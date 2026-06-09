@@ -1,0 +1,646 @@
+/**
+ * ══════════════════════════════════════════════════════════════
+ * EVETIS WB — SheetsSchema.gs  v1.0.3-mvp
+ * Схемы всех листов: заголовки колонок, типы, ширина
+ * Единый источник правды для всей системы
+ *
+ * История:
+ *   v1.0.0 — начальная структура (setupWorkbook)
+ *   v1.0.1 — STOCKS_WB 66, SKU_MASTER +4, PNL_TOTAL +10
+ *   v1.0.2 — RAW_WB_FINANCE +2, RAW_WB_STOCKS +1, COST_HISTORY +3
+ *   v1.0.3 — SUPPLY_PLAN 80, финальная фиксация всех схем
+ * ══════════════════════════════════════════════════════════════
+ */
+
+var SHEETS_SCHEMA = {};
+
+
+// ═══════════════════════════════════════
+// СЛОЙ 1: НАСТРОЙКИ И СПРАВОЧНИКИ
+// ═══════════════════════════════════════
+
+SHEETS_SCHEMA[SHEET_NAMES.SETTINGS] = {
+  type: 'key_value',
+  description: 'API ключи (*_SECRET_NAME), параметры расчётов, пороги, исключения'
+};
+
+// ───────────────────────────────────────
+// SKU_MASTER — 56 колонок
+// ───────────────────────────────────────
+SHEETS_SCHEMA[SHEET_NAMES.SKU_MASTER] = {
+  type: 'table',
+  headers: [
+    // Идентификация (A–H)
+    'active', 'internal_sku', 'product_name_short', 'product_name_full',
+    'category', 'line', 'product_type', 'status',
+    // WB идентификаторы (I–O)
+    'wb_nm_id', 'wb_vendor_code', 'barcode', 'wb_subject_id',
+    'wb_subject_name', 'wb_card_url', 'wb_imt_id',
+    // Продуктовые характеристики (P–W)
+    'volume_ml', 'weight_g', 'color', 'fragrance', 'brand',
+    'country_of_origin', 'certification', 'launch_date',
+    // Себестоимость из COST_HISTORY (X–Y)
+    'current_cogs', 'cogs_valid_from',
+    // Цены (Z–AF)
+    'regular_price', 'target_sale_price', 'min_sale_price',
+    'current_wb_price', 'current_discount_percent',
+    'price_strategy', 'promo_allowed',
+    // Фулфилмент (AG–AO)
+    'ff_tariff_group', 'units_per_box', 'units_per_masterbox',
+    'min_supply_qty', 'target_stock_days', 'critical_stock_days',
+    'supply_priority', 'preferred_warehouses', 'excluded_warehouses',
+    // Наборы (AP–AS)
+    'is_bundle', 'bundle_components_source', 'bundle_build_cost', 'bundle_comment',
+    // Управленческие флаги (AT–AW)
+    'include_in_pnl', 'include_in_ads_analysis',
+    'include_in_supply_plan', 'include_in_stock_alerts',
+    // Контроль (AX–AZ)
+    'manager_comment', 'data_quality_status', 'data_quality_comment',
+    // Целевые KPI (BA–BD) — добавлены v1.0.1
+    'target_margin_percent', 'min_margin_percent',
+    'target_drr_percent', 'critical_drr_percent'
+  ],
+  columnWidths: {
+    0: 60, 1: 180, 2: 200, 3: 280, 4: 120, 5: 120, 6: 80, 7: 80,
+    8: 120, 9: 160, 10: 140, 11: 100, 12: 140, 13: 200, 14: 100,
+    15: 80, 16: 80, 17: 80, 18: 100, 19: 80, 20: 80, 21: 100, 22: 100,
+    23: 100, 24: 100,
+    25: 100, 26: 100, 27: 100, 28: 100, 29: 80, 30: 100, 31: 80,
+    32: 120, 33: 80, 34: 80, 35: 80, 36: 80, 37: 80, 38: 80, 39: 140, 40: 140,
+    41: 80, 42: 140, 43: 100, 44: 120,
+    45: 80, 46: 80, 47: 80, 48: 80,
+    49: 160, 50: 100, 51: 200,
+    52: 100, 53: 100, 54: 100, 55: 100
+  }
+};
+
+// ───────────────────────────────────────
+// BUNDLES — 9 колонок
+// ───────────────────────────────────────
+SHEETS_SCHEMA[SHEET_NAMES.BUNDLES] = {
+  type: 'table',
+  headers: [
+    'bundle_internal_sku', 'bundle_name', 'component_internal_sku',
+    'component_name', 'component_qty', 'component_cost',
+    'bundle_total_cost', 'bundle_build_cost', 'comment'
+  ],
+  columnWidths: {
+    0: 180, 1: 200, 2: 180, 3: 200, 4: 80, 5: 100, 6: 120, 7: 120, 8: 200
+  }
+};
+
+// ───────────────────────────────────────
+// COST_HISTORY — 27 колонок (24 base + 3 v1.0.2)
+// ───────────────────────────────────────
+SHEETS_SCHEMA[SHEET_NAMES.COST_HISTORY] = {
+  type: 'table',
+  headers: [
+    'cost_id', 'internal_sku', 'product_name', 'valid_from', 'valid_to',
+    'is_current', 'cost_type',
+    'purchase_cost_cny', 'exchange_rate', 'purchase_cost_rub',
+    'logistics_china_rub', 'customs_rub', 'certification_rub',
+    'packaging_rub', 'marking_rub', 'labeling_rub',
+    'other_cost_rub', 'cogs_per_unit',
+    'batch_id', 'batch_qty', 'supplier', 'reason',
+    'data_quality_status', 'comment',
+    // Добавлены v1.0.2
+    'status', 'sellable_qty', 'data_quality_comment'
+  ],
+  columnWidths: {
+    0: 100, 1: 180, 2: 200, 3: 100, 4: 100, 5: 80, 6: 100,
+    7: 120, 8: 80, 9: 120, 10: 120, 11: 100, 12: 100,
+    13: 100, 14: 100, 15: 100, 16: 100, 17: 120,
+    18: 100, 19: 80, 20: 150, 21: 200, 22: 100, 23: 200,
+    24: 100, 25: 100, 26: 200
+  }
+};
+
+
+// ═══════════════════════════════════════
+// СЛОЙ 2: СЫРЫЕ ДАННЫЕ API
+// ═══════════════════════════════════════
+
+// ───────────────────────────────────────
+// RAW_WB_FINANCE — 69 колонок (67 base + 2 v1.0.2)
+// ───────────────────────────────────────
+SHEETS_SCHEMA[SHEET_NAMES.RAW_WB_FINANCE] = {
+  type: 'table',
+  headers: [
+    // Служебные (A–J)
+    'load_id', 'loaded_at', 'source_api', 'request_date_from', 'request_date_to',
+    'report_id', 'report_period_from', 'report_period_to', 'row_hash', 'raw_row_number',
+    // Идентификаторы операции WB (K–S)
+    'wb_operation_id', 'rrd_id', 'srid', 'rid', 'shk_id',
+    'sticker_id', 'doc_type_name', 'supplier_oper_name', 'operation_type_normalized',
+    // Даты (T–Y)
+    'order_dt', 'sale_dt', 'rr_dt', 'create_dt', 'period_month', 'last_change_date',
+    // Товар (Z–AH)
+    'wb_nm_id', 'wb_vendor_code', 'barcode', 'sa_name', 'ts_name',
+    'brand_name', 'subject_name', 'internal_sku', 'sku_match_status',
+    // География (AI–AL)
+    'office_name', 'warehouse_name', 'country_name', 'region_name',
+    // Продажи/цены (AM–AU)
+    'retail_price', 'retail_amount', 'retail_price_withdisc_rub',
+    'sale_percent', 'commission_percent', 'product_discount_for_report',
+    'supplier_promo', 'spp_percent', 'quantity',
+    // Деньги WB (AV–BH)
+    'sale_amount', 'return_amount_rub', 'for_pay',
+    'commission_amount', 'sales_commission', 'logistics_amount',
+    'storage_fee', 'deduction', 'penalty', 'acceptance',
+    'additional_payment', 'acquiring_fee', 'compensation_amount',
+    'other_amount', 'currency',
+    // Технические (BI–BM)
+    'money_parse_status', 'money_parse_comment',
+    'is_duplicate', 'processed_status', 'error_message',
+    // Добавлены v1.0.2
+    'raw_json', 'error_code'
+  ],
+  columnWidths: { 0: 80, 1: 130, 67: 200 }
+};
+
+// ───────────────────────────────────────
+// RAW_WB_ADS — 72 колонки
+// ───────────────────────────────────────
+SHEETS_SCHEMA[SHEET_NAMES.RAW_WB_ADS] = {
+  type: 'table',
+  headers: [
+    // Служебные (A–H)
+    'load_id', 'loaded_at', 'source_api', 'record_type',
+    'request_date_from', 'request_date_to', 'row_hash', 'raw_row_number',
+    // Кампания (I–T)
+    'advert_id', 'campaign_name', 'campaign_type', 'campaign_status',
+    'payment_type', 'bid_type', 'placement_search', 'placement_recommendations',
+    'created_at', 'started_at', 'updated_at', 'ended_at',
+    // Дата (U–X)
+    'stat_date', 'period_month', 'timezone', 'interval_type',
+    // Товар (Y–AF)
+    'wb_nm_id', 'wb_vendor_code', 'barcode', 'internal_sku',
+    'sku_match_status', 'product_name', 'subject_id', 'subject_name',
+    // Метрики (AG–AS)
+    'views', 'clicks', 'ctr', 'cpc', 'cpm', 'spend',
+    'atbs', 'orders', 'orders_amount', 'shks', 'sum_price',
+    'cr_click_to_cart', 'cr_click_to_order',
+    // Финансы рекламы (AT–AZ)
+    'budget', 'budget_balance', 'budget_operation_type',
+    'budget_operation_amount', 'budget_operation_date', 'upd_number', 'upd_date',
+    // Ставки (BA–BG)
+    'bid_search_kopecks', 'bid_recommendations_kopecks', 'bid_card_kopecks',
+    'bid_normalized_rub', 'min_bid_kopecks', 'recommended_bid_kopecks', 'bid_change_date',
+    // Кластеры (BH–BO)
+    'search_cluster_id', 'search_cluster_name', 'keyword_text',
+    'cluster_views', 'cluster_clicks', 'cluster_spend',
+    'cluster_orders', 'cluster_orders_amount',
+    // Обработка (BP–BT)
+    'raw_json', 'is_duplicate', 'processed_status', 'error_code', 'error_message'
+  ],
+  columnWidths: { 0: 80, 1: 130, 68: 200 }
+};
+
+// ───────────────────────────────────────
+// RAW_WB_STOCKS — 48 колонок (47 base + 1 v1.0.2)
+// ───────────────────────────────────────
+SHEETS_SCHEMA[SHEET_NAMES.RAW_WB_STOCKS] = {
+  type: 'table',
+  headers: [
+    // Служебные (A–H)
+    'load_id', 'loaded_at', 'snapshot_date', 'snapshot_time',
+    'source_api', 'request_date', 'row_hash', 'raw_row_number',
+    // Товар WB (I–R)
+    'wb_nm_id', 'wb_vendor_code', 'barcode', 'title',
+    'brand_name', 'subject_name', 'category_name', 'tech_size',
+    'internal_sku', 'sku_match_status',
+    // Склад WB (S–Y)
+    'warehouse_id', 'warehouse_name', 'warehouse_type',
+    'region_name', 'federal_district', 'is_priority_warehouse', 'warehouse_match_status',
+    // Количество (Z–AF)
+    'quantity_total', 'quantity_available', 'quantity_reserved',
+    'quantity_in_transit', 'quantity_not_available', 'quantity_defect', 'quantity_raw',
+    // Статусы (AG–AK)
+    'stock_status', 'is_fbo_stock', 'is_available_for_sale',
+    'last_change_date', 'stock_source_status',
+    // Поставки (AL–AQ)
+    'wb_supply_id', 'supply_status', 'expected_qty',
+    'accepted_qty', 'acceptance_date', 'supply_warehouse',
+    // Обработка (AR–AV)
+    'is_duplicate', 'processed_status', 'error_code', 'error_message',
+    // Добавлен v1.0.2
+    'raw_json'
+  ],
+  columnWidths: { 0: 80, 1: 130, 2: 100, 3: 80, 47: 200 }
+};
+
+// ───────────────────────────────────────
+// RAW_WB_ORDERS — 28 колонок
+// ───────────────────────────────────────
+SHEETS_SCHEMA[SHEET_NAMES.RAW_WB_ORDERS] = {
+  type: 'table',
+  headers: [
+    'load_id', 'loaded_at', 'source_api', 'row_hash', 'raw_row_number',
+    'srid', 'order_uid', 'order_dt', 'cancel_dt', 'is_cancel',
+    'wb_nm_id', 'wb_vendor_code', 'barcode', 'internal_sku', 'sku_match_status',
+    'category', 'subject', 'brand', 'tech_size',
+    'warehouse_name', 'region_name', 'country_name',
+    'price_with_disc', 'quantity', 'sticker_id',
+    'is_duplicate', 'processed_status', 'error_message'
+  ],
+  columnWidths: { 0: 80, 1: 130 }
+};
+
+// ───────────────────────────────────────
+// RAW_WB_SALES_RETURNS — 34 колонки
+// ───────────────────────────────────────
+SHEETS_SCHEMA[SHEET_NAMES.RAW_WB_SALES] = {
+  type: 'table',
+  headers: [
+    'load_id', 'loaded_at', 'source_api', 'row_hash', 'raw_row_number',
+    'srid', 'sale_id', 'order_dt', 'sale_dt', 'last_change_date',
+    'operation_type', 'is_return',
+    'wb_nm_id', 'wb_vendor_code', 'barcode', 'internal_sku', 'sku_match_status',
+    'category', 'subject', 'brand', 'tech_size',
+    'warehouse_name', 'region_name', 'country_name',
+    'total_price', 'discount_percent', 'spp', 'finished_price', 'for_pay',
+    'quantity', 'sticker_id',
+    'is_duplicate', 'processed_status', 'error_message'
+  ],
+  columnWidths: { 0: 80, 1: 130 }
+};
+
+
+// ═══════════════════════════════════════
+// СЛОЙ 3: ОЧИЩЕННЫЕ ДАННЫЕ
+// ═══════════════════════════════════════
+
+// ───────────────────────────────────────
+// CLEAN_WB_DAILY — 38 колонок
+// ───────────────────────────────────────
+SHEETS_SCHEMA[SHEET_NAMES.CLEAN_WB_DAILY] = {
+  type: 'table',
+  headers: [
+    'date', 'period_month', 'week_number', 'marketplace',
+    'internal_sku', 'product_name', 'category', 'product_type', 'status',
+    'orders_qty', 'sales_qty', 'returns_qty', 'net_sales_qty',
+    'gross_revenue', 'returns_amount', 'net_revenue', 'avg_sale_price',
+    'wb_commission', 'wb_logistics', 'wb_storage', 'wb_acceptance',
+    'wb_penalty', 'wb_deduction', 'wb_acquiring', 'wb_other_expenses',
+    'wb_compensations', 'wb_total_expenses',
+    'ads_spend', 'ads_views', 'ads_clicks', 'ads_orders',
+    'stock_total', 'stock_available',
+    'cogs_per_unit', 'cogs_total',
+    'row_key', 'data_quality_status', 'data_quality_comment'
+  ],
+  columnWidths: { 0: 100, 1: 100, 4: 180, 5: 200 }
+};
+
+// ───────────────────────────────────────
+// ERRORS_CONTROL — 15 колонок
+// ───────────────────────────────────────
+SHEETS_SCHEMA[SHEET_NAMES.ERRORS_CONTROL] = {
+  type: 'table',
+  headers: [
+    'error_id', 'detected_at', 'source_sheet', 'source_row',
+    'error_type', 'severity', 'internal_sku', 'wb_nm_id',
+    'error_message', 'expected_value', 'actual_value',
+    'resolved', 'resolved_at', 'resolved_by', 'comment'
+  ],
+  columnWidths: {
+    0: 100, 1: 140, 2: 160, 3: 80, 4: 160, 5: 80,
+    6: 160, 7: 120, 8: 300, 9: 120, 10: 120,
+    11: 80, 12: 130, 13: 100, 14: 200
+  }
+};
+
+
+// ═══════════════════════════════════════
+// СЛОЙ 4: АНАЛИТИКА И ОТЧЁТЫ
+// ═══════════════════════════════════════
+
+// ───────────────────────────────────────
+// UNIT_SKU_DAILY — 55 колонок
+// ───────────────────────────────────────
+SHEETS_SCHEMA[SHEET_NAMES.UNIT_SKU_DAILY] = {
+  type: 'table',
+  headers: [
+    // Ключ (A–J)
+    'date', 'period_month', 'week_number', 'marketplace',
+    'internal_sku', 'product_name', 'category', 'product_type', 'status', 'row_key',
+    // Заказы/продажи (K–P)
+    'orders_qty', 'sales_qty', 'returns_qty', 'net_sales_qty',
+    'buyout_rate_percent', 'return_rate_percent',
+    // Выручка (Q–W)
+    'gross_revenue', 'returns_amount', 'net_revenue',
+    'avg_sale_price', 'avg_order_value', 'discount_percent_avg', 'promo_flag',
+    // Расходы WB (X–AG)
+    'wb_commission', 'wb_logistics', 'wb_storage', 'wb_acceptance',
+    'wb_penalty', 'wb_deduction', 'wb_acquiring', 'wb_other_expenses',
+    'wb_compensations', 'wb_total_expenses',
+    // Реклама (AH–AN)
+    'ads_spend', 'ads_views', 'ads_clicks', 'ads_orders',
+    'ads_revenue', 'drr_percent', 'roas',
+    // Себестоимость (AO–AP)
+    'cogs_per_unit', 'cogs_total',
+    // P&L по SKU (AQ–AW)
+    'gross_profit_before_ads', 'profit_after_ads', 'margin_after_ads_percent',
+    'profit_per_unit', 'break_even_drr_percent',
+    'external_expenses_allocated', 'operating_profit',
+    // Статусы (AX–BC)
+    'profit_status', 'ads_status', 'stock_status',
+    'data_quality_status', 'main_problem', 'recommended_action'
+  ],
+  columnWidths: { 0: 100, 1: 100, 4: 180, 5: 200, 9: 240 }
+};
+
+// ───────────────────────────────────────
+// PNL_TOTAL — 84 колонки (74 base + 10 v1.0.1)
+// ───────────────────────────────────────
+SHEETS_SCHEMA[SHEET_NAMES.PNL_TOTAL] = {
+  type: 'table',
+  headers: [
+    // Период (A–H)
+    'period_month', 'period_start', 'period_end', 'marketplace',
+    'business_unit', 'report_status', 'closed_at', 'row_key',
+    // Продажи (I–Q)
+    'orders_qty', 'sales_qty', 'returns_qty', 'net_sales_qty',
+    'gross_revenue', 'returns_amount', 'net_revenue', 'avg_sale_price', 'return_rate_percent',
+    // Расходы WB (R–AA)
+    'wb_commission', 'wb_logistics', 'wb_storage', 'wb_acceptance',
+    'wb_penalty', 'wb_deduction', 'wb_acquiring', 'wb_other_expenses',
+    'wb_compensations', 'wb_total_expenses',
+    // Реклама (AB–AH)
+    'ads_spend', 'ads_views', 'ads_clicks', 'ads_orders',
+    'ads_revenue', 'drr_percent', 'roas',
+    // Себестоимость (AI–AK)
+    'cogs_total', 'avg_cogs_per_unit', 'gross_profit_before_ads',
+    // P&L (AL–AU)
+    'profit_after_ads', 'margin_after_ads_percent',
+    'ext_ff_expenses', 'ext_logistics_expenses', 'ext_marketing_expenses',
+    'ext_design_expenses', 'ext_accounting_expenses', 'ext_bank_expenses',
+    'ext_it_expenses', 'ext_other_expenses',
+    // Итоги (AV–BF)
+    'total_external_expenses', 'operating_profit', 'operating_margin_percent',
+    'breakeven_revenue',
+    'usn_tax_estimated', 'tax_base_income', 'tax_base_expenses_accepted',
+    'tax_base_expenses_questionable',
+    'net_profit_before_tax', 'net_profit_after_tax_estimated', 'net_margin_after_tax_percent',
+    // Статусы (BG–BI)
+    'profit_status', 'main_loss_reason', 'recommended_focus',
+    // Cashflow (BJ–BP)
+    'wb_payouts_received', 'bank_expenses_paid', 'taxes_paid',
+    'owner_withdrawals', 'inventory_purchases_paid', 'cashflow_net', 'cashflow_status',
+    // Сверка (BQ–BV)
+    'wb_for_pay_total', 'wb_payouts_received_check', 'wb_payout_difference',
+    'data_quality_status', 'main_data_issue', 'comment',
+    // Добавлены v1.0.1
+    'wb_expenses_percent', 'ads_share_of_expenses',
+    'gross_margin_before_ads_percent', 'profit_per_unit',
+    'business_health_status',
+    'taxable_income_estimated', 'tax_accepted_expenses_estimated',
+    'tax_base_estimated', 'tax_data_quality_status', 'tax_comment'
+  ],
+  columnWidths: { 0: 100, 4: 100, 7: 220 }
+};
+
+// ───────────────────────────────────────
+// ADS_WB — 44 колонки
+// ───────────────────────────────────────
+SHEETS_SCHEMA[SHEET_NAMES.ADS_WB] = {
+  type: 'table',
+  headers: [
+    'date', 'period_month', 'advert_id', 'campaign_name', 'campaign_type',
+    'campaign_status', 'payment_type', 'internal_sku', 'product_name', 'category',
+    'views', 'clicks', 'ctr', 'cpc', 'cpm', 'spend',
+    'atbs', 'orders', 'orders_amount',
+    'drr_ads_percent', 'drr_management_percent',
+    'net_revenue', 'wb_total_expenses', 'cogs_total',
+    'profit_before_ads', 'profit_after_ads', 'break_even_drr',
+    'click_to_cart_cr', 'click_to_order_cr',
+    'cost_per_order', 'revenue_per_click', 'profit_per_click',
+    'stock_total', 'stock_days_left', 'stock_status',
+    'supply_planned', 'recommended_ads_limit',
+    'ads_efficiency_status', 'main_ads_problem', 'recommended_action',
+    'priority', 'data_quality_status', 'data_quality_comment',
+    'row_key'
+  ],
+  columnWidths: { 0: 100, 1: 100, 2: 100, 3: 200, 7: 180, 8: 200 }
+};
+
+// ───────────────────────────────────────
+// STOCKS_WB — 66 колонок (v1.0.1: полная перестройка)
+// ───────────────────────────────────────
+SHEETS_SCHEMA[SHEET_NAMES.STOCKS_WB] = {
+  type: 'table',
+  headers: [
+    // Ключ и товар (A–J)
+    'snapshot_date', 'snapshot_time', 'marketplace',
+    'internal_sku', 'product_name', 'category',
+    'product_status', 'wb_nm_id', 'wb_vendor_code', 'row_key',
+    // Склад (K–Q)
+    'warehouse_id', 'warehouse_name', 'warehouse_region',
+    'warehouse_type', 'warehouse_priority',
+    'warehouse_is_available_for_supply', 'warehouse_comment',
+    // Остатки (R–Y)
+    'stock_total', 'stock_available', 'stock_reserved',
+    'stock_in_transit', 'stock_not_available', 'stock_defect',
+    'stock_total_all_warehouses', 'stock_available_all_warehouses',
+    // Скорость продаж (Z–AI)
+    'sales_qty_7d', 'sales_qty_14d', 'sales_qty_30d',
+    'avg_sales_per_day_7d', 'avg_sales_per_day_14d', 'avg_sales_per_day_30d',
+    'sales_trend', 'sales_velocity_status',
+    'forecast_sales_per_day', 'forecast_method',
+    // Дней остатка и риски (AJ–AQ)
+    'days_of_stock_total', 'days_of_stock_available',
+    'days_until_stockout', 'stock_status',
+    'stock_risk_level', 'stockout_date_estimated',
+    'lost_revenue_risk_14d', 'lost_profit_risk_14d',
+    // Связь с рекламой (AR–AV)
+    'ads_spend_7d', 'ads_drr_7d', 'ads_status',
+    'ads_recommendation_by_stock', 'can_scale_ads',
+    // Поставки и ФФ (AW–BC)
+    'ff_stock_available', 'planned_supply_qty', 'planned_supply_date',
+    'days_until_supply', 'expected_stock_before_supply',
+    'supply_gap_qty', 'supply_status',
+    // Рекомендации (BD–BI)
+    'recommended_supply_qty', 'recommended_supply_priority',
+    'recommended_warehouse', 'recommended_action',
+    'action_deadline', 'responsible',
+    // Контроль (BJ–BN)
+    'data_quality_status', 'data_quality_comment',
+    'last_raw_update_at', 'last_sales_update_at', 'last_ads_update_at'
+  ],
+  columnWidths: {
+    0: 100, 1: 80, 2: 60,
+    3: 180, 4: 200, 5: 100,
+    6: 80, 7: 120, 8: 160, 9: 240,
+    11: 160, 12: 120, 13: 100,
+    56: 200, 57: 100
+  }
+};
+
+// ───────────────────────────────────────
+// SUPPLY_PLAN — 80 колонок (v1.0.3: полная перестройка)
+// ───────────────────────────────────────
+SHEETS_SCHEMA[SHEET_NAMES.SUPPLY_PLAN] = {
+  type: 'table',
+  headers: [
+    // Ключ и статус (A–J)
+    'planning_date', 'planning_week', 'marketplace',
+    'internal_sku', 'product_name', 'category',
+    'product_status', 'row_key', 'plan_status', 'priority',
+    // Остатки WB (K–Q)
+    'wb_stock_total', 'wb_stock_available', 'wb_stock_in_transit',
+    'stock_days_left', 'stock_status', 'stock_risk_level',
+    'stockout_date_estimated',
+    // Скорость продаж (R–Z)
+    'sales_qty_7d', 'sales_qty_14d', 'sales_qty_30d',
+    'avg_sales_per_day_7d', 'avg_sales_per_day_14d', 'avg_sales_per_day_30d',
+    'forecast_sales_per_day', 'forecast_method', 'sales_trend',
+    // Целевые параметры (AA–AF)
+    'target_stock_days', 'critical_stock_days', 'low_stock_days',
+    'overstock_days', 'min_supply_qty', 'safety_stock_days',
+    // Остатки на ФФ (AG–AL)
+    'ff_stock_available', 'ff_stock_reserved', 'ff_stock_free',
+    'ff_stock_status', 'batch_id', 'batch_cogs',
+    // Целевой склад (AM–AR)
+    'target_warehouse', 'warehouse_priority', 'warehouse_current_stock',
+    'warehouse_sales_30d', 'warehouse_days_left', 'warehouse_recommendation_reason',
+    // Сроки доставки (AS–AV)
+    'transport_lead_time_days', 'expected_acceptance_days',
+    'total_lead_time_days', 'expected_sales_before_acceptance',
+    // Расчёт потребности (AW–BA)
+    'target_stock_qty', 'planned_supply_qty_existing',
+    'supply_need_qty_raw', 'recommended_supply_qty',
+    'recommended_supply_qty_final',
+    // Экономика поставки (BB–BG)
+    'avg_sale_price', 'profit_per_unit',
+    'expected_revenue_from_supply', 'expected_profit_from_supply',
+    'lost_revenue_risk', 'lost_profit_risk',
+    // Решение и действие (BH–BM)
+    'supply_decision', 'decision_reason', 'recommended_action',
+    'action_deadline', 'responsible', 'comment',
+    // Факт поставки (BN–BU)
+    'wb_supply_id', 'ff_operation_id',
+    'actual_shipped_qty', 'actual_accepted_qty',
+    'supply_created_date', 'supply_shipped_date', 'supply_accepted_date',
+    'supply_fact_status',
+    // Контроль (BV–CB)
+    'data_quality_status', 'data_quality_comment',
+    'last_stock_update_at', 'last_sales_update_at', 'last_ff_update_at',
+    'created_at', 'updated_at'
+  ],
+  columnWidths: {
+    0: 100, 3: 180, 4: 200, 5: 100,
+    7: 240, 8: 100, 9: 80,
+    38: 100, 43: 200,
+    55: 100, 56: 200, 57: 200, 58: 100, 59: 120, 60: 200,
+    68: 100, 70: 200
+  }
+};
+
+// ───────────────────────────────────────
+// WAREHOUSE_ANALYTICS — 16 колонок
+// ───────────────────────────────────────
+SHEETS_SCHEMA[SHEET_NAMES.WAREHOUSE_ANALYTICS] = {
+  type: 'table',
+  headers: [
+    'snapshot_date', 'warehouse_name', 'region_name', 'federal_district',
+    'total_stock', 'total_available', 'sku_count', 'sku_out_of_stock',
+    'avg_turnover_days', 'stuck_stock_qty', 'stuck_stock_value',
+    'storage_fee_estimated', 'sales_share_percent',
+    'warehouse_priority', 'recommendation', 'comment'
+  ],
+  columnWidths: { 0: 100, 1: 180, 2: 140, 3: 140 }
+};
+
+// ───────────────────────────────────────
+// ABC_XYZ — 15 колонок
+// ───────────────────────────────────────
+SHEETS_SCHEMA[SHEET_NAMES.ABC_XYZ] = {
+  type: 'table',
+  headers: [
+    'period_month', 'internal_sku', 'product_name', 'category',
+    'net_revenue', 'revenue_share_percent', 'abc_revenue',
+    'profit_after_ads', 'profit_share_percent', 'abc_profit',
+    'sales_cv_percent', 'xyz_demand',
+    'abc_xyz_group', 'recommendation', 'comment'
+  ],
+  columnWidths: { 0: 100, 1: 180, 2: 200, 3: 100 }
+};
+
+// ───────────────────────────────────────
+// DASHBOARD_WB — формируется отдельно
+// ───────────────────────────────────────
+SHEETS_SCHEMA[SHEET_NAMES.DASHBOARD_WB] = {
+  type: 'dashboard',
+  description: 'Управленческий дашборд — формируется отдельной функцией'
+};
+
+// ───────────────────────────────────────
+// Воронка WB — существующий лист
+// ───────────────────────────────────────
+SHEETS_SCHEMA[SHEET_NAMES.FUNNEL_WB] = {
+  type: 'existing',
+  description: 'Воронка WB — существующий лист, доработка позже'
+};
+
+
+// ═══════════════════════════════════════
+// ОПЕРАЦИОННЫЕ ЛИСТЫ
+// ═══════════════════════════════════════
+
+// ───────────────────────────────────────
+// FULFILLMENT — 27 колонок
+// ───────────────────────────────────────
+SHEETS_SCHEMA[SHEET_NAMES.FULFILLMENT] = {
+  type: 'table',
+  headers: [
+    'ff_operation_id', 'operation_date', 'period_month',
+    'ff_partner', 'operation_type', 'operation_description',
+    'internal_sku', 'product_name', 'wb_nm_id',
+    'quantity', 'unit', 'tariff_per_unit', 'tariff_total',
+    'vat_amount', 'final_amount', 'currency',
+    'batch_id', 'supply_id',
+    'include_in_cogs', 'include_in_pnl',
+    'invoice_number', 'invoice_date', 'document_url',
+    'reconciliation_status', 'bank_expense_id',
+    'data_quality_status', 'comment'
+  ],
+  columnWidths: { 0: 120, 1: 100, 5: 200, 6: 180, 7: 200 }
+};
+
+// ───────────────────────────────────────
+// BANK_EXPENSES — 46 колонок
+// ───────────────────────────────────────
+SHEETS_SCHEMA[SHEET_NAMES.BANK_EXPENSES] = {
+  type: 'table',
+  headers: [
+    'expense_id', 'operation_date', 'period_month', 'bank_account',
+    'operation_type', 'payment_status', 'bank_statement_id', 'source',
+    'counterparty_name', 'counterparty_inn', 'payment_purpose',
+    'short_description', 'document_number', 'document_date', 'document_url',
+    'amount_total', 'amount_without_vat', 'vat_amount',
+    'currency', 'exchange_rate', 'amount_rub',
+    'expense_category', 'expense_subcategory', 'expense_nature',
+    'business_area', 'allocation_level', 'internal_sku',
+    'batch_id', 'allocation_method', 'allocation_percent', 'allocated_amount_rub',
+    'include_in_cogs', 'include_in_pnl', 'include_in_cashflow', 'include_in_tax_usn',
+    'tax_status', 'tax_category', 'tax_comment',
+    'linked_sheet', 'linked_record_id', 'reconciliation_status', 'reconciliation_comment',
+    'responsible', 'comment', 'data_quality_status', 'data_quality_comment'
+  ],
+  columnWidths: { 0: 120, 1: 100, 8: 180, 11: 220, 14: 200 }
+};
+
+// ───────────────────────────────────────
+// TAX_USN — 17 колонок
+// ───────────────────────────────────────
+SHEETS_SCHEMA[SHEET_NAMES.TAX_USN] = {
+  type: 'table',
+  headers: [
+    'period_month', 'income_wb_payouts', 'income_other',
+    'income_total', 'expenses_accepted', 'expenses_questionable',
+    'expenses_not_accepted', 'tax_base',
+    'usn_rate_percent', 'usn_tax_calculated', 'usn_tax_min_1_percent',
+    'usn_tax_to_pay', 'advance_paid', 'advance_due',
+    'status', 'accountant_comment', 'data_quality_status'
+  ],
+  columnWidths: { 0: 100, 1: 140 }
+};
