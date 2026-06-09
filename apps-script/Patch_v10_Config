@@ -1,0 +1,187 @@
+/**
+ * ══════════════════════════════════════════════════════════════
+ * EVETIS WB — Patch_v10_Config.gs
+ *
+ * Патч v10: дополнения к Config.gs
+ *
+ * ДОБАВИТЬ в SHEET_NAMES:
+ *   RAW_WB_STORAGE: 'RAW_WB_STORAGE'
+ *
+ * ДОБАВИТЬ в SHEETS_SCHEMA:
+ *   Схема RAW_WB_STORAGE (21 колонка, расширена в v10.1)
+ *
+ * ДОБАВИТЬ в HIDDEN_SHEETS:
+ *   'RAW_WB_STORAGE'
+ *
+ * ДОБАВИТЬ в SHEET_ORDER (после RAW_WB_STOCKS):
+ *   'RAW_WB_STORAGE'
+ *
+ * НЕ МЕНЯЕТ существующие листы, схемы, данные.
+ * ══════════════════════════════════════════════════════════════
+ */
+
+
+// ═══════════════════════════════════════
+// ИНСТРУКЦИЯ ПО ПРИМЕНЕНИЮ
+// ═══════════════════════════════════════
+//
+// 1. Открыть Config.gs
+//
+// 2. В объект SHEET_NAMES добавить строку:
+//      RAW_WB_STORAGE: 'RAW_WB_STORAGE',
+//
+// 3. В массив HIDDEN_SHEETS добавить:
+//      'RAW_WB_STORAGE'
+//
+// 4. В массив SHEET_ORDER добавить после 'RAW_WB_STOCKS':
+//      'RAW_WB_STORAGE'
+//
+// 5. Вставить блок SHEETS_SCHEMA ниже (или добавить этот файл в проект).
+//
+// ═══════════════════════════════════════
+
+
+// ───────────────────────────────────────
+// RAW_WB_STORAGE — 21 колонка
+// Полный набор полей из отчёта хранения WB
+// ───────────────────────────────────────
+
+/**
+ * Регистрирует схему RAW_WB_STORAGE в SHEETS_SCHEMA.
+ * Вызывается из setupWorkbook или вручную.
+ *
+ * Если SHEETS_SCHEMA уже определена в Config.gs, можно просто
+ * скопировать блок ниже в Config.gs.
+ */
+function registerRawWbStorageSchema_() {
+  if (typeof SHEETS_SCHEMA === 'undefined') {
+    console.log('⚠️ SHEETS_SCHEMA не найден — патч не применён.');
+    return;
+  }
+
+  // Регистрируем имя листа
+  if (typeof SHEET_NAMES !== 'undefined' && !SHEET_NAMES.RAW_WB_STORAGE) {
+    SHEET_NAMES.RAW_WB_STORAGE = 'RAW_WB_STORAGE';
+  }
+
+  // Регистрируем схему
+  SHEETS_SCHEMA['RAW_WB_STORAGE'] = {
+    type: 'table',
+    headers: [
+      // Служебные (A–C)
+      'load_id',              // ID загрузки
+      'loaded_at',            // Дата загрузки
+      'source_report',        // Источник ('WB_paid_storage', ...)
+
+      // Данные (D–K)
+      'date',                 // Дата хранения (YYYY-MM-DD)
+      'nmID',                 // wb_nm_id — артикул WB
+      'vendor_code',          // Артикул продавца
+      'barcode',              // Штрихкод (последний баркод)
+      'warehouse_name',       // Название склада
+      'storage_cost',         // Стоимость хранения за день/период, ₽
+      'quantity',             // Количество штрих-кодов, шт
+      'volume',               // Объём (литры)
+
+      // Расширенные поля из xlsx (L–Q)
+      'warehouse_id',         // Номер склада
+      'supply_id',            // Номер поставки
+      'calculation_type',     // Способ расчёта
+      'subject_name',         // Предмет
+      'brand_name',           // Бренд
+      'category',             // Категория
+
+      // Связь (R)
+      'source_report_id',     // Имя файла источника
+
+      // Обработка (S–U)
+      'is_duplicate',         // TRUE/FALSE
+      'processed_status',     // OK / ERROR
+      'error_message'         // Текст ошибки
+    ],
+    columnWidths: {
+      0: 80,    // load_id
+      1: 130,   // loaded_at
+      2: 140,   // source_report
+      3: 100,   // date
+      4: 120,   // nmID
+      5: 140,   // vendor_code
+      6: 140,   // barcode
+      7: 160,   // warehouse_name
+      8: 120,   // storage_cost
+      9: 80,    // quantity
+      10: 80,   // volume
+      11: 100,  // warehouse_id
+      12: 100,  // supply_id
+      13: 120,  // calculation_type
+      14: 140,  // subject_name
+      15: 100,  // brand_name
+      16: 120,  // category
+      17: 160,  // source_report_id
+      18: 80,   // is_duplicate
+      19: 80,   // processed_status
+      20: 200   // error_message
+    }
+  };
+
+  console.log('✅ Схема RAW_WB_STORAGE зарегистрирована (' +
+    SHEETS_SCHEMA['RAW_WB_STORAGE'].headers.length + ' колонок)');
+}
+
+
+// ═══════════════════════════════════════
+// СОЗДАНИЕ ЛИСТА RAW_WB_STORAGE
+// ═══════════════════════════════════════
+
+/**
+ * Создаёт лист RAW_WB_STORAGE если его нет.
+ * Записывает заголовки, применяет форматирование.
+ */
+function createRawWbStorageSheet() {
+  registerRawWbStorageSchema_();
+
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var sheetName = 'RAW_WB_STORAGE';
+  var sheet = ss.getSheetByName(sheetName);
+
+  if (!sheet) {
+    sheet = ss.insertSheet(sheetName);
+    console.log('📋 Создан лист ' + sheetName);
+  }
+
+  var schema = SHEETS_SCHEMA[sheetName];
+  if (!schema) {
+    console.log('❌ Схема ' + sheetName + ' не найдена');
+    return;
+  }
+
+  // Заголовки
+  var headers = schema.headers;
+  if (sheet.getMaxColumns() < headers.length) {
+    sheet.insertColumnsAfter(sheet.getMaxColumns(), headers.length - sheet.getMaxColumns());
+  }
+  sheet.getRange(1, 1, 1, headers.length).setValues([headers]);
+
+  // Форматирование заголовков
+  var headerRange = sheet.getRange(1, 1, 1, headers.length);
+  headerRange
+    .setFontWeight('bold')
+    .setBackground('#1F2937')
+    .setFontColor('#FFFFFF')
+    .setFontSize(10)
+    .setFontFamily('Arial');
+
+  // Ширина колонок
+  for (var col in schema.columnWidths) {
+    sheet.setColumnWidth(Number(col) + 1, schema.columnWidths[col]);
+  }
+
+  // Заморозка
+  sheet.setFrozenRows(1);
+
+  // Скрыть
+  sheet.hideSheet();
+
+  SpreadsheetApp.flush();
+  console.log('✅ Лист ' + sheetName + ' готов (' + headers.length + ' колонок)');
+}
