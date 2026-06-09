@@ -1,0 +1,97 @@
+/**
+ * ══════════════════════════════════════════════════════════════
+ * EVETIS WB — Protections.gs
+ * Защита формульных колонок и технических зон
+ * ══════════════════════════════════════════════════════════════
+ */
+
+// ───────────────────────────────────────
+// Колонки, которые нужно защитить от ручного ввода
+// (формулы, API-данные, автоматические расчёты)
+// ───────────────────────────────────────
+var PROTECTED_COLUMNS = {};
+
+// SKU_MASTER: формульные поля
+PROTECTED_COLUMNS[SHEET_NAMES.SKU_MASTER] = [
+  'current_cogs',          // формула из COST_HISTORY
+  'cogs_valid_from',       // формула
+  'wb_card_url',           // формула
+  'data_quality_status',   // формула
+  'data_quality_comment'   // формула
+];
+
+// UNIT_SKU_DAILY: весь лист расчётный
+PROTECTED_COLUMNS[SHEET_NAMES.UNIT_SKU_DAILY] = '__ALL__';
+
+// PNL_TOTAL: большинство полей расчётные
+PROTECTED_COLUMNS[SHEET_NAMES.PNL_TOTAL] = '__ALL_EXCEPT_MANUAL__';
+
+// CLEAN_WB_DAILY: весь лист автоматический
+PROTECTED_COLUMNS[SHEET_NAMES.CLEAN_WB_DAILY] = '__ALL__';
+
+// RAW листы: полностью защищены от ручного ввода
+PROTECTED_COLUMNS[SHEET_NAMES.RAW_WB_FINANCE] = '__ALL__';
+PROTECTED_COLUMNS[SHEET_NAMES.RAW_WB_ADS]     = '__ALL__';
+PROTECTED_COLUMNS[SHEET_NAMES.RAW_WB_STOCKS]  = '__ALL__';
+PROTECTED_COLUMNS[SHEET_NAMES.RAW_WB_ORDERS]  = '__ALL__';
+PROTECTED_COLUMNS[SHEET_NAMES.RAW_WB_SALES]   = '__ALL__';
+
+
+/**
+ * Применить защиту формульных колонок для конкретного листа.
+ * Защита с предупреждением, но без блокировки
+ * (чтобы не мешать Apps Script записывать данные).
+ */
+function protectSheetColumns_(sheet, sheetName) {
+  var config = PROTECTED_COLUMNS[sheetName];
+  if (!config) return;
+  
+  var schema = SHEETS_SCHEMA[sheetName];
+  if (!schema || schema.type !== 'table') return;
+  
+  if (config === '__ALL__' || config === '__ALL_EXCEPT_MANUAL__') {
+    // Защитить весь лист, но с предупреждением
+    var protection = sheet.protect()
+      .setDescription('Автоматический/расчётный лист: ' + sheetName)
+      .setWarningOnly(true); // только предупреждение, не блокировка
+    
+    Logger.log('🔒 Защита (предупреждение) всего листа: ' + sheetName);
+    return;
+  }
+  
+  // Защита конкретных колонок
+  var headers = schema.headers;
+  
+  for (var i = 0; i < config.length; i++) {
+    var colName = config[i];
+    var colIndex = headers.indexOf(colName);
+    if (colIndex === -1) continue;
+    
+    var range = sheet.getRange(2, colIndex + 1, sheet.getMaxRows() - 1, 1);
+    var protection = range.protect()
+      .setDescription('Формульная колонка: ' + colName)
+      .setWarningOnly(true);
+    
+    // Подсветить формульные колонки серым фоном в заголовке
+    sheet.getRange(1, colIndex + 1).setBackground(COLORS.FORMULA_BG);
+  }
+  
+  Logger.log('🔒 Защита колонок применена: ' + sheetName + ' (' + config.length + ' колонок)');
+}
+
+/**
+ * Применить защиту ко всем листам
+ */
+function protectAllFormulaColumns_(ss) {
+  var sheetNames = Object.keys(PROTECTED_COLUMNS);
+  
+  for (var i = 0; i < sheetNames.length; i++) {
+    var name = sheetNames[i];
+    var sheet = ss.getSheetByName(name);
+    if (!sheet) continue;
+    
+    protectSheetColumns_(sheet, name);
+  }
+  
+  Logger.log('🔒 Защита формульных зон применена ко всем листам');
+}
