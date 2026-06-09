@@ -1,0 +1,155 @@
+/**
+ * ══════════════════════════════════════════════════════════════
+ * EVETIS WB — Formatting.gs
+ * Форматирование заголовков, ширина колонок, замораживание строк,
+ * фильтры, цвета вкладок
+ * ══════════════════════════════════════════════════════════════
+ */
+
+/**
+ * Применить форматирование к табличному листу:
+ * - Заголовки (стиль, цвет, шрифт)
+ * - Заморозка первой строки
+ * - Фильтры
+ * - Ширина колонок
+ */
+function applyTableFormatting_(sheet, schema, sheetName) {
+  if (!schema || schema.type !== 'table' || !schema.headers) return;
+  
+  var headers = schema.headers;
+  var numCols = headers.length;
+  
+  // --- Заголовки ---
+  var headerRange = sheet.getRange(1, 1, 1, numCols);
+  headerRange.setValues([headers]);
+  
+  // Определяем цвет заголовка по типу листа
+  var headerBg = COLORS.HEADER_BG;
+  var headerFont = COLORS.HEADER_FONT;
+  
+  if (sheetName.indexOf('RAW_') === 0) {
+    headerBg = COLORS.RAW_HEADER_BG;
+    headerFont = COLORS.RAW_HEADER_FONT;
+  } else if ([SHEET_NAMES.DASHBOARD_WB, SHEET_NAMES.ADS_WB, SHEET_NAMES.STOCKS_WB,
+              SHEET_NAMES.UNIT_SKU_DAILY, SHEET_NAMES.PNL_TOTAL].indexOf(sheetName) > -1) {
+    headerBg = COLORS.ANALYTICS_HEADER_BG;
+    headerFont = COLORS.ANALYTICS_HEADER_FONT;
+  }
+  
+  headerRange
+    .setBackground(headerBg)
+    .setFontColor(headerFont)
+    .setFontWeight('bold')
+    .setFontSize(10)
+    .setFontFamily('Arial')
+    .setHorizontalAlignment('center')
+    .setVerticalAlignment('middle')
+    .setWrap(true);
+  
+  // Высота заголовка
+  sheet.setRowHeight(1, 36);
+  
+  // --- Замораживаем первую строку ---
+  sheet.setFrozenRows(1);
+  
+  // --- Фильтры ---
+  // Убираем старый фильтр, если есть
+  var existingFilter = sheet.getFilter();
+  if (existingFilter) {
+    existingFilter.remove();
+  }
+  // Создаём фильтр на весь диапазон с заголовками + 1 строка
+  var filterRange = sheet.getRange(1, 1, 2, numCols);
+  filterRange.createFilter();
+  
+  // --- Ширина колонок ---
+  var defaultWidth = 100;
+  var widths = schema.columnWidths || {};
+  for (var col = 0; col < numCols; col++) {
+    var w = widths[col] || defaultWidth;
+    sheet.setColumnWidth(col + 1, w);
+  }
+  
+  // --- Базовое форматирование данных (строка 2+) ---
+  if (sheet.getMaxRows() > 1) {
+    var dataRange = sheet.getRange(2, 1, Math.max(1, sheet.getMaxRows() - 1), numCols);
+    dataRange
+      .setFontSize(10)
+      .setFontFamily('Arial')
+      .setVerticalAlignment('middle');
+  }
+}
+
+/**
+ * Применить цвет вкладки листа
+ */
+function applyTabColor_(sheet, sheetName) {
+  var color = TAB_COLORS[sheetName];
+  if (color) {
+    sheet.setTabColor(color);
+  }
+}
+
+/**
+ * Скрыть RAW-листы
+ */
+function hideRawSheets_(ss) {
+  for (var i = 0; i < HIDDEN_SHEETS.length; i++) {
+    var sheet = ss.getSheetByName(HIDDEN_SHEETS[i]);
+    if (sheet) {
+      sheet.hideSheet();
+      Logger.log('👁️‍🗨️ Скрыт лист: ' + HIDDEN_SHEETS[i]);
+    }
+  }
+}
+
+/**
+ * Упорядочить листы согласно SHEET_ORDER
+ */
+function reorderSheets_(ss) {
+  var sheets = ss.getSheets();
+  var sheetMap = {};
+  for (var i = 0; i < sheets.length; i++) {
+    sheetMap[sheets[i].getName()] = sheets[i];
+  }
+  
+  var position = 1;
+  for (var i = 0; i < SHEET_ORDER.length; i++) {
+    var name = SHEET_ORDER[i];
+    if (sheetMap[name]) {
+      ss.setActiveSheet(sheetMap[name]);
+      ss.moveActiveSheet(position);
+      position++;
+    }
+  }
+  
+  // Активировать дашборд как стартовый
+  var dashboard = ss.getSheetByName(SHEET_NAMES.DASHBOARD_WB);
+  if (dashboard) {
+    ss.setActiveSheet(dashboard);
+  }
+  
+  Logger.log('📋 Листы упорядочены');
+}
+
+/**
+ * Общее форматирование для всех табличных листов
+ */
+function applyAllFormatting_(ss) {
+  var sheetNames = Object.keys(SHEETS_SCHEMA);
+  
+  for (var i = 0; i < sheetNames.length; i++) {
+    var name = sheetNames[i];
+    var schema = SHEETS_SCHEMA[name];
+    
+    if (schema.type !== 'table') continue;
+    
+    var sheet = ss.getSheetByName(name);
+    if (!sheet) continue;
+    
+    applyTableFormatting_(sheet, schema, name);
+    applyTabColor_(sheet, name);
+  }
+  
+  Logger.log('🎨 Форматирование применено ко всем табличным листам');
+}
