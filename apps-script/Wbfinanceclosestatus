@@ -1,0 +1,165 @@
+/**
+ * ══════════════════════════════════════════════════════════════
+ * EVETIS WB — WbFinanceCloseStatus.gs  v1.0
+ *
+ * Read-only диагностика «закрыт ли месяц по финансам».
+ * Ничего не пишет. Показывает итоговые суммы за месяц + признак
+ * незакрытого хвоста (дни, где идёт хранение, но ещё нет финансового
+ * отчёта/выручки — обычно последняя неделя месяца, которую WB выпускает
+ * с задержкой).
+ *
+ * НЕ ТРОГАЕТ: buildMonthlyUnitReportV10(), ЮНИТ_*, RAW_*, парсер.
+ *
+ * ЗАВИСИМОСТИ:
+ *   getRawFinanceSheet_, buildFinanceRawHeaderMap_, readFinanceRowsForPeriod_  [WbFinanceLoader.gs]
+ *   computeFinanceControl_                                                     [CleanWbDailyPeriod.gs]
+ *   financeMonthBounds_                                                        [WbFinanceMonthClose.gs]
+ *   getHeaderMap_, findCol_, normalizeDateKey_, roundTwo_, pad2_
+ * ══════════════════════════════════════════════════════════════
+ */
+
+/** YYYY-MM-DD → Date (локально, без таймзонных сюрпризов). */
+function fcsParseDate_(s) {
+  var p = String(s).split('-');
+  if (p.length !== 3) return null;
+  return new Date(Number(p[0]), Number(p[1]) - 1, Number(p[2]));
+}
+
+/** Кол-во дней включительно между двумя YYYY-MM-DD (b >= a). */
+function fcsDaysInclusive_(a, b) {
+  var da = fcsParseDate_(a), db = fcsParseDate_(b);
+  if (!da || !db) return 0;
+  return Math.round((db - da) / 86400000) + 1;
+}
+
+/** Следующий день для YYYY-MM-DD. */
+function fcsNextDay_(s) {
+  var d = fcsParseDate_(s); if (!d) return s;
+  d.setDate(d.getDate() + 1);
+  return d.getFullYear() + '-' + pad2_(d.getMonth() + 1) + '-' + pad2_(d.getDate());
+}
+
+/** Макс. дата в May по колонке RAW_WB_STORAGE (best-effort). */
+function fcsStorageMaxDateInMonth_(ss, monthFrom, monthTo) {
+  var sh = ss.getSheetByName('RAW_WB_STORAGE');
+  if (!sh || sh.getLastRow() < 2) return null;
+  var hMap = getHeaderMap_(sh);
+  var dateCol = findCol_(hMap, ['date', 'storage_dt', 'dt', 'calc_date', 'log_date']);
+  if (dateCol === -1) return null;
+  var data = sh.getRange(2, 1, sh.getLastRow() - 1, sh.getLastColumn()).getValues();
+  var maxD = null;
+  for (var i = 0; i < data.length; i++) {
+    var dk = normalizeDateKey_(data[i][dateCol]);
+    if (!dk || dk < monthFrom || dk > monthTo) continue;
+    if (!maxD || dk > maxD) maxD = dk;
+  }
+  return maxD;
+}
+
+/**
+ * reportFinanceCloseStatus(year, month)
+ *
+ * Read-only. Выводит итоги месяца + статус закрытия.
+ */
+function reportFinanceCloseStatus(year, month) {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var ui = SpreadsheetApp.getUi();
+  var b = financeMonthBounds_(year, month);
+
+  var rawSheet = getRawFinanceSheet_(ss);
+  if (!rawSheet || rawSheet.getLastRow() < 2) {
+    ui.alert('⚠️', 'RAW_WB_FINANCE пуст.', ui.ButtonSet.OK);
+    return null;
+  }
+
+  var hMap = buildFinanceRawHeaderMap_(rawSheet, rawSheet.getLastColumn());
+  var rows = readFinanceRowsForPeriod_(rawSheet, hMap, b.from, b.to);
+  var ctrl = computeFinanceControl_(rows, hMap);
+
+  // Последняя дата продаж и последняя дата любой фин-операции в месяце
+  var dtCol = hMap['doc_type_name'], opCol = hMap['supplier_oper_name'];
+  var saleCol = hMap['sale_dt'], rrCol = hMap['rr_dt'], qtyCol = hMap['quantity'];
+  var lastSaleDate = null, lastFinDate = null;
+  var salesDays = {};
+
+  for (var i = 0; i < rows.length; i++) {
+    var r = rows[i];
+    var sd = saleCol !== undefined ? normalizeDateKey_(r[saleCol]) : '';
+    var rd = rrCol !== undefined ? normalizeDateKey_(r[rrCol]) : '';
+    var anyD = sd || rd;
+    if (anyD && (!lastFinDate || anyD > lastFinDate)) lastFinDate = anyD;
+
+    var isSale = String(r[dtCol] || '').trim() === 'Продажа' &&
+                 String(r[opCol] || '').trim() === 'Продажа';
+    if (isSale) {
+      var q = Math.abs(Number(r[qtyCol]) || 0);
+      var d = sd || rd;
+      if (d && q > 0) {
+        salesDays[d] = (salesDays[d] || 0) + q;
+        if (!lastSaleDate || d > lastSaleDate) lastSaleDate = d;
+      }
+    }
+  }
+
+  var storageMax = fcsStorageMaxDateInMonth_(ss, b.from, b.to);
+
+  // Незакрытый хвост: от (последняя фин-дата + 1) до конца месяца
+  var fullyClosed = lastFinDate && lastFinDate >= b.to;
+  var tailFrom = lastFinDate ? fcsNextDay_(lastFinDate) : b.from;
+  var tailDays = fullyClosed ? 0 : (lastFinDate ? fcsDaysInclusive_(tailFrom, b.to) : fcsDaysInclusive_(b.from, b.to));
+
+  var verdict;
+  if (fullyClosed) {
+    verdict = '✅ Месяц закрыт полностью (финансы доходят до ' + b.to + ').';
+  } else if (!lastFinDate) {
+    verdict = '⚠️ За месяц нет финансовых строк.';
+  } else {
+    verdict = '⏳ Открытый хвост: ' + tailDays + ' дн. (' + tailFrom + ' … ' + b.to + ').\n' +
+      'Недельный финотчёт WB за этот период ещё не загружен.\n' +
+      (storageMax && storageMax > lastFinDate
+        ? 'Хранение при этом идёт до ' + storageMax + ' → на этих днях будет «хранение без выручки».'
+        : '');
+  }
+
+  console.log('── Статус закрытия ' + b.from + '…' + b.to + ' ──');
+  console.log('  last_finance_date=' + lastFinDate + ', last_sale_date=' + lastSaleDate +
+    ', storage_max=' + storageMax + ', tail_days=' + tailDays);
+
+  var msg = '📅 Статус закрытия месяца: ' + pad2_(month) + '.' + year + '\n' +
+    'Период: ' + b.from + ' — ' + b.to + '\n\n' +
+    '── ИТОГИ (RAW_WB_FINANCE за месяц) ──\n' +
+    'sales_qty: ' + ctrl.sales_qty + '\n' +
+    'gross_revenue: ' + ctrl.gross_revenue + ' ₽\n' +
+    'wb_for_pay: ' + ctrl.wb_for_pay + ' ₽\n' +
+    'wb_logistics: ' + ctrl.wb_logistics + ' ₽\n' +
+    'wb_storage (по финансам): ' + ctrl.wb_storage + ' ₽\n' +
+    'wb_deductions: ' + ctrl.wb_deductions + ' ₽\n' +
+    'wb_penalties: ' + ctrl.wb_penalties + ' ₽\n' +
+    'wb_loyalty_comp: ' + ctrl.wb_loyalty_comp + ' ₽\n' +
+    'wb_compensations: ' + ctrl.wb_compensations + ' ₽\n' +
+    'wb_after_expenses: ' + ctrl.wb_after_expenses + ' ₽\n\n' +
+    '── ЗАКРЫТИЕ ──\n' +
+    'Последняя дата финансов: ' + (lastFinDate || '—') + '\n' +
+    'Последняя дата продаж: ' + (lastSaleDate || '—') + '\n' +
+    'Хранение загружено до: ' + (storageMax || '—') + '\n\n' +
+    verdict;
+
+  ui.alert('📅 Статус закрытия ' + pad2_(month) + '.' + year, msg, ui.ButtonSet.OK);
+
+  return {
+    control: ctrl, lastFinDate: lastFinDate, lastSaleDate: lastSaleDate,
+    storageMax: storageMax, fullyClosed: fullyClosed, tailDays: tailDays,
+    tailFrom: fullyClosed ? null : tailFrom, monthFrom: b.from, monthTo: b.to
+  };
+}
+
+/** Статус закрытия мая 2026 (read-only). */
+function reportMayFinanceCloseStatus() {
+  return reportFinanceCloseStatus(2026, 5);
+}
+
+function addWbFinanceCloseStatusMenu() {
+  SpreadsheetApp.getUi().createMenu('📅 Статус закрытия')
+    .addItem('📅 Статус закрытия мая 2026', 'reportMayFinanceCloseStatus')
+    .addToUi();
+}
