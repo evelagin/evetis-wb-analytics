@@ -1,0 +1,1270 @@
+/**
+ * ══════════════════════════════════════════════════════════════
+ * EVETIS WB — WbStorageFolderLoader.gs  v3.0
+ *
+ * Загрузка отчётов хранения WB в RAW_WB_STORAGE.
+ *
+ * ГЛАВНАЯ КНОПКА:
+ *   🔄 Обновить хранение WB → updateWbStorageData()
+ *     1. API rolling 7 days (основной)
+ *     2. Drive Folder Loader (резервный, если API не сработал)
+ *     3. Сверка + покрытие
+ *
+ * КЛЮЧЕВАЯ ФУНКЦИЯ ДЛЯ ЮНИТ:
+ *   getCleanStorageDailyMap_(dateFrom, dateTo)
+ *     Возвращает дедуплицированную карту date|nmID → storage_cost
+ *     API > DRIVE, свежий load_id > старый
+ *
+ * НЕ ТРОГАЕТ:
+ *   buildMonthlyUnitReportV10(), CLEAN_WB_DAILY, RAW_WB_FINANCE,
+ *   RAW_WB_ADS, ЮНИТ_*
+ * ══════════════════════════════════════════════════════════════
+ */
+
+
+// ═══════════════════════════════════════
+// НАСТРОЙКИ
+// ═══════════════════════════════════════
+
+var STORAGE_REPORTS_FOLDER_ID = '1sOm0cqu1RFNeK7UYvHgrkZk2ExxlqzUS';
+var IMPORT_LOG_STORAGE_SHEET_NAME_ = 'IMPORT_LOG_STORAGE';
+var STORAGE_FOLDER_SRC_SHEET_ = 'Детальная информация';
+var STORAGE_FOLDER_HEADER_ROW_ = 2;
+var WB_STORAGE_API_BASE_ = 'https://seller-analytics-api.wildberries.ru';
+var WB_STORAGE_API_MAX_DAYS_ = 8;
+var WB_STORAGE_API_MAX_POLLS_ = 24;
+var WB_STORAGE_API_POLL_INTERVAL_ = 15000;
+var WB_STORAGE_TOKEN_KEY_ = 'WB_TOKEN_ANALYTICS';
+var STORAGE_RECONCILIATION_THRESHOLD_ = 5;
+
+
+// ═══════════════════════════════════════
+// IMPORT_LOG_STORAGE
+// ═══════════════════════════════════════
+
+var IMPORT_LOG_STORAGE_HEADERS_ = [
+  'load_id','loaded_at','source_type','period_from','period_to',
+  'file_id','file_name','task_id','rows_imported','unique_skus',
+  'storage_sum','finance_storage_sum','delta','status','error_message'
+];
+
+function createImportLogStorageSheet() {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var sheetName = IMPORT_LOG_STORAGE_SHEET_NAME_;
+  var sheet = ss.getSheetByName(sheetName);
+  if (sheet) {
+    var eh = sheet.getRange(1,1,1,sheet.getLastColumn()).getValues()[0];
+    if (String(eh[0]||'').trim()===IMPORT_LOG_STORAGE_HEADERS_[0]) {
+      SpreadsheetApp.getUi().alert('✅ '+sheetName,'Лист уже существует.',SpreadsheetApp.getUi().ButtonSet.OK);
+      return;
+    }
+  } else { sheet = ss.insertSheet(sheetName); }
+  var h = IMPORT_LOG_STORAGE_HEADERS_;
+  if (sheet.getMaxColumns()<h.length) sheet.insertColumnsAfter(sheet.getMaxColumns(),h.length-sheet.getMaxColumns());
+  sheet.getRange(1,1,1,h.length).setValues([h]);
+  sheet.getRange(1,1,1,h.length).setFontWeight('bold').setBackground('#1F2937').setFontColor('#FFFFFF').setFontSize(10).setFontFamily('Arial');
+  var w=[120,150,100,100,100,200,250,120,80,80,120,120,80,60,300];
+  for(var i=0;i<w.length;i++) sheet.setColumnWidth(i+1,w[i]);
+  sheet.setFrozenRows(1); SpreadsheetApp.flush();
+  SpreadsheetApp.getUi().alert('✅ '+sheetName+' создан','Лог готов ('+h.length+' колонок).',SpreadsheetApp.getUi().ButtonSet.OK);
+}
+
+
+// ═══════════════════════════════════════
+// ВНУТРЕННИЕ ХЕЛПЕРЫ
+// ═══════════════════════════════════════
+
+function getProcessedFileIds_(logSheet) {
+  var result = {};
+  var lr = logSheet.getLastRow();
+  if (lr<2) return result;
+  var data = logSheet.getRange(2,1,lr-1,IMPORT_LOG_STORAGE_HEADERS_.length).getValues();
+  for (var r=0;r<data.length;r++) {
+    var fid = String(data[r][5]||'').trim();
+    var st = String(data[r][13]||'').trim();
+    if (fid) result[fid] = st;
+  }
+  return result;
+}
+
+function getProcessedTaskIds_(logSheet) {
+  var result = {};
+  var lr = logSheet.getLastRow();
+  if (lr<2) return result;
+  var data = logSheet.getRange(2,1,lr-1,IMPORT_LOG_STORAGE_HEADERS_.length).getValues();
+  for (var r=0;r<data.length;r++) {
+    if (String(data[r][2]||'').trim()!=='API') continue;
+    var pf = String(data[r][3]||'').trim();
+    var pt = String(data[r][4]||'').trim();
+    var st = String(data[r][13]||'').trim();
+    if (pf&&pt) result[pf+'|'+pt] = st;
+  }
+  return result;
+}
+
+function writeImportLogEntry_(logSheet, result) {
+  var row = [result.load_id,result.loaded_at,result.source_type,result.period_from,result.period_to,
+    result.file_id||'',result.file_name||'',result.task_id||'',result.rows_imported,result.unique_skus,
+    result.storage_sum,result.finance_storage_sum,result.delta,result.status,result.error_message];
+  var ir = logSheet.getLastRow()+1; if(ir<2)ir=2;
+  logSheet.getRange(ir,1,1,row.length).setValues([row]);
+  SpreadsheetApp.flush();
+}
+
+function clearStorageBySourceReportId_(rawSheet, sourceReportId) {
+  var lr = rawSheet.getLastRow(); if(lr<2) return 0;
+  var hMap = getHeaderMap_(rawSheet);
+  var srcColIdx = findCol_(hMap,['source_report_id']); if(srcColIdx===-1) return 0;
+  var cc = rawSheet.getLastColumn();
+  var all = rawSheet.getRange(2,1,lr-1,cc).getValues();
+  var keep=[],del=0;
+  for(var i=0;i<all.length;i++){
+    if(String(all[i][srcColIdx]||'').trim()===sourceReportId){del++;}else{keep.push(all[i]);}
+  }
+  if(del===0) return 0;
+  rawSheet.getRange(2,1,lr-1,cc).clearContent();
+  if(keep.length>0) rawSheet.getRange(2,1,keep.length,cc).setValues(keep);
+  SpreadsheetApp.flush(); return del;
+}
+
+function clearStorageApiPeriod_(rawSheet, dateFrom, dateTo) {
+  var lr = rawSheet.getLastRow(); if(lr<2) return 0;
+  var hMap = getHeaderMap_(rawSheet);
+  var dc = findCol_(hMap,['date']), sc = findCol_(hMap,['source_report_id']);
+  if(dc===-1||sc===-1) return 0;
+  var cc = rawSheet.getLastColumn();
+  var all = rawSheet.getRange(2,1,lr-1,cc).getValues();
+  var keep=[],del=0;
+  for(var i=0;i<all.length;i++){
+    var dk = normalizeStorageDate_(all[i][dc]);
+    var src = String(all[i][sc]||'').trim();
+    if(dk&&dk>=dateFrom&&dk<=dateTo&&src.indexOf('API_')===0){del++;}else{keep.push(all[i]);}
+  }
+  if(del===0) return 0;
+  rawSheet.getRange(2,1,lr-1,cc).clearContent();
+  if(keep.length>0) rawSheet.getRange(2,1,keep.length,cc).setValues(keep);
+  SpreadsheetApp.flush(); return del;
+}
+
+function clearStorageMonth_(rawSheet, dateColIdx, monthPrefix) {
+  var lr = rawSheet.getLastRow(); if(lr<2) return 0;
+  var cc = rawSheet.getLastColumn();
+  var all = rawSheet.getRange(2,1,lr-1,cc).getValues();
+  var keep=[],del=0;
+  for(var i=0;i<all.length;i++){
+    var dk = normalizeStorageDate_(all[i][dateColIdx]);
+    if(dk&&dk.indexOf(monthPrefix)===0){del++;}else{keep.push(all[i]);}
+  }
+  if(del===0) return 0;
+  rawSheet.getRange(2,1,lr-1,cc).clearContent();
+  if(keep.length>0) rawSheet.getRange(2,1,keep.length,cc).setValues(keep);
+  SpreadsheetApp.flush(); return del;
+}
+
+function ensureStorageSheets_(ss) {
+  var raw = ss.getSheetByName('RAW_WB_STORAGE');
+  if(!raw){createRawWbStorageSheet();raw=ss.getSheetByName('RAW_WB_STORAGE');if(!raw)return null;}
+  var log = ss.getSheetByName(IMPORT_LOG_STORAGE_SHEET_NAME_);
+  if(!log){createImportLogStorageSheet();log=ss.getSheetByName(IMPORT_LOG_STORAGE_SHEET_NAME_);if(!log)return null;}
+  return {rawSheet:raw,logSheet:log};
+}
+
+/**
+ * Добавляет camelCase-алиасы для известных колонок,
+ * чтобы rawHMap['nmID'] работал даже если заголовок в листе = 'nmid'.
+ *
+ * getHeaderMap_() возвращает lowercase ключи (nmid),
+ * а код использует camelCase (nmID). Эта функция мостит разницу.
+ */
+function normalizeHMap_(hMap) {
+  var aliases = [
+    ['nmid', 'nmID'],
+    ['nmid', 'nm_id'],
+    ['nmID', 'nmid']
+  ];
+  for (var i = 0; i < aliases.length; i++) {
+    var from = aliases[i][0], to = aliases[i][1];
+    if (hMap[from] !== undefined && hMap[to] === undefined) {
+      hMap[to] = hMap[from];
+    }
+  }
+  return hMap;
+}
+
+function writeRowsToRawStorage_(rawSheet, rows, rawColCount) {
+  if(rows.length===0) return;
+  var ir = rawSheet.getLastRow()+1; if(ir<2)ir=2;
+  if(rawSheet.getMaxColumns()<rawColCount) rawSheet.insertColumnsAfter(rawSheet.getMaxColumns(),rawColCount-rawSheet.getMaxColumns());
+  if(rawSheet.getMaxRows()<ir+rows.length-1) rawSheet.insertRowsAfter(rawSheet.getMaxRows(),ir+rows.length-rawSheet.getMaxRows());
+  rawSheet.getRange(ir,1,rows.length,rawColCount).setValues(rows);
+  SpreadsheetApp.flush();
+}
+
+function buildNormalizedRows_(srcValues, dataStartRow, colMap, rawHMap, rawColCount, loadId, loadedAt, sourceReportId) {
+  var rows=[],totalCost=0,nmIdSet={},dateMin=null,dateMax=null;
+  for(var ri=dataStartRow;ri<srcValues.length;ri++){
+    var srcRow=srcValues[ri];
+    var dateVal=colMap.date!==undefined?srcRow[colMap.date]:null;
+    var dk=normalizeStorageDate_(dateVal); if(!dk)continue;
+    var nmRaw=colMap.nmID!==undefined?srcRow[colMap.nmID]:'';
+    var nmId=String(nmRaw||'').trim().replace(/\.0$/,'');
+    var cost=colMap.storage_cost!==undefined?(Number(srcRow[colMap.storage_cost])||0):0;
+    totalCost+=cost;
+    if(nmId&&nmId!=='0')nmIdSet[nmId]=true;
+    if(!dateMin||dk<dateMin)dateMin=dk;
+    if(!dateMax||dk>dateMax)dateMax=dk;
+    var newRow=new Array(rawColCount);for(var c=0;c<rawColCount;c++)newRow[c]='';
+    if(rawHMap['load_id']!==undefined)newRow[rawHMap['load_id']]=loadId;
+    if(rawHMap['loaded_at']!==undefined)newRow[rawHMap['loaded_at']]=loadedAt;
+    if(rawHMap['source_report']!==undefined)newRow[rawHMap['source_report']]='WB_paid_storage';
+    if(rawHMap['date']!==undefined)newRow[rawHMap['date']]=dk;
+    if(rawHMap['nmID']!==undefined)newRow[rawHMap['nmID']]=nmId;
+    if(rawHMap['storage_cost']!==undefined)newRow[rawHMap['storage_cost']]=cost;
+    if(rawHMap['vendor_code']!==undefined&&colMap.vendor_code!==undefined)newRow[rawHMap['vendor_code']]=String(srcRow[colMap.vendor_code]||'').trim();
+    if(rawHMap['barcode']!==undefined&&colMap.barcode!==undefined)newRow[rawHMap['barcode']]=String(srcRow[colMap.barcode]||'').trim();
+    if(rawHMap['warehouse_name']!==undefined&&colMap.warehouse_name!==undefined)newRow[rawHMap['warehouse_name']]=String(srcRow[colMap.warehouse_name]||'').trim();
+    if(rawHMap['quantity']!==undefined&&colMap.quantity!==undefined)newRow[rawHMap['quantity']]=Number(srcRow[colMap.quantity])||0;
+    if(rawHMap['volume']!==undefined&&colMap.volume_l!==undefined)newRow[rawHMap['volume']]=Number(srcRow[colMap.volume_l])||0;
+    if(rawHMap['warehouse_id']!==undefined&&colMap.warehouse_id!==undefined)newRow[rawHMap['warehouse_id']]=String(srcRow[colMap.warehouse_id]||'').trim();
+    if(rawHMap['supply_id']!==undefined&&colMap.supply_id!==undefined)newRow[rawHMap['supply_id']]=String(srcRow[colMap.supply_id]||'').trim();
+    if(rawHMap['calculation_type']!==undefined&&colMap.calculation_type!==undefined)newRow[rawHMap['calculation_type']]=String(srcRow[colMap.calculation_type]||'').trim();
+    if(rawHMap['subject_name']!==undefined&&colMap.subject_name!==undefined)newRow[rawHMap['subject_name']]=String(srcRow[colMap.subject_name]||'').trim();
+    if(rawHMap['brand_name']!==undefined&&colMap.brand_name!==undefined)newRow[rawHMap['brand_name']]=String(srcRow[colMap.brand_name]||'').trim();
+    if(rawHMap['category']!==undefined&&colMap.category!==undefined)newRow[rawHMap['category']]=String(srcRow[colMap.category]||'').trim();
+    if(rawHMap['source_report_id']!==undefined)newRow[rawHMap['source_report_id']]=sourceReportId;
+    if(rawHMap['is_duplicate']!==undefined)newRow[rawHMap['is_duplicate']]='FALSE';
+    if(rawHMap['processed_status']!==undefined)newRow[rawHMap['processed_status']]='OK';
+    if(rawHMap['error_message']!==undefined)newRow[rawHMap['error_message']]='';
+    rows.push(newRow);
+  }
+  return {rows:rows,totalCost:totalCost,nmIdSet:nmIdSet,dateMin:dateMin,dateMax:dateMax};
+}
+
+
+// ═══════════════════════════════════════════════════════════════
+// ЗАДАЧА 2: ЧИСТАЯ АГРЕГАЦИЯ ХРАНЕНИЯ (для ЮНИТ и сверки)
+// ═══════════════════════════════════════════════════════════════
+
+/**
+ * Возвращает дедуплицированную карту хранения по SKU и дате.
+ *
+ * Ключ: "YYYY-MM-DD|nmID"
+ * Значение: storage_cost (₽)
+ *
+ * Правила дедупликации:
+ *   1. API > DRIVE (source_report_id начинается с 'API_')
+ *   2. При нескольких API за одну дату/SKU — самый свежий load_id
+ *   3. При нескольких DRIVE за одну дату/SKU — самый свежий load_id
+ *   4. Никогда не суммировать разные source_report_id за одну дату/SKU
+ *
+ * @param {string} [dateFrom] — "YYYY-MM-DD" (опционально)
+ * @param {string} [dateTo] — "YYYY-MM-DD" (опционально)
+ * @return {Object} { map: {key→cost}, dateMin, dateMax, totalCost, skuCount, rowCount }
+ */
+function getCleanStorageDailyMap_(dateFrom, dateTo) {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var rawSheet = ss.getSheetByName('RAW_WB_STORAGE');
+  if (!rawSheet || rawSheet.getLastRow() < 2) {
+    console.log('  cleanMap: RAW_WB_STORAGE пуст или не найден (lastRow=' + (rawSheet ? rawSheet.getLastRow() : 'null') + ')');
+    return { map: {}, dateMin: null, dateMax: null, totalCost: 0, skuCount: 0, rowCount: 0 };
+  }
+
+  var hMap = getHeaderMap_(rawSheet);
+  normalizeHMap_(hMap);
+  var rawData = readSheetData_(rawSheet);
+  var dateCol = findCol_(hMap, ['date']);
+  var costCol = findCol_(hMap, ['storage_cost']);
+  var nmCol = findCol_(hMap, ['nmID']);
+  var loadIdCol = findCol_(hMap, ['load_id']);
+  var srcRepCol = findCol_(hMap, ['source_report_id']);
+
+  // Диагностика: показать что видим
+  var headerKeys = Object.keys(hMap);
+  console.log('  cleanMap: lastRow=' + rawSheet.getLastRow() + ', rawData.length=' + rawData.length +
+    ', headers=[' + headerKeys.join(',') + ']');
+  console.log('  cleanMap: dateCol=' + dateCol + ', costCol=' + costCol + ', nmCol=' + nmCol +
+    ', loadIdCol=' + loadIdCol + ', srcRepCol=' + srcRepCol);
+  console.log('  cleanMap: фильтр dateFrom=' + (dateFrom||'нет') + ', dateTo=' + (dateTo||'нет'));
+
+  if (dateCol === -1 || costCol === -1 || nmCol === -1) {
+    console.log('  cleanMap: ❌ ОБРЫВ — не найдены колонки!');
+    return { map: {}, dateMin: null, dateMax: null, totalCost: 0, skuCount: 0, rowCount: 0 };
+  }
+
+  // Диагностика: первые 3 строки
+  for (var dbg = 0; dbg < Math.min(3, rawData.length); dbg++) {
+    var dbgDate = rawData[dbg][dateCol];
+    var dbgNm = rawData[dbg][nmCol];
+    var dbgCost = rawData[dbg][costCol];
+    var dbgDk = normalizeStorageDate_(dbgDate);
+    console.log('  cleanMap: row' + dbg + ' date=' + dbgDate + '(→' + dbgDk + ') nmID=' + dbgNm + ' cost=' + dbgCost);
+  }
+
+  // ── Двухпроходная агрегация ──
+  // Проход 1: SUM по date|nmID|sourceReportId (один SKU может быть на нескольких складах)
+  var byDateNmSrc = {}; // "date|nmId|srcRep" → { cost, loadId, isApi }
+  var skipNoDate = 0, skipDateFilter = 0, skipNoNm = 0, processed = 0;
+
+  for (var i = 0; i < rawData.length; i++) {
+    var dk = normalizeStorageDate_(rawData[i][dateCol]);
+    if (!dk) { skipNoDate++; continue; }
+
+    if (dateFrom && dk < dateFrom) { skipDateFilter++; continue; }
+    if (dateTo && dk > dateTo) { skipDateFilter++; continue; }
+
+    var nmId = normalizeNmId_(rawData[i][nmCol]);
+    if (!nmId) { skipNoNm++; continue; }
+
+    processed++;
+    var cost = Number(rawData[i][costCol]) || 0;
+    var loadId = loadIdCol !== -1 ? String(rawData[i][loadIdCol] || '') : '';
+    var srcRep = srcRepCol !== -1 ? String(rawData[i][srcRepCol] || '') : '';
+    var isApi = srcRep.indexOf('API_') === 0;
+
+    var key3 = dk + '|' + nmId + '|' + srcRep;
+    if (!byDateNmSrc[key3]) {
+      byDateNmSrc[key3] = { cost: cost, loadId: loadId, isApi: isApi };
+    } else {
+      byDateNmSrc[key3].cost += cost;  // SUM: разные склады одного SKU из одного источника
+      if (loadId > byDateNmSrc[key3].loadId) byDateNmSrc[key3].loadId = loadId;
+    }
+  }
+
+  // Проход 2: для каждого date|nmID выбираем лучший источник (API > DRIVE, свежий > старый)
+  var candidates = {};
+  var key3List = Object.keys(byDateNmSrc);
+  for (var k3i = 0; k3i < key3List.length; k3i++) {
+    var parts3 = key3List[k3i].split('|');
+    var key2 = parts3[0] + '|' + parts3[1];
+    var entry = byDateNmSrc[key3List[k3i]];
+
+    if (!candidates[key2]) {
+      candidates[key2] = { cost: entry.cost, loadId: entry.loadId, isApi: entry.isApi };
+    } else {
+      var existing = candidates[key2];
+      if (entry.isApi && !existing.isApi) {
+        candidates[key2] = { cost: entry.cost, loadId: entry.loadId, isApi: true };
+      } else if (!entry.isApi && existing.isApi) {
+        // Оставляем API
+      } else if (entry.loadId > existing.loadId) {
+        candidates[key2] = { cost: entry.cost, loadId: entry.loadId, isApi: entry.isApi };
+      }
+    }
+  }
+
+  console.log('  cleanMap: processed=' + processed + ', groups=' + key3List.length +
+    ', candidates=' + Object.keys(candidates).length +
+    ', skipNoDate=' + skipNoDate + ', skipDateFilter=' + skipDateFilter + ', skipNoNm=' + skipNoNm);
+
+  // ── Строим финальную карту ──
+  var map = {};
+  var totalCost = 0;
+  var nmIdSet = {};
+  var dateMin = null, dateMax = null;
+
+  var keys = Object.keys(candidates);
+  for (var ki = 0; ki < keys.length; ki++) {
+    var k = keys[ki];
+    var c = candidates[k].cost;
+    map[k] = c;
+    totalCost += c;
+
+    var parts = k.split('|');
+    var d = parts[0];
+    var nm = parts[1];
+    nmIdSet[nm] = true;
+    if (!dateMin || d < dateMin) dateMin = d;
+    if (!dateMax || d > dateMax) dateMax = d;
+  }
+
+  return {
+    map: map,
+    dateMin: dateMin,
+    dateMax: dateMax,
+    totalCost: totalCost,
+    skuCount: Object.keys(nmIdSet).length,
+    rowCount: keys.length
+  };
+}
+
+/**
+ * Агрегация чистой карты по датам (для сверки).
+ * @param {Object} cleanMap — от getCleanStorageDailyMap_()
+ * @return {Object} { date → sum }
+ */
+function aggregateCleanMapByDate_(cleanMap) {
+  var byDate = {};
+  var keys = Object.keys(cleanMap.map);
+  for (var i = 0; i < keys.length; i++) {
+    var date = keys[i].split('|')[0];
+    if (!byDate[date]) byDate[date] = 0;
+    byDate[date] += cleanMap.map[keys[i]];
+  }
+  return byDate;
+}
+
+
+// ═══════════════════════════════════════════════════════════════
+// DRIVE FOLDER LOADER
+// ═══════════════════════════════════════════════════════════════
+
+/**
+ * Internal: импортирует новые XLSX из папки.
+ * Возвращает объект со статистикой, без UI-алертов.
+ *
+ * @return {Object} { status, newFiles, skippedFiles, errorFiles,
+ *   totalRows, totalSum, results, folderName, fileCount, error }
+ */
+function importDriveStorageInternal_() {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var out = { status: 'ERROR', newFiles: 0, skippedFiles: 0, errorFiles: 0,
+    totalRows: 0, totalSum: 0, results: [], folderName: '', fileCount: 0, error: '' };
+
+  if (!STORAGE_REPORTS_FOLDER_ID || STORAGE_REPORTS_FOLDER_ID === 'ВСТАВИТЬ_ID_ПАПКИ_С_ОТЧЕТАМИ_ХРАНЕНИЯ') {
+    out.error = 'Не задан STORAGE_REPORTS_FOLDER_ID'; return out;
+  }
+
+  var sheets = ensureStorageSheets_(ss);
+  if (!sheets) { out.error = 'Не удалось создать листы'; return out; }
+
+  var folder;
+  try { folder = DriveApp.getFolderById(STORAGE_REPORTS_FOLDER_ID); }
+  catch (e) { out.error = 'Папка не найдена: ' + e.message; return out; }
+  out.folderName = folder.getName();
+
+  var xlsxFiles = [];
+  var it1 = folder.getFilesByType('application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+  while (it1.hasNext()) { var f = it1.next(); xlsxFiles.push({ id: f.getId(), name: f.getName() }); }
+  var it2 = folder.getFilesByType('application/vnd.ms-excel');
+  while (it2.hasNext()) {
+    var f2 = it2.next(); var dup = false;
+    for (var d = 0; d < xlsxFiles.length; d++) { if (xlsxFiles[d].id === f2.getId()) { dup = true; break; } }
+    if (!dup) xlsxFiles.push({ id: f2.getId(), name: f2.getName() });
+  }
+
+  out.fileCount = xlsxFiles.length;
+  if (xlsxFiles.length === 0) { out.status = 'OK'; out.error = 'Папка пуста'; return out; }
+
+  var processedIds = getProcessedFileIds_(sheets.logSheet);
+
+  for (var fi = 0; fi < xlsxFiles.length; fi++) {
+    var xf = xlsxFiles[fi];
+    if (processedIds[xf.id] === 'OK') { out.skippedFiles++; continue; }
+
+    var result = importSingleStorageFile_(ss, sheets.rawSheet, xf.id, xf.name);
+    writeImportLogEntry_(sheets.logSheet, result);
+
+    if (result.status === 'OK') {
+      out.newFiles++;
+      out.totalRows += result.rows_imported;
+      out.totalSum += result.storage_sum;
+    } else { out.errorFiles++; }
+    out.results.push(result);
+  }
+
+  out.status = out.errorFiles > 0 ? 'PARTIAL' : 'OK';
+  return out;
+}
+
+
+/**
+ * Public: импорт из папки с UI-алертом.
+ */
+function importNewWbStorageReportsFromFolder() {
+  var t0 = Date.now();
+  var out = importDriveStorageInternal_();
+  var ui = SpreadsheetApp.getUi();
+
+  if (out.error && out.status === 'ERROR') {
+    ui.alert('❌ Ошибка', out.error, ui.ButtonSet.OK); return;
+  }
+
+  var msg = '📦 Импорт из папки\n\n' +
+    'Папка: ' + out.folderName + '\nФайлов: ' + out.fileCount + '\n\n' +
+    '✅ Новых: ' + out.newFiles + '\n⏭️ Пропущено: ' + out.skippedFiles +
+    '\n❌ Ошибок: ' + out.errorFiles + '\n\n';
+  if (out.newFiles > 0) msg += 'Строк: ' + out.totalRows + '\nСумма: ' + roundTwo_(out.totalSum) + ' ₽\n';
+  for (var i = 0; i < out.results.length; i++) {
+    var r = out.results[i];
+    msg += '\n' + (r.status === 'OK' ? '✅' : '❌') + ' ' + r.file_name +
+      ' (' + r.period_from + '—' + r.period_to + ') → ' + r.rows_imported +
+      ' строк, ' + roundTwo_(r.storage_sum) + ' ₽' +
+      (r.status === 'ERROR' ? '\n   ' + r.error_message : '');
+  }
+  msg += '\n\nВремя: ' + sec_(t0) + ' сек';
+  ui.alert('📦 Импорт хранения', msg, ui.ButtonSet.OK);
+}
+
+/**
+ * Импорт одного xlsx-файла (без изменений от v2).
+ */
+function importSingleStorageFile_(ss, rawSheet, fileId, fileName) {
+  var result = {
+    load_id: 'STOR_DRV_' + Utilities.formatDate(new Date(), 'Europe/Moscow', 'yyyyMMdd_HHmmss'),
+    loaded_at: Utilities.formatDate(new Date(), 'Europe/Moscow', 'yyyy-MM-dd HH:mm:ss'),
+    source_type: 'DRIVE', period_from: '', period_to: '',
+    file_id: fileId, file_name: fileName, task_id: '',
+    rows_imported: 0, unique_skus: 0, storage_sum: 0,
+    finance_storage_sum: 0, delta: 0, status: 'ERROR', error_message: ''
+  };
+  var tempId = null;
+  try {
+    tempId = convertStorageXlsxToGsheet_(fileId, fileName);
+    if (!tempId) { result.error_message = 'Конвертация xlsx не удалась'; return result; }
+    var tempSS = SpreadsheetApp.openById(tempId);
+    var srcSheet = tempSS.getSheetByName(STORAGE_FOLDER_SRC_SHEET_);
+    if (!srcSheet) {
+      var allSheets = tempSS.getSheets();
+      for (var si = 0; si < allSheets.length; si++) {
+        var sn = allSheets[si].getName().toLowerCase();
+        if (sn.indexOf('детальн') >= 0 || sn.indexOf('detail') >= 0) { srcSheet = allSheets[si]; break; }
+      }
+      if (!srcSheet) { result.error_message = 'Лист не найден'; cleanupStorageTempSheet_(tempId); return result; }
+    }
+    var srcLastRow = srcSheet.getLastRow();
+    var srcLastCol = srcSheet.getLastColumn();
+    if (srcLastRow < STORAGE_FOLDER_HEADER_ROW_ + 1) {
+      result.error_message = 'Нет данных'; cleanupStorageTempSheet_(tempId); return result;
+    }
+    var srcValues = srcSheet.getRange(1, 1, srcLastRow, srcLastCol).getValues();
+    var headerRowIdx = STORAGE_FOLDER_HEADER_ROW_ - 1;
+    var colMap = buildStorageColMapping_(srcValues[headerRowIdx]);
+    var missing = [];
+    ['date','nmID','storage_cost'].forEach(function(c){ if(colMap[c]===undefined) missing.push(c); });
+    if (missing.length > 0) { result.error_message = 'Нет колонок: ' + missing.join(', '); cleanupStorageTempSheet_(tempId); return result; }
+    var rawHMap = getHeaderMap_(rawSheet);
+    normalizeHMap_(rawHMap);
+    var rawColCount = rawSheet.getRange(1,1,1,rawSheet.getLastColumn()).getValues()[0].length;
+    var norm = buildNormalizedRows_(srcValues, headerRowIdx + 1, colMap, rawHMap, rawColCount, result.load_id, result.loaded_at, fileId);
+    cleanupStorageTempSheet_(tempId); tempId = null;
+    if (norm.rows.length === 0) { result.error_message = 'Нет строк с валидной датой'; return result; }
+    result.period_from = norm.dateMin; result.period_to = norm.dateMax;
+    clearStorageBySourceReportId_(rawSheet, fileId);
+    writeRowsToRawStorage_(rawSheet, norm.rows, rawColCount);
+    var finStorage = getFinanceStorageFee_(ss, result.period_from, result.period_to);
+    result.rows_imported = norm.rows.length;
+    result.unique_skus = Object.keys(norm.nmIdSet).length;
+    result.storage_sum = roundTwo_(norm.totalCost);
+    result.finance_storage_sum = roundTwo_(finStorage);
+    result.delta = roundTwo_(norm.totalCost - finStorage);
+    result.status = 'OK';
+    return result;
+  } catch (e) {
+    result.error_message = e.message;
+    if (tempId) cleanupStorageTempSheet_(tempId);
+    return result;
+  }
+}
+
+
+// ═══════════════════════════════════════════════════════════════
+// API LOADER
+// ═══════════════════════════════════════════════════════════════
+
+/**
+ * Маппинг WB API → RAW_WB_STORAGE (по аудиту 29.05.2026).
+ */
+function normalizeApiRows_(reportData, rawHMap, rawColCount, loadId, loadedAt, sourceReportId) {
+  var rows = [], totalCost = 0, nmIdSet = {}, dateMin = null, dateMax = null;
+  for (var i = 0; i < reportData.length; i++) {
+    var item = reportData[i];
+    var dk = normalizeStorageDate_(item.date || item.Date || item.originalDate || '');
+    if (!dk) continue;
+    var nmId = String(item.nmId || item.nmID || '').trim().replace(/\.0$/, '');
+    var cost = Number(item.warehousePrice || item.storageCost || item.storage_cost || 0) || 0;
+    totalCost += cost;
+    if (nmId && nmId !== '0') nmIdSet[nmId] = true;
+    if (!dateMin || dk < dateMin) dateMin = dk;
+    if (!dateMax || dk > dateMax) dateMax = dk;
+    var newRow = new Array(rawColCount); for (var c = 0; c < rawColCount; c++) newRow[c] = '';
+    if(rawHMap['load_id']!==undefined)newRow[rawHMap['load_id']]=loadId;
+    if(rawHMap['loaded_at']!==undefined)newRow[rawHMap['loaded_at']]=loadedAt;
+    if(rawHMap['source_report']!==undefined)newRow[rawHMap['source_report']]='WB_paid_storage';
+    if(rawHMap['date']!==undefined)newRow[rawHMap['date']]=dk;
+    if(rawHMap['nmID']!==undefined)newRow[rawHMap['nmID']]=nmId;
+    if(rawHMap['storage_cost']!==undefined)newRow[rawHMap['storage_cost']]=cost;
+    if(rawHMap['vendor_code']!==undefined)newRow[rawHMap['vendor_code']]=String(item.vendorCode||item.vendor_code||'').trim();
+    if(rawHMap['barcode']!==undefined)newRow[rawHMap['barcode']]=String(item.barcode||'').trim();
+    if(rawHMap['warehouse_name']!==undefined)newRow[rawHMap['warehouse_name']]=String(item.warehouse||item.warehouseName||'').trim();
+    if(rawHMap['quantity']!==undefined)newRow[rawHMap['quantity']]=Number(item.barcodesCount||item.quantity||0)||0;
+    if(rawHMap['volume']!==undefined)newRow[rawHMap['volume']]=Number(item.volume||0)||0;
+    if(rawHMap['warehouse_id']!==undefined)newRow[rawHMap['warehouse_id']]=String(item.officeId||item.warehouseId||'').trim();
+    if(rawHMap['supply_id']!==undefined)newRow[rawHMap['supply_id']]=String(item.giId||item.supplyId||'').trim();
+    if(rawHMap['calculation_type']!==undefined)newRow[rawHMap['calculation_type']]=String(item.calcType||item.calculationType||'').trim();
+    if(rawHMap['subject_name']!==undefined)newRow[rawHMap['subject_name']]=String(item.subject||item.subjectName||'').trim();
+    if(rawHMap['brand_name']!==undefined)newRow[rawHMap['brand_name']]=String(item.brand||item.brandName||'').trim();
+    if(rawHMap['category']!==undefined)newRow[rawHMap['category']]=String(item.category||'').trim();
+    if(rawHMap['source_report_id']!==undefined)newRow[rawHMap['source_report_id']]=sourceReportId;
+    if(rawHMap['is_duplicate']!==undefined)newRow[rawHMap['is_duplicate']]='FALSE';
+    if(rawHMap['processed_status']!==undefined)newRow[rawHMap['processed_status']]='OK';
+    if(rawHMap['error_message']!==undefined)newRow[rawHMap['error_message']]='';
+    rows.push(newRow);
+  }
+  return { rows: rows, totalCost: totalCost, nmIdSet: nmIdSet, dateMin: dateMin, dateMax: dateMax };
+}
+
+
+/**
+ * Internal: импорт через WB API.
+ * Возвращает result-объект, без UI-алертов.
+ *
+ * @param {string} dateFrom
+ * @param {string} dateTo
+ * @return {Object} result с полями IMPORT_LOG_STORAGE + error
+ */
+function importWbStorageFromApiInternal_(dateFrom, dateTo) {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+
+  var result = {
+    load_id: 'STOR_API_' + Utilities.formatDate(new Date(), 'Europe/Moscow', 'yyyyMMdd_HHmmss'),
+    loaded_at: Utilities.formatDate(new Date(), 'Europe/Moscow', 'yyyy-MM-dd HH:mm:ss'),
+    source_type: 'API', period_from: dateFrom, period_to: dateTo,
+    file_id: '', file_name: 'WB_API', task_id: '',
+    rows_imported: 0, unique_skus: 0, storage_sum: 0,
+    finance_storage_sum: 0, delta: 0, status: 'ERROR', error_message: ''
+  };
+
+  if (!dateFrom || !dateTo) { result.error_message = 'Не указаны dateFrom/dateTo'; return result; }
+
+  var dFrom = new Date(dateFrom + 'T00:00:00+03:00');
+  var dTo = new Date(dateTo + 'T00:00:00+03:00');
+  var days = Math.ceil((dTo - dFrom) / (86400000)) + 1;
+  if (days > WB_STORAGE_API_MAX_DAYS_) {
+    result.error_message = 'Период ' + days + ' дней > макс. ' + WB_STORAGE_API_MAX_DAYS_; return result;
+  }
+
+  var token = getScriptProperty_(WB_STORAGE_TOKEN_KEY_);
+  if (!token) { result.error_message = 'Нет токена: ' + WB_STORAGE_TOKEN_KEY_; return result; }
+
+  var sheets = ensureStorageSheets_(ss);
+  if (!sheets) { result.error_message = 'Не удалось создать листы'; return result; }
+
+  try {
+    // 1. Создать задачу
+    console.log('  API: создаю задачу ' + dateFrom + ' — ' + dateTo);
+    var createResp = UrlFetchApp.fetch(
+      WB_STORAGE_API_BASE_ + '/api/v1/paid_storage?dateFrom=' + dateFrom + '&dateTo=' + dateTo,
+      { method: 'get', headers: { 'Authorization': token }, muteHttpExceptions: true }
+    );
+    if (createResp.getResponseCode() !== 200) {
+      result.error_message = 'HTTP ' + createResp.getResponseCode() + ': ' + createResp.getContentText().substring(0, 200);
+      writeImportLogEntry_(sheets.logSheet, result); return result;
+    }
+    var createData = JSON.parse(createResp.getContentText());
+    var taskId = '';
+    if (createData.data && createData.data.taskId) taskId = String(createData.data.taskId);
+    else if (createData.taskId) taskId = String(createData.taskId);
+    if (!taskId) { result.error_message = 'Нет taskId'; writeImportLogEntry_(sheets.logSheet, result); return result; }
+    result.task_id = taskId;
+    console.log('  taskId: ' + taskId);
+
+    // 2. Опрос статуса
+    var ready = false;
+    for (var p = 0; p < WB_STORAGE_API_MAX_POLLS_; p++) {
+      Utilities.sleep(WB_STORAGE_API_POLL_INTERVAL_);
+      var sr = UrlFetchApp.fetch(
+        WB_STORAGE_API_BASE_ + '/api/v1/paid_storage/tasks/' + taskId + '/status',
+        { method: 'get', headers: { 'Authorization': token }, muteHttpExceptions: true }
+      );
+      var sd; try { sd = JSON.parse(sr.getContentText()); } catch (e) { sd = {}; }
+      var ts = (sd.data && sd.data.status) || sd.status || '';
+      console.log('  Опрос ' + (p + 1) + '/' + WB_STORAGE_API_MAX_POLLS_ + ': ' + ts);
+      if (ts === 'done') { ready = true; break; }
+      if (ts === 'purged' || ts === 'canceled') {
+        result.error_message = 'Задача ' + ts; writeImportLogEntry_(sheets.logSheet, result); return result;
+      }
+    }
+    if (!ready) {
+      result.error_message = 'Таймаут'; writeImportLogEntry_(sheets.logSheet, result); return result;
+    }
+
+    // 3. Скачать
+    console.log('  Скачиваю...');
+    var dlResp = UrlFetchApp.fetch(
+      WB_STORAGE_API_BASE_ + '/api/v1/paid_storage/tasks/' + taskId + '/download',
+      { method: 'get', headers: { 'Authorization': token }, muteHttpExceptions: true }
+    );
+    if (dlResp.getResponseCode() !== 200) {
+      result.error_message = 'Download HTTP ' + dlResp.getResponseCode();
+      writeImportLogEntry_(sheets.logSheet, result); return result;
+    }
+    var reportData = JSON.parse(dlResp.getContentText());
+    console.log('  Записей: ' + reportData.length);
+
+    if (!reportData || reportData.length === 0) {
+      result.rows_imported = 0; result.status = 'OK'; result.error_message = 'Пустой отчёт';
+      writeImportLogEntry_(sheets.logSheet, result); return result;
+    }
+
+    // 4. Нормализация
+    var rawHMap = getHeaderMap_(sheets.rawSheet);
+    normalizeHMap_(rawHMap);
+    var rawColCount = sheets.rawSheet.getRange(1,1,1,sheets.rawSheet.getLastColumn()).getValues()[0].length;
+    var norm = normalizeApiRows_(reportData, rawHMap, rawColCount,
+      result.load_id, result.loaded_at, 'API_' + taskId);
+
+    if (norm.rows.length === 0) {
+      result.error_message = 'Нет строк после нормализации';
+      writeImportLogEntry_(sheets.logSheet, result); return result;
+    }
+
+    // 5. Очистка + запись
+    clearStorageBySourceReportId_(sheets.rawSheet, 'API_' + taskId);
+    clearStorageApiPeriod_(sheets.rawSheet, dateFrom, dateTo);
+    writeRowsToRawStorage_(sheets.rawSheet, norm.rows, rawColCount);
+
+    // 6. Результат
+    result.rows_imported = norm.rows.length;
+    result.unique_skus = Object.keys(norm.nmIdSet).length;
+    result.storage_sum = roundTwo_(norm.totalCost);
+
+    if (result.rows_imported > 0 && result.storage_sum === 0) {
+      result.status = 'WARNING_ZERO_STORAGE_SUM';
+      result.error_message = 'rows=' + result.rows_imported + ' но sum=0';
+    } else {
+      result.status = 'OK';
+    }
+
+    writeImportLogEntry_(sheets.logSheet, result);
+    return result;
+
+  } catch (e) {
+    result.error_message = e.message;
+    console.log('❌ API: ' + e.message);
+    writeImportLogEntry_(sheets.logSheet, result);
+    return result;
+  }
+}
+
+
+/**
+ * Public: импорт через API с UI-алертом.
+ */
+function importWbStorageFromApi(dateFrom, dateTo) {
+  var t0 = Date.now();
+  var result = importWbStorageFromApiInternal_(dateFrom, dateTo);
+  var ui = SpreadsheetApp.getUi();
+
+  if (result.status === 'ERROR') {
+    ui.alert('❌ Ошибка API', result.error_message, ui.ButtonSet.OK);
+    return;
+  }
+
+  var msg = '📦 WB API — Хранение\n\n' +
+    'Период: ' + dateFrom + ' — ' + dateTo + '\n' +
+    'taskId: ' + result.task_id + '\n\n' +
+    'Строк: ' + result.rows_imported + '\n' +
+    'SKU: ' + result.unique_skus + '\n' +
+    'Сумма: ' + result.storage_sum + ' ₽\n' +
+    'Статус: ' + result.status + '\n\n' +
+    'Время: ' + sec_(t0) + ' сек';
+
+  ui.alert('📦 API импорт', msg, ui.ButtonSet.OK);
+}
+
+function importWbStorageFromApiYesterday() {
+  var y = new Date(); y.setDate(y.getDate() - 1);
+  var ds = y.getFullYear() + '-' + pad2_(y.getMonth() + 1) + '-' + pad2_(y.getDate());
+  importWbStorageFromApi(ds, ds);
+}
+
+function importWbStorageFromApiRolling7Days() {
+  var yesterday = new Date(); yesterday.setDate(yesterday.getDate() - 1);
+  var weekAgo = new Date(yesterday); weekAgo.setDate(weekAgo.getDate() - 6);
+  var df = Utilities.formatDate(weekAgo, 'Europe/Moscow', 'yyyy-MM-dd');
+  var dt = Utilities.formatDate(yesterday, 'Europe/Moscow', 'yyyy-MM-dd');
+  importWbStorageFromApi(df, dt);
+}
+
+
+// ═══════════════════════════════════════════════════════════════
+// ЗАДАЧА 1: ГЛАВНАЯ КНОПКА
+// ═══════════════════════════════════════════════════════════════
+
+/**
+ * 🔄 Обновить хранение WB
+ *
+ * Одна кнопка для ежедневной работы:
+ *   1. API rolling 7 days (свежие данные)
+ *   2. Drive Folder Loader (ВСЕГДА — подхватывает файлы за остальные дни)
+ *   3. Сверка + покрытие
+ */
+function updateWbStorageData() {
+  var t0 = Date.now();
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var ui = SpreadsheetApp.getUi();
+
+  console.log('═══ updateWbStorageData() СТАРТ ═══');
+
+  // ── 1. Определить период rolling 7 days ──
+  var yesterday = new Date();
+  yesterday.setDate(yesterday.getDate() - 1);
+  var weekAgo = new Date(yesterday);
+  weekAgo.setDate(weekAgo.getDate() - 6);
+  var dateFrom = Utilities.formatDate(weekAgo, 'Europe/Moscow', 'yyyy-MM-dd');
+  var dateTo = Utilities.formatDate(yesterday, 'Europe/Moscow', 'yyyy-MM-dd');
+
+  var apiResult = null;
+  var driveResult = null;
+  var apiOk = false;
+
+  // ── 2. Попробовать API ──
+  console.log('  Шаг 1: API rolling 7 days (' + dateFrom + ' — ' + dateTo + ')');
+  apiResult = importWbStorageFromApiInternal_(dateFrom, dateTo);
+  apiOk = (apiResult.status === 'OK' || apiResult.status === 'WARNING_ZERO_STORAGE_SUM');
+  console.log('  API: ' + apiResult.status + ' (' + apiResult.rows_imported + ' строк, ' + apiResult.storage_sum + ' ₽)');
+
+  // ── 3. Drive Folder Loader — ВСЕГДА запускать ──
+  // API покрывает только 7 дней. Drive подхватывает файлы за остальные дни.
+  // Идемпотентно: уже обработанные файлы (status=OK) пропускаются.
+  console.log('  Шаг 2: Drive Folder Loader');
+  driveResult = importDriveStorageInternal_();
+  console.log('  Drive: ' + driveResult.status + ' (новых: ' + driveResult.newFiles +
+    ', пропущено: ' + driveResult.skippedFiles + ', строк: ' + driveResult.totalRows + ')');
+
+  // ── 4. Чистая агрегация за текущий месяц ──
+  var now = new Date();
+  var monthFrom = now.getFullYear() + '-' + pad2_(now.getMonth() + 1) + '-01';
+  var monthTo = now.getFullYear() + '-' + pad2_(now.getMonth() + 1) + '-' + pad2_(new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate());
+  var cleanMap = getCleanStorageDailyMap_(monthFrom, monthTo);
+
+  // ── 5. Сверка по пересечению ──
+  var recon = buildIntersectionReconciliation_(ss);
+
+  // ── 6. Покрытие текущего месяца ──
+  var monthStr = now.getFullYear() + '-' + pad2_(now.getMonth() + 1);
+  var coverage = checkWbStorageCoverageInternal_(ss, monthStr);
+
+  // ── 7. Последняя загрузка ──
+  var logSheet = ss.getSheetByName(IMPORT_LOG_STORAGE_SHEET_NAME_);
+  var lastLoadDate = '';
+  if (logSheet && logSheet.getLastRow() >= 2) {
+    var lastLoadedAt = logSheet.getRange(logSheet.getLastRow(), 2).getValue();
+    lastLoadDate = String(lastLoadedAt || '');
+  }
+
+  // ── 8. Итоговый алерт ──
+  var elapsed = sec_(t0);
+  var msg = '🔄 Обновление хранения WB\n\n';
+
+  // API
+  msg += '1️⃣ API (' + dateFrom + ' — ' + dateTo + '): ';
+  if (apiOk) {
+    msg += '✅ ' + apiResult.status + '\n' +
+      '   Строк: ' + apiResult.rows_imported + ', Сумма: ' + apiResult.storage_sum + ' ₽\n';
+  } else {
+    msg += '❌ ' + apiResult.status + '\n   ' + apiResult.error_message + '\n';
+  }
+
+  // Drive
+  msg += '\n2️⃣ Drive Folder Loader: ';
+  if (driveResult.status === 'OK' || driveResult.status === 'PARTIAL') {
+    if (driveResult.newFiles > 0) {
+      msg += '✅ Новых: ' + driveResult.newFiles +
+        ', Строк: ' + driveResult.totalRows + ', Сумма: ' + roundTwo_(driveResult.totalSum) + ' ₽\n';
+    } else {
+      msg += '✅ Новых файлов нет (пропущено: ' + driveResult.skippedFiles + ')\n';
+    }
+  } else {
+    msg += '⚠️ ' + (driveResult.error || driveResult.status) + '\n';
+  }
+
+  // Хранение за месяц
+  msg += '\n── Месяц ' + monthStr + ' ──\n' +
+    'Чистая сумма хранения: ' + roundTwo_(cleanMap.totalCost) + ' ₽\n' +
+    'SKU: ' + cleanMap.skuCount + '\n' +
+    'Уникальных записей: ' + cleanMap.rowCount + '\n';
+
+  // Покрытие
+  if (coverage) {
+    msg += 'Дней загружено: ' + coverage.loaded.length + '\n';
+    if (coverage.missing.length > 0) {
+      msg += '⚠️ Нет данных: ' + coverage.missing.length + ' дней\n';
+    }
+  }
+
+  // Сверка
+  if (recon && recon.hasIntersection) {
+    var deltaOk = Math.abs(recon.deltaIntersection) <= STORAGE_RECONCILIATION_THRESHOLD_;
+    msg += '\n── Сверка (пересечение ' + recon.intersectionFrom + '—' + recon.intersectionTo + ') ──\n' +
+      'Storage: ' + roundTwo_(recon.storageSumIntersection) + ' ₽\n' +
+      'Finance: ' + roundTwo_(recon.financeSumIntersection) + ' ₽\n' +
+      'Δ: ' + roundTwo_(recon.deltaIntersection) + ' ₽ ' + (deltaOk ? '✅' : '⚠️') + '\n';
+    if (recon.storageDaysOutsideFinance > 0) {
+      msg += '📌 ' + recon.storageDaysOutsideFinance + ' дней только в Storage (не ошибка)\n';
+    }
+  }
+
+  msg += '\nПоследняя загрузка: ' + lastLoadDate + '\nВремя: ' + elapsed + ' сек';
+
+  ui.alert('🔄 Обновление хранения WB', msg, ui.ButtonSet.OK);
+}
+
+
+// ═══════════════════════════════════════════════════════════════
+// ЗАДАЧА 3: СВЕРКА (на чистой карте)
+// ═══════════════════════════════════════════════════════════════
+
+/**
+ * Сверка RAW_WB_STORAGE vs RAW_WB_FINANCE по пересечению дат.
+ * Использует getCleanStorageDailyMap_() для дедупликации.
+ */
+function verifyStorageReconciliation() {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var ui = SpreadsheetApp.getUi();
+
+  var recon = buildIntersectionReconciliation_(ss);
+  if (!recon) {
+    ui.alert('❌', 'Не удалось построить сверку.', ui.ButtonSet.OK); return;
+  }
+
+  var msg = '📊 Сверка хранения WB\n\n' +
+    '── ПЕРИОДЫ ──\n' +
+    'RAW_WB_STORAGE:  ' + recon.storageDateMin + ' — ' + recon.storageDateMax + '\n' +
+    'RAW_WB_FINANCE:  ' + (recon.financeDateMin || 'нет данных') + ' — ' + (recon.financeDateMax || '') + '\n' +
+    'Пересечение:     ' + (recon.intersectionFrom || 'нет') + ' — ' + (recon.intersectionTo || '') + '\n\n' +
+    '── СУММЫ (дедуплицированные) ──\n' +
+    'Storage (всего): ' + roundTwo_(recon.storageTotalAll) + ' ₽\n' +
+    'Finance (всего): ' + roundTwo_(recon.financeTotalAll) + ' ₽\n\n';
+
+  if (recon.hasIntersection) {
+    var deltaOk = Math.abs(recon.deltaIntersection) <= STORAGE_RECONCILIATION_THRESHOLD_;
+    msg += '── СВЕРКА ПО ПЕРЕСЕЧЕНИЮ ──\n' +
+      'Дней: ' + recon.intersectionDays + '\n' +
+      'Storage: ' + roundTwo_(recon.storageSumIntersection) + ' ₽\n' +
+      'Finance: ' + roundTwo_(recon.financeSumIntersection) + ' ₽\n' +
+      'Δ: ' + roundTwo_(recon.deltaIntersection) + ' ₽ ' + (deltaOk ? '✅' : '⚠️') + '\n';
+    if (recon.storageDaysOutsideFinance > 0) {
+      msg += '\n📌 ' + recon.storageDaysOutsideFinance + ' дней есть в Storage, но ещё нет в финансовом отчёте (не ошибка)\n';
+    }
+  } else {
+    msg += '⚠️ Нет пересечения дат — сверка невозможна.\n';
+  }
+
+  msg += '\nSKU: ' + recon.storageSkuCount + ', записей (чистых): ' + recon.storageRowCount;
+  ui.alert('📊 Сверка хранения', msg, ui.ButtonSet.OK);
+}
+
+
+/**
+ * Сверка на чистой карте (дедуплицированной).
+ *
+ * @param {SpreadsheetApp.Spreadsheet} ss
+ * @return {Object|null}
+ */
+function buildIntersectionReconciliation_(ss) {
+  // ── 1. Чистая карта Storage ──
+  var cleanMap = getCleanStorageDailyMap_();
+  if (!cleanMap.dateMin) return null;
+
+  var storageByDate = aggregateCleanMapByDate_(cleanMap);
+
+  // ── 2. Finance по датам ──
+  var financeByDate = {};
+  var financeDateMin = null, financeDateMax = null;
+  var finSheet = ss.getSheetByName('RAW_WB_FINANCE');
+  if (finSheet && finSheet.getLastRow() >= 2) {
+    var fHMap = getHeaderMap_(finSheet);
+    var fDateCol = findCol_(fHMap, ['sale_dt', 'rr_dt', 'order_dt']);
+    var fStorCol = findCol_(fHMap, ['storage_fee']);
+    if (fDateCol !== -1 && fStorCol !== -1) {
+      var fData = readSheetData_(finSheet);
+      for (var fi = 0; fi < fData.length; fi++) {
+        var fdk = normalizeDateKey_(fData[fi][fDateCol]);
+        if (!fdk) continue;
+        var fCost = Math.abs(Number(fData[fi][fStorCol]) || 0);
+        if (fCost === 0) continue;
+        if (!financeByDate[fdk]) financeByDate[fdk] = 0;
+        financeByDate[fdk] += fCost;
+        if (!financeDateMin || fdk < financeDateMin) financeDateMin = fdk;
+        if (!financeDateMax || fdk > financeDateMax) financeDateMax = fdk;
+      }
+    }
+  }
+
+  // ── 3. Пересечение ──
+  var storageDates = Object.keys(storageByDate).sort();
+  var intersectionFrom = null, intersectionTo = null;
+  if (cleanMap.dateMin && financeDateMin) {
+    intersectionFrom = cleanMap.dateMin > financeDateMin ? cleanMap.dateMin : financeDateMin;
+    intersectionTo = cleanMap.dateMax < financeDateMax ? cleanMap.dateMax : financeDateMax;
+  }
+  var hasIntersection = intersectionFrom && intersectionTo && intersectionFrom <= intersectionTo;
+
+  // ── 4. Суммы ──
+  var storageSumIntersection = 0, financeSumIntersection = 0, intersectionDays = 0;
+  var storageSumOutsideFinance = 0, storageDaysOutsideFinance = 0;
+  var financeTotalAll = 0;
+
+  for (var si = 0; si < storageDates.length; si++) {
+    var sd = storageDates[si];
+    if (hasIntersection && sd >= intersectionFrom && sd <= intersectionTo) {
+      storageSumIntersection += storageByDate[sd];
+      if (financeByDate[sd]) intersectionDays++;
+    }
+    if (!financeByDate[sd]) {
+      storageSumOutsideFinance += storageByDate[sd];
+      storageDaysOutsideFinance++;
+    }
+  }
+
+  var financeDates = Object.keys(financeByDate);
+  for (var fdi = 0; fdi < financeDates.length; fdi++) {
+    financeTotalAll += financeByDate[financeDates[fdi]];
+    if (hasIntersection && financeDates[fdi] >= intersectionFrom && financeDates[fdi] <= intersectionTo) {
+      financeSumIntersection += financeByDate[financeDates[fdi]];
+    }
+  }
+
+  return {
+    storageDateMin: cleanMap.dateMin, storageDateMax: cleanMap.dateMax,
+    storageTotalAll: cleanMap.totalCost,
+    financeDateMin: financeDateMin, financeDateMax: financeDateMax,
+    financeTotalAll: financeTotalAll,
+    intersectionFrom: intersectionFrom, intersectionTo: intersectionTo,
+    hasIntersection: hasIntersection, intersectionDays: intersectionDays,
+    storageSumIntersection: storageSumIntersection,
+    financeSumIntersection: financeSumIntersection,
+    deltaIntersection: hasIntersection ? roundTwo_(storageSumIntersection - financeSumIntersection) : 0,
+    storageDaysOutsideFinance: storageDaysOutsideFinance,
+    storageSumOutsideFinance: storageSumOutsideFinance,
+    storageRowCount: cleanMap.rowCount,
+    storageSkuCount: cleanMap.skuCount
+  };
+}
+
+
+// ═══════════════════════════════════════════════════════════════
+// ПОКРЫТИЕ
+// ═══════════════════════════════════════════════════════════════
+
+function checkWbStorageCoverage(month) {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var ui = SpreadsheetApp.getUi();
+  if (!month || !/^\d{4}-\d{2}$/.test(month)) {
+    ui.alert('❌', 'Формат: YYYY-MM', ui.ButtonSet.OK); return null;
+  }
+  var coverage = checkWbStorageCoverageInternal_(ss, month);
+  if (!coverage) { ui.alert('❌', 'Ошибка проверки.', ui.ButtonSet.OK); return null; }
+
+  if (coverage.missing.length > 0) writeStorageCoverageErrors_(ss, month, coverage.missing);
+
+  var msg = '📅 Покрытие: ' + month + '\n\n' +
+    '✅ Загружено: ' + coverage.loaded.length + '\n' +
+    '❌ Отсутствует: ' + coverage.missing.length + '\n' +
+    '⚠️ Нулевая сумма: ' + coverage.zeroCost.length + '\n' +
+    'Сумма: ' + roundTwo_(coverage.totalStorage) + ' ₽\n';
+
+  if (coverage.missing.length > 0) {
+    msg += '\nПропущенные даты:\n';
+    for (var i = 0; i < Math.min(coverage.missing.length, 15); i++) msg += '  ' + coverage.missing[i] + '\n';
+    if (coverage.missing.length > 15) msg += '  ...и ещё ' + (coverage.missing.length - 15) + '\n';
+  }
+  ui.alert('📅 Покрытие', msg, ui.ButtonSet.OK);
+  return coverage;
+}
+
+function checkWbStorageCoverageCurrentMonth() {
+  var now = new Date();
+  checkWbStorageCoverage(now.getFullYear() + '-' + pad2_(now.getMonth() + 1));
+}
+
+function checkWbStorageCoverageInternal_(ss, monthStr) {
+  var parts = monthStr.split('-');
+  var year = Number(parts[0]), mon = Number(parts[1]);
+  var daysInMonth = new Date(year, mon, 0).getDate();
+  var today = Utilities.formatDate(new Date(), 'Europe/Moscow', 'yyyy-MM-dd');
+
+  // Используем чистую карту
+  var dateFrom = monthStr + '-01';
+  var dateTo = monthStr + '-' + pad2_(daysInMonth);
+  var cleanMap = getCleanStorageDailyMap_(dateFrom, dateTo);
+  var storageByDate = aggregateCleanMapByDate_(cleanMap);
+
+  var loaded = [], missing = [], zeroCost = [], totalStorage = 0;
+
+  for (var d = 1; d <= daysInMonth; d++) {
+    var dk = year + '-' + pad2_(mon) + '-' + pad2_(d);
+    if (dk > today) continue;
+    var cost = storageByDate[dk] || 0;
+    if (!storageByDate.hasOwnProperty(dk)) { missing.push(dk); }
+    else if (cost === 0) { zeroCost.push(dk); }
+    else { loaded.push(dk); totalStorage += cost; }
+  }
+
+  return { loaded: loaded, missing: missing, zeroCost: zeroCost,
+    totalDays: daysInMonth, totalStorage: totalStorage };
+}
+
+function writeStorageCoverageErrors_(ss, month, missingDates) {
+  var errSheet = ss.getSheetByName('ERRORS_CONTROL');
+  if (!errSheet) return;
+  var errHeaders = getHeaderMap_(errSheet);
+  var lastCol = errSheet.getLastColumn(); if (lastCol < 1) return;
+  var batch = [], ts = new Date();
+  for (var i = 0; i < missingDates.length; i++) {
+    var row = []; for (var c = 0; c < lastCol; c++) row.push('');
+    setIfExists_(row, errHeaders, 'error_id', 'STORAGE_COVERAGE_' + ts.getTime() + '_' + i);
+    setIfExists_(row, errHeaders, 'detected_at', ts);
+    setIfExists_(row, errHeaders, 'source_sheet', 'RAW_WB_STORAGE');
+    setIfExists_(row, errHeaders, 'error_type', 'STORAGE_DATE_MISSING');
+    setIfExists_(row, errHeaders, 'severity', 'Проверить');
+    setIfExists_(row, errHeaders, 'error_message', 'Нет данных хранения за ' + missingDates[i]);
+    setIfExists_(row, errHeaders, 'message', 'Нет данных хранения за ' + missingDates[i]);
+    setIfExists_(row, errHeaders, 'recommended_action', 'Загрузите через API или XLSX');
+    setIfExists_(row, errHeaders, 'status', 'Новая');
+    setIfExists_(row, errHeaders, 'resolved', false);
+    batch.push(row);
+  }
+  if (batch.length > 0) errSheet.getRange(errSheet.getLastRow() + 1, 1, batch.length, lastCol).setValues(batch);
+}
+
+
+// ═══════════════════════════════════════════════════════════════
+// АРХИВИРОВАНИЕ
+// ═══════════════════════════════════════════════════════════════
+
+function archiveWbStorageMonth(year, month, clearAfterArchive) {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var ui = SpreadsheetApp.getUi();
+  if (clearAfterArchive === undefined) clearAfterArchive = false;
+  var monthStr = year + '-' + pad2_(month);
+  var archiveName = 'ARCHIVE_WB_STORAGE_' + year + '_' + pad2_(month);
+
+  var rawSheet = ss.getSheetByName('RAW_WB_STORAGE');
+  if (!rawSheet || rawSheet.getLastRow() < 2) {
+    ui.alert('⚠️', 'RAW_WB_STORAGE пуст.', ui.ButtonSet.OK); return;
+  }
+  var rawHMap = getHeaderMap_(rawSheet);
+  var rawData = readSheetData_(rawSheet);
+  var dateCol = findCol_(rawHMap, ['date']);
+  var costCol = findCol_(rawHMap, ['storage_cost']);
+  var nmCol = findCol_(rawHMap, ['nmID']);
+  if (dateCol === -1) { ui.alert('❌', 'Нет колонки date.', ui.ButtonSet.OK); return; }
+
+  var monthPrefix = monthStr + '-';
+  var monthRows = [], totalCost = 0, nmIdSet = {};
+  var rawHeaders = rawSheet.getRange(1,1,1,rawSheet.getLastColumn()).getValues()[0];
+  var colCount = rawHeaders.length;
+
+  for (var i = 0; i < rawData.length; i++) {
+    var dk = normalizeStorageDate_(rawData[i][dateCol]);
+    if (!dk || dk.indexOf(monthPrefix) !== 0) continue;
+    monthRows.push(rawData[i]);
+    if (costCol !== -1) totalCost += Number(rawData[i][costCol]) || 0;
+    if (nmCol !== -1) { var nm = String(rawData[i][nmCol] || '').trim(); if (nm && nm !== '0') nmIdSet[nm] = true; }
+  }
+  if (monthRows.length === 0) { ui.alert('⚠️', 'Нет данных за ' + monthStr + '.', ui.ButtonSet.OK); return; }
+
+  var archSheet = ss.getSheetByName(archiveName);
+  if (archSheet) {
+    if (archSheet.getLastRow() > 1) archSheet.getRange(2, 1, archSheet.getLastRow() - 1, archSheet.getLastColumn()).clearContent();
+  } else {
+    archSheet = ss.insertSheet(archiveName);
+    if (colCount > archSheet.getMaxColumns()) archSheet.insertColumnsAfter(archSheet.getMaxColumns(), colCount - archSheet.getMaxColumns());
+    archSheet.getRange(1,1,1,colCount).setValues([rawHeaders]);
+    archSheet.getRange(1,1,1,colCount).setFontWeight('bold').setBackground('#1F2937').setFontColor('#FFFFFF');
+    archSheet.setFrozenRows(1);
+  }
+  if (archSheet.getMaxRows() < monthRows.length + 1) archSheet.insertRowsAfter(archSheet.getMaxRows(), monthRows.length + 1 - archSheet.getMaxRows());
+  archSheet.getRange(2, 1, monthRows.length, colCount).setValues(monthRows);
+  SpreadsheetApp.flush();
+
+  var clearedCount = 0;
+  if (clearAfterArchive) clearedCount = clearStorageMonth_(rawSheet, dateCol, monthPrefix);
+
+  ui.alert('📦 Архивация', '📦 ' + archiveName + '\n\n' +
+    'Строк: ' + monthRows.length + '\nSKU: ' + Object.keys(nmIdSet).length +
+    '\nСумма: ' + roundTwo_(totalCost) + ' ₽\n\n' +
+    (clearAfterArchive ? '🗑️ Очищено: ' + clearedCount + ' строк' : '💾 RAW не очищен'),
+    ui.ButtonSet.OK);
+}
+
+function archiveWbStorageMonthMenu() {
+  var ui = SpreadsheetApp.getUi();
+  var resp = ui.prompt('📦 Архивация', 'Месяц (YYYY-MM):', ui.ButtonSet.OK_CANCEL);
+  if (resp.getSelectedButton() !== ui.Button.OK) return;
+  var m = resp.getResponseText().trim();
+  if (!/^\d{4}-\d{2}$/.test(m)) { ui.alert('❌', 'Формат: YYYY-MM', ui.ButtonSet.OK); return; }
+  archiveWbStorageMonth(Number(m.split('-')[0]), Number(m.split('-')[1]), false);
+}
+
+
+// ═══════════════════════════════════════════════════════════════
+// МЕСЯЧНОЕ ЗАКРЫТИЕ
+// ═══════════════════════════════════════════════════════════════
+
+function closeStorageMonth(year, month) {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var ui = SpreadsheetApp.getUi();
+  var monthStr = year + '-' + pad2_(month);
+
+  var coverage = checkWbStorageCoverageInternal_(ss, monthStr);
+  if (!coverage) { ui.alert('❌', 'Не удалось проверить покрытие.', ui.ButtonSet.OK); return; }
+
+  var hasCriticalGaps = coverage.missing.length > 0;
+  var recon = buildIntersectionReconciliation_(ss);
+
+  var delta = 0, deltaOk = true;
+  if (recon && recon.hasIntersection) {
+    delta = recon.deltaIntersection;
+    deltaOk = Math.abs(delta) <= STORAGE_RECONCILIATION_THRESHOLD_;
+  }
+
+  var canArchive = !hasCriticalGaps && deltaOk;
+
+  var msg = '📊 Закрытие: ' + monthStr + '\n\n' +
+    '1. ПОКРЫТИЕ:\n' +
+    '   ✅ Загружено: ' + coverage.loaded.length + '\n' +
+    '   ❌ Отсутствует: ' + coverage.missing.length + '\n\n' +
+    '2. СВЕРКА (по пересечению):\n' +
+    '   Хранение: ' + roundTwo_(coverage.totalStorage) + ' ₽\n';
+  if (recon && recon.hasIntersection) {
+    msg += '   Δ пересечения: ' + roundTwo_(delta) + ' ₽ ' + (deltaOk ? '✅' : '⚠️') + '\n';
+  }
+  msg += '\n';
+
+  if (canArchive) {
+    msg += '✅ Все проверки пройдены.\nАрхивировать?';
+    if (ui.alert('📊 Закрытие', msg, ui.ButtonSet.YES_NO) === ui.Button.YES) {
+      archiveWbStorageMonth(year, month, false);
+    }
+  } else {
+    msg += '❌ Проблемы:\n';
+    if (hasCriticalGaps) msg += '   — Пропущено ' + coverage.missing.length + ' дней\n';
+    if (!deltaOk) msg += '   — Расхождение: ' + roundTwo_(delta) + ' ₽\n';
+    msg += '\nАрхивация заблокирована.';
+    ui.alert('❌ Закрытие', msg, ui.ButtonSet.OK);
+  }
+}
+
+function closeStorageMonthMenu() {
+  var ui = SpreadsheetApp.getUi();
+  var resp = ui.prompt('📊 Закрытие', 'Месяц (YYYY-MM):', ui.ButtonSet.OK_CANCEL);
+  if (resp.getSelectedButton() !== ui.Button.OK) return;
+  var m = resp.getResponseText().trim();
+  if (!/^\d{4}-\d{2}$/.test(m)) { ui.alert('❌', 'Формат: YYYY-MM', ui.ButtonSet.OK); return; }
+  closeStorageMonth(Number(m.split('-')[0]), Number(m.split('-')[1]));
+}
+
+
+// ═══════════════════════════════════════════════════════════════
+// ЗАДАЧА 4: МЕНЮ
+// ═══════════════════════════════════════════════════════════════
+
+function addStorageFolderLoaderMenu() {
+  SpreadsheetApp.getUi().createMenu('📦 Хранение WB')
+    .addItem('🔄 Обновить хранение WB', 'updateWbStorageData')
+    .addSeparator()
+    .addItem('🌐 API rolling 7 days', 'importWbStorageFromApiRolling7Days')
+    .addItem('📂 Импорт новых файлов из папки', 'importNewWbStorageReportsFromFolder')
+    .addItem('📊 Проверить сверку', 'verifyStorageReconciliation')
+    .addItem('📅 Проверить покрытие', 'checkWbStorageCoverageCurrentMonth')
+    .addSeparator()
+    .addItem('📦 Архивировать месяц', 'archiveWbStorageMonthMenu')
+    .addItem('🔒 Закрыть месяц', 'closeStorageMonthMenu')
+    .addSeparator()
+    .addItem('📋 Создать RAW_WB_STORAGE', 'createRawWbStorageSheet')
+    .addItem('📋 Создать IMPORT_LOG_STORAGE', 'createImportLogStorageSheet')
+    .addToUi();
+}
