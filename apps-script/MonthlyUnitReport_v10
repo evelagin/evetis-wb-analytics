@@ -1,0 +1,1251 @@
+/**
+ * ══════════════════════════════════════════════════════════════
+ * EVETIS WB — MonthlyUnitReport.gs  v10.0
+ *
+ * Патч v10: Новая структура юнит-экономики ЮНИТ_MM_YYYY.
+ *
+ * ИЗМЕНЕНИЯ v10:
+ *
+ * 1. ИТОГО ПО КАБИНЕТУ — новая структура строк:
+ *    Заказы → Продажи → Возвраты → Чистые продажи → Средняя цена →
+ *    Реализация WB → К перечислению WB → Логистика → Хранение WB →
+ *    Удержания WB → WB Продвижение → Транзитные поставки WB →
+ *    Возмещение ПВЗ → Компенсации WB → После расходов WB →
+ *    Расход на рекламу по ADS → Расхождение ADS vs фин. отчет →
+ *    ДРР → Себестоимость продаж → Прибыль → Маржинальность → Остаток
+ *
+ * 2. ТОВАРНЫЕ БЛОКИ — новая структура строк:
+ *    Заказы → Продажи → Возвраты → Чистые продажи → Средняя цена →
+ *    Реализация WB → К перечислению WB → Логистика →
+ *    Хранение WB (RAW_WB_STORAGE) → Расход на рекламу (RAW_WB_ADS) →
+ *    ДРР → Себестоимость 1 шт → Себестоимость продаж →
+ *    Прибыль до рекламы и хранения → Прибыль после рекламы и хранения →
+ *    Маржинальность после рекламы и хранения → Остаток → Статус данных
+ *
+ * 3. Хранение WB:
+ *    - Верхний блок: из RAW_WB_FINANCE (контрольная сумма)
+ *    - Товарные блоки: из RAW_WB_STORAGE по nmID + date
+ *    - Если RAW_WB_STORAGE не загружен → "Нет отчета хранения по SKU"
+ *    - Сверка: sum(RAW_WB_STORAGE) vs financial_storage → delta в ERRORS_CONTROL
+ *
+ * 4. Реклама WB:
+ *    - Верхний блок: "Удержания WB" включает WB Продвижение (из фин. отчета)
+ *    - Товарные блоки: из RAW_WB_ADS по date + nmID
+ *    - Сверка: sum(RAW_WB_ADS.spend) vs WB Продвижение → delta
+ *    - ДРР = Расход на рекламу / Сумма реализации WB
+ *
+ * 5. Возмещение ПВЗ — кабинетный расход:
+ *    pvz_comp_net = "Возмещение за выдачу и возврат на ПВЗ"
+ *                 + "Вознаграждение ВВ, без НДС"
+ *                 + "НДС с Вознаграждения ВВ"
+ *    Не распределяется по SKU.
+ *
+ * 6. Транзитные поставки WB — кабинетный расход:
+ *    Из RAW_WB_FINANCE → удержания → "Услуги доставки транзитных поставок"
+ *    Не распределяется по SKU.
+ *
+ * 7. Формулы по SKU:
+ *    sku_profit_before = wb_for_pay - wb_logistics + wb_comp_direct - cogs
+ *    sku_profit_after  = sku_profit_before - storage(RAW_WB_STORAGE) - ads(RAW_WB_ADS)
+ *    sku_margin = sku_profit_after / wb_for_pay (если wb_for_pay > 0)
+ *
+ * Зависимости:
+ *   - getHeaderMap_(sheet), readSheetData_(sheet), findCol_(...)
+ *   - normalizeNmId_(val), parseDate_(val), normalizeDateKey_(val)
+ *   - pad2_(n), sec_(tStart), roundTwo_(val)
+ *
+ * ══════════════════════════════════════════════════════════════
+ */
+
+
+// ═══════════════════════════════════════
+// СТРОКИ ВЕРХНЕГО БЛОКА «ИТОГО ПО КАБИНЕТУ» (22 строки)
+// ═══════════════════════════════════════
+
+var UNIT_TOTAL_LABELS_V10_ = [
+  'Заказы, шт',                              // T0
+  'Продажи, шт',                             // T1
+  'Возвраты, шт',                            // T2
+  'Чистые продажи, шт',                      // T3
+  'Средняя цена продажи, ₽',                 // T4
+  'Сумма реализации WB, ₽',                  // T5
+  'К перечислению WB за товар, ₽',           // T6
+  'Логистика WB, ₽',                         // T7
+  'Хранение WB, ₽',                          // T8
+  'Удержания WB, ₽',                         // T9
+  'WB Продвижение, ₽',                       // T10
+  'Транзитные поставки WB, ₽',               // T11
+  'Возмещение ПВЗ, ₽',                       // T12
+  'Компенсации WB, ₽',                       // T13
+  'После расходов WB, ₽',                    // T14
+  'Расход на рекламу по ADS, ₽',             // T15
+  'Расхождение рекламы ADS vs фин. отчет, ₽',// T16
+  'ДРР, %',                                  // T17
+  'Себестоимость продаж, ₽',                 // T18
+  'Прибыль, ₽',                              // T19
+  'Маржинальность, %',                       // T20
+  'Остаток, шт'                              // T21
+];
+
+var T_ = {
+  ORDERS:0, SALES:1, RETURNS:2, NET_SALES:3, AVG_PRICE:4,
+  NET_REV:5, WB_FOR_PAY:6, WB_LOG:7, WB_STOR:8, WB_DEDUCT:9,
+  WB_PROMO:10, WB_TRANSIT:11, WB_PVZ:12, WB_COMP:13, WB_AFTER:14,
+  ADS_SPEND:15, ADS_DELTA:16, DRR:17, COGS_TOTAL:18,
+  PROFIT:19, MARGIN:20, STOCK:21
+};
+
+var UNIT_TOTAL_ROWS_COUNT_V10_ = UNIT_TOTAL_LABELS_V10_.length;
+
+
+// ═══════════════════════════════════════
+// СТРОКИ ТОВАРНОГО БЛОКА SKU (18 строк)
+// ═══════════════════════════════════════
+
+var UNIT_SKU_LABELS_V10_ = [
+  'Заказы, шт',                                     // S0
+  'Продажи, шт',                                    // S1
+  'Возвраты, шт',                                   // S2
+  'Чистые продажи, шт',                             // S3
+  'Средняя цена продажи, ₽',                        // S4
+  'Сумма реализации WB, ₽',                         // S5
+  'К перечислению WB за товар, ₽',                  // S6
+  'Логистика WB, ₽',                                // S7
+  'Хранение WB, ₽',                                 // S8  — только RAW_WB_STORAGE
+  'Расход на рекламу, ₽',                           // S9  — только RAW_WB_ADS
+  'ДРР, %',                                         // S10
+  'Себестоимость 1 шт, ₽',                          // S11
+  'Себестоимость продаж, ₽',                        // S12
+  'Прибыль до рекламы и хранения, ₽',               // S13
+  'Прибыль после рекламы и хранения, ₽',            // S14
+  'Маржинальность после рекламы и хранения, %',     // S15
+  'Остаток, шт',                                    // S16
+  'Статус данных'                                    // S17
+];
+
+var S_ = {
+  ORDERS:0, SALES:1, RETURNS:2, NET_SALES:3, AVG_PRICE:4,
+  NET_REV:5, WB_FOR_PAY:6, WB_LOG:7,
+  WB_STOR_SKU:8, ADS_SKU:9, DRR:10,
+  COGS_UNIT:11, COGS_TOTAL:12,
+  PROFIT_BEFORE:13, PROFIT_AFTER:14, MARGIN_AFTER:15,
+  STOCK:16, DATA_STATUS:17
+};
+
+var UNIT_SKU_ROWS_COUNT_V10_ = UNIT_SKU_LABELS_V10_.length;
+
+
+// ═══════════════════════════════════════
+// ОБЩИЕ КОНСТАНТЫ
+// ═══════════════════════════════════════
+
+var RU_MONTHS_V10_ = ['','Январь','Февраль','Март','Апрель','Май','Июнь',
+  'Июль','Август','Сентябрь','Октябрь','Ноябрь','Декабрь'];
+var RU_DAYS_V10_ = ['Вс','Пн','Вт','Ср','Чт','Пт','Сб'];
+
+
+// ═══════════════════════════════════════
+// ЧТЕНИЕ RAW_WB_FINANCE (кабинетные расходы)
+// ═══════════════════════════════════════
+
+/**
+ * Читает RAW_WB_FINANCE и агрегирует по дате:
+ *   - wb_for_pay (к перечислению)
+ *   - wb_logistics (логистика)
+ *   - wb_storage (хранение)
+ *   - wb_deductions (удержания)
+ *   - wb_compensations (компенсации)
+ *   - wb_promo (WB Продвижение, из удержаний)
+ *   - wb_transit (транзитные поставки, из удержаний)
+ *   - wb_pvz_comp_net (возмещение ПВЗ)
+ *   - net_revenue (реализация WB)
+ *
+ * Также агрегирует по date|nmId для товарных расходов:
+ *   - for_pay, logistics, compensations (прямые)
+ */
+function readFinanceCabinetData_(ss) {
+  var result = {
+    byDate: {},      // date → {wb_for_pay, wb_logistics, ...}
+    byDateNm: {},    // "date|nmId" → {for_pay, logistics, comp_direct}
+    loaded: false,
+    rowCount: 0
+  };
+
+  var sheet = ss.getSheetByName('RAW_WB_FINANCE');
+  if (!sheet || sheet.getLastRow() < 2) {
+    console.log('⚠️ RAW_WB_FINANCE пуст или не найден — финансовые расходы = 0');
+    return result;
+  }
+
+  var hMap = getHeaderMap_(sheet);
+  var data = readSheetData_(sheet);
+  result.rowCount = data.length;
+
+  // Колонки дат
+  var dateCol = findCol_(hMap, ['sale_dt', 'rr_dt', 'order_dt']);
+  var nmCol = findCol_(hMap, ['wb_nm_id']);
+  var opCol = findCol_(hMap, ['supplier_oper_name', 'operation_type_normalized']);
+
+  // Колонки денег
+  var forPayCol = findCol_(hMap, ['for_pay']);
+  var logCol = findCol_(hMap, ['logistics_amount', 'delivery_rub']);
+  var storCol = findCol_(hMap, ['storage_fee']);
+  var deductCol = findCol_(hMap, ['deduction']);
+  var compCol = findCol_(hMap, ['compensation_amount']);
+  var saleAmtCol = findCol_(hMap, ['sale_amount']);
+  var retAmtCol = findCol_(hMap, ['return_amount_rub', 'return_amount']);
+  var penaltyCol = findCol_(hMap, ['penalty']);
+  var acceptCol = findCol_(hMap, ['acceptance']);
+  var acquireCol = findCol_(hMap, ['acquiring_fee']);
+  var otherCol = findCol_(hMap, ['other_amount']);
+  var addPayCol = findCol_(hMap, ['additional_payment']);
+
+  if (dateCol === -1) {
+    console.log('⚠️ Нет колонки даты в RAW_WB_FINANCE');
+    return result;
+  }
+
+  for (var i = 0; i < data.length; i++) {
+    var row = data[i];
+    var dk = normalizeDateKey_(row[dateCol]);
+    if (!dk) continue;
+
+    var nm = nmCol >= 0 ? normalizeNmIdFinance_(row[nmCol]) : '';
+    var op = opCol >= 0 ? String(row[opCol] || '').trim() : '';
+
+    // ── Инициализация byDate ──
+    if (!result.byDate[dk]) {
+      result.byDate[dk] = {
+        net_revenue: 0, wb_for_pay: 0, wb_logistics: 0, wb_storage: 0,
+        wb_deductions: 0, wb_compensations: 0, wb_promo: 0,
+        wb_transit: 0, wb_pvz_comp_net: 0,
+        sales_qty: 0, returns_qty: 0
+      };
+    }
+    var bd = result.byDate[dk];
+
+    // Суммируем прямые колонки
+    var fpVal = forPayCol >= 0 ? (Number(row[forPayCol]) || 0) : 0;
+    var logVal = logCol >= 0 ? (Number(row[logCol]) || 0) : 0;
+    var storVal = storCol >= 0 ? (Number(row[storCol]) || 0) : 0;
+    var dedVal = deductCol >= 0 ? (Number(row[deductCol]) || 0) : 0;
+    var compVal = compCol >= 0 ? (Number(row[compCol]) || 0) : 0;
+    var saleVal = saleAmtCol >= 0 ? (Number(row[saleAmtCol]) || 0) : 0;
+    var retVal = retAmtCol >= 0 ? (Number(row[retAmtCol]) || 0) : 0;
+
+    bd.wb_for_pay += fpVal;
+    bd.wb_logistics += Math.abs(logVal);
+    bd.wb_storage += Math.abs(storVal);
+    bd.wb_deductions += Math.abs(dedVal);
+    bd.wb_compensations += compVal;
+    bd.net_revenue += (saleVal - retVal);
+
+    // ── Определение кабинетных операций по имени ──
+    var opLower = op.toLowerCase();
+
+    // WB Продвижение
+    if (opLower.indexOf('продвижение') >= 0 || opLower.indexOf('реклама') >= 0) {
+      bd.wb_promo += Math.abs(dedVal);
+    }
+
+    // Транзитные поставки
+    if (opLower.indexOf('транзит') >= 0 || opLower.indexOf('доставк') >= 0 && opLower.indexOf('транзит') >= 0) {
+      bd.wb_transit += Math.abs(dedVal);
+    }
+
+    // Возмещение ПВЗ:
+    // pvz_comp_net = "Возмещение за выдачу и возврат товаров на ПВЗ"
+    //              + "Вознаграждение ВВ, без НДС"
+    //              + "НДС с Вознаграждения ВВ"
+    if (opLower.indexOf('возмещение') >= 0 && opLower.indexOf('пвз') >= 0) {
+      bd.wb_pvz_comp_net += (Number(row[forPayCol]) || 0) + (Number(row[deductCol]) || 0);
+    }
+    if (opLower.indexOf('вознаграждение') >= 0 && (opLower.indexOf('вв') >= 0 || opLower.indexOf('вайлдберриз') >= 0)) {
+      bd.wb_pvz_comp_net += (Number(row[forPayCol]) || 0) + (Number(row[deductCol]) || 0);
+    }
+    if (opLower.indexOf('ндс') >= 0 && opLower.indexOf('вознагражден') >= 0) {
+      bd.wb_pvz_comp_net += (Number(row[forPayCol]) || 0) + (Number(row[deductCol]) || 0);
+    }
+
+    // Подсчёт продаж/возвратов по doc_type_name или oper_name
+    if (opLower === 'продажа' || opLower.indexOf('продажа') === 0) {
+      bd.sales_qty += 1;
+    }
+    if (opLower === 'возврат' || opLower.indexOf('возврат') === 0) {
+      bd.returns_qty += 1;
+    }
+
+    // ── byDateNm: расходы по артикулу (прямые) ──
+    if (nm) {
+      var key = dk + '|' + nm;
+      if (!result.byDateNm[key]) {
+        result.byDateNm[key] = { for_pay: 0, logistics: 0, comp_direct: 0 };
+      }
+      result.byDateNm[key].for_pay += fpVal;
+      result.byDateNm[key].logistics += Math.abs(logVal);
+      result.byDateNm[key].comp_direct += compVal;
+    }
+  }
+
+  result.loaded = true;
+  console.log('✅ RAW_WB_FINANCE: ' + data.length + ' строк, ' +
+    Object.keys(result.byDate).length + ' дат, ' +
+    Object.keys(result.byDateNm).length + ' ключей date|nm');
+  return result;
+}
+
+
+// ═══════════════════════════════════════
+// ЧТЕНИЕ RAW_WB_STORAGE (хранение по SKU)
+// ═══════════════════════════════════════
+
+/**
+ * Читает RAW_WB_STORAGE → агрегация по date|nmId → storage_cost.
+ * Возвращает:
+ *   { byDateNm: {"date|nm": cost}, totalCost: число, loaded: bool }
+ *
+ * Использует getCleanStorageDailyMap_() для:
+ *   - дедупликации API > DRIVE
+ *   - суммирования по складам (один SKU на нескольких складах)
+ *   - выбора самого свежего источника при пересечении периодов
+ */
+function readStorageBySkuData_(ss) {
+  var result = { byDateNm: {}, totalCost: 0, loaded: false };
+
+  var sheet = ss.getSheetByName('RAW_WB_STORAGE');
+  if (!sheet || sheet.getLastRow() < 2) {
+    console.log('⚠️ RAW_WB_STORAGE не найден или пуст — хранение по SKU недоступно');
+    return result;
+  }
+
+  var cleanMap = getCleanStorageDailyMap_();
+
+  if (cleanMap.rowCount === 0) {
+    console.log('⚠️ RAW_WB_STORAGE: нет данных после очистки/дедупликации');
+    return result;
+  }
+
+  result.byDateNm = cleanMap.map;
+  result.totalCost = cleanMap.totalCost;
+  result.loaded = true;
+
+  console.log('✅ RAW_WB_STORAGE (clean): ' + cleanMap.rowCount + ' записей, ' +
+    cleanMap.skuCount + ' SKU, сумма = ' + roundTwo_(cleanMap.totalCost) + ' ₽');
+  return result;
+}
+
+
+// ═══════════════════════════════════════
+// ЧТЕНИЕ RAW_WB_ADS (реклама по SKU)
+// ═══════════════════════════════════════
+
+/**
+ * Читает RAW_WB_ADS → агрегация по date|nmId → spend.
+ * Возвращает:
+ *   { byDateNm: {"date|nm": spend}, totalSpend: число, loaded: bool }
+ */
+function readAdsBySkuData_(ss) {
+  var result = { byDateNm: {}, totalSpend: 0, loaded: false };
+
+  var sheet = ss.getSheetByName('RAW_WB_ADS');
+  if (!sheet || sheet.getLastRow() < 2) {
+    console.log('⚠️ RAW_WB_ADS не найден или пуст — реклама по SKU недоступна');
+    return result;
+  }
+
+  var hMap = getHeaderMap_(sheet);
+  var data = readSheetData_(sheet);
+
+  var dateCol = findCol_(hMap, ['stat_date', 'date', 'report_date']);
+  var nmCol = findCol_(hMap, ['wb_nm_id', 'nmID', 'nm_id']);
+  var spendCol = findCol_(hMap, ['spend', 'cost', 'amount']);
+
+  if (dateCol === -1 || nmCol === -1 || spendCol === -1) {
+    console.log('⚠️ RAW_WB_ADS: не найдены обязательные колонки (date, nmID, spend)');
+    return result;
+  }
+
+  for (var i = 0; i < data.length; i++) {
+    var row = data[i];
+    var dk = normalizeDateKey_(row[dateCol]);
+    var nm = normalizeNmIdFinance_(row[nmCol]);
+    var spend = Number(row[spendCol]) || 0;
+    if (!dk || !nm) continue;
+
+    var key = dk + '|' + nm;
+    if (!result.byDateNm[key]) result.byDateNm[key] = 0;
+    result.byDateNm[key] += spend;
+    result.totalSpend += spend;
+  }
+
+  result.loaded = true;
+  console.log('✅ RAW_WB_ADS: ' + data.length + ' строк, сумма = ' +
+    roundTwo_(result.totalSpend) + ' ₽, ключей = ' + Object.keys(result.byDateNm).length);
+  return result;
+}
+
+
+// ═══════════════════════════════════════
+// СВЕРКА И ЗАПИСЬ РАСХОЖДЕНИЙ В ERRORS_CONTROL
+// ═══════════════════════════════════════
+
+/**
+ * Сверяет суммы RAW_WB_STORAGE и RAW_WB_ADS с финансовым отчётом WB.
+ * Записывает расхождения в ERRORS_CONTROL.
+ *
+ * @param {SpreadsheetApp.Spreadsheet} ss
+ * @param {Object} finData — результат readFinanceCabinetData_
+ * @param {Object} storData — результат readStorageBySkuData_
+ * @param {Object} adsData — результат readAdsBySkuData_
+ * @param {string} period — "2026-05" и т.п.
+ */
+function writeReconciliationErrors_(ss, finData, storData, adsData, period) {
+  var errorsBuffer = [];
+  var now = Utilities.formatDate(new Date(), 'Europe/Moscow', 'yyyy-MM-dd HH:mm:ss');
+
+  // Считаем суммы из финансового отчёта за период
+  var finStorage = 0, finPromo = 0;
+  for (var dk in finData.byDate) {
+    if (dk.substring(0, 7) !== period) continue;
+    finStorage += finData.byDate[dk].wb_storage;
+    finPromo += finData.byDate[dk].wb_promo;
+  }
+
+  // ── Сверка хранения ──
+  if (storData.loaded && finStorage > 0) {
+    // Фильтруем storData только за этот период
+    var storPeriodSum = 0;
+    for (var key in storData.byDateNm) {
+      if (key.substring(0, 7) === period) {
+        storPeriodSum += storData.byDateNm[key];
+      }
+    }
+    var storageDelta = roundTwo_(storPeriodSum - finStorage);
+    if (Math.abs(storageDelta) > 1) {
+      errorsBuffer.push([
+        'RECONCILE_' + period + '_STORAGE',  // error_id
+        now,                                   // detected_at
+        'MonthlyUnitReport',                   // source_sheet
+        '',                                    // source_row
+        'reconciliation',                      // error_type
+        Math.abs(storageDelta) > 100 ? 'high' : 'medium',  // severity
+        '',                                    // internal_sku
+        '',                                    // wb_nm_id
+        'Расхождение хранения: RAW_WB_STORAGE vs Фин.отчет WB за ' + period,  // error_message
+        roundTwo_(finStorage),                 // expected_value
+        roundTwo_(storPeriodSum),              // actual_value
+        'FALSE',                               // resolved
+        '',                                    // resolved_at
+        '',                                    // resolved_by
+        'financial_storage=' + roundTwo_(finStorage) +
+          ', storage_report_sum=' + roundTwo_(storPeriodSum) +
+          ', delta=' + storageDelta            // comment
+      ]);
+    }
+  }
+
+  // ── Сверка рекламы ──
+  if (adsData.loaded && finPromo > 0) {
+    var adsPeriodSum = 0;
+    for (var key in adsData.byDateNm) {
+      if (key.substring(0, 7) === period) {
+        adsPeriodSum += adsData.byDateNm[key];
+      }
+    }
+    var adsDelta = roundTwo_(adsPeriodSum - finPromo);
+    if (Math.abs(adsDelta) > 1) {
+      errorsBuffer.push([
+        'RECONCILE_' + period + '_ADS',
+        now,
+        'MonthlyUnitReport',
+        '',
+        'reconciliation',
+        Math.abs(adsDelta) > 500 ? 'high' : 'medium',
+        '',
+        '',
+        'Расхождение рекламы: RAW_WB_ADS vs WB Продвижение (фин.отчет) за ' + period,
+        roundTwo_(finPromo),
+        roundTwo_(adsPeriodSum),
+        'FALSE',
+        '',
+        '',
+        'fin_promo=' + roundTwo_(finPromo) +
+          ', ads_report_sum=' + roundTwo_(adsPeriodSum) +
+          ', delta=' + adsDelta
+      ]);
+    }
+  }
+
+  // Запись в ERRORS_CONTROL
+  if (errorsBuffer.length > 0) {
+    flushErrors_(ss, errorsBuffer);
+    console.log('⚠️ Записано расхождений в ERRORS_CONTROL: ' + errorsBuffer.length);
+  } else {
+    console.log('✅ Расхождений нет (или нет данных для сверки)');
+  }
+}
+
+
+// ═══════════════════════════════════════
+// СБОРКА ДАННЫХ ВЕРХНЕГО БЛОКА (ИТОГО)
+// ═══════════════════════════════════════
+
+/**
+ * Собирает данные верхнего блока «ИТОГО ПО КАБИНЕТУ» за месяц.
+ *
+ * @param {Object} cleanByDateNm — данные CLEAN_WB_DAILY: {date|nm → {orders, sales, ...}}
+ * @param {string[]} nmIds — список nmId за этот месяц
+ * @param {number} daysInMonth
+ * @param {Object} cogsMap — {nmId → cogs_per_unit}
+ * @param {Object} finData — результат readFinanceCabinetData_
+ * @param {Object} storData — результат readStorageBySkuData_
+ * @param {Object} adsData — результат readAdsBySkuData_
+ * @param {number} year
+ * @param {number} month
+ */
+function buildTotalBlockV10_(cleanByDateNm, nmIds, daysInMonth, cogsMap,
+                              finData, storData, adsData, year, month) {
+  var rows = UNIT_TOTAL_ROWS_COUNT_V10_;
+  var data = [];
+  for (var i = 0; i < rows; i++) data.push({});
+
+  var mk = year + '-' + pad2_(month);
+
+  for (var d = 1; d <= daysInMonth; d++) {
+    var dk = year + '-' + pad2_(month) + '-' + pad2_(d);
+
+    // ── Агрегация из CLEAN ──
+    var dO = 0, dS = 0, dR = 0, dNS = 0, dNR = 0, dCogsT = 0, dSt = 0;
+    for (var ni = 0; ni < nmIds.length; ni++) {
+      var key = dk + '|' + nmIds[ni];
+      var dd = cleanByDateNm[key];
+      if (!dd) continue;
+      dO += dd.orders; dS += dd.sales; dR += dd.returns; dNS += dd.netSales;
+      dNR += dd.netRev; dSt += dd.stock;
+      dCogsT += dd.netSales * (cogsMap[nmIds[ni]] || 0);
+    }
+
+    // ── Финансовые данные из RAW_WB_FINANCE ──
+    var fin = finData.byDate[dk] || {};
+    var dForPay = fin.wb_for_pay || 0;
+    var dLog = fin.wb_logistics || 0;
+    // Хранение: из RAW_WB_STORAGE (все дни), fallback на RAW_WB_FINANCE
+    var dStor = 0;
+    if (storData.loaded) {
+      for (var si = 0; si < nmIds.length; si++) {
+        dStor += (storData.byDateNm[dk + '|' + nmIds[si]] || 0);
+      }
+      dStor = roundTwo_(dStor);
+    } else {
+      dStor = fin.wb_storage || 0;
+    }
+    var dDeduct = fin.wb_deductions || 0;
+    var dComp = fin.wb_compensations || 0;
+    var dPromo = fin.wb_promo || 0;
+    var dTransit = fin.wb_transit || 0;
+    var dPvz = fin.wb_pvz_comp_net || 0;
+    var dFinRev = fin.net_revenue || 0;
+
+    // Реализация WB: из фин. отчёта если есть, иначе из CLEAN
+    var revenue = dFinRev || dNR;
+
+    // После расходов WB
+    var dAfter = dForPay - dLog - dStor - dDeduct + dComp - dTransit + dPvz;
+
+    // ── Реклама из RAW_WB_ADS ──
+    var dAdsTotal = 0;
+    for (var ni = 0; ni < nmIds.length; ni++) {
+      var adsKey = dk + '|' + nmIds[ni];
+      dAdsTotal += (adsData.byDateNm[adsKey] || 0);
+    }
+
+    // Расхождение рекламы за этот день
+    var dAdsDelta = dAdsTotal - dPromo;
+
+    // ДРР = Расход на рекламу / Сумма реализации WB
+    var dDrr = revenue > 0 ? dAdsTotal / revenue : 0;
+
+    // Средняя цена
+    var dAvgPrice = dNS > 0 ? Math.round(revenue / dNS) : 0;
+
+    // Прибыль
+    var dProfit = dAfter - dAdsTotal - dCogsT;
+    // Если реклама уже в удержаниях — не вычитать дважды
+    // В верхнем блоке: прибыль = После расходов WB - себестоимость
+    // (реклама уже внутри удержаний)
+    dProfit = dAfter - dCogsT;
+
+    var dMargin = revenue > 0 ? dProfit / revenue : 0;
+
+    data[T_.ORDERS][d] = dO;
+    data[T_.SALES][d] = dS;
+    data[T_.RETURNS][d] = dR;
+    data[T_.NET_SALES][d] = dNS;
+    data[T_.AVG_PRICE][d] = dAvgPrice;
+    data[T_.NET_REV][d] = roundTwo_(revenue);
+    data[T_.WB_FOR_PAY][d] = roundTwo_(dForPay);
+    data[T_.WB_LOG][d] = roundTwo_(dLog);
+    data[T_.WB_STOR][d] = roundTwo_(dStor);
+    data[T_.WB_DEDUCT][d] = roundTwo_(dDeduct);
+    data[T_.WB_PROMO][d] = roundTwo_(dPromo);
+    data[T_.WB_TRANSIT][d] = roundTwo_(dTransit);
+    data[T_.WB_PVZ][d] = roundTwo_(dPvz);
+    data[T_.WB_COMP][d] = roundTwo_(dComp);
+    data[T_.WB_AFTER][d] = roundTwo_(dAfter);
+    data[T_.ADS_SPEND][d] = roundTwo_(dAdsTotal);
+    data[T_.ADS_DELTA][d] = roundTwo_(dAdsDelta);
+    data[T_.DRR][d] = dDrr;
+    data[T_.COGS_TOTAL][d] = roundTwo_(dCogsT);
+    data[T_.PROFIT][d] = roundTwo_(dProfit);
+    data[T_.MARGIN][d] = dMargin;
+    data[T_.STOCK][d] = dSt;
+  }
+
+  // ── Итого за месяц ──
+  var sumIdx = [T_.ORDERS, T_.SALES, T_.RETURNS, T_.NET_SALES, T_.NET_REV,
+    T_.WB_FOR_PAY, T_.WB_LOG, T_.WB_STOR, T_.WB_DEDUCT, T_.WB_PROMO,
+    T_.WB_TRANSIT, T_.WB_PVZ, T_.WB_COMP, T_.WB_AFTER,
+    T_.ADS_SPEND, T_.ADS_DELTA, T_.COGS_TOTAL, T_.PROFIT];
+
+  for (var si = 0; si < sumIdx.length; si++) {
+    var idx = sumIdx[si], s = 0;
+    for (var d = 1; d <= daysInMonth; d++) s += (Number(data[idx][d]) || 0);
+    data[idx].total = roundTwo_(s);
+  }
+
+  // Остаток — последний ненулевой
+  var lastSt = 0;
+  for (var d = 1; d <= daysInMonth; d++) if (data[T_.STOCK][d]) lastSt = data[T_.STOCK][d];
+  data[T_.STOCK].total = lastSt;
+
+  // Расчётные итого
+  var tRevenue = data[T_.NET_REV].total || 0;
+  var tNS = data[T_.NET_SALES].total || 0;
+  var tAds = data[T_.ADS_SPEND].total || 0;
+  var tProfit = data[T_.PROFIT].total || 0;
+
+  data[T_.AVG_PRICE].total = tNS > 0 ? Math.round(tRevenue / tNS) : 0;
+  data[T_.DRR].total = tRevenue > 0 ? tAds / tRevenue : 0;
+  data[T_.MARGIN].total = tRevenue > 0 ? tProfit / tRevenue : 0;
+
+  return data;
+}
+
+
+// ═══════════════════════════════════════
+// СБОРКА ДАННЫХ ТОВАРНОГО БЛОКА (SKU)
+// ═══════════════════════════════════════
+
+/**
+ * Собирает данные одного товарного блока SKU за месяц.
+ *
+ * Формулы по SKU:
+ *   profit_before = wb_for_pay - wb_logistics + comp_direct - cogs_total
+ *   profit_after  = profit_before - storage(RAW_WB_STORAGE) - ads(RAW_WB_ADS)
+ *   margin_after  = profit_after / wb_for_pay (если > 0)
+ */
+function buildSkuBlockV10_(cleanByDateNm, nmId, daysInMonth, cogsMap,
+                            finData, storData, adsData, year, month) {
+  var rows = UNIT_SKU_ROWS_COUNT_V10_;
+  var data = [];
+  for (var i = 0; i < rows; i++) data.push({});
+
+  var cogsUnit = cogsMap[nmId] || 0;
+  var hasStorage = storData.loaded;
+  var hasAds = adsData.loaded;
+
+  for (var d = 1; d <= daysInMonth; d++) {
+    var dk = year + '-' + pad2_(month) + '-' + pad2_(d);
+    var cleanKey = dk + '|' + nmId;
+    var cd = cleanByDateNm[cleanKey] || {};
+
+    var dO = cd.orders || 0;
+    var dS = cd.sales || 0;
+    var dR = cd.returns || 0;
+    var dNS = cd.netSales || 0;
+    var dNR = cd.netRev || 0;
+    var dSt = cd.stock || 0;
+
+    // Прямые расходы WB по артикулу (из финансового отчёта)
+    var finKey = dk + '|' + nmId;
+    var finSku = finData.byDateNm[finKey] || {};
+    var dForPay = finSku.for_pay || 0;
+    var dLog = finSku.logistics || 0;
+    var dCompDirect = finSku.comp_direct || 0;
+
+    // Хранение по SKU — из RAW_WB_STORAGE
+    var dStorSku = hasStorage ? (storData.byDateNm[finKey] || 0) : 0;
+
+    // Реклама по SKU — из RAW_WB_ADS
+    var dAdsSku = hasAds ? (adsData.byDateNm[finKey] || 0) : 0;
+
+    // ДРР = Расход на рекламу / Сумма реализации WB
+    var dDrr = dNR > 0 ? dAdsSku / dNR : 0;
+
+    // Себестоимость
+    var dCogsTotal = dNS * cogsUnit;
+
+    // Прибыль до рекламы и хранения
+    // = wb_for_pay - wb_logistics + comp_direct - cogs
+    var dProfitBefore = dForPay - dLog + dCompDirect - dCogsTotal;
+
+    // Прибыль после рекламы и хранения
+    var dProfitAfter = dProfitBefore - dStorSku - dAdsSku;
+
+    // Маржинальность
+    var dMargin = dForPay > 0 ? dProfitAfter / dForPay : 0;
+
+    // Средняя цена
+    var dAvgPrice = dNS > 0 ? Math.round(dNR / dNS) : 0;
+
+    data[S_.ORDERS][d] = dO;
+    data[S_.SALES][d] = dS;
+    data[S_.RETURNS][d] = dR;
+    data[S_.NET_SALES][d] = dNS;
+    data[S_.AVG_PRICE][d] = dAvgPrice;
+    data[S_.NET_REV][d] = roundTwo_(dNR);
+    data[S_.WB_FOR_PAY][d] = roundTwo_(dForPay);
+    data[S_.WB_LOG][d] = roundTwo_(dLog);
+    data[S_.WB_STOR_SKU][d] = hasStorage ? roundTwo_(dStorSku) : '';
+    data[S_.ADS_SKU][d] = hasAds ? roundTwo_(dAdsSku) : '';
+    data[S_.DRR][d] = dDrr;
+    data[S_.COGS_UNIT][d] = cogsUnit;
+    data[S_.COGS_TOTAL][d] = roundTwo_(dCogsTotal);
+    data[S_.PROFIT_BEFORE][d] = roundTwo_(dProfitBefore);
+    data[S_.PROFIT_AFTER][d] = roundTwo_(dProfitAfter);
+    data[S_.MARGIN_AFTER][d] = dMargin;
+    data[S_.STOCK][d] = dSt;
+    data[S_.DATA_STATUS][d] = '';
+  }
+
+  // ── Итого за месяц ──
+  var sumIdx = [S_.ORDERS, S_.SALES, S_.RETURNS, S_.NET_SALES, S_.NET_REV,
+    S_.WB_FOR_PAY, S_.WB_LOG, S_.WB_STOR_SKU, S_.ADS_SKU,
+    S_.COGS_TOTAL, S_.PROFIT_BEFORE, S_.PROFIT_AFTER];
+
+  for (var si = 0; si < sumIdx.length; si++) {
+    var idx = sumIdx[si], s = 0;
+    for (var d = 1; d <= daysInMonth; d++) {
+      var v = data[idx][d];
+      if (v !== '' && v !== undefined) s += (Number(v) || 0);
+    }
+    data[idx].total = roundTwo_(s);
+  }
+
+  // Остаток — последний ненулевой
+  var lastSt = 0;
+  for (var d = 1; d <= daysInMonth; d++) if (data[S_.STOCK][d]) lastSt = data[S_.STOCK][d];
+  data[S_.STOCK].total = lastSt;
+
+  // Расчётные итого
+  var tNR = data[S_.NET_REV].total || 0;
+  var tNS = data[S_.NET_SALES].total || 0;
+  var tFP = data[S_.WB_FOR_PAY].total || 0;
+  var tAds = data[S_.ADS_SKU].total || 0;
+  var tProfitAfter = data[S_.PROFIT_AFTER].total || 0;
+
+  data[S_.AVG_PRICE].total = tNS > 0 ? Math.round(tNR / tNS) : 0;
+  data[S_.COGS_UNIT].total = cogsUnit;
+  data[S_.DRR].total = tNR > 0 ? tAds / tNR : 0;
+  data[S_.MARGIN_AFTER].total = tFP > 0 ? tProfitAfter / tFP : 0;
+
+  // Статус данных
+  var statusParts = [];
+  if (!hasStorage) statusParts.push('Нет отчета хранения по SKU');
+  else statusParts.push('Хранение по SKU загружено');
+  if (!hasAds) statusParts.push('Реклама по SKU не загружена');
+  else statusParts.push('Реклама по SKU загружена');
+  data[S_.DATA_STATUS].total = statusParts.join('; ');
+
+  return data;
+}
+
+
+// ═══════════════════════════════════════
+// ДОБАВЛЕНИЕ СТРОК ВЕРХНЕГО БЛОКА В МАССИВ
+// ═══════════════════════════════════════
+
+function pushTotalBlockRowsV10_(allRows, rowFormats, blockData, totalCols) {
+  var moneyIdx = [T_.AVG_PRICE, T_.NET_REV, T_.WB_FOR_PAY, T_.WB_LOG, T_.WB_STOR,
+    T_.WB_DEDUCT, T_.WB_PROMO, T_.WB_TRANSIT, T_.WB_PVZ, T_.WB_COMP, T_.WB_AFTER,
+    T_.ADS_SPEND, T_.ADS_DELTA, T_.COGS_TOTAL, T_.PROFIT];
+  var pctIdx = [T_.DRR, T_.MARGIN];
+  var qtyIdx = [T_.ORDERS, T_.SALES, T_.RETURNS, T_.NET_SALES, T_.STOCK];
+
+  for (var li = 0; li < UNIT_TOTAL_ROWS_COUNT_V10_; li++) {
+    var row = emptyRow_(totalCols);
+    row[0] = UNIT_TOTAL_LABELS_V10_[li];
+    for (var d = 1; d <= totalCols - 2; d++) {
+      row[d] = blockData[li][d] !== undefined ? blockData[li][d] : '';
+    }
+    row[totalCols - 1] = blockData[li].total !== undefined ? blockData[li].total : '';
+    allRows.push(row);
+
+    if (moneyIdx.indexOf(li) >= 0) rowFormats.push('money');
+    else if (pctIdx.indexOf(li) >= 0) rowFormats.push('pct');
+    else if (qtyIdx.indexOf(li) >= 0) rowFormats.push('qty');
+    else rowFormats.push('text');
+  }
+}
+
+
+// ═══════════════════════════════════════
+// ДОБАВЛЕНИЕ СТРОК ТОВАРНОГО БЛОКА В МАССИВ
+// ═══════════════════════════════════════
+
+function pushSkuBlockRowsV10_(allRows, rowFormats, blockData, totalCols) {
+  var moneyIdx = [S_.AVG_PRICE, S_.NET_REV, S_.WB_FOR_PAY, S_.WB_LOG,
+    S_.WB_STOR_SKU, S_.ADS_SKU, S_.COGS_UNIT, S_.COGS_TOTAL,
+    S_.PROFIT_BEFORE, S_.PROFIT_AFTER];
+  var pctIdx = [S_.DRR, S_.MARGIN_AFTER];
+  var qtyIdx = [S_.ORDERS, S_.SALES, S_.RETURNS, S_.NET_SALES, S_.STOCK];
+
+  for (var li = 0; li < UNIT_SKU_ROWS_COUNT_V10_; li++) {
+    var row = emptyRow_(totalCols);
+    row[0] = UNIT_SKU_LABELS_V10_[li];
+    for (var d = 1; d <= totalCols - 2; d++) {
+      row[d] = blockData[li][d] !== undefined ? blockData[li][d] : '';
+    }
+    row[totalCols - 1] = blockData[li].total !== undefined ? blockData[li].total : '';
+    allRows.push(row);
+
+    if (moneyIdx.indexOf(li) >= 0) rowFormats.push('money');
+    else if (pctIdx.indexOf(li) >= 0) rowFormats.push('pct');
+    else if (qtyIdx.indexOf(li) >= 0) rowFormats.push('qty');
+    else rowFormats.push('text');
+  }
+}
+
+
+// ═══════════════════════════════════════
+// УСЛОВНОЕ ФОРМАТИРОВАНИЕ v10
+// ═══════════════════════════════════════
+
+function applyUnitCondRulesV10_(sheet, totalRows, totalCols) {
+  var profitRows = [], marginRows = [], drrRows = [], stockRows = [], statusRows = [];
+
+  var colA = sheet.getRange(1, 1, totalRows, 1).getValues();
+  for (var r = 0; r < colA.length; r++) {
+    var v = String(colA[r][0]);
+    if (v.indexOf('Прибыль') === 0 && v.indexOf('₽') > 0) profitRows.push(r + 1);
+    else if (v.indexOf('Маржинальность') === 0) marginRows.push(r + 1);
+    else if (v === 'ДРР, %') drrRows.push(r + 1);
+    else if (v === 'Остаток, шт') stockRows.push(r + 1);
+    else if (v === 'Статус данных' || v === 'Статус дня') statusRows.push(r + 1);
+    else if (v === 'После расходов WB, ₽') profitRows.push(r + 1);
+    else if (v.indexOf('Расхождение') === 0) statusRows.push(r + 1);
+  }
+
+  var rules = [];
+
+  // Прибыль < 0 → красный
+  for (var i = 0; i < profitRows.length; i++) {
+    var rng = sheet.getRange(profitRows[i], 2, 1, totalCols - 1);
+    rules.push(SpreadsheetApp.newConditionalFormatRule()
+      .whenNumberLessThan(0).setBackground('#FEE2E2').setRanges([rng]).build());
+  }
+
+  // Маржинальность < 15% → красный
+  for (var i = 0; i < marginRows.length; i++) {
+    var rng = sheet.getRange(marginRows[i], 2, 1, totalCols - 1);
+    rules.push(SpreadsheetApp.newConditionalFormatRule()
+      .whenNumberLessThan(0.15).setBackground('#FEE2E2').setRanges([rng]).build());
+  }
+
+  // ДРР > 25% → красный, 15-25% → жёлтый
+  for (var i = 0; i < drrRows.length; i++) {
+    var rng = sheet.getRange(drrRows[i], 2, 1, totalCols - 1);
+    rules.push(SpreadsheetApp.newConditionalFormatRule()
+      .whenNumberGreaterThan(0.25).setBackground('#FEE2E2').setRanges([rng]).build());
+    rules.push(SpreadsheetApp.newConditionalFormatRule()
+      .whenNumberBetween(0.15, 0.25).setBackground('#FEF3C7').setRanges([rng]).build());
+  }
+
+  // Остаток = 0 → красный
+  for (var i = 0; i < stockRows.length; i++) {
+    var rng = sheet.getRange(stockRows[i], 2, 1, totalCols - 1);
+    rules.push(SpreadsheetApp.newConditionalFormatRule()
+      .whenNumberEqualTo(0).setBackground('#FEE2E2').setRanges([rng]).build());
+  }
+
+  // Статус: текстовые правила
+  for (var i = 0; i < statusRows.length; i++) {
+    var rng = sheet.getRange(statusRows[i], 2, 1, totalCols - 1);
+    rules.push(SpreadsheetApp.newConditionalFormatRule()
+      .whenTextContains('не загружен').setBackground('#FEF3C7').setFontColor('#92400E').setRanges([rng]).build());
+    rules.push(SpreadsheetApp.newConditionalFormatRule()
+      .whenTextContains('расхождение').setBackground('#FEE2E2').setFontColor('#991B1B').setRanges([rng]).build());
+    rules.push(SpreadsheetApp.newConditionalFormatRule()
+      .whenTextContains('Нет отчета').setBackground('#FEF3C7').setFontColor('#92400E').setRanges([rng]).build());
+  }
+
+  if (rules.length > 0) {
+    sheet.setConditionalFormatRules(rules);
+  }
+}
+
+
+// ═══════════════════════════════════════
+// ГЛАВНАЯ ФУНКЦИЯ v10
+// ═══════════════════════════════════════
+
+function buildMonthlyUnitReportV10() {
+  var t0 = Date.now();
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  console.log('═══ buildMonthlyUnitReportV10() СТАРТ ═══');
+
+  // ── 1. Читаем CLEAN_WB_DAILY ──
+  var tStep = Date.now();
+  var cleanSheet = ss.getSheetByName('CLEAN_WB_DAILY');
+  if (!cleanSheet || cleanSheet.getLastRow() < 2) {
+    SpreadsheetApp.getUi().alert('❌ Ошибка', 'CLEAN_WB_DAILY пуст или не найден.',
+      SpreadsheetApp.getUi().ButtonSet.OK);
+    return;
+  }
+  var cH = getHeaderMap_(cleanSheet);
+  var cDateCol = findCol_(cH, ['date']);
+  var cNmCol = findCol_(cH, ['wb_nm_id']);
+  var cNameCol = findCol_(cH, ['product_name']);
+  var cSkuCol = findCol_(cH, ['internal_sku']);
+  var cOrdersCol = findCol_(cH, ['orders_qty']);
+  var cSalesCol = findCol_(cH, ['sales_qty']);
+  var cReturnsCol = findCol_(cH, ['returns_qty']);
+  var cNetSalesCol = findCol_(cH, ['net_sales_qty']);
+  var cNetRevCol = findCol_(cH, ['net_revenue']);
+  var cAdsCol = findCol_(cH, ['ads_spend']);
+  var cStockCol = findCol_(cH, ['stock_qty']);
+
+  if (cDateCol === -1 || cNmCol === -1) {
+    SpreadsheetApp.getUi().alert('❌', 'Нет колонки date или wb_nm_id в CLEAN_WB_DAILY.',
+      SpreadsheetApp.getUi().ButtonSet.OK);
+    return;
+  }
+  var cleanData = readSheetData_(cleanSheet);
+  console.log('✅ CLEAN_WB_DAILY: ' + cleanData.length + ' строк, ' + sec_(tStep) + ' сек');
+
+  // ── 2. Читаем SKU_MASTER ──
+  var masterSheet = ss.getSheetByName('SKU_MASTER');
+  var cogsMap = {}, skuInfoMap = {};
+  if (masterSheet) {
+    var mH = getHeaderMap_(masterSheet);
+    var mNmCol = findCol_(mH, ['wb_nm_id', 'nm_id']);
+    var mCogsCol = findCol_(mH, ['current_cogs']);
+    var mNameCol = findCol_(mH, ['product_name_short', 'product_name']);
+    var mSkuCol = findCol_(mH, ['internal_sku']);
+    var mCatCol = findCol_(mH, ['category']);
+    var mData = readSheetData_(masterSheet);
+    for (var i = 0; i < mData.length; i++) {
+      var nm = mNmCol >= 0 ? normalizeNmId_(mData[i][mNmCol]) : '';
+      if (!nm) continue;
+      cogsMap[nm] = mCogsCol >= 0 ? (Number(mData[i][mCogsCol]) || 0) : 0;
+      skuInfoMap[nm] = {
+        name: mNameCol >= 0 ? String(mData[i][mNameCol] || '') : '',
+        sku: mSkuCol >= 0 ? String(mData[i][mSkuCol] || '') : '',
+        category: mCatCol >= 0 ? String(mData[i][mCatCol] || '') : ''
+      };
+    }
+  }
+  console.log('  SKU_MASTER: ' + Object.keys(cogsMap).length + ' товаров');
+
+  // ── 3. Читаем RAW_WB_FINANCE (кабинетные расходы) ──
+  tStep = Date.now();
+  var finData = readFinanceCabinetData_(ss);
+  console.log('  Чтение RAW_WB_FINANCE: ' + sec_(tStep) + ' сек');
+
+  // ── 4. Читаем RAW_WB_STORAGE (хранение по SKU) ──
+  tStep = Date.now();
+  var storData = readStorageBySkuData_(ss);
+  console.log('  Чтение RAW_WB_STORAGE: ' + sec_(tStep) + ' сек');
+
+  // ── 5. Читаем RAW_WB_ADS (реклама по SKU) ──
+  tStep = Date.now();
+  var adsData = readAdsBySkuData_(ss);
+  console.log('  Чтение RAW_WB_ADS: ' + sec_(tStep) + ' сек');
+
+  // ── 6. Группируем CLEAN данные по date|nm ──
+  var cleanByDateNm = {}, allNmIds = {}, monthSet = {};
+  for (var ci = 0; ci < cleanData.length; ci++) {
+    var row = cleanData[ci];
+    var ds = parseDate_(row[cDateCol]);
+    if (!ds) continue;
+    var nm = normalizeNmId_(row[cNmCol]);
+    if (!nm) continue;
+    var p = ds.split('-'), mk = p[0] + '-' + p[1];
+
+    allNmIds[nm] = true;
+    if (!monthSet[mk]) monthSet[mk] = {};
+    monthSet[mk][nm] = true;
+
+    if (!skuInfoMap[nm]) {
+      skuInfoMap[nm] = {
+        name: cNameCol >= 0 ? String(row[cNameCol] || '') : '',
+        sku: cSkuCol >= 0 ? String(row[cSkuCol] || '') : '',
+        category: ''
+      };
+    }
+
+    var key = ds + '|' + nm;
+    cleanByDateNm[key] = {
+      orders: cOrdersCol >= 0 ? (Number(row[cOrdersCol]) || 0) : 0,
+      sales: cSalesCol >= 0 ? (Number(row[cSalesCol]) || 0) : 0,
+      returns: cReturnsCol >= 0 ? (Number(row[cReturnsCol]) || 0) : 0,
+      netSales: cNetSalesCol >= 0 ? (Number(row[cNetSalesCol]) || 0) : 0,
+      netRev: cNetRevCol >= 0 ? (Number(row[cNetRevCol]) || 0) : 0,
+      ads: cAdsCol >= 0 ? (Number(row[cAdsCol]) || 0) : 0,
+      stock: cStockCol >= 0 ? (Number(row[cStockCol]) || 0) : 0
+    };
+  }
+  var monthKeys = Object.keys(monthSet).sort();
+  var nmIdList = Object.keys(allNmIds).sort();
+  console.log('  Месяцев: ' + monthKeys.length + ', товаров: ' + nmIdList.length +
+    ', ключей CLEAN: ' + Object.keys(cleanByDateNm).length);
+
+  // ── 7. Сверка и запись расхождений ──
+  for (var mi = 0; mi < monthKeys.length; mi++) {
+    writeReconciliationErrors_(ss, finData, storData, adsData, monthKeys[mi]);
+  }
+
+  // ── 8. Собираем каждый лист ЮНИТ_MM_YYYY ──
+  var tWrite = 0, tFormat = 0;
+
+  for (var mki = 0; mki < monthKeys.length; mki++) {
+    var mk = monthKeys[mki], mP = mk.split('-');
+    var year = Number(mP[0]), month = Number(mP[1]);
+    var daysInMonth = new Date(year, month, 0).getDate();
+    var sheetName = 'ЮНИТ_' + pad2_(month) + '_' + year;
+    var monthNmIds = Object.keys(monthSet[mk]).sort();
+    var totalCols = 1 + daysInMonth + 1; // A(labels) + days + Итого
+
+    console.log('  Собираю ' + sheetName + ' (' + daysInMonth + ' дней, ' +
+      monthNmIds.length + ' товаров)...');
+
+    // ═══ СБОРКА МАССИВА В ПАМЯТИ ═══
+    tStep = Date.now();
+    var allRows = [];
+    var rowFormats = [];
+
+    // ── Строка 1: заголовок ──
+    var r1 = emptyRow_(totalCols);
+    r1[0] = 'Юнит-экономика WB v10';
+    r1[1] = RU_MONTHS_V10_[month] + ' ' + year;
+    allRows.push(r1); rowFormats.push('title');
+
+    // ── Строка 2: обновлено ──
+    var r2 = emptyRow_(totalCols);
+    r2[0] = 'Обновлено';
+    r2[1] = Utilities.formatDate(new Date(), 'Europe/Moscow', 'dd.MM.yyyy HH:mm');
+    allRows.push(r2); rowFormats.push('subtitle');
+
+    // ── Строка 3: статус источников ──
+    var r3 = emptyRow_(totalCols);
+    r3[0] = 'Источники';
+    var srcParts = [];
+    srcParts.push('CLEAN_WB_DAILY: ✅');
+    srcParts.push('RAW_WB_FINANCE: ' + (finData.loaded ? '✅ ' + finData.rowCount + ' строк' : '❌ не загружен'));
+    srcParts.push('RAW_WB_STORAGE: ' + (storData.loaded ? '✅ ' + roundTwo_(storData.totalCost) + ' ₽' : '❌ не загружен'));
+    srcParts.push('RAW_WB_ADS: ' + (adsData.loaded ? '✅ ' + roundTwo_(adsData.totalSpend) + ' ₽' : '❌ не загружен'));
+    r3[1] = srcParts.join(' | ');
+    allRows.push(r3); rowFormats.push('subtitle');
+
+    // ── Пустая строка ──
+    allRows.push(emptyRow_(totalCols)); rowFormats.push('empty');
+
+    // ── Даты и дни недели ──
+    var dateRow = emptyRow_(totalCols), dowRow = emptyRow_(totalCols);
+    var weekendColIdx = [];
+    dateRow[0] = 'Показатель'; dowRow[0] = '';
+    for (var d = 1; d <= daysInMonth; d++) {
+      var dt = new Date(year, month - 1, d);
+      dateRow[d] = pad2_(d) + '.' + pad2_(month);
+      var dow = dt.getDay();
+      dowRow[d] = RU_DAYS_V10_[dow];
+      if (dow === 0 || dow === 6) weekendColIdx.push(d);
+    }
+    dateRow[totalCols - 1] = 'Итого';
+    dowRow[totalCols - 1] = '';
+
+    // ═══ БЛОК «ИТОГО ПО КАБИНЕТУ» ═══
+    var totalSepRow = emptyRow_(totalCols);
+    totalSepRow[0] = '📊 ИТОГО ПО КАБИНЕТУ';
+    allRows.push(totalSepRow); rowFormats.push('total_header');
+
+    allRows.push(dateRow.slice()); rowFormats.push('dates');
+    allRows.push(dowRow.slice()); rowFormats.push('dow');
+
+    var totalBlock = buildTotalBlockV10_(cleanByDateNm, monthNmIds, daysInMonth,
+      cogsMap, finData, storData, adsData, year, month);
+    pushTotalBlockRowsV10_(allRows, rowFormats, totalBlock, totalCols);
+
+    // ── Пустая строка ──
+    allRows.push(emptyRow_(totalCols)); rowFormats.push('empty');
+
+    // ═══ БЛОКИ ПО ТОВАРАМ ═══
+    for (var ni = 0; ni < monthNmIds.length; ni++) {
+      var nmId = monthNmIds[ni];
+      var info = skuInfoMap[nmId] || {};
+
+      // Разделитель товара
+      var sepRow = emptyRow_(totalCols);
+      sepRow[0] = 'АРТИКУЛ WB: ' + nmId;
+      sepRow[1] = (info.name || '');
+      sepRow[2] = (info.sku || '');
+      if (info.category) sepRow[3] = info.category;
+      allRows.push(sepRow); rowFormats.push('sku_header');
+
+      // Даты и дни недели
+      allRows.push(dateRow.slice()); rowFormats.push('dates');
+      allRows.push(dowRow.slice()); rowFormats.push('dow');
+
+      // Данные SKU
+      var skuBlock = buildSkuBlockV10_(cleanByDateNm, nmId, daysInMonth,
+        cogsMap, finData, storData, adsData, year, month);
+      pushSkuBlockRowsV10_(allRows, rowFormats, skuBlock, totalCols);
+
+      // Пустая строка
+      allRows.push(emptyRow_(totalCols)); rowFormats.push('empty');
+    }
+
+    console.log('  ✅ Сбор массива: ' + allRows.length + ' строк, ' + sec_(tStep) + ' сек');
+
+    // ═══ ЗАПИСЬ В ЛИСТ ═══
+    tStep = Date.now();
+    var sheet = ss.getSheetByName(sheetName);
+    if (sheet) { sheet.clear(); sheet.clearConditionalFormatRules(); }
+    else { sheet = ss.insertSheet(sheetName); }
+
+    if (sheet.getMaxRows() < allRows.length) {
+      sheet.insertRowsAfter(sheet.getMaxRows(), allRows.length - sheet.getMaxRows());
+    }
+    if (sheet.getMaxColumns() < totalCols) {
+      sheet.insertColumnsAfter(sheet.getMaxColumns(), totalCols - sheet.getMaxColumns());
+    }
+
+    try { sheet.getRange(1, 1, sheet.getMaxRows(), sheet.getMaxColumns()).clearDataValidations(); } catch (e) {}
+
+    sheet.getRange(1, 1, allRows.length, totalCols).setValues(allRows);
+    SpreadsheetApp.flush();
+
+    var writeTime = sec_(tStep);
+    tWrite += Number(writeTime);
+    console.log('  ✅ Запись: ' + allRows.length + '×' + totalCols + ', ' + writeTime + ' сек');
+
+    // ═══ ФОРМАТИРОВАНИЕ ═══
+    tStep = Date.now();
+
+    sheet.setColumnWidth(1, 300);
+    for (var c = 2; c <= totalCols; c++) sheet.setColumnWidth(c, 85);
+    sheet.setFrozenRows(2);
+
+    sheet.getRange(1, 1, allRows.length, totalCols).setFontFamily('Arial').setFontSize(10);
+
+    var fmtRanges = groupFormats_(rowFormats);
+    for (var fi = 0; fi < fmtRanges.length; fi++) {
+      var fmt = fmtRanges[fi];
+      var range = sheet.getRange(fmt.start + 1, 1, fmt.count, totalCols);
+
+      switch (fmt.type) {
+        case 'title':
+          range.setFontSize(14).setFontWeight('bold');
+          break;
+        case 'subtitle':
+          range.setFontColor('#6B7280').setFontSize(9);
+          break;
+        case 'total_header':
+          range.setBackground('#1E40AF').setFontColor('#FFFFFF').setFontWeight('bold').setFontSize(11);
+          break;
+        case 'sku_header':
+          range.setBackground('#DBEAFE').setFontWeight('bold').setFontSize(10);
+          break;
+        case 'dates':
+          range.setFontWeight('bold').setHorizontalAlignment('center').setBackground('#E5E7EB');
+          break;
+        case 'dow':
+          range.setHorizontalAlignment('center').setFontColor('#6B7280').setFontSize(9);
+          break;
+        case 'money':
+          sheet.getRange(fmt.start + 1, 2, fmt.count, totalCols - 1).setNumberFormat('#,##0');
+          sheet.getRange(fmt.start + 1, 1, fmt.count, 1).setFontWeight('bold');
+          break;
+        case 'pct':
+          sheet.getRange(fmt.start + 1, 2, fmt.count, totalCols - 1).setNumberFormat('0%');
+          sheet.getRange(fmt.start + 1, 1, fmt.count, 1).setFontWeight('bold');
+          break;
+        case 'qty':
+          sheet.getRange(fmt.start + 1, 2, fmt.count, totalCols - 1).setNumberFormat('#,##0');
+          sheet.getRange(fmt.start + 1, 1, fmt.count, 1).setFontWeight('bold');
+          break;
+        case 'text':
+          sheet.getRange(fmt.start + 1, 1, fmt.count, 1).setFontWeight('bold');
+          break;
+      }
+    }
+
+    // Выходные — серый фон
+    for (var wi = 0; wi < weekendColIdx.length; wi++) {
+      var wCol = weekendColIdx[wi] + 1;
+      sheet.getRange(5, wCol, allRows.length - 4, 1).setBackground('#F9FAFB');
+    }
+
+    var formatTime = sec_(tStep);
+    tFormat += Number(formatTime);
+    console.log('  ✅ Форматирование: ' + formatTime + ' сек');
+
+    // ═══ УСЛОВНОЕ ФОРМАТИРОВАНИЕ ═══
+    tStep = Date.now();
+    applyUnitCondRulesV10_(sheet, allRows.length, totalCols);
+    console.log('  ✅ Условное форматирование: ' + sec_(tStep) + ' сек');
+
+    console.log('  ✅ ' + sheetName + ' готов: ' + allRows.length + ' строк');
+  }
+
+  // ── Финал ──
+  var elapsed = sec_(t0);
+  console.log('═══ buildMonthlyUnitReportV10() ЗАВЕРШЕНО: ' + monthKeys.length + ' мес, ' +
+    nmIdList.length + ' товаров, запись: ' + tWrite.toFixed(1) + 'с, формат: ' +
+    tFormat.toFixed(1) + 'с, всего: ' + elapsed + ' сек ═══');
+
+  var summaryMsg = 'Листов: ' + monthKeys.length + '\n' +
+    'Товаров: ' + nmIdList.length + '\n' +
+    'Время: ' + elapsed + ' сек\n\n' +
+    'Источники:\n' +
+    '  RAW_WB_FINANCE: ' + (finData.loaded ? '✅' : '❌') + '\n' +
+    '  RAW_WB_STORAGE: ' + (storData.loaded ? '✅ ' + roundTwo_(storData.totalCost) + ' ₽' : '❌ Не загружен') + '\n' +
+    '  RAW_WB_ADS: ' + (adsData.loaded ? '✅ ' + roundTwo_(adsData.totalSpend) + ' ₽' : '❌ Не загружен');
+
+  SpreadsheetApp.getUi().alert('📈 Юнит-экономика v10 собрана', summaryMsg,
+    SpreadsheetApp.getUi().ButtonSet.OK);
+}
+
+
+// ═══════════════════════════════════════
+// СХЕМА RAW_WB_STORAGE (для Config.gs)
+// ═══════════════════════════════════════
+
+/**
+ * Добавить в SHEETS_SCHEMA (Config.gs):
+ *
+ * SHEETS_SCHEMA['RAW_WB_STORAGE'] = {
+ *   type: 'table',
+ *   headers: [
+ *     'load_id', 'loaded_at', 'source_report',
+ *     'date', 'nmID', 'vendor_code', 'barcode',
+ *     'warehouse_name', 'storage_cost', 'quantity',
+ *     'volume', 'source_report_id',
+ *     'is_duplicate', 'processed_status', 'error_message'
+ *   ],
+ *   columnWidths: { 0: 80, 1: 130, 3: 100, 4: 120, 7: 160 }
+ * };
+ */
+
+
+// ═══════════════════════════════════════
+// ОБНОВЛЁННОЕ МЕНЮ
+// ═══════════════════════════════════════
+
+function addUnitReportMenuV10() {
+  SpreadsheetApp.getUi().createMenu('📈 Юнит-экономика')
+    .addItem('📈 Собрать месячный отчет v10', 'buildMonthlyUnitReportV10')
+    .addSeparator()
+    .addItem('📈 Собрать месячный отчет (старый v1.2)', 'buildMonthlyUnitReport')
+    .addToUi();
+}
