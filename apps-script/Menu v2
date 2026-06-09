@@ -1,0 +1,153 @@
+/**
+ * ══════════════════════════════════════════════════════════════
+ * EVETIS WB — Menu.gs  v2.0
+ * Пользовательское меню EVETIS WB в Google Sheets
+ *
+ * Обновлено: подключены реальные функции загрузки финансов.
+ * ══════════════════════════════════════════════════════════════
+ */
+
+/**
+ * Создаёт меню при открытии таблицы
+ */
+function onOpen() {
+  var ui = SpreadsheetApp.getUi();
+  
+  ui.createMenu('🏷️ EVETIS WB')
+    // ─── Настройка ───
+    .addItem('🔧 Полная настройка таблицы', 'setupWorkbook')
+    .addSeparator()
+    
+    // ─── Финансы WB ───
+    .addSubMenu(
+      ui.createMenu('💰 Финансы WB')
+        .addItem('📋 Preview API (без записи)', 'previewWbFinanceApi')
+        .addSeparator()
+        .addItem('📥 Загрузить последнюю неделю', 'loadWbFinanceLastWeek')
+        .addItem('📥 Загрузить за период...', 'loadWbFinancePeriod')
+        .addItem('📥 Загрузить всю историю (с сент 2024)', 'loadWbFinanceFullHistory')
+        .addItem('📥 Загрузить историю по частям (кварталы)', 'loadWbFinanceHistoryChunked')
+        .addSeparator()
+        .addItem('🔍 Аудит RAW_WB_FINANCE', 'auditRawWbFinance')
+    )
+    .addSeparator()
+    
+    // ─── API (заглушки для будущего) ───
+    .addSubMenu(
+      ui.createMenu('📡 API WB (в разработке)')
+        .addItem('Загрузить заказы/продажи WB', 'notImplementedYet_')
+        .addItem('Загрузить рекламу WB', 'notImplementedYet_')
+        .addItem('Загрузить остатки WB', 'notImplementedYet_')
+    )
+    .addSeparator()
+    
+    // ─── Расчёты (заглушки) ───
+    .addSubMenu(
+      ui.createMenu('📊 Расчёты')
+        .addItem('Пересчитать UNIT_SKU_DAILY', 'notImplementedYet_')
+        .addItem('Пересчитать PNL_TOTAL', 'notImplementedYet_')
+        .addItem('Обновить дашборд', 'notImplementedYet_')
+        .addItem('ABC/XYZ анализ', 'notImplementedYet_')
+    )
+    .addSeparator()
+    
+    // ─── Обслуживание ───
+    .addSubMenu(
+      ui.createMenu('⚙️ Обслуживание')
+        .addItem('Пересоздать все листы', 'createAllSheets')
+        .addItem('Обновить форматирование', 'refreshFormatting')
+        .addItem('Обновить валидации', 'refreshValidations')
+        .addItem('Обновить защиту', 'refreshProtections')
+        .addItem('Упорядочить листы', 'reorderSheetsCommand')
+        .addSeparator()
+        .addItem('Скрыть RAW-листы', 'hideRawSheetsCommand')
+        .addItem('Показать RAW-листы', 'showRawSheetsCommand')
+    )
+    .addSeparator()
+    
+    // ─── Инфо ───
+    .addItem('🩺 Диагностика системы', 'systemHealthCheck')
+    .addItem('ℹ️ О системе', 'showAbout_')
+    
+    .addToUi();
+}
+
+/**
+ * Заглушка для функций, которые ещё не реализованы
+ */
+function notImplementedYet_() {
+  SpreadsheetApp.getUi().alert(
+    '🚧 В разработке',
+    'Эта функция будет реализована на следующем этапе.\n\n' +
+    'Текущий этап: финансовый загрузчик WB.\n' +
+    'Следующий: заказы/продажи, реклама, остатки.',
+    SpreadsheetApp.getUi().ButtonSet.OK
+  );
+}
+
+/**
+ * Информация о системе
+ */
+function showAbout_() {
+  var msg = 'EVETIS WB — Управленческая аналитика\n\n' +
+    'Версия: ' + SYSTEM_VERSION + '\n' +
+    'Платформа: Google Sheets + Apps Script\n' +
+    'Маркетплейс: Wildberries (FBO)\n\n' +
+    'Архитектура: 4 слоя, 24 листа\n' +
+    '• Слой 1: Настройки и справочники\n' +
+    '• Слой 2: Сырые данные API (RAW)\n' +
+    '• Слой 3: Очищенные данные (CLEAN)\n' +
+    '• Слой 4: Аналитика и отчёты\n\n' +
+    'Модули:\n' +
+    '• 💰 Финансы WB — загружен ✅\n' +
+    '• 📦 Заказы/продажи — в разработке\n' +
+    '• 📊 Реклама — в разработке\n' +
+    '• 📋 Остатки — в разработке\n\n' +
+    'Бренд: EVETIS\n' +
+    'Модель: FBO через фулфилмент';
+  
+  SpreadsheetApp.getUi().alert('ℹ️ О системе', msg, SpreadsheetApp.getUi().ButtonSet.OK);
+}
+
+// ═══════════════════════════════════════
+// Команды из меню (обёртки)
+// ═══════════════════════════════════════
+
+function refreshFormatting() {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  applyAllFormatting_(ss);
+  SpreadsheetApp.getUi().alert('✅ Форматирование обновлено');
+}
+
+function refreshValidations() {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  applyAllValidations_(ss);
+  SpreadsheetApp.getUi().alert('✅ Валидации обновлены');
+}
+
+function refreshProtections() {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  protectAllFormulaColumns_(ss);
+  SpreadsheetApp.getUi().alert('✅ Защита обновлена');
+}
+
+function reorderSheetsCommand() {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  reorderSheets_(ss);
+  SpreadsheetApp.getUi().alert('✅ Листы упорядочены');
+}
+
+function hideRawSheetsCommand() {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  hideRawSheets_(ss);
+  SpreadsheetApp.getUi().alert('✅ RAW-листы скрыты');
+}
+
+function showRawSheetsCommand() {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  for (var i = 0; i < HIDDEN_SHEETS.length; i++) {
+    var sheet = ss.getSheetByName(HIDDEN_SHEETS[i]);
+    if (sheet) sheet.showSheet();
+  }
+  SpreadsheetApp.getUi().alert('✅ RAW-листы показаны');
+}
