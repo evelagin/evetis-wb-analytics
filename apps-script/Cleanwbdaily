@@ -1,0 +1,810 @@
+/**
+ * ══════════════════════════════════════════════════════════════
+ * EVETIS WB — CleanWbDaily.gs  v2.1
+ *
+ * Блок 2: RAW → CLEAN
+ * Сборка листа CLEAN_WB_DAILY — ежедневная витрина фактов.
+ *
+ * Одна строка = одна дата + один wb_nm_id.
+ *
+ * Источники:
+ *   - RAW_WB_ORDERS         → orders_qty
+ *   - RAW_WB_SALES_RETURNS  → sales_qty, returns_qty, gross_revenue, returns_amount, net_revenue
+ *   - RAW_WB_ADS            → ads_spend
+ *   - RAW_WB_STOCKS         → stock_qty
+ *
+ * Главный ключ: wb_nm_id.
+ * НЕ считает P&L, прибыль, себестоимость.
+ *
+ * v2.0 — Оптимизация:
+ *   - Все ошибки собираются в массив, запись пачкой через setValues()
+ *   - Никаких appendRow() / deleteRow() в циклах
+ *   - toast/alert — только финальные
+ *   - console.log() по каждому этапу с замерами времени
+ *
+ * Зависимости:
+ *   - getHeaderMap_(sheet)
+ *   - readSheetData_(sheet)
+ *   - normalizeNmId_(val)
+ *   - setIfExists_(newRow, headerMap, colName, value)
+ *   - clearErrorsBySource(sourceName)
+ *
+ * ══════════════════════════════════════════════════════════════
+ */
+
+
+// ═══════════════════════════════════════
+// КОНСТАНТЫ
+// ═══════════════════════════════════════
+
+var CLEAN_WB_SOURCE_ = 'RAW_TO_CLEAN';
+
+var CLEAN_WB_HEADERS_ = [
+  'date', 'wb_nm_id', 'product_name', 'internal_sku',
+  'orders_qty', 'sales_qty', 'returns_qty', 'net_sales_qty',
+  'gross_revenue', 'returns_amount', 'net_revenue',
+  'ads_spend', 'stock_qty', 'source_status', 'updated_at'
+];
+
+
+// ═══════════════════════════════════════
+// ГЛАВНАЯ ФУНКЦИЯ
+// ═══════════════════════════════════════
+
+/**
+ * Собирает CLEAN_WB_DAILY из RAW-листов.
+ */
+function buildCleanWbDaily() {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var t0 = Date.now();
+  var errorsBuffer = [];   // все ошибки — сначала в массив
+  var emptySheets = [];
+
+  console.log('═══ buildCleanWbDaily() СТАРТ ═══');
+
+  // ── Очистка старых ошибок этого блока ──
+  clearErrorsBySource(CLEAN_WB_SOURCE_);
+
+  // ══════════════════════════════════════
+  // 1. ЧИТАЕМ SKU_MASTER
+  // ══════════════════════════════════════
+
+  var tStep = Date.now();
+
+  var masterSheet = ss.getSheetByName('SKU_MASTER');
+  if (!masterSheet) {
+    console.log('❌ КРИТИЧНО: лист SKU_MASTER не найден. Сборка остановлена.');
+    errorsBuffer.push(makeErrorRow_('SKU_MASTER', 0, 'Не найден лист', 'Критично', '', '',
+      'Лист SKU_MASTER не найден. Сборка невозможна.',
+      'Создать лист SKU_MASTER'));
+    flushErrors_(ss, errorsBuffer);
+    SpreadsheetApp.getUi().alert('❌ Ошибка', 'Лист SKU_MASTER не найден. Сборка остановлена.', SpreadsheetApp.getUi().ButtonSet.OK);
+    return;
+  }
+
+  var mHeaders = getHeaderMap_(masterSheet);
+
+  // Ищем колонку wb_nm_id
+  var mNmCol = findCol_(mHeaders, ['wb_nm_id', 'nm_id', 'nmid', 'nmid_wb', 'nm_id_wb']);
+  if (mNmCol === -1) {
+    console.log('❌ КРИТИЧНО: колонка wb_nm_id не найдена в SKU_MASTER. Сборка остановлена.');
+    errorsBuffer.push(makeErrorRow_('SKU_MASTER', 1, 'Не найдена колонка', 'Критично', '', '',
+      'Колонка wb_nm_id не найдена в SKU_MASTER. Сборка остановлена.',
+      'Добавить колонку wb_nm_id в SKU_MASTER'));
+    flushErrors_(ss, errorsBuffer);
+    SpreadsheetApp.getUi().alert('❌ Критичная ошибка',
+      'В SKU_MASTER нет колонки wb_nm_id.\nСборка CLEAN_WB_DAILY невозможна.',
+      SpreadsheetApp.getUi().ButtonSet.OK);
+    return;
+  }
+
+  var mNameCol = findCol_(mHeaders, ['product_name_short', 'product_name', 'name', 'product']);
+  var mSkuCol = findCol_(mHeaders, ['internal_sku']);
+  var mVendorCol = findCol_(mHeaders, ['wb_vendor_code', 'vendor_code', 'vendorcode', 'supplierarticle']);
+  var mBarcodeCol = findCol_(mHeaders, ['barcode', 'barcodes']);
+
+  var masterData = readSheetData_(masterSheet);
+
+  // Справочник: wb_nm_id → {product_name, internal_sku, vendor_code, barcode}
+  var skuLookup = {};
+  // Обратные справочники для связывания
+  var vendorToNm = {};
+  var barcodeToNm = {};
+
+  for (var i = 0; i < masterData.length; i++) {
+    var row = masterData[i];
+    var nmId = normalizeNmId_(row[mNmCol]);
+    if (!nmId) continue;
+
+    var info = {
+      product_name: mNameCol >= 0 ? String(row[mNameCol] || '') : '',
+      internal_sku: mSkuCol >= 0 ? String(row[mSkuCol] || '') : '',
+      vendor_code: mVendorCol >= 0 ? String(row[mVendorCol] || '') : '',
+      barcode: mBarcodeCol >= 0 ? String(row[mBarcodeCol] || '') : ''
+    };
+
+    skuLookup[nmId] = info;
+
+    if (info.vendor_code) {
+      vendorToNm[info.vendor_code.trim().toUpperCase()] = nmId;
+    }
+    if (info.barcode) {
+      barcodeToNm[String(info.barcode).trim()] = nmId;
+    }
+  }
+
+  var skuCount = Object.keys(skuLookup).length;
+  console.log('✅ SKU_MASTER: ' + masterData.length + ' строк, ' + skuCount + ' товаров с wb_nm_id, ' +
+    sec_(tStep) + ' сек');
+
+  // ══════════════════════════════════════
+  // 2. ЧИТАЕМ RAW_WB_ORDERS → orders_qty
+  // ══════════════════════════════════════
+
+  tStep = Date.now();
+  var ordersMap = {};
+  var ordersRows = 0;
+  var ordersErrors = 0;
+
+  var ordersSheet = ss.getSheetByName('RAW_WB_ORDERS');
+  if (!ordersSheet || ordersSheet.getLastRow() < 2) {
+    emptySheets.push('RAW_WB_ORDERS');
+    console.log('⚠️ RAW_WB_ORDERS: пустой или не найден, ' + sec_(tStep) + ' сек');
+  } else {
+    var oHeaders = getHeaderMap_(ordersSheet);
+    var oDateCol = findCol_(oHeaders, ['order_dt', 'date', 'order_date', 'date_order', 'lastchangedate']);
+    var oNmCol = findCol_(oHeaders, ['wb_nm_id', 'nmid', 'nm_id']);
+    var oVendorCol = findCol_(oHeaders, ['wb_vendor_code', 'vendor_code', 'vendorcode', 'supplierarticle']);
+    var oBarcodeCol = findCol_(oHeaders, ['barcode', 'barcodes']);
+    var oQtyCol = findCol_(oHeaders, ['quantity', 'qty', 'orders_qty']);
+
+    if (oDateCol === -1) {
+      errorsBuffer.push(makeErrorRow_('RAW_WB_ORDERS', 1, 'Не найдена колонка', 'Проверить', '', '',
+        'Колонка даты не найдена в RAW_WB_ORDERS. Заказы пропущены.',
+        'Проверить заголовки RAW_WB_ORDERS'));
+      ordersErrors++;
+      emptySheets.push('RAW_WB_ORDERS (нет даты)');
+      console.log('⚠️ RAW_WB_ORDERS: нет колонки даты, ' + sec_(tStep) + ' сек');
+    } else {
+      var oData = readSheetData_(ordersSheet);
+      ordersRows = oData.length;
+      for (var oi = 0; oi < oData.length; oi++) {
+        var oRow = oData[oi];
+        var oDate = parseDate_(oRow[oDateCol]);
+        if (!oDate) continue;
+
+        var oNmId = resolveNmId_(oRow, oNmCol, oVendorCol, oBarcodeCol, vendorToNm, barcodeToNm);
+        if (!oNmId) {
+          errorsBuffer.push(makeErrorRow_('RAW_WB_ORDERS', oi + 2, 'Не найден wb_nm_id', 'Проверить', '', '',
+            'Строка ' + (oi + 2) + ': не удалось определить wb_nm_id.',
+            'Проверить данные или обновить SKU_MASTER'));
+          ordersErrors++;
+          continue;
+        }
+
+        var key = oDate + '|' + oNmId;
+        var qty = oQtyCol >= 0 ? (Number(oRow[oQtyCol]) || 0) : 1;
+        qty = Math.abs(qty);
+        if (!ordersMap[key]) ordersMap[key] = 0;
+        ordersMap[key] += qty;
+      }
+      console.log('✅ RAW_WB_ORDERS: ' + ordersRows + ' строк, ' + Object.keys(ordersMap).length + ' ключей, ошибок: ' + ordersErrors + ', ' + sec_(tStep) + ' сек');
+    }
+  }
+
+  // ══════════════════════════════════════
+  // 3. ЧИТАЕМ RAW_WB_SALES_RETURNS
+  // ══════════════════════════════════════
+
+  tStep = Date.now();
+  var salesMap = {};
+  var returnsMap = {};
+  var grossRevMap = {};
+  var retAmtMap = {};
+  var srRows = 0;
+  var srErrors = 0;
+
+  var srSheet = ss.getSheetByName('RAW_WB_SALES_RETURNS');
+  if (!srSheet || srSheet.getLastRow() < 2) {
+    emptySheets.push('RAW_WB_SALES_RETURNS');
+    console.log('⚠️ RAW_WB_SALES_RETURNS: пустой или не найден, ' + sec_(tStep) + ' сек');
+  } else {
+    var srHeaders = getHeaderMap_(srSheet);
+    var srDateCol = findCol_(srHeaders, ['sale_dt', 'date', 'sale_date', 'date_sale', 'last_change_date', 'lastchangedate', 'rr_dt']);
+    var srNmCol = findCol_(srHeaders, ['wb_nm_id', 'nmid', 'nm_id']);
+    var srVendorCol = findCol_(srHeaders, ['wb_vendor_code', 'vendor_code', 'vendorcode', 'supplierarticle']);
+    var srBarcodeCol = findCol_(srHeaders, ['barcode', 'barcodes']);
+    var srQtyCol = findCol_(srHeaders, ['quantity', 'qty']);
+    var srAmountCol = findCol_(srHeaders, ['finished_price', 'finishedprice', 'pricewithdisc', 'price_with_disc',
+      'retail_amount', 'retail_price_withdisc_rub', 'for_pay', 'forpay', 'ppvz_for_pay', 'amount']);
+    var srTypeCol = findCol_(srHeaders, ['operation_type', 'supplier_oper_name', 'type']);
+
+    if (srDateCol === -1) {
+      errorsBuffer.push(makeErrorRow_('RAW_WB_SALES_RETURNS', 1, 'Не найдена колонка', 'Проверить', '', '',
+        'Колонка даты не найдена в RAW_WB_SALES_RETURNS.',
+        'Проверить заголовки'));
+      srErrors++;
+      emptySheets.push('RAW_WB_SALES_RETURNS (нет даты)');
+      console.log('⚠️ RAW_WB_SALES_RETURNS: нет колонки даты, ' + sec_(tStep) + ' сек');
+    } else {
+      var srData = readSheetData_(srSheet);
+      srRows = srData.length;
+      var salesCount = 0;
+      var returnsCount = 0;
+
+      for (var si = 0; si < srData.length; si++) {
+        var srRow = srData[si];
+        var srDate = parseDate_(srRow[srDateCol]);
+        if (!srDate) continue;
+
+        var srNmId = resolveNmId_(srRow, srNmCol, srVendorCol, srBarcodeCol, vendorToNm, barcodeToNm);
+        if (!srNmId) {
+          errorsBuffer.push(makeErrorRow_('RAW_WB_SALES_RETURNS', si + 2, 'Не найден wb_nm_id', 'Проверить', '', '',
+            'Строка ' + (si + 2) + ': не удалось определить wb_nm_id.',
+            'Проверить данные или обновить SKU_MASTER'));
+          srErrors++;
+          continue;
+        }
+
+        var sKey = srDate + '|' + srNmId;
+        var rawQty = srQtyCol >= 0 ? Number(srRow[srQtyCol]) : 0;
+        var rawAmt = srAmountCol >= 0 ? Number(srRow[srAmountCol]) : 0;
+
+        // Определяем: возврат или продажа
+        var isReturn = false;
+
+        if (srTypeCol >= 0) {
+          var typeVal = String(srRow[srTypeCol] || '').toLowerCase();
+          if (typeVal.indexOf('возврат') >= 0 || typeVal.indexOf('return') >= 0) {
+            isReturn = true;
+          }
+        }
+
+        if (!isReturn && (rawQty < 0 || rawAmt < 0)) {
+          isReturn = true;
+        }
+
+        var absQty = Math.abs(rawQty) || 1;
+        var absAmt = Math.abs(rawAmt) || 0;
+
+        if (isReturn) {
+          if (!returnsMap[sKey]) returnsMap[sKey] = 0;
+          if (!retAmtMap[sKey]) retAmtMap[sKey] = 0;
+          returnsMap[sKey] += absQty;
+          retAmtMap[sKey] += absAmt;
+          returnsCount++;
+        } else {
+          if (!salesMap[sKey]) salesMap[sKey] = 0;
+          if (!grossRevMap[sKey]) grossRevMap[sKey] = 0;
+          salesMap[sKey] += absQty;
+          grossRevMap[sKey] += absAmt;
+          salesCount++;
+        }
+      }
+      console.log('✅ RAW_WB_SALES_RETURNS: ' + srRows + ' строк (продаж: ' + salesCount + ', возвратов: ' + returnsCount + '), ошибок: ' + srErrors + ', ' + sec_(tStep) + ' сек');
+    }
+  }
+
+  // ══════════════════════════════════════
+  // 4. ЧИТАЕМ RAW_WB_ADS → ads_spend
+  // ══════════════════════════════════════
+
+  tStep = Date.now();
+  var adsMap = {};
+  var adsRows = 0;
+  var adsErrors = 0;
+
+  var adsSheet = ss.getSheetByName('RAW_WB_ADS');
+  if (!adsSheet || adsSheet.getLastRow() < 2) {
+    emptySheets.push('RAW_WB_ADS');
+    console.log('⚠️ RAW_WB_ADS: пустой или не найден, ' + sec_(tStep) + ' сек');
+  } else {
+    var aHeaders = getHeaderMap_(adsSheet);
+    var aDateCol = findCol_(aHeaders, ['stat_date', 'date', 'advert_date', 'day']);
+    var aNmCol = findCol_(aHeaders, ['wb_nm_id', 'nmid', 'nm_id']);
+    var aVendorCol = findCol_(aHeaders, ['wb_vendor_code', 'vendor_code', 'vendorcode', 'supplierarticle']);
+    var aBarcodeCol = findCol_(aHeaders, ['barcode', 'barcodes']);
+    var aSpendCol = findCol_(aHeaders, ['spend', 'sum', 'advert_spend', 'cost', 'expense', 'expenses']);
+
+    if (aDateCol === -1 || aSpendCol === -1) {
+      var missingA = [];
+      if (aDateCol === -1) missingA.push('дата');
+      if (aSpendCol === -1) missingA.push('расход');
+      errorsBuffer.push(makeErrorRow_('RAW_WB_ADS', 1, 'Не найдена колонка', 'Проверить', '', '',
+        'Не найдены колонки: ' + missingA.join(', ') + ' в RAW_WB_ADS.',
+        'Проверить заголовки'));
+      adsErrors++;
+      emptySheets.push('RAW_WB_ADS (нет колонок)');
+      console.log('⚠️ RAW_WB_ADS: нет колонок (' + missingA.join(', ') + '), ' + sec_(tStep) + ' сек');
+    } else {
+      var aData = readSheetData_(adsSheet);
+      adsRows = aData.length;
+      for (var ai = 0; ai < aData.length; ai++) {
+        var aRow = aData[ai];
+        var aDate = parseDate_(aRow[aDateCol]);
+        if (!aDate) continue;
+
+        var aNmId = resolveNmId_(aRow, aNmCol, aVendorCol, aBarcodeCol, vendorToNm, barcodeToNm);
+        if (!aNmId) {
+          errorsBuffer.push(makeErrorRow_('RAW_WB_ADS', ai + 2, 'Не найден wb_nm_id', 'Проверить', '', '',
+            'Строка ' + (ai + 2) + ': не удалось связать рекламу с wb_nm_id.',
+            'Проверить данные или обновить SKU_MASTER'));
+          adsErrors++;
+          continue;
+        }
+
+        var aKey = aDate + '|' + aNmId;
+        var spend = Number(aRow[aSpendCol]) || 0;
+        if (!adsMap[aKey]) adsMap[aKey] = 0;
+        adsMap[aKey] += Math.abs(spend);
+      }
+      console.log('✅ RAW_WB_ADS: ' + adsRows + ' строк, ' + Object.keys(adsMap).length + ' ключей, ошибок: ' + adsErrors + ', ' + sec_(tStep) + ' сек');
+    }
+  }
+
+  // ══════════════════════════════════════
+  // 5. ЧИТАЕМ RAW_WB_STOCKS → stock_qty
+  // ══════════════════════════════════════
+
+  tStep = Date.now();
+  var stocksMap = {};
+  var stockRows = 0;
+  var stockErrors = 0;
+
+  var stockSheet = ss.getSheetByName('RAW_WB_STOCKS');
+  if (!stockSheet || stockSheet.getLastRow() < 2) {
+    emptySheets.push('RAW_WB_STOCKS');
+    console.log('⚠️ RAW_WB_STOCKS: пустой или не найден, ' + sec_(tStep) + ' сек');
+  } else {
+    var stHeaders = getHeaderMap_(stockSheet);
+    var stDateCol = findCol_(stHeaders, ['snapshot_date', 'date', 'stock_date', 'last_change_date', 'lastchangedate']);
+    var stNmCol = findCol_(stHeaders, ['wb_nm_id', 'nmid', 'nm_id']);
+    var stVendorCol = findCol_(stHeaders, ['wb_vendor_code', 'vendor_code', 'vendorcode', 'supplierarticle']);
+    var stBarcodeCol = findCol_(stHeaders, ['barcode', 'barcodes']);
+    var stQtyCol = findCol_(stHeaders, ['quantity_total', 'quantity', 'quantityfull', 'stock_qty', 'qty', 'stocks']);
+
+    if (stQtyCol === -1) {
+      errorsBuffer.push(makeErrorRow_('RAW_WB_STOCKS', 1, 'Не найдена колонка', 'Проверить', '', '',
+        'Колонка остатка не найдена в RAW_WB_STOCKS.',
+        'Проверить заголовки'));
+      stockErrors++;
+      emptySheets.push('RAW_WB_STOCKS (нет колонки)');
+      console.log('⚠️ RAW_WB_STOCKS: нет колонки остатка, ' + sec_(tStep) + ' сек');
+    } else {
+      var stData = readSheetData_(stockSheet);
+      stockRows = stData.length;
+      var today = formatDate_(new Date());
+
+      for (var sti = 0; sti < stData.length; sti++) {
+        var stRow = stData[sti];
+
+        var stDate = stDateCol >= 0 ? parseDate_(stRow[stDateCol]) : '';
+        if (!stDate) stDate = today;
+
+        var stNmId = resolveNmId_(stRow, stNmCol, stVendorCol, stBarcodeCol, vendorToNm, barcodeToNm);
+        if (!stNmId) {
+          errorsBuffer.push(makeErrorRow_('RAW_WB_STOCKS', sti + 2, 'Не найден wb_nm_id', 'Проверить', '', '',
+            'Строка ' + (sti + 2) + ': не удалось связать остаток с wb_nm_id.',
+            'Проверить данные или обновить SKU_MASTER'));
+          stockErrors++;
+          continue;
+        }
+
+        var stKey = stDate + '|' + stNmId;
+        var stQty = Number(stRow[stQtyCol]) || 0;
+        if (!stocksMap[stKey]) stocksMap[stKey] = 0;
+        stocksMap[stKey] += stQty;
+      }
+      console.log('✅ RAW_WB_STOCKS: ' + stockRows + ' строк, ' + Object.keys(stocksMap).length + ' ключей, ошибок: ' + stockErrors + ', ' + sec_(tStep) + ' сек');
+    }
+  }
+
+  // ══════════════════════════════════════
+  // 6. СОБИРАЕМ ИТОГОВЫЙ МАССИВ
+  // ══════════════════════════════════════
+
+  tStep = Date.now();
+
+  var allKeys = {};
+  var maps = [ordersMap, salesMap, returnsMap, grossRevMap, retAmtMap, adsMap, stocksMap];
+  for (var mi = 0; mi < maps.length; mi++) {
+    var mapKeys = Object.keys(maps[mi]);
+    for (var mk = 0; mk < mapKeys.length; mk++) {
+      allKeys[mapKeys[mk]] = true;
+    }
+  }
+
+  var keyList = Object.keys(allKeys);
+  keyList.sort();
+
+  var now = new Date();
+  var resultRows = [];
+  var uniqueDates = {};
+  var uniqueNm = {};
+
+  for (var ki = 0; ki < keyList.length; ki++) {
+    var k = keyList[ki];
+    var parts = k.split('|');
+    var kDate = parts[0];
+    var kNmId = parts[1];
+
+    uniqueDates[kDate] = true;
+    uniqueNm[kNmId] = true;
+
+    var nfo = skuLookup[kNmId] || {};
+    var salesQty = salesMap[k] || 0;
+    var returnsQty = returnsMap[k] || 0;
+    var grossRev = grossRevMap[k] || 0;
+    var retAmt = retAmtMap[k] || 0;
+
+    var sourceStatus = skuLookup[kNmId] ? 'OK' : 'Нет SKU_MASTER';
+
+    resultRows.push([
+      kDate,
+      kNmId,
+      nfo.product_name || '',
+      nfo.internal_sku || '',
+      ordersMap[k] || 0,
+      salesQty,
+      returnsQty,
+      salesQty - returnsQty,
+      roundTwo_(grossRev),
+      roundTwo_(retAmt),
+      roundTwo_(grossRev - retAmt),
+      roundTwo_(adsMap[k] || 0),
+      stocksMap[k] || 0,
+      sourceStatus,
+      now
+    ]);
+  }
+
+  var datesCount = Object.keys(uniqueDates).length;
+  var nmCount = Object.keys(uniqueNm).length;
+
+  console.log('✅ Сборка массива: ' + resultRows.length + ' строк, ' + datesCount + ' дат, ' + nmCount + ' wb_nm_id, ' + sec_(tStep) + ' сек');
+
+  // ══════════════════════════════════════
+  // 7. ОЧИСТКА И ЗАПИСЬ CLEAN_WB_DAILY
+  // ══════════════════════════════════════
+
+  tStep = Date.now();
+
+  var cleanSheet = ss.getSheetByName('CLEAN_WB_DAILY');
+  if (!cleanSheet) {
+    console.log('❌ КРИТИЧНО: лист CLEAN_WB_DAILY не найден. Сборка остановлена.');
+    errorsBuffer.push(makeErrorRow_('CLEAN_WB_DAILY', 0, 'Не найден лист', 'Критично', '', '',
+      'Лист CLEAN_WB_DAILY не найден.',
+      'Создать лист CLEAN_WB_DAILY'));
+    flushErrors_(ss, errorsBuffer);
+    SpreadsheetApp.getUi().alert('❌ Ошибка', 'Лист CLEAN_WB_DAILY не найден.', SpreadsheetApp.getUi().ButtonSet.OK);
+    return;
+  }
+
+  // Заголовки
+  var cleanLastCol = cleanSheet.getLastColumn();
+  if (cleanLastCol < 1) {
+    cleanSheet.getRange(1, 1, 1, CLEAN_WB_HEADERS_.length).setValues([CLEAN_WB_HEADERS_]);
+  } else {
+    var existingHeaders = cleanSheet.getRange(1, 1, 1, cleanLastCol).getValues()[0];
+    var firstHeader = String(existingHeaders[0] || '').trim().toLowerCase();
+    if (firstHeader !== 'date') {
+      cleanSheet.getRange(1, 1, 1, CLEAN_WB_HEADERS_.length).setValues([CLEAN_WB_HEADERS_]);
+    }
+  }
+
+  // Очистка данных ниже заголовка — clearContent, не deleteRow
+  var cleanLastRow = cleanSheet.getLastRow();
+  if (cleanLastRow >= 2) {
+    cleanSheet.getRange(2, 1, cleanLastRow - 1, cleanSheet.getLastColumn()).clearContent();
+  }
+
+  console.log('  Очистка CLEAN_WB_DAILY: удалено ' + Math.max(0, cleanLastRow - 1) + ' старых строк, ' + sec_(tStep) + ' сек');
+
+  // Запись новых данных — пачкой через setValues
+  tStep = Date.now();
+  if (resultRows.length > 0) {
+    cleanSheet.getRange(2, 1, resultRows.length, CLEAN_WB_HEADERS_.length).setValues(resultRows);
+  }
+  SpreadsheetApp.flush();
+
+  console.log('  Запись CLEAN_WB_DAILY: ' + resultRows.length + ' строк, ' + sec_(tStep) + ' сек');
+
+  // ══════════════════════════════════════
+  // 8. ЗАПИСЬ ОШИБОК В ERRORS_CONTROL (ПАЧКОЙ)
+  // ══════════════════════════════════════
+
+  tStep = Date.now();
+  var errorsTotal = errorsBuffer.length;
+  flushErrors_(ss, errorsBuffer);
+  console.log('  Запись ERRORS_CONTROL: ' + errorsTotal + ' ошибок, ' + sec_(tStep) + ' сек');
+
+  // ══════════════════════════════════════
+  // 9. ЗАПИСЬ UPDATE_LOG
+  // ══════════════════════════════════════
+
+  tStep = Date.now();
+  writeUpdateLog_(ss, resultRows.length, errorsTotal, emptySheets, t0);
+  console.log('  Запись UPDATE_LOG: ок, ' + sec_(tStep) + ' сек');
+
+  // ══════════════════════════════════════
+  // 10. ФИНАЛЬНОЕ СООБЩЕНИЕ
+  // ══════════════════════════════════════
+
+  var elapsed = sec_(t0);
+
+  console.log('═══ buildCleanWbDaily() ЗАВЕРШЕНО: ' + resultRows.length + ' строк, ' +
+    datesCount + ' дат, ' + nmCount + ' SKU, ' + errorsTotal + ' ошибок, ' + elapsed + ' сек ═══');
+
+  // Единственный alert для пользователя
+  var msg = '📊 CLEAN_WB_DAILY собран\n\n' +
+    'Строк: ' + resultRows.length + '\n' +
+    'Дат: ' + datesCount + '\n' +
+    'SKU: ' + nmCount + '\n' +
+    'Ошибок: ' + errorsTotal + '\n' +
+    'Время: ' + elapsed + ' сек';
+
+  if (emptySheets.length > 0) {
+    msg += '\n\nПустые RAW: ' + emptySheets.join(', ');
+  }
+
+  SpreadsheetApp.getUi().alert('📊 CLEAN_WB_DAILY', msg, SpreadsheetApp.getUi().ButtonSet.OK);
+}
+
+
+// ═══════════════════════════════════════
+// ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ
+// ═══════════════════════════════════════
+
+/**
+ * Ищет первое совпадение среди вариантов названий колонок.
+ * Возвращает индекс (0-based) или -1.
+ */
+function findCol_(headerMap, variants) {
+  for (var i = 0; i < variants.length; i++) {
+    var v = variants[i].toLowerCase();
+    if (headerMap[v] !== undefined) {
+      return headerMap[v];
+    }
+  }
+  return -1;
+}
+
+
+/**
+ * Определяет wb_nm_id для строки RAW-данных.
+ * Сначала пробует прямую колонку nmId,
+ * потом через vendor_code, потом через barcode.
+ */
+function resolveNmId_(row, nmCol, vendorCol, barcodeCol, vendorToNm, barcodeToNm) {
+  if (nmCol >= 0) {
+    var direct = normalizeNmId_(row[nmCol]);
+    if (direct) return direct;
+  }
+  if (vendorCol >= 0) {
+    var vc = String(row[vendorCol] || '').trim().toUpperCase();
+    if (vc && vendorToNm[vc]) return vendorToNm[vc];
+  }
+  if (barcodeCol >= 0) {
+    var bc = String(row[barcodeCol] || '').trim();
+    if (bc && barcodeToNm[bc]) return barcodeToNm[bc];
+  }
+  return '';
+}
+
+
+/**
+ * Парсит дату из ячейки.
+ * Поддерживает: Date, YYYY-MM-DD, DD.MM.YYYY, MM/DD/YYYY, с временем.
+ * Возвращает строку "YYYY-MM-DD" или ''.
+ */
+function parseDate_(val) {
+  if (!val) return '';
+
+  if (val instanceof Date) {
+    if (isNaN(val.getTime())) return '';
+    return formatDate_(val);
+  }
+
+  var s = String(val).trim();
+  if (!s) return '';
+
+  s = s.split('T')[0].split(' ')[0];
+
+  var isoMatch = s.match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/);
+  if (isoMatch) {
+    return isoMatch[1] + '-' + pad2_(isoMatch[2]) + '-' + pad2_(isoMatch[3]);
+  }
+
+  var ruMatch = s.match(/^(\d{1,2})\.(\d{1,2})\.(\d{4})$/);
+  if (ruMatch) {
+    return ruMatch[3] + '-' + pad2_(ruMatch[2]) + '-' + pad2_(ruMatch[1]);
+  }
+
+  var usMatch = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+  if (usMatch) {
+    return usMatch[3] + '-' + pad2_(usMatch[1]) + '-' + pad2_(usMatch[2]);
+  }
+
+  var d = new Date(s);
+  if (!isNaN(d.getTime())) {
+    return formatDate_(d);
+  }
+
+  return '';
+}
+
+
+/** Форматирует Date → "YYYY-MM-DD". */
+function formatDate_(d) {
+  return d.getFullYear() + '-' + pad2_(d.getMonth() + 1) + '-' + pad2_(d.getDate());
+}
+
+
+/** Ведущий ноль. */
+function pad2_(n) {
+  var s = String(n);
+  return s.length < 2 ? '0' + s : s;
+}
+
+
+/** Округление до 2 знаков. */
+function roundTwo_(val) {
+  return Math.round((val || 0) * 100) / 100;
+}
+
+
+/** Секунды с момента tStart (Date.now() timestamp). */
+function sec_(tStart) {
+  return ((Date.now() - tStart) / 1000).toFixed(2);
+}
+
+
+/**
+ * Создаёт массив-строку ошибки для буфера (НЕ пишет в лист).
+ * Возвращает объект с данными ошибки.
+ */
+function makeErrorRow_(sourceSheet, sourceRow, errorType, severity, internalSku, wbNmId, message, action) {
+  return {
+    sourceSheet: sourceSheet,
+    sourceRow: sourceRow,
+    errorType: errorType,
+    severity: severity,
+    internalSku: internalSku,
+    wbNmId: wbNmId,
+    message: message,
+    action: action
+  };
+}
+
+
+/**
+ * Записывает все ошибки из буфера в ERRORS_CONTROL одной пачкой.
+ * Никаких appendRow() в цикле.
+ */
+function flushErrors_(ss, errorsBuffer) {
+  if (!errorsBuffer || errorsBuffer.length === 0) return;
+
+  var errSheet = ss.getSheetByName('ERRORS_CONTROL');
+  if (!errSheet) {
+    console.log('⚠️ Лист ERRORS_CONTROL не найден, ' + errorsBuffer.length + ' ошибок не записаны.');
+    return;
+  }
+
+  var errHeaders = getHeaderMap_(errSheet);
+  var lastCol = errSheet.getLastColumn();
+  if (lastCol < 1) {
+    console.log('⚠️ ERRORS_CONTROL пустой (нет заголовков), ошибки не записаны.');
+    return;
+  }
+
+  var batchRows = [];
+  var ts = new Date();
+
+  for (var i = 0; i < errorsBuffer.length; i++) {
+    var e = errorsBuffer[i];
+    var newRow = [];
+    for (var c = 0; c < lastCol; c++) {
+      newRow.push('');
+    }
+
+    var errorId = CLEAN_WB_SOURCE_ + '_' + ts.getTime() + '_' + i;
+
+    setIfExists_(newRow, errHeaders, 'error_id', errorId);
+    setIfExists_(newRow, errHeaders, 'detected_at', ts);
+    setIfExists_(newRow, errHeaders, 'source_sheet', e.sourceSheet);
+    setIfExists_(newRow, errHeaders, 'source_row', e.sourceRow || '');
+    setIfExists_(newRow, errHeaders, 'error_type', e.errorType);
+    setIfExists_(newRow, errHeaders, 'severity', e.severity);
+    setIfExists_(newRow, errHeaders, 'internal_sku', e.internalSku);
+    setIfExists_(newRow, errHeaders, 'wb_nm_id', e.wbNmId);
+    setIfExists_(newRow, errHeaders, 'error_message', e.message);
+    setIfExists_(newRow, errHeaders, 'message', e.message);
+    setIfExists_(newRow, errHeaders, 'recommended_action', e.action);
+    setIfExists_(newRow, errHeaders, 'comment', e.action);
+    setIfExists_(newRow, errHeaders, 'status', 'Новая');
+    setIfExists_(newRow, errHeaders, 'resolved', false);
+
+    batchRows.push(newRow);
+  }
+
+  // Запись пачкой
+  var startRow = errSheet.getLastRow() + 1;
+  errSheet.getRange(startRow, 1, batchRows.length, lastCol).setValues(batchRows);
+}
+
+
+/**
+ * Записывает результат в UPDATE_LOG.
+ * Не падает, если колонок нет — пишет в те, которые есть.
+ */
+function writeUpdateLog_(ss, rowsWritten, errCount, emptySheets, t0) {
+  var logSheet = ss.getSheetByName('UPDATE_LOG');
+  if (!logSheet) {
+    console.log('⚠️ Лист UPDATE_LOG не найден.');
+    return;
+  }
+
+  var logHeaders = getHeaderMap_(logSheet);
+  var lastCol = logSheet.getLastColumn();
+  if (lastCol < 1) {
+    logSheet.appendRow([new Date(), 'RAW_TO_CLEAN', 'Готово',
+      'Строк: ' + rowsWritten + ', ошибок: ' + errCount]);
+    return;
+  }
+
+  var elapsed = sec_(t0);
+  var status = errCount > 0 ? 'С ошибками' : 'Готово';
+  var comment = 'Строк: ' + rowsWritten + ', ошибок: ' + errCount +
+    ', время: ' + elapsed + ' сек';
+  if (emptySheets.length > 0) {
+    comment += '. Пустые: ' + emptySheets.join(', ');
+  }
+
+  var newRow = [];
+  for (var c = 0; c < lastCol; c++) {
+    newRow.push('');
+  }
+
+  setIfExists_(newRow, logHeaders, 'timestamp', new Date());
+  setIfExists_(newRow, logHeaders, 'date', new Date());
+  setIfExists_(newRow, logHeaders, 'datetime', new Date());
+  setIfExists_(newRow, logHeaders, 'updated_at', new Date());
+
+  setIfExists_(newRow, logHeaders, 'block', 'RAW_TO_CLEAN');
+  setIfExists_(newRow, logHeaders, 'module', 'RAW_TO_CLEAN');
+  setIfExists_(newRow, logHeaders, 'source', 'CLEAN_WB_DAILY');
+  setIfExists_(newRow, logHeaders, 'action', 'buildCleanWbDaily');
+
+  setIfExists_(newRow, logHeaders, 'status', status);
+  setIfExists_(newRow, logHeaders, 'result', status);
+
+  setIfExists_(newRow, logHeaders, 'rows_written', rowsWritten);
+  setIfExists_(newRow, logHeaders, 'rows', rowsWritten);
+  setIfExists_(newRow, logHeaders, 'rows_count', rowsWritten);
+
+  setIfExists_(newRow, logHeaders, 'errors', errCount);
+  setIfExists_(newRow, logHeaders, 'errors_count', errCount);
+
+  setIfExists_(newRow, logHeaders, 'comment', comment);
+  setIfExists_(newRow, logHeaders, 'message', comment);
+  setIfExists_(newRow, logHeaders, 'details', comment);
+
+  // Одна запись через appendRow — допустимо, это один вызов
+  logSheet.appendRow(newRow);
+}
+
+
+// ═══════════════════════════════════════
+// МЕНЮ
+// ═══════════════════════════════════════
+
+/**
+ * Добавляет пункт «📊 Собрать CLEAN_WB_DAILY» в меню.
+ * Вызывайте addCleanWbMenu() из вашей onOpen().
+ */
+function addCleanWbMenu() {
+  var ui = SpreadsheetApp.getUi();
+  ui.createMenu('📊 CLEAN')
+    .addItem('📊 Собрать CLEAN_WB_DAILY', 'buildCleanWbDaily')
+    .addToUi();
+}
