@@ -1,0 +1,571 @@
+/**
+ * ══════════════════════════════════════════════════════════════
+ * EVETIS WB — TestRawToClean.gs  v2.0
+ *
+ * Блок 2.0: Тестирование RAW → CLEAN.
+ *
+ * Функции:
+ *   1. resetCleanWbDailyStructure()  — сброс CLEAN_WB_DAILY к новой структуре
+ *   2. fillTestRawDataForClean()     — заполнение тестовых данных в RAW-листы
+ *   3. addTestRawToCleanMenu()       — меню 🧪 Тест RAW → CLEAN
+ *
+ * Все сообщения на русском.
+ * Не создаёт новые листы. Работает только с существующими.
+ *
+ * Зависимости:
+ *   - getHeaderMap_(sheet)
+ *   - readSheetData_(sheet)
+ *   - normalizeNmId_(val)
+ *   - setIfExists_(newRow, headerMap, colName, value)
+ *   - buildCleanWbDaily() (из CleanWbDaily.gs)
+ *
+ * ══════════════════════════════════════════════════════════════
+ */
+
+
+// ═══════════════════════════════════════
+// ЗАДАЧА 1: СБРОС СТРУКТУРЫ CLEAN_WB_DAILY
+// ═══════════════════════════════════════
+
+/**
+ * Новая простая структура CLEAN_WB_DAILY (15 колонок).
+ */
+var CLEAN_HEADERS_NEW_ = [
+  'date', 'wb_nm_id', 'product_name', 'internal_sku',
+  'orders_qty', 'sales_qty', 'returns_qty', 'net_sales_qty',
+  'gross_revenue', 'returns_amount', 'net_revenue',
+  'ads_spend', 'stock_qty', 'source_status', 'updated_at'
+];
+
+/**
+ * Сбрасывает лист CLEAN_WB_DAILY к новой простой структуре.
+ * Удаляет старые заголовки и данные, записывает новые 15 колонок.
+ */
+function resetCleanWbDailyStructure() {
+  console.log('═══ resetCleanWbDailyStructure() СТАРТ ═══');
+  var t0 = Date.now();
+
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var sheet = ss.getSheetByName('CLEAN_WB_DAILY');
+
+  if (!sheet) {
+    console.log('❌ Лист CLEAN_WB_DAILY не найден.');
+    SpreadsheetApp.getUi().alert('❌ Ошибка',
+      'Лист CLEAN_WB_DAILY не найден.',
+      SpreadsheetApp.getUi().ButtonSet.OK);
+    return;
+  }
+
+  // Запоминаем старое состояние
+  var oldCols = sheet.getLastColumn();
+  var oldRows = sheet.getLastRow();
+  console.log('  Старое состояние: ' + oldCols + ' колонок, ' + oldRows + ' строк');
+
+  // Полная очистка листа
+  sheet.clear();
+  sheet.clearConditionalFormatRules();
+
+  // Убираем лишние колонки, если было больше 15
+  var maxCols = sheet.getMaxColumns();
+  if (maxCols > CLEAN_HEADERS_NEW_.length) {
+    sheet.deleteColumns(CLEAN_HEADERS_NEW_.length + 1, maxCols - CLEAN_HEADERS_NEW_.length);
+  }
+
+  // Записываем новые заголовки
+  sheet.getRange(1, 1, 1, CLEAN_HEADERS_NEW_.length).setValues([CLEAN_HEADERS_NEW_]);
+
+  // Базовое форматирование заголовков
+  var headerRange = sheet.getRange(1, 1, 1, CLEAN_HEADERS_NEW_.length);
+  headerRange.setFontWeight('bold');
+  headerRange.setBackground('#1F2937');
+  headerRange.setFontColor('#FFFFFF');
+  headerRange.setFontSize(10);
+  headerRange.setFontFamily('Arial');
+  sheet.setFrozenRows(1);
+
+  // Ширина колонок
+  sheet.setColumnWidth(1, 100);  // date
+  sheet.setColumnWidth(2, 120);  // wb_nm_id
+  sheet.setColumnWidth(3, 200);  // product_name
+  sheet.setColumnWidth(4, 150);  // internal_sku
+  sheet.setColumnWidth(14, 120); // source_status
+  sheet.setColumnWidth(15, 140); // updated_at
+
+  SpreadsheetApp.flush();
+
+  console.log('✅ resetCleanWbDailyStructure() завершено: ' + CLEAN_HEADERS_NEW_.length +
+    ' колонок, ' + ((Date.now() - t0) / 1000).toFixed(2) + ' сек');
+
+  SpreadsheetApp.getUi().alert('✅ Структура CLEAN_WB_DAILY обновлена',
+    'Старое: ' + oldCols + ' колонок, ' + Math.max(0, oldRows - 1) + ' строк данных.\n' +
+    'Новое: ' + CLEAN_HEADERS_NEW_.length + ' колонок, 0 строк данных.\n\n' +
+    'Новые заголовки:\n' + CLEAN_HEADERS_NEW_.join(', '),
+    SpreadsheetApp.getUi().ButtonSet.OK);
+}
+
+
+// ═══════════════════════════════════════
+// ЗАДАЧА 2: ТЕСТОВЫЕ ДАННЫЕ В RAW-ЛИСТЫ
+// ═══════════════════════════════════════
+
+/**
+ * Заполняет тестовыми данными RAW_WB_ORDERS, RAW_WB_SALES_RETURNS,
+ * RAW_WB_ADS, RAW_WB_STOCKS.
+ *
+ * Берёт первые 3 активных товара из SKU_MASTER.
+ * Создаёт данные за последние 3 дня.
+ * Использует только существующие заголовки листов.
+ * Перед записью снимает data validation с диапазона записи.
+ */
+function fillTestRawDataForClean() {
+  console.log('═══ fillTestRawDataForClean() СТАРТ ═══');
+  var t0 = Date.now();
+
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+
+  // Счётчики для финального alert (объявляем наверху, чтобы были доступны)
+  var writtenOrders = 0;
+  var writtenSR = 0;
+  var writtenAds = 0;
+  var writtenStocks = 0;
+
+  // ── 1. Читаем SKU_MASTER: первые 3 активных товара ──
+
+  var masterSheet = ss.getSheetByName('SKU_MASTER');
+  if (!masterSheet) {
+    console.log('❌ SKU_MASTER не найден.');
+    SpreadsheetApp.getUi().alert('❌ Ошибка', 'Лист SKU_MASTER не найден.', SpreadsheetApp.getUi().ButtonSet.OK);
+    return;
+  }
+
+  var mHeaders = getHeaderMap_(masterSheet);
+  var mNmCol = findCol_(mHeaders, ['wb_nm_id', 'nm_id', 'nmid']);
+  var mSkuCol = findCol_(mHeaders, ['internal_sku']);
+  var mVendorCol = findCol_(mHeaders, ['wb_vendor_code', 'vendor_code', 'vendorcode', 'supplierarticle']);
+  var mBarcodeCol = findCol_(mHeaders, ['barcode', 'barcodes']);
+  var mNameCol = findCol_(mHeaders, ['product_name_short', 'product_name', 'name', 'product']);
+  var mActiveCol = findCol_(mHeaders, ['active', 'status']);
+
+  if (mNmCol === -1) {
+    console.log('❌ Колонка wb_nm_id не найдена в SKU_MASTER.');
+    SpreadsheetApp.getUi().alert('❌ Ошибка', 'В SKU_MASTER нет колонки wb_nm_id.', SpreadsheetApp.getUi().ButtonSet.OK);
+    return;
+  }
+
+  var masterData = readSheetData_(masterSheet);
+  var testSkus = [];
+
+  for (var i = 0; i < masterData.length && testSkus.length < 3; i++) {
+    var row = masterData[i];
+    var nmId = normalizeNmId_(row[mNmCol]);
+    if (!nmId) continue;
+
+    // Проверяем active (если есть колонка)
+    if (mActiveCol >= 0) {
+      var activeVal = String(row[mActiveCol] || '').trim().toUpperCase();
+      if (activeVal === 'FALSE' || activeVal === 'НЕТ' || activeVal === '0' || activeVal === 'INACTIVE') {
+        continue;
+      }
+    }
+
+    testSkus.push({
+      wb_nm_id: nmId,
+      internal_sku: mSkuCol >= 0 ? String(row[mSkuCol] || '') : '',
+      vendor_code: mVendorCol >= 0 ? String(row[mVendorCol] || '') : '',
+      barcode: mBarcodeCol >= 0 ? String(row[mBarcodeCol] || '') : '',
+      name: mNameCol >= 0 ? String(row[mNameCol] || '') : 'Тест-товар'
+    });
+  }
+
+  if (testSkus.length === 0) {
+    console.log('❌ В SKU_MASTER нет активных товаров с wb_nm_id.');
+    SpreadsheetApp.getUi().alert('❌ Ошибка',
+      'В SKU_MASTER нет активных товаров с wb_nm_id.\nДобавьте товары и повторите.',
+      SpreadsheetApp.getUi().ButtonSet.OK);
+    return;
+  }
+
+  console.log('  Найдено тестовых товаров: ' + testSkus.length);
+  for (var t = 0; t < testSkus.length; t++) {
+    console.log('    [' + (t + 1) + '] nm_id=' + testSkus[t].wb_nm_id +
+      ', sku=' + testSkus[t].internal_sku +
+      ', vendor=' + testSkus[t].vendor_code +
+      ', barcode=' + testSkus[t].barcode);
+  }
+
+  // ── 2. Генерируем даты: 3 дня назад, 2 дня назад, вчера ──
+
+  var dates = [];
+  for (var d = 3; d >= 1; d--) {
+    var dt = new Date();
+    dt.setDate(dt.getDate() - d);
+    dt.setHours(12, 0, 0, 0);
+    dates.push(dt);
+  }
+
+  console.log('  Даты: ' + dates.map(function(dd) { return formatDate_(dd); }).join(', '));
+
+  // ── 3. Тестовые параметры ──
+
+  var testPrices = [890, 1250, 650];
+  var testAdSpend = [150, 220, 90];
+  var testStocks = [45, 120, 78];
+
+  // ══════════════════════════════════════
+  // RAW_WB_ORDERS — ожидаем 9 строк
+  // ══════════════════════════════════════
+
+  var tStep = Date.now();
+  var ordersSheet = ss.getSheetByName('RAW_WB_ORDERS');
+  if (!ordersSheet) {
+    console.log('⚠️ RAW_WB_ORDERS: лист не найден, пропускаю.');
+  } else {
+    var oH = getHeaderMap_(ordersSheet);
+    var oLastCol = ordersSheet.getLastColumn();
+    console.log('  RAW_WB_ORDERS: найден, lastCol=' + oLastCol);
+    logFoundCols_(oH, ['load_id', 'order_dt', 'wb_nm_id', 'wb_vendor_code', 'barcode',
+      'internal_sku', 'price_with_disc', 'quantity', 'sku_match_status', 'processed_status']);
+
+    var orderRows = [];
+    for (var di = 0; di < dates.length; di++) {
+      for (var si = 0; si < testSkus.length; si++) {
+        var sku = testSkus[si];
+        var newRow = makeEmptyRow_(oLastCol);
+        setIfExists_(newRow, oH, 'load_id', 'TEST_LOAD_001');
+        setIfExists_(newRow, oH, 'loaded_at', new Date());
+        setIfExists_(newRow, oH, 'source_api', 'TEST');
+        setIfExists_(newRow, oH, 'order_dt', dates[di]);
+        setIfExists_(newRow, oH, 'wb_nm_id', sku.wb_nm_id);
+        setIfExists_(newRow, oH, 'wb_vendor_code', sku.vendor_code);
+        setIfExists_(newRow, oH, 'barcode', sku.barcode);
+        setIfExists_(newRow, oH, 'internal_sku', sku.internal_sku);
+        setIfExists_(newRow, oH, 'sku_match_status', 'OK');
+        setIfExists_(newRow, oH, 'price_with_disc', testPrices[si]);
+        setIfExists_(newRow, oH, 'quantity', si + di + 1);
+        setIfExists_(newRow, oH, 'is_cancel', false);
+        setIfExists_(newRow, oH, 'processed_status', 'OK');
+        orderRows.push(newRow);
+      }
+    }
+
+    writtenOrders = writeTestRows_(ordersSheet, orderRows, 'RAW_WB_ORDERS');
+    console.log('✅ RAW_WB_ORDERS: записано ' + writtenOrders + ' строк, ' +
+      ((Date.now() - tStep) / 1000).toFixed(2) + ' сек');
+  }
+
+  // ══════════════════════════════════════
+  // RAW_WB_SALES_RETURNS — ожидаем 10 строк
+  // ══════════════════════════════════════
+
+  tStep = Date.now();
+  var srSheet = ss.getSheetByName('RAW_WB_SALES_RETURNS');
+  if (!srSheet) {
+    console.log('⚠️ RAW_WB_SALES_RETURNS: лист не найден, пропускаю.');
+  } else {
+    var srH = getHeaderMap_(srSheet);
+    var srLastCol = srSheet.getLastColumn();
+    console.log('  RAW_WB_SALES_RETURNS: найден, lastCol=' + srLastCol);
+    logFoundCols_(srH, ['load_id', 'sale_dt', 'operation_type', 'is_return', 'wb_nm_id',
+      'wb_vendor_code', 'barcode', 'internal_sku', 'finished_price', 'for_pay',
+      'quantity', 'sku_match_status', 'processed_status']);
+
+    var srRows = [];
+    for (var di = 0; di < dates.length; di++) {
+      for (var si = 0; si < testSkus.length; si++) {
+        var sku = testSkus[si];
+        var price = testPrices[si];
+
+        // Продажа
+        var saleRow = makeEmptyRow_(srLastCol);
+        setIfExists_(saleRow, srH, 'load_id', 'TEST_LOAD_001');
+        setIfExists_(saleRow, srH, 'loaded_at', new Date());
+        setIfExists_(saleRow, srH, 'source_api', 'TEST');
+        setIfExists_(saleRow, srH, 'sale_dt', dates[di]);
+        setIfExists_(saleRow, srH, 'operation_type', 'Продажа');
+        setIfExists_(saleRow, srH, 'is_return', false);
+        setIfExists_(saleRow, srH, 'wb_nm_id', sku.wb_nm_id);
+        setIfExists_(saleRow, srH, 'wb_vendor_code', sku.vendor_code);
+        setIfExists_(saleRow, srH, 'barcode', sku.barcode);
+        setIfExists_(saleRow, srH, 'internal_sku', sku.internal_sku);
+        setIfExists_(saleRow, srH, 'sku_match_status', 'OK');
+        setIfExists_(saleRow, srH, 'finished_price', price);
+        setIfExists_(saleRow, srH, 'for_pay', Math.round(price * 0.78));
+        setIfExists_(saleRow, srH, 'quantity', si + 1);
+        setIfExists_(saleRow, srH, 'processed_status', 'OK');
+        srRows.push(saleRow);
+
+        // Возврат: только первый товар, последний день
+        if (si === 0 && di === dates.length - 1) {
+          var retRow = makeEmptyRow_(srLastCol);
+          setIfExists_(retRow, srH, 'load_id', 'TEST_LOAD_001');
+          setIfExists_(retRow, srH, 'loaded_at', new Date());
+          setIfExists_(retRow, srH, 'source_api', 'TEST');
+          setIfExists_(retRow, srH, 'sale_dt', dates[di]);
+          setIfExists_(retRow, srH, 'operation_type', 'Возврат');
+          setIfExists_(retRow, srH, 'is_return', true);
+          setIfExists_(retRow, srH, 'wb_nm_id', sku.wb_nm_id);
+          setIfExists_(retRow, srH, 'wb_vendor_code', sku.vendor_code);
+          setIfExists_(retRow, srH, 'barcode', sku.barcode);
+          setIfExists_(retRow, srH, 'internal_sku', sku.internal_sku);
+          setIfExists_(retRow, srH, 'sku_match_status', 'OK');
+          setIfExists_(retRow, srH, 'finished_price', price);
+          setIfExists_(retRow, srH, 'for_pay', Math.round(price * 0.78));
+          setIfExists_(retRow, srH, 'quantity', 1);
+          setIfExists_(retRow, srH, 'processed_status', 'OK');
+          srRows.push(retRow);
+        }
+      }
+    }
+
+    writtenSR = writeTestRows_(srSheet, srRows, 'RAW_WB_SALES_RETURNS');
+    console.log('✅ RAW_WB_SALES_RETURNS: записано ' + writtenSR + ' строк, ' +
+      ((Date.now() - tStep) / 1000).toFixed(2) + ' сек');
+  }
+
+  // ══════════════════════════════════════
+  // RAW_WB_ADS — ожидаем 9 строк
+  // ══════════════════════════════════════
+
+  tStep = Date.now();
+  var adsSheet = ss.getSheetByName('RAW_WB_ADS');
+  if (!adsSheet) {
+    console.log('⚠️ RAW_WB_ADS: лист не найден, пропускаю.');
+  } else {
+    var aH = getHeaderMap_(adsSheet);
+    var aLastCol = adsSheet.getLastColumn();
+    console.log('  RAW_WB_ADS: найден, lastCol=' + aLastCol);
+    logFoundCols_(aH, ['load_id', 'stat_date', 'wb_nm_id', 'wb_vendor_code', 'barcode',
+      'internal_sku', 'sku_match_status', 'spend', 'views', 'clicks', 'orders',
+      'orders_amount', 'processed_status']);
+
+    var adsRows = [];
+    for (var di = 0; di < dates.length; di++) {
+      for (var si = 0; si < testSkus.length; si++) {
+        var sku = testSkus[si];
+        var spendVal = testAdSpend[si] + di * 10;
+        var viewsVal = 500 + si * 200 + di * 100;
+        var clicksVal = 20 + si * 5 + di * 3;
+        var ordersVal = si + 1;
+
+        var adRow = makeEmptyRow_(aLastCol);
+        setIfExists_(adRow, aH, 'load_id', 'TEST_LOAD_001');
+        setIfExists_(adRow, aH, 'loaded_at', new Date());
+        setIfExists_(adRow, aH, 'source_api', 'TEST');
+        setIfExists_(adRow, aH, 'stat_date', dates[di]);
+        setIfExists_(adRow, aH, 'wb_nm_id', sku.wb_nm_id);
+        setIfExists_(adRow, aH, 'wb_vendor_code', sku.vendor_code);
+        setIfExists_(adRow, aH, 'barcode', sku.barcode);
+        setIfExists_(adRow, aH, 'internal_sku', sku.internal_sku);
+        setIfExists_(adRow, aH, 'sku_match_status', 'OK');
+        setIfExists_(adRow, aH, 'product_name', sku.name);
+        setIfExists_(adRow, aH, 'spend', spendVal);
+        setIfExists_(adRow, aH, 'views', viewsVal);
+        setIfExists_(adRow, aH, 'clicks', clicksVal);
+        setIfExists_(adRow, aH, 'ctr', clicksVal > 0 && viewsVal > 0 ? Math.round(clicksVal / viewsVal * 10000) / 100 : 0);
+        setIfExists_(adRow, aH, 'cpc', clicksVal > 0 ? Math.round(spendVal / clicksVal * 100) / 100 : 0);
+        setIfExists_(adRow, aH, 'orders', ordersVal);
+        setIfExists_(adRow, aH, 'orders_amount', ordersVal * testPrices[si]);
+        setIfExists_(adRow, aH, 'processed_status', 'OK');
+        adsRows.push(adRow);
+      }
+    }
+
+    writtenAds = writeTestRows_(adsSheet, adsRows, 'RAW_WB_ADS');
+    console.log('✅ RAW_WB_ADS: записано ' + writtenAds + ' строк, ' +
+      ((Date.now() - tStep) / 1000).toFixed(2) + ' сек');
+  }
+
+  // ══════════════════════════════════════
+  // RAW_WB_STOCKS — ожидаем 6 строк
+  // ══════════════════════════════════════
+
+  tStep = Date.now();
+  var stockSheet = ss.getSheetByName('RAW_WB_STOCKS');
+  if (!stockSheet) {
+    console.log('⚠️ RAW_WB_STOCKS: лист не найден, пропускаю.');
+  } else {
+    var stH = getHeaderMap_(stockSheet);
+    var stLastCol = stockSheet.getLastColumn();
+    console.log('  RAW_WB_STOCKS: найден, lastCol=' + stLastCol);
+    logFoundCols_(stH, ['load_id', 'snapshot_date', 'wb_nm_id', 'wb_vendor_code', 'barcode',
+      'title', 'internal_sku', 'sku_match_status', 'warehouse_name', 'region_name',
+      'quantity_total', 'quantity_available', 'processed_status']);
+
+    var stRows = [];
+    var warehouses = [
+      { name: 'Коледино', region: 'Московская область' },
+      { name: 'Подольск', region: 'Московская область' }
+    ];
+    var today = new Date();
+    today.setHours(12, 0, 0, 0);
+
+    for (var si = 0; si < testSkus.length; si++) {
+      var sku = testSkus[si];
+      for (var wi = 0; wi < warehouses.length; wi++) {
+        var qtyTotal = Math.round(testStocks[si] / 2);
+        var qtyAvail = qtyTotal - 2;
+
+        var stRow = makeEmptyRow_(stLastCol);
+        setIfExists_(stRow, stH, 'load_id', 'TEST_LOAD_001');
+        setIfExists_(stRow, stH, 'loaded_at', today);
+        setIfExists_(stRow, stH, 'source_api', 'TEST');
+        setIfExists_(stRow, stH, 'snapshot_date', today);
+        setIfExists_(stRow, stH, 'wb_nm_id', sku.wb_nm_id);
+        setIfExists_(stRow, stH, 'wb_vendor_code', sku.vendor_code);
+        setIfExists_(stRow, stH, 'barcode', sku.barcode);
+        setIfExists_(stRow, stH, 'title', sku.name);
+        setIfExists_(stRow, stH, 'internal_sku', sku.internal_sku);
+        setIfExists_(stRow, stH, 'sku_match_status', 'OK');
+        setIfExists_(stRow, stH, 'warehouse_name', warehouses[wi].name);
+        setIfExists_(stRow, stH, 'region_name', warehouses[wi].region);
+        setIfExists_(stRow, stH, 'quantity_total', qtyTotal);
+        setIfExists_(stRow, stH, 'quantity_available', qtyAvail);
+        setIfExists_(stRow, stH, 'processed_status', 'OK');
+        stRows.push(stRow);
+      }
+    }
+
+    writtenStocks = writeTestRows_(stockSheet, stRows, 'RAW_WB_STOCKS');
+    console.log('✅ RAW_WB_STOCKS: записано ' + writtenStocks + ' строк, ' +
+      ((Date.now() - tStep) / 1000).toFixed(2) + ' сек');
+  }
+
+  // ══════════════════════════════════════
+  // ФИНАЛ
+  // ══════════════════════════════════════
+
+  SpreadsheetApp.flush();
+
+  var totalRows = writtenOrders + writtenSR + writtenAds + writtenStocks;
+  var elapsed = ((Date.now() - t0) / 1000).toFixed(2);
+  console.log('═══ fillTestRawDataForClean() ЗАВЕРШЕНО: ' + totalRows + ' строк, ' + elapsed + ' сек ═══');
+
+  SpreadsheetApp.getUi().alert('✅ Тестовые данные записаны',
+    'Товаров из SKU_MASTER: ' + testSkus.length + '\n' +
+    'Дат: ' + dates.length + ' (' + formatDate_(dates[0]) + ' — ' + formatDate_(dates[dates.length - 1]) + ')\n\n' +
+    'RAW_WB_ORDERS: записано ' + writtenOrders + '\n' +
+    'RAW_WB_SALES_RETURNS: записано ' + writtenSR + '\n' +
+    'RAW_WB_ADS: записано ' + writtenAds + '\n' +
+    'RAW_WB_STOCKS: записано ' + writtenStocks + '\n\n' +
+    'Время: ' + elapsed + ' сек\n\n' +
+    'Теперь запустите «Собрать CLEAN_WB_DAILY».',
+    SpreadsheetApp.getUi().ButtonSet.OK);
+}
+
+
+// ═══════════════════════════════════════
+// ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ
+// ═══════════════════════════════════════
+
+/**
+ * Создаёт пустой массив заданной длины.
+ * Принимает число колонок (не объект sheet).
+ */
+function makeEmptyRow_(colCount) {
+  var row = [];
+  for (var i = 0; i < colCount; i++) {
+    row.push('');
+  }
+  return row;
+}
+
+
+/**
+ * Записывает тестовые строки в лист.
+ *
+ * Порядок:
+ *   1. Очищает данные ниже заголовка (clearContent).
+ *   2. Снимает data validation с диапазона записи.
+ *   3. Записывает строки пачкой через setValues().
+ *   4. flush().
+ *
+ * Возвращает количество записанных строк.
+ */
+function writeTestRows_(sheet, rows, sheetName) {
+  if (!rows || rows.length === 0) {
+    console.log('  ' + sheetName + ': нет строк для записи.');
+    return 0;
+  }
+
+  var lastCol = sheet.getLastColumn();
+  var lastRow = sheet.getLastRow();
+
+  // 1. Очищаем данные ниже заголовка
+  if (lastRow >= 2) {
+    sheet.getRange(2, 1, lastRow - 1, lastCol).clearContent();
+  }
+
+  // 2. Снимаем data validation с диапазона записи
+  var writeRange = sheet.getRange(2, 1, rows.length, lastCol);
+  try {
+    writeRange.clearDataValidations();
+  } catch (e) {
+    console.log('  ' + sheetName + ': не удалось снять validation: ' + e.message);
+  }
+
+  // 3. Записываем пачкой
+  try {
+    writeRange.setValues(rows);
+  } catch (e) {
+    console.log('❌ ' + sheetName + ': ошибка setValues(): ' + e.message);
+    console.log('  rows.length=' + rows.length + ', row[0].length=' + rows[0].length + ', lastCol=' + lastCol);
+    return 0;
+  }
+
+  // 4. flush
+  SpreadsheetApp.flush();
+
+  return rows.length;
+}
+
+
+/**
+ * Логирует, какие из нужных колонок найдены в headerMap.
+ */
+function logFoundCols_(headerMap, colNames) {
+  var found = [];
+  var missing = [];
+  for (var i = 0; i < colNames.length; i++) {
+    var name = colNames[i];
+    if (headerMap[name] !== undefined) {
+      found.push(name + '=' + headerMap[name]);
+    } else {
+      missing.push(name);
+    }
+  }
+  console.log('    Найдены: ' + found.join(', '));
+  if (missing.length > 0) {
+    console.log('    Не найдены: ' + missing.join(', '));
+  }
+}
+
+
+/**
+ * Очищает данные листа ниже заголовка (clearContent, не deleteRow).
+ */
+function clearSheetData_(sheet) {
+  var lastRow = sheet.getLastRow();
+  if (lastRow >= 2) {
+    sheet.getRange(2, 1, lastRow - 1, sheet.getLastColumn()).clearContent();
+  }
+}
+
+
+// ═══════════════════════════════════════
+// ЗАДАЧА 3: МЕНЮ
+// ═══════════════════════════════════════
+
+/**
+ * Добавляет меню 🧪 Тест RAW → CLEAN.
+ * Вызывайте addTestRawToCleanMenu() из вашей onOpen().
+ */
+function addTestRawToCleanMenu() {
+  var ui = SpreadsheetApp.getUi();
+  ui.createMenu('🧪 Тест RAW → CLEAN')
+    .addItem('🔄 Сбросить структуру CLEAN_WB_DAILY', 'resetCleanWbDailyStructure')
+    .addSeparator()
+    .addItem('📝 Заполнить тестовые RAW-данные', 'fillTestRawDataForClean')
+    .addSeparator()
+    .addItem('📊 Собрать CLEAN_WB_DAILY', 'buildCleanWbDaily')
+    .addToUi();
+}
