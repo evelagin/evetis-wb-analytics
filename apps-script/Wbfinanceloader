@@ -1,0 +1,1267 @@
+/**
+ * ══════════════════════════════════════════════════════════════
+ * EVETIS WB — WbFinanceLoader.gs  v1.0
+ *
+ * Единый загрузчик финансового отчёта WB (отчёт о реализации)
+ * в лист RAW_WB_FINANCE — по аналогии со Storage Loader.
+ *
+ * ГЛАВНАЯ КНОПКА:
+ *   💰 Обновить финансы WB → updateWbFinanceData()
+ *     1. API rolling 14 days (основной режим)
+ *     2. Drive Folder Loader (резервный — новые XLSX из папки)
+ *     3. Пересборка CLEAN_WB_DAILY
+ *     4. Сверка по ключевым суммам
+ *
+ * АРХИТЕКТУРА:
+ *   RAW_WB_FINANCE       — единый сырой слой финансов (НЕ создаётся заново)
+ *   IMPORT_LOG_FINANCE   — лог загрузок (создаётся этим модулем)
+ *
+ * ВАЖНО — НЕ ТРОГАЕТ И НЕ МЕНЯЕТ:
+ *   - buildMonthlyUnitReportV10(), ЮНИТ_*
+ *   - RAW_WB_STORAGE, RAW_WB_ADS
+ *   - Рабочую логику парсинга XLSX финансового отчёта:
+ *       normalizeWbFinanceRowsToRaw_(), convertXlsxToGoogleSheet_(),
+ *       detectHeaderRow_(), ensureRawFinanceCols_(), buildSkuIndex_(),
+ *       cleanupTempSheet_(), COL_MAPPING_, HEADER_SIGNALS_.
+ *     Этот модуль ВЫЗЫВАЕТ их, но не изменяет.
+ *   - Существующую функцию importWbFinanceReports_2026_05_18_24()
+ *     (её данные с префиксом load_id "DRIVE_XLSX_FINANCE_" не удаляются).
+ *
+ * ИДЕМПОТЕНТНОСТЬ (без дублей):
+ *   - Каждая строка получает row_hash по устойчивым идентификаторам
+ *     операции (rrd_id, srid, rid, shk_id, sticker_id, nm_id, даты,
+ *     supplier_oper_name, doc_type_name, quantity).
+ *   - Перед записью строится множество row_hash из ВСЕХ существующих
+ *     строк RAW_WB_FINANCE (включая данные старого импорта) → новые
+ *     строки с уже известным хэшем пропускаются.
+ *   - Дополнительно: перед записью удаляются только СВОИ прошлые строки
+ *     загрузчика за загружаемый период (по префиксу load_id), что не
+ *     затрагивает данные ручного импорта 18–24 мая.
+ *
+ * ЗАВИСИМОСТИ (из других файлов проекта):
+ *   getHeaderMap_(sheet), readSheetData_(sheet), findCol_(hMap, variants)
+ *   normalizeDateKey_(val), normalizeNmIdFinance_(val)
+ *   pad2_(n), sec_(tStart), roundTwo_(val)
+ *   convertXlsxToGoogleSheet_(fileId, fileName)        [WbFinanceImportFromDrive.gs]
+ *   detectHeaderRow_(values)                           [WbFinanceImportFromDrive.gs]
+ *   ensureRawFinanceCols_(rawSheet)                    [WbFinanceImportFromDrive.gs]
+ *   normalizeWbFinanceRowsToRaw_(...)                  [WbFinanceImportFromDrive.gs]
+ *   buildSkuIndex_(ss)                                 [WbFinanceImportFromDrive.gs]
+ *   cleanupTempSheet_(tempId)                          [WbFinanceImportFromDrive.gs]
+ *   buildCleanWbDailyWithFinance()                     [WbFinance.gs]
+ *   getScriptProperty_(key)  (опц., есть фолбэк)       [Config.gs]
+ *   getFinanceStorageFee_(ss, from, to) (опц.)         [WbStorageImport.gs]
+ * ══════════════════════════════════════════════════════════════
+ */
+
+
+// ═══════════════════════════════════════
+// НАСТРОЙКИ
+// ═══════════════════════════════════════
+
+/** ID папки Google Drive с XLSX-отчётами реализации WB (резервный режим). */
+var FINANCE_REPORTS_FOLDER_ID_ = '1pLgyjHvy4jB5GnaTwVkrMTuCsw2zyXOd';
+
+/** Лист лога загрузок. */
+var IMPORT_LOG_FINANCE_SHEET_NAME_ = 'IMPORT_LOG_FINANCE';
+
+/** WB Statistics API — отчёт о реализации (детализация по периоду). */
+var WB_FINANCE_API_BASE_ = 'https://statistics-api.wildberries.ru';
+var WB_FINANCE_API_PATH_ = '/api/v5/supplier/reportDetailByPeriod';
+
+/** Ключи токена в Script Properties (пробуются по порядку). */
+var WB_FINANCE_TOKEN_KEYS_ = ['WB_TOKEN_STATISTICS', 'WB_TOKEN_ANALYTICS'];
+
+/** Параметры API. */
+var WB_FINANCE_API_LIMIT_ = 100000;     // строк за один запрос (макс)
+var WB_FINANCE_API_MAX_PAGES_ = 12;     // защита от бесконечной пагинации
+var WB_FINANCE_API_PAGE_PAUSE_ = 21000; // пауза между страницами (rate limit ~1/мин)
+var WB_FINANCE_API_ROLLING_DAYS_ = 14;  // глубина ежедневного rolling-периода
+
+/** Источники (source_type) — пишутся в IMPORT_LOG_FINANCE. */
+var FINANCE_SOURCE_API_ = 'API';
+var FINANCE_SOURCE_DRIVE_ = 'DRIVE';
+
+/** Метка source_api в RAW для строк, загруженных через API. */
+var FINANCE_RAW_SOURCE_API_ = 'WB_API_REALIZATION';
+
+/** Префиксы load_id загрузчика (для безопасной идемпотентной очистки). */
+var FINANCE_LOADID_API_PREFIX_ = 'FIN_API_';
+var FINANCE_LOADID_DRIVE_PREFIX_ = 'FIN_DRIVE_';
+
+/** Порог сверки внутренней согласованности, ₽. */
+var FINANCE_RECON_THRESHOLD_ = 1;
+
+/** Имя листа XLSX финансового отчёта (резерв; реальный детектится автоматически). */
+var FINANCE_DRIVE_HEADER_AUTODETECT_ = true;
+
+
+// ═══════════════════════════════════════
+// МАППИНГ JSON API → RAW_WB_FINANCE
+// (ключ = поле ответа WB API, значение = колонка RAW, lowercase)
+// ═══════════════════════════════════════
+
+var FINANCE_API_FIELD_MAP_ = {
+  rrd_id:                    'rrd_id',
+  srid:                      'srid',
+  rid:                       'rid',
+  shk_id:                    'shk_id',
+  sticker_id:                'sticker_id',
+  realizationreport_id:      'report_id',
+  gi_id:                     'wb_operation_id',
+  doc_type_name:             'doc_type_name',
+  supplier_oper_name:        'supplier_oper_name',
+  order_dt:                  'order_dt',
+  sale_dt:                   'sale_dt',
+  rr_dt:                     'rr_dt',
+  create_dt:                 'create_dt',
+  nm_id:                     'wb_nm_id',
+  sa_name:                   'wb_vendor_code',
+  barcode:                   'barcode',
+  ts_name:                   'ts_name',
+  brand_name:                'brand_name',
+  subject_name:              'subject_name',
+  office_name:               'office_name',
+  warehouse_name:            'warehouse_name',
+  site_country:              'country_name',
+  retail_price:              'retail_price',
+  retail_amount:             'retail_amount',
+  retail_price_withdisc_rub: 'retail_price_withdisc_rub',
+  sale_percent:              'sale_percent',
+  commission_percent:        'commission_percent',
+  product_discount_for_report:'product_discount_for_report',
+  supplier_promo:            'supplier_promo',
+  ppvz_spp_prc:              'spp_percent',
+  quantity:                  'quantity',
+  ppvz_for_pay:              'for_pay',
+  ppvz_vw:                   'commission_amount',
+  ppvz_sales_commission:     'sales_commission',
+  delivery_rub:              'logistics_amount',
+  storage_fee:               'storage_fee',
+  deduction:                 'deduction',
+  penalty:                   'penalty',
+  acceptance:                'acceptance',
+  additional_payment:        'additional_payment',
+  acquiring_fee:             'acquiring_fee',
+  currency_name:             'currency'
+};
+
+
+// ═══════════════════════════════════════
+// IMPORT_LOG_FINANCE
+// ═══════════════════════════════════════
+
+var IMPORT_LOG_FINANCE_HEADERS_ = [
+  'load_id', 'loaded_at', 'source_type', 'period_from', 'period_to',
+  'file_id', 'file_name', 'task_id', 'rows_imported', 'sales_qty',
+  'gross_revenue', 'wb_for_pay', 'wb_logistics', 'wb_storage',
+  'wb_deductions', 'wb_promotion', 'wb_transit_delivery',
+  'wb_compensations', 'wb_after_expenses', 'status', 'error_message'
+];
+
+/**
+ * Создаёт лист IMPORT_LOG_FINANCE (если нет) с нужными колонками.
+ */
+function createImportLogFinanceSheet() {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var name = IMPORT_LOG_FINANCE_SHEET_NAME_;
+  var sheet = ss.getSheetByName(name);
+
+  if (sheet) {
+    var eh = sheet.getRange(1, 1, 1, Math.max(1, sheet.getLastColumn())).getValues()[0];
+    if (String(eh[0] || '').trim() === IMPORT_LOG_FINANCE_HEADERS_[0]) {
+      SpreadsheetApp.getUi().alert('✅ ' + name, 'Лист уже существует.',
+        SpreadsheetApp.getUi().ButtonSet.OK);
+      return;
+    }
+  } else {
+    sheet = ss.insertSheet(name);
+  }
+
+  var h = IMPORT_LOG_FINANCE_HEADERS_;
+  if (sheet.getMaxColumns() < h.length) {
+    sheet.insertColumnsAfter(sheet.getMaxColumns(), h.length - sheet.getMaxColumns());
+  }
+  sheet.getRange(1, 1, 1, h.length).setValues([h]);
+  sheet.getRange(1, 1, 1, h.length)
+    .setFontWeight('bold').setBackground('#1F2937').setFontColor('#FFFFFF')
+    .setFontSize(10).setFontFamily('Arial');
+
+  var w = [150, 150, 90, 100, 100, 200, 240, 120, 90, 80,
+           110, 110, 110, 100, 110, 100, 130, 120, 120, 70, 300];
+  for (var i = 0; i < w.length; i++) sheet.setColumnWidth(i + 1, w[i]);
+  sheet.setFrozenRows(1);
+  SpreadsheetApp.flush();
+
+  SpreadsheetApp.getUi().alert('✅ ' + name + ' создан',
+    'Лог готов (' + h.length + ' колонок).',
+    SpreadsheetApp.getUi().ButtonSet.OK);
+}
+
+/** Возвращает лист лога, создаёт при отсутствии (без UI). */
+function ensureImportLogFinanceSheet_(ss) {
+  var sheet = ss.getSheetByName(IMPORT_LOG_FINANCE_SHEET_NAME_);
+  if (sheet) {
+    var eh = sheet.getRange(1, 1, 1, Math.max(1, sheet.getLastColumn())).getValues()[0];
+    if (String(eh[0] || '').trim() === IMPORT_LOG_FINANCE_HEADERS_[0]) return sheet;
+  }
+  if (!sheet) sheet = ss.insertSheet(IMPORT_LOG_FINANCE_SHEET_NAME_);
+  var h = IMPORT_LOG_FINANCE_HEADERS_;
+  if (sheet.getMaxColumns() < h.length) {
+    sheet.insertColumnsAfter(sheet.getMaxColumns(), h.length - sheet.getMaxColumns());
+  }
+  sheet.getRange(1, 1, 1, h.length).setValues([h]);
+  sheet.getRange(1, 1, 1, h.length)
+    .setFontWeight('bold').setBackground('#1F2937').setFontColor('#FFFFFF');
+  sheet.setFrozenRows(1);
+  SpreadsheetApp.flush();
+  return sheet;
+}
+
+/** Пишет одну строку результата в IMPORT_LOG_FINANCE. */
+function writeFinanceLogEntry_(logSheet, r) {
+  var row = [
+    r.load_id, r.loaded_at, r.source_type, r.period_from, r.period_to,
+    r.file_id || '', r.file_name || '', r.task_id || '',
+    r.rows_imported || 0, r.sales_qty || 0,
+    r.gross_revenue || 0, r.wb_for_pay || 0, r.wb_logistics || 0, r.wb_storage || 0,
+    r.wb_deductions || 0, r.wb_promotion || 0, r.wb_transit_delivery || 0,
+    r.wb_compensations || 0, r.wb_after_expenses || 0,
+    r.status, r.error_message || ''
+  ];
+  var ir = logSheet.getLastRow() + 1; if (ir < 2) ir = 2;
+  logSheet.getRange(ir, 1, 1, row.length).setValues([row]);
+  SpreadsheetApp.flush();
+}
+
+
+// ═══════════════════════════════════════
+// ОБЩИЕ ХЕЛПЕРЫ
+// ═══════════════════════════════════════
+
+/** Безопасное чтение Script Property (есть фолбэк на PropertiesService). */
+function financeScriptProp_(key) {
+  try {
+    if (typeof getScriptProperty_ === 'function') {
+      var v = getScriptProperty_(key);
+      if (v) return v;
+    }
+  } catch (e) { /* падать нельзя */ }
+  try {
+    return PropertiesService.getScriptProperties().getProperty(key) || '';
+  } catch (e2) {
+    return '';
+  }
+}
+
+/** Возвращает {token, key} или null. */
+function getFinanceToken_() {
+  for (var i = 0; i < WB_FINANCE_TOKEN_KEYS_.length; i++) {
+    var t = financeScriptProp_(WB_FINANCE_TOKEN_KEYS_[i]);
+    if (t) return { token: t, key: WB_FINANCE_TOKEN_KEYS_[i] };
+  }
+  return null;
+}
+
+/** RAW_WB_FINANCE → лист (без создания: лист уже есть в книге). */
+function getRawFinanceSheet_(ss) {
+  return ss.getSheetByName('RAW_WB_FINANCE');
+}
+
+/** Строит rawHeaderMap {colNameLower → idx}. */
+function buildFinanceRawHeaderMap_(rawSheet, rawLastCol) {
+  var headers = rawSheet.getRange(1, 1, 1, rawLastCol).getValues()[0];
+  var map = {};
+  for (var i = 0; i < headers.length; i++) {
+    var k = String(headers[i] || '').trim().toLowerCase();
+    if (k) map[k] = i;
+  }
+  return map;
+}
+
+/** MD5-хэш строки → hex. */
+function financeMd5_(s) {
+  var bytes = Utilities.computeDigest(Utilities.DigestAlgorithm.MD5, String(s), Utilities.Charset.UTF_8);
+  var hex = '';
+  for (var i = 0; i < bytes.length; i++) {
+    var b = (bytes[i] + 256) % 256;
+    hex += (b < 16 ? '0' : '') + b.toString(16);
+  }
+  return hex;
+}
+
+/**
+ * row_hash по устойчивым идентификаторам операции из массива-строки RAW.
+ * Использует rawHeaderMap для доступа к колонкам.
+ */
+function computeFinanceRowHash_(rowArr, hMap) {
+  function g(name) {
+    var idx = hMap[name];
+    return idx === undefined ? '' : String(rowArr[idx] === undefined || rowArr[idx] === null ? '' : rowArr[idx]).trim();
+  }
+  var parts = [
+    g('rrd_id'),
+    g('srid'),
+    g('rid'),
+    g('shk_id'),
+    g('sticker_id'),
+    normalizeNmIdFinance_(g('wb_nm_id')),
+    normalizeDateKey_(g('sale_dt')),
+    normalizeDateKey_(g('rr_dt')),
+    g('supplier_oper_name'),
+    g('doc_type_name'),
+    g('quantity')
+  ];
+  return financeMd5_(parts.join('|'));
+}
+
+/** Множество row_hash всех существующих строк RAW_WB_FINANCE. */
+function buildExistingFinanceHashSet_(rawSheet, hMap) {
+  var set = {};
+  var lr = rawSheet.getLastRow();
+  if (lr < 2) return set;
+  var data = rawSheet.getRange(2, 1, lr - 1, rawSheet.getLastColumn()).getValues();
+  var rhCol = hMap['row_hash'];
+  for (var i = 0; i < data.length; i++) {
+    var h = rhCol !== undefined ? String(data[i][rhCol] || '').trim() : '';
+    if (!h) h = computeFinanceRowHash_(data[i], hMap);
+    if (h) set[h] = true;
+  }
+  return set;
+}
+
+/** min/max нормализованной даты по строкам (по sale_dt, иначе rr_dt). */
+function financeRowsDateRange_(rows, hMap) {
+  var saleCol = hMap['sale_dt'], rrCol = hMap['rr_dt'];
+  var min = null, max = null;
+  for (var i = 0; i < rows.length; i++) {
+    var dk = '';
+    if (saleCol !== undefined) dk = normalizeDateKey_(rows[i][saleCol]);
+    if (!dk && rrCol !== undefined) dk = normalizeDateKey_(rows[i][rrCol]);
+    if (!dk) continue;
+    if (!min || dk < min) min = dk;
+    if (!max || dk > max) max = dk;
+  }
+  return { from: min, to: max };
+}
+
+/** Дозаписывает строки в конец RAW_WB_FINANCE (без очистки чужих данных). */
+function appendFinanceRows_(rawSheet, rows, rawLastCol) {
+  if (!rows.length) return 0;
+  var ir = rawSheet.getLastRow() + 1; if (ir < 2) ir = 2;
+  if (rawSheet.getMaxColumns() < rawLastCol) {
+    rawSheet.insertColumnsAfter(rawSheet.getMaxColumns(), rawLastCol - rawSheet.getMaxColumns());
+  }
+  if (rawSheet.getMaxRows() < ir + rows.length - 1) {
+    rawSheet.insertRowsAfter(rawSheet.getMaxRows(), ir + rows.length - rawSheet.getMaxRows());
+  }
+  var range = rawSheet.getRange(ir, 1, rows.length, rawLastCol);
+  try { range.clearDataValidations(); } catch (e) { /* ok */ }
+  range.setValues(rows);
+  SpreadsheetApp.flush();
+  return rows.length;
+}
+
+/**
+ * Удаляет ТОЛЬКО строки этого загрузчика (по префиксу load_id)
+ * за период [dateFrom, dateTo]. Не трогает строки ручного импорта
+ * (префикс "DRIVE_XLSX_FINANCE_") и иные источники.
+ */
+function clearFinanceOwnPeriod_(rawSheet, hMap, dateFrom, dateTo, loadIdPrefix) {
+  var lr = rawSheet.getLastRow();
+  if (lr < 2) return 0;
+  var loadCol = hMap['load_id'];
+  var saleCol = hMap['sale_dt'];
+  var rrCol = hMap['rr_dt'];
+  if (loadCol === undefined) return 0;
+
+  var cc = rawSheet.getLastColumn();
+  var all = rawSheet.getRange(2, 1, lr - 1, cc).getValues();
+  var keep = [], del = 0;
+
+  for (var i = 0; i < all.length; i++) {
+    var lid = String(all[i][loadCol] || '');
+    var dk = '';
+    if (saleCol !== undefined) dk = normalizeDateKey_(all[i][saleCol]);
+    if (!dk && rrCol !== undefined) dk = normalizeDateKey_(all[i][rrCol]);
+
+    var isOwn = lid.indexOf(loadIdPrefix) === 0;
+    var inPeriod = dk && dk >= dateFrom && dk <= dateTo;
+
+    if (isOwn && inPeriod) { del++; } else { keep.push(all[i]); }
+  }
+
+  if (del === 0) return 0;
+  rawSheet.getRange(2, 1, lr - 1, cc).clearContent();
+  if (keep.length > 0) rawSheet.getRange(2, 1, keep.length, cc).setValues(keep);
+  SpreadsheetApp.flush();
+  return del;
+}
+
+
+// ═══════════════════════════════════════
+// АГРЕГАЦИЯ КЛЮЧЕВЫХ СУММ (для лога и сверки)
+// ═══════════════════════════════════════
+
+/**
+ * Считает ключевые финансовые суммы по массиву строк RAW.
+ * Логика классификации совпадает с verifyRawWbFinanceImport().
+ *
+ * @param {Array[]} rows — строки шириной RAW
+ * @param {Object} hMap — rawHeaderMap
+ * @return {Object} суммы
+ */
+function aggregateFinanceSums_(rows, hMap) {
+  var dtCol = hMap['doc_type_name'];
+  var opCol = hMap['supplier_oper_name'];
+  var qtyCol = hMap['quantity'];
+  var retailCol = hMap['retail_amount'];
+  var forPayCol = hMap['for_pay'];
+  var logCol = hMap['logistics_amount'];
+  var storCol = hMap['storage_fee'];
+  var deductCol = hMap['deduction'];
+  var penaltyCol = hMap['penalty'];
+  var addPayCol = hMap['additional_payment'];
+  var compCol = hMap['compensation_amount'];
+
+  function num(row, col) { return col === undefined ? 0 : (Number(row[col]) || 0); }
+  function str(row, col) { return col === undefined ? '' : String(row[col] || '').trim(); }
+
+  var salesQty = 0, gross = 0, forPay = 0, log = 0, stor = 0;
+  var deduct = 0, promo = 0, transit = 0, comp = 0;
+
+  for (var i = 0; i < rows.length; i++) {
+    var row = rows[i];
+    var dt = str(row, dtCol);
+    var op = str(row, opCol);
+    var opLow = op.toLowerCase();
+
+    var isSale = (dt === 'Продажа' && op === 'Продажа');
+    var isLog = opLow.indexOf('логистика') >= 0;
+    var isStor = opLow.indexOf('хранение') >= 0;
+    var isDeduct = opLow.indexOf('удержан') >= 0;
+    var isPromo = opLow.indexOf('продвижен') >= 0 || opLow.indexOf('реклам') >= 0;
+    var isLoyalty = opLow.indexOf('компенсация скидки') >= 0 || opLow.indexOf('лояльност') >= 0;
+    var isTransit = opLow.indexOf('возмещение издержек') >= 0;
+    var isPvz = opLow.indexOf('возмещение за выдачу') >= 0;
+
+    // Общий «к перечислению» по всем строкам (как сумма ppvz_for_pay)
+    forPay += num(row, forPayCol);
+
+    if (isSale) {
+      salesQty += Math.abs(num(row, qtyCol));
+      gross += Math.abs(num(row, retailCol));
+    }
+    if (isLog) log += Math.abs(num(row, logCol) || num(row, forPayCol));
+    if (isStor) stor += Math.abs(num(row, storCol) || num(row, forPayCol));
+    if (isDeduct) deduct += Math.abs(num(row, deductCol) || num(row, forPayCol));
+    if (isPromo) promo += Math.abs(num(row, deductCol) || num(row, forPayCol));
+    if (isTransit) transit += (num(row, addPayCol) || num(row, forPayCol));
+    if (isLoyalty) comp += (num(row, compCol) || num(row, addPayCol) || num(row, forPayCol));
+    if (isPvz) comp += (num(row, addPayCol) || num(row, forPayCol));
+  }
+
+  var afterExpenses = forPay - log - stor - deduct - promo + transit + comp;
+
+  return {
+    sales_qty: salesQty,
+    gross_revenue: roundTwo_(gross),
+    wb_for_pay: roundTwo_(forPay),
+    wb_logistics: roundTwo_(log),
+    wb_storage: roundTwo_(stor),
+    wb_deductions: roundTwo_(deduct),
+    wb_promotion: roundTwo_(promo),
+    wb_transit_delivery: roundTwo_(transit),
+    wb_compensations: roundTwo_(comp),
+    wb_after_expenses: roundTwo_(afterExpenses)
+  };
+}
+
+/** Читает строки RAW_WB_FINANCE за период [from,to] (по sale_dt/rr_dt). */
+function readFinanceRowsForPeriod_(rawSheet, hMap, dateFrom, dateTo) {
+  var lr = rawSheet.getLastRow();
+  if (lr < 2) return [];
+  var data = rawSheet.getRange(2, 1, lr - 1, rawSheet.getLastColumn()).getValues();
+  var saleCol = hMap['sale_dt'], rrCol = hMap['rr_dt'];
+  var out = [];
+  for (var i = 0; i < data.length; i++) {
+    var dk = '';
+    if (saleCol !== undefined) dk = normalizeDateKey_(data[i][saleCol]);
+    if (!dk && rrCol !== undefined) dk = normalizeDateKey_(data[i][rrCol]);
+    if (!dk) continue;
+    if (dateFrom && dk < dateFrom) continue;
+    if (dateTo && dk > dateTo) continue;
+    out.push(data[i]);
+  }
+  return out;
+}
+
+
+// ═══════════════════════════════════════
+// API LOADER
+// ═══════════════════════════════════════
+
+/**
+ * Нормализует JSON-строки ответа WB API → строки RAW_WB_FINANCE.
+ * Заполняет служебные поля, row_hash, raw_json.
+ *
+ * @return {Object} {rows, hashes:[...] }
+ */
+function normalizeFinanceApiRows_(apiData, hMap, rawLastCol, loadId, loadedAt, dateFrom, dateTo, taskId, skuIndex) {
+  var rows = [];
+  var apiKeys = Object.keys(FINANCE_API_FIELD_MAP_);
+
+  for (var i = 0; i < apiData.length; i++) {
+    var item = apiData[i];
+    var newRow = new Array(rawLastCol);
+    for (var c = 0; c < rawLastCol; c++) newRow[c] = '';
+
+    // Маппинг полей API → RAW
+    for (var k = 0; k < apiKeys.length; k++) {
+      var apiField = apiKeys[k];
+      var rawCol = FINANCE_API_FIELD_MAP_[apiField];
+      var idx = hMap[rawCol];
+      if (idx === undefined) continue;
+      var v = item[apiField];
+      if (v === undefined || v === null) continue;
+      newRow[idx] = v;
+    }
+
+    // operation_type_normalized = supplier_oper_name (как в XLSX-маппинге)
+    if (hMap['operation_type_normalized'] !== undefined && item.supplier_oper_name !== undefined) {
+      newRow[hMap['operation_type_normalized']] = item.supplier_oper_name;
+    }
+
+    // Служебные поля
+    if (hMap['load_id'] !== undefined) newRow[hMap['load_id']] = loadId;
+    if (hMap['loaded_at'] !== undefined) newRow[hMap['loaded_at']] = loadedAt;
+    if (hMap['source_api'] !== undefined) newRow[hMap['source_api']] = FINANCE_RAW_SOURCE_API_;
+    if (hMap['request_date_from'] !== undefined) newRow[hMap['request_date_from']] = dateFrom;
+    if (hMap['request_date_to'] !== undefined) newRow[hMap['request_date_to']] = dateTo;
+    if (hMap['report_period_from'] !== undefined) newRow[hMap['report_period_from']] = dateFrom;
+    if (hMap['report_period_to'] !== undefined) newRow[hMap['report_period_to']] = dateTo;
+    if (hMap['processed_status'] !== undefined) newRow[hMap['processed_status']] = 'raw';
+    if (hMap['raw_row_number'] !== undefined) newRow[hMap['raw_row_number']] = i + 1;
+
+    // period_month
+    if (hMap['period_month'] !== undefined) {
+      var dkPm = normalizeDateKey_(newRow[hMap['sale_dt']] || newRow[hMap['rr_dt']] || '');
+      newRow[hMap['period_month']] = dkPm ? dkPm.substring(0, 7) : '';
+    }
+
+    // Связка с SKU_MASTER (если индекс передан)
+    if (skuIndex) {
+      var nmId = hMap['wb_nm_id'] !== undefined ? normalizeNmIdFinance_(newRow[hMap['wb_nm_id']]) : '';
+      var matched = false;
+      if (nmId && skuIndex.byNm[nmId]) {
+        matched = true;
+        if (hMap['internal_sku'] !== undefined) newRow[hMap['internal_sku']] = skuIndex.byNm[nmId].sku || '';
+      }
+      if (!matched && hMap['barcode'] !== undefined) {
+        var bc = String(newRow[hMap['barcode']] || '').trim();
+        if (bc && skuIndex.byBarcode[bc]) {
+          matched = true;
+          var rNm = skuIndex.byBarcode[bc];
+          if (hMap['internal_sku'] !== undefined && skuIndex.byNm[rNm]) newRow[hMap['internal_sku']] = skuIndex.byNm[rNm].sku || '';
+        }
+      }
+      if (hMap['sku_match_status'] !== undefined) newRow[hMap['sku_match_status']] = matched ? 'matched' : 'not_found';
+    }
+
+    // raw_json
+    if (hMap['raw_json'] !== undefined) {
+      try { newRow[hMap['raw_json']] = JSON.stringify(item); }
+      catch (e) { newRow[hMap['raw_json']] = ''; }
+    }
+
+    // row_hash
+    var rh = computeFinanceRowHash_(newRow, hMap);
+    if (hMap['row_hash'] !== undefined) newRow[hMap['row_hash']] = rh;
+    newRow.__hash = rh; // временно для дедупа
+
+    rows.push(newRow);
+  }
+
+  return rows;
+}
+
+/**
+ * Тянет отчёт реализации из WB API за период (с пагинацией по rrdid).
+ * @return {Object} {ok, data, error, pages}
+ */
+function fetchFinanceApiData_(token, dateFrom, dateTo) {
+  var all = [];
+  var rrdid = 0;
+  var pages = 0;
+
+  while (pages < WB_FINANCE_API_MAX_PAGES_) {
+    pages++;
+    var url = WB_FINANCE_API_BASE_ + WB_FINANCE_API_PATH_ +
+      '?dateFrom=' + encodeURIComponent(dateFrom) +
+      '&dateTo=' + encodeURIComponent(dateTo) +
+      '&limit=' + WB_FINANCE_API_LIMIT_ +
+      '&rrdid=' + rrdid;
+
+    var resp = UrlFetchApp.fetch(url, {
+      method: 'get',
+      headers: { 'Authorization': token },
+      muteHttpExceptions: true
+    });
+
+    var code = resp.getResponseCode();
+    if (code === 429) {
+      // Rate limit — подождать и повторить эту же страницу
+      console.log('  API 429 (rate limit), пауза ' + (WB_FINANCE_API_PAGE_PAUSE_ / 1000) + ' сек...');
+      Utilities.sleep(WB_FINANCE_API_PAGE_PAUSE_);
+      pages--; // не считаем за страницу
+      continue;
+    }
+    if (code !== 200) {
+      return { ok: false, data: all, pages: pages,
+        error: 'HTTP ' + code + ': ' + resp.getContentText().substring(0, 200) };
+    }
+
+    var chunk;
+    try { chunk = JSON.parse(resp.getContentText()); }
+    catch (e) { return { ok: false, data: all, pages: pages, error: 'JSON parse: ' + e.message }; }
+
+    if (!chunk || chunk.length === 0) break;
+
+    for (var i = 0; i < chunk.length; i++) all.push(chunk[i]);
+    console.log('  Страница ' + pages + ': +' + chunk.length + ' строк (всего ' + all.length + ')');
+
+    // Следующий rrdid = rrd_id последней строки
+    var last = chunk[chunk.length - 1];
+    var lastId = Number(last.rrd_id || 0);
+    if (!lastId || lastId === rrdid) break; // нет продвижения — выходим
+    rrdid = lastId;
+
+    if (chunk.length < WB_FINANCE_API_LIMIT_) break; // последняя страница
+
+    Utilities.sleep(WB_FINANCE_API_PAGE_PAUSE_);
+  }
+
+  return { ok: true, data: all, pages: pages, error: '' };
+}
+
+/**
+ * Internal: импорт финансов через WB API. Без UI-алертов.
+ * @return {Object} result (поля IMPORT_LOG_FINANCE + флаги)
+ */
+function importWbFinanceFromApiInternal_(dateFrom, dateTo) {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var stamp = Utilities.formatDate(new Date(), 'Europe/Moscow', 'yyyyMMdd_HHmmss');
+
+  var result = {
+    load_id: FINANCE_LOADID_API_PREFIX_ + stamp,
+    loaded_at: Utilities.formatDate(new Date(), 'Europe/Moscow', 'yyyy-MM-dd HH:mm:ss'),
+    source_type: FINANCE_SOURCE_API_,
+    period_from: dateFrom, period_to: dateTo,
+    file_id: '', file_name: 'WB_API', task_id: '',
+    rows_imported: 0, sales_qty: 0, gross_revenue: 0,
+    wb_for_pay: 0, wb_logistics: 0, wb_storage: 0, wb_deductions: 0,
+    wb_promotion: 0, wb_transit_delivery: 0, wb_compensations: 0, wb_after_expenses: 0,
+    status: 'ERROR', error_message: '', skipped_dupes: 0
+  };
+
+  if (!dateFrom || !dateTo) { result.error_message = 'Не указаны dateFrom/dateTo'; return result; }
+
+  var rawSheet = getRawFinanceSheet_(ss);
+  if (!rawSheet) { result.error_message = 'Лист RAW_WB_FINANCE не найден'; return result; }
+
+  var tk = getFinanceToken_();
+  if (!tk) {
+    result.error_message = 'Нет токена WB. Задайте Script Property: ' + WB_FINANCE_TOKEN_KEYS_.join(' или ');
+    return result;
+  }
+  console.log('  API токен: ' + tk.key);
+
+  var logSheet = ensureImportLogFinanceSheet_(ss);
+
+  try {
+    // 1. Тянем данные
+    console.log('  API: запрос отчёта реализации ' + dateFrom + ' — ' + dateTo);
+    var fetched = fetchFinanceApiData_(tk.token, dateFrom, dateTo);
+    if (!fetched.ok) {
+      result.error_message = fetched.error;
+      writeFinanceLogEntry_(logSheet, result);
+      return result;
+    }
+    var apiData = fetched.data;
+    console.log('  API: получено ' + apiData.length + ' строк за ' + fetched.pages + ' страниц');
+
+    if (apiData.length === 0) {
+      result.status = 'OK';
+      result.error_message = 'Пустой отчёт за период';
+      writeFinanceLogEntry_(logSheet, result);
+      return result;
+    }
+
+    // 2. Нормализация
+    var rawLastCol = ensureRawFinanceCols_(rawSheet);
+    var hMap = buildFinanceRawHeaderMap_(rawSheet, rawLastCol);
+    var skuIndex = buildSkuIndex_(ss);
+
+    var rows = normalizeFinanceApiRows_(
+      apiData, hMap, rawLastCol, result.load_id, result.loaded_at,
+      dateFrom, dateTo, result.task_id, skuIndex
+    );
+
+    // 3. Удаляем СВОИ прошлые API-строки за период (идемпотентность загрузчика)
+    var cleared = clearFinanceOwnPeriod_(rawSheet, hMap, dateFrom, dateTo, FINANCE_LOADID_API_PREFIX_);
+    if (cleared > 0) console.log('  Очищено своих API-строк за период: ' + cleared);
+
+    // 4. Дедуп по row_hash против ВСЕХ существующих строк (вкл. ручной импорт)
+    var existing = buildExistingFinanceHashSet_(rawSheet, hMap);
+    var batchSeen = {};
+    var toWrite = [];
+    for (var i = 0; i < rows.length; i++) {
+      var h = rows[i].__hash;
+      if (existing[h] || batchSeen[h]) { result.skipped_dupes++; continue; }
+      batchSeen[h] = true;
+      delete rows[i].__hash; // не пишем служебное поле в лист
+      toWrite.push(rows[i]);
+    }
+    console.log('  К записи: ' + toWrite.length + ', пропущено дублей: ' + result.skipped_dupes);
+
+    // 5. Запись
+    appendFinanceRows_(rawSheet, toWrite, rawLastCol);
+
+    // 6. Суммы (по всем строкам периода в RAW — для корректной сверки)
+    var periodRows = readFinanceRowsForPeriod_(rawSheet, hMap, dateFrom, dateTo);
+    var sums = aggregateFinanceSums_(periodRows, hMap);
+
+    result.rows_imported = toWrite.length;
+    result.sales_qty = sums.sales_qty;
+    result.gross_revenue = sums.gross_revenue;
+    result.wb_for_pay = sums.wb_for_pay;
+    result.wb_logistics = sums.wb_logistics;
+    result.wb_storage = sums.wb_storage;
+    result.wb_deductions = sums.wb_deductions;
+    result.wb_promotion = sums.wb_promotion;
+    result.wb_transit_delivery = sums.wb_transit_delivery;
+    result.wb_compensations = sums.wb_compensations;
+    result.wb_after_expenses = sums.wb_after_expenses;
+    result.status = 'OK';
+
+    writeFinanceLogEntry_(logSheet, result);
+    return result;
+
+  } catch (e) {
+    result.error_message = e.message;
+    console.log('❌ API: ' + e.message + '\n' + (e.stack || ''));
+    writeFinanceLogEntry_(logSheet, result);
+    return result;
+  }
+}
+
+/** Public: импорт через API за указанный период (с UI-алертом). */
+function importWbFinanceFromApi(dateFrom, dateTo) {
+  var t0 = Date.now();
+  var ui = SpreadsheetApp.getUi();
+  var r = importWbFinanceFromApiInternal_(dateFrom, dateTo);
+
+  if (r.status === 'ERROR') {
+    ui.alert('❌ Ошибка API (финансы)', r.error_message, ui.ButtonSet.OK);
+    return r;
+  }
+
+  var msg = '💰 WB API — Финансы\n\n' +
+    'Период: ' + dateFrom + ' — ' + dateTo + '\n\n' +
+    'Новых строк: ' + r.rows_imported + '\n' +
+    'Пропущено дублей: ' + r.skipped_dupes + '\n\n' +
+    'Продажи (шт): ' + r.sales_qty + '\n' +
+    'Выручка (реализация): ' + r.gross_revenue + ' ₽\n' +
+    'К перечислению: ' + r.wb_for_pay + ' ₽\n' +
+    'Логистика: ' + r.wb_logistics + ' ₽\n' +
+    'Хранение: ' + r.wb_storage + ' ₽\n' +
+    'Удержания: ' + r.wb_deductions + ' ₽\n' +
+    'После расходов WB: ' + r.wb_after_expenses + ' ₽\n\n' +
+    (r.error_message ? 'Примечание: ' + r.error_message + '\n\n' : '') +
+    'Время: ' + sec_(t0) + ' сек';
+
+  ui.alert('💰 API импорт финансов', msg, ui.ButtonSet.OK);
+  return r;
+}
+
+/** Public: ежедневный rolling-период последних 14 дней. */
+function importWbFinanceFromApiRolling14Days() {
+  var range = financeRolling14Range_();
+  return importWbFinanceFromApi(range.from, range.to);
+}
+
+/** Возвращает {from,to} для rolling-периода (вчера минус N-1 дней … вчера). */
+function financeRolling14Range_() {
+  var yesterday = new Date(); yesterday.setDate(yesterday.getDate() - 1);
+  var start = new Date(yesterday); start.setDate(start.getDate() - (WB_FINANCE_API_ROLLING_DAYS_ - 1));
+  return {
+    from: Utilities.formatDate(start, 'Europe/Moscow', 'yyyy-MM-dd'),
+    to: Utilities.formatDate(yesterday, 'Europe/Moscow', 'yyyy-MM-dd')
+  };
+}
+
+
+// ═══════════════════════════════════════
+// DRIVE FOLDER LOADER (резервный режим)
+// Использует РАБОЧИЙ парсер normalizeWbFinanceRowsToRaw_ без изменений.
+// ═══════════════════════════════════════
+
+/**
+ * Собирает file_id уже успешно загруженных через Drive файлов из лога.
+ */
+function getFinanceProcessedFileIds_(logSheet) {
+  var res = {};
+  var lr = logSheet.getLastRow();
+  if (lr < 2) return res;
+  var data = logSheet.getRange(2, 1, lr - 1, IMPORT_LOG_FINANCE_HEADERS_.length).getValues();
+  // file_id = idx 5, status = idx 19
+  for (var r = 0; r < data.length; r++) {
+    var fid = String(data[r][5] || '').trim();
+    var st = String(data[r][19] || '').trim();
+    if (fid) res[fid] = st;
+  }
+  return res;
+}
+
+/**
+ * Обрабатывает один XLSX-файл через рабочий парсер.
+ * Не показывает UI-алертов. Возвращает {rows, fileName, error}.
+ */
+function processFinanceFileForLoader_(ss, fileId, rawHeaderMap, rawLastCol, skuIndex, loadId) {
+  var out = { rows: [], fileName: '', error: '' };
+
+  var fileName;
+  try { fileName = DriveApp.getFileById(fileId).getName(); }
+  catch (e) { out.error = 'Файл не найден: ' + e.message; return out; }
+  out.fileName = fileName;
+
+  var tempId = convertXlsxToGoogleSheet_(fileId, fileName);
+  if (!tempId) { out.error = 'Конвертация xlsx не удалась'; return out; }
+
+  try {
+    var tempSS = SpreadsheetApp.openById(tempId);
+    var tempSheet = tempSS.getSheets()[0];
+    var lastRow = tempSheet.getLastRow();
+    var lastCol = tempSheet.getLastColumn();
+    if (lastRow < 2 || lastCol < 2) {
+      cleanupTempSheet_(tempId);
+      out.error = 'Пустой лист: ' + lastRow + '×' + lastCol;
+      return out;
+    }
+
+    var allValues = tempSheet.getRange(1, 1, lastRow, lastCol).getValues();
+    var headerRowIdx = detectHeaderRow_(allValues);
+
+    var fileMeta = {
+      sourceReportPart: 'DRIVE_LOADER',
+      fileId: fileId,
+      fileName: fileName,
+      loadId: loadId  // префикс FIN_DRIVE_ задаётся снаружи
+    };
+
+    // ВЫЗОВ рабочего парсера БЕЗ ИЗМЕНЕНИЙ
+    var norm = normalizeWbFinanceRowsToRaw_(
+      allValues, headerRowIdx, rawHeaderMap, rawLastCol, skuIndex, fileMeta
+    );
+
+    cleanupTempSheet_(tempId);
+    out.rows = norm.rows;
+    return out;
+
+  } catch (e) {
+    cleanupTempSheet_(tempId);
+    out.error = e.message;
+    return out;
+  }
+}
+
+/**
+ * Internal: импорт новых XLSX из папки. Без UI.
+ * @return {Object} статистика
+ */
+function importDriveFinanceInternal_() {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var out = { status: 'ERROR', newFiles: 0, skippedFiles: 0, errorFiles: 0,
+    totalNewRows: 0, totalDupes: 0, results: [], folderName: '', fileCount: 0, error: '' };
+
+  if (!FINANCE_REPORTS_FOLDER_ID_ || FINANCE_REPORTS_FOLDER_ID_ === 'ВСТАВИТЬ_ID_ПАПКИ_С_ФИН_ОТЧЕТАМИ') {
+    out.error = 'Не задан FINANCE_REPORTS_FOLDER_ID_'; return out;
+  }
+
+  var rawSheet = getRawFinanceSheet_(ss);
+  if (!rawSheet) { out.error = 'Лист RAW_WB_FINANCE не найден'; return out; }
+  var logSheet = ensureImportLogFinanceSheet_(ss);
+
+  var folder;
+  try { folder = DriveApp.getFolderById(FINANCE_REPORTS_FOLDER_ID_); }
+  catch (e) { out.error = 'Папка не найдена: ' + e.message; return out; }
+  out.folderName = folder.getName();
+
+  // Собираем XLSX-файлы
+  var xlsxFiles = [];
+  var it1 = folder.getFilesByType('application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+  while (it1.hasNext()) { var f = it1.next(); xlsxFiles.push({ id: f.getId(), name: f.getName() }); }
+  var it2 = folder.getFilesByType('application/vnd.ms-excel');
+  while (it2.hasNext()) {
+    var f2 = it2.next(), dup = false;
+    for (var d = 0; d < xlsxFiles.length; d++) { if (xlsxFiles[d].id === f2.getId()) { dup = true; break; } }
+    if (!dup) xlsxFiles.push({ id: f2.getId(), name: f2.getName() });
+  }
+  out.fileCount = xlsxFiles.length;
+  if (xlsxFiles.length === 0) { out.status = 'OK'; out.error = 'Папка пуста'; return out; }
+
+  var processedIds = getFinanceProcessedFileIds_(logSheet);
+  var rawLastCol = ensureRawFinanceCols_(rawSheet);
+  var rawHeaderMap = buildFinanceRawHeaderMap_(rawSheet, rawLastCol);
+  var skuIndex = buildSkuIndex_(ss);
+
+  for (var fi = 0; fi < xlsxFiles.length; fi++) {
+    var xf = xlsxFiles[fi];
+    if (processedIds[xf.id] === 'OK') { out.skippedFiles++; continue; }
+
+    var stamp = Utilities.formatDate(new Date(), 'Europe/Moscow', 'yyyyMMdd_HHmmss');
+    var loadId = FINANCE_LOADID_DRIVE_PREFIX_ + stamp + '_' + fi;
+
+    var fres = processFinanceFileForLoader_(ss, xf.id, rawHeaderMap, rawLastCol, skuIndex, loadId);
+
+    var logRec = {
+      load_id: loadId,
+      loaded_at: Utilities.formatDate(new Date(), 'Europe/Moscow', 'yyyy-MM-dd HH:mm:ss'),
+      source_type: FINANCE_SOURCE_DRIVE_,
+      period_from: '', period_to: '',
+      file_id: xf.id, file_name: xf.name, task_id: '',
+      rows_imported: 0, sales_qty: 0, gross_revenue: 0,
+      wb_for_pay: 0, wb_logistics: 0, wb_storage: 0, wb_deductions: 0,
+      wb_promotion: 0, wb_transit_delivery: 0, wb_compensations: 0, wb_after_expenses: 0,
+      status: 'ERROR', error_message: ''
+    };
+
+    if (fres.error) {
+      logRec.error_message = fres.error;
+      writeFinanceLogEntry_(logSheet, logRec);
+      out.errorFiles++;
+      out.results.push({ ok: false, name: xf.name, error: fres.error });
+      continue;
+    }
+
+    var rows = fres.rows;
+    if (!rows.length) {
+      logRec.status = 'OK';
+      logRec.error_message = 'Нет строк после нормализации';
+      writeFinanceLogEntry_(logSheet, logRec);
+      out.results.push({ ok: true, name: xf.name, newRows: 0, dupes: 0 });
+      continue;
+    }
+
+    // Период из реальных дат файла → правим метаданные периода в своих строках
+    var range = financeRowsDateRange_(rows, rawHeaderMap);
+    logRec.period_from = range.from || '';
+    logRec.period_to = range.to || '';
+    fixFinanceRowsPeriodMeta_(rows, rawHeaderMap, range.from, range.to);
+
+    // row_hash для каждой строки + дедуп
+    var existing = buildExistingFinanceHashSet_(rawSheet, rawHeaderMap);
+    var batchSeen = {}, toWrite = [], dupes = 0;
+    var rhCol = rawHeaderMap['row_hash'];
+    for (var ri = 0; ri < rows.length; ri++) {
+      var h = computeFinanceRowHash_(rows[ri], rawHeaderMap);
+      if (rhCol !== undefined) rows[ri][rhCol] = h;
+      if (existing[h] || batchSeen[h]) { dupes++; continue; }
+      batchSeen[h] = true;
+      toWrite.push(rows[ri]);
+    }
+
+    appendFinanceRows_(rawSheet, toWrite, rawLastCol);
+
+    // Суммы по строкам этого файла
+    var sums = aggregateFinanceSums_(rows, rawHeaderMap);
+    logRec.rows_imported = toWrite.length;
+    logRec.sales_qty = sums.sales_qty;
+    logRec.gross_revenue = sums.gross_revenue;
+    logRec.wb_for_pay = sums.wb_for_pay;
+    logRec.wb_logistics = sums.wb_logistics;
+    logRec.wb_storage = sums.wb_storage;
+    logRec.wb_deductions = sums.wb_deductions;
+    logRec.wb_promotion = sums.wb_promotion;
+    logRec.wb_transit_delivery = sums.wb_transit_delivery;
+    logRec.wb_compensations = sums.wb_compensations;
+    logRec.wb_after_expenses = sums.wb_after_expenses;
+    logRec.status = 'OK';
+    writeFinanceLogEntry_(logSheet, logRec);
+
+    out.newFiles++;
+    out.totalNewRows += toWrite.length;
+    out.totalDupes += dupes;
+    out.results.push({ ok: true, name: xf.name, newRows: toWrite.length, dupes: dupes,
+      period: (range.from || '?') + '—' + (range.to || '?') });
+  }
+
+  out.status = out.errorFiles > 0 ? 'PARTIAL' : 'OK';
+  return out;
+}
+
+/**
+ * Перезаписывает метаданные периода (request_/report_period_from/to)
+ * в строках, произведённых рабочим парсером (он ставит туда IMPORT_PERIOD_).
+ * Меняем ТОЛЬКО свои строки-массивы в памяти — парсер не трогаем.
+ */
+function fixFinanceRowsPeriodMeta_(rows, hMap, from, to) {
+  var cols = ['request_date_from', 'report_period_from'];
+  var colsTo = ['request_date_to', 'report_period_to'];
+  for (var i = 0; i < rows.length; i++) {
+    for (var a = 0; a < cols.length; a++) {
+      var ci = hMap[cols[a]]; if (ci !== undefined && from) rows[i][ci] = from;
+    }
+    for (var b = 0; b < colsTo.length; b++) {
+      var cj = hMap[colsTo[b]]; if (cj !== undefined && to) rows[i][cj] = to;
+    }
+    // period_month по sale_dt/rr_dt
+    if (hMap['period_month'] !== undefined) {
+      var dk = '';
+      if (hMap['sale_dt'] !== undefined) dk = normalizeDateKey_(rows[i][hMap['sale_dt']]);
+      if (!dk && hMap['rr_dt'] !== undefined) dk = normalizeDateKey_(rows[i][hMap['rr_dt']]);
+      if (dk) rows[i][hMap['period_month']] = dk.substring(0, 7);
+    }
+  }
+}
+
+/** Public: импорт новых XLSX из папки (с UI-алертом). */
+function importNewWbFinanceReportsFromFolder() {
+  var t0 = Date.now();
+  var ui = SpreadsheetApp.getUi();
+  var out = importDriveFinanceInternal_();
+
+  if (out.error && out.status === 'ERROR') {
+    ui.alert('❌ Ошибка', out.error, ui.ButtonSet.OK);
+    return out;
+  }
+
+  var msg = '💰 Импорт финансов из папки\n\n' +
+    'Папка: ' + out.folderName + '\nФайлов: ' + out.fileCount + '\n\n' +
+    '✅ Новых файлов: ' + out.newFiles + '\n⏭️ Пропущено: ' + out.skippedFiles +
+    '\n❌ Ошибок: ' + out.errorFiles + '\n';
+  if (out.newFiles > 0) {
+    msg += '\nНовых строк: ' + out.totalNewRows + '\nПропущено дублей строк: ' + out.totalDupes + '\n';
+  }
+  for (var i = 0; i < out.results.length; i++) {
+    var r = out.results[i];
+    msg += '\n' + (r.ok ? '✅' : '❌') + ' ' + r.name +
+      (r.ok ? ' (' + (r.period || '') + ') → ' + r.newRows + ' строк' + (r.dupes ? ', дублей ' + r.dupes : '')
+            : '\n   ' + r.error);
+  }
+  msg += '\n\nВремя: ' + sec_(t0) + ' сек';
+  ui.alert('💰 Импорт финансов', msg, ui.ButtonSet.OK);
+  return out;
+}
+
+
+// ═══════════════════════════════════════
+// СВЕРКА
+// ═══════════════════════════════════════
+
+/**
+ * Сверка ключевых сумм за период:
+ *   - внутренняя согласованность after_expenses;
+ *   - storage_fee из RAW_WB_FINANCE vs RAW_WB_STORAGE (если доступно);
+ *   - распределение строк по источникам (API/DRIVE/ручной импорт).
+ *
+ * @param {string} dateFrom
+ * @param {string} dateTo
+ */
+function verifyFinanceReconciliation(dateFrom, dateTo) {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var ui = SpreadsheetApp.getUi();
+
+  if (!dateFrom || !dateTo) {
+    var rg = financeRolling14Range_();
+    dateFrom = dateFrom || rg.from;
+    dateTo = dateTo || rg.to;
+  }
+
+  var rawSheet = getRawFinanceSheet_(ss);
+  if (!rawSheet || rawSheet.getLastRow() < 2) {
+    ui.alert('⚠️', 'RAW_WB_FINANCE пуст.', ui.ButtonSet.OK);
+    return null;
+  }
+
+  var rawLastCol = rawSheet.getLastColumn();
+  var hMap = buildFinanceRawHeaderMap_(rawSheet, rawLastCol);
+  var periodRows = readFinanceRowsForPeriod_(rawSheet, hMap, dateFrom, dateTo);
+  var sums = aggregateFinanceSums_(periodRows, hMap);
+
+  // Внутренняя сверка after_expenses
+  var recomputed = roundTwo_(
+    sums.wb_for_pay - sums.wb_logistics - sums.wb_storage - sums.wb_deductions -
+    sums.wb_promotion + sums.wb_transit_delivery + sums.wb_compensations
+  );
+  var internalDelta = roundTwo_(recomputed - sums.wb_after_expenses);
+  var internalOk = Math.abs(internalDelta) <= FINANCE_RECON_THRESHOLD_;
+
+  // Сверка хранения с RAW_WB_STORAGE (если функция доступна)
+  var storageDeltaMsg = '';
+  try {
+    if (typeof getFinanceStorageFee_ === 'function') {
+      // getFinanceStorageFee_ берёт storage_fee из RAW_WB_FINANCE — это «эталон» из финансов
+      var finStorage = getFinanceStorageFee_(ss, dateFrom, dateTo);
+      storageDeltaMsg = '\n— Хранение (финансы) за период: ' + roundTwo_(finStorage) + ' ₽';
+    }
+  } catch (e) { /* опционально */ }
+
+  // Распределение по источникам
+  var loadCol = hMap['load_id'];
+  var srcCounts = { API: 0, DRIVE_loader: 0, manual: 0, other: 0 };
+  for (var i = 0; i < periodRows.length; i++) {
+    var lid = loadCol !== undefined ? String(periodRows[i][loadCol] || '') : '';
+    if (lid.indexOf(FINANCE_LOADID_API_PREFIX_) === 0) srcCounts.API++;
+    else if (lid.indexOf(FINANCE_LOADID_DRIVE_PREFIX_) === 0) srcCounts.DRIVE_loader++;
+    else if (lid.indexOf('DRIVE_XLSX_FINANCE_') === 0) srcCounts.manual++;
+    else srcCounts.other++;
+  }
+
+  var msg = '📊 Сверка финансов WB\n\n' +
+    'Период: ' + dateFrom + ' — ' + dateTo + '\n' +
+    'Строк в периоде: ' + periodRows.length + '\n\n' +
+    '── КЛЮЧЕВЫЕ СУММЫ ──\n' +
+    'Продажи (шт): ' + sums.sales_qty + '\n' +
+    'Выручка (реализация): ' + sums.gross_revenue + ' ₽\n' +
+    'К перечислению: ' + sums.wb_for_pay + ' ₽\n' +
+    'Логистика: ' + sums.wb_logistics + ' ₽\n' +
+    'Хранение: ' + sums.wb_storage + ' ₽\n' +
+    'Удержания: ' + sums.wb_deductions + ' ₽\n' +
+    'Продвижение/реклама: ' + sums.wb_promotion + ' ₽\n' +
+    'Возмещение издержек: ' + sums.wb_transit_delivery + ' ₽\n' +
+    'Компенсации: ' + sums.wb_compensations + ' ₽\n' +
+    'После расходов WB: ' + sums.wb_after_expenses + ' ₽' + storageDeltaMsg + '\n\n' +
+    '── ВНУТРЕННЯЯ СВЕРКА ──\n' +
+    'Пересчёт after_expenses: ' + recomputed + ' ₽\n' +
+    'Δ: ' + internalDelta + ' ₽ ' + (internalOk ? '✅' : '⚠️') + '\n\n' +
+    '── ИСТОЧНИКИ СТРОК ──\n' +
+    'API: ' + srcCounts.API + ', Drive-загрузчик: ' + srcCounts.DRIVE_loader +
+    ', Ручной импорт: ' + srcCounts.manual +
+    (srcCounts.other ? ', Прочее: ' + srcCounts.other : '');
+
+  ui.alert('📊 Сверка финансов', msg, ui.ButtonSet.OK);
+  return { sums: sums, internalDelta: internalDelta, internalOk: internalOk, srcCounts: srcCounts };
+}
+
+
+// ═══════════════════════════════════════
+// ГЛАВНАЯ КНОПКА: 💰 ОБНОВИТЬ ФИНАНСЫ WB
+// ═══════════════════════════════════════
+
+/**
+ * 💰 Обновить финансы WB
+ *   1. API rolling 14 дней (основной)
+ *   2. Drive Folder Loader (резервный — подхватывает новые XLSX)
+ *   3. Пересборка CLEAN_WB_DAILY (buildCleanWbDailyWithFinance)
+ *   4. Сверка по ключевым суммам
+ */
+function updateWbFinanceData() {
+  var t0 = Date.now();
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var ui = SpreadsheetApp.getUi();
+
+  console.log('═══ updateWbFinanceData() СТАРТ ═══');
+
+  var range = financeRolling14Range_();
+  var dateFrom = range.from, dateTo = range.to;
+
+  // ── 1. API rolling 14 days ──
+  console.log('  Шаг 1: API rolling 14 дней (' + dateFrom + ' — ' + dateTo + ')');
+  var apiResult = importWbFinanceFromApiInternal_(dateFrom, dateTo);
+  var apiOk = (apiResult.status === 'OK');
+  console.log('  API: ' + apiResult.status + ' (новых ' + apiResult.rows_imported +
+    ', дублей ' + apiResult.skipped_dupes + ')');
+
+  // ── 2. Drive Folder Loader (всегда — подхватывает прочие периоды/файлы) ──
+  console.log('  Шаг 2: Drive Folder Loader');
+  var driveResult = importDriveFinanceInternal_();
+  console.log('  Drive: ' + driveResult.status + ' (новых файлов ' + driveResult.newFiles +
+    ', новых строк ' + driveResult.totalNewRows + ')');
+
+  // ── 3. Пересборка CLEAN_WB_DAILY ──
+  var cleanOk = false, cleanErr = '';
+  try {
+    if (typeof buildCleanWbDailyWithFinance === 'function') {
+      console.log('  Шаг 3: пересборка CLEAN_WB_DAILY');
+      buildCleanWbDailyWithFinance();
+      cleanOk = true;
+    } else {
+      cleanErr = 'buildCleanWbDailyWithFinance() не найдена';
+    }
+  } catch (e) {
+    cleanErr = e.message;
+    console.log('  ⚠️ CLEAN: ' + e.message);
+  }
+
+  // ── 4. Сверка за период ──
+  var rawSheet = getRawFinanceSheet_(ss);
+  var sums = null;
+  if (rawSheet && rawSheet.getLastRow() >= 2) {
+    var hMap = buildFinanceRawHeaderMap_(rawSheet, rawSheet.getLastColumn());
+    var periodRows = readFinanceRowsForPeriod_(rawSheet, hMap, dateFrom, dateTo);
+    sums = aggregateFinanceSums_(periodRows, hMap);
+  }
+
+  // ── Итоговый алерт ──
+  var elapsed = sec_(t0);
+  var msg = '💰 Обновление финансов WB\n\n';
+
+  msg += '1️⃣ API (' + dateFrom + ' — ' + dateTo + '): ';
+  if (apiOk) {
+    msg += '✅\n   Новых строк: ' + apiResult.rows_imported +
+      ', дублей: ' + apiResult.skipped_dupes + '\n';
+    if (apiResult.error_message) msg += '   (' + apiResult.error_message + ')\n';
+  } else {
+    msg += '❌\n   ' + apiResult.error_message + '\n';
+  }
+
+  msg += '\n2️⃣ Drive Folder Loader: ';
+  if (driveResult.status === 'OK' || driveResult.status === 'PARTIAL') {
+    if (driveResult.newFiles > 0) {
+      msg += '✅ Новых файлов: ' + driveResult.newFiles + ', строк: ' + driveResult.totalNewRows + '\n';
+    } else {
+      msg += '✅ Новых файлов нет (пропущено: ' + driveResult.skippedFiles + ')\n';
+    }
+  } else {
+    msg += '⚠️ ' + (driveResult.error || driveResult.status) + '\n';
+  }
+
+  msg += '\n3️⃣ CLEAN_WB_DAILY: ' + (cleanOk ? '✅ пересобран' : '⚠️ ' + cleanErr) + '\n';
+
+  if (sums) {
+    msg += '\n── Суммы за период ' + dateFrom + '—' + dateTo + ' ──\n' +
+      'К перечислению: ' + sums.wb_for_pay + ' ₽\n' +
+      'Логистика: ' + sums.wb_logistics + ' ₽\n' +
+      'Хранение: ' + sums.wb_storage + ' ₽\n' +
+      'Удержания: ' + sums.wb_deductions + ' ₽\n' +
+      'После расходов WB: ' + sums.wb_after_expenses + ' ₽\n';
+  }
+
+  msg += '\nВремя: ' + elapsed + ' сек';
+
+  ui.alert('💰 Обновление финансов WB', msg, ui.ButtonSet.OK);
+  console.log('═══ updateWbFinanceData() ЗАВЕРШЕНО: ' + elapsed + ' сек ═══');
+}
+
+
+// ═══════════════════════════════════════
+// МЕНЮ
+// ═══════════════════════════════════════
+
+function verifyFinanceReconciliationMenu() {
+  var rg = financeRolling14Range_();
+  verifyFinanceReconciliation(rg.from, rg.to);
+}
+
+function addWbFinanceLoaderMenu() {
+  SpreadsheetApp.getUi().createMenu('💰 Финансы WB')
+    .addItem('💰 Обновить финансы WB', 'updateWbFinanceData')
+    .addSeparator()
+    .addItem('🌐 API rolling 14 дней', 'importWbFinanceFromApiRolling14Days')
+    .addItem('📂 Импорт новых файлов из папки', 'importNewWbFinanceReportsFromFolder')
+    .addItem('📊 Проверить сверку (14 дней)', 'verifyFinanceReconciliationMenu')
+    .addSeparator()
+    .addItem('📋 Создать IMPORT_LOG_FINANCE', 'createImportLogFinanceSheet')
+    .addToUi();
+}
