@@ -1,0 +1,309 @@
+/**
+ * ══════════════════════════════════════════════════════════════
+ * EVETIS WB — CleanWbDailyPeriod.gs  v1.0
+ *
+ * Периодная сборка CLEAN_WB_DAILY для закрытия месяца.
+ *
+ * ПРОБЛЕМА:
+ *   В RAW_WB_FINANCE есть файлы, пересекающие апрель/май
+ *   (2026-04-27—2026-05-03, 2026-04-05—2026-05-03), из-за чего
+ *   buildCleanWbDailyWithFinance() собирает CLEAN по всему RAW
+ *   (36 дат, включая апрель). Для закрытия мая нужен CLEAN только
+ *   за 2026-05-01 — 2026-05-31.
+ *
+ * РЕШЕНИЕ (без переписывания рабочего билдера):
+ *   buildCleanWbDailyWithFinance() агрегирует строго по ключу
+ *   date|nmID — межсуточной связки нет. Поэтому периодная сборка =
+ *   «вызвать рабочий билдер как есть → обрезать готовый CLEAN_WB_DAILY
+ *   по периоду». Для daily-гранулярного листа это тождественно
+ *   фильтрации исходных строк по периоду, но НЕ трогает 2000-строчную
+ *   логику агрегации.
+ *
+ * НЕ ТРОГАЕТ И НЕ МЕНЯЕТ:
+ *   - buildCleanWbDailyWithFinance() (вызывает как есть, не удаляет)
+ *   - buildMonthlyUnitReportV10(), ЮНИТ_*
+ *   - рабочий парсер XLSX
+ *   - RAW_* листы
+ *
+ * ЗАВИСИМОСТИ:
+ *   buildCleanWbDailyWithFinance()                  [WbFinance.gs]
+ *   getRawFinanceSheet_, buildFinanceRawHeaderMap_,
+ *   readFinanceRowsForPeriod_                        [WbFinanceLoader.gs]
+ *   getHeaderMap_, findCol_, normalizeDateKey_, roundTwo_, pad2_, sec_
+ * ══════════════════════════════════════════════════════════════
+ */
+
+
+// ═══════════════════════════════════════
+// ОБРЕЗКА CLEAN ПО ПЕРИОДУ
+// ═══════════════════════════════════════
+
+/**
+ * Оставляет в CLEAN_WB_DAILY только строки с date в [from, to].
+ * Возвращает статистику обрезки.
+ */
+function clearCleanRowsOutsidePeriod_(cleanSheet, dateFrom, dateTo) {
+  var lr = cleanSheet.getLastRow();
+  var cc = cleanSheet.getLastColumn();
+  var res = { removed: 0, kept: 0, datesCount: 0, minDate: null, maxDate: null, error: '' };
+  if (lr < 2) return res;
+
+  var hMap = getHeaderMap_(cleanSheet);
+  var dateCol = findCol_(hMap, ['date']);
+  if (dateCol === -1) { res.error = 'нет колонки date'; return res; }
+
+  var all = cleanSheet.getRange(2, 1, lr - 1, cc).getValues();
+  var keep = [], dset = {};
+
+  for (var i = 0; i < all.length; i++) {
+    var dk = normalizeDateKey_(all[i][dateCol]);
+    if (dk && dk >= dateFrom && dk <= dateTo) {
+      keep.push(all[i]);
+      dset[dk] = true;
+      if (!res.minDate || dk < res.minDate) res.minDate = dk;
+      if (!res.maxDate || dk > res.maxDate) res.maxDate = dk;
+    } else {
+      res.removed++;
+    }
+  }
+
+  cleanSheet.getRange(2, 1, lr - 1, cc).clearContent();
+  if (keep.length > 0) cleanSheet.getRange(2, 1, keep.length, cc).setValues(keep);
+  SpreadsheetApp.flush();
+
+  res.kept = keep.length;
+  res.datesCount = Object.keys(dset).length;
+  return res;
+}
+
+
+// ═══════════════════════════════════════
+// КОНТРОЛЬНЫЕ СУММЫ ЗА ПЕРИОД (из RAW_WB_FINANCE)
+// ═══════════════════════════════════════
+
+/**
+ * Контроль за период: та же классификация, что и в aggregateFinanceSums_
+ * (формула after_expenses совпадает — штрафы в неё НЕ входят, чтобы
+ * сходиться с уже принятыми майскими числами). Дополнительно отдаёт
+ * wb_penalties и wb_loyalty_comp отдельными строками.
+ *
+ * @param {Array[]} rows — строки RAW шириной листа
+ * @param {Object} hMap — {colNameLower → idx}
+ */
+function computeFinanceControl_(rows, hMap) {
+  var dtCol = hMap['doc_type_name'], opCol = hMap['supplier_oper_name'],
+      qtyCol = hMap['quantity'], retailCol = hMap['retail_amount'],
+      forPayCol = hMap['for_pay'], logCol = hMap['logistics_amount'],
+      storCol = hMap['storage_fee'], deductCol = hMap['deduction'],
+      penaltyCol = hMap['penalty'], addPayCol = hMap['additional_payment'],
+      compCol = hMap['compensation_amount'];
+
+  function num(row, col) { return col === undefined ? 0 : (Number(row[col]) || 0); }
+  function str(row, col) { return col === undefined ? '' : String(row[col] || '').trim(); }
+
+  var salesQty = 0, gross = 0, forPay = 0, log = 0, stor = 0;
+  var deduct = 0, promo = 0, transit = 0, comp = 0, pen = 0, loyalty = 0;
+
+  for (var i = 0; i < rows.length; i++) {
+    var row = rows[i];
+    var dt = str(row, dtCol);
+    var op = str(row, opCol);
+    var opLow = op.toLowerCase();
+
+    var isSale = (dt === 'Продажа' && op === 'Продажа');
+    var isLog = opLow.indexOf('логистика') >= 0;
+    var isStor = opLow.indexOf('хранение') >= 0;
+    var isDeduct = opLow.indexOf('удержан') >= 0;
+    var isPromo = opLow.indexOf('продвижен') >= 0 || opLow.indexOf('реклам') >= 0;
+    var isPenalty = opLow.indexOf('штраф') >= 0;
+    var isLoyalty = opLow.indexOf('компенсация скидки') >= 0 || opLow.indexOf('лояльност') >= 0;
+    var isTransit = opLow.indexOf('возмещение издержек') >= 0;
+    var isPvz = opLow.indexOf('возмещение за выдачу') >= 0;
+
+    forPay += num(row, forPayCol);
+
+    if (isSale) {
+      salesQty += Math.abs(num(row, qtyCol));
+      gross += Math.abs(num(row, retailCol));
+    }
+    if (isLog) log += Math.abs(num(row, logCol) || num(row, forPayCol));
+    if (isStor) stor += Math.abs(num(row, storCol) || num(row, forPayCol));
+    if (isDeduct) deduct += Math.abs(num(row, deductCol) || num(row, forPayCol));
+    if (isPromo) promo += Math.abs(num(row, deductCol) || num(row, forPayCol));
+    if (isPenalty) pen += Math.abs(num(row, penaltyCol) || num(row, forPayCol));
+    if (isTransit) transit += (num(row, addPayCol) || num(row, forPayCol));
+    if (isLoyalty) { var l = (num(row, compCol) || num(row, addPayCol) || num(row, forPayCol)); comp += l; loyalty += l; }
+    if (isPvz) comp += (num(row, addPayCol) || num(row, forPayCol));
+  }
+
+  // ВАЖНО: формула совпадает с aggregateFinanceSums_ (без вычета штрафов),
+  // чтобы сходиться с уже принятыми майскими числами. Штрафы выводим отдельно.
+  var afterExpenses = forPay - log - stor - deduct - promo + transit + comp;
+
+  return {
+    sales_qty: salesQty,
+    gross_revenue: roundTwo_(gross),
+    wb_for_pay: roundTwo_(forPay),
+    wb_logistics: roundTwo_(log),
+    wb_storage: roundTwo_(stor),
+    wb_deductions: roundTwo_(deduct),
+    wb_penalties: roundTwo_(pen),
+    wb_loyalty_comp: roundTwo_(loyalty),
+    wb_compensations: roundTwo_(comp),
+    wb_after_expenses: roundTwo_(afterExpenses)
+  };
+}
+
+
+// ═══════════════════════════════════════
+// ПЕРИОДНАЯ СБОРКА (internal — без своего alert)
+// ═══════════════════════════════════════
+
+/**
+ * Собирает CLEAN_WB_DAILY рабочей логикой и обрезает по периоду.
+ * Без UI-алерта (его показывают публичные обёртки / интеграция).
+ *
+ * @return {Object} {ok, error, trim, control, dateFrom, dateTo}
+ */
+function buildCleanWbDailyWithFinanceForPeriodInternal_(dateFrom, dateTo) {
+  var t0 = Date.now();
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var out = { ok: false, error: '', trim: null, control: null, dateFrom: dateFrom, dateTo: dateTo };
+
+  if (!dateFrom || !dateTo) { out.error = 'Не указаны dateFrom/dateTo'; return out; }
+  if (typeof buildCleanWbDailyWithFinance !== 'function') {
+    out.error = 'buildCleanWbDailyWithFinance() не найдена'; return out;
+  }
+
+  console.log('═══ buildCleanWbDailyWithFinanceForPeriod(' + dateFrom + ' … ' + dateTo + ') ═══');
+
+  try {
+    // 1. Полная сборка рабочей логикой (CLEAN по всему RAW).
+    //    Внутри функция показывает СВОЙ alert по полному диапазону — он транзиентный.
+    buildCleanWbDailyWithFinance();
+
+    // 2. Обрезаем CLEAN_WB_DAILY до периода.
+    var cleanSheet = ss.getSheetByName('CLEAN_WB_DAILY');
+    if (!cleanSheet) { out.error = 'CLEAN_WB_DAILY не найден'; return out; }
+
+    var trim = clearCleanRowsOutsidePeriod_(cleanSheet, dateFrom, dateTo);
+    if (trim.error) { out.error = trim.error; return out; }
+    out.trim = trim;
+    console.log('  CLEAN обрезан до периода: оставлено ' + trim.kept + ', удалено ' + trim.removed +
+      ', дат ' + trim.datesCount + ' (' + (trim.minDate || '?') + ' … ' + (trim.maxDate || '?') + ')');
+
+    // 3. Контроль из RAW_WB_FINANCE за период (та же классификация).
+    var rawSheet = getRawFinanceSheet_(ss);
+    if (rawSheet && rawSheet.getLastRow() >= 2) {
+      var hMap = buildFinanceRawHeaderMap_(rawSheet, rawSheet.getLastColumn());
+      var rows = readFinanceRowsForPeriod_(rawSheet, hMap, dateFrom, dateTo);
+      out.control = computeFinanceControl_(rows, hMap);
+    }
+
+    // Лог контроля
+    if (out.control) {
+      var c = out.control;
+      console.log('  ── КОНТРОЛЬ CLEAN за ' + dateFrom + ' … ' + dateTo + ' ──');
+      console.log('    дат: ' + trim.datesCount + ' (' + (trim.minDate || '?') + ' … ' + (trim.maxDate || '?') + ')');
+      console.log('    sales_qty: ' + c.sales_qty);
+      console.log('    gross_revenue: ' + c.gross_revenue);
+      console.log('    wb_for_pay: ' + c.wb_for_pay);
+      console.log('    wb_logistics: ' + c.wb_logistics);
+      console.log('    wb_storage: ' + c.wb_storage);
+      console.log('    wb_deductions: ' + c.wb_deductions);
+      console.log('    wb_penalties: ' + c.wb_penalties);
+      console.log('    wb_loyalty_comp: ' + c.wb_loyalty_comp);
+      console.log('    wb_after_expenses: ' + c.wb_after_expenses);
+    }
+
+    out.ok = true;
+    console.log('═══ buildCleanWbDailyWithFinanceForPeriod ЗАВЕРШЕНО: ' + sec_(t0) + ' сек ═══');
+    return out;
+
+  } catch (e) {
+    out.error = e.message;
+    console.log('❌ ' + e.message + '\n' + (e.stack || ''));
+    return out;
+  }
+}
+
+
+// ═══════════════════════════════════════
+// ПУБЛИЧНАЯ ПЕРИОДНАЯ СБОРКА (с alert)
+// ═══════════════════════════════════════
+
+/**
+ * buildCleanWbDailyWithFinanceForPeriod(dateFrom, dateTo)
+ *
+ * Периодная сборка CLEAN_WB_DAILY с контрольным алертом.
+ * Использует рабочую логику buildCleanWbDailyWithFinance() и обрезает
+ * результат по периоду. buildCleanWbDailyWithFinance() остаётся для
+ * общей сборки и не изменяется.
+ */
+function buildCleanWbDailyWithFinanceForPeriod(dateFrom, dateTo) {
+  var ui = SpreadsheetApp.getUi();
+  var r = buildCleanWbDailyWithFinanceForPeriodInternal_(dateFrom, dateTo);
+
+  if (!r.ok) {
+    ui.alert('❌ Периодная сборка CLEAN', r.error, ui.ButtonSet.OK);
+    return r;
+  }
+
+  var c = r.control || {};
+  var t = r.trim || {};
+  var msg = '📊 CLEAN_WB_DAILY собран за период\n\n' +
+    'Период CLEAN: ' + dateFrom + ' — ' + dateTo + '\n' +
+    'Дат: ' + (t.datesCount || 0) + '\n' +
+    'min_date: ' + (t.minDate || '—') + '\n' +
+    'max_date: ' + (t.maxDate || '—') + '\n' +
+    'Строк в CLEAN: ' + (t.kept || 0) + ' (удалено вне периода: ' + (t.removed || 0) + ')\n\n' +
+    '── КОНТРОЛЬ (RAW_WB_FINANCE за период) ──\n' +
+    'sales_qty: ' + (c.sales_qty || 0) + '\n' +
+    'gross_revenue: ' + (c.gross_revenue || 0) + ' ₽\n' +
+    'wb_for_pay: ' + (c.wb_for_pay || 0) + ' ₽\n' +
+    'wb_logistics: ' + (c.wb_logistics || 0) + ' ₽\n' +
+    'wb_storage: ' + (c.wb_storage || 0) + ' ₽\n' +
+    'wb_deductions: ' + (c.wb_deductions || 0) + ' ₽\n' +
+    'wb_penalties: ' + (c.wb_penalties || 0) + ' ₽\n' +
+    'wb_loyalty_comp: ' + (c.wb_loyalty_comp || 0) + ' ₽\n' +
+    'wb_after_expenses: ' + (c.wb_after_expenses || 0) + ' ₽';
+
+  ui.alert('📊 Периодная сборка CLEAN', msg, ui.ButtonSet.OK);
+  return r;
+}
+
+/** Обёртка: периодная сборка CLEAN за май 2026. */
+function buildCleanWbDailyWithFinance_May2026() {
+  return buildCleanWbDailyWithFinanceForPeriod('2026-05-01', '2026-05-31');
+}
+
+
+// ═══════════════════════════════════════
+// ИНТЕГРАЦИЯ с updateWbFinanceMay2026FromDriveOnly()
+// ═══════════════════════════════════════
+
+/**
+ * Пересборка CLEAN только за май (без лишнего alert) — для вызова
+ * из updateWbFinanceMay2026FromDriveOnly() вместо общего rebuildCleanFinanceSafe_().
+ *
+ * ПАТЧ в WbFinanceMonthClose.gs → функция updateWbFinanceMay2026FromDriveOnly():
+ *   было:  var clean = rebuildCleanFinanceSafe_();
+ *   стало: var clean = rebuildCleanFinanceForMay_();
+ *
+ * @return {Object} {ok, error, control, trim}
+ */
+function rebuildCleanFinanceForMay_() {
+  var r = buildCleanWbDailyWithFinanceForPeriodInternal_('2026-05-01', '2026-05-31');
+  return { ok: r.ok, error: r.error, control: r.control, trim: r.trim };
+}
+
+
+// ═══════════════════════════════════════
+// МЕНЮ
+// ═══════════════════════════════════════
+
+function addCleanPeriodMenu() {
+  SpreadsheetApp.getUi().createMenu('📊 CLEAN по периоду')
+    .addItem('📊 Собрать CLEAN за май 2026', 'buildCleanWbDailyWithFinance_May2026')
+    .addToUi();
+}
