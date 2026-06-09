@@ -1,4 +1,4 @@
-# stabilization_plan.md
+# Stabilization Plan — EVETIS WB Analytics
 
 > План стабилизации проекта **EVETIS WB Analytics** после первичного аудита кода.
 > Опирается на `docs/current_code_map.md`. Документ **не переписывает архитектуру** — он фиксирует безопасный порядок работы до того, как проект пойдёт в развитие.
