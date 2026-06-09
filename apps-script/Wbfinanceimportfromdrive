@@ -1,0 +1,1412 @@
+/**
+ * ══════════════════════════════════════════════════════════════
+ * EVETIS WB — WbFinanceImportFromDrive.gs  v2.0
+ *
+ * Блок 5: Импорт ДВУХ финансовых отчетов WB из Google Drive (.xlsx).
+ *
+ * За неделю 18.05.2026–24.05.2026 — два файла:
+ *   1. Большой (РФ):   fileId = 1aygbsOGA6hyMQFnK1YYFBqKLuyK78YrE
+ *   2. Маленький (Вне РФ): fileId = 1nZQxoHzDM_tNahk3lTvFSP0ksGSc01W1
+ *
+ * Цепочка:
+ *   1. Конвертировать оба xlsx → временные Google Sheets
+ *   2. Прочитать и нормализовать каждый
+ *   3. Объединить строки
+ *   4. Спросить подтверждение ОДИН раз
+ *   5. Записать пачкой в RAW_WB_FINANCE
+ *   6. Удалить обе временные копии
+ *
+ * Требования:
+ *   - Advanced Drive Service подключен (Services → Drive API)
+ *
+ * Зависимости (из других файлов):
+ *   - getHeaderMap_(sheet), readSheetData_(sheet)
+ *   - normalizeNmIdFinance_(val), normalizeDateKey_(val)
+ *   - findCol_(headerMap, variants)
+ *   - pad2_(n), sec_(tStart), roundTwo_(val)
+ *
+ * ══════════════════════════════════════════════════════════════
+ */
+
+
+// ═══════════════════════════════════════
+// КОНСТАНТЫ
+// ═══════════════════════════════════════
+
+var DRIVE_FOLDER_ID_ = '1MqDj9GGt3BiYPfbIW_eZfZU02x67RS28';
+
+var IMPORT_PERIOD_ = {
+  from: '2026-05-18',
+  to:   '2026-05-24',
+  label: '18.05.2026–24.05.2026'
+};
+
+/** Два файла отчетов за неделю */
+var REPORT_FILES_ = [
+  {
+    fileId: '1aygbsOGA6hyMQFnK1YYFBqKLuyK78YrE',
+    label: 'РФ',
+    sourceReportPart: 'РФ'
+  },
+  {
+    fileId: '1nZQxoHzDM_tNahk3lTvFSP0ksGSc01W1',
+    label: 'Вне РФ',
+    sourceReportPart: 'Вне РФ'
+  }
+];
+
+var XLSX_MIME_ = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
+var GSHEET_MIME_ = 'application/vnd.google-apps.spreadsheet';
+
+/** Признаки строки заголовков */
+var HEADER_SIGNALS_ = [
+  'номер поставки', 'предмет', 'код номенклатуры', 'артикул поставщика',
+  'баркод', 'тип документа', 'обоснование для оплаты', 'дата продажи',
+  'дата заказа', 'кол-во', 'цена розничная', 'сумма продаж',
+  'комиссия', 'логистика', 'хранение', 'эквайринг', 'штраф',
+  'к перечислению', 'nm_id', 'barcode', 'supplier_oper_name',
+  'retail_amount', 'logistics_amount', 'вознаграждение', 'доставка',
+  'компенсация', 'удержания', 'приемка', 'srid', 'склад'
+];
+
+/**
+ * Полный маппинг колонок WB XLSX → RAW_WB_FINANCE.
+ * Ключ = колонка RAW_WB_FINANCE (lowercase).
+ * Значение = варианты из xlsx (lowercase).
+ */
+var COL_MAPPING_ = {
+  // Даты
+  rr_dt:        ['дата продажи', 'rr_dt', 'дата отчета'],
+  sale_dt:      ['дата продажи', 'sale_dt'],
+  order_dt:     ['дата заказа покупателем', 'дата заказа', 'order_dt'],
+
+  // Артикулы
+  wb_nm_id:     ['код номенклатуры', 'wb_nm_id', 'nm_id', 'nmid'],
+  wb_vendor_code: ['артикул поставщика', 'wb_vendor_code', 'vendorcode', 'supplierarticle'],
+  barcode:      ['баркод', 'barcode', 'штрихкод'],
+
+  // Описание товара
+  ts_name:      ['размер', 'ts_name'],
+  subject_name: ['предмет', 'subject_name'],
+  brand_name:   ['бренд', 'brand_name'],
+  sa_name:      ['название', 'sa_name'],
+  product_name: ['название', 'product_name'],
+
+  // Тип операции
+  doc_type_name:             ['тип документа', 'doc_type_name'],
+  supplier_oper_name:        ['обоснование для оплаты', 'supplier_oper_name'],
+  operation_type_normalized: ['обоснование для оплаты', 'operation_type_normalized'],
+
+  // Количество
+  quantity:     ['кол-во', 'количество', 'quantity'],
+
+  // Выручка
+  retail_price: ['цена розничная', 'retail_price'],
+  retail_amount: ['вайлдберриз реализовал товар (пр)', 'вайлдберриз реализовал товар',
+                  'retail_amount'],
+
+  // Комиссия
+  commission_percent: ['размер квв, %', 'размер квв', 'commission_percent'],
+  commission_amount:  ['вознаграждение вайлдберриз (вв), без ндс', 'вознаграждение вайлдберриз',
+                       'вознаграждение wb', 'commission_amount', 'commission'],
+
+  // Эквайринг
+  acquiring_fee: ['компенсация платёжных услуг', 'компенсация платежных услуг',
+                  'комиссия за интеграцию платёжных сервисов', 'комиссия за интеграцию платежных сервисов',
+                  'acquiring_fee', 'эквайринг'],
+
+  // ── К перечислению ──
+  // ВАЖНО: RAW_WB_FINANCE содержит колонку "for_pay" (не ppvz_for_pay).
+  // Старый ключ ppvz_for_pay не совпадал с колонкой RAW, данные терялись.
+  for_pay:      ['к перечислению продавцу за реализованный товар', 'к перечислению продавцу',
+                 'к перечислению', 'for_pay', 'ppvz_for_pay', 'сумма к перечислению'],
+
+  // ── Логистика ──
+  // ВАЖНО: RAW_WB_FINANCE содержит колонку "logistics_amount" (не delivery_rub).
+  delivery_count:  ['количество доставок', 'delivery_count'],
+  return_count:    ['количество возврата', 'return_count'],
+  logistics_amount: ['услуги по доставке товара покупателю', 'услуги по доставке товара',
+                     'логистика', 'доставка', 'logistics_amount', 'delivery_rub'],
+
+  // Штрафы и удержания
+  penalty:      ['общая сумма штрафов', 'штраф', 'штрафы', 'penalty'],
+  storage_fee:  ['хранение', 'storage_fee'],
+  deduction:    ['удержания', 'deduction'],
+  // ВАЖНО: RAW_WB_FINANCE содержит колонку "acceptance" (не acceptance_fee).
+  acceptance:   ['операции на приемке', 'приемка', 'acceptance', 'acceptance_fee'],
+
+  // ── Дополнительные выплаты / компенсации ──
+  // WB xlsx: 'Дополнительная оплата' — сюда WB пишет суммы
+  // для строк типа 'Компенсация скидки по программе лояльности',
+  // 'Возмещение за выдачу и возврат товаров на ПВЗ',
+  // 'Возмещение издержек по перевозке'.
+  additional_payment:  ['дополнительная оплата', 'additional_payment', 'допплата'],
+  // НЕ добавлять 'компенсация' — это вызовет коллизию
+  // с 'компенсация платёжных услуг' (acquiring_fee) через partial match.
+  compensation_amount: ['compensation_amount'],
+
+  // Суммы продаж
+  sale_amount:       ['сумма продаж', 'sale_amount'],
+  return_amount_rub: ['сумма возврата', 'return_amount_rub'],
+
+  // Склад, страна, идентификаторы
+  warehouse_name: ['склад', 'warehouse_name'],
+  country_name:   ['страна', 'country_name'],
+  srid:           ['srid'],
+  shk_id:         ['шк', 'shk_id'],
+  sticker_id:     ['стикер мп', 'sticker_id']
+};
+
+/** Колонки, которые нужно автоматически добавить если отсутствуют */
+var ENSURE_RAW_COLS_ = [
+  'source_report_part',
+  'source_file_id',
+  'source_file_name'
+];
+
+
+// ═══════════════════════════════════════
+// 1. СПИСОК ФАЙЛОВ (ИСПРАВЛЕННЫЙ)
+// ═══════════════════════════════════════
+
+/**
+ * Показывает количество файлов в папке (toast) + первые 20 в console.log.
+ * Не выводит все 182 файла в alert.
+ */
+function listWbFinanceReportsInDrive() {
+  console.log('═══ listWbFinanceReportsInDrive() СТАРТ ═══');
+  var t0 = Date.now();
+
+  var folder;
+  try {
+    folder = DriveApp.getFolderById(DRIVE_FOLDER_ID_);
+  } catch (e) {
+    SpreadsheetApp.getUi().alert('❌ Ошибка',
+      'Не удалось открыть папку.\nID: ' + DRIVE_FOLDER_ID_ + '\n' + e.message,
+      SpreadsheetApp.getUi().ButtonSet.OK);
+    return;
+  }
+
+  var files = folder.getFiles();
+  var count = 0;
+  var xlsxCount = 0;
+  var xlsxFiles = [];
+
+  while (files.hasNext()) {
+    var f = files.next();
+    count++;
+    var name = f.getName();
+    var mime = f.getMimeType();
+
+    // Логируем только первые 20
+    if (count <= 20) {
+      console.log('  ' + count + '. ' + name + ' | ' + mime + ' | ' + Math.round(f.getSize() / 1024) + ' KB');
+    }
+
+    var isXlsx = (mime === XLSX_MIME_ || name.toLowerCase().endsWith('.xlsx'));
+    if (isXlsx) {
+      xlsxCount++;
+      if (xlsxFiles.length < 10) {
+        xlsxFiles.push(name);
+      }
+    }
+  }
+
+  if (count > 20) {
+    console.log('  ... и ещё ' + (count - 20) + ' файлов');
+  }
+
+  console.log('✅ Всего: ' + count + ', xlsx: ' + xlsxCount + ', ' + sec_(t0) + ' сек');
+
+  // Короткий alert
+  var msg = '📁 ' + folder.getName() + '\n\n' +
+    'Всего файлов: ' + count + '\n' +
+    'XLSX файлов: ' + xlsxCount + '\n';
+
+  if (xlsxFiles.length > 0) {
+    msg += '\nПоследние xlsx:\n';
+    for (var i = 0; i < xlsxFiles.length; i++) {
+      msg += '  • ' + xlsxFiles[i] + '\n';
+    }
+  }
+
+  msg += '\nПодробности — в Журнале выполнения (console.log).';
+
+  SpreadsheetApp.getUi().alert('📁 Файлы на Диске', msg, SpreadsheetApp.getUi().ButtonSet.OK);
+}
+
+
+// ═══════════════════════════════════════
+// 2. КОНВЕРТАЦИЯ XLSX → GOOGLE SHEETS
+// ═══════════════════════════════════════
+
+/**
+ * Конвертирует xlsx → временный Google Sheet через Advanced Drive API.
+ * Возвращает id временной копии или null.
+ */
+function convertXlsxToGoogleSheet_(fileId, fileName) {
+  console.log('── convertXlsxToGoogleSheet_() ──');
+  console.log('  Файл: ' + fileName + ' (id=' + fileId + ')');
+
+  var timestamp = Utilities.formatDate(new Date(), 'Europe/Moscow', 'yyyyMMdd_HHmmss');
+  var tempName = 'TEMP_IMPORT_WB_FINANCE_' + fileName.replace(/\.xlsx$/i, '') + '_' + timestamp;
+
+  if (typeof Drive === 'undefined' || !Drive.Files) {
+    SpreadsheetApp.getUi().alert('❌ Advanced Drive API не подключен',
+      'В Apps Script: Services → добавьте Drive API.\n\n' +
+      '1. Нажмите «+» рядом с «Сервисы»\n' +
+      '2. Найдите «Drive API»\n' +
+      '3. Нажмите «Добавить»\n' +
+      '4. Повторите импорт.',
+      SpreadsheetApp.getUi().ButtonSet.OK);
+    return null;
+  }
+
+  try {
+    var resource = { title: tempName, mimeType: GSHEET_MIME_ };
+    var copiedFile = Drive.Files.copy(resource, fileId, { convert: true });
+    console.log('  ✅ Временная копия: ' + tempName + ' (id=' + copiedFile.id + ')');
+    return copiedFile.id;
+  } catch (e) {
+    console.log('  ⚠️ Drive.Files.copy не сработал: ' + e.message);
+    try {
+      var blob = DriveApp.getFileById(fileId).getBlob();
+      var inserted = Drive.Files.insert({ title: tempName, mimeType: GSHEET_MIME_ }, blob, { convert: true });
+      console.log('  ✅ Альтернативный метод: id=' + inserted.id);
+      return inserted.id;
+    } catch (e2) {
+      SpreadsheetApp.getUi().alert('❌ Ошибка конвертации',
+        'Не удалось конвертировать xlsx.\n' + e.message + '\n' + e2.message,
+        SpreadsheetApp.getUi().ButtonSet.OK);
+      return null;
+    }
+  }
+}
+
+
+// ═══════════════════════════════════════
+// 3. ОПРЕДЕЛЕНИЕ СТРОКИ ЗАГОЛОВКОВ
+// ═══════════════════════════════════════
+
+function detectHeaderRow_(values) {
+  var bestRow = 0, bestScore = 0;
+  var limit = Math.min(values.length, 20);
+
+  for (var r = 0; r < limit; r++) {
+    var row = values[r];
+    var score = 0;
+    for (var c = 0; c < row.length; c++) {
+      var cv = String(row[c] || '').toLowerCase().trim();
+      if (!cv) continue;
+      for (var si = 0; si < HEADER_SIGNALS_.length; si++) {
+        if (cv.indexOf(HEADER_SIGNALS_[si]) >= 0 || HEADER_SIGNALS_[si].indexOf(cv) >= 0) {
+          score++;
+          break;
+        }
+      }
+    }
+    if (score > bestScore) { bestScore = score; bestRow = r; }
+  }
+
+  console.log('  Строка заголовков: ' + (bestRow + 1) + ' (score=' + bestScore + ')');
+  return bestRow;
+}
+
+
+// ═══════════════════════════════════════
+// 4. ГАРАНТИЯ КОЛОНОК RAW_WB_FINANCE
+// ═══════════════════════════════════════
+
+/**
+ * Добавляет в RAW_WB_FINANCE отсутствующие колонки из ENSURE_RAW_COLS_.
+ * Возвращает обновлённый rawLastCol.
+ */
+function ensureRawFinanceCols_(rawSheet) {
+  var lastCol = rawSheet.getLastColumn();
+  var headers = lastCol > 0 ? rawSheet.getRange(1, 1, 1, lastCol).getValues()[0] : [];
+  var headersLower = headers.map(function(h) { return String(h).trim().toLowerCase(); });
+
+  var added = [];
+  for (var i = 0; i < ENSURE_RAW_COLS_.length; i++) {
+    if (headersLower.indexOf(ENSURE_RAW_COLS_[i]) === -1) {
+      lastCol++;
+      rawSheet.getRange(1, lastCol).setValue(ENSURE_RAW_COLS_[i]);
+      added.push(ENSURE_RAW_COLS_[i]);
+    }
+  }
+  if (added.length > 0) {
+    SpreadsheetApp.flush();
+    console.log('  Добавлены колонки в RAW_WB_FINANCE: ' + added.join(', '));
+  }
+  return lastCol;
+}
+
+
+// ═══════════════════════════════════════
+// 5. НОРМАЛИЗАЦИЯ СТРОК
+// ═══════════════════════════════════════
+
+/**
+ * Нормализует строки из WB xlsx-отчёта под RAW_WB_FINANCE.
+ *
+ * @param {Array[]} sourceValues — 2D массив из xlsx
+ * @param {number} headerRowIndex — 0-based индекс заголовков
+ * @param {Object} rawHeaderMap — {colName → idx} для RAW_WB_FINANCE
+ * @param {number} rawLastCol — ширина RAW
+ * @param {Object} skuIndex — индекс SKU_MASTER
+ * @param {Object} fileMeta — {sourceReportPart, fileId, fileName, loadId}
+ * @returns {Object} {rows, stats}
+ */
+function normalizeWbFinanceRowsToRaw_(sourceValues, headerRowIndex, rawHeaderMap, rawLastCol, skuIndex, fileMeta) {
+  console.log('── normalizeWbFinanceRowsToRaw_() [' + fileMeta.sourceReportPart + '] ──');
+
+  // ── Заголовки WB-отчёта ──
+  var srcHeaders = sourceValues[headerRowIndex];
+  var srcHeaderMap = {};
+  for (var sh = 0; sh < srcHeaders.length; sh++) {
+    var shKey = String(srcHeaders[sh]).trim().toLowerCase();
+    if (shKey) srcHeaderMap[shKey] = sh;
+  }
+  console.log('  WB заголовки (' + Object.keys(srcHeaderMap).length + '): ' +
+    Object.keys(srcHeaderMap).slice(0, 15).join(', ') + '...');
+
+  // ── Маппинг rawCol → srcCol ──
+  var colMap = {};
+  var mappedNames = [];
+
+  var rawColNames = Object.keys(COL_MAPPING_);
+  for (var rci = 0; rci < rawColNames.length; rci++) {
+    var rawColName = rawColNames[rci];
+    var rawColIdx = rawHeaderMap[rawColName];
+    if (rawColIdx === undefined) continue;
+
+    var variants = COL_MAPPING_[rawColName];
+    var foundSrcCol = -1;
+
+    for (var vi = 0; vi < variants.length; vi++) {
+      var variant = variants[vi].toLowerCase();
+
+      // Точное совпадение
+      if (srcHeaderMap[variant] !== undefined) {
+        foundSrcCol = srcHeaderMap[variant];
+        break;
+      }
+
+      // Частичное: вариант содержится в заголовке xlsx или наоборот
+      var srcKeys = Object.keys(srcHeaderMap);
+      for (var ski = 0; ski < srcKeys.length; ski++) {
+        if (srcKeys[ski].indexOf(variant) >= 0 || variant.indexOf(srcKeys[ski]) >= 0) {
+          foundSrcCol = srcHeaderMap[srcKeys[ski]];
+          break;
+        }
+      }
+      if (foundSrcCol >= 0) break;
+    }
+
+    if (foundSrcCol >= 0) {
+      colMap[rawColIdx] = foundSrcCol;
+      mappedNames.push(rawColName);
+    }
+  }
+
+  console.log('  Маппинг (' + mappedNames.length + '): ' + mappedNames.join(', '));
+
+  // ── Диагностика маппинга финансовых колонок ──
+  var finDiagCols = ['for_pay', 'logistics_amount', 'storage_fee', 'deduction',
+    'acceptance', 'additional_payment', 'compensation_amount', 'acquiring_fee',
+    'penalty', 'retail_amount', 'commission_amount'];
+  for (var fdi = 0; fdi < finDiagCols.length; fdi++) {
+    var fdc = finDiagCols[fdi];
+    var rawIdx2 = rawHeaderMap[fdc];
+    var srcIdx2 = rawIdx2 !== undefined ? colMap[rawIdx2] : undefined;
+    var srcName2 = (srcIdx2 !== undefined && srcIdx2 < srcHeaders.length) ?
+      String(srcHeaders[srcIdx2] || '') : '(не найден)';
+    console.log('    ' + fdc + ': RAW[' + rawIdx2 + '] ← xlsx[' + srcIdx2 + '] "' + srcName2 + '"');
+  }
+
+  // ── Аудит строк компенсаций в исходном xlsx (ДО нормализации) ──
+  var compKeywords = ['компенсация скидки', 'возмещение за выдачу', 'возмещение издержек'];
+  // Ищем колонку "Обоснование для оплаты" / "supplier_oper_name" в исходном xlsx
+  var srcOpCol = -1;
+  var opSearchKeys = ['обоснование для оплаты', 'supplier_oper_name'];
+  for (var osi = 0; osi < opSearchKeys.length; osi++) {
+    if (srcHeaderMap[opSearchKeys[osi]] !== undefined) {
+      srcOpCol = srcHeaderMap[opSearchKeys[osi]];
+      break;
+    }
+  }
+  if (srcOpCol >= 0) {
+    console.log('  ── АУДИТ КОМПЕНСАЦИЙ В ИСХОДНОМ XLSX ──');
+    console.log('  Колонка операции в xlsx: [' + srcOpCol + '] "' + srcHeaders[srcOpCol] + '"');
+    var compCountByType = {};
+    var compSumsByType = {}; // type → {colName: sum}
+
+    for (var cr = headerRowIndex + 1; cr < sourceValues.length; cr++) {
+      var cRow = sourceValues[cr];
+      var cOp = String(cRow[srcOpCol] || '').trim().toLowerCase();
+      var isComp = false;
+      for (var cki = 0; cki < compKeywords.length; cki++) {
+        if (cOp.indexOf(compKeywords[cki]) >= 0) { isComp = true; break; }
+      }
+      if (!isComp) continue;
+
+      var cOpOrig = String(cRow[srcOpCol] || '').trim();
+      if (!compCountByType[cOpOrig]) {
+        compCountByType[cOpOrig] = 0;
+        compSumsByType[cOpOrig] = {};
+      }
+      compCountByType[cOpOrig]++;
+
+      // Показать первые 2 примера каждого типа
+      if (compCountByType[cOpOrig] <= 2) {
+        console.log('    xlsx строка ' + (cr + 1) + ': "' + cOpOrig + '"');
+        for (var cv = 0; cv < cRow.length; cv++) {
+          if (cRow[cv] !== '' && cRow[cv] !== null && cRow[cv] !== undefined) {
+            var cVal = cRow[cv];
+            var isNum = typeof cVal === 'number' || (!isNaN(Number(cVal)) && String(cVal).trim() !== '');
+            if (isNum && Number(cVal) !== 0) {
+              console.log('      [' + cv + '] "' + String(srcHeaders[cv] || '') + '": ' + cVal + ' (число)');
+            }
+          }
+        }
+      }
+
+      // Суммирование числовых полей
+      for (var cs = 0; cs < cRow.length; cs++) {
+        var csVal = Number(cRow[cs]);
+        if (!isNaN(csVal) && csVal !== 0) {
+          var csName = String(srcHeaders[cs] || 'col' + cs).trim();
+          if (!compSumsByType[cOpOrig][csName]) compSumsByType[cOpOrig][csName] = 0;
+          compSumsByType[cOpOrig][csName] += csVal;
+        }
+      }
+    }
+
+    // Итоги по типам
+    var compTypes = Object.keys(compCountByType);
+    for (var cti = 0; cti < compTypes.length; cti++) {
+      var ct = compTypes[cti];
+      console.log('    ИТОГО "' + ct + '": ' + compCountByType[ct] + ' строк');
+      var ctSums = compSumsByType[ct];
+      var ctKeys = Object.keys(ctSums).sort(function(a, b) {
+        return Math.abs(ctSums[b]) - Math.abs(ctSums[a]);
+      });
+      for (var ctk = 0; ctk < Math.min(ctKeys.length, 10); ctk++) {
+        console.log('      "' + ctKeys[ctk] + '": ' + roundTwo_(ctSums[ctKeys[ctk]]));
+      }
+    }
+  }
+
+  // ── v7: Поиск колонок xlsx для компенсаций ──
+  // Эти колонки нужны для извлечения чистых сумм компенсаций
+  var srcCompLoyaltyCol_ = -1;  // "Компенсация скидки по программе лояльности"
+  var srcCompTechCol_ = -1;     // "Возмещение издержек по перевозке/по складским операциям с товаром"
+  var srcCompPvzCol_ = -1;      // "Возмещение за выдачу и возврат товаров на ПВЗ"
+  var srcCompCommCol_ = -1;     // "Вознаграждение Вайлдберриз (ВВ), без НДС"
+  var srcCompNdsCol_ = -1;      // "НДС с Вознаграждения Вайлдберриз"
+
+  var compColSearch_ = [
+    { target: 'srcCompLoyaltyCol_', keywords: ['компенсация скидки по программе лояльности'] },
+    { target: 'srcCompTechCol_', keywords: ['возмещение издержек по перевозке', 'возмещение издержек'] },
+    { target: 'srcCompPvzCol_', keywords: ['возмещение за выдачу и возврат товаров на пвз', 'возмещение за выдачу'] },
+    { target: 'srcCompCommCol_', keywords: ['вознаграждение вайлдберриз (вв), без ндс', 'вознаграждение вайлдберриз'] },
+    { target: 'srcCompNdsCol_', keywords: ['ндс с вознаграждения вайлдберриз'] }
+  ];
+
+  var srcKeysAll_ = Object.keys(srcHeaderMap);
+  for (var cci = 0; cci < compColSearch_.length; cci++) {
+    var ccs = compColSearch_[cci];
+    for (var ccki = 0; ccki < ccs.keywords.length; ccki++) {
+      var cck = ccs.keywords[ccki];
+      // Точное совпадение
+      if (srcHeaderMap[cck] !== undefined) {
+        if (ccs.target === 'srcCompLoyaltyCol_') srcCompLoyaltyCol_ = srcHeaderMap[cck];
+        else if (ccs.target === 'srcCompTechCol_') srcCompTechCol_ = srcHeaderMap[cck];
+        else if (ccs.target === 'srcCompPvzCol_') srcCompPvzCol_ = srcHeaderMap[cck];
+        else if (ccs.target === 'srcCompCommCol_') srcCompCommCol_ = srcHeaderMap[cck];
+        else if (ccs.target === 'srcCompNdsCol_') srcCompNdsCol_ = srcHeaderMap[cck];
+        break;
+      }
+      // Частичное
+      for (var skai = 0; skai < srcKeysAll_.length; skai++) {
+        if (srcKeysAll_[skai].indexOf(cck) >= 0) {
+          if (ccs.target === 'srcCompLoyaltyCol_') srcCompLoyaltyCol_ = srcHeaderMap[srcKeysAll_[skai]];
+          else if (ccs.target === 'srcCompTechCol_') srcCompTechCol_ = srcHeaderMap[srcKeysAll_[skai]];
+          else if (ccs.target === 'srcCompPvzCol_') srcCompPvzCol_ = srcHeaderMap[srcKeysAll_[skai]];
+          else if (ccs.target === 'srcCompCommCol_') srcCompCommCol_ = srcHeaderMap[srcKeysAll_[skai]];
+          else if (ccs.target === 'srcCompNdsCol_') srcCompNdsCol_ = srcHeaderMap[srcKeysAll_[skai]];
+          break;
+        }
+      }
+    }
+  }
+
+  console.log('  ── v7: Колонки компенсаций в xlsx ──');
+  console.log('    Лояльность:    [' + srcCompLoyaltyCol_ + '] ' +
+    (srcCompLoyaltyCol_ >= 0 ? '"' + srcHeaders[srcCompLoyaltyCol_] + '"' : '(не найдена)'));
+  console.log('    Возмещ.издержек: [' + srcCompTechCol_ + '] ' +
+    (srcCompTechCol_ >= 0 ? '"' + srcHeaders[srcCompTechCol_] + '"' : '(не найдена)'));
+  console.log('    Возмещ.ПВЗ:    [' + srcCompPvzCol_ + '] ' +
+    (srcCompPvzCol_ >= 0 ? '"' + srcHeaders[srcCompPvzCol_] + '"' : '(не найдена)'));
+  console.log('    Вознагр.WB:    [' + srcCompCommCol_ + '] ' +
+    (srcCompCommCol_ >= 0 ? '"' + srcHeaders[srcCompCommCol_] + '"' : '(не найдена)'));
+  console.log('    НДС с вознагр: [' + srcCompNdsCol_ + '] ' +
+    (srcCompNdsCol_ >= 0 ? '"' + srcHeaders[srcCompNdsCol_] + '"' : '(не найдена)'));
+
+  // ── Служебные поля ──
+  var metaFields = {
+    load_id: fileMeta.loadId,
+    loaded_at: new Date(),
+    source_api: 'DRIVE_XLSX_REPORT',
+    request_date_from: IMPORT_PERIOD_.from,
+    request_date_to: IMPORT_PERIOD_.to,
+    report_period_from: IMPORT_PERIOD_.from,
+    report_period_to: IMPORT_PERIOD_.to,
+    processed_status: 'raw',
+    source_report_part: fileMeta.sourceReportPart,
+    source_file_id: fileMeta.fileId,
+    source_file_name: fileMeta.fileName
+  };
+
+  // ── Нормализуем строки ──
+  var resultRows = [];
+  var dataStartRow = headerRowIndex + 1;
+  var skuOk = 0, skuMissing = 0;
+
+  var mappedColIndices = Object.keys(colMap);
+
+  for (var r = dataStartRow; r < sourceValues.length; r++) {
+    var srcRow = sourceValues[r];
+
+    // Пропускаем полностью пустые строки
+    var hasData = false;
+    for (var cc = 0; cc < Math.min(srcRow.length, 10); cc++) {
+      if (srcRow[cc] !== '' && srcRow[cc] !== null && srcRow[cc] !== undefined) {
+        hasData = true; break;
+      }
+    }
+    if (!hasData) continue;
+
+    // Создаём строку шириной RAW_WB_FINANCE
+    var newRow = new Array(rawLastCol);
+    for (var ni = 0; ni < rawLastCol; ni++) newRow[ni] = '';
+
+    // Заполняем из маппинга
+    for (var mci = 0; mci < mappedColIndices.length; mci++) {
+      var rawIdx = Number(mappedColIndices[mci]);
+      var srcIdx = colMap[rawIdx];
+      if (srcIdx < srcRow.length) {
+        newRow[rawIdx] = srcRow[srcIdx];
+      }
+    }
+
+    // Служебные поля
+    var metaKeys = Object.keys(metaFields);
+    for (var mk = 0; mk < metaKeys.length; mk++) {
+      var metaKey = metaKeys[mk];
+      if (rawHeaderMap[metaKey] !== undefined) {
+        newRow[rawHeaderMap[metaKey]] = metaFields[metaKey];
+      }
+    }
+
+    // raw_row_number
+    if (rawHeaderMap['raw_row_number'] !== undefined) {
+      newRow[rawHeaderMap['raw_row_number']] = r + 1;
+    }
+
+    // raw_json
+    if (rawHeaderMap['raw_json'] !== undefined) {
+      try {
+        var jsonObj = {};
+        for (var jc = 0; jc < srcHeaders.length; jc++) {
+          var jk = String(srcHeaders[jc] || '').trim();
+          if (jk && srcRow[jc] !== '' && srcRow[jc] !== null && srcRow[jc] !== undefined) {
+            jsonObj[jk] = srcRow[jc];
+          }
+        }
+        newRow[rawHeaderMap['raw_json']] = JSON.stringify(jsonObj);
+      } catch (je) {
+        newRow[rawHeaderMap['raw_json']] = '';
+      }
+    }
+
+    // ── Связка с SKU_MASTER ──
+    var nmId = '';
+    if (rawHeaderMap['wb_nm_id'] !== undefined) {
+      nmId = normalizeNmIdFinance_(newRow[rawHeaderMap['wb_nm_id']]);
+    }
+
+    var matchedSku = false;
+
+    if (nmId && skuIndex.byNm[nmId]) {
+      matchedSku = true;
+      if (rawHeaderMap['internal_sku'] !== undefined) {
+        newRow[rawHeaderMap['internal_sku']] = skuIndex.byNm[nmId].sku || '';
+      }
+    }
+
+    if (!matchedSku && rawHeaderMap['barcode'] !== undefined) {
+      var bc = String(newRow[rawHeaderMap['barcode']] || '').trim();
+      if (bc && skuIndex.byBarcode[bc]) {
+        matchedSku = true;
+        var rNm = skuIndex.byBarcode[bc];
+        if (rawHeaderMap['wb_nm_id'] !== undefined && !nmId) newRow[rawHeaderMap['wb_nm_id']] = rNm;
+        if (rawHeaderMap['internal_sku'] !== undefined && skuIndex.byNm[rNm]) {
+          newRow[rawHeaderMap['internal_sku']] = skuIndex.byNm[rNm].sku || '';
+        }
+      }
+    }
+
+    if (!matchedSku && rawHeaderMap['wb_vendor_code'] !== undefined) {
+      var vc = String(newRow[rawHeaderMap['wb_vendor_code']] || '').trim().toUpperCase();
+      if (vc && skuIndex.byVendor[vc]) {
+        matchedSku = true;
+        var rNm2 = skuIndex.byVendor[vc];
+        if (rawHeaderMap['wb_nm_id'] !== undefined && !nmId) newRow[rawHeaderMap['wb_nm_id']] = rNm2;
+        if (rawHeaderMap['internal_sku'] !== undefined && skuIndex.byNm[rNm2]) {
+          newRow[rawHeaderMap['internal_sku']] = skuIndex.byNm[rNm2].sku || '';
+        }
+      }
+    }
+
+    if (rawHeaderMap['sku_match_status'] !== undefined) {
+      newRow[rawHeaderMap['sku_match_status']] = matchedSku ? 'matched' : 'not_found';
+    }
+
+    if (matchedSku) skuOk++; else skuMissing++;
+
+    // ── v7: Извлечение компенсаций из исходного xlsx ──
+    // Определяем supplier_oper_name текущей строки
+    var rowOpName = '';
+    if (srcOpCol >= 0 && srcOpCol < srcRow.length) {
+      rowOpName = String(srcRow[srcOpCol] || '').trim();
+    }
+    var rowOpLow = rowOpName.toLowerCase();
+
+    if (rowOpLow.indexOf('компенсация скидки') >= 0 && rowOpLow.indexOf('лояльност') >= 0) {
+      // A. Компенсация скидки по программе лояльности → compensation_amount
+      var loyaltySrcCol = srcCompLoyaltyCol_;
+      var loyaltyVal = (loyaltySrcCol >= 0 && loyaltySrcCol < srcRow.length) ? (Number(srcRow[loyaltySrcCol]) || 0) : 0;
+      if (loyaltyVal !== 0 && rawHeaderMap['compensation_amount'] !== undefined) {
+        newRow[rawHeaderMap['compensation_amount']] = loyaltyVal;
+      }
+      // Также запишем в additional_payment если compensation_amount не нашлась
+      if (loyaltyVal !== 0 && rawHeaderMap['compensation_amount'] === undefined && rawHeaderMap['additional_payment'] !== undefined) {
+        newRow[rawHeaderMap['additional_payment']] = loyaltyVal;
+      }
+    } else if (rowOpLow.indexOf('возмещение издержек') >= 0) {
+      // B. Возмещение издержек по перевозке/по складским операциям
+      // Чистый эффект = возмещение + вознаграждение WB + НДС с вознаграждения
+      var techGross = (srcCompTechCol_ >= 0 && srcCompTechCol_ < srcRow.length) ? (Number(srcRow[srcCompTechCol_]) || 0) : 0;
+      var techComm = (srcCompCommCol_ >= 0 && srcCompCommCol_ < srcRow.length) ? (Number(srcRow[srcCompCommCol_]) || 0) : 0;
+      var techNds = (srcCompNdsCol_ >= 0 && srcCompNdsCol_ < srcRow.length) ? (Number(srcRow[srcCompNdsCol_]) || 0) : 0;
+      var techNet = techGross + techComm + techNds;
+      if (rawHeaderMap['additional_payment'] !== undefined) {
+        newRow[rawHeaderMap['additional_payment']] = techNet;
+      }
+    } else if (rowOpLow.indexOf('возмещение за выдачу') >= 0) {
+      // C. Возмещение за выдачу и возврат товаров на ПВЗ
+      // Чистый эффект = возмещение + вознаграждение WB + НДС с вознаграждения
+      var pvzGross = (srcCompPvzCol_ >= 0 && srcCompPvzCol_ < srcRow.length) ? (Number(srcRow[srcCompPvzCol_]) || 0) : 0;
+      var pvzComm = (srcCompCommCol_ >= 0 && srcCompCommCol_ < srcRow.length) ? (Number(srcRow[srcCompCommCol_]) || 0) : 0;
+      var pvzNds = (srcCompNdsCol_ >= 0 && srcCompNdsCol_ < srcRow.length) ? (Number(srcRow[srcCompNdsCol_]) || 0) : 0;
+      var pvzNet = pvzGross + pvzComm + pvzNds;
+      if (rawHeaderMap['additional_payment'] !== undefined) {
+        newRow[rawHeaderMap['additional_payment']] = pvzNet;
+      }
+    }
+
+    resultRows.push(newRow);
+  }
+
+  console.log('  ✅ [' + fileMeta.sourceReportPart + '] Нормализовано: ' + resultRows.length +
+    ' строк (SKU OK: ' + skuOk + ', Нет: ' + skuMissing + ')');
+
+  return {
+    rows: resultRows,
+    stats: { total: sourceValues.length - dataStartRow, mapped: resultRows.length, skuOk: skuOk, skuMissing: skuMissing }
+  };
+}
+
+
+// ═══════════════════════════════════════
+// 6. ИНДЕКС SKU_MASTER
+// ═══════════════════════════════════════
+
+function buildSkuIndex_(ss) {
+  var result = { byNm: {}, byBarcode: {}, byVendor: {} };
+  var masterSheet = ss.getSheetByName('SKU_MASTER');
+  if (!masterSheet || masterSheet.getLastRow() < 2) {
+    console.log('  ⚠️ SKU_MASTER не найден или пуст');
+    return result;
+  }
+  var mH = getHeaderMap_(masterSheet);
+  var mNmCol = findCol_(mH, ['wb_nm_id', 'nm_id', 'nmid']);
+  if (mNmCol === -1) return result;
+  var mSkuCol = findCol_(mH, ['internal_sku']);
+  var mNameCol = findCol_(mH, ['product_name_short', 'product_name', 'name']);
+  var mVendorCol = findCol_(mH, ['wb_vendor_code', 'vendor_code']);
+  var mBarcodeCol = findCol_(mH, ['barcode', 'barcodes']);
+  var data = readSheetData_(masterSheet);
+  for (var i = 0; i < data.length; i++) {
+    var row = data[i];
+    var nm = normalizeNmIdFinance_(row[mNmCol]);
+    if (!nm) continue;
+    var info = {
+      sku: mSkuCol >= 0 ? String(row[mSkuCol] || '') : '',
+      name: mNameCol >= 0 ? String(row[mNameCol] || '') : '',
+      vendor: mVendorCol >= 0 ? String(row[mVendorCol] || '') : '',
+      barcode: mBarcodeCol >= 0 ? String(row[mBarcodeCol] || '') : ''
+    };
+    result.byNm[nm] = info;
+    if (info.barcode) result.byBarcode[info.barcode.trim()] = nm;
+    if (info.vendor) result.byVendor[info.vendor.trim().toUpperCase()] = nm;
+  }
+  console.log('  SKU_MASTER: ' + Object.keys(result.byNm).length + ' товаров');
+  return result;
+}
+
+
+// ═══════════════════════════════════════
+// 7. ЧТЕНИЕ ОДНОГО ФАЙЛА
+// ═══════════════════════════════════════
+
+/**
+ * Конвертирует xlsx, читает данные, нормализует, удаляет копию.
+ * Возвращает {rows, stats, tempDeleted, fileName, readRows} или null при ошибке.
+ */
+function processOneReportFile_(reportDef, rawHeaderMap, rawLastCol, skuIndex, loadId) {
+  var fileId = reportDef.fileId;
+  var label = reportDef.label;
+
+  console.log('══ Обработка: ' + label + ' (fileId=' + fileId + ') ══');
+
+  // Получаем имя файла
+  var fileName;
+  try {
+    fileName = DriveApp.getFileById(fileId).getName();
+  } catch (e) {
+    console.log('❌ Файл не найден: ' + fileId + ' — ' + e.message);
+    SpreadsheetApp.getUi().alert('❌ Ошибка',
+      'Файл не найден: ' + fileId + '\n' + e.message,
+      SpreadsheetApp.getUi().ButtonSet.OK);
+    return null;
+  }
+  console.log('  Файл: ' + fileName);
+
+  // Конвертация
+  var tempId = convertXlsxToGoogleSheet_(fileId, fileName);
+  if (!tempId) return null;
+
+  var tempDeleted = false;
+
+  try {
+    // Чтение
+    var tStep = Date.now();
+    var tempSS = SpreadsheetApp.openById(tempId);
+    var tempSheet = tempSS.getSheets()[0];
+    var lastRow = tempSheet.getLastRow();
+    var lastCol = tempSheet.getLastColumn();
+
+    if (lastRow < 2 || lastCol < 2) {
+      console.log('  ❌ Пустой лист: ' + lastRow + '×' + lastCol);
+      cleanupTempSheet_(tempId);
+      return null;
+    }
+
+    var allValues = tempSheet.getRange(1, 1, lastRow, lastCol).getValues();
+    console.log('  Прочитано: ' + lastRow + ' строк × ' + lastCol + ' колонок, ' + sec_(tStep) + ' сек');
+
+    // Заголовки
+    var headerRowIdx = detectHeaderRow_(allValues);
+
+    // Нормализация
+    tStep = Date.now();
+    var fileMeta = {
+      sourceReportPart: reportDef.sourceReportPart,
+      fileId: fileId,
+      fileName: fileName,
+      loadId: loadId
+    };
+
+    var normResult = normalizeWbFinanceRowsToRaw_(
+      allValues, headerRowIdx, rawHeaderMap, rawLastCol, skuIndex, fileMeta
+    );
+    console.log('  Нормализация: ' + normResult.rows.length + ' строк, ' + sec_(tStep) + ' сек');
+
+    // Удаляем временную копию
+    tempDeleted = cleanupTempSheet_(tempId);
+
+    return {
+      rows: normResult.rows,
+      stats: normResult.stats,
+      tempDeleted: tempDeleted,
+      fileName: fileName,
+      readRows: lastRow
+    };
+
+  } catch (e) {
+    console.log('❌ Ошибка при обработке ' + label + ': ' + e.message);
+    cleanupTempSheet_(tempId);
+    return null;
+  }
+}
+
+
+// ═══════════════════════════════════════
+// 8. ГЛАВНАЯ ФУНКЦИЯ: ИМПОРТ ПАРЫ ОТЧЕТОВ
+// ═══════════════════════════════════════
+
+/**
+ * Импорт двух финансовых отчетов WB за 18.05–24.05.2026.
+ * Объединяет строки из обоих файлов, записывает одной пачкой.
+ */
+function importWbFinanceReports_2026_05_18_24() {
+  var t0 = Date.now();
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var ui = SpreadsheetApp.getUi();
+
+  console.log('═══ importWbFinanceReports_2026_05_18_24() СТАРТ ═══');
+  console.log('  Период: ' + IMPORT_PERIOD_.label);
+  console.log('  Файлов: ' + REPORT_FILES_.length);
+
+  // ── 1. Проверяем RAW_WB_FINANCE ──
+  var rawSheet = ss.getSheetByName('RAW_WB_FINANCE');
+  if (!rawSheet) {
+    ui.alert('❌ Ошибка', 'Лист RAW_WB_FINANCE не найден.', ui.ButtonSet.OK);
+    return;
+  }
+
+  // ── 2. Гарантируем колонки ──
+  var rawLastCol = ensureRawFinanceCols_(rawSheet);
+
+  // ── 3. Строим rawHeaderMap ──
+  var rawHeaders = rawSheet.getRange(1, 1, 1, rawLastCol).getValues()[0];
+  var rawHeaderMap = {};
+  for (var rh = 0; rh < rawHeaders.length; rh++) {
+    var rhKey = String(rawHeaders[rh]).trim().toLowerCase();
+    if (rhKey) rawHeaderMap[rhKey] = rh;
+  }
+  console.log('  RAW_WB_FINANCE: ' + rawLastCol + ' колонок');
+
+  // ── 4. Индекс SKU_MASTER ──
+  var skuIndex = buildSkuIndex_(ss);
+
+  // ── 5. Общий load_id ──
+  var timestamp = Utilities.formatDate(new Date(), 'Europe/Moscow', 'yyyyMMdd_HHmmss');
+  var loadId = 'DRIVE_XLSX_FINANCE_' +
+    IMPORT_PERIOD_.from.replace(/-/g, '_') + '_' +
+    IMPORT_PERIOD_.to.replace(/-/g, '_') + '_' + timestamp;
+
+  // ── 6. Обработка каждого файла ──
+  var allRows = [];
+  var fileResults = [];
+  var totalSkuOk = 0, totalSkuMissing = 0;
+
+  for (var fi = 0; fi < REPORT_FILES_.length; fi++) {
+    var result = processOneReportFile_(
+      REPORT_FILES_[fi], rawHeaderMap, rawLastCol, skuIndex, loadId
+    );
+
+    if (!result) {
+      ui.alert('❌ Ошибка', 'Не удалось обработать файл: ' + REPORT_FILES_[fi].label, ui.ButtonSet.OK);
+      return;
+    }
+
+    fileResults.push(result);
+    totalSkuOk += result.stats.skuOk;
+    totalSkuMissing += result.stats.skuMissing;
+
+    // Добавляем строки в общий массив
+    for (var ri = 0; ri < result.rows.length; ri++) {
+      allRows.push(result.rows[ri]);
+    }
+
+    console.log('  ✅ ' + REPORT_FILES_[fi].label + ': ' + result.rows.length + ' строк');
+  }
+
+  console.log('📊 Итого: ' + allRows.length + ' строк из ' + REPORT_FILES_.length + ' файлов');
+
+  if (allRows.length === 0) {
+    ui.alert('❌ Ошибка', 'После нормализации 0 строк.\nПроверьте структуру xlsx.', ui.ButtonSet.OK);
+    return;
+  }
+
+  // ── 7. Подтверждение (ОДИН раз, после объединения) ──
+  var confirmMsg = 'Заменить RAW_WB_FINANCE данными двух отчетов WB?\n\n' +
+    'Период: ' + IMPORT_PERIOD_.label + '\n\n';
+
+  for (var fr = 0; fr < fileResults.length; fr++) {
+    confirmMsg += REPORT_FILES_[fr].label + ': ' + fileResults[fr].rows.length + ' строк (' + fileResults[fr].fileName + ')\n';
+  }
+
+  confirmMsg += '\nВсего строк: ' + allRows.length + '\n' +
+    'SKU найдено: ' + totalSkuOk + '\n' +
+    'SKU не найдено: ' + totalSkuMissing;
+
+  var confirm = ui.alert('📥 Подтверждение импорта', confirmMsg, ui.ButtonSet.YES_NO);
+  if (confirm !== ui.Button.YES) {
+    console.log('⛔ Отменено пользователем.');
+    return;
+  }
+
+  // ── 8. Очистка и запись RAW_WB_FINANCE (одной пачкой!) ──
+  var tStep = Date.now();
+  var rawLastRow = rawSheet.getLastRow();
+
+  if (rawLastRow >= 2) {
+    rawSheet.getRange(2, 1, rawLastRow - 1, rawLastCol).clearContent();
+  }
+
+  // Увеличиваем кол-во строк если нужно
+  var maxRows = rawSheet.getMaxRows();
+  if (maxRows < allRows.length + 1) {
+    rawSheet.insertRowsAfter(maxRows, allRows.length + 1 - maxRows);
+  }
+
+  // Диагностика sku_match_status перед записью
+  var smsCol = rawHeaderMap['sku_match_status'];
+  if (smsCol !== undefined) {
+    var smsMatched = 0, smsNotFound = 0, smsDuplicate = 0, smsOther = 0;
+    for (var si = 0; si < allRows.length; si++) {
+      var sv = allRows[si][smsCol];
+      if (sv === 'matched') smsMatched++;
+      else if (sv === 'not_found') smsNotFound++;
+      else if (sv === 'duplicate') smsDuplicate++;
+      else smsOther++;
+    }
+    console.log('📋 sku_match_status: matched=' + smsMatched +
+      ', not_found=' + smsNotFound + ', duplicate=' + smsDuplicate +
+      (smsOther > 0 ? ', other=' + smsOther : ''));
+  }
+
+  // Снимаем data validation с диапазона записи (кроме заголовка),
+  // чтобы не блокировать запись в другие колонки с валидацией
+  var writeRange = rawSheet.getRange(2, 1, allRows.length, rawLastCol);
+  try { writeRange.clearDataValidations(); } catch (e) { console.log('  ⚠️ clearDataValidations: ' + e.message); }
+
+  writeRange.setValues(allRows);
+  SpreadsheetApp.flush();
+  console.log('✅ Запись RAW_WB_FINANCE: ' + allRows.length + ' строк, ' + sec_(tStep) + ' сек');
+
+  // ── 9. Итог ──
+  var elapsed = sec_(t0);
+  console.log('═══ importWbFinanceReports_2026_05_18_24() ЗАВЕРШЕНО: ' + allRows.length + ' строк, ' + elapsed + ' сек ═══');
+
+  var alertMsg = 'Период: ' + IMPORT_PERIOD_.label + '\n' +
+    'Файлов: ' + REPORT_FILES_.length + '\n\n';
+
+  for (var ar = 0; ar < fileResults.length; ar++) {
+    alertMsg += REPORT_FILES_[ar].label + ': ' + fileResults[ar].rows.length + ' строк\n' +
+      '  Файл: ' + fileResults[ar].fileName + '\n' +
+      '  Прочитано: ' + fileResults[ar].readRows + '\n' +
+      '  Копия удалена: ' + (fileResults[ar].tempDeleted ? 'Да' : 'Нет') + '\n\n';
+  }
+
+  alertMsg += 'Всего записано: ' + allRows.length + '\n' +
+    'SKU связано: ' + totalSkuOk + '\n' +
+    'SKU не найдено: ' + totalSkuMissing + '\n\n' +
+    'Время: ' + elapsed + ' сек\n\n' +
+    'Теперь запустите «Пересобрать CLEAN с расходами».';
+
+  ui.alert('✅ Финансовые отчеты WB загружены', alertMsg, ui.ButtonSet.OK);
+}
+
+
+// ═══════════════════════════════════════
+// УТИЛИТЫ
+// ═══════════════════════════════════════
+
+function cleanupTempSheet_(tempSheetId) {
+  if (!tempSheetId) return false;
+  try {
+    DriveApp.getFileById(tempSheetId).setTrashed(true);
+    console.log('  🗑️ Временная копия удалена: ' + tempSheetId);
+    return true;
+  } catch (e) {
+    console.log('  ⚠️ Не удалось удалить копию: ' + e.message);
+    return false;
+  }
+}
+
+
+// ═══════════════════════════════════════
+// 9. ДИАГНОСТИКА: АУДИТ RAW_JSON
+// ═══════════════════════════════════════
+
+/**
+ * auditRawJsonFinanceFields() — v5 диагностика.
+ *
+ * 1. Для каждого типа операции выводит 3-5 примеров raw_json:
+ *    ключи, числовые поля, «денежные» значения.
+ *
+ * 2. Суммирует числовые поля raw_json по группам операций —
+ *    чтобы найти, какие поля дают эталонные суммы.
+ *
+ * 3. Группировка source_report_part × supplier_oper_name.
+ */
+function auditRawJsonFinanceFields() {
+  console.log('═══ auditRawJsonFinanceFields() СТАРТ ═══');
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var sheet = ss.getSheetByName('RAW_WB_FINANCE');
+  if (!sheet || sheet.getLastRow() < 2) {
+    console.log('❌ RAW_WB_FINANCE пуст.');
+    SpreadsheetApp.getUi().alert('❌', 'RAW_WB_FINANCE пуст.', SpreadsheetApp.getUi().ButtonSet.OK);
+    return;
+  }
+
+  var lastCol = sheet.getLastColumn();
+  var headers = sheet.getRange(1, 1, 1, lastCol).getValues()[0];
+  var data = sheet.getRange(2, 1, sheet.getLastRow() - 1, lastCol).getValues();
+
+  // Найти индексы ключевых колонок
+  var colIdx = {};
+  for (var h = 0; h < headers.length; h++) {
+    colIdx[String(headers[h] || '').trim().toLowerCase()] = h;
+  }
+  var opIdx = colIdx['supplier_oper_name'] !== undefined ? colIdx['supplier_oper_name'] :
+              (colIdx['operation_type_normalized'] !== undefined ? colIdx['operation_type_normalized'] : -1);
+  var dtIdx = colIdx['doc_type_name'] !== undefined ? colIdx['doc_type_name'] : -1;
+  var jsonIdx = colIdx['raw_json'] !== undefined ? colIdx['raw_json'] : -1;
+  var partIdx = colIdx['source_report_part'] !== undefined ? colIdx['source_report_part'] : -1;
+
+  if (jsonIdx === -1) {
+    console.log('❌ Колонка raw_json не найдена');
+    SpreadsheetApp.getUi().alert('❌', 'Колонка raw_json не найдена в RAW_WB_FINANCE.', SpreadsheetApp.getUi().ButtonSet.OK);
+    return;
+  }
+
+  // ── 1. Группировка по типам операций ──
+  var groups = {
+    'Продажа|Продажа': { filter: function(dt, op) { return dt === 'Продажа' && op === 'Продажа'; }, examples: [], fieldSums: {} },
+    'Логистика':       { filter: function(dt, op) { return op.indexOf('Логистика') >= 0; }, examples: [], fieldSums: {} },
+    'Хранение':        { filter: function(dt, op) { return op.indexOf('Хранение') >= 0; }, examples: [], fieldSums: {} },
+    'Удержание':       { filter: function(dt, op) { return op.indexOf('Удержание') >= 0 || op.indexOf('Удержания') >= 0; }, examples: [], fieldSums: {} },
+    'Компенсация лояльности': { filter: function(dt, op) { return op.indexOf('Компенсация скидки') >= 0 || op.indexOf('лояльност') >= 0; }, examples: [], fieldSums: {} },
+    'Возмещение ПВЗ':  { filter: function(dt, op) { return op.indexOf('Возмещение за выдачу') >= 0; }, examples: [], fieldSums: {} },
+    'Возмещение издержек': { filter: function(dt, op) { return op.indexOf('Возмещение издержек') >= 0; }, examples: [], fieldSums: {} }
+  };
+
+  // ── 3. source_report_part × supplier_oper_name ──
+  var partOpGroups = {};
+
+  for (var r = 0; r < data.length; r++) {
+    var row = data[r];
+    var dt = dtIdx >= 0 ? String(row[dtIdx] || '').trim() : '';
+    var op = opIdx >= 0 ? String(row[opIdx] || '').trim() : '';
+    var part = partIdx >= 0 ? String(row[partIdx] || '').trim() : '(нет)';
+    var rawJsonStr = jsonIdx >= 0 ? String(row[jsonIdx] || '') : '';
+
+    // Парсим raw_json
+    var jsonObj = null;
+    if (rawJsonStr && rawJsonStr !== '') {
+      try { jsonObj = JSON.parse(rawJsonStr); } catch (e) { /* skip */ }
+    }
+
+    // ── Группировка ──
+    var gKeys = Object.keys(groups);
+    for (var gi = 0; gi < gKeys.length; gi++) {
+      var g = groups[gKeys[gi]];
+      if (g.filter(dt, op)) {
+        // Примеры (до 3)
+        if (g.examples.length < 3 && jsonObj) {
+          g.examples.push(jsonObj);
+        }
+        // Суммирование числовых полей из raw_json
+        if (jsonObj) {
+          var jKeys = Object.keys(jsonObj);
+          for (var jk = 0; jk < jKeys.length; jk++) {
+            var jVal = Number(jsonObj[jKeys[jk]]);
+            if (!isNaN(jVal) && jVal !== 0) {
+              if (!g.fieldSums[jKeys[jk]]) g.fieldSums[jKeys[jk]] = 0;
+              g.fieldSums[jKeys[jk]] += jVal;
+            }
+          }
+        }
+      }
+    }
+
+    // ── source_report_part × supplier_oper_name ──
+    var poKey = part + ' | ' + (op || '(пусто)');
+    if (!partOpGroups[poKey]) {
+      partOpGroups[poKey] = { count: 0, colSums: {}, jsonSums: {} };
+    }
+    var po = partOpGroups[poKey];
+    po.count++;
+
+    // Суммы числовых колонок
+    for (var ci = 0; ci < row.length; ci++) {
+      var cv = Number(row[ci]);
+      if (!isNaN(cv) && cv !== 0) {
+        if (!po.colSums[ci]) po.colSums[ci] = 0;
+        po.colSums[ci] += cv;
+      }
+    }
+
+    // Суммы числовых полей из raw_json
+    if (jsonObj) {
+      var jk2 = Object.keys(jsonObj);
+      for (var j2 = 0; j2 < jk2.length; j2++) {
+        var jv2 = Number(jsonObj[jk2[j2]]);
+        if (!isNaN(jv2) && jv2 !== 0) {
+          if (!po.jsonSums[jk2[j2]]) po.jsonSums[jk2[j2]] = 0;
+          po.jsonSums[jk2[j2]] += jv2;
+        }
+      }
+    }
+  }
+
+  // ── ВЫВОД 1: Примеры и суммы по группам операций ──
+  var gNames = Object.keys(groups);
+  for (var g1 = 0; g1 < gNames.length; g1++) {
+    var grp = groups[gNames[g1]];
+    console.log('');
+    console.log('══ ГРУППА: ' + gNames[g1] + ' ══');
+
+    if (grp.examples.length === 0) {
+      console.log('  (нет строк)');
+      continue;
+    }
+
+    // Примеры
+    for (var ex = 0; ex < grp.examples.length; ex++) {
+      var obj = grp.examples[ex];
+      var keys = Object.keys(obj);
+      console.log('  --- Пример ' + (ex + 1) + ' ---');
+      console.log('  Ключи (' + keys.length + '): ' + keys.join(', '));
+
+      var numFields = [];
+      for (var nk = 0; nk < keys.length; nk++) {
+        var nv = Number(obj[keys[nk]]);
+        if (!isNaN(nv) && nv !== 0) {
+          numFields.push(keys[nk] + '=' + nv);
+        }
+      }
+      console.log('  Числовые: ' + (numFields.length > 0 ? numFields.join(', ') : '(нет)'));
+    }
+
+    // Суммы по полям
+    console.log('  --- Суммы числовых полей raw_json ---');
+    var fKeys = Object.keys(grp.fieldSums).sort(function(a, b) {
+      return Math.abs(grp.fieldSums[b]) - Math.abs(grp.fieldSums[a]);
+    });
+    for (var fk = 0; fk < fKeys.length; fk++) {
+      console.log('    ' + fKeys[fk] + ': ' + roundTwo_(grp.fieldSums[fKeys[fk]]));
+    }
+  }
+
+  // ── ВЫВОД 3: source_report_part × supplier_oper_name ──
+  console.log('');
+  console.log('══ ГРУППИРОВКА: source_report_part × supplier_oper_name ══');
+  var poKeys = Object.keys(partOpGroups).sort();
+  for (var pk = 0; pk < poKeys.length; pk++) {
+    var po2 = partOpGroups[poKeys[pk]];
+    console.log('');
+    console.log('  ' + poKeys[pk] + ': ' + po2.count + ' строк');
+
+    // Суммы колонок (топ-10)
+    var csKeys = Object.keys(po2.colSums).sort(function(a, b) {
+      return Math.abs(po2.colSums[b]) - Math.abs(po2.colSums[a]);
+    });
+    var csTop = csKeys.slice(0, 10);
+    for (var cs = 0; cs < csTop.length; cs++) {
+      var ci3 = Number(csTop[cs]);
+      console.log('    col[' + ci3 + '] "' + (headers[ci3] || '?') + '": ' + roundTwo_(po2.colSums[ci3]));
+    }
+
+    // Суммы json (топ-10)
+    var jsKeys = Object.keys(po2.jsonSums).sort(function(a, b) {
+      return Math.abs(po2.jsonSums[b]) - Math.abs(po2.jsonSums[a]);
+    });
+    var jsTop = jsKeys.slice(0, 10);
+    if (jsTop.length > 0) {
+      console.log('    raw_json поля:');
+      for (var js = 0; js < jsTop.length; js++) {
+        console.log('      ' + jsTop[js] + ': ' + roundTwo_(po2.jsonSums[jsTop[js]]));
+      }
+    }
+  }
+
+  // ── ВЫВОД: проверка маппинга COL_MAPPING_ vs RAW ──
+  console.log('');
+  console.log('══ ПРОВЕРКА МАППИНГА COL_MAPPING_ → RAW_WB_FINANCE ══');
+  var mappingKeys = Object.keys(COL_MAPPING_);
+  var rawHeadersLower = {};
+  for (var rh = 0; rh < headers.length; rh++) {
+    var rl = String(headers[rh] || '').trim().toLowerCase();
+    if (rl) rawHeadersLower[rl] = rh;
+  }
+
+  var mapped = 0, notMapped = 0;
+  for (var mk = 0; mk < mappingKeys.length; mk++) {
+    var mKey = mappingKeys[mk];
+    if (rawHeadersLower[mKey] !== undefined) {
+      mapped++;
+    } else {
+      notMapped++;
+      console.log('  ⚠️ COL_MAPPING_ ключ "' + mKey + '" → НЕТ колонки в RAW_WB_FINANCE!');
+    }
+  }
+  console.log('  Совпадений: ' + mapped + ', несовпадений: ' + notMapped);
+
+  // ── Проверка: колонки RAW_WB_FINANCE без маппинга ──
+  var financeCols = ['for_pay', 'logistics_amount', 'storage_fee', 'deduction', 'penalty',
+    'acceptance', 'additional_payment', 'acquiring_fee', 'compensation_amount',
+    'retail_amount', 'commission_amount', 'quantity'];
+  console.log('');
+  console.log('══ ФИНАНСОВЫЕ КОЛОНКИ RAW: есть ли данные? ══');
+  for (var fc = 0; fc < financeCols.length; fc++) {
+    var fci = rawHeadersLower[financeCols[fc]];
+    if (fci === undefined) {
+      console.log('  ' + financeCols[fc] + ': НЕТ КОЛОНКИ');
+      continue;
+    }
+    var sum = 0, nonZero = 0;
+    for (var dr = 0; dr < data.length; dr++) {
+      var dv = Number(data[dr][fci]);
+      if (!isNaN(dv) && dv !== 0) { sum += dv; nonZero++; }
+    }
+    console.log('  ' + financeCols[fc] + ' [' + fci + ']: сумма=' + roundTwo_(sum) +
+      ', ненулевых=' + nonZero + '/' + data.length);
+  }
+
+  console.log('');
+  console.log('═══ auditRawJsonFinanceFields() ЗАВЕРШЕНО ═══');
+  SpreadsheetApp.getUi().alert('✅ Аудит raw_json завершён',
+    'Результаты — в Журнале выполнения (console.log).\n\n' +
+    'Строк данных: ' + data.length + '\n' +
+    'Групп операций: ' + gNames.length + '\n' +
+    'Групп part×op: ' + poKeys.length,
+    SpreadsheetApp.getUi().ButtonSet.OK);
+}
+
+
+// ═══════════════════════════════════════
+// 10. ВЕРИФИКАЦИЯ ИМПОРТА
+// ═══════════════════════════════════════
+
+/**
+ * verifyRawWbFinanceImport() — контрольная сверка после импорта.
+ *
+ * Проверяет, что финансовые колонки RAW_WB_FINANCE
+ * содержат ненулевые данные, и выводит суммы
+ * по типам операций для сравнения с эталоном.
+ */
+function verifyRawWbFinanceImport() {
+  console.log('═══ verifyRawWbFinanceImport() СТАРТ ═══');
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var sheet = ss.getSheetByName('RAW_WB_FINANCE');
+  if (!sheet || sheet.getLastRow() < 2) {
+    console.log('❌ RAW_WB_FINANCE пуст.');
+    SpreadsheetApp.getUi().alert('❌', 'RAW_WB_FINANCE пуст.', SpreadsheetApp.getUi().ButtonSet.OK);
+    return;
+  }
+
+  var lastCol = sheet.getLastColumn();
+  var headers = sheet.getRange(1, 1, 1, lastCol).getValues()[0];
+  var data = sheet.getRange(2, 1, sheet.getLastRow() - 1, lastCol).getValues();
+
+  var colIdx = {};
+  for (var h = 0; h < headers.length; h++) {
+    colIdx[String(headers[h] || '').trim().toLowerCase()] = h;
+  }
+
+  var dtCol = colIdx['doc_type_name'] !== undefined ? colIdx['doc_type_name'] : -1;
+  var opCol = colIdx['supplier_oper_name'] !== undefined ? colIdx['supplier_oper_name'] : -1;
+  var qtyCol = colIdx['quantity'] !== undefined ? colIdx['quantity'] : -1;
+  var retailCol = colIdx['retail_amount'] !== undefined ? colIdx['retail_amount'] : -1;
+  var forPayCol = colIdx['for_pay'] !== undefined ? colIdx['for_pay'] : -1;
+  var logCol = colIdx['logistics_amount'] !== undefined ? colIdx['logistics_amount'] : -1;
+  var storCol = colIdx['storage_fee'] !== undefined ? colIdx['storage_fee'] : -1;
+  var deductCol = colIdx['deduction'] !== undefined ? colIdx['deduction'] : -1;
+  var addPayCol = colIdx['additional_payment'] !== undefined ? colIdx['additional_payment'] : -1;
+  var compCol = colIdx['compensation_amount'] !== undefined ? colIdx['compensation_amount'] : -1;
+
+  var salesCount = 0;
+  var sumRetail = 0, sumForPay = 0, sumLog = 0, sumStor = 0;
+  var sumDeduct = 0, sumLoyalty = 0, sumTech = 0;
+
+  for (var r = 0; r < data.length; r++) {
+    var row = data[r];
+    var dt = dtCol >= 0 ? String(row[dtCol] || '').trim() : '';
+    var op = opCol >= 0 ? String(row[opCol] || '').trim() : '';
+    var opLow = op.toLowerCase();
+
+    var isSale = (dt === 'Продажа' && op === 'Продажа');
+    var isLog = opLow.indexOf('логистика') >= 0;
+    var isStor = opLow.indexOf('хранение') >= 0;
+    var isDeduct = opLow.indexOf('удержан') >= 0;
+    var isLoyalty = opLow.indexOf('компенсация скидки') >= 0 || opLow.indexOf('лояльност') >= 0;
+    var isTech = opLow.indexOf('возмещение издержек') >= 0 || opLow.indexOf('возмещение за выдачу') >= 0;
+
+    if (isSale) {
+      salesCount += Math.abs(Number(row[qtyCol]) || 0);
+      sumRetail += Math.abs(Number(row[retailCol]) || 0);
+      sumForPay += Number(row[forPayCol]) || 0;
+    }
+
+    if (isLog) sumLog += Math.abs(Number(row[logCol] || row[forPayCol]) || 0);
+    if (isStor) sumStor += Math.abs(Number(row[storCol] || row[forPayCol]) || 0);
+    if (isDeduct) sumDeduct += Math.abs(Number(row[deductCol] || row[forPayCol]) || 0);
+
+    if (isLoyalty) {
+      var lAmt = Number(row[forPayCol]) || Number(row[addPayCol]) || Number(row[compCol]) || 0;
+      sumLoyalty += Math.abs(lAmt);
+    }
+    if (isTech) {
+      var tAmt = Number(row[forPayCol]) || 0;
+      sumTech += Math.abs(tAmt);
+    }
+  }
+
+  var afterExpenses = sumForPay - sumLog - sumStor - sumDeduct + sumLoyalty + sumTech;
+
+  console.log('══ КОНТРОЛЬНАЯ СВЕРКА RAW_WB_FINANCE ══');
+  console.log('  Продажи товара (qty):        ' + salesCount);
+  console.log('  Сумма реализации WB:         ' + roundTwo_(sumRetail));
+  console.log('  К перечислению продавцу:     ' + roundTwo_(sumForPay));
+  console.log('  Логистика WB:                ' + roundTwo_(sumLog));
+  console.log('  Хранение:                    ' + roundTwo_(sumStor));
+  console.log('  Удержания:                   ' + roundTwo_(sumDeduct));
+  console.log('  Компенсация лояльности:      ' + roundTwo_(sumLoyalty));
+  console.log('  Технические компенсации:     ' + roundTwo_(sumTech));
+  console.log('  ──────────────────────────────');
+  console.log('  После расходов WB:           ' + roundTwo_(afterExpenses));
+
+  console.log('');
+  console.log('═══ verifyRawWbFinanceImport() ЗАВЕРШЕНО ═══');
+
+  SpreadsheetApp.getUi().alert('📊 Контрольная сверка RAW_WB_FINANCE',
+    'Продажи товара: ' + salesCount + '\n' +
+    'Сумма реализации WB: ' + roundTwo_(sumRetail) + '\n' +
+    'К перечислению продавцу: ' + roundTwo_(sumForPay) + '\n' +
+    'Логистика WB: ' + roundTwo_(sumLog) + '\n' +
+    'Хранение: ' + roundTwo_(sumStor) + '\n' +
+    'Удержания: ' + roundTwo_(sumDeduct) + '\n' +
+    'Компенсация лояльности: ' + roundTwo_(sumLoyalty) + '\n' +
+    'Тех. компенсации: ' + roundTwo_(sumTech) + '\n' +
+    '──────────────────\n' +
+    'После расходов WB: ' + roundTwo_(afterExpenses) + '\n\n' +
+    'Подробности — в Журнале выполнения.',
+    SpreadsheetApp.getUi().ButtonSet.OK);
+}
+
+
+// ═══════════════════════════════════════
+// МЕНЮ
+// ═══════════════════════════════════════
+
+function addWbFinanceImportMenu() {
+  var ui = SpreadsheetApp.getUi();
+  ui.createMenu('📥 Импорт WB Finance')
+    .addItem('📁 Показать файлы отчетов на Диске', 'listWbFinanceReportsInDrive')
+    .addSeparator()
+    .addItem('📥 Загрузить пару отчетов 18.05–24.05', 'importWbFinanceReports_2026_05_18_24')
+    .addSeparator()
+    .addItem('🔍 Аудит raw_json по группам операций', 'auditRawJsonFinanceFields')
+    .addItem('📋 Контрольная сверка RAW_WB_FINANCE', 'verifyRawWbFinanceImport')
+    .addSeparator()
+    .addItem('📊 Пересобрать CLEAN с расходами', 'buildCleanWbDailyWithFinance')
+    .addItem('📈 Пересобрать юнит-отчет', 'buildMonthlyUnitReportWithFinance')
+    .addToUi();
+}
