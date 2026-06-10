@@ -407,18 +407,23 @@ function wbApiTestBuildSummary_(folder, results) {
   }
   lines.push('');
 
-  // Кросс-сверка рекламы T8 ↔ T9
+  // Реклама: T8 — управленческий источник, T9 — контроль списаний WB
   if (byId.T8 && byId.T9) {
     var sumFull = (byId.T8.checksums && byId.T8.checksums.sumSpend) || 0;
     var sumUpd = (byId.T9.checksums && byId.T9.checksums.sumUpd) || 0;
-    var dAds = wbApiTestRound_(Math.abs(sumFull - sumUpd));
-    lines.push('## Сверка рекламы (T8 ↔ T9)');
-    lines.push('- Σ fullstats.sum = ' + wbApiTestRound_(sumFull) + ' ₽');
-    lines.push('- Σ updSum = ' + wbApiTestRound_(sumUpd) + ' ₽');
-    lines.push('- |Δ| = ' + dAds + ' ₽ (порог ' + WB_API_TEST_ADS_THRESHOLD_ + ' ₽)');
-    lines.push('- Статус: ' + (dAds <= WB_API_TEST_ADS_THRESHOLD_
-      ? 'API-сверка T8/T9 сходится; финальный SKU-факт только после сверки с кабинетом WB'
-      : 'API-сверка T8/T9 НЕ сходится — реклама остаётся оценкой'));
+    var dAmount = wbApiTestRound_(Math.abs(sumFull - sumUpd));
+    var deltaPercent = sumFull ? wbApiTestRound_(dAmount / Math.abs(sumFull) * 100) : null;
+    var adsStatus = (deltaPercent !== null && deltaPercent <= WB_API_TEST_ADS_DELTA_PCT_) ? 'OK' : 'WARNING';
+    lines.push('## Реклама (T8 — источник, T9 — контроль)');
+    lines.push('- T8 total spend (fullstats) = ' + wbApiTestRound_(sumFull) + ' ₽');
+    lines.push('- T9 total updSum (списания WB) = ' + wbApiTestRound_(sumUpd) + ' ₽');
+    lines.push('- delta amount = ' + dAmount + ' ₽');
+    lines.push('- deltaPercent = ' + (deltaPercent === null ? '—' : deltaPercent + ' %') +
+      ' (порог ' + WB_API_TEST_ADS_DELTA_PCT_ + ' %)');
+    lines.push('- status: ' + adsStatus + (adsStatus === 'WARNING' ? ' — требуется ручная сверка с кабинетом WB' : ''));
+    lines.push('- Реклама для управленческого P&L и SKU-воронки берётся из T8 fullstats. ' +
+      'T9 используется как контроль списаний WB; расхождение допустимо из-за временного лага ' +
+      'между рекламной активностью и финансовым списанием.');
     lines.push('');
   }
 
@@ -447,7 +452,8 @@ function wbApiTestBuildSummary_(folder, results) {
   }
 
   lines.push('---');
-  lines.push('*T8/T9 — только API-сверка; финальный SKU-факт рекламы возможен только после сверки с кабинетом WB. ' +
+  lines.push('*Реклама для управленческого P&L и SKU-воронки берётся из T8 fullstats; ' +
+    'T9 — контроль списаний WB (расхождение допустимо из-за временного лага). ' +
     'COGS в WB API не ищется. Excel/Drive не используется как источник факта.*');
 
   var stamp = Utilities.formatDate(new Date(), 'Europe/Moscow', 'yyyyMMdd_HHmmss');

@@ -104,11 +104,12 @@ function testWbApiRunFinanceNew() {
   var c = wbApiTestFinanceChecksums_(all,
     { gross: ['retailAmount', 'retail_amount', 'ppvzForPay', 'saleAmount'],
       forPay: ['ppvzForPay', 'ppvz_for_pay', 'forPay'],
-      logistics: ['deliveryRub', 'delivery_rub', 'logistics'],
-      storage: ['storageFee', 'storage_fee', 'storagePrice'],
+      logistics: ['deliveryService', 'deliveryRub', 'delivery_rub', 'logistics'],
+      storage: ['paidStorage', 'storageFee', 'storage_fee', 'storagePrice'],
       deductions: ['deduction', 'penalty', 'additionalPayment'],
-      acceptance: ['acceptance', 'acceptanceCost'],
-      acquiring: ['acquiringFee', 'acquiring_fee', 'rebillLogisticCost'],
+      acceptance: ['paidAcceptance', 'acceptance', 'acceptanceCost'],
+      acquiring: ['acquiringFee', 'acquiring_fee'],
+      rebillLogistics: ['rebillLogisticCost', 'rebill_logistic_cost'],
       qty: ['quantity', 'qty'] },
     ['nmId', 'nm_id', 'nmID'], ['srid', 'sale_dt'], ['rrdId', 'rrd_id', 'rrdid']);
   c.pages = pages;
@@ -171,7 +172,8 @@ function testWbApiRunLegacyFinance() {
       storage: ['storage_fee'],
       deductions: ['deduction', 'penalty'],
       acceptance: ['acceptance'],
-      acquiring: ['acquiring_fee', 'rebill_logistic_cost'],
+      acquiring: ['acquiring_fee'],
+      rebillLogistics: ['rebill_logistic_cost'],
       qty: ['quantity'] },
     ['nm_id', 'nmId'], ['srid'], ['rrd_id']);
   c.pages = pages;
@@ -329,21 +331,39 @@ function wbApiTestStocksA_() {
   r.firstRows = wbApiTestFirstRows_(data, 3);
 
   var sku = wbApiTestLoadSkuNmIds_();
-  var nmIds = [], totalQty = 0, warehouseRows = 0;
+  // Спец-категории внутри warehouses[] (не физические склады)
+  var WH_TOTAL_ = 'Всего находится на складах';
+  var WH_TO_CLIENT_ = 'В пути до получателей';
+  var WH_FROM_CLIENT_ = 'В пути возвраты на склад WB';
+  var nmIds = [];
+  var stockTotalQtyFromTotalRows = 0;   // из строк "Всего находится на складах"
+  var stockPhysicalQtyByWarehouses = 0; // сумма по физическим складам
+  var inWayToClientQty = 0;
+  var inWayFromClientQty = 0;
+  var warehouseRows = 0;                 // число физических складских строк
+  var totalRowsPresent = false;
   for (var i = 0; i < data.length; i++) {
     var nm = wbApiTestNormNmId_(wbApiTestPick_(data[i], ['nmId', 'nmid', 'nm_id']));
     if (nm) nmIds.push(nm);
     var whs = data[i].warehouses;
     if (whs && whs.length) {
-      warehouseRows += whs.length;
-      for (var w = 0; w < whs.length; w++) totalQty += Number(whs[w].quantity || 0);
-    } else {
-      totalQty += Number(wbApiTestPick_(data[i], ['quantity', 'quantityFull']) || 0);
+      for (var w = 0; w < whs.length; w++) {
+        var whName = String(whs[w].warehouseName || whs[w].warehouse || '');
+        var q = Number(whs[w].quantity || 0);
+        if (whName === WH_TOTAL_) { stockTotalQtyFromTotalRows += q; totalRowsPresent = true; }
+        else if (whName === WH_TO_CLIENT_) { inWayToClientQty += q; }
+        else if (whName === WH_FROM_CLIENT_) { inWayFromClientQty += q; }
+        else { stockPhysicalQtyByWarehouses += q; warehouseRows++; }
+      }
     }
   }
   var uniq = wbApiTestUniqueAndUnmatched_(nmIds, sku.set);
-  r.checksums = { rows: data.length, uniqueNmId: uniq.unique, totalQty: totalQty,
-    warehouseRows: warehouseRows, unmatchedNmId: uniq.unmatched,
+  r.checksums = { rows: data.length, uniqueNmId: uniq.unique,
+    stockTotalQtyFromTotalRows: stockTotalQtyFromTotalRows,
+    stockPhysicalQtyByWarehouses: stockPhysicalQtyByWarehouses,
+    inWayToClientQty: inWayToClientQty, inWayFromClientQty: inWayFromClientQty,
+    warehouseRows: warehouseRows, totalRowsPresent: totalRowsPresent,
+    unmatchedNmId: uniq.unmatched,
     hasVendorCode: wbApiTestHasField_(data, ['vendorCode']),
     hasBarcode: wbApiTestHasField_(data, ['barcode']),
     expandableToRows: (warehouseRows > 0) };
@@ -373,7 +393,11 @@ function wbApiTestStocksB_() {
       r.errors.push('HTTP ' + resp.code + ': ' + resp.body.substring(0, 200));
     } else {
       var arr = resp.json;
-      if (arr && arr.data && arr.data.length !== undefined) arr = arr.data;
+      if (arr && arr.data && arr.data.items && arr.data.items.length !== undefined) {
+        arr = arr.data.items;
+      } else if (arr && arr.data && arr.data.length !== undefined) {
+        arr = arr.data;
+      }
       if (arr && arr.length) data = arr;
     }
   } catch (e) { r.errors.push('Исключение: ' + e.message); }
@@ -381,10 +405,25 @@ function wbApiTestStocksB_() {
   r.rowsCount = data.length;
   r.fields = wbApiTestFieldList_(data);
   r.firstRows = wbApiTestFirstRows_(data, 3);
-  r.checksums = { rows: data.length,
+
+  var sku = wbApiTestLoadSkuNmIds_();
+  var nmIds = [], totalQuantity = 0, inWayToClient = 0, inWayFromClient = 0;
+  for (var i = 0; i < data.length; i++) {
+    var nm = wbApiTestNormNmId_(wbApiTestPick_(data[i], ['nmId', 'nmid', 'nm_id']));
+    if (nm) nmIds.push(nm);
+    totalQuantity += Number(wbApiTestPick_(data[i], ['quantity', 'qty', 'quantityFull']) || 0);
+    inWayToClient += Number(wbApiTestPick_(data[i], ['inWayToClient', 'in_way_to_client']) || 0);
+    inWayFromClient += Number(wbApiTestPick_(data[i], ['inWayFromClient', 'in_way_from_client']) || 0);
+  }
+  var uniqT6 = wbApiTestUniqueAndUnmatched_(nmIds, sku.set);
+  r.checksums = { rows: data.length, uniqueNmId: uniqT6.unique,
+    totalQuantity: totalQuantity, inWayToClient: inWayToClient, inWayFromClient: inWayFromClient,
+    unmatchedNmId: uniqT6.unmatched,
     hasNmId: wbApiTestHasField_(data, ['nmId', 'nmid', 'nm_id']),
     hasWarehouse: wbApiTestHasField_(data, ['warehouse', 'warehouseName']),
-    hasQuantity: wbApiTestHasField_(data, ['quantity', 'qty']) };
+    hasRegion: wbApiTestHasField_(data, ['region', 'regionName', 'oblast']),
+    hasWarehouseId: wbApiTestHasField_(data, ['warehouseId', 'officeId']),
+    hasChrtId: wbApiTestHasField_(data, ['chrtId', 'chrt_id']) };
 
   // candidate B: даже при 200 без подтверждённой схемы — PARTIAL/TBD
   if (r.httpStatus === 200 && data.length > 0) r.decision = WB_API_TEST_DECISION_PARTIAL_;
@@ -405,15 +444,17 @@ function testWbApiRunAds() {
   var t8 = wbApiTestAdsFullstats_(statsAdvertIds);
   var t9 = wbApiTestAdsUpd_();
 
-  // сверка T8 ↔ T9 — только API-сверка (не финальный SKU-факт)
+  // Реклама: T8 (fullstats) — основной управленческий источник расхода;
+  // T9 (upd) — контроль списаний WB. Коэффициент приведения НЕ применяется.
   var sumFull = (t8.checksums && t8.checksums.sumSpend) || 0;
   var sumUpd = (t9.checksums && t9.checksums.sumUpd) || 0;
-  var delta = wbApiTestRound_(Math.abs(sumFull - sumUpd));
-  wbApiTestLog_('Сверка рекламы Σfullstats.sum=' + wbApiTestRound_(sumFull) +
-    ' ↔ ΣupdSum=' + wbApiTestRound_(sumUpd) + ' → |Δ|=' + delta +
-    (delta <= WB_API_TEST_ADS_THRESHOLD_
-      ? ' (API-сверка T8/T9 сходится; финальный SKU-факт только после сверки с кабинетом WB)'
-      : ' (API-сверка T8/T9 НЕ сходится — реклама остаётся оценкой)'));
+  var deltaAmount = wbApiTestRound_(Math.abs(sumFull - sumUpd));
+  var deltaPercent = sumFull ? wbApiTestRound_(deltaAmount / Math.abs(sumFull) * 100) : null;
+  var adsStatus = (deltaPercent !== null && deltaPercent <= WB_API_TEST_ADS_DELTA_PCT_) ? 'OK' : 'WARNING';
+  wbApiTestLog_('Реклама: T8 spend=' + wbApiTestRound_(sumFull) + ' ₽ (управленческий источник), ' +
+    'T9 updSum=' + wbApiTestRound_(sumUpd) + ' ₽ (контроль) → |Δ|=' + deltaAmount + ' ₽' +
+    (deltaPercent !== null ? ' (deltaPercent=' + deltaPercent + '%)' : '') + ' → ' + adsStatus +
+    (adsStatus === 'WARNING' ? ' — требуется ручная сверка с кабинетом WB' : ''));
 
   return { T7: t7, T8: t8, T9: t9 };
 }
@@ -550,7 +591,8 @@ function wbApiTestAdsFullstats_(statsAdvertIds) {
   r.checksums = { aggregatedRows: allRows.length, sumSpend: wbApiTestRound_(sumSpend),
     uniqueNmId: uniq.unique, unmatchedNmId: uniq.unmatched,
     zeroSumWithActivity: zeroSumNonZeroActivity,
-    note: 'API-сверка с T9 — обязательна; финальный SKU-факт только после сверки с кабинетом WB' };
+    note: 'T8 fullstats — основной управленческий источник рекламного расхода (P&L, SKU-воронка); ' +
+      'T9 upd — контроль списаний WB' };
 
   r.decision = wbApiTestDecideRows_(r, r.checksums);
   return wbApiTestFinalize_(folder, r, rawParts);
@@ -783,7 +825,7 @@ function wbApiTestDecideRows_(r, c) {
 /** Контрольные суммы финансовых тестов (T1/T2) по карте полей. */
 function wbApiTestFinanceChecksums_(rows, moneyMap, nmIdNames, sridNames, rrdNames) {
   var c = { gross: 0, forPay: 0, logistics: 0, storage: 0, deductions: 0,
-    acceptance: 0, acquiring: 0, qty: 0, rows: rows.length,
+    acceptance: 0, acquiring: 0, rebillLogistics: 0, qty: 0, rows: rows.length,
     rowsWithoutNmId: 0, uniqueNmId: 0, hasSrid: false, hasRrd: false };
   var seen = {};
   for (var i = 0; i < rows.length; i++) {
@@ -795,6 +837,7 @@ function wbApiTestFinanceChecksums_(rows, moneyMap, nmIdNames, sridNames, rrdNam
     c.deductions += wbApiTestMoney_(wbApiTestPick_(row, moneyMap.deductions));
     c.acceptance += wbApiTestMoney_(wbApiTestPick_(row, moneyMap.acceptance));
     c.acquiring += wbApiTestMoney_(wbApiTestPick_(row, moneyMap.acquiring));
+    if (moneyMap.rebillLogistics) c.rebillLogistics += wbApiTestMoney_(wbApiTestPick_(row, moneyMap.rebillLogistics));
     c.qty += Number(wbApiTestPick_(row, moneyMap.qty) || 0);
     var nm = wbApiTestNormNmId_(wbApiTestPick_(row, nmIdNames));
     if (nm) seen[nm] = true; else c.rowsWithoutNmId++;
@@ -803,7 +846,7 @@ function wbApiTestFinanceChecksums_(rows, moneyMap, nmIdNames, sridNames, rrdNam
   c.hasSrid = wbApiTestHasField_(rows, sridNames);
   c.hasRrd = wbApiTestHasField_(rows, rrdNames);
   // округление
-  var keys = ['gross', 'forPay', 'logistics', 'storage', 'deductions', 'acceptance', 'acquiring'];
+  var keys = ['gross', 'forPay', 'logistics', 'storage', 'deductions', 'acceptance', 'acquiring', 'rebillLogistics'];
   for (var k = 0; k < keys.length; k++) c[keys[k]] = wbApiTestRound_(c[keys[k]]);
   return c;
 }
