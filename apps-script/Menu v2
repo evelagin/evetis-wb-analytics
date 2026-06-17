@@ -70,6 +70,9 @@ function onOpen() {
     .addItem('ℹ️ О системе', 'showAbout_')
     
     .addToUi();
+
+    // PR #13: отдельное меню ежедневного обновления WB API
+    addWbDailyRefreshMenu();
 }
 
 /**
