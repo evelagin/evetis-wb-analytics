@@ -76,6 +76,9 @@ function onOpen() {
 
     // PR #14A: меню production-загрузчика заказов
     addWbOrdersLoaderMenu();
+
+    // PR #14B: меню production-загрузчика продаж/возвратов
+    addWbSalesReturnsLoaderMenu();
 }
 
 /**
