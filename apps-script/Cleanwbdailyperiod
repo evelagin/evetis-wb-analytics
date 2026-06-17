@@ -96,13 +96,14 @@ function computeFinanceControl_(rows, hMap) {
       forPayCol = hMap['for_pay'], logCol = hMap['logistics_amount'],
       storCol = hMap['storage_fee'], deductCol = hMap['deduction'],
       penaltyCol = hMap['penalty'], addPayCol = hMap['additional_payment'],
-      compCol = hMap['compensation_amount'];
+      compCol = hMap['compensation_amount'], rebillCol = hMap['rebill_logistics'];
 
   function num(row, col) { return col === undefined ? 0 : (Number(row[col]) || 0); }
   function str(row, col) { return col === undefined ? '' : String(row[col] || '').trim(); }
 
   var salesQty = 0, gross = 0, forPay = 0, log = 0, stor = 0;
   var deduct = 0, promo = 0, transit = 0, comp = 0, pen = 0, loyalty = 0;
+  var rebill = 0;
 
   for (var i = 0; i < rows.length; i++) {
     var row = rows[i];
@@ -134,6 +135,7 @@ function computeFinanceControl_(rows, hMap) {
     if (isTransit) transit += (num(row, addPayCol) || num(row, forPayCol));
     if (isLoyalty) { var l = (num(row, compCol) || num(row, addPayCol) || num(row, forPayCol)); comp += l; loyalty += l; }
     if (isPvz) comp += (num(row, addPayCol) || num(row, forPayCol));
+    rebill += Math.abs(num(row, rebillCol));
   }
 
   // ВАЖНО: формула совпадает с aggregateFinanceSums_ (без вычета штрафов),
@@ -150,6 +152,7 @@ function computeFinanceControl_(rows, hMap) {
     wb_penalties: roundTwo_(pen),
     wb_loyalty_comp: roundTwo_(loyalty),
     wb_compensations: roundTwo_(comp),
+    wb_rebill_logistics: roundTwo_(rebill),
     wb_after_expenses: roundTwo_(afterExpenses)
   };
 }

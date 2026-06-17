@@ -43,7 +43,8 @@ var FINANCE_CLEAN_COLS_ = [
   'wb_acquiring',
   'wb_loyalty_comp',
   'wb_tech_comp',
-  'wb_after_expenses'
+  'wb_after_expenses',
+  'wb_rebill_logistics'
 ];
 
 
@@ -341,6 +342,7 @@ function readAndAggregateFinance_(ss, skuLookup, vendorToNm, barcodeToNm) {
   var fPromotionMap = {};    // WB продвижение (внутри удержаний)
   var fTransitMap = {};      // услуги доставки транзитных поставок (внутри удержаний)
   var fAcquiringMap = {};    // эквайринг / компенсация платёжных услуг
+  var fRebillMap = {};         // rebill-логистика: отдельно от обычной логистики
 
   console.log('══ readAndAggregateFinance_() v3.0 СТАРТ ══');
 
@@ -353,7 +355,7 @@ function readAndAggregateFinance_(ss, skuLookup, vendorToNm, barcodeToNm) {
              storageMap: fStorageMap, deductionMap: fDeductionMap,
              acceptanceMap: fAcceptanceMap, penaltyMap: fPenaltyMap,
              loyaltyMap: fLoyaltyMap, techCompMap: fTechCompMap,
-             promotionMap: fPromotionMap, transitMap: fTransitMap, acquiringMap: fAcquiringMap,
+             promotionMap: fPromotionMap, transitMap: fTransitMap, acquiringMap: fAcquiringMap, rebillMap: fRebillMap,
              stats: stats, errorsBuffer: errorsBuffer };
   }
 
@@ -390,6 +392,7 @@ function readAndAggregateFinance_(ss, skuLookup, vendorToNm, barcodeToNm) {
   // additional_payment / компенсации — теперь ищем явно
   var fAddPayCol  = findCol_(fH, ['additional_payment', 'допплата', 'дополнительная оплата']);
   var fCompCol    = findCol_(fH, ['compensation_amount', 'компенсация', 'возмещение']);
+  var fRebillCol = findCol_(fH, ['rebill_logistics', 'rebill_logistic_cost', 'rebillLogisticCost', 'rebilllogisticcost']);
 
   if (fDateCol === -1) {
     console.log('❌ Колонка даты НЕ НАЙДЕНА.');
@@ -400,7 +403,7 @@ function readAndAggregateFinance_(ss, skuLookup, vendorToNm, barcodeToNm) {
              storageMap: fStorageMap, deductionMap: fDeductionMap,
              acceptanceMap: fAcceptanceMap, penaltyMap: fPenaltyMap,
              loyaltyMap: fLoyaltyMap, techCompMap: fTechCompMap,
-             promotionMap: fPromotionMap, transitMap: fTransitMap, acquiringMap: fAcquiringMap,
+             promotionMap: fPromotionMap, transitMap: fTransitMap, acquiringMap: fAcquiringMap, rebillMap: fRebillMap,
              stats: stats, errorsBuffer: errorsBuffer };
   }
 
@@ -435,6 +438,7 @@ function readAndAggregateFinance_(ss, skuLookup, vendorToNm, barcodeToNm) {
     var storAmt   = fStorCol >= 0 ? (Number(row[fStorCol]) || 0) : 0;
     var deductAmt = fDeductCol >= 0 ? (Number(row[fDeductCol]) || 0) : 0;
     var accAmt    = fAccCol >= 0 ? (Number(row[fAccCol]) || 0) : 0;
+    var rebillAmt = fRebillCol >= 0 ? (Number(row[fRebillCol]) || 0) : 0;
     var penAmt    = fPenCol >= 0 ? (Number(row[fPenCol]) || 0) : 0;
     var acqAmt    = fAcqCol >= 0 ? (Number(row[fAcqCol]) || 0) : 0;
 
@@ -505,6 +509,9 @@ function readAndAggregateFinance_(ss, skuLookup, vendorToNm, barcodeToNm) {
 
     // Эквайринг / компенсация платёжных услуг
     if (acqAmt !== 0) fAcquiringMap[key] = (fAcquiringMap[key] || 0) + Math.abs(acqAmt);
+
+    // Rebill-логистика: отдельно от обычной логистики
+    if (rebillAmt !== 0) fRebillMap[key] = (fRebillMap[key] || 0) + Math.abs(rebillAmt);
 
     // Расшифровка удержаний и компенсаций по supplier_oper_name
     if (opLow.indexOf('продвижен') >= 0 || opLow.indexOf('реклам') >= 0) {
@@ -610,7 +617,7 @@ function readAndAggregateFinance_(ss, skuLookup, vendorToNm, barcodeToNm) {
     storageMap: fStorageMap, deductionMap: fDeductionMap,
     acceptanceMap: fAcceptanceMap, penaltyMap: fPenaltyMap,
     loyaltyMap: fLoyaltyMap, techCompMap: fTechCompMap,
-    promotionMap: fPromotionMap, transitMap: fTransitMap, acquiringMap: fAcquiringMap,
+    promotionMap: fPromotionMap, transitMap: fTransitMap, acquiringMap: fAcquiringMap, rebillMap: fRebillMap,
     stats: stats, errorsBuffer: errorsBuffer
   };
 }
@@ -905,6 +912,7 @@ function buildCleanWbDailyWithFinance() {
     'wb_for_pay', 'wb_logistics', 'wb_storage',
     'wb_deductions', 'wb_acceptance', 'wb_penalties', 'wb_acquiring',
     'wb_loyalty_comp', 'wb_tech_comp', 'wb_after_expenses',
+    'wb_rebill_logistics',
     'ads_spend', 'stock_qty', 'source_status', 'updated_at'
   ];
 
@@ -935,6 +943,7 @@ function buildCleanWbDailyWithFinance() {
     var wbAcc       = finResult.acceptanceMap[k] || 0;
     var wbPen       = finResult.penaltyMap[k] || 0;
     var wbAcq       = finResult.acquiringMap[k] || 0;
+    var wbRebill  = finResult.rebillMap[k] || 0;
     var wbLoyalty   = finResult.loyaltyMap[k] || 0;
     var wbTech      = finResult.techCompMap[k] || 0;
 
@@ -963,6 +972,7 @@ function buildCleanWbDailyWithFinance() {
       roundTwo_(wbLoyalty),
       roundTwo_(wbTech),
       roundTwo_(wbAfter),
+      roundTwo_(wbRebill),
       roundTwo_(adsMap[k] || 0),
       stocksMap[k] || 0,
       sourceStatus,
