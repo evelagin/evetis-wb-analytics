@@ -143,6 +143,8 @@ var FINANCE_API_FIELD_MAP_ = {
   acceptance:                'acceptance',
   additional_payment:        'additional_payment',
   acquiring_fee:             'acquiring_fee',
+  rebill_logistic_cost: 'rebill_logistics',
+  rebillLogisticCost: 'rebill_logistics',
   currency_name:             'currency'
 };
 
@@ -423,12 +425,14 @@ function aggregateFinanceSums_(rows, hMap) {
   var penaltyCol = hMap['penalty'];
   var addPayCol = hMap['additional_payment'];
   var compCol = hMap['compensation_amount'];
+  var rebillCol = hMap['rebill_logistics'];
 
   function num(row, col) { return col === undefined ? 0 : (Number(row[col]) || 0); }
   function str(row, col) { return col === undefined ? '' : String(row[col] || '').trim(); }
 
   var salesQty = 0, gross = 0, forPay = 0, log = 0, stor = 0;
   var deduct = 0, promo = 0, transit = 0, comp = 0;
+  var rebill = 0;
 
   for (var i = 0; i < rows.length; i++) {
     var row = rows[i];
@@ -459,6 +463,7 @@ function aggregateFinanceSums_(rows, hMap) {
     if (isTransit) transit += (num(row, addPayCol) || num(row, forPayCol));
     if (isLoyalty) comp += (num(row, compCol) || num(row, addPayCol) || num(row, forPayCol));
     if (isPvz) comp += (num(row, addPayCol) || num(row, forPayCol));
+    rebill += Math.abs(num(row, rebillCol));
   }
 
   var afterExpenses = forPay - log - stor - deduct - promo + transit + comp;
@@ -473,6 +478,7 @@ function aggregateFinanceSums_(rows, hMap) {
     wb_promotion: roundTwo_(promo),
     wb_transit_delivery: roundTwo_(transit),
     wb_compensations: roundTwo_(comp),
+    wb_rebill_logistics: roundTwo_(rebill),
     wb_after_expenses: roundTwo_(afterExpenses)
   };
 }
@@ -1127,6 +1133,7 @@ function verifyFinanceReconciliation(dateFrom, dateTo) {
     'К перечислению: ' + sums.wb_for_pay + ' ₽\n' +
     'Логистика: ' + sums.wb_logistics + ' ₽\n' +
     'Хранение: ' + sums.wb_storage + ' ₽\n' +
+    'Rebill-логистика: ' + sums.wb_rebill_logistics + ' ₽\n' +
     'Удержания: ' + sums.wb_deductions + ' ₽\n' +
     'Продвижение/реклама: ' + sums.wb_promotion + ' ₽\n' +
     'Возмещение издержек: ' + sums.wb_transit_delivery + ' ₽\n' +
