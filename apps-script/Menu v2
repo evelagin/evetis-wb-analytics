@@ -73,6 +73,9 @@ function onOpen() {
 
     // PR #13: отдельное меню ежедневного обновления WB API
     addWbDailyRefreshMenu();
+
+    // PR #14A: меню production-загрузчика заказов
+    addWbOrdersLoaderMenu();
 }
 
 /**
