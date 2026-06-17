@@ -403,7 +403,7 @@ function readAndAggregateFinance_(ss, skuLookup, vendorToNm, barcodeToNm) {
              storageMap: fStorageMap, deductionMap: fDeductionMap,
              acceptanceMap: fAcceptanceMap, penaltyMap: fPenaltyMap,
              loyaltyMap: fLoyaltyMap, techCompMap: fTechCompMap,
-             promotionMap: fPromotionMap, transitMap: fTransitMap, acquiringMap: fAcquiringMap,
+             promotionMap: fPromotionMap, transitMap: fTransitMap, acquiringMap: fAcquiringMap, rebillMap: fRebillMap,
              stats: stats, errorsBuffer: errorsBuffer };
   }
 
