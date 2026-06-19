@@ -331,15 +331,9 @@ function normalizeStocksApiRows_(apiData, hMap, lastCol, meta, skuIndex) {
 
     if (nm) out.nmSet[nm] = 1;
 
-    // SKU-привязка
-    var internalSku = '', matchStatus = 'not_found';
-    if (skuIndex && skuIndex.byNm && nm && skuIndex.byNm[nm]) {
-      internalSku = skuIndex.byNm[nm].sku || ''; matchStatus = 'matched';
-    } else if (skuIndex && skuIndex.byBarcode && barcode && skuIndex.byBarcode[barcode]) {
-      var rNm = skuIndex.byBarcode[barcode];
-      if (skuIndex.byNm && skuIndex.byNm[rNm]) internalSku = skuIndex.byNm[rNm].sku || '';
-      matchStatus = 'matched';
-    }
+    // SKU-привязка (устойчиво к разной структуре buildSkuIndex_)
+    var resolved = stocksResolveSku_(skuIndex, nm, barcode);
+    var internalSku = resolved.sku, matchStatus = resolved.status;
     if (nm && matchStatus === 'not_found') out.unmatchedSet[nm] = 1;
 
     var whs = item.warehouses || [];
@@ -397,6 +391,46 @@ function normalizeStocksApiRows_(apiData, hMap, lastCol, meta, skuIndex) {
 
 function stocksSet_(row, hMap, key, val) {
   if (hMap[key] !== undefined) row[hMap[key]] = val;
+}
+
+/**
+ * Безопасно извлекает SKU из записи SKU-индекса любой структуры.
+ *   - строка → сама строка;
+ *   - объект → sku | internal_sku | internalSku | article | vendor_code | vendorCode;
+ *   - иначе → ''.
+ */
+function stocksExtractSku_(entry) {
+  if (entry === null || entry === undefined) return '';
+  if (typeof entry === 'string') return entry.trim();
+  if (typeof entry === 'object') {
+    var v = entry.sku || entry.internal_sku || entry.internalSku ||
+            entry.article || entry.vendor_code || entry.vendorCode || '';
+    return String(v || '').trim();
+  }
+  return '';
+}
+
+/**
+ * Резолвит SKU по nmId, затем по barcode, устойчиво к структуре buildSkuIndex_.
+ *   1) byNm[nm];
+ *   2) byBarcode[barcode] — если строка, считаем её кандидатом в SKU,
+ *      но при наличии byNm[<строка>] берём SKU оттуда;
+ *   3) непустой SKU → matched, иначе not_found.
+ * @return {{sku:string, status:string}}
+ */
+function stocksResolveSku_(skuIndex, nm, barcode) {
+  var sku = '';
+  if (skuIndex && skuIndex.byNm && nm && skuIndex.byNm[nm] !== undefined) {
+    sku = stocksExtractSku_(skuIndex.byNm[nm]);
+  }
+  if (!sku && skuIndex && skuIndex.byBarcode && barcode && skuIndex.byBarcode[barcode] !== undefined) {
+    var ref = skuIndex.byBarcode[barcode];
+    if (typeof ref === 'string' && skuIndex.byNm && skuIndex.byNm[ref] !== undefined) {
+      sku = stocksExtractSku_(skuIndex.byNm[ref]);   // строка-ссылка на nm → SKU из byNm
+    }
+    if (!sku) sku = stocksExtractSku_(ref);          // иначе сама запись/строка как SKU
+  }
+  return { sku: sku, status: (sku ? 'matched' : 'not_found') };
 }
 
 
