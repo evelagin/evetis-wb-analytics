@@ -71,17 +71,26 @@ function addUnitSkuDailyMenu() {
  * Собирает плоский UNIT_SKU_DAILY из CLEAN_WB_DAILY.
  * Идемпотентно: очищает данные (со 2-й строки) и пишет заново одним setValues.
  */
-function buildUnitSkuDaily() {
+function buildUnitSkuDaily(options) {
+  // PR #15F: optional silent mode — без отдельного UI-alert при вызове из оркестратора.
+  options = options || {};
+  var silent = options.silent === true;
   var t0 = Date.now();
   var ss = SpreadsheetApp.getActiveSpreadsheet();
-  var ui = SpreadsheetApp.getUi();
+  var ui = null;  // PR #15F: ленивое получение UI; в silent режиме getUi() не вызывается
+
+  function unitAlert_(title, body) {
+    if (silent) return;
+    if (!ui) ui = SpreadsheetApp.getUi();
+    ui.alert(title, body, ui.ButtonSet.OK);
+  }
 
   console.log('═══ buildUnitSkuDaily() v1.0 (PR #15B) СТАРТ ═══');
 
   // ── 1. CLEAN_WB_DAILY (источник, только чтение) ──
   var cleanSheet = ss.getSheetByName(UNIT_SKU_CLEAN_SHEET_);
   if (!cleanSheet || cleanSheet.getLastRow() < 2) {
-    ui.alert('❌ Ошибка', UNIT_SKU_CLEAN_SHEET_ + ' пуст или не найден.', ui.ButtonSet.OK);
+    unitAlert_('❌ Ошибка', UNIT_SKU_CLEAN_SHEET_ + ' пуст или не найден.');
     return { ok: false, error: 'CLEAN пуст/не найден' };
   }
 
@@ -102,7 +111,7 @@ function buildUnitSkuDaily() {
   var cAdsCol     = findCol_(cH, ['ads_spend']);
 
   if (cDateCol === -1 || cNmCol === -1) {
-    ui.alert('❌ Ошибка', 'В CLEAN нет колонки date или wb_nm_id.', ui.ButtonSet.OK);
+    unitAlert_('❌ Ошибка', 'В CLEAN нет колонки date или wb_nm_id.');
     return { ok: false, error: 'нет date/wb_nm_id в CLEAN' };
   }
   if (cCancelCol === -1 || cActiveCol === -1) {
@@ -229,7 +238,7 @@ function buildUnitSkuDaily() {
   console.log('  (суммы должны совпадать с CLEAN_WB_DAILY за тот же набор дат)');
   console.log('═══ buildUnitSkuDaily() ЗАВЕРШЕНО: ' + sec_(t0) + ' сек ═══');
 
-  ui.alert('📦 UNIT_SKU_DAILY собран',
+  unitAlert_('📦 UNIT_SKU_DAILY собран',
     'Строк: ' + matrix.length +
     '\nПропущено без SKU: ' + skippedNoNm +
     '\n\n── Контроль (= должно сходиться с CLEAN) ──' +
@@ -237,8 +246,7 @@ function buildUnitSkuDaily() {
     '\ncancel_qty: ' + sumCancel +
     '\nsales_qty: ' + sumSales +
     '\nreturns_qty: ' + sumReturns +
-    '\n\nВремя: ' + sec_(t0) + ' сек',
-    ui.ButtonSet.OK);
+    '\n\nВремя: ' + sec_(t0) + ' сек');
 
   return {
     ok: true, rows: matrix.length, skippedNoNm: skippedNoNm,
