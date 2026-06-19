@@ -44,7 +44,7 @@ function onOpen() {
     // ─── Расчёты (заглушки) ───
     .addSubMenu(
       ui.createMenu('📊 Расчёты')
-        .addItem('Пересчитать UNIT_SKU_DAILY', 'notImplementedYet_')
+        .addItem('Пересчитать UNIT_SKU_DAILY', 'buildUnitSkuDaily')
         .addItem('Пересчитать PNL_TOTAL', 'notImplementedYet_')
         .addItem('Обновить дашборд', 'notImplementedYet_')
         .addItem('ABC/XYZ анализ', 'notImplementedYet_')
