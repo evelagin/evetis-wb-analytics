@@ -1,6 +1,6 @@
 /**
  * ══════════════════════════════════════════════════════════════
- * EVETIS WB — WbDailyRefresh.gs  v1.0  (PR #13)
+ * EVETIS WB — WbDailyRefresh.gs  v1.1  (PR #13 + PR #14C)
  *
  * Тонкий оркестратор ежедневного обновления WB через API.
  * Ручной запуск: меню «🔄 WB Daily» → «🔄 Обновить WB API» → runWbDailyRefresh().
@@ -11,11 +11,22 @@
  *   3. ПОЛНАЯ пересборка CLEAN_WB_DAILY (buildCleanWbDailyWithFinance) — без периодной обрезки.
  *   4. Журнал WB_DAILY_STATUS (создаётся ЭТИМ модулем, НЕ через SheetsSchema/createAllSheets).
  *
+ * SCOPE PR #14C (добавлено):
+ *   5. RAW-загрузка заказов: importWbOrdersFromApiInternal_(from,to) → RAW_WB_ORDERS.
+ *   6. RAW-загрузка продаж/возвратов: importWbSalesReturnsFromApiInternal_(from,to) → RAW_WB_SALES_RETURNS.
+ *   • Оба идемпотентны (replace-slice по своим строкам). Каждый в своём try/catch.
+ *   • Сбой ИЛИ отсутствие любого из загрузчиков → ТОЛЬКО warnings (не errors):
+ *     итоговый статус при здоровых finance+CLEAN остаётся WARN, а не FAIL.
+ *   • Метрики пишутся в WB_DAILY_STATUS (6 новых колонок в конце заголовка).
+ *
  * НЕ ДЕЛАЕТ:
  *   - Не меняет P&L, UNIT, PNL, формулы, обработку rebill_logistics.
- *   - Не трогает orders / sales / ads / stocks.
+ *   - НЕ меняет финансовую методологию: продажи/возвраты для CLEAN по-прежнему
+ *     берутся из RAW_WB_FINANCE. RAW_WB_ORDERS / RAW_WB_SALES_RETURNS — только
+ *     RAW-слой для будущей воронки и сверок, в CLEAN сейчас НЕ участвуют.
  *   - Не вызывает Drive/XLSX fallback, updateWbFinanceData(), updateWbStorageData().
  *   - Storage/хранение ВЫКЛЮЧЕНО флагом (WB_DAILY_INCLUDE_STORAGE_ = false).
+ *   - Не меняет сами загрузчики, WbFinance, CLEAN, SheetsSchema, Menu, triggers.
  *
  * ТЕРМИНОЛОГИЯ: wb_storage в статусе — это storage_fee из финансового отчёта WB
  *   (расход за ХРАНЕНИЕ). Это НЕ товарные остатки (stocks).
@@ -27,6 +38,8 @@
  *   buildFinanceRawHeaderMap_(sheet,lastCol)        [WbFinanceLoader.gs]
  *   readFinanceRowsForPeriod_(sheet,hMap,from,to)   [WbFinanceLoader.gs]
  *   aggregateFinanceSums_(rows,hMap)                [WbFinanceLoader.gs]
+ *   importWbOrdersFromApiInternal_(from,to)         [WbOrdersLoader.gs]          — PR #14C
+ *   importWbSalesReturnsFromApiInternal_(from,to)   [WbSalesReturnsLoader.gs]    — PR #14C
  *   buildCleanWbDailyWithFinance()                  [WbFinance.gs]
  *   importWbStorageFromApiInternal_(from,to)        [WbStorageFolderLoader.gs] — только при флаге
  *   roundTwo_                                       [utils]
@@ -52,7 +65,11 @@ var WB_DAILY_STATUS_HEADERS_ = [
   'gross_revenue', 'wb_for_pay', 'wb_logistics', 'wb_storage',
   'wb_deductions', 'wb_rebill_logistics', 'wb_after_expenses',
   'clean_rows', 'clean_dates',
-  'errors_warnings'
+  'errors_warnings',
+  // PR #14C: метрики orders/sales дописываются В КОНЕЦ (совместимо с аддитивной
+  // миграцией старого листа PR #13; запись — по имени колонки, см. writeWbDailyStatusRow_).
+  'orders_rows_imported', 'orders_count', 'orders_cancel_count',
+  'sales_rows_imported', 'sales_count', 'returns_count'
 ];
 
 
@@ -73,7 +90,8 @@ function addWbDailyRefreshMenu() {
 // ═══════════════════════════════════════
 
 /**
- * Ежедневное безопасное обновление: finance API (rolling 14) + контроль + полная CLEAN + статус.
+ * Ежедневное безопасное обновление: finance API (rolling 14) + RAW orders +
+ * RAW sales/returns + контроль finance + полная CLEAN + статус.
  * Каждый блок в своём try/catch — падение одного не рушит остальные. Данные не откатываются.
  * @return {Object} result
  */
@@ -81,7 +99,7 @@ function runWbDailyRefresh() {
   var t0 = Date.now();
   var ss = SpreadsheetApp.getActiveSpreadsheet();
   var ui = SpreadsheetApp.getUi();
-  console.log('═══ runWbDailyRefresh() v1.0 СТАРТ ═══');
+  console.log('═══ runWbDailyRefresh() v1.1 СТАРТ ═══');
 
   var errors = [];
   var warnings = [];
@@ -94,7 +112,10 @@ function runWbDailyRefresh() {
     gross_revenue: 0, wb_for_pay: 0, wb_logistics: 0, wb_storage: 0,
     wb_deductions: 0, wb_rebill_logistics: 0, wb_after_expenses: 0,
     clean_rows: 0, clean_dates: 0,
-    errors_warnings: ''
+    errors_warnings: '',
+    // PR #14C: метрики RAW-загрузчиков
+    orders_rows_imported: 0, orders_count: 0, orders_cancel_count: 0,
+    sales_rows_imported: 0, sales_count: 0, returns_count: 0
   };
 
   // 0. Лист статуса
@@ -130,7 +151,49 @@ function runWbDailyRefresh() {
     console.log('❌ Finance API: ' + e.message);
   }
 
+  // 2a. Orders API import (PR #14C). RAW-слой, идемпотентно (replace-slice).
+  //     Сбой/отсутствие → ТОЛЬКО warning; daily не останавливается, статус не уходит в FAIL.
+  try {
+    if (typeof importWbOrdersFromApiInternal_ !== 'function') {
+      warnings.push('Orders loader: importWbOrdersFromApiInternal_ not found');
+      console.log('⚠️ Orders loader: importWbOrdersFromApiInternal_ not found');
+    } else {
+      var ord = importWbOrdersFromApiInternal_(rng.from, rng.to);
+      result.orders_rows_imported = Number((ord && ord.rows_imported) || 0);
+      result.orders_count         = Number((ord && ord.orders_count) || 0);
+      result.orders_cancel_count  = Number((ord && ord.cancel_count) || 0);
+      if (ord && ord.status === 'ERROR') warnings.push('Orders loader: ' + (ord.error_message || 'ERROR'));
+      console.log('  Orders: rows=' + result.orders_rows_imported +
+        ', orders=' + result.orders_count + ', cancels=' + result.orders_cancel_count);
+    }
+  } catch (e) {
+    warnings.push('Orders loader исключение: ' + e.message);
+    console.log('⚠️ Orders loader: ' + e.message);
+  }
+
+  // 2b. Sales/Returns API import (PR #14C). RAW-слой, идемпотентно (replace-slice).
+  //     CLEAN по-прежнему из RAW_WB_FINANCE; RAW_WB_SALES_RETURNS пока только RAW-слой.
+  //     Сбой/отсутствие → ТОЛЬКО warning; daily не останавливается, статус не уходит в FAIL.
+  try {
+    if (typeof importWbSalesReturnsFromApiInternal_ !== 'function') {
+      warnings.push('Sales loader: importWbSalesReturnsFromApiInternal_ not found');
+      console.log('⚠️ Sales loader: importWbSalesReturnsFromApiInternal_ not found');
+    } else {
+      var sal = importWbSalesReturnsFromApiInternal_(rng.from, rng.to);
+      result.sales_rows_imported = Number((sal && sal.rows_imported) || 0);
+      result.sales_count         = Number((sal && sal.sales_count) || 0);
+      result.returns_count       = Number((sal && sal.returns_count) || 0);
+      if (sal && sal.status === 'ERROR') warnings.push('Sales loader: ' + (sal.error_message || 'ERROR'));
+      console.log('  Sales: rows=' + result.sales_rows_imported +
+        ', sales=' + result.sales_count + ', returns=' + result.returns_count);
+    }
+  } catch (e) {
+    warnings.push('Sales loader исключение: ' + e.message);
+    console.log('⚠️ Sales loader: ' + e.message);
+  }
+
   // 3. Контроль finance за период (incl. wb_rebill_logistics из PR #12)
+  //    Читает ТОЛЬКО RAW_WB_FINANCE → orders/sales выше на finance-суммы не влияют.
   try {
     var rawSheet = getRawFinanceSheet_(ss);
     if (rawSheet) {
@@ -143,7 +206,7 @@ function runWbDailyRefresh() {
       result.wb_logistics        = wbDailyNum_(sums.wb_logistics);
       result.wb_storage          = wbDailyNum_(sums.wb_storage);          // storage_fee = ХРАНЕНИЕ-расход (НЕ остатки)
       result.wb_deductions       = wbDailyNum_(sums.wb_deductions);
-      result.wb_rebill_logistics = wbDailyNum_(sums.wb_rebill_logistics || sums.rebill_logistics || 0);    // PR #12; 0 если ключа нет
+      result.wb_rebill_logistics = wbDailyNum_(sums.rebill_logistics);    // PR #12; 0 если ключа нет
       result.wb_after_expenses   = wbDailyNum_(sums.wb_after_expenses);
       console.log('  Контроль finance: forPay=' + result.wb_for_pay +
         ', log=' + result.wb_logistics + ', storage=' + result.wb_storage +
@@ -190,7 +253,7 @@ function runWbDailyRefresh() {
     console.log('❌ CLEAN: ' + e.message);
   }
 
-  // 6. Итоговый статус
+  // 6. Итоговый статус (orders/sales дают только warnings → FAIL только при finance/CLEAN/статус-лист)
   if (errors.length > 0) result.status = 'FAIL';
   else if (warnings.length > 0) result.status = 'WARN';
   else result.status = 'OK';
@@ -213,6 +276,10 @@ function runWbDailyRefresh() {
     'Статус: ' + result.status + '\n' +
     'Период finance: ' + result.finance_period_from + ' — ' + result.finance_period_to + '\n\n' +
     'Finance строк: ' + result.finance_rows_imported + ' (дублей: ' + result.finance_skipped_dupes + ')\n' +
+    'Orders строк: ' + result.orders_rows_imported + ' (заказов: ' + result.orders_count +
+      ', отмен: ' + result.orders_cancel_count + ')\n' +
+    'Sales строк: ' + result.sales_rows_imported + ' (продаж: ' + result.sales_count +
+      ', возвратов: ' + result.returns_count + ')\n' +
     'Выручка: ' + result.gross_revenue + ' ₽\n' +
     'К перечислению: ' + result.wb_for_pay + ' ₽\n' +
     'Логистика: ' + result.wb_logistics + ' ₽\n' +
@@ -235,7 +302,9 @@ function runWbDailyRefresh() {
 // ВСПОМОГАТЕЛЬНЫЕ (локальные для модуля)
 // ═══════════════════════════════════════
 
-/** Лист WB_DAILY_STATUS: создать с заголовками, если отсутствует. Без SheetsSchema/createAllSheets. */
+/** Лист WB_DAILY_STATUS: создать с заголовками, если отсутствует. Без SheetsSchema/createAllSheets.
+ *  PR #14C: если лист уже есть (старая шапка PR #13) — ТОЛЬКО дописать недостающие
+ *  колонки справа. Старые колонки не переставляются и не удаляются, строки не трогаются. */
 function ensureWbDailyStatusSheet_(ss) {
   var sheet = ss.getSheetByName(WB_DAILY_STATUS_SHEET_);
   if (!sheet) {
@@ -243,24 +312,45 @@ function ensureWbDailyStatusSheet_(ss) {
     sheet.getRange(1, 1, 1, WB_DAILY_STATUS_HEADERS_.length).setValues([WB_DAILY_STATUS_HEADERS_]);
     sheet.setFrozenRows(1);
     console.log('  WB_DAILY_STATUS создан');
-  } else if (sheet.getLastRow() === 0) {
+    return sheet;
+  }
+  if (sheet.getLastRow() === 0) {
     sheet.getRange(1, 1, 1, WB_DAILY_STATUS_HEADERS_.length).setValues([WB_DAILY_STATUS_HEADERS_]);
     sheet.setFrozenRows(1);
+    return sheet;
+  }
+  // Аддитивная миграция: дописать недостающие колонки СПРАВА.
+  var lastCol = sheet.getLastColumn();
+  var existing = sheet.getRange(1, 1, 1, lastCol).getValues()[0];
+  var present = {};
+  for (var i = 0; i < existing.length; i++) {
+    var nm = String(existing[i] || '').trim();
+    if (nm) present[nm] = true;
+  }
+  var missing = [];
+  for (var h = 0; h < WB_DAILY_STATUS_HEADERS_.length; h++) {
+    if (!present[WB_DAILY_STATUS_HEADERS_[h]]) missing.push(WB_DAILY_STATUS_HEADERS_[h]);
+  }
+  if (missing.length > 0) {
+    sheet.getRange(1, lastCol + 1, 1, missing.length).setValues([missing]);
+    console.log('  WB_DAILY_STATUS: дописаны колонки → ' + missing.join(', '));
   }
   return sheet;
 }
 
-/** Добавляет одну строку журнала в порядке WB_DAILY_STATUS_HEADERS_. */
+/** Добавляет одну строку журнала ПО ИМЕНАМ колонок фактического заголовка листа.
+ *  Устойчиво к расширенному/мигрированному заголовку и к ручной перестановке колонок
+ *  (ключи result совпадают с именами колонок WB_DAILY_STATUS_HEADERS_). */
 function writeWbDailyStatusRow_(sheet, r) {
-  sheet.appendRow([
-    r.timestamp, r.status,
-    r.finance_period_from, r.finance_period_to,
-    r.finance_rows_imported, r.finance_skipped_dupes,
-    r.gross_revenue, r.wb_for_pay, r.wb_logistics, r.wb_storage,
-    r.wb_deductions, r.wb_rebill_logistics, r.wb_after_expenses,
-    r.clean_rows, r.clean_dates,
-    r.errors_warnings
-  ]);
+  var lastCol = sheet.getLastColumn();
+  if (lastCol < 1) return;
+  var headers = sheet.getRange(1, 1, 1, lastCol).getValues()[0];
+  var row = [];
+  for (var c = 0; c < lastCol; c++) {
+    var name = String(headers[c] || '').trim();
+    row.push((name && r[name] !== undefined) ? r[name] : '');
+  }
+  sheet.getRange(sheet.getLastRow() + 1, 1, 1, lastCol).setValues([row]);
 }
 
 /** Окно rolling 14: использует financeRolling14Range_(), иначе считает локально (вчера-13 … вчера). */
