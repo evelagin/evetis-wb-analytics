@@ -206,7 +206,7 @@ function runWbDailyRefresh() {
       result.wb_logistics        = wbDailyNum_(sums.wb_logistics);
       result.wb_storage          = wbDailyNum_(sums.wb_storage);          // storage_fee = ХРАНЕНИЕ-расход (НЕ остатки)
       result.wb_deductions       = wbDailyNum_(sums.wb_deductions);
-      result.wb_rebill_logistics = wbDailyNum_(sums.rebill_logistics);    // PR #12; 0 если ключа нет
+      result.wb_rebill_logistics = wbDailyNum_(sums.wb_rebill_logistics || sums.rebill_logistics || 0);    // PR #12; 0 если ключа нет
       result.wb_after_expenses   = wbDailyNum_(sums.wb_after_expenses);
       console.log('  Контроль finance: forPay=' + result.wb_for_pay +
         ', log=' + result.wb_logistics + ', storage=' + result.wb_storage +
