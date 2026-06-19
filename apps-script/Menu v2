@@ -86,6 +86,9 @@ function onOpen() {
 
     // PR #16A: меню API operational pilot (orders/sales за 14/30 дней)
     addWbOperationalPilotMenu();
+
+    // PR #16B: test-only probe остатков T5/T6
+    addWbStocksProbeMenu();
 }
 
 /**

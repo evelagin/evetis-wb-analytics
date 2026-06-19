@@ -1,0 +1,110 @@
+/**
+ * ══════════════════════════════════════════════════════════════
+ * EVETIS WB — WbStocksProbe.gs  v1.0  (test-only)
+ *
+ * Тонкая READ-ONLY обёртка над уже существующими T5/T6 probe из
+ * WbApiTestRunner.gs. Запускает оба кандидата остатков и сводит
+ * результат в один контрольный alert.
+ *
+ * SCOPE (строго):
+ *   - Только ВЫЗОВ существующих wbApiTestStocksA_() (T5) и
+ *     wbApiTestStocksB_() (T6) + чтение их result-объектов + alert.
+ *   - СВОЕЙ записи нет вообще: ни production RAW (RAW_WB_STOCKS и пр.),
+ *     ни листов, ни dashboard. Любая персистентность — это поведение
+ *     самого test-harness (raw JSON в Drive-папку для разбора).
+ *
+ * НЕ ТРОГАЕТ И НЕ МЕНЯЕТ:
+ *   - WbApiTestRunner.gs / WbApiTestConfig.gs (только ВЫЗЫВАЕТ).
+ *   - RAW_WB_STOCKS, RAW_WB_FINANCE, RAW_WB_ORDERS, RAW_WB_SALES_RETURNS.
+ *   - runWbDailyRefresh(), CLEAN/UNIT, dashboard, COGS.
+ *
+ * ЗАВИСИМОСТИ (из WbApiTestRunner.gs):
+ *   wbApiTestStocksA_(), wbApiTestStocksB_()
+ *
+ * ПУБЛИЧНАЯ ТОЧКА ВХОДА:
+ *   probeWbStocksTestOnly()
+ *
+ * МЕНЮ: addWbStocksProbeMenu() — опционально, одной строкой в Menu v2.
+ * ══════════════════════════════════════════════════════════════
+ */
+
+
+/** Достаёт «физический остаток» из checksums кандидата (A и B зовут поле по-разному). */
+function wbStocksProbePhysicalQty_(cs) {
+  if (!cs) return 0;
+  if (cs.stockPhysicalQtyByWarehouses !== undefined) return cs.stockPhysicalQtyByWarehouses; // T5
+  if (cs.totalQuantity !== undefined) return cs.totalQuantity;                                // T6
+  return 0;
+}
+
+/** Краткий статус probe: OK если есть строки и нет ошибок, иначе WARN/ERROR. */
+function wbStocksProbeStatus_(r) {
+  if (!r) return 'ERROR';
+  if (r.errors && r.errors.length) return (r.rowsCount > 0 ? 'WARN' : 'ERROR');
+  return (r.rowsCount > 0 ? 'OK' : 'WARN');
+}
+
+/** Формирует блок текста по одному кандидату. */
+function wbStocksProbeBlock_(title, r) {
+  if (!r) return '── ' + title + ' ──\n(нет результата)\n';
+  var cs = r.checksums || {};
+  var firstErr = (r.errors && r.errors.length) ? r.errors[0] : '';
+  return '── ' + title + ' ──\n' +
+    'Статус: ' + wbStocksProbeStatus_(r) + '\n' +
+    'HTTP: ' + (r.httpStatus !== undefined && r.httpStatus !== null ? r.httpStatus : '—') + '\n' +
+    'Строк: ' + (r.rowsCount || 0) + '\n' +
+    'Уникальных nmId: ' + (cs.uniqueNmId !== undefined ? cs.uniqueNmId : '—') + '\n' +
+    'Физ. остаток (qty): ' + wbStocksProbePhysicalQty_(cs) + '\n' +
+    'Складских строк: ' + (cs.warehouseRows !== undefined ? cs.warehouseRows : '—') + '\n' +
+    'unmatched nmId: ' + (cs.unmatchedNmId !== undefined ? cs.unmatchedNmId : '—') + '\n' +
+    'Решение: ' + (r.decision || '—') + '\n' +
+    (firstErr ? 'Ошибка: ' + firstErr + '\n' : '');
+}
+
+/**
+ * READ-ONLY probe остатков: гоняет T5 (warehouse_remains) и T6
+ * (stocks-report/wb-warehouses) через существующий harness и сводит
+ * результат в один alert. Своей записи не делает.
+ * @return {{T5:Object, T6:Object}}
+ */
+function probeWbStocksTestOnly() {
+  var ui = SpreadsheetApp.getUi();
+  var t0 = Date.now();
+
+  if (typeof wbApiTestStocksA_ !== 'function' || typeof wbApiTestStocksB_ !== 'function') {
+    ui.alert('🧪 Probe остатков',
+      'Не найдены T5/T6 probe (wbApiTestStocksA_/wbApiTestStocksB_) в WbApiTestRunner.gs.',
+      ui.ButtonSet.OK);
+    return { T5: null, T6: null };
+  }
+
+  var a = null, b = null;
+  try { a = wbApiTestStocksA_(); } catch (e) { console.log('❌ T5: ' + e.message); }
+  try { b = wbApiTestStocksB_(); } catch (e) { console.log('❌ T6: ' + e.message); }
+
+  var elapsed = ((Date.now() - t0) / 1000).toFixed(1);
+
+  var msg =
+    wbStocksProbeBlock_('T5 · warehouse_remains (A, GET task-based)', a) + '\n' +
+    wbStocksProbeBlock_('T6 · stocks-report/wb-warehouses (B, POST)', b) + '\n' +
+    'Время: ' + elapsed + ' сек\n\n' +
+    '⚠️ Test-only probe остатков. В production RAW и dashboard НЕ пишет.\n' +
+    'Канон A/B не выбран — загрузчик остатков не кодим (PR #16B).';
+
+  ui.alert('🧪 Probe остатков (T5/T6)', msg, ui.ButtonSet.OK);
+  console.log('🧪 probeWbStocksTestOnly завершён за ' + elapsed + ' сек');
+  return { T5: a, T6: b };
+}
+
+
+// ═══════════════════════════════════════
+// МЕНЮ (опционально; подключить в Menu v2 → onOpen:
+//        addWbStocksProbeMenu();)
+// ═══════════════════════════════════════
+
+function addWbStocksProbeMenu() {
+  SpreadsheetApp.getUi()
+    .createMenu('🧪 Probe остатков')
+    .addItem('🔍 Probe T5/T6 (read-only)', 'probeWbStocksTestOnly')
+    .addToUi();
+}
