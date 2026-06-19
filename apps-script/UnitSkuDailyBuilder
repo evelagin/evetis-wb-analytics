@@ -46,7 +46,9 @@ var UNIT_SKU_FILL_COLS_ = [
   'sales_qty', 'returns_qty', 'net_sales_qty',
   'buyout_rate_percent', 'return_rate_percent',
   // выручка и реклама (деньги — из CLEAN)
-  'gross_revenue', 'returns_amount', 'net_revenue', 'ads_spend'
+  'gross_revenue', 'returns_amount', 'net_revenue', 'ads_spend',
+  // остатки (PR #16D) — append-only, после всех существующих колонок
+  'stock_qty', 'stock_status'
 ];
 
 
@@ -109,6 +111,7 @@ function buildUnitSkuDaily(options) {
   var cRetAmtCol  = findCol_(cH, ['returns_amount']);
   var cNetRevCol  = findCol_(cH, ['net_revenue']);
   var cAdsCol     = findCol_(cH, ['ads_spend']);
+  var cStockCol   = findCol_(cH, ['stock_qty']);   // PR #16D: остатки из CLEAN
 
   if (cDateCol === -1 || cNmCol === -1) {
     unitAlert_('❌ Ошибка', 'В CLEAN нет колонки date или wb_nm_id.');
@@ -132,6 +135,8 @@ function buildUnitSkuDaily(options) {
 
   // контрольные суммы для сверки UNIT ↔ CLEAN
   var sumOrders = 0, sumCancel = 0, sumSales = 0, sumReturns = 0;
+  // PR #16D: контроль остатков
+  var cntStockData = 0, cntOutOfStock = 0, cntLowStock = 0;
 
   for (var i = 0; i < cleanData.length; i++) {
     var row = cleanData[i];
@@ -152,6 +157,23 @@ function buildUnitSkuDaily(options) {
     var retAmt  = unitNum_(cRetAmtCol  >= 0 ? row[cRetAmtCol]  : 0);
     var netRev  = unitNum_(cNetRevCol  >= 0 ? row[cNetRevCol]  : 0);
     var ads     = unitNum_(cAdsCol     >= 0 ? row[cAdsCol]     : 0);
+
+    // PR #16D: остатки и статус. Пустая ячейка ≠ 0 → no_stock_data.
+    var stockRaw = (cStockCol >= 0) ? row[cStockCol] : '';
+    var stockQtyOut, stockStatus;
+    if (cStockCol < 0 || unitIsBlank_(stockRaw)) {
+      stockQtyOut = '';                 // нет данных — оставляем пусто, не 0
+      stockStatus = 'no_stock_data';
+    } else {
+      var stockQty = unitNum_(stockRaw);
+      stockQtyOut = stockQty;
+      if (stockQty <= 0)       stockStatus = 'out_of_stock';
+      else if (stockQty <= 20) stockStatus = 'low_stock';
+      else                     stockStatus = 'ok';
+    }
+    if (stockStatus !== 'no_stock_data') cntStockData++;
+    if (stockStatus === 'out_of_stock')  cntOutOfStock++;
+    if (stockStatus === 'low_stock')     cntLowStock++;
 
     // коэффициенты
     var cancelRate = orders > 0 ? roundTwo_(cancel / orders * 100) : 0;
@@ -177,7 +199,9 @@ function buildUnitSkuDaily(options) {
       'gross_revenue': roundTwo_(gross),
       'returns_amount': roundTwo_(retAmt),
       'net_revenue': roundTwo_(netRev),
-      'ads_spend': roundTwo_(ads)
+      'ads_spend': roundTwo_(ads),
+      'stock_qty': stockQtyOut,
+      'stock_status': stockStatus
     });
   }
 
@@ -235,6 +259,8 @@ function buildUnitSkuDaily(options) {
   console.log('  Σcancel_qty:  ' + sumCancel);
   console.log('  Σsales_qty:   ' + sumSales);
   console.log('  Σreturns_qty: ' + sumReturns);
+  console.log('  Σstock_data:  ' + cntStockData +
+    ' (out_of_stock: ' + cntOutOfStock + ', low_stock: ' + cntLowStock + ')');
   console.log('  (суммы должны совпадать с CLEAN_WB_DAILY за тот же набор дат)');
   console.log('═══ buildUnitSkuDaily() ЗАВЕРШЕНО: ' + sec_(t0) + ' сек ═══');
 
@@ -246,6 +272,10 @@ function buildUnitSkuDaily(options) {
     '\ncancel_qty: ' + sumCancel +
     '\nsales_qty: ' + sumSales +
     '\nreturns_qty: ' + sumReturns +
+    '\n\n── Остатки (PR #16D) ──' +
+    '\nстрок со stock data: ' + cntStockData +
+    '\nout_of_stock: ' + cntOutOfStock +
+    '\nlow_stock: ' + cntLowStock +
     '\n\nВремя: ' + sec_(t0) + ' сек');
 
   return {
@@ -263,6 +293,13 @@ function buildUnitSkuDaily(options) {
 function unitNum_(v) {
   var n = Number(v);
   return isNaN(n) ? 0 : n;
+}
+
+/** Пустая ячейка (null/undefined/''/пробелы). ВАЖНО: число 0 НЕ считается пустым. */
+function unitIsBlank_(v) {
+  if (v === null || v === undefined) return true;
+  if (typeof v === 'string') return v.trim() === '';
+  return false;
 }
 
 /**
