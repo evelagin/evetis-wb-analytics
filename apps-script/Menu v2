@@ -70,6 +70,7 @@ function onOpen() {
     .addItem('ℹ️ О системе', 'showAbout_')
     .addSeparator()
     .addItem('Probe остатков T5/T6', 'probeWbStocksTestOnly')
+    .addItem('Загрузить остатки WB T5', 'importWbStocksFromApi')
     
     .addToUi();
 
