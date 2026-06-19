@@ -1050,6 +1050,15 @@ function buildCleanWbDailyWithFinance() {
   // Запись
   if (resultRows.length > 0) {
     cleanSheet.getRange(2, 1, resultRows.length, CLEAN_HEADERS_FULL_.length).setValues(resultRows);
+
+    // PR #15A: числовой формат для новых метрик воронки, чтобы 0 не отображался как 30.12.1899
+    var cancelQtyCol = CLEAN_HEADERS_FULL_.indexOf('cancel_qty') + 1;
+    var activeOrdersQtyCol = CLEAN_HEADERS_FULL_.indexOf('active_orders_qty') + 1;
+    var orderCancelRateCol = CLEAN_HEADERS_FULL_.indexOf('order_cancel_rate_percent') + 1;
+
+    cleanSheet.getRange(2, cancelQtyCol, resultRows.length, 1).setNumberFormat('0');
+    cleanSheet.getRange(2, activeOrdersQtyCol, resultRows.length, 1).setNumberFormat('0');
+    cleanSheet.getRange(2, orderCancelRateCol, resultRows.length, 1).setNumberFormat('0.00');
   }
   SpreadsheetApp.flush();
   console.log('✅ Запись CLEAN_WB_DAILY: ' + resultRows.length + ' строк, ' + sec_(tStep) + ' сек');
