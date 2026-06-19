@@ -276,7 +276,7 @@ function runWbDailyRefresh() {
     console.log('⚠️ UNIT: buildUnitSkuDaily() не найдена');
   } else {
     try {
-      var unitResult = buildUnitSkuDaily();
+      var unitResult = buildUnitSkuDaily({ silent: true });   // PR #15F: без отдельного UNIT-alert
 
       if (unitResult && unitResult.ok) {
         result.unit_rows = wbDailyNum_(unitResult.rows);
