@@ -83,6 +83,9 @@ function onOpen() {
     // PR #15D: ручной пункт пересборки UNIT_SKU_DAILY
     // addUnitSkuDailyMenu() определён в UnitSkuDailyBuilder.gs, PR #15B
     addUnitSkuDailyMenu();
+
+    // PR #16A: меню API operational pilot (orders/sales за 14/30 дней)
+    addWbOperationalPilotMenu();
 }
 
 /**
