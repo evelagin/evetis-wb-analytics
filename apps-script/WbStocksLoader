@@ -1,0 +1,558 @@
+/**
+ * ══════════════════════════════════════════════════════════════
+ * EVETIS WB — WbStocksLoader.gs  v1.0  (PR #16C)
+ *
+ * Production-загрузчик остатков WB через Analytics API (T5):
+ *   GET /api/v1/warehouse_remains (task-based: create→status→download)
+ *   → RAW_WB_STOCKS
+ *
+ * Только RAW-загрузка. Без CLEAN / UNIT / P&L / dashboard / триггера.
+ * Строится ТОЛЬКО на T5. Кандидат B (T6) в production НЕ используется.
+ *
+ * СХЕМА: переиспользует существующую SHEETS_SCHEMA[RAW_WB_STOCKS]
+ *   (48 колонок). Лист и схему не переопределяет — заполняет подмножество.
+ *
+ * ГРАНУЛЯРНОСТЬ: одна строка = nmId × склад.
+ *   - «Всего находится на складах» НЕ пишем (это сумма → двойной счёт).
+ *   - «В пути до получателей» / «В пути возвраты на склад WB» пишем
+ *     отдельными строками с warehouse_type (in_transit_to_client /
+ *     in_transit_return), количество → quantity_in_transit.
+ *   - Физические склады → warehouse_type='physical', количество → quantity_total.
+ *
+ * ИДЕМПОТЕНТНОСТЬ (snapshot-based, НЕ period-based):
+ *   warehouse_remains — текущий снимок. Перед записью удаляем ТОЛЬКО свои
+ *   строки: source_api=='WB_API_STOCKS_T5' AND snapshot_date==сегодня (MSK).
+ *   Снимки прошлых дней и чужие source_api (вкл. TEST) НЕ трогаем.
+ *   Весь лист НЕ чистится.
+ *
+ * НЕ ТРОГАЕТ: runWbDailyRefresh(), CLEAN/UNIT, dashboard, finance,
+ *   orders/sales loaders, RAW_WB_FINANCE, test harness, SHEETS_SCHEMA.
+ *
+ * ПЕРЕИСПОЛЬЗУЕТ (существующие утилиты, без изменений):
+ *   buildSkuIndex_, normalizeNmIdFinance_, normalizeDateKey_, getScriptProperty_
+ *
+ * МЕНЮ: пункт «Загрузить остатки WB T5» добавлен в основное меню
+ *   🏷️ EVETIS WB (Menu v2 → onOpen), handler importWbStocksFromApi.
+ *   Отдельного top-level меню модуль НЕ создаёт.
+ * ══════════════════════════════════════════════════════════════
+ */
+
+
+// ═══════════════════════════════════════
+// КОНФИГ
+// ═══════════════════════════════════════
+
+var WB_STOCKS_API_BASE_   = 'https://seller-analytics-api.wildberries.ru';
+var WB_STOCKS_API_PATH_   = '/api/v1/warehouse_remains';
+var WB_STOCKS_TOKEN_KEYS_ = ['WB_TOKEN_ANALYTICS', 'WB_TOKEN_STATISTICS'];
+
+var STOCKS_RAW_SHEET_         = 'RAW_WB_STOCKS';
+var STOCKS_RAW_SOURCE_API_    = 'WB_API_STOCKS_T5';
+var STOCKS_LOADID_API_PREFIX_ = 'STK_API_';
+var IMPORT_LOG_STOCKS_SHEET_  = 'IMPORT_LOG_STOCKS';
+var WB_STOCKS_TZ_             = 'Europe/Moscow';
+
+// Группировки create (как в подтверждённом probe T5).
+var WB_STOCKS_GROUPS_ = 'groupByBrand=false&groupBySubject=false&groupBySa=true' +
+  '&groupByNm=true&groupByBarcode=true&groupBySize=true';
+
+// Task polling.
+var WB_STOCKS_TASK_MAX_WAIT_MS_ = 90000;   // максимум ожидания готовности отчёта
+var WB_STOCKS_TASK_POLL_PAUSE_  = 5000;    // пауза между опросами статуса
+var WB_STOCKS_TASK_CREATE_PAUSE_ = 3000;   // пауза после create до первого статуса
+
+// Спец-категории внутри warehouses[] (не физические склады).
+var WB_STOCKS_WH_TOTAL_      = 'Всего находится на складах';
+var WB_STOCKS_WH_TO_CLIENT_  = 'В пути до получателей';
+var WB_STOCKS_WH_FROM_CLIENT_ = 'В пути возвраты на склад WB';
+
+var IMPORT_LOG_STOCKS_HEADERS_ = [
+  'load_id', 'loaded_at', 'snapshot_date', 'snapshot_time',
+  'rows_imported', 'skipped_dupes',
+  'physical_rows', 'in_transit_rows',
+  'unique_nmId', 'unmatched_nmId', 'total_physical_qty',
+  'status', 'error_message'
+];
+
+// Фолбэк-заголовки RAW_WB_STOCKS (точная копия SHEETS_SCHEMA, 48 колонок) —
+// используются ТОЛЬКО если SHEETS_SCHEMA недоступна при создании листа.
+var STOCKS_FALLBACK_HEADERS_ = [
+  'load_id', 'loaded_at', 'snapshot_date', 'snapshot_time',
+  'source_api', 'request_date', 'row_hash', 'raw_row_number',
+  'wb_nm_id', 'wb_vendor_code', 'barcode', 'title',
+  'brand_name', 'subject_name', 'category_name', 'tech_size',
+  'internal_sku', 'sku_match_status',
+  'warehouse_id', 'warehouse_name', 'warehouse_type',
+  'region_name', 'federal_district', 'is_priority_warehouse', 'warehouse_match_status',
+  'quantity_total', 'quantity_available', 'quantity_reserved',
+  'quantity_in_transit', 'quantity_not_available', 'quantity_defect', 'quantity_raw',
+  'stock_status', 'is_fbo_stock', 'is_available_for_sale',
+  'last_change_date', 'stock_source_status',
+  'wb_supply_id', 'supply_status', 'expected_qty',
+  'accepted_qty', 'acceptance_date', 'supply_warehouse',
+  'is_duplicate', 'processed_status', 'error_code', 'error_message',
+  'raw_json'
+];
+
+
+// ═══════════════════════════════════════
+// ПУБЛИЧНЫЕ ФУНКЦИИ
+// ═══════════════════════════════════════
+
+/** Ручной запуск с alert-сводкой. Пункт меню 🏷️ EVETIS WB → «Загрузить остатки WB T5». */
+function importWbStocksFromApi() {
+  var t0 = Date.now();
+  var ui = SpreadsheetApp.getUi();
+  var r = importWbStocksFromApiInternal_();
+
+  if (r.status === 'ERROR') {
+    ui.alert('❌ Остатки WB (T5)', (r.error_message || 'ERROR'), ui.ButtonSet.OK);
+    return r;
+  }
+
+  var msg =
+    'Статус: ' + r.status + '\n' +
+    'Снимок: ' + r.snapshot_date + ' ' + r.snapshot_time + '\n\n' +
+    'Импортировано строк: ' + r.rows_imported + '\n' +
+    'Пропущено дублей (в пакете): ' + r.skipped_dupes + '\n' +
+    'Физических складских строк: ' + r.physical_rows + '\n' +
+    'Строк «в пути»: ' + r.in_transit_rows + '\n' +
+    'Уник. nmId: ' + r.unique_nmId + '\n' +
+    'Не найдено в SKU_MASTER: ' + r.unmatched_nmId + '\n' +
+    'Σ физ. остаток (qty): ' + r.total_physical_qty + '\n' +
+    (r.error_message ? '\nПримечание: ' + r.error_message + '\n' : '') +
+    '\nВремя: ' + ((Date.now() - t0) / 1000).toFixed(1) + ' сек\n\n' +
+    'ℹ️ RAW-слой остатков (T5 warehouse_remains). Не P&L, не подключено к daily.';
+
+  ui.alert('📦 Остатки WB (T5)', msg, ui.ButtonSet.OK);
+  return r;
+}
+
+
+/**
+ * Ядро без UI. Загружает текущий снимок остатков (T5) в RAW_WB_STOCKS.
+ * @return {Object} result (поля IMPORT_LOG_STOCKS + snapshot_*)
+ */
+function importWbStocksFromApiInternal_() {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var now = new Date();
+  var snapshotDate = Utilities.formatDate(now, WB_STOCKS_TZ_, 'yyyy-MM-dd');
+  var snapshotTime = Utilities.formatDate(now, WB_STOCKS_TZ_, 'HH:mm:ss');
+  var stamp = Utilities.formatDate(now, WB_STOCKS_TZ_, 'yyyyMMdd_HHmmss');
+
+  var result = {
+    load_id: STOCKS_LOADID_API_PREFIX_ + stamp,
+    loaded_at: Utilities.formatDate(now, WB_STOCKS_TZ_, 'yyyy-MM-dd HH:mm:ss'),
+    snapshot_date: snapshotDate, snapshot_time: snapshotTime,
+    rows_imported: 0, skipped_dupes: 0,
+    physical_rows: 0, in_transit_rows: 0,
+    unique_nmId: 0, unmatched_nmId: 0, total_physical_qty: 0,
+    status: 'ERROR', error_message: ''
+  };
+
+  var rawSheet = ensureRawWbStocksSheet_(ss);
+  if (!rawSheet) { result.error_message = 'Лист RAW_WB_STOCKS недоступен'; return result; }
+
+  var tk = getStocksToken_();
+  if (!tk) {
+    result.error_message = 'Нет токена WB. Задайте Script Property: ' + WB_STOCKS_TOKEN_KEYS_.join(' или ');
+    return result;
+  }
+  console.log('  Stocks API токен: ' + tk.key);
+
+  var logSheet = ensureImportLogStocksSheet_(ss);
+
+  try {
+    // 1. Тянем снимок (task-flow)
+    var fetched = fetchStocksApiData_(tk.token);
+    if (!fetched.ok) {
+      result.error_message = fetched.error;
+      writeStocksLogEntry_(logSheet, result);
+      return result;
+    }
+    var apiData = fetched.data || [];
+    console.log('  Stocks: получено ' + apiData.length + ' nmId-строк');
+
+    // 2. Нормализация + разворот по складам
+    var lastCol = rawSheet.getLastColumn();
+    var hMap = buildStocksRawHeaderMap_(rawSheet, lastCol);
+    var skuIndex = (typeof buildSkuIndex_ === 'function') ? buildSkuIndex_(ss) : { byNm: {}, byBarcode: {} };
+
+    var norm = normalizeStocksApiRows_(apiData, hMap, lastCol, result, skuIndex);
+    var rows = norm.rows;
+
+    // 3. Внутрипакетный дедуп по row_hash
+    var seen = {}, unique = [];
+    var rhIdx = hMap['row_hash'];
+    for (var i = 0; i < rows.length; i++) {
+      var h = (rhIdx !== undefined) ? rows[i][rhIdx] : ('row' + i);
+      if (seen[h]) { result.skipped_dupes++; continue; }
+      seen[h] = 1; unique.push(rows[i]);
+    }
+
+    // 4. Replace-slice: удалить СВОИ строки за сегодняшний snapshot, затем записать свежий срез
+    var cleared = clearStocksOwnSnapshot_(rawSheet, hMap, snapshotDate);
+    if (cleared > 0) console.log('  Удалено своих строк WB_API_STOCKS_T5 за ' + snapshotDate + ': ' + cleared);
+
+    if (unique.length > 0) appendStocksRows_(rawSheet, unique, lastCol);
+
+    result.rows_imported = unique.length;
+    result.physical_rows = norm.physical_rows;
+    result.in_transit_rows = norm.in_transit_rows;
+    result.unique_nmId = Object.keys(norm.nmSet).length;
+    result.unmatched_nmId = Object.keys(norm.unmatchedSet).length;
+    result.total_physical_qty = norm.total_physical_qty;
+    result.status = 'OK';
+    if (unique.length === 0) result.error_message = 'Пустой снимок остатков';
+
+    writeStocksLogEntry_(logSheet, result);
+    console.log('  Stocks: импортировано ' + result.rows_imported +
+      ' (физ. ' + result.physical_rows + ', в пути ' + result.in_transit_rows + ')');
+    return result;
+
+  } catch (e) {
+    result.error_message = 'Исключение: ' + e.message;
+    try { writeStocksLogEntry_(logSheet, result); } catch (e2) {}
+    console.log('❌ Stocks: ' + e.message + '\n' + (e.stack || ''));
+    return result;
+  }
+}
+
+
+// ═══════════════════════════════════════
+// FETCH (task-based: create → status → download)
+// ═══════════════════════════════════════
+
+function fetchStocksApiData_(token) {
+  var base = WB_STOCKS_API_BASE_ + WB_STOCKS_API_PATH_;
+  var headers = { Authorization: token };
+
+  // 1. create
+  var createResp;
+  try {
+    createResp = UrlFetchApp.fetch(base + '?' + WB_STOCKS_GROUPS_,
+      { method: 'get', headers: headers, muteHttpExceptions: true });
+  } catch (e) {
+    return { ok: false, error: 'create HTTP исключение: ' + e.message, data: [] };
+  }
+  if (createResp.getResponseCode() !== 200) {
+    return { ok: false, data: [],
+      error: 'create HTTP ' + createResp.getResponseCode() + ': ' +
+        String(createResp.getContentText()).substring(0, 200) };
+  }
+  var taskId = '';
+  try {
+    var cj = JSON.parse(createResp.getContentText());
+    var cd = (cj && cj.data) ? cj.data : {};
+    // taskId из всех вариантов (как wbApiTestRunTask_):
+    // data.taskId | data.id | taskId | task_id | id
+    taskId = String(cd.taskId || cd.id || cj.taskId || cj.task_id || cj.id || '');
+  } catch (e) {
+    return { ok: false, error: 'create JSON parse: ' + e.message, data: [] };
+  }
+  if (!taskId) return { ok: false, error: 'create: пустой taskId', data: [] };
+  console.log('  Stocks task создан: ' + taskId);
+
+  // 2. polling status
+  // ready-статусы: done/ready/completed/success; ошибочные: purged/canceled/cancelled/failed/error
+  var WB_STOCKS_READY_ = { 'done': 1, 'ready': 1, 'completed': 1, 'success': 1 };
+  var WB_STOCKS_FAIL_  = { 'purged': 1, 'canceled': 1, 'cancelled': 1, 'failed': 1, 'error': 1 };
+  Utilities.sleep(WB_STOCKS_TASK_CREATE_PAUSE_);
+  var waited = WB_STOCKS_TASK_CREATE_PAUSE_;
+  var ready = false;
+  while (waited < WB_STOCKS_TASK_MAX_WAIT_MS_) {
+    var stResp;
+    try {
+      stResp = UrlFetchApp.fetch(base + '/tasks/' + encodeURIComponent(taskId) + '/status',
+        { method: 'get', headers: headers, muteHttpExceptions: true });
+    } catch (e) {
+      return { ok: false, error: 'status HTTP исключение: ' + e.message, data: [] };
+    }
+    if (stResp.getResponseCode() === 200) {
+      var st = '';
+      try {
+        var sj = JSON.parse(stResp.getContentText());
+        var sd = (sj && sj.data) ? sj.data : {};
+        st = String(sd.status || sj.status || '').toLowerCase();
+      } catch (e) { st = ''; }
+      console.log('  Stocks task статус: ' + st + ' (ждём ' + (waited / 1000) + 'с)');
+      if (WB_STOCKS_READY_[st]) { ready = true; break; }
+      if (WB_STOCKS_FAIL_[st]) {
+        return { ok: false, data: [], error: 'Задача завершилась со статусом: ' + st };
+      }
+    }
+    Utilities.sleep(WB_STOCKS_TASK_POLL_PAUSE_);
+    waited += WB_STOCKS_TASK_POLL_PAUSE_;
+  }
+  if (!ready) {
+    return { ok: false, data: [],
+      error: 'Задача не готова за ' + (WB_STOCKS_TASK_MAX_WAIT_MS_ / 1000) + ' сек — повторите запуск позже' };
+  }
+
+  // 3. download
+  var dlResp;
+  try {
+    dlResp = UrlFetchApp.fetch(base + '/tasks/' + encodeURIComponent(taskId) + '/download',
+      { method: 'get', headers: headers, muteHttpExceptions: true });
+  } catch (e) {
+    return { ok: false, error: 'download HTTP исключение: ' + e.message, data: [] };
+  }
+  if (dlResp.getResponseCode() !== 200) {
+    return { ok: false, data: [],
+      error: 'download HTTP ' + dlResp.getResponseCode() + ': ' +
+        String(dlResp.getContentText()).substring(0, 200) };
+  }
+  var arr;
+  try { arr = JSON.parse(dlResp.getContentText()); } catch (e) { return { ok: false, error: 'download JSON parse: ' + e.message, data: [] }; }
+  if (!arr || !arr.length) return { ok: true, data: [], error: '' };
+  return { ok: true, data: arr, error: '' };
+}
+
+
+// ═══════════════════════════════════════
+// НОРМАЛИЗАЦИЯ (разворот warehouses[] → строки nmId × склад)
+// ═══════════════════════════════════════
+
+function normalizeStocksApiRows_(apiData, hMap, lastCol, meta, skuIndex) {
+  var out = { rows: [], physical_rows: 0, in_transit_rows: 0,
+    total_physical_qty: 0, nmSet: {}, unmatchedSet: {} };
+  var rowNum = 0;
+
+  for (var i = 0; i < apiData.length; i++) {
+    var item = apiData[i] || {};
+    var nm = (typeof normalizeNmIdFinance_ === 'function')
+      ? normalizeNmIdFinance_(item.nmId || item.nmID || item.nm_id)
+      : String(item.nmId || item.nmID || item.nm_id || '');
+    var barcode = String(item.barcode || '').trim();
+    var vendorCode = String(item.vendorCode || item.sa_name || '').trim();
+    var brand = String(item.brand || '').trim();
+    var subject = String(item.subjectName || item.subject || '').trim();
+    var techSize = String(item.techSize || item.ts_name || '').trim();
+
+    if (nm) out.nmSet[nm] = 1;
+
+    // SKU-привязка (устойчиво к разной структуре buildSkuIndex_)
+    var resolved = stocksResolveSku_(skuIndex, nm, barcode);
+    var internalSku = resolved.sku, matchStatus = resolved.status;
+    if (nm && matchStatus === 'not_found') out.unmatchedSet[nm] = 1;
+
+    var whs = item.warehouses || [];
+    for (var w = 0; w < whs.length; w++) {
+      var whName = String(whs[w].warehouseName || whs[w].warehouse || '').trim();
+      var qty = Number(whs[w].quantity || 0) || 0;
+
+      // «Всего находится на складах» — сумма, не пишем
+      if (whName === WB_STOCKS_WH_TOTAL_) continue;
+
+      var whType, qtyCol;
+      if (whName === WB_STOCKS_WH_TO_CLIENT_) { whType = 'in_transit_to_client'; qtyCol = 'quantity_in_transit'; out.in_transit_rows++; }
+      else if (whName === WB_STOCKS_WH_FROM_CLIENT_) { whType = 'in_transit_return'; qtyCol = 'quantity_in_transit'; out.in_transit_rows++; }
+      else { whType = 'physical'; qtyCol = 'quantity_total'; out.physical_rows++; out.total_physical_qty += qty; }
+
+      rowNum++;
+      var row = new Array(lastCol);
+      for (var c = 0; c < lastCol; c++) row[c] = '';
+
+      stocksSet_(row, hMap, 'load_id', meta.load_id);
+      stocksSet_(row, hMap, 'loaded_at', meta.loaded_at);
+      stocksSet_(row, hMap, 'snapshot_date', meta.snapshot_date);
+      stocksSet_(row, hMap, 'snapshot_time', meta.snapshot_time);
+      stocksSet_(row, hMap, 'source_api', STOCKS_RAW_SOURCE_API_);
+      stocksSet_(row, hMap, 'request_date', meta.snapshot_date);
+      stocksSet_(row, hMap, 'raw_row_number', rowNum);
+
+      stocksSet_(row, hMap, 'wb_nm_id', nm);
+      stocksSet_(row, hMap, 'wb_vendor_code', vendorCode);
+      stocksSet_(row, hMap, 'barcode', barcode);
+      stocksSet_(row, hMap, 'brand_name', brand);
+      stocksSet_(row, hMap, 'subject_name', subject);
+      stocksSet_(row, hMap, 'tech_size', techSize);
+      stocksSet_(row, hMap, 'internal_sku', internalSku);
+      stocksSet_(row, hMap, 'sku_match_status', matchStatus);
+
+      stocksSet_(row, hMap, 'warehouse_name', whName);
+      stocksSet_(row, hMap, 'warehouse_type', whType);
+      stocksSet_(row, hMap, qtyCol, qty);
+      stocksSet_(row, hMap, 'quantity_raw', qty);
+
+      stocksSet_(row, hMap, 'processed_status', 'OK');
+
+      var rh = stocksRowHash_([meta.snapshot_date, nm, barcode, whName, whType]);
+      stocksSet_(row, hMap, 'row_hash', rh);
+
+      stocksSet_(row, hMap, 'raw_json',
+        JSON.stringify({ nmId: nm, barcode: barcode, warehouseName: whName, quantity: qty }));
+
+      out.rows.push(row);
+    }
+  }
+  return out;
+}
+
+function stocksSet_(row, hMap, key, val) {
+  if (hMap[key] !== undefined) row[hMap[key]] = val;
+}
+
+/**
+ * Безопасно извлекает SKU из записи SKU-индекса любой структуры.
+ *   - строка → сама строка;
+ *   - объект → sku | internal_sku | internalSku | article | vendor_code | vendorCode;
+ *   - иначе → ''.
+ */
+function stocksExtractSku_(entry) {
+  if (entry === null || entry === undefined) return '';
+  if (typeof entry === 'string') return entry.trim();
+  if (typeof entry === 'object') {
+    var v = entry.sku || entry.internal_sku || entry.internalSku ||
+            entry.article || entry.vendor_code || entry.vendorCode || '';
+    return String(v || '').trim();
+  }
+  return '';
+}
+
+/**
+ * Резолвит SKU по nmId, затем по barcode, устойчиво к структуре buildSkuIndex_.
+ *   1) byNm[nm];
+ *   2) byBarcode[barcode] — если строка, считаем её кандидатом в SKU,
+ *      но при наличии byNm[<строка>] берём SKU оттуда;
+ *   3) непустой SKU → matched, иначе not_found.
+ * @return {{sku:string, status:string}}
+ */
+function stocksResolveSku_(skuIndex, nm, barcode) {
+  var sku = '';
+  if (skuIndex && skuIndex.byNm && nm && skuIndex.byNm[nm] !== undefined) {
+    sku = stocksExtractSku_(skuIndex.byNm[nm]);
+  }
+  if (!sku && skuIndex && skuIndex.byBarcode && barcode && skuIndex.byBarcode[barcode] !== undefined) {
+    var ref = skuIndex.byBarcode[barcode];
+    if (typeof ref === 'string' && skuIndex.byNm && skuIndex.byNm[ref] !== undefined) {
+      sku = stocksExtractSku_(skuIndex.byNm[ref]);   // строка-ссылка на nm → SKU из byNm
+    }
+    if (!sku) sku = stocksExtractSku_(ref);          // иначе сама запись/строка как SKU
+  }
+  return { sku: sku, status: (sku ? 'matched' : 'not_found') };
+}
+
+
+// ═══════════════════════════════════════
+// IDEMPOTENCY (replace-slice по своему snapshot_date)
+// ═══════════════════════════════════════
+
+function clearStocksOwnSnapshot_(sheet, hMap, snapshotDate) {
+  var lastRow = sheet.getLastRow(), lastCol = sheet.getLastColumn();
+  if (lastRow < 2) return 0;
+  var values = sheet.getRange(2, 1, lastRow - 1, lastCol).getValues();
+  var srcIdx = hMap['source_api'], snapIdx = hMap['snapshot_date'];
+  if (srcIdx === undefined || snapIdx === undefined) return 0;
+
+  var keep = [], removed = 0;
+  for (var i = 0; i < values.length; i++) {
+    var row = values[i];
+    var isOwn = String(row[srcIdx] || '') === STOCKS_RAW_SOURCE_API_;
+    var snap = (typeof normalizeDateKey_ === 'function')
+      ? normalizeDateKey_(row[snapIdx]) : String(row[snapIdx] || '');
+    if (isOwn && snap === snapshotDate) { removed++; } else { keep.push(row); }
+  }
+  if (removed === 0) return 0;
+
+  sheet.getRange(2, 1, lastRow - 1, lastCol).clearContent();
+  if (keep.length > 0) sheet.getRange(2, 1, keep.length, lastCol).setValues(keep);
+  SpreadsheetApp.flush();
+  return removed;
+}
+
+function appendStocksRows_(sheet, rows, lastCol) {
+  if (!rows.length) return;
+  var start = sheet.getLastRow() + 1; if (start < 2) start = 2;
+  sheet.getRange(start, 1, rows.length, lastCol).setValues(rows);
+  SpreadsheetApp.flush();
+}
+
+
+// ═══════════════════════════════════════
+// ВСПОМОГАТЕЛЬНЫЕ
+// ═══════════════════════════════════════
+
+function stocksSchemaHeaders_() {
+  try {
+    if (typeof SHEETS_SCHEMA !== 'undefined') {
+      var key = (typeof SHEET_NAMES !== 'undefined' && SHEET_NAMES.RAW_WB_STOCKS)
+        ? SHEET_NAMES.RAW_WB_STOCKS : 'RAW_WB_STOCKS';
+      var sc = SHEETS_SCHEMA[key] || SHEETS_SCHEMA['RAW_WB_STOCKS'];
+      if (sc && sc.headers && sc.headers.length) return sc.headers.slice();
+    }
+  } catch (e) {}
+  return STOCKS_FALLBACK_HEADERS_.slice();
+}
+
+/** Возвращает лист RAW_WB_STOCKS; создаёт из схемы, если его нет. Схему не меняет. */
+function ensureRawWbStocksSheet_(ss) {
+  var sheet = ss.getSheetByName(STOCKS_RAW_SHEET_);
+  if (sheet) return sheet;
+  var headers = stocksSchemaHeaders_();
+  sheet = ss.insertSheet(STOCKS_RAW_SHEET_);
+  sheet.getRange(1, 1, 1, headers.length).setValues([headers]);
+  sheet.setFrozenRows(1);
+  console.log('  RAW_WB_STOCKS создан (' + headers.length + ' колонок)');
+  return sheet;
+}
+
+function buildStocksRawHeaderMap_(sheet, lastCol) {
+  var headers = sheet.getRange(1, 1, 1, lastCol).getValues()[0];
+  var map = {};
+  for (var i = 0; i < headers.length; i++) {
+    var k = String(headers[i] || '').trim().toLowerCase();
+    if (k) map[k] = i;
+  }
+  return map;
+}
+
+function stocksScriptProp_(key) {
+  try { if (typeof getScriptProperty_ === 'function') { var v = getScriptProperty_(key); if (v) return v; } } catch (e) {}
+  try { return PropertiesService.getScriptProperties().getProperty(key) || ''; } catch (e2) { return ''; }
+}
+
+function getStocksToken_() {
+  for (var i = 0; i < WB_STOCKS_TOKEN_KEYS_.length; i++) {
+    var t = stocksScriptProp_(WB_STOCKS_TOKEN_KEYS_[i]);
+    if (t) return { token: t, key: WB_STOCKS_TOKEN_KEYS_[i] };
+  }
+  return null;
+}
+
+function stocksRowHash_(parts) {
+  var s = parts.join('|');
+  var raw = Utilities.computeDigest(Utilities.DigestAlgorithm.MD5, s);
+  var hex = '';
+  for (var i = 0; i < raw.length; i++) {
+    var b = (raw[i] + 256) % 256;
+    hex += (b < 16 ? '0' : '') + b.toString(16);
+  }
+  return hex;
+}
+
+function ensureImportLogStocksSheet_(ss) {
+  var sheet = ss.getSheetByName(IMPORT_LOG_STOCKS_SHEET_);
+  if (!sheet) {
+    sheet = ss.insertSheet(IMPORT_LOG_STOCKS_SHEET_);
+    sheet.getRange(1, 1, 1, IMPORT_LOG_STOCKS_HEADERS_.length).setValues([IMPORT_LOG_STOCKS_HEADERS_]);
+    sheet.setFrozenRows(1);
+  } else if (sheet.getLastRow() === 0) {
+    sheet.getRange(1, 1, 1, IMPORT_LOG_STOCKS_HEADERS_.length).setValues([IMPORT_LOG_STOCKS_HEADERS_]);
+    sheet.setFrozenRows(1);
+  }
+  return sheet;
+}
+
+function writeStocksLogEntry_(logSheet, r) {
+  var row = [
+    r.load_id, r.loaded_at, r.snapshot_date, r.snapshot_time,
+    r.rows_imported, r.skipped_dupes,
+    r.physical_rows, r.in_transit_rows,
+    r.unique_nmId, r.unmatched_nmId, r.total_physical_qty,
+    r.status, r.error_message || ''
+  ];
+  var ir = logSheet.getLastRow() + 1; if (ir < 2) ir = 2;
+  logSheet.getRange(ir, 1, 1, row.length).setValues([row]);
+  SpreadsheetApp.flush();
+}
