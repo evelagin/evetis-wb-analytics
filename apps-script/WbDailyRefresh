@@ -69,7 +69,10 @@ var WB_DAILY_STATUS_HEADERS_ = [
   // PR #14C: метрики orders/sales дописываются В КОНЕЦ (совместимо с аддитивной
   // миграцией старого листа PR #13; запись — по имени колонки, см. writeWbDailyStatusRow_).
   'orders_rows_imported', 'orders_count', 'orders_cancel_count',
-  'sales_rows_imported', 'sales_count', 'returns_count'
+  'sales_rows_imported', 'sales_count', 'returns_count',
+  // PR #15C: метрики UNIT_SKU_DAILY дописываются В КОНЕЦ.
+  'unit_rows', 'unit_orders_qty', 'unit_cancel_qty',
+  'unit_sales_qty', 'unit_returns_qty', 'unit_status'
 ];
 
 
@@ -115,7 +118,10 @@ function runWbDailyRefresh() {
     errors_warnings: '',
     // PR #14C: метрики RAW-загрузчиков
     orders_rows_imported: 0, orders_count: 0, orders_cancel_count: 0,
-    sales_rows_imported: 0, sales_count: 0, returns_count: 0
+    sales_rows_imported: 0, sales_count: 0, returns_count: 0,
+    // PR #15C: метрики UNIT_SKU_DAILY
+    unit_rows: 0, unit_orders_qty: 0, unit_cancel_qty: 0,
+    unit_sales_qty: 0, unit_returns_qty: 0, unit_status: 'SKIPPED'
   };
 
   // 0. Лист статуса
@@ -241,16 +247,62 @@ function runWbDailyRefresh() {
   }
 
   // 5. ПОЛНАЯ пересборка CLEAN (без периодной обрезки — сохраняет историю)
+  var cleanOk = false;
   try {
     buildCleanWbDailyWithFinance();
     var clean = wbDailyCleanStats_(ss);
     result.clean_rows = clean.rows;
     result.clean_dates = clean.dates;
-    if (clean.rows === 0) warnings.push('CLEAN_WB_DAILY: 0 строк после пересборки');
+    if (clean.rows === 0) {
+      warnings.push('CLEAN_WB_DAILY: 0 строк после пересборки');
+    } else {
+      cleanOk = true;
+    }
     console.log('  CLEAN: строк=' + clean.rows + ', дат=' + clean.dates);
   } catch (e) {
     errors.push('CLEAN пересборка исключение: ' + e.message);
     console.log('❌ CLEAN: ' + e.message);
+  }
+
+  // 5a. PR #15C: пересборка UNIT_SKU_DAILY из CLEAN.
+  // Ошибка UNIT не должна ломать весь WB Daily refresh.
+  if (!cleanOk) {
+    result.unit_status = 'SKIPPED';
+    warnings.push('UNIT_SKU_DAILY: пропущен — CLEAN не пересобран успешно');
+    console.log('  UNIT: SKIPPED — CLEAN не готов');
+  } else if (typeof buildUnitSkuDaily !== 'function') {
+    result.unit_status = 'WARNING';
+    warnings.push('UNIT_SKU_DAILY: функция buildUnitSkuDaily() не найдена');
+    console.log('⚠️ UNIT: buildUnitSkuDaily() не найдена');
+  } else {
+    try {
+      var unitResult = buildUnitSkuDaily();
+
+      if (unitResult && unitResult.ok) {
+        result.unit_rows = wbDailyNum_(unitResult.rows);
+        result.unit_orders_qty = wbDailyNum_(unitResult.orders);
+        result.unit_cancel_qty = wbDailyNum_(unitResult.cancel);
+        result.unit_sales_qty = wbDailyNum_(unitResult.sales);
+        result.unit_returns_qty = wbDailyNum_(unitResult.returns);
+        result.unit_status = 'OK';
+
+        console.log(
+          '  UNIT: OK, строк=' + result.unit_rows +
+          ', orders=' + result.unit_orders_qty +
+          ', cancel=' + result.unit_cancel_qty +
+          ', sales=' + result.unit_sales_qty +
+          ', returns=' + result.unit_returns_qty
+        );
+      } else {
+        result.unit_status = 'WARNING';
+        warnings.push('UNIT_SKU_DAILY: сборка вернула ok=false');
+        console.log('⚠️ UNIT: ok=false');
+      }
+    } catch (e) {
+      result.unit_status = 'WARNING';
+      warnings.push('UNIT_SKU_DAILY исключение: ' + e.message);
+      console.log('⚠️ UNIT: ' + e.message);
+    }
   }
 
   // 6. Итоговый статус (orders/sales дают только warnings → FAIL только при finance/CLEAN/статус-лист)
@@ -288,6 +340,9 @@ function runWbDailyRefresh() {
     'Rebill-логистика: ' + result.wb_rebill_logistics + ' ₽\n' +
     'После расходов WB: ' + result.wb_after_expenses + ' ₽\n\n' +
     'CLEAN строк: ' + result.clean_rows + ', дат: ' + result.clean_dates + '\n' +
+    'UNIT строк: ' + result.unit_rows + ' [' + result.unit_status + '] (orders: ' +
+      result.unit_orders_qty + ', cancel: ' + result.unit_cancel_qty +
+      ', sales: ' + result.unit_sales_qty + ', returns: ' + result.unit_returns_qty + ')\n' +
     (result.errors_warnings ? '\n' + result.errors_warnings + '\n' : '') +
     '\nВремя: ' + elapsed + ' сек';
 
