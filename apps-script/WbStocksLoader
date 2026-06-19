@@ -223,6 +223,32 @@ function importWbStocksFromApiInternal_() {
 // FETCH (task-based: create → status → download)
 // ═══════════════════════════════════════
 
+// 429-backoff (PR #16C.2): максимум 3 попытки, паузы 20с / 40с перед 2-й и 3-й.
+var WB_STOCKS_429_MAX_ATTEMPTS_ = 3;
+var WB_STOCKS_429_PAUSES_MS_    = [20000, 40000];
+
+/**
+ * GET с retry/backoff на HTTP 429 (глобальный лимитер WB).
+ * Возвращает последний Response (на не-429 — сразу; на 429 — после ретраев).
+ * Сетевые исключения НЕ глушит — пробрасывает в вызывающий try/catch.
+ * @param {string} label метка шага для лога ('create' | 'status' | 'download')
+ */
+function stocksFetch429_(url, options, label) {
+  var resp = null;
+  for (var attempt = 1; attempt <= WB_STOCKS_429_MAX_ATTEMPTS_; attempt++) {
+    resp = UrlFetchApp.fetch(url, options);
+    if (resp.getResponseCode() !== 429) return resp;
+    if (attempt < WB_STOCKS_429_MAX_ATTEMPTS_) {
+      var pause = WB_STOCKS_429_PAUSES_MS_[attempt - 1] ||
+        WB_STOCKS_429_PAUSES_MS_[WB_STOCKS_429_PAUSES_MS_.length - 1];
+      console.log('  Stocks ' + label + ' HTTP 429, пауза ' + (pause / 1000) +
+        ' сек, попытка ' + (attempt + 1) + '/' + WB_STOCKS_429_MAX_ATTEMPTS_);
+      Utilities.sleep(pause);
+    }
+  }
+  return resp; // всё ещё 429
+}
+
 function fetchStocksApiData_(token) {
   var base = WB_STOCKS_API_BASE_ + WB_STOCKS_API_PATH_;
   var headers = { Authorization: token };
@@ -230,10 +256,14 @@ function fetchStocksApiData_(token) {
   // 1. create
   var createResp;
   try {
-    createResp = UrlFetchApp.fetch(base + '?' + WB_STOCKS_GROUPS_,
-      { method: 'get', headers: headers, muteHttpExceptions: true });
+    createResp = stocksFetch429_(base + '?' + WB_STOCKS_GROUPS_,
+      { method: 'get', headers: headers, muteHttpExceptions: true }, 'create');
   } catch (e) {
     return { ok: false, error: 'create HTTP исключение: ' + e.message, data: [] };
+  }
+  if (createResp.getResponseCode() === 429) {
+    return { ok: false, data: [],
+      error: 'create HTTP 429 после повторных попыток: лимит WB, повторите запуск позже' };
   }
   if (createResp.getResponseCode() !== 200) {
     return { ok: false, data: [],
@@ -263,8 +293,8 @@ function fetchStocksApiData_(token) {
   while (waited < WB_STOCKS_TASK_MAX_WAIT_MS_) {
     var stResp;
     try {
-      stResp = UrlFetchApp.fetch(base + '/tasks/' + encodeURIComponent(taskId) + '/status',
-        { method: 'get', headers: headers, muteHttpExceptions: true });
+      stResp = stocksFetch429_(base + '/tasks/' + encodeURIComponent(taskId) + '/status',
+        { method: 'get', headers: headers, muteHttpExceptions: true }, 'status');
     } catch (e) {
       return { ok: false, error: 'status HTTP исключение: ' + e.message, data: [] };
     }
@@ -292,10 +322,14 @@ function fetchStocksApiData_(token) {
   // 3. download
   var dlResp;
   try {
-    dlResp = UrlFetchApp.fetch(base + '/tasks/' + encodeURIComponent(taskId) + '/download',
-      { method: 'get', headers: headers, muteHttpExceptions: true });
+    dlResp = stocksFetch429_(base + '/tasks/' + encodeURIComponent(taskId) + '/download',
+      { method: 'get', headers: headers, muteHttpExceptions: true }, 'download');
   } catch (e) {
     return { ok: false, error: 'download HTTP исключение: ' + e.message, data: [] };
+  }
+  if (dlResp.getResponseCode() === 429) {
+    return { ok: false, data: [],
+      error: 'download HTTP 429 после повторных попыток: лимит WB, повторите запуск позже' };
   }
   if (dlResp.getResponseCode() !== 200) {
     return { ok: false, data: [],
