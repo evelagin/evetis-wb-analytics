@@ -695,6 +695,7 @@ function buildCleanWbDailyWithFinance() {
 
   tStep = Date.now();
   var ordersMap = {};
+  var cancelMap = {};
   var ordersSheet = ss.getSheetByName('RAW_WB_ORDERS');
   if (!ordersSheet || ordersSheet.getLastRow() < 2) {
     emptySheets.push('RAW_WB_ORDERS');
@@ -705,6 +706,7 @@ function buildCleanWbDailyWithFinance() {
     var oVendorCol = findCol_(oH, ['wb_vendor_code', 'vendor_code', 'vendorcode', 'supplierarticle']);
     var oBarcodeCol = findCol_(oH, ['barcode', 'barcodes']);
     var oQtyCol = findCol_(oH, ['quantity', 'qty', 'orders_qty']);
+    var oCancelCol = findCol_(oH, ['is_cancel', 'iscancel', 'cancel']);
     if (oDateCol >= 0) {
       var oData = readSheetData_(ordersSheet);
       for (var oi = 0; oi < oData.length; oi++) {
@@ -718,6 +720,13 @@ function buildCleanWbDailyWithFinance() {
         var key = oDate + '|' + oNmId;
         var qty = oQtyCol >= 0 ? Math.abs(Number(oRow[oQtyCol]) || 0) : 1;
         ordersMap[key] = (ordersMap[key] || 0) + qty;
+        // PR #15A: cancel_qty — те же ключ и логика qty, что у orders_qty; только is_cancel=TRUE
+        if (oCancelCol >= 0) {
+          var cv = oRow[oCancelCol];
+          if (cv === true || String(cv).trim().toLowerCase() === 'true') {
+            cancelMap[key] = (cancelMap[key] || 0) + qty;
+          }
+        }
       }
       console.log('✅ RAW_WB_ORDERS: ' + oData.length + ' строк, ' + Object.keys(ordersMap).length + ' ключей');
     } else {
@@ -913,7 +922,8 @@ function buildCleanWbDailyWithFinance() {
     'wb_deductions', 'wb_acceptance', 'wb_penalties', 'wb_acquiring',
     'wb_loyalty_comp', 'wb_tech_comp', 'wb_after_expenses',
     'wb_rebill_logistics',
-    'ads_spend', 'stock_qty', 'source_status', 'updated_at'
+    'ads_spend', 'stock_qty', 'source_status', 'updated_at',
+    'cancel_qty', 'active_orders_qty', 'order_cancel_rate_percent'
   ];
 
   var now = new Date();
@@ -950,6 +960,12 @@ function buildCleanWbDailyWithFinance() {
     // Формула: после расходов WB
     var wbAfter = wbForPay - wbLog - wbStor - wbDeduct - wbAcc - wbPen + wbLoyalty + wbTech;
 
+    // PR #15A: воронка заказов/отмен (источник RAW_WB_ORDERS, тот же ключ, что orders_qty)
+    var ordersQty = ordersMap[k] || 0;
+    var cancel = cancelMap[k] || 0;
+    var active = ordersQty - cancel;
+    var cancelRate = ordersQty > 0 ? roundTwo_(cancel / ordersQty * 100) : 0;
+
     resultRows.push([
       kDate,
       kNmId,
@@ -976,7 +992,10 @@ function buildCleanWbDailyWithFinance() {
       roundTwo_(adsMap[k] || 0),
       stocksMap[k] || 0,
       sourceStatus,
-      now
+      now,
+      cancel,
+      active,
+      cancelRate
     ]);
   }
 
