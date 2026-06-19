@@ -79,6 +79,10 @@ function onOpen() {
 
     // PR #14B: меню production-загрузчика продаж/возвратов
     addWbSalesReturnsLoaderMenu();
+
+    // PR #15D: ручной пункт пересборки UNIT_SKU_DAILY
+    // addUnitSkuDailyMenu() определён в UnitSkuDailyBuilder.gs, PR #15B
+    addUnitSkuDailyMenu();
 }
 
 /**
