@@ -375,7 +375,7 @@ function normalizeStocksApiRows_(apiData, hMap, lastCol, meta, skuIndex) {
       stocksSet_(row, hMap, qtyCol, qty);
       stocksSet_(row, hMap, 'quantity_raw', qty);
 
-      stocksSet_(row, hMap, 'processed_status', 'OK');
+      stocksSet_(row, hMap, 'processed_status', 'raw');
 
       var rh = stocksRowHash_([meta.snapshot_date, nm, barcode, whName, whType]);
       stocksSet_(row, hMap, 'row_hash', rh);
