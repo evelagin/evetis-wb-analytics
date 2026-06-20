@@ -901,6 +901,8 @@ function buildCleanWbDailyWithFinance() {
   // ══════════════════════════════════════
 
   tStep = Date.now();
+  // PR #16D.1: контроль наличия остатков
+  console.log('  stocksMap: ключей с остатками = ' + Object.keys(stocksMap).length);
 
   var allKeys = {};
   var maps = [ordersMap, salesMap, returnsMap, grossRevMap, retAmtMap, adsMap, stocksMap,
@@ -966,6 +968,12 @@ function buildCleanWbDailyWithFinance() {
     var active = ordersQty - cancel;
     var cancelRate = ordersQty > 0 ? roundTwo_(cancel / ordersQty * 100) : 0;
 
+    // PR #16D.1: отсутствие ключа остатка ≠ реальный нулевой остаток.
+    // Ключ есть → пишем значение, включая настоящий 0; ключа нет → пусто.
+    var stockQtyOut = Object.prototype.hasOwnProperty.call(stocksMap, k)
+      ? stocksMap[k]
+      : '';
+
     resultRows.push([
       kDate,
       kNmId,
@@ -990,7 +998,7 @@ function buildCleanWbDailyWithFinance() {
       roundTwo_(wbAfter),
       roundTwo_(wbRebill),
       roundTwo_(adsMap[k] || 0),
-      stocksMap[k] || 0,
+      stockQtyOut,
       sourceStatus,
       now,
       cancel,
