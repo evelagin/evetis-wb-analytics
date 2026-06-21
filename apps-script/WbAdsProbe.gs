@@ -65,6 +65,9 @@ var WB_ADS_STATS_STATUSES_ = [7, 9, 11];
 /** Поисковые кластеры — массово НЕ опрашиваем, только sample 1–3 связки. */
 var WB_ADS_SEARCH_SAMPLE_MAX_ = 3;
 
+/** Пошаговая fullstats-диагностика (PR #17A.1): safe sample кампаний по 1 за раз. */
+var WB_ADS_FULLSTATS_SINGLE_SAMPLE_ = 10;
+
 /** Защита от 429: линейный backoff, паузы ≥ лимитов WB (fullstats — 3 req/min). */
 var WB_ADS_MAX_RETRY_429_ = 3;
 var WB_ADS_RETRY_BASE_MS_ = 20000;   // ≥ 20 с (интервал fullstats)
@@ -88,6 +91,7 @@ function addWbAdsProbeMenu() {
     .addSeparator()
     .addItem('Кампании (count + adverts v2)', 'probeWbAdsCampaigns')
     .addItem('Fullstats (последние 7 дней)', 'probeWbAdsFullstatsLast7Days')
+    .addItem('Fullstats single-campaign debug', 'probeWbAdsFullstatsSingleCampaignsLast7Days')
     .addItem('Расходы upd (последние 7 дней)', 'probeWbAdsCostsLast7Days')
     .addItem('Поисковые кластеры (sample)', 'probeWbAdsSearchClustersSample')
     .addToUi();
@@ -176,6 +180,102 @@ function probeWbAdsFullstatsLast7Days(runId) {
 
   wbAdsFinish_(ss, r);
   return r;
+}
+
+/**
+ * Проба #3b (PR #17A.1): пошаговая fullstats-диагностика по одной кампании.
+ * Назначение: локализовать кампанию(и), из-за которой batch /adv/v3/fullstats
+ * падает с HTTP 500 (наблюдалось "service.GetAvgPositions failed").
+ *
+ * Логика:
+ *   - кампании берём существующим wbAdsFetchCampaigns_();
+ *   - только статусы 7/9/11, safe sample — первые WB_ADS_FULLSTATS_SINGLE_SAMPLE_ (10);
+ *   - на каждый advertId — отдельный запрос /adv/v3/fullstats?ids=<advertId>;
+ *   - между запросами пауза ≥ WB_ADS_FULLSTATS_PAUSE_MS_;
+ *   - КАЖДАЯ кампания пишется отдельной строкой в WB_ADS_STATUS (probe_name=fullstats_single).
+ *
+ * НЕ меняет основную probeWbAdsFullstatsLast7Days() и не входит в runWbAdsProbeAll().
+ * @param {string=} runId
+ */
+function probeWbAdsFullstatsSingleCampaignsLast7Days(runId) {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var rid = wbAdsResolveRunId_(runId);
+  var rng = wbAdsLast7Range_();
+
+  var tok = getWbAdsToken_();
+  if (!tok) {
+    var rb = wbAdsMakeResult_(rid, 'fullstats_single');
+    rb.period_from = rng.from; rb.period_to = rng.to;
+    wbAdsFinishBlocked_(ss, rb, 'Нет WB Promotion токена');
+    return { run_id: rid, results: [rb] };
+  }
+
+  var results = [];
+  try {
+    var c = wbAdsFetchCampaigns_(tok.token);
+    var allFound = c.advertIds.length;
+    var ids = c.statsAdvertIds.slice(0, WB_ADS_FULLSTATS_SINGLE_SAMPLE_); // 7/9/11, первые N
+
+    // Если кампаний в нужных статусах нет — одна строка SKIPPED, как в основной пробе.
+    if (!ids.length) {
+      var rs = wbAdsMakeResult_(rid, 'fullstats_single');
+      rs.period_from = rng.from; rs.period_to = rng.to;
+      rs.campaigns_found = allFound;
+      rs.campaigns_sampled = 0;
+      rs.http_status = String(c.countHttp);
+      rs.status = 'SKIPPED';
+      rs.error_message = 'Нет кампаний в статусах 7/9/11 — пошаговый fullstats не запускался';
+      rs.response_keys_sample = 'count:[' + c.countKeys + ']';
+      wbAdsFinish_(ss, rs);
+      return { run_id: rid, results: [rs] };
+    }
+
+    for (var i = 0; i < ids.length; i++) {
+      if (i > 0) Utilities.sleep(WB_ADS_FULLSTATS_PAUSE_MS_);
+
+      var advertId = ids[i];
+      var r = wbAdsMakeResult_(rid, 'fullstats_single');
+      r.period_from = rng.from; r.period_to = rng.to;
+      r.campaigns_found = allFound;
+      r.campaigns_sampled = 1;
+
+      try {
+        var url = WB_ADS_API_HOST_ + '/adv/v3/fullstats?ids=' + advertId +
+          '&beginDate=' + rng.from + '&endDate=' + rng.to;
+        var resp = wbAdsHttp_('get', url, tok.token, null);
+        r.http_status = resp.code;
+
+        var camps = Array.isArray(resp.json) ? resp.json : ((resp.json && resp.json.data) || []);
+        r.rows_or_items_found = camps.length;
+        r.response_keys_sample = 'advertId=' + advertId + '; ' + wbAdsFullstatsKeys_(camps);
+
+        if (!resp.ok) {
+          r.status = 'FAILED';
+          r.error_message = 'advertId=' + advertId + ' HTTP ' + resp.code + ': ' + wbAdsClip_(resp.body);
+        } else if (camps.length) {
+          r.status = 'OK';
+        } else {
+          r.status = 'PARTIAL';
+          r.error_message = 'advertId=' + advertId + ': HTTP 200, но статистики нет';
+        }
+      } catch (eOne) {
+        r.status = 'FAILED';
+        r.error_message = 'advertId=' + advertId + ' Исключение: ' + eOne.message;
+      }
+
+      wbAdsFinish_(ss, r);
+      results.push(r);
+    }
+  } catch (e) {
+    var rerr = wbAdsMakeResult_(rid, 'fullstats_single');
+    rerr.period_from = rng.from; rerr.period_to = rng.to;
+    rerr.status = 'FAILED';
+    rerr.error_message = 'Исключение: ' + e.message;
+    wbAdsFinish_(ss, rerr);
+    results.push(rerr);
+  }
+
+  return { run_id: rid, results: results };
 }
 
 /**
