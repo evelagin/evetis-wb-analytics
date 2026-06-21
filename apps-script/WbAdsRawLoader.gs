@@ -104,9 +104,9 @@ function addWbAdsRawLoaderMenu() {
     .addItem('Загрузить Ads RAW за период', 'loadWbAdsRawPeriodPrompt')
     .addSeparator()
     .addItem('Только кампании (RAW)', 'loadWbAdsCampaignsRaw')
-    .addItem('Только fullstats (RAW, 7 дней)', 'loadWbAdsFullstatsRaw')
-    .addItem('Только расходы upd (RAW, 7 дней)', 'loadWbAdsCostsRaw')
-    .addItem('Только поисковые кластеры (RAW, 7 дней)', 'loadWbAdsSearchClustersRaw')
+    .addItem('Только fullstats (RAW, 7 дней)', 'loadWbAdsFullstatsRawLast7Days')
+    .addItem('Только расходы upd (RAW, 7 дней)', 'loadWbAdsCostsRawLast7Days')
+    .addItem('Только поисковые кластеры (RAW, 7 дней)', 'loadWbAdsSearchClustersRawLast7Days')
     .addToUi();
 }
 
@@ -181,6 +181,31 @@ function loadWbAdsRawPeriodPrompt() {
     return;
   }
   loadWbAdsRawPeriod(parts[0], parts[1]);
+}
+
+
+// ═══════════════════════════════════════
+// LAST-7 WRAPPER'Ы (entry points для меню per-source)
+//   Меню Apps Script вызывает функции без аргументов, поэтому период
+//   подставляется явно через wbAdsLast7Range_().
+// ═══════════════════════════════════════
+
+/** Меню-обёртка: fullstats RAW за последние 7 дней. */
+function loadWbAdsFullstatsRawLast7Days() {
+  var rng = wbAdsLast7Range_();
+  return loadWbAdsFullstatsRaw(rng.from, rng.to);
+}
+
+/** Меню-обёртка: расходы upd RAW за последние 7 дней. */
+function loadWbAdsCostsRawLast7Days() {
+  var rng = wbAdsLast7Range_();
+  return loadWbAdsCostsRaw(rng.from, rng.to);
+}
+
+/** Меню-обёртка: поисковые кластеры RAW за последние 7 дней. */
+function loadWbAdsSearchClustersRawLast7Days() {
+  var rng = wbAdsLast7Range_();
+  return loadWbAdsSearchClustersRaw(rng.from, rng.to);
 }
 
 
