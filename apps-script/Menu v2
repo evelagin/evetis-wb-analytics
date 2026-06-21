@@ -32,12 +32,29 @@ function onOpen() {
     )
     .addSeparator()
     
-    // ─── API (заглушки для будущего) ───
+    // ─── API WB ───
     .addSubMenu(
-      ui.createMenu('📡 API WB (в разработке)')
+      ui.createMenu('📡 API WB')
         .addItem('Загрузить заказы/продажи WB', 'notImplementedYet_')
-        .addItem('Загрузить рекламу WB', 'notImplementedYet_')
-        .addItem('Загрузить остатки WB', 'notImplementedYet_')
+        .addSeparator()
+        // PR #17B.1: реклама WB встроена в основное меню вместо отдельных top-level меню
+        .addSubMenu(
+          ui.createMenu('📊 Реклама WB')
+            // ── Диагностика Ads API ──
+            .addItem('🧪 Probe: проверить рекламу WB', 'runWbAdsProbeAll')
+            .addItem('🧪 Probe: fullstats single debug', 'probeWbAdsFullstatsSingleCampaignsLast7Days')
+            .addSeparator()
+            // ── RAW-загрузка рекламы ──
+            .addItem('📥 RAW: загрузить за 7 дней', 'loadWbAdsRawLast7Days')
+            .addItem('📥 RAW: загрузить за период', 'loadWbAdsRawPeriodPrompt')
+            .addSeparator()
+            .addItem('RAW: только кампании', 'loadWbAdsCampaignsRaw')
+            .addItem('RAW: только расходы за 7 дней', 'loadWbAdsCostsRawLast7Days')
+            .addItem('RAW: только fullstats за 7 дней', 'loadWbAdsFullstatsRawLast7Days')
+            .addItem('RAW: только кластеры за 7 дней', 'loadWbAdsSearchClustersRawLast7Days')
+        )
+        .addSeparator()
+        .addItem('Загрузить остатки WB', 'importWbStocksFromApi')
     )
     .addSeparator()
     
@@ -90,11 +107,11 @@ function onOpen() {
     // PR #16A: меню API operational pilot (orders/sales за 14/30 дней)
     addWbOperationalPilotMenu();
 
-    // PR #17A: меню диагностического Ads API Probe
-    addWbAdsProbeMenu();
-
-    // PR #17B: меню RAW-загрузчика рекламы
-    addWbAdsRawLoaderMenu();
+    // PR #17B.1: реклама WB встроена в основное меню:
+    // 🏷️ EVETIS WB → 📡 API WB → 📊 Реклама WB.
+    // Отдельные top-level меню больше не создаём:
+    //   addWbAdsProbeMenu();        // убрано из onOpen()
+    //   addWbAdsRawLoaderMenu();    // убрано из onOpen()
 }
 
 /**
