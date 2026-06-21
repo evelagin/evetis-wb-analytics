@@ -89,6 +89,9 @@ function onOpen() {
 
     // PR #16A: меню API operational pilot (orders/sales за 14/30 дней)
     addWbOperationalPilotMenu();
+
+    // PR #17A: меню диагностического Ads API Probe
+    addWbAdsProbeMenu();
 }
 
 /**
