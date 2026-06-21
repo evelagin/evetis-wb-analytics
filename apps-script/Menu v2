@@ -92,6 +92,9 @@ function onOpen() {
 
     // PR #17A: меню диагностического Ads API Probe
     addWbAdsProbeMenu();
+
+    // PR #17B: меню RAW-загрузчика рекламы
+    addWbAdsRawLoaderMenu();
 }
 
 /**
