@@ -288,33 +288,24 @@ function fetchSalesApiData_(token, dateFrom) {
  * @return {Object} { ok, code, body, error } (токен не логируется).
  */
 function salesHttpGet_(url, token) {
-  var attempt = 0;
-  while (true) {
-    attempt++;
-    var resp;
-    try {
-      resp = UrlFetchApp.fetch(url, {
-        method: 'get',
-        headers: { Authorization: token },
-        muteHttpExceptions: true
-      });
-    } catch (e) {
-      return { ok: false, code: 0, body: '', error: 'HTTP исключение: ' + e.message };
-    }
-    var code = resp.getResponseCode();
-    var body = resp.getContentText();
-
-    if (code === 429 && attempt <= WB_SALES_API_RETRY_429_) {
-      var pause = WB_SALES_API_RETRY_PAUSE_MS_ * attempt;   // линейный backoff
-      console.log('  Sales API: HTTP 429 — пауза ' + (pause / 1000) + ' c (попытка ' + attempt + ')');
-      Utilities.sleep(pause);
-      continue;
-    }
-    if (code !== 200) {
-      return { ok: false, code: code, body: body, error: 'HTTP ' + code + ': ' + String(body).substring(0, 200) };
-    }
-    return { ok: true, code: code, body: body, error: '' };
+  // PR: ретрай вынесен в общий wbFetchWithRetry_ (429/5xx + Retry-After).
+  // Контракт возврата { ok, code, body, error } сохранён.
+  var resp;
+  try {
+    resp = wbFetchWithRetry_(url, {
+      method: 'get',
+      headers: { Authorization: token },
+      muteHttpExceptions: true
+    }, { label: 'Sales', maxRetries: WB_SALES_API_RETRY_429_, baseDelayMs: WB_SALES_API_RETRY_PAUSE_MS_ });
+  } catch (e) {
+    return { ok: false, code: 0, body: '', error: 'HTTP исключение: ' + e.message };
   }
+  var code = resp.getResponseCode();
+  var body = resp.getContentText();
+  if (code !== 200) {
+    return { ok: false, code: code, body: body, error: 'HTTP ' + code + ': ' + String(body).substring(0, 200) };
+  }
+  return { ok: true, code: code, body: body, error: '' };
 }
 
 

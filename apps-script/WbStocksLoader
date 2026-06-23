@@ -234,19 +234,13 @@ var WB_STOCKS_429_PAUSES_MS_    = [20000, 40000];
  * @param {string} label метка шага для лога ('create' | 'status' | 'download')
  */
 function stocksFetch429_(url, options, label) {
-  var resp = null;
-  for (var attempt = 1; attempt <= WB_STOCKS_429_MAX_ATTEMPTS_; attempt++) {
-    resp = UrlFetchApp.fetch(url, options);
-    if (resp.getResponseCode() !== 429) return resp;
-    if (attempt < WB_STOCKS_429_MAX_ATTEMPTS_) {
-      var pause = WB_STOCKS_429_PAUSES_MS_[attempt - 1] ||
-        WB_STOCKS_429_PAUSES_MS_[WB_STOCKS_429_PAUSES_MS_.length - 1];
-      console.log('  Stocks ' + label + ' HTTP 429, пауза ' + (pause / 1000) +
-        ' сек, попытка ' + (attempt + 1) + '/' + WB_STOCKS_429_MAX_ATTEMPTS_);
-      Utilities.sleep(pause);
-    }
-  }
-  return resp; // всё ещё 429
+  // PR: делегируем общему wbFetchWithRetry_ (429/5xx + Retry-After).
+  // Сохраняем прежний backoff остатков (20с/40с) и возврат HTTPResponse.
+  return wbFetchWithRetry_(url, options, {
+    label: 'Stocks' + (label ? ' ' + label : ''),
+    maxRetries: WB_STOCKS_429_MAX_ATTEMPTS_ - 1,
+    baseDelayMs: (WB_STOCKS_429_PAUSES_MS_ && WB_STOCKS_429_PAUSES_MS_[0]) ? WB_STOCKS_429_PAUSES_MS_[0] : 20000
+  });
 }
 
 function fetchStocksApiData_(token) {

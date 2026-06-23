@@ -123,10 +123,103 @@ function debugSkuMatching() {
   
   var testNmId = '252442341';
   Logger.log('=== DEBUG SKU MATCHING v2 ===');
-  Logger.log('byNmId keys (first 5): ' + Object.keys(skuIndex.byNmId).slice(0, 5).join(', '));
-  Logger.log('byNmId[' + testNmId + '] = ' + JSON.stringify(skuIndex.byNmId[testNmId] ? skuIndex.byNmId[testNmId].internal_sku : 'NOT FOUND'));
+  Logger.log('byNm keys (first 5): ' + Object.keys(skuIndex.byNm).slice(0, 5).join(', '));
+  Logger.log('byNm[' + testNmId + '] = ' + JSON.stringify(skuIndex.byNm[testNmId] ? skuIndex.byNm[testNmId].internal_sku : 'NOT FOUND'));
   
-  var firstKey = Object.keys(skuIndex.byNmId)[0];
+  var firstKey = Object.keys(skuIndex.byNm)[0];
   Logger.log('First key: "' + firstKey + '"');
   Logger.log('Looks numeric: ' + /^\d+$/.test(firstKey));
+}
+
+
+/**
+ * ──────────────────────────────────────────────────────────────
+ * Единый HTTP-вызов WB API с устойчивостью к лимитам и сбоям.
+ * Ретраит на HTTP 429 и 5xx (500/502/503/504), уважает Retry-After,
+ * экспоненциальный backoff с верхней границей, ограничение по числу повторов.
+ *
+ * Возвращает HTTPResponse, СОВМЕСТИМЫЙ с UrlFetchApp.fetch:
+ *   .getResponseCode(), .getContentText(), .getHeaders() и т.д.
+ * Поэтому вызывающий код почти не меняется.
+ *
+ * Токен (заголовок Authorization) и тело options НЕ логируются.
+ *
+ * @param {string} url
+ * @param {Object} options  опции UrlFetchApp.fetch (method, headers, payload, contentType…)
+ * @param {Object} [retryOptions]
+ *   maxRetries  {number}  число ПОВТОРОВ после первой попытки (по умолч. 4)
+ *   baseDelayMs {number}  базовая пауза backoff, мс (по умолч. 1500)
+ *   maxDelayMs  {number}  верхняя граница паузы, мс (по умолч. 60000)
+ *   retryCodes  {number[]} коды для повтора (по умолч. [429,500,502,503,504])
+ *   label       {string}  метка для логов (напр. 'Orders', 'WB_ADS')
+ * @return {HTTPResponse} последний полученный ответ
+ */
+function wbFetchWithRetry_(url, options, retryOptions) {
+  var ro = retryOptions || {};
+  var maxRetries = (ro.maxRetries != null) ? ro.maxRetries : 4;
+  var baseDelay  = (ro.baseDelayMs != null) ? ro.baseDelayMs : 1500;
+  var maxDelay   = (ro.maxDelayMs != null) ? ro.maxDelayMs : 60000;
+  var retryCodes = ro.retryCodes || [429, 500, 502, 503, 504];
+  var label      = ro.label || 'WB';
+
+  // muteHttpExceptions обязателен: иначе не-2xx бросает исключение, и код ответа не прочитать.
+  var opt = {};
+  if (options) { for (var k in options) { if (options.hasOwnProperty(k)) opt[k] = options[k]; } }
+  opt.muteHttpExceptions = true;
+
+  var safeUrl = String(url).split('?')[0]; // логируем без query-параметров
+  var lastResp = null;
+  var attempt = 0;
+
+  while (true) {
+    attempt++;
+    var resp = null, code = 0, threw = false, errMsg = '';
+    try {
+      resp = UrlFetchApp.fetch(url, opt);
+      code = resp.getResponseCode();
+    } catch (e) {
+      threw = true; errMsg = (e && e.message) ? e.message : String(e);
+    }
+
+    if (!threw) {
+      lastResp = resp;
+      if (retryCodes.indexOf(code) === -1) return resp;  // успех или неретраябельный код
+    }
+
+    if (attempt > maxRetries) {
+      if (threw) {
+        throw new Error('[' + label + '] HTTP-исключение после ' + attempt + ' попыток: ' + errMsg);
+      }
+      console.log('  [' + label + '] HTTP ' + code + ' — повторы исчерпаны (' +
+        attempt + '/' + (maxRetries + 1) + '), ' + safeUrl);
+      return lastResp;
+    }
+
+    // Пауза: приоритет у Retry-After, иначе экспоненциальный backoff.
+    var pause = (!threw && resp) ? wbRetryAfterMs_(resp) : -1;
+    if (pause < 0) pause = baseDelay * Math.pow(2, attempt - 1);
+    pause = Math.min(maxDelay, pause);
+
+    var reason = threw ? ('исключение: ' + errMsg) : ('HTTP ' + code);
+    console.log('  [' + label + '] ' + reason + ' — пауза ' + Math.round(pause / 1000) +
+      ' c, повтор ' + (attempt + 1) + '/' + (maxRetries + 1) + ' (' + safeUrl + ')');
+    Utilities.sleep(pause);
+  }
+}
+
+/**
+ * Разбор заголовка Retry-After: число секунд или HTTP-дата.
+ * @return {number} миллисекунды ожидания, либо -1 если заголовка нет/не распознан.
+ */
+function wbRetryAfterMs_(resp) {
+  try {
+    var headers = (resp && resp.getHeaders) ? (resp.getHeaders() || {}) : {};
+    var ra = headers['Retry-After'] || headers['retry-after'] || '';
+    if (!ra) return -1;
+    ra = String(ra).trim();
+    if (/^\d+$/.test(ra)) return parseInt(ra, 10) * 1000;   // секунды
+    var when = Date.parse(ra);                              // HTTP-дата
+    if (!isNaN(when)) { var ms = when - Date.now(); return ms > 0 ? ms : 0; }
+  } catch (e) {}
+  return -1;
 }

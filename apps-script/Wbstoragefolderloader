@@ -642,9 +642,10 @@ function importWbStorageFromApiInternal_(dateFrom, dateTo) {
   try {
     // 1. Создать задачу
     console.log('  API: создаю задачу ' + dateFrom + ' — ' + dateTo);
-    var createResp = UrlFetchApp.fetch(
+    var createResp = wbFetchWithRetry_(
       WB_STORAGE_API_BASE_ + '/api/v1/paid_storage?dateFrom=' + dateFrom + '&dateTo=' + dateTo,
-      { method: 'get', headers: { 'Authorization': token }, muteHttpExceptions: true }
+      { method: 'get', headers: { 'Authorization': token }, muteHttpExceptions: true },
+      { label: 'Storage create' }
     );
     if (createResp.getResponseCode() !== 200) {
       result.error_message = 'HTTP ' + createResp.getResponseCode() + ': ' + createResp.getContentText().substring(0, 200);
@@ -662,9 +663,10 @@ function importWbStorageFromApiInternal_(dateFrom, dateTo) {
     var ready = false;
     for (var p = 0; p < WB_STORAGE_API_MAX_POLLS_; p++) {
       Utilities.sleep(WB_STORAGE_API_POLL_INTERVAL_);
-      var sr = UrlFetchApp.fetch(
+      var sr = wbFetchWithRetry_(
         WB_STORAGE_API_BASE_ + '/api/v1/paid_storage/tasks/' + taskId + '/status',
-        { method: 'get', headers: { 'Authorization': token }, muteHttpExceptions: true }
+        { method: 'get', headers: { 'Authorization': token }, muteHttpExceptions: true },
+        { label: 'Storage status' }
       );
       var sd; try { sd = JSON.parse(sr.getContentText()); } catch (e) { sd = {}; }
       var ts = (sd.data && sd.data.status) || sd.status || '';
@@ -680,9 +682,10 @@ function importWbStorageFromApiInternal_(dateFrom, dateTo) {
 
     // 3. Скачать
     console.log('  Скачиваю...');
-    var dlResp = UrlFetchApp.fetch(
+    var dlResp = wbFetchWithRetry_(
       WB_STORAGE_API_BASE_ + '/api/v1/paid_storage/tasks/' + taskId + '/download',
-      { method: 'get', headers: { 'Authorization': token }, muteHttpExceptions: true }
+      { method: 'get', headers: { 'Authorization': token }, muteHttpExceptions: true },
+      { label: 'Storage download' }
     );
     if (dlResp.getResponseCode() !== 200) {
       result.error_message = 'Download HTTP ' + dlResp.getResponseCode();
