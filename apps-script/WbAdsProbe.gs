@@ -554,24 +554,19 @@ function wbAdsHttp_(method, url, token, payload) {
   var opt = { method: method, headers: { 'Authorization': token }, muteHttpExceptions: true };
   if (payload != null) { opt.contentType = 'application/json'; opt.payload = JSON.stringify(payload); }
 
-  var attempts = 0;
-  while (true) {
-    attempts++;
-    var resp = UrlFetchApp.fetch(url, opt);
-    var code = resp.getResponseCode();
+  // PR: ретрай вынесен в общий wbFetchWithRetry_ (429/5xx + Retry-After).
+  var resp = wbFetchWithRetry_(url, opt, {
+    label: 'WB_ADS',
+    maxRetries: WB_ADS_MAX_RETRY_429_,
+    baseDelayMs: WB_ADS_RETRY_BASE_MS_
+  });
 
-    if (code === 429 && attempts <= WB_ADS_MAX_RETRY_429_) {
-      var pause = WB_ADS_RETRY_BASE_MS_ * attempts; // линейный backoff, ≥ лимита WB
-      console.log('  [WB_ADS] 429 на попытке ' + attempts + ', пауза ' + (pause / 1000) + ' с...');
-      Utilities.sleep(pause);
-      continue;
-    }
-
-    var body = resp.getContentText();
-    var json = null;
-    try { json = JSON.parse(body); } catch (e) { json = null; }
-    return { code: code, ok: (code >= 200 && code < 300), body: body, json: json, attempts: attempts };
-  }
+  var code = resp.getResponseCode();
+  var body = resp.getContentText();
+  var json = null;
+  try { json = JSON.parse(body); } catch (e) { json = null; }
+  // attempts больше не считается здесь (число попыток видно в логах wbFetchWithRetry_); поле сохранено для совместимости формы.
+  return { code: code, ok: (code >= 200 && code < 300), body: body, json: json, attempts: 1 };
 }
 
 

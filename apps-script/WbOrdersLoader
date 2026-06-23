@@ -221,7 +221,9 @@ function fetchOrdersApiData_(token, dateFrom) {
     var url = base + '?dateFrom=' + encodeURIComponent(cursor) + '&flag=0';
     var resp;
     try {
-      resp = UrlFetchApp.fetch(url, { method: 'get', headers: { Authorization: token }, muteHttpExceptions: true });
+      // PR: единый ретрай WB API (429/5xx + Retry-After). Формат строк/replace-slice не меняется.
+      resp = wbFetchWithRetry_(url, { method: 'get', headers: { Authorization: token }, muteHttpExceptions: true },
+        { label: 'Orders', maxRetries: 3, baseDelayMs: 20000 });
     } catch (e) {
       return { ok: false, error: 'HTTP исключение: ' + e.message, data: all, pages: pages };
     }

@@ -374,11 +374,16 @@ function testAuditStorageApi_2026_05_18_24() {
 // ═══════════════════════════════════════
 
 /**
- * Импорт хранения через API за последние 7 дней (вчера - 6 дней).
+ * [ДИАГНОСТИКА] Импорт хранения через API за последние 7 дней (вчера - 6 дней).
+ *
+ * Переименована в приватную *_Diag_ для устранения дубля глобального имени:
+ * боевая реализация живёт в Wbstoragefolderloader (importWbStorageFromApiRolling7Days),
+ * на неё ссылаются меню и updateWbStorageData. В Apps Script все .gs делят одно
+ * глобальное пространство имён, поэтому два определения одного имени перетирали друг друга.
  *
  * НЕ подключать к триггеру, пока не проверен маппинг суммы.
  */
-function importWbStorageFromApiRolling7Days() {
+function importWbStorageFromApiRolling7DaysDiag_() {
   var yesterday = new Date();
   yesterday.setDate(yesterday.getDate() - 1);
 
