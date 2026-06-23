@@ -107,6 +107,9 @@ function onOpen() {
     // PR #16A: меню API operational pilot (orders/sales за 14/30 дней)
     addWbOperationalPilotMenu();
 
+    // FIX: меню «📦 Хранение WB» не появлялось — addStorageFolderLoaderMenu() не вызывался в onOpen.
+    addStorageFolderLoaderMenu();
+
     // PR #17B.1: реклама WB встроена в основное меню:
     // 🏷️ EVETIS WB → 📡 API WB → 📊 Реклама WB.
     // Отдельные top-level меню больше не создаём:
