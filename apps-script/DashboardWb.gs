@@ -159,9 +159,12 @@ function dashBuildSpine_(ss, sku) {
     }
   }
 
-  // — Реклама (дедуп date+advertId+nmId, last row wins) —
-  // В RAW могут лежать старые 7-дневные fullstats и свежий месячный fullstats.
-  // Поэтому при дубле берём ПОСЛЕДНЮЮ строку в листе: новые прогоны append-ятся ниже.
+  // — Реклама (дедуп date+advertId+nmId+appType, last row wins) —
+  // fullstats отдаёт расход в разрезе ПЛОЩАДОК (appType: 1 сайт, 32 приложение,
+  // 64 и т.д.) — на один date+advertId+nmId приходится несколько строк, которые
+  // надо СУММИРОВАТЬ. Поэтому appType входит в ключ (площадки не схлопываются),
+  // а дедуп убирает лишь ПОВТОРНЫЕ прогоны периода (старые 7-дневные fullstats
+  // перекрывают месячный). При дубле берём ПОСЛЕДНЮЮ строку: новые прогоны ниже.
   var sha = ss.getSheetByName(DASH_SRC_ADS_);
   if (sha && sha.getLastRow() > 1) {
     var av = sha.getRange(1, 1, sha.getLastRow(), sha.getLastColumn()).getValues();
@@ -169,6 +172,7 @@ function dashBuildSpine_(ss, sku) {
     var aDate = dashPick_(ah, ['date']);
     var aAdv = dashPick_(ah, ['advertId']);
     var aNm = dashPick_(ah, ['nmId', 'nm_id']);
+    var aType = dashPick_(ah, ['appType']);
     var aSum = dashPick_(ah, ['sum']);
     var aLvl = dashPick_(ah, ['source_level']);
 
@@ -180,7 +184,8 @@ function dashBuildSpine_(ss, sku) {
         var dk3 = dashDayKey_(row3[aDate]); if (!dk3) continue;
         var nm = String(row3[aNm] || '').trim(); if (!nm) continue;
         var adv = aAdv >= 0 ? String(row3[aAdv] || '').trim() : '';
-        var dedupKey = dk3 + '|' + adv + '|' + nm;
+        var appT = aType >= 0 ? String(row3[aType] || '').trim() : '';
+        var dedupKey = dk3 + '|' + adv + '|' + nm + '|' + appT;
         adsDedup[dedupKey] = { dateKey: dk3, nm: nm, spend: dashNum_(row3[aSum]) };
       }
 
@@ -326,13 +331,18 @@ function dashRender_(ss, spine, sku) {
     var oq = sifSku(cOQ, 'B', rr), or = sifSku(cOR, 'B', rr), cq = sifSku(cCQ, 'B', rr),
         sq = sifSku(cSQ, 'B', rr), sr = sifSku(cSR, 'B', rr), as = sifSku(cAS, 'B', rr);
     var tgt = (sku.bySku[skuRows[j].sku] ? sku.bySku[skuRows[j].sku].targetDrr : 0) || 0;
+    // C..I — формулы; J (цель ДРР) — число отдельным setValue; K (флаг) — отдельной формулой
+    // (нельзя смешивать число и формулы в одном setFormulas → давало #ERROR! в J и K).
     var f = [
       '=' + oq, '=' + or, '=' + cq, '=' + sq, '=' + sr, '=' + as,
-      '=IF(' + or + '=0' + SEP + '0' + SEP + as + '/' + or + '*100)',
-      tgt,
-      '=IF(I' + rr + '=0' + SEP + '"—"' + SEP + 'IF(I' + rr + '>J' + rr + SEP + '"🔴 резать"' + SEP + 'IF(I' + rr + '<J' + rr + '*60/100' + SEP + '"🟢 усиливать"' + SEP + '"🟡 ок")))'
+      '=IF(' + or + '=0' + SEP + '0' + SEP + as + '/' + or + '*100)'
     ];
     sh.getRange(rr, 3, 1, f.length).setFormulas([f]);
+    sh.getRange(rr, 10).setValue(tgt);
+    sh.getRange(rr, 11).setFormula(
+      '=IF(I' + rr + '=0' + SEP + '"—"' + SEP + 'IF(I' + rr + '>J' + rr + SEP + '"🔴 резать"' + SEP +
+      'IF(I' + rr + '<J' + rr + '*60/100' + SEP + '"🟢 усиливать"' + SEP + '"🟡 ок")))'
+    );
     sh.getRange(rr, 3).setNumberFormat('#,##0');
     sh.getRange(rr, 4).setNumberFormat('#,##0 ₽');
     sh.getRange(rr, 5).setNumberFormat('#,##0');
