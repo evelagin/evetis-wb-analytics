@@ -196,10 +196,13 @@ function adsBuildSpine_(ss, sku, camps) {
 function adsRender_(ss, data, sku) {
   var sh = ss.getSheetByName(ADS_SHEET_);
   if (!sh) sh = ss.insertSheet(ADS_SHEET_);
+  try { var ef = sh.getFilter(); if (ef) ef.remove(); } catch (e) {}
   sh.clear();
   sh.clearConditionalFormatRules();
-  try { sh.getDataRange().clearDataValidations(); } catch (e) {}
-  try { var ef = sh.getFilter(); if (ef) ef.remove(); } catch (e) {}
+  // Важно: чистим validations по ВСЕМУ листу, а не только getDataRange().
+  // Иначе старые проверки данных в дальних скрытых колонках (например AO2)
+  // могут блокировать запись служебного spine через setValues().
+  try { sh.getRange(1, 1, sh.getMaxRows(), sh.getMaxColumns()).clearDataValidations(); } catch (e) {}
 
   var SEP = dashArgSep_(sh);
   var L = dashColLetter_;
