@@ -257,15 +257,20 @@ function dashRender_(ss, spine, sku) {
   var dv = SpreadsheetApp.newDataValidation().requireValueInList(periods, true).setAllowInvalid(false).build();
   sh.getRange('B2').setDataValidation(dv).setValue('Весь период').setBackground('#FFF7CC').setFontWeight('bold');
 
+  // Разделитель аргументов формул зависит от локали таблицы (ru/de/fr → ';').
+  // Определяем эмпирически пробной формулой, иначе формулы дают #ERROR!.
+  var SEP = dashArgSep_(sh);
+
   // helper-ячейки границ периода (вычисляются от фильтра и дат массива)
   var minRef = "MIN(" + rng + ")", maxRef = "MAX(" + rng + ")";
   var fromF = '=IFS(' +
-    '$B$2="Вчера",TODAY()-1,' +
-    '$B$2="7 дней",TODAY()-7,' +
-    '$B$2="14 дней",TODAY()-14,' +
-    '$B$2="Текущий месяц",DATE(YEAR(TODAY()),MONTH(TODAY()),1),' +
-    '$B$2="Весь период",' + minRef + ')';
-  var toF = '=IF($B$2="Весь период",' + maxRef + ',IF($B$2="Текущий месяц",TODAY(),TODAY()-1))';
+    '$B$2="Вчера"' + SEP + 'TODAY()-1' + SEP +
+    '$B$2="7 дней"' + SEP + 'TODAY()-7' + SEP +
+    '$B$2="14 дней"' + SEP + 'TODAY()-14' + SEP +
+    '$B$2="Текущий месяц"' + SEP + 'DATE(YEAR(TODAY())' + SEP + 'MONTH(TODAY())' + SEP + '1)' + SEP +
+    '$B$2="Весь период"' + SEP + minRef + ')';
+  var toF = '=IF($B$2="Весь период"' + SEP + maxRef + SEP +
+            'IF($B$2="Текущий месяц"' + SEP + 'TODAY()' + SEP + 'TODAY()-1))';
   sh.getRange('D2').setValue('с:').setFontWeight('bold');
   sh.getRange('E2').setFormula(fromF).setNumberFormat('yyyy-mm-dd');
   sh.getRange('F2').setValue('по:').setFontWeight('bold');
@@ -273,10 +278,12 @@ function dashRender_(ss, spine, sku) {
   sh.getRange('I2').setValue('обновлено: ' + Utilities.formatDate(new Date(), DASH_TZ_, 'yyyy-MM-dd HH:mm'));
 
   var from = '$E$2', to = '$G$2';
-  function sif(col) { return 'SUMIFS(' + fullCol(col) + ',' + rng + ',">="&' + from + ',' + rng + ',"<="&' + to + ')'; }
+  function sif(col) {
+    return 'SUMIFS(' + fullCol(col) + SEP + rng + SEP + '">="&' + from + SEP + rng + SEP + '"<="&' + to + ')';
+  }
   function sifSku(col, skuCellAbsCol, rowNum) {
-    return 'SUMIFS(' + fullCol(col) + ',' + rngSku + ',$' + skuCellAbsCol + rowNum + ',' +
-           rng + ',">="&' + from + ',' + rng + ',"<="&' + to + ')';
+    return 'SUMIFS(' + fullCol(col) + SEP + rngSku + SEP + '$' + skuCellAbsCol + rowNum + SEP +
+           rng + SEP + '">="&' + from + SEP + rng + SEP + '"<="&' + to + ')';
   }
 
   // — Блок «Итого по магазину за период» —
@@ -290,8 +297,8 @@ function dashRender_(ss, spine, sku) {
     '=' + sif(cSQ),
     '=' + sif(cSR),
     '=' + sif(cAS),
-    '=IF(' + sif(cOR) + '=0,0,' + sif(cAS) + '/' + sif(cOR) + '*100)',
-    '=IF(' + sif(cOQ) + '=0,0,' + sif(cOR) + '/' + sif(cOQ) + ')'
+    '=IF(' + sif(cOR) + '=0' + SEP + '0' + SEP + sif(cAS) + '/' + sif(cOR) + '*100)',
+    '=IF(' + sif(cOQ) + '=0' + SEP + '0' + SEP + sif(cOR) + '/' + sif(cOQ) + ')'
   ];
   sh.getRange(6, 1, 1, kpi.length).setFormulas([kpi]);
   sh.getRange(6, 1).setNumberFormat('#,##0');
@@ -321,9 +328,9 @@ function dashRender_(ss, spine, sku) {
     var tgt = (sku.bySku[skuRows[j].sku] ? sku.bySku[skuRows[j].sku].targetDrr : 0) || 0;
     var f = [
       '=' + oq, '=' + or, '=' + cq, '=' + sq, '=' + sr, '=' + as,
-      '=IF(' + or + '=0,0,' + as + '/' + or + '*100)',
+      '=IF(' + or + '=0' + SEP + '0' + SEP + as + '/' + or + '*100)',
       tgt,
-      '=IF(I' + rr + '=0,"—",IF(I' + rr + '>J' + rr + ',"🔴 резать",IF(I' + rr + '<J' + rr + '*0.6,"🟢 усиливать","🟡 ок")))'
+      '=IF(I' + rr + '=0' + SEP + '"—"' + SEP + 'IF(I' + rr + '>J' + rr + SEP + '"🔴 резать"' + SEP + 'IF(I' + rr + '<J' + rr + '*60/100' + SEP + '"🟢 усиливать"' + SEP + '"🟡 ок")))'
     ];
     sh.getRange(rr, 3, 1, f.length).setFormulas([f]);
     sh.getRange(rr, 3).setNumberFormat('#,##0');
@@ -431,6 +438,18 @@ function dashDayKey_(v) {
 function dashParseKey_(k) {
   var p = k.split('-');
   return new Date(Number(p[0]), Number(p[1]) - 1, Number(p[2]), 12, 0, 0);
+}
+/**
+ * Разделитель аргументов формул для локали таблицы.
+ * Пишет пробную формулу с запятой: если посчиталась как 5 — локаль US (','),
+ * иначе (ru/de/fr и т.п. — запятая = десятичный разделитель) → ';'.
+ */
+function dashArgSep_(sh) {
+  var probe = sh.getRange(1, 60);   // далёкая пустая ячейка
+  probe.setFormula('=SUM(2,3)');
+  var v = probe.getValue();
+  probe.clearContent();
+  return (v === 5) ? ',' : ';';
 }
 /** Буква колонки по номеру (1→A). */
 function dashColLetter_(n) {
