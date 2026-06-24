@@ -94,6 +94,17 @@ function onOpen() {
         .addItem('RAW: только расходы за 7 дней', 'loadWbAdsCostsRawLast7Days')
         .addItem('RAW: только fullstats за 7 дней', 'loadWbAdsFullstatsRawLast7Days')
         .addItem('RAW: только кластеры за 7 дней', 'loadWbAdsSearchClustersRawLast7Days')
+        .addSeparator()
+        .addSubMenu(
+          ui.createMenu('🧩 Кластеры за месяц (полный сбор)')
+            .addItem('▶️ Старт: текущий месяц', 'wbAdsClustersJobStartCurrentMonth')
+            .addItem('📅 Старт: выбрать период…', 'wbAdsClustersJobStartPrompt')
+            .addItem('⏭️ Продолжить сбор', 'wbAdsClustersJobContinue')
+            .addItem('📊 Статус сбора', 'wbAdsClustersJobStatus')
+            .addSeparator()
+            .addItem('🤖 Включить авто-сбор (триггер)', 'wbAdsClustersJobInstallTrigger')
+            .addItem('🛑 Выключить авто-сбор', 'wbAdsClustersJobRemoveTrigger')
+        )
     )
 
     // ─── Расчёты ───
