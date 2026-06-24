@@ -14,6 +14,10 @@
  * (одна строка на пару, перезаписывается на каждый «Старт») + мета в
  * Script Properties. Это рабочий лист джоба, а НЕ хранилище данных.
  *
+ * ТАЙМИНГ: пачка ограничена тайм-бюджетом (~3.5 мин) с резервом под
+ * последнюю итерацию; обратная связь — НЕблокирующий toast (не ui.alert),
+ * чтобы ожидание клика не съедало 6-минутный лимит выполнения.
+ *
  * ПЕРЕИСПОЛЬЗУЕТ (без изменений):
  *   getWbAdsToken_, wbAdsHttp_, wbAdsCollectAdvertNmPairs_,
  *   wbAdvFlattenNormquery_, wbAdvRawEnsureSheet_, wbAdvRawAppendRows_,
@@ -24,11 +28,12 @@
  * ══════════════════════════════════════════════════════════════
  */
 
-var WB_ADS_CLJOB_SHEET_      = '_ADS_CLUSTERS_JOB';
-var WB_ADS_CLJOB_BUDGET_MS_  = 240000;   // ~4 мин на одну пачку (запас до 6 мин)
-var WB_ADS_CLJOB_TZ_         = 'Europe/Moscow';
-var WB_ADS_CLJOB_TRIGGER_FN_ = 'wbAdsClustersJobTriggerTick_';
-var WB_ADS_CLJOB_HEADERS_    = ['idx', 'advert_id', 'nm_id', 'done', 'rows_written', 'http_code', 'processed_at'];
+var WB_ADS_CLJOB_SHEET_           = '_ADS_CLUSTERS_JOB';
+var WB_ADS_CLJOB_BUDGET_MS_       = 210000;  // ~3.5 мин на пачку (запас до 6-мин лимита)
+var WB_ADS_CLJOB_ITER_RESERVE_MS_ = 35000;   // резерв под последнюю итерацию (пауза + возможный 429-ретрай)
+var WB_ADS_CLJOB_TZ_              = 'Europe/Moscow';
+var WB_ADS_CLJOB_TRIGGER_FN_      = 'wbAdsClustersJobTriggerTick_';
+var WB_ADS_CLJOB_HEADERS_         = ['idx', 'advert_id', 'nm_id', 'done', 'rows_written', 'http_code', 'processed_at'];
 
 // ─── Script Properties (мета джоба) ───
 function wbAdsClProp_(k)      { return getScriptProperty_('CLJOB_' + k, ''); }
@@ -70,29 +75,27 @@ function wbAdsClustersJobStartPrompt() {
 /** Продолжить незавершённый сбор (обработать следующую пачку). */
 function wbAdsClustersJobContinue() {
   if (wbAdsClProp_('STATUS') !== 'running') {
-    SpreadsheetApp.getUi().alert('Нет активного джоба кластеров. Сначала «Старт».');
+    SpreadsheetApp.getActiveSpreadsheet().toast('Нет активного джоба. Сначала «Старт».', '📊 Кластеры', 6);
     return;
   }
   var pr = wbAdsClustersJobProcessBatch_();
-  wbAdsClJobAlert_(pr);
+  wbAdsClJobToast_(pr);
 }
 
-/** Показать статус джоба. */
+/** Показать статус джоба (быстрый, неблокирующий). */
 function wbAdsClustersJobStatus() {
   var status = wbAdsClProp_('STATUS') || 'none';
   if (status === 'none' || status === '') {
-    SpreadsheetApp.getUi().alert('Джоб кластеров не запускался.');
+    SpreadsheetApp.getActiveSpreadsheet().toast('Джоб кластеров не запускался.', '📊 Кластеры', 6);
     return;
   }
   var cursor = parseInt(wbAdsClProp_('CURSOR') || '0', 10);
   var total  = parseInt(wbAdsClProp_('TOTAL') || '0', 10);
   var rows   = parseInt(wbAdsClProp_('ROWS') || '0', 10);
-  SpreadsheetApp.getUi().alert('📊 Кластеры — статус',
-    'Период: ' + wbAdsClProp_('PERIOD_FROM') + ' … ' + wbAdsClProp_('PERIOD_TO') + '\n' +
-    'Статус: ' + status + '\n' +
-    'Обработано пар: ' + cursor + ' / ' + total + '\n' +
-    'Строк собрано: ' + rows,
-    SpreadsheetApp.getUi().ButtonSet.OK);
+  SpreadsheetApp.getActiveSpreadsheet().toast(
+    'Период ' + wbAdsClProp_('PERIOD_FROM') + '…' + wbAdsClProp_('PERIOD_TO') +
+    ' | статус: ' + status + ' | пар ' + cursor + '/' + total + ' | строк ' + rows,
+    '📊 Кластеры — статус', 10);
 }
 
 
@@ -108,7 +111,7 @@ function wbAdsClustersJobStart_(from, to, silent) {
   var ss = SpreadsheetApp.getActiveSpreadsheet();
   var tok = getWbAdsToken_();
   if (!tok) {
-    if (!silent) SpreadsheetApp.getUi().alert('Нет WB Promotion токена (Script Property).');
+    if (!silent) ss.toast('Нет WB Promotion токена (Script Property).', '📊 Кластеры', 8);
     return;
   }
   var rng = wbAdsRawNormalizeRange_(from, to);
@@ -118,7 +121,7 @@ function wbAdsClustersJobStart_(from, to, silent) {
   var collected = wbAdsCollectAdvertNmPairs_(tok.token, 100000);
   var pairs = (collected && collected.pairs) || [];
   if (!pairs.length) {
-    if (!silent) SpreadsheetApp.getUi().alert('Не удалось получить пары advertId+nmId из adverts v2.');
+    if (!silent) ss.toast('Не удалось получить пары advertId+nmId из adverts v2.', '📊 Кластеры', 8);
     return;
   }
 
@@ -150,13 +153,16 @@ function wbAdsClustersJobStart_(from, to, silent) {
   console.log('  [CLJOB] старт период ' + rng.from + '…' + rng.to + ', пар: ' + pairs.length +
     ', удалено старых строк периода: ' + deleted);
 
-  // 4) Первая пачка.
+  // 4) Первая пачка. Бюджет считаем от ТЕКУЩЕГО момента — сбор пар уже учтён тем,
+  //    что времени до лимита осталось меньше; поэтому бюджет консервативный (210 c).
   var pr = wbAdsClustersJobProcessBatch_();
-  if (!silent) wbAdsClJobAlert_(pr);
+  if (!silent) wbAdsClJobToast_(pr);
 }
 
 /**
  * Обработать очередную пачку пар в пределах тайм-бюджета.
+ * Останавливается ДО старта итерации, если до дедлайна осталось меньше резерва —
+ * чтобы последняя итерация (пауза + возможный 429-ретрай) не перелетела 6-мин лимит.
  * @return {Object} { processed, total, rows_added, total_rows, done }
  */
 function wbAdsClustersJobProcessBatch_() {
@@ -181,7 +187,8 @@ function wbAdsClustersJobProcessBatch_() {
   var addedThisBatch = 0, httpThisBatch = 0, processedNow = 0;
 
   for (var i = cursor; i < total; i++) {
-    if (Date.now() >= deadline) break;
+    // Стоп ДО начала итерации, если не хватает резерва на её худший случай.
+    if (Date.now() + WB_ADS_CLJOB_ITER_RESERVE_MS_ >= deadline) break;
     var advertId = jobData[i][1], nmId = jobData[i][2];
 
     if (httpThisBatch > 0) Utilities.sleep(WB_ADS_NORMQUERY_PAUSE_MS_);
@@ -228,15 +235,18 @@ function wbAdsClustersJobProcessBatch_() {
   return { processed: cursor, total: total, rows_added: addedThisBatch, total_rows: rowsAcc, done: done };
 }
 
-function wbAdsClJobAlert_(pr) {
+/** НЕблокирующая обратная связь (toast не ждёт клика → не съедает лимит выполнения). */
+function wbAdsClJobToast_(pr) {
   if (!pr) return;
-  var ui = SpreadsheetApp.getUi();
-  if (pr.error) { ui.alert('Кластеры: ' + pr.error); return; }
-  var msg = 'Обработано пар: ' + pr.processed + ' / ' + pr.total + '\n' +
-            'Добавлено строк (пачка): ' + pr.rows_added + '\n' +
-            'Всего строк собрано: ' + (pr.total_rows != null ? pr.total_rows : '—') + '\n\n' +
-            (pr.done ? '✅ Сбор завершён.' : '⏳ Не завершено — нажмите «Кластеры: продолжить сбор» или включите авто-сбор.');
-  ui.alert('📊 Кластеры за месяц', msg, ui.ButtonSet.OK);
+  var msg;
+  if (pr.error) {
+    msg = 'Ошибка: ' + pr.error;
+  } else {
+    msg = 'Пар ' + pr.processed + '/' + pr.total + ' · строк всего ' +
+      (pr.total_rows != null ? pr.total_rows : '—') +
+      (pr.done ? ' · ✅ завершено' : ' · ⏳ нажмите «Продолжить» или включите авто-сбор');
+  }
+  try { SpreadsheetApp.getActiveSpreadsheet().toast(msg, '📊 Кластеры за месяц', pr.done ? 12 : 8); } catch (e) {}
 }
 
 
@@ -300,13 +310,13 @@ function wbAdsClEnsureCapacity_(sheet, needRows, needCols) {
 function wbAdsClustersJobInstallTrigger() {
   wbAdsClustersJobRemoveTrigger_();   // не плодим дубликаты
   ScriptApp.newTrigger(WB_ADS_CLJOB_TRIGGER_FN_).timeBased().everyMinutes(10).create();
-  SpreadsheetApp.getUi().alert('✅ Авто-сбор включён: каждые 10 минут, пока кластеры не доберутся. Снимется автоматически по завершении.');
+  SpreadsheetApp.getActiveSpreadsheet().toast('Авто-сбор включён: каждые 10 минут, пока не доберётся. Снимется сам по завершении.', '🤖 Кластеры', 10);
 }
 
 /** Снять триггер авто-добора (ручной пункт меню). */
 function wbAdsClustersJobRemoveTrigger() {
   var n = wbAdsClustersJobRemoveTrigger_();
-  SpreadsheetApp.getUi().alert(n ? ('🛑 Авто-сбор выключен (снято триггеров: ' + n + ').') : 'Активных триггеров авто-сбора не было.');
+  SpreadsheetApp.getActiveSpreadsheet().toast(n ? ('Авто-сбор выключен (снято триггеров: ' + n + ').') : 'Активных триггеров не было.', '🛑 Кластеры', 8);
 }
 
 function wbAdsClustersJobRemoveTrigger_() {
