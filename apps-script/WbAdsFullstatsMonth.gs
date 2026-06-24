@@ -59,7 +59,7 @@ function wbAdsFullstatsMonthRun_(from, to) {
 
   var msg = 'Период ' + rng.from + '…' + rng.to + ' · статус ' + (res && res.status) +
             ' · строк ' + (res && res.rows != null ? res.rows : '—') +
-            (res && res.status === 'PARTIAL' ? ' · ⏳ упёрлось в тайм-бюджет, запусти ещё раз для дозабора' : '');
+            (res && res.status === 'PARTIAL' ? ' · ⏳ упёрлось в тайм-бюджет; повторный запуск пересоберёт период заново' : '');
   try { ss.toast(msg, '📊 fullstats за месяц', res && res.status === 'PARTIAL' ? 12 : 10); } catch (e) {}
 }
 
