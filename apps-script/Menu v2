@@ -105,6 +105,12 @@ function onOpen() {
             .addItem('🤖 Включить авто-сбор (триггер)', 'wbAdsClustersJobInstallTrigger')
             .addItem('🛑 Выключить авто-сбор', 'wbAdsClustersJobRemoveTrigger')
         )
+        .addSeparator()
+        .addSubMenu(
+          ui.createMenu('📈 fullstats за месяц')
+            .addItem('▶️ Текущий месяц', 'wbAdsFullstatsMonthCurrent')
+            .addItem('📅 Выбрать период…', 'wbAdsFullstatsMonthPrompt')
+        )
     )
 
     // ─── Расчёты ───
