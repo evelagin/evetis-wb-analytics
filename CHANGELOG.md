@@ -2,6 +2,24 @@
 
 ## История изменений
 
+### 2026-07-10
+
+BigQuery migration — Phase A.
+
+Что изменено:
+- добавлен новый файл `apps-script/WbBigQuery.gs`;
+- добавлен базовый слой доступа к BigQuery: конфиг через Script Properties, создание датасета, создание `RAW_WB_FINANCE`, batch load через `NEWLINE_DELIMITED_JSON`, SQL query helper;
+- добавлен `bqSelfTest()` — безопасная проверка доступа через временную таблицу `_selftest`;
+- добавлена документация `docs/bigquery_migration_phase_a.md`.
+
+Правила безопасности:
+- реальный GCP Project ID не коммитится в репозиторий;
+- существующие Google Sheets RAW-листы и WB-загрузчики на этой фазе не меняются;
+- `bqSelfTest()` удаляет только временную таблицу `_selftest`;
+- `RAW_WB_FINANCE` создаётся только отдельным запуском `bqCreateFinanceTable()`.
+
+Следующий шаг: после успешного `bqSelfTest()` перейти к Phase B — переносу финансового RAW/backfill в BigQuery.
+
 ### 2026-06-28
 
 Фаза 0, шаг 1 — миграция финансов на API «Финансы»: файл-разведчик (только чтение).
