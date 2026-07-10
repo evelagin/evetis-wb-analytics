@@ -2,6 +2,46 @@
 
 ## История изменений
 
+### 2026-06-28
+
+Фаза 0, шаг 1 — миграция финансов на API «Финансы»: файл-разведчик (только чтение).
+
+Что изменено:
+- добавлен новый файл `apps-script/WbFinanceApiV1.gs` — диагностический модуль БЕЗ записи в листы;
+- `showWbFinanceV1ReportsList()` — POST `sales-reports/list`, выводит в лог фактические периоды всех доступных `reportId` (проверка реальной глубины по кабинету);
+- `wbFinanceV1DetailedSample()` — POST `sales-reports/detailed/{reportId}`, выводит реальные имена полей (camelCase) и первую строку для проверки string-сумм;
+- предусловие: токен категории «Финансы» в Script Property `WB_TOKEN_FINANCE`;
+- база `finance-api.wildberries.ru`, пагинация detailed по `rrdid` (как в старом методе).
+
+Что НЕ менялось:
+- `RAW_WB_FINANCE` и любые другие листы (модуль только читает API и пишет в логи);
+- старый загрузчик `Wbfinanceloader` (reportDetailByPeriod) — работает до 15.07.2026, выводим из использования позже;
+- CLEAN/UNIT/PNL, заказы, продажи, реклама, остатки, хранение.
+
+Подтверждено разведкой (29.06): `list` отдал 189 недельных отчётов с глубиной **2024-09-02 … 2026-06-21**; `detailed/{reportId}` отдаёт строки и за сентябрь 2024. Снята полная camelCase-схема полей.
+
+Добавлен продакшн-загрузчик (в том же файле, переиспользует конвейер `Wbfinanceloader`):
+- `wbFinV1AdaptRow_` — новые camelCase-поля → старые имена `FINANCE_API_FIELD_MAP_` + парсинг string-сумм в числа (логистика-деньги = `deliveryService`, не `deliveryAmount`);
+- `wbFinV1FetchDetailedAll_` — пагинация detailed по `rrdId`;
+- `wbFinV1ImportReport_` — запись одного reportId в `RAW_WB_FINANCE` через `normalizeFinanceApiRows_`, с **replace-slice ПО reportId** (`wbFinV1ClearOwnReport_` удаляет только строки `source_api=WB_API_FIN_V1` И `report_id=reportId`, затем пишет fresh — не по периоду, т.к. на неделю бывает несколько reportId);
+- `wbFinanceV1ImportOneReportTest` — импорт ОДНОГО отчёта + контрольные суммы рядом с недельными итогами из `list` (самопроверка маппинга); UNMAPPED-диагностика по `sellerOperName`.
+
+Правила безопасности: токен строго `WB_TOKEN_FINANCE` (без fallback); запись запрещена, если в RAW нет колонок `source_api`/`report_id` (иначе откат невозможен); `row_hash` детерминированный = `WB_API_FIN_V1|reportId|rrdId`; HTTP 204 в пагинации = штатное завершение. Запись additive и обратима (откат — удалить строки с `source_api=WB_API_FIN_V1`). Старый загрузчик не тронут.
+
+Проверка на одном отчёте (757272781, 15–21.06.2026): наши detailed-суммы совпали с недельными итогами `list` точь-в-точь (forPay 4396.37, retail 4849.01, логистика 943.99), UNMAPPED нет.
+
+Добавлен резюмируемый бэкфилл по всем reportId (сен 2024 → сейчас):
+- `wbFinV1ListAll_`, `wbFinanceV1Backfill` (бюджет времени 4.5 мин, прогресс в Script Property `WB_FIN_V1_DONE` после каждого отчёта, запуск повторно до «ЗАВЕРШЁН»), `wbFinanceV1BackfillStatus`, `wbFinanceV1BackfillReset`.
+- `wbFinV1ImportReport_` принимает готовый `skuIndex` (строится 1 раз на прогон).
+
+Принятая стратегия источника финансов: **единый API**. После бэкфилла — сверка недель перекрытия Excel↔API, затем удаление Excel-строк (`source_api=DRIVE_XLSX_REPORT`) → один источник. Шаг сверки/удаления — отдельно. См. `docs/phase0_finance_migration_tz.md`.
+
+### 2026-06-29 (исправление бэкфилла)
+
+Прогон бэкфилла падал: per-report `deleteRow`-очистка по всему листу на разросшемся RAW давала `IllegalStateException` и «Exceeded maximum execution time» (один большой отчёт не укладывался в 6 мин).
+
+Переписан `wbFinanceV1Backfill`: **один скан листа за прогон** (`wbFinV1BuildSeenRrdSet_`), дедуп строго по безопасному ключу **`reportId|rrdId`**, запись только новых строк, БЕЗ очистки по периоду. Это убирает таймаут, `IllegalStateException` и риск задвоения при повторных/прерванных запусках. `row_hash` теперь = `WB_API_FIN_V1|reportId|rrdId`. Добавлена read-only диагностика `wbFinanceV1CheckDuplicates` (строк/уник. reportId|rrdId/дубли/суммы). Старый `wbFinV1ImportReport_` (single-report тест с replace-slice по report_id) оставлен.
+
 ### 2026-06-24
 
 Рекламный дашборд ADS_WB v1 (по API fullstats).
