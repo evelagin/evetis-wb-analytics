@@ -2,6 +2,43 @@
 
 ## История изменений
 
+### 2026-07-11
+
+BigQuery migration — Phase C (реклама), hardening по внешнему аудиту перед запуском.
+
+Что изменено (`apps-script/WbAdsBigQuery.gs`):
+- `wbAdvBqEnsureTable_()` переписан: отличает 404 от прочих ошибок (убран «пустой catch»), для существующей таблицы делает аудит схемы и АДДИТИВНОЕ расширение (недостающие колонки → STRING NULLABLE через `Tables.patch`), обрывает запуск при несовместимом типе; выделены `wbAdvBqCreateTable_()` / `wbAdvBqAuditAndExtendSchema_()`;
+- `wbAdsBqCreateViews()` теперь создаёт дедуп-вью для ВСЕХ 5 таблиц (было 2): `V_ADV_CAMPAIGNS` (ключ advertId), `V_ADV_CAMPAIGN_STATS` (date+advertId+nmId+appType+source_level, только `processed_status='raw'`), `V_ADV_BOOSTER_STATS` (date+advertId+nmId), `V_ADV_SEARCH_CLUSTERS` (period+связка+norm_query), `V_ADV_COSTS` (updNum, при пустом — составной ключ). Сортировка дедупа: `SAFE_CAST(load_ts AS TIMESTAMP) DESC, run_id DESC`;
+- `wbAdsBqEnable()` — preflight (fail-closed): `getBqConfig_` + `bqEnsureDataset_` + `bqSelfTest` ДО установки флага;
+- добавлены allowlist `WB_ADS_BQ_TABLES_` и `wbAdsBqAssertTable_()` (вызываются в ensure/append);
+- `WB_ADS_BQ_BATCH_` 10000 → 1000 (payload NDJSON с крупным raw_json);
+- `wbAdsBqStats()` больше не прячет реальные ошибки под «(нет таблицы)».
+
+Что изменено (`apps-script/WbAdsRawLoader.gs`):
+- UI-сообщение оркестратора теперь показывает верное назначение (BigQuery vs листы) при включённом sink;
+- `RAW_WB_ADV_SEARCH_CLUSTERS` явно задокументирован как SAMPLE (первые N связок, без ротации) — не источник полноты;
+- в `loadWbAdsRawPeriod()` добавлено предупреждение при периоде > 31 дня (backfill — помесячно).
+
+Замечания аудита, ОТЛОЖЕННЫЕ в бэклог (не блокеры первого прогона):
+- уникальность `updNum` в `RAW_WB_ADV_COSTS` проверить фактическим запросом (в один день по кампании возможно несколько операций) до утверждения ключа `V_ADV_COSTS`;
+- отдельная `V_ADV_CAMPAIGN_NO_STATS` при необходимости (сейчас маркеры остаются только в RAW);
+- партиция ingestion-time во вью не используется — для витрин фильтровать по бизнес-дате/`_PARTITIONDATE`.
+
+Порядок запуска (лестница): C0 `wbAdsBqEnable()` (preflight) → C1 один день + `wbAdsBqStats()` + `wbAdsBqCreateViews()` → C2 7 дней → backfill ПОМЕСЯЧНО. Откат: `wbAdsBqDisable()`. Финконтур (RAW_WB_FINANCE/V_WB_FINANCE), CLEAN/UNIT/PNL и daily refresh не затронуты.
+
+Правки по ВТОРОМУ раунду аудита (тот же день):
+- **Блокер C0:** `wbAdsBqCreateViews()` падал бы на отсутствующей RAW-таблице (таблицы создаются лениво загрузчиками; при отсутствии кампаний 7/9/11 или связок advertId+nmId часть таблиц не появляется). Добавлен `wbAdsBqEnsureAllTables_()` (гарантирует 5 пустых таблиц из констант заголовков) — вызывается в начале `wbAdsBqCreateViews()`. Добавлен `wbAdsBqInit()` — настоящий C0 БЕЗ WB API (enable+ensure+views+stats).
+- **Блокер `V_ADV_CAMPAIGNS`:** свежая строка `count_only` (временный сбой /adverts) вытесняла полноценную `raw` (название/товары/даты). В `makeView()` добавлен параметр `orderPrefix`; для кампаний приоритет `raw` (0) над `count_only` (1) перед сортировкой по load_ts.
+- **Backfill по источникам:** инструкция в заголовке и handoff переписана — историю грузить НЕ общим оркестратором (он тратит бюджет на паузы search clusters до fullstats), а по источникам: `loadWbAdsCampaignsRaw()` один раз, `loadWbAdsCostsRaw` помесячно, `loadWbAdsFullstatsRaw` малыми окнами, clusters отдельно.
+- Исправлена неверная формулировка: `wbAdsSplitPeriod_()` даёт СМЕЖНЫЕ НЕперекрывающиеся окна; причина PARTIAL — тайм-бюджет и rate-limit, не перекрытие.
+- `load_ts` подтверждён: `wbAdsNow_()` → `'yyyy-MM-dd HH:mm:ss'` — валидный timestamp-литерал BigQuery, `SAFE_CAST(load_ts AS TIMESTAMP)` парсит корректно (проверить и на реальных строках в C1).
+- Комментарий аудита схемы сужен: проверяются только колонки/типы, партиция и clustering — нет (бэклог).
+
+Правки по ТРЕТЬЕМУ раунду аудита (тот же день):
+- **C0 fail-closed:** `wbAdsBqInit()` обёрнут в try/catch — при ошибке на любом шаге ПОСЛЕ включения флага (частичное создание таблиц/вью) вызывается `wbAdsBqDisable()` (rollback), чтобы загрузчик не писал в недоинициализированный контур.
+- **C0 проверка вью:** добавлен `wbAdsBqAssertViews_()` — подтверждает, что все 5 объектов существуют и являются VIEW (не просто «вызов не бросил исключение»).
+- **`V_ADV_COSTS` NULL-safe:** append пишет пустые значения как NULL, а `CONCAT` с NULL даёт NULL → разные операции схлопнулись бы в одну. Резервный ключ заменён на `TO_HEX(SHA256(COALESCE(raw_json,'')))` — сохраняет фактическую гранулярность до подтверждения уникальности `updNum` в C1.
+
 ### 2026-07-10
 
 BigQuery migration — Phase A.
