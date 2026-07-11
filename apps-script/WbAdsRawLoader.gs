@@ -79,7 +79,13 @@ var WB_ADV_RAW_COSTS_HEADERS_ = [
 /** Лимиты периодов WB: fullstats и upd — максимум 31 день на запрос. */
 var WB_ADV_RAW_MAX_DAYS_ = 31;
 
-/** Search clusters: безопасный лимит ручного запуска (PR #17B). */
+/**
+ * Search clusters — SAMPLE/диагностика, НЕ полный RAW.
+ * Каждый прогон берёт первые N связок advertId|nmId без ротации/offset/
+ * checkpoint → остальные связки в BQ не попадают. Не строить на
+ * RAW_WB_ADV_SEARCH_CLUSTERS / V_ADV_SEARCH_CLUSTERS требование полноты.
+ * Полный сбор ключей — отдельная задача Фазы D (checkpoint по паре).
+ */
 var WB_ADS_SEARCH_MAX_PAIRS_RAW_ = 20;
 
 /** Тайм-бюджеты (Apps Script hard limit ~6 мин). */
@@ -135,6 +141,18 @@ function loadWbAdsRawPeriod(periodFrom, periodTo) {
   console.log('═══ loadWbAdsRawPeriod() v1.0 СТАРТ run_id=' + runId +
     ' период ' + rng.from + '…' + rng.to + ' ═══');
 
+  // №3: один прогон оркестратора НЕ гарантирует полноту на длинном
+  // периоде — fullstats может не успеть за 6-мин лимит после пауз search
+  // clusters (причина — тайм-бюджет и rate-limit, окна wbAdsSplitPeriod_
+  // неперекрывающиеся). Backfill истории — ПО ИСТОЧНИКАМ, не оркестратором.
+  var spanDays = Math.round(
+    (new Date(rng.to + 'T00:00:00Z') - new Date(rng.from + 'T00:00:00Z')) / 86400000) + 1;
+  if (spanDays > WB_ADV_RAW_MAX_DAYS_) {
+    console.warn('⚠️ Период ' + spanDays + ' дн (> ' + WB_ADV_RAW_MAX_DAYS_ +
+      '). Оркестратор НЕ гарантирует полный fullstats — для истории грузите ' +
+      'по источникам (loadWbAdsFullstatsRaw малыми окнами).');
+  }
+
   var results = [];
   try {
     results.push(loadWbAdsCampaignsRaw(runId));
@@ -156,7 +174,9 @@ function loadWbAdsRawPeriod(periodFrom, periodTo) {
       msg += '• ' + (x.source || '?') + ': ' + (x.status || '?') +
         ' (rows=' + (x.rows != null ? x.rows : 0) + ')\n';
     }
-    msg += '\nДанные — в листах RAW_WB_ADV_*. Ошибки — в WB_ADS_STATUS.\n' +
+    var bqOn = (typeof wbAdsBqSinkOn_ === 'function' && wbAdsBqSinkOn_());
+    var destination = bqOn ? 'BigQuery-таблицах RAW_WB_ADV_*' : 'листах RAW_WB_ADV_*';
+    msg += '\nДанные — в ' + destination + '. Ошибки — в WB_ADS_STATUS.\n' +
       '⚠️ RAW-загрузка рекламы. CLEAN/UNIT/PNL/RAW_WB_FINANCE и daily refresh НЕ затронуты.\n' +
       'Время: ' + elapsed + ' сек';
     ui.alert('📥 WB Ads RAW', msg, ui.ButtonSet.OK);
@@ -451,8 +471,9 @@ function loadWbAdsCostsRaw(periodFrom, periodTo, runId) {
 
 /**
  * RAW поисковых кластеров: /adv/v0/normquery/stats.
- * Safe mode (PR #17B): ≤ 20 связок advertId+nmId за прогон, по одной связке
- * на запрос, пауза ≥ 6.5 c (WB_ADS_NORMQUERY_PAUSE_MS_).
+ * ⚠️ SAMPLE, НЕ полный RAW: ≤ WB_ADS_SEARCH_MAX_PAIRS_RAW_ связок advertId+nmId
+ * за прогон (первые, без ротации), по одной связке на запрос, пауза ≥ 6.5 c
+ * (WB_ADS_NORMQUERY_PAUSE_MS_). Полнота ключей — задача Фазы D.
  * @param {string=} periodFrom @param {string=} periodTo @param {string=} runId
  */
 function loadWbAdsSearchClustersRaw(periodFrom, periodTo, runId) {
@@ -801,6 +822,12 @@ function wbAdvCollectNmIds_(obj) {
 
 /** Создаёт RAW-лист при отсутствии; иначе аддитивно дописывает недостающие колонки справа. */
 function wbAdvRawEnsureSheet_(ss, name, headers) {
+  // BQ-приёмник (Фаза C): вместо листа создаём таблицу в BigQuery и
+  // возвращаем лёгкую заглушку с getName() — её ждёт wbAdvRawAppendRows_.
+  if (typeof wbAdsBqSinkOn_ === 'function' && wbAdsBqSinkOn_()) {
+    wbAdvBqEnsureTable_(name, headers);
+    return { getName: function () { return name; }, _bqSink: true };
+  }
   var sheet = ss.getSheetByName(name);
   if (!sheet) {
     sheet = ss.insertSheet(name);
@@ -833,6 +860,8 @@ function wbAdvRawEnsureSheet_(ss, name, headers) {
 /** Пакетно дописывает строки по ИМЕНАМ колонок текущего заголовка. @return число строк. */
 function wbAdvRawAppendRows_(sheet, rowObjs) {
   if (!rowObjs || !rowObjs.length) return 0;
+  // BQ-приёмник (Фаза C): пишем в BigQuery-таблицу с именем листа.
+  if (sheet && sheet._bqSink) return wbAdvBqAppendRows_(sheet.getName(), rowObjs);
   var lastCol = sheet.getLastColumn();
   var headers = sheet.getRange(1, 1, 1, lastCol).getValues()[0];
   var data = [];
