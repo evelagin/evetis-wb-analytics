@@ -24,9 +24,14 @@
  * ══════════════════════════════════════════════════════════════
  */
 
-/** SQL-выражение: строка-число WB → FLOAT64 (убираем пробелы, запятую→точку). */
+/** Приведение строки-числа WB → FLOAT64 (убираем пробелы, запятую→точку). */
+function wbCast_(col) {
+  return 'SAFE_CAST(REPLACE(REPLACE(IFNULL(' + col + ',"0")," ",""),",",".") AS FLOAT64)';
+}
+
+/** SUM() поверх приведённого числа. */
 function wbNum_(col) {
-  return 'SUM(SAFE_CAST(REPLACE(REPLACE(IFNULL(' + col + ',"0")," ",""),",",".") AS FLOAT64))';
+  return 'SUM(' + wbCast_(col) + ')';
 }
 
 /** Полное имя вью с дедупом. */
@@ -80,26 +85,47 @@ function wbFinAuditQuality() {
 function wbFinAuditCommissionByMonth() {
   var v = wbFinViewFq_();
   var retail = wbNum_('retail_amount');
+  var retailWd = 'SUM(' + wbCast_('retail_price_withdisc_rub') + ' * ' + wbCast_('quantity') + ')';
   var forpay = wbNum_('for_pay');
   var acq = wbNum_('acquiring_fee');
+  var commWb = wbNum_('commission_amount');   // ppvz_vw — нативная комиссия WB
   var sql =
     'SELECT period_month,\n' +
     '  COUNT(*) AS sale_rows,\n' +
     '  ' + wbNum_('quantity') + ' AS qty,\n' +
     '  ' + retail + ' AS retail,\n' +
+    '  ' + retailWd + ' AS retail_wd,\n' +
     '  ' + forpay + ' AS for_pay,\n' +
     '  ' + acq + ' AS acquiring,\n' +
-    '  ROUND(' + retail + ' - ' + forpay + ', 2) AS comm_gross,\n' +
-    '  ROUND(SAFE_DIVIDE(' + retail + ' - ' + forpay + ', ' + retail + ') * 100, 1) AS comm_gross_pct,\n' +
-    '  ROUND(' + retail + ' - ' + forpay + ' - ' + acq + ', 2) AS comm_pure,\n' +
-    '  ROUND(SAFE_DIVIDE(' + retail + ' - ' + forpay + ' - ' + acq + ', ' + retail + ') * 100, 1) AS comm_pure_pct\n' +
+    '  ' + commWb + ' AS comm_wb,\n' +
+    '  ROUND(SAFE_DIVIDE(' + commWb + ', ' + retailWd + ') * 100, 1) AS comm_wb_pct,\n' +
+    '  ROUND(SAFE_DIVIDE(' + retail + ' - ' + forpay + ', ' + retail + ') * 100, 1) AS gross_pct,\n' +
+    '  ROUND(SAFE_DIVIDE(' + retailWd + ' - ' + forpay + ' - ' + acq + ', ' + retailWd + ') * 100, 1) AS pure_pct_wd\n' +
     'FROM ' + v + '\n' +
     'WHERE doc_type_name = "Продажа"\n' +
     'GROUP BY period_month ORDER BY period_month';
   var res = bqQuery_(sql);
-  wbFinPrintRows_(res, ['month', 'sale_rows', 'qty', 'retail', 'for_pay', 'acquiring',
-    'comm_gross', 'gross%', 'comm_pure', 'pure%']);
-  console.log('Комиссия менялась по периодам — сверяем pure% с вашим ручным расчётом.');
+  wbFinPrintRows_(res, ['month', 'sale_rows', 'qty', 'retail', 'retail_wd', 'for_pay', 'acquiring',
+    'comm_wb', 'comm_wb%', 'gross%(retail)', 'pure%(wd)']);
+  console.log('retail_wd = Σ(цена_со_скидкой × qty). Сверяем comm_wb% (нативная WB) с производными.');
+}
+
+
+/** ОБРАЗЕЦ: 15 строк продаж со всеми ценовыми/денежными полями — понять формулу комиссии. */
+function wbFinSampleSaleRows() {
+  var v = wbFinViewFq_();
+  var cols = ['rr_dt', 'wb_nm_id', 'quantity', 'retail_price', 'retail_price_withdisc_rub',
+    'retail_amount', 'sale_amount', 'spp_percent', 'commission_percent',
+    'commission_amount', 'acquiring_fee', 'for_pay'];
+  var sql =
+    'SELECT ' + cols.join(', ') + '\n' +
+    'FROM ' + v + '\n' +
+    'WHERE doc_type_name = "Продажа"\n' +
+    'ORDER BY _rr_date DESC\n' +
+    'LIMIT 15';
+  var res = bqQuery_(sql);
+  wbFinPrintRows_(res, cols);
+  console.log('Проверяем: for_pay ≈ база − commission_amount; какая база (retail_amount / withdisc×qty) даёт положительную комиссию.');
 }
 
 
@@ -108,7 +134,7 @@ function wbFinAuditByMonth() {
   var v = wbFinViewFq_();
   var sql =
     'SELECT period_month,\n' +
-    '  COUNT(*) AS rows,\n' +
+    '  COUNT(*) AS cnt,\n' +
     '  ' + wbNum_('retail_amount') + ' AS retail,\n' +
     '  ' + wbNum_('for_pay') + ' AS for_pay,\n' +
     '  ' + wbNum_('acquiring_fee') + ' AS acquiring,\n' +
@@ -131,7 +157,7 @@ function wbFinAuditByOper() {
   var v = wbFinViewFq_();
   var sql =
     'SELECT supplier_oper_name,\n' +
-    '  COUNT(*) AS rows,\n' +
+    '  COUNT(*) AS cnt,\n' +
     '  ' + wbNum_('retail_amount') + ' AS retail,\n' +
     '  ' + wbNum_('for_pay') + ' AS for_pay,\n' +
     '  ' + wbNum_('logistics_amount') + ' AS logistics,\n' +
@@ -140,7 +166,7 @@ function wbFinAuditByOper() {
     '  ' + wbNum_('deduction') + ' AS deduction,\n' +
     '  ' + wbNum_('acquiring_fee') + ' AS acquiring\n' +
     'FROM ' + v + '\n' +
-    'GROUP BY supplier_oper_name ORDER BY rows DESC';
+    'GROUP BY supplier_oper_name ORDER BY cnt DESC';
   var res = bqQuery_(sql);
   wbFinPrintRows_(res, ['oper', 'rows', 'retail', 'for_pay', 'logistics', 'storage', 'penalty', 'deduction', 'acquiring']);
 }
