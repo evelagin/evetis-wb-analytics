@@ -53,10 +53,23 @@ Backfill гнать ПО ИСТОЧНИКАМ (не оркестратором):
 
 **СЛЕДУЮЩИЙ ШАГ (за владельцем, после merge D1.2):** bootstrap 1 раз → **2 ручных прогона** `runWbOrdersIncremental()`: (1) watermark установлен, `order_dt`-фильтра нет, RAW вырос при изменениях, `watermark_after` = макс. точный `lastChangeDate` записанного пакета, VIEW = уник. `srid`, старые заказы с поздними изменениями не отброшены; (2) сразу следом — `OK_NO_CHANGES` (RAW/watermark неизменны) ИЛИ `OK` с монотонным ростом watermark. Запрещено: уменьшение watermark, запись при `PARTIAL`/`ERROR`, продвижение без append. Изолированный SQL/CTE-тест подтверждает выбор последнего состояния (`is_cancel=false→true`), природная отмена — постконтроль. Триггер обсуждаем только после этого. Затем **D2 Sales/Returns** по зрелому шаблону. Бэклог **D1.1**: `raw_json` + полная схема, `regionName` вместо `oblastOkrugName`, мск-таймзона. Детали — CHANGELOG 2026-07-12, память [[d1-orders-migration-status]].
 
+## 5.1 Продажи/возвраты (Фаза D2a — ✅ КОД написан, до acceptance-прогонов)
+
+Ветка `phase-d2a-sales-bigquery`. Аудит D2 + 2 read-only probe живого Sales API завершены; архитектура принята владельцем.
+
+**Доказано probe (`dateFrom` 2026-05-28 и 2026-04-13):** 3319 строк/90д, `distinct saleID = distinct srid = raw_rows = 3319`, пустых `saleID/srid/lastChangeDate`=0, дублей `saleID`=0, конфликтов `saleID↔srid/nmId/date`=0, cap 80000 недостижим, префиксы `S=3319/R=0`, `orderType` в контракте отсутствует, min `date` (2026-03-30) < `dateFrom` → фильтрация по `lastChangeDate`, а не по дате продажи. **event_key = `saleID`** (100% заполнен, уникален, стабилен, без версий). Возвраты у EVETIS ≈0.
+
+**Что написано (флаг `WB_SALES_BQ_SINK` по умолчанию ВЫКЛ):**
+- новый `WbSalesReturnsBigQuery.gs`: `wbSalesBqInitC0` (C0 fail-closed), enable/disable/stats/validate; таблица `RAW_WB_SALES_RETURNS` (типизированная: INT64/NUMERIC/BOOL + `_sale_date DATE`), партиция `_sale_date`, кластер `sale_id, srid, wb_nm_id`; вью `V_WB_SALES_RETURNS` — last-wins по `sale_id` (`ORDER BY REPLACE(last_change_date,'T',' ')::TIMESTAMP DESC, loaded_at DESC, load_id DESC`), `WHERE source_api='WB_API_SALES' AND TRIM(sale_id)<>'' AND processed_status<>'MISSING_EVENT_KEY'`.
+- правки под флагом в `WbSalesReturnsLoader`: `SALES_RAW_HEADERS_` (40 колонок), новые API-поля + `raw_json`, раздельные `region_name`/`oblast_okrug_name`, `operation_type=SALE/RETURN`, `MISSING_EVENT_KEY` при пустом `saleID`; `fetchSalesApiData_` → один fail-closed запрос (пагинация снята, cap→PARTIAL); `salesHttpGet_` = ровно один `UrlFetchApp.fetch` **без retry** (rate limit 1 req/min; `wbFetchWithRetry_` и константы MAX_PAGES/PAGE_PAUSE/RETRY_* убраны; 429/5xx→ERROR, повтор вручную ≥65с); sink-ветки (getRawSheet/headerMap/clear no-op/append→BQ); `aggregateSalesRowArray_`.
+- **`noWindow` (найдено на ревью, критично):** при sink ON нормализация и суммы идут с `{noWindow:true}` — локальное окно `sale_dt` снято, весь change-feed от `dateFrom` сохраняется (Sales API фильтрует по `lastChangeDate`; `sale_dt` может быть раньше `dateFrom`). Legacy sheet (sink OFF) — прежнее окно. Mock `wbSalesNoWindowSelfTest()` подтверждает (sink ON=1/1, sink OFF=0). `node --check` обоих файлов пройден в окружении ассистента (на машине владельца node не установлен — перепроверить отдельно).
+
+**СЛЕДУЮЩИЙ ШАГ (владелец, D2a acceptance):** `wbSalesBqInitC0()` (RAW=0/VIEW=0) → `importWbSalesReturnsFromApi(d,d)` за 1 день (RAW=строкам, VIEW=distinct saleID, пустых ключей/дат=0, `_sale_date` заполнена) → повтор того же дня (RAW растёт append-only, VIEW не меняется → дедуп по saleID подтверждён) → backfill `importWbSalesReturnsFromApi('2026-04-13','<сегодня>')` (~3319 строк, RAW≥VIEW=distinct saleID, покрытие по дням, MAX(last_change_date)). Проверять `wbSalesBqStats()`. Потребители НЕ трогаем. После приёмки — **D2b** (cutover DashboardWb/Cleanwbdaily на вью), затем **D2c** (watermark `WB_SALES_LAST_CHANGE_WATERMARK`, граница `sale_id+row_hash`, триггер).
+
 ## 6. Осталось по дорожной карте
 
 - **D1 Orders:** прогнать C0/C1, проверить, backfill 90 дней.
-- **D2 Sales/Returns** (`WbSalesReturnsLoader`) — тем же приёмом.
+- **D2 Sales/Returns** (`WbSalesReturnsLoader`): D2a код готов (ветка `phase-d2a-sales-bigquery`) → acceptance → D2b cutover → D2c watermark/триггер.
 - **D3 Storage** (`WbStocksLoader`) — snapshot по snapshot_date+warehouse+nmId.
 - **D4 Витрины MART:** ДРР по SKU, связать рекламу с удержанием 4,56 млн, ABC, воронка. Партиции + фильтр по дате (экономия квоты 1 ТБ/мес).
 - **D5 Dashboard** (web-app, читает MART).
