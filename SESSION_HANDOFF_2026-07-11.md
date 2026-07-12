@@ -44,7 +44,7 @@
 
 - Порт сделан флагом в 2 общих хелперах (`wbAdvRawEnsureSheet_`/`wbAdvRawAppendRows_`) — под флагом `WB_ADS_BQ_SINK`, откат `wbAdsBqDisable()`. Логика тяги не тронута.
 - 5 таблиц: `RAW_WB_ADV_CAMPAIGNS`, `RAW_WB_ADV_CAMPAIGN_STATS` (расход/показы/клики по SKU/дням), `RAW_WB_ADV_BOOSTER_STATS`, `RAW_WB_ADV_SEARCH_CLUSTERS` (ключи), `RAW_WB_ADV_COSTS`. Все STRING, партиция по времени загрузки, дедуп-вью.
-- **Статус на 11.07 (вечер):** порт прошёл внешний аудит, внесены правки (hardening) — см. CHANGELOG 2026-07-11. Код в BQ ещё НЕ прогонялся, рекламных таблиц в `wb_raw` нет (только финансы) — это ожидаемо.
+- **Статус на 12.07:** ✅ Фаза C ЗАВЕРШЕНА. Реклама в BQ: 5 таблиц + 5 вью, backfill 90 дней проверен. fullstats 13.04–11.07 полное (90/90 дней, расход по SKU ≈ 395 170 ₽, 24 SKU); costs ≈ 425 106 ₽ (сходится, +7,5%); campaigns 426. Дефект `V_ADV_COSTS` (updNum неуникален) найден и исправлен на хэш raw_json. Осталось опционально: search clusters (sample). Следующее — Фаза D (витрины: ДРР по SKU, ABC, связать рекламу с удержанием 4,56 млн).
 - **СЛЕДУЮЩИЙ ШАГ (за владельцем), лестница безопасности:**
   - **C0 (без WB API):** залить `WbAdsBigQuery.gs` + `WbAdsRawLoader.gs` в Apps Script → `wbAdsBqInit()`. Один вызов: preflight (self-test+ensure dataset), 5 пустых таблиц, 5 вью, счётчики (все 0 — норм). Упадёт ДО флага, если доступа нет.
   - **C1:** `loadWbAdsRawPeriod('YYYY-MM-DD','YYYY-MM-DD')` за ОДИН ЗАВЕРШЁННЫЙ день (не текущий неполный, напр. `'2026-07-10','2026-07-10'`) → `wbAdsBqStats()` → `wbAdsBqCreateViews()`; Клод проверит в облаке.

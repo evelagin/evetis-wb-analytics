@@ -2,6 +2,75 @@
 
 ## История изменений
 
+### 2026-07-12 — Фаза D1: fail-closed на ошибке ответа WB + PARTIAL в лог (3-й аудит)
+
+3-й аудит подтвердил корректность контракта WB и поймал fail-open блокер целостности.
+
+Блокер (`fetchOrdersApiData_`, `WbOrdersLoader`):
+- `JSON.parse` в `catch` возвращал `arr = []`, а пустой массив = штатный конец → повреждённый/не-массивный ответ WB (битый JSON, HTML-ошибка с HTTP 200, объект вместо массива, обрезанный ответ) принимался за **полную** выгрузку с `ok:true`. Исправлено: ошибка разбора → `{ok:false, partial: pages>0}`; ответ не `Array` → `{ok:false}`. Штатным концом остаётся ТОЛЬКО настоящий пустой массив `[]`.
+
+PARTIAL в результат/лог (`importWbOrdersFromApiInternal_`):
+- при `!fetched.ok` статус теперь `PARTIAL` (упор в лимит/курсор/битый JSON) vs `ERROR` (жёсткая), в существующей колонке `status` лога `IMPORT_LOG_ORDERS`; в `error_message` добавлено число полученных страниц; в result — поля `partial`, `pages_fetched`. При любом `!ok` строки НЕ записываются (fail-closed). Теперь фраза «увидишь PARTIAL» соответствует интерфейсу.
+
+Синхронизированы 3 устаревших комментария (backfill «окнами» → одним проходом; «lastChangeDate не сохраняется» → сохраняется; «партиция не проверяется» → строгая проверка). `node --check` обоих файлов — ОК.
+
+Отложено в **D1.1** (после успешного C1, отдельным решением — не раздувать патч): RAW не полностью «сырой» — нет `raw_json` (страховка от расширения схемы, разбор спорных строк без повторного запроса), `totalPrice`, `finishedPrice`, `discountPercent`, `spp`, `warehouseType`, `incomeID`, `isSupply`, `isRealization`; `region_name` сейчас заполнен `oblastOkrugName` (федеральный округ), тогда как WB отдаёт отдельно `regionName` (регион) — для витрины продаж по регионам семантически неверно; `last_change_date` хранится как мск-время (UTC+3) без зоны, `SAFE_CAST(... AS TIMESTAMP)` в BQ трактует как UTC — для дедупа неважно (сдвиг одинаков), но для аналитики абсолютное время на 3 ч неверно, приводить через мск-зону.
+
+### 2026-07-12 — Фаза D1: исправление семантики пагинации/backfill заказов (2-й аудит)
+
+Повторный внешний аудит подтвердил предыдущий hardening и выявил архитектурный дефект пагинации. По документации WB (`/api/v1/supplier/orders`, `flag=0`): `dateFrom` = `lastChangeDate`, возвращаются записи с `lastChangeDate >= dateFrom` (лимит ответа ~80 000 строк); пагинация — **полным значением `lastChangeDate` последней строки**; конец — **пустой массив `[]`**; параметра `dateTo` у эндпоинта НЕТ.
+
+`fetchOrdersApiData_` (`WbOrdersLoader`):
+- курсор пагинации теперь = точное `lastChangeDate` **последней строки** ответа (было: `max()` по странице с `replace('T',' ').substring(0,19)` — обрезка мс/формата расширяла границу и вызывала повтор страниц).
+- сравнение версий last-wins по srid — на сырых строках `lastChangeDate` (без обрезки).
+- признаки завершения приведены к контракту: пустой массив → конец; страница без новых/обновлённых srid **и ниже лимита строк** → дренаж; курсор не двигается при непустом ответе **или** упор в лимит страниц → `{ok:false, partial:true}` (не «красивый» OK). Введена `WB_ORDERS_API_ROWS_CAP_ = 80000` для отличия дренажа от упора в лимит строк.
+
+Backfill (инструкция, не код): 90 дней делать **одним проходом** `importWbOrdersFromApi('<начало 90д>','<сегодня>')` — окна по `dateTo` объём ответа WB не уменьшают (эндпоинт всё равно отдаёт всё от `dateFrom` до «сейчас»), только многократно перетягивают историю и повышают риск упора в лимит. Client-side фильтр по `order_dt` в `normalizeOrdersApiRows_` оставлен — он и вырезает целевое окно.
+
+Ежедневный инкремент (помечено в коде, реализация — до включения триггера): `importWbOrdersFromApiRolling14Days` фильтрует по `order_dt` — для инкремента НЕВЕРНО (поздняя отмена заказа старше окна не обновит состояние). Заменить на watermark-режим: `dateFrom` = последний обработанный `lastChangeDate`, без фильтра изменений по `order_dt` (дедуп по srid во вью выберет последнее состояние).
+
+Строгая проверка партиции (`WbOrdersBigQuery.gs`): `wbOrdersBqEnsureTable_` у существующей таблицы теперь падает, если она не партиционирована по `_order_date` (patch колонку добавляет, но партицию не создаёт). Синхронизирован устаревший комментарий шапки (`loaded_at DESC` → `last_change_date`). Оба файла прошли `node --check`.
+
+### 2026-07-12 — Фаза D1: hardening заказов по внешнему аудиту (до C0/C1)
+
+Правки перед первым прогоном. Финансы/реклама/CLEAN/UNIT/PNL не затронуты.
+
+Структура колонок (`WbOrdersLoader`):
+- `ORDERS_RAW_HEADERS_`: 28 → **29 колонок**, добавлена `last_change_date` **в конец** (время изменения заказа на стороне WB). Легаси-лист RAW_WB_ORDERS физически имеет 28 колонок — append в конец её игнорирует (в sheet-режиме `set('last_change_date')` = no-op); в BQ схема патчится аддитивно. Порядок первых 28 колонок не тронут.
+
+Устойчивый last-wins (`WbOrdersLoader`):
+- `fetchOrdersApiData_` переписан: внутрипакетный дедуп по srid был **first-wins** (`if (!seenSrid[key]) all.push(o)`) → теперь **last-wins** (для каждой srid держим версию с максимальной `lastChangeDate`). Раньше поздняя версия одной srid отбрасывалась ещё до RAW — вью не могла бы это исправить.
+- нормализация сохраняет `last_change_date` (`T`→пробел для чистого `SAFE_CAST` в BQ).
+
+Полнота backfill (`WbOrdersLoader`):
+- упор в лимит `WB_ORDERS_API_MAX_PAGES_` (30) больше не возвращает `ok:true`. Введён флаг `reachedEnd`, отличающий штатное завершение (пустой ответ / нет прогресса / курсор не двигается) от обрыва по лимиту → `{ok:false, partial:true}` с сообщением «сузьте окно». Иначе обрезанный хвост давал «красивый» OK.
+
+Валидация периода (`WbOrdersLoader`):
+- добавлена проверка `dateFrom <= dateTo` в ядре и в промпте меню.
+
+Дедуп-вью (`WbOrdersBigQuery.gs`):
+- `V_WB_ORDERS`: первичный ключ сортировки `SAFE_CAST(last_change_date AS TIMESTAMP) DESC`, затем `loaded_at DESC, load_id DESC` (tie-break). NULL last_change_date уходит вниз (штатно для BigQuery DESC).
+- `wbOrdersBqEnsureTable_`: у существующей таблицы теперь аудируется и служебная `_order_date` (должна быть DATE; если нет — добавляется аддитивно). Раньше проверялись только STRING-колонки из headers → таблица могла существовать без партиционной колонки, append падал бы.
+
+Отложено в бэклог (не блокеры D1): контрольные суммы прогона считаются по пакету, не по дедуп-вью — для acceptance брать `COUNT(*)`/`COUNT(DISTINCT srid)` из `V_WB_ORDERS` в облаке; `IMPORT_LOG_ORDERS` временно в Sheets (диагностика); сопоставление SKU при загрузке через `SKU_MASTER` (стратегически — в SQL-вью, чтобы правка справочника пересчитывала старые RAW). Оба файла прошли `node --check`.
+
+### 2026-07-12 — Фаза D1: Orders → BigQuery (порт)
+
+Аудит `WbOrdersLoader` и порт заказов в BigQuery по образцу рекламы (BigQuery-first).
+
+Новый файл `WbOrdersBigQuery.gs`:
+- флаг `WB_ORDERS_BQ_SINK`; `wbOrdersBqEnable()` с preflight (self-test+ensure dataset, fail-closed); `wbOrdersBqDisable()`; `wbOrdersBqInit()` — C0 без WB API (флаг+таблица+вью+счётчики, rollback флага при ошибке).
+- `wbOrdersBqEnsureTable_()` — 404-aware + аддитивное расширение схемы; таблица `RAW_WB_ORDERS` = STRING-колонки + `_order_date DATE` (партиция по ДАТЕ ЗАКАЗА, кластер wb_nm_id/srid).
+- `wbOrdersBqAppendRows_()` — append-only, `_order_date` из order_dt; batch 2000; allowlist только RAW_WB_ORDERS.
+- `wbOrdersBqCreateViews()` — `V_WB_ORDERS`: дедуп по **srid, last-wins** (`ORDER BY loaded_at DESC`), фильтр source_api='WB_API_ORDERS'. Заказы мутируют (заказ→отмена) → нужно последнее состояние; row_hash как ключ НЕ годится (включает is_cancel → задвоение).
+- `wbOrdersBqStats()`, `wbOrdersBqAssertViews_()`.
+
+Правки под флагом в `WbOrdersLoader` (тяга/нормализация НЕ тронуты):
+- добавлена константа `ORDERS_RAW_HEADERS_` (канонический порядок 28 колонок — при sink листа нет).
+- `getRawOrdersSheet_` → при sink возвращает заглушку (`_bqSink`, getName, getLastColumn) и гарантирует BQ-таблицу; `buildOrdersRawHeaderMap_` → из константы; `clearOrdersOwnPeriod_` → no-op (append-only, дедуп во вью); `appendOrdersRows_` → массивы→объекты→BQ; контрольные суммы при sink считаются из памяти (`aggregateOrdersRowArray_`).
+
+Запуск: C0 `wbOrdersBqInit()` (редактор) → C1 `importWbOrdersFromApi` за 1 день (меню «Заказы WB → за период…») → `wbOrdersBqStats()` → проверка в облаке (в т.ч. эмпирическая проверка ключа srid: COUNT vs COUNT DISTINCT srid, srid с меняющимся is_cancel) → backfill 90 дней окнами. ⚠️ Глубина заказов = потолок API ~90 дней. Лист `RAW_WB_ORDERS` остаётся legacy. Финансы/реклама/CLEAN/UNIT/PNL не затронуты.
+
 ### 2026-07-11
 
 BigQuery migration — Phase C (реклама), hardening по внешнему аудиту перед запуском.
@@ -39,6 +108,11 @@ BigQuery migration — Phase C (реклама), hardening по внешнему
 - `Menu v2`: в «Реклама WB» добавлены пункты «RAW: только расходы за период…» и «RAW: только fullstats за период…».
 - Примечание: пункт «fullstats за месяц» тоже пишет в BQ (внутри зовёт loadWbAdsFullstatsRaw), но перед загрузкой делает лишний deleteRows по старым листам — для backfill предпочтительны новые prompt-пункты «за период».
 - Backfill не требует пересоздания вью: V_ADV_* читают живой RAW; `wbAdsBqCreateViews()` нужен только при изменении SQL вью.
+
+Backfill рекламы 90 дней ЗАВЕРШЁН и проверен (2026-07-12):
+- fullstats: покрытие 13.04–11.07 полное, 90/90 дней, пропусков нет; расход по SKU ≈ 395 170 ₽, 24 SKU, 7995 строк во `V_ADV_CAMPAIGN_STATS`. Грузили 14-дневными окнами (~200 сек каждое, OK).
+- costs (upd): `V_ADV_COSTS` ≈ 425 106 ₽ за период. Сходимость с fullstats: costs на ~7,5% больше (вся реклама с баланса vs привязанное к SKU) — ожидаемо, связывает рекламу с удержанием 4,56 млн из финотчёта.
+- campaigns: 426 уникальных. Осталось (низкий приоритет): search clusters (sample) — не грузили.
 
 Результат C1 (первый реальный прогон, проверено в облаке 2026-07-12):
 - Все 5 RAW-таблиц и 5 вью созданы; sink работает. Прогон был 7-дневный оркестратором (2 запуска: первый отменён после campaigns+costs, второй прошёл до fullstats PARTIAL).

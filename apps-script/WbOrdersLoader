@@ -15,7 +15,8 @@
  *   Весь лист НЕ чистится. createAllSheets / reset НЕ вызываются. Схема НЕ меняется.
  *
  * ПОЛЯ (по факту gate T3): только колонки, которые есть в RAW_WB_ORDERS.
- *   lastChangeDate / totalPrice / finishedPrice НЕ сохраняются (нет колонок).
+ *   last_change_date СОХРАНЯЕТСЯ (Фаза D1: ключ сортировки дедуп-вью). totalPrice /
+ *   finishedPrice пока НЕ сохраняются (нет колонок) — см. долг D1.1 (raw_json + поля).
  *   quantity = 1 на строку (orders API не отдаёт qty по строке).
  *   Отменённые заказы сохраняются: is_cancel=TRUE, cancel_dt=cancelDate.
  *
@@ -38,7 +39,24 @@ var ORDERS_RAW_SOURCE_API_      = 'WB_API_ORDERS';
 var ORDERS_LOADID_API_PREFIX_   = 'ORD_API_';
 var IMPORT_LOG_ORDERS_SHEET_    = 'IMPORT_LOG_ORDERS';
 
+// Канонический порядок колонок RAW_WB_ORDERS (1:1 с листом).
+// Нужен BQ-приёмнику (Фаза D): при включённом sink физического листа нет,
+// hMap строится из этой константы. Порядок менять нельзя без CHANGELOG.
+// last_change_date — время изменения заказа на стороне WB. В легаси-листе
+// колонки нет (append в конец её игнорирует), но BQ-схема патчит её аддитивно:
+// это первичный ключ сортировки дедуп-вью V_WB_ORDERS (устойчивый last-wins).
+var ORDERS_RAW_HEADERS_ = [
+  'load_id', 'loaded_at', 'source_api', 'row_hash', 'raw_row_number',
+  'srid', 'order_uid', 'order_dt', 'cancel_dt', 'is_cancel',
+  'wb_nm_id', 'wb_vendor_code', 'barcode', 'internal_sku', 'sku_match_status',
+  'category', 'subject', 'brand', 'tech_size', 'warehouse_name',
+  'region_name', 'country_name', 'price_with_disc', 'quantity', 'sticker_id',
+  'is_duplicate', 'processed_status', 'error_message',
+  'last_change_date'
+];
+
 var WB_ORDERS_API_MAX_PAGES_    = 30;
+var WB_ORDERS_API_ROWS_CAP_     = 80000;  // лимит строк одного ответа WB (flag=0); нужен для отличия «дренаж» от «упор в лимит»
 var WB_ORDERS_API_PAGE_PAUSE_   = 2000;   // мс между страницами пагинации
 var WB_ORDERS_API_ROLLING_DAYS_ = 14;
 
@@ -74,6 +92,9 @@ function importWbOrdersFromApiPrompt_() {
   if (!ordersValidDate_(from) || !ordersValidDate_(to)) {
     ui.alert('Неверный формат периода. Ожидается YYYY-MM-DD,YYYY-MM-DD'); return;
   }
+  if (from > to) {
+    ui.alert('Начало периода (' + from + ') позже конца (' + to + ').'); return;
+  }
   importWbOrdersFromApi(from, to);
 }
 
@@ -105,7 +126,17 @@ function importWbOrdersFromApi(dateFrom, dateTo) {
   return r;
 }
 
-/** Rolling-14 (вчера−13 … вчера), ручной запуск. */
+/**
+ * Rolling-14 (вчера−13 … вчера), ручной запуск.
+ * ⚠️ ВНИМАНИЕ (Фаза D — ежедневный инкремент): этот режим режет данные по
+ * order_dt в окне 14 дней. Для инкремента это НЕВЕРНО: flag=0 отдаёт все
+ * изменения (в т.ч. позднюю отмену заказа старше 14 дней), а фильтр по order_dt
+ * такую строку выбросит — состояние в BigQuery не обновится. Перед включением
+ * ежедневного триггера заменить на watermark-режим: dateFrom = последний
+ * обработанный lastChangeDate, БЕЗ фильтра изменений по order_dt (дедуп по srid
+ * во вью V_WB_ORDERS сам выберет последнее состояние). Backfill 90 дней делать
+ * ОДНИМ проходом: importWbOrdersFromApi('<начало 90д>','<сегодня>').
+ */
 function importWbOrdersFromApiRolling14Days() {
   var yesterday = new Date(); yesterday.setDate(yesterday.getDate() - 1);
   var from = new Date(yesterday); from.setDate(from.getDate() - (WB_ORDERS_API_ROLLING_DAYS_ - 1));
@@ -136,6 +167,9 @@ function importWbOrdersFromApiInternal_(dateFrom, dateTo) {
   if (!ordersValidDate_(dateFrom) || !ordersValidDate_(dateTo)) {
     result.error_message = 'Неверные dateFrom/dateTo (YYYY-MM-DD)'; return result;
   }
+  if (dateFrom > dateTo) {
+    result.error_message = 'dateFrom (' + dateFrom + ') позже dateTo (' + dateTo + ')'; return result;
+  }
 
   var rawSheet = getRawOrdersSheet_(ss);
   if (!rawSheet) { result.error_message = 'Лист RAW_WB_ORDERS не найден'; return result; }
@@ -154,7 +188,13 @@ function importWbOrdersFromApiInternal_(dateFrom, dateTo) {
     console.log('  Orders API: запрос ' + dateFrom + ' — ' + dateTo);
     var fetched = fetchOrdersApiData_(tk.token, dateFrom);
     if (!fetched.ok) {
-      result.error_message = fetched.error;
+      // PARTIAL (упор в лимит/курсор/битый JSON) отличаем от жёсткой ERROR: при
+      // любом !ok строки НЕ записываются (fail-closed), но статус виден в логе.
+      result.status = fetched.partial ? 'PARTIAL' : 'ERROR';
+      result.partial = !!fetched.partial;
+      result.pages_fetched = fetched.pages || 0;
+      result.error_message = String(fetched.error || '') +
+        (fetched.pages != null ? ' [страниц получено: ' + fetched.pages + ']' : '');
       writeOrdersLogEntry_(logSheet, result);
       return result;
     }
@@ -184,8 +224,10 @@ function importWbOrdersFromApiInternal_(dateFrom, dateTo) {
     if (unique.length > 0) appendOrdersRows_(rawSheet, unique, lastCol);
     result.rows_imported = unique.length;
 
-    // 5. Контрольные суммы за период (по факту в RAW)
-    var sums = aggregateOrdersSums_(rawSheet, hMap, dateFrom, dateTo, skuIndex);
+    // 5. Контрольные суммы за период (по факту в RAW; при sink — из памяти)
+    var sums = (rawSheet && rawSheet._bqSink)
+      ? aggregateOrdersRowArray_(unique, hMap, dateFrom, dateTo, skuIndex)
+      : aggregateOrdersSums_(rawSheet, hMap, dateFrom, dateTo, skuIndex);
     result.rows_total_period = sums.rows_total_period;
     result.orders_count = sums.orders_count;
     result.cancel_count = sums.cancel_count;
@@ -212,42 +254,92 @@ function importWbOrdersFromApiInternal_(dateFrom, dateTo) {
 // FETCH (пагинация по lastChangeDate)
 // ═══════════════════════════════════════
 
+/**
+ * Контракт WB (/api/v1/supplier/orders, flag=0): dateFrom интерпретируется как
+ * lastChangeDate; возвращаются записи с lastChangeDate >= dateFrom (до ~80 000
+ * строк на ответ). Пагинация — передать в dateFrom ПОЛНОЕ значение lastChangeDate
+ * ПОСЛЕДНЕЙ строки ответа (без обрезки/смены формата). Конец выгрузки —
+ * пустой массив []. Параметра dateTo у эндпоинта НЕТ: окно по order_dt режется
+ * локально в normalizeOrdersApiRows_. Здесь тянем ВЕСЬ хвост от dateFrom до
+ * «сейчас»; поэтому backfill делается ОДНИМ проходом от начала периода, а не
+ * окнами (окна по dateTo объём ответа не уменьшают — только перетягивают историю).
+ *
+ * Признаки завершения:
+ *   • пустой массив [] — документированный конец (reachedEnd);
+ *   • страница без новых/обновлённых srid И ниже лимита строк — дренаж (reachedEnd);
+ *   • курсор не двигается при непустом ответе, ИЛИ упор в лимит страниц —
+ *     PARTIAL (данные могут быть неполны), НЕ выдаём «красивый» OK.
+ * Дедуп внутри прохода — last-wins по srid (макс. lastChangeDate).
+ */
 function fetchOrdersApiData_(token, dateFrom) {
   var base = WB_ORDERS_API_BASE_ + WB_ORDERS_API_PATH_;
-  var cursor = dateFrom;
-  var all = [], seenSrid = {}, pages = 0;
+  var cursor = dateFrom;              // RFC3339 как отдаёт WB, без преобразований
+  var byKey = {}, order = [], pages = 0, reachedEnd = false, stalled = false;
 
   while (pages < WB_ORDERS_API_MAX_PAGES_) {
     var url = base + '?dateFrom=' + encodeURIComponent(cursor) + '&flag=0';
     var resp;
     try {
-      // PR: единый ретрай WB API (429/5xx + Retry-After). Формат строк/replace-slice не меняется.
+      // PR: единый ретрай WB API (429/5xx + Retry-After).
       resp = wbFetchWithRetry_(url, { method: 'get', headers: { Authorization: token }, muteHttpExceptions: true },
         { label: 'Orders', maxRetries: 3, baseDelayMs: 20000 });
     } catch (e) {
-      return { ok: false, error: 'HTTP исключение: ' + e.message, data: all, pages: pages };
+      return { ok: false, error: 'HTTP исключение: ' + e.message, data: order.map(function (k) { return byKey[k]; }), pages: pages };
     }
     var code = resp.getResponseCode();
     if (code !== 200) {
-      return { ok: false, error: 'HTTP ' + code + ': ' + String(resp.getContentText()).substring(0, 200), data: all, pages: pages };
+      return { ok: false, error: 'HTTP ' + code + ': ' + String(resp.getContentText()).substring(0, 200), data: order.map(function (k) { return byKey[k]; }), pages: pages };
     }
+    // fail-closed: повреждённый JSON / не-массив НЕ считаем концом выгрузки.
+    // Документированный конец WB — именно полученный пустой массив [].
     var arr;
-    try { arr = JSON.parse(resp.getContentText()); } catch (e) { arr = []; }
-    if (!arr || !arr.length) break;
+    try {
+      arr = JSON.parse(resp.getContentText());
+    } catch (e3) {
+      return { ok: false, partial: pages > 0, pages: pages, data: order.map(function (k) { return byKey[k]; }),
+               error: 'Повреждённый JSON ответа WB (страница ' + (pages + 1) + '): ' + String((e3 && e3.message) || e3) };
+    }
+    if (!Array.isArray(arr)) {
+      return { ok: false, partial: pages > 0, pages: pages, data: order.map(function (k) { return byKey[k]; }),
+               error: 'Ответ WB не является массивом (страница ' + (pages + 1) + '): ' + String(resp.getContentText()).substring(0, 200) };
+    }
+    if (!arr.length) { reachedEnd = true; break; }   // документированный конец WB
 
-    var newCount = 0, maxLcd = cursor;
+    var progress = 0;
     for (var i = 0; i < arr.length; i++) {
       var o = arr[i];
       var key = o.srid ? String(o.srid) : (String(o.gNumber || '') + '_' + String(o.date || ''));
-      if (!seenSrid[key]) { seenSrid[key] = 1; all.push(o); newCount++; }
-      var lcd = String(o.lastChangeDate || '').replace('T', ' ').substring(0, 19);
-      if (lcd && lcd > maxLcd) maxLcd = lcd;
+      var lcd = String(o.lastChangeDate || '');
+      var prev = byKey[key];
+      if (!prev) {
+        byKey[key] = o; order.push(key); progress++;              // новая srid
+      } else if (lcd > String(prev.lastChangeDate || '')) {
+        byKey[key] = o; progress++;                               // last-wins: свежее состояние
+      }
     }
     pages++;
-    if (newCount === 0) break;          // дальше только повтор граничных строк
-    if (maxLcd <= cursor) break;        // курсор не двигается
-    cursor = maxLcd;
+
+    var atCap = arr.length >= WB_ORDERS_API_ROWS_CAP_;            // ответ упёрся в лимит строк?
+    var nextCursor = String(arr[arr.length - 1].lastChangeDate || ''); // строго: lastChangeDate ПОСЛЕДНЕЙ строки
+
+    if (!nextCursor || nextCursor === cursor) {
+      // Курсор не может продвинуться.
+      if (progress === 0 && !atCap) { reachedEnd = true; }        // всё в этой временной точке учтено, лимит не задет → конец
+      else { stalled = true; }                                    // плотная граница времени свыше лимита строк → неполно
+      break;
+    }
+    if (progress === 0 && !atCap) { reachedEnd = true; break; }   // страница — только уже учтённые записи (ниже лимита) → дренаж
+    cursor = nextCursor;
     Utilities.sleep(WB_ORDERS_API_PAGE_PAUSE_);
+  }
+
+  var all = order.map(function (k) { return byKey[k]; });
+  if (!reachedEnd) {
+    var why = stalled
+      ? 'Курсор lastChangeDate не продвигается при непустом ответе (плотная граница времени свыше лимита строк)'
+      : 'Достигнут лимит страниц (' + WB_ORDERS_API_MAX_PAGES_ + ')';
+    return { ok: false, partial: true, pages: pages, data: all,
+             error: why + ': данные за период могут быть НЕПОЛНЫМИ.' };
   }
   return { ok: true, data: all, pages: pages };
 }
@@ -280,6 +372,7 @@ function normalizeOrdersApiRows_(apiData, hMap, lastCol, loadId, loadedAt, dateF
     set('order_dt', o.date || '');
     set('cancel_dt', o.cancelDate || '');
     set('is_cancel', o.isCancel === true);
+    set('last_change_date', String(o.lastChangeDate || '').replace('T', ' '));
 
     set('wb_nm_id', o.nmId || '');
     set('wb_vendor_code', o.supplierArticle || '');
@@ -343,6 +436,8 @@ function computeOrdersRowHash_(rowArr, hMap) {
 
 /** Удаляет ТОЛЬКО свои строки (WB_API_ORDERS / ORD_API_*) за order_dt ∈ [from,to]. TEST не трогает. */
 function clearOrdersOwnPeriod_(sheet, hMap, dateFrom, dateTo) {
+  // BQ-приёмник: append-only, ничего не удаляем — дедуп во вью V_WB_ORDERS.
+  if (sheet && sheet._bqSink) return 0;
   var lastRow = sheet.getLastRow(), lastCol = sheet.getLastColumn();
   if (lastRow < 2) return 0;
   var values = sheet.getRange(2, 1, lastRow - 1, lastCol).getValues();
@@ -368,6 +463,20 @@ function clearOrdersOwnPeriod_(sheet, hMap, dateFrom, dateTo) {
 
 function appendOrdersRows_(sheet, rows, lastCol) {
   if (!rows.length) return;
+  // BQ-приёмник: массивы-строки → объекты по ORDERS_RAW_HEADERS_ → в BigQuery.
+  if (sheet && sheet._bqSink) {
+    var objs = [];
+    for (var r = 0; r < rows.length; r++) {
+      var o = {};
+      for (var c = 0; c < ORDERS_RAW_HEADERS_.length; c++) {
+        var v = rows[r][c];
+        if (v !== '' && v !== null && v !== undefined) o[ORDERS_RAW_HEADERS_[c]] = v;
+      }
+      objs.push(o);
+    }
+    wbOrdersBqAppendRows_(objs);
+    return;
+  }
   var start = sheet.getLastRow() + 1; if (start < 2) start = 2;
   sheet.getRange(start, 1, rows.length, lastCol).setValues(rows);
   SpreadsheetApp.flush();
@@ -377,6 +486,30 @@ function appendOrdersRows_(sheet, rows, lastCol) {
 // ═══════════════════════════════════════
 // КОНТРОЛЬНЫЕ СУММЫ (по факту в RAW за период)
 // ═══════════════════════════════════════
+
+/** Контрольные суммы из массива строк (BQ-приёмник: листа для чтения нет). */
+function aggregateOrdersRowArray_(rows, hMap, dateFrom, dateTo, skuIndex) {
+  var out = { rows_total_period: 0, orders_count: 0, cancel_count: 0, unique_srid: 0, unique_nmId: 0, unmatched_nmId: 0 };
+  var odtIdx = hMap['order_dt'], cancIdx = hMap['is_cancel'], sridIdx = hMap['srid'], nmIdx = hMap['wb_nm_id'];
+  var srid = {}, nm = {}, unmatched = {};
+  for (var i = 0; i < rows.length; i++) {
+    var row = rows[i];
+    var day = odtIdx !== undefined ? normalizeDateKey_(row[odtIdx]) : '';
+    if (!day || day < dateFrom || day > dateTo) continue;
+    out.rows_total_period++; out.orders_count++;
+    var cv = cancIdx !== undefined ? row[cancIdx] : false;
+    if (cv === true || String(cv).toLowerCase() === 'true') out.cancel_count++;
+    var s = sridIdx !== undefined ? String(row[sridIdx] || '').trim() : '';
+    if (s) srid[s] = 1;
+    var nmRaw = nmIdx !== undefined ? row[nmIdx] : '';
+    var n = (typeof normalizeNmIdFinance_ === 'function') ? normalizeNmIdFinance_(nmRaw) : String(nmRaw || '');
+    if (n) { nm[n] = 1; if (skuIndex && skuIndex.byNm && !skuIndex.byNm[n]) unmatched[n] = 1; }
+  }
+  out.unique_srid = Object.keys(srid).length;
+  out.unique_nmId = Object.keys(nm).length;
+  out.unmatched_nmId = Object.keys(unmatched).length;
+  return out;
+}
 
 function aggregateOrdersSums_(sheet, hMap, dateFrom, dateTo, skuIndex) {
   var out = { rows_total_period: 0, orders_count: 0, cancel_count: 0, unique_srid: 0, unique_nmId: 0, unmatched_nmId: 0 };
@@ -418,10 +551,25 @@ function aggregateOrdersSums_(sheet, hMap, dateFrom, dateTo, skuIndex) {
 // ВСПОМОГАТЕЛЬНЫЕ
 // ═══════════════════════════════════════
 
-function getRawOrdersSheet_(ss) { return ss.getSheetByName(ORDERS_RAW_SHEET_); }
+function getRawOrdersSheet_(ss) {
+  // BQ-приёмник (Фаза D1): вместо листа — лёгкая заглушка. hMap/append
+  // работают по ORDERS_RAW_HEADERS_; лист не нужен.
+  if (typeof wbOrdersBqSinkOn_ === 'function' && wbOrdersBqSinkOn_()) {
+    wbOrdersBqEnsureTable_(ORDERS_RAW_HEADERS_);
+    return {
+      _bqSink: true,
+      getName: function () { return ORDERS_RAW_SHEET_; },
+      getLastColumn: function () { return ORDERS_RAW_HEADERS_.length; }
+    };
+  }
+  return ss.getSheetByName(ORDERS_RAW_SHEET_);
+}
 
 function buildOrdersRawHeaderMap_(sheet, lastCol) {
-  var headers = sheet.getRange(1, 1, 1, lastCol).getValues()[0];
+  // BQ-приёмник: заголовки берём из канонической константы (листа нет).
+  var headers = (sheet && sheet._bqSink)
+    ? ORDERS_RAW_HEADERS_
+    : sheet.getRange(1, 1, 1, lastCol).getValues()[0];
   var map = {};
   for (var i = 0; i < headers.length; i++) {
     var k = String(headers[i] || '').trim().toLowerCase();
