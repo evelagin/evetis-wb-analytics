@@ -2,6 +2,30 @@
 
 ## История изменений
 
+### 2026-07-12 — Фаза D2a: продажи/возвраты в BigQuery (RAW+view, код до acceptance)
+
+Порт `WbSalesReturnsLoader` в BigQuery по образцу заказов (Фаза D1). Флаг `WB_SALES_BQ_SINK` по умолчанию ВЫКЛ; листовое поведение при выключенном sink сохранено. Триггер, watermark-инкремент и cutover потребителей (DashboardWb/Cleanwbdaily/UNIT/PNL) в этот PR НЕ входят (D2b/D2c). `node --check` обоих файлов пройден в окружении ассистента (на машине владельца node не установлен — синтаксис перепроверяется отдельно).
+
+**Эмпирика (2 read-only probe живого Sales API, 2026-05-28 и 2026-04-13):** 3319 строк/90д, `distinct saleID = distinct srid = raw_rows`, пустых `saleID/srid/lastChangeDate`=0, дублей `saleID`=0, конфликтов `saleID↔srid/nmId/date`=0, cap 80000 не достигнут, префиксы `S=3319/R=0`, `orderType` отсутствует, min `date` (2026-03-30) < `dateFrom` (2026-04-13) → фильтрация по потоку изменений. **Доказано: event_key = `saleID`** (заполнен 100%, уникален, стабилен, без версий). Возвраты у EVETIS ≈0 (в финотчёте 16 за ~22 мес) — return-ветка остаётся валидируемой на входе (постконтроль при первом реальном `R`).
+
+Новый файл `WbSalesReturnsBigQuery.gs`:
+- флаг `WB_SALES_BQ_SINK`; `wbSalesBqInitC0()` (C0 fail-closed: preflight→таблица→вью→счётчики, при ошибке sink гасится), `wbSalesBqEnable()/Disable()`, `wbSalesBqStats()` (RAW / MISSING_EVENT_KEY / уник. sale_id во вью), `wbSalesBqValidateViews()`.
+- таблица `RAW_WB_SALES_RETURNS` — **типизированная** схема (STRING по умолчанию + `INT64`: raw_row_number/income_id/wb_nm_id; `NUMERIC`: total_price/discount_percent/spp/payment_sale_amount/price_with_disc/finished_price/for_pay; `BOOL`: is_supply/is_realization/is_return) + служебная `_sale_date DATE`. Партиция по `_sale_date`, кластер `sale_id, srid, wb_nm_id`. Аудит схемы типо-чувствительный (несовместимый тип → обрыв), строгая проверка партиции по `_sale_date`; `raw_json` (STRING) хранит оригинал ответа.
+- `wbSalesBqAppendRows_` — приведение значений к типам колонки (пустые опускаются → NULL), `_sale_date` из `sale_dt[0:10]`, батч 2000.
+- вью `V_WB_SALES_RETURNS` — дедуп **last-wins по `sale_id`**: `PARTITION BY sale_id ORDER BY SAFE_CAST(REPLACE(last_change_date,'T',' ') AS TIMESTAMP) DESC, loaded_at DESC, load_id DESC`; `WHERE source_api='WB_API_SALES' AND TRIM(sale_id)<>'' AND processed_status<>'MISSING_EVENT_KEY'`. Продажа и потенциальный возврат одного `srid` НЕ схлопываются (у них разные `sale_id`); `row_hash` в ключе НЕ используется.
+
+Изменения в `WbSalesReturnsLoader` (аддитивно, под флагом):
+- константа `SALES_RAW_HEADERS_` (40 колонок, каноническая для BQ; `_sale_date` служебная, добавляется в append) и `WB_SALES_API_ROWS_CAP_=80000`.
+- `normalizeSalesApiRows_`: добавлены `g_number, income_id, warehouse_type, payment_sale_amount, price_with_disc, is_supply, is_realization, raw_json`; **раздельные** `region_name`(regionName) и `oblast_okrug_name`(oblastOkrugName) — не смешивать (урок Orders); `operation_type` → `SALE`/`RETURN`; `processed_status='MISSING_EVENT_KEY'` при пустом `saleID`. Листовые поля `order_dt/quantity/is_duplicate` сохранены (в BQ-схеме отсутствуют, при sink игнорируются). `orderType` не добавлен (в контракте нет).
+- **`noWindow` (критично, найдено на ревью):** `normalizeSalesApiRows_` получил параметр `opts.noWindow`. Sales API — change-feed по `lastChangeDate`, поэтому поздно изменённая старая продажа приходит с `sale_dt < dateFrom` (probe: `date` 2026-03-30 при `dateFrom` 2026-04-13). При sink ON нормализация вызывается с `{noWindow:true}` — локальный фильтр `sale_dt ∈ [from,to]` снят, весь change-feed сохраняется; при sink OFF (legacy sheet) прежнее окно по `sale_dt` сохранено. Контрольные суммы при sink считаются тем же `noWindow:true` (`aggregateSalesRowArray_(...,{noWindow:true})`), чтобы поздние изменения попадали в диагностику. Будущий watermark (D2c) — тоже всегда noWindow.
+- Mock-проверка `wbSalesNoWindowSelfTest()` (без API/листов/BQ): строка `sale_dt=2026-03-30`, `lastChangeDate=2026-04-13T07:03:54`, `dateFrom=2026-04-13` → sink ON нормализуется и в sums (1/1), sink OFF отбрасывается (0).
+- `fetchSalesApiData_` переписан: **пагинация снята**, один fail-closed запрос (rate limit Sales API 1 req/min; при объёме EVETIS весь диапазон в одном ответе). HTTP≠200/битый JSON/не-массив → `ERROR`; `arr.length>=80000` → `PARTIAL` (граница обрезана, ничего не пишем); пустой `[]` → `ok` с 0 строк.
+- **rate limit (найдено на ревью):** `salesHttpGet_` теперь = **ровно один `UrlFetchApp.fetch` без retry** (`wbFetchWithRetry_` убран — при 1 req/min повтор через 20 сек снова словил бы 429 и жёг лимит выполнения). Удалены неиспользуемые константы `WB_SALES_API_MAX_PAGES_/PAGE_PAUSE_/RETRY_429_/RETRY_PAUSE_MS_` (осталась `ROLLING_DAYS_` для rolling-14). 429/5xx → `ERROR`, повтор — вручную оператором ≥65 сек. Комментарии секции FETCH обновлены (не «пагинация/429-backoff»).
+- ядро `importWbSalesReturnsFromApiInternal_`: при `!ok` статус `PARTIAL`/`ERROR` (fail-closed, строки не пишутся); контрольные суммы при sink — из памяти (`aggregateSalesRowArray_`).
+- sink-ветки: `getRawSalesSheet_` (заглушка `_bqSink`, `wbSalesBqEnsureTable_`), `buildSalesRawHeaderMap_` (hMap из `SALES_RAW_HEADERS_`), `clearSalesOwnPeriod_` (no-op при sink — append-only), `appendSalesRows_` (массивы→объекты→`wbSalesBqAppendRows_`).
+
+Не включено (следующие фазы): **D2b** — cutover `DashboardWb`/`Cleanwbdaily` на `V_WB_SALES_RETURNS`; **D2c** — `WB_SALES_LAST_CHANGE_WATERMARK`, инкремент (граница `sale_id+row_hash`), hourly-триггер. Флаг `WB_SALES_BQ_SINK` включать вручную только на приёмке.
+
 ### 2026-07-12 — Фаза D1.2: watermark-инкремент заказов (код, до acceptance-прогонов)
 
 Отдельная операционная семантика поверх period/backfill. Триггер НЕ создаётся, `runWbDailyRefresh` не трогается. `node --check` обоих файлов — ОК.
