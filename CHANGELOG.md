@@ -2,6 +2,34 @@
 
 ## История изменений
 
+### 2026-07-12 — Фаза D1.2: watermark-инкремент заказов (код, до acceptance-прогонов)
+
+Отдельная операционная семантика поверх period/backfill. Триггер НЕ создаётся, `runWbDailyRefresh` не трогается. `node --check` обоих файлов — ОК.
+
+Новое (`WbOrdersLoader`):
+- `WB_ORDERS_LAST_CHANGE_WATERMARK` (Script Property) — полное `lastChangeDate` в формате WB (RFC3339 с `T`).
+- `wbOrdersIncrementalBootstrap()` — берёт `MAX(last_change_date)` из RAW (`source_api='WB_API_ORDERS'`), строго проверяет формат, восстанавливает `T` вместо первого пробела, записывает свойство **только если его нет** (существующее молча не перезаписывает; контрольное значение не хардкодится).
+- `runWbOrdersIncremental()` (+ ядро `wbOrdersIncrementalCore_`) — под `LockService.getScriptLock()` на весь цикл; требует `WB_ORDERS_BQ_SINK=1` и валидный watermark; запрос по точному watermark `flag=0`; **без фильтра `order_dt`**; строгая валидация `srid`(trim)/даты/`lastChangeDate` каждой строки И `cursor_end` ДО любой ветки; at-least-once — watermark двигается ТОЛЬКО после полного успешного append; при `PARTIAL`/`ERROR` ничего не пишет и watermark не двигает; overlap арифметически не уменьшается.
+- **Безопасная граница watermark (защита от потери строк при секундной точности):** no-change определяется НЕ только по timestamp. Помимо строк `lastChangeDate > watermark`, дописываются граничные строки (`== watermark`), пары `srid+row_hash` которых ещё нет в RAW (helper `wbOrdersBqBoundaryKeys_`). Итог: новая `srid` на уже зафиксированной временной точке НЕ теряется; watermark продвигается только при наличии строк строго новее (`candidate > watermark_before`); при только-граничных новых строках — они пишутся, watermark остаётся (боевого размножения дублей нет, т.к. на след. прогоне пары уже в RAW). `candidate < watermark_before` или невалидный `candidate` → `ERROR`.
+- `wbOrdersIncrementalStatus()` — текущий watermark, состояние sink, `RAW MAX(last_change_date)`, `V_WB_ORDERS COUNT` (`wbOrdersBqViewCount_`).
+- `ordersValidWatermark_` — строгий формат `YYYY-MM-DDTHH:mm:ss[.fraction]` (дата без времени и пробел отклоняются) **+ календарная корректность** (год 0001–9999, месяц 1–12, день с учётом високосного года, часы 0–23, мин/сек 0–59): отсекает синтаксически похожий мусор вроде `2026-99-99T99:99:99` и `0000-01-01T00:00:00`. Применяется к watermark_before, cursor_end, bootstrap и `lastChangeDate` каждой строки.
+- **Инвариант пустого `cursor_end`:** пустой кандидат допустим ТОЛЬКО при настоящем пустом ответе (`data.length===0` и `api_rows_received===0`) → `OK_NO_CHANGES`; непустой пакет без `cursor_end` → `ERROR` (иначе строки писались бы, а watermark стоял → бесконечный повтор диапазона).
+- **Диагностика `watermark_after`:** сразу после чтения/валидации watermark ставится `watermark_after = watermark_before`, поэтому при `PARTIAL`/`ERROR` после чтения лог показывает `before == after` (checkpoint не сдвинут), а не пустое `after`; при успешном продвижении перезаписывается на `candidate`.
+- `wbOrdersIncrementalBootstrap` — под ScriptLock, требует `WB_ORDERS_BQ_SINK=1`; существующий watermark строго валидируется (валидный → `OK_EXISTS`, битый → `ERROR`, авто-перезаписи нет); записываемое значение проверяется строгим форматом.
+- `api_rows_received` = реальная сумма строк ответа API (`fetchOrdersApiData_` считает до дедупа по srid), а не `data.length` после схлопывания. `load_id` (`ORD_INC_yyyyMMdd_HHmmss`) **сквозной** — создаётся в самом начале `runWbOrdersIncremental` (до lock/sink/watermark/API), присутствует в result при всех статусах (`OK`/`OK_NO_CHANGES`/`PARTIAL`/`ERROR`); в лог пишется `r.load_id` без fallback-константы.
+- Статусы: `OK` / `OK_NO_CHANGES` / `PARTIAL` / `ERROR`. Поля результата: status, mode, load_id, watermark_before, watermark_candidate, watermark_after, pages_fetched, api_rows_received, rows_appended, unique_srid, started_at, finished_at, duration_ms, error_message.
+- В меню «📦 Заказы WB» +3 пункта (bootstrap / инкремент / статус) для ручной приёмки. Rolling-14 по-прежнему помечен ⚠️ и на триггер не ставится.
+
+Изменено аддитивно (поведение period/backfill НЕ меняется):
+- `fetchOrdersApiData_` возвращает доп. поля `cursor_start`, `cursor_end` (точное `lastChangeDate` последней строки, формат WB), `pages`, `partial`, `reached_end`, `api_rows_received` (реальная сумма строк ответа до дедупа). HTTP/JSON-ошибка после ≥1 успешной страницы теперь классифицируется `PARTIAL` (на 1-й странице — `ERROR`).
+- **Признак завершения при неподвижной границе исправлен (критично для инкремента):** при включительном `>=` WB всегда отдаёт граничную строку с тем же `lastChangeDate`, поэтому `nextCursor === cursor` — норма, а не обрыв. Решение теперь по лимиту строк, НЕ по `progress`: ниже лимита → штатный дренаж (`reachedEnd`, `ok:true`); на лимите → `PARTIAL` (граница могла обрезаться); непустой ответ без `cursor_end` → `PARTIAL`. Раньше `progress>0` на границе (в начале прогона `byKey` пуст → все граничные srid локально «новые») ошибочно давал `PARTIAL`, из-за чего второй прогон не доходил до `OK_NO_CHANGES`, а новая srid на граничной секунде — до `wbOrdersBqBoundaryKeys_`. Проверено через сам `fetchOrdersApiData_`: одна граничная строка / A+B на секунде → `ok:true`; хвост без `lastChangeDate` и 80000 строк на границе → `PARTIAL`.
+- `normalizeOrdersApiRows_` получил параметр `opts.noWindow` (пропуск фильтра `order_dt` для инкремента); строка без даты заказа пропускается.
+- `IMPORT_LOG_ORDERS_HEADERS_` 14 → 19: аддитивно `mode, watermark_before, watermark_after, pages_fetched, api_rows_received`. Первые 14 колонок не переставлены; `ensureImportLogOrdersSheet_` дописывает новые колонки существующему листу, исторические строки не трогает.
+
+Новое (`WbOrdersBigQuery.gs`): `wbOrdersBqMaxLastChangeDate_()` — `MAX(last_change_date)` из RAW для bootstrap; `wbOrdersBqBoundaryKeys_(lastChangeStorage)` — DISTINCT `srid,row_hash` на границе для безопасной обработки граничных строк; `wbOrdersBqViewCount_()` — COUNT из `V_WB_ORDERS` для статуса.
+
+Ограничение (документируется): fetch хранит только последнее наблюдённое состояние `srid` за прогон — D1.2 даёт *latest observed state per srid*, полный event log — это D1.1 (`raw_json`, отказ от fetch-схлопывания). Переход `is_cancel=false→true` в рабочей RAW искусственно НЕ провоцируем: до триггера — изолированный SQL/CTE-тест без записи, после запуска — постконтроль на естественной отмене.
+
 ### 2026-07-12 — Фаза D1: прогон C0 → C1 → backfill выполнен и проверен в облаке (migration/backfill ПРИНЯТ)
 
 Документальная фиксация фактического прогона (код не менялся). Проверки — через BigQuery-коннектор в `project-fa311fc0-4d87-4781-986.wb_raw`.

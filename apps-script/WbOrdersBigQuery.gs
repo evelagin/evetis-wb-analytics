@@ -224,3 +224,46 @@ function wbOrdersBqStats() {
     console.log(WB_ORDERS_BQ_VIEW_ + ' (уник. заказов): ' + v);
   } catch (e2) { console.log(WB_ORDERS_BQ_VIEW_ + ': (вью ещё нет)'); }
 }
+
+/**
+ * MAX(last_change_date) из RAW (source_api='WB_API_ORDERS') — источник bootstrap
+ * watermark для D1.2. Возвращает строку в формате хранения ('YYYY-MM-DD HH:MM:SS')
+ * или '' если данных нет. Лексический MAX корректен: формат фиксированной ширины.
+ */
+function wbOrdersBqMaxLastChangeDate_() {
+  var c = getBqConfig_();
+  var sql = 'SELECT MAX(last_change_date) FROM `' + c.projectId + '.' + c.datasetId + '.' + WB_ORDERS_BQ_TABLE_ + '` ' +
+            "WHERE source_api = '" + ORDERS_RAW_SOURCE_API_ + "' AND last_change_date <> ''";
+  var r = bqQuery_(sql);
+  var v = (r && r.rows && r.rows.length) ? r.rows[0].f[0].v : null;
+  return (v === null || v === undefined) ? '' : String(v);
+}
+
+/**
+ * Существующие пары srid|row_hash в RAW на ТОЧНОЙ границе last_change_date
+ * (форма хранения, с пробелом). Для D1.2: инкремент дописывает граничные строки,
+ * которых ещё нет, и не размножает уже записанные. Возвращает map {srid|row_hash:true}.
+ */
+function wbOrdersBqBoundaryKeys_(lastChangeStorage) {
+  var c = getBqConfig_();
+  var esc = String(lastChangeStorage || '').replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+  var sql = 'SELECT DISTINCT srid, row_hash FROM `' + c.projectId + '.' + c.datasetId + '.' + WB_ORDERS_BQ_TABLE_ + '` ' +
+            "WHERE source_api = '" + ORDERS_RAW_SOURCE_API_ + "' AND last_change_date = '" + esc + "'";
+  var r = bqQuery_(sql);
+  var rows = (r && r.rows) || [];
+  var set = {};
+  for (var i = 0; i < rows.length; i++) {
+    var f = rows[i].f;
+    var srid = (f[0] && f[0].v != null) ? String(f[0].v) : '';
+    var rh = (f[1] && f[1].v != null) ? String(f[1].v) : '';
+    set[srid + '|' + rh] = true;
+  }
+  return set;
+}
+
+/** COUNT(*) из дедуп-вью V_WB_ORDERS (для диагностики). */
+function wbOrdersBqViewCount_() {
+  var c = getBqConfig_();
+  var r = bqQuery_('SELECT COUNT(*) FROM `' + c.projectId + '.' + c.datasetId + '.' + WB_ORDERS_BQ_VIEW_ + '`');
+  return (r && r.rows && r.rows.length) ? String(r.rows[0].f[0].v) : '0';
+}

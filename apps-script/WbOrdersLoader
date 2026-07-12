@@ -39,6 +39,9 @@ var ORDERS_RAW_SOURCE_API_      = 'WB_API_ORDERS';
 var ORDERS_LOADID_API_PREFIX_   = 'ORD_API_';
 var IMPORT_LOG_ORDERS_SHEET_    = 'IMPORT_LOG_ORDERS';
 
+// D1.2: watermark ежедневного инкремента — полное lastChangeDate в формате WB (RFC3339 с 'T').
+var WB_ORDERS_WATERMARK_PROP_   = 'WB_ORDERS_LAST_CHANGE_WATERMARK';
+
 // Канонический порядок колонок RAW_WB_ORDERS (1:1 с листом).
 // Нужен BQ-приёмнику (Фаза D): при включённом sink физического листа нет,
 // hMap строится из этой константы. Порядок менять нельзя без CHANGELOG.
@@ -60,11 +63,14 @@ var WB_ORDERS_API_ROWS_CAP_     = 80000;  // лимит строк одного 
 var WB_ORDERS_API_PAGE_PAUSE_   = 2000;   // мс между страницами пагинации
 var WB_ORDERS_API_ROLLING_DAYS_ = 14;
 
+// Первые 14 колонок — исторические (period/backfill). D1.2 добавляет 5 в конец
+// (аддитивно; порядок первых 14 НЕ менять). Инкремент пишет watermark в новые колонки.
 var IMPORT_LOG_ORDERS_HEADERS_ = [
   'load_id', 'loaded_at', 'period_from', 'period_to',
   'rows_imported', 'skipped_dupes', 'rows_total_period',
   'orders_count', 'cancel_count', 'unique_srid', 'unique_nmId', 'unmatched_nmId',
-  'status', 'error_message'
+  'status', 'error_message',
+  'mode', 'watermark_before', 'watermark_after', 'pages_fetched', 'api_rows_received'
 ];
 
 
@@ -78,6 +84,10 @@ function addWbOrdersLoaderMenu() {
     .addItem('🔄 Обновить заказы (rolling 14)', 'importWbOrdersFromApiRolling14Days')
     .addItem('📅 Загрузить заказы за период…', 'importWbOrdersFromApiPrompt_')
     .addItem('🧾 Создать IMPORT_LOG_ORDERS', 'ensureImportLogOrdersMenu_')
+    .addSeparator()
+    .addItem('🌱 D1.2: инициализировать watermark', 'wbOrdersIncrementalBootstrap')
+    .addItem('⏱️ D1.2: инкремент заказов (watermark)', 'runWbOrdersIncremental')
+    .addItem('ℹ️ D1.2: статус watermark', 'wbOrdersIncrementalStatus')
     .addToUi();
 }
 
@@ -266,14 +276,20 @@ function importWbOrdersFromApiInternal_(dateFrom, dateTo) {
  *
  * Признаки завершения:
  *   • пустой массив [] — документированный конец (reachedEnd);
- *   • страница без новых/обновлённых srid И ниже лимита строк — дренаж (reachedEnd);
- *   • курсор не двигается при непустом ответе, ИЛИ упор в лимит страниц —
- *     PARTIAL (данные могут быть неполны), НЕ выдаём «красивый» OK.
+ *   • неподвижная граница (nextCursor === cursor) НИЖЕ лимита строк — вся
+ *     граничная временная точка поместилась → штатный дренаж (reachedEnd),
+ *     НЕЗАВИСИМО от progress (при включительном >= WB всегда отдаёт граничную
+ *     строку; в начале прогона она локально «новая»);
+ *   • неподвижная граница НА лимите строк — граница могла обрезаться → PARTIAL;
+ *   • непустой ответ без cursor_end, ИЛИ упор в лимит страниц — PARTIAL.
  * Дедуп внутри прохода — last-wins по srid (макс. lastChangeDate).
  */
 function fetchOrdersApiData_(token, dateFrom) {
   var base = WB_ORDERS_API_BASE_ + WB_ORDERS_API_PATH_;
   var cursor = dateFrom;              // RFC3339 как отдаёт WB, без преобразований
+  var cursorStart = String(dateFrom || '');
+  var cursorEnd = '';                 // точное lastChangeDate последней строки последней НЕпустой страницы (формат WB, без замены T)
+  var apiRowsTotal = 0;               // реальное число строк ответа API (сумма arr.length ДО дедупа по srid)
   var byKey = {}, order = [], pages = 0, reachedEnd = false, stalled = false;
 
   while (pages < WB_ORDERS_API_MAX_PAGES_) {
@@ -284,11 +300,16 @@ function fetchOrdersApiData_(token, dateFrom) {
       resp = wbFetchWithRetry_(url, { method: 'get', headers: { Authorization: token }, muteHttpExceptions: true },
         { label: 'Orders', maxRetries: 3, baseDelayMs: 20000 });
     } catch (e) {
-      return { ok: false, error: 'HTTP исключение: ' + e.message, data: order.map(function (k) { return byKey[k]; }), pages: pages };
+      // HTTP-ошибка после ≥1 успешной страницы = PARTIAL (данные могли не долиться); на 1-й странице = ERROR.
+      return { ok: false, partial: pages > 0, error: 'HTTP исключение: ' + e.message,
+               data: order.map(function (k) { return byKey[k]; }), pages: pages, api_rows_received: apiRowsTotal,
+               cursor_start: cursorStart, cursor_end: cursorEnd, reached_end: false };
     }
     var code = resp.getResponseCode();
     if (code !== 200) {
-      return { ok: false, error: 'HTTP ' + code + ': ' + String(resp.getContentText()).substring(0, 200), data: order.map(function (k) { return byKey[k]; }), pages: pages };
+      return { ok: false, partial: pages > 0, error: 'HTTP ' + code + ': ' + String(resp.getContentText()).substring(0, 200),
+               data: order.map(function (k) { return byKey[k]; }), pages: pages, api_rows_received: apiRowsTotal,
+               cursor_start: cursorStart, cursor_end: cursorEnd, reached_end: false };
     }
     // fail-closed: повреждённый JSON / не-массив НЕ считаем концом выгрузки.
     // Документированный конец WB — именно полученный пустой массив [].
@@ -296,14 +317,17 @@ function fetchOrdersApiData_(token, dateFrom) {
     try {
       arr = JSON.parse(resp.getContentText());
     } catch (e3) {
-      return { ok: false, partial: pages > 0, pages: pages, data: order.map(function (k) { return byKey[k]; }),
+      return { ok: false, partial: pages > 0, pages: pages, data: order.map(function (k) { return byKey[k]; }), api_rows_received: apiRowsTotal,
+               cursor_start: cursorStart, cursor_end: cursorEnd, reached_end: false,
                error: 'Повреждённый JSON ответа WB (страница ' + (pages + 1) + '): ' + String((e3 && e3.message) || e3) };
     }
     if (!Array.isArray(arr)) {
-      return { ok: false, partial: pages > 0, pages: pages, data: order.map(function (k) { return byKey[k]; }),
+      return { ok: false, partial: pages > 0, pages: pages, data: order.map(function (k) { return byKey[k]; }), api_rows_received: apiRowsTotal,
+               cursor_start: cursorStart, cursor_end: cursorEnd, reached_end: false,
                error: 'Ответ WB не является массивом (страница ' + (pages + 1) + '): ' + String(resp.getContentText()).substring(0, 200) };
     }
     if (!arr.length) { reachedEnd = true; break; }   // документированный конец WB
+    apiRowsTotal += arr.length;                      // реальное число строк ответа (до дедупа)
 
     var progress = 0;
     for (var i = 0; i < arr.length; i++) {
@@ -321,14 +345,21 @@ function fetchOrdersApiData_(token, dateFrom) {
 
     var atCap = arr.length >= WB_ORDERS_API_ROWS_CAP_;            // ответ упёрся в лимит строк?
     var nextCursor = String(arr[arr.length - 1].lastChangeDate || ''); // строго: lastChangeDate ПОСЛЕДНЕЙ строки
+    if (nextCursor) cursorEnd = nextCursor;                      // кандидат watermark = точный формат WB
 
-    if (!nextCursor || nextCursor === cursor) {
-      // Курсор не может продвинуться.
-      if (progress === 0 && !atCap) { reachedEnd = true; }        // всё в этой временной точке учтено, лимит не задет → конец
-      else { stalled = true; }                                    // плотная граница времени свыше лимита строк → неполно
+    // Неподвижный курсор при включительном >= — НЕ признак обрыва: WB всегда
+    // отдаёт граничную строку с тем же lastChangeDate. Решение — по лимиту строк,
+    // НЕ по progress (в начале прогона все граничные srid локально «новые», хотя
+    // могут уже быть в BigQuery — их проверит wbOrdersBqBoundaryKeys_).
+    if (!nextCursor) {
+      stalled = true; break;                                      // непустой ответ без cursor_end — незавершённая выгрузка
+    }
+    if (nextCursor === cursor) {
+      if (!atCap) { reachedEnd = true; }                          // вся граничная точка поместилась (ниже лимита) → штатный дренаж
+      else { stalled = true; }                                    // граница на лимите строк — могла обрезаться → PARTIAL
       break;
     }
-    if (progress === 0 && !atCap) { reachedEnd = true; break; }   // страница — только уже учтённые записи (ниже лимита) → дренаж
+    if (progress === 0 && !atCap) { reachedEnd = true; break; }   // курсор продвинулся, но новых/обновлённых нет (ниже лимита) → дренаж
     cursor = nextCursor;
     Utilities.sleep(WB_ORDERS_API_PAGE_PAUSE_);
   }
@@ -336,12 +367,14 @@ function fetchOrdersApiData_(token, dateFrom) {
   var all = order.map(function (k) { return byKey[k]; });
   if (!reachedEnd) {
     var why = stalled
-      ? 'Курсор lastChangeDate не продвигается при непустом ответе (плотная граница времени свыше лимита строк)'
+      ? 'Незавершённая выгрузка: пустой cursor_end при непустом ответе ИЛИ граница на лимите строк (' + WB_ORDERS_API_ROWS_CAP_ + ')'
       : 'Достигнут лимит страниц (' + WB_ORDERS_API_MAX_PAGES_ + ')';
-    return { ok: false, partial: true, pages: pages, data: all,
+    return { ok: false, partial: true, pages: pages, data: all, api_rows_received: apiRowsTotal,
+             cursor_start: cursorStart, cursor_end: cursorEnd, reached_end: false,
              error: why + ': данные за период могут быть НЕПОЛНЫМИ.' };
   }
-  return { ok: true, data: all, pages: pages };
+  return { ok: true, data: all, pages: pages, api_rows_received: apiRowsTotal,
+           cursor_start: cursorStart, cursor_end: cursorEnd, reached_end: true };
 }
 
 
@@ -349,13 +382,18 @@ function fetchOrdersApiData_(token, dateFrom) {
 // НОРМАЛИЗАЦИЯ
 // ═══════════════════════════════════════
 
-function normalizeOrdersApiRows_(apiData, hMap, lastCol, loadId, loadedAt, dateFrom, dateTo, skuIndex) {
+function normalizeOrdersApiRows_(apiData, hMap, lastCol, loadId, loadedAt, dateFrom, dateTo, skuIndex, opts) {
+  // opts.noWindow=true — режим инкремента: НЕ фильтруем по order_dt (нужны все
+  // изменения, включая позднюю отмену старого заказа). Строку без даты заказа
+  // всё равно пропускаем (не с чем партиционировать; в инкременте отсеяно валидацией до записи).
+  var noWindow = !!(opts && opts.noWindow);
   var rows = [];
   var rowNo = 0;
   for (var i = 0; i < apiData.length; i++) {
     var o = apiData[i];
     var day = normalizeDateKey_(o.date);
-    if (!day || day < dateFrom || day > dateTo) continue;   // окно по дате заказа
+    if (!day) continue;
+    if (!noWindow && (day < dateFrom || day > dateTo)) continue;   // окно по дате заказа (backfill/period)
 
     rowNo++;
     var newRow = [];
@@ -602,6 +640,13 @@ function ensureImportLogOrdersSheet_(ss) {
   } else if (sheet.getLastRow() === 0) {
     sheet.getRange(1, 1, 1, IMPORT_LOG_ORDERS_HEADERS_.length).setValues([IMPORT_LOG_ORDERS_HEADERS_]);
     sheet.setFrozenRows(1);
+  } else {
+    // D1.2: аддитивно дописать новые колонки заголовка (первые 14 не трогаем, строки не трогаем).
+    var curWidth = sheet.getLastColumn();
+    if (curWidth < IMPORT_LOG_ORDERS_HEADERS_.length) {
+      var extra = IMPORT_LOG_ORDERS_HEADERS_.slice(curWidth);
+      sheet.getRange(1, curWidth + 1, 1, extra.length).setValues([extra]);
+    }
   }
   return sheet;
 }
@@ -612,6 +657,310 @@ function writeOrdersLogEntry_(logSheet, r) {
     r.rows_imported, r.skipped_dupes, r.rows_total_period,
     r.orders_count, r.cancel_count, r.unique_srid, r.unique_nmId, r.unmatched_nmId,
     r.status, r.error_message || ''
+  ];
+  var ir = logSheet.getLastRow() + 1; if (ir < 2) ir = 2;
+  logSheet.getRange(ir, 1, 1, row.length).setValues([row]);
+  SpreadsheetApp.flush();
+}
+
+
+// ═══════════════════════════════════════
+// D1.2 — ЕЖЕДНЕВНЫЙ WATERMARK-ИНКРЕМЕНТ
+// ═══════════════════════════════════════
+//
+// Отдельная семантика от period/backfill: запрос по watermark (точный
+// lastChangeDate), БЕЗ фильтра order_dt, at-least-once (watermark двигается
+// ТОЛЬКО после полного успешного append; при PARTIAL/ERROR — не двигается и
+// ничего не пишем). No-change определяется ОТСУТСТВИЕМ toAppend после сверки
+// граничных пар srid+row_hash (не просто candidate <= watermark): новая строка
+// на уже зафиксированной секунде не теряется. watermark двигаем только при
+// строках строго новее (candidate > watermark_before). Триггер НЕ создаётся;
+// runWbDailyRefresh не трогается. Rolling-14 на триггер ставить нельзя.
+
+/**
+ * Строгий формат И календарная корректность операционного watermark/cursor.
+ * Формат: ТОЛЬКО полное API-значение YYYY-MM-DDTHH:mm:ss[.fraction] (дата без
+ * времени и вариант с пробелом недопустимы). Дополнительно проверяются реальные
+ * значения: месяц 1–12, день с учётом високосного года, часы 0–23, мин/сек 0–59.
+ * Отсекает синтаксически похожий мусор вроде 2026-99-99T99:99:99.
+ */
+function ordersValidWatermark_(s) {
+  var m = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(\.\d+)?$/.exec(String(s || ''));
+  if (!m) return false;
+  var Y = +m[1], Mo = +m[2], D = +m[3], H = +m[4], Mi = +m[5], S = +m[6];
+  if (Y < 1) return false;                       // год 0001–9999 (0000 недопустим)
+  if (Mo < 1 || Mo > 12) return false;
+  if (H > 23 || Mi > 59 || S > 59) return false;
+  var leap = (Y % 4 === 0 && Y % 100 !== 0) || (Y % 400 === 0);
+  var daysInMonth = [31, leap ? 29 : 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31][Mo - 1];
+  if (D < 1 || D > daysInMonth) return false;
+  return true;
+}
+
+/**
+ * Bootstrap watermark из RAW. Под ScriptLock (то же свойство меняет инкремент).
+ * НЕ хардкодит контрольное значение и НЕ перезаписывает существующий watermark.
+ * Существующее значение строго валидируется: валидное → OK_EXISTS, битое → ERROR.
+ */
+function wbOrdersIncrementalBootstrap() {
+  var lock = LockService.getScriptLock();
+  if (!lock.tryLock(30000)) {
+    var lm = 'Script Lock занят — bootstrap не выполнен.';
+    console.error('❌ ' + lm);
+    return { status: 'ERROR', error_message: lm };
+  }
+  try {
+    if (!(typeof wbOrdersBqSinkOn_ === 'function' && wbOrdersBqSinkOn_())) {
+      var sm = 'WB_ORDERS_BQ_SINK выключен — bootstrap только при включённом BigQuery-приёмнике.';
+      console.error('❌ ' + sm);
+      return { status: 'ERROR', error_message: sm };
+    }
+    var props = PropertiesService.getScriptProperties();
+    var existing = props.getProperty(WB_ORDERS_WATERMARK_PROP_) || '';
+    if (existing) {
+      if (!ordersValidWatermark_(existing)) {
+        var bm = 'Существующий watermark имеет НЕВЕРНЫЙ формат: ' + existing + ' — исправьте вручную, авто-перезапись запрещена.';
+        console.error('❌ ' + bm);
+        return { status: 'ERROR', error_message: bm };
+      }
+      console.log('ℹ️ watermark уже установлен: ' + existing + ' — bootstrap пропущен.');
+      return { status: 'OK_EXISTS', watermark: existing };
+    }
+    var maxLcd = wbOrdersBqMaxLastChangeDate_();   // 'YYYY-MM-DD HH:MM:SS[.ffff]' или ''
+    if (!maxLcd) {
+      var m = 'В RAW_WB_ORDERS нет last_change_date — сначала выполните backfill.';
+      console.error('❌ ' + m);
+      return { status: 'ERROR', error_message: m };
+    }
+    if (!/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}(\.\d+)?$/.test(maxLcd)) {
+      var m2 = 'Неожиданный формат last_change_date в RAW: ' + maxLcd;
+      console.error('❌ ' + m2);
+      return { status: 'ERROR', error_message: m2 };
+    }
+    var api = maxLcd.replace(' ', 'T');            // восстановить API-разделитель (первый пробел → T)
+    if (!ordersValidWatermark_(api)) {             // страховка: писать только строго валидное API-значение
+      var m3 = 'Сформированный watermark невалиден: ' + api;
+      console.error('❌ ' + m3);
+      return { status: 'ERROR', error_message: m3 };
+    }
+    props.setProperty(WB_ORDERS_WATERMARK_PROP_, api);
+    console.log('✅ watermark установлен из RAW: ' + api);
+    return { status: 'OK', watermark: api };
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+/** Диагностика: текущий watermark, состояние sink, RAW max last_change_date, VIEW count. */
+function wbOrdersIncrementalStatus() {
+  var wm = PropertiesService.getScriptProperties().getProperty(WB_ORDERS_WATERMARK_PROP_) || '(нет)';
+  var sinkOn = (typeof wbOrdersBqSinkOn_ === 'function') && wbOrdersBqSinkOn_();
+  var rawMax = '';
+  try { rawMax = wbOrdersBqMaxLastChangeDate_(); } catch (e) { rawMax = '(ошибка: ' + ((e && e.message) || e) + ')'; }
+  var viewCount = '';
+  try { viewCount = wbOrdersBqViewCount_(); } catch (e3) { viewCount = '(ошибка: ' + ((e3 && e3.message) || e3) + ')'; }
+  console.log('watermark: ' + wm + ' | sink: ' + (sinkOn ? 'ВКЛ' : 'ВЫКЛ') +
+    ' | RAW max last_change_date: ' + rawMax + ' | V_WB_ORDERS: ' + viewCount);
+  try {
+    var ui = SpreadsheetApp.getUi();
+    ui.alert('D1.2 статус', 'watermark: ' + wm + '\nsink: ' + (sinkOn ? 'ВКЛ' : 'ВЫКЛ') +
+      '\nRAW max last_change_date: ' + rawMax + '\nV_WB_ORDERS (уник. заказов): ' + viewCount, ui.ButtonSet.OK);
+  } catch (e2) {}
+  return { watermark: wm, sink_on: sinkOn, raw_max_last_change_date: rawMax, view_count: viewCount };
+}
+
+/** Базовая структура результата инкремента. */
+function ordersIncBaseResult_() {
+  var tz = 'Europe/Moscow';
+  return {
+    status: 'ERROR', mode: 'incremental', load_id: '',
+    watermark_before: '', watermark_candidate: '', watermark_after: '',
+    pages_fetched: 0, api_rows_received: 0, rows_appended: 0, unique_srid: 0, cancel_count: 0,
+    started_at: Utilities.formatDate(new Date(), tz, 'yyyy-MM-dd HH:mm:ss'),
+    finished_at: '', duration_ms: 0, error_message: ''
+  };
+}
+
+/**
+ * Один запуск инкремента под ScriptLock. Возвращает result-контракт D1.2.
+ * Статусы: OK / OK_NO_CHANGES / PARTIAL / ERROR.
+ */
+function runWbOrdersIncremental() {
+  var tz = 'Europe/Moscow';
+  var t0 = Date.now();
+  var r = ordersIncBaseResult_();
+  // load_id создаётся ОДИН раз в самом начале — до lock/sink/watermark/API,
+  // чтобы любой статус (в т.ч. ранний ERROR/PARTIAL) был связан со строкой лога.
+  r.load_id = 'ORD_INC_' + Utilities.formatDate(new Date(), tz, 'yyyyMMdd_HHmmss');
+
+  var lock = LockService.getScriptLock();
+  if (!lock.tryLock(30000)) {
+    r.status = 'ERROR';
+    r.error_message = 'Script Lock занят — возможен параллельный запуск';
+    r.finished_at = Utilities.formatDate(new Date(), tz, 'yyyy-MM-dd HH:mm:ss');
+    r.duration_ms = Date.now() - t0;
+    return r;   // без lock в лог не пишем (гонка watermark недопустима)
+  }
+  try {
+    wbOrdersIncrementalCore_(r);
+  } catch (e) {
+    r.status = 'ERROR';
+    r.error_message = 'Исключение: ' + ((e && e.message) || e);
+    // watermark НЕ трогаем
+  } finally {
+    lock.releaseLock();
+  }
+  r.finished_at = Utilities.formatDate(new Date(), tz, 'yyyy-MM-dd HH:mm:ss');
+  r.duration_ms = Date.now() - t0;
+  try {
+    var ss = SpreadsheetApp.getActiveSpreadsheet();
+    writeOrdersIncrementalLogEntry_(ensureImportLogOrdersSheet_(ss), r);
+  } catch (e2) {}
+  console.log('D1.2 инкремент: ' + r.status + ' | before=' + r.watermark_before +
+    ' candidate=' + r.watermark_candidate + ' after=' + r.watermark_after +
+    ' | rows_appended=' + r.rows_appended + ' api_rows=' + r.api_rows_received +
+    (r.error_message ? ' | ' + r.error_message : ''));
+  return r;
+}
+
+/**
+ * Ядро инкремента (мутирует r). Ранний выход — установить r.status и return.
+ * Безопасная обработка ГРАНИЦЫ watermark (секундная точность): новая srid,
+ * появившаяся позже с тем же lastChangeDate, что и watermark, не теряется —
+ * граничные строки сверяются с RAW по (srid,row_hash) и дописываются, если их
+ * ещё нет. watermark продвигается только когда есть строки строго новее (>).
+ */
+function wbOrdersIncrementalCore_(r) {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var tz = 'Europe/Moscow';
+
+  if (!(typeof wbOrdersBqSinkOn_ === 'function' && wbOrdersBqSinkOn_())) {
+    r.status = 'ERROR'; r.error_message = 'WB_ORDERS_BQ_SINK выключен — инкремент только в BigQuery.'; return;
+  }
+  var tk = getOrdersToken_();
+  if (!tk) { r.status = 'ERROR'; r.error_message = 'Нет токена WB (' + WB_ORDERS_TOKEN_KEYS_.join(' / ') + ').'; return; }
+
+  var props = PropertiesService.getScriptProperties();
+  var wm = props.getProperty(WB_ORDERS_WATERMARK_PROP_) || '';
+  if (!wm) { r.status = 'ERROR'; r.error_message = 'watermark отсутствует — выполните wbOrdersIncrementalBootstrap().'; return; }
+  if (!ordersValidWatermark_(wm)) { r.status = 'ERROR'; r.error_message = 'Неверный формат watermark: ' + wm; return; }
+  r.watermark_before = wm;
+  r.watermark_after = wm;   // диагностика: пока не сдвинут — before==after (перекрывается только при успешном продвижении)
+
+  var fetched = fetchOrdersApiData_(tk.token, wm);
+  r.pages_fetched = fetched.pages || 0;
+  r.api_rows_received = (fetched.api_rows_received != null) ? fetched.api_rows_received : ((fetched.data || []).length);
+  r.watermark_candidate = fetched.cursor_end || '';
+
+  if (!fetched.ok) {
+    // HTTP/JSON-ошибка после ≥1 страницы или упор в лимит → PARTIAL; иначе ERROR. Ничего не пишем, watermark не двигаем.
+    r.status = fetched.partial ? 'PARTIAL' : 'ERROR';
+    r.error_message = fetched.error || 'Незавершённая выгрузка';
+    return;
+  }
+
+  var candidate = fetched.cursor_end || '';
+  var dataLen = (fetched.data || []).length;
+
+  // Пустой cursor_end допустим ТОЛЬКО при настоящем пустом ответе (нет строк).
+  // Непустой пакет без кандидата = ERROR (иначе строки пишутся, а watermark стоит → бесконечный повтор).
+  if (!candidate) {
+    if (dataLen === 0 && r.api_rows_received === 0) {
+      r.status = 'OK_NO_CHANGES'; r.watermark_after = wm; return;
+    }
+    r.status = 'ERROR';
+    r.error_message = 'Непустой ответ WB без cursor_end (data=' + dataLen + ', api_rows=' + r.api_rows_received + ') — запись отменена, watermark не сдвинут.';
+    return;
+  }
+  // candidate непустой: строгая валидация ДО любой ветки.
+  if (!ordersValidWatermark_(candidate)) {
+    r.status = 'ERROR'; r.error_message = 'Невалидный cursor_end от WB: ' + candidate + ' — запись отменена, watermark не сдвинут.'; return;
+  }
+  // candidate строго СТАРШЕ watermark — аномалия времени/формата, не no-change.
+  if (candidate < wm) {
+    r.status = 'ERROR'; r.error_message = 'cursor_end (' + candidate + ') < watermark_before (' + wm + ') — аномалия, запись отменена.'; return;
+  }
+
+  // Валидация КАЖДОЙ строки ДО ветки OK_NO_CHANGES: srid (после trim), дата заказа, строгий lastChangeDate.
+  var bad = 0;
+  for (var i = 0; i < fetched.data.length; i++) {
+    var o = fetched.data[i];
+    var sridOk = o && String(o.srid || '').trim() !== '';
+    var dateOk = o && !!normalizeDateKey_(o.date);
+    var lcdOk = o && ordersValidWatermark_(String(o.lastChangeDate || ''));
+    if (!sridOk || !dateOk || !lcdOk) bad++;
+  }
+  if (bad > 0) {
+    r.status = 'ERROR';
+    r.error_message = 'Невалидных строк (srid/date/lastChangeDate): ' + bad + ' — запись отменена, watermark не сдвинут.';
+    return;
+  }
+
+  var loadId = r.load_id;   // создан в runWbOrdersIncremental в самом начале (сквозной)
+  var rawSheet = getRawOrdersSheet_(ss);
+  var lastCol = rawSheet.getLastColumn();
+  var hMap = buildOrdersRawHeaderMap_(rawSheet, lastCol);
+  var skuIndex = (typeof buildSkuIndex_ === 'function') ? buildSkuIndex_(ss) : { byNm: {}, byBarcode: {} };
+
+  // Нормализация всех изменений (noWindow — без фильтра order_dt).
+  var rows = normalizeOrdersApiRows_(fetched.data, hMap, lastCol, loadId, r.started_at, '', '', skuIndex, { noWindow: true });
+
+  // Существующие пары srid|row_hash на ГРАНИЦЕ (last_change_date == watermark).
+  // RAW хранит время с пробелом, watermark — с 'T'.
+  var wmStorage = wm.replace('T', ' ');
+  var boundaryKeys = wbOrdersBqBoundaryKeys_(wmStorage);
+
+  var lcdIdx = hMap['last_change_date'], sridIdx = hMap['srid'], rhIdx = hMap['row_hash'];
+  var toAppend = [], seen = {};
+  for (i = 0; i < rows.length; i++) {
+    var row = rows[i];
+    var lcdStore = String(row[lcdIdx] || '');
+    var srid = String(row[sridIdx] || '').trim();
+    var rh = String(row[rhIdx] || '');
+    var pairKey = srid + '|' + rh;
+
+    var include = false;
+    if (lcdStore > wmStorage) {
+      include = true;                              // строго новее watermark
+    } else if (lcdStore === wmStorage) {
+      include = !boundaryKeys[pairKey];            // граница: только если такой пары ещё нет в RAW
+    } // lcdStore < wmStorage — уже обработано ранее, пропускаем
+
+    if (include && !seen[rh]) { seen[rh] = 1; toAppend.push(row); }
+  }
+
+  if (toAppend.length === 0) {
+    // Нет строк новее и нет новых граничных строк → изменений нет.
+    r.status = 'OK_NO_CHANGES'; r.watermark_after = wm; return;
+  }
+
+  // Append (исключение → пробрасывается в runWbOrdersIncremental → ERROR, watermark не двигаем).
+  appendOrdersRows_(rawSheet, toAppend, lastCol);
+  r.rows_appended = toAppend.length;
+
+  var sums = aggregateOrdersRowArray_(toAppend, hMap, '0000-01-01', '9999-12-31', skuIndex);
+  r.unique_srid = sums.unique_srid;
+  r.cancel_count = sums.cancel_count;
+
+  // watermark продвигаем ТОЛЬКО если есть строки СТРОГО новее (candidate > watermark_before).
+  // candidate == watermark_before (только новые граничные строки) → строки записаны, watermark НЕ двигаем.
+  if (candidate && candidate > wm) {
+    props.setProperty(WB_ORDERS_WATERMARK_PROP_, candidate);
+    r.watermark_after = candidate;
+  } else {
+    r.watermark_after = wm;
+  }
+  r.status = 'OK';
+}
+
+/** Пишет строку инкремента в IMPORT_LOG_ORDERS (14 базовых + 5 новых). */
+function writeOrdersIncrementalLogEntry_(logSheet, r) {
+  var row = [
+    r.load_id, r.started_at, '', '',                 // load_id (сквозной, задан в начале запуска), loaded_at, period_from/to (не применимо)
+    r.rows_appended, '', r.api_rows_received,         // rows_imported, skipped_dupes, rows_total_period
+    r.rows_appended, r.cancel_count || 0, r.unique_srid, '', '', // orders_count, cancel_count, unique_srid, unique_nmId, unmatched_nmId
+    r.status, r.error_message || '',                  // status, error_message
+    r.mode, r.watermark_before, r.watermark_after, r.pages_fetched, r.api_rows_received  // 5 новых
   ];
   var ir = logSheet.getLastRow() + 1; if (ir < 2) ir = 2;
   logSheet.getRange(ir, 1, 1, row.length).setValues([row]);
