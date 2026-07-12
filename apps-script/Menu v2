@@ -92,7 +92,9 @@ function onOpen() {
         .addSeparator()
         .addItem('RAW: только кампании', 'loadWbAdsCampaignsRaw')
         .addItem('RAW: только расходы за 7 дней', 'loadWbAdsCostsRawLast7Days')
+        .addItem('RAW: только расходы за период…', 'loadWbAdsCostsRawPeriodPrompt')
         .addItem('RAW: только fullstats за 7 дней', 'loadWbAdsFullstatsRawLast7Days')
+        .addItem('RAW: только fullstats за период…', 'loadWbAdsFullstatsRawPeriodPrompt')
         .addItem('RAW: только кластеры за 7 дней', 'loadWbAdsSearchClustersRawLast7Days')
         .addSeparator()
         .addSubMenu(

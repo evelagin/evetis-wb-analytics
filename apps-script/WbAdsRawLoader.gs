@@ -205,6 +205,48 @@ function loadWbAdsRawPeriodPrompt() {
 
 
 // ═══════════════════════════════════════
+// BACKFILL-ОБЁРТКИ (no-arg, для запуска из выпадающего списка редактора)
+//   Кнопка «Выполнить» не передаёт аргументы → период зашит явно.
+//   Только per-source (без оркестратора). Правь даты под нужный период.
+// ═══════════════════════════════════════
+
+/** Backfill РАСХОДОВ (upd) за 90 ЗАВЕРШЁННЫХ дней (по 11.07, без неполного 12-го). */
+function loadWbAdsCostsBackfill90() {
+  return loadWbAdsCostsRaw('2026-04-13', '2026-07-11');
+}
+
+/** Расходы (upd) за период — prompt (BQ-совместимый, пишет через флаг sink). */
+function loadWbAdsCostsRawPeriodPrompt() {
+  var ui = SpreadsheetApp.getUi();
+  var resp = ui.prompt('WB Ads — расходы за период',
+    'Введите даты через пробел: YYYY-MM-DD YYYY-MM-DD\nНапр.: 2026-04-13 2026-04-30',
+    ui.ButtonSet.OK_CANCEL);
+  if (resp.getSelectedButton() !== ui.Button.OK) return;
+  var p = String(resp.getResponseText() || '').trim().split(/\s+/);
+  var re = /^\d{4}-\d{2}-\d{2}$/;
+  if (p.length !== 2 || !re.test(p[0]) || !re.test(p[1])) {
+    ui.alert('Неверный формат. Пример: 2026-04-13 2026-04-30'); return;
+  }
+  return loadWbAdsCostsRaw(p[0], p[1]);
+}
+
+/** fullstats за период — prompt (BQ-совместимый; без replace-slice по листам). */
+function loadWbAdsFullstatsRawPeriodPrompt() {
+  var ui = SpreadsheetApp.getUi();
+  var resp = ui.prompt('WB Ads — fullstats за период',
+    'Введите даты через пробел: YYYY-MM-DD YYYY-MM-DD\nНачни с 7 дней, напр.: 2026-04-13 2026-04-19',
+    ui.ButtonSet.OK_CANCEL);
+  if (resp.getSelectedButton() !== ui.Button.OK) return;
+  var p = String(resp.getResponseText() || '').trim().split(/\s+/);
+  var re = /^\d{4}-\d{2}-\d{2}$/;
+  if (p.length !== 2 || !re.test(p[0]) || !re.test(p[1])) {
+    ui.alert('Неверный формат. Пример: 2026-04-13 2026-04-19'); return;
+  }
+  return loadWbAdsFullstatsRaw(p[0], p[1]);
+}
+
+
+// ═══════════════════════════════════════
 // LAST-7 WRAPPER'Ы (entry points для меню per-source)
 //   Меню Apps Script вызывает функции без аргументов, поэтому период
 //   подставляется явно через wbAdsLast7Range_().

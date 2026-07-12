@@ -34,6 +34,12 @@ BigQuery migration — Phase C (реклама), hardening по внешнему
 - `load_ts` подтверждён: `wbAdsNow_()` → `'yyyy-MM-dd HH:mm:ss'` — валидный timestamp-литерал BigQuery, `SAFE_CAST(load_ts AS TIMESTAMP)` парсит корректно (проверить и на реальных строках в C1).
 - Комментарий аудита схемы сужен: проверяются только колонки/типы, партиция и clustering — нет (бэклог).
 
+Утилиты backfill по источникам (для C1/истории, 2026-07-12):
+- `WbAdsRawLoader.gs`: `loadWbAdsCostsBackfill90()` (расходы 2026-04-13…2026-07-11, 90 завершённых дней), prompt-обёртки `loadWbAdsCostsRawPeriodPrompt()` и `loadWbAdsFullstatsRawPeriodPrompt()` — вызывают напрямую BQ-совместимые загрузчики (без replace-slice по листам).
+- `Menu v2`: в «Реклама WB» добавлены пункты «RAW: только расходы за период…» и «RAW: только fullstats за период…».
+- Примечание: пункт «fullstats за месяц» тоже пишет в BQ (внутри зовёт loadWbAdsFullstatsRaw), но перед загрузкой делает лишний deleteRows по старым листам — для backfill предпочтительны новые prompt-пункты «за период».
+- Backfill не требует пересоздания вью: V_ADV_* читают живой RAW; `wbAdsBqCreateViews()` нужен только при изменении SQL вью.
+
 Результат C1 (первый реальный прогон, проверено в облаке 2026-07-12):
 - Все 5 RAW-таблиц и 5 вью созданы; sink работает. Прогон был 7-дневный оркестратором (2 запуска: первый отменён после campaigns+costs, второй прошёл до fullstats PARTIAL).
 - Дедуп подтверждён: CAMPAIGNS 852→426 (2×426), CAMPAIGN_STATS фильтр `raw` 256 против 363 no_stats-маркеров.
