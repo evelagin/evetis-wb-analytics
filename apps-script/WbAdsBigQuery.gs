@@ -289,13 +289,14 @@ function wbAdsBqCreateViews() {
   makeView('V_ADV_SEARCH_CLUSTERS', 'RAW_WB_ADV_SEARCH_CLUSTERS',
     'period_from, period_to, advert_id, nm_id, norm_query', null);
 
-  // 5) Расходы upd — предпочтительно updNum; при пустом — хэш raw_json.
-  //    NULL-safe: пустые значения append пишет как NULL, а CONCAT с NULL
-  //    даёт NULL → несколько операций схлопнулись бы в одну. Хэш raw_json
-  //    сохраняет фактическую гранулярность (одинаковые перезагрузки → один
-  //    хэш; разные операции → разные). ⚠️ updNum уникальность проверить в C1.
+  // 5) Расходы upd — дедуп по ХЭШУ raw_json.
+  //    ⚠️ C1 (2026-07-12) показал: updNum НЕ уникален — 2 различных
+  //    значения на 272 строки (это номер документа, общий для многих
+  //    кампаний). Ключ на updNum схлопывал 272 → 2. raw_json даёт 154
+  //    различных = фактическую гранулярность операций; одинаковые
+  //    перезагрузки → один хэш. updNum как ключ НЕ использовать.
   makeView('V_ADV_COSTS', 'RAW_WB_ADV_COSTS',
-    "COALESCE(NULLIF(updNum, ''), TO_HEX(SHA256(COALESCE(raw_json, ''))))", null);
+    "TO_HEX(SHA256(COALESCE(raw_json, '')))", null);
 
   console.log('✅ Вью созданы (5): V_ADV_CAMPAIGNS, V_ADV_CAMPAIGN_STATS, ' +
     'V_ADV_BOOSTER_STATS, V_ADV_SEARCH_CLUSTERS, V_ADV_COSTS');
