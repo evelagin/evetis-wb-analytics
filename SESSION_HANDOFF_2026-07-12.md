@@ -36,16 +36,20 @@
 
 Backfill гнать ПО ИСТОЧНИКАМ (не оркестратором): campaigns 1 раз; costs помесячно (`loadWbAdsCostsBackfill90` или меню «RAW: только расходы за период…»); fullstats окнами ≤14 дней (меню «RAW: только fullstats за период…»). У одиночного вызова бюджет 4 мин → чистый PARTIAL, не жёсткий кил.
 
-## 5. Заказы (Фаза D1 — КОД НАПИСАН, НЕ ПРОГНАН) ← продолжаем здесь
+## 5. Заказы (Фаза D1 — ✅ migration/backfill ПРИНЯТ; операционный инкремент — нет)
 
 Порт `WbOrdersLoader` в BQ по рекламному образцу. Базовый endpoint и общий каркас загрузчика сохранены, но `fetchOrdersApiData_` переписан под контракт WB (курсор = полное `lastChangeDate` последней строки, конец = пустой массив/дренаж/иначе PARTIAL, fail-closed на битом ответе), а нормализация дополнена `last_change_date`.
 - Новый `WbOrdersBigQuery.gs`: флаг `WB_ORDERS_BQ_SINK`; `wbOrdersBqInit()` (C0 fail-closed); таблица `RAW_WB_ORDERS` (STRING + `_order_date DATE` партиция по дате заказа, кластер wb_nm_id/srid); вью `V_WB_ORDERS` — дедуп **srid + last-wins** (`ORDER BY SAFE_CAST(last_change_date AS TIMESTAMP) DESC, SAFE_CAST(loaded_at AS TIMESTAMP) DESC, load_id DESC`), т.к. заказы мутируют (заказ→отмена); row_hash как ключ НЕ годится. Есть `wbOrdersBqStats`, `wbOrdersBqAssertViews_`, allowlist, аудит схемы + строгая проверка партиции по `_order_date`.
 - Правки под флагом в `WbOrdersLoader`: константа `ORDERS_RAW_HEADERS_` (29 колонок; 29-я — `last_change_date`); sink-ветки в `getRawOrdersSheet_`/`buildOrdersRawHeaderMap_`/`clearOrdersOwnPeriod_` (no-op)/`appendOrdersRows_` (массивы→объекты→BQ); контрольные суммы из памяти `aggregateOrdersRowArray_`.
 - Оба файла прошли `node --check`. Меню менять не нужно (C1/backfill — существующий пункт «Заказы WB → Загрузить за период…»).
 
-**СЛЕДУЮЩИЙ ШАГ (за владельцем):** залить оба файла → **C0** `wbOrdersBqInit()` (редактор) → **C1** меню «Заказы WB → за период…» `2026-07-10,2026-07-10` → `wbOrdersBqStats()` → Клод проверит в облаке: покрытие, `COUNT(*)` vs `COUNT(DISTINCT srid)`, отмены, эмпирически ключ (srid с меняющимся is_cancel) → **backfill 90 дней ОДНИМ проходом** `importWbOrdersFromApi('<начало 90д>','<сегодня>')` (НЕ окнами: у эндпоинта нет dateTo, окна объём не режут). ⚠️ Глубина заказов = потолок API ~90 дней (глубже — из финотчёта).
+**ФАКТИЧЕСКИЙ ПРОГОН (12.07, проверен в облаке):**
+- **C0** `wbOrdersBqInit()` — таблица (партиция `_order_date`, кластер `wb_nm_id, srid`) и вью созданы, счётчики 0/0.
+- **C1** `2026-07-10`: 21 строка, 21 уник. `srid`, 12 `nmId`, 0 отмен, 1 `nmId` не найден в SKU_MASTER; RAW=21, VIEW=21; `last_change_date` парсится; `_order_date`=2026-07-10.
+- **Повторный C1** того же дня: RAW=42, VIEW=21, все 21 `srid` ×2 → эмпирически подтверждён ключ `srid` + append-only. ⚠️ Смена состояния `is_cancel=false→true` пока НЕ наблюдалась — проверим на D1.2.
+- **Backfill** `importWbOrdersFromApi('2026-04-13','2026-07-12')`: **91 календарный день включительно**; **3500 уникальных строк по `srid`** (товарные единицы, НЕ 3500 покупательских заказов — `gNumber` не проверялся); 1 страница (3552 → слив по `[]`). Облако: RAW=3542 (2 тестовых прогона, 3 `load_id`), VIEW=3500=уник. `srid`, отмен в VIEW=285, покрытие **91/91 без пропусков**, пустых `srid`=0, непарсимых `last_change_date`=0, `nmId`=22. Sink `WB_ORDERS_BQ_SINK` включён.
 
-**2-й внешний аудит (12.07, внесён):** исправлена семантика пагинации — курсор = точное `lastChangeDate` последней строки, конец = пустой массив/дренаж/иначе PARTIAL; backfill одним проходом; ежедневный инкремент до триггера переделать на watermark (без фильтра order_dt). Детали — CHANGELOG 2026-07-12 и память [[d1-orders-migration-status]].
+**СЛЕДУЮЩИЙ ШАГ — D1.2 (watermark-инкремент), ДО D2:** ежедневное обновление по watermark (точный `lastChangeDate` в Script Properties), запрос по watermark (НЕ по `order_dt`), сохранять все изменения включая позднюю отмену, watermark двигать только после полного успешного append (при ERROR/PARTIAL — не двигать), небольшой overlap + дедуп во вью, триггер включать после 2 ручных прогонов. Контрольный тест D1.2 обязан подтвердить last-wins на реальной смене `is_cancel=false→true`. `importWbOrdersFromApiRolling14Days` на триггер ставить НЕЛЬЗЯ (фильтрует `order_dt`). Затем **D2 Sales/Returns** по зрелому шаблону: API change feed → append-only RAW → srid-key/view → watermark → trigger. Бэклог **D1.1**: `raw_json` + полная схема, `regionName` вместо `oblastOkrugName`, мск-таймзона. Детали — CHANGELOG 2026-07-12, память [[d1-orders-migration-status]].
 
 ## 6. Осталось по дорожной карте
 
