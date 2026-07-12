@@ -57,6 +57,24 @@ function salesBqFieldType_(name) {
   return 'STRING';
 }
 
+/**
+ * Канонизация имени BigQuery-типа для сравнения схемы. BigQuery API отдаёт
+ * КАНОНИЧЕСКИЕ имена (INTEGER/BOOLEAN/FLOAT/RECORD), а мы задаём SQL-алиасы
+ * (INT64/BOOL/FLOAT64/STRUCT) — это один и тот же тип. Сравнивать нужно
+ * канонические формы, иначе аудит схемы ложно падает (C0: raw_row_number
+ * INTEGER vs ожидался INT64). Неизвестные типы возвращаются как есть.
+ */
+function wbSalesBqCanonicalType_(type) {
+  var t = String(type || '').toUpperCase().trim();
+  var aliases = {
+    INT64: 'INTEGER', INTEGER: 'INTEGER',
+    BOOL: 'BOOLEAN', BOOLEAN: 'BOOLEAN',
+    FLOAT64: 'FLOAT', FLOAT: 'FLOAT',
+    STRUCT: 'RECORD', RECORD: 'RECORD'
+  };
+  return aliases[t] || t;
+}
+
 /** allowlist: приёмник продаж пишет ТОЛЬКО в RAW_WB_SALES_RETURNS (fail-closed). */
 function wbSalesBqAssertTable_(tableId) {
   if (tableId !== WB_SALES_BQ_TABLE_) {
@@ -144,15 +162,21 @@ function wbSalesBqEnsureTable_(headers) {
     var want = salesBqFieldType_(headers[h]);
     var f = byName[headers[h]];
     if (!f) { missing.push({ name: headers[h], type: want, mode: 'NULLABLE' }); continue; }
-    if (String(f.type).toUpperCase() !== want) {
-      throw new Error('RAW_WB_SALES_RETURNS: колонка ' + headers[h] + ' тип ' + f.type + ', ожидался ' + want + '.');
+    // Сравниваем КАНОНИЧЕСКИЕ формы: BigQuery API отдаёт INTEGER/BOOLEAN/…,
+    // мы задаём INT64/BOOL/… — это один тип.
+    var actualType = wbSalesBqCanonicalType_(f.type);
+    var expectedType = wbSalesBqCanonicalType_(want);
+    if (actualType !== expectedType) {
+      throw new Error('RAW_WB_SALES_RETURNS: колонка ' + headers[h] + ' тип ' + f.type +
+        ' (canonical ' + actualType + '), ожидался ' + want + ' (canonical ' + expectedType + ').');
     }
   }
   var sdf = byName['_sale_date'];
   if (!sdf) {
     missing.push({ name: '_sale_date', type: 'DATE', mode: 'NULLABLE' });
-  } else if (String(sdf.type).toUpperCase() !== 'DATE') {
-    throw new Error('RAW_WB_SALES_RETURNS: колонка _sale_date тип ' + sdf.type + ', ожидался DATE.');
+  } else if (wbSalesBqCanonicalType_(sdf.type) !== wbSalesBqCanonicalType_('DATE')) {
+    throw new Error('RAW_WB_SALES_RETURNS: колонка _sale_date тип ' + sdf.type +
+      ' (canonical ' + wbSalesBqCanonicalType_(sdf.type) + '), ожидался DATE.');
   }
   var pf = table.timePartitioning && table.timePartitioning.field;
   if (pf && pf !== '_sale_date') {
@@ -276,4 +300,23 @@ function wbSalesBqViewCount_() {
   var c = getBqConfig_();
   var r = bqQuery_('SELECT COUNT(*) FROM `' + c.projectId + '.' + c.datasetId + '.' + WB_SALES_BQ_VIEW_ + '`');
   return (r && r.rows && r.rows.length) ? String(r.rows[0].f[0].v) : '0';
+}
+
+/** Self-test канонизации типов (без BigQuery). Запускать вручную из редактора. */
+function wbSalesBqTypeAliasSelfTest() {
+  var cases = [
+    ['INT64', 'INTEGER'],
+    ['BOOL', 'BOOLEAN'],
+    ['FLOAT64', 'FLOAT'],
+    ['STRUCT', 'RECORD'],
+    ['NUMERIC', 'NUMERIC'],
+    ['STRING', 'STRING'],
+    ['DATE', 'DATE']
+  ];
+  cases.forEach(function (pair) {
+    var a = wbSalesBqCanonicalType_(pair[0]);
+    var b = wbSalesBqCanonicalType_(pair[1]);
+    if (a !== b) throw new Error(pair[0] + ' != ' + pair[1] + ' (canonical ' + a + ' / ' + b + ')');
+  });
+  console.log('✅ wbSalesBqTypeAliasSelfTest PASS');
 }
