@@ -222,8 +222,10 @@ function wbSalesReadBqCanonical_(fromDate, toDate, allowEmpty) {
  * 10 символам sale_dt (единый публичный контракт адаптера, не зависящий
  * от источника). from по умолчанию = wbSalesConsumerFrom_() (2024-09-01),
  * а не «вся история».
- * Пустой лист/пустой диапазон → [header] (потребители трактуют как «пусто»);
- * в SHEET-режиме пустота не считается ошибкой (аварийный/замороженный снимок).
+ * При allowEmpty=false пустой лист/отсутствие листа ИЛИ пустой результат
+ * после фильтрации fromDate/toDate → исключение (единый контракт с BQ,
+ * защита от rollback с пустыми продажами). [header] возвращается только
+ * при allowEmpty=true (parity/узкие проверки).
  */
 function wbSalesReadSheetCanonical_(fromDate, toDate, allowEmpty) {
   var from = fromDate ? wbSalesAssertDate_(fromDate, 'fromDate') : wbSalesConsumerFrom_();
@@ -254,6 +256,10 @@ function wbSalesReadSheetCanonical_(fromDate, toDate, allowEmpty) {
   var iOper   = wbSalesFindCol_(hmap, ['operation_type', 'supplier_oper_name', 'type']);
   var iRet    = wbSalesFindCol_(hmap, ['is_return']);
   var iSrc    = wbSalesFindCol_(hmap, ['source_api']);
+  // Реальная legacy-семантика: колонки quantity/is_duplicate есть в листе
+  // (loader D2a их сохранял), в дедуп-вью — нет. Синтез только при отсутствии.
+  var iQty    = wbSalesFindCol_(hmap, ['quantity', 'qty']);
+  var iDup    = wbSalesFindCol_(hmap, ['is_duplicate', 'isduplicate']);
 
   var out = header;
   for (var r = 1; r < values.length; r++) {
@@ -276,8 +282,8 @@ function wbSalesReadSheetCanonical_(fromDate, toDate, allowEmpty) {
       iOper   >= 0 ? wbSalesStr_(row[iOper])     : '',
       iRet    >= 0 ? wbSalesBool_(row[iRet])     : false,
       iSrc    >= 0 ? wbSalesStr_(row[iSrc])      : 'WB_API_SALES',
-      1,        // quantity — синтез
-      false     // is_duplicate — синтез
+      iQty    >= 0 ? wbSalesNumber_(row[iQty])   : 1,      // реальный quantity, иначе синтез 1
+      iDup    >= 0 ? wbSalesBool_(row[iDup])     : false   // реальный is_duplicate, иначе синтез false
     ]);
   }
 
@@ -433,18 +439,26 @@ function wbSalesConsumerParityTest_() {
   return { ok: ok, quantityMismatch: qtyMismatch, moneyMismatch: moneyMismatch, missingKeys: missing, from: from, to: to };
 }
 
-/** Агрегат канонических строк по date×SKU (для parity). Деньги — в копейках. */
+/**
+ * Агрегат канонических строк по date×SKU (для parity). Деньги — в копейках.
+ * Обе стороны уже нормализованы в единый контракт, поэтому:
+ *   • строки is_duplicate === true ПРОПУСКАЮТСЯ (legacy-дубли; во вью их нет,
+ *     на BQ-стороне фильтр безвреден) — сравниваем «лист без дублей» vs BQ;
+ *   • qty = Math.abs(quantity) || 1 (legacy-продажи поштучные);
+ *   • возврат — по авторитетному каноническому is_return, без повторной
+ *     деривации из operation_type.
+ */
 function wbSalesParityAggregate_(values) {
   var map = {};
   var minDate = '', maxDate = '';
   for (var r = 1; r < values.length; r++) {
     var row = values[r];
+    if (row[11] === true) continue;   // is_duplicate → пропуск
     var day = String(row[0] || '').substring(0, 10);   // sale_dt → yyyy-MM-dd
     if (!/^\d{4}-\d{2}-\d{2}$/.test(day)) continue;
     var sku = String(row[2] || '').trim() || ('nm:' + String(row[3] || '').trim());
-    var isRet = (row[8] === true) || (String(row[7] || '').toLowerCase().indexOf('return') >= 0) ||
-                (String(row[7] || '').toLowerCase().indexOf('возврат') >= 0);
-    var qty = Number(row[10]) || 0;
+    var isRet = (row[8] === true);   // каноническое is_return, авторитетно
+    var qty = Math.abs(Number(row[10])) || 1;
     var kop = Math.round((Number(row[6]) || 0) * 100);
 
     var k = day + '|' + sku;
@@ -462,4 +476,193 @@ function wbSalesParityAggregate_(values) {
 function wbSalesKeyInRange_(k, from, to) {
   var day = k.substring(0, 10);
   return day >= from && day <= to;
+}
+
+// ───────────────────────────────────────────────────────────────
+// ПУБЛИЧНЫЕ ОБЁРТКИ ЗАПУСКА (репозиторий = Apps Script)
+// ───────────────────────────────────────────────────────────────
+
+/** Публичный запуск parity-сверки (SHEET vs BIGQUERY). Ничего не переключает. */
+function wbSalesConsumerParityTest() {
+  return wbSalesConsumerParityTest_();
+}
+
+// ───────────────────────────────────────────────────────────────
+// READ-ONLY ДИАГНОСТИКА (не меняет flag, ничего не пишет)
+// ───────────────────────────────────────────────────────────────
+
+/**
+ * Диагностика расхождений parity: доказывает, что дельта SHEET vs BQ —
+ * это legacy-дубли (is_duplicate=true), а не потеря валидных продаж в BQ.
+ * Только console.log. Флаг и данные не трогает.
+ */
+function wbSalesConsumerParityDiagnostics() {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+
+  // --- Сырой лист: наличие колонок и счётчики дублей ---
+  var sh = ss.getSheetByName(WB_SALES_CONSUMER_SHEET_);
+  var rawRows = 0, dupCol = false, qtyCol = false, dupTotal = 0;
+  if (sh && sh.getLastRow() > 1 && sh.getLastColumn() > 0) {
+    var vals = sh.getRange(1, 1, sh.getLastRow(), sh.getLastColumn()).getValues();
+    var hmap = wbSalesLowerHeaderMap_(vals[0]);
+    var iDup = wbSalesFindCol_(hmap, ['is_duplicate', 'isduplicate']);
+    var iQty = wbSalesFindCol_(hmap, ['quantity', 'qty']);
+    dupCol = (iDup >= 0);
+    qtyCol = (iQty >= 0);
+    rawRows = vals.length - 1;
+    if (iDup >= 0) {
+      for (var i = 1; i < vals.length; i++) {
+        if (wbSalesBool_(vals[i][iDup])) dupTotal++;
+      }
+    }
+  }
+
+  // --- Канонические строки (SHEET carries real is_duplicate/quantity) ---
+  var sheetCanon = wbSalesReadSheetCanonical_(undefined, undefined, true);
+  var bqCanon = wbSalesReadBqCanonical_(undefined, undefined, true);
+
+  var sMinMax = wbSalesDiagMinMax_(sheetCanon);
+  var bMinMax = wbSalesDiagMinMax_(bqCanon);
+  var from = (sMinMax.min > bMinMax.min) ? sMinMax.min : bMinMax.min;
+  var to   = (sMinMax.max < bMinMax.max) ? sMinMax.max : bMinMax.max;
+
+  console.log('WB_SALES_CONSUMER_SOURCE = ' + wbSalesConsumerSource_() + ' (диагностика read-only, не переключает)');
+  console.log('SHEET raw rows=' + rawRows +
+    ' | is_duplicate column found=' + dupCol +
+    ' | quantity column found=' + qtyCol +
+    ' | duplicate rows total=' + dupTotal);
+  console.log('SHEET canonical rows=' + (sheetCanon.length - 1) + ' | min=' + sMinMax.min + ' | max=' + sMinMax.max);
+  console.log('BQ    canonical rows=' + (bqCanon.length - 1) + ' | min=' + bMinMax.min + ' | max=' + bMinMax.max);
+  console.log('overlap from=' + from + ' | to=' + to);
+
+  if (!from || !to || from > to) {
+    console.log('❌ пустое пересечение — сравнивать нечего.');
+    return;
+  }
+
+  // Счётчики строк листа в overlap: raw / duplicate / non-duplicate.
+  var sIn = 0, sDupIn = 0, sNonDupIn = 0;
+  for (var r = 1; r < sheetCanon.length; r++) {
+    var day = String(sheetCanon[r][0] || '').substring(0, 10);
+    if (day < from || day > to) continue;
+    sIn++;
+    if (sheetCanon[r][11] === true) sDupIn++; else sNonDupIn++;
+  }
+  var bIn = 0;
+  for (var rb = 1; rb < bqCanon.length; rb++) {
+    var db = String(bqCanon[rb][0] || '').substring(0, 10);
+    if (db >= from && db <= to) bIn++;
+  }
+  console.log('overlap: sheet rows=' + sIn + ' (dup=' + sDupIn + ', non-dup=' + sNonDupIn + ') | bq rows=' + bIn);
+
+  // Агрегаты BEFORE (все строки) и AFTER (без дублей) исключения.
+  var sBefore = wbSalesDiagAgg_(sheetCanon, from, to, false);
+  var sAfter  = wbSalesDiagAgg_(sheetCanon, from, to, true);
+  var bAgg    = wbSalesDiagAgg_(bqCanon, from, to, true);   // в BQ дублей нет, exclude безвреден
+
+  var cmpBefore = wbSalesDiagCompare_(sBefore, bAgg);
+  var cmpAfter  = wbSalesDiagCompare_(sAfter, bAgg);
+  console.log('BEFORE dup-exclusion: missing keys=' + cmpBefore.missing +
+    ' | qty mismatch=' + cmpBefore.qty + ' | money mismatch=' + cmpBefore.money);
+  console.log('AFTER  dup-exclusion: missing keys=' + cmpAfter.missing +
+    ' | qty mismatch=' + cmpAfter.qty + ' | money mismatch=' + cmpAfter.money);
+
+  // Первые 20 спорных ключей ПОСЛЕ исключения дублей.
+  console.log('--- спорные ключи (после исключения дублей, до 20) ---');
+  var shown = 0;
+  var allKeys = {};
+  Object.keys(sAfter).forEach(function (k) { allKeys[k] = true; });
+  Object.keys(bAgg).forEach(function (k) { allKeys[k] = true; });
+  Object.keys(allKeys).sort().forEach(function (k) {
+    if (shown >= 20) return;
+    var sa = sAfter[k], ba = bAgg[k];
+    var diff = (!sa || !ba) || sa.salesQty !== ba.salesQty || sa.returnsQty !== ba.returnsQty ||
+               sa.grossKop !== ba.grossKop || sa.retKop !== ba.retKop;
+    if (!diff) return;
+    var rk = wbSalesDiagRawByKey_(sheetCanon, k, from, to);
+    console.log('• ' + k +
+      ' | sheet raw=' + rk.raw + ' dup=' + rk.dup + ' non-dup=' + rk.nonDup +
+      ' qty=' + (sa ? sa.salesQty : 0) + ' amountKop=' + (sa ? sa.grossKop : 0) +
+      ' || bq rows=' + (ba ? (ba.salesQty + ba.returnsQty) : 0) +
+      ' qty=' + (ba ? ba.salesQty : 0) + ' amountKop=' + (ba ? ba.grossKop : 0));
+    shown++;
+  });
+
+  // BODY-300: явный дамп исходных канонических строк листа в overlap.
+  console.log('--- EVT-HC-BODY-300: строки листа в overlap ---');
+  var bodyShown = 0;
+  for (var rr = 1; rr < sheetCanon.length; rr++) {
+    var row = sheetCanon[rr];
+    if (String(row[2] || '').trim() !== 'EVT-HC-BODY-300') continue;
+    var d = String(row[0] || '').substring(0, 10);
+    if (d < from || d > to) continue;
+    if (bodyShown >= 50) { console.log('   … (обрезано)'); break; }
+    console.log('   sale_dt=' + row[0] + ' nm=' + row[3] + ' fin=' + row[6] +
+      ' qty=' + row[10] + ' is_dup=' + row[11] + ' oper=' + row[7] + ' is_return=' + row[8]);
+    bodyShown++;
+  }
+  if (bodyShown === 0) console.log('   (нет строк BODY-300 в overlap)');
+}
+
+/** min/max дня (yyyy-MM-dd) по канонической строке sale_dt. */
+function wbSalesDiagMinMax_(values) {
+  var min = '', max = '';
+  for (var r = 1; r < values.length; r++) {
+    var day = String(values[r][0] || '').substring(0, 10);
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(day)) continue;
+    if (!min || day < min) min = day;
+    if (!max || day > max) max = day;
+  }
+  return { min: min, max: max };
+}
+
+/** Агрегат day×SKU в [from,to]; excludeDup=true пропускает is_duplicate. */
+function wbSalesDiagAgg_(values, from, to, excludeDup) {
+  var map = {};
+  for (var r = 1; r < values.length; r++) {
+    var row = values[r];
+    if (excludeDup && row[11] === true) continue;
+    var day = String(row[0] || '').substring(0, 10);
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(day)) continue;
+    if (day < from || day > to) continue;
+    var sku = String(row[2] || '').trim() || ('nm:' + String(row[3] || '').trim());
+    var isRet = (row[8] === true);
+    var qty = Math.abs(Number(row[10])) || 1;
+    var kop = Math.round((Number(row[6]) || 0) * 100);
+    var k = day + '|' + sku;
+    if (!map[k]) map[k] = { salesQty: 0, returnsQty: 0, grossKop: 0, retKop: 0 };
+    if (isRet) { map[k].returnsQty += qty; map[k].retKop += kop; }
+    else { map[k].salesQty += qty; map[k].grossKop += kop; }
+  }
+  return map;
+}
+
+/** Сравнение двух агрегатов: {missing, qty, money}. */
+function wbSalesDiagCompare_(a, b) {
+  var keys = {};
+  Object.keys(a).forEach(function (k) { keys[k] = true; });
+  Object.keys(b).forEach(function (k) { keys[k] = true; });
+  var missing = 0, qty = 0, money = 0;
+  Object.keys(keys).forEach(function (k) {
+    var x = a[k], y = b[k];
+    if (!x || !y) { missing++; return; }
+    if (x.salesQty !== y.salesQty || x.returnsQty !== y.returnsQty) qty++;
+    if (x.grossKop !== y.grossKop || x.retKop !== y.retKop) money++;
+  });
+  return { missing: missing, qty: qty, money: money };
+}
+
+/** Разбивка сырых канонических строк листа по ключу: raw/dup/non-dup. */
+function wbSalesDiagRawByKey_(values, key, from, to) {
+  var raw = 0, dup = 0, nonDup = 0;
+  for (var r = 1; r < values.length; r++) {
+    var row = values[r];
+    var day = String(row[0] || '').substring(0, 10);
+    if (day < from || day > to) continue;
+    var sku = String(row[2] || '').trim() || ('nm:' + String(row[3] || '').trim());
+    if ((day + '|' + sku) !== key) continue;
+    raw++;
+    if (row[11] === true) dup++; else nonDup++;
+  }
+  return { raw: raw, dup: dup, nonDup: nonDup };
 }

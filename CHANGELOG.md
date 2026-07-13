@@ -2,6 +2,19 @@
 
 ## История изменений
 
+### 2026-07-13 — D2b hotfix: legacy-семантика продаж в parity (ветка fix/d2b-sales-parity-legacy-semantics)
+
+Follow-up после первого runtime-parity: он корректно провалился и остановил cutover. Диагноз подтверждён по BigQuery (`RAW_WB_SALES_RETURNS`/`V_WB_SALES_RETURNS`): по спорным ключам `raw_rows = uniq_sale_id = view`, `missing_key=0` — вью НЕ теряет валидных продаж и не схлопывает их. Лишние строки — на стороне замороженного листа: у него есть колонка `is_duplicate` (loader D2a её сохранял), которой во вью нет концептуально. Прежний SHEET-reader безусловно ставил `is_duplicate=false`/`quantity=1`, из-за чего legacy-дубли (их старый `DashboardWb` исключал по `is_duplicate`) считались продажами → лист давал больше строк на более коротком периоде (SHEET 3345 строк 2026-04-01…06-23 vs BQ 3319 строк 2026-03-30…07-12; примеры: HAND-300 05-23 лист 9 / BQ 8, CHERRY-300 05-23 лист 3 / BQ 2).
+
+Scope только D2b (loader/RAW/VIEW/watermark/триггеры не трогаются). Меняется только `WbSalesConsumerSource.gs`; `DashboardWb.gs`/`Cleanwbdaily` — без изменений. `node --check` пройден.
+
+- **SHEET-reader — реальная legacy-семантика:** `wbSalesReadSheetCanonical_` ищет колонки `quantity`(`quantity`/`qty`) и `is_duplicate`(`is_duplicate`/`isduplicate`) и подставляет их нормализованные значения; синтез `1`/`false` — только при отсутствии колонки. BQ-reader без изменений (во вью полей нет → `quantity=1`, `is_duplicate=false` корректны для дедуп last-state).
+- **parity исправлен содержательно:** `wbSalesParityAggregate_` пропускает строки `is_duplicate === true` (сравнение «лист без дублей» vs BQ; на BQ-стороне фильтр безвреден), `qty = Math.abs(quantity) || 1`, возврат — по авторитетному каноническому `is_return` (без повторной деривации из `operation_type`).
+- **публичные обёртки (репозиторий = Apps Script):** `wbSalesConsumerParityTest()` → `wbSalesConsumerParityTest_()`; диагностика публична без завершающего `_`.
+- **read-only диагностика `wbSalesConsumerParityDiagnostics()`** (флаг/данные не трогает, только console.log): наличие колонок `is_duplicate`/`quantity`, всего дублей и дублей в overlap, non-dup строки, BQ-строки; missing/qty/money **до и после** исключения дублей; до 20 спорных ключей с разбивкой листа raw/dup/non-dup vs BQ; явный дамп исходных строк `EVT-HC-BODY-300` в overlap (для проверки, все ли они дубли).
+
+Acceptance hotfix (флаг остаётся `SHEET`): `wbSalesConsumerParityDiagnostics()` → анализ BODY-300 → `wbSalesConsumerParityTest()`. Ожидание после фикса: `keys>0`, `quantity mismatch=0`, `money mismatch=0`, `missing keys=0`. Если после исключения дублей остаётся только BODY-300 — разобрать его строки: если все дубли → ок; если нет — отдельно выяснить пробел в BQ, cutover не выполнять до объяснения каждой разницы. `WB_SALES_CONSUMER_SOURCE=BIGQUERY` не включаем до зелёного parity.
+
 ### 2026-07-13 — Фаза D2b: cutover потребителей продаж на BigQuery (вариант B, код до acceptance)
 
 Снятие полу-переключённого состояния D2a: `WB_SALES_BQ_SINK=ON` пишет в BigQuery, но `DashboardWb`/`Cleanwbdaily` читали замороженный лист `RAW_WB_SALES_RETURNS`. Выбран **вариант B** — прямой cutover потребителей на вью через ЕДИНЫЙ адаптер с feature-flag и мгновенным откатом. Мост BQ→лист (A) и dual-write (C) отклонены. Ветка `phase-d2b-sales-consumer-cutover`; `node --check` трёх файлов пройден; commit/push — за владельцем. Флаг по умолчанию `SHEET` до parity и ручной приёмки.
