@@ -131,10 +131,9 @@ function dashBuildSpine_(ss, sku) {
     }
   }
 
-  // — Продажи/возвраты —
-  var shs = ss.getSheetByName(DASH_SRC_SALES_);
-  if (shs && shs.getLastRow() > 1) {
-    var sv = shs.getRange(1, 1, shs.getLastRow(), shs.getLastColumn()).getValues();
+  // — Продажи/возвраты (Фаза D2b: единый адаптер, источник SHEET|BIGQUERY) —
+  var sv = readCanonicalSalesRows_({ allowEmpty: false });
+  if (sv && sv.length > 1) {
     var sh = dashHeaderIndex_(sv[0]);
     var sSrc = dashPick_(sh, ['source_api']);
     var sDt = dashPick_(sh, ['sale_dt']);
