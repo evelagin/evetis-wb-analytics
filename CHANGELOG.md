@@ -2,6 +2,40 @@
 
 ## История изменений
 
+### 2026-07-13 — Фаза D2b: cutover потребителей продаж на BigQuery (вариант B, код до acceptance)
+
+Снятие полу-переключённого состояния D2a: `WB_SALES_BQ_SINK=ON` пишет в BigQuery, но `DashboardWb`/`Cleanwbdaily` читали замороженный лист `RAW_WB_SALES_RETURNS`. Выбран **вариант B** — прямой cutover потребителей на вью через ЕДИНЫЙ адаптер с feature-flag и мгновенным откатом. Мост BQ→лист (A) и dual-write (C) отклонены. Ветка `phase-d2b-sales-consumer-cutover`; `node --check` трёх файлов пройден; commit/push — за владельцем. Флаг по умолчанию `SHEET` до parity и ручной приёмки.
+
+Границы D2b (НЕ трогалось): loader D2a, watermark, триггеры, RAW-схема, SQL вью `V_WB_SALES_RETURNS`, finance, ads, MART, PNL-формулы, общий `bqQuery_`.
+
+Новый файл `WbSalesConsumerSource.gs`:
+- feature-flag `WB_SALES_CONSUMER_SOURCE = SHEET | BIGQUERY` (Script Property, **default SHEET**). Функции `wbSalesConsumerUseBigQuery()`/`wbSalesConsumerUseSheet()`/`wbSalesConsumerSourceStatus()`.
+- `readCanonicalSalesRows_({fromDate,toDate,allowEmpty})` — единственный слой чтения. Возвращает 2D `[header, ...rows]` (форма `getValues()`), потребители используют именные пикеры без изменений.
+- **Единый нормализованный 12-колоночный контракт для ОБОИХ источников** (одинаковые логические типы): `sale_dt`/`last_change_date` string `yyyy-MM-ddTHH:mm:ss`; `internal_sku`/`wb_nm_id`/`wb_vendor_code`/`barcode`/`operation_type`/`source_api` string (**`wb_nm_id` — строка**, INT64 может выходить за Number); `finished_price`/`quantity` number; `is_return`/`is_duplicate` boolean. `quantity=1` и `is_duplicate=false` синтезируются централизованно в обоих режимах (в вью/листе их нет).
+- **BIGQUERY:** явный SELECT только нужных полей в каноническом порядке + `1 AS quantity`, `FALSE AS is_duplicate`; обязательный partition-filter `WHERE _sale_date >= DATE '<from>'`; детерминированный `ORDER BY sale_dt, sale_id`. Дата — **валидированный литерал** (regex `^\d{4}-\d{2}-\d{2}$`), НЕ query-параметр (`bqQuery_` не расширялся).
+- **Нижняя граница истории — постоянная стартовая дата** `WB_SALES_CONSUMER_FROM` (Script Property, fallback константа `2024-09-01`), НЕ скользящее окно — ранняя история не исчезает из пересчитываемых витрин.
+- **FAIL-CLOSED:** в BIGQUERY-режиме ошибка запроса ИЛИ пустой результат при `allowEmpty=false` → исключение с явным префиксом `[SALES ADAPTER]`. Молчаливого отката на SHEET НЕТ. Чтение у потребителей идёт ДО очистки витрин → исключение прерывает сборку, данные целы. `allowEmpty=true` — только для parity/узких проверок.
+- `salesHeaderMapFromRow_()` — карта {имя→индекс} из канонической шапки для `Cleanwbdaily` (совместима с общим `findCol_`).
+- `wbSalesConsumerParityTest_()` — read-only сверка SHEET vs BIGQUERY по date×SKU на **точной границе пересечения** `[max(min), min(max)]` (печатает `SHEET rows/min/max`, `BQ rows/min/max`, `comparison from/to`). Деньги — целые копейки `Math.round(x*100)`. Критерии приёмки: `quantity mismatch=0`, `money mismatch (копейки)=0`, `missing keys=0`.
+
+Правки потребителей (минимальные, только блок чтения; downstream-логика без изменений):
+- `DashboardWb.gs` (`dashBuildSpine_`): вместо `getSheetByName(DASH_SRC_SALES_)`+`getRange().getValues()` → `var sv = readCanonicalSalesRows_({allowEmpty:false})`.
+- `Cleanwbdaily` (секция 3): вместо прямого листа+`getHeaderMap_(srSheet)`+`readSheetData_(srSheet)` → `readCanonicalSalesRows_({allowEmpty:false})`, шапка через `salesHeaderMapFromRow_(srValues[0])`, данные `srValues.slice(1)`.
+
+Сверено коннектором на момент правок: `V_WB_SALES_RETURNS` = 3319 строк = 3319 уник. `sale_id`, возвратов 0, SKU 21, диапазон 2026-03-30…2026-07-12; `sale_dt`/`last_change_date` уже в формате `yyyy-MM-ddTHH:mm:ss`.
+
+**Правки по статическому ревью (2026-07-13):**
+- **feature flag fail-closed:** `wbSalesConsumerSource_()` возвращает SHEET только при отсутствии/пустом свойстве; любое иное значение (опечатка/повреждение) → исключение, а не молчаливый SHEET (иначе после cutover — внешне корректная устаревшая отчётность).
+- **единый контракт fromDate/toDate:** SHEET-режим теперь тоже применяет границы (по первым 10 символам `sale_dt`, симметрично BQ); `from` по умолчанию = `2024-09-01`, не «вся история». Публичный контракт адаптера больше не источник-зависимый.
+- **проверка формы ответа BQ:** перед маппингом каждой строки — контроль `Array.isArray(f) && f.length === 12`, иначе контролируемый `[SALES ADAPTER] Invalid BigQuery row shape` (вместо технического TypeError).
+- **`Cleanwbdaily`:** каноническое `is_return` — первый источник истины при детекции возврата; `operation_type` и знак — fallback.
+
+**Правки по 2-му раунду ревью (2026-07-13):**
+- **`allowEmpty:false` симметричен и в SHEET:** пустой лист/отсутствие листа И пустой результат после фильтрации → исключение `[SALES ADAPTER] empty Sheet …` (раньше SHEET молча возвращал пустое → опасный rollback: `DashboardWb` перестроил бы витрину без продаж). Теперь единый контракт: production-чтение с `allowEmpty=false` не отдаёт пустые продажи ни в одном режиме.
+- **`is_return` действительно авторитетно:** в `Cleanwbdaily` при наличии канонической колонки её значение решает полностью (явный `false` не переопределяется `operation_type`/знаком); fallback — только при отсутствии поля (легаси-лист без `is_return`).
+
+Acceptance (порядок, флаг остаётся SHEET): `wbSalesConsumerSourceStatus()` → `wbSalesConsumerParityTest_()` зелёный (проверить ненулевое число comparison keys) → `wbSalesConsumerUseBigQuery()` → `buildCleanWbDaily()` → `buildDashboardWb()` → сверка UNIT/PNL → тест неправильного флага (ожидать исключение) → откат `wbSalesConsumerUseSheet()`. Флаг держать ≥1–2 недели. Отдельно: hotfix D2a `fix/d2a-bq-type-aliases` коммитится независимо.
+
 ### 2026-07-12 — Фаза D2a: продажи/возвраты в BigQuery (RAW+view, код до acceptance)
 
 Порт `WbSalesReturnsLoader` в BigQuery по образцу заказов (Фаза D1). Флаг `WB_SALES_BQ_SINK` по умолчанию ВЫКЛ; листовое поведение при выключенном sink сохранено. Триггер, watermark-инкремент и cutover потребителей (DashboardWb/Cleanwbdaily/UNIT/PNL) в этот PR НЕ входят (D2b/D2c). `node --check` обоих файлов пройден в окружении ассистента (на машине владельца node не установлен — синтаксис перепроверяется отдельно).

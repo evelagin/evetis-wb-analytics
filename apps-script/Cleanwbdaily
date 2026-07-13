@@ -204,12 +204,14 @@ function buildCleanWbDaily() {
   var srRows = 0;
   var srErrors = 0;
 
-  var srSheet = ss.getSheetByName('RAW_WB_SALES_RETURNS');
-  if (!srSheet || srSheet.getLastRow() < 2) {
+  // Фаза D2b: продажи через единый адаптер (источник SHEET|BIGQUERY),
+  // а не прямым чтением листа. Контракт канонический, потребитель не изменён.
+  var srValues = readCanonicalSalesRows_({ allowEmpty: false });
+  if (!srValues || srValues.length < 2) {
     emptySheets.push('RAW_WB_SALES_RETURNS');
     console.log('⚠️ RAW_WB_SALES_RETURNS: пустой или не найден, ' + sec_(tStep) + ' сек');
   } else {
-    var srHeaders = getHeaderMap_(srSheet);
+    var srHeaders = salesHeaderMapFromRow_(srValues[0]);
     var srDateCol = findCol_(srHeaders, ['sale_dt', 'date', 'sale_date', 'date_sale', 'last_change_date', 'lastchangedate', 'rr_dt']);
     var srNmCol = findCol_(srHeaders, ['wb_nm_id', 'nmid', 'nm_id']);
     var srVendorCol = findCol_(srHeaders, ['wb_vendor_code', 'vendor_code', 'vendorcode', 'supplierarticle']);
@@ -218,6 +220,7 @@ function buildCleanWbDaily() {
     var srAmountCol = findCol_(srHeaders, ['finished_price', 'finishedprice', 'pricewithdisc', 'price_with_disc',
       'retail_amount', 'retail_price_withdisc_rub', 'for_pay', 'forpay', 'ppvz_for_pay', 'amount']);
     var srTypeCol = findCol_(srHeaders, ['operation_type', 'supplier_oper_name', 'type']);
+    var srRetCol = findCol_(srHeaders, ['is_return']);
 
     if (srDateCol === -1) {
       errorsBuffer.push(makeErrorRow_('RAW_WB_SALES_RETURNS', 1, 'Не найдена колонка', 'Проверить', '', '',
@@ -227,7 +230,7 @@ function buildCleanWbDaily() {
       emptySheets.push('RAW_WB_SALES_RETURNS (нет даты)');
       console.log('⚠️ RAW_WB_SALES_RETURNS: нет колонки даты, ' + sec_(tStep) + ' сек');
     } else {
-      var srData = readSheetData_(srSheet);
+      var srData = srValues.slice(1);
       srRows = srData.length;
       var salesCount = 0;
       var returnsCount = 0;
@@ -250,18 +253,27 @@ function buildCleanWbDaily() {
         var rawQty = srQtyCol >= 0 ? Number(srRow[srQtyCol]) : 0;
         var rawAmt = srAmountCol >= 0 ? Number(srRow[srAmountCol]) : 0;
 
-        // Определяем: возврат или продажа
+        // Определяем: возврат или продажа.
+        // Каноническое is_return — АВТОРИТЕТНЫЙ источник: если колонка есть,
+        // её значение решает полностью (в т.ч. явный false не переопределяется).
+        // operation_type и знак количества/суммы — fallback ТОЛЬКО при отсутствии
+        // канонического поля (легаси-лист без is_return).
+        var hasCanonicalReturn = srRetCol >= 0;
         var isReturn = false;
 
-        if (srTypeCol >= 0) {
-          var typeVal = String(srRow[srTypeCol] || '').toLowerCase();
-          if (typeVal.indexOf('возврат') >= 0 || typeVal.indexOf('return') >= 0) {
+        if (hasCanonicalReturn) {
+          var rv = srRow[srRetCol];
+          isReturn = (rv === true) || (String(rv).trim().toLowerCase() === 'true');
+        } else {
+          if (srTypeCol >= 0) {
+            var typeVal = String(srRow[srTypeCol] || '').toLowerCase();
+            if (typeVal.indexOf('возврат') >= 0 || typeVal.indexOf('return') >= 0) {
+              isReturn = true;
+            }
+          }
+          if (!isReturn && (rawQty < 0 || rawAmt < 0)) {
             isReturn = true;
           }
-        }
-
-        if (!isReturn && (rawQty < 0 || rawAmt < 0)) {
-          isReturn = true;
         }
 
         var absQty = Math.abs(rawQty) || 1;
