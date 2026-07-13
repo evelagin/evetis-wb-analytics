@@ -2,6 +2,20 @@
 
 ## История изменений
 
+### 2026-07-13 — D2b: parity ограничен честной базой (source_api + boundary) (ветка fix/d2b-diag-date-normalization)
+
+Архитектурное решение владельца: **legacy-import ранних продаж не делаем**. Оперативная история Sales API начинается с **2026-04-13** (нижний край сплошного покрытия BQ), полная финансовая история — в модуле Finance (с 2024-09-05, 201 211 строк). 522 API-строки листа за 01–12.04 — случайный неполный хвост (нет января/февраля/марта/2025/2024), их перенос не делает историю полной и не нужен. 10 строк `source_api=TEST` — не реальные события WB API. 90-дн. лимит — только на ПОЛУЧЕНИЕ из WB; уже сохранённое в BQ не исчезает, история накапливается вперёд через watermark+перехлёст+append+дедуп во VIEW (D2c).
+
+`wbSalesParityAggregate_` теперь считает **честную общую базу**: пропускает `source_api !== 'WB_API_SALES'` (тест/legacy) и строки `sale_dt < WB_SALES_BQ_BOUNDARY_` (2026-04-13); `is_duplicate`-пропуск и авторитетный `is_return` сохранены; добавлен счётчик `rows`. `wbSalesConsumerParityTest_` вызывает агрегат с boundary и логирует фильтр (`source_api=WB_API_SALES AND sale_dt >= 2026-04-13`), печатает `SHEET/BQ API rows>=boundary`. Константа `WB_SALES_BQ_BOUNDARY_` вынесена к остальным константам вверху файла. Меняется только `wbSalesConsumerSource.gs` (функции parity), reader-контракт и потребители не тронуты.
+
+Ожидание acceptance: SHEET API rows>=boundary = 2813, BQ = 2813, `quantity/money/missing = 0`. Сверено коннектором: `V_WB_SALES_RETURNS` в `[2026-04-13, 2026-06-23]` = **2813 строк, 21 SKU, 0 возвратов**. После зелёного parity → cutover (`wbSalesConsumerUseBigQuery()` → `buildCleanWbDaily()`/`buildDashboardWb()` → UNIT/PNL) → D2c.
+
+### 2026-07-13 — D2b диагностика hotfix: нормализация дат (ветка fix/d2b-diag-date-normalization)
+
+Первый прогон `wbSalesConsumerSourceClassification()` дал ложный `missing unique=0` и пустые бакеты: `getValues()` отдаёт `sale_dt` из листа как JS `Date`, а `String(date).substring(0,10)` = «Sat May 23», что не проходит `^\d{4}-\d{2}-\d{2}$` → все 3345 строк пропускались (дамп `EVT-HC-BODY-300` работал, т.к. без фильтра по дате). Бизнес-факт при этом получен: BODY-300 — `source_api=TEST`, `sale_id` пустой, `last_change_date` пустой, `operation_type=Продажа`, `quantity=2` → сценарий C подтверждён (тестовый/legacy-хвост, не запись WB Sales API).
+
+Фикс только в `wbSalesConsumerSourceClassification()`/`wbSalesDiagDumpRow_`: `sale_dt` и `last_change_date` нормализуются через существующий `wbSalesDateStr_()` (Date → `yyyy-MM-ddTHH:mm:ss`), день = первые 10 символов. Дамп теперь печатает нормализованные даты. Production-reader/parity/flag не тронуты, поведение адаптера не менялось. `WB_SALES_CONSUMER_SOURCE=SHEET`, cutover запрещён. После фикса повторный запуск `wbSalesConsumerSourceClassification()` даст реальные бакеты Период×source_api и долю ранних API-строк vs non-API хвоста.
+
 ### 2026-07-13 — D2b диагностика: классификация источников листа (read-only, ветка diag/d2b-sales-source-classification)
 
 Первый runtime-parity после legacy-hotfix показал: гипотеза дублей НЕ подтвердилась (`duplicate rows total=0`), расхождение имеет иную природу. Доказано по BigQuery-коннектору (read-only): BQ RAW = **100% `source_api=WB_API_SALES`** (3395 строк); сплошное покрытие начинается с **2026-04-13** (03-30 = 1 строка `noWindow`-артефакт, 31.03–12.04 = 0); `EVT-HC-BODY-300`/`nmId=252442341` отсутствует в BQ полностью. Лист (3345 строк, 01.04–23.06) содержит раннюю историю (01–12.04, вне backfill и уже вне 90-дн. retention WB API) и строки вида `operation_type=Продажа`/`quantity=2` — вероятные legacy/не-API записи. Корневой разрыв: вью фильтрует `source_api='WB_API_SALES'`, а SHEET-reader/parity — нет (старый `DashboardWb` не-API строки отбрасывал).
