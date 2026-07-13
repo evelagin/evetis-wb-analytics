@@ -49,6 +49,11 @@ var WB_SALES_CONSUMER_FROM_DEF_   = '2024-09-01';   // постоянная ст
 var WB_SALES_CONSUMER_VIEW_       = 'V_WB_SALES_RETURNS';
 var WB_SALES_CONSUMER_SHEET_      = 'RAW_WB_SALES_RETURNS';
 var WB_SALES_CONSUMER_TZ_         = 'Europe/Moscow';
+// Нижний край сплошного покрытия BQ по продажам (доказано: RAW/VIEW сплошные
+// с 2026-04-13; 03-30 — единичный noWindow-артефакт). Ниже этой даты Sales API
+// историю не даёт (вне 90-дн. retention) — оперативная история продаж
+// начинается здесь; финансовая глубина — в модуле Finance (с 2024-09-05).
+var WB_SALES_BQ_BOUNDARY_        = '2026-04-13';
 
 /** Канонический порядок колонок контракта (row[0] возвращаемого 2D-массива). */
 var WB_SALES_CANON_HEADERS_ = [
@@ -387,11 +392,17 @@ function wbSalesConsumerParityTest_() {
   var sheetRows = wbSalesReadSheetCanonical_(undefined, undefined, true);
   var bqRows = wbSalesReadBqCanonical_(undefined, undefined, true);
 
-  var sAgg = wbSalesParityAggregate_(sheetRows);
-  var bAgg = wbSalesParityAggregate_(bqRows);
+  // Честная база сравнения: только API-строки (source_api=WB_API_SALES) и только
+  // от нижнего края сплошного покрытия BQ (WB_SALES_BQ_BOUNDARY_=2026-04-13).
+  // Ранние API-строки листа (01–12.04, вне backfill и вне 90-дн. retention) и
+  // тестовые строки (source_api=TEST) в acceptance НЕ участвуют — историческая
+  // глубина обеспечивается модулем Finance, а не оперативным Sales API.
+  var sAgg = wbSalesParityAggregate_(sheetRows, WB_SALES_BQ_BOUNDARY_);
+  var bAgg = wbSalesParityAggregate_(bqRows, WB_SALES_BQ_BOUNDARY_);
 
-  console.log('SHEET rows=' + (sheetRows.length - 1) + ' | min=' + sAgg.minDate + ' | max=' + sAgg.maxDate);
-  console.log('BQ    rows=' + (bqRows.length - 1) + ' | min=' + bAgg.minDate + ' | max=' + bAgg.maxDate);
+  console.log('parity filter: source_api=WB_API_SALES AND sale_dt >= ' + WB_SALES_BQ_BOUNDARY_);
+  console.log('SHEET API rows>=boundary=' + sAgg.rows + ' | min=' + sAgg.minDate + ' | max=' + sAgg.maxDate);
+  console.log('BQ    API rows>=boundary=' + bAgg.rows + ' | min=' + bAgg.minDate + ' | max=' + bAgg.maxDate);
 
   // Точная граница пересечения: max(min), min(max).
   var from = (sAgg.minDate > bAgg.minDate) ? sAgg.minDate : bAgg.minDate;
@@ -442,20 +453,27 @@ function wbSalesConsumerParityTest_() {
 /**
  * Агрегат канонических строк по date×SKU (для parity). Деньги — в копейках.
  * Обе стороны уже нормализованы в единый контракт, поэтому:
- *   • строки is_duplicate === true ПРОПУСКАЮТСЯ (legacy-дубли; во вью их нет,
- *     на BQ-стороне фильтр безвреден) — сравниваем «лист без дублей» vs BQ;
- *   • qty = Math.abs(quantity) || 1 (legacy-продажи поштучные);
- *   • возврат — по авторитетному каноническому is_return, без повторной
- *     деривации из operation_type.
+ *   • только API-строки: source_api !== 'WB_API_SALES' ПРОПУСКАЮТСЯ (тестовые/
+ *     legacy-строки не входят в acceptance; вью и так API-only) — сравниваем
+ *     одинаковые популяции;
+ *   • floorDate (нижний край покрытия BQ): строки с day < floorDate
+ *     ПРОПУСКАЮТСЯ (ранняя история берётся из Finance, не из Sales API);
+ *   • is_duplicate === true ПРОПУСКАЮТСЯ (legacy-дубли; во вью их нет);
+ *   • qty = Math.abs(quantity) || 1 (продажи поштучные);
+ *   • возврат — по авторитетному каноническому is_return.
+ * @param {string=} floorDate 'YYYY-MM-DD'; строки строго раньше — исключаются.
  */
-function wbSalesParityAggregate_(values) {
+function wbSalesParityAggregate_(values, floorDate) {
   var map = {};
+  var rows = 0;
   var minDate = '', maxDate = '';
   for (var r = 1; r < values.length; r++) {
     var row = values[r];
+    if (String(row[9] == null ? '' : row[9]).trim() !== 'WB_API_SALES') continue;   // только API
     if (row[11] === true) continue;   // is_duplicate → пропуск
     var day = String(row[0] || '').substring(0, 10);   // sale_dt → yyyy-MM-dd
     if (!/^\d{4}-\d{2}-\d{2}$/.test(day)) continue;
+    if (floorDate && day < floorDate) continue;        // ниже границы покрытия BQ → пропуск
     var sku = String(row[2] || '').trim() || ('nm:' + String(row[3] || '').trim());
     var isRet = (row[8] === true);   // каноническое is_return, авторитетно
     var qty = Math.abs(Number(row[10])) || 1;
@@ -465,11 +483,12 @@ function wbSalesParityAggregate_(values) {
     if (!map[k]) map[k] = { salesQty: 0, returnsQty: 0, grossKop: 0, retKop: 0 };
     if (isRet) { map[k].returnsQty += qty; map[k].retKop += kop; }
     else { map[k].salesQty += qty; map[k].grossKop += kop; }
+    rows++;
 
     if (!minDate || day < minDate) minDate = day;
     if (!maxDate || day > maxDate) maxDate = day;
   }
-  return { map: map, minDate: minDate, maxDate: maxDate };
+  return { map: map, rows: rows, minDate: minDate, maxDate: maxDate };
 }
 
 /** Ключ 'yyyy-MM-dd|sku' попадает в [from,to] по дате. */
@@ -671,8 +690,7 @@ function wbSalesDiagRawByKey_(values, key, from, to) {
 // READ-ONLY КЛАССИФИКАЦИЯ ИСТОЧНИКОВ (Период × source_api)
 // ───────────────────────────────────────────────────────────────
 
-var WB_SALES_BQ_BOUNDARY_ = '2026-04-13';   // нижний край сплошного покрытия BQ (доказано)
-var WB_SALES_DIAG_ROW_CAP_ = 300;           // предел построчного дампа missing
+var WB_SALES_DIAG_ROW_CAP_ = 300;           // предел построчного дампа missing (WB_SALES_BQ_BOUNDARY_ определён вверху)
 
 /**
  * Классифицирует строки ЛИСТА по осям Период(до/с boundary) × source_api
@@ -734,7 +752,11 @@ function wbSalesConsumerSourceClassification() {
 
   for (var r = 1; r < vals.length; r++) {
     var row = vals[r];
-    var day = c.saleDt >= 0 ? String(row[c.saleDt] || '').substring(0, 10) : '';
+    // getValues() отдаёт sale_dt как JS Date → нормализуем в 'yyyy-MM-ddT…'
+    // тем же нормализатором, что и адаптер (иначе substring(0,10) даёт «Sat May 23»
+    // и regex отбраковывает все строки → ложный missing=0).
+    var saleDt = c.saleDt >= 0 ? wbSalesDateStr_(row[c.saleDt]) : '';
+    var day = saleDt.substring(0, 10);
     if (!/^\d{4}-\d{2}-\d{2}$/.test(day)) continue;
     var sku = c.sku >= 0 ? (String(row[c.sku] || '').trim() || ('nm:' + (c.nm >= 0 ? String(row[c.nm] || '').trim() : ''))) : '';
     var key = day + '|' + sku;
@@ -742,7 +764,7 @@ function wbSalesConsumerSourceClassification() {
     var srcLabel = c.src >= 0 ? srcLabelOf(row[c.src]) : '2_EMPTY';
     var qv = c.qty >= 0 ? (Math.abs(Number(row[c.qty])) || 1) : 1;
     var kop = c.fin >= 0 ? Math.round((Number(row[c.fin]) || 0) * 100) : 0;
-    var lcd = c.lcd >= 0 ? String(row[c.lcd] || '') : '';
+    var lcd = c.lcd >= 0 ? wbSalesDateStr_(row[c.lcd]) : '';
 
     var bu = bkt(period, srcLabel);
     bu.rows++; bu.keys[key] = true; bu.qty += qv; bu.kop += kop;
@@ -806,8 +828,8 @@ function wbSalesConsumerSourceClassification() {
 /** Печать сырой строки листа в диагностике (нужные поля). */
 function wbSalesDiagDumpRow_(row, c) {
   function g(i) { return i >= 0 ? row[i] : ''; }
-  console.log('   sale_dt=' + g(c.saleDt) +
-    ' | lcd=' + g(c.lcd) +
+  console.log('   sale_dt=' + (c.saleDt >= 0 ? wbSalesDateStr_(row[c.saleDt]) : '') +
+    ' | lcd=' + (c.lcd >= 0 ? wbSalesDateStr_(row[c.lcd]) : '') +
     ' | sku=' + g(c.sku) +
     ' | nm=' + g(c.nm) +
     ' | vendor=' + g(c.vendor) +
