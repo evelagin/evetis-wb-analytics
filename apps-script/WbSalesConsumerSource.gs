@@ -666,3 +666,157 @@ function wbSalesDiagRawByKey_(values, key, from, to) {
   }
   return { raw: raw, dup: dup, nonDup: nonDup };
 }
+
+// ───────────────────────────────────────────────────────────────
+// READ-ONLY КЛАССИФИКАЦИЯ ИСТОЧНИКОВ (Период × source_api)
+// ───────────────────────────────────────────────────────────────
+
+var WB_SALES_BQ_BOUNDARY_ = '2026-04-13';   // нижний край сплошного покрытия BQ (доказано)
+var WB_SALES_DIAG_ROW_CAP_ = 300;           // предел построчного дампа missing
+
+/**
+ * Классифицирует строки ЛИСТА по осям Период(до/с boundary) × source_api
+ * (WB_API_SALES / пусто / иной) и разбирает 141 missing-ключ относительно BQ.
+ * Читает СЫРОЙ лист напрямую (нужен sale_id/event_key, которого нет в
+ * каноническом контракте). Только console.log — flag/данные не трогает.
+ */
+function wbSalesConsumerSourceClassification() {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var sh = ss.getSheetByName(WB_SALES_CONSUMER_SHEET_);
+  if (!sh || sh.getLastRow() < 2 || sh.getLastColumn() < 1) {
+    console.log('❌ Лист ' + WB_SALES_CONSUMER_SHEET_ + ' пуст/не найден.');
+    return;
+  }
+  var vals = sh.getRange(1, 1, sh.getLastRow(), sh.getLastColumn()).getValues();
+  var h = wbSalesLowerHeaderMap_(vals[0]);
+  var c = {
+    saleDt: wbSalesFindCol_(h, ['sale_dt']),
+    lcd:    wbSalesFindCol_(h, ['last_change_date', 'lastchangedate']),
+    sku:    wbSalesFindCol_(h, ['internal_sku']),
+    nm:     wbSalesFindCol_(h, ['wb_nm_id', 'nmid', 'nm_id']),
+    vendor: wbSalesFindCol_(h, ['wb_vendor_code', 'vendor_code', 'vendorcode', 'supplierarticle']),
+    bar:    wbSalesFindCol_(h, ['barcode', 'barcodes']),
+    saleId: wbSalesFindCol_(h, ['sale_id', 'saleid', 'event_key']),
+    src:    wbSalesFindCol_(h, ['source_api']),
+    oper:   wbSalesFindCol_(h, ['operation_type', 'supplier_oper_name', 'type']),
+    qty:    wbSalesFindCol_(h, ['quantity', 'qty']),
+    fin:    wbSalesFindCol_(h, ['finished_price', 'finishedprice']),
+    ret:    wbSalesFindCol_(h, ['is_return']),
+    dup:    wbSalesFindCol_(h, ['is_duplicate', 'isduplicate'])
+  };
+  console.log('boundary=' + WB_SALES_BQ_BOUNDARY_ + ' | колонки: ' +
+    'sale_id=' + (c.saleId >= 0) + ', source_api=' + (c.src >= 0) + ', quantity=' + (c.qty >= 0));
+
+  // Множество ключей BQ (day|sku) — для missing-детекции.
+  var bq = wbSalesReadBqCanonical_(undefined, undefined, true);
+  var bqKeys = {};
+  for (var b = 1; b < bq.length; b++) {
+    var bd = String(bq[b][0] || '').substring(0, 10);
+    var bsku = String(bq[b][2] || '').trim() || ('nm:' + String(bq[b][3] || '').trim());
+    if (/^\d{4}-\d{2}-\d{2}$/.test(bd)) bqKeys[bd + '|' + bsku] = true;
+  }
+
+  // Бакеты Период × Источник + сбор строк по missing-ключам.
+  var buckets = {};
+  var keyRows = {};   // key -> [rowIdx...]
+  function bkt(period, srcLabel) {
+    var id = period + ' | ' + srcLabel;
+    if (!buckets[id]) buckets[id] = { rows: 0, keys: {}, qty: 0, kop: 0,
+      minDt: '', maxDt: '', minLcd: '', maxLcd: '' };
+    return buckets[id];
+  }
+  function srcLabelOf(v) {
+    var s = String(v == null ? '' : v).trim();
+    if (s === 'WB_API_SALES') return '1_API';
+    if (s === '') return '2_EMPTY';
+    return '3_OTHER(' + s + ')';
+  }
+
+  for (var r = 1; r < vals.length; r++) {
+    var row = vals[r];
+    var day = c.saleDt >= 0 ? String(row[c.saleDt] || '').substring(0, 10) : '';
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(day)) continue;
+    var sku = c.sku >= 0 ? (String(row[c.sku] || '').trim() || ('nm:' + (c.nm >= 0 ? String(row[c.nm] || '').trim() : ''))) : '';
+    var key = day + '|' + sku;
+    var period = (day < WB_SALES_BQ_BOUNDARY_) ? 'A(<' + WB_SALES_BQ_BOUNDARY_ + ')' : 'B(>=' + WB_SALES_BQ_BOUNDARY_ + ')';
+    var srcLabel = c.src >= 0 ? srcLabelOf(row[c.src]) : '2_EMPTY';
+    var qv = c.qty >= 0 ? (Math.abs(Number(row[c.qty])) || 1) : 1;
+    var kop = c.fin >= 0 ? Math.round((Number(row[c.fin]) || 0) * 100) : 0;
+    var lcd = c.lcd >= 0 ? String(row[c.lcd] || '') : '';
+
+    var bu = bkt(period, srcLabel);
+    bu.rows++; bu.keys[key] = true; bu.qty += qv; bu.kop += kop;
+    if (!bu.minDt || day < bu.minDt) bu.minDt = day;
+    if (!bu.maxDt || day > bu.maxDt) bu.maxDt = day;
+    if (lcd) { if (!bu.minLcd || lcd < bu.minLcd) bu.minLcd = lcd; if (!bu.maxLcd || lcd > bu.maxLcd) bu.maxLcd = lcd; }
+
+    if (!bqKeys[key]) { if (!keyRows[key]) keyRows[key] = []; keyRows[key].push(r); }
+  }
+
+  console.log('=== БАКЕТЫ Период × source_api ===');
+  Object.keys(buckets).sort().forEach(function (id) {
+    var x = buckets[id];
+    console.log('[' + id + '] rows=' + x.rows + ' keys=' + Object.keys(x.keys).length +
+      ' qty=' + x.qty + ' amountKop=' + x.kop +
+      ' sale_dt=' + x.minDt + '…' + x.maxDt + ' lcd=' + x.minLcd + '…' + x.maxLcd);
+  });
+
+  // Агрегаты по missing-ключам.
+  var missKeys = Object.keys(keyRows);
+  var mBefore = 0, mAfter = 0, mApi = 0, mEmpty = 0, mOther = 0;
+  missKeys.forEach(function (key) {
+    var day = key.substring(0, 10);
+    if (day < WB_SALES_BQ_BOUNDARY_) mBefore++; else mAfter++;
+    var hasApi = false, hasEmpty = false, hasOther = false;
+    keyRows[key].forEach(function (ri) {
+      var lbl = c.src >= 0 ? srcLabelOf(vals[ri][c.src]) : '2_EMPTY';
+      if (lbl === '1_API') hasApi = true; else if (lbl === '2_EMPTY') hasEmpty = true; else hasOther = true;
+    });
+    if (hasApi) mApi++; if (hasEmpty) mEmpty++; if (hasOther) mOther++;
+  });
+  console.log('=== MISSING-КЛЮЧИ (нет в BQ), всего уник=' + missKeys.length + ' ===');
+  console.log('missing before ' + WB_SALES_BQ_BOUNDARY_ + '=' + mBefore +
+    ' | from ' + WB_SALES_BQ_BOUNDARY_ + '=' + mAfter);
+  console.log('missing keys с API-строкой=' + mApi +
+    ' | с empty-source=' + mEmpty + ' | с other-source=' + mOther);
+
+  // Построчный дамп missing (с предохранителем).
+  console.log('=== MISSING строки (до ' + WB_SALES_DIAG_ROW_CAP_ + ') ===');
+  var dumped = 0;
+  missKeys.sort().forEach(function (key) {
+    keyRows[key].forEach(function (ri) {
+      if (dumped >= WB_SALES_DIAG_ROW_CAP_) return;
+      wbSalesDiagDumpRow_(vals[ri], c);
+      dumped++;
+    });
+  });
+  if (dumped >= WB_SALES_DIAG_ROW_CAP_) console.log('   … дамп обрезан на ' + WB_SALES_DIAG_ROW_CAP_ + ' (см. агрегаты выше)');
+
+  // BODY-300: все строки листа (любая дата), полный сырой вид.
+  console.log('=== EVT-HC-BODY-300: все строки листа ===');
+  var bodyN = 0;
+  for (var rb = 1; rb < vals.length; rb++) {
+    if (c.sku < 0 || String(vals[rb][c.sku] || '').trim() !== 'EVT-HC-BODY-300') continue;
+    wbSalesDiagDumpRow_(vals[rb], c);
+    bodyN++;
+  }
+  if (bodyN === 0) console.log('   (нет строк BODY-300 в листе)');
+}
+
+/** Печать сырой строки листа в диагностике (нужные поля). */
+function wbSalesDiagDumpRow_(row, c) {
+  function g(i) { return i >= 0 ? row[i] : ''; }
+  console.log('   sale_dt=' + g(c.saleDt) +
+    ' | lcd=' + g(c.lcd) +
+    ' | sku=' + g(c.sku) +
+    ' | nm=' + g(c.nm) +
+    ' | vendor=' + g(c.vendor) +
+    ' | barcode=' + g(c.bar) +
+    ' | sale_id=' + g(c.saleId) +
+    ' | source_api=' + g(c.src) +
+    ' | oper=' + g(c.oper) +
+    ' | qty=' + g(c.qty) +
+    ' | fin=' + g(c.fin) +
+    ' | is_return=' + g(c.ret) +
+    ' | is_dup=' + g(c.dup));
+}
