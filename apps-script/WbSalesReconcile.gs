@@ -295,15 +295,17 @@ function wbSalesNightReconcileCore_(r) {
     var key2 = stateKeysInBatch[k];
     if (!existing[key2]) toAppend.push(byState[key2]);
   }
-  r.gaps_filled = toAppend.length;
-  r.rows_written = toAppend.length;
+  r.gaps_filled = toAppend.length;   // сколько состояний ОТСУТСТВУЕТ в RAW (до записи)
+  r.rows_written = 0;                // подтверждаем только ПОСЛЕ успешного append
 
   if (toAppend.length === 0) {
     r.status = 'OK_NO_GAPS'; return;
   }
 
-  // Append (исключение → пробрасывается в runWbSalesNightReconcile → ERROR, watermark не трогаем).
+  // Append (исключение → пробрасывается в runWbSalesNightReconcile → ERROR;
+  // rows_written остаётся 0, gaps_filled=N — запись не подтверждена, watermark не трогаем).
   appendSalesRows_(rawSheet, toAppend, lastCol);
+  r.rows_written = toAppend.length;   // запись подтверждена: gaps_filled == rows_written
 
   try {
     var sums = aggregateSalesRowArray_(toAppend, hMap, '0000-01-01', '9999-12-31', { noWindow: true });
@@ -325,7 +327,8 @@ function salesReconSafeLog_(r) {
 /**
  * Пишет строку пересверки в IMPORT_LOG_SALES_RETURNS по тому же расширенному
  * контракту (IMPORT_LOG_SALES_HEADERS_). period_from/period_to = окно; rows_imported
- * и rows_written = gaps_filled; watermark_before == watermark_after (доказательство,
+ * и rows_written = r.rows_written (подтверждённая запись; при падении append = 0,
+ * при успехе == gaps_filled); watermark_before == watermark_after (доказательство,
  * что пересверка watermark не двигает).
  */
 function writeSalesReconcileLogEntry_(logSheet, r) {
@@ -333,12 +336,12 @@ function writeSalesReconcileLogEntry_(logSheet, r) {
   var rowObj = {
     load_id: r.load_id, loaded_at: r.started_at,
     period_from: r.period_from, period_to: r.period_to,
-    rows_imported: r.gaps_filled, unique_saleID: r.unique_saleID,
+    rows_imported: r.rows_written, unique_saleID: r.unique_saleID,
     status: r.status, error_message: r.error_message,
     watermark_before: r.watermark_before, watermark_after: r.watermark_after,
     api_rows_received: r.api_rows_received,
     rows_after_boundary_dedup: r.rows_after_boundary_dedup,
-    rows_written: r.gaps_filled, duration_ms: r.duration_ms
+    rows_written: r.rows_written, duration_ms: r.duration_ms
   };
   var rowArr = [];
   for (var i = 0; i < IMPORT_LOG_SALES_HEADERS_.length; i++) {
