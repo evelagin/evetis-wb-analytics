@@ -2,6 +2,31 @@
 
 ## История изменений
 
+### 2026-07-14 — Фаза D2c: Sales Night Reconciliation + общий rate-limit guard (ветка phase-d2c-sales-night-reconcile)
+
+Ночная пересверка продаж/возвратов — закрывает eventual-consistency Sales API (строка может всплыть позже с `lastChangeDate < watermark`, hourly её не увидит) и пропуски от сбоев/429. Это правильное место для **range-wide дедупа** (в hourly он сознательно НЕ делается). watermark пересверка **не двигает** — им владеет hourly.
+
+**Эмпирика ключа дедупа (BigQuery-коннектор, 14.07):** RAW `WB_API_SALES` = 3421 строк → distinct `sale_id` **3345** = distinct `sale_id|TO_HEX(MD5(raw_json))` **3345** (76 физических дублей — точные повторы состояния, идемпотентность). Окно 7 дней (`last_change_date >= 2026-07-07T00:00:00`): 253 строки → **177** уникальных state-ключей (тривиально в память). `last_change_date` — фикс-ISO с `T` → лексикографическое `>=` хронологически корректно (как watermark). Вывод: range-wide ключ состояния `sale_id|md5(raw_json)` доказан; пересверка дописывает только отсутствующие состояния и точные повторы не плодит.
+
+**Обязательное дополнение по аудиту (ChatGPT) — общий 65-сек API cooldown для ОБОИХ путей.** Один `ScriptLock` защищает от одновременности, но НЕ от двух последовательных запросов Sales API в пределах минуты (доказанный runtime 429: hourly завершился и через ~15 сек стартовал nightly — снова вызвал API). Решение: Script Property `WB_SALES_API_LAST_REQUEST_AT_MS` + `wbSalesApiAcquireRequestSlot_()` (`WbSalesReconcile.gs`), вызывается ОБОИМИ путями под уже удерживаемым общим ScriptLock, непосредственно перед `fetchSalesApiData_`: если с прошлой **попытки** < 65 000 мс → `SKIPPED_RATE_LIMIT` без HTTP; иначе timestamp пишется **ДО** fetch (даже 429/500 = попытка к API, участвует в лимите) и выполняется ровно один запрос.
+
+Новый файл `WbSalesReconcile.gs`:
+- `runWbSalesNightReconcile()` + ядро `wbSalesNightReconcileCore_()` — под тем же общим `ScriptLock`, что hourly (`tryLock`→`finally releaseLock`); параллельный запуск = **SKIPPED_LOCKED**. Требует `WB_SALES_BQ_SINK=ON` (иначе ERROR, RAW неизменен).
+- Окно: `WB_SALES_RECONCILE_DAYS` (Script Property, дефолт **7**, валидируется 1..90); `wbSalesReconcileFromLcd_()` = полночь МСК `(сегодня − N)` в формате `YYYY-MM-DDT00:00:00` (МСК фиксирован UTC+3 без DST). Одна строка — и API `dateFrom`, и `fromLcd` для BQ-набора; проходит ту же строгую `salesValidWatermark_` ДО SQL.
+- Один fail-closed запрос, `noWindow`; та же **валидация ВСЕХ сырых API-строк ДО нормализации** (`saleID/date/lastChangeDate`) + страховка `rows.length===data.length`.
+- **Внутрипакетный дедуп по STATE-ключу `sale_id|md5(raw_json)` — оставляем ВСЕ различные состояния** (в ОТЛИЧИЕ от hourly last-wins по `sale_id`: цель пересверки — залатать каждое отсутствующее состояние). Одинаковый state-ключ в пакете → одна строка. **Только после этого** сравнение с BQ-набором.
+- Range-wide набор существующих состояний за окно — новый `wbSalesBqStateKeysSince_(fromLcd)`; append **только** тех `sale_id|state`, которых в RAW нет → `gaps_filled`. `rows_written == gaps_filled`. Каноничность — во `V_WB_SALES_RETURNS` (last-wins по `sale_id`), поэтому даже если пересверка дольёт старое состояние — вью остаётся distinct `sale_id`.
+- Статусы: `OK` / `OK_NO_GAPS` / `SKIPPED_LOCKED` / `SKIPPED_RATE_LIMIT` / `ERROR`.
+- Лог в `IMPORT_LOG_SALES_RETURNS` (тот же расширенный контракт `IMPORT_LOG_SALES_HEADERS_`): `load_id` префикс `SALE_RECON_`, `period_from/period_to` = окно, `rows_imported == rows_written`, **`watermark_before == watermark_after`** (авто-доказательство, что пересверка watermark не двигает). **`gaps_filled` (отсутствующие состояния) фиксируется ДО append, а `rows_written` подтверждается ТОЛЬКО после успешного `appendSalesRows_`** — при падении append: `status=ERROR, gaps_filled=N, rows_written=0` (запись не подтверждена); при успехе `gaps_filled == rows_written`. ⚠️ **Оговорка по семантике:** поле `rows_after_boundary_dedup` в контексте reconcile означает «строк после range-wide state-dedup» (в hourly — после граничного дедупа); контракт колонок не меняли ради совместимости журнала.
+- `wbSalesReconcileStatus()` — окно/fromLcd, watermark hourly, sink, размер набора состояний, last Sales API attempt.
+- Идемпотентная установка ночного триггера `wbSalesReconcileInstallNightlyTrigger()` — `everyDays(1).atHour(4).nearMinute(20)` (≈ **04:20 МСК**: снижает шанс близости к hourly; сам guard дополнительно страхует от 429); `0→создать 1; 1→ничего; 2+→дедуп до 1`. `wbSalesReconcileRemoveNightlyTrigger()`. Трогают ТОЛЬКО обработчик `runWbSalesNightReconcile` (hourly/Orders/Finance/Ads не затрагиваются). Требует часовой пояс проекта Apps Script = `Europe/Moscow`. Триггер ставит владелец после ручной приёмки.
+
+`WbSalesReturnsBigQuery.gs`: добавлен `wbSalesBqStateKeysSince_(fromLcd)` — DISTINCT `sale_id, TO_HEX(MD5(raw_json))` где `last_change_date >= fromLcd` (fail-safe фильтры `source_api`/`sale_id`/`raw_json`, экранирование литерала). Отличие от `wbSalesBqBoundaryStateKeys_`: диапазон `>=` за окно, а не равенство границе.
+
+`WbSalesIncremental.gs` (минимальная врезка в принятый D2c): перед `fetchSalesApiData_` добавлен вызов общего `wbSalesApiAcquireRequestSlot_()`; при отказе — `SKIPPED_RATE_LIMIT`, watermark не тронут (следующий час догонит). Доп-статус отражён в шапке файла.
+
+НЕ трогалось: RAW-схема/`V_WB_SALES_RETURNS`, consumer adapter (D2b), Finance, Ads, PNL. `node --check` пройден. Apps Script/триггер — после PR/merge и ручной приёмки (acceptance R1–R6: первый прогон → `OK_NO_GAPS`/малый `gaps_filled`, `watermark_before==after`; повтор после 65 сек → `OK_NO_GAPS`, RAW не растёт; guard <65 сек → `SKIPPED_RATE_LIMIT` без HTTP; sink OFF → ERROR; общий lock → `SKIPPED_LOCKED`; установщик триггера 0→1/1→1/2+→1).
+
 ### 2026-07-13 — Фаза D2c: watermark-инкремент продаж + hourly-триггер (ветка phase-d2c-sales-watermark)
 
 Автоматизация уже принятого D2a: продажи/возвраты дособираются ежечасно по образцу боевого D1.2 (заказы). Bootstrap-якорь (контрольная цифра, не хардкод): `MAX(last_change_date)` в RAW = `2026-07-12T20:14:45` (сверено коннектором: 3395 API-строк, 0 пустых, 0 вне формата, min `2026-04-13T07:03:54`). Sales хранит `last_change_date` уже с `T` → на границе сравниваем напрямую (без замены пробела, в отличие от Orders).

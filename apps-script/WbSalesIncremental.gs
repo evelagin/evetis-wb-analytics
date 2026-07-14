@@ -32,9 +32,11 @@
  *   • весь цикл под одним ScriptLock (tryLock → finally releaseLock); параллельный
  *     запуск = SKIPPED_LOCKED (не ошибка данных, watermark не трогается).
  *
- * СТАТУСЫ: OK / OK_NO_CHANGES / SKIPPED_LOCKED / ERROR.
+ * СТАТУСЫ: OK / OK_NO_CHANGES / SKIPPED_LOCKED / SKIPPED_RATE_LIMIT / ERROR.
  * (Отдельный PARTIAL не вводим: единственный доказуемо-неполный сигнал —
- *  упор в лимит строк ответа — трактуется как ERROR, ничего не пишем.)
+ *  упор в лимит строк ответа — трактуется как ERROR, ничего не пишем.
+ *  SKIPPED_RATE_LIMIT — общий с ночной пересверкой 65-сек cooldown Sales API
+ *  сработал до fetch; не ошибка данных, watermark не тронут, следующий час догонит.)
  *
  * НЕ входит в D2c: ночная пересверка последних 3–7 дней, Finance/Ads-триггеры,
  * единый health-монитор. Триггер ставит владелец после ручной приёмки.
@@ -210,6 +212,21 @@ function wbSalesIncrementalCore_(r) {
   if (!salesValidWatermark_(wm)) { r.status = 'ERROR'; r.error_message = 'Неверный формат watermark: ' + wm; return; }
   r.watermark_before = wm;
   r.watermark_after = wm;
+
+  // SHARED RATE-LIMIT GUARD (общий с ночной пересверкой). Под уже удерживаемым
+  // ScriptLock, непосредственно перед fetch: один ScriptLock защищает от
+  // одновременности, но НЕ от двух последовательных запросов Sales API в пределах
+  // минуты (hourly и nightly могут стартовать с разницей в секунды → 429). Если
+  // с прошлой ПОПЫТКИ < 65 сек — пропускаем без HTTP, watermark не трогаем
+  // (следующий час догонит). См. wbSalesApiAcquireRequestSlot_ (WbSalesReconcile.gs).
+  var slot = wbSalesApiAcquireRequestSlot_();
+  if (!slot.ok) {
+    r.status = 'SKIPPED_RATE_LIMIT';
+    r.error_message = 'С прошлой попытки Sales API прошло ' + slot.since_ms + ' мс (< ' +
+      WB_SALES_API_MIN_INTERVAL_MS_ + ') — HTTP не вызван, watermark не тронут.';
+    r.watermark_after = wm;
+    return;
+  }
 
   // Один fail-closed запрос (rate limit 1 req/min). dateFrom = watermark.
   var fetched = fetchSalesApiData_(tk.token, wm);
