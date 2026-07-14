@@ -239,8 +239,10 @@ function wbSalesBqAppendRows_(rowObjs) {
  * Дедуп-вью V_WB_SALES_RETURNS — ПОСЛЕДНЕЕ состояние каждого события продажи/
  * возврата. Ключ sale_id (доказан probe). Порядок: last_change_date DESC
  * (форма 'T' приводится к пробелу для SAFE_CAST), затем loaded_at DESC,
- * load_id DESC как tie-break. Строки без sale_id / MISSING_EVENT_KEY исключены.
- * Гарантирует таблицу перед созданием.
+ * load_id DESC и TO_HEX(MD5(raw_json)) DESC как ПОЛНОСТЬЮ детерминированный
+ * tie-break — согласован с внутрипакетным last-wins D2c (при равных
+ * last_change_date/loaded_at/load_id выбор состояния не зависит от порядка строк).
+ * Строки без sale_id / MISSING_EVENT_KEY исключены. Гарантирует таблицу.
  */
 function wbSalesBqCreateViews() {
   wbSalesBqEnsureTable_(SALES_RAW_HEADERS_);
@@ -252,7 +254,8 @@ function wbSalesBqCreateViews() {
     '  SELECT *, ROW_NUMBER() OVER (\n' +
     '    PARTITION BY sale_id\n' +
     "    ORDER BY SAFE_CAST(REPLACE(last_change_date, 'T', ' ') AS TIMESTAMP) DESC,\n" +
-    '             SAFE_CAST(loaded_at AS TIMESTAMP) DESC, load_id DESC\n' +
+    '             SAFE_CAST(loaded_at AS TIMESTAMP) DESC, load_id DESC,\n' +
+    '             TO_HEX(MD5(raw_json)) DESC\n' +
     '  ) AS _rn\n' +
     '  FROM ' + fq(WB_SALES_BQ_TABLE_) + '\n' +
     "  WHERE source_api = '" + SALES_RAW_SOURCE_API_ + "'\n" +
@@ -300,6 +303,54 @@ function wbSalesBqViewCount_() {
   var c = getBqConfig_();
   var r = bqQuery_('SELECT COUNT(*) FROM `' + c.projectId + '.' + c.datasetId + '.' + WB_SALES_BQ_VIEW_ + '`');
   return (r && r.rows && r.rows.length) ? String(r.rows[0].f[0].v) : '0';
+}
+
+// ═══════════════════════════════════════
+//  D2c: watermark-инкремент — хелперы чтения RAW
+// ═══════════════════════════════════════
+
+/**
+ * MAX(last_change_date) среди API-строк RAW (для bootstrap watermark).
+ * Sales хранит last_change_date уже с 'T' → возвращаем как есть (без замены
+ * пробела, в отличие от Orders). '' если строк нет.
+ */
+function wbSalesBqMaxLastChange_() {
+  var c = getBqConfig_();
+  var sql = 'SELECT MAX(last_change_date) FROM `' + c.projectId + '.' + c.datasetId + '.' + WB_SALES_BQ_TABLE_ + '` ' +
+            "WHERE source_api = '" + SALES_RAW_SOURCE_API_ + "'";
+  var r = bqQuery_(sql);
+  var rows = (r && r.rows) || [];
+  return (rows.length && rows[0].f[0].v != null) ? String(rows[0].f[0].v) : '';
+}
+
+/**
+ * STATE-ключи sale_id|md5(raw_json) на ГРАНИЦЕ watermark (last_change_date ==
+ * watermark), уже присутствующие в RAW. Защита секундной точности + защита от
+ * ложного дубля: новая ИЛИ ИЗМЕНЁННАЯ продажа с тем же lastChangeDate дописывается,
+ * если пары sale_id|state ещё нет. Ключ — по полному состоянию (raw_json), а НЕ
+ * по row_hash (тот считается лишь из srid/nmId/sale_dt/sale_id/operation_type и
+ * не меняется при изменении цены/склада/скидки → давал бы ложный дубль).
+ * MD5 согласован с Apps Script salesMd5_ (обе стороны — lowercase hex над одним
+ * и тем же raw_json = JSON.stringify(апи-строки)). Схему RAW не меняем.
+ * Sales хранит last_change_date с 'T' → сравниваем напрямую.
+ */
+function wbSalesBqBoundaryStateKeys_(watermark) {
+  var c = getBqConfig_();
+  var esc = String(watermark || '').replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+  var sql = 'SELECT DISTINCT sale_id, TO_HEX(MD5(raw_json)) AS sh FROM `' +
+            c.projectId + '.' + c.datasetId + '.' + WB_SALES_BQ_TABLE_ + '` ' +
+            "WHERE source_api = '" + SALES_RAW_SOURCE_API_ + "' AND last_change_date = '" + esc + "' " +
+            "AND sale_id IS NOT NULL AND TRIM(sale_id) <> '' AND raw_json IS NOT NULL";
+  var r = bqQuery_(sql);
+  var rows = (r && r.rows) || [];
+  var set = {};
+  for (var i = 0; i < rows.length; i++) {
+    var f = rows[i].f;
+    var sid = (f[0] && f[0].v != null) ? String(f[0].v) : '';
+    var sh = (f[1] && f[1].v != null) ? String(f[1].v) : '';
+    set[sid + '|' + sh] = true;
+  }
+  return set;
 }
 
 /** Self-test канонизации типов (без BigQuery). Запускать вручную из редактора. */

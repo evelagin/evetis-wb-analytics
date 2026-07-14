@@ -65,7 +65,10 @@ var IMPORT_LOG_SALES_HEADERS_ = [
   'rows_imported', 'skipped_dupes', 'rows_total_period',
   'sales_count', 'returns_count',
   'unique_saleID', 'unique_srid', 'unique_nmId', 'unmatched_nmId',
-  'status', 'error_message'
+  'status', 'error_message',
+  // D2c watermark-инкремент (аддитивно; backfill/rolling пишут '' в эти поля).
+  'watermark_before', 'watermark_after', 'api_rows_received',
+  'rows_after_boundary_dedup', 'rows_written', 'duration_ms'
 ];
 
 // Лимит строк одного ответа WB (flag=0). Упор в лимит = граница обрезана →
