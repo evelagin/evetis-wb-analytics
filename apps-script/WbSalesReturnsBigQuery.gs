@@ -353,6 +353,39 @@ function wbSalesBqBoundaryStateKeys_(watermark) {
   return set;
 }
 
+/**
+ * RANGE-WIDE набор STATE-ключей sale_id|md5(raw_json) для ночной пересверки
+ * (Night Reconciliation). Возвращает множество уже присутствующих в RAW состояний,
+ * у которых last_change_date >= fromLcd — пересверка дописывает только те sale_id|state,
+ * которых в наборе НЕТ (gaps_filled). Отличие от wbSalesBqBoundaryStateKeys_:
+ * там точное равенство границе (== watermark), здесь диапазон (>= fromLcd) за всё окно.
+ *
+ * ВАЖНО: fromLcd — валидированный литерал YYYY-MM-DDThh:mm:ss (та же строгая проверка,
+ * что watermark, выполняется у вызывающего ДО SQL); дополнительно экранируется здесь.
+ * Sales хранит last_change_date с 'T' (фикс-ISO) → лексикографическое сравнение >=
+ * хронологически корректно. Fail-safe фильтры sale_id/raw_json как во вью. Схему RAW
+ * не меняем. MD5 согласован с Apps Script salesMd5_ (обе стороны — lowercase hex над
+ * одним raw_json = JSON.stringify(апи-строки)).
+ */
+function wbSalesBqStateKeysSince_(fromLcd) {
+  var c = getBqConfig_();
+  var esc = String(fromLcd || '').replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+  var sql = 'SELECT DISTINCT sale_id, TO_HEX(MD5(raw_json)) AS sh FROM `' +
+            c.projectId + '.' + c.datasetId + '.' + WB_SALES_BQ_TABLE_ + '` ' +
+            "WHERE source_api = '" + SALES_RAW_SOURCE_API_ + "' AND last_change_date >= '" + esc + "' " +
+            "AND sale_id IS NOT NULL AND TRIM(sale_id) <> '' AND raw_json IS NOT NULL";
+  var r = bqQuery_(sql);
+  var rows = (r && r.rows) || [];
+  var set = {};
+  for (var i = 0; i < rows.length; i++) {
+    var f = rows[i].f;
+    var sid = (f[0] && f[0].v != null) ? String(f[0].v) : '';
+    var sh = (f[1] && f[1].v != null) ? String(f[1].v) : '';
+    set[sid + '|' + sh] = true;
+  }
+  return set;
+}
+
 /** Self-test канонизации типов (без BigQuery). Запускать вручную из редактора. */
 function wbSalesBqTypeAliasSelfTest() {
   var cases = [
