@@ -2,6 +2,10 @@
 
 ## История изменений
 
+### 2026-07-16 — B2: проверка семантики периода T6 в probe (ветка test/stocks-t6-period-semantics)
+
+Аудит плана загрузчика остатков принял направление (канон T6, контроль T5), но выставил блокер B2: до production нельзя фиксировать `currentPeriod` T6 на тестовых датах мая — совпадение Σфиз с текущим T5 (4565) само по себе не доказывает семантику. `WbStocksProbe`: добавлен Drive-независимый `probeWbStocksT6Periods()` — гоняет T6 три раза (A `2026-05-18..24`, B сегодня, C последние 7 дней) и сравнивает rows · distinctKey · Σquantity(all/физ) · Σв пути · uniqueNmId. Вердикт в лог: идентичны → период не влияет (берём безопасное окно); различаются → период влияет (выбрать окно под текущие остатки, сверить Σфиз с T5); не-200 на «сегодня» → окно ограничено. Хелперы `stocksProbeT6Metrics_`/`stocksProbeT6Fetch_`; Σфиз считается без агрегатного склада `warehouseId=0/«Остальные»`. Токен не логируется, harness не тронут. Меню дополнено пунктом «T6 период-семантика (B2)». `node --check` пройден. Также фиксируется блокер B1 (manifest-таблица `WB_STOCKS_SNAPSHOTS` + VIEW по последнему COMPLETE) — сворачивается в финальный план перед кодом загрузчика.
+
 ### 2026-07-16 — Fail-open console-probe остатков (ветка fix/stocks-probe-drive-failopen)
 
 Диагностика источника остатков (T5 `warehouse_remains` / T6 `stocks-report/wb-warehouses`) блокировалась ещё ДО WB API: `probeWbStocksTestOnly()` идёт через `wbApiTestPrepare_()`, который при недоступной Drive-папке (`Permission denied while enabling APIs: drive`) возвращает `BLOCKED` и не доходит до T5/T6. Для диагностики Drive не нужен.
