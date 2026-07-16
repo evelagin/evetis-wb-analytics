@@ -98,6 +98,221 @@ function probeWbStocksTestOnly() {
 
 
 // ═══════════════════════════════════════
+// FAIL-OPEN CONSOLE PROBE (Drive-независимый)
+// ═══════════════════════════════════════
+/*
+ * probeWbStocksConsole() — диагностика источника остатков БЕЗ зависимости от Google Drive.
+ * Причина: старый probeWbStocksTestOnly() шёл через wbApiTestPrepare_(), который при
+ * недоступной Drive-папке (`Permission denied while enabling APIs: drive`) возвращает
+ * BLOCKED ещё ДО вызова WB API — то есть T5/T6 не отрабатывали.
+ *
+ * Здесь Drive не нужен для диагностики: обращаемся к WB напрямую и всё выводим в
+ * console.log (endpoint, HTTP, тип ответа, число строк, ключи первой строки, 1–3 примера
+ * без токена, уникальные nmId/barcode/склад, SUM(quantity), физ. и псевдо-склады, ошибки).
+ * Полное сохранение JSON в Drive — ОПЦИОНАЛЬНО (opts.saveJson=true) и НИКОГДА не блокирует:
+ * при недоступном Drive — только WARNING. Токен и заголовки не логируются. Ошибка самого
+ * WB API по-прежнему даёт ERROR/PARTIAL; отсутствие Drive — только WARNING.
+ *
+ * Переиспользует Drive-free хелперы WbApiTest* (токен/HTTP/task/парсинг), harness НЕ меняет.
+ * Точка повторного запуска: probeWbStocksConsole()  (без аргументов — Drive не трогается).
+ */
+
+/** Безопасный лог probe (никогда не принимает токен). */
+function stocksProbeLog_(msg) {
+  console.log('[STOCKS_PROBE] ' + msg);
+}
+
+/** JSON с ограничением длины (примеры строк — без токена, он только в заголовке запроса). */
+function stocksProbeSafeJson_(obj) {
+  var s;
+  try { s = JSON.stringify(obj); } catch (e) { return '(unserializable)'; }
+  if (s.length > 1500) s = s.substring(0, 1500) + '…(обрезано)';
+  return s;
+}
+
+/**
+ * Fail-open console-probe остатков (T5 + T6). Drive не требуется.
+ * @param {Object=} opts { saveJson:boolean } — если true, ДОПОЛНИТЕЛЬНО попытаться
+ *   сохранить полный JSON в Drive (не блокирует при недоступности).
+ * @return {{T5:Object, T6:Object}}
+ */
+function probeWbStocksConsole(opts) {
+  opts = opts || {};
+  var saveJson = (opts.saveJson === true);
+  assertWbApiTestMode_();   // предохранитель тест-режима (Drive не трогает)
+
+  stocksProbeLog_('=== Probe остатков (console, Drive-независимый) ===');
+  stocksProbeLog_('Период (для T6 body): ' + WB_API_TEST_DATE_FROM_ + '..' + WB_API_TEST_DATE_TO_ +
+    ' | T5 warehouse_remains — снимок «сейчас».');
+
+  var tk = wbApiTestGetToken_('Analytics');
+  wbApiTestTokenInfo_('Analytics', tk.present);   // печатает только present:yes/no, без значения
+  if (!tk.present) {
+    stocksProbeLog_('❌ ERROR: нет токена Analytics (WB_TOKEN_ANALYTICS) — обращение к WB невозможно.');
+    return { T5: { test: 'T5', status: 'ERROR', rowsCount: 0, errors: ['no Analytics token'] },
+             T6: { test: 'T6', status: 'ERROR', rowsCount: 0, errors: ['no Analytics token'] } };
+  }
+
+  var sku = { set: {}, count: 0 };
+  try { sku = wbApiTestLoadSkuNmIds_(); } catch (e) { stocksProbeLog_('⚠️ SKU_MASTER read-only: ' + e.message); }
+
+  var t5 = probeStocksT5Console_(tk.token, sku);
+  var t6 = probeStocksT6Console_(tk.token, sku);
+
+  // Опциональное сохранение полного JSON в Drive — НЕ обязательно и НЕ блокирует.
+  if (saveJson) {
+    try {
+      var folder = wbApiTestGetResultsFolder_();   // сам ловит ошибки Drive и возвращает null
+      if (folder) {
+        var stamp = Utilities.formatDate(new Date(), 'Europe/Moscow', 'yyyyMMdd_HHmmss');
+        wbApiTestSaveJson_(folder, 'stocks_probe_console_' + stamp + '.json', { T5: t5, T6: t6 });
+      } else {
+        stocksProbeLog_('⚠️ WARNING: Drive-папка недоступна — полный JSON НЕ сохранён (диагностике не мешает).');
+      }
+    } catch (e2) {
+      stocksProbeLog_('⚠️ WARNING: сохранение в Drive не удалось (' + e2.message + ') — диагностике не мешает.');
+    }
+  } else {
+    stocksProbeLog_('ℹ️ Сохранение JSON в Drive отключено (вызови probeWbStocksConsole({saveJson:true}) чтобы включить).');
+  }
+
+  stocksProbeLog_('=== Итог: T5 ' + t5.status + ' (rows=' + t5.rowsCount + '), T6 ' + t6.status +
+    ' (rows=' + t6.rowsCount + ') === Источник остатков выбираем по этим числам.');
+  return { T5: t5, T6: t6 };
+}
+
+/** T5 — warehouse_remains (GET task-based). Разворачивает warehouses[] в физ./псевдо-склады. */
+function probeStocksT5Console_(token, sku) {
+  var taskBase = WB_API_TEST_HOST_ANALYTICS_ + '/api/v1/warehouse_remains';
+  var createUrl = taskBase + '?groupByBrand=false&groupBySubject=false&groupBySa=true' +
+    '&groupByNm=true&groupByBarcode=true&groupBySize=true';
+  var out = { test: 'T5', name: 'warehouse_remains', endpoint: taskBase, status: 'ERROR',
+    httpStatus: null, responseType: '', rowsCount: 0, fields: [], errors: [] };
+
+  stocksProbeLog_('── T5 · warehouse_remains (GET task-based) ──');
+  stocksProbeLog_('T5 endpoint: ' + taskBase);
+
+  var data = [];
+  try {
+    var task = wbApiTestRunTask_(token, createUrl, taskBase);
+    out.httpStatus = task.ok ? 200 : null;
+    out.responseType = Array.isArray(task.data) ? 'array' : (task.data ? typeof task.data : 'null');
+    if (!task.ok) { out.errors.push(task.error); stocksProbeLog_('T5 ❌ task error: ' + task.error); }
+    else if (task.data && task.data.length) data = task.data;
+  } catch (e) { out.errors.push('Исключение: ' + e.message); stocksProbeLog_('T5 ❌ исключение: ' + e.message); }
+
+  out.rowsCount = data.length;
+  out.fields = wbApiTestFieldList_(data);
+
+  var WH_TOTAL_ = 'Всего находится на складах';
+  var WH_TO_CLIENT_ = 'В пути до получателей';
+  var WH_FROM_CLIENT_ = 'В пути возвраты на склад WB';
+  var nmIds = [], barcodes = {}, physWarehouses = {};
+  var physQty = 0, toClient = 0, fromClient = 0, warehouseRows = 0, pseudoRows = 0;
+  for (var i = 0; i < data.length; i++) {
+    var nm = wbApiTestNormNmId_(wbApiTestPick_(data[i], ['nmId', 'nmid', 'nm_id']));
+    if (nm) nmIds.push(nm);
+    var bc = wbApiTestPick_(data[i], ['barcode', 'sku']);
+    if (bc) barcodes[String(bc)] = true;
+    var whs = data[i].warehouses;
+    if (whs && whs.length) {
+      for (var w = 0; w < whs.length; w++) {
+        var name = String(whs[w].warehouseName || whs[w].warehouse || '');
+        var q = Number(whs[w].quantity || 0);
+        if (name === WH_TOTAL_) { pseudoRows++; }
+        else if (name === WH_TO_CLIENT_) { toClient += q; pseudoRows++; }
+        else if (name === WH_FROM_CLIENT_) { fromClient += q; pseudoRows++; }
+        else { physQty += q; warehouseRows++; physWarehouses[name] = true; }
+      }
+    }
+  }
+  var uniq = wbApiTestUniqueAndUnmatched_(nmIds, sku.set);
+  out.uniqueNmId = uniq.unique;
+  out.unmatchedNmId = uniq.unmatched;
+  out.uniqueBarcode = Object.keys(barcodes).length;
+  out.uniqueWarehouse = Object.keys(physWarehouses).length;
+  out.sumQuantityPhysical = wbApiTestRound_(physQty);
+  out.inWayToClient = wbApiTestRound_(toClient);
+  out.inWayFromClient = wbApiTestRound_(fromClient);
+  out.warehouseRows = warehouseRows;
+  out.pseudoRows = pseudoRows;
+  out.status = out.errors.length ? (out.rowsCount > 0 ? 'PARTIAL' : 'ERROR') : (out.rowsCount > 0 ? 'OK' : 'WARN');
+
+  stocksProbeLog_('T5 HTTP: ' + (out.httpStatus === null ? '—' : out.httpStatus) + ' | итог: ' + out.status +
+    ' | responseType: ' + out.responseType + ' | rows(items): ' + out.rowsCount);
+  stocksProbeLog_('T5 first-row keys: ' + JSON.stringify(out.fields));
+  stocksProbeLog_('T5 sample rows (1-3, без токена): ' + stocksProbeSafeJson_(wbApiTestFirstRows_(data, 3)));
+  stocksProbeLog_('T5 uniqueNmId: ' + out.uniqueNmId + ' | uniqueBarcode: ' + out.uniqueBarcode +
+    ' | физ.складов: ' + out.uniqueWarehouse + ' | unmatched nmId: ' + out.unmatchedNmId);
+  stocksProbeLog_('T5 SUM(quantity) физ: ' + out.sumQuantityPhysical + ' | в пути к клиенту: ' + out.inWayToClient +
+    ' | возвраты в пути: ' + out.inWayFromClient);
+  stocksProbeLog_('T5 физ.складских строк: ' + out.warehouseRows + ' | псевдо-строк («всего»/«в пути»): ' + out.pseudoRows);
+  if (out.errors.length) stocksProbeLog_('T5 errors: ' + JSON.stringify(out.errors));
+  return out;
+}
+
+/** T6 — stocks-report/wb-warehouses (POST). Схема не подтверждена → best-effort, логируем как есть. */
+function probeStocksT6Console_(token, sku) {
+  var endpoint = WB_API_TEST_HOST_ANALYTICS_ + '/api/analytics/v1/stocks-report/wb-warehouses';
+  var body = { currentPeriod: { start: WB_API_TEST_DATE_FROM_, end: WB_API_TEST_DATE_TO_ },
+    stockType: '', skipDeletedNm: false };
+  var out = { test: 'T6', name: 'stocks-report/wb-warehouses', endpoint: endpoint, status: 'ERROR',
+    httpStatus: null, responseType: '', rowsCount: 0, fields: [], errors: [] };
+
+  stocksProbeLog_('── T6 · stocks-report/wb-warehouses (POST) ──');
+  stocksProbeLog_('T6 endpoint: ' + endpoint);
+  stocksProbeLog_('T6 body: ' + JSON.stringify(body));
+
+  var data = [];
+  try {
+    var resp = wbApiTestHttp_('post', endpoint, token, body);
+    out.httpStatus = resp.code;
+    if (!resp.ok) { out.errors.push('HTTP ' + resp.code + ': ' + String(resp.body).substring(0, 200)); }
+    var arr = resp.json;
+    if (arr && arr.data && arr.data.items && arr.data.items.length !== undefined) { out.responseType = 'data.items'; arr = arr.data.items; }
+    else if (arr && arr.data && arr.data.length !== undefined) { out.responseType = 'data[]'; arr = arr.data; }
+    else if (Array.isArray(arr)) { out.responseType = 'array'; }
+    else { out.responseType = (arr ? typeof arr : 'null'); arr = []; }
+    if (arr && arr.length) data = arr;
+  } catch (e) { out.errors.push('Исключение: ' + e.message); stocksProbeLog_('T6 ❌ исключение: ' + e.message); }
+
+  out.rowsCount = data.length;
+  out.fields = wbApiTestFieldList_(data);
+  var nmIds = [], warehouses = {}, sumQty = 0, toClient = 0, fromClient = 0;
+  for (var i = 0; i < data.length; i++) {
+    var nm = wbApiTestNormNmId_(wbApiTestPick_(data[i], ['nmId', 'nmid', 'nm_id']));
+    if (nm) nmIds.push(nm);
+    var wn = wbApiTestPick_(data[i], ['warehouseName', 'warehouse']);
+    if (wn) warehouses[String(wn)] = true;
+    sumQty += Number(wbApiTestPick_(data[i], ['quantity', 'qty', 'quantityFull']) || 0);
+    toClient += Number(wbApiTestPick_(data[i], ['inWayToClient', 'in_way_to_client']) || 0);
+    fromClient += Number(wbApiTestPick_(data[i], ['inWayFromClient', 'in_way_from_client']) || 0);
+  }
+  var uniqT6 = wbApiTestUniqueAndUnmatched_(nmIds, sku.set);
+  out.uniqueNmId = uniqT6.unique;
+  out.unmatchedNmId = uniqT6.unmatched;
+  out.uniqueWarehouse = Object.keys(warehouses).length;
+  out.sumQuantity = wbApiTestRound_(sumQty);
+  out.inWayToClient = wbApiTestRound_(toClient);
+  out.inWayFromClient = wbApiTestRound_(fromClient);
+  out.hasWarehouse = wbApiTestHasField_(data, ['warehouse', 'warehouseName']);
+  out.hasRegion = wbApiTestHasField_(data, ['region', 'regionName', 'oblast']);
+  out.status = out.errors.length ? (out.rowsCount > 0 ? 'PARTIAL' : 'ERROR') : (out.rowsCount > 0 ? 'OK' : 'WARN');
+
+  stocksProbeLog_('T6 HTTP: ' + (out.httpStatus === null ? '—' : out.httpStatus) + ' | итог: ' + out.status +
+    ' | responseType: ' + out.responseType + ' | rows: ' + out.rowsCount);
+  stocksProbeLog_('T6 first-row keys: ' + JSON.stringify(out.fields));
+  stocksProbeLog_('T6 sample rows (1-3, без токена): ' + stocksProbeSafeJson_(wbApiTestFirstRows_(data, 3)));
+  stocksProbeLog_('T6 uniqueNmId: ' + out.uniqueNmId + ' | складов: ' + out.uniqueWarehouse +
+    ' | hasWarehouse: ' + out.hasWarehouse + ' | hasRegion: ' + out.hasRegion + ' | unmatched nmId: ' + out.unmatchedNmId);
+  stocksProbeLog_('T6 SUM(quantity): ' + out.sumQuantity + ' | в пути к клиенту: ' + out.inWayToClient +
+    ' | возвраты в пути: ' + out.inWayFromClient);
+  if (out.errors.length) stocksProbeLog_('T6 errors: ' + JSON.stringify(out.errors));
+  return out;
+}
+
+
+// ═══════════════════════════════════════
 // МЕНЮ (опционально; подключить в Menu v2 → onOpen:
 //        addWbStocksProbeMenu();)
 // ═══════════════════════════════════════
@@ -105,6 +320,7 @@ function probeWbStocksTestOnly() {
 function addWbStocksProbeMenu() {
   SpreadsheetApp.getUi()
     .createMenu('🧪 Probe остатков')
-    .addItem('🔍 Probe T5/T6 (read-only)', 'probeWbStocksTestOnly')
+    .addItem('🔍 Probe T5/T6 (console, без Drive)', 'probeWbStocksConsole')
+    .addItem('🔍 Probe T5/T6 (с Drive-артефактами)', 'probeWbStocksTestOnly')
     .addToUi();
 }
