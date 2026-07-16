@@ -130,6 +130,17 @@ function stocksProbeSafeJson_(obj) {
   return s;
 }
 
+/** Список distinct nmId, отсутствующих в SKU_MASTER. available=false, если SKU_MASTER пуст/недоступен. */
+function stocksProbeUnmatchedNmList_(nmIds, skuSet) {
+  if (!skuSet || !Object.keys(skuSet).length) return { available: false, list: [] };
+  var seen = {}, list = [];
+  for (var i = 0; i < nmIds.length; i++) {
+    var nm = nmIds[i];
+    if (nm && !seen[nm]) { seen[nm] = true; if (!skuSet[nm]) list.push(nm); }
+  }
+  return { available: true, list: list };
+}
+
 /**
  * Fail-open console-probe остатков (T5 + T6). Drive не требуется.
  * @param {Object=} opts { saveJson:boolean } — если true, ДОПОЛНИТЕЛЬНО попытаться
@@ -227,8 +238,10 @@ function probeStocksT5Console_(token, sku) {
     }
   }
   var uniq = wbApiTestUniqueAndUnmatched_(nmIds, sku.set);
+  var unm5 = stocksProbeUnmatchedNmList_(nmIds, sku.set);
   out.uniqueNmId = uniq.unique;
   out.unmatchedNmId = uniq.unmatched;
+  out.unmatchedNmList = unm5.list;
   out.uniqueBarcode = Object.keys(barcodes).length;
   out.uniqueWarehouse = Object.keys(physWarehouses).length;
   out.sumQuantityPhysical = wbApiTestRound_(physQty);
@@ -244,6 +257,7 @@ function probeStocksT5Console_(token, sku) {
   stocksProbeLog_('T5 sample rows (1-3, без токена): ' + stocksProbeSafeJson_(wbApiTestFirstRows_(data, 3)));
   stocksProbeLog_('T5 uniqueNmId: ' + out.uniqueNmId + ' | uniqueBarcode: ' + out.uniqueBarcode +
     ' | физ.складов: ' + out.uniqueWarehouse + ' | unmatched nmId: ' + out.unmatchedNmId);
+  stocksProbeLog_('T5 unmatched nmId list: ' + (unm5.available ? JSON.stringify(unm5.list) : 'SKU_MASTER недоступен'));
   stocksProbeLog_('T5 SUM(quantity) физ: ' + out.sumQuantityPhysical + ' | в пути к клиенту: ' + out.inWayToClient +
     ' | возвраты в пути: ' + out.inWayFromClient);
   stocksProbeLog_('T5 физ.складских строк: ' + out.warehouseRows + ' | псевдо-строк («всего»/«в пути»): ' + out.pseudoRows);
@@ -279,24 +293,43 @@ function probeStocksT6Console_(token, sku) {
   out.rowsCount = data.length;
   out.fields = wbApiTestFieldList_(data);
   var nmIds = [], warehouses = {}, sumQty = 0, toClient = 0, fromClient = 0;
+  // Естественный ключ строки снимка (доказательство перед RAW): nmId|chrtId|warehouseId.
+  var keySeen = {}, dupKeyRows = 0, qtyPositive = 0, qtyZero = 0, otherRows = 0, otherQty = 0;
   for (var i = 0; i < data.length; i++) {
-    var nm = wbApiTestNormNmId_(wbApiTestPick_(data[i], ['nmId', 'nmid', 'nm_id']));
+    var row = data[i];
+    var nm = wbApiTestNormNmId_(wbApiTestPick_(row, ['nmId', 'nmid', 'nm_id']));
     if (nm) nmIds.push(nm);
-    var wn = wbApiTestPick_(data[i], ['warehouseName', 'warehouse']);
+    var wn = wbApiTestPick_(row, ['warehouseName', 'warehouse']);
     if (wn) warehouses[String(wn)] = true;
-    sumQty += Number(wbApiTestPick_(data[i], ['quantity', 'qty', 'quantityFull']) || 0);
-    toClient += Number(wbApiTestPick_(data[i], ['inWayToClient', 'in_way_to_client']) || 0);
-    fromClient += Number(wbApiTestPick_(data[i], ['inWayFromClient', 'in_way_from_client']) || 0);
+    var q = Number(wbApiTestPick_(row, ['quantity', 'qty', 'quantityFull']) || 0);
+    sumQty += q;
+    if (q > 0) qtyPositive++; else qtyZero++;
+    toClient += Number(wbApiTestPick_(row, ['inWayToClient', 'in_way_to_client']) || 0);
+    fromClient += Number(wbApiTestPick_(row, ['inWayFromClient', 'in_way_from_client']) || 0);
+    var chrt = wbApiTestPick_(row, ['chrtId', 'chrt_id']);
+    var whid = wbApiTestPick_(row, ['warehouseId', 'warehouse_id']);
+    var key = String(nm) + '|' + String(chrt === undefined ? '' : chrt) + '|' + String(whid === undefined ? '' : whid);
+    if (keySeen[key]) dupKeyRows++; else keySeen[key] = true;
+    // спец-склад: warehouseId=0 или имя «Остальные» (агрегат, не физический склад).
+    if (String(whid) === '0' || String(wn) === 'Остальные') { otherRows++; otherQty += q; }
   }
   var uniqT6 = wbApiTestUniqueAndUnmatched_(nmIds, sku.set);
+  var unm6 = stocksProbeUnmatchedNmList_(nmIds, sku.set);
   out.uniqueNmId = uniqT6.unique;
   out.unmatchedNmId = uniqT6.unmatched;
+  out.unmatchedNmList = unm6.list;
   out.uniqueWarehouse = Object.keys(warehouses).length;
   out.sumQuantity = wbApiTestRound_(sumQty);
   out.inWayToClient = wbApiTestRound_(toClient);
   out.inWayFromClient = wbApiTestRound_(fromClient);
   out.hasWarehouse = wbApiTestHasField_(data, ['warehouse', 'warehouseName']);
   out.hasRegion = wbApiTestHasField_(data, ['region', 'regionName', 'oblast']);
+  out.distinctKey = Object.keys(keySeen).length;
+  out.duplicateKeyRows = dupKeyRows;
+  out.qtyPositiveRows = qtyPositive;
+  out.qtyZeroRows = qtyZero;
+  out.otherWarehouseRows = otherRows;
+  out.otherWarehouseQty = wbApiTestRound_(otherQty);
   out.status = out.errors.length ? (out.rowsCount > 0 ? 'PARTIAL' : 'ERROR') : (out.rowsCount > 0 ? 'OK' : 'WARN');
 
   stocksProbeLog_('T6 HTTP: ' + (out.httpStatus === null ? '—' : out.httpStatus) + ' | итог: ' + out.status +
@@ -305,8 +338,15 @@ function probeStocksT6Console_(token, sku) {
   stocksProbeLog_('T6 sample rows (1-3, без токена): ' + stocksProbeSafeJson_(wbApiTestFirstRows_(data, 3)));
   stocksProbeLog_('T6 uniqueNmId: ' + out.uniqueNmId + ' | складов: ' + out.uniqueWarehouse +
     ' | hasWarehouse: ' + out.hasWarehouse + ' | hasRegion: ' + out.hasRegion + ' | unmatched nmId: ' + out.unmatchedNmId);
+  stocksProbeLog_('T6 unmatched nmId list: ' + (unm6.available ? JSON.stringify(unm6.list) : 'SKU_MASTER недоступен'));
   stocksProbeLog_('T6 SUM(quantity): ' + out.sumQuantity + ' | в пути к клиенту: ' + out.inWayToClient +
     ' | возвраты в пути: ' + out.inWayFromClient);
+  // ── Доказательство естественного ключа RAW ──
+  stocksProbeLog_('T6 КЛЮЧ nmId|chrtId|warehouseId → rows: ' + out.rowsCount + ' | distinct key: ' + out.distinctKey +
+    ' | duplicate keys: ' + out.duplicateKeyRows +
+    ((out.distinctKey === out.rowsCount && out.duplicateKeyRows === 0) ? ' ✅ ключ уникален' : ' ⚠️ ЕСТЬ ДУБЛИ КЛЮЧА'));
+  stocksProbeLog_('T6 quantity>0 строк: ' + out.qtyPositiveRows + ' | quantity=0 строк: ' + out.qtyZeroRows);
+  stocksProbeLog_('T6 спец-склад warehouseId=0/«Остальные»: строк ' + out.otherWarehouseRows + ' | Σquantity ' + out.otherWarehouseQty);
   if (out.errors.length) stocksProbeLog_('T6 errors: ' + JSON.stringify(out.errors));
   return out;
 }
