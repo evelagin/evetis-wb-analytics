@@ -2,6 +2,12 @@
 
 ## История изменений
 
+### 2026-07-16 — Fail-open console-probe остатков (ветка fix/stocks-probe-drive-failopen)
+
+Диагностика источника остатков (T5 `warehouse_remains` / T6 `stocks-report/wb-warehouses`) блокировалась ещё ДО WB API: `probeWbStocksTestOnly()` идёт через `wbApiTestPrepare_()`, который при недоступной Drive-папке (`Permission denied while enabling APIs: drive`) возвращает `BLOCKED` и не доходит до T5/T6. Для диагностики Drive не нужен.
+
+`WbStocksProbe`: добавлен **Drive-независимый** `probeWbStocksConsole(opts)` — обращается к WB напрямую и всё выводит в `console.log`: endpoint, HTTP, тип ответа, число строк, ключи первой строки, 1–3 примера (без токена), уникальные nmId/barcode/склад, `SUM(quantity)`, физ. и псевдо-склады («всего»/«в пути»), ошибки API. Сохранение полного JSON в Drive — ОПЦИОНАЛЬНО (`{saveJson:true}`) и НЕ блокирует: недоступный Drive → только WARNING. Ошибка самого WB API по-прежнему даёт ERROR/PARTIAL. Токен/заголовки не логируются. Переиспользует Drive-free хелперы `WbApiTest*` (токен/HTTP/task/парсинг) — harness `WbApiTestRunner/Utils/Config` НЕ изменён. Точка повторного запуска: `probeWbStocksConsole()` (без аргументов — Drive не трогается). Меню `addWbStocksProbeMenu` дополнено пунктом console-probe. Старый `probeWbStocksTestOnly()` не тронут. `node --check` пройден.
+
 ### 2026-07-14 — Фаза D2c: Sales Night Reconciliation + общий rate-limit guard (ветка phase-d2c-sales-night-reconcile)
 
 Ночная пересверка продаж/возвратов — закрывает eventual-consistency Sales API (строка может всплыть позже с `lastChangeDate < watermark`, hourly её не увидит) и пропуски от сбоев/429. Это правильное место для **range-wide дедупа** (в hourly он сознательно НЕ делается). watermark пересверка **не двигает** — им владеет hourly.
