@@ -339,11 +339,11 @@ function wbStocksSnapshotCore_(r) {
   var cnt = wbStocksBqSnapshotCounts_(snapshotId, snapshotDate);
   m.written_rows = cnt.count;
   r.written_rows = cnt.count;
-  var okCounts = (cnt.count === m.expected_rows && cnt.distinct === m.expected_rows && cnt.nullKey === 0);
+  var okCounts = (cnt.count === m.expected_rows && cnt.distinct === m.expected_rows);
   if (!okCounts) {
     r.status = 'ERROR';
     r.error_message = 'Пост-проверка не сошлась: expected=' + m.expected_rows + ' written=' + cnt.count +
-      ' distinct=' + cnt.distinct + ' nullKey=' + cnt.nullKey;
+      ' distinct=' + cnt.distinct;
     wbStocksBqManifestFinalize_(snapshotId, 'ERROR', m, r.error_message); r._manifestFinalized = true; return;
   }
 

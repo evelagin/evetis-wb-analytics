@@ -208,13 +208,20 @@ function wbStocksBqLoadDeterministic_(tableId, rows, jobId) {
     } catch (e) {
       var msg = String((e && e.message) || e);
       if (msg.indexOf('Already Exists') >= 0 || msg.indexOf('duplicate') >= 0 || msg.indexOf('already exists') >= 0) {
-        console.log('ℹ️ load job уже существует (' + jobId + ') — повторный append НЕ делаем, ждём его завершения.');
-        submitted = true;   // job уже отправлен ранее → просто дожидаемся
-      } else if (attempt >= 3) {
-        throw e;
-      } else {
-        Utilities.sleep(2000);
+        console.log('ℹ️ load job уже существует (' + jobId + ') — повторный append НЕ делаем, ждём завершения.');
+        submitted = true;   // job уже принят ранее → дожидаемся
+        break;
       }
+      // Timeout/сетевая неопределённость после insert: BQ мог УЖЕ принять job.
+      // Перед retry/throw проверяем существование по детерминированному jobId.
+      var chk = wbStocksBqJobExists_(jobId, jobLocation);
+      if (chk.exists) {
+        console.log('ℹ️ load job принят несмотря на ошибку ответа (' + jobId + ') — повторно НЕ вставляем.');
+        submitted = true; break;                 // job есть → не дублируем append
+      }
+      if (chk.unknown) throw e;                    // не смогли проверить → fail closed
+      if (attempt >= 3) throw e;                    // точно not found и попытки исчерпаны
+      Utilities.sleep(2000);                        // точно not found → можно повторить insert
     }
   }
 
@@ -230,10 +237,52 @@ function wbStocksBqLoadDeterministic_(tableId, rows, jobId) {
   return rows.length;
 }
 
-/** stocks-локальный DML → numDmlAffectedRows (общий bqQuery_ его не отдаёт). */
+/**
+ * Существует ли BigQuery job с данным jobId. { exists, unknown }:
+ *   exists=true  — job найден (был принят);
+ *   not found    — exists=false, unknown=false (можно вставлять);
+ *   иная ошибка  — exists=false, unknown=true (проверить не смогли → fail closed).
+ */
+function wbStocksBqJobExists_(jobId, jobLocation) {
+  var c = getBqConfig_();
+  try {
+    BigQuery.Jobs.get(c.projectId, jobId, { location: jobLocation || c.location });
+    return { exists: true, unknown: false };
+  } catch (e) {
+    if (wbStocksBqIsNotFound_(e)) return { exists: false, unknown: false };
+    return { exists: false, unknown: true };
+  }
+}
+
+/**
+ * stocks-локальный DML → numDmlAffectedRows. Jobs.query может вернуть
+ * jobComplete=false (query job ещё идёт) — тогда numDmlAffectedRows читать рано.
+ * Дожидаемся завершения через getQueryResults по jobReference.jobId, проверяем
+ * errorResult (Jobs.get) и только после этого возвращаем numDmlAffectedRows.
+ */
 function wbStocksBqDml_(sql) {
   var c = getBqConfig_();
   var res = BigQuery.Jobs.query({ query: sql, useLegacySql: false, location: c.location, timeoutMs: 30000 }, c.projectId);
+  var jobId = res.jobReference && res.jobReference.jobId;
+  var jobLocation = (res.jobReference && res.jobReference.location) || c.location;
+
+  var complete = (res.jobComplete === true);
+  var tries = 0;
+  while (!complete && jobId && tries < 120) {
+    Utilities.sleep(1000);
+    res = BigQuery.Jobs.getQueryResults(c.projectId, jobId, { location: jobLocation, timeoutMs: 30000 });
+    complete = (res.jobComplete === true);
+    tries++;
+  }
+  if (!complete) throw new Error('BQ DML: query job не завершился' + (jobId ? ' (' + jobId + ')' : ''));
+
+  // Проверка ошибки самого job до чтения результата.
+  if (jobId) {
+    var j = BigQuery.Jobs.get(c.projectId, jobId, { location: jobLocation });
+    if (j.status && j.status.errorResult) {
+      throw new Error('BQ DML error (' + jobId + '): ' + JSON.stringify(j.status.errorResult));
+    }
+  }
   return Number((res && res.numDmlAffectedRows) || 0);
 }
 
@@ -328,15 +377,16 @@ function wbStocksBqManifestFinalize_(snapshotId, status, m, errorMessage) {
 // ───────────────────────────────────────────────────────────────
 
 /**
- * Фактические счётчики RAW по snapshot_id (после append): всего строк,
- * distinct естественного ключа nm_id|chrt_id|warehouse_id, строк с пустым
- * snapshot_id. Фильтр по партиции _snapshot_date для pruning.
+ * Фактические счётчики RAW по snapshot_id (после append): всего строк и distinct
+ * естественного ключа nm_id|chrt_id|warehouse_id. Фильтр по партиции _snapshot_date
+ * для pruning. (Проверку «пустой snapshot_id» не делаем — запрос и так фильтрует
+ * по snapshot_id=<id>, так что в выборке он не может быть пустым; строки всегда
+ * пишутся с snapshot_id.)
  */
 function wbStocksBqSnapshotCounts_(snapshotId, snapshotDate) {
   var c = getBqConfig_();
   var sql = 'SELECT COUNT(*) AS c, ' +
-    'COUNT(DISTINCT CONCAT(CAST(nm_id AS STRING),"|",CAST(chrt_id AS STRING),"|",CAST(warehouse_id AS STRING))) AS d, ' +
-    "COUNTIF(snapshot_id IS NULL OR snapshot_id='') AS nullkey " +
+    'COUNT(DISTINCT CONCAT(CAST(nm_id AS STRING),"|",CAST(chrt_id AS STRING),"|",CAST(warehouse_id AS STRING))) AS d ' +
     'FROM `' + c.projectId + '.' + c.datasetId + '.' + WB_STOCKS_RAW_TABLE_ + '` ' +
     'WHERE snapshot_id=' + wbStocksSqlStr_(snapshotId) +
     (snapshotDate ? ' AND _snapshot_date=' + wbStocksSqlStr_(snapshotDate) : '');
@@ -344,8 +394,7 @@ function wbStocksBqSnapshotCounts_(snapshotId, snapshotDate) {
   var f = (r && r.rows && r.rows[0] && r.rows[0].f) || [];
   return {
     count: Number(f[0] && f[0].v != null ? f[0].v : 0),
-    distinct: Number(f[1] && f[1].v != null ? f[1].v : 0),
-    nullKey: Number(f[2] && f[2].v != null ? f[2].v : 0)
+    distinct: Number(f[1] && f[1].v != null ? f[1].v : 0)
   };
 }
 
