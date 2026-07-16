@@ -443,13 +443,18 @@ function probeWbStocksT6Periods() {
   function same_(a, b) {
     return a.httpStatus === 200 && b.httpStatus === 200 &&
       a.rows === b.rows && a.sumAll === b.sumAll && a.sumPhysical === b.sumPhysical &&
-      a.sumToClient === b.sumToClient && a.sumFromClient === b.sumFromClient;
+      a.sumToClient === b.sumToClient && a.sumFromClient === b.sumFromClient &&
+      a.distinctKey === b.distinctKey && a.duplicateKeys === b.duplicateKeys &&
+      a.uniqueNmId === b.uniqueNmId;
   }
   var allOk = (A.httpStatus === 200 && B.httpStatus === 200 && C.httpStatus === 200);
   var allSame = allOk && same_(A, B) && same_(A, C);
 
   stocksProbeLog_('T6 сводка Σфиз: A=' + A.sumPhysical + ' B=' + B.sumPhysical + ' C=' + C.sumPhysical +
     ' | rows: A=' + A.rows + ' B=' + B.rows + ' C=' + C.rows);
+  stocksProbeLog_('T6 сводка ключи/SKU: distinctKey A=' + A.distinctKey + ' B=' + B.distinctKey + ' C=' + C.distinctKey +
+    ' | dup A=' + A.duplicateKeys + ' B=' + B.duplicateKeys + ' C=' + C.duplicateKeys +
+    ' | uniqueNmId A=' + A.uniqueNmId + ' B=' + B.uniqueNmId + ' C=' + C.uniqueNmId);
   if (!allOk) {
     stocksProbeLog_('⚠️ ВЕРДИКТ: не все варианты вернули 200 (A=' + A.httpStatus + ' B=' + B.httpStatus + ' C=' + C.httpStatus +
       ') — вероятно, окно ограничено; для production выбрать подтверждённое допустимое окно (см. errors).');
