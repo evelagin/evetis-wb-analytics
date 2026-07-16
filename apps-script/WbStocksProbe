@@ -353,6 +353,116 @@ function probeStocksT6Console_(token, sku) {
 
 
 // ═══════════════════════════════════════
+// B2 · СЕМАНТИКА ПЕРИОДА T6 (перед production-loader)
+// ═══════════════════════════════════════
+/*
+ * probeWbStocksT6Periods() — доказать, влияет ли currentPeriod на снимок T6.
+ * Гоняет T6 ТРИ раза (A старый май / B сегодня / C последние 7 дней) и сравнивает
+ * rows · distinctKey · Σquantity(all/физ) · Σв пути. Вывод:
+ *   • все три идентичны → период не влияет на текущий снимок (берём безопасное окно);
+ *   • различаются → период влияет, выбрать окно, дающее текущие остатки (сверить с T5);
+ *   • сегодня не принимается (не 200) → выбрать подтверждённое допустимое окно.
+ * Drive не нужен, всё в console.log. Токен не логируется. Production body фиксируем
+ * ТОЛЬКО по результату (без хардкодных тестовых дат мая).
+ */
+
+/** Метрики снимка T6: rows, ключ nmId|chrtId|warehouseId, Σqty (весь/физ), Σв пути, uniqueNmId. */
+function stocksProbeT6Metrics_(data) {
+  var keySeen = {}, dup = 0, sumAll = 0, sumPhys = 0, toClient = 0, fromClient = 0, nmSeen = {};
+  for (var i = 0; i < data.length; i++) {
+    var row = data[i];
+    var nm = wbApiTestNormNmId_(wbApiTestPick_(row, ['nmId', 'nmid', 'nm_id']));
+    if (nm) nmSeen[nm] = true;
+    var chrt = wbApiTestPick_(row, ['chrtId', 'chrt_id']);
+    var whid = wbApiTestPick_(row, ['warehouseId', 'warehouse_id']);
+    var wn = wbApiTestPick_(row, ['warehouseName', 'warehouse']);
+    var key = String(nm) + '|' + String(chrt === undefined ? '' : chrt) + '|' + String(whid === undefined ? '' : whid);
+    if (keySeen[key]) dup++; else keySeen[key] = true;
+    var q = Number(wbApiTestPick_(row, ['quantity', 'qty', 'quantityFull']) || 0);
+    sumAll += q;
+    if (!(String(whid) === '0' || String(wn) === 'Остальные')) sumPhys += q;   // физ = без агрегата
+    toClient += Number(wbApiTestPick_(row, ['inWayToClient', 'in_way_to_client']) || 0);
+    fromClient += Number(wbApiTestPick_(row, ['inWayFromClient', 'in_way_from_client']) || 0);
+  }
+  return { rows: data.length, distinctKey: Object.keys(keySeen).length, duplicateKeys: dup,
+    sumAll: wbApiTestRound_(sumAll), sumPhysical: wbApiTestRound_(sumPhys),
+    sumToClient: wbApiTestRound_(toClient), sumFromClient: wbApiTestRound_(fromClient),
+    uniqueNmId: Object.keys(nmSeen).length };
+}
+
+/** Один вызов T6 с заданным currentPeriod; логирует метрики; возвращает объект метрик. */
+function stocksProbeT6Fetch_(token, label, start, end) {
+  var endpoint = WB_API_TEST_HOST_ANALYTICS_ + '/api/analytics/v1/stocks-report/wb-warehouses';
+  var body = { currentPeriod: { start: start, end: end }, stockType: '', skipDeletedNm: false };
+  var out = { label: label, start: start, end: end, httpStatus: null, responseType: '', rows: 0, errors: [] };
+
+  var data = [];
+  try {
+    var resp = wbApiTestHttp_('post', endpoint, token, body);
+    out.httpStatus = resp.code;
+    if (!resp.ok) out.errors.push('HTTP ' + resp.code + ': ' + String(resp.body).substring(0, 200));
+    var arr = resp.json;
+    if (arr && arr.data && arr.data.items && arr.data.items.length !== undefined) { out.responseType = 'data.items'; arr = arr.data.items; }
+    else if (arr && arr.data && arr.data.length !== undefined) { out.responseType = 'data[]'; arr = arr.data; }
+    else if (Array.isArray(arr)) { out.responseType = 'array'; }
+    else { out.responseType = (arr ? typeof arr : 'null'); arr = []; }
+    if (arr && arr.length) data = arr;
+  } catch (e) { out.errors.push('Исключение: ' + e.message); }
+
+  var m = stocksProbeT6Metrics_(data);
+  out.rows = m.rows; out.distinctKey = m.distinctKey; out.duplicateKeys = m.duplicateKeys;
+  out.sumAll = m.sumAll; out.sumPhysical = m.sumPhysical;
+  out.sumToClient = m.sumToClient; out.sumFromClient = m.sumFromClient; out.uniqueNmId = m.uniqueNmId;
+
+  stocksProbeLog_('T6[' + label + '] ' + start + '..' + end + ' | HTTP ' + (out.httpStatus === null ? '—' : out.httpStatus) +
+    ' | rows ' + out.rows + ' | distinctKey ' + out.distinctKey + ' | dup ' + out.duplicateKeys +
+    ' | ΣqtyAll ' + out.sumAll + ' | Σqty физ ' + out.sumPhysical +
+    ' | Σв_путиК ' + out.sumToClient + ' | Σв_путиОт ' + out.sumFromClient + ' | nmId ' + out.uniqueNmId);
+  if (out.errors.length) stocksProbeLog_('T6[' + label + '] errors: ' + JSON.stringify(out.errors));
+  return out;
+}
+
+/** B2: T6 с тремя периодами (A май / B сегодня / C 7 дней) + вердикт влияния периода. */
+function probeWbStocksT6Periods() {
+  assertWbApiTestMode_();
+  stocksProbeLog_('=== B2 · T6 период-семантика: A(старый май) / B(сегодня) / C(последние 7 дней) ===');
+
+  var tk = wbApiTestGetToken_('Analytics');
+  wbApiTestTokenInfo_('Analytics', tk.present);
+  if (!tk.present) { stocksProbeLog_('❌ ERROR: нет токена Analytics (WB_TOKEN_ANALYTICS).'); return { error: 'no token' }; }
+
+  var today = Utilities.formatDate(new Date(), 'Europe/Moscow', 'yyyy-MM-dd');
+  var d7 = Utilities.formatDate(new Date(Date.now() - 6 * 86400000), 'Europe/Moscow', 'yyyy-MM-dd');
+
+  var A = stocksProbeT6Fetch_(tk.token, 'A_май', '2026-05-18', '2026-05-24');
+  Utilities.sleep(1500);
+  var B = stocksProbeT6Fetch_(tk.token, 'B_сегодня', today, today);
+  Utilities.sleep(1500);
+  var C = stocksProbeT6Fetch_(tk.token, 'C_7дней', d7, today);
+
+  function same_(a, b) {
+    return a.httpStatus === 200 && b.httpStatus === 200 &&
+      a.rows === b.rows && a.sumAll === b.sumAll && a.sumPhysical === b.sumPhysical &&
+      a.sumToClient === b.sumToClient && a.sumFromClient === b.sumFromClient;
+  }
+  var allOk = (A.httpStatus === 200 && B.httpStatus === 200 && C.httpStatus === 200);
+  var allSame = allOk && same_(A, B) && same_(A, C);
+
+  stocksProbeLog_('T6 сводка Σфиз: A=' + A.sumPhysical + ' B=' + B.sumPhysical + ' C=' + C.sumPhysical +
+    ' | rows: A=' + A.rows + ' B=' + B.rows + ' C=' + C.rows);
+  if (!allOk) {
+    stocksProbeLog_('⚠️ ВЕРДИКТ: не все варианты вернули 200 (A=' + A.httpStatus + ' B=' + B.httpStatus + ' C=' + C.httpStatus +
+      ') — вероятно, окно ограничено; для production выбрать подтверждённое допустимое окно (см. errors).');
+  } else if (allSame) {
+    stocksProbeLog_('✅ ВЕРДИКТ: все три идентичны → период НЕ влияет на текущий снимок; production body может брать безопасное фиксированное окно.');
+  } else {
+    stocksProbeLog_('⚠️ ВЕРДИКТ: ответы различаются → период ВЛИЯЕТ; выбрать окно, дающее текущие остатки (сверить Σфиз с T5=4565 на момент прогона).');
+  }
+  return { A: A, B: B, C: C, allOk: allOk, allSame: allSame };
+}
+
+
+// ═══════════════════════════════════════
 // МЕНЮ (опционально; подключить в Menu v2 → onOpen:
 //        addWbStocksProbeMenu();)
 // ═══════════════════════════════════════
@@ -361,6 +471,7 @@ function addWbStocksProbeMenu() {
   SpreadsheetApp.getUi()
     .createMenu('🧪 Probe остатков')
     .addItem('🔍 Probe T5/T6 (console, без Drive)', 'probeWbStocksConsole')
+    .addItem('🕒 T6 период-семантика (B2)', 'probeWbStocksT6Periods')
     .addItem('🔍 Probe T5/T6 (с Drive-артефактами)', 'probeWbStocksTestOnly')
     .addToUi();
 }
