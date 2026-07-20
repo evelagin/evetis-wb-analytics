@@ -293,7 +293,7 @@ ACOS = расход / `ad_attributed_revenue` (в %);
 ### Уровень 2 — бизнес-витрины
 | MART | Грейн | Входы | Показатели |
 |---|---|---|---|
-| **`MART_SKU_DAILY`** (якорь) | day × internal_sku (+ разрез `nm_id`) | FACT_SALES/ORDERS/STOCKS_SNAPSHOT/FINANCE + REF_COST_HISTORY | заказы, продажи, `sale_amount`, возвраты, остаток, продажи/сутки, дней запаса, cogs, маржа |
+| **`MART_SKU_DAILY`** (якорь) | day × internal_sku (+ разрез `nm_id`) | FACT_SALES/ORDERS/STOCKS_SNAPSHOT/FINANCE + REF_COST_HISTORY | заказы, продажи, `sale_amount`, возвраты, остаток, продажи/сутки, дней запаса, cogs, маржа (после reconciliation) |
 | `MART_SALES_DAILY` | day | FACT_SALES/ORDERS | заказы, продажи, возвраты, `order_amount`, `sale_amount` |
 | `MART_SALES_BY_WAREHOUSE` | day × nm_id × warehouse | FACT_SALES | продано, возвраты, выручка по складу |
 | `MART_STOCKS_CURRENT` | nm_id × warehouse | **последний COMPLETE-снимок** | остаток, в пути, дата снимка |
@@ -390,7 +390,7 @@ ACOS = расход / `ad_attributed_revenue` (в %);
 
 ---
 
-## 13. Порядок реализации (утверждён 16.07.2026, ревизия 2)
+## 13. Порядок реализации (утверждён 16.07.2026, ревизия 3)
 
 | # | Этап | Статус |
 |---|---|---|
