@@ -44,14 +44,55 @@ function getFinanceV1Token_() {
   return null;
 }
 
+// ── Глобальный пейсер Finance API (PR-Fin1, code audit Б2) ──
+// Тот же ScriptProperty, что у WbFinanceDaily.gs: 1 req/мин действует на ВСЕ
+// вызовы Finance API из legacy-контура (list/detailed обоих старых файлов идут
+// через wbFinV1Post_). Резервация слота — ДО fetch, под коротким ScriptLock
+// (сон — вне lock'а); сбой чтения/записи property или недоступный lock =
+// fail-closed (исключение, запрос не выполняется). Во время тика
+// WbFinanceDaily (он держит общий ScriptLock весь прогон) legacy-вызов
+// не получит lock и упадёт — это желаемое поведение (не interleave'имся).
+// ⚠️ ЗАФИКСИРОВАНО (code audit v1.2): wbFinanceBackfillAutoTick
+// (WbFinanceBackfillBQ.gs) больше НЕ production-entrypoint — он сам держит
+// ScriptLock на прогон, что несовместимо с нереентерабельным pacer-lock'ом
+// (его вызов пейсера упадёт fail-closed). Регулярная загрузка — ТОЛЬКО
+// WbFinanceDaily.gs; ручной глубокий бэкфилл — wbFinDeepBackfillRegister().
+var WB_FIN_V1_PACER_PROP_ = 'WB_FIN_API_LAST_REQ_MS';
+var WB_FIN_V1_PACER_MS_   = 61000;
+
+function wbFinV1PacerReserve_() {
+  var props = PropertiesService.getScriptProperties();
+  for (var g = 0; g < 10; g++) {
+    var last = Number(props.getProperty(WB_FIN_V1_PACER_PROP_) || 0);
+    var wait = last ? (WB_FIN_V1_PACER_MS_ - (Date.now() - last)) : 0;
+    if (wait > 0) { Utilities.sleep(wait); continue; } // спим ВНЕ lock'а, потом перечитываем
+    var lock = LockService.getScriptLock();
+    if (!lock.tryLock(5000)) {
+      throw new Error('Finance API pacer: ScriptLock недоступен (идёт другой прогон?) — запрос отменён');
+    }
+    try {
+      last = Number(props.getProperty(WB_FIN_V1_PACER_PROP_) || 0);
+      wait = last ? (WB_FIN_V1_PACER_MS_ - (Date.now() - last)) : 0;
+      if (wait <= 0) {
+        props.setProperty(WB_FIN_V1_PACER_PROP_, String(Date.now())); // throw → fail-closed
+        return;
+      }
+    } finally {
+      lock.releaseLock();
+    }
+  }
+  throw new Error('Finance API pacer: слот не зарезервирован за 10 попыток');
+}
+
 /** Универсальный POST к новому API «Финансы». Возвращает {code, body, json}. */
 function wbFinV1Post_(token, path, bodyObj) {
+  wbFinV1PacerReserve_(); // 1 req/мин глобально (fail-closed)
   var url = WB_FIN_V1_BASE_ + path;
   var resp = UrlFetchApp.fetch(url, {
     method: 'post',
     contentType: 'application/json',
     headers: { 'Authorization': token },
-    payload: JSON.stringify(bodyObj || {}),
+    payload: (typeof bodyObj === 'string') ? bodyObj : JSON.stringify(bodyObj || {}), // фикс PR-Fin1: строка-payload вербатим (BigInt-курсор)
     muteHttpExceptions: true
   });
   var code = resp.getResponseCode();
@@ -132,7 +173,7 @@ function wbFinanceV1DetailedSample() {
     console.log('═══════════ reportId ' + rid + ' ═══════════');
 
     var path = WB_FIN_V1_DET_PATH_ + encodeURIComponent(rid);
-    var body = { rrdid: 0, limit: WB_FIN_V1_SAMPLE_LIMIT_ }; // пагинация по rrdid
+    var body = { rrdId: 0, limit: WB_FIN_V1_SAMPLE_LIMIT_ }; // пагинация по rrdId (фикс PR-Fin1: имя поля по спеке)
     console.log('POST ' + WB_FIN_V1_BASE_ + path + '  body=' + JSON.stringify(body));
 
     var r = wbFinV1Post_(tk.token, path, body);
@@ -181,10 +222,10 @@ function parseMoneyV1_(v) {
 /** Тянет ВСЕ строки detailed по одному reportId (пагинация по rrdId). */
 function wbFinV1FetchDetailedAll_(token, reportId) {
   var all = [];
-  var rrdid = 0, pages = 0, guard = 0;
+  var rrdid = '0', pages = 0, guard = 0; // фикс PR-Fin1: курсор СТРОКОЙ (BigInt-безопасно)
   while (guard++ < 500) {
     var path = WB_FIN_V1_DET_PATH_ + encodeURIComponent(reportId);
-    var r = wbFinV1Post_(token, path, { rrdid: rrdid, limit: WB_FIN_V1_PAGE_LIMIT_ });
+    var r = wbFinV1Post_(token, path, '{"rrdId":' + rrdid + ',"limit":' + WB_FIN_V1_PAGE_LIMIT_ + '}'); // фикс PR-Fin1: rrdId по спеке, курсор вербатим строкой
     if (r.code === 429) { Utilities.sleep(20000); continue; }
     if (r.code === 204) break; // нет данных — нормальное завершение пагинации
     if (r.code !== 200) return { ok: false, data: all, error: 'HTTP ' + r.code + ': ' + String(r.body).substring(0, 200) };
@@ -193,8 +234,8 @@ function wbFinV1FetchDetailedAll_(token, reportId) {
     for (var i = 0; i < arr.length; i++) all.push(arr[i]);
     pages++;
     var last = arr[arr.length - 1];
-    var lastId = Number(last.rrdId || 0);
-    if (!lastId || lastId === rrdid) break;
+    var lastId = String(last.rrdId === undefined || last.rrdId === null ? '' : last.rrdId); // фикс PR-Fin1: без Number()
+    if (!/^\d+$/.test(lastId) || lastId === '0' || lastId === rrdid) break;
     rrdid = lastId;
     if (arr.length < WB_FIN_V1_PAGE_LIMIT_) break;
     Utilities.sleep(500);
