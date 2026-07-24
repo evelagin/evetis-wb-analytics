@@ -1,0 +1,12 @@
+# Скопировать в terraform.tfvars и заполнить. Значения токенов сюда НЕ кладём.
+# Backend (GCS) конфигурируется отдельно при init:
+#   terraform init -backend-config="bucket=<STATE_BUCKET>" -backend-config="prefix=evetis/wb-cloud"
+# Сам bucket создаётся модулем infra/bootstrap (см. docs/GCP_SETUP_CHECKLIST.md).
+project_id     = "project-fa311fc0-4d87-4781-986"
+project_number = "37074083763"
+region         = "europe-west1"
+bq_location    = "EU"
+raw_dataset    = "wb_raw"
+artifact_repo  = "wb-loaders"
+github_repo    = "evelagin/evetis-wb-analytics"
+# container_image по умолчанию = bootstrap hello; CI продвигает реальный digest.

@@ -1,0 +1,44 @@
+name: deploy-prod
+# Промоушен ПРОВЕРЕННОГО в shadow образа в prod. Образ НЕ пересобирается.
+# GIT_SHA берём из source_git_sha сборки (а НЕ из commit запуска этого workflow).
+on:
+  workflow_dispatch:
+    inputs:
+      image_digest:
+        description: "Полный digest из shadow (…/wb-loader@sha256:…)"
+        required: true
+      source_git_sha:
+        description: "SHA коммита, из которого собран этот образ (из summary deploy-shadow)"
+        required: true
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  promote-prod:
+    runs-on: ubuntu-latest
+    environment: production # ручной approval
+    steps:
+      - uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ vars.WIF_PROVIDER }}
+          service_account: ${{ vars.DEPLOYER_SA }}
+      - uses: google-github-actions/setup-gcloud@v2
+      - name: Validate digest
+        run: |
+          DIGEST="${{ inputs.image_digest }}"
+          EXPECTED_PREFIX="${{ vars.GCP_REGION }}-docker.pkg.dev/${{ vars.GCP_PROJECT_ID }}/${{ vars.AR_REPO }}/wb-loader@sha256:"
+          case "$DIGEST" in
+            "${EXPECTED_PREFIX}"*) echo "digest ok: $DIGEST" ;;
+            *) echo "BAD digest: ожидался префикс ${EXPECTED_PREFIX}"; exit 1 ;;
+          esac
+          # digest должен существовать в реестре
+          gcloud artifacts docker images describe "$DIGEST" >/dev/null
+      - name: Deploy prod Job (промоушен того же digest, source sha)
+        run: |
+          gcloud run jobs update wb-stocks-prod \
+            --region ${{ vars.GCP_REGION }} \
+            --image "${{ inputs.image_digest }}" \
+            --update-env-vars IMAGE_DIGEST="${{ inputs.image_digest }}",GIT_SHA="${{ inputs.source_git_sha }}"
+      # НЕ включает Scheduler и НЕ меняет IAM.

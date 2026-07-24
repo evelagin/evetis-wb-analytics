@@ -1,0 +1,74 @@
+name: infra
+# Authenticated Terraform plan/apply. НЕ запускается на PR (offline fmt/validate — в ci.yml).
+# Требует настроенных GitHub Variables (WIF/SA/bucket). Без них — явный SKIPPED, не FAILURE.
+on:
+  workflow_dispatch:
+    inputs:
+      action:
+        description: "plan | apply"
+        required: true
+        default: "plan"
+
+permissions:
+  contents: read
+  id-token: write
+
+env:
+  TF_VAR_project_id: ${{ vars.GCP_PROJECT_ID }}
+  TF_VAR_project_number: ${{ vars.GCP_PROJECT_NUMBER }}
+  TF_VAR_github_repo: ${{ github.repository }}
+  TF_VAR_region: ${{ vars.GCP_REGION }}
+  TF_VAR_raw_dataset: ${{ vars.BQ_RAW_DATASET }}
+  TF_VAR_artifact_repo: ${{ vars.AR_REPO }}
+
+jobs:
+  preflight:
+    runs-on: ubuntu-latest
+    outputs:
+      configured: ${{ steps.check.outputs.configured }}
+    steps:
+      - id: check
+        run: |
+          if [ -n "${{ vars.WIF_PROVIDER }}" ] && [ -n "${{ vars.TF_STATE_BUCKET }}" ] \
+             && [ -n "${{ vars.TERRAFORM_PLAN_SA }}" ] && [ -n "${{ vars.TERRAFORM_APPLY_SA }}" ]; then
+            echo "configured=true" >> "$GITHUB_OUTPUT"
+            echo "GCP config present — authenticated ${{ inputs.action }} будет выполнен."
+          else
+            echo "configured=false" >> "$GITHUB_OUTPUT"
+            echo "::notice title=infra SKIPPED::WIF_PROVIDER/TF_STATE_BUCKET/TERRAFORM_*_SA не заданы. Сначала выполни разовую настройку GCP (docs/GCP_SETUP_CHECKLIST.md). Authenticated plan/apply пропущены."
+          fi
+
+  plan:
+    needs: preflight
+    if: inputs.action == 'plan' && needs.preflight.outputs.configured == 'true'
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: infra/terraform
+    steps:
+      - uses: actions/checkout@v4
+      - uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ vars.WIF_PROVIDER }}
+          service_account: ${{ vars.TERRAFORM_PLAN_SA }} # read-only
+      - uses: hashicorp/setup-terraform@v3
+      - run: terraform init -input=false -backend-config="bucket=${{ vars.TF_STATE_BUCKET }}" -backend-config="prefix=evetis/wb-cloud"
+      - run: terraform plan -input=false
+
+  apply:
+    needs: preflight
+    if: inputs.action == 'apply' && needs.preflight.outputs.configured == 'true'
+    runs-on: ubuntu-latest
+    environment: infra # ручной approval
+    defaults:
+      run:
+        working-directory: infra/terraform
+    steps:
+      - uses: actions/checkout@v4
+      - uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ vars.WIF_PROVIDER }}
+          service_account: ${{ vars.TERRAFORM_APPLY_SA }} # privileged, main-only (WIF ref-условие)
+      - uses: hashicorp/setup-terraform@v3
+      - run: terraform init -input=false -backend-config="bucket=${{ vars.TF_STATE_BUCKET }}" -backend-config="prefix=evetis/wb-cloud"
+      - run: terraform apply -input=false -auto-approve

@@ -1,0 +1,39 @@
+name: scheduler-control
+# Управление расписанием отдельно от деплоя (аудит-френдли, без Console).
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: "shadow | prod"
+        required: true
+      loader:
+        description: "имя loader, напр. wb-stocks"
+        required: true
+        default: "wb-stocks"
+      action:
+        description: "pause | resume | run-now"
+        required: true
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  control:
+    runs-on: ubuntu-latest
+    environment: ${{ inputs.environment == 'prod' && 'production' || 'infra' }}
+    steps:
+      - uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ vars.WIF_PROVIDER }}
+          service_account: ${{ vars.TERRAFORM_APPLY_SA }} # scheduler admin + run execute
+      - uses: google-github-actions/setup-gcloud@v2
+      - name: Apply action
+        run: |
+          JOB="${{ inputs.loader }}-${{ inputs.environment }}"
+          case "${{ inputs.action }}" in
+            pause)   gcloud scheduler jobs pause  "$JOB" --location ${{ vars.GCP_REGION }} ;;
+            resume)  gcloud scheduler jobs resume "$JOB" --location ${{ vars.GCP_REGION }} ;;
+            run-now) gcloud run jobs execute "$JOB" --region ${{ vars.GCP_REGION }} --wait ;;
+            *) echo "unknown action"; exit 1 ;;
+          esac
