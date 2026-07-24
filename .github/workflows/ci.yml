@@ -1,5 +1,5 @@
 name: ci
-# PR-проверки. БЕЗ деплоя, без облачных креденшелов.
+# PR-проверки. БЕЗ деплоя, без облачных креденшелов, без backend.
 on:
   pull_request:
     paths: ["cloud/**", "infra/**", ".github/workflows/**"]
@@ -33,12 +33,19 @@ jobs:
 
   infra:
     runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: infra/terraform
     steps:
       - uses: actions/checkout@v4
       - uses: hashicorp/setup-terraform@v3
-      - run: terraform fmt -check -recursive
-      - run: terraform init -backend=false -input=false
-      - run: terraform validate
+      - name: fmt (all)
+        run: terraform fmt -check -recursive
+        working-directory: infra
+      - name: validate terraform (offline)
+        working-directory: infra/terraform
+        run: |
+          terraform init -backend=false -input=false
+          terraform validate
+      - name: validate bootstrap (offline)
+        working-directory: infra/bootstrap
+        run: |
+          terraform init -backend=false -input=false
+          terraform validate

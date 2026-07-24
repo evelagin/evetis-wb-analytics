@@ -1,8 +1,7 @@
 name: infra
-# Terraform plan/apply. Apply — только вручную, из main, с approval (Environment infra).
+# Authenticated Terraform plan/apply. НЕ запускается на PR (offline fmt/validate — в ci.yml).
+# Требует настроенных GitHub Variables (WIF/SA/bucket). Без них — явный SKIPPED, не FAILURE.
 on:
-  pull_request:
-    paths: ["infra/**"]
   workflow_dispatch:
     inputs:
       action:
@@ -23,8 +22,25 @@ env:
   TF_VAR_artifact_repo: ${{ vars.AR_REPO }}
 
 jobs:
+  preflight:
+    runs-on: ubuntu-latest
+    outputs:
+      configured: ${{ steps.check.outputs.configured }}
+    steps:
+      - id: check
+        run: |
+          if [ -n "${{ vars.WIF_PROVIDER }}" ] && [ -n "${{ vars.TF_STATE_BUCKET }}" ] \
+             && [ -n "${{ vars.TERRAFORM_PLAN_SA }}" ] && [ -n "${{ vars.TERRAFORM_APPLY_SA }}" ]; then
+            echo "configured=true" >> "$GITHUB_OUTPUT"
+            echo "GCP config present — authenticated ${{ inputs.action }} будет выполнен."
+          else
+            echo "configured=false" >> "$GITHUB_OUTPUT"
+            echo "::notice title=infra SKIPPED::WIF_PROVIDER/TF_STATE_BUCKET/TERRAFORM_*_SA не заданы. Сначала выполни разовую настройку GCP (docs/GCP_SETUP_CHECKLIST.md). Authenticated plan/apply пропущены."
+          fi
+
   plan:
-    if: github.event_name == 'pull_request' || inputs.action == 'plan'
+    needs: preflight
+    if: inputs.action == 'plan' && needs.preflight.outputs.configured == 'true'
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -40,7 +56,8 @@ jobs:
       - run: terraform plan -input=false
 
   apply:
-    if: github.event_name == 'workflow_dispatch' && inputs.action == 'apply'
+    needs: preflight
+    if: inputs.action == 'apply' && needs.preflight.outputs.configured == 'true'
     runs-on: ubuntu-latest
     environment: infra # ручной approval
     defaults:

@@ -142,3 +142,7 @@ vite.config.js.timestamp-*
 vite.config.ts.timestamp-*
 .vite/
 .DS_Store
+
+# transfer artifacts (не коммитить)
+_to_delete/
+*.tar.gz
