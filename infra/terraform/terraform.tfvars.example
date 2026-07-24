@@ -1,0 +1,9 @@
+# Скопировать в terraform.tfvars и заполнить. Значения токенов сюда НЕ кладём.
+project_id     = "project-fa311fc0-4d87-4781-986"
+project_number = "37074083763"
+region         = "europe-west1"
+bq_location    = "EU"
+raw_dataset    = "wb_raw"
+artifact_repo  = "wb-loaders"
+github_repo    = "OWNER/evetis-wb-analytics"   # заменить на реальный owner/name
+# container_image по умолчанию = bootstrap hello; CI продвигает реальный digest.

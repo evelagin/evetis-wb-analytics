@@ -1,0 +1,51 @@
+name: infra
+# Terraform plan/apply. Apply — только вручную и с approval (GitHub Environment).
+on:
+  pull_request:
+    paths: ["infra/**"]
+  workflow_dispatch:
+    inputs:
+      action:
+        description: "plan | apply"
+        required: true
+        default: "plan"
+
+permissions:
+  contents: read
+  id-token: write # WIF
+
+jobs:
+  plan:
+    if: github.event_name == 'pull_request' || inputs.action == 'plan'
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: infra/terraform
+    steps:
+      - uses: actions/checkout@v4
+      - id: auth
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ vars.WIF_PROVIDER }}
+          service_account: ${{ vars.TERRAFORM_SA }}
+      - uses: hashicorp/setup-terraform@v3
+      - run: terraform init -input=false
+      - run: terraform plan -input=false
+
+  apply:
+    if: github.event_name == 'workflow_dispatch' && inputs.action == 'apply'
+    runs-on: ubuntu-latest
+    environment: infra # требует ручного approval (reviewers)
+    defaults:
+      run:
+        working-directory: infra/terraform
+    steps:
+      - uses: actions/checkout@v4
+      - id: auth
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ vars.WIF_PROVIDER }}
+          service_account: ${{ vars.TERRAFORM_SA }}
+      - uses: hashicorp/setup-terraform@v3
+      - run: terraform init -input=false
+      - run: terraform apply -input=false -auto-approve

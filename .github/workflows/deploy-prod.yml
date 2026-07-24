@@ -1,0 +1,33 @@
+name: deploy-prod
+# Промоушен ПРОВЕРЕННОГО digest из shadow в prod. Образ НЕ пересобирается.
+# Требует ручного approval (environment: production). Не меняет IAM/Scheduler.
+on:
+  workflow_dispatch:
+    inputs:
+      image_digest:
+        description: "Полный digest, проверенный в shadow (…/wb-loader@sha256:…)"
+        required: true
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  promote-prod:
+    runs-on: ubuntu-latest
+    environment: production # ручной approval
+    steps:
+      - uses: actions/checkout@v4
+      - id: auth
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ vars.WIF_PROVIDER }}
+          service_account: ${{ vars.DEPLOYER_SA }}
+      - uses: google-github-actions/setup-gcloud@v2
+      - name: Deploy prod Job (promote same digest)
+        run: |
+          gcloud run jobs update wb-stocks-prod \
+            --region ${{ vars.GCP_REGION }} \
+            --image "${{ inputs.image_digest }}" \
+            --update-env-vars IMAGE_DIGEST="${{ inputs.image_digest }}",GIT_SHA="${GITHUB_SHA}"
+      # ВНИМАНИЕ: этот workflow НЕ включает Scheduler и НЕ меняет IAM.

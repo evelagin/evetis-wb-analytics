@@ -1,0 +1,44 @@
+name: deploy-shadow
+# Собирает ОДИН образ, пушит по digest, деплоит shadow Job. Digest — в output/summary
+# для последующего promotion в prod (prod образ НЕ пересобирается).
+on:
+  push:
+    branches: ["main"]
+    paths: ["cloud/**"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  build-deploy-shadow:
+    runs-on: ubuntu-latest
+    outputs:
+      image_digest: ${{ steps.push.outputs.digest }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: auth
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ vars.WIF_PROVIDER }}
+          service_account: ${{ vars.DEPLOYER_SA }}
+      - uses: google-github-actions/setup-gcloud@v2
+      - name: Docker auth
+        run: gcloud auth configure-docker ${{ vars.GCP_REGION }}-docker.pkg.dev --quiet
+      - name: Build & push (by digest)
+        id: push
+        working-directory: cloud
+        run: |
+          IMAGE="${{ vars.GCP_REGION }}-docker.pkg.dev/${{ vars.GCP_PROJECT_ID }}/${{ vars.AR_REPO }}/wb-loader"
+          docker build -t "$IMAGE:${GITHUB_SHA}" .
+          docker push "$IMAGE:${GITHUB_SHA}"
+          DIGEST=$(gcloud artifacts docker images describe "$IMAGE:${GITHUB_SHA}" --format='value(image_summary.digest)')
+          echo "digest=${IMAGE}@${DIGEST}" >> "$GITHUB_OUTPUT"
+          echo "Built immutable image: ${IMAGE}@${DIGEST}" >> "$GITHUB_STEP_SUMMARY"
+      - name: Deploy shadow Job (same digest)
+        run: |
+          gcloud run jobs update wb-stocks-shadow \
+            --region ${{ vars.GCP_REGION }} \
+            --image "${{ steps.push.outputs.digest }}" \
+            --update-env-vars IMAGE_DIGEST="${{ steps.push.outputs.digest }}",GIT_SHA="${GITHUB_SHA}"

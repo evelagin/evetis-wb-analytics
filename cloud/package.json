@@ -1,0 +1,28 @@
+{
+  "name": "evetis-wb-cloud",
+  "version": "0.0.0",
+  "private": true,
+  "description": "EVETIS WB Analytics — облачные загрузчики (Cloud Run Jobs). PR-Mig0: фундамент, без бизнес-логики.",
+  "type": "module",
+  "engines": { "node": ">=20" },
+  "bin": { "wb-loader": "dist/cli.js" },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "lint": "eslint \"src/**/*.ts\" \"test/**/*.ts\"",
+    "test": "vitest run",
+    "start": "node dist/cli.js"
+  },
+  "dependencies": {
+    "@google-cloud/bigquery": "^7.9.0",
+    "@google-cloud/secret-manager": "^5.6.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.14.0",
+    "@typescript-eslint/eslint-plugin": "^7.16.0",
+    "@typescript-eslint/parser": "^7.16.0",
+    "eslint": "^8.57.0",
+    "typescript": "^5.5.0",
+    "vitest": "^2.0.0"
+  }
+}
