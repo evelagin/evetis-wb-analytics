@@ -7,8 +7,12 @@ output "deployer_service_account" {
   value = google_service_account.deployer.email
 }
 
-output "terraform_service_account" {
-  value = google_service_account.terraform.email
+output "terraform_plan_service_account" {
+  value = google_service_account.terraform_plan.email
+}
+
+output "terraform_apply_service_account" {
+  value = google_service_account.terraform_apply.email
 }
 
 output "artifact_registry_repo" {

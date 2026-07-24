@@ -26,8 +26,14 @@ resource "google_service_account" "deployer" {
   display_name = "GitHub Actions deployer (WIF)"
 }
 
-# Terraform identity (infra.yml) — привилегированная, применяется только с approval.
-resource "google_service_account" "terraform" {
-  account_id   = "sa-terraform"
-  display_name = "Terraform infra (infra.yml, approval-gated)"
+# Terraform PLAN (read-only) — доступен из PR-workflow, менять ресурсы НЕ может.
+resource "google_service_account" "terraform_plan" {
+  account_id   = "sa-terraform-plan"
+  display_name = "Terraform plan (read-only, PR)"
+}
+
+# Terraform APPLY (привилегированный) — только из main + environment infra + approval.
+resource "google_service_account" "terraform_apply" {
+  account_id   = "sa-terraform-apply"
+  display_name = "Terraform apply (privileged, main-only)"
 }

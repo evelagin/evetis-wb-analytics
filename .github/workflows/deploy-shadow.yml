@@ -1,6 +1,6 @@
 name: deploy-shadow
-# Собирает ОДИН образ, пушит по digest, деплоит shadow Job. Digest — в output/summary
-# для последующего promotion в prod (prod образ НЕ пересобирается).
+# Собирает ОДИН образ, пушит по digest, деплоит shadow Job. Для промоушена в prod
+# оператор берёт из summary ПАРУ (digest, source_git_sha) — prod образ не пересобирается.
 on:
   push:
     branches: ["main"]
@@ -16,27 +16,31 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       image_digest: ${{ steps.push.outputs.digest }}
+      source_git_sha: ${{ github.sha }}
     steps:
       - uses: actions/checkout@v4
-      - id: auth
-        uses: google-github-actions/auth@v2
+      - uses: google-github-actions/auth@v2
         with:
           workload_identity_provider: ${{ vars.WIF_PROVIDER }}
           service_account: ${{ vars.DEPLOYER_SA }}
       - uses: google-github-actions/setup-gcloud@v2
-      - name: Docker auth
-        run: gcloud auth configure-docker ${{ vars.GCP_REGION }}-docker.pkg.dev --quiet
-      - name: Build & push (by digest)
+      - run: gcloud auth configure-docker ${{ vars.GCP_REGION }}-docker.pkg.dev --quiet
+      - name: Build & push (by digest, метка source sha)
         id: push
         working-directory: cloud
         run: |
           IMAGE="${{ vars.GCP_REGION }}-docker.pkg.dev/${{ vars.GCP_PROJECT_ID }}/${{ vars.AR_REPO }}/wb-loader"
-          docker build -t "$IMAGE:${GITHUB_SHA}" .
+          docker build --label "git-sha=${GITHUB_SHA}" -t "$IMAGE:${GITHUB_SHA}" .
           docker push "$IMAGE:${GITHUB_SHA}"
           DIGEST=$(gcloud artifacts docker images describe "$IMAGE:${GITHUB_SHA}" --format='value(image_summary.digest)')
           echo "digest=${IMAGE}@${DIGEST}" >> "$GITHUB_OUTPUT"
-          echo "Built immutable image: ${IMAGE}@${DIGEST}" >> "$GITHUB_STEP_SUMMARY"
-      - name: Deploy shadow Job (same digest)
+          {
+            echo "### Shadow image built"
+            echo "- image_digest: \`${IMAGE}@${DIGEST}\`"
+            echo "- source_git_sha: \`${GITHUB_SHA}\`"
+            echo "Промоушен в prod: запусти deploy-prod с ЭТИМИ значениями."
+          } >> "$GITHUB_STEP_SUMMARY"
+      - name: Deploy shadow Job (тот же digest)
         run: |
           gcloud run jobs update wb-stocks-shadow \
             --region ${{ vars.GCP_REGION }} \

@@ -1,5 +1,5 @@
 name: infra
-# Terraform plan/apply. Apply — только вручную и с approval (GitHub Environment).
+# Terraform plan/apply. Apply — только вручную, из main, с approval (Environment infra).
 on:
   pull_request:
     paths: ["infra/**"]
@@ -12,7 +12,15 @@ on:
 
 permissions:
   contents: read
-  id-token: write # WIF
+  id-token: write
+
+env:
+  TF_VAR_project_id: ${{ vars.GCP_PROJECT_ID }}
+  TF_VAR_project_number: ${{ vars.GCP_PROJECT_NUMBER }}
+  TF_VAR_github_repo: ${{ github.repository }}
+  TF_VAR_region: ${{ vars.GCP_REGION }}
+  TF_VAR_raw_dataset: ${{ vars.BQ_RAW_DATASET }}
+  TF_VAR_artifact_repo: ${{ vars.AR_REPO }}
 
 jobs:
   plan:
@@ -23,29 +31,27 @@ jobs:
         working-directory: infra/terraform
     steps:
       - uses: actions/checkout@v4
-      - id: auth
-        uses: google-github-actions/auth@v2
+      - uses: google-github-actions/auth@v2
         with:
           workload_identity_provider: ${{ vars.WIF_PROVIDER }}
-          service_account: ${{ vars.TERRAFORM_SA }}
+          service_account: ${{ vars.TERRAFORM_PLAN_SA }} # read-only
       - uses: hashicorp/setup-terraform@v3
-      - run: terraform init -input=false
+      - run: terraform init -input=false -backend-config="bucket=${{ vars.TF_STATE_BUCKET }}" -backend-config="prefix=evetis/wb-cloud"
       - run: terraform plan -input=false
 
   apply:
     if: github.event_name == 'workflow_dispatch' && inputs.action == 'apply'
     runs-on: ubuntu-latest
-    environment: infra # требует ручного approval (reviewers)
+    environment: infra # ручной approval
     defaults:
       run:
         working-directory: infra/terraform
     steps:
       - uses: actions/checkout@v4
-      - id: auth
-        uses: google-github-actions/auth@v2
+      - uses: google-github-actions/auth@v2
         with:
           workload_identity_provider: ${{ vars.WIF_PROVIDER }}
-          service_account: ${{ vars.TERRAFORM_SA }}
+          service_account: ${{ vars.TERRAFORM_APPLY_SA }} # privileged, main-only (WIF ref-условие)
       - uses: hashicorp/setup-terraform@v3
-      - run: terraform init -input=false
+      - run: terraform init -input=false -backend-config="bucket=${{ vars.TF_STATE_BUCKET }}" -backend-config="prefix=evetis/wb-cloud"
       - run: terraform apply -input=false -auto-approve

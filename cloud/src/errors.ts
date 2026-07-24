@@ -8,9 +8,6 @@ export const EXIT_ERROR = 1;
 /** Терминальный статус строки манифеста в BQ. */
 export type ManifestStatus = 'STARTED' | 'COMPLETE' | 'ERROR';
 
-/** Решение execution-guard по логическому периоду. */
-export type GuardAction = 'PROCEED' | 'OK_NO_NEW' | 'ALREADY_RUNNING' | 'RECOVER';
-
 export class LoaderError extends Error {
   constructor(
     message: string,

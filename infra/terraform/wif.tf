@@ -14,8 +14,9 @@ resource "google_iam_workload_identity_pool_provider" "github" {
     "google.subject"       = "assertion.sub"
     "attribute.repository" = "assertion.repository"
     "attribute.ref"        = "assertion.ref"
+    # Композитный атрибут repo@ref — для точного ограничения привилегированного SA.
+    "attribute.repo_ref" = "assertion.repository + \"@\" + assertion.ref"
   }
-  # Ограничиваем провайдер конкретным репозиторием.
   attribute_condition = "assertion.repository == \"${var.github_repo}\""
 
   oidc {
@@ -23,16 +24,27 @@ resource "google_iam_workload_identity_pool_provider" "github" {
   }
 }
 
-# Только workflow из нашего репо может impersonate sa-deployer.
+locals {
+  pool_principal = "principalSet://iam.googleapis.com/projects/${var.project_number}/locations/global/workloadIdentityPools/${google_iam_workload_identity_pool.github.workload_identity_pool_id}"
+}
+
+# deployer: любой workflow нашего репо (деплой Job из main; права узкие).
 resource "google_service_account_iam_member" "deployer_wif" {
   service_account_id = google_service_account.deployer.name
   role               = "roles/iam.workloadIdentityUser"
-  member             = "principalSet://iam.googleapis.com/projects/${var.project_number}/locations/global/workloadIdentityPools/${google_iam_workload_identity_pool.github.workload_identity_pool_id}/attribute.repository/${var.github_repo}"
+  member             = "${local.pool_principal}/attribute.repository/${var.github_repo}"
 }
 
-# Отдельный WIF-биндинг для Terraform-идентити (infra.yml).
-resource "google_service_account_iam_member" "terraform_wif" {
-  service_account_id = google_service_account.terraform.name
+# terraform-plan: любой workflow репо (нужен для PR-plan), но SA read-only.
+resource "google_service_account_iam_member" "terraform_plan_wif" {
+  service_account_id = google_service_account.terraform_plan.name
   role               = "roles/iam.workloadIdentityUser"
-  member             = "principalSet://iam.googleapis.com/projects/${var.project_number}/locations/global/workloadIdentityPools/${google_iam_workload_identity_pool.github.workload_identity_pool_id}/attribute.repository/${var.github_repo}"
+  member             = "${local.pool_principal}/attribute.repository/${var.github_repo}"
+}
+
+# terraform-apply: ТОЛЬКО repo@refs/heads/main (PR-код токен админ-SA не получит).
+resource "google_service_account_iam_member" "terraform_apply_wif" {
+  service_account_id = google_service_account.terraform_apply.name
+  role               = "roles/iam.workloadIdentityUser"
+  member             = "${local.pool_principal}/attribute.repo_ref/${var.github_repo}@refs/heads/main"
 }

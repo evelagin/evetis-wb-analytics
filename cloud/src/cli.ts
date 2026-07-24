@@ -1,7 +1,7 @@
 /**
  * Точка входа Cloud Run Job (PR-Mig0): node dist/cli.js <loader>.
- * Оркестрация: config → execution-guard (env×loader×period) → loader → finalize.
- * DRY_RUN=1 прогоняет каркас без BigQuery (для локальной проверки).
+ * Оркестрация: config → атомарный acquire (execution-guard) → loader → finalize.
+ * loader выполняется ТОЛЬКО при acquired=true. DRY_RUN=1 прогоняет каркас без BQ.
  */
 import { loadConfig } from './config.js';
 import { Logger, parseLevel } from './logging.js';
@@ -9,8 +9,8 @@ import { EXIT_OK, EXIT_ERROR, LoaderError } from './errors.js';
 import { resolveLoader } from './loaders/registry.js';
 import { dailyPeriodMoscow } from './period.js';
 import { BqClient } from './bq/client.js';
-import { BqManifestStore, decideRun, DEFAULT_STALE_STARTED_MS } from './bq/runManifest.js';
-import type { ManifestKey, ManifestRecord } from './bq/runManifest.js';
+import { BqManifestStore, DEFAULT_STALE_STARTED_MS } from './bq/runManifest.js';
+import type { ManifestKey, AcquireParams } from './bq/runManifest.js';
 
 async function main(): Promise<number> {
   const loaderName = (process.argv[2] ?? process.env.LOADER_NAME ?? '').trim();
@@ -32,11 +32,7 @@ async function main(): Promise<number> {
   }
 
   const logicalPeriod = dailyPeriodMoscow();
-  const key: ManifestKey = {
-    environment: config.environment,
-    loaderName,
-    logicalPeriod,
-  };
+  const key: ManifestKey = { environment: config.environment, loaderName, logicalPeriod };
 
   // Локальный/CI прогон каркаса без облака.
   if (process.env.DRY_RUN === '1') {
@@ -49,33 +45,36 @@ async function main(): Promise<number> {
   const bq = new BqClient(config.projectId, config.bqLocation);
   const store = new BqManifestStore(bq, config.rawDataset, config.manifestTable);
 
-  const current = await store.getCurrent(key);
-  const decision = decideRun({ current, nowMs: Date.now(), staleStartedMs: DEFAULT_STALE_STARTED_MS });
-  logger.info('guard_decision', { action: decision.action, reason: decision.reason });
-  if (decision.action === 'OK_NO_NEW') return EXIT_OK;
-  if (decision.action === 'ALREADY_RUNNING') return EXIT_OK;
-
   const runId = `${config.environment}:${loaderName}:${logicalPeriod}:${config.gitSha}:${config.executionId || 'na'}`;
-  const started: ManifestRecord = {
+  const params: AcquireParams = {
     ...key,
     runId,
     executionId: config.executionId,
     imageDigest: config.imageDigest,
     gitSha: config.gitSha,
-    status: 'STARTED',
-    attemptCount: 1,
-    startedAt: new Date().toISOString(),
+    nowMs: Date.now(),
+    staleMs: DEFAULT_STALE_STARTED_MS,
   };
-  await store.insertStarted(started);
+
+  const lock = await store.acquire(params);
+  if (!lock.acquired) {
+    logger.info('guard_skip', { reason: lock.reason });
+    return EXIT_OK; // OK_NO_NEW / ALREADY_RUNNING — не запускаем loader, штатный выход
+  }
+  logger.info('guard_acquired', { runId: lock.runId, recovered: lock.recovered });
 
   try {
     const res = await handler({ config, logger, logicalPeriod });
-    await store.finalize(key, runId, { status: 'COMPLETE', rowsFetched: res.rowsFetched, rowsLoaded: res.rowsLoaded });
+    await store.finalize(key, lock.runId, {
+      status: 'COMPLETE',
+      rowsFetched: res.rowsFetched,
+      rowsLoaded: res.rowsLoaded,
+    });
     logger.info('loader_complete', { rowsFetched: res.rowsFetched, rowsLoaded: res.rowsLoaded });
     return EXIT_OK;
   } catch (e) {
     const err = e instanceof LoaderError ? e : new LoaderError(e instanceof Error ? e.message : String(e));
-    await store.finalize(key, runId, { status: 'ERROR', errorCode: err.code, errorMessage: err.message });
+    await store.finalize(key, lock.runId, { status: 'ERROR', errorCode: err.code, errorMessage: err.message });
     logger.error('loader_failed', { code: err.code, message: err.message });
     return EXIT_ERROR;
   }

@@ -6,6 +6,9 @@ terraform {
       version = ">= 5.30.0"
     }
   }
+  # Remote state в GCS. Bucket создаётся ЗАРАНЕЕ (infra/bootstrap или чек-лист).
+  # Конфиг передаётся при init: -backend-config="bucket=..." -backend-config="prefix=..."
+  backend "gcs" {}
 }
 
 provider "google" {

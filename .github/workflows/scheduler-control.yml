@@ -1,5 +1,5 @@
 name: scheduler-control
-# Управление расписанием отдельно от деплоя (аудит-френдли, без похода в Console).
+# Управление расписанием отдельно от деплоя (аудит-френдли, без Console).
 on:
   workflow_dispatch:
     inputs:
@@ -23,11 +23,10 @@ jobs:
     runs-on: ubuntu-latest
     environment: ${{ inputs.environment == 'prod' && 'production' || 'infra' }}
     steps:
-      - id: auth
-        uses: google-github-actions/auth@v2
+      - uses: google-github-actions/auth@v2
         with:
           workload_identity_provider: ${{ vars.WIF_PROVIDER }}
-          service_account: ${{ vars.TERRAFORM_SA }}
+          service_account: ${{ vars.TERRAFORM_APPLY_SA }} # scheduler admin + run execute
       - uses: google-github-actions/setup-gcloud@v2
       - name: Apply action
         run: |

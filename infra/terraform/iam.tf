@@ -11,7 +11,6 @@ resource "google_project_iam_member" "deployer_ar" {
   member  = "serviceAccount:${google_service_account.deployer.email}"
 }
 
-# Право деплоить Job, работающий КАК runtime SA (impersonation при деплое).
 resource "google_service_account_iam_member" "deployer_actas_shadow" {
   service_account_id = google_service_account.loaders_shadow.name
   role               = "roles/iam.serviceAccountUser"
@@ -23,11 +22,19 @@ resource "google_service_account_iam_member" "deployer_actas_prod" {
   role               = "roles/iam.serviceAccountUser"
   member             = "serviceAccount:${google_service_account.deployer.email}"
 }
-# ВНИМАНИЕ: у deployer НЕТ roles/secretmanager.secretAccessor и НЕТ Scheduler Admin.
+# У deployer НЕТ secretAccessor и НЕТ Scheduler Admin.
 
-# ── Terraform identity (infra.yml, approval-gated). Первый apply — человек-админ. ──
+# ── Terraform PLAN (read-only) ──
+resource "google_project_iam_member" "terraform_plan_viewer" {
+  project = var.project_id
+  role    = "roles/viewer"
+  member  = "serviceAccount:${google_service_account.terraform_plan.email}"
+}
+# Доступ к чтению backend-state bucket даётся на сам bucket (см. bootstrap/чек-лист).
+
+# ── Terraform APPLY (привилегированный, main-only + approval) ──
 locals {
-  terraform_roles = [
+  terraform_apply_roles = [
     "roles/run.admin",
     "roles/cloudscheduler.admin",
     "roles/artifactregistry.admin",
@@ -38,13 +45,28 @@ locals {
     "roles/serviceusage.serviceUsageAdmin",
     "roles/bigquery.admin",
   ]
+  # SA, которыми Terraform привязывает Job/Scheduler → нужен serviceAccountUser (actAs).
+  terraform_actas_targets = {
+    loaders_shadow   = google_service_account.loaders_shadow.name
+    loaders_prod     = google_service_account.loaders_prod.name
+    scheduler_shadow = google_service_account.scheduler_shadow.name
+    scheduler_prod   = google_service_account.scheduler_prod.name
+  }
 }
 
-resource "google_project_iam_member" "terraform_roles" {
-  for_each = toset(local.terraform_roles)
+resource "google_project_iam_member" "terraform_apply_roles" {
+  for_each = toset(local.terraform_apply_roles)
   project  = var.project_id
   role     = each.value
-  member   = "serviceAccount:${google_service_account.terraform.email}"
+  member   = "serviceAccount:${google_service_account.terraform_apply.email}"
+}
+
+# Fix 5: apply SA может actAs на runtime/scheduler SAs (иначе падает iam.serviceAccounts.actAs).
+resource "google_service_account_iam_member" "terraform_apply_actas" {
+  for_each           = local.terraform_actas_targets
+  service_account_id = each.value
+  role               = "roles/iam.serviceAccountUser"
+  member             = "serviceAccount:${google_service_account.terraform_apply.email}"
 }
 
 # ── Runtime loaders: BigQuery Job User (project) + доступ к секретам ──
@@ -60,7 +82,6 @@ resource "google_project_iam_member" "loaders_prod_jobuser" {
   member  = "serviceAccount:${google_service_account.loaders_prod.email}"
 }
 
-# Оба runtime читают значения WB-секретов (нужны для вызова WB API).
 resource "google_secret_manager_secret_iam_member" "shadow_secret_access" {
   for_each  = google_secret_manager_secret.wb
   secret_id = each.value.id
