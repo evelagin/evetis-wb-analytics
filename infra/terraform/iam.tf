@@ -110,3 +110,17 @@ resource "google_cloud_run_v2_job_iam_member" "scheduler_prod_invoke" {
   role     = "roles/run.invoker"
   member   = "serviceAccount:${google_service_account.scheduler_prod.email}"
 }
+
+# ── Remote state bucket: доступ Terraform-SA к объектам (create/read/delete .tflock+state) ──
+# Роль storage.objectUser — bucket-level, НЕ project-level; ровно объекты этого бакета.
+resource "google_storage_bucket_iam_member" "tfstate_plan" {
+  bucket = var.state_bucket
+  role   = "roles/storage.objectUser"
+  member = "serviceAccount:${google_service_account.terraform_plan.email}"
+}
+
+resource "google_storage_bucket_iam_member" "tfstate_apply" {
+  bucket = var.state_bucket
+  role   = "roles/storage.objectUser"
+  member = "serviceAccount:${google_service_account.terraform_apply.email}"
+}
