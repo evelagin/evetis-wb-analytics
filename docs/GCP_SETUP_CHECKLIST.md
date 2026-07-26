@@ -59,7 +59,9 @@ printf '%s' "$WB_TOKEN_FINANCE"   | gcloud secrets versions add WB_TOKEN_FINANCE
 - `deploy-prod.yml` — вручную с approval; на вход `image_digest` + `source_git_sha`
   из summary shadow; валидирует digest и промоутит ТОТ ЖЕ образ.
 - `scheduler-control.yml` — pause/resume/run-now.
-- `infra.yml` — plan на PR (read-only SA) / apply вручную с approval (privileged SA).
+- `infra.yml` — authenticated plan/apply ТОЛЬКО вручную (workflow_dispatch); на PR НЕ запускается.
+- PR выполняет OFFLINE-валидацию Terraform в `ci.yml` (fmt -check + init -backend=false + validate, без креденшелов/backend).
+- Без заданных GitHub Variables `infra.yml` (preflight) показывает **SKIPPED** с сообщением, а не FAILURE.
 
 ## Инварианты (проверяемы в ревью)
 - deployer БЕЗ secretAccessor и БЕЗ Scheduler Admin;
