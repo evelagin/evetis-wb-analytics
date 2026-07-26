@@ -7,6 +7,15 @@
 - Проект `project-fa311fc0-4d87-4781-986` (номер `37074083763`), BQ `wb_raw` (EU).
 - Локально `gcloud` + `terraform`, роль **Owner** (только для bootstrap и первого apply).
 
+## 0.1. Пре-реквизит API и recovery
+- Terraform включает API сам (apis.tf, включая **cloudresourcemanager.googleapis.com**),
+  НО `cloudresourcemanager.googleapis.com` должен быть включён ДО первого apply —
+  иначе google_project_service падает. Включить заранее:
+  `gcloud services enable cloudresourcemanager.googleapis.com`.
+- **Recovery (Cloud Shell):** если локальный apply падает по правам/сети/API, выполни
+  тот же apply из Google Cloud Shell (gcloud+terraform предустановлены, ADC готов).
+  Backend GCS общий → state консистентен; локальный и Cloud Shell apply взаимозаменяемы.
+
 ## 1. Bootstrap remote state (создать GCS-bucket под tfstate)
 Remote state ОБЯЗАТЕЛЕН: иначе локальный apply и CI разойдутся по состоянию.
 ```
