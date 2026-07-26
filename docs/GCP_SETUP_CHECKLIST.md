@@ -25,6 +25,16 @@ terraform apply -var project_id=project-fa311fc0-4d87-4781-986 -var state_bucket
 ```
 `<UNIQUE_BUCKET_NAME>` — глобально уникальное имя (напр. `evetis-wb-tfstate-<rnd>`).
 
+**Bucket-IAM для Terraform-SA** (state r/w + `.tflock`) выдаётся ТОЖЕ в bootstrap —
+вторым прогоном, ПОСЛЕ того как основной модуль создал SA (email'ы из его output):
+```
+terraform apply -var project_id=<PROJECT_ID> -var state_bucket=<UNIQUE_BUCKET_NAME> \
+  -var terraform_plan_sa_email=$(cd ../terraform && terraform output -raw terraform_plan_service_account) \
+  -var terraform_apply_sa_email=$(cd ../terraform && terraform output -raw terraform_apply_service_account)
+```
+Роль на бакете — `roles/storage.objectUser` (bucket-level, НЕ project). Основной
+модуль `infra/terraform` bucket-IAM НЕ трогает → CI-identity не рефрешит IAM бакета.
+
 ## 2. Первый apply основного модуля (под Owner, backend = bucket из шага 1)
 ```
 cd ../terraform
@@ -80,3 +90,48 @@ printf '%s' "$WB_TOKEN_FINANCE"   | gcloud secrets versions add WB_TOKEN_FINANCE
 - prod Scheduler PAUSED; `paused` исключён из Terraform drift (ignore_changes);
 - prod образ не пересобирается — промоушен digest + source sha сборки;
 - remote state в GCS; ключей JSON в GitHub нет.
+
+## Migration for existing Mig0 installation (перенос bucket-IAM main → bootstrap)
+
+Для УЖЕ развёрнутой Mig0 два ресурса bucket-IAM находятся в remote state ОСНОВНОГО
+модуля. Обычный `plan/apply` после удаления из `infra/terraform` предложит
+**уничтожить реальные grants** → CI потеряет доступ к backend. Порядок переноса
+владения (детерминированно, через `import` — НЕ через apply-адопт):
+
+1. **НЕ запускать** `terraform apply` в `infra/terraform` сразу после merge.
+
+2. Удалить записи из remote state основного модуля (реальные IAM grants остаются):
+   ```
+   cd infra/terraform
+   terraform state rm \
+     google_storage_bucket_iam_member.tfstate_plan \
+     google_storage_bucket_iam_member.tfstate_apply
+   ```
+
+3. Подготовить значения для `infra/bootstrap` (в `terraform.tfvars` или через `-var`):
+   ```
+   project_id               = project-fa311fc0-4d87-4781-986
+   state_bucket             = evetis-wb-tfstate-37074083763
+   terraform_plan_sa_email  = sa-terraform-plan@project-fa311fc0-4d87-4781-986.iam.gserviceaccount.com
+   terraform_apply_sa_email = sa-terraform-apply@project-fa311fc0-4d87-4781-986.iam.gserviceaccount.com
+   ```
+
+4. Импортировать существующие grants в bootstrap state (`terraform init` в bootstrap
+   уже выполнен; адрес обязательно с `[0]` из-за `count`):
+   ```
+   cd ../bootstrap
+   terraform import \
+     'google_storage_bucket_iam_member.tfstate_plan[0]' \
+     'b/evetis-wb-tfstate-37074083763 roles/storage.objectUser serviceAccount:sa-terraform-plan@project-fa311fc0-4d87-4781-986.iam.gserviceaccount.com'
+   terraform import \
+     'google_storage_bucket_iam_member.tfstate_apply[0]' \
+     'b/evetis-wb-tfstate-37074083763 roles/storage.objectUser serviceAccount:sa-terraform-apply@project-fa311fc0-4d87-4781-986.iam.gserviceaccount.com'
+   ```
+
+5. Проверки:
+   - bootstrap: `terraform plan` → **No changes**
+   - main:      `terraform plan` → **No changes**
+   - GitHub:    Actions → infra → plan → **green**
+
+Для существующего проекта используем ЯВНЫЙ `import` (не `apply`), чтобы перенос
+владения bindings был детерминированным.

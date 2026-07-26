@@ -43,7 +43,3 @@ variable "container_image" {
   description = "Bootstrap-образ для создания Job. CI продвигает реальный immutable digest (prod образ не пересобирается)."
 }
 
-variable "state_bucket" {
-  type        = string
-  description = "Имя GCS-бакета remote state (для выдачи IAM Terraform-SA). Тот же, что в -backend-config."
-}

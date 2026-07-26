@@ -45,3 +45,31 @@ resource "google_storage_bucket" "tfstate" {
 output "state_bucket" {
   value = google_storage_bucket.tfstate.name
 }
+
+variable "terraform_plan_sa_email" {
+  type        = string
+  default     = ""
+  description = "Email SA sa-terraform-plan (из terraform output основного модуля). Пусто на первичном bootstrap до создания SA."
+}
+
+variable "terraform_apply_sa_email" {
+  type        = string
+  default     = ""
+  description = "Email SA sa-terraform-apply (из terraform output основного модуля). Пусто на первичном bootstrap до создания SA."
+}
+
+# Доступ Terraform-SA к объектам state-бакета (state r/w + .tflock). Bucket-level, НЕ project.
+# Управляется здесь (bootstrap, запускает Owner), чтобы CI-identity НЕ рефрешил IAM бакета.
+resource "google_storage_bucket_iam_member" "tfstate_plan" {
+  count  = var.terraform_plan_sa_email == "" ? 0 : 1
+  bucket = google_storage_bucket.tfstate.name
+  role   = "roles/storage.objectUser"
+  member = "serviceAccount:${var.terraform_plan_sa_email}"
+}
+
+resource "google_storage_bucket_iam_member" "tfstate_apply" {
+  count  = var.terraform_apply_sa_email == "" ? 0 : 1
+  bucket = google_storage_bucket.tfstate.name
+  role   = "roles/storage.objectUser"
+  member = "serviceAccount:${var.terraform_apply_sa_email}"
+}
