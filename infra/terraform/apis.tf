@@ -1,6 +1,7 @@
 locals {
   required_apis = [
     "run.googleapis.com",
+    "cloudresourcemanager.googleapis.com",
     "cloudscheduler.googleapis.com",
     "secretmanager.googleapis.com",
     "artifactregistry.googleapis.com",

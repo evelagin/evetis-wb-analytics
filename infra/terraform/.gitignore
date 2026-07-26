@@ -2,5 +2,7 @@
 *.tfstate
 *.tfstate.*
 terraform.tfvars
-.terraform.lock.hcl
+*.plan
+mig0-plan.txt
 crash.log
+# .terraform.lock.hcl НЕ игнорируем — коммитим (pin версий провайдера)

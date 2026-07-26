@@ -1,0 +1,6 @@
+.terraform/
+*.tfstate
+*.tfstate.*
+*.plan
+crash.log
+# .terraform.lock.hcl НЕ игнорируем — коммитим
