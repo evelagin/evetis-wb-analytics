@@ -4,9 +4,11 @@
  */
 import type { LoaderHandler } from './types.js';
 import { noopLoader } from './noop.js';
+import { stocksLoader } from './stocks/index.js';
 
 export const LOADERS: Record<string, LoaderHandler> = {
   noop: noopLoader,
+  stocks: stocksLoader,
 };
 
 export function resolveLoader(name: string): LoaderHandler | undefined {

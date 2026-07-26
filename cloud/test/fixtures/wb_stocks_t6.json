@@ -1,0 +1,9 @@
+{
+  "data": {
+    "items": [
+      { "nmId": 101, "chrtId": 1, "warehouseId": 10, "warehouseName": "Коледино", "regionName": "Центральный", "quantity": 5, "inWayToClient": 1, "inWayFromClient": 0 },
+      { "nmId": 101, "chrtId": 1, "warehouseId": 0, "warehouseName": "Остальные", "regionName": "", "quantity": 3, "inWayToClient": 0, "inWayFromClient": 0 },
+      { "nmId": 999, "chrtId": 5, "warehouseId": 10, "warehouseName": "Коледино", "regionName": "Центральный", "quantity": 2, "inWayToClient": 0, "inWayFromClient": 1 }
+    ]
+  }
+}
