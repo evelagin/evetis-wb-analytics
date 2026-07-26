@@ -9,6 +9,12 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { RawStockRow, StockMetrics } from './normalize.js';
 
+function isAlreadyExists(e: unknown): boolean {
+  const code = (e as { code?: number }).code;
+  const msg = e instanceof Error ? e.message : String(e);
+  return code === 409 || /already exists/i.test(msg);
+}
+
 export class StocksBq {
   private readonly bq: BigQuery;
   constructor(
@@ -90,8 +96,14 @@ export class StocksBq {
     });
   }
 
-  /** Идемпотентный append: load job с детерминированным jobId (BQ дедупит по jobId). */
-  async appendRaw(table: string, rows: RawStockRow[], snapshotId: string): Promise<void> {
+  /**
+   * Идемпотентный append: load job с ДЕТЕРМИНИРОВАННЫМ jobId (стабилен для
+   * env×period×table, см. jobId.ts). Повтор периода → тот же jobId → BQ отдаёт
+   * 409 Already Exists; если прошлая джоба успешна — трактуем как идемпотентный
+   * повтор (данные уже загружены), иначе — ошибка (jobId «сожжён» неуспехом).
+   * snapshotId используется только для имени временного файла.
+   */
+  async appendRaw(table: string, rows: RawStockRow[], snapshotId: string, loadJobId: string): Promise<void> {
     const file = join(tmpdir(), `stocks_${snapshotId}.ndjson`);
     writeFileSync(file, rows.map((r) => JSON.stringify(r)).join('\n'));
     try {
@@ -99,9 +111,17 @@ export class StocksBq {
         sourceFormat: 'NEWLINE_DELIMITED_JSON',
         writeDisposition: 'WRITE_APPEND',
         location: this.location,
-        jobId: `stocks_load_${snapshotId}`,
+        jobId: loadJobId,
       };
       await this.bq.dataset(this.dataset).table(table).load(file, meta);
+    } catch (e) {
+      if (isAlreadyExists(e)) {
+        const [job] = await this.bq.job(loadJobId, { location: this.location }).get();
+        const st = (job.metadata as { status?: { state?: string; errorResult?: { message?: string } } } | undefined)?.status;
+        if (st?.state === 'DONE' && !st.errorResult) return; // идемпотентный повтор — уже загружено
+        throw new Error(`load job ${loadJobId} уже существует и не успешен: ${st?.errorResult?.message ?? st?.state ?? 'unknown'}`);
+      }
+      throw e;
     } finally {
       rmSync(file, { force: true });
     }

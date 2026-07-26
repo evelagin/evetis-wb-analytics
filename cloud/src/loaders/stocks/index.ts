@@ -13,6 +13,7 @@ import { SecretsClient } from '../../secrets.js';
 import { fetchStocksT6 } from './wbApi.js';
 import { validateT6, normalizeT6 } from './normalize.js';
 import { StocksBq } from './bq.js';
+import { stocksLoadJobId } from './jobId.js';
 import { WB_STOCKS_SOURCE_API } from './constants.js';
 
 export async function stocksLoader(ctx: LoaderContext): Promise<LoaderResult> {
@@ -21,6 +22,7 @@ export async function stocksLoader(ctx: LoaderContext): Promise<LoaderResult> {
   const nowIso = new Date().toISOString();
   const snapshotId = `STOCK_SNAP_${snapshotDate.replace(/-/g, '')}_${randomUUID().slice(0, 8)}`;
   const loadId = `STOCK_LOAD_${snapshotId}`;
+  const loadJobId = stocksLoadJobId(config.environment, snapshotDate, config.stocksRawTable);
   const bq = new StocksBq(config.projectId, config.bqLocation, config.rawDataset);
 
   const token = await new SecretsClient(config.projectId).access(config.wbAnalyticsSecret);
@@ -45,7 +47,7 @@ export async function stocksLoader(ctx: LoaderContext): Promise<LoaderResult> {
     });
     metrics.distinct_keys = v.distinctKeys ?? metrics.distinct_keys;
 
-    await bq.appendRaw(config.stocksRawTable, rows, snapshotId);
+    await bq.appendRaw(config.stocksRawTable, rows, snapshotId, loadJobId);
 
     const cnt = await bq.snapshotCounts(config.stocksRawTable, snapshotId);
     if (cnt.count !== metrics.expected_rows || cnt.distinct !== metrics.expected_rows) {
