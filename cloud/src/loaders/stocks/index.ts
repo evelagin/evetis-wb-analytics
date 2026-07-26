@@ -21,7 +21,7 @@ import { fetchStocksT6 } from './wbApi.js';
 import { validateT6, normalizeT6 } from './normalize.js';
 import { StocksBq } from './bq.js';
 import { stocksLoadJobId, stocksDataSnapshotId } from './jobId.js';
-import { evaluatePostLoad } from './postLoad.js';
+import { evaluatePostLoad, planFinalize } from './postLoad.js';
 import { WB_STOCKS_SOURCE_API } from './constants.js';
 
 export async function stocksLoader(ctx: LoaderContext): Promise<LoaderResult> {
@@ -60,8 +60,13 @@ export async function stocksLoader(ctx: LoaderContext): Promise<LoaderResult> {
     const decision = evaluatePostLoad(appendResult, cnt.count, cnt.distinct, metrics.expected_rows);
     if (!decision.ok) throw new LoaderError(decision.message, decision.code);
 
-    const controlStatus = decision.reused ? 'REUSED' : 'NOT_RUN';
-    await bq.manifestFinalize(config.stocksSnapshotTable, dataSnapshotId, 'COMPLETE', metrics, cnt.count, controlStatus, '');
+    const plan = planFinalize(decision.reused, metrics, cnt.count);
+    if (plan.kind === 'markReused') {
+      // Повтор: метрики исходной загрузки НЕ трогаем, только статус/written/completed_at.
+      await bq.manifestMarkReused(config.stocksSnapshotTable, dataSnapshotId, plan.written);
+    } else {
+      await bq.manifestFinalize(config.stocksSnapshotTable, dataSnapshotId, 'COMPLETE', plan.metrics, plan.written, plan.controlStatus, '');
+    }
     logger.info('stocks_complete', {
       dataSnapshotId, attemptId, append: appendResult, reused: decision.reused,
       written: cnt.count, expected: metrics.expected_rows, unique_nm: metrics.unique_nm_ids,

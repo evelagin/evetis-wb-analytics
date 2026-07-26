@@ -31,3 +31,18 @@ export function evaluatePostLoad(
   }
   return { ok: true, reused: false };
 }
+
+import type { StockMetrics } from './normalize.js';
+
+/**
+ * План финализации manifest. reused → markReused (метрики нового fetch НЕ пишем);
+ * иначе → finalize с метриками текущей загрузки.
+ */
+export type FinalizePlan =
+  | { kind: 'finalize'; metrics: StockMetrics; written: number; controlStatus: 'NOT_RUN' }
+  | { kind: 'markReused'; written: number };
+
+export function planFinalize(reused: boolean, metrics: StockMetrics, count: number): FinalizePlan {
+  if (reused) return { kind: 'markReused', written: count };
+  return { kind: 'finalize', metrics, written: count, controlStatus: 'NOT_RUN' };
+}

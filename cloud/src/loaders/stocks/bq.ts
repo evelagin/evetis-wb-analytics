@@ -109,6 +109,22 @@ export class StocksBq {
    * повтор (данные уже загружены), иначе — ошибка (jobId «сожжён» неуспехом).
    * snapshotId используется только для имени временного файла.
    */
+  /**
+   * Пометить снимок как COMPLETE(REUSED) при идемпотентном повторе. НЕ перезаписывает
+   * метрики исходной успешной загрузки (expected_rows/unique_nm_ids/суммы/unmatched/
+   * distinct/duplicate) — они относятся к УЖЕ загруженным данным, а не к новому fetch.
+   */
+  async manifestMarkReused(table: string, snapshotId: string, writtenRows: number): Promise<void> {
+    await this.bq.query({
+      query: `UPDATE ${this.fqn(table)} SET
+                status='COMPLETE', control_status='REUSED', completed_at=CURRENT_TIMESTAMP(),
+                written_rows=@written, error_message=''
+              WHERE snapshot_id=@id AND status='STARTED'`,
+      params: { written: writtenRows, id: snapshotId },
+      location: this.location,
+    });
+  }
+
   async appendRaw(table: string, rows: RawStockRow[], snapshotId: string, loadJobId: string): Promise<AppendResult> {
     const file = join(tmpdir(), `stocks_${snapshotId}.ndjson`);
     writeFileSync(file, rows.map((r) => JSON.stringify(r)).join('\n'));
