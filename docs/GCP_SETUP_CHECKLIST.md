@@ -25,6 +25,16 @@ terraform apply -var project_id=project-fa311fc0-4d87-4781-986 -var state_bucket
 ```
 `<UNIQUE_BUCKET_NAME>` — глобально уникальное имя (напр. `evetis-wb-tfstate-<rnd>`).
 
+**Bucket-IAM для Terraform-SA** (state r/w + `.tflock`) выдаётся ТОЖЕ в bootstrap —
+вторым прогоном, ПОСЛЕ того как основной модуль создал SA (email'ы из его output):
+```
+terraform apply -var project_id=<PROJECT_ID> -var state_bucket=<UNIQUE_BUCKET_NAME> \
+  -var terraform_plan_sa_email=$(cd ../terraform && terraform output -raw terraform_plan_service_account) \
+  -var terraform_apply_sa_email=$(cd ../terraform && terraform output -raw terraform_apply_service_account)
+```
+Роль на бакете — `roles/storage.objectUser` (bucket-level, НЕ project). Основной
+модуль `infra/terraform` bucket-IAM НЕ трогает → CI-identity не рефрешит IAM бакета.
+
 ## 2. Первый apply основного модуля (под Owner, backend = bucket из шага 1)
 ```
 cd ../terraform
