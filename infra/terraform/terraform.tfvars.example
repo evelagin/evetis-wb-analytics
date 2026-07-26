@@ -9,4 +9,5 @@ bq_location    = "EU"
 raw_dataset    = "wb_raw"
 artifact_repo  = "wb-loaders"
 github_repo    = "evelagin/evetis-wb-analytics"
+state_bucket   = "<UNIQUE_BUCKET>"   # тот же, что в -backend-config bucket=
 # container_image по умолчанию = bootstrap hello; CI продвигает реальный digest.
