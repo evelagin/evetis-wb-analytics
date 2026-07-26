@@ -8,6 +8,7 @@ import { writeFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { RawStockRow, StockMetrics } from './normalize.js';
+import type { AppendResult } from './postLoad.js';
 
 function isAlreadyExists(e: unknown): boolean {
   const code = (e as { code?: number }).code;
@@ -44,9 +45,14 @@ export class StocksBq {
   }
 
   async manifestStart(table: string, snapshotId: string, startedAtIso: string, from: string, to: string): Promise<void> {
+    // Upsert: одна строка на детерминированный snapshot_id; повтор сбрасывает её в STARTED.
     await this.bq.query({
-      query: `INSERT INTO ${this.fqn(table)} (snapshot_id, started_at, status, period_from, period_to)
-              VALUES (@id, TIMESTAMP(@ts), 'STARTED', @from, @to)`,
+      query: `MERGE ${this.fqn(table)} T
+              USING (SELECT @id AS snapshot_id) S ON T.snapshot_id = S.snapshot_id
+              WHEN MATCHED THEN UPDATE SET status='STARTED', started_at=TIMESTAMP(@ts),
+                completed_at=NULL, error_message=NULL, period_from=@from, period_to=@to
+              WHEN NOT MATCHED THEN INSERT (snapshot_id, started_at, status, period_from, period_to)
+                VALUES (@id, TIMESTAMP(@ts), 'STARTED', @from, @to)`,
       params: { id: snapshotId, ts: startedAtIso, from, to },
       location: this.location,
     });
@@ -103,7 +109,7 @@ export class StocksBq {
    * повтор (данные уже загружены), иначе — ошибка (jobId «сожжён» неуспехом).
    * snapshotId используется только для имени временного файла.
    */
-  async appendRaw(table: string, rows: RawStockRow[], snapshotId: string, loadJobId: string): Promise<void> {
+  async appendRaw(table: string, rows: RawStockRow[], snapshotId: string, loadJobId: string): Promise<AppendResult> {
     const file = join(tmpdir(), `stocks_${snapshotId}.ndjson`);
     writeFileSync(file, rows.map((r) => JSON.stringify(r)).join('\n'));
     try {
@@ -114,11 +120,12 @@ export class StocksBq {
         jobId: loadJobId,
       };
       await this.bq.dataset(this.dataset).table(table).load(file, meta);
+      return 'LOADED';
     } catch (e) {
       if (isAlreadyExists(e)) {
         const [job] = await this.bq.job(loadJobId, { location: this.location }).get();
         const st = (job.metadata as { status?: { state?: string; errorResult?: { message?: string } } } | undefined)?.status;
-        if (st?.state === 'DONE' && !st.errorResult) return; // идемпотентный повтор — уже загружено
+        if (st?.state === 'DONE' && !st.errorResult) return 'ALREADY_LOADED'; // идемпотентный повтор
         throw new Error(`load job ${loadJobId} уже существует и не успешен: ${st?.errorResult?.message ?? st?.state ?? 'unknown'}`);
       }
       throw e;

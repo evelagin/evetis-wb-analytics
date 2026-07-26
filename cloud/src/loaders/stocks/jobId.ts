@@ -11,3 +11,12 @@ export function stocksLoadJobId(environment: string, logicalPeriod: string, targ
     .replace(/^_+|_+$/g, '');
   return `stocks_${environment}_${period}_${table}`;
 }
+
+/**
+ * Детерминированный ID НАБОРА ДАННЫХ снимка (env × logical period). Именно он пишется
+ * в RAW-строки и manifest и используется в post-count — стабилен между попытками,
+ * поэтому идемпотентный повтор (тот же load job) корректно находит уже загруженные строки.
+ */
+export function stocksDataSnapshotId(environment: string, logicalPeriod: string): string {
+  return `STOCK_SNAP_${environment}_${logicalPeriod.replace(/-/g, '')}`;
+}
