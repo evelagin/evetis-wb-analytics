@@ -42,6 +42,11 @@ resource "google_cloud_run_v2_job" "wb_stocks_shadow" {
       }
     }
   }
+  # Образ управляется deploy-shadow.yml (реальный digest), Terraform его НЕ трогает
+  # → нет drift между Terraform (bootstrap hello) и собранным образом.
+  lifecycle {
+    ignore_changes = [template[0].template[0].containers[0].image]
+  }
   depends_on = [google_project_service.enabled]
 }
 
