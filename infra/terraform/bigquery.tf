@@ -118,6 +118,23 @@ resource "google_bigquery_table_iam_member" "shadow_read_ref" {
   member     = "serviceAccount:${google_service_account.loaders_shadow.email}"
 }
 
+# REF_SKU_MASTER — обычный (не authorized) view над REF_SKU_MASTER_DATA + REF_ACTIVE_VERSION.
+# Для выполнения запроса runtime-SA нужен table-level read на обе базовые таблицы,
+# иначе BigQuery раскрывает SQL вью и падает на первой недоступной зависимости.
+resource "google_bigquery_table_iam_member" "shadow_read_ref_active_version" {
+  dataset_id = var.raw_dataset
+  table_id   = "REF_ACTIVE_VERSION"
+  role       = "roles/bigquery.dataViewer"
+  member     = "serviceAccount:${google_service_account.loaders_shadow.email}"
+}
+
+resource "google_bigquery_table_iam_member" "shadow_read_ref_data" {
+  dataset_id = var.raw_dataset
+  table_id   = "REF_SKU_MASTER_DATA"
+  role       = "roles/bigquery.dataViewer"
+  member     = "serviceAccount:${google_service_account.loaders_shadow.email}"
+}
+
 # prod пишет манифест + читает REF (прод-таблицы остатков привяжем в PR-Mig1b на cutover).
 resource "google_bigquery_table_iam_member" "prod_write_runs" {
   dataset_id = var.raw_dataset
@@ -129,6 +146,21 @@ resource "google_bigquery_table_iam_member" "prod_write_runs" {
 resource "google_bigquery_table_iam_member" "prod_read_ref" {
   dataset_id = var.raw_dataset
   table_id   = "REF_SKU_MASTER"
+  role       = "roles/bigquery.dataViewer"
+  member     = "serviceAccount:${google_service_account.loaders_prod.email}"
+}
+
+# Те же базовые зависимости REF-вью для prod-SA (понадобится на Mig1b cutover).
+resource "google_bigquery_table_iam_member" "prod_read_ref_active_version" {
+  dataset_id = var.raw_dataset
+  table_id   = "REF_ACTIVE_VERSION"
+  role       = "roles/bigquery.dataViewer"
+  member     = "serviceAccount:${google_service_account.loaders_prod.email}"
+}
+
+resource "google_bigquery_table_iam_member" "prod_read_ref_data" {
+  dataset_id = var.raw_dataset
+  table_id   = "REF_SKU_MASTER_DATA"
   role       = "roles/bigquery.dataViewer"
   member     = "serviceAccount:${google_service_account.loaders_prod.email}"
 }
