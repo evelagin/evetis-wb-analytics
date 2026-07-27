@@ -8,6 +8,11 @@
  *  - №4 recovery: устаревший STARTED не считается активным → вставляется НОВАЯ
  *    строка STARTED (свой run_id), finalize() находит её по run_id.
  *  - REQUIRED FIX 1 (прошлый аудит): логический ключ включает environment.
+ *  - fix/mig1-bq-typed-null-params: finalize() задаёт ЯВНЫЕ типы параметров.
+ *    В COMPLETE-ветке null'ами приходят errorCode/errorMessage, в ERROR-ветке —
+ *    rowsFetched/rowsLoaded. Без types BigQuery не выводит тип для null и query()
+ *    падает → строка LOADER_RUNS остаётся STARTED, guard блокирует ретраи ~30 мин,
+ *    а Cloud Run показывает «зелёный» execution ретрая, который ничего не загрузил.
  *
  * Чистые помощники (isActive/classifyReason) тестируются отдельно; BqManifestStore
  * — BQ-проводка. MemManifestStore (в тестах) моделирует ту же семантику.
@@ -85,6 +90,9 @@ export class BqManifestStore implements ManifestStore {
    * Атомарный захват в транзакции. Возвращает active (кол-во активных строк ДО
    * вставки) и cur_status (статус последней строки). При конфликте транзакции
    * (гонка) BigQuery прерывает один из execution — трактуем как ALREADY_RUNNING.
+   *
+   * Примечание: параметры acquire все НЕ-null строки, поэтому types не требуется
+   * (в отличие от finalize).
    */
   async acquire(p: AcquireParams): Promise<AcquireResult> {
     const staleIso = new Date(p.nowMs - p.staleMs).toISOString();
@@ -162,6 +170,19 @@ END`;
         loaderName: key.loaderName,
         logicalPeriod: key.logicalPeriod,
         runId,
+      },
+      {
+        // ЯВНЫЕ типы обязательны: у null-значений BigQuery не выводит тип сам.
+        // COMPLETE → errorCode/errorMessage = null; ERROR → rowsFetched/rowsLoaded = null.
+        status: 'STRING',
+        errorCode: 'STRING',
+        errorMessage: 'STRING',
+        rowsFetched: 'INT64',
+        rowsLoaded: 'INT64',
+        environment: 'STRING',
+        loaderName: 'STRING',
+        logicalPeriod: 'STRING',
+        runId: 'STRING',
       },
     );
   }
