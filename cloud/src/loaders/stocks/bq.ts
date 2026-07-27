@@ -139,6 +139,10 @@ export class StocksBq {
     try {
       const meta: JobLoadMetadata = {
         sourceFormat: 'NEWLINE_DELIMITED_JSON',
+        // CREATE_NEVER: таблицами владеет Terraform; runtime-SA НЕ создаёт таблицы.
+        // Без этого BigQuery берёт дефолт CREATE_IF_NEEDED и требует dataset-level
+        // bigquery.tables.create даже для заранее существующей целевой таблицы.
+        createDisposition: 'CREATE_NEVER',
         writeDisposition: 'WRITE_APPEND',
         location: this.location,
         jobId: loadJobId,
