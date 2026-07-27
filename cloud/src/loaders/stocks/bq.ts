@@ -16,14 +16,22 @@ function isAlreadyExists(e: unknown): boolean {
   return code === 409 || /already exists/i.test(msg);
 }
 
+/** Минимальный контракт BQ-клиента (для инъекции фейка в тестах). */
+export interface BqLike {
+  query(options: { query: string; params?: Record<string, unknown>; location?: string }): Promise<[unknown[]]>;
+  dataset(datasetId: string): { table(tableId: string): { load(source: string, metadata: JobLoadMetadata): Promise<unknown> } };
+  job(id: string, options?: { location?: string }): { get(): Promise<[{ metadata?: unknown }]> };
+}
+
 export class StocksBq {
-  private readonly bq: BigQuery;
+  private readonly bq: BqLike;
   constructor(
     private readonly projectId: string,
     private readonly location: string,
     private readonly dataset: string,
+    bqClient?: BqLike,
   ) {
-    this.bq = new BigQuery({ projectId });
+    this.bq = bqClient ?? (new BigQuery({ projectId }) as unknown as BqLike);
   }
 
   private fqn(table: string): string {
@@ -49,7 +57,7 @@ export class StocksBq {
     await this.bq.query({
       query: `MERGE ${this.fqn(table)} T
               USING (SELECT @id AS snapshot_id) S ON T.snapshot_id = S.snapshot_id
-              WHEN MATCHED THEN UPDATE SET status='STARTED', started_at=TIMESTAMP(@ts),
+              WHEN MATCHED AND T.status != 'COMPLETE' THEN UPDATE SET status='STARTED', started_at=TIMESTAMP(@ts),
                 completed_at=NULL, error_message=NULL, period_from=@from, period_to=@to
               WHEN NOT MATCHED THEN INSERT (snapshot_id, started_at, status, period_from, period_to)
                 VALUES (@id, TIMESTAMP(@ts), 'STARTED', @from, @to)`,
@@ -119,7 +127,7 @@ export class StocksBq {
       query: `UPDATE ${this.fqn(table)} SET
                 status='COMPLETE', control_status='REUSED', completed_at=CURRENT_TIMESTAMP(),
                 written_rows=@written, error_message=''
-              WHERE snapshot_id=@id AND status='STARTED'`,
+              WHERE snapshot_id=@id AND status IN ('STARTED', 'COMPLETE')`,
       params: { written: writtenRows, id: snapshotId },
       location: this.location,
     });
