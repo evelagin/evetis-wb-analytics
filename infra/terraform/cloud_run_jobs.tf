@@ -10,6 +10,13 @@ locals {
     LOADER_NAME       = "wb-stocks"
     LOG_LEVEL         = "info"
   }
+  # PR-Mig1: env загрузчика остатков (shadow пишет ТОЛЬКО в __CR).
+  stocks_env = {
+    STOCKS_RAW_TABLE      = "RAW_WB_STOCKS__CR"
+    STOCKS_SNAPSHOT_TABLE = "WB_STOCKS_SNAPSHOTS__CR"
+    REF_SKU_TABLE         = "REF_SKU_MASTER"
+    WB_ANALYTICS_SECRET   = "WB_TOKEN_ANALYTICS"
+  }
 }
 
 resource "google_cloud_run_v2_job" "wb_stocks_shadow" {
@@ -24,9 +31,9 @@ resource "google_cloud_run_v2_job" "wb_stocks_shadow" {
       timeout         = "1800s"
       containers {
         image = var.container_image
-        args  = ["noop"]
+        args  = ["stocks"]
         dynamic "env" {
-          for_each = merge(local.common_env, { ENVIRONMENT = "shadow" })
+          for_each = merge(local.common_env, local.stocks_env, { ENVIRONMENT = "shadow" })
           content {
             name  = env.key
             value = env.value

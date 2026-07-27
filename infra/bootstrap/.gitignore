@@ -4,3 +4,4 @@
 *.plan
 crash.log
 # .terraform.lock.hcl НЕ игнорируем — коммитим
+terraform.tfvars

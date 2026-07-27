@@ -23,6 +23,12 @@ export interface Config {
   gitSha: string;
   /** Идентификаторы конкретного запуска Cloud Run Job (если доступны). */
   executionId: string;
+  // ── stocks loader ──
+  wbAnalyticsHost: string;
+  wbAnalyticsSecret: string;
+  stocksRawTable: string;
+  stocksSnapshotTable: string;
+  refSkuTable: string;
 }
 
 type Env = Record<string, string | undefined>;
@@ -65,5 +71,10 @@ export function loadConfig(env: Env = process.env): Config {
     imageDigest: opt(env, 'IMAGE_DIGEST', 'unknown'),
     gitSha: opt(env, 'GIT_SHA', 'unknown'),
     executionId: opt(env, 'CLOUD_RUN_EXECUTION', ''),
+    wbAnalyticsHost: opt(env, 'WB_ANALYTICS_HOST', 'https://seller-analytics-api.wildberries.ru'),
+    wbAnalyticsSecret: opt(env, 'WB_ANALYTICS_SECRET', 'WB_TOKEN_ANALYTICS'),
+    stocksRawTable: opt(env, 'STOCKS_RAW_TABLE', 'RAW_WB_STOCKS__CR'),
+    stocksSnapshotTable: opt(env, 'STOCKS_SNAPSHOT_TABLE', 'WB_STOCKS_SNAPSHOTS__CR'),
+    refSkuTable: opt(env, 'REF_SKU_TABLE', 'REF_SKU_MASTER'),
   };
 }
