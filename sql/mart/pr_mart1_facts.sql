@@ -1,7 +1,10 @@
 -- ============================================================================
--- PR-Mart1 — EVETIS WB Analytics MART, слой FACT (6 таблиц). REV3 после аудита #2.
--- Дата: 2026-07-28.  Дизайн: docs/MART_DESIGN_2026-07-23_rev2.md (виза дана).
--- История правок аудита — docs/MART_PR1_2026-07-28.md, §«Правки аудита».
+-- PR-Mart1 — EVETIS WB Analytics MART, слой FACT (6 таблиц). REV3 (аудит) + PR-Mart1.1 (реклама).
+-- Дата: 2026-07-28.  Дизайн: docs/MART_DESIGN_2026-07-23_rev2.md; контракты: docs/MART_MART2_CONTRACTS_2026-07-28.md.
+-- История правок аудита — docs/MART_PR1_2026-07-28.md; PR-Mart1.1 — docs/MART_PR11_2026-07-28.md.
+-- PR-Mart1.1: FACT_ADS_SKU_DAILY получил ads_revenue_raw_rub/_dedup_estimate_rub, ad_orders_raw (переим. orders),
+--   ad_orders_dedup_estimate, multitouch_ambiguous_flag, zero_revenue_multiorder_flag + sum_price parse-QC + dynamic acceptance.
+--   ⚠️ Требует ПЕРЕ-bootstrap (CALL sp_bootstrap_facts('')) — FACT_ADS_SKU_DAILY пересоберётся с новыми колонками.
 --
 -- ⚠️ BOOTSTRAP / MANUAL-ONLY. Процедура `sp_bootstrap_facts` — РУЧНОЙ первичный прогон.
 --   Публикация выполняется как ПОСЛЕДОВАТЕЛЬНЫЙ publish каждой FACT (6 отдельных
@@ -253,25 +256,53 @@ BEGIN
     -- ======================================================================
     -- 1.5 FACT_ADS_SKU_DAILY — грейн: date × advert_id × nm_id (SUM по appType).
     --      date как КАЛЕНДАРНАЯ дата: PARSE_DATE от SUBSTR (без TZ-каста).
+    --      PR-Mart1.1: +ads_revenue_raw_rub / _dedup_estimate_rub, ad_orders_raw (переим. из orders),
+    --      ad_orders_dedup_estimate, multitouch_ambiguous_flag, zero_revenue_multiorder_flag
+    --      (контракт MART_MART2_CONTRACTS §1). raw = source-faithful; dedup = ОЦЕНКА (не выручка), ВНЕ консервации.
     -- ======================================================================
     EXECUTE IMMEDIATE """
       CREATE OR REPLACE TABLE `wb_mart.FACT_ADS_SKU_DAILY__BUILD`
       PARTITION BY `date`
       CLUSTER BY nm_id, advert_id AS
+      WITH parsed AS (
+        SELECT
+          SAFE.PARSE_DATE('%Y-%m-%d', SUBSTR(`date`, 1, 10)) AS d,
+          SAFE_CAST(advertId AS INT64) AS advert_id,
+          SAFE_CAST(nmId AS INT64)     AS nm_id,
+          SAFE_CAST(views AS INT64)    AS views,
+          SAFE_CAST(clicks AS INT64)   AS clicks,
+          SAFE_CAST(orders AS INT64)   AS orders,
+          SAFE_CAST(REPLACE(`sum`, ',', '.') AS NUMERIC)     AS spend,
+          SAFE_CAST(REPLACE(sum_price, ',', '.') AS NUMERIC) AS revenue
+        FROM `wb_raw.V_ADV_CAMPAIGN_STATS`
+      ),
+      dedup AS (  -- на группе (d,advert,nm): Σ различных ненулевых revenue; Σ MAX(orders) на различное значение
+        SELECT d, advert_id, nm_id,
+               SUM(rev_val) AS revenue_dedup,
+               SUM(max_orders_for_val) AS orders_dedup_nz
+        FROM (
+          SELECT d, advert_id, nm_id, revenue AS rev_val, MAX(orders) AS max_orders_for_val
+          FROM parsed WHERE revenue IS NOT NULL AND revenue <> 0
+          GROUP BY d, advert_id, nm_id, revenue
+        ) GROUP BY d, advert_id, nm_id
+      )
       SELECT
-        SAFE.PARSE_DATE('%Y-%m-%d', SUBSTR(`date`, 1, 10)) AS `date`,
-        SAFE_CAST(advertId AS INT64)                       AS advert_id,
-        SAFE_CAST(nmId AS INT64)                           AS nm_id,
-        SUM(SAFE_CAST(views  AS INT64))                    AS views,
-        SUM(SAFE_CAST(clicks AS INT64))                    AS clicks,
-        SUM(SAFE_CAST(orders AS INT64))                    AS orders,
-        SUM(SAFE_CAST(REPLACE(`sum`, ',', '.') AS NUMERIC)) AS stats_spend_rub,
+        p.d AS `date`, p.advert_id, p.nm_id,
+        SUM(p.views)  AS views,
+        SUM(p.clicks) AS clicks,
+        SUM(p.spend)  AS stats_spend_rub,
+        SUM(p.orders) AS ad_orders_raw,
+        SUM(IFNULL(p.revenue, 0)) AS ads_revenue_raw_rub,
+        IFNULL(ANY_VALUE(dd.revenue_dedup), 0) AS ads_revenue_dedup_estimate_rub,
+        IFNULL(ANY_VALUE(dd.orders_dedup_nz), 0) + SUM(IF(IFNULL(p.revenue, 0) = 0, p.orders, 0)) AS ad_orders_dedup_estimate,
+        (COUNTIF(p.revenue IS NOT NULL AND p.revenue <> 0) > COUNT(DISTINCT IF(p.revenue <> 0, p.revenue, NULL))) AS multitouch_ambiguous_flag,
+        (COUNTIF(IFNULL(p.revenue, 0) = 0 AND p.orders > 0) >= 2) AS zero_revenue_multiorder_flag,
         @run_id AS mart_run_id, @built_at AS built_at
-      FROM `wb_raw.V_ADV_CAMPAIGN_STATS`
-      GROUP BY 1, 2, 3
+      FROM parsed p LEFT JOIN dedup dd USING (d, advert_id, nm_id)
+      GROUP BY p.d, p.advert_id, p.nm_id
     """ USING v_run_id AS run_id, v_built_at AS built_at;
 
-    -- parse-QC: date, advertId, nmId, views, clicks, orders, sum.
+    -- parse-QC: date, advertId, nmId, views, clicks, orders, sum, sum_price (Mart1.1).
     ASSERT (
       SELECT
         COUNTIF(`date` IS NOT NULL AND TRIM(`date`) <> '' AND SAFE.PARSE_DATE('%Y-%m-%d', SUBSTR(`date`,1,10)) IS NULL)
@@ -281,6 +312,7 @@ BEGIN
       + COUNTIF(clicks   IS NOT NULL AND TRIM(clicks)   <> '' AND SAFE_CAST(clicks   AS INT64) IS NULL)
       + COUNTIF(orders   IS NOT NULL AND TRIM(orders)   <> '' AND SAFE_CAST(orders   AS INT64) IS NULL)
       + COUNTIF(`sum`    IS NOT NULL AND TRIM(`sum`)    <> '' AND SAFE_CAST(REPLACE(`sum`, ',', '.') AS NUMERIC) IS NULL)
+      + COUNTIF(sum_price IS NOT NULL AND TRIM(sum_price) <> '' AND SAFE_CAST(REPLACE(sum_price, ',', '.') AS NUMERIC) IS NULL)
       FROM `wb_raw.V_ADV_CAMPAIGN_STATS`) = 0 AS 'FACT_ADS_SKU_DAILY: parse-QC != 0';
     ASSERT (SELECT COUNTIF(`date` IS NULL) + COUNTIF(advert_id IS NULL) + COUNTIF(nm_id IS NULL)
             FROM `wb_mart.FACT_ADS_SKU_DAILY__BUILD`) = 0 AS 'FACT_ADS_SKU_DAILY: NULL grain/partition';
@@ -294,6 +326,16 @@ BEGIN
                      SAFE.PARSE_DATE('%Y-%m-%d', SUBSTR(`date`,1,10)), SAFE_CAST(advertId AS INT64), SAFE_CAST(nmId AS INT64)))
               FROM `wb_raw.V_ADV_CAMPAIGN_STATS`)
             AS 'FACT_ADS_SKU_DAILY: BUILD rows != source distinct grain';
+    -- Mart1.1 ДИНАМИЧЕСКИЙ acceptance: raw ad-revenue FACT == Σ source sum_price (не фикс-сумма).
+    ASSERT (SELECT ROUND(SUM(ads_revenue_raw_rub),2) FROM `wb_mart.FACT_ADS_SKU_DAILY__BUILD`)
+         = (SELECT ROUND(SUM(SAFE_CAST(REPLACE(sum_price, ',', '.') AS NUMERIC)),2) FROM `wb_raw.V_ADV_CAMPAIGN_STATS`)
+            AS 'FACT_ADS_SKU_DAILY: ads_revenue_raw_rub != Σ source sum_price';
+    -- Mart1.1 fail-closed границы estimate: 0 ≤ dedup ≤ raw (оценка не может превышать source-faithful или быть отрицательной).
+    ASSERT (SELECT COUNTIF(
+              ads_revenue_dedup_estimate_rub < 0 OR ads_revenue_dedup_estimate_rub > ads_revenue_raw_rub
+              OR ad_orders_dedup_estimate < 0 OR ad_orders_dedup_estimate > ad_orders_raw)
+            FROM `wb_mart.FACT_ADS_SKU_DAILY__BUILD`) = 0
+            AS 'FACT_ADS_SKU_DAILY: dedup estimate outside raw bounds';
 
     -- ======================================================================
     -- 1.6 FACT_ADS_COSTS_DAILY — грейн: date × advert_id (агрегируем updNum-строки).

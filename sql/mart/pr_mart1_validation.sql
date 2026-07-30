@@ -57,7 +57,8 @@ SELECT
   (SELECT COUNTIF(views IS NOT NULL AND TRIM(views)<>'' AND SAFE_CAST(views AS INT64) IS NULL) FROM `wb_raw.V_ADV_CAMPAIGN_STATS`) views_fail,
   (SELECT COUNTIF(clicks IS NOT NULL AND TRIM(clicks)<>'' AND SAFE_CAST(clicks AS INT64) IS NULL) FROM `wb_raw.V_ADV_CAMPAIGN_STATS`) clicks_fail,
   (SELECT COUNTIF(orders IS NOT NULL AND TRIM(orders)<>'' AND SAFE_CAST(orders AS INT64) IS NULL) FROM `wb_raw.V_ADV_CAMPAIGN_STATS`) orders_fail,
-  (SELECT COUNTIF(`sum` IS NOT NULL AND TRIM(`sum`)<>'' AND SAFE_CAST(REPLACE(`sum`,',','.') AS NUMERIC) IS NULL) FROM `wb_raw.V_ADV_CAMPAIGN_STATS`) sum_fail;
+  (SELECT COUNTIF(`sum` IS NOT NULL AND TRIM(`sum`)<>'' AND SAFE_CAST(REPLACE(`sum`,',','.') AS NUMERIC) IS NULL) FROM `wb_raw.V_ADV_CAMPAIGN_STATS`) sum_fail,
+  (SELECT COUNTIF(sum_price IS NOT NULL AND TRIM(sum_price)<>'' AND SAFE_CAST(REPLACE(sum_price,',','.') AS NUMERIC) IS NULL) FROM `wb_raw.V_ADV_CAMPAIGN_STATS`) sum_price_fail;  -- Mart1.1: ожидание 0
 
 -- 6) ADS_COSTS: грейн date×advert уникален; Σcosts ≥ Σstats (инвариант рекламы §8.3).
 SELECT
@@ -73,3 +74,20 @@ SELECT table_name,
 FROM `wb_mart.INFORMATION_SCHEMA.COLUMNS`
 WHERE table_name IN ('FACT_ORDERS','FACT_SALES','FACT_STOCKS_SNAPSHOT','FACT_FINANCE','FACT_ADS_SKU_DAILY','FACT_ADS_COSTS_DAILY')
 GROUP BY table_name ORDER BY table_name;
+
+-- 8) PR-Mart1.1 — новые поля FACT_ADS_SKU_DAILY (ПОСЛЕ пере-bootstrap).
+--    Ожидание: raw == Σ source sum_price (dynamic acceptance); dedup <= raw; grain уникален; флаги — счётчики.
+SELECT
+  (SELECT COUNT(*) FROM `wb_mart.FACT_ADS_SKU_DAILY`) n_rows,
+  (SELECT COUNT(DISTINCT FORMAT('%t|%t|%t',`date`,advert_id,nm_id)) FROM `wb_mart.FACT_ADS_SKU_DAILY`) dk,
+  (SELECT ROUND(SUM(ads_revenue_raw_rub),2) FROM `wb_mart.FACT_ADS_SKU_DAILY`) rev_raw_fact,
+  (SELECT ROUND(SUM(SAFE_CAST(REPLACE(sum_price,',','.') AS NUMERIC)),2) FROM `wb_raw.V_ADV_CAMPAIGN_STATS`) rev_raw_source, -- == rev_raw_fact
+  (SELECT ROUND(SUM(ads_revenue_dedup_estimate_rub),2) FROM `wb_mart.FACT_ADS_SKU_DAILY`) rev_dedup_est, -- <= rev_raw_fact
+  (SELECT SUM(ad_orders_raw) FROM `wb_mart.FACT_ADS_SKU_DAILY`) ord_raw,
+  (SELECT SUM(ad_orders_dedup_estimate) FROM `wb_mart.FACT_ADS_SKU_DAILY`) ord_dedup_est,
+  (SELECT COUNTIF(multitouch_ambiguous_flag) FROM `wb_mart.FACT_ADS_SKU_DAILY`) amb_groups,
+  (SELECT COUNTIF(zero_revenue_multiorder_flag) FROM `wb_mart.FACT_ADS_SKU_DAILY`) zrm_groups,
+  -- Mart1.1 границы estimate: ожидание 0 (0 ≤ dedup ≤ raw для revenue и orders)
+  (SELECT COUNTIF(ads_revenue_dedup_estimate_rub < 0 OR ads_revenue_dedup_estimate_rub > ads_revenue_raw_rub
+                OR ad_orders_dedup_estimate < 0 OR ad_orders_dedup_estimate > ad_orders_raw)
+   FROM `wb_mart.FACT_ADS_SKU_DAILY`) estimate_bounds_violations;
