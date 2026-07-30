@@ -1,31 +1,27 @@
 -- ============================================================================
--- PR-Mart2b — EVETIS WB Analytics MART. Витрина #1: MART_SKU_DAILY (day × nm_id).
+-- PR-Mart2b (PR#81) — EVETIS WB Analytics MART. Витрина #1: MART_SKU_DAILY (day × nm_id). REV2 (аудит).
 -- Дата: 2026-07-30.  Контракты: docs/MART_MART2_CONTRACTS_2026-07-28.md (§4 spine, §KPI).
--- PR-нота: docs/MART_PR2B_SKU_DAILY_2026-07-30.md.  Зависит от PR-Mart2a (LONG_MAPPED).
+-- PR-нота: docs/MART_PR2B_SKU_DAILY_2026-07-30.md.  Зависит от PR-Mart2a (LONG_MAPPED в проде).
 --
--- Первая KPI-витрина: реклама (raw+estimate), заказы/выкупы, per-SKU finance-затраты,
---   ДРР/ACOS/ROAS/CPC/CTR/CPO, вклад-до-COGS (cross-base), rolling 7/14 по dense-spine.
+-- REV2 по замечаниям аудитора (REQUEST CHANGES, PR#81):
+--   #1 Fail-closed guard: в V_WB_FINANCE_AMOUNTS_LONG_MAPPED (finance_date<=build_as_of) НЕТ строк
+--      с cost_category IS NULL — неизвестные денежные пары не должны молча исчезать из витрины.
+--   #2 Полнота universe: guard global_start<=build_as_of; BUILD rows>0;
+--      (active REF nm_id) EXCEPT DISTINCT (BUILD nm_id) = 0 — ловит ПОЛНОСТЬЮ отсутствующий SKU.
+--   #3 Все source-CTE и reconciliation ограничены source_date<=build_as_of (воспроизводимость на дату;
+--      особенно finance/LONG_MAPPED — finance исключён из max_required_source_date).
+--   #4 Убрана NULL-ловушка GREATEST/LEAST: max/min через MAX/MIN(d) FROM UNNEST(dates) WHERE d IS NOT NULL
+--      + явный RAISE, если обязательные даты определить невозможно (пустые источники).
+--   (+ добавлен KPI cpm = spend/views×1000 — был в списке KPI аудита.)
 --
 -- Грейн: day × nm_id, DENSE spine. Universe = REF_SKU_MASTER (WB, active, nm_id NOT NULL).
---   start_date(nm) = LEAST(MIN order/sale/ads/finance по nm); fallback (нет активности) =
---   mart_global_start_date. GENERATE_DATE_ARRAY(start, build_as_of) → пропуски = 0.
---   Rolling: RANGE BETWEEN 6/13 PRECEDING по UNIX_DATE(day) (dense → ровно 7/14 календарных дней).
+--   start_date(nm)=LEAST(MIN order/sale/ads/finance по nm, все <=build_as_of); fallback=mart_global_start_date.
+--   GENERATE_DATE_ARRAY(start, build_as_of) → пропуски=0. Rolling: RANGE 6/13 PRECEDING по UNIX_DATE(day).
+--   Заказы: orders_qty/rub ЧИСТЫЕ (is_cancel=FALSE) + canceled_*. Выкупы: is_return=FALSE + returns_*.
+--   Вклад-до-COGS cross-base (НЕ P&L дня); основной управленческий = rolling. Маржа (−COGS) — MART v2.
 --
--- build_as_of_date — ЯВНЫЙ параметр. Guards (fail-closed):
---   NOT NULL; <= CURRENT_DATE('Europe/Moscow'); >= max_required_source_date
---   (GREATEST(MAX order/sale/ads); FINANCE НЕ входит — лагает недельно).
---
--- Заказы (решение владельца 30.07): orders_qty/orders_rub = ЧИСТЫЕ (is_cancel=FALSE) —
---   основной KPI; отмены — отдельными canceled_qty/canceled_rub (прозрачность «заказано»).
--- Выкупы: buyouts = is_return=FALSE; возвраты — returns_qty/returns_rub.
--- Вклад-до-COGS — cross-base, НЕ «прибыль дня» (finance лагает; основной управленческий = rolling):
---   hybrid_day_contribution_pre_cogs   = buyouts_rub − commission − logistics − ad_spend;
---   settlement_day_contribution_pre_cogs = finance_for_pay_accounting − ad_spend.
---   Маржа (−COGS) — MART v2 после REF PR2 (COGS в BQ).
---
--- Паттерн Mart1: BUILD → ASSERT(грейн/плотность/консервация) → publish → ASSERT физики.
--- ⚠️ BOOTSTRAP / MANUAL-ONLY. Витрина создаётся ТОЛЬКО после APPROVE аудитора.
---    Оркестрация (runWbMartDaily) — PR-Mart3.
+-- Паттерн Mart1: BUILD → ASSERT → publish → ASSERT физики. BOOTSTRAP/MANUAL-ONLY, lock 'mart_sku_daily'.
+-- ⚠️ Витрина создаётся ТОЛЬКО после merge PR#81. Оркестрация (runWbMartDaily) — PR-Mart3.
 -- ============================================================================
 
 CREATE SCHEMA IF NOT EXISTS `wb_mart` OPTIONS (location = 'EU');
@@ -39,8 +35,8 @@ USING (SELECT 'mart_sku_daily' AS lock_id) S ON T.lock_id = S.lock_id
 WHEN NOT MATCHED THEN INSERT (lock_id, is_running) VALUES ('mart_sku_daily', FALSE);
 
 CREATE OR REPLACE PROCEDURE `wb_mart.sp_build_mart_sku_daily`(
-  IN in_build_as_of_date DATE,     -- явная граница построения (обычно CURRENT_DATE МСК)
-  IN in_global_start_date DATE      -- fallback-старт для «мёртвых» SKU (NULL → авто = глобальный MIN)
+  IN in_build_as_of_date DATE,
+  IN in_global_start_date DATE
 )
 BEGIN
   DECLARE v_run_id       STRING    DEFAULT GENERATE_UUID();
@@ -49,25 +45,42 @@ BEGIN
   DECLARE v_global_start DATE;
   DECLARE v_max_required DATE;
 
-  SET v_max_required = (SELECT GREATEST(
-    (SELECT MAX(order_date) FROM `wb_mart.FACT_ORDERS`),
-    (SELECT MAX(sale_date)  FROM `wb_mart.FACT_SALES`),
-    (SELECT MAX(`date`)     FROM `wb_mart.FACT_ADS_SKU_DAILY`)));
-  SET v_global_start = IFNULL(in_global_start_date, (SELECT LEAST(
-    (SELECT MIN(order_date) FROM `wb_mart.FACT_ORDERS`),
-    (SELECT MIN(sale_date)  FROM `wb_mart.FACT_SALES`),
-    (SELECT MIN(`date`)     FROM `wb_mart.FACT_ADS_SKU_DAILY`),
-    (SELECT MIN(finance_date) FROM `wb_mart.FACT_FINANCE`))));
+  -- fix #4: NULL-safe max/min (UNNEST + WHERE d IS NOT NULL; MAX/MIN игнорируют NULL, GREATEST/LEAST — нет).
+  SET v_max_required = (
+    SELECT MAX(d) FROM UNNEST([
+      (SELECT MAX(order_date) FROM `wb_mart.FACT_ORDERS`),
+      (SELECT MAX(sale_date)  FROM `wb_mart.FACT_SALES`),
+      (SELECT MAX(`date`)     FROM `wb_mart.FACT_ADS_SKU_DAILY`)
+    ]) AS d WHERE d IS NOT NULL);
 
-  -- --- build_as_of guards (fail-closed) ---
+  SET v_global_start = IFNULL(in_global_start_date, (
+    SELECT MIN(d) FROM UNNEST([
+      (SELECT MIN(order_date)   FROM `wb_mart.FACT_ORDERS`),
+      (SELECT MIN(sale_date)    FROM `wb_mart.FACT_SALES`),
+      (SELECT MIN(`date`)       FROM `wb_mart.FACT_ADS_SKU_DAILY`),
+      (SELECT MIN(finance_date) FROM `wb_mart.FACT_FINANCE`)
+    ]) AS d WHERE d IS NOT NULL));
+
+  -- --- guards (fail-closed) ---
   IF v_build_as_of IS NULL THEN
     RAISE USING MESSAGE = 'sp_build_mart_sku_daily: build_as_of_date IS NULL (нужен явный DATE)'; END IF;
+  IF v_max_required IS NULL THEN
+    RAISE USING MESSAGE = 'sp_build_mart_sku_daily: max_required_source_date не определён (обязательные источники orders/sales/ads пусты)'; END IF;
   IF v_build_as_of > CURRENT_DATE('Europe/Moscow') THEN
     RAISE USING MESSAGE = 'sp_build_mart_sku_daily: build_as_of_date в будущем (> сегодня МСК)'; END IF;
   IF v_build_as_of < v_max_required THEN
     RAISE USING MESSAGE = 'sp_build_mart_sku_daily: build_as_of_date < max_required_source_date (orders/sales/ads свежее границы)'; END IF;
   IF v_global_start IS NULL THEN
-    RAISE USING MESSAGE = 'sp_build_mart_sku_daily: не удалось определить mart_global_start_date'; END IF;
+    RAISE USING MESSAGE = 'sp_build_mart_sku_daily: mart_global_start_date не определён (все источники пусты)'; END IF;
+  IF v_global_start > v_build_as_of THEN                                            -- fix #2
+    RAISE USING MESSAGE = 'sp_build_mart_sku_daily: global_start > build_as_of (пустой spine)'; END IF;
+
+  -- fix #1: неизвестные денежные пары (cost_category IS NULL) в окне <=build_as_of ЗАПРЕЩЕНЫ.
+  --   Иначе fin-CTE (cost_amount_positive IS NOT NULL) молча уронил бы их из витрины.
+  ASSERT (SELECT COUNTIF(cost_category IS NULL)
+          FROM `wb_mart.V_WB_FINANCE_AMOUNTS_LONG_MAPPED`
+          WHERE finance_date <= v_build_as_of) = 0
+    AS 'SKU_DAILY §pre: unknown money-pair (cost_category IS NULL) в LONG_MAPPED — расширить REF_COST_MAP';
 
   -- --- concurrency guard ---
   UPDATE `wb_mart._MART_BOOTSTRAP_LOCK`
@@ -77,6 +90,7 @@ BEGIN
     RAISE USING MESSAGE = 'sp_build_mart_sku_daily: lock занят (manual-only). Снять _MART_BOOTSTRAP_LOCK при зависшем ране.'; END IF;
 
   BEGIN
+    -- fix #3: ВСЕ source-CTE ограничены <= @build_as_of (воспроизводимость на дату).
     EXECUTE IMMEDIATE """
       CREATE OR REPLACE TABLE `wb_mart.MART_SKU_DAILY__BUILD`
       PARTITION BY day CLUSTER BY nm_id AS
@@ -88,31 +102,32 @@ BEGIN
           SUM(ad_orders_raw) ad_orders_raw, SUM(ads_revenue_raw_rub) ads_revenue_raw_rub,
           SUM(ads_revenue_dedup_estimate_rub) ads_revenue_dedup_estimate_rub,
           SUM(ad_orders_dedup_estimate) ad_orders_dedup_estimate
-        FROM `wb_mart.FACT_ADS_SKU_DAILY` GROUP BY nm_id, `date`),
+        FROM `wb_mart.FACT_ADS_SKU_DAILY` WHERE `date` <= @build_as_of GROUP BY nm_id, `date`),
       ord AS (
         SELECT nm_id, order_date d, COUNTIF(NOT is_cancel) orders_qty,
           SUM(IF(NOT is_cancel, price_with_disc, 0)) orders_rub,
           COUNTIF(is_cancel) canceled_qty, SUM(IF(is_cancel, price_with_disc, 0)) canceled_rub
-        FROM `wb_mart.FACT_ORDERS` GROUP BY nm_id, order_date),
+        FROM `wb_mart.FACT_ORDERS` WHERE order_date <= @build_as_of GROUP BY nm_id, order_date),
       sal AS (
         SELECT nm_id, sale_date d, COUNTIF(NOT is_return) buyouts_qty,
           SUM(IF(NOT is_return, price_with_disc, 0)) buyouts_rub,
           SUM(IF(NOT is_return, sales_for_pay_operational, 0)) sales_for_pay_operational,
           COUNTIF(is_return) returns_qty, SUM(IF(is_return, price_with_disc, 0)) returns_rub
-        FROM `wb_mart.FACT_SALES` GROUP BY nm_id, sale_date),
+        FROM `wb_mart.FACT_SALES` WHERE sale_date <= @build_as_of GROUP BY nm_id, sale_date),
       fin AS (
         SELECT nm_id, finance_date d,
           SUM(IF(cost_category='commission', cost_amount_positive, 0)) commission_cost_positive,
           SUM(IF(cost_category='logistics',  cost_amount_positive, 0)) logistics_cost_positive
         FROM `wb_mart.V_WB_FINANCE_AMOUNTS_LONG_MAPPED`
-        WHERE is_sku_row AND cost_amount_positive IS NOT NULL
+        WHERE is_sku_row AND cost_amount_positive IS NOT NULL AND finance_date <= @build_as_of
         GROUP BY nm_id, finance_date),
       finpay AS (
         SELECT nm_id, finance_date d, SUM(finance_for_pay_accounting) finance_for_pay_accounting
         FROM `wb_mart.FACT_FINANCE`
-        WHERE COALESCE(nm_id > 0 AND sku_match_status='matched', FALSE)
+        WHERE COALESCE(nm_id > 0 AND sku_match_status='matched', FALSE) AND finance_date <= @build_as_of
         GROUP BY nm_id, finance_date),
-      findt AS (SELECT nm_id, MIN(finance_date) d FROM `wb_mart.FACT_FINANCE` WHERE nm_id > 0 GROUP BY nm_id),
+      findt AS (SELECT nm_id, MIN(finance_date) d FROM `wb_mart.FACT_FINANCE`
+                WHERE nm_id > 0 AND finance_date <= @build_as_of GROUP BY nm_id),
       firstev AS (
         SELECT nm_id, MIN(d) first_d FROM (
           SELECT nm_id, d FROM ads UNION ALL SELECT nm_id, d FROM ord
@@ -165,6 +180,7 @@ BEGIN
         buyouts_qty, buyouts_rub, sales_for_pay_operational, returns_qty, returns_rub,
         commission_cost_positive, logistics_cost_positive, finance_for_pay_accounting,
         SAFE_DIVIDE(clicks, views)                       AS ctr,
+        SAFE_DIVIDE(ad_spend, views) * 1000              AS cpm,
         SAFE_DIVIDE(ad_spend, clicks)                    AS cpc,
         SAFE_DIVIDE(ad_spend, ad_orders_raw)             AS cpo_attributed,
         SAFE_DIVIDE(ad_spend, orders_qty)                AS blended_cpo,
@@ -191,11 +207,21 @@ BEGIN
     """ USING v_build_as_of AS build_as_of, v_global_start AS global_start, v_run_id AS run_id, v_built_at AS built_at;
 
     -- --- ASSERT-гейт на __BUILD ---
+    -- fix #2: непустой BUILD.
+    ASSERT (SELECT COUNT(*) FROM `wb_mart.MART_SKU_DAILY__BUILD`) > 0
+      AS 'SKU_DAILY: пустой BUILD (fail-closed)';
     -- грейн (day, nm_id) уникален + not-null.
     ASSERT (SELECT COUNTIF(day IS NULL OR nm_id IS NULL) FROM `wb_mart.MART_SKU_DAILY__BUILD`) = 0
       AS 'SKU_DAILY: NULL day/nm_id';
     ASSERT (SELECT COUNT(*) = COUNT(DISTINCT FORMAT('%t|%t', day, nm_id)) FROM `wb_mart.MART_SKU_DAILY__BUILD`)
       AS 'SKU_DAILY: грейн (day,nm_id) не уникален';
+    -- fix #2: полнота universe — КАЖДЫЙ активный SKU обязан присутствовать в BUILD (ловит отсутствующий nm).
+    ASSERT (SELECT COUNT(*) FROM (
+              SELECT nm_id FROM `wb_raw.REF_SKU_MASTER`
+              WHERE marketplace='WB' AND active=TRUE AND nm_id IS NOT NULL
+              EXCEPT DISTINCT
+              SELECT nm_id FROM `wb_mart.MART_SKU_DAILY__BUILD`)) = 0
+      AS 'SKU_DAILY: активный SKU отсутствует в BUILD (universe неполон)';
     -- плотность spine: у каждого nm число дней == (MAX-MIN+1), пропусков нет.
     ASSERT (SELECT COUNTIF(cnt <> span) FROM (
               SELECT nm_id, COUNT(*) cnt, DATE_DIFF(MAX(day), MIN(day), DAY) + 1 span
@@ -204,41 +230,45 @@ BEGIN
     -- граница: MAX(day) == build_as_of.
     ASSERT (SELECT MAX(day) FROM `wb_mart.MART_SKU_DAILY__BUILD`) = v_build_as_of
       AS 'SKU_DAILY: MAX(day) != build_as_of_date';
-    -- консервация операционки vs FACT (в рамках universe): витрина Σ == FACT Σ по universe nm.
+
+    -- fix #3: reconciliation ограничен <= build_as_of (совпадает с bounding source-CTE).
     ASSERT (SELECT ABS((SELECT SUM(ad_spend) FROM `wb_mart.MART_SKU_DAILY__BUILD`)
                      - (SELECT SUM(stats_spend_rub) FROM `wb_mart.FACT_ADS_SKU_DAILY`
-                        WHERE nm_id IN (SELECT nm_id FROM `wb_raw.REF_SKU_MASTER`
+                        WHERE `date` <= v_build_as_of
+                          AND nm_id IN (SELECT nm_id FROM `wb_raw.REF_SKU_MASTER`
                                         WHERE marketplace='WB' AND active=TRUE AND nm_id IS NOT NULL))) < 0.01)
-      AS 'SKU_DAILY: ad_spend != FACT (universe)';
+      AS 'SKU_DAILY: ad_spend != FACT (universe, <=build_as_of)';
     ASSERT (SELECT (SELECT SUM(orders_qty) FROM `wb_mart.MART_SKU_DAILY__BUILD`)
                  = (SELECT COUNTIF(NOT is_cancel) FROM `wb_mart.FACT_ORDERS`
-                    WHERE nm_id IN (SELECT nm_id FROM `wb_raw.REF_SKU_MASTER`
+                    WHERE order_date <= v_build_as_of
+                      AND nm_id IN (SELECT nm_id FROM `wb_raw.REF_SKU_MASTER`
                                     WHERE marketplace='WB' AND active=TRUE AND nm_id IS NOT NULL)))
-      AS 'SKU_DAILY: orders_qty != FACT (universe)';
+      AS 'SKU_DAILY: orders_qty != FACT (universe, <=build_as_of)';
     ASSERT (SELECT ABS((SELECT SUM(buyouts_rub) FROM `wb_mart.MART_SKU_DAILY__BUILD`)
                      - (SELECT SUM(IF(NOT is_return, price_with_disc, 0)) FROM `wb_mart.FACT_SALES`
-                        WHERE nm_id IN (SELECT nm_id FROM `wb_raw.REF_SKU_MASTER`
+                        WHERE sale_date <= v_build_as_of
+                          AND nm_id IN (SELECT nm_id FROM `wb_raw.REF_SKU_MASTER`
                                         WHERE marketplace='WB' AND active=TRUE AND nm_id IS NOT NULL))) < 0.01)
-      AS 'SKU_DAILY: buyouts_rub != FACT (universe)';
-    -- консервация finance SKU-затрат vs LONG_MAPPED (universe, SKU-ветка, commission+logistics).
+      AS 'SKU_DAILY: buyouts_rub != FACT (universe, <=build_as_of)';
     ASSERT (SELECT ABS(
               (SELECT SUM(commission_cost_positive + logistics_cost_positive) FROM `wb_mart.MART_SKU_DAILY__BUILD`)
             - (SELECT SUM(cost_amount_positive) FROM `wb_mart.V_WB_FINANCE_AMOUNTS_LONG_MAPPED`
-               WHERE is_sku_row AND cost_category IN ('commission','logistics')
+               WHERE is_sku_row AND cost_category IN ('commission','logistics') AND finance_date <= v_build_as_of
                  AND nm_id IN (SELECT nm_id FROM `wb_raw.REF_SKU_MASTER`
                                WHERE marketplace='WB' AND active=TRUE AND nm_id IS NOT NULL))) < 0.01)
-      AS 'SKU_DAILY: finance commission+logistics != LONG_MAPPED (universe SKU)';
+      AS 'SKU_DAILY: finance commission+logistics != LONG_MAPPED (universe SKU, <=build_as_of)';
 
     -- --- publish ---
     CREATE OR REPLACE TABLE `wb_mart.MART_SKU_DAILY`
       PARTITION BY day CLUSTER BY nm_id AS
       SELECT * FROM `wb_mart.MART_SKU_DAILY__BUILD`;
 
-    -- физика: partition=1, cluster=1.
     ASSERT (SELECT COUNTIF(is_partitioning_column='YES') FROM `wb_mart.INFORMATION_SCHEMA.COLUMNS`
             WHERE table_name='MART_SKU_DAILY') = 1 AS 'SKU_DAILY: partition != 1';
     ASSERT (SELECT COUNTIF(clustering_ordinal_position IS NOT NULL) FROM `wb_mart.INFORMATION_SCHEMA.COLUMNS`
             WHERE table_name='MART_SKU_DAILY') = 1 AS 'SKU_DAILY: cluster != 1';
+
+    DROP TABLE IF EXISTS `wb_mart.MART_SKU_DAILY__BUILD`;
 
     UPDATE `wb_mart._MART_BOOTSTRAP_LOCK`
        SET is_running=FALSE, run_id=NULL, last_run_id=v_run_id, released_at=CURRENT_TIMESTAMP()
@@ -252,5 +282,5 @@ BEGIN
   END;
 END;
 
--- Ручной прогон (владелец, после APPROVE):
+-- Ручной прогон (владелец, после APPROVE + merge):
 --   CALL `wb_mart.sp_build_mart_sku_daily`(CURRENT_DATE('Europe/Moscow'), NULL);
