@@ -6,12 +6,22 @@
 --   n_rows=6772; gap_nms=0; Δ(ad_spend/orders/buyouts/finance, date-bounded)=0.
 -- ============================================================================
 
--- 1) fix #4: NULL-safe вычисление границ (MAX/MIN через UNNEST WHERE d IS NOT NULL). Ожидание: обе даты NOT NULL.
+-- 1) REV3: per-source max-date (каждый обязательный источник ОБЯЗАН быть непуст) + finance непуст;
+--    max_required=GREATEST(orders,sales,ads); global_start NULL-safe. Ожидание: 3 даты NOT NULL, finance_rows>0.
 SELECT
-  (SELECT MAX(d) FROM UNNEST([(SELECT MAX(order_date) FROM `wb_mart.FACT_ORDERS`),
-     (SELECT MAX(sale_date) FROM `wb_mart.FACT_SALES`),(SELECT MAX(`date`) FROM `wb_mart.FACT_ADS_SKU_DAILY`)]) d WHERE d IS NOT NULL) max_required,  -- 2026-07-30
-  (SELECT MIN(d) FROM UNNEST([(SELECT MIN(order_date) FROM `wb_mart.FACT_ORDERS`),(SELECT MIN(sale_date) FROM `wb_mart.FACT_SALES`),
-     (SELECT MIN(`date`) FROM `wb_mart.FACT_ADS_SKU_DAILY`),(SELECT MIN(finance_date) FROM `wb_mart.FACT_FINANCE`)]) d WHERE d IS NOT NULL) global_start; -- 2024-09-05
+  CAST((SELECT MAX(order_date) FROM `wb_mart.FACT_ORDERS`) AS STRING) orders_max,      -- 2026-07-30 (NOT NULL)
+  CAST((SELECT MAX(sale_date)  FROM `wb_mart.FACT_SALES`)  AS STRING) sales_max,       -- 2026-07-30 (NOT NULL)
+  CAST((SELECT MAX(`date`)     FROM `wb_mart.FACT_ADS_SKU_DAILY`) AS STRING) ads_max,  -- 2026-07-29 (NOT NULL)
+  (SELECT COUNT(*) FROM `wb_mart.V_WB_FINANCE_AMOUNTS_LONG_MAPPED`
+     WHERE finance_date <= DATE '2026-07-30' AND is_sku_row AND cost_category='commission' AND cost_amount_positive IS NOT NULL
+       AND nm_id IN (SELECT nm_id FROM `wb_raw.REF_SKU_MASTER` WHERE marketplace='WB' AND active=TRUE AND nm_id IS NOT NULL)) finance_commission_rows, -- >0
+  (SELECT COUNT(*) FROM `wb_mart.V_WB_FINANCE_AMOUNTS_LONG_MAPPED`
+     WHERE finance_date <= DATE '2026-07-30' AND is_sku_row AND cost_category='logistics' AND cost_amount_positive IS NOT NULL
+       AND nm_id IN (SELECT nm_id FROM `wb_raw.REF_SKU_MASTER` WHERE marketplace='WB' AND active=TRUE AND nm_id IS NOT NULL)) finance_logistics_rows, -- >0
+  CAST(GREATEST((SELECT MAX(order_date) FROM `wb_mart.FACT_ORDERS`),(SELECT MAX(sale_date) FROM `wb_mart.FACT_SALES`),
+     (SELECT MAX(`date`) FROM `wb_mart.FACT_ADS_SKU_DAILY`)) AS STRING) max_required,   -- 2026-07-30
+  CAST((SELECT MIN(d) FROM UNNEST([(SELECT MIN(order_date) FROM `wb_mart.FACT_ORDERS`),(SELECT MIN(sale_date) FROM `wb_mart.FACT_SALES`),
+     (SELECT MIN(`date`) FROM `wb_mart.FACT_ADS_SKU_DAILY`),(SELECT MIN(finance_date) FROM `wb_mart.FACT_FINANCE`)]) d WHERE d IS NOT NULL) AS STRING) global_start; -- 2024-09-05
 
 -- 2) fix #1: неизвестные денежные пары в окне (cost_category IS NULL) — ожидание 0.
 SELECT COUNTIF(cost_category IS NULL) unknown_window

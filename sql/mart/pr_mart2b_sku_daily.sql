@@ -13,6 +13,17 @@
 --   #4 Убрана NULL-ловушка GREATEST/LEAST: max/min через MAX/MIN(d) FROM UNNEST(dates) WHERE d IS NOT NULL
 --      + явный RAISE, если обязательные даты определить невозможно (пустые источники).
 --   (+ добавлен KPI cpm = spend/views×1000 — был в списке KPI аудита.)
+-- REV3 (re-audit): остаточный fail-closed blocker — NULL-safe UNNEST молча терпел пустой ОТДЕЛЬНЫЙ
+--   обязательный источник (max_required считался по остальным). Теперь per-source max-date по
+--   FACT_ORDERS/FACT_SALES/FACT_ADS_SKU_DAILY + явный RAISE на КАЖДЫЙ пустой; отдельная проверка непустоты
+--   finance LONG_MAPPED (в max_required НЕ входит); только затем GREATEST(orders_max, sales_max, ads_max).
+--   CPM входит в витрину (не deferred).
+-- REV4 (re-audit): finance-guard считал ВСЕ строки LONG_MAPPED, а витрина потребляет только is_sku_row.
+--   При сбое reference-мэппинга (все строки → ACCOUNT) guard прошёл бы, а fin оказался пуст → нулевая витрина
+--   опубликовалась бы. Теперь считаем ТОЛЬКО is_sku_row + active universe (реальный источник витрины).
+-- REV5 (re-audit): guard is_sku_row всё ещё шире, чем два выводимых показателя (commission_cost_positive,
+--   logistics_cost_positive). Развёл на ДВА счётчика по cost_category='commission' и ='logistics' с RAISE каждый —
+--   при сбое mapping конкретной категории общий is_sku_row-guard прошёл бы, а метрика занулилась.
 --
 -- Грейн: day × nm_id, DENSE spine. Universe = REF_SKU_MASTER (WB, active, nm_id NOT NULL).
 --   start_date(nm)=LEAST(MIN order/sale/ads/finance по nm, все <=build_as_of); fallback=mart_global_start_date.
@@ -44,15 +55,51 @@ BEGIN
   DECLARE v_build_as_of  DATE      DEFAULT in_build_as_of_date;
   DECLARE v_global_start DATE;
   DECLARE v_max_required DATE;
+  DECLARE v_orders_max   DATE;
+  DECLARE v_sales_max    DATE;
+  DECLARE v_ads_max                 DATE;
+  DECLARE v_finance_commission_rows INT64;
+  DECLARE v_finance_logistics_rows  INT64;
 
-  -- fix #4: NULL-safe max/min (UNNEST + WHERE d IS NOT NULL; MAX/MIN игнорируют NULL, GREATEST/LEAST — нет).
-  SET v_max_required = (
-    SELECT MAX(d) FROM UNNEST([
-      (SELECT MAX(order_date) FROM `wb_mart.FACT_ORDERS`),
-      (SELECT MAX(sale_date)  FROM `wb_mart.FACT_SALES`),
-      (SELECT MAX(`date`)     FROM `wb_mart.FACT_ADS_SKU_DAILY`)
-    ]) AS d WHERE d IS NOT NULL);
+  -- build_as_of обязателен раньше всего (используется в проверке непустоты finance ниже).
+  IF v_build_as_of IS NULL THEN
+    RAISE USING MESSAGE = 'sp_build_mart_sku_daily: build_as_of_date IS NULL (нужен явный DATE)'; END IF;
 
+  -- REV3 (re-audit): ОТДЕЛЬНАЯ max-date по каждому обязательному источнику + явный RAISE на пустой.
+  --   NULL-safe UNNEST раньше молча терпел пустой отдельный источник (max_required считался по остальным).
+  SET v_orders_max = (SELECT MAX(order_date) FROM `wb_mart.FACT_ORDERS`);
+  SET v_sales_max  = (SELECT MAX(sale_date)  FROM `wb_mart.FACT_SALES`);
+  SET v_ads_max    = (SELECT MAX(`date`)     FROM `wb_mart.FACT_ADS_SKU_DAILY`);
+  IF v_orders_max IS NULL THEN RAISE USING MESSAGE = 'sp_build_mart_sku_daily: FACT_ORDERS пуст'; END IF;
+  IF v_sales_max  IS NULL THEN RAISE USING MESSAGE = 'sp_build_mart_sku_daily: FACT_SALES пуст'; END IF;
+  IF v_ads_max    IS NULL THEN RAISE USING MESSAGE = 'sp_build_mart_sku_daily: FACT_ADS_SKU_DAILY пуст'; END IF;
+
+  -- finance НЕ входит в max_required (лагает недельно), но ДВА обязательных финансовых входа витрины —
+  --   SKU commission и SKU logistics (cost_category IN ('commission','logistics'), is_sku_row, active universe,
+  --   cost_amount_positive IS NOT NULL) — обязаны быть непусты. REV5 (аудит): счётчики ПО КАЖДОЙ категории отдельно —
+  --   иначе при сбое mapping конкретной категории (commission/logistics исчезли, прочие SKU-строки остались) общий
+  --   guard прошёл бы, а соответствующая метрика витрины занулилась, и reconciliation сравнил бы ноль с нулём.
+  SET v_finance_commission_rows = (
+    SELECT COUNT(*) FROM `wb_mart.V_WB_FINANCE_AMOUNTS_LONG_MAPPED`
+    WHERE finance_date <= v_build_as_of AND is_sku_row
+      AND cost_category = 'commission' AND cost_amount_positive IS NOT NULL
+      AND nm_id IN (SELECT nm_id FROM `wb_raw.REF_SKU_MASTER`
+                    WHERE marketplace='WB' AND active=TRUE AND nm_id IS NOT NULL));
+  SET v_finance_logistics_rows = (
+    SELECT COUNT(*) FROM `wb_mart.V_WB_FINANCE_AMOUNTS_LONG_MAPPED`
+    WHERE finance_date <= v_build_as_of AND is_sku_row
+      AND cost_category = 'logistics' AND cost_amount_positive IS NOT NULL
+      AND nm_id IN (SELECT nm_id FROM `wb_raw.REF_SKU_MASTER`
+                    WHERE marketplace='WB' AND active=TRUE AND nm_id IS NOT NULL));
+  IF v_finance_commission_rows = 0 THEN
+    RAISE USING MESSAGE = 'sp_build_mart_sku_daily: SKU commission finance пуст (is_sku_row, active universe, <=build_as_of)'; END IF;
+  IF v_finance_logistics_rows = 0 THEN
+    RAISE USING MESSAGE = 'sp_build_mart_sku_daily: SKU logistics finance пуст (is_sku_row, active universe, <=build_as_of)'; END IF;
+
+  -- Все три обязательных источника непусты → GREATEST безопасен (нет NULL-аргументов).
+  SET v_max_required = GREATEST(v_orders_max, v_sales_max, v_ads_max);
+
+  -- global_start: fallback для «мёртвых» SKU (обязательные источники непусты → MIN определён; finance тоже проверен).
   SET v_global_start = IFNULL(in_global_start_date, (
     SELECT MIN(d) FROM UNNEST([
       (SELECT MIN(order_date)   FROM `wb_mart.FACT_ORDERS`),
@@ -61,17 +108,13 @@ BEGIN
       (SELECT MIN(finance_date) FROM `wb_mart.FACT_FINANCE`)
     ]) AS d WHERE d IS NOT NULL));
 
-  -- --- guards (fail-closed) ---
-  IF v_build_as_of IS NULL THEN
-    RAISE USING MESSAGE = 'sp_build_mart_sku_daily: build_as_of_date IS NULL (нужен явный DATE)'; END IF;
-  IF v_max_required IS NULL THEN
-    RAISE USING MESSAGE = 'sp_build_mart_sku_daily: max_required_source_date не определён (обязательные источники orders/sales/ads пусты)'; END IF;
+  -- --- остальные guards (fail-closed) ---
   IF v_build_as_of > CURRENT_DATE('Europe/Moscow') THEN
     RAISE USING MESSAGE = 'sp_build_mart_sku_daily: build_as_of_date в будущем (> сегодня МСК)'; END IF;
   IF v_build_as_of < v_max_required THEN
     RAISE USING MESSAGE = 'sp_build_mart_sku_daily: build_as_of_date < max_required_source_date (orders/sales/ads свежее границы)'; END IF;
   IF v_global_start IS NULL THEN
-    RAISE USING MESSAGE = 'sp_build_mart_sku_daily: mart_global_start_date не определён (все источники пусты)'; END IF;
+    RAISE USING MESSAGE = 'sp_build_mart_sku_daily: mart_global_start_date не определён'; END IF;
   IF v_global_start > v_build_as_of THEN                                            -- fix #2
     RAISE USING MESSAGE = 'sp_build_mart_sku_daily: global_start > build_as_of (пустой spine)'; END IF;
 
