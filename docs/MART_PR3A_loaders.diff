@@ -1,0 +1,187 @@
+diff --git a/apps-script/WbAdsDaily.gs b/apps-script/WbAdsDaily.gs
+index 25ce597..fc4eda7 100644
+--- a/apps-script/WbAdsDaily.gs
++++ b/apps-script/WbAdsDaily.gs
+@@ -28,6 +28,78 @@ var WB_ADS_DAILY_TRIGGER_FN_    = 'runWbAdsDaily';
+ var WB_ADS_DAILY_LOCK_WAIT_MS_  = 30000;   // ждём общий ScriptLock (часовые заказы/продажи короткие)
+ var WB_ADS_DAILY_STALE_DAYS_    = 2;       // fullstats за вчера — норма; > N дней = устаревание
+ 
++// PR-Mart3a REV5: fail-closed расчёт итогового статуса рекламного прогона.
++var WB_ADS_EXPECTED_SOURCES_ = 3;  // campaigns + costs + fullstats
++
++/**
++ * Чистый расчёт итогового статуса рекламного прогона (без API/BQ — тестируется offline).
++ * Fail-closed: отсутствующий/битый результат, нет поля status, неизвестный статус ИЛИ
++ * неверное число результатов => ERROR. Иначе null/{}/сырой статус проскочил бы ДО whitelist
++ * на этапе overall и дал бы ложный OK/STALE => ложный COMPLETE-heartbeat => Mart3 собрал бы
++ * витрину на неполной рекламе.
++ *   OK+OK+OK               => OK (или STALE, если stale===true)
++ *   >=1 PARTIAL без ошибок => PARTIAL
++ *   null / {} / нет status / неизвестный статус / не 3 результата / не массив => ERROR
++ * @param {Array} results  результаты трёх per-source загрузчиков
++ * @param {boolean|null} stale  признак устаревания fullstats (true|false|null)
++ * @return {string} 'OK' | 'PARTIAL' | 'STALE' | 'ERROR'
++ */
++function wbAdsOverallStatus_(results, stale) {
++  var invalid =
++    !Array.isArray(results) ||
++    results.length !== WB_ADS_EXPECTED_SOURCES_ ||
++    results.some(function (x) { return !x || !x.status; });
++  if (invalid) return 'ERROR';
++
++  var badStatus = results.some(function (x) {
++    var st = String(x.status).toUpperCase();
++    return st !== 'OK' && st !== 'PARTIAL';
++  });
++  if (badStatus) return 'ERROR';
++
++  var anyPartial = results.some(function (x) {
++    return String(x.status).toUpperCase() === 'PARTIAL';
++  });
++  if (anyPartial) return 'PARTIAL';
++
++  return stale === true ? 'STALE' : 'OK';
++}
++
++/**
++ * Регрессионный self-тест wbAdsOverallStatus_ (offline, без API/BQ).
++ * Запускать из редактора Apps Script. Бросает Error при первом расхождении.
++ */
++function wbAdsSelfTestOverallStatus() {
++  function r(status) { return { source: 's', status: status, rows: 0 }; }
++  var cases = [
++    { n: 'OK+OK+OK',              in: [r('OK'), r('OK'), r('OK')],          stale: false, exp: 'OK' },
++    { n: 'OK+OK+OK stale=true',   in: [r('OK'), r('OK'), r('OK')],          stale: true,  exp: 'STALE' },
++    { n: 'OK+OK+OK stale=null',   in: [r('OK'), r('OK'), r('OK')],          stale: null,  exp: 'OK' },
++    { n: 'один PARTIAL',          in: [r('OK'), r('PARTIAL'), r('OK')],     stale: false, exp: 'PARTIAL' },
++    { n: 'PARTIAL важнее STALE',  in: [r('OK'), r('PARTIAL'), r('OK')],     stale: true,  exp: 'PARTIAL' },
++    { n: 'ERROR перебивает всё',  in: [r('OK'), r('ERROR'), r('OK')],       stale: true,  exp: 'ERROR' },
++    { n: 'null-результат',        in: [r('OK'), null, r('OK')],             stale: false, exp: 'ERROR' },
++    { n: 'пустой объект {}',      in: [r('OK'), {}, r('OK')],               stale: false, exp: 'ERROR' },
++    { n: 'нет поля status',       in: [r('OK'), { source: 's' }, r('OK')],  stale: false, exp: 'ERROR' },
++    { n: 'неизвестный статус',    in: [r('OK'), r('WAT'), r('OK')],         stale: false, exp: 'ERROR' },
++    { n: 'мало результатов (2)',  in: [r('OK'), r('OK')],                   stale: false, exp: 'ERROR' },
++    { n: 'много результатов (4)', in: [r('OK'), r('OK'), r('OK'), r('OK')], stale: false, exp: 'ERROR' },
++    { n: 'не массив',             in: null,                                  stale: false, exp: 'ERROR' },
++    { n: 'регистр ok/partial',    in: [r('ok'), r('partial'), r('OK')],     stale: false, exp: 'PARTIAL' }
++  ];
++  var failed = 0;
++  for (var i = 0; i < cases.length; i++) {
++    var c = cases[i];
++    var got = wbAdsOverallStatus_(c.in, c.stale);
++    var ok = got === c.exp;
++    if (!ok) failed++;
++    Logger.log((ok ? 'OK   ' : 'FAIL ') + c.n + ' => ожид. ' + c.exp + ', получено ' + got);
++  }
++  if (failed > 0) throw new Error('wbAdsSelfTestOverallStatus: провалено ' + failed + ' из ' + cases.length);
++  Logger.log('wbAdsSelfTestOverallStatus: все ' + cases.length + ' кейсов прошли OK');
++  return { passed: cases.length, failed: 0 };
++}
++
+ /**
+  * Один суточный прогон рекламы под общим ScriptLock.
+  * Возвращает { status, run_id, results, fullstats_max_date, stale }.
+@@ -42,6 +114,7 @@ function runWbAdsDaily() {
+ 
+   var runId = '';
+   var rng = null;
++  var ingestRunIdAds = null;   // PR-Mart3a: id строки heartbeat-журнала
+   try {
+     runId = wbAdsRawNewRunId_();
+ 
+@@ -49,10 +122,16 @@ function runWbAdsDaily() {
+     if (typeof wbAdsBqSinkOn_ !== 'function' || !wbAdsBqSinkOn_()) {
+       console.error('WB Ads daily: WB_ADS_BQ_SINK выключен — прогон отменён');
+       wbAdsDailyWriteStatus_(runId, '', '', 'ERROR', 'WB_ADS_BQ_SINK выключен');
++      // PR-Mart3a: early-return — фиксируем неуспех явно (точный период API ещё не вычислен,
++      // берём закрытый день; в норме он совпадает с rng.to).
++      ingestRunIdAds = ingestRunStart_('ads', ingestClosedDayMsk_(), 'SCHEDULED');
++      ingestRunError_(ingestRunIdAds, 'ADS_SINK_OFF', 'WB_ADS_BQ_SINK выключен');
+       return { status: 'ERROR', run_id: runId, error_message: 'WB_ADS_BQ_SINK выключен' };
+     }
+ 
+     rng = wbAdsLast7Range_();
++    // PR-Mart3a: logical_period = ЦЕЛЕВОЙ ПЕРИОД API (period_to), а не дата запуска.
++    ingestRunIdAds = ingestRunStart_('ads', rng.to, 'SCHEDULED');
+     WB_ADS_RAW_RUN_T0_ = t0;   // общий тайм-бюджет для per-source загрузчиков
+ 
+     console.log('═══ runWbAdsDaily run_id=' + runId + ' | ' + rng.from + '…' + rng.to + ' ═══');
+@@ -67,20 +146,18 @@ function runWbAdsDaily() {
+       return (x.source || '?') + '=' + (x.status || '?') + '(' + (x.rows != null ? x.rows : 0) + ')';
+     }).join(' | ');
+ 
+-    // Иерархия статусов: ошибка любого источника → ERROR; неполнота → PARTIAL;
+-    // всё успешно, но данные устарели → STALE; иначе OK.
+-    var hasError = results.some(function (x) {
+-      return x && x.status && x.status !== 'OK' && x.status !== 'PARTIAL';
+-    });
+-    var hasPartial = results.some(function (x) { return x && x.status === 'PARTIAL'; });
+-
++    // PR-Mart3a REV5: итог вынесен в чистую wbAdsOverallStatus_ (fail-closed, offline self-test).
++    // null/{}/без-status/неизвестный статус/не 3 результата => ERROR (не проскочит в OK до whitelist).
+     var fresh = wbAdsDailyFreshness_();
+-    var overall = hasError ? 'ERROR' : (hasPartial ? 'PARTIAL' : (fresh.stale === true ? 'STALE' : 'OK'));
++    var overall = wbAdsOverallStatus_(results, fresh.stale);
+     var elapsed = ((Date.now() - t0) / 1000).toFixed(1);
+     var note = summary + ' | fullstats_max=' + fresh.maxDate + ' | ' + elapsed + 'c';
+ 
+     wbAdsDailyWriteStatus_(runId, rng.from, rng.to, overall, note);
+     console.log('runWbAdsDaily ' + overall + ' | ' + note);
++    // PR-Mart3a: whitelist (OK/STALE = успех; PARTIAL/ERROR -> ERROR-heartbeat).
++    var adsRowsTotal = results.reduce(function (a, x) { return a + ((x && x.rows) || 0); }, 0);
++    ingestFinalizeByStatus_(ingestRunIdAds, 'ads', overall, adsRowsTotal, adsRowsTotal, note);
+     return { status: overall, run_id: runId, results: results,
+       fullstats_max_date: fresh.maxDate, stale: fresh.stale };
+ 
+@@ -88,6 +165,7 @@ function runWbAdsDaily() {
+     var em = (e && e.message) || String(e);
+     console.error('runWbAdsDaily ERROR: ' + em);
+     wbAdsDailyWriteStatus_(runId, rng ? rng.from : '', rng ? rng.to : '', 'ERROR', 'Исключение: ' + em);
++    ingestRunError_(ingestRunIdAds, 'ADS_EXCEPTION', em);   // PR-Mart3a: catch-ветка
+     return { status: 'ERROR', run_id: runId, error_message: em };
+   } finally {
+     WB_ADS_RAW_RUN_T0_ = null;
+diff --git a/apps-script/WbOrdersLoader b/apps-script/WbOrdersLoader
+index 88d6b80..b8ab7e9 100644
+--- a/apps-script/WbOrdersLoader
++++ b/apps-script/WbOrdersLoader
+@@ -801,6 +801,8 @@ function runWbOrdersIncremental() {
+     r.duration_ms = Date.now() - t0;
+     return r;   // без lock в лог не пишем (гонка watermark недопустима)
+   }
++  // PR-Mart3a: heartbeat-журнал. Открываем ПОСЛЕ захвата lock — пропуск по локу это не ран.
++  var ingestRunIdOrders = ingestRunStart_('orders', ingestClosedDayMsk_(), 'SCHEDULED');
+   try {
+     wbOrdersIncrementalCore_(r);
+   } catch (e) {
+@@ -820,6 +822,8 @@ function runWbOrdersIncremental() {
+     ' candidate=' + r.watermark_candidate + ' after=' + r.watermark_after +
+     ' | rows_appended=' + r.rows_appended + ' api_rows=' + r.api_rows_received +
+     (r.error_message ? ' | ' + r.error_message : ''));
++  // PR-Mart3a: финализация по whitelist (OK/OK_NO_CHANGES = успех; PARTIAL/прочее -> ERROR).
++  ingestFinalizeByStatus_(ingestRunIdOrders, 'orders', r.status, r.api_rows_received, r.rows_appended, r.error_message);
+   return r;
+ }
+ 
+diff --git a/apps-script/WbSalesIncremental.gs b/apps-script/WbSalesIncremental.gs
+index d2d8c91..2b003dd 100644
+--- a/apps-script/WbSalesIncremental.gs
++++ b/apps-script/WbSalesIncremental.gs
+@@ -173,6 +173,8 @@ function runWbSalesIncremental() {
+     salesIncSafeLog_(r);
+     return r;
+   }
++  // PR-Mart3a: heartbeat-журнал. Ранний SKIPPED_LOCKED выше — там ран не открываем.
++  var ingestRunIdSales = ingestRunStart_('sales', ingestClosedDayMsk_(), 'SCHEDULED');
+   try {
+     wbSalesIncrementalCore_(r);
+   } catch (e) {
+@@ -189,6 +191,8 @@ function runWbSalesIncremental() {
+     ' candidate=' + r.watermark_candidate + ' after=' + r.watermark_after +
+     ' | api_rows=' + r.api_rows_received + ' boundary_dedup=' + r.rows_after_boundary_dedup +
+     ' written=' + r.rows_written + (r.error_message ? ' | ' + r.error_message : ''));
++  // PR-Mart3a: whitelist (OK/OK_NO_CHANGES = успех; SKIPPED_RATE_LIMIT/PARTIAL/прочее -> ERROR).
++  ingestFinalizeByStatus_(ingestRunIdSales, 'sales', r.status, r.api_rows_received, r.rows_written, r.error_message);
+   return r;
+ }
+ 
