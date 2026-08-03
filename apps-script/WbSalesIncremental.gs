@@ -173,6 +173,8 @@ function runWbSalesIncremental() {
     salesIncSafeLog_(r);
     return r;
   }
+  // PR-Mart3a: heartbeat-журнал. Ранний SKIPPED_LOCKED выше — там ран не открываем.
+  var ingestRunIdSales = ingestRunStart_('sales', ingestClosedDayMsk_(), 'SCHEDULED');
   try {
     wbSalesIncrementalCore_(r);
   } catch (e) {
@@ -189,6 +191,8 @@ function runWbSalesIncremental() {
     ' candidate=' + r.watermark_candidate + ' after=' + r.watermark_after +
     ' | api_rows=' + r.api_rows_received + ' boundary_dedup=' + r.rows_after_boundary_dedup +
     ' written=' + r.rows_written + (r.error_message ? ' | ' + r.error_message : ''));
+  // PR-Mart3a: whitelist (OK/OK_NO_CHANGES = успех; SKIPPED_RATE_LIMIT/PARTIAL/прочее -> ERROR).
+  ingestFinalizeByStatus_(ingestRunIdSales, 'sales', r.status, r.api_rows_received, r.rows_written, r.error_message);
   return r;
 }
 
