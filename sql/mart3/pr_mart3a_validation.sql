@@ -88,17 +88,46 @@ LEFT JOIN (SELECT loader_name, status, completed_at FROM attempts WHERE rn = 1) 
   USING (loader_name)
 ORDER BY r.loader_name;
 
--- 8) Ежедневное покрытие за последние 7 суток (наблюдение перед стартом Mart3b).
---    Ожидание: у каждого загрузчика COMPLETE на КАЖДЫЙ день (в т.ч. дни без продаж).
-SELECT logical_period, loader_name,
-       COUNTIF(status = 'COMPLETE') AS complete_runs,
-       COUNTIF(status = 'ERROR')    AS error_runs,
-       SUM(IFNULL(rows_loaded, 0))  AS rows_loaded_total
-FROM `wb_raw.V_INGEST_HEARTBEAT`
-WHERE logical_period >= DATE_SUB(CURRENT_DATE('Europe/Moscow'), INTERVAL 7 DAY)
-  AND loader_name IN ('orders', 'sales', 'ads')
-GROUP BY 1, 2
-ORDER BY logical_period DESC, loader_name;
+-- 8) LATEST-ATTEMPT покрытие по дням (наблюдение перед стартом Mart3b) — ТА ЖЕ семантика, что §7.
+--    НЕ `COUNTIF(status='COMPLETE')`: ранний COMPLETE + поздний ERROR (00:10 COMPLETE → 08:00 ERROR)
+--    дал бы ложную зелень (complete_runs=1), хотя последняя попытка дня упала. Берём ПОСЛЕДНЮЮ попытку
+--    за (logical_period × loader) по started_at DESC, run_id DESC и требуем, чтобы ИМЕННО она была COMPLETE.
+--    Плотный спайн дней (GENERATE_DATE_ARRAY, D-7..D-1) × обязательные загрузчики через CROSS JOIN:
+--    полностью отсутствующий день ИЛИ loader остаётся строкой с latest_complete=FALSE, а не исчезает.
+--    КРИТЕРИЙ ГОТОВНОСТИ К Mart3b: latest_complete = TRUE для всех трёх загрузчиков на КАЖДЫЙ день.
+WITH days AS (
+  SELECT day AS logical_period
+  FROM UNNEST(GENERATE_DATE_ARRAY(
+    DATE_SUB(CURRENT_DATE('Europe/Moscow'), INTERVAL 7 DAY),
+    DATE_SUB(CURRENT_DATE('Europe/Moscow'), INTERVAL 1 DAY)
+  )) AS day
+),
+required AS (
+  SELECT loader_name FROM UNNEST(['orders', 'sales', 'ads']) AS loader_name
+),
+latest AS (
+  SELECT
+    logical_period, loader_name, status, started_at, completed_at, rows_loaded,
+    ROW_NUMBER() OVER (
+      PARTITION BY logical_period, loader_name
+      ORDER BY started_at DESC, run_id DESC
+    ) AS rn
+  FROM `wb_raw.V_INGEST_HEARTBEAT`
+  WHERE logical_period >= DATE_SUB(CURRENT_DATE('Europe/Moscow'), INTERVAL 7 DAY)
+    AND loader_name IN ('orders', 'sales', 'ads')
+)
+SELECT
+  d.logical_period,
+  r.loader_name,
+  COALESCE(l.status = 'COMPLETE' AND l.completed_at IS NOT NULL, FALSE) AS latest_complete,
+  l.status                          AS latest_status,   -- NULL = ни одной попытки в этот день
+  CAST(l.started_at   AS STRING)    AS started_at,
+  CAST(l.completed_at AS STRING)    AS completed_at,
+  l.rows_loaded
+FROM days d
+CROSS JOIN required r
+LEFT JOIN (SELECT * FROM latest WHERE rn = 1) l USING (logical_period, loader_name)
+ORDER BY d.logical_period DESC, r.loader_name;
 
 -- 9) Secondary sanity (НЕ гейт): бизнес-даты RAW с КОРРЕКТНЫМ парсингом строкового времени.
 --    Формат '2026-07-31 11:31:47' без TZ → '%Y-%m-%d %H:%M:%S' (ISO-парсер даёт NULL!).

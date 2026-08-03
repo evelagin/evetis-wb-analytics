@@ -1,6 +1,17 @@
-# PR-Mart3a — журнал ранов загрузчиков (heartbeat для MART). REV5 (аудит)
+# PR-Mart3a — журнал ранов загрузчиков (heartbeat для MART). REV6 (аудит)
 
-**Дата:** 2026-08-02  **Статус:** REV5 — закрыт 1 production-блокер REV4 (fail-open в расчёте ads `overall`). Ожидает применения + 1–2 суток наблюдения.
+**Дата:** 2026-08-03  **Статус:** REV6 — закрыт 1 блокер REV5 (validation §8 считал `COUNTIF(COMPLETE)`, а не latest-attempt). Ожидает применения + 1–2 суток наблюдения.
+
+## Правки REV6 (1 блокер наблюдения)
+1. **Validation §8 — latest-attempt по дням (та же семантика, что §7).** Было: `COUNTIF(status='COMPLETE') AS complete_runs`
+   — ранний COMPLETE + поздний ERROR (`00:10 COMPLETE → 08:00 ERROR`) давал `complete_runs=1` (ложная зелень),
+   хотя последняя попытка дня упала; §7 при этом даёт `FALSE` — критерии расходились. Стало: плотный спайн дней
+   (`GENERATE_DATE_ARRAY(D-7..D-1)`) `CROSS JOIN` обязательные загрузчики `LEFT JOIN` последняя попытка за
+   `(logical_period × loader)` (`ROW_NUMBER() ... ORDER BY started_at DESC, run_id DESC`, `rn=1`) →
+   `latest_complete = status='COMPLETE' AND completed_at IS NOT NULL`. Отсутствующий день/loader остаётся строкой
+   `FALSE`, а не исчезает. **Критерий готовности к Mart3b:** `latest_complete = TRUE` для всех трёх на КАЖДЫЙ день.
+   Проверено на BQ синтетическим mock: false-green день `00:10 COMPLETE → 08:00 ERROR` теперь `latest_complete=FALSE`,
+   отсутствующий loader и пустой день → `FALSE`. PR-нота (шаг наблюдения) синхронизирована.
 
 ## Правки REV5 (1 production-блокер)
 1. **Ads: fail-open при вычислении `overall` до whitelist.** Было (в исходном `runWbAdsDaily`, до Mart3a):
@@ -114,7 +125,9 @@ DML через `Jobs.query` (не streaming `insertAll`) + NAMED-парамет�
    - `ingestSelfTestStatusWhitelist()` — **`ads PARTIAL` и `sales SKIPPED_RATE_LIMIT` обязаны дать `ERROR`**,
      `orders OK_NO_CHANGES` — `COMPLETE`.
 4. **Валидация:** `sql/mart3/pr_mart3a_validation.sql` §1–§6, §10 (`status_domain_bad=0`), §11 (whitelist-регресс).
-5. **Наблюдение 1–2 суток:** §7 (`covers_target = TRUE` по orders/sales/ads) и §8 (COMPLETE на каждый день).
+5. **Наблюдение 1–2 суток:** §7 (`covers_target = TRUE` по orders/sales/ads) и §8 — **latest-attempt по дням**
+   (`latest_complete = TRUE` для всех трёх на КАЖДЫЙ день; НЕ `COUNTIF(COMPLETE) > 0` — иначе ранний COMPLETE
+   + поздний ERROR дал бы ложную зелень). Готовность к Mart3b подтверждает ПОСЛЕДНЯЯ попытка каждого дня.
    Строки `loader_name='selftest'` в гейт не входят.
 6. Удалить бэкапы `apps-script/*.pre_mart3a.bak` после ревью diff.
 
