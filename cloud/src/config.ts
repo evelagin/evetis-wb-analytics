@@ -23,7 +23,7 @@ export interface Config {
   gitSha: string;
   /** Идентификаторы конкретного запуска Cloud Run Job (если доступны). */
   executionId: string;
-  // ── stocks loader ──
+  // ── stocks loader (mart-прогону НЕ нужны: он не ходит в WB API и не читает WB-секрет) ──
   wbAnalyticsHost: string;
   wbAnalyticsSecret: string;
   stocksRawTable: string;
