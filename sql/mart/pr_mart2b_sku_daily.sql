@@ -24,6 +24,20 @@
 -- REV5 (re-audit): guard is_sku_row всё ещё шире, чем два выводимых показателя (commission_cost_positive,
 --   logistics_cost_positive). Развёл на ДВА счётчика по cost_category='commission' и ='logistics' с RAISE каждый —
 --   при сбое mapping конкретной категории общий is_sku_row-guard прошёл бы, а метрика занулилась.
+-- REV6 (PR-Mart3b-1): оркестрация. Дизайн: docs/MART_PR3B_PLAN_2026-08-03.md (REV3 APPROVED), PR-нота: docs/MART_PR3B1_LOADER_2026-08-03.md.
+--   1) +параметр in_run_id STRING (сквозной id из Cloud Run; fallback GENERATE_UUID() при ''/NULL).
+--   2) СНЯТ guard build_as_of < max_required_source_date (несовместим с D-1 и бэкфиллом; его роль берёт внешний
+--      freshness-gate по V_INGEST_HEARTBEAT). v_max_required оставлен как sanity-величина, но НЕ гейтит.
+--      Верхний guard build_as_of > сегодня(МСК) СОХРАНЁН. Источники витрины уже bounded <= build_as_of.
+--   3) ADS coverage vs activity (аудит PR3b-1, блокеры #4/#3-REV3). Fail-closed ПОКРЫТИЕ рекламы за target_date
+--      доказывает HEARTBEAT-гейт в loader (ads covers_target=COMPLETE), а НЕ MAX(FACT_ADS.date): успешный zero-row
+--      день (ран загрузчика OK, рекламных строк нет) дал бы ложный stale по FACT. Процедура рекламу НЕ гейтит.
+--   4) +колонки MART_SKU_DAILY: ads_activity_max_date DATE и ads_activity_lagged BOOL — ЧИСТО ДИАГНОСТИЧЕСКИЕ
+--      поля АКТИВНОСТИ (build-level, одинаковы во всех строках). ⚠️ ЭТО НЕ индикатор покрытия/качества/полноты
+--      данных: полнота гарантируется heartbeat-гейтом. ads_activity_max_date = MAX(FACT_ADS.date <= build_as_of)
+--      (NULL/раньше build_as_of на дни без рекламы — НОРМА, не лаг данных). ads_activity_lagged =
+--      (ads_activity_max_date IS NULL OR < build_as_of) — «в последний(е) день(дни) не было рекламной активности».
+--      +ASSERT: ads_activity_max_date <= build_as_of, COUNT(DISTINCT ads_activity_max_date)<=1 (единый снимок).
 --
 -- Грейн: day × nm_id, DENSE spine. Universe = REF_SKU_MASTER (WB, active, nm_id NOT NULL).
 --   start_date(nm)=LEAST(MIN order/sale/ads/finance по nm, все <=build_as_of); fallback=mart_global_start_date.
@@ -47,10 +61,11 @@ WHEN NOT MATCHED THEN INSERT (lock_id, is_running) VALUES ('mart_sku_daily', FAL
 
 CREATE OR REPLACE PROCEDURE `wb_mart.sp_build_mart_sku_daily`(
   IN in_build_as_of_date DATE,
-  IN in_global_start_date DATE
+  IN in_global_start_date DATE,
+  IN in_run_id STRING            -- REV6: сквозной id из Cloud Run; '' / NULL → GENERATE_UUID()
 )
 BEGIN
-  DECLARE v_run_id       STRING    DEFAULT GENERATE_UUID();
+  DECLARE v_run_id       STRING;
   DECLARE v_built_at     TIMESTAMP DEFAULT CURRENT_TIMESTAMP();
   DECLARE v_build_as_of  DATE      DEFAULT in_build_as_of_date;
   DECLARE v_global_start DATE;
@@ -58,8 +73,13 @@ BEGIN
   DECLARE v_orders_max   DATE;
   DECLARE v_sales_max    DATE;
   DECLARE v_ads_max                 DATE;
+  DECLARE v_ads_activity_max_date DATE;   -- REV6: MAX(FACT_ADS.date <= build_as_of) — диагностика активности (НЕ покрытие)
+  DECLARE v_ads_activity_lagged   BOOL;   -- REV6: диагностический build-level флаг активности (НЕ качество/лаг данных)
   DECLARE v_finance_commission_rows INT64;
   DECLARE v_finance_logistics_rows  INT64;
+
+  -- REV6: сквозной run_id (fallback на UUID, чтобы ручной CALL без id тоже работал).
+  SET v_run_id = COALESCE(NULLIF(in_run_id, ''), GENERATE_UUID());
 
   -- build_as_of обязателен раньше всего (используется в проверке непустоты finance ниже).
   IF v_build_as_of IS NULL THEN
@@ -96,7 +116,8 @@ BEGIN
   IF v_finance_logistics_rows = 0 THEN
     RAISE USING MESSAGE = 'sp_build_mart_sku_daily: SKU logistics finance пуст (is_sku_row, active universe, <=build_as_of)'; END IF;
 
-  -- Все три обязательных источника непусты → GREATEST безопасен (нет NULL-аргументов).
+  -- REV6: v_max_required оставлен как sanity-величина (в лог/отладку), но БОЛЬШЕ НЕ ГЕЙТИТ build.
+  --   Внешний freshness-gate (loader mart по V_INGEST_HEARTBEAT) доказывает факт успешной загрузки за D-1.
   SET v_max_required = GREATEST(v_orders_max, v_sales_max, v_ads_max);
 
   -- global_start: fallback для «мёртвых» SKU (обязательные источники непусты → MIN определён; finance тоже проверен).
@@ -111,8 +132,15 @@ BEGIN
   -- --- остальные guards (fail-closed) ---
   IF v_build_as_of > CURRENT_DATE('Europe/Moscow') THEN
     RAISE USING MESSAGE = 'sp_build_mart_sku_daily: build_as_of_date в будущем (> сегодня МСК)'; END IF;
-  IF v_build_as_of < v_max_required THEN
-    RAISE USING MESSAGE = 'sp_build_mart_sku_daily: build_as_of_date < max_required_source_date (orders/sales/ads свежее границы)'; END IF;
+  -- REV6: guard build_as_of < max_required СНЯТ (см. заголовок REV6 #2) — несовместим с D-1/бэкфиллом.
+
+  -- REV6 (блокеры #4/#3-REV3): ДИАГНОСТИЧЕСКИЕ ads-метаданные АКТИВНОСТИ (НЕ гейт, НЕ индикатор полноты).
+  --   Покрытие рекламы за target_date доказывает heartbeat-гейт loader'а; здесь — лишь МАКС дата рекламной
+  --   АКТИВНОСТИ в FACT (NULL/раньше build_as_of на дни без рекламы — НОРМА). BI НЕ должен трактовать эти поля
+  --   как «данные лагают/неполны» — они говорят лишь «в этот день не было рекламных строк».
+  SET v_ads_activity_max_date = (SELECT MAX(`date`) FROM `wb_mart.FACT_ADS_SKU_DAILY` WHERE `date` <= v_build_as_of);
+  SET v_ads_activity_lagged = (v_ads_activity_max_date IS NULL) OR (v_ads_activity_max_date < v_build_as_of);
+
   IF v_global_start IS NULL THEN
     RAISE USING MESSAGE = 'sp_build_mart_sku_daily: mart_global_start_date не определён'; END IF;
   IF v_global_start > v_build_as_of THEN                                            -- fix #2
@@ -245,9 +273,12 @@ BEGIN
         SAFE_DIVIDE(ad_spend_7d,  orders_qty_7d)         AS blended_cpo_7d,
         SAFE_DIVIDE(ad_spend_14d, orders_qty_14d)        AS blended_cpo_14d,
         @build_as_of AS build_as_of_date,
+        @ads_activity_max_date AS ads_activity_max_date,   -- REV6: build-level, одинаков во всех строках
+        @ads_activity_lagged AS ads_activity_lagged,                          -- REV6: build-level, одинаков во всех строках
         @run_id AS mart_run_id, @built_at AS built_at
       FROM rolled
-    """ USING v_build_as_of AS build_as_of, v_global_start AS global_start, v_run_id AS run_id, v_built_at AS built_at;
+    """ USING v_build_as_of AS build_as_of, v_global_start AS global_start, v_run_id AS run_id, v_built_at AS built_at,
+             v_ads_activity_max_date AS ads_activity_max_date, v_ads_activity_lagged AS ads_activity_lagged;
 
     -- --- ASSERT-гейт на __BUILD ---
     -- fix #2: непустой BUILD.
@@ -273,6 +304,18 @@ BEGIN
     -- граница: MAX(day) == build_as_of.
     ASSERT (SELECT MAX(day) FROM `wb_mart.MART_SKU_DAILY__BUILD`) = v_build_as_of
       AS 'SKU_DAILY: MAX(day) != build_as_of_date';
+    -- REV6: снимок АКТИВНОСТИ рекламы не в будущем относительно build_as_of.
+    ASSERT (SELECT COUNTIF(ads_activity_max_date > build_as_of_date) FROM `wb_mart.MART_SKU_DAILY__BUILD`) = 0
+      AS 'SKU_DAILY: ads_activity_max_date > build_as_of_date';
+    -- REV6: ads_* — build-level МЕТАДАННЫЕ, обязаны быть ЕДИНЫ на всю публикацию (не per-day).
+    --   NULL-safe (аудит REV4): COUNT(DISTINCT col) игнорирует NULL и пропустил бы смесь NULL+дата;
+    --   TO_JSON_STRING(STRUCT(...)) считает NULL отдельным значением.
+    ASSERT (SELECT COUNT(DISTINCT TO_JSON_STRING(STRUCT(ads_activity_max_date AS value)))
+            FROM `wb_mart.MART_SKU_DAILY__BUILD`) <= 1
+      AS 'SKU_DAILY: ads_activity_max_date не единый снимок (ожидается build-level, NULL-safe)';
+    ASSERT (SELECT COUNT(DISTINCT TO_JSON_STRING(STRUCT(ads_activity_lagged AS value)))
+            FROM `wb_mart.MART_SKU_DAILY__BUILD`) <= 1
+      AS 'SKU_DAILY: ads_activity_lagged не единый снимок (ожидается build-level, NULL-safe)';
 
     -- fix #3: reconciliation ограничен <= build_as_of (совпадает с bounding source-CTE).
     ASSERT (SELECT ABS((SELECT SUM(ad_spend) FROM `wb_mart.MART_SKU_DAILY__BUILD`)
@@ -325,5 +368,6 @@ BEGIN
   END;
 END;
 
--- Ручной прогон (владелец, после APPROVE + merge):
---   CALL `wb_mart.sp_build_mart_sku_daily`(CURRENT_DATE('Europe/Moscow'), NULL);
+-- Ручной прогон (владелец, после APPROVE + merge). REV6: третий аргумент — in_run_id ('' → UUID):
+--   CALL `wb_mart.sp_build_mart_sku_daily`(DATE_SUB(CURRENT_DATE('Europe/Moscow'), INTERVAL 1 DAY), NULL, '');
+-- В проде loader mart зовёт: CALL sp_bootstrap_facts(@run_id); CALL sp_build_mart_sku_daily(@target_date, NULL, @run_id);

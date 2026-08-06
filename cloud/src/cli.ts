@@ -11,6 +11,7 @@ import { dailyPeriodMoscow } from './period.js';
 import { BqClient } from './bq/client.js';
 import { BqManifestStore, DEFAULT_STALE_STARTED_MS } from './bq/runManifest.js';
 import type { ManifestKey, AcquireParams } from './bq/runManifest.js';
+import type { LoaderContext } from './loaders/types.js';
 
 async function main(): Promise<number> {
   const loaderName = (process.argv[2] ?? process.env.LOADER_NAME ?? '').trim();
@@ -27,17 +28,23 @@ async function main(): Promise<number> {
 
   const handler = resolveLoader(loaderName);
   if (!handler) {
-    logger.error('unknown_loader', { available: 'noop' });
+    // mart здесь недоступен намеренно (см. registry.ts, блокер #3) — ручной путь: mart_manual.ts.
+    logger.error('unknown_loader', { available: 'noop, stocks' });
     return EXIT_ERROR;
   }
 
   const logicalPeriod = dailyPeriodMoscow();
   const key: ManifestKey = { environment: config.environment, loaderName, logicalPeriod };
+  // run_id и целевая дата вычисляются ОДИН раз; handler их не пересчитывает.
+  // Для generic-загрузчиков (stocks/noop) target_date == logical_period (текущие сутки МСК).
+  // Инвариант контракта LoaderContext: targetDate === logicalPeriod (см. types.ts).
+  const runId = `${config.environment}:${loaderName}:${logicalPeriod}:${config.gitSha}:${config.executionId || 'na'}`;
+  const ctxBase: LoaderContext = { config, logger, logicalPeriod, runId, targetDate: logicalPeriod };
 
   // Локальный/CI прогон каркаса без облака.
   if (process.env.DRY_RUN === '1') {
     logger.info('dry_run', { logicalPeriod });
-    const res = await handler({ config, logger, logicalPeriod });
+    const res = await handler(ctxBase);
     logger.info('dry_run_done', { rowsFetched: res.rowsFetched, rowsLoaded: res.rowsLoaded });
     return EXIT_OK;
   }
@@ -45,7 +52,6 @@ async function main(): Promise<number> {
   const bq = new BqClient(config.projectId, config.bqLocation);
   const store = new BqManifestStore(bq, config.rawDataset, config.manifestTable);
 
-  const runId = `${config.environment}:${loaderName}:${logicalPeriod}:${config.gitSha}:${config.executionId || 'na'}`;
   const params: AcquireParams = {
     ...key,
     runId,
@@ -64,7 +70,7 @@ async function main(): Promise<number> {
   logger.info('guard_acquired', { runId: lock.runId, recovered: lock.recovered });
 
   try {
-    const res = await handler({ config, logger, logicalPeriod });
+    const res = await handler({ ...ctxBase, runId: lock.runId, targetDate: logicalPeriod });
     await store.finalize(key, lock.runId, {
       status: 'COMPLETE',
       rowsFetched: res.rowsFetched,
