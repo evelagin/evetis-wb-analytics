@@ -6,6 +6,14 @@
 
 ---
 
+## Правки REV7 (hotfix после первого ручного прогона — DATE-параметр)
+
+**Симптом:** ручной прогон за D-1=2026-08-05 упал в `FRESHNESS_GATE` (orders/sales/ads «не COMPLETE»), хотя heartbeat показывал 3×COMPLETE; в логе — `Required field target_date cannot be null`.
+**Причина:** `@google-cloud/bigquery` для **DATE-типизированного** скалярного параметра из «сырой» JS-строки сериализует значение как **NULL** → `@target_date` приходил NULL → `logical_period = NULL` → 0 строк → LEFT JOIN → FALSE/FALSE/FALSE. Сам gate/данные/heartbeat исправны.
+**Фикс (`cloud/src/loaders/mart/bq.ts`):** все date-параметры передаются как **STRING**, а в SQL — **`CAST(@target_date AS DATE)`** (проверенный паттерн репозитория, ср. `TIMESTAMP(@ts)` в stocks/runManifest). Затронуты 4 места: `checkFreshness` (2 вхождения), `callBuildMart` (CALL с `CAST` — сигнатуру процедуры НЕ меняем), `readMartSnapshot`, `writeMartRun` (`target_date` и nullable `ads_activity_max_date`; `CAST(NULL AS DATE)=NULL`). Регресс-тест: ни один вызов не типизирует date-параметр как `DATE`, SQL содержит `CAST(...AS DATE)`. Проверено: `CAST('2026-08-05' AS DATE)`/`CAST(NULL AS DATE)` в BigQuery корректны. Локально зелёно: **90 tests**.
+
+---
+
 ## Правки REV6 (по замечанию аудита REV5)
 
 1. **[БЛОКЕР] Сбой записи `MART_RUNS.COMPLETE` больше не маркируется как `mart_snapshot`.** После успешных проверок snapshot шаг закрывается `{step:'mart_snapshot', status:'OK'}`, затем `currentStep='mart_runs_complete'` + новый `stepStartMs` ПЕРЕД `writeMartRun(COMPLETE)`. Теперь при «freshness/FACT/MART/snapshot прошли, запись COMPLETE упала, запись ERROR прошла» журнал честен: `[freshness_gate:OK, sp_bootstrap_facts:OK, sp_build_mart_sku_daily:OK, mart_snapshot:OK, mart_runs_complete:MART_ERROR]`. **Тест именно этого сценария:** фейк с `completeWriteFails` (падает ТОЛЬКО MERGE со status='COMPLETE'; ERROR проходит) → loader падает; одна строка ERROR; `mart_snapshot=OK`; `mart_runs_complete=MART_ERROR`; `mart_snapshot` с ошибочным статусом отсутствует. +тест успеха: `mart_snapshot=OK` ровно один раз.

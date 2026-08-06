@@ -83,8 +83,8 @@ WITH required AS (SELECT l AS loader_name FROM UNNEST(['orders','sales','ads']) 
                                  ORDER BY started_at DESC, run_id DESC) AS rn
        FROM ${this.raw('V_INGEST_HEARTBEAT')}
        WHERE loader_name IN ('orders','sales','ads')
-         AND logical_period = @target_date
-         AND started_at    >= TIMESTAMP(DATE_ADD(@target_date, INTERVAL 1 DAY), 'Europe/Moscow')
+         AND logical_period = CAST(@target_date AS DATE)
+         AND started_at    >= TIMESTAMP(DATE_ADD(CAST(@target_date AS DATE), INTERVAL 1 DAY), 'Europe/Moscow')
      )
 SELECT r.loader_name AS loader,
        COALESCE(l.status = 'COMPLETE' AND l.completed_at IS NOT NULL, FALSE) AS covers_target,
@@ -92,10 +92,14 @@ SELECT r.loader_name AS loader,
 FROM required r
 LEFT JOIN (SELECT * FROM latest WHERE rn = 1) l USING (loader_name)
 ORDER BY r.loader_name`;
+    // ⚠️ target_date передаётся как STRING + CAST(... AS DATE) в SQL: @google-cloud/bigquery
+    // для DATE-типизированного скалярного параметра из «сырой» JS-строки сериализует значение
+    // как NULL → @target_date приходил NULL → 0 строк → ложный FRESHNESS_GATE. STRING+CAST —
+    // проверенный паттерн этого репозитория (ср. TIMESTAMP(@ts) в stocks/runManifest).
     const rows = await this.runner.query<{ loader: unknown; covers_target: unknown; last_complete_at: unknown }>(
       sql,
       { target_date: targetDate },
-      { target_date: 'DATE' },
+      { target_date: 'STRING' },
     );
     return rows.map((r) => ({
       loader: String(r.loader),
@@ -113,12 +117,16 @@ ORDER BY r.loader_name`;
     );
   }
 
-  /** Шаг MART: сборка витрины. NULL — литерал (global_start по умолчанию). */
+  /**
+   * Шаг MART: сборка витрины. NULL — литерал (global_start по умолчанию).
+   * target_date как STRING + CAST(... AS DATE) — процедура принимает DATE, её сигнатуру НЕ меняем
+   * (см. заметку про DATE-сериализацию в checkFreshness).
+   */
   async callBuildMart(targetDate: string, runId: string): Promise<void> {
     await this.runner.query(
-      `CALL ${this.mart('sp_build_mart_sku_daily')}(@target_date, NULL, @run_id)`,
+      `CALL ${this.mart('sp_build_mart_sku_daily')}(CAST(@target_date AS DATE), NULL, @run_id)`,
       { target_date: targetDate, run_id: runId },
-      { target_date: 'DATE', run_id: 'STRING' },
+      { target_date: 'STRING', run_id: 'STRING' },
     );
   }
 
@@ -133,12 +141,12 @@ ORDER BY r.loader_name`;
               COUNT(DISTINCT mart_run_id)                         AS d_run,
               COUNT(DISTINCT build_as_of_date)                    AS d_date,
               COUNTIF(mart_run_id     IS DISTINCT FROM @run_id)   AS wrong_run,
-              COUNTIF(build_as_of_date IS DISTINCT FROM @target_date) AS wrong_date,
+              COUNTIF(build_as_of_date IS DISTINCT FROM CAST(@target_date AS DATE)) AS wrong_date,
               ANY_VALUE(ads_activity_lagged)                      AS al,
               CAST(ANY_VALUE(ads_activity_max_date) AS STRING)    AS abmd
        FROM ${this.mart('MART_SKU_DAILY')}`,
       { run_id: runId, target_date: targetDate },
-      { run_id: 'STRING', target_date: 'DATE' },
+      { run_id: 'STRING', target_date: 'STRING' }, // target_date STRING + CAST в SQL (DATE-сериализация)
     );
     const r = rows[0] ?? {};
     return {
@@ -170,8 +178,8 @@ ORDER BY r.loader_name`;
          freshness_json, ads_activity_lagged, ads_activity_max_date, steps_json, mart_rows,
          git_sha, image_digest, error_code, error_message)
        VALUES
-        (@run_id, @environment, @target_date, @status, TIMESTAMP(@started_at), CURRENT_TIMESTAMP(), @duration_ms,
-         @freshness_json, @ads_activity_lagged, @ads_activity_max_date, @steps_json, @mart_rows,
+        (@run_id, @environment, CAST(@target_date AS DATE), @status, TIMESTAMP(@started_at), CURRENT_TIMESTAMP(), @duration_ms,
+         @freshness_json, @ads_activity_lagged, CAST(@ads_activity_max_date AS DATE), @steps_json, @mart_rows,
          @git_sha, @image_digest, @error_code, @error_message)`,
       {
         run_id: rec.runId,
@@ -193,13 +201,13 @@ ORDER BY r.loader_name`;
       {
         run_id: 'STRING',
         environment: 'STRING',
-        target_date: 'DATE',
+        target_date: 'STRING',            // STRING + CAST(... AS DATE) в VALUES (DATE-сериализация клиента)
         status: 'STRING',
         started_at: 'STRING',
         duration_ms: 'INT64',
         freshness_json: 'STRING',
         ads_activity_lagged: 'BOOL',
-        ads_activity_max_date: 'DATE',
+        ads_activity_max_date: 'STRING',  // STRING + CAST(... AS DATE) в VALUES (nullable; CAST(NULL AS DATE)=NULL)
         steps_json: 'STRING',
         mart_rows: 'INT64',
         git_sha: 'STRING',

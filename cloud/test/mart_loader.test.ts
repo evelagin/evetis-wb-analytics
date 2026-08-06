@@ -36,9 +36,15 @@ class FakeRunner implements QueryRunner {
   bootstrapCalled = false;
   buildCalled = false;
   martRuns = new Map<string, Record<string, unknown>>();
+  calls: Array<{ sql: string; params?: Record<string, unknown>; types?: Record<string, string> }> = [];
   constructor(private readonly o: FakeOpts = {}) {}
   get inserts(): Array<Record<string, unknown>> { return [...this.martRuns.values()]; }
-  async query<T = Record<string, unknown>>(sql: string, params?: Record<string, unknown>): Promise<T[]> {
+  async query<T = Record<string, unknown>>(
+    sql: string,
+    params?: Record<string, unknown>,
+    types?: Record<string, string>,
+  ): Promise<T[]> {
+    this.calls.push({ sql, params, types });
     if (sql.includes('V_INGEST_HEARTBEAT')) return (this.o.freshness ?? OK_FRESH) as unknown as T[];
     if (sql.includes('sp_bootstrap_facts')) { this.bootstrapCalled = true; return [] as T[]; }
     if (sql.includes('sp_build_mart_sku_daily')) {
@@ -79,6 +85,29 @@ const run = (o: FakeOpts = {}, over: Partial<LoaderContext> = {}) => {
 describe('classifyMartError', () => {
   it('сохраняет код LoaderError', () => expect(classifyMartError(new LoaderError('x', 'FRESHNESS_GATE'))).toBe('FRESHNESS_GATE'));
   it('дефолт MART_ERROR', () => expect(classifyMartError(new Error('boom'))).toBe('MART_ERROR'));
+});
+
+describe('DATE-параметр сериализуется как STRING+CAST (hotfix DATE-null)', () => {
+  it('ни один вызов не типизирует target_date/ads_activity_max_date как DATE; SQL кастит', async () => {
+    const { fake, promise } = run({}); // happy path — проходит freshness→FACT→MART→snapshot→MART_RUNS
+    await promise;
+    // ни один параметр даты не объявлен типом 'DATE'
+    for (const c of fake.calls) {
+      for (const [name, t] of Object.entries(c.types ?? {})) {
+        expect(t, `параметр ${name} не должен быть DATE`).not.toBe('DATE');
+      }
+    }
+    const withTarget = fake.calls.filter((c) => c.params && 'target_date' in c.params);
+    expect(withTarget.length).toBeGreaterThan(0);
+    for (const c of withTarget) {
+      expect(c.types?.target_date).toBe('STRING');                 // STRING на границе Node↔BQ
+      expect(c.sql).toContain('CAST(@target_date AS DATE)');       // каст внутри SQL
+    }
+    // запись MART_RUNS: nullable ads_activity_max_date тоже STRING+CAST
+    const write = fake.calls.find((c) => c.sql.includes('MERGE') && c.sql.includes('MART_RUNS'));
+    expect(write?.types?.ads_activity_max_date).toBe('STRING');
+    expect(write?.sql).toContain('CAST(@ads_activity_max_date AS DATE)');
+  });
 });
 
 describe('martLoader — happy / ads (PR-Mart3b-1 REV2)', () => {
