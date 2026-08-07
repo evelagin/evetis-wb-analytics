@@ -101,6 +101,48 @@ describe('acquire (атомарный guard)', () => {
   });
 });
 
+// PR-Mart3b-2: РЕКАВЕРИ по контракту — устаревший STARTED НЕ обновляется на месте, а
+// ВСТАВЛЯЕТСЯ НОВАЯ строка со своим run_id (см. runManifest.ts fix №4). Ниже — явное
+// доказательство «insert-new-row»: старая строка сохраняется как есть, finalize адресует
+// ТОЛЬКО новую по run_id, поэтому история попыток за период не теряется.
+describe('РЕКАВЕРИ вставляет НОВУЮ строку (не update-in-place)', () => {
+  const key: ManifestKey = { environment: 'prod', loaderName: 'wb-stocks', logicalPeriod: '2026-07-24' };
+  const staleStartedAt = new Date(NOW - 60 * 60_000).toISOString();
+
+  it('после устаревшего STARTED появляются ДВЕ строки; старая нетронута', async () => {
+    const s = new MemManifestStore();
+    s.rows.push({ ...key, runId: 'old', status: 'STARTED', startedAt: staleStartedAt });
+
+    const r = await s.acquire(params('prod', 'rNew'));
+    expect(r).toEqual({ acquired: true, runId: 'rNew', recovered: true });
+
+    // именно ВСТАВКА: было 1 → стало 2; оба run_id присутствуют
+    expect(s.rows).toHaveLength(2);
+    expect(s.rows.map((x) => x.runId).sort()).toEqual(['old', 'rNew']);
+
+    // старая строка не изменилась (status и started_at сохранены — не перезаписаны)
+    const old = s.rows.find((x) => x.runId === 'old')!;
+    expect(old).toMatchObject({ status: 'STARTED', startedAt: staleStartedAt });
+
+    // новая строка — свежий STARTED со своим run_id
+    const fresh = s.rows.find((x) => x.runId === 'rNew')!;
+    expect(fresh.status).toBe('STARTED');
+  });
+
+  it('finalize адресует ТОЛЬКО новый run_id; старая строка остаётся STARTED', async () => {
+    const s = new MemManifestStore();
+    s.rows.push({ ...key, runId: 'old', status: 'STARTED', startedAt: staleStartedAt });
+    const r = await s.acquire(params('prod', 'rNew'));
+    if (!r.acquired) throw new Error('recovery must acquire');
+
+    await s.finalize(key, r.runId, { status: 'COMPLETE' });
+
+    expect(s.rows.find((x) => x.runId === 'rNew')!.status).toBe('COMPLETE');
+    // «висящая» старая попытка НЕ трогается finalize'ом по новому run_id
+    expect(s.rows.find((x) => x.runId === 'old')!.status).toBe('STARTED');
+  });
+});
+
 describe('REQUIRED FIX 1 — окружение в ключе', () => {
   it('shadow COMPLETE НЕ блокирует prod за тот же период', async () => {
     const s = new MemManifestStore();

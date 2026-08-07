@@ -1,5 +1,5 @@
 /**
- * Loader `mart` (PR-Mart3b-1) — оркестратор витрины MART_SKU_DAILY.
+ * Loader `mart` (PR-Mart3b) — оркестратор витрины MART_SKU_DAILY.
  *
  * Поток (fail-closed):
  *   1) freshness-gate LATEST-ATTEMPT по V_INGEST_HEARTBEAT (РОВНО orders/sales/ads за target_date) —
@@ -10,10 +10,14 @@
  *
  * Контракты аудита:
  *   - инвариант ctx.logicalPeriod === ctx.targetDate;
+ *   - среда прогона строго prod (публикуется production wb_mart) — fail-closed самозащита loader'а;
  *   - freshness-результат — ровно уникальные orders/sales/ads;
  *   - публикация витрины принадлежит именно этому run_id и target_date (иначе fail-closed);
- *   - MART_RUNS: одна строка на run_id (MERGE+read-back), запись не маскирует исходную ошибку;
- *   - run-lease (LOADER_RUNS) здесь НЕ трогаем (в PR-Mart3b-1 mart ходит только через mart_manual.ts).
+ *   - MART_RUNS: одна строка на run_id (MERGE+read-back), запись не маскирует исходную ошибку.
+ *
+ * PR-Mart3b-2: mart зарегистрирован в generic CLI (registry.ts, prodOnly + logicalPeriod=D-1),
+ * поэтому run-lease LOADER_RUNS ведёт cli; здесь LOADER_RUNS НЕ трогаем (журналы раздельны:
+ * LOADER_RUNS — lease/оркестрация, MART_RUNS — бизнес-детали прогона).
  */
 import type { LoaderContext, LoaderResult } from '../types.js';
 import { LoaderError } from '../../errors.js';
@@ -50,6 +54,18 @@ export async function martLoader(ctx: LoaderContext, injectedBq?: MartBq): Promi
       throw new LoaderError(
         `CTX_INVARIANT: logicalPeriod(${ctx.logicalPeriod}) !== targetDate(${targetDate})`,
         'CTX_INVARIANT',
+      );
+    }
+
+    // 0b) fail-closed по среде. Витрина ПУБЛИКУЕТ production wb_mart (отдельного wb_mart_shadow нет),
+    //     поэтому loader самозащищается независимо от точки входа (generic cli / mart_manual /
+    //     будущий вызов). cli.prodOnly уже отклоняет shadow до lease — это второй рубеж (belt-and-suspenders):
+    //     shadow-прогон переписал бы production и оставил строку MART_RUNS с environment='shadow',
+    //     которую prod-валидация даже не связала бы.
+    if (config.environment !== 'prod') {
+      throw new LoaderError(
+        `MART_ENV: витрина публикует production wb_mart и запрещена вне ENVIRONMENT=prod (получено '${config.environment}')`,
+        'MART_ENV',
       );
     }
 

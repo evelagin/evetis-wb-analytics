@@ -35,10 +35,17 @@ jobs:
           esac
           # digest должен существовать в реестре
           gcloud artifacts docker images describe "$DIGEST" >/dev/null
-      - name: Deploy prod Job (промоушен того же digest, source sha)
+      - name: Deploy prod Jobs (промоушен того же digest, source sha)
+        # PR-Mart3b-2 (аудит REV2, блокер #1): продвигаем ОДИН и тот же проверенный digest в ОБА
+        # prod-Job'а. Оба используют один образ (dispatch по args[0] в cli.ts: "noop" vs "mart").
+        # Без wb-mart-prod здесь Terraform-created Job остался бы на bootstrap hello-образе и
+        # ручной/scheduler-запуск не вызвал бы `node dist/cli.js mart`.
         run: |
-          gcloud run jobs update wb-stocks-prod \
-            --region ${{ vars.GCP_REGION }} \
-            --image "${{ inputs.image_digest }}" \
-            --update-env-vars IMAGE_DIGEST="${{ inputs.image_digest }}",GIT_SHA="${{ inputs.source_git_sha }}"
+          for JOB in wb-stocks-prod wb-mart-prod; do
+            echo "== promote ${JOB} =="
+            gcloud run jobs update "${JOB}" \
+              --region ${{ vars.GCP_REGION }} \
+              --image "${{ inputs.image_digest }}" \
+              --update-env-vars IMAGE_DIGEST="${{ inputs.image_digest }}",GIT_SHA="${{ inputs.source_git_sha }}"
+          done
       # НЕ включает Scheduler и НЕ меняет IAM.

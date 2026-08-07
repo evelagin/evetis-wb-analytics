@@ -26,6 +26,12 @@ variable "raw_dataset" {
   description = "Датасет с RAW/manifest таблицами."
 }
 
+variable "mart_dataset" {
+  type        = string
+  default     = "wb_mart"
+  description = "Датасет бизнес-витрины (FACT_*/MART_*/MART_RUNS). Пишет ТОЛЬКО prod-загрузчик mart."
+}
+
 variable "artifact_repo" {
   type        = string
   default     = "wb-loaders"
@@ -42,4 +48,3 @@ variable "container_image" {
   default     = "us-docker.pkg.dev/cloudrun/container/hello"
   description = "Bootstrap-образ для создания Job. CI продвигает реальный immutable digest (prod образ не пересобирается)."
 }
-

@@ -164,3 +164,27 @@ resource "google_bigquery_table_iam_member" "prod_read_ref_data" {
   role       = "roles/bigquery.dataViewer"
   member     = "serviceAccount:${google_service_account.loaders_prod.email}"
 }
+
+# ── PR-Mart3b-2: доступ prod-загрузчика витрины `mart` к данным ──────────────
+# Запись (dataEditor) на весь датасет wb_mart: процедуры sp_bootstrap_facts /
+# sp_build_mart_sku_daily делают CREATE OR REPLACE TABLE для FACT_*/MART_SKU_DAILY
+# (+ __BUILD, _MART_BOOTSTRAP_LOCK), а терминальная строка MART_RUNS пишется MERGE
+# (mutating DML) + read-back SELECT. Нужны tables.create/update/updateData/getData на
+# СЕМЕЙСТВЕ таблиц → dataset-level dataEditor соразмерен (insert-only упал бы на первом MERGE).
+resource "google_bigquery_dataset_iam_member" "prod_edit_mart" {
+  dataset_id = var.mart_dataset
+  role       = "roles/bigquery.dataEditor"
+  member     = "serviceAccount:${google_service_account.loaders_prod.email}"
+}
+
+# Чтение (dataViewer) на весь датасет wb_raw: freshness-gate читает V_INGEST_HEARTBEAT
+# (→ INGEST_RUNS + LOADER_RUNS), а sp_bootstrap_facts — V_WB_ORDERS / V_WB_SALES_RETURNS /
+# V_ADV_CAMPAIGN_STATS / V_ADV_COSTS / V_WB_FINANCE_CANONICAL / WB_STOCKS_SNAPSHOTS / RAW_WB_STOCKS
+# И их БАЗОВЫЕ таблицы (не-authorized вью раскрываются на зависимостях). Витрина — бизнес-ролап
+# ВСЕГО канонического слоя wb_raw, поэтому dataset-level read соразмерен функции и устойчив к
+# эволюции источников. Табличная (least-privilege) альтернатива описана в PR-ноте — решение за аудитом.
+resource "google_bigquery_dataset_iam_member" "prod_view_raw" {
+  dataset_id = var.raw_dataset
+  role       = "roles/bigquery.dataViewer"
+  member     = "serviceAccount:${google_service_account.loaders_prod.email}"
+}
