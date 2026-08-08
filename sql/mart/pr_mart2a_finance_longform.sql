@@ -33,7 +33,7 @@
 
 CREATE SCHEMA IF NOT EXISTS `wb_mart` OPTIONS (location = 'EU');
 
--- ── 1. STAGING: REF_COST_MAP__BUILD (seed 22 пары; точные op-строки ИЗ ДАННЫХ) ──
+-- ── 1. STAGING: REF_COST_MAP__BUILD (seed 23 пары; точные op-строки ИЗ ДАННЫХ) ──
 CREATE OR REPLACE TABLE `wb_mart.REF_COST_MAP__BUILD` AS
 SELECT op_key, amount_field, economic_direction, cost_category,
   field_normalization_sign, note, CURRENT_TIMESTAMP() AS seeded_at
@@ -58,6 +58,7 @@ FROM UNNEST([
   ('__NULL__','deduction','COST','deduction',1,'Удержание, операция не размечена'),
   ('Удержание','additional_payment','COST','deduction',1,'Удержание через доп. платёж'),
   ('Штраф','penalty','COST','penalty',1,'Штрафы WB'),
+  ('__NULL__','penalty','COST','penalty',1,'Штраф, операция не размечена'),
   ('Платная приемка','acceptance','COST','acceptance',1,'Платная приёмка'),
   ('Пересчет платной приемки','acceptance','COST','acceptance',1,'Пересчёт платной приёмки'),
   ('Стоимость участия в программе лояльности','additional_payment','COST','loyalty',1,'Программа лояльности WB')

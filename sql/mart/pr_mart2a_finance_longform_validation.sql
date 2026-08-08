@@ -38,9 +38,9 @@ FROM fields fld LEFT JOIN ls ON ls.amount_field=fld.f LEFT JOIN fs ON fs.amount_
 SELECT COUNTIF(compensation_amount IS NOT NULL AND compensation_amount<>0) comp_nonzero  -- 0
 FROM `wb_mart.FACT_FINANCE`;
 
--- 3) REF_COST_MAP: 22 пары, уникальны, NULL-safe домены (fix #3), 10 категорий. (ПОСЛЕ publish)
-SELECT COUNT(*) ref_pairs,                                                              -- 22
-  COUNT(DISTINCT FORMAT('%t|%t',op_key,amount_field)) dk,                               -- 22
+-- 3) REF_COST_MAP: 23 пары, уникальны, NULL-safe домены (fix #3), 10 категорий. (ПОСЛЕ publish)
+SELECT COUNT(*) ref_pairs,                                                              -- 23
+  COUNT(DISTINCT FORMAT('%t|%t',op_key,amount_field)) dk,                               -- 23
   COUNT(DISTINCT cost_category) categories,                                             -- 10
   COUNTIF(economic_direction IS NULL OR economic_direction NOT IN ('COST','CREDIT','ADJUSTMENT')) dir_bad, -- 0
   COUNTIF(field_normalization_sign IS NULL OR field_normalization_sign NOT IN (-1,1)) sign_bad,            -- 0
