@@ -287,8 +287,8 @@ function importWbSalesReturnsFromApiInternal_(dateFrom, dateTo) {
  *     могла обрезаться; ничего не пишем — нужен resumable job);
  *   • пустой [] → ok:true, data:[] (нет продаж / нет изменений);
  *   • иначе → ok:true, data:arr.
- * Автоповтора через 2 сек НЕТ (соблюдаем лимит 1 req/min). Многостраничная
- * выгрузка / watermark-инкремент — отдельная фаза D2c.
+ * HTTP идёт через bounded retry (429/5xx, backoff 20/40/60 c); обработка ответа
+ * остаётся fail-closed. Многостраничная выгрузка / watermark-инкремент — фаза D2c.
  */
 function fetchSalesApiData_(token, dateFrom, transport_) {
   var url = WB_SALES_API_BASE_ + WB_SALES_API_PATH_ +

@@ -51,9 +51,32 @@ function _srtAssert_(res, name, cond, detail) {
   else { res.failed++; res.details.push('FAIL  ' + name + (detail ? ' — ' + detail : '')); }
 }
 
+function _srtArrEq_(a, b) {
+  if (!a || !b || a.length !== b.length) return false;
+  for (var i = 0; i < a.length; i++) if (a[i] !== b[i]) return false;
+  return true;
+}
+
 function runSalesRetrySelfTests() {
   var res = { total: 0, passed: 0, failed: 0, details: [] };
   var TOK = 'TESTTOKEN', URL = 'https://example/api/v1/supplier/sales?dateFrom=x';
+
+  // ═══ Группа 0: retry-политика Sales подключена к helper (Diff A, детерминированно, без сети) ═══
+  (function () {
+    var cap = {};
+    var capTransport = function (u, o, ro) { cap.url = u; cap.opt = o; cap.ro = ro; return _srtResp_(200, '[]'); };
+    var r0 = salesHttpGet_(URL, TOK, capTransport);
+    _srtAssert_(res, '0.helper вызван, ok:true', r0.ok === true && !!cap.ro, JSON.stringify(cap.ro));
+    _srtAssert_(res, '0.label=Sales', !!cap.ro && cap.ro.label === 'Sales', cap.ro && cap.ro.label);
+    _srtAssert_(res, '0.maxRetries=3', !!cap.ro && cap.ro.maxRetries === 3, String(cap.ro && cap.ro.maxRetries));
+    _srtAssert_(res, '0.baseDelayMs=20000', !!cap.ro && cap.ro.baseDelayMs === 20000, String(cap.ro && cap.ro.baseDelayMs));
+    _srtAssert_(res, '0.retryCodes=[429,500,502,503,504]',
+      !!cap.ro && _srtArrEq_(cap.ro.retryCodes, [429, 500, 502, 503, 504]),
+      cap.ro && JSON.stringify(cap.ro.retryCodes));
+    _srtAssert_(res, '0.options: get+Authorization+muteHttpExceptions',
+      !!cap.opt && cap.opt.method === 'get' && cap.opt.muteHttpExceptions === true &&
+      !!cap.opt.headers && cap.opt.headers.Authorization === TOK, JSON.stringify(cap.opt));
+  })();
 
   // ═══ Группа 1: salesHttpGet_ маппинг ответа (Diff A) ═══
   (function () {
