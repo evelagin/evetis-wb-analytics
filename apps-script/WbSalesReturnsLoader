@@ -290,11 +290,11 @@ function importWbSalesReturnsFromApiInternal_(dateFrom, dateTo) {
  * Автоповтора через 2 сек НЕТ (соблюдаем лимит 1 req/min). Многостраничная
  * выгрузка / watermark-инкремент — отдельная фаза D2c.
  */
-function fetchSalesApiData_(token, dateFrom) {
+function fetchSalesApiData_(token, dateFrom, transport_) {
   var url = WB_SALES_API_BASE_ + WB_SALES_API_PATH_ +
             '?dateFrom=' + encodeURIComponent(dateFrom) + '&flag=0';
 
-  var resp = salesHttpGet_(url, token);
+  var resp = salesHttpGet_(url, token, transport_);
   if (!resp.ok) {
     return { ok: false, partial: false, error: resp.error, data: [], pages: 0, api_rows_received: 0 };
   }
@@ -319,20 +319,22 @@ function fetchSalesApiData_(token, dateFrom) {
 }
 
 /**
- * GET с Authorization-токеном — РОВНО ОДИН UrlFetchApp.fetch, без retry.
- * Rate limit Sales API 1 req/min: авто-повтор недопустим (повтор через 20 сек
- * снова словил бы 429). 429/5xx → ok:false (ERROR выше по стеку); повтор —
- * вручную оператором не ранее чем через 65 сек. Токен не логируется.
+ * GET через единый retry-helper проекта wbFetchWithRetry_ (как orders/stocks):
+ * транзиентные 429/5xx + Retry-After, backoff 20/40/60 c, до 3 повторов. Слот cooldown
+ * (wbSalesApiAcquireRequestSlot_) берётся выше по стеку один раз — retry его не трогает.
+ * Исчерпанный 429/5xx → code≠200 → ok:false (fail-closed выше; watermark не двигается).
+ * transport_ инъектируется в self-tests. Токен не логируется.
  * @return {Object} { ok, code, body, error }.
  */
-function salesHttpGet_(url, token) {
+function salesHttpGet_(url, token, transport_) {
+  var fetchRetry_ = transport_ || wbFetchWithRetry_;
   var resp;
   try {
-    resp = UrlFetchApp.fetch(url, {
+    resp = fetchRetry_(url, {
       method: 'get',
       headers: { Authorization: token },
       muteHttpExceptions: true
-    });
+    }, { label: 'Sales', maxRetries: 3, baseDelayMs: 20000, retryCodes: [429, 500, 502, 503, 504] });
   } catch (e) {
     return { ok: false, code: 0, body: '', error: 'HTTP исключение: ' + ((e && e.message) || e) };
   }
