@@ -27,22 +27,16 @@ locals {
   # (opt(env,'GIT_SHA','unknown')) и кладёт в run_id и LOADER_RUNS — это функциональные входы,
   # а не украшение. До этого фикса Terraform о них не знал и в plan предлагал их УДАЛИТЬ.
   #
-  # Terraform объявляет КЛЮЧИ (состав env остаётся под его контролем: лишний ручной env по-прежнему
-  # ловится planом), но НЕ навязывает ЗНАЧЕНИЯ — см. ignore_changes у обоих prod-Job'ов. Sentinel
-  # совпадает с fallback в config.ts, поэтому до первого промоушена поведение не меняется.
+  # Sentinel совпадает с fallback в config.ts, поэтому до первого промоушена поведение не меняется.
   # ⚠️ Только prod: deploy-shadow.yml обновляет образ, а env НЕ трогает (у shadow эти значения
   # штатно 'unknown' — подтверждено строками LOADER_RUNS).
   #
-  # 🔴 ПОРЯДОК КЛЮЧЕЙ ВАЖЕН. Terraform обходит map в `for_each` в ЛЕКСИКОГРАФИЧЕСКОМ порядке,
-  # поэтому у обоих prod-Job'ов список env получается такой:
-  #   0 BQ_LOCATION · 1 BQ_MANIFEST_TABLE · 2 BQ_RAW_DATASET · 3 ENVIRONMENT · 4 GCP_PROJECT_ID
-  #   5 GIT_SHA     · 6 IMAGE_DIGEST      · 7 LOADER_NAME    · 8 LOG_LEVEL
-  # (mart_env только ПЕРЕОПРЕДЕЛЯЕТ LOADER_NAME, нового ключа не добавляет — индексы совпадают.)
-  # Именно индексы 5 и 6 зашиты в ignore_changes ниже (там нельзя использовать переменные —
-  # ignore_changes принимает только статические ссылки на атрибуты).
-  # При добавлении env-ключа, сортирующегося РАНЬШЕ GIT_SHA, индексы сместятся и ignore_changes
-  # начнёт молча игнорировать не ту переменную. Меняя env prod-Job'ов: пересчитай список выше и
-  # проверь, что `terraform plan` сразу после deploy-prod пустой.
+  # 🔴 ЗАЧЕМ ЭТИ КЛЮЧИ ЗДЕСЬ, ЕСЛИ env всё равно в ignore_changes.
+  # `ignore_changes` действует только на UPDATE, но НЕ на CREATE. Поэтому объявление нужно ровно
+  # для одного случая: если Job когда-нибудь пересоздадут с нуля — он поднимется с корректным
+  # НАБОРОМ ключей (значения тут же перезапишет ближайший deploy-prod). Для уже существующих
+  # wb-stocks-prod / wb-mart-prod этот блок — no-op: Terraform не станет их добавлять, а живые
+  # значения, выставленные deploy-prod.yml, останутся нетронутыми. Это и есть цель фикса.
   deploy_managed_env = {
     GIT_SHA      = "unknown"
     IMAGE_DIGEST = "unknown"
@@ -109,11 +103,11 @@ resource "google_cloud_run_v2_job" "wb_stocks_prod" {
   # исполнялся (в LOADER_RUNS нет ни одной строки environment='prod'), поэтому сейчас это не
   # ломает работающий загрузчик — но на cutover Mig1b Scheduler запустил бы hello, который
   # молча выходит с 0 и ничего не грузит. Это ловушка, а не косметика.
+  # env целиком — см. общий комментарий о совместном владении над wb_mart_prod.
   lifecycle {
     ignore_changes = [
       template[0].template[0].containers[0].image,
-      template[0].template[0].containers[0].env[5].value, # GIT_SHA      — владеет deploy-prod.yml
-      template[0].template[0].containers[0].env[6].value, # IMAGE_DIGEST — владеет deploy-prod.yml
+      template[0].template[0].containers[0].env,
     ]
   }
   depends_on = [google_project_service.enabled]
@@ -152,16 +146,35 @@ resource "google_cloud_run_v2_job" "wb_mart_prod" {
       }
     }
   }
-  # fix/terraform-prod-job-drift: к ignore на image добавлены GIT_SHA/IMAGE_DIGEST. Этот Job УЖЕ
-  # работает в проде (3 прогона, run_id вида `prod:mart:2026-08-09:c1f2a58…:wb-mart-prod-dfq9n`),
-  # и удаление этих env обнулило бы traceability: config.ts подставил бы 'unknown', и в run_id и в
+  # fix/terraform-prod-job-drift: к ignore на image добавлен env. Этот Job УЖЕ работает в проде
+  # (3 прогона, run_id вида `prod:mart:2026-08-09:c1f2a58…:wb-mart-prod-dfq9n`), и удаление
+  # GIT_SHA/IMAGE_DIGEST обнулило бы traceability: config.ts подставил бы 'unknown', и в run_id, и в
   # LOADER_RUNS/MART_RUNS вместо коммита и digest'а попало бы 'unknown'. Прогон не упал бы
   # (обе переменные — opt() с fallback), но связь «строка витрины ↔ версия кода» была бы потеряна.
+  #
+  # ═══ ПОЧЕМУ ИГНОРИРУЕТСЯ ВЕСЬ env, А НЕ ДВЕ ПЕРЕМЕННЫЕ (аудит CI PR #89) ═══
+  # В provider google v7.41.0 `containers.env` — это SET объектов, а не list. Set в Terraform
+  # неупорядочен и не индексируется: `env[5].value` даёт `Error: Cannot index a set value`, а
+  # адресации по имени (`env["GIT_SHA"]`) для set в ignore_changes не существует. Поэтому
+  # точечно исключить два значения технически НЕЛЬЗЯ — только весь блок целиком.
+  #
+  # 🔴 ЦЕНА КОМПРОМИССА, КОТОРУЮ НАДО ПОМНИТЬ:
+  # после CREATE Terraform больше НЕ реконсилирует env этих двух prod-Job'ов. Если изменить
+  # `local.common_env` (например BQ_RAW_DATASET или LOG_LEVEL), у prod-Job'ов останется СТАРОЕ
+  # значение, и `terraform plan` об этом промолчит. Для shadow-Job'а реконсиляция работает как
+  # раньше — расхождение shadow/prod ловится только вручную.
+  # Проверять фактический env после изменения common_env или после deploy-prod:
+  #   gcloud run jobs describe wb-mart-prod --region <region> \
+  #     --format="value(template.template.containers[0].env)"
+  # Правильное решение (вне scope этого хотфикса): отдать ВЕСЬ набор env одному владельцу —
+  # либо Terraform, либо deploy-prod.yml — вместо совместного владения одним set.
+  #
+  # Всё остальное остаётся Terraform-owned и по-прежнему ловится planом: args, service_account,
+  # max_retries, timeout, имя, регион, а также образ и env у shadow-Job'а.
   lifecycle {
     ignore_changes = [
       template[0].template[0].containers[0].image,
-      template[0].template[0].containers[0].env[5].value, # GIT_SHA      — владеет deploy-prod.yml
-      template[0].template[0].containers[0].env[6].value, # IMAGE_DIGEST — владеет deploy-prod.yml
+      template[0].template[0].containers[0].env,
     ]
   }
   depends_on = [google_project_service.enabled]
