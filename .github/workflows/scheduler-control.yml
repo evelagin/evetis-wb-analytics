@@ -4,15 +4,21 @@ on:
   workflow_dispatch:
     inputs:
       environment:
-        description: "shadow | prod"
+        description: "окружение (wb-mart существует ТОЛЬКО в prod — он prodOnly)"
         required: true
+        type: choice
+        options: [shadow, prod]
       loader:
-        description: "имя loader, напр. wb-stocks"
+        description: "имя loader; итоговый job = <loader>-<environment>"
         required: true
         default: "wb-stocks"
+        type: choice
+        options: [wb-stocks, wb-mart]
       action:
         description: "pause | resume | run-now"
         required: true
+        type: choice
+        options: [pause, resume, run-now]
 
 permissions:
   contents: read
@@ -23,6 +29,17 @@ jobs:
     runs-on: ubuntu-latest
     environment: ${{ inputs.environment == 'prod' && 'production' || 'infra' }}
     steps:
+      # Fail-fast ПЕРВЫМ шагом (аудит PR-Mart3b-3, блокер #1): `mart` помечен prodOnly в реестре
+      # загрузчиков (cloud/src/loaders/registry.ts), Terraform создаёт только wb-mart-prod →
+      # job `wb-mart-shadow` не существует НИКОГДА. Без этой проверки UI предлагает заведомо
+      # недопустимую комбинацию, а оператор узнаёт об ошибке из невнятного NOT_FOUND от gcloud —
+      # уже после WIF-аутентификации привилегированным SA. Проверка идёт ДО auth осознанно.
+      - name: Reject impossible loader/environment combination
+        run: |
+          if [ "${{ inputs.loader }}" = "wb-mart" ] && [ "${{ inputs.environment }}" != "prod" ]; then
+            echo "::error title=Invalid combination::wb-mart is prod-only; job wb-mart-${{ inputs.environment }} does not exist. Use environment=prod."
+            exit 1
+          fi
       - uses: google-github-actions/auth@v2
         with:
           workload_identity_provider: ${{ vars.WIF_PROVIDER }}

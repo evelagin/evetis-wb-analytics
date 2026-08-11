@@ -2,6 +2,24 @@
 
 ## История изменений
 
+### 2026-08-11 — PR-Mart3b-3: Cloud Scheduler витрины `wb-mart-prod` (ветка feat/mart3b-3-scheduler)
+
+Последний недостающий элемент облачной цепочки витрины. `wb-mart-prod` проходил зелёным с 10.08 (`MART_RUNS` COMPLETE, target_date 2026-08-09, mart_rows 7012, `lease_only_no_mart=FALSE`, `exit(0)`), но запускался **вручную** — то есть `MART_SKU_DAILY` была свежа ровно до дня последнего ручного запуска.
+
+`scheduler.tf`: `google_cloud_scheduler_job "wb_mart_prod"` — OAuth от `sa-scheduler-prod`, POST на Run Admin API `…/jobs/wb-mart-prod:run`. **Имя обязано быть `wb-mart-prod`**: `scheduler-control.yml` собирает имя как `"<loader>-<environment>"`. Создаётся `paused = true` + `ignore_changes = [paused]` — конфиг принадлежит Terraform, состояние pause/resume принадлежит `scheduler-control.yml`, иначе очередной apply мог бы остановить рабочий загрузчик.
+
+**Расписание `0 7,9,12,16 * * *` Europe/Moscow выбрано по данным, а не по интуиции.** Новый `sql/mart3/pr_mart3b3_freshness_readiness.sql` прогоняет freshness-gate (LATEST-ATTEMPT) по `V_INGEST_HEARTBEAT` для каждого часа МСК за 7 полных суток 03–09.08.2026. Результат опроверг исходное предположение «источники подтягиваются позже»: источники готовы уже к **~05:11 МСК** (лимитирует ads: старт 05:07 → COMPLETE 05:11), часы 06:00–10:00 и 12:00–23:00 зелёные 7/7, а **11:00 — единственный красный час в сутках, 0/7**. Причина: hourly-loader sales стартует в 10:22 и падал **7 раз из 7** с WB HTTP 429 «Limited by global limiter, per seller»; семантика LATEST-ATTEMPT превращает это в ровно часовое окно красноты 10:2x→11:2x (следующая успешная попытка — 11:22). Поэтому 10:00/11:00 исключены, а окна разнесены по обе стороны отказа: 07:00 основное (с зазором от Apps Script-окна триггера ads `atHour(5)`, который может сработать в любой момент 05:00–06:00), 09:00 резерв до отказа sales, 12:00 первый безопасный час после восстановления, 16:00 глубокий фолбэк.
+
+**Границы доказательства зафиксированы в дизайн-документе:** история `INGEST_RUNS` начинается 02.08 (PR#82), поэтому окно наблюдения — 7 суток, а не запрошенные аудитом 14–30; **ads делает ровно одну попытку в сутки** (hourly-ретраев нет), поэтому при падении ads ни одно окно дня витрину не спасёт — это задача алертов (PR-Mart3b-5) и ретрая ads-триггера, а не расписания; эффект PR #87 в проде **не подтверждён** — отказ sales 10:22 воспроизводился и 10.08, контроль — запрос Q4 в новом SQL.
+
+`retry_config.retry_count=1` безопасен и НЕ дублирует `max_retries=0` у Job'а: вызов `:run` асинхронный (200 = execution создан, исход прогона Scheduler не видит), поэтому retry Scheduler повторяет только неудавшийся *вызов API*; дубль-execution отсекается lease по свежему STARTED. `max_retries` Job'а остаётся 0: task-retry повторяет task в ТОМ ЖЕ execution → тот же `run_id` → `MART_RUNS_CONFLICT`.
+
+`iam.tf`: `roles/run.invoker` для `sa-scheduler-prod` на Job `wb-mart-prod` — поресурсно. Без этого биндинга Scheduler молча падал бы по 403. Новых проектных ролей не выдаётся: `roles/cloudscheduler.admin` у `sa-terraform-apply` уже есть.
+
+`scheduler-control.yml`: входы переведены в `type: choice`; добавлен **fail-fast первым шагом** — комбинация `loader=wb-mart` + `environment != prod` отвергается ДО WIF-аутентификации. `mart` помечен `prodOnly` в реестре, Terraform создаёт только `wb-mart-prod`, поэтому `wb-mart-shadow` не существует никогда; без проверки оператор получал невнятный `NOT_FOUND` от gcloud уже после того, как workflow взял привилегированный `sa-terraform-apply`.
+
+В приёмку добавлен конкурентный тест lease: параллельный `gcloud run jobs execute` без `--wait` обязан дать `guard_skip reason=ALREADY_RUNNING`, а повтор после завершения — `reason=COMPLETE`. Снятие паузы — PR-Mart3b-4; алерты ERROR/SLA — PR-Mart3b-5. Дизайн и критерии приёмки — `docs/MART_PR3B3_SCHEDULER_2026-08-11.md`.
+
 ### 2026-07-16 — Фаза E: production-загрузчик остатков (ветка phase-e-stocks-loader)
 
 Первый шаг операционной видимости. Источник — **T6** `stocks-report/wb-warehouses` (плоский снимок, grain `snapshot × nmId × chrtId × warehouseId`); **T5** `warehouse_remains` — НЕблокирующий контроль суммы физ. остатков. Период — `today..today` Europe/Moscow (B2 доказал: `currentPeriod` не влияет на снимок). Ключ доказан probe: 155 строк = 155 distinct = 0 дублей; Σфиз T6=T5=4565.

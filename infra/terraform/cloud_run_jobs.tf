@@ -83,7 +83,8 @@ resource "google_cloud_run_v2_job" "wb_stocks_prod" {
 
 # PR-Mart3b-2: оркестратор витрины. Тот же образ, что stocks (dispatch по args[0]="mart" в cli.ts);
 # ENVIRONMENT=prod (mart prodOnly — публикует production wb_mart, shadow-датасета нет).
-# Планировщик НЕ создаётся здесь (PR-Mart3b-3); до тех пор Job запускается вручную/для валидации.
+# Планировщик — в scheduler.tf (`wb-mart-prod`, окна 07/09/12/16 МСК, PR-Mart3b-3); создаётся paused,
+# снятие паузы — отдельный шаг rollout (PR-Mart3b-4) через scheduler-control.yml.
 # Образ продвигает деплой реальным digest → ignore_changes на image (как у wb_stocks_shadow),
 # иначе Terraform сбросил бы digest обратно на bootstrap hello.
 resource "google_cloud_run_v2_job" "wb_mart_prod" {
@@ -97,7 +98,7 @@ resource "google_cloud_run_v2_job" "wb_mart_prod" {
       # max_retries=0 (аудит REV2, блокер #2): task-retry Cloud Run повторяет task в ТОМ ЖЕ
       # execution → тот же CLOUD_RUN_EXECUTION → тот же run_id. Повтор после ERROR вставил бы вторую
       # строку LOADER_RUNS с тем же run_id и словил бы MART_RUNS_CONFLICT. Повторы витрины идут ТОЛЬКО
-      # новым execution в следующем окне Scheduler (09/10/11 МСК) — с новым run_id.
+      # новым execution в следующем окне Scheduler (07/09/12/16 МСК) — с новым run_id.
       max_retries = 0
       timeout     = "1800s"
       containers {

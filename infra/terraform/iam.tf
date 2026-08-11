@@ -110,3 +110,12 @@ resource "google_cloud_run_v2_job_iam_member" "scheduler_prod_invoke" {
   role     = "roles/run.invoker"
   member   = "serviceAccount:${google_service_account.scheduler_prod.email}"
 }
+
+# PR-Mart3b-3: invoker выдаётся ПОРЕСУРСНО, а не на проект — sa-scheduler-prod уже мог запускать
+# wb-stocks-prod, но на wb-mart-prod прав не имел бы, и Scheduler молча падал бы по 403.
+resource "google_cloud_run_v2_job_iam_member" "scheduler_mart_prod_invoke" {
+  location = var.region
+  name     = google_cloud_run_v2_job.wb_mart_prod.name
+  role     = "roles/run.invoker"
+  member   = "serviceAccount:${google_service_account.scheduler_prod.email}"
+}
