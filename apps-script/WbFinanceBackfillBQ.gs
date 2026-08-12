@@ -3,6 +3,25 @@
  *  WbFinanceBackfillBQ.gs — бэкфилл финансов WB напрямую в BigQuery
  *  (Фаза B миграции). НЕ трогает лист RAW_WB_FINANCE и старый
  *  загрузчик — это параллельный путь. Полностью обратим.
+ *
+ *  ⛔ DEPRECATED (PR-A, 12.08.2026). Файл — ВТОРАЯ дверь записи в
+ *  RAW_WB_FINANCE мимо pre-load orphan guard'а нового контура
+ *  (finDailyOrphanGuard_, WbFinanceDaily.gs). Своей защиты от повторной
+ *  загрузки отчёта у него нет: wbFinanceBQResetProgress() прямо
+ *  предупреждает о физических дублях, а _rr_date он проставляет только при
+ *  валидном rr_dt/sale_dt — то есть способен записать строку с NULL в
+ *  колонке партиции.
+ *
+ *  Бэкфилл своё отработал: последняя запись legacy-слоя в RAW —
+ *  2026-07-13 11:51:12, дальше пишет только WbFinanceDaily.gs.
+ *  Все пишущие entrypoint'ы закрыты kill-switch'ем WB_FIN_BQ_DEPRECATED_
+ *  (fail-closed: бросают исключение до любого обращения к API и BigQuery).
+ *  Read-only функции (wbFinanceBQStats, wbFinanceBackfillAuditTriggers) и
+ *  wbFinanceBackfillAutoStop() остаются рабочими намеренно.
+ *
+ *  Если бэкфилл когда-нибудь понадобится снова: сначала провести его через
+ *  тот же orphan guard, и только потом переключать WB_FIN_BQ_DEPRECATED_.
+ *  Спека: docs/FINANCE_PR_A_INGESTION_INTEGRITY_2026-08-11.md §2 A5a.
  * ══════════════════════════════════════════════════════════════
  *  Использует:
  *    из WbFinanceApiV1.gs — getFinanceV1Token_, wbFinV1ListAll_,
@@ -24,6 +43,25 @@ var WB_FIN_BQ_DONE_PROP_   = 'WB_FIN_V1_DONE_BQ';   // прогресс бэкф
 var WB_FIN_BQ_VIEW_        = 'V_WB_FINANCE';         // вью с дедупом
 var WB_FIN_BQ_LOAD_BATCH_  = 10000;                  // строк на один load-job
 var WB_FIN_BQ_TICK_FN_     = 'wbFinanceBackfillAutoTick';
+
+// ⛔ PR-A kill-switch. true — все пишущие пути этого файла закрыты fail-closed.
+// Снимать ТОЛЬКО осознанно и только после того, как бэкфилл проведён через
+// pre-load orphan guard (см. finDailyOrphanGuard_ в WbFinanceDaily.gs).
+var WB_FIN_BQ_DEPRECATED_  = true;
+
+/**
+ * Fail-closed страж депрекации. Вызывается ПЕРВОЙ строкой каждого пишущего
+ * entrypoint'а — до обращения к WB API, до bqEnsureFinanceTable_ и до любого
+ * load-job'а. Бросает исключение, а не возвращает флаг: молчаливый no-op
+ * выглядел бы как успешный прогон.
+ */
+function wbFinBqAssertNotDeprecated_(entry) {
+  if (!WB_FIN_BQ_DEPRECATED_) return;
+  throw new Error('DEPRECATED_WRITER: ' + entry + ' — legacy-бэкфилл пишет в ' +
+    'RAW_WB_FINANCE мимо pre-load orphan guard нового контура и не защищён от ' +
+    'повторной загрузки отчёта. Регулярная загрузка — только WbFinanceDaily.gs. ' +
+    'Чтобы включить осознанно: WB_FIN_BQ_DEPRECATED_ = false в WbFinanceBackfillBQ.gs.');
+}
 
 
 // ═══════════════════════════════════════
@@ -61,6 +99,7 @@ function wbFinBqRowToObj_(rowArr, headerNames) {
 
 /** Пакетная загрузка объектов в таблицу. */
 function wbFinBqLoadBatched_(objs) {
+  wbFinBqAssertNotDeprecated_('wbFinBqLoadBatched_');  // defence in depth: сам append
   var total = 0;
 
   for (var i = 0; i < objs.length; i += WB_FIN_BQ_LOAD_BATCH_) {
@@ -106,6 +145,7 @@ function bqCreateFinanceView() {
  * testOneOnly=true — обработать только первый ещё-не-готовый отчёт и выйти.
  */
 function wbFinBqRun_(testOneOnly) {
+  wbFinBqAssertNotDeprecated_('wbFinBqRun_');
   var tk = getFinanceV1Token_();
   if (!tk) {
     console.log('❌ Нет токена WB_TOKEN_FINANCE');
@@ -263,6 +303,7 @@ function wbFinanceBackfillBQ() {
 
 /** Сбросить прогресс бэкфилла в BQ. НЕ удаляет данные из BigQuery. */
 function wbFinanceBQResetProgress() {
+  wbFinBqAssertNotDeprecated_('wbFinanceBQResetProgress');  // сброс прогресса = включатель дублей
   PropertiesService.getScriptProperties().deleteProperty(WB_FIN_BQ_DONE_PROP_);
   console.log('♻️ Прогресс BQ-бэкфилла сброшен. Данные в таблице не тронуты. Без очистки BQ это может привести к физическим дублям при повторном backfill.');
 }
@@ -274,6 +315,7 @@ function wbFinanceBQResetProgress() {
 
 /** Запуск авто-бэкфилла: ставит триггер каждые 5 минут и делает первый чанк сразу. */
 function wbFinanceBackfillAutoStart() {
+  wbFinBqAssertNotDeprecated_('wbFinanceBackfillAutoStart');
   wbFinanceBackfillAutoStop();
   ScriptApp.newTrigger(WB_FIN_BQ_TICK_FN_).timeBased().everyMinutes(5).create();
   console.log('▶️ Авто-бэкфилл запущен: тик каждые 5 минут. Можно закрыть вкладку.');
@@ -282,6 +324,7 @@ function wbFinanceBackfillAutoStart() {
 
 /** Один тик планировщика: чанк + проверка завершения. С защитой от наложения. */
 function wbFinanceBackfillAutoTick() {
+  wbFinBqAssertNotDeprecated_('wbFinanceBackfillAutoTick');
   var lock = LockService.getScriptLock();
 
   if (!lock.tryLock(1000)) {
@@ -303,7 +346,36 @@ function wbFinanceBackfillAutoTick() {
   }
 }
 
-/** Остановка авто-бэкфилла: удаляет все триггеры тика. */
+/**
+ * Read-only аудит триггеров проекта (PR-A). Ничего не создаёт и не удаляет.
+ * Доказательство «активного триггера бэкфилла нет» снимается запуском этой
+ * функции в Apps Script и копированием лога в описание PR: из репозитория
+ * список живых триггеров не виден в принципе.
+ */
+function wbFinanceBackfillAuditTriggers() {
+  var trs = ScriptApp.getProjectTriggers();
+  var backfill = 0;
+
+  console.log('Триггеров в проекте: ' + trs.length);
+  for (var i = 0; i < trs.length; i++) {
+    var fn = trs[i].getHandlerFunction();
+    var mark = (fn === WB_FIN_BQ_TICK_FN_) ? '  ⛔ BACKFILL' : '';
+    if (fn === WB_FIN_BQ_TICK_FN_) backfill++;
+    console.log('  · ' + fn + ' [' + trs[i].getEventType() + ']' + mark);
+  }
+
+  console.log(backfill === 0
+    ? '✅ Триггеров legacy-бэкфилла (' + WB_FIN_BQ_TICK_FN_ + ') нет.'
+    : '🔴 Найдено триггеров бэкфилла: ' + backfill + ' — снять через wbFinanceBackfillAutoStop().');
+  console.log('kill-switch WB_FIN_BQ_DEPRECATED_ = ' + WB_FIN_BQ_DEPRECATED_);
+
+  return { total: trs.length, backfill: backfill, deprecated: WB_FIN_BQ_DEPRECATED_ };
+}
+
+/**
+ * Остановка авто-бэкфилла: удаляет все триггеры тика.
+ * Намеренно НЕ закрыт kill-switch'ем — должен работать всегда.
+ */
 function wbFinanceBackfillAutoStop() {
   var trs = ScriptApp.getProjectTriggers();
   var n = 0;

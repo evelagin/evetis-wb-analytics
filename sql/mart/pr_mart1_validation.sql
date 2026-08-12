@@ -19,6 +19,7 @@ FROM `wb_raw.V_WB_SALES_RETURNS`;
 --    Контракт ключа (аудит #2/#3): части ключа NOT NULL/empty (key_parts_fail=0), distinct по CONCAT БЕЗ IFNULL.
 SELECT COUNT(*) rows_all,
   COUNT(DISTINCT CONCAT(report_id,'#',rrd_id)) distinct_key,  -- = rows_all
+  COUNT(DISTINCT rrd_id) distinct_rrd,                        -- = rows_all (PR-A/A1: инвариант CANONICAL)
   COUNTIF(report_id IS NULL OR TRIM(report_id)='' OR rrd_id IS NULL OR TRIM(rrd_id)='') key_parts_fail,  -- 0
   COUNTIF(wb_nm_id IS NOT NULL AND TRIM(wb_nm_id)<>'' AND SAFE_CAST(wb_nm_id AS INT64) IS NULL) nm_cast_fail,       -- 0
   (COUNTIF(sale_amount IS NOT NULL AND TRIM(sale_amount)<>'' AND SAFE_CAST(REPLACE(sale_amount,',','.') AS NUMERIC) IS NULL)
@@ -36,6 +37,15 @@ SELECT COUNT(*) rows_all,
   +COUNTIF(other_amount IS NOT NULL AND TRIM(other_amount)<>'' AND SAFE_CAST(REPLACE(other_amount,',','.') AS NUMERIC) IS NULL)
   ) money_parse_fail                                                                -- 0
 FROM `wb_raw.V_WB_FINANCE_CANONICAL`;
+
+-- 3a) FINANCE PR-A/A1: инвариант CANONICAL — ОДНА строка на rrd_id.
+--     finance_row_key = report_id#rrd_id, поэтому проверка 3) пропускает пару
+--     DAILY+WEEKLY по одному rrd_id. Здесь — fail-closed на сам rrd_id.
+--     Спека: docs/FINANCE_PR_A_INGESTION_INTEGRITY_2026-08-11.md §2 A1.
+ASSERT (
+  SELECT COUNT(*) - COUNT(DISTINCT rrd_id)
+  FROM `wb_raw.V_WB_FINANCE_CANONICAL`
+) = 0 AS 'PR-A: CANONICAL содержит дубли rrd_id — дедуп weekly/daily не сработал';
 
 -- 4) STOCKS: последний COMPLETE-снапшот дня → грейн snap_date×nm×склад уникален.
 WITH pick AS (

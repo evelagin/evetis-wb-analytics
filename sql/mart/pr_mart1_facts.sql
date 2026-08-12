@@ -248,6 +248,15 @@ BEGIN
             FROM `wb_mart.FACT_FINANCE__BUILD`) = 0 AS 'FACT_FINANCE: NULL/empty grain or NULL partition';
     ASSERT (SELECT COUNT(*) = COUNT(DISTINCT finance_row_key) FROM `wb_mart.FACT_FINANCE__BUILD`)
             AS 'FACT_FINANCE: finance_row_key not unique';
+    -- PR-A/A1: finance_row_key включает report_id, поэтому пара DAILY+WEEKLY по одному
+    --   rrd_id проходит проверку выше насквозь. Инвариант CANONICAL — ОДНА строка на
+    --   rrd_id; если дедуп weekly/daily не сработал (например, weekly_final не проставлен),
+    --   витрина задвоится молча. Fail-closed до подмены FACT_FINANCE.
+    --   Спека: docs/FINANCE_PR_A_INGESTION_INTEGRITY_2026-08-11.md §2 A1.
+    ASSERT (
+      SELECT COUNT(*) - COUNT(DISTINCT rrd_id)
+      FROM `wb_raw.V_WB_FINANCE_CANONICAL`
+    ) = 0 AS 'PR-A: CANONICAL содержит дубли rrd_id — дедуп weekly/daily не сработал';
     -- fail-closed: непустой BUILD + pass-through объём.
     ASSERT (SELECT COUNT(*) FROM `wb_mart.FACT_FINANCE__BUILD`) > 0 AS 'FACT_FINANCE: empty build (fail-closed)';
     ASSERT (SELECT COUNT(*) FROM `wb_mart.FACT_FINANCE__BUILD`)

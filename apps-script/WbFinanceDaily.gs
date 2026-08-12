@@ -665,6 +665,199 @@ function finDailyStaleRecovery_() {
 // ═══════════════ ЗАГРУЗКА ОДНОГО ОТЧЁТА ═══════════════
 
 /**
+ * A5b · Детерминированный jobId для финансовых load-job'ов.
+ *
+ * Ключ: fin_<report_id>_<run_id>_<batch_index>. run_id в ключе ОБЯЗАТЕЛЕН —
+ * без него ломается ownership-контракт V_WB_FINANCE_COMPLETE
+ * (JOIN ... ON r.run_id = m.processing_run_id): следующий execution увидел бы
+ * тот же jobId, повторный append бы не сделал, а строки остались бы с чужим
+ * run_id — данные в таблице есть, в витрине их нет.
+ *
+ * BigQuery допускает в jobId только [A-Za-z0-9_-] и не длиннее 1024 символов.
+ * report_id — цифры, run_id — FINDAILY_<дата>_<время>_<rand>; на всякий случай
+ * всё остальное схлопываем в '-'.
+ */
+function finDailyBqJobId_(reportId, runId, batchIndex) {
+  var raw = 'fin_' + reportId + '_' + runId + '_' + batchIndex;
+  var safe = raw.replace(/[^A-Za-z0-9_-]/g, '-');
+  return (safe.length > 1024) ? safe.substring(0, 1024) : safe;
+}
+
+function finDailyBqIsNotFound_(e) {
+  var code = Number(e && (e.code || e.statusCode));
+  var msg = String((e && e.message) || e);
+  return (code === 404) || (msg.indexOf('Not found') >= 0) || (msg.indexOf('notFound') >= 0);
+}
+
+function finDailyBqJobExists_(jobId, jobLocation) {
+  var c = getBqConfig_();
+  try {
+    BigQuery.Jobs.get(c.projectId, jobId, { location: jobLocation || c.location });
+    return { exists: true, unknown: false };
+  } catch (e) {
+    if (finDailyBqIsNotFound_(e)) return { exists: false, unknown: false };
+    return { exists: false, unknown: true };   // не смогли проверить → fail-closed выше
+  }
+}
+
+/**
+ * A5b · Load-job с детерминированным jobId — exactly-once для повторов
+ * Jobs.insert ВНУТРИ одного execution. Если ответ на insert потерялся, а BQ
+ * задание уже принял, повторная попытка не делает второй append: находим job
+ * по тому же jobId и дожидаемся DONE.
+ *
+ * Механика перенесена с apps-script/WbStocksBigQuery.gs:170-235; generic
+ * bqLoadRows_ (WbBigQuery.gs) НЕ изменён — у него другие потребители.
+ *
+ * ignoreUnknownValues: false — в отличие от generic-обёртки. Проверено на
+ * срезе 12.08.2026: finDailyMapRow_ отдаёт 54 ключа, и все 54 есть среди 74
+ * колонок RAW_WB_FINANCE, то есть сегодня это no-op. Смысл — на завтра: при
+ * расхождении маппера и схемы load упадёт громко, а не потеряет поле молча.
+ */
+function finDailyLoadRowsDeterministic_(tableId, rows, jobId) {
+  if (!rows || !rows.length) return 0;
+  var c = getBqConfig_();
+
+  var lines = new Array(rows.length);
+  for (var i = 0; i < rows.length; i++) lines[i] = JSON.stringify(rows[i]);
+  var blob = Utilities.newBlob(lines.join('\n'), 'application/octet-stream');
+
+  var job = {
+    jobReference: { projectId: c.projectId, location: c.location, jobId: jobId },
+    configuration: {
+      load: {
+        destinationTable: { projectId: c.projectId, datasetId: c.datasetId, tableId: tableId },
+        sourceFormat: 'NEWLINE_DELIMITED_JSON',
+        writeDisposition: 'WRITE_APPEND',
+        ignoreUnknownValues: false,
+        maxBadRecords: 0
+      }
+    }
+  };
+
+  var jobLocation = c.location;
+  var submitted = false, attempt = 0;
+  while (!submitted) {
+    attempt++;
+    try {
+      var ins = BigQuery.Jobs.insert(job, c.projectId, blob);
+      jobLocation = (ins.jobReference && ins.jobReference.location) || c.location;
+      submitted = true;
+    } catch (e) {
+      var msg = String((e && e.message) || e);
+      if (msg.indexOf('Already Exists') >= 0 || msg.indexOf('already exists') >= 0 ||
+          msg.indexOf('duplicate') >= 0) {
+        console.log('  ℹ️ load-job уже существует (' + jobId + ') — повторный append НЕ делаем.');
+        submitted = true; break;
+      }
+      // Сетевая неопределённость после insert: BQ мог УЖЕ принять job.
+      var chk = finDailyBqJobExists_(jobId, jobLocation);
+      if (chk.exists) {
+        console.log('  ℹ️ load-job принят несмотря на ошибку ответа (' + jobId + ') — не дублируем.');
+        submitted = true; break;
+      }
+      if (chk.unknown) throw e;      // не смогли проверить → fail-closed
+      if (attempt >= 3) throw e;     // точно not found и попытки исчерпаны
+      Utilities.sleep(2000);         // точно not found → можно повторить insert
+    }
+  }
+
+  var state = '', tries = 0;
+  do {
+    Utilities.sleep(1500);
+    var j = BigQuery.Jobs.get(c.projectId, jobId, { location: jobLocation });
+    state = j.status.state;
+    if (j.status.errorResult) {
+      throw new Error('BQ load error (' + jobId + '): ' + JSON.stringify(j.status.errorResult));
+    }
+    tries++;
+  } while (state !== 'DONE' && tries < 120);
+  if (state !== 'DONE') throw new Error('BQ load job не завершился: ' + jobId);
+
+  return rows.length;
+}
+
+
+/**
+ * A5a · Pre-load orphan guard. Вызывается ДО любого load-job'а: при срабатывании
+ * управление физически не доходит до bqLoadRows_.
+ *
+ * Проверяем report_id, а НЕ rrd_id — законная двухслойность DAILY/WEEKLY
+ * (docs/FINANCE_DAILY_DESIGN_2026-07-22.md:41,53-57) guard'ом не затрагивается.
+ *
+ * Закрываемый сценарий: execution RUN_A вставил строки в RAW, упал до COMPLETE,
+ * stale-recovery очистила processing_run_id, следующий execution RUN_B грузит
+ * тот же отчёт заново. Строки RUN_A остаются в RAW без владельца в манифесте,
+ * а RAW задваивается по (report_id, rrd_id). Периодический QC (A5d) такой дубль
+ * ОБНАРУЖИТ, но не предотвратит — предотвращает только этот guard.
+ *
+ * Шаг 1 (всегда) — дешёвый, с partition pruning по _rr_date.
+ * Шаг 2 (условно, только когда шаг 1 дал ноль) — full-scan без фильтра по
+ *   партициям, на случай нарушения partition-инварианта (_rr_date NULL или вне
+ *   периода манифеста). Дороже, но выполняется ровно один раз на новый отчёт.
+ *
+ * Возвращает {mode:'LOAD'} либо {mode:'RESUME', persisted:n}.
+ * Бросает Error при обнаружении сирот — вызывающий переводит отчёт в ERROR.
+ *
+ * Спека: docs/FINANCE_PR_A_INGESTION_INTEGRITY_2026-08-11.md §2 A5a.
+ */
+function finDailyOrphanGuard_(rid, item, runId) {
+  // ── Шаг 1: дешёвый основной guard (pruned) ─────────────────────────────
+  var q1 = finDailyQuery_(
+    'SELECT COUNTIF(run_id = @run)                AS this_run,\n' +
+    '       COUNTIF(run_id IS DISTINCT FROM @run) AS other_run\n' +
+    'FROM ' + finDailyTbl_(BQ_TABLE_FINANCE_) + '\n' +
+    'WHERE report_id = @rid\n' +
+    '  AND _rr_date BETWEEN @dfrom AND @dto',
+    [finDailyP_('rid', 'STRING', rid),
+     finDailyP_('run', 'STRING', runId),
+     finDailyP_('dfrom', 'DATE', item.date_from),
+     finDailyP_('dto', 'DATE', item.date_to)]);
+  var thisRun  = Number(q1.rows[0].f[0].v);
+  var otherRun = Number(q1.rows[0].f[1].v);
+
+  if (otherRun > 0) {
+    throw new Error('ORPHANED_RAW_REPORT: report_id=' + rid + ', this_run=' + thisRun +
+      ', other_run=' + otherRun + ', run_id=' + runId +
+      ', period=' + item.date_from + '..' + item.date_to +
+      '. Строки прошлого прогона остались в RAW без владельца в манифесте. ' +
+      'Автоматическое усыновление вне PR-A — требуется ручное восстановление.');
+  }
+  if (thisRun > 0) {
+    // Повторный заход внутри ТОГО ЖЕ execution: строки уже наши, append не нужен.
+    return { mode: 'RESUME', persisted: thisRun };
+  }
+
+  // ── Шаг 2: условный full-scan fallback (только когда шаг 1 дал ноль) ───
+  var q2 = finDailyQuery_(
+    'SELECT COUNT(*)                     AS full_count,\n' +
+    '       COUNTIF(_rr_date IS NULL)    AS null_rr_date,\n' +
+    '       COUNTIF(_rr_date < @dfrom\n' +
+    '            OR _rr_date > @dto)     AS outside_period,\n' +
+    '       COUNT(DISTINCT run_id)       AS run_count\n' +
+    'FROM ' + finDailyTbl_(BQ_TABLE_FINANCE_) + '\n' +
+    'WHERE report_id = @rid',
+    [finDailyP_('rid', 'STRING', rid),
+     finDailyP_('dfrom', 'DATE', item.date_from),
+     finDailyP_('dto', 'DATE', item.date_to)]);
+  var full    = Number(q2.rows[0].f[0].v);
+  var nullRr  = Number(q2.rows[0].f[1].v);
+  var outside = Number(q2.rows[0].f[2].v);
+  var runCnt  = Number(q2.rows[0].f[3].v);
+
+  if (full > 0) {
+    throw new Error('ORPHANED_RAW_OUTSIDE_MANIFEST_PERIOD: report_id=' + rid +
+      ', full=' + full + ', pruned=0, outside=' + outside +
+      ', null_rr_date=' + nullRr + ', run_count=' + runCnt +
+      ', period=' + item.date_from + '..' + item.date_to +
+      '. Строки отчёта есть в RAW вне периода манифеста — partition-инвариант нарушен.');
+  }
+
+  return { mode: 'LOAD' };
+}
+
+
+/**
  * DISCOVERED/ERROR → STARTED → detailed(rrdId=0) → RAW load-job →
  * post-load SQL → COMPLETE|ERROR. Возвращает 'COMPLETE'|'ERROR'|'SKIPPED'.
  */
@@ -675,6 +868,17 @@ function finDailyLoadReport_(st, item) {
   if (!finDailyMergeStarted_(rid, st.runId)) {
     console.log('  ⏭ ' + rid + ': не захвачен (статус изменился/лимит попыток)');
     return 'SKIPPED';
+  }
+
+  // A5a · pre-load orphan guard — ДО fetch и ДО любого load-job'а.
+  var guard;
+  try {
+    guard = finDailyOrphanGuard_(rid, item, st.runId);
+  } catch (eGuard) {
+    var gmsg = (eGuard && eGuard.message) || String(eGuard);
+    finDailyMergeError_(rid, st.runId, gmsg);
+    console.error('  ✗ ' + rid + ': ' + gmsg);
+    return 'ERROR';
   }
 
   var fetched = finDailyFetchDetailed_(st, rid);
@@ -719,14 +923,28 @@ function finDailyLoadReport_(st, item) {
 
   // Запись: атомарные load-job'ы (отчёты EVETIS < батча → ровно 1 job)
   var loaded = 0;
-  try {
-    for (var b = 0; b < objs.length; b += FIN_DAILY_LOAD_BATCH_) {
-      loaded += bqLoadRows_(BQ_TABLE_FINANCE_, objs.slice(b, b + FIN_DAILY_LOAD_BATCH_));
+  if (guard.mode === 'RESUME') {
+    // A5a: строки этого же execution уже в RAW — повторный append не делаем,
+    // корректность подтвердит post-load проверка ниже.
+    loaded = guard.persisted;
+    console.log('  ↻ ' + rid + ': строки этого прогона уже в RAW (' + loaded +
+      ') — append пропущен (A5a RESUME)');
+  } else {
+    try {
+      var batchIndex = 0;
+      for (var b = 0; b < objs.length; b += FIN_DAILY_LOAD_BATCH_) {
+        // A5b: детерминированный jobId, run_id внутри ключа (ownership-контракт)
+        loaded += finDailyLoadRowsDeterministic_(
+          BQ_TABLE_FINANCE_,
+          objs.slice(b, b + FIN_DAILY_LOAD_BATCH_),
+          finDailyBqJobId_(rid, st.runId, batchIndex));
+        batchIndex++;
+      }
+    } catch (e) {
+      finDailyMergeError_(rid, st.runId, 'LOAD_JOB: ' + ((e && e.message) || e));
+      console.error('  ✗ ' + rid + ': load-job — ' + e);
+      return 'ERROR';
     }
-  } catch (e) {
-    finDailyMergeError_(rid, st.runId, 'LOAD_JOB: ' + ((e && e.message) || e));
-    console.error('  ✗ ' + rid + ': load-job — ' + e);
-    return 'ERROR';
   }
 
   // Post-load SQL: фактически сохранённое в BQ (дизайн §4 шаг 4)
@@ -740,6 +958,28 @@ function finDailyLoadReport_(st, item) {
     finDailyMergeError_(rid, st.runId, 'POSTLOAD_MISMATCH: persisted=' + persisted +
       ' distinct=' + distinctRrd + ' fetched=' + rows.length + ' loaded=' + loaded);
     console.error('  ✗ ' + rid + ': POSTLOAD_MISMATCH');
+    return 'ERROR';
+  }
+
+  // A5c · post-load без привязки к run: ловит межпрогонное задвоение сразу
+  // после загрузки, не дожидаясь периодического QC (A5d). Существующая
+  // проверка выше ограничена (report_id, run_id) и такой дубль пропустила бы.
+  // Окно по партициям — то же, что в pre-load guard (шаг 1): report_id живёт
+  // ровно в периоде своего манифеста, это проверено там же.
+  var chk2 = finDailyQuery_(
+    'SELECT COUNT(*) AS c, COUNT(DISTINCT rrd_id) AS d FROM ' +
+    finDailyTbl_(BQ_TABLE_FINANCE_) + '\n' +
+    'WHERE report_id=@rid AND _rr_date BETWEEN @dfrom AND @dto',
+    [finDailyP_('rid', 'STRING', rid),
+     finDailyP_('dfrom', 'DATE', item.date_from),
+     finDailyP_('dto', 'DATE', item.date_to)]);
+  var allRows = Number(chk2.rows[0].f[0].v), allRrd = Number(chk2.rows[0].f[1].v);
+  if (!(allRows === allRrd && allRows === rows.length)) {
+    finDailyMergeError_(rid, st.runId, 'POSTLOAD_CROSSRUN_MISMATCH: report_rows=' + allRows +
+      ' distinct_rrd=' + allRrd + ' fetched=' + rows.length + ' this_run=' + persisted +
+      '. В RAW по этому report_id больше строк, чем загрузил текущий прогон.');
+    console.error('  ✗ ' + rid + ': POSTLOAD_CROSSRUN_MISMATCH rows=' + allRows +
+      ' rrd=' + allRrd + ' fetched=' + rows.length);
     return 'ERROR';
   }
 
