@@ -665,6 +665,85 @@ function finDailyStaleRecovery_() {
 // ═══════════════ ЗАГРУЗКА ОДНОГО ОТЧЁТА ═══════════════
 
 /**
+ * A5a · Pre-load orphan guard. Вызывается ДО любого load-job'а: при срабатывании
+ * управление физически не доходит до bqLoadRows_.
+ *
+ * Проверяем report_id, а НЕ rrd_id — законная двухслойность DAILY/WEEKLY
+ * (docs/FINANCE_DAILY_DESIGN_2026-07-22.md:41,53-57) guard'ом не затрагивается.
+ *
+ * Закрываемый сценарий: execution RUN_A вставил строки в RAW, упал до COMPLETE,
+ * stale-recovery очистила processing_run_id, следующий execution RUN_B грузит
+ * тот же отчёт заново. Строки RUN_A остаются в RAW без владельца в манифесте,
+ * а RAW задваивается по (report_id, rrd_id). Периодический QC (A5d) такой дубль
+ * ОБНАРУЖИТ, но не предотвратит — предотвращает только этот guard.
+ *
+ * Шаг 1 (всегда) — дешёвый, с partition pruning по _rr_date.
+ * Шаг 2 (условно, только когда шаг 1 дал ноль) — full-scan без фильтра по
+ *   партициям, на случай нарушения partition-инварианта (_rr_date NULL или вне
+ *   периода манифеста). Дороже, но выполняется ровно один раз на новый отчёт.
+ *
+ * Возвращает {mode:'LOAD'} либо {mode:'RESUME', persisted:n}.
+ * Бросает Error при обнаружении сирот — вызывающий переводит отчёт в ERROR.
+ *
+ * Спека: docs/FINANCE_PR_A_INGESTION_INTEGRITY_2026-08-11.md §2 A5a.
+ */
+function finDailyOrphanGuard_(rid, item, runId) {
+  // ── Шаг 1: дешёвый основной guard (pruned) ─────────────────────────────
+  var q1 = finDailyQuery_(
+    'SELECT COUNTIF(run_id = @run)                AS this_run,\n' +
+    '       COUNTIF(run_id IS DISTINCT FROM @run) AS other_run\n' +
+    'FROM ' + finDailyTbl_(BQ_TABLE_FINANCE_) + '\n' +
+    'WHERE report_id = @rid\n' +
+    '  AND _rr_date BETWEEN @dfrom AND @dto',
+    [finDailyP_('rid', 'STRING', rid),
+     finDailyP_('run', 'STRING', runId),
+     finDailyP_('dfrom', 'DATE', item.date_from),
+     finDailyP_('dto', 'DATE', item.date_to)]);
+  var thisRun  = Number(q1.rows[0].f[0].v);
+  var otherRun = Number(q1.rows[0].f[1].v);
+
+  if (otherRun > 0) {
+    throw new Error('ORPHANED_RAW_REPORT: report_id=' + rid + ', this_run=' + thisRun +
+      ', other_run=' + otherRun + ', run_id=' + runId +
+      ', period=' + item.date_from + '..' + item.date_to +
+      '. Строки прошлого прогона остались в RAW без владельца в манифесте. ' +
+      'Автоматическое усыновление вне PR-A — требуется ручное восстановление.');
+  }
+  if (thisRun > 0) {
+    // Повторный заход внутри ТОГО ЖЕ execution: строки уже наши, append не нужен.
+    return { mode: 'RESUME', persisted: thisRun };
+  }
+
+  // ── Шаг 2: условный full-scan fallback (только когда шаг 1 дал ноль) ───
+  var q2 = finDailyQuery_(
+    'SELECT COUNT(*)                     AS full_count,\n' +
+    '       COUNTIF(_rr_date IS NULL)    AS null_rr_date,\n' +
+    '       COUNTIF(_rr_date < @dfrom\n' +
+    '            OR _rr_date > @dto)     AS outside_period,\n' +
+    '       COUNT(DISTINCT run_id)       AS run_count\n' +
+    'FROM ' + finDailyTbl_(BQ_TABLE_FINANCE_) + '\n' +
+    'WHERE report_id = @rid',
+    [finDailyP_('rid', 'STRING', rid),
+     finDailyP_('dfrom', 'DATE', item.date_from),
+     finDailyP_('dto', 'DATE', item.date_to)]);
+  var full    = Number(q2.rows[0].f[0].v);
+  var nullRr  = Number(q2.rows[0].f[1].v);
+  var outside = Number(q2.rows[0].f[2].v);
+  var runCnt  = Number(q2.rows[0].f[3].v);
+
+  if (full > 0) {
+    throw new Error('ORPHANED_RAW_OUTSIDE_MANIFEST_PERIOD: report_id=' + rid +
+      ', full=' + full + ', pruned=0, outside=' + outside +
+      ', null_rr_date=' + nullRr + ', run_count=' + runCnt +
+      ', period=' + item.date_from + '..' + item.date_to +
+      '. Строки отчёта есть в RAW вне периода манифеста — partition-инвариант нарушен.');
+  }
+
+  return { mode: 'LOAD' };
+}
+
+
+/**
  * DISCOVERED/ERROR → STARTED → detailed(rrdId=0) → RAW load-job →
  * post-load SQL → COMPLETE|ERROR. Возвращает 'COMPLETE'|'ERROR'|'SKIPPED'.
  */
@@ -675,6 +754,17 @@ function finDailyLoadReport_(st, item) {
   if (!finDailyMergeStarted_(rid, st.runId)) {
     console.log('  ⏭ ' + rid + ': не захвачен (статус изменился/лимит попыток)');
     return 'SKIPPED';
+  }
+
+  // A5a · pre-load orphan guard — ДО fetch и ДО любого load-job'а.
+  var guard;
+  try {
+    guard = finDailyOrphanGuard_(rid, item, st.runId);
+  } catch (eGuard) {
+    var gmsg = (eGuard && eGuard.message) || String(eGuard);
+    finDailyMergeError_(rid, st.runId, gmsg);
+    console.error('  ✗ ' + rid + ': ' + gmsg);
+    return 'ERROR';
   }
 
   var fetched = finDailyFetchDetailed_(st, rid);
@@ -719,14 +809,22 @@ function finDailyLoadReport_(st, item) {
 
   // Запись: атомарные load-job'ы (отчёты EVETIS < батча → ровно 1 job)
   var loaded = 0;
-  try {
-    for (var b = 0; b < objs.length; b += FIN_DAILY_LOAD_BATCH_) {
-      loaded += bqLoadRows_(BQ_TABLE_FINANCE_, objs.slice(b, b + FIN_DAILY_LOAD_BATCH_));
+  if (guard.mode === 'RESUME') {
+    // A5a: строки этого же execution уже в RAW — повторный append не делаем,
+    // корректность подтвердит post-load проверка ниже.
+    loaded = guard.persisted;
+    console.log('  ↻ ' + rid + ': строки этого прогона уже в RAW (' + loaded +
+      ') — append пропущен (A5a RESUME)');
+  } else {
+    try {
+      for (var b = 0; b < objs.length; b += FIN_DAILY_LOAD_BATCH_) {
+        loaded += bqLoadRows_(BQ_TABLE_FINANCE_, objs.slice(b, b + FIN_DAILY_LOAD_BATCH_));
+      }
+    } catch (e) {
+      finDailyMergeError_(rid, st.runId, 'LOAD_JOB: ' + ((e && e.message) || e));
+      console.error('  ✗ ' + rid + ': load-job — ' + e);
+      return 'ERROR';
     }
-  } catch (e) {
-    finDailyMergeError_(rid, st.runId, 'LOAD_JOB: ' + ((e && e.message) || e));
-    console.error('  ✗ ' + rid + ': load-job — ' + e);
-    return 'ERROR';
   }
 
   // Post-load SQL: фактически сохранённое в BQ (дизайн §4 шаг 4)
