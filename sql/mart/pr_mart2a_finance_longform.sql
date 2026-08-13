@@ -33,7 +33,15 @@
 
 CREATE SCHEMA IF NOT EXISTS `wb_mart` OPTIONS (location = 'EU');
 
--- ── 1. STAGING: REF_COST_MAP__BUILD (seed 23 пары; точные op-строки ИЗ ДАННЫХ) ──
+-- ── 1. STAGING: REF_COST_MAP__BUILD (seed 19 пар; точные op-строки ИЗ ДАННЫХ) ──
+--    PR-B (13.08.2026): удалены пять аварийных пар op_key='__NULL__'.
+--    Они ловили строки нового контура (op_key = COALESCE(operation_type_normalized,
+--    '__NULL__')) и нейтрализовали fail-closed ASSERT §5.3 именно там, где он нужен;
+--    попутно терялась семантика ADJUSTMENT — «Коррекция логистики» и «Корректировка
+--    эквайринга» уходили в обычный COST с ABS(). После восстановления
+--    operation_type_normalized в V_WB_FINANCE_SEMANTIC заглушки не нужны.
+--    ⚠️ Порядок обязателен: сначала FACT_FINANCE пересобран из семантического слоя,
+--    только потом этот скрипт. Иначе §5.3 упадёт — и это будет правильно.
 CREATE OR REPLACE TABLE `wb_mart.REF_COST_MAP__BUILD` AS
 SELECT op_key, amount_field, economic_direction, cost_category,
   field_normalization_sign, note, CURRENT_TIMESTAMP() AS seeded_at
@@ -45,20 +53,16 @@ FROM UNNEST([
   ('Возмещение издержек по перевозке/по складским операциям с товаром','commission_amount','CREDIT','reimbursement_logistics',-1,'Возмещение издержек перевозки/склада (кредит)'),
   ('Коррекция продаж','commission_amount','ADJUSTMENT','commission',-1,'Корректировка комиссии — знак сохраняется'),
   ('Продажа','acquiring_fee','COST','acquiring',1,'Эквайринг по продаже (per-SKU COST)'),
-  ('__NULL__','acquiring_fee','COST','acquiring',1,'Эквайринг, операция не размечена'),
   ('Возврат','acquiring_fee','COST','acquiring',1,'Эквайринг по возврату'),
   ('Коррекция продаж','acquiring_fee','ADJUSTMENT','acquiring',1,'Корректировка эквайринга (продажи)'),
   ('Корректировка эквайринга','acquiring_fee','ADJUSTMENT','acquiring',1,'Корректировка эквайринга'),
   ('Логистика','logistics_amount','COST','logistics',1,'Логистика WB'),
-  ('__NULL__','logistics_amount','COST','logistics',1,'Логистика, операция не размечена'),
   ('Коррекция логистики','logistics_amount','ADJUSTMENT','logistics',1,'Корректировка логистики'),
   ('Хранение','storage_fee','COST','storage',1,'Хранение WB'),
-  ('__NULL__','storage_fee','COST','storage',1,'Хранение, операция не размечена'),
+  ('Коррекция хранения','storage_fee','ADJUSTMENT','storage',1,'Корректировка хранения — знак сохраняется (PR-B)'),
   ('Удержание','deduction','COST','deduction',1,'Прочие удержания'),
-  ('__NULL__','deduction','COST','deduction',1,'Удержание, операция не размечена'),
   ('Удержание','additional_payment','COST','deduction',1,'Удержание через доп. платёж'),
   ('Штраф','penalty','COST','penalty',1,'Штрафы WB'),
-  ('__NULL__','penalty','COST','penalty',1,'Штраф, операция не размечена'),
   ('Платная приемка','acceptance','COST','acceptance',1,'Платная приёмка'),
   ('Пересчет платной приемки','acceptance','COST','acceptance',1,'Пересчёт платной приёмки'),
   ('Стоимость участия в программе лояльности','additional_payment','COST','loyalty',1,'Программа лояльности WB')
