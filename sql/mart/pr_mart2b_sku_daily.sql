@@ -24,6 +24,7 @@
 -- REV5 (re-audit): guard is_sku_row всё ещё шире, чем два выводимых показателя (commission_cost_positive,
 --   logistics_cost_positive). Развёл на ДВА счётчика по cost_category='commission' и ='logistics' с RAISE каждый —
 --   при сбое mapping конкретной категории общий is_sku_row-guard прошёл бы, а метрика занулилась.
+--   (PR-B2: категория 'commission' переименована в 'wb_reward', счётчиков стало три — см. ниже.)
 -- REV6 (PR-Mart3b-1): оркестрация. Дизайн: docs/MART_PR3B_PLAN_2026-08-03.md (REV3 APPROVED), PR-нота: docs/MART_PR3B1_LOADER_2026-08-03.md.
 --   1) +параметр in_run_id STRING (сквозной id из Cloud Run; fallback GENERATE_UUID() при ''/NULL).
 --   2) СНЯТ guard build_as_of < max_required_source_date (несовместим с D-1 и бэкфиллом; его роль берёт внешний
@@ -38,6 +39,23 @@
 --      (NULL/раньше build_as_of на дни без рекламы — НОРМА, не лаг данных). ads_activity_lagged =
 --      (ads_activity_max_date IS NULL OR < build_as_of) — «в последний(е) день(дни) не было рекламной активности».
 --      +ASSERT: ads_activity_max_date <= build_as_of, COUNT(DISTINCT ads_activity_max_date)<=1 (единый снимок).
+-- PR-B2 (13.08.2026): честная семантика расхода на маркетплейс. Спека: docs/FINANCE_PR_B2_METRICS_2026-08-13.md.
+--   Слово `commission` больше нигде не означает `vw`.
+--   1) Колонка commission_cost_positive → wb_reward_cost_positive. Чистое переименование:
+--      те же строки LONG_MAPPED, та же величина до копейки. Это vw — вознаграждение WB по операции.
+--   2) +Колонка marketplace_fee_rub = SUM(FACT_FINANCE.marketplace_fee_gap_rub) по SKU-строкам —
+--      authoritative сбор маркетплейса (retail_price_withdisc_rub − for_pay, V_WB_FINANCE_SEMANTIC §4.1).
+--   3) hybrid_day_contribution_pre_cogs теперь вычитает marketplace_fee_rub вместо vw. Ранее контрибуция
+--      была ЗАВЫШЕНА на (fee_gap − vw): валовая выручка выкупов уменьшалась на вознаграждение WB,
+--      а не на реальный сбор. settlement_day_contribution_pre_cogs НЕ меняется (for_pay уже нетто).
+--   4) wb_reward_cost_positive и acquiring_fee в формулы контрибуции НЕ входят — они внутри спреда;
+--      вычитать их вторым разом нельзя. Это контракт, а не умолчание.
+--   ⚠️ АТОМАРНО С sql/mart/pr_mart2a_finance_longform.sql (seed 'commission' → 'wb_reward') и с
+--      sql/mart/pr_mart1_facts.sql (колонка marketplace_fee_gap_rub в FACT_FINANCE). Порядок в окне:
+--      pr_mart1 → CALL sp_bootstrap_facts → pr_mart2a → pr_mart2b → CALL sp_build_mart_sku_daily.
+--      Разнести по времени нельзя: между 2a и 2b guard ищет несуществующую категорию и штатный
+--      прогон 07:00 упадёт с RAISE.
+--   ⚠️ ЛОМАЮЩЕЕ переименование колонки витрины. Потребителей нет (дашборд не построен) — сделано сейчас.
 --
 -- Грейн: day × nm_id, DENSE spine. Universe = REF_SKU_MASTER (WB, active, nm_id NOT NULL).
 --   start_date(nm)=LEAST(MIN order/sale/ads/finance по nm, все <=build_as_of); fallback=mart_global_start_date.
@@ -75,8 +93,9 @@ BEGIN
   DECLARE v_ads_max                 DATE;
   DECLARE v_ads_activity_max_date DATE;   -- REV6: MAX(FACT_ADS.date <= build_as_of) — диагностика активности (НЕ покрытие)
   DECLARE v_ads_activity_lagged   BOOL;   -- REV6: диагностический build-level флаг активности (НЕ качество/лаг данных)
-  DECLARE v_finance_commission_rows INT64;
+  DECLARE v_finance_wb_reward_rows  INT64;   -- PR-B2: бывш. v_finance_commission_rows
   DECLARE v_finance_logistics_rows  INT64;
+  DECLARE v_finance_fee_gap_rows    INT64;   -- PR-B2: authoritative сбор WB — третий обязательный вход
 
   -- REV6: сквозной run_id (fallback на UUID, чтобы ручной CALL без id тоже работал).
   SET v_run_id = COALESCE(NULLIF(in_run_id, ''), GENERATE_UUID());
@@ -94,15 +113,21 @@ BEGIN
   IF v_sales_max  IS NULL THEN RAISE USING MESSAGE = 'sp_build_mart_sku_daily: FACT_SALES пуст'; END IF;
   IF v_ads_max    IS NULL THEN RAISE USING MESSAGE = 'sp_build_mart_sku_daily: FACT_ADS_SKU_DAILY пуст'; END IF;
 
-  -- finance НЕ входит в max_required (лагает недельно), но ДВА обязательных финансовых входа витрины —
-  --   SKU commission и SKU logistics (cost_category IN ('commission','logistics'), is_sku_row, active universe,
-  --   cost_amount_positive IS NOT NULL) — обязаны быть непусты. REV5 (аудит): счётчики ПО КАЖДОЙ категории отдельно —
-  --   иначе при сбое mapping конкретной категории (commission/logistics исчезли, прочие SKU-строки остались) общий
+  -- finance НЕ входит в max_required (лагает недельно), но обязательные финансовые входы витрины
+  --   обязаны быть непусты. REV5 (аудит): счётчики ПО КАЖДОМУ входу отдельно — иначе при сбое mapping
+  --   конкретной категории (соответствующие строки исчезли, прочие SKU-строки остались) общий
   --   guard прошёл бы, а соответствующая метрика витрины занулилась, и reconciliation сравнил бы ноль с нулём.
-  SET v_finance_commission_rows = (
+  -- PR-B2: входов стало ТРИ.
+  --   1) SKU wb_reward   — бывш. 'commission'; это vw, вознаграждение WB, из LONG_MAPPED;
+  --   2) SKU logistics   — без изменений, из LONG_MAPPED;
+  --   3) SKU fee_gap     — authoritative сбор маркетплейса, ПРЯМО из FACT_FINANCE (не из LONG_MAPPED:
+  --      marketplace_fee_gap_rub не является одним из 9 unpivot-полей и в REF_COST_MAP не участвует).
+  --      Он вошёл в hybrid_day_contribution_pre_cogs, поэтому подчиняется тому же правилу REV5:
+  --      молчаливый ноль здесь завысил бы контрибуцию ровно так же, как раньше это делал vw.
+  SET v_finance_wb_reward_rows = (
     SELECT COUNT(*) FROM `wb_mart.V_WB_FINANCE_AMOUNTS_LONG_MAPPED`
     WHERE finance_date <= v_build_as_of AND is_sku_row
-      AND cost_category = 'commission' AND cost_amount_positive IS NOT NULL
+      AND cost_category = 'wb_reward' AND cost_amount_positive IS NOT NULL
       AND nm_id IN (SELECT nm_id FROM `wb_raw.REF_SKU_MASTER`
                     WHERE marketplace='WB' AND active=TRUE AND nm_id IS NOT NULL));
   SET v_finance_logistics_rows = (
@@ -111,10 +136,19 @@ BEGIN
       AND cost_category = 'logistics' AND cost_amount_positive IS NOT NULL
       AND nm_id IN (SELECT nm_id FROM `wb_raw.REF_SKU_MASTER`
                     WHERE marketplace='WB' AND active=TRUE AND nm_id IS NOT NULL));
-  IF v_finance_commission_rows = 0 THEN
-    RAISE USING MESSAGE = 'sp_build_mart_sku_daily: SKU commission finance пуст (is_sku_row, active universe, <=build_as_of)'; END IF;
+  SET v_finance_fee_gap_rows = (
+    SELECT COUNT(*) FROM `wb_mart.FACT_FINANCE`
+    WHERE finance_date <= v_build_as_of
+      AND COALESCE(nm_id > 0 AND sku_match_status = 'matched', FALSE)
+      AND marketplace_fee_gap_rub IS NOT NULL
+      AND nm_id IN (SELECT nm_id FROM `wb_raw.REF_SKU_MASTER`
+                    WHERE marketplace='WB' AND active=TRUE AND nm_id IS NOT NULL));
+  IF v_finance_wb_reward_rows = 0 THEN
+    RAISE USING MESSAGE = 'sp_build_mart_sku_daily: SKU wb_reward finance пуст (is_sku_row, active universe, <=build_as_of)'; END IF;
   IF v_finance_logistics_rows = 0 THEN
     RAISE USING MESSAGE = 'sp_build_mart_sku_daily: SKU logistics finance пуст (is_sku_row, active universe, <=build_as_of)'; END IF;
+  IF v_finance_fee_gap_rows = 0 THEN
+    RAISE USING MESSAGE = 'sp_build_mart_sku_daily: SKU marketplace_fee_gap пуст (is_sku_row, active universe, <=build_as_of)'; END IF;
 
   -- REV6: v_max_required оставлен как sanity-величина (в лог/отладку), но БОЛЬШЕ НЕ ГЕЙТИТ build.
   --   Внешний freshness-gate (loader mart по V_INGEST_HEARTBEAT) доказывает факт успешной загрузки за D-1.
@@ -186,14 +220,22 @@ BEGIN
           COUNTIF(is_return) returns_qty, SUM(IF(is_return, price_with_disc, 0)) returns_rub
         FROM `wb_mart.FACT_SALES` WHERE sale_date <= @build_as_of GROUP BY nm_id, sale_date),
       fin AS (
+        -- PR-B2: wb_reward_cost_positive — бывш. commission_cost_positive. Переименование, не пересчёт:
+        --   те же строки, та же величина. Это vw (вознаграждение WB), и в формулу контрибуции он больше НЕ входит.
         SELECT nm_id, finance_date d,
-          SUM(IF(cost_category='commission', cost_amount_positive, 0)) commission_cost_positive,
-          SUM(IF(cost_category='logistics',  cost_amount_positive, 0)) logistics_cost_positive
+          SUM(IF(cost_category='wb_reward', cost_amount_positive, 0)) wb_reward_cost_positive,
+          SUM(IF(cost_category='logistics', cost_amount_positive, 0)) logistics_cost_positive
         FROM `wb_mart.V_WB_FINANCE_AMOUNTS_LONG_MAPPED`
         WHERE is_sku_row AND cost_amount_positive IS NOT NULL AND finance_date <= @build_as_of
         GROUP BY nm_id, finance_date),
       finpay AS (
-        SELECT nm_id, finance_date d, SUM(finance_for_pay_accounting) finance_for_pay_accounting
+        -- PR-B2: marketplace_fee_rub — authoritative сбор WB, retail_price_withdisc_rub − for_pay.
+        --   Берётся из FACT_FINANCE, а не из LONG_MAPPED: это не одно из 9 unpivot-полей.
+        --   Гейт SKU тот же (is_sku_row), окно то же. NULL вне «Продажа»/«Возврат» — SUM их игнорирует,
+        --   и это корректно: у прочих операций пары «выручка × выплата» не существует.
+        SELECT nm_id, finance_date d,
+          SUM(finance_for_pay_accounting) finance_for_pay_accounting,
+          SUM(marketplace_fee_gap_rub)    marketplace_fee_rub
         FROM `wb_mart.FACT_FINANCE`
         WHERE COALESCE(nm_id > 0 AND sku_match_status='matched', FALSE) AND finance_date <= @build_as_of
         GROUP BY nm_id, finance_date),
@@ -219,8 +261,9 @@ BEGIN
           IFNULL(sl.buyouts_qty,0) buyouts_qty, IFNULL(sl.buyouts_rub,0) buyouts_rub,
           IFNULL(sl.sales_for_pay_operational,0) sales_for_pay_operational,
           IFNULL(sl.returns_qty,0) returns_qty, IFNULL(sl.returns_rub,0) returns_rub,
-          IFNULL(fn.commission_cost_positive,0) commission_cost_positive,
+          IFNULL(fn.wb_reward_cost_positive,0) wb_reward_cost_positive,
           IFNULL(fn.logistics_cost_positive,0) logistics_cost_positive,
+          IFNULL(fp.marketplace_fee_rub,0) marketplace_fee_rub,
           IFNULL(fp.finance_for_pay_accounting,0) finance_for_pay_accounting
         FROM spine s
         LEFT JOIN ads a  ON a.nm_id=s.nm_id  AND a.d=s.day
@@ -249,7 +292,7 @@ BEGIN
         ad_spend, views, clicks, ad_orders_raw, ads_revenue_raw_rub, ads_revenue_dedup_estimate_rub, ad_orders_dedup_estimate,
         orders_qty, orders_rub, canceled_qty, canceled_rub,
         buyouts_qty, buyouts_rub, sales_for_pay_operational, returns_qty, returns_rub,
-        commission_cost_positive, logistics_cost_positive, finance_for_pay_accounting,
+        wb_reward_cost_positive, logistics_cost_positive, marketplace_fee_rub, finance_for_pay_accounting,
         SAFE_DIVIDE(clicks, views)                       AS ctr,
         SAFE_DIVIDE(ad_spend, views) * 1000              AS cpm,
         SAFE_DIVIDE(ad_spend, clicks)                    AS cpc,
@@ -259,8 +302,13 @@ BEGIN
         SAFE_DIVIDE(ad_spend, buyouts_rub)               AS drr_buyouts,
         SAFE_DIVIDE(ads_revenue_raw_rub, ad_spend)       AS roas,
         SAFE_DIVIDE(ad_spend, ads_revenue_raw_rub)       AS acos,
-        buyouts_rub - commission_cost_positive - logistics_cost_positive - ad_spend
+        -- PR-B2: из валовой выручки выкупов вычитается РЕАЛЬНЫЙ сбор маркетплейса
+        --   (marketplace_fee_rub), а не vw. wb_reward_cost_positive из формулы ИСКЛЮЧЁН:
+        --   иначе вознаграждение WB вычиталось бы вторым разом поверх спреда, внутри
+        --   которого оно уже сидит. acquiring_rub по той же причине не участвует.
+        buyouts_rub - marketplace_fee_rub - logistics_cost_positive - ad_spend
                                                          AS hybrid_day_contribution_pre_cogs,
+        -- settlement НЕ трогается: for_pay уже нетто сбора WB.
         finance_for_pay_accounting - ad_spend            AS settlement_day_contribution_pre_cogs,
         ad_spend_7d, ad_spend_14d, ads_revenue_raw_7d, ads_revenue_raw_14d,
         ads_revenue_dedup_estimate_7d, ads_revenue_dedup_estimate_14d,
@@ -337,12 +385,23 @@ BEGIN
                                         WHERE marketplace='WB' AND active=TRUE AND nm_id IS NOT NULL))) < 0.01)
       AS 'SKU_DAILY: buyouts_rub != FACT (universe, <=build_as_of)';
     ASSERT (SELECT ABS(
-              (SELECT SUM(commission_cost_positive + logistics_cost_positive) FROM `wb_mart.MART_SKU_DAILY__BUILD`)
+              (SELECT SUM(wb_reward_cost_positive + logistics_cost_positive) FROM `wb_mart.MART_SKU_DAILY__BUILD`)
             - (SELECT SUM(cost_amount_positive) FROM `wb_mart.V_WB_FINANCE_AMOUNTS_LONG_MAPPED`
-               WHERE is_sku_row AND cost_category IN ('commission','logistics') AND finance_date <= v_build_as_of
+               WHERE is_sku_row AND cost_category IN ('wb_reward','logistics') AND finance_date <= v_build_as_of
                  AND nm_id IN (SELECT nm_id FROM `wb_raw.REF_SKU_MASTER`
                                WHERE marketplace='WB' AND active=TRUE AND nm_id IS NOT NULL))) < 0.01)
-      AS 'SKU_DAILY: finance commission+logistics != LONG_MAPPED (universe SKU, <=build_as_of)';
+      AS 'SKU_DAILY: finance wb_reward+logistics != LONG_MAPPED (universe SKU, <=build_as_of)';
+    -- PR-B2: reconciliation для authoritative-сбора. marketplace_fee_rub идёт мимо REF_COST_MAP
+    --   и мимо леммы консервации PR-Mart2a §5.2, поэтому нуждается в собственной сверке с источником —
+    --   иначе единственная метрика, реально формирующая hybrid-контрибуцию, осталась бы без гейта.
+    ASSERT (SELECT ABS(
+              (SELECT SUM(marketplace_fee_rub) FROM `wb_mart.MART_SKU_DAILY__BUILD`)
+            - (SELECT SUM(marketplace_fee_gap_rub) FROM `wb_mart.FACT_FINANCE`
+               WHERE COALESCE(nm_id > 0 AND sku_match_status='matched', FALSE)
+                 AND finance_date <= v_build_as_of
+                 AND nm_id IN (SELECT nm_id FROM `wb_raw.REF_SKU_MASTER`
+                               WHERE marketplace='WB' AND active=TRUE AND nm_id IS NOT NULL))) < 0.01)
+      AS 'SKU_DAILY: marketplace_fee_rub != FACT_FINANCE (universe SKU, <=build_as_of)';
 
     -- --- publish ---
     CREATE OR REPLACE TABLE `wb_mart.MART_SKU_DAILY`

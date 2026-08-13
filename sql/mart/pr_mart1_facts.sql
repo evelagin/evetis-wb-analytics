@@ -193,6 +193,8 @@ BEGIN
     --      ниже по-прежнему считаются ПО КАНОНУ.
     --      Целостность ключа проверяем ПО ИСТОЧНИКУ (обе части NOT NULL/empty),
     --      затем строим CONCAT БЕЗ IFNULL (иначе маскирует отсутствие части).
+    --      PR-B2: +колонка marketplace_fee_gap_rub (authoritative сбор WB).
+    --      Изменение аддитивное — ни одна существующая колонка не тронута.
     -- ======================================================================
     ASSERT (SELECT COUNTIF(report_id IS NULL OR TRIM(report_id) = ''
                         OR rrd_id    IS NULL OR TRIM(rrd_id)    = '')
@@ -224,6 +226,10 @@ BEGIN
         SAFE_CAST(REPLACE(additional_payment, ',', '.') AS NUMERIC) AS additional_payment,
         SAFE_CAST(REPLACE(compensation_amount,',', '.') AS NUMERIC) AS compensation_amount,
         SAFE_CAST(REPLACE(other_amount,       ',', '.') AS NUMERIC) AS other_amount,
+        -- PR-B2: authoritative сбор маркетплейса. Уже NUMERIC и уже округлён
+        --   в V_WB_FINANCE_SEMANTIC §4.1 — здесь чистый pass-through, без
+        --   повторного парсинга. NULL вне «Продажа»/«Возврат» — по контракту.
+        marketplace_fee_gap_rub,
         @run_id AS mart_run_id, @built_at AS built_at
       FROM `wb_raw.V_WB_FINANCE_SEMANTIC`
     """ USING v_run_id AS run_id, v_built_at AS built_at;
@@ -243,7 +249,17 @@ BEGIN
       + COUNTIF(additional_payment IS NOT NULL AND TRIM(additional_payment) <> '' AND SAFE_CAST(REPLACE(additional_payment, ',', '.') AS NUMERIC) IS NULL)
       + COUNTIF(compensation_amount IS NOT NULL AND TRIM(compensation_amount)<> '' AND SAFE_CAST(REPLACE(compensation_amount,',', '.') AS NUMERIC) IS NULL)
       + COUNTIF(other_amount       IS NOT NULL AND TRIM(other_amount)       <> '' AND SAFE_CAST(REPLACE(other_amount,       ',', '.') AS NUMERIC) IS NULL)
+      -- PR-B2: retail_price_withdisc_rub стал входом authoritative-метрики
+      --   marketplace_fee_gap_rub, поэтому попадает под тот же parse-QC.
+      --   (for_pay уже покрыт выше как finance_for_pay_accounting.)
+      + COUNTIF(retail_price_withdisc_rub IS NOT NULL AND TRIM(retail_price_withdisc_rub) <> '' AND SAFE_CAST(REPLACE(retail_price_withdisc_rub, ',', '.') AS NUMERIC) IS NULL)
       FROM `wb_raw.V_WB_FINANCE_SEMANTIC`) = 0 AS 'FACT_FINANCE: money parse-QC != 0';
+    -- PR-B2 fail-closed: у операции с выручкой и выплатой спред обязан быть определён.
+    --   Молчаливый NULL здесь занизил бы расход витрины (SUM игнорирует NULL).
+    ASSERT (SELECT COUNTIF(supplier_oper_name IN ('Продажа', 'Возврат')
+                           AND marketplace_fee_gap_rub IS NULL)
+            FROM `wb_raw.V_WB_FINANCE_SEMANTIC`) = 0
+            AS 'FACT_FINANCE: marketplace_fee_gap_rub NULL на «Продажа»/«Возврат»';
     ASSERT (SELECT COUNTIF(wb_nm_id IS NOT NULL AND TRIM(wb_nm_id) <> ''
               AND SAFE_CAST(wb_nm_id AS INT64) IS NULL)
             FROM `wb_raw.V_WB_FINANCE_SEMANTIC`) = 0 AS 'FACT_FINANCE: nm_id cast != 0';
