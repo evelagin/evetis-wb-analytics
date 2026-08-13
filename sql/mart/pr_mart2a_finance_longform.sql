@@ -24,7 +24,9 @@
 --   is_sku_row=COALESCE(nm_id>0 AND sku_match_status='matched', FALSE);
 --   деньги FACT_FINANCE уже NUMERIC (без re-parse); 9 unpivot-полей (commission_amount, logistics_amount,
 --   storage_fee, deduction, penalty, acceptance, acquiring_fee, additional_payment, other_amount);
---   compensation_amount НЕ разворачивается (отдельный guard); field_normalization_sign: commission=−1, прочие=+1;
+--   compensation_amount НЕ разворачивается (отдельный guard);
+--   field_normalization_sign: amount_field='commission_amount' → −1, прочие поля → +1
+--     (речь о ПОЛЕ commission_amount, не о cost_category — с PR-B2 категория этих пар 'wb_reward');
 --   cost_amount_positive: COST→+ABS; CREDIT→−ABS; ADJUSTMENT→source×field_sign.
 --
 -- ⚠️ Read-only dry-run исправленных гейтов пройден на проде 30.07 (все счётчики 0; 9/9 полей).
@@ -34,6 +36,18 @@
 CREATE SCHEMA IF NOT EXISTS `wb_mart` OPTIONS (location = 'EU');
 
 -- ── 1. STAGING: REF_COST_MAP__BUILD (seed 19 пар; точные op-строки ИЗ ДАННЫХ) ──
+--    PR-B2 (13.08.2026): cost_category трёх пар с amount_field='commission_amount'
+--    переименован 'commission' → 'wb_reward'. Причина: поле commission_amount
+--    несёт ppvz_vw ← API `vw` — вознаграждение WB по операции, а НЕ комиссию
+--    маркетплейса. Комиссия маркетплейса отдельной строкой отчёта не приходит:
+--    она внутри спреда retail_price_withdisc_rub − for_pay вместе с эквайрингом
+--    (V_WB_FINANCE_SEMANTIC §4.1 marketplace_fee_gap_rub). Слово `commission`
+--    после PR-B2 не означает `vw` нигде в контуре.
+--    ⚠️ ПЕРЕИМЕНОВАНИЕ АТОМАРНО С sql/mart/pr_mart2b_sku_daily.sql: guard
+--    v_finance_wb_reward_rows и ASSERT консервации там ищут именно 'wb_reward'.
+--    Выкатывать оба файла в одном окне; порядок между ними — 2a, затем 2b.
+--    Величина расхода не меняется: правится только имя категории.
+--
 --    PR-B (13.08.2026): удалены пять аварийных пар op_key='__NULL__'.
 --    Они ловили строки нового контура (op_key = COALESCE(operation_type_normalized,
 --    '__NULL__')) и нейтрализовали fail-closed ASSERT §5.3 именно там, где он нужен;
@@ -47,11 +61,12 @@ SELECT op_key, amount_field, economic_direction, cost_category,
   field_normalization_sign, note, CURRENT_TIMESTAMP() AS seeded_at
 FROM UNNEST([
   STRUCT('Продажа' AS op_key,'commission_amount' AS amount_field,'COST' AS economic_direction,
-         'commission' AS cost_category,-1 AS field_normalization_sign,'Комиссия WB по продаже' AS note),
-  ('Возврат','commission_amount','COST','commission',-1,'Комиссия по возврату'),
+         'wb_reward' AS cost_category,-1 AS field_normalization_sign,
+         'Вознаграждение WB (vw) по продаже. НЕ сбор маркетплейса — см. marketplace_fee_gap_rub (PR-B2)' AS note),
+  ('Возврат','commission_amount','COST','wb_reward',-1,'Вознаграждение WB (vw) по возврату (PR-B2)'),
   ('Возмещение за выдачу и возврат товаров на ПВЗ','commission_amount','CREDIT','reimbursement_pvz',-1,'Возмещение ПВЗ (кредит)'),
   ('Возмещение издержек по перевозке/по складским операциям с товаром','commission_amount','CREDIT','reimbursement_logistics',-1,'Возмещение издержек перевозки/склада (кредит)'),
-  ('Коррекция продаж','commission_amount','ADJUSTMENT','commission',-1,'Корректировка комиссии — знак сохраняется'),
+  ('Коррекция продаж','commission_amount','ADJUSTMENT','wb_reward',-1,'Корректировка вознаграждения WB — знак сохраняется (PR-B2)'),
   ('Продажа','acquiring_fee','COST','acquiring',1,'Эквайринг по продаже (per-SKU COST)'),
   ('Возврат','acquiring_fee','COST','acquiring',1,'Эквайринг по возврату'),
   ('Коррекция продаж','acquiring_fee','ADJUSTMENT','acquiring',1,'Корректировка эквайринга (продажи)'),
