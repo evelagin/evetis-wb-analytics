@@ -187,13 +187,16 @@ BEGIN
             AS 'FACT_STOCKS_SNAPSHOT: BUILD rows != source distinct grain (selected snapshots)';
 
     -- ======================================================================
-    -- 1.4 FACT_FINANCE — грейн: finance_row_key = report_id#rrd_id. Только canonical.
+    -- 1.4 FACT_FINANCE — грейн: finance_row_key = report_id#rrd_id.
+    --      PR-B: источник — V_WB_FINANCE_SEMANTIC (семантический слой поверх
+    --      V_WB_FINANCE_CANONICAL). Канон не тронут: дедуп и ASSERT PR-A/A1
+    --      ниже по-прежнему считаются ПО КАНОНУ.
     --      Целостность ключа проверяем ПО ИСТОЧНИКУ (обе части NOT NULL/empty),
     --      затем строим CONCAT БЕЗ IFNULL (иначе маскирует отсутствие части).
     -- ======================================================================
     ASSERT (SELECT COUNTIF(report_id IS NULL OR TRIM(report_id) = ''
                         OR rrd_id    IS NULL OR TRIM(rrd_id)    = '')
-            FROM `wb_raw.V_WB_FINANCE_CANONICAL`) = 0
+            FROM `wb_raw.V_WB_FINANCE_SEMANTIC`) = 0
             AS 'FACT_FINANCE: report_id/rrd_id NULL or empty (key integrity)';
 
     EXECUTE IMMEDIATE """
@@ -222,7 +225,7 @@ BEGIN
         SAFE_CAST(REPLACE(compensation_amount,',', '.') AS NUMERIC) AS compensation_amount,
         SAFE_CAST(REPLACE(other_amount,       ',', '.') AS NUMERIC) AS other_amount,
         @run_id AS mart_run_id, @built_at AS built_at
-      FROM `wb_raw.V_WB_FINANCE_CANONICAL`
+      FROM `wb_raw.V_WB_FINANCE_SEMANTIC`
     """ USING v_run_id AS run_id, v_built_at AS built_at;
 
     ASSERT (
@@ -240,10 +243,10 @@ BEGIN
       + COUNTIF(additional_payment IS NOT NULL AND TRIM(additional_payment) <> '' AND SAFE_CAST(REPLACE(additional_payment, ',', '.') AS NUMERIC) IS NULL)
       + COUNTIF(compensation_amount IS NOT NULL AND TRIM(compensation_amount)<> '' AND SAFE_CAST(REPLACE(compensation_amount,',', '.') AS NUMERIC) IS NULL)
       + COUNTIF(other_amount       IS NOT NULL AND TRIM(other_amount)       <> '' AND SAFE_CAST(REPLACE(other_amount,       ',', '.') AS NUMERIC) IS NULL)
-      FROM `wb_raw.V_WB_FINANCE_CANONICAL`) = 0 AS 'FACT_FINANCE: money parse-QC != 0';
+      FROM `wb_raw.V_WB_FINANCE_SEMANTIC`) = 0 AS 'FACT_FINANCE: money parse-QC != 0';
     ASSERT (SELECT COUNTIF(wb_nm_id IS NOT NULL AND TRIM(wb_nm_id) <> ''
               AND SAFE_CAST(wb_nm_id AS INT64) IS NULL)
-            FROM `wb_raw.V_WB_FINANCE_CANONICAL`) = 0 AS 'FACT_FINANCE: nm_id cast != 0';
+            FROM `wb_raw.V_WB_FINANCE_SEMANTIC`) = 0 AS 'FACT_FINANCE: nm_id cast != 0';
     ASSERT (SELECT COUNTIF(finance_row_key IS NULL OR TRIM(finance_row_key) = '') + COUNTIF(finance_date IS NULL)
             FROM `wb_mart.FACT_FINANCE__BUILD`) = 0 AS 'FACT_FINANCE: NULL/empty grain or NULL partition';
     ASSERT (SELECT COUNT(*) = COUNT(DISTINCT finance_row_key) FROM `wb_mart.FACT_FINANCE__BUILD`)
@@ -260,7 +263,7 @@ BEGIN
     -- fail-closed: непустой BUILD + pass-through объём.
     ASSERT (SELECT COUNT(*) FROM `wb_mart.FACT_FINANCE__BUILD`) > 0 AS 'FACT_FINANCE: empty build (fail-closed)';
     ASSERT (SELECT COUNT(*) FROM `wb_mart.FACT_FINANCE__BUILD`)
-         = (SELECT COUNT(*) FROM `wb_raw.V_WB_FINANCE_CANONICAL`) AS 'FACT_FINANCE: BUILD rows != source rows';
+         = (SELECT COUNT(*) FROM `wb_raw.V_WB_FINANCE_SEMANTIC`) AS 'FACT_FINANCE: BUILD rows != source rows';
 
     -- ======================================================================
     -- 1.5 FACT_ADS_SKU_DAILY — грейн: date × advert_id × nm_id (SUM по appType).
