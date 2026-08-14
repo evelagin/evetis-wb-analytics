@@ -48,7 +48,10 @@ var WB_ADS_BQ_TABLES_ = {
   RAW_WB_ADV_CAMPAIGN_STATS: true,
   RAW_WB_ADV_BOOSTER_STATS: true,
   RAW_WB_ADV_SEARCH_CLUSTERS: true,
-  RAW_WB_ADV_COSTS: true
+  RAW_WB_ADV_COSTS: true,
+  // Ads-3: снимок ставок по поисковым кластерам + его run-log.
+  RAW_WB_ADV_QUERY_BIDS: true,
+  RAW_WB_ADV_QUERY_BIDS_RUNS: true
 };
 function wbAdsBqAssertTable_(tableId) {
   if (!WB_ADS_BQ_TABLES_[tableId]) {
@@ -198,7 +201,10 @@ function wbAdsBqEnsureAllTables_() {
   wbAdvBqEnsureTable_('RAW_WB_ADV_BOOSTER_STATS', WB_ADV_RAW_BOOSTER_STATS_HEADERS_);
   wbAdvBqEnsureTable_('RAW_WB_ADV_SEARCH_CLUSTERS', WB_ADV_RAW_SEARCH_CLUSTERS_HEADERS_);
   wbAdvBqEnsureTable_('RAW_WB_ADV_COSTS', WB_ADV_RAW_COSTS_HEADERS_);
-  console.log('✅ Все 5 RAW_WB_ADV_* таблиц гарантированы.');
+  // Ads-3 (append-only снимок ставок) + его run-log.
+  wbAdvBqEnsureTable_('RAW_WB_ADV_QUERY_BIDS', WB_ADV_RAW_QUERY_BIDS_HEADERS_);
+  wbAdvBqEnsureTable_('RAW_WB_ADV_QUERY_BIDS_RUNS', WB_ADV_RAW_QUERY_BIDS_RUNS_HEADERS_);
+  console.log('✅ Все 7 RAW_WB_ADV_* таблиц гарантированы.');
 }
 
 /**
@@ -229,16 +235,16 @@ function wbAdsBqInit() {
 function wbAdsBqAssertViews_() {
   var c = getBqConfig_();
   var views = ['V_ADV_CAMPAIGNS', 'V_ADV_CAMPAIGN_STATS', 'V_ADV_BOOSTER_STATS',
-    'V_ADV_SEARCH_CLUSTERS', 'V_ADV_COSTS'];
+    'V_ADV_SEARCH_CLUSTERS', 'V_ADV_COSTS', 'V_ADV_QUERY_BIDS'];
   for (var i = 0; i < views.length; i++) {
     var t = BigQuery.Tables.get(c.projectId, c.datasetId, views[i]);
     if (!t.view) throw new Error(views[i] + ': объект существует, но не является VIEW');
   }
-  console.log('✅ Все 5 рекламных вью подтверждены.');
+  console.log('✅ Все 6 рекламных вью подтверждены.');
 }
 
 /**
- * Дедуп-вью для ВСЕХ 5 RAW-таблиц (№2). append-only RAW при повторных
+ * Дедуп-вью для RAW-таблиц (№2). append-only RAW при повторных
  * прогонах даёт копии строк — вью оставляют последнюю по load_ts.
  * Порядок сортировки: SAFE_CAST(load_ts AS TIMESTAMP) DESC (устойчиво к
  * формату строки, №6), run_id как тай-брейк.
@@ -298,15 +304,85 @@ function wbAdsBqCreateViews() {
   makeView('V_ADV_COSTS', 'RAW_WB_ADV_COSTS',
     "TO_HEX(SHA256(COALESCE(raw_json, '')))", null);
 
-  console.log('✅ Вью созданы (5): V_ADV_CAMPAIGNS, V_ADV_CAMPAIGN_STATS, ' +
-    'V_ADV_BOOSTER_STATS, V_ADV_SEARCH_CLUSTERS, V_ADV_COSTS');
+  // 6) Ads-3: ставки по кластерам — APPEND-ONLY ИСТОРИЯ.
+  //    🔴 makeView здесь НЕ ПОДХОДИТ ПРИНЦИПИАЛЬНО, и дело не только в ключе.
+  //    Дедуп по (snapshot_date, advert_id, nm_id, norm_query) канонизирует КАЖДЫЙ
+  //    запрос НЕЗАВИСИМО. Если во втором прогоне дня ставка по ключу снята, строки
+  //    для него во втором снимке нет — и вью подставит строку из ПЕРВОГО снимка.
+  //    Получится гибрид: набор ставок, которого не существовало ни в один момент
+  //    времени. Для таблицы снимков это тихая порча данных.
+  //    Канонизация обязана быть НА УРОВНЕ СНИМКА: выбрать один снимок за день —
+  //    ключ (snapshot_date, snapshot_ts, run_id), а не один snapshot_ts, потому что
+  //    ts имеет точность до секунды и два execution могут его разделить, — и
+  //    показать строки ТОЛЬКО этого снимка целиком.
+  //    Выбор снимка дня: сначала успешные и полные (OK), затем неполные (PARTIAL);
+  //    внутри группы — самый поздний, тай-брейк по run_id. Статус выбранного снимка
+  //    отдаётся колонкой snapshot_status, чтобы потребитель видел, полон ли день.
+  wbAdsBqCreateQueryBidsView_(fq);
+
+  console.log('✅ Вью созданы (6): V_ADV_CAMPAIGNS, V_ADV_CAMPAIGN_STATS, ' +
+    'V_ADV_BOOSTER_STATS, V_ADV_SEARCH_CLUSTERS, V_ADV_COSTS, V_ADV_QUERY_BIDS');
+}
+
+/**
+ * V_ADV_QUERY_BIDS — канонический СНИМОК ставок за день (Ads-3).
+ * Не дедуп-вью: выбирается ОДИН снимок на дату, и берутся строки только его.
+ * Источник выбора — RAW_WB_ADV_QUERY_BIDS_RUNS (run-log): полагаться на сами
+ * строки данных нельзя, потому что у неуспешного прогона их может не быть вовсе.
+ *
+ * 🔴 ИДЕНТИЧНОСТЬ СНИМКА = (snapshot_date, snapshot_ts, run_id), НЕ один snapshot_ts.
+ *    snapshot_ts имеет точность до секунды. Два execution, стартовавших в одну и ту
+ *    же секунду (ручной запуск поверх триггера; параллельный retry; повтор после
+ *    таймаута), получат РАЗНЫЕ run_id, но ОДИНАКОВЫЙ snapshot_ts — и JOIN только по
+ *    ts снова склеил бы два независимых снимка в один гибрид, ровно тот дефект,
+ *    ради которого канонизация и делалась. run_id уникален на execution, поэтому
+ *    он и есть настоящий ключ снимка; ts остаётся в ключе как носитель времени.
+ *    По той же причине run_id входит и во внутренний дедуп: схлопывать дубли строк
+ *    можно ТОЛЬКО внутри одного прогона, иначе дедуп пересекает границу снимка.
+ *    run_id DESC в ORDER BY канона — детерминированный тай-брейк при равных
+ *    (status, snapshot_ts): без него выбор снимка был бы недетерминирован.
+ */
+function wbAdsBqCreateQueryBidsView_(fq) {
+  var sql =
+    'CREATE OR REPLACE VIEW ' + fq('V_ADV_QUERY_BIDS') + ' AS\n' +
+    'WITH canon AS (\n' +
+    '  SELECT snapshot_date, snapshot_ts, run_id, status AS snapshot_status\n' +
+    '  FROM (\n' +
+    '    SELECT snapshot_date, snapshot_ts, run_id, status,\n' +
+    '           ROW_NUMBER() OVER (\n' +
+    '             PARTITION BY snapshot_date\n' +
+    "             ORDER BY CASE status WHEN 'OK' THEN 0 WHEN 'PARTIAL' THEN 1 ELSE 2 END,\n" +
+    '                      SAFE_CAST(snapshot_ts AS TIMESTAMP) DESC,\n' +
+    '                      run_id DESC\n' +
+    '           ) AS _rn\n' +
+    '    FROM ' + fq('RAW_WB_ADV_QUERY_BIDS_RUNS') + '\n' +
+    "    WHERE http_success = 'TRUE' AND status IN ('OK', 'PARTIAL')\n" +
+    '  )\n' +
+    '  WHERE _rn = 1\n' +
+    ')\n' +
+    'SELECT * EXCEPT(_dup) FROM (\n' +
+    '  SELECT b.*, c.snapshot_status,\n' +
+    '         ROW_NUMBER() OVER (\n' +
+    '           PARTITION BY b.run_id, b.snapshot_ts, b.advert_id, b.nm_id, b.norm_query\n' +
+    '           ORDER BY b.load_ts DESC\n' +
+    '         ) AS _dup\n' +
+    '  FROM ' + fq('RAW_WB_ADV_QUERY_BIDS') + ' b\n' +
+    '  JOIN canon c\n' +
+    '    ON b.snapshot_date = c.snapshot_date\n' +
+    '   AND b.snapshot_ts   = c.snapshot_ts\n' +
+    '   AND b.run_id        = c.run_id\n' +
+    "  WHERE b.processed_status = 'raw'\n" +
+    ')\n' +
+    'WHERE _dup = 1';
+  bqQuery_(sql);
 }
 
 /** Сколько строк в каждой рекламной таблице BQ. */
 function wbAdsBqStats() {
   var c = getBqConfig_();
   var tabs = ['RAW_WB_ADV_CAMPAIGNS', 'RAW_WB_ADV_CAMPAIGN_STATS', 'RAW_WB_ADV_BOOSTER_STATS',
-    'RAW_WB_ADV_SEARCH_CLUSTERS', 'RAW_WB_ADV_COSTS'];
+    'RAW_WB_ADV_SEARCH_CLUSTERS', 'RAW_WB_ADV_COSTS',
+    'RAW_WB_ADV_QUERY_BIDS', 'RAW_WB_ADV_QUERY_BIDS_RUNS'];
   tabs.forEach(function (t) {
     try {
       var r = bqQuery_('SELECT COUNT(*) AS c FROM `' + c.projectId + '.' + c.datasetId + '.' + t + '`');
