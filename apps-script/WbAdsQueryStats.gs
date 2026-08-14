@@ -109,11 +109,31 @@ function loadWbAdsQueryStatsRaw(runId, fromDay, toDay) {
     return { source: srcLabel, status: 'FAILED', rows: 0, days: 0, days_ok: 0 };
   }
 
+  return wbAdsQsRunDays_(days, rid, st, srcLabel);
+}
+
+
+/**
+ * Общее ядро: прогоняет ЯВНЫЙ список суток. Используется и суточным окном, и
+ * backfill'ом — чтобы у них не разъехались обработка ошибок, тайм-бюджет и статусы.
+ * Список именно явный, а не диапазон: backfill добирает НЕсмежные сутки.
+ *
+ * @param {Array<string>} days отсортированный список 'yyyy-MM-dd'
+ * @param {string} rid   run_id
+ * @param {Object} st    { t0, httpCalls } — общий на execution счётчик и часы
+ */
+function wbAdsQsRunDays_(days, rid, st, srcLabel) {
+  srcLabel = srcLabel || 'raw_query_stats';
+
   var tok = null;
   try { tok = getWbAdsToken_(); } catch (eTok) { tok = null; }
   if (!tok) {
     console.error('  query_stats BLOCKED: нет WB Promotion токена');
     return { source: srcLabel, status: 'BLOCKED', rows: 0, days: days.length, days_ok: 0 };
+  }
+  if (!days.length) {
+    console.log('  query_stats: обрабатывать нечего — список суток пуст');
+    return { source: srcLabel, status: 'EMPTY', rows: 0, days: 0, days_ok: 0 };
   }
 
   // Телеметрия покрытия по всему окну — ОДНИМ запросом, а не по одному на день.
@@ -140,6 +160,9 @@ function loadWbAdsQueryStatsRaw(runId, fromDay, toDay) {
     if (wbAdsQsOutOfBudget_(st)) {
       var left = days.length - i - 1;
       if (left > 0) {
+        // 🔴 Необработанные сутки НЕ получают строку run-log — и это правильно:
+        //    попытки не было. В V_ADV_QUERY_STATS_COVERAGE они видны как
+        //    total_attempts = 0, то есть «не пробовали», а не «пробовали и не вышло».
         console.log('  query_stats: тайм-бюджет исчерпан, не обработано суток: ' + left);
         daysFailed += left;
       }
@@ -158,7 +181,7 @@ function loadWbAdsQueryStatsRaw(runId, fromDay, toDay) {
     ', EMPTY ' + daysEmpty + ', FAILED ' + daysFailed + ')' +
     ' | строк ' + totalRows +
     ' | HTTP ' + st.httpCalls +
-    ' | ' + (Date.now() - t0) + 'мс');
+    ' | ' + (Date.now() - st.t0) + 'мс');
 
   return { source: srcLabel, status: overall, rows: totalRows,
            days: days.length, days_ok: daysOk };
@@ -497,16 +520,96 @@ function wbAdsQsFlatten_(json, rid, day, nowTs) {
 // РУЧНЫЕ ТОЧКИ ВХОДА (backfill помесячно)
 // ═══════════════════════════════════════
 
+/** Сколько суток берёт один клик backfill'а. Замер 14.08: 14,8 с на сутки,
+ *  бюджет 120 000 мс ⇒ 8 суток — потолок, 6 — с запасом. */
+var WB_ADS_QSTATS_BACKFILL_DAYS_ = 6;
+
 /**
- * Backfill за произвольный период, посуточно. Запускается ВРУЧНУЮ, помесячно.
- * Осознанно без чекпоинтов и без самоснимающегося триггера — ровно того механизма,
- * на котором сломался WbAdsClustersJob (триггер удалял сам себя).
- * Идемпотентен по построению: ничего не удаляет, канонизация выберет последний OK.
+ * 🔴 ГЛАВНАЯ ТОЧКА ВХОДА BACKFILL — запускается КНОПКОЙ Run, без аргументов.
+ *
+ * Причина существования: из выпадающего списка редактора Apps Script нельзя вызвать
+ * функцию с аргументами, а backfill по календарю требует дат. Значит либо владелец
+ * правит даты в коде перед каждым запуском (код в Apps Script разъезжается с
+ * репозиторием — ровно тот дефект, который мы уже ловили), либо функция сама узнаёт,
+ * что осталось добрать. Здесь — второе.
+ *
+ * Что делает: спрашивает у V_ADV_QUERY_STATS_COVERAGE самые ранние сутки, по которым
+ * ещё НЕТ разрешённого исхода, берёт из них WB_ADS_QSTATS_BACKFILL_DAYS_ штук и
+ * прогоняет. Нажимать столько раз, сколько понадобится: каждый клик двигает границу.
+ *
+ * 🔴 «Разрешённый исход» — это `ok_runs > 0 ИЛИ empty_runs > 0`, а не только OK.
+ *    Сутки без единой пары (12–14.07.2026) навсегда останутся неопубликованными:
+ *    публиковать по ним нечего, статус EMPTY — валидный конец истории, а не неудача.
+ *    Если бы отбор шёл только по `is_published`, эти трое суток выбирались бы на
+ *    каждом клике вечно и backfill никогда бы не сошёлся.
+ *
+ * Идемпотентно: ничего не удаляет, повтор безопасен, канонизация берёт последний OK.
+ * Без чекпоинтов и без самоснимающегося триггера — состояние живёт в run-log,
+ * а не в отдельном механизме (на нём сломался WbAdsClustersJob).
+ *
+ * @param {number=} maxDays переопределить размер порции
+ */
+function wbAdsQueryStatsBackfillNext(maxDays) {
+  var limit = maxDays || WB_ADS_QSTATS_BACKFILL_DAYS_;
+  var st = { t0: Date.now(), httpCalls: 0 };
+
+  var pending = wbAdsQsPendingDays_();
+  if (!pending.ok) {
+    console.error('❌ Не удалось прочитать V_ADV_QUERY_STATS_COVERAGE: ' + pending.error);
+    return null;
+  }
+  if (!pending.days.length) {
+    console.log('✅ Backfill завершён: суток без разрешённого исхода не осталось.');
+    return { source: 'raw_query_stats', status: 'EMPTY', rows: 0, days: 0, days_ok: 0 };
+  }
+
+  var batch = pending.days.slice(0, limit);
+  console.log('═══ Ads-2 backfill: ' + batch[0] + '…' + batch[batch.length - 1] +
+    ' (' + batch.length + ' сут.) · осталось всего ' + pending.days.length + ' ═══');
+
+  var res = wbAdsQsRunDays_(batch, wbAdsResolveRunId_(null), st);
+
+  var left = pending.days.length - batch.length;
+  console.log(left > 0
+    ? '➡️  Осталось примерно ' + left + ' суток. Нажмите Run ещё раз.'
+    : '✅ Это была последняя порция. Проверьте V_ADV_QUERY_STATS_COVERAGE.');
+  return res;
+}
+
+/**
+ * Сутки, по которым ещё нет разрешённого исхода, от ранних к поздним.
+ * Источник — coverage-вью: она уже знает вселенную суток (из V_ADV_CAMPAIGN_STATS)
+ * и все попытки. Отдельного состояния для backfill'а не заводим принципиально.
+ * @return {{ok: boolean, days: Array<string>, error: string}}
+ */
+function wbAdsQsPendingDays_() {
+  var out = { ok: false, days: [], error: '' };
+  try {
+    var c = getBqConfig_();
+    var sql =
+      'SELECT period_from\n' +
+      'FROM `' + c.projectId + '.' + c.datasetId + '.V_ADV_QUERY_STATS_COVERAGE`\n' +
+      'WHERE ok_runs = 0 AND empty_runs = 0\n' +
+      'ORDER BY period_from';
+    var r = bqQuery_(sql);
+    var rows = (r && r.rows) || [];
+    for (var i = 0; i < rows.length; i++) out.days.push(String(rows[i].f[0].v));
+    out.ok = true;
+  } catch (e) {
+    out.error = (e && e.message) || String(e);
+  }
+  return out;
+}
+
+/**
+ * Backfill за явный период (из кода или из другой функции).
+ * Оставлен для точечных доборов; из редактора его не вызвать — там
+ * wbAdsQueryStatsBackfillNext().
  */
 function wbAdsQueryStatsBackfill(fromDay, toDay) {
   if (!fromDay || !toDay) {
-    console.error('wbAdsQueryStatsBackfill(from, to): укажите обе даты, например ' +
-      "wbAdsQueryStatsBackfill('2026-04-13','2026-04-30')");
+    console.error('wbAdsQueryStatsBackfill(from, to) требует обе даты. ' +
+      'Из редактора Apps Script запускайте wbAdsQueryStatsBackfillNext() — она без аргументов.');
     return null;
   }
   console.log('═══ Ads-2 backfill ' + fromDay + '…' + toDay + ' ═══');
