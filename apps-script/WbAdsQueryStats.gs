@@ -569,10 +569,22 @@ function wbAdsQueryStatsBackfillNext(maxDays) {
 
   var res = wbAdsQsRunDays_(batch, wbAdsResolveRunId_(null), st);
 
-  var left = pending.days.length - batch.length;
-  console.log(left > 0
-    ? '➡️  Осталось примерно ' + left + ' суток. Нажмите Run ещё раз.'
-    : '✅ Это была последняя порция. Проверьте V_ADV_QUERY_STATS_COVERAGE.');
+  // 🔴 Остаток ПЕРЕСЧИТЫВАЕМ по факту, а не вычитаем размер порции из прогноза.
+  //    Разница принципиальная: сутки из порции могли получить PARTIAL или FAILED
+  //    либо вовсе не успеть по тайм-бюджету — тогда они остаются в очереди, а
+  //    арифметика «было минус взято» показала бы их выполненными. Оператор увидел
+  //    бы убывающий счётчик, который никогда не дойдёт до нуля, и не понял бы почему.
+  //    Заодно «последняя порция» подтверждается состоянием coverage ПОСЛЕ записи
+  //    run-log, а не предсказанием до запуска.
+  var after = wbAdsQsPendingDays_();
+  if (!after.ok) {
+    console.warn('⚠️ Прогон завершён, но не удалось пересчитать фактический остаток: ' +
+      after.error);
+  } else if (after.days.length > 0) {
+    console.log('➡️  Осталось ' + after.days.length + ' суток. Нажмите Run ещё раз.');
+  } else {
+    console.log('✅ Backfill завершён: суток без разрешённого исхода не осталось.');
+  }
   return res;
 }
 
