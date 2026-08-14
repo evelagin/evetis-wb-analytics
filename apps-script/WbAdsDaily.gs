@@ -30,8 +30,9 @@ var WB_ADS_DAILY_STALE_DAYS_    = 2;       // fullstats за вчера — но
 
 // PR-Mart3a REV5: fail-closed расчёт итогового статуса рекламного прогона.
 // 🔴 НЕ МЕНЯТЬ. Ровно три mart-критичных источника: campaigns + costs + fullstats.
-// Ads-3 (query bids) СОЗНАТЕЛЬНО сюда не входит: его статус не должен влиять на
-// heartbeat и freshness-гейт витрины (см. врезку у вызова в runWbAdsDaily).
+// Ads-3 (query bids) и Ads-2 (query stats) СОЗНАТЕЛЬНО сюда не входят: их статус
+// не должен влиять на heartbeat и freshness-гейт витрины (см. врезки у вызовов
+// в runWbAdsDaily). Витрина ни ставок, ни query-level статистики не потребляет.
 var WB_ADS_EXPECTED_SOURCES_ = 3;  // campaigns + costs + fullstats
 
 /**
@@ -194,8 +195,34 @@ function runWbAdsDaily() {
     console.log('runWbAdsDaily query_bids=' + bidsResult.status +
       '(' + (bidsResult.rows || 0) + ' строк, ' + (bidsResult.pairs || 0) + ' пар)');
 
+    // ── Ads-2: суточные срезы query-level статистики ─────────────────────────
+    // 🔴 СТРОГО ПОСЛЕ Ads-3, и порядок между ними НЕ произволен:
+    //    снимок ставок (Ads-3) невосстановим — эндпоинта истории у WB нет, сутки без
+    //    снимка потеряны навсегда. Срез статистики (Ads-2) восстановим: история у WB
+    //    есть с апреля, пропущенные сутки добираются повторным прогоном.
+    //    Значит при нехватке тайм-бюджета жертвовать надо этим источником, а не
+    //    Ads-3 — отсюда позиция в коде, а не эстетика порядка вызовов.
+    // 🔴 Как и Ads-3: после ingestFinalizeByStatus_, в results НЕ входит,
+    //    WB_ADS_EXPECTED_SOURCES_ остаётся 3, heartbeat не трогается. Витрина
+    //    query-level не потребляет, и сбой этого источника не имеет права
+    //    остановить сборку MART_SKU_DAILY.
+    // ⚠️ Список пар Ads-2 берёт из V_ADV_CAMPAIGN_STATS (наш BigQuery), а не из
+    //    справочника WB — осознанное ограничение полноты, см. ADS2_DESIGN §5.2.
+    var qstatsResult = { source: 'raw_query_stats', status: 'SKIPPED', rows: 0, days: 0 };
+    try {
+      if (typeof loadWbAdsQueryStatsRaw === 'function') {
+        qstatsResult = loadWbAdsQueryStatsRaw(runId) || qstatsResult;
+      }
+    } catch (eQs) {
+      qstatsResult = { source: 'raw_query_stats', status: 'FAILED', rows: 0, days: 0 };
+      console.error('  query_stats изолированный сбой: ' + ((eQs && eQs.message) || eQs));
+    }
+    console.log('runWbAdsDaily query_stats=' + qstatsResult.status +
+      '(' + (qstatsResult.rows || 0) + ' строк, ' + (qstatsResult.days || 0) + ' суток)');
+
     return { status: overall, run_id: runId, results: results,
       query_bids: bidsResult,
+      query_stats: qstatsResult,
       fullstats_max_date: fresh.maxDate, stale: fresh.stale };
 
   } catch (e) {
