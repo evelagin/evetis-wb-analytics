@@ -53,7 +53,8 @@ var WB_ADV_RAW_QUERY_STATS_HEADERS_ = [
 
 /**
  * Run-log: одна строка на СУТКИ, пишется ВСЕГДА, включая returned_rows = 0.
- * Гейты приёмки: returned_packs vs requested_pairs, requested_batches vs expected_batches.
+ * Гейты приёмки: returned_packs == requested_pairs (равенство, не «не меньше»),
+ * requested_batches == expected_batches.
  * Телеметрия (не гейт): max_keys_per_pair, rows_with_views, scope_*, day_spend_costs_rub.
  */
 var WB_ADV_RAW_QUERY_STATS_RUNS_HEADERS_ = [
@@ -176,8 +177,8 @@ function loadWbAdsQueryStatsRaw(runId, fromDay, toDay) {
  *             ИЛИ не записался run-log. Срез за сутки недостоверен.
  *   EMPTY   — BQ отработал, пар за сутки нет. Запросов не делали, снимать нечего.
  *             Это НОРМА (реклама не крутилась), а не сбой.
- *   PARTIAL — часть пачек не доехала, ИЛИ вышли по тайм-бюджету, ИЛИ вернулось
- *             пакетов меньше, чем запрошено пар. Данные есть, но срез неполон.
+ *   PARTIAL — часть пачек не доехала, ИЛИ вышли по тайм-бюджету, ИЛИ число
+ *             пакетов НЕ РАВНО числу запрошенных пар. Срез недостоверен как целое.
  *   OK      — все пачки отработали И returned_packs == requested_pairs.
  *             returned_rows = 0 при этом ДОПУСТИМО: у пар были показы, но не в поиске.
  *
@@ -279,21 +280,33 @@ function wbAdsQsProcessDay_(token, rid, day, dayCostsRub, st) {
   log.max_keys_per_pair = maxKeys;
   log.rows_with_views = rowsWithViews;
 
-  // 🔴 Полнота среза — тремя счётчиками, без порогов на объём.
-  //    returned_packs < requested_pairs имеет смысл ТОЛЬКО потому, что доказано
-  //    (probe v5/v6): WB возвращает пакет на каждую запрошенную пару, даже пустой.
+  // 🔴 Полнота среза — счётчиками, без порогов на объём.
+  //    Проверка по пакетам опирается на доказанный probe v5/v6 контракт мощности:
+  //    WB возвращает РОВНО ОДИН пакет на каждую запрошенную пару, даже пустой
+  //    (9/9, 10/10, 50/50, 51/51, 98/98, 100/100).
+  //    🔴 Поэтому здесь СТРОГОЕ НЕРАВЕНСТВО, а не «меньше». Проверка на `<`
+  //    пропустила бы как OK ответ с ЛИШНИМИ пакетами (например 51 на 50 пар) —
+  //    а это такое же нарушение доказанного контракта, как и недостача, только
+  //    в другую сторону, и означает оно, что мы больше не понимаем ответ WB.
+  //    Публиковать такой retrieval канонической версией нельзя: `V_ADV_QUERY_STATS`
+  //    показывает только OK, и любая дырка в этой проверке становится тихой
+  //    публикацией недостоверного среза.
+  //    Обе формы расхождения ведут в PARTIAL: недостача — неполный срез,
+  //    избыток — неизвестная форма ответа. Различает их error_message.
   var batchesIncomplete = (log.requested_batches < log.expected_batches);
-  var packsIncomplete = (log.returned_packs < log.requested_pairs);
+  var packsMismatch = (log.returned_packs !== log.requested_pairs);
 
   if (!anyOk) {
     log.status = 'FAILED';
     log.error_message = wbAdsQsAppendMsg_(log.error_message,
       'ни одна пачка не вернула HTTP 200');
-  } else if (failed > 0 || batchesIncomplete || packsIncomplete) {
+  } else if (failed > 0 || batchesIncomplete || packsMismatch) {
     log.status = 'PARTIAL';
-    if (packsIncomplete) {
+    if (packsMismatch) {
       log.error_message = wbAdsQsAppendMsg_(log.error_message,
-        'пакетов ' + log.returned_packs + ' при ' + log.requested_pairs + ' парах');
+        'нарушен контракт мощности: пакетов ' + log.returned_packs +
+        ' при ' + log.requested_pairs + ' запрошенных парах' +
+        (log.returned_packs > log.requested_pairs ? ' (ИЗБЫТОК)' : ' (недостача)'));
     }
   } else {
     log.status = 'OK';   // в том числе при returned_rows = 0
