@@ -29,6 +29,9 @@ var WB_ADS_DAILY_LOCK_WAIT_MS_  = 30000;   // ждём общий ScriptLock (ч
 var WB_ADS_DAILY_STALE_DAYS_    = 2;       // fullstats за вчера — норма; > N дней = устаревание
 
 // PR-Mart3a REV5: fail-closed расчёт итогового статуса рекламного прогона.
+// 🔴 НЕ МЕНЯТЬ. Ровно три mart-критичных источника: campaigns + costs + fullstats.
+// Ads-3 (query bids) СОЗНАТЕЛЬНО сюда не входит: его статус не должен влиять на
+// heartbeat и freshness-гейт витрины (см. врезку у вызова в runWbAdsDaily).
 var WB_ADS_EXPECTED_SOURCES_ = 3;  // campaigns + costs + fullstats
 
 /**
@@ -115,6 +118,7 @@ function runWbAdsDaily() {
   var runId = '';
   var rng = null;
   var ingestRunIdAds = null;   // PR-Mart3a: id строки heartbeat-журнала
+  var heartbeatFinalized = false;  // Ads-3: после финализации catch не трогает heartbeat
   try {
     runId = wbAdsRawNewRunId_();
 
@@ -158,14 +162,54 @@ function runWbAdsDaily() {
     // PR-Mart3a: whitelist (OK/STALE = успех; PARTIAL/ERROR -> ERROR-heartbeat).
     var adsRowsTotal = results.reduce(function (a, x) { return a + ((x && x.rows) || 0); }, 0);
     ingestFinalizeByStatus_(ingestRunIdAds, 'ads', overall, adsRowsTotal, adsRowsTotal, note);
+    heartbeatFinalized = true;   // дальше идёт ТОЛЬКО необязательная работа
+
+    // ── Ads-3: снимок ставок по поисковым кластерам ──────────────────────────
+    // 🔴 СТРОГО ПОСЛЕ ingestFinalizeByStatus_. Причина: try/catch спасает от
+    //    исключения, но НЕ от жёсткого таймаута Apps Script (6 мин) — тот убивает
+    //    execution без всякого catch. Если бы Ads-3 стоял до финализации и съел
+    //    остаток бюджета, mart-критичный RAW был бы уже загружен, а heartbeat
+    //    'ads' остался бы незакрытым → freshness-гейт не увидел бы COMPLETE →
+    //    сборка MART_SKU_DAILY встала бы из-за необязательного источника.
+    //    Теперь худший случай таймаута здесь = отсутствие снимка ставок за день,
+    //    и только это; критичный путь уже полностью завершён и зафиксирован.
+    // 🔴 heartbeatFinalized блокирует catch-ветку: после финализации она НЕ имеет
+    //    права переписать успешный heartbeat в ERROR из-за сбоя Ads-3.
+    // ⚠️ Список пар Ads-3 собирает СВОИМИ вызовами /adv/v1/promotion/count и
+    //    /api/advert/v2/adverts. Он НЕ читает RAW-справочник, загруженный выше в
+    //    этом же прогоне: это дополнительные read-запросы к WB, и состав пар может
+    //    отличаться от загруженного справочника, если кампании изменились между
+    //    вызовами. Сделано намеренно — снимок ставок должен опираться на состояние
+    //    кампаний на момент СНИМКА, а не на состояние начала прогона.
+    // WB_ADS_EXPECTED_SOURCES_ остаётся 3 — Ads-3 в results не входит.
+    var bidsResult = { source: 'raw_query_bids', status: 'SKIPPED', rows: 0, pairs: 0 };
+    try {
+      if (typeof loadWbAdsQueryBidsRaw === 'function') {
+        bidsResult = loadWbAdsQueryBidsRaw(runId) || bidsResult;
+      }
+    } catch (eBids) {
+      bidsResult = { source: 'raw_query_bids', status: 'FAILED', rows: 0, pairs: 0 };
+      console.error('  query_bids изолированный сбой: ' + ((eBids && eBids.message) || eBids));
+    }
+    console.log('runWbAdsDaily query_bids=' + bidsResult.status +
+      '(' + (bidsResult.rows || 0) + ' строк, ' + (bidsResult.pairs || 0) + ' пар)');
+
     return { status: overall, run_id: runId, results: results,
+      query_bids: bidsResult,
       fullstats_max_date: fresh.maxDate, stale: fresh.stale };
 
   } catch (e) {
     var em = (e && e.message) || String(e);
     console.error('runWbAdsDaily ERROR: ' + em);
     wbAdsDailyWriteStatus_(runId, rng ? rng.from : '', rng ? rng.to : '', 'ERROR', 'Исключение: ' + em);
-    ingestRunError_(ingestRunIdAds, 'ADS_EXCEPTION', em);   // PR-Mart3a: catch-ветка
+    // 🔴 Если heartbeat уже финализирован, сбой мог прийти только из необязательной
+    //    части (Ads-3). Переписывать успешный heartbeat в ERROR из-за неё нельзя —
+    //    это остановило бы витрину ровно так же, как BLOCKER 1.
+    if (!heartbeatFinalized) {
+      ingestRunError_(ingestRunIdAds, 'ADS_EXCEPTION', em);   // PR-Mart3a: catch-ветка
+    } else {
+      console.error('  (heartbeat уже финализирован — не трогаем; сбой в необязательной части)');
+    }
     return { status: 'ERROR', run_id: runId, error_message: em };
   } finally {
     WB_ADS_RAW_RUN_T0_ = null;
