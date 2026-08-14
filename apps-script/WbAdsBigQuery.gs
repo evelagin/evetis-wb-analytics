@@ -51,7 +51,10 @@ var WB_ADS_BQ_TABLES_ = {
   RAW_WB_ADV_COSTS: true,
   // Ads-3: снимок ставок по поисковым кластерам + его run-log.
   RAW_WB_ADV_QUERY_BIDS: true,
-  RAW_WB_ADV_QUERY_BIDS_RUNS: true
+  RAW_WB_ADV_QUERY_BIDS_RUNS: true,
+  // Ads-2: суточные срезы статистики по поисковым запросам + их run-log.
+  RAW_WB_ADV_QUERY_STATS: true,
+  RAW_WB_ADV_QUERY_STATS_RUNS: true
 };
 function wbAdsBqAssertTable_(tableId) {
   if (!WB_ADS_BQ_TABLES_[tableId]) {
@@ -204,7 +207,10 @@ function wbAdsBqEnsureAllTables_() {
   // Ads-3 (append-only снимок ставок) + его run-log.
   wbAdvBqEnsureTable_('RAW_WB_ADV_QUERY_BIDS', WB_ADV_RAW_QUERY_BIDS_HEADERS_);
   wbAdvBqEnsureTable_('RAW_WB_ADV_QUERY_BIDS_RUNS', WB_ADV_RAW_QUERY_BIDS_RUNS_HEADERS_);
-  console.log('✅ Все 7 RAW_WB_ADV_* таблиц гарантированы.');
+  // Ads-2 (append-only суточные срезы query-level статистики) + их run-log.
+  wbAdvBqEnsureTable_('RAW_WB_ADV_QUERY_STATS', WB_ADV_RAW_QUERY_STATS_HEADERS_);
+  wbAdvBqEnsureTable_('RAW_WB_ADV_QUERY_STATS_RUNS', WB_ADV_RAW_QUERY_STATS_RUNS_HEADERS_);
+  console.log('✅ Все 9 RAW_WB_ADV_* таблиц гарантированы.');
 }
 
 /**
@@ -235,12 +241,13 @@ function wbAdsBqInit() {
 function wbAdsBqAssertViews_() {
   var c = getBqConfig_();
   var views = ['V_ADV_CAMPAIGNS', 'V_ADV_CAMPAIGN_STATS', 'V_ADV_BOOSTER_STATS',
-    'V_ADV_SEARCH_CLUSTERS', 'V_ADV_COSTS', 'V_ADV_QUERY_BIDS'];
+    'V_ADV_SEARCH_CLUSTERS', 'V_ADV_COSTS', 'V_ADV_QUERY_BIDS',
+    'V_ADV_QUERY_STATS', 'V_ADV_QUERY_STATS_COVERAGE'];
   for (var i = 0; i < views.length; i++) {
     var t = BigQuery.Tables.get(c.projectId, c.datasetId, views[i]);
     if (!t.view) throw new Error(views[i] + ': объект существует, но не является VIEW');
   }
-  console.log('✅ Все 6 рекламных вью подтверждены.');
+  console.log('✅ Все 8 рекламных вью подтверждены.');
 }
 
 /**
@@ -336,8 +343,141 @@ function wbAdsBqCreateViews() {
   //    отдаётся колонкой snapshot_status, чтобы потребитель видел, полон ли день.
   wbAdsBqCreateQueryBidsView_(fq);
 
-  console.log('✅ Вью созданы (6): V_ADV_CAMPAIGNS, V_ADV_CAMPAIGN_STATS, ' +
-    'V_ADV_BOOSTER_STATS, V_ADV_SEARCH_CLUSTERS, V_ADV_COSTS, V_ADV_QUERY_BIDS');
+  // 7) Ads-2: суточные СРЕЗЫ query-level статистики — тоже append-only.
+  //    🔴 makeView здесь неприменим по той же причине, что и в п.6, но по другому
+  //    поводу: probe v5 показал, что два обращения за ОДИН И ТОТ ЖЕ период вернули
+  //    разное число строк (61 против 44) при идентичных агрегатах. Причина не
+  //    установлена и здесь не постулируется. Построчный дедуп склеил бы две
+  //    retrieval-версии в набор запросов, не существовавший ни в одном ответе API.
+  //    Канонизация — на уровне СРЕЗА целиком, ключ (period_from, period_to, run_id).
+  wbAdsBqCreateQueryStatsView_(fq);
+
+  // 8) Ads-2: витрина НЕопубликованного. Нужна потому, что п.7 публикует только OK:
+  //    без неё непокрытые сутки превратились бы в тихую дыру.
+  wbAdsBqCreateQueryStatsCoverageView_(fq);
+
+  console.log('✅ Вью созданы (8): V_ADV_CAMPAIGNS, V_ADV_CAMPAIGN_STATS, ' +
+    'V_ADV_BOOSTER_STATS, V_ADV_SEARCH_CLUSTERS, V_ADV_COSTS, V_ADV_QUERY_BIDS, ' +
+    'V_ADV_QUERY_STATS, V_ADV_QUERY_STATS_COVERAGE');
+}
+
+/**
+ * V_ADV_QUERY_STATS — канонический СРЕЗ query-level статистики за сутки (Ads-2).
+ *
+ * 🔴 ПУБЛИКУЕТСЯ ТОЛЬКО status = 'OK'. PARTIAL и FAILED остаются в RAW и в run-log
+ *    как диагностический материал, но официальной версией периода не становятся
+ *    никогда. Причина: PARTIAL означает, что часть пар или пачек не доехала, и
+ *    опубликовать его значит отдать заниженные цифры под видом полных — причём
+ *    молча, потому что по отсутствующим строкам недостача не видна. Отсутствие
+ *    периода заметно, тихая недостача — нет. Fail-closed.
+ *
+ * 🔴 Ключ каноники = (period_from, period_to, run_id). Один прогон на период,
+ *    строки только этого прогона. run_id уникален на execution и потому является
+ *    настоящим идентификатором retrieval-версии; load_ts несёт лишь время.
+ *
+ * Внутренний дедуп идёт ВНУТРИ выбранного run_id: схлопывать строки между
+ * прогонами нельзя, это пересекло бы границу среза.
+ *
+ * slice_status оставлен в выдаче, хотя сейчас всегда равен 'OK': потребитель не
+ * должен гадать, фильтровано ли представление, а будущее расширение набора
+ * публикуемых статусов обязано быть видимым изменением, а не молчаливым.
+ */
+function wbAdsBqCreateQueryStatsView_(fq) {
+  var sql =
+    'CREATE OR REPLACE VIEW ' + fq('V_ADV_QUERY_STATS') + ' AS\n' +
+    'WITH canon AS (\n' +
+    '  SELECT period_from, period_to, run_id, status AS slice_status\n' +
+    '  FROM (\n' +
+    '    SELECT period_from, period_to, run_id, status,\n' +
+    '           ROW_NUMBER() OVER (\n' +
+    '             PARTITION BY period_from, period_to\n' +
+    '             ORDER BY SAFE_CAST(load_ts AS TIMESTAMP) DESC,\n' +
+    '                      run_id DESC\n' +
+    '           ) AS _rn\n' +
+    '    FROM ' + fq('RAW_WB_ADV_QUERY_STATS_RUNS') + '\n' +
+    "    WHERE http_success = 'TRUE' AND status = 'OK'\n" +
+    '  )\n' +
+    '  WHERE _rn = 1\n' +
+    ')\n' +
+    'SELECT * EXCEPT(_dup) FROM (\n' +
+    '  SELECT s.*, c.slice_status,\n' +
+    '         ROW_NUMBER() OVER (\n' +
+    '           PARTITION BY s.run_id, s.period_from, s.period_to,\n' +
+    '                        s.advert_id, s.nm_id, s.norm_query\n' +
+    '           ORDER BY s.load_ts DESC\n' +
+    '         ) AS _dup\n' +
+    '  FROM ' + fq('RAW_WB_ADV_QUERY_STATS') + ' s\n' +
+    '  JOIN canon c\n' +
+    '    ON s.period_from = c.period_from\n' +
+    '   AND s.period_to   = c.period_to\n' +
+    '   AND s.run_id      = c.run_id\n' +
+    "  WHERE s.processed_status = 'raw'\n" +
+    ')\n' +
+    'WHERE _dup = 1';
+  bqQuery_(sql);
+}
+
+/**
+ * V_ADV_QUERY_STATS_COVERAGE — что НЕ опубликовано и почему (Ads-2, спека §4.4).
+ *
+ * Вселенная суток берётся из V_ADV_CAMPAIGN_STATS, а НЕ из run-log. Иначе сутки,
+ * которые вообще ни разу не запрашивались, не попали бы в отчёт — а это ровно тот
+ * случай, который надо видеть в первую очередь: не «попробовали и не вышло», а
+ * «не пробовали». Отсюда LEFT JOIN: строки без попыток остаются с нулями.
+ *
+ * coverage_ratio = scope_spend_rub / day_spend_costs_rub — какую долю реально
+ * потраченных за сутки денег мы вообще пытались объяснить.
+ * ⚠️ Осмысленно только после исправления ключа дедупа V_ADV_COSTS: до него
+ *    знаменатель завышен (см. docs/ADS_COSTS_DEDUP_FIX_2026-08-14.md).
+ */
+function wbAdsBqCreateQueryStatsCoverageView_(fq) {
+  var sql =
+    'CREATE OR REPLACE VIEW ' + fq('V_ADV_QUERY_STATS_COVERAGE') + ' AS\n' +
+    'WITH days AS (\n' +
+    "  SELECT DISTINCT FORMAT_DATE('%Y-%m-%d', DATE(`date`)) AS period_from\n" +
+    '  FROM ' + fq('V_ADV_CAMPAIGN_STATS') + '\n' +
+    '  WHERE `date` IS NOT NULL\n' +
+    '),\n' +
+    'agg AS (\n' +
+    '  SELECT period_from,\n' +
+    "         COUNTIF(status = 'OK')      AS ok_runs,\n" +
+    "         COUNTIF(status = 'PARTIAL') AS partial_runs,\n" +
+    "         COUNTIF(status = 'FAILED')  AS failed_runs,\n" +
+    "         COUNTIF(status = 'EMPTY')   AS empty_runs,\n" +
+    '         COUNT(*)                    AS total_attempts,\n' +
+    '         MAX(SAFE_CAST(load_ts AS TIMESTAMP)) AS last_attempt_ts\n' +
+    '  FROM ' + fq('RAW_WB_ADV_QUERY_STATS_RUNS') + '\n' +
+    '  GROUP BY period_from\n' +
+    '),\n' +
+    'last_try AS (\n' +
+    '  SELECT period_from, status AS last_status, error_message AS last_error,\n' +
+    '         SAFE_CAST(scope_pairs AS INT64)          AS scope_pairs,\n' +
+    '         SAFE_CAST(scope_spend_rub AS FLOAT64)    AS scope_spend_rub,\n' +
+    '         SAFE_CAST(day_spend_costs_rub AS FLOAT64) AS day_spend_costs_rub\n' +
+    '  FROM (\n' +
+    '    SELECT *, ROW_NUMBER() OVER (\n' +
+    '      PARTITION BY period_from\n' +
+    '      ORDER BY SAFE_CAST(load_ts AS TIMESTAMP) DESC, run_id DESC\n' +
+    '    ) AS _rn\n' +
+    '    FROM ' + fq('RAW_WB_ADV_QUERY_STATS_RUNS') + '\n' +
+    '  )\n' +
+    '  WHERE _rn = 1\n' +
+    ')\n' +
+    'SELECT d.period_from,\n' +
+    '       COALESCE(a.ok_runs, 0) > 0 AS is_published,\n' +
+    '       COALESCE(a.ok_runs, 0)        AS ok_runs,\n' +
+    '       COALESCE(a.partial_runs, 0)   AS partial_runs,\n' +
+    '       COALESCE(a.failed_runs, 0)    AS failed_runs,\n' +
+    '       COALESCE(a.empty_runs, 0)     AS empty_runs,\n' +
+    '       COALESCE(a.total_attempts, 0) AS total_attempts,\n' +
+    '       a.last_attempt_ts,\n' +
+    '       l.last_status, l.last_error,\n' +
+    '       l.scope_pairs, l.scope_spend_rub, l.day_spend_costs_rub,\n' +
+    '       SAFE_DIVIDE(l.scope_spend_rub, l.day_spend_costs_rub) AS coverage_ratio\n' +
+    'FROM days d\n' +
+    'LEFT JOIN agg a      USING (period_from)\n' +
+    'LEFT JOIN last_try l USING (period_from)';
+  bqQuery_(sql);
 }
 
 /**
@@ -398,7 +538,8 @@ function wbAdsBqStats() {
   var c = getBqConfig_();
   var tabs = ['RAW_WB_ADV_CAMPAIGNS', 'RAW_WB_ADV_CAMPAIGN_STATS', 'RAW_WB_ADV_BOOSTER_STATS',
     'RAW_WB_ADV_SEARCH_CLUSTERS', 'RAW_WB_ADV_COSTS',
-    'RAW_WB_ADV_QUERY_BIDS', 'RAW_WB_ADV_QUERY_BIDS_RUNS'];
+    'RAW_WB_ADV_QUERY_BIDS', 'RAW_WB_ADV_QUERY_BIDS_RUNS',
+    'RAW_WB_ADV_QUERY_STATS', 'RAW_WB_ADV_QUERY_STATS_RUNS'];
   tabs.forEach(function (t) {
     try {
       var r = bqQuery_('SELECT COUNT(*) AS c FROM `' + c.projectId + '.' + c.datasetId + '.' + t + '`');
