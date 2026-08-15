@@ -1,7 +1,7 @@
 -- ══════════════════════════════════════════════════════════════
 -- Ads-4 · Advertising Data Mart / Funnel Contract — v1
 --
--- Спека: docs/ADS4_FUNNEL_MART_DESIGN_2026-08-15.md (ред. 2)
+-- Спека: docs/ADS4_FUNNEL_MART_DESIGN_2026-08-15.md (ред. 3)
 --
 -- 🔴 ИНВАРИАНТЫ РЕАЛИЗАЦИИ (нарушение = откат, не правка):
 --   1. Только CREATE OR REPLACE VIEW. Ни одной таблицы, ни одного INSERT.
