@@ -614,9 +614,74 @@ function wbAdsQsPendingDays_() {
 }
 
 /**
+ * Пересъём query-level статистики за ЯВНЫЙ период — из меню, через диалог.
+ *
+ * Зачем отдельно от wbAdsQueryStatsBackfillNext(): тот берёт только сутки без
+ * разрешённого исхода, то есть никогда не тронет уже опубликованный день. А
+ * пересъём нужен ровно для опубликованных — когда у суток ЗАДНИМ ЧИСЛОМ вырос
+ * scope. Так было 15.08.2026: пересбор fullstats за 05–14.07 добавил 11 кампаний,
+ * которых в тот момент не было, и снятые ранее срезы этих суток стали неполными
+ * по составу пар, оставаясь при этом честными OK по своему тогдашнему scope.
+ *
+ * Формат дат — через пробел, как в loadWbAdsCostsRawPeriodPrompt и
+ * loadWbAdsFullstatsRawPeriodPrompt: единообразие важнее краткости.
+ *
+ * 🔴 Окно ограничено WB_ADS_QSTATS_PROMPT_MAX_DAYS_ и обрывается ЯВНОЙ ошибкой,
+ *    а не молча. Предел выведен из замера, а не из деления бюджета на среднее:
+ *    прогон 14.08 занял 103 с на СЕМИ сутках при внутреннем бюджете 120 000 мс.
+ *    Значит восьмые сутки упираются в потолок практически без запаса — а запас
+ *    здесь нужен на BQ-запрос scope, запись RAW и run-log и на случайное
+ *    замедление API. И главное: жёсткий таймаут Apps Script (6 мин) не ловится
+ *    ни try/catch, ни собственным бюджетом — он просто убивает execution, и
+ *    сутки останутся без строки run-log. Поэтому шесть, а не восемь.
+ */
+var WB_ADS_QSTATS_PROMPT_MAX_DAYS_ = 6;
+
+function wbAdsQueryStatsPeriodPrompt() {
+  var ui = SpreadsheetApp.getUi();
+  var resp = ui.prompt('WB Ads — query-level статистика за период',
+    'Введите даты через пробел: YYYY-MM-DD YYYY-MM-DD\n' +
+    'Не больше ' + WB_ADS_QSTATS_PROMPT_MAX_DAYS_ + ' суток за раз.\n' +
+    'Напр.: 2026-07-05 2026-07-10',
+    ui.ButtonSet.OK_CANCEL);
+  if (resp.getSelectedButton() !== ui.Button.OK) return;
+
+  var p = String(resp.getResponseText() || '').trim().split(/\s+/);
+  var re = /^\d{4}-\d{2}-\d{2}$/;
+  if (p.length !== 2 || !re.test(p[0]) || !re.test(p[1])) {
+    ui.alert('Неверный формат. Пример: 2026-07-05 2026-07-10'); return;
+  }
+
+  var days;
+  try {
+    days = wbAdsQsResolveDays_(p[0], p[1]);
+  } catch (e) {
+    ui.alert('Неверный период: ' + ((e && e.message) || e)); return;
+  }
+  if (days.length > WB_ADS_QSTATS_PROMPT_MAX_DAYS_) {
+    ui.alert('Слишком длинное окно: ' + days.length + ' суток при пределе ' +
+      WB_ADS_QSTATS_PROMPT_MAX_DAYS_ + '.\n\n' +
+      'При ~15 с на сутки прогон не уложится в тайм-бюджет, и часть суток ' +
+      'останется без попытки. Разбейте на окна поменьше.');
+    return;
+  }
+
+  console.log('═══ Ads-2 пересъём ' + p[0] + '…' + p[1] + ' (' + days.length + ' сут.) ═══');
+  var res = loadWbAdsQueryStatsRaw(null, p[0], p[1]);
+  try {
+    SpreadsheetApp.getActiveSpreadsheet().toast(
+      'Период ' + p[0] + '…' + p[1] + ' · статус ' + (res && res.status) +
+      ' · суток OK ' + (res && res.days_ok) + '/' + (res && res.days) +
+      ' · строк ' + (res && res.rows),
+      '📊 query-level статистика', 12);
+  } catch (eToast) {}
+  return res;
+}
+
+/**
  * Backfill за явный период (из кода или из другой функции).
  * Оставлен для точечных доборов; из редактора его не вызвать — там
- * wbAdsQueryStatsBackfillNext().
+ * wbAdsQueryStatsBackfillNext() или wbAdsQueryStatsPeriodPrompt().
  */
 function wbAdsQueryStatsBackfill(fromDay, toDay) {
   if (!fromDay || !toDay) {

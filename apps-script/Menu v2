@@ -113,6 +113,17 @@ function onOpen() {
             .addItem('▶️ Текущий месяц', 'wbAdsFullstatsMonthCurrent')
             .addItem('📅 Выбрать период…', 'wbAdsFullstatsMonthPrompt')
         )
+        .addSeparator()
+        .addSubMenu(
+          // Ads-2 · query-level статистика по поисковым запросам.
+          // «Добрать историю» идёт порциями и сама знает, где остановилась —
+          // берёт непокрытые сутки из V_ADV_QUERY_STATS_COVERAGE, даты не нужны.
+          // «Пересъём за период» — для УЖЕ опубликованных суток, у которых
+          // задним числом вырос scope (пересобрали fullstats → появились пары).
+          ui.createMenu('🔎 Поисковые запросы (Ads-2)')
+            .addItem('⏭️ Добрать историю (порция)', 'wbAdsQueryStatsBackfillNext')
+            .addItem('📅 Пересъём за период…', 'wbAdsQueryStatsPeriodPrompt')
+        )
     )
 
     // ─── Расчёты ───
