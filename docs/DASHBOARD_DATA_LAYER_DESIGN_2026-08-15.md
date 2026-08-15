@@ -1,0 +1,425 @@
+# Слой данных под экран «Реклама» — дизайн контрактов 1 и 2
+
+Редакция **4** от 2026-08-15 (ред. 1–3 — там же, история в git).
+Статус: **ред. 4 на ACK → код.** Production не тронут.
+Архитектура ред. 2 не переоткрывается; ред. 4 закрывает один SQL-level blocker ред. 3
+и две редакторские формулировки. Больше в ред. 4 ничего не менялось.
+
+## Что изменила ред. 4 (REQUEST CHANGES к ред. 3)
+
+| # | замечание | что сделано |
+|---|---|---|
+| 1 | 🔴 **blocker.** В `last_success` два независимых `MAX()` (`started_at` и `completed_at`) могли прийти из разных прогонов — в строке свежести получился бы несуществующий гибрид «начало одного run + завершение другого» | §1.5: `last_success` строится тем же детерминированным способом, что и `last_attempt` — `success_ranked` с `ROW_NUMBER() … ORDER BY started_at DESC, run_id DESC` и `WHERE rn = 1`. `success_started_at`, `success_completed_at`, raw status, `run_id` берутся **из одной реальной строки**. Агрегатов в `last_success` больше нет |
+| 2 | формулировка F10 «у каждого заданы оба порога» неточна | §1.10 F10: «`success_age_ok_hours` у всех 12, `data_age_ok_days` у всех применимых 11» |
+| 3 | `NO_RUN = прогонов за окно нет` может быть прочитано как ограничение operational lookup 30-дневным окном | §1.5, карта статусов: «для слоя не найдено ни одной релевантной попытки»; там же явно: 30 суток использовались **только** для вывода порогов §1.8, во вью окна поиска прогонов нет |
+
+Следствие правки 1 (не новое требование, а её проверка): гейт F5 теперь проверяет
+детерминированность **обеих** строк — и `last_attempt`, и `last_success`.
+
+Всё остальное из ред. 3 принято без изменений: `last_attempt` с `ROW_NUMBER` + `run_id`,
+случай зависшего `stocks` `STARTED`, `RUNNING` vs `STUCK`, исключение `selftest`,
+три часов `data_age` / `run_age` / `success_age`, layer-specific `success_age_ok_hours`,
+S5 по каждому окну, S7 как настоящий priority-gate, S8 с двусторонней сверкой 1 469 ↔ 1 469.
+
+## Что изменила ред. 3 (REQUEST CHANGES к ред. 2)
+
+| # | замечание | что сделано |
+|---|---|---|
+| 1 | не задана семантика выбора текущего run из append-only лога; старый `STARTED` не должен делать слой `STUCK` | §1.5: `last_attempt` (детерминированный tie-break) + `last_success` как две независимые величины; состояние `RUNNING` отделено от `STUCK`. 🔴 Проверено на реальном случае: зависший `STARTED` у `stocks` от 27.07 — после него **20 успешных прогонов**, слой обязан быть `OK` |
+| 2 | две шкалы не доведены до полного контракта: `build_age_ok_hours` был только у mart/ref | §1.6: **три явных часов** — `data_age`, `run_age`, `success_age`. Пороги заданы **для всех 12 слоёв** и выведены из замера ритма прогонов. `built_at` остаётся информационной колонкой и **из статуса убран** |
+| 3 | S5 назвать точное денежное поле | §2.4: `SUM(spend_rub)` в `V_ADS_SCREEN_QUERY` против `SUM(spend_sum)` в соответствующей вью Ads-4, с числом по каждому окну |
+| 4 | нужен гейт, что `signal_top` — действительно самый приоритетный | §2.4 S7: сравнение `prio(signal_top)` с `MIN(prio(s))` по всему массиву `signals`, одной и той же функцией приоритета |
+
+## 🔴 Замороженный якорь измерений
+
+Все числа получены запросами к production BigQuery **2026-08-15**.
+
+```
+слой                        as_of        возраст   built_at (UTC)
+ads_query_bids (Ads-3)      2026-08-15    0 сут    2026-08-15 05:11
+orders                      2026-08-15    0        2026-08-15 04:01
+stocks                      2026-08-15    0        2026-08-15 04:01
+ads_costs                   2026-08-14    1        —
+ads_fullstats               2026-08-14    1        —
+sales                       2026-08-14    1        2026-08-15 04:01
+fact_ads_costs_daily        2026-08-14    1        2026-08-15 04:01
+fact_ads_sku_daily          2026-08-14    1        2026-08-15 04:01
+mart_sku_daily              2026-08-14    1        2026-08-15 04:03
+finance                     2026-08-13    2        2026-08-15 04:01
+ads_query_stats (Ads-2)     2026-08-13    2        —
+ref_sku_master              —             —        2026-08-15 05:22 (_synced_at)
+```
+
+Объекты Ads-4: `V_ADS_FUNNEL_SKU_28D` — **16** строк, `SUM(query_spend_rub)` =
+**31 229,75 ₽**; `V_ADS_FUNNEL_QUERY_28D` — **480** строк / **31 229,75 ₽**;
+`V_ADS_FUNNEL_QUERY_90D` — **1 432** строки / **129 657,53 ₽**;
+`V_ADS_FUNNEL_SIGNALS` — **1 469** строк, без `ZERO_ORDER_SPEND` — **60**;
+строк витрины хотя бы с одним сигналом — **1 443**.
+
+---
+
+## 0. Рамка
+
+Два контракта, оба — **только вью**: ни таблиц, ни изменений загрузчиков, job'ов
+и heartbeat. Откат = `DROP VIEW`.
+
+**Контракт 1 — `V_DATA_FRESHNESS`:** светофор здоровья, видимый при входе.
+**Контракт 2 — `V_ADS_SCREEN_SKU` и `V_ADS_SCREEN_QUERY`:** готовые источники для Looker
+Studio; экран ничего существенного не вычисляет.
+
+---
+
+## 1. Контракт 1 · `wb_mart.V_DATA_FRESHNESS`
+
+### 1.1 Две природы возраста
+
+Слой может быть **собран час назад и содержать данные недельной давности** (финансы:
+WB отдаёт недельные отчёты с лагом) — и наоборот, данные свежие, а загрузчик умер.
+Прецедент — тихая остановка триггеров 17–21.07 ([[appsscript-oauth-incident]]).
+
+### 1.2 🔴 Четыре формата даты — нормализуются здесь, один раз
+
+```
+V_ADV_QUERY_STATS.period_from    STRING 'YYYY-MM-DD'           → SAFE.PARSE_DATE
+V_ADV_QUERY_BIDS.snapshot_date   STRING 'YYYY-MM-DD'           → SAFE.PARSE_DATE
+V_ADV_CAMPAIGN_STATS.date        STRING '2026-08-14T00:00:00Z' → SUBSTR(...,1,10)
+V_ADV_COSTS.updDate              TIMESTAMP                      → DATE()
+FACT_*/MART_*                    DATE                           → как есть
+```
+
+### 1.3 Состав: 12 слоёв данных + 1 детектор = **13 строк**
+
+| # | `layer_code` | группа | `data_as_of` | run-log (фильтр) |
+|---|---|---|---|---|
+| 1 | `ads_query_stats` | ads | `MAX(period_from)` `V_ADV_QUERY_STATS` | `INGEST_RUNS` `loader_name='ads'` |
+| 2 | `ads_query_bids` | ads | `MAX(snapshot_date)` `V_ADV_QUERY_BIDS` | `INGEST_RUNS` `loader_name='ads'` |
+| 3 | `ads_costs` | ads | `MAX(DATE(updDate))` `V_ADV_COSTS` | `INGEST_RUNS` `loader_name='ads'` |
+| 4 | `ads_fullstats` | ads | `MAX(SUBSTR(date,1,10))` `V_ADV_CAMPAIGN_STATS` | `INGEST_RUNS` `loader_name='ads'` |
+| 5 | `orders` | ops | `MAX(order_date)` `FACT_ORDERS` | `INGEST_RUNS` `loader_name='orders'` |
+| 6 | `sales` | ops | `MAX(sale_date)` `FACT_SALES` | `INGEST_RUNS` `loader_name='sales'` |
+| 7 | `stocks` | ops | `MAX(snapshot_date)` `FACT_STOCKS_SNAPSHOT` | `LOADER_RUNS` `loader_name='stocks'` |
+| 8 | `finance` | finance | `MAX(finance_date)` `FACT_FINANCE` | `FINANCE_LOADER_RUNS` |
+| 9 | `mart_sku_daily` | mart | `MAX(day)` | `LOADER_RUNS` `loader_name='mart'` |
+| 10 | `fact_ads_costs_daily` | mart | `MAX(date)` | `LOADER_RUNS` `loader_name='mart'` |
+| 11 | `fact_ads_sku_daily` | mart | `MAX(date)` | `LOADER_RUNS` `loader_name='mart'` |
+| 12 | `ref_sku_master` | ref | — | `REF_SYNC_RUNS` |
+| 13 | `sku_orphans` | qc | — | — (детектор, §1.7) |
+
+🔴 `INGEST_RUNS.loader_name = 'selftest'` **исключается явным фильтром**: это служебный
+прогон (4 COMPLETE / 4 ERROR от 03.08), его ошибки не относятся ни к одному слою данных.
+Четыре ads-слоя разделяют один run-log — рекламный прогон общий.
+
+### 1.4 Почему `ref_sync_lag` удалён (решение ред. 2, в силе)
+
+`_synced_at` фиксирует момент прогона синхронизации и не может знать, что Google-лист
+изменился после него. Телеметрия прогона (`REF_SYNC_RUNS.status`, `warning_count`,
+`REF_ACTIVE_VERSION.activated_at`) живёт в строке `ref_sku_master`. Бизнес-значимую часть
+дрейфа покрывает детектор сирот §1.7 — он смотрит на факты, а не на метаданные синка.
+
+### 1.5 🔴 Выбор прогона из append-only лога
+
+Run-логи append-only, поэтому «текущий прогон» надо определить, а не взять первый попавшийся.
+Определяются **две независимые строки** — последняя попытка и последний успех. 🔴 Обе
+выбираются **одним и тем же детерминированным способом**, и обе — целые строки лога:
+
+```sql
+attempts AS (   -- все прогоны слоя, приведённые к общей схеме
+  SELECT layer_code, run_id, started_at, completed_at, raw_status, run_state FROM ...
+),
+
+attempt_ranked AS (
+  SELECT *, ROW_NUMBER() OVER (
+    PARTITION BY layer_code
+    ORDER BY started_at DESC, run_id DESC     -- 🔴 детерминированный tie-break
+  ) AS rn
+  FROM attempts
+),
+last_attempt AS (SELECT * FROM attempt_ranked WHERE rn = 1),
+
+success_ranked AS (
+  SELECT *, ROW_NUMBER() OVER (
+    PARTITION BY layer_code
+    ORDER BY started_at DESC, run_id DESC     -- 🔴 тот же порядок, что и у last_attempt
+  ) AS rn
+  FROM attempts
+  WHERE run_state IN ('SUCCESS','SUCCESS_EMPTY')
+),
+last_success AS (SELECT * FROM success_ranked WHERE rn = 1)
+```
+
+Tie-break по `run_id` нужен, потому что `started_at` теоретически может совпасть
+у двух записей; без него вью недетерминирована.
+
+🔴 **В `last_success` нет ни одного агрегата.** Все поля последнего успеха берутся из этой
+единственной реальной строки и только переименовываются при выдаче:
+
+```sql
+last_success.started_at    AS success_started_at
+last_success.completed_at  AS success_completed_at
+last_success.raw_status    AS success_raw_status
+last_success.run_id        AS success_run_id
+success_age_hours = TIMESTAMP_DIFF(
+    CURRENT_TIMESTAMP(),
+    COALESCE(last_success.completed_at, last_success.started_at),   -- из ОДНОЙ строки
+    HOUR)
+```
+
+Причина жёсткая: два независимых `MAX()` (как было в ред. 3) могут вернуть `started_at`
+одного прогона и `completed_at` другого — строка свежести описала бы **несуществующий
+run**. Вся новая модель как раз разделяет «последнюю попытку» и «последний успех»;
+собирать внутри `last_success` синтетический прогон нельзя. `COALESCE` — страховка:
+у `SUCCESS`/`SUCCESS_EMPTY` `completed_at` непуст по построению (незавершённая запись
+попадает в `RUNNING`/`STUCK`, а не в успех).
+
+`last_attempt` и `last_success` — это, вообще говоря, **разные строки**: последняя попытка
+могла упасть, тогда как последний успех был раньше. Это и есть требуемая семантика,
+а не рассинхрон.
+
+**Карта нормализации статусов** — по фактическим значениям из логов (замер 15.08):
+
+```
+LOADER_RUNS           COMPLETE 26 · ERROR 8 · STARTED 1
+INGEST_RUNS           COMPLETE 604 · ERROR 13   (в т.ч. selftest — исключается)
+FINANCE_LOADER_RUNS   OK_NO_NEW 46 · OK 27 · PARTIAL 2
+REF_SYNC_RUNS         COMPLETE 25 (+ warning_count)
+MART_RUNS             COMPLETE 7 · ERROR 2
+ADV_QUERY_STATS_RUNS  OK 133
+```
+
+| исходные значения | `run_state` | семантика |
+|---|---|---|
+| `COMPLETE`, `OK` | `SUCCESS` | прогон успешен |
+| **`OK_NO_NEW`** | **`SUCCESS_EMPTY`** | успешен, новых данных не было — **норма** |
+| `PARTIAL` | `PARTIAL` | получена часть данных |
+| `ERROR`, `FAILED` | `FAILED` | прогон упал |
+| `STARTED`, возраст ≤ 6 ч | `RUNNING` | идёт прямо сейчас — не проблема |
+| `STARTED`, возраст > 6 ч | `STUCK` | начался и не завершился |
+| для слоя не найдено ни одной релевантной попытки | `NO_RUN` | загрузчик не запускался |
+
+🔴 **`NO_RUN` не привязан ни к какому окну.** Поиск прогонов во вью идёт по всей истории
+run-лога; 30-суточное окно фигурирует **только** в §1.8, где по нему выведены пороги
+`success_age_ok_hours`. Ограничивать operational lookup этим окном нельзя: слой с редким
+расписанием получил бы ложный `NO_RUN`.
+
+🔴 **`STUCK` определяется только по `last_attempt`.** Зависшая запись, после которой были
+успешные прогоны, не может быть `last_attempt` по построению — значит на статус не влияет.
+Реальный случай в проде: `stocks` имеет `STARTED` от 27.07 13:18 с пустым `completed_at`,
+но после него **20 успешных прогонов**, последний 15.08 03:30. `last_attempt` = `COMPLETE`,
+`last_success` = 15.08 → слой **`OK`**. Ровно то, что требует замечание.
+
+🔴 **`SUCCESS_EMPTY` — 46 из 75 прогонов финансов.** Считай мы «не OK» проблемой, светофор
+был бы красным две трети времени. Пустой успех говорит «загрузчик жив», а не «данные
+свежие», и **возраст данных он не обнуляет**.
+
+### 1.6 🔴 Три явных часов вместо двух неполных
+
+Ред. 2 задавала `build_age_ok_hours` только для mart и ref — для остальных слоёв вторая
+шкала оставалась без порога. Исправлено: три величины, у каждой своя роль и свой порог
+у **каждого** слоя.
+
+| колонка | что измеряет | участвует в статусе |
+|---|---|---|
+| `data_age_days` | возраст самих данных: `CURRENT_DATE('Europe/Moscow') − data_as_of` | ✅ порог `data_age_ok_days` |
+| `run_age_hours` | с последней **попытки** (любого исхода) | ✅ только для `NO_RUN` |
+| `success_age_hours` | с последнего **успеха** (`SUCCESS`/`SUCCESS_EMPTY`) | ✅ порог `success_age_ok_hours` |
+| `built_at` / `build_age_hours` | когда объект пересобран; есть не у всех слоёв | ❌ **информационная**, из статуса убрана |
+
+`built_at` выведен из гейта сознательно: у сырых слоёв его физически нет, и порог для него
+пришлось бы выдумывать. Роль «сборка встала» полностью закрывает `success_age`.
+
+### 1.7 Детектор сирот
+
+`FACT_ORDERS.sku_match_status = 'not_found'` существует и уже отработал: `1083392113`
+продавался с 01.07 (8 заказов, средняя цена 1 248 ₽) и был невидим витрине.
+**Данные для детектора были, детектора не было.**
+
+```sql
+layer_code    = 'sku_orphans'
+metric_value  = COUNT(DISTINCT nm_id) WHERE sku_match_status = 'not_found'
+                AND order_date >= DATE_SUB(CURRENT_DATE('Europe/Moscow'), INTERVAL 90 DAY)
+status        = IF(metric_value > 0, 'ERROR', 'OK')
+```
+
+### 1.8 Пороги — из замеренного ритма прогонов
+
+Замер интервалов между **успешными** прогонами за 30 суток:
+
+```
+loader     успехов  медиана  макс    с последнего   → success_age_ok_hours
+orders       300     1,0 ч   1,0 ч      0,7 ч              3
+sales        287     1,0     2,0        0,8                4
+finance       73     6,2    12,8        6,6               20
+ads           13    24,0    24,0       20,1               36
+stocks        20    24,0    24,0       18,7               36
+mart           6    24,0    24,0       18,2               36
+ref_sync      25    24,0    48,9       16,8               72
+```
+
+Правило: `success_age_ok_hours = ceil(max_gap × 1,5)`, но не меньше `median × 2`.
+⚠️ У `mart` всего 6 успехов за 30 суток — измерение тонкое; порог 36 ч принят по тому же
+правилу, но подлежит пересмотру, когда накопится история.
+
+Пороги возраста данных (расписание + лаг WB):
+
+```
+data_age_ok_days:  ads_query_bids 1 · orders 1 · stocks 1
+                   ads_costs 2 · ads_fullstats 2 · sales 2
+                   mart_sku_daily 2 · fact_ads_costs_daily 2 · fact_ads_sku_daily 2
+                   ads_query_stats 3 · finance 3
+                   ref_sku_master — n/a (справочник без дат событий)
+```
+
+🔴 Порог — **свойство слоя**. Пороги хранятся отдельной CTE-константой, а не зашиты в `CASE`.
+
+### 1.9 Статус слоя и правило времени
+
+```sql
+status = CASE
+  WHEN run_state IN ('FAILED','STUCK','NO_RUN')                THEN 'ERROR'
+  WHEN run_state = 'PARTIAL'                                   THEN 'STALE'
+  WHEN success_age_hours > success_age_ok_hours                THEN 'STALE'
+  WHEN data_age_ok_days IS NOT NULL
+       AND data_age_days > data_age_ok_days                    THEN 'STALE'
+  ELSE 'OK' END
+status_reason  -- 'run STUCK 19 сут' | 'success_age=41h>36h' | 'data_age=4>3'
+```
+
+`RUNNING` в статус не переходит: идущий прогон — не проблема, а нормальное состояние.
+
+🔴 **Время: только `CURRENT_DATE('Europe/Moscow')` и `CURRENT_TIMESTAMP()`.** Ads-4
+запрещал `CURRENT_DATE` вовсе (там якорь берётся из данных); свежесть по природе измеряет
+«сейчас». Правило статического аудита правится точечно: `CURRENT_DATE` без таймзоны —
+запрет; `CURRENT_DATE('Europe/Moscow')` разрешён **только** в `V_DATA_FRESHNESS`.
+
+### 1.10 Гейты приёмки контракта 1
+
+| # | проверка | ожидание на якоре |
+|---|---|---|
+| F1 | ровно одна строка на `layer_code`, всего 13 | 13 строк, дублей 0 |
+| F2 | `data_as_of` совпадает с прямым `MAX()` по источнику | 11/11 слоёв с датами |
+| F3 | ни один `data_as_of` не в будущем относительно МСК | 0 нарушений |
+| F4 | нормализация дат: нет `NULL` там, где источник непуст | 0 |
+| F5 | `last_attempt` **и** `last_success` детерминированы: по одной целой строке на слой (`rn = 1`), агрегатов нет | 12/12 и 12/12 |
+| F6 | **зависший `STARTED` не делает слой `STUCK`, если после него был успех** | `stocks` = `OK` при `STARTED` от 27.07 и 20 успехах после |
+| F7 | все исходные значения run-логов покрыты картой §1.5 | 0 значений вне карты |
+| F8 | `SUCCESS_EMPTY` не влияет на статус сам по себе | `finance` = `OK` при 46 `OK_NO_NEW` |
+| F9 | `selftest` исключён | 0 строк светофора ссылаются на него |
+| F10 | пороги заданы: `success_age_ok_hours` — у всех 12 слоёв, `data_age_ok_days` — у всех применимых 11 (`ref_sku_master` — n/a, справочник без дат событий) | 12/12 и 11/11 |
+| F11 | статусы | все `OK`, кроме `sku_orphans` = `ERROR` (1 товар) |
+| F12 | существующие объекты не изменены | `MART_SKU_DAILY` 7 132 / 488 226,24; `FACT_ADS_COSTS_DAILY` 1 758 / 499 294 |
+| F13 | K9 — файл репозитория == выкаченный объект по SHA-256 | PASS |
+
+🔴 **F11 намеренно ожидает один `ERROR`** — сироту `1083392113`. Вью, показывающая
+«всё зелено» при известной дыре, бесполезна.
+
+---
+
+## 2. Контракт 2 · вью экрана
+
+### 2.1 🔴 Universe: рекламные SKU, и только они
+
+`V_ADS_SCREEN_SKU` строится от `V_ADS_FUNNEL_SKU_28D` — SKU, у которых была реклама
+в окне. Замер: **16 строк, все 16 уже сматчены с `REF_SKU_MASTER`**.
+
+* **REF-Sync не меняет число строк экрана** — он обогащает атрибутами, а не расширяет
+  universe. После прогона будет те же 16;
+* **торговая сирота `1083392113` на рекламный экран не попадёт** — у неё нет рекламы.
+  Она видна в `V_DATA_FRESHNESS` как `sku_orphans` и разбирается там;
+* `REF_SKU_MASTER` подключается **`LEFT JOIN`** — на случай рекламы по SKU, выпавшему
+  из справочника; такой строке ставится `is_orphan = TRUE`, а не выбрасывается.
+
+Грейн `(as_of_date, window_days, nm_id)`; состав колонок — как в ред. 2 §2.1.
+
+### 2.2 `wb_mart.V_ADS_SCREEN_QUERY`
+
+Грейн `(as_of_date, window_days, nm_id, norm_query)`; **1 912 строк** на якоре.
+
+```
+запрос → spend_rub → доля расхода SKU → показы → CTR → клики → CPC
+       → корзины → cart CR → заказы → order CR → CPO
+       → evidence_status → сигналы → ставка (min/max, дата снимка, флаг «после окна»)
+```
+
+🔴 Денежная колонка называется **`spend_rub`** — единственное денежное поле этой вью,
+именно оно фигурирует в гейтах.
+
+Сигналы приходят свёрнутыми в строку запроса: у Looker Studio нет удобного способа
+джойнить один-ко-многим без риска размножить деньги.
+
+```sql
+signals            ARRAY<STRING>
+signals_text       STRING
+signal_top         STRING   -- сильнейший по приоритету
+has_strong_signal  BOOL
+```
+
+**Функция приоритета** фиксируется контрактом и используется в одном и том же виде
+и во вью, и в гейте S7:
+
+```
+1 CTR_BELOW_BASELINE · 2 CART_CR_BELOW_BASELINE · 3 ORDER_CR_CARTS_BELOW_BASELINE
+4 CPO_BELOW_BASELINE · 5 CPC_ABOVE_BASELINE · 6 CPC_BELOW_BASELINE
+7 CTR_ABOVE_BASELINE · 8 ZERO_ORDER_SPEND
+```
+
+Сначала то, что ломает воронку; деньги — потом.
+
+### 2.3 🔴 Экономика остаётся `pre_cogs` — и подписана
+
+`REF_COGS` в BigQuery ещё нет: `COST_HISTORY` живёт в листе и требует REF-Sync PR2.
+Данные выверены (25 SKU, гейты листа зелёные), но до переноса все показатели вклада
+сохраняют суффикс `_pre_cogs`, а на экране стоит явная подпись. Когда `REF_COGS`
+появится — это добавление колонок, а не переделка экрана.
+
+### 2.4 Гейты приёмки контракта 2
+
+| # | проверка | ожидание на якоре |
+|---|---|---|
+| S1 | `SUM(query_spend_rub)` в `V_ADS_SCREEN_SKU` = то же поле в `V_ADS_FUNNEL_SKU_28D` | 31 229,75 ₽, delta 0,00 |
+| S2 | дублей по ключу | 0 в обеих вью |
+| S3 | `LEFT JOIN` справочника не режет строки | 16 → 16, delta 0 |
+| S4 | строк в `V_ADS_SCREEN_QUERY` | 1 912 = 480 + 1 432 |
+| S5 | **`SUM(spend_rub)`** в `V_ADS_SCREEN_QUERY` против `SUM(spend_sum)` Ads-4, **по каждому окну** | 28d: 31 229,75 ₽ · 90d: 129 657,53 ₽ · delta 0,00 в обоих |
+| S6 | свёртка сигналов не размножает строки | `COUNT(*)` = 1 912 |
+| S7 | **`signal_top` — самый приоритетный из `signals`**: `prio(signal_top) = MIN(prio(s))` по всему массиву | 0 нарушений на 1 443 строках с сигналами |
+| S8 | каждый элемент `signals` присутствует в `V_ADS_FUNNEL_SIGNALS` для того же ключа и окна, и наоборот | 1 469 ↔ 1 469 |
+| S9 | ни одной колонки вклада без суффикса `_pre_cogs` | статический аудит |
+| S10 | `is_orphan` | 0 строк |
+| S11 | существующие объекты не изменены | baseline «до» |
+| S12 | K9 | PASS |
+
+S5 сформулирован **по окнам, а не суммарно**: суммарное совпадение может скрыть
+компенсирующую ошибку между окнами.
+
+S7 сравнивает **вычисленный приоритет**, а не факт вхождения в массив — то есть ловит
+случай, когда `signal_top` присутствует в `signals`, но не является сильнейшим.
+
+---
+
+## 3. Чего эти контракты сознательно НЕ делают
+
+1. Не меняют загрузчики, job'ы, heartbeat и существующие витрины — только новые вью.
+2. Не вычисляют прибыль и маржу — нет `REF_COGS`.
+3. Не считают метрики в Looker Studio.
+4. Не чинят данные: сироты и зависшие прогоны **показываются**, а не скрываются.
+5. **Не утверждают, что знают о дрейфе Google-листа** — `ref_sync_lag` удалён.
+6. Не используют `built_at` как гейт свежести — только как справочную колонку (§1.6).
+7. Не заводят новых порогов доказательности — берутся готовые из Ads-4.
+8. Не трогают `BUNDLES` и `SKU_MASTER` — это контракт 0.
+9. Не выводят торговые SKU без рекламы на рекламный экран.
+10. Не строят экран — он собирается в Looker Studio поверх этих вью.
+
+---
+
+## 4. Порядок работ
+
+1. ACK по ред. 4.
+2. Замечания аудитора закрыты (ред. 3 и ред. 4); новых до кода не осталось.
+3. `sql/mart/dashboard_layer_v1.sql`, статический аудит SQL (с правкой правила
+   `CURRENT_DATE` по §1.9).
+4. Diff → аудитор → правки → ветка / PR / merge (владелец).
+5. Baseline «до» → выкат → гейты F1–F13 и S1–S12 → merged-state audit.
+6. Прогон REF-Sync + заведение сироты → перепроверка F11.
+7. Сборка экрана в Looker Studio.
+8. Отдельно и позже: контракт 0 (`REF_COGS` + REF-Sync PR2 + отключение автоскрипта);
+   REF-Sync telemetry, после которой возможен честный `ref_sync_lag`.
