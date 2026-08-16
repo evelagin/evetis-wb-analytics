@@ -19,6 +19,9 @@
 --   8. Сигналы сворачиваются в строку запроса одной функцией приоритета,
 --      той же самой, что использует гейт S7 (§2.2).
 --   9. Ни одной колонки вклада без суффикса `_pre_cogs`, пока нет REF_COGS (§2.3).
+--  10. Каждый слой смотрит в СВОЙ журнал. `ads_query_stats` — в RAW_WB_ADV_QUERY_STATS_RUNS,
+--      а не в общий ads-прогон: иначе тихая остановка Ads-2 маскируется чужим успехом.
+--      Порог часов прогона у него не задан осознанно — см. `success_age_is_sla`.
 --
 -- 🔴 Отступления от буквы ред. 4 — перечислены в сопроводительной записке,
 --    приняты БЕЗ решения аудитора быть не могут.
@@ -34,9 +37,13 @@ WITH
 -- реестр слоёв и порогов: порог есть свойство слоя, а не ветка CASE (§1.8)
 layers AS (
   SELECT * FROM UNNEST([
+    -- 🔴 у ads_query_stats СВОЙ журнал (§1.3 ред. 5) и осознанно НЕ задан порог часов
+    --    прогона: история лога 12 ч короче ожидаемого интервала между прогонами,
+    --    max_gap неизмерим, правило §1.8 неприменимо. Гейтит только возраст данных.
     STRUCT(
-      'ads_query_stats'     AS layer_code, 'ads'     AS layer_group, 'ads'     AS run_source,
-      3                     AS data_age_ok_days,      36 AS success_age_ok_hours),
+      'ads_query_stats'     AS layer_code, 'ads'     AS layer_group,
+      'ads_query_stats_log' AS run_source,
+      3                     AS data_age_ok_days,      CAST(NULL AS INT64) AS success_age_ok_hours),
     ('ads_query_bids',       'ads',     'ads',      1, 36),
     ('ads_costs',            'ads',     'ads',      2, 36),
     ('ads_fullstats',        'ads',     'ads',      2, 36),
@@ -105,9 +112,31 @@ built AS (
               ON d.ref_run_id = v.active_ref_run_id)
 ),
 
+-- 🔴 собственный журнал Ads-2 (§1.3 ред. 5). Строка лога = ЗАПРОШЕННЫЕ СУТКИ,
+--    поэтому попытка собирается по run_id: один прогон = одна попытка.
+--    Статус прогона — худший из суточных: неизвестный → FAILED → PARTIAL → OK.
+--    load_ts здесь STRING 'YYYY-MM-DD HH:MM:SS' в UTC; started/completed не разделены,
+--    берём границы прогона. Ни один суточный статус не теряется.
+ads_query_stats_runs AS (
+  SELECT
+    run_id,
+    MIN(SAFE.PARSE_TIMESTAMP('%Y-%m-%d %H:%M:%S', load_ts)) AS started_at,
+    MAX(SAFE.PARSE_TIMESTAMP('%Y-%m-%d %H:%M:%S', load_ts)) AS completed_at,
+    COALESCE(
+      MAX(IF(status NOT IN ('OK', 'PARTIAL', 'FAILED', 'ERROR'), status, NULL)),
+      MAX(IF(status IN ('FAILED', 'ERROR'), status, NULL)),
+      MAX(IF(status = 'PARTIAL', status, NULL)),
+      'OK') AS raw_status
+  FROM `project-fa311fc0-4d87-4781-986.wb_raw.RAW_WB_ADV_QUERY_STATS_RUNS`
+  GROUP BY run_id
+),
+
 -- run-логи, приведённые к общей схеме. `selftest` не выбирается вовсе (§1.3)
 run_attempts AS (
-  SELECT 'ads' AS run_source, run_id, started_at, completed_at, status AS raw_status
+  SELECT 'ads_query_stats_log' AS run_source, run_id, started_at, completed_at, raw_status
+    FROM ads_query_stats_runs
+  UNION ALL
+  SELECT 'ads', run_id, started_at, completed_at, status
     FROM `project-fa311fc0-4d87-4781-986.wb_raw.INGEST_RUNS` WHERE loader_name = 'ads'
   UNION ALL
   SELECT 'orders', run_id, started_at, completed_at, status
@@ -196,6 +225,9 @@ base AS (
     TIMESTAMP_DIFF(CURRENT_TIMESTAMP(),
                    COALESCE(s.completed_at, s.started_at), HOUR)        AS success_age_hours,
     l.success_age_ok_hours,
+    -- 🔴 порог не задан = часы прогона у этого слоя НЕ являются SLA. Колонка нужна,
+    --    чтобы экран не показывал зелёные часы как обещание (§1.8 ред. 5)
+    (l.success_age_ok_hours IS NOT NULL)                                AS success_age_is_sla,
     b.built_at,
     TIMESTAMP_DIFF(CURRENT_TIMESTAMP(), b.built_at, HOUR)               AS build_age_hours
   FROM layers l
@@ -212,7 +244,8 @@ scored AS (
       WHEN run_state IN ('FAILED', 'STUCK', 'NO_RUN', 'UNMAPPED')            THEN 'ERROR'
       WHEN success_run_id IS NULL                                           THEN 'ERROR'
       WHEN run_state = 'PARTIAL'                                            THEN 'STALE'
-      WHEN success_age_hours > success_age_ok_hours                         THEN 'STALE'
+      WHEN success_age_ok_hours IS NOT NULL
+           AND success_age_hours > success_age_ok_hours                     THEN 'STALE'
       WHEN data_age_ok_days IS NOT NULL
            AND data_age_days > data_age_ok_days                             THEN 'STALE'
       ELSE 'OK'
@@ -230,7 +263,7 @@ scored AS (
         THEN 'нет ни одного успешного прогона'
       WHEN run_state = 'PARTIAL'
         THEN 'последняя попытка PARTIAL'
-      WHEN success_age_hours > success_age_ok_hours
+      WHEN success_age_ok_hours IS NOT NULL AND success_age_hours > success_age_ok_hours
         THEN FORMAT('success_age=%dч>%dч', success_age_hours, success_age_ok_hours)
       WHEN data_age_ok_days IS NOT NULL AND data_age_days > data_age_ok_days
         THEN FORMAT('data_age=%d>%d', data_age_days, data_age_ok_days)
@@ -253,7 +286,7 @@ SELECT
   run_state, last_attempt_status, last_attempt_run_id,
   last_attempt_started_at, last_attempt_completed_at, run_age_hours,
   success_run_id, success_raw_status, success_started_at, success_completed_at,
-  success_age_hours, success_age_ok_hours,
+  success_age_hours, success_age_ok_hours, success_age_is_sla,
   built_at, build_age_hours,
   CAST(NULL AS INT64) AS metric_value,
   status, status_reason,
@@ -268,7 +301,7 @@ SELECT
   CAST(NULL AS STRING), CAST(NULL AS STRING), CAST(NULL AS STRING),
   CAST(NULL AS TIMESTAMP), CAST(NULL AS TIMESTAMP), CAST(NULL AS INT64),
   CAST(NULL AS STRING), CAST(NULL AS STRING), CAST(NULL AS TIMESTAMP), CAST(NULL AS TIMESTAMP),
-  CAST(NULL AS INT64), CAST(NULL AS INT64),
+  CAST(NULL AS INT64), CAST(NULL AS INT64), CAST(NULL AS BOOL),
   CAST(NULL AS TIMESTAMP), CAST(NULL AS INT64),
   orphan_nm_ids,
   IF(orphan_nm_ids > 0, 'ERROR', 'OK'),
