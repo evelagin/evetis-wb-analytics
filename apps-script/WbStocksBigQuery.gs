@@ -120,7 +120,7 @@ function wbStocksManifestFields_() {
     { name: 'control_delta', type: 'INT64' },
     // Детектор доступности (с 16.08.2026). Отдельные поля, а не переопределение
     // control_*: иначе исторические значения станут несопоставимы с будущими.
-    { name: 't6_comparable', type: 'INT64' },           // T6 quantity + T6 in_way_from_client — сопоставимая с T5 величина
+    { name: 't6_comparable', type: 'INT64' },           // T6 physical quantity — величина, сопоставляемая с агрегатом T5; потоки in_way_* в инвариант НЕ входят
     { name: 'availability_gap', type: 'INT64' },        // t5_wb_rf_sum − t6_comparable
     { name: 'availability_gap_prev', type: 'INT64' },   // gap предыдущего COMPLETE-снимка
     { name: 'availability_gap_delta', type: 'INT64' },  // прирост разрыва — сигнал выпадения склада
@@ -243,8 +243,9 @@ function wbStocksBqEnsureManifest_() {
 /**
  * Добивает недостающие NULLABLE-колонки в существующую таблицу (schema evolution).
  * Только ДОБАВЛЕНИЕ: существующие поля не трогаем, типы не меняем, ничего не удаляем —
- * поэтому операция безопасна и идемпотентна. Нужна, чтобы `warehouse_code` и
- * `nonnumeric_warehouse_rows` появились в уже созданных таблицах без пересоздания.
+ * поэтому операция безопасна и идемпотентна. Нужна, чтобы `warehouse_code` в RAW
+ * и `anonymized_warehouse_rows`, `t6_comparable`, `availability_*` в manifest
+ * появились в уже созданных таблицах без пересоздания.
  */
 function wbStocksBqEnsureColumns_(tableId, wantFields) {
   wbStocksBqAssertTable_(tableId);
