@@ -3,12 +3,16 @@
  * EVETIS WB — WbStocksBigQuery.gs   (Фаза E — остатки, BQ-слой)
  *
  * Приёмник остатков в BigQuery: RAW_WB_STOCKS (append-only снапшоты) +
- * manifest WB_STOCKS_SNAPSHOTS (источник истины статуса снимка) +
- * V_WB_STOCKS_CURRENT (только последний COMPLETE-снимок).
+ * RAW_WB_STOCKS_T5 (детализация по складам из T5) + manifest
+ * WB_STOCKS_SNAPSHOTS (источник истины статуса снимка) + две вью по
+ * последнему COMPLETE-снимку: V_WB_STOCKS_CURRENT и V_WB_STOCKS_T5_CURRENT.
  *
- * Источник данных — T6 `stocks-report/wb-warehouses` (плоский снимок,
- * grain: snapshot × nmId × chrtId × warehouseId). Тяга/оркестрация — в
- * WbStocksSnapshot.gs. Здесь только BQ-механика.
+ * Источники: T6 `stocks-report/wb-warehouses` (grain snapshot × nmId × chrtId ×
+ * warehouseId) и T5 `warehouse_remains` (grain snapshot × nmId × barcode ×
+ * techSize × warehouseName). 🔴 С 16.08.2026 T6 обезличен и отдаёт только
+ * агрегат «Склад WB»; поимённые склады остались ТОЛЬКО в T5, поэтому T5 из
+ * контрольного источника стал ещё и источником складской детализации.
+ * Тяга/оркестрация — в WbStocksSnapshot.gs. Здесь только BQ-механика.
  *
  * КЛЮЧЕВЫЕ ГАРАНТИИ (аудит C1–C3):
  *   • C2 — manifest STARTED вставляется ДО fetch; финал UPDATE строго
@@ -31,6 +35,8 @@ var WB_STOCKS_BQ_SINK_PROP_   = 'WB_STOCKS_BQ_SINK';
 var WB_STOCKS_RAW_TABLE_      = 'RAW_WB_STOCKS';
 var WB_STOCKS_MANIFEST_TABLE_ = 'WB_STOCKS_SNAPSHOTS';
 var WB_STOCKS_VIEW_           = 'V_WB_STOCKS_CURRENT';
+var WB_STOCKS_T5_TABLE_       = 'RAW_WB_STOCKS_T5';
+var WB_STOCKS_T5_VIEW_        = 'V_WB_STOCKS_T5_CURRENT';
 var WB_STOCKS_SOURCE_API_     = 'WB_API_STOCKS';
 var WB_STOCKS_BQ_BATCH_       = 2000;
 
@@ -47,7 +53,8 @@ function wbStocksRawFields_() {
     { name: 'source_api', type: 'STRING' },
     { name: 'nm_id', type: 'INT64' },
     { name: 'chrt_id', type: 'INT64' },
-    { name: 'warehouse_id', type: 'INT64' },
+    { name: 'warehouse_id', type: 'INT64' },        // NULL с 16.08.2026, если WB отдал нечисловой id
+    { name: 'warehouse_code', type: 'STRING' },     // сырой warehouseId строкой — ключ грейна после обезличивания
     { name: 'warehouse_name', type: 'STRING' },
     { name: 'region_name', type: 'STRING' },
     { name: 'quantity', type: 'INT64' },
@@ -57,6 +64,30 @@ function wbStocksRawFields_() {
     { name: 'internal_sku', type: 'STRING' },
     { name: 'sku_match_status', type: 'STRING' },
     { name: 'raw_json', type: 'STRING' }
+  ];
+}
+
+/**
+ * Поля RAW_WB_STOCKS_T5 — детализация из T5 `warehouse_remains`.
+ * С 16.08.2026 это ЕДИНСТВЕННОЕ место, где виден товар на поимённых складах:
+ * T6 схлопнул всё в «Склад WB». Грейн: snapshot × nmId × barcode × techSize × warehouseName.
+ */
+function wbStocksT5RawFields_() {
+  return [
+    { name: 'load_id', type: 'STRING' },
+    { name: 'snapshot_id', type: 'STRING' },
+    { name: 'snapshot_ts', type: 'TIMESTAMP' },
+    { name: 'source_api', type: 'STRING' },
+    { name: 'nm_id', type: 'INT64' },
+    { name: 'barcode', type: 'STRING' },
+    { name: 'tech_size', type: 'STRING' },
+    { name: 'vendor_code', type: 'STRING' },
+    { name: 'volume', type: 'FLOAT64' },
+    { name: 'warehouse_name', type: 'STRING' },
+    { name: 'row_type', type: 'STRING' },     // WAREHOUSE | AGGREGATE | PSEUDO_TOTAL | PSEUDO_TO_CLIENT | PSEUDO_FROM_CLIENT
+    { name: 'quantity', type: 'INT64' },
+    { name: 'internal_sku', type: 'STRING' },
+    { name: 'sku_match_status', type: 'STRING' }
   ];
 }
 
@@ -78,11 +109,23 @@ function wbStocksManifestFields_() {
     { name: 'qty_positive_rows', type: 'INT64' },
     { name: 'qty_zero_rows', type: 'INT64' },
     { name: 'aggregate_warehouse_rows', type: 'INT64' },
+    { name: 'anonymized_warehouse_rows', type: 'INT64' },   // строк со складом -999999 «Склад WB» (обезличивание WB, с 16.08.2026)
     { name: 'sum_quantity_all_t6', type: 'INT64' },
     { name: 'sum_quantity_physical_t6', type: 'INT64' },
-    { name: 't5_control_sum', type: 'INT64' },
-    { name: 'control_status', type: 'STRING' },       // OK / MISMATCH / T5_UNAVAILABLE
+    { name: 't5_control_sum', type: 'INT64' },        // все реальные склады T5
+    { name: 't5_wb_rf_sum', type: 'INT64' },          // только агрегат «Склад WB РФ»
+    { name: 't5_named_sum', type: 'INT64' },          // поимённые склады — их T6 больше не отдаёт
+    { name: 't5_rows_written', type: 'INT64' },
+    { name: 'control_status', type: 'STRING' },       // OK / MISMATCH / T5_UNAVAILABLE — ИСТОРИЧЕСКАЯ метрика, семантику не менять
     { name: 'control_delta', type: 'INT64' },
+    // Детектор доступности (с 16.08.2026). Отдельные поля, а не переопределение
+    // control_*: иначе исторические значения станут несопоставимы с будущими.
+    { name: 't6_comparable', type: 'INT64' },           // T6 physical quantity — величина, сопоставляемая с агрегатом T5; потоки in_way_* в инвариант НЕ входят
+    { name: 'availability_gap', type: 'INT64' },        // t5_wb_rf_sum − t6_comparable
+    { name: 'availability_gap_prev', type: 'INT64' },   // gap предыдущего COMPLETE-снимка
+    { name: 'availability_gap_delta', type: 'INT64' },  // прирост разрыва — сигнал выпадения склада
+    { name: 'availability_ratio', type: 'FLOAT64' },    // доля продаваемого от балансового агрегата
+    { name: 'availability_status', type: 'STRING' },    // OK / DEGRADED / WAREHOUSE_DROP / DATA_ERROR / NO_BASELINE / T5_UNAVAILABLE
     { name: 'unmatched_nm_ids', type: 'STRING' },      // JSON-массив
     { name: 'error_message', type: 'STRING' }
   ];
@@ -107,9 +150,10 @@ function wbStocksBqEnable() {
   console.log('✅ Остатки sink → BigQuery ВКЛючён: ' + c.projectId + '.' + c.datasetId);
 }
 
-/** allowlist: приёмник остатков пишет ТОЛЬКО в RAW_WB_STOCKS / WB_STOCKS_SNAPSHOTS. */
+/** allowlist: приёмник остатков пишет ТОЛЬКО в RAW_WB_STOCKS / RAW_WB_STOCKS_T5 / WB_STOCKS_SNAPSHOTS. */
 function wbStocksBqAssertTable_(tableId) {
-  if (tableId !== WB_STOCKS_RAW_TABLE_ && tableId !== WB_STOCKS_MANIFEST_TABLE_) {
+  if (tableId !== WB_STOCKS_RAW_TABLE_ && tableId !== WB_STOCKS_MANIFEST_TABLE_ &&
+      tableId !== WB_STOCKS_T5_TABLE_) {
     throw new Error('Запрещённая Stocks BQ-таблица: ' + tableId);
   }
 }
@@ -124,6 +168,7 @@ function wbStocksBqEnsureRaw_() {
   bqEnsureDataset_();
   try {
     BigQuery.Tables.get(c.projectId, c.datasetId, WB_STOCKS_RAW_TABLE_);
+    wbStocksBqEnsureColumns_(WB_STOCKS_RAW_TABLE_, wbStocksRawFields_());
     return false;
   } catch (e) {
     if (!wbStocksBqIsNotFound_(e)) throw new Error('Не удалось проверить ' + WB_STOCKS_RAW_TABLE_ + ': ' + ((e && e.message) || e));
@@ -140,12 +185,49 @@ function wbStocksBqEnsureRaw_() {
   return true;
 }
 
+/** RAW_WB_STOCKS_T5: партиция _snapshot_date, кластер nm_id/warehouse_name. Create-if-missing. */
+function wbStocksBqEnsureT5_() {
+  var c = getBqConfig_();
+  bqEnsureDataset_();
+  try {
+    BigQuery.Tables.get(c.projectId, c.datasetId, WB_STOCKS_T5_TABLE_);
+    wbStocksBqEnsureColumns_(WB_STOCKS_T5_TABLE_, wbStocksT5RawFields_());
+    return false;
+  } catch (e) {
+    if (!wbStocksBqIsNotFound_(e)) throw new Error('Не удалось проверить ' + WB_STOCKS_T5_TABLE_ + ': ' + ((e && e.message) || e));
+  }
+  var fields = wbStocksT5RawFields_().slice();
+  fields.push({ name: '_snapshot_date', type: 'DATE' });
+  BigQuery.Tables.insert({
+    tableReference: { projectId: c.projectId, datasetId: c.datasetId, tableId: WB_STOCKS_T5_TABLE_ },
+    schema: { fields: fields },
+    timePartitioning: { type: 'DAY', field: '_snapshot_date' },
+    clustering: { fields: ['nm_id', 'warehouse_name'] }
+  }, c.projectId, c.datasetId);
+  console.log('✅ BQ таблица создана: ' + WB_STOCKS_T5_TABLE_ + ' (детализация T5 по складам)');
+  return true;
+}
+
+/** Append детализации T5 батчами с детерминированным jobId (C3). */
+function wbStocksBqAppendT5_(rowObjs, snapshotId) {
+  wbStocksBqAssertTable_(WB_STOCKS_T5_TABLE_);
+  if (!rowObjs || !rowObjs.length) return 0;
+  var total = 0, batchNo = 0;
+  for (var j = 0; j < rowObjs.length; j += WB_STOCKS_BQ_BATCH_) {
+    batchNo++;
+    var slice = rowObjs.slice(j, j + WB_STOCKS_BQ_BATCH_);
+    total += wbStocksBqLoadDeterministic_(WB_STOCKS_T5_TABLE_, slice, 'STOCKT5_' + snapshotId + '_BATCH_' + batchNo);
+  }
+  return total;
+}
+
 /** WB_STOCKS_SNAPSHOTS (manifest). Create-if-missing (небольшая таблица, без партиции). */
 function wbStocksBqEnsureManifest_() {
   var c = getBqConfig_();
   bqEnsureDataset_();
   try {
     BigQuery.Tables.get(c.projectId, c.datasetId, WB_STOCKS_MANIFEST_TABLE_);
+    wbStocksBqEnsureColumns_(WB_STOCKS_MANIFEST_TABLE_, wbStocksManifestFields_());
     return false;
   } catch (e) {
     if (!wbStocksBqIsNotFound_(e)) throw new Error('Не удалось проверить ' + WB_STOCKS_MANIFEST_TABLE_ + ': ' + ((e && e.message) || e));
@@ -156,6 +238,35 @@ function wbStocksBqEnsureManifest_() {
   }, c.projectId, c.datasetId);
   console.log('✅ BQ таблица создана: ' + WB_STOCKS_MANIFEST_TABLE_ + ' (manifest снимков)');
   return true;
+}
+
+/**
+ * Добивает недостающие NULLABLE-колонки в существующую таблицу (schema evolution).
+ * Только ДОБАВЛЕНИЕ: существующие поля не трогаем, типы не меняем, ничего не удаляем —
+ * поэтому операция безопасна и идемпотентна. Нужна, чтобы `warehouse_code` в RAW
+ * и `anonymized_warehouse_rows`, `t6_comparable`, `availability_*` в manifest
+ * появились в уже созданных таблицах без пересоздания.
+ */
+function wbStocksBqEnsureColumns_(tableId, wantFields) {
+  wbStocksBqAssertTable_(tableId);
+  var c = getBqConfig_();
+  var tbl = BigQuery.Tables.get(c.projectId, c.datasetId, tableId);
+  var have = {};
+  var cur = (tbl.schema && tbl.schema.fields) || [];
+  for (var i = 0; i < cur.length; i++) have[cur[i].name] = true;
+
+  var added = [];
+  for (var j = 0; j < wantFields.length; j++) {
+    if (!have[wantFields[j].name]) {
+      cur.push({ name: wantFields[j].name, type: wantFields[j].type, mode: 'NULLABLE' });
+      added.push(wantFields[j].name);
+    }
+  }
+  if (!added.length) return [];
+
+  BigQuery.Tables.patch({ schema: { fields: cur } }, c.projectId, c.datasetId, tableId);
+  console.log('✅ ' + tableId + ': добавлены колонки — ' + added.join(', '));
+  return added;
 }
 
 function wbStocksBqIsNotFound_(e) {
@@ -299,6 +410,29 @@ function wbStocksSqlInt_(v) {
   if (v === null || v === undefined || v === '' || isNaN(Number(v))) return 'NULL';
   return String(Math.round(Number(v)));
 }
+/** SQL-число с плавающей точкой или NULL (для availability_ratio). */
+function wbStocksSqlNum_(v) {
+  if (v === null || v === undefined || v === '' || isNaN(Number(v)) || !isFinite(Number(v))) return 'NULL';
+  return String(Number(v));
+}
+
+/**
+ * `availability_gap` предыдущего COMPLETE-снимка — база для `availability_gap_delta`.
+ * Берём последний COMPLETE с НЕпустым gap: снимки до внедрения детектора его не писали,
+ * и брать NULL за базу нельзя — иначе первый же выпавший склад не отличится от старта.
+ * Текущий снимок в выборку не попадает: он ещё STARTED.
+ * @return {number|null}
+ */
+function wbStocksBqPrevAvailabilityGap_() {
+  var c = getBqConfig_();
+  var sql = 'SELECT availability_gap FROM `' + c.projectId + '.' + c.datasetId + '.' +
+    WB_STOCKS_MANIFEST_TABLE_ + "` WHERE status='COMPLETE' AND availability_gap IS NOT NULL " +
+    'ORDER BY completed_at DESC, snapshot_id DESC LIMIT 1';
+  var r = bqQuery_(sql);
+  var f = (r && r.rows && r.rows[0] && r.rows[0].f) || [];
+  if (!f.length || f[0].v == null) return null;
+  return Number(f[0].v);
+}
 
 // ───────────────────────────────────────────────────────────────
 // RAW append (детерминированные batch jobId)
@@ -355,11 +489,21 @@ function wbStocksBqManifestFinalize_(snapshotId, status, m, errorMessage) {
     'qty_positive_rows=' + wbStocksSqlInt_(m.qty_positive_rows),
     'qty_zero_rows=' + wbStocksSqlInt_(m.qty_zero_rows),
     'aggregate_warehouse_rows=' + wbStocksSqlInt_(m.aggregate_warehouse_rows),
+    'anonymized_warehouse_rows=' + wbStocksSqlInt_(m.anonymized_warehouse_rows),
     'sum_quantity_all_t6=' + wbStocksSqlInt_(m.sum_quantity_all_t6),
     'sum_quantity_physical_t6=' + wbStocksSqlInt_(m.sum_quantity_physical_t6),
     't5_control_sum=' + wbStocksSqlInt_(m.t5_control_sum),
+    't5_wb_rf_sum=' + wbStocksSqlInt_(m.t5_wb_rf_sum),
+    't5_named_sum=' + wbStocksSqlInt_(m.t5_named_sum),
+    't5_rows_written=' + wbStocksSqlInt_(m.t5_rows_written),
     'control_status=' + (m.control_status ? wbStocksSqlStr_(m.control_status) : 'NULL'),
     'control_delta=' + wbStocksSqlInt_(m.control_delta),
+    't6_comparable=' + wbStocksSqlInt_(m.t6_comparable),
+    'availability_gap=' + wbStocksSqlInt_(m.availability_gap),
+    'availability_gap_prev=' + wbStocksSqlInt_(m.availability_gap_prev),
+    'availability_gap_delta=' + wbStocksSqlInt_(m.availability_gap_delta),
+    'availability_ratio=' + wbStocksSqlNum_(m.availability_ratio),
+    'availability_status=' + (m.availability_status ? wbStocksSqlStr_(m.availability_status) : 'NULL'),
     'unmatched_nm_ids=' + (m.unmatched_nm_ids ? wbStocksSqlStr_(m.unmatched_nm_ids) : 'NULL'),
     'error_message=' + (errorMessage ? wbStocksSqlStr_(errorMessage) : 'NULL')
   ];
@@ -386,7 +530,12 @@ function wbStocksBqManifestFinalize_(snapshotId, status, m, errorMessage) {
 function wbStocksBqSnapshotCounts_(snapshotId, snapshotDate) {
   var c = getBqConfig_();
   var sql = 'SELECT COUNT(*) AS c, ' +
-    'COUNT(DISTINCT CONCAT(CAST(nm_id AS STRING),"|",CAST(chrt_id AS STRING),"|",CAST(warehouse_id AS STRING))) AS d ' +
+    // 🔴 Ключ грейна берём тот же, что и валидация: код склада, иначе имя.
+    // Раньше здесь был CAST(warehouse_id AS STRING) — при NULL весь CONCAT
+    // становится NULL, COUNT(DISTINCT) молча теряет строки и гейт
+    // «distinct == expected» валит корректный снимок.
+    'COUNT(DISTINCT CONCAT(CAST(nm_id AS STRING),"|",CAST(chrt_id AS STRING),"|",' +
+    'COALESCE(NULLIF(warehouse_code,""),CAST(warehouse_id AS STRING),warehouse_name,""))) AS d ' +
     'FROM `' + c.projectId + '.' + c.datasetId + '.' + WB_STOCKS_RAW_TABLE_ + '` ' +
     'WHERE snapshot_id=' + wbStocksSqlStr_(snapshotId) +
     (snapshotDate ? ' AND _snapshot_date=' + wbStocksSqlStr_(snapshotDate) : '');
@@ -402,6 +551,11 @@ function wbStocksBqSnapshotCounts_(snapshotId, snapshotDate) {
 function wbStocksBqCreateView() {
   wbStocksBqEnsureRaw_();
   wbStocksBqEnsureManifest_();
+  // 🔴 Обязательно ДО создания V_WB_STOCKS_T5_CURRENT: вью ссылается на
+  // RAW_WB_STOCKS_T5, а её создаёт только wbStocksBqEnsureT5_(). Без этой
+  // строки на чистом внедрении CREATE VIEW падает — таблицы ещё нет
+  // (в снимке она появлялась позже, в best-effort ветке T5).
+  wbStocksBqEnsureT5_();
   var c = getBqConfig_();
   function fq(t) { return '`' + c.projectId + '.' + c.datasetId + '.' + t + '`'; }
   var sql =
@@ -416,6 +570,19 @@ function wbStocksBqCreateView() {
     'JOIN last_complete lc USING (snapshot_id)';
   bqQuery_(sql);
   console.log('✅ Вью создана: ' + WB_STOCKS_VIEW_ + ' (последний COMPLETE снимок)');
+
+  var sqlT5 =
+    'CREATE OR REPLACE VIEW ' + fq(WB_STOCKS_T5_VIEW_) + ' AS\n' +
+    'WITH last_complete AS (\n' +
+    '  SELECT snapshot_id FROM ' + fq(WB_STOCKS_MANIFEST_TABLE_) + '\n' +
+    "  WHERE status = 'COMPLETE'\n" +
+    '  ORDER BY completed_at DESC, snapshot_id DESC\n' +
+    '  LIMIT 1\n' +
+    ')\n' +
+    'SELECT r.* FROM ' + fq(WB_STOCKS_T5_TABLE_) + ' r\n' +
+    'JOIN last_complete lc USING (snapshot_id)';
+  bqQuery_(sqlT5);
+  console.log('✅ Вью создана: ' + WB_STOCKS_T5_VIEW_ + ' (детализация T5 последнего COMPLETE снимка)');
 }
 
 /** C0 smoke без WB API: sink + таблицы + вью. Fail-closed rollback флага. */
@@ -425,7 +592,7 @@ function wbStocksBqInitC0() {
     wbStocksBqEnsureRaw_();
     wbStocksBqEnsureManifest_();
     wbStocksBqCreateView();
-    console.log('✅ C0 остатков готов (RAW + manifest + VIEW). Дальше — runWbStocksSnapshot за один снимок.');
+    console.log('✅ C0 остатков готов (RAW + RAW_T5 + manifest + обе VIEW). Дальше — runWbStocksSnapshot за один снимок.');
   } catch (e) {
     wbStocksBqDisable();
     console.error('❌ C0 остатков не завершён. Sink ВЫКЛючен: ' + String((e && e.message) || e));

@@ -30,6 +30,29 @@ var WB_STOCKS_LOG_SHEET_      = 'IMPORT_LOG_STOCKS';
 var WB_STOCKS_CONTROL_TOLERANCE_ = 2;   // ед.: допуск T5/T6 физ. (снимки сняты с разницей в секунды)
 var WB_STOCKS_AGG_WH_NAME_    = 'Остальные';
 
+// T5 после обезличивания 16.08.2026: один агрегат «Склад WB РФ» + поимённо те склады,
+// которые WB обещал оставить видимыми, + три псевдо-строки.
+var WB_STOCKS_T5_AGG_NAME_    = 'Склад WB РФ';
+// ── Детектор доступности (16.08.2026) ──
+// Пороги выведены из наблюдаемой истории складов, а не назначены произвольно:
+// самый маленький значимый склад в нашем контуре давал ~159 ед (Владимир),
+// самый большой — 1 109 (Коледино). При агрегате порядка 2,4 тыс это 6–45%.
+// Поэтому «резкий скачок» = не меньше 100 ед И не меньше 5% агрегата: ниже этой
+// планки лежат обычные суточные колебания продаж и возвратов, выше — выбытие склада.
+// ⚠️ Это калибровочная бизнес-гипотеза, а не гарантия: склад с остатком ~70 ед
+// намеренно НЕ даст WAREHOUSE_DROP, он попадёт в DEGRADED. Это цена защиты от
+// ложных тревог. Пересматривать пороги только после того, как накопится
+// распределение обычного gap_delta за несколько суток.
+var WB_STOCKS_AVAIL_DROP_ABS_   = 100;    // ед., нижняя граница «резкого скачка»
+var WB_STOCKS_AVAIL_DROP_REL_   = 0.05;   // доля агрегата
+var WB_STOCKS_AVAIL_OK_REL_     = 0.01;   // разрыв ≤1% агрегата считаем шумом
+
+var WB_STOCKS_T5_PSEUDO_      = {
+  'Всего находится на складах': 'PSEUDO_TOTAL',
+  'В пути до получателей':      'PSEUDO_TO_CLIENT',
+  'В пути возвраты на склад WB':'PSEUDO_FROM_CLIENT'
+};
+
 // ───────────────────────────────────────────────────────────────
 // Утилиты
 // ───────────────────────────────────────────────────────────────
@@ -40,6 +63,35 @@ function wbStocksInt_(v) {
   var n = Number(v);
   if (!isFinite(n) || Math.floor(n) !== n) return null;
   return n;
+}
+
+/**
+ * Разбор склада из строки T6.
+ *
+ * 🔴 16.08.2026 — ФАКТ, снят пробой `probeWbStocksWarehouseShape()` в 11:37 МСК:
+ * WB обезличил склады в T6. Вместо 241 строки по 39 складам приходит 23 строки
+ * (по одной на chrtId), и во ВСЕХ:
+ *     warehouseId = -999999,  warehouseName = "Склад WB",  regionName = "Склад WB"
+ * `-999999` — это сентинел «склад не раскрываем», а не идентификатор. Прежняя
+ * валидация требовала `warehouseId >= 0` и роняла весь снимок на первой строке.
+ *
+ * Теперь: реальный неотрицательный id сохраняем в `warehouse_id`; сентинел
+ * (и любое отрицательное/нечисловое значение) кладём строкой в `warehouse_code`,
+ * а `warehouse_id` = NULL. Ключ грейна — код склада, а если его нет — имя.
+ * Снимок падает, только если склад не опознать ничем.
+ *
+ * @return {{id:(number|null), code:string, name:string, key:string, anonymized:boolean}}
+ */
+var WB_STOCKS_ANON_WH_ID_ = -999999;   // сентинел WB: «склад обезличен»
+
+function wbStocksWarehouse_(o) {
+  var raw = (o.warehouseId !== undefined) ? o.warehouseId : o.warehouse_id;
+  var code = (raw === null || raw === undefined) ? '' : String(raw).trim();
+  var id = wbStocksInt_(raw);
+  var anon = (id === null || id < 0);          // -999999 и любое отрицательное — не идентификатор
+  if (anon) id = null;
+  var name = String(o.warehouseName || o.warehouse || '').trim();
+  return { id: id, code: code, name: name, key: (code !== '' ? code : name), anonymized: anon };
 }
 
 /** Короткий UUID (8 hex) для уникальности snapshot_id при двух запусках в одну секунду. */
@@ -136,16 +188,61 @@ function wbStocksT5PhysicalSum_(token) {
   var dl = wbStocksHttp_('get', taskBase + '/tasks/' + taskId + '/download', token, null);
   if (!dl.ok) return { ok: false, sum: 0, error: 'T5 download: ' + dl.error };
   var data = Array.isArray(dl.json) ? dl.json : [];
-  var PSEUDO = { 'Всего находится на складах': 1, 'В пути до получателей': 1, 'В пути возвраты на склад WB': 1 };
-  var sum = 0;
+  var sum = 0, aggSum = 0, namedSum = 0;
   for (var i = 0; i < data.length; i++) {
     var whs = data[i].warehouses || [];
     for (var w = 0; w < whs.length; w++) {
-      var name = String(whs[w].warehouseName || whs[w].warehouse || '');
-      if (!PSEUDO[name]) sum += Number(whs[w].quantity || 0);
+      var name = String(whs[w].warehouseName || whs[w].warehouse || '').trim();
+      if (WB_STOCKS_T5_PSEUDO_[name]) continue;              // псевдо-строки в сумму не идут
+      var q = Number(whs[w].quantity || 0);
+      sum += q;
+      if (name === WB_STOCKS_T5_AGG_NAME_) aggSum += q; else namedSum += q;
     }
   }
-  return { ok: true, sum: Math.round(sum), error: '' };
+  return { ok: true, sum: Math.round(sum), aggSum: Math.round(aggSum),
+           namedSum: Math.round(namedSum), data: data, error: '' };
+}
+
+/**
+ * Нормализация T5 → строки RAW_WB_STOCKS_T5.
+ *
+ * 🔴 Зачем это вообще хранится. С 16.08.2026 T6 отдаёт ТОЛЬКО обезличенный
+ * агрегат «Склад WB» — товар на поимённых складах (Электросталь, Краснодар,
+ * Тула, Самара, Сарапул, Волгоград, СПБ Шушары) из T6 просто исчез. В T5 он
+ * остался. Для нас это ровно тот остаток, что сгорел: пока WB держит его на
+ * балансе, мы обязаны его видеть — это предмет заявки на компенсацию.
+ *
+ * Грейн: snapshot × nmId × barcode × techSize × warehouseName.
+ * row_type: WAREHOUSE (реальный склад) | AGGREGATE («Склад WB РФ») | PSEUDO_*.
+ */
+function wbStocksNormalizeT5_(data, snapshotId, snapshotTsIso, snapshotDate, loadId, skuIndex) {
+  var rows = [];
+  for (var i = 0; i < data.length; i++) {
+    var o = data[i];
+    var nm = wbStocksInt_(o.nmId !== undefined ? o.nmId : o.nm_id);
+    var nmStr = (typeof normalizeNmIdFinance_ === 'function') ? normalizeNmIdFinance_(nm) : String(nm);
+    var internalSku = '', matchStatus = 'not_found';
+    if (nmStr && skuIndex && skuIndex.byNm && skuIndex.byNm[nmStr]) {
+      internalSku = skuIndex.byNm[nmStr].sku || ''; matchStatus = 'matched';
+    }
+    var whs = o.warehouses || [];
+    for (var w = 0; w < whs.length; w++) {
+      var name = String(whs[w].warehouseName || whs[w].warehouse || '').trim();
+      var rowType = WB_STOCKS_T5_PSEUDO_[name] ||
+                    (name === WB_STOCKS_T5_AGG_NAME_ ? 'AGGREGATE' : 'WAREHOUSE');
+      rows.push({
+        load_id: loadId, snapshot_id: snapshotId, snapshot_ts: snapshotTsIso,
+        source_api: 'WB_API_STOCKS_T5',
+        nm_id: nm, barcode: String(o.barcode || ''), tech_size: String(o.techSize || ''),
+        vendor_code: String(o.vendorCode || ''), volume: Number(o.volume || 0),
+        warehouse_name: name, row_type: rowType,
+        quantity: wbStocksInt_(whs[w].quantity) || 0,
+        internal_sku: internalSku, sku_match_status: matchStatus,
+        _snapshot_date: snapshotDate
+      });
+    }
+  }
+  return { rows: rows };
 }
 
 // ───────────────────────────────────────────────────────────────
@@ -165,37 +262,40 @@ function wbStocksValidateT6_(data) {
     var o = data[i];
     var nm = wbStocksInt_(o.nmId !== undefined ? o.nmId : (o.nmid !== undefined ? o.nmid : o.nm_id));
     var chrt = wbStocksInt_(o.chrtId !== undefined ? o.chrtId : o.chrt_id);
-    var wh = wbStocksInt_(o.warehouseId !== undefined ? o.warehouseId : o.warehouse_id);
+    var wh = wbStocksWarehouse_(o);
     if (nm === null || nm <= 0) return { ok: false, error: 'Строка #' + (i + 1) + ': nmId не положительный INT64' };
     if (chrt === null) return { ok: false, error: 'Строка #' + (i + 1) + ': chrtId не INT64' };
-    if (wh === null || wh < 0) return { ok: false, error: 'Строка #' + (i + 1) + ': warehouseId не INT64 ≥0' };
+    if (wh.key === '') return { ok: false, error: 'Строка #' + (i + 1) + ': склад не опознан — пусты и warehouseId, и warehouseName' };
     var q = wbStocksInt_(o.quantity !== undefined ? o.quantity : o.qty);
     var t = wbStocksInt_(o.inWayToClient !== undefined ? o.inWayToClient : o.in_way_to_client);
     var f = wbStocksInt_(o.inWayFromClient !== undefined ? o.inWayFromClient : o.in_way_from_client);
     if (q === null || q < 0) return { ok: false, error: 'Строка #' + (i + 1) + ': quantity не целое ≥0' };
     if (t === null || t < 0) return { ok: false, error: 'Строка #' + (i + 1) + ': inWayToClient не целое ≥0' };
     if (f === null || f < 0) return { ok: false, error: 'Строка #' + (i + 1) + ': inWayFromClient не целое ≥0' };
-    var key = nm + '|' + chrt + '|' + wh;
+    var key = nm + '|' + chrt + '|' + wh.key;
     if (keySeen[key]) dup++; else keySeen[key] = true;
   }
-  if (dup > 0) return { ok: false, error: 'T6: дубли ключа nmId|chrtId|warehouseId = ' + dup + ' (ожидалось 0)' };
+  if (dup > 0) return { ok: false, error: 'T6: дубли ключа nmId|chrtId|склад = ' + dup + ' (ожидалось 0)' };
   return { ok: true, error: '', distinctKeys: Object.keys(keySeen).length, duplicateKeys: 0 };
 }
 
 /** Нормализация T6 → RAW-объекты + метрики снимка. SKU-привязка по nmId (у T6 нет barcode). */
 function wbStocksNormalize_(data, snapshotId, snapshotTsIso, snapshotDate, loadId, skuIndex) {
   var rows = [], nmSet = {}, whSet = {}, qtyPos = 0, qtyZero = 0, aggRows = 0, sumAll = 0, sumPhys = 0, unmatched = {};
+  var sumInWayFrom = 0;
+  var anonWh = 0;   // строк с обезличенным складом (warehouseId = -999999) — индикатор перехода WB
   for (var i = 0; i < data.length; i++) {
     var o = data[i];
     var nm = wbStocksInt_(o.nmId !== undefined ? o.nmId : (o.nmid !== undefined ? o.nmid : o.nm_id));
     var chrt = wbStocksInt_(o.chrtId !== undefined ? o.chrtId : o.chrt_id);
-    var wh = wbStocksInt_(o.warehouseId !== undefined ? o.warehouseId : o.warehouse_id);
-    var whName = String(o.warehouseName || o.warehouse || '');
+    var wh = wbStocksWarehouse_(o);
+    var whName = wh.name;
     var region = String(o.regionName || o.region || '');
     var q = wbStocksInt_(o.quantity !== undefined ? o.quantity : o.qty) || 0;
     var t = wbStocksInt_(o.inWayToClient !== undefined ? o.inWayToClient : o.in_way_to_client) || 0;
     var f = wbStocksInt_(o.inWayFromClient !== undefined ? o.inWayFromClient : o.in_way_from_client) || 0;
-    var isAgg = (wh === 0 || whName === WB_STOCKS_AGG_WH_NAME_);
+    var isAgg = (wh.id === 0 || wh.code === '0' || whName === WB_STOCKS_AGG_WH_NAME_);
+    if (wh.anonymized) anonWh++;
 
     var nmStr = (typeof normalizeNmIdFinance_ === 'function') ? normalizeNmIdFinance_(nm) : String(nm);
     var internalSku = '', matchStatus = 'not_found';
@@ -207,15 +307,17 @@ function wbStocksNormalize_(data, snapshotId, snapshotTsIso, snapshotDate, loadI
 
     rows.push({
       load_id: loadId, snapshot_id: snapshotId, snapshot_ts: snapshotTsIso, source_api: WB_STOCKS_SOURCE_API_,
-      nm_id: nm, chrt_id: chrt, warehouse_id: wh, warehouse_name: whName, region_name: region,
+      nm_id: nm, chrt_id: chrt, warehouse_id: wh.id, warehouse_code: wh.code,
+      warehouse_name: whName, region_name: region,
       quantity: q, in_way_to_client: t, in_way_from_client: f, is_aggregate_warehouse: isAgg,
       internal_sku: internalSku, sku_match_status: matchStatus, raw_json: JSON.stringify(o),
       _snapshot_date: snapshotDate
     });
 
     if (nm != null) nmSet[nm] = true;
-    if (whName) whSet[whName] = true;
+    if (wh.key) whSet[wh.key] = true;
     if (q > 0) qtyPos++; else qtyZero++;
+    sumInWayFrom += f;
     sumAll += q;
     if (!isAgg) sumPhys += q;
     if (isAgg) aggRows++;
@@ -224,6 +326,7 @@ function wbStocksNormalize_(data, snapshotId, snapshotTsIso, snapshotDate, loadI
     expected_rows: rows.length, unique_nm_ids: Object.keys(nmSet).length,
     warehouses_count: Object.keys(whSet).length, qty_positive_rows: qtyPos, qty_zero_rows: qtyZero,
     aggregate_warehouse_rows: aggRows, sum_quantity_all_t6: sumAll, sum_quantity_physical_t6: sumPhys,
+    anonymized_warehouse_rows: anonWh, sum_in_way_from_client: sumInWayFrom,
     unmatched_list: Object.keys(unmatched) } };
 }
 
@@ -319,15 +422,92 @@ function wbStocksSnapshotCore_(r) {
   m.duplicate_keys = val.duplicateKeys;
   m.unmatched_nm_ids = JSON.stringify(m.unmatched_list || []);
 
-  // T5-контроль (НЕ блокирует).
+  // `t6_comparable` зависит ТОЛЬКО от T6, поэтому считается и сохраняется ДО обращения
+  // к T5: если второй источник недоступен, эту величину мы всё равно знаем, и терять
+  // её незачем — диагностический слой хранит входы независимо от судьбы соседей.
+  //
+  // 🔴 16.08.2026, ОПРОВЕРГНУТАЯ ГИПОТЕЗА — не возвращать слагаемое обратно.
+  // Была версия, что `quantity` в T5 включает возвраты, едущие на склад, и потому
+  // сравнивать надо с `sum_quantity_physical_t6 + sum_in_way_from_client`. Она
+  // родилась из ОДНОГО совпадения (T5 агрегат 2445 против 2405 + 38 = 2443).
+  // Опровергается замером 15.08, где сходимость была точной БЕЗ всякой поправки:
+  //     T6 physical 4741 == T5 control 4741, delta 0, при in_way_from_client 37.
+  // Будь слагаемое верным, T5 показал бы 4778. И контрольный факт: 16.08 разрыв
+  // без поправки гулял +40 → +23 при in_way_from_client 38 → 41 — связи нет.
+  // Со слагаемым детектор давал воспроизводимый ложный DATA_ERROR (gap −18).
+  // `sum_in_way_from_client` остаётся самостоятельной наблюдаемой метрикой,
+  // но в инвариант T5↔T6 не входит.
+  var t6Comparable = m.sum_quantity_physical_t6;
+  m.t6_comparable = t6Comparable;
+
+  // T5-контроль (НЕ блокирует) + сохранение детализации T5.
   var t5 = wbStocksT5PhysicalSum_(tk.token);
   if (!t5.ok) {
     m.control_status = 'T5_UNAVAILABLE'; m.t5_control_sum = null; m.control_delta = null;
+    m.t5_wb_rf_sum = null; m.t5_named_sum = null; m.t5_rows_written = 0;
+    // t6_comparable НЕ обнуляем — это независимая метрика T6.
+    m.availability_gap = null; m.availability_gap_prev = null; m.availability_gap_delta = null;
+    m.availability_ratio = null; m.availability_status = 'T5_UNAVAILABLE';
     console.log('STOCKS control: T5 недоступен — ' + t5.error);
   } else {
-    m.t5_control_sum = t5.sum;
-    m.control_delta = Math.abs(t5.sum - m.sum_quantity_physical_t6);
+    m.t5_control_sum = t5.sum;        // все реальные склады T5 (агрегат + поимённые)
+    m.t5_wb_rf_sum   = t5.aggSum;     // только «Склад WB РФ» — сопоставим с T6
+    m.t5_named_sum   = t5.namedSum;   // поимённые склады — их T6 больше не показывает
+
+    // 🔴 Сопоставляем T6 с АГРЕГАТОМ T5, а не с его общим итогом: с 16.08.2026 T6
+    // отдаёт только «Склад WB», а поимённые склады живут отдельной частью T5.
+    // Инвариант: T5 total = aggregate + named — балансовый контур; T5 aggregate ↔
+    // T6 physical — доступный контур. Потоки (inWayToClient/inWayFromClient) в
+    // инвариант не входят, см. опровержение выше.
+    m.control_delta = Math.abs(t5.aggSum - t6Comparable);
     m.control_status = (m.control_delta <= WB_STOCKS_CONTROL_TOLERANCE_) ? 'OK' : 'MISMATCH';
+
+    // 🔴 ДЕТЕКТОР ДОСТУПНОСТИ. Равенство T5-агрегата и T6 перестало быть инвариантом
+    // 16.08.2026: Коледино выпало из продаваемого T6, оставшись в балансовом T5, и
+    // разрыв скакнул с ~2 до 1 147. Поэтому вместо pass/fail разделяем две разные
+    // вещи: целостность данных (T6 не может быть БОЛЬШЕ баланса) и бизнес-событие
+    // (склад выбыл из продаваемого контура). Поля отдельные — control_* остаются
+    // историческими, чтобы накопленные значения не стали несопоставимы.
+    m.availability_gap = t5.aggSum - t6Comparable;
+    m.availability_ratio = t5.aggSum > 0 ? (t6Comparable / t5.aggSum) : null;
+    try { m.availability_gap_prev = wbStocksBqPrevAvailabilityGap_(); }
+    catch (ePrev) { m.availability_gap_prev = null; console.error('availability_gap_prev не прочитан: ' + ((ePrev && ePrev.message) || ePrev)); }
+    m.availability_gap_delta = (m.availability_gap_prev === null || m.availability_gap_prev === undefined)
+      ? null : (m.availability_gap - m.availability_gap_prev);
+
+    var dropThreshold = Math.max(WB_STOCKS_AVAIL_DROP_ABS_, Math.round(t5.aggSum * WB_STOCKS_AVAIL_DROP_REL_));
+    var okThreshold   = Math.max(WB_STOCKS_CONTROL_TOLERANCE_, Math.round(t5.aggSum * WB_STOCKS_AVAIL_OK_REL_));
+
+    if (t6Comparable > t5.aggSum + WB_STOCKS_CONTROL_TOLERANCE_) {
+      // Продаваемого больше, чем на балансе — так не бывает: один из источников врёт.
+      m.availability_status = 'DATA_ERROR';
+    } else if (m.availability_gap_delta === null) {
+      m.availability_status = 'NO_BASELINE';   // не с чем сравнивать: первый снимок с детектором
+    } else if (m.availability_gap_delta >= dropThreshold) {
+      m.availability_status = 'WAREHOUSE_DROP';
+    } else if (m.availability_gap > okThreshold) {
+      m.availability_status = 'DEGRADED';
+    } else {
+      m.availability_status = 'OK';
+    }
+    console.log('STOCKS availability: T5агрегат ' + t5.aggSum + ' | T6 доступно ' + t6Comparable +
+                ' | gap ' + m.availability_gap +
+                ' | gap_delta ' + (m.availability_gap_delta === null ? 'н/д' : m.availability_gap_delta) +
+                ' | ratio ' + (m.availability_ratio === null ? 'н/д' : m.availability_ratio.toFixed(3)) +
+                ' | status ' + m.availability_status);
+
+    // Детализация T5 — best-effort: её потеря не должна валить снимок T6.
+    try {
+      wbStocksBqEnsureT5_();
+      var t5n = wbStocksNormalizeT5_(t5.data, snapshotId, r.started_at_iso, snapshotDate, loadId, skuIndex);
+      wbStocksBqAppendT5_(t5n.rows, snapshotId);
+      m.t5_rows_written = t5n.rows.length;
+      console.log('STOCKS T5 detail: записано строк ' + t5n.rows.length +
+                  ' (агрегат ' + t5.aggSum + ', поимённые склады ' + t5.namedSum + ')');
+    } catch (eT5) {
+      m.t5_rows_written = 0;
+      console.error('STOCKS T5 detail НЕ сохранён (снимок T6 не затронут): ' + ((eT5 && eT5.message) || eT5));
+    }
   }
   r.control_status = m.control_status;
   r.metrics = m;
