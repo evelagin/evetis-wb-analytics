@@ -1,0 +1,255 @@
+<!DOCTYPE html>
+<html lang="ru"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>EVETIS · Живые и фантомные остатки WB, план отгрузки — 15.08.2026</title>
+<style>
+:root{
+  --surface-1:#fcfcfb; --page:#f9f9f7;
+  --ink-1:#0b0b0b; --ink-2:#52514e; --ink-muted:#898781;
+  --grid:#e1e0d9; --axis:#c3c2b7; --ring:rgba(11,11,11,0.10);
+  --bar:#2a78d6; --bar-soft:#cde2fb;
+  --good:#0ca30c; --warning:#fab219; --serious:#ec835a; --critical:#d03b3b;
+  color-scheme:light;
+}
+@media (prefers-color-scheme:dark){
+  :root:where(:not([data-theme="light"])){
+    --surface-1:#1a1a19; --page:#0d0d0d;
+    --ink-1:#fff; --ink-2:#c3c2b7; --ink-muted:#898781;
+    --grid:#2c2c2a; --axis:#383835; --ring:rgba(255,255,255,0.10);
+    --bar:#3987e5; --bar-soft:#184f95;
+    color-scheme:dark;
+  }
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--page);color:var(--ink-1);
+  font-family:system-ui,-apple-system,"Segoe UI",sans-serif;font-size:15px;line-height:1.5}
+.wrap{max-width:1120px;margin:0 auto;padding:32px 20px 72px}
+h1{font-size:26px;margin:0 0 6px;letter-spacing:-.01em}
+.sub{color:var(--ink-2);margin:0 0 28px;font-size:14px}
+h2{font-size:19px;margin:40px 0 6px;letter-spacing:-.01em}
+h2 .n{color:var(--ink-muted);font-weight:400;margin-right:8px}
+.lead{color:var(--ink-2);margin:0 0 14px;font-size:14px}
+.card{background:var(--surface-1);border:1px solid var(--ring);border-radius:10px;padding:16px 18px}
+.kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px;margin:0 0 8px}
+.kpi{background:var(--surface-1);border:1px solid var(--ring);border-radius:10px;padding:14px 16px}
+.kpi .lab{font-size:12px;color:var(--ink-muted);text-transform:uppercase;letter-spacing:.04em}
+.kpi .val{font-size:30px;font-weight:600;margin-top:4px;letter-spacing:-.02em}
+.kpi .note{font-size:12.5px;color:var(--ink-2);margin-top:2px}
+table{width:100%;border-collapse:collapse;background:var(--surface-1);
+  border:1px solid var(--ring);border-radius:10px;overflow:hidden;font-size:14px}
+th,td{padding:8px 12px;text-align:left;border-bottom:1px solid var(--grid);vertical-align:middle}
+th{font-size:12px;color:var(--ink-muted);text-transform:uppercase;letter-spacing:.04em;font-weight:600;white-space:nowrap}
+tbody tr:last-child td{border-bottom:none}
+tfoot td{font-weight:600;border-top:2px solid var(--axis);background:transparent}
+.num{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
+.bar{display:block;height:10px;border-radius:0 4px 4px 0;background:var(--bar);min-width:2px}
+.barcell{width:120px;padding-right:16px}
+.st{display:inline-flex;align-items:center;gap:6px;white-space:nowrap;font-weight:600;font-size:13px}
+.dot{width:9px;height:9px;border-radius:50%;flex:none;box-shadow:0 0 0 2px var(--surface-1)}
+.st-live .dot{background:var(--good)} .st-live{color:var(--good)}
+.st-dead .dot{background:var(--critical)} .st-dead{color:var(--critical)}
+.st-warn .dot{background:var(--warning)} .st-warn{color:var(--ink-1)}
+.st-new .dot{background:var(--bar)} .st-new{color:var(--bar)}
+.neg{color:var(--critical);font-weight:600}
+.pos{color:var(--ink-2)}
+ul{margin:8px 0 0;padding-left:20px} li{margin:5px 0}
+.small{font-size:13px;color:var(--ink-2)}
+.tag{display:inline-block;font-size:11.5px;padding:1px 7px;border-radius:20px;border:1px solid var(--ring);color:var(--ink-2);margin-left:6px}
+.box{background:var(--surface-1);border:1px solid var(--ring);border-left:3px solid var(--critical);border-radius:8px;padding:14px 16px;margin:14px 0}
+.box.ok{border-left-color:var(--good)}
+.box.warn{border-left-color:var(--warning)}
+.box h3{margin:0 0 6px;font-size:15px}
+.box p{margin:0;font-size:14px;color:var(--ink-2)}
+footer{margin-top:44px;padding-top:18px;border-top:1px solid var(--grid);font-size:12.5px;color:var(--ink-muted)}
+</style></head><body><div class="wrap">
+
+<h1>EVETIS · что из остатков реально есть и план поставки на 18.08</h1>
+<p class="sub">Снимок остатков 15.08.2026, спрос 04.06–15.08.2026. Источники: <code>RAW_WB_STOCKS</code> (T6), <code>V_WB_ORDERS</code>, открытые новости по складам WB. Ред. 2 — добавлены план поставки, блокировка увлажняющей линейки и логистика.</p>
+
+<div class="kpis">
+  <div class="kpi"><div class="lab">Остаток по отчёту WB</div><div class="val">4 741</div><div class="note">единиц, 15.08</div></div>
+  <div class="kpi"><div class="lab">Реально доступно</div><div class="val" style="color:var(--good)">2 414</div><div class="note">51% — 8 работающих складов</div></div>
+  <div class="kpi"><div class="lab">Фантом (не отгружается)</div><div class="val" style="color:var(--critical)">2 327</div><div class="note">49% — 8 выбывших складов</div></div>
+  <div class="kpi"><div class="lab">Спрос, база до 18.07</div><div class="val">24,4</div><div class="note">заказа/день · сейчас 18,6 (−24%)</div></div>
+</div>
+
+<h2><span class="n">1</span>Живые и мёртвые склады</h2>
+<p class="lead">Признак фантома: остаток не меняется с даты инцидента <b>и</b> с этого склада не ушло ни одного заказа. Оба условия выполняются одновременно — это не сбой выгрузки, это остановленный склад.</p>
+<table>
+<thead><tr><th>Склад</th><th>Округ</th><th class="num">Остаток</th><th class="barcell"></th><th>Остаток менялся</th><th class="num">Заказов 10–13.08</th><th>Статус</th></tr></thead>
+<tbody>
+<tr><td>Коледино</td><td>ЦФО</td><td class="num">1 109</td><td class="barcell"><span class="bar" style="width:100%"></span></td><td>15.08 <span class="tag">ежедневно</span></td><td class="num">62</td><td><span class="st st-live"><span class="dot"></span>Живой</span></td></tr>
+<tr><td>Казань</td><td>ПФО</td><td class="num">854</td><td class="barcell"><span class="bar" style="width:77%"></span></td><td>15.08 <span class="tag">ежедневно</span></td><td class="num">13</td><td><span class="st st-live"><span class="dot"></span>Живой</span></td></tr>
+<tr><td>Тула</td><td>ЦФО</td><td class="num">695</td><td class="barcell"><span class="bar" style="width:63%;background:var(--bar-soft)"></span></td><td>11.08 <span class="tag">±1, шум</span></td><td class="num">0</td><td><span class="st st-dead"><span class="dot"></span>Фантом</span></td></tr>
+<tr><td>Электросталь</td><td>ЦФО</td><td class="num">685</td><td class="barcell"><span class="bar" style="width:62%;background:var(--bar-soft)"></span></td><td>21.07 <span class="tag">25 дней</span></td><td class="num">0</td><td><span class="st st-dead"><span class="dot"></span>Фантом</span></td></tr>
+<tr><td>Краснодар</td><td>ЮФО</td><td class="num">415</td><td class="barcell"><span class="bar" style="width:37%;background:var(--bar-soft)"></span></td><td>23.07 <span class="tag">23 дня</span></td><td class="num">0</td><td><span class="st st-dead"><span class="dot"></span>Фантом</span></td></tr>
+<tr><td>Екатеринбург — Перспективная 14</td><td>УФО</td><td class="num">284</td><td class="barcell"><span class="bar" style="width:26%"></span></td><td>15.08 <span class="tag">ежедневно</span></td><td class="num">21</td><td><span class="st st-live"><span class="dot"></span>Живой</span></td></tr>
+<tr><td>Самара (Новосемейкино)</td><td>ПФО</td><td class="num">166</td><td class="barcell"><span class="bar" style="width:15%;background:var(--bar-soft)"></span></td><td>12.08 <span class="tag">±1, шум</span></td><td class="num">0</td><td><span class="st st-dead"><span class="dot"></span>Фантом</span></td></tr>
+<tr><td>Сарапул</td><td>ПФО</td><td class="num">165</td><td class="barcell"><span class="bar" style="width:15%;background:var(--bar-soft)"></span></td><td>01.08 <span class="tag">14 дней</span></td><td class="num">0</td><td><span class="st st-dead"><span class="dot"></span>Фантом</span></td></tr>
+<tr><td>Владимир</td><td>ЦФО</td><td class="num">159</td><td class="barcell"><span class="bar" style="width:14%"></span></td><td>15.08</td><td class="num">1</td><td><span class="st st-warn"><span class="dot"></span>Живой, слабый</span></td></tr>
+<tr><td>Волгоград</td><td>ЮФО</td><td class="num">159</td><td class="barcell"><span class="bar" style="width:14%;background:var(--bar-soft)"></span></td><td>01.08 <span class="tag">14 дней</span></td><td class="num">0</td><td><span class="st st-dead"><span class="dot"></span>Фантом</span></td></tr>
+<tr><td>СПБ Шушары</td><td>СЗФО</td><td class="num">40</td><td class="barcell"><span class="bar" style="width:4%;background:var(--bar-soft)"></span></td><td>24.07 <span class="tag">22 дня</span></td><td class="num">0</td><td><span class="st st-dead"><span class="dot"></span>Фантом</span></td></tr>
+<tr><td>Рязань (Тюшевское)</td><td>ЦФО</td><td class="num">5</td><td class="barcell"><span class="bar" style="width:2%"></span></td><td>15.08</td><td class="num">0</td><td><span class="st st-live"><span class="dot"></span>Живой</span></td></tr>
+<tr><td>Невинномысск</td><td>СКФО</td><td class="num">2</td><td class="barcell"><span class="bar" style="width:2%;background:var(--bar-soft)"></span></td><td>21.07</td><td class="num">0</td><td><span class="st st-dead"><span class="dot"></span>Фантом</span></td></tr>
+<tr><td>Котовск</td><td>ЦФО</td><td class="num">1</td><td class="barcell"><span class="bar" style="width:2%"></span></td><td>13.08</td><td class="num">1</td><td><span class="st st-live"><span class="dot"></span>Живой</span></td></tr>
+<tr><td>Омск</td><td>СФО</td><td class="num">1</td><td class="barcell"><span class="bar" style="width:2%"></span></td><td>появился 15.08</td><td class="num">0</td><td><span class="st st-new"><span class="dot"></span>Новый склад</span></td></tr>
+<tr><td>СЦ Ереван</td><td>Армения</td><td class="num">1</td><td class="barcell"><span class="bar" style="width:2%"></span></td><td>03.08</td><td class="num">0</td><td><span class="st st-warn"><span class="dot"></span>Не РФ</span></td></tr>
+</tbody>
+<tfoot><tr><td colspan="2">Итого</td><td class="num">4 741</td><td></td><td colspan="2" class="small">живого 2 414 · фантома 2 327</td><td></td></tr></tfoot>
+</table>
+
+<div class="box"><h3>Что подтвердилось из ваших предположений и что нет</h3>
+<p><b>Подтвердилось:</b> Электросталь, Краснодар, Новосемейкино, Сарапул, Волгоград, Шушары, Невинномысск — мёртвые, товара там нет. Тула — мёртвая (последняя отгрузка около 5–9 августа, дальше ноль).<br>
+<b>Не подтвердилось:</b> Владимир <b>живой</b> — остаток шевелился 12.08 и 15.08, заказы идут по 1–2 в неделю. Товар там, скорее всего, цел, просто склад маленький и медленный.<br>
+<b>Подтвердилось по-вашему:</b> Коледино, Казань, Екатеринбург — живые, остатки реальные, отгружают каждый день.</p></div>
+
+<h2><span class="n">2</span>Где спрос и где товар</h2>
+<p class="lead">База спроса взята <b>до ударов</b> (04.06–16.07) — после 18.07 спрос искажён отсутствием товара и сроками доставки, планировать по нему нельзя. Цель — 60 дней покрытия в каждом округе.</p>
+<table>
+<thead><tr><th>Округ</th><th class="num">Заказов/день<br>до 18.07</th><th class="barcell"></th><th class="num">Сейчас</th><th class="num">Доля спроса</th><th class="num">Нужно на 60 дн.</th><th class="num">Живого есть</th><th class="num">Дефицит</th></tr></thead>
+<tbody>
+<tr><td>Центральный</td><td class="num">8,00</td><td class="barcell"><span class="bar" style="width:100%"></span></td><td class="num">7,07</td><td class="num">32,8%</td><td class="num">480</td><td class="num">1 274</td><td class="num pos">+794</td></tr>
+<tr><td>Южный</td><td class="num">3,72</td><td class="barcell"><span class="bar" style="width:47%"></span></td><td class="num">2,43</td><td class="num">15,3%</td><td class="num">223</td><td class="num">0</td><td class="num neg">−223</td></tr>
+<tr><td>Приволжский</td><td class="num">3,60</td><td class="barcell"><span class="bar" style="width:45%"></span></td><td class="num">2,89</td><td class="num">14,8%</td><td class="num">216</td><td class="num">854</td><td class="num pos">+638</td></tr>
+<tr><td>Сибирский</td><td class="num">2,37</td><td class="barcell"><span class="bar" style="width:30%"></span></td><td class="num">1,64</td><td class="num">9,7%</td><td class="num">142</td><td class="num">1</td><td class="num neg">−141</td></tr>
+<tr><td>Северо-Западный</td><td class="num">2,33</td><td class="barcell"><span class="bar" style="width:29%"></span></td><td class="num">1,43</td><td class="num">9,5%</td><td class="num">140</td><td class="num">0</td><td class="num neg">−140</td></tr>
+<tr><td>Уральский</td><td class="num">1,67</td><td class="barcell"><span class="bar" style="width:21%"></span></td><td class="num">1,25</td><td class="num">6,9%</td><td class="num">100</td><td class="num">284</td><td class="num pos">+184</td></tr>
+<tr><td>Северо-Кавказский</td><td class="num">1,35</td><td class="barcell"><span class="bar" style="width:17%"></span></td><td class="num">1,11</td><td class="num">5,5%</td><td class="num">81</td><td class="num">0</td><td class="num neg">−81</td></tr>
+<tr><td>Дальневосточный</td><td class="num">1,33</td><td class="barcell"><span class="bar" style="width:17%"></span></td><td class="num">0,75</td><td class="num">5,4%</td><td class="num">80</td><td class="num">0</td><td class="num neg">−80</td></tr>
+</tbody>
+<tfoot><tr><td>Итого</td><td class="num">24,37</td><td></td><td class="num">18,57</td><td class="num">100%</td><td class="num">1 462</td><td class="num">2 414</td><td class="num neg">−665</td></tr></tfoot>
+</table>
+<p class="small" style="margin-top:10px">Товара в сумме <b>хватает</b> (2 414 живых против 1 462 нужных на 60 дней) — он просто стоит не там. В ЦФО, ПФО и на Урале избыток <b>1 616 единиц</b>, а пять округов с 45,8% спроса стоят на нуле.</p>
+
+<h2><span class="n">3</span>Куда отгружаться — приоритеты</h2>
+<table>
+<thead><tr><th>Приоритет</th><th>Округ</th><th>Склад-кандидат</th><th class="num">Объём</th><th>Почему</th></tr></thead>
+<tbody>
+<tr><td><b>1</b></td><td>Сибирь + Дальний Восток</td><td>Новосибирск (Толмачёвский), Омск, Владивосток</td><td class="num">220</td><td>15,1% спроса, локализация была 0% <b>всегда</b> — максимальный КТР по индексу локализации. Новосибирск открылся 01.08, Омск 27.07, оба вне зоны ударов</td></tr>
+<tr><td><b>2</b></td><td>Юг + Северный Кавказ</td><td>Волгоград (если приёмка открыта) → иначе схема через ПВЗ</td><td class="num">300</td><td>20,8% спроса, оба склада (Краснодар, Невинномысск) уничтожены. Закрыть физически почти нечем — это кандидат №1 на тест новой модели, где ИЛ не применяется</td></tr>
+<tr><td><b>3</b></td><td>Северо-Запад</td><td>Красный Бор → иначе схема через ПВЗ</td><td class="num">140</td><td>9,5% спроса, Шушары уничтожены, Новосаратовка и Красный Бор тоже горели — статус проверять перед бронью</td></tr>
+<tr><td><b>4</b></td><td>Урал</td><td>Екатеринбург — Перспективная 14</td><td class="num">0</td><td>284 ед. на 100 нужных — не пополнять, использовать как страховку для Сибири</td></tr>
+<tr><td><b>5</b></td><td>Центр и Поволжье</td><td>Коледино, Казань</td><td class="num">0</td><td>Избыток 1 432 ед. Не пополнять до конца октября — только распродавать</td></tr>
+</tbody>
+<tfoot><tr><td colspan="3">Ближайшая поставка</td><td class="num">≈660</td><td class="small">≈33% ассортиментной матрицы по долям спроса</td></tr></tfoot>
+</table>
+<p class="small" style="margin-top:10px">Состав поставки по долям спроса за 28 дней: крем для рук HAND-300 — <b>217 шт</b> (32,6% спроса), FS-ACNE-30 — 59, FC-ACNE-50 — 57, FC-MOIST-50 — 51, FS-MOIST-30 — 48, FT-ACNE-150 — 33, остальное — по 5–20 шт.</p>
+
+<h2><span class="n">4</span>Что заканчивается физически</h2>
+<p class="lead">Покрытие в днях считается по <b>живому</b> остатку и темпу заказов за 28 дней. Красное — товар кончится раньше, чем приедет новая поставка.</p>
+<table>
+<thead><tr><th>SKU</th><th>Категория</th><th class="num">Заказов/день</th><th class="num">Живой остаток</th><th class="num">Сгорело</th><th class="num">Покрытие, дней</th><th class="barcell"></th></tr></thead>
+<tbody>
+<tr><td>EVT-SET-TON-SER-CREAM-MOIST</td><td>Наборы</td><td class="num">0,54</td><td class="num">1</td><td class="num">14</td><td class="num neg">2</td><td class="barcell"><span class="bar" style="width:2%;background:var(--critical)"></span></td></tr>
+<tr><td>EVT-HC-CHERRY-300</td><td>Крем для рук</td><td class="num">0,61</td><td class="num">6</td><td class="num">49</td><td class="num neg">10</td><td class="barcell"><span class="bar" style="width:8%;background:var(--critical)"></span></td></tr>
+<tr><td>EVT-SET-TON-SER-CREAM-ACNE</td><td>Наборы</td><td class="num">0,36</td><td class="num">8</td><td class="num">24</td><td class="num neg">22</td><td class="barcell"><span class="bar" style="width:18%;background:var(--serious)"></span></td></tr>
+<tr><td>EVT-HC-AMBER-300</td><td>Крем для рук</td><td class="num">0,39</td><td class="num">10</td><td class="num">51</td><td class="num neg">25</td><td class="barcell"><span class="bar" style="width:21%;background:var(--serious)"></span></td></tr>
+<tr><td>EVT-FS-MOIST-30</td><td>Сыворотки</td><td class="num">1,39</td><td class="num">39</td><td class="num">129</td><td class="num neg">28</td><td class="barcell"><span class="bar" style="width:23%;background:var(--serious)"></span></td></tr>
+<tr><td>EVT-SET-4PC-ACNE</td><td>Наборы</td><td class="num">0,54</td><td class="num">15</td><td class="num">40</td><td class="num neg">28</td><td class="barcell"><span class="bar" style="width:23%;background:var(--serious)"></span></td></tr>
+<tr><td>EVT-SET-SER-CREAM-MOIST</td><td>Наборы</td><td class="num">0,25</td><td class="num">7</td><td class="num">3</td><td class="num neg">28</td><td class="barcell"><span class="bar" style="width:23%;background:var(--serious)"></span></td></tr>
+<tr><td>EVT-SET-TON-CREAM-ACNE</td><td>Наборы</td><td class="num">0,39</td><td class="num">12</td><td class="num">21</td><td class="num">31</td><td class="barcell"><span class="bar" style="width:26%;background:var(--warning)"></span></td></tr>
+<tr><td>EVT-SET-TON-CREAM-MOIST</td><td>Наборы</td><td class="num">0,25</td><td class="num">9</td><td class="num">23</td><td class="num">36</td><td class="barcell"><span class="bar" style="width:30%;background:var(--warning)"></span></td></tr>
+<tr><td>EVT-FC-MOIST-50</td><td>Кремы</td><td class="num">1,50</td><td class="num">55</td><td class="num">1</td><td class="num">37</td><td class="barcell"><span class="bar" style="width:31%;background:var(--warning)"></span></td></tr>
+<tr><td>EVT-SET-MOIST-TONIC-SERUM</td><td>Наборы</td><td class="num">0,14</td><td class="num">6</td><td class="num">14</td><td class="num">42</td><td class="barcell"><span class="bar" style="width:35%"></span></td></tr>
+<tr><td>EVT-SET-CHERRY-AMBER</td><td>Наборы</td><td class="num">0,29</td><td class="num">16</td><td class="num">24</td><td class="num">56</td><td class="barcell"><span class="bar" style="width:47%"></span></td></tr>
+<tr><td>EVT-HC-HAND-300</td><td>Крем для рук <span class="tag">32,6% спроса</span></td><td class="num">6,32</td><td class="num">617</td><td class="num">351</td><td class="num">98</td><td class="barcell"><span class="bar" style="width:82%"></span></td></tr>
+<tr><td>EVT-FT-ACNE-150</td><td>Тоники</td><td class="num">0,96</td><td class="num">97</td><td class="num">203</td><td class="num">101</td><td class="barcell"><span class="bar" style="width:84%"></span></td></tr>
+<tr><td>EVT-SET-HAND-AMBER</td><td>Наборы</td><td class="num">0,11</td><td class="num">14</td><td class="num">23</td><td class="num">131</td><td class="barcell"><span class="bar" style="width:100%"></span></td></tr>
+<tr><td>EVT-SET-HAND-CHERRY</td><td>Наборы</td><td class="num">0,18</td><td class="num">24</td><td class="num">28</td><td class="num">134</td><td class="barcell"><span class="bar" style="width:100%"></span></td></tr>
+<tr><td>EVT-SET-SER-CREAM-ACNE</td><td>Наборы</td><td class="num">0,64</td><td class="num">89</td><td class="num">102</td><td class="num">138</td><td class="barcell"><span class="bar" style="width:100%"></span></td></tr>
+<tr><td>EVT-FT-MOIST-150</td><td>Тоники</td><td class="num">0,50</td><td class="num">97</td><td class="num">182</td><td class="num">194</td><td class="barcell"><span class="bar" style="width:100%"></span></td></tr>
+<tr><td>EVT-FS-ACNE-30</td><td>Сыворотки</td><td class="num">1,71</td><td class="num">421</td><td class="num">203</td><td class="num">246</td><td class="barcell"><span class="bar" style="width:100%"></span></td></tr>
+<tr><td>EVT-EP-ENZYME-75</td><td>Пудры</td><td class="num">0,54</td><td class="num">172</td><td class="num">302</td><td class="num">321</td><td class="barcell"><span class="bar" style="width:100%"></span></td></tr>
+<tr><td>EVT-FC-ACNE-50</td><td>Кремы</td><td class="num">1,64</td><td class="num">695</td><td class="num">528</td><td class="num">423</td><td class="barcell"><span class="bar" style="width:100%"></span></td></tr>
+</tbody>
+</table>
+
+<h2><span class="n">5</span>Заявка на компенсацию — что списывать</h2>
+<p class="lead">Это те же 2 327 единиц, но в разрезе «склад × артикул» — форма, в которой WB принимает заявку. Сумма считается по закупочной стоимости, поэтому к каждой строке нужны договор поставки, накладная и счёт.</p>
+<table>
+<thead><tr><th>Склад</th><th>Дата инцидента</th><th class="num">Единиц</th><th class="barcell"></th><th>Крупнейшие позиции</th></tr></thead>
+<tbody>
+<tr><td>Тула</td><td>≈05.08</td><td class="num">695</td><td class="barcell"><span class="bar" style="width:100%;background:var(--critical)"></span></td><td>HAND-300 225 · FC-ACNE-50 166 · EP-ENZYME-75 70 · FS-ACNE-30 51</td></tr>
+<tr><td>Электросталь</td><td>18.07</td><td class="num">685</td><td class="barcell"><span class="bar" style="width:99%;background:var(--critical)"></span></td><td>FC-ACNE-50 202 · EP-ENZYME-75 136 · FT-ACNE-150 121 · FT-MOIST-150 96 · FS-ACNE-30 76</td></tr>
+<tr><td>Краснодар</td><td>22.07</td><td class="num">415</td><td class="barcell"><span class="bar" style="width:60%;background:var(--critical)"></span></td><td>FC-ACNE-50 99 · EP-ENZYME-75 66 · HAND-300 66 · SET-SER-CREAM-ACNE 32 · FS-MOIST-30 30</td></tr>
+<tr><td>Самара (Новосемейкино)</td><td>02.08</td><td class="num">166</td><td class="barcell"><span class="bar" style="width:24%;background:var(--critical)"></span></td><td>по 20: HAND-300, FS-ACNE-30, FS-MOIST-30, FC-ACNE-50 — поставка принята в день удара</td></tr>
+<tr><td>Сарапул</td><td>30.07</td><td class="num">165</td><td class="barcell"><span class="bar" style="width:24%;background:var(--critical)"></span></td><td>по 20: FC-ACNE-50, FS-MOIST-30, FS-ACNE-30, HAND-300 — поставка принята 29.07, за сутки до удара</td></tr>
+<tr><td>Волгоград</td><td>31.07</td><td class="num">159</td><td class="barcell"><span class="bar" style="width:23%;background:var(--critical)"></span></td><td>FC-ACNE-50 21 · FS-ACNE-30 20 · HAND-300 20 · FS-MOIST-30 17</td></tr>
+<tr><td>СПБ Шушары</td><td>24.07</td><td class="num">40</td><td class="barcell"><span class="bar" style="width:6%;background:var(--critical)"></span></td><td>HC-CHERRY-300 12 · HC-AMBER-300 8 · FS-MOIST-30 6</td></tr>
+<tr><td>Невинномысск</td><td>22.07</td><td class="num">2</td><td class="barcell"><span class="bar" style="width:2%;background:var(--critical)"></span></td><td>SET-4PC-ACNE 2</td></tr>
+</tbody>
+<tfoot><tr><td colspan="2">Итого к заявке</td><td class="num">2 327</td><td></td><td class="small">49% отражённого остатка</td></tr></tfoot>
+</table>
+<div class="box warn"><h3>Три поставки уехали прямо под удар</h3>
+<p>Сарапул принял 165 единиц 29 июля — удар 30-го. Новосемейкино принял 166 единиц 2 августа — в день удара. Волгоград принял 165 единиц 28 июля — пожар 31-го. Итого <b>496 единиц</b> прожили на складе от одного до трёх дней. Это самая свежая и самая доказуемая часть заявки: приёмка оформлена, документы есть, продаж не было.</p></div>
+
+<h2><span class="n">6</span>🔴 Увлажняющая линейка выключена до октября</h2>
+<p class="lead">Крем для лица увлажняющий FC-MOIST-50 закончился на фулфилменте. Партия 5 000 единиц произведена в Китае, но приедет <b>в октябре и позже</b>. Собрать наборы, где он участвует, невозможно.</p>
+<table>
+<thead><tr><th>SKU</th><th class="num">Заказов/28 дн</th><th class="num">Живого на WB</th><th class="num">Хватит до</th><th>Что делать</th></tr></thead>
+<tbody>
+<tr><td>EVT-SET-TON-SER-CREAM-MOIST</td><td class="num">15</td><td class="num">1</td><td class="num neg">уже кончился</td><td>Снять рекламу, скрыть карточку до октября</td></tr>
+<tr><td>EVT-SET-SER-CREAM-MOIST</td><td class="num">7</td><td class="num">7</td><td class="num neg">≈12.09</td><td>Снять рекламу с 1 сентября</td></tr>
+<tr><td>EVT-SET-TON-CREAM-MOIST</td><td class="num">7</td><td class="num">9</td><td class="num neg">≈20.09</td><td>Снять рекламу с 1 сентября</td></tr>
+<tr><td>EVT-FC-MOIST-50</td><td class="num">42</td><td class="num">55</td><td class="num neg">≈21.09</td><td>Остаток не трогать, работает в ЦФО/ПФО/УФО</td></tr>
+</tbody>
+<tfoot><tr><td>Итого выпадает</td><td class="num">71</td><td class="num">72</td><td class="num neg">13,1% заказов</td><td class="small">с конца сентября до прихода партии</td></tr></tfoot>
+</table>
+<div class="box"><h3>Чем замещать</h3>
+<p>Увлажняющая линейка не исчезает целиком — сыворотка FS-MOIST-30 и тоник FT-MOIST-150 собираются без крема, как и набор <b>SET-MOIST-TONIC-SERUM</b> (тоник + сыворотка). Поэтому его объём в поставке поднят с 6 до <b>20 единиц</b> — выше доли спроса — и на него имеет смысл перевести рекламный бюджет с выбывающих наборов. Отдельно: у FS-MOIST-30 сгорело 129 из 168 единиц, живого осталось 39 — это 28 дней. Если сыворотки нет и на фулфилменте, увлажняющая линейка выключается целиком, а не наполовину.</p></div>
+
+<h2><span class="n">7</span>План поставки на понедельник 18.08</h2>
+<p class="lead">Объёмы рассчитаны от спроса до ударов на 60 дней покрытия, за вычетом живого остатка, и распределены по долям спроса за 28 дней с исключением заблокированных SKU.</p>
+<table>
+<thead><tr><th>SKU</th><th class="num">Новосибирск<br>Толмачёвский</th><th class="num">Красный Бор<br>(СЗФО)</th><th class="num">Юг + Кавказ<br>(резерв)</th><th class="num">Итого</th></tr></thead>
+<tbody>
+<tr><td>EVT-HC-HAND-300 <span class="tag">37,5% поставки</span></td><td class="num">86</td><td class="num">54</td><td class="num">114</td><td class="num">254</td></tr>
+<tr><td>EVT-FS-ACNE-30</td><td class="num">23</td><td class="num">14</td><td class="num">31</td><td class="num">68</td></tr>
+<tr><td>EVT-FC-ACNE-50</td><td class="num">22</td><td class="num">13</td><td class="num">30</td><td class="num">65</td></tr>
+<tr><td>EVT-FS-MOIST-30</td><td class="num">18</td><td class="num">12</td><td class="num">25</td><td class="num">55</td></tr>
+<tr><td>EVT-FT-ACNE-150</td><td class="num">13</td><td class="num">8</td><td class="num">17</td><td class="num">38</td></tr>
+<tr><td>EVT-SET-SER-CREAM-ACNE</td><td class="num">8</td><td class="num">6</td><td class="num">11</td><td class="num">25</td></tr>
+<tr><td>EVT-HC-CHERRY-300</td><td class="num">8</td><td class="num">5</td><td class="num">11</td><td class="num">24</td></tr>
+<tr><td>EVT-SET-4PC-ACNE</td><td class="num">7</td><td class="num">4</td><td class="num">10</td><td class="num">21</td></tr>
+<tr><td>EVT-EP-ENZYME-75</td><td class="num">7</td><td class="num">4</td><td class="num">10</td><td class="num">21</td></tr>
+<tr><td>EVT-FT-MOIST-150</td><td class="num">7</td><td class="num">4</td><td class="num">9</td><td class="num">20</td></tr>
+<tr><td>EVT-SET-MOIST-TONIC-SERUM <span class="tag">замещение</span></td><td class="num">7</td><td class="num">4</td><td class="num">9</td><td class="num">20</td></tr>
+<tr><td>EVT-HC-AMBER-300</td><td class="num">5</td><td class="num">3</td><td class="num">7</td><td class="num">15</td></tr>
+<tr><td>EVT-SET-TON-CREAM-ACNE</td><td class="num">5</td><td class="num">3</td><td class="num">7</td><td class="num">15</td></tr>
+<tr><td>EVT-SET-TON-SER-CREAM-ACNE</td><td class="num">5</td><td class="num">3</td><td class="num">6</td><td class="num">14</td></tr>
+<tr><td>EVT-SET-CHERRY-AMBER</td><td class="num">4</td><td class="num">2</td><td class="num">5</td><td class="num">11</td></tr>
+<tr><td>EVT-SET-HAND-CHERRY</td><td class="num">2</td><td class="num">2</td><td class="num">3</td><td class="num">7</td></tr>
+<tr><td>Тоник nm 1083392113</td><td class="num">0</td><td class="num">1</td><td class="num">3</td><td class="num">4</td></tr>
+<tr><td>EVT-SET-HAND-AMBER</td><td class="num">0</td><td class="num">1</td><td class="num">2</td><td class="num">3</td></tr>
+</tbody>
+<tfoot><tr><td>Итого</td><td class="num">227</td><td class="num">143</td><td class="num">310</td><td class="num">680</td></tr></tfoot>
+</table>
+<p class="small" style="margin-top:10px">Два SKU не едут в Новосибирск намеренно: при коэффициенте склада 220% медленный товар (менее 5 заказов за 28 дней) месяцами платит удвоенное хранение. Правило простое — в дорогой склад везём только то, что оборачивается.</p>
+
+<h2><span class="n">8</span>Как везти и что проверить утром в понедельник</h2>
+<div class="box ok"><h3>Новосибирск — Толмачёвский · 227 ед. · отгружаем</h3>
+<p>Принимает FBW с 01.08.2026, короба и штучные паллеты — с 04.08. Заявлен как приоритетный склад для Сибири и Дальнего Востока с доставкой за 2 дня, поэтому <b>Владивосток отдельно не грузим</b> — дробить объём между двумя дальними складами дороже, чем закрыть оба округа из одного. Транзит через WB: тариф считается за паллету или за объём коробов, приёмка стандартные 10 рабочих дней плюс перегон, платите вы по тарифам <b>конечного</b> склада, а не транзитного. Коэффициент склада 220% на логистику и хранение — проверить в кабинете, цифра из отраслевого источника.</p></div>
+<div class="box warn"><h3>Красный Бор — СЗФО · 143 ед. · проверить приёмку</h3>
+<p>Единственный склад Северо-Запада в списке FBW. Шушары уничтожены 24.07, Новосаратовка 24.07, сам Красный Бор горел 04.08. Если приёмка закрыта — объём переносится в Новосибирск, а Северо-Запад уходит в ту же корзину, что и Юг.</p></div>
+<div class="box"><h3>Юг и Кавказ · 310 ед. · FBW невозможен</h3>
+<p>На 15.08 в ЮФО и СКФО <b>не осталось ни одного склада FBW</b>, принимающего поставки: Краснодар 22.07, Невинномысск 22.07, Волгоград 31.07 — последний, кто принимал, и тот встал. Это 20,8% вашего спроса. Единственные рабочие варианты: подать заявку на новую схему сдачи в ПВЗ (там, по заявлению WB, индекс локализации не применяется — то есть штрафа за отсутствие локализации не будет) либо перевести южные заказы на FBS, где КТР по локализации всегда равен 1,0. Товар держим на фулфилменте, поставку не оформляем вслепую.</p></div>
+<p class="lead" style="margin-top:18px"><b>Утро понедельника, по порядку:</b></p>
+<ul class="small">
+<li>Проверить в кабинете приёмку и коэффициенты по Толмачёвскому и Красному Бору — коэффициенты меняются ежедневно, ни один внешний список им не замена.</li>
+<li>Заполнить жёлтую колонку в файле плана фактическим наличием на фулфилменте — колонка «Можем отгрузить» посчитается сама.</li>
+<li>Оформить поставку в Новосибирск на 227 единиц (или на то, что есть).</li>
+<li>Подать заявку на схему сдачи через ПВЗ — это единственный путь к Югу.</li>
+<li>Снять рекламу с трёх увлажняющих наборов, перевести бюджет на SET-MOIST-TONIC-SERUM.</li>
+<li>Подать заявку на компенсацию по 2 327 единицам, начиная с трёх поставок, принятых под удар.</li>
+</ul>
+
+<h2><span class="n">9</span>Как это читать и чего здесь нет</h2>
+<ul class="small">
+<li><b>Фантом ≠ отмены.</b> WB перестал маршрутизировать заказы на выбывшие склады — доля отмен в августе даже упала до 4,2% против 8–12% нормы. То есть фантомный остаток не рвёт заказы, он <b>завышает вашу видимую доступность вдвое</b> и заставляет недозаказывать.</li>
+<li><b>Спрос упал на 24%</b> — сильнее всего там, где сгорели склады: Дальний Восток −44%, Северо-Запад −39%, Юг −35%. Это не потеря интереса к бренду, это срок доставки.</li>
+<li><b>С 14.08 склад отгрузки в заказах и продажах обезличен</b> («Склад WB РФ»), в финотчёте — с 13.08. Дальше этот анализ можно будет делать только по снимкам остатков T6. Если и там детализацию закроют, разрез умрёт.</li>
+<li><b>Снимок 16.07 задвоен</b> (два COMPLETE-снимка за день) — за базу его не берём, ряд считается с 17.07.</li>
+<li><b>Чего здесь нет:</b> закупочной стоимости — COGS в системе не заведён, поэтому сумма ущерба в рублях не посчитана. Статусы приёмки складов-кандидатов надо проверить в кабинете перед бронированием: сторонние списки складов противоречивы.</li>
+</ul>
+
+<footer>EVETIS WB Analytics · сформировано 15.08.2026 · данные BigQuery <code>wb_raw</code>: RAW_WB_STOCKS, V_WB_ORDERS, V_WB_STOCKS_CURRENT</footer>
+</div></body></html>
