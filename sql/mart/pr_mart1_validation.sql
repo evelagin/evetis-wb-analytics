@@ -48,12 +48,65 @@ ASSERT (
 ) = 0 AS 'PR-A: CANONICAL содержит дубли rrd_id — дедуп weekly/daily не сработал';
 
 -- 4) STOCKS: последний COMPLETE-снапшот дня → грейн snap_date×nm×склад уникален.
+--    С 17.08.2026 ключ склада = warehouse_key (STRING), а не warehouse_id: WB обезличил
+--    склад отгрузки, лоадер с 16.08 пишет warehouse_id = NULL и сентинел в warehouse_code.
+--    Ожидание на 17.08.2026: 5637 = 5637, key_null = 0 (замер 30 суток истории).
+--    Историческая отметка на старом ключе (28.07.2026): 1509 = 1509.
 WITH pick AS (
   SELECT snapshot_id, SAFE.PARSE_DATE('%Y-%m-%d', period_to) snapshot_date
   FROM `wb_raw.WB_STOCKS_SNAPSHOTS` WHERE status='COMPLETE' AND period_to IS NOT NULL
   QUALIFY ROW_NUMBER() OVER (PARTITION BY period_to ORDER BY started_at DESC)=1)
-SELECT COUNT(*) rows_all, COUNT(DISTINCT FORMAT('%t|%t|%t',snapshot_date,nm_id,warehouse_id)) dk  -- 1509 = 1509
-FROM (SELECT p.snapshot_date, r.nm_id, r.warehouse_id FROM pick p JOIN `wb_raw.RAW_WB_STOCKS` r USING(snapshot_id) GROUP BY 1,2,3);
+SELECT COUNT(*) rows_all,
+       COUNT(DISTINCT FORMAT('%t|%t|%t',snapshot_date,nm_id,warehouse_key)) dk,
+       COUNTIF(warehouse_key IS NULL OR TRIM(warehouse_key)='') key_null
+FROM (SELECT p.snapshot_date, r.nm_id,
+             COALESCE(NULLIF(r.warehouse_code,''), CAST(r.warehouse_id AS STRING)) warehouse_key
+      FROM pick p JOIN `wb_raw.RAW_WB_STOCKS` r USING(snapshot_id) GROUP BY 1,2,3);
+
+-- 4a) STOCKS fail-closed: контроль эпох ключа. До 16.08 ключ приходит из warehouse_id,
+--     с 16.08 — из warehouse_code. Обе колонки одновременно пустыми быть не должны
+--     НИКОГДА: это ровно тот класс, что положил витрину 17.08 — источник перестал
+--     заполнять колонку, из которой собирается грейн, и заметил это потребитель.
+--     Замер 17.08: 0 на всей RAW (5 907 строк, 36 снапшотов, все COMPLETE).
+ASSERT (
+  SELECT COUNTIF(warehouse_id IS NULL AND (warehouse_code IS NULL OR TRIM(warehouse_code) = ''))
+  FROM `wb_raw.RAW_WB_STOCKS`
+) = 0 AS 'STOCKS: warehouse_id and warehouse_code both empty';
+
+--     Диагностика к 4a — разбивка по датам, чтобы видеть границу эпох (и что она одна).
+SELECT _snapshot_date,
+       COUNT(*) rows_src,
+       COUNTIF(warehouse_id IS NULL) wh_id_null,
+       COUNTIF(warehouse_code IS NULL OR TRIM(warehouse_code)='') wh_code_empty,
+       COUNTIF(warehouse_id IS NULL AND (warehouse_code IS NULL OR TRIM(warehouse_code)='')) both_empty
+FROM `wb_raw.RAW_WB_STOCKS`
+GROUP BY 1 ORDER BY 1 DESC LIMIT 10;  -- ожидание: ≥16.08 wh_id_null=rows_src, ≤15.08 wh_code_empty=rows_src
+
+-- 4b) STOCKS: однозначность ANY_VALUE-колонок внутри warehouse_key — разбивка по колонкам.
+--     В процедуре это два ASSERT (id отдельно, описательные вместе); здесь видно, какая
+--     именно колонка сломалась. ⚠️ FORMAT('%t') обязателен — COUNT(DISTINCT) молча
+--     игнорирует NULL, а группа {NULL, 5} это как раз недетерминированный ANY_VALUE.
+--     Ожидание 17.08: все bad_* = 0, groups=5637, max_raw_rows_per_group=1.
+WITH pick AS (
+  SELECT snapshot_id, SAFE.PARSE_DATE('%Y-%m-%d', period_to) snapshot_date
+  FROM `wb_raw.WB_STOCKS_SNAPSHOTS` WHERE status='COMPLETE' AND period_to IS NOT NULL
+  QUALIFY ROW_NUMBER() OVER (PARTITION BY period_to ORDER BY started_at DESC)=1),
+g AS (
+  SELECT p.snapshot_date, r.nm_id,
+         COALESCE(NULLIF(r.warehouse_code,''), CAST(r.warehouse_id AS STRING)) warehouse_key,
+         COUNT(*) raw_rows,
+         COUNT(DISTINCT FORMAT('%t', r.warehouse_id))     d_wh_id,
+         COUNT(DISTINCT FORMAT('%t', r.warehouse_name))   d_wh_name,
+         COUNT(DISTINCT FORMAT('%t', r.region_name))      d_region,
+         COUNT(DISTINCT FORMAT('%t', r.internal_sku))     d_sku,
+         COUNT(DISTINCT FORMAT('%t', r.sku_match_status)) d_sku_status
+  FROM pick p JOIN `wb_raw.RAW_WB_STOCKS` r USING (snapshot_id)
+  GROUP BY 1,2,3)
+SELECT COUNT(*) groups, MAX(raw_rows) max_raw_rows_per_group,
+       COUNTIF(d_wh_id>1) bad_warehouse_id, COUNTIF(d_wh_name>1) bad_warehouse_name,
+       COUNTIF(d_region>1) bad_region_name, COUNTIF(d_sku>1) bad_internal_sku,
+       COUNTIF(d_sku_status>1) bad_sku_match_status
+FROM g;
 
 -- 5) ADS_SKU: грейн date×advert×nm (SUM по appType) + ПОЛНЫЙ parse-QC.
 --    Дата — тем же алгоритмом, что в процедуре: SAFE.PARSE_DATE('%Y-%m-%d', SUBSTR(date,1,10)).
