@@ -6,6 +6,12 @@
 --   ad_orders_dedup_estimate, multitouch_ambiguous_flag, zero_revenue_multiorder_flag + sum_price parse-QC + dynamic acceptance.
 --   ⚠️ Требует ПЕРЕ-bootstrap (CALL sp_bootstrap_facts('')) — FACT_ADS_SKU_DAILY пересоберётся с новыми колонками.
 --
+-- 2026-08-17 (fix/mart-stocks-warehouse-key): грейн FACT_STOCKS_SNAPSHOT переведён с
+--   `warehouse_id INT64` на `warehouse_key STRING` — WB обезличил склад отгрузки, лоадер
+--   с 16.08 пишет warehouse_id = NULL. Подробности и доказательства — в блоке 1.3.
+--   Отдельный ПЕРЕ-bootstrap НЕ нужен: FACT-таблицы собираются CREATE OR REPLACE, штатный
+--   прогон wb-mart-prod пересоздаст FACT_STOCKS_SNAPSHOT с новой схемой.
+--
 -- ⚠️ BOOTSTRAP / MANUAL-ONLY. Процедура `sp_bootstrap_facts` — РУЧНОЙ первичный прогон.
 --   Публикация выполняется как ПОСЛЕДОВАТЕЛЬНЫЙ publish каждой FACT (6 отдельных
 --   CREATE OR REPLACE) — это НЕ атомарно по всему набору: сбой между шагами может
@@ -143,13 +149,41 @@ BEGIN
          = (SELECT COUNT(*) FROM `wb_raw.V_WB_SALES_RETURNS`) AS 'FACT_SALES: BUILD rows != source rows';
 
     -- ======================================================================
-    -- 1.3 FACT_STOCKS_SNAPSHOT — грейн: snapshot_date × nm_id × warehouse_id.
+    -- 1.3 FACT_STOCKS_SNAPSHOT — грейн: snapshot_date × nm_id × warehouse_key.
     --      Последний COMPLETE-снапшот дня (правка 7), затем сумма складов.
+    --
+    -- 🔴 warehouse_key (STRING) — канонический ключ склада, введён 17.08.2026.
+    --    До 16.08 грейном был `warehouse_id INT64`. 16.08 WB обезличил склад
+    --    отгрузки: T6 отдаёт warehouseId = -999999 — это СЕНТИНЕЛ «склад не
+    --    раскрываем», а не идентификатор. Лоадер (WbStocksSnapshot.gs, правка
+    --    16.08) сознательно кладёт сырое значение в `warehouse_code STRING`, а
+    --    `warehouse_id` оставляет NULL — чтобы сентинел не притворялся id склада.
+    --    Следствие: 16 и 17.08 дали 46 строк с NULL в старом грейне, и ASSERT
+    --    ниже завалил витрину два прогона подряд (см. CHANGELOG 2026-08-17).
+    --
+    --    warehouse_key = COALESCE(NULLIF(warehouse_code,''), CAST(warehouse_id AS STRING))
+    --    покрывает ОБЕ эпохи: ≤15.08 — числовой id при пустом code, ≥16.08 —
+    --    наоборот. Проверено read-only на всей истории (30 суток): 5 637 строк,
+    --    0 NULL, 5 637 distinct — ключ уникален и не-NULL на обеих эпохах.
+    --
+    --    `warehouse_id` ОСТАЁТСЯ в таблице как справочная колонка (NULL с 16.08):
+    --    история до 15.08 включительно на нём построена. Потребителям склада
+    --    брать `warehouse_key`; тип STRING выбран потому, что WB уже прислал
+    --    непрозрачное значение и может прислать нечисловое.
+    --    ⚠️ Смена типа ключа — изменение структуры колонок FACT (см. CHANGELOG).
+    --
+    -- ⏭️ Открытый вопрос (аудит 17.08, сознательно НЕ решаем здесь): namespace ключа
+    --    вида `id:123456` / `code:-999999`. `warehouse_id` и `warehouse_code` — разные
+    --    пространства идентификаторов, и голая строка теоретически допускает коллизию
+    --    числового id со строковым code. Сегодня коллизий нет (5 637 = 5 637 distinct),
+    --    поэтому в этот фикс не берём: префикс — переписывание ключа во всей истории,
+    --    его цена выше, чем польза, пока WB отдаёт один код. Вернуться, если появится
+    --    второй непрозрачный код склада.
     -- ======================================================================
     EXECUTE IMMEDIATE """
       CREATE OR REPLACE TABLE `wb_mart.FACT_STOCKS_SNAPSHOT__BUILD`
       PARTITION BY snapshot_date
-      CLUSTER BY nm_id, warehouse_id AS
+      CLUSTER BY nm_id, warehouse_key AS
       WITH pick AS (
         SELECT snapshot_id, SAFE.PARSE_DATE('%Y-%m-%d', period_to) AS snapshot_date
         FROM `wb_raw.WB_STOCKS_SNAPSHOTS`
@@ -157,7 +191,12 @@ BEGIN
         QUALIFY ROW_NUMBER() OVER (PARTITION BY period_to ORDER BY started_at DESC) = 1
       )
       SELECT
-        p.snapshot_date, r.nm_id, r.warehouse_id,
+        p.snapshot_date,
+        r.nm_id,
+        COALESCE(NULLIF(r.warehouse_code, ''), CAST(r.warehouse_id AS STRING)) AS warehouse_key,
+        -- однозначность warehouse_id внутри warehouse_key НЕ следует из построения ключа
+        -- и доказывается отдельным ASSERT ниже (ремарка аудита 17.08).
+        ANY_VALUE(r.warehouse_id)     AS warehouse_id,
         ANY_VALUE(r.warehouse_name)   AS warehouse_name,
         ANY_VALUE(r.region_name)      AS region_name,
         SUM(r.quantity)               AS quantity,
@@ -168,23 +207,69 @@ BEGIN
         @run_id AS mart_run_id, @built_at AS built_at
       FROM pick p
       JOIN `wb_raw.RAW_WB_STOCKS` r USING (snapshot_id)
-      GROUP BY p.snapshot_date, r.nm_id, r.warehouse_id
+      GROUP BY snapshot_date, nm_id, warehouse_key
     """ USING v_run_id AS run_id, v_built_at AS built_at;
 
-    ASSERT (SELECT COUNTIF(snapshot_date IS NULL) + COUNTIF(nm_id IS NULL) + COUNTIF(warehouse_id IS NULL)
-            FROM `wb_mart.FACT_STOCKS_SNAPSHOT__BUILD`) = 0 AS 'FACT_STOCKS_SNAPSHOT: NULL grain/partition';
-    ASSERT (SELECT COUNT(*) = COUNT(DISTINCT FORMAT('%t|%t|%t', snapshot_date, nm_id, warehouse_id))
+    -- not-null/not-empty grain (string) + not-null partition — как у FACT_ORDERS/FACT_SALES.
+    -- ⚠️ Текст ASSERT изменён вместе с типом грейна: старая сигнатура ошибки была
+    --    'FACT_STOCKS_SNAPSHOT: NULL grain/partition'.
+    ASSERT (SELECT COUNTIF(snapshot_date IS NULL) + COUNTIF(nm_id IS NULL)
+                 + COUNTIF(warehouse_key IS NULL) + COUNTIF(TRIM(warehouse_key) = '')
+            FROM `wb_mart.FACT_STOCKS_SNAPSHOT__BUILD`) = 0
+            AS 'FACT_STOCKS_SNAPSHOT: NULL/empty grain or NULL partition';
+    ASSERT (SELECT COUNT(*) = COUNT(DISTINCT FORMAT('%t|%t|%t', snapshot_date, nm_id, warehouse_key))
             FROM `wb_mart.FACT_STOCKS_SNAPSHOT__BUILD`)
-            AS 'FACT_STOCKS_SNAPSHOT: (snapshot_date,nm_id,warehouse_id) not unique';
+            AS 'FACT_STOCKS_SNAPSHOT: (snapshot_date,nm_id,warehouse_key) not unique';
     -- fail-closed: непустой BUILD + соответствие грейну ВЫБРАННЫХ (последних COMPLETE) снапшотов.
     ASSERT (SELECT COUNT(*) FROM `wb_mart.FACT_STOCKS_SNAPSHOT__BUILD`) > 0 AS 'FACT_STOCKS_SNAPSHOT: empty build (fail-closed)';
     ASSERT (SELECT COUNT(*) FROM `wb_mart.FACT_STOCKS_SNAPSHOT__BUILD`) = (
-              SELECT COUNT(DISTINCT FORMAT('%t|%t|%t', p.snapshot_date, r.nm_id, r.warehouse_id))
+              SELECT COUNT(DISTINCT FORMAT('%t|%t|%t', p.snapshot_date, r.nm_id,
+                       COALESCE(NULLIF(r.warehouse_code, ''), CAST(r.warehouse_id AS STRING))))
               FROM (SELECT snapshot_id, SAFE.PARSE_DATE('%Y-%m-%d', period_to) AS snapshot_date
                     FROM `wb_raw.WB_STOCKS_SNAPSHOTS` WHERE status='COMPLETE' AND period_to IS NOT NULL
                     QUALIFY ROW_NUMBER() OVER (PARTITION BY period_to ORDER BY started_at DESC)=1) p
               JOIN `wb_raw.RAW_WB_STOCKS` r USING (snapshot_id))
             AS 'FACT_STOCKS_SNAPSHOT: BUILD rows != source distinct grain (selected snapshots)';
+
+    -- ──────────────────────────────────────────────────────────────────────
+    -- 🔴 ANY_VALUE выше — не предположение, а проверяемый инвариант (ремарка аудита 17.08).
+    --    Однозначность warehouse_id внутри warehouse_key НЕ гарантирована построением ключа:
+    --    теоретически несколько RAW-строк могут нести один warehouse_code и разные
+    --    warehouse_id, и тогда ANY_VALUE молча станет недетерминированным.
+    --    Замер 17.08 на всей истории (30 суток, 5 637 групп): нарушений 0; более того,
+    --    max RAW-строк на группу = 1 — то есть сегодня GROUP BY не схлопывает ничего.
+    --    Но это свойство ДАННЫХ (у наших SKU один chrt_id), а не ключа: появится размерный
+    --    ряд — и агрегация заработает по-настоящему. Проверяем на RAW ДО агрегации, потому
+    --    что в BUILD нарушение уже неразличимо.
+    --    ⚠️ FORMAT('%t', x) обязателен: COUNT(DISTINCT) сам по себе игнорирует NULL, и
+    --    группа {NULL, 5} прошла бы как однозначная — а это ровно тот случай, который ловим.
+    -- ──────────────────────────────────────────────────────────────────────
+    ASSERT (SELECT COUNT(*) FROM (
+              SELECT p.snapshot_date, r.nm_id,
+                     COALESCE(NULLIF(r.warehouse_code, ''), CAST(r.warehouse_id AS STRING)) AS warehouse_key
+              FROM (SELECT snapshot_id, SAFE.PARSE_DATE('%Y-%m-%d', period_to) AS snapshot_date
+                    FROM `wb_raw.WB_STOCKS_SNAPSHOTS` WHERE status='COMPLETE' AND period_to IS NOT NULL
+                    QUALIFY ROW_NUMBER() OVER (PARTITION BY period_to ORDER BY started_at DESC)=1) p
+              JOIN `wb_raw.RAW_WB_STOCKS` r USING (snapshot_id)
+              GROUP BY 1,2,3
+              HAVING COUNT(DISTINCT FORMAT('%t', r.warehouse_id)) > 1)) = 0
+            AS 'FACT_STOCKS_SNAPSHOT: multiple warehouse_id per warehouse_key';
+    -- то же для остальных ANY_VALUE-колонок: описание склада и привязка SKU обязаны быть
+    -- однозначны внутри грейна, иначе факт перестаёт быть воспроизводимым между прогонами.
+    -- Разбивку «какая именно колонка сломалась» даёт проверка 4b в pr_mart1_validation.sql.
+    ASSERT (SELECT COUNT(*) FROM (
+              SELECT p.snapshot_date, r.nm_id,
+                     COALESCE(NULLIF(r.warehouse_code, ''), CAST(r.warehouse_id AS STRING)) AS warehouse_key
+              FROM (SELECT snapshot_id, SAFE.PARSE_DATE('%Y-%m-%d', period_to) AS snapshot_date
+                    FROM `wb_raw.WB_STOCKS_SNAPSHOTS` WHERE status='COMPLETE' AND period_to IS NOT NULL
+                    QUALIFY ROW_NUMBER() OVER (PARTITION BY period_to ORDER BY started_at DESC)=1) p
+              JOIN `wb_raw.RAW_WB_STOCKS` r USING (snapshot_id)
+              GROUP BY 1,2,3
+              HAVING COUNT(DISTINCT FORMAT('%t', r.warehouse_name))   > 1
+                  OR COUNT(DISTINCT FORMAT('%t', r.region_name))      > 1
+                  OR COUNT(DISTINCT FORMAT('%t', r.internal_sku))     > 1
+                  OR COUNT(DISTINCT FORMAT('%t', r.sku_match_status)) > 1)) = 0
+            AS 'FACT_STOCKS_SNAPSHOT: multiple descriptive values per warehouse_key (name/region/sku)';
 
     -- ======================================================================
     -- 1.4 FACT_FINANCE — грейн: finance_row_key = report_id#rrd_id.
@@ -413,7 +498,7 @@ BEGIN
       PARTITION BY sale_date CLUSTER BY nm_id, is_return AS
       SELECT * FROM `wb_mart.FACT_SALES__BUILD`;
     CREATE OR REPLACE TABLE `wb_mart.FACT_STOCKS_SNAPSHOT`
-      PARTITION BY snapshot_date CLUSTER BY nm_id, warehouse_id AS
+      PARTITION BY snapshot_date CLUSTER BY nm_id, warehouse_key AS
       SELECT * FROM `wb_mart.FACT_STOCKS_SNAPSHOT__BUILD`;
     CREATE OR REPLACE TABLE `wb_mart.FACT_FINANCE`
       PARTITION BY finance_date CLUSTER BY nm_id, finance_status, operation_type_normalized AS
