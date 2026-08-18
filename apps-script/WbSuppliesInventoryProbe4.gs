@@ -61,8 +61,9 @@
  *
  * ЗАПУСК — ТРИ ФУНКЦИИ, по отдельности:
  *   probeJuly4()       — сначала это. Состоявшиеся поставки июля, ~30 секунд.
- *   probeInventory4a() — поставки 1…66 из 131, около 2 минут.
- *   probeInventory4b() — поставки 67…131, около 2 минут.
+ *   probeInventory4a() — записи 0…65 (уже отработала 17.08).
+ *   probeInventory4b() — записи 66…99.
+ *   probeInventory4c() — записи 100 и далее.
  * ══════════════════════════════════════════════════════════════
  */
 
@@ -76,13 +77,32 @@ var P4_JULY_TILL_ = '2026-07-31';
 /** Статус состоявшейся поставки. Вынесен в константу, чтобы не растекался по коду. */
 var P4_STATUS_DONE_ = 5;
 
-/** Пауза между запросами, мс. Лимиты supplies-api нам неизвестны — идём мягко. */
-var P4_PAUSE_MS_ = 350;
+/**
+ * Пауза между запросами, мс.
+ * 🔴 Прогон 4a на 350 мс получил 429 на КАЖДОЙ второй-третьей записи. Ретрай
+ * вытянул (итог: 0 ошибок), но это была удача, а не запас. Поднято до 900.
+ */
+var P4_PAUSE_MS_ = 900;
+
+/**
+ * Максимум ПОПЫТОК на один запрос, включая первую.
+ * 3 попытки = первый вызов + до двух повторов. Названо так намеренно: слово
+ * «ретраи» здесь уже путало документацию с реализацией.
+ */
+var P4_MAX_ATTEMPTS_ = 3;
 
 /** Страховка от лимита выполнения Apps Script: 4,5 минуты. */
 var P4_TIME_BUDGET_MS_ = 270000;
 
 // ── утилиты ───────────────────────────────────────────────────
+
+/**
+ * Счётчик повторяемых отказов за прогон (429 и 5xx вместе).
+ * ⚠️ Это НЕ чистый счётчик rate-limit: сюда же идут 5xx, а последний отказ
+ * после исчерпания попыток не учитывается — он уже становится ошибкой чтения.
+ * Разводить `rate429` и `server5xx` будем в production-загрузчике.
+ */
+var P4_RATE_HITS_ = 0;
 
 function p4Log_(s) { Logger.log(s); }
 
@@ -97,9 +117,13 @@ function p4Token_() {
   return { token: '', keyName: '' };
 }
 
-/** Запрос с одним ретраем на 429 и 5xx. Тихий: печатает только проблемы. */
+/**
+ * Запрос с повторами на 429 и 5xx: до `P4_MAX_ATTEMPTS_` попыток всего
+ * (первая + до двух повторов), задержка перед повтором растёт 4 с → 8 с.
+ * Тихий: печатает только проблемы и сами повторы.
+ */
 function p4Fetch_(method, url, token, payload) {
-  for (var attempt = 0; attempt < 2; attempt++) {
+  for (var attempt = 0; attempt < P4_MAX_ATTEMPTS_; attempt++) {
     var opt = { method: method, muteHttpExceptions: true, headers: { 'Authorization': token } };
     if (payload !== undefined && payload !== null) {
       opt.contentType = 'application/json';
@@ -114,9 +138,12 @@ function p4Fetch_(method, url, token, payload) {
       p4Log_('    ИСКЛЮЧЕНИЕ ' + method + ' ' + url + ' → ' + e);
       return { code: -1, json: null, body: '' };
     }
-    if ((code === 429 || code >= 500) && attempt === 0) {
-      p4Log_('    HTTP ' + code + ' на ' + url + ' — ждём 5 с и повторяем один раз');
-      Utilities.sleep(5000);
+    if ((code === 429 || code >= 500) && attempt < P4_MAX_ATTEMPTS_ - 1) {
+      var wait = 4000 * (attempt + 1);   // 4 с, 8 с
+      P4_RATE_HITS_++;
+      p4Log_('    HTTP ' + code + ' на ' + url + ' — ждём ' + (wait / 1000) + ' с, попытка ' +
+             (attempt + 2) + ' из ' + P4_MAX_ATTEMPTS_);
+      Utilities.sleep(wait);
       continue;
     }
     var json = null;
@@ -272,6 +299,7 @@ function p4Totals_(goods) {
 
 function probeJuly4() {
   var t0 = new Date().getTime();
+  P4_RATE_HITS_ = 0;
   p4Log_('=== PROBE-4 · сверка состоявшихся поставок ' + P4_JULY_FROM_ + '…' + P4_JULY_TILL_ + ' ===');
 
   var t = p4Token_();
@@ -378,11 +406,16 @@ function probeJuly4() {
 
 // ── 2. Инвентаризация всей истории ────────────────────────────
 
+// 🔴 Диапазоны сокращены после прогона 4a: он занял 249 с при бюджете 270 с,
+// то есть упёрся почти впритык. С увеличенной паузой 66 записей уже не влезут
+// в лимит Apps Script, поэтому остаток разбит на два куска.
 function probeInventory4a() { p4Inventory_(0, 66); }
-function probeInventory4b() { p4Inventory_(66, 1000); }
+function probeInventory4b() { p4Inventory_(66, 100); }
+function probeInventory4c() { p4Inventory_(100, 1000); }
 
 function p4Inventory_(fromIdx, toIdx) {
   var t0 = new Date().getTime();
+  P4_RATE_HITS_ = 0;   // счётчик локален для прогона, а не для execution context
   p4Log_('=== PROBE-4 · инвентаризация поставок [' + fromIdx + '…' + toIdx + ') ===');
 
   var t = p4Token_();
@@ -502,6 +535,8 @@ function p4Inventory_(fromIdx, toIdx) {
          ' · состоявшихся в агрегатах: ' + nCompleted +
          ' · исключено как не состоявшиеся: ' + nNotCompleted +
          ' (без factDate: ' + nNoFact + ', статус ≠ ' + P4_STATUS_DONE_ + ': ' + nOtherStatus + ')');
+  p4Log_('повторов после 429/5xx за прогон: ' + P4_RATE_HITS_ +
+         ' (последний отказ после исчерпания попыток сюда не входит)');
   p4Log_('без supplyID (стадия preorder, к API не обращались): ' + noSupplyId);
   p4Log_('ошибки чтения — только по записям, где supplyID был: карточек ' + cardErrors +
          ' · составов ' + goodsErrors);
