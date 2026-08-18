@@ -146,11 +146,25 @@ function wbsSqlLit_(s) {
   return "'" + String(s).replace(/\\/g, '\\\\').replace(/'/g, "\\'") + "'";
 }
 
+/**
+ * 🔴 Идентификатор объекта: 0 и пустое приводятся к NULL.
+ *
+ * WB отдаёт отсутствующий `preorderID` как **0**, а не как null — проверено на
+ * снимке: `preorder_id = 0` у 14 строк, NULL ни у одной. Обычный `wbsInt_()`
+ * записал бы туда ноль, и все 14 разных поставок слиплись бы в одну группу
+ * `preorder_id = 0`, роняя инвариант И7 «один preorder → несколько supply».
+ * Для количеств ноль осмыслен, поэтому отдельная функция только для ID.
+ */
+function wbsId_(v) {
+  var n = wbsInt_(v);
+  return (n === null || n === 0) ? null : n;
+}
+
 /** 🔴 Ключ объекта. Префикс обязателен: без него supply_id и preorder_id столкнутся. */
 function wbsEntityKey_(o) {
-  var pre = wbsInt_(o.preorderID), sup = wbsInt_(o.supplyID);
-  if (pre !== null && pre !== 0) return 'P:' + pre;
-  if (sup !== null && sup !== 0) return 'S:' + sup;
+  var pre = wbsId_(o.preorderID), sup = wbsId_(o.supplyID);
+  if (pre !== null) return 'P:' + pre;
+  if (sup !== null) return 'S:' + sup;
   return null;   // объект без обоих идентификаторов — пропускаем и логируем
 }
 
@@ -295,8 +309,8 @@ function wbsHeaderRow_(o, card, entityKey, runId, snapshotTs) {
     snapshot_ts: snapshotTs,
     run_id: runId,
     entity_key: entityKey,
-    supply_id:   wbsInt_(o.supplyID),
-    preorder_id: wbsInt_(o.preorderID),
+    supply_id:   wbsId_(o.supplyID),      // 0 → NULL, см. wbsId_
+    preorder_id: wbsId_(o.preorderID),    // 0 → NULL, иначе И7 ложно падает
     status_id:   wbsInt_(o.statusID),
     create_dt:   wbsTs_(o.createDate),
     supply_dt:   wbsTs_(o.supplyDate),
@@ -356,7 +370,7 @@ function wbsGoodsRow_(g, o, entityKey, runId, snapshotTs) {
     snapshot_ts: snapshotTs,
     run_id: runId,
     entity_key: entityKey,
-    supply_id: wbsInt_(o.supplyID),
+    supply_id: wbsId_(o.supplyID),
     barcode:     wbsStr_(g.barcode),
     vendor_code: wbsStr_(g.vendorCode),
     nm_id:       wbsInt_(g.nmID),
@@ -433,10 +447,10 @@ function wbsDeleteObject_(runId, entityKey) {
  * 🔴 Порядок обязателен: goods, затем header. Header — commit-marker объекта.
  */
 function wbsWriteObject_(token, o, entityKey, runId, snapshotTs) {
-  var supplyId = wbsInt_(o.supplyID);
+  var supplyId = wbsId_(o.supplyID);
   var card = null, goods = [];
 
-  if (supplyId !== null && supplyId !== 0) {
+  if (supplyId !== null) {
     card  = wbsCard_(token, supplyId);   Utilities.sleep(WBS_PAUSE_MS_);
     goods = wbsGoods_(token, supplyId);  Utilities.sleep(WBS_PAUSE_MS_);
   }
