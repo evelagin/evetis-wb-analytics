@@ -23,9 +23,18 @@
  * где поле работало прекрасно. Остальные поставки считаются отдельным
  * контрольным счётчиком и в выводы о семантике не входят.
  *
- * Второе правило: ошибка чтения API НЕ превращается в ноль. Поставка, у
- * которой не прочитались состав или карточка, помечается `DATA_MISSING`,
- * считается отдельным счётчиком и в агрегаты не попадает.
+ * Второе правило: ошибка чтения API НЕ превращается в данные. Но исключается
+ * ровно тот агрегат, который испорчен, а не все сразу:
+ *
+ *   • не прочитался СОСТАВ → количества неизвестны → поставка не входит ни в
+ *     количественные агрегаты, ни в классификацию `acceptedQuantity`;
+ *   • не прочиталась КАРТОЧКА → неизвестен склад → поставка не входит в
+ *     складскую разбивку, но её достоверно прочитанные количества остаются в
+ *     общих суммах. Выбрасывать верные цифры из-за несвязанной ошибки нельзя.
+ *
+ * Обе ситуации помечаются в журнале как `DATA_MISSING` и считаются отдельными
+ * счётчиками `goodsErrors` / `cardErrors`. Ведро вида
+ * `DATA_MISSING (назнач. DATA_MISSING)` в складской разбивке не создаётся.
  *
  * ЧТО УСТАНАВЛИВАЕТ ПРОБА
  *   1. Как заполнено `acceptedQuantity` по завершённым поставкам — не двумя
@@ -304,7 +313,7 @@ function p4Inventory_(fromIdx, toIdx) {
 
   var sumQ = 0, sumA = 0, sumR = 0, byWh = {}, done = [];
   var nCompleted = 0, nNotCompleted = 0, nNoFact = 0, nOtherStatus = 0;
-  var cardErrors = 0, goodsErrors = 0, processed = 0, stoppedAt = -1;
+  var cardErrors = 0, goodsErrors = 0, whUnknown = 0, processed = 0, stoppedAt = -1;
 
   for (var i = fromIdx; i < last; i++) {
     if ((new Date().getTime() - t0) > P4_TIME_BUDGET_MS_) { stoppedAt = i; break; }
@@ -342,16 +351,19 @@ function p4Inventory_(fromIdx, toIdx) {
 
     processed++;
 
-    // В агрегаты — только состоявшиеся и только с прочитанным составом.
+    // В количественные агрегаты — только состоявшиеся и только с прочитанным
+    // составом. Непрочитанный состав = количества неизвестны.
     if (!completed || !tt) continue;
     nCompleted++;
     sumQ += tt.quantity; sumA += tt.accepted; sumR += tt.ready;
+    done.push({ id: s.supplyID, day: p4Day_(s.factDate), q: tt.quantity, a: tt.accepted });
 
+    // В складскую разбивку — только если карточка прочиталась. Иначе склад
+    // неизвестен, и ведро «DATA_MISSING» было бы выдуманной группой.
+    if (!card) { whUnknown++; continue; }
     var whKey = awh + ' (назнач. ' + wh + ')';
     if (!byWh[whKey]) byWh[whKey] = { supplies: 0, quantity: 0, accepted: 0 };
     byWh[whKey].supplies++; byWh[whKey].quantity += tt.quantity; byWh[whKey].accepted += tt.accepted;
-
-    done.push({ id: s.supplyID, day: p4Day_(s.factDate), q: tt.quantity, a: tt.accepted });
   }
 
   p4Log_('─────────────────────────────────────────────────────────────────────────────────────────');
@@ -359,8 +371,10 @@ function p4Inventory_(fromIdx, toIdx) {
          ' · состоявшихся в агрегатах: ' + nCompleted +
          ' · исключено как не состоявшиеся: ' + nNotCompleted +
          ' (без factDate: ' + nNoFact + ', статус ≠ ' + P4_STATUS_DONE_ + ': ' + nOtherStatus + ')');
-  p4Log_('ошибки чтения: карточек ' + cardErrors + ' · составов ' + goodsErrors +
-         (goodsErrors ? ' ⚠️ поставки с непрочитанным составом в агрегаты НЕ включены' : ''));
+  p4Log_('ошибки чтения: карточек ' + cardErrors + ' · составов ' + goodsErrors);
+  if (goodsErrors) p4Log_('  ⚠️ непрочитанный состав → количества неизвестны, такие поставки НЕ в агрегатах');
+  if (whUnknown)   p4Log_('  ⚠️ состоявшихся с неизвестным складом: ' + whUnknown +
+                          ' — их количества в общих суммах есть, в складской разбивке их НЕТ');
   if (stoppedAt >= 0) {
     p4Log_('⚠️ ОСТАНОВЛЕНО ПО ВРЕМЕНИ на позиции ' + stoppedAt +
            '. Это не вся выборка — продолжить со следующего диапазона.');
@@ -412,7 +426,12 @@ function p4Inventory_(fromIdx, toIdx) {
 
   // ── склады ──────────────────────────────────────────────────
   p4Log_('');
-  p4Log_('по складам, только состоявшиеся (фактический, в скобках назначения):');
+  p4Log_('по складам — только состоявшиеся и только с прочитанной карточкой');
+  p4Log_('(фактический склад, в скобках склад назначения):');
+  if (whUnknown) {
+    p4Log_('  ⚠️ сумма по этой разбивке МЕНЬШЕ общей на ' + whUnknown +
+           ' поставок с неизвестным складом — это не потеря, это неполнота чтения.');
+  }
   for (var w in byWh) if (byWh.hasOwnProperty(w)) {
     p4Log_('  ' + w + ' — поставок ' + byWh[w].supplies +
            ' · quantity ' + byWh[w].quantity + ' · accepted ' + byWh[w].accepted);
