@@ -41,10 +41,19 @@
  *      датами, а классификацией: ноль · недобор · ровно · перебор.
  *   2. Есть ли вообще чистая временная граница: встречаются ли нули ПОСЛЕ
  *      первой поставки с положительным `acceptedQuantity`.
- *   3. Склад назначения и фактический склад по каждой поставке.
- *      ⚠️ Склад поставки ≠ текущее расположение остатка. Товар мог быть
- *      перемещён после приёмки. Смешивать эти две величины нельзя.
- *   4. Сверку состоявшихся поставок июля 2026 с тем, что владелец помнит.
+ *   3. Склады по каждой поставке.
+ *      🔴 Сверка июля показала: `actualWarehouse` у транзитных поставок
+ *      СОВПАДАЕТ с `transitWarehouse` до идентификатора. Значит это точка
+ *      сдачи коробов, а не место хранения. Поэтому складская разбивка строится
+ *      по `warehouseName` — складу НАЗНАЧЕНИЯ; `transit` и `actual` печатаются
+ *      рядом как диагностика, без интерпретации в названии.
+ *      ⚠️ И даже склад назначения ≠ текущее расположение остатка: после
+ *      приёмки товар мог быть перемещён.
+ *   4. Общее ли правило `actual == transit` на всей истории — счётчиками
+ *      `actual == transit` / `actual == назначение` / прочее.
+ *   5. Годится ли `preorderID` как стабильный lifecycle-ключ: уникальность,
+ *      пропуски, случаи «один preorderID → несколько supplyID».
+ *   6. Сверку состоявшихся поставок июля 2026 с тем, что владелец помнит.
  *
  * БЕЗОПАСНОСТЬ. Только чтение. Ни одной записи: ни в лист, ни в BigQuery.
  * Токен в журнал не печатается. Лист не трогается сознательно — книга упёрлась
@@ -175,6 +184,78 @@ function p4Goods_(token, id) {
   return rows;
 }
 
+/**
+ * Чем является `actualWarehouse` в этой карточке — совпадает с транзитом, со
+ * складом назначения, или ни с тем ни с другим. Никакой интерпретации, только
+ * сравнение идентификаторов.
+ */
+function p4WhRelation_(card) {
+  if (!card) return 'карточки нет';
+  var a = card.actualWarehouseID, t = card.transitWarehouseID, d = card.warehouseID;
+  var hasA = (a !== null && a !== undefined && a !== '');
+  if (!hasA) return 'actual пуст';
+  var sameT = (t !== null && t !== undefined && String(t) === String(a));
+  var sameD = (d !== null && d !== undefined && String(d) === String(a));
+  if (sameT && sameD) return 'actual == transit == назначение';
+  if (sameT) return 'actual == transit';
+  if (sameD) return 'actual == назначение';
+  return '⚠️ actual не совпал ни с транзитом, ни с назначением';
+}
+
+/**
+ * Аудит идентификаторов по ВСЕЙ выборке. Без единого запроса к API.
+ * Проверяет пригодность `preorderID` как стабильного lifecycle-ключа: он есть
+ * и до назначения `supplyID`, и после. Если менять первичный ключ по стадии,
+ * одна поставка превратится в две записи в RAW.
+ */
+function p4KeyAudit_(list) {
+  p4Log_('');
+  p4Log_('🔑 АУДИТ ИДЕНТИФИКАТОРОВ по всей выборке (' + list.length + ' записей)');
+
+  var preSeen = {}, supSeen = {}, preToSup = {};
+  var preNull = 0, supNull = 0, preDup = [], supDup = [], preMulti = [];
+
+  for (var i = 0; i < list.length; i++) {
+    var s = list[i] || {};
+    var pre = (s.preorderID === null || s.preorderID === undefined || s.preorderID === 0)
+              ? '' : String(s.preorderID);
+    var sup = (s.supplyID === null || s.supplyID === undefined || s.supplyID === 0)
+              ? '' : String(s.supplyID);
+
+    if (!pre) preNull++;
+    else {
+      if (preSeen[pre]) preDup.push(pre); else preSeen[pre] = 1;
+      if (!preToSup[pre]) preToSup[pre] = {};
+      if (sup) preToSup[pre][sup] = 1;
+    }
+    if (!sup) supNull++;
+    else { if (supSeen[sup]) supDup.push(sup); else supSeen[sup] = 1; }
+  }
+
+  var preUniq = 0; for (var p in preSeen) if (preSeen.hasOwnProperty(p)) preUniq++;
+  var supUniq = 0; for (var q in supSeen) if (supSeen.hasOwnProperty(q)) supUniq++;
+
+  for (var k in preToSup) if (preToSup.hasOwnProperty(k)) {
+    var n = 0; for (var m in preToSup[k]) if (preToSup[k].hasOwnProperty(m)) n++;
+    if (n > 1) preMulti.push(k + ' → ' + n + ' supplyID');
+  }
+
+  p4Log_('  preorderID: уникальных ' + preUniq + ' · пустых ' + preNull +
+         ' · дубликатов ' + preDup.length + (preDup.length ? ' [' + preDup.join(', ') + ']' : ''));
+  p4Log_('  supplyID:   уникальных ' + supUniq + ' · пустых ' + supNull +
+         ' · дубликатов ' + supDup.length + (supDup.length ? ' [' + supDup.join(', ') + ']' : ''));
+  p4Log_('  один preorderID → несколько supplyID: ' + preMulti.length +
+         (preMulti.length ? ' [' + preMulti.join(' · ') + ']' : ''));
+
+  if (preNull === 0 && preDup.length === 0 && preMulti.length === 0) {
+    p4Log_('  ✅ preorderID заполнен везде, уникален и не ветвится — ГОДИТСЯ в кандидаты lifecycle-ключа.');
+  } else {
+    p4Log_('  ⚠️ preorderID не проходит проверку целиком — как единый ключ пока не годится.');
+  }
+  p4Log_('  ⚠️ Это проверка на текущем снимке. Стабильность во времени она не доказывает:');
+  p4Log_('     переприсвоение идентификаторов ловится только повторными снимками.');
+}
+
 function p4Totals_(goods) {
   var t = { positions: goods.length, quantity: 0, accepted: 0, ready: 0, unloading: 0 };
   for (var i = 0; i < goods.length; i++) {
@@ -221,7 +302,11 @@ function probeJuly4() {
     p4Log_('плановая или дата создания, но нет подтверждённого факта:');
     for (var k = 0; k < skipped.length; k++) {
       var sk = skipped[k];
-      p4Log_('  ' + sk.supplyID + ' · statusID ' + sk.statusID +
+      // 🔑 У незавершённых поставок supplyID приходит null — идентификатор
+      // на этой стадии только preorderID. Печатаем оба.
+      p4Log_('  supplyID ' + (sk.supplyID === null || sk.supplyID === undefined ? 'null' : sk.supplyID) +
+             ' · preorderID ' + (sk.preorderID || '—') +
+             ' · statusID ' + sk.statusID +
              ' · создана ' + (p4Day_(sk.createDate) || '—') +
              ' · план ' + (p4Day_(sk.supplyDate) || '—') +
              ' · факт ' + (p4Day_(sk.factDate) || 'НЕТ'));
@@ -249,12 +334,16 @@ function probeJuly4() {
            ' · на паллете: ' + (p.isBoxOnPallet ? 'да' : 'нет'));
 
     if (card) {
-      p4Log_('  🔑 склад назначения: ' + (card.warehouseName || '—') +
+      p4Log_('  🔑 назначение: ' + (card.warehouseName || '—') +
              ' (id ' + (card.warehouseID || '—') + ')');
-      p4Log_('  🔑 фактический склад: ' + (card.actualWarehouseName || '—') +
-             ' (id ' + (card.actualWarehouseID || '—') + ')');
+      p4Log_('     transit:    ' + (card.transitWarehouseName || '—') +
+             ' (id ' + (card.transitWarehouseID === null || card.transitWarehouseID === undefined
+                        ? 'null' : card.transitWarehouseID) + ')');
+      p4Log_('     actual:     ' + (card.actualWarehouseName || '—') +
+             ' (id ' + (card.actualWarehouseID || '—') + ') · ' + p4WhRelation_(card));
       var known = ['phone','statusID','boxTypeID','createDate','supplyDate','factDate','updatedDate',
-                   'warehouseID','warehouseName','actualWarehouseID','actualWarehouseName'];
+                   'warehouseID','warehouseName','actualWarehouseID','actualWarehouseName',
+                   'transitWarehouseID','transitWarehouseName'];
       var extra = [];
       for (var key in card) if (card.hasOwnProperty(key) && known.indexOf(key) < 0) {
         extra.push(key + '=' + JSON.stringify(card[key]));
@@ -301,6 +390,8 @@ function p4Inventory_(fromIdx, toIdx) {
 
   var list = p4List_(t.token);
   if (!list) return;
+  p4KeyAudit_(list);   // по всей выборке, без запросов к API
+  p4Log_('');
   var last = Math.min(toIdx, list.length);
   p4Log_('обрабатываем позиции ' + fromIdx + '…' + (last - 1) + ' из ' + list.length +
          ' (порядок по createDate, от старых к новым)');
@@ -308,12 +399,13 @@ function p4Inventory_(fromIdx, toIdx) {
   p4Log_('В агрегаты и в выводы о семантике идут ТОЛЬКО состоявшиеся поставки:');
   p4Log_('statusID ' + P4_STATUS_DONE_ + ' и непустой factDate. Остальные — отдельным счётчиком.');
   p4Log_('');
-  p4Log_('# | supplyID | факт | статус | склад назнач → фактический | поз | qty | accepted | ready | пометка');
+  p4Log_('# | supplyID | preorderID | факт | статус | назначение | transit | actual | поз | qty | accepted | ready | пометка');
   p4Log_('─────────────────────────────────────────────────────────────────────────────────────────');
 
-  var sumQ = 0, sumA = 0, sumR = 0, byWh = {}, done = [];
+  var sumQ = 0, sumA = 0, sumR = 0, byWh = {}, whRel = {}, done = [];
   var nCompleted = 0, nNotCompleted = 0, nNoFact = 0, nOtherStatus = 0;
   var cardErrors = 0, goodsErrors = 0, whUnknown = 0, processed = 0, stoppedAt = -1;
+  var mismatchQty = 0, mismatchAcc = 0, noSupplyId = 0;
 
   for (var i = fromIdx; i < last; i++) {
     if ((new Date().getTime() - t0) > P4_TIME_BUDGET_MS_) { stoppedAt = i; break; }
@@ -326,25 +418,60 @@ function p4Inventory_(fromIdx, toIdx) {
       if (Number(s.statusID) !== P4_STATUS_DONE_) nOtherStatus++;
     }
 
-    var card = p4Card_(t.token, s.supplyID);
-    Utilities.sleep(P4_PAUSE_MS_);
-    var goods = p4Goods_(t.token, s.supplyID);
-    Utilities.sleep(P4_PAUSE_MS_);
+    // 🔴 На стадии preorder `supplyID` приходит null. Запрос
+    // /api/v1/supplies/null — это не проверка источника, а заведомо неверный
+    // адрес, и его отказ загрязнил бы cardErrors/goodsErrors ложными ошибками.
+    // Такие записи считаем отдельно и в API не ходим.
+    var hasSupplyId = (s.supplyID !== null && s.supplyID !== undefined && s.supplyID !== '');
+    var card = null, goods = null;
+    if (hasSupplyId) {
+      card = p4Card_(t.token, s.supplyID);
+      Utilities.sleep(P4_PAUSE_MS_);
+      goods = p4Goods_(t.token, s.supplyID);
+      Utilities.sleep(P4_PAUSE_MS_);
+      if (!card) cardErrors++;
+      if (!goods) goodsErrors++;
+    } else {
+      noSupplyId++;
+    }
 
-    if (!card) cardErrors++;
-    if (!goods) goodsErrors++;
-
-    var wh  = card ? (card.warehouseName || '—') : 'DATA_MISSING';
-    var awh = card ? (card.actualWarehouseName || '—') : 'DATA_MISSING';
+    var wh  = card ? (card.warehouseName || '—') : 'DATA_MISSING';        // назначение
+    var twh = card ? (card.transitWarehouseName || '—') : 'DATA_MISSING'; // транзит
+    var awh = card ? (card.actualWarehouseName || '—') : 'DATA_MISSING';  // без интерпретации
     var tt  = goods ? p4Totals_(goods) : null;
+
+    if (card) {
+      var rel = p4WhRelation_(card);
+      whRel[rel] = (whRel[rel] || 0) + 1;
+    }
 
     var note = [];
     if (!completed) note.push('ИСКЛЮЧЕНА: не состоялась');
-    if (!goods) note.push('DATA_MISSING состав');
-    if (!card) note.push('DATA_MISSING карточка');
+    if (!hasSupplyId) {
+      note.push('NO_SUPPLY_ID: стадия preorder, карточка и состав не запрашивались');
+    } else {
+      if (!goods) note.push('DATA_MISSING состав');
+      if (!card) note.push('DATA_MISSING карточка');
+    }
 
-    p4Log_(i + ' | ' + s.supplyID + ' | ' + (p4Day_(s.factDate) || 'нет') + ' | ' + s.statusID +
-           ' | ' + wh + ' → ' + awh +
+    // Встроенный контроль целостности: карточка тоже несёт агрегаты quantity и
+    // acceptedQuantity. Если они расходятся с суммой по позициям — это дефект
+    // источника, и знать о нём надо до того, как мы построим на нём баланс.
+    if (card && tt) {
+      if (typeof card.quantity === 'number' && card.quantity !== tt.quantity) {
+        note.push('⚠️ MISMATCH quantity: карточка ' + card.quantity + ' против позиций ' + tt.quantity);
+        mismatchQty++;
+      }
+      if (typeof card.acceptedQuantity === 'number' && card.acceptedQuantity !== tt.accepted) {
+        note.push('⚠️ MISMATCH accepted: карточка ' + card.acceptedQuantity + ' против позиций ' + tt.accepted);
+        mismatchAcc++;
+      }
+    }
+
+    p4Log_(i + ' | ' + (s.supplyID === null || s.supplyID === undefined ? 'null' : s.supplyID) +
+           ' | ' + (s.preorderID || '—') +
+           ' | ' + (p4Day_(s.factDate) || 'нет') + ' | ' + s.statusID +
+           ' | ' + wh + ' | ' + twh + ' | ' + awh +
            ' | ' + (tt ? tt.positions : '?') + ' | ' + (tt ? tt.quantity : '?') +
            ' | ' + (tt ? tt.accepted : '?') + ' | ' + (tt ? tt.ready : '?') +
            (note.length ? ' | ' + note.join(' · ') : ''));
@@ -360,10 +487,14 @@ function p4Inventory_(fromIdx, toIdx) {
 
     // В складскую разбивку — только если карточка прочиталась. Иначе склад
     // неизвестен, и ведро «DATA_MISSING» было бы выдуманной группой.
+    // 🔴 Ведро — по складу НАЗНАЧЕНИЯ. `actual` у транзитных поставок равен
+    // транзиту, и разбивка по нему записала бы Волгоград, Владимир и Сарапул
+    // на Обухово — сортировочный центр, где товар не хранится.
     if (!card) { whUnknown++; continue; }
-    var whKey = awh + ' (назнач. ' + wh + ')';
-    if (!byWh[whKey]) byWh[whKey] = { supplies: 0, quantity: 0, accepted: 0 };
+    var whKey = wh;
+    if (!byWh[whKey]) byWh[whKey] = { supplies: 0, quantity: 0, accepted: 0, viaTransit: 0 };
     byWh[whKey].supplies++; byWh[whKey].quantity += tt.quantity; byWh[whKey].accepted += tt.accepted;
+    if (card.transitWarehouseID !== null && card.transitWarehouseID !== undefined) byWh[whKey].viaTransit++;
   }
 
   p4Log_('─────────────────────────────────────────────────────────────────────────────────────────');
@@ -371,10 +502,14 @@ function p4Inventory_(fromIdx, toIdx) {
          ' · состоявшихся в агрегатах: ' + nCompleted +
          ' · исключено как не состоявшиеся: ' + nNotCompleted +
          ' (без factDate: ' + nNoFact + ', статус ≠ ' + P4_STATUS_DONE_ + ': ' + nOtherStatus + ')');
-  p4Log_('ошибки чтения: карточек ' + cardErrors + ' · составов ' + goodsErrors);
+  p4Log_('без supplyID (стадия preorder, к API не обращались): ' + noSupplyId);
+  p4Log_('ошибки чтения — только по записям, где supplyID был: карточек ' + cardErrors +
+         ' · составов ' + goodsErrors);
   if (goodsErrors) p4Log_('  ⚠️ непрочитанный состав → количества неизвестны, такие поставки НЕ в агрегатах');
   if (whUnknown)   p4Log_('  ⚠️ состоявшихся с неизвестным складом: ' + whUnknown +
                           ' — их количества в общих суммах есть, в складской разбивке их НЕТ');
+  p4Log_('расхождения карточка ↔ позиции: по quantity ' + mismatchQty + ' · по accepted ' + mismatchAcc +
+         ((mismatchQty || mismatchAcc) ? ' 🔴 источник противоречит сам себе, разбирать до загрузчика' : ' ✅'));
   if (stoppedAt >= 0) {
     p4Log_('⚠️ ОСТАНОВЛЕНО ПО ВРЕМЕНИ на позиции ' + stoppedAt +
            '. Это не вся выборка — продолжить со следующего диапазона.');
@@ -426,17 +561,26 @@ function p4Inventory_(fromIdx, toIdx) {
 
   // ── склады ──────────────────────────────────────────────────
   p4Log_('');
-  p4Log_('по складам — только состоявшиеся и только с прочитанной карточкой');
-  p4Log_('(фактический склад, в скобках склад назначения):');
+  p4Log_('🔑 ЧЕМ ЯВЛЯЕТСЯ actualWarehouse — по всем прочитанным карточкам:');
+  for (var rl in whRel) if (whRel.hasOwnProperty(rl)) p4Log_('  ' + rl + ': ' + whRel[rl]);
+  p4Log_('  Проверяем, общее ли это правило. В июле у всех транзитных поставок');
+  p4Log_('  actual совпадал с транзитом, а без транзита — со складом назначения.');
+
+  p4Log_('');
+  p4Log_('ПО СКЛАДАМ НАЗНАЧЕНИЯ — только состоявшиеся и только с прочитанной карточкой:');
   if (whUnknown) {
     p4Log_('  ⚠️ сумма по этой разбивке МЕНЬШЕ общей на ' + whUnknown +
            ' поставок с неизвестным складом — это не потеря, это неполнота чтения.');
   }
   for (var w in byWh) if (byWh.hasOwnProperty(w)) {
     p4Log_('  ' + w + ' — поставок ' + byWh[w].supplies +
+           ' (через транзит ' + byWh[w].viaTransit + ')' +
            ' · quantity ' + byWh[w].quantity + ' · accepted ' + byWh[w].accepted);
   }
-  p4Log_('  ⚠️ Склад ПОСТАВКИ — это точка приёмки, а не текущее расположение остатка.');
+  p4Log_('  🔴 Разбивка построена по warehouseName — складу НАЗНАЧЕНИЯ, а не по actual:');
+  p4Log_('     actual у транзитных поставок равен транзиту, и разбивка по нему записала бы');
+  p4Log_('     Волгоград, Владимир и Сарапул на Обухово — сортировочный центр, а не хранение.');
+  p4Log_('  ⚠️ И склад назначения — это точка поставки, а не текущее расположение остатка.');
   p4Log_('     После приёмки товар мог быть перемещён. С обезличенным остатком не смешивать.');
   p4Log_('');
   p4Log_('=== ГОТОВО, ' + Math.round((new Date().getTime() - t0) / 1000) + ' с ===');
