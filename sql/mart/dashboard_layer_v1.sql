@@ -22,6 +22,19 @@
 --  10. Каждый слой смотрит в СВОЙ журнал. `ads_query_stats` — в RAW_WB_ADV_QUERY_STATS_RUNS,
 --      а не в общий ads-прогон: иначе тихая остановка Ads-2 маскируется чужим успехом.
 --      Порог часов прогона у него не задан осознанно — см. `success_age_is_sla`.
+--  11. 🔴 Журнал слоя обязан принадлежать ТОМУ ЖЕ производителю, что и его данные
+--      (правка 19.08, Stage 1A). `stocks` читает WB_STOCKS_SNAPSHOTS — журнал боевого
+--      загрузчика Apps Script, который и наполняет FACT_STOCKS_SNAPSHOT. LOADER_RUNS
+--      сюда НЕ подключается: её пишет исключительно Cloud Run CLI, то есть shadow
+--      миграционного контура (таблицы `*__CR`), у которого нет ни одного production-
+--      потребителя. Прежняя схема брала `data_as_of` у боевого пути, а `run_state`
+--      у миграционного — одна строка отвечала о двух разных производителях и выдавала
+--      поломку миграции за отсутствие свежих боевых остатков.
+--  12. 🔴 Детектор отвечает на ТЕКУЩИЙ вопрос, а не воспроизводит историю
+--      (правка 19.08, Stage 2). `sku_orphans` сверяется с authoritative
+--      `REF_SKU_MASTER` здесь и сейчас, а не с `sku_match_status`, вмороженным
+--      в RAW/FACT в момент загрузки. Само поле `sku_match_status` не трогаем —
+--      на нём стоит `is_sku_row` финансового контура.
 --
 -- 🔴 Отступления от спеки и находки из данных — в сопроводительной записке
 --    docs/DASHBOARD_LAYER_STATIC_AUDIT_2026-08-16.md. О-1…О-7 приняты аудитором;
@@ -50,7 +63,8 @@ layers AS (
     ('ads_fullstats',        'ads',     'ads',      2, 36),
     ('orders',               'ops',     'orders',   1,  3),
     ('sales',                'ops',     'sales',    2,  4),
-    ('stocks',               'ops',     'stocks',   1, 36),
+    -- 🔴 журнал боевого пути (Apps Script), а не LOADER_RUNS — инвариант 11
+    ('stocks',               'ops',     'stocks_snapshots', 1, 36),
     ('finance',              'finance', 'finance',  3, 20),
     ('mart_sku_daily',       'mart',    'mart',     2, 36),
     ('fact_ads_costs_daily', 'mart',    'mart',     2, 36),
@@ -146,8 +160,15 @@ run_attempts AS (
   SELECT 'sales', run_id, started_at, completed_at, status
     FROM `project-fa311fc0-4d87-4781-986.wb_raw.INGEST_RUNS` WHERE loader_name = 'sales'
   UNION ALL
-  SELECT 'stocks', run_id, started_at, completed_at, status
-    FROM `project-fa311fc0-4d87-4781-986.wb_raw.LOADER_RUNS` WHERE loader_name = 'stocks'
+  -- 🔴 Остатки: журнал БОЕВОГО загрузчика (Apps Script), инвариант 11.
+  --    Грейн строки = снимок, `snapshot_id` уникален (39/39 на 19.08.2026), NULL нет.
+  --    Наблюдённые статусы за всю историю — только COMPLETE (38) и ERROR (1), оба
+  --    внутри карты §1.5, ветка UNMAPPED недостижима на текущих данных.
+  --    ⚠️ Строка пишется по завершении прогона, промежуточного STARTED нет — значит
+  --    состояние STUCK для этого слоя не наблюдаемо по построению. Зависший прогон
+  --    ловится ростом `success_age_hours` против порога 36 ч, а не `run_state`.
+  SELECT 'stocks_snapshots', snapshot_id, started_at, completed_at, status
+    FROM `project-fa311fc0-4d87-4781-986.wb_raw.WB_STOCKS_SNAPSHOTS`
   UNION ALL
   SELECT 'mart', run_id, started_at, completed_at, status
     FROM `project-fa311fc0-4d87-4781-986.wb_raw.LOADER_RUNS` WHERE loader_name = 'mart'
@@ -274,11 +295,28 @@ scored AS (
 ),
 
 -- детектор сирот: смотрит на факты, а не на метаданные синка (§1.7)
+--
+-- 🔴 ПРАВКА 19.08.2026 (Stage 2). Вопрос детектора — ТЕКУЩИЙ: «есть ли среди
+--    валидных nm_id > 0 в заказах за 90 суток такие, которых СЕЙЧАС нет в
+--    authoritative wb_raw.REF_SKU_MASTER?». Прежняя редакция фильтровала по
+--    `sku_match_status = 'not_found'`, а это СНИМОК сопоставления на момент
+--    загрузки: его проставляет загрузчик при записи в RAW, FACT копирует без
+--    пересчёта. SKU, доехавший в справочник позже, оставался «сиротой» до выхода
+--    старых строк из окна — nm_id 1083392113 держал бы ERROR до 03.11.2026,
+--    уже находясь в REF. Детектор отвечал на исторический вопрос, а не на текущий.
+-- 🔴 `sku_match_status` в RAW/FACT НЕ трогаем: на нём стоит `is_sku_row`
+--    финансового контура (pr_mart2a/pr_mart2b). Правка локальна — только этот CTE.
+-- 🔴 NOT EXISTS, а не JOIN: дубль nm_id в справочнике не должен ни размножать
+--    строки, ни менять счётчик.
 orphans AS (
-  SELECT COUNT(DISTINCT nm_id) AS orphan_nm_ids
-  FROM `project-fa311fc0-4d87-4781-986.wb_mart.FACT_ORDERS`
-  WHERE sku_match_status = 'not_found'
-    AND order_date >= DATE_SUB(CURRENT_DATE('Europe/Moscow'), INTERVAL 90 DAY)
+  SELECT COUNT(DISTINCT o.nm_id) AS orphan_nm_ids
+  FROM `project-fa311fc0-4d87-4781-986.wb_mart.FACT_ORDERS` o
+  WHERE o.order_date >= DATE_SUB(CURRENT_DATE('Europe/Moscow'), INTERVAL 90 DAY)
+    AND o.nm_id > 0
+    AND NOT EXISTS (
+      SELECT 1 FROM `project-fa311fc0-4d87-4781-986.wb_raw.REF_SKU_MASTER` r
+      WHERE r.nm_id = o.nm_id
+    )
 )
 
 SELECT
