@@ -44,6 +44,7 @@ var WB_ADV_RAW_CAMPAIGN_STATS_SHEET_  = 'RAW_WB_ADV_CAMPAIGN_STATS';
 var WB_ADV_RAW_BOOSTER_STATS_SHEET_   = 'RAW_WB_ADV_BOOSTER_STATS';
 var WB_ADV_RAW_SEARCH_CLUSTERS_SHEET_ = 'RAW_WB_ADV_SEARCH_CLUSTERS';
 var WB_ADV_RAW_COSTS_SHEET_           = 'RAW_WB_ADV_COSTS';
+var WB_ADV_RAW_COSTS_RUNS_SHEET_      = 'RAW_WB_ADV_COSTS_RUNS';   // Stage 3B.1: журнал ранов costs
 
 var WB_ADV_RAW_CAMPAIGNS_HEADERS_ = [
   'load_ts', 'run_id', 'period_from', 'period_to', 'source_method', 'processed_status',
@@ -73,8 +74,46 @@ var WB_ADV_RAW_SEARCH_CLUSTERS_HEADERS_ = [
 var WB_ADV_RAW_COSTS_HEADERS_ = [
   'load_ts', 'run_id', 'period_from', 'period_to', 'source_method', 'processed_status',
   'updTime', 'updDate', 'updNum', 'updSum', 'advertId',
-  'campName', 'advertType', 'paymentType', 'advertStatus', 'raw_json'
+  'campName', 'advertType', 'paymentType', 'advertStatus', 'raw_json',
+  // Stage 3B.1: аддитивно и ПОСЛЕДНЕЙ колонкой — так же, как ALTER ADD COLUMN
+  //   допишет её в существующую BQ-таблицу. Порядок колонок остаётся согласованным.
+  'window_index'
 ];
+
+/**
+ * Stage 3B.1 — журнал запросов к /adv/v1/upd.
+ * Грейн: (run_id, window_index) — атомарное окно-снапшот.
+ * 🔴 Строка пишется на КАЖДЫЙ запрос, включая http_success с нулём строк и включая
+ *    неуспешные окна. Именно это делает «успешные сутки с 0 ₽» отличимыми от
+ *    «сутки не загружены»: без журнала пустой ответ не оставляет следа вообще.
+ * 🔴 Строка журнала — COMMIT-MARKER окна: canonical берёт строки окна только при
+ *    status='OK' AND http_success='true'. Ран, упавший до записи маркера, оставит
+ *    строки в RAW, но они не станут авторитетными.
+ */
+var WB_ADV_RAW_COSTS_RUNS_HEADERS_ = [
+  'load_ts', 'run_id', 'source_method', 'window_index', 'window_completed_at',
+  'period_from', 'period_to', 'requested_days',
+  'http_status', 'http_success', 'returned_rows', 'returned_days',
+  'returned_min_date', 'returned_max_date', 'rows_out_of_window',
+  'duration_ms', 'status', 'error_message'
+];
+
+/**
+ * Окна чтения расходов (Stage 3B.1, обоснование — docs/ADS_COSTS_SNAPSHOT_CONTRACT_2026-08-20.md).
+ * 🔴 7 суток было НЕДОСТАТОЧНО: наблюдавшаяся ревизия биллинга пришла на D+7, то есть
+ *    ровно на границе окна. Наблюдение обрывалось там, где данные ещё менялись, и
+ *    «стабильность» дальше была артефактом того, что мы перестали спрашивать.
+ */
+// 🔴 ФАЗА A: ОСТАЁТСЯ 7. Union умеет только расти, поэтому расширение окна само по
+//    себе подняло бы суммы FACT ещё до cutover — и Фаза A перестала бы быть «без
+//    смены бизнес-семантики». Константа переводится в 14 ОДНОЙ СТРОКОЙ в Фазе B,
+//    вместе с переключением V_ADV_COSTS на snapshot canonical (шаг B4a).
+var WB_ADS_COSTS_OPERATIONAL_DAYS_ = 7;    // Фаза A: D−7 … D−1;  Фаза B: 14
+var WB_ADS_COSTS_AUDIT_FROM_DAYS_  = 45;   // еженедельно: D−45 … D−8 (хвост за operational-окном)
+var WB_ADS_COSTS_AUDIT_TO_DAYS_    = 8;
+var WB_ADS_COSTS_BOOTSTRAP_START_  = '2026-04-13';  // первая дата истории расходов
+var WB_ADS_COSTS_BOOTSTRAP_WINDOW_DAYS_ = 30;       // < лимита WB (31) с запасом
+var WB_ADS_COSTS_RECHECK_PROP_ = 'WB_ADS_COSTS_RECHECK_DATES';  // 'YYYY-MM-DD,YYYY-MM-DD'
 
 /** Лимиты периодов WB: fullstats и upd — максимум 31 день на запрос. */
 var WB_ADV_RAW_MAX_DAYS_ = 31;
@@ -111,7 +150,8 @@ function addWbAdsRawLoaderMenu() {
     .addSeparator()
     .addItem('Только кампании (RAW)', 'loadWbAdsCampaignsRaw')
     .addItem('Только fullstats (RAW, 7 дней)', 'loadWbAdsFullstatsRawLast7Days')
-    .addItem('Только расходы upd (RAW, 7 дней)', 'loadWbAdsCostsRawLast7Days')
+    .addItem('Только расходы upd (RAW, 14 дней)', 'loadWbAdsCostsRawOperational')
+    .addItem('Расходы upd — недельный аудит D−45…D−8', 'loadWbAdsCostsAudit')
     .addItem('Только поисковые кластеры (RAW, 7 дней)', 'loadWbAdsSearchClustersRawLast7Days')
     .addToUi();
 }
@@ -258,10 +298,79 @@ function loadWbAdsFullstatsRawLast7Days() {
   return loadWbAdsFullstatsRaw(rng.from, rng.to);
 }
 
-/** Меню-обёртка: расходы upd RAW за последние 7 дней. */
+/** Меню-обёртка: расходы upd RAW за последние 7 дней. DEPRECATED — см. Operational. */
 function loadWbAdsCostsRawLast7Days() {
   var rng = wbAdsLast7Range_();
   return loadWbAdsCostsRaw(rng.from, rng.to);
+}
+
+// ── Stage 3B.1: три контура чтения расходов ──────────────────────────────────
+
+/** Окно «D−fromDaysAgo … D−toDaysAgo» (Europe/Moscow). */
+function wbAdsCostsRangeBack_(fromDaysAgo, toDaysAgo) {
+  var t = new Date(); t.setDate(t.getDate() - toDaysAgo);
+  var f = new Date(); f.setDate(f.getDate() - fromDaysAgo);
+  return {
+    from: Utilities.formatDate(f, WB_ADS_TZ_, 'yyyy-MM-dd'),
+    to:   Utilities.formatDate(t, WB_ADS_TZ_, 'yyyy-MM-dd')
+  };
+}
+
+/** run_id с явным префиксом контура (ADSAUDIT_ / ADSBACKFILL_ / ADSRECHECK_). */
+function wbAdsCostsRunId_(prefix) {
+  return prefix + Utilities.formatDate(new Date(), WB_ADS_TZ_, 'yyyyMMdd_HHmmss') +
+    '_' + Math.floor(Math.random() * 1000);
+}
+
+/** OPERATIONAL: ежедневное перечитывание D−14 … D−1. Одно окно, один запрос. */
+function loadWbAdsCostsRawOperational() {
+  var r = wbAdsCostsRangeBack_(WB_ADS_COSTS_OPERATIONAL_DAYS_, 1);
+  return loadWbAdsCostsRaw(r.from, r.to);
+}
+
+/**
+ * AUDIT: еженедельное чтение хвоста D−45 … D−8.
+ * 🔴 Без него поздняя коррекция после D+14 была бы необнаружима В ПРИНЦИПЕ —
+ *    не потому, что её нет, а потому что мы перестали спрашивать.
+ */
+function loadWbAdsCostsAudit() {
+  var r = wbAdsCostsRangeBack_(WB_ADS_COSTS_AUDIT_FROM_DAYS_, WB_ADS_COSTS_AUDIT_TO_DAYS_);
+  return loadWbAdsCostsRaw(r.from, r.to, wbAdsCostsRunId_('ADSAUDIT_'),
+                           WB_ADS_COSTS_BOOTSTRAP_WINDOW_DAYS_);
+}
+
+/**
+ * BOOTSTRAP: один проход по всей истории 13.04.2026 … D−1 окнами по 30 суток.
+ * Запускать ТРИ РАЗА, по одному разу в сутки три дня подряд: проходы внутри одного
+ * дня не независимы — WB публикует списания в течение суток, и три чтения подряд
+ * измерили бы один и тот же момент, а не три наблюдения.
+ * Только append: ни одна существующая строка RAW не меняется и не удаляется.
+ */
+function loadWbAdsCostsBootstrapPass() {
+  var r = wbAdsCostsRangeBack_(1, 1);
+  return loadWbAdsCostsRaw(WB_ADS_COSTS_BOOTSTRAP_START_, r.to,
+                           wbAdsCostsRunId_('ADSBACKFILL_'),
+                           WB_ADS_COSTS_BOOTSTRAP_WINDOW_DAYS_);
+}
+
+/**
+ * RECHECK: точечное перечитывание дат, у которых V_ADV_COSTS_DAY_COVERAGE.needs_recheck.
+ * Список дат кладётся владельцем в Script Property WB_ADS_COSTS_RECHECK_DATES
+ * ('YYYY-MM-DD,YYYY-MM-DD'). Автоматической обратной связи BQ → Apps Script в проекте
+ * нет, и делать вид, что она есть, нельзя: шаг ручной и назван ручным.
+ */
+function loadWbAdsCostsRecheck() {
+  var raw = PropertiesService.getScriptProperties().getProperty(WB_ADS_COSTS_RECHECK_PROP_);
+  var list = String(raw || '').split(',').map(function (x) { return x.trim(); })
+                .filter(function (x) { return /^\d{4}-\d{2}-\d{2}$/.test(x); });
+  if (!list.length) {
+    console.log('recheck: список дат пуст (' + WB_ADS_COSTS_RECHECK_PROP_ + ')');
+    return { source: 'raw_costs', status: 'SKIPPED', rows: 0 };
+  }
+  list.sort();
+  return loadWbAdsCostsRaw(list[0], list[list.length - 1],
+                           wbAdsCostsRunId_('ADSRECHECK_'),
+                           WB_ADS_COSTS_BOOTSTRAP_WINDOW_DAYS_);
 }
 
 /** Меню-обёртка: поисковые кластеры RAW за последние 7 дней. */
@@ -454,9 +563,20 @@ function loadWbAdsFullstatsRaw(periodFrom, periodTo, runId) {
 
 /**
  * RAW расходов: /adv/v1/upd за период (окна ≤ 31 дня).
+ *
+ * Stage 3B.1 — SNAPSHOT-AWARE контракт producer'а:
+ *   • грейн окна-снапшота — (run_id, window_index); window_index пишется и в данные, и в журнал;
+ *   • на КАЖДОЕ окно пишется строка RAW_WB_ADV_COSTS_RUNS, включая пустой успешный ответ
+ *     и включая ошибку — «не спрашивали» и «спросили и не получили» это разные состояния;
+ *   • порядок внутри окна: сначала данные, ПОТОМ строка журнала. Журнальная строка —
+ *     commit-marker: canonical читает окно только при status='OK' AND http_success='true'.
+ *     Ран, упавший между данными и маркером, оставит строки невидимыми для canonical,
+ *     а не примет их за полный ответ.
+ *
  * @param {string=} periodFrom @param {string=} periodTo @param {string=} runId
+ * @param {number=} maxDays размер окна (по умолчанию WB_ADV_RAW_MAX_DAYS_ = 31)
  */
-function loadWbAdsCostsRaw(periodFrom, periodTo, runId) {
+function loadWbAdsCostsRaw(periodFrom, periodTo, runId, maxDays) {
   var ss = SpreadsheetApp.getActiveSpreadsheet();
   var rid = wbAdsResolveRunId_(runId);
   var rng = wbAdsRawNormalizeRange_(periodFrom, periodTo);
@@ -470,17 +590,26 @@ function loadWbAdsCostsRaw(periodFrom, periodTo, runId) {
 
   try {
     var sheet = wbAdvRawEnsureSheet_(ss, WB_ADV_RAW_COSTS_SHEET_, WB_ADV_RAW_COSTS_HEADERS_);
-    var windows = wbAdsSplitPeriod_(rng.from, rng.to, WB_ADV_RAW_MAX_DAYS_);
-    var total = 0, lastCode = '', failed = 0;
+    var runsSheet = wbAdvRawEnsureSheet_(ss, WB_ADV_RAW_COSTS_RUNS_SHEET_, WB_ADV_RAW_COSTS_RUNS_HEADERS_);
+    var winDays = (maxDays && maxDays > 0) ? maxDays : WB_ADV_RAW_MAX_DAYS_;
+    var windows = wbAdsSplitPeriod_(rng.from, rng.to, winDays);
+    var total = 0, lastCode = '', failed = 0, journalFailed = 0, emptyOk = 0;
 
     for (var w = 0; w < windows.length; w++) {
       if (w > 0) Utilities.sleep(WB_ADS_UPD_PAUSE_MS_);
+      var tW = Date.now();
       var url = WB_ADS_API_HOST_ + '/adv/v1/upd?from=' + windows[w].from + '&to=' + windows[w].to;
       var resp = wbAdsHttp_('get', url, tok.token, null);
       lastCode = resp.code;
 
       if (!resp.ok) {
         failed++;
+        // Журнал пишется и для НЕуспешного окна: без него неудача неотличима от «не спрашивали».
+        journalFailed += wbAdsCostsWriteRunLog_(runsSheet, {
+          rid: rid, windowIndex: w, win: windows[w], resp: resp, rows: [],
+          durationMs: Date.now() - tW, status: 'ERROR',
+          errorMessage: 'upd HTTP ' + resp.code + ': ' + wbAdsClip_(resp.body)
+        });
         wbAdsRawWriteStatus_(rid, srcLabel, windows[w].from, windows[w].to, {
           http_status: resp.code, status: 'FAILED',
           error_message: 'upd HTTP ' + resp.code + ': ' + wbAdsClip_(resp.body)
@@ -490,16 +619,32 @@ function loadWbAdsCostsRaw(periodFrom, periodTo, runId) {
 
       var data = Array.isArray(resp.json) ? resp.json : ((resp.json && resp.json.data) || []);
       var rows = [];
-      for (var i = 0; i < data.length; i++) rows.push(wbAdvCostRow_(rid, data[i], windows[w].from, windows[w].to));
+      for (var i = 0; i < data.length; i++) {
+        rows.push(wbAdvCostRow_(rid, data[i], windows[w].from, windows[w].to, w));
+      }
+      // Сначала данные — потом commit-marker. Обратный порядок объявил бы окно полным
+      // раньше, чем его строки существуют.
       total += wbAdvRawAppendRows_(sheet, rows);
+      if (!rows.length) emptyOk++;
+
+      journalFailed += wbAdsCostsWriteRunLog_(runsSheet, {
+        rid: rid, windowIndex: w, win: windows[w], resp: resp, rows: rows,
+        durationMs: Date.now() - tW, status: 'OK', errorMessage: ''
+      });
     }
 
-    var st = failed > 0 ? 'PARTIAL' : 'OK';
+    // Незаписанный журнал — НЕ мелочь: окно без маркера не попадёт в canonical,
+    // поэтому прогон не имеет права отчитаться как полностью успешный.
+    var st = (failed > 0 || journalFailed > 0) ? 'PARTIAL' : 'OK';
     wbAdsRawWriteStatus_(rid, srcLabel, rng.from, rng.to, {
       rows_or_items_found: total, http_status: String(lastCode), status: st,
-      response_keys_sample: 'cost_rows=' + total + '; failed_windows=' + failed
+      response_keys_sample: 'cost_rows=' + total + '; windows=' + windows.length +
+        '; failed_windows=' + failed + '; empty_success_windows=' + emptyOk +
+        '; runlog_failed=' + journalFailed
     });
-    return { source: srcLabel, status: st, rows: total };
+    return { source: srcLabel, status: st, rows: total,
+             windows: windows.length, empty_success_windows: emptyOk,
+             failed_windows: failed, runlog_failed: journalFailed };
   } catch (e) {
     wbAdsRawWriteStatus_(rid, srcLabel, rng.from, rng.to, { status: 'FAILED', error_message: 'Исключение: ' + e.message });
     return { source: srcLabel, status: 'FAILED', rows: 0 };
@@ -775,11 +920,17 @@ function wbAdvCampaignRow_(rid, advertId, meta, detail) {
   };
 }
 
-/** Один row расхода для RAW_WB_ADV_COSTS. */
-function wbAdvCostRow_(rid, u, from, to) {
+/**
+ * Один row расхода для RAW_WB_ADV_COSTS.
+ * Stage 3B.1: +window_index — вторая половина ключа снапшота (run_id, window_index).
+ * Без него связь строки с окном приходилось бы выводить из пары строк period_from/period_to,
+ * то есть полагаться на то, что ран никогда не запросит одно окно дважды.
+ */
+function wbAdvCostRow_(rid, u, from, to, windowIndex) {
   u = u || {};
   var updTime = (u.updTime != null) ? u.updTime : '';
   return {
+    window_index: (windowIndex != null) ? String(windowIndex) : '',
     load_ts: wbAdsNow_(), run_id: rid, period_from: from, period_to: to,
     source_method: 'adv/v1/upd', processed_status: 'raw',
     updTime: updTime,
@@ -793,6 +944,71 @@ function wbAdvCostRow_(rid, u, from, to) {
     advertStatus: (u.advertStatus != null) ? u.advertStatus : '',
     raw_json: wbAdvRawJson_(u)
   };
+}
+
+
+/**
+ * Stage 3B.1 — строка журнала окна. Возвращает 0 при успехе, 1 при неудаче записи.
+ * 🔴 Неудача записи маркера НЕ откатывает данные (RAW append-only), но делает окно
+ *    неавторитетным для canonical — это и есть желаемое fail-closed поведение.
+ */
+function wbAdsCostsWriteRunLog_(runsSheet, o) {
+  var rows = o.rows || [];
+  var minD = '', maxD = '', outOfWindow = 0, days = {}, dayCnt = 0;
+  for (var i = 0; i < rows.length; i++) {
+    var d = String(rows[i].updDate || '');
+    if (!d) continue;
+    if (!days[d]) { days[d] = true; dayCnt++; }
+    if (!minD || d < minD) minD = d;
+    if (!maxD || d > maxD) maxD = d;
+    // WB иногда отдаёт строки за день, который мы не просили (наблюдалось 3 раза из 5026).
+    // Считаем их явно: canonical их отбросит, но факт должен быть виден в журнале.
+    if (d < o.win.from || d > o.win.to) outOfWindow++;
+  }
+  // 🔑 HARD GATE 1: момент завершения окна фиксируется ОДИН раз и кладётся в
+  //    отдельную колонку. Снапшоты упорядочиваются по ней, а не по load_ts строк
+  //    данных: row-level load_ts проставляется на каждую строку отдельно и к
+  //    завершению окна отношения не имеет.
+  var completedAt = wbAdsNow_();
+  var log = {
+    load_ts: completedAt,
+    run_id: o.rid,
+    source_method: 'adv/v1/upd',
+    window_index: String(o.windowIndex),
+    window_completed_at: completedAt,
+    period_from: o.win.from,
+    period_to: o.win.to,
+    requested_days: String(wbAdsCostsDayCount_(o.win.from, o.win.to)),
+    http_status: String((o.resp && o.resp.code) || ''),
+    http_success: (o.resp && o.resp.ok) ? 'true' : 'false',
+    returned_rows: String(rows.length),
+    returned_days: String(dayCnt),
+    returned_min_date: minD,
+    returned_max_date: maxD,
+    rows_out_of_window: String(outOfWindow),
+    duration_ms: String(o.durationMs),
+    status: o.status,
+    error_message: o.errorMessage || ''
+  };
+  try {
+    wbAdvRawAppendRows_(runsSheet, [log]);
+    console.log('  raw_costs ' + log.period_from + '…' + log.period_to +
+      ' [w' + log.window_index + '] ' + log.status +
+      ' | строк ' + log.returned_rows + ' | суток ' + log.returned_days +
+      ' | вне окна ' + log.rows_out_of_window + ' | ' + log.duration_ms + 'мс');
+    return 0;
+  } catch (e) {
+    console.error('  raw_costs ' + log.period_from + '…' + log.period_to +
+      ': RUN-LOG НЕ ЗАПИСАН: ' + ((e && e.message) || e));
+    return 1;
+  }
+}
+
+/** Число суток в окне включительно. */
+function wbAdsCostsDayCount_(from, to) {
+  var f = wbAdsRawParseDate_(from), t = wbAdsRawParseDate_(to);
+  if (!f || !t) return 0;
+  return Math.round((t.getTime() - f.getTime()) / 86400000) + 1;
 }
 
 

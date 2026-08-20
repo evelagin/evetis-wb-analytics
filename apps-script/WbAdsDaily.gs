@@ -143,7 +143,13 @@ function runWbAdsDaily() {
 
     var results = [];
     results.push(loadWbAdsCampaignsRaw(runId));                    // DIM (дёшево)
-    results.push(loadWbAdsCostsRaw(rng.from, rng.to, runId));      // расходы (~сек)
+    // Stage 3B.1: у расходов СВОЁ окно D−14 … D−1, шире общего 7-дневного.
+    //   Наблюдавшаяся ревизия биллинга приходила на D+7 — ровно на границе прежнего окна,
+    //   то есть наблюдение обрывалось там, где данные ещё менялись. Это ОДИН запрос
+    //   (14 < лимита WB в 31 сутки), поэтому цена изменения нулевая.
+    //   Окна campaigns и fullstats НЕ меняются.
+    var costsRng = wbAdsCostsRangeBack_(WB_ADS_COSTS_OPERATIONAL_DAYS_, 1);
+    results.push(loadWbAdsCostsRaw(costsRng.from, costsRng.to, runId));   // расходы (~сек)
     results.push(loadWbAdsFullstatsRaw(rng.from, rng.to, runId));  // fullstats — последним
 
     var summary = results.map(function (x) {
