@@ -143,7 +143,15 @@ function runWbAdsDaily() {
 
     var results = [];
     results.push(loadWbAdsCampaignsRaw(runId));                    // DIM (дёшево)
-    results.push(loadWbAdsCostsRaw(rng.from, rng.to, runId));      // расходы (~сек)
+    // Stage 3B.1: у расходов СВОЁ окно, независимое от общего rng.
+    //   🔴 ФАЗА A: D−7 … D−1 — то же окно, что и раньше. Расширять его в Фазе A нельзя:
+    //   union умеет только расти, и лишние перечитывания подняли бы суммы FACT ещё до
+    //   cutover. Переход на D−14 … D−1 — шаг B4a Фазы B (наблюдавшаяся ревизия биллинга
+    //   приходила на D+7, ровно на границе 7-дневного окна).
+    //   Размер окна задаётся ОДНОЙ константой WB_ADS_COSTS_OPERATIONAL_DAYS_.
+    //   Окна campaigns и fullstats НЕ меняются.
+    var costsRng = wbAdsCostsRangeBack_(WB_ADS_COSTS_OPERATIONAL_DAYS_, 1);
+    results.push(loadWbAdsCostsRaw(costsRng.from, costsRng.to, runId));   // расходы (~сек)
     results.push(loadWbAdsFullstatsRaw(rng.from, rng.to, runId));  // fullstats — последним
 
     var summary = results.map(function (x) {

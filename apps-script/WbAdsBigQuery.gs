@@ -49,6 +49,8 @@ var WB_ADS_BQ_TABLES_ = {
   RAW_WB_ADV_BOOSTER_STATS: true,
   RAW_WB_ADV_SEARCH_CLUSTERS: true,
   RAW_WB_ADV_COSTS: true,
+  // Stage 3B.1: журнал окон-снапшотов расходов (grain run_id × window_index).
+  RAW_WB_ADV_COSTS_RUNS: true,
   // Ads-3: снимок ставок по поисковым кластерам + его run-log.
   RAW_WB_ADV_QUERY_BIDS: true,
   RAW_WB_ADV_QUERY_BIDS_RUNS: true,
@@ -204,13 +206,15 @@ function wbAdsBqEnsureAllTables_() {
   wbAdvBqEnsureTable_('RAW_WB_ADV_BOOSTER_STATS', WB_ADV_RAW_BOOSTER_STATS_HEADERS_);
   wbAdvBqEnsureTable_('RAW_WB_ADV_SEARCH_CLUSTERS', WB_ADV_RAW_SEARCH_CLUSTERS_HEADERS_);
   wbAdvBqEnsureTable_('RAW_WB_ADV_COSTS', WB_ADV_RAW_COSTS_HEADERS_);
+  // Stage 3B.1: журнал ранов расходов — commit-marker каждого окна.
+  wbAdvBqEnsureTable_('RAW_WB_ADV_COSTS_RUNS', WB_ADV_RAW_COSTS_RUNS_HEADERS_);
   // Ads-3 (append-only снимок ставок) + его run-log.
   wbAdvBqEnsureTable_('RAW_WB_ADV_QUERY_BIDS', WB_ADV_RAW_QUERY_BIDS_HEADERS_);
   wbAdvBqEnsureTable_('RAW_WB_ADV_QUERY_BIDS_RUNS', WB_ADV_RAW_QUERY_BIDS_RUNS_HEADERS_);
   // Ads-2 (append-only суточные срезы query-level статистики) + их run-log.
   wbAdvBqEnsureTable_('RAW_WB_ADV_QUERY_STATS', WB_ADV_RAW_QUERY_STATS_HEADERS_);
   wbAdvBqEnsureTable_('RAW_WB_ADV_QUERY_STATS_RUNS', WB_ADV_RAW_QUERY_STATS_RUNS_HEADERS_);
-  console.log('✅ Все 9 RAW_WB_ADV_* таблиц гарантированы.');
+  console.log('✅ Все 10 RAW_WB_ADV_* таблиц гарантированы.');
 }
 
 /**
