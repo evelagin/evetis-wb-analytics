@@ -100,15 +100,16 @@ var WB_ADV_RAW_COSTS_RUNS_HEADERS_ = [
 
 /**
  * Окна чтения расходов (Stage 3B.1, обоснование — docs/ADS_COSTS_SNAPSHOT_CONTRACT_2026-08-20.md).
- * 🔴 7 суток было НЕДОСТАТОЧНО: наблюдавшаяся ревизия биллинга пришла на D+7, то есть
- *    ровно на границе окна. Наблюдение обрывалось там, где данные ещё менялись, и
- *    «стабильность» дальше была артефактом того, что мы перестали спрашивать.
+ *
+ * СЕЙЧАС ДЕЙСТВУЕТ ФАЗА A: operational-окно D−7 … D−1 (как было до Stage 3B.1).
+ *
+ * 🔴 7 суток НЕДОСТАТОЧНО по существу: наблюдавшаяся ревизия биллинга пришла на D+7,
+ *    то есть ровно на границе окна. Наблюдение обрывалось там, где данные ещё менялись,
+ *    и «стабильность» дальше была артефактом того, что мы перестали спрашивать.
+ *    Но расширять окно В ФАЗЕ A нельзя: union умеет только расти, лишние перечитывания
+ *    подняли бы суммы FACT ещё до cutover. Переход на D−14 … D−1 — шаг B4a Фазы B.
  */
-// 🔴 ФАЗА A: ОСТАЁТСЯ 7. Union умеет только расти, поэтому расширение окна само по
-//    себе подняло бы суммы FACT ещё до cutover — и Фаза A перестала бы быть «без
-//    смены бизнес-семантики». Константа переводится в 14 ОДНОЙ СТРОКОЙ в Фазе B,
-//    вместе с переключением V_ADV_COSTS на snapshot canonical (шаг B4a).
-var WB_ADS_COSTS_OPERATIONAL_DAYS_ = 7;    // Фаза A: D−7 … D−1;  Фаза B: 14
+var WB_ADS_COSTS_OPERATIONAL_DAYS_ = 7;    // 🔴 ФАЗА A: 7 (D−7 … D−1). Фаза B, шаг B4a: 14
 var WB_ADS_COSTS_AUDIT_FROM_DAYS_  = 45;   // еженедельно: D−45 … D−8 (хвост за operational-окном)
 var WB_ADS_COSTS_AUDIT_TO_DAYS_    = 8;
 var WB_ADS_COSTS_BOOTSTRAP_START_  = '2026-04-13';  // первая дата истории расходов
@@ -150,7 +151,7 @@ function addWbAdsRawLoaderMenu() {
     .addSeparator()
     .addItem('Только кампании (RAW)', 'loadWbAdsCampaignsRaw')
     .addItem('Только fullstats (RAW, 7 дней)', 'loadWbAdsFullstatsRawLast7Days')
-    .addItem('Только расходы upd (RAW, 14 дней)', 'loadWbAdsCostsRawOperational')
+    .addItem('Только расходы upd (RAW, 7 дней — Фаза A)', 'loadWbAdsCostsRawOperational')
     .addItem('Расходы upd — недельный аудит D−45…D−8', 'loadWbAdsCostsAudit')
     .addItem('Только поисковые кластеры (RAW, 7 дней)', 'loadWbAdsSearchClustersRawLast7Days')
     .addToUi();
@@ -322,7 +323,12 @@ function wbAdsCostsRunId_(prefix) {
     '_' + Math.floor(Math.random() * 1000);
 }
 
-/** OPERATIONAL: ежедневное перечитывание D−14 … D−1. Одно окно, один запрос. */
+/**
+ * OPERATIONAL: ежедневное перечитывание D−WB_ADS_COSTS_OPERATIONAL_DAYS_ … D−1.
+ * Одно окно, один запрос (и 7, и 14 суток укладываются в лимит WB в 31 сутки).
+ * 🔴 Фаза A: D−7 … D−1. Переход на D−14 … D−1 выполняется в Фазе B (шаг B4a),
+ *    одновременно с переключением V_ADV_COSTS на snapshot canonical.
+ */
 function loadWbAdsCostsRawOperational() {
   var r = wbAdsCostsRangeBack_(WB_ADS_COSTS_OPERATIONAL_DAYS_, 1);
   return loadWbAdsCostsRaw(r.from, r.to);
