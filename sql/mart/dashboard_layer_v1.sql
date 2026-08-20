@@ -407,7 +407,7 @@ SELECT
   f.cpo_ads,
   f.ctr_coverage_spend_share,
   -- сверка с денежной витриной
-  f.mart_ad_spend_rub,
+  f.mart_ad_spend_attributed_rub,
   f.query_spend_share_of_total,
   -- торговая часть и вклад ДО себестоимости (§2.3)
   f.orders_rub,

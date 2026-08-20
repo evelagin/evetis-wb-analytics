@@ -714,7 +714,11 @@ WITH q AS (
 m AS (
   SELECT
     SAFE_CAST(d.nm_id AS INT64)                           AS nm_id,
-    SUM(d.ad_spend)                                       AS mart_ad_spend_rub,
+    -- Stage 3B (20.08.2026): имя уточнено. Величина НЕ изменилась — это по-прежнему
+    --   ad_spend витрины, то есть АТРИБУТИРОВАННЫЙ расход. Доля запросов считается от
+    --   атрибуции осознанно: query stats и campaign stats — один и тот же источник,
+    --   а биллинг живёт в другом разрезе, и деление одного на другое было бы подлогом.
+    SUM(d.ad_spend)                                       AS mart_ad_spend_attributed_rub,
     SUM(d.orders_rub)                                     AS orders_rub,
     SUM(d.buyouts_rub)                                    AS buyouts_rub,
     SUM(d.orders_qty)                                     AS orders_qty,
@@ -738,10 +742,10 @@ SELECT
   SAFE_DIVIDE(q.query_spend_rub, q.clicks_sum)           AS cpc_calc,
   SAFE_DIVIDE(q.query_spend_rub, NULLIF(q.orders_sum, 0)) AS cpo_ads,
   SAFE_DIVIDE(q.query_spend_on_imp_rub, q.query_spend_rub) AS ctr_coverage_spend_share,
-  m.mart_ad_spend_rub,
+  m.mart_ad_spend_attributed_rub,
   -- 🔴 доля расхода SKU, вообще объяснимая на уровне запросов (§10.2):
   --    сумма по запросам никогда не сойдётся с рекламным расходом
-  SAFE_DIVIDE(q.query_spend_rub, m.mart_ad_spend_rub)    AS query_spend_share_of_total,
+  SAFE_DIVIDE(q.query_spend_rub, m.mart_ad_spend_attributed_rub) AS query_spend_share_of_total,
   m.orders_rub, m.buyouts_rub, m.orders_qty,
   -- 🔴 pre_cogs: себестоимости в системе нет, прибыль и маржа не вычисляются (§10.3)
   m.hybrid_contribution_pre_cogs,

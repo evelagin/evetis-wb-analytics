@@ -1,10 +1,18 @@
 -- ============================================================================
--- PR-Mart1 — EVETIS WB Analytics MART, слой FACT (6 таблиц). REV3 (аудит) + PR-Mart1.1 (реклама).
+-- PR-Mart1 — EVETIS WB Analytics MART, слой FACT (8 таблиц). REV3 (аудит) + PR-Mart1.1 (реклама).
 -- Дата: 2026-07-28.  Дизайн: docs/MART_DESIGN_2026-07-23_rev2.md; контракты: docs/MART_MART2_CONTRACTS_2026-07-28.md.
 -- История правок аудита — docs/MART_PR1_2026-07-28.md; PR-Mart1.1 — docs/MART_PR11_2026-07-28.md.
 -- PR-Mart1.1: FACT_ADS_SKU_DAILY получил ads_revenue_raw_rub/_dedup_estimate_rub, ad_orders_raw (переим. orders),
 --   ad_orders_dedup_estimate, multitouch_ambiguous_flag, zero_revenue_multiorder_flag + sum_price parse-QC + dynamic acceptance.
 --   ⚠️ Требует ПЕРЕ-bootstrap (CALL sp_bootstrap_facts('')) — FACT_ADS_SKU_DAILY пересоберётся с новыми колонками.
+--
+-- 2026-08-20 (Stage 3B, ads spend semantics): +1.7 FACT_ADS_SPEND_ALLOC_DAILY и
+--   +1.8 FACT_ADS_SPEND_UNALLOC_DAILY. Биллинг (FACT_ADS_COSTS_DAILY, грейн date x advert_id)
+--   распределяется на SKU пропорционально stats_spend_rub той же пары; нераспределимый остаток
+--   выносится ОТДЕЛЬНОЙ таблицей, а не обнуляется и не размазывается. Существующие шесть FACT
+--   не изменены ни на байт — миграция строго аддитивная.
+--   Инвариант: SUM(billed_alloc_rub) + SUM(unallocated_rub) = SUM(actual_spend_rub), остаток по
+--   каждой паре (date, advert_id) ровно 0. Требует ПЕРЕ-bootstrap: CALL sp_bootstrap_facts('').
 --
 -- 2026-08-17 (fix/mart-stocks-warehouse-key): грейн FACT_STOCKS_SNAPSHOT переведён с
 --   `warehouse_id INT64` на `warehouse_key STRING` — WB обезличил склад отгрузки, лоадер
@@ -13,7 +21,7 @@
 --   прогон wb-mart-prod пересоздаст FACT_STOCKS_SNAPSHOT с новой схемой.
 --
 -- ⚠️ BOOTSTRAP / MANUAL-ONLY. Процедура `sp_bootstrap_facts` — РУЧНОЙ первичный прогон.
---   Публикация выполняется как ПОСЛЕДОВАТЕЛЬНЫЙ publish каждой FACT (6 отдельных
+--   Публикация выполняется как ПОСЛЕДОВАТЕЛЬНЫЙ publish каждой FACT (8 отдельных
 --   CREATE OR REPLACE) — это НЕ атомарно по всему набору: сбой между шагами может
 --   оставить смешанный run. Поэтому:
 --     • конкурентный запуск ЗАПРЕЩЁН (advisory-lock `_MART_BOOTSTRAP_LOCK`);
@@ -487,8 +495,161 @@ BEGIN
             AS 'FACT_ADS_COSTS_DAILY: BUILD rows != source distinct grain';
 
     -- ======================================================================
+    -- 1.7 FACT_ADS_SPEND_ALLOC_DAILY — грейн: date x advert_id x nm_id.
+    --      Stage 3B (20.08.2026): РАСПРЕДЕЛЕНИЕ БИЛЛИНГА НА SKU.
+    --
+    --      ЧТО ЭТО. FACT_ADS_COSTS_DAILY.actual_spend_rub — то, что WB фактически
+    --      списал с баланса за (сутки x кампанию). Это учётная величина, и разреза по
+    --      nm_id у неё нет: WB его не публикует. FACT_ADS_SKU_DAILY.stats_spend_rub —
+    --      расход, который WB ОТНЁС на карточку в статистике кампании. Это атрибуция,
+    --      и её сумма систематически отличается от биллинга. Две разные величины, обе
+    --      верные, ни одна не заменяет другую.
+    --
+    --      ПРАВИЛО РАСПРЕДЕЛЕНИЯ. Внутри (date, advert_id) биллинг делится
+    --      пропорционально stats_spend_rub той же пары:
+    --          billed_alloc_rub = actual_spend_rub * stats_sku / SUM(stats кампании)
+    --      Если SUM(stats) по кампании = 0 (или строк статистики нет вовсе) — сумма
+    --      НЕ размазывается ни на кого и целиком уходит в 1.8 как unallocated.
+    --      Выдумывать получателя расхода нельзя: это была бы аллокация без основания.
+    --
+    --      ТОЧНОСТЬ. Построчного округления НЕТ. Деление NUMERIC даёт scale 9, поэтому
+    --      SUM долей может разойтись с actual на нано-рубли. Остаток целиком относится
+    --      на ЯКОРНУЮ строку (максимальный stats_spend_rub, тай-брейк nm_id ASC):
+    --      инвариант SUM(billed_alloc) = actual выполняется ТОЧНО по построению, а
+    --      ASSERT ниже проверяет логику распределения, а не арифметику NUMERIC.
+    -- ======================================================================
+    EXECUTE IMMEDIATE """
+      CREATE OR REPLACE TABLE `wb_mart.FACT_ADS_SPEND_ALLOC_DAILY__BUILD`
+      PARTITION BY `date`
+      CLUSTER BY advert_id, nm_id AS
+      WITH stats AS (
+        SELECT
+          `date`, advert_id, nm_id, stats_spend_rub,
+          SUM(stats_spend_rub) OVER (PARTITION BY `date`, advert_id) AS campaign_stats_spend_rub
+        FROM `wb_mart.FACT_ADS_SKU_DAILY__BUILD`
+      ),
+      j AS (
+        SELECT
+          c.`date`, c.advert_id, s.nm_id,
+          s.stats_spend_rub,
+          s.campaign_stats_spend_rub,
+          c.actual_spend_rub,
+          SAFE_DIVIDE(s.stats_spend_rub, s.campaign_stats_spend_rub) AS alloc_weight,
+          SAFE_DIVIDE(c.actual_spend_rub * s.stats_spend_rub, s.campaign_stats_spend_rub) AS alloc_raw
+        FROM `wb_mart.FACT_ADS_COSTS_DAILY__BUILD` c
+        JOIN stats s
+          ON s.`date` = c.`date` AND s.advert_id = c.advert_id
+        WHERE s.campaign_stats_spend_rub > 0
+      ),
+      anchored AS (
+        SELECT
+          j.*,
+          SUM(alloc_raw) OVER (PARTITION BY `date`, advert_id) AS alloc_sum,
+          ROW_NUMBER() OVER (PARTITION BY `date`, advert_id
+                             ORDER BY stats_spend_rub DESC, nm_id ASC) AS rn
+        FROM j
+      )
+      SELECT
+        `date`, advert_id, nm_id,
+        stats_spend_rub,
+        campaign_stats_spend_rub,
+        actual_spend_rub,
+        alloc_weight,
+        alloc_raw + IF(rn = 1, actual_spend_rub - alloc_sum, 0) AS billed_alloc_rub,
+        'stats_spend_rub' AS alloc_basis,
+        @run_id AS mart_run_id, @built_at AS built_at
+      FROM anchored
+    """ USING v_run_id AS run_id, v_built_at AS built_at;
+
+    ASSERT (SELECT COUNTIF(`date` IS NULL) + COUNTIF(advert_id IS NULL) + COUNTIF(nm_id IS NULL)
+            FROM `wb_mart.FACT_ADS_SPEND_ALLOC_DAILY__BUILD`) = 0
+            AS 'FACT_ADS_SPEND_ALLOC_DAILY: NULL grain/partition';
+    ASSERT (SELECT COUNT(*) = COUNT(DISTINCT FORMAT('%t|%t|%t', `date`, advert_id, nm_id))
+            FROM `wb_mart.FACT_ADS_SPEND_ALLOC_DAILY__BUILD`)
+            AS 'FACT_ADS_SPEND_ALLOC_DAILY: (date,advert_id,nm_id) not unique';
+    -- fail-closed: биллинг есть (1.6 непуст), статистика есть (1.5 непуста) — значит и
+    --   распределение обязано быть непустым. Пустой BUILD означал бы разрыв ключей.
+    ASSERT (SELECT COUNT(*) FROM `wb_mart.FACT_ADS_SPEND_ALLOC_DAILY__BUILD`) > 0
+            AS 'FACT_ADS_SPEND_ALLOC_DAILY: empty build (fail-closed)';
+    ASSERT (SELECT COUNTIF(alloc_weight IS NULL OR alloc_weight < 0 OR alloc_weight > 1)
+            FROM `wb_mart.FACT_ADS_SPEND_ALLOC_DAILY__BUILD`) = 0
+            AS 'FACT_ADS_SPEND_ALLOC_DAILY: alloc_weight вне [0,1]';
+    ASSERT (SELECT COUNTIF(billed_alloc_rub < 0) FROM `wb_mart.FACT_ADS_SPEND_ALLOC_DAILY__BUILD`) = 0
+            AS 'FACT_ADS_SPEND_ALLOC_DAILY: отрицательный billed_alloc_rub';
+    -- ГЛАВНЫЙ инвариант распределения: по КАЖДОЙ паре (date, advert_id) остаток ровно 0.
+    ASSERT (SELECT COUNT(*) FROM (
+              SELECT `date`, advert_id
+              FROM `wb_mart.FACT_ADS_SPEND_ALLOC_DAILY__BUILD`
+              GROUP BY `date`, advert_id
+              HAVING ANY_VALUE(actual_spend_rub) - SUM(billed_alloc_rub) <> 0)) = 0
+            AS 'FACT_ADS_SPEND_ALLOC_DAILY: residual != 0 по (date, advert_id)';
+    -- веса — доли одного основания, по кампании-дню обязаны давать единицу.
+    ASSERT (SELECT COUNT(*) FROM (
+              SELECT `date`, advert_id
+              FROM `wb_mart.FACT_ADS_SPEND_ALLOC_DAILY__BUILD`
+              GROUP BY `date`, advert_id
+              HAVING ABS(SUM(alloc_weight) - 1) > 0.000001)) = 0
+            AS 'FACT_ADS_SPEND_ALLOC_DAILY: SUM(alloc_weight) != 1 по кампании-дню';
+
+    -- ======================================================================
+    -- 1.8 FACT_ADS_SPEND_UNALLOC_DAILY — грейн: date x advert_id.
+    --      Биллинг, который НЕ на кого распределить: у пары нет строк статистики
+    --      либо SUM(stats) = 0. Таблица МОЖЕТ быть пустой — это норма, а не сбой,
+    --      поэтому fail-closed проверки на непустоту здесь НЕТ.
+    --
+    --      Эта величина не имеет права исчезнуть: без неё сумма по SKU молча
+    --      оказалась бы меньше фактического списания, и сходимость выглядела бы
+    --      достигнутой при потерянных деньгах.
+    -- ======================================================================
+    EXECUTE IMMEDIATE """
+      CREATE OR REPLACE TABLE `wb_mart.FACT_ADS_SPEND_UNALLOC_DAILY__BUILD`
+      PARTITION BY `date`
+      CLUSTER BY advert_id AS
+      WITH camp AS (
+        SELECT `date`, advert_id,
+               COUNT(*)             AS stats_rows,
+               SUM(stats_spend_rub) AS campaign_stats_spend_rub
+        FROM `wb_mart.FACT_ADS_SKU_DAILY__BUILD`
+        GROUP BY `date`, advert_id
+      )
+      SELECT
+        c.`date`, c.advert_id,
+        c.actual_spend_rub,
+        c.actual_spend_rub                    AS unallocated_rub,
+        IFNULL(k.stats_rows, 0)               AS stats_rows,
+        IFNULL(k.campaign_stats_spend_rub, 0) AS campaign_stats_spend_rub,
+        IF(k.advert_id IS NULL, 'NO_STATS_ROWS', 'ZERO_STATS_SPEND') AS reason,
+        @run_id AS mart_run_id, @built_at AS built_at
+      FROM `wb_mart.FACT_ADS_COSTS_DAILY__BUILD` c
+      LEFT JOIN camp k ON k.`date` = c.`date` AND k.advert_id = c.advert_id
+      WHERE IFNULL(k.campaign_stats_spend_rub, 0) <= 0
+    """ USING v_run_id AS run_id, v_built_at AS built_at;
+
+    ASSERT (SELECT COUNTIF(`date` IS NULL) + COUNTIF(advert_id IS NULL)
+            FROM `wb_mart.FACT_ADS_SPEND_UNALLOC_DAILY__BUILD`) = 0
+            AS 'FACT_ADS_SPEND_UNALLOC_DAILY: NULL grain/partition';
+    ASSERT (SELECT COUNT(*) = COUNT(DISTINCT FORMAT('%t|%t', `date`, advert_id))
+            FROM `wb_mart.FACT_ADS_SPEND_UNALLOC_DAILY__BUILD`)
+            AS 'FACT_ADS_SPEND_UNALLOC_DAILY: (date,advert_id) not unique';
+    ASSERT (SELECT COUNTIF(reason NOT IN ('NO_STATS_ROWS', 'ZERO_STATS_SPEND'))
+            FROM `wb_mart.FACT_ADS_SPEND_UNALLOC_DAILY__BUILD`) = 0
+            AS 'FACT_ADS_SPEND_UNALLOC_DAILY: неизвестный reason';
+    -- ПОЛНОТА БИЛЛИНГА: распределённое + нераспределённое = фактическое списание.
+    ASSERT (SELECT
+              (SELECT IFNULL(SUM(billed_alloc_rub), 0) FROM `wb_mart.FACT_ADS_SPEND_ALLOC_DAILY__BUILD`)
+            + (SELECT IFNULL(SUM(unallocated_rub), 0)  FROM `wb_mart.FACT_ADS_SPEND_UNALLOC_DAILY__BUILD`)
+            = (SELECT IFNULL(SUM(actual_spend_rub), 0) FROM `wb_mart.FACT_ADS_COSTS_DAILY__BUILD`))
+            AS 'ADS_SPEND: SUM(billed_alloc) + SUM(unallocated) != SUM(actual_spend)';
+    -- ни одна пара биллинга не потеряна и ни одна не учтена дважды.
+    ASSERT (SELECT
+              (SELECT COUNT(DISTINCT FORMAT('%t|%t', `date`, advert_id)) FROM `wb_mart.FACT_ADS_SPEND_ALLOC_DAILY__BUILD`)
+            + (SELECT COUNT(*) FROM `wb_mart.FACT_ADS_SPEND_UNALLOC_DAILY__BUILD`)
+            = (SELECT COUNT(*) FROM `wb_mart.FACT_ADS_COSTS_DAILY__BUILD`))
+            AS 'ADS_SPEND: пары биллинга потеряны или задвоены между alloc/unalloc';
+
+    -- ======================================================================
     -- 2. PUBLISH — все ASSERT пройдены. ПОСЛЕДОВАТЕЛЬНЫЙ publish каждой FACT
-    --    (6 отдельных CREATE OR REPLACE; НЕ атомарно по всему набору — см. шапку).
+    --    (8 отдельных CREATE OR REPLACE; НЕ атомарно по всему набору — см. шапку).
     --    ПОВТОРЯЕМ PARTITION/CLUSTER (CTAS `SELECT *` их НЕ наследует!).
     -- ======================================================================
     CREATE OR REPLACE TABLE `wb_mart.FACT_ORDERS`
@@ -509,6 +670,12 @@ BEGIN
     CREATE OR REPLACE TABLE `wb_mart.FACT_ADS_COSTS_DAILY`
       PARTITION BY `date` CLUSTER BY advert_id AS
       SELECT * FROM `wb_mart.FACT_ADS_COSTS_DAILY__BUILD`;
+    CREATE OR REPLACE TABLE `wb_mart.FACT_ADS_SPEND_ALLOC_DAILY`
+      PARTITION BY `date` CLUSTER BY advert_id, nm_id AS
+      SELECT * FROM `wb_mart.FACT_ADS_SPEND_ALLOC_DAILY__BUILD`;
+    CREATE OR REPLACE TABLE `wb_mart.FACT_ADS_SPEND_UNALLOC_DAILY`
+      PARTITION BY `date` CLUSTER BY advert_id AS
+      SELECT * FROM `wb_mart.FACT_ADS_SPEND_UNALLOC_DAILY__BUILD`;
 
     -- ======================================================================
     -- 3. ВАЛИДАЦИЯ ФИЗИКИ финальных FACT через INFORMATION_SCHEMA
@@ -532,6 +699,12 @@ BEGIN
     ASSERT (SELECT COUNTIF(is_partitioning_column='YES')=1 AND COUNTIF(clustering_ordinal_position IS NOT NULL)=1
             FROM `wb_mart.INFORMATION_SCHEMA.COLUMNS` WHERE table_name='FACT_ADS_COSTS_DAILY')
             AS 'FACT_ADS_COSTS_DAILY: partition/cluster physics lost';
+    ASSERT (SELECT COUNTIF(is_partitioning_column='YES')=1 AND COUNTIF(clustering_ordinal_position IS NOT NULL)=2
+            FROM `wb_mart.INFORMATION_SCHEMA.COLUMNS` WHERE table_name='FACT_ADS_SPEND_ALLOC_DAILY')
+            AS 'FACT_ADS_SPEND_ALLOC_DAILY: partition/cluster physics lost';
+    ASSERT (SELECT COUNTIF(is_partitioning_column='YES')=1 AND COUNTIF(clustering_ordinal_position IS NOT NULL)=1
+            FROM `wb_mart.INFORMATION_SCHEMA.COLUMNS` WHERE table_name='FACT_ADS_SPEND_UNALLOC_DAILY')
+            AS 'FACT_ADS_SPEND_UNALLOC_DAILY: partition/cluster physics lost';
 
   EXCEPTION WHEN ERROR THEN
     -- освободить lock (run_id=NULL, зафиксировать last_run_id) и пробросить ошибку
