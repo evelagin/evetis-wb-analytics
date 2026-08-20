@@ -140,16 +140,39 @@ function wbAdsQsRunDays_(days, rid, st, srcLabel) {
   // Best-effort: недоступность этой цифры не влияет на статус суток.
   var costsByDay = wbAdsQsCostsByDay_(days);
 
+  // 🔴 ПОРЯДОК ОБХОДА: от СВЕЖИХ суток к старым (правка 19.08.2026, Stage 3A).
+  //
+  //    Причина: окно D−7…D−1 не помещается в WB_ADS_QSTATS_BUDGET_MS_ (120 000 мс).
+  //    Одни сутки стоят 6–16 с плюс throttle WB_ADS_QSTATS_PAUSE_MS_ 6 500 мс на
+  //    запрос, семь суток — вдвое больше бюджета. При обходе ПО ВОЗРАСТАНИЮ бюджет
+  //    обрывал список на свежем конце, поэтому D−1 и D−2 не загружались НИКОГДА:
+  //    замер run-log 19.08 — прогон взял 12–16.08 и встал, свежие сутки приезжали
+  //    только через трое суток, а ~80 % бюджета уходило на перечитывание суток,
+  //    загруженных накануне.
+  //
+  //    Теперь при нехватке бюджета голодают ПОВТОРНЫЕ чтения старых суток, которые
+  //    уже лежат в RAW, а не те сутки, ради которых прогон и запускается.
+  //    Окно, бюджет, overlap и семантика статусов НЕ меняются.
+  //
+  //    ⚠️ Побочный эффект на backfill: свою порцию он тоже обрабатывает в обратном
+  //    порядке. ВЫБОР суток не меняется — wbAdsQsPendingDays_ по-прежнему отдаёт
+  //    самые ранние сутки без разрешённого исхода. Потерь нет: недообработанные
+  //    остаются в очереди и берутся следующим кликом (остаток пересчитывается
+  //    по факту, а не вычитанием размера порции).
+  var daysOrdered = days.slice().sort(function (a, b) {
+    return a < b ? 1 : (a > b ? -1 : 0);
+  });
+
   var totalRows = 0, daysOk = 0, daysPartial = 0, daysFailed = 0, daysEmpty = 0;
 
-  for (var i = 0; i < days.length; i++) {
+  for (var i = 0; i < daysOrdered.length; i++) {
     var res;
     try {
-      res = wbAdsQsProcessDay_(tok.token, rid, days[i], costsByDay[days[i]], st);
+      res = wbAdsQsProcessDay_(tok.token, rid, daysOrdered[i], costsByDay[daysOrdered[i]], st);
     } catch (eDay) {
       // Исключение на одних сутках не должно останавливать остальные.
       res = { status: 'FAILED', rows: 0 };
-      console.error('  query_stats ' + days[i] + ' исключение: ' + ((eDay && eDay.message) || eDay));
+      console.error('  query_stats ' + daysOrdered[i] + ' исключение: ' + ((eDay && eDay.message) || eDay));
     }
     totalRows += res.rows;
     if (res.status === 'OK') daysOk++;
@@ -158,7 +181,7 @@ function wbAdsQsRunDays_(days, rid, st, srcLabel) {
     else daysFailed++;
 
     if (wbAdsQsOutOfBudget_(st)) {
-      var left = days.length - i - 1;
+      var left = daysOrdered.length - i - 1;
       if (left > 0) {
         // 🔴 Необработанные сутки НЕ получают строку run-log — и это правильно:
         //    попытки не было. В V_ADV_QUERY_STATS_COVERAGE они видны как
