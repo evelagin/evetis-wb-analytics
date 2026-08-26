@@ -57,48 +57,6 @@
 --      прогон 07:00 упадёт с RAISE.
 --   ⚠️ ЛОМАЮЩЕЕ переименование колонки витрины. Потребителей нет (дашборд не построен) — сделано сейчас.
 --
--- Stage 3B (20.08.2026) — семантика рекламного расхода. Дизайн принят владельцем 20.08.
---   ПРАВИЛО 1 — миграция строго АДДИТИВНАЯ. Колонка `ad_spend` НЕ переименована и НЕ переопределена:
---     она была и остаётся АТРИБУТИРОВАННЫМ расходом (FACT_ADS_SKU_DAILY.stats_spend_rub). Статус —
---     legacy/deprecated: тот же смысл теперь доступен под явным именем ad_spend_attributed_rub.
---     Все существующие KPI (cpm, cpc, cpo_attributed, blended_cpo, drr_orders, drr_buyouts, roas, acos,
---     hybrid_/settlement_day_contribution_pre_cogs и все *_7d/_14d) считаются от `ad_spend` КАК РАНЬШЕ,
---     до последней копейки. Ни одна существующая величина этим PR не меняется.
---   ПРАВИЛО 2 — БИЛЛИНГ. +ad_spend_billed_rub: доля фактического списания WB, отнесённая на SKU
---     (FACT_ADS_SPEND_ALLOC_DAILY, аллокация внутри (date, advert_id) пропорционально stats).
---     🔴 ДЕНЕЖНОЙ колонки остатка в витрине НЕТ и быть не должно (ревью 20.08). Natural grain
---     остатка — (date, advert_id) и сутки, а не (day, nm_id): повторённая во всех строках дня
---     сумма молча завышалась бы в SUM() по SKU ровно в число SKU. Вместо суммы витрина несёт
---     БУЛЕВО наблюдение +has_unallocated_billing (в сутках есть биллинг, не отнесённый ни на
---     одну строку витрины). Сама сумма живёт ТОЛЬКО в reconciliation-объектах:
---     wb_mart.V_ADS_SPEND_RECONCILIATION (грейн date × advert_id) и ..._DAILY (грейн date),
---     где биллинг раскладывается на три взаимоисключающие части:
---         actual = billed_valid_sku_rub + billed_outside_sku_universe_rub + billed_no_allocation_basis_rub
---   ПРАВИЛО 3 — ЭКОНОМИКА на биллинге: +drr_orders_billed, +drr_buyouts_billed,
---     +hybrid_day_contribution_pre_cogs_billed, +settlement_day_contribution_pre_cogs_billed.
---   ПРАВИЛО 4 — PERFORMANCE на атрибуции: +roas_attributed, +acos_attributed (явные имена рядом с
---     legacy roas/acos) и отдельный +roas_billed. Однозначного поля `roas` без суффикса больше нет
---     в контракте: legacy-имя сохранено только как deprecated-совместимость.
---   ПОЛНОТА СУТОК — ДВА РАЗНЫХ ФЛАГА, их нельзя смешивать:
---     billed_complete              — ЗАКРЫТЫ ли сутки по биллингу. 🔴 Берётся ИСКЛЮЧИТЕЛЬНО из
---                                    wb_raw.V_ADV_COSTS_DAY_COVERAGE — объекта coverage-контракта
---                                    adv/v1/upd. Витрина этот флаг НЕ вычисляет и вычислять не может.
---                                    Правило «day <= MAX(FACT_ADS_COSTS_DAILY.date)» ОПРОВЕРГНУТО
---                                    данными 20.08 (docs/ADS_COSTS_COVERAGE_CONTRACT_2026-08-20.md):
---                                    оно не отличает успешные нулевые сутки от незагруженных, а
---                                    сам биллинг не финален на D+1 и не монотонен. Отсутствие
---                                    строки в coverage = FALSE (fail-closed): пока полнота не
---                                    доказана, billed-KPI не публикуются.
---     billing_allocation_complete  — удалось ли РАСПРЕДЕЛИТЬ весь опубликованный биллинг до SKU
---                                    (unallocated = 0). NULL, когда billed_complete = FALSE:
---                                    распределять ещё нечего, и «TRUE» было бы ложным успехом.
---   🔴 На сутках с billed_complete = FALSE все billed-KPI строго NULL, а не 0: ноль означал бы
---     «рекламы не было», и ДРР этих суток схлопнулся бы в ноль, занизив управленческую картину.
---     ad_spend_billed_rub при этом хранит фактически доступное значение (0, если списаний ещё нет) —
---     сама сумма не искажается, но потребитель видит по флагу, что сутки неполные.
---   ⚠️ ТРЕБУЕТ pr_mart1_facts.sql того же change-set (FACT_ADS_SPEND_ALLOC/UNALLOC_DAILY) и
---     ПЕРЕ-bootstrap FACT перед первым прогоном этой процедуры.
---
 -- Грейн: day × nm_id, DENSE spine. Universe = REF_SKU_MASTER (WB, active, nm_id NOT NULL).
 --   start_date(nm)=LEAST(MIN order/sale/ads/finance по nm, все <=build_as_of); fallback=mart_global_start_date.
 --   GENERATE_DATE_ARRAY(start, build_as_of) → пропуски=0. Rolling: RANGE 6/13 PRECEDING по UNIX_DATE(day).
@@ -108,6 +66,33 @@
 -- Паттерн Mart1: BUILD → ASSERT → publish → ASSERT физики. BOOTSTRAP/MANUAL-ONLY, lock 'mart_sku_daily'.
 -- ⚠️ Витрина создаётся ТОЛЬКО после merge PR#81. Оркестрация (runWbMartDaily) — PR-Mart3.
 -- ============================================================================
+
+-- ────────────────────────────────────────────────────────────────────────────
+-- STAGE 1.5 (2026-08-26) — fail-closed guard знаковой нормализации (`fix #5` ниже).
+--   Ловит знакопеременную пару в ABS-ветке COST/CREDIT REF_COST_MAP. Спека и разбор:
+--   Stage 1.4 reconciliation + Stage 1.5 sign fix.
+--
+-- STAGE 1.6 (2026-08-26) — ЭТОТ ФАЙЛ ВОЗВРАЩЁН НА PRODUCTION-COMPATIBLE ЛИНИЮ 8290672.
+--   ПРИЧИНА: commit e30f668 «feat(ads): prepare billed spend allocation contract (#116)»
+--   добавил сюда потребление `wb_mart.FACT_ADS_SPEND_ALLOC_DAILY`, которой в production
+--   BigQuery НЕТ. Сам commit-message #116 объявляет change-set «prepared but remains
+--   blocked from production deployment until Stage 3B.1 Ads Costs Snapshot & Coverage
+--   completes Phase B cutover». Процедура при этом создаётся успешно и падает только
+--   на CALL — то есть тихо подменяет рабочую витрину неработоспособной.
+--
+--   ОТЛОЖЕННАЯ РАБОТА STAGE 3B НЕ ПОТЕРЯНА. Точки восстановления:
+--     • полный diff этого файла  : git show e30f668 -- sql/mart/pr_mart2b_sku_daily.sql
+--     • спека контракта          : docs/ADS_SPEND_STAGE3B_2026-08-20.md
+--     • производитель таблицы    : sql/mart/pr_mart1_facts.sql §1.7 (в репо, не развёрнут)
+--     • сверка расхода           : sql/mart/ads_spend_reconciliation_v1.sql
+--     • валидация Stage 3B       : sql/mart/ads_spend_stage3b_validation.sql
+--     • контракты покрытия       : docs/ADS_COSTS_SNAPSHOT_CONTRACT_2026-08-20.md,
+--                                  docs/ADS_COSTS_COVERAGE_CONTRACT_2026-08-20.md
+--
+--   ПОРЯДОК ВОЗВРАТА #116 (после Phase B cutover): развернуть pr_mart1_facts.sql и
+--   получить непустую FACT_ADS_SPEND_ALLOC_DAILY → вернуть блок billed-spend из e30f668
+--   в эту процедуру ПОВЕРХ guard `fix #5` → пересобрать MART → сверить card 51 и SKU↔KPI.
+-- ────────────────────────────────────────────────────────────────────────────
 
 CREATE SCHEMA IF NOT EXISTS `wb_mart` OPTIONS (location = 'EU');
 
@@ -154,7 +139,6 @@ BEGIN
   IF v_orders_max IS NULL THEN RAISE USING MESSAGE = 'sp_build_mart_sku_daily: FACT_ORDERS пуст'; END IF;
   IF v_sales_max  IS NULL THEN RAISE USING MESSAGE = 'sp_build_mart_sku_daily: FACT_SALES пуст'; END IF;
   IF v_ads_max    IS NULL THEN RAISE USING MESSAGE = 'sp_build_mart_sku_daily: FACT_ADS_SKU_DAILY пуст'; END IF;
-
 
   -- finance НЕ входит в max_required (лагает недельно), но обязательные финансовые входы витрины
   --   обязаны быть непусты. REV5 (аудит): счётчики ПО КАЖДОМУ входу отдельно — иначе при сбое mapping
@@ -230,6 +214,25 @@ BEGIN
           WHERE finance_date <= v_build_as_of) = 0
     AS 'SKU_DAILY §pre: unknown money-pair (cost_category IS NULL) в LONG_MAPPED — расширить REF_COST_MAP';
 
+  -- fix #5 (Stage 1.5, 2026-08-26): знакопеременная пара под ABS-нормализацией ЗАПРЕЩЕНА.
+  --   Ветки COST/CREDIT в V_WB_FINANCE_AMOUNTS_LONG_MAPPED применяют ABS() ПОСТРОЧНО.
+  --   Для однознаковой пары это безвредно. Для знакопеременной — уничтожает знак:
+  --   возврат/кредит превращается в расход, величина растёт на 2×|сумма противознака|.
+  --   Так в прод молча ушли deduction (+45 856,00 ₽ за 21 сутки) и wb_reward (+4 867,98 ₽).
+  --   Знакопеременные пары обязаны жить в ветке ADJUSTMENT, которая знак сохраняет.
+  ASSERT (
+    SELECT COUNT(*) FROM (
+      SELECT l.op_key, l.amount_field
+      FROM `wb_mart.V_WB_FINANCE_AMOUNTS_LONG_MAPPED` l
+      JOIN `wb_mart.REF_COST_MAP` r USING (op_key, amount_field)
+      WHERE r.economic_direction IN ('COST', 'CREDIT')
+        AND l.finance_date <= v_build_as_of
+      GROUP BY l.op_key, l.amount_field
+      HAVING COUNTIF(l.source_signed_amount > 0) > 0
+         AND COUNTIF(l.source_signed_amount < 0) > 0
+    )) = 0
+    AS 'SKU_DAILY §pre: знакопеременная пара в ветке COST/CREDIT — построчный ABS() уничтожает знак. Перевести пару в ADJUSTMENT с field_normalization_sign.';
+
   -- --- concurrency guard ---
   UPDATE `wb_mart._MART_BOOTSTRAP_LOCK`
      SET is_running = TRUE, run_id = v_run_id, acquired_at = CURRENT_TIMESTAMP(), released_at = NULL
@@ -251,27 +254,6 @@ BEGIN
           SUM(ads_revenue_dedup_estimate_rub) ads_revenue_dedup_estimate_rub,
           SUM(ad_orders_dedup_estimate) ad_orders_dedup_estimate
         FROM `wb_mart.FACT_ADS_SKU_DAILY` WHERE `date` <= @build_as_of GROUP BY nm_id, `date`),
-      ads_billed AS (
-        -- Stage 3B: доля фактического списания WB, отнесённая на SKU (грейн SKU × сутки).
-        SELECT nm_id, `date` d, SUM(billed_alloc_rub) ad_spend_billed_rub
-        FROM `wb_mart.FACT_ADS_SPEND_ALLOC_DAILY` WHERE `date` <= @build_as_of GROUP BY nm_id, `date`),
-      cov AS (
-        -- 🔴 ЕДИНСТВЕННЫЙ источник правды о закрытости суток. Витрина его не выводит.
-        SELECT `date` d, billed_complete
-        FROM `wb_raw.V_ADV_COSTS_DAY_COVERAGE`
-        WHERE `date` <= @build_as_of),
-      bill_day AS (
-        -- Stage 3B: всё списание суток целиком (грейн СУТКИ) — знаменатель сходимости.
-        SELECT `date` d, SUM(actual_spend_rub) actual_spend_day_rub
-        FROM `wb_mart.FACT_ADS_COSTS_DAILY` WHERE `date` <= @build_as_of GROUP BY `date`),
-      bill_day_universe AS (
-        -- Stage 3B: та часть списания суток, которую реально несут строки витрины.
-        --   Ограничение по universe обязательно: аллокация на nm_id вне справочника в витрину
-        --   не попадёт, и без этого вычета остаток суток оказался бы занижен.
-        SELECT `date` d, SUM(billed_alloc_rub) billed_universe_day_rub
-        FROM `wb_mart.FACT_ADS_SPEND_ALLOC_DAILY`
-        WHERE `date` <= @build_as_of AND nm_id IN (SELECT nm_id FROM universe)
-        GROUP BY `date`),
       ord AS (
         SELECT nm_id, order_date d, COUNTIF(NOT is_cancel) orders_qty,
           SUM(IF(NOT is_cancel, price_with_disc, 0)) orders_rub,
@@ -320,10 +302,6 @@ BEGIN
           IFNULL(a.ad_orders_raw,0) ad_orders_raw, IFNULL(a.ads_revenue_raw_rub,0) ads_revenue_raw_rub,
           IFNULL(a.ads_revenue_dedup_estimate_rub,0) ads_revenue_dedup_estimate_rub,
           IFNULL(a.ad_orders_dedup_estimate,0) ad_orders_dedup_estimate,
-          IFNULL(ab.ad_spend_billed_rub,0) ad_spend_billed_rub,
-          -- ВНУТРЕННЯЯ величина: в витрину как деньги НЕ выходит, нужна только для булева флага.
-          IFNULL(bd.actual_spend_day_rub,0) - IFNULL(bu.billed_universe_day_rub,0) AS unallocated_day_rub_internal,
-          IFNULL(cv.billed_complete, FALSE) AS billed_complete,   -- fail-closed: нет строки покрытия => не закрыто
           IFNULL(o.orders_qty,0) orders_qty, IFNULL(o.orders_rub,0) orders_rub,
           IFNULL(o.canceled_qty,0) canceled_qty, IFNULL(o.canceled_rub,0) canceled_rub,
           IFNULL(sl.buyouts_qty,0) buyouts_qty, IFNULL(sl.buyouts_rub,0) buyouts_rub,
@@ -335,10 +313,6 @@ BEGIN
           IFNULL(fp.finance_for_pay_accounting,0) finance_for_pay_accounting
         FROM spine s
         LEFT JOIN ads a  ON a.nm_id=s.nm_id  AND a.d=s.day
-        LEFT JOIN ads_billed ab ON ab.nm_id=s.nm_id AND ab.d=s.day
-        LEFT JOIN bill_day bd            ON bd.d=s.day
-        LEFT JOIN bill_day_universe bu   ON bu.d=s.day
-        LEFT JOIN cov cv                 ON cv.d=s.day
         LEFT JOIN ord o  ON o.nm_id=s.nm_id  AND o.d=s.day
         LEFT JOIN sal sl ON sl.nm_id=s.nm_id AND sl.d=s.day
         LEFT JOIN fin fn ON fn.nm_id=s.nm_id AND fn.d=s.day
@@ -362,13 +336,6 @@ BEGIN
       SELECT
         day, nm_id,
         ad_spend, views, clicks, ad_orders_raw, ads_revenue_raw_rub, ads_revenue_dedup_estimate_rub, ad_orders_dedup_estimate,
-        -- Stage 3B. ad_spend выше — legacy (deprecated), тождественно attributed; см. ПРАВИЛО 1 в шапке.
-        ad_spend AS ad_spend_attributed_rub,
-        ad_spend_billed_rub,
-        billed_complete,
-        -- булево наблюдение вместо денежной суммы: сама сумма — в reconciliation-объектах.
-        (unallocated_day_rub_internal > 0)                      AS has_unallocated_billing,
-        IF(billed_complete, NOT (unallocated_day_rub_internal > 0), NULL) AS billing_allocation_complete,
         orders_qty, orders_rub, canceled_qty, canceled_rub,
         buyouts_qty, buyouts_rub, sales_for_pay_operational, returns_qty, returns_rub,
         wb_reward_cost_positive, logistics_cost_positive, marketplace_fee_rub, finance_for_pay_accounting,
@@ -379,15 +346,8 @@ BEGIN
         SAFE_DIVIDE(ad_spend, orders_qty)                AS blended_cpo,
         SAFE_DIVIDE(ad_spend, orders_rub)                AS drr_orders,
         SAFE_DIVIDE(ad_spend, buyouts_rub)               AS drr_buyouts,
-        SAFE_DIVIDE(ads_revenue_raw_rub, ad_spend)       AS roas,     -- legacy = attributed (deprecated)
-        SAFE_DIVIDE(ad_spend, ads_revenue_raw_rub)       AS acos,     -- legacy = attributed (deprecated)
-        -- Stage 3B, ПРАВИЛО 4: performance-метрики остаются на АТРИБУЦИИ — только под явными именами.
-        SAFE_DIVIDE(ads_revenue_raw_rub, ad_spend)       AS roas_attributed,
-        SAFE_DIVIDE(ad_spend, ads_revenue_raw_rub)       AS acos_attributed,
-        -- Stage 3B, ПРАВИЛО 3: экономика — на БИЛЛИНГЕ. NULL на неполных сутках, не 0.
-        IF(billed_complete, SAFE_DIVIDE(ad_spend_billed_rub, orders_rub),  NULL) AS drr_orders_billed,
-        IF(billed_complete, SAFE_DIVIDE(ad_spend_billed_rub, buyouts_rub), NULL) AS drr_buyouts_billed,
-        IF(billed_complete, SAFE_DIVIDE(ads_revenue_raw_rub, ad_spend_billed_rub), NULL) AS roas_billed,
+        SAFE_DIVIDE(ads_revenue_raw_rub, ad_spend)       AS roas,
+        SAFE_DIVIDE(ad_spend, ads_revenue_raw_rub)       AS acos,
         -- PR-B2: из валовой выручки выкупов вычитается РЕАЛЬНЫЙ сбор маркетплейса
         --   (marketplace_fee_rub), а не vw. wb_reward_cost_positive из формулы ИСКЛЮЧЁН:
         --   иначе вознаграждение WB вычиталось бы вторым разом поверх спреда, внутри
@@ -396,15 +356,6 @@ BEGIN
                                                          AS hybrid_day_contribution_pre_cogs,
         -- settlement НЕ трогается: for_pay уже нетто сбора WB.
         finance_for_pay_accounting - ad_spend            AS settlement_day_contribution_pre_cogs,
-        -- Stage 3B: те же две формулы, но с фактическим списанием вместо атрибуции.
-        --   На сутках без опубликованного биллинга — NULL: подстановка нуля означала бы
-        --   «реклама была бесплатной» и завысила бы вклад этих суток.
-        IF(billed_complete,
-           buyouts_rub - marketplace_fee_rub - logistics_cost_positive - ad_spend_billed_rub,
-           NULL)                                         AS hybrid_day_contribution_pre_cogs_billed,
-        IF(billed_complete,
-           finance_for_pay_accounting - ad_spend_billed_rub,
-           NULL)                                         AS settlement_day_contribution_pre_cogs_billed,
         ad_spend_7d, ad_spend_14d, ads_revenue_raw_7d, ads_revenue_raw_14d,
         ads_revenue_dedup_estimate_7d, ads_revenue_dedup_estimate_14d,
         ad_orders_raw_7d, ad_orders_raw_14d, ad_orders_dedup_estimate_7d, ad_orders_dedup_estimate_14d,
@@ -497,97 +448,6 @@ BEGIN
                  AND nm_id IN (SELECT nm_id FROM `wb_raw.REF_SKU_MASTER`
                                WHERE marketplace='WB' AND active=TRUE AND nm_id IS NOT NULL))) < 0.01)
       AS 'SKU_DAILY: marketplace_fee_rub != FACT_FINANCE (universe SKU, <=build_as_of)';
-
-
-    -- ── Stage 3B: гейты рекламного расхода ────────────────────────────────
-    -- S1. attributed — ТОЧНЫЙ синоним legacy ad_spend. Проверка построчная, а не по сумме:
-    --     совпадение итогов не исключало бы перестановку значений между строками.
-    ASSERT (SELECT COUNTIF(ad_spend_attributed_rub <> ad_spend) FROM `wb_mart.MART_SKU_DAILY__BUILD`) = 0
-      AS 'SKU_DAILY: ad_spend_attributed_rub != ad_spend (построчно)';
-    -- S2. billed — pass-through из FACT_ADS_SPEND_ALLOC_DAILY в тех же границах (universe, <= build_as_of).
-    ASSERT (SELECT ABS((SELECT SUM(ad_spend_billed_rub) FROM `wb_mart.MART_SKU_DAILY__BUILD`)
-                     - (SELECT IFNULL(SUM(billed_alloc_rub), 0) FROM `wb_mart.FACT_ADS_SPEND_ALLOC_DAILY`
-                        WHERE `date` <= v_build_as_of
-                          AND nm_id IN (SELECT nm_id FROM `wb_raw.REF_SKU_MASTER`
-                                        WHERE marketplace='WB' AND active=TRUE AND nm_id IS NOT NULL))) < 0.01)
-      AS 'SKU_DAILY: ad_spend_billed_rub != FACT_ADS_SPEND_ALLOC_DAILY (universe, <=build_as_of)';
-    -- S3. Сутки с биллингом ОБЯЗАНЫ присутствовать в витрине — иначе их unallocated просто исчез бы
-    --     из всякой агрегации, и недостача не была бы видна ни в одной строке.
-    ASSERT (SELECT COUNT(*) FROM (
-              SELECT `date` FROM `wb_mart.FACT_ADS_COSTS_DAILY` WHERE `date` <= v_build_as_of
-              EXCEPT DISTINCT
-              SELECT day FROM `wb_mart.MART_SKU_DAILY__BUILD`)) = 0
-      AS 'SKU_DAILY: сутки с биллингом отсутствуют в витрине (unallocated был бы потерян)';
-    -- S4. Витрина несёт РОВНО ту часть биллинга, что распределена на SKU её universe —
-    --     ни рублём больше, ни рублём меньше. Посуточно, а не только в итоге.
-    ASSERT (SELECT COUNT(*) FROM (
-              SELECT day, SUM(ad_spend_billed_rub) billed_sum
-              FROM `wb_mart.MART_SKU_DAILY__BUILD` GROUP BY day) x
-            LEFT JOIN (
-              SELECT `date` d, SUM(billed_alloc_rub) alloc
-              FROM `wb_mart.FACT_ADS_SPEND_ALLOC_DAILY`
-              WHERE `date` <= v_build_as_of
-                AND nm_id IN (SELECT nm_id FROM `wb_raw.REF_SKU_MASTER`
-                              WHERE marketplace='WB' AND active=TRUE AND nm_id IS NOT NULL)
-              GROUP BY `date`) a
-              ON a.d = x.day
-            WHERE ABS(x.billed_sum - IFNULL(a.alloc, 0)) > 0.005) = 0
-      AS 'SKU_DAILY: посуточная SUM(billed) != FACT alloc (universe)';
-    -- S5. Три day-level колонки обязаны быть ЕДИНЫ внутри суток (иначе ANY_VALUE в S4 лгал бы).
-    --     NULL-safe через TO_JSON_STRING(STRUCT(...)) — COUNT(DISTINCT) сам по себе игнорирует NULL.
-    ASSERT (SELECT COUNT(*) FROM (
-              SELECT day FROM `wb_mart.MART_SKU_DAILY__BUILD` GROUP BY day
-              HAVING COUNT(DISTINCT TO_JSON_STRING(STRUCT(has_unallocated_billing AS v))) > 1
-                  OR COUNT(DISTINCT TO_JSON_STRING(STRUCT(billed_complete AS v))) > 1
-                  OR COUNT(DISTINCT TO_JSON_STRING(STRUCT(billing_allocation_complete AS v))) > 1)) = 0
-      AS 'SKU_DAILY: day-level колонки биллинга не едины внутри суток';
-    -- S6. billed_complete — ТОЧНАЯ копия coverage-контракта, без собственной логики витрины.
-    --     Отсутствие строки покрытия обязано читаться как FALSE, а не как «наверное, да».
-    ASSERT (SELECT COUNT(*) FROM (
-              SELECT day, ANY_VALUE(billed_complete) flag
-              FROM `wb_mart.MART_SKU_DAILY__BUILD` GROUP BY day) x
-            LEFT JOIN `wb_raw.V_ADV_COSTS_DAY_COVERAGE` c ON c.`date` = x.day
-            WHERE x.flag <> IFNULL(c.billed_complete, FALSE)) = 0
-      AS 'SKU_DAILY: billed_complete != V_ADV_COSTS_DAY_COVERAGE (fail-closed)';
-    -- S7. billing_allocation_complete — ДРУГОЙ вопрос: весь ли опубликованный биллинг дошёл до SKU.
-    --     Определён только там, где биллинг вообще опубликован.
-    ASSERT (SELECT COUNTIF(billed_complete AND (billing_allocation_complete IS NULL
-                     OR billing_allocation_complete <> (NOT has_unallocated_billing)))
-            FROM `wb_mart.MART_SKU_DAILY__BUILD`) = 0
-      AS 'SKU_DAILY: billing_allocation_complete != NOT has_unallocated_billing на полных сутках';
-    -- S8. На неполных сутках billed-KPI строго NULL (ноль означал бы «рекламы не было»).
-    ASSERT (SELECT COUNTIF(NOT billed_complete AND (
-                     drr_orders_billed  IS NOT NULL
-                  OR drr_buyouts_billed IS NOT NULL
-                  OR roas_billed        IS NOT NULL
-                  OR hybrid_day_contribution_pre_cogs_billed     IS NOT NULL
-                  OR settlement_day_contribution_pre_cogs_billed IS NOT NULL
-                  OR billing_allocation_complete IS NOT NULL))
-            FROM `wb_mart.MART_SKU_DAILY__BUILD`) = 0
-      AS 'SKU_DAILY: billed-KPI не NULL на сутках с неопубликованным биллингом';
-    -- S9. Витрина не может нести БОЛЬШЕ, чем WB списал за сутки — это были бы выдуманные деньги.
-    ASSERT (SELECT COUNT(*) FROM (
-              SELECT day, SUM(ad_spend_billed_rub) billed_sum
-              FROM `wb_mart.MART_SKU_DAILY__BUILD` GROUP BY day) x
-            LEFT JOIN (
-              SELECT `date` d, SUM(actual_spend_rub) act
-              FROM `wb_mart.FACT_ADS_COSTS_DAILY` WHERE `date` <= v_build_as_of GROUP BY `date`) c
-              ON c.d = x.day
-            WHERE x.billed_sum - IFNULL(c.act, 0) > 0.005) = 0
-      AS 'SKU_DAILY: SUM(billed) по суткам превышает списание WB';
-    -- S10. Булев флаг обязан соответствовать факту: остаток суток = списание − несомое витриной.
-    --     Без этого гейта флаг мог бы разойтись с reconciliation, и «всё распределено» стало бы
-    --     утверждением ни на чём не основанным.
-    ASSERT (SELECT COUNT(*) FROM (
-              SELECT day, SUM(ad_spend_billed_rub) billed_sum,
-                     ANY_VALUE(has_unallocated_billing) flag
-              FROM `wb_mart.MART_SKU_DAILY__BUILD` GROUP BY day) x
-            LEFT JOIN (
-              SELECT `date` d, SUM(actual_spend_rub) act
-              FROM `wb_mart.FACT_ADS_COSTS_DAILY` WHERE `date` <= v_build_as_of GROUP BY `date`) c
-              ON c.d = x.day
-            WHERE x.flag <> (IFNULL(c.act, 0) - x.billed_sum > 0)) = 0
-      AS 'SKU_DAILY: has_unallocated_billing не соответствует остатку суток';
 
     -- --- publish ---
     CREATE OR REPLACE TABLE `wb_mart.MART_SKU_DAILY`

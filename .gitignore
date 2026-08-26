@@ -146,3 +146,6 @@ vite.config.ts.timestamp-*
 # transfer artifacts (не коммитить)
 _to_delete/
 *.tar.gz
+
+# Playwright MCP artifacts (console logs, page snapshots) — вне Git
+.playwright-mcp/
