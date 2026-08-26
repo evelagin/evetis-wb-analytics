@@ -1,0 +1,9 @@
+{
+  "data": {
+    "items": [
+      { "nmId": 101, "chrtId": 1, "warehouseId": -999999, "warehouseName": "Склад WB", "regionName": "Склад WB", "quantity": 8, "inWayToClient": 1, "inWayFromClient": 0 },
+      { "nmId": 101, "chrtId": 2, "warehouseId": -999999, "warehouseName": "Склад WB", "regionName": "Склад WB", "quantity": 4, "inWayToClient": 0, "inWayFromClient": 2 },
+      { "nmId": 999, "chrtId": 5, "warehouseId": -999999, "warehouseName": "Склад WB", "regionName": "Склад WB", "quantity": 2, "inWayToClient": 0, "inWayFromClient": 1 }
+    ]
+  }
+}
