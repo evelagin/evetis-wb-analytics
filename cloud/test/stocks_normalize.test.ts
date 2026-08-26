@@ -97,3 +97,58 @@ describe('normalizeT6 (replay/fixture parity 1:1)', () => {
     expect(metrics.unmatched_nm_ids.sort()).toEqual(['999']);
   });
 });
+
+// ============================================================================
+// Обезличивание складов WB (WAREHOUSE_DISCLOSURE_DEGRADED_FROM = 2026-08-15).
+// Регрессия на боевой отказ: с 16.08.2026 CR-загрузчик падал на КАЖДОМ прогоне
+// с WB_T6_VALIDATION «Строка #1: warehouseId не INT64 ≥0», потому что WB начал
+// отдавать warehouseId = -999999. Старая фикстура этого не воспроизводила.
+// ============================================================================
+const fixtureAnon = JSON.parse(
+  readFileSync(join(here, 'fixtures', 'wb_stocks_t6_anonymized.json'), 'utf8'),
+);
+
+describe('T6 после обезличивания складов', () => {
+  const arr = extractT6Array(fixtureAnon)!;
+
+  it('validateT6 НЕ отвергает сентинел -999999', () => {
+    const v = validateT6(arr);
+    expect(v.ok).toBe(true);
+    expect(v.distinctKeys).toBe(3);
+    expect(v.duplicateKeys).toBe(0);
+  });
+
+  it('пустой warehouseId по-прежнему отвергается', () => {
+    const bad = [{ ...(arr[0] as object), warehouseId: null }];
+    const v = validateT6(bad);
+    expect(v.ok).toBe(false);
+    expect(v.error).toMatch(/склад не опознать/);
+  });
+
+  it('warehouse_id = NULL, сырое значение сохранено в warehouse_code', () => {
+    const { rows } = normalizeT6(arr, ctx);
+    expect(rows).toHaveLength(3);
+    for (const r of rows) {
+      expect(r.warehouse_id).toBeNull();
+      expect(r.warehouse_code).toBe('-999999');
+      expect(r.warehouse_name).toBe('Склад WB');
+    }
+  });
+
+  it('ключ грейна строится по warehouse_code и остаётся уникальным', () => {
+    const { metrics } = normalizeT6(arr, ctx);
+    expect(metrics.distinct_keys).toBe(3);
+    expect(metrics.duplicate_keys).toBe(0);
+  });
+
+  it('PARITY: isAgg=false для «Склад WB» — совпадает с Apps Script, НЕ чинится здесь', () => {
+    const { metrics, rows } = normalizeT6(arr, ctx);
+    // Зафиксировано намеренно: расхождение семантики агрегата разбирается
+    // отдельной задачей D, до неё CR обязан вести себя как боевой путь.
+    expect(rows.every((r) => r.is_aggregate_warehouse === false)).toBe(true);
+    expect(metrics.aggregate_warehouse_rows).toBe(0);
+    expect(metrics.sum_quantity_physical_t6).toBe(14);
+    expect(metrics.sum_quantity_all_t6).toBe(14);
+    expect(metrics.warehouses_count).toBe(1);
+  });
+});
