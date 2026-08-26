@@ -296,6 +296,31 @@ SELECT
   -- ── ЭКОНОМИКА, pre-COGS. NULL, если хоть один компонент неизвестен. ──
   IF(c.contribution_covered, s.contribution_pre_cogs_rub_src,            NULL) AS contribution_pre_cogs_rub,
   IF(c.contribution_covered, s.settlement_contribution_pre_cogs_rub_src, NULL) AS settlement_contribution_pre_cogs_rub,
+
+  -- ── РЕЗУЛЬТАТ ПЕРИОДА до себестоимости (Stage 1.9, 2026-08-26) ──
+  --   contribution_pre_cogs_rub уже вычел сбор маркетплейса, логистику SKU и
+  --   атрибутированную рекламу. Здесь дополнительно вычитаются расходы УРОВНЯ
+  --   СЧЁТА: хранение, удержания, приёмка, штрафы, компенсации (кредит, знак
+  --   сохранён) и residual other_account_rub. Их место — только этот слой:
+  --   по SKU они не разносятся принципиально (см. V_DASH_SKU_DAILY).
+  --
+  --   НЕ вычитаются повторно wb_reward, acquiring и SKU-возмещения: по контракту
+  --   PR-B2 они уже внутри спреда marketplace_fee_rub (retail_withdisc − for_pay).
+  --   Замер 27.07–16.08: спред 132 487,86 ₽ против 47 415,08 ₽ этих трёх статей.
+  --
+  --   ЭТО НЕ ПРИБЫЛЬ. Себестоимость товара (Stage 1.3 не закрыт) и налоги сюда
+  --   не входят и войти не могут: REF_COGS в BigQuery отсутствует.
+  --
+  --   Гейт двойной и осознанный. contribution_covered = sales ∧ ads ∧ наличие
+  --   финансовых строк; finance_covered = сутки внутри финансового интервала.
+  --   Слагаемые берутся из РАЗНЫХ гейтов, поэтому нужны оба: иначе на 585 сутках
+  --   с finance_covered=TRUE и contribution_covered=FALSE метрика молча
+  --   превратилась бы в «минус расходы уровня счёта» без выручки.
+  --   Ratio-колонки здесь НЕТ — по правилу контракта выше: процент за диапазон
+  --   считается потребителем как ratio-of-sums, а не усреднением посуточных.
+  IF(c.contribution_covered AND c.finance_covered,
+     s.contribution_pre_cogs_rub_src - a.account_level_total_rub,
+     NULL)                                                                    AS period_result_pre_cogs_rub,
   'PRE_COGS'                                                                  AS economics_basis,
   'REF_COGS отсутствует в BigQuery: это вклад до себестоимости, не прибыль и не маржа'
                                                                               AS economics_note,
