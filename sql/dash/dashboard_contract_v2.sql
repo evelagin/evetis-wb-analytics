@@ -68,6 +68,24 @@
 --    что WB заведёт новую категорию, а она молча выпадет из отчёта.
 -- ============================================================================
 
+-- ────────────────────────────────────────────────────────────────────────────
+-- 🔴 ЖЁСТКОЕ ПРАВИЛО ДЛЯ STAGE 2 (зафиксировано Stage 1.10B, 2026-08-26).
+--    ВЫКУПЫ СУЩЕСТВУЮТ В ДВУХ НЕСОВМЕСТИМЫХ БАЗАХ ДАТ. Замер 01.08–22.08:
+--      • 410 — WB Funnel export «Выкупили, шт»: КОГОРТА по дате ЗАКАЗА;
+--      • 443 — WB report + FACT_SALES → V_DASH → card 43: СОБЫТИЕ по sale_date.
+--    Наш контур сходится с event-базой идеально на всех слоях (RAW 443 =
+--    FACT 443 = MART 443 = V_DASH 443), Δ = 0.
+--
+--    ЗАПРЕЩЕНО строить конверсию как buyouts / orders, смешивая базы:
+--    orders_gross_qty считается по ДАТЕ ЗАКАЗА, buyouts_qty — по ДАТЕ ВЫКУПА.
+--    Их отношение не является процентом выкупа ни в каком корректном смысле —
+--    числитель и знаменатель описывают разные множества событий.
+--    Корректная конверсия требует ЯВНОГО COHORT-КОНТРАКТА: выкупы, привязанные
+--    к дате исходного заказа (это и есть 410), делённые на брутто-заказы той же
+--    когорты. Такой связки в пайплайне СЕЙЧАС НЕТ — FACT_SALES не несёт
+--    order_date. Это отдельная проектная задача, а не расчёт в карточке.
+-- ────────────────────────────────────────────────────────────────────────────
+
 CREATE OR REPLACE VIEW `wb_mart.V_DASH_KPI_DAILY` AS
 WITH
 -- SKU-часть: агрегат витрины по суткам. Universe витрины = активные SKU справочника.
@@ -245,6 +263,28 @@ SELECT
   IF(c.orders_covered, s.orders_revenue_rub,             NULL) AS orders_revenue_rub,
   IF(c.orders_covered, s.canceled_qty,                   NULL) AS canceled_qty,
   IF(c.orders_covered, s.canceled_rub,                   NULL) AS canceled_rub,
+  -- ── ЗАКАЗЫ БРУТТО (Stage 1.10B, 2026-08-26) ──
+  --   orders_gross_qty = ВСЕ оформленные заказы, включая впоследствии отменённые.
+  --   Именно эта семантика сопоставима с колонкой WB «Заказали товаров, шт»
+  --   в выгрузке воронки; orders_qty (нетто отмен) НЕ сопоставим и читался
+  --   владельцем как брутто — инцидент Stage 1.10.
+  --   orders_qty и canceled_qty НЕ переопределяются: обратная совместимость.
+  --
+  --   IFNULL здесь ЗАПРЕЩЁН. Обе компоненты обращаются в NULL строго
+  --   одновременно (замер: 0 расхождений гейта на 7 452 строках SKU-слоя и
+  --   721 сутках KPI-слоя), поэтому NULL-пропагация суммы — корректное
+  --   fail-closed поведение. IFNULL(...,0) создал бы ложный ноль на 585 сутках
+  --   без покрытия заказов.
+  --
+  --   Тождество проверено на всём горизонте MART: orders_qty + canceled_qty
+  --   = COUNT(FACT_ORDERS), 0 расхождений на 7 452 ячейках день×nm_id,
+  --   4 407 = 4 407 при order_date <= build_as_of.
+  --
+  --   Остаточное расхождение с выгрузкой воронки WB именуется
+  --   «WB Funnel vs Statistics Orders API net source discrepancy» = −1,19 %
+  --   на обоих проверенных окнах. Оно ДВУНАПРАВЛЕННОЕ на грейне день×SKU
+  --   (+18 / −12 из 28 расходящихся ячеек) и в пайплайне НЕ корректируется.
+  IF(c.orders_covered, s.orders_qty + s.canceled_qty,     NULL) AS orders_gross_qty,
   IF(c.sales_covered,  s.buyouts_qty,                    NULL) AS buyouts_qty,
   IF(c.sales_covered,  s.sales_revenue_seller_base_rub,  NULL) AS sales_revenue_seller_base_rub,
   IF(c.sales_covered,  b.sales_revenue_buyer_paid_rub,   NULL) AS sales_revenue_buyer_paid_rub,
@@ -424,6 +464,8 @@ SELECT
   IF(c.orders_covered, m.orders_rub,    NULL) AS orders_revenue_rub,
   IF(c.orders_covered, m.canceled_qty,  NULL) AS canceled_qty,
   IF(c.orders_covered, m.canceled_rub,  NULL) AS canceled_rub,
+  -- Stage 1.10B: брутто-заказы. Контракт и обоснование — см. V_DASH_KPI_DAILY выше.
+  IF(c.orders_covered, m.orders_qty + m.canceled_qty, NULL) AS orders_gross_qty,
 
   -- ── BUYOUTS ──
   IF(c.sales_covered, m.buyouts_qty,                NULL) AS buyouts_qty,
