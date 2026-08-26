@@ -16,6 +16,24 @@ function isAlreadyExists(e: unknown): boolean {
   return code === 409 || /already exists/i.test(msg);
 }
 
+/**
+ * Ключ грейна снимка для пост-проверки уникальности.
+ *
+ * 🔴 26.08.2026. Ключ обязан быть ЗЕРКАЛОМ ключа из normalize.ts:
+ *   nm_id | chrt_id | warehouse_code.
+ * Раньше здесь стоял warehouse_id, и после обезличивания складов (PR #121, где
+ * warehouse_id стал NULL для сентинела -999999) выражение ломалось молча:
+ * в BigQuery CONCAT с NULL-аргументом возвращает NULL, а COUNT(DISTINCT NULL) = 0.
+ * Пост-проверка получала count=23 distinct=0 и падала с STOCKS_POSTCOUNT_DUP,
+ * хотя все 23 строки уникальны. Держать ключ на nullable-колонке нельзя.
+ *
+ * IFNULL — защита от NULL в warehouse_code: колонка добавлена ALTER'ом, у строк
+ * из снимков до 26.08.2026 она пуста. Пост-проверка смотрит только на текущий
+ * snapshot_id, но выражение обязано быть NULL-безопасным само по себе.
+ */
+export const STOCKS_GRAIN_KEY_SQL =
+  "CONCAT(CAST(nm_id AS STRING),'|',CAST(chrt_id AS STRING),'|',IFNULL(warehouse_code,''))";
+
 /** Минимальный контракт BQ-клиента (для инъекции фейка в тестах). */
 export interface BqLike {
   query(options: { query: string; params?: Record<string, unknown>; location?: string }): Promise<[unknown[]]>;
@@ -166,7 +184,7 @@ export class StocksBq {
   async snapshotCounts(table: string, snapshotId: string): Promise<{ count: number; distinct: number }> {
     const [rows] = await this.bq.query({
       query: `SELECT COUNT(*) AS c,
-                COUNT(DISTINCT CONCAT(CAST(nm_id AS STRING),'|',CAST(chrt_id AS STRING),'|',CAST(warehouse_id AS STRING))) AS d
+                COUNT(DISTINCT ${STOCKS_GRAIN_KEY_SQL}) AS d
               FROM ${this.fqn(table)} WHERE snapshot_id=@id`,
       params: { id: snapshotId },
       location: this.location,
