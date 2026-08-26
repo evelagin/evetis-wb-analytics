@@ -12,6 +12,9 @@
 --
 -- Спека: docs/FINANCE_PR_A_INGESTION_INTEGRITY_2026-08-11.md §2 A2, A3, A5d.
 -- Прогнано 12.08.2026 на 205 638 строках RAW / 203 928 rrd_id: 4/4 PASS.
+-- Прогнано 26.08.2026 после раскола QC-3 на 208 858 строках RAW /
+--   205 381 rrd_id (3 477 с несколькими копиями): 5/5 PASS,
+--   QC-3-CORE = 0, QC-3-META = 0.
 -- ============================================================================
 
 WITH raw_src AS (
@@ -83,13 +86,27 @@ qc2 AS (
 --   Этим payload_hash отличается от row_hash лоадера
 --   (MD5('WB_API_FIN_V1|' || report_id || '|' || rrd_id)).
 --
---   Формула обязана совпадать с CTE `payload` в pr_a_regression_check.sql.
---   Срабатывание = WB прислал под тем же rrd_id другие суммы, и дедуп
+--   🔴 РАСКОЛ 26.08.2026. Раньше хэш был один и включал office_name /
+--   warehouse_name / region_name. WB (release note 15.08.2026) свёл office_name
+--   для складов РФ с 37 значений к 4, начиная с отчётов за 13.08 —
+--   см. WAREHOUSE_DISCLOSURE_DEGRADED_FROM в DATA_MODEL.md. Переименование
+--   склада НЕ меняет экономику строки, поэтому оно больше не имеет права
+--   ронять ingestion integrity. Хэш разделён на два:
+--     • payload_core_hash     — 26 полей, экономика/товар. БЛОКИРУЮЩИЙ.
+--     • payload_metadata_hash — 3 поля склада. ИНФОРМАЦИОННЫЙ (source drift).
+--
+--   ⚠️ Формула payload_core_hash НАМЕРЕННО НЕ совпадает с CTE `payload`
+--   в pr_a_regression_check.sql: там хэш — замороженная база сравнения, её
+--   состав менять нельзя без осознанной перезаморозки. Расхождение штатное.
+--
+--   Срабатывание CORE = WB прислал под тем же rrd_id другие суммы, и дедуп
 --   CANONICAL начал съедать реальную корректировку. Контракт «rrd_id —
 --   natural key» доказан на наблюдаемой истории, а не гарантирован WB.
 -- ---------------------------------------------------------------------------
 payload AS (
-  SELECT rrd_id, TO_HEX(MD5(CONCAT(
+  SELECT rrd_id,
+  -- CORE (26 полей): всё, что определяет финансовую и товарную сущность строки.
+  TO_HEX(MD5(CONCAT(
       IFNULL(supplier_oper_name,'~'),'|',IFNULL(doc_type_name,'~'),'|',IFNULL(srid,'~'),'|',
       IFNULL(wb_nm_id,'~'),'|',IFNULL(barcode,'~'),'|',IFNULL(sa_name,'~'),'|',IFNULL(ts_name,'~'),'|',
       IFNULL(order_dt,'~'),'|',IFNULL(sale_dt,'~'),'|',IFNULL(rr_dt,'~'),'|',
@@ -98,17 +115,40 @@ payload AS (
       IFNULL(commission_percent,'~'),'|',IFNULL(spp_percent,'~'),'|',IFNULL(for_pay,'~'),'|',
       IFNULL(acquiring_fee,'~'),'|',IFNULL(logistics_amount,'~'),'|',IFNULL(rebill_logistics,'~'),'|',
       IFNULL(storage_fee,'~'),'|',IFNULL(deduction,'~'),'|',IFNULL(penalty,'~'),'|',
-      IFNULL(acceptance,'~'),'|',IFNULL(additional_payment,'~'),'|',IFNULL(office_name,'~'),'|',
-      IFNULL(warehouse_name,'~'),'|',IFNULL(region_name,'~')
-  ))) AS payload_hash
+      IFNULL(acceptance,'~'),'|',IFNULL(additional_payment,'~')
+  ))) AS payload_core_hash,
+  -- METADATA (3 поля): только те, которые WB ДОКАЗАННО переименовывает массово
+  -- без изменения экономики.
+  -- ⚠️ На 26.08.2026 warehouse_name и region_name — NULL во ВСЕХ 208 858 строках
+  --    RAW_WB_FINANCE (проверено). Они включены для полноты контракта, но сигнала
+  --    сегодня не несут: фактически хэш наблюдает за office_name.
+  TO_HEX(MD5(CONCAT(
+      IFNULL(office_name,'~'),'|',
+      IFNULL(warehouse_name,'~'),'|',
+      IFNULL(region_name,'~')
+  ))) AS payload_metadata_hash
   FROM raw_src
 ),
-qc3 AS (
+-- QC-3 CORE — БЛОКИРУЮЩИЙ. Экономика под одним rrd_id обязана быть одна.
+qc3_core AS (
   SELECT COUNT(*) AS violations FROM (
     SELECT rrd_id
     FROM payload
     GROUP BY rrd_id
-    HAVING COUNT(DISTINCT payload_hash) > 1
+    HAVING COUNT(DISTINCT payload_core_hash) > 1
+  )
+),
+-- QC-3 META — ИНФОРМАЦИОННЫЙ. Считаем ТОЛЬКО чистый source drift: метаданные
+-- разошлись, а экономика идентична (core_hash один). Если разошлось и то и
+-- другое — это ловит CORE, и здесь строка не учитывается, чтобы один инцидент
+-- не был посчитан дважды.
+qc3_meta AS (
+  SELECT COUNT(*) AS violations FROM (
+    SELECT rrd_id
+    FROM payload
+    GROUP BY rrd_id
+    HAVING COUNT(DISTINCT payload_metadata_hash) > 1
+       AND COUNT(DISTINCT payload_core_hash) = 1
   )
 ),
 
@@ -128,14 +168,27 @@ checks AS (
          (SELECT violations FROM qc2),
          'Незадокументированный третий слой или повтор внутри слоя'
   UNION ALL
-  SELECT 'QC-3',
-         'NATURAL KEY: один rrd_id — один payload (A2)',
-         (SELECT violations FROM qc3),
+  SELECT 'QC-3-CORE',
+         'NATURAL KEY: один rrd_id — одна экономика (A2), 26 полей',
+         (SELECT violations FROM qc3_core),
          'WB прислал другие суммы под тем же rrd_id → дедуп съедает корректировку'
+  UNION ALL
+  SELECT 'QC-3-META',
+         'SOURCE DRIFT: склад переименован при неизменной экономике',
+         (SELECT violations FROM qc3_meta),
+         'WB переименовал office/warehouse/region задним числом — ingestion НЕ блокируется'
 )
 
+-- 🔴 Вердикт: FAIL только для блокирующих проверок. QC-3-META — наблюдение,
+--    а не отказ: переименование склада на стороне WB не является нарушением
+--    целостности наших данных и не должно останавливать ingestion.
 SELECT check_id, check_name, violations,
-       IF(violations = 0, 'PASS', '🔴 FAIL') AS verdict,
+       CASE
+         WHEN violations = 0         THEN 'PASS'
+         WHEN check_id = 'QC-3-META' THEN '🟡 DRIFT'
+         ELSE '🔴 FAIL'
+       END                                   AS verdict,
+       IF(check_id = 'QC-3-META', 'informational', 'blocking') AS severity,
        IF(violations = 0, '', on_violation)  AS action
 FROM checks
 ORDER BY check_id;
@@ -164,9 +217,21 @@ ORDER BY check_id;
 --         OR STRING_AGG(DISTINCT IFNULL(report_period,'LEGACY') ORDER BY IFNULL(report_period,'LEGACY')) <> 'DAILY,WEEKLY')
 -- ORDER BY c DESC LIMIT 100;
 
--- QC-3: расхождение payload — построчно, чтобы увидеть, ЧТО именно изменилось
--- WITH payload AS ( /* тот же CTE, что выше */ SELECT 1 )
+-- QC-3-CORE: расхождение экономики — построчно, чтобы увидеть, ЧТО изменилось
 -- SELECT r.*
 -- FROM `wb_raw.RAW_WB_FINANCE` r
--- WHERE r.rrd_id IN (/* rrd_id из QC-3 */)
+-- WHERE r.rrd_id IN (/* rrd_id из QC-3-CORE */)
 -- ORDER BY r.rrd_id, r.report_id;
+
+-- QC-3-META: какие именно значения склада разошлись под одним rrd_id.
+-- SELECT rrd_id,
+--        COUNT(DISTINCT office_name)    AS office_variants,
+--        STRING_AGG(DISTINCT IFNULL(office_name,'<NULL>') ORDER BY IFNULL(office_name,'<NULL>')) AS offices,
+--        STRING_AGG(DISTINCT IFNULL(report_period,'LEGACY')) AS periods,
+--        MIN(rr_dt) AS rr_dt_min, MAX(rr_dt) AS rr_dt_max
+-- FROM `wb_raw.RAW_WB_FINANCE`
+-- GROUP BY rrd_id
+-- HAVING COUNT(DISTINCT CONCAT(IFNULL(office_name,'~'),'|',
+--                              IFNULL(warehouse_name,'~'),'|',
+--                              IFNULL(region_name,'~'))) > 1
+-- ORDER BY rrd_id LIMIT 100;
