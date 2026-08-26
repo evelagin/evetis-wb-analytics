@@ -1,0 +1,59 @@
+- generic [active] [ref=e1]:
+  - banner [ref=e2]:
+    - generic [ref=e3]:
+      - link [ref=e5] [cursor=pointer]:
+        - /url: https://datastudio.google.com?requirelogin=1
+        - img "Data Studio" [ref=e6]
+      - generic [ref=e7]: Data Studio
+      - generic [ref=e9]: Overview
+    - generic [ref=e10]:
+      - link "Overview" [ref=e11] [cursor=pointer]:
+        - /url: /overview
+      - link "Gallery" [ref=e12] [cursor=pointer]:
+        - /url: /gallery
+      - link "Connect to Data" [ref=e13] [cursor=pointer]:
+        - /url: /data
+      - link "Visualizations" [ref=e14] [cursor=pointer]:
+        - /url: /visualization
+      - link "Home" [ref=e15] [cursor=pointer]:
+        - /url: https://datastudio.google.com?requirelogin=1
+  - main [ref=e16]:
+    - generic [ref=e18]:
+      - generic [ref=e19]: Data Studio
+      - heading "Your data is beautiful. Use it." [level=1] [ref=e20]
+      - paragraph [ref=e21]: Unlock the power of your data with interactive dashboards and beautiful reports that inspire smarter business decisions. It's easy and free.
+      - link "use it for free" [ref=e22] [cursor=pointer]:
+        - /url: https://datastudio.google.com?requirelogin=1
+    - generic [ref=e23]:
+      - generic [ref=e24]:
+        - heading "Connect" [level=2] [ref=e25]
+        - paragraph [ref=e26]: Easily access a wide variety of data. Data Studio’s built-in and partner connectors makes it possible to connect to virtually any kind of data.
+        - link "See what data you can access" [ref=e27] [cursor=pointer]:
+          - /url: /data
+      - generic [ref=e28]:
+        - heading "Visualize" [level=2] [ref=e29]
+        - paragraph [ref=e30]: Turn your data into compelling stories of data visualization art. Quickly build interactive reports and dashboards with Data Studio’s web based reporting tools.
+        - link "Create your own report" [ref=e31] [cursor=pointer]:
+          - /url: https://datastudio.google.com/reporting/0B5FF6JBKbNJxOWItcWo2SVVVeGc
+        - link "Explore visualizations you can use" [ref=e32] [cursor=pointer]:
+          - /url: /visualization
+      - generic [ref=e33]:
+        - heading "Share" [level=2] [ref=e34]
+        - paragraph [ref=e35]: Share your reports and dashboards with individuals, teams, or the world. Collaborate in real time. Embed your report on any web page.
+        - link "View what others have built in the gallery" [ref=e36] [cursor=pointer]:
+          - /url: /gallery
+    - paragraph [ref=e38]:
+      - text: Are you a developer? Learn how to extend Data Studio through the
+      - link "Data Studio developer platform." [ref=e39] [cursor=pointer]:
+        - /url: https://developers.google.com/datastudio
+  - contentinfo [ref=e40]:
+    - link "Google" [ref=e41] [cursor=pointer]:
+      - /url: https://google.com
+    - link "Privacy" [ref=e42] [cursor=pointer]:
+      - /url: https://policies.google.com/privacy
+    - link "Site Terms" [ref=e43] [cursor=pointer]:
+      - /url: https://policies.google.com/terms
+    - link "Service Terms" [ref=e44] [cursor=pointer]:
+      - /url: https://support.google.com/datastudio/answer/7019158
+    - link "Help" [ref=e45] [cursor=pointer]:
+      - /url: https://support.google.com/datastudio/#topic=6267740

@@ -1,0 +1,375 @@
+- generic [ref=f10e3]:
+  - generic [ref=f10e6]:
+    - button "На главную страницу" [ref=f10e8] [cursor=pointer]:
+      - img "Значок приложения \"Главная страница сервиса \"Студия данных\"\"" [ref=f10e10]
+    - generic [ref=f10e13]:
+      - heading "EVETIS · Executive · Пульс магазина" [level=1] [ref=f10e46]
+      - generic [ref=f10e21]:
+        - generic:
+          - generic:
+            - button "Сбросить" [disabled]
+          - generic [ref=f10e47]:
+            - button "Текст кнопки для отправки отчета другим пользователям" [ref=f10e48] [cursor=pointer]:
+              - generic [ref=f10e52]: Поделиться
+            - button "Дополнительно" [ref=f10e55] [cursor=pointer]:
+              - img [ref=f10e58]: arrow_drop_down
+          - button "Изменить" [ref=f10e61] [cursor=pointer]
+          - button "Другие действия с отчетом" [ref=f10e68] [cursor=pointer]
+          - separator [ref=f10e74]
+          - button "Открыть меню Справки" [ref=f10e75] [cursor=pointer]
+          - button "Открыть панель выбора аккаунта." [ref=f10e22] [cursor=pointer]:
+            - 'img "Аккаунт Google: Евгений Елагин (evelagin@gmail.com)"'
+  - generic [ref=f10e84]:
+    - generic [ref=f10e89]:
+      - generic "Чтобы показать заголовок диаграммы, нажмите Ввод или Пробел" [ref=f10e92]:
+        - generic [ref=f10e99]:
+          - generic [ref=f10e100]: Выручка (выкупы), ₽
+          - generic [ref=f10e102]: 3,47 млн
+      - generic "Чтобы показать заголовок диаграммы, нажмите Ввод или Пробел" [ref=f10e105]:
+        - generic [ref=f10e112]:
+          - generic [ref=f10e113]: Выручка (заказы), ₽
+          - generic [ref=f10e115]: 3 394 921,09
+      - generic "Чтобы показать заголовок диаграммы, нажмите Ввод или Пробел" [ref=f10e118]:
+        - generic [ref=f10e125]:
+          - generic [ref=f10e126]: Заказы, шт
+          - generic [ref=f10e128]: 3 988
+      - generic "Чтобы показать заголовок диаграммы, нажмите Ввод или Пробел" [ref=f10e131]:
+        - generic [ref=f10e138]:
+          - generic [ref=f10e139]: Выкупы, шт
+          - generic [ref=f10e141]: 4 070
+      - generic "Чтобы показать заголовок диаграммы, нажмите Ввод или Пробел" [ref=f10e144]:
+        - generic [ref=f10e151]:
+          - generic [ref=f10e152]: Отменено, шт
+          - generic [ref=f10e154]: "392"
+      - generic "Чтобы показать заголовок диаграммы, нажмите Ввод или Пробел" [ref=f10e157]:
+        - generic [ref=f10e164]:
+          - generic [ref=f10e165]: Возвраты, шт
+          - generic [ref=f10e167]: "1"
+      - generic "Чтобы показать заголовок диаграммы, нажмите Ввод или Пробел" [ref=f10e170]:
+        - generic [ref=f10e177]:
+          - generic [ref=f10e178]: Средняя цена заказа, ₽
+          - generic [ref=f10e180]: 851,28
+      - generic "Чтобы показать заголовок диаграммы, нажмите Ввод или Пробел" [ref=f10e183]:
+        - generic [ref=f10e190]:
+          - generic [ref=f10e191]: Средняя цена выкупа, ₽
+          - generic [ref=f10e193]: 853,11
+      - generic "Чтобы показать заголовок диаграммы, нажмите Ввод или Пробел" [ref=f10e196]:
+        - generic [ref=f10e203]:
+          - generic [ref=f10e204]: Выкуп/заказ, календарный
+          - generic [ref=f10e206]: 102,06%
+      - generic "Чтобы показать заголовок диаграммы, нажмите Ввод или Пробел" [ref=f10e209]:
+        - generic [ref=f10e216]:
+          - generic [ref=f10e217]: Доля отмен
+          - generic [ref=f10e219]: 9,83
+      - generic "Чтобы показать заголовок диаграммы, нажмите Ввод или Пробел" [ref=f10e222]:
+        - generic [ref=f10e229]:
+          - generic [ref=f10e230]: Оплачено покупателем, ₽
+          - generic [ref=f10e232]: 2 168 142,56
+      - generic "Чтобы показать заголовок диаграммы, нажмите Ввод или Пробел" [ref=f10e235]:
+        - generic [ref=f10e242]:
+          - generic [ref=f10e243]: Реклама, ₽
+          - generic [ref=f10e245]: 525 955,07
+      - generic "Чтобы показать заголовок диаграммы, нажмите Ввод или Пробел" [ref=f10e248]:
+        - generic [ref=f10e255]:
+          - generic [ref=f10e256]: Показы
+          - generic [ref=f10e258]: 1 993 624
+      - generic "Чтобы показать заголовок диаграммы, нажмите Ввод или Пробел" [ref=f10e261]:
+        - generic [ref=f10e268]:
+          - generic [ref=f10e269]: Клики
+          - generic [ref=f10e271]: 39 040
+      - generic "Чтобы показать заголовок диаграммы, нажмите Ввод или Пробел" [ref=f10e274]:
+        - generic [ref=f10e281]:
+          - generic [ref=f10e282]: CTR, %
+          - generic [ref=f10e284]: 1,96
+      - generic "Чтобы показать заголовок диаграммы, нажмите Ввод или Пробел" [ref=f10e287]:
+        - generic [ref=f10e294]:
+          - generic [ref=f10e295]: CPC, ₽
+          - generic [ref=f10e297]: 13,47
+      - generic "Чтобы показать заголовок диаграммы, нажмите Ввод или Пробел" [ref=f10e300]:
+        - generic [ref=f10e307]:
+          - generic [ref=f10e308]: CPM, ₽
+          - generic [ref=f10e310]: 263,82
+      - generic "Чтобы показать заголовок диаграммы, нажмите Ввод или Пробел" [ref=f10e313]:
+        - generic [ref=f10e320]:
+          - generic [ref=f10e321]: ДРР по выкупам, %
+          - generic [ref=f10e323]: 15,15
+      - generic "Чтобы показать заголовок диаграммы, нажмите Ввод или Пробел" [ref=f10e326]:
+        - generic [ref=f10e333]:
+          - generic [ref=f10e334]: ROAS по атрибуции
+          - generic [ref=f10e336]: 3,86
+      - generic "Чтобы показать заголовок диаграммы, нажмите Ввод или Пробел" [ref=f10e339]:
+        - generic [ref=f10e346]:
+          - generic [ref=f10e347]: Сбор маркетплейса, ₽
+          - generic [ref=f10e349]: 1 322 372,54
+          - generic [ref=f10e350]: "-43.9%"
+      - generic "Чтобы показать заголовок диаграммы, нажмите Ввод или Пробел" [ref=f10e358]:
+        - generic [ref=f10e365]:
+          - generic [ref=f10e366]: Логистика, ₽
+          - generic [ref=f10e368]: 276 345,52
+          - generic [ref=f10e369]: "-54.6%"
+      - generic "Чтобы показать заголовок диаграммы, нажмите Ввод или Пробел" [ref=f10e377]:
+        - generic [ref=f10e384]:
+          - generic [ref=f10e385]: Хранение (счёт), ₽
+          - generic [ref=f10e387]: 95 393,89
+          - generic [ref=f10e388]: 14.6%
+      - generic "Чтобы показать заголовок диаграммы, нажмите Ввод или Пробел" [ref=f10e396]:
+        - generic [ref=f10e403]:
+          - generic [ref=f10e404]: Удержания (счёт), ₽
+          - generic [ref=f10e406]: 635 695,36
+          - generic [ref=f10e407]: "-48.6%"
+      - generic "Чтобы показать заголовок диаграммы, нажмите Ввод или Пробел" [ref=f10e415]:
+        - generic [ref=f10e422]:
+          - generic [ref=f10e423]: К перечислению, ₽
+          - generic [ref=f10e425]: 2,13 млн
+          - generic [ref=f10e426]: "-50.1%"
+      - generic "Чтобы показать заголовок диаграммы, нажмите Ввод или Пробел" [ref=f10e434]:
+        - generic [ref=f10e441]:
+          - generic [ref=f10e442]: Вклад pre-COGS, ₽
+          - generic [ref=f10e444]: 1,33 млн
+      - generic "Чтобы показать заголовок диаграммы, нажмите Ввод или Пробел" [ref=f10e447]:
+        - generic [ref=f10e454]:
+          - generic [ref=f10e455]: Вклад, %
+          - generic [ref=f10e457]: 38,38
+      - generic "Чтобы показать заголовок диаграммы, нажмите Ввод или Пробел" [ref=f10e460]:
+        - button "13 апр. 2026 г. - 25 авг. 2026 г." [ref=f10e464] [cursor=pointer]:
+          - img [ref=f10e467]: arrow_drop_down
+      - generic "Чтобы показать заголовок диаграммы, нажмите Ввод или Пробел" [ref=f10e472]:
+        - generic [ref=f10e479]:
+          - generic [ref=f10e481]:
+            - generic [ref=f10e484] [cursor=pointer]:
+              - generic "Реклама · непокрыто" [ref=f10e485]
+              - generic [ref=f10e486]: ▼
+            - generic "Заказы · непокрыто" [ref=f10e490] [cursor=pointer]
+            - generic "Выкупы · непокрыто" [ref=f10e494] [cursor=pointer]
+            - generic "Финансы · непокрыто" [ref=f10e498] [cursor=pointer]
+            - generic "Вклад · предварительно" [ref=f10e502] [cursor=pointer]
+          - generic [ref=f10e505] [cursor=pointer]:
+            - generic [ref=f10e506]: "1"
+            - generic [ref=f10e507]: "1"
+            - generic [ref=f10e508]: "1"
+            - generic [ref=f10e509]: "2"
+            - generic [ref=f10e510]: "0"
+          - generic [ref=f10e511]:
+            - text: 1 - 1 / 1
+            - generic "Предыдущая страница" [ref=f10e512]: <
+            - generic "Следующая страница" [ref=f10e513]: ">"
+      - generic "Чтобы показать заголовок диаграммы, нажмите Ввод или Пробел" [ref=f10e516]:
+        - generic [ref=f10e523]:
+          - generic [ref=f10e526] [cursor=pointer]:
+            - generic "OK" [ref=f10e527]
+            - generic "23 авг. 2026 г." [ref=f10e528]
+          - generic [ref=f10e530]:
+            - text: 1 - 1 / 1
+            - generic "Предыдущая страница" [ref=f10e531]: <
+            - generic "Следующая страница" [ref=f10e532]: ">"
+      - generic "Чтобы показать заголовок диаграммы, нажмите Ввод или Пробел" [ref=f10e535]:
+        - generic [ref=f10e542]:
+          - generic [ref=f10e545] [cursor=pointer]:
+            - generic "OK" [ref=f10e546]
+            - generic "23 авг. 2026 г." [ref=f10e547]
+          - generic [ref=f10e548]:
+            - text: 1 - 1 / 1
+            - generic "Предыдущая страница" [ref=f10e549]: <
+            - generic "Следующая страница" [ref=f10e550]: ">"
+      - generic "Чтобы показать заголовок диаграммы, нажмите Ввод или Пробел" [ref=f10e553]:
+        - generic [ref=f10e560]:
+          - generic [ref=f10e562]:
+            - generic [ref=f10e563]: Категория → товар → день
+            - generic [ref=f10e566]: К перечислению, ₽
+            - generic [ref=f10e569]: Выкупы, шт
+            - generic [ref=f10e574] [cursor=pointer]:
+              - text: Выручка (выкупы), ₽
+              - generic [ref=f10e575]: ▼
+            - generic [ref=f10e576]: Реклама, ₽
+            - generic [ref=f10e579]: Вклад pre-COGS, ₽
+          - generic [ref=f10e583]:
+            - generic [ref=f10e584] [cursor=pointer]:
+              - generic "Набор" [ref=f10e585]
+              - generic [ref=f10e586]: 822 320,67
+              - generic [ref=f10e587]: "858"
+              - generic [ref=f10e588]: 1 345 486,67
+              - generic [ref=f10e589]: 115 963,78
+              - generic [ref=f10e590]: 624 845,11
+            - generic [ref=f10e591] [cursor=pointer]:
+              - generic "Крем" [ref=f10e592]
+              - generic [ref=f10e593]: 745 451,21
+              - generic [ref=f10e594]: 1 878
+              - generic [ref=f10e595]: 1 207 863,72
+              - generic [ref=f10e596]: 218 530,08
+              - generic [ref=f10e597]: 405 476,48
+            - generic [ref=f10e598] [cursor=pointer]:
+              - generic "Сыворотка" [ref=f10e599]
+              - generic [ref=f10e600]: 324 150,61
+              - generic [ref=f10e601]: "751"
+              - generic [ref=f10e602]: 526 179,88
+              - generic [ref=f10e603]: 104 248,79
+              - generic [ref=f10e604]: 178 849,4
+            - generic [ref=f10e605] [cursor=pointer]:
+              - generic "Тоник" [ref=f10e606]
+              - generic [ref=f10e607]: 183 549,29
+              - generic [ref=f10e608]: "448"
+              - generic [ref=f10e609]: 296 798,26
+              - generic [ref=f10e610]: 60 391,24
+              - generic [ref=f10e611]: 98 578,85
+            - generic [ref=f10e612] [cursor=pointer]:
+              - generic "Энзимная пудра" [ref=f10e613]
+              - generic [ref=f10e614]: 59 189,8
+              - generic [ref=f10e615]: "135"
+              - generic [ref=f10e616]: 95 823,29
+              - generic [ref=f10e617]: 26 821,18
+              - generic [ref=f10e618]: 24 788,34
+          - generic [ref=f10e619]:
+            - text: 1 - 5 / 5
+            - generic "Предыдущая страница" [ref=f10e620]: <
+            - generic "Следующая страница" [ref=f10e621]: ">"
+      - generic "Чтобы показать заголовок диаграммы, нажмите Ввод или Пробел" [ref=f10e624]: EVETIS / ANALYTICS
+      - generic "Чтобы показать заголовок диаграммы, нажмите Ввод или Пробел" [ref=f10e633]: Executive · Пульс магазина
+      - generic "Чтобы показать заголовок диаграммы, нажмите Ввод или Пробел" [ref=f10e643]: ПУЛЬС МАГАЗИНА
+      - generic "Чтобы показать заголовок диаграммы, нажмите Ввод или Пробел" [ref=f10e652]: ТОРГОВЛЯ
+      - generic "Чтобы показать заголовок диаграммы, нажмите Ввод или Пробел" [ref=f10e661]: ЭФФЕКТИВНОСТЬ ТОРГОВЛИ
+      - generic "Чтобы показать заголовок диаграммы, нажмите Ввод или Пробел" [ref=f10e670]: РЕКЛАМА · РАСХОД ПО АТРИБУЦИИ WB
+      - generic "Чтобы показать заголовок диаграммы, нажмите Ввод или Пробел" [ref=f10e679]: ЭКОНОМИКА · ДО СЕБЕСТОИМОСТИ
+      - generic "Чтобы показать заголовок диаграммы, нажмите Ввод или Пробел" [ref=f10e688]: ДАННЫЕ ЭКРАНА · контракт KPI_DAILY
+      - generic "Чтобы показать заголовок диаграммы, нажмите Ввод или Пробел" [ref=f10e697]: СИСТЕМА · весь аналитический контур
+      - generic "Чтобы показать заголовок диаграммы, нажмите Ввод или Пробел" [ref=f10e706]:
+        - iframe [ref=f10e712]:
+          - generic "Vega visualization" [ref=f17e2]:
+            - img [ref=f17e3]:
+              - generic [ref=f17e8]:
+                - generic "Y-axis for a linear scale with values from −20,000 to 60,000" [ref=f17e9]:
+                  - generic [ref=f17e11]:
+                    - generic:
+                      - generic: "-20 тыс."
+                      - generic: "0"
+                      - generic: 20 тыс.
+                      - generic: 40 тыс.
+                      - generic: 60 тыс.
+                - generic "X-axis for a linear scale with values from 0 to 134" [ref=f17e12]:
+                  - generic [ref=f17e14]:
+                    - generic:
+                      - generic: 13 апр.
+                      - generic: 26 апр.
+                      - generic: 9 мая
+                      - generic: 22 мая
+                      - generic: 4 июн.
+                      - generic: 17 июн.
+                      - generic: 30 июн.
+                      - generic: 13 июл.
+                      - generic: 26 июл.
+                      - generic: 8 авг.
+                      - generic: 21 авг.
+                - 'generic "Symbol legend for fill color and stroke color with 2 values: 0, 1" [ref=f17e167]':
+                  - generic [ref=f17e173]:
+                    - generic [ref=f17e174]: Выручка (выкупы), ₽
+                    - generic [ref=f17e177]: Вклад pre-COGS, ₽
+      - generic "Чтобы показать заголовок диаграммы, нажмите Ввод или Пробел" [ref=f10e715]:
+        - iframe [ref=f10e721]:
+          - generic "Vega visualization" [ref=f18e2]:
+            - img [ref=f18e3]:
+              - generic [ref=f18e8]:
+                - generic "Y-axis for a linear scale with values from 0 to 80" [ref=f18e9]:
+                  - generic [ref=f18e11]:
+                    - generic:
+                      - generic: "0"
+                      - generic: "20"
+                      - generic: "40"
+                      - generic: "60"
+                      - generic: "80"
+                - generic "X-axis for a linear scale with values from 0 to 134" [ref=f18e12]:
+                  - generic [ref=f18e14]:
+                    - generic:
+                      - generic: 13 апр.
+                      - generic: 26 апр.
+                      - generic: 9 мая
+                      - generic: 22 мая
+                      - generic: 4 июн.
+                      - generic: 17 июн.
+                      - generic: 30 июн.
+                      - generic: 13 июл.
+                      - generic: 26 июл.
+                      - generic: 8 авг.
+                      - generic: 21 авг.
+                - 'generic "Symbol legend for fill color and stroke color with 2 values: 0, 1" [ref=f18e167]':
+                  - generic [ref=f18e173]:
+                    - generic [ref=f18e174]: Заказы, шт
+                    - generic [ref=f18e177]: Выкупы, шт
+      - generic "Чтобы показать заголовок диаграммы, нажмите Ввод или Пробел" [ref=f10e724]: Расход по атрибуции WB, не по биллингу. Биллинговый расход на экран не выведен.
+      - generic "Чтобы показать заголовок диаграммы, нажмите Ввод или Пробел" [ref=f10e735]: ДИНАМИКА · ПО СУТКАМ
+      - generic "Чтобы показать заголовок диаграммы, нажмите Ввод или Пробел" [ref=f10e744]: ТОВАРЫ · КАТЕГОРИИ И SKU
+      - generic "Чтобы показать заголовок диаграммы, нажмите Ввод или Пробел" [ref=f10e753]: "Хранение, удержания и приёмка приходят от WB на уровне счёта, без привязки к SKU, поэтому в таблице товаров их нет: разнести их по SKU можно было бы только выдуманным правилом."
+      - generic "Чтобы показать заголовок диаграммы, нажмите Ввод или Пробел" [ref=f10e762]: КАЧЕСТВО ДАННЫХ ПЕРИОДА · СУТОК
+      - generic "Чтобы показать заголовок диаграммы, нажмите Ввод или Пробел" [ref=f10e771]: "Счётчики показывают, сколько суток выбранного периода не покрыты данными соответствующего контура. Такие сутки не заменяются нулями: в карточках они дают «Нет данных», в графиках остаются разрывом. «Вклад · предварительно» — сутки, где финансовая часть ещё не финализирована WB, поэтому вклад pre-COGS за них предварительный."
+      - generic "Чтобы показать заголовок диаграммы, нажмите Ввод или Пробел" [ref=f10e780]:
+        - iframe [ref=f10e786]:
+          - generic "Vega visualization" [ref=f19e2]:
+            - img [ref=f19e3]:
+              - generic [ref=f19e8]:
+                - generic "Y-axis titled 'Реклама, ₽' for a linear scale with values from 0 to 10,000" [ref=f19e9]:
+                  - generic [ref=f19e11]:
+                    - generic:
+                      - generic: "0"
+                      - generic: 2,5 тыс.
+                      - generic: 5 тыс.
+                      - generic: 7,5 тыс.
+                      - generic: 10 тыс.
+                    - generic: Реклама, ₽
+                - generic "Y-axis titled 'ДРР по выкупам, %' for a linear scale with values from 0 to 80" [ref=f19e12]:
+                  - generic [ref=f19e14]:
+                    - generic:
+                      - generic: 0,00
+                      - generic: 20,00
+                      - generic: 40,00
+                      - generic: 60,00
+                      - generic: 80,00
+                    - generic: ДРР по выкупам, %
+                - generic "X-axis for a linear scale with values from 0 to 134" [ref=f19e15]:
+                  - generic [ref=f19e17]:
+                    - generic:
+                      - generic: 13 апр.
+                      - generic: 26 апр.
+                      - generic: 9 мая
+                      - generic: 22 мая
+                      - generic: 4 июн.
+                      - generic: 17 июн.
+                      - generic: 30 июн.
+                      - generic: 13 июл.
+                      - generic: 26 июл.
+                      - generic: 8 авг.
+                      - generic: 21 авг.
+      - generic "Чтобы показать заголовок диаграммы, нажмите Ввод или Пробел" [ref=f10e789]:
+        - iframe [ref=f10e795]:
+          - generic "Vega visualization" [ref=f20e2]:
+            - img [ref=f20e3]:
+              - generic [ref=f20e8]:
+                - generic "Y-axis for a linear scale with values from 0 to 60,000" [ref=f20e9]:
+                  - generic [ref=f20e11]:
+                    - generic:
+                      - generic: "0"
+                      - generic: 20 тыс.
+                      - generic: 40 тыс.
+                      - generic: 60 тыс.
+                - generic "X-axis for a linear scale with values from 0 to 134" [ref=f20e12]:
+                  - generic [ref=f20e14]:
+                    - generic:
+                      - generic: 13 апр.
+                      - generic: 26 апр.
+                      - generic: 9 мая
+                      - generic: 22 мая
+                      - generic: 4 июн.
+                      - generic: 17 июн.
+                      - generic: 30 июн.
+                      - generic: 13 июл.
+                      - generic: 26 июл.
+                      - generic: 8 авг.
+                      - generic: 21 авг.
+                - 'generic "Symbol legend for fill color and stroke color with 4 values: 0, 1, 2, 3" [ref=f20e173]':
+                  - generic [ref=f20e179]:
+                    - generic [ref=f20e180]: Сбор маркетплейса, ₽
+                    - generic [ref=f20e183]: Логистика, ₽
+                    - generic [ref=f20e186]: Хранение (счёт), ₽
+                    - generic [ref=f20e189]: Удержания (счёт), ₽
+      - generic "Чтобы показать заголовок диаграммы, нажмите Ввод или Пробел" [ref=f10e798]: "Проценты сравнения на карточках считаются с предыдущим периодом такой же длины. Если предыдущий период покрыт не полностью, дельта занижена: Looker Studio не умеет гасить её условно — это ограничение инструмента, а не свойство данных."
+    - generic [ref=f10e806]:
+      - generic [ref=f10e807]: "Последнее обновление данных: 25.08.2026 13:52:39"
+      - link "Политика конфиденциальности" [ref=f10e811] [cursor=pointer]:
+        - /url: https://support.google.com/looker-studio/answer/15683626
