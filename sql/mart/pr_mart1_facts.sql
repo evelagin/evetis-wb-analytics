@@ -44,6 +44,39 @@
 -- ⚠️ Объекты в BQ создаются ТОЛЬКО после финального APPROVE + запуска владельцем.
 -- ============================================================================
 
+-- ── 0-GATE. STAGE 3B DEPLOYMENT GATE (Stage 1.8, 2026-08-26) ─────────────────
+--   Первый исполняемый стейтмент файла. Стоит ДО CREATE SCHEMA и ДО
+--   CREATE OR REPLACE PROCEDURE `wb_mart.sp_bootstrap_facts` намеренно:
+--   при закрытом гейте скрипт обязан остановиться, НЕ тронув развёрнутую
+--   рабочую процедуру.
+--
+--   ЗАЧЕМ. Коммит e30f668 «feat(ads): prepare billed spend allocation contract
+--   (#116)» добавил в эту процедуру §1.7 FACT_ADS_SPEND_ALLOC_DAILY и §1.8
+--   FACT_ADS_SPEND_UNALLOC_DAILY вместе с 15 fail-closed ASSERT. Сам коммит
+--   объявляет change-set «prepared but remains blocked from production
+--   deployment until Stage 3B.1 Ads Costs Snapshot & Coverage completes
+--   Phase B cutover».
+--
+--   ЧЕМ ОПАСЕН МОЛЧАЛИВЫЙ ДЕПЛОЙ. BigQuery не резолвит имена таблиц внутри
+--   тела процедуры при CREATE — файл раскатывается успешно и тихо. Прод-
+--   загрузчик Cloud Run зовёт CALL sp_bootstrap_facts(@run_id) на КАЖДОМ
+--   прогоне (cloud/src/loaders/mart/bq.ts). Ближайший плановый прогон
+--   выполнил бы Stage 3B cutover в обход Фазы B, а любой из 15 новых ASSERT
+--   уронил бы сборку ВСЕГО FACT-слоя — заказов, продаж, финансов, остатков.
+--
+--   УСЛОВИЕ ОТКРЫТИЯ — фактическое состояние production, а не наличие
+--   snapshot-view: шаг B4b роллаута переключает V_ADV_COSTS на
+--   V_ADV_COSTS_SNAPSHOT. Проверяется реальное view_definition.
+--   Гейт снимается сам после cutover — править файл не нужно.
+--   Спека: docs/ADS_COSTS_SNAPSHOT_ROLLOUT_2026-08-20.md §«Фаза B», шаг B4b.
+--           docs/ADS_SPEND_STAGE3B_2026-08-20.md.
+--   Порядок раскатки: sql/mart/ads_spend_stage3b_validation.sql §0.
+ASSERT (
+  SELECT IFNULL(LOGICAL_OR(REGEXP_CONTAINS(view_definition, r'V_ADV_COSTS_SNAPSHOT')), FALSE)
+  FROM `wb_raw.INFORMATION_SCHEMA.VIEWS`
+  WHERE table_name = 'V_ADV_COSTS'
+) AS 'STAGE 3B DEPLOYMENT BLOCKED: Stage 3B.1 Phase B cutover not complete. wb_raw.V_ADV_COSTS ещё НЕ переключён на wb_raw.V_ADV_COSTS_SNAPSHOT (шаг B4b). Файл содержит deferred-код e30f668 / PR #116 (§1.7 FACT_ADS_SPEND_ALLOC_DAILY, §1.8 FACT_ADS_SPEND_UNALLOC_DAILY) — deployment остановлен ДО замены sp_bootstrap_facts. Сначала выполнить Phase B cutover: CREATE OR REPLACE VIEW wb_raw.V_ADV_COSTS AS SELECT * FROM wb_raw.V_ADV_COSTS_SNAPSHOT.';
+
 -- ── 0. Датасет + lock-таблица (advisory mutex для manual-bootstrap) ───────────
 CREATE SCHEMA IF NOT EXISTS `wb_mart` OPTIONS (location = 'EU');
 

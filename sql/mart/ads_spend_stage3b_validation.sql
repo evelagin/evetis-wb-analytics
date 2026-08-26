@@ -1,12 +1,56 @@
 -- ============================================================================
 -- EVETIS WB — Stage 3B. ПРИЁМКА после deploy. Дата: 20.08.2026.
--- 🔴 Только SELECT. Ни одного DDL/DML. Запускать ПОСЛЕ:
---      1) deploy sql/mart/pr_mart1_facts.sql   (пере-создание процедуры)
---      2) deploy sql/mart/pr_mart2b_sku_daily.sql
---      3) deploy sql/mart/ads_spend_reconciliation_v1.sql
---      4) deploy sql/mart/ads4_funnel_v1.sql + sql/mart/dashboard_layer_v1.sql
---      5) CALL wb_mart.sp_bootstrap_facts('');
---         CALL wb_mart.sp_build_mart_sku_daily(DATE_SUB(CURRENT_DATE('Europe/Moscow'), INTERVAL 1 DAY), NULL, '');
+-- 🔴 Только SELECT. Ни одного DDL/DML.
+--
+-- ── §0. ПОРЯДОК CUTOVER (актуализирован Stage 1.8, 2026-08-26) ───────────────
+--   ⚠️ Прежний порядок (5 шагов от 20.08.2026) УСТАРЕЛ и приводил к молчаливой
+--      потере колонок витрины. Причина: Stage 1.6 вернул
+--      sql/mart/pr_mart2b_sku_daily.sql на production-совместимую линию 8290672
+--      + guard `fix #5`, поэтому billed-spend блок #116 в этом файле БОЛЬШЕ НЕ
+--      ЛЕЖИТ — его нужно сначала восстановить из e30f668. Прежний шаг «2) deploy
+--      pr_mart2b_sku_daily.sql» выполнился бы вхолостую.
+--
+--   A. Завершить prerequisites Фазы B:
+--        docs/ADS_COSTS_SNAPSHOT_ROLLOUT_2026-08-20.md §«Фаза B», шаги B1–B3
+--        (пауза wb-mart-prod; _MART_BOOTSTRAP_LOCK.is_running=FALSE по обоим
+--         lock_id; последний LOADER_RUNS('mart')=COMPLETE; I1–I9 + I5 DAY_LOST=0
+--         на V_ADV_COSTS_SNAPSHOT; B4a — константа 7 → 14 отдельным коммитом).
+--   B. Шаг B4b — переключить источник:
+--        CREATE OR REPLACE VIEW `wb_raw.V_ADV_COSTS` AS
+--          SELECT * FROM `wb_raw.V_ADV_COSTS_SNAPSHOT`;
+--   C. Гейт §0-GATE в sql/mart/pr_mart1_facts.sql открывается САМ (проверяет
+--        реальное view_definition V_ADV_COSTS). Правки файла не требуется.
+--        Проверить открытие ДО деплоя:
+--          SELECT IFNULL(LOGICAL_OR(REGEXP_CONTAINS(view_definition,
+--                 r'V_ADV_COSTS_SNAPSHOT')), FALSE)
+--          FROM `wb_raw.INFORMATION_SCHEMA.VIEWS` WHERE table_name='V_ADV_COSTS';
+--   D. deploy sql/mart/pr_mart1_facts.sql  (пере-создание sp_bootstrap_facts).
+--   E. CALL `wb_mart.sp_bootstrap_facts`('');
+--        Убедиться, что созданы и НЕПУСТЫ FACT_ADS_SPEND_ALLOC_DAILY и
+--        FACT_ADS_SPEND_UNALLOC_DAILY; 15 fail-closed ASSERT §1.7/§1.8 прошли.
+--   F. Восстановить Stage 3B блок в sql/mart/pr_mart2b_sku_daily.sql из e30f668
+--        ПОВЕРХ guard `fix #5` (guard обязан сохраниться — он ловит
+--        знакопеременную пару в ABS-ветке REF_COST_MAP, Stage 1.5).
+--        Источник: git show e30f668 -- sql/mart/pr_mart2b_sku_daily.sql
+--   G. deploy sql/mart/pr_mart2b_sku_daily.sql, затем
+--        CALL `wb_mart.sp_build_mart_sku_daily`(
+--               DATE_SUB(CURRENT_DATE('Europe/Moscow'), INTERVAL 1 DAY), NULL, '');
+--   H. deploy sql/mart/ads_spend_reconciliation_v1.sql
+--        (V_ADS_SPEND_RECONCILIATION, V_ADS_SPEND_RECONCILIATION_DAILY —
+--         потребляют таблицы из шага E, раньше не компилируются).
+--   I. deploy sql/mart/ads4_funnel_v1.sql, СРАЗУ ЗА НИМ
+--        sql/mart/dashboard_layer_v1.sql — строго в этом порядке и в одной
+--        сессии. Они переименовывают публичную колонку
+--        mart_ad_spend_rub → mart_ad_spend_attributed_rub: funnel в одиночку
+--        ломает уже развёрнутую V_ADS_SCREEN_SKU на чтении, а dashboard_layer
+--        в одиночку не компилируется («Name mart_ad_spend_attributed_rub not
+--        found inside f»).
+--   J. Запустить приёмку — этот файл целиком.
+--
+--   ⚠️ Проверять компиляцию ПОСТЕЙТМЕНТНО. Скриптовый `bq query --dry_run` по
+--      целому файлу даёт ЛОЖНЫЙ успех: dashboard_layer_v1.sql проходит его
+--      целиком, но падает на изолированном CREATE OR REPLACE VIEW.
+-- ────────────────────────────────────────────────────────────────────────────
 --
 -- 🔴 ПРИНЦИП ПРИЁМКИ: НИ ОДНА проверка не сверяется с записанной заранее суммой.
 --    Прежние цифры приёмки (523 365,38 / 514 064,00 / 512 997,00 / 1 067,00) в
