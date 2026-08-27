@@ -3,7 +3,7 @@
 **Last verified:** 2026-08-27
 **Repository:** `evelagin/evetis-wb-analytics`
 **Branch:** `main`
-**Verified HEAD:** `e902183dc7e886647c1ecab9cc4685174c0ae4ee`
+**Verified HEAD:** `f8ea31e575db45e0bf4ecf5b9afda85724ff981f`
 **Purpose:** authoritative human-readable checkpoint for restarting work in a new Claude Code session.
 
 ---
@@ -34,8 +34,8 @@ Before any new development:
 | remote URL | `https://github.com/evelagin/evetis-wb-analytics.git` |
 | local path | `/Users/evgenelagin/Projects/evetis-wb-analytics` |
 | branch | `main` |
-| HEAD SHA | `e902183dc7e886647c1ecab9cc4685174c0ae4ee` |
-| origin/main SHA | `e902183dc7e886647c1ecab9cc4685174c0ae4ee` |
+| HEAD SHA | `f8ea31e575db45e0bf4ecf5b9afda85724ff981f` |
+| origin/main SHA | `f8ea31e575db45e0bf4ecf5b9afda85724ff981f` |
 | ahead | 0 |
 | behind | 0 |
 | working tree | clean |
@@ -44,6 +44,8 @@ Before any new development:
 Последние коммиты `main`:
 
 ```
+f8ea31e  feat(cogs): add Stage 3.1A product COGS reference layer
+7bf0472  docs(project): add CURRENT_PROJECT_STATE checkpoint verified against production
 e902183  chore(metabase): add disaster-recovery snapshot for Executive and SKU Performance
 05e0303  docs(analytics): restore Stage 4A PR1 rollout record
 a033160  feat(analytics): complete Stage 2 SKU performance dashboard
@@ -99,6 +101,10 @@ WB (API + XLSX-отчёты)
                                    │
                                    ▼
                              Metabase (Docker, localhost:3000)
+
+BigQuery  evetis_ref  ← reference layer: историческая Product COGS.
+                        Marketplace-independent, ключ internal_sku.
+                        Потребителями (MART / V_DASH / Metabase) НЕ подключён.
 ```
 
 Что делает каждый слой, простым языком:
@@ -108,13 +114,15 @@ WB (API + XLSX-отчёты)
 * **MART (`MART_SKU_DAILY`)** — сводит факты в одну строку на сутки и товар.
 * **V_DASH_\*** — публичный контракт для дашбордов: гейты покрытия, NULL вне покрытия,
   никаких ratio-колонок (их считает потребитель как отношение сумм).
+* **`evetis_ref`** — справочный слой Product COGS. Ни от чего не зависит и в конвейер
+  выше не встроен: витрины его пока не читают. Появился в Stage 3.1A.
 * **Metabase** — только читает. В конвейере не участвует, данных не пишет.
 
 Фактический состав на 2026-08-27:
 
 | компонент | состояние |
 | --- | --- |
-| BigQuery datasets | `wb_raw`, `wb_mart`, `evetis_communications` |
+| BigQuery datasets | `wb_raw`, `wb_mart`, `evetis_communications`, **`evetis_ref`** |
 | `wb_mart` | 17 базовых таблиц, 18 view, 2 процедуры (`sp_bootstrap_facts`, `sp_build_mart_sku_daily`) |
 | `MART_SKU_DAILY` | 7 477 строк, `max_day = 2026-08-26` |
 | `FACT_ORDERS` | 4 426 строк, до 2026-08-26 |
@@ -123,15 +131,24 @@ WB (API + XLSX-отчёты)
 | `FACT_ADS_SKU_DAILY` | 5 767 строк, до 2026-08-26 |
 | `REF_COST_MAP` | 19 правил |
 | `wb_raw.REF_SKU_MASTER` | 25 SKU, из них 14 — наборы |
+| `evetis_ref` | 4 объекта: 2 таблицы + 2 view (Stage 3.1A) |
+| `evetis_ref.REF_SKU_COGS_HISTORY` | 17 материализованных интервалов Product COGS |
+| `evetis_ref.REF_BUNDLE_COMPONENTS` | 33 строки состава, 14 наборов, стоимостных полей нет |
+| `evetis_ref.V_BUNDLE_COGS_DERIVED` | 21 производный интервал COGS набора |
+| `evetis_ref.V_PRODUCT_COGS_EFFECTIVE` | unified resolver, 38 интервалов (17 + 21) |
 | dashboard views | `V_DASH_KPI_DAILY` (76 колонок), `V_DASH_SKU_DAILY` (60), `V_DASH_COVERAGE_DAILY` (33), `V_DASH_FRESHNESS_HEADER`, `V_DASH_FRESHNESS_BY_CONTRACT` (14) |
 | Google Apps Script | 39 файлов `.gs` в репозитории; слой Google Sheets (справочники, себестоимость) |
 | Cloud Run loaders | `cloud/src/loaders/`: `mart`, `stocks` |
 | Metabase | v0.63.15.1 OSS, Docker, 2 наших дашборда, 32 карточки |
-| GitHub | `main` = `e902183`, плюс ветка `rescue/stash-20260826` |
+| GitHub | `main` = `f8ea31e`, плюс ветка `rescue/stash-20260826` |
 | Claude skills | 7 `SKILL.md` в `.claude/skills/`, все под версионным контролем |
 
 Design-only и **не** production: спека рекламного экрана Stage 4B (см. раздел
-Rescue & Historical Work), Stage 3B Phase B, COGS.
+Rescue & Historical Work), Stage 3B Phase B.
+
+🔴 `evetis_ref` — **production**, но **не подключён к потребителям**. Product COGS не
+читают ни `MART_SKU_DAILY`, ни `V_DASH_*`, ни Metabase. Числа на существующих
+дашбордах Stage 3.1A не изменил.
 
 ---
 
@@ -285,10 +302,112 @@ Cutover не начат и не начинается без отдельного
 
 ---
 
-# COGS & Unit Economics — NOT READY YET
+# COGS & Unit Economics — REFERENCE LAYER LIVE, CONSUMERS NOT CONNECTED
 
-Себестоимость **отсутствует в BigQuery**: объектов с `COGS` в `wb_mart`, `wb_raw` и
-`evetis_communications` — ноль, `REF_COGS` не создан. Проверено 2026-08-27.
+## Stage 3.1A — Product COGS Reference Layer
+
+**Status: `CLOSED / ACCEPTED / PUSHED`**
+**Commit:** `f8ea31e575db45e0bf4ecf5b9afda85724ff981f`
+Контракт слоя: `docs/STAGE3_1A_COGS_REFERENCE_LAYER_2026-08-27.md`.
+Сборка: `sql/ref/pr_ref_cogs_history.sql`. Acceptance: `sql/ref/pr_ref_cogs_validation.sql`.
+Откат: `tools/stage3_1a_cogs_rollback.sh [--dry-run]`.
+
+Создан датасет `evetis_ref` (location EU) — marketplace-independent справочный слой
+Product COGS. Четыре production-объекта:
+
+| объект | тип | содержимое |
+| --- | --- | --- |
+| `REF_SKU_COGS_HISTORY` | TABLE | 17 материализованных исторических интервалов Product COGS; только самостоятельные стоимостные факты; ключ `internal_sku`; идентификаторов канала в схеме нет |
+| `REF_BUNDLE_COMPONENTS` | TABLE | 33 строки состава, 14 определений наборов; стоимостных полей не содержит |
+| `V_BUNDLE_COGS_DERIVED` | VIEW | 21 производный интервал; стоимость ФФ-собранного набора вычисляется из действующих Product COGS компонентов; fail-closed, если компонент не разрешается |
+| `V_PRODUCT_COGS_EFFECTIVE` | VIEW | unified resolver, 38 интервалов = 17 материализованных + 21 производный |
+
+**Acceptance-факты:** `REF_SKU_COGS_HISTORY` 17 строк · `REF_BUNDLE_COMPONENTS`
+33 строки / 14 наборов · `V_BUNDLE_COGS_DERIVED` 21 интервал ·
+`V_PRODUCT_COGS_EFFECTIVE` 38 интервалов · проверено 40 110 исторических
+finance-событий WB (2024-09-07 … 2026-08-26): `matches = 1` для 40 110 из 40 110,
+`matches = 0` → 0, `matches > 1` → 0.
+
+**Регрессия production отсутствует:** `wb_raw` 56 объектов, `wb_mart` 35 объектов,
+`MART_SKU_DAILY` 7 477 строк, `REF_COST_MAP` 19 правил — все baseline без изменений.
+
+🔴 **Stage 3.1A создал справочный слой, но НЕ подключил Product COGS к существующим
+потребителям.** `MART_SKU_DAILY`, `V_DASH_*` и Metabase его не читают.
+
+### Product COGS — замороженная семантика
+
+Product COGS включает стоимость товара **до поступления на фулфилмент**: закупочную
+стоимость, относимые расходы в Китае, таможенные расходы, доставку до фулфилмента.
+
+Product COGS **не включает**: хранение ФФ · сборку на ФФ · доставку ФФ → склад
+маркетплейса · расходы кабинета маркетплейса · рекламу · операционные расходы · налог.
+
+🔴 Не смешивать Product COGS и расходы фулфилмента. Это разные слои и разные поля.
+
+### Наборы
+
+Для ФФ-собранных наборов:
+
+```
+bundle_product_cogs(date) = Σ component_qty × component_product_cogs(date)
+```
+
+Если хотя бы один компонент не разрешается однозначно — Product COGS набора
+**unknown / NULL**. Частичная сумма запрещена. Unknown ≠ zero.
+
+### Импортный набор руки+тело
+
+`EVT-SET-HAND-BODY` до 2025-05-01 существовал как импортированный готовый набор:
+Product COGS = **429 ₽**, самостоятельная неделимая товарная единица. С 2025-05-01
+применяется derived-модель ФФ-сборки. Режимы **не пересекаются** (исполняемый ASSERT).
+
+### Fail-closed ограничения, действующие сейчас
+
+`EVT-HC-BODY-300` **не имеет действующего inventory-интервала после 2026-04-26.**
+Следовательно `EVT-SET-HAND-BODY` также не имеет производного интервала после этой даты.
+
+Это **by design**, а не пробел: SKU выбыл, физического остатка нет. Автоматически эти
+интервалы **не открывать**. Будущая новая физическая партия крема тела обязана получить
+новый самостоятельный COGS-интервал с собственной себестоимостью и датой.
+
+🔴 Owner-current справочные значения **219 ₽** и **459 ₽** не означают наличия
+действующего physical inventory interval на текущую дату.
+
+### Management boundaries
+
+Шесть management / reconstructed transitions:
+
+| id | дата | SKU |
+| --- | --- | --- |
+| T1 | 2025-01-26 | крем рук |
+| T2 | 2025-03-10 | крем рук |
+| T3 | 2025-11-01 | крем тела |
+| T4 | 2025-05-01 | набор руки+тело, смена режима |
+| T5 | 2026-03-01 | сыворотка УВЛ |
+| T6 | 2026-08-01 | сыворотка АКНЕ |
+
+🔴 **T6 / сыворотка АКНЕ `2026-08-01` — `MANAGEMENT_RECONSTRUCTED_BOUNDARY`, а НЕ
+доказанная физическая дата полного перехода партии.** Mixed-batch limitation остаётся
+известным ограничением effective-date-модели v1. Не переинтерпретировать эту дату как
+physical batch transition.
+
+### Marketplace independence
+
+`evetis_ref` — marketplace-independent. Product identity = **`internal_sku`**.
+WB `nm_id` **не является частью схемы COGS history**. WB-специфичное разрешение
+выполняется снаружи справочного слоя (в acceptance-запросах и будущих витринах).
+При подключении новых каналов должен использоваться отдельный channel mapping layer,
+а не изменение COGS-контракта.
+
+---
+
+## Исторический контекст до Stage 3.1A
+
+Ниже — состояние, зафиксированное до коммита `f8ea31e`. Сохранено как история: оно
+объясняет, почему слой строился именно так. **Актуальным состоянием не является.**
+
+На тот момент себестоимость **отсутствовала в BigQuery**: объектов с `COGS` в `wb_mart`,
+`wb_raw` и `evetis_communications` — ноль, `REF_COGS` не создан.
 
 Источник себестоимости живёт в слое Google Sheets и обслуживается Apps Script:
 поля `current_cogs` («Текущая себестоимость, ₽ (из COST_HISTORY)») и `cogs_valid_from`
@@ -296,11 +415,14 @@ Cutover не начат и не начинается без отдельного
 `apps-script/AuditAndNotes`, `apps-script/Protections`; работа с наборами —
 в `apps-script/CostManagement` (`fillMissingBundleCogs()`).
 
-Репозиторий фиксирует состояние прямо: «`REF_COGS` в BigQuery ещё нет: `COST_HISTORY`
+Репозиторий фиксировал состояние прямо: «`REF_COGS` в BigQuery ещё нет: `COST_HISTORY`
 живёт в листе и требует REF-Sync PR2» (`docs/DASHBOARD_DATA_LAYER_DESIGN_2026-08-15.md` §2.3).
-Stage 1.3 в репозитории отмечен как незакрытый.
+Stage 1.3 был отмечен как незакрытый.
 
-## KNOWN
+🔴 Этот абзац исторический. Слой Google Sheets остаётся legacy-источником и в новом
+контракте source of truth не является: Product COGS берётся из `evetis_ref`.
+
+## KNOWN (на момент до Stage 3.1A)
 
 Разделяю три разных утверждения — их легко перепутать, и цена ошибки здесь высокая.
 
@@ -332,24 +454,36 @@ Stage 1.3 в репозитории отмечен как незакрытый.
 источника** — срез выше устарел и заново не снимался. Переносить его в статус текущего
 состояния нельзя.
 
-Прочее, что известно:
+Прочее, что было известно **на тот момент** (всё три пункта устранены или изменены
+в Stage 3.0.3B / 3.1A — см. блок Stage 3.1A выше):
 
-* исторический контракт себестоимости (какая цена действовала на дату продажи) неполон;
-* COGS не довезён в BigQuery production;
-* честно считать историческую прибыль сейчас нельзя.
+* ~~исторический контракт себестоимости неполон~~ — восстановлен, 17 интервалов;
+* ~~COGS не довезён в BigQuery production~~ — `evetis_ref` создан и запушен (`f8ea31e`);
+* историческую прибыль по-прежнему считать нельзя, но причина другая: Product COGS
+  есть и заморожен, однако он не подключён к витринам, а слоя расходов фулфилмента
+  и налоговой модели не существует.
 
 ## UNRESOLVED
 
-* историчность себестоимости (какая цена действовала на дату продажи);
-* правило расчёта себестоимости наборов;
-* источник истины для текущей и исторической себестоимости;
-* отсутствующие и неоднозначные SKU;
-* правила возврата себестоимости при возврате товара;
-* отнесение расходов уровня счёта;
-* налоговая модель.
+Закрыто в Stage 3.0.3 / 3.0.3B / 3.1A:
 
-🔴 Ранее полученные ориентировочные значения себестоимости остаются **provisional**.
-Переводить их в статус факта нельзя.
+* ~~историчность себестоимости~~ — 17 интервалов с датами и lineage;
+* ~~правило расчёта себестоимости наборов~~ — derived из компонентов, сборка отдельно;
+* ~~источник истины для текущей и исторической себестоимости~~ — `evetis_ref`.
+
+Остаётся открытым:
+
+* правила возврата себестоимости при возврате товара;
+* отнесение расходов уровня счёта (решение: по SKU **не** распределять);
+* слой расходов фулфилмента (`ff_cost_rub`) — не спроектирован;
+* налоговая модель;
+* разложение landed-cost (закупка в CNY, курс, логистика, таможня) — первичных
+  документов по контрактам RU01–RU04 в системе нет;
+* подключение Product COGS к витринам и дашбордам.
+
+🔴 Значения Product COGS больше не provisional: они подтверждены владельцем и
+заморожены контрактом. Provisional остаются **даты** реконструированных границ —
+они помечены `is_reconstructed = TRUE` вместе с окнами.
 
 ---
 
@@ -511,9 +645,11 @@ Stage 1.5/1.8/1.9/1.10B/Stage 2. Объединение способно пов�
 
 | # | пробел | STATUS | почему не сделано | блокер | следующий безопасный шаг |
 | --- | --- | --- | --- | --- | --- |
-| 1 | Историческая себестоимость (COGS) | не начато | контракт историчности неполон, данные в листе | REF-Sync PR2 + правило `cogs_valid_from` | аудит источника, без внедрения |
-| 2 | Правило себестоимости наборов | не решено | 14 из 25 SKU — наборы, состав требует раскрытия | решение владельца о методе | зафиксировать варианты и цену ошибки |
-| 3 | Реальная прибыль и маржа | заблокировано | нет COGS и налоговой модели | пробелы 1, 2 | не считать до закрытия 1 и 2 |
+| 1 | Историческая себестоимость (COGS) | **закрыто** (Stage 3.0.3B + 3.1A, `f8ea31e`) | контракт восстановлен форензикой и вынесен в `evetis_ref` | — | подключение к витринам — отдельный gate |
+| 2 | Правило себестоимости наборов | **закрыто** | derived из Product COGS компонентов на дату; сборка — отдельный слой | — | действий не требуется |
+| 3 | Реальная прибыль и маржа | заблокировано | Product COGS есть, но не подключён; нет слоя расходов ФФ и налоговой модели | подключение COGS к витринам, `ff_cost_rub`, налоговая модель | не считать до их закрытия |
+| 3a | Подключение Product COGS к MART / V_DASH / Metabase | не начато | Stage 3.1A сознательно остановлен на справочном слое | отдельный design/read-only gate + ACK владельца | спроектировать потребление, не трогая контракт |
+| 3b | Слой расходов фулфилмента (`ff_cost_rub`) | не начато | ledger ФФ отсутствует, лист `FULFILLMENT` пуст | выгрузка операций ФФ | оценить объём отдельно |
 | 4 | Stage 3B Phase B (billed ads по SKU) | подготовлено, не раскатано | сознательный fail-closed гейт | cutover `V_ADV_COSTS` → snapshot | отдельный этап с ACK |
 | 5 | Cohort buyout conversion | отложено | `FACT_SALES` не несёт `order_date` | изменение FACT-слоя | проектировать отдельно |
 | 6 | Metabase → PostgreSQL | не начато | H2 работает, миграция меняет запуск | согласование простоя | оценить объём отдельно |
@@ -542,6 +678,12 @@ Stage 1.5/1.8/1.9/1.10B/Stage 2. Объединение способно пов�
 * period result pre-COGS ≠ прибыль;
 * COGS обязана быть исторически корректной;
 * себестоимость наборов нельзя выдумать;
+* Product COGS ≠ расходы фулфилмента — это разные слои, неявно они не складываются;
+* Product COGS набора = сумма компонентов на дату; частичная сумма запрещена,
+  нерешаемый компонент даёт NULL, а не ноль;
+* management-граница ≠ доказанная физическая дата смены партии;
+* ключ COGS-контракта — `internal_sku`; `nm_id` маркетплейса ключом не является;
+* legacy-значения себестоимости — audit lineage, а не источник расчёта;
 * Stage 3B не обходит свой гейт;
 * никаких молчаливых подстановок значений по умолчанию;
 * deferred-код не раскатывается из `main` без исполняемого гейта;
@@ -550,12 +692,33 @@ Stage 1.5/1.8/1.9/1.10B/Stage 2. Объединение способно пов�
 
 ---
 
-# Immediate Next Decision
+# Current Stage Status & Next Step
 
-Stage 3 **не начат**.
+## CLOSED
 
-Следующий предлагаемый этап: **Stage 3 — Architecture & Unit Economics Readiness Audit**.
+* **Stage 3.0.3 / 3.0.3B** — форензика исторической себестоимости и нормализованный
+  контракт Product COGS;
+* **Stage 3.1A** — Product COGS Reference Layer, коммит `f8ea31e`, запушен.
 
-Его задача — не внедрять COGS и не перестраивать систему, а определить безопасную
-архитектуру дальнейшего движения: что именно считать unit economics, какие источники
-для этого нужны, какие зависимости закрыть и в каком порядке.
+## CURRENT PRODUCTION STATE
+
+`evetis_ref` является **production reference source** для Product COGS.
+
+Но Product COGS пока **НЕ подключён** к:
+
+* `MART_SKU_DAILY`;
+* `V_DASH_*`;
+* дашбордам Metabase.
+
+Поэтому существующие числа на дашбордах Stage 3.1A **не изменил**.
+
+## NEXT
+
+Следующий этап должен начинаться **отдельным design / read-only gate**. Его предмет —
+подключение справочного слоя Product COGS к слою потребления (mart и дашборды):
+как именно витрина берёт цену на дату, как ведёт себя fail-closed при отсутствии
+интервала, какие метрики после COGS появляются и как они называются.
+
+🔴 Этот чекпоинт **не является** началом Stage 3.1B и **не является** началом Stage 3B.
+Stage 3B остаётся отдельным gated-направлением со своим исполняемым гейтом
+(`sql/mart/pr_mart1_facts.sql:78`) и автоматически не запускается.
