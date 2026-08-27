@@ -112,7 +112,11 @@ FROM exp LEFT JOIN act ON act.tr = exp.tr GROUP BY exp.tr, exp.b ORDER BY exp.tr
 -- ── AC-10 / AC-11. Baseline соседних слоёв не тронут ──────────────────────
 SELECT 'wb_raw' AS ds, COUNT(*) AS objects, 56 AS baseline, IF(COUNT(*)=56,'PASS','FAIL') AS verdict
 FROM `project-fa311fc0-4d87-4781-986.wb_raw.INFORMATION_SCHEMA.TABLES`
-UNION ALL SELECT 'wb_mart', COUNT(*), 35, IF(COUNT(*)=35,'PASS','FAIL')
+-- Structural baseline maintenance (Stage 3.1B PR1, 2026-08-27): wb_mart 35 -> 37.
+--   +wb_mart.V_FACT_FINANCE_COGS, +wb_mart.V_MART_SKU_DAILY_COGS (sql/mart/pr_cogs_consumer_v1.sql).
+--   Это обслуживание СТРУКТУРНОГО baseline, а НЕ переоткрытие Stage 3.1A: экономические
+--   инварианты (17 / 33 / 21 / 38, AC-6..AC-9) не изменены ни одним символом.
+UNION ALL SELECT 'wb_mart', COUNT(*), 37, IF(COUNT(*)=37,'PASS','FAIL')
 FROM `project-fa311fc0-4d87-4781-986.wb_mart.INFORMATION_SCHEMA.TABLES`
 UNION ALL SELECT 'evetis_ref', COUNT(*), 4, IF(COUNT(*)=4,'PASS','FAIL')
 FROM `project-fa311fc0-4d87-4781-986.evetis_ref.INFORMATION_SCHEMA.TABLES`
