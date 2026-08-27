@@ -1,0 +1,150 @@
+{
+ "archived": false,
+ "archived_directly": false,
+ "cache_invalidated_at": "2026-08-26T16:21:51.329193Z",
+ "cache_ttl": null,
+ "card_schema": 23,
+ "collection": {
+  "archive_operation_id": null,
+  "archived": false,
+  "archived_directly": null,
+  "authority_level": null,
+  "created_at": "2026-08-26T15:19:56.740614Z",
+  "description": "Executive MVP: что происходит с бизнесом и зарабатываем ли мы деньги.",
+  "entity_id": "EZUYQWsC5fdY9QqGY-xKC",
+  "id": 6,
+  "is_remote_synced": false,
+  "is_sample": false,
+  "location": "/5/",
+  "name": "01 Executive",
+  "namespace": null,
+  "personal_owner_id": null,
+  "slug": "01_executive",
+  "type": null
+ },
+ "collection_id": 6,
+ "collection_position": null,
+ "collection_preview": true,
+ "created_at": "2026-08-26T15:23:43.520045Z",
+ "creator_id": 2,
+ "dashboard": null,
+ "dashboard_id": null,
+ "database_id": 2,
+ "dataset_query": {
+  "database": 2,
+  "lib/type": "mbql/query",
+  "stages": [
+   {
+    "lib/type": "mbql.stage/native",
+    "native": "SELECT\n  day,\n  sales_revenue_seller_base_rub AS revenue_rub,\n  contribution_pre_cogs_rub     AS contribution_rub\nFROM `wb_mart.V_DASH_KPI_DAILY`\nWHERE {{day}}\nORDER BY day",
+    "template-tags": [
+     {
+      "dimension": [
+       "field",
+       {
+        "lib/uuid": "17e5d769-9892-4411-a7fa-22c996be7068"
+       },
+       909
+      ],
+      "display-name": "Период",
+      "id": "ad5ad8f8-cd91-4f26-b79a-8a2d2b416ac9",
+      "name": "day",
+      "type": "dimension",
+      "widget-type": "date/all-options"
+     }
+    ]
+   }
+  ]
+ },
+ "description": "Обе серии в ₽ и одного порядка величины, поэтому одна ось корректна: разрыв между столбцом и линией — это и есть затраты. Сутки без покрытия дают разрыв линии (NULL), а не ноль.",
+ "dimension_mappings": null,
+ "dimensions": null,
+ "display": "combo",
+ "document_id": null,
+ "embedding_params": null,
+ "embedding_type": null,
+ "enable_embedding": false,
+ "entity_id": "FLqIu5Fk4VDeVAmOyDVJd",
+ "id": 50,
+ "is_remote_synced": false,
+ "last_used_at": "2026-08-26T21:05:52.53599Z",
+ "legacy_query": null,
+ "metabase_version": "v0.63.15.1 (ab5ffba)",
+ "name": "Выручка и вклад по дням",
+ "param_fields": {
+  "ad5ad8f8-cd91-4f26-b79a-8a2d2b416ac9": [
+   {
+    "base_type": "type/Date",
+    "dimensions": [],
+    "display_name": "Day",
+    "fk_target_field_id": null,
+    "has_field_values": "none",
+    "id": 909,
+    "name": "day",
+    "name_field": null,
+    "semantic_type": null,
+    "table_id": 38,
+    "target": null
+   }
+  ]
+ },
+ "parameter_mappings": [],
+ "parameter_usage_count": 0,
+ "parameters": [
+  {
+   "id": "ad5ad8f8-cd91-4f26-b79a-8a2d2b416ac9",
+   "name": "Период",
+   "slug": "day",
+   "target": [
+    "dimension",
+    [
+     "template-tag",
+     "day"
+    ]
+   ],
+   "type": "date/all-options"
+  }
+ ],
+ "query_type": "native",
+ "source_card_id": null,
+ "table_id": null,
+ "type": "question",
+ "visualization_settings": {
+  "column_settings": {
+   "[\"name\",\"contribution_rub\"]": {
+    "currency": "RUB",
+    "currency_in_header": false,
+    "currency_style": "symbol",
+    "decimals": 0,
+    "number_style": "currency"
+   },
+   "[\"name\",\"revenue_rub\"]": {
+    "currency": "RUB",
+    "currency_in_header": false,
+    "currency_style": "symbol",
+    "decimals": 0,
+    "number_style": "currency"
+   }
+  },
+  "graph.dimensions": [
+   "day"
+  ],
+  "graph.metrics": [
+   "revenue_rub",
+   "contribution_rub"
+  ],
+  "graph.show_values": false,
+  "graph.x_axis.title_text": "День",
+  "graph.y_axis.title_text": "₽",
+  "series_settings": {
+   "contribution_rub": {
+    "display": "line",
+    "title": "Доход до себестоимости"
+   },
+   "revenue_rub": {
+    "display": "bar",
+    "title": "Выручка"
+   }
+  }
+ }
+}

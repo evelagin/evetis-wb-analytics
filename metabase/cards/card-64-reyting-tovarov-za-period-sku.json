@@ -1,0 +1,194 @@
+{
+ "archived": false,
+ "archived_directly": false,
+ "cache_invalidated_at": "2026-08-27T05:54:56.894368Z",
+ "cache_ttl": null,
+ "card_schema": 23,
+ "collection": {
+  "archive_operation_id": null,
+  "archived": false,
+  "archived_directly": null,
+  "authority_level": null,
+  "created_at": "2026-08-26T21:36:24.222972Z",
+  "description": "Stage 2 — экран SKU Performance. Источник: wb_mart.V_DASH_SKU_DAILY (грейн сутки × nm_id). Все ratio — ratio-of-sums. Показатели «до себестоимости»: REF_COGS отсутствует.",
+  "entity_id": "fAATuhpeqreJF4Tq0aTmF",
+  "id": 7,
+  "is_remote_synced": false,
+  "is_sample": false,
+  "location": "/5/",
+  "name": "02 SKU Performance",
+  "namespace": null,
+  "personal_owner_id": null,
+  "slug": "02_sku_performance",
+  "type": null
+ },
+ "collection_id": 7,
+ "collection_position": null,
+ "collection_preview": true,
+ "created_at": "2026-08-26T21:36:51.232602Z",
+ "creator_id": 2,
+ "dashboard": null,
+ "dashboard_id": null,
+ "database_id": 2,
+ "dataset_query": {
+  "database": 2,
+  "lib/type": "mbql/query",
+  "stages": [
+   {
+    "lib/type": "mbql.stage/native",
+    "native": "WITH per AS (\n  SELECT\n    nm_id,\n    product_name_short                    AS product,\n    SUM(orders_gross_qty)                 AS orders_gross_qty,\n    SUM(canceled_qty)                     AS canceled_qty,\n    SUM(buyouts_qty)                      AS buyouts_qty,\n    SUM(sales_revenue_seller_base_rub)    AS revenue_rub,\n    SUM(ad_spend_attributed_rub)          AS ad_spend_rub,\n    SUM(contribution_pre_cogs_rub)        AS contribution_rub\n  FROM `wb_mart.V_DASH_SKU_DAILY`\n  WHERE {{day}}\n    [[AND {{sku}}]]\n  GROUP BY nm_id, product\n)\nSELECT\n  nm_id,\n  product,\n  orders_gross_qty,\n  canceled_qty,\n  SAFE_DIVIDE(canceled_qty, NULLIF(orders_gross_qty, 0))    AS canceled_share,\n  buyouts_qty,\n  revenue_rub,\n  ad_spend_rub,\n  SAFE_DIVIDE(ad_spend_rub, NULLIF(revenue_rub, 0))         AS drr,\n  contribution_rub,\n  SAFE_DIVIDE(contribution_rub, NULLIF(revenue_rub, 0))     AS contribution_to_revenue\nFROM per\nWHERE\n  -- Скрываем ТОЛЬКО доказанно неактивные в периоде SKU (все четыре величины известны и равны нулю).\n  -- Неизвестное (NULL, нет покрытия) НЕ скрывается: отсутствие данных не равно отсутствию активности.\n     COALESCE(orders_gross_qty, 0) <> 0\n  OR COALESCE(buyouts_qty, 0)      <> 0\n  OR COALESCE(revenue_rub, 0)      <> 0\n  OR COALESCE(ad_spend_rub, 0)     <> 0\n  OR orders_gross_qty IS NULL\n  OR buyouts_qty      IS NULL\n  OR revenue_rub      IS NULL\n  OR ad_spend_rub     IS NULL\nORDER BY contribution_rub DESC\n",
+    "template-tags": [
+     {
+      "dimension": [
+       "field",
+       {
+        "lib/uuid": "3b952888-2364-4a69-a82d-ef1ae2ce87d5"
+       },
+       983
+      ],
+      "display-name": "Период",
+      "id": "5e9126be-8354-4095-a8c8-451a4924e1cc",
+      "name": "day",
+      "type": "dimension",
+      "widget-type": "date/all-options"
+     },
+     {
+      "dimension": [
+       "field",
+       {
+        "lib/uuid": "e2e75486-6dc9-49b0-8644-1acc2b53039d"
+       },
+       986
+      ],
+      "display-name": "Товар",
+      "id": "501cdad6-71bf-46f5-8f61-4d2274f93ff9",
+      "name": "sku",
+      "type": "dimension",
+      "widget-type": "string/="
+     }
+    ]
+   }
+  ]
+ },
+ "description": "Сортировка: SUM(contribution_pre_cogs_rub) DESC. БАЗЫ ДАТ РАЗНЫЕ И НЕ СМЕШИВАЮТСЯ: «Заказы (брутто)» и «Отменено» — дата заказа, «Выкупы» — дата выкупа, «Реклама» — дата рекламной активности, «Выручка» — дата выкупа. Отношение выкупов к заказам не вычисляется. Все ratio — ratio-of-sums за период: доля отмен = SUM(canceled)/NULLIF(SUM(orders_gross),0), ДРР = SUM(ads)/NULLIF(SUM(revenue),0), доходность = SUM(contribution)/NULLIF(SUM(revenue),0). AVG посуточных отношений не применяется. Строки SKU, у которых за период одновременно известны и равны нулю заказы, выкупы, выручка и реклама, из рейтинга скрыты — из модели SKU при этом не удаляются. Неизвестное (NULL, нет покрытия) не скрывается никогда. Себестоимость товара не вычитается: показатель не является прибылью.",
+ "dimension_mappings": null,
+ "dimensions": null,
+ "display": "table",
+ "document_id": null,
+ "embedding_params": null,
+ "embedding_type": null,
+ "enable_embedding": false,
+ "entity_id": "s3CXdfl4aUcaLmxYzZXtA",
+ "id": 64,
+ "is_remote_synced": false,
+ "last_used_at": "2026-08-27T06:56:47.210947Z",
+ "legacy_query": null,
+ "metabase_version": "v0.63.15.1 (ab5ffba)",
+ "name": "Рейтинг товаров за период (SKU)",
+ "param_fields": {
+  "501cdad6-71bf-46f5-8f61-4d2274f93ff9": [
+   {
+    "base_type": "type/Text",
+    "dimensions": [],
+    "display_name": "Product Name Short",
+    "fk_target_field_id": null,
+    "has_field_values": "list",
+    "id": 986,
+    "name": "product_name_short",
+    "name_field": null,
+    "semantic_type": "type/Category",
+    "table_id": 39,
+    "target": null
+   }
+  ],
+  "5e9126be-8354-4095-a8c8-451a4924e1cc": [
+   {
+    "base_type": "type/Date",
+    "dimensions": [],
+    "display_name": "Day",
+    "fk_target_field_id": null,
+    "has_field_values": "none",
+    "id": 983,
+    "name": "day",
+    "name_field": null,
+    "semantic_type": null,
+    "table_id": 39,
+    "target": null
+   }
+  ]
+ },
+ "parameter_mappings": [],
+ "parameter_usage_count": 0,
+ "parameters": [],
+ "query_type": "native",
+ "source_card_id": null,
+ "table_id": null,
+ "type": "question",
+ "visualization_settings": {
+  "column_settings": {
+   "[\"name\",\"ad_spend_rub\"]": {
+    "column_title": "Реклама, ₽",
+    "currency": "RUB",
+    "currency_in_header": false,
+    "currency_style": "symbol",
+    "decimals": 0,
+    "number_style": "currency"
+   },
+   "[\"name\",\"buyouts_qty\"]": {
+    "column_title": "Выкупы (по дате выкупа), шт",
+    "decimals": 0,
+    "number_style": "decimal"
+   },
+   "[\"name\",\"canceled_qty\"]": {
+    "column_title": "Отменено, шт",
+    "decimals": 0,
+    "number_style": "decimal"
+   },
+   "[\"name\",\"canceled_share\"]": {
+    "column_title": "Доля отмен, %",
+    "decimals": 1,
+    "number_style": "percent"
+   },
+   "[\"name\",\"contribution_rub\"]": {
+    "column_title": "Доход до себестоимости, ₽",
+    "currency": "RUB",
+    "currency_in_header": false,
+    "currency_style": "symbol",
+    "decimals": 0,
+    "number_style": "currency"
+   },
+   "[\"name\",\"contribution_to_revenue\"]": {
+    "column_title": "Доходность до себестоимости, %",
+    "decimals": 1,
+    "number_style": "percent"
+   },
+   "[\"name\",\"drr\"]": {
+    "column_title": "ДРР, %",
+    "decimals": 1,
+    "number_style": "percent"
+   },
+   "[\"name\",\"nm_id\"]": {
+    "column_title": "Артикул WB",
+    "decimals": 0,
+    "number_style": "decimal"
+   },
+   "[\"name\",\"orders_gross_qty\"]": {
+    "column_title": "Заказы (брутто), шт",
+    "decimals": 0,
+    "number_style": "decimal"
+   },
+   "[\"name\",\"product\"]": {
+    "column_title": "Товар"
+   },
+   "[\"name\",\"revenue_rub\"]": {
+    "column_title": "Выручка, ₽",
+    "currency": "RUB",
+    "currency_in_header": false,
+    "currency_style": "symbol",
+    "decimals": 0,
+    "number_style": "currency"
+   }
+  },
+  "table.pivot": false
+ }
+}

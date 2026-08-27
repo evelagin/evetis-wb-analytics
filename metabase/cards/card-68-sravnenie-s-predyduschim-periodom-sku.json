@@ -1,0 +1,154 @@
+{
+ "archived": false,
+ "archived_directly": false,
+ "cache_invalidated_at": "2026-08-27T05:55:34.701276Z",
+ "cache_ttl": null,
+ "card_schema": 23,
+ "collection": {
+  "archive_operation_id": null,
+  "archived": false,
+  "archived_directly": null,
+  "authority_level": null,
+  "created_at": "2026-08-26T21:36:24.222972Z",
+  "description": "Stage 2 — экран SKU Performance. Источник: wb_mart.V_DASH_SKU_DAILY (грейн сутки × nm_id). Все ratio — ratio-of-sums. Показатели «до себестоимости»: REF_COGS отсутствует.",
+  "entity_id": "fAATuhpeqreJF4Tq0aTmF",
+  "id": 7,
+  "is_remote_synced": false,
+  "is_sample": false,
+  "location": "/5/",
+  "name": "02 SKU Performance",
+  "namespace": null,
+  "personal_owner_id": null,
+  "slug": "02_sku_performance",
+  "type": null
+ },
+ "collection_id": 7,
+ "collection_position": null,
+ "collection_preview": true,
+ "created_at": "2026-08-26T21:36:59.665581Z",
+ "creator_id": 2,
+ "dashboard": null,
+ "dashboard_id": null,
+ "database_id": 2,
+ "dataset_query": {
+  "database": 2,
+  "lib/type": "mbql/query",
+  "stages": [
+   {
+    "lib/type": "mbql.stage/native",
+    "native": "WITH b AS (\n  SELECT MIN(day) AS d1, MAX(day) AS d2, COUNT(*) AS len\n  FROM `wb_mart.V_DASH_KPI_DAILY`\n  WHERE {{day}}\n),\n-- Покрытие по слоям, отдельно для каждого окна. Считается по календарю KPI,\n-- потому что он плотный: 2024-09-05 … сегодня без разрывов.\ncov AS (\n  SELECT\n    IF(day >= (SELECT d1 FROM b), 'cur', 'prv') AS w,\n    COUNTIF(orders_covered)                        AS d_orders,\n    COUNTIF(sales_covered)                         AS d_sales,\n    COUNTIF(ads_covered)                           AS d_ads,\n    COUNTIF(ads_covered AND sales_covered)         AS d_adsrev,\n    COUNTIF(contribution_covered)                  AS d_contrib,\n    COUNT(*)                                       AS d_total\n  FROM `wb_mart.V_DASH_KPI_DAILY`, b\n  WHERE day BETWEEN DATE_SUB(b.d1, INTERVAL b.len DAY) AND b.d2\n  GROUP BY w\n),\ncv AS (\n  SELECT\n    MAX(IF(w='cur',d_orders, NULL)) AS c_d_orders,  MAX(IF(w='prv',d_orders, NULL)) AS p_d_orders,\n    MAX(IF(w='cur',d_sales,  NULL)) AS c_d_sales,   MAX(IF(w='prv',d_sales,  NULL)) AS p_d_sales,\n    MAX(IF(w='cur',d_ads,    NULL)) AS c_d_ads,     MAX(IF(w='prv',d_ads,    NULL)) AS p_d_ads,\n    MAX(IF(w='cur',d_adsrev, NULL)) AS c_d_adsrev,  MAX(IF(w='prv',d_adsrev, NULL)) AS p_d_adsrev,\n    MAX(IF(w='cur',d_contrib,NULL)) AS c_d_contrib, MAX(IF(w='prv',d_contrib,NULL)) AS p_d_contrib\n  FROM cov\n),\nwin AS (\n  SELECT\n    IF(day >= (SELECT d1 FROM b), 'cur', 'prv') AS w,\n    orders_gross_qty, canceled_qty, buyouts_qty,\n    sales_revenue_seller_base_rub, ad_spend_attributed_rub, contribution_pre_cogs_rub\n  FROM `wb_mart.V_DASH_SKU_DAILY`, b\n  WHERE day BETWEEN DATE_SUB(b.d1, INTERVAL b.len DAY) AND b.d2\n    [[AND {{sku}}]]\n),\nagg AS (\n  SELECT w,\n    SUM(orders_gross_qty) AS ord, SUM(canceled_qty) AS can, SUM(buyouts_qty) AS buy,\n    SUM(sales_revenue_seller_base_rub) AS rev, SUM(ad_spend_attributed_rub) AS ads,\n    SUM(contribution_pre_cogs_rub) AS con\n  FROM win GROUP BY w\n),\np AS (\n  SELECT\n    MAX(IF(w='cur',ord,NULL)) AS c_ord, MAX(IF(w='prv',ord,NULL)) AS p_ord,\n    MAX(IF(w='cur',can,NULL)) AS c_can, MAX(IF(w='prv',can,NULL)) AS p_can,\n    MAX(IF(w='cur',buy,NULL)) AS c_buy, MAX(IF(w='prv',buy,NULL)) AS p_buy,\n    MAX(IF(w='cur',rev,NULL)) AS c_rev, MAX(IF(w='prv',rev,NULL)) AS p_rev,\n    MAX(IF(w='cur',ads,NULL)) AS c_ads, MAX(IF(w='prv',ads,NULL)) AS p_ads,\n    MAX(IF(w='cur',con,NULL)) AS c_con, MAX(IF(w='prv',con,NULL)) AS p_con\n  FROM agg\n),\nm AS (\n  SELECT ord AS sort_ord, metric, basis, unit, cv_, pv_, cd, pd\n  FROM p, cv, UNNEST([\n    STRUCT(1 AS ord, 'Заказы, шт' AS metric, 'дата заказа' AS basis, 'n' AS unit,\n           CAST(c_ord AS NUMERIC) AS cv_, CAST(p_ord AS NUMERIC) AS pv_,\n           c_d_orders AS cd, p_d_orders AS pd),\n    (2,'Отменено, шт',              'дата заказа','n',   CAST(c_can AS NUMERIC), CAST(p_can AS NUMERIC), c_d_orders, p_d_orders),\n    (3,'Доля отмен',                'дата заказа','pct', SAFE_DIVIDE(c_can,c_ord), SAFE_DIVIDE(p_can,p_ord), c_d_orders, p_d_orders),\n    (4,'Выкупы, шт',                'дата выкупа','n',   CAST(c_buy AS NUMERIC), CAST(p_buy AS NUMERIC), c_d_sales, p_d_sales),\n    (5,'Выручка, ₽',                'дата выкупа','n',   c_rev, p_rev,                                   c_d_sales, p_d_sales),\n    (6,'Реклама, ₽',                'дата рекламы','n',  c_ads, p_ads,                                   c_d_ads, p_d_ads),\n    (7,'ДРР',                       'реклама / выручка','pct', SAFE_DIVIDE(c_ads,c_rev), SAFE_DIVIDE(p_ads,p_rev), c_d_adsrev, p_d_adsrev),\n    (8,'Доход до себестоимости, ₽', 'экономика','n',     c_con, p_con,                                   c_d_contrib, p_d_contrib),\n    (9,'Доходность до себестоимости','экономика','pct',  SAFE_DIVIDE(c_con,c_rev), SAFE_DIVIDE(p_con,p_rev), c_d_contrib, p_d_contrib)\n  ])\n)\nSELECT\n  metric,\n  basis,\n  IF(unit='pct', FORMAT('%.1f %%', cv_*100), REPLACE(FORMAT('%\\'.0f', cv_), ',', ' ')) AS cur_txt,\n  IF(unit='pct', FORMAT('%.1f %%', pv_*100), REPLACE(FORMAT('%\\'.0f', pv_), ',', ' ')) AS prv_txt,\n  IF(cd = pd,\n     IF(unit='pct', FORMAT('%+.1f п.п.', (cv_-pv_)*100), REPLACE(FORMAT('%+\\'.0f', cv_-pv_), ',', ' ')),\n     'н/с') AS delta_txt,\n  IF(cd = pd AND unit <> 'pct', SAFE_DIVIDE(cv_-pv_, ABS(NULLIF(pv_,0))), NULL) AS delta_pct,\n  CONCAT(CAST(cd AS STRING),' / ',CAST(pd AS STRING),' сут',\n         IF(cd = pd, '', ' — не сопоставимо')) AS comparability\nFROM m ORDER BY sort_ord\n",
+    "template-tags": [
+     {
+      "dimension": [
+       "field",
+       {
+        "lib/uuid": "b1015cff-2df0-498d-98e3-626b4a7601c6"
+       },
+       909
+      ],
+      "display-name": "Период",
+      "id": "7b3756a6-1375-47ea-b035-7118502cb94c",
+      "name": "day",
+      "type": "dimension",
+      "widget-type": "date/all-options"
+     },
+     {
+      "dimension": [
+       "field",
+       {
+        "lib/uuid": "5dd921c9-40e8-42a3-97a1-182a8d2469fb"
+       },
+       986
+      ],
+      "display-name": "Товар",
+      "id": "729e7236-4f19-4f33-9b74-7a797dd13241",
+      "name": "sku",
+      "type": "dimension",
+      "widget-type": "string/="
+     }
+    ]
+   }
+  ]
+ },
+ "description": "Текущий период против предыдущего той же длины, непосредственно перед ним. Границы восстанавливаются из плотного календаря V_DASH_KPI_DAILY. У КАЖДОЙ МЕТРИКИ СВОЯ БАЗА ДАТ И СВОЁ ПОКРЫТИЕ — колонка «Покрытие тек./пред.» показывает число фактически покрытых суток в каждом окне. Если покрытие окон не совпадает, Δ и Δ% НЕ выводятся: вместо них «н/с» (не сопоставимо). Скрытого приведения 29 суток к 30 не выполняется ни в каком виде. Для ratio (доля отмен, ДРР, доходность) изменение считается как разность ratio-of-sums двух периодов и выражается в процентных пунктах; относительное Δ% для них не выводится как бессмысленное. Отношение выкупов к заказам не вычисляется.",
+ "dimension_mappings": null,
+ "dimensions": null,
+ "display": "table",
+ "document_id": null,
+ "embedding_params": null,
+ "embedding_type": null,
+ "enable_embedding": false,
+ "entity_id": "plTGh9A2Kc6wB6kbX8dOi",
+ "id": 68,
+ "is_remote_synced": false,
+ "last_used_at": "2026-08-27T06:56:41.045801Z",
+ "legacy_query": null,
+ "metabase_version": "v0.63.15.1 (ab5ffba)",
+ "name": "Сравнение с предыдущим периодом (SKU)",
+ "param_fields": {
+  "729e7236-4f19-4f33-9b74-7a797dd13241": [
+   {
+    "base_type": "type/Text",
+    "dimensions": [],
+    "display_name": "Product Name Short",
+    "fk_target_field_id": null,
+    "has_field_values": "list",
+    "id": 986,
+    "name": "product_name_short",
+    "name_field": null,
+    "semantic_type": "type/Category",
+    "table_id": 39,
+    "target": null
+   }
+  ],
+  "7b3756a6-1375-47ea-b035-7118502cb94c": [
+   {
+    "base_type": "type/Date",
+    "dimensions": [],
+    "display_name": "Day",
+    "fk_target_field_id": null,
+    "has_field_values": "none",
+    "id": 909,
+    "name": "day",
+    "name_field": null,
+    "semantic_type": null,
+    "table_id": 38,
+    "target": null
+   }
+  ]
+ },
+ "parameter_mappings": [],
+ "parameter_usage_count": 0,
+ "parameters": [],
+ "query_type": "native",
+ "source_card_id": null,
+ "table_id": null,
+ "type": "question",
+ "visualization_settings": {
+  "column_settings": {
+   "[\"name\",\"basis\"]": {
+    "column_title": "База дат"
+   },
+   "[\"name\",\"comparability\"]": {
+    "column_title": "Покрытие тек./пред."
+   },
+   "[\"name\",\"cur_txt\"]": {
+    "column_title": "Текущий период"
+   },
+   "[\"name\",\"delta_pct\"]": {
+    "column_title": "Изменение, %",
+    "decimals": 1,
+    "number_style": "percent"
+   },
+   "[\"name\",\"delta_txt\"]": {
+    "column_title": "Изменение"
+   },
+   "[\"name\",\"metric\"]": {
+    "column_title": "Показатель"
+   },
+   "[\"name\",\"prv_txt\"]": {
+    "column_title": "Предыдущий период"
+   }
+  }
+ }
+}

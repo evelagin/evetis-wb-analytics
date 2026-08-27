@@ -1,0 +1,19 @@
+{
+ "archive_operation_id": null,
+ "archived": false,
+ "archived_directly": null,
+ "authority_level": null,
+ "created_at": "2026-08-26T15:19:56.740614Z",
+ "description": "Executive MVP: что происходит с бизнесом и зарабатываем ли мы деньги.",
+ "entity_id": "EZUYQWsC5fdY9QqGY-xKC",
+ "id": 6,
+ "is_remote_synced": false,
+ "is_sample": false,
+ "location": "/5/",
+ "name": "01 Executive",
+ "namespace": null,
+ "parent_id": 5,
+ "personal_owner_id": null,
+ "slug": "01_executive",
+ "type": null
+}

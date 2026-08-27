@@ -1,0 +1,124 @@
+{
+ "archived": false,
+ "archived_directly": false,
+ "cache_invalidated_at": "2026-08-26T15:47:35.644363Z",
+ "cache_ttl": null,
+ "card_schema": 23,
+ "collection": {
+  "archive_operation_id": null,
+  "archived": false,
+  "archived_directly": null,
+  "authority_level": null,
+  "created_at": "2026-08-26T15:19:56.740614Z",
+  "description": "Executive MVP: что происходит с бизнесом и зарабатываем ли мы деньги.",
+  "entity_id": "EZUYQWsC5fdY9QqGY-xKC",
+  "id": 6,
+  "is_remote_synced": false,
+  "is_sample": false,
+  "location": "/5/",
+  "name": "01 Executive",
+  "namespace": null,
+  "personal_owner_id": null,
+  "slug": "01_executive",
+  "type": null
+ },
+ "collection_id": 6,
+ "collection_position": null,
+ "collection_preview": true,
+ "created_at": "2026-08-26T15:23:34.665158Z",
+ "creator_id": 2,
+ "dashboard": null,
+ "dashboard_id": null,
+ "database_id": 2,
+ "dataset_query": {
+  "database": 2,
+  "lib/type": "mbql/query",
+  "stages": [
+   {
+    "lib/type": "mbql.stage/native",
+    "native": "SELECT SUM(ad_spend_attributed_rub) AS ad_spend_rub\nFROM `wb_mart.V_DASH_KPI_DAILY`\nWHERE {{day}}",
+    "template-tags": [
+     {
+      "dimension": [
+       "field",
+       {
+        "lib/uuid": "543af13b-3cac-4b28-973b-3f3bda5c705d"
+       },
+       909
+      ],
+      "display-name": "Период",
+      "id": "e8449115-dbe0-4c95-9ce8-b11d4d50518c",
+      "name": "day",
+      "type": "dimension",
+      "widget-type": "date/all-options"
+     }
+    ]
+   }
+  ]
+ },
+ "description": "V_DASH_KPI_DAILY.ad_spend_attributed_rub — АТРИБУЦИЯ рекламной статистики WB, а не факт биллингового списания (Stage 3B.1 в контракт PR2 не входит). База даты — дата рекламной активности.",
+ "dimension_mappings": null,
+ "dimensions": null,
+ "display": "scalar",
+ "document_id": null,
+ "embedding_params": null,
+ "embedding_type": null,
+ "enable_embedding": false,
+ "entity_id": "5x6I3WoNX5W4eZJbiU59N",
+ "id": 46,
+ "is_remote_synced": false,
+ "last_used_at": "2026-08-27T07:12:20.385486Z",
+ "legacy_query": null,
+ "metabase_version": "v0.63.15.1 (ab5ffba)",
+ "name": "Реклама, ₽",
+ "param_fields": {
+  "e8449115-dbe0-4c95-9ce8-b11d4d50518c": [
+   {
+    "base_type": "type/Date",
+    "dimensions": [],
+    "display_name": "Day",
+    "fk_target_field_id": null,
+    "has_field_values": "none",
+    "id": 909,
+    "name": "day",
+    "name_field": null,
+    "semantic_type": null,
+    "table_id": 38,
+    "target": null
+   }
+  ]
+ },
+ "parameter_mappings": [],
+ "parameter_usage_count": 0,
+ "parameters": [
+  {
+   "id": "e8449115-dbe0-4c95-9ce8-b11d4d50518c",
+   "name": "Период",
+   "slug": "day",
+   "target": [
+    "dimension",
+    [
+     "template-tag",
+     "day"
+    ]
+   ],
+   "type": "date/all-options"
+  }
+ ],
+ "query_type": "native",
+ "source_card_id": null,
+ "table_id": null,
+ "type": "question",
+ "visualization_settings": {
+  "column_settings": {
+   "[\"name\",\"ad_spend_rub\"]": {
+    "currency": "RUB",
+    "currency_in_header": false,
+    "currency_style": "symbol",
+    "decimals": 0,
+    "number_style": "currency"
+   }
+  },
+  "scalar.field": "ad_spend_rub"
+ }
+}

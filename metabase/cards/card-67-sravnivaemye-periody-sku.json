@@ -1,0 +1,108 @@
+{
+ "archived": false,
+ "archived_directly": false,
+ "cache_invalidated_at": "2026-08-27T05:55:37.452171Z",
+ "cache_ttl": null,
+ "card_schema": 23,
+ "collection": {
+  "archive_operation_id": null,
+  "archived": false,
+  "archived_directly": null,
+  "authority_level": null,
+  "created_at": "2026-08-26T21:36:24.222972Z",
+  "description": "Stage 2 — экран SKU Performance. Источник: wb_mart.V_DASH_SKU_DAILY (грейн сутки × nm_id). Все ratio — ratio-of-sums. Показатели «до себестоимости»: REF_COGS отсутствует.",
+  "entity_id": "fAATuhpeqreJF4Tq0aTmF",
+  "id": 7,
+  "is_remote_synced": false,
+  "is_sample": false,
+  "location": "/5/",
+  "name": "02 SKU Performance",
+  "namespace": null,
+  "personal_owner_id": null,
+  "slug": "02_sku_performance",
+  "type": null
+ },
+ "collection_id": 7,
+ "collection_position": null,
+ "collection_preview": true,
+ "created_at": "2026-08-26T21:36:57.563066Z",
+ "creator_id": 2,
+ "dashboard": null,
+ "dashboard_id": null,
+ "database_id": 2,
+ "dataset_query": {
+  "database": 2,
+  "lib/type": "mbql/query",
+  "stages": [
+   {
+    "lib/type": "mbql.stage/native",
+    "native": "WITH b AS (\n  SELECT MIN(day) AS d1, MAX(day) AS d2, COUNT(*) AS len\n  FROM `wb_mart.V_DASH_KPI_DAILY`\n  WHERE {{day}}\n)\nSELECT\n  CONCAT(FORMAT_DATE('%d.%m.%Y', d1), ' — ', FORMAT_DATE('%d.%m.%Y', d2),\n         '  (', CAST(len AS STRING), ' сут)')                                        AS cur_period,\n  CONCAT(FORMAT_DATE('%d.%m.%Y', DATE_SUB(d1, INTERVAL len DAY)), ' — ',\n         FORMAT_DATE('%d.%m.%Y', DATE_SUB(d1, INTERVAL 1 DAY)),\n         '  (', CAST(len AS STRING), ' сут)')                                        AS prv_period\nFROM b",
+    "template-tags": [
+     {
+      "dimension": [
+       "field",
+       {
+        "lib/uuid": "78f294ae-7b3b-46a5-a792-b253ca457929"
+       },
+       909
+      ],
+      "display-name": "Период",
+      "id": "5571e12f-2fbc-44ef-afb9-59e9826d33c9",
+      "name": "day",
+      "type": "dimension",
+      "widget-type": "date/all-options"
+     }
+    ]
+   }
+  ]
+ },
+ "description": "Календарные границы двух сравниваемых окон одинаковой длины. Фактическое покрытие каждого окна по метрикам показано в карточке «Сравнение с предыдущим периодом» колонкой «Покрытие тек./пред.», покрытие текущего периода по слоям — в карточке «Период и покрытие данных SKU». Карточка не подчиняется фильтру «Товар»: границы периода от выбора товара не зависят.",
+ "dimension_mappings": null,
+ "dimensions": null,
+ "display": "table",
+ "document_id": null,
+ "embedding_params": null,
+ "embedding_type": null,
+ "enable_embedding": false,
+ "entity_id": "4KJ3cUYg4PwW2mb3v9EgE",
+ "id": 67,
+ "is_remote_synced": false,
+ "last_used_at": "2026-08-27T06:56:41.045801Z",
+ "legacy_query": null,
+ "metabase_version": "v0.63.15.1 (ab5ffba)",
+ "name": "Сравниваемые периоды (SKU)",
+ "param_fields": {
+  "5571e12f-2fbc-44ef-afb9-59e9826d33c9": [
+   {
+    "base_type": "type/Date",
+    "dimensions": [],
+    "display_name": "Day",
+    "fk_target_field_id": null,
+    "has_field_values": "none",
+    "id": 909,
+    "name": "day",
+    "name_field": null,
+    "semantic_type": null,
+    "table_id": 38,
+    "target": null
+   }
+  ]
+ },
+ "parameter_mappings": [],
+ "parameter_usage_count": 0,
+ "parameters": [],
+ "query_type": "native",
+ "source_card_id": null,
+ "table_id": null,
+ "type": "question",
+ "visualization_settings": {
+  "column_settings": {
+   "[\"name\",\"cur_period\"]": {
+    "column_title": "Текущий период"
+   },
+   "[\"name\",\"prv_period\"]": {
+    "column_title": "Предыдущий сопоставимый период"
+   }
+  }
+ }
+}

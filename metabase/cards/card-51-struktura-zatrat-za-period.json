@@ -1,0 +1,132 @@
+{
+ "archived": false,
+ "archived_directly": false,
+ "cache_invalidated_at": "2026-08-26T15:48:01.214674Z",
+ "cache_ttl": null,
+ "card_schema": 23,
+ "collection": {
+  "archive_operation_id": null,
+  "archived": false,
+  "archived_directly": null,
+  "authority_level": null,
+  "created_at": "2026-08-26T15:19:56.740614Z",
+  "description": "Executive MVP: что происходит с бизнесом и зарабатываем ли мы деньги.",
+  "entity_id": "EZUYQWsC5fdY9QqGY-xKC",
+  "id": 6,
+  "is_remote_synced": false,
+  "is_sample": false,
+  "location": "/5/",
+  "name": "01 Executive",
+  "namespace": null,
+  "personal_owner_id": null,
+  "slug": "01_executive",
+  "type": null
+ },
+ "collection_id": 6,
+ "collection_position": null,
+ "collection_preview": true,
+ "created_at": "2026-08-26T15:23:45.818194Z",
+ "creator_id": 2,
+ "dashboard": null,
+ "dashboard_id": null,
+ "database_id": 2,
+ "dataset_query": {
+  "database": 2,
+  "lib/type": "mbql/query",
+  "stages": [
+   {
+    "lib/type": "mbql.stage/native",
+    "native": "WITH b AS (\n  SELECT\n    SUM(marketplace_fee_rub)     AS mp,\n    SUM(logistics_rub)           AS logi,\n    SUM(ad_spend_attributed_rub) AS ads,\n    SUM(storage_rub)             AS storage,\n    SUM(deduction_rub)           AS deduction,\n    SUM(acceptance_rub)          AS acceptance,\n    SUM(penalty_account_rub)     AS penalty,\n    SUM(reimbursement_account_rub) AS reimb,\n    SUM(other_account_rub)       AS other_acc\n  FROM `wb_mart.V_DASH_KPI_DAILY`\n  WHERE {{day}}\n)\nSELECT cost_item, amount_rub FROM (\n  SELECT 'Комиссия WB'  AS cost_item, mp         AS amount_rub FROM b\n  UNION ALL SELECT 'Логистика',              logi       FROM b\n  UNION ALL SELECT 'Реклама',    ads        FROM b\n  UNION ALL SELECT 'Удержания WB',             deduction  FROM b\n  UNION ALL SELECT 'Хранение',              storage    FROM b\n  UNION ALL SELECT 'Приёмка',               acceptance FROM b\n  UNION ALL SELECT 'Штрафы',                penalty    FROM b\n  UNION ALL SELECT 'Компенсации',           reimb      FROM b\n  UNION ALL SELECT 'Прочее',                other_acc  FROM b\n)\nWHERE amount_rub IS NOT NULL AND amount_rub <> 0\nORDER BY amount_rub DESC",
+    "template-tags": [
+     {
+      "dimension": [
+       "field",
+       {
+        "lib/uuid": "c8329288-bdda-4ae2-a63c-6da3a2672f66"
+       },
+       909
+      ],
+      "display-name": "Период",
+      "id": "318ab9f3-0886-47ed-8ff2-7a8787e23357",
+      "name": "day",
+      "type": "dimension",
+      "widget-type": "date/all-options"
+     }
+    ]
+   }
+  ]
+ },
+ "description": "Структура затрат за выбранный период. Комиссия WB, Логистика и Реклама разносятся WB по SKU; Удержания WB, Хранение, Приёмка, Штрафы и Компенсации приходят на уровне кабинета — источник не даёт связки с товаром, и разносить их по SKU нельзя. Сознательно НЕ показаны wb_reward_rub и acquiring_sku_rub: по контракту v1 REV2.4 они уже сидят внутри спреда между ценой продавца и суммой к перечислению, вычитать их вторым разом = двойной счёт. Себестоимости здесь нет — REF_COGS в BigQuery отсутствует. Горизонтальные полосы выбраны вместо waterfall: затраты приходят из двух разных слоёв и не образуют одну аддитивную цепочку от выручки к результату. Поля-источники и расчёты не менялись, изменены только подписи категорий.",
+ "dimension_mappings": null,
+ "dimensions": null,
+ "display": "row",
+ "document_id": null,
+ "embedding_params": null,
+ "embedding_type": null,
+ "enable_embedding": false,
+ "entity_id": "sP0TcBbqSZCY-Z82W-IKN",
+ "id": 51,
+ "is_remote_synced": false,
+ "last_used_at": "2026-08-27T08:23:17.457148Z",
+ "legacy_query": null,
+ "metabase_version": "v0.63.15.1 (ab5ffba)",
+ "name": "Структура затрат за период",
+ "param_fields": {
+  "318ab9f3-0886-47ed-8ff2-7a8787e23357": [
+   {
+    "base_type": "type/Date",
+    "dimensions": [],
+    "display_name": "Day",
+    "fk_target_field_id": null,
+    "has_field_values": "none",
+    "id": 909,
+    "name": "day",
+    "name_field": null,
+    "semantic_type": null,
+    "table_id": 38,
+    "target": null
+   }
+  ]
+ },
+ "parameter_mappings": [],
+ "parameter_usage_count": 0,
+ "parameters": [
+  {
+   "id": "318ab9f3-0886-47ed-8ff2-7a8787e23357",
+   "name": "Период",
+   "slug": "day",
+   "target": [
+    "dimension",
+    [
+     "template-tag",
+     "day"
+    ]
+   ],
+   "type": "date/all-options"
+  }
+ ],
+ "query_type": "native",
+ "source_card_id": null,
+ "table_id": null,
+ "type": "question",
+ "visualization_settings": {
+  "column_settings": {
+   "[\"name\",\"amount_rub\"]": {
+    "currency": "RUB",
+    "currency_in_header": false,
+    "currency_style": "symbol",
+    "decimals": 0,
+    "number_style": "currency"
+   }
+  },
+  "graph.dimensions": [
+   "cost_item"
+  ],
+  "graph.metrics": [
+   "amount_rub"
+  ],
+  "graph.show_values": true,
+  "graph.x_axis.title_text": "₽",
+  "graph.y_axis.title_text": ""
+ }
+}

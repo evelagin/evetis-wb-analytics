@@ -1,0 +1,141 @@
+{
+ "archived": false,
+ "archived_directly": false,
+ "cache_invalidated_at": "2026-08-26T15:46:59.265749Z",
+ "cache_ttl": null,
+ "card_schema": 23,
+ "collection": {
+  "archive_operation_id": null,
+  "archived": false,
+  "archived_directly": null,
+  "authority_level": null,
+  "created_at": "2026-08-26T15:19:56.740614Z",
+  "description": "Executive MVP: что происходит с бизнесом и зарабатываем ли мы деньги.",
+  "entity_id": "EZUYQWsC5fdY9QqGY-xKC",
+  "id": 6,
+  "is_remote_synced": false,
+  "is_sample": false,
+  "location": "/5/",
+  "name": "01 Executive",
+  "namespace": null,
+  "personal_owner_id": null,
+  "slug": "01_executive",
+  "type": null
+ },
+ "collection_id": 6,
+ "collection_position": null,
+ "collection_preview": true,
+ "created_at": "2026-08-26T15:23:23.999674Z",
+ "creator_id": 2,
+ "dashboard": null,
+ "dashboard_id": null,
+ "database_id": 2,
+ "dataset_query": {
+  "database": 2,
+  "lib/type": "mbql/query",
+  "stages": [
+   {
+    "lib/type": "mbql.stage/native",
+    "native": "SELECT\n  CONCAT(\n    FORMAT_DATE('%d.%m.%Y', MIN(day)), ' — ', FORMAT_DATE('%d.%m.%Y', MAX(day)),\n    IF(COUNTIF(is_current_day) > 0, ' (вкл. неполный сегодня)', '')\n  )                                                                       AS period,\n  CONCAT(CAST(COUNTIF(contribution_covered) AS STRING), '/', CAST(COUNT(*) AS STRING)) AS finance_days,\n  COUNTIF(contains_provisional_finance)                                   AS provisional_days\nFROM `wb_mart.V_DASH_KPI_DAILY`\nWHERE {{day}}",
+    "template-tags": [
+     {
+      "dimension": [
+       "field",
+       {
+        "lib/uuid": "38a96997-c1ac-4474-9e5f-07c560b82e51"
+       },
+       909
+      ],
+      "display-name": "Период",
+      "id": "5bd7c7a7-fec7-4e19-a2bd-6b5d2a171a30",
+      "name": "day",
+      "type": "dimension",
+      "widget-type": "date/all-options"
+     }
+    ]
+   }
+  ]
+ },
+ "description": "Покрытие ВЫБРАННОГО периода. «Финансы, сут» = COUNTIF(contribution_covered) / COUNT(*): сколько суток окна имеют полную экономику из скольки выбранных. Разница между числителем и знаменателем — сутки без финансового покрытия. «PROVISIONAL» = COUNTIF(contains_provisional_finance): по контракту OPEN-1 такие сутки ВХОДЯТ в контрибуцию, но остаются наблюдаемыми. Флаги — pass-through из V_DASH_COVERAGE_DAILY, определения покрытия не менялись.",
+ "dimension_mappings": null,
+ "dimensions": null,
+ "display": "table",
+ "document_id": null,
+ "embedding_params": null,
+ "embedding_type": null,
+ "enable_embedding": false,
+ "entity_id": "OhjdAmERGYfuDjRLMuRDI",
+ "id": 41,
+ "is_remote_synced": false,
+ "last_used_at": "2026-08-27T06:56:41.045801Z",
+ "legacy_query": null,
+ "metabase_version": "v0.63.15.1 (ab5ffba)",
+ "name": "Качество выбранного периода",
+ "param_fields": {
+  "5bd7c7a7-fec7-4e19-a2bd-6b5d2a171a30": [
+   {
+    "base_type": "type/Date",
+    "dimensions": [],
+    "display_name": "Day",
+    "fk_target_field_id": null,
+    "has_field_values": "none",
+    "id": 909,
+    "name": "day",
+    "name_field": null,
+    "semantic_type": null,
+    "table_id": 38,
+    "target": null
+   }
+  ]
+ },
+ "parameter_mappings": [],
+ "parameter_usage_count": 0,
+ "parameters": [
+  {
+   "id": "5bd7c7a7-fec7-4e19-a2bd-6b5d2a171a30",
+   "name": "Период",
+   "slug": "day",
+   "target": [
+    "dimension",
+    [
+     "template-tag",
+     "day"
+    ]
+   ],
+   "type": "date/all-options"
+  }
+ ],
+ "query_type": "native",
+ "source_card_id": null,
+ "table_id": null,
+ "type": "question",
+ "visualization_settings": {
+  "column_settings": {
+   "[\"name\",\"finance_days\"]": {
+    "column_title": "Финансы, сут"
+   },
+   "[\"name\",\"period\"]": {
+    "column_title": "Период"
+   },
+   "[\"name\",\"provisional_days\"]": {
+    "column_title": "PROVISIONAL, сут",
+    "decimals": 0,
+    "number_style": "decimal"
+   }
+  },
+  "table.columns": [
+   {
+    "enabled": true,
+    "name": "period"
+   },
+   {
+    "enabled": true,
+    "name": "finance_days"
+   },
+   {
+    "enabled": true,
+    "name": "provisional_days"
+   }
+  ]
+ }
+}

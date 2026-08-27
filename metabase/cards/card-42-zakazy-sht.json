@@ -1,0 +1,121 @@
+{
+ "archived": false,
+ "archived_directly": false,
+ "cache_invalidated_at": "2026-08-26T20:54:45.951702Z",
+ "cache_ttl": null,
+ "card_schema": 23,
+ "collection": {
+  "archive_operation_id": null,
+  "archived": false,
+  "archived_directly": null,
+  "authority_level": null,
+  "created_at": "2026-08-26T15:19:56.740614Z",
+  "description": "Executive MVP: что происходит с бизнесом и зарабатываем ли мы деньги.",
+  "entity_id": "EZUYQWsC5fdY9QqGY-xKC",
+  "id": 6,
+  "is_remote_synced": false,
+  "is_sample": false,
+  "location": "/5/",
+  "name": "01 Executive",
+  "namespace": null,
+  "personal_owner_id": null,
+  "slug": "01_executive",
+  "type": null
+ },
+ "collection_id": 6,
+ "collection_position": null,
+ "collection_preview": true,
+ "created_at": "2026-08-26T15:23:26.103364Z",
+ "creator_id": 2,
+ "dashboard": null,
+ "dashboard_id": null,
+ "database_id": 2,
+ "dataset_query": {
+  "database": 2,
+  "lib/type": "mbql/query",
+  "stages": [
+   {
+    "lib/type": "mbql.stage/native",
+    "native": "SELECT SUM(orders_gross_qty) AS orders_gross_qty\nFROM `wb_mart.V_DASH_KPI_DAILY`\nWHERE {{day}}",
+    "template-tags": [
+     {
+      "dimension": [
+       "field",
+       {
+        "lib/uuid": "a3e166ae-596d-43e3-8c74-d3e736ba375f"
+       },
+       909
+      ],
+      "display-name": "Период",
+      "id": "453c74c8-e1df-43af-92fc-a526447bde48",
+      "name": "day",
+      "type": "dimension",
+      "widget-type": "date/all-options"
+     }
+    ]
+   }
+  ]
+ },
+ "description": "Все оформленные заказы, включая впоследствии отменённые — сопоставимо с колонкой WB «Заказали товаров, шт» в выгрузке воронки. V_DASH_KPI_DAILY.orders_gross_qty = orders_qty + canceled_qty; тождество с COUNT(FACT_ORDERS) проверено на всём горизонте витрины (0 расхождений на 7 452 ячейках день×SKU). Остаточное расхождение с выгрузкой воронки WB именуется «WB Funnel vs Statistics Orders API net source discrepancy» и составляет −1,19 % на обоих проверенных окнах; оно двунаправленное на грейне день×SKU и в пайплайне намеренно не корректируется. Показатель без отмен доступен в контракте как orders_qty (на дашборд не выводится). NULL в сутках без покрытия заказов.",
+ "dimension_mappings": null,
+ "dimensions": null,
+ "display": "scalar",
+ "document_id": null,
+ "embedding_params": null,
+ "embedding_type": null,
+ "enable_embedding": false,
+ "entity_id": "3V7cev4MGVAre_wAHzy8M",
+ "id": 42,
+ "is_remote_synced": false,
+ "last_used_at": "2026-08-27T08:22:37.728279Z",
+ "legacy_query": null,
+ "metabase_version": "v0.63.15.1 (ab5ffba)",
+ "name": "Заказы, шт",
+ "param_fields": {
+  "453c74c8-e1df-43af-92fc-a526447bde48": [
+   {
+    "base_type": "type/Date",
+    "dimensions": [],
+    "display_name": "Day",
+    "fk_target_field_id": null,
+    "has_field_values": "none",
+    "id": 909,
+    "name": "day",
+    "name_field": null,
+    "semantic_type": null,
+    "table_id": 38,
+    "target": null
+   }
+  ]
+ },
+ "parameter_mappings": [],
+ "parameter_usage_count": 0,
+ "parameters": [
+  {
+   "id": "453c74c8-e1df-43af-92fc-a526447bde48",
+   "name": "Период",
+   "slug": "day",
+   "target": [
+    "dimension",
+    [
+     "template-tag",
+     "day"
+    ]
+   ],
+   "type": "date/all-options"
+  }
+ ],
+ "query_type": "native",
+ "source_card_id": null,
+ "table_id": null,
+ "type": "question",
+ "visualization_settings": {
+  "column_settings": {
+   "[\"name\",\"orders_gross_qty\"]": {
+    "decimals": 0,
+    "number_style": "decimal"
+   }
+  },
+  "scalar.field": "orders_gross_qty"
+ }
+}

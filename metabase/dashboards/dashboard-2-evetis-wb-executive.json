@@ -1,0 +1,2442 @@
+{
+ "archived": false,
+ "archived_directly": false,
+ "auto_apply_filters": true,
+ "cache_ttl": null,
+ "can_set_cache_policy": true,
+ "caveats": null,
+ "collection": {
+  "archive_operation_id": null,
+  "archived": false,
+  "archived_directly": null,
+  "authority_level": null,
+  "created_at": "2026-08-26T15:19:56.740614Z",
+  "description": "Executive MVP: что происходит с бизнесом и зарабатываем ли мы деньги.",
+  "entity_id": "EZUYQWsC5fdY9QqGY-xKC",
+  "id": 6,
+  "is_remote_synced": false,
+  "is_sample": false,
+  "location": "/5/",
+  "name": "01 Executive",
+  "namespace": null,
+  "personal_owner_id": null,
+  "slug": "01_executive",
+  "type": null
+ },
+ "collection_authority_level": null,
+ "collection_id": 6,
+ "collection_position": null,
+ "created_at": "2026-08-26T15:25:08.169659Z",
+ "creator_id": 2,
+ "dashcards": [
+  {
+   "action_id": null,
+   "card": {
+    "download_perms": "none",
+    "query_average_duration": null
+   },
+   "card_id": null,
+   "col": 0,
+   "collection_authority_level": null,
+   "created_at": "2026-08-26T15:25:08.584995Z",
+   "dashboard_id": 2,
+   "dashboard_tab_id": null,
+   "entity_id": "Cso98x0WWir8I5_aLah3g",
+   "id": 37,
+   "inline_parameters": [],
+   "parameter_mappings": [],
+   "row": 0,
+   "series": [],
+   "size_x": 24,
+   "size_y": 1,
+   "visualization_settings": {
+    "dashcard.background": false,
+    "text": "Актуальность данных",
+    "virtual_card": {
+     "archived": false,
+     "dataset_query": {},
+     "display": "heading",
+     "name": null,
+     "visualization_settings": {}
+    }
+   }
+  },
+  {
+   "action_id": null,
+   "card": {
+    "archived": false,
+    "archived_directly": false,
+    "cache_invalidated_at": "2026-08-26T15:46:57.107939Z",
+    "cache_ttl": null,
+    "card_schema": 23,
+    "collection_id": 6,
+    "collection_position": null,
+    "collection_preview": true,
+    "created_at": "2026-08-26T15:23:21.73995Z",
+    "creator_id": 2,
+    "dashboard_id": null,
+    "database_id": 2,
+    "dataset_query": {
+     "database": 2,
+     "lib/type": "mbql/query",
+     "stages": [
+      {
+       "lib/type": "mbql.stage/native",
+       "native": "SELECT\n  FORMAT_DATE('%d.%m.%Y', data_as_of_min)                          AS data_as_of,\n  FORMAT_TIMESTAMP('%d.%m %H:%M', mart_built_at, 'Europe/Moscow')  AS mart_built,\n  CONCAT(CAST(layers_ok AS STRING), '/', CAST(layers_total AS STRING)) AS layers_ok\nFROM `wb_mart.V_DASH_FRESHNESS_HEADER`"
+      }
+     ]
+    },
+    "description": "Глобальная свежесть слоя данных из V_DASH_FRESHNESS_HEADER. «Данные по» = data_as_of_min: дата, по которую полны ВСЕ слои (самый отстающий слой). Фильтр периода на эту карточку не действует — это состояние источника, а не выбранного окна. Определения свежести не менялись.",
+    "dimension_mappings": null,
+    "dimensions": null,
+    "display": "table",
+    "document_id": null,
+    "download_perms": "full",
+    "embedding_params": null,
+    "embedding_type": null,
+    "enable_embedding": false,
+    "entity_id": "zK5OYRiAzSHqILBD-1SCW",
+    "id": 40,
+    "last_used_at": "2026-08-27T06:56:41.045801Z",
+    "legacy_query": null,
+    "metabase_version": "v0.63.15.1 (ab5ffba)",
+    "name": "Свежесть данных",
+    "parameter_mappings": [],
+    "parameters": [],
+    "query_average_duration": 7187,
+    "query_type": "native",
+    "source_card_id": null,
+    "table_id": null,
+    "type": "question",
+    "visualization_settings": {
+     "column_settings": {
+      "[\"name\",\"data_as_of\"]": {
+       "column_title": "Данные по"
+      },
+      "[\"name\",\"layers_ok\"]": {
+       "column_title": "Слои данных OK"
+      },
+      "[\"name\",\"mart_built\"]": {
+       "column_title": "Витрина собрана, МСК"
+      }
+     },
+     "table.columns": [
+      {
+       "enabled": true,
+       "name": "data_as_of"
+      },
+      {
+       "enabled": true,
+       "name": "mart_built"
+      },
+      {
+       "enabled": true,
+       "name": "layers_ok"
+      }
+     ]
+    }
+   },
+   "card_id": 40,
+   "col": 0,
+   "collection_authority_level": null,
+   "created_at": "2026-08-26T15:25:08.584995Z",
+   "dashboard_id": 2,
+   "dashboard_tab_id": null,
+   "entity_id": "zWDcm_SLMFp5C4KMzE07H",
+   "id": 38,
+   "inline_parameters": [],
+   "parameter_mappings": [],
+   "row": 1,
+   "series": [],
+   "size_x": 12,
+   "size_y": 3,
+   "visualization_settings": {}
+  },
+  {
+   "action_id": null,
+   "card": {
+    "archived": false,
+    "archived_directly": false,
+    "cache_invalidated_at": "2026-08-26T15:46:59.265749Z",
+    "cache_ttl": null,
+    "card_schema": 23,
+    "collection_id": 6,
+    "collection_position": null,
+    "collection_preview": true,
+    "created_at": "2026-08-26T15:23:23.999674Z",
+    "creator_id": 2,
+    "dashboard_id": null,
+    "database_id": 2,
+    "dataset_query": {
+     "database": 2,
+     "lib/type": "mbql/query",
+     "stages": [
+      {
+       "lib/type": "mbql.stage/native",
+       "native": "SELECT\n  CONCAT(\n    FORMAT_DATE('%d.%m.%Y', MIN(day)), ' — ', FORMAT_DATE('%d.%m.%Y', MAX(day)),\n    IF(COUNTIF(is_current_day) > 0, ' (вкл. неполный сегодня)', '')\n  )                                                                       AS period,\n  CONCAT(CAST(COUNTIF(contribution_covered) AS STRING), '/', CAST(COUNT(*) AS STRING)) AS finance_days,\n  COUNTIF(contains_provisional_finance)                                   AS provisional_days\nFROM `wb_mart.V_DASH_KPI_DAILY`\nWHERE {{day}}",
+       "template-tags": [
+        {
+         "dimension": [
+          "field",
+          {
+           "lib/uuid": "38a96997-c1ac-4474-9e5f-07c560b82e51"
+          },
+          909
+         ],
+         "display-name": "Период",
+         "id": "5bd7c7a7-fec7-4e19-a2bd-6b5d2a171a30",
+         "name": "day",
+         "type": "dimension",
+         "widget-type": "date/all-options"
+        }
+       ]
+      }
+     ]
+    },
+    "description": "Покрытие ВЫБРАННОГО периода. «Финансы, сут» = COUNTIF(contribution_covered) / COUNT(*): сколько суток окна имеют полную экономику из скольки выбранных. Разница между числителем и знаменателем — сутки без финансового покрытия. «PROVISIONAL» = COUNTIF(contains_provisional_finance): по контракту OPEN-1 такие сутки ВХОДЯТ в контрибуцию, но остаются наблюдаемыми. Флаги — pass-through из V_DASH_COVERAGE_DAILY, определения покрытия не менялись.",
+    "dimension_mappings": null,
+    "dimensions": null,
+    "display": "table",
+    "document_id": null,
+    "download_perms": "full",
+    "embedding_params": null,
+    "embedding_type": null,
+    "enable_embedding": false,
+    "entity_id": "OhjdAmERGYfuDjRLMuRDI",
+    "id": 41,
+    "last_used_at": "2026-08-27T06:56:41.045801Z",
+    "legacy_query": null,
+    "metabase_version": "v0.63.15.1 (ab5ffba)",
+    "name": "Качество выбранного периода",
+    "parameter_mappings": [],
+    "parameters": [
+     {
+      "id": "5bd7c7a7-fec7-4e19-a2bd-6b5d2a171a30",
+      "name": "Период",
+      "slug": "day",
+      "target": [
+       "dimension",
+       [
+        "template-tag",
+        "day"
+       ]
+      ],
+      "type": "date/all-options"
+     }
+    ],
+    "query_average_duration": null,
+    "query_type": "native",
+    "source_card_id": null,
+    "table_id": null,
+    "type": "question",
+    "visualization_settings": {
+     "column_settings": {
+      "[\"name\",\"finance_days\"]": {
+       "column_title": "Финансы, сут"
+      },
+      "[\"name\",\"period\"]": {
+       "column_title": "Период"
+      },
+      "[\"name\",\"provisional_days\"]": {
+       "column_title": "PROVISIONAL, сут",
+       "decimals": 0,
+       "number_style": "decimal"
+      }
+     },
+     "table.columns": [
+      {
+       "enabled": true,
+       "name": "period"
+      },
+      {
+       "enabled": true,
+       "name": "finance_days"
+      },
+      {
+       "enabled": true,
+       "name": "provisional_days"
+      }
+     ]
+    }
+   },
+   "card_id": 41,
+   "col": 12,
+   "collection_authority_level": null,
+   "created_at": "2026-08-26T15:25:08.584995Z",
+   "dashboard_id": 2,
+   "dashboard_tab_id": null,
+   "entity_id": "_50O-BxISrKOciTaaGMt-",
+   "id": 39,
+   "inline_parameters": [],
+   "parameter_mappings": [
+    {
+     "card_id": 41,
+     "parameter_id": "date",
+     "target": [
+      "dimension",
+      [
+       "template-tag",
+       "day"
+      ]
+     ]
+    }
+   ],
+   "row": 1,
+   "series": [],
+   "size_x": 12,
+   "size_y": 3,
+   "visualization_settings": {}
+  },
+  {
+   "action_id": null,
+   "card": {
+    "download_perms": "none",
+    "query_average_duration": null
+   },
+   "card_id": null,
+   "col": 0,
+   "collection_authority_level": null,
+   "created_at": "2026-08-26T15:25:08.584995Z",
+   "dashboard_id": 2,
+   "dashboard_tab_id": null,
+   "entity_id": "q4NGdcCieePhSU6ptWWSh",
+   "id": 40,
+   "inline_parameters": [],
+   "parameter_mappings": [],
+   "row": 4,
+   "series": [],
+   "size_x": 24,
+   "size_y": 1,
+   "visualization_settings": {
+    "dashcard.background": false,
+    "text": "Ключевые показатели",
+    "virtual_card": {
+     "archived": false,
+     "dataset_query": {},
+     "display": "heading",
+     "name": null,
+     "visualization_settings": {}
+    }
+   }
+  },
+  {
+   "action_id": null,
+   "card": {
+    "archived": false,
+    "archived_directly": false,
+    "cache_invalidated_at": "2026-08-26T20:54:45.951702Z",
+    "cache_ttl": null,
+    "card_schema": 23,
+    "collection_id": 6,
+    "collection_position": null,
+    "collection_preview": true,
+    "created_at": "2026-08-26T15:23:26.103364Z",
+    "creator_id": 2,
+    "dashboard_id": null,
+    "database_id": 2,
+    "dataset_query": {
+     "database": 2,
+     "lib/type": "mbql/query",
+     "stages": [
+      {
+       "lib/type": "mbql.stage/native",
+       "native": "SELECT SUM(orders_gross_qty) AS orders_gross_qty\nFROM `wb_mart.V_DASH_KPI_DAILY`\nWHERE {{day}}",
+       "template-tags": [
+        {
+         "dimension": [
+          "field",
+          {
+           "lib/uuid": "a3e166ae-596d-43e3-8c74-d3e736ba375f"
+          },
+          909
+         ],
+         "display-name": "Период",
+         "id": "453c74c8-e1df-43af-92fc-a526447bde48",
+         "name": "day",
+         "type": "dimension",
+         "widget-type": "date/all-options"
+        }
+       ]
+      }
+     ]
+    },
+    "description": "Все оформленные заказы, включая впоследствии отменённые — сопоставимо с колонкой WB «Заказали товаров, шт» в выгрузке воронки. V_DASH_KPI_DAILY.orders_gross_qty = orders_qty + canceled_qty; тождество с COUNT(FACT_ORDERS) проверено на всём горизонте витрины (0 расхождений на 7 452 ячейках день×SKU). Остаточное расхождение с выгрузкой воронки WB именуется «WB Funnel vs Statistics Orders API net source discrepancy» и составляет −1,19 % на обоих проверенных окнах; оно двунаправленное на грейне день×SKU и в пайплайне намеренно не корректируется. Показатель без отмен доступен в контракте как orders_qty (на дашборд не выводится). NULL в сутках без покрытия заказов.",
+    "dimension_mappings": null,
+    "dimensions": null,
+    "display": "scalar",
+    "document_id": null,
+    "download_perms": "full",
+    "embedding_params": null,
+    "embedding_type": null,
+    "enable_embedding": false,
+    "entity_id": "3V7cev4MGVAre_wAHzy8M",
+    "id": 42,
+    "last_used_at": "2026-08-27T08:22:37.728279Z",
+    "legacy_query": null,
+    "metabase_version": "v0.63.15.1 (ab5ffba)",
+    "name": "Заказы, шт",
+    "parameter_mappings": [],
+    "parameters": [
+     {
+      "id": "453c74c8-e1df-43af-92fc-a526447bde48",
+      "name": "Период",
+      "slug": "day",
+      "target": [
+       "dimension",
+       [
+        "template-tag",
+        "day"
+       ]
+      ],
+      "type": "date/all-options"
+     }
+    ],
+    "query_average_duration": null,
+    "query_type": "native",
+    "source_card_id": null,
+    "table_id": null,
+    "type": "question",
+    "visualization_settings": {
+     "column_settings": {
+      "[\"name\",\"orders_gross_qty\"]": {
+       "decimals": 0,
+       "number_style": "decimal"
+      }
+     },
+     "scalar.field": "orders_gross_qty"
+    }
+   },
+   "card_id": 42,
+   "col": 0,
+   "collection_authority_level": null,
+   "created_at": "2026-08-26T15:25:08.584995Z",
+   "dashboard_id": 2,
+   "dashboard_tab_id": null,
+   "entity_id": "ol9fZVEBz8QbdpgSLZmmj",
+   "id": 41,
+   "inline_parameters": [],
+   "parameter_mappings": [
+    {
+     "card_id": 42,
+     "parameter_id": "date",
+     "target": [
+      "dimension",
+      [
+       "template-tag",
+       "day"
+      ]
+     ]
+    }
+   ],
+   "row": 5,
+   "series": [],
+   "size_x": 8,
+   "size_y": 3,
+   "visualization_settings": {}
+  },
+  {
+   "action_id": null,
+   "card": {
+    "archived": false,
+    "archived_directly": false,
+    "cache_invalidated_at": "2026-08-26T15:27:53.912845Z",
+    "cache_ttl": null,
+    "card_schema": 23,
+    "collection_id": 6,
+    "collection_position": null,
+    "collection_preview": true,
+    "created_at": "2026-08-26T15:23:28.217321Z",
+    "creator_id": 2,
+    "dashboard_id": null,
+    "database_id": 2,
+    "dataset_query": {
+     "database": 2,
+     "lib/type": "mbql/query",
+     "stages": [
+      {
+       "lib/type": "mbql.stage/native",
+       "native": "SELECT SUM(buyouts_qty) AS buyouts_qty\nFROM `wb_mart.V_DASH_KPI_DAILY`\nWHERE {{day}}",
+       "template-tags": [
+        {
+         "dimension": [
+          "field",
+          {
+           "lib/uuid": "840c99dd-3819-4258-a702-c4e809d07595"
+          },
+          909
+         ],
+         "display-name": "Период",
+         "id": "25c4eab0-bc5b-4784-a8cf-cc7827b41cd1",
+         "name": "day",
+         "type": "dimension",
+         "widget-type": "date/all-options"
+        }
+       ]
+      }
+     ]
+    },
+    "description": "V_DASH_KPI_DAILY.buyouts_qty, база даты — дата продажи. Это фактические выкупы, а не заказы.",
+    "dimension_mappings": null,
+    "dimensions": null,
+    "display": "scalar",
+    "document_id": null,
+    "download_perms": "full",
+    "embedding_params": null,
+    "embedding_type": null,
+    "enable_embedding": false,
+    "entity_id": "ujw3jOslRpW_5lbZWfe_J",
+    "id": 43,
+    "last_used_at": "2026-08-27T08:22:51.371736Z",
+    "legacy_query": null,
+    "metabase_version": "v0.63.15.1 (ab5ffba)",
+    "name": "Выкупы, шт",
+    "parameter_mappings": [],
+    "parameters": [
+     {
+      "id": "25c4eab0-bc5b-4784-a8cf-cc7827b41cd1",
+      "name": "Период",
+      "slug": "day",
+      "target": [
+       "dimension",
+       [
+        "template-tag",
+        "day"
+       ]
+      ],
+      "type": "date/all-options"
+     }
+    ],
+    "query_average_duration": 3899,
+    "query_type": "native",
+    "source_card_id": null,
+    "table_id": null,
+    "type": "question",
+    "visualization_settings": {
+     "column_settings": {
+      "[\"name\",\"buyouts_qty\"]": {
+       "decimals": 0,
+       "number_style": "decimal"
+      }
+     },
+     "scalar.field": "buyouts_qty"
+    }
+   },
+   "card_id": 43,
+   "col": 16,
+   "collection_authority_level": null,
+   "created_at": "2026-08-26T15:25:08.584995Z",
+   "dashboard_id": 2,
+   "dashboard_tab_id": null,
+   "entity_id": "X_7iifeUrzZKe4zDSs0Ys",
+   "id": 42,
+   "inline_parameters": [],
+   "parameter_mappings": [
+    {
+     "card_id": 43,
+     "parameter_id": "date",
+     "target": [
+      "dimension",
+      [
+       "template-tag",
+       "day"
+      ]
+     ]
+    }
+   ],
+   "row": 5,
+   "series": [],
+   "size_x": 8,
+   "size_y": 3,
+   "visualization_settings": {}
+  },
+  {
+   "action_id": null,
+   "card": {
+    "archived": false,
+    "archived_directly": false,
+    "cache_invalidated_at": "2026-08-26T15:47:35.224671Z",
+    "cache_ttl": null,
+    "card_schema": 23,
+    "collection_id": 6,
+    "collection_position": null,
+    "collection_preview": true,
+    "created_at": "2026-08-26T15:23:30.374048Z",
+    "creator_id": 2,
+    "dashboard_id": null,
+    "database_id": 2,
+    "dataset_query": {
+     "database": 2,
+     "lib/type": "mbql/query",
+     "stages": [
+      {
+       "lib/type": "mbql.stage/native",
+       "native": "SELECT SUM(sales_revenue_seller_base_rub) AS revenue_rub\nFROM `wb_mart.V_DASH_KPI_DAILY`\nWHERE {{day}}",
+       "template-tags": [
+        {
+         "dimension": [
+          "field",
+          {
+           "lib/uuid": "07eee20e-4fa9-46f1-847e-4cbb0aec2507"
+          },
+          909
+         ],
+         "display-name": "Период",
+         "id": "9fce4429-859f-4aac-ae90-2eab839f2c7b",
+         "name": "day",
+         "type": "dimension",
+         "widget-type": "date/all-options"
+        }
+       ]
+      }
+     ]
+    },
+    "description": "V_DASH_KPI_DAILY.sales_revenue_seller_base_rub = buyouts_rub витрины (retail_price_withdisc). Цена продавца — база начисления WB, НЕ то, что заплатил покупатель, и НЕ то, что перечислит WB.",
+    "dimension_mappings": null,
+    "dimensions": null,
+    "display": "scalar",
+    "document_id": null,
+    "download_perms": "full",
+    "embedding_params": null,
+    "embedding_type": null,
+    "enable_embedding": false,
+    "entity_id": "jxYMIsLfqFoeruflAx0rO",
+    "id": 44,
+    "last_used_at": "2026-08-27T08:22:56.758581Z",
+    "legacy_query": null,
+    "metabase_version": "v0.63.15.1 (ab5ffba)",
+    "name": "Выручка, ₽",
+    "parameter_mappings": [],
+    "parameters": [
+     {
+      "id": "9fce4429-859f-4aac-ae90-2eab839f2c7b",
+      "name": "Период",
+      "slug": "day",
+      "target": [
+       "dimension",
+       [
+        "template-tag",
+        "day"
+       ]
+      ],
+      "type": "date/all-options"
+     }
+    ],
+    "query_average_duration": 3813,
+    "query_type": "native",
+    "source_card_id": null,
+    "table_id": null,
+    "type": "question",
+    "visualization_settings": {
+     "column_settings": {
+      "[\"name\",\"revenue_rub\"]": {
+       "currency": "RUB",
+       "currency_in_header": false,
+       "currency_style": "symbol",
+       "decimals": 0,
+       "number_style": "currency"
+      }
+     },
+     "scalar.field": "revenue_rub"
+    }
+   },
+   "card_id": 44,
+   "col": 0,
+   "collection_authority_level": null,
+   "created_at": "2026-08-26T15:25:08.584995Z",
+   "dashboard_id": 2,
+   "dashboard_tab_id": null,
+   "entity_id": "MsRsk7kpu4xxvQR0CMxIS",
+   "id": 43,
+   "inline_parameters": [],
+   "parameter_mappings": [
+    {
+     "card_id": 44,
+     "parameter_id": "date",
+     "target": [
+      "dimension",
+      [
+       "template-tag",
+       "day"
+      ]
+     ]
+    }
+   ],
+   "row": 8,
+   "series": [],
+   "size_x": 8,
+   "size_y": 3,
+   "visualization_settings": {}
+  },
+  {
+   "action_id": null,
+   "card": {
+    "archived": false,
+    "archived_directly": false,
+    "cache_invalidated_at": "2026-08-26T16:21:50.89452Z",
+    "cache_ttl": null,
+    "card_schema": 23,
+    "collection_id": 6,
+    "collection_position": null,
+    "collection_preview": true,
+    "created_at": "2026-08-26T15:23:32.575869Z",
+    "creator_id": 2,
+    "dashboard_id": null,
+    "database_id": 2,
+    "dataset_query": {
+     "database": 2,
+     "lib/type": "mbql/query",
+     "stages": [
+      {
+       "lib/type": "mbql.stage/native",
+       "native": "SELECT SUM(contribution_pre_cogs_rub) AS contribution_rub\nFROM `wb_mart.V_DASH_KPI_DAILY`\nWHERE {{day}}",
+       "template-tags": [
+        {
+         "dimension": [
+          "field",
+          {
+           "lib/uuid": "2cedf8a8-b8c1-4f3a-b5d0-cd0bc6ffe934"
+          },
+          909
+         ],
+         "display-name": "Период",
+         "id": "ccae321d-08bc-4a12-80b7-5916cc35cca0",
+         "name": "day",
+         "type": "dimension",
+         "widget-type": "date/all-options"
+        }
+       ]
+      }
+     ]
+    },
+    "description": "Выручка за выкупленные товары за вычетом комиссии WB, логистики и рекламных расходов. Себестоимость товара в этом показателе не вычитается, поэтому показатель не является прибылью. V_DASH_KPI_DAILY.contribution_pre_cogs_rub = buyouts_rub − marketplace_fee − logistics − ad_spend. economics_basis = PRE_COGS: REF_COGS в BigQuery отсутствует, поэтому это вклад ДО себестоимости, не прибыль и не маржа. Величина cross-base (четыре разные базы дат), осмысленна на горизонте от недели. NULL в сутках без полного покрытия.",
+    "dimension_mappings": null,
+    "dimensions": null,
+    "display": "scalar",
+    "document_id": null,
+    "download_perms": "full",
+    "embedding_params": null,
+    "embedding_type": null,
+    "enable_embedding": false,
+    "entity_id": "4vMtSBt8gYDdY_gqm7Vhe",
+    "id": 45,
+    "last_used_at": "2026-08-27T08:23:02.066441Z",
+    "legacy_query": null,
+    "metabase_version": "v0.63.15.1 (ab5ffba)",
+    "name": "Доход до себестоимости, ₽",
+    "parameter_mappings": [],
+    "parameters": [
+     {
+      "id": "ccae321d-08bc-4a12-80b7-5916cc35cca0",
+      "name": "Период",
+      "slug": "day",
+      "target": [
+       "dimension",
+       [
+        "template-tag",
+        "day"
+       ]
+      ],
+      "type": "date/all-options"
+     }
+    ],
+    "query_average_duration": 4088,
+    "query_type": "native",
+    "source_card_id": null,
+    "table_id": null,
+    "type": "question",
+    "visualization_settings": {
+     "column_settings": {
+      "[\"name\",\"contribution_rub\"]": {
+       "currency": "RUB",
+       "currency_in_header": false,
+       "currency_style": "symbol",
+       "decimals": 0,
+       "number_style": "currency"
+      }
+     },
+     "scalar.field": "contribution_rub"
+    }
+   },
+   "card_id": 45,
+   "col": 8,
+   "collection_authority_level": null,
+   "created_at": "2026-08-26T15:25:08.584995Z",
+   "dashboard_id": 2,
+   "dashboard_tab_id": null,
+   "entity_id": "J7Xlo2AgslJAM_pFnyUmC",
+   "id": 44,
+   "inline_parameters": [],
+   "parameter_mappings": [
+    {
+     "card_id": 45,
+     "parameter_id": "date",
+     "target": [
+      "dimension",
+      [
+       "template-tag",
+       "day"
+      ]
+     ]
+    }
+   ],
+   "row": 8,
+   "series": [],
+   "size_x": 8,
+   "size_y": 3,
+   "visualization_settings": {}
+  },
+  {
+   "action_id": null,
+   "card": {
+    "archived": false,
+    "archived_directly": false,
+    "cache_invalidated_at": "2026-08-26T15:47:35.644363Z",
+    "cache_ttl": null,
+    "card_schema": 23,
+    "collection_id": 6,
+    "collection_position": null,
+    "collection_preview": true,
+    "created_at": "2026-08-26T15:23:34.665158Z",
+    "creator_id": 2,
+    "dashboard_id": null,
+    "database_id": 2,
+    "dataset_query": {
+     "database": 2,
+     "lib/type": "mbql/query",
+     "stages": [
+      {
+       "lib/type": "mbql.stage/native",
+       "native": "SELECT SUM(ad_spend_attributed_rub) AS ad_spend_rub\nFROM `wb_mart.V_DASH_KPI_DAILY`\nWHERE {{day}}",
+       "template-tags": [
+        {
+         "dimension": [
+          "field",
+          {
+           "lib/uuid": "543af13b-3cac-4b28-973b-3f3bda5c705d"
+          },
+          909
+         ],
+         "display-name": "Период",
+         "id": "e8449115-dbe0-4c95-9ce8-b11d4d50518c",
+         "name": "day",
+         "type": "dimension",
+         "widget-type": "date/all-options"
+        }
+       ]
+      }
+     ]
+    },
+    "description": "V_DASH_KPI_DAILY.ad_spend_attributed_rub — АТРИБУЦИЯ рекламной статистики WB, а не факт биллингового списания (Stage 3B.1 в контракт PR2 не входит). База даты — дата рекламной активности.",
+    "dimension_mappings": null,
+    "dimensions": null,
+    "display": "scalar",
+    "document_id": null,
+    "download_perms": "full",
+    "embedding_params": null,
+    "embedding_type": null,
+    "enable_embedding": false,
+    "entity_id": "5x6I3WoNX5W4eZJbiU59N",
+    "id": 46,
+    "last_used_at": "2026-08-27T07:12:20.385486Z",
+    "legacy_query": null,
+    "metabase_version": "v0.63.15.1 (ab5ffba)",
+    "name": "Реклама, ₽",
+    "parameter_mappings": [],
+    "parameters": [
+     {
+      "id": "e8449115-dbe0-4c95-9ce8-b11d4d50518c",
+      "name": "Период",
+      "slug": "day",
+      "target": [
+       "dimension",
+       [
+        "template-tag",
+        "day"
+       ]
+      ],
+      "type": "date/all-options"
+     }
+    ],
+    "query_average_duration": 3929,
+    "query_type": "native",
+    "source_card_id": null,
+    "table_id": null,
+    "type": "question",
+    "visualization_settings": {
+     "column_settings": {
+      "[\"name\",\"ad_spend_rub\"]": {
+       "currency": "RUB",
+       "currency_in_header": false,
+       "currency_style": "symbol",
+       "decimals": 0,
+       "number_style": "currency"
+      }
+     },
+     "scalar.field": "ad_spend_rub"
+    }
+   },
+   "card_id": 46,
+   "col": 16,
+   "collection_authority_level": null,
+   "created_at": "2026-08-26T15:25:08.584995Z",
+   "dashboard_id": 2,
+   "dashboard_tab_id": null,
+   "entity_id": "H0MkO0CiFSvae2NJdEvPn",
+   "id": 45,
+   "inline_parameters": [],
+   "parameter_mappings": [
+    {
+     "card_id": 46,
+     "parameter_id": "date",
+     "target": [
+      "dimension",
+      [
+       "template-tag",
+       "day"
+      ]
+     ]
+    }
+   ],
+   "row": 8,
+   "series": [],
+   "size_x": 8,
+   "size_y": 3,
+   "visualization_settings": {}
+  },
+  {
+   "action_id": null,
+   "card": {
+    "archived": false,
+    "archived_directly": false,
+    "cache_invalidated_at": "2026-08-26T15:27:57.674485Z",
+    "cache_ttl": null,
+    "card_schema": 23,
+    "collection_id": 6,
+    "collection_position": null,
+    "collection_preview": true,
+    "created_at": "2026-08-26T15:23:36.786113Z",
+    "creator_id": 2,
+    "dashboard_id": null,
+    "database_id": 2,
+    "dataset_query": {
+     "database": 2,
+     "lib/type": "mbql/query",
+     "stages": [
+      {
+       "lib/type": "mbql.stage/native",
+       "native": "SELECT SAFE_DIVIDE(SUM(ad_spend_attributed_rub), SUM(sales_revenue_seller_base_rub)) AS drr\nFROM `wb_mart.V_DASH_KPI_DAILY`\nWHERE {{day}}",
+       "template-tags": [
+        {
+         "dimension": [
+          "field",
+          {
+           "lib/uuid": "5ecf4ecf-28cf-45b1-ad60-0c539b3bcd95"
+          },
+          909
+         ],
+         "display-name": "Период",
+         "id": "2e33299c-8b84-4540-ad42-09406365ba4a",
+         "name": "day",
+         "type": "dimension",
+         "widget-type": "date/all-options"
+        }
+       ]
+      }
+     ]
+    },
+    "description": "ДРР = SUM(ad_spend_attributed_rub) / SUM(sales_revenue_seller_base_rub) — ratio-of-sums, соответствует drr_buyouts витрины. AVG(посуточный ДРР) даёт другую величину (замер 20.08: 15,37 % против 15,77 %) и здесь не применяется.",
+    "dimension_mappings": null,
+    "dimensions": null,
+    "display": "scalar",
+    "document_id": null,
+    "download_perms": "full",
+    "embedding_params": null,
+    "embedding_type": null,
+    "enable_embedding": false,
+    "entity_id": "GAjrrJAwNvYoesCkUQ0G3",
+    "id": 47,
+    "last_used_at": "2026-08-27T07:12:26.329212Z",
+    "legacy_query": null,
+    "metabase_version": "v0.63.15.1 (ab5ffba)",
+    "name": "ДРР, %",
+    "parameter_mappings": [],
+    "parameters": [
+     {
+      "id": "2e33299c-8b84-4540-ad42-09406365ba4a",
+      "name": "Период",
+      "slug": "day",
+      "target": [
+       "dimension",
+       [
+        "template-tag",
+        "day"
+       ]
+      ],
+      "type": "date/all-options"
+     }
+    ],
+    "query_average_duration": 4205,
+    "query_type": "native",
+    "source_card_id": null,
+    "table_id": null,
+    "type": "question",
+    "visualization_settings": {
+     "column_settings": {
+      "[\"name\",\"drr\"]": {
+       "decimals": 1,
+       "number_style": "percent"
+      }
+     },
+     "scalar.field": "drr"
+    }
+   },
+   "card_id": 47,
+   "col": 0,
+   "collection_authority_level": null,
+   "created_at": "2026-08-26T15:25:08.584995Z",
+   "dashboard_id": 2,
+   "dashboard_tab_id": null,
+   "entity_id": "rNpvAfI3gsQFUonnWpevm",
+   "id": 46,
+   "inline_parameters": [],
+   "parameter_mappings": [
+    {
+     "card_id": 47,
+     "parameter_id": "date",
+     "target": [
+      "dimension",
+      [
+       "template-tag",
+       "day"
+      ]
+     ]
+    }
+   ],
+   "row": 11,
+   "series": [],
+   "size_x": 8,
+   "size_y": 3,
+   "visualization_settings": {}
+  },
+  {
+   "action_id": null,
+   "card": {
+    "archived": false,
+    "archived_directly": false,
+    "cache_invalidated_at": "2026-08-26T15:27:58.593694Z",
+    "cache_ttl": null,
+    "card_schema": 23,
+    "collection_id": 6,
+    "collection_position": null,
+    "collection_preview": true,
+    "created_at": "2026-08-26T15:23:38.995057Z",
+    "creator_id": 2,
+    "dashboard_id": null,
+    "database_id": 2,
+    "dataset_query": {
+     "database": 2,
+     "lib/type": "mbql/query",
+     "stages": [
+      {
+       "lib/type": "mbql.stage/native",
+       "native": "SELECT SUM(returns_qty) AS returns_qty\nFROM `wb_mart.V_DASH_KPI_DAILY`\nWHERE {{day}}",
+       "template-tags": [
+        {
+         "dimension": [
+          "field",
+          {
+           "lib/uuid": "3f8fae44-96cf-429a-8f4a-a716d8982019"
+          },
+          909
+         ],
+         "display-name": "Период",
+         "id": "7a165502-4c08-46b4-92b2-f6671999719a",
+         "name": "day",
+         "type": "dimension",
+         "widget-type": "date/all-options"
+        }
+       ]
+      }
+     ]
+    },
+    "description": "V_DASH_KPI_DAILY.returns_qty, база даты — дата возврата. Для этого кабинета возвраты единичны: за всю историю 1 сутки с возвратом (21.07.2026, 1 шт, −840 ₽). Ноль здесь — реальный ноль, а не отсутствие данных: смотри карточку качества периода.",
+    "dimension_mappings": null,
+    "dimensions": null,
+    "display": "scalar",
+    "document_id": null,
+    "download_perms": "full",
+    "embedding_params": null,
+    "embedding_type": null,
+    "enable_embedding": false,
+    "entity_id": "_ZpSB8Y4ZwCl2Cn4DwMhy",
+    "id": 48,
+    "last_used_at": "2026-08-27T07:12:31.660961Z",
+    "legacy_query": null,
+    "metabase_version": "v0.63.15.1 (ab5ffba)",
+    "name": "Возвраты, шт",
+    "parameter_mappings": [],
+    "parameters": [
+     {
+      "id": "7a165502-4c08-46b4-92b2-f6671999719a",
+      "name": "Период",
+      "slug": "day",
+      "target": [
+       "dimension",
+       [
+        "template-tag",
+        "day"
+       ]
+      ],
+      "type": "date/all-options"
+     }
+    ],
+    "query_average_duration": 3958,
+    "query_type": "native",
+    "source_card_id": null,
+    "table_id": null,
+    "type": "question",
+    "visualization_settings": {
+     "column_settings": {
+      "[\"name\",\"returns_qty\"]": {
+       "decimals": 0,
+       "number_style": "decimal"
+      }
+     },
+     "scalar.field": "returns_qty"
+    }
+   },
+   "card_id": 48,
+   "col": 8,
+   "collection_authority_level": null,
+   "created_at": "2026-08-26T15:25:08.584995Z",
+   "dashboard_id": 2,
+   "dashboard_tab_id": null,
+   "entity_id": "nZgYoQe6Z3kxzP1a1nm0g",
+   "id": 47,
+   "inline_parameters": [],
+   "parameter_mappings": [
+    {
+     "card_id": 48,
+     "parameter_id": "date",
+     "target": [
+      "dimension",
+      [
+       "template-tag",
+       "day"
+      ]
+     ]
+    }
+   ],
+   "row": 11,
+   "series": [],
+   "size_x": 8,
+   "size_y": 3,
+   "visualization_settings": {}
+  },
+  {
+   "action_id": null,
+   "card": {
+    "archived": false,
+    "archived_directly": false,
+    "cache_invalidated_at": "2026-08-26T15:47:36.08791Z",
+    "cache_ttl": null,
+    "card_schema": 23,
+    "collection_id": 6,
+    "collection_position": null,
+    "collection_preview": true,
+    "created_at": "2026-08-26T15:23:41.258527Z",
+    "creator_id": 2,
+    "dashboard_id": null,
+    "database_id": 2,
+    "dataset_query": {
+     "database": 2,
+     "lib/type": "mbql/query",
+     "stages": [
+      {
+       "lib/type": "mbql.stage/native",
+       "native": "SELECT SUM(net_settlement_rub) AS net_settlement_rub\nFROM `wb_mart.V_DASH_KPI_DAILY`\nWHERE {{day}}",
+       "template-tags": [
+        {
+         "dimension": [
+          "field",
+          {
+           "lib/uuid": "1760900a-764a-4963-b594-b93fa1b38aa4"
+          },
+          909
+         ],
+         "display-name": "Период",
+         "id": "095ff9c1-6777-4c9f-a247-6d341de7a1fb",
+         "name": "day",
+         "type": "dimension",
+         "widget-type": "date/all-options"
+        }
+       ]
+      }
+     ]
+    },
+    "description": "Это сумма финансовых начислений, привязанных WB к SKU. Расходы уровня кабинета, которые WB не распределяет по товарам, в показатель не входят. Это не итоговая выплата кабинета. Технически: V_DASH_KPI_DAILY.net_settlement_rub = SUM(finance_for_pay_accounting) по SKU-строкам витрины. Расходы уровня кабинета показаны отдельно в блоке «Структура затрат».",
+    "dimension_mappings": null,
+    "dimensions": null,
+    "display": "scalar",
+    "document_id": null,
+    "download_perms": "full",
+    "embedding_params": null,
+    "embedding_type": null,
+    "enable_embedding": false,
+    "entity_id": "wo8auV1gdB7fAquaO-t34",
+    "id": 49,
+    "last_used_at": "2026-08-27T07:12:36.871091Z",
+    "legacy_query": null,
+    "metabase_version": "v0.63.15.1 (ab5ffba)",
+    "name": "К перечислению по SKU*, ₽",
+    "parameter_mappings": [],
+    "parameters": [
+     {
+      "id": "095ff9c1-6777-4c9f-a247-6d341de7a1fb",
+      "name": "Период",
+      "slug": "day",
+      "target": [
+       "dimension",
+       [
+        "template-tag",
+        "day"
+       ]
+      ],
+      "type": "date/all-options"
+     }
+    ],
+    "query_average_duration": 4180,
+    "query_type": "native",
+    "source_card_id": null,
+    "table_id": null,
+    "type": "question",
+    "visualization_settings": {
+     "column_settings": {
+      "[\"name\",\"net_settlement_rub\"]": {
+       "currency": "RUB",
+       "currency_in_header": false,
+       "currency_style": "symbol",
+       "decimals": 0,
+       "number_style": "currency"
+      }
+     },
+     "scalar.field": "net_settlement_rub"
+    }
+   },
+   "card_id": 49,
+   "col": 16,
+   "collection_authority_level": null,
+   "created_at": "2026-08-26T15:25:08.584995Z",
+   "dashboard_id": 2,
+   "dashboard_tab_id": null,
+   "entity_id": "LnotF3K52fTqybDvroHC5",
+   "id": 48,
+   "inline_parameters": [],
+   "parameter_mappings": [
+    {
+     "card_id": 49,
+     "parameter_id": "date",
+     "target": [
+      "dimension",
+      [
+       "template-tag",
+       "day"
+      ]
+     ]
+    }
+   ],
+   "row": 11,
+   "series": [],
+   "size_x": 8,
+   "size_y": 3,
+   "visualization_settings": {}
+  },
+  {
+   "action_id": null,
+   "card": {
+    "download_perms": "none",
+    "query_average_duration": null
+   },
+   "card_id": null,
+   "col": 0,
+   "collection_authority_level": null,
+   "created_at": "2026-08-26T15:25:08.584995Z",
+   "dashboard_id": 2,
+   "dashboard_tab_id": null,
+   "entity_id": "AY6SCnr3U51UDfDQSCxYs",
+   "id": 49,
+   "inline_parameters": [],
+   "parameter_mappings": [],
+   "row": 18,
+   "series": [],
+   "size_x": 24,
+   "size_y": 1,
+   "visualization_settings": {
+    "dashcard.background": false,
+    "text": "Динамика",
+    "virtual_card": {
+     "archived": false,
+     "dataset_query": {},
+     "display": "heading",
+     "name": null,
+     "visualization_settings": {}
+    }
+   }
+  },
+  {
+   "action_id": null,
+   "card": {
+    "archived": false,
+    "archived_directly": false,
+    "cache_invalidated_at": "2026-08-26T16:21:51.329193Z",
+    "cache_ttl": null,
+    "card_schema": 23,
+    "collection_id": 6,
+    "collection_position": null,
+    "collection_preview": true,
+    "created_at": "2026-08-26T15:23:43.520045Z",
+    "creator_id": 2,
+    "dashboard_id": null,
+    "database_id": 2,
+    "dataset_query": {
+     "database": 2,
+     "lib/type": "mbql/query",
+     "stages": [
+      {
+       "lib/type": "mbql.stage/native",
+       "native": "SELECT\n  day,\n  sales_revenue_seller_base_rub AS revenue_rub,\n  contribution_pre_cogs_rub     AS contribution_rub\nFROM `wb_mart.V_DASH_KPI_DAILY`\nWHERE {{day}}\nORDER BY day",
+       "template-tags": [
+        {
+         "dimension": [
+          "field",
+          {
+           "lib/uuid": "17e5d769-9892-4411-a7fa-22c996be7068"
+          },
+          909
+         ],
+         "display-name": "Период",
+         "id": "ad5ad8f8-cd91-4f26-b79a-8a2d2b416ac9",
+         "name": "day",
+         "type": "dimension",
+         "widget-type": "date/all-options"
+        }
+       ]
+      }
+     ]
+    },
+    "description": "Обе серии в ₽ и одного порядка величины, поэтому одна ось корректна: разрыв между столбцом и линией — это и есть затраты. Сутки без покрытия дают разрыв линии (NULL), а не ноль.",
+    "dimension_mappings": null,
+    "dimensions": null,
+    "display": "combo",
+    "document_id": null,
+    "download_perms": "full",
+    "embedding_params": null,
+    "embedding_type": null,
+    "enable_embedding": false,
+    "entity_id": "FLqIu5Fk4VDeVAmOyDVJd",
+    "id": 50,
+    "last_used_at": "2026-08-26T21:05:52.53599Z",
+    "legacy_query": null,
+    "metabase_version": "v0.63.15.1 (ab5ffba)",
+    "name": "Выручка и вклад по дням",
+    "parameter_mappings": [],
+    "parameters": [
+     {
+      "id": "ad5ad8f8-cd91-4f26-b79a-8a2d2b416ac9",
+      "name": "Период",
+      "slug": "day",
+      "target": [
+       "dimension",
+       [
+        "template-tag",
+        "day"
+       ]
+      ],
+      "type": "date/all-options"
+     }
+    ],
+    "query_average_duration": null,
+    "query_type": "native",
+    "source_card_id": null,
+    "table_id": null,
+    "type": "question",
+    "visualization_settings": {
+     "column_settings": {
+      "[\"name\",\"contribution_rub\"]": {
+       "currency": "RUB",
+       "currency_in_header": false,
+       "currency_style": "symbol",
+       "decimals": 0,
+       "number_style": "currency"
+      },
+      "[\"name\",\"revenue_rub\"]": {
+       "currency": "RUB",
+       "currency_in_header": false,
+       "currency_style": "symbol",
+       "decimals": 0,
+       "number_style": "currency"
+      }
+     },
+     "graph.dimensions": [
+      "day"
+     ],
+     "graph.metrics": [
+      "revenue_rub",
+      "contribution_rub"
+     ],
+     "graph.show_values": false,
+     "graph.x_axis.title_text": "День",
+     "graph.y_axis.title_text": "₽",
+     "series_settings": {
+      "contribution_rub": {
+       "display": "line",
+       "title": "Доход до себестоимости"
+      },
+      "revenue_rub": {
+       "display": "bar",
+       "title": "Выручка"
+      }
+     }
+    }
+   },
+   "card_id": 50,
+   "col": 0,
+   "collection_authority_level": null,
+   "created_at": "2026-08-26T15:25:08.584995Z",
+   "dashboard_id": 2,
+   "dashboard_tab_id": null,
+   "entity_id": "_l05V0BIwno2XL2bv59Ki",
+   "id": 50,
+   "inline_parameters": [],
+   "parameter_mappings": [
+    {
+     "card_id": 50,
+     "parameter_id": "date",
+     "target": [
+      "dimension",
+      [
+       "template-tag",
+       "day"
+      ]
+     ]
+    }
+   ],
+   "row": 19,
+   "series": [],
+   "size_x": 24,
+   "size_y": 7,
+   "visualization_settings": {}
+  },
+  {
+   "action_id": null,
+   "card": {
+    "download_perms": "none",
+    "query_average_duration": null
+   },
+   "card_id": null,
+   "col": 0,
+   "collection_authority_level": null,
+   "created_at": "2026-08-26T15:25:08.584995Z",
+   "dashboard_id": 2,
+   "dashboard_tab_id": null,
+   "entity_id": "yHikC55f2dobIs7s8ihKt",
+   "id": 51,
+   "inline_parameters": [],
+   "parameter_mappings": [],
+   "row": 26,
+   "series": [],
+   "size_x": 24,
+   "size_y": 1,
+   "visualization_settings": {
+    "dashcard.background": false,
+    "text": "Структура затрат за период",
+    "virtual_card": {
+     "archived": false,
+     "dataset_query": {},
+     "display": "heading",
+     "name": null,
+     "visualization_settings": {}
+    }
+   }
+  },
+  {
+   "action_id": null,
+   "card": {
+    "archived": false,
+    "archived_directly": false,
+    "cache_invalidated_at": "2026-08-26T15:48:01.214674Z",
+    "cache_ttl": null,
+    "card_schema": 23,
+    "collection_id": 6,
+    "collection_position": null,
+    "collection_preview": true,
+    "created_at": "2026-08-26T15:23:45.818194Z",
+    "creator_id": 2,
+    "dashboard_id": null,
+    "database_id": 2,
+    "dataset_query": {
+     "database": 2,
+     "lib/type": "mbql/query",
+     "stages": [
+      {
+       "lib/type": "mbql.stage/native",
+       "native": "WITH b AS (\n  SELECT\n    SUM(marketplace_fee_rub)     AS mp,\n    SUM(logistics_rub)           AS logi,\n    SUM(ad_spend_attributed_rub) AS ads,\n    SUM(storage_rub)             AS storage,\n    SUM(deduction_rub)           AS deduction,\n    SUM(acceptance_rub)          AS acceptance,\n    SUM(penalty_account_rub)     AS penalty,\n    SUM(reimbursement_account_rub) AS reimb,\n    SUM(other_account_rub)       AS other_acc\n  FROM `wb_mart.V_DASH_KPI_DAILY`\n  WHERE {{day}}\n)\nSELECT cost_item, amount_rub FROM (\n  SELECT 'Комиссия WB'  AS cost_item, mp         AS amount_rub FROM b\n  UNION ALL SELECT 'Логистика',              logi       FROM b\n  UNION ALL SELECT 'Реклама',    ads        FROM b\n  UNION ALL SELECT 'Удержания WB',             deduction  FROM b\n  UNION ALL SELECT 'Хранение',              storage    FROM b\n  UNION ALL SELECT 'Приёмка',               acceptance FROM b\n  UNION ALL SELECT 'Штрафы',                penalty    FROM b\n  UNION ALL SELECT 'Компенсации',           reimb      FROM b\n  UNION ALL SELECT 'Прочее',                other_acc  FROM b\n)\nWHERE amount_rub IS NOT NULL AND amount_rub <> 0\nORDER BY amount_rub DESC",
+       "template-tags": [
+        {
+         "dimension": [
+          "field",
+          {
+           "lib/uuid": "c8329288-bdda-4ae2-a63c-6da3a2672f66"
+          },
+          909
+         ],
+         "display-name": "Период",
+         "id": "318ab9f3-0886-47ed-8ff2-7a8787e23357",
+         "name": "day",
+         "type": "dimension",
+         "widget-type": "date/all-options"
+        }
+       ]
+      }
+     ]
+    },
+    "description": "Структура затрат за выбранный период. Комиссия WB, Логистика и Реклама разносятся WB по SKU; Удержания WB, Хранение, Приёмка, Штрафы и Компенсации приходят на уровне кабинета — источник не даёт связки с товаром, и разносить их по SKU нельзя. Сознательно НЕ показаны wb_reward_rub и acquiring_sku_rub: по контракту v1 REV2.4 они уже сидят внутри спреда между ценой продавца и суммой к перечислению, вычитать их вторым разом = двойной счёт. Себестоимости здесь нет — REF_COGS в BigQuery отсутствует. Горизонтальные полосы выбраны вместо waterfall: затраты приходят из двух разных слоёв и не образуют одну аддитивную цепочку от выручки к результату. Поля-источники и расчёты не менялись, изменены только подписи категорий.",
+    "dimension_mappings": null,
+    "dimensions": null,
+    "display": "row",
+    "document_id": null,
+    "download_perms": "full",
+    "embedding_params": null,
+    "embedding_type": null,
+    "enable_embedding": false,
+    "entity_id": "sP0TcBbqSZCY-Z82W-IKN",
+    "id": 51,
+    "last_used_at": "2026-08-27T08:23:17.457148Z",
+    "legacy_query": null,
+    "metabase_version": "v0.63.15.1 (ab5ffba)",
+    "name": "Структура затрат за период",
+    "parameter_mappings": [],
+    "parameters": [
+     {
+      "id": "318ab9f3-0886-47ed-8ff2-7a8787e23357",
+      "name": "Период",
+      "slug": "day",
+      "target": [
+       "dimension",
+       [
+        "template-tag",
+        "day"
+       ]
+      ],
+      "type": "date/all-options"
+     }
+    ],
+    "query_average_duration": null,
+    "query_type": "native",
+    "source_card_id": null,
+    "table_id": null,
+    "type": "question",
+    "visualization_settings": {
+     "column_settings": {
+      "[\"name\",\"amount_rub\"]": {
+       "currency": "RUB",
+       "currency_in_header": false,
+       "currency_style": "symbol",
+       "decimals": 0,
+       "number_style": "currency"
+      }
+     },
+     "graph.dimensions": [
+      "cost_item"
+     ],
+     "graph.metrics": [
+      "amount_rub"
+     ],
+     "graph.show_values": true,
+     "graph.x_axis.title_text": "₽",
+     "graph.y_axis.title_text": ""
+    }
+   },
+   "card_id": 51,
+   "col": 0,
+   "collection_authority_level": null,
+   "created_at": "2026-08-26T15:25:08.584995Z",
+   "dashboard_id": 2,
+   "dashboard_tab_id": null,
+   "entity_id": "rhPJbFMJRGUcSlQ3eb_C4",
+   "id": 52,
+   "inline_parameters": [],
+   "parameter_mappings": [
+    {
+     "card_id": 51,
+     "parameter_id": "date",
+     "target": [
+      "dimension",
+      [
+       "template-tag",
+       "day"
+      ]
+     ]
+    }
+   ],
+   "row": 27,
+   "series": [],
+   "size_x": 24,
+   "size_y": 8,
+   "visualization_settings": {}
+  },
+  {
+   "action_id": null,
+   "card": {
+    "download_perms": "none",
+    "query_average_duration": null
+   },
+   "card_id": null,
+   "col": 0,
+   "collection_authority_level": null,
+   "created_at": "2026-08-26T15:25:08.584995Z",
+   "dashboard_id": 2,
+   "dashboard_tab_id": null,
+   "entity_id": "I7bzdC8brYptSp87_Gq6C",
+   "id": 53,
+   "inline_parameters": [],
+   "parameter_mappings": [],
+   "row": 35,
+   "series": [],
+   "size_x": 24,
+   "size_y": 1,
+   "visualization_settings": {
+    "dashcard.background": false,
+    "text": "Товары за период",
+    "virtual_card": {
+     "archived": false,
+     "dataset_query": {},
+     "display": "heading",
+     "name": null,
+     "visualization_settings": {}
+    }
+   }
+  },
+  {
+   "action_id": null,
+   "card": {
+    "archived": false,
+    "archived_directly": false,
+    "cache_invalidated_at": "2026-08-26T20:55:24.052894Z",
+    "cache_ttl": null,
+    "card_schema": 23,
+    "collection_id": 6,
+    "collection_position": null,
+    "collection_preview": true,
+    "created_at": "2026-08-26T15:23:48.170981Z",
+    "creator_id": 2,
+    "dashboard_id": null,
+    "database_id": 2,
+    "dataset_query": {
+     "database": 2,
+     "lib/type": "mbql/query",
+     "stages": [
+      {
+       "lib/type": "mbql.stage/native",
+       "native": "SELECT\n  product_name_short                    AS product,\n  SUM(orders_gross_qty)                 AS orders_gross_qty,\n  SUM(canceled_qty)                     AS canceled_qty,\n  SUM(buyouts_qty)                      AS buyouts_qty,\n  SUM(sales_revenue_seller_base_rub)    AS revenue_rub,\n  SUM(ad_spend_attributed_rub)          AS ad_spend_rub,\n  SAFE_DIVIDE(SUM(ad_spend_attributed_rub), SUM(sales_revenue_seller_base_rub)) AS drr,\n  SUM(contribution_pre_cogs_rub)        AS contribution_rub,\n  SAFE_DIVIDE(SUM(contribution_pre_cogs_rub), SUM(sales_revenue_seller_base_rub)) AS contribution_to_revenue\nFROM `wb_mart.V_DASH_SKU_DAILY`\nWHERE {{day}}\n  [[AND {{sku}}]]\nGROUP BY product\nORDER BY revenue_rub DESC",
+       "template-tags": [
+        {
+         "dimension": [
+          "field",
+          {
+           "lib/uuid": "e4298234-2f62-435e-bc2b-273fce94703e"
+          },
+          983
+         ],
+         "display-name": "Период",
+         "id": "a535efa8-dd5b-4d92-a823-fe453380352a",
+         "name": "day",
+         "type": "dimension",
+         "widget-type": "date/all-options"
+        },
+        {
+         "dimension": [
+          "field",
+          {
+           "lib/uuid": "81f84129-d89d-427d-bf44-4f8eb8f2fcfa"
+          },
+          986
+         ],
+         "display-name": "SKU",
+         "id": "a27b2ade-1b4d-4b21-b5b0-4acb93e1ef13",
+         "name": "sku",
+         "type": "dimension",
+         "widget-type": "string/="
+        }
+       ]
+      }
+     ]
+    },
+    "description": "V_DASH_SKU_DAILY, грейн сутки × nm_id, строгий pass-through грейна витрины. Расходы уровня счёта (хранение, удержания, приёмка) сюда принципиально не входят — источник не даёт связки с SKU. ДРР и «Доходность до себестоимости, %» считаются как ratio-of-sums за выбранный период.",
+    "dimension_mappings": null,
+    "dimensions": null,
+    "display": "table",
+    "document_id": null,
+    "download_perms": "full",
+    "embedding_params": null,
+    "embedding_type": null,
+    "enable_embedding": false,
+    "entity_id": "LuPy2relmB6JfNCBgzv2t",
+    "id": 52,
+    "last_used_at": "2026-08-26T21:05:52.53599Z",
+    "legacy_query": null,
+    "metabase_version": "v0.63.15.1 (ab5ffba)",
+    "name": "SKU за период",
+    "parameter_mappings": [],
+    "parameters": [
+     {
+      "id": "a535efa8-dd5b-4d92-a823-fe453380352a",
+      "name": "Период",
+      "slug": "day",
+      "target": [
+       "dimension",
+       [
+        "template-tag",
+        "day"
+       ]
+      ],
+      "type": "date/all-options"
+     },
+     {
+      "id": "a27b2ade-1b4d-4b21-b5b0-4acb93e1ef13",
+      "name": "Товар",
+      "slug": "sku",
+      "target": [
+       "dimension",
+       [
+        "template-tag",
+        "sku"
+       ]
+      ],
+      "type": "string/="
+     }
+    ],
+    "query_average_duration": null,
+    "query_type": "native",
+    "source_card_id": null,
+    "table_id": null,
+    "type": "question",
+    "visualization_settings": {
+     "column_settings": {
+      "[\"name\",\"ad_spend_rub\"]": {
+       "column_title": "Реклама, ₽",
+       "currency": "RUB",
+       "currency_in_header": false,
+       "currency_style": "symbol",
+       "decimals": 0,
+       "number_style": "currency"
+      },
+      "[\"name\",\"buyouts_qty\"]": {
+       "column_title": "Выкупы, шт",
+       "decimals": 0,
+       "number_style": "decimal"
+      },
+      "[\"name\",\"canceled_qty\"]": {
+       "column_title": "Отменено, шт",
+       "decimals": 0,
+       "number_style": "decimal"
+      },
+      "[\"name\",\"contribution_rub\"]": {
+       "column_title": "Доход до себестоимости, ₽",
+       "currency": "RUB",
+       "currency_in_header": false,
+       "currency_style": "symbol",
+       "decimals": 0,
+       "number_style": "currency"
+      },
+      "[\"name\",\"contribution_to_revenue\"]": {
+       "column_title": "Доходность до себестоимости, %",
+       "decimals": 1,
+       "number_style": "percent"
+      },
+      "[\"name\",\"drr\"]": {
+       "column_title": "ДРР",
+       "decimals": 1,
+       "number_style": "percent"
+      },
+      "[\"name\",\"orders_gross_qty\"]": {
+       "column_title": "Заказы, шт",
+       "decimals": 0,
+       "number_style": "decimal"
+      },
+      "[\"name\",\"product\"]": {
+       "column_title": "Товар"
+      },
+      "[\"name\",\"revenue_rub\"]": {
+       "column_title": "Выручка, ₽",
+       "currency": "RUB",
+       "currency_in_header": false,
+       "currency_style": "symbol",
+       "decimals": 0,
+       "number_style": "currency"
+      }
+     }
+    }
+   },
+   "card_id": 52,
+   "col": 0,
+   "collection_authority_level": null,
+   "created_at": "2026-08-26T15:25:08.584995Z",
+   "dashboard_id": 2,
+   "dashboard_tab_id": null,
+   "entity_id": "InqOdLDXfRwCXUjQG7ax5",
+   "id": 54,
+   "inline_parameters": [],
+   "parameter_mappings": [
+    {
+     "card_id": 52,
+     "parameter_id": "date",
+     "target": [
+      "dimension",
+      [
+       "template-tag",
+       "day"
+      ]
+     ]
+    }
+   ],
+   "row": 36,
+   "series": [],
+   "size_x": 24,
+   "size_y": 9,
+   "visualization_settings": {}
+  },
+  {
+   "action_id": null,
+   "card": {
+    "download_perms": "none",
+    "query_average_duration": null
+   },
+   "card_id": null,
+   "col": 0,
+   "collection_authority_level": null,
+   "created_at": "2026-08-26T20:17:02.685174Z",
+   "dashboard_id": 2,
+   "dashboard_tab_id": null,
+   "entity_id": "rpJWhsBiyAoUSLUjgmdUC",
+   "id": 55,
+   "inline_parameters": [],
+   "parameter_mappings": [],
+   "row": 14,
+   "series": [],
+   "size_x": 24,
+   "size_y": 1,
+   "visualization_settings": {
+    "dashcard.background": false,
+    "text": "Результат периода",
+    "text.align_vertical": "bottom",
+    "virtual_card": {
+     "archived": false,
+     "dataset_query": {},
+     "display": "text",
+     "name": null,
+     "visualization_settings": {}
+    }
+   }
+  },
+  {
+   "action_id": null,
+   "card": {
+    "archived": false,
+    "archived_directly": false,
+    "cache_invalidated_at": null,
+    "cache_ttl": null,
+    "card_schema": 23,
+    "collection_id": 6,
+    "collection_position": null,
+    "collection_preview": true,
+    "created_at": "2026-08-26T20:14:19.313813Z",
+    "creator_id": 2,
+    "dashboard_id": null,
+    "database_id": 2,
+    "dataset_query": {
+     "database": 2,
+     "lib/type": "mbql/query",
+     "stages": [
+      {
+       "lib/type": "mbql.stage/native",
+       "native": "SELECT SUM(period_result_pre_cogs_rub) AS period_result_rub\nFROM `wb_mart.V_DASH_KPI_DAILY`\nWHERE {{day}}",
+       "template-tags": [
+        {
+         "dimension": [
+          "field",
+          {
+           "lib/uuid": "eab95bcf-9abe-41ed-bdfb-d9b3e0d6ae80"
+          },
+          909
+         ],
+         "display-name": "Период",
+         "id": "c94eb0c2-98f3-4e15-9adf-3d904a5e8ed8",
+         "name": "day",
+         "type": "dimension",
+         "widget-type": "date/all-options"
+        }
+       ]
+      }
+     ]
+    },
+    "description": "Выручка продавца за вычетом сбора маркетплейса, логистики, атрибутированной рекламы и расходов уровня аккаунта. Не включает себестоимость товара и налоги. V_DASH_KPI_DAILY.period_result_pre_cogs_rub = contribution_pre_cogs_rub − account_level_total_rub. Расходы уровня аккаунта: хранение, удержания, приёмка, штрафы, компенсации (кредит, знак сохранён), прочее. wb_reward, эквайринг и SKU-возмещения повторно НЕ вычитаются — по контракту PR-B2 они уже внутри спреда marketplace_fee_rub. Это НЕ прибыль, НЕ операционная прибыль и НЕ EBITDA. NULL в сутках без полного покрытия (contribution_covered AND finance_covered).",
+    "dimension_mappings": null,
+    "dimensions": null,
+    "display": "scalar",
+    "document_id": null,
+    "download_perms": "full",
+    "embedding_params": null,
+    "embedding_type": null,
+    "enable_embedding": false,
+    "entity_id": "xHRFz-D8n9OnzHYkwPC7F",
+    "id": 53,
+    "last_used_at": "2026-08-27T08:23:09.903559Z",
+    "legacy_query": null,
+    "metabase_version": "v0.63.15.1 (ab5ffba)",
+    "name": "Результат периода до себестоимости",
+    "parameter_mappings": [],
+    "parameters": [],
+    "query_average_duration": null,
+    "query_type": "native",
+    "source_card_id": null,
+    "table_id": null,
+    "type": "question",
+    "visualization_settings": {
+     "column_settings": {
+      "[\"name\",\"period_result_rub\"]": {
+       "currency": "RUB",
+       "currency_in_header": false,
+       "currency_style": "symbol",
+       "decimals": 0,
+       "number_style": "currency"
+      }
+     },
+     "scalar.field": "period_result_rub"
+    }
+   },
+   "card_id": 53,
+   "col": 0,
+   "collection_authority_level": null,
+   "created_at": "2026-08-26T20:17:02.685174Z",
+   "dashboard_id": 2,
+   "dashboard_tab_id": null,
+   "entity_id": "jljauKtdFu92GtIFFh9SL",
+   "id": 56,
+   "inline_parameters": [],
+   "parameter_mappings": [
+    {
+     "card_id": 53,
+     "parameter_id": "date",
+     "target": [
+      "dimension",
+      [
+       "template-tag",
+       "day"
+      ]
+     ]
+    }
+   ],
+   "row": 15,
+   "series": [],
+   "size_x": 12,
+   "size_y": 3,
+   "visualization_settings": {}
+  },
+  {
+   "action_id": null,
+   "card": {
+    "archived": false,
+    "archived_directly": false,
+    "cache_invalidated_at": null,
+    "cache_ttl": null,
+    "card_schema": 23,
+    "collection_id": 6,
+    "collection_position": null,
+    "collection_preview": true,
+    "created_at": "2026-08-26T20:14:21.486482Z",
+    "creator_id": 2,
+    "dashboard_id": null,
+    "database_id": 2,
+    "dataset_query": {
+     "database": 2,
+     "lib/type": "mbql/query",
+     "stages": [
+      {
+       "lib/type": "mbql.stage/native",
+       "native": "SELECT SAFE_DIVIDE(SUM(period_result_pre_cogs_rub), SUM(sales_revenue_seller_base_rub)) AS period_result_margin\nFROM `wb_mart.V_DASH_KPI_DAILY`\nWHERE {{day}}",
+       "template-tags": [
+        {
+         "dimension": [
+          "field",
+          {
+           "lib/uuid": "5d2fc7ab-5730-42a2-8013-86a79ec88385"
+          },
+          909
+         ],
+         "display-name": "Период",
+         "id": "efa1fb8f-bde9-485a-ba46-6114c643d789",
+         "name": "day",
+         "type": "dimension",
+         "widget-type": "date/all-options"
+        }
+       ]
+      }
+     ]
+    },
+    "description": "Результат периода до себестоимости, делённый на выручку продавца за тот же период. Считается как ratio-of-sums: SUM(period_result_pre_cogs_rub) / SUM(sales_revenue_seller_base_rub), а НЕ усреднением посуточных долей — AVG(ratio) даёт другую величину. Не включает себестоимость товара и налоги. Это НЕ рентабельность по прибыли.",
+    "dimension_mappings": null,
+    "dimensions": null,
+    "display": "scalar",
+    "document_id": null,
+    "download_perms": "full",
+    "embedding_params": null,
+    "embedding_type": null,
+    "enable_embedding": false,
+    "entity_id": "-iKoChmzY-b4AosEvxnRS",
+    "id": 54,
+    "last_used_at": "2026-08-27T07:12:59.052299Z",
+    "legacy_query": null,
+    "metabase_version": "v0.63.15.1 (ab5ffba)",
+    "name": "Рентабельность до себестоимости",
+    "parameter_mappings": [],
+    "parameters": [],
+    "query_average_duration": null,
+    "query_type": "native",
+    "source_card_id": null,
+    "table_id": null,
+    "type": "question",
+    "visualization_settings": {
+     "column_settings": {
+      "[\"name\",\"period_result_margin\"]": {
+       "decimals": 2,
+       "number_style": "percent"
+      }
+     },
+     "scalar.field": "period_result_margin"
+    }
+   },
+   "card_id": 54,
+   "col": 12,
+   "collection_authority_level": null,
+   "created_at": "2026-08-26T20:17:02.685174Z",
+   "dashboard_id": 2,
+   "dashboard_tab_id": null,
+   "entity_id": "xCiO1ABd12IVUVUpMmUVm",
+   "id": 57,
+   "inline_parameters": [],
+   "parameter_mappings": [
+    {
+     "card_id": 54,
+     "parameter_id": "date",
+     "target": [
+      "dimension",
+      [
+       "template-tag",
+       "day"
+      ]
+     ]
+    }
+   ],
+   "row": 15,
+   "series": [],
+   "size_x": 12,
+   "size_y": 3,
+   "visualization_settings": {}
+  },
+  {
+   "action_id": null,
+   "card": {
+    "archived": false,
+    "archived_directly": false,
+    "cache_invalidated_at": null,
+    "cache_ttl": null,
+    "card_schema": 23,
+    "collection_id": 6,
+    "collection_position": null,
+    "collection_preview": true,
+    "created_at": "2026-08-26T20:55:04.116623Z",
+    "creator_id": 2,
+    "dashboard_id": null,
+    "database_id": 2,
+    "dataset_query": {
+     "database": 2,
+     "lib/type": "mbql/query",
+     "stages": [
+      {
+       "lib/type": "mbql.stage/native",
+       "native": "SELECT SUM(canceled_qty) AS canceled_qty\nFROM `wb_mart.V_DASH_KPI_DAILY`\nWHERE {{day}}",
+       "template-tags": [
+        {
+         "dimension": [
+          "field",
+          {
+           "lib/uuid": "4aef3c56-fb98-45ce-b981-5f7fdf49e046"
+          },
+          909
+         ],
+         "display-name": "Период",
+         "id": "57d96d4b-5fae-4614-88e9-7e998fc84408",
+         "name": "day",
+         "type": "dimension",
+         "widget-type": "date/all-options"
+        }
+       ]
+      }
+     ]
+    },
+    "description": "Заказы, отменённые до выкупа. V_DASH_KPI_DAILY.canceled_qty = COUNTIF(is_cancel) в FACT_ORDERS, по дате заказа. Входит в «Заказы, шт» (брутто): orders_gross_qty = orders_qty + canceled_qty. WB в выгрузке воронки показывает отмены отдельной колонкой «Отменили, шт» — по своей базе дат значение может отличаться. NULL в сутках без покрытия заказов.",
+    "dimension_mappings": null,
+    "dimensions": null,
+    "display": "scalar",
+    "document_id": null,
+    "download_perms": "full",
+    "embedding_params": null,
+    "embedding_type": null,
+    "enable_embedding": false,
+    "entity_id": "65chXD4wAKqRX_ZkvE4gL",
+    "id": 55,
+    "last_used_at": "2026-08-27T08:22:44.544745Z",
+    "legacy_query": null,
+    "metabase_version": "v0.63.15.1 (ab5ffba)",
+    "name": "Отменено, шт",
+    "parameter_mappings": [],
+    "parameters": [],
+    "query_average_duration": null,
+    "query_type": "native",
+    "source_card_id": null,
+    "table_id": null,
+    "type": "question",
+    "visualization_settings": {
+     "column_settings": {
+      "[\"name\",\"canceled_qty\"]": {
+       "decimals": 0,
+       "number_style": "decimal"
+      }
+     },
+     "scalar.field": "canceled_qty"
+    }
+   },
+   "card_id": 55,
+   "col": 8,
+   "collection_authority_level": null,
+   "created_at": "2026-08-26T20:56:19.557411Z",
+   "dashboard_id": 2,
+   "dashboard_tab_id": null,
+   "entity_id": "4ZqrZ84HakVu5hKFEkX5n",
+   "id": 58,
+   "inline_parameters": [],
+   "parameter_mappings": [
+    {
+     "card_id": 55,
+     "parameter_id": "date",
+     "target": [
+      "dimension",
+      [
+       "template-tag",
+       "day"
+      ]
+     ]
+    }
+   ],
+   "row": 5,
+   "series": [],
+   "size_x": 8,
+   "size_y": 3,
+   "visualization_settings": {}
+  }
+ ],
+ "description": "Что происходит с бизнесом EVETIS на Wildberries и зарабатываем ли мы деньги. Источник — валидированный consumption layer BigQuery (wb_mart.V_DASH_*). Экономика pre-COGS: REF_COGS в BigQuery отсутствует, поэтому это вклад до себестоимости, не прибыль и не маржа. Период по умолчанию — последние 30 полных суток (текущий неполный день исключён).",
+ "embedding_params": null,
+ "embedding_type": null,
+ "enable_embedding": false,
+ "entity_id": "YR3kZiSekMbLIfeJ_EnRg",
+ "id": 2,
+ "is_remote_synced": false,
+ "name": "EVETIS · WB Executive",
+ "param_fields": {
+  "095ff9c1-6777-4c9f-a247-6d341de7a1fb": [
+   {
+    "base_type": "type/Date",
+    "dimensions": [],
+    "display_name": "Day",
+    "fk_target_field_id": null,
+    "has_field_values": "none",
+    "id": 909,
+    "name": "day",
+    "name_field": null,
+    "semantic_type": null,
+    "table_id": 38,
+    "target": null
+   }
+  ],
+  "25c4eab0-bc5b-4784-a8cf-cc7827b41cd1": [
+   {
+    "base_type": "type/Date",
+    "dimensions": [],
+    "display_name": "Day",
+    "fk_target_field_id": null,
+    "has_field_values": "none",
+    "id": 909,
+    "name": "day",
+    "name_field": null,
+    "semantic_type": null,
+    "table_id": 38,
+    "target": null
+   }
+  ],
+  "2e33299c-8b84-4540-ad42-09406365ba4a": [
+   {
+    "base_type": "type/Date",
+    "dimensions": [],
+    "display_name": "Day",
+    "fk_target_field_id": null,
+    "has_field_values": "none",
+    "id": 909,
+    "name": "day",
+    "name_field": null,
+    "semantic_type": null,
+    "table_id": 38,
+    "target": null
+   }
+  ],
+  "318ab9f3-0886-47ed-8ff2-7a8787e23357": [
+   {
+    "base_type": "type/Date",
+    "dimensions": [],
+    "display_name": "Day",
+    "fk_target_field_id": null,
+    "has_field_values": "none",
+    "id": 909,
+    "name": "day",
+    "name_field": null,
+    "semantic_type": null,
+    "table_id": 38,
+    "target": null
+   }
+  ],
+  "453c74c8-e1df-43af-92fc-a526447bde48": [
+   {
+    "base_type": "type/Date",
+    "dimensions": [],
+    "display_name": "Day",
+    "fk_target_field_id": null,
+    "has_field_values": "none",
+    "id": 909,
+    "name": "day",
+    "name_field": null,
+    "semantic_type": null,
+    "table_id": 38,
+    "target": null
+   }
+  ],
+  "57d96d4b-5fae-4614-88e9-7e998fc84408": [
+   {
+    "base_type": "type/Date",
+    "dimensions": [],
+    "display_name": "Day",
+    "fk_target_field_id": null,
+    "has_field_values": "none",
+    "id": 909,
+    "name": "day",
+    "name_field": null,
+    "semantic_type": null,
+    "table_id": 38,
+    "target": null
+   }
+  ],
+  "5bd7c7a7-fec7-4e19-a2bd-6b5d2a171a30": [
+   {
+    "base_type": "type/Date",
+    "dimensions": [],
+    "display_name": "Day",
+    "fk_target_field_id": null,
+    "has_field_values": "none",
+    "id": 909,
+    "name": "day",
+    "name_field": null,
+    "semantic_type": null,
+    "table_id": 38,
+    "target": null
+   }
+  ],
+  "7a165502-4c08-46b4-92b2-f6671999719a": [
+   {
+    "base_type": "type/Date",
+    "dimensions": [],
+    "display_name": "Day",
+    "fk_target_field_id": null,
+    "has_field_values": "none",
+    "id": 909,
+    "name": "day",
+    "name_field": null,
+    "semantic_type": null,
+    "table_id": 38,
+    "target": null
+   }
+  ],
+  "9fce4429-859f-4aac-ae90-2eab839f2c7b": [
+   {
+    "base_type": "type/Date",
+    "dimensions": [],
+    "display_name": "Day",
+    "fk_target_field_id": null,
+    "has_field_values": "none",
+    "id": 909,
+    "name": "day",
+    "name_field": null,
+    "semantic_type": null,
+    "table_id": 38,
+    "target": null
+   }
+  ],
+  "a27b2ade-1b4d-4b21-b5b0-4acb93e1ef13": [
+   {
+    "base_type": "type/Text",
+    "dimensions": [],
+    "display_name": "Product Name Short",
+    "fk_target_field_id": null,
+    "has_field_values": "list",
+    "id": 986,
+    "name": "product_name_short",
+    "name_field": null,
+    "semantic_type": "type/Category",
+    "table_id": 39,
+    "target": null
+   }
+  ],
+  "a535efa8-dd5b-4d92-a823-fe453380352a": [
+   {
+    "base_type": "type/Date",
+    "dimensions": [],
+    "display_name": "Day",
+    "fk_target_field_id": null,
+    "has_field_values": "none",
+    "id": 983,
+    "name": "day",
+    "name_field": null,
+    "semantic_type": null,
+    "table_id": 39,
+    "target": null
+   }
+  ],
+  "ad5ad8f8-cd91-4f26-b79a-8a2d2b416ac9": [
+   {
+    "base_type": "type/Date",
+    "dimensions": [],
+    "display_name": "Day",
+    "fk_target_field_id": null,
+    "has_field_values": "none",
+    "id": 909,
+    "name": "day",
+    "name_field": null,
+    "semantic_type": null,
+    "table_id": 38,
+    "target": null
+   }
+  ],
+  "c94eb0c2-98f3-4e15-9adf-3d904a5e8ed8": [
+   {
+    "base_type": "type/Date",
+    "dimensions": [],
+    "display_name": "Day",
+    "fk_target_field_id": null,
+    "has_field_values": "none",
+    "id": 909,
+    "name": "day",
+    "name_field": null,
+    "semantic_type": null,
+    "table_id": 38,
+    "target": null
+   }
+  ],
+  "ccae321d-08bc-4a12-80b7-5916cc35cca0": [
+   {
+    "base_type": "type/Date",
+    "dimensions": [],
+    "display_name": "Day",
+    "fk_target_field_id": null,
+    "has_field_values": "none",
+    "id": 909,
+    "name": "day",
+    "name_field": null,
+    "semantic_type": null,
+    "table_id": 38,
+    "target": null
+   }
+  ],
+  "date": [
+   {
+    "base_type": "type/Date",
+    "dimensions": [],
+    "display_name": "Day",
+    "fk_target_field_id": null,
+    "has_field_values": "none",
+    "id": 909,
+    "name": "day",
+    "name_field": null,
+    "semantic_type": null,
+    "table_id": 38,
+    "target": null
+   },
+   {
+    "base_type": "type/Date",
+    "dimensions": [],
+    "display_name": "Day",
+    "fk_target_field_id": null,
+    "has_field_values": "none",
+    "id": 983,
+    "name": "day",
+    "name_field": null,
+    "semantic_type": null,
+    "table_id": 39,
+    "target": null
+   }
+  ],
+  "e8449115-dbe0-4c95-9ce8-b11d4d50518c": [
+   {
+    "base_type": "type/Date",
+    "dimensions": [],
+    "display_name": "Day",
+    "fk_target_field_id": null,
+    "has_field_values": "none",
+    "id": 909,
+    "name": "day",
+    "name_field": null,
+    "semantic_type": null,
+    "table_id": 38,
+    "target": null
+   }
+  ],
+  "efa1fb8f-bde9-485a-ba46-6114c643d789": [
+   {
+    "base_type": "type/Date",
+    "dimensions": [],
+    "display_name": "Day",
+    "fk_target_field_id": null,
+    "has_field_values": "none",
+    "id": 909,
+    "name": "day",
+    "name_field": null,
+    "semantic_type": null,
+    "table_id": 38,
+    "target": null
+   }
+  ]
+ },
+ "parameters": [
+  {
+   "default": "past30days",
+   "id": "date",
+   "name": "Период",
+   "sectionId": "date",
+   "slug": "date",
+   "type": "date/all-options"
+  }
+ ],
+ "points_of_interest": null,
+ "position": null,
+ "show_in_getting_started": false,
+ "tabs": [],
+ "width": "fixed"
+}

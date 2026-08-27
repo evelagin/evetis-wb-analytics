@@ -1,0 +1,107 @@
+{
+ "archived": false,
+ "archived_directly": false,
+ "cache_invalidated_at": null,
+ "cache_ttl": null,
+ "card_schema": 23,
+ "collection": {
+  "archive_operation_id": null,
+  "archived": false,
+  "archived_directly": null,
+  "authority_level": null,
+  "created_at": "2026-08-26T15:19:56.740614Z",
+  "description": "Executive MVP: что происходит с бизнесом и зарабатываем ли мы деньги.",
+  "entity_id": "EZUYQWsC5fdY9QqGY-xKC",
+  "id": 6,
+  "is_remote_synced": false,
+  "is_sample": false,
+  "location": "/5/",
+  "name": "01 Executive",
+  "namespace": null,
+  "personal_owner_id": null,
+  "slug": "01_executive",
+  "type": null
+ },
+ "collection_id": 6,
+ "collection_position": null,
+ "collection_preview": true,
+ "created_at": "2026-08-26T20:14:21.486482Z",
+ "creator_id": 2,
+ "dashboard": null,
+ "dashboard_id": null,
+ "database_id": 2,
+ "dataset_query": {
+  "database": 2,
+  "lib/type": "mbql/query",
+  "stages": [
+   {
+    "lib/type": "mbql.stage/native",
+    "native": "SELECT SAFE_DIVIDE(SUM(period_result_pre_cogs_rub), SUM(sales_revenue_seller_base_rub)) AS period_result_margin\nFROM `wb_mart.V_DASH_KPI_DAILY`\nWHERE {{day}}",
+    "template-tags": [
+     {
+      "dimension": [
+       "field",
+       {
+        "lib/uuid": "5d2fc7ab-5730-42a2-8013-86a79ec88385"
+       },
+       909
+      ],
+      "display-name": "Период",
+      "id": "efa1fb8f-bde9-485a-ba46-6114c643d789",
+      "name": "day",
+      "type": "dimension",
+      "widget-type": "date/all-options"
+     }
+    ]
+   }
+  ]
+ },
+ "description": "Результат периода до себестоимости, делённый на выручку продавца за тот же период. Считается как ratio-of-sums: SUM(period_result_pre_cogs_rub) / SUM(sales_revenue_seller_base_rub), а НЕ усреднением посуточных долей — AVG(ratio) даёт другую величину. Не включает себестоимость товара и налоги. Это НЕ рентабельность по прибыли.",
+ "dimension_mappings": null,
+ "dimensions": null,
+ "display": "scalar",
+ "document_id": null,
+ "embedding_params": null,
+ "embedding_type": null,
+ "enable_embedding": false,
+ "entity_id": "-iKoChmzY-b4AosEvxnRS",
+ "id": 54,
+ "is_remote_synced": false,
+ "last_used_at": "2026-08-27T07:12:59.052299Z",
+ "legacy_query": null,
+ "metabase_version": "v0.63.15.1 (ab5ffba)",
+ "name": "Рентабельность до себестоимости",
+ "param_fields": {
+  "efa1fb8f-bde9-485a-ba46-6114c643d789": [
+   {
+    "base_type": "type/Date",
+    "dimensions": [],
+    "display_name": "Day",
+    "fk_target_field_id": null,
+    "has_field_values": "none",
+    "id": 909,
+    "name": "day",
+    "name_field": null,
+    "semantic_type": null,
+    "table_id": 38,
+    "target": null
+   }
+  ]
+ },
+ "parameter_mappings": [],
+ "parameter_usage_count": 0,
+ "parameters": [],
+ "query_type": "native",
+ "source_card_id": null,
+ "table_id": null,
+ "type": "question",
+ "visualization_settings": {
+  "column_settings": {
+   "[\"name\",\"period_result_margin\"]": {
+    "decimals": 2,
+    "number_style": "percent"
+   }
+  },
+  "scalar.field": "period_result_margin"
+ }
+}

@@ -1,0 +1,123 @@
+{
+ "archived": false,
+ "archived_directly": false,
+ "cache_invalidated_at": null,
+ "cache_ttl": null,
+ "card_schema": 23,
+ "collection": {
+  "archive_operation_id": null,
+  "archived": false,
+  "archived_directly": null,
+  "authority_level": null,
+  "created_at": "2026-08-26T21:36:24.222972Z",
+  "description": "Stage 2 — экран SKU Performance. Источник: wb_mart.V_DASH_SKU_DAILY (грейн сутки × nm_id). Все ratio — ratio-of-sums. Показатели «до себестоимости»: REF_COGS отсутствует.",
+  "entity_id": "fAATuhpeqreJF4Tq0aTmF",
+  "id": 7,
+  "is_remote_synced": false,
+  "is_sample": false,
+  "location": "/5/",
+  "name": "02 SKU Performance",
+  "namespace": null,
+  "personal_owner_id": null,
+  "slug": "02_sku_performance",
+  "type": null
+ },
+ "collection_id": 7,
+ "collection_position": null,
+ "collection_preview": true,
+ "created_at": "2026-08-27T05:54:54.103322Z",
+ "creator_id": 2,
+ "dashboard": null,
+ "dashboard_id": null,
+ "database_id": 2,
+ "dataset_query": {
+  "database": 2,
+  "lib/type": "mbql/query",
+  "stages": [
+   {
+    "lib/type": "mbql.stage/native",
+    "native": "WITH b AS (\n  SELECT\n    MIN(day) AS d1, MAX(day) AS d2, COUNT(*) AS len,\n    COUNTIF(orders_covered)       AS d_orders,\n    COUNTIF(sales_covered)        AS d_sales,\n    COUNTIF(ads_covered)          AS d_ads,\n    COUNTIF(finance_covered)      AS d_finance,\n    COUNTIF(contribution_covered) AS d_contrib\n  FROM `wb_mart.V_DASH_KPI_DAILY`\n  WHERE {{day}}\n),\ns AS (\n  SELECT MIN(day) AS mn, MAX(day) AS mx, COUNT(DISTINCT day) AS d\n  FROM `wb_mart.V_DASH_SKU_DAILY`\n  WHERE day BETWEEN (SELECT d1 FROM b) AND (SELECT d2 FROM b)\n)\nSELECT\n  CONCAT(FORMAT_DATE('%d.%m.%Y', b.d1), ' — ', FORMAT_DATE('%d.%m.%Y', b.d2),\n         '  (', CAST(b.len AS STRING), ' сут)')                                   AS selected_period,\n  IF(s.mn IS NULL, 'нет данных',\n     CONCAT(FORMAT_DATE('%d.%m.%Y', s.mn), ' — ', FORMAT_DATE('%d.%m.%Y', s.mx),\n            '  (', CAST(s.d AS STRING), ' сут)',\n            IF(s.d = b.len, '', ' ⚠')))                                           AS sku_data_period,\n  CONCAT(CAST(b.d_orders  AS STRING),'/',CAST(b.len AS STRING), IF(b.d_orders =b.len,'',' ⚠')) AS cov_orders,\n  CONCAT(CAST(b.d_sales   AS STRING),'/',CAST(b.len AS STRING), IF(b.d_sales  =b.len,'',' ⚠')) AS cov_sales,\n  CONCAT(CAST(b.d_ads     AS STRING),'/',CAST(b.len AS STRING), IF(b.d_ads    =b.len,'',' ⚠')) AS cov_ads,\n  CONCAT(CAST(b.d_finance AS STRING),'/',CAST(b.len AS STRING), IF(b.d_finance=b.len,'',' ⚠')) AS cov_finance,\n  CONCAT(CAST(b.d_contrib AS STRING),'/',CAST(b.len AS STRING), IF(b.d_contrib=b.len,'',' ⚠')) AS cov_economics\nFROM b, s\n",
+    "template-tags": [
+     {
+      "dimension": [
+       "field",
+       {
+        "lib/uuid": "a9e4fb00-4f5f-4b29-9410-8ad77c6c75cf"
+       },
+       909
+      ],
+      "display-name": "Период",
+      "id": "201cd0b9-a156-4a3b-a73a-cb915ce9d0c5",
+      "name": "day",
+      "type": "dimension",
+      "widget-type": "date/all-options"
+     }
+    ]
+   }
+  ]
+ },
+ "description": "Выбранный период против фактически доступных суток SKU-слоя и покрытия по каждому источнику. Границы берутся из плотного календаря V_DASH_KPI_DAILY (2024-09-05 … сегодня, без разрывов), фактические сутки — из V_DASH_SKU_DAILY. Знак ⚠ означает, что слой покрывает НЕ весь выбранный диапазон. Отсутствие данных нулём не подменяется. Карточка намеренно НЕ подчиняется фильтру «Товар»: покрытие определяется посуточно на уровне источника, а не на уровне SKU.",
+ "dimension_mappings": null,
+ "dimensions": null,
+ "display": "table",
+ "document_id": null,
+ "embedding_params": null,
+ "embedding_type": null,
+ "enable_embedding": false,
+ "entity_id": "MKDw7Bx6e-ym26PKuH4Dt",
+ "id": 71,
+ "is_remote_synced": false,
+ "last_used_at": "2026-08-27T06:56:41.045801Z",
+ "legacy_query": null,
+ "metabase_version": "v0.63.15.1 (ab5ffba)",
+ "name": "Период и покрытие данных SKU",
+ "param_fields": {
+  "201cd0b9-a156-4a3b-a73a-cb915ce9d0c5": [
+   {
+    "base_type": "type/Date",
+    "dimensions": [],
+    "display_name": "Day",
+    "fk_target_field_id": null,
+    "has_field_values": "none",
+    "id": 909,
+    "name": "day",
+    "name_field": null,
+    "semantic_type": null,
+    "table_id": 38,
+    "target": null
+   }
+  ]
+ },
+ "parameter_mappings": [],
+ "parameter_usage_count": 0,
+ "parameters": [],
+ "query_type": "native",
+ "source_card_id": null,
+ "table_id": null,
+ "type": "question",
+ "visualization_settings": {
+  "column_settings": {
+   "[\"name\",\"cov_ads\"]": {
+    "column_title": "Реклама"
+   },
+   "[\"name\",\"cov_economics\"]": {
+    "column_title": "Экономика"
+   },
+   "[\"name\",\"cov_finance\"]": {
+    "column_title": "Финансы"
+   },
+   "[\"name\",\"cov_orders\"]": {
+    "column_title": "Заказы"
+   },
+   "[\"name\",\"cov_sales\"]": {
+    "column_title": "Продажи"
+   },
+   "[\"name\",\"selected_period\"]": {
+    "column_title": "Выбранный период"
+   },
+   "[\"name\",\"sku_data_period\"]": {
+    "column_title": "Данные SKU фактически по"
+   }
+  }
+ }
+}

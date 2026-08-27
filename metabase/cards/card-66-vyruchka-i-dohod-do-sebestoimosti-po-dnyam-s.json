@@ -1,0 +1,165 @@
+{
+ "archived": false,
+ "archived_directly": false,
+ "cache_invalidated_at": "2026-08-27T05:56:07.925529Z",
+ "cache_ttl": null,
+ "card_schema": 23,
+ "collection": {
+  "archive_operation_id": null,
+  "archived": false,
+  "archived_directly": null,
+  "authority_level": null,
+  "created_at": "2026-08-26T21:36:24.222972Z",
+  "description": "Stage 2 — экран SKU Performance. Источник: wb_mart.V_DASH_SKU_DAILY (грейн сутки × nm_id). Все ratio — ratio-of-sums. Показатели «до себестоимости»: REF_COGS отсутствует.",
+  "entity_id": "fAATuhpeqreJF4Tq0aTmF",
+  "id": 7,
+  "is_remote_synced": false,
+  "is_sample": false,
+  "location": "/5/",
+  "name": "02 SKU Performance",
+  "namespace": null,
+  "personal_owner_id": null,
+  "slug": "02_sku_performance",
+  "type": null
+ },
+ "collection_id": 7,
+ "collection_position": null,
+ "collection_preview": true,
+ "created_at": "2026-08-26T21:36:55.508285Z",
+ "creator_id": 2,
+ "dashboard": null,
+ "dashboard_id": null,
+ "database_id": 2,
+ "dataset_query": {
+  "database": 2,
+  "lib/type": "mbql/query",
+  "stages": [
+   {
+    "lib/type": "mbql.stage/native",
+    "native": "SELECT\n  day,\n  SUM(sales_revenue_seller_base_rub) AS revenue_rub,\n  SUM(contribution_pre_cogs_rub)     AS contribution_rub\nFROM `wb_mart.V_DASH_SKU_DAILY`\nWHERE {{day}}\n  [[AND {{sku}}]]\nGROUP BY day\nORDER BY day",
+    "template-tags": [
+     {
+      "dimension": [
+       "field",
+       {
+        "lib/uuid": "dc2b200d-21f8-4cfd-b8e0-c2f137b57e16"
+       },
+       983
+      ],
+      "display-name": "Период",
+      "id": "047b3e1d-7cc1-4f86-a0a4-cd297c8f5dcc",
+      "name": "day",
+      "type": "dimension",
+      "widget-type": "date/all-options"
+     },
+     {
+      "dimension": [
+       "field",
+       {
+        "lib/uuid": "59466342-9b7c-40c2-8408-2ca102f0a803"
+       },
+       986
+      ],
+      "display-name": "Товар",
+      "id": "cfff1109-0962-424c-87fe-7bf0d0aa82f4",
+      "name": "sku",
+      "type": "dimension",
+      "widget-type": "string/="
+     }
+    ]
+   }
+  ]
+ },
+ "description": "БАЗЫ ДАТ: выручка — дата выкупа, доход до себестоимости — cross-base величина (сводит выручку по дате выкупа, комиссию и логистику по дате финансовой операции, рекламу по дате рекламной активности), поэтому управленчески осмысленна на горизонте от недели. Обе величины в ₽ и на одной оси — dual-axis не требуется. Сутки вне покрытия дают NULL и разрыв, а не ноль. Себестоимость товара не вычитается. Показатель не является прибылью.",
+ "dimension_mappings": null,
+ "dimensions": null,
+ "display": "combo",
+ "document_id": null,
+ "embedding_params": null,
+ "embedding_type": null,
+ "enable_embedding": false,
+ "entity_id": "6WsGCjW1R0WIz__1NtLbz",
+ "id": 66,
+ "is_remote_synced": false,
+ "last_used_at": "2026-08-27T06:56:47.210947Z",
+ "legacy_query": null,
+ "metabase_version": "v0.63.15.1 (ab5ffba)",
+ "name": "Выручка и доход до себестоимости по дням (SKU)",
+ "param_fields": {
+  "047b3e1d-7cc1-4f86-a0a4-cd297c8f5dcc": [
+   {
+    "base_type": "type/Date",
+    "dimensions": [],
+    "display_name": "Day",
+    "fk_target_field_id": null,
+    "has_field_values": "none",
+    "id": 983,
+    "name": "day",
+    "name_field": null,
+    "semantic_type": null,
+    "table_id": 39,
+    "target": null
+   }
+  ],
+  "cfff1109-0962-424c-87fe-7bf0d0aa82f4": [
+   {
+    "base_type": "type/Text",
+    "dimensions": [],
+    "display_name": "Product Name Short",
+    "fk_target_field_id": null,
+    "has_field_values": "list",
+    "id": 986,
+    "name": "product_name_short",
+    "name_field": null,
+    "semantic_type": "type/Category",
+    "table_id": 39,
+    "target": null
+   }
+  ]
+ },
+ "parameter_mappings": [],
+ "parameter_usage_count": 0,
+ "parameters": [],
+ "query_type": "native",
+ "source_card_id": null,
+ "table_id": null,
+ "type": "question",
+ "visualization_settings": {
+  "column_settings": {
+   "[\"name\",\"contribution_rub\"]": {
+    "currency": "RUB",
+    "currency_in_header": false,
+    "currency_style": "symbol",
+    "decimals": 0,
+    "number_style": "currency"
+   },
+   "[\"name\",\"revenue_rub\"]": {
+    "currency": "RUB",
+    "currency_in_header": false,
+    "currency_style": "symbol",
+    "decimals": 0,
+    "number_style": "currency"
+   }
+  },
+  "graph.dimensions": [
+   "day"
+  ],
+  "graph.metrics": [
+   "revenue_rub",
+   "contribution_rub"
+  ],
+  "graph.show_values": false,
+  "graph.x_axis.title_text": "День",
+  "graph.y_axis.title_text": "₽",
+  "series_settings": {
+   "contribution_rub": {
+    "display": "line",
+    "title": "Доход до себестоимости"
+   },
+   "revenue_rub": {
+    "display": "bar",
+    "title": "Выручка"
+   }
+  }
+ }
+}

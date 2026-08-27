@@ -1,0 +1,124 @@
+{
+ "archived": false,
+ "archived_directly": false,
+ "cache_invalidated_at": "2026-08-26T16:21:50.89452Z",
+ "cache_ttl": null,
+ "card_schema": 23,
+ "collection": {
+  "archive_operation_id": null,
+  "archived": false,
+  "archived_directly": null,
+  "authority_level": null,
+  "created_at": "2026-08-26T15:19:56.740614Z",
+  "description": "Executive MVP: что происходит с бизнесом и зарабатываем ли мы деньги.",
+  "entity_id": "EZUYQWsC5fdY9QqGY-xKC",
+  "id": 6,
+  "is_remote_synced": false,
+  "is_sample": false,
+  "location": "/5/",
+  "name": "01 Executive",
+  "namespace": null,
+  "personal_owner_id": null,
+  "slug": "01_executive",
+  "type": null
+ },
+ "collection_id": 6,
+ "collection_position": null,
+ "collection_preview": true,
+ "created_at": "2026-08-26T15:23:32.575869Z",
+ "creator_id": 2,
+ "dashboard": null,
+ "dashboard_id": null,
+ "database_id": 2,
+ "dataset_query": {
+  "database": 2,
+  "lib/type": "mbql/query",
+  "stages": [
+   {
+    "lib/type": "mbql.stage/native",
+    "native": "SELECT SUM(contribution_pre_cogs_rub) AS contribution_rub\nFROM `wb_mart.V_DASH_KPI_DAILY`\nWHERE {{day}}",
+    "template-tags": [
+     {
+      "dimension": [
+       "field",
+       {
+        "lib/uuid": "2cedf8a8-b8c1-4f3a-b5d0-cd0bc6ffe934"
+       },
+       909
+      ],
+      "display-name": "Период",
+      "id": "ccae321d-08bc-4a12-80b7-5916cc35cca0",
+      "name": "day",
+      "type": "dimension",
+      "widget-type": "date/all-options"
+     }
+    ]
+   }
+  ]
+ },
+ "description": "Выручка за выкупленные товары за вычетом комиссии WB, логистики и рекламных расходов. Себестоимость товара в этом показателе не вычитается, поэтому показатель не является прибылью. V_DASH_KPI_DAILY.contribution_pre_cogs_rub = buyouts_rub − marketplace_fee − logistics − ad_spend. economics_basis = PRE_COGS: REF_COGS в BigQuery отсутствует, поэтому это вклад ДО себестоимости, не прибыль и не маржа. Величина cross-base (четыре разные базы дат), осмысленна на горизонте от недели. NULL в сутках без полного покрытия.",
+ "dimension_mappings": null,
+ "dimensions": null,
+ "display": "scalar",
+ "document_id": null,
+ "embedding_params": null,
+ "embedding_type": null,
+ "enable_embedding": false,
+ "entity_id": "4vMtSBt8gYDdY_gqm7Vhe",
+ "id": 45,
+ "is_remote_synced": false,
+ "last_used_at": "2026-08-27T08:23:02.066441Z",
+ "legacy_query": null,
+ "metabase_version": "v0.63.15.1 (ab5ffba)",
+ "name": "Доход до себестоимости, ₽",
+ "param_fields": {
+  "ccae321d-08bc-4a12-80b7-5916cc35cca0": [
+   {
+    "base_type": "type/Date",
+    "dimensions": [],
+    "display_name": "Day",
+    "fk_target_field_id": null,
+    "has_field_values": "none",
+    "id": 909,
+    "name": "day",
+    "name_field": null,
+    "semantic_type": null,
+    "table_id": 38,
+    "target": null
+   }
+  ]
+ },
+ "parameter_mappings": [],
+ "parameter_usage_count": 0,
+ "parameters": [
+  {
+   "id": "ccae321d-08bc-4a12-80b7-5916cc35cca0",
+   "name": "Период",
+   "slug": "day",
+   "target": [
+    "dimension",
+    [
+     "template-tag",
+     "day"
+    ]
+   ],
+   "type": "date/all-options"
+  }
+ ],
+ "query_type": "native",
+ "source_card_id": null,
+ "table_id": null,
+ "type": "question",
+ "visualization_settings": {
+  "column_settings": {
+   "[\"name\",\"contribution_rub\"]": {
+    "currency": "RUB",
+    "currency_in_header": false,
+    "currency_style": "symbol",
+    "decimals": 0,
+    "number_style": "currency"
+   }
+  },
+  "scalar.field": "contribution_rub"
+ }
+}

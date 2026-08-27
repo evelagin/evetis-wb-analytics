@@ -1,0 +1,110 @@
+{
+ "archived": false,
+ "archived_directly": false,
+ "cache_invalidated_at": null,
+ "cache_ttl": null,
+ "card_schema": 23,
+ "collection": {
+  "archive_operation_id": null,
+  "archived": false,
+  "archived_directly": null,
+  "authority_level": null,
+  "created_at": "2026-08-26T15:19:56.740614Z",
+  "description": "Executive MVP: что происходит с бизнесом и зарабатываем ли мы деньги.",
+  "entity_id": "EZUYQWsC5fdY9QqGY-xKC",
+  "id": 6,
+  "is_remote_synced": false,
+  "is_sample": false,
+  "location": "/5/",
+  "name": "01 Executive",
+  "namespace": null,
+  "personal_owner_id": null,
+  "slug": "01_executive",
+  "type": null
+ },
+ "collection_id": 6,
+ "collection_position": null,
+ "collection_preview": true,
+ "created_at": "2026-08-26T20:14:19.313813Z",
+ "creator_id": 2,
+ "dashboard": null,
+ "dashboard_id": null,
+ "database_id": 2,
+ "dataset_query": {
+  "database": 2,
+  "lib/type": "mbql/query",
+  "stages": [
+   {
+    "lib/type": "mbql.stage/native",
+    "native": "SELECT SUM(period_result_pre_cogs_rub) AS period_result_rub\nFROM `wb_mart.V_DASH_KPI_DAILY`\nWHERE {{day}}",
+    "template-tags": [
+     {
+      "dimension": [
+       "field",
+       {
+        "lib/uuid": "eab95bcf-9abe-41ed-bdfb-d9b3e0d6ae80"
+       },
+       909
+      ],
+      "display-name": "Период",
+      "id": "c94eb0c2-98f3-4e15-9adf-3d904a5e8ed8",
+      "name": "day",
+      "type": "dimension",
+      "widget-type": "date/all-options"
+     }
+    ]
+   }
+  ]
+ },
+ "description": "Выручка продавца за вычетом сбора маркетплейса, логистики, атрибутированной рекламы и расходов уровня аккаунта. Не включает себестоимость товара и налоги. V_DASH_KPI_DAILY.period_result_pre_cogs_rub = contribution_pre_cogs_rub − account_level_total_rub. Расходы уровня аккаунта: хранение, удержания, приёмка, штрафы, компенсации (кредит, знак сохранён), прочее. wb_reward, эквайринг и SKU-возмещения повторно НЕ вычитаются — по контракту PR-B2 они уже внутри спреда marketplace_fee_rub. Это НЕ прибыль, НЕ операционная прибыль и НЕ EBITDA. NULL в сутках без полного покрытия (contribution_covered AND finance_covered).",
+ "dimension_mappings": null,
+ "dimensions": null,
+ "display": "scalar",
+ "document_id": null,
+ "embedding_params": null,
+ "embedding_type": null,
+ "enable_embedding": false,
+ "entity_id": "xHRFz-D8n9OnzHYkwPC7F",
+ "id": 53,
+ "is_remote_synced": false,
+ "last_used_at": "2026-08-27T08:23:09.903559Z",
+ "legacy_query": null,
+ "metabase_version": "v0.63.15.1 (ab5ffba)",
+ "name": "Результат периода до себестоимости",
+ "param_fields": {
+  "c94eb0c2-98f3-4e15-9adf-3d904a5e8ed8": [
+   {
+    "base_type": "type/Date",
+    "dimensions": [],
+    "display_name": "Day",
+    "fk_target_field_id": null,
+    "has_field_values": "none",
+    "id": 909,
+    "name": "day",
+    "name_field": null,
+    "semantic_type": null,
+    "table_id": 38,
+    "target": null
+   }
+  ]
+ },
+ "parameter_mappings": [],
+ "parameter_usage_count": 0,
+ "parameters": [],
+ "query_type": "native",
+ "source_card_id": null,
+ "table_id": null,
+ "type": "question",
+ "visualization_settings": {
+  "column_settings": {
+   "[\"name\",\"period_result_rub\"]": {
+    "currency": "RUB",
+    "currency_in_header": false,
+    "currency_style": "symbol",
+    "decimals": 0,
+    "number_style": "currency"
+   }
+  },
+  "scalar.field": "period_result_rub"
+ }
+}

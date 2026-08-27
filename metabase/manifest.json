@@ -1,0 +1,474 @@
+{
+ "analytics_database": {
+  "engine": "bigquery-cloud-sdk",
+  "metabase_db_id": 2,
+  "name": "EVETIS BigQuery",
+  "note": "Реквизиты подключения сознательно НЕ экспортируются."
+ },
+ "app_db": {
+  "container": "metabase",
+  "docker_volume": "metabase-data",
+  "engine": "H2",
+  "image": "metabase/metabase:latest",
+  "mb_db_file": "/metabase-data/metabase.db"
+ },
+ "baseline_commit": "05e0303cbcbbadc7c3d7e334c8bff5e2358a9189",
+ "card_ids": [
+  40,
+  41,
+  42,
+  43,
+  44,
+  45,
+  46,
+  47,
+  48,
+  49,
+  50,
+  51,
+  52,
+  53,
+  54,
+  55,
+  56,
+  57,
+  58,
+  59,
+  60,
+  61,
+  62,
+  63,
+  64,
+  65,
+  66,
+  67,
+  68,
+  69,
+  70,
+  71
+ ],
+ "card_to_collection": {
+  "40": 6,
+  "41": 6,
+  "42": 6,
+  "43": 6,
+  "44": 6,
+  "45": 6,
+  "46": 6,
+  "47": 6,
+  "48": 6,
+  "49": 6,
+  "50": 6,
+  "51": 6,
+  "52": 6,
+  "53": 6,
+  "54": 6,
+  "55": 6,
+  "56": 7,
+  "57": 7,
+  "58": 7,
+  "59": 7,
+  "60": 7,
+  "61": 7,
+  "62": 7,
+  "63": 7,
+  "64": 7,
+  "65": 7,
+  "66": 7,
+  "67": 7,
+  "68": 7,
+  "69": 7,
+  "70": 7,
+  "71": 7
+ },
+ "cards": [
+  {
+   "collection_id": 6,
+   "display": "table",
+   "file": "metabase/cards/card-40-svezhest-dannyh.json",
+   "id": 40,
+   "name": "Свежесть данных"
+  },
+  {
+   "collection_id": 6,
+   "display": "table",
+   "file": "metabase/cards/card-41-kachestvo-vybrannogo-perioda.json",
+   "id": 41,
+   "name": "Качество выбранного периода"
+  },
+  {
+   "collection_id": 6,
+   "display": "scalar",
+   "file": "metabase/cards/card-42-zakazy-sht.json",
+   "id": 42,
+   "name": "Заказы, шт"
+  },
+  {
+   "collection_id": 6,
+   "display": "scalar",
+   "file": "metabase/cards/card-43-vykupy-sht.json",
+   "id": 43,
+   "name": "Выкупы, шт"
+  },
+  {
+   "collection_id": 6,
+   "display": "scalar",
+   "file": "metabase/cards/card-44-vyruchka.json",
+   "id": 44,
+   "name": "Выручка, ₽"
+  },
+  {
+   "collection_id": 6,
+   "display": "scalar",
+   "file": "metabase/cards/card-45-dohod-do-sebestoimosti.json",
+   "id": 45,
+   "name": "Доход до себестоимости, ₽"
+  },
+  {
+   "collection_id": 6,
+   "display": "scalar",
+   "file": "metabase/cards/card-46-reklama.json",
+   "id": 46,
+   "name": "Реклама, ₽"
+  },
+  {
+   "collection_id": 6,
+   "display": "scalar",
+   "file": "metabase/cards/card-47-drr.json",
+   "id": 47,
+   "name": "ДРР, %"
+  },
+  {
+   "collection_id": 6,
+   "display": "scalar",
+   "file": "metabase/cards/card-48-vozvraty-sht.json",
+   "id": 48,
+   "name": "Возвраты, шт"
+  },
+  {
+   "collection_id": 6,
+   "display": "scalar",
+   "file": "metabase/cards/card-49-k-perechisleniyu-po-sku.json",
+   "id": 49,
+   "name": "К перечислению по SKU*, ₽"
+  },
+  {
+   "collection_id": 6,
+   "display": "combo",
+   "file": "metabase/cards/card-50-vyruchka-i-vklad-po-dnyam.json",
+   "id": 50,
+   "name": "Выручка и вклад по дням"
+  },
+  {
+   "collection_id": 6,
+   "display": "row",
+   "file": "metabase/cards/card-51-struktura-zatrat-za-period.json",
+   "id": 51,
+   "name": "Структура затрат за период"
+  },
+  {
+   "collection_id": 6,
+   "display": "table",
+   "file": "metabase/cards/card-52-sku-za-period.json",
+   "id": 52,
+   "name": "SKU за период"
+  },
+  {
+   "collection_id": 6,
+   "display": "scalar",
+   "file": "metabase/cards/card-53-rezultat-perioda-do-sebestoimosti.json",
+   "id": 53,
+   "name": "Результат периода до себестоимости"
+  },
+  {
+   "collection_id": 6,
+   "display": "scalar",
+   "file": "metabase/cards/card-54-rentabelnost-do-sebestoimosti.json",
+   "id": 54,
+   "name": "Рентабельность до себестоимости"
+  },
+  {
+   "collection_id": 6,
+   "display": "scalar",
+   "file": "metabase/cards/card-55-otmeneno-sht.json",
+   "id": 55,
+   "name": "Отменено, шт"
+  },
+  {
+   "collection_id": 7,
+   "display": "scalar",
+   "file": "metabase/cards/card-56-zakazy-sht-sku.json",
+   "id": 56,
+   "name": "Заказы, шт (SKU)"
+  },
+  {
+   "collection_id": 7,
+   "display": "scalar",
+   "file": "metabase/cards/card-57-otmeneno-sht-sku.json",
+   "id": 57,
+   "name": "Отменено, шт (SKU)"
+  },
+  {
+   "collection_id": 7,
+   "display": "scalar",
+   "file": "metabase/cards/card-58-vykupy-sht-sku.json",
+   "id": 58,
+   "name": "Выкупы, шт (SKU)"
+  },
+  {
+   "collection_id": 7,
+   "display": "scalar",
+   "file": "metabase/cards/card-59-vyruchka-sku.json",
+   "id": 59,
+   "name": "Выручка, ₽ (SKU)"
+  },
+  {
+   "collection_id": 7,
+   "display": "scalar",
+   "file": "metabase/cards/card-60-reklama-sku.json",
+   "id": 60,
+   "name": "Реклама, ₽ (SKU)"
+  },
+  {
+   "collection_id": 7,
+   "display": "scalar",
+   "file": "metabase/cards/card-61-drr-sku.json",
+   "id": 61,
+   "name": "ДРР, % (SKU)"
+  },
+  {
+   "collection_id": 7,
+   "display": "scalar",
+   "file": "metabase/cards/card-62-dohod-do-sebestoimosti-sku.json",
+   "id": 62,
+   "name": "Доход до себестоимости, ₽ (SKU)"
+  },
+  {
+   "collection_id": 7,
+   "display": "scalar",
+   "file": "metabase/cards/card-63-dohodnost-do-sebestoimosti-sku.json",
+   "id": 63,
+   "name": "Доходность до себестоимости, % (SKU)"
+  },
+  {
+   "collection_id": 7,
+   "display": "table",
+   "file": "metabase/cards/card-64-reyting-tovarov-za-period-sku.json",
+   "id": 64,
+   "name": "Рейтинг товаров за период (SKU)"
+  },
+  {
+   "collection_id": 7,
+   "display": "line",
+   "file": "metabase/cards/card-65-zakazy-i-otmeny-po-dnyam-sku.json",
+   "id": 65,
+   "name": "Заказы и отмены по дням (SKU)"
+  },
+  {
+   "collection_id": 7,
+   "display": "combo",
+   "file": "metabase/cards/card-66-vyruchka-i-dohod-do-sebestoimosti-po-dnyam-s.json",
+   "id": 66,
+   "name": "Выручка и доход до себестоимости по дням (SKU)"
+  },
+  {
+   "collection_id": 7,
+   "display": "table",
+   "file": "metabase/cards/card-67-sravnivaemye-periody-sku.json",
+   "id": 67,
+   "name": "Сравниваемые периоды (SKU)"
+  },
+  {
+   "collection_id": 7,
+   "display": "table",
+   "file": "metabase/cards/card-68-sravnenie-s-predyduschim-periodom-sku.json",
+   "id": 68,
+   "name": "Сравнение с предыдущим периодом (SKU)"
+  },
+  {
+   "collection_id": 7,
+   "display": "table",
+   "file": "metabase/cards/card-69-trebuyut-vnimaniya-sku.json",
+   "id": 69,
+   "name": "Требуют внимания (SKU)"
+  },
+  {
+   "collection_id": 7,
+   "display": "line",
+   "file": "metabase/cards/card-70-vykupy-po-dnyam-sku.json",
+   "id": 70,
+   "name": "Выкупы по дням (SKU)"
+  },
+  {
+   "collection_id": 7,
+   "display": "table",
+   "file": "metabase/cards/card-71-period-i-pokrytie-dannyh-sku.json",
+   "id": 71,
+   "name": "Период и покрытие данных SKU"
+  }
+ ],
+ "collection_ids": [
+  5,
+  6,
+  7
+ ],
+ "collections": [
+  {
+   "file": "metabase/collections/collection-5-evetis-analytics.json",
+   "id": 5,
+   "location": "/",
+   "name": "EVETIS Analytics"
+  },
+  {
+   "file": "metabase/collections/collection-6-01-executive.json",
+   "id": 6,
+   "location": "/5/",
+   "name": "01 Executive"
+  },
+  {
+   "file": "metabase/collections/collection-7-02-sku-performance.json",
+   "id": 7,
+   "location": "/5/",
+   "name": "02 SKU Performance"
+  }
+ ],
+ "counts": {
+  "cards": 32,
+  "collections": 3,
+  "dashboards": 2
+ },
+ "dashboard_ids": [
+  2,
+  3
+ ],
+ "dashboard_to_cards": {
+  "2": [
+   40,
+   41,
+   42,
+   43,
+   44,
+   45,
+   46,
+   47,
+   48,
+   49,
+   50,
+   51,
+   52,
+   53,
+   54,
+   55
+  ],
+  "3": [
+   40,
+   41,
+   56,
+   57,
+   58,
+   59,
+   60,
+   61,
+   62,
+   63,
+   64,
+   65,
+   66,
+   67,
+   68,
+   69,
+   70,
+   71
+  ]
+ },
+ "dashboards": [
+  {
+   "collection_id": 6,
+   "file": "metabase/dashboards/dashboard-2-evetis-wb-executive.json",
+   "id": 2,
+   "name": "EVETIS · WB Executive"
+  },
+  {
+   "collection_id": 7,
+   "file": "metabase/dashboards/dashboard-3-evetis-wb-sku-performance.json",
+   "id": 3,
+   "name": "EVETIS · WB SKU Performance"
+  }
+ ],
+ "excluded_volatile_fields": [
+  "average_query_time",
+  "based_on_upload",
+  "below",
+  "can_delete",
+  "can_manage_db",
+  "can_restore",
+  "can_run_adhoc_query",
+  "can_write",
+  "creator",
+  "dashboard_count",
+  "effective_ancestors",
+  "effective_location",
+  "here",
+  "initially_published_at",
+  "is_personal",
+  "last-edit-info",
+  "last_query_start",
+  "last_used_param_values",
+  "last_viewed_at",
+  "made_public_by_id",
+  "moderation_reviews",
+  "persisted",
+  "public_uuid",
+  "result_metadata",
+  "updated_at",
+  "view_count"
+ ],
+ "export_timestamp": "2026-08-27T11:22:00+03:00",
+ "metabase_version": {
+  "date": "2026-08-25",
+  "hash": "ab5ffba",
+  "tag": "v0.63.15.1"
+ },
+ "sha256": {
+  "metabase/cards/card-40-svezhest-dannyh.json": "7dcbded3d5073efd4a160caeb7600a68cc598ca253ebe8f2fd7827835868ae2b",
+  "metabase/cards/card-41-kachestvo-vybrannogo-perioda.json": "07d79ac843f1ebc65878516bc33b968de7a721defc6940089e291dae9737c829",
+  "metabase/cards/card-42-zakazy-sht.json": "794e5d94e9de6fcd55cb895aaf60034c55bbf6d4b738de6e085678030fa8d381",
+  "metabase/cards/card-43-vykupy-sht.json": "2fe38d5bd0cb09f1d669103b39cb7241bad90199b6252ac8fa474918cebb96f4",
+  "metabase/cards/card-44-vyruchka.json": "12bccdf1ff40830d36b76faa19f268a076dd6a3d700e2d51128a45b4f0a1039d",
+  "metabase/cards/card-45-dohod-do-sebestoimosti.json": "efc7d88ae5c915b038c19b65ad675afdcc302daa8f5895b1d117ab91fdef3b8e",
+  "metabase/cards/card-46-reklama.json": "0a4945e44a570fb58aa6a1fb20c92457d34d5a1e7c4cd76156a5d10e825fb39e",
+  "metabase/cards/card-47-drr.json": "a8a798ac0e01ce79d7ab5d92e2cac62ecfdd5dec121bd198847ae1ab2848ca5f",
+  "metabase/cards/card-48-vozvraty-sht.json": "63aaf4411d01a2b57e0f68950099f86da6016fb8d8889bf7bfbf0af9f857b515",
+  "metabase/cards/card-49-k-perechisleniyu-po-sku.json": "38fd58ec7ed648aea8ba23403f7d0011b274e5f0ad5478d76893561e5a0ca9f3",
+  "metabase/cards/card-50-vyruchka-i-vklad-po-dnyam.json": "afd0f711d441ed3ed674d3a01deadff611caf065b2d18e13881e7d42ddc6ae77",
+  "metabase/cards/card-51-struktura-zatrat-za-period.json": "f5429ec32036025879c22e85ed089b34b7d51e0bc10c8a49b5628109eed66cc6",
+  "metabase/cards/card-52-sku-za-period.json": "91e8ffcc9c660ce9a4f36b5c7805cd1e4afa2e922087fb074d3f3ed153a4c87c",
+  "metabase/cards/card-53-rezultat-perioda-do-sebestoimosti.json": "7b707d63654a70c4839cb139159bce556ab89ae2f6a266ea9678bd088557b172",
+  "metabase/cards/card-54-rentabelnost-do-sebestoimosti.json": "cac2b3a33905c86fd4e39976710362f73c82aa79cf158dd6d45e24d5776bc633",
+  "metabase/cards/card-55-otmeneno-sht.json": "da971112050430d74d68f12d395852a7169f8193a77cbc88d44618980851bd68",
+  "metabase/cards/card-56-zakazy-sht-sku.json": "f4abad0393b31740da3027cf065a14272b76afa6267055de22a0d252307d4eff",
+  "metabase/cards/card-57-otmeneno-sht-sku.json": "a63f094fb8437fe412b2330b24ef757acd17d3c9404c7a51e3266fb08e95deb0",
+  "metabase/cards/card-58-vykupy-sht-sku.json": "3c2954347f76c007ed593e8ae95a4c082212431f0e32115fd7894d4e10c9c943",
+  "metabase/cards/card-59-vyruchka-sku.json": "c00c52e457b615834727a795e9e1ba6d3f349ddfcd6b661ec13752e1456036ad",
+  "metabase/cards/card-60-reklama-sku.json": "1d400347213d3963c16533fb32a5e25b2959a470df75cdcddeccbf3df16fb369",
+  "metabase/cards/card-61-drr-sku.json": "cdca1b0942c4362266d27510c819a4a2ae3c356f341aa1aead64da3f11e84428",
+  "metabase/cards/card-62-dohod-do-sebestoimosti-sku.json": "087533afda06ec62ec1fdefb0c138e1b785c6c6888c02daab6b59374a82b0166",
+  "metabase/cards/card-63-dohodnost-do-sebestoimosti-sku.json": "1ad246a38d7ad52efb89c88486b40da534ca265646d026e455aae866af9dde9a",
+  "metabase/cards/card-64-reyting-tovarov-za-period-sku.json": "6921cf7e5d09176549055e5c672301daebcec733bdd92ba95790b1ef17d4fad7",
+  "metabase/cards/card-65-zakazy-i-otmeny-po-dnyam-sku.json": "573d365c2858900c9ee4a33d10f2e7c7fc696feeeb7644f328b6ce507ab8e4b8",
+  "metabase/cards/card-66-vyruchka-i-dohod-do-sebestoimosti-po-dnyam-s.json": "466793efd7ed546fc1c064031b049c826f345748f093b00f01ee18dc4c722bf9",
+  "metabase/cards/card-67-sravnivaemye-periody-sku.json": "6bb3b7f8ed333c12c716fcd6d2ddf39b1a9de6ad39c775f12762211db30f020f",
+  "metabase/cards/card-68-sravnenie-s-predyduschim-periodom-sku.json": "b88026247d876e28ecd9e1dfadb76989d0061c04f1497ca410b55b2f19e164c7",
+  "metabase/cards/card-69-trebuyut-vnimaniya-sku.json": "082ae63a67364a5c9b511ea3b50d7fd7fbf9288dbd7a012ab19570a877de3739",
+  "metabase/cards/card-70-vykupy-po-dnyam-sku.json": "205e9918dfa5e789a74ff1480e05f64a95d685b3079b5f321947ff4915df7069",
+  "metabase/cards/card-71-period-i-pokrytie-dannyh-sku.json": "116eeec6a1485011e46e7c9efe73de699f4ef3266a668db33d1deda7fbb77aa9",
+  "metabase/collections/collection-5-evetis-analytics.json": "db06cefa53c6c0717bb13f28da362bbc91728017516c4ed3c86829aa7f814ca2",
+  "metabase/collections/collection-6-01-executive.json": "cb72952920412540ffc5805a991367fbdd0dfb73bc6bf76f209be1d5b8598562",
+  "metabase/collections/collection-7-02-sku-performance.json": "24aad11e9416dd74ba9075c70d4cad39b6a5073582b7f4b5c21caff9e13ca7e7",
+  "metabase/dashboards/dashboard-2-evetis-wb-executive.json": "81a0771f404bd5b4bc6b35457386ba14eec9f02f4dcff96ad9da610156a04221",
+  "metabase/dashboards/dashboard-3-evetis-wb-sku-performance.json": "2ae9fff2b3fad2e477bc9fc8790c819a2e641f1fe8ae4fa979dc8e8b160fe219"
+ },
+ "source_note": "OSS. Аутентификационные данные в экспорт не входят.",
+ "source_url": "http://localhost:3000",
+ "stage2_baseline_commit": "a033160e57c2a1fc67a31ff8ad31452cbb565943"
+}

@@ -1,0 +1,93 @@
+{
+ "archived": false,
+ "archived_directly": false,
+ "cache_invalidated_at": "2026-08-26T15:46:57.107939Z",
+ "cache_ttl": null,
+ "card_schema": 23,
+ "collection": {
+  "archive_operation_id": null,
+  "archived": false,
+  "archived_directly": null,
+  "authority_level": null,
+  "created_at": "2026-08-26T15:19:56.740614Z",
+  "description": "Executive MVP: что происходит с бизнесом и зарабатываем ли мы деньги.",
+  "entity_id": "EZUYQWsC5fdY9QqGY-xKC",
+  "id": 6,
+  "is_remote_synced": false,
+  "is_sample": false,
+  "location": "/5/",
+  "name": "01 Executive",
+  "namespace": null,
+  "personal_owner_id": null,
+  "slug": "01_executive",
+  "type": null
+ },
+ "collection_id": 6,
+ "collection_position": null,
+ "collection_preview": true,
+ "created_at": "2026-08-26T15:23:21.73995Z",
+ "creator_id": 2,
+ "dashboard": null,
+ "dashboard_id": null,
+ "database_id": 2,
+ "dataset_query": {
+  "database": 2,
+  "lib/type": "mbql/query",
+  "stages": [
+   {
+    "lib/type": "mbql.stage/native",
+    "native": "SELECT\n  FORMAT_DATE('%d.%m.%Y', data_as_of_min)                          AS data_as_of,\n  FORMAT_TIMESTAMP('%d.%m %H:%M', mart_built_at, 'Europe/Moscow')  AS mart_built,\n  CONCAT(CAST(layers_ok AS STRING), '/', CAST(layers_total AS STRING)) AS layers_ok\nFROM `wb_mart.V_DASH_FRESHNESS_HEADER`"
+   }
+  ]
+ },
+ "description": "Глобальная свежесть слоя данных из V_DASH_FRESHNESS_HEADER. «Данные по» = data_as_of_min: дата, по которую полны ВСЕ слои (самый отстающий слой). Фильтр периода на эту карточку не действует — это состояние источника, а не выбранного окна. Определения свежести не менялись.",
+ "dimension_mappings": null,
+ "dimensions": null,
+ "display": "table",
+ "document_id": null,
+ "embedding_params": null,
+ "embedding_type": null,
+ "enable_embedding": false,
+ "entity_id": "zK5OYRiAzSHqILBD-1SCW",
+ "id": 40,
+ "is_remote_synced": false,
+ "last_used_at": "2026-08-27T06:56:41.045801Z",
+ "legacy_query": null,
+ "metabase_version": "v0.63.15.1 (ab5ffba)",
+ "name": "Свежесть данных",
+ "param_fields": {},
+ "parameter_mappings": [],
+ "parameter_usage_count": 0,
+ "parameters": [],
+ "query_type": "native",
+ "source_card_id": null,
+ "table_id": null,
+ "type": "question",
+ "visualization_settings": {
+  "column_settings": {
+   "[\"name\",\"data_as_of\"]": {
+    "column_title": "Данные по"
+   },
+   "[\"name\",\"layers_ok\"]": {
+    "column_title": "Слои данных OK"
+   },
+   "[\"name\",\"mart_built\"]": {
+    "column_title": "Витрина собрана, МСК"
+   }
+  },
+  "table.columns": [
+   {
+    "enabled": true,
+    "name": "data_as_of"
+   },
+   {
+    "enabled": true,
+    "name": "mart_built"
+   },
+   {
+    "enabled": true,
+    "name": "layers_ok"
+   }
+  ]
+ }
+}

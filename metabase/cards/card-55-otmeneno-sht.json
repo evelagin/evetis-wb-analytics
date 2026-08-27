@@ -1,0 +1,107 @@
+{
+ "archived": false,
+ "archived_directly": false,
+ "cache_invalidated_at": null,
+ "cache_ttl": null,
+ "card_schema": 23,
+ "collection": {
+  "archive_operation_id": null,
+  "archived": false,
+  "archived_directly": null,
+  "authority_level": null,
+  "created_at": "2026-08-26T15:19:56.740614Z",
+  "description": "Executive MVP: что происходит с бизнесом и зарабатываем ли мы деньги.",
+  "entity_id": "EZUYQWsC5fdY9QqGY-xKC",
+  "id": 6,
+  "is_remote_synced": false,
+  "is_sample": false,
+  "location": "/5/",
+  "name": "01 Executive",
+  "namespace": null,
+  "personal_owner_id": null,
+  "slug": "01_executive",
+  "type": null
+ },
+ "collection_id": 6,
+ "collection_position": null,
+ "collection_preview": true,
+ "created_at": "2026-08-26T20:55:04.116623Z",
+ "creator_id": 2,
+ "dashboard": null,
+ "dashboard_id": null,
+ "database_id": 2,
+ "dataset_query": {
+  "database": 2,
+  "lib/type": "mbql/query",
+  "stages": [
+   {
+    "lib/type": "mbql.stage/native",
+    "native": "SELECT SUM(canceled_qty) AS canceled_qty\nFROM `wb_mart.V_DASH_KPI_DAILY`\nWHERE {{day}}",
+    "template-tags": [
+     {
+      "dimension": [
+       "field",
+       {
+        "lib/uuid": "4aef3c56-fb98-45ce-b981-5f7fdf49e046"
+       },
+       909
+      ],
+      "display-name": "Период",
+      "id": "57d96d4b-5fae-4614-88e9-7e998fc84408",
+      "name": "day",
+      "type": "dimension",
+      "widget-type": "date/all-options"
+     }
+    ]
+   }
+  ]
+ },
+ "description": "Заказы, отменённые до выкупа. V_DASH_KPI_DAILY.canceled_qty = COUNTIF(is_cancel) в FACT_ORDERS, по дате заказа. Входит в «Заказы, шт» (брутто): orders_gross_qty = orders_qty + canceled_qty. WB в выгрузке воронки показывает отмены отдельной колонкой «Отменили, шт» — по своей базе дат значение может отличаться. NULL в сутках без покрытия заказов.",
+ "dimension_mappings": null,
+ "dimensions": null,
+ "display": "scalar",
+ "document_id": null,
+ "embedding_params": null,
+ "embedding_type": null,
+ "enable_embedding": false,
+ "entity_id": "65chXD4wAKqRX_ZkvE4gL",
+ "id": 55,
+ "is_remote_synced": false,
+ "last_used_at": "2026-08-27T08:22:44.544745Z",
+ "legacy_query": null,
+ "metabase_version": "v0.63.15.1 (ab5ffba)",
+ "name": "Отменено, шт",
+ "param_fields": {
+  "57d96d4b-5fae-4614-88e9-7e998fc84408": [
+   {
+    "base_type": "type/Date",
+    "dimensions": [],
+    "display_name": "Day",
+    "fk_target_field_id": null,
+    "has_field_values": "none",
+    "id": 909,
+    "name": "day",
+    "name_field": null,
+    "semantic_type": null,
+    "table_id": 38,
+    "target": null
+   }
+  ]
+ },
+ "parameter_mappings": [],
+ "parameter_usage_count": 0,
+ "parameters": [],
+ "query_type": "native",
+ "source_card_id": null,
+ "table_id": null,
+ "type": "question",
+ "visualization_settings": {
+  "column_settings": {
+   "[\"name\",\"canceled_qty\"]": {
+    "decimals": 0,
+    "number_style": "decimal"
+   }
+  },
+  "scalar.field": "canceled_qty"
+ }
+}
