@@ -117,9 +117,11 @@ FROM `project-fa311fc0-4d87-4781-986.wb_raw.INFORMATION_SCHEMA.TABLES`
 -- Structural baseline maintenance (Stage 3.1C PR1, 2026-08-27): wb_mart 37 -> 39.
 --   +wb_mart.V_WB_DEDUCTIONS_CLASSIFIED, +wb_mart.V_ADVERTISING_RECONCILIATION_DAILY
 --   (sql/mart/pr_ad_billing_classification_v1.sql).
+-- Structural baseline maintenance (Stage 3.1C PR2, 2026-08-27): wb_mart 39 -> 40.
+--   +wb_mart.V_DASH_FINANCE_CORRECTED_DAILY (sql/dash/pr_dash_finance_corrected_v1.sql).
 --   Это обслуживание СТРУКТУРНОГО baseline, а НЕ переоткрытие Stage 3.1A: экономические
 --   инварианты (17 / 33 / 21 / 38, AC-6..AC-9) не изменены ни одним символом.
-UNION ALL SELECT 'wb_mart', COUNT(*), 39, IF(COUNT(*)=39,'PASS','FAIL')
+UNION ALL SELECT 'wb_mart', COUNT(*), 40, IF(COUNT(*)=40,'PASS','FAIL')
 FROM `project-fa311fc0-4d87-4781-986.wb_mart.INFORMATION_SCHEMA.TABLES`
 UNION ALL SELECT 'evetis_ref', COUNT(*), 4, IF(COUNT(*)=4,'PASS','FAIL')
 FROM `project-fa311fc0-4d87-4781-986.evetis_ref.INFORMATION_SCHEMA.TABLES`
