@@ -34,8 +34,8 @@ Before any new development:
 | remote URL | `https://github.com/evelagin/evetis-wb-analytics.git` |
 | local path | `/Users/evgenelagin/Projects/evetis-wb-analytics` |
 | branch | `main` |
-| HEAD SHA | `3024789cb346f8714597da3d6d5ff10e0c9d74bf` |
-| origin/main SHA | `3024789cb346f8714597da3d6d5ff10e0c9d74bf` |
+| HEAD SHA | `33be7ee67d8157f7d51d5e760926adda185a59c0` |
+| origin/main SHA | `33be7ee67d8157f7d51d5e760926adda185a59c0` |
 | ahead | 0 |
 | behind | 0 |
 | working tree | clean |
@@ -44,6 +44,7 @@ Before any new development:
 Последние коммиты `main`:
 
 ```
+33be7ee  fix(finance): classify WB deductions by direct labels
 3024789  feat(analytics): integrate Product COGS into Executive
 32d230c  docs(metabase): checkpoint Stage 3.1C Executive integration
 889fcfa  feat(finance): add Stage 3.1C corrected executive finance overlay
@@ -125,7 +126,7 @@ BigQuery  evetis_ref  ← reference layer: историческая Product COGS
 | компонент | состояние |
 | --- | --- |
 | BigQuery datasets | `wb_raw`, `wb_mart`, `evetis_communications`, **`evetis_ref`** |
-| `wb_mart` | 17 базовых таблиц, **24 view**, 2 процедуры (`sp_bootstrap_facts`, `sp_build_mart_sku_daily`) — **41 объект** |
+| `wb_mart` | 17 базовых таблиц, **25 view**, 2 процедуры (`sp_bootstrap_facts`, `sp_build_mart_sku_daily`) — **42 объекта** |
 | `MART_SKU_DAILY` | 7 477 строк, `max_day = 2026-08-26` |
 | `FACT_ORDERS` | 4 426 строк, до 2026-08-26 |
 | `FACT_SALES` | 4 103 строки, до 2026-08-26 |
@@ -138,11 +139,11 @@ BigQuery  evetis_ref  ← reference layer: историческая Product COGS
 | `evetis_ref.REF_BUNDLE_COMPONENTS` | 33 строки состава, 14 наборов, стоимостных полей нет |
 | `evetis_ref.V_BUNDLE_COGS_DERIVED` | 21 производный интервал COGS набора |
 | `evetis_ref.V_PRODUCT_COGS_EFFECTIVE` | unified resolver, 38 интервалов (17 + 21) |
-| dashboard views | `V_DASH_KPI_DAILY` (76 колонок), `V_DASH_SKU_DAILY` (60), `V_DASH_COVERAGE_DAILY` (33), `V_DASH_FRESHNESS_HEADER`, `V_DASH_FRESHNESS_BY_CONTRACT` (14), **`V_DASH_FINANCE_CORRECTED_DAILY`** (Stage 3.1C PR2), **`V_DASH_EXECUTIVE_ECONOMICS_DAILY`** (Stage 3.1D) |
+| dashboard views | `V_DASH_KPI_DAILY` (76 колонок), `V_DASH_SKU_DAILY` (60), `V_DASH_COVERAGE_DAILY` (33), `V_DASH_FRESHNESS_HEADER`, `V_DASH_FRESHNESS_BY_CONTRACT` (14), **`V_DASH_FINANCE_CORRECTED_DAILY`** (Stage 3.1C PR2), **`V_DASH_EXECUTIVE_ECONOMICS_DAILY`** (Stage 3.1D), **`V_DASH_SETTLEMENT_DAILY`** (Stage 3.1G) |
 | Google Apps Script | 39 файлов `.gs` в репозитории; слой Google Sheets (справочники, себестоимость) |
 | Cloud Run loaders | `cloud/src/loaders/`: `mart`, `stocks` |
-| Metabase | v0.63.15.1 OSS, Docker, 2 наших дашборда, **35 наших карточек** (id 40–74 без пропусков: коллекция 6 — 40–55 и 72–74, коллекция 7 — 56–71; id 1–39 принадлежат демо-дашборду Metabase) |
-| GitHub | `main` = `3024789`, плюс ветка `rescue/stash-20260826` |
+| Metabase | v0.63.15.1 OSS, Docker, 2 наших дашборда, **37 наших карточек** (id 40–76 без пропусков: коллекция 6 — 40–55 и 72–76, коллекция 7 — 56–71; id 1–39 принадлежат демо-дашборду Metabase) |
+| GitHub | `main` = `33be7ee`, плюс ветка `rescue/stash-20260826` |
 | Claude skills | 7 `SKILL.md` в `.claude/skills/`, все под версионным контролем |
 
 Design-only и **не** production: спека рекламного экрана Stage 4B (см. раздел
@@ -637,6 +638,48 @@ Product COGS 119 334,00 · после себестоимости **−26 183,14*
 
 ---
 
+## Stage 3.1G — Расчёты с Wildberries в Executive — **CLOSED**
+
+Дата 2026-08-28. Контракт: `docs/STAGE3_1G_WB_SETTLEMENT_EXECUTIVE_2026-08-28.md`.
+Скрипты: `sql/finance/v_wb_finance_semantic.sql` (правка),
+`sql/dash/pr_dash_settlement_v1.sql`, `..._validation.sql`.
+Откат: `tools/stage3_1g_settlement_rollback.sh`.
+
+Создан один additive-слой **`wb_mart.V_DASH_SETTLEMENT_DAILY`** (грейн
+`finance_date`, 722 строки). `wb_mart`: 41 → **42**. В `V_WB_FINANCE_SEMANTIC`
+добавлено поле `loyalty_points_rub`.
+
+**Мост расчётов, 27.07–23.08.2026:**
+
+```
+К перечислению за товар   198 475,40 ₽
+Удержания после реализации −88 373,44 ₽
+К выплате от WB            110 101,96 ₽     остаток моста 0,00
+```
+
+Понедельно: 40 077,71 / 14 138,58 / 27 845,16 / 28 040,51 — **все четыре недели
+delta 0,00**. По типам отчёта: основной 101 160,31 + «по выкупам» 8 941,65.
+Валидация **14/14 ASSERT PASS**.
+
+🔴 **Это settlement, а не управленческий результат и не прибыль.** Здесь нет
+себестоимости товара, фулфилмента, OPEX и налога, нет attributed-рекламы и
+seller-base выручки. И это **расчёт по отчётам WB, а не подтверждённое
+поступление на счёт**: банковские транзакции не заведены.
+
+🔴 **Гейт закрытости.** Денежные поля публикуются только на сутках
+`finance_covered AND finance_is_final` — гейты заимствованы у `V_DASH_KPI_DAILY`.
+Открытая неделя WB в мост не входит; вне гейта поля NULL, а не ноль.
+
+**Metabase.** Новый раздел «Расчёты с Wildberries» между «Результат периода» и
+«Динамика». Карточка **49** переиспользована с сохранением id: «К перечислению по
+SKU*, ₽» → **«К перечислению за товар»**, переключена на слой расчётов и
+перенесена в новый раздел; дубликата не создано. Созданы **75** «Удержания после
+реализации» и **76** «К выплате от WB». Карточки 47 и 48 расширены до 12 после
+ухода карточки 49 — пустот не осталось. Управленческие числа не изменились:
+93 150,86 / 119 334,00 / −26 183,14. SKU Performance не тронут.
+
+---
+
 ## Исторический контекст до Stage 3.1A
 
 Ниже — состояние, зафиксированное до коммита `f8ea31e`. Сохранено как история: оно
@@ -942,7 +985,8 @@ Stage 1.5/1.8/1.9/1.10B/Stage 2. Объединение способно пов�
 * **Stage 3.1C PR3** — Metabase Executive Integration, коммит `32d230c`;
 * **Stage 3.1D** — Product COGS → Executive Economics, коммит `3024789`;
 * **Stage 3.1E** — сверка с закрытыми финотчётами WB (read-only), 2026-08-28;
-* **Stage 3.1F** — классификация удержаний по прямым меткам WB, 2026-08-28.
+* **Stage 3.1F** — классификация удержаний по прямым меткам WB, коммит `33be7ee`;
+* **Stage 3.1G** — блок «Расчёты с Wildberries» в Executive, 2026-08-28.
 
 ## CURRENT PRODUCTION STATE
 
@@ -963,9 +1007,11 @@ Stage 1.5/1.8/1.9/1.10B/Stage 2. Объединение способно пов�
 (−7,21 %), плюс исключительная компенсация форс-мажор **+20 000 ₽** отдельной
 строкой вне операционного результата.
 
-🔴 **Фактическая выплата WB воспроизводится точно:** 110 101,96 ₽ за
-27.07–23.08.2026, все четыре недели до копейки (Stage 3.1E). Это денежный поток,
-а не управленческий результат — величины не сопоставимы напрямую.
+🔴 **Фактическая выплата WB выведена на экран** отдельным блоком «Расчёты с
+Wildberries» (Stage 3.1G): 198 475,40 → −88 373,44 → **110 101,96 ₽** за
+27.07–23.08.2026, все четыре недели до копейки. Это денежный поток по отчётам WB,
+а не управленческий результат и не подтверждённое поступление на счёт — величины
+с управленческой лестницей не сопоставимы напрямую.
 
 🔴 **Это НЕ чистая прибыль.** Не включены fulfilment/FF, OPEX, ЗП, налог, банковские
 расходы. Следующая ступень лестницы — **fulfilment / FF cost layer** — **не реализована**.
@@ -984,11 +1030,11 @@ Stage 3.1D и 3.1F не изменялись.
 | 2 | **SKU Performance: Product COGS** | `V_MART_SKU_DAILY_COGS` готов (7 502 строки, грейн 1:1 с `V_DASH_SKU_DAILY`), но экран не подключён |
 | 3 | **SKU Performance UX compaction** | компактизация dashboard 3 не выполнялась |
 | 4 | **Карточка 63, знаменатель** | тот же coverage-перекос, что чинил PR2 для Executive; чинить **до** вывода процентов после COGS на SKU-экране |
-| 5a | **Блок «Расчёты с Wildberries» в Executive** | формула выплаты доказана Stage 3.1E (110 101,96 ₽); блок сознательно не строился до исправления классификации |
 | 5 | **Metabase admin schema sync** | API-key пользователь не админ; новый слой не зарегистрирован как таблица. Карточки 72–74 используют `V_DASH_FINANCE_CORRECTED_DAILY.day` как драйвер фильтра. Семантика верна, производительность ≈11,7 с против ≈4,7 с. Не дефект Stage 3.1D |
 | 6 | **Stage 3B billed advertising allocation** | под исполняемым гейтом, cutover не начат |
 | 7 | **FACT deployment drift** | `docs/TECHDEBT_FACT_DEPLOY_DRIFT_2026-08-27.md` |
 | 8 | **uuid36-популяция 2025, 794 732,04 ₽** | остаётся `UNCLASSIFIED_DEDUCTION`. Stage 3.1F доказал: `bonusTypeName` там пуст на 100 % строк — новое поле её не объясняет. Устанавливается только детализацией кабинета WB |
+| 9a | **Банковские транзакции** | «К выплате от WB» — расчёт по отчётам площадки, а не подтверждённое поступление. Сверка с банком потребует отдельного источника |
 | 9 | **Словарь прямых меток WB** | собран на 17 строках одного месяца, заведомо неполон; расширяется осознанно по срабатыванию ASSERT F-9 |
 
 ## NEXT

@@ -12,7 +12,7 @@
   "image": "metabase/metabase:latest",
   "mb_db_file": "/metabase-data/metabase.db"
  },
- "baseline_commit": "3024789cb346f8714597da3d6d5ff10e0c9d74bf",
+ "baseline_commit": "33be7ee67d8157f7d51d5e760926adda185a59c0",
  "card_ids": [
   40,
   41,
@@ -48,7 +48,9 @@
   71,
   72,
   73,
-  74
+  74,
+  75,
+  76
  ],
  "card_to_collection": {
   "40": 6,
@@ -85,7 +87,9 @@
   "71": 7,
   "72": 6,
   "73": 6,
-  "74": 6
+  "74": 6,
+  "75": 6,
+  "76": 6
  },
  "cards": [
   {
@@ -156,7 +160,7 @@
    "display": "scalar",
    "file": "metabase/cards/card-49-k-perechisleniyu-po-sku.json",
    "id": 49,
-   "name": "К перечислению по SKU*, ₽"
+   "name": "К перечислению за товар"
   },
   {
    "collection_id": 6,
@@ -332,6 +336,20 @@
    "file": "metabase/cards/card-74-rentabelnost-posle-sebestoimosti-tovara.json",
    "id": 74,
    "name": "Рентабельность после себестоимости товара"
+  },
+  {
+   "collection_id": 6,
+   "display": "scalar",
+   "file": "metabase/cards/card-75-uderzhaniya-posle-realizacii.json",
+   "id": 75,
+   "name": "Удержания после реализации"
+  },
+  {
+   "collection_id": 6,
+   "display": "scalar",
+   "file": "metabase/cards/card-76-k-vyplate-ot-wb.json",
+   "id": 76,
+   "name": "К выплате от WB"
   }
  ],
  "collection_ids": [
@@ -360,7 +378,7 @@
   }
  ],
  "counts": {
-  "cards": 35,
+  "cards": 37,
   "collections": 3,
   "dashboards": 2
  },
@@ -388,7 +406,9 @@
    55,
    72,
    73,
-   74
+   74,
+   75,
+   76
   ],
   "3": [
    40,
@@ -453,7 +473,7 @@
   "updated_at",
   "view_count"
  ],
- "export_timestamp": "2026-08-28T14:36:20+03:00",
+ "export_timestamp": "2026-08-28T15:11:52+03:00",
  "metabase_version": {
   "date": "2026-08-25",
   "hash": "ab5ffba",
@@ -469,7 +489,7 @@
   "metabase/cards/card-46-reklama.json": "0a4945e44a570fb58aa6a1fb20c92457d34d5a1e7c4cd76156a5d10e825fb39e",
   "metabase/cards/card-47-drr.json": "a8a798ac0e01ce79d7ab5d92e2cac62ecfdd5dec121bd198847ae1ab2848ca5f",
   "metabase/cards/card-48-vozvraty-sht.json": "63aaf4411d01a2b57e0f68950099f86da6016fb8d8889bf7bfbf0af9f857b515",
-  "metabase/cards/card-49-k-perechisleniyu-po-sku.json": "38fd58ec7ed648aea8ba23403f7d0011b274e5f0ad5478d76893561e5a0ca9f3",
+  "metabase/cards/card-49-k-perechisleniyu-po-sku.json": "c4d0365e83536b7689749f4043ac51afa59c4f1b04064293f2aaebbaf06bbae2",
   "metabase/cards/card-50-vyruchka-i-vklad-po-dnyam.json": "afd0f711d441ed3ed674d3a01deadff611caf065b2d18e13881e7d42ddc6ae77",
   "metabase/cards/card-51-struktura-zatrat-za-period.json": "b6a4b727030981dc2622d30141611b1b7b8bb7b45126e20a432b7691518b22b6",
   "metabase/cards/card-52-sku-za-period.json": "91e8ffcc9c660ce9a4f36b5c7805cd1e4afa2e922087fb074d3f3ed153a4c87c",
@@ -495,10 +515,12 @@
   "metabase/cards/card-72-sebestoimost-tovara.json": "13466beccffe701220bfd259c6bb338e2e4f2b48170ebdeccf820b8af8805cbc",
   "metabase/cards/card-73-rezultat-perioda-posle-sebestoimosti-tovara.json": "689da99c0bafe391d6838d90bbdeee1f3e645396782dc8daf29c8382c56950a5",
   "metabase/cards/card-74-rentabelnost-posle-sebestoimosti-tovara.json": "4525e7944a6950a7afa1f7e3212a055d920d247c4d6854fb8cddced604fdcc2e",
+  "metabase/cards/card-75-uderzhaniya-posle-realizacii.json": "1b82167f68826cfc53e74673db4275b474a189b03da2d596ecad115155e0de6a",
+  "metabase/cards/card-76-k-vyplate-ot-wb.json": "2fd5c198fd4a605ddedbb5159361dd24a6bd76f8f5ac7a62b0f8899939051f4d",
   "metabase/collections/collection-5-evetis-analytics.json": "db06cefa53c6c0717bb13f28da362bbc91728017516c4ed3c86829aa7f814ca2",
   "metabase/collections/collection-6-01-executive.json": "cb72952920412540ffc5805a991367fbdd0dfb73bc6bf76f209be1d5b8598562",
   "metabase/collections/collection-7-02-sku-performance.json": "24aad11e9416dd74ba9075c70d4cad39b6a5073582b7f4b5c21caff9e13ca7e7",
-  "metabase/dashboards/dashboard-2-evetis-wb-executive.json": "e4ca08e285f12c5dadeebbd6e8736ad749c5dacac6264192d0e29fbbed99c678",
+  "metabase/dashboards/dashboard-2-evetis-wb-executive.json": "be8b5f8c6c69a617316186c88f1c4b4c20a3641afb418e63c742cb7288de6cda",
   "metabase/dashboards/dashboard-3-evetis-wb-sku-performance.json": "2ae9fff2b3fad2e477bc9fc8790c819a2e641f1fe8ae4fa979dc8e8b160fe219"
  },
  "source_note": "OSS. Аутентификационные данные в экспорт не входят.",

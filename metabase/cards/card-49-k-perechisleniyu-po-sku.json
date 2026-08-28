@@ -1,7 +1,7 @@
 {
  "archived": false,
  "archived_directly": false,
- "cache_invalidated_at": "2026-08-26T15:47:36.08791Z",
+ "cache_invalidated_at": "2026-08-28T12:08:59.769308Z",
  "cache_ttl": null,
  "card_schema": 23,
  "collection": {
@@ -36,7 +36,7 @@
   "stages": [
    {
     "lib/type": "mbql.stage/native",
-    "native": "SELECT SUM(net_settlement_rub) AS net_settlement_rub\nFROM `wb_mart.V_DASH_KPI_DAILY`\nWHERE {{day}}",
+    "native": "WITH d AS (\n  SELECT day FROM `wb_mart.V_DASH_KPI_DAILY`\n  WHERE {{day}}\n)\nSELECT SUM(s.settlement_goods_rub) AS settlement_goods_rub\nFROM d JOIN `wb_mart.V_DASH_SETTLEMENT_DAILY` s USING (day)",
     "template-tags": [
      {
       "dimension": [
@@ -56,7 +56,7 @@
    }
   ]
  },
- "description": "Это сумма финансовых начислений, привязанных WB к SKU. Расходы уровня кабинета, которые WB не распределяет по товарам, в показатель не входят. Это не итоговая выплата кабинета. Технически: V_DASH_KPI_DAILY.net_settlement_rub = SUM(finance_for_pay_accounting) по SKU-строкам витрины. Расходы уровня кабинета показаны отдельно в блоке «Структура затрат».",
+ "description": "Сумма, которую Wildberries рассчитал к перечислению продавцу за реализованный товар до удержаний после реализации. Технически: SUM(for_pay) по строкам финансовых отчётов WB за выбранный период, оба типа еженедельного отчёта (основной и «по выкупам»). Это первая ступень моста расчётов: к перечислению за товар + удержания после реализации = к выплате от WB. Контроль 27.07–23.08.2026: 198 475,40 ₽. В расчёт входят только ЗАКРЫТЫЕ финансовые сутки — открытая неделя WB ещё не рассчитана и в мост не включается. Расчёты с Wildberries построены по финансовым отчётам WB и показывают сумму расчётов площадки за период. Это НЕ управленческий результат и НЕ чистая прибыль: здесь не учитываются себестоимость товара, расходы фулфилмента, OPEX и другие расходы бизнеса. Прежнее имя карточки — «К перечислению по SKU*, ₽»; переименована в Stage 3.1G, id сохранён. Источник: wb_mart.V_DASH_SETTLEMENT_DAILY.",
  "dimension_mappings": null,
  "dimensions": null,
  "display": "scalar",
@@ -67,10 +67,10 @@
  "entity_id": "wo8auV1gdB7fAquaO-t34",
  "id": 49,
  "is_remote_synced": false,
- "last_used_at": "2026-08-27T07:12:36.871091Z",
+ "last_used_at": "2026-08-28T12:09:54.480376Z",
  "legacy_query": null,
  "metabase_version": "v0.63.15.1 (ab5ffba)",
- "name": "К перечислению по SKU*, ₽",
+ "name": "К перечислению за товар",
  "param_fields": {
   "095ff9c1-6777-4c9f-a247-6d341de7a1fb": [
    {
@@ -111,7 +111,7 @@
  "type": "question",
  "visualization_settings": {
   "column_settings": {
-   "[\"name\",\"net_settlement_rub\"]": {
+   "[\"name\",\"settlement_goods_rub\"]": {
     "currency": "RUB",
     "currency_in_header": false,
     "currency_style": "symbol",
@@ -119,6 +119,6 @@
     "number_style": "currency"
    }
   },
-  "scalar.field": "net_settlement_rub"
+  "scalar.field": "settlement_goods_rub"
  }
 }

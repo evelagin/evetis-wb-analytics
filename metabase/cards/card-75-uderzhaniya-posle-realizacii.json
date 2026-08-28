@@ -1,0 +1,110 @@
+{
+ "archived": false,
+ "archived_directly": false,
+ "cache_invalidated_at": null,
+ "cache_ttl": null,
+ "card_schema": 23,
+ "collection": {
+  "archive_operation_id": null,
+  "archived": false,
+  "archived_directly": null,
+  "authority_level": null,
+  "created_at": "2026-08-26T15:19:56.740614Z",
+  "description": "Executive MVP: что происходит с бизнесом и зарабатываем ли мы деньги.",
+  "entity_id": "EZUYQWsC5fdY9QqGY-xKC",
+  "id": 6,
+  "is_remote_synced": false,
+  "is_sample": false,
+  "location": "/5/",
+  "name": "01 Executive",
+  "namespace": null,
+  "personal_owner_id": null,
+  "slug": "01_executive",
+  "type": null
+ },
+ "collection_id": 6,
+ "collection_position": null,
+ "collection_preview": true,
+ "created_at": "2026-08-28T12:08:35.116954Z",
+ "creator_id": 2,
+ "dashboard": null,
+ "dashboard_id": null,
+ "database_id": 2,
+ "dataset_query": {
+  "database": 2,
+  "lib/type": "mbql/query",
+  "stages": [
+   {
+    "lib/type": "mbql.stage/native",
+    "native": "WITH d AS (\n  SELECT day FROM `wb_mart.V_DASH_KPI_DAILY`\n  WHERE {{day}}\n)\nSELECT SUM(s.post_realization_deductions_rub) AS post_realization_deductions_rub\nFROM d JOIN `wb_mart.V_DASH_SETTLEMENT_DAILY` s USING (day)",
+    "template-tags": [
+     {
+      "dimension": [
+       "field",
+       {
+        "lib/uuid": "84502376-586a-40ab-82fa-fbf1b5ecc395"
+       },
+       909
+      ],
+      "display-name": "Период",
+      "id": "67b5e6da-7759-4325-b729-dc69c52a337b",
+      "name": "day",
+      "type": "dimension",
+      "widget-type": "date/all-options"
+     }
+    ]
+   }
+  ]
+ },
+ "description": "Удержания WB после реализации товара: логистика, хранение, удержания (реклама, транзит, утилизация и прочее), штрафы, корректировка вознаграждения, приёмка и баллы лояльности. Показывается отрицательной величиной, чтобы мост читался сложением: к перечислению за товар + удержания после реализации = к выплате от WB. Знаки источника сохранены, ABS не применяется. Это не структура управленческих затрат: здесь нет себестоимости товара, attributed-рекламы и расходов бизнеса. Расчёты с Wildberries построены по финансовым отчётам WB и показывают сумму расчётов площадки за выбранный период. Это НЕ управленческий результат и НЕ чистая прибыль: здесь не учитываются себестоимость товара, расходы фулфилмента, OPEX и другие расходы бизнеса. «К выплате от WB» — сумма расчётов по отчётам площадки, а НЕ подтверждённое поступление на банковский счёт: банковские транзакции в систему не заведены. В расчёт входят только ЗАКРЫТЫЕ финансовые сутки — открытая неделя WB ещё не рассчитана и в мост не включается. Источник: wb_mart.V_DASH_SETTLEMENT_DAILY.",
+ "dimension_mappings": null,
+ "dimensions": null,
+ "display": "scalar",
+ "document_id": null,
+ "embedding_params": null,
+ "embedding_type": null,
+ "enable_embedding": false,
+ "entity_id": "beO7n4AA-OJsaNzQO-1XR",
+ "id": 75,
+ "is_remote_synced": false,
+ "last_used_at": "2026-08-28T12:10:02.782765Z",
+ "legacy_query": null,
+ "metabase_version": "v0.63.15.1 (ab5ffba)",
+ "name": "Удержания после реализации",
+ "param_fields": {
+  "67b5e6da-7759-4325-b729-dc69c52a337b": [
+   {
+    "base_type": "type/Date",
+    "dimensions": [],
+    "display_name": "Day",
+    "fk_target_field_id": null,
+    "has_field_values": "none",
+    "id": 909,
+    "name": "day",
+    "name_field": null,
+    "semantic_type": null,
+    "table_id": 38,
+    "target": null
+   }
+  ]
+ },
+ "parameter_mappings": [],
+ "parameter_usage_count": 0,
+ "parameters": [],
+ "query_type": "native",
+ "source_card_id": null,
+ "table_id": null,
+ "type": "question",
+ "visualization_settings": {
+  "column_settings": {
+   "[\"name\",\"post_realization_deductions_rub\"]": {
+    "currency": "RUB",
+    "currency_in_header": false,
+    "currency_style": "symbol",
+    "decimals": 0,
+    "number_style": "currency"
+   }
+  },
+  "scalar.field": "post_realization_deductions_rub"
+ }
+}

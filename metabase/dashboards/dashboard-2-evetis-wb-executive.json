@@ -97,13 +97,13 @@
     "enable_embedding": false,
     "entity_id": "zK5OYRiAzSHqILBD-1SCW",
     "id": 40,
-    "last_used_at": "2026-08-28T10:15:33.044033Z",
+    "last_used_at": "2026-08-28T11:49:33.519634Z",
     "legacy_query": null,
     "metabase_version": "v0.63.15.1 (ab5ffba)",
     "name": "Свежесть данных",
     "parameter_mappings": [],
     "parameters": [],
-    "query_average_duration": 8046,
+    "query_average_duration": 7902,
     "query_type": "native",
     "source_card_id": null,
     "table_id": null,
@@ -204,7 +204,7 @@
     "enable_embedding": false,
     "entity_id": "OhjdAmERGYfuDjRLMuRDI",
     "id": 41,
-    "last_used_at": "2026-08-28T10:22:12.896084Z",
+    "last_used_at": "2026-08-28T11:49:33.519634Z",
     "legacy_query": null,
     "metabase_version": "v0.63.15.1 (ab5ffba)",
     "name": "Качество выбранного периода",
@@ -371,7 +371,7 @@
     "enable_embedding": false,
     "entity_id": "3V7cev4MGVAre_wAHzy8M",
     "id": 42,
-    "last_used_at": "2026-08-28T10:22:12.896084Z",
+    "last_used_at": "2026-08-28T11:49:33.519634Z",
     "legacy_query": null,
     "metabase_version": "v0.63.15.1 (ab5ffba)",
     "name": "Заказы, шт",
@@ -486,7 +486,7 @@
     "enable_embedding": false,
     "entity_id": "ujw3jOslRpW_5lbZWfe_J",
     "id": 43,
-    "last_used_at": "2026-08-28T10:22:12.896084Z",
+    "last_used_at": "2026-08-28T11:49:33.519634Z",
     "legacy_query": null,
     "metabase_version": "v0.63.15.1 (ab5ffba)",
     "name": "Выкупы, шт",
@@ -601,7 +601,7 @@
     "enable_embedding": false,
     "entity_id": "jxYMIsLfqFoeruflAx0rO",
     "id": 44,
-    "last_used_at": "2026-08-28T11:32:34.453448Z",
+    "last_used_at": "2026-08-28T11:49:33.519634Z",
     "legacy_query": null,
     "metabase_version": "v0.63.15.1 (ab5ffba)",
     "name": "Выручка по цене продавца, ₽",
@@ -719,7 +719,7 @@
     "enable_embedding": false,
     "entity_id": "4vMtSBt8gYDdY_gqm7Vhe",
     "id": 45,
-    "last_used_at": "2026-08-28T11:32:40.095992Z",
+    "last_used_at": "2026-08-28T11:49:33.519634Z",
     "legacy_query": null,
     "metabase_version": "v0.63.15.1 (ab5ffba)",
     "name": "Доход до себестоимости, ₽",
@@ -837,7 +837,7 @@
     "enable_embedding": false,
     "entity_id": "5x6I3WoNX5W4eZJbiU59N",
     "id": 46,
-    "last_used_at": "2026-08-28T11:32:44.560594Z",
+    "last_used_at": "2026-08-28T11:49:33.519634Z",
     "legacy_query": null,
     "metabase_version": "v0.63.15.1 (ab5ffba)",
     "name": "Реклама, ₽",
@@ -955,7 +955,7 @@
     "enable_embedding": false,
     "entity_id": "GAjrrJAwNvYoesCkUQ0G3",
     "id": 47,
-    "last_used_at": "2026-08-28T10:22:12.896084Z",
+    "last_used_at": "2026-08-28T11:49:33.519634Z",
     "legacy_query": null,
     "metabase_version": "v0.63.15.1 (ab5ffba)",
     "name": "ДРР, %",
@@ -1014,7 +1014,7 @@
    ],
    "row": 11,
    "series": [],
-   "size_x": 8,
+   "size_x": 12,
    "size_y": 3,
    "visualization_settings": {}
   },
@@ -1070,7 +1070,7 @@
     "enable_embedding": false,
     "entity_id": "_ZpSB8Y4ZwCl2Cn4DwMhy",
     "id": 48,
-    "last_used_at": "2026-08-28T10:22:12.896084Z",
+    "last_used_at": "2026-08-28T11:49:33.519634Z",
     "legacy_query": null,
     "metabase_version": "v0.63.15.1 (ab5ffba)",
     "name": "Возвраты, шт",
@@ -1106,7 +1106,7 @@
     }
    },
    "card_id": 48,
-   "col": 8,
+   "col": 12,
    "collection_authority_level": null,
    "created_at": "2026-08-26T15:25:08.584995Z",
    "dashboard_id": 2,
@@ -1129,7 +1129,7 @@
    ],
    "row": 11,
    "series": [],
-   "size_x": 8,
+   "size_x": 12,
    "size_y": 3,
    "visualization_settings": {}
   },
@@ -1138,7 +1138,7 @@
    "card": {
     "archived": false,
     "archived_directly": false,
-    "cache_invalidated_at": "2026-08-26T15:47:36.08791Z",
+    "cache_invalidated_at": "2026-08-28T12:08:59.769308Z",
     "cache_ttl": null,
     "card_schema": 23,
     "collection_id": 6,
@@ -1154,7 +1154,7 @@
      "stages": [
       {
        "lib/type": "mbql.stage/native",
-       "native": "SELECT SUM(net_settlement_rub) AS net_settlement_rub\nFROM `wb_mart.V_DASH_KPI_DAILY`\nWHERE {{day}}",
+       "native": "WITH d AS (\n  SELECT day FROM `wb_mart.V_DASH_KPI_DAILY`\n  WHERE {{day}}\n)\nSELECT SUM(s.settlement_goods_rub) AS settlement_goods_rub\nFROM d JOIN `wb_mart.V_DASH_SETTLEMENT_DAILY` s USING (day)",
        "template-tags": [
         {
          "dimension": [
@@ -1174,7 +1174,7 @@
       }
      ]
     },
-    "description": "Это сумма финансовых начислений, привязанных WB к SKU. Расходы уровня кабинета, которые WB не распределяет по товарам, в показатель не входят. Это не итоговая выплата кабинета. Технически: V_DASH_KPI_DAILY.net_settlement_rub = SUM(finance_for_pay_accounting) по SKU-строкам витрины. Расходы уровня кабинета показаны отдельно в блоке «Структура затрат».",
+    "description": "Сумма, которую Wildberries рассчитал к перечислению продавцу за реализованный товар до удержаний после реализации. Технически: SUM(for_pay) по строкам финансовых отчётов WB за выбранный период, оба типа еженедельного отчёта (основной и «по выкупам»). Это первая ступень моста расчётов: к перечислению за товар + удержания после реализации = к выплате от WB. Контроль 27.07–23.08.2026: 198 475,40 ₽. В расчёт входят только ЗАКРЫТЫЕ финансовые сутки — открытая неделя WB ещё не рассчитана и в мост не включается. Расчёты с Wildberries построены по финансовым отчётам WB и показывают сумму расчётов площадки за период. Это НЕ управленческий результат и НЕ чистая прибыль: здесь не учитываются себестоимость товара, расходы фулфилмента, OPEX и другие расходы бизнеса. Прежнее имя карточки — «К перечислению по SKU*, ₽»; переименована в Stage 3.1G, id сохранён. Источник: wb_mart.V_DASH_SETTLEMENT_DAILY.",
     "dimension_mappings": null,
     "dimensions": null,
     "display": "scalar",
@@ -1185,10 +1185,10 @@
     "enable_embedding": false,
     "entity_id": "wo8auV1gdB7fAquaO-t34",
     "id": 49,
-    "last_used_at": "2026-08-28T11:32:49.368338Z",
+    "last_used_at": "2026-08-28T12:09:54.480376Z",
     "legacy_query": null,
     "metabase_version": "v0.63.15.1 (ab5ffba)",
-    "name": "К перечислению по SKU*, ₽",
+    "name": "К перечислению за товар",
     "parameter_mappings": [],
     "parameters": [
      {
@@ -1205,14 +1205,14 @@
       "type": "date/all-options"
      }
     ],
-    "query_average_duration": 4180,
+    "query_average_duration": null,
     "query_type": "native",
     "source_card_id": null,
     "table_id": null,
     "type": "question",
     "visualization_settings": {
      "column_settings": {
-      "[\"name\",\"net_settlement_rub\"]": {
+      "[\"name\",\"settlement_goods_rub\"]": {
        "currency": "RUB",
        "currency_in_header": false,
        "currency_style": "symbol",
@@ -1220,11 +1220,11 @@
        "number_style": "currency"
       }
      },
-     "scalar.field": "net_settlement_rub"
+     "scalar.field": "settlement_goods_rub"
     }
    },
    "card_id": 49,
-   "col": 16,
+   "col": 0,
    "collection_authority_level": null,
    "created_at": "2026-08-26T15:25:08.584995Z",
    "dashboard_id": 2,
@@ -1245,7 +1245,7 @@
      ]
     }
    ],
-   "row": 11,
+   "row": 22,
    "series": [],
    "size_x": 8,
    "size_y": 3,
@@ -1267,7 +1267,7 @@
    "id": 49,
    "inline_parameters": [],
    "parameter_mappings": [],
-   "row": 21,
+   "row": 25,
    "series": [],
    "size_x": 24,
    "size_y": 1,
@@ -1335,7 +1335,7 @@
     "enable_embedding": false,
     "entity_id": "FLqIu5Fk4VDeVAmOyDVJd",
     "id": 50,
-    "last_used_at": "2026-08-28T10:22:20.275068Z",
+    "last_used_at": "2026-08-28T11:49:42.523496Z",
     "legacy_query": null,
     "metabase_version": "v0.63.15.1 (ab5ffba)",
     "name": "Выручка и вклад по дням",
@@ -1421,7 +1421,7 @@
      ]
     }
    ],
-   "row": 22,
+   "row": 26,
    "series": [],
    "size_x": 24,
    "size_y": 7,
@@ -1443,7 +1443,7 @@
    "id": 51,
    "inline_parameters": [],
    "parameter_mappings": [],
-   "row": 29,
+   "row": 33,
    "series": [],
    "size_x": 24,
    "size_y": 1,
@@ -1511,7 +1511,7 @@
     "enable_embedding": false,
     "entity_id": "sP0TcBbqSZCY-Z82W-IKN",
     "id": 51,
-    "last_used_at": "2026-08-28T11:32:53.423051Z",
+    "last_used_at": "2026-08-28T11:49:42.523496Z",
     "legacy_query": null,
     "metabase_version": "v0.63.15.1 (ab5ffba)",
     "name": "Структура затрат за период",
@@ -1579,7 +1579,7 @@
      ]
     }
    ],
-   "row": 30,
+   "row": 34,
    "series": [],
    "size_x": 24,
    "size_y": 8,
@@ -1601,7 +1601,7 @@
    "id": 53,
    "inline_parameters": [],
    "parameter_mappings": [],
-   "row": 38,
+   "row": 42,
    "series": [],
    "size_x": 24,
    "size_y": 1,
@@ -1683,7 +1683,7 @@
     "enable_embedding": false,
     "entity_id": "LuPy2relmB6JfNCBgzv2t",
     "id": 52,
-    "last_used_at": "2026-08-28T10:22:20.275068Z",
+    "last_used_at": "2026-08-28T11:49:42.523496Z",
     "legacy_query": null,
     "metabase_version": "v0.63.15.1 (ab5ffba)",
     "name": "SKU за период",
@@ -1800,7 +1800,7 @@
      ]
     }
    ],
-   "row": 39,
+   "row": 43,
    "series": [],
    "size_x": 24,
    "size_y": 9,
@@ -1891,7 +1891,7 @@
     "enable_embedding": false,
     "entity_id": "xHRFz-D8n9OnzHYkwPC7F",
     "id": 53,
-    "last_used_at": "2026-08-28T11:34:58.571997Z",
+    "last_used_at": "2026-08-28T12:10:17.906084Z",
     "legacy_query": null,
     "metabase_version": "v0.63.15.1 (ab5ffba)",
     "name": "Результат периода до себестоимости",
@@ -1995,7 +1995,7 @@
     "enable_embedding": false,
     "entity_id": "-iKoChmzY-b4AosEvxnRS",
     "id": 54,
-    "last_used_at": "2026-08-28T11:35:05.850944Z",
+    "last_used_at": "2026-08-28T11:49:42.523496Z",
     "legacy_query": null,
     "metabase_version": "v0.63.15.1 (ab5ffba)",
     "name": "Рентабельность до себестоимости",
@@ -2096,7 +2096,7 @@
     "enable_embedding": false,
     "entity_id": "65chXD4wAKqRX_ZkvE4gL",
     "id": 55,
-    "last_used_at": "2026-08-28T10:22:12.896084Z",
+    "last_used_at": "2026-08-28T11:49:33.519634Z",
     "legacy_query": null,
     "metabase_version": "v0.63.15.1 (ab5ffba)",
     "name": "Отменено, шт",
@@ -2197,7 +2197,7 @@
     "enable_embedding": false,
     "entity_id": "1dmQRES2x6tII-7tExRxG",
     "id": 72,
-    "last_used_at": "2026-08-28T11:35:13.70326Z",
+    "last_used_at": "2026-08-28T12:10:25.262926Z",
     "legacy_query": null,
     "metabase_version": "v0.63.15.1 (ab5ffba)",
     "name": "Себестоимость товара",
@@ -2301,7 +2301,7 @@
     "enable_embedding": false,
     "entity_id": "w5DXDu4rusqu8LIffsaiq",
     "id": 73,
-    "last_used_at": "2026-08-28T11:35:23.846039Z",
+    "last_used_at": "2026-08-28T12:10:34.545717Z",
     "legacy_query": null,
     "metabase_version": "v0.63.15.1 (ab5ffba)",
     "name": "Результат периода после себестоимости товара",
@@ -2405,7 +2405,7 @@
     "enable_embedding": false,
     "entity_id": "DB_SSXaLq412NIgCflJzV",
     "id": 74,
-    "last_used_at": "2026-08-28T11:35:38.026577Z",
+    "last_used_at": "2026-08-28T12:10:46.965908Z",
     "legacy_query": null,
     "metabase_version": "v0.63.15.1 (ab5ffba)",
     "name": "Рентабельность после себестоимости товара",
@@ -2451,6 +2451,247 @@
    "row": 18,
    "series": [],
    "size_x": 12,
+   "size_y": 3,
+   "visualization_settings": {}
+  },
+  {
+   "action_id": null,
+   "card": {
+    "download_perms": "none",
+    "query_average_duration": null
+   },
+   "card_id": null,
+   "col": 0,
+   "collection_authority_level": null,
+   "created_at": "2026-08-28T12:09:30.189667Z",
+   "dashboard_id": 2,
+   "dashboard_tab_id": null,
+   "entity_id": "xZbxu0KP0-Bty8bpXI1cI",
+   "id": 108,
+   "inline_parameters": [],
+   "parameter_mappings": [],
+   "row": 21,
+   "series": [],
+   "size_x": 24,
+   "size_y": 1,
+   "visualization_settings": {
+    "dashcard.background": false,
+    "text": "Расчёты с Wildberries",
+    "text.align_vertical": "bottom",
+    "virtual_card": {
+     "archived": false,
+     "dataset_query": {},
+     "display": "text",
+     "name": null,
+     "visualization_settings": {}
+    }
+   }
+  },
+  {
+   "action_id": null,
+   "card": {
+    "archived": false,
+    "archived_directly": false,
+    "cache_invalidated_at": null,
+    "cache_ttl": null,
+    "card_schema": 23,
+    "collection_id": 6,
+    "collection_position": null,
+    "collection_preview": true,
+    "created_at": "2026-08-28T12:08:35.116954Z",
+    "creator_id": 2,
+    "dashboard_id": null,
+    "database_id": 2,
+    "dataset_query": {
+     "database": 2,
+     "lib/type": "mbql/query",
+     "stages": [
+      {
+       "lib/type": "mbql.stage/native",
+       "native": "WITH d AS (\n  SELECT day FROM `wb_mart.V_DASH_KPI_DAILY`\n  WHERE {{day}}\n)\nSELECT SUM(s.post_realization_deductions_rub) AS post_realization_deductions_rub\nFROM d JOIN `wb_mart.V_DASH_SETTLEMENT_DAILY` s USING (day)",
+       "template-tags": [
+        {
+         "dimension": [
+          "field",
+          {
+           "lib/uuid": "84502376-586a-40ab-82fa-fbf1b5ecc395"
+          },
+          909
+         ],
+         "display-name": "Период",
+         "id": "67b5e6da-7759-4325-b729-dc69c52a337b",
+         "name": "day",
+         "type": "dimension",
+         "widget-type": "date/all-options"
+        }
+       ]
+      }
+     ]
+    },
+    "description": "Удержания WB после реализации товара: логистика, хранение, удержания (реклама, транзит, утилизация и прочее), штрафы, корректировка вознаграждения, приёмка и баллы лояльности. Показывается отрицательной величиной, чтобы мост читался сложением: к перечислению за товар + удержания после реализации = к выплате от WB. Знаки источника сохранены, ABS не применяется. Это не структура управленческих затрат: здесь нет себестоимости товара, attributed-рекламы и расходов бизнеса. Расчёты с Wildberries построены по финансовым отчётам WB и показывают сумму расчётов площадки за выбранный период. Это НЕ управленческий результат и НЕ чистая прибыль: здесь не учитываются себестоимость товара, расходы фулфилмента, OPEX и другие расходы бизнеса. «К выплате от WB» — сумма расчётов по отчётам площадки, а НЕ подтверждённое поступление на банковский счёт: банковские транзакции в систему не заведены. В расчёт входят только ЗАКРЫТЫЕ финансовые сутки — открытая неделя WB ещё не рассчитана и в мост не включается. Источник: wb_mart.V_DASH_SETTLEMENT_DAILY.",
+    "dimension_mappings": null,
+    "dimensions": null,
+    "display": "scalar",
+    "document_id": null,
+    "download_perms": "full",
+    "embedding_params": null,
+    "embedding_type": null,
+    "enable_embedding": false,
+    "entity_id": "beO7n4AA-OJsaNzQO-1XR",
+    "id": 75,
+    "last_used_at": "2026-08-28T12:10:02.782765Z",
+    "legacy_query": null,
+    "metabase_version": "v0.63.15.1 (ab5ffba)",
+    "name": "Удержания после реализации",
+    "parameter_mappings": [],
+    "parameters": [],
+    "query_average_duration": null,
+    "query_type": "native",
+    "source_card_id": null,
+    "table_id": null,
+    "type": "question",
+    "visualization_settings": {
+     "column_settings": {
+      "[\"name\",\"post_realization_deductions_rub\"]": {
+       "currency": "RUB",
+       "currency_in_header": false,
+       "currency_style": "symbol",
+       "decimals": 0,
+       "number_style": "currency"
+      }
+     },
+     "scalar.field": "post_realization_deductions_rub"
+    }
+   },
+   "card_id": 75,
+   "col": 8,
+   "collection_authority_level": null,
+   "created_at": "2026-08-28T12:09:30.189667Z",
+   "dashboard_id": 2,
+   "dashboard_tab_id": null,
+   "entity_id": "SOkq5yDSU2UOcEOPJhD-l",
+   "id": 109,
+   "inline_parameters": [],
+   "parameter_mappings": [
+    {
+     "card_id": 75,
+     "parameter_id": "date",
+     "target": [
+      "dimension",
+      [
+       "template-tag",
+       "day"
+      ]
+     ]
+    }
+   ],
+   "row": 22,
+   "series": [],
+   "size_x": 8,
+   "size_y": 3,
+   "visualization_settings": {}
+  },
+  {
+   "action_id": null,
+   "card": {
+    "archived": false,
+    "archived_directly": false,
+    "cache_invalidated_at": null,
+    "cache_ttl": null,
+    "card_schema": 23,
+    "collection_id": 6,
+    "collection_position": null,
+    "collection_preview": true,
+    "created_at": "2026-08-28T12:08:37.270457Z",
+    "creator_id": 2,
+    "dashboard_id": null,
+    "database_id": 2,
+    "dataset_query": {
+     "database": 2,
+     "lib/type": "mbql/query",
+     "stages": [
+      {
+       "lib/type": "mbql.stage/native",
+       "native": "WITH d AS (\n  SELECT day FROM `wb_mart.V_DASH_KPI_DAILY`\n  WHERE {{day}}\n)\nSELECT SUM(s.wb_payout_rub) AS wb_payout_rub\nFROM d JOIN `wb_mart.V_DASH_SETTLEMENT_DAILY` s USING (day)",
+       "template-tags": [
+        {
+         "dimension": [
+          "field",
+          {
+           "lib/uuid": "8519af70-570e-45cc-8e7c-5e47d0893af5"
+          },
+          909
+         ],
+         "display-name": "Период",
+         "id": "d0d204b8-187a-44e0-8a96-abbf89bd5894",
+         "name": "day",
+         "type": "dimension",
+         "widget-type": "date/all-options"
+        }
+       ]
+      }
+     ]
+    },
+    "description": "Сумма, которую Wildberries рассчитал к перечислению продавцу за выбранный период по своим финансовым отчётам. Формула, проверенная на восьми закрытых еженедельных отчётах: к перечислению за товар − логистика − хранение − удержания − штрафы − корректировка вознаграждения − приёмка − баллы лояльности. Контроль 27.07–23.08.2026: 110 101,96 ₽, все четыре недели сходятся до копейки. Расчёты с Wildberries построены по финансовым отчётам WB и показывают сумму расчётов площадки за выбранный период. Это НЕ управленческий результат и НЕ чистая прибыль: здесь не учитываются себестоимость товара, расходы фулфилмента, OPEX и другие расходы бизнеса. «К выплате от WB» — сумма расчётов по отчётам площадки, а НЕ подтверждённое поступление на банковский счёт: банковские транзакции в систему не заведены. В расчёт входят только ЗАКРЫТЫЕ финансовые сутки — открытая неделя WB ещё не рассчитана и в мост не включается. Источник: wb_mart.V_DASH_SETTLEMENT_DAILY.",
+    "dimension_mappings": null,
+    "dimensions": null,
+    "display": "scalar",
+    "document_id": null,
+    "download_perms": "full",
+    "embedding_params": null,
+    "embedding_type": null,
+    "enable_embedding": false,
+    "entity_id": "4wUdZYv-79-SHvyzaHkkT",
+    "id": 76,
+    "last_used_at": "2026-08-28T12:11:25.400994Z",
+    "legacy_query": null,
+    "metabase_version": "v0.63.15.1 (ab5ffba)",
+    "name": "К выплате от WB",
+    "parameter_mappings": [],
+    "parameters": [],
+    "query_average_duration": null,
+    "query_type": "native",
+    "source_card_id": null,
+    "table_id": null,
+    "type": "question",
+    "visualization_settings": {
+     "column_settings": {
+      "[\"name\",\"wb_payout_rub\"]": {
+       "currency": "RUB",
+       "currency_in_header": false,
+       "currency_style": "symbol",
+       "decimals": 0,
+       "number_style": "currency"
+      }
+     },
+     "scalar.field": "wb_payout_rub"
+    }
+   },
+   "card_id": 76,
+   "col": 16,
+   "collection_authority_level": null,
+   "created_at": "2026-08-28T12:09:30.189667Z",
+   "dashboard_id": 2,
+   "dashboard_tab_id": null,
+   "entity_id": "tpMPIKdQLMHJ4-nPR5sBr",
+   "id": 110,
+   "inline_parameters": [],
+   "parameter_mappings": [
+    {
+     "card_id": 76,
+     "parameter_id": "date",
+     "target": [
+      "dimension",
+      [
+       "template-tag",
+       "day"
+      ]
+     ]
+    }
+   ],
+   "row": 22,
+   "series": [],
+   "size_x": 8,
    "size_y": 3,
    "visualization_settings": {}
   }
@@ -2555,6 +2796,21 @@
    }
   ],
   "5bd7c7a7-fec7-4e19-a2bd-6b5d2a171a30": [
+   {
+    "base_type": "type/Date",
+    "dimensions": [],
+    "display_name": "Day",
+    "fk_target_field_id": null,
+    "has_field_values": "none",
+    "id": 909,
+    "name": "day",
+    "name_field": null,
+    "semantic_type": null,
+    "table_id": 38,
+    "target": null
+   }
+  ],
+  "67b5e6da-7759-4325-b729-dc69c52a337b": [
    {
     "base_type": "type/Date",
     "dimensions": [],
@@ -2690,6 +2946,21 @@
    }
   ],
   "ccae321d-08bc-4a12-80b7-5916cc35cca0": [
+   {
+    "base_type": "type/Date",
+    "dimensions": [],
+    "display_name": "Day",
+    "fk_target_field_id": null,
+    "has_field_values": "none",
+    "id": 909,
+    "name": "day",
+    "name_field": null,
+    "semantic_type": null,
+    "table_id": 38,
+    "target": null
+   }
+  ],
+  "d0d204b8-187a-44e0-8a96-abbf89bd5894": [
    {
     "base_type": "type/Date",
     "dimensions": [],
