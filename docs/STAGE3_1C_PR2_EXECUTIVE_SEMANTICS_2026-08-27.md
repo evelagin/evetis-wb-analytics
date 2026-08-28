@@ -58,6 +58,16 @@ period_result_pre_cogs_corrected_rub = contribution_pre_cogs_rub - account_level
 `V_FACT_FINANCE_COGS`, `V_MART_SKU_DAILY_COGS`, `V_WB_DEDUCTIONS_CLASSIFIED`,
 `V_ADVERTISING_RECONCILIATION_DAILY`, процедуры, Cloud Scheduler, Metabase.
 
+
+🔴 **SUPERSEDED BY STAGE 3.1F CLASSIFIER CORRECTION (2026-08-28).** Числа этого
+блока приняты при действовавшем тогда классификаторе, в котором 38 ₽ утилизации
+товара ошибочно относились к рекламному биллингу и потому исключались из
+операционных расходов. Действующие величины: billed advertising 01–26.08 —
+**52 837,00 ₽**; результат до себестоимости 01–26.08 — **90 306,47 ₽**,
+01–25.08 — **87 433,25 ₽**; результат после себестоимости 01–26.08 —
+**−26 724,53 ₽**, 01–25.08 — **−26 578,75 ₽**. Контракт:
+`docs/STAGE3_1F_DEDUCTION_DIRECT_LABELS_2026-08-28.md`.
+
 ## 4. BEFORE / AFTER, 01–26.08.2026
 
 🔴 Снимок на 27.08.2026, а не вечный инвариант: `FACT_*` штатно обновляются.

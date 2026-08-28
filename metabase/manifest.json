@@ -12,7 +12,7 @@
   "image": "metabase/metabase:latest",
   "mb_db_file": "/metabase-data/metabase.db"
  },
- "baseline_commit": "32d230c9cdada219b0b6d6d3a3bce57cc9d03814",
+ "baseline_commit": "3024789cb346f8714597da3d6d5ff10e0c9d74bf",
  "card_ids": [
   40,
   41,
@@ -121,7 +121,7 @@
    "display": "scalar",
    "file": "metabase/cards/card-44-vyruchka.json",
    "id": 44,
-   "name": "Выручка, ₽"
+   "name": "Выручка по цене продавца, ₽"
   },
   {
    "collection_id": 6,
@@ -453,7 +453,7 @@
   "updated_at",
   "view_count"
  ],
- "export_timestamp": "2026-08-28T13:27:13+03:00",
+ "export_timestamp": "2026-08-28T14:36:20+03:00",
  "metabase_version": {
   "date": "2026-08-25",
   "hash": "ab5ffba",
@@ -464,14 +464,14 @@
   "metabase/cards/card-41-kachestvo-vybrannogo-perioda.json": "07d79ac843f1ebc65878516bc33b968de7a721defc6940089e291dae9737c829",
   "metabase/cards/card-42-zakazy-sht.json": "794e5d94e9de6fcd55cb895aaf60034c55bbf6d4b738de6e085678030fa8d381",
   "metabase/cards/card-43-vykupy-sht.json": "2fe38d5bd0cb09f1d669103b39cb7241bad90199b6252ac8fa474918cebb96f4",
-  "metabase/cards/card-44-vyruchka.json": "12bccdf1ff40830d36b76faa19f268a076dd6a3d700e2d51128a45b4f0a1039d",
+  "metabase/cards/card-44-vyruchka.json": "99b81f023fe03e805386b0c993a1f54eddf2a3489171b5a37ee28b4fc0744e85",
   "metabase/cards/card-45-dohod-do-sebestoimosti.json": "efc7d88ae5c915b038c19b65ad675afdcc302daa8f5895b1d117ab91fdef3b8e",
   "metabase/cards/card-46-reklama.json": "0a4945e44a570fb58aa6a1fb20c92457d34d5a1e7c4cd76156a5d10e825fb39e",
   "metabase/cards/card-47-drr.json": "a8a798ac0e01ce79d7ab5d92e2cac62ecfdd5dec121bd198847ae1ab2848ca5f",
   "metabase/cards/card-48-vozvraty-sht.json": "63aaf4411d01a2b57e0f68950099f86da6016fb8d8889bf7bfbf0af9f857b515",
   "metabase/cards/card-49-k-perechisleniyu-po-sku.json": "38fd58ec7ed648aea8ba23403f7d0011b274e5f0ad5478d76893561e5a0ca9f3",
   "metabase/cards/card-50-vyruchka-i-vklad-po-dnyam.json": "afd0f711d441ed3ed674d3a01deadff611caf065b2d18e13881e7d42ddc6ae77",
-  "metabase/cards/card-51-struktura-zatrat-za-period.json": "2f7b2a720d87f6f77c3df031a77a751bca594a281758db226249330c534f91a0",
+  "metabase/cards/card-51-struktura-zatrat-za-period.json": "b6a4b727030981dc2622d30141611b1b7b8bb7b45126e20a432b7691518b22b6",
   "metabase/cards/card-52-sku-za-period.json": "91e8ffcc9c660ce9a4f36b5c7805cd1e4afa2e922087fb074d3f3ed153a4c87c",
   "metabase/cards/card-53-rezultat-perioda-do-sebestoimosti.json": "46d5a747c1237ec9bb3b6ef6f14657e6b1a53b2defcf11d990035496946c99de",
   "metabase/cards/card-54-rentabelnost-do-sebestoimosti.json": "fd49ca7515b1aa7f03fa4feb40a9320aa0c0a57d797ddae97af94d9b9530583a",
@@ -498,7 +498,7 @@
   "metabase/collections/collection-5-evetis-analytics.json": "db06cefa53c6c0717bb13f28da362bbc91728017516c4ed3c86829aa7f814ca2",
   "metabase/collections/collection-6-01-executive.json": "cb72952920412540ffc5805a991367fbdd0dfb73bc6bf76f209be1d5b8598562",
   "metabase/collections/collection-7-02-sku-performance.json": "24aad11e9416dd74ba9075c70d4cad39b6a5073582b7f4b5c21caff9e13ca7e7",
-  "metabase/dashboards/dashboard-2-evetis-wb-executive.json": "bac67dea3218e9fcbc95286c498ad88015f37e9d0e23e70ecfcc93e90b4917f2",
+  "metabase/dashboards/dashboard-2-evetis-wb-executive.json": "e4ca08e285f12c5dadeebbd6e8736ad749c5dacac6264192d0e29fbbed99c678",
   "metabase/dashboards/dashboard-3-evetis-wb-sku-performance.json": "2ae9fff2b3fad2e477bc9fc8790c819a2e641f1fe8ae4fa979dc8e8b160fe219"
  },
  "source_note": "OSS. Аутентификационные данные в экспорт не входят.",

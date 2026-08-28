@@ -1,7 +1,7 @@
 {
  "archived": false,
  "archived_directly": false,
- "cache_invalidated_at": "2026-08-26T15:47:35.224671Z",
+ "cache_invalidated_at": "2026-08-28T11:32:13.042334Z",
  "cache_ttl": null,
  "card_schema": 23,
  "collection": {
@@ -67,10 +67,10 @@
  "entity_id": "jxYMIsLfqFoeruflAx0rO",
  "id": 44,
  "is_remote_synced": false,
- "last_used_at": "2026-08-27T08:22:56.758581Z",
+ "last_used_at": "2026-08-28T11:32:34.453448Z",
  "legacy_query": null,
  "metabase_version": "v0.63.15.1 (ab5ffba)",
- "name": "Выручка, ₽",
+ "name": "Выручка по цене продавца, ₽",
  "param_fields": {
   "9fce4429-859f-4aac-ae90-2eab839f2c7b": [
    {
