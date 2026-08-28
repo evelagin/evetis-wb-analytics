@@ -1,7 +1,7 @@
 {
  "archived": false,
  "archived_directly": false,
- "cache_invalidated_at": "2026-08-28T13:53:19.489394Z",
+ "cache_invalidated_at": "2026-08-28T14:54:53.759447Z",
  "cache_ttl": null,
  "card_schema": 23,
  "collection": {
@@ -70,7 +70,7 @@
    }
   ]
  },
- "description": "V_DASH_SKU_DAILY, грейн сутки × nm_id, строгий pass-through грейна витрины. Расходы уровня счёта (хранение, удержания, приёмка) сюда принципиально не входят — источник не даёт связки с SKU. ДРР и «Доходность до себестоимости, %» считаются как ratio-of-sums за выбранный период.",
+ "description": "V_DASH_SKU_DAILY, грейн сутки × nm_id, строгий pass-through грейна витрины. Расходы уровня счёта (хранение, удержания, приёмка) сюда принципиально не входят — источник не даёт связки с SKU. ДРР и «Доходность до себестоимости, %» считаются как ratio-of-sums за выбранный период. Порядок колонок — управленческий: товар, выкупы, выручка, реклама, ДРР, доход и доходность; заказы и отмены оставлены правее как операционные. 🔴 Колонка называется «Доход до себестоимости», а НЕ «Результат до себестоимости»: в неё не входят расходы уровня кабинета (хранение, штрафы, удержания) — источник не даёт их связки с SKU. Величина карточки «Результат до себестоимости» из блока экономики к сумме этой колонки не сводится. 🔴 Подсветка ДРР ≥ 30 % — порог ВНИМАНИЯ уровня отображения, а не бизнес-правило и не порог рентабельности.",
  "dimension_mappings": null,
  "dimensions": null,
  "display": "table",
@@ -81,7 +81,7 @@
  "entity_id": "LuPy2relmB6JfNCBgzv2t",
  "id": 52,
  "is_remote_synced": false,
- "last_used_at": "2026-08-28T13:48:19.948356Z",
+ "last_used_at": "2026-08-28T15:00:59.308671Z",
  "legacy_query": null,
  "metabase_version": "v0.63.15.1 (ab5ffba)",
  "name": "SKU за период",
@@ -160,23 +160,23 @@
     "suffix": " ₽"
    },
    "[\"name\",\"buyouts_qty\"]": {
-    "column_title": "Выкупы, шт",
+    "column_title": "Выкупы",
     "decimals": 0,
     "number_style": "decimal"
    },
    "[\"name\",\"canceled_qty\"]": {
-    "column_title": "Отменено, шт",
+    "column_title": "Отменено",
     "decimals": 0,
     "number_style": "decimal"
    },
    "[\"name\",\"contribution_rub\"]": {
-    "column_title": "Доход до себестоимости, ₽",
+    "column_title": "Доход до себест., ₽",
     "decimals": 0,
     "number_style": "decimal",
     "suffix": " ₽"
    },
    "[\"name\",\"contribution_to_revenue\"]": {
-    "column_title": "Доходность до себестоимости, %",
+    "column_title": "Доходность, %",
     "decimals": 1,
     "number_style": "percent"
    },
@@ -186,7 +186,7 @@
     "number_style": "percent"
    },
    "[\"name\",\"orders_gross_qty\"]": {
-    "column_title": "Заказы, шт",
+    "column_title": "Заказы",
     "decimals": 0,
     "number_style": "decimal"
    },
@@ -221,6 +221,65 @@
     "operator": "<",
     "type": "single",
     "value": 0
+   },
+   {
+    "color": "#E9A13B",
+    "columns": [
+     "drr"
+    ],
+    "highlight_row": false,
+    "operator": ">=",
+    "type": "single",
+    "value": 0.3
+   }
+  ],
+  "table.column_widths": [
+   180,
+   95,
+   185,
+   110,
+   70,
+   165,
+   130,
+   85,
+   100
+  ],
+  "table.columns": [
+   {
+    "enabled": true,
+    "name": "product"
+   },
+   {
+    "enabled": true,
+    "name": "buyouts_qty"
+   },
+   {
+    "enabled": true,
+    "name": "revenue_rub"
+   },
+   {
+    "enabled": true,
+    "name": "ad_spend_rub"
+   },
+   {
+    "enabled": true,
+    "name": "drr"
+   },
+   {
+    "enabled": true,
+    "name": "contribution_rub"
+   },
+   {
+    "enabled": true,
+    "name": "contribution_to_revenue"
+   },
+   {
+    "enabled": true,
+    "name": "orders_gross_qty"
+   },
+   {
+    "enabled": true,
+    "name": "canceled_qty"
    }
   ]
  }

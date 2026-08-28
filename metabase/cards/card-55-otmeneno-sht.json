@@ -1,7 +1,7 @@
 {
  "archived": false,
  "archived_directly": false,
- "cache_invalidated_at": null,
+ "cache_invalidated_at": "2026-08-28T14:33:09.706232Z",
  "cache_ttl": null,
  "card_schema": 23,
  "collection": {
@@ -36,18 +36,18 @@
   "stages": [
    {
     "lib/type": "mbql.stage/native",
-    "native": "SELECT SUM(canceled_qty) AS canceled_qty\nFROM `wb_mart.V_DASH_KPI_DAILY`\nWHERE {{day}}",
+    "native": "WITH b AS (\n  SELECT MIN(day) AS d1, MAX(day) AS d2, COUNT(*) AS len\n  FROM `wb_mart.V_DASH_KPI_DAILY`\n  WHERE {{day}}\n),\nagg AS (\n  SELECT\n    IF(k.day >= b.d1, 'cur', 'prv')                             AS w,\n    IF(k.day >= b.d1, b.d1, DATE_SUB(b.d1, INTERVAL b.len DAY)) AS period_start,\n    COUNTIF(k.orders_covered)                                             AS cov,\n    SUM(k.canceled_qty)                                                    AS v\n  FROM `wb_mart.V_DASH_KPI_DAILY` k, b\n  WHERE k.day BETWEEN DATE_SUB(b.d1, INTERVAL b.len DAY) AND b.d2\n  GROUP BY w, period_start\n)\nSELECT period_start AS period, v AS canceled_qty\nFROM agg\nWHERE w = 'cur'\n   OR (cov = (SELECT cov FROM agg WHERE w = 'cur'))\nORDER BY period",
     "template-tags": [
      {
       "dimension": [
        "field",
        {
-        "lib/uuid": "4aef3c56-fb98-45ce-b981-5f7fdf49e046"
+        "lib/uuid": "94ff06f3-f9f2-481e-93ea-5a09f8e2d556"
        },
        909
       ],
       "display-name": "Период",
-      "id": "57d96d4b-5fae-4614-88e9-7e998fc84408",
+      "id": "d64a33b3-b761-4aad-b710-6c3c26a94d1c",
       "name": "day",
       "type": "dimension",
       "widget-type": "date/all-options"
@@ -56,10 +56,10 @@
    }
   ]
  },
- "description": "Заказы, отменённые до выкупа. V_DASH_KPI_DAILY.canceled_qty = COUNTIF(is_cancel) в FACT_ORDERS, по дате заказа. Входит в «Заказы, шт» (брутто): orders_gross_qty = orders_qty + canceled_qty. WB в выгрузке воронки показывает отмены отдельной колонкой «Отменили, шт» — по своей базе дат значение может отличаться. NULL в сутках без покрытия заказов.",
+ "description": "Заказы, отменённые до выкупа: V_DASH_KPI_DAILY.canceled_qty, база даты — дата заказа. Входит в «Заказы, шт» (брутто). 🔴 Окраска изменения перевёрнута сознательно: снижение отмен — это хорошо, поэтому падение показано зелёным, а рост — красным. Знак математического изменения при этом не искажается. Сравнение с предыдущим сопоставимым периодом той же длины непосредственно перед выбранным: границы берутся из плотного календаря V_DASH_KPI_DAILY, механизм тот же, что у карточки 68 SKU Performance. 🔴 Изменение показывается ТОЛЬКО при равном покрытии обоих окон по маске этой метрики; при неравном покрытии предыдущая точка не выводится и Δ отсутствует — полный период с неполным не сравнивается.",
  "dimension_mappings": null,
  "dimensions": null,
- "display": "scalar",
+ "display": "smartscalar",
  "document_id": null,
  "embedding_params": null,
  "embedding_type": null,
@@ -67,12 +67,12 @@
  "entity_id": "65chXD4wAKqRX_ZkvE4gL",
  "id": 55,
  "is_remote_synced": false,
- "last_used_at": "2026-08-27T08:22:44.544745Z",
+ "last_used_at": "2026-08-28T14:59:52.222079Z",
  "legacy_query": null,
  "metabase_version": "v0.63.15.1 (ab5ffba)",
  "name": "Отменено, шт",
  "param_fields": {
-  "57d96d4b-5fae-4614-88e9-7e998fc84408": [
+  "d64a33b3-b761-4aad-b710-6c3c26a94d1c": [
    {
     "base_type": "type/Date",
     "dimensions": [],
@@ -102,6 +102,13 @@
     "number_style": "decimal"
    }
   },
-  "scalar.field": "canceled_qty"
+  "scalar.comparisons": [
+   {
+    "id": "prev",
+    "type": "previousValue"
+   }
+  ],
+  "scalar.field": "canceled_qty",
+  "scalar.switch_positive_negative": true
  }
 }

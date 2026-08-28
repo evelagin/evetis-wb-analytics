@@ -1,7 +1,7 @@
 {
  "archived": false,
  "archived_directly": false,
- "cache_invalidated_at": "2026-08-28T14:33:12.757881Z",
+ "cache_invalidated_at": null,
  "cache_ttl": null,
  "card_schema": 23,
  "collection": {
@@ -25,7 +25,7 @@
  "collection_id": 6,
  "collection_position": null,
  "collection_preview": true,
- "created_at": "2026-08-28T13:34:53.530184Z",
+ "created_at": "2026-08-28T14:31:17.815879Z",
  "creator_id": 2,
  "dashboard": null,
  "dashboard_id": null,
@@ -36,18 +36,18 @@
   "stages": [
    {
     "lib/type": "mbql.stage/native",
-    "native": "SELECT SUM(ad_spend_unallocated_rub) AS ad_spend_unallocated_rub\nFROM `wb_mart.V_DASH_FINANCE_CORRECTED_DAILY`\nWHERE {{day}}",
+    "native": "WITH d AS (\n  SELECT day FROM `wb_mart.V_DASH_FINANCE_CORRECTED_DAILY`\n  WHERE {{day}}\n),\ns AS (\n  SELECT\n    e.period_result_eligible          AS el,\n    e.revenue_base_period_result_rub  AS rev,\n    e.period_result_pre_cogs_corrected_rub AS res,\n    k.marketplace_fee_rub, k.ad_spend_attributed_rub, k.logistics_rub, k.storage_rub\n  FROM d\n  JOIN `wb_mart.V_DASH_EXECUTIVE_ECONOMICS_DAILY` e USING (day)\n  JOIN `wb_mart.V_DASH_KPI_DAILY` k USING (day)\n)\nSELECT SUM(IF(el, marketplace_fee_rub, NULL)) AS marketplace_fee_rub\nFROM s",
     "template-tags": [
      {
       "dimension": [
        "field",
        {
-        "lib/uuid": "ccc8200c-b29a-4a26-81af-bab5921169c1"
+        "lib/uuid": "95fa185f-f5bb-4d8f-a4ff-d7321ea77c02"
        },
        2622
       ],
       "display-name": "Период",
-      "id": "f2a9bcb6-db56-41cb-a3b4-abbfe64e9760",
+      "id": "c774ad6b-7796-4d84-8c4e-0e5ffa338ac2",
       "name": "day",
       "type": "dimension",
       "widget-type": "date/all-options"
@@ -56,7 +56,7 @@
    }
   ]
  },
- "description": "Разница между рекламным биллингом WB и рекламой, распределённой на SKU: V_DASH_FINANCE_CORRECTED_DAILY.ad_spend_unallocated_rub. 🔴 Знак источника сохранён, ABS не применяется: плюс означает, что биллинг больше распределённого. 🔴 Это НЕ расход. Расходом в результате периода является только распределённая на SKU реклама; эта карточка — сверка двух измерений одних и тех же денег. Складывать строки контроля нельзя.",
+ "description": "Вознаграждение Wildberries, удержанное из цены товара (marketplace_fee_rub в V_DASH_KPI_DAILY): разница между ценой продавца и тем, что WB рассчитал к перечислению за товар. Сумма берётся на сутках period_result_eligible — той же маске, на которой считается «Результат до себестоимости», поэтому полоса расходов сходится с мостом и со scalar-карточкой результата. 🔴 Это НЕ «Удержания после реализации» из блока расчётов с WB: там логистика, хранение, штрафы и прочее, удержанные ПОСЛЕ реализации, и другая база даты.",
  "dimension_mappings": null,
  "dimensions": null,
  "display": "scalar",
@@ -64,15 +64,15 @@
  "embedding_params": null,
  "embedding_type": null,
  "enable_embedding": false,
- "entity_id": "brjFvNOXhKCg4znCEkJHC",
- "id": 79,
+ "entity_id": "pSAsmqOP4U-UlK3nyIWvL",
+ "id": 80,
  "is_remote_synced": false,
- "last_used_at": "2026-08-28T15:00:26.911774Z",
+ "last_used_at": "2026-08-28T15:00:03.593234Z",
  "legacy_query": null,
  "metabase_version": "v0.63.15.1 (ab5ffba)",
- "name": "Реклама: нераспределено, ₽",
+ "name": "Удержано WB из цены, ₽",
  "param_fields": {
-  "f2a9bcb6-db56-41cb-a3b4-abbfe64e9760": [
+  "c774ad6b-7796-4d84-8c4e-0e5ffa338ac2": [
    {
     "base_type": "type/Date",
     "dimensions": [],
@@ -97,12 +97,12 @@
  "type": "question",
  "visualization_settings": {
   "column_settings": {
-   "[\"name\",\"ad_spend_unallocated_rub\"]": {
+   "[\"name\",\"marketplace_fee_rub\"]": {
     "decimals": 0,
     "number_style": "decimal",
     "suffix": " ₽"
    }
   },
-  "scalar.field": "ad_spend_unallocated_rub"
+  "scalar.field": "marketplace_fee_rub"
  }
 }

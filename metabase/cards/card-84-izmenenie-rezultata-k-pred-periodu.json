@@ -1,0 +1,108 @@
+{
+ "archived": false,
+ "archived_directly": false,
+ "cache_invalidated_at": null,
+ "cache_ttl": null,
+ "card_schema": 23,
+ "collection": {
+  "archive_operation_id": null,
+  "archived": false,
+  "archived_directly": null,
+  "authority_level": null,
+  "created_at": "2026-08-26T15:19:56.740614Z",
+  "description": "Executive MVP: что происходит с бизнесом и зарабатываем ли мы деньги.",
+  "entity_id": "EZUYQWsC5fdY9QqGY-xKC",
+  "id": 6,
+  "is_remote_synced": false,
+  "is_sample": false,
+  "location": "/5/",
+  "name": "01 Executive",
+  "namespace": null,
+  "personal_owner_id": null,
+  "slug": "01_executive",
+  "type": null
+ },
+ "collection_id": 6,
+ "collection_position": null,
+ "collection_preview": true,
+ "created_at": "2026-08-28T14:31:26.503944Z",
+ "creator_id": 2,
+ "dashboard": null,
+ "dashboard_id": null,
+ "database_id": 2,
+ "dataset_query": {
+  "database": 2,
+  "lib/type": "mbql/query",
+  "stages": [
+   {
+    "lib/type": "mbql.stage/native",
+    "native": "WITH b AS (\n  SELECT MIN(day) AS d1, MAX(day) AS d2, COUNT(*) AS len\n  FROM `wb_mart.V_DASH_KPI_DAILY`\n  WHERE {{day}}\n),\nagg AS (\n  SELECT\n    IF(k.day >= b.d1, 'cur', 'prv')                    AS w,\n    COUNTIF(e.after_product_cogs_eligible)             AS cov,\n    SUM(IF(e.after_product_cogs_eligible, e.period_result_after_product_cogs_rub, NULL)) AS v\n  FROM `wb_mart.V_DASH_KPI_DAILY` k\n  JOIN `wb_mart.V_DASH_EXECUTIVE_ECONOMICS_DAILY` e USING (day), b\n  WHERE k.day BETWEEN DATE_SUB(b.d1, INTERVAL b.len DAY) AND b.d2\n  GROUP BY w\n)\nSELECT\n  IF(MAX(IF(w='cur', cov, NULL)) = MAX(IF(w='prv', cov, NULL)),\n     MAX(IF(w='cur', v, NULL)) - MAX(IF(w='prv', v, NULL)),\n     NULL) AS result_after_cogs_delta_rub\nFROM agg",
+    "template-tags": [
+     {
+      "dimension": [
+       "field",
+       {
+        "lib/uuid": "ca635f6a-a2b9-49c8-8521-03261d7d15b3"
+       },
+       909
+      ],
+      "display-name": "Период",
+      "id": "6f31a58e-547f-4c51-938e-16e988737c8b",
+      "name": "day",
+      "type": "dimension",
+      "widget-type": "date/all-options"
+     }
+    ]
+   }
+  ]
+ },
+ "description": "Абсолютное изменение результата после себестоимости товара к предыдущему сопоставимому периоду той же длины непосредственно перед выбранным. Механизм границ тот же, что у карточки 68 SKU Performance. 🔴 Показано В РУБЛЯХ, а не в процентах, СПЕЦИАЛЬНО: результат может менять знак, и относительное изменение при переходе через ноль бессмысленно. За 27.07–23.08.2026 предыдущий период дал +20 174,03 ₽, текущий −26 183,14 ₽ — процент здесь был бы −229 %, то есть заведомо вводящим в заблуждение. 🔴 При неравном покрытии окон значение отсутствует (NULL), а не показывается нулём: полный период с неполным не сравнивается.",
+ "dimension_mappings": null,
+ "dimensions": null,
+ "display": "scalar",
+ "document_id": null,
+ "embedding_params": null,
+ "embedding_type": null,
+ "enable_embedding": false,
+ "entity_id": "warpSMT_EOKeeLvylveSt",
+ "id": 84,
+ "is_remote_synced": false,
+ "last_used_at": "2026-08-28T15:00:03.593234Z",
+ "legacy_query": null,
+ "metabase_version": "v0.63.15.1 (ab5ffba)",
+ "name": "Результат после себестоимости: изменение к пред. периоду, ₽",
+ "param_fields": {
+  "6f31a58e-547f-4c51-938e-16e988737c8b": [
+   {
+    "base_type": "type/Date",
+    "dimensions": [],
+    "display_name": "Day",
+    "fk_target_field_id": null,
+    "has_field_values": "none",
+    "id": 909,
+    "name": "day",
+    "name_field": null,
+    "semantic_type": null,
+    "table_id": 38,
+    "target": null
+   }
+  ]
+ },
+ "parameter_mappings": [],
+ "parameter_usage_count": 0,
+ "parameters": [],
+ "query_type": "native",
+ "source_card_id": null,
+ "table_id": null,
+ "type": "question",
+ "visualization_settings": {
+  "column_settings": {
+   "[\"name\",\"result_after_cogs_delta_rub\"]": {
+    "decimals": 0,
+    "number_style": "decimal",
+    "suffix": " ₽"
+   }
+  },
+  "scalar.field": "result_after_cogs_delta_rub"
+ }
+}

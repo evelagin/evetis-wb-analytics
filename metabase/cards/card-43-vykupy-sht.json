@@ -1,7 +1,7 @@
 {
  "archived": false,
  "archived_directly": false,
- "cache_invalidated_at": "2026-08-26T15:27:53.912845Z",
+ "cache_invalidated_at": "2026-08-28T14:32:58.257821Z",
  "cache_ttl": null,
  "card_schema": 23,
  "collection": {
@@ -36,18 +36,18 @@
   "stages": [
    {
     "lib/type": "mbql.stage/native",
-    "native": "SELECT SUM(buyouts_qty) AS buyouts_qty\nFROM `wb_mart.V_DASH_KPI_DAILY`\nWHERE {{day}}",
+    "native": "WITH b AS (\n  SELECT MIN(day) AS d1, MAX(day) AS d2, COUNT(*) AS len\n  FROM `wb_mart.V_DASH_KPI_DAILY`\n  WHERE {{day}}\n),\nagg AS (\n  SELECT\n    IF(k.day >= b.d1, 'cur', 'prv')                             AS w,\n    IF(k.day >= b.d1, b.d1, DATE_SUB(b.d1, INTERVAL b.len DAY)) AS period_start,\n    COUNTIF(k.sales_covered)                                             AS cov,\n    SUM(k.buyouts_qty)                                                    AS v\n  FROM `wb_mart.V_DASH_KPI_DAILY` k, b\n  WHERE k.day BETWEEN DATE_SUB(b.d1, INTERVAL b.len DAY) AND b.d2\n  GROUP BY w, period_start\n)\nSELECT period_start AS period, v AS buyouts_qty\nFROM agg\nWHERE w = 'cur'\n   OR (cov = (SELECT cov FROM agg WHERE w = 'cur'))\nORDER BY period",
     "template-tags": [
      {
       "dimension": [
        "field",
        {
-        "lib/uuid": "840c99dd-3819-4258-a702-c4e809d07595"
+        "lib/uuid": "7df4f50f-3e15-43bf-b1ce-cfa4d73d5682"
        },
        909
       ],
       "display-name": "Период",
-      "id": "25c4eab0-bc5b-4784-a8cf-cc7827b41cd1",
+      "id": "21c63240-ea21-4a0e-adc7-d630465ea4e0",
       "name": "day",
       "type": "dimension",
       "widget-type": "date/all-options"
@@ -56,10 +56,10 @@
    }
   ]
  },
- "description": "V_DASH_KPI_DAILY.buyouts_qty, база даты — дата продажи. Это фактические выкупы, а не заказы.",
+ "description": "Фактические выкупы: V_DASH_KPI_DAILY.buyouts_qty, база даты — дата продажи. Это не заказы. 🔴 Разность «заказы − отмены − выкупы» смысла НЕ имеет: у заказа и выкупа разные базы дат. Сравнение с предыдущим сопоставимым периодом той же длины непосредственно перед выбранным: границы берутся из плотного календаря V_DASH_KPI_DAILY, механизм тот же, что у карточки 68 SKU Performance. 🔴 Изменение показывается ТОЛЬКО при равном покрытии обоих окон по маске этой метрики; при неравном покрытии предыдущая точка не выводится и Δ отсутствует — полный период с неполным не сравнивается.",
  "dimension_mappings": null,
  "dimensions": null,
- "display": "scalar",
+ "display": "smartscalar",
  "document_id": null,
  "embedding_params": null,
  "embedding_type": null,
@@ -67,12 +67,12 @@
  "entity_id": "ujw3jOslRpW_5lbZWfe_J",
  "id": 43,
  "is_remote_synced": false,
- "last_used_at": "2026-08-27T08:22:51.371736Z",
+ "last_used_at": "2026-08-28T14:59:52.222079Z",
  "legacy_query": null,
  "metabase_version": "v0.63.15.1 (ab5ffba)",
- "name": "Выкупы, шт",
+ "name": "Выкуплено, шт",
  "param_fields": {
-  "25c4eab0-bc5b-4784-a8cf-cc7827b41cd1": [
+  "21c63240-ea21-4a0e-adc7-d630465ea4e0": [
    {
     "base_type": "type/Date",
     "dimensions": [],
@@ -116,6 +116,13 @@
     "number_style": "decimal"
    }
   },
-  "scalar.field": "buyouts_qty"
+  "scalar.comparisons": [
+   {
+    "id": "prev",
+    "type": "previousValue"
+   }
+  ],
+  "scalar.field": "buyouts_qty",
+  "scalar.switch_positive_negative": false
  }
 }

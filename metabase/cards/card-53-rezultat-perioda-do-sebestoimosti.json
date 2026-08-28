@@ -1,7 +1,7 @@
 {
  "archived": false,
  "archived_directly": false,
- "cache_invalidated_at": "2026-08-28T13:53:20.173319Z",
+ "cache_invalidated_at": "2026-08-28T14:33:07.567377Z",
  "cache_ttl": null,
  "card_schema": 23,
  "collection": {
@@ -36,18 +36,18 @@
   "stages": [
    {
     "lib/type": "mbql.stage/native",
-    "native": "SELECT SUM(period_result_pre_cogs_corrected_rub) AS period_result_rub\nFROM `wb_mart.V_DASH_FINANCE_CORRECTED_DAILY`\nWHERE {{day}}",
+    "native": "WITH b AS (\n  SELECT MIN(day) AS d1, MAX(day) AS d2, COUNT(*) AS len\n  FROM `wb_mart.V_DASH_KPI_DAILY`\n  WHERE {{day}}\n),\nagg AS (\n  SELECT\n    IF(k.day >= b.d1, 'cur', 'prv')                             AS w,\n    IF(k.day >= b.d1, b.d1, DATE_SUB(b.d1, INTERVAL b.len DAY)) AS period_start,\n    COUNTIF(e.period_result_eligible)                                             AS cov,\n    SUM(IF(e.period_result_eligible, e.period_result_pre_cogs_corrected_rub, NULL))                                                    AS v\n  FROM `wb_mart.V_DASH_KPI_DAILY` k\n  JOIN `wb_mart.V_DASH_EXECUTIVE_ECONOMICS_DAILY` e USING (day), b\n  WHERE k.day BETWEEN DATE_SUB(b.d1, INTERVAL b.len DAY) AND b.d2\n  GROUP BY w, period_start\n)\nSELECT period_start AS period, v AS period_result_rub\nFROM agg\nWHERE w = 'cur'\n   OR (cov = (SELECT cov FROM agg WHERE w = 'cur')\n  AND SIGN(v) = (SELECT SIGN(v) FROM agg WHERE w = 'cur')\n  AND v <> 0)\nORDER BY period",
     "template-tags": [
      {
       "dimension": [
        "field",
        {
-        "lib/uuid": "eab95bcf-9abe-41ed-bdfb-d9b3e0d6ae80"
+        "lib/uuid": "a681c790-0c5d-4546-9049-c20d3bd7190c"
        },
-       2622
+       909
       ],
       "display-name": "Период",
-      "id": "c94eb0c2-98f3-4e15-9adf-3d904a5e8ed8",
+      "id": "15874d8f-b24f-41fe-a259-d11779e03437",
       "name": "day",
       "type": "dimension",
       "widget-type": "date/all-options"
@@ -56,10 +56,10 @@
    }
   ]
  },
- "description": "После комиссии, логистики, рекламы и расходов кабинета WB; до Product COGS, fulfillment, OPEX и налога. Источник: V_DASH_FINANCE_CORRECTED_DAILY.period_result_pre_cogs_corrected_rub = contribution_pre_cogs_rub − (account_level_total_rub − ad_billing_reconstructed_rub). Рекламный биллинг исключён из расходов уровня кабинета, потому что реклама уже вычтена как attributed внутри дохода до себестоимости — иначе она вычиталась бы дважды. Транзит поставок и неопознанные удержания остаются расходом. Это НЕ прибыль, НЕ операционная прибыль и НЕ EBITDA. NULL в сутках без полного покрытия (contribution_covered AND finance_covered).",
+ "description": "После вознаграждения WB, логистики, рекламы, хранения и прочих расходов кабинета; до себестоимости товара, фулфилмента, OPEX и налога. Источник: V_DASH_EXECUTIVE_ECONOMICS_DAILY.period_result_pre_cogs_corrected_rub на сутках period_result_eligible. Сравнение с предыдущим сопоставимым периодом той же длины непосредственно перед выбранным: границы берутся из плотного календаря V_DASH_KPI_DAILY, механизм тот же, что у карточки 68 SKU Performance. 🔴 Изменение показывается ТОЛЬКО при равном покрытии обоих окон по маске этой метрики; при неравном покрытии предыдущая точка не выводится и Δ отсутствует — полный период с неполным не сравнивается.",
  "dimension_mappings": null,
  "dimensions": null,
- "display": "scalar",
+ "display": "smartscalar",
  "document_id": null,
  "embedding_params": null,
  "embedding_type": null,
@@ -67,23 +67,23 @@
  "entity_id": "xHRFz-D8n9OnzHYkwPC7F",
  "id": 53,
  "is_remote_synced": false,
- "last_used_at": "2026-08-28T13:46:11.046338Z",
+ "last_used_at": "2026-08-28T14:59:52.222079Z",
  "legacy_query": null,
  "metabase_version": "v0.63.15.1 (ab5ffba)",
- "name": "Результат периода до себестоимости",
+ "name": "Результат до себестоимости, ₽",
  "param_fields": {
-  "c94eb0c2-98f3-4e15-9adf-3d904a5e8ed8": [
+  "15874d8f-b24f-41fe-a259-d11779e03437": [
    {
     "base_type": "type/Date",
     "dimensions": [],
     "display_name": "Day",
     "fk_target_field_id": null,
     "has_field_values": "none",
-    "id": 2622,
+    "id": 909,
     "name": "day",
     "name_field": null,
     "semantic_type": null,
-    "table_id": 108,
+    "table_id": 38,
     "target": null
    }
   ]
@@ -103,6 +103,13 @@
     "suffix": " ₽"
    }
   },
-  "scalar.field": "period_result_rub"
+  "scalar.comparisons": [
+   {
+    "id": "prev",
+    "type": "previousValue"
+   }
+  ],
+  "scalar.field": "period_result_rub",
+  "scalar.switch_positive_negative": false
  }
 }

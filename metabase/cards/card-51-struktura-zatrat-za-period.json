@@ -1,7 +1,7 @@
 {
  "archived": false,
  "archived_directly": false,
- "cache_invalidated_at": "2026-08-28T13:53:18.78368Z",
+ "cache_invalidated_at": "2026-08-28T14:48:24.29212Z",
  "cache_ttl": null,
  "card_schema": 23,
  "collection": {
@@ -36,18 +36,18 @@
   "stages": [
    {
     "lib/type": "mbql.stage/native",
-    "native": "WITH d AS (\n  SELECT day FROM `wb_mart.V_DASH_FINANCE_CORRECTED_DAILY`\n  WHERE {{day}}\n),\nsrc AS (\n  SELECT\n    e.period_result_eligible AS el, e.after_product_cogs_eligible AS el2,\n    e.revenue_base_period_result_rub AS revenue_base, e.product_cogs_rub,\n    k.marketplace_fee_rub, k.logistics_rub, k.ad_spend_attributed_rub, k.storage_rub,\n    k.acceptance_rub, k.penalty_account_rub, k.reimbursement_account_rub, k.other_account_rub,\n    f.transit_deduction_rub, f.utilization_rub, f.review_points_refund_rub,\n    f.minimum_payment_adjustment_rub, f.unclassified_deduction_rub,\n    f.unknown_semantic_rub, f.classification_conflict_rub\n  FROM d\n  JOIN `wb_mart.V_DASH_FINANCE_CORRECTED_DAILY` f USING (day)\n  JOIN `wb_mart.V_DASH_KPI_DAILY` k USING (day)\n  JOIN `wb_mart.V_DASH_EXECUTIVE_ECONOMICS_DAILY` e USING (day)\n),\nb AS (\n  SELECT\n     SUM(IF(el,  revenue_base, NULL))                     AS s01_revenue,\n    -SUM(IF(el,  marketplace_fee_rub, NULL))              AS s02_mp,\n    -SUM(IF(el,  logistics_rub, NULL))                    AS s03_logi,\n    -SUM(IF(el,  ad_spend_attributed_rub, NULL))          AS s04_ads,\n    -SUM(IF(el,  storage_rub, NULL))                      AS s05_storage,\n    -SUM(IF(el,  acceptance_rub, NULL))                   AS s06_acceptance,\n    -SUM(IF(el,  penalty_account_rub, NULL))              AS s07_penalty,\n    -SUM(IF(el,  transit_deduction_rub, NULL))            AS s08_transit,\n    -SUM(IF(el,  minimum_payment_adjustment_rub, NULL))   AS s09_minpay,\n    -SUM(IF(el,  utilization_rub, NULL))                  AS s10_util,\n    -SUM(IF(el,  other_account_rub, NULL))                AS s11_other,\n    -SUM(IF(el,  unclassified_deduction_rub, NULL))       AS s12_unclass,\n    -SUM(IF(el,  unknown_semantic_rub, NULL))             AS s13_unknown,\n    -SUM(IF(el,  classification_conflict_rub, NULL))      AS s14_conflict,\n    -SUM(IF(el,  reimbursement_account_rub, NULL))        AS s15_reimb,\n    -SUM(IF(el,  review_points_refund_rub, NULL))         AS s16_points,\n    -SUM(IF(el2, product_cogs_rub, NULL))                 AS s17_cogs\n  FROM src\n)\nSELECT\n  CASE metric\n    WHEN 's01_revenue'    THEN 'Выручка'\n    WHEN 's02_mp'         THEN 'Комиссия WB'\n    WHEN 's03_logi'       THEN 'Логистика'\n    WHEN 's04_ads'        THEN 'Реклама'\n    WHEN 's05_storage'    THEN 'Хранение'\n    WHEN 's06_acceptance' THEN 'Приёмка'\n    WHEN 's07_penalty'    THEN 'Штрафы'\n    WHEN 's08_transit'    THEN 'Транзит поставок'\n    WHEN 's09_minpay'     THEN 'Мин. платёж'\n    WHEN 's10_util'       THEN 'Утилизация'\n    WHEN 's11_other'      THEN 'Прочее WB'\n    WHEN 's12_unclass'    THEN 'Прочие удержания'\n    WHEN 's13_unknown'    THEN 'Не распознано WB'\n    WHEN 's14_conflict'   THEN 'Конфликт классификации'\n    WHEN 's15_reimb'      THEN 'Возмещения WB'\n    WHEN 's16_points'     THEN 'Баллы за отзывы'\n    WHEN 's17_cogs'       THEN 'Себестоимость товара'\n  END AS step,\n  amount_rub\nFROM b UNPIVOT (amount_rub FOR metric IN (\n  s01_revenue, s02_mp, s03_logi, s04_ads, s05_storage, s06_acceptance, s07_penalty,\n  s08_transit, s09_minpay, s10_util, s11_other, s12_unclass, s13_unknown, s14_conflict,\n  s15_reimb, s16_points, s17_cogs))\nWHERE amount_rub IS NOT NULL AND amount_rub <> 0\nORDER BY metric",
+    "native": "WITH d AS (\n  SELECT day FROM `wb_mart.V_DASH_FINANCE_CORRECTED_DAILY`\n  WHERE {{day}}\n),\ns AS (\n  SELECT\n    e.period_result_eligible               AS el,\n    e.after_product_cogs_eligible          AS el2,\n    e.revenue_base_period_result_rub       AS rev,\n    e.period_result_pre_cogs_corrected_rub AS res,\n    e.product_cogs_rub,\n    k.marketplace_fee_rub, k.ad_spend_attributed_rub, k.logistics_rub, k.storage_rub\n  FROM d\n  JOIN `wb_mart.V_DASH_EXECUTIVE_ECONOMICS_DAILY` e USING (day)\n  JOIN `wb_mart.V_DASH_KPI_DAILY` k USING (day)\n),\nb AS (\n  SELECT\n     SUM(IF(el,  rev, NULL))                        AS s1_revenue,\n    -SUM(IF(el,  marketplace_fee_rub, NULL))        AS s2_fee,\n    -SUM(IF(el,  ad_spend_attributed_rub, NULL))    AS s3_ads,\n    -SUM(IF(el,  logistics_rub, NULL))              AS s4_logistics,\n    -SUM(IF(el,  storage_rub, NULL))                AS s5_storage,\n    -(SUM(IF(el, rev, NULL)) - SUM(IF(el, res, NULL))\n      - SUM(IF(el, marketplace_fee_rub, NULL))\n      - SUM(IF(el, ad_spend_attributed_rub, NULL))\n      - SUM(IF(el, logistics_rub, NULL))\n      - SUM(IF(el, storage_rub, NULL)))             AS s6_other,\n    -SUM(IF(el2, product_cogs_rub, NULL))           AS s7_cogs\n  FROM s\n)\nSELECT\n  CASE metric\n    WHEN 's1_revenue'   THEN 'Выручка'\n    WHEN 's2_fee'       THEN 'Удержано WB из цены'\n    WHEN 's3_ads'       THEN 'Реклама'\n    WHEN 's4_logistics' THEN 'Логистика'\n    WHEN 's5_storage'   THEN 'Хранение'\n    WHEN 's6_other'     THEN 'Прочие расходы WB'\n    WHEN 's7_cogs'      THEN 'Себестоимость товара'\n  END AS step,\n  amount_rub\nFROM b UNPIVOT (amount_rub FOR metric IN (\n  s1_revenue, s2_fee, s3_ads, s4_logistics, s5_storage, s6_other, s7_cogs))\nWHERE amount_rub IS NOT NULL AND amount_rub <> 0\nORDER BY metric",
     "template-tags": [
      {
       "dimension": [
        "field",
        {
-        "lib/uuid": "3cd08de7-ff8b-4648-a16c-c96a20575e8f"
+        "lib/uuid": "c71ca891-3e69-4d7a-bde9-fc674340b46b"
        },
        2622
       ],
       "display-name": "Период",
-      "id": "2b6afb16-fa3f-44cd-a9a3-bff8a4b57e45",
+      "id": "d51ef97c-26e7-4dce-acfc-ca5dfd24a51b",
       "name": "day",
       "type": "dimension",
       "widget-type": "date/all-options"
@@ -56,7 +56,7 @@
    }
   ]
  },
- "description": "Мост от выручки к результату периода. Каждый столбец — шаг: вниз (расход) или вверх (положительная корректировка); «Итого» — результат после себестоимости товара. Промежуточная сумма после шага «Реклама» равна доходу до себестоимости, сумма перед шагом «Себестоимость товара» — результату до себестоимости. Знаковое правило одно для всех статей: шаг = −значение источника, поэтому кредиты WB (возмещения, возврат аванса «Баллы за отзывы») поднимают мост вверх, а не изображаются «отрицательным расходом». Удержания WB классифицированы по прямому основанию платежа (bonusTypeName, Stage 3.1F). 🔴 Компенсации форс-мажор в мосте НЕТ: OPTION B выводит её за операционный результат — она показана отдельной карточкой. 🔴 Рекламного биллинга WB в мосте НЕТ: в результат входит только атрибутированная на SKU реклама; биллинг — отдельная карточка контроля. 🔴 Все статьи взяты на сутках соответствующего гейта (period_result_eligible / after_product_cogs_eligible), поэтому мост сходится к тем же величинам, что и scalar-карточки; нулевые статьи в период не выводятся.",
+ "description": "Управленческий мост периода: семь шагов и итог. Столбец вниз — расход, вверх — кредит WB, «Итого» — результат после себестоимости товара. Промежуточная сумма после шага «Хранение» плюс «Прочие расходы WB» даёт результат до себестоимости, показанный отдельной карточкой выше. 🔴 «Прочие расходы WB» — ОСТАТОК по построению: выручка минус результат до себестоимости минус четыре названных категории. Внутри — штрафы, транзит, корректировка минимального платежа, утилизация, приёмка и прочие удержания, МИНУС кредиты WB (возмещения, возврат аванса «Баллы за отзывы»). Величина нетто и может быть отрицательной, тогда шаг идёт вверх. Расшифровка бухгалтерского уровня здесь сознательно не выводится: это управленческий мост, а не реестр операций. 🔴 Разовой компенсации форс-мажор в мосте НЕТ — Stage 3.1F OPTION B выводит её за операционный результат; она показана отдельной карточкой. 🔴 Рекламного биллинга WB в мосте НЕТ — в результат входит только атрибутированная на SKU реклама; биллинг показан отдельной контрольной карточкой и вторым расходом не является. ABS не применяется ни к одной статье; знаки источника сохранены. Все шаги взяты на сутках своего гейта (period_result_eligible / after_product_cogs_eligible), поэтому мост сходится к копейке на любом окне.",
  "dimension_mappings": null,
  "dimensions": null,
  "display": "waterfall",
@@ -67,12 +67,12 @@
  "entity_id": "sP0TcBbqSZCY-Z82W-IKN",
  "id": 51,
  "is_remote_synced": false,
- "last_used_at": "2026-08-28T13:47:51.529465Z",
+ "last_used_at": "2026-08-28T15:00:29.723798Z",
  "legacy_query": null,
  "metabase_version": "v0.63.15.1 (ab5ffba)",
- "name": "Расходы и корректировки периода",
+ "name": "От выручки к результату",
  "param_fields": {
-  "2b6afb16-fa3f-44cd-a9a3-bff8a4b57e45": [
+  "d51ef97c-26e7-4dce-acfc-ca5dfd24a51b": [
    {
     "base_type": "type/Date",
     "dimensions": [],
@@ -120,7 +120,7 @@
   "graph.dimensions": [
    "step"
   ],
-  "graph.label_value_formatting": "compact",
+  "graph.label_value_formatting": "auto",
   "graph.metrics": [
    "amount_rub"
   ],

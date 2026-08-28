@@ -1,7 +1,7 @@
 {
  "archived": false,
  "archived_directly": false,
- "cache_invalidated_at": "2026-08-28T13:53:21.437172Z",
+ "cache_invalidated_at": "2026-08-28T14:38:04.338083Z",
  "cache_ttl": null,
  "card_schema": 23,
  "collection": {
@@ -67,10 +67,10 @@
  "entity_id": "w5DXDu4rusqu8LIffsaiq",
  "id": 73,
  "is_remote_synced": false,
- "last_used_at": "2026-08-28T13:46:18.445857Z",
+ "last_used_at": "2026-08-28T14:59:52.222079Z",
  "legacy_query": null,
  "metabase_version": "v0.63.15.1 (ab5ffba)",
- "name": "Результат периода после себестоимости товара",
+ "name": "Результат после себестоимости, ₽",
  "param_fields": {
   "720de0e0-2403-4831-bd7d-5597045bcf03": [
    {

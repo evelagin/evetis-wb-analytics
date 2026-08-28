@@ -1,7 +1,7 @@
 {
  "archived": false,
  "archived_directly": false,
- "cache_invalidated_at": null,
+ "cache_invalidated_at": "2026-08-28T14:38:04.746776Z",
  "cache_ttl": null,
  "card_schema": 23,
  "collection": {
@@ -67,10 +67,10 @@
  "entity_id": "DB_SSXaLq412NIgCflJzV",
  "id": 74,
  "is_remote_synced": false,
- "last_used_at": "2026-08-28T10:22:20.275068Z",
+ "last_used_at": "2026-08-28T15:00:03.593234Z",
  "legacy_query": null,
  "metabase_version": "v0.63.15.1 (ab5ffba)",
- "name": "Рентабельность после себестоимости товара",
+ "name": "Рентабельность после себестоимости",
  "param_fields": {
   "85c46edf-adba-4fa9-9f43-1b3011779c2f": [
    {

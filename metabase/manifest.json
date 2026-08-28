@@ -12,7 +12,7 @@
   "image": "metabase/metabase:latest",
   "mb_db_file": "/metabase-data/metabase.db"
  },
- "baseline_commit": "be29e4d46f7089b2ccd0c4327c2a859fd72a16ab",
+ "baseline_commit": "f317fcdd783db6db2efcfd93903306a106e15110",
  "card_ids": [
   40,
   41,
@@ -53,7 +53,13 @@
   76,
   77,
   78,
-  79
+  79,
+  80,
+  81,
+  82,
+  83,
+  84,
+  85
  ],
  "card_to_collection": {
   "40": 6,
@@ -95,7 +101,13 @@
   "76": 6,
   "77": 6,
   "78": 6,
-  "79": 6
+  "79": 6,
+  "80": 6,
+  "81": 6,
+  "82": 6,
+  "83": 6,
+  "84": 6,
+  "85": 6
  },
  "cards": [
   {
@@ -114,21 +126,21 @@
   },
   {
    "collection_id": 6,
-   "display": "scalar",
+   "display": "smartscalar",
    "file": "metabase/cards/card-42-zakazy-sht.json",
    "id": 42,
    "name": "Заказы, шт"
   },
   {
    "collection_id": 6,
-   "display": "scalar",
+   "display": "smartscalar",
    "file": "metabase/cards/card-43-vykupy-sht.json",
    "id": 43,
-   "name": "Выкупы, шт"
+   "name": "Выкуплено, шт"
   },
   {
    "collection_id": 6,
-   "display": "scalar",
+   "display": "smartscalar",
    "file": "metabase/cards/card-44-vyruchka.json",
    "id": 44,
    "name": "Выручка по цене продавца, ₽"
@@ -142,7 +154,7 @@
   },
   {
    "collection_id": 6,
-   "display": "scalar",
+   "display": "smartscalar",
    "file": "metabase/cards/card-46-reklama.json",
    "id": 46,
    "name": "Реклама, ₽"
@@ -180,7 +192,7 @@
    "display": "waterfall",
    "file": "metabase/cards/card-51-struktura-zatrat-za-period.json",
    "id": 51,
-   "name": "Расходы и корректировки периода"
+   "name": "От выручки к результату"
   },
   {
    "collection_id": 6,
@@ -191,10 +203,10 @@
   },
   {
    "collection_id": 6,
-   "display": "scalar",
+   "display": "smartscalar",
    "file": "metabase/cards/card-53-rezultat-perioda-do-sebestoimosti.json",
    "id": 53,
-   "name": "Результат периода до себестоимости"
+   "name": "Результат до себестоимости, ₽"
   },
   {
    "collection_id": 6,
@@ -205,7 +217,7 @@
   },
   {
    "collection_id": 6,
-   "display": "scalar",
+   "display": "smartscalar",
    "file": "metabase/cards/card-55-otmeneno-sht.json",
    "id": 55,
    "name": "Отменено, шт"
@@ -327,21 +339,21 @@
    "display": "scalar",
    "file": "metabase/cards/card-72-sebestoimost-tovara.json",
    "id": 72,
-   "name": "Себестоимость товара"
+   "name": "Себестоимость товара, ₽"
   },
   {
    "collection_id": 6,
    "display": "scalar",
    "file": "metabase/cards/card-73-rezultat-perioda-posle-sebestoimosti-tovara.json",
    "id": 73,
-   "name": "Результат периода после себестоимости товара"
+   "name": "Результат после себестоимости, ₽"
   },
   {
    "collection_id": 6,
    "display": "scalar",
    "file": "metabase/cards/card-74-rentabelnost-posle-sebestoimosti-tovara.json",
    "id": 74,
-   "name": "Рентабельность после себестоимости товара"
+   "name": "Рентабельность после себестоимости"
   },
   {
    "collection_id": 6,
@@ -362,21 +374,63 @@
    "display": "scalar",
    "file": "metabase/cards/card-77-prodazhi-po-cene-pokupatelya.json",
    "id": 77,
-   "name": "Продажи по цене покупателя, ₽"
+   "name": "Оплачено покупателями, ₽"
   },
   {
    "collection_id": 6,
    "display": "scalar",
    "file": "metabase/cards/card-78-kompensaciya-fors-mazhor.json",
    "id": 78,
-   "name": "Компенсация форс-мажор (вне операционного результата), ₽"
+   "name": "Разовая компенсация WB, ₽"
   },
   {
    "collection_id": 6,
-   "display": "table",
+   "display": "scalar",
    "file": "metabase/cards/card-79-kontrol-reklamy-wb.json",
    "id": 79,
-   "name": "Контроль рекламы WB"
+   "name": "Реклама: нераспределено, ₽"
+  },
+  {
+   "collection_id": 6,
+   "display": "scalar",
+   "file": "metabase/cards/card-80-uderzhano-wb-iz-ceny.json",
+   "id": 80,
+   "name": "Удержано WB из цены, ₽"
+  },
+  {
+   "collection_id": 6,
+   "display": "scalar",
+   "file": "metabase/cards/card-81-logistika.json",
+   "id": 81,
+   "name": "Логистика, ₽"
+  },
+  {
+   "collection_id": 6,
+   "display": "scalar",
+   "file": "metabase/cards/card-82-hranenie.json",
+   "id": 82,
+   "name": "Хранение, ₽"
+  },
+  {
+   "collection_id": 6,
+   "display": "scalar",
+   "file": "metabase/cards/card-83-prochie-rashody-wb-netto.json",
+   "id": 83,
+   "name": "Прочие расходы WB, нетто, ₽"
+  },
+  {
+   "collection_id": 6,
+   "display": "scalar",
+   "file": "metabase/cards/card-84-izmenenie-rezultata-k-pred-periodu.json",
+   "id": 84,
+   "name": "Результат после себестоимости: изменение к пред. периоду, ₽"
+  },
+  {
+   "collection_id": 6,
+   "display": "scalar",
+   "file": "metabase/cards/card-85-reklama-billing-wb.json",
+   "id": 85,
+   "name": "Реклама: биллинг WB, ₽"
   }
  ],
  "collection_ids": [
@@ -405,7 +459,7 @@
   }
  ],
  "counts": {
-  "cards": 40,
+  "cards": 46,
   "collections": 3,
   "dashboards": 2
  },
@@ -437,7 +491,13 @@
    76,
    77,
    78,
-   79
+   79,
+   80,
+   81,
+   82,
+   83,
+   84,
+   85
   ],
   "3": [
    40,
@@ -502,7 +562,7 @@
   "updated_at",
   "view_count"
  ],
- "export_timestamp": "2026-08-28T16:53:44+03:00",
+ "export_timestamp": "2026-08-28T18:01:47+03:00",
  "metabase_version": {
   "date": "2026-08-25",
   "hash": "ab5ffba",
@@ -511,20 +571,20 @@
  "sha256": {
   "metabase/cards/card-40-svezhest-dannyh.json": "7dcbded3d5073efd4a160caeb7600a68cc598ca253ebe8f2fd7827835868ae2b",
   "metabase/cards/card-41-kachestvo-vybrannogo-perioda.json": "07d79ac843f1ebc65878516bc33b968de7a721defc6940089e291dae9737c829",
-  "metabase/cards/card-42-zakazy-sht.json": "794e5d94e9de6fcd55cb895aaf60034c55bbf6d4b738de6e085678030fa8d381",
-  "metabase/cards/card-43-vykupy-sht.json": "2fe38d5bd0cb09f1d669103b39cb7241bad90199b6252ac8fa474918cebb96f4",
-  "metabase/cards/card-44-vyruchka.json": "79bf1322541a2e84b2b37d49c8d81e2ac2e7a0c6e7dd4029191782eb9e05bc77",
+  "metabase/cards/card-42-zakazy-sht.json": "ce1504ad1fded53969919d72062b44c284f50cc789a862b708da1cc6717b35e8",
+  "metabase/cards/card-43-vykupy-sht.json": "bf9315086091806c1b29bc655025cbb50caa8ea25bc59c51a0aca16fd66e032e",
+  "metabase/cards/card-44-vyruchka.json": "deba365010b3ac7b3522fd3e85530b23279f4f341763b4cd4f746576391f0e33",
   "metabase/cards/card-45-dohod-do-sebestoimosti.json": "efc7d88ae5c915b038c19b65ad675afdcc302daa8f5895b1d117ab91fdef3b8e",
-  "metabase/cards/card-46-reklama.json": "deb75089fb52832239a31733ff5c2e3dfc117aeaa6a5bbae63f3a9e530db4dc0",
+  "metabase/cards/card-46-reklama.json": "d08c8bd7f56cd702c72452dee35600539d79350152a1079ef8f7a39814fa78ea",
   "metabase/cards/card-47-drr.json": "a8a798ac0e01ce79d7ab5d92e2cac62ecfdd5dec121bd198847ae1ab2848ca5f",
   "metabase/cards/card-48-vozvraty-sht.json": "63aaf4411d01a2b57e0f68950099f86da6016fb8d8889bf7bfbf0af9f857b515",
   "metabase/cards/card-49-k-perechisleniyu-po-sku.json": "791e55312fd2841cf678efa221dc298f7f3370e5ca9035c4172839680efd569e",
   "metabase/cards/card-50-vyruchka-i-vklad-po-dnyam.json": "18b0f43199335839216e9b1a6243e57d4ae8b8845a2fe6f8f7deb766ed17c6f6",
-  "metabase/cards/card-51-struktura-zatrat-za-period.json": "cf44e91e47205ffa40236ce8977d7618f9131876c4f287e04f4955b4dfb3f6ce",
-  "metabase/cards/card-52-sku-za-period.json": "618af7afc56abcddf7f90f2c249bd5dbc888beb1b9640a9e4e533a16360331f7",
-  "metabase/cards/card-53-rezultat-perioda-do-sebestoimosti.json": "b453f502a3e183a1dcf0e500c6c7b359b87dbc1ee2c808b5817fcbe91835b050",
+  "metabase/cards/card-51-struktura-zatrat-za-period.json": "e40ac3e72e7c1bbf04c14e86c865ecea5b6a0b19c0db3f02ff668c23b715ec8b",
+  "metabase/cards/card-52-sku-za-period.json": "9373eb1258380e7610df178636bb92dbd8faf637116e45e2d282cb2f06b511f5",
+  "metabase/cards/card-53-rezultat-perioda-do-sebestoimosti.json": "b0513517d66cbc3d8c8e12cf5a34da07211021f3421e964f99b5028f42f2e0e0",
   "metabase/cards/card-54-rentabelnost-do-sebestoimosti.json": "fd49ca7515b1aa7f03fa4feb40a9320aa0c0a57d797ddae97af94d9b9530583a",
-  "metabase/cards/card-55-otmeneno-sht.json": "da971112050430d74d68f12d395852a7169f8193a77cbc88d44618980851bd68",
+  "metabase/cards/card-55-otmeneno-sht.json": "15e22f5cfa4a88ad0ff34e479416c3792eac434b4ab5a1306f9d29df4c32af2c",
   "metabase/cards/card-56-zakazy-sht-sku.json": "f4abad0393b31740da3027cf065a14272b76afa6267055de22a0d252307d4eff",
   "metabase/cards/card-57-otmeneno-sht-sku.json": "a63f094fb8437fe412b2330b24ef757acd17d3c9404c7a51e3266fb08e95deb0",
   "metabase/cards/card-58-vykupy-sht-sku.json": "3c2954347f76c007ed593e8ae95a4c082212431f0e32115fd7894d4e10c9c943",
@@ -541,18 +601,24 @@
   "metabase/cards/card-69-trebuyut-vnimaniya-sku.json": "082ae63a67364a5c9b511ea3b50d7fd7fbf9288dbd7a012ab19570a877de3739",
   "metabase/cards/card-70-vykupy-po-dnyam-sku.json": "205e9918dfa5e789a74ff1480e05f64a95d685b3079b5f321947ff4915df7069",
   "metabase/cards/card-71-period-i-pokrytie-dannyh-sku.json": "116eeec6a1485011e46e7c9efe73de699f4ef3266a668db33d1deda7fbb77aa9",
-  "metabase/cards/card-72-sebestoimost-tovara.json": "81ee5078efcab521be3398702a355b73d6d585b23f0bc77fa6859a6cca1836a0",
-  "metabase/cards/card-73-rezultat-perioda-posle-sebestoimosti-tovara.json": "574bf89a0083ff672c15439bd19d8b5758c57dec95ff4e33f02569234de00cbd",
-  "metabase/cards/card-74-rentabelnost-posle-sebestoimosti-tovara.json": "4525e7944a6950a7afa1f7e3212a055d920d247c4d6854fb8cddced604fdcc2e",
+  "metabase/cards/card-72-sebestoimost-tovara.json": "2c2efb693f76b5d2b86277fd02ae9a22c44c7ff981f20480b00ad7bf346f416f",
+  "metabase/cards/card-73-rezultat-perioda-posle-sebestoimosti-tovara.json": "6138d574cc09dacfa24c6e2d1c9f274d2c5fdf8e5e7b6024ff16c508476ebf88",
+  "metabase/cards/card-74-rentabelnost-posle-sebestoimosti-tovara.json": "ce317b2704b4fd8bf7697f719afec72ad67102291130954702d45b3197dfae02",
   "metabase/cards/card-75-uderzhaniya-posle-realizacii.json": "15d6daeee96dad9de27351ee636bfed9cad93f1d02ee4fa2ed9ee915e0baa797",
   "metabase/cards/card-76-k-vyplate-ot-wb.json": "126d3598d2a4303738f65259c7b33419a704d21048a28413bf3c84a6a4848cd0",
-  "metabase/cards/card-77-prodazhi-po-cene-pokupatelya.json": "7296c19bba5dcc4860e84364269082bdeb3e05cda4c476f5be3029c63a291dd2",
-  "metabase/cards/card-78-kompensaciya-fors-mazhor.json": "43608b67f40fb76027fe7e50c1d9320783f8cc7af9e9aff23f701be921d8e080",
-  "metabase/cards/card-79-kontrol-reklamy-wb.json": "a32922e6dd70596b9a1c9528be2c410735026188c69489561b491b1a9b87e79b",
+  "metabase/cards/card-77-prodazhi-po-cene-pokupatelya.json": "34dac2100cd90b72f5e2bfe689c33135842410057f220a31a7305bf570ff1888",
+  "metabase/cards/card-78-kompensaciya-fors-mazhor.json": "03b3441b406a1eb40a26e7ea722caaac300ee7f81045301525f47abf3e07958d",
+  "metabase/cards/card-79-kontrol-reklamy-wb.json": "785367e9e6f59709ed182ecead3be2373b1f473c58ade6f924fb40a88743c80c",
+  "metabase/cards/card-80-uderzhano-wb-iz-ceny.json": "4ff344ff9d6830967180d30fa52c6f624a4e4aed8fb287a88d91d788baf932ef",
+  "metabase/cards/card-81-logistika.json": "ea0aba69d6bd6465b05cc86bc7c0147463934e5a9cda916d51bf5000942a632e",
+  "metabase/cards/card-82-hranenie.json": "dcc46e6b54cbafe30697e8dc85f4105e2ab8dc51dc1ae04d1c29bc14b53d2980",
+  "metabase/cards/card-83-prochie-rashody-wb-netto.json": "59466952f7116d69201e919d02f651a2ee22154eadb6b4c84b8dade2d2a65d9f",
+  "metabase/cards/card-84-izmenenie-rezultata-k-pred-periodu.json": "5d02d6717ef55176a90ce45900bc7a2525fbf55e698902f029e1328168654baa",
+  "metabase/cards/card-85-reklama-billing-wb.json": "4422757364dfc9de8c7697378132d6f0eef94c5b0f32261d23b8e50bdac00c0b",
   "metabase/collections/collection-5-evetis-analytics.json": "db06cefa53c6c0717bb13f28da362bbc91728017516c4ed3c86829aa7f814ca2",
   "metabase/collections/collection-6-01-executive.json": "cb72952920412540ffc5805a991367fbdd0dfb73bc6bf76f209be1d5b8598562",
   "metabase/collections/collection-7-02-sku-performance.json": "24aad11e9416dd74ba9075c70d4cad39b6a5073582b7f4b5c21caff9e13ca7e7",
-  "metabase/dashboards/dashboard-2-evetis-wb-executive.json": "4bf3a9442ca7d104a559aa677e4986f379d2f70deba05cedc9e9a7b8b1e7ad3f",
+  "metabase/dashboards/dashboard-2-evetis-wb-executive.json": "b8141823187614fe73f702c5f724cfa3f78fa0ef73bae79b8cc1471653cc5dd7",
   "metabase/dashboards/dashboard-3-evetis-wb-sku-performance.json": "2ae9fff2b3fad2e477bc9fc8790c819a2e641f1fe8ae4fa979dc8e8b160fe219"
  },
  "source_note": "OSS. Аутентификационные данные в экспорт не входят.",

@@ -1,0 +1,108 @@
+{
+ "archived": false,
+ "archived_directly": false,
+ "cache_invalidated_at": null,
+ "cache_ttl": null,
+ "card_schema": 23,
+ "collection": {
+  "archive_operation_id": null,
+  "archived": false,
+  "archived_directly": null,
+  "authority_level": null,
+  "created_at": "2026-08-26T15:19:56.740614Z",
+  "description": "Executive MVP: что происходит с бизнесом и зарабатываем ли мы деньги.",
+  "entity_id": "EZUYQWsC5fdY9QqGY-xKC",
+  "id": 6,
+  "is_remote_synced": false,
+  "is_sample": false,
+  "location": "/5/",
+  "name": "01 Executive",
+  "namespace": null,
+  "personal_owner_id": null,
+  "slug": "01_executive",
+  "type": null
+ },
+ "collection_id": 6,
+ "collection_position": null,
+ "collection_preview": true,
+ "created_at": "2026-08-28T14:31:24.449277Z",
+ "creator_id": 2,
+ "dashboard": null,
+ "dashboard_id": null,
+ "database_id": 2,
+ "dataset_query": {
+  "database": 2,
+  "lib/type": "mbql/query",
+  "stages": [
+   {
+    "lib/type": "mbql.stage/native",
+    "native": "WITH d AS (\n  SELECT day FROM `wb_mart.V_DASH_FINANCE_CORRECTED_DAILY`\n  WHERE {{day}}\n),\ns AS (\n  SELECT\n    e.period_result_eligible          AS el,\n    e.revenue_base_period_result_rub  AS rev,\n    e.period_result_pre_cogs_corrected_rub AS res,\n    k.marketplace_fee_rub, k.ad_spend_attributed_rub, k.logistics_rub, k.storage_rub\n  FROM d\n  JOIN `wb_mart.V_DASH_EXECUTIVE_ECONOMICS_DAILY` e USING (day)\n  JOIN `wb_mart.V_DASH_KPI_DAILY` k USING (day)\n)\nSELECT   SUM(IF(el, rev, NULL)) - SUM(IF(el, res, NULL))\n  - SUM(IF(el, marketplace_fee_rub, NULL))\n  - SUM(IF(el, ad_spend_attributed_rub, NULL))\n  - SUM(IF(el, logistics_rub, NULL))\n  - SUM(IF(el, storage_rub, NULL))  AS other_wb_net_rub\nFROM s",
+    "template-tags": [
+     {
+      "dimension": [
+       "field",
+       {
+        "lib/uuid": "3d4749fe-1958-49be-a875-ed543c951254"
+       },
+       2622
+      ],
+      "display-name": "Период",
+      "id": "7826c2bc-d7e6-469a-9d01-03e705cd28d5",
+      "name": "day",
+      "type": "dimension",
+      "widget-type": "date/all-options"
+     }
+    ]
+   }
+  ]
+ },
+ "description": "Всё, что отделяет выручку от результата до себестоимости, КРОМЕ четырёх названных категорий (вознаграждение WB, реклама, логистика, хранение). Считается как ОСТАТОК: выручка − результат до себестоимости − вознаграждение − реклама − логистика − хранение. Состав остатка: штрафы, транзит поставок, корректировка минимального платежа, утилизация, приёмка, прочие и неопознанные удержания WB, МИНУС кредиты WB (возмещения, возврат аванса «Баллы за отзывы»). 🔴 Величина НЕТТО и может быть отрицательной, если кредиты WB превысили мелкие удержания — так было в периоде 29.06–26.07.2026 (−15 317,49 ₽). Отрицательное значение здесь означает чистый кредит, а не ошибку. 🔴 Считается остатком, а не перечислением статей, поэтому НИ ОДНА операционная статья не может потеряться при появлении новой категории у WB. Проверено на пяти окнах: остаток совпадает с явным перечислением статей до копейки (расхождение 0,000000). 🔴 Сюда по построению НЕ попадают: себестоимость товара (остаток считается ДО неё), разовая компенсация форс-мажор (выведена за операционный результат в Stage 3.1F OPTION B), рекламный биллинг WB (в результат входит только атрибутированная реклама), фулфилмент, OPEX и налоги (их в слое нет).",
+ "dimension_mappings": null,
+ "dimensions": null,
+ "display": "scalar",
+ "document_id": null,
+ "embedding_params": null,
+ "embedding_type": null,
+ "enable_embedding": false,
+ "entity_id": "qm0n36yj0r3tOoFsvSb-o",
+ "id": 83,
+ "is_remote_synced": false,
+ "last_used_at": "2026-08-28T15:00:15.134411Z",
+ "legacy_query": null,
+ "metabase_version": "v0.63.15.1 (ab5ffba)",
+ "name": "Прочие расходы WB, нетто, ₽",
+ "param_fields": {
+  "7826c2bc-d7e6-469a-9d01-03e705cd28d5": [
+   {
+    "base_type": "type/Date",
+    "dimensions": [],
+    "display_name": "Day",
+    "fk_target_field_id": null,
+    "has_field_values": "none",
+    "id": 2622,
+    "name": "day",
+    "name_field": null,
+    "semantic_type": null,
+    "table_id": 108,
+    "target": null
+   }
+  ]
+ },
+ "parameter_mappings": [],
+ "parameter_usage_count": 0,
+ "parameters": [],
+ "query_type": "native",
+ "source_card_id": null,
+ "table_id": null,
+ "type": "question",
+ "visualization_settings": {
+  "column_settings": {
+   "[\"name\",\"other_wb_net_rub\"]": {
+    "decimals": 0,
+    "number_style": "decimal",
+    "suffix": " ₽"
+   }
+  },
+  "scalar.field": "other_wb_net_rub"
+ }
+}

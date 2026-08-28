@@ -1,7 +1,7 @@
 {
  "archived": false,
  "archived_directly": false,
- "cache_invalidated_at": "2026-08-28T13:53:12.180559Z",
+ "cache_invalidated_at": "2026-08-28T14:33:10.684189Z",
  "cache_ttl": null,
  "card_schema": 23,
  "collection": {
@@ -56,7 +56,7 @@
    }
   ]
  },
- "description": "Добровольная выплата Wildberries за товар, пострадавший от обстоятельств непреодолимой силы. Положительное значение = выгода продавца. Источник: V_DASH_FINANCE_CORRECTED_DAILY.exceptional_compensation_rub, классификация по прямому основанию платежа WB (Stage 3.1F, OPTION B). 🔴 Сумма сознательно НЕ улучшает результат периода: это исключительное событие, а не операционный доход. В выплате WB она учтена.",
+ "description": "Исключительная компенсация Wildberries — добровольная выплата за товар, пострадавший от обстоятельств непреодолимой силы. Положительное значение = выгода продавца. Источник: V_DASH_FINANCE_CORRECTED_DAILY.exceptional_compensation_rub, классификация по прямому основанию платежа WB (Stage 3.1F, OPTION B). 🔴 НЕ включается в операционный результат периода и не улучшает его: это разовое событие, а не операционный доход. В расчётах с WB она учтена. Не смешивать ни с выручкой, ни с расходами.",
  "dimension_mappings": null,
  "dimensions": null,
  "display": "scalar",
@@ -67,10 +67,10 @@
  "entity_id": "UEwhgQRO2jaJxoc88AfnD",
  "id": 78,
  "is_remote_synced": false,
- "last_used_at": "2026-08-28T13:47:35.961838Z",
+ "last_used_at": "2026-08-28T15:00:18.507432Z",
  "legacy_query": null,
  "metabase_version": "v0.63.15.1 (ab5ffba)",
- "name": "Компенсация форс-мажор (вне операционного результата), ₽",
+ "name": "Разовая компенсация WB, ₽",
  "param_fields": {
   "90efff37-bc24-4f51-9880-4ff78cdad1d3": [
    {

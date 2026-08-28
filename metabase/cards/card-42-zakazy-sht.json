@@ -1,7 +1,7 @@
 {
  "archived": false,
  "archived_directly": false,
- "cache_invalidated_at": "2026-08-26T20:54:45.951702Z",
+ "cache_invalidated_at": "2026-08-28T14:32:56.015856Z",
  "cache_ttl": null,
  "card_schema": 23,
  "collection": {
@@ -36,18 +36,18 @@
   "stages": [
    {
     "lib/type": "mbql.stage/native",
-    "native": "SELECT SUM(orders_gross_qty) AS orders_gross_qty\nFROM `wb_mart.V_DASH_KPI_DAILY`\nWHERE {{day}}",
+    "native": "WITH b AS (\n  SELECT MIN(day) AS d1, MAX(day) AS d2, COUNT(*) AS len\n  FROM `wb_mart.V_DASH_KPI_DAILY`\n  WHERE {{day}}\n),\nagg AS (\n  SELECT\n    IF(k.day >= b.d1, 'cur', 'prv')                             AS w,\n    IF(k.day >= b.d1, b.d1, DATE_SUB(b.d1, INTERVAL b.len DAY)) AS period_start,\n    COUNTIF(k.orders_covered)                                             AS cov,\n    SUM(k.orders_gross_qty)                                                    AS v\n  FROM `wb_mart.V_DASH_KPI_DAILY` k, b\n  WHERE k.day BETWEEN DATE_SUB(b.d1, INTERVAL b.len DAY) AND b.d2\n  GROUP BY w, period_start\n)\nSELECT period_start AS period, v AS orders_gross_qty\nFROM agg\nWHERE w = 'cur'\n   OR (cov = (SELECT cov FROM agg WHERE w = 'cur'))\nORDER BY period",
     "template-tags": [
      {
       "dimension": [
        "field",
        {
-        "lib/uuid": "a3e166ae-596d-43e3-8c74-d3e736ba375f"
+        "lib/uuid": "38b8ac8e-dc24-4204-a69a-8cfbc97db629"
        },
        909
       ],
       "display-name": "Период",
-      "id": "453c74c8-e1df-43af-92fc-a526447bde48",
+      "id": "70d241cc-02d4-467c-8bf2-5c7fd51a7b13",
       "name": "day",
       "type": "dimension",
       "widget-type": "date/all-options"
@@ -56,10 +56,10 @@
    }
   ]
  },
- "description": "Все оформленные заказы, включая впоследствии отменённые — сопоставимо с колонкой WB «Заказали товаров, шт» в выгрузке воронки. V_DASH_KPI_DAILY.orders_gross_qty = orders_qty + canceled_qty; тождество с COUNT(FACT_ORDERS) проверено на всём горизонте витрины (0 расхождений на 7 452 ячейках день×SKU). Остаточное расхождение с выгрузкой воронки WB именуется «WB Funnel vs Statistics Orders API net source discrepancy» и составляет −1,19 % на обоих проверенных окнах; оно двунаправленное на грейне день×SKU и в пайплайне намеренно не корректируется. Показатель без отмен доступен в контракте как orders_qty (на дашборд не выводится). NULL в сутках без покрытия заказов.",
+ "description": "Все оформленные заказы, включая впоследствии отменённые: V_DASH_KPI_DAILY.orders_gross_qty = orders_qty + canceled_qty, база даты — дата заказа. Сопоставимо с колонкой WB «Заказали товаров, шт». Сравнение с предыдущим сопоставимым периодом той же длины непосредственно перед выбранным: границы берутся из плотного календаря V_DASH_KPI_DAILY, механизм тот же, что у карточки 68 SKU Performance. 🔴 Изменение показывается ТОЛЬКО при равном покрытии обоих окон по маске этой метрики; при неравном покрытии предыдущая точка не выводится и Δ отсутствует — полный период с неполным не сравнивается.",
  "dimension_mappings": null,
  "dimensions": null,
- "display": "scalar",
+ "display": "smartscalar",
  "document_id": null,
  "embedding_params": null,
  "embedding_type": null,
@@ -67,12 +67,12 @@
  "entity_id": "3V7cev4MGVAre_wAHzy8M",
  "id": 42,
  "is_remote_synced": false,
- "last_used_at": "2026-08-27T08:22:37.728279Z",
+ "last_used_at": "2026-08-28T14:59:52.222079Z",
  "legacy_query": null,
  "metabase_version": "v0.63.15.1 (ab5ffba)",
  "name": "Заказы, шт",
  "param_fields": {
-  "453c74c8-e1df-43af-92fc-a526447bde48": [
+  "70d241cc-02d4-467c-8bf2-5c7fd51a7b13": [
    {
     "base_type": "type/Date",
     "dimensions": [],
@@ -116,6 +116,13 @@
     "number_style": "decimal"
    }
   },
-  "scalar.field": "orders_gross_qty"
+  "scalar.comparisons": [
+   {
+    "id": "prev",
+    "type": "previousValue"
+   }
+  ],
+  "scalar.field": "orders_gross_qty",
+  "scalar.switch_positive_negative": false
  }
 }

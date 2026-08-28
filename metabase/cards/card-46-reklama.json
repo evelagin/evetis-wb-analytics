@@ -1,7 +1,7 @@
 {
  "archived": false,
  "archived_directly": false,
- "cache_invalidated_at": "2026-08-28T13:53:13.844063Z",
+ "cache_invalidated_at": "2026-08-28T14:33:02.729396Z",
  "cache_ttl": null,
  "card_schema": 23,
  "collection": {
@@ -36,18 +36,18 @@
   "stages": [
    {
     "lib/type": "mbql.stage/native",
-    "native": "SELECT SUM(ad_spend_attributed_rub) AS ad_spend_rub\nFROM `wb_mart.V_DASH_KPI_DAILY`\nWHERE {{day}}",
+    "native": "WITH b AS (\n  SELECT MIN(day) AS d1, MAX(day) AS d2, COUNT(*) AS len\n  FROM `wb_mart.V_DASH_KPI_DAILY`\n  WHERE {{day}}\n),\nagg AS (\n  SELECT\n    IF(k.day >= b.d1, 'cur', 'prv')                             AS w,\n    IF(k.day >= b.d1, b.d1, DATE_SUB(b.d1, INTERVAL b.len DAY)) AS period_start,\n    COUNTIF(k.ads_covered)                                             AS cov,\n    SUM(k.ad_spend_attributed_rub)                                                    AS v\n  FROM `wb_mart.V_DASH_KPI_DAILY` k, b\n  WHERE k.day BETWEEN DATE_SUB(b.d1, INTERVAL b.len DAY) AND b.d2\n  GROUP BY w, period_start\n)\nSELECT period_start AS period, v AS ad_spend_rub\nFROM agg\nWHERE w = 'cur'\n   OR (cov = (SELECT cov FROM agg WHERE w = 'cur'))\nORDER BY period",
     "template-tags": [
      {
       "dimension": [
        "field",
        {
-        "lib/uuid": "543af13b-3cac-4b28-973b-3f3bda5c705d"
+        "lib/uuid": "df70b81a-71bf-4815-9890-057f5ad51cef"
        },
        909
       ],
       "display-name": "Период",
-      "id": "e8449115-dbe0-4c95-9ce8-b11d4d50518c",
+      "id": "bd397a7b-9d35-4006-9d0b-03a17ec4dced",
       "name": "day",
       "type": "dimension",
       "widget-type": "date/all-options"
@@ -56,10 +56,10 @@
    }
   ]
  },
- "description": "V_DASH_KPI_DAILY.ad_spend_attributed_rub — АТРИБУЦИЯ рекламной статистики WB, а не факт биллингового списания (Stage 3B.1 в контракт PR2 не входит). База даты — дата рекламной активности.",
+ "description": "V_DASH_KPI_DAILY.ad_spend_attributed_rub — АТРИБУЦИЯ рекламной статистики WB на SKU, база даты — дата рекламной активности. Именно эта величина входит в результат периода и в ДРР. 🔴 Это не факт списания с баланса: биллинг WB показан отдельной контрольной карточкой. 🔴 Окраска изменения перевёрнута: реклама — расход, поэтому её снижение показано зелёным. Сравнение с предыдущим сопоставимым периодом той же длины непосредственно перед выбранным: границы берутся из плотного календаря V_DASH_KPI_DAILY, механизм тот же, что у карточки 68 SKU Performance. 🔴 Изменение показывается ТОЛЬКО при равном покрытии обоих окон по маске этой метрики; при неравном покрытии предыдущая точка не выводится и Δ отсутствует — полный период с неполным не сравнивается.",
  "dimension_mappings": null,
  "dimensions": null,
- "display": "scalar",
+ "display": "smartscalar",
  "document_id": null,
  "embedding_params": null,
  "embedding_type": null,
@@ -67,12 +67,12 @@
  "entity_id": "5x6I3WoNX5W4eZJbiU59N",
  "id": 46,
  "is_remote_synced": false,
- "last_used_at": "2026-08-28T13:47:05.210881Z",
+ "last_used_at": "2026-08-28T14:58:54.063353Z",
  "legacy_query": null,
  "metabase_version": "v0.63.15.1 (ab5ffba)",
  "name": "Реклама, ₽",
  "param_fields": {
-  "e8449115-dbe0-4c95-9ce8-b11d4d50518c": [
+  "bd397a7b-9d35-4006-9d0b-03a17ec4dced": [
    {
     "base_type": "type/Date",
     "dimensions": [],
@@ -117,6 +117,13 @@
     "suffix": " ₽"
    }
   },
-  "scalar.field": "ad_spend_rub"
+  "scalar.comparisons": [
+   {
+    "id": "prev",
+    "type": "previousValue"
+   }
+  ],
+  "scalar.field": "ad_spend_rub",
+  "scalar.switch_positive_negative": true
  }
 }

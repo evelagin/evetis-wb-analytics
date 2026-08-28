@@ -1,7 +1,7 @@
 {
  "archived": false,
  "archived_directly": false,
- "cache_invalidated_at": "2026-08-28T13:53:20.978389Z",
+ "cache_invalidated_at": "2026-08-28T14:38:03.875056Z",
  "cache_ttl": null,
  "card_schema": 23,
  "collection": {
@@ -67,10 +67,10 @@
  "entity_id": "1dmQRES2x6tII-7tExRxG",
  "id": 72,
  "is_remote_synced": false,
- "last_used_at": "2026-08-28T13:46:55.292027Z",
+ "last_used_at": "2026-08-28T15:00:03.593234Z",
  "legacy_query": null,
  "metabase_version": "v0.63.15.1 (ab5ffba)",
- "name": "Себестоимость товара",
+ "name": "Себестоимость товара, ₽",
  "param_fields": {
   "de544032-26e8-42be-b91b-7ceeab9fbbda": [
    {
