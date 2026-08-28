@@ -1,7 +1,7 @@
 {
  "archived": false,
  "archived_directly": false,
- "cache_invalidated_at": null,
+ "cache_invalidated_at": "2026-08-28T13:53:20.978389Z",
  "cache_ttl": null,
  "card_schema": 23,
  "collection": {
@@ -67,7 +67,7 @@
  "entity_id": "1dmQRES2x6tII-7tExRxG",
  "id": 72,
  "is_remote_synced": false,
- "last_used_at": "2026-08-28T10:22:12.896084Z",
+ "last_used_at": "2026-08-28T13:46:55.292027Z",
  "legacy_query": null,
  "metabase_version": "v0.63.15.1 (ab5ffba)",
  "name": "Себестоимость товара",
@@ -98,11 +98,9 @@
  "visualization_settings": {
   "column_settings": {
    "[\"name\",\"product_cogs_rub\"]": {
-    "currency": "RUB",
-    "currency_in_header": false,
-    "currency_style": "symbol",
     "decimals": 0,
-    "number_style": "currency"
+    "number_style": "decimal",
+    "suffix": " ₽"
    }
   },
   "scalar.field": "product_cogs_rub"

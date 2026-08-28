@@ -1,7 +1,7 @@
 {
  "archived": false,
  "archived_directly": false,
- "cache_invalidated_at": "2026-08-28T07:00:59.757055Z",
+ "cache_invalidated_at": "2026-08-28T13:53:20.173319Z",
  "cache_ttl": null,
  "card_schema": 23,
  "collection": {
@@ -67,7 +67,7 @@
  "entity_id": "xHRFz-D8n9OnzHYkwPC7F",
  "id": 53,
  "is_remote_synced": false,
- "last_used_at": "2026-08-28T07:10:54.617023Z",
+ "last_used_at": "2026-08-28T13:46:11.046338Z",
  "legacy_query": null,
  "metabase_version": "v0.63.15.1 (ab5ffba)",
  "name": "Результат периода до себестоимости",
@@ -98,11 +98,9 @@
  "visualization_settings": {
   "column_settings": {
    "[\"name\",\"period_result_rub\"]": {
-    "currency": "RUB",
-    "currency_in_header": false,
-    "currency_style": "symbol",
     "decimals": 0,
-    "number_style": "currency"
+    "number_style": "decimal",
+    "suffix": " ₽"
    }
   },
   "scalar.field": "period_result_rub"

@@ -1,7 +1,7 @@
 {
  "archived": false,
  "archived_directly": false,
- "cache_invalidated_at": "2026-08-26T16:21:51.329193Z",
+ "cache_invalidated_at": "2026-08-28T13:53:23.139764Z",
  "cache_ttl": null,
  "card_schema": 23,
  "collection": {
@@ -36,18 +36,18 @@
   "stages": [
    {
     "lib/type": "mbql.stage/native",
-    "native": "SELECT\n  day,\n  sales_revenue_seller_base_rub AS revenue_rub,\n  contribution_pre_cogs_rub     AS contribution_rub\nFROM `wb_mart.V_DASH_KPI_DAILY`\nWHERE {{day}}\nORDER BY day",
+    "native": "WITH f AS (\n  SELECT day FROM `wb_mart.V_DASH_FINANCE_CORRECTED_DAILY`\n  WHERE {{day}}\n)\nSELECT\n  e.day,\n  e.sales_revenue_seller_base_rub AS revenue_rub,\n  IF(e.after_product_cogs_eligible, e.period_result_after_product_cogs_rub, NULL) AS result_after_cogs_rub\nFROM f JOIN `wb_mart.V_DASH_EXECUTIVE_ECONOMICS_DAILY` e USING (day)\nORDER BY e.day",
     "template-tags": [
      {
       "dimension": [
        "field",
        {
-        "lib/uuid": "17e5d769-9892-4411-a7fa-22c996be7068"
+        "lib/uuid": "d409e921-53a3-494c-8368-13dbe692cb8e"
        },
-       909
+       2622
       ],
       "display-name": "Период",
-      "id": "ad5ad8f8-cd91-4f26-b79a-8a2d2b416ac9",
+      "id": "2065efcc-89d7-442a-80ef-87b1aec135eb",
       "name": "day",
       "type": "dimension",
       "widget-type": "date/all-options"
@@ -56,7 +56,7 @@
    }
   ]
  },
- "description": "Обе серии в ₽ и одного порядка величины, поэтому одна ось корректна: разрыв между столбцом и линией — это и есть затраты. Сутки без покрытия дают разрыв линии (NULL), а не ноль.",
+ "description": "Столбцы — выручка по цене продавца за сутки; линия — результат тех же суток после себестоимости товара (V_DASH_EXECUTIVE_ECONOMICS_DAILY.period_result_after_product_cogs_rub). Пунктир на нуле разделяет прибыльные и убыточные сутки. Обе серии в ₽ и одного порядка величины, поэтому одна ось корректна. 🔴 Сутки вне гейта after_product_cogs_eligible дают разрыв линии (NULL), а не ноль: экономика этих суток ещё не рассчитана. 🔴 Базы дат внутри суточного результата смешанные (продажа, реклама, финотчёт) — это управленческая, а не расчётная величина.",
  "dimension_mappings": null,
  "dimensions": null,
  "display": "combo",
@@ -67,23 +67,23 @@
  "entity_id": "FLqIu5Fk4VDeVAmOyDVJd",
  "id": 50,
  "is_remote_synced": false,
- "last_used_at": "2026-08-26T21:05:52.53599Z",
+ "last_used_at": "2026-08-28T13:48:06.436959Z",
  "legacy_query": null,
  "metabase_version": "v0.63.15.1 (ab5ffba)",
- "name": "Выручка и вклад по дням",
+ "name": "Продажи и результат по дням",
  "param_fields": {
-  "ad5ad8f8-cd91-4f26-b79a-8a2d2b416ac9": [
+  "2065efcc-89d7-442a-80ef-87b1aec135eb": [
    {
     "base_type": "type/Date",
     "dimensions": [],
     "display_name": "Day",
     "fk_target_field_id": null,
     "has_field_values": "none",
-    "id": 909,
+    "id": 2622,
     "name": "day",
     "name_field": null,
     "semantic_type": null,
-    "table_id": 38,
+    "table_id": 108,
     "target": null
    }
   ]
@@ -111,39 +111,41 @@
  "type": "question",
  "visualization_settings": {
   "column_settings": {
-   "[\"name\",\"contribution_rub\"]": {
-    "currency": "RUB",
-    "currency_in_header": false,
-    "currency_style": "symbol",
+   "[\"name\",\"result_after_cogs_rub\"]": {
     "decimals": 0,
-    "number_style": "currency"
+    "number_style": "decimal",
+    "suffix": " ₽"
    },
    "[\"name\",\"revenue_rub\"]": {
-    "currency": "RUB",
-    "currency_in_header": false,
-    "currency_style": "symbol",
     "decimals": 0,
-    "number_style": "currency"
+    "number_style": "decimal",
+    "suffix": " ₽"
    }
   },
   "graph.dimensions": [
    "day"
   ],
+  "graph.goal_label": "0 ₽",
+  "graph.goal_value": 0,
   "graph.metrics": [
    "revenue_rub",
-   "contribution_rub"
+   "result_after_cogs_rub"
   ],
+  "graph.show_goal": true,
   "graph.show_values": false,
   "graph.x_axis.title_text": "День",
+  "graph.y_axis.auto_split": false,
   "graph.y_axis.title_text": "₽",
   "series_settings": {
-   "contribution_rub": {
+   "result_after_cogs_rub": {
+    "color": "#1B7FBD",
     "display": "line",
-    "title": "Доход до себестоимости"
+    "title": "Результат после себестоимости"
    },
    "revenue_rub": {
+    "color": "#F2C94C",
     "display": "bar",
-    "title": "Выручка"
+    "title": "Продажи"
    }
   }
  }

@@ -1,7 +1,7 @@
 {
  "archived": false,
  "archived_directly": false,
- "cache_invalidated_at": "2026-08-26T15:47:35.644363Z",
+ "cache_invalidated_at": "2026-08-28T13:53:13.844063Z",
  "cache_ttl": null,
  "card_schema": 23,
  "collection": {
@@ -67,7 +67,7 @@
  "entity_id": "5x6I3WoNX5W4eZJbiU59N",
  "id": 46,
  "is_remote_synced": false,
- "last_used_at": "2026-08-27T07:12:20.385486Z",
+ "last_used_at": "2026-08-28T13:47:05.210881Z",
  "legacy_query": null,
  "metabase_version": "v0.63.15.1 (ab5ffba)",
  "name": "Реклама, ₽",
@@ -112,11 +112,9 @@
  "visualization_settings": {
   "column_settings": {
    "[\"name\",\"ad_spend_rub\"]": {
-    "currency": "RUB",
-    "currency_in_header": false,
-    "currency_style": "symbol",
     "decimals": 0,
-    "number_style": "currency"
+    "number_style": "decimal",
+    "suffix": " ₽"
    }
   },
   "scalar.field": "ad_spend_rub"

@@ -1,7 +1,7 @@
 {
  "archived": false,
  "archived_directly": false,
- "cache_invalidated_at": "2026-08-26T20:55:24.052894Z",
+ "cache_invalidated_at": "2026-08-28T13:53:19.489394Z",
  "cache_ttl": null,
  "card_schema": 23,
  "collection": {
@@ -81,7 +81,7 @@
  "entity_id": "LuPy2relmB6JfNCBgzv2t",
  "id": 52,
  "is_remote_synced": false,
- "last_used_at": "2026-08-26T21:05:52.53599Z",
+ "last_used_at": "2026-08-28T13:48:19.948356Z",
  "legacy_query": null,
  "metabase_version": "v0.63.15.1 (ab5ffba)",
  "name": "SKU за период",
@@ -155,11 +155,9 @@
   "column_settings": {
    "[\"name\",\"ad_spend_rub\"]": {
     "column_title": "Реклама, ₽",
-    "currency": "RUB",
-    "currency_in_header": false,
-    "currency_style": "symbol",
     "decimals": 0,
-    "number_style": "currency"
+    "number_style": "decimal",
+    "suffix": " ₽"
    },
    "[\"name\",\"buyouts_qty\"]": {
     "column_title": "Выкупы, шт",
@@ -173,11 +171,9 @@
    },
    "[\"name\",\"contribution_rub\"]": {
     "column_title": "Доход до себестоимости, ₽",
-    "currency": "RUB",
-    "currency_in_header": false,
-    "currency_style": "symbol",
     "decimals": 0,
-    "number_style": "currency"
+    "number_style": "decimal",
+    "suffix": " ₽"
    },
    "[\"name\",\"contribution_to_revenue\"]": {
     "column_title": "Доходность до себестоимости, %",
@@ -199,12 +195,33 @@
    },
    "[\"name\",\"revenue_rub\"]": {
     "column_title": "Выручка, ₽",
-    "currency": "RUB",
-    "currency_in_header": false,
-    "currency_style": "symbol",
     "decimals": 0,
-    "number_style": "currency"
+    "number_style": "decimal",
+    "show_mini_bar": true,
+    "suffix": " ₽"
    }
-  }
+  },
+  "table.column_formatting": [
+   {
+    "color": "#ED6E6E",
+    "columns": [
+     "contribution_rub"
+    ],
+    "highlight_row": false,
+    "operator": "<",
+    "type": "single",
+    "value": 0
+   },
+   {
+    "color": "#ED6E6E",
+    "columns": [
+     "contribution_to_revenue"
+    ],
+    "highlight_row": false,
+    "operator": "<",
+    "type": "single",
+    "value": 0
+   }
+  ]
  }
 }

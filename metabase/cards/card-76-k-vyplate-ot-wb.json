@@ -1,7 +1,7 @@
 {
  "archived": false,
  "archived_directly": false,
- "cache_invalidated_at": null,
+ "cache_invalidated_at": "2026-08-28T13:53:22.295716Z",
  "cache_ttl": null,
  "card_schema": 23,
  "collection": {
@@ -67,7 +67,7 @@
  "entity_id": "4wUdZYv-79-SHvyzaHkkT",
  "id": 76,
  "is_remote_synced": false,
- "last_used_at": "2026-08-28T12:11:25.400994Z",
+ "last_used_at": "2026-08-28T13:47:29.373264Z",
  "legacy_query": null,
  "metabase_version": "v0.63.15.1 (ab5ffba)",
  "name": "К выплате от WB",
@@ -98,11 +98,9 @@
  "visualization_settings": {
   "column_settings": {
    "[\"name\",\"wb_payout_rub\"]": {
-    "currency": "RUB",
-    "currency_in_header": false,
-    "currency_style": "symbol",
     "decimals": 0,
-    "number_style": "currency"
+    "number_style": "decimal",
+    "suffix": " ₽"
    }
   },
   "scalar.field": "wb_payout_rub"

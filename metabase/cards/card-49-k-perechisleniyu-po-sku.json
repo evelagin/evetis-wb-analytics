@@ -1,7 +1,7 @@
 {
  "archived": false,
  "archived_directly": false,
- "cache_invalidated_at": "2026-08-28T12:08:59.769308Z",
+ "cache_invalidated_at": "2026-08-28T13:53:14.313768Z",
  "cache_ttl": null,
  "card_schema": 23,
  "collection": {
@@ -67,7 +67,7 @@
  "entity_id": "wo8auV1gdB7fAquaO-t34",
  "id": 49,
  "is_remote_synced": false,
- "last_used_at": "2026-08-28T12:09:54.480376Z",
+ "last_used_at": "2026-08-28T13:47:15.364709Z",
  "legacy_query": null,
  "metabase_version": "v0.63.15.1 (ab5ffba)",
  "name": "К перечислению за товар",
@@ -112,11 +112,9 @@
  "visualization_settings": {
   "column_settings": {
    "[\"name\",\"settlement_goods_rub\"]": {
-    "currency": "RUB",
-    "currency_in_header": false,
-    "currency_style": "symbol",
     "decimals": 0,
-    "number_style": "currency"
+    "number_style": "decimal",
+    "suffix": " ₽"
    }
   },
   "scalar.field": "settlement_goods_rub"

@@ -1,7 +1,7 @@
 {
  "archived": false,
  "archived_directly": false,
- "cache_invalidated_at": "2026-08-28T11:32:12.461336Z",
+ "cache_invalidated_at": "2026-08-28T13:53:18.78368Z",
  "cache_ttl": null,
  "card_schema": 23,
  "collection": {
@@ -36,18 +36,18 @@
   "stages": [
    {
     "lib/type": "mbql.stage/native",
-    "native": "WITH f AS (\n  SELECT day, ad_billing_reconstructed_rub, transit_deduction_rub,\n         unclassified_deduction_rub, classification_conflict_rub,\n         utilization_rub, review_points_refund_rub, minimum_payment_adjustment_rub,\n         unknown_semantic_rub, exceptional_compensation_rub\n  FROM `wb_mart.V_DASH_FINANCE_CORRECTED_DAILY`\n  WHERE {{day}}\n),\nb AS (\n  SELECT\n    SUM(k.marketplace_fee_rub)             AS mp,\n    SUM(k.logistics_rub)                   AS logi,\n    SUM(k.ad_spend_attributed_rub)         AS ads,\n    SUM(k.storage_rub)                     AS storage,\n    SUM(k.acceptance_rub)                  AS acceptance,\n    SUM(k.penalty_account_rub)             AS penalty,\n    SUM(k.reimbursement_account_rub)       AS reimb,\n    SUM(k.other_account_rub)               AS other_acc,\n    SUM(f.transit_deduction_rub)           AS ded_transit,\n    SUM(f.utilization_rub)                 AS ded_util,\n    SUM(f.review_points_refund_rub)        AS ded_points,\n    SUM(f.minimum_payment_adjustment_rub)  AS ded_minpay,\n    SUM(f.unclassified_deduction_rub)      AS ded_unclass,\n    SUM(f.unknown_semantic_rub)            AS ded_unknown,\n    SUM(f.classification_conflict_rub)     AS ded_conflict,\n    SUM(IF(e.after_product_cogs_eligible, e.product_cogs_rub, NULL)) AS cogs,\n    SUM(f.ad_billing_reconstructed_rub)    AS ctl_ads,\n    SUM(f.exceptional_compensation_rub)    AS ctl_force_majeure\n  FROM f\n  JOIN `wb_mart.V_DASH_KPI_DAILY` k USING (day)\n  JOIN `wb_mart.V_DASH_EXECUTIVE_ECONOMICS_DAILY` e USING (day)\n)\nSELECT\n  CASE metric\n    WHEN 'mp'                THEN 'Удержано WB из цены'\n    WHEN 'cogs'              THEN 'Себестоимость товара'\n    WHEN 'logi'              THEN 'Логистика'\n    WHEN 'ads'               THEN 'Реклама, распределённая на SKU'\n    WHEN 'storage'           THEN 'Хранение'\n    WHEN 'acceptance'        THEN 'Приёмка'\n    WHEN 'penalty'           THEN 'Штрафы'\n    WHEN 'reimb'             THEN 'Возмещения WB (перевозка, ПВЗ)'\n    WHEN 'other_acc'         THEN 'Прочее'\n    WHEN 'ded_transit'       THEN 'Удержания WB: транзит поставок'\n    WHEN 'ded_util'          THEN 'Удержания WB: утилизация товара'\n    WHEN 'ded_points'        THEN 'Удержания WB: возврат аванса «Баллы за отзывы»'\n    WHEN 'ded_minpay'        THEN 'Удержания WB: остаток по минимальному платежу'\n    WHEN 'ded_unclass'       THEN 'Удержания WB: прочие и неопознанные'\n    WHEN 'ded_unknown'       THEN 'Удержания WB: новое основание WB, не распознано'\n    WHEN 'ded_conflict'      THEN 'Удержания WB: конфликт классификации'\n    WHEN 'ctl_ads'           THEN 'Рекламный биллинг WB (контроль, уже учтён)'\n    WHEN 'ctl_force_majeure' THEN 'Компенсация форс-мажор (вне операционного результата)'\n  END AS cost_item,\n  amount_rub\nFROM b UNPIVOT (amount_rub FOR metric IN (\n  mp, cogs, logi, ads, storage, acceptance, penalty, reimb, other_acc,\n  ded_transit, ded_util, ded_points, ded_minpay, ded_unclass, ded_unknown, ded_conflict,\n  ctl_ads, ctl_force_majeure))\nWHERE amount_rub IS NOT NULL AND amount_rub <> 0\nORDER BY (metric IN ('ctl_ads','ctl_force_majeure')), amount_rub DESC",
+    "native": "WITH d AS (\n  SELECT day FROM `wb_mart.V_DASH_FINANCE_CORRECTED_DAILY`\n  WHERE {{day}}\n),\nsrc AS (\n  SELECT\n    e.period_result_eligible AS el, e.after_product_cogs_eligible AS el2,\n    e.revenue_base_period_result_rub AS revenue_base, e.product_cogs_rub,\n    k.marketplace_fee_rub, k.logistics_rub, k.ad_spend_attributed_rub, k.storage_rub,\n    k.acceptance_rub, k.penalty_account_rub, k.reimbursement_account_rub, k.other_account_rub,\n    f.transit_deduction_rub, f.utilization_rub, f.review_points_refund_rub,\n    f.minimum_payment_adjustment_rub, f.unclassified_deduction_rub,\n    f.unknown_semantic_rub, f.classification_conflict_rub\n  FROM d\n  JOIN `wb_mart.V_DASH_FINANCE_CORRECTED_DAILY` f USING (day)\n  JOIN `wb_mart.V_DASH_KPI_DAILY` k USING (day)\n  JOIN `wb_mart.V_DASH_EXECUTIVE_ECONOMICS_DAILY` e USING (day)\n),\nb AS (\n  SELECT\n     SUM(IF(el,  revenue_base, NULL))                     AS s01_revenue,\n    -SUM(IF(el,  marketplace_fee_rub, NULL))              AS s02_mp,\n    -SUM(IF(el,  logistics_rub, NULL))                    AS s03_logi,\n    -SUM(IF(el,  ad_spend_attributed_rub, NULL))          AS s04_ads,\n    -SUM(IF(el,  storage_rub, NULL))                      AS s05_storage,\n    -SUM(IF(el,  acceptance_rub, NULL))                   AS s06_acceptance,\n    -SUM(IF(el,  penalty_account_rub, NULL))              AS s07_penalty,\n    -SUM(IF(el,  transit_deduction_rub, NULL))            AS s08_transit,\n    -SUM(IF(el,  minimum_payment_adjustment_rub, NULL))   AS s09_minpay,\n    -SUM(IF(el,  utilization_rub, NULL))                  AS s10_util,\n    -SUM(IF(el,  other_account_rub, NULL))                AS s11_other,\n    -SUM(IF(el,  unclassified_deduction_rub, NULL))       AS s12_unclass,\n    -SUM(IF(el,  unknown_semantic_rub, NULL))             AS s13_unknown,\n    -SUM(IF(el,  classification_conflict_rub, NULL))      AS s14_conflict,\n    -SUM(IF(el,  reimbursement_account_rub, NULL))        AS s15_reimb,\n    -SUM(IF(el,  review_points_refund_rub, NULL))         AS s16_points,\n    -SUM(IF(el2, product_cogs_rub, NULL))                 AS s17_cogs\n  FROM src\n)\nSELECT\n  CASE metric\n    WHEN 's01_revenue'    THEN 'Выручка'\n    WHEN 's02_mp'         THEN 'Комиссия WB'\n    WHEN 's03_logi'       THEN 'Логистика'\n    WHEN 's04_ads'        THEN 'Реклама'\n    WHEN 's05_storage'    THEN 'Хранение'\n    WHEN 's06_acceptance' THEN 'Приёмка'\n    WHEN 's07_penalty'    THEN 'Штрафы'\n    WHEN 's08_transit'    THEN 'Транзит поставок'\n    WHEN 's09_minpay'     THEN 'Мин. платёж'\n    WHEN 's10_util'       THEN 'Утилизация'\n    WHEN 's11_other'      THEN 'Прочее WB'\n    WHEN 's12_unclass'    THEN 'Прочие удержания'\n    WHEN 's13_unknown'    THEN 'Не распознано WB'\n    WHEN 's14_conflict'   THEN 'Конфликт классификации'\n    WHEN 's15_reimb'      THEN 'Возмещения WB'\n    WHEN 's16_points'     THEN 'Баллы за отзывы'\n    WHEN 's17_cogs'       THEN 'Себестоимость товара'\n  END AS step,\n  amount_rub\nFROM b UNPIVOT (amount_rub FOR metric IN (\n  s01_revenue, s02_mp, s03_logi, s04_ads, s05_storage, s06_acceptance, s07_penalty,\n  s08_transit, s09_minpay, s10_util, s11_other, s12_unclass, s13_unknown, s14_conflict,\n  s15_reimb, s16_points, s17_cogs))\nWHERE amount_rub IS NOT NULL AND amount_rub <> 0\nORDER BY metric",
     "template-tags": [
      {
       "dimension": [
        "field",
        {
-        "lib/uuid": "c8329288-bdda-4ae2-a63c-6da3a2672f66"
+        "lib/uuid": "3cd08de7-ff8b-4648-a16c-c96a20575e8f"
        },
        2622
       ],
       "display-name": "Период",
-      "id": "318ab9f3-0886-47ed-8ff2-7a8787e23357",
+      "id": "2b6afb16-fa3f-44cd-a9a3-bff8a4b57e45",
       "name": "day",
       "type": "dimension",
       "widget-type": "date/all-options"
@@ -56,10 +56,10 @@
    }
   ]
  },
- "description": "Структура затрат за выбранный период. Удержания WB классифицированы по ПРЯМОМУ основанию платежа, которое присылает сам WB (поле bonusTypeName, доступно с 19.07.2026): транзит поставок, утилизация товара, возврат аванса «Баллы за отзывы», остаток по минимальному платежу. До этой даты WB основание не передавал, и там продолжает работать прежняя реконструкция по форме srid — такие суммы попадают в «прочие и неопознанные». Строка «новое основание WB, не распознано» появляется, если WB прислал формулировку, которой нет в словаре: это сигнал расширить словарь, а не молчаливая потеря. ДВЕ НИЖНИЕ СТРОКИ — НЕ ОПЕРАЦИОННЫЕ ЗАТРАТЫ. «Рекламный биллинг WB» — контрольная величина: реклама уже вычтена как attributed внутри дохода до себестоимости, второй раз она не вычитается. «Компенсация форс-мажор» — исключительная выплата WB за пострадавший товар; по решению владельца она НЕ улучшает операционный результат и показана отдельно (знак положительный = выгода продавца). ВАЖНО, CROSS-BASE: диаграмма сознательно смешивает разные временные базы согласно контракту дашборда v2. Себестоимость товара относится к дате выкупа; удержано WB из цены, логистика, хранение и удержания — к дате финансовой операции; реклама — к дате рекламной активности. Картина управленчески осмысленна на горизонте от недели. «Удержано WB из цены» — это весь спред между ценой с согласованной скидкой и суммой к перечислению; он шире официальной комиссии WB и включает НДС, эквайринг, ПВЗ и платформенные скидки. Сознательно НЕ показаны wb_reward_rub и acquiring_sku_rub: они уже внутри этого спреда. Источники: wb_mart.V_DASH_FINANCE_CORRECTED_DAILY + V_DASH_EXECUTIVE_ECONOMICS_DAILY + V_DASH_KPI_DAILY.",
+ "description": "Мост от выручки к результату периода. Каждый столбец — шаг: вниз (расход) или вверх (положительная корректировка); «Итого» — результат после себестоимости товара. Промежуточная сумма после шага «Реклама» равна доходу до себестоимости, сумма перед шагом «Себестоимость товара» — результату до себестоимости. Знаковое правило одно для всех статей: шаг = −значение источника, поэтому кредиты WB (возмещения, возврат аванса «Баллы за отзывы») поднимают мост вверх, а не изображаются «отрицательным расходом». Удержания WB классифицированы по прямому основанию платежа (bonusTypeName, Stage 3.1F). 🔴 Компенсации форс-мажор в мосте НЕТ: OPTION B выводит её за операционный результат — она показана отдельной карточкой. 🔴 Рекламного биллинга WB в мосте НЕТ: в результат входит только атрибутированная на SKU реклама; биллинг — отдельная карточка контроля. 🔴 Все статьи взяты на сутках соответствующего гейта (period_result_eligible / after_product_cogs_eligible), поэтому мост сходится к тем же величинам, что и scalar-карточки; нулевые статьи в период не выводятся.",
  "dimension_mappings": null,
  "dimensions": null,
- "display": "row",
+ "display": "waterfall",
  "document_id": null,
  "embedding_params": null,
  "embedding_type": null,
@@ -67,12 +67,12 @@
  "entity_id": "sP0TcBbqSZCY-Z82W-IKN",
  "id": 51,
  "is_remote_synced": false,
- "last_used_at": "2026-08-28T11:32:53.423051Z",
+ "last_used_at": "2026-08-28T13:47:51.529465Z",
  "legacy_query": null,
  "metabase_version": "v0.63.15.1 (ab5ffba)",
- "name": "Структура затрат за период",
+ "name": "Расходы и корректировки периода",
  "param_fields": {
-  "318ab9f3-0886-47ed-8ff2-7a8787e23357": [
+  "2b6afb16-fa3f-44cd-a9a3-bff8a4b57e45": [
    {
     "base_type": "type/Date",
     "dimensions": [],
@@ -112,21 +112,25 @@
  "visualization_settings": {
   "column_settings": {
    "[\"name\",\"amount_rub\"]": {
-    "currency": "RUB",
-    "currency_in_header": false,
-    "currency_style": "symbol",
     "decimals": 0,
-    "number_style": "currency"
+    "number_style": "decimal",
+    "suffix": " ₽"
    }
   },
   "graph.dimensions": [
-   "cost_item"
+   "step"
   ],
+  "graph.label_value_formatting": "compact",
   "graph.metrics": [
    "amount_rub"
   ],
   "graph.show_values": true,
-  "graph.x_axis.title_text": "₽",
-  "graph.y_axis.title_text": ""
+  "graph.x_axis.axis_enabled": "rotate-45",
+  "graph.x_axis.title_text": "",
+  "graph.y_axis.title_text": "₽",
+  "waterfall.decrease_color": "#E35D5D",
+  "waterfall.increase_color": "#3B9E5B",
+  "waterfall.show_total": true,
+  "waterfall.total_color": "#4C5773"
  }
 }
