@@ -12,7 +12,7 @@
   "image": "metabase/metabase:latest",
   "mb_db_file": "/metabase-data/metabase.db"
  },
- "baseline_commit": "05e0303cbcbbadc7c3d7e334c8bff5e2358a9189",
+ "baseline_commit": "889fcfad1faf8c95059cc5218c22060bcb66c81a",
  "card_ids": [
   40,
   41,
@@ -423,7 +423,7 @@
   "updated_at",
   "view_count"
  ],
- "export_timestamp": "2026-08-27T11:22:00+03:00",
+ "export_timestamp": "2026-08-28T10:38:21+03:00",
  "metabase_version": {
   "date": "2026-08-25",
   "hash": "ab5ffba",
@@ -441,10 +441,10 @@
   "metabase/cards/card-48-vozvraty-sht.json": "63aaf4411d01a2b57e0f68950099f86da6016fb8d8889bf7bfbf0af9f857b515",
   "metabase/cards/card-49-k-perechisleniyu-po-sku.json": "38fd58ec7ed648aea8ba23403f7d0011b274e5f0ad5478d76893561e5a0ca9f3",
   "metabase/cards/card-50-vyruchka-i-vklad-po-dnyam.json": "afd0f711d441ed3ed674d3a01deadff611caf065b2d18e13881e7d42ddc6ae77",
-  "metabase/cards/card-51-struktura-zatrat-za-period.json": "f5429ec32036025879c22e85ed089b34b7d51e0bc10c8a49b5628109eed66cc6",
+  "metabase/cards/card-51-struktura-zatrat-za-period.json": "83128b3176ee3604e51d99aa3ae8bf83ca7f044750610fef1c48774ab4c97f12",
   "metabase/cards/card-52-sku-za-period.json": "91e8ffcc9c660ce9a4f36b5c7805cd1e4afa2e922087fb074d3f3ed153a4c87c",
-  "metabase/cards/card-53-rezultat-perioda-do-sebestoimosti.json": "7b707d63654a70c4839cb139159bce556ab89ae2f6a266ea9678bd088557b172",
-  "metabase/cards/card-54-rentabelnost-do-sebestoimosti.json": "cac2b3a33905c86fd4e39976710362f73c82aa79cf158dd6d45e24d5776bc633",
+  "metabase/cards/card-53-rezultat-perioda-do-sebestoimosti.json": "46d5a747c1237ec9bb3b6ef6f14657e6b1a53b2defcf11d990035496946c99de",
+  "metabase/cards/card-54-rentabelnost-do-sebestoimosti.json": "fd49ca7515b1aa7f03fa4feb40a9320aa0c0a57d797ddae97af94d9b9530583a",
   "metabase/cards/card-55-otmeneno-sht.json": "da971112050430d74d68f12d395852a7169f8193a77cbc88d44618980851bd68",
   "metabase/cards/card-56-zakazy-sht-sku.json": "f4abad0393b31740da3027cf065a14272b76afa6267055de22a0d252307d4eff",
   "metabase/cards/card-57-otmeneno-sht-sku.json": "a63f094fb8437fe412b2330b24ef757acd17d3c9404c7a51e3266fb08e95deb0",
@@ -465,7 +465,7 @@
   "metabase/collections/collection-5-evetis-analytics.json": "db06cefa53c6c0717bb13f28da362bbc91728017516c4ed3c86829aa7f814ca2",
   "metabase/collections/collection-6-01-executive.json": "cb72952920412540ffc5805a991367fbdd0dfb73bc6bf76f209be1d5b8598562",
   "metabase/collections/collection-7-02-sku-performance.json": "24aad11e9416dd74ba9075c70d4cad39b6a5073582b7f4b5c21caff9e13ca7e7",
-  "metabase/dashboards/dashboard-2-evetis-wb-executive.json": "81a0771f404bd5b4bc6b35457386ba14eec9f02f4dcff96ad9da610156a04221",
+  "metabase/dashboards/dashboard-2-evetis-wb-executive.json": "691d6d5ec073dba9de44aca568c4e624619aae39089f75a03ac90a410525bf44",
   "metabase/dashboards/dashboard-3-evetis-wb-sku-performance.json": "2ae9fff2b3fad2e477bc9fc8790c819a2e641f1fe8ae4fa979dc8e8b160fe219"
  },
  "source_note": "OSS. Аутентификационные данные в экспорт не входят.",

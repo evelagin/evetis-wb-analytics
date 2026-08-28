@@ -1,7 +1,7 @@
 {
  "archived": false,
  "archived_directly": false,
- "cache_invalidated_at": null,
+ "cache_invalidated_at": "2026-08-28T07:01:18.45485Z",
  "cache_ttl": null,
  "card_schema": 23,
  "collection": {
@@ -36,7 +36,7 @@
   "stages": [
    {
     "lib/type": "mbql.stage/native",
-    "native": "SELECT SAFE_DIVIDE(SUM(period_result_pre_cogs_rub), SUM(sales_revenue_seller_base_rub)) AS period_result_margin\nFROM `wb_mart.V_DASH_KPI_DAILY`\nWHERE {{day}}",
+    "native": "SELECT SAFE_DIVIDE(SUM(period_result_pre_cogs_corrected_rub),\n                   SUM(revenue_base_period_result_rub)) AS period_result_margin\nFROM `wb_mart.V_DASH_FINANCE_CORRECTED_DAILY`\nWHERE {{day}}",
     "template-tags": [
      {
       "dimension": [
@@ -44,7 +44,7 @@
        {
         "lib/uuid": "5d2fc7ab-5730-42a2-8013-86a79ec88385"
        },
-       909
+       2622
       ],
       "display-name": "Период",
       "id": "efa1fb8f-bde9-485a-ba46-6114c643d789",
@@ -56,7 +56,7 @@
    }
   ]
  },
- "description": "Результат периода до себестоимости, делённый на выручку продавца за тот же период. Считается как ratio-of-sums: SUM(period_result_pre_cogs_rub) / SUM(sales_revenue_seller_base_rub), а НЕ усреднением посуточных долей — AVG(ratio) даёт другую величину. Не включает себестоимость товара и налоги. Это НЕ рентабельность по прибыли.",
+ "description": "Результат периода до себестоимости, делённый на выручку продавца за те же сутки. Считается как ratio-of-sums: SAFE_DIVIDE(SUM(period_result_pre_cogs_corrected_rub), SUM(revenue_base_period_result_rub)), а НЕ усреднением посуточных долей — AVG(ratio) даёт другую величину. Знаменатель выровнен по тому же множеству покрытых суток, что и числитель (contribution_covered AND finance_covered): сырая выручка давала бы механически заниженный процент. Не включает себестоимость товара, fulfillment, OPEX и налоги. Это НЕ рентабельность по прибыли.",
  "dimension_mappings": null,
  "dimensions": null,
  "display": "scalar",
@@ -67,7 +67,7 @@
  "entity_id": "-iKoChmzY-b4AosEvxnRS",
  "id": 54,
  "is_remote_synced": false,
- "last_used_at": "2026-08-27T07:12:59.052299Z",
+ "last_used_at": "2026-08-28T07:11:02.188513Z",
  "legacy_query": null,
  "metabase_version": "v0.63.15.1 (ab5ffba)",
  "name": "Рентабельность до себестоимости",
@@ -79,11 +79,11 @@
     "display_name": "Day",
     "fk_target_field_id": null,
     "has_field_values": "none",
-    "id": 909,
+    "id": 2622,
     "name": "day",
     "name_field": null,
     "semantic_type": null,
-    "table_id": 38,
+    "table_id": 108,
     "target": null
    }
   ]

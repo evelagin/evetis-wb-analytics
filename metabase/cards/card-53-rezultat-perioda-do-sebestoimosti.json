@@ -1,7 +1,7 @@
 {
  "archived": false,
  "archived_directly": false,
- "cache_invalidated_at": null,
+ "cache_invalidated_at": "2026-08-28T07:00:59.757055Z",
  "cache_ttl": null,
  "card_schema": 23,
  "collection": {
@@ -36,7 +36,7 @@
   "stages": [
    {
     "lib/type": "mbql.stage/native",
-    "native": "SELECT SUM(period_result_pre_cogs_rub) AS period_result_rub\nFROM `wb_mart.V_DASH_KPI_DAILY`\nWHERE {{day}}",
+    "native": "SELECT SUM(period_result_pre_cogs_corrected_rub) AS period_result_rub\nFROM `wb_mart.V_DASH_FINANCE_CORRECTED_DAILY`\nWHERE {{day}}",
     "template-tags": [
      {
       "dimension": [
@@ -44,7 +44,7 @@
        {
         "lib/uuid": "eab95bcf-9abe-41ed-bdfb-d9b3e0d6ae80"
        },
-       909
+       2622
       ],
       "display-name": "Период",
       "id": "c94eb0c2-98f3-4e15-9adf-3d904a5e8ed8",
@@ -56,7 +56,7 @@
    }
   ]
  },
- "description": "Выручка продавца за вычетом сбора маркетплейса, логистики, атрибутированной рекламы и расходов уровня аккаунта. Не включает себестоимость товара и налоги. V_DASH_KPI_DAILY.period_result_pre_cogs_rub = contribution_pre_cogs_rub − account_level_total_rub. Расходы уровня аккаунта: хранение, удержания, приёмка, штрафы, компенсации (кредит, знак сохранён), прочее. wb_reward, эквайринг и SKU-возмещения повторно НЕ вычитаются — по контракту PR-B2 они уже внутри спреда marketplace_fee_rub. Это НЕ прибыль, НЕ операционная прибыль и НЕ EBITDA. NULL в сутках без полного покрытия (contribution_covered AND finance_covered).",
+ "description": "После комиссии, логистики, рекламы и расходов кабинета WB; до Product COGS, fulfillment, OPEX и налога. Источник: V_DASH_FINANCE_CORRECTED_DAILY.period_result_pre_cogs_corrected_rub = contribution_pre_cogs_rub − (account_level_total_rub − ad_billing_reconstructed_rub). Рекламный биллинг исключён из расходов уровня кабинета, потому что реклама уже вычтена как attributed внутри дохода до себестоимости — иначе она вычиталась бы дважды. Транзит поставок и неопознанные удержания остаются расходом. Это НЕ прибыль, НЕ операционная прибыль и НЕ EBITDA. NULL в сутках без полного покрытия (contribution_covered AND finance_covered).",
  "dimension_mappings": null,
  "dimensions": null,
  "display": "scalar",
@@ -67,7 +67,7 @@
  "entity_id": "xHRFz-D8n9OnzHYkwPC7F",
  "id": 53,
  "is_remote_synced": false,
- "last_used_at": "2026-08-27T08:23:09.903559Z",
+ "last_used_at": "2026-08-28T07:10:54.617023Z",
  "legacy_query": null,
  "metabase_version": "v0.63.15.1 (ab5ffba)",
  "name": "Результат периода до себестоимости",
@@ -79,11 +79,11 @@
     "display_name": "Day",
     "fk_target_field_id": null,
     "has_field_values": "none",
-    "id": 909,
+    "id": 2622,
     "name": "day",
     "name_field": null,
     "semantic_type": null,
-    "table_id": 38,
+    "table_id": 108,
     "target": null
    }
   ]

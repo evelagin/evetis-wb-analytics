@@ -1,7 +1,7 @@
 {
  "archived": false,
  "archived_directly": false,
- "cache_invalidated_at": "2026-08-26T15:48:01.214674Z",
+ "cache_invalidated_at": "2026-08-28T07:10:34.221753Z",
  "cache_ttl": null,
  "card_schema": 23,
  "collection": {
@@ -36,7 +36,7 @@
   "stages": [
    {
     "lib/type": "mbql.stage/native",
-    "native": "WITH b AS (\n  SELECT\n    SUM(marketplace_fee_rub)     AS mp,\n    SUM(logistics_rub)           AS logi,\n    SUM(ad_spend_attributed_rub) AS ads,\n    SUM(storage_rub)             AS storage,\n    SUM(deduction_rub)           AS deduction,\n    SUM(acceptance_rub)          AS acceptance,\n    SUM(penalty_account_rub)     AS penalty,\n    SUM(reimbursement_account_rub) AS reimb,\n    SUM(other_account_rub)       AS other_acc\n  FROM `wb_mart.V_DASH_KPI_DAILY`\n  WHERE {{day}}\n)\nSELECT cost_item, amount_rub FROM (\n  SELECT 'Комиссия WB'  AS cost_item, mp         AS amount_rub FROM b\n  UNION ALL SELECT 'Логистика',              logi       FROM b\n  UNION ALL SELECT 'Реклама',    ads        FROM b\n  UNION ALL SELECT 'Удержания WB',             deduction  FROM b\n  UNION ALL SELECT 'Хранение',              storage    FROM b\n  UNION ALL SELECT 'Приёмка',               acceptance FROM b\n  UNION ALL SELECT 'Штрафы',                penalty    FROM b\n  UNION ALL SELECT 'Компенсации',           reimb      FROM b\n  UNION ALL SELECT 'Прочее',                other_acc  FROM b\n)\nWHERE amount_rub IS NOT NULL AND amount_rub <> 0\nORDER BY amount_rub DESC",
+    "native": "WITH f AS (\n  SELECT day, ad_billing_reconstructed_rub, transit_deduction_rub,\n         unclassified_deduction_rub, classification_conflict_rub\n  FROM `wb_mart.V_DASH_FINANCE_CORRECTED_DAILY`\n  WHERE {{day}}\n),\nb AS (\n  SELECT\n    SUM(k.marketplace_fee_rub)          AS mp,\n    SUM(k.logistics_rub)                AS logi,\n    SUM(k.ad_spend_attributed_rub)      AS ads,\n    SUM(k.storage_rub)                  AS storage,\n    SUM(k.acceptance_rub)               AS acceptance,\n    SUM(k.penalty_account_rub)          AS penalty,\n    SUM(k.reimbursement_account_rub)    AS reimb,\n    SUM(k.other_account_rub)            AS other_acc,\n    SUM(f.transit_deduction_rub)        AS ded_transit,\n    SUM(f.unclassified_deduction_rub)   AS ded_unclass,\n    SUM(f.classification_conflict_rub)  AS ded_conflict,\n    SUM(f.ad_billing_reconstructed_rub) AS ded_ads\n  FROM f\n  JOIN `wb_mart.V_DASH_KPI_DAILY` k USING (day)\n)\nSELECT\n  CASE metric\n    WHEN 'mp'           THEN 'Комиссия WB'\n    WHEN 'logi'         THEN 'Логистика'\n    WHEN 'ads'          THEN 'Реклама, распределённая на SKU'\n    WHEN 'storage'      THEN 'Хранение'\n    WHEN 'acceptance'   THEN 'Приёмка'\n    WHEN 'penalty'      THEN 'Штрафы'\n    WHEN 'reimb'        THEN 'Компенсации'\n    WHEN 'other_acc'    THEN 'Прочее'\n    WHEN 'ded_transit'  THEN 'Удержания WB: транзит поставок'\n    WHEN 'ded_unclass'  THEN 'Удержания WB: прочие и неопознанные'\n    WHEN 'ded_conflict' THEN 'Удержания WB: конфликт классификации'\n    WHEN 'ded_ads'      THEN 'Рекламный биллинг WB (контроль, уже учтён)'\n  END AS cost_item,\n  amount_rub\nFROM b UNPIVOT (amount_rub FOR metric IN (\n  mp, logi, ads, storage, acceptance, penalty, reimb, other_acc,\n  ded_transit, ded_unclass, ded_conflict, ded_ads))\nWHERE amount_rub IS NOT NULL AND amount_rub <> 0\nORDER BY (metric = 'ded_ads'), amount_rub DESC",
     "template-tags": [
      {
       "dimension": [
@@ -44,7 +44,7 @@
        {
         "lib/uuid": "c8329288-bdda-4ae2-a63c-6da3a2672f66"
        },
-       909
+       2622
       ],
       "display-name": "Период",
       "id": "318ab9f3-0886-47ed-8ff2-7a8787e23357",
@@ -56,7 +56,7 @@
    }
   ]
  },
- "description": "Структура затрат за выбранный период. Комиссия WB, Логистика и Реклама разносятся WB по SKU; Удержания WB, Хранение, Приёмка, Штрафы и Компенсации приходят на уровне кабинета — источник не даёт связки с товаром, и разносить их по SKU нельзя. Сознательно НЕ показаны wb_reward_rub и acquiring_sku_rub: по контракту v1 REV2.4 они уже сидят внутри спреда между ценой продавца и суммой к перечислению, вычитать их вторым разом = двойной счёт. Себестоимости здесь нет — REF_COGS в BigQuery отсутствует. Горизонтальные полосы выбраны вместо waterfall: затраты приходят из двух разных слоёв и не образуют одну аддитивную цепочку от выручки к результату. Поля-источники и расчёты не менялись, изменены только подписи категорий.",
+ "description": "Структура затрат за выбранный период. Комиссия WB, Логистика и Реклама разносятся WB по SKU; Хранение, Приёмка, Штрафы, Компенсации и Удержания приходят на уровне кабинета — источник не даёт связки с товаром. Операция WB «Удержание» разложена по классификатору Stage 3.1C: транзит поставок, прочие и неопознанные удержания, конфликт классификации. Рекламный биллинг WB показан отдельной контрольной строкой и НЕ является второй статьёй расхода: реклама уже вычтена как attributed внутри дохода до себестоимости. Различайте: «Реклама, распределённая на SKU» (attributed) — расход; «Рекламный биллинг WB» (billed) — фактическое списание с баланса кабинета; разница billed − attributed (unallocated) — разрыв сверки, а не статья затрат. Сознательно НЕ показаны wb_reward_rub и acquiring_sku_rub: по контракту v1 REV2.4 они уже внутри спреда между ценой продавца и суммой к перечислению. Себестоимости товара здесь нет. Горизонтальные полосы выбраны вместо waterfall: затраты приходят из двух разных слоёв и не образуют одну аддитивную цепочку. Источник: wb_mart.V_DASH_FINANCE_CORRECTED_DAILY + V_DASH_KPI_DAILY.",
  "dimension_mappings": null,
  "dimensions": null,
  "display": "row",
@@ -67,7 +67,7 @@
  "entity_id": "sP0TcBbqSZCY-Z82W-IKN",
  "id": 51,
  "is_remote_synced": false,
- "last_used_at": "2026-08-27T08:23:17.457148Z",
+ "last_used_at": "2026-08-28T07:11:09.698819Z",
  "legacy_query": null,
  "metabase_version": "v0.63.15.1 (ab5ffba)",
  "name": "Структура затрат за период",
@@ -79,11 +79,11 @@
     "display_name": "Day",
     "fk_target_field_id": null,
     "has_field_values": "none",
-    "id": 909,
+    "id": 2622,
     "name": "day",
     "name_field": null,
     "semantic_type": null,
-    "table_id": 38,
+    "table_id": 108,
     "target": null
    }
   ]
