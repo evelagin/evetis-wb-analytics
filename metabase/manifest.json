@@ -12,7 +12,7 @@
   "image": "metabase/metabase:latest",
   "mb_db_file": "/metabase-data/metabase.db"
  },
- "baseline_commit": "889fcfad1faf8c95059cc5218c22060bcb66c81a",
+ "baseline_commit": "32d230c9cdada219b0b6d6d3a3bce57cc9d03814",
  "card_ids": [
   40,
   41,
@@ -45,7 +45,10 @@
   68,
   69,
   70,
-  71
+  71,
+  72,
+  73,
+  74
  ],
  "card_to_collection": {
   "40": 6,
@@ -79,7 +82,10 @@
   "68": 7,
   "69": 7,
   "70": 7,
-  "71": 7
+  "71": 7,
+  "72": 6,
+  "73": 6,
+  "74": 6
  },
  "cards": [
   {
@@ -305,6 +311,27 @@
    "file": "metabase/cards/card-71-period-i-pokrytie-dannyh-sku.json",
    "id": 71,
    "name": "Период и покрытие данных SKU"
+  },
+  {
+   "collection_id": 6,
+   "display": "scalar",
+   "file": "metabase/cards/card-72-sebestoimost-tovara.json",
+   "id": 72,
+   "name": "Себестоимость товара"
+  },
+  {
+   "collection_id": 6,
+   "display": "scalar",
+   "file": "metabase/cards/card-73-rezultat-perioda-posle-sebestoimosti-tovara.json",
+   "id": 73,
+   "name": "Результат периода после себестоимости товара"
+  },
+  {
+   "collection_id": 6,
+   "display": "scalar",
+   "file": "metabase/cards/card-74-rentabelnost-posle-sebestoimosti-tovara.json",
+   "id": 74,
+   "name": "Рентабельность после себестоимости товара"
   }
  ],
  "collection_ids": [
@@ -333,7 +360,7 @@
   }
  ],
  "counts": {
-  "cards": 32,
+  "cards": 35,
   "collections": 3,
   "dashboards": 2
  },
@@ -358,7 +385,10 @@
    52,
    53,
    54,
-   55
+   55,
+   72,
+   73,
+   74
   ],
   "3": [
    40,
@@ -423,7 +453,7 @@
   "updated_at",
   "view_count"
  ],
- "export_timestamp": "2026-08-28T10:38:21+03:00",
+ "export_timestamp": "2026-08-28T13:27:13+03:00",
  "metabase_version": {
   "date": "2026-08-25",
   "hash": "ab5ffba",
@@ -441,7 +471,7 @@
   "metabase/cards/card-48-vozvraty-sht.json": "63aaf4411d01a2b57e0f68950099f86da6016fb8d8889bf7bfbf0af9f857b515",
   "metabase/cards/card-49-k-perechisleniyu-po-sku.json": "38fd58ec7ed648aea8ba23403f7d0011b274e5f0ad5478d76893561e5a0ca9f3",
   "metabase/cards/card-50-vyruchka-i-vklad-po-dnyam.json": "afd0f711d441ed3ed674d3a01deadff611caf065b2d18e13881e7d42ddc6ae77",
-  "metabase/cards/card-51-struktura-zatrat-za-period.json": "83128b3176ee3604e51d99aa3ae8bf83ca7f044750610fef1c48774ab4c97f12",
+  "metabase/cards/card-51-struktura-zatrat-za-period.json": "2f7b2a720d87f6f77c3df031a77a751bca594a281758db226249330c534f91a0",
   "metabase/cards/card-52-sku-za-period.json": "91e8ffcc9c660ce9a4f36b5c7805cd1e4afa2e922087fb074d3f3ed153a4c87c",
   "metabase/cards/card-53-rezultat-perioda-do-sebestoimosti.json": "46d5a747c1237ec9bb3b6ef6f14657e6b1a53b2defcf11d990035496946c99de",
   "metabase/cards/card-54-rentabelnost-do-sebestoimosti.json": "fd49ca7515b1aa7f03fa4feb40a9320aa0c0a57d797ddae97af94d9b9530583a",
@@ -462,10 +492,13 @@
   "metabase/cards/card-69-trebuyut-vnimaniya-sku.json": "082ae63a67364a5c9b511ea3b50d7fd7fbf9288dbd7a012ab19570a877de3739",
   "metabase/cards/card-70-vykupy-po-dnyam-sku.json": "205e9918dfa5e789a74ff1480e05f64a95d685b3079b5f321947ff4915df7069",
   "metabase/cards/card-71-period-i-pokrytie-dannyh-sku.json": "116eeec6a1485011e46e7c9efe73de699f4ef3266a668db33d1deda7fbb77aa9",
+  "metabase/cards/card-72-sebestoimost-tovara.json": "13466beccffe701220bfd259c6bb338e2e4f2b48170ebdeccf820b8af8805cbc",
+  "metabase/cards/card-73-rezultat-perioda-posle-sebestoimosti-tovara.json": "689da99c0bafe391d6838d90bbdeee1f3e645396782dc8daf29c8382c56950a5",
+  "metabase/cards/card-74-rentabelnost-posle-sebestoimosti-tovara.json": "4525e7944a6950a7afa1f7e3212a055d920d247c4d6854fb8cddced604fdcc2e",
   "metabase/collections/collection-5-evetis-analytics.json": "db06cefa53c6c0717bb13f28da362bbc91728017516c4ed3c86829aa7f814ca2",
   "metabase/collections/collection-6-01-executive.json": "cb72952920412540ffc5805a991367fbdd0dfb73bc6bf76f209be1d5b8598562",
   "metabase/collections/collection-7-02-sku-performance.json": "24aad11e9416dd74ba9075c70d4cad39b6a5073582b7f4b5c21caff9e13ca7e7",
-  "metabase/dashboards/dashboard-2-evetis-wb-executive.json": "691d6d5ec073dba9de44aca568c4e624619aae39089f75a03ac90a410525bf44",
+  "metabase/dashboards/dashboard-2-evetis-wb-executive.json": "bac67dea3218e9fcbc95286c498ad88015f37e9d0e23e70ecfcc93e90b4917f2",
   "metabase/dashboards/dashboard-3-evetis-wb-sku-performance.json": "2ae9fff2b3fad2e477bc9fc8790c819a2e641f1fe8ae4fa979dc8e8b160fe219"
  },
  "source_note": "OSS. Аутентификационные данные в экспорт не входят.",

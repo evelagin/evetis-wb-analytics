@@ -34,8 +34,8 @@ Before any new development:
 | remote URL | `https://github.com/evelagin/evetis-wb-analytics.git` |
 | local path | `/Users/evgenelagin/Projects/evetis-wb-analytics` |
 | branch | `main` |
-| HEAD SHA | `889fcfad1faf8c95059cc5218c22060bcb66c81a` |
-| origin/main SHA | `889fcfad1faf8c95059cc5218c22060bcb66c81a` |
+| HEAD SHA | `32d230c9cdada219b0b6d6d3a3bce57cc9d03814` |
+| origin/main SHA | `32d230c9cdada219b0b6d6d3a3bce57cc9d03814` |
 | ahead | 0 |
 | behind | 0 |
 | working tree | clean |
@@ -44,6 +44,7 @@ Before any new development:
 Последние коммиты `main`:
 
 ```
+32d230c  docs(metabase): checkpoint Stage 3.1C Executive integration
 889fcfa  feat(finance): add Stage 3.1C corrected executive finance overlay
 9ada18b  feat(finance): add Stage 3.1C advertising billing classification layer
 7c74cde  feat(cogs): add Stage 3.1B COGS consumer views
@@ -123,7 +124,7 @@ BigQuery  evetis_ref  ← reference layer: историческая Product COGS
 | компонент | состояние |
 | --- | --- |
 | BigQuery datasets | `wb_raw`, `wb_mart`, `evetis_communications`, **`evetis_ref`** |
-| `wb_mart` | 17 базовых таблиц, **23 view**, 2 процедуры (`sp_bootstrap_facts`, `sp_build_mart_sku_daily`) — 40 объектов |
+| `wb_mart` | 17 базовых таблиц, **24 view**, 2 процедуры (`sp_bootstrap_facts`, `sp_build_mart_sku_daily`) — **41 объект** |
 | `MART_SKU_DAILY` | 7 477 строк, `max_day = 2026-08-26` |
 | `FACT_ORDERS` | 4 426 строк, до 2026-08-26 |
 | `FACT_SALES` | 4 103 строки, до 2026-08-26 |
@@ -136,30 +137,44 @@ BigQuery  evetis_ref  ← reference layer: историческая Product COGS
 | `evetis_ref.REF_BUNDLE_COMPONENTS` | 33 строки состава, 14 наборов, стоимостных полей нет |
 | `evetis_ref.V_BUNDLE_COGS_DERIVED` | 21 производный интервал COGS набора |
 | `evetis_ref.V_PRODUCT_COGS_EFFECTIVE` | unified resolver, 38 интервалов (17 + 21) |
-| dashboard views | `V_DASH_KPI_DAILY` (76 колонок), `V_DASH_SKU_DAILY` (60), `V_DASH_COVERAGE_DAILY` (33), `V_DASH_FRESHNESS_HEADER`, `V_DASH_FRESHNESS_BY_CONTRACT` (14), **`V_DASH_FINANCE_CORRECTED_DAILY`** (Stage 3.1C PR2) |
+| dashboard views | `V_DASH_KPI_DAILY` (76 колонок), `V_DASH_SKU_DAILY` (60), `V_DASH_COVERAGE_DAILY` (33), `V_DASH_FRESHNESS_HEADER`, `V_DASH_FRESHNESS_BY_CONTRACT` (14), **`V_DASH_FINANCE_CORRECTED_DAILY`** (Stage 3.1C PR2), **`V_DASH_EXECUTIVE_ECONOMICS_DAILY`** (Stage 3.1D) |
 | Google Apps Script | 39 файлов `.gs` в репозитории; слой Google Sheets (справочники, себестоимость) |
 | Cloud Run loaders | `cloud/src/loaders/`: `mart`, `stocks` |
-| Metabase | v0.63.15.1 OSS, Docker, 2 наших дашборда, 32 карточки |
-| GitHub | `main` = `f8ea31e`, плюс ветка `rescue/stash-20260826` |
+| Metabase | v0.63.15.1 OSS, Docker, 2 наших дашборда, **35 наших карточек** (id 40–74 без пропусков: коллекция 6 — 40–55 и 72–74, коллекция 7 — 56–71; id 1–39 принадлежат демо-дашборду Metabase) |
+| GitHub | `main` = `32d230c`, плюс ветка `rescue/stash-20260826` |
 | Claude skills | 7 `SKILL.md` в `.claude/skills/`, все под версионным контролем |
 
 Design-only и **не** production: спека рекламного экрана Stage 4B (см. раздел
 Rescue & Historical Work), Stage 3B Phase B.
 
-🔴 `evetis_ref` — **production**. Stage 3.1B создал consumer-view
-(`V_FACT_FINANCE_COGS`, `V_MART_SKU_DAILY_COGS`), но **Product COGS по-прежнему не
-входит в Executive**: ни `MART_SKU_DAILY`, ни `V_DASH_KPI_DAILY`, ни
-`V_DASH_FINANCE_CORRECTED_DAILY`, ни карточки Metabase его не читают. Все показатели
-дашбордов остаются **до себестоимости товара**.
+🔴 `evetis_ref` — **production**, и с 2026-08-28 **Product COGS подключён к Executive**
+(Stage 3.1D) через additive-overlay `V_DASH_EXECUTIVE_ECONOMICS_DAILY`. Сам
+`MART_SKU_DAILY`, `V_DASH_KPI_DAILY` и `V_DASH_FINANCE_CORRECTED_DAILY` себестоимость
+по-прежнему **не** читают — она приходит отдельным слоем. Показатели «до себестоимости»
+сохранены рядом с «после себестоимости». **SKU Performance себестоимость ещё не
+показывает.**
 
 ---
 
 # Stage 1 — Executive Dashboard
 
 **Dashboard:** `EVETIS · WB Executive` (Metabase dashboard id 2, коллекция 6 «01 Executive»).
-Карточки 40–55, грейн сутки. Источник — `wb_mart.V_DASH_KPI_DAILY`, а для трёх
-финансовых карточек (**51**, **53**, **54**) — исправленный слой
-`wb_mart.V_DASH_FINANCE_CORRECTED_DAILY` (Stage 3.1C PR3, см. ниже).
+Карточки **40–55 и 72–74**, грейн сутки. Источники: `wb_mart.V_DASH_KPI_DAILY`; для
+карточек **53**, **54** — исправленный слой `V_DASH_FINANCE_CORRECTED_DAILY`
+(Stage 3.1C PR3); для карточек **72**, **73**, **74** — `V_DASH_EXECUTIVE_ECONOMICS_DAILY`
+(Stage 3.1D); карточка **51** читает все три слоя.
+
+**Действующая управленческая лестница Executive:**
+
+```
+выручка продавца
+  → contribution pre-COGS
+    → corrected result pre-COGS          (Stage 3.1C PR2: реклама не вычтена дважды)
+      → Product COGS                     (Stage 3.1D)
+        → result after Product COGS      ← текущая нижняя ступень
+```
+
+🔴 Следующая ступень — **fulfilment / FF cost layer** — **не реализована**.
 
 Реализовано и работает:
 
@@ -496,6 +511,47 @@ Field filter `{{day}}` перенаправлен с поля Metabase 909 на 
 🔴 Transit (2 596,45 ₽) и unclassified (1 714,74 ₽) остаются расходами.
 🔴 Product COGS в расчёт **не входит**.
 
+## Stage 3.1D — Product COGS → Executive Economics — **CLOSED**
+
+Дата 2026-08-28. Контракт:
+`docs/STAGE3_1D_PRODUCT_COGS_EXECUTIVE_INTEGRATION_2026-08-28.md`.
+Скрипты: `sql/dash/pr_dash_executive_economics_v1.sql`, `..._validation.sql`.
+Откат: `tools/stage3_1d_executive_economics_rollback.sh`.
+
+Создан один additive-overlay **`wb_mart.V_DASH_EXECUTIVE_ECONOMICS_DAILY`** (грейн `day`,
+1:1 к `V_DASH_FINANCE_CORRECTED_DAILY`, 723 строки). `wb_mart`: 40 → **41**.
+
+```
+period_result_after_product_cogs_rub = period_result_pre_cogs_corrected_rub - product_cogs_rub
+after_product_cogs_eligible          = period_result_eligible AND product_cogs_covered
+```
+
+**Consumer:** OPERATIONAL-серия `V_MART_SKU_DAILY_COGS.net_product_cogs_operational_rub`,
+агрегированная до `day` **до** join. Причина — экономический универсум Executive:
+выручка и contribution считаются от **выкупов**, значит себестоимость обязана относиться
+к тем же реализованным единицам. SETTLEMENT-серия остаётся control/reconciliation.
+
+🔴 **unknown != zero, fail closed.** Одной неразрешённой строки витрины достаточно,
+чтобы суточная величина стала NULL. Ноль — только доказуемое отсутствие событий.
+
+**Контроль 01–26.08.2026:** выручка 335 526,88 · до себестоимости 90 344,47 ·
+Product COGS 117 031,00 · **после себестоимости −26 686,53 ₽, −7,95 %** ·
+eligible 26/26 · покрытие COGS 100 %.
+**Regression 01–25.08.2026:** 87 471,25 · 114 012,00 · **−26 540,75 ₽, −8,19 %**.
+Валидация: **15/15 ASSERT PASS**.
+
+**Metabase.** Сохранены карточки 53 и 54. Созданы **72** «Себестоимость товара»,
+**73** «Результат периода после себестоимости товара», **74** «Рентабельность после
+себестоимости товара». Карточка **51** получила отдельную статью «Себестоимость товара».
+Существующие dashcard IDs сохранены, фильтр периода не менялся, высота дашборда
+45 → 48 без пустот. Dashboard 3 SKU Performance не тронут.
+
+**Owner-confirmed 2026-08-28:** `EVT-HC-HAND-300` = 240 ₽, `EVT-FC-ACNE-50` = 145 ₽.
+Reference layer признан корректным и не изменялся.
+
+🔴 **Это НЕ чистая прибыль.** Не включены fulfilment/FF, OPEX, ЗП, налог и банковские
+расходы. Слова «чистая прибыль», «net profit», «валовая маржа», «EBITDA» запрещены.
+
 ---
 
 ## Исторический контекст до Stage 3.1A
@@ -800,35 +856,52 @@ Stage 1.5/1.8/1.9/1.10B/Stage 2. Объединение способно пов�
 * **Stage 3.1B** — COGS Consumer Layer, коммит `7c74cde`;
 * **Stage 3.1C PR1** — Advertising Billing Classification, коммит `9ada18b`;
 * **Stage 3.1C PR2** — Executive Financial Semantics Correction, коммит `889fcfa`;
-* **Stage 3.1C PR3** — Metabase Executive Integration, 2026-08-28.
+* **Stage 3.1C PR3** — Metabase Executive Integration, коммит `32d230c`;
+* **Stage 3.1D** — Product COGS → Executive Economics, 2026-08-28.
 
 ## CURRENT PRODUCTION STATE
 
-**Executive использует исправленную финансовую семантику.** Карточки 51 / 53 / 54
-читают `wb_mart.V_DASH_FINANCE_CORRECTED_DAILY`: реклама не вычитается дважды,
-проценты считаются ratio-of-sums по выровненному знаменателю. Контрольные величины на
-01–26.08.2026 — результат периода 90 344,47 ₽, рентабельность 26,93 %.
+**Executive показывает управленческую лестницу до результата после себестоимости товара.**
 
-`evetis_ref` является **production reference source** для Product COGS, а Stage 3.1B
-дал consumer-view `V_FACT_FINANCE_COGS` и `V_MART_SKU_DAILY_COGS`.
+```
+выручка продавца  →  contribution pre-COGS  →  corrected result pre-COGS
+   →  Product COGS  →  result after Product COGS
+```
 
-🔴 Но **Product COGS ещё НЕ входит в Executive**. Его не читают:
+Карточки 53 / 54 читают `V_DASH_FINANCE_CORRECTED_DAILY` (реклама не вычитается дважды,
+проценты — ratio-of-sums по выровненному знаменателю); карточки 72 / 73 / 74 —
+`V_DASH_EXECUTIVE_ECONOMICS_DAILY`; карточка 51 — оба слоя плюс `V_DASH_KPI_DAILY`.
 
-* `MART_SKU_DAILY`;
-* `V_DASH_KPI_DAILY` и `V_DASH_FINANCE_CORRECTED_DAILY`;
-* карточки Metabase.
+Контроль 01–26.08.2026: до себестоимости **90 344,47 ₽** (26,93 %), Product COGS
+**117 031,00 ₽**, после себестоимости **−26 686,53 ₽** (−7,95 %).
 
-Поэтому все показатели дашбордов остаются **до себестоимости товара**, и это не прибыль.
+🔴 **Это НЕ чистая прибыль.** Не включены fulfilment/FF, OPEX, ЗП, налог, банковские
+расходы. Следующая ступень лестницы — **fulfilment / FF cost layer** — **не реализована**.
+
+🔴 **SKU Performance себестоимость не показывает.** Dashboard 3 и карточки 56–71 в
+Stage 3.1D не изменялись.
 
 **Stage 3B — не начат.** Остаётся отдельным gated-направлением со своим исполняемым
 гейтом (`sql/mart/pr_mart1_facts.sql:78`) и автоматически не запускается.
 
+## DEFERRED — не смешивать с завершённым Stage 3.1D
+
+| # | отложено | суть |
+| --- | --- | --- |
+| 1 | **Fulfilment / FF cost layer** | следующая ступень экономики; проектирование не начато |
+| 2 | **SKU Performance: Product COGS** | `V_MART_SKU_DAILY_COGS` готов (7 502 строки, грейн 1:1 с `V_DASH_SKU_DAILY`), но экран не подключён |
+| 3 | **SKU Performance UX compaction** | компактизация dashboard 3 не выполнялась |
+| 4 | **Карточка 63, знаменатель** | тот же coverage-перекос, что чинил PR2 для Executive; чинить **до** вывода процентов после COGS на SKU-экране |
+| 5 | **Metabase admin schema sync** | API-key пользователь не админ; новый слой не зарегистрирован как таблица. Карточки 72–74 используют `V_DASH_FINANCE_CORRECTED_DAILY.day` как драйвер фильтра. Семантика верна, производительность ≈11,7 с против ≈4,7 с. Не дефект Stage 3.1D |
+| 6 | **Stage 3B billed advertising allocation** | под исполняемым гейтом, cutover не начат |
+| 7 | **FACT deployment drift** | `docs/TECHDEBT_FACT_DEPLOY_DRIFT_2026-08-27.md` |
+| 8 | **uuid36-популяция 2025, 794 732 ₽** | остаётся `UNCLASSIFIED_DEDUCTION` и расходом; расследование отложено |
+
 ## NEXT
 
-Следующий бизнес-этап после этого чекпоинта — **подключение Product COGS к
-управленческой экономике и к Executive**: как витрина берёт цену на дату, как ведёт
-себя fail-closed при отсутствии интервала, какие метрики после COGS появляются и как
-они называются.
+Следующий бизнес-этап — **fulfilment / FF cost layer**: какие операции ФФ входят в
+управленческую себестоимость, на каком грейне они приходят, как соотносятся с
+Product COGS и с расходами кабинета WB, и как называется следующая ступень результата.
 
 Этап должен начинаться **отдельным design / read-only gate**. Этот чекпоинт его не
 открывает, Stage 3B не начинает и новых production-изменений не вносит.

@@ -1,0 +1,110 @@
+{
+ "archived": false,
+ "archived_directly": false,
+ "cache_invalidated_at": null,
+ "cache_ttl": null,
+ "card_schema": 23,
+ "collection": {
+  "archive_operation_id": null,
+  "archived": false,
+  "archived_directly": null,
+  "authority_level": null,
+  "created_at": "2026-08-26T15:19:56.740614Z",
+  "description": "Executive MVP: что происходит с бизнесом и зарабатываем ли мы деньги.",
+  "entity_id": "EZUYQWsC5fdY9QqGY-xKC",
+  "id": 6,
+  "is_remote_synced": false,
+  "is_sample": false,
+  "location": "/5/",
+  "name": "01 Executive",
+  "namespace": null,
+  "personal_owner_id": null,
+  "slug": "01_executive",
+  "type": null
+ },
+ "collection_id": 6,
+ "collection_position": null,
+ "collection_preview": true,
+ "created_at": "2026-08-28T09:54:46.728166Z",
+ "creator_id": 2,
+ "dashboard": null,
+ "dashboard_id": null,
+ "database_id": 2,
+ "dataset_query": {
+  "database": 2,
+  "lib/type": "mbql/query",
+  "stages": [
+   {
+    "lib/type": "mbql.stage/native",
+    "native": "WITH f AS (\n  SELECT day FROM `wb_mart.V_DASH_FINANCE_CORRECTED_DAILY`\n  WHERE {{day}}\n)\nSELECT SUM(e.period_result_after_product_cogs_rub) AS period_result_after_cogs_rub\nFROM f JOIN `wb_mart.V_DASH_EXECUTIVE_ECONOMICS_DAILY` e USING (day)",
+    "template-tags": [
+     {
+      "dimension": [
+       "field",
+       {
+        "lib/uuid": "4b4dc615-2c14-422e-8e8f-636b9d3cb85f"
+       },
+       2622
+      ],
+      "display-name": "Период",
+      "id": "720de0e0-2403-4831-bd7d-5597045bcf03",
+      "name": "day",
+      "type": "dimension",
+      "widget-type": "date/all-options"
+     }
+    ]
+   }
+  ]
+ },
+ "description": "Результат периода до себестоимости МИНУС себестоимость товара. Источник: wb_mart.V_DASH_EXECUTIVE_ECONOMICS_DAILY.period_result_after_product_cogs_rub = period_result_pre_cogs_corrected_rub − product_cogs_rub, только на суточном универсуме after_product_cogs_eligible. Product COGS учтён; fulfillment/FF, OPEX и налог ещё НЕ включены. Показатель не является чистой прибылью, не является операционной прибылью и не является EBITDA.",
+ "dimension_mappings": null,
+ "dimensions": null,
+ "display": "scalar",
+ "document_id": null,
+ "embedding_params": null,
+ "embedding_type": null,
+ "enable_embedding": false,
+ "entity_id": "w5DXDu4rusqu8LIffsaiq",
+ "id": 73,
+ "is_remote_synced": false,
+ "last_used_at": "2026-08-28T10:22:12.896084Z",
+ "legacy_query": null,
+ "metabase_version": "v0.63.15.1 (ab5ffba)",
+ "name": "Результат периода после себестоимости товара",
+ "param_fields": {
+  "720de0e0-2403-4831-bd7d-5597045bcf03": [
+   {
+    "base_type": "type/Date",
+    "dimensions": [],
+    "display_name": "Day",
+    "fk_target_field_id": null,
+    "has_field_values": "none",
+    "id": 2622,
+    "name": "day",
+    "name_field": null,
+    "semantic_type": null,
+    "table_id": 108,
+    "target": null
+   }
+  ]
+ },
+ "parameter_mappings": [],
+ "parameter_usage_count": 0,
+ "parameters": [],
+ "query_type": "native",
+ "source_card_id": null,
+ "table_id": null,
+ "type": "question",
+ "visualization_settings": {
+  "column_settings": {
+   "[\"name\",\"period_result_after_cogs_rub\"]": {
+    "currency": "RUB",
+    "currency_in_header": false,
+    "currency_style": "symbol",
+    "decimals": 0,
+    "number_style": "currency"
+   }
+  },
+  "scalar.field": "period_result_after_cogs_rub"
+ }
+}

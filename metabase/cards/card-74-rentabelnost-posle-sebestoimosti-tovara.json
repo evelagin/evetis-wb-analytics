@@ -1,0 +1,107 @@
+{
+ "archived": false,
+ "archived_directly": false,
+ "cache_invalidated_at": null,
+ "cache_ttl": null,
+ "card_schema": 23,
+ "collection": {
+  "archive_operation_id": null,
+  "archived": false,
+  "archived_directly": null,
+  "authority_level": null,
+  "created_at": "2026-08-26T15:19:56.740614Z",
+  "description": "Executive MVP: что происходит с бизнесом и зарабатываем ли мы деньги.",
+  "entity_id": "EZUYQWsC5fdY9QqGY-xKC",
+  "id": 6,
+  "is_remote_synced": false,
+  "is_sample": false,
+  "location": "/5/",
+  "name": "01 Executive",
+  "namespace": null,
+  "personal_owner_id": null,
+  "slug": "01_executive",
+  "type": null
+ },
+ "collection_id": 6,
+ "collection_position": null,
+ "collection_preview": true,
+ "created_at": "2026-08-28T09:54:48.842798Z",
+ "creator_id": 2,
+ "dashboard": null,
+ "dashboard_id": null,
+ "database_id": 2,
+ "dataset_query": {
+  "database": 2,
+  "lib/type": "mbql/query",
+  "stages": [
+   {
+    "lib/type": "mbql.stage/native",
+    "native": "WITH f AS (\n  SELECT day FROM `wb_mart.V_DASH_FINANCE_CORRECTED_DAILY`\n  WHERE {{day}}\n)\nSELECT SAFE_DIVIDE(SUM(e.period_result_after_product_cogs_rub),\n                   SUM(e.revenue_base_after_product_cogs_rub)) AS margin_after_cogs\nFROM f JOIN `wb_mart.V_DASH_EXECUTIVE_ECONOMICS_DAILY` e USING (day)",
+    "template-tags": [
+     {
+      "dimension": [
+       "field",
+       {
+        "lib/uuid": "81a28eb7-72ea-49fc-a118-3b6d61c524db"
+       },
+       2622
+      ],
+      "display-name": "Период",
+      "id": "85c46edf-adba-4fa9-9f43-1b3011779c2f",
+      "name": "day",
+      "type": "dimension",
+      "widget-type": "date/all-options"
+     }
+    ]
+   }
+  ]
+ },
+ "description": "Результат периода после себестоимости товара, делённый на выручку продавца за те же сутки. Считается как ratio-of-sums: SAFE_DIVIDE(SUM(period_result_after_product_cogs_rub), SUM(revenue_base_after_product_cogs_rub)), а НЕ усреднением посуточных долей — AVG(ratio) даёт другую величину. Числитель и знаменатель гейтятся одной и той же маской after_product_cogs_eligible. Product COGS учтён; fulfillment/FF, OPEX и налог ещё НЕ включены. Показатель не является рентабельностью по чистой прибыли.",
+ "dimension_mappings": null,
+ "dimensions": null,
+ "display": "scalar",
+ "document_id": null,
+ "embedding_params": null,
+ "embedding_type": null,
+ "enable_embedding": false,
+ "entity_id": "DB_SSXaLq412NIgCflJzV",
+ "id": 74,
+ "is_remote_synced": false,
+ "last_used_at": "2026-08-28T10:22:20.275068Z",
+ "legacy_query": null,
+ "metabase_version": "v0.63.15.1 (ab5ffba)",
+ "name": "Рентабельность после себестоимости товара",
+ "param_fields": {
+  "85c46edf-adba-4fa9-9f43-1b3011779c2f": [
+   {
+    "base_type": "type/Date",
+    "dimensions": [],
+    "display_name": "Day",
+    "fk_target_field_id": null,
+    "has_field_values": "none",
+    "id": 2622,
+    "name": "day",
+    "name_field": null,
+    "semantic_type": null,
+    "table_id": 108,
+    "target": null
+   }
+  ]
+ },
+ "parameter_mappings": [],
+ "parameter_usage_count": 0,
+ "parameters": [],
+ "query_type": "native",
+ "source_card_id": null,
+ "table_id": null,
+ "type": "question",
+ "visualization_settings": {
+  "column_settings": {
+   "[\"name\",\"margin_after_cogs\"]": {
+    "decimals": 2,
+    "number_style": "percent"
+   }
+  },
+  "scalar.field": "margin_after_cogs"
+ }
+}

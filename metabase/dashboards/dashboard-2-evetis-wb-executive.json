@@ -1,7 +1,7 @@
 {
  "archived": false,
  "archived_directly": false,
- "auto_apply_filters": true,
+ "auto_apply_filters": false,
  "cache_ttl": null,
  "can_set_cache_policy": true,
  "caveats": null,
@@ -97,13 +97,13 @@
     "enable_embedding": false,
     "entity_id": "zK5OYRiAzSHqILBD-1SCW",
     "id": 40,
-    "last_used_at": "2026-08-27T17:43:39.084433Z",
+    "last_used_at": "2026-08-28T10:15:33.044033Z",
     "legacy_query": null,
     "metabase_version": "v0.63.15.1 (ab5ffba)",
     "name": "Свежесть данных",
     "parameter_mappings": [],
     "parameters": [],
-    "query_average_duration": 7549,
+    "query_average_duration": 8046,
     "query_type": "native",
     "source_card_id": null,
     "table_id": null,
@@ -204,7 +204,7 @@
     "enable_embedding": false,
     "entity_id": "OhjdAmERGYfuDjRLMuRDI",
     "id": 41,
-    "last_used_at": "2026-08-27T17:43:39.084433Z",
+    "last_used_at": "2026-08-28T10:22:12.896084Z",
     "legacy_query": null,
     "metabase_version": "v0.63.15.1 (ab5ffba)",
     "name": "Качество выбранного периода",
@@ -371,7 +371,7 @@
     "enable_embedding": false,
     "entity_id": "3V7cev4MGVAre_wAHzy8M",
     "id": 42,
-    "last_used_at": "2026-08-27T17:39:38.04907Z",
+    "last_used_at": "2026-08-28T10:22:12.896084Z",
     "legacy_query": null,
     "metabase_version": "v0.63.15.1 (ab5ffba)",
     "name": "Заказы, шт",
@@ -486,7 +486,7 @@
     "enable_embedding": false,
     "entity_id": "ujw3jOslRpW_5lbZWfe_J",
     "id": 43,
-    "last_used_at": "2026-08-27T17:39:38.04907Z",
+    "last_used_at": "2026-08-28T10:22:12.896084Z",
     "legacy_query": null,
     "metabase_version": "v0.63.15.1 (ab5ffba)",
     "name": "Выкупы, шт",
@@ -601,7 +601,7 @@
     "enable_embedding": false,
     "entity_id": "jxYMIsLfqFoeruflAx0rO",
     "id": 44,
-    "last_used_at": "2026-08-28T07:11:37.745515Z",
+    "last_used_at": "2026-08-28T10:22:12.896084Z",
     "legacy_query": null,
     "metabase_version": "v0.63.15.1 (ab5ffba)",
     "name": "Выручка, ₽",
@@ -719,7 +719,7 @@
     "enable_embedding": false,
     "entity_id": "4vMtSBt8gYDdY_gqm7Vhe",
     "id": 45,
-    "last_used_at": "2026-08-28T07:11:43.38718Z",
+    "last_used_at": "2026-08-28T10:22:12.896084Z",
     "legacy_query": null,
     "metabase_version": "v0.63.15.1 (ab5ffba)",
     "name": "Доход до себестоимости, ₽",
@@ -837,7 +837,7 @@
     "enable_embedding": false,
     "entity_id": "5x6I3WoNX5W4eZJbiU59N",
     "id": 46,
-    "last_used_at": "2026-08-28T07:11:47.846016Z",
+    "last_used_at": "2026-08-28T10:22:12.896084Z",
     "legacy_query": null,
     "metabase_version": "v0.63.15.1 (ab5ffba)",
     "name": "Реклама, ₽",
@@ -955,7 +955,7 @@
     "enable_embedding": false,
     "entity_id": "GAjrrJAwNvYoesCkUQ0G3",
     "id": 47,
-    "last_used_at": "2026-08-27T17:39:38.04907Z",
+    "last_used_at": "2026-08-28T10:22:12.896084Z",
     "legacy_query": null,
     "metabase_version": "v0.63.15.1 (ab5ffba)",
     "name": "ДРР, %",
@@ -1070,7 +1070,7 @@
     "enable_embedding": false,
     "entity_id": "_ZpSB8Y4ZwCl2Cn4DwMhy",
     "id": 48,
-    "last_used_at": "2026-08-27T17:39:38.04907Z",
+    "last_used_at": "2026-08-28T10:22:12.896084Z",
     "legacy_query": null,
     "metabase_version": "v0.63.15.1 (ab5ffba)",
     "name": "Возвраты, шт",
@@ -1185,7 +1185,7 @@
     "enable_embedding": false,
     "entity_id": "wo8auV1gdB7fAquaO-t34",
     "id": 49,
-    "last_used_at": "2026-08-28T07:11:51.973254Z",
+    "last_used_at": "2026-08-28T10:22:12.896084Z",
     "legacy_query": null,
     "metabase_version": "v0.63.15.1 (ab5ffba)",
     "name": "К перечислению по SKU*, ₽",
@@ -1267,7 +1267,7 @@
    "id": 49,
    "inline_parameters": [],
    "parameter_mappings": [],
-   "row": 18,
+   "row": 21,
    "series": [],
    "size_x": 24,
    "size_y": 1,
@@ -1335,7 +1335,7 @@
     "enable_embedding": false,
     "entity_id": "FLqIu5Fk4VDeVAmOyDVJd",
     "id": 50,
-    "last_used_at": "2026-08-28T07:11:57.32339Z",
+    "last_used_at": "2026-08-28T10:22:20.275068Z",
     "legacy_query": null,
     "metabase_version": "v0.63.15.1 (ab5ffba)",
     "name": "Выручка и вклад по дням",
@@ -1421,7 +1421,7 @@
      ]
     }
    ],
-   "row": 19,
+   "row": 22,
    "series": [],
    "size_x": 24,
    "size_y": 7,
@@ -1443,7 +1443,7 @@
    "id": 51,
    "inline_parameters": [],
    "parameter_mappings": [],
-   "row": 26,
+   "row": 29,
    "series": [],
    "size_x": 24,
    "size_y": 1,
@@ -1464,7 +1464,7 @@
    "card": {
     "archived": false,
     "archived_directly": false,
-    "cache_invalidated_at": "2026-08-28T07:10:34.221753Z",
+    "cache_invalidated_at": "2026-08-28T09:55:12.493982Z",
     "cache_ttl": null,
     "card_schema": 23,
     "collection_id": 6,
@@ -1480,7 +1480,7 @@
      "stages": [
       {
        "lib/type": "mbql.stage/native",
-       "native": "WITH f AS (\n  SELECT day, ad_billing_reconstructed_rub, transit_deduction_rub,\n         unclassified_deduction_rub, classification_conflict_rub\n  FROM `wb_mart.V_DASH_FINANCE_CORRECTED_DAILY`\n  WHERE {{day}}\n),\nb AS (\n  SELECT\n    SUM(k.marketplace_fee_rub)          AS mp,\n    SUM(k.logistics_rub)                AS logi,\n    SUM(k.ad_spend_attributed_rub)      AS ads,\n    SUM(k.storage_rub)                  AS storage,\n    SUM(k.acceptance_rub)               AS acceptance,\n    SUM(k.penalty_account_rub)          AS penalty,\n    SUM(k.reimbursement_account_rub)    AS reimb,\n    SUM(k.other_account_rub)            AS other_acc,\n    SUM(f.transit_deduction_rub)        AS ded_transit,\n    SUM(f.unclassified_deduction_rub)   AS ded_unclass,\n    SUM(f.classification_conflict_rub)  AS ded_conflict,\n    SUM(f.ad_billing_reconstructed_rub) AS ded_ads\n  FROM f\n  JOIN `wb_mart.V_DASH_KPI_DAILY` k USING (day)\n)\nSELECT\n  CASE metric\n    WHEN 'mp'           THEN 'Комиссия WB'\n    WHEN 'logi'         THEN 'Логистика'\n    WHEN 'ads'          THEN 'Реклама, распределённая на SKU'\n    WHEN 'storage'      THEN 'Хранение'\n    WHEN 'acceptance'   THEN 'Приёмка'\n    WHEN 'penalty'      THEN 'Штрафы'\n    WHEN 'reimb'        THEN 'Компенсации'\n    WHEN 'other_acc'    THEN 'Прочее'\n    WHEN 'ded_transit'  THEN 'Удержания WB: транзит поставок'\n    WHEN 'ded_unclass'  THEN 'Удержания WB: прочие и неопознанные'\n    WHEN 'ded_conflict' THEN 'Удержания WB: конфликт классификации'\n    WHEN 'ded_ads'      THEN 'Рекламный биллинг WB (контроль, уже учтён)'\n  END AS cost_item,\n  amount_rub\nFROM b UNPIVOT (amount_rub FOR metric IN (\n  mp, logi, ads, storage, acceptance, penalty, reimb, other_acc,\n  ded_transit, ded_unclass, ded_conflict, ded_ads))\nWHERE amount_rub IS NOT NULL AND amount_rub <> 0\nORDER BY (metric = 'ded_ads'), amount_rub DESC",
+       "native": "WITH f AS (\n  SELECT day, ad_billing_reconstructed_rub, transit_deduction_rub,\n         unclassified_deduction_rub, classification_conflict_rub\n  FROM `wb_mart.V_DASH_FINANCE_CORRECTED_DAILY`\n  WHERE {{day}}\n),\nb AS (\n  SELECT\n    SUM(k.marketplace_fee_rub)          AS mp,\n    SUM(k.logistics_rub)                AS logi,\n    SUM(k.ad_spend_attributed_rub)      AS ads,\n    SUM(k.storage_rub)                  AS storage,\n    SUM(k.acceptance_rub)               AS acceptance,\n    SUM(k.penalty_account_rub)          AS penalty,\n    SUM(k.reimbursement_account_rub)    AS reimb,\n    SUM(k.other_account_rub)            AS other_acc,\n    SUM(f.transit_deduction_rub)        AS ded_transit,\n    SUM(f.unclassified_deduction_rub)   AS ded_unclass,\n    SUM(f.classification_conflict_rub)  AS ded_conflict,\n    SUM(IF(e.after_product_cogs_eligible, e.product_cogs_rub, NULL)) AS cogs,\n    SUM(f.ad_billing_reconstructed_rub) AS ded_ads\n  FROM f\n  JOIN `wb_mart.V_DASH_KPI_DAILY` k USING (day)\n  JOIN `wb_mart.V_DASH_EXECUTIVE_ECONOMICS_DAILY` e USING (day)\n)\nSELECT\n  CASE metric\n    WHEN 'mp'           THEN 'Комиссия WB'\n    WHEN 'cogs'         THEN 'Себестоимость товара'\n    WHEN 'logi'         THEN 'Логистика'\n    WHEN 'ads'          THEN 'Реклама, распределённая на SKU'\n    WHEN 'storage'      THEN 'Хранение'\n    WHEN 'acceptance'   THEN 'Приёмка'\n    WHEN 'penalty'      THEN 'Штрафы'\n    WHEN 'reimb'        THEN 'Компенсации'\n    WHEN 'other_acc'    THEN 'Прочее'\n    WHEN 'ded_transit'  THEN 'Удержания WB: транзит поставок'\n    WHEN 'ded_unclass'  THEN 'Удержания WB: прочие и неопознанные'\n    WHEN 'ded_conflict' THEN 'Удержания WB: конфликт классификации'\n    WHEN 'ded_ads'      THEN 'Рекламный биллинг WB (контроль, уже учтён)'\n  END AS cost_item,\n  amount_rub\nFROM b UNPIVOT (amount_rub FOR metric IN (\n  mp, cogs, logi, ads, storage, acceptance, penalty, reimb, other_acc,\n  ded_transit, ded_unclass, ded_conflict, ded_ads))\nWHERE amount_rub IS NOT NULL AND amount_rub <> 0\nORDER BY (metric = 'ded_ads'), amount_rub DESC",
        "template-tags": [
         {
          "dimension": [
@@ -1500,7 +1500,7 @@
       }
      ]
     },
-    "description": "Структура затрат за выбранный период. Комиссия WB, Логистика и Реклама разносятся WB по SKU; Хранение, Приёмка, Штрафы, Компенсации и Удержания приходят на уровне кабинета — источник не даёт связки с товаром. Операция WB «Удержание» разложена по классификатору Stage 3.1C: транзит поставок, прочие и неопознанные удержания, конфликт классификации. Рекламный биллинг WB показан отдельной контрольной строкой и НЕ является второй статьёй расхода: реклама уже вычтена как attributed внутри дохода до себестоимости. Различайте: «Реклама, распределённая на SKU» (attributed) — расход; «Рекламный биллинг WB» (billed) — фактическое списание с баланса кабинета; разница billed − attributed (unallocated) — разрыв сверки, а не статья затрат. Сознательно НЕ показаны wb_reward_rub и acquiring_sku_rub: по контракту v1 REV2.4 они уже внутри спреда между ценой продавца и суммой к перечислению. Себестоимости товара здесь нет. Горизонтальные полосы выбраны вместо waterfall: затраты приходят из двух разных слоёв и не образуют одну аддитивную цепочку. Источник: wb_mart.V_DASH_FINANCE_CORRECTED_DAILY + V_DASH_KPI_DAILY.",
+    "description": "Структура затрат за выбранный период. Комиссия WB, Логистика и Реклама разносятся WB по SKU; Хранение, Приёмка, Штрафы, Компенсации и Удержания приходят на уровне кабинета — источник не даёт связки с товаром. Операция WB «Удержание» разложена по классификатору Stage 3.1C: транзит поставок, прочие и неопознанные удержания, конфликт классификации. Себестоимость товара (Product COGS) добавлена как отдельная реальная статья расхода из слоя Stage 3.1D. Рекламный биллинг WB показан отдельной контрольной строкой и НЕ является второй статьёй расхода: реклама уже вычтена как attributed внутри дохода до себестоимости. Различайте: «Реклама, распределённая на SKU» (attributed) — расход; «Рекламный биллинг WB» (billed) — фактическое списание с баланса кабинета; разница billed − attributed (unallocated) — разрыв сверки, а не статья затрат. ВАЖНО, CROSS-BASE: диаграмма сознательно смешивает разные временные базы согласно контракту дашборда v2. Себестоимость товара относится к operational buyout basis (дата выкупа); комиссия, логистика, хранение и удержания — к дате финансовой операции; реклама — к дате рекламной активности. Поэтому картина управленчески осмысленна на горизонте от недели, а не на отдельных сутках. Сознательно НЕ показаны wb_reward_rub и acquiring_sku_rub: по контракту v1 REV2.4 они уже внутри спреда между ценой продавца и суммой к перечислению. Горизонтальные полосы выбраны вместо waterfall: затраты приходят из разных слоёв и не образуют одну аддитивную цепочку. Источники: wb_mart.V_DASH_EXECUTIVE_ECONOMICS_DAILY + V_DASH_FINANCE_CORRECTED_DAILY + V_DASH_KPI_DAILY.",
     "dimension_mappings": null,
     "dimensions": null,
     "display": "row",
@@ -1511,7 +1511,7 @@
     "enable_embedding": false,
     "entity_id": "sP0TcBbqSZCY-Z82W-IKN",
     "id": 51,
-    "last_used_at": "2026-08-28T07:11:09.698819Z",
+    "last_used_at": "2026-08-28T10:22:20.275068Z",
     "legacy_query": null,
     "metabase_version": "v0.63.15.1 (ab5ffba)",
     "name": "Структура затрат за период",
@@ -1579,7 +1579,7 @@
      ]
     }
    ],
-   "row": 27,
+   "row": 30,
    "series": [],
    "size_x": 24,
    "size_y": 8,
@@ -1601,7 +1601,7 @@
    "id": 53,
    "inline_parameters": [],
    "parameter_mappings": [],
-   "row": 35,
+   "row": 38,
    "series": [],
    "size_x": 24,
    "size_y": 1,
@@ -1683,7 +1683,7 @@
     "enable_embedding": false,
     "entity_id": "LuPy2relmB6JfNCBgzv2t",
     "id": 52,
-    "last_used_at": "2026-08-27T17:39:40.505701Z",
+    "last_used_at": "2026-08-28T10:22:20.275068Z",
     "legacy_query": null,
     "metabase_version": "v0.63.15.1 (ab5ffba)",
     "name": "SKU за период",
@@ -1800,7 +1800,7 @@
      ]
     }
    ],
-   "row": 36,
+   "row": 39,
    "series": [],
    "size_x": 24,
    "size_y": 9,
@@ -1891,7 +1891,7 @@
     "enable_embedding": false,
     "entity_id": "xHRFz-D8n9OnzHYkwPC7F",
     "id": 53,
-    "last_used_at": "2026-08-28T07:10:54.617023Z",
+    "last_used_at": "2026-08-28T10:22:12.896084Z",
     "legacy_query": null,
     "metabase_version": "v0.63.15.1 (ab5ffba)",
     "name": "Результат периода до себестоимости",
@@ -1939,7 +1939,7 @@
    ],
    "row": 15,
    "series": [],
-   "size_x": 12,
+   "size_x": 8,
    "size_y": 3,
    "visualization_settings": {}
   },
@@ -1995,7 +1995,7 @@
     "enable_embedding": false,
     "entity_id": "-iKoChmzY-b4AosEvxnRS",
     "id": 54,
-    "last_used_at": "2026-08-28T07:11:02.188513Z",
+    "last_used_at": "2026-08-28T10:22:12.896084Z",
     "legacy_query": null,
     "metabase_version": "v0.63.15.1 (ab5ffba)",
     "name": "Рентабельность до себестоимости",
@@ -2017,7 +2017,7 @@
     }
    },
    "card_id": 54,
-   "col": 12,
+   "col": 0,
    "collection_authority_level": null,
    "created_at": "2026-08-26T20:17:02.685174Z",
    "dashboard_id": 2,
@@ -2038,7 +2038,7 @@
      ]
     }
    ],
-   "row": 15,
+   "row": 18,
    "series": [],
    "size_x": 12,
    "size_y": 3,
@@ -2096,7 +2096,7 @@
     "enable_embedding": false,
     "entity_id": "65chXD4wAKqRX_ZkvE4gL",
     "id": 55,
-    "last_used_at": "2026-08-27T17:39:38.04907Z",
+    "last_used_at": "2026-08-28T10:22:12.896084Z",
     "legacy_query": null,
     "metabase_version": "v0.63.15.1 (ab5ffba)",
     "name": "Отменено, шт",
@@ -2142,6 +2142,315 @@
    "row": 5,
    "series": [],
    "size_x": 8,
+   "size_y": 3,
+   "visualization_settings": {}
+  },
+  {
+   "action_id": null,
+   "card": {
+    "archived": false,
+    "archived_directly": false,
+    "cache_invalidated_at": null,
+    "cache_ttl": null,
+    "card_schema": 23,
+    "collection_id": 6,
+    "collection_position": null,
+    "collection_preview": true,
+    "created_at": "2026-08-28T09:54:44.622283Z",
+    "creator_id": 2,
+    "dashboard_id": null,
+    "database_id": 2,
+    "dataset_query": {
+     "database": 2,
+     "lib/type": "mbql/query",
+     "stages": [
+      {
+       "lib/type": "mbql.stage/native",
+       "native": "WITH f AS (\n  SELECT day FROM `wb_mart.V_DASH_FINANCE_CORRECTED_DAILY`\n  WHERE {{day}}\n)\nSELECT SUM(IF(e.after_product_cogs_eligible, e.product_cogs_rub, NULL)) AS product_cogs_rub\nFROM f JOIN `wb_mart.V_DASH_EXECUTIVE_ECONOMICS_DAILY` e USING (day)",
+       "template-tags": [
+        {
+         "dimension": [
+          "field",
+          {
+           "lib/uuid": "b39fe8c4-7593-4a55-8a2b-8ba8d09c4f73"
+          },
+          2622
+         ],
+         "display-name": "Период",
+         "id": "de544032-26e8-42be-b91b-7ceeab9fbbda",
+         "name": "day",
+         "type": "dimension",
+         "widget-type": "date/all-options"
+        }
+       ]
+      }
+     ]
+    },
+    "description": "Себестоимость товара (Product COGS) за выбранный период: закупка, Китай, таможня и доставка ДО фулфилмента. Источник: wb_mart.V_DASH_EXECUTIVE_ECONOMICS_DAILY.product_cogs_rub, серия operational — себестоимость единиц ВЫКУПА, тех же самых, из которых считается выручка и доход до себестоимости. Возврат сторнирует себестоимость исходной продажи, а не себестоимость на дату возврата. Показывается только по суткам совместимого after-COGS универсума (after_product_cogs_eligible): если себестоимость хотя бы одной строки витрины за сутки не разрешена, сутки не участвуют — неизвестное не превращается в ноль. НЕ включает операции фулфилмента, OPEX и налог. Product COGS учтён; fulfillment/FF, OPEX и налог ещё НЕ включены. Показатель не является чистой прибылью.",
+    "dimension_mappings": null,
+    "dimensions": null,
+    "display": "scalar",
+    "document_id": null,
+    "download_perms": "full",
+    "embedding_params": null,
+    "embedding_type": null,
+    "enable_embedding": false,
+    "entity_id": "1dmQRES2x6tII-7tExRxG",
+    "id": 72,
+    "last_used_at": "2026-08-28T10:22:12.896084Z",
+    "legacy_query": null,
+    "metabase_version": "v0.63.15.1 (ab5ffba)",
+    "name": "Себестоимость товара",
+    "parameter_mappings": [],
+    "parameters": [],
+    "query_average_duration": null,
+    "query_type": "native",
+    "source_card_id": null,
+    "table_id": null,
+    "type": "question",
+    "visualization_settings": {
+     "column_settings": {
+      "[\"name\",\"product_cogs_rub\"]": {
+       "currency": "RUB",
+       "currency_in_header": false,
+       "currency_style": "symbol",
+       "decimals": 0,
+       "number_style": "currency"
+      }
+     },
+     "scalar.field": "product_cogs_rub"
+    }
+   },
+   "card_id": 72,
+   "col": 8,
+   "collection_authority_level": null,
+   "created_at": "2026-08-28T09:55:47.530402Z",
+   "dashboard_id": 2,
+   "dashboard_tab_id": null,
+   "entity_id": "UprZMpz9Ven2ZnQmgp0nA",
+   "id": 105,
+   "inline_parameters": [],
+   "parameter_mappings": [
+    {
+     "card_id": 72,
+     "parameter_id": "date",
+     "target": [
+      "dimension",
+      [
+       "template-tag",
+       "day"
+      ]
+     ]
+    }
+   ],
+   "row": 15,
+   "series": [],
+   "size_x": 8,
+   "size_y": 3,
+   "visualization_settings": {}
+  },
+  {
+   "action_id": null,
+   "card": {
+    "archived": false,
+    "archived_directly": false,
+    "cache_invalidated_at": null,
+    "cache_ttl": null,
+    "card_schema": 23,
+    "collection_id": 6,
+    "collection_position": null,
+    "collection_preview": true,
+    "created_at": "2026-08-28T09:54:46.728166Z",
+    "creator_id": 2,
+    "dashboard_id": null,
+    "database_id": 2,
+    "dataset_query": {
+     "database": 2,
+     "lib/type": "mbql/query",
+     "stages": [
+      {
+       "lib/type": "mbql.stage/native",
+       "native": "WITH f AS (\n  SELECT day FROM `wb_mart.V_DASH_FINANCE_CORRECTED_DAILY`\n  WHERE {{day}}\n)\nSELECT SUM(e.period_result_after_product_cogs_rub) AS period_result_after_cogs_rub\nFROM f JOIN `wb_mart.V_DASH_EXECUTIVE_ECONOMICS_DAILY` e USING (day)",
+       "template-tags": [
+        {
+         "dimension": [
+          "field",
+          {
+           "lib/uuid": "4b4dc615-2c14-422e-8e8f-636b9d3cb85f"
+          },
+          2622
+         ],
+         "display-name": "Период",
+         "id": "720de0e0-2403-4831-bd7d-5597045bcf03",
+         "name": "day",
+         "type": "dimension",
+         "widget-type": "date/all-options"
+        }
+       ]
+      }
+     ]
+    },
+    "description": "Результат периода до себестоимости МИНУС себестоимость товара. Источник: wb_mart.V_DASH_EXECUTIVE_ECONOMICS_DAILY.period_result_after_product_cogs_rub = period_result_pre_cogs_corrected_rub − product_cogs_rub, только на суточном универсуме after_product_cogs_eligible. Product COGS учтён; fulfillment/FF, OPEX и налог ещё НЕ включены. Показатель не является чистой прибылью, не является операционной прибылью и не является EBITDA.",
+    "dimension_mappings": null,
+    "dimensions": null,
+    "display": "scalar",
+    "document_id": null,
+    "download_perms": "full",
+    "embedding_params": null,
+    "embedding_type": null,
+    "enable_embedding": false,
+    "entity_id": "w5DXDu4rusqu8LIffsaiq",
+    "id": 73,
+    "last_used_at": "2026-08-28T10:22:12.896084Z",
+    "legacy_query": null,
+    "metabase_version": "v0.63.15.1 (ab5ffba)",
+    "name": "Результат периода после себестоимости товара",
+    "parameter_mappings": [],
+    "parameters": [],
+    "query_average_duration": null,
+    "query_type": "native",
+    "source_card_id": null,
+    "table_id": null,
+    "type": "question",
+    "visualization_settings": {
+     "column_settings": {
+      "[\"name\",\"period_result_after_cogs_rub\"]": {
+       "currency": "RUB",
+       "currency_in_header": false,
+       "currency_style": "symbol",
+       "decimals": 0,
+       "number_style": "currency"
+      }
+     },
+     "scalar.field": "period_result_after_cogs_rub"
+    }
+   },
+   "card_id": 73,
+   "col": 16,
+   "collection_authority_level": null,
+   "created_at": "2026-08-28T09:55:47.530402Z",
+   "dashboard_id": 2,
+   "dashboard_tab_id": null,
+   "entity_id": "Y3k_KKUsJN4dvnmrX6fEU",
+   "id": 106,
+   "inline_parameters": [],
+   "parameter_mappings": [
+    {
+     "card_id": 73,
+     "parameter_id": "date",
+     "target": [
+      "dimension",
+      [
+       "template-tag",
+       "day"
+      ]
+     ]
+    }
+   ],
+   "row": 15,
+   "series": [],
+   "size_x": 8,
+   "size_y": 3,
+   "visualization_settings": {}
+  },
+  {
+   "action_id": null,
+   "card": {
+    "archived": false,
+    "archived_directly": false,
+    "cache_invalidated_at": null,
+    "cache_ttl": null,
+    "card_schema": 23,
+    "collection_id": 6,
+    "collection_position": null,
+    "collection_preview": true,
+    "created_at": "2026-08-28T09:54:48.842798Z",
+    "creator_id": 2,
+    "dashboard_id": null,
+    "database_id": 2,
+    "dataset_query": {
+     "database": 2,
+     "lib/type": "mbql/query",
+     "stages": [
+      {
+       "lib/type": "mbql.stage/native",
+       "native": "WITH f AS (\n  SELECT day FROM `wb_mart.V_DASH_FINANCE_CORRECTED_DAILY`\n  WHERE {{day}}\n)\nSELECT SAFE_DIVIDE(SUM(e.period_result_after_product_cogs_rub),\n                   SUM(e.revenue_base_after_product_cogs_rub)) AS margin_after_cogs\nFROM f JOIN `wb_mart.V_DASH_EXECUTIVE_ECONOMICS_DAILY` e USING (day)",
+       "template-tags": [
+        {
+         "dimension": [
+          "field",
+          {
+           "lib/uuid": "81a28eb7-72ea-49fc-a118-3b6d61c524db"
+          },
+          2622
+         ],
+         "display-name": "Период",
+         "id": "85c46edf-adba-4fa9-9f43-1b3011779c2f",
+         "name": "day",
+         "type": "dimension",
+         "widget-type": "date/all-options"
+        }
+       ]
+      }
+     ]
+    },
+    "description": "Результат периода после себестоимости товара, делённый на выручку продавца за те же сутки. Считается как ratio-of-sums: SAFE_DIVIDE(SUM(period_result_after_product_cogs_rub), SUM(revenue_base_after_product_cogs_rub)), а НЕ усреднением посуточных долей — AVG(ratio) даёт другую величину. Числитель и знаменатель гейтятся одной и той же маской after_product_cogs_eligible. Product COGS учтён; fulfillment/FF, OPEX и налог ещё НЕ включены. Показатель не является рентабельностью по чистой прибыли.",
+    "dimension_mappings": null,
+    "dimensions": null,
+    "display": "scalar",
+    "document_id": null,
+    "download_perms": "full",
+    "embedding_params": null,
+    "embedding_type": null,
+    "enable_embedding": false,
+    "entity_id": "DB_SSXaLq412NIgCflJzV",
+    "id": 74,
+    "last_used_at": "2026-08-28T10:22:20.275068Z",
+    "legacy_query": null,
+    "metabase_version": "v0.63.15.1 (ab5ffba)",
+    "name": "Рентабельность после себестоимости товара",
+    "parameter_mappings": [],
+    "parameters": [],
+    "query_average_duration": null,
+    "query_type": "native",
+    "source_card_id": null,
+    "table_id": null,
+    "type": "question",
+    "visualization_settings": {
+     "column_settings": {
+      "[\"name\",\"margin_after_cogs\"]": {
+       "decimals": 2,
+       "number_style": "percent"
+      }
+     },
+     "scalar.field": "margin_after_cogs"
+    }
+   },
+   "card_id": 74,
+   "col": 12,
+   "collection_authority_level": null,
+   "created_at": "2026-08-28T09:55:47.530402Z",
+   "dashboard_id": 2,
+   "dashboard_tab_id": null,
+   "entity_id": "vdNHqHAkEWUS3U4dU-MQH",
+   "id": 107,
+   "inline_parameters": [],
+   "parameter_mappings": [
+    {
+     "card_id": 74,
+     "parameter_id": "date",
+     "target": [
+      "dimension",
+      [
+       "template-tag",
+       "day"
+      ]
+     ]
+    }
+   ],
+   "row": 18,
+   "series": [],
+   "size_x": 12,
    "size_y": 3,
    "visualization_settings": {}
   }
@@ -2260,6 +2569,21 @@
     "target": null
    }
   ],
+  "720de0e0-2403-4831-bd7d-5597045bcf03": [
+   {
+    "base_type": "type/Date",
+    "dimensions": [],
+    "display_name": "Day",
+    "fk_target_field_id": null,
+    "has_field_values": "none",
+    "id": 2622,
+    "name": "day",
+    "name_field": null,
+    "semantic_type": null,
+    "table_id": 108,
+    "target": null
+   }
+  ],
   "7a165502-4c08-46b4-92b2-f6671999719a": [
    {
     "base_type": "type/Date",
@@ -2272,6 +2596,21 @@
     "name_field": null,
     "semantic_type": null,
     "table_id": 38,
+    "target": null
+   }
+  ],
+  "85c46edf-adba-4fa9-9f43-1b3011779c2f": [
+   {
+    "base_type": "type/Date",
+    "dimensions": [],
+    "display_name": "Day",
+    "fk_target_field_id": null,
+    "has_field_values": "none",
+    "id": 2622,
+    "name": "day",
+    "name_field": null,
+    "semantic_type": null,
+    "table_id": 108,
     "target": null
    }
   ],
@@ -2403,6 +2742,21 @@
     "name_field": null,
     "semantic_type": null,
     "table_id": 39,
+    "target": null
+   }
+  ],
+  "de544032-26e8-42be-b91b-7ceeab9fbbda": [
+   {
+    "base_type": "type/Date",
+    "dimensions": [],
+    "display_name": "Day",
+    "fk_target_field_id": null,
+    "has_field_values": "none",
+    "id": 2622,
+    "name": "day",
+    "name_field": null,
+    "semantic_type": null,
+    "table_id": 108,
     "target": null
    }
   ],

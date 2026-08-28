@@ -1,0 +1,110 @@
+{
+ "archived": false,
+ "archived_directly": false,
+ "cache_invalidated_at": null,
+ "cache_ttl": null,
+ "card_schema": 23,
+ "collection": {
+  "archive_operation_id": null,
+  "archived": false,
+  "archived_directly": null,
+  "authority_level": null,
+  "created_at": "2026-08-26T15:19:56.740614Z",
+  "description": "Executive MVP: что происходит с бизнесом и зарабатываем ли мы деньги.",
+  "entity_id": "EZUYQWsC5fdY9QqGY-xKC",
+  "id": 6,
+  "is_remote_synced": false,
+  "is_sample": false,
+  "location": "/5/",
+  "name": "01 Executive",
+  "namespace": null,
+  "personal_owner_id": null,
+  "slug": "01_executive",
+  "type": null
+ },
+ "collection_id": 6,
+ "collection_position": null,
+ "collection_preview": true,
+ "created_at": "2026-08-28T09:54:44.622283Z",
+ "creator_id": 2,
+ "dashboard": null,
+ "dashboard_id": null,
+ "database_id": 2,
+ "dataset_query": {
+  "database": 2,
+  "lib/type": "mbql/query",
+  "stages": [
+   {
+    "lib/type": "mbql.stage/native",
+    "native": "WITH f AS (\n  SELECT day FROM `wb_mart.V_DASH_FINANCE_CORRECTED_DAILY`\n  WHERE {{day}}\n)\nSELECT SUM(IF(e.after_product_cogs_eligible, e.product_cogs_rub, NULL)) AS product_cogs_rub\nFROM f JOIN `wb_mart.V_DASH_EXECUTIVE_ECONOMICS_DAILY` e USING (day)",
+    "template-tags": [
+     {
+      "dimension": [
+       "field",
+       {
+        "lib/uuid": "b39fe8c4-7593-4a55-8a2b-8ba8d09c4f73"
+       },
+       2622
+      ],
+      "display-name": "Период",
+      "id": "de544032-26e8-42be-b91b-7ceeab9fbbda",
+      "name": "day",
+      "type": "dimension",
+      "widget-type": "date/all-options"
+     }
+    ]
+   }
+  ]
+ },
+ "description": "Себестоимость товара (Product COGS) за выбранный период: закупка, Китай, таможня и доставка ДО фулфилмента. Источник: wb_mart.V_DASH_EXECUTIVE_ECONOMICS_DAILY.product_cogs_rub, серия operational — себестоимость единиц ВЫКУПА, тех же самых, из которых считается выручка и доход до себестоимости. Возврат сторнирует себестоимость исходной продажи, а не себестоимость на дату возврата. Показывается только по суткам совместимого after-COGS универсума (after_product_cogs_eligible): если себестоимость хотя бы одной строки витрины за сутки не разрешена, сутки не участвуют — неизвестное не превращается в ноль. НЕ включает операции фулфилмента, OPEX и налог. Product COGS учтён; fulfillment/FF, OPEX и налог ещё НЕ включены. Показатель не является чистой прибылью.",
+ "dimension_mappings": null,
+ "dimensions": null,
+ "display": "scalar",
+ "document_id": null,
+ "embedding_params": null,
+ "embedding_type": null,
+ "enable_embedding": false,
+ "entity_id": "1dmQRES2x6tII-7tExRxG",
+ "id": 72,
+ "is_remote_synced": false,
+ "last_used_at": "2026-08-28T10:22:12.896084Z",
+ "legacy_query": null,
+ "metabase_version": "v0.63.15.1 (ab5ffba)",
+ "name": "Себестоимость товара",
+ "param_fields": {
+  "de544032-26e8-42be-b91b-7ceeab9fbbda": [
+   {
+    "base_type": "type/Date",
+    "dimensions": [],
+    "display_name": "Day",
+    "fk_target_field_id": null,
+    "has_field_values": "none",
+    "id": 2622,
+    "name": "day",
+    "name_field": null,
+    "semantic_type": null,
+    "table_id": 108,
+    "target": null
+   }
+  ]
+ },
+ "parameter_mappings": [],
+ "parameter_usage_count": 0,
+ "parameters": [],
+ "query_type": "native",
+ "source_card_id": null,
+ "table_id": null,
+ "type": "question",
+ "visualization_settings": {
+  "column_settings": {
+   "[\"name\",\"product_cogs_rub\"]": {
+    "currency": "RUB",
+    "currency_in_header": false,
+    "currency_style": "symbol",
+    "decimals": 0,
+    "number_style": "currency"
+   }
+  },
+  "scalar.field": "product_cogs_rub"
+ }
+}
