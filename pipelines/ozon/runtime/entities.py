@@ -267,7 +267,16 @@ def _csv_rows(text):
 
 
 def _rub(v):
-    return float((v or "0").replace(",", ".").replace("\xa0", "").replace(" ", "") or 0)
+    """Число из CSV Performance API. Прочерк — «не определено», а не ноль.
+
+    В исторических отчётах ДРР и «Заказано на сумму» приходят как "-", когда
+    показатель не определён. Возвращаем None: ноль исказил бы смысл.
+    """
+    t = (v or "0").replace(",", ".").replace("\xa0", "").replace(" ", "") or "0"
+    try:
+        return float(t)
+    except ValueError:
+        return None
 
 
 def ads_expense_daily(run_id, ts, frm, to):
@@ -354,9 +363,11 @@ def ads_sku_daily(run_id, ts, frm, to):
                 iso = f"{dd[6:10]}-{dd[3:5]}-{dd[0:2]}"
                 rows.append(dict(date=iso, campaign_id=cid, sku=sku,
                     attributed_spend_rub=_rub(r.get("Расход, ₽, с НДС")),
-                    impressions=int(_rub(r.get("Показы"))), clicks=int(_rub(r.get("Клики"))),
-                    cart_adds=int(_rub(r.get("Добавления в корзину"))),
-                    orders=int(_rub(r.get("Продано товаров"))),
+                    # счётчики: отсутствие показателя — ноль наблюдений, а не NULL
+                    impressions=int(_rub(r.get("Показы")) or 0),
+                    clicks=int(_rub(r.get("Клики")) or 0),
+                    cart_adds=int(_rub(r.get("Добавления в корзину")) or 0),
+                    orders=int(_rub(r.get("Продано товаров")) or 0),
                     revenue_promo_rub=_rub(r.get("Продажи в продвижении, ₽")),
                     ordered_total_rub=_rub(r.get("Заказано на сумму, ₽")),
                     drr_promo_pct=_rub(r.get("ДРР в продвижении, %")),

@@ -74,7 +74,11 @@ def _request(req, attempt=0, raw_text=False):
     try:
         with urllib.request.urlopen(req, timeout=180) as r:
             body = r.read()
-            return r.status, (body.decode("utf-8") if raw_text else json.loads(body))
+            # surrogateescape: отчёты Performance API приходят ZIP-архивом, строгий
+            # utf-8 на них падает. Round-trip .encode("utf-8","surrogateescape")
+            # в entities.py восстанавливает байты один в один.
+            return r.status, (body.decode("utf-8", "surrogateescape")
+                              if raw_text else json.loads(body))
     except urllib.error.HTTPError as e:
         payload = e.read().decode("utf-8", "replace")
         if e.code in (429, 500, 502, 503, 504) and attempt < len(BACKOFF):
