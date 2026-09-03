@@ -1,0 +1,61 @@
+plan,cluster,cluster_class,allocation_type,current_fbo_stock,units_per_available_day,sep_demand_estimate,target_days_of_cover,target_stock,ship_qty,priority,confidence,reason
+PLAN_A,"Москва, МО и Дальние регионы",A_PROVEN_HIGH,DEMAND,14,0.787,33.0,30,33,19,P2,HIGH,скорость 0.787/дн × рост ×1.4 × 30 дн
+PLAN_A,Ростов,A_PROVEN_HIGH,DEMAND,0,0.637,26.7,30,27,27,P0,HIGH,скорость 0.637/дн × рост ×1.4 × 30 дн
+PLAN_A,Пермь,B_PROVEN_MEDIUM,DEMAND,11,0.606,25.4,30,25,14,P2,LOW,скорость 0.606/дн × рост ×1.4 × 30 дн
+PLAN_A,Уфа,B_PROVEN_MEDIUM,DEMAND,16,0.529,22.2,30,22,6,P2,LOW,скорость 0.529/дн × рост ×1.4 × 30 дн
+PLAN_A,Казань,B_PROVEN_MEDIUM,DEMAND,40,0.412,17.3,30,17,0,P2,MEDIUM,скорость 0.412/дн × рост ×1.4 × 30 дн
+PLAN_A,Санкт-Петербург и СЗО,B_PROVEN_MEDIUM,DEMAND,49,0.398,16.7,30,17,0,P2,MEDIUM,скорость 0.398/дн × рост ×1.4 × 30 дн
+PLAN_A,Самара,B_PROVEN_MEDIUM,DEMAND,0,0.22,9.2,30,9,9,P0,MEDIUM,скорость 0.22/дн × рост ×1.4 × 30 дн
+PLAN_A,Красноярск,C_NEW,COVERAGE,27,0.176,7.4,30,12,0,P2,LOW,"DEMAND_NOT_OBSERVED, доступен 51 дн — тестовый ассортиментный сид"
+PLAN_A,Екатеринбург,B_PROVEN_MEDIUM,DEMAND,4,0.153,6.4,30,6,2,P2,MEDIUM,скорость 0.153/дн × рост ×1.4 × 30 дн
+PLAN_A,Краснодар,D_LOW_DEMAND_SUFFICIENT_HISTORY,COVERAGE,5,0.129,5.4,30,0,0,P3,LOW,"история достаточна, спрос 11 шт — минимальное присутствие"
+PLAN_A,Ярославль,D_LOW_DEMAND_SUFFICIENT_HISTORY,COVERAGE,8,0.105,4.4,30,0,0,P3,LOW,"история достаточна, спрос 8 шт — минимальное присутствие"
+PLAN_A,Невинномысск,C_NEW,COVERAGE,0,0.062,2.6,30,12,12,P2,LOW,"DEMAND_NOT_OBSERVED, доступен 16 дн — тестовый ассортиментный сид"
+PLAN_A,Саратов,D_LOW_DEMAND_SUFFICIENT_HISTORY,COVERAGE,3,0.06,2.5,30,0,0,P3,LOW,"история достаточна, спрос 5 шт — минимальное присутствие"
+PLAN_A,Воронеж,D_LOW_DEMAND_SUFFICIENT_HISTORY,COVERAGE,0,0.057,2.4,30,0,0,P3,LOW,"история достаточна, спрос 5 шт — минимальное присутствие"
+PLAN_A,Тюмень,C_NEW,COVERAGE,0,0.032,1.3,30,12,12,P2,LOW,"DEMAND_NOT_OBSERVED, доступен 31 дн — тестовый ассортиментный сид"
+PLAN_A,Тверь,D_LOW_DEMAND_SUFFICIENT_HISTORY,COVERAGE,0,0.03,1.3,30,0,0,P3,LOW,"история достаточна, спрос 2 шт — минимальное присутствие"
+PLAN_A,Омск,D_LOW_DEMAND_SUFFICIENT_HISTORY,COVERAGE,0,0.023,1.0,30,0,0,P3,LOW,"история достаточна, спрос 2 шт — минимальное присутствие"
+PLAN_A,Дальний Восток,D_LOW_DEMAND_SUFFICIENT_HISTORY,COVERAGE,1,0.0,0.0,30,0,0,P3,LOW,"история достаточна, спрос 0 шт — минимальное присутствие"
+PLAN_A,Новосибирск,D_LOW_DEMAND_SUFFICIENT_HISTORY,COVERAGE,0,0.0,0.0,30,0,0,P3,LOW,"история достаточна, спрос 0 шт — минимальное присутствие"
+PLAN_A,Оренбург,D_LOW_DEMAND_SUFFICIENT_HISTORY,COVERAGE,2,0.0,0.0,30,0,0,P3,LOW,"история достаточна, спрос 0 шт — минимальное присутствие"
+PLAN_B,"Москва, МО и Дальние регионы",A_PROVEN_HIGH,DEMAND,14,0.787,59.4,45,89,75,P2,HIGH,скорость 0.787/дн × рост ×2.5 × 45 дн
+PLAN_B,Ростов,A_PROVEN_HIGH,DEMAND,0,0.637,48.0,45,72,72,P0,HIGH,скорость 0.637/дн × рост ×2.5 × 45 дн
+PLAN_B,Пермь,B_PROVEN_MEDIUM,DEMAND,11,0.606,45.7,45,69,58,P2,LOW,скорость 0.606/дн × рост ×2.5 × 45 дн
+PLAN_B,Уфа,B_PROVEN_MEDIUM,DEMAND,16,0.529,39.9,45,60,44,P2,LOW,скорость 0.529/дн × рост ×2.5 × 45 дн
+PLAN_B,Казань,B_PROVEN_MEDIUM,DEMAND,40,0.412,31.1,45,47,7,P2,MEDIUM,скорость 0.412/дн × рост ×2.5 × 45 дн
+PLAN_B,Санкт-Петербург и СЗО,B_PROVEN_MEDIUM,DEMAND,49,0.398,30.0,45,45,0,P2,MEDIUM,скорость 0.398/дн × рост ×2.5 × 45 дн
+PLAN_B,Самара,B_PROVEN_MEDIUM,DEMAND,0,0.22,16.6,45,25,25,P0,MEDIUM,скорость 0.22/дн × рост ×2.5 × 45 дн
+PLAN_B,Красноярск,C_NEW,COVERAGE,27,0.176,13.3,45,20,0,P2,LOW,"DEMAND_NOT_OBSERVED, доступен 51 дн — тестовый ассортиментный сид"
+PLAN_B,Екатеринбург,B_PROVEN_MEDIUM,DEMAND,4,0.153,11.5,45,17,13,P2,MEDIUM,скорость 0.153/дн × рост ×2.5 × 45 дн
+PLAN_B,Краснодар,D_LOW_DEMAND_SUFFICIENT_HISTORY,COVERAGE,5,0.129,9.7,45,10,5,P3,LOW,"история достаточна, спрос 11 шт — минимальное присутствие"
+PLAN_B,Ярославль,D_LOW_DEMAND_SUFFICIENT_HISTORY,COVERAGE,8,0.105,7.9,45,10,2,P3,LOW,"история достаточна, спрос 8 шт — минимальное присутствие"
+PLAN_B,Невинномысск,C_NEW,COVERAGE,0,0.062,4.7,45,20,20,P2,LOW,"DEMAND_NOT_OBSERVED, доступен 16 дн — тестовый ассортиментный сид"
+PLAN_B,Саратов,D_LOW_DEMAND_SUFFICIENT_HISTORY,COVERAGE,3,0.06,4.5,45,10,7,P3,LOW,"история достаточна, спрос 5 шт — минимальное присутствие"
+PLAN_B,Воронеж,D_LOW_DEMAND_SUFFICIENT_HISTORY,COVERAGE,0,0.057,4.3,45,10,10,P3,LOW,"история достаточна, спрос 5 шт — минимальное присутствие"
+PLAN_B,Тюмень,C_NEW,COVERAGE,0,0.032,2.4,45,20,20,P2,LOW,"DEMAND_NOT_OBSERVED, доступен 31 дн — тестовый ассортиментный сид"
+PLAN_B,Тверь,D_LOW_DEMAND_SUFFICIENT_HISTORY,COVERAGE,0,0.03,2.3,45,10,10,P3,LOW,"история достаточна, спрос 2 шт — минимальное присутствие"
+PLAN_B,Омск,D_LOW_DEMAND_SUFFICIENT_HISTORY,COVERAGE,0,0.023,1.7,45,10,10,P3,LOW,"история достаточна, спрос 2 шт — минимальное присутствие"
+PLAN_B,Дальний Восток,D_LOW_DEMAND_SUFFICIENT_HISTORY,COVERAGE,1,0.0,0.0,45,10,9,P3,LOW,"история достаточна, спрос 0 шт — минимальное присутствие"
+PLAN_B,Новосибирск,D_LOW_DEMAND_SUFFICIENT_HISTORY,COVERAGE,0,0.0,0.0,45,10,10,P3,LOW,"история достаточна, спрос 0 шт — минимальное присутствие"
+PLAN_B,Оренбург,D_LOW_DEMAND_SUFFICIENT_HISTORY,COVERAGE,2,0.0,0.0,45,10,8,P3,LOW,"история достаточна, спрос 0 шт — минимальное присутствие"
+PLAN_C,"Москва, МО и Дальние регионы",A_PROVEN_HIGH,DEMAND,14,0.787,79.1,60,158,144,P2,HIGH,скорость 0.787/дн × рост ×3.4 × 60 дн
+PLAN_C,Ростов,A_PROVEN_HIGH,DEMAND,0,0.637,64.1,60,128,128,P0,HIGH,скорость 0.637/дн × рост ×3.4 × 60 дн
+PLAN_C,Пермь,B_PROVEN_MEDIUM,DEMAND,11,0.606,60.9,60,122,111,P2,LOW,скорость 0.606/дн × рост ×3.4 × 60 дн
+PLAN_C,Уфа,B_PROVEN_MEDIUM,DEMAND,16,0.529,53.2,60,106,90,P2,LOW,скорость 0.529/дн × рост ×3.4 × 60 дн
+PLAN_C,Казань,B_PROVEN_MEDIUM,DEMAND,40,0.412,41.4,60,83,43,P2,MEDIUM,скорость 0.412/дн × рост ×3.4 × 60 дн
+PLAN_C,Санкт-Петербург и СЗО,B_PROVEN_MEDIUM,DEMAND,49,0.398,40.0,60,80,31,P2,MEDIUM,скорость 0.398/дн × рост ×3.4 × 60 дн
+PLAN_C,Самара,B_PROVEN_MEDIUM,DEMAND,0,0.22,22.1,60,44,44,P0,MEDIUM,скорость 0.22/дн × рост ×3.4 × 60 дн
+PLAN_C,Красноярск,C_NEW,COVERAGE,27,0.176,17.7,60,30,3,P2,LOW,"DEMAND_NOT_OBSERVED, доступен 51 дн — тестовый ассортиментный сид"
+PLAN_C,Екатеринбург,B_PROVEN_MEDIUM,DEMAND,4,0.153,15.4,60,31,27,P2,MEDIUM,скорость 0.153/дн × рост ×3.4 × 60 дн
+PLAN_C,Краснодар,D_LOW_DEMAND_SUFFICIENT_HISTORY,COVERAGE,5,0.129,13.0,60,16,11,P3,LOW,"история достаточна, спрос 11 шт — минимальное присутствие"
+PLAN_C,Ярославль,D_LOW_DEMAND_SUFFICIENT_HISTORY,COVERAGE,8,0.105,10.6,60,16,8,P3,LOW,"история достаточна, спрос 8 шт — минимальное присутствие"
+PLAN_C,Невинномысск,C_NEW,COVERAGE,0,0.062,6.2,60,30,30,P2,LOW,"DEMAND_NOT_OBSERVED, доступен 16 дн — тестовый ассортиментный сид"
+PLAN_C,Саратов,D_LOW_DEMAND_SUFFICIENT_HISTORY,COVERAGE,3,0.06,6.0,60,16,13,P3,LOW,"история достаточна, спрос 5 шт — минимальное присутствие"
+PLAN_C,Воронеж,D_LOW_DEMAND_SUFFICIENT_HISTORY,COVERAGE,0,0.057,5.7,60,16,16,P3,LOW,"история достаточна, спрос 5 шт — минимальное присутствие"
+PLAN_C,Тюмень,C_NEW,COVERAGE,0,0.032,3.2,60,30,30,P2,LOW,"DEMAND_NOT_OBSERVED, доступен 31 дн — тестовый ассортиментный сид"
+PLAN_C,Тверь,D_LOW_DEMAND_SUFFICIENT_HISTORY,COVERAGE,0,0.03,3.0,60,16,16,P3,LOW,"история достаточна, спрос 2 шт — минимальное присутствие"
+PLAN_C,Омск,D_LOW_DEMAND_SUFFICIENT_HISTORY,COVERAGE,0,0.023,2.3,60,16,16,P3,LOW,"история достаточна, спрос 2 шт — минимальное присутствие"
+PLAN_C,Дальний Восток,D_LOW_DEMAND_SUFFICIENT_HISTORY,COVERAGE,1,0.0,0.0,60,16,15,P3,LOW,"история достаточна, спрос 0 шт — минимальное присутствие"
+PLAN_C,Новосибирск,D_LOW_DEMAND_SUFFICIENT_HISTORY,COVERAGE,0,0.0,0.0,60,16,16,P3,LOW,"история достаточна, спрос 0 шт — минимальное присутствие"
+PLAN_C,Оренбург,D_LOW_DEMAND_SUFFICIENT_HISTORY,COVERAGE,2,0.0,0.0,60,16,14,P3,LOW,"история достаточна, спрос 0 шт — минимальное присутствие"

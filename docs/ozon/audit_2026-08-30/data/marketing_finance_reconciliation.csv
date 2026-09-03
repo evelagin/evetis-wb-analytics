@@ -1,0 +1,6 @@
+date,date_kind,perf_cpc_expense_rub,perf_cpo_expense_rub,perf_bonus_rub,perf_subscription_rub,finance_type_41_rub,finance_type_54_rub,finance_type_116_rub,difference_cpc_rub,difference_cpc_pct,verdict
+2026-08-05,обычный рабочий день,1683.23,0,0.0,0.0,1683.23,0.0,0.0,0.0,0.0,EXACT_MATCH
+2026-08-17,день списания SEARCH_PROMO,1562.41,119.2,0.0,0.0,1562.41,119.2,0.0,0.0,0.0,EXACT_MATCH
+2026-08-20,день списания SEARCH_PROMO,1682.72,119.2,0.0,0.0,1682.72,119.2,0.0,0.0,0.0,EXACT_MATCH
+2026-08-26,день высокого расхода,2010.24,0,0.0,0.0,2010.24,0.0,0.0,0.0,0.0,EXACT_MATCH
+2026-08-28,контрольная дата,1599.0,0,0.0,0.0,1599.0,0.0,0.0,0.0,0.0,EXACT_MATCH

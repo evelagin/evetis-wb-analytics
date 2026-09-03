@@ -1,0 +1,17 @@
+gate,status,detail
+P01 дубли ключа общего справочника = 0,PASS,"REF_PRODUCT_MASTER: 25 строк, 25 уникальных internal_sku, NULL-ключей 0"
+P02 маппинг Ozon 20/20,PASS,"20 строк marketplace=OZON, все резолвятся в REF_PRODUCT_MASTER. Неоднозначных связок 0. Строк OZON, где marketplace_sku совпадает с WB marketplace_sku: 0"
+P03 нет зависимости Ozon от wb_raw,PASS,Ни одна созданная таблица ozon_* не ссылается на wb_raw. wb_raw использован ТОЛЬКО как разовый миграционный источник при INSERT в evetis_ref
+P04 нет зависимости Ozon от wb_mart,PASS,Ссылок нет
+P05 регрессия WB,PASS,"До и после: wb_raw 32 таблицы + 24 вью, wb_mart 17 + 25 — без изменений. REF_SKU_MASTER 25 строк, 22 колонки — без изменений. Вью читаются: V_DASH_EXECUTIVE_ECONOMICS_DAILY 727, V_DASH_KPI_DAILY 727, V_DASH_SKU_DAILY 7602, V_DASH_SETTLEMENT_DAILY 726, V_DASH_FINANCE_CORRECTED_DAILY 727, V_PRODUCT_COGS_EFFECTIVE 38"
+P06 исторический CPC = канону,BLOCKED,"Проверка требует загруженных фактов. Загрузка заблокирована, см. B-01"
+P07 CPC по SKU = канону,BLOCKED,То же
+P08 начисления = канону,BLOCKED,То же
+P09 сверка тип 41 и Performance,BLOCKED,"То же. В аудите доказано: 0,00 руб на 90 днях"
+P10 сверка тип 54 и SEARCH_PROMO,BLOCKED,То же. В аудите доказано: расхождений 0
+"P11 тип 116 = 9 862,48 руб",BLOCKED,То же. Канон зафиксирован в STAGE2_1_CANONICAL_ECONOMICS.md
+P12 расход архивных кампаний сохранён,PASS (в подготовленной загрузке),"В ads_campaigns 92 строки, включая 49 ARCHIVED; в ads_expense_daily присутствуют 4 архивные кампании на 20 898 руб. Правило зафиксировано в OZON_DATA_CONTRACT_V1 и в комментарии таблицы"
+P13 нет выдуманного распределения по SKU,PASS,"attribution_status = ATTRIBUTED_ACTUAL во всех 969 строках. Пропорциональное распределение не применялось. Нераспределённые 515,80 руб (0,62%) не разносились"
+P14 разрешение COGS по effective-дате,PASS,"Покрытие 20/20 SKU, COGS_MISSING = 0 на 1018 строках экономики. Forward-fill не применялся"
+P15 скан секретов,PASS,Значений Api-Key и Performance client_secret в файлах 0. JWT вне вендорских спецификаций 0
+P16 нет deprecated endpoint Ozon,PASS,"Не использовались: /v3/finance/transaction/list, /v3/finance/transaction/totals, /v2/posting/fbo/list"

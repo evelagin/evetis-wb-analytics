@@ -1,0 +1,21 @@
+internal_sku,ozon_sku,assortment_status,revenue_covered,cogs_covered,marketplace_cost_covered,direct_marketing_covered,multi_campaign_marketing_unallocated_rub,attribution_coverage_pct,profitability_reliable,bidder_ready,reason
+EVT-EP-ENZYME-75,3543342130,ACTIVE_IN_STOCK,yes,yes,yes,yes (SKU_ACTUAL),0,99.38,yes,TRUE,отрицательный вклад после маркетинга
+EVT-FC-ACNE-50,2974977988,ACTIVE_IN_STOCK,yes,yes,yes,yes (SKU_ACTUAL),0,99.38,yes,TRUE,экономика полная и устойчивая
+EVT-FC-MOIST-50,2969806788,OUT_OF_STOCK,no,yes,no,no,0,NOT_APPLICABLE,no,FALSE,"нет продаж за период: ни выручки, ни рекламы. Экономика не определена"
+EVT-FS-ACNE-30,1994674912,ACTIVE_IN_STOCK,yes,yes,yes,yes (SKU_ACTUAL),0,99.38,yes,TRUE,экономика полная и устойчивая
+EVT-FS-MOIST-30,1991772098,ACTIVE_IN_STOCK,yes,yes,yes,yes (SKU_ACTUAL),0,99.38,yes,TRUE,экономика полная и устойчивая
+EVT-FT-ACNE-150,3530427102,ACTIVE_IN_STOCK,yes,yes,yes,yes (SKU_ACTUAL),0,99.38,yes,TRUE,экономика полная и устойчивая
+EVT-FT-MOIST-150,3528293526,ACTIVE_IN_STOCK,yes,yes,yes,yes (SKU_ACTUAL),0,99.38,yes,TRUE,отрицательный вклад после маркетинга
+EVT-HC-AMBER-300,3930712640,ACTIVE_IN_STOCK,yes,yes,yes,yes (SKU_ACTUAL),0,99.38,yes,TRUE,отрицательный вклад после маркетинга
+EVT-HC-CHERRY-300,3892518031,ACTIVE_IN_STOCK,yes,yes,yes,yes (SKU_ACTUAL),0,99.38,yes,TRUE,отрицательный вклад после маркетинга
+EVT-HC-HAND-300,1997079254,ACTIVE_IN_STOCK,yes,yes,yes,yes (SKU_ACTUAL),0,99.38,yes,TRUE,отрицательный вклад после маркетинга; LIQUIDATION_STRATEGY: оценивать не по обычному правилу прибыльности
+EVT-SET-4PC-ACNE,3733452761,ACTIVE_IN_STOCK,yes,yes,yes,yes (SKU_ACTUAL),0,99.38,yes,TRUE,экономика полная и устойчивая
+EVT-SET-ACNE-POWDER-SERUM-CREAM,3733947454,ACTIVE_IN_STOCK,yes,yes,yes,yes (SKU_ACTUAL),0,99.38,no,FALSE,"мало наблюдений: 6 шт за 92 дня, решающее правило неустойчиво; отрицательный вклад после маркетинга"
+EVT-SET-ACNE-TONIC-SERUM,4843362212,ACTIVE_IN_STOCK,yes,yes,yes,yes (SKU_ACTUAL),0,99.38,no,FALSE,"мало наблюдений: 1 шт за 92 дня, решающее правило неустойчиво; отрицательный вклад после маркетинга"
+EVT-SET-CHERRY-AMBER,3892223191,ACTIVE_IN_STOCK,yes,yes,yes,yes (SKU_ACTUAL),0,99.38,yes,TRUE,отрицательный вклад после маркетинга
+EVT-SET-HAND-AMBER,3892410843,ACTIVE_IN_STOCK,yes,yes,yes,yes (SKU_ACTUAL),0,99.38,no,FALSE,"мало наблюдений: 4 шт за 92 дня, решающее правило неустойчиво; отрицательный вклад после маркетинга"
+EVT-SET-HAND-CHERRY,3892345516,ACTIVE_IN_STOCK,yes,yes,yes,yes (SKU_ACTUAL),0,99.38,yes,TRUE,экономика полная и устойчивая
+EVT-SET-MOIST-TONIC-SERUM,3735183318,ACTIVE_IN_STOCK,yes,yes,yes,yes (SKU_ACTUAL),0,99.38,no,FALSE,"мало наблюдений: 4 шт за 92 дня, решающее правило неустойчиво"
+EVT-SET-SER-CREAM-ACNE,3732641694,ACTIVE_IN_STOCK,yes,yes,yes,yes (SKU_ACTUAL),0,99.38,yes,TRUE,экономика полная и устойчивая
+EVT-SET-SER-CREAM-MOIST,3732933477,OUT_OF_STOCK,no,yes,no,no,0,NOT_APPLICABLE,no,FALSE,"нет продаж за период: ни выручки, ни рекламы. Экономика не определена"
+EVT-SET-TON-SER-CREAM-ACNE,3735674506,ACTIVE_IN_STOCK,yes,yes,yes,yes (SKU_ACTUAL),0,99.38,yes,TRUE,экономика полная и устойчивая

@@ -1,0 +1,11 @@
+gate,status,result
+stock warehouse resolution,PASS,25 из 25 складов остатка резолвятся в кластер по warehouse_id — 100%
+supply warehouse resolution,PASS,150 из 150 поставок со складом назначения резолвятся — 100%. У 10 поставок склад назначения не указан самим API
+cluster mapping source,PASS,"официальный /v1/cluster/list, 22 кластера, 840 складов. Имя склада и региона для связи НЕ использовалось"
+sales warehouse resolution,PASS,27 из 27 складов продаж резолвятся ПО ИДЕНТИФИКАТОРУ — 100%. SALES_GEO_MAPPING = ID_BASED
+ambiguous mapping,PASS,0
+unresolved sales,PASS,"0. Ранее не резолвились РОСТОВ-НА-ДОНУ_РФЦ, ЕКАТЕРИНБУРГ_РФЦ_НОВЫЙ, КАЗАНЬ_РФЦ_НОВЫЙ — по id все три нашлись"
+supply details coverage,PASS,"orders_discovered=65, orders_detailed=65, coverage_pct=100.0, supplies_inside_orders=160"
+ACTUAL_RECEIPT_TIME,NOT_PROVEN,arrival_date пуст во всех 160 поставках. completed-время как приёмку не подставляли
+ACTUAL_RECEIPT_QUANTITY,NOT_PROVEN,в составе поставки только quantity (заявлено). Поля фактической приёмки в ответе нет: 0 из 556 позиций
+revenue semantics,PASS,financial_data.products[].price == seller_base_price на 260 из 261 сопоставленных позиций

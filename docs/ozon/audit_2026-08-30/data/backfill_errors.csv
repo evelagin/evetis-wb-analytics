@@ -1,0 +1,2 @@
+timestamp_msk,dataset,endpoint,chunk,http_status,attempts,required,message
+2026-08-31T18:04:09.662315+03:00,finance_realization,/v2/finance/realization,202608,404,1,True,"{'code':5,'message':'Report was not found'}"

@@ -1,0 +1,16 @@
+campaign_id,campaign_title,campaign_type,sku_membership_count,sku_membership,campaign_expense_rub,product_statistics_available,sku_expense_available,sku_orders_revenue_available,attribution_level,evidence
+32157891,крем руки от 11.07 \ 25.08,SKU,1,EVT-HC-HAND-300,5949.12,yes (campaign level),yes,NOT_AVAILABLE,SKU_DIRECT,"кампания содержит ровно один SKU, весь расход относится к нему"
+32157919,крем вишня от 11.07 \ 25.08,SKU,1,EVT-HC-CHERRY-300,4928.19,yes (campaign level),yes,NOT_AVAILABLE,SKU_DIRECT,"кампания содержит ровно один SKU, весь расход относится к нему"
+32157947,сыворотка увл от 11.07 / 20.08,SKU,1,EVT-FS-MOIST-30,5483.9,yes (campaign level),yes,NOT_AVAILABLE,SKU_DIRECT,"кампания содержит ровно один SKU, весь расход относится к нему"
+32157965,крем лицо акне от 11.07 \ 25.08,SKU,1,EVT-FC-ACNE-50,6418.91,yes (campaign level),yes,NOT_AVAILABLE,SKU_DIRECT,"кампания содержит ровно один SKU, весь расход относится к нему"
+32157988,тоник акне от 11.07 \ 25.08,SKU,1,EVT-FT-ACNE-150,8007.44,yes (campaign level),yes,NOT_AVAILABLE,SKU_DIRECT,"кампания содержит ровно один SKU, весь расход относится к нему"
+32158008,Набор 3 ед акне от 11.07 \ 25.08,SKU,1,EVT-SET-TON-SER-CREAM-ACNE,3964.92,yes (campaign level),yes,NOT_AVAILABLE,SKU_DIRECT,"кампания содержит ровно один SKU, весь расход относится к нему"
+32158051,набор 4 ед акне от 11.07 \ 25.08,SKU,1,EVT-SET-4PC-ACNE,7295.56,yes (campaign level),yes,NOT_AVAILABLE,SKU_DIRECT,"кампания содержит ровно один SKU, весь расход относится к нему"
+32158176,Энзимная пудра от 11.07 \ 25.08,SKU,1,EVT-EP-ENZYME-75,5785.39,yes (campaign level),yes,NOT_AVAILABLE,SKU_DIRECT,"кампания содержит ровно один SKU, весь расход относится к нему"
+32158299,Набор с пудрой от 11.07,SKU,1,EVT-SET-ACNE-POWDER-SERUM-CREAM,2879.09,yes (campaign level),yes,NOT_AVAILABLE,SKU_DIRECT,"кампания содержит ровно один SKU, весь расход относится к нему"
+33678192,крем ваниль от 29.07 \ 25.08,SKU,1,EVT-HC-AMBER-300,1736.03,yes (campaign level),yes,NOT_AVAILABLE,SKU_DIRECT,"кампания содержит ровно один SKU, весь расход относится к нему"
+33678220,Набор кремов руки тело от 29.07,SKU,3,EVT-SET-CHERRY-AMBER|EVT-SET-HAND-AMBER|EVT-SET-HAND-CHERRY,1760.64,yes (campaign level),NOT_AVAILABLE,NOT_AVAILABLE,CAMPAIGN_ONLY,campaign/product отдаёт кампанийный уровень; products/sku только сегодня-вчера; асинхронный отчёт не сформировался. Пропорциональное распределение НЕ применялось
+33678261,сыворотка крем акне от 29.07,SKU,1,EVT-SET-SER-CREAM-ACNE,0.0,yes (campaign level),yes,NOT_AVAILABLE,SKU_DIRECT,"кампания содержит ровно один SKU, весь расход относится к нему"
+33678288,Тоник УВЛ от 29.07 \ 25.08,SKU,1,EVT-FT-MOIST-150,2831.85,yes (campaign level),yes,NOT_AVAILABLE,SKU_DIRECT,"кампания содержит ровно один SKU, весь расход относится к нему"
+33678331,Тоник сыворотка от 29.07,SKU,2,EVT-SET-ACNE-TONIC-SERUM|EVT-SET-MOIST-TONIC-SERUM,1344.11,yes (campaign level),NOT_AVAILABLE,NOT_AVAILABLE,CAMPAIGN_ONLY,campaign/product отдаёт кампанийный уровень; products/sku только сегодня-вчера; асинхронный отчёт не сформировался. Пропорциональное распределение НЕ применялось
+33703975,Сыворотка Акне от 30.07 \ 25.08,SKU,1,EVT-FS-ACNE-30,3320.76,yes (campaign level),yes,NOT_AVAILABLE,SKU_DIRECT,"кампания содержит ровно один SKU, весь расход относится к нему"

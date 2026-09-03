@@ -1,0 +1,44 @@
+{
+ "total": {
+  "seller_revenue": 337755.0,
+  "quantity": 271.0,
+  "cogs_total": 71000.0,
+  "marketplace_commission": 138729.45,
+  "logistics": 26675.79,
+  "other_marketplace_cost": 120.0,
+  "profit_before_marketing": 101229.76,
+  "cpc_spend": 82604.23,
+  "search_promo_spend": 1277.4,
+  "first_review_promo_spend": 9862.48,
+  "total_marketing_cost_confirmed": 93744.11,
+  "profit_after_confirmed_marketing": 7485.65
+ },
+ "A": {
+  "seller_revenue": 319000.0,
+  "quantity": 256.0,
+  "cogs_total": 67494.0,
+  "marketplace_commission": 130901.52,
+  "logistics": 25019.77,
+  "other_marketplace_cost": 120.0,
+  "profit_before_marketing": 95464.71,
+  "cpc_spend": 77862.81,
+  "search_promo_spend": 1277.4,
+  "first_review_promo_spend": 8968.22,
+  "total_marketing_cost_confirmed": 88108.43,
+  "profit_after_confirmed_marketing": 7356.28
+ },
+ "B": {
+  "seller_revenue": 18755.0,
+  "quantity": 15.0,
+  "cogs_total": 3506.0,
+  "marketplace_commission": 7827.93,
+  "logistics": 1656.02,
+  "other_marketplace_cost": 0.0,
+  "profit_before_marketing": 5765.05,
+  "cpc_spend": 4741.42,
+  "search_promo_spend": 0.0,
+  "first_review_promo_spend": 894.26,
+  "total_marketing_cost_confirmed": 5635.68,
+  "profit_after_confirmed_marketing": 129.37
+ }
+}

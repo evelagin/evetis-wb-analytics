@@ -1,0 +1,11 @@
+internal_sku,standalone_need,bundle_need,total_need,operational_available,long_term_available,wb_fbs_reservation,ozon_available,take_from_operational,take_from_long_term,leave_operational,leave_long_term,shortage_or_surplus,constraint
+EVT-FC-MOIST-50,0,0,0,2,0,0,2,0,0,2,0,2,узкое место
+EVT-FC-ACNE-50,35,78,113,0,1117,76,1041,0,113,0,1004,928,
+EVT-HC-HAND-300,50,30,80,26,2720,124,2622,26,54,0,2666,2542,
+EVT-FT-ACNE-150,76,65,141,96,3600,66,3630,96,45,0,3555,3489,
+EVT-FT-MOIST-150,53,22,75,77,3600,12,3665,75,0,2,3600,3590,
+EVT-EP-ENZYME-75,35,33,68,115,3630,29,3716,68,0,47,3630,3648,
+EVT-FS-MOIST-30,41,22,63,311,3600,22,3889,63,0,248,3600,3826,
+EVT-HC-CHERRY-300,38,33,71,109,4320,33,4396,71,0,38,4320,4325,
+EVT-HC-AMBER-300,25,23,48,103,4400,28,4475,48,0,55,4400,4427,
+EVT-FS-ACNE-30,70,83,153,60,5200,91,5169,60,93,0,5107,5016,

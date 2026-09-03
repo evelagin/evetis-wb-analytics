@@ -1,0 +1,21 @@
+gate,status,critical,detail
+catalog_mapping_20_of_20,PASS,yes,20/20 товаров имеют internal_sku и offer_id == nm_id
+cogs_coverage_catalog,PASS,yes,20/20 товаров с COGS
+cogs_coverage_transactions,PASS,yes,строк экономики без действующего COGS: 0 из 227
+finance_date_completeness,PASS,yes,"92/92 дней, отсутствуют: нет"
+finance_http_ok,PASS,yes,дней с HTTP != 200: 0
+finance_pagination_not_truncated,PASS,yes,"дней, упёршихся в лимит страниц: 0"
+performance_date_completeness,PASS,yes,"92/92 дней, отсутствуют: нет"
+failed_required_chunks_zero,PASS,yes,"всего ошибок 1, из них блокирующих 0. Реализация за 202608 — 404, месяц не закрыт, это ожидаемо"
+cpc_finance_reconciliation,PASS,yes,"90 дней со сверкой, расхождений: 0"
+cpc_reconciliation_max_abs_diff,PASS,yes,максимальное |разница| = 0.0000 руб
+search_promo_reconciliation,PASS,yes,дней с расхождением по типу 54: 0
+finance_no_duplicate_keys,PASS,no,"дублей ключа (operation_id,type_id,sku,amount): 0"
+orders_no_duplicate_keys,PASS,no,"дублей (posting_number,sku): 0"
+performance_no_duplicate_keys,PASS,yes,"дублей (date,campaign_id): 0"
+portfolio_date_completeness,PASS,yes,92/92 дней в portfolio_daily
+orders_quantity_valid,PASS,yes,позиций с некорректным quantity: 0
+unit_econ_quantity_valid,PASS,yes,строк экономики с отрицательным quantity: 0
+currency_single_rub,PASS,yes,валюты в начислениях: {'RUB': 1702}
+no_credential_leak,PASS,yes,совпадений секретов в файлах: 0 []
+no_token_persisted,PASS,yes,файлов данных с JWT-подобным значением: 0 []

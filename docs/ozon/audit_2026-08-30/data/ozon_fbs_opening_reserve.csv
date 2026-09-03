@@ -1,0 +1,19 @@
+sku_or_bundle,type,recommended_fbs_opening_qty,reason,confidence
+EVT-FT-ACNE-150,единица,22,подстраховка стокаутов FBO и переливной спрос,MEDIUM
+EVT-FS-ACNE-30,единица,20,подстраховка стокаутов FBO и переливной спрос,MEDIUM
+EVT-FT-MOIST-150,единица,15,подстраховка стокаутов FBO и переливной спрос,MEDIUM
+EVT-HC-HAND-300,единица,14,подстраховка стокаутов FBO и переливной спрос,MEDIUM
+EVT-FS-MOIST-30,единица,12,подстраховка стокаутов FBO и переливной спрос,MEDIUM
+EVT-HC-CHERRY-300,единица,11,подстраховка стокаутов FBO и переливной спрос,MEDIUM
+EVT-EP-ENZYME-75,единица,10,подстраховка стокаутов FBO и переливной спрос,MEDIUM
+EVT-FC-ACNE-50,единица,10,подстраховка стокаутов FBO и переливной спрос,MEDIUM
+EVT-SET-TON-SER-CREAM-ACNE,набор,9,подстраховка стокаутов FBO и переливной спрос,MEDIUM
+EVT-SET-4PC-ACNE,набор,8,подстраховка стокаутов FBO и переливной спрос,MEDIUM
+EVT-HC-AMBER-300,единица,7,подстраховка стокаутов FBO и переливной спрос,MEDIUM
+EVT-SET-MOIST-TONIC-SERUM,набор,6,подстраховка стокаутов FBO и переливной спрос,MEDIUM
+EVT-SET-HAND-CHERRY,набор,6,подстраховка стокаутов FBO и переливной спрос,MEDIUM
+EVT-SET-CHERRY-AMBER,набор,4,"холодный старт, FBS как первичный канал",LOW
+EVT-SET-SER-CREAM-ACNE,набор,4,"холодный старт, FBS как первичный канал",LOW
+EVT-SET-HAND-AMBER,набор,3,"холодный старт, FBS как первичный канал",LOW
+EVT-SET-ACNE-POWDER-SERUM-CREAM,набор,3,"холодный старт, FBS как первичный канал",LOW
+EVT-SET-ACNE-TONIC-SERUM,набор,3,"холодный старт, FBS как первичный канал",LOW
