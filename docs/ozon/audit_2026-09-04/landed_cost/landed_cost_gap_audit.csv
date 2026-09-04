@@ -1,0 +1,23 @@
+cost_component,included_in_15316321,amount_rub,source,attributable,canonical_treatment
+factory_payment,YES,"839865.15 CNY = 10391014.53 ₽",7 инвойсов + 17 платежей по факт. курсу покупки,YES,IN_LEGAL_IMPORT_COST
+international_freight,YES,1441373.18,счета ФА ПОРТАВЕНТУРА по 7 контейнерам,YES,IN_LEGAL_IMPORT_COST
+cargo_insurance,YES,8951.01,те же счета,YES,IN_LEGAL_IMPORT_COST
+customs_duty,YES,677288.62,графа 47 семи ДТ,YES,IN_LEGAL_IMPORT_COST
+customs_vat,YES,2268701.68,графа 47 семи ДТ,YES,IN_LEGAL_IMPORT_COST
+customs_fee,YES,53878.00,графа 47 семи ДТ,YES,IN_LEGAL_IMPORT_COST
+customs_broker,YES,153300.00,АРИВИСТ-КОНСАЛТ 7 платежей,YES,IN_LEGAL_IMPORT_COST
+preshipment_inspection,YES,114844.72,ЭЙЧ КЬЮ ТИ ЭС и др. 5 платежей,YES,IN_LEGAL_IMPORT_COST
+bank_fx_fees_ved,YES,187971.52,комиссии ВЭД,YES,IN_LEGAL_IMPORT_COST
+svh_terminal,PARTIAL,2566,только партия 2,PARTIAL,IN_LEGAL_IMPORT_COST_BATCH_02
+station_removal,PARTIAL,23000,только партия 4,PARTIAL,IN_LEGAL_IMPORT_COST_BATCH_04
+station_removal_other_6_batches,NO,0,НЕ НАЙДЕНО в банке,NO,ESTIMATED_ONLY_EXCLUDED
+certification_product_specific,NO,82425,"ООО СТЭП 2 платежа с названными товарами",YES,ADDITIONAL_DOCUMENTED_ATTRIBUTABLE
+certification_generic,NO,86000,"ООО СТЭП + АБСОЛЮТ СТАНДАРТ 7 платежей без указания товара",NO,DOCUMENTED_NOT_ATTRIBUTABLE
+certification_ambiguous,NO,5000,"ООО СТЭП: крем для тела, не различает какой",PARTIAL,DOCUMENTED_NOT_ATTRIBUTABLE
+marking_chz,NO,27180,ОПЕРАТОР-ЦРПТ 8 предоплат,NO,DOCUMENTED_NOT_ATTRIBUTABLE_PREPAYMENT
+china_domestic_logistics,UNKNOWN,,не выделено отдельно; входит в цену инвойса,,NO_SEPARATE_EVIDENCE
+domestic_delivery_after_customs,NO,0,отдельных платежей не найдено,NO,NOT_FOUND
+ff_operations_marking_packing,NO,"см. ИП Курасов и др.",фулфилмент: упаковка/маркировка/хранение/логистика,NO,EXCLUDED_FF_NOT_PRODUCT_COGS
+ved_consulting_vasilieva,NO,731400,"Васильева Е.Л. Консультационные услуги ВЭД 13 платежей",UNDECIDED,REQUIRES_OWNER_DECISION
+accounting_managers_design_ads,NO,,"МАВЛЕТКУЛОВА, менеджеры, дизайн, ЛОЯЛИТИ ПРОМОУШЕН",NO,EXCLUDED_PERIOD_COST
+marketplace_costs,NO,,комиссия/логистика/хранение/реклама/эквайринг WB и Ozon,NO,EXCLUDED_MARKETPLACE_PNL

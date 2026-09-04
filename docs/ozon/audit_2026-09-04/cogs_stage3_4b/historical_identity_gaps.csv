@@ -1,0 +1,4 @@
+ozon_sku,offer_id,internal_sku,gap_before_stage_3_4b,gross_qty_affected,evidence_bigquery,evidence_primary_document,resolved_in_3_4b,resolution_status
+1997315236,252442341,EVT-HC-BODY-300,UNMAPPED,239,"ozon_raw.RAW_OZON_SUPPLY_BUNDLES: sku+offer_id+product_name «EVETIS Увлажняющий универсальный крем для рук и тела, 300мл»",RealizationReportCIS-12363791169560.xlsx,YES,MAPPED_OZON_PRIMARY_DOCUMENT
+2046027307,252441968,EVT-SET-HAND-BODY,UNMAPPED,178,"ozon_raw.RAW_OZON_SUPPLY_BUNDLES: sku+offer_id+product_name «EVETIS Крем для рук и тела… (2 по 300мл)»",DocumentB2BSales_12297392881090_2773848.xlsx,YES,MAPPED_OZON_PRIMARY_DOCUMENT
+TOTAL,,,2_GAPS,417,,,YES,UNMAPPED_HISTORICAL_OZON_IDENTITIES_AFTER_REPAIR=0

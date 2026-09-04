@@ -1,0 +1,18 @@
+payment_date,amount_rub,named_products,batch_id,internal_sku,batch_qty,alloc_rub_per_unit,attribution_status,note
+2026-04-22,49875,"энзимная пудра, увлажняющий тоник, тоник акне",BATCH-05,EVT-EP-ENZYME-75,5000,3.3250,PRODUCT_SPECIFIC,распределено по количеству партии 5 (15000 ед)
+2026-04-22,49875,"энзимная пудра, увлажняющий тоник, тоник акне",BATCH-05,EVT-FT-MOIST-150,5000,3.3250,PRODUCT_SPECIFIC,то же
+2026-04-22,49875,"энзимная пудра, увлажняющий тоник, тоник акне",BATCH-05,EVT-FT-ACNE-150,5000,3.3250,PRODUCT_SPECIFIC,то же
+2026-05-28,32550,"HAND & BODY CREAM Lost Cherry и Amber Vanilla",BATCH-07,EVT-HC-CHERRY-300,4859,3.3116,PRODUCT_SPECIFIC,распределено по количеству партии 7 (9829 ед)
+2026-05-28,32550,"HAND & BODY CREAM Lost Cherry и Amber Vanilla",BATCH-07,EVT-HC-AMBER-300,4970,3.3116,PRODUCT_SPECIFIC,то же
+2025-12-21,5000,"крем для тела ТМ EVETIS",,,,,AMBIGUOUS_WHICH_BODY_CREAM,"кандидаты: EVT-HC-BODY-300, EVT-HC-CHERRY-300, EVT-HC-AMBER-300 — документ не различает"
+2024-05-29,6500,"—",,,,,GENERIC_NOT_ATTRIBUTABLE,консультационные услуги без указания товара
+2024-09-18,15000,"—",,,,,GENERIC_NOT_ATTRIBUTABLE,консультационные и сопроводительные услуги
+2024-12-27,5000,"косметика",,,,,GENERIC_NOT_ATTRIBUTABLE,не входит в 168425 документа
+2025-06-10,28000,"косметика",,,,,GENERIC_NOT_ATTRIBUTABLE,товар не назван
+2025-07-04,5000,"косметика",,,,,GENERIC_NOT_ATTRIBUTABLE,товар не назван
+2025-10-30,16500,"средства ухода за кожей",,,,,GENERIC_NOT_ATTRIBUTABLE,товар не назван
+2025-11-11,10000,"средства ухода за кожей",,,,,GENERIC_NOT_ATTRIBUTABLE,товар не назван
+TOTAL_PRODUCT_SPECIFIC,82425,,,,,,FULLY_ATTRIBUTABLE,49875 + 32550
+TOTAL_AMBIGUOUS,5000,,,,,,PARTIALLY_ATTRIBUTABLE,
+TOTAL_GENERIC,86000,,,,,,NOT_ATTRIBUTABLE,
+TOTAL_ALL_FOUND,173425,,,,,,,"из них 168425 = 9 платежей документа, +5000 найдено дополнительно"

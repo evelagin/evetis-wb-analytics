@@ -1,0 +1,13 @@
+bundle_internal_sku,components,bom_effective_from_before,bom_effective_from_after,first_ozon_sale,bom_status,evidence_status,evidence,delivered_qty_without_cogs_before,delivered_qty_without_cogs_after
+EVT-SET-4PC-ACNE,4,2026-03-24,2026-03-24,2026-04-05,BOM_PROVEN,NOT_APPLICABLE,,0,0
+EVT-SET-ACNE-POWDER-SERUM-CREAM,3,2026-01-15,2026-01-15,2026-04-05,BOM_PROVEN,NOT_APPLICABLE,,0,0
+EVT-SET-ACNE-TONIC-SERUM,2,2026-07-09,2026-07-09,2026-08-19,BOM_PROVEN,NOT_APPLICABLE,,0,0
+EVT-SET-CHERRY-AMBER,2,2026-04-10,2026-04-10,2026-04-27,BOM_PROVEN,NOT_APPLICABLE,,0,0
+EVT-SET-HAND-AMBER,2,2026-04-26,2026-04-26,2026-04-24,BOM_PROVEN,NOT_NEEDED_NO_DELIVERED_UNITS_IN_GAP,,0,0
+EVT-SET-HAND-BODY,2,2025-05-01,2025-05-01,2025-05-05,BOM_PROVEN,NOT_APPLICABLE,,0,0
+EVT-SET-HAND-CHERRY,2,2026-05-01,2026-05-01,2026-04-27,BOM_PROVEN,PARTIAL,"поставка 2026-04-13 доказывает существование карточки; название «Набор парфюмированных кремов для рук и тела с церамидами, 2 шт 300 мл» ИДЕНТИЧНО карточке EVT-SET-HAND-AMBER и не различает Cherry от Amber; в отчётах о реализации карточка с названием не найдена",1,1
+EVT-SET-MOIST-TONIC-SERUM,2,2026-07-20,2026-03-24,2026-04-11,BOM_PROVEN,PROVEN_SAME_BOM,"Отчет о реализации товара_20260430: «Набор для лица увлажняющий: сыворотка и тоник с гиалуроновой кислотой» — состав назван поимённо и совпадает с BOM; первая поставка 2026-03-24",4,0
+EVT-SET-SER-CREAM-ACNE,2,2025-11-01,2025-11-01,2026-03-30,BOM_PROVEN,NOT_APPLICABLE,,0,0
+EVT-SET-SER-CREAM-MOIST,2,2025-10-31,2025-10-31,2026-04-02,BOM_PROVEN,NOT_APPLICABLE,,0,0
+EVT-SET-TON-SER-CREAM-ACNE,3,2026-04-23,2026-03-24,2026-03-30,BOM_PROVEN,PROVEN_SAME_BOM,"Отчет о реализации товара_20260430: «Набор для лица от прыщей и акне: тоник, сыворотка, крем против акне» — состав назван поимённо и совпадает с BOM; первая поставка 2026-03-24",2,0
+TOTAL,,,,,BOM_NOT_PROVEN=0,PROVEN_SAME_BOM=2 PARTIAL=1,,7,1
