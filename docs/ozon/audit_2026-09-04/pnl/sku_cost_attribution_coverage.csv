@@ -1,0 +1,10 @@
+metric,stage_3_4C,stage_3_4C_1,change,note
+variable_marketplace_costs_total,189861.98,189861.98,0.00,"логистика+кросс-докинг+последняя миля+хранение+эквайринг+возвраты"
+method,REVENUE_PROPORTIONAL_ALL,DIRECT_SKU_WHERE_AVAILABLE,METHOD_CHANGED,"Stage 3.4C разносил всё пропорционально выручке — это была аппроксимация"
+amount_direct_sku,0.00,173172.31,+173172.31,"finance row сама несёт sku"
+amount_store_level_unallocated,0.00,16689.67,+16689.67,"кросс-докинг 13721.60 + размещение на складах 2968.07"
+direct_attribution_coverage_pct,0.00,91.21,+91.21,
+amount_allocated_analytically,189861.98,0.00,-189861.98,"аналитическое разнесение больше не требуется для этих статей"
+ad_campaign_attribution_pct,91.65,91.65,0.00,через RAW_OZON_ADS_SKU_DAILY
+ad_reviews_direct_pct,0.00,58.10,+58.10,
+other_marketplace_direct_pct,0.00,8.72,+8.72,

@@ -1,0 +1,13 @@
+cost_group,finance_types,amount_rub,rows,rows_with_sku,amount_direct_sku,amount_store_level,attribution_level,basis,note
+LOGISTICS,32,132963.79,2153,2153,132963.79,0.00,DIRECT_SKU,"finance row несёт sku и posting_number",100% прямая
+LAST_MILE,"29,28,98,30",15583.78,1925,1925,15583.78,0.00,DIRECT_SKU,"finance row несёт sku и posting_number",100% прямая
+ACQUIRING,1,12749.42,1990,1990,12749.42,0.00,DIRECT_SKU,"finance row несёт sku (item_fees)",100% прямая
+RETURN_LOGISTICS,"59,45,78,9",11443.32,264,264,11443.32,0.00,DIRECT_SKU,"finance row несёт sku и posting_number",100% прямая
+STORAGE_TEMP,79,432.00,3,3,432.00,0.00,DIRECT_SKU,finance row несёт sku,100% прямая
+AD_REVIEWS_PROMO,"116,47,96,74,48",17949.07,103,84,10428.67,7520.40,MIXED,"часть строк несёт sku",58.1% прямая
+OTHER_MARKETPLACE,"77,76,15,71,39,38,57",11583.04,251,35,1010.60,10572.44,MIXED,"часть строк несёт sku",8.7% прямая
+CROSSDOCK,12,13721.60,72,0,0.00,13721.60,STORE_LEVEL_ONLY,"NON_ITEM, sku отсутствует",не атрибутируется
+STORAGE_PLACEMENT,46,2968.07,203,0,0.00,2968.07,STORE_LEVEL_ONLY,"NON_ITEM, sku отсутствует",не атрибутируется
+SUBSCRIPTION,52,109880.00,12,0,0.00,109880.00,STORE_LEVEL_ONLY,"NON_ITEM, фиксированный расход",не атрибутируется
+AD_CAMPAIGN,"75,41,33,54",476690.72,2022,0,0.00,476690.72,DIRECT_VIA_PERFORMANCE,"finance без sku; атрибуция берётся из RAW_OZON_ADS_SKU_DAILY",91.65% через Performance
+CANCELLATION,6,0.00,130,130,0.00,0.00,DIRECT_SKU,"суммы нулевые",—

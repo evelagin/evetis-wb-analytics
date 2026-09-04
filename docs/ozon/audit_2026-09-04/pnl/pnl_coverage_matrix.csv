@@ -1,0 +1,27 @@
+component,source,earliest,latest,coverage,confidence,known_gaps
+gross_ordered_qty,ozon_raw.RAW_OZON_POSTINGS_FBO,2025-04-26,2026-09-03,2261/2261 = 100%,HIGH,нет
+realized_qty,postings status=delivered,2025-04-26,2026-09-03,1955/1955 = 100%,HIGH,нет
+sku_identity,evetis_ref.REF_SKU_CHANNEL_MAP,2025-04-18,2026-09-03,22/22 identities = 100%,HIGH,нет
+seller_base_revenue,"finance economics (1920) + posting.price_rub (35 восстановленных)",2025-04-26,2026-09-03,1955/1955 = 100%,HIGH,"пробел закрыт Stage 3.4C.1: posting.price_rub = seller_base доказано на 1919/1919 строк"
+buyer_paid/bonus/coinvestment,finance economics,2025-04-30,2026-09-03,1920/1955 = 98.21%,HIGH,те же 35 единиц
+product_cogs,evetis_ref MANAGEMENT_LANDED_COGS,2024-09-07,открыт,1954/1955 = 99.95%,HIGH,1 ед EVT-SET-HAND-CHERRY MISSING_BOM_INTERVAL
+commission,finance commission_rub,2025-04-30,2026-09-03,привязана к тем же 1920 строкам,HIGH,те же 35 единиц
+finance_classification,finance amount_rub,2025-04-22,2026-09-03,33/33 типов = 100%; сумма сходится точно,HIGH,UNCLASSIFIED = 0
+advertising_total,Performance campaign + finance review types,2025-05-05,2026-09-02,100% периода рекламы,HIGH,"сверка с finance даёт 0 расхождения во всех 17 месяцах"
+advertising_sku_attribution,ozon_raw.RAW_OZON_ADS_SKU_DAILY,2025-05-05,2026-09-03,"436905.07/476690.72 = 91.65%",MEDIUM,"остаток 39785.65 руб на SKU не разносится; все 22 sku резолвятся, нерезолвящихся 0"
+returns_monetary,finance types 59/9/78/45,2025-06-03,2026-08-30,11443.32 руб учтено,HIGH,суммы есть
+returns_quantity,—,—,—,NOT_PROVEN,NONE,"в postings статуса возврата нет; количество по SKU не восстановимо"
+subscription,finance type 52,2025-06-11,2026-05-11,109880 руб = 12 строк,HIGH,"прекращена после 2026-05"
+stock_history,ozon_raw.RAW_OZON_STOCKS,2026-08-31,2026-09-03,только вперёд,HIGH,"истории до 2026-08-31 не существует"
+commission_coverage_qty,finance commission_rub + отчёты о реализации,2025-04-30,2026-09-03,1949/1955 = 99.69%,HIGH,"6 postings: месяцы 2025-05 и 2026-06..08 отсутствуют в локальной папке отчётов"
+commission_missing_revenue,posting.price_rub,2025-05-16,2026-08-03,7417.00 руб,HIGH,"выручка учтена, комиссия нет — известное смещение прибыли вверх"
+commission_uncertainty_band,"наблюдаемые ставки 0.18..0.52 на 1919 строках",,,1335.06..3856.84 руб,HIGH,"границы, не оценка; середина не подставляется"
+direct_variable_cost_attribution,finance строки с sku,2025-04-30,2026-09-03,173172.31/189861.98 = 91.21%,HIGH,"кросс-докинг и размещение на складах не несут sku"
+ozon_mart.FCT_OZON_PNL_MONTHLY,"VIEW над ozon_raw + evetis_ref",2025-04-01,2026-09-01,18 строк = 18 месяцев,HIGH,"нет; VIEW — устареть относительно ozon_raw не может"
+ozon_mart.FCT_OZON_SKU_PNL_MONTHLY,"VIEW, зерно месяц x internal_sku",2025-04-01,2026-09-01,"171 строка, 22 SKU, 1955/1955 ед",HIGH,"расхождение с месячным мартом по L2/L4 = -0.05 руб — накопление округления на 171 строке против 18"
+ozon_mart.V_OZON_LIFETIME_PNL,"агрегат FCT_OZON_PNL_MONTHLY",2025-04-01,2026-09-01,1 строка,HIGH,"data_status = PASS_WITH_KNOWN_COMMISSION_GAP"
+ozon_mart.V_OZON_SKU_UNIT_ECONOMICS_CURRENT,"агрегат FCT_OZON_SKU_PNL_MONTHLY, окно 180 дней",2026-03-01,2026-09-04,"22 SKU, 718 ед",MEDIUM,"economics_mode=TRAILING_OBSERVED; forward_pricing_ready=FALSE — действующие тарифы Ozon NOT_PROVEN; full_marketplace_break_even_drr на SKU = NULL"
+ozon_mart.FCT_OZON_PNL_DAILY,—,—,—,NOT_CREATED,NONE,"решение владельца Stage 3.4C.1: дневное зерно не создавать"
+ozon_mart.V_OZON_MART_FRESHNESS,ozon_raw.OZON_INGESTION_RUNS,2026-09-03,2026-09-04,"4 сущности P&L под контролем",HIGH,"на 2026-09-04 freshness_status=PARTIAL_SOURCE_UPDATE, agent_decision_gate=DECISIONS_BLOCKED_SOURCE_NOT_FRESH: fbo_postings 23ч при допуске 12ч"
+ozon_scheduler_health,"gcloud scheduler + cloud_scheduler_job logs",2026-09-03,2026-09-04,"0 успешных срабатываний из 4",NONE,"ozon-fast/ozon-daily/ozon-weekly возвращают PERMISSION_DENIED: sa-ozon-scheduler не имеет run.jobs.runWithOverrides. Инцидент вне периметра Stage 3.4C, ждёт ACK владельца"
+forward_unit_economics,—,—,—,NOT_CREATED,NONE,"действующие тарифы Ozon не подтверждены; Stage 3.4D"

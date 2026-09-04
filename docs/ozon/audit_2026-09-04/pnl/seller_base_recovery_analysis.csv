@@ -1,0 +1,17 @@
+test,result,evidence,verdict
+finance_block_missing_in_source,YES,"все 35 postings имеют finance-строки (тип 32 Логистика, иногда 98), но ни одной item_fee и ни одного commission-блока",NOT_A_JOIN_PROBLEM
+posting_number_format,OK,форматы совпадают; join находит строки типа 32,ИСКЛЮЧЕНО
+sku_mismatch,OK,skus_in_finance совпадает с postings sku во всех 35,ИСКЛЮЧЕНО
+quantity_gt_1,OK,все 35 имеют quantity=1,ИСКЛЮЧЕНО
+date_window,OK,разбросаны 2025-05..2026-08 равномерно; не запаздывание,ИСКЛЮЧЕНО
+archived_sku,PARTIAL,"3 из 35 — EVT-HC-BODY-300 (снятый с продажи), остальные активные",НЕ ПРИЧИНА
+identity_seller_base_equals_posting_price,PROVEN,"1919 из 1919 покрытых строк: seller_base_price_rub = posting.price_rub, макс. расхождение 0.0000",ОСНОВАНИЕ ВОССТАНОВЛЕНИЯ
+commission_equals_seller_base_x_ratio,PROVEN,1918 из 1919 строк,ПОДТВЕРЖДАЕТ БАЗУ
+independent_corroboration_realization_reports,PROVEN,"29 из 29 найденных отчётов: цена в отчёте = posting.price_rub, 0 расхождений",НЕЗАВИСИМОЕ ПОДТВЕРЖДЕНИЕ
+seller_base_recovered_qty,35,posting.price_rub,RECONSTRUCTED_PROVEN
+seller_base_recovered_rub,30905.00,,RECONSTRUCTED_PROVEN
+commission_recovered_postings,29,отчёты о реализации,RECONSTRUCTED_PROVEN
+commission_recovered_rub,9637.60,,RECONSTRUCTED_PROVEN
+commission_not_recovered_postings,6,"месяцы 2025-05 и 2026-06..08 отсутствуют в локальной папке отчётов",COMMISSION_NOT_RECOVERED
+commission_not_recovered_revenue_rub,7417.00,,ИЗВЕСТНОЕ СМЕЩЕНИЕ ВВЕРХ
+commission_exposure_range_rub,1706-3115,"наблюдаемые ставки комиссии 23%-42%; НЕ оценка, а границы",MEMO_ONLY_NOT_CANONICAL

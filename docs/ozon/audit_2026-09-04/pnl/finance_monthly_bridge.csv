@@ -1,0 +1,16 @@
+scope,check,value_rub,status
+finance_raw_total,SUM(amount_rub) по всем 9130 строкам,-805218.68,BASELINE
+classified_ad_campaign_equiv,"типы 75,41,33,54",476690.72,CLASSIFIED
+classified_ad_reviews_promo,"типы 116,47,96,74,48",17949.07,CLASSIFIED
+classified_subscription,тип 52,109880.00,CLASSIFIED
+classified_logistics,"типы 32,12",146685.39,CLASSIFIED
+classified_last_mile,"типы 29,28,98,30",15583.78,CLASSIFIED
+classified_storage,"типы 46,79",3400.07,CLASSIFIED
+classified_acquiring,тип 1,12749.42,CLASSIFIED
+classified_return_costs,"типы 59,9,78,45",11443.32,CLASSIFIED
+classified_cancellation,тип 6,0.00,CLASSIFIED
+classified_other_marketplace,"типы 77,76,15,71,39,38,57",11583.04,CLASSIFIED
+classified_compensations,"типы 25,10",-746.13,CLASSIFIED_INCOME
+classified_total,сумма всех категорий,805218.68,MATCH
+unclassified,остаток,0.00,PASS
+note,commission не входит в amount_rub — отдельная колонка commission_rub,644594.00,SEPARATE_FIELD
