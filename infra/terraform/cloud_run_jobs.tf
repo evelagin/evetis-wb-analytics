@@ -68,8 +68,24 @@ resource "google_cloud_run_v2_job" "wb_stocks_shadow" {
   }
   # Образ управляется deploy-shadow.yml (реальный digest), Terraform его НЕ трогает
   # → нет drift между Terraform (bootstrap hello) и собранным образом.
+  # 🔴 Stage Drift Reconciliation (06.09.2026). `client` / `client_version` в схеме
+  # провайдера объявлены как `optional` (НЕ computed) с описанием "Arbitrary
+  # identifier/version for the API client" — проверено `terraform providers schema`.
+  # Это отметка о том, КАКИМ ИНСТРУМЕНТОМ последний раз писали ресурс, а не
+  # конфигурация job'а: gcloud проставляет "gcloud"/"<версия>", Terraform не
+  # проставляет ничего, поэтому план вечно предлагает занулить их. На поведение
+  # Cloud Run это не влияет.
+  # Владеть ими Terraform не может осмысленно: любое значение, которое он записал бы,
+  # было бы неправдой (Terraform — не gcloud), а зануление стирает происхождение
+  # ресурса без всякой выгоды. Хардкодить версии (568.0.0 / 577.0.0) ради тишины
+  # в плане запрещено — это подгонка под вывод, а не desired state.
+  # Поэтому — минимальная нормализация: не реконсилировать эти два поля.
   lifecycle {
-    ignore_changes = [template[0].template[0].containers[0].image]
+    ignore_changes = [
+      template[0].template[0].containers[0].image,
+      client,
+      client_version,
+    ]
   }
   depends_on = [google_project_service.enabled]
 }
