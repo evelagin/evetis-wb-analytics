@@ -187,25 +187,39 @@ Read-only, по фактическим `MART_RUNS` за 02–06.09.2026. Ист�
 | Retry / deadline | `retry_count = 1`, `attempt_deadline = 320s` |
 | Начальное состояние | `paused = true` — как у всех job'ов проекта |
 
-**Почему не применено — проверено 06.09.2026, два независимых блокера.**
+**Почему не применено — authoritative CI-план, run `34048138814`, 06.09.2026 17:18 UTC,
+из GitHub `main` = `52675f2`.**
 
-1. 🔴 **План содержит 4 unrelated изменения**, ни одно не относится к ADS-1B:
-   `ozon_runtime["ozon-runtime-daily"]`, `["ozon-runtime-fast"]`, `["ozon-runtime-weekly"]`
-   (от **незакоммиченной** правки `infra/terraform/ozon_ingestion.tf` — Stage 3.4D.2/3.4D.3,
-   смена `ozon_runtime_image` и сущность `seller_info`) и `wb_stocks_shadow`
-   (дрейф: `client`/`client_version` `"gcloud"`/`"568.0.0"` → `null`, job трогали мимо Terraform).
-   `terraform apply` применяет всю конфигурацию, а не файл — включение детектора протащило бы
-   с собой чужой Ozon-релиз. Прямое STOP-условие.
-2. 🔴 **`terraform plan` завершается кодом 1**: 11 предсуществующих ресурсов падают на refresh
-   с HTTP 403 `getIamPolicy` у локальной учётки — та же стена 403, что у BigQuery REST с этой
-   машины. Ресурсов `ops_health` в ошибках нет; все шесть корректно планируются к созданию:
-   **Plan: 6 to add, 4 to change, 0 to destroy** (`destroy = 0` подтверждён).
+```
+Plan: 6 to add, 5 to change, 0 to destroy
+```
+
+Шесть создаваемых ресурсов — ровно ADS-1B, ошибок по ним нет, `destroy = 0`. Но пять
+in-place изменений к ADS-1B не относятся, а `terraform apply` работает по всей
+конфигурации, а не по файлу. Acceptance `6 add / 0 change / 0 destroy` не выполнен → STOP.
+
+| # | Ресурс | Что изменилось бы | Оценка |
+|---|---|---|---|
+| 1 | `google_bigquery_table.raw_wb_stocks_cr` | `INTEGER→INT64`, `BOOLEAN→BOOL` + 🔴 **удаление колонки `warehouse_code`** | опасно: колонка ЕСТЬ в проде (`RAW_WB_STOCKS__CR.warehouse_code`, STRING), в `bigquery.tf` её нет |
+| 2 | `ozon_runtime["ozon-runtime-daily"]` | дрейф `client`/`client_version` + 🔴 **откат `ENTITIES`: пропадает `seller_info`** | опасно: Stage 3.4D.3 живёт только в незакоммиченном рабочем дереве, на `main` его нет |
+| 3 | `ozon_runtime["ozon-runtime-fast"]` | `client`/`client_version` `"gcloud"`/`"577.0.0"` → `null` | косметика |
+| 4 | `ozon_runtime["ozon-runtime-weekly"]` | то же | косметика |
+| 5 | `wb_stocks_shadow` | `client`/`client_version` `"gcloud"`/`"568.0.0"` → `null` | косметика |
+
+⚠️ **Исправление прежней записи.** В первой редакции здесь утверждалось, что три изменения
+`ozon_runtime` вызваны незакоммиченной правкой `ozon_ingestion.tf`. Это неверно, и CI-план
+это показал: дрейф `client`/`client_version` существует независимо от неё, а грязный файл,
+наоборот, **маскировал** откат `ENTITIES` — локально конфиг содержал `seller_info` и совпадал
+с продом, поэтому этой части диффа видно не было.
+
+**Локальный terraform для apply непригоден отдельно:** `plan` завершается кодом 1 —
+11 предсуществующих ресурсов падают на refresh с HTTP 403 `getIamPolicy` у рабочей учётки.
+В CI под `TERRAFORM_PLAN_SA` тот же plan проходит успешно.
 
 **Штатный путь** — `.github/workflows/infra.yml` (`workflow_dispatch`, `action=apply`,
-WIF + `TERRAFORM_APPLY_SA`, ручной approval через environment `infra`). Инфраструктура
-проекта применяется из CI привилегированным SA, а не с ноутбука — поэтому локальная
-учётка и получает 403. Порядок: развести unrelated изменения → влить декларацию в main →
-запустить workflow `infra` с `action=apply`.
+WIF + `TERRAFORM_APPLY_SA`, ручной approval через environment `infra`). Перед apply нужно
+развести пять чужих изменений с ADS-1B, иначе включение детектора потянет за собой откат
+схемы остатков и Ozon-релиза.
 
 **До apply** детектор запускается вручную: ``CALL `wb_ops.sp_evaluate_pipeline_health`()``.
 
