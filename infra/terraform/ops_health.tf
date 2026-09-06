@@ -2,9 +2,41 @@
 # Док: docs/ADS1B_HEALTH_DETECTOR_2026-09-06.md · SQL: sql/ops/ads1b_health_detector.sql
 #
 # 🔴 НЕ ПРИМЕНЁН. Объекты BigQuery (процедуры и вью) развёрнуты и проверены,
-#    но АВТОМАТИЧЕСКИЙ ЗАПУСК требует terraform apply, а это изменение инфраструктуры
-#    (новый service account + два IAM-биндинга + scheduler job). Решение за владельцем.
-#    До apply детектор запускается вручную: CALL `wb_ops.sp_evaluate_pipeline_health`().
+#    но АВТОМАТИЧЕСКИЙ ЗАПУСК требует terraform apply. До apply детектор
+#    запускается вручную: CALL `wb_ops.sp_evaluate_pipeline_health`().
+#
+# 🔴 ПОЧЕМУ APPLY НЕ СДЕЛАН С РАБОЧЕЙ МАШИНЫ (проверено 06.09.2026, два блокера).
+#
+#   1. ПЛАН СОДЕРЖИТ UNRELATED ИЗМЕНЕНИЯ — 4 штуки, ни одно не относится к ADS-1B:
+#        google_cloud_run_v2_job.ozon_runtime["ozon-runtime-daily"]    ~ in-place
+#        google_cloud_run_v2_job.ozon_runtime["ozon-runtime-fast"]     ~ in-place
+#        google_cloud_run_v2_job.ozon_runtime["ozon-runtime-weekly"]   ~ in-place
+#        google_cloud_run_v2_job.wb_stocks_shadow                      ~ in-place
+#      Первые три — от НЕЗАКОММИЧЕННОЙ правки infra/terraform/ozon_ingestion.tf
+#      (Stage 3.4D.2/3.4D.3, смена ozon_runtime_image и сущность seller_info).
+#      Четвёртое — дрейф: у wb-stocks-shadow затёрлись бы client/client_version
+#      ("gcloud"/"568.0.0" -> null), то есть job последний раз трогали мимо Terraform.
+#      `terraform apply` применяет ВСЮ конфигурацию, а не файл, поэтому включение
+#      детектора протащило бы с собой чужой Ozon-релиз. Это прямое STOP-условие.
+#
+#   2. `terraform plan` ЗАВЕРШАЕТСЯ КОДОМ 1. Одиннадцать ПРЕДСУЩЕСТВУЮЩИХ ресурсов
+#      падают на refresh с HTTP 403 `getIamPolicy` (LOADER_RUNS, RAW_WB_STOCKS__CR,
+#      WB_STOCKS_SNAPSHOTS__CR, prod/shadow_read_ref*, prod_edit_mart, prod_view_raw).
+#      Это не дефект конфигурации: у локальной учётки нет прав читать IAM-политики —
+#      ровно та же стена 403, что у BigQuery REST с этой машины. Ни один из ресурсов
+#      ops_health в ошибках НЕ фигурирует; все шесть корректно планируются к созданию.
+#
+# ШТАТНЫЙ ПУТЬ ПРИМЕНЕНИЯ — .github/workflows/infra.yml (workflow_dispatch,
+#   action=apply, WIF + TERRAFORM_APPLY_SA, ручной approval через environment `infra`).
+#   Инфраструктура этого проекта применяется из CI с привилегированным SA, а не с
+#   ноутбука — именно поэтому локальная учётка и получает 403. Порядок:
+#     а) решить, что делать с четырьмя unrelated изменениями (отдельно применить
+#        Ozon-релиз или сначала закоммитить/откатить ozon_ingestion.tf);
+#     б) влить эту декларацию в main;
+#     в) запустить workflow `infra` с action=apply и подтвердить approval.
+#
+# Ожидаемый результат apply: Plan: 6 to add, 0 to change, 0 to destroy
+#   (после того как unrelated изменения будут разведены с ADS-1B).
 #
 # ПОЧЕМУ ТАК, А НЕ ИНАЧЕ.
 #   • Штатный механизм проекта — Cloud Scheduler + OAuth-токен (см. scheduler.tf).
@@ -62,7 +94,15 @@ resource "google_cloud_scheduler_job" "ops_health_prod" {
   region    = var.region
   schedule  = "0 */3 * * *"
   time_zone = "Europe/Moscow"
-  paused    = true # включается владельцем после apply, как и остальные job'ы
+
+  # 🔴 ОТЛИЧИЕ ОТ scheduler.tf — осознанное. Загрузчики создаются `paused = true` с
+  # `ignore_changes = [paused]`, потому что их состояние pause/resume принадлежит
+  # .github/workflows/scheduler-control.yml. Этот workflow управляет ТОЛЬКО списком
+  # [wb-stocks, wb-mart] (type: choice), то есть `wb-ops-health-prod` им не владеется
+  # НИКЕМ, кроме Terraform. Поэтому здесь ни `ignore_changes`, ни стартовой паузы нет:
+  # иначе repo объявлял бы paused, а production работал бы enabled — ровно то
+  # расхождение repo↔production, которое чинили в ADS-1A.
+  paused = false
 
   attempt_deadline = "320s"
 
@@ -90,8 +130,5 @@ resource "google_cloud_scheduler_job" "ops_health_prod" {
     }
   }
 
-  lifecycle {
-    ignore_changes = [paused]
-  }
   depends_on = [google_project_service.enabled]
 }

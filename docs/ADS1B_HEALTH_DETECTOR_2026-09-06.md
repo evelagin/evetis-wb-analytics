@@ -187,9 +187,25 @@ Read-only, по фактическим `MART_RUNS` за 02–06.09.2026. Ист�
 | Retry / deadline | `retry_count = 1`, `attempt_deadline = 320s` |
 | Начальное состояние | `paused = true` — как у всех job'ов проекта |
 
-**Почему не применено.** Это изменение инфраструктуры: новый service account и четыре
-IAM-биндинга. Создавать их мимо terraform означало бы повторить ровно тот дефект, который
-чинили в ADS-1A. Решение о `terraform apply` — за владельцем.
+**Почему не применено — проверено 06.09.2026, два независимых блокера.**
+
+1. 🔴 **План содержит 4 unrelated изменения**, ни одно не относится к ADS-1B:
+   `ozon_runtime["ozon-runtime-daily"]`, `["ozon-runtime-fast"]`, `["ozon-runtime-weekly"]`
+   (от **незакоммиченной** правки `infra/terraform/ozon_ingestion.tf` — Stage 3.4D.2/3.4D.3,
+   смена `ozon_runtime_image` и сущность `seller_info`) и `wb_stocks_shadow`
+   (дрейф: `client`/`client_version` `"gcloud"`/`"568.0.0"` → `null`, job трогали мимо Terraform).
+   `terraform apply` применяет всю конфигурацию, а не файл — включение детектора протащило бы
+   с собой чужой Ozon-релиз. Прямое STOP-условие.
+2. 🔴 **`terraform plan` завершается кодом 1**: 11 предсуществующих ресурсов падают на refresh
+   с HTTP 403 `getIamPolicy` у локальной учётки — та же стена 403, что у BigQuery REST с этой
+   машины. Ресурсов `ops_health` в ошибках нет; все шесть корректно планируются к созданию:
+   **Plan: 6 to add, 4 to change, 0 to destroy** (`destroy = 0` подтверждён).
+
+**Штатный путь** — `.github/workflows/infra.yml` (`workflow_dispatch`, `action=apply`,
+WIF + `TERRAFORM_APPLY_SA`, ручной approval через environment `infra`). Инфраструктура
+проекта применяется из CI привилегированным SA, а не с ноутбука — поэтому локальная
+учётка и получает 403. Порядок: развести unrelated изменения → влить декларацию в main →
+запустить workflow `infra` с `action=apply`.
 
 **До apply** детектор запускается вручную: ``CALL `wb_ops.sp_evaluate_pipeline_health`()``.
 
@@ -215,7 +231,8 @@ Metabase advertising cards, organic rank, BL-8 global parity framework, авто
 |---|---|---|---|
 | BL-8 | Parity-гейт есть только у `pr_mart2a`; остальные seed/DDL-скрипты `sql/` не защищены | HIGH | ADS-10 |
 | **BL-9** | **Датасет `wb_ops` не имел представления в репозитории; §0 закрывает это как as-is снимок, но таблицы Stage 3.1A по-прежнему создаются вне репозитория** | **HIGH** | ADS-10 |
-| **BL-10** | **Доставка алертов не реализована: события копятся в `RECORDED`, канал и получатель не выбраны** | **HIGH** | требует решения владельца |
+| **BL-10** | **Доставка алертов не реализована: события копятся в `RECORDED`, канал и получатель не выбраны.** Рекомендация: сначала исследовать существующий датасет `evetis_communications` (`communication_events`, `communications_current`, `communication_engine_shadow`) и Cloud Run сервис `evetis-wb-communications` — возможно, доставщик уже есть. Параллельную систему доставки не создавать. | **HIGH** | требует решения владельца |
 | **BL-11** | **`CLOSED_UNRECOVERABLE` не реализован — нет политики `recovery_deadline_ts` для невосстановимых снимков ставок** | MEDIUM | после BL-10 |
-| **BL-12** | **`terraform apply` для `wb-ops-health-prod` не выполнен — автозапуска нет** | **HIGH** | решение владельца |
+| **BL-12** | **`terraform apply` не выполнен — автозапуска нет.** Два блокера, см. §10: план содержит 4 unrelated изменения (3× Ozon runtime от незакоммиченного `ozon_ingestion.tf` + дрейф `wb_stocks_shadow`), и `terraform plan` падает кодом 1 на 403 `getIamPolicy` у локальной учётки. Штатный путь — workflow `infra`. | **HIGH** | решение владельца |
+| **BL-13** | **Внешний watchdog для `wb-ops-health-prod`.** H0 внутри самого детектора не способен обнаружить, что детектор вообще перестал запускаться: если прогонов нет, то и строки H0 не появляется. Сейчас единственное доказательство — control-plane история выполнений Cloud Scheduler. Нужен независимый от детектора наблюдатель. | MEDIUM | после BL-12 |
 | BL-1…BL-7 | См. `docs/ADS1A_MART_RECOVERY_2026-09-06.md` §11 | — | — |
