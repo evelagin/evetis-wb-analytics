@@ -1,0 +1,155 @@
+{
+ "archived": false,
+ "archived_directly": false,
+ "cache_invalidated_at": null,
+ "cache_ttl": null,
+ "card_schema": 23,
+ "collection": {
+  "archive_operation_id": null,
+  "archived": false,
+  "archived_directly": null,
+  "authority_level": null,
+  "created_at": "2026-09-06T18:46:49.072866Z",
+  "description": "Stage ADS-5. Операционная реклама WB: экраны поверх валидированных вью wb_mart (Ads-2/3/4). Источник истины — BigQuery, Metabase только presentation.",
+  "entity_id": "SchgzXE2sxJbQxqj4pOve",
+  "id": 8,
+  "is_remote_synced": false,
+  "is_sample": false,
+  "location": "/5/",
+  "name": "03 · Advertising",
+  "namespace": null,
+  "personal_owner_id": null,
+  "slug": "03_%C2%B7_advertising",
+  "type": null
+ },
+ "collection_id": 8,
+ "collection_position": null,
+ "collection_preview": true,
+ "created_at": "2026-09-06T18:52:53.136353Z",
+ "creator_id": 2,
+ "dashboard": null,
+ "dashboard_id": null,
+ "database_id": 2,
+ "dataset_query": {
+  "database": 2,
+  "lib/type": "mbql/query",
+  "stages": [
+   {
+    "lib/type": "mbql.stage/native",
+    "native": "WITH s AS (\n  SELECT\n    MAX(as_of_date)                       AS as_of_date,\n    MAX(bid_snapshot_date)                AS bid_snapshot_date,\n    COUNTIF(bid_snapshot_status = \"OK\")   AS rows_with_bid,\n    COUNT(*)                              AS rows_total\n  FROM `wb_mart.V_ADS_SCREEN_QUERY`\n  WHERE window_days = {{window}}\n),\nreg AS (\n  SELECT\n    MAX(IF(pipeline_id = \"ads_query_stats\", expected_business_lag_days, NULL)) AS stats_lag_sla_days,\n    MAX(IF(pipeline_id = \"ads_query_bids\",  expected_business_lag_days, NULL)) AS bids_lag_sla_days\n  FROM `wb_ops.OPS_PIPELINE_REGISTRY`\n)\nSELECT\n  s.as_of_date,\n  {{window}}                                                                     AS window_days,\n  DATE_ADD(DATE_SUB(s.as_of_date, INTERVAL {{window}} DAY), INTERVAL 1 DAY)      AS period_from,\n  s.as_of_date                                                                   AS period_to,\n  DATE_DIFF(CURRENT_DATE(\"Europe/Moscow\"), s.as_of_date, DAY)                    AS stats_lag_days,\n  reg.stats_lag_sla_days,\n  IF(DATE_DIFF(CURRENT_DATE(\"Europe/Moscow\"), s.as_of_date, DAY)\n       > reg.stats_lag_sla_days, \"STALE\", \"OK\")                                  AS stats_freshness,\n  s.bid_snapshot_date,\n  DATE_DIFF(CURRENT_DATE(\"Europe/Moscow\"), s.bid_snapshot_date, DAY)             AS bids_lag_days,\n  reg.bids_lag_sla_days,\n  IF(DATE_DIFF(CURRENT_DATE(\"Europe/Moscow\"), s.bid_snapshot_date, DAY)\n       > reg.bids_lag_sla_days, \"STALE\", \"OK\")                                   AS bids_freshness,\n  SAFE_DIVIDE(s.rows_with_bid, s.rows_total)                                     AS bid_coverage_share,\n  CURRENT_TIMESTAMP()                                                            AS refreshed_at\nFROM s, reg\n",
+    "template-tags": [
+     {
+      "default": "90",
+      "display-name": "Окно (дней)",
+      "id": "ac4e8717-55d9-49b0-91b5-ca9796e014d9",
+      "name": "window",
+      "required": true,
+      "type": "number"
+     }
+    ]
+   }
+  ]
+ },
+ "description": "Свежесть источников экрана «Поисковые запросы». as_of — последний ЗАКРЫТЫЙ день статистики запросов (MAX(day) в V_ADS_FUNNEL_QUERY_DAILY); окно считается как (as_of − N; as_of]. Пороги устаревания НЕ придуманы: expected_business_lag_days берётся из реестра wb_ops.OPS_PIPELINE_REGISTRY (ads_query_stats = 3 сут., ads_query_bids = 1 сут.). Снимок ставок — SNAPSHOT-ONLY: у WB нет истории ставок, поэтому его дата может опережать as_of статистики; это норма, а не дефект.",
+ "dimension_mappings": null,
+ "dimensions": null,
+ "display": "table",
+ "document_id": null,
+ "embedding_params": null,
+ "embedding_type": null,
+ "enable_embedding": false,
+ "entity_id": "ie7sNPT3UPE2OucWM56Sk",
+ "id": 86,
+ "is_remote_synced": false,
+ "last_used_at": "2026-09-06T18:52:53.136353Z",
+ "legacy_query": null,
+ "metabase_version": "v0.63.15.1 (ab5ffba)",
+ "name": "Окно и свежесть данных",
+ "param_fields": {},
+ "parameter_mappings": [],
+ "parameter_usage_count": 0,
+ "parameters": [],
+ "query_type": "native",
+ "source_card_id": null,
+ "table_id": null,
+ "type": "question",
+ "visualization_settings": {
+  "column_settings": {
+   "[\"name\",\"as_of_date\"]": {
+    "column_title": "as_of (последний закрытый день)"
+   },
+   "[\"name\",\"bid_coverage_share\"]": {
+    "column_title": "Строк со ставкой",
+    "decimals": 1,
+    "number_style": "percent"
+   },
+   "[\"name\",\"bid_snapshot_date\"]": {
+    "column_title": "Снимок ставок"
+   },
+   "[\"name\",\"bids_freshness\"]": {
+    "column_title": "Ставки"
+   },
+   "[\"name\",\"bids_lag_days\"]": {
+    "column_title": "Лаг ставок, дней",
+    "decimals": 0,
+    "number_style": "decimal"
+   },
+   "[\"name\",\"bids_lag_sla_days\"]": {
+    "column_title": "SLA лага ставок, дней",
+    "decimals": 0,
+    "number_style": "decimal"
+   },
+   "[\"name\",\"period_from\"]": {
+    "column_title": "Период с"
+   },
+   "[\"name\",\"period_to\"]": {
+    "column_title": "Период по"
+   },
+   "[\"name\",\"refreshed_at\"]": {
+    "column_title": "Карточка обновлена"
+   },
+   "[\"name\",\"stats_freshness\"]": {
+    "column_title": "Статистика запросов"
+   },
+   "[\"name\",\"stats_lag_days\"]": {
+    "column_title": "Лаг статистики, дней",
+    "decimals": 0,
+    "number_style": "decimal"
+   },
+   "[\"name\",\"stats_lag_sla_days\"]": {
+    "column_title": "SLA лага статистики, дней",
+    "decimals": 0,
+    "number_style": "decimal"
+   },
+   "[\"name\",\"window_days\"]": {
+    "column_title": "Окно, дней",
+    "decimals": 0,
+    "number_style": "decimal"
+   }
+  },
+  "table.column_formatting": [
+   {
+    "color": "#ED6E6E",
+    "columns": [
+     "stats_freshness",
+     "bids_freshness"
+    ],
+    "highlight_row": false,
+    "operator": "=",
+    "type": "single",
+    "value": "STALE"
+   },
+   {
+    "color": "#84BB4C",
+    "columns": [
+     "stats_freshness",
+     "bids_freshness"
+    ],
+    "highlight_row": false,
+    "operator": "=",
+    "type": "single",
+    "value": "OK"
+   }
+  ]
+ }
+}

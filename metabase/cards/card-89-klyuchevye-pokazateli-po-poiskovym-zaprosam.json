@@ -1,0 +1,257 @@
+{
+ "archived": false,
+ "archived_directly": false,
+ "cache_invalidated_at": null,
+ "cache_ttl": null,
+ "card_schema": 23,
+ "collection": {
+  "archive_operation_id": null,
+  "archived": false,
+  "archived_directly": null,
+  "authority_level": null,
+  "created_at": "2026-09-06T18:46:49.072866Z",
+  "description": "Stage ADS-5. Операционная реклама WB: экраны поверх валидированных вью wb_mart (Ads-2/3/4). Источник истины — BigQuery, Metabase только presentation.",
+  "entity_id": "SchgzXE2sxJbQxqj4pOve",
+  "id": 8,
+  "is_remote_synced": false,
+  "is_sample": false,
+  "location": "/5/",
+  "name": "03 · Advertising",
+  "namespace": null,
+  "personal_owner_id": null,
+  "slug": "03_%C2%B7_advertising",
+  "type": null
+ },
+ "collection_id": 8,
+ "collection_position": null,
+ "collection_preview": true,
+ "created_at": "2026-09-06T18:53:02.329542Z",
+ "creator_id": 2,
+ "dashboard": null,
+ "dashboard_id": null,
+ "database_id": 2,
+ "dataset_query": {
+  "database": 2,
+  "lib/type": "mbql/query",
+  "stages": [
+   {
+    "lib/type": "mbql.stage/native",
+    "native": "SELECT\n  MAX(as_of_date)                                                  AS as_of_date,\n  COUNT(*)                                                         AS queries_cnt,\n  SUM(spend_rub)                                                   AS spend_rub,\n  SUM(views_sum)                                                   AS views,\n  SUM(clicks_sum)                                                  AS clicks,\n  SUM(atbs_sum)                                                    AS atbs,\n  SUM(orders_sum)                                                  AS orders_raw,\n  SUM(shks_sum)                                                    AS buyouts_raw,\n  SAFE_DIVIDE(SUM(clicks_on_imp), SUM(views_sum))                  AS ctr,\n  SAFE_DIVIDE(SUM(spend_rub), SUM(clicks_sum))                     AS cpc_rub,\n  SAFE_DIVIDE(SUM(atbs_sum), SUM(clicks_sum))                      AS cart_cr,\n  SAFE_DIVIDE(SUM(orders_sum), SUM(clicks_sum))                    AS order_cr,\n  SAFE_DIVIDE(SUM(spend_rub), NULLIF(SUM(orders_sum), 0))          AS cpo_rub,\n  SAFE_DIVIDE(SUM(avg_pos_w_clicks * clicks_sum), SUM(clicks_sum)) AS avg_paid_pos\nFROM `wb_mart.V_ADS_SCREEN_QUERY`\nWHERE window_days = {{window}}\n  [[AND {{sku}}]]\n  [[AND {{evidence}}]]\n  [[AND {{q}}]]\n  [[AND spend_rub >= {{spend_min}}]]\n  [[AND orders_sum >= {{orders_min}}]]\n",
+    "template-tags": [
+     {
+      "default": "90",
+      "display-name": "Окно (дней)",
+      "id": "8019c316-4d99-4d3d-b014-b582106ce64e",
+      "name": "window",
+      "required": true,
+      "type": "number"
+     },
+     {
+      "dimension": [
+       "field",
+       {
+        "lib/uuid": "04c60564-d091-40f7-b6e0-c62d754420a5"
+       },
+       721
+      ],
+      "display-name": "Товар",
+      "id": "f35b7789-8289-481e-a30a-ba6c671909b3",
+      "name": "sku",
+      "type": "dimension",
+      "widget-type": "string/="
+     },
+     {
+      "dimension": [
+       "field",
+       {
+        "lib/uuid": "3b9dee85-cd74-4a71-b7f8-4ee8e0f0582e"
+       },
+       747
+      ],
+      "display-name": "Доказательность",
+      "id": "77a59de0-1b77-4b8d-b858-2d427466404e",
+      "name": "evidence",
+      "type": "dimension",
+      "widget-type": "string/="
+     },
+     {
+      "dimension": [
+       "field",
+       {
+        "lib/uuid": "a00ef923-ed37-416f-8101-ef6609c0405f"
+       },
+       719
+      ],
+      "display-name": "Запрос содержит",
+      "id": "75a581e9-1c81-4f97-bba9-0375e05007a7",
+      "name": "q",
+      "type": "dimension",
+      "widget-type": "string/contains"
+     },
+     {
+      "display-name": "Минимальный расход, ₽",
+      "id": "8d1bea4b-3ab0-4952-88a8-02b52b4330cb",
+      "name": "spend_min",
+      "type": "number"
+     },
+     {
+      "display-name": "Минимум заказов",
+      "id": "85b91234-5055-4772-b86c-71f6eb7e0e66",
+      "name": "orders_min",
+      "type": "number"
+     }
+    ]
+   }
+  ]
+ },
+ "description": "KPI-шапка окна. ВСЕ отношения — ratio-of-sums (сумма числителей / сумма знаменателей), готовые построчные ratio не суммируются. CTR считается по clicks_on_imp / views: строки без показов в знаменатель не попадают. «Заказы» и «Выкупы» — attributed raw по контракту ADS-0/ADS-3, это НЕ общие продажи WB. Выручки в разрезе поискового запроса у WB НЕТ (см. текст под шапкой), поэтому ДРР и ROAS на этом грейне не выводятся. Расход — только та часть бюджета, которую WB разложил по запросам.",
+ "dimension_mappings": null,
+ "dimensions": null,
+ "display": "table",
+ "document_id": null,
+ "embedding_params": null,
+ "embedding_type": null,
+ "enable_embedding": false,
+ "entity_id": "kAHNxZNDywQ5l9MtRnTcq",
+ "id": 89,
+ "is_remote_synced": false,
+ "last_used_at": "2026-09-06T18:53:02.329542Z",
+ "legacy_query": null,
+ "metabase_version": "v0.63.15.1 (ab5ffba)",
+ "name": "Ключевые показатели по поисковым запросам",
+ "param_fields": {
+  "75a581e9-1c81-4f97-bba9-0375e05007a7": [
+   {
+    "base_type": "type/Text",
+    "dimensions": [],
+    "display_name": "Norm Query",
+    "fk_target_field_id": null,
+    "has_field_values": "list",
+    "id": 719,
+    "name": "norm_query",
+    "name_field": null,
+    "semantic_type": null,
+    "table_id": 33,
+    "target": null
+   }
+  ],
+  "77a59de0-1b77-4b8d-b858-2d427466404e": [
+   {
+    "base_type": "type/Text",
+    "dimensions": [],
+    "display_name": "Evidence Status",
+    "fk_target_field_id": null,
+    "has_field_values": "list",
+    "id": 747,
+    "name": "evidence_status",
+    "name_field": null,
+    "semantic_type": "type/Category",
+    "table_id": 33,
+    "target": null
+   }
+  ],
+  "f35b7789-8289-481e-a30a-ba6c671909b3": [
+   {
+    "base_type": "type/Text",
+    "dimensions": [],
+    "display_name": "Product Name Short",
+    "fk_target_field_id": null,
+    "has_field_values": "list",
+    "id": 721,
+    "name": "product_name_short",
+    "name_field": null,
+    "semantic_type": "type/Category",
+    "table_id": 33,
+    "target": null
+   }
+  ]
+ },
+ "parameter_mappings": [],
+ "parameter_usage_count": 0,
+ "parameters": [],
+ "query_type": "native",
+ "source_card_id": null,
+ "table_id": null,
+ "type": "question",
+ "visualization_settings": {
+  "column_settings": {
+   "[\"name\",\"as_of_date\"]": {
+    "column_title": "as_of"
+   },
+   "[\"name\",\"atbs\"]": {
+    "column_title": "В корзину",
+    "decimals": 0,
+    "number_style": "decimal"
+   },
+   "[\"name\",\"avg_paid_pos\"]": {
+    "column_title": "Средняя рекламная позиция (по кликам)",
+    "decimals": 2,
+    "number_style": "decimal"
+   },
+   "[\"name\",\"buyouts_raw\"]": {
+    "column_title": "Выкупы, шт (attributed, raw)",
+    "decimals": 0,
+    "number_style": "decimal"
+   },
+   "[\"name\",\"cart_cr\"]": {
+    "column_title": "CR корзины из кликов",
+    "decimals": 1,
+    "number_style": "percent"
+   },
+   "[\"name\",\"clicks\"]": {
+    "column_title": "Клики",
+    "decimals": 0,
+    "number_style": "decimal"
+   },
+   "[\"name\",\"cpc_rub\"]": {
+    "column_title": "CPC, ₽",
+    "currency": "RUB",
+    "currency_in_header": false,
+    "currency_style": "symbol",
+    "decimals": 2,
+    "number_style": "currency"
+   },
+   "[\"name\",\"cpo_rub\"]": {
+    "column_title": "Расход на заказ (CPO), ₽",
+    "currency": "RUB",
+    "currency_in_header": false,
+    "currency_style": "symbol",
+    "decimals": 2,
+    "number_style": "currency"
+   },
+   "[\"name\",\"ctr\"]": {
+    "column_title": "CTR",
+    "decimals": 2,
+    "number_style": "percent"
+   },
+   "[\"name\",\"order_cr\"]": {
+    "column_title": "CR заказов из кликов",
+    "decimals": 1,
+    "number_style": "percent"
+   },
+   "[\"name\",\"orders_raw\"]": {
+    "column_title": "Заказы (attributed, raw)",
+    "decimals": 0,
+    "number_style": "decimal"
+   },
+   "[\"name\",\"queries_cnt\"]": {
+    "column_title": "Строк «запрос × товар»",
+    "decimals": 0,
+    "number_style": "decimal"
+   },
+   "[\"name\",\"spend_rub\"]": {
+    "column_title": "Расход по запросам, ₽",
+    "currency": "RUB",
+    "currency_in_header": false,
+    "currency_style": "symbol",
+    "decimals": 0,
+    "number_style": "currency"
+   },
+   "[\"name\",\"views\"]": {
+    "column_title": "Показы (реклама)",
+    "decimals": 0,
+    "number_style": "decimal"
+   }
+  }
+ }
+}

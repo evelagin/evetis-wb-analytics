@@ -12,7 +12,7 @@
   "image": "metabase/metabase:latest",
   "mb_db_file": "/metabase-data/metabase.db"
  },
- "baseline_commit": "f317fcdd783db6db2efcfd93903306a106e15110",
+ "baseline_commit": "2a46b31d9797d2c08fc9fcb1fb88a4ac3a553a39",
  "card_ids": [
   40,
   41,
@@ -59,7 +59,18 @@
   82,
   83,
   84,
-  85
+  85,
+  86,
+  87,
+  88,
+  89,
+  90,
+  91,
+  92,
+  93,
+  94,
+  95,
+  96
  ],
  "card_to_collection": {
   "40": 6,
@@ -107,7 +118,18 @@
   "82": 6,
   "83": 6,
   "84": 6,
-  "85": 6
+  "85": 6,
+  "86": 8,
+  "87": 8,
+  "88": 8,
+  "89": 8,
+  "90": 8,
+  "91": 8,
+  "92": 8,
+  "93": 8,
+  "94": 8,
+  "95": 8,
+  "96": 8
  },
  "cards": [
   {
@@ -431,12 +453,90 @@
    "file": "metabase/cards/card-85-reklama-billing-wb.json",
    "id": 85,
    "name": "Реклама: биллинг WB, ₽"
+  },
+  {
+   "collection_id": 8,
+   "display": "table",
+   "file": "metabase/cards/card-86-okno-i-svezhest-dannyh.json",
+   "id": 86,
+   "name": "Окно и свежесть данных"
+  },
+  {
+   "collection_id": 8,
+   "display": "table",
+   "file": "metabase/cards/card-87-pokrytie-reklamnogo-byudzheta-zaprosami.json",
+   "id": 87,
+   "name": "Покрытие рекламного бюджета запросами"
+  },
+  {
+   "collection_id": 8,
+   "display": "table",
+   "file": "metabase/cards/card-88-struktura-reklamnogo-rashoda-okna.json",
+   "id": 88,
+   "name": "Структура рекламного расхода окна"
+  },
+  {
+   "collection_id": 8,
+   "display": "table",
+   "file": "metabase/cards/card-89-klyuchevye-pokazateli-po-poiskovym-zaprosam.json",
+   "id": 89,
+   "name": "Ключевые показатели по поисковым запросам"
+  },
+  {
+   "collection_id": 8,
+   "display": "table",
+   "file": "metabase/cards/card-90-dokazatelnost-zaprosov.json",
+   "id": 90,
+   "name": "Доказательность запросов"
+  },
+  {
+   "collection_id": 8,
+   "display": "table",
+   "file": "metabase/cards/card-91-zaprosy-s-naibolshim-rashodom.json",
+   "id": 91,
+   "name": "Запросы с наибольшим расходом"
+  },
+  {
+   "collection_id": 8,
+   "display": "table",
+   "file": "metabase/cards/card-92-zaprosy-s-dostatochnymi-dannymi-actionable.json",
+   "id": 92,
+   "name": "Запросы с достаточными данными (ACTIONABLE)"
+  },
+  {
+   "collection_id": 8,
+   "display": "table",
+   "file": "metabase/cards/card-93-rashod-bez-zakazov.json",
+   "id": 93,
+   "name": "Расход без заказов"
+  },
+  {
+   "collection_id": 8,
+   "display": "table",
+   "file": "metabase/cards/card-94-dorogoy-klik-otnositelno-bazy.json",
+   "id": 94,
+   "name": "Дорогой клик относительно базы"
+  },
+  {
+   "collection_id": 8,
+   "display": "table",
+   "file": "metabase/cards/card-95-silnaya-konversiya-pri-dostatochnyh-dannyh.json",
+   "id": 95,
+   "name": "Сильная конверсия при достаточных данных"
+  },
+  {
+   "collection_id": 8,
+   "display": "table",
+   "file": "metabase/cards/card-96-vse-zaprosy-okna-polnaya-tablica.json",
+   "id": 96,
+   "name": "Все запросы окна — полная таблица"
   }
  ],
  "collection_ids": [
   5,
   6,
-  7
+  7,
+  8
  ],
  "collections": [
   {
@@ -456,16 +556,23 @@
    "id": 7,
    "location": "/5/",
    "name": "02 SKU Performance"
+  },
+  {
+   "file": "metabase/collections/collection-8-03-advertising.json",
+   "id": 8,
+   "location": "/5/",
+   "name": "03 · Advertising"
   }
  ],
  "counts": {
-  "cards": 46,
-  "collections": 3,
-  "dashboards": 2
+  "cards": 57,
+  "collections": 4,
+  "dashboards": 3
  },
  "dashboard_ids": [
   2,
-  3
+  3,
+  4
  ],
  "dashboard_to_cards": {
   "2": [
@@ -518,6 +625,19 @@
    69,
    70,
    71
+  ],
+  "4": [
+   86,
+   87,
+   88,
+   89,
+   90,
+   91,
+   92,
+   93,
+   94,
+   95,
+   96
   ]
  },
  "dashboards": [
@@ -532,6 +652,12 @@
    "file": "metabase/dashboards/dashboard-3-evetis-wb-sku-performance.json",
    "id": 3,
    "name": "EVETIS · WB SKU Performance"
+  },
+  {
+   "collection_id": 8,
+   "file": "metabase/dashboards/dashboard-4-search-queries.json",
+   "id": 4,
+   "name": "Search Queries"
   }
  ],
  "excluded_volatile_fields": [
@@ -562,7 +688,7 @@
   "updated_at",
   "view_count"
  ],
- "export_timestamp": "2026-08-28T18:01:47+03:00",
+ "export_timestamp": "2026-09-06T21:59:50+03:00",
  "metabase_version": {
   "date": "2026-08-25",
   "hash": "ab5ffba",
@@ -615,11 +741,24 @@
   "metabase/cards/card-83-prochie-rashody-wb-netto.json": "59466952f7116d69201e919d02f651a2ee22154eadb6b4c84b8dade2d2a65d9f",
   "metabase/cards/card-84-izmenenie-rezultata-k-pred-periodu.json": "5d02d6717ef55176a90ce45900bc7a2525fbf55e698902f029e1328168654baa",
   "metabase/cards/card-85-reklama-billing-wb.json": "4422757364dfc9de8c7697378132d6f0eef94c5b0f32261d23b8e50bdac00c0b",
+  "metabase/cards/card-86-okno-i-svezhest-dannyh.json": "6bb9731a2325100e3a65be1839947fe96e9b5f4e8b7c3f60dee8947cbb54271b",
+  "metabase/cards/card-87-pokrytie-reklamnogo-byudzheta-zaprosami.json": "6b950267396360783f990e9fe42506b5f2439d7ced655b6c5984973332e53e92",
+  "metabase/cards/card-88-struktura-reklamnogo-rashoda-okna.json": "0574d2bdcebca846ea2a7a8e9eb0cf8e890680a317f5f2ab2129bbe3cb762001",
+  "metabase/cards/card-89-klyuchevye-pokazateli-po-poiskovym-zaprosam.json": "70fcc88f73d5633070d3530841353bfee8cdb4d6bbeb3cf9a74842e5c565e2b8",
+  "metabase/cards/card-90-dokazatelnost-zaprosov.json": "152213ea30189e096dd4cd1a525171159ad2b3d715f78c6c9657f349afac253d",
+  "metabase/cards/card-91-zaprosy-s-naibolshim-rashodom.json": "c90c4f0d69c1ab434383c7b38ab9d826b00def4be35607239004bf8360559f2c",
+  "metabase/cards/card-92-zaprosy-s-dostatochnymi-dannymi-actionable.json": "a3616aed793c603adc38674547b3a1554f91f2e3d0b75b34096c2a3c8b552759",
+  "metabase/cards/card-93-rashod-bez-zakazov.json": "0c0bb0cfc18b0aa634168670c8061ce47e912a5636299e1415501fc9a0a1880c",
+  "metabase/cards/card-94-dorogoy-klik-otnositelno-bazy.json": "634124ea5d3ea31b4efc199ec6a6f6c1c962495a49a509bc17cd3affe4b99077",
+  "metabase/cards/card-95-silnaya-konversiya-pri-dostatochnyh-dannyh.json": "25c627f045db74b51df1d27294b53271b686df680ecad74dea55b54d1d077a7b",
+  "metabase/cards/card-96-vse-zaprosy-okna-polnaya-tablica.json": "dde32756e9e7f305bad185be33c99f027a09bb93f6bf495be004a6e20cafefd9",
   "metabase/collections/collection-5-evetis-analytics.json": "db06cefa53c6c0717bb13f28da362bbc91728017516c4ed3c86829aa7f814ca2",
   "metabase/collections/collection-6-01-executive.json": "cb72952920412540ffc5805a991367fbdd0dfb73bc6bf76f209be1d5b8598562",
   "metabase/collections/collection-7-02-sku-performance.json": "24aad11e9416dd74ba9075c70d4cad39b6a5073582b7f4b5c21caff9e13ca7e7",
+  "metabase/collections/collection-8-03-advertising.json": "9617404ea642b1e083cc083acaf2133bd5b4b0ba1e767dc033d0a34544f2dec1",
   "metabase/dashboards/dashboard-2-evetis-wb-executive.json": "b8141823187614fe73f702c5f724cfa3f78fa0ef73bae79b8cc1471653cc5dd7",
-  "metabase/dashboards/dashboard-3-evetis-wb-sku-performance.json": "2ae9fff2b3fad2e477bc9fc8790c819a2e641f1fe8ae4fa979dc8e8b160fe219"
+  "metabase/dashboards/dashboard-3-evetis-wb-sku-performance.json": "2ae9fff2b3fad2e477bc9fc8790c819a2e641f1fe8ae4fa979dc8e8b160fe219",
+  "metabase/dashboards/dashboard-4-search-queries.json": "5fb8a5504fc33a5051b73de9c7d87b5a9624f254226efcfd8dd687cc5c7013b3"
  },
  "source_note": "OSS. Аутентификационные данные в экспорт не входят.",
  "source_url": "http://localhost:3000",

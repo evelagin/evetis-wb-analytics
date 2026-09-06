@@ -1,0 +1,239 @@
+{
+ "archived": false,
+ "archived_directly": false,
+ "cache_invalidated_at": null,
+ "cache_ttl": null,
+ "card_schema": 23,
+ "collection": {
+  "archive_operation_id": null,
+  "archived": false,
+  "archived_directly": null,
+  "authority_level": null,
+  "created_at": "2026-09-06T18:46:49.072866Z",
+  "description": "Stage ADS-5. Операционная реклама WB: экраны поверх валидированных вью wb_mart (Ads-2/3/4). Источник истины — BigQuery, Metabase только presentation.",
+  "entity_id": "SchgzXE2sxJbQxqj4pOve",
+  "id": 8,
+  "is_remote_synced": false,
+  "is_sample": false,
+  "location": "/5/",
+  "name": "03 · Advertising",
+  "namespace": null,
+  "personal_owner_id": null,
+  "slug": "03_%C2%B7_advertising",
+  "type": null
+ },
+ "collection_id": 8,
+ "collection_position": null,
+ "collection_preview": true,
+ "created_at": "2026-09-06T18:53:04.213158Z",
+ "creator_id": 2,
+ "dashboard": null,
+ "dashboard_id": null,
+ "database_id": 2,
+ "dataset_query": {
+  "database": 2,
+  "lib/type": "mbql/query",
+  "stages": [
+   {
+    "lib/type": "mbql.stage/native",
+    "native": "SELECT\n  evidence_status,\n  COUNT(*)                                                        AS queries_cnt,\n  SAFE_DIVIDE(COUNT(*), SUM(COUNT(*)) OVER ())                    AS queries_share,\n  SUM(spend_rub)                                                  AS spend_rub,\n  SAFE_DIVIDE(SUM(spend_rub), SUM(SUM(spend_rub)) OVER ())        AS spend_share,\n  SUM(clicks_sum)                                                 AS clicks,\n  SUM(views_sum)                                                  AS views,\n  SUM(orders_sum)                                                 AS orders_raw,\n  COUNTIF(can_compare_ctr)                                        AS can_ctr,\n  COUNTIF(can_compare_cpc)                                        AS can_cpc,\n  COUNTIF(can_judge_order_cr)                                     AS can_order_cr\nFROM `wb_mart.V_ADS_SCREEN_QUERY`\nWHERE window_days = {{window}}\n  [[AND {{sku}}]]\n  [[AND {{q}}]]\n  [[AND spend_rub >= {{spend_min}}]]\n  [[AND orders_sum >= {{orders_min}}]]\nGROUP BY evidence_status\nORDER BY CASE evidence_status\n           WHEN \"ACTIONABLE\"    THEN 1\n           WHEN \"OBSERVATIONAL\" THEN 2\n           ELSE 3\n         END\n",
+    "template-tags": [
+     {
+      "default": "90",
+      "display-name": "Окно (дней)",
+      "id": "3df49c2f-6a91-470a-92f4-b1c89548cc03",
+      "name": "window",
+      "required": true,
+      "type": "number"
+     },
+     {
+      "dimension": [
+       "field",
+       {
+        "lib/uuid": "527570b9-6646-4d2b-9034-c5019fdb1696"
+       },
+       721
+      ],
+      "display-name": "Товар",
+      "id": "bf9481d6-9f57-42cf-af15-d45492762dcf",
+      "name": "sku",
+      "type": "dimension",
+      "widget-type": "string/="
+     },
+     {
+      "dimension": [
+       "field",
+       {
+        "lib/uuid": "c957d86a-96d4-4221-b0d4-23df74289a0a"
+       },
+       719
+      ],
+      "display-name": "Запрос содержит",
+      "id": "8e3b73d2-b6b1-4dd6-9914-1a2bbcf2da66",
+      "name": "q",
+      "type": "dimension",
+      "widget-type": "string/contains"
+     },
+     {
+      "display-name": "Минимальный расход, ₽",
+      "id": "d16973b4-e613-434b-89dd-b3aa39fdab6a",
+      "name": "spend_min",
+      "type": "number"
+     },
+     {
+      "display-name": "Минимум заказов",
+      "id": "082a3e12-0d64-41eb-8496-2240698b072c",
+      "name": "orders_min",
+      "type": "number"
+     }
+    ]
+   }
+  ]
+ },
+ "description": "Распределение строк окна по уровню доказательности и доле расхода. Пороги — ровно те, что заданы в BigQuery (Ads-4) и НЕ ослаблены: ACTIONABLE — клики ≥ 40; OBSERVATIONAL — клики ≥ 10 ИЛИ показы ≥ 1000; иначе INSUFFICIENT. Столбцы «сравним/оценим» показывают, скольким строкам разрешено сравнение: CTR — показы ≥ 1000, CPC — клики ≥ 20, CR заказов — клики ≥ 40. Карточка намеренно НЕ фильтруется по доказательности: это её собственный разрез.",
+ "dimension_mappings": null,
+ "dimensions": null,
+ "display": "table",
+ "document_id": null,
+ "embedding_params": null,
+ "embedding_type": null,
+ "enable_embedding": false,
+ "entity_id": "slfex3zo6S58DOdyZHhrY",
+ "id": 90,
+ "is_remote_synced": false,
+ "last_used_at": "2026-09-06T18:53:04.213158Z",
+ "legacy_query": null,
+ "metabase_version": "v0.63.15.1 (ab5ffba)",
+ "name": "Доказательность запросов",
+ "param_fields": {
+  "8e3b73d2-b6b1-4dd6-9914-1a2bbcf2da66": [
+   {
+    "base_type": "type/Text",
+    "dimensions": [],
+    "display_name": "Norm Query",
+    "fk_target_field_id": null,
+    "has_field_values": "list",
+    "id": 719,
+    "name": "norm_query",
+    "name_field": null,
+    "semantic_type": null,
+    "table_id": 33,
+    "target": null
+   }
+  ],
+  "bf9481d6-9f57-42cf-af15-d45492762dcf": [
+   {
+    "base_type": "type/Text",
+    "dimensions": [],
+    "display_name": "Product Name Short",
+    "fk_target_field_id": null,
+    "has_field_values": "list",
+    "id": 721,
+    "name": "product_name_short",
+    "name_field": null,
+    "semantic_type": "type/Category",
+    "table_id": 33,
+    "target": null
+   }
+  ]
+ },
+ "parameter_mappings": [],
+ "parameter_usage_count": 0,
+ "parameters": [],
+ "query_type": "native",
+ "source_card_id": null,
+ "table_id": null,
+ "type": "question",
+ "visualization_settings": {
+  "column_settings": {
+   "[\"name\",\"can_cpc\"]": {
+    "column_title": "CPC сравним",
+    "decimals": 0,
+    "number_style": "decimal"
+   },
+   "[\"name\",\"can_ctr\"]": {
+    "column_title": "CTR сравним",
+    "decimals": 0,
+    "number_style": "decimal"
+   },
+   "[\"name\",\"can_order_cr\"]": {
+    "column_title": "CR заказов оценим",
+    "decimals": 0,
+    "number_style": "decimal"
+   },
+   "[\"name\",\"clicks\"]": {
+    "column_title": "Клики",
+    "decimals": 0,
+    "number_style": "decimal"
+   },
+   "[\"name\",\"evidence_status\"]": {
+    "column_title": "Доказательность"
+   },
+   "[\"name\",\"orders_raw\"]": {
+    "column_title": "Заказы (attributed, raw)",
+    "decimals": 0,
+    "number_style": "decimal"
+   },
+   "[\"name\",\"queries_cnt\"]": {
+    "column_title": "Строк",
+    "decimals": 0,
+    "number_style": "decimal"
+   },
+   "[\"name\",\"queries_share\"]": {
+    "column_title": "Доля строк",
+    "decimals": 1,
+    "number_style": "percent"
+   },
+   "[\"name\",\"spend_rub\"]": {
+    "column_title": "Расход, ₽",
+    "currency": "RUB",
+    "currency_in_header": false,
+    "currency_style": "symbol",
+    "decimals": 0,
+    "number_style": "currency"
+   },
+   "[\"name\",\"spend_share\"]": {
+    "column_title": "Доля расхода",
+    "decimals": 1,
+    "number_style": "percent"
+   },
+   "[\"name\",\"views\"]": {
+    "column_title": "Показы",
+    "decimals": 0,
+    "number_style": "decimal"
+   }
+  },
+  "table.column_formatting": [
+   {
+    "color": "#84BB4C",
+    "columns": [
+     "evidence_status"
+    ],
+    "highlight_row": false,
+    "operator": "=",
+    "type": "single",
+    "value": "ACTIONABLE"
+   },
+   {
+    "color": "#F9CF48",
+    "columns": [
+     "evidence_status"
+    ],
+    "highlight_row": false,
+    "operator": "=",
+    "type": "single",
+    "value": "OBSERVATIONAL"
+   },
+   {
+    "color": "#E0E0E0",
+    "columns": [
+     "evidence_status"
+    ],
+    "highlight_row": false,
+    "operator": "=",
+    "type": "single",
+    "value": "INSUFFICIENT"
+   }
+  ]
+ }
+}

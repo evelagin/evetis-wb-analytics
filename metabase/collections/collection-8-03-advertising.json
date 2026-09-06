@@ -1,0 +1,19 @@
+{
+ "archive_operation_id": null,
+ "archived": false,
+ "archived_directly": null,
+ "authority_level": null,
+ "created_at": "2026-09-06T18:46:49.072866Z",
+ "description": "Stage ADS-5. Операционная реклама WB: экраны поверх валидированных вью wb_mart (Ads-2/3/4). Источник истины — BigQuery, Metabase только presentation.",
+ "entity_id": "SchgzXE2sxJbQxqj4pOve",
+ "id": 8,
+ "is_remote_synced": false,
+ "is_sample": false,
+ "location": "/5/",
+ "name": "03 · Advertising",
+ "namespace": null,
+ "parent_id": 5,
+ "personal_owner_id": null,
+ "slug": "03_%C2%B7_advertising",
+ "type": null
+}

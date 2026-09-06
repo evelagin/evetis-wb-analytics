@@ -1,0 +1,101 @@
+{
+ "archived": false,
+ "archived_directly": false,
+ "cache_invalidated_at": null,
+ "cache_ttl": null,
+ "card_schema": 23,
+ "collection": {
+  "archive_operation_id": null,
+  "archived": false,
+  "archived_directly": null,
+  "authority_level": null,
+  "created_at": "2026-09-06T18:46:49.072866Z",
+  "description": "Stage ADS-5. Операционная реклама WB: экраны поверх валидированных вью wb_mart (Ads-2/3/4). Источник истины — BigQuery, Metabase только presentation.",
+  "entity_id": "SchgzXE2sxJbQxqj4pOve",
+  "id": 8,
+  "is_remote_synced": false,
+  "is_sample": false,
+  "location": "/5/",
+  "name": "03 · Advertising",
+  "namespace": null,
+  "personal_owner_id": null,
+  "slug": "03_%C2%B7_advertising",
+  "type": null
+ },
+ "collection_id": 8,
+ "collection_position": null,
+ "collection_preview": true,
+ "created_at": "2026-09-06T18:53:00.191985Z",
+ "creator_id": 2,
+ "dashboard": null,
+ "dashboard_id": null,
+ "database_id": 2,
+ "dataset_query": {
+  "database": 2,
+  "lib/type": "mbql/query",
+  "stages": [
+   {
+    "lib/type": "mbql.stage/native",
+    "native": "WITH a AS (\n  SELECT MAX(day) AS as_of FROM `wb_mart.V_ADS_FUNNEL_QUERY_DAILY`\n),\nqs AS (\n  SELECT SAFE_CAST(advert_id AS INT64) AS advert_id,\n         SUM(SAFE_CAST(spend AS FLOAT64)) AS q_spend\n  FROM `wb_raw.V_ADV_QUERY_STATS`, a\n  WHERE SAFE.PARSE_DATE(\"%Y-%m-%d\", period_from) >  DATE_SUB(a.as_of, INTERVAL {{window}} DAY)\n    AND SAFE.PARSE_DATE(\"%Y-%m-%d\", period_from) <= a.as_of\n  GROUP BY 1\n),\ncdd AS (\n  SELECT cd.advert_id, SUM(cd.ad_spend_rub) AS c_spend\n  FROM `wb_mart.V_ADS_CAMPAIGN_DAILY` cd, a\n  WHERE cd.day > DATE_SUB(a.as_of, INTERVAL {{window}} DAY) AND cd.day <= a.as_of\n  GROUP BY 1\n),\nj AS (\n  SELECT cdd.advert_id,\n         CAST(cdd.c_spend AS FLOAT64) AS c_spend,\n         IFNULL(qs.q_spend, 0)        AS q_spend,\n         qs.advert_id IS NOT NULL     AS has_q\n  FROM cdd LEFT JOIN qs USING (advert_id)\n),\nagg AS (\n  SELECT\n    SUM(q_spend)                          AS explained,\n    SUM(IF(has_q, c_spend - q_spend, 0))  AS not_broken_down,\n    SUM(IF(has_q, 0, c_spend))            AS absent,\n    SUM(c_spend)                          AS total,\n    COUNTIF(has_q)                        AS adverts_with_q,\n    COUNTIF(NOT has_q)                    AS adverts_without_q,\n    COUNT(*)                              AS adverts_total\n  FROM j\n),\nrows_ AS (\n  SELECT 1 AS ord, \"Объяснено статистикой по поисковым запросам\" AS bucket,\n         explained AS spend_rub, adverts_with_q AS adverts FROM agg\n  UNION ALL\n  SELECT 2, \"Кампания есть в отчёте по запросам, но расход по запросам не разложен\",\n         not_broken_down, adverts_with_q FROM agg\n  UNION ALL\n  SELECT 3, \"Кампании нет в отчёте по поисковым запросам\",\n         absent, adverts_without_q FROM agg\n  UNION ALL\n  SELECT 4, \"ИТОГО сопоставимый расход по кампаниям\",\n         total, adverts_total FROM agg\n)\nSELECT r.bucket, r.spend_rub, SAFE_DIVIDE(r.spend_rub, agg.total) AS share, r.adverts\nFROM rows_ r, agg\nORDER BY r.ord\n",
+    "template-tags": [
+     {
+      "default": "90",
+      "display-name": "Окно (дней)",
+      "id": "60df91af-b526-4493-b0c5-f6b6244ce57c",
+      "name": "window",
+      "required": true,
+      "type": "number"
+     }
+    ]
+   }
+  ]
+ },
+ "description": "Раскладка разрыва покрытия (ADS-5 §6). Сопоставление на уровне кампании: расход по запросам (wb_raw.V_ADV_QUERY_STATS, сумма по advert_id) против расхода кампаний (V_ADS_CAMPAIGN_DAILY) за одно и то же окно. Проверено на живых данных: ни одна кампания из отчёта по запросам не отсутствует в витрине кампаний и ни у одной расход по запросам не превышает расход кампании, поэтому все три строки неотрицательны и в сумме дают ИТОГО. Единственная карточка дашборда, читающая wb_raw напрямую: разбивки расхода по advert_id на уровне витрины не существует.",
+ "dimension_mappings": null,
+ "dimensions": null,
+ "display": "table",
+ "document_id": null,
+ "embedding_params": null,
+ "embedding_type": null,
+ "enable_embedding": false,
+ "entity_id": "YeS8YW4oHJ5R5xoz9u-SI",
+ "id": 88,
+ "is_remote_synced": false,
+ "last_used_at": "2026-09-06T18:53:00.191985Z",
+ "legacy_query": null,
+ "metabase_version": "v0.63.15.1 (ab5ffba)",
+ "name": "Структура рекламного расхода окна",
+ "param_fields": {},
+ "parameter_mappings": [],
+ "parameter_usage_count": 0,
+ "parameters": [],
+ "query_type": "native",
+ "source_card_id": null,
+ "table_id": null,
+ "type": "question",
+ "visualization_settings": {
+  "column_settings": {
+   "[\"name\",\"adverts\"]": {
+    "column_title": "Кампаний",
+    "decimals": 0,
+    "number_style": "decimal"
+   },
+   "[\"name\",\"bucket\"]": {
+    "column_title": "Строка бюджета"
+   },
+   "[\"name\",\"share\"]": {
+    "column_title": "Доля",
+    "decimals": 1,
+    "number_style": "percent"
+   },
+   "[\"name\",\"spend_rub\"]": {
+    "column_title": "Сумма, ₽",
+    "currency": "RUB",
+    "currency_in_header": false,
+    "currency_style": "symbol",
+    "decimals": 0,
+    "number_style": "currency"
+   }
+  }
+ }
+}
