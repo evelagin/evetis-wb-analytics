@@ -92,15 +92,32 @@ LEFT JOIN UNNEST(JSON_QUERY_ARRAY(c.raw_json, '$.nm_settings')) AS e WITH OFFSET
 WHERE c.processed_status = 'raw';
 
 -- ── Детерминированный суточный срез ─────────────────────────────────────────
--- Правило свёртки: ПОСЛЕДНИЙ снимок суток по snapshot_ts; при равенстве —
--- больший run_id. Детерминизм обеспечен тем, что (snapshot_ts, advert_id)
--- уникален. Вью НЕ заменяет основную: 22 пары «сутки × кампания» имеют разные
--- конфигурации внутри дня, и здесь останется только последняя из них.
+-- 🔴 ИСПРАВЛЕНО в Stage ADS-3 §0.2 (06.09.2026). Первая редакция брала последнюю
+--    строку по (snapshot_date, advert_id, nm_index) НЕЗАВИСИМО для каждого nm_index.
+--    Пока nm_settings — массив длины ≤ 1, это безвредно, но контракт был небезопасен:
+--    как только у кампании появятся две номенклатуры и одну из них удалят, свёртка
+--    склеит СИНТЕТИЧЕСКОЕ состояние из разных снимков. Доказано фикстурой:
+--      снимок 10:00 = [nm 111 bid 10000, nm 222 bid 20000]
+--      снимок 20:00 = [nm 111 bid 15000]            (nm 222 удалили)
+--      старый алгоритм → idx0 nm=111 bid=15000 (20:00) + idx1 nm=222 bid=20000 (10:00)
+--      то есть удалённая номенклатура воскресает и подаётся как текущее состояние.
+--    Правильный порядок: СНАЧАЛА выбрать ЦЕЛЫЙ снимок кампании за сутки, и только
+--    ПОТОМ отдать его nm-строки. Тогда все строки суток принадлежат одному
+--    snapshot_ts по построению.
+-- Правило выбора: последний снимок суток по snapshot_ts; при равенстве — больший
+-- run_id. Детерминизм обеспечен уникальностью (snapshot_ts, advert_id).
+-- Вью НЕ заменяет основную: 22 пары «сутки × кампания» имеют разные конфигурации
+-- внутри дня, и здесь останется только последняя из них.
 CREATE OR REPLACE VIEW `wb_raw.V_ADV_CAMPAIGN_CONFIG_DAILY`
-OPTIONS (description = 'Stage ADS-2. Суточный срез V_ADV_CAMPAIGN_CONFIG_SNAPSHOT: последний снимок суток на кампанию. Внутридневные состояния здесь ТЕРЯЮТСЯ по построению — для них использовать snapshot-вью.') AS
-SELECT * EXCEPT(_rn) FROM (
-  SELECT s.*, ROW_NUMBER() OVER (
-    PARTITION BY s.snapshot_date, s.advert_id, s.nm_index
-    ORDER BY s.snapshot_ts DESC, s.run_id DESC) AS _rn
-  FROM `wb_raw.V_ADV_CAMPAIGN_CONFIG_SNAPSHOT` s)
-WHERE _rn = 1;
+OPTIONS (description = 'Stage ADS-2 (исправлено ADS-3 §0.2). Суточный срез V_ADV_CAMPAIGN_CONFIG_SNAPSHOT: ЦЕЛЫЙ последний снимок кампании за сутки. Строки одних суток гарантированно принадлежат одному snapshot_ts. Внутридневные состояния здесь ТЕРЯЮТСЯ по построению — для них использовать snapshot-вью.') AS
+WITH chosen AS (
+  SELECT * EXCEPT(_rn) FROM (
+    SELECT DISTINCT snapshot_date, advert_id, snapshot_ts, run_id,
+           ROW_NUMBER() OVER (PARTITION BY snapshot_date, advert_id
+                              ORDER BY snapshot_ts DESC, run_id DESC) AS _rn
+    FROM `wb_raw.V_ADV_CAMPAIGN_CONFIG_SNAPSHOT`)
+  WHERE _rn = 1)
+SELECT s.*
+FROM `wb_raw.V_ADV_CAMPAIGN_CONFIG_SNAPSHOT` s
+JOIN chosen c
+  USING (snapshot_date, advert_id, snapshot_ts, run_id);
