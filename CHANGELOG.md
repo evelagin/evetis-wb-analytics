@@ -2,6 +2,36 @@
 
 ## История изменений
 
+### 2026-09-06 — Stage ADS-1B FINAL: детектор здоровья включён в production и доказан автономно
+
+**Что сделано.** Инфраструктура ADS-1B развёрнута штатным CI-путём (workflow `infra`, `action=apply`, WIF + `TERRAFORM_APPLY_SA`), `wb-ops-health-prod` работает по расписанию, автономное исполнение доказано цепочкой Scheduler → BigQuery → процедура → `OPS_HEALTH_STATE`. Ручной `CALL` в качестве приёмки не использовался.
+
+**Перед apply устранён чужой дрейф — три атомарных коммита по классам дефектов.** Authoritative CI-план до этого показывал `6 to add, 5 to change, 0 to destroy`, и пять изменений к ADS-1B не относились. `terraform apply` работает по всей конфигурации, поэтому включение детектора протащило бы их с собой.
+
+🔴 **`warehouse_code` (`786c84d`) — колонка чуть не была удалена.** План предлагал выпилить её из `RAW_WB_STOCKS__CR`. Доказано данными до правки: 272 строки из 4 676 (5,82 %) её несут, и у **всех 272** `warehouse_id IS NULL` — после того как 16.08.2026 WB обезличил склад отгрузки, код остаётся **единственным** идентификатором склада. Это ключ грейна (`warehouse_key = COALESCE(NULLIF(warehouse_code,''), CAST(warehouse_id AS STRING))`), потребляемый `pr_mart1_facts.sql`, `pr_mart1_validation.sql`, `cloud/src/loaders/stocks/{normalize,bq}.ts` и `WbStocks*.gs`. Колонка back-портирована в `bigquery.tf` последней — под ordinal 18 прода. Побочно доказано, что `INTEGER→INT64` и `BOOLEAN→BOOL` не были дрейфом: после добавления одной колонки весь diff по ресурсу исчез, включая типы.
+
+🔴 **`seller_info` (`a9ca841`) — production чуть не откатили.** `ozon-runtime-daily` работает с сущностью `seller_info` и образом `sha256:14f8a4c8` со Stage 3.4D.3, но эта правка жила только в рабочем дереве; на `main` её не было, и terraform планировал убрать сущность. Значения сверены с живым job'ом и back-портированы. Закоммичен **только** `infra/terraform/ozon_ingestion.tf`; `pipelines/ozon/runtime/entities.py` и 20 untracked Ozon-файлов не тронуты — они принадлежат владельцу Ozon-этапа. Ничего в проде от этого коммита не меняется: это фиксация уже развёрнутого поведения.
+
+**`client` / `client_version` (`4683239`).** Вечный diff на четырёх Cloud Run job'ах. `terraform providers schema` показал: оба поля `optional`, НЕ `computed`, описание «Arbitrary identifier/version for the API client» — отметка о том, каким инструментом последний раз писали ресурс, а не конфигурация job'а. Владеть ими Terraform осмысленно не может: любое записанное значение было бы неправдой, зануление стирает происхождение без выгоды, а хардкод `568.0.0`/`577.0.0` был бы подгонкой под вывод. Решение — `ignore_changes` на двух дрейфующих блоках; `wb_stocks_prod` и `wb_mart_prod` не тронуты, у них diff'а нет.
+
+После разведения CI-план дал ровно **`6 to add, 0 to change, 0 to destroy`**.
+
+🔴 **Первый apply упал, и это вскрыло пробел в собственной декларации ADS-1B (`7cf07e5`).** Прогон `34048893917`: пять ресурсов создались, `wb-ops-health-prod` упал с `403 iam.serviceAccounts.actAs` на `sa-ops-health`. Cloud Scheduler требует у создающего принципала `actAs` на SA из `oauth_token`; в проекте это решает карта `local.terraform_actas_targets` в `iam.tf`, и `sa-ops-health` в ней не было. Добавлен туда же — паттерн проекта сохранён, отдельного биндинга не заводилось. Плюс явный `depends_on`: ссылочной связи между биндингом и scheduler'ом нет, Terraform был вправе создавать их параллельно, и scheduler проигрывал гонку. Повторный прогон `34049039880` — `Apply complete! Resources: 2 added, 0 changed, 0 destroyed`.
+
+**Production state.** `wb-ops-health-prod`, `europe-west1`, **ENABLED**, `paused=false`, `0 */3 * * *` `Europe/Moscow`, retry 1, deadline 320s, identity `sa-ops-health`, target `POST bigquery.googleapis.com/.../jobs` → ``CALL `wb_ops.sp_evaluate_pipeline_health`()``. Декларация и production совпадают.
+
+**Доказательство автономного исполнения** (штатный `Run now`, инициатор — Scheduler): `lastAttemptTime 2026-09-06T17:36:59.651998Z`, `status.code` пуст → через 87 мс BigQuery job `job_QIVWa1UEe6OW8uqyjg--UQgMzsco` принципалом `sa-ops-health`, SCRIPT, DONE, 17:36:59.775 → 17:37:29.250 (29 475 мс), плюс 8 дочерних job'ов тем же принципалом (`_res`, `_prev`, `_eval`, INSERT `OPS_HEALTH_STATE`, MERGE и UPDATE `OPS_INCIDENT`, INSERT `OPS_ALERT_EVENT`) — все DONE. `OPS_HEALTH_STATE` обновлён семью строками с `check_ts 17:36:59.879`. Значения пересчитаны, а не переписаны: H3 14,5→15,4 ч, H4 11,5→12,4 ч.
+
+**Идемпотентность на втором штатном прогоне** (`17:38:14.287206Z`, job `job_ovHH2KJrcUq1i0xjN5lKJgjAAtT_`, DONE): 3 прогона → 21 снимок (3 × 7), дублей `(scope, scope_id, check_ts)` — **0**, переходов после bootstrap — **0**, инцидентов **0**, alert-событий **0**. Шторма нет.
+
+**Текущее здоровье:** 7 проверок, все `HEALTHY`, unhealthy 0, активных инцидентов 0, алертов 0. Реальных проблем в проде не возникло — подавлять было нечего.
+
+**Fail-open подтверждён фактически, а не декларативно:** на `wb_ops`/детектор не ссылается ни одна из 2 процедур `wb_mart`, ни одна из 25 вью `wb_mart`, ни одна из 24 вью `wb_raw`, ни один файл `cloud/src`, `apps-script`, `pipelines`. Детектор ссылается на конвейеры 9 раз — направление `detector → pipelines`, как и требуется.
+
+**Backlog.** BL-12 **ЗАКРЫТ**. Остаются OPEN и в ADS-1B не реализовывались: BL-10 (доставка алертов; сначала исследовать существующий `evetis_communications`, параллельную систему не создавать), BL-11 (`recovery_deadline_ts` / `CLOSED_UNRECOVERABLE`), BL-13 (внешний watchdog: H0 внутри детектора не заметит, что детектор вообще перестал запускаться), BL-8/BL-9 (parity-гейт только у `pr_mart2a`; таблицы `wb_ops` создаются вне репозитория).
+
+**Файлы.** `infra/terraform/{bigquery,ozon_ingestion,cloud_run_jobs,iam,ops_health}.tf`, `docs/ADS1B_HEALTH_DETECTOR_2026-09-06.md`.
+
 ### 2026-09-06 — Stage ADS-1B: детектор здоровья конвейеров WB (объекты развёрнуты, автозапуск ждёт решения)
 
 **Зачем.** Инцидент ADS-1A прожил незамеченным трое суток: витрина падала 15 раз подряд, а `wb_ops` — реестр из 14 конвейеров с SLA — стоял с пустыми `OPS_HEALTH_STATE`, `OPS_ALERT_EVENT`, `OPS_INCIDENT`. Реестр был, детектора не было.

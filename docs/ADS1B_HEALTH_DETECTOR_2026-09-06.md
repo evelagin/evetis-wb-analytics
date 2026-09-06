@@ -172,66 +172,89 @@ Read-only, по фактическим `MART_RUNS` за 02–06.09.2026. Ист�
 **7 проверок, все `HEALTHY`, 0 инцидентов, 0 alert-событий.** Ложных исторических
 инцидентов не создано — требование §14 ТЗ выполнено.
 
-## 10. Расписание — НЕ ВКЛЮЧЕНО
+## 10. Расписание — РАЗВЁРНУТО И РАБОТАЕТ
 
-`infra/terraform/ops_health.tf`: `terraform validate` — **Success**, `terraform fmt` — чисто.
-**`terraform apply` не выполнялся.**
+`terraform apply` выполнен штатным CI-путём: workflow `infra`, `action=apply`,
+WIF + `TERRAFORM_APPLY_SA`, из GitHub `main`.
 
-| Параметр | Значение |
+| Прогон | Итог |
 |---|---|
-| Механизм | Cloud Scheduler → BigQuery `jobs.insert` (тот же resource и паттерн, что `wb-mart-prod`) |
-| Job | `wb-ops-health-prod`, region `europe-west1` |
-| Каденс | `0 */3 * * *`, `Europe/Moscow` |
-| Обоснование каденса | самый короткий осмысленный SLA реестра — `orders.freshness_sla_minutes = 180` (3 ч) |
-| Identity | новый SA `sa-ops-health` + jobUser + dataEditor на `wb_ops` + dataViewer на `wb_raw`/`wb_mart` |
-| Retry / deadline | `retry_count = 1`, `attempt_deadline = 320s` |
-| Начальное состояние | `paused = true` — как у всех job'ов проекта |
+| `34048893917` | **FAILURE** — 5 из 6 ресурсов создано, scheduler упал: `403 iam.serviceAccounts.actAs` на `sa-ops-health` |
+| `34049039880` | **SUCCESS** — `Apply complete! Resources: 2 added, 0 changed, 0 destroyed` |
 
-**Почему не применено — authoritative CI-план, run `34048138814`, 06.09.2026 17:18 UTC,
-из GitHub `main` = `52675f2`.**
+🔴 **Найденный при apply пробел декларации.** Cloud Scheduler требует у создающего
+принципала право `actAs` на SA из `oauth_token`. В проекте это решается картой
+`local.terraform_actas_targets` в `iam.tf`, но `sa-ops-health` в ней не было. Добавлен
+туда же, а не отдельным биндингом — паттерн проекта сохранён. Дополнительно проставлен
+`depends_on`: ссылочной связи между биндингом и scheduler'ом нет, поэтому Terraform был
+вправе создавать их параллельно, и scheduler проигрывал гонку — что и произошло.
+
+**Production state:**
+
+| Параметр | Факт |
+|---|---|
+| Job | `wb-ops-health-prod`, `europe-west1` |
+| Состояние | **ENABLED**, `paused = false` |
+| Расписание | `0 */3 * * *`, `Europe/Moscow` |
+| Retry / deadline | `1` / `320s` |
+| Identity | `sa-ops-health@…` |
+| Target | `POST bigquery.googleapis.com/.../jobs` → ``CALL `wb_ops.sp_evaluate_pipeline_health`()`` |
+
+Terraform-декларация и production совпадают.
+
+### Доказательство автономного исполнения
+
+Ручной `CALL` в качестве приёмки не использовался. Запуск — штатным механизмом
+Cloud Scheduler (**`Run now`**, отмечено явно: инициатор — Scheduler, BigQuery job
+создаётся его service account'ом, процедура оператором напрямую не вызывается).
 
 ```
-Plan: 6 to add, 5 to change, 0 to destroy
+Scheduler lastAttemptTime   2026-09-06T17:36:59.651998Z   status.code пуст (успех)
+   ↓ 87 мс
+BigQuery job_QIVWa1UEe6OW8uqyjg--UQgMzsco
+   principal  sa-ops-health@project-fa311fc0-4d87-4781-986.iam.gserviceaccount.com
+   statement  CALL `wb_ops.sp_evaluate_pipeline_health`()
+   SCRIPT · DONE · без ошибки
+   started 17:36:59.775 → ended 17:37:29.250 (29 475 мс)
+   ↓ 8 дочерних job'ов тем же принципалом, все DONE:
+     _res → _prev → _eval → INSERT OPS_HEALTH_STATE → MERGE OPS_INCIDENT
+     → UPDATE OPS_INCIDENT → INSERT OPS_ALERT_EVENT
+   ↓
+OPS_HEALTH_STATE   7 строк с check_ts 17:36:59.879
 ```
 
-Шесть создаваемых ресурсов — ровно ADS-1B, ошибок по ним нет, `destroy = 0`. Но пять
-in-place изменений к ADS-1B не относятся, а `terraform apply` работает по всей
-конфигурации, а не по файлу. Acceptance `6 add / 0 change / 0 destroy` не выполнен → STOP.
+Значения пересчитаны, а не переписаны: H3 14,5 → 15,4 ч, H4 11,5 → 12,4 ч.
 
-| # | Ресурс | Что изменилось бы | Оценка |
-|---|---|---|---|
-| 1 | `google_bigquery_table.raw_wb_stocks_cr` | `INTEGER→INT64`, `BOOLEAN→BOOL` + 🔴 **удаление колонки `warehouse_code`** | опасно: колонка ЕСТЬ в проде (`RAW_WB_STOCKS__CR.warehouse_code`, STRING), в `bigquery.tf` её нет |
-| 2 | `ozon_runtime["ozon-runtime-daily"]` | дрейф `client`/`client_version` + 🔴 **откат `ENTITIES`: пропадает `seller_info`** | опасно: Stage 3.4D.3 живёт только в незакоммиченном рабочем дереве, на `main` его нет |
-| 3 | `ozon_runtime["ozon-runtime-fast"]` | `client`/`client_version` `"gcloud"`/`"577.0.0"` → `null` | косметика |
-| 4 | `ozon_runtime["ozon-runtime-weekly"]` | то же | косметика |
-| 5 | `wb_stocks_shadow` | `client`/`client_version` `"gcloud"`/`"568.0.0"` → `null` | косметика |
+### Идемпотентность на втором штатном прогоне
 
-⚠️ **Исправление прежней записи.** В первой редакции здесь утверждалось, что три изменения
-`ozon_runtime` вызваны незакоммиченной правкой `ozon_ingestion.tf`. Это неверно, и CI-план
-это показал: дрейф `client`/`client_version` существует независимо от неё, а грязный файл,
-наоборот, **маскировал** откат `ENTITIES` — локально конфиг содержал `seller_info` и совпадал
-с продом, поэтому этой части диффа видно не было.
+Второй `Run now` — `lastAttemptTime 17:38:14.287206Z`, job
+`job_ovHH2KJrcUq1i0xjN5lKJgjAAtT_`, тот же принципал, DONE без ошибки.
 
-**Локальный terraform для apply непригоден отдельно:** `plan` завершается кодом 1 —
-11 предсуществующих ресурсов падают на refresh с HTTP 403 `getIamPolicy` у рабочей учётки.
-В CI под `TERRAFORM_PLAN_SA` тот же plan проходит успешно.
+| Показатель | Значение |
+|---|---:|
+| Прогонов детектора | 3 (bootstrap 16:42:38, scheduler 17:36:59, scheduler 17:38:14) |
+| Снимков `OPS_HEALTH_STATE` | 21 = 3 × 7 |
+| Дублей `(scope, scope_id, check_ts)` | **0** |
+| Переходов после bootstrap | **0** |
+| Инцидентов всего / активных | **0 / 0** |
+| Alert-событий | **0** — шторма нет |
 
-**Штатный путь** — `.github/workflows/infra.yml` (`workflow_dispatch`, `action=apply`,
-WIF + `TERRAFORM_APPLY_SA`, ручной approval через environment `infra`). Перед apply нужно
-развести пять чужих изменений с ADS-1B, иначе включение детектора потянет за собой откат
-схемы остатков и Ozon-релиза.
+## 11. Fail-open — подтверждено фактически после развёртывания
 
-**До apply** детектор запускается вручную: ``CALL `wb_ops.sp_evaluate_pipeline_health`()``.
+Зависимость односторонняя, проверено по объектам, а не по намерению:
 
-Контейнер и Cloud Run job не нужны — процедура уже в BigQuery. BigQuery scheduled query
-отвергнут: это новый для проекта механизм. Встраивание в `wb-mart-prod` отвергнуто:
-нарушило бы fail-open.
+| Проверка | Результат |
+|---|---|
+| Процедуры `wb_mart`, ссылающиеся на `wb_ops`/детектор | **0 из 2** |
+| Вью `wb_mart` | **0 из 25** |
+| Вью `wb_raw` | **0 из 24** |
+| Исходники `cloud/src`, `apps-script`, `pipelines` | **ни одного файла** |
+| Ссылки детектора на конвейеры | 9 — направление `detector → pipelines`, как и должно |
+| Scheduler | отдельный job `wb-ops-health-prod`, не связан с `wb-mart-prod` |
 
-## 11. Fail-open
-
-Детектор не вызывается ни из одного конвейера данных и не может их заблокировать:
-отдельный scheduler job, отдельный SA, отдельная процедура. Обратное тоже верно —
-отказ витрины не мешает детектору работать, что и требуется, чтобы он о ней сообщил.
+Отказ детектора не способен остановить WB ingestion, рекламную загрузку, bootstrap
+FACT или сборку MART. Обратное тоже верно — отказ витрины не мешает детектору о ней
+сообщить, что и требуется.
 
 ## 12. Чего этап не делает
 
