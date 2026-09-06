@@ -38,7 +38,22 @@
 
 locals {
   # Один образ и одна identity на все три расписания: разный только ENTITIES.
-  ozon_runtime_image = "europe-west1-docker.pkg.dev/project-fa311fc0-4d87-4781-986/cloud-run-source-deploy/ozon-runtime-ingest@sha256:a7ce446a661e612bab7f756f103ec8bcf41688429c1da9361096fae108639409"
+  #
+  # ⚠️ Это поле под `ignore_changes` (см. lifecycle ниже): Terraform его не
+  # применяет, образ продвигается отдельно, как у WB-загрузчиков. Значение
+  # держим в актуальном состоянии только ради читаемости — иначе файл начнёт
+  # врать о том, что крутится в проде.
+  #
+  # 2026-09-06, Stage 3.4D.2: sha256:a7ce446a… → sha256:43fb3a10…
+  # Причина: prices() расширен полным блоком commissions и пишет вторую
+  # таблицу RAW_OZON_PRICE_COMMISSIONS. Прежний образ сохранял из тарифа
+  # только sales_percent_fbo, из-за чего форвардная экономика не могла
+  # обновляться сама. Откат — sql/ozon/stage3_4d2_rollback.sql, раздел про образ.
+  #
+  # 2026-09-06, Stage 3.4D.3: sha256:43fb3a10… → sha256:14f8a4c8…
+  # Причина: добавлена сущность seller_info (статус подписки Premium).
+  # Откат — sql/ozon/stage3_4d3_rollback.sql, раздел 4.
+  ozon_runtime_image = "europe-west1-docker.pkg.dev/project-fa311fc0-4d87-4781-986/cloud-run-source-deploy/ozon-runtime-ingest@sha256:14f8a4c8d13fde7ae5d4e3364fe1ad5ce82c54d4b5c6d92c2313325d20b3f40c"
   ozon_ingestion_sa  = "sa-ozon-ingestion@${var.project_id}.iam.gserviceaccount.com"
   ozon_scheduler_sa  = "sa-ozon-scheduler@${var.project_id}.iam.gserviceaccount.com"
 
@@ -57,8 +72,12 @@ locals {
       entities = "stocks,fbo_postings"
       schedule = "0 7,13,19 * * *"
     }
+    # 2026-09-06, Stage 3.4D.3: добавлена seller_info. Новая сущность, а не
+    # перенос существующей — окно ретроспективы 0, каденция суточная, полнота
+    # других сущностей не затрагивается. Даёт статус подписки Premium, который
+    # до этого проверялся вручную.
     "ozon-runtime-daily" = {
-      entities = "catalog,prices,finance_accrual,ads_campaigns,ads_expense_daily,ads_sku_daily,supplies"
+      entities = "catalog,prices,seller_info,finance_accrual,ads_campaigns,ads_expense_daily,ads_sku_daily,supplies"
       schedule = "30 6 * * *"
     }
     "ozon-runtime-weekly" = {
