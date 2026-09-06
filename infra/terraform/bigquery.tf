@@ -57,6 +57,23 @@ resource "google_bigquery_table" "raw_wb_stocks_cr" {
     { name = "sku_match_status", type = "STRING" },
     { name = "raw_json", type = "STRING" },
     { name = "_snapshot_date", type = "DATE" },
+    # 🔴 BACK-PORT из production (Stage Drift Reconciliation, 06.09.2026).
+    #    Колонка добавлена в прод после первой редакции этого файла (PR #121) и сюда
+    #    не вернулась — тот же класс дефекта, что Stage 1.6 и ADS-1A. CI-план предлагал
+    #    её УДАЛИТЬ; это было бы регрессией, а не наведением порядка.
+    #    Почему нельзя удалять — доказано данными, а не мнением:
+    #      • 16.08.2026 WB обезличил склад отгрузки, `warehouse_id` стал приходить NULL;
+    #      • в RAW_WB_STOCKS__CR 272 строки из 4 676 (5,82 %) имеют warehouse_code;
+    #        у ВСЕХ 272 `warehouse_id IS NULL` — код остаётся ЕДИНСТВЕННЫМ
+    #        идентификатором склада для этих строк;
+    #      • это ключ грейна, а не справочное поле:
+    #        warehouse_key = COALESCE(NULLIF(warehouse_code,''), CAST(warehouse_id AS STRING))
+    #        — sql/mart/pr_mart1_facts.sql, pr_mart1_validation.sql,
+    #          cloud/src/loaders/stocks/{normalize,bq}.ts, apps-script/WbStocks*.gs;
+    #      • колонка живая: данные с 27.07 по 06.09.2026.
+    #    Позиция в конце схемы соответствует ordinal_position = 18 в проде — так diff
+    #    остаётся пустым, а не превращается в перестановку колонок.
+    { name = "warehouse_code", type = "STRING" },
   ])
 }
 
