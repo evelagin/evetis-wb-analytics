@@ -1,0 +1,298 @@
+{
+ "archived": false,
+ "archived_directly": false,
+ "cache_invalidated_at": null,
+ "cache_ttl": null,
+ "card_schema": 23,
+ "collection": {
+  "archive_operation_id": null,
+  "archived": false,
+  "archived_directly": null,
+  "authority_level": null,
+  "created_at": "2026-09-06T18:46:49.072866Z",
+  "description": "Stage ADS-5. Операционная реклама WB: экраны поверх валидированных вью wb_mart (Ads-2/3/4). Источник истины — BigQuery, Metabase только presentation.",
+  "entity_id": "SchgzXE2sxJbQxqj4pOve",
+  "id": 8,
+  "is_remote_synced": false,
+  "is_sample": false,
+  "location": "/5/",
+  "name": "03 · Advertising",
+  "namespace": null,
+  "personal_owner_id": null,
+  "slug": "03_%C2%B7_advertising",
+  "type": null
+ },
+ "collection_id": 8,
+ "collection_position": null,
+ "collection_preview": true,
+ "created_at": "2026-09-06T18:53:14.182067Z",
+ "creator_id": 2,
+ "dashboard": null,
+ "dashboard_id": null,
+ "database_id": 2,
+ "dataset_query": {
+  "database": 2,
+  "lib/type": "mbql/query",
+  "stages": [
+   {
+    "lib/type": "mbql.stage/native",
+    "native": "SELECT\n  norm_query,\n  product_name_short,\n  nm_id,\n  evidence_status,\n  spend_rub,\n  views_sum,\n  clicks_sum,\n  ctr,\n  cpc_calc,\n  atbs_sum,\n  cart_cr_clicks,\n  orders_sum,\n  order_cr_clicks,\n  cpo_ads,\n  avg_pos_w_clicks,\n  signals_text,\n  advert_count\nFROM `wb_mart.V_ADS_SCREEN_QUERY`\nWHERE window_days = {{window}}\n  [[AND {{sku}}]]\n  [[AND {{evidence}}]]\n  [[AND {{q}}]]\n  [[AND spend_rub >= {{spend_min}}]]\n  [[AND orders_sum >= {{orders_min}}]]\n  AND can_compare_cpc AND baseline_cpc IS NOT NULL\nORDER BY cpc_vs_baseline DESC\nLIMIT 50\n",
+    "template-tags": [
+     {
+      "default": "90",
+      "display-name": "Окно (дней)",
+      "id": "b0667b70-da19-4246-ac88-4c25d26ef1f3",
+      "name": "window",
+      "required": true,
+      "type": "number"
+     },
+     {
+      "dimension": [
+       "field",
+       {
+        "lib/uuid": "7c937fef-c729-4f3a-8612-d247e3fb960d"
+       },
+       721
+      ],
+      "display-name": "Товар",
+      "id": "82e0ff23-093a-4afb-bba7-9a4fec26af37",
+      "name": "sku",
+      "type": "dimension",
+      "widget-type": "string/="
+     },
+     {
+      "dimension": [
+       "field",
+       {
+        "lib/uuid": "662fc0a3-7368-417a-b718-41a8e373fc05"
+       },
+       747
+      ],
+      "display-name": "Доказательность",
+      "id": "cf5452b6-d5d0-4707-8157-6bb5ef404304",
+      "name": "evidence",
+      "type": "dimension",
+      "widget-type": "string/="
+     },
+     {
+      "dimension": [
+       "field",
+       {
+        "lib/uuid": "34b5e5d7-4c2b-4ee9-90f4-2a59722484f3"
+       },
+       719
+      ],
+      "display-name": "Запрос содержит",
+      "id": "17f3afb3-7a87-4e79-9091-3de48dcc5d31",
+      "name": "q",
+      "type": "dimension",
+      "widget-type": "string/contains"
+     },
+     {
+      "display-name": "Минимальный расход, ₽",
+      "id": "924676af-b8b2-4629-a904-03362c94322c",
+      "name": "spend_min",
+      "type": "number"
+     },
+     {
+      "display-name": "Минимум заказов",
+      "id": "cbeab288-5031-42d6-b0b8-584e162216e6",
+      "name": "orders_min",
+      "type": "number"
+     }
+    ]
+   }
+  ]
+ },
+ "description": "Только строки, которым Ads-4 разрешает сравнивать CPC (клики ≥ 20) и у которых база CPC определена. Сортировка по отношению CPC к базе. База — SKU_EX_SELF (тот же товар без самого запроса), при нехватке выборки — STORE_EX_SELF; уровень базы виден в полной таблице. Сигнал CPC_ABOVE_BASELINE (× > 1,3) виден в столбце «Сигналы»; порог принадлежит BigQuery и здесь не менялся.",
+ "dimension_mappings": null,
+ "dimensions": null,
+ "display": "table",
+ "document_id": null,
+ "embedding_params": null,
+ "embedding_type": null,
+ "enable_embedding": false,
+ "entity_id": "FciNlnXsNOAVABmC2yzSh",
+ "id": 94,
+ "is_remote_synced": false,
+ "last_used_at": "2026-09-06T18:53:14.182067Z",
+ "legacy_query": null,
+ "metabase_version": "v0.63.15.1 (ab5ffba)",
+ "name": "Дорогой клик относительно базы",
+ "param_fields": {
+  "17f3afb3-7a87-4e79-9091-3de48dcc5d31": [
+   {
+    "base_type": "type/Text",
+    "dimensions": [],
+    "display_name": "Norm Query",
+    "fk_target_field_id": null,
+    "has_field_values": "list",
+    "id": 719,
+    "name": "norm_query",
+    "name_field": null,
+    "semantic_type": null,
+    "table_id": 33,
+    "target": null
+   }
+  ],
+  "82e0ff23-093a-4afb-bba7-9a4fec26af37": [
+   {
+    "base_type": "type/Text",
+    "dimensions": [],
+    "display_name": "Product Name Short",
+    "fk_target_field_id": null,
+    "has_field_values": "list",
+    "id": 721,
+    "name": "product_name_short",
+    "name_field": null,
+    "semantic_type": "type/Category",
+    "table_id": 33,
+    "target": null
+   }
+  ],
+  "cf5452b6-d5d0-4707-8157-6bb5ef404304": [
+   {
+    "base_type": "type/Text",
+    "dimensions": [],
+    "display_name": "Evidence Status",
+    "fk_target_field_id": null,
+    "has_field_values": "list",
+    "id": 747,
+    "name": "evidence_status",
+    "name_field": null,
+    "semantic_type": "type/Category",
+    "table_id": 33,
+    "target": null
+   }
+  ]
+ },
+ "parameter_mappings": [],
+ "parameter_usage_count": 0,
+ "parameters": [],
+ "query_type": "native",
+ "source_card_id": null,
+ "table_id": null,
+ "type": "question",
+ "visualization_settings": {
+  "column_settings": {
+   "[\"name\",\"advert_count\"]": {
+    "column_title": "Кампаний в строке",
+    "decimals": 0,
+    "number_style": "decimal"
+   },
+   "[\"name\",\"atbs_sum\"]": {
+    "column_title": "В корзину",
+    "decimals": 0,
+    "number_style": "decimal"
+   },
+   "[\"name\",\"avg_pos_w_clicks\"]": {
+    "column_title": "Средняя рекламная позиция (по кликам)",
+    "decimals": 2,
+    "number_style": "decimal"
+   },
+   "[\"name\",\"cart_cr_clicks\"]": {
+    "column_title": "CR корзины из кликов",
+    "decimals": 1,
+    "number_style": "percent"
+   },
+   "[\"name\",\"clicks_sum\"]": {
+    "column_title": "Клики",
+    "decimals": 0,
+    "number_style": "decimal"
+   },
+   "[\"name\",\"cpc_calc\"]": {
+    "column_title": "CPC, ₽",
+    "currency": "RUB",
+    "currency_in_header": false,
+    "currency_style": "symbol",
+    "decimals": 2,
+    "number_style": "currency"
+   },
+   "[\"name\",\"cpo_ads\"]": {
+    "column_title": "Расход на заказ (CPO), ₽",
+    "currency": "RUB",
+    "currency_in_header": false,
+    "currency_style": "symbol",
+    "decimals": 2,
+    "number_style": "currency"
+   },
+   "[\"name\",\"ctr\"]": {
+    "column_title": "CTR",
+    "decimals": 2,
+    "number_style": "percent"
+   },
+   "[\"name\",\"evidence_status\"]": {
+    "column_title": "Доказательность"
+   },
+   "[\"name\",\"nm_id\"]": {
+    "column_title": "Артикул WB",
+    "decimals": 0,
+    "number_style": "decimal"
+   },
+   "[\"name\",\"norm_query\"]": {
+    "column_title": "Поисковый запрос"
+   },
+   "[\"name\",\"order_cr_clicks\"]": {
+    "column_title": "CR заказов из кликов",
+    "decimals": 1,
+    "number_style": "percent"
+   },
+   "[\"name\",\"orders_sum\"]": {
+    "column_title": "Заказы (attributed, raw)",
+    "decimals": 0,
+    "number_style": "decimal"
+   },
+   "[\"name\",\"product_name_short\"]": {
+    "column_title": "Товар"
+   },
+   "[\"name\",\"signals_text\"]": {
+    "column_title": "Сигналы"
+   },
+   "[\"name\",\"spend_rub\"]": {
+    "column_title": "Расход по запросу, ₽",
+    "currency": "RUB",
+    "currency_in_header": false,
+    "currency_style": "symbol",
+    "decimals": 2,
+    "number_style": "currency"
+   },
+   "[\"name\",\"views_sum\"]": {
+    "column_title": "Показы (реклама)",
+    "decimals": 0,
+    "number_style": "decimal"
+   }
+  },
+  "table.column_formatting": [
+   {
+    "color": "#84BB4C",
+    "columns": [
+     "evidence_status"
+    ],
+    "highlight_row": false,
+    "operator": "=",
+    "type": "single",
+    "value": "ACTIONABLE"
+   },
+   {
+    "color": "#F9CF48",
+    "columns": [
+     "evidence_status"
+    ],
+    "highlight_row": false,
+    "operator": "=",
+    "type": "single",
+    "value": "OBSERVATIONAL"
+   },
+   {
+    "color": "#E0E0E0",
+    "columns": [
+     "evidence_status"
+    ],
+    "highlight_row": false,
+    "operator": "=",
+    "type": "single",
+    "value": "INSUFFICIENT"
+   }
+  ]
+ }
+}

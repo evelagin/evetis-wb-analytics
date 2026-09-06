@@ -1,0 +1,112 @@
+{
+ "archived": false,
+ "archived_directly": false,
+ "cache_invalidated_at": null,
+ "cache_ttl": null,
+ "card_schema": 23,
+ "collection": {
+  "archive_operation_id": null,
+  "archived": false,
+  "archived_directly": null,
+  "authority_level": null,
+  "created_at": "2026-09-06T18:46:49.072866Z",
+  "description": "Stage ADS-5. Операционная реклама WB: экраны поверх валидированных вью wb_mart (Ads-2/3/4). Источник истины — BigQuery, Metabase только presentation.",
+  "entity_id": "SchgzXE2sxJbQxqj4pOve",
+  "id": 8,
+  "is_remote_synced": false,
+  "is_sample": false,
+  "location": "/5/",
+  "name": "03 · Advertising",
+  "namespace": null,
+  "personal_owner_id": null,
+  "slug": "03_%C2%B7_advertising",
+  "type": null
+ },
+ "collection_id": 8,
+ "collection_position": null,
+ "collection_preview": true,
+ "created_at": "2026-09-06T18:52:57.155908Z",
+ "creator_id": 2,
+ "dashboard": null,
+ "dashboard_id": null,
+ "database_id": 2,
+ "dataset_query": {
+  "database": 2,
+  "lib/type": "mbql/query",
+  "stages": [
+   {
+    "lib/type": "mbql.stage/native",
+    "native": "WITH a AS (\n  SELECT MAX(day) AS as_of FROM `wb_mart.V_ADS_FUNNEL_QUERY_DAILY`\n),\nq AS (\n  SELECT SUM(spend_rub) AS s FROM `wb_mart.V_ADS_SCREEN_QUERY` WHERE window_days = {{window}}\n),\nc AS (\n  SELECT SUM(cd.ad_spend_rub) AS s\n  FROM `wb_mart.V_ADS_CAMPAIGN_DAILY` cd, a\n  WHERE cd.day > DATE_SUB(a.as_of, INTERVAL {{window}} DAY) AND cd.day <= a.as_of\n)\nSELECT\n  FORMAT(\"Интеллект по поисковым запросам объясняет %s ₽ из %s ₽ рекламного расхода (%.1f%%)\",\n         REPLACE(FORMAT(\"%'.0f\", q.s), \",\", \" \"),\n         REPLACE(FORMAT(\"%'.0f\", CAST(c.s AS FLOAT64)), \",\", \" \"),\n         100 * SAFE_DIVIDE(q.s, CAST(c.s AS FLOAT64)))          AS coverage_statement,\n  q.s                                                            AS query_spend_rub,\n  CAST(c.s AS FLOAT64)                                           AS campaign_spend_rub,\n  CAST(c.s AS FLOAT64) - q.s                                     AS unexplained_rub,\n  SAFE_DIVIDE(q.s, CAST(c.s AS FLOAT64))                         AS coverage_share\nFROM q, c\n",
+    "template-tags": [
+     {
+      "default": "90",
+      "display-name": "Окно (дней)",
+      "id": "35edf01f-75c5-46ed-bfd6-42c7fd012922",
+      "name": "window",
+      "required": true,
+      "type": "number"
+     }
+    ]
+   }
+  ]
+ },
+ "description": "ОБЯЗАТЕЛЬНЫЙ контроль масштаба (ADS-5 §6). Числитель — расход, разложенный WB по поисковым запросам (V_ADS_SCREEN_QUERY.spend_rub). Знаменатель — сопоставимый расход по кампаниям за то же окно (V_ADS_CAMPAIGN_DAILY.ad_spend_rub). Разрыв структурный, а не дефект загрузки: WB не даёт разбивку по запросам для не-поисковых размещений. Карточка НЕ фильтруется по товару и доказательности: знаменатель существует только на уровне кампании и по SKU не раскладывается.",
+ "dimension_mappings": null,
+ "dimensions": null,
+ "display": "table",
+ "document_id": null,
+ "embedding_params": null,
+ "embedding_type": null,
+ "enable_embedding": false,
+ "entity_id": "UhFpwZmNTNPodkxMWcf4O",
+ "id": 87,
+ "is_remote_synced": false,
+ "last_used_at": "2026-09-06T18:52:57.155908Z",
+ "legacy_query": null,
+ "metabase_version": "v0.63.15.1 (ab5ffba)",
+ "name": "Покрытие рекламного бюджета запросами",
+ "param_fields": {},
+ "parameter_mappings": [],
+ "parameter_usage_count": 0,
+ "parameters": [],
+ "query_type": "native",
+ "source_card_id": null,
+ "table_id": null,
+ "type": "question",
+ "visualization_settings": {
+  "column_settings": {
+   "[\"name\",\"campaign_spend_rub\"]": {
+    "column_title": "Расход по кампаниям, ₽",
+    "currency": "RUB",
+    "currency_in_header": false,
+    "currency_style": "symbol",
+    "decimals": 0,
+    "number_style": "currency"
+   },
+   "[\"name\",\"coverage_share\"]": {
+    "column_title": "Покрытие",
+    "decimals": 1,
+    "number_style": "percent"
+   },
+   "[\"name\",\"coverage_statement\"]": {
+    "column_title": "Вывод"
+   },
+   "[\"name\",\"query_spend_rub\"]": {
+    "column_title": "Объяснено запросами, ₽",
+    "currency": "RUB",
+    "currency_in_header": false,
+    "currency_style": "symbol",
+    "decimals": 0,
+    "number_style": "currency"
+   },
+   "[\"name\",\"unexplained_rub\"]": {
+    "column_title": "Не объяснено, ₽",
+    "currency": "RUB",
+    "currency_in_header": false,
+    "currency_style": "symbol",
+    "decimals": 0,
+    "number_style": "currency"
+   }
+  }
+ }
+}

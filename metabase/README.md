@@ -13,9 +13,10 @@
 metabase/
   README.md          — этот файл
   manifest.json      — состав снимка, ID, связи, sha256 каждого JSON
-  collections/       — 3 коллекции: 5 EVETIS Analytics, 6 «01 Executive», 7 «02 SKU Performance»
-  dashboards/        — 2 дашборда: 2 Executive, 3 SKU Performance
-  cards/             — 32 карточки, 40–71
+  collections/       — 4 коллекции: 5 EVETIS Analytics, 6 «01 Executive», 7 «02 SKU Performance»,
+                       8 «03 · Advertising»
+  dashboards/        — 3 дашборда: 2 Executive, 3 SKU Performance, 4 Search Queries
+  cards/             — 57 карточек, 40–96
 ```
 
 Имена файлов включают **числовой ID**: `card-42-zakazy-sht.json`, `dashboard-3-evetis-wb-sku-performance.json`.
