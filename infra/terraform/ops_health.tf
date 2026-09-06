@@ -124,5 +124,15 @@ resource "google_cloud_scheduler_job" "ops_health_prod" {
     }
   }
 
-  depends_on = [google_project_service.enabled]
+  # 🔴 Порядок обязателен, а не желателен. Cloud Scheduler при создании job'а
+  # требует у создающего принципала право actAs на SA из oauth_token. Само
+  # правило живёт в iam.tf (terraform_apply_actas, ключ ops_health), но между
+  # ним и этим ресурсом нет ссылочной связи — без явного depends_on Terraform
+  # вправе создавать их параллельно, и scheduler проигрывает гонку.
+  # Так и произошло на первом apply (run 34048893917): пять ресурсов создались,
+  # scheduler упал с 403 iam.serviceAccounts.actAs.
+  depends_on = [
+    google_project_service.enabled,
+    google_service_account_iam_member.terraform_apply_actas,
+  ]
 }

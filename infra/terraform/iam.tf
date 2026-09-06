@@ -51,6 +51,12 @@ locals {
     loaders_prod     = google_service_account.loaders_prod.name
     scheduler_shadow = google_service_account.scheduler_shadow.name
     scheduler_prod   = google_service_account.scheduler_prod.name
+    # Stage ADS-1B. Без этой записи создание wb-ops-health-prod падает с
+    # 403 iam.serviceAccounts.actAs на sa-ops-health: Cloud Scheduler требует,
+    # чтобы создающий принципал имел actAs на SA из oauth_token. Проверено
+    # фактическим отказом apply 06.09.2026 (run 34048893917) — пять ресурсов
+    # создались, scheduler упал именно на этом.
+    ops_health = google_service_account.ops_health.name
   }
 }
 
