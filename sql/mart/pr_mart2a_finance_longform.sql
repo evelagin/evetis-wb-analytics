@@ -27,6 +27,9 @@
 --   compensation_amount НЕ разворачивается (отдельный guard);
 --   field_normalization_sign: amount_field='commission_amount' → −1, прочие поля → +1
 --     (речь о ПОЛЕ commission_amount, не о cost_category — с PR-B2 категория этих пар 'wb_reward');
+--     🔴 ИСКЛЮЧЕНИЕ Stage 1.5 (26.08.2026): пара Продажа/commission_amount переведена
+--     в ADJUSTMENT со знаком +1 — она знакопеременная, и +1 знак СОХРАНЯЕТ. Правило выше
+--     остаётся верным для остальных пар этого поля;
 --   cost_amount_positive: COST→+ABS; CREDIT→−ABS; ADJUSTMENT→source×field_sign.
 --
 -- ⚠️ Read-only dry-run исправленных гейтов пройден на проде 30.07 (все счётчики 0; 9/9 полей).
@@ -35,7 +38,14 @@
 
 CREATE SCHEMA IF NOT EXISTS `wb_mart` OPTIONS (location = 'EU');
 
--- ── 1. STAGING: REF_COST_MAP__BUILD (seed 19 пар; точные op-строки ИЗ ДАННЫХ) ──
+-- ── 1. STAGING: REF_COST_MAP__BUILD (seed 21 пара; точные op-строки ИЗ ДАННЫХ) ──
+--    Stage ADS-1A (06.09.2026): 19 → 21. Добавлены ДВА переименования WB, вступившие
+--    в силу 01.09.2026: «Логистика» → «Доставка» и «Возмещение издержек по перевозке/по
+--    складским операциям с товаром» → «Возмещение издержек по перемещению и операционной
+--    обработке товара». Старые пары НЕ удалены — они несут историю до 31.08.2026
+--    включительно и обязаны продолжать разноситься. Новые пары не имеют ни одной строки
+--    до 01.09.2026 (проверено: rows_before_sep = 0 у обеих), поэтому историческая
+--    семантика измениться не может по построению.
 --    PR-B2 (13.08.2026): cost_category трёх пар с amount_field='commission_amount'
 --    переименован 'commission' → 'wb_reward'. Причина: поле commission_amount
 --    несёт ppvz_vw ← API `vw` — вознаграждение WB по операции, а НЕ комиссию
@@ -60,26 +70,59 @@ CREATE OR REPLACE TABLE `wb_mart.REF_COST_MAP__BUILD` AS
 SELECT op_key, amount_field, economic_direction, cost_category,
   field_normalization_sign, note, CURRENT_TIMESTAMP() AS seeded_at
 FROM UNNEST([
-  STRUCT('Продажа' AS op_key,'commission_amount' AS amount_field,'COST' AS economic_direction,
-         'wb_reward' AS cost_category,-1 AS field_normalization_sign,
-         'Вознаграждение WB (vw) по продаже. НЕ сбор маркетплейса — см. marketplace_fee_gap_rub (PR-B2)' AS note),
+  -- 🔴 Stage 1.5 (26.08.2026) BACK-PORT, выполнен в Stage ADS-1A (06.09.2026).
+  --    Stage 1.5 правил production ПРЯМЫМ UPDATE четырёх строк REF_COST_MAP и в этот seed
+  --    НЕ вернулся. Файл разошёлся с production ровно так же, как в Stage 1.6 разошлась
+  --    sp_build_mart_sku_daily. Повторный прогон seed'а откатил бы знаковую нормализацию:
+  --    Продажа/commission_amount 2 231 127,66 ₽ · Удержание/deduction 307 917,84 ₽ ·
+  --    Пересчет платной приемки/acceptance 4 000,00 ₽ · Штраф/penalty 548,00 ₽.
+  --    Проверено на практике 06.09.2026: прогон дофиксового seed'а был пойман guard'ом
+  --    fix #5 в sp_build_mart_sku_daily ДО сборки витрины (§pre, до _MART_BOOTSTRAP_LOCK).
+  --    Ветка ADJUSTMENT (x * field_normalization_sign) знак СОХРАНЯЕТ; COST/CREDIT
+  --    применяют ABS() построчно и знакопеременную пару разрушают.
+  STRUCT('Продажа' AS op_key,'commission_amount' AS amount_field,'ADJUSTMENT' AS economic_direction,
+         'wb_reward' AS cost_category,1 AS field_normalization_sign,
+         'Вознаграждение WB (vw) по продаже. НЕ сбор маркетплейса — см. marketplace_fee_gap_rub (PR-B2) | Stage 1.5 (2026-08-26): знакопеременное поле — знак СОХРАНЯЕТСЯ. Построчный ABS() отражал возвраты/кредиты как расход.' AS note),
   ('Возврат','commission_amount','COST','wb_reward',-1,'Вознаграждение WB (vw) по возврату (PR-B2)'),
   ('Возмещение за выдачу и возврат товаров на ПВЗ','commission_amount','CREDIT','reimbursement_pvz',-1,'Возмещение ПВЗ (кредит)'),
   ('Возмещение издержек по перевозке/по складским операциям с товаром','commission_amount','CREDIT','reimbursement_logistics',-1,'Возмещение издержек перевозки/склада (кредит)'),
+  -- Stage ADS-1A (2026-09-06): WB ПЕРЕИМЕНОВАЛ операцию с 01.09.2026. Доказательство —
+  --   чистая посуточная передача эстафеты без единого дня пересечения: старое имя присутствует
+  --   92/92 суток 01.06–31.08 и исчезает 01.09; новое появляется 01.09 и присутствует 5/5 суток.
+  --   Тождественны: amount_field (commission_amount), полярность знака (125/125 строк < 0,
+  --   как 5829/5829 у старого), порядок величины (−13,4…−0,8 против −20,6…−0,04),
+  --   привязка к SKU (125/125 matched), отношение к логистике (0,065…0,103 внутри
+  --   исторического диапазона 0,014…0,199). Внешнее подтверждение: оферта WB от 01.09.2026
+  --   переименовала услугу «организации доставки» в «доставку» (п. 13.1.4).
+  -- 🔴 Категория НЕ 'wb_reward'. Отрицательная сумма в поле commission_amount здесь —
+  --   ВОЗМЕЩЕНИЕ издержек продавца (кредит), а не вознаграждение маркетплейса. Классифицируем
+  --   экономический смысл операции, а не техническое имя поля. Категория переиспользована
+  --   существующая: downstream (dashboard_contract_v2 §fin_long_day) уже разносит
+  --   reimbursement_logistics отдельной строкой; новое имя категории молча ушло бы
+  --   в остаточные корзины other_sku_rub/other_account_rub и изменило бы «Прочие расходы WB».
+  ('Возмещение издержек по перемещению и операционной обработке товара','commission_amount','CREDIT','reimbursement_logistics',-1,'Возмещение издержек перемещения/операционной обработки (кредит). Stage ADS-1A: переименование WB с 01.09.2026 операции «Возмещение издержек по перевозке/по складским операциям с товаром» — та же семантика, то же поле, тот же знак'),
   ('Коррекция продаж','commission_amount','ADJUSTMENT','wb_reward',-1,'Корректировка вознаграждения WB — знак сохраняется (PR-B2)'),
   ('Продажа','acquiring_fee','COST','acquiring',1,'Эквайринг по продаже (per-SKU COST)'),
   ('Возврат','acquiring_fee','COST','acquiring',1,'Эквайринг по возврату'),
   ('Коррекция продаж','acquiring_fee','ADJUSTMENT','acquiring',1,'Корректировка эквайринга (продажи)'),
   ('Корректировка эквайринга','acquiring_fee','ADJUSTMENT','acquiring',1,'Корректировка эквайринга'),
   ('Логистика','logistics_amount','COST','logistics',1,'Логистика WB'),
+  -- Stage ADS-1A (2026-09-06): второе переименование того же дня. «Логистика» присутствует
+  --   92/92 суток 01.06–31.08 и исчезает 01.09; «Доставка» появляется 01.09 (5/5 суток).
+  --   Тождественны: amount_field (logistics_amount), знак (0 отрицательных строк из 85,
+  --   как 0 из 2531 у старого), стоимость строки (53,01…70,39 ₽ против 52,41…66,50 ₽ —
+  --   ступени нет). Категория 'logistics' переиспользована: только 'logistics' и 'wb_reward'
+  --   попадают в logistics_cost_positive витрины (pr_mart2b_sku_daily.sql:273), поэтому
+  --   любое другое имя вывело бы доставку из контрибуции SKU.
+  ('Доставка','logistics_amount','COST','logistics',1,'Доставка WB. Stage ADS-1A: переименование WB с 01.09.2026 операции «Логистика» — то же поле, тот же знак, та же стоимость строки'),
   ('Коррекция логистики','logistics_amount','ADJUSTMENT','logistics',1,'Корректировка логистики'),
   ('Хранение','storage_fee','COST','storage',1,'Хранение WB'),
   ('Коррекция хранения','storage_fee','ADJUSTMENT','storage',1,'Корректировка хранения — знак сохраняется (PR-B)'),
-  ('Удержание','deduction','COST','deduction',1,'Прочие удержания'),
+  ('Удержание','deduction','ADJUSTMENT','deduction',1,'Прочие удержания | Stage 1.5 (2026-08-26): знакопеременное поле — знак СОХРАНЯЕТСЯ. Построчный ABS() отражал возвраты/кредиты как расход.'),
   ('Удержание','additional_payment','COST','deduction',1,'Удержание через доп. платёж'),
-  ('Штраф','penalty','COST','penalty',1,'Штрафы WB'),
+  ('Штраф','penalty','ADJUSTMENT','penalty',1,'Штрафы WB | Stage 1.5 (2026-08-26): знакопеременное поле — знак СОХРАНЯЕТСЯ. Построчный ABS() отражал возвраты/кредиты как расход.'),
   ('Платная приемка','acceptance','COST','acceptance',1,'Платная приёмка'),
-  ('Пересчет платной приемки','acceptance','COST','acceptance',1,'Пересчёт платной приёмки'),
+  ('Пересчет платной приемки','acceptance','ADJUSTMENT','acceptance',1,'Пересчёт платной приёмки | Stage 1.5 (2026-08-26): знакопеременное поле — знак СОХРАНЯЕТСЯ. Построчный ABS() отражал возвраты/кредиты как расход.'),
   ('Стоимость участия в программе лояльности','additional_payment','COST','loyalty',1,'Программа лояльности WB')
 ]);
 
@@ -173,6 +216,39 @@ ASSERT (SELECT
 ASSERT (SELECT ABS(SUM(cp) - SUM(IF(is_sku_row, cp, 0)) - SUM(IF(NOT is_sku_row, cp, 0))) < 0.005
         FROM `_mapped` WHERE cp IS NOT NULL)
   AS 'PR-Mart2a §5.4b: SKU + ACCOUNT != total';
+
+-- ── 4b. 🔴 SOURCE-OF-TRUTH PARITY GATE (Stage ADS-1A, 06.09.2026) ────────────
+--   ПРИЧИНА. 06.09.2026 повторный прогон этого seed'а молча откатил четыре
+--   знаковых исправления Stage 1.5, применённых 26.08.2026 прямым UPDATE по
+--   production и не вернувшихся в файл. Ни один из гейтов §2/§5 этого не ловил:
+--   все они проверяют seed на внутреннюю согласованность, но НИ ОДИН не
+--   сравнивает seed с тем, что УЖЕ живёт в production. Инцидент остановил
+--   только guard fix #5 в sp_build_mart_sku_daily — то есть на два слоя ниже
+--   и уже после перезаписи REF.
+--
+--   ЧТО ДЕЛАЕТ. Перед публикацией сравнивает СЕМАНТИЧЕСКОЕ множество
+--   (op_key × amount_field × direction × category × sign) действующего
+--   production REF_COST_MAP с тем, что собирается опубликовать __BUILD.
+--   Строка, которая есть в production и НЕ воспроизводится seed'ом, —
+--   это либо hotfix, не вернувшийся в файл, либо осознанное удаление правила.
+--   Отличить их автоматически нельзя, поэтому гейт fail-closed: он ОСТАНАВЛИВАЕТ
+--   публикацию и требует явного решения человека.
+--
+--   КАК СНЯТЬ ЛОЖНОЕ СРАБАТЫВАНИЕ при намеренном удалении пары: сначала удалить
+--   строку из production (UPDATE/DELETE с обоснованием в CHANGELOG), потом
+--   прогонять seed. Обходить гейт правкой этого ASSERT запрещено.
+--
+--   ⚠️ Гейт предполагает, что REF_COST_MAP уже существует (верно с 30.07.2026).
+--   Для bootstrap «с нуля» на пустом датасете его надо пропустить осознанно.
+--   Логика проверена read-only на проде 06.09.2026: prod_only=0, seed_only=0.
+ASSERT (
+  SELECT COUNT(*) = 0 FROM (
+    SELECT op_key, amount_field, economic_direction, cost_category, field_normalization_sign
+    FROM `wb_mart.REF_COST_MAP`
+    EXCEPT DISTINCT
+    SELECT op_key, amount_field, economic_direction, cost_category, field_normalization_sign
+    FROM `wb_mart.REF_COST_MAP__BUILD`))
+  AS 'PR-Mart2a §4b DRIFT: в production REF_COST_MAP есть семантические строки, которых нет в seed. Публикация откатила бы их. Сначала back-port в этот файл — см. Stage ADS-1A (06.09.2026).';
 
 -- ── 5. PUBLISH (только после прохождения ВСЕХ гейтов) ────────────────────────
 CREATE OR REPLACE TABLE `wb_mart.REF_COST_MAP`
