@@ -36,12 +36,17 @@ jobs:
           # digest должен существовать в реестре
           gcloud artifacts docker images describe "$DIGEST" >/dev/null
       - name: Deploy prod Jobs (промоушен того же digest, source sha)
-        # PR-Mart3b-2 (аудит REV2, блокер #1): продвигаем ОДИН и тот же проверенный digest в ОБА
-        # prod-Job'а. Оба используют один образ (dispatch по args[0] в cli.ts: "noop" vs "mart").
+        # PR-Mart3b-2 (аудит REV2, блокер #1): продвигаем ОДИН и тот же проверенный digest во ВСЕ
+        # prod-Job'ы. Все используют один образ (dispatch по args[0] в cli.ts).
         # Без wb-mart-prod здесь Terraform-created Job остался бы на bootstrap hello-образе и
         # ручной/scheduler-запуск не вызвал бы `node dist/cli.js mart`.
+        #
+        # PR-1: добавлен wb-prices-prod — ровно по той же причине. Пропущенный в этом списке
+        # Job молча остаётся на hello, который выходит с кодом 0 и ничего не наблюдает; при
+        # следующих промоушенах он бы отставал по digest от остальных, и расхождение
+        # не проявилось бы ни в одном «зелёном» прогоне.
         run: |
-          for JOB in wb-stocks-prod wb-mart-prod; do
+          for JOB in wb-stocks-prod wb-mart-prod wb-prices-prod; do
             echo "== promote ${JOB} =="
             gcloud run jobs update "${JOB}" \
               --region ${{ vars.GCP_REGION }} \
