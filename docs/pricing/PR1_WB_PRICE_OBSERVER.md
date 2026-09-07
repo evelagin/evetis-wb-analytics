@@ -669,10 +669,22 @@ totals remain observable`, см. `DATA_MODEL.md`).
 | Наблюдение 2 | `WBPX_prod_202609071020`, 10:22:01 UTC, 25 SKU, 100 % |
 | Строка `OPS_PIPELINE_REGISTRY` | активирована после двух успешных наблюдений |
 | Scheduler | `ENABLED`, `*/20 * * * *` `Etc/UTC` |
+| Автономное срабатывание | `WBPX_prod_202609071100`, 11:01:07 UTC, 25 SKU, 100 % |
 
-Два пробела в CI, вскрытые развёртыванием и закрытые здесь же: `deploy-prod.yml`
-не промоутил digest в `wb-prices-prod` (Job молча остался бы на bootstrap-образе),
-`scheduler-control.yml` не знал про `wb-prices` (не было штатного pause/resume).
+Три дефекта, вскрытые развёртыванием и закрытые здесь же:
+
+1. `deploy-prod.yml` не промоутил digest в `wb-prices-prod` — Job молча остался бы
+   на bootstrap-образе, который выходит с кодом 0 и ничего не наблюдает.
+2. `scheduler-control.yml` не знал про `wb-prices` — не было штатного pause/resume/run-now.
+3. У `wb-prices-prod` не было IAM-политики: `roles/run.invoker` в этом проекте
+   выдаётся пореcурсно. Первое автономное срабатывание в 10:40:00 UTC упало с
+   `PERMISSION_DENIED`, **не создав execution**. Отказ виден только в Scheduler'е
+   (`status.code = 7`); в Cloud Run — тишина, неотличимая от «наблюдений не было».
+   Окно `2026-09-07T10:40` в истории отсутствует — и это правильно: наблюдения
+   действительно не было, а SNAPSHOT-ONLY пайплайн такие окна не восстанавливает.
+
+Первые два — пробелы, третий — повторение ошибки, уже описанной в комментарии
+к `scheduler_mart_prod_invoke` в `iam.tf`.
 
 ---
 
