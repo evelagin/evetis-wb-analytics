@@ -230,15 +230,15 @@ LEFT JOIN last_ok o USING (environment)
 LEFT JOIN fails   f USING (environment);
 
 -- ── 6. Регистрация в OPS ────────────────────────────────────────────────────
--- ⚠️ ВЫПОЛНЯТЬ НА ШАГЕ ДЕПЛОЯ, а не вместе с DDL.
--- Строка реестра объявляет пайплайн ожидаемым: детекторы здоровья начнут требовать
--- прогоны. Пока Cloud Scheduler на паузе, это дало бы ложный инцидент.
+-- ПРИМЕНЕНО 2026-09-07 после двух успешных наблюдений (10:19 и 10:22 UTC).
+-- Порядок принципиален: строка реестра объявляет пайплайн ожидаемым, и детекторы
+-- здоровья начинают требовать прогоны. Выполнение ДО снятия паузы со scheduler
+-- создало бы ложный инцидент, поэтому шаг отделён от DDL.
 --
 -- freshness_sla_minutes = 45 — два окна по 20 минут плюс запас; те же пороги
 -- зашиты в V_WB_PRICES_OBSERVER_HEALTH и V_WB_PRICES_CURRENT.
 -- is_snapshot_only = TRUE и missed_run_data_loss = TRUE: у WB нет эндпоинта истории
 -- цен, поэтому пропущенное окно невосстановимо — ровно как у ads_query_bids.
-/*
 INSERT INTO `project-fa311fc0-4d87-4781-986.wb_ops.OPS_PIPELINE_REGISTRY`
 (pipeline_id, pipeline_name, parent_pipeline_id, source_system, target_object,
  environment, enabled, criticality, cadence_type, cadence_spec,
@@ -250,10 +250,9 @@ INSERT INTO `project-fa311fc0-4d87-4781-986.wb_ops.OPS_PIPELINE_REGISTRY`
 VALUES
 ('wb_prices_observer', 'Наблюдатель цен WB (PR-1)', NULL, 'WB_API',
  'wb_raw.RAW_WB_PRICES', 'prod', TRUE, 'HIGH', 'INTERVAL_WORKER', '*/20 * * * * Etc/UTC',
- 'TERRAFORM', 'NOT_VERIFIED', 'infra/terraform/wb_prices_observer.tf — ДЕКЛАРАЦИЯ',
+ 'TERRAFORM', 'VERIFIED', 'прогоны 2026-09-07 10:19 и 10:22 UTC, оба COMPLETE, покрытие 100 процентов',
  FALSE, TRUE, FALSE, TRUE,
  45, 60, 0, 20, 12, 'wb_raw.WB_PRICES_OBSERVATIONS', TRUE,
  'evelagin',
  'SNAPSHOT-ONLY. У WB нет эндпоинта истории цен: пропущенное окно потеряно навсегда. READ-ONLY: мутирующих методов в коде нет.',
  CURRENT_TIMESTAMP());
-*/
