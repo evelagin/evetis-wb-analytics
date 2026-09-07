@@ -1,0 +1,3715 @@
+{
+ "archived": false,
+ "archived_directly": false,
+ "auto_apply_filters": true,
+ "cache_ttl": null,
+ "can_set_cache_policy": true,
+ "caveats": null,
+ "collection": {
+  "archive_operation_id": null,
+  "archived": false,
+  "archived_directly": null,
+  "authority_level": null,
+  "created_at": "2026-09-06T18:46:49.072866Z",
+  "description": "Stage ADS-5. Операционная реклама WB: экраны поверх валидированных вью wb_mart (Ads-2/3/4). Источник истины — BigQuery, Metabase только presentation.",
+  "entity_id": "SchgzXE2sxJbQxqj4pOve",
+  "id": 8,
+  "is_remote_synced": false,
+  "is_sample": false,
+  "location": "/5/",
+  "name": "03 · Advertising",
+  "namespace": null,
+  "personal_owner_id": null,
+  "slug": "03_%C2%B7_advertising",
+  "type": null
+ },
+ "collection_authority_level": null,
+ "collection_id": 8,
+ "collection_position": null,
+ "created_at": "2026-09-06T18:57:13.087722Z",
+ "creator_id": 2,
+ "dashcards": [
+  {
+   "action_id": null,
+   "card": {
+    "download_perms": "none",
+    "query_average_duration": null
+   },
+   "card_id": null,
+   "col": 0,
+   "collection_authority_level": null,
+   "created_at": "2026-09-06T18:57:15.121918Z",
+   "dashboard_id": 4,
+   "dashboard_tab_id": null,
+   "entity_id": "JqQTtuYfjK4gMAFo7wrlJ",
+   "id": 131,
+   "inline_parameters": [],
+   "parameter_mappings": [],
+   "row": 0,
+   "series": [],
+   "size_x": 24,
+   "size_y": 1,
+   "visualization_settings": {
+    "dashcard.background": false,
+    "text": "Обзор · окно, свежесть и покрытие рекламного бюджета",
+    "virtual_card": {
+     "archived": false,
+     "dataset_query": {},
+     "display": "heading",
+     "name": null,
+     "visualization_settings": {}
+    }
+   }
+  },
+  {
+   "action_id": null,
+   "card": {
+    "download_perms": "none",
+    "query_average_duration": null
+   },
+   "card_id": null,
+   "col": 0,
+   "collection_authority_level": null,
+   "created_at": "2026-09-06T18:57:15.121918Z",
+   "dashboard_id": 4,
+   "dashboard_tab_id": null,
+   "entity_id": "UrNv532G3gRxfbW0xarDR",
+   "id": 132,
+   "inline_parameters": [],
+   "parameter_mappings": [],
+   "row": 1,
+   "series": [],
+   "size_x": 24,
+   "size_y": 5,
+   "visualization_settings": {
+    "text": "**Что показывает экран.** Поисковая реклама WB в разрезе «запрос × товар». Это анализ, а не автоматические решения: действий PAUSE / SCALE / изменения ставок стадия ADS-5 не формирует.\n\n**Масштаб.** Расход на экране — только та часть рекламного бюджета, которую WB разложил по поисковым запросам. Полный рекламный расход больше; насколько именно — в карточках покрытия ниже. Обе карточки покрытия считаются по всему кабинету и фильтрами «Товар» и «Доказательность» НЕ управляются: знаменатель существует только на уровне кампании и по товару не раскладывается.\n\n**Термины.** Заказы и выкупы — attributed raw по контракту ADS-0 / ADS-3, это НЕ общие продажи WB. Позиция — **рекламная** (avg_pos рекламного отчёта WB); авторитетного источника органических позиций в проекте нет, поэтому называть её органической или SEO-позицией нельзя. Ставка — ставка **поискового запроса** из снимка WB; со ставкой кампании из конфигурации она не смешивается.",
+    "virtual_card": {
+     "archived": false,
+     "dataset_query": {},
+     "display": "text",
+     "name": null,
+     "visualization_settings": {}
+    }
+   }
+  },
+  {
+   "action_id": null,
+   "card": {
+    "archived": false,
+    "archived_directly": false,
+    "cache_invalidated_at": null,
+    "cache_ttl": null,
+    "card_schema": 23,
+    "collection_id": 8,
+    "collection_position": null,
+    "collection_preview": true,
+    "created_at": "2026-09-06T18:52:53.136353Z",
+    "creator_id": 2,
+    "dashboard_id": null,
+    "database_id": 2,
+    "dataset_query": {
+     "database": 2,
+     "lib/type": "mbql/query",
+     "stages": [
+      {
+       "lib/type": "mbql.stage/native",
+       "native": "WITH s AS (\n  SELECT\n    MAX(as_of_date)                       AS as_of_date,\n    MAX(bid_snapshot_date)                AS bid_snapshot_date,\n    COUNTIF(bid_snapshot_status = \"OK\")   AS rows_with_bid,\n    COUNT(*)                              AS rows_total\n  FROM `wb_mart.V_ADS_SCREEN_QUERY`\n  WHERE window_days = {{window}}\n),\nreg AS (\n  SELECT\n    MAX(IF(pipeline_id = \"ads_query_stats\", expected_business_lag_days, NULL)) AS stats_lag_sla_days,\n    MAX(IF(pipeline_id = \"ads_query_bids\",  expected_business_lag_days, NULL)) AS bids_lag_sla_days\n  FROM `wb_ops.OPS_PIPELINE_REGISTRY`\n)\nSELECT\n  s.as_of_date,\n  {{window}}                                                                     AS window_days,\n  DATE_ADD(DATE_SUB(s.as_of_date, INTERVAL {{window}} DAY), INTERVAL 1 DAY)      AS period_from,\n  s.as_of_date                                                                   AS period_to,\n  DATE_DIFF(CURRENT_DATE(\"Europe/Moscow\"), s.as_of_date, DAY)                    AS stats_lag_days,\n  reg.stats_lag_sla_days,\n  IF(DATE_DIFF(CURRENT_DATE(\"Europe/Moscow\"), s.as_of_date, DAY)\n       > reg.stats_lag_sla_days, \"STALE\", \"OK\")                                  AS stats_freshness,\n  s.bid_snapshot_date,\n  DATE_DIFF(CURRENT_DATE(\"Europe/Moscow\"), s.bid_snapshot_date, DAY)             AS bids_lag_days,\n  reg.bids_lag_sla_days,\n  IF(DATE_DIFF(CURRENT_DATE(\"Europe/Moscow\"), s.bid_snapshot_date, DAY)\n       > reg.bids_lag_sla_days, \"STALE\", \"OK\")                                   AS bids_freshness,\n  SAFE_DIVIDE(s.rows_with_bid, s.rows_total)                                     AS bid_coverage_share,\n  CURRENT_TIMESTAMP()                                                            AS refreshed_at\nFROM s, reg\n",
+       "template-tags": [
+        {
+         "default": "90",
+         "display-name": "Окно (дней)",
+         "id": "ac4e8717-55d9-49b0-91b5-ca9796e014d9",
+         "name": "window",
+         "required": true,
+         "type": "number"
+        }
+       ]
+      }
+     ]
+    },
+    "description": "Свежесть источников экрана «Поисковые запросы». as_of — последний ЗАКРЫТЫЙ день статистики запросов (MAX(day) в V_ADS_FUNNEL_QUERY_DAILY); окно считается как (as_of − N; as_of]. Пороги устаревания НЕ придуманы: expected_business_lag_days берётся из реестра wb_ops.OPS_PIPELINE_REGISTRY (ads_query_stats = 3 сут., ads_query_bids = 1 сут.). Снимок ставок — SNAPSHOT-ONLY: у WB нет истории ставок, поэтому его дата может опережать as_of статистики; это норма, а не дефект.",
+    "dimension_mappings": null,
+    "dimensions": null,
+    "display": "table",
+    "document_id": null,
+    "download_perms": "full",
+    "embedding_params": null,
+    "embedding_type": null,
+    "enable_embedding": false,
+    "entity_id": "ie7sNPT3UPE2OucWM56Sk",
+    "id": 86,
+    "last_used_at": "2026-09-06T18:52:53.136353Z",
+    "legacy_query": null,
+    "metabase_version": "v0.63.15.1 (ab5ffba)",
+    "name": "Окно и свежесть данных",
+    "parameter_mappings": [],
+    "parameters": [],
+    "query_average_duration": 2169,
+    "query_type": "native",
+    "source_card_id": null,
+    "table_id": null,
+    "type": "question",
+    "visualization_settings": {
+     "column_settings": {
+      "[\"name\",\"as_of_date\"]": {
+       "column_title": "as_of (последний закрытый день)"
+      },
+      "[\"name\",\"bid_coverage_share\"]": {
+       "column_title": "Строк со ставкой",
+       "decimals": 1,
+       "number_style": "percent"
+      },
+      "[\"name\",\"bid_snapshot_date\"]": {
+       "column_title": "Снимок ставок"
+      },
+      "[\"name\",\"bids_freshness\"]": {
+       "column_title": "Ставки"
+      },
+      "[\"name\",\"bids_lag_days\"]": {
+       "column_title": "Лаг ставок, дней",
+       "decimals": 0,
+       "number_style": "decimal"
+      },
+      "[\"name\",\"bids_lag_sla_days\"]": {
+       "column_title": "SLA лага ставок, дней",
+       "decimals": 0,
+       "number_style": "decimal"
+      },
+      "[\"name\",\"period_from\"]": {
+       "column_title": "Период с"
+      },
+      "[\"name\",\"period_to\"]": {
+       "column_title": "Период по"
+      },
+      "[\"name\",\"refreshed_at\"]": {
+       "column_title": "Карточка обновлена"
+      },
+      "[\"name\",\"stats_freshness\"]": {
+       "column_title": "Статистика запросов"
+      },
+      "[\"name\",\"stats_lag_days\"]": {
+       "column_title": "Лаг статистики, дней",
+       "decimals": 0,
+       "number_style": "decimal"
+      },
+      "[\"name\",\"stats_lag_sla_days\"]": {
+       "column_title": "SLA лага статистики, дней",
+       "decimals": 0,
+       "number_style": "decimal"
+      },
+      "[\"name\",\"window_days\"]": {
+       "column_title": "Окно, дней",
+       "decimals": 0,
+       "number_style": "decimal"
+      }
+     },
+     "table.column_formatting": [
+      {
+       "color": "#ED6E6E",
+       "columns": [
+        "stats_freshness",
+        "bids_freshness"
+       ],
+       "highlight_row": false,
+       "operator": "=",
+       "type": "single",
+       "value": "STALE"
+      },
+      {
+       "color": "#84BB4C",
+       "columns": [
+        "stats_freshness",
+        "bids_freshness"
+       ],
+       "highlight_row": false,
+       "operator": "=",
+       "type": "single",
+       "value": "OK"
+      }
+     ]
+    }
+   },
+   "card_id": 86,
+   "col": 0,
+   "collection_authority_level": null,
+   "created_at": "2026-09-06T18:57:15.121918Z",
+   "dashboard_id": 4,
+   "dashboard_tab_id": null,
+   "entity_id": "vE3zRaeUKn5r9LmR1mpfx",
+   "id": 133,
+   "inline_parameters": [],
+   "parameter_mappings": [
+    {
+     "card_id": 86,
+     "parameter_id": "window",
+     "target": [
+      "variable",
+      [
+       "template-tag",
+       "window"
+      ]
+     ]
+    }
+   ],
+   "row": 6,
+   "series": [],
+   "size_x": 12,
+   "size_y": 4,
+   "visualization_settings": {}
+  },
+  {
+   "action_id": null,
+   "card": {
+    "archived": false,
+    "archived_directly": false,
+    "cache_invalidated_at": null,
+    "cache_ttl": null,
+    "card_schema": 23,
+    "collection_id": 8,
+    "collection_position": null,
+    "collection_preview": true,
+    "created_at": "2026-09-06T18:52:57.155908Z",
+    "creator_id": 2,
+    "dashboard_id": null,
+    "database_id": 2,
+    "dataset_query": {
+     "database": 2,
+     "lib/type": "mbql/query",
+     "stages": [
+      {
+       "lib/type": "mbql.stage/native",
+       "native": "WITH a AS (\n  SELECT MAX(day) AS as_of FROM `wb_mart.V_ADS_FUNNEL_QUERY_DAILY`\n),\nq AS (\n  SELECT SUM(spend_rub) AS s FROM `wb_mart.V_ADS_SCREEN_QUERY` WHERE window_days = {{window}}\n),\nc AS (\n  SELECT SUM(cd.ad_spend_rub) AS s\n  FROM `wb_mart.V_ADS_CAMPAIGN_DAILY` cd, a\n  WHERE cd.day > DATE_SUB(a.as_of, INTERVAL {{window}} DAY) AND cd.day <= a.as_of\n)\nSELECT\n  FORMAT(\"Интеллект по поисковым запросам объясняет %s ₽ из %s ₽ рекламного расхода (%.1f%%)\",\n         REPLACE(FORMAT(\"%'.0f\", q.s), \",\", \" \"),\n         REPLACE(FORMAT(\"%'.0f\", CAST(c.s AS FLOAT64)), \",\", \" \"),\n         100 * SAFE_DIVIDE(q.s, CAST(c.s AS FLOAT64)))          AS coverage_statement,\n  q.s                                                            AS query_spend_rub,\n  CAST(c.s AS FLOAT64)                                           AS campaign_spend_rub,\n  CAST(c.s AS FLOAT64) - q.s                                     AS unexplained_rub,\n  SAFE_DIVIDE(q.s, CAST(c.s AS FLOAT64))                         AS coverage_share\nFROM q, c\n",
+       "template-tags": [
+        {
+         "default": "90",
+         "display-name": "Окно (дней)",
+         "id": "35edf01f-75c5-46ed-bfd6-42c7fd012922",
+         "name": "window",
+         "required": true,
+         "type": "number"
+        }
+       ]
+      }
+     ]
+    },
+    "description": "ОБЯЗАТЕЛЬНЫЙ контроль масштаба (ADS-5 §6). Числитель — расход, разложенный WB по поисковым запросам (V_ADS_SCREEN_QUERY.spend_rub). Знаменатель — сопоставимый расход по кампаниям за то же окно (V_ADS_CAMPAIGN_DAILY.ad_spend_rub). Разрыв структурный, а не дефект загрузки: WB не даёт разбивку по запросам для не-поисковых размещений. Карточка НЕ фильтруется по товару и доказательности: знаменатель существует только на уровне кампании и по SKU не раскладывается.",
+    "dimension_mappings": null,
+    "dimensions": null,
+    "display": "table",
+    "document_id": null,
+    "download_perms": "full",
+    "embedding_params": null,
+    "embedding_type": null,
+    "enable_embedding": false,
+    "entity_id": "UhFpwZmNTNPodkxMWcf4O",
+    "id": 87,
+    "last_used_at": "2026-09-06T18:52:57.155908Z",
+    "legacy_query": null,
+    "metabase_version": "v0.63.15.1 (ab5ffba)",
+    "name": "Покрытие рекламного бюджета запросами",
+    "parameter_mappings": [],
+    "parameters": [],
+    "query_average_duration": 1255,
+    "query_type": "native",
+    "source_card_id": null,
+    "table_id": null,
+    "type": "question",
+    "visualization_settings": {
+     "column_settings": {
+      "[\"name\",\"campaign_spend_rub\"]": {
+       "column_title": "Расход по кампаниям, ₽",
+       "currency": "RUB",
+       "currency_in_header": false,
+       "currency_style": "symbol",
+       "decimals": 0,
+       "number_style": "currency"
+      },
+      "[\"name\",\"coverage_share\"]": {
+       "column_title": "Покрытие",
+       "decimals": 1,
+       "number_style": "percent"
+      },
+      "[\"name\",\"coverage_statement\"]": {
+       "column_title": "Вывод"
+      },
+      "[\"name\",\"query_spend_rub\"]": {
+       "column_title": "Объяснено запросами, ₽",
+       "currency": "RUB",
+       "currency_in_header": false,
+       "currency_style": "symbol",
+       "decimals": 0,
+       "number_style": "currency"
+      },
+      "[\"name\",\"unexplained_rub\"]": {
+       "column_title": "Не объяснено, ₽",
+       "currency": "RUB",
+       "currency_in_header": false,
+       "currency_style": "symbol",
+       "decimals": 0,
+       "number_style": "currency"
+      }
+     }
+    }
+   },
+   "card_id": 87,
+   "col": 12,
+   "collection_authority_level": null,
+   "created_at": "2026-09-06T18:57:15.121918Z",
+   "dashboard_id": 4,
+   "dashboard_tab_id": null,
+   "entity_id": "EYex53PD697BOokBe-TFr",
+   "id": 134,
+   "inline_parameters": [],
+   "parameter_mappings": [
+    {
+     "card_id": 87,
+     "parameter_id": "window",
+     "target": [
+      "variable",
+      [
+       "template-tag",
+       "window"
+      ]
+     ]
+    }
+   ],
+   "row": 6,
+   "series": [],
+   "size_x": 12,
+   "size_y": 4,
+   "visualization_settings": {}
+  },
+  {
+   "action_id": null,
+   "card": {
+    "archived": false,
+    "archived_directly": false,
+    "cache_invalidated_at": null,
+    "cache_ttl": null,
+    "card_schema": 23,
+    "collection_id": 8,
+    "collection_position": null,
+    "collection_preview": true,
+    "created_at": "2026-09-06T18:53:00.191985Z",
+    "creator_id": 2,
+    "dashboard_id": null,
+    "database_id": 2,
+    "dataset_query": {
+     "database": 2,
+     "lib/type": "mbql/query",
+     "stages": [
+      {
+       "lib/type": "mbql.stage/native",
+       "native": "WITH a AS (\n  SELECT MAX(day) AS as_of FROM `wb_mart.V_ADS_FUNNEL_QUERY_DAILY`\n),\nqs AS (\n  SELECT SAFE_CAST(advert_id AS INT64) AS advert_id,\n         SUM(SAFE_CAST(spend AS FLOAT64)) AS q_spend\n  FROM `wb_raw.V_ADV_QUERY_STATS`, a\n  WHERE SAFE.PARSE_DATE(\"%Y-%m-%d\", period_from) >  DATE_SUB(a.as_of, INTERVAL {{window}} DAY)\n    AND SAFE.PARSE_DATE(\"%Y-%m-%d\", period_from) <= a.as_of\n  GROUP BY 1\n),\ncdd AS (\n  SELECT cd.advert_id, SUM(cd.ad_spend_rub) AS c_spend\n  FROM `wb_mart.V_ADS_CAMPAIGN_DAILY` cd, a\n  WHERE cd.day > DATE_SUB(a.as_of, INTERVAL {{window}} DAY) AND cd.day <= a.as_of\n  GROUP BY 1\n),\nj AS (\n  SELECT cdd.advert_id,\n         CAST(cdd.c_spend AS FLOAT64) AS c_spend,\n         IFNULL(qs.q_spend, 0)        AS q_spend,\n         qs.advert_id IS NOT NULL     AS has_q\n  FROM cdd LEFT JOIN qs USING (advert_id)\n),\nagg AS (\n  SELECT\n    SUM(q_spend)                          AS explained,\n    SUM(IF(has_q, c_spend - q_spend, 0))  AS not_broken_down,\n    SUM(IF(has_q, 0, c_spend))            AS absent,\n    SUM(c_spend)                          AS total,\n    COUNTIF(has_q)                        AS adverts_with_q,\n    COUNTIF(NOT has_q)                    AS adverts_without_q,\n    COUNT(*)                              AS adverts_total\n  FROM j\n),\nrows_ AS (\n  SELECT 1 AS ord, \"Объяснено статистикой по поисковым запросам\" AS bucket,\n         explained AS spend_rub, adverts_with_q AS adverts FROM agg\n  UNION ALL\n  SELECT 2, \"Кампания есть в отчёте по запросам, но расход по запросам не разложен\",\n         not_broken_down, adverts_with_q FROM agg\n  UNION ALL\n  SELECT 3, \"Кампании нет в отчёте по поисковым запросам\",\n         absent, adverts_without_q FROM agg\n  UNION ALL\n  SELECT 4, \"ИТОГО сопоставимый расход по кампаниям\",\n         total, adverts_total FROM agg\n)\nSELECT r.bucket, r.spend_rub, SAFE_DIVIDE(r.spend_rub, agg.total) AS share, r.adverts\nFROM rows_ r, agg\nORDER BY r.ord\n",
+       "template-tags": [
+        {
+         "default": "90",
+         "display-name": "Окно (дней)",
+         "id": "60df91af-b526-4493-b0c5-f6b6244ce57c",
+         "name": "window",
+         "required": true,
+         "type": "number"
+        }
+       ]
+      }
+     ]
+    },
+    "description": "Раскладка разрыва покрытия (ADS-5 §6). Сопоставление на уровне кампании: расход по запросам (wb_raw.V_ADV_QUERY_STATS, сумма по advert_id) против расхода кампаний (V_ADS_CAMPAIGN_DAILY) за одно и то же окно. Проверено на живых данных: ни одна кампания из отчёта по запросам не отсутствует в витрине кампаний и ни у одной расход по запросам не превышает расход кампании, поэтому все три строки неотрицательны и в сумме дают ИТОГО. Единственная карточка дашборда, читающая wb_raw напрямую: разбивки расхода по advert_id на уровне витрины не существует.",
+    "dimension_mappings": null,
+    "dimensions": null,
+    "display": "table",
+    "document_id": null,
+    "download_perms": "full",
+    "embedding_params": null,
+    "embedding_type": null,
+    "enable_embedding": false,
+    "entity_id": "YeS8YW4oHJ5R5xoz9u-SI",
+    "id": 88,
+    "last_used_at": "2026-09-06T18:53:00.191985Z",
+    "legacy_query": null,
+    "metabase_version": "v0.63.15.1 (ab5ffba)",
+    "name": "Структура рекламного расхода окна",
+    "parameter_mappings": [],
+    "parameters": [],
+    "query_average_duration": 1159,
+    "query_type": "native",
+    "source_card_id": null,
+    "table_id": null,
+    "type": "question",
+    "visualization_settings": {
+     "column_settings": {
+      "[\"name\",\"adverts\"]": {
+       "column_title": "Кампаний",
+       "decimals": 0,
+       "number_style": "decimal"
+      },
+      "[\"name\",\"bucket\"]": {
+       "column_title": "Строка бюджета"
+      },
+      "[\"name\",\"share\"]": {
+       "column_title": "Доля",
+       "decimals": 1,
+       "number_style": "percent"
+      },
+      "[\"name\",\"spend_rub\"]": {
+       "column_title": "Сумма, ₽",
+       "currency": "RUB",
+       "currency_in_header": false,
+       "currency_style": "symbol",
+       "decimals": 0,
+       "number_style": "currency"
+      }
+     }
+    }
+   },
+   "card_id": 88,
+   "col": 0,
+   "collection_authority_level": null,
+   "created_at": "2026-09-06T18:57:15.121918Z",
+   "dashboard_id": 4,
+   "dashboard_tab_id": null,
+   "entity_id": "imSLmSoUaIYkBD68G_Tb9",
+   "id": 135,
+   "inline_parameters": [],
+   "parameter_mappings": [
+    {
+     "card_id": 88,
+     "parameter_id": "window",
+     "target": [
+      "variable",
+      [
+       "template-tag",
+       "window"
+      ]
+     ]
+    }
+   ],
+   "row": 10,
+   "series": [],
+   "size_x": 24,
+   "size_y": 4,
+   "visualization_settings": {}
+  },
+  {
+   "action_id": null,
+   "card": {
+    "download_perms": "none",
+    "query_average_duration": null
+   },
+   "card_id": null,
+   "col": 0,
+   "collection_authority_level": null,
+   "created_at": "2026-09-06T18:57:15.121918Z",
+   "dashboard_id": 4,
+   "dashboard_tab_id": null,
+   "entity_id": "nfnB9YKYo8lIwSBnnkHpV",
+   "id": 136,
+   "inline_parameters": [],
+   "parameter_mappings": [],
+   "row": 14,
+   "series": [],
+   "size_x": 24,
+   "size_y": 1,
+   "visualization_settings": {
+    "dashcard.background": false,
+    "text": "Ключевые показатели окна",
+    "virtual_card": {
+     "archived": false,
+     "dataset_query": {},
+     "display": "heading",
+     "name": null,
+     "visualization_settings": {}
+    }
+   }
+  },
+  {
+   "action_id": null,
+   "card": {
+    "archived": false,
+    "archived_directly": false,
+    "cache_invalidated_at": null,
+    "cache_ttl": null,
+    "card_schema": 23,
+    "collection_id": 8,
+    "collection_position": null,
+    "collection_preview": true,
+    "created_at": "2026-09-06T18:53:02.329542Z",
+    "creator_id": 2,
+    "dashboard_id": null,
+    "database_id": 2,
+    "dataset_query": {
+     "database": 2,
+     "lib/type": "mbql/query",
+     "stages": [
+      {
+       "lib/type": "mbql.stage/native",
+       "native": "SELECT\n  MAX(as_of_date)                                                  AS as_of_date,\n  COUNT(*)                                                         AS queries_cnt,\n  SUM(spend_rub)                                                   AS spend_rub,\n  SUM(views_sum)                                                   AS views,\n  SUM(clicks_sum)                                                  AS clicks,\n  SUM(atbs_sum)                                                    AS atbs,\n  SUM(orders_sum)                                                  AS orders_raw,\n  SUM(shks_sum)                                                    AS buyouts_raw,\n  SAFE_DIVIDE(SUM(clicks_on_imp), SUM(views_sum))                  AS ctr,\n  SAFE_DIVIDE(SUM(spend_rub), SUM(clicks_sum))                     AS cpc_rub,\n  SAFE_DIVIDE(SUM(atbs_sum), SUM(clicks_sum))                      AS cart_cr,\n  SAFE_DIVIDE(SUM(orders_sum), SUM(clicks_sum))                    AS order_cr,\n  SAFE_DIVIDE(SUM(spend_rub), NULLIF(SUM(orders_sum), 0))          AS cpo_rub,\n  SAFE_DIVIDE(SUM(avg_pos_w_clicks * clicks_sum), SUM(clicks_sum)) AS avg_paid_pos\nFROM `wb_mart.V_ADS_SCREEN_QUERY`\nWHERE window_days = {{window}}\n  [[AND {{sku}}]]\n  [[AND {{evidence}}]]\n  [[AND {{q}}]]\n  [[AND spend_rub >= {{spend_min}}]]\n  [[AND orders_sum >= {{orders_min}}]]\n",
+       "template-tags": [
+        {
+         "default": "90",
+         "display-name": "Окно (дней)",
+         "id": "8019c316-4d99-4d3d-b014-b582106ce64e",
+         "name": "window",
+         "required": true,
+         "type": "number"
+        },
+        {
+         "dimension": [
+          "field",
+          {
+           "lib/uuid": "04c60564-d091-40f7-b6e0-c62d754420a5"
+          },
+          721
+         ],
+         "display-name": "Товар",
+         "id": "f35b7789-8289-481e-a30a-ba6c671909b3",
+         "name": "sku",
+         "type": "dimension",
+         "widget-type": "string/="
+        },
+        {
+         "dimension": [
+          "field",
+          {
+           "lib/uuid": "3b9dee85-cd74-4a71-b7f8-4ee8e0f0582e"
+          },
+          747
+         ],
+         "display-name": "Доказательность",
+         "id": "77a59de0-1b77-4b8d-b858-2d427466404e",
+         "name": "evidence",
+         "type": "dimension",
+         "widget-type": "string/="
+        },
+        {
+         "dimension": [
+          "field",
+          {
+           "lib/uuid": "a00ef923-ed37-416f-8101-ef6609c0405f"
+          },
+          719
+         ],
+         "display-name": "Запрос содержит",
+         "id": "75a581e9-1c81-4f97-bba9-0375e05007a7",
+         "name": "q",
+         "type": "dimension",
+         "widget-type": "string/contains"
+        },
+        {
+         "display-name": "Минимальный расход, ₽",
+         "id": "8d1bea4b-3ab0-4952-88a8-02b52b4330cb",
+         "name": "spend_min",
+         "type": "number"
+        },
+        {
+         "display-name": "Минимум заказов",
+         "id": "85b91234-5055-4772-b86c-71f6eb7e0e66",
+         "name": "orders_min",
+         "type": "number"
+        }
+       ]
+      }
+     ]
+    },
+    "description": "KPI-шапка окна. ВСЕ отношения — ratio-of-sums (сумма числителей / сумма знаменателей), готовые построчные ratio не суммируются. CTR считается по clicks_on_imp / views: строки без показов в знаменатель не попадают. «Заказы» и «Выкупы» — attributed raw по контракту ADS-0/ADS-3, это НЕ общие продажи WB. Выручки в разрезе поискового запроса у WB НЕТ (см. текст под шапкой), поэтому ДРР и ROAS на этом грейне не выводятся. Расход — только та часть бюджета, которую WB разложил по запросам.",
+    "dimension_mappings": null,
+    "dimensions": null,
+    "display": "table",
+    "document_id": null,
+    "download_perms": "full",
+    "embedding_params": null,
+    "embedding_type": null,
+    "enable_embedding": false,
+    "entity_id": "kAHNxZNDywQ5l9MtRnTcq",
+    "id": 89,
+    "last_used_at": "2026-09-06T18:53:02.329542Z",
+    "legacy_query": null,
+    "metabase_version": "v0.63.15.1 (ab5ffba)",
+    "name": "Ключевые показатели по поисковым запросам",
+    "parameter_mappings": [],
+    "parameters": [],
+    "query_average_duration": 1473,
+    "query_type": "native",
+    "source_card_id": null,
+    "table_id": null,
+    "type": "question",
+    "visualization_settings": {
+     "column_settings": {
+      "[\"name\",\"as_of_date\"]": {
+       "column_title": "as_of"
+      },
+      "[\"name\",\"atbs\"]": {
+       "column_title": "В корзину",
+       "decimals": 0,
+       "number_style": "decimal"
+      },
+      "[\"name\",\"avg_paid_pos\"]": {
+       "column_title": "Средняя рекламная позиция (по кликам)",
+       "decimals": 2,
+       "number_style": "decimal"
+      },
+      "[\"name\",\"buyouts_raw\"]": {
+       "column_title": "Выкупы, шт (attributed, raw)",
+       "decimals": 0,
+       "number_style": "decimal"
+      },
+      "[\"name\",\"cart_cr\"]": {
+       "column_title": "CR корзины из кликов",
+       "decimals": 1,
+       "number_style": "percent"
+      },
+      "[\"name\",\"clicks\"]": {
+       "column_title": "Клики",
+       "decimals": 0,
+       "number_style": "decimal"
+      },
+      "[\"name\",\"cpc_rub\"]": {
+       "column_title": "CPC, ₽",
+       "currency": "RUB",
+       "currency_in_header": false,
+       "currency_style": "symbol",
+       "decimals": 2,
+       "number_style": "currency"
+      },
+      "[\"name\",\"cpo_rub\"]": {
+       "column_title": "Расход на заказ (CPO), ₽",
+       "currency": "RUB",
+       "currency_in_header": false,
+       "currency_style": "symbol",
+       "decimals": 2,
+       "number_style": "currency"
+      },
+      "[\"name\",\"ctr\"]": {
+       "column_title": "CTR",
+       "decimals": 2,
+       "number_style": "percent"
+      },
+      "[\"name\",\"order_cr\"]": {
+       "column_title": "CR заказов из кликов",
+       "decimals": 1,
+       "number_style": "percent"
+      },
+      "[\"name\",\"orders_raw\"]": {
+       "column_title": "Заказы (attributed, raw)",
+       "decimals": 0,
+       "number_style": "decimal"
+      },
+      "[\"name\",\"queries_cnt\"]": {
+       "column_title": "Строк «запрос × товар»",
+       "decimals": 0,
+       "number_style": "decimal"
+      },
+      "[\"name\",\"spend_rub\"]": {
+       "column_title": "Расход по запросам, ₽",
+       "currency": "RUB",
+       "currency_in_header": false,
+       "currency_style": "symbol",
+       "decimals": 0,
+       "number_style": "currency"
+      },
+      "[\"name\",\"views\"]": {
+       "column_title": "Показы (реклама)",
+       "decimals": 0,
+       "number_style": "decimal"
+      }
+     }
+    }
+   },
+   "card_id": 89,
+   "col": 0,
+   "collection_authority_level": null,
+   "created_at": "2026-09-06T18:57:15.121918Z",
+   "dashboard_id": 4,
+   "dashboard_tab_id": null,
+   "entity_id": "SxGOBOOhXd-0UxHjYRvmp",
+   "id": 137,
+   "inline_parameters": [],
+   "parameter_mappings": [
+    {
+     "card_id": 89,
+     "parameter_id": "window",
+     "target": [
+      "variable",
+      [
+       "template-tag",
+       "window"
+      ]
+     ]
+    },
+    {
+     "card_id": 89,
+     "parameter_id": "sku",
+     "target": [
+      "dimension",
+      [
+       "template-tag",
+       "sku"
+      ]
+     ]
+    },
+    {
+     "card_id": 89,
+     "parameter_id": "evidence",
+     "target": [
+      "dimension",
+      [
+       "template-tag",
+       "evidence"
+      ]
+     ]
+    },
+    {
+     "card_id": 89,
+     "parameter_id": "q",
+     "target": [
+      "dimension",
+      [
+       "template-tag",
+       "q"
+      ]
+     ]
+    },
+    {
+     "card_id": 89,
+     "parameter_id": "spend_min",
+     "target": [
+      "variable",
+      [
+       "template-tag",
+       "spend_min"
+      ]
+     ]
+    },
+    {
+     "card_id": 89,
+     "parameter_id": "orders_min",
+     "target": [
+      "variable",
+      [
+       "template-tag",
+       "orders_min"
+      ]
+     ]
+    }
+   ],
+   "row": 15,
+   "series": [],
+   "size_x": 24,
+   "size_y": 3,
+   "visualization_settings": {}
+  },
+  {
+   "action_id": null,
+   "card": {
+    "download_perms": "none",
+    "query_average_duration": null
+   },
+   "card_id": null,
+   "col": 0,
+   "collection_authority_level": null,
+   "created_at": "2026-09-06T18:57:15.121918Z",
+   "dashboard_id": 4,
+   "dashboard_tab_id": null,
+   "entity_id": "QOb7wURad9DQDZWIIKpMh",
+   "id": 138,
+   "inline_parameters": [],
+   "parameter_mappings": [],
+   "row": 18,
+   "series": [],
+   "size_x": 24,
+   "size_y": 3,
+   "visualization_settings": {
+    "text": "**Выручки в разрезе поискового запроса WB не отдаёт.** В отчёте по запросам есть показы, клики, корзины, заказы, выкупы (шт) и расход — денежной суммы заказа нет (проверено по `raw_json` источника `wb_raw.V_ADV_QUERY_STATS`). Поэтому ДРР и ROAS на грейне запроса не считаются и на этом экране отсутствуют: их пришлось бы выдумать. Экономические пределы по товару (в том числе безубыточный ДРР) живут в `wb_mart.V_ADS_SKU_ECONOMIC_LIMITS`, стадия ADS-4.",
+    "virtual_card": {
+     "archived": false,
+     "dataset_query": {},
+     "display": "text",
+     "name": null,
+     "visualization_settings": {}
+    }
+   }
+  },
+  {
+   "action_id": null,
+   "card": {
+    "archived": false,
+    "archived_directly": false,
+    "cache_invalidated_at": null,
+    "cache_ttl": null,
+    "card_schema": 23,
+    "collection_id": 8,
+    "collection_position": null,
+    "collection_preview": true,
+    "created_at": "2026-09-06T18:53:04.213158Z",
+    "creator_id": 2,
+    "dashboard_id": null,
+    "database_id": 2,
+    "dataset_query": {
+     "database": 2,
+     "lib/type": "mbql/query",
+     "stages": [
+      {
+       "lib/type": "mbql.stage/native",
+       "native": "SELECT\n  evidence_status,\n  COUNT(*)                                                        AS queries_cnt,\n  SAFE_DIVIDE(COUNT(*), SUM(COUNT(*)) OVER ())                    AS queries_share,\n  SUM(spend_rub)                                                  AS spend_rub,\n  SAFE_DIVIDE(SUM(spend_rub), SUM(SUM(spend_rub)) OVER ())        AS spend_share,\n  SUM(clicks_sum)                                                 AS clicks,\n  SUM(views_sum)                                                  AS views,\n  SUM(orders_sum)                                                 AS orders_raw,\n  COUNTIF(can_compare_ctr)                                        AS can_ctr,\n  COUNTIF(can_compare_cpc)                                        AS can_cpc,\n  COUNTIF(can_judge_order_cr)                                     AS can_order_cr\nFROM `wb_mart.V_ADS_SCREEN_QUERY`\nWHERE window_days = {{window}}\n  [[AND {{sku}}]]\n  [[AND {{q}}]]\n  [[AND spend_rub >= {{spend_min}}]]\n  [[AND orders_sum >= {{orders_min}}]]\nGROUP BY evidence_status\nORDER BY CASE evidence_status\n           WHEN \"ACTIONABLE\"    THEN 1\n           WHEN \"OBSERVATIONAL\" THEN 2\n           ELSE 3\n         END\n",
+       "template-tags": [
+        {
+         "default": "90",
+         "display-name": "Окно (дней)",
+         "id": "3df49c2f-6a91-470a-92f4-b1c89548cc03",
+         "name": "window",
+         "required": true,
+         "type": "number"
+        },
+        {
+         "dimension": [
+          "field",
+          {
+           "lib/uuid": "527570b9-6646-4d2b-9034-c5019fdb1696"
+          },
+          721
+         ],
+         "display-name": "Товар",
+         "id": "bf9481d6-9f57-42cf-af15-d45492762dcf",
+         "name": "sku",
+         "type": "dimension",
+         "widget-type": "string/="
+        },
+        {
+         "dimension": [
+          "field",
+          {
+           "lib/uuid": "c957d86a-96d4-4221-b0d4-23df74289a0a"
+          },
+          719
+         ],
+         "display-name": "Запрос содержит",
+         "id": "8e3b73d2-b6b1-4dd6-9914-1a2bbcf2da66",
+         "name": "q",
+         "type": "dimension",
+         "widget-type": "string/contains"
+        },
+        {
+         "display-name": "Минимальный расход, ₽",
+         "id": "d16973b4-e613-434b-89dd-b3aa39fdab6a",
+         "name": "spend_min",
+         "type": "number"
+        },
+        {
+         "display-name": "Минимум заказов",
+         "id": "082a3e12-0d64-41eb-8496-2240698b072c",
+         "name": "orders_min",
+         "type": "number"
+        }
+       ]
+      }
+     ]
+    },
+    "description": "Распределение строк окна по уровню доказательности и доле расхода. Пороги — ровно те, что заданы в BigQuery (Ads-4) и НЕ ослаблены: ACTIONABLE — клики ≥ 40; OBSERVATIONAL — клики ≥ 10 ИЛИ показы ≥ 1000; иначе INSUFFICIENT. Столбцы «сравним/оценим» показывают, скольким строкам разрешено сравнение: CTR — показы ≥ 1000, CPC — клики ≥ 20, CR заказов — клики ≥ 40. Карточка намеренно НЕ фильтруется по доказательности: это её собственный разрез.",
+    "dimension_mappings": null,
+    "dimensions": null,
+    "display": "table",
+    "document_id": null,
+    "download_perms": "full",
+    "embedding_params": null,
+    "embedding_type": null,
+    "enable_embedding": false,
+    "entity_id": "slfex3zo6S58DOdyZHhrY",
+    "id": 90,
+    "last_used_at": "2026-09-06T18:53:04.213158Z",
+    "legacy_query": null,
+    "metabase_version": "v0.63.15.1 (ab5ffba)",
+    "name": "Доказательность запросов",
+    "parameter_mappings": [],
+    "parameters": [],
+    "query_average_duration": 1127,
+    "query_type": "native",
+    "source_card_id": null,
+    "table_id": null,
+    "type": "question",
+    "visualization_settings": {
+     "column_settings": {
+      "[\"name\",\"can_cpc\"]": {
+       "column_title": "CPC сравним",
+       "decimals": 0,
+       "number_style": "decimal"
+      },
+      "[\"name\",\"can_ctr\"]": {
+       "column_title": "CTR сравним",
+       "decimals": 0,
+       "number_style": "decimal"
+      },
+      "[\"name\",\"can_order_cr\"]": {
+       "column_title": "CR заказов оценим",
+       "decimals": 0,
+       "number_style": "decimal"
+      },
+      "[\"name\",\"clicks\"]": {
+       "column_title": "Клики",
+       "decimals": 0,
+       "number_style": "decimal"
+      },
+      "[\"name\",\"evidence_status\"]": {
+       "column_title": "Доказательность"
+      },
+      "[\"name\",\"orders_raw\"]": {
+       "column_title": "Заказы (attributed, raw)",
+       "decimals": 0,
+       "number_style": "decimal"
+      },
+      "[\"name\",\"queries_cnt\"]": {
+       "column_title": "Строк",
+       "decimals": 0,
+       "number_style": "decimal"
+      },
+      "[\"name\",\"queries_share\"]": {
+       "column_title": "Доля строк",
+       "decimals": 1,
+       "number_style": "percent"
+      },
+      "[\"name\",\"spend_rub\"]": {
+       "column_title": "Расход, ₽",
+       "currency": "RUB",
+       "currency_in_header": false,
+       "currency_style": "symbol",
+       "decimals": 0,
+       "number_style": "currency"
+      },
+      "[\"name\",\"spend_share\"]": {
+       "column_title": "Доля расхода",
+       "decimals": 1,
+       "number_style": "percent"
+      },
+      "[\"name\",\"views\"]": {
+       "column_title": "Показы",
+       "decimals": 0,
+       "number_style": "decimal"
+      }
+     },
+     "table.column_formatting": [
+      {
+       "color": "#84BB4C",
+       "columns": [
+        "evidence_status"
+       ],
+       "highlight_row": false,
+       "operator": "=",
+       "type": "single",
+       "value": "ACTIONABLE"
+      },
+      {
+       "color": "#F9CF48",
+       "columns": [
+        "evidence_status"
+       ],
+       "highlight_row": false,
+       "operator": "=",
+       "type": "single",
+       "value": "OBSERVATIONAL"
+      },
+      {
+       "color": "#E0E0E0",
+       "columns": [
+        "evidence_status"
+       ],
+       "highlight_row": false,
+       "operator": "=",
+       "type": "single",
+       "value": "INSUFFICIENT"
+      }
+     ]
+    }
+   },
+   "card_id": 90,
+   "col": 0,
+   "collection_authority_level": null,
+   "created_at": "2026-09-06T18:57:15.121918Z",
+   "dashboard_id": 4,
+   "dashboard_tab_id": null,
+   "entity_id": "pGol9UGweldXVyS3suhs-",
+   "id": 139,
+   "inline_parameters": [],
+   "parameter_mappings": [
+    {
+     "card_id": 90,
+     "parameter_id": "window",
+     "target": [
+      "variable",
+      [
+       "template-tag",
+       "window"
+      ]
+     ]
+    },
+    {
+     "card_id": 90,
+     "parameter_id": "sku",
+     "target": [
+      "dimension",
+      [
+       "template-tag",
+       "sku"
+      ]
+     ]
+    },
+    {
+     "card_id": 90,
+     "parameter_id": "q",
+     "target": [
+      "dimension",
+      [
+       "template-tag",
+       "q"
+      ]
+     ]
+    },
+    {
+     "card_id": 90,
+     "parameter_id": "spend_min",
+     "target": [
+      "variable",
+      [
+       "template-tag",
+       "spend_min"
+      ]
+     ]
+    },
+    {
+     "card_id": 90,
+     "parameter_id": "orders_min",
+     "target": [
+      "variable",
+      [
+       "template-tag",
+       "orders_min"
+      ]
+     ]
+    }
+   ],
+   "row": 21,
+   "series": [],
+   "size_x": 24,
+   "size_y": 4,
+   "visualization_settings": {}
+  },
+  {
+   "action_id": null,
+   "card": {
+    "download_perms": "none",
+    "query_average_duration": null
+   },
+   "card_id": null,
+   "col": 0,
+   "collection_authority_level": null,
+   "created_at": "2026-09-06T18:57:15.121918Z",
+   "dashboard_id": 4,
+   "dashboard_tab_id": null,
+   "entity_id": "U0-nG67YsOmn0NcIcuD0G",
+   "id": 140,
+   "inline_parameters": [],
+   "parameter_mappings": [],
+   "row": 25,
+   "series": [],
+   "size_x": 24,
+   "size_y": 1,
+   "visualization_settings": {
+    "dashcard.background": false,
+    "text": "B · Запросы с наибольшим расходом",
+    "virtual_card": {
+     "archived": false,
+     "dataset_query": {},
+     "display": "heading",
+     "name": null,
+     "visualization_settings": {}
+    }
+   }
+  },
+  {
+   "action_id": null,
+   "card": {
+    "archived": false,
+    "archived_directly": false,
+    "cache_invalidated_at": null,
+    "cache_ttl": null,
+    "card_schema": 23,
+    "collection_id": 8,
+    "collection_position": null,
+    "collection_preview": true,
+    "created_at": "2026-09-06T18:53:06.576013Z",
+    "creator_id": 2,
+    "dashboard_id": null,
+    "database_id": 2,
+    "dataset_query": {
+     "database": 2,
+     "lib/type": "mbql/query",
+     "stages": [
+      {
+       "lib/type": "mbql.stage/native",
+       "native": "SELECT\n  norm_query,\n  product_name_short,\n  nm_id,\n  evidence_status,\n  spend_rub,\n  views_sum,\n  clicks_sum,\n  ctr,\n  cpc_calc,\n  atbs_sum,\n  cart_cr_clicks,\n  orders_sum,\n  order_cr_clicks,\n  cpo_ads,\n  avg_pos_w_clicks,\n  signals_text,\n  advert_count\nFROM `wb_mart.V_ADS_SCREEN_QUERY`\nWHERE window_days = {{window}}\n  [[AND {{sku}}]]\n  [[AND {{evidence}}]]\n  [[AND {{q}}]]\n  [[AND spend_rub >= {{spend_min}}]]\n  [[AND orders_sum >= {{orders_min}}]]\nORDER BY spend_rub DESC\nLIMIT 50\n",
+       "template-tags": [
+        {
+         "default": "90",
+         "display-name": "Окно (дней)",
+         "id": "0cf138cf-bb6d-4c27-873e-23224b3dbf42",
+         "name": "window",
+         "required": true,
+         "type": "number"
+        },
+        {
+         "dimension": [
+          "field",
+          {
+           "lib/uuid": "b3ce5f28-17d9-4fd6-972b-58f8bc892410"
+          },
+          721
+         ],
+         "display-name": "Товар",
+         "id": "45fea996-4c62-4d33-a5d9-93bdab5aa252",
+         "name": "sku",
+         "type": "dimension",
+         "widget-type": "string/="
+        },
+        {
+         "dimension": [
+          "field",
+          {
+           "lib/uuid": "a788228a-8121-42e1-9954-01aa1dd000e8"
+          },
+          747
+         ],
+         "display-name": "Доказательность",
+         "id": "e08a882e-2329-4ae4-b864-eba8e6995e8b",
+         "name": "evidence",
+         "type": "dimension",
+         "widget-type": "string/="
+        },
+        {
+         "dimension": [
+          "field",
+          {
+           "lib/uuid": "87989322-d713-4747-94a6-21c24ac605c7"
+          },
+          719
+         ],
+         "display-name": "Запрос содержит",
+         "id": "bc75806e-5c83-4cab-801f-83418e35fec2",
+         "name": "q",
+         "type": "dimension",
+         "widget-type": "string/contains"
+        },
+        {
+         "display-name": "Минимальный расход, ₽",
+         "id": "44ecfdd5-9e66-4633-9779-4618b1592404",
+         "name": "spend_min",
+         "type": "number"
+        },
+        {
+         "display-name": "Минимум заказов",
+         "id": "a2c07c24-380e-486a-9d14-3caa22804aca",
+         "name": "orders_min",
+         "type": "number"
+        }
+       ]
+      }
+     ]
+    },
+    "description": "Куда уходит разложенный по запросам бюджет. Сортировка по расходу, 50 строк. Цвет столбца «Доказательность» показывает, можно ли на строку опираться: зелёный — ACTIONABLE, жёлтый — OBSERVATIONAL, серый — INSUFFICIENT. Показатели строки суммарны по всем кампаниям, в которых запрос показывался (столбец «Кампаний в строке»).",
+    "dimension_mappings": null,
+    "dimensions": null,
+    "display": "table",
+    "document_id": null,
+    "download_perms": "full",
+    "embedding_params": null,
+    "embedding_type": null,
+    "enable_embedding": false,
+    "entity_id": "czsZekNsU5Moc9m8sdfzF",
+    "id": 91,
+    "last_used_at": "2026-09-06T18:53:06.576013Z",
+    "legacy_query": null,
+    "metabase_version": "v0.63.15.1 (ab5ffba)",
+    "name": "Запросы с наибольшим расходом",
+    "parameter_mappings": [],
+    "parameters": [],
+    "query_average_duration": 1431,
+    "query_type": "native",
+    "source_card_id": null,
+    "table_id": null,
+    "type": "question",
+    "visualization_settings": {
+     "column_settings": {
+      "[\"name\",\"advert_count\"]": {
+       "column_title": "Кампаний в строке",
+       "decimals": 0,
+       "number_style": "decimal"
+      },
+      "[\"name\",\"atbs_sum\"]": {
+       "column_title": "В корзину",
+       "decimals": 0,
+       "number_style": "decimal"
+      },
+      "[\"name\",\"avg_pos_w_clicks\"]": {
+       "column_title": "Средняя рекламная позиция (по кликам)",
+       "decimals": 2,
+       "number_style": "decimal"
+      },
+      "[\"name\",\"cart_cr_clicks\"]": {
+       "column_title": "CR корзины из кликов",
+       "decimals": 1,
+       "number_style": "percent"
+      },
+      "[\"name\",\"clicks_sum\"]": {
+       "column_title": "Клики",
+       "decimals": 0,
+       "number_style": "decimal"
+      },
+      "[\"name\",\"cpc_calc\"]": {
+       "column_title": "CPC, ₽",
+       "currency": "RUB",
+       "currency_in_header": false,
+       "currency_style": "symbol",
+       "decimals": 2,
+       "number_style": "currency"
+      },
+      "[\"name\",\"cpo_ads\"]": {
+       "column_title": "Расход на заказ (CPO), ₽",
+       "currency": "RUB",
+       "currency_in_header": false,
+       "currency_style": "symbol",
+       "decimals": 2,
+       "number_style": "currency"
+      },
+      "[\"name\",\"ctr\"]": {
+       "column_title": "CTR",
+       "decimals": 2,
+       "number_style": "percent"
+      },
+      "[\"name\",\"evidence_status\"]": {
+       "column_title": "Доказательность"
+      },
+      "[\"name\",\"nm_id\"]": {
+       "column_title": "Артикул WB",
+       "decimals": 0,
+       "number_style": "decimal"
+      },
+      "[\"name\",\"norm_query\"]": {
+       "column_title": "Поисковый запрос"
+      },
+      "[\"name\",\"order_cr_clicks\"]": {
+       "column_title": "CR заказов из кликов",
+       "decimals": 1,
+       "number_style": "percent"
+      },
+      "[\"name\",\"orders_sum\"]": {
+       "column_title": "Заказы (attributed, raw)",
+       "decimals": 0,
+       "number_style": "decimal"
+      },
+      "[\"name\",\"product_name_short\"]": {
+       "column_title": "Товар"
+      },
+      "[\"name\",\"signals_text\"]": {
+       "column_title": "Сигналы"
+      },
+      "[\"name\",\"spend_rub\"]": {
+       "column_title": "Расход по запросу, ₽",
+       "currency": "RUB",
+       "currency_in_header": false,
+       "currency_style": "symbol",
+       "decimals": 2,
+       "number_style": "currency"
+      },
+      "[\"name\",\"views_sum\"]": {
+       "column_title": "Показы (реклама)",
+       "decimals": 0,
+       "number_style": "decimal"
+      }
+     },
+     "table.column_formatting": [
+      {
+       "color": "#84BB4C",
+       "columns": [
+        "evidence_status"
+       ],
+       "highlight_row": false,
+       "operator": "=",
+       "type": "single",
+       "value": "ACTIONABLE"
+      },
+      {
+       "color": "#F9CF48",
+       "columns": [
+        "evidence_status"
+       ],
+       "highlight_row": false,
+       "operator": "=",
+       "type": "single",
+       "value": "OBSERVATIONAL"
+      },
+      {
+       "color": "#E0E0E0",
+       "columns": [
+        "evidence_status"
+       ],
+       "highlight_row": false,
+       "operator": "=",
+       "type": "single",
+       "value": "INSUFFICIENT"
+      }
+     ]
+    }
+   },
+   "card_id": 91,
+   "col": 0,
+   "collection_authority_level": null,
+   "created_at": "2026-09-06T18:57:15.121918Z",
+   "dashboard_id": 4,
+   "dashboard_tab_id": null,
+   "entity_id": "2h88JeFEMBISOxBNAHShP",
+   "id": 141,
+   "inline_parameters": [],
+   "parameter_mappings": [
+    {
+     "card_id": 91,
+     "parameter_id": "window",
+     "target": [
+      "variable",
+      [
+       "template-tag",
+       "window"
+      ]
+     ]
+    },
+    {
+     "card_id": 91,
+     "parameter_id": "sku",
+     "target": [
+      "dimension",
+      [
+       "template-tag",
+       "sku"
+      ]
+     ]
+    },
+    {
+     "card_id": 91,
+     "parameter_id": "evidence",
+     "target": [
+      "dimension",
+      [
+       "template-tag",
+       "evidence"
+      ]
+     ]
+    },
+    {
+     "card_id": 91,
+     "parameter_id": "q",
+     "target": [
+      "dimension",
+      [
+       "template-tag",
+       "q"
+      ]
+     ]
+    },
+    {
+     "card_id": 91,
+     "parameter_id": "spend_min",
+     "target": [
+      "variable",
+      [
+       "template-tag",
+       "spend_min"
+      ]
+     ]
+    },
+    {
+     "card_id": 91,
+     "parameter_id": "orders_min",
+     "target": [
+      "variable",
+      [
+       "template-tag",
+       "orders_min"
+      ]
+     ]
+    }
+   ],
+   "row": 26,
+   "series": [],
+   "size_x": 24,
+   "size_y": 10,
+   "visualization_settings": {}
+  },
+  {
+   "action_id": null,
+   "card": {
+    "download_perms": "none",
+    "query_average_duration": null
+   },
+   "card_id": null,
+   "col": 0,
+   "collection_authority_level": null,
+   "created_at": "2026-09-06T18:57:15.121918Z",
+   "dashboard_id": 4,
+   "dashboard_tab_id": null,
+   "entity_id": "glP1caGc6Eas1nF4615Zo",
+   "id": 142,
+   "inline_parameters": [],
+   "parameter_mappings": [],
+   "row": 36,
+   "series": [],
+   "size_x": 24,
+   "size_y": 1,
+   "visualization_settings": {
+    "dashcard.background": false,
+    "text": "C · Запросы с достаточными данными (ACTIONABLE)",
+    "virtual_card": {
+     "archived": false,
+     "dataset_query": {},
+     "display": "heading",
+     "name": null,
+     "visualization_settings": {}
+    }
+   }
+  },
+  {
+   "action_id": null,
+   "card": {
+    "archived": false,
+    "archived_directly": false,
+    "cache_invalidated_at": null,
+    "cache_ttl": null,
+    "card_schema": 23,
+    "collection_id": 8,
+    "collection_position": null,
+    "collection_preview": true,
+    "created_at": "2026-09-06T18:53:09.083551Z",
+    "creator_id": 2,
+    "dashboard_id": null,
+    "database_id": 2,
+    "dataset_query": {
+     "database": 2,
+     "lib/type": "mbql/query",
+     "stages": [
+      {
+       "lib/type": "mbql.stage/native",
+       "native": "SELECT\n  norm_query,\n  product_name_short,\n  nm_id,\n  evidence_status,\n  spend_rub,\n  views_sum,\n  clicks_sum,\n  ctr,\n  cpc_calc,\n  atbs_sum,\n  cart_cr_clicks,\n  orders_sum,\n  order_cr_clicks,\n  cpo_ads,\n  avg_pos_w_clicks,\n  signals_text,\n  advert_count\nFROM `wb_mart.V_ADS_SCREEN_QUERY`\nWHERE window_days = {{window}}\n  [[AND {{sku}}]]\n  [[AND {{q}}]]\n  [[AND spend_rub >= {{spend_min}}]]\n  [[AND orders_sum >= {{orders_min}}]]\n  AND evidence_status = \"ACTIONABLE\"\nORDER BY spend_rub DESC\n",
+       "template-tags": [
+        {
+         "default": "90",
+         "display-name": "Окно (дней)",
+         "id": "a6b8fd8a-43f0-4682-b462-9ff1f4e3997f",
+         "name": "window",
+         "required": true,
+         "type": "number"
+        },
+        {
+         "dimension": [
+          "field",
+          {
+           "lib/uuid": "bd7e1125-8af9-4905-9382-5c1ed0a623f7"
+          },
+          721
+         ],
+         "display-name": "Товар",
+         "id": "f4e3e897-91cf-4c70-a310-22c9cf0c93e2",
+         "name": "sku",
+         "type": "dimension",
+         "widget-type": "string/="
+        },
+        {
+         "dimension": [
+          "field",
+          {
+           "lib/uuid": "132901c3-b1ce-4aa5-bf1a-c2a718a57581"
+          },
+          719
+         ],
+         "display-name": "Запрос содержит",
+         "id": "14fb6749-e2f4-44ce-a289-0f4cba026928",
+         "name": "q",
+         "type": "dimension",
+         "widget-type": "string/contains"
+        },
+        {
+         "display-name": "Минимальный расход, ₽",
+         "id": "47c4faae-ecc2-4c82-aa32-0df13103f22a",
+         "name": "spend_min",
+         "type": "number"
+        },
+        {
+         "display-name": "Минимум заказов",
+         "id": "5b1ffe2a-5477-4f1c-8b51-7cdece19b396",
+         "name": "orders_min",
+         "type": "number"
+        }
+       ]
+      }
+     ]
+    },
+    "description": "Только строки с клики ≥ 40 — единственный уровень, на котором Ads-4 разрешает сравнение CR заказов и CPO с базой. Фильтр доказательности здесь зашит в запрос и дашбордом не переопределяется. Это разрез для анализа, а не список действий: решений PAUSE/SCALE стадия ADS-5 не формирует.",
+    "dimension_mappings": null,
+    "dimensions": null,
+    "display": "table",
+    "document_id": null,
+    "download_perms": "full",
+    "embedding_params": null,
+    "embedding_type": null,
+    "enable_embedding": false,
+    "entity_id": "hk0N-OmilsBxFeKQgyTww",
+    "id": 92,
+    "last_used_at": "2026-09-06T18:53:09.083551Z",
+    "legacy_query": null,
+    "metabase_version": "v0.63.15.1 (ab5ffba)",
+    "name": "Запросы с достаточными данными (ACTIONABLE)",
+    "parameter_mappings": [],
+    "parameters": [],
+    "query_average_duration": 1264,
+    "query_type": "native",
+    "source_card_id": null,
+    "table_id": null,
+    "type": "question",
+    "visualization_settings": {
+     "column_settings": {
+      "[\"name\",\"advert_count\"]": {
+       "column_title": "Кампаний в строке",
+       "decimals": 0,
+       "number_style": "decimal"
+      },
+      "[\"name\",\"atbs_sum\"]": {
+       "column_title": "В корзину",
+       "decimals": 0,
+       "number_style": "decimal"
+      },
+      "[\"name\",\"avg_pos_w_clicks\"]": {
+       "column_title": "Средняя рекламная позиция (по кликам)",
+       "decimals": 2,
+       "number_style": "decimal"
+      },
+      "[\"name\",\"cart_cr_clicks\"]": {
+       "column_title": "CR корзины из кликов",
+       "decimals": 1,
+       "number_style": "percent"
+      },
+      "[\"name\",\"clicks_sum\"]": {
+       "column_title": "Клики",
+       "decimals": 0,
+       "number_style": "decimal"
+      },
+      "[\"name\",\"cpc_calc\"]": {
+       "column_title": "CPC, ₽",
+       "currency": "RUB",
+       "currency_in_header": false,
+       "currency_style": "symbol",
+       "decimals": 2,
+       "number_style": "currency"
+      },
+      "[\"name\",\"cpo_ads\"]": {
+       "column_title": "Расход на заказ (CPO), ₽",
+       "currency": "RUB",
+       "currency_in_header": false,
+       "currency_style": "symbol",
+       "decimals": 2,
+       "number_style": "currency"
+      },
+      "[\"name\",\"ctr\"]": {
+       "column_title": "CTR",
+       "decimals": 2,
+       "number_style": "percent"
+      },
+      "[\"name\",\"evidence_status\"]": {
+       "column_title": "Доказательность"
+      },
+      "[\"name\",\"nm_id\"]": {
+       "column_title": "Артикул WB",
+       "decimals": 0,
+       "number_style": "decimal"
+      },
+      "[\"name\",\"norm_query\"]": {
+       "column_title": "Поисковый запрос"
+      },
+      "[\"name\",\"order_cr_clicks\"]": {
+       "column_title": "CR заказов из кликов",
+       "decimals": 1,
+       "number_style": "percent"
+      },
+      "[\"name\",\"orders_sum\"]": {
+       "column_title": "Заказы (attributed, raw)",
+       "decimals": 0,
+       "number_style": "decimal"
+      },
+      "[\"name\",\"product_name_short\"]": {
+       "column_title": "Товар"
+      },
+      "[\"name\",\"signals_text\"]": {
+       "column_title": "Сигналы"
+      },
+      "[\"name\",\"spend_rub\"]": {
+       "column_title": "Расход по запросу, ₽",
+       "currency": "RUB",
+       "currency_in_header": false,
+       "currency_style": "symbol",
+       "decimals": 2,
+       "number_style": "currency"
+      },
+      "[\"name\",\"views_sum\"]": {
+       "column_title": "Показы (реклама)",
+       "decimals": 0,
+       "number_style": "decimal"
+      }
+     },
+     "table.column_formatting": [
+      {
+       "color": "#84BB4C",
+       "columns": [
+        "evidence_status"
+       ],
+       "highlight_row": false,
+       "operator": "=",
+       "type": "single",
+       "value": "ACTIONABLE"
+      },
+      {
+       "color": "#F9CF48",
+       "columns": [
+        "evidence_status"
+       ],
+       "highlight_row": false,
+       "operator": "=",
+       "type": "single",
+       "value": "OBSERVATIONAL"
+      },
+      {
+       "color": "#E0E0E0",
+       "columns": [
+        "evidence_status"
+       ],
+       "highlight_row": false,
+       "operator": "=",
+       "type": "single",
+       "value": "INSUFFICIENT"
+      }
+     ]
+    }
+   },
+   "card_id": 92,
+   "col": 0,
+   "collection_authority_level": null,
+   "created_at": "2026-09-06T18:57:15.121918Z",
+   "dashboard_id": 4,
+   "dashboard_tab_id": null,
+   "entity_id": "28153yJJUByv-FmzFPgbH",
+   "id": 143,
+   "inline_parameters": [],
+   "parameter_mappings": [
+    {
+     "card_id": 92,
+     "parameter_id": "window",
+     "target": [
+      "variable",
+      [
+       "template-tag",
+       "window"
+      ]
+     ]
+    },
+    {
+     "card_id": 92,
+     "parameter_id": "sku",
+     "target": [
+      "dimension",
+      [
+       "template-tag",
+       "sku"
+      ]
+     ]
+    },
+    {
+     "card_id": 92,
+     "parameter_id": "q",
+     "target": [
+      "dimension",
+      [
+       "template-tag",
+       "q"
+      ]
+     ]
+    },
+    {
+     "card_id": 92,
+     "parameter_id": "spend_min",
+     "target": [
+      "variable",
+      [
+       "template-tag",
+       "spend_min"
+      ]
+     ]
+    },
+    {
+     "card_id": 92,
+     "parameter_id": "orders_min",
+     "target": [
+      "variable",
+      [
+       "template-tag",
+       "orders_min"
+      ]
+     ]
+    }
+   ],
+   "row": 37,
+   "series": [],
+   "size_x": 24,
+   "size_y": 7,
+   "visualization_settings": {}
+  },
+  {
+   "action_id": null,
+   "card": {
+    "download_perms": "none",
+    "query_average_duration": null
+   },
+   "card_id": null,
+   "col": 0,
+   "collection_authority_level": null,
+   "created_at": "2026-09-06T18:57:15.121918Z",
+   "dashboard_id": 4,
+   "dashboard_tab_id": null,
+   "entity_id": "vXodQz5hXsr_Zock3mpWJ",
+   "id": 144,
+   "inline_parameters": [],
+   "parameter_mappings": [],
+   "row": 44,
+   "series": [],
+   "size_x": 24,
+   "size_y": 1,
+   "visualization_settings": {
+    "dashcard.background": false,
+    "text": "D · Расход без заказов (доказательность не ниже OBSERVATIONAL)",
+    "virtual_card": {
+     "archived": false,
+     "dataset_query": {},
+     "display": "heading",
+     "name": null,
+     "visualization_settings": {}
+    }
+   }
+  },
+  {
+   "action_id": null,
+   "card": {
+    "archived": false,
+    "archived_directly": false,
+    "cache_invalidated_at": null,
+    "cache_ttl": null,
+    "card_schema": 23,
+    "collection_id": 8,
+    "collection_position": null,
+    "collection_preview": true,
+    "created_at": "2026-09-06T18:53:11.067567Z",
+    "creator_id": 2,
+    "dashboard_id": null,
+    "database_id": 2,
+    "dataset_query": {
+     "database": 2,
+     "lib/type": "mbql/query",
+     "stages": [
+      {
+       "lib/type": "mbql.stage/native",
+       "native": "SELECT\n  norm_query,\n  product_name_short,\n  nm_id,\n  evidence_status,\n  spend_rub,\n  views_sum,\n  clicks_sum,\n  ctr,\n  cpc_calc,\n  atbs_sum,\n  cart_cr_clicks,\n  orders_sum,\n  order_cr_clicks,\n  cpo_ads,\n  avg_pos_w_clicks,\n  signals_text,\n  advert_count\nFROM `wb_mart.V_ADS_SCREEN_QUERY`\nWHERE window_days = {{window}}\n  [[AND {{sku}}]]\n  [[AND {{q}}]]\n  [[AND spend_rub >= {{spend_min}}]]\n  [[AND orders_sum >= {{orders_min}}]]\n  AND \"ZERO_ORDER_SPEND\" IN UNNEST(signals) AND evidence_status <> \"INSUFFICIENT\"\nORDER BY spend_rub DESC\n",
+       "template-tags": [
+        {
+         "default": "90",
+         "display-name": "Окно (дней)",
+         "id": "cfbb5fe9-a34e-4b52-90f9-3daf3991f4b1",
+         "name": "window",
+         "required": true,
+         "type": "number"
+        },
+        {
+         "dimension": [
+          "field",
+          {
+           "lib/uuid": "3bb3d177-6a22-4b76-9a5b-221a40bc4bf4"
+          },
+          721
+         ],
+         "display-name": "Товар",
+         "id": "0a730284-819f-4d42-b178-fa5575b158df",
+         "name": "sku",
+         "type": "dimension",
+         "widget-type": "string/="
+        },
+        {
+         "dimension": [
+          "field",
+          {
+           "lib/uuid": "2559e0c4-23b1-4fba-8bae-392cbe543d1e"
+          },
+          719
+         ],
+         "display-name": "Запрос содержит",
+         "id": "f0cd261a-44f4-46b0-8bde-7b2995818cae",
+         "name": "q",
+         "type": "dimension",
+         "widget-type": "string/contains"
+        },
+        {
+         "display-name": "Минимальный расход, ₽",
+         "id": "26e16e80-17e1-47c7-ac3f-e7b14bcc97b4",
+         "name": "spend_min",
+         "type": "number"
+        },
+        {
+         "display-name": "Минимум заказов",
+         "id": "9b4ea569-3180-40ed-af08-e8dd627e007c",
+         "name": "orders_min",
+         "type": "number"
+        }
+       ]
+      }
+     ]
+    },
+    "description": "Сигнал ZERO_ORDER_SPEND из wb_mart.V_ADS_FUNNEL_SIGNALS (заказов = 0 при расходе > 0). Строки с INSUFFICIENT исключены сознательно: при 3 кликах отсутствие заказа не является наблюдением. Сигнал взят из BigQuery как есть, новая логика в Metabase не создаётся.",
+    "dimension_mappings": null,
+    "dimensions": null,
+    "display": "table",
+    "document_id": null,
+    "download_perms": "full",
+    "embedding_params": null,
+    "embedding_type": null,
+    "enable_embedding": false,
+    "entity_id": "C-T35HMLBox1yPVoiarr2",
+    "id": 93,
+    "last_used_at": "2026-09-06T18:53:11.067567Z",
+    "legacy_query": null,
+    "metabase_version": "v0.63.15.1 (ab5ffba)",
+    "name": "Расход без заказов",
+    "parameter_mappings": [],
+    "parameters": [],
+    "query_average_duration": 1435,
+    "query_type": "native",
+    "source_card_id": null,
+    "table_id": null,
+    "type": "question",
+    "visualization_settings": {
+     "column_settings": {
+      "[\"name\",\"advert_count\"]": {
+       "column_title": "Кампаний в строке",
+       "decimals": 0,
+       "number_style": "decimal"
+      },
+      "[\"name\",\"atbs_sum\"]": {
+       "column_title": "В корзину",
+       "decimals": 0,
+       "number_style": "decimal"
+      },
+      "[\"name\",\"avg_pos_w_clicks\"]": {
+       "column_title": "Средняя рекламная позиция (по кликам)",
+       "decimals": 2,
+       "number_style": "decimal"
+      },
+      "[\"name\",\"cart_cr_clicks\"]": {
+       "column_title": "CR корзины из кликов",
+       "decimals": 1,
+       "number_style": "percent"
+      },
+      "[\"name\",\"clicks_sum\"]": {
+       "column_title": "Клики",
+       "decimals": 0,
+       "number_style": "decimal"
+      },
+      "[\"name\",\"cpc_calc\"]": {
+       "column_title": "CPC, ₽",
+       "currency": "RUB",
+       "currency_in_header": false,
+       "currency_style": "symbol",
+       "decimals": 2,
+       "number_style": "currency"
+      },
+      "[\"name\",\"cpo_ads\"]": {
+       "column_title": "Расход на заказ (CPO), ₽",
+       "currency": "RUB",
+       "currency_in_header": false,
+       "currency_style": "symbol",
+       "decimals": 2,
+       "number_style": "currency"
+      },
+      "[\"name\",\"ctr\"]": {
+       "column_title": "CTR",
+       "decimals": 2,
+       "number_style": "percent"
+      },
+      "[\"name\",\"evidence_status\"]": {
+       "column_title": "Доказательность"
+      },
+      "[\"name\",\"nm_id\"]": {
+       "column_title": "Артикул WB",
+       "decimals": 0,
+       "number_style": "decimal"
+      },
+      "[\"name\",\"norm_query\"]": {
+       "column_title": "Поисковый запрос"
+      },
+      "[\"name\",\"order_cr_clicks\"]": {
+       "column_title": "CR заказов из кликов",
+       "decimals": 1,
+       "number_style": "percent"
+      },
+      "[\"name\",\"orders_sum\"]": {
+       "column_title": "Заказы (attributed, raw)",
+       "decimals": 0,
+       "number_style": "decimal"
+      },
+      "[\"name\",\"product_name_short\"]": {
+       "column_title": "Товар"
+      },
+      "[\"name\",\"signals_text\"]": {
+       "column_title": "Сигналы"
+      },
+      "[\"name\",\"spend_rub\"]": {
+       "column_title": "Расход по запросу, ₽",
+       "currency": "RUB",
+       "currency_in_header": false,
+       "currency_style": "symbol",
+       "decimals": 2,
+       "number_style": "currency"
+      },
+      "[\"name\",\"views_sum\"]": {
+       "column_title": "Показы (реклама)",
+       "decimals": 0,
+       "number_style": "decimal"
+      }
+     },
+     "table.column_formatting": [
+      {
+       "color": "#84BB4C",
+       "columns": [
+        "evidence_status"
+       ],
+       "highlight_row": false,
+       "operator": "=",
+       "type": "single",
+       "value": "ACTIONABLE"
+      },
+      {
+       "color": "#F9CF48",
+       "columns": [
+        "evidence_status"
+       ],
+       "highlight_row": false,
+       "operator": "=",
+       "type": "single",
+       "value": "OBSERVATIONAL"
+      },
+      {
+       "color": "#E0E0E0",
+       "columns": [
+        "evidence_status"
+       ],
+       "highlight_row": false,
+       "operator": "=",
+       "type": "single",
+       "value": "INSUFFICIENT"
+      }
+     ]
+    }
+   },
+   "card_id": 93,
+   "col": 0,
+   "collection_authority_level": null,
+   "created_at": "2026-09-06T18:57:15.121918Z",
+   "dashboard_id": 4,
+   "dashboard_tab_id": null,
+   "entity_id": "HvaTIP3fV3NbFuVM_ZEmB",
+   "id": 145,
+   "inline_parameters": [],
+   "parameter_mappings": [
+    {
+     "card_id": 93,
+     "parameter_id": "window",
+     "target": [
+      "variable",
+      [
+       "template-tag",
+       "window"
+      ]
+     ]
+    },
+    {
+     "card_id": 93,
+     "parameter_id": "sku",
+     "target": [
+      "dimension",
+      [
+       "template-tag",
+       "sku"
+      ]
+     ]
+    },
+    {
+     "card_id": 93,
+     "parameter_id": "q",
+     "target": [
+      "dimension",
+      [
+       "template-tag",
+       "q"
+      ]
+     ]
+    },
+    {
+     "card_id": 93,
+     "parameter_id": "spend_min",
+     "target": [
+      "variable",
+      [
+       "template-tag",
+       "spend_min"
+      ]
+     ]
+    },
+    {
+     "card_id": 93,
+     "parameter_id": "orders_min",
+     "target": [
+      "variable",
+      [
+       "template-tag",
+       "orders_min"
+      ]
+     ]
+    }
+   ],
+   "row": 45,
+   "series": [],
+   "size_x": 24,
+   "size_y": 9,
+   "visualization_settings": {}
+  },
+  {
+   "action_id": null,
+   "card": {
+    "download_perms": "none",
+    "query_average_duration": null
+   },
+   "card_id": null,
+   "col": 0,
+   "collection_authority_level": null,
+   "created_at": "2026-09-06T18:57:15.121918Z",
+   "dashboard_id": 4,
+   "dashboard_tab_id": null,
+   "entity_id": "DvjFu4pzGOxPSPREFjKkH",
+   "id": 146,
+   "inline_parameters": [],
+   "parameter_mappings": [],
+   "row": 54,
+   "series": [],
+   "size_x": 24,
+   "size_y": 1,
+   "visualization_settings": {
+    "dashcard.background": false,
+    "text": "E · Дорогой клик относительно базы",
+    "virtual_card": {
+     "archived": false,
+     "dataset_query": {},
+     "display": "heading",
+     "name": null,
+     "visualization_settings": {}
+    }
+   }
+  },
+  {
+   "action_id": null,
+   "card": {
+    "archived": false,
+    "archived_directly": false,
+    "cache_invalidated_at": null,
+    "cache_ttl": null,
+    "card_schema": 23,
+    "collection_id": 8,
+    "collection_position": null,
+    "collection_preview": true,
+    "created_at": "2026-09-06T18:53:14.182067Z",
+    "creator_id": 2,
+    "dashboard_id": null,
+    "database_id": 2,
+    "dataset_query": {
+     "database": 2,
+     "lib/type": "mbql/query",
+     "stages": [
+      {
+       "lib/type": "mbql.stage/native",
+       "native": "SELECT\n  norm_query,\n  product_name_short,\n  nm_id,\n  evidence_status,\n  spend_rub,\n  views_sum,\n  clicks_sum,\n  ctr,\n  cpc_calc,\n  atbs_sum,\n  cart_cr_clicks,\n  orders_sum,\n  order_cr_clicks,\n  cpo_ads,\n  avg_pos_w_clicks,\n  signals_text,\n  advert_count\nFROM `wb_mart.V_ADS_SCREEN_QUERY`\nWHERE window_days = {{window}}\n  [[AND {{sku}}]]\n  [[AND {{evidence}}]]\n  [[AND {{q}}]]\n  [[AND spend_rub >= {{spend_min}}]]\n  [[AND orders_sum >= {{orders_min}}]]\n  AND can_compare_cpc AND baseline_cpc IS NOT NULL\nORDER BY cpc_vs_baseline DESC\nLIMIT 50\n",
+       "template-tags": [
+        {
+         "default": "90",
+         "display-name": "Окно (дней)",
+         "id": "b0667b70-da19-4246-ac88-4c25d26ef1f3",
+         "name": "window",
+         "required": true,
+         "type": "number"
+        },
+        {
+         "dimension": [
+          "field",
+          {
+           "lib/uuid": "7c937fef-c729-4f3a-8612-d247e3fb960d"
+          },
+          721
+         ],
+         "display-name": "Товар",
+         "id": "82e0ff23-093a-4afb-bba7-9a4fec26af37",
+         "name": "sku",
+         "type": "dimension",
+         "widget-type": "string/="
+        },
+        {
+         "dimension": [
+          "field",
+          {
+           "lib/uuid": "662fc0a3-7368-417a-b718-41a8e373fc05"
+          },
+          747
+         ],
+         "display-name": "Доказательность",
+         "id": "cf5452b6-d5d0-4707-8157-6bb5ef404304",
+         "name": "evidence",
+         "type": "dimension",
+         "widget-type": "string/="
+        },
+        {
+         "dimension": [
+          "field",
+          {
+           "lib/uuid": "34b5e5d7-4c2b-4ee9-90f4-2a59722484f3"
+          },
+          719
+         ],
+         "display-name": "Запрос содержит",
+         "id": "17f3afb3-7a87-4e79-9091-3de48dcc5d31",
+         "name": "q",
+         "type": "dimension",
+         "widget-type": "string/contains"
+        },
+        {
+         "display-name": "Минимальный расход, ₽",
+         "id": "924676af-b8b2-4629-a904-03362c94322c",
+         "name": "spend_min",
+         "type": "number"
+        },
+        {
+         "display-name": "Минимум заказов",
+         "id": "cbeab288-5031-42d6-b0b8-584e162216e6",
+         "name": "orders_min",
+         "type": "number"
+        }
+       ]
+      }
+     ]
+    },
+    "description": "Только строки, которым Ads-4 разрешает сравнивать CPC (клики ≥ 20) и у которых база CPC определена. Сортировка по отношению CPC к базе. База — SKU_EX_SELF (тот же товар без самого запроса), при нехватке выборки — STORE_EX_SELF; уровень базы виден в полной таблице. Сигнал CPC_ABOVE_BASELINE (× > 1,3) виден в столбце «Сигналы»; порог принадлежит BigQuery и здесь не менялся.",
+    "dimension_mappings": null,
+    "dimensions": null,
+    "display": "table",
+    "document_id": null,
+    "download_perms": "full",
+    "embedding_params": null,
+    "embedding_type": null,
+    "enable_embedding": false,
+    "entity_id": "FciNlnXsNOAVABmC2yzSh",
+    "id": 94,
+    "last_used_at": "2026-09-06T18:53:14.182067Z",
+    "legacy_query": null,
+    "metabase_version": "v0.63.15.1 (ab5ffba)",
+    "name": "Дорогой клик относительно базы",
+    "parameter_mappings": [],
+    "parameters": [],
+    "query_average_duration": 1271,
+    "query_type": "native",
+    "source_card_id": null,
+    "table_id": null,
+    "type": "question",
+    "visualization_settings": {
+     "column_settings": {
+      "[\"name\",\"advert_count\"]": {
+       "column_title": "Кампаний в строке",
+       "decimals": 0,
+       "number_style": "decimal"
+      },
+      "[\"name\",\"atbs_sum\"]": {
+       "column_title": "В корзину",
+       "decimals": 0,
+       "number_style": "decimal"
+      },
+      "[\"name\",\"avg_pos_w_clicks\"]": {
+       "column_title": "Средняя рекламная позиция (по кликам)",
+       "decimals": 2,
+       "number_style": "decimal"
+      },
+      "[\"name\",\"cart_cr_clicks\"]": {
+       "column_title": "CR корзины из кликов",
+       "decimals": 1,
+       "number_style": "percent"
+      },
+      "[\"name\",\"clicks_sum\"]": {
+       "column_title": "Клики",
+       "decimals": 0,
+       "number_style": "decimal"
+      },
+      "[\"name\",\"cpc_calc\"]": {
+       "column_title": "CPC, ₽",
+       "currency": "RUB",
+       "currency_in_header": false,
+       "currency_style": "symbol",
+       "decimals": 2,
+       "number_style": "currency"
+      },
+      "[\"name\",\"cpo_ads\"]": {
+       "column_title": "Расход на заказ (CPO), ₽",
+       "currency": "RUB",
+       "currency_in_header": false,
+       "currency_style": "symbol",
+       "decimals": 2,
+       "number_style": "currency"
+      },
+      "[\"name\",\"ctr\"]": {
+       "column_title": "CTR",
+       "decimals": 2,
+       "number_style": "percent"
+      },
+      "[\"name\",\"evidence_status\"]": {
+       "column_title": "Доказательность"
+      },
+      "[\"name\",\"nm_id\"]": {
+       "column_title": "Артикул WB",
+       "decimals": 0,
+       "number_style": "decimal"
+      },
+      "[\"name\",\"norm_query\"]": {
+       "column_title": "Поисковый запрос"
+      },
+      "[\"name\",\"order_cr_clicks\"]": {
+       "column_title": "CR заказов из кликов",
+       "decimals": 1,
+       "number_style": "percent"
+      },
+      "[\"name\",\"orders_sum\"]": {
+       "column_title": "Заказы (attributed, raw)",
+       "decimals": 0,
+       "number_style": "decimal"
+      },
+      "[\"name\",\"product_name_short\"]": {
+       "column_title": "Товар"
+      },
+      "[\"name\",\"signals_text\"]": {
+       "column_title": "Сигналы"
+      },
+      "[\"name\",\"spend_rub\"]": {
+       "column_title": "Расход по запросу, ₽",
+       "currency": "RUB",
+       "currency_in_header": false,
+       "currency_style": "symbol",
+       "decimals": 2,
+       "number_style": "currency"
+      },
+      "[\"name\",\"views_sum\"]": {
+       "column_title": "Показы (реклама)",
+       "decimals": 0,
+       "number_style": "decimal"
+      }
+     },
+     "table.column_formatting": [
+      {
+       "color": "#84BB4C",
+       "columns": [
+        "evidence_status"
+       ],
+       "highlight_row": false,
+       "operator": "=",
+       "type": "single",
+       "value": "ACTIONABLE"
+      },
+      {
+       "color": "#F9CF48",
+       "columns": [
+        "evidence_status"
+       ],
+       "highlight_row": false,
+       "operator": "=",
+       "type": "single",
+       "value": "OBSERVATIONAL"
+      },
+      {
+       "color": "#E0E0E0",
+       "columns": [
+        "evidence_status"
+       ],
+       "highlight_row": false,
+       "operator": "=",
+       "type": "single",
+       "value": "INSUFFICIENT"
+      }
+     ]
+    }
+   },
+   "card_id": 94,
+   "col": 0,
+   "collection_authority_level": null,
+   "created_at": "2026-09-06T18:57:15.121918Z",
+   "dashboard_id": 4,
+   "dashboard_tab_id": null,
+   "entity_id": "yDkY0sxvxg4LXlgoX7_AF",
+   "id": 147,
+   "inline_parameters": [],
+   "parameter_mappings": [
+    {
+     "card_id": 94,
+     "parameter_id": "window",
+     "target": [
+      "variable",
+      [
+       "template-tag",
+       "window"
+      ]
+     ]
+    },
+    {
+     "card_id": 94,
+     "parameter_id": "sku",
+     "target": [
+      "dimension",
+      [
+       "template-tag",
+       "sku"
+      ]
+     ]
+    },
+    {
+     "card_id": 94,
+     "parameter_id": "evidence",
+     "target": [
+      "dimension",
+      [
+       "template-tag",
+       "evidence"
+      ]
+     ]
+    },
+    {
+     "card_id": 94,
+     "parameter_id": "q",
+     "target": [
+      "dimension",
+      [
+       "template-tag",
+       "q"
+      ]
+     ]
+    },
+    {
+     "card_id": 94,
+     "parameter_id": "spend_min",
+     "target": [
+      "variable",
+      [
+       "template-tag",
+       "spend_min"
+      ]
+     ]
+    },
+    {
+     "card_id": 94,
+     "parameter_id": "orders_min",
+     "target": [
+      "variable",
+      [
+       "template-tag",
+       "orders_min"
+      ]
+     ]
+    }
+   ],
+   "row": 55,
+   "series": [],
+   "size_x": 24,
+   "size_y": 9,
+   "visualization_settings": {}
+  },
+  {
+   "action_id": null,
+   "card": {
+    "download_perms": "none",
+    "query_average_duration": null
+   },
+   "card_id": null,
+   "col": 0,
+   "collection_authority_level": null,
+   "created_at": "2026-09-06T18:57:15.121918Z",
+   "dashboard_id": 4,
+   "dashboard_tab_id": null,
+   "entity_id": "ZJgQFeRYwxOc3R2-_cMAa",
+   "id": 148,
+   "inline_parameters": [],
+   "parameter_mappings": [],
+   "row": 64,
+   "series": [],
+   "size_x": 24,
+   "size_y": 1,
+   "visualization_settings": {
+    "dashcard.background": false,
+    "text": "F · Сильная конверсия при достаточных данных",
+    "virtual_card": {
+     "archived": false,
+     "dataset_query": {},
+     "display": "heading",
+     "name": null,
+     "visualization_settings": {}
+    }
+   }
+  },
+  {
+   "action_id": null,
+   "card": {
+    "archived": false,
+    "archived_directly": false,
+    "cache_invalidated_at": null,
+    "cache_ttl": null,
+    "card_schema": 23,
+    "collection_id": 8,
+    "collection_position": null,
+    "collection_preview": true,
+    "created_at": "2026-09-06T18:53:17.08423Z",
+    "creator_id": 2,
+    "dashboard_id": null,
+    "database_id": 2,
+    "dataset_query": {
+     "database": 2,
+     "lib/type": "mbql/query",
+     "stages": [
+      {
+       "lib/type": "mbql.stage/native",
+       "native": "SELECT\n  norm_query,\n  product_name_short,\n  nm_id,\n  evidence_status,\n  spend_rub,\n  views_sum,\n  clicks_sum,\n  ctr,\n  cpc_calc,\n  atbs_sum,\n  cart_cr_clicks,\n  orders_sum,\n  order_cr_clicks,\n  cpo_ads,\n  avg_pos_w_clicks,\n  signals_text,\n  advert_count\nFROM `wb_mart.V_ADS_SCREEN_QUERY`\nWHERE window_days = {{window}}\n  [[AND {{sku}}]]\n  [[AND {{q}}]]\n  [[AND spend_rub >= {{spend_min}}]]\n  [[AND orders_sum >= {{orders_min}}]]\n  AND can_judge_order_cr AND orders_sum > 0\nORDER BY order_cr_vs_baseline DESC NULLS LAST, spend_rub DESC\n",
+       "template-tags": [
+        {
+         "default": "90",
+         "display-name": "Окно (дней)",
+         "id": "1e27bfa4-7085-466b-ac00-d6cf714b942e",
+         "name": "window",
+         "required": true,
+         "type": "number"
+        },
+        {
+         "dimension": [
+          "field",
+          {
+           "lib/uuid": "cb6dd93d-5801-44bd-bada-f38f6ad8c187"
+          },
+          721
+         ],
+         "display-name": "Товар",
+         "id": "3e1e3132-27de-412c-8d10-35f145f7ae02",
+         "name": "sku",
+         "type": "dimension",
+         "widget-type": "string/="
+        },
+        {
+         "dimension": [
+          "field",
+          {
+           "lib/uuid": "f58306b2-d311-4c41-92a3-433d55078f05"
+          },
+          719
+         ],
+         "display-name": "Запрос содержит",
+         "id": "a29ecca7-37c8-4763-91e9-b8287a3e3d08",
+         "name": "q",
+         "type": "dimension",
+         "widget-type": "string/contains"
+        },
+        {
+         "display-name": "Минимальный расход, ₽",
+         "id": "504ec7e7-587f-4be7-9e14-bcfbddddacf8",
+         "name": "spend_min",
+         "type": "number"
+        },
+        {
+         "display-name": "Минимум заказов",
+         "id": "5f02ee59-9a9e-4119-a92f-61fc5d5cd032",
+         "name": "orders_min",
+         "type": "number"
+        }
+       ]
+      }
+     ]
+    },
+    "description": "Строки, где CR заказов оценим (клики ≥ 40) и заказы > 0, отсортированные по отношению CR заказов к базе. Порог не вводится: карточка ранжирует, а не отсекает. Сигнал CPO_BELOW_BASELINE (× < 0,7) из BigQuery виден в столбце «Сигналы». Это наблюдение о конверсии, а не рекомендация повышать ставку.",
+    "dimension_mappings": null,
+    "dimensions": null,
+    "display": "table",
+    "document_id": null,
+    "download_perms": "full",
+    "embedding_params": null,
+    "embedding_type": null,
+    "enable_embedding": false,
+    "entity_id": "a6Z8XPbJWdWYn-nG4VyOx",
+    "id": 95,
+    "last_used_at": "2026-09-06T18:53:17.08423Z",
+    "legacy_query": null,
+    "metabase_version": "v0.63.15.1 (ab5ffba)",
+    "name": "Сильная конверсия при достаточных данных",
+    "parameter_mappings": [],
+    "parameters": [],
+    "query_average_duration": 1338,
+    "query_type": "native",
+    "source_card_id": null,
+    "table_id": null,
+    "type": "question",
+    "visualization_settings": {
+     "column_settings": {
+      "[\"name\",\"advert_count\"]": {
+       "column_title": "Кампаний в строке",
+       "decimals": 0,
+       "number_style": "decimal"
+      },
+      "[\"name\",\"atbs_sum\"]": {
+       "column_title": "В корзину",
+       "decimals": 0,
+       "number_style": "decimal"
+      },
+      "[\"name\",\"avg_pos_w_clicks\"]": {
+       "column_title": "Средняя рекламная позиция (по кликам)",
+       "decimals": 2,
+       "number_style": "decimal"
+      },
+      "[\"name\",\"cart_cr_clicks\"]": {
+       "column_title": "CR корзины из кликов",
+       "decimals": 1,
+       "number_style": "percent"
+      },
+      "[\"name\",\"clicks_sum\"]": {
+       "column_title": "Клики",
+       "decimals": 0,
+       "number_style": "decimal"
+      },
+      "[\"name\",\"cpc_calc\"]": {
+       "column_title": "CPC, ₽",
+       "currency": "RUB",
+       "currency_in_header": false,
+       "currency_style": "symbol",
+       "decimals": 2,
+       "number_style": "currency"
+      },
+      "[\"name\",\"cpo_ads\"]": {
+       "column_title": "Расход на заказ (CPO), ₽",
+       "currency": "RUB",
+       "currency_in_header": false,
+       "currency_style": "symbol",
+       "decimals": 2,
+       "number_style": "currency"
+      },
+      "[\"name\",\"ctr\"]": {
+       "column_title": "CTR",
+       "decimals": 2,
+       "number_style": "percent"
+      },
+      "[\"name\",\"evidence_status\"]": {
+       "column_title": "Доказательность"
+      },
+      "[\"name\",\"nm_id\"]": {
+       "column_title": "Артикул WB",
+       "decimals": 0,
+       "number_style": "decimal"
+      },
+      "[\"name\",\"norm_query\"]": {
+       "column_title": "Поисковый запрос"
+      },
+      "[\"name\",\"order_cr_clicks\"]": {
+       "column_title": "CR заказов из кликов",
+       "decimals": 1,
+       "number_style": "percent"
+      },
+      "[\"name\",\"orders_sum\"]": {
+       "column_title": "Заказы (attributed, raw)",
+       "decimals": 0,
+       "number_style": "decimal"
+      },
+      "[\"name\",\"product_name_short\"]": {
+       "column_title": "Товар"
+      },
+      "[\"name\",\"signals_text\"]": {
+       "column_title": "Сигналы"
+      },
+      "[\"name\",\"spend_rub\"]": {
+       "column_title": "Расход по запросу, ₽",
+       "currency": "RUB",
+       "currency_in_header": false,
+       "currency_style": "symbol",
+       "decimals": 2,
+       "number_style": "currency"
+      },
+      "[\"name\",\"views_sum\"]": {
+       "column_title": "Показы (реклама)",
+       "decimals": 0,
+       "number_style": "decimal"
+      }
+     },
+     "table.column_formatting": [
+      {
+       "color": "#84BB4C",
+       "columns": [
+        "evidence_status"
+       ],
+       "highlight_row": false,
+       "operator": "=",
+       "type": "single",
+       "value": "ACTIONABLE"
+      },
+      {
+       "color": "#F9CF48",
+       "columns": [
+        "evidence_status"
+       ],
+       "highlight_row": false,
+       "operator": "=",
+       "type": "single",
+       "value": "OBSERVATIONAL"
+      },
+      {
+       "color": "#E0E0E0",
+       "columns": [
+        "evidence_status"
+       ],
+       "highlight_row": false,
+       "operator": "=",
+       "type": "single",
+       "value": "INSUFFICIENT"
+      }
+     ]
+    }
+   },
+   "card_id": 95,
+   "col": 0,
+   "collection_authority_level": null,
+   "created_at": "2026-09-06T18:57:15.121918Z",
+   "dashboard_id": 4,
+   "dashboard_tab_id": null,
+   "entity_id": "-2O5_FIZoL6_uWySft6xQ",
+   "id": 149,
+   "inline_parameters": [],
+   "parameter_mappings": [
+    {
+     "card_id": 95,
+     "parameter_id": "window",
+     "target": [
+      "variable",
+      [
+       "template-tag",
+       "window"
+      ]
+     ]
+    },
+    {
+     "card_id": 95,
+     "parameter_id": "sku",
+     "target": [
+      "dimension",
+      [
+       "template-tag",
+       "sku"
+      ]
+     ]
+    },
+    {
+     "card_id": 95,
+     "parameter_id": "q",
+     "target": [
+      "dimension",
+      [
+       "template-tag",
+       "q"
+      ]
+     ]
+    },
+    {
+     "card_id": 95,
+     "parameter_id": "spend_min",
+     "target": [
+      "variable",
+      [
+       "template-tag",
+       "spend_min"
+      ]
+     ]
+    },
+    {
+     "card_id": 95,
+     "parameter_id": "orders_min",
+     "target": [
+      "variable",
+      [
+       "template-tag",
+       "orders_min"
+      ]
+     ]
+    }
+   ],
+   "row": 65,
+   "series": [],
+   "size_x": 24,
+   "size_y": 7,
+   "visualization_settings": {}
+  },
+  {
+   "action_id": null,
+   "card": {
+    "download_perms": "none",
+    "query_average_duration": null
+   },
+   "card_id": null,
+   "col": 0,
+   "collection_authority_level": null,
+   "created_at": "2026-09-06T18:57:15.121918Z",
+   "dashboard_id": 4,
+   "dashboard_tab_id": null,
+   "entity_id": "RIugQq8DJXcGMfykaIcKe",
+   "id": 150,
+   "inline_parameters": [],
+   "parameter_mappings": [],
+   "row": 72,
+   "series": [],
+   "size_x": 24,
+   "size_y": 1,
+   "visualization_settings": {
+    "dashcard.background": false,
+    "text": "G · Полная таблица запросов",
+    "virtual_card": {
+     "archived": false,
+     "dataset_query": {},
+     "display": "heading",
+     "name": null,
+     "visualization_settings": {}
+    }
+   }
+  },
+  {
+   "action_id": null,
+   "card": {
+    "archived": false,
+    "archived_directly": false,
+    "cache_invalidated_at": null,
+    "cache_ttl": null,
+    "card_schema": 23,
+    "collection_id": 8,
+    "collection_position": null,
+    "collection_preview": true,
+    "created_at": "2026-09-06T18:53:19.630631Z",
+    "creator_id": 2,
+    "dashboard_id": null,
+    "database_id": 2,
+    "dataset_query": {
+     "database": 2,
+     "lib/type": "mbql/query",
+     "stages": [
+      {
+       "lib/type": "mbql.stage/native",
+       "native": "SELECT\n  norm_query,\n  product_name_short,\n  nm_id,\n  internal_sku,\n  evidence_status,\n  evidence_reason,\n  signals_text,\n  signal_top,\n  spend_rub,\n  spend_share_of_sku,\n  spend_share_window,\n  views_sum,\n  clicks_sum,\n  ctr,\n  cpc_calc,\n  cpm_calc,\n  atbs_sum,\n  cart_cr_clicks,\n  orders_sum,\n  order_cr_clicks,\n  order_cr_carts,\n  shks_sum,\n  buyout_ratio_shk,\n  cpo_ads,\n  avg_pos_w_clicks,\n  avg_pos_w_views,\n  baseline_level,\n  baseline_ctr,\n  ctr_vs_baseline,\n  baseline_cpc,\n  cpc_vs_baseline,\n  baseline_order_cr,\n  order_cr_vs_baseline,\n  baseline_cpo,\n  cpo_vs_baseline,\n  can_compare_ctr,\n  can_compare_cpc,\n  can_judge_cart_cr,\n  can_judge_order_cr,\n  can_judge_order_carts,\n  funnel_monotonic,\n  days_with_data,\n  days_with_spend,\n  advert_count,\n  bid_min,\n  bid_max,\n  bid_is_uniform,\n  bid_snapshot_date,\n  bid_snapshot_offset_days,\n  delta_cpc,\n  delta_order_cr_clicks,\n  delta_spend,\n  as_of_date,\n  window_days\nFROM `wb_mart.V_ADS_SCREEN_QUERY`\nWHERE window_days = {{window}}\n  [[AND {{sku}}]]\n  [[AND {{evidence}}]]\n  [[AND {{q}}]]\n  [[AND spend_rub >= {{spend_min}}]]\n  [[AND orders_sum >= {{orders_min}}]]\nORDER BY spend_rub DESC\n",
+       "template-tags": [
+        {
+         "default": "90",
+         "display-name": "Окно (дней)",
+         "id": "1b564acb-0bfb-4310-bcff-a6db1a9a47d8",
+         "name": "window",
+         "required": true,
+         "type": "number"
+        },
+        {
+         "dimension": [
+          "field",
+          {
+           "lib/uuid": "eadb1367-4e6f-4447-b9b3-a44171ee494e"
+          },
+          721
+         ],
+         "display-name": "Товар",
+         "id": "621138c3-ee0e-4d6f-a92d-ad517a3c6f45",
+         "name": "sku",
+         "type": "dimension",
+         "widget-type": "string/="
+        },
+        {
+         "dimension": [
+          "field",
+          {
+           "lib/uuid": "5badba11-10b8-4db4-ac34-d7f6dfb0ed49"
+          },
+          747
+         ],
+         "display-name": "Доказательность",
+         "id": "83bda4b4-c153-4d65-9ddb-70c8f8a518ed",
+         "name": "evidence",
+         "type": "dimension",
+         "widget-type": "string/="
+        },
+        {
+         "dimension": [
+          "field",
+          {
+           "lib/uuid": "07dbff21-7736-49fd-ae74-25035ed3eb14"
+          },
+          719
+         ],
+         "display-name": "Запрос содержит",
+         "id": "a731d4db-edea-4b89-8a7a-88db962bd66c",
+         "name": "q",
+         "type": "dimension",
+         "widget-type": "string/contains"
+        },
+        {
+         "display-name": "Минимальный расход, ₽",
+         "id": "f812cbbf-4a6f-425d-b023-4c9749d664bf",
+         "name": "spend_min",
+         "type": "number"
+        },
+        {
+         "display-name": "Минимум заказов",
+         "id": "3a1eeeb6-bbef-42fa-bbe6-e956f5905602",
+         "name": "orders_min",
+         "type": "number"
+        }
+       ]
+      }
+     ]
+    },
+    "description": "Полный грейн источника: as_of_date × window_days × nm_id × norm_query, дубликатов нет (проверено: 1 596 строк = 1 596 ключей). Все столбцы приходят из wb_mart.V_ADS_SCREEN_QUERY без пересчёта в Metabase. Позиция — РЕКЛАМНАЯ (avg_pos рекламного отчёта WB), а не органическая: авторитетного источника органических позиций в проекте нет. Ставка — ставка ЗАПРОСА из снимка V_ADV_QUERY_BIDS, она не смешивается со ставкой кампании из конфигурации. Заказы и выкупы — attributed raw, не общие продажи WB.",
+    "dimension_mappings": null,
+    "dimensions": null,
+    "display": "table",
+    "document_id": null,
+    "download_perms": "full",
+    "embedding_params": null,
+    "embedding_type": null,
+    "enable_embedding": false,
+    "entity_id": "q5acQQXGkzVld-ABHBTTJ",
+    "id": 96,
+    "last_used_at": "2026-09-06T18:53:19.630631Z",
+    "legacy_query": null,
+    "metabase_version": "v0.63.15.1 (ab5ffba)",
+    "name": "Все запросы окна — полная таблица",
+    "parameter_mappings": [],
+    "parameters": [],
+    "query_average_duration": 1162,
+    "query_type": "native",
+    "source_card_id": null,
+    "table_id": null,
+    "type": "question",
+    "visualization_settings": {
+     "column_settings": {
+      "[\"name\",\"advert_count\"]": {
+       "column_title": "Кампаний в строке",
+       "decimals": 0,
+       "number_style": "decimal"
+      },
+      "[\"name\",\"as_of_date\"]": {
+       "column_title": "as_of (последний закрытый день)"
+      },
+      "[\"name\",\"atbs_sum\"]": {
+       "column_title": "В корзину",
+       "decimals": 0,
+       "number_style": "decimal"
+      },
+      "[\"name\",\"avg_pos_w_clicks\"]": {
+       "column_title": "Средняя рекламная позиция (по кликам)",
+       "decimals": 2,
+       "number_style": "decimal"
+      },
+      "[\"name\",\"avg_pos_w_views\"]": {
+       "column_title": "Средняя рекламная позиция (по показам)",
+       "decimals": 2,
+       "number_style": "decimal"
+      },
+      "[\"name\",\"baseline_cpc\"]": {
+       "column_title": "База CPC, ₽",
+       "currency": "RUB",
+       "currency_in_header": false,
+       "currency_style": "symbol",
+       "decimals": 2,
+       "number_style": "currency"
+      },
+      "[\"name\",\"baseline_cpo\"]": {
+       "column_title": "База CPO, ₽",
+       "currency": "RUB",
+       "currency_in_header": false,
+       "currency_style": "symbol",
+       "decimals": 2,
+       "number_style": "currency"
+      },
+      "[\"name\",\"baseline_ctr\"]": {
+       "column_title": "База CTR",
+       "decimals": 2,
+       "number_style": "percent"
+      },
+      "[\"name\",\"baseline_level\"]": {
+       "column_title": "Уровень базы"
+      },
+      "[\"name\",\"baseline_order_cr\"]": {
+       "column_title": "База CR заказов",
+       "decimals": 1,
+       "number_style": "percent"
+      },
+      "[\"name\",\"bid_is_uniform\"]": {
+       "column_title": "Ставка одинакова во всех кампаниях"
+      },
+      "[\"name\",\"bid_max\"]": {
+       "column_title": "Ставка запроса, макс",
+       "currency": "RUB",
+       "currency_in_header": false,
+       "currency_style": "symbol",
+       "decimals": 2,
+       "number_style": "currency"
+      },
+      "[\"name\",\"bid_min\"]": {
+       "column_title": "Ставка запроса, мин",
+       "currency": "RUB",
+       "currency_in_header": false,
+       "currency_style": "symbol",
+       "decimals": 2,
+       "number_style": "currency"
+      },
+      "[\"name\",\"bid_snapshot_date\"]": {
+       "column_title": "Дата снимка ставок"
+      },
+      "[\"name\",\"bid_snapshot_offset_days\"]": {
+       "column_title": "Сдвиг снимка ставок, дней",
+       "decimals": 0,
+       "number_style": "decimal"
+      },
+      "[\"name\",\"buyout_ratio_shk\"]": {
+       "column_title": "Доля выкупа, шт/заказ",
+       "decimals": 1,
+       "number_style": "percent"
+      },
+      "[\"name\",\"can_compare_cpc\"]": {
+       "column_title": "CPC сравним (клики ≥ 20)"
+      },
+      "[\"name\",\"can_compare_ctr\"]": {
+       "column_title": "CTR сравним (показы ≥ 1000)"
+      },
+      "[\"name\",\"can_judge_cart_cr\"]": {
+       "column_title": "CR корзины оценим (клики ≥ 60)"
+      },
+      "[\"name\",\"can_judge_order_carts\"]": {
+       "column_title": "CR заказов из корзин оценим (корзины ≥ 40)"
+      },
+      "[\"name\",\"can_judge_order_cr\"]": {
+       "column_title": "CR заказов оценим (клики ≥ 40)"
+      },
+      "[\"name\",\"cart_cr_clicks\"]": {
+       "column_title": "CR корзины из кликов",
+       "decimals": 1,
+       "number_style": "percent"
+      },
+      "[\"name\",\"clicks_sum\"]": {
+       "column_title": "Клики",
+       "decimals": 0,
+       "number_style": "decimal"
+      },
+      "[\"name\",\"cpc_calc\"]": {
+       "column_title": "CPC, ₽",
+       "currency": "RUB",
+       "currency_in_header": false,
+       "currency_style": "symbol",
+       "decimals": 2,
+       "number_style": "currency"
+      },
+      "[\"name\",\"cpc_vs_baseline\"]": {
+       "column_title": "CPC к базе, ×",
+       "decimals": 2,
+       "number_style": "decimal"
+      },
+      "[\"name\",\"cpm_calc\"]": {
+       "column_title": "CPM, ₽",
+       "currency": "RUB",
+       "currency_in_header": false,
+       "currency_style": "symbol",
+       "decimals": 2,
+       "number_style": "currency"
+      },
+      "[\"name\",\"cpo_ads\"]": {
+       "column_title": "Расход на заказ (CPO), ₽",
+       "currency": "RUB",
+       "currency_in_header": false,
+       "currency_style": "symbol",
+       "decimals": 2,
+       "number_style": "currency"
+      },
+      "[\"name\",\"cpo_vs_baseline\"]": {
+       "column_title": "CPO к базе, ×",
+       "decimals": 2,
+       "number_style": "decimal"
+      },
+      "[\"name\",\"ctr\"]": {
+       "column_title": "CTR",
+       "decimals": 2,
+       "number_style": "percent"
+      },
+      "[\"name\",\"ctr_vs_baseline\"]": {
+       "column_title": "CTR к базе, ×",
+       "decimals": 2,
+       "number_style": "decimal"
+      },
+      "[\"name\",\"days_with_data\"]": {
+       "column_title": "Дней с данными",
+       "decimals": 0,
+       "number_style": "decimal"
+      },
+      "[\"name\",\"days_with_spend\"]": {
+       "column_title": "Дней с расходом",
+       "decimals": 0,
+       "number_style": "decimal"
+      },
+      "[\"name\",\"delta_cpc\"]": {
+       "column_title": "Δ CPC к пред. окну, ₽",
+       "currency": "RUB",
+       "currency_in_header": false,
+       "currency_style": "symbol",
+       "decimals": 2,
+       "number_style": "currency"
+      },
+      "[\"name\",\"delta_order_cr_clicks\"]": {
+       "column_title": "Δ CR заказов к пред. окну",
+       "decimals": 1,
+       "number_style": "percent"
+      },
+      "[\"name\",\"delta_spend\"]": {
+       "column_title": "Δ расхода к пред. окну, ₽",
+       "currency": "RUB",
+       "currency_in_header": false,
+       "currency_style": "symbol",
+       "decimals": 2,
+       "number_style": "currency"
+      },
+      "[\"name\",\"evidence_reason\"]": {
+       "column_title": "Основание доказательности"
+      },
+      "[\"name\",\"evidence_status\"]": {
+       "column_title": "Доказательность"
+      },
+      "[\"name\",\"funnel_monotonic\"]": {
+       "column_title": "Воронка монотонна"
+      },
+      "[\"name\",\"internal_sku\"]": {
+       "column_title": "Внутренний SKU"
+      },
+      "[\"name\",\"nm_id\"]": {
+       "column_title": "Артикул WB",
+       "decimals": 0,
+       "number_style": "decimal"
+      },
+      "[\"name\",\"norm_query\"]": {
+       "column_title": "Поисковый запрос"
+      },
+      "[\"name\",\"order_cr_carts\"]": {
+       "column_title": "CR заказов из корзин",
+       "decimals": 1,
+       "number_style": "percent"
+      },
+      "[\"name\",\"order_cr_clicks\"]": {
+       "column_title": "CR заказов из кликов",
+       "decimals": 1,
+       "number_style": "percent"
+      },
+      "[\"name\",\"order_cr_vs_baseline\"]": {
+       "column_title": "CR заказов к базе, ×",
+       "decimals": 2,
+       "number_style": "decimal"
+      },
+      "[\"name\",\"orders_sum\"]": {
+       "column_title": "Заказы (attributed, raw)",
+       "decimals": 0,
+       "number_style": "decimal"
+      },
+      "[\"name\",\"product_name_short\"]": {
+       "column_title": "Товар"
+      },
+      "[\"name\",\"shks_sum\"]": {
+       "column_title": "Выкупы, шт (attributed, raw)",
+       "decimals": 0,
+       "number_style": "decimal"
+      },
+      "[\"name\",\"signal_top\"]": {
+       "column_title": "Главный сигнал"
+      },
+      "[\"name\",\"signals_text\"]": {
+       "column_title": "Сигналы"
+      },
+      "[\"name\",\"spend_rub\"]": {
+       "column_title": "Расход по запросу, ₽",
+       "currency": "RUB",
+       "currency_in_header": false,
+       "currency_style": "symbol",
+       "decimals": 2,
+       "number_style": "currency"
+      },
+      "[\"name\",\"spend_share_of_sku\"]": {
+       "column_title": "Доля расхода внутри товара",
+       "decimals": 1,
+       "number_style": "percent"
+      },
+      "[\"name\",\"spend_share_window\"]": {
+       "column_title": "Доля расхода окна",
+       "decimals": 2,
+       "number_style": "percent"
+      },
+      "[\"name\",\"views_sum\"]": {
+       "column_title": "Показы (реклама)",
+       "decimals": 0,
+       "number_style": "decimal"
+      },
+      "[\"name\",\"window_days\"]": {
+       "column_title": "Окно, дней",
+       "decimals": 0,
+       "number_style": "decimal"
+      }
+     },
+     "table.column_formatting": [
+      {
+       "color": "#84BB4C",
+       "columns": [
+        "evidence_status"
+       ],
+       "highlight_row": false,
+       "operator": "=",
+       "type": "single",
+       "value": "ACTIONABLE"
+      },
+      {
+       "color": "#F9CF48",
+       "columns": [
+        "evidence_status"
+       ],
+       "highlight_row": false,
+       "operator": "=",
+       "type": "single",
+       "value": "OBSERVATIONAL"
+      },
+      {
+       "color": "#E0E0E0",
+       "columns": [
+        "evidence_status"
+       ],
+       "highlight_row": false,
+       "operator": "=",
+       "type": "single",
+       "value": "INSUFFICIENT"
+      }
+     ]
+    }
+   },
+   "card_id": 96,
+   "col": 0,
+   "collection_authority_level": null,
+   "created_at": "2026-09-06T18:57:15.121918Z",
+   "dashboard_id": 4,
+   "dashboard_tab_id": null,
+   "entity_id": "AyaVwEejB3g5n6oiM_UTL",
+   "id": 151,
+   "inline_parameters": [],
+   "parameter_mappings": [
+    {
+     "card_id": 96,
+     "parameter_id": "window",
+     "target": [
+      "variable",
+      [
+       "template-tag",
+       "window"
+      ]
+     ]
+    },
+    {
+     "card_id": 96,
+     "parameter_id": "sku",
+     "target": [
+      "dimension",
+      [
+       "template-tag",
+       "sku"
+      ]
+     ]
+    },
+    {
+     "card_id": 96,
+     "parameter_id": "evidence",
+     "target": [
+      "dimension",
+      [
+       "template-tag",
+       "evidence"
+      ]
+     ]
+    },
+    {
+     "card_id": 96,
+     "parameter_id": "q",
+     "target": [
+      "dimension",
+      [
+       "template-tag",
+       "q"
+      ]
+     ]
+    },
+    {
+     "card_id": 96,
+     "parameter_id": "spend_min",
+     "target": [
+      "variable",
+      [
+       "template-tag",
+       "spend_min"
+      ]
+     ]
+    },
+    {
+     "card_id": 96,
+     "parameter_id": "orders_min",
+     "target": [
+      "variable",
+      [
+       "template-tag",
+       "orders_min"
+      ]
+     ]
+    }
+   ],
+   "row": 73,
+   "series": [],
+   "size_x": 24,
+   "size_y": 12,
+   "visualization_settings": {}
+  }
+ ],
+ "description": "Stage ADS-5. Операционный экран поисковой рекламы WB. Источник — wb_mart.V_ADS_SCREEN_QUERY (грейн as_of_date × window_days × nm_id × norm_query), покрытие бюджета — V_ADS_CAMPAIGN_DAILY и wb_raw.V_ADV_QUERY_STATS. Окно по умолчанию — 90 закрытых суток, 28 доступно переключателем. Пороги доказательности принадлежат BigQuery (Ads-4) и в Metabase не переопределяются. Расход по запросам — ЧАСТЬ рекламного бюджета, а не весь бюджет.",
+ "embedding_params": null,
+ "embedding_type": null,
+ "enable_embedding": false,
+ "entity_id": "jWl4EULClmhhgO1RdKowS",
+ "id": 4,
+ "is_remote_synced": false,
+ "name": "Search Queries",
+ "param_fields": {
+  "0a730284-819f-4d42-b178-fa5575b158df": [
+   {
+    "base_type": "type/Text",
+    "dimensions": [],
+    "display_name": "Product Name Short",
+    "fk_target_field_id": null,
+    "has_field_values": "list",
+    "id": 721,
+    "name": "product_name_short",
+    "name_field": null,
+    "semantic_type": "type/Category",
+    "table_id": 33,
+    "target": null
+   }
+  ],
+  "14fb6749-e2f4-44ce-a289-0f4cba026928": [
+   {
+    "base_type": "type/Text",
+    "dimensions": [],
+    "display_name": "Norm Query",
+    "fk_target_field_id": null,
+    "has_field_values": "list",
+    "id": 719,
+    "name": "norm_query",
+    "name_field": null,
+    "semantic_type": null,
+    "table_id": 33,
+    "target": null
+   }
+  ],
+  "17f3afb3-7a87-4e79-9091-3de48dcc5d31": [
+   {
+    "base_type": "type/Text",
+    "dimensions": [],
+    "display_name": "Norm Query",
+    "fk_target_field_id": null,
+    "has_field_values": "list",
+    "id": 719,
+    "name": "norm_query",
+    "name_field": null,
+    "semantic_type": null,
+    "table_id": 33,
+    "target": null
+   }
+  ],
+  "3e1e3132-27de-412c-8d10-35f145f7ae02": [
+   {
+    "base_type": "type/Text",
+    "dimensions": [],
+    "display_name": "Product Name Short",
+    "fk_target_field_id": null,
+    "has_field_values": "list",
+    "id": 721,
+    "name": "product_name_short",
+    "name_field": null,
+    "semantic_type": "type/Category",
+    "table_id": 33,
+    "target": null
+   }
+  ],
+  "45fea996-4c62-4d33-a5d9-93bdab5aa252": [
+   {
+    "base_type": "type/Text",
+    "dimensions": [],
+    "display_name": "Product Name Short",
+    "fk_target_field_id": null,
+    "has_field_values": "list",
+    "id": 721,
+    "name": "product_name_short",
+    "name_field": null,
+    "semantic_type": "type/Category",
+    "table_id": 33,
+    "target": null
+   }
+  ],
+  "621138c3-ee0e-4d6f-a92d-ad517a3c6f45": [
+   {
+    "base_type": "type/Text",
+    "dimensions": [],
+    "display_name": "Product Name Short",
+    "fk_target_field_id": null,
+    "has_field_values": "list",
+    "id": 721,
+    "name": "product_name_short",
+    "name_field": null,
+    "semantic_type": "type/Category",
+    "table_id": 33,
+    "target": null
+   }
+  ],
+  "75a581e9-1c81-4f97-bba9-0375e05007a7": [
+   {
+    "base_type": "type/Text",
+    "dimensions": [],
+    "display_name": "Norm Query",
+    "fk_target_field_id": null,
+    "has_field_values": "list",
+    "id": 719,
+    "name": "norm_query",
+    "name_field": null,
+    "semantic_type": null,
+    "table_id": 33,
+    "target": null
+   }
+  ],
+  "77a59de0-1b77-4b8d-b858-2d427466404e": [
+   {
+    "base_type": "type/Text",
+    "dimensions": [],
+    "display_name": "Evidence Status",
+    "fk_target_field_id": null,
+    "has_field_values": "list",
+    "id": 747,
+    "name": "evidence_status",
+    "name_field": null,
+    "semantic_type": "type/Category",
+    "table_id": 33,
+    "target": null
+   }
+  ],
+  "82e0ff23-093a-4afb-bba7-9a4fec26af37": [
+   {
+    "base_type": "type/Text",
+    "dimensions": [],
+    "display_name": "Product Name Short",
+    "fk_target_field_id": null,
+    "has_field_values": "list",
+    "id": 721,
+    "name": "product_name_short",
+    "name_field": null,
+    "semantic_type": "type/Category",
+    "table_id": 33,
+    "target": null
+   }
+  ],
+  "83bda4b4-c153-4d65-9ddb-70c8f8a518ed": [
+   {
+    "base_type": "type/Text",
+    "dimensions": [],
+    "display_name": "Evidence Status",
+    "fk_target_field_id": null,
+    "has_field_values": "list",
+    "id": 747,
+    "name": "evidence_status",
+    "name_field": null,
+    "semantic_type": "type/Category",
+    "table_id": 33,
+    "target": null
+   }
+  ],
+  "8e3b73d2-b6b1-4dd6-9914-1a2bbcf2da66": [
+   {
+    "base_type": "type/Text",
+    "dimensions": [],
+    "display_name": "Norm Query",
+    "fk_target_field_id": null,
+    "has_field_values": "list",
+    "id": 719,
+    "name": "norm_query",
+    "name_field": null,
+    "semantic_type": null,
+    "table_id": 33,
+    "target": null
+   }
+  ],
+  "a29ecca7-37c8-4763-91e9-b8287a3e3d08": [
+   {
+    "base_type": "type/Text",
+    "dimensions": [],
+    "display_name": "Norm Query",
+    "fk_target_field_id": null,
+    "has_field_values": "list",
+    "id": 719,
+    "name": "norm_query",
+    "name_field": null,
+    "semantic_type": null,
+    "table_id": 33,
+    "target": null
+   }
+  ],
+  "a731d4db-edea-4b89-8a7a-88db962bd66c": [
+   {
+    "base_type": "type/Text",
+    "dimensions": [],
+    "display_name": "Norm Query",
+    "fk_target_field_id": null,
+    "has_field_values": "list",
+    "id": 719,
+    "name": "norm_query",
+    "name_field": null,
+    "semantic_type": null,
+    "table_id": 33,
+    "target": null
+   }
+  ],
+  "bc75806e-5c83-4cab-801f-83418e35fec2": [
+   {
+    "base_type": "type/Text",
+    "dimensions": [],
+    "display_name": "Norm Query",
+    "fk_target_field_id": null,
+    "has_field_values": "list",
+    "id": 719,
+    "name": "norm_query",
+    "name_field": null,
+    "semantic_type": null,
+    "table_id": 33,
+    "target": null
+   }
+  ],
+  "bf9481d6-9f57-42cf-af15-d45492762dcf": [
+   {
+    "base_type": "type/Text",
+    "dimensions": [],
+    "display_name": "Product Name Short",
+    "fk_target_field_id": null,
+    "has_field_values": "list",
+    "id": 721,
+    "name": "product_name_short",
+    "name_field": null,
+    "semantic_type": "type/Category",
+    "table_id": 33,
+    "target": null
+   }
+  ],
+  "cf5452b6-d5d0-4707-8157-6bb5ef404304": [
+   {
+    "base_type": "type/Text",
+    "dimensions": [],
+    "display_name": "Evidence Status",
+    "fk_target_field_id": null,
+    "has_field_values": "list",
+    "id": 747,
+    "name": "evidence_status",
+    "name_field": null,
+    "semantic_type": "type/Category",
+    "table_id": 33,
+    "target": null
+   }
+  ],
+  "e08a882e-2329-4ae4-b864-eba8e6995e8b": [
+   {
+    "base_type": "type/Text",
+    "dimensions": [],
+    "display_name": "Evidence Status",
+    "fk_target_field_id": null,
+    "has_field_values": "list",
+    "id": 747,
+    "name": "evidence_status",
+    "name_field": null,
+    "semantic_type": "type/Category",
+    "table_id": 33,
+    "target": null
+   }
+  ],
+  "evidence": [
+   {
+    "base_type": "type/Text",
+    "dimensions": [],
+    "display_name": "Evidence Status",
+    "fk_target_field_id": null,
+    "has_field_values": "list",
+    "id": 747,
+    "name": "evidence_status",
+    "name_field": null,
+    "semantic_type": "type/Category",
+    "table_id": 33,
+    "target": null
+   }
+  ],
+  "f0cd261a-44f4-46b0-8bde-7b2995818cae": [
+   {
+    "base_type": "type/Text",
+    "dimensions": [],
+    "display_name": "Norm Query",
+    "fk_target_field_id": null,
+    "has_field_values": "list",
+    "id": 719,
+    "name": "norm_query",
+    "name_field": null,
+    "semantic_type": null,
+    "table_id": 33,
+    "target": null
+   }
+  ],
+  "f35b7789-8289-481e-a30a-ba6c671909b3": [
+   {
+    "base_type": "type/Text",
+    "dimensions": [],
+    "display_name": "Product Name Short",
+    "fk_target_field_id": null,
+    "has_field_values": "list",
+    "id": 721,
+    "name": "product_name_short",
+    "name_field": null,
+    "semantic_type": "type/Category",
+    "table_id": 33,
+    "target": null
+   }
+  ],
+  "f4e3e897-91cf-4c70-a310-22c9cf0c93e2": [
+   {
+    "base_type": "type/Text",
+    "dimensions": [],
+    "display_name": "Product Name Short",
+    "fk_target_field_id": null,
+    "has_field_values": "list",
+    "id": 721,
+    "name": "product_name_short",
+    "name_field": null,
+    "semantic_type": "type/Category",
+    "table_id": 33,
+    "target": null
+   }
+  ],
+  "q": [
+   {
+    "base_type": "type/Text",
+    "dimensions": [],
+    "display_name": "Norm Query",
+    "fk_target_field_id": null,
+    "has_field_values": "list",
+    "id": 719,
+    "name": "norm_query",
+    "name_field": null,
+    "semantic_type": null,
+    "table_id": 33,
+    "target": null
+   }
+  ],
+  "sku": [
+   {
+    "base_type": "type/Text",
+    "dimensions": [],
+    "display_name": "Product Name Short",
+    "fk_target_field_id": null,
+    "has_field_values": "list",
+    "id": 721,
+    "name": "product_name_short",
+    "name_field": null,
+    "semantic_type": "type/Category",
+    "table_id": 33,
+    "target": null
+   }
+  ]
+ },
+ "parameters": [
+  {
+   "default": [
+    90
+   ],
+   "id": "window",
+   "isMultiSelect": false,
+   "name": "Окно (дней)",
+   "sectionId": "number",
+   "slug": "window",
+   "type": "number/=",
+   "values_source_config": {
+    "values": [
+     [
+      90
+     ],
+     [
+      28
+     ]
+    ]
+   },
+   "values_source_type": "static-list"
+  },
+  {
+   "id": "sku",
+   "isMultiSelect": true,
+   "name": "Товар",
+   "sectionId": "string",
+   "slug": "sku",
+   "type": "string/="
+  },
+  {
+   "id": "evidence",
+   "isMultiSelect": true,
+   "name": "Доказательность",
+   "sectionId": "string",
+   "slug": "evidence",
+   "type": "string/="
+  },
+  {
+   "id": "q",
+   "name": "Запрос содержит",
+   "sectionId": "string",
+   "slug": "q",
+   "type": "string/contains"
+  },
+  {
+   "id": "spend_min",
+   "name": "Минимальный расход, ₽",
+   "sectionId": "number",
+   "slug": "spend_min",
+   "type": "number/="
+  },
+  {
+   "id": "orders_min",
+   "name": "Минимум заказов",
+   "sectionId": "number",
+   "slug": "orders_min",
+   "type": "number/="
+  }
+ ],
+ "points_of_interest": null,
+ "position": null,
+ "show_in_getting_started": false,
+ "tabs": [],
+ "width": "fixed"
+}
