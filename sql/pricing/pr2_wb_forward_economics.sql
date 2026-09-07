@@ -1,0 +1,42 @@
+-- ============================================================================
+-- PR-2 Phase C — форвардная экономика WB (PRE-TAX).
+--
+-- Отвечает на вопрос: какова минимальная цена продавца, при которой продажа
+-- не создаёт отрицательный операционный вклад ДО РЕКЛАМЫ и ДО НАЛОГА.
+--
+-- Доказанное тождество расчёта WB (38 698 строк, 97,2 % совпадений ±0,02 ₽):
+--   for_pay = retail_price_withdisc_rub × (1 − commission_pct/100) − acquiring_fee
+-- Отсюда база выручки — цена ПРОДАВЦА. СПП финансирует WB и выплату не уменьшает.
+--
+-- Формулы (P — цена продавца, take = комиссия% + эквайринг%):
+--   contribution_before_ads_pre_tax = P − P×take − E[logistics] − COGS
+--   break_even_before_ads_pre_tax   = (E[logistics] + COGS) / (1 − take)
+--   break_even_with_ads(d)          = (E[logistics] + COGS) / (1 − take − d)
+--   target_contribution_price(c)    = (E[logistics] + COGS + c) / (1 − take)
+--   max_affordable_drr(P)           = contribution_before_ads(P) / P
+--
+-- НЕ ВХОДЯТ намеренно: налог, хранение, приёмка, штрафы, удержания уровня
+-- кабинета, фулфилмент, OPEX. Каждое исключение видно в tax_model_status
+-- и в документации.
+--
+-- Сценарии различаются неопределёнными переменными затратами:
+--   BASE         — эквайринг p50, логистика = нагрузка на проданную единицу
+--   CONSERVATIVE — эквайринг p75, логистика × (p75/mean)
+--   STRESS       — эквайринг p90, логистика × (p90/mean)
+--
+-- Версия модели: WB_FE_V1.
+-- Объекты созданы в production; фактические определения ниже соответствуют
+-- развёрнутым (сверено через INFORMATION_SCHEMA.VIEWS).
+-- ============================================================================
+
+-- Разворачивать в порядке: V_WB_TARIFFS_CURRENT → V_WB_SKU_COST_INPUTS
+-- → V_WB_SKU_FORWARD_ECONOMICS_CURRENT → TVF_WB_FORWARD_ECONOMICS
+-- → V_WB_PRICING_ECONOMICS_HEALTH
+
+-- Извлечение фактических определений (BigQuery INFORMATION_SCHEMA):
+--   SELECT table_name, view_definition
+--   FROM `project-fa311fc0-4d87-4781-986.wb_mart`.INFORMATION_SCHEMA.VIEWS
+--   WHERE table_name LIKE 'V_WB_%ECONOMICS%' OR table_name = 'V_WB_SKU_COST_INPUTS';
+--   SELECT table_name, view_definition
+--   FROM `project-fa311fc0-4d87-4781-986.wb_raw`.INFORMATION_SCHEMA.VIEWS
+--   WHERE table_name = 'V_WB_TARIFFS_CURRENT';
