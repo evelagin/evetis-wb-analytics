@@ -15,6 +15,10 @@ export interface LoaderContext {
    * PR-Mart3b: целевая дата прогона (YYYY-MM-DD). Для витрины — D-1 Europe/Moscow.
    * ИНВАРИАНТ: `targetDate === logicalPeriod` (cli/entry-point выставляют их одинаковыми;
    * handler НЕ пересчитывает текущую дату самостоятельно).
+   *
+   * PR-1: формат периода задаёт загрузчик (см. registry.ts). У наблюдателя цен период —
+   * 20-минутное окно UTC, поэтому и targetDate у него окно, а не дата. Инвариант
+   * равенства сохраняется; наблюдатель цен targetDate не использует.
    */
   targetDate: string;
 }

@@ -15,12 +15,20 @@ import { noopLoader } from './noop.js';
 import { stocksLoader } from './stocks/index.js';
 import { martLoader } from './mart/index.js';
 import { d1Moscow } from './mart/targetDate.js';
+import { pricesLoader } from './prices/index.js';
+import { observationBucket } from './prices/bucket.js';
 
 export interface LoaderSpec {
   handler: LoaderHandler;
   /**
-   * Логический период прогона (YYYY-MM-DD). Он же идемпотентный ключ LOADER_RUNS и ctx.targetDate.
+   * Логический период прогона. Он же идемпотентный ключ LOADER_RUNS и ctx.targetDate.
    * `now` инжектится в тестах.
+   *
+   * Формат ЗАДАЁТ ЗАГРУЗЧИК, а не платформа:
+   *   - суточные (stocks/noop/mart) — YYYY-MM-DD;
+   *   - наблюдатель цен — окно YYYY-MM-DDTHH:MM (UTC), потому что идемпотентность
+   *     ему нужна внутри окна и НЕ нужна между окнами.
+   * Колонка LOADER_RUNS.logical_period имеет тип STRING и формат не ограничивает.
    */
   logicalPeriod: (now?: Date) => string;
   /**
@@ -35,6 +43,9 @@ export const LOADERS: Record<string, LoaderSpec> = {
   stocks: { handler: stocksLoader, logicalPeriod: (now) => dailyPeriodMoscow(now) },
   // Витрина: целевая дата = D-1 МСК; процедуры публикуют production `wb_mart` → только prod.
   mart: { handler: martLoader, logicalPeriod: (now) => d1Moscow(now), prodOnly: true },
+  // PR-1: наблюдатель цен. Период — 20-минутное окно UTC, а не сутки: суточный ключ
+  // подавил бы все прогоны кроме первого и превратил бы интрадей в дневной снимок.
+  prices: { handler: pricesLoader, logicalPeriod: (now) => observationBucket(now) },
 };
 
 export function resolveLoader(name: string): LoaderSpec | undefined {

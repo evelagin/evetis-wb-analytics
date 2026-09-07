@@ -29,6 +29,13 @@ export interface Config {
   stocksRawTable: string;
   stocksSnapshotTable: string;
   refSkuTable: string;
+  // ── prices observer (PR-1) ────────────────────────────────────────────────
+  /** Хост категории «Цены и скидки». Отличается от аналитического — не переиспользовать. */
+  wbPricesHost: string;
+  /** Имя секрета с токеном категории «Цены и скидки». Значение читает ТОЛЬКО runtime SA. */
+  wbPricesSecret: string;
+  pricesRawTable: string;
+  pricesObservationsTable: string;
 }
 
 type Env = Record<string, string | undefined>;
@@ -76,5 +83,9 @@ export function loadConfig(env: Env = process.env): Config {
     stocksRawTable: opt(env, 'STOCKS_RAW_TABLE', 'RAW_WB_STOCKS__CR'),
     stocksSnapshotTable: opt(env, 'STOCKS_SNAPSHOT_TABLE', 'WB_STOCKS_SNAPSHOTS__CR'),
     refSkuTable: opt(env, 'REF_SKU_TABLE', 'REF_SKU_MASTER'),
+    wbPricesHost: opt(env, 'WB_PRICES_HOST', 'https://discounts-prices-api.wildberries.ru'),
+    wbPricesSecret: opt(env, 'WB_PRICES_SECRET', 'WB_PRICES_READ_TOKEN'),
+    pricesRawTable: opt(env, 'PRICES_RAW_TABLE', 'RAW_WB_PRICES'),
+    pricesObservationsTable: opt(env, 'PRICES_OBSERVATIONS_TABLE', 'WB_PRICES_OBSERVATIONS'),
   };
 }
