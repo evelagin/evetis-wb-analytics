@@ -114,3 +114,26 @@ resource "google_cloud_scheduler_job" "wb_prices_prod" {
   }
   depends_on = [google_project_service.enabled]
 }
+
+# ── Права на таблицы наблюдателя ────────────────────────────────────────────
+# Таблицы созданы DDL-скриптом (sql/pricing/pr1_wb_price_observer.sql), Terraform
+# ими не владеет — здесь только права, по той же схеме, что prod_write_runs.
+# Уровень таблицы, а не датасета: наблюдателю нужны ровно две таблицы, и выдавать
+# ему запись на весь wb_raw (где живут финансы, продажи и остатки) не за что.
+#
+# dataEditor, а не dataViewer: загрузчик делает append в RAW и MERGE/UPDATE
+# строки манифеста. Чтение REF_SKU_MASTER и запись LOADER_RUNS уже выданы
+# в bigquery.tf (prod_read_ref / prod_write_runs) — здесь не дублируются.
+resource "google_bigquery_table_iam_member" "prod_write_prices_raw" {
+  dataset_id = var.raw_dataset
+  table_id   = "RAW_WB_PRICES"
+  role       = "roles/bigquery.dataEditor"
+  member     = "serviceAccount:${google_service_account.loaders_prod.email}"
+}
+
+resource "google_bigquery_table_iam_member" "prod_write_prices_observations" {
+  dataset_id = var.raw_dataset
+  table_id   = "WB_PRICES_OBSERVATIONS"
+  role       = "roles/bigquery.dataEditor"
+  member     = "serviceAccount:${google_service_account.loaders_prod.email}"
+}
