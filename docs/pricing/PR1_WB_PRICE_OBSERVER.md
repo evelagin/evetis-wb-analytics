@@ -625,16 +625,18 @@ totals remain observable`, см. `DATA_MODEL.md`).
 
 ## 17. Известные ограничения
 
-1. **Наблюдатель развёрнут не полностью.** Cloud Run Job `wb-prices-prod`,
-   Cloud Scheduler (`*/20 * * * *`, **PAUSED**) и IAM на секрете созданы.
-   Джоб указывает на bootstrap-образ `cloudrun/container/hello`, который не содержит
-   загрузчика `prices`: запуск завершился бы кодом 0 и не записал бы ничего.
-   Реальный образ собирает `deploy-shadow.yml` **из git-ref**, поэтому наблюдения
-   возможны только после merge ветки в `main`.
-2. **Двух реальных наблюдений пока нет.** Локальное исполнение невозможно:
-   BigQuery API недоступен для локальных креденшелов (HTTP 403 на всех эндпоинтах,
-   включая `datasets.list`). Наблюдения возможны только из Cloud Run.
-3. ~~`secretAccessor` не выдан~~ — **выдан** на уровне секрета для `sa-loaders-prod`.
+1. **Локальное исполнение наблюдателя невозможно.** BigQuery API недоступен для
+   локальных креденшелов (HTTP 403 на всех эндпоинтах, включая `datasets.list`),
+   поэтому отладка и прогоны возможны только из Cloud Run. То же ограничение
+   не даёт применять Terraform локально к BigQuery-ресурсам: права на таблицы
+   PR-1 выданы через BigQuery DDL `GRANT`, а декларации в
+   `infra/terraform/wb_prices_observer.tf` ждут ближайшего прогона `infra.yml`.
+2. **`infra.yml apply` содержит постороннее изменение.** План предлагает занулить
+   `client` / `client_version` на `wb-stocks-prod` и `wb-mart-prod` — известный
+   дрейф, который репозиторий сознательно решил не реконсилировать
+   (см. комментарий в `cloud_run_jobs.tf`). У этих двух Job'ов, в отличие от
+   `wb-stocks-shadow` и `wb-prices-prod`, нет `ignore_changes` на эти поля.
+   Это чужой незакрытый пункт, в PR-1 не трогался.
 4. **СПП и цена покупателя не наблюдаются** — структурное свойство API WB.
 5. **Состояние акций не собирается.** Календарь акций WB — отдельный эндпоинт,
    вне границ PR-1. До этого репрайсер не может отличать «цена изменилась нами»
@@ -654,13 +656,23 @@ totals remain observable`, см. `DATA_MODEL.md`).
   `roles/secretmanager.secretAccessor` → `sa-loaders-prod` на `WB_PRICES_READ_TOKEN`.
   Project-level грантов не выдавалось.
 
-### Осталось: merge ветки в `main`
+### Развёртывание выполнено 2026-09-07
 
-`deploy-shadow.yml` собирает образ из git-ref по `push` в `main` с путями `cloud/**`.
-Пока код не в `main`, образ с загрузчиком `prices` не существует, и джоб запускать
-бессмысленно. После merge: промоушен digest в `wb-prices-prod` → снятие паузы
-со scheduler → два наблюдения → раскомментировать раздел 6 в
-`sql/pricing/pr1_wb_price_observer.sql` (строка `OPS_PIPELINE_REGISTRY`).
+| Шаг | Результат |
+|---|---|
+| Интеграция в `origin/main` | `b39b616` + `eae1d0a`, ADS-5 (`2e2b115`) исключён |
+| `deploy-shadow.yml` | success, sha `eae1d0a` |
+| Образ | `wb-loader@sha256:ad71279355…` |
+| Проверка содержимого образа | `available: "noop, stocks, mart, prices"` |
+| `deploy-prod.yml` | success, digest продвинут в `wb-prices-prod` |
+| Наблюдение 1 | `WBPX_prod_202609071000`, 10:19:48 UTC, 25 SKU, 100 % |
+| Наблюдение 2 | `WBPX_prod_202609071020`, 10:22:01 UTC, 25 SKU, 100 % |
+| Строка `OPS_PIPELINE_REGISTRY` | активирована после двух успешных наблюдений |
+| Scheduler | `ENABLED`, `*/20 * * * *` `Etc/UTC` |
+
+Два пробела в CI, вскрытые развёртыванием и закрытые здесь же: `deploy-prod.yml`
+не промоутил digest в `wb-prices-prod` (Job молча остался бы на bootstrap-образе),
+`scheduler-control.yml` не знал про `wb-prices` (не было штатного pause/resume).
 
 ---
 

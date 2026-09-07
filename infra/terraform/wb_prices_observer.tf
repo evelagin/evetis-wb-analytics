@@ -137,3 +137,17 @@ resource "google_bigquery_table_iam_member" "prod_write_prices_observations" {
   role       = "roles/bigquery.dataEditor"
   member     = "serviceAccount:${google_service_account.loaders_prod.email}"
 }
+
+# ── Право Scheduler'а запустить именно этот Job ─────────────────────────────
+# Invoker выдаётся ПОРЕСУРСНО, а не на проект (та же причина, что у
+# scheduler_mart_prod_invoke в iam.tf). Без этой строки Scheduler отрабатывает
+# по расписанию, но получает PERMISSION_DENIED и НЕ создаёт execution: в самом
+# Scheduler'е видно только `status.code = 7`, а в Cloud Run — тишина, неотличимая
+# от «наблюдений не было». Проверено: первое автономное срабатывание 2026-09-07
+# 10:40:00 UTC упало именно так, пока этой строки не было.
+resource "google_cloud_run_v2_job_iam_member" "scheduler_prices_prod_invoke" {
+  location = var.region
+  name     = google_cloud_run_v2_job.wb_prices_prod.name
+  role     = "roles/run.invoker"
+  member   = "serviceAccount:${google_service_account.scheduler_prod.email}"
+}
