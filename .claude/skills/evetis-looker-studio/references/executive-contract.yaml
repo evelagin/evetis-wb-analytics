@@ -1,0 +1,101 @@
+version: 1.0.0
+screen:
+  product: "EVETIS / ANALYTICS"
+  page: "Executive · Пульс магазина"
+  big_idea: "Показать владельцу, как магазин продаёт и зарабатывает до COGS, почему результат меняется и насколько данным можно доверять."
+  default_date_start: "2026-04-13"
+
+sources:
+  kpi:
+    view: "wb_mart.V_DASH_KPI_DAILY"
+    grain: "day"
+    date_field: "day"
+  sku:
+    view: "wb_mart.V_DASH_SKU_DAILY"
+    grain: "day x nm_id"
+    date_field: "day"
+    do_not_blend_with: "kpi"
+  freshness_contract:
+    view: "wb_mart.V_DASH_FRESHNESS_BY_CONTRACT"
+    filter: "contract_code = 'KPI_DAILY'"
+  freshness_system:
+    view: "wb_mart.V_DASH_FRESHNESS_HEADER"
+
+hero_candidates:
+  - id: sales_revenue
+    label: "Выручка (выкупы)"
+    field: "sales_revenue_seller_base_rub"
+    aggregation: "SUM"
+    coverage_counter: "sales_uncovered_days"
+  - id: contribution
+    label: "Вклад pre-COGS"
+    field: "contribution_pre_cogs_rub"
+    aggregation: "SUM"
+    coverage_counter: "contribution_uncovered_days"
+    provisional_counter: "contribution_provisional_days"
+  - id: drr
+    label: "ДРР по выкупам"
+    formula: "SUM(ad_spend_attributed_rub) / SUM(sales_revenue_seller_base_rub)"
+    aggregation: "ratio-of-sums"
+    coverage_counters: ["ads_uncovered_days", "sales_uncovered_days"]
+  - id: orders_qty
+    label: "Заказы, шт"
+    field: "orders_qty"
+    aggregation: "SUM"
+    coverage_counter: "orders_uncovered_days"
+  - id: net_settlement
+    label: "К перечислению"
+    field: "net_settlement_rub"
+    aggregation: "SUM"
+    coverage_counter: "finance_uncovered_days"
+
+kpis:
+  trading:
+    - {label: "Выручка (выкупы)", field: "sales_revenue_seller_base_rub", agg: "SUM", coverage: "sales_uncovered_days"}
+    - {label: "Выручка (заказы)", field: "orders_revenue_rub", agg: "SUM", coverage: "orders_uncovered_days"}
+    - {label: "Заказы, шт", field: "orders_qty", agg: "SUM", coverage: "orders_uncovered_days"}
+    - {label: "Выкупы, шт", field: "buyouts_qty", agg: "SUM", coverage: "sales_uncovered_days"}
+    - {label: "Отменено, шт", field: "canceled_qty", agg: "SUM", coverage: "orders_uncovered_days"}
+    - {label: "Возвраты, шт", field: "returns_qty", agg: "SUM", coverage: "sales_uncovered_days"}
+  efficiency:
+    - {label: "Средняя цена заказа", formula: "SUM(orders_revenue_rub)/SUM(orders_qty)", agg: "ratio-of-sums", coverage: "orders_uncovered_days"}
+    - {label: "Средняя цена выкупа", formula: "SUM(sales_revenue_seller_base_rub)/SUM(buyouts_qty)", agg: "ratio-of-sums", coverage: "sales_uncovered_days"}
+    - {label: "Выкуп/заказ, календарный", formula: "SUM(buyouts_qty)/SUM(orders_qty)", agg: "ratio-of-sums", coverage: "orders_uncovered_days + sales_uncovered_days", note: "Календарный, не когортный. Значение выше 100% возможно."}
+    - {label: "Доля отмен", formula: "SUM(canceled_qty)/SUM(orders_qty)", agg: "ratio-of-sums", coverage: "orders_uncovered_days"}
+    - {label: "Оплачено покупателем", field: "sales_revenue_buyer_paid_rub", agg: "SUM", coverage: "sales_uncovered_days"}
+  advertising:
+    - {label: "Реклама, ₽", field: "ad_spend_attributed_rub", agg: "SUM", coverage: "ads_uncovered_days"}
+    - {label: "Показы", field: "views", agg: "SUM", coverage: "ads_uncovered_days"}
+    - {label: "Клики", field: "clicks", agg: "SUM", coverage: "ads_uncovered_days"}
+    - {label: "CTR", formula: "SUM(clicks)/SUM(views)", agg: "ratio-of-sums", coverage: "ads_uncovered_days"}
+    - {label: "CPC", formula: "SUM(ad_spend_attributed_rub)/SUM(clicks)", agg: "ratio-of-sums", coverage: "ads_uncovered_days"}
+    - {label: "CPM", formula: "SUM(ad_spend_attributed_rub)/SUM(views)*1000", agg: "ratio-of-sums", coverage: "ads_uncovered_days"}
+    - {label: "ДРР по выкупам", formula: "SUM(ad_spend_attributed_rub)/SUM(sales_revenue_seller_base_rub)", agg: "ratio-of-sums", coverage: "ads_uncovered_days + sales_uncovered_days"}
+    - {label: "ROAS", formula: "SUM(ads_revenue_raw_rub)/SUM(ad_spend_attributed_rub)", agg: "ratio-of-sums", coverage: "ads_uncovered_days"}
+  economics:
+    - {label: "Сбор маркетплейса", field: "marketplace_fee_rub", agg: "SUM", coverage: "finance_uncovered_days"}
+    - {label: "Логистика", field: "logistics_rub", agg: "SUM", coverage: "finance_uncovered_days"}
+    - {label: "Хранение", field: "storage_rub", agg: "SUM", coverage: "finance_uncovered_days", level: "account"}
+    - {label: "Удержания", field: "deduction_rub", agg: "SUM", coverage: "finance_uncovered_days", level: "account"}
+    - {label: "К перечислению", field: "net_settlement_rub", agg: "SUM", coverage: "finance_uncovered_days"}
+    - {label: "Вклад pre-COGS", field: "contribution_pre_cogs_rub", agg: "SUM", coverage: "contribution_uncovered_days", provisional: "contribution_provisional_days"}
+    - {label: "Вклад, %", formula: "SUM(contribution_pre_cogs_rub)/SUM(sales_revenue_seller_base_rub)", agg: "ratio-of-sums", coverage: "contribution_uncovered_days", provisional: "contribution_provisional_days"}
+
+secondary_metrics:
+  - {label: "Реализация по расчёту", field: "sales_revenue_settled_rub"}
+  - {label: "Корректировки", field: "sales_adjustment_rub", note: "не выручка"}
+  - {label: "Эквайринг SKU", field: "acquiring_sku_rub", note: "внутри спреда, во вклад не входит"}
+  - {label: "WB reward", field: "wb_reward_rub"}
+
+warnings:
+  coverage: "В выбранном периоде есть сутки без подтвержденных данных. Не считать их нулевыми."
+  contribution: "Вклад рассчитан только по покрытым суткам."
+  provisional: "Период содержит предварительные финансовые данные; числа могут измениться после закрытия недели WB."
+  early_range: "До 13.04.2026 operational orders/sales/ads history неполна из-за 90-дневного retention исходного API."
+
+future_not_in_v1:
+  - "cohort buyout rate (PR3)"
+  - "campaign/query analytics (PR4)"
+  - "stock and days of stock (PR5)"
+  - "profit/margin after REF_COGS"
+  - "billing ad spend until Stage 3B.1 is ready"
