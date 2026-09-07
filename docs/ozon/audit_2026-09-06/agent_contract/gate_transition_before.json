@@ -1,0 +1,35 @@
+{
+  "label": "BEFORE — состояние ворот до второго планового снимка тарифа",
+  "captured_at": "2026-09-06T11:56:45Z",
+  "purpose": "Зафиксировано до наступления события, чтобы переход FIRST_BASELINE_PENDING → BASELINE_OK был доказуем, а не описан задним числом.",
+  "source": "ozon_mart.V_OZON_TARIFF_SOURCE_HEALTH + прямые счётчики ozon_raw",
+
+  "tariff_change_baseline_status": "FIRST_BASELINE_PENDING",
+  "complete_tariff_snapshots": 1,
+  "first_complete_tariff_date": "2026-09-06",
+  "commission_snapshot_dates": 1,
+  "commission_rows": 300,
+  "change_log_no_baseline_rows": 300,
+
+  "tariff_freshness_status": "FRESH",
+  "seller_info_freshness_status": "FRESH",
+  "seller_info_rows": 1,
+
+  "offers_with_full_tariff": 20,
+  "sku_identity_ok": 20,
+  "sku_cogs_ok": 20,
+  "unknown_component_rows": 0,
+
+  "forward_economics_ready": true,
+  "agent_shadow_ready": false,
+  "agent_shadow_gate": "SHADOW_BLOCKED_FIRST_BASELINE_PENDING",
+  "agent_write_ready": false,
+
+  "awaited_event": {
+    "job": "ozon-runtime-daily",
+    "schedule": "30 6 * * * Europe/Moscow = 03:30 UTC",
+    "expected_at": "2026-09-07T03:30:00Z",
+    "entities": "catalog,prices,seller_info,finance_accrual,ads_campaigns,ads_expense_daily,ads_sku_daily,supplies",
+    "note": "База сравнения не изготавливается вручную. Второй полный снимок блока commissions должен прийти плановым путём через планировщик."
+  }
+}

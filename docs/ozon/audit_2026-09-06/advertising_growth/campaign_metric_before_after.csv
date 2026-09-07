@@ -1,0 +1,12 @@
+campaign_id,internal_sku,before_ordered_revenue_equivalent_units,after_ad_attributed_ordered_units,before_cvr_pct,after_cvr_pct,before_cvr_window,after_cvr_window,before_break_even_cpc_p90,after_break_even_cpc_p90,before_growth_floor_cpc_p90,after_growth_floor_cpc_p90,before_next_test_bid,before_role,after_next_test_bid,after_role,delta_cvr_pp,delta_break_even_cpc,material_change
+32157891,EVT-HC-HAND-300,,12,10.67,9.38,week_31.08-06.09,extended_25.08+,8.63,7.59,3.44,3.03,,KEEP,,MARGIN_LIMITED,-1.29,-1.04,YES
+32157919,EVT-HC-CHERRY-300,,3,5.01,3.19,regime_11.07+,extended_25.08+,12.42,7.91,9.39,5.98,6.5,TEST_HIGHER_BID,5.98,HOLD,-1.82,-4.51,YES
+32157947,EVT-FS-MOIST-30,,4,13.64,7.27,week_31.08-06.09,extended_25.08+,45.43,24.22,37.02,19.74,9.1,TEST_HIGHER_BID,9.1,SCALE,-6.37,-21.21,YES
+32157965,EVT-FC-ACNE-50,,4,2.62,2.76,regime_25.08+,extended_25.08+,10.05,10.6,8.25,8.71,6.5,TEST_HIGHER_BID,6.5,SCALE,0.14,0.55,NO
+32157988,EVT-FT-ACNE-150,,10,5.05,3.45,week_31.08-06.09,extended_25.08+,13.14,8.98,10.06,6.87,6.5,TEST_HIGHER_BID,6.5,SCALE,-1.6,-4.16,YES
+32158008,EVT-SET-TON-SER-CREAM-ACNE,,3,1.08,1.0,regime_11.07+,extended_25.08+,7.44,6.89,5.96,5.52,7.0,KEEP,,MARGIN_LIMITED,-0.08,-0.55,NO
+32158051,EVT-SET-4PC-ACNE,,3,1.16,0.79,week_31.08-06.09,extended_25.08+,11.95,8.12,9.73,6.61,8.0,KEEP,,HOLD,-0.37,-3.83,YES
+32158176,EVT-EP-ENZYME-75,,2,1.88,3.57,regime_11.07+,extended_25.08+,5.47,10.39,4.31,8.19,4.31,TEST_HIGHER_BID,5.2,SCALE,1.69,4.92,YES
+33678192,EVT-HC-AMBER-300,,4,5.23,10.81,regime_11.07+,extended_25.08+,13.78,28.48,10.53,21.77,10.4,TEST_HIGHER_BID,10.4,SCALE,5.58,14.7,YES
+33678288,EVT-FT-MOIST-150,,6,4.43,4.76,regime_25.08+,extended_25.08+,11.06,11.89,8.41,9.04,6.5,TEST_HIGHER_BID,6.5,SCALE,0.33,0.83,NO
+33703975,EVT-FS-ACNE-30,,9,8.91,8.91,regime_25.08+,extended_25.08+,30.25,30.25,24.65,24.64,,KEEP,,MARGIN_LIMITED,0.0,0.0,NO

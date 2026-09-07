@@ -1,0 +1,2 @@
+checked_at,tariff_snapshot_date,tariff_snapshot_at,tariff_age_hours,tariff_tolerance_hours,prices_last_ok_at,prices_last_attempt_status,offers_in_snapshot,offers_with_full_tariff,unknown_component_rows,unknown_component_fields,tariff_freshness_status,unknown_tariff_component_detected,forward_economics_ready,agent_decision_gate
+2026-09-06 11:03:33.917685 UTC,2026-09-06,2026-09-06 10:48:18.438911 UTC,0,30,2026-09-06 10:48:30.637012 UTC,OK,20,20,0,,FRESH,false,true,DECISIONS_ALLOWED

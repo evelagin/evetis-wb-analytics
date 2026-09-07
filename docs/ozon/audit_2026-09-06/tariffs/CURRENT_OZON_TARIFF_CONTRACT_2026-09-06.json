@@ -1,0 +1,179 @@
+{
+  "contract_version": "2026-09-06",
+  "seller": "EVETIS",
+  "marketplace": "OZON",
+  "scope": "Действующие правила, необходимые и достаточные для форвардной экономики ОДНОГО заказа. Ничего недоказанного здесь нет: неразрешённые вопросы вынесены в блок not_proven и в формулах не участвуют.",
+  "generated_at": "2026-09-06T11:05:00Z",
+  "sources": {
+    "official_page": {
+      "url": "https://seller-edu.ozon.ru/commissions-tariffs/legal-information/full-actual-commissions",
+      "edition": "редакция 01.12.2026 с дополнениями от 29.08 и 10.09.2026, опубликована 2026-08-28",
+      "retrieved_at": "2026-09-06T10:03Z",
+      "method": "Playwright (Firecrawl отдаёт антибот 403)"
+    },
+    "official_archive": {
+      "url": "https://seller-edu.ozon.ru/commissions-tariffs/legal-information/archive-komisii",
+      "retrieved_at": "2026-09-06T10:06Z"
+    },
+    "official_xlsx": "docs/ozon/audit_2026-09-06/tariffs/source/ (4 файла, sha256 в source_manifest.csv)",
+    "seller_api": {
+      "prices": "POST /v5/product/info/prices, снимок 2026-09-06, ingestion_run_id rt-dde638f9-081e-4128-b09b-afeba2a789af",
+      "subscription": "POST /v1/seller/info и POST /v1/rating/summary, 2026-09-06T10:03:50Z"
+    },
+    "realized": "ozon_raw.RAW_OZON_FINANCE_ACCRUAL, начисления по 2026-09-05"
+  },
+
+  "commission": {
+    "value_pct": 52,
+    "schemes": { "fbo": 52, "fbs": 52, "rfbs": 52, "fbp": 52 },
+    "base": "SELLER_BASE_PRICE",
+    "base_definition": "цена, установленная продавцом, с учётом НДС, скидок и акций, кроме дополнительных скидок за Баллы (официальный раздел 1) = price.marketing_seller_price в API = seller_base_price_rub в начислениях",
+    "price_band": "свыше 300 руб.",
+    "other_bands": { "le_100_rub_pct": 17, "from_100_to_300_rub_pct": 23 },
+    "category": "Красота и гигиена > Косметика для ухода",
+    "description_category_id": 17028991,
+    "type_ids": [93882, 93883, 93897, 93913, 93915],
+    "effective_from": "2026-08-28",
+    "charged_at": "переход товара в статус «Доставлен», по ставке, действовавшей на момент заказа",
+    "proof_status": "PROVEN_OFFICIAL_DOCUMENTATION",
+    "source": "Таблица категорий и типов для расчёта вознаграждения с 28 августа 2026 г., лист «Прайс РФ (БЗ)», строки 3743/3813/3950/3973/3989; sha256 d633431893c4bc6bbf1b1659f1193e4802d0886ccb3fed97798f3526ff023b85",
+    "cross_check": {
+      "api": "sales_percent_fbo/fbs/rfbs/fbp = 52 на 20/20 товаров",
+      "realized": "commission_ratio = 0.52 на 24/24 доставках с created_at >= 2026-08-28 01:57 MSK",
+      "archive": "предыдущая редакция (15.07–27.08) даёт FBO 0.41 / FBS 0.47 — совпадает с наблюдённой историей",
+      "conflicts": 0
+    }
+  },
+
+  "acquiring": {
+    "formula": "не более 1,00 % от SELLER_BASE_PRICE",
+    "api_field": "acquiring (абсолютная сумма, = 1,00 % цены на 20/20)",
+    "observed_pct_range": [0.57, 0.75],
+    "refunded_on_return": true,
+    "proof_status": "PROVEN_CURRENT_API_MAX",
+    "source": "официальный п. 2.20 — «Тариф устанавливается банком, который обработал платёж»; число в документе отсутствует, поэтому берётся максимум из API",
+    "modelled_as": "API_MAX_CONSERVATIVE"
+  },
+
+  "fbo_route_logistics": {
+    "semantics": "матрица «кластер отправления → кластер назначения × полоса объёма × ценовой диапазон»",
+    "api_min_meaning": "универсальный тариф по объёму (лист «Тарифы по умолчанию»), применяется когда кластер определить не удалось",
+    "api_max_meaning": "максимум по всем 848 маршрутам матрицы для полосы объёма товара",
+    "verified": "20/20 SKU: api_min == xlsx default И api_max == xlsx route max",
+    "sku_min_range_rub": [56, 75],
+    "sku_max_range_rub": [144, 254],
+    "effective_from": "2026-08-28",
+    "proof_status": "PROVEN_OFFICIAL_DOCUMENTATION",
+    "source": "logistika-fbo-fbs-28082026.xlsx, sha256 9475b39b78410062820fb02e3d468e44a811c149894eb5d17d642ba2171a91a7; официальный п. 2.1.1 и 2.3.3",
+    "expected_value": {
+      "status": "MODELLED_EXPECTED",
+      "not_a_tariff": true,
+      "rule": "медиана фактических начислений type 32 по заказам с created_at >= 2026-08-28 при n >= 2; иначе универсальный тариф × 1,20; всегда зажато в [min, max]",
+      "note": "маршрут конкретного заказа определяется поведением покупателя, а не договором"
+    }
+  },
+
+  "last_mile": {
+    "value_rub": 25,
+    "rule": "партнёры-исполнители — не больше 25 ₽; силами Ozon — 25 ₽",
+    "not_charged_when": "отмена, если товар не был доставлен в точку выдачи; невыкуп при доставке силами Ozon",
+    "effective_from": "2026-07-28",
+    "proof_status": "PROVEN_OFFICIAL_DOCUMENTATION",
+    "source": "официальный п. 2.7 + API fbo_deliv_to_customer_amount",
+    "observed": "type 98 «силами Ozon» = 25.00 ровно; type 29 партнёрские ПВЗ 5,81–17,21 ₽"
+  },
+
+  "fbs_first_mile": {
+    "sc_dropoff_rub": 0,
+    "pvz_ppz_rub": 10,
+    "special_points": { "УТК Садовод, Люблино, Фуд Сити (Москва)": 17, "Горбушка": 2 },
+    "courier_handover_rub": null,
+    "courier_handover_status": "NOT_PROVEN — тариф устанавливает партнёр-исполнитель, предварительный расчёт виден только в личном кабинете (п. 2.4.1)",
+    "effective_from": "2026-08-25",
+    "proof_status": "PROVEN_OFFICIAL_DOCUMENTATION",
+    "source": "официальный п. 2.3.2; совпадает с API fbs_first_mile_min_amount = 0 и fbs_first_mile_max_amount = 10",
+    "superseded_claim": "«2 % от стоимости, но не более 45 ₽ с 01.09» — пункт РАНЕЕ ОБЪЯВЛЕННОЙ редакции (архив: версия «12.09.2026», опубликована 14.07.2026). В действующей редакции отсутствует. Вторичные источники цитировали отменённый анонс."
+  },
+
+  "return_processing": {
+    "value_rub": 15,
+    "unit": "за единицу товара",
+    "applies_to": "клиентские возвраты, отмены и невыкупы, принятые на партнёрском ПВЗ, на FBO, FBO Fresh, FBS, realFBS",
+    "proof_status": "PROVEN_OFFICIAL_DOCUMENTATION",
+    "source": "официальный п. 2.32",
+    "cross_check": "finance type 45 = 15,00 ₽ на 7 из 43 отмен июнь–август 2026",
+    "cancel_before_shipment_rub": 0
+  },
+
+  "return_logistics": {
+    "rule": "тариф обратной логистики равен тарифу логистики соответствующего маршрута",
+    "fbo_api_range_rub": [107, 115],
+    "fbs_api_range_rub": [144, 254],
+    "fbs_vs_fbo": "FBS дороже: API отдаёт верхнюю границу маршрута",
+    "proof_status": "PROVEN_OFFICIAL_DOCUMENTATION",
+    "source": "официальные пп. 2.1.2 и 2.3.4 + API fbo_return_flow_amount / fbs_return_flow_amount",
+    "probability_status": "NOT_PROVEN — количество возвратов в источниках не наблюдается, expected_return_cost = NULL"
+  },
+
+  "forced_storage": {
+    "rate_rub_per_liter_per_day": 2.50,
+    "applies_to": "обычные товары на объектах Ozon в РФ",
+    "other_rates": { "Казахстан": 0.35, "КГТ_с_12.09.2026": 0.08, "пожароопасные": 0.60, "склады для шин": 0.14 },
+    "free_period_days": 99,
+    "free_period_scope": "Косметика для ухода, обычные товары; отсчёт с 22-го дня после приёмки (первый 21 день — транзит)",
+    "effective_from": "2026-09-12 (редакция п. 2.1.3; для КГТ)",
+    "proof_status": "PROVEN_OFFICIAL_DOCUMENTATION",
+    "source": "официальный п. 2.1.3 + Сроки_и_условия_размещения_с_12.09.26.xlsx, sha256 97aa1c019e869f1908a3e35a70365061fe30c021e4e0386a1f50063a65254fba, строки 3742/3812/3949/3972/3988",
+    "applicability_to_order_economics": "EXCLUDED — это стоимость удержания запаса, а не расход на заказ. Слой INVENTORY_CARRYING_COST не построен."
+  },
+
+  "premium": {
+    "active": false,
+    "tariff_rub_per_month": 9990,
+    "proof_status": "PROVEN_CURRENT_API",
+    "source": "POST /v1/seller/info subscription.is_premium = false, type = UNSPECIFIED; POST /v1/rating/summary premium = false, premium_plus = false; проверено 2026-09-06T10:03:50Z",
+    "cross_check": "finance type 52: последнее списание 2026-05-11; в 2026 списано 5 × 9 990 = 49 950 ₽ (янв–май)",
+    "allocation": "NOT_ALLOCATED_TO_SKU",
+    "note": "Точечная проверка API. В ingestion статус подписки не заведён — при возобновлении Premium витрина этого не заметит автоматически."
+  },
+
+  "local_order_discount": {
+    "status": "NOT_APPLICABLE",
+    "proof_status": "PROVEN_OFFICIAL_DOCUMENTATION",
+    "source": "архив тарифов, запись от 24.08.2026: «С 28 августа 2026 года объявленные тарифы за продажу сделаем на 3 процентных пункта меньше почти для всех категорий товаров на FBO, FBS и realFBS, ВМЕСТО скидок за локальные продажи (пп. 1, 3)»; запись от 27.07.2026: скидка за нахождение товара в кластере покупателя не вводилась",
+    "consequence": "52 % — это уже «объявленная ставка − 3 п.п.». Ставка 49 % не существует и не моделируется.",
+    "note": "Нелокальность влияет на ТАРИФ ЛОГИСТИКИ (наценка внутри п. 2.1.1), а не на комиссию, и уже покрыта коридором API min…max."
+  },
+
+  "fbs_early_shipment_discount": {
+    "value_pct": -3,
+    "condition": "передача товара в первый рекомендованный слот отгрузки (≤ 12 ч); во второй слот −2 %",
+    "penalty": { "36_48h_pct": 1, "over_48h_pct": 2 },
+    "proof_status": "PROVEN_OFFICIAL_DOCUMENTATION",
+    "source": "официальный раздел 1 и п. 2.14",
+    "in_model": false,
+    "reason": "условная величина, зависит от операционной дисциплины, а не от тарифа; показана отдельной колонкой в сравнении FBO/FBS"
+  },
+
+  "vat": { "rate": 0, "seller_tax_system": "USN", "proof_status": "PROVEN_CURRENT_API", "modelled": false },
+
+  "not_proven": [
+    { "item": "тариф курьерской отгрузки FBS (доставка до СЦ)", "reason": "устанавливает партнёр-исполнитель; предварительный расчёт только в кабинете (п. 2.4.1); при отсутствии настроенного FBS-склада страница недоступна", "consequence": "FBS_FORWARD_ECONOMICS_READY = PARTIAL" },
+    { "item": "вероятность возврата", "reason": "количество возвратов не наблюдается в источниках", "consequence": "expected_return_cost = NULL, MODE 2 считает только отмены" },
+    { "item": "маршрут конкретного заказа", "reason": "поведение покупателя", "consequence": "expected-логистика помечена MODELLED_EXPECTED и не является тарифом" }
+  ],
+
+  "order_economics_formula": {
+    "fbo_contribution": "seller_base_price − management_cogs − commission_pct·seller_base_price − acquiring − route_logistics − last_mile",
+    "scenarios": { "best": "route_logistics = api_min", "expected": "route_logistics = MODELLED_EXPECTED", "worst": "route_logistics = api_max" },
+    "target_price": "P = (COGS + logistics + last_mile) / (1 − commission_frac − acquiring_frac − target_margin − target_drr); знаменатель ≤ 0 ⇒ цена недостижима",
+    "excluded_by_policy": ["Premium", "кросс-докинг", "обработка (77)", "страхование (76)", "размещение (46)", "реклама"]
+  },
+
+  "consumers": [
+    "ozon_mart.V_OZON_SKU_CURRENT_TARIFF",
+    "ozon_mart.V_OZON_SKU_FORWARD_ECONOMICS_CURRENT",
+    "ozon_mart.V_OZON_SKU_FBO_FBS_COMPARISON_CURRENT"
+  ],
+  "usage_note": "ANALYTICAL_ONLY_NO_PRICE_WRITES"
+}
