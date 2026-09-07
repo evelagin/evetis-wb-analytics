@@ -13,7 +13,7 @@ on:
         required: true
         default: "wb-stocks"
         type: choice
-        options: [wb-stocks, wb-mart, wb-prices]
+        options: [wb-stocks, wb-mart, wb-prices, wb-tariffs]
       action:
         description: "pause | resume | run-now"
         required: true
@@ -40,7 +40,7 @@ jobs:
           # Terraform создаёт единственный Job wb-prices-prod, теневого контура у наблюдателя
           # цен нет (лишний носитель доступа к ценовому секрету не нужен).
           case "${{ inputs.loader }}" in
-            wb-mart|wb-prices)
+            wb-mart|wb-prices|wb-tariffs)
               if [ "${{ inputs.environment }}" != "prod" ]; then
                 echo "::error title=Invalid combination::${{ inputs.loader }} is prod-only; job ${{ inputs.loader }}-${{ inputs.environment }} does not exist. Use environment=prod."
                 exit 1

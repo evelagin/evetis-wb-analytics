@@ -46,7 +46,7 @@ jobs:
         # следующих промоушенах он бы отставал по digest от остальных, и расхождение
         # не проявилось бы ни в одном «зелёном» прогоне.
         run: |
-          for JOB in wb-stocks-prod wb-mart-prod wb-prices-prod; do
+          for JOB in wb-stocks-prod wb-mart-prod wb-prices-prod wb-tariffs-prod; do
             echo "== promote ${JOB} =="
             gcloud run jobs update "${JOB}" \
               --region ${{ vars.GCP_REGION }} \

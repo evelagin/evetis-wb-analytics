@@ -17,6 +17,7 @@ import { martLoader } from './mart/index.js';
 import { d1Moscow } from './mart/targetDate.js';
 import { pricesLoader } from './prices/index.js';
 import { observationBucket } from './prices/bucket.js';
+import { tariffsLoader } from './tariffs/index.js';
 
 export interface LoaderSpec {
   handler: LoaderHandler;
@@ -46,6 +47,9 @@ export const LOADERS: Record<string, LoaderSpec> = {
   // PR-1: наблюдатель цен. Период — 20-минутное окно UTC, а не сутки: суточный ключ
   // подавил бы все прогоны кроме первого и превратил бы интрадей в дневной снимок.
   prices: { handler: pricesLoader, logicalPeriod: (now) => observationBucket(now) },
+  // PR-2: тарифы WB. Период — сутки UTC: ставки меняются реже раза в месяц,
+  // и более частый опрос тратил бы лимит без единицы новой информации.
+  tariffs: { handler: tariffsLoader, logicalPeriod: (now) => (now ?? new Date()).toISOString().slice(0, 10) },
 };
 
 export function resolveLoader(name: string): LoaderSpec | undefined {

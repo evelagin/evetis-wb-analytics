@@ -36,6 +36,10 @@ export interface Config {
   wbPricesSecret: string;
   pricesRawTable: string;
   pricesObservationsTable: string;
+  // ── tariffs loader (PR-2) — тот же секрет, что у наблюдателя цен ──────────
+  wbTariffsHost: string;
+  tariffsRawTable: string;
+  tariffsObservationsTable: string;
 }
 
 type Env = Record<string, string | undefined>;
@@ -87,5 +91,8 @@ export function loadConfig(env: Env = process.env): Config {
     wbPricesSecret: opt(env, 'WB_PRICES_SECRET', 'WB_PRICES_READ_TOKEN'),
     pricesRawTable: opt(env, 'PRICES_RAW_TABLE', 'RAW_WB_PRICES'),
     pricesObservationsTable: opt(env, 'PRICES_OBSERVATIONS_TABLE', 'WB_PRICES_OBSERVATIONS'),
+    wbTariffsHost: opt(env, 'WB_TARIFFS_HOST', 'https://common-api.wildberries.ru'),
+    tariffsRawTable: opt(env, 'TARIFFS_RAW_TABLE', 'RAW_WB_TARIFFS'),
+    tariffsObservationsTable: opt(env, 'TARIFFS_OBSERVATIONS_TABLE', 'WB_TARIFF_OBSERVATIONS'),
   };
 }
