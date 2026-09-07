@@ -1,0 +1,22 @@
+{
+ "retrieved_at_api_prices": "2026-09-04T13:42:12Z",
+ "retrieved_at_api_seller_info": "2026-09-06T10:03:50Z",
+ "official_doc_retrieved_at": "2026-09-06T10:03Z",
+ "official_doc_url": "https://seller-edu.ozon.ru/commissions-tariffs/legal-information/full-actual-commissions",
+ "official_doc_version": "published 2026-08-28 (edition 01.12.2026 with additions 29.08 and 10.09.2026)",
+ "route_mix_factor": 1.2,
+ "route_mix_status": "MODELLED_EXPECTED_INFERRED",
+ "p_shipped_given_cancel": 0.5581395348837209,
+ "commission_pct": 52,
+ "acquiring_pct_max": 1.0,
+ "last_mile_rub": 25,
+ "fbs_processing_pvz_rub": 10,
+ "fbs_processing_sc_rub": 0,
+ "cancel_return_processing_rub": 15,
+ "safety_thresholds_worst_case": {
+  "SCALE_SAFE": 25,
+  "HEALTHY_SAFE": 20,
+  "WATCH": 10,
+  "RESTRICT_ADS": 0
+ }
+}

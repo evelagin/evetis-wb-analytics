@@ -1,0 +1,23 @@
+{
+ "retrieved_at": "2026-09-06T10:03:50Z",
+ "source": "Seller API POST /v1/seller/info and POST /v1/rating/summary (read-only)",
+ "seller_info.subscription": {
+  "is_premium": false,
+  "type": "UNSPECIFIED"
+ },
+ "seller_info.company": {
+  "tax_system": "USN",
+  "country": "RUS",
+  "currency": "RUB"
+ },
+ "rating_summary": {
+  "premium": false,
+  "premium_plus": false,
+  "penalty_score_exceeded": false,
+  "localization_index": {
+   "localization_percentage": 30,
+   "calculation_date": "2026-08-30T00:00:00Z"
+  }
+ },
+ "note": "Идентификаторы компании (ИНН/ОГРН/название) намеренно не сохранены"
+}

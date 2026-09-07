@@ -1,0 +1,8 @@
+fee,segment,n,modelled,observed,median_delta_rub,mean_delta_rub,max_abs_delta_rub,match_rate,exceptions,note
+COMMISSION,orders created >= 2026-08-28 01:57 MSK (new tariff; accruals through 2026-09-05),24,0.52 x seller_price,0.52 x seller_price,0.0,0.0,0.0,24/24,нет,"последний 0.41 — created 2026-08-27 21:51 MSK (8 заказов 26–27.08 по 0.41); transition_window 27.08 21:51 .. 28.08 01:57 MSK OBSERVED; из 24 — 15 созданы с 30.08"
+FBO_LOGISTICS type 32,orders >= 2026-08-28,14,API min..max по SKU; expected = медиана/API_min x 1.20,"min 70, median 78, max 112, avg 79.5",0 (по построению для n>=2),см. по SKU,"FC-ACNE-50: 112 vs модель 75.6 (n=1, дальний маршрут)",14/14 внутри API min..max,ни одно значение не вышло за API-диапазон,"route mix — поведение покупателей, не тариф"
+FBO_LOGISTICS type 32,orders 2026-08-05..27 (old tariff),125,—,"min 56, median 70, max 170.88, avg 72.15",,,,125/125 внутри API min..max,170.88 и 135.04 (ДВ/дальние) — в пределах API max,"до смены тарифа, только контекст"
+LAST_MILE types 29+98,orders >= 2026-08-28,14,25,"min 0, median 8.97, max 25, avg 11.08; type98=25 в 1 случае",-16.03,-13.92,25,14/14 <= 25,1 заказ без последней мили (0),модель консервативна: 25 = API cap
+ACQUIRING type 1,"monthly Mar–Sep 2026 (ITEM-level, без posting)",7,1.00% x seller_base,0.57–0.75% x seller_base,≈ -0.35 п.п.,,,всегда <= модели,,зависит от способа оплаты покупателя; API = максимум
+CANCEL cost,cancelled orders since 2026-06-01,43,0 до отгрузки; log+return+15 после,24/43 несли type32 avg 71.83 + type59 avg 69.29; 7/43 type45 15 ₽; 18/43 type29 avg 11.77,,,,,,type 59 наблюдён 56–92 vs API return_flow 107–115 (новый тариф) — ожидаемо выше
+FBS all,—,0,API,нет ни одного FBS-заказа за всю историю,,,,N/A,,валидация невозможна
