@@ -1,0 +1,9 @@
+fastapi==0.115.6
+uvicorn[standard]==0.34.0
+httpx==0.28.1
+openai>=1.66.0,<2   # Responses API (client.responses) added in 1.66.0; 1.59.6 lacks it
+pydantic==2.11.9
+PyYAML==6.0.2
+google-cloud-firestore==2.20.0
+google-cloud-bigquery==3.27.0
+google-cloud-secret-manager==2.22.0

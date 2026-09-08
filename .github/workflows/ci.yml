@@ -2,10 +2,10 @@ name: ci
 # PR-проверки. БЕЗ деплоя, без облачных креденшелов, без backend.
 on:
   pull_request:
-    paths: ["cloud/**", "infra/**", ".github/workflows/**"]
+    paths: ["cloud/**", "services/**", "infra/**", ".github/workflows/**"]
   push:
     branches-ignore: ["main"]
-    paths: ["cloud/**", "infra/**"]
+    paths: ["cloud/**", "services/**", "infra/**"]
 
 permissions:
   contents: read
@@ -30,6 +30,29 @@ jobs:
       - run: npm run build
       - name: Docker build (no push)
         run: docker build -t wb-loader:ci .
+
+  wb-communications:
+    # Stage A / A2. Сервис публикует ответы в Wildberries; до Stage A он
+    # доставлялся мимо CI и без исходников в Git. Здесь только проверки:
+    # ни деплоя, ни push образа, ни облачных креденшелов.
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: services/wb-communications
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          # Совпадает с базовым образом Dockerfile (python:3.12-slim).
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: services/wb-communications/requirements-dev.txt
+      - run: pip install -r requirements-dev.txt
+      - name: Compile all sources
+        run: python -m compileall -q app scripts
+      - run: python -m pytest -q
+      - name: Docker build (no push)
+        run: docker build -t evetis-wb-communications:ci .
 
   infra:
     runs-on: ubuntu-latest
