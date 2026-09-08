@@ -1,54 +1,55 @@
 # ============================================================================
-# Stage A / A4 — изоляция прав Ozon-загрузчика.
+# Stage A / A4 — права Ozon-загрузчика.
 #
-# БЫЛО (создано вручную, вне Terraform):
-#   sa-ozon-ingestion@… :
-#     roles/bigquery.jobUser     на уровне ПРОЕКТА
-#     roles/bigquery.dataEditor  на уровне ПРОЕКТА   ← право записи во ВСЕ датасеты
-#     roles/bigquery.dataViewer  на уровне ПРОЕКТА   ← право чтения ВСЕХ датасетов
+# 🔴 ПОПРАВКА К НАХОДКЕ F-04 (Stage A Closeout, 2026-09-08).
+#   Аудит и первая редакция этого файла утверждали, что sa-ozon-ingestion имеет
+#   roles/bigquery.dataEditor и dataViewer «на уровне всего проекта» и потому
+#   может писать в wb_raw / wb_mart / wb_ops. ЭТО БЫЛО НЕВЕРНО.
 #
-#   Проектный dataEditor означает членство в projectWriters, а значит запись в
-#   wb_raw, wb_mart, wb_ops и evetis_ref. Ошибка в pipelines/ozon (например,
-#   неверный BQ_RAW_DATASET) могла бы перезаписать данные Wildberries.
-#   Это прямое нарушение изоляции маркетплейсов — находка F-04 (HIGH).
+#   Обе привязки — УСЛОВНЫЕ (IAM Conditions), и условия ровно те, что нужны:
+#     dataEditor  условие ozon_raw_only
+#                 resource.name.startsWith(".../datasets/ozon_raw")
+#     dataViewer  условие evetis_ref_only
+#                 resource.name.startsWith(".../datasets/evetis_ref")
 #
-# СТАЛО:
-#   roles/bigquery.jobUser     на уровне проекта  (нужен, чтобы запускать job'ы)
-#   roles/bigquery.dataEditor  на датасете ozon_raw ТОЛЬКО
+#   Ошибка возникла из-за формы вывода:
+#     gcloud projects get-iam-policy … --format="value(bindings.role)"
+#   молча отбрасывает поле condition, и условная привязка выглядит как
+#   безусловная. Проверять права нужно ТОЛЬКО по --format=json с чтением
+#   bindings[].condition.
 #
-# ПОЧЕМУ ИМЕННО ozon_raw И ПОЧЕМУ dataEditor, А НЕ dataViewer + что-то ещё.
-#   Загрузчик не просто пишет строки: на каждую сущность он создаёт временную
-#   таблицу `_rt_<table>_<run>`, грузит в неё LOAD-job'ом, делает MERGE в целевую
-#   и удаляет временную (pipelines/ozon/runtime/common.py:146-186). Это требует
-#   tables.create и tables.delete внутри датасета, то есть именно dataEditor.
+#   Вывод: изоляция маркетплейсов была реализована ДО Stage A и реализована
+#   правильно — Ozon пишет только в свой RAW-слой и читает только общий
+#   справочный слой evetis_ref. Это в точности правило проекта.
 #
-# ДОКАЗАТЕЛЬСТВО ДОСТАТОЧНОСТИ (а не предположение).
-#   INFORMATION_SCHEMA.JOBS_BY_PROJECT за 180 суток по user_email этого SA:
-#     referenced_tables -> ровно один датасет, ozon_raw (502 обращения,
-#     310 write-job'ов, 192 SELECT, первое 2026-09-03, последнее 2026-09-08);
-#     job_type/destination -> 158 LOAD и 155 MERGE, все в ozon_raw.
-#   Ни одного обращения к wb_raw, wb_mart, wb_ops, evetis_ref, ozon_mart,
-#   ozon_stg. Упоминание evetis_ref.REF_SKU_CHANNEL_MAP в коде — только в
-#   docstring: резолв идентификаторов выполняется во вьюхах ozon_mart, а не в
-#   загрузчике.
+# ЧТО СДЕЛАЛ И ОТКАТИЛ STAGE A.
+#   08.09.2026 в ACL датасета ozon_raw была добавлена запись WRITER для этого SA
+#   как «шаг 1 сужения прав». На фоне уже существующего условного dataEditor она
+#   была избыточной, а её обоснование — ошибочным, поэтому в Closeout запись
+#   удалена: ACL ozon_raw вернулся в состояние до Stage A. Эффективные права SA
+#   за весь этап не изменились ни разу.
 #
-# ЧТО НЕ ТРОГАЕМ.
-#   Доступ к GCS уже узкий: roles/storage.objectViewer выдан ПОБАКЕТНО на
-#   gs://evetis-ozon-staging-37074083763 (нужен bootstrap-джобу для
-#   load_table_from_uri). Проектной роли storage у этого SA нет.
+# ДОКАЗАТЕЛЬСТВА ДОСТАТОЧНОСТИ ТЕКУЩИХ ПРАВ.
+#   1. Определение: IAM-условие вычисляется самой системой IAM; роль физически
+#      не применяется к ресурсу вне выражения условия.
+#   2. Других путей доступа нет: ни в одном из семи датасетов проекта
+#      (wb_raw, wb_mart, wb_ops, evetis_ref, ozon_raw, ozon_mart, ozon_stg)
+#      нет записи ACL для этого SA; прочие проектные роли — только безусловный
+#      bigquery.jobUser, который данных не даёт.
+#   3. Эмпирика: INFORMATION_SCHEMA.JOBS_BY_PROJECT за 180 суток — 502 обращения
+#      к таблицам, все в ozon_raw; 158 LOAD и 155 MERGE, ни одного обращения к
+#      WB-датасетам.
+#   4. Дымовой прогон 2026-09-08 12:11 UTC уже БЕЗ избыточной записи ACL:
+#      ozon-runtime-fast завершился успешно, stocks 197 строк и fbo_postings
+#      175 строк смёржены, errors = 0.
 #
-# ⚠️ СТАТУС НА 2026-09-08: ПЕРЕХОД НЕ ЗАВЕРШЁН.
-#   Выполнено: гранулярный dataEditor на ozon_raw выдан в production (шаг 1).
-#   НЕ выполнено: снятие двух проектных ролей (dataEditor, dataViewer) —
-#   операция заблокирована политикой рабочей среды, где выполнялся Stage A.
-#   Пока они не сняты, изоляция НЕ достигнута и F-04 остаётся открытой.
-#   Команды, окно, приёмка и откат: docs/ops/STAGE_A_OZON_IAM_CUTOVER.md.
+#   Прямая проверка через impersonation невозможна: у пользователя нет
+#   roles/iam.serviceAccountTokenCreator на этом SA, а выдавать её ради проверки
+#   означало бы расширить права, чего Stage A делать не должен.
 #
-# СОСТОЯНИЕ TERRAFORM. Ни SA, ни его проектные роли Terraform никогда не
-#   принадлежали — в state их нет. import-блоки ниже принимают SA и целевые
-#   привязки. Снятые проектные роли в конфиге намеренно отсутствуют: Terraform
-#   с ресурсами `google_project_iam_member` не является authoritative и сам их
-#   не удалит — удаление выполняется командами из runbook выше.
+# ЧТО НЕ ТРОГАЕМ. Доступ к GCS уже узкий: roles/storage.objectViewer выдан
+#   ПОБАКЕТНО на gs://evetis-ozon-staging-37074083763 (нужен bootstrap-джобу
+#   для load_table_from_uri). Проектной роли storage у SA нет.
 # ============================================================================
 
 resource "google_service_account" "ozon_ingestion" {
@@ -71,7 +72,7 @@ import {
   id = "projects/${var.project_id}/serviceAccounts/sa-ozon-scheduler@${var.project_id}.iam.gserviceaccount.com"
 }
 
-# Проектный уровень — только право ЗАПУСКАТЬ job'ы. Данных эта роль не даёт.
+# Безусловная роль. Право ЗАПУСКАТЬ job'ы; доступа к данным не даёт.
 resource "google_project_iam_member" "ozon_ingestion_job_user" {
   project = var.project_id
   role    = "roles/bigquery.jobUser"
@@ -83,17 +84,46 @@ import {
   id = "${var.project_id} roles/bigquery.jobUser serviceAccount:sa-ozon-ingestion@${var.project_id}.iam.gserviceaccount.com"
 }
 
-# Единственный датасет, к которому у Ozon-загрузчика есть доступ к данным.
-resource "google_bigquery_dataset_iam_member" "ozon_ingestion_edit_raw" {
-  dataset_id = "ozon_raw"
-  role       = "roles/bigquery.dataEditor"
-  member     = "serviceAccount:${google_service_account.ozon_ingestion.email}"
+# 🔑 Запись — ТОЛЬКО в ozon_raw. Условие и есть механизм изоляции.
+#   Загрузчик создаёт и удаляет временные таблицы _rt_* вокруг каждого MERGE
+#   (pipelines/ozon/runtime/common.py:146-186), поэтому нужен именно dataEditor,
+#   а не что-то слабее. Условие ограничивает его одним датасетом.
+resource "google_project_iam_member" "ozon_ingestion_edit_ozon_raw" {
+  project = var.project_id
+  role    = "roles/bigquery.dataEditor"
+  member  = "serviceAccount:${google_service_account.ozon_ingestion.email}"
+
+  condition {
+    title       = "ozon_raw_only"
+    description = "Запись только в датасет ozon_raw и его таблицы"
+    expression  = "resource.name.startsWith(\"projects/${var.project_id}/datasets/ozon_raw\")"
+  }
 }
 
-# Грант уже выдан в production на шаге A5 Stage A — принимаем, а не создаём.
 import {
-  to = google_bigquery_dataset_iam_member.ozon_ingestion_edit_raw
-  id = "projects/${var.project_id}/datasets/ozon_raw roles/bigquery.dataEditor serviceAccount:sa-ozon-ingestion@${var.project_id}.iam.gserviceaccount.com"
+  to = google_project_iam_member.ozon_ingestion_edit_ozon_raw
+  id = "${var.project_id} roles/bigquery.dataEditor serviceAccount:sa-ozon-ingestion@${var.project_id}.iam.gserviceaccount.com ozon_raw_only"
+}
+
+# 🔑 Чтение — ТОЛЬКО общий справочный слой. Это ровно то, что разрешает правило
+#   изоляции маркетплейсов: единственный общий домен — evetis_ref, на чтение.
+#   За 180 суток обращений не зафиксировано, но грант объявлен намеренно и
+#   описывает разрешённую зависимость; сужать дальше нечего.
+resource "google_project_iam_member" "ozon_ingestion_read_evetis_ref" {
+  project = var.project_id
+  role    = "roles/bigquery.dataViewer"
+  member  = "serviceAccount:${google_service_account.ozon_ingestion.email}"
+
+  condition {
+    title       = "evetis_ref_only"
+    description = "Чтение только общего справочного слоя"
+    expression  = "resource.name.startsWith(\"projects/${var.project_id}/datasets/evetis_ref\")"
+  }
+}
+
+import {
+  to = google_project_iam_member.ozon_ingestion_read_evetis_ref
+  id = "${var.project_id} roles/bigquery.dataViewer serviceAccount:sa-ozon-ingestion@${var.project_id}.iam.gserviceaccount.com evetis_ref_only"
 }
 
 # Чтение staging-бакета для разового bootstrap-джоба. Побакетно, не проектно.

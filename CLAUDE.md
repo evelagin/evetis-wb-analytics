@@ -72,8 +72,11 @@ EVETIS WB Analytics — это система управленческой от�
 - менять структуру колонок без описания в CHANGELOG.md;
 - называть вклад прибылью: контракт метрик — `PRE_COGS` и `AFTER_PRODUCT_COGS`,
   налоги, OPEX и фулфилмент в них не входят;
-- деплоить `services/wb-communications` c `--env-vars-file`: это молча выключит
+- деплоить `services/wb-communications` без преддеплойного гейта
+  `python3 deploy/preflight_env.py`: деплой с `--env-vars-file` молча выключит
   публикацию в WB (см. `services/wb-communications/PROVENANCE.md` §2);
+- добавлять новые компоненты с правом ЗАПИСИ во внешние сервисы, включая
+  репрайсер, пока открыта F-18 (`docs/ops/SECURITY_BACKLOG.md`);
 - ссылаться на mutable-тег образа вместо digest при развёртывании.
 
 ## Приоритет источников данных

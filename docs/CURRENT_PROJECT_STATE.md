@@ -27,7 +27,10 @@ Terraform / IAM над уже работающими компонентами, �
 | **Себестоимость: авторитетный источник восстановлен.** `V_PRODUCT_COGS_EFFECTIVE` редакции 3.4B.1 теперь в репозитории; ранние редакции защищены гейтами | `sql/ref/stage3_4b1_management_landed_cogs.sql` |
 | **Провенанс Ozon доказан.** Развёрнутый образ побайтово совпадает с `pipelines/ozon` на HEAD. Тег `latest` указывает на более старый образ и не является идентификатором production | `pipelines/ozon/DEPLOYMENT.md` |
 | **Производитель остатков в реестре исправлен.** `stocks_snapshot` (Apps Script) объявлен производителем `RAW_WB_STOCKS`; `stocks_cloudrun` выключен как не введённый в эксплуатацию | `sql/ops/stage_a_stocks_registry_truth.sql` |
-| **Изоляция прав Ozon: переход не завершён.** Гранулярный доступ выдан, снятие двух проектных ролей — за владельцем | `docs/ops/STAGE_A_OZON_IAM_CUTOVER.md` |
+| **Изоляция прав Ozon подтверждена.** Находка F-04 оказалась ошибкой диагностики: обе роли условные и ограничены `ozon_raw` / `evetis_ref`. Снимать было нечего | `docs/ops/STAGE_A_OZON_IAM_CUTOVER.md` |
+| **Terraform принял ресурсы Stage A.** 12 imported, 0 destroyed; повторный plan — `No changes` | `infra/terraform/wb_communications.tf`, `ozon_iam.tf` |
+| **Ловушка деплоя закрыта fail-closed.** Перед деплоем сервиса коммуникаций обязателен `deploy/preflight_env.py` | `services/wb-communications/PROVENANCE.md` §2 |
+| ⛔ **F-18 открыта:** сервис коммуникаций доступен из интернета. Блокирует любую новую write-автоматизацию и репрайсинг | `docs/ops/SECURITY_BACKLOG.md` |
 
 ### Аварийное отключение публикации в WB
 

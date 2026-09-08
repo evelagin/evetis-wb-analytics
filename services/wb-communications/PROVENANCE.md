@@ -61,7 +61,9 @@ GCS source archive
 Поэтому `deploy/env.production.yaml` в этом каталоге — это состояние на момент
 сборки, а не то, что работает сейчас.
 
-Расхождение на 2026-09-08 (read-only снимок Cloud Run):
+Расхождение на 2026-09-08 (read-only снимок Cloud Run). Машиночитаемая версия —
+`deploy/env.production.live.yaml`; проверяется тестом `tests/test_deploy_contract.py`
+и преддеплойным гейтом `deploy/preflight_env.py`:
 
 | Переменная | `deploy/env.production.yaml` | Живой Cloud Run | Последствие отката |
 |---|---|---|---|
@@ -72,16 +74,30 @@ GCS source archive
 | `COMMUNICATION_ENGINE_V2_SHADOW_ONLY` | `"true"` | **`false`** | — |
 | `COMMUNICATION_ENGINE_V2_PRIMARY` | `"false"` | **`true`** | генератор черновиков откатится на `reviews_v1` |
 | `WB_QUESTIONS_FIRST_RUN_MAX` | `"20"` | `10` | больше вопросов в первом прогоне |
+| `TELEGRAM_CHAT_ID` | `"302044578"` | **`-5578869057`** | согласование ответов ушло бы из рабочей группы в личный чат |
+| `TELEGRAM_WEBHOOK_URL` | `""` (литерал) | из Secret Manager | ссылка на секрет заменилась бы пустой строкой, вебхук оборвался бы |
 
 > 🔴 **`gcloud run deploy --env-vars-file deploy/env.production.yaml` перезапишет
 > набор переменных целиком и молча остановит публикацию в Wildberries.**
-> Именно так `DEPLOY.md` (файл из архива сборки) и предлагает деплоить.
-> Пока это расхождение не решено владельцем, деплоить сервис можно только
-> аддитивно: `gcloud run services update --update-env-vars …`.
+> Именно так `DEPLOY.md` из архива сборки и предлагал деплоить.
+>
+> **Закрыто на Stage A Closeout (F-19), fail-closed:** перед деплоем обязателен
+> `python3 deploy/preflight_env.py` — он читает живой Cloud Run, печатает каждую
+> переменную, которая изменилась бы или исчезла, и возвращает ненулевой код,
+> пока изменения не подтверждены явным `--accept-changes`. Недоступность живой
+> конфигурации — тоже отказ, а не пропуск проверки. `DEPLOY.md` переписан так,
+> что команда деплоя идёт только после гейта.
+>
+> Предпочтительный способ менять конфигурацию остаётся аддитивным:
+> `gcloud run services update --update-env-vars …`.
 
-Файл `deploy/env.production.yaml` намеренно оставлен таким, каким он был в
-собранном образе. Приводить его к «живым» значениям — это изменение
-production-поведения, а Stage A такого не делает.
+Файл `deploy/env.production.yaml` намеренно оставлен байт в байт таким, каким он
+был в собранном образе: приведение его к «живым» значениям — это решение
+владельца о конфигурации production, а не техническая правка. Безопасность
+обеспечивается гейтом, а не редактированием снимка.
+
+Восьмое расхождение (`TELEGRAM_CHAT_ID`) нашёл сам гейт при первом же запуске —
+в отчёте Stage A их было перечислено семь.
 
 ---
 
@@ -134,22 +150,30 @@ gcloud scheduler jobs pause evetis-wb-poll \
 
 ---
 
-## 5. Статус перевода под Terraform
+## 5. Terraform — принято (Stage A Closeout, 2026-09-08)
 
-Ресурсы **уже существуют** и создавались вручную, поэтому Terraform обязан их
-**принять (import)**, а не создавать заново. В `infra/terraform/wb_communications.tf`
-объявлены ресурсы и `import`-блоки; `apply` в рамках Stage A **не выполнялся**.
+Ресурсы существовали и создавались вручную, поэтому Terraform их **принял
+(import)**, а не создал заново. Выполнено `terraform apply` сохранённого плана:
 
-Причина: `terraform plan` с этой машины падает на сетевом фильтре
-(`bigquery.googleapis.com` возвращает HTTP 403 на уровне сети — см. приложение к
-отчёту аудита 2026-09-08), поэтому доказать «no destroy / no replacement»
-локально невозможно. Принимать ресурсы вслепую запрещено.
+```
+Apply complete! Resources: 12 imported, 4 added, 4 changed, 0 destroyed.
+```
 
-**Как завершить:** выполнить `plan` из GitHub Actions (`.github/workflows/infra.yml`,
-`action=plan`), убедиться, что в плане нет `destroy` и `forces replacement`, и
-только затем `apply`.
+Под управлением Terraform теперь: `google_cloud_run_v2_service.wb_communications`,
+`google_cloud_run_v2_service_iam_member.wb_communications_public`,
+`google_cloud_scheduler_job.wb_comms_poll`, `google_service_account.wb_comms`
+и две его проектные роли.
 
----
+Проверено после apply:
+- повторный `terraform plan` → **No changes. Your infrastructure matches the configuration.**
+- ревизия сервиса осталась `evetis-wb-communications-00025-rq8` (generation 25) — не заменена;
+- `WB_PUBLISH_ENABLED`, `WB_QUESTIONS_ENABLED`, `WB_QUESTION_PUBLISH_ENABLED`, `COMMUNICATION_ENGINE_V2_PRIMARY` = `true`, как и до apply;
+- расписание `0 8,11,14,17,20 * * *` Europe/Moscow, состояние ENABLED, URI не изменились;
+- заголовок `X-Scheduler-Secret` планировщика на месте (Terraform его игнорирует).
+
+Terraform намеренно не контролирует `template` сервиса, `build_config` и заголовки
+планировщика — иначе первый же apply выровнял бы переменные окружения и остановил
+публикацию.
 
 ## 6. Что НЕ делалось на Stage A
 

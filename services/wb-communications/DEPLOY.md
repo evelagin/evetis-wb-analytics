@@ -1,5 +1,51 @@
 # DEPLOY — EVETIS WB Communications
 
+> ## 🔴 ОБЯЗАТЕЛЬНО ПРОЧИТАТЬ ПЕРЕД ЛЮБЫМ ДЕПЛОЕМ (Stage A Closeout, 2026-09-08)
+>
+> **`deploy/env.production.yaml` БОЛЬШЕ НЕ ОПИСЫВАЕТ PRODUCTION.** Это снимок
+> конфигурации на момент сборки образа 2026-07-23. С тех пор ревизии 11…25 меняли
+> ТОЛЬКО переменные окружения, и сейчас файл расходится с живым сервисом по
+> восьми значениям, а ещё одну переменную затирает. Флаг публикации среди них:
+>
+> | Переменная | в файле | в production |
+> |---|---|---|
+> | `WB_PUBLISH_ENABLED` | `false` | **`true`** |
+> | `WB_QUESTIONS_ENABLED` | `false` | **`true`** |
+> | `WB_QUESTION_PUBLISH_ENABLED` | `false` | **`true`** |
+> | `COMMUNICATION_ENGINE_V2_ENABLED` | `false` | **`true`** |
+> | `COMMUNICATION_ENGINE_V2_SHADOW_ONLY` | `true` | **`false`** |
+> | `COMMUNICATION_ENGINE_V2_PRIMARY` | `false` | **`true`** |
+> | `WB_QUESTIONS_FIRST_RUN_MAX` | `20` | `10` |
+> | `TELEGRAM_CHAT_ID` | `302044578` (личный) | **`-5578869057`** (группа) |
+>
+> Отдельно: `TELEGRAM_WEBHOOK_URL` в файле стоит пустой строкой, а в production
+> приходит из Secret Manager. Деплой файлом заменил бы ссылку на секрет литералом
+> и оборвал бы вебхук Telegram.
+>
+> `gcloud run deploy --env-vars-file` перезаписывает НАБОР переменных целиком,
+> поэтому команда ниже в её исходном виде **молча выключит публикацию ответов
+> покупателям в Wildberries**.
+>
+> **Правило fail-closed.** Перед деплоем обязателен преддеплойный гейт:
+>
+> ```bash
+> python3 deploy/preflight_env.py            # отказ при любой неподтверждённой дельте
+> ```
+>
+> Он ничего не меняет, только читает живой Cloud Run и сравнивает. Ненулевой код —
+> деплой не выполнять. Осознанное изменение — `--accept-changes`.
+>
+> **Предпочтительный способ менять конфигурацию — аддитивный,** он не трогает
+> остальные переменные:
+>
+> ```bash
+> gcloud run services update "$SERVICE" --region "$REGION" \
+>   --update-env-vars KEY=VALUE
+> ```
+>
+> Фактическое состояние продакшена: `deploy/env.production.live.yaml`.
+> Контракт проверяется тестом `tests/test_deploy_contract.py`.
+
 Вариант A: тот же GCP-проект, что и Marketplace Analytics, полная изоляция ресурсов.
 Все команды содержат плейсхолдеры — **реальные секреты вставляются только в
 Secret Manager**, не в код и не в git.
@@ -222,12 +268,19 @@ v2 работает **только в теневом режиме**: парал�
 уже стоят на `false`/`true`, поэтому деплой не включает v2 автоматически:
 
 ```bash
-# деплой с v2 OFF (поведение полностью прежнее)
+# 🔴 СНАЧАЛА ГЕЙТ. Ненулевой код — деплой НЕ выполнять.
+python3 deploy/preflight_env.py
+
+# деплой только после того, как гейт вернул 0
 gcloud run deploy "$SERVICE" \
   --source . --region "$REGION" --service-account "$SA_EMAIL" \
   --allow-unauthenticated \
   --env-vars-file deploy/env.production.yaml
 ```
+
+> ⚠️ Комментарий «флаги уже стоят на false/true, поэтому деплой не включает v2»
+> относится к состоянию на 2026-07-23 и с тех пор неверен: в production v2 уже
+> ПЕРВИЧНЫЙ (`COMMUNICATION_ENGINE_V2_PRIMARY=true`), и этот файл его выключит.
 
 **Шаг 2. Явная миграция схемы shadow-таблицы — ОБЯЗАТЕЛЬНО перед включением тени.**
 Идемпотентно: создаёт таблицу, если её нет, и **добавляет `shadow_id`**, если
