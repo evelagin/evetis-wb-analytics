@@ -215,6 +215,26 @@ VALUES (S.internal_sku, S.marketplace, S.marketplace_sku, NULL, S.offer_id, NULL
 -- Первые десять колонок и их порядок не меняются — оба потребителя в wb_mart
 -- выбирают колонки поимённо (SELECT * не используется, проверено).
 -- Добавлены поля происхождения в конец.
+-- 🔴 STAGE A (2026-09-08): ГЕЙТ РЕГРЕССИИ CONTRACT — fail-closed.
+--    Ниже создаётся редакция Stage 3.4B (15 колонок) вью V_PRODUCT_COGS_EFFECTIVE.
+--    В production действует более поздняя редакция 3.4B.1 (18 колонок:
+--    + legal_import_cost_unit_rub, additional_documented_unit_rub, cost_basis).
+--    Прогон этого файла поверх production молча вернул бы старый контракт и
+--    сломал бы трёх потребителей cost_basis:
+--      wb_mart.V_WB_SKU_FORWARD_ECONOMICS_CURRENT
+--      ozon_mart.V_OZON_SKU_FORWARD_ECONOMICS_CURRENT
+--      ozon_mart.V_OZON_AGENT_DECISION_INPUT
+--    Авторитетное определение действующей редакции:
+--      sql/ref/stage3_4b1_management_landed_cogs.sql
+--    Осознанный откат выполняется через sql/ref/stage3_4b1_rollback.sql,
+--    который снимает гейт, потому что сначала удаляет REF_COST_ADDITIONAL_LANDED.
+ASSERT (SELECT COUNTIF(column_name IN ('legal_import_cost_unit_rub',
+                                       'additional_documented_unit_rub',
+                                       'cost_basis'))
+        FROM `project-fa311fc0-4d87-4781-986.evetis_ref.INFORMATION_SCHEMA.COLUMNS`
+        WHERE table_name = 'V_PRODUCT_COGS_EFFECTIVE') = 0
+  AS 'COGS CONTRACT REGRESSION BLOCKED: в production действует редакция 3.4B.1 V_PRODUCT_COGS_EFFECTIVE (management landed COGS). Этот файл содержит редакцию Stage 3.4B (15 колонок) и понизил бы контракт. Авторитетный источник — sql/ref/stage3_4b1_management_landed_cogs.sql. Осознанный откат — sql/ref/stage3_4b1_rollback.sql.';
+
 CREATE OR REPLACE VIEW `project-fa311fc0-4d87-4781-986.evetis_ref.V_PRODUCT_COGS_EFFECTIVE`
 OPTIONS(description="Действующая себестоимость продукта на дату. Stage 3.4B: значения выведены из семи деклараций. cost_method=EFFECTIVE_DATE, batch_traceability=NOT_PROVEN — метод является соглашением учёта, а не физической прослеживаемостью партии.")
 AS

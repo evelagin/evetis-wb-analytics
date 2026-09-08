@@ -283,6 +283,26 @@ WHERE seg_from <= seg_to AND resolved_components = n_components;
 --   17 materialized + 21 derived. Зависит ТОЛЬКО от объектов внутри evetis_ref.
 --   Правило потребителя: на COGS-требующее событие обязан примениться ровно один
 --   интервал; ноль или больше одного => NULL (fail-closed), никогда 0.
+-- 🔴 STAGE A (2026-09-08): ГЕЙТ РЕГРЕССИИ CONTRACT — fail-closed.
+--    Ниже создаётся редакция Stage 3.1A (10 колонок) вью V_PRODUCT_COGS_EFFECTIVE.
+--    В production действует более поздняя редакция 3.4B.1 (18 колонок:
+--    + legal_import_cost_unit_rub, additional_documented_unit_rub, cost_basis).
+--    Прогон этого файла поверх production молча вернул бы старый контракт и
+--    сломал бы трёх потребителей cost_basis:
+--      wb_mart.V_WB_SKU_FORWARD_ECONOMICS_CURRENT
+--      ozon_mart.V_OZON_SKU_FORWARD_ECONOMICS_CURRENT
+--      ozon_mart.V_OZON_AGENT_DECISION_INPUT
+--    Авторитетное определение действующей редакции:
+--      sql/ref/stage3_4b1_management_landed_cogs.sql
+--    Осознанный откат выполняется через sql/ref/stage3_4b1_rollback.sql,
+--    который снимает гейт, потому что сначала удаляет REF_COST_ADDITIONAL_LANDED.
+ASSERT (SELECT COUNTIF(column_name IN ('legal_import_cost_unit_rub',
+                                       'additional_documented_unit_rub',
+                                       'cost_basis'))
+        FROM `project-fa311fc0-4d87-4781-986.evetis_ref.INFORMATION_SCHEMA.COLUMNS`
+        WHERE table_name = 'V_PRODUCT_COGS_EFFECTIVE') = 0
+  AS 'COGS CONTRACT REGRESSION BLOCKED: в production действует редакция 3.4B.1 V_PRODUCT_COGS_EFFECTIVE (management landed COGS). Этот файл содержит редакцию Stage 3.1A (10 колонок) и понизил бы контракт. Авторитетный источник — sql/ref/stage3_4b1_management_landed_cogs.sql. Осознанный откат — sql/ref/stage3_4b1_rollback.sql.';
+
 CREATE OR REPLACE VIEW `project-fa311fc0-4d87-4781-986.evetis_ref.V_PRODUCT_COGS_EFFECTIVE`
 OPTIONS (description = 'Stage 3.1A. UNIFIED product-level Product COGS resolver: materialized base/imported COGS UNION ALL derived FF-assembled bundle COGS. Marketplace-independent: depends ONLY on objects inside evetis_ref, no channel identifiers, no dependency on wb_raw / wb_mart. Key = internal_sku + date. Consumer rule: exactly one interval must apply to a COGS-requiring event; zero or more than one => NULL (fail-closed), never 0.')
 AS
