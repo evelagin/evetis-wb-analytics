@@ -1,6 +1,7 @@
 # Stage B Recovery — bootstrap рекламного биллинга: инструкция на проходы
 
-**Дата:** 2026-09-08 · **Статус: READY FOR OWNER PASS 1** — проход выполняет владелец
+**Дата:** 2026-09-08 · **Статус: PASS 1 COMPLETE — требуется PASS 2 (2026-09-09)**
+**Журнал проходов и доказательства:** `docs/ops/STAGE_B_BOOTSTRAP_PASSES.md`
 **Ревизия:** 2 (уточнены production invariant §5, completion gate §6, порядок проверок §4)
 **Production не менялся. Ни одного DDL/DML в этом этапе не выполнено.**
 
