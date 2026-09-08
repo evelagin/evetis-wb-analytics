@@ -2,6 +2,69 @@
 
 ## История изменений
 
+### 2026-09-08 — Stage A: восстановление контроля над production
+
+Этап не менял бизнес-логику аналитики и не добавлял функциональности. Задача —
+сделать уже работающие компоненты воспроизводимыми и управляемыми.
+
+**Что изменено.**
+
+- `sql/ref/stage3_4b1_management_landed_cogs.sql` — восстановлен авторитетный
+  источник двух объектов, которые существовали только в production: таблицы
+  `evetis_ref.REF_COST_ADDITIONAL_LANDED` (DDL + 16 строк регистра) и вью
+  `evetis_ref.V_PRODUCT_COGS_EFFECTIVE` редакции 3.4B.1. Сверка с production —
+  семантический MATCH. Сид неразрушающий (CREATE TABLE IF NOT EXISTS + MERGE
+  WHEN NOT MATCHED). Добавлен гейт против повторного прогона аддитивного UPDATE
+  себестоимости: он не идемпотентен и второй прогон удвоил бы аллокацию
+  сертификации по пяти SKU. В `pr_ref_cogs_history.sql` и
+  `stage3_4b_canonical_cogs.sql` добавлены гейты регрессии контракта.
+- `services/wb-communications/` — в репозиторий заведён сервис ответов на отзывы
+  и вопросы WB. Код восстановлен из архива сборки Cloud Build `e7f0e35c`,
+  побайтово совпадает с образом ревизии `00025-rq8`. Провенанс и расхождение
+  живой конфигурации с `deploy/env.production.yaml` описаны в `PROVENANCE.md`.
+- `infra/terraform/wb_communications.tf`, `infra/terraform/ozon_iam.tf` — Cloud Run
+  Service, Scheduler, service accounts и целевые привязки IAM описаны через
+  `import`-блоки. `terraform plan`: 11 to import, 4 to add, 4 to change,
+  **0 to destroy**, ни одного forces replacement. Apply выполняет владелец.
+- `.github/workflows/ci.yml` — `paths` расширены на `services/**` и `pipelines/**`;
+  добавлены job'ы `wb-communications` (compileall, 195 тестов, docker build) и
+  `ozon` (compileall, тесты контракта, сборка обоих образов). Деплоя в CI нет.
+- `pipelines/ozon/tests/test_deployment_contract.py` — четыре офлайновых теста
+  согласованности `REGISTRY` и `ENTITIES` в Terraform: пропущенная сущность,
+  неизвестная сущность, несовпадение каденции и mutable-тег вместо digest.
+- `pipelines/ozon/DEPLOYMENT.md` — доказанный провенанс образов и контракт
+  «build once → promote digest». Зафиксировано, что тег `latest` указывает на
+  образ на трое суток старше работающего в production.
+- `sql/ops/stage_a_stocks_registry_truth.sql` — реестр конвейеров приведён к
+  фактам: производителем `wb_raw.RAW_WB_STOCKS` объявлен `stocks_snapshot`
+  (Apps Script), `stocks_cloudrun` выключен как не введённый в эксплуатацию.
+- `docs/ops/STAGE_A_OZON_IAM_CUTOVER.md` — незавершённый шаг изоляции прав Ozon.
+- `README.md`, `CLAUDE.md`, `docs/CURRENT_PROJECT_STATE.md` — приведены к
+  фактической архитектуре. `ARCHITECTURE.md`, `DATA_MODEL.md`, `PROJECT_RULES.md`
+  помечены как исторические, содержимое не тронуто.
+
+**Что изменено в production.**
+
+- ACL датасета `ozon_raw`: выдан `roles/bigquery.dataEditor` для
+  `sa-ozon-ingestion` (аддитивно, прав ни у кого не убыло).
+- `wb_ops.OPS_PIPELINE_REGISTRY`: обновлены две строки метаданных
+  (`stocks_snapshot`, `stocks_cloudrun`).
+
+Больше ничего. Данные заказов, продаж, финансов, остатков, себестоимости,
+рекламы и Ozon не затронуты; дашборды не менялись; ни одного отзыва или ответа
+в Wildberries не опубликовано.
+
+**Как проверено.** Контрольные величины до и после этапа совпадают: FACT_ORDERS
+4610, FACT_SALES 4284, FACT_FINANCE 206304, MART_SKU_DAILY 7777, COGS — 38
+интервалов, сумма 11503.104774, 0 нерезолвленных строк витрины, 4283 покрытых
+единицы. Тесты: cloud 187, wb-communications 195, ozon 4; typecheck, lint,
+terraform fmt и validate — PASS. Детектор здоровья после правки реестра: 7
+чеков HEALTHY, 0 активных инцидентов.
+
+**Что осталось открытым.** Снятие двух проектных ролей BigQuery у
+`sa-ozon-ingestion` (заблокировано политикой среды, где выполнялся этап) и
+`terraform apply`. Оба шага описаны и передаются владельцу.
+
 ### 2026-09-07 — Гигиена репозитория: возврат production-кода в Git и политика хранения
 
 **Зачем.** В рабочем дереве накопилось 99 неучтённых файлов. Разбор показал не беспорядок, а два дефекта целостности.

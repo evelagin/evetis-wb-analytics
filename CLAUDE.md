@@ -6,12 +6,24 @@
 
 EVETIS WB Analytics — это система управленческой отчетности для бренда EVETIS на Wildberries.
 
-Технологии:
-- Google Sheets
-- Google Apps Script
-- Wildberries API
-- ручная загрузка финансовых Excel-отчетов WB
-- справочники SKU, себестоимости и наборов
+Технологии (фактический стек на 2026-09-08, Stage A):
+- BigQuery — слои `wb_raw` → `wb_mart`, `evetis_ref`, `wb_ops`, `ozon_raw` → `ozon_mart`
+- Google Apps Script — **production-загрузка** WB: заказы, продажи, финансы,
+  реклама, остатки, синхронизация справочника. Не legacy
+- Cloud Run Jobs (`cloud/`, TypeScript) — сборка витрины, наблюдатель цен, тарифы,
+  shadow-контур остатков
+- Cloud Run Jobs (`pipelines/ozon/`, Python) — загрузка Ozon Seller API
+- Cloud Run Service (`services/wb-communications/`) — ответы на отзывы и вопросы WB.
+  ⚠️ Единственный канал ЗАПИСИ во внешний маркетплейс
+- Metabase поверх BigQuery — 3 дашборда, 57 карточек
+- Terraform + GitHub Actions — инфраструктура и доставка по digest
+- Wildberries API и Ozon Seller/Performance API — источники
+- Google Sheets — исторический слой расчёта; витрины из него перенесены в BigQuery
+
+Расчётные листы Google Sheets (`ORDERS_SALES_DAILY`, `FINANCE_CLEAN`, `PNL_TOTAL`
+и подобные) в BigQuery не существуют. Документы `ARCHITECTURE.md`,
+`DATA_MODEL.md`, `PROJECT_RULES.md` описывают ту, первоначальную архитектуру и
+помечены как исторические.
 
 Цель проекта:
 Получить простую, надежную и проверяемую систему, которая показывает:
@@ -53,20 +65,30 @@ EVETIS WB Analytics — это система управленческой от�
 - создавать новые листы без явного разрешения;
 - переписывать весь проект без отдельного согласования;
 - добавлять патчи поверх патчей;
-- менять PNL_TOTAL без контрольных сумм;
+- менять экономику витрин (`MART_SKU_DAILY`, `V_DASH_*`) без контрольных сумм;
 - смешивать RAW-данные и расчетные данные на одном листе;
 - использовать рекламу WB как точную поартикульную себестоимость, если источник не дает связку SKU → расход;
 - удалять функции без объяснения;
-- менять структуру колонок без описания в CHANGELOG.md.
+- менять структуру колонок без описания в CHANGELOG.md;
+- называть вклад прибылью: контракт метрик — `PRE_COGS` и `AFTER_PRODUCT_COGS`,
+  налоги, OPEX и фулфилмент в них не входят;
+- деплоить `services/wb-communications` c `--env-vars-file`: это молча выключит
+  публикацию в WB (см. `services/wb-communications/PROVENANCE.md` §2);
+- ссылаться на mutable-тег образа вместо digest при развёртывании.
 
 ## Приоритет источников данных
 
-1. RAW-данные WB.
-2. Финансовые Excel-отчеты WB.
-3. SKU_MASTER.
-4. COST_HISTORY.
-5. BUNDLES.
-6. Расчетные листы.
+1. RAW-данные WB (`wb_raw.RAW_WB_*`) и Ozon (`ozon_raw.RAW_OZON_*`).
+2. Финансовые отчёты WB (`wb_raw.RAW_WB_FINANCE`: слой WEEKLY из Finance API,
+   слой LEGACY — исторический импорт до июля 2026).
+3. Справочник SKU: `wb_raw.REF_SKU_MASTER` и `evetis_ref.REF_SKU_CHANNEL_MAP`.
+4. Себестоимость: `evetis_ref.REF_SKU_COGS_HISTORY` → `V_PRODUCT_COGS_EFFECTIVE`.
+   Авторитетный DDL — `sql/ref/stage3_4b1_management_landed_cogs.sql`.
+5. Наборы: `evetis_ref.REF_BUNDLE_COMPONENTS` → `V_BUNDLE_COGS_DERIVED`.
+6. Расчётные слои: `wb_mart.FACT_*` → `MART_SKU_DAILY` → `V_DASH_*`.
+
+Прежде чем править объект BigQuery, сверь живое определение с репозиторием:
+production уже дважды опережал Git (`REF_COST_MAP`, `V_PRODUCT_COGS_EFFECTIVE`).
 
 ## Перед написанием кода
 

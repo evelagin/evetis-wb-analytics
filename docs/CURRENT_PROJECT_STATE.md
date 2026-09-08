@@ -1,10 +1,47 @@
 # EVETIS WB Analytics — Current Project State
 
-**Last verified:** 2026-08-27
+**Last verified:** 2026-09-08 (Stage A)
 **Repository:** `evelagin/evetis-wb-analytics`
 **Branch:** `main`
-**Verified HEAD:** `f8ea31e575db45e0bf4ecf5b9afda85724ff981f`
+**Baseline HEAD этапа:** `4aa0070fbee3901fc5054e2d88187c96f6594989`
 **Purpose:** authoritative human-readable checkpoint for restarting work in a new Claude Code session.
+
+> Разделы ниже, датированные августом 2026, отражают состояние на тот момент.
+> Актуальная сводка — раздел «Stage A» сразу под этим блоком; при расхождении
+> верен он.
+
+---
+
+## Stage A — Production Control & Source-of-Truth Recovery (2026-09-08)
+
+Этап закрывал не аналитику, а управляемость: доказуемый контроль Git / CI /
+Terraform / IAM над уже работающими компонентами, без изменения бизнес-семантики.
+
+### Что стало известно и зафиксировано
+
+| Факт | Где смотреть |
+|---|---|
+| **Apps Script — production-загрузка, а не legacy.** Заказы, продажи, финансы, реклама, остатки WB грузит он. Cloud Run отвечает за витрину, цены, тарифы и shadow-остатки | `README.md`, `CLAUDE.md` |
+| **`services/wb-communications/` — единственный канал ЗАПИСИ в Wildberries.** Исходники восстановлены из архива сборки Cloud Build и версионируются | `services/wb-communications/PROVENANCE.md` |
+| **Живая конфигурация сервиса расходится с `deploy/env.production.yaml`.** Деплой с `--env-vars-file` выключит публикацию в WB | `PROVENANCE.md` §2 |
+| **Себестоимость: авторитетный источник восстановлен.** `V_PRODUCT_COGS_EFFECTIVE` редакции 3.4B.1 теперь в репозитории; ранние редакции защищены гейтами | `sql/ref/stage3_4b1_management_landed_cogs.sql` |
+| **Провенанс Ozon доказан.** Развёрнутый образ побайтово совпадает с `pipelines/ozon` на HEAD. Тег `latest` указывает на более старый образ и не является идентификатором production | `pipelines/ozon/DEPLOYMENT.md` |
+| **Производитель остатков в реестре исправлен.** `stocks_snapshot` (Apps Script) объявлен производителем `RAW_WB_STOCKS`; `stocks_cloudrun` выключен как не введённый в эксплуатацию | `sql/ops/stage_a_stocks_registry_truth.sql` |
+| **Изоляция прав Ozon: переход не завершён.** Гранулярный доступ выдан, снятие двух проектных ролей — за владельцем | `docs/ops/STAGE_A_OZON_IAM_CUTOVER.md` |
+
+### Аварийное отключение публикации в WB
+
+```bash
+gcloud run services update evetis-wb-communications \
+  --project=project-fa311fc0-4d87-4781-986 --region=europe-west1 \
+  --update-env-vars WB_PUBLISH_ENABLED=false,WB_QUESTION_PUBLISH_ENABLED=false
+```
+
+### Что Stage A НЕ делал
+
+Stage 3B / переключение `V_ADV_COSTS` (это Stage B), новые чеки здоровья и
+доставка алертов (Stage C), дашборды Ozon (Stage E), миграция Apps Script в
+Cloud Run, включение `wb-stocks-prod`, изменения цен, ставок и карточек.
 
 ---
 

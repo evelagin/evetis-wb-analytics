@@ -1,5 +1,15 @@
 # PROJECT_RULES.md
 
+> ⚠️ **ИСТОРИЧЕСКИЙ ДОКУМЕНТ / NON-AUTHORITATIVE.** Помечен 2026-09-08 (Stage A).
+>
+> Описывает первоначальную архитектуру EVETIS на Google Sheets. Действующей
+> системе не соответствует: перечисленные здесь листы и расчётные слои
+> (`ORDERS_SALES_DAILY`, `FINANCE_CLEAN`, `ADS_CLEAN`, `PNL_TOTAL`, `RAW_WB_ADS`,
+> `COST_HISTORY`, `BUNDLES`, `SETTINGS`) в BigQuery не существуют.
+>
+> Фактическое состояние: `README.md`, `CLAUDE.md`, `docs/CURRENT_PROJECT_STATE.md`.
+> Документ сохранён как запись о том, с чего система начиналась, и не удаляется.
+
 ## Правила проекта EVETIS WB Analytics
 
 ### 1. Архитектура

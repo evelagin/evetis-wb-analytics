@@ -12,13 +12,13 @@
 #   создавать заново. Пересоздание сервиса означало бы новый URL, потерю ревизии
 #   00025-rq8 и остановку публикации.
 #
-# 🔴 APPLY В STAGE A НЕ ВЫПОЛНЯЛСЯ. `terraform plan` с рабочей машины падает:
-#   провайдер Google ходит на bigquery.googleapis.com, а этот хост фильтруется
-#   на сетевом уровне (HTTP 403 от Google frontend даже без аутентификации).
-#   Доказать «no destroy / no replacement» локально невозможно, а принимать
-#   ресурсы вслепую запрещено.
-#   ПОРЯДОК ЗАВЕРШЕНИЯ: .github/workflows/infra.yml с action=plan → убедиться,
-#   что план не содержит destroy и forces replacement → только затем apply.
+# 🔴 APPLY В STAGE A НЕ ВЫПОЛНЯЛСЯ, plan — выполнен и чист.
+#   `terraform plan` 2026-09-08: 10 to import, 5 to add, 7 to change, 0 to destroy;
+#   ни одного forces replacement. Для ресурсов этого файла план сводится к чистому
+#   import без единого изменения. Оставшиеся 7 in-place — дрейф, существовавший
+#   до Stage A и к этому файлу отношения не имеющий.
+#   ПОРЯДОК ЗАВЕРШЕНИЯ: apply выполняет владелец через
+#   .github/workflows/infra.yml (action=plan → сверить → action=apply).
 #
 # ЧТО TERRAFORM НАМЕРЕННО НЕ КОНТРОЛИРУЕТ.
 #   1. Содержимое template сервиса (образ, переменные, ресурсы). Ими управляет
@@ -35,7 +35,8 @@
 # ── Service account сервиса ─────────────────────────────────────────────────
 resource "google_service_account" "wb_comms" {
   account_id   = "evetis-wb-comms"
-  display_name = "EVETIS WB communications service"
+  display_name = "EVETIS WB Communications"
+  description  = "Service account for EVETIS reviews automation"
 }
 
 import {
@@ -99,6 +100,11 @@ resource "google_cloud_run_v2_service" "wb_communications" {
       client,
       client_version,
       traffic,
+      # build_config хранит связь ревизии с Cloud Build e7f0e35c и архивом
+      # исходников в GCS — это и есть машиночитаемое доказательство провенанса
+      # (см. PROVENANCE.md §1). Terraform его не описывает и обязан не трогать:
+      # иначе первый apply стёр бы ссылку на сборку.
+      build_config,
     ]
   }
   depends_on = [google_project_service.enabled]

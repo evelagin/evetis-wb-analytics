@@ -37,21 +37,28 @@
 #   gs://evetis-ozon-staging-37074083763 (нужен bootstrap-джобу для
 #   load_table_from_uri). Проектной роли storage у этого SA нет.
 #
-# СОСТОЯНИЕ TERRAFORM. Ни SA, ни его прежние проектные роли Terraform никогда не
+# ⚠️ СТАТУС НА 2026-09-08: ПЕРЕХОД НЕ ЗАВЕРШЁН.
+#   Выполнено: гранулярный dataEditor на ozon_raw выдан в production (шаг 1).
+#   НЕ выполнено: снятие двух проектных ролей (dataEditor, dataViewer) —
+#   операция заблокирована политикой рабочей среды, где выполнялся Stage A.
+#   Пока они не сняты, изоляция НЕ достигнута и F-04 остаётся открытой.
+#   Команды, окно, приёмка и откат: docs/ops/STAGE_A_OZON_IAM_CUTOVER.md.
+#
+# СОСТОЯНИЕ TERRAFORM. Ни SA, ни его проектные роли Terraform никогда не
 #   принадлежали — в state их нет. import-блоки ниже принимают SA и целевые
-#   привязки; снятые проектные роли в конфиге отсутствуют намеренно: их удаление
-#   выполнено напрямую (apply заблокирован сетевым фильтром, см.
-#   services/wb-communications/PROVENANCE.md §5), и повторно создавать их нечем.
+#   привязки. Снятые проектные роли в конфиге намеренно отсутствуют: Terraform
+#   с ресурсами `google_project_iam_member` не является authoritative и сам их
+#   не удалит — удаление выполняется командами из runbook выше.
 # ============================================================================
 
 resource "google_service_account" "ozon_ingestion" {
   account_id   = "sa-ozon-ingestion"
-  display_name = "Ozon ingestion (Cloud Run jobs)"
+  display_name = "Ozon loaders runtime"
 }
 
 resource "google_service_account" "ozon_scheduler" {
   account_id   = "sa-ozon-scheduler"
-  display_name = "Ozon schedulers (Cloud Run invoker)"
+  display_name = "Ozon Cloud Scheduler invoker"
 }
 
 import {
@@ -81,6 +88,12 @@ resource "google_bigquery_dataset_iam_member" "ozon_ingestion_edit_raw" {
   dataset_id = "ozon_raw"
   role       = "roles/bigquery.dataEditor"
   member     = "serviceAccount:${google_service_account.ozon_ingestion.email}"
+}
+
+# Грант уже выдан в production на шаге A5 Stage A — принимаем, а не создаём.
+import {
+  to = google_bigquery_dataset_iam_member.ozon_ingestion_edit_raw
+  id = "projects/${var.project_id}/datasets/ozon_raw roles/bigquery.dataEditor serviceAccount:sa-ozon-ingestion@${var.project_id}.iam.gserviceaccount.com"
 }
 
 # Чтение staging-бакета для разового bootstrap-джоба. Побакетно, не проектно.
