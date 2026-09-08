@@ -40,6 +40,17 @@ gcloud run services update evetis-wb-communications \
   --update-env-vars WB_PUBLISH_ENABLED=false,WB_QUESTION_PUBLISH_ENABLED=false
 ```
 
+### Stage B (2026-09-08) — попытка cutover рекламного биллинга: NO-GO
+
+Production остаётся на `V_ADV_COSTS = V_ADV_COSTS_UNION_PREBOOTSTRAP`, Stage 3B не
+развёрнут. Гейт I5: `day_lost = 122` при требуемом 0 — снапшот покрывает 26 суток из
+148, потому что три bootstrap-прохода (`loadWbAdsCostsBootstrapPass()`, шаги A7–A9)
+никогда не запускались. Требуется три прогона в разные сутки со стороны владельца.
+Разбор и дорожная карта: `docs/ops/STAGE_B_CUTOVER_BLOCKED_2026-09-08.md`.
+
+Расхождение статистики и биллинга измерено: +9 476,42 ₽ (+1,76 %) за апрель–сентябрь.
+Пока cutover не выполнен, рекламный расход в экономике — атрибуция, а не биллинг.
+
 ### Что Stage A НЕ делал
 
 Stage 3B / переключение `V_ADV_COSTS` (это Stage B), новые чеки здоровья и
