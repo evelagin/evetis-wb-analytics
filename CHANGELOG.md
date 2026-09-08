@@ -2,6 +2,39 @@
 
 ## История изменений
 
+### 2026-09-08 — Stage B Recovery: PASS 1 bootstrap НЕ выполнен (BLOCKED)
+
+Production не менялся, DDL и DML не выполнялись. Этап дал операционную инструкцию.
+
+**Почему BLOCKED.** `loadWbAdsCostsBootstrapPass()` — Apps Script в проекте
+владельца, привязанный к таблице. Пути запуска из репозитория нет, и это
+проверено: script ID в репозитории отсутствует; токен `gcloud` не имеет scope'ов
+Drive/Sheets/Apps Script (Drive API отвечает 403 `ACCESS_TOKEN_SCOPE_INSUFFICIENT`);
+`script.googleapis.com`, `sheets`, `drive` в GCP-проекте не включены; загрузчика
+`adv/v1/upd` нет ни в `cloud/`, ни в `pipelines/`. Эмуляция функции SQL-запросами
+означала бы подделку commit-marker и запрещена по существу.
+
+**Baseline подтверждён без дрейфа** относительно отчёта Stage B: `V_ADV_COSTS` =
+`UNION_PREBOOTSTRAP` (sha256 `0699a82e…`), Stage 3B объектов 0, оба
+`_MART_BOOTSTRAP_LOCK` свободны, ранов `ADSBACKFILL_` 0, I5 `day_lost = 122`,
+I6 settled 10 / unsettled 138 / not_loaded 122, 13 слоёв OPS OK, 0 инцидентов.
+
+🔴 **Новая находка — `wbAdsBqCreateViews()` откатит шаг A5.** Функция
+безусловно пересоздаёт `V_ADV_COSTS` дедупом по всей `RAW_WB_ADV_COSTS` без
+фильтра по префиксу рана (`apps-script/WbAdsBigQuery.gs:331`). Сегодня безвредно
+— `UNION_LEGACY` и `UNION_PREBOOTSTRAP` совпадают (2 089 строк / 536 457 ₽ обе).
+После первого же прохода bootstrap вызов втянет строки `ADSBACKFILL_` в
+production-экономику и молча завысит `FACT_ADS_COSTS_DAILY`. Защиты в коде нет;
+запрет внесён в `CLAUDE.md`.
+
+**Ответ по шагу B4a** (`WB_ADS_COSTS_OPERATIONAL_DAYS_` 7 → 14,
+`apps-script/WbAdsRawLoader.gs:112`): выполнять ПОСЛЕ завершения bootstrap,
+внутри Фазы B между B3 и B4b. Раньше нельзя — ежедневные раны `ADSRAW_` входят в
+действующий canonical, union умеет только расти, и расширение окна подняло бы
+суммы `FACT` до cutover, обессмыслив сам гейт I5.
+
+Инструкция на три прохода: `docs/ops/STAGE_B_BOOTSTRAP_RUNBOOK.md`.
+
 ### 2026-09-08 — Stage B: cutover рекламного биллинга НЕ выполнен (NO-GO)
 
 Production не переключался, DDL и DML не выполнялись. Этап дал диагностику.

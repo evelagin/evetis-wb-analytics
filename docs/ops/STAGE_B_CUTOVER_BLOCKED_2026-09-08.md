@@ -178,6 +178,10 @@ function loadWbAdsCostsBootstrapPass()      // run_id префикс ADSBACKFILL
 | 8 | Фаза B: B1–B10 по `docs/ADS_COSTS_SNAPSHOT_ROLLOUT_2026-08-20.md` §3 | — | ~1 окно |
 | 9 | Stage 3B: шаги D–J по `sql/mart/ads_spend_stage3b_validation.sql` §0 | — | ~1 окно |
 
+Операционная инструкция на три прохода, ловушки и проверки после каждого
+прохода — `docs/ops/STAGE_B_BOOTSTRAP_RUNBOOK.md`. На 2026-09-08 PASS 1 не
+выполнен: функция живёт в Apps Script владельца, пути запуска из репозитория нет.
+
 Повторную попытку Stage B начинать **только** после того, как I5 даст `day_lost = 0`
 и `billed_complete` покроет расчётный период. Проверка одной командой:
 
