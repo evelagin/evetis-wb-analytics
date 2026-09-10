@@ -1,7 +1,7 @@
 # Stage B Recovery — bootstrap рекламного биллинга: инструкция на проходы
 
-**Дата:** 2026-09-08 · **Статус: PHASE A CLOSED (2026-09-10) — GO FOR STAGE B
-CUTOVER PRECHECK.** Cutover не выполнен; последовательность — §10
+**Дата:** 2026-09-08 · **Статус: PHASE A CLOSED (2026-09-10) — STAGE B CUTOVER CONDITIONAL GO.**
+Последовательность ревизии 2 — §10, манифест отката — `STAGE_B_CUTOVER_ROLLBACK_MANIFEST.md`
 **Журнал проходов и доказательства:** `docs/ops/STAGE_B_BOOTSTRAP_PASSES.md`
 **Ревизия:** 2 (уточнены production invariant §5, completion gate §6, порядок проверок §4)
 **Production не менялся. Ни одного DDL/DML в этом этапе не выполнено.**
@@ -368,70 +368,97 @@ Union умеет только расти: удвоение окна перечи
 
 ---
 
-## 10. Последовательность cutover — к исполнению, НЕ выполнена
+## 10. Последовательность cutover — ревизия 2 (2026-09-10)
 
 Составлена из `docs/ADS_COSTS_SNAPSHOT_ROLLOUT_2026-08-20.md` §3 «Фаза B» и
-`sql/mart/ads_spend_stage3b_validation.sql` §0 (редакция Stage 1.8 от 26.08 —
-прежний порядок из пяти шагов устарел и приводил к молчаливой потере колонок
-витрины).
+`sql/mart/ads_spend_stage3b_validation.sql` §0 (редакция Stage 1.8).
 
-Ничего из перечисленного на 2026-09-10 не выполнено.
+**Две обязательные правки контракта относительно ревизии 1 (по решению владельца):**
 
-### Precheck — read-only, ничего не меняет
+1. **`wb-mart` стоит на паузе всё окно**, включая развёртывание Stage 3B. Прежний
+   B10 (resume сразу после Фазы B) удалён. После B9 Stage 3B ещё меняет процедуры,
+   логику MART и зависимые вью; снять паузу до D–I — значит устроить гонку
+   планового прогона с промежуточным состоянием схемы и семантики. Снятие паузы
+   вынесено в финальный шаг **K**.
+2. **Полный манифест отката снят до B1** — `docs/ops/STAGE_B_CUTOVER_ROLLBACK_MANIFEST.md`.
+   Однострочного отката `V_ADV_COSTS` достаточно для переключения источника, но
+   не для отказа после D–I.
 
-| # | Что | Ожидание | Замер 2026-09-10 |
-|---|---|---|---|
-| P-1 | `I1`–`I9`, `P1`, инвариант §5 | всё PASS | **PASS** |
-| P-2 | `I5.day_lost` | 0 | **0** |
-| P-3 | `_MART_BOOTSTRAP_LOCK` по обоим `lock_id` | `is_running = FALSE` | **FALSE / FALSE** |
-| P-4 | последний прогон mart | `COMPLETE` | **COMPLETE, 09.09** |
-| P-5 | гейт Stage 3B | `FALSE` до B4b | **FALSE** |
-| P-6 | `V_ADV_COSTS` sha256 | `0699a82e…2968af` | **совпал** |
-| P-7 | зафиксировать B0-срез canonical и `FACT` | сохранён | **2 105 · 539 193 ₽ · FACT 539 193 ₽** |
+Окно обслуживания:
 
-Precheck повторяется **непосредственно перед** B1: между сегодняшним замером и
-окном cutover пройдут штатные раны, и `_MART_BOOTSTRAP_LOCK` может быть занят.
+```
+precheck → B1 PAUSE → B2 … B9 → ЧЕКПОИНТ 1 → C … J → ЧЕКПОИНТ 2 → K RESUME
+```
 
-### Фаза B — короткое окно, витрина на паузе
+### Precheck и concurrency guard — непосредственно перед B1
 
-| # | Действие |
-|---|---|
-| **B1** | пауза загрузчика: workflow `scheduler-control.yml` → `environment: prod`, `loader: wb-mart`, `action: pause` |
-| **B2** | убедиться: оба `_MART_BOOTSTRAP_LOCK.is_running = FALSE`, последний `mart` = `COMPLETE` |
-| **B3** | `I1`–`I9` целиком, `I5.day_lost = 0` на `V_ADV_COSTS_SNAPSHOT` |
-| **B4a** | `WB_ADS_COSTS_OPERATIONAL_DAYS_` 7 → 14 в `apps-script/WbAdsRawLoader.gs:112` — **отдельный коммит**, затем перенос файла в проект Apps Script |
-| **B4b** | `CREATE OR REPLACE VIEW wb_raw.V_ADV_COSTS AS SELECT * FROM wb_raw.V_ADV_COSTS_SNAPSHOT;` |
-| **B5** | `CALL wb_mart.sp_bootstrap_facts('');` — пересборка `FACT_ADS_COSTS_DAILY` |
-| **B6** | сверка коррекции против B0 **на одной и той же сборке**: ожидается −300 ₽ ровно на `2026-07-12` (−108) и `2026-08-05` (−192) |
-| **B7** | `X1` — механизмы. 🔴 Ожидания −334 ₽ переизмерить: они сняты симуляцией 20.08 на узких окнах, bootstrap читал WB окнами по 30 суток |
-| **B8** | `CALL wb_mart.sp_build_mart_sku_daily(DATE_SUB(CURRENT_DATE('Europe/Moscow'), INTERVAL 1 DAY), NULL, '');` |
-| **B9** | `K9` по всем шести объектам + повтор `I4`–`I9` на пересобранном `FACT` |
-| **B10** | снять паузу: `scheduler-control.yml` → `resume` |
+| # | Проверка | Ожидание |
+|---|---|---|
+| P-1 | `I1`–`I9`, `P1`, инвариант §5 | всё PASS |
+| P-2 | `I5.day_lost` | 0 |
+| P-3 | `_MART_BOOTSTRAP_LOCK` | `is_running = FALSE` по обоим `lock_id` |
+| P-4 | последний прогон `wb-mart-prod` | Completed, succeeded |
+| P-5 | гейт Stage 3B | `FALSE` |
+| P-6 | sha256 тела `V_ADV_COSTS` | `0699a82e…2968af` |
+| P-7 | манифест отката | снят, файлы `R1`–`R8` проверены dry-run |
+| CG-1 | активный MART lock | нет |
+| CG-2 | исполняющийся `wb-mart-prod` | нет |
+| CG-3 | до следующего планового `wb-mart-prod` | достаточно времени, чтобы B1 прошёл раньше |
+| CG-4 | производитель биллинга `ADSRAW_` | не запланирован до конца окна (следующий ≈05:07 MSK следующих суток) |
+| CG-5 | водяные знаки RAW (`FP-4`) | сняты — точка отсчёта для атрибуции расхождений |
 
-### Stage 3B — переход экономики на биллинг
+### Фаза B
 
-| # | Действие |
-|---|---|
-| **C** | проверить, что гейт открылся сам: `SELECT IFNULL(LOGICAL_OR(REGEXP_CONTAINS(view_definition, r'V_ADV_COSTS_SNAPSHOT')), FALSE) FROM wb_raw.INFORMATION_SCHEMA.VIEWS WHERE table_name='V_ADV_COSTS'` → `TRUE`. Файл `pr_mart1_facts.sql` **не править** |
-| **D** | deploy `sql/mart/pr_mart1_facts.sql` — пересоздание `sp_bootstrap_facts` |
-| **E** | `CALL wb_mart.sp_bootstrap_facts('');` — убедиться, что `FACT_ADS_SPEND_ALLOC_DAILY` и `FACT_ADS_SPEND_UNALLOC_DAILY` созданы и непусты, 15 fail-closed ASSERT §1.7/§1.8 прошли |
-| **F** | восстановить Stage 3B блок в `sql/mart/pr_mart2b_sku_daily.sql` из `e30f668` **поверх** guard `fix #5` — guard обязан сохраниться |
-| **G** | deploy `pr_mart2b_sku_daily.sql`, затем `CALL wb_mart.sp_build_mart_sku_daily(DATE_SUB(CURRENT_DATE('Europe/Moscow'), INTERVAL 1 DAY), NULL, '');` |
-| **H** | deploy `sql/mart/ads_spend_reconciliation_v1.sql` |
-| **I** | deploy `sql/mart/ads4_funnel_v1.sql`, **сразу за ним** `sql/mart/dashboard_layer_v1.sql` — строго в этом порядке и в одной сессии: они переименовывают `mart_ad_spend_rub` → `mart_ad_spend_attributed_rub`, и порознь ломаются оба |
-| **J** | приёмка: `sql/mart/ads_spend_stage3b_validation.sql` целиком |
+| # | Действие | Гейт / стоп |
+|---|---|---|
+| **B1** | `scheduler-control.yml` → `prod` / `wb-mart` / `pause`; убедиться, что `wb-mart-prod` в состоянии `PAUSED` | не встало на паузу → стоп |
+| **B2** | оба lock `FALSE`, последний mart Completed | lock занят → стоп |
+| **B2a** | **контрольная пересборка на прежней семантике**: `CALL sp_bootstrap_facts('')`, затем `CALL sp_build_mart_sku_daily(DATE_SUB(CURRENT_DATE('Europe/Moscow'), INTERVAL 1 DAY), NULL, '')` — ровно то, что делает `wb-mart-prod` | ASSERT упал → стоп, откат не нужен |
+| **B2b** | **B0**: `FP_fingerprint.sql` целиком + `FP-4` водяные знаки + `P1` + `I5` | — |
+| **B3** | `I1`–`I9` целиком, `I5.day_lost = 0` | любой FAIL → стоп |
+| **B4a** | `WB_ADS_COSTS_OPERATIONAL_DAYS_` 7 → 14 в репозитории, **отдельный коммит**. Перенос в проект Apps Script — владелец, до ≈05:00 MSK следующих суток. Опоздание безопасно: под snapshot-семантикой окно 7 просто наблюдает меньше | — |
+| **B4b** | `CREATE OR REPLACE VIEW wb_raw.V_ADV_COSTS AS SELECT * FROM wb_raw.V_ADV_COSTS_SNAPSHOT;` | sha тела ≠ ожидаемому → `R5` |
+| **B5** | `CALL sp_bootstrap_facts('')` | ASSERT → `R5` → `R6` |
+| **B6** | `FP-3` против B0: **ровно −300 ₽**, ровно на `2026-07-12` (−108) и `2026-08-05` (−192), остальные даты = B0. `FP-1` пяти прочих FACT = B0 | любая иная дельта → стоп, `R5` → `R6` |
+| **B7** | `X1` — механизмы. Ожидания −334 ₽ не сравнивать, а переизмерить | механизм не сработал → стоп |
+| **B8** | `CALL sp_build_mart_sku_daily(DATE_SUB(CURRENT_DATE('Europe/Moscow'), INTERVAL 1 DAY), NULL, '')` | ASSERT → стоп |
+| **B9** | `K9`, `I4`–`I9` на пересобранном FACT; **`FP-1` `MART_SKU_DAILY[57]` = B0 побайтово** (MART биллинг не читает); `FP-4` не сдвинулся | расхождение без объяснения водяными знаками → стоп |
+
+**ЧЕКПОИНТ 1 — доклад владельцу. Пауза сохраняется.**
+
+### Stage 3B
+
+| # | Действие | Гейт / стоп |
+|---|---|---|
+| **C** | гейт открылся сам: `REGEXP_CONTAINS(view_definition, r'V_ADV_COSTS_SNAPSHOT')` = `TRUE`. `pr_mart1_facts.sql` не править | `FALSE` → стоп |
+| **D** | deploy `sql/mart/pr_mart1_facts.sql` | ошибка → стоп (процедура не заменена) |
+| **E** | `CALL sp_bootstrap_facts('')`; `FACT_ADS_SPEND_ALLOC_DAILY` и `_UNALLOC_DAILY` созданы и непусты; 15 ASSERT §1.7/§1.8 прошли; сохранение `actual = alloc + unalloc`; **`FP-1` шести прежних FACT = B9** | ASSERT / conservation / fan-out → `R4` → `R6` → `R7` |
+| **F** | восстановить Stage 3B блок в `pr_mart2b_sku_daily.sql` из `e30f668` **поверх** guard `fix #5`; отдельный коммит | guard потерян → стоп |
+| **G** | deploy `pr_mart2b_sku_daily.sql`; `CALL sp_build_mart_sku_daily(D−1, NULL, '')`; **`FP-1` `MART_SKU_DAILY[57]` = B9**; новые колонки есть; все вью над `MART_SKU_DAILY` компилируются (`SELECT … LIMIT 0` постейтментно) | расхождение / несовместимость схемы → `R3` → `R4` → `R6` → `R7` |
+| **H** | deploy `sql/mart/ads_spend_reconciliation_v1.sql` постейтментно | ошибка → откат по матрице манифеста |
+| **I** | deploy `sql/mart/ads4_funnel_v1.sql`, **сразу за ним** `sql/mart/dashboard_layer_v1.sql`, одна сессия; после — компиляция каждой из 8 вью и 12 карточек Metabase, читающих `V_ADS_SCREEN_QUERY` / `V_ADS_FUNNEL_QUERY_DAILY` | ошибка компиляции → **`R1` немедленно** |
+| **J** | `sql/mart/ads_spend_stage3b_validation.sql` целиком + финальная сверка `FP` против B9 | любой FAIL → откат |
+
+**ЧЕКПОИНТ 2 — доклад владельцу. Пауза сохраняется.**
+
+| # | Действие | Условие |
+|---|---|---|
+| **K** | **RESUME PRODUCTION MART**: `scheduler-control.yml` → `prod` / `wb-mart` / `resume` | только после полного PASS `J`, чистой финальной сверки и решения владельца |
+
+### Немедленная остановка
+
+* дельта в B6 иная, чем принятые −300 ₽ на двух датах;
+* конкуренция за lock;
+* упавший ASSERT;
+* несовместимость схемы;
+* нарушение сохранения аллокации (`actual ≠ alloc + unalloc`);
+* fan-out (рост строк на ключе);
+* провал сверки;
+* ошибка компиляции dashboard layer.
+
+🔴 **При отказе `wb-mart` НЕ снимается с паузы.** Сначала откат по матрице
+манифеста §5, затем `R8` и отпечатки, затем решение владельца.
 
 🔴 Компиляцию проверять **постейтментно**: `dry_run` по целому файлу даёт ложный
 успех — `dashboard_layer_v1.sql` проходит его целиком, но падает на изолированном
 `CREATE OR REPLACE VIEW`.
-
-### Откат
-
-Одна строка в обе стороны:
-
-```sql
-CREATE OR REPLACE VIEW `project-fa311fc0-4d87-4781-986.wb_raw.V_ADV_COSTS` AS
-  SELECT * FROM `project-fa311fc0-4d87-4781-986.wb_raw.V_ADV_COSTS_UNION_PREBOOTSTRAP`;
-```
-затем `CALL wb_mart.sp_bootstrap_facts('');`. Контрольная сумма правильного тела —
-`0699a82ed08d0bc676ef13265fed8eb5e3b88f7bbcf08eb05d6f64075c2968af`.

@@ -1,0 +1,110 @@
+-- ============================================================================
+-- EVETIS · Stage 3B ROLLBACK · СПРАВКА · схемы таблиц до cutover — НЕ ИСПОЛНЯТЬ
+-- Снято с production 2026-09-10 до шага B1 (INFORMATION_SCHEMA.*.ddl, read-only).
+-- Это ТОЧНОЕ состояние до cutover, а не реконструкция из Git.
+-- Манифест и порядок: docs/ops/STAGE_B_CUTOVER_ROLLBACK_MANIFEST.md
+-- ============================================================================
+-- Таблицы пересоздаются процедурами (CREATE OR REPLACE TABLE … AS SELECT), поэтому
+-- откат схемы = откат процедуры + пересборка. Файл закомментирован целиком намеренно:
+-- его исполнение пересоздало бы ПУСТЫЕ таблицы.
+
+-- MART_SKU_DAILY
+-- CREATE TABLE `project-fa311fc0-4d87-4781-986.wb_mart.MART_SKU_DAILY`
+-- (
+--   day DATE,
+--   nm_id INT64,
+--   ad_spend NUMERIC,
+--   views INT64,
+--   clicks INT64,
+--   ad_orders_raw INT64,
+--   ads_revenue_raw_rub NUMERIC,
+--   ads_revenue_dedup_estimate_rub NUMERIC,
+--   ad_orders_dedup_estimate INT64,
+--   orders_qty INT64,
+--   orders_rub NUMERIC,
+--   canceled_qty INT64,
+--   canceled_rub NUMERIC,
+--   buyouts_qty INT64,
+--   buyouts_rub NUMERIC,
+--   sales_for_pay_operational NUMERIC,
+--   returns_qty INT64,
+--   returns_rub NUMERIC,
+--   wb_reward_cost_positive NUMERIC,
+--   logistics_cost_positive NUMERIC,
+--   marketplace_fee_rub NUMERIC,
+--   finance_for_pay_accounting NUMERIC,
+--   ctr FLOAT64,
+--   cpm NUMERIC,
+--   cpc NUMERIC,
+--   cpo_attributed NUMERIC,
+--   blended_cpo NUMERIC,
+--   drr_orders NUMERIC,
+--   drr_buyouts NUMERIC,
+--   roas NUMERIC,
+--   acos NUMERIC,
+--   hybrid_day_contribution_pre_cogs NUMERIC,
+--   settlement_day_contribution_pre_cogs NUMERIC,
+--   ad_spend_7d NUMERIC,
+--   ad_spend_14d NUMERIC,
+--   ads_revenue_raw_7d NUMERIC,
+--   ads_revenue_raw_14d NUMERIC,
+--   ads_revenue_dedup_estimate_7d NUMERIC,
+--   ads_revenue_dedup_estimate_14d NUMERIC,
+--   ad_orders_raw_7d INT64,
+--   ad_orders_raw_14d INT64,
+--   ad_orders_dedup_estimate_7d INT64,
+--   ad_orders_dedup_estimate_14d INT64,
+--   buyouts_rub_7d NUMERIC,
+--   buyouts_rub_14d NUMERIC,
+--   orders_rub_7d NUMERIC,
+--   orders_rub_14d NUMERIC,
+--   orders_qty_7d INT64,
+--   orders_qty_14d INT64,
+--   drr_buyouts_7d NUMERIC,
+--   drr_buyouts_14d NUMERIC,
+--   roas_7d NUMERIC,
+--   roas_14d NUMERIC,
+--   blended_cpo_7d NUMERIC,
+--   blended_cpo_14d NUMERIC,
+--   build_as_of_date DATE,
+--   ads_activity_max_date DATE,
+--   ads_activity_lagged BOOL,
+--   mart_run_id STRING,
+--   built_at TIMESTAMP
+-- )
+-- PARTITION BY day
+-- CLUSTER BY nm_id;
+
+-- FACT_ADS_COSTS_DAILY
+-- CREATE TABLE `project-fa311fc0-4d87-4781-986.wb_mart.FACT_ADS_COSTS_DAILY`
+-- (
+--   date DATE,
+--   advert_id INT64,
+--   actual_spend_rub NUMERIC,
+--   cost_rows INT64,
+--   mart_run_id STRING,
+--   built_at TIMESTAMP
+-- )
+-- PARTITION BY date
+-- CLUSTER BY advert_id;
+
+-- FACT_ADS_SKU_DAILY
+-- CREATE TABLE `project-fa311fc0-4d87-4781-986.wb_mart.FACT_ADS_SKU_DAILY`
+-- (
+--   date DATE,
+--   advert_id INT64,
+--   nm_id INT64,
+--   views INT64,
+--   clicks INT64,
+--   stats_spend_rub NUMERIC,
+--   ad_orders_raw INT64,
+--   ads_revenue_raw_rub NUMERIC,
+--   ads_revenue_dedup_estimate_rub NUMERIC,
+--   ad_orders_dedup_estimate INT64,
+--   multitouch_ambiguous_flag BOOL,
+--   zero_revenue_multiorder_flag BOOL,
+--   mart_run_id STRING,
+--   built_at TIMESTAMP
+-- )
+-- PARTITION BY date
+-- CLUSTER BY nm_id, advert_id;
