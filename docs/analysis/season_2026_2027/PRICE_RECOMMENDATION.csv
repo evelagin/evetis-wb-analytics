@@ -1,0 +1,44 @@
+internal_sku,name,channel,current_price,contribution_before_ads_pct,recommended_normal_price,promo_price_events,absolute_floor_no_ads,target_drr_pct,velocity_class,logic
+EVT-FS-ACNE-30,Сыворотка АКНЕ 30 мл,WB,806,28.2,806,765,387,16,B-HEALTHY + E-bundle enabler,KEEP
+EVT-FS-ACNE-30,Сыворотка АКНЕ 30 мл,OZON,1258,28.3,1258,1195,476,16,B-HEALTHY + E-bundle enabler,KEEP
+EVT-FS-MOIST-30,Сыворотка УВЛ 30 мл,WB,699,24.8,699,664,379,10,A-FAST (stock-limited now),HERO: protect price; -5% max on event dates; ads up to ceiling that keeps 15% after ads
+EVT-FS-MOIST-30,Сыворотка УВЛ 30 мл,OZON,1234,28.3,1234,1172,466,13,A-FAST (stock-limited now),HERO: protect price; -5% max on event dates; ads up to ceiling that keeps 15% after ads
+EVT-FC-ACNE-50,Крем для лица АКНЕ 50 мл,WB,800,27.6,800,760,393,13,A-FAST (stock-limited now),HERO: protect price; -5% max on event dates; ads up to ceiling that keeps 15% after ads
+EVT-FC-ACNE-50,Крем для лица АКНЕ 50 мл,OZON,1374,29.5,1374,1305,483,15,A-FAST (stock-limited now),HERO: protect price; -5% max on event dates; ads up to ceiling that keeps 15% after ads
+EVT-FC-MOIST-50,Крем для лица УВЛ 50 мл,WB,926,31.8,926,879,382,17,R-REPLENISH (inbound 5000),"KEEP STOCK/REPLENISH: strongest margin, no deep discount; -5% only at NY"
+EVT-FC-MOIST-50,Крем для лица УВЛ 50 мл,OZON,848,19.7,848,806,481,5,R-REPLENISH (inbound 5000),"KEEP STOCK/REPLENISH: strongest margin, no deep discount; -5% only at NY"
+EVT-FT-ACNE-150,Тоник АКНЕ 150 мл,WB,740,19.5,777,681,474,7,C-SLOW / E-bundle enabler,"SELL DOWN: keep list price, run -8% only on event dates (11.11, BF, NY, 8 March); ads only within economic ceiling"
+EVT-FT-ACNE-150,Тоник АКНЕ 150 мл,OZON,1219,23.3,1280,1121,595,11,C-SLOW / E-bundle enabler,"SELL DOWN: keep list price, run -8% only on event dates (11.11, BF, NY, 8 March); ads only within economic ceiling"
+EVT-FT-MOIST-150,Тоник УВЛ 150 мл,WB,740,19.4,777,681,475,7,C-SLOW / E-bundle enabler,"SELL DOWN: keep list price, run -8% only on event dates (11.11, BF, NY, 8 March); ads only within economic ceiling"
+EVT-FT-MOIST-150,Тоник УВЛ 150 мл,OZON,1197,22.9,1257,1101,595,11,C-SLOW / E-bundle enabler,"SELL DOWN: keep list price, run -8% only on event dates (11.11, BF, NY, 8 March); ads only within economic ceiling"
+EVT-EP-ENZYME-75,Энзимная пудра 75 г,WB,666,18.8,699,613,435,7,C-SLOW / E-bundle enabler,"SELL DOWN: keep list price, run -8% only on event dates (11.11, BF, NY, 8 March); ads only within economic ceiling"
+EVT-EP-ENZYME-75,Энзимная пудра 75 г,OZON,1231,25.4,1231,1133,544,13,C-SLOW / E-bundle enabler,"SELL DOWN: keep list price, run -8% only on event dates (11.11, BF, NY, 8 March); ads only within economic ceiling"
+EVT-HC-HAND-300,Крем для рук Oud Wood 300 мл,WB,640,3.8,640,589,595,4,"D-LIQUIDATE (expiry, negative margin at realized ASP)","LIQUIDATION: hold >= break-even, no paid traffic on the single on WB (contribution 45 RUB before ads at 640); push via Ozon (52% comm but higher price) and body bundles"
+EVT-HC-HAND-300,Крем для рук Oud Wood 300 мл,OZON,973,12.3,973,895,711,8,"D-LIQUIDATE (expiry, negative margin at realized ASP)","LIQUIDATION: hold >= break-even, no paid traffic on the single on WB (contribution 45 RUB before ads at 640); push via Ozon (52% comm but higher price) and body bundles"
+EVT-HC-CHERRY-300,Крем для тела Lost Cherry 300 мл,WB,640,13.0,672,589,486,1,D-OVERSTOCK (Cherry/Amber 190+ months) / E-bundle enabler,"SELL DOWN: keep list price, run -8% only on event dates (11.11, BF, NY, 8 March); ads only within economic ceiling"
+EVT-HC-CHERRY-300,Крем для тела Lost Cherry 300 мл,OZON,1209,23.4,1269,1112,587,11,D-OVERSTOCK (Cherry/Amber 190+ months) / E-bundle enabler,"SELL DOWN: keep list price, run -8% only on event dates (11.11, BF, NY, 8 March); ads only within economic ceiling"
+EVT-HC-AMBER-300,Крем для тела Amber Vanilla 300 мл,WB,640,11.0,672,589,510,0,D-OVERSTOCK (Cherry/Amber 190+ months) / E-bundle enabler,"SELL DOWN: keep list price, run -8% only on event dates (11.11, BF, NY, 8 March); ads only within economic ceiling"
+EVT-HC-AMBER-300,Крем для тела Amber Vanilla 300 мл,OZON,1242,24.0,1304,1143,587,12,D-OVERSTOCK (Cherry/Amber 190+ months) / E-bundle enabler,"SELL DOWN: keep list price, run -8% only on event dates (11.11, BF, NY, 8 March); ads only within economic ceiling"
+EVT-SET-4PC-ACNE,Набор 4 шага АКНЕ,WB,1900,13.1,1900,1805,1440,0,A-HERO_BUNDLE,HERO: protect price; -5% max on event dates; ads up to ceiling that keeps 15% after ads
+EVT-SET-4PC-ACNE,Набор 4 шага АКНЕ,OZON,3816,27.0,3816,3625,1553,12,A-HERO_BUNDLE,HERO: protect price; -5% max on event dates; ads up to ceiling that keeps 15% after ads
+EVT-SET-SER-CREAM-ACNE,Набор сыв+крем АКНЕ,WB,1294,26.5,1294,1229,660,12,A-HERO_BUNDLE,HERO: protect price; -5% max on event dates; ads up to ceiling that keeps 15% after ads
+EVT-SET-SER-CREAM-ACNE,Набор сыв+крем АКНЕ,OZON,1625,23.4,1625,1544,790,8,A-HERO_BUNDLE,HERO: protect price; -5% max on event dates; ads up to ceiling that keeps 15% after ads
+EVT-SET-TON-SER-CREAM-ACNE,Набор тон+сыв+крем АКНЕ,WB,1343,9.0,1343,1276,1119,0,A-HERO_BUNDLE,HERO: protect price; -5% max on event dates; ads up to ceiling that keeps 15% after ads
+EVT-SET-TON-SER-CREAM-ACNE,Набор тон+сыв+крем АКНЕ,OZON,2735,25.7,2735,2598,1192,11,A-HERO_BUNDLE,HERO: protect price; -5% max on event dates; ads up to ceiling that keeps 15% after ads
+EVT-SET-ACNE-POWDER-SERUM-CREAM,Набор пудра+сыв+крем АКНЕ,WB,6000,45.6,6000,5520,955,34,C-SLOW_BUNDLE,"SELL DOWN: keep list price, run -8% only on event dates (11.11, BF, NY, 8 March); ads only within economic ceiling"
+EVT-SET-ACNE-POWDER-SERUM-CREAM,Набор пудра+сыв+крем АКНЕ,OZON,2436,24.2,2558,2241,1140,12,C-SLOW_BUNDLE,"SELL DOWN: keep list price, run -8% only on event dates (11.11, BF, NY, 8 March); ads only within economic ceiling"
+EVT-SET-ACNE-TONIC-SERUM,Набор тоник+сыв АКНЕ,WB,1280,23.2,1280,1152,733,15,E-INVENTORY_RELEASE_BUNDLE,INVENTORY-RELEASE bundle: price so that set >= sum of components at promo; -10% on events; ads to 8% floor
+EVT-SET-ACNE-TONIC-SERUM,Набор тоник+сыв АКНЕ,OZON,1740,21.9,1740,1566,902,14,E-INVENTORY_RELEASE_BUNDLE,INVENTORY-RELEASE bundle: price so that set >= sum of components at promo; -10% on events; ads to 8% floor
+EVT-SET-TON-CREAM-ACNE,Набор тон+крем АКНЕ,WB,1274,21.7,1338,1172,763,10,C-SLOW_BUNDLE,"SELL DOWN: keep list price, run -8% only on event dates (11.11, BF, NY, 8 March); ads only within economic ceiling"
+EVT-SET-SER-CREAM-MOIST,Набор сыв+крем УВЛ,WB,1320,26.7,1320,1254,670,12,R-REPLENISH (inbound 5000),"KEEP STOCK/REPLENISH: strongest margin, no deep discount; -5% only at NY"
+EVT-SET-SER-CREAM-MOIST,Набор сыв+крем УВЛ,OZON,1371,19.7,1371,1302,777,5,R-REPLENISH (inbound 5000),"KEEP STOCK/REPLENISH: strongest margin, no deep discount; -5% only at NY"
+EVT-SET-TON-CREAM-MOIST,Набор тон+крем УВЛ,WB,1267,21.8,1267,1204,758,7,R-REPLENISH (inbound 5000),"KEEP STOCK/REPLENISH: strongest margin, no deep discount; -5% only at NY"
+EVT-SET-TON-SER-CREAM-MOIST,Набор тон+сыв+крем УВЛ,WB,1370,11.9,1370,1302,1069,0,R-REPLENISH (inbound 5000),"KEEP STOCK/REPLENISH: strongest margin, no deep discount; -5% only at NY"
+EVT-SET-MOIST-TONIC-SERUM,Набор тоник+сыв УВЛ,WB,1248,21.4,1248,1123,755,13,E-INVENTORY_RELEASE_BUNDLE,INVENTORY-RELEASE bundle: price so that set >= sum of components at promo; -10% on events; ads to 8% floor
+EVT-SET-MOIST-TONIC-SERUM,Набор тоник+сыв УВЛ,OZON,1527,18.9,1527,1374,891,11,E-INVENTORY_RELEASE_BUNDLE,INVENTORY-RELEASE bundle: price so that set >= sum of components at promo; -10% on events; ads to 8% floor
+EVT-SET-HAND-CHERRY,Набор руки+Lost Cherry,WB,1120,3.2,1120,1008,1054,0,E-INVENTORY_RELEASE_BUNDLE,INVENTORY-RELEASE bundle: price so that set >= sum of components at promo; -10% on events; ads to 8% floor
+EVT-SET-HAND-CHERRY,Набор руки+Lost Cherry,OZON,1620,14.2,1620,1458,1114,6,E-INVENTORY_RELEASE_BUNDLE,INVENTORY-RELEASE bundle: price so that set >= sum of components at promo; -10% on events; ads to 8% floor
+EVT-SET-HAND-AMBER,Набор руки+Amber,WB,1120,4.2,1120,1008,1032,0,E-INVENTORY_RELEASE_BUNDLE,INVENTORY-RELEASE bundle: price so that set >= sum of components at promo; -10% on events; ads to 8% floor
+EVT-SET-HAND-AMBER,Набор руки+Amber,OZON,1452,10.6,1452,1307,1114,3,E-INVENTORY_RELEASE_BUNDLE,INVENTORY-RELEASE bundle: price so that set >= sum of components at promo; -10% on events; ads to 8% floor
+EVT-SET-CHERRY-AMBER,Набор Cherry+Amber,WB,1120,11.0,1120,1008,892,3,E-INVENTORY_RELEASE_BUNDLE,INVENTORY-RELEASE bundle: price so that set >= sum of components at promo; -10% on events; ads to 8% floor
+EVT-SET-CHERRY-AMBER,Набор Cherry+Amber,OZON,1574,16.9,1574,1417,990,9,E-INVENTORY_RELEASE_BUNDLE,INVENTORY-RELEASE bundle: price so that set >= sum of components at promo; -10% on events; ads to 8% floor

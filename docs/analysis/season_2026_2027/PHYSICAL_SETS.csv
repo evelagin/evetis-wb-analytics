@@ -1,0 +1,15 @@
+set_sku,name,bom,units_per_set,wb_fbo_live_sets,wb_lost_sets,ozon_fbo_sets,ff_assembled_sets,assembly_model,cogs_rub
+EVT-SET-4PC-ACNE,Набор 4 шага АКНЕ,EVT-EP-ENZYME-75 + EVT-FC-ACNE-50 + EVT-FS-ACNE-30 + EVT-FT-ACNE-150,4,1,45,4,MISSING (ФФ не отдаёт срез наборов; наряд 03.09 на сборку не подтверждён),FF_ASSEMBLED on demand,609.52
+EVT-SET-SER-CREAM-ACNE,Набор сыв+крем АКНЕ,EVT-FC-ACNE-50 + EVT-FS-ACNE-30,2,48,130,3,MISSING (ФФ не отдаёт срез наборов; наряд 03.09 на сборку не подтверждён),FF_ASSEMBLED on demand,267.44
+EVT-SET-TON-SER-CREAM-ACNE,Набор тон+сыв+крем АКНЕ,EVT-FC-ACNE-50 + EVT-FS-ACNE-30 + EVT-FT-ACNE-150,3,0,25,6,MISSING (ФФ не отдаёт срез наборов; наряд 03.09 на сборку не подтверждён),FF_ASSEMBLED on demand,450.23
+EVT-SET-ACNE-POWDER-SERUM-CREAM,Набор пудра+сыв+крем АКНЕ,EVT-EP-ENZYME-75 + EVT-FC-ACNE-50 + EVT-FS-ACNE-30,3,0,0,6,MISSING (ФФ не отдаёт срез наборов; наряд 03.09 на сборку не подтверждён),FF_ASSEMBLED on demand,426.74
+EVT-SET-ACNE-TONIC-SERUM,Набор тоник+сыв АКНЕ,EVT-FS-ACNE-30 + EVT-FT-ACNE-150,2,0,14,11,MISSING (ФФ не отдаёт срез наборов; наряд 03.09 на сборку не подтверждён),FF_ASSEMBLED on demand,318.56
+EVT-SET-TON-CREAM-ACNE,Набор тон+крем АКНЕ,EVT-FC-ACNE-50 + EVT-FT-ACNE-150,2,11,23,0,MISSING (ФФ не отдаёт срез наборов; наряд 03.09 на сборку не подтверждён),FF_ASSEMBLED on demand,314.44
+EVT-SET-SER-CREAM-MOIST,Набор сыв+крем УВЛ,EVT-FC-MOIST-50 + EVT-FS-MOIST-30,2,0,3,0,MISSING (ФФ не отдаёт срез наборов; наряд 03.09 на сборку не подтверждён),FF_ASSEMBLED on demand,261.59
+EVT-SET-TON-CREAM-MOIST,Набор тон+крем УВЛ,EVT-FC-MOIST-50 + EVT-FT-MOIST-150,2,0,24,0,MISSING (ФФ не отдаёт срез наборов; наряд 03.09 на сборку не подтверждён),FF_ASSEMBLED on demand,313.56
+EVT-SET-TON-SER-CREAM-MOIST,Набор тон+сыв+крем УВЛ,EVT-FC-MOIST-50 + EVT-FS-MOIST-30 + EVT-FT-MOIST-150,3,0,14,0,MISSING (ФФ не отдаёт срез наборов; наряд 03.09 на сборку не подтверждён),FF_ASSEMBLED on demand,444.38
+EVT-SET-MOIST-TONIC-SERUM,Набор тоник+сыв УВЛ,EVT-FS-MOIST-30 + EVT-FT-MOIST-150,2,4,16,4,MISSING (ФФ не отдаёт срез наборов; наряд 03.09 на сборку не подтверждён),FF_ASSEMBLED on demand,313.6
+EVT-SET-HAND-CHERRY,Набор руки+Lost Cherry,EVT-HC-HAND-300 + EVT-HC-CHERRY-300,2,11,34,13,MISSING (ФФ не отдаёт срез наборов; наряд 03.09 на сборку не подтверждён),FF_ASSEMBLED on demand,406.65
+EVT-SET-HAND-AMBER,Набор руки+Amber,EVT-HC-HAND-300 + EVT-HC-AMBER-300,2,10,23,15,MISSING (ФФ не отдаёт срез наборов; наряд 03.09 на сборку не подтверждён),FF_ASSEMBLED on demand,406.65
+EVT-SET-CHERRY-AMBER,Набор Cherry+Amber,EVT-HC-CHERRY-300 + EVT-HC-AMBER-300,2,11,26,21,MISSING (ФФ не отдаёт срез наборов; наряд 03.09 на сборку не подтверждён),FF_ASSEMBLED on demand,350.54
+EVT-SET-HAND-BODY,Набор руки+тело,EVT-HC-HAND-300 + EVT-HC-BODY-300,2,0,0,0,MISSING (ФФ не отдаёт срез наборов; наряд 03.09 на сборку не подтверждён),FF_ASSEMBLED on demand,437.26

@@ -1,0 +1,43 @@
+internal_sku,name,channel,action,current_list_price,current_realized_price,recommended_shelf_price,promo_range,drr_assumption_pct,expected_margin_after_ads_pct,absolute_floor_no_ads,margin_before_ads_now_pct
+EVT-FS-ACNE-30,Сыворотка АКНЕ 30 мл,WB,HOLD (check auto-promos: realized < 90% of list),806,656,806,765 on events,12.0,16.2,387,28.2
+EVT-FS-ACNE-30,Сыворотка АКНЕ 30 мл,OZON,HOLD,1258,1090,1258,1195 on events,12.0,16.3,476,28.3
+EVT-FS-MOIST-30,Сыворотка УВЛ 30 мл,WB,HOLD (check auto-promos: realized < 90% of list),699,619,699,664 on events,12.0,12.8,379,24.8
+EVT-FS-MOIST-30,Сыворотка УВЛ 30 мл,OZON,HOLD,1234,1037,1234,1172 on events,12.0,16.3,466,28.3
+EVT-FC-ACNE-50,Крем для лица АКНЕ 50 мл,WB,HOLD (check auto-promos: realized < 90% of list),800,646,800,760 on events,12.0,15.6,393,27.6
+EVT-FC-ACNE-50,Крем для лица АКНЕ 50 мл,OZON,HOLD,1374,1146,1374,1305 on events,12.0,17.5,483,29.5
+EVT-FC-MOIST-50,Крем для лица УВЛ 50 мл,WB,HOLD (check auto-promos: realized < 90% of list),926,627,926,879 on events,12.0,19.8,382,31.8
+EVT-FC-MOIST-50,Крем для лица УВЛ 50 мл,OZON,RAISE,848,,1200,1 140 on events,11.7,15.6,481,19.7
+EVT-FT-ACNE-150,Тоник АКНЕ 150 мл,WB,HOLD (check auto-promos: realized < 90% of list),740,657,740,703 on events,3.0,16.5,474,19.5
+EVT-FT-ACNE-150,Тоник АКНЕ 150 мл,OZON,RAISE,1219,993,1324,"hold new price, -8% only on events",3.0,22.0,595,23.3
+EVT-FT-MOIST-150,Тоник УВЛ 150 мл,WB,HOLD (check auto-promos: realized < 90% of list),740,590,740,703 on events,3.0,16.4,475,19.4
+EVT-FT-MOIST-150,Тоник УВЛ 150 мл,OZON,RAISE,1197,998,1367,"hold new price, -8% only on events",3.0,22.7,595,22.9
+EVT-EP-ENZYME-75,Энзимная пудра 75 г,WB,PROMO ONLY,666,614,666,613 on 11.11 / BF / NY / 8 March,3.0,15.8,435,18.8
+EVT-EP-ENZYME-75,Энзимная пудра 75 г,OZON,PROMO ONLY,1231,989,1231,1133 on 11.11 / BF / NY / 8 March,3.0,22.4,544,25.4
+EVT-HC-HAND-300,Крем для рук Oud Wood 300 мл,WB,LIQUIDATION,640,419,640,590 Oct → 540 Nov → 490 Dec (floor 450),0.0,3.8,595,3.8
+EVT-HC-HAND-300,Крем для рук Oud Wood 300 мл,OZON,LIQUIDATION,973,858,973,895 Oct → 850 Nov → 799 Dec (floor 699),0.0,12.3,711,12.3
+EVT-HC-CHERRY-300,Крем для тела Lost Cherry 300 мл,WB,HOLD (check auto-promos: realized < 90% of list),640,491,640,608 on events,0.0,13.0,486,13.0
+EVT-HC-CHERRY-300,Крем для тела Lost Cherry 300 мл,OZON,RAISE,1209,996,1378,"hold new price, -8% only on events",0.0,26.1,587,23.4
+EVT-HC-AMBER-300,Крем для тела Amber Vanilla 300 мл,WB,HOLD (check auto-promos: realized < 90% of list),640,549,640,608 on events,0.0,11.0,510,11.0
+EVT-HC-AMBER-300,Крем для тела Amber Vanilla 300 мл,OZON,PROMO ONLY,1242,970,1242,1143 on 11.11 / BF / NY / 8 March,0.0,24.0,587,24.0
+EVT-SET-4PC-ACNE,Набор 4 шага АКНЕ,WB,RAISE,1900,1870,2014,1900 on events,5.1,10.3,1440,13.1
+EVT-SET-4PC-ACNE,Набор 4 шага АКНЕ,OZON,HOLD,3816,3056,3816,3625 on events,12.0,15.0,1553,27.0
+EVT-SET-SER-CREAM-ACNE,Набор сыв+крем АКНЕ,WB,HOLD,1294,1169,1294,1229 on events,12.0,14.5,660,26.5
+EVT-SET-SER-CREAM-ACNE,Набор сыв+крем АКНЕ,OZON,TEST,1625,1204,1706,1625 on events,12.0,12.4,790,23.4
+EVT-SET-TON-SER-CREAM-ACNE,Набор тон+сыв+крем АКНЕ,WB,RAISE,1343,1424,1424,1343 on events,1.0,10.6,1119,9.0
+EVT-SET-TON-SER-CREAM-ACNE,Набор тон+сыв+крем АКНЕ,OZON,HOLD,2735,1966,2735,2598 on events,12.0,13.7,1192,25.7
+EVT-SET-ACNE-POWDER-SERUM-CREAM,Набор пудра+сыв+крем АКНЕ,OZON,PROMO ONLY,2436,2000,2436,2241 on 11.11 / BF / NY / 8 March,3.0,21.2,1140,24.2
+EVT-SET-ACNE-TONIC-SERUM,Набор тоник+сыв АКНЕ,WB,HOLD (check auto-promos: realized < 90% of list),1280,801,1280,1216 on events,3.0,20.2,733,23.2
+EVT-SET-ACNE-TONIC-SERUM,Набор тоник+сыв АКНЕ,OZON,PROMO ONLY,1740,1421,1740,1601 on 11.11 / BF / NY / 8 March,3.0,18.9,902,21.9
+EVT-SET-TON-CREAM-ACNE,Набор тон+крем АКНЕ,WB,HOLD (check auto-promos: realized < 90% of list),1274,935,1274,1210 on events,3.0,18.7,763,21.7
+EVT-SET-SER-CREAM-MOIST,Набор сыв+крем УВЛ,WB,HOLD (check auto-promos: realized < 90% of list),1320,1042,1320,1254 on events,12.0,14.7,670,26.7
+EVT-SET-SER-CREAM-MOIST,Набор сыв+крем УВЛ,OZON,TEST,1371,,1440,1371 on events,11.7,9.2,777,19.7
+EVT-SET-TON-CREAM-MOIST,Набор тон+крем УВЛ,WB,TEST,1267,1291,1331,1267 on events,3.0,20.4,758,21.8
+EVT-SET-TON-SER-CREAM-MOIST,Набор тон+сыв+крем УВЛ,WB,TEST,1370,1337,1438,1370 on events,3.9,10.0,1069,11.9
+EVT-SET-MOIST-TONIC-SERUM,Набор тоник+сыв УВЛ,WB,PROMO ONLY,1248,1280,1248,1148 on 11.11 / BF / NY / 8 March,3.0,18.4,755,21.4
+EVT-SET-MOIST-TONIC-SERUM,Набор тоник+сыв УВЛ,OZON,PROMO ONLY,1527,1259,1527,1405 on 11.11 / BF / NY / 8 March,3.0,15.9,891,18.9
+EVT-SET-HAND-CHERRY,Набор руки+Lost Cherry,WB,LIQUIDATION,1120,1024,1120,1064 Oct → 1008 Nov-Dec,0.0,3.2,1054,3.2
+EVT-SET-HAND-CHERRY,Набор руки+Lost Cherry,OZON,LIQUIDATION,1620,1188,1620,1539 Oct → 1458 Nov-Dec,0.0,14.2,1114,14.2
+EVT-SET-HAND-AMBER,Набор руки+Amber,WB,LIQUIDATION,1120,954,1120,1064 Oct → 1008 Nov-Dec,0.0,4.2,1032,4.2
+EVT-SET-HAND-AMBER,Набор руки+Amber,OZON,LIQUIDATION,1452,1090,1452,1379 Oct → 1307 Nov-Dec,0.0,10.6,1114,10.6
+EVT-SET-CHERRY-AMBER,Набор Cherry+Amber,WB,HOLD (check auto-promos: realized < 90% of list),1120,852,1120,1064 on events,3.0,8.0,892,11.0
+EVT-SET-CHERRY-AMBER,Набор Cherry+Amber,OZON,PROMO ONLY,1574,1172,1574,1448 on 11.11 / BF / NY / 8 March,8.9,8.0,990,16.9

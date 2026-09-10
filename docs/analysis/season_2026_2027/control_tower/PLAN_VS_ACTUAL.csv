@@ -1,0 +1,11 @@
+kpi,plan_mtd_1_8_sep,actual_mtd_1_8_sep,delta,pct_of_plan,forecast_eom,status,unit
+cards sold (orders),287,143,-144,50,932,RED,cards
+physical units (bottles),356,184,-172,52,1162,RED,bottles
+WB cards,217,107,-110,49,704,RED,cards
+Ozon cards,70,36,-34,52,228,RED,cards
+bundle cards,45,27,-18,60,151,RED,cards
+revenue (GMV),267542,128805,-138737,48,864544,RED,RUB
+advertising,20927,18323,-2604,88,75873,YELLOW,RUB
+DRR %,7.8,14.2,6.4,,7.8,RED,%
+contribution after ads (WB 7d proxy),20841,5305,-15536,25,87181,RED,RUB
+stock reduction (bottles sold),356,184,-172,52,1162,RED,bottles

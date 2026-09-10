@@ -1,0 +1,81 @@
+week_start,week,internal_sku,name,target_sales_wb,target_sales_ozon,target_fbo_wb,target_fbo_ozon,shipment_wb,shipment_ozon,bundle_units_to_assemble,inventory_alert
+2026-09-14,1,EVT-FS-ACNE-30,Сыворотка АКНЕ 30 мл,39,12,299,95,49,1,20,PULL 111 from pallets
+2026-09-14,1,EVT-FS-MOIST-30,Сыворотка УВЛ 30 мл,38,5,361,44,336,0,2,PULL 122 from pallets
+2026-09-14,1,EVT-FC-ACNE-50,Крем для лица АКНЕ 50 мл,42,9,322,72,0,0,20,RUNOUT Jan-2027 in BASE: order acne face cream now; PULL 61 from pallets
+2026-09-14,1,EVT-FC-MOIST-50,Крем для лица УВЛ 50 мл,0,0,308,37,0,0,0,INBOUND 5000: release order this week; ETA FF ~20.10; WB/Ozon from Nov; PULL 396 from pallets
+2026-09-14,1,EVT-FT-ACNE-150,Тоник АКНЕ 150 мл,31,11,236,87,173,0,14,PULL 186 from pallets
+2026-09-14,1,EVT-FT-MOIST-150,Тоник УВЛ 150 мл,13,6,158,49,85,0,2,PULL 64 from pallets
+2026-09-14,1,EVT-EP-ENZYME-75,Энзимная пудра 75 г,19,6,152,45,41,0,8,
+2026-09-14,1,EVT-HC-HAND-300,Крем для рук Oud Wood 300 мл,49,14,374,112,210,44,7,LIQUIDATION: hold price >= 640 WB / 973 Ozon; ads only Ozon+bundles; PULL 329 from pallets
+2026-09-14,1,EVT-HC-CHERRY-300,Крем для тела Lost Cherry 300 мл,11,8,89,62,67,0,8,"190+ months of cover: bundle-only promotion, no solo ads; PULL 12 from pallets"
+2026-09-14,1,EVT-HC-AMBER-300,Крем для тела Amber Vanilla 300 мл,11,6,88,45,65,0,6,"190+ months of cover: bundle-only promotion, no solo ads"
+2026-09-21,2,EVT-FS-ACNE-30,Сыворотка АКНЕ 30 мл,39,12,299,95,0,24,20,
+2026-09-21,2,EVT-FS-MOIST-30,Сыворотка УВЛ 30 мл,38,5,361,44,0,10,2,
+2026-09-21,2,EVT-FC-ACNE-50,Крем для лица АКНЕ 50 мл,42,9,322,72,0,18,20,RUNOUT Jan-2027 in BASE: order acne face cream now
+2026-09-21,2,EVT-FC-MOIST-50,Крем для лица УВЛ 50 мл,0,0,308,37,0,0,0,
+2026-09-21,2,EVT-FT-ACNE-150,Тоник АКНЕ 150 мл,31,11,236,87,0,22,14,
+2026-09-21,2,EVT-FT-MOIST-150,Тоник УВЛ 150 мл,13,6,158,49,0,12,2,
+2026-09-21,2,EVT-EP-ENZYME-75,Энзимная пудра 75 г,19,6,152,45,0,11,8,
+2026-09-21,2,EVT-HC-HAND-300,Крем для рук Oud Wood 300 мл,49,14,374,112,0,29,7,LIQUIDATION: hold price >= 640 WB / 973 Ozon; ads only Ozon+bundles
+2026-09-21,2,EVT-HC-CHERRY-300,Крем для тела Lost Cherry 300 мл,11,8,89,62,0,16,8,"190+ months of cover: bundle-only promotion, no solo ads"
+2026-09-21,2,EVT-HC-AMBER-300,Крем для тела Amber Vanilla 300 мл,11,6,88,45,0,11,6,"190+ months of cover: bundle-only promotion, no solo ads"
+2026-09-28,3,EVT-FS-ACNE-30,Сыворотка АКНЕ 30 мл,39,12,299,95,39,0,20,
+2026-09-28,3,EVT-FS-MOIST-30,Сыворотка УВЛ 30 мл,38,5,361,44,38,0,2,
+2026-09-28,3,EVT-FC-ACNE-50,Крем для лица АКНЕ 50 мл,42,9,322,72,42,0,20,RUNOUT Jan-2027 in BASE: order acne face cream now
+2026-09-28,3,EVT-FC-MOIST-50,Крем для лица УВЛ 50 мл,0,0,308,37,0,0,0,
+2026-09-28,3,EVT-FT-ACNE-150,Тоник АКНЕ 150 мл,31,11,236,87,31,0,14,
+2026-09-28,3,EVT-FT-MOIST-150,Тоник УВЛ 150 мл,13,6,158,49,13,0,2,
+2026-09-28,3,EVT-EP-ENZYME-75,Энзимная пудра 75 г,19,6,152,45,19,0,8,
+2026-09-28,3,EVT-HC-HAND-300,Крем для рук Oud Wood 300 мл,49,14,374,112,49,0,7,LIQUIDATION: hold price >= 640 WB / 973 Ozon; ads only Ozon+bundles
+2026-09-28,3,EVT-HC-CHERRY-300,Крем для тела Lost Cherry 300 мл,11,8,89,62,11,0,8,"190+ months of cover: bundle-only promotion, no solo ads"
+2026-09-28,3,EVT-HC-AMBER-300,Крем для тела Amber Vanilla 300 мл,11,6,88,45,11,0,6,"190+ months of cover: bundle-only promotion, no solo ads"
+2026-10-05,4,EVT-FS-ACNE-30,Сыворотка АКНЕ 30 мл,41,13,299,95,0,25,28,
+2026-10-05,4,EVT-FS-MOIST-30,Сыворотка УВЛ 30 мл,40,5,361,44,0,11,2,
+2026-10-05,4,EVT-FC-ACNE-50,Крем для лица АКНЕ 50 мл,45,10,322,72,0,19,29,RUNOUT Jan-2027 in BASE: order acne face cream now
+2026-10-05,4,EVT-FC-MOIST-50,Крем для лица УВЛ 50 мл,0,0,308,37,0,0,0,
+2026-10-05,4,EVT-FT-ACNE-150,Тоник АКНЕ 150 мл,32,12,236,87,0,23,20,
+2026-10-05,4,EVT-FT-MOIST-150,Тоник УВЛ 150 мл,14,6,158,49,0,13,2,
+2026-10-05,4,EVT-EP-ENZYME-75,Энзимная пудра 75 г,21,6,152,45,0,12,12,
+2026-10-05,4,EVT-HC-HAND-300,Крем для рук Oud Wood 300 мл,52,15,374,112,0,30,10,LIQUIDATION: hold price >= 640 WB / 973 Ozon; ads only Ozon+bundles
+2026-10-05,4,EVT-HC-CHERRY-300,Крем для тела Lost Cherry 300 мл,12,8,89,62,0,16,11,"190+ months of cover: bundle-only promotion, no solo ads"
+2026-10-05,4,EVT-HC-AMBER-300,Крем для тела Amber Vanilla 300 мл,12,6,88,45,0,12,9,"190+ months of cover: bundle-only promotion, no solo ads"
+2026-10-12,5,EVT-FS-ACNE-30,Сыворотка АКНЕ 30 мл,41,13,299,95,41,0,28,
+2026-10-12,5,EVT-FS-MOIST-30,Сыворотка УВЛ 30 мл,40,5,361,44,40,0,2,
+2026-10-12,5,EVT-FC-ACNE-50,Крем для лица АКНЕ 50 мл,45,10,322,72,45,0,29,RUNOUT Jan-2027 in BASE: order acne face cream now
+2026-10-12,5,EVT-FC-MOIST-50,Крем для лица УВЛ 50 мл,0,0,308,37,0,0,0,
+2026-10-12,5,EVT-FT-ACNE-150,Тоник АКНЕ 150 мл,32,12,236,87,32,0,20,
+2026-10-12,5,EVT-FT-MOIST-150,Тоник УВЛ 150 мл,14,6,158,49,14,0,2,
+2026-10-12,5,EVT-EP-ENZYME-75,Энзимная пудра 75 г,21,6,152,45,21,0,12,
+2026-10-12,5,EVT-HC-HAND-300,Крем для рук Oud Wood 300 мл,52,15,374,112,52,0,10,LIQUIDATION: hold price >= 640 WB / 973 Ozon; ads only Ozon+bundles
+2026-10-12,5,EVT-HC-CHERRY-300,Крем для тела Lost Cherry 300 мл,12,8,89,62,12,0,11,"190+ months of cover: bundle-only promotion, no solo ads"
+2026-10-12,5,EVT-HC-AMBER-300,Крем для тела Amber Vanilla 300 мл,12,6,88,45,12,0,9,"190+ months of cover: bundle-only promotion, no solo ads"
+2026-10-19,6,EVT-FS-ACNE-30,Сыворотка АКНЕ 30 мл,41,13,299,95,0,25,28,
+2026-10-19,6,EVT-FS-MOIST-30,Сыворотка УВЛ 30 мл,40,5,361,44,0,11,2,
+2026-10-19,6,EVT-FC-ACNE-50,Крем для лица АКНЕ 50 мл,45,10,322,72,0,19,29,RUNOUT Jan-2027 in BASE: order acne face cream now
+2026-10-19,6,EVT-FC-MOIST-50,Крем для лица УВЛ 50 мл,0,0,308,37,0,0,0,ETA FF this week
+2026-10-19,6,EVT-FT-ACNE-150,Тоник АКНЕ 150 мл,32,12,236,87,0,23,20,
+2026-10-19,6,EVT-FT-MOIST-150,Тоник УВЛ 150 мл,14,6,158,49,0,13,2,
+2026-10-19,6,EVT-EP-ENZYME-75,Энзимная пудра 75 г,21,6,152,45,0,12,12,
+2026-10-19,6,EVT-HC-HAND-300,Крем для рук Oud Wood 300 мл,52,15,374,112,0,30,10,LIQUIDATION: hold price >= 640 WB / 973 Ozon; ads only Ozon+bundles
+2026-10-19,6,EVT-HC-CHERRY-300,Крем для тела Lost Cherry 300 мл,12,8,89,62,0,16,11,"190+ months of cover: bundle-only promotion, no solo ads"
+2026-10-19,6,EVT-HC-AMBER-300,Крем для тела Amber Vanilla 300 мл,12,6,88,45,0,12,9,"190+ months of cover: bundle-only promotion, no solo ads"
+2026-10-26,7,EVT-FS-ACNE-30,Сыворотка АКНЕ 30 мл,41,13,299,95,41,0,28,
+2026-10-26,7,EVT-FS-MOIST-30,Сыворотка УВЛ 30 мл,40,5,361,44,40,0,2,
+2026-10-26,7,EVT-FC-ACNE-50,Крем для лица АКНЕ 50 мл,45,10,322,72,45,0,29,RUNOUT Jan-2027 in BASE: order acne face cream now
+2026-10-26,7,EVT-FC-MOIST-50,Крем для лица УВЛ 50 мл,0,0,308,37,0,0,0,
+2026-10-26,7,EVT-FT-ACNE-150,Тоник АКНЕ 150 мл,32,12,236,87,32,0,20,
+2026-10-26,7,EVT-FT-MOIST-150,Тоник УВЛ 150 мл,14,6,158,49,14,0,2,
+2026-10-26,7,EVT-EP-ENZYME-75,Энзимная пудра 75 г,21,6,152,45,21,0,12,
+2026-10-26,7,EVT-HC-HAND-300,Крем для рук Oud Wood 300 мл,52,15,374,112,52,0,10,LIQUIDATION: hold price >= 640 WB / 973 Ozon; ads only Ozon+bundles
+2026-10-26,7,EVT-HC-CHERRY-300,Крем для тела Lost Cherry 300 мл,12,8,89,62,12,0,11,"190+ months of cover: bundle-only promotion, no solo ads"
+2026-10-26,7,EVT-HC-AMBER-300,Крем для тела Amber Vanilla 300 мл,12,6,88,45,12,0,9,"190+ months of cover: bundle-only promotion, no solo ads"
+2026-11-02,8,EVT-FS-ACNE-30,Сыворотка АКНЕ 30 мл,48,15,299,95,0,29,33,
+2026-11-02,8,EVT-FS-MOIST-30,Сыворотка УВЛ 30 мл,68,7,361,44,0,14,26,
+2026-11-02,8,EVT-FC-ACNE-50,Крем для лица АКНЕ 50 мл,51,11,322,72,0,22,34,RUNOUT Jan-2027 in BASE: order acne face cream now
+2026-11-02,8,EVT-FC-MOIST-50,Крем для лица УВЛ 50 мл,92,10,308,37,0,20,29,
+2026-11-02,8,EVT-FT-ACNE-150,Тоник АКНЕ 150 мл,37,13,236,87,0,27,23,
+2026-11-02,8,EVT-FT-MOIST-150,Тоник УВЛ 150 мл,32,7,158,49,0,15,19,
+2026-11-02,8,EVT-EP-ENZYME-75,Энзимная пудра 75 г,24,7,152,45,0,13,14,
+2026-11-02,8,EVT-HC-HAND-300,Крем для рук Oud Wood 300 мл,60,17,374,112,0,35,12,LIQUIDATION: hold price >= 640 WB / 973 Ozon; ads only Ozon+bundles
+2026-11-02,8,EVT-HC-CHERRY-300,Крем для тела Lost Cherry 300 мл,14,9,89,62,0,19,13,"190+ months of cover: bundle-only promotion, no solo ads"
+2026-11-02,8,EVT-HC-AMBER-300,Крем для тела Amber Vanilla 300 мл,13,7,88,45,0,13,11,"190+ months of cover: bundle-only promotion, no solo ads"

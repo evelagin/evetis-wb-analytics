@@ -1,0 +1,84 @@
+week,week_start,bundle,name,qty_assemble,components_consumed,units_consumed,sell_target_wb,sell_target_ozon,marketplace,limiting_component,on_hand_limit,note
+1,2026-09-14,EVT-SET-4PC-ACNE,Набор 4 шага АКНЕ,19,Энзимная пудра 75 г x19 + Крем для лица АКНЕ 50 мл x19 + Сыворотка АКНЕ 30 мл x19 + Тоник АКНЕ 150 мл x19,76,5,2,WB+Ozon,Крем для лица АКНЕ 50 мл,1513,
+1,2026-09-14,EVT-SET-SER-CREAM-ACNE,Набор сыв+крем АКНЕ,14,Крем для лица АКНЕ 50 мл x14 + Сыворотка АКНЕ 30 мл x14,28,5,1,WB+Ozon,Крем для лица АКНЕ 50 мл,1513,
+1,2026-09-14,EVT-SET-TON-SER-CREAM-ACNE,Набор тон+сыв+крем АКНЕ,11,Крем для лица АКНЕ 50 мл x11 + Сыворотка АКНЕ 30 мл x11 + Тоник АКНЕ 150 мл x11,33,2,3,WB+Ozon,Крем для лица АКНЕ 50 мл,1513,
+1,2026-09-14,EVT-SET-ACNE-POWDER-SERUM-CREAM,Набор пудра+сыв+крем АКНЕ,1,Энзимная пудра 75 г x1 + Крем для лица АКНЕ 50 мл x1 + Сыворотка АКНЕ 30 мл x1,3,0,1,WB+Ozon,Крем для лица АКНЕ 50 мл,1513,
+1,2026-09-14,EVT-SET-ACNE-TONIC-SERUM,Набор тоник+сыв АКНЕ,2,Сыворотка АКНЕ 30 мл x2 + Тоник АКНЕ 150 мл x2,4,0,1,WB+Ozon,Тоник АКНЕ 150 мл,3790,
+1,2026-09-14,EVT-SET-TON-CREAM-ACNE,Набор тон+крем АКНЕ,5,Крем для лица АКНЕ 50 мл x5 + Тоник АКНЕ 150 мл x5,10,2,0,WB,Крем для лица АКНЕ 50 мл,1513,
+1,2026-09-14,EVT-SET-MOIST-TONIC-SERUM,Набор тоник+сыв УВЛ,12,Сыворотка УВЛ 30 мл x12 + Тоник УВЛ 150 мл x12,24,1,5,WB+Ozon,Тоник УВЛ 150 мл,3781,
+1,2026-09-14,EVT-SET-HAND-CHERRY,Набор руки+Lost Cherry,10,Крем для рук Oud Wood 300 мл x10 + Крем для тела Lost Cherry 300 мл x10,20,3,2,WB+Ozon,Крем для рук Oud Wood 300 мл,2952,liquidation set: hand cream inside
+1,2026-09-14,EVT-SET-HAND-AMBER,Набор руки+Amber,9,Крем для рук Oud Wood 300 мл x9 + Крем для тела Amber Vanilla 300 мл x9,18,2,1,WB+Ozon,Крем для рук Oud Wood 300 мл,2952,liquidation set: hand cream inside
+1,2026-09-14,EVT-SET-CHERRY-AMBER,Набор Cherry+Amber,11,Крем для тела Lost Cherry 300 мл x11 + Крем для тела Amber Vanilla 300 мл x11,22,2,3,WB+Ozon,Крем для тела Lost Cherry 300 мл,4509,
+2,2026-09-21,EVT-SET-4PC-ACNE,Набор 4 шага АКНЕ,0,,0,5,2,WB+Ozon,Крем для лица АКНЕ 50 мл,1513,
+2,2026-09-21,EVT-SET-SER-CREAM-ACNE,Набор сыв+крем АКНЕ,0,,0,5,1,WB+Ozon,Крем для лица АКНЕ 50 мл,1513,
+2,2026-09-21,EVT-SET-TON-SER-CREAM-ACNE,Набор тон+сыв+крем АКНЕ,0,,0,2,3,WB+Ozon,Крем для лица АКНЕ 50 мл,1513,
+2,2026-09-21,EVT-SET-ACNE-POWDER-SERUM-CREAM,Набор пудра+сыв+крем АКНЕ,0,,0,0,1,WB+Ozon,Крем для лица АКНЕ 50 мл,1513,
+2,2026-09-21,EVT-SET-ACNE-TONIC-SERUM,Набор тоник+сыв АКНЕ,0,,0,0,1,WB+Ozon,Тоник АКНЕ 150 мл,3790,
+2,2026-09-21,EVT-SET-TON-CREAM-ACNE,Набор тон+крем АКНЕ,0,,0,2,0,WB,Крем для лица АКНЕ 50 мл,1513,
+2,2026-09-21,EVT-SET-MOIST-TONIC-SERUM,Набор тоник+сыв УВЛ,0,,0,1,5,WB+Ozon,Тоник УВЛ 150 мл,3781,
+2,2026-09-21,EVT-SET-HAND-CHERRY,Набор руки+Lost Cherry,0,,0,3,2,WB+Ozon,Крем для рук Oud Wood 300 мл,2952,liquidation set: hand cream inside
+2,2026-09-21,EVT-SET-HAND-AMBER,Набор руки+Amber,0,,0,2,1,WB+Ozon,Крем для рук Oud Wood 300 мл,2952,liquidation set: hand cream inside
+2,2026-09-21,EVT-SET-CHERRY-AMBER,Набор Cherry+Amber,0,,0,2,3,WB+Ozon,Крем для тела Lost Cherry 300 мл,4509,
+3,2026-09-28,EVT-SET-4PC-ACNE,Набор 4 шага АКНЕ,19,Энзимная пудра 75 г x19 + Крем для лица АКНЕ 50 мл x19 + Сыворотка АКНЕ 30 мл x19 + Тоник АКНЕ 150 мл x19,76,5,2,WB+Ozon,Крем для лица АКНЕ 50 мл,1513,
+3,2026-09-28,EVT-SET-SER-CREAM-ACNE,Набор сыв+крем АКНЕ,14,Крем для лица АКНЕ 50 мл x14 + Сыворотка АКНЕ 30 мл x14,28,5,1,WB+Ozon,Крем для лица АКНЕ 50 мл,1513,
+3,2026-09-28,EVT-SET-TON-SER-CREAM-ACNE,Набор тон+сыв+крем АКНЕ,11,Крем для лица АКНЕ 50 мл x11 + Сыворотка АКНЕ 30 мл x11 + Тоник АКНЕ 150 мл x11,33,2,3,WB+Ozon,Крем для лица АКНЕ 50 мл,1513,
+3,2026-09-28,EVT-SET-ACNE-POWDER-SERUM-CREAM,Набор пудра+сыв+крем АКНЕ,1,Энзимная пудра 75 г x1 + Крем для лица АКНЕ 50 мл x1 + Сыворотка АКНЕ 30 мл x1,3,0,1,WB+Ozon,Крем для лица АКНЕ 50 мл,1513,
+3,2026-09-28,EVT-SET-ACNE-TONIC-SERUM,Набор тоник+сыв АКНЕ,2,Сыворотка АКНЕ 30 мл x2 + Тоник АКНЕ 150 мл x2,4,0,1,WB+Ozon,Тоник АКНЕ 150 мл,3790,
+3,2026-09-28,EVT-SET-TON-CREAM-ACNE,Набор тон+крем АКНЕ,5,Крем для лица АКНЕ 50 мл x5 + Тоник АКНЕ 150 мл x5,10,2,0,WB,Крем для лица АКНЕ 50 мл,1513,
+3,2026-09-28,EVT-SET-MOIST-TONIC-SERUM,Набор тоник+сыв УВЛ,12,Сыворотка УВЛ 30 мл x12 + Тоник УВЛ 150 мл x12,24,1,5,WB+Ozon,Тоник УВЛ 150 мл,3781,
+3,2026-09-28,EVT-SET-HAND-CHERRY,Набор руки+Lost Cherry,10,Крем для рук Oud Wood 300 мл x10 + Крем для тела Lost Cherry 300 мл x10,20,3,2,WB+Ozon,Крем для рук Oud Wood 300 мл,2952,liquidation set: hand cream inside
+3,2026-09-28,EVT-SET-HAND-AMBER,Набор руки+Amber,9,Крем для рук Oud Wood 300 мл x9 + Крем для тела Amber Vanilla 300 мл x9,18,2,1,WB+Ozon,Крем для рук Oud Wood 300 мл,2952,liquidation set: hand cream inside
+3,2026-09-28,EVT-SET-CHERRY-AMBER,Набор Cherry+Amber,11,Крем для тела Lost Cherry 300 мл x11 + Крем для тела Amber Vanilla 300 мл x11,22,2,3,WB+Ozon,Крем для тела Lost Cherry 300 мл,4509,
+4,2026-10-05,EVT-SET-4PC-ACNE,Набор 4 шага АКНЕ,0,,0,9,3,WB+Ozon,Крем для лица АКНЕ 50 мл,1513,
+4,2026-10-05,EVT-SET-SER-CREAM-ACNE,Набор сыв+крем АКНЕ,0,,0,8,1,WB+Ozon,Крем для лица АКНЕ 50 мл,1513,
+4,2026-10-05,EVT-SET-TON-SER-CREAM-ACNE,Набор тон+сыв+крем АКНЕ,0,,0,3,3,WB+Ozon,Крем для лица АКНЕ 50 мл,1513,
+4,2026-10-05,EVT-SET-ACNE-POWDER-SERUM-CREAM,Набор пудра+сыв+крем АКНЕ,0,,0,0,1,WB+Ozon,Крем для лица АКНЕ 50 мл,1513,
+4,2026-10-05,EVT-SET-ACNE-TONIC-SERUM,Набор тоник+сыв АКНЕ,0,,0,0,1,WB+Ozon,Тоник АКНЕ 150 мл,3790,
+4,2026-10-05,EVT-SET-TON-CREAM-ACNE,Набор тон+крем АКНЕ,0,,0,3,0,WB,Крем для лица АКНЕ 50 мл,1513,
+4,2026-10-05,EVT-SET-MOIST-TONIC-SERUM,Набор тоник+сыв УВЛ,0,,0,1,5,WB+Ozon,Тоник УВЛ 150 мл,3781,
+4,2026-10-05,EVT-SET-HAND-CHERRY,Набор руки+Lost Cherry,0,,0,4,3,WB+Ozon,Крем для рук Oud Wood 300 мл,2952,liquidation set: hand cream inside
+4,2026-10-05,EVT-SET-HAND-AMBER,Набор руки+Amber,0,,0,4,2,WB+Ozon,Крем для рук Oud Wood 300 мл,2952,liquidation set: hand cream inside
+4,2026-10-05,EVT-SET-CHERRY-AMBER,Набор Cherry+Amber,0,,0,3,3,WB+Ozon,Крем для тела Lost Cherry 300 мл,4509,
+5,2026-10-12,EVT-SET-4PC-ACNE,Набор 4 шага АКНЕ,27,Энзимная пудра 75 г x27 + Крем для лица АКНЕ 50 мл x27 + Сыворотка АКНЕ 30 мл x27 + Тоник АКНЕ 150 мл x27,108,9,3,WB+Ozon,Крем для лица АКНЕ 50 мл,1513,
+5,2026-10-12,EVT-SET-SER-CREAM-ACNE,Набор сыв+крем АКНЕ,22,Крем для лица АКНЕ 50 мл x22 + Сыворотка АКНЕ 30 мл x22,44,8,1,WB+Ozon,Крем для лица АКНЕ 50 мл,1513,
+5,2026-10-12,EVT-SET-TON-SER-CREAM-ACNE,Набор тон+сыв+крем АКНЕ,15,Крем для лица АКНЕ 50 мл x15 + Сыворотка АКНЕ 30 мл x15 + Тоник АКНЕ 150 мл x15,45,3,3,WB+Ozon,Крем для лица АКНЕ 50 мл,1513,
+5,2026-10-12,EVT-SET-ACNE-POWDER-SERUM-CREAM,Набор пудра+сыв+крем АКНЕ,2,Энзимная пудра 75 г x2 + Крем для лица АКНЕ 50 мл x2 + Сыворотка АКНЕ 30 мл x2,6,0,1,WB+Ozon,Крем для лица АКНЕ 50 мл,1513,
+5,2026-10-12,EVT-SET-ACNE-TONIC-SERUM,Набор тоник+сыв АКНЕ,3,Сыворотка АКНЕ 30 мл x3 + Тоник АКНЕ 150 мл x3,6,0,1,WB+Ozon,Тоник АКНЕ 150 мл,3790,
+5,2026-10-12,EVT-SET-TON-CREAM-ACNE,Набор тон+крем АКНЕ,7,Крем для лица АКНЕ 50 мл x7 + Тоник АКНЕ 150 мл x7,14,3,0,WB,Крем для лица АКНЕ 50 мл,1513,
+5,2026-10-12,EVT-SET-MOIST-TONIC-SERUM,Набор тоник+сыв УВЛ,15,Сыворотка УВЛ 30 мл x15 + Тоник УВЛ 150 мл x15,30,1,5,WB+Ozon,Тоник УВЛ 150 мл,3781,
+5,2026-10-12,EVT-SET-HAND-CHERRY,Набор руки+Lost Cherry,18,Крем для рук Oud Wood 300 мл x18 + Крем для тела Lost Cherry 300 мл x18,36,4,3,WB+Ozon,Крем для рук Oud Wood 300 мл,2952,liquidation set: hand cream inside
+5,2026-10-12,EVT-SET-HAND-AMBER,Набор руки+Amber,15,Крем для рук Oud Wood 300 мл x15 + Крем для тела Amber Vanilla 300 мл x15,30,4,2,WB+Ozon,Крем для рук Oud Wood 300 мл,2952,liquidation set: hand cream inside
+5,2026-10-12,EVT-SET-CHERRY-AMBER,Набор Cherry+Amber,15,Крем для тела Lost Cherry 300 мл x15 + Крем для тела Amber Vanilla 300 мл x15,30,3,3,WB+Ozon,Крем для тела Lost Cherry 300 мл,4509,
+6,2026-10-19,EVT-SET-4PC-ACNE,Набор 4 шага АКНЕ,0,,0,9,3,WB+Ozon,Крем для лица АКНЕ 50 мл,1513,
+6,2026-10-19,EVT-SET-SER-CREAM-ACNE,Набор сыв+крем АКНЕ,0,,0,8,1,WB+Ozon,Крем для лица АКНЕ 50 мл,1513,
+6,2026-10-19,EVT-SET-TON-SER-CREAM-ACNE,Набор тон+сыв+крем АКНЕ,0,,0,3,3,WB+Ozon,Крем для лица АКНЕ 50 мл,1513,
+6,2026-10-19,EVT-SET-ACNE-POWDER-SERUM-CREAM,Набор пудра+сыв+крем АКНЕ,0,,0,0,1,WB+Ozon,Крем для лица АКНЕ 50 мл,1513,
+6,2026-10-19,EVT-SET-ACNE-TONIC-SERUM,Набор тоник+сыв АКНЕ,0,,0,0,1,WB+Ozon,Тоник АКНЕ 150 мл,3790,
+6,2026-10-19,EVT-SET-TON-CREAM-ACNE,Набор тон+крем АКНЕ,0,,0,3,0,WB,Крем для лица АКНЕ 50 мл,1513,
+6,2026-10-19,EVT-SET-MOIST-TONIC-SERUM,Набор тоник+сыв УВЛ,0,,0,1,5,WB+Ozon,Тоник УВЛ 150 мл,3781,
+6,2026-10-19,EVT-SET-HAND-CHERRY,Набор руки+Lost Cherry,0,,0,4,3,WB+Ozon,Крем для рук Oud Wood 300 мл,2952,liquidation set: hand cream inside
+6,2026-10-19,EVT-SET-HAND-AMBER,Набор руки+Amber,0,,0,4,2,WB+Ozon,Крем для рук Oud Wood 300 мл,2952,liquidation set: hand cream inside
+6,2026-10-19,EVT-SET-CHERRY-AMBER,Набор Cherry+Amber,0,,0,3,3,WB+Ozon,Крем для тела Lost Cherry 300 мл,4509,
+7,2026-10-26,EVT-SET-4PC-ACNE,Набор 4 шага АКНЕ,27,Энзимная пудра 75 г x27 + Крем для лица АКНЕ 50 мл x27 + Сыворотка АКНЕ 30 мл x27 + Тоник АКНЕ 150 мл x27,108,9,3,WB+Ozon,Крем для лица АКНЕ 50 мл,1513,
+7,2026-10-26,EVT-SET-SER-CREAM-ACNE,Набор сыв+крем АКНЕ,22,Крем для лица АКНЕ 50 мл x22 + Сыворотка АКНЕ 30 мл x22,44,8,1,WB+Ozon,Крем для лица АКНЕ 50 мл,1513,
+7,2026-10-26,EVT-SET-TON-SER-CREAM-ACNE,Набор тон+сыв+крем АКНЕ,15,Крем для лица АКНЕ 50 мл x15 + Сыворотка АКНЕ 30 мл x15 + Тоник АКНЕ 150 мл x15,45,3,3,WB+Ozon,Крем для лица АКНЕ 50 мл,1513,
+7,2026-10-26,EVT-SET-ACNE-POWDER-SERUM-CREAM,Набор пудра+сыв+крем АКНЕ,2,Энзимная пудра 75 г x2 + Крем для лица АКНЕ 50 мл x2 + Сыворотка АКНЕ 30 мл x2,6,0,1,WB+Ozon,Крем для лица АКНЕ 50 мл,1513,
+7,2026-10-26,EVT-SET-ACNE-TONIC-SERUM,Набор тоник+сыв АКНЕ,3,Сыворотка АКНЕ 30 мл x3 + Тоник АКНЕ 150 мл x3,6,0,1,WB+Ozon,Тоник АКНЕ 150 мл,3790,
+7,2026-10-26,EVT-SET-TON-CREAM-ACNE,Набор тон+крем АКНЕ,7,Крем для лица АКНЕ 50 мл x7 + Тоник АКНЕ 150 мл x7,14,3,0,WB,Крем для лица АКНЕ 50 мл,1513,
+7,2026-10-26,EVT-SET-MOIST-TONIC-SERUM,Набор тоник+сыв УВЛ,15,Сыворотка УВЛ 30 мл x15 + Тоник УВЛ 150 мл x15,30,1,5,WB+Ozon,Тоник УВЛ 150 мл,3781,
+7,2026-10-26,EVT-SET-HAND-CHERRY,Набор руки+Lost Cherry,18,Крем для рук Oud Wood 300 мл x18 + Крем для тела Lost Cherry 300 мл x18,36,4,3,WB+Ozon,Крем для рук Oud Wood 300 мл,2952,liquidation set: hand cream inside
+7,2026-10-26,EVT-SET-HAND-AMBER,Набор руки+Amber,15,Крем для рук Oud Wood 300 мл x15 + Крем для тела Amber Vanilla 300 мл x15,30,4,2,WB+Ozon,Крем для рук Oud Wood 300 мл,2952,liquidation set: hand cream inside
+7,2026-10-26,EVT-SET-CHERRY-AMBER,Набор Cherry+Amber,15,Крем для тела Lost Cherry 300 мл x15 + Крем для тела Amber Vanilla 300 мл x15,30,3,3,WB+Ozon,Крем для тела Lost Cherry 300 мл,4509,
+8,2026-11-02,EVT-SET-4PC-ACNE,Набор 4 шага АКНЕ,0,,0,13,4,WB+Ozon,Крем для лица АКНЕ 50 мл,1513,
+8,2026-11-02,EVT-SET-SER-CREAM-ACNE,Набор сыв+крем АКНЕ,0,,0,12,2,WB+Ozon,Крем для лица АКНЕ 50 мл,1513,
+8,2026-11-02,EVT-SET-TON-SER-CREAM-ACNE,Набор тон+сыв+крем АКНЕ,0,,0,5,4,WB+Ozon,Крем для лица АКНЕ 50 мл,1513,
+8,2026-11-02,EVT-SET-ACNE-POWDER-SERUM-CREAM,Набор пудра+сыв+крем АКНЕ,0,,0,0,1,WB+Ozon,Крем для лица АКНЕ 50 мл,1513,
+8,2026-11-02,EVT-SET-ACNE-TONIC-SERUM,Набор тоник+сыв АКНЕ,0,,0,1,1,WB+Ozon,Тоник АКНЕ 150 мл,3790,
+8,2026-11-02,EVT-SET-TON-CREAM-ACNE,Набор тон+крем АКНЕ,0,,0,5,0,WB,Крем для лица АКНЕ 50 мл,1513,
+8,2026-11-02,EVT-SET-SER-CREAM-MOIST,Набор сыв+крем УВЛ,0,,0,14,2,WB+Ozon,Крем для лица УВЛ 50 мл,2,
+8,2026-11-02,EVT-SET-TON-CREAM-MOIST,Набор тон+крем УВЛ,0,,0,6,0,WB,Крем для лица УВЛ 50 мл,2,
+8,2026-11-02,EVT-SET-TON-SER-CREAM-MOIST,Набор тон+сыв+крем УВЛ,0,,0,14,0,WB,Крем для лица УВЛ 50 мл,2,
+8,2026-11-02,EVT-SET-MOIST-TONIC-SERUM,Набор тоник+сыв УВЛ,0,,0,1,8,WB+Ozon,Тоник УВЛ 150 мл,3781,
+8,2026-11-02,EVT-SET-HAND-CHERRY,Набор руки+Lost Cherry,0,,0,9,6,WB+Ozon,Крем для рук Oud Wood 300 мл,2952,liquidation set: hand cream inside
+8,2026-11-02,EVT-SET-HAND-AMBER,Набор руки+Amber,0,,0,8,5,WB+Ozon,Крем для рук Oud Wood 300 мл,2952,liquidation set: hand cream inside
+8,2026-11-02,EVT-SET-CHERRY-AMBER,Набор Cherry+Amber,0,,0,5,4,WB+Ozon,Крем для тела Lost Cherry 300 мл,4509,

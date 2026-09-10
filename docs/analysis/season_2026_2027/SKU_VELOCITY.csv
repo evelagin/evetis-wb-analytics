@@ -1,0 +1,26 @@
+internal_sku,name,is_bundle,wb_orders_7d,wb_14d,wb_30d,wb_60d,wb_90d,ozon_7d,ozon_14d,ozon_30d,ozon_60d,ozon_90d,units_per_day_7d,units_per_day_30d,units_per_day_90d,trend,wb_full_availability_ref_per_month,ozon_ref_per_month,marketplace_stock_cards,sellable_stock_base,months_of_cover_at_90d_rate,velocity_class
+EVT-FS-ACNE-30,Сыворотка АКНЕ 30 мл,False,3,14,43,90,126,1,7,15,24,24,0.57,1.93,1.67,DECEL,101.0,22.0,202,5544,110.9,B-HEALTHY + E-bundle enabler
+EVT-FS-MOIST-30,Сыворотка УВЛ 30 мл,False,2,6,20,63,128,3,6,11,24,27,0.71,1.03,1.72,DECEL,200.0,13.0,29,3948,76.4,A-FAST (stock-limited now)
+EVT-FC-ACNE-50,Крем для лица АКНЕ 50 мл,False,7,12,26,76,127,1,4,12,20,22,1.14,1.27,1.66,FLAT,111.5,11.0,317,1513,30.5,A-FAST (stock-limited now)
+EVT-FC-MOIST-50,Крем для лица УВЛ 50 мл,False,0,0,7,57,135,0,0,0,0,0,0.0,0.23,1.5,DECEL,198.5,0.0,0,2,0.0,R-REPLENISH (inbound 5000)
+EVT-FT-ACNE-150,Тоник АКНЕ 150 мл,False,7,14,25,49,97,6,12,23,39,46,1.86,1.6,1.59,FLAT,91.5,24.0,58,3790,79.5,C-SLOW / E-bundle enabler
+EVT-FT-MOIST-150,Тоник УВЛ 150 мл,False,2,3,8,22,46,1,6,11,18,22,0.43,0.63,0.76,DECEL,69.0,17.0,96,3781,166.8,C-SLOW / E-bundle enabler
+EVT-EP-ENZYME-75,Энзимная пудра 75 г,False,5,6,20,30,58,4,4,14,19,19,1.29,1.13,0.86,FLAT,57.5,11.0,130,3889,151.5,C-SLOW / E-bundle enabler
+EVT-HC-HAND-300,Крем для рук Oud Wood 300 мл,False,43,87,173,357,623,5,12,18,35,36,6.86,6.37,7.32,FLAT,144.0,18.0,143,2952,13.4,"D-LIQUIDATE (expiry, negative margin at realized ASP)"
+EVT-HC-CHERRY-300,Крем для тела Lost Cherry 300 мл,False,0,6,14,29,53,1,3,7,19,21,0.14,0.7,0.82,DECEL,31.0,11.0,17,4509,182.8,D-OVERSTOCK (Cherry/Amber 190+ months) / E-bundle enabler
+EVT-HC-AMBER-300,Крем для тела Amber Vanilla 300 мл,False,2,6,14,23,42,3,5,8,11,13,0.71,0.73,0.61,FLAT,31.0,8.0,16,4586,250.1,D-OVERSTOCK (Cherry/Amber 190+ months) / E-bundle enabler
+EVT-HC-BODY-300,Крем для тела Oud Wood 300 мл,False,0,0,0,0,0,0,0,0,0,0,0.0,0.0,0.0,FLAT,0.0,0.0,0,0,999,X-NO_STOCK
+EVT-SET-4PC-ACNE,Набор 4 шага АКНЕ,True,1,1,13,28,53,3,4,10,16,24,0.57,0.77,0.86,FLAT,47.0,9.0,5,1513,58.9,A-HERO_BUNDLE
+EVT-SET-SER-CREAM-ACNE,Набор сыв+крем АКНЕ,True,1,7,17,36,52,1,1,3,5,8,0.29,0.67,0.67,DECEL,43.0,4.0,51,1513,75.7,A-HERO_BUNDLE
+EVT-SET-TON-SER-CREAM-ACNE,Набор тон+сыв+крем АКНЕ,True,0,3,11,24,47,1,4,9,13,18,0.14,0.67,0.72,DECEL,6.0,10.0,6,1513,69.8,A-HERO_BUNDLE
+EVT-SET-ACNE-POWDER-SERUM-CREAM,Набор пудра+сыв+крем АКНЕ,True,0,0,0,0,0,0,0,1,4,6,0.0,0.03,0.07,DECEL,0.0,2.0,6,1513,756.5,C-SLOW_BUNDLE
+EVT-SET-ACNE-TONIC-SERUM,Набор тоник+сыв АКНЕ,True,0,0,3,3,3,0,0,1,1,1,0.0,0.13,0.04,DECEL,0.0,1.0,11,3790,2842.5,E-INVENTORY_RELEASE_BUNDLE
+EVT-SET-TON-CREAM-ACNE,Набор тон+крем АКНЕ,True,1,2,2,13,18,0,0,0,0,0,0.14,0.07,0.2,ACCEL,4.0,0.0,11,1513,252.2,C-SLOW_BUNDLE
+EVT-SET-SER-CREAM-MOIST,Набор сыв+крем УВЛ,True,0,0,9,16,26,0,0,0,0,0,0.0,0.3,0.29,DECEL,62.0,0.0,0,2,0.2,R-REPLENISH (inbound 5000)
+EVT-SET-TON-CREAM-MOIST,Набор тон+крем УВЛ,True,2,4,8,18,26,0,0,0,0,0,0.29,0.27,0.29,FLAT,32.0,0.0,0,2,0.2,R-REPLENISH (inbound 5000)
+EVT-SET-TON-SER-CREAM-MOIST,Набор тон+сыв+крем УВЛ,True,0,0,8,24,68,0,0,0,0,0,0.0,0.27,0.76,DECEL,54.5,0.0,0,2,0.1,R-REPLENISH (inbound 5000)
+EVT-SET-MOIST-TONIC-SERUM,Набор тоник+сыв УВЛ,True,0,0,1,5,5,1,6,8,8,8,0.14,0.3,0.14,DECEL,0.0,7.0,8,3781,872.5,E-INVENTORY_RELEASE_BUNDLE
+EVT-SET-HAND-CHERRY,Набор руки+Lost Cherry,True,1,3,7,12,19,0,1,3,6,13,0.14,0.33,0.36,DECEL,2.5,6.0,24,2952,276.8,E-INVENTORY_RELEASE_BUNDLE
+EVT-SET-HAND-AMBER,Набор руки+Amber,True,2,2,5,7,18,1,1,3,4,6,0.43,0.27,0.27,ACCEL,7.0,3.0,25,2952,369.0,E-INVENTORY_RELEASE_BUNDLE
+EVT-SET-CHERRY-AMBER,Набор Cherry+Amber,True,1,4,8,14,18,0,0,2,6,7,0.14,0.33,0.28,DECEL,7.0,4.0,32,4509,541.1,E-INVENTORY_RELEASE_BUNDLE
+EVT-SET-HAND-BODY,Набор руки+тело,True,0,0,0,0,0,0,0,0,0,0,0.0,0.0,0.0,FLAT,2.0,0.0,0,0,999,X-NO_STOCK

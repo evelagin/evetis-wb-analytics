@@ -1,0 +1,38 @@
+[
+ [
+  "INFERENCE",
+  "Manufacturing date = import date - 70 days (sea freight + customs), calibrated on the owner fact for hand cream (import 25.02.2025, expiry Dec 2026). Expiry = mfg + 2 years; inbound cream + 3 years."
+ ],
+ [
+  "INFERENCE",
+  "FIFO check on serums: BATCH-03 (5 000 acne + 4 800 moist, expiry ~Dec 2026) is fully consumed for moist serum (4 679 sold by Jan 2026 vs 4 800) and ~95% consumed for acne serum (~270 units could remain, plus fire losses) -> current serum stock treated as BATCH-06 (expiry ~Nov 2027). Physical lot check on pallets required for acne serum."
+ ],
+ [
+  "FACT",
+  "Seasonal multipliers vs October (WB buyouts): 2024/25 Nov 1.91 / Dec 2.71 / Jan 1.39 / Feb 1.52 / Mar 2.22; 2025/26 Nov 1.03 / Dec 2.36 / Jan 0.79 / Feb 1.00 / Mar 1.57. Peak weeks: 23.12.2024 1 259 units (180/day), 08.12.2025 891 (127/day), 02.03.2026 877. Ads billing at peak: Dec-2024 229k (DRR 8.9%), Dec-2025 375k (15.8%)."
+ ],
+ [
+  "FACT",
+  "OPEX (owner): fulfilment 45 000 + accountant 20 000 + designer 12 000 (6 months) = 77 000 RUB/month Sep-Feb, 65 000 from March."
+ ],
+ [
+  "ASSUMPTION",
+  "SET seasonality WB = average of the two observed seasons rounded down (Nov 1.35, Dec 2.40, Jan 1.00, Feb 1.10, Mar 1.60 vs Oct); Ozon = own 2025/26 pattern damped (Nov 1.6, Dec 1.7, Mar 1.6). MP uses half the seasonal lift; AGGR adds +8-10%."
+ ],
+ [
+  "ASSUMPTION",
+  "Hand cream programs: monthly capacities are set from evidence (Sep-Oct 2025: 6-11/day; Nov-Dec 2025: 16-22/day at ASP 560-590 and ads ~100 RUB/card; Nov-Dec 2024: 65-96/day at ASP ~560 and ads ~58 RUB/unit). Prices step down 640 -> 490 on WB, 973 -> 799 on Ozon; liquidation DRR up to 17-18% in Nov-Dec. Volume response to price is not modelled by elasticity."
+ ],
+ [
+  "ASSUMPTION",
+  "Advertising classes: ADVERTISED (serums, face creams, ser+cream sets, 4-step, ton+ser+cream sets, Cherry+Amber set) get DRR = min(cap, contribution% - floor) with SET cap 12% / floor 8%; ORGANIC_HALO (tonics, powder, small sets) 2-3%; BUNDLE_SUPPORTED (Cherry, Amber solo) 0% direct; LIQUIDATION_ADS per hand-cream program. No SKU gets a flat 10%."
+ ],
+ [
+  "ASSUMPTION",
+  "Unit weights for PVZ lots (limit 25 kg per shipment, FACT from WB cabinet errors): hand/body cream 0.391 kg (FACT), tonic 0.215, serum 0.08, powder 0.14, face cream 0.105 (ASSUMPTION from packaging)."
+ ],
+ [
+  "FACT",
+  "September 1-8 actuals: WB orders 107 (FACT_ORDERS), Ozon 36 postings, WB buyouts 110 cards / 75 686 RUB, Ozon 53 119 RUB, ads WB 10 996 (billing) + Ozon 7 327 (attributed)."
+ ]
+]

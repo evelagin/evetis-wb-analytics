@@ -1,0 +1,60 @@
+{
+ "assumptions": [
+  [
+   "ASSUMPTION",
+   "FF operational shelf = LK 09.09 minus 4 supplies IN_TRANSIT (03.09, 178 units) minus 5 supplies shipped 09.09 (191 of 314 units; 123 short per FF letter). Not yet confirmed by a fresh FF snapshot."
+  ],
+  [
+   "INFERENCE",
+   "Long-term (pallet) stock of acne face cream reduced 1 117 -> 1 077 for the undocumented pick under 03.09 Ozon supplies (LK card shows -32)."
+  ],
+  [
+   "FACT",
+   "Inbound: 5 000 units EVT-FC-MOIST-50 produced in China (batch 8), advance 225 792 RUB paid 09.06.2026; ~1 month lead after release order."
+  ],
+  [
+   "FACT",
+   "COGS per SKU = evetis_ref.V_PRODUCT_COGS_EFFECTIVE via wb_mart.V_WB_SKU_FORWARD_ECONOMICS_CURRENT (07.09.2026); bundle COGS = sum of components."
+  ],
+  [
+   "FACT",
+   "WB storage 20.50 RUB/unit = fact of last 180 days (memory wb-unit-economics); applied per card."
+  ],
+  [
+   "ASSUMPTION",
+   "Ozon variable costs per card: 52% commission (FACT since 28.08), last mile 25 (FACT, prices API), direct flow = fbo_direct_flow_trans_min (56-75, FACT), acquiring 1.0% (FACT ~0.75-1%), returns/cancel allowance 1.5% of price (ASSUMPTION)."
+  ],
+  [
+   "ASSUMPTION",
+   "Seasonality index vs Sep-Oct level, from WB season 2025/26 (Dec x2.30, Mar x1.53, Jan x0.77 vs Sep-Nov avg): CONSERVATIVE Dec 1.5/Mar 1.2, BASE Dec 2.0/Mar 1.5, AGGRESSIVE Nov 1.4 (11.11+BF)/Dec 2.3/Mar 1.6. Only one comparable season exists; 2024/25 was a launch ramp."
+  ],
+  [
+   "ASSUMPTION",
+   "Advertising DRR is SKU- and channel-specific = clamp(contribution_before_ads% - margin floor, 0, cap): MARGIN_PROTECTION floor 15%/cap 10%; BALANCED floor 10%/cap 12%; AGGRESSIVE floor 5%/cap 15%. Hand cream floor 0% (break-even liquidation), -3% in AGGRESSIVE. Fact Jun-Aug 2026: WB DRR 20-25%, Ozon 23% produced negative contribution on 5 SKUs."
+  ],
+  [
+   "ASSUMPTION",
+   "Base demand: CONSERVATIVE = last-90-day order rate as is (stock-constrained). BASE = max(90d rate, 85% of Apr-May 2026 full-availability rate) for WB; Ozon = max(Aug 2026, 90d avg) x1.15 (growth x2/mo in Jun-Aug damped). AGGRESSIVE = BASE x1.30 WB / x1.50 Ozon, body bundles x3.5 (traffic + promo). Hand cream and moisture line set explicitly."
+  ],
+  [
+   "ASSUMPTION",
+   "Inbound 5 000 moisture face cream: available at FF from 20.10.2026 (30 days), on WB/Ozon from November (acceptance lead). Scenario A = no import."
+  ],
+  [
+   "ASSUMPTION",
+   "Promo price factors: BASE -5% on slow/overstock SKUs in Nov/Dec/Mar; AGGRESSIVE -8..-10% on slow/overstock and -6% hand cream all season; hero SKUs never below -5%. Volume response to price is embedded in scenario velocities, not modelled by elasticity (no reliable EVETIS elasticity data)."
+  ],
+  [
+   "FACT",
+   "Hand cream WB realized ASP: 28d 418 RUB, 7d 494 RUB (V_ADS_SKU_ECONOMIC_LIMITS 08.09) vs listed seller price 640 (list 1600 -60%). At 418 the unit is -95 RUB before ads. Peak velocity: Dec 2024 2 301/mo (launch season, body-cream twin, heavy ads); Dec 2025 643/mo; Jun-Aug 2026 183-277/mo at 20-24k RUB/mo ads."
+  ],
+  [
+   "ASSUMPTION",
+   "Hand cream ads needed per unit at higher velocities (45/90/140/200/260 RUB per unit for 10/20/30/40/50 per day) - extrapolated from Jun-Aug CPO 60-120 RUB at 6-9/day; no data exists for 20+/day at 640 RUB price. Sensitivity: every +50 RUB/unit of ads costs 1.5% of GMV."
+  ],
+  [
+   "ASSUMPTION",
+   "FBO target = cover days (45) x daily demand + safety z=1.65*sqrt(lead x daily); lead time WB 14 d (slot + acceptance, NOT_PROVEN), Ozon 10 d. FF reserve = 21 days of FBS+bundle assembly demand, min 20 units per active SKU."
+  ]
+ ]
+}
