@@ -101,7 +101,8 @@ var WB_ADV_RAW_COSTS_RUNS_HEADERS_ = [
 /**
  * Окна чтения расходов (Stage 3B.1, обоснование — docs/ADS_COSTS_SNAPSHOT_CONTRACT_2026-08-20.md).
  *
- * СЕЙЧАС ДЕЙСТВУЕТ ФАЗА A: operational-окно D−7 … D−1 (как было до Stage 3B.1).
+ * СЕЙЧАС ДЕЙСТВУЕТ ФАЗА B (с 2026-09-10, шаг B4a): operational-окно D−14 … D−1.
+ * В Фазе A окно было D−7 … D−1 — причина, по которой его нельзя было расширить раньше, ниже.
  *
  * 🔴 7 суток НЕДОСТАТОЧНО по существу: наблюдавшаяся ревизия биллинга пришла на D+7,
  *    то есть ровно на границе окна. Наблюдение обрывалось там, где данные ещё менялись,
@@ -109,7 +110,7 @@ var WB_ADV_RAW_COSTS_RUNS_HEADERS_ = [
  *    Но расширять окно В ФАЗЕ A нельзя: union умеет только расти, лишние перечитывания
  *    подняли бы суммы FACT ещё до cutover. Переход на D−14 … D−1 — шаг B4a Фазы B.
  */
-var WB_ADS_COSTS_OPERATIONAL_DAYS_ = 7;    // 🔴 ФАЗА A: 7 (D−7 … D−1). Фаза B, шаг B4a: 14
+var WB_ADS_COSTS_OPERATIONAL_DAYS_ = 14;   // ФАЗА B, шаг B4a (2026-09-10): D−14 … D−1. В Фазе A было 7
 var WB_ADS_COSTS_AUDIT_FROM_DAYS_  = 45;   // еженедельно: D−45 … D−8 (хвост за operational-окном)
 var WB_ADS_COSTS_AUDIT_TO_DAYS_    = 8;
 var WB_ADS_COSTS_BOOTSTRAP_START_  = '2026-04-13';  // первая дата истории расходов
