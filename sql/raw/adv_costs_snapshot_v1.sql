@@ -419,13 +419,16 @@ FROM base;
 --      ADSAUDIT_ / ADSRECHECK_ в бизнес-семантику не попадают, поэтому bootstrap
 --      можно вести дни подряд, не останавливая витрину.
 -- ───────────────────────────────────────────────────────────────
-CREATE OR REPLACE VIEW `project-fa311fc0-4d87-4781-986.wb_raw.V_ADV_COSTS` AS
-SELECT * FROM `project-fa311fc0-4d87-4781-986.wb_raw.V_ADV_COSTS_UNION_PREBOOTSTRAP`;
+--    🔴 Команда Фазы A ВЫВЕДЕНА из действия 2026-09-10 (шаг B4b). Оставлена как
+--       команда ОТКАТА — она же sql/rollback/stage3b_pre_cutover_2026-09-10/R5.
+-- CREATE OR REPLACE VIEW `project-fa311fc0-4d87-4781-986.wb_raw.V_ADV_COSTS` AS
+-- SELECT * FROM `project-fa311fc0-4d87-4781-986.wb_raw.V_ADV_COSTS_UNION_PREBOOTSTRAP`;
 
 -- ───────────────────────────────────────────────────────────────
---    ФАЗА B (короткое окно cutover, wb-mart-prod на паузе):
---      выполнить ВМЕСТО команды Фазы A, после I1–I9 и DAY_LOST = 0.
---      Раскомментировать при cutover; в Фазе A строки остаются комментарием.
+--    ФАЗА B — ДЕЙСТВУЕТ с 2026-09-10 (шаг B4b, wb-mart-prod на паузе).
+--      Выполнено после закрытия Фазы A: три bootstrap-прохода, I1–I9, DAY_LOST = 0.
+--      sha256(view_definition) в production = ab2a971e6367aad347c33c79a4d6251967228d31f709c24900acfaa6f8de5ab9
+--      Протокол: docs/ops/STAGE_B_BOOTSTRAP_PASSES.md, docs/ops/STAGE_B_BOOTSTRAP_RUNBOOK.md §10.
 -- ───────────────────────────────────────────────────────────────
--- CREATE OR REPLACE VIEW `project-fa311fc0-4d87-4781-986.wb_raw.V_ADV_COSTS` AS
--- SELECT * FROM `project-fa311fc0-4d87-4781-986.wb_raw.V_ADV_COSTS_SNAPSHOT`;
+CREATE OR REPLACE VIEW `project-fa311fc0-4d87-4781-986.wb_raw.V_ADV_COSTS` AS
+SELECT * FROM `project-fa311fc0-4d87-4781-986.wb_raw.V_ADV_COSTS_SNAPSHOT`;

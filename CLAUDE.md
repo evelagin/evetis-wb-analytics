@@ -78,11 +78,11 @@ EVETIS WB Analytics — это система управленческой от�
 - добавлять новые компоненты с правом ЗАПИСИ во внешние сервисы, включая
   репрайсер, пока открыта F-18 (`docs/ops/SECURITY_BACKLOG.md`);
 - ссылаться на mutable-тег образа вместо digest при развёртывании;
-- запускать Apps Script `wbAdsBqCreateViews()`, пока `V_ADV_COSTS` переключена
-  на `V_ADV_COSTS_UNION_PREBOOTSTRAP`: она пересоздаёт вью дедупом по всей
-  `RAW_WB_ADV_COSTS` без фильтра по префиксу рана и после первого же
-  bootstrap-прохода втянет строки `ADSBACKFILL_` в экономику
-  (см. `docs/ops/STAGE_B_BOOTSTRAP_RUNBOOK.md` §3).
+- запускать Apps Script `wbAdsBqCreateViews()` — **вообще**, пока функция не
+  исправлена: она безусловно пересоздаёт `V_ADV_COSTS` дедупом-union по всей
+  `RAW_WB_ADV_COSTS` без фильтра по префиксу рана. С 2026-09-10 `V_ADV_COSTS`
+  читает `V_ADV_COSTS_SNAPSHOT`; вызов откатил бы cutover и втянул в экономику
+  6 287 строк `ADSBACKFILL_` (см. `docs/ops/STAGE_B_BOOTSTRAP_RUNBOOK.md` §3).
 
 ## Приоритет источников данных
 
