@@ -46,7 +46,8 @@ ASSERT (SELECT forecast_confidence IN ('LOW','MEDIUM','HIGH')
 ASSERT (SELECT COUNT(DISTINCT section_ord) = 6 AND COUNTIF(section_ord IN (4,5)) <= 7 AND COUNTIF(line_text IS NULL OR line_text = '') = 0
         FROM `project-fa311fc0-4d87-4781-986.wb_mart.V_CT_DAILY_BRIEF_LINES`)
   AS 'T28a FAILED: daily brief lines';
-ASSERT (SELECT brief_text LIKE '%Сегодня сделать%' AND brief_text LIKE '%Требует решения владельца%' AND brief_text NOT LIKE '%SELECT %'
+-- Phase 1.2: раздел переименован «Требует решения владельца» → «Решения владельца»
+ASSERT (SELECT brief_text LIKE '%Сегодня сделать%' AND brief_text LIKE '%Решения владельца%' AND brief_text NOT LIKE '%SELECT %'
         FROM `project-fa311fc0-4d87-4781-986.wb_mart.V_CT_DAILY_BRIEF`)
   AS 'T28b FAILED: daily brief text';
 

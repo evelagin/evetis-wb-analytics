@@ -656,8 +656,8 @@ pva AS (
 ),
 below_plan AS (
   SELECT 'BELOW_PLAN' AS alert_type, IF(SAFE_DIVIDE(mtd_actual, mtd_target) < 0.5, 'RED', 'YELLOW') AS severity, marketplace, 'PORTFOLIO' AS internal_sku, CONCAT('Портфель ', marketplace) AS product_name,
-    CONCAT(marketplace, ': MTD ', CAST(mtd_actual AS STRING), ' карточек против плана ', CAST(ROUND(mtd_target) AS STRING), ' (', CAST(ROUND(SAFE_DIVIDE(mtd_actual, mtd_target) * 100) AS STRING), ' %)') AS headline,
-    CONCAT('План месяца ', CAST(ROUND(month_target) AS STRING), ' карточек; отставание ', CAST(ROUND(mtd_target - mtd_actual) AS STRING), ' карточек на ', FORMAT_DATE('%d.%m', DATE_SUB(CURRENT_DATE(), INTERVAL 1 DAY))) AS detail,
+    CONCAT(marketplace, ': MTD ', CAST(mtd_actual AS STRING), ' поз. против плана ', CAST(ROUND(mtd_target) AS STRING), ' (', CAST(ROUND(SAFE_DIVIDE(mtd_actual, mtd_target) * 100) AS STRING), ' %)') AS headline,
+    CONCAT('План месяца ', CAST(ROUND(month_target) AS STRING), ' проданных позиций; отставание ', CAST(ROUND(mtd_target - mtd_actual) AS STRING), ' поз. на ', FORMAT_DATE('%d.%m', DATE_SUB(CURRENT_DATE(), INTERVAL 1 DAY))) AS detail,
     CAST(SAFE_DIVIDE(mtd_actual, mtd_target) * 100 AS FLOAT64) AS metric_value, 70.0 AS threshold_value,
     CAST(NULL AS FLOAT64) AS financial_effect_rub, 'V_CT_PLAN_VS_ACTUAL_DAILY' AS source_view, 3 AS sort_rank
   FROM pva WHERE mtd_target >= 15 AND SAFE_DIVIDE(mtd_actual, mtd_target) < 0.7
@@ -753,7 +753,7 @@ r2 AS (
     CAST(ROUND(p.mtd_target - p.mtd_actual) AS INT64) AS qty,
     CAST(NULL AS FLOAT64) AS financial_effect_rub,
     CONCAT('BELOW_PLAN_', FORMAT_DATE('%Y%m', p.month)) AS reason_code,
-    CONCAT(p.marketplace, ': ', CAST(p.mtd_actual AS STRING), ' карточек против плана ', CAST(ROUND(p.mtd_target) AS STRING), ' (', CAST(ROUND(SAFE_DIVIDE(p.mtd_actual, p.mtd_target) * 100) AS STRING), ' %) за ', CAST(p.plan_days_elapsed AS STRING), ' дн. плана. Наибольшее отставание: ',
+    CONCAT(p.marketplace, ': ', CAST(p.mtd_actual AS STRING), ' поз. против плана ', CAST(ROUND(p.mtd_target) AS STRING), ' (', CAST(ROUND(SAFE_DIVIDE(p.mtd_actual, p.mtd_target) * 100) AS STRING), ' %) за ', CAST(p.plan_days_elapsed AS STRING), ' дн. плана. Наибольшее отставание: ',
       IFNULL(g.gap_text, '—'),
       '. Проверить наличие на полке, цену vs автоскидки, показы рекламы, позиции в выдаче') AS reason_text,
     'V_CT_PLAN_VS_ACTUAL_DAILY.mtd_attainment_pct' AS source_metric,
@@ -846,6 +846,10 @@ FROM u
 --   why_short   — причина одной фразой; полный reason_text остаётся для drill-down
 --   deadline_ru — «сегодня», «до 12.09», «просрочено 3 дн.»
 --   effect_ru   — «+500 тыс ₽» / «−94 тыс ₽»
+--   Phase 1.2: why_owner (одна фраза без перечня SKU), sku_breakdown (перечень для drill-down),
+--   effect_kind_ru / effect_line («Потенциальная выручка: +500 тыс ₽», «Риск списания: −1.8 млн ₽»,
+--   «Перерасход рекламы: −94 тыс ₽», «Потенциальный cash effect: +451 тыс ₽», «Стоимость решения: −87 тыс ₽»);
+--   what_to_do больше не обрезается до 110 символов — на дашборде перенос строк вместо «…».
 --   done_url / progress_url / cancel_url — ссылки на owner web-app (Apps Script), URL берётся из
 --   evetis_ref.CT_CONFIG (action_webapp_url); пока ключ не заполнен — NULL, ссылки не показываются.
 -- Статусы меняются ТОЛЬКО через evetis_ref.sp_ct_action_update() (web-app вызывает её же).
@@ -888,7 +892,7 @@ q AS (
       WHEN marketplace = 'FF' THEN 'Фулфилмент Usend'
       ELSE 'Владелец'
     END AS executor_ru,
-    -- Короткая формулировка: до первого « — » в тексте правила, обрезка до 110 символов
+    -- Короткая формулировка: до первого « — » в тексте правила (Phase 1.2: без обрезки)
     TRIM(SPLIT(reason_text, ' — ')[SAFE_OFFSET(0)]) AS reason_head,
     TRIM(ARRAY_TO_STRING(ARRAY(SELECT x FROM UNNEST(SPLIT(reason_text, ' — ')) x WITH OFFSET o WHERE o > 0 ORDER BY o), ' — ')) AS reason_tail
   FROM `project-fa311fc0-4d87-4781-986.evetis_ref.CT_OWNER_ACTION_QUEUE` q
@@ -913,13 +917,42 @@ q3 AS (
       WHEN use_template AND action_type = 'ASSEMBLE_BUNDLES' THEN CONCAT('Собрать ', REPLACE(FORMAT('%\'d', CAST(qty AS INT64)), ',', ' '), ' наборов')
       WHEN use_template AND action_type = 'ADS_REVIEW' THEN CONCAT('Снизить ставки / пересмотреть рекламу: ', sku_name)
       WHEN use_template AND action_type = 'ACCELERATE' THEN CONCAT('Ускорить сбыт: ', sku_name, IF(qty > 0, CONCAT(' (остаток к 31.03 ≈ ', REPLACE(FORMAT('%\'d', CAST(qty AS INT64)), ',', ' '), ' фл.)'), ''))
-      ELSE IF(LENGTH(reason_head) > 110, CONCAT(SUBSTR(reason_head, 1, 107), '…'), reason_head)
+      -- Phase 1.2: авторская формулировка владельца НЕ обрезается (перенос строк на дашборде вместо «…»)
+      ELSE reason_head
     END AS what_to_do,
     CASE
       WHEN use_template THEN reason_text
       WHEN reason_tail IS NULL OR reason_tail = '' THEN reason_head
       ELSE reason_tail
-    END AS why_full
+    END AS why_full,
+    -- Phase 1.2: «Зачем» одной фразой без перечня SKU (перечень уходит в sku_breakdown / drill-down)
+    CASE
+      WHEN use_template AND action_type = 'PULL_FROM_PALLETS' THEN 'Оперативная полка на фулфилменте пуста — без флаконов не будет отгрузок WB/Ozon и сборки наборов недели'
+      WHEN use_template AND action_type = 'REPLENISH_WB' AND reason_code LIKE 'WB_STOCKOUT%' THEN 'На WB запаса меньше недели по плану — без поставки продажи остановятся'
+      WHEN use_template AND action_type = 'REPLENISH_OZON' AND reason_code LIKE 'OZON_STOCKOUT%' THEN 'На Ozon запаса меньше недели по плану — без поставки продажи остановятся'
+      WHEN use_template AND action_type = 'ASSEMBLE_BUNDLES' THEN 'Наборы недели по плану сборки — готовых наборов на фулфилменте нет, они собираются под отгрузку'
+      WHEN use_template AND action_type = 'ADS_REVIEW' AND REGEXP_CONTAINS(reason_text, r'ДРР 7 дн\.') THEN
+        CONCAT(TRIM(REGEXP_EXTRACT(reason_text, r'(ДРР 7 дн\. [^(;]+)')), IFNULL(CONCAT(' — ', REGEXP_EXTRACT(reason_text, r'(перерасход ≈ [^.]+)'), ' за неделю'), ''))
+      WHEN use_template AND action_type = 'ACCELERATE' AND REGEXP_CONTAINS(reason_text, r'запас ') THEN
+        CONCAT(REGEXP_EXTRACT(reason_text, r'(запас [^;]+)'), ' — к 31.03.2027 останется ≈ ', IFNULL(REGEXP_EXTRACT(reason_text, r'≈ (\d+) фл\.'), '?'), ' фл.',
+               IFNULL(CONCAT(' (срок годности ', REGEXP_EXTRACT(reason_text, r'срок годности ([0-9.]+)'), ')'), ''))
+      WHEN use_template THEN TRIM(SPLIT(reason_text, ';')[SAFE_OFFSET(0)])
+      WHEN reason_tail IS NULL OR reason_tail = '' THEN reason_head
+      ELSE reason_tail
+    END AS why_owner,
+    -- Перечень SKU из seed-строк «Снять с паллет / Отгрузить …: SKU N, SKU N …» — только для drill-down
+    IF(use_template AND action_type IN ('PULL_FROM_PALLETS', 'REPLENISH_WB', 'REPLENISH_OZON') AND REGEXP_CONTAINS(reason_head, r': .+ \d+, .+ \d+'),
+       REGEXP_EXTRACT(reason_head, r'^[^:]+: (.*)$'), NULL) AS sku_breakdown,
+    -- Phase 1.2: тип финансового эффекта — что именно означает сумма
+    CASE
+      WHEN financial_effect_rub IS NULL THEN NULL
+      WHEN reason_code LIKE 'EXPIRY%' OR action_type = 'LIQUIDATION' THEN IF(financial_effect_rub < 0, 'Риск списания', 'Предотвращённый риск списания')
+      WHEN action_type = 'ADS_REVIEW' OR reason_code LIKE 'DRR%' THEN IF(financial_effect_rub < 0, 'Перерасход рекламы', 'Ожидаемый вклад')
+      WHEN action_type = 'ACCELERATE' OR reason_code LIKE 'OVERSTOCK%' THEN 'Потенциальный cash effect'
+      WHEN action_type = 'DECISION' AND financial_effect_rub < 0 THEN 'Стоимость решения'
+      WHEN financial_effect_rub < 0 THEN 'Выручка под риском'
+      ELSE 'Потенциальная выручка'
+    END AS effect_kind_ru
   FROM q2
 )
 SELECT action_id, priority, SUBSTR(priority, 1, 2) AS priority_short, priority_rank, status, status_rank, is_open, is_overdue, color,
@@ -933,8 +966,25 @@ SELECT action_id, priority, SUBSTR(priority, 1, 2) AS priority_short, priority_r
     WHEN ABS(financial_effect_rub) >= 1000 THEN CONCAT(IF(financial_effect_rub < 0, '−', '+'), CAST(CAST(ROUND(ABS(financial_effect_rub) / 1000) AS INT64) AS STRING), ' тыс ₽')
     ELSE CONCAT(IF(financial_effect_rub < 0, '−', '+'), CAST(CAST(ROUND(ABS(financial_effect_rub)) AS INT64) AS STRING), ' ₽')
   END AS effect_ru,
-  what_to_do, executor_ru,
-  IF(LENGTH(why_full) > 220, CONCAT(SUBSTR(why_full, 1, 217), '…'), why_full) AS why_short,
+  effect_kind_ru,
+  IF(financial_effect_rub IS NULL, NULL, CONCAT(effect_kind_ru, ': ',
+    CASE
+      WHEN ABS(financial_effect_rub) >= 1000000 THEN CONCAT(IF(financial_effect_rub < 0, '−', '+'), FORMAT('%.1f', ABS(financial_effect_rub) / 1000000), ' млн ₽')
+      WHEN ABS(financial_effect_rub) >= 1000 THEN CONCAT(IF(financial_effect_rub < 0, '−', '+'), CAST(CAST(ROUND(ABS(financial_effect_rub) / 1000) AS INT64) AS STRING), ' тыс ₽')
+      ELSE CONCAT(IF(financial_effect_rub < 0, '−', '+'), CAST(CAST(ROUND(ABS(financial_effect_rub)) AS INT64) AS STRING), ' ₽')
+    END)) AS effect_line,
+  -- Phase 1.2: технические коды из авторских seed-формулировок заменяются человеческими словами
+  -- (оригинал остаётся в reason_text для drill-down)
+  REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(what_to_do,
+    ' (ADVERTISING_ACTIONS)', ''), ' (HC-B)', ''), ' по BUNDLE_PRODUCTION_PLAN', ' по плану сборки'), 'план SET', 'план'), ' в SET', ' по плану'), 'FBS = 0', 'FBS сейчас не используется') AS what_to_do,
+  executor_ru,
+  REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(why_owner,
+    ' (HARD)', ' — жёсткий срок'), 'RAW_WB_SUPPLIES: ', 'в кабинете WB '), 'приёмка NOT_PROVEN', 'приёмка не подтверждена'), 'V_ADS_SKU_ECONOMIC_LIMITS: ', 'по экономике рекламы: '),
+    'ABOVE_BREAKEVEN', 'выше точки безубыточности'), 'ETA ASSUMPTION', 'дата прихода — допущение, поставщиком не подтверждена'), 'expiry Oct-2027', 'срок годности октябрь 2027'),
+    'по плану SET ', 'по плану '), 'runout март 2027 в SET', 'по плану запас кончится в марте 2027'), 'FBS = 0 сегодня', 'FBS сейчас не используется'), ' (NEGATIVE_BEFORE_ADS)', '') AS why_owner,
+  sku_breakdown,
+  -- why_short сохранён для совместимости (Phase 1.1); с Phase 1.2 без обрезки «…»
+  why_full AS why_short,
   CONCAT('[', SUBSTR(priority, 1, 2), '] ', action_type_ru, ' · ', IFNULL(NULLIF(marketplace, 'ALL'), 'все каналы'), IF(sku IN ('PORTFOLIO', 'BUNDLES', 'FF', 'DATA', 'BATCH-05') OR sku IS NULL, '', CONCAT(' · ', sku_name)),
          IF(qty IS NULL OR qty = 0, '', CONCAT(' · ', CAST(CAST(qty AS INT64) AS STRING), ' шт.')),
          IF(deadline IS NULL, '', CONCAT(' · до ', FORMAT_DATE('%d.%m', deadline)))) AS headline,
@@ -982,6 +1032,21 @@ yday AS (
     SUM(IF(sales_mode = 'BUNDLE', cards_ordered, 0)) AS bundles_ordered_yesterday,
     SUM(IF(sales_mode = 'BUNDLE', units_ordered, 0)) AS units_via_bundles_yesterday
   FROM a, ref WHERE a.d = ref.yday
+),
+-- Phase 1.2: сопоставимые периоды для контекста KPI «вчера» — позавчера и тот же день недели неделю назад
+prev AS (
+  SELECT
+    SUM(IF(a.d = DATE_SUB(ref.yday, INTERVAL 1 DAY), cards_ordered, 0)) AS cards_ordered_dby,
+    SUM(IF(a.d = DATE_SUB(ref.yday, INTERVAL 1 DAY), units_ordered, 0)) AS units_dby,
+    SUM(IF(a.d = DATE_SUB(ref.yday, INTERVAL 1 DAY), gmv_ordered, 0)) AS gmv_dby,
+    SUM(IF(a.d = DATE_SUB(ref.yday, INTERVAL 1 DAY), contribution, 0)) AS contribution_dby,
+    SAFE_DIVIDE(SUM(IF(a.d = DATE_SUB(ref.yday, INTERVAL 1 DAY), ad_spend, 0)), SUM(IF(a.d = DATE_SUB(ref.yday, INTERVAL 1 DAY), gmv_ordered, 0))) * 100 AS drr_dby_pct,
+    SUM(IF(a.d = DATE_SUB(ref.yday, INTERVAL 7 DAY), cards_ordered, 0)) AS cards_ordered_lw,
+    SUM(IF(a.d = DATE_SUB(ref.yday, INTERVAL 7 DAY), units_ordered, 0)) AS units_lw,
+    SUM(IF(a.d = DATE_SUB(ref.yday, INTERVAL 7 DAY), gmv_ordered, 0)) AS gmv_lw,
+    SUM(IF(a.d = DATE_SUB(ref.yday, INTERVAL 7 DAY), contribution, 0)) AS contribution_lw,
+    SAFE_DIVIDE(SUM(IF(a.d = DATE_SUB(ref.yday, INTERVAL 7 DAY), ad_spend, 0)), SUM(IF(a.d = DATE_SUB(ref.yday, INTERVAL 7 DAY), gmv_ordered, 0))) * 100 AS drr_lw_pct
+  FROM a, ref WHERE a.d IN (DATE_SUB(ref.yday, INTERVAL 1 DAY), DATE_SUB(ref.yday, INTERVAL 7 DAY))
 ),
 mtd AS (
   SELECT
@@ -1085,6 +1150,10 @@ SELECT
   plan.plan_cards_yesterday, plan.plan_units_yesterday, plan.plan_gmv_yesterday, plan.plan_contribution_yesterday, plan.plan_drr_yesterday_pct,
   SAFE_DIVIDE(yday.cards_ordered_yesterday, plan.plan_cards_yesterday) * 100 AS yesterday_attainment_pct,
   fr.wb_sales_as_of >= ref.yday AND fr.ozon_sales_as_of >= ref.yday AS yesterday_data_complete,
+  -- PREVIOUS COMPARABLE PERIODS (Phase 1.2): позавчера (dby) и тот же день недели неделю назад (lw)
+  DATE_SUB(ref.yday, INTERVAL 1 DAY) AS dby_date, DATE_SUB(ref.yday, INTERVAL 7 DAY) AS lw_date,
+  prev.cards_ordered_dby, prev.units_dby, prev.gmv_dby, prev.contribution_dby, prev.drr_dby_pct,
+  prev.cards_ordered_lw, prev.units_lw, prev.gmv_lw, prev.contribution_lw, prev.drr_lw_pct,
   -- MTD
   mtd.cards_ordered_mtd, mtd.cards_sold_mtd, mtd.units_mtd, mtd.units_sold_mtd, mtd.gmv_mtd, mtd.seller_cash_mtd, mtd.contribution_mtd, mtd.ad_spend_mtd, mtd.drr_mtd_pct,
   mtd.wb_cards_mtd, mtd.ozon_cards_mtd, mtd.cards_per_day_7d, mtd.gmv_per_day_7d,
@@ -1145,7 +1214,7 @@ SELECT
     WHEN SAFE_DIVIDE(aip.cards_ordered_plan_days_mtd, plan.plan_cards_mtd) < 0.9 AND plan.plan_days_elapsed >= 3 THEN 'YELLOW'
     ELSE 'GREEN'
   END AS plan_status
-FROM ref CROSS JOIN yday CROSS JOIN mtd CROSS JOIN plan CROSS JOIN actual_in_plan aip
+FROM ref CROSS JOIN yday CROSS JOIN prev CROSS JOIN mtd CROSS JOIN plan CROSS JOIN actual_in_plan aip
 LEFT JOIN cc_m ON TRUE LEFT JOIN cc_s ON TRUE LEFT JOIN cc_p ON TRUE
 CROSS JOIN bundles LEFT JOIN hc ON TRUE CROSS JOIN q CROSS JOIN att CROSS JOIN fr CROSS JOIN avail LEFT JOIN rs ON TRUE
 ),
@@ -1173,7 +1242,7 @@ SELECT c.* EXCEPT (conf_base_level),
       IF(conf_flag_availability, CONCAT('риск наличия: ', CAST(CAST(ROUND(availability_risk_plan_share_pct) AS INT64) AS STRING), ' % плана без недельного покрытия (', IFNULL(availability_risk_top, ''), ')'), NULL),
       IF(conf_flag_deviation, CONCAT('темп расходится с сезонной кривой на ', CAST(CAST(ROUND(ABS(forecast_eom_attainment_pct - 100)) AS INT64) AS STRING), ' %'), NULL)
     ]) r WHERE r IS NOT NULL), '; ') AS forecast_confidence_reason,
-  CONCAT('Прогноз на ', CASE EXTRACT(MONTH FROM CURRENT_DATE()) WHEN 1 THEN 'январь' WHEN 2 THEN 'февраль' WHEN 3 THEN 'март' WHEN 4 THEN 'апрель' WHEN 5 THEN 'май' WHEN 6 THEN 'июнь' WHEN 7 THEN 'июль' WHEN 8 THEN 'август' WHEN 9 THEN 'сентябрь' WHEN 10 THEN 'октябрь' WHEN 11 THEN 'ноябрь' ELSE 'декабрь' END, ': ', CAST(CAST(ROUND(forecast_eom_cards_plan_days) AS INT64) AS STRING), ' из ', CAST(CAST(ROUND(plan_cards_month) AS INT64) AS STRING), ' карточек (',
+  CONCAT('Прогноз на ', CASE EXTRACT(MONTH FROM CURRENT_DATE()) WHEN 1 THEN 'январь' WHEN 2 THEN 'февраль' WHEN 3 THEN 'март' WHEN 4 THEN 'апрель' WHEN 5 THEN 'май' WHEN 6 THEN 'июнь' WHEN 7 THEN 'июль' WHEN 8 THEN 'август' WHEN 9 THEN 'сентябрь' WHEN 10 THEN 'октябрь' WHEN 11 THEN 'ноябрь' ELSE 'декабрь' END, ': ', CAST(CAST(ROUND(forecast_eom_cards_plan_days) AS INT64) AS STRING), ' из ', CAST(CAST(ROUND(plan_cards_month) AS INT64) AS STRING), ' проданных позиций (',
          CAST(CAST(ROUND(forecast_eom_attainment_pct) AS INT64) AS STRING), ' %) · уверенность ',
          CASE forecast_confidence_score WHEN 3 THEN 'HIGH' WHEN 2 THEN 'MEDIUM' ELSE 'LOW' END) AS forecast_line
 FROM conf2 c;

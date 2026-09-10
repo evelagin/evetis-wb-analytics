@@ -131,6 +131,12 @@ stock AS (
   UNION ALL
   SELECT 'OZON', bundle_sku, ozon_cards_live, ozon_cards_transit_api, days_cover_marketplace_at_plan_rate, NULL, assemblable_now_ff FROM `project-fa311fc0-4d87-4781-986.wb_mart.V_CT_BUNDLE_STATUS`
 )
+-- Phase 1.2: status_ru (СРОЧНО / ВНИМАНИЕ / ПО ПЛАНУ / РОСТ / ВНЕ ПЛАНА) и channel_ru — для владельческих таблиц без кодов
+SELECT x.*,
+  CASE x.status WHEN 'RED' THEN 'СРОЧНО' WHEN 'YELLOW' THEN 'ВНИМАНИЕ' WHEN 'BLUE' THEN 'РОСТ' WHEN 'GREEN' THEN 'ПО ПЛАНУ' ELSE 'ВНЕ ПЛАНА' END AS status_ru,
+  CASE x.marketplace WHEN 'WB' THEN 'WB' WHEN 'OZON' THEN 'Ozon' ELSE x.marketplace END AS channel_ru,
+  IF(x.sales_mode = 'BUNDLE', 'набор', 'товар') AS kind_ru
+FROM (
 SELECT pa.*, s.stock_units, s.in_transit_units, s.cover_days, s.recommended_ship_units, s.ff_total_units,
   SAFE_DIVIDE(pa.actual_cards_mtd, pa.plan_cards_mtd) * 100 AS attainment_pct,
   pa.actual_cards_mtd + pa.cards_per_day_7d * pa.plan_days_remaining AS forecast_eom_cards,
@@ -154,15 +160,15 @@ SELECT pa.*, s.stock_units, s.in_transit_units, s.cover_days, s.recommended_ship
     ELSE 'по плану'
   END AS status_reason,
   CURRENT_DATE() AS as_of
-FROM pa LEFT JOIN stock s ON s.marketplace = pa.marketplace AND s.internal_sku = pa.internal_sku;
+FROM pa LEFT JOIN stock s ON s.marketplace = pa.marketplace AND s.internal_sku = pa.internal_sku) x;
 
 -- ── §4. Ежедневная сводка владельца — построчно ─────────────────────────────────────
--- Секции: Вчера / План / Главные отклонения / Сегодня сделать (≤ 4, исполнение) /
--- Требует решения владельца (≤ 3) / Обновление данных. Итого ≤ 7 действий.
+-- Секции (Phase 1.2): Вчера / План месяца / Главные отклонения / Сегодня сделать (≤ 4, исполнение) /
+-- Решения владельца (≤ 3) / Данные. Итого ≤ 7 действий. Эффект всегда с типом (effect_line), «зачем» — why_owner.
 -- V_CT_OWNER_HOME читается ОДИН раз (UNNEST массива STRUCT) — иначе BigQuery
 -- разворачивает тяжёлую витрину в каждой ветке UNION ALL и падает по сложности плана.
 CREATE OR REPLACE VIEW `project-fa311fc0-4d87-4781-986.wb_mart.V_CT_DAILY_BRIEF_LINES`
-OPTIONS (description = 'Control Tower Phase 1.1: Daily Owner Brief as lines (section × line). Sections: Вчера / План / Главные отклонения / Сегодня сделать / Требует решения владельца / Обновление данных. Max 7 actions total (4 execution + 3 decisions). No SQL terms. Built from V_CT_OWNER_HOME (single scan), V_CT_ACTION_QUEUE, V_CT_ATTENTION.') AS
+OPTIONS (description = 'Control Tower Phase 1.1: Daily Owner Brief as lines (section × line). Sections: Вчера / План месяца / Главные отклонения / Сегодня сделать / Решения владельца / Данные. Max 7 actions total (4 execution + 3 decisions). No SQL terms. Built from V_CT_OWNER_HOME (single scan), V_CT_ACTION_QUEUE, V_CT_ATTENTION.') AS
 WITH h AS (SELECT * FROM `project-fa311fc0-4d87-4781-986.wb_mart.V_CT_OWNER_HOME`),
 fmt AS (
   SELECT
@@ -179,25 +185,26 @@ home_lines AS (
   SELECT l.*
   FROM fmt, UNNEST([
     STRUCT(1 AS section_ord, 'Вчера' AS section, 1 AS line_ord,
-      CONCAT(FORMAT_DATE('%d.%m', yesterday_date), ': заказано ', CAST(cards_ordered_yesterday AS STRING), ' карточек / ', CAST(units_yesterday AS STRING), ' фл. на ', gmv_y_s, ' ₽',
-             IF(plan_cards_yesterday > 0, CONCAT(' — ', CAST(CAST(ROUND(yesterday_attainment_pct) AS INT64) AS STRING), ' % плана дня (план ', CAST(CAST(ROUND(plan_cards_yesterday) AS INT64) AS STRING), ' карт. / ', plan_gmv_y_s, ' ₽)'), '')) AS line_text,
+      CONCAT(FORMAT_DATE('%d.%m', yesterday_date), ': продано ', CAST(cards_ordered_yesterday AS STRING), ' позиций / ', CAST(units_yesterday AS STRING), ' физ. ед. на ', gmv_y_s, ' ₽',
+             IF(plan_cards_yesterday > 0, CONCAT(' — ', CAST(CAST(ROUND(yesterday_attainment_pct) AS INT64) AS STRING), ' % плана дня (план ', CAST(CAST(ROUND(plan_cards_yesterday) AS INT64) AS STRING), ' поз. / ', plan_gmv_y_s, ' ₽)'), ''),
+             '; позавчера ', CAST(cards_ordered_dby AS STRING), ' поз., неделю назад ', CAST(cards_ordered_lw AS STRING), ' поз.') AS line_text,
       IF(plan_cards_yesterday > 0 AND yesterday_attainment_pct < 70, 'RED', IF(plan_cards_yesterday > 0 AND yesterday_attainment_pct < 90, 'YELLOW', 'GREEN')) AS tone),
     STRUCT(1, 'Вчера', 2,
-      CONCAT('Вклад ', IF(contribution_yesterday < 0, '−', '+'), contrib_y_abs_s, ' ₽ (план +', plan_contrib_y_s, ' ₽) · ДРР ', FORMAT('%.1f', drr_yesterday_pct), ' % (план ', FORMAT('%.1f', plan_drr_yesterday_pct), ' %) · WB ', CAST(wb_cards_yesterday AS STRING), ' / Ozon ', CAST(ozon_cards_yesterday AS STRING), ' карт.'),
+      CONCAT('Вклад ', IF(contribution_yesterday < 0, '−', '+'), contrib_y_abs_s, ' ₽ (план +', plan_contrib_y_s, ' ₽) · ДРР ', FORMAT('%.1f', drr_yesterday_pct), ' % (план ', FORMAT('%.1f', plan_drr_yesterday_pct), ' %) · WB ', CAST(wb_cards_yesterday AS STRING), ' / Ozon ', CAST(ozon_cards_yesterday AS STRING), ' поз.'),
       IF(contribution_yesterday < 0, 'RED', IF(contribution_yesterday < plan_contribution_yesterday, 'YELLOW', 'GREEN'))),
     STRUCT(1, 'Вчера', 3, IF(yesterday_data_complete, 'Данные за вчера полные (WB и Ozon закрыли день)', 'Данные за вчера НЕПОЛНЫЕ — WB или Ozon ещё не закрыли день'), IF(yesterday_data_complete, 'GREEN', 'YELLOW')),
-    STRUCT(2, 'План', 1,
-      CONCAT('Месяц: план на прошедшие плановые дни ', CAST(CAST(ROUND(plan_cards_mtd) AS INT64) AS STRING), ' карт., факт ', CAST(cards_ordered_plan_days_mtd AS STRING), ' — выполнение ', CAST(CAST(ROUND(mtd_attainment_pct) AS INT64) AS STRING), ' %'),
+    STRUCT(2, 'План месяца', 1,
+      CONCAT('План продаж на прошедшие плановые дни ', CAST(CAST(ROUND(plan_cards_mtd) AS INT64) AS STRING), ' поз., факт продаж ', CAST(cards_ordered_plan_days_mtd AS STRING), ' — выполнение плана ', CAST(CAST(ROUND(mtd_attainment_pct) AS INT64) AS STRING), ' %'),
       IF(mtd_attainment_pct < 70, 'RED', IF(mtd_attainment_pct < 90, 'YELLOW', 'GREEN'))),
-    STRUCT(2, 'План', 2,
-      CONCAT('План месяца ', CAST(CAST(ROUND(plan_cards_month) AS INT64) AS STRING), ' карт. · прогноз ', CAST(CAST(ROUND(forecast_eom_cards_plan_days) AS INT64) AS STRING), ' (', CAST(CAST(ROUND(forecast_eom_attainment_pct) AS INT64) AS STRING), ' %) · нужно ', FORMAT('%.1f', required_daily_velocity_remaining), '/день, факт ', FORMAT('%.1f', actual_daily_velocity_plan_days), '/день'),
+    STRUCT(2, 'План месяца', 2,
+      CONCAT('План месяца ', CAST(CAST(ROUND(plan_cards_month) AS INT64) AS STRING), ' поз. · прогноз месяца ', CAST(CAST(ROUND(forecast_eom_cards_plan_days) AS INT64) AS STRING), ' (', CAST(CAST(ROUND(forecast_eom_attainment_pct) AS INT64) AS STRING), ' %) · нужно ', FORMAT('%.1f', required_daily_velocity_remaining), ' поз./день, факт ', FORMAT('%.1f', actual_daily_velocity_plan_days), ' поз./день'),
       IF(forecast_eom_attainment_pct < 70, 'RED', IF(forecast_eom_attainment_pct < 90, 'YELLOW', 'GREEN'))),
-    STRUCT(2, 'План', 3, CONCAT('Уверенность прогноза: ', forecast_confidence, ' — ', forecast_confidence_reason), IF(forecast_confidence = 'LOW', 'YELLOW', 'GREEN')),
+    STRUCT(2, 'План месяца', 3, CONCAT('Надёжность прогноза: ', forecast_confidence, ' (', forecast_confidence_ru, ') — ', forecast_confidence_reason), IF(forecast_confidence = 'LOW', 'YELLOW', 'GREEN')),
     STRUCT(3, 'Главные отклонения', 1,
-      CONCAT('Крем для рук: ', hc_units_s, ' фл., ', CAST(hc_days_to_expiry AS STRING), ' дн. до срока; нужно ', FORMAT('%.1f', hc_required_units_per_day), '/день, факт ', FORMAT('%.1f', hc_actual_units_per_day_7d), '/день; прогноз списания ', hc_resid_s, ' фл. (', CAST(CAST(ROUND(hc_writeoff_risk_rub / 1000) AS INT64) AS STRING), ' тыс ₽)'),
+      CONCAT('Крем для рук: ', hc_units_s, ' фл., ', CAST(hc_days_to_expiry AS STRING), ' дн. до срока годности; нужно ', FORMAT('%.1f', hc_required_units_per_day), '/день, факт ', FORMAT('%.1f', hc_actual_units_per_day_7d), '/день; риск списания ', hc_resid_s, ' фл. (', CAST(CAST(ROUND(hc_writeoff_risk_rub / 1000) AS INT64) AS STRING), ' тыс ₽ по себестоимости)'),
       hc_status),
-    STRUCT(6, 'Обновление данных', 1, ct_status_line, IF(ct_refresh_status = 'OK', 'GREEN', 'RED')),
-    STRUCT(6, 'Обновление данных', 2, IF(stale_domains_count = 0, 'Все источники свежие', CONCAT('Устарели: ', stale_domains)), IF(stale_domains_count = 0, 'GREEN', 'YELLOW'))
+    STRUCT(6, 'Данные', 1, ct_status_line, IF(ct_refresh_status = 'OK', 'GREEN', 'RED')),
+    STRUCT(6, 'Данные', 2, IF(stale_domains_count = 0, 'Все источники свежие', CONCAT('Устарели: ', stale_domains)), IF(stale_domains_count = 0, 'GREEN', 'YELLOW'))
   ]) AS l
 ),
 other_lines AS (
@@ -206,11 +213,11 @@ other_lines AS (
   QUALIFY ROW_NUMBER() OVER (ORDER BY sort_rank, metric_value) <= 3
   UNION ALL
   SELECT 4, 'Сегодня сделать', lane_rank,
-    CONCAT(priority_short, ' · ', what_to_do, ' → ', executor_ru, ' · ', deadline_ru, IFNULL(CONCAT(' · ', effect_ru), '')), color
+    CONCAT(priority_short, ' · ', what_to_do, ' → ', executor_ru, ' · срок: ', deadline_ru, IFNULL(CONCAT(' · ', effect_line), ''), ' — ', why_owner), color
   FROM `project-fa311fc0-4d87-4781-986.wb_mart.V_CT_ACTION_QUEUE` WHERE is_open AND lane = 'EXECUTION' AND lane_rank <= 4
   UNION ALL
-  SELECT 5, 'Требует решения владельца', lane_rank,
-    CONCAT(priority_short, ' · ', what_to_do, ' · ', deadline_ru, IFNULL(CONCAT(' · ', effect_ru), ''), IF(why_short IS NULL OR why_short = '', '', CONCAT(' — ', why_short))), color
+  SELECT 5, 'Решения владельца', lane_rank,
+    CONCAT(priority_short, ' · ', what_to_do, ' · срок: ', deadline_ru, IFNULL(CONCAT(' · ', effect_line), ''), IF(why_owner IS NULL OR why_owner = '', '', CONCAT(' — ', why_owner))), color
   FROM `project-fa311fc0-4d87-4781-986.wb_mart.V_CT_ACTION_QUEUE` WHERE is_open AND lane = 'DECISION' AND lane_rank <= 3
 )
 SELECT section_ord, section, line_ord, line_text, tone, CURRENT_DATE() AS as_of FROM home_lines

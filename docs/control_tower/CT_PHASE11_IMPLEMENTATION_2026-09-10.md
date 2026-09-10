@@ -1,6 +1,9 @@
 # EVETIS OWNER CONTROL TOWER — PHASE 1.1
 ## Автообновление · рабочий процесс владельца · уверенность прогноза · визуальный UX
 
+> **Phase 1.2 (10.09.2026, тем же днём):** владельческие подписи, порядок блоков Owner Home, фильтры периода/канала на Sales Plan,
+> секции сводки — см. `CT_PHASE12_IMPLEMENTATION_2026-09-10.md`. Разделы 5–7 ниже описывают состояние Phase 1.1 (до 1.2).
+
 Дата: 2026-09-10. База: Phase 1 (`075f45a`). Metabase v0.63.15.1 (Docker, localhost:3000).
 Границы те же, что в Phase 1: READ FROM PRODUCTION / WRITE ONLY CT_*. Ни один production-объект,
 Stage B, загрузчик, цена, ставка или остаток маркетплейса не изменён. Marketplace write credentials
