@@ -1,9 +1,11 @@
 -- =====================================================================================
--- CONTROL TOWER PHASE 1 — ВЛАДЕЛЬЧЕСКИЕ ВИТРИНЫ (wb_mart.V_CT_*)
+-- CONTROL TOWER PHASE 1 (+1.1) — ВЛАДЕЛЬЧЕСКИЕ ВИТРИНЫ (wb_mart.V_CT_*)
 -- =====================================================================================
 -- Слой решений: правда о запасе (LIVE), план/факт, запас→деньги, наборы, потребность
 -- в отгрузке, крем для рук, алерты, кандидаты действий, очередь, Owner Home.
--- Применять ПОСЛЕ ct_04a. Все объекты новые, префикс V_CT_.
+-- Применять ПОСЛЕ ct_04a и ct_07 §1–2 (V_CT_OWNER_HOME читает V_CT_REFRESH_STATUS и CT_CONFIG).
+-- Все объекты новые, префикс V_CT_. Phase 1.1 (10.09.2026): V_CT_ACTION_QUEUE и V_CT_OWNER_HOME расширены
+-- человекочитаемыми полями, дорожками DECISION/EXECUTION, уверенностью прогноза и статусом обновления.
 --
 -- СЛОВАРЬ ДЕНЕГ (контракт проекта):
 --   деньги продавца  = выручка по базе продавца − комиссии/логистика − реклама
@@ -837,11 +839,22 @@ FROM u
 ;
 
 -- ── Очередь действий владельца (представление для дашборда) ─────────────────────────
--- Читает CT_OWNER_ACTION_QUEUE, добавляет человекочитаемые тип/заголовок, цвет,
--- признак просрочки и сквозной порядок: сначала в работе и открытые, затем по
--- приоритету и сроку. Статусы меняются ТОЛЬКО через evetis_ref.sp_ct_action_update().
+-- Phase 1.1: читает CT_OWNER_ACTION_QUEUE, добавляет человекочитаемые поля для владельца:
+--   lane        — DECISION (только владелец решает) | EXECUTION (исполняет ФФ / кабинет) | WATCH
+--   what_to_do  — короткий императив («Снять с паллет 1 330 фл.»), без технических кодов
+--   executor_ru — куда / кому (Фулфилмент Usend, WB · поставка через ПВЗ, Кабинет рекламы WB …)
+--   why_short   — причина одной фразой; полный reason_text остаётся для drill-down
+--   deadline_ru — «сегодня», «до 12.09», «просрочено 3 дн.»
+--   effect_ru   — «+500 тыс ₽» / «−94 тыс ₽»
+--   done_url / progress_url / cancel_url — ссылки на owner web-app (Apps Script), URL берётся из
+--   evetis_ref.CT_CONFIG (action_webapp_url); пока ключ не заполнен — NULL, ссылки не показываются.
+-- Статусы меняются ТОЛЬКО через evetis_ref.sp_ct_action_update() (web-app вызывает её же).
 CREATE OR REPLACE VIEW `project-fa311fc0-4d87-4781-986.wb_mart.V_CT_ACTION_QUEUE` AS
-WITH q AS (
+WITH cfg AS (
+  SELECT MAX(IF(config_key = 'action_webapp_url', NULLIF(TRIM(config_value), ''), NULL)) AS webapp_url
+  FROM `project-fa311fc0-4d87-4781-986.evetis_ref.CT_CONFIG`
+),
+q AS (
   SELECT q.*,
     CASE priority WHEN 'P0 TODAY' THEN 0 WHEN 'P1 THIS WEEK' THEN 1 WHEN 'P2 NEXT 2 WEEKS' THEN 2 WHEN 'P3 THIS MONTH' THEN 3 ELSE 4 END AS priority_rank,
     CASE status WHEN 'IN_PROGRESS' THEN 0 WHEN 'OPEN' THEN 1 WHEN 'DONE' THEN 2 WHEN 'CANCELLED' THEN 3 ELSE 4 END AS status_rank,
@@ -854,23 +867,108 @@ WITH q AS (
       WHEN 'ASSEMBLE_BUNDLES' THEN 'Сборка наборов' WHEN 'LIQUIDATION' THEN 'Ликвидация' WHEN 'ADS_REVIEW' THEN 'Реклама'
       WHEN 'PRICE_ACTION' THEN 'Цены' WHEN 'DECISION' THEN 'Решение' WHEN 'FF_REQUEST' THEN 'Заявка на ФФ' WHEN 'INVESTIGATE' THEN 'Разобраться'
       WHEN 'ACCELERATE' THEN 'Ускорить сбыт' WHEN 'DATA_FIX' THEN 'Данные' WHEN 'WATCH' THEN 'Наблюдать' ELSE action_type END AS action_type_ru,
-    CASE priority WHEN 'P0 TODAY' THEN 'RED' WHEN 'P1 THIS WEEK' THEN 'YELLOW' WHEN 'P2 NEXT 2 WEEKS' THEN 'YELLOW' WHEN 'P3 THIS MONTH' THEN 'BLUE' ELSE 'GREEN' END AS color
+    CASE priority WHEN 'P0 TODAY' THEN 'RED' WHEN 'P1 THIS WEEK' THEN 'YELLOW' WHEN 'P2 NEXT 2 WEEKS' THEN 'YELLOW' WHEN 'P3 THIS MONTH' THEN 'BLUE' ELSE 'GREEN' END AS color,
+    -- Дорожка: решение владельца против рутинного исполнения
+    CASE
+      WHEN action_type IN ('DECISION', 'LIQUIDATION', 'ACCELERATE', 'INVESTIGATE') THEN 'DECISION'
+      WHEN action_type IN ('PULL_FROM_PALLETS', 'REPLENISH_WB', 'REPLENISH_OZON', 'ASSEMBLE_BUNDLES', 'FF_REQUEST', 'ADS_REVIEW', 'PRICE_ACTION', 'DATA_FIX') THEN 'EXECUTION'
+      ELSE 'WATCH'
+    END AS lane,
+    -- Куда / кому
+    CASE
+      WHEN action_type IN ('PULL_FROM_PALLETS', 'ASSEMBLE_BUNDLES') THEN 'Фулфилмент Usend'
+      WHEN action_type = 'FF_REQUEST' AND marketplace = 'FF' THEN 'Фулфилмент Usend (письменно)'
+      WHEN action_type = 'FF_REQUEST' THEN CONCAT('Поддержка ', marketplace)
+      WHEN action_type = 'REPLENISH_WB' THEN 'WB · поставка через ПВЗ (лот ≤ 25 кг)'
+      WHEN action_type = 'REPLENISH_OZON' THEN 'Ozon · заявка FBO'
+      WHEN action_type = 'ADS_REVIEW' THEN CONCAT('Кабинет рекламы ', IFNULL(NULLIF(marketplace, 'ALL'), 'WB и Ozon'))
+      WHEN action_type = 'PRICE_ACTION' THEN CONCAT('Цены ', IFNULL(NULLIF(marketplace, 'ALL'), 'WB и Ozon'))
+      WHEN marketplace = 'CHINA' THEN 'Поставщик (Китай)'
+      WHEN marketplace = 'EXTERNAL' THEN 'Внешний канал (опт / офлайн)'
+      WHEN marketplace = 'FF' THEN 'Фулфилмент Usend'
+      ELSE 'Владелец'
+    END AS executor_ru,
+    -- Короткая формулировка: до первого « — » в тексте правила, обрезка до 110 символов
+    TRIM(SPLIT(reason_text, ' — ')[SAFE_OFFSET(0)]) AS reason_head,
+    TRIM(ARRAY_TO_STRING(ARRAY(SELECT x FROM UNNEST(SPLIT(reason_text, ' — ')) x WITH OFFSET o WHERE o > 0 ORDER BY o), ' — ')) AS reason_tail
   FROM `project-fa311fc0-4d87-4781-986.evetis_ref.CT_OWNER_ACTION_QUEUE` q
   LEFT JOIN `project-fa311fc0-4d87-4781-986.evetis_ref.REF_PRODUCT_MASTER` p ON p.internal_sku = q.sku
+),
+q2 AS (
+  SELECT q.*,
+    -- Шаблон применяется к строкам правил и к seed-строкам с длинной формулировкой (> 110 симв.);
+    -- короткая авторская формулировка владельца сохраняется как есть.
+    (generated_by = 'RULE_ENGINE' OR LENGTH(reason_head) > 110)
+      AND action_type IN ('PULL_FROM_PALLETS', 'REPLENISH_WB', 'REPLENISH_OZON', 'ASSEMBLE_BUNDLES', 'ADS_REVIEW', 'ACCELERATE')
+      AND (qty > 0 OR action_type IN ('ADS_REVIEW', 'ACCELERATE'))
+      AND (action_type NOT IN ('ADS_REVIEW', 'ACCELERATE') OR sku IS NULL OR sku NOT IN ('PORTFOLIO', 'BUNDLES', 'FF', 'DATA', 'BATCH-05')) AS use_template
+  FROM q
+),
+q3 AS (
+  SELECT q2.*,
+    CASE
+      WHEN use_template AND action_type = 'PULL_FROM_PALLETS' THEN CONCAT('Снять с паллет ', REPLACE(FORMAT('%\'d', CAST(qty AS INT64)), ',', ' '), ' фл.')
+      WHEN use_template AND action_type = 'REPLENISH_WB' THEN CONCAT('Отгрузить на WB ', REPLACE(FORMAT('%\'d', CAST(qty AS INT64)), ',', ' '), ' фл.', IF(sku NOT IN ('PORTFOLIO', 'BUNDLES') AND sku IS NOT NULL, CONCAT(' · ', sku_name), ''))
+      WHEN use_template AND action_type = 'REPLENISH_OZON' THEN CONCAT('Отгрузить на Ozon ', REPLACE(FORMAT('%\'d', CAST(qty AS INT64)), ',', ' '), ' фл.', IF(sku NOT IN ('PORTFOLIO', 'BUNDLES') AND sku IS NOT NULL, CONCAT(' · ', sku_name), ''))
+      WHEN use_template AND action_type = 'ASSEMBLE_BUNDLES' THEN CONCAT('Собрать ', REPLACE(FORMAT('%\'d', CAST(qty AS INT64)), ',', ' '), ' наборов')
+      WHEN use_template AND action_type = 'ADS_REVIEW' THEN CONCAT('Снизить ставки / пересмотреть рекламу: ', sku_name)
+      WHEN use_template AND action_type = 'ACCELERATE' THEN CONCAT('Ускорить сбыт: ', sku_name, IF(qty > 0, CONCAT(' (остаток к 31.03 ≈ ', REPLACE(FORMAT('%\'d', CAST(qty AS INT64)), ',', ' '), ' фл.)'), ''))
+      ELSE IF(LENGTH(reason_head) > 110, CONCAT(SUBSTR(reason_head, 1, 107), '…'), reason_head)
+    END AS what_to_do,
+    CASE
+      WHEN use_template THEN reason_text
+      WHEN reason_tail IS NULL OR reason_tail = '' THEN reason_head
+      ELSE reason_tail
+    END AS why_full
+  FROM q2
 )
-SELECT action_id, priority, priority_rank, status, status_rank, is_open, is_overdue, color,
-  action_type, action_type_ru, marketplace, sku, sku_name, bundle_id, qty, financial_effect_rub,
+SELECT action_id, priority, SUBSTR(priority, 1, 2) AS priority_short, priority_rank, status, status_rank, is_open, is_overdue, color,
+  lane, CASE lane WHEN 'DECISION' THEN 'Решение владельца' WHEN 'EXECUTION' THEN 'Исполнение' ELSE 'Наблюдение' END AS lane_ru,
+  action_type, action_type_ru, marketplace, sku, sku_name, bundle_id, qty,
+  IF(qty IS NULL OR qty = 0, NULL, CONCAT(REPLACE(FORMAT('%\'d', CAST(qty AS INT64)), ',', ' '), IF(action_type = 'ASSEMBLE_BUNDLES', ' наб.', ' фл.'))) AS qty_ru,
+  financial_effect_rub,
+  CASE
+    WHEN financial_effect_rub IS NULL THEN NULL
+    WHEN ABS(financial_effect_rub) >= 1000000 THEN CONCAT(IF(financial_effect_rub < 0, '−', '+'), FORMAT('%.1f', ABS(financial_effect_rub) / 1000000), ' млн ₽')
+    WHEN ABS(financial_effect_rub) >= 1000 THEN CONCAT(IF(financial_effect_rub < 0, '−', '+'), CAST(CAST(ROUND(ABS(financial_effect_rub) / 1000) AS INT64) AS STRING), ' тыс ₽')
+    ELSE CONCAT(IF(financial_effect_rub < 0, '−', '+'), CAST(CAST(ROUND(ABS(financial_effect_rub)) AS INT64) AS STRING), ' ₽')
+  END AS effect_ru,
+  what_to_do, executor_ru,
+  IF(LENGTH(why_full) > 220, CONCAT(SUBSTR(why_full, 1, 217), '…'), why_full) AS why_short,
   CONCAT('[', SUBSTR(priority, 1, 2), '] ', action_type_ru, ' · ', IFNULL(NULLIF(marketplace, 'ALL'), 'все каналы'), IF(sku IN ('PORTFOLIO', 'BUNDLES', 'FF', 'DATA', 'BATCH-05') OR sku IS NULL, '', CONCAT(' · ', sku_name)),
          IF(qty IS NULL OR qty = 0, '', CONCAT(' · ', CAST(CAST(qty AS INT64) AS STRING), ' шт.')),
-         ' · до ', FORMAT_DATE('%d.%m', deadline)) AS headline,
-  reason_code, reason_text, source_metric, deadline, days_to_deadline, action_date, generated_at, generated_by,
+         IF(deadline IS NULL, '', CONCAT(' · до ', FORMAT_DATE('%d.%m', deadline)))) AS headline,
+  reason_code, reason_text, source_metric, deadline,
+  CASE
+    WHEN deadline IS NULL THEN '—'
+    WHEN deadline < CURRENT_DATE() AND status IN ('OPEN', 'IN_PROGRESS') THEN CONCAT('просрочено ', CAST(DATE_DIFF(CURRENT_DATE(), deadline, DAY) AS STRING), ' дн.')
+    WHEN deadline = CURRENT_DATE() THEN 'сегодня'
+    WHEN deadline = DATE_ADD(CURRENT_DATE(), INTERVAL 1 DAY) THEN 'завтра'
+    ELSE CONCAT('до ', FORMAT_DATE('%d.%m', deadline))
+  END AS deadline_ru,
+  days_to_deadline, action_date, generated_at, generated_by,
   status_updated_at, completed_at, owner_note, plan_version, first_seen_at, last_seen_at, times_seen, dedup_key,
+  IF(cfg.webapp_url IS NULL, NULL, CONCAT(cfg.webapp_url, '?id=', action_id, '&status=DONE')) AS done_url,
+  IF(cfg.webapp_url IS NULL, NULL, CONCAT(cfg.webapp_url, '?id=', action_id, '&status=IN_PROGRESS')) AS progress_url,
+  IF(cfg.webapp_url IS NULL, NULL, CONCAT(cfg.webapp_url, '?id=', action_id, '&status=CANCELLED')) AS cancel_url,
+  IF(cfg.webapp_url IS NULL, NULL, CONCAT(cfg.webapp_url, '?id=', action_id)) AS action_url,
   ROW_NUMBER() OVER (ORDER BY status_rank, priority_rank, deadline, action_id) AS queue_rank,
+  ROW_NUMBER() OVER (PARTITION BY lane ORDER BY status_rank, priority_rank, deadline, action_id) AS lane_rank,
   CURRENT_DATE() AS as_of
-FROM q;
+FROM q3 CROSS JOIN cfg;
 
 CREATE OR REPLACE VIEW `project-fa311fc0-4d87-4781-986.wb_mart.V_CT_OWNER_HOME` AS
 -- Single-row owner KPI set: yesterday / MTD / season / operating result / bundles / hand cream / actions / attention / freshness.
+-- Phase 1.1: + план на вчера (флаконы, вклад), + уверенность прогноза (LOW / MEDIUM / HIGH с причиной),
+--   + риск наличия на площадках, + статус обновления Control Tower (CONTROL TOWER UPDATED AT), + готовые строки для дашборда.
+--
+-- ПРАВИЛА УВЕРЕННОСТИ ПРОГНОЗА (явные, проверяются тестом T27):
+--   базовый уровень по числу закрытых плановых дней: 0–2 → LOW(1), 3–9 → MEDIUM(2), ≥10 → HIGH(3);
+--   каждое из условий ниже понижает уровень на одну ступень (не ниже LOW):
+--     a) данные за вчера неполные (WB или Ozon не закрыли вчерашний день);
+--     b) риск наличия: ≥ 10 % плана ближайших 14 дней приходится на SKU без недельного покрытия на площадке;
+--     c) темп расходится с сезонной кривой: |прогноз EOM / план месяца − 1| > 50 %.
+--   forecast_confidence_reason перечисляет сработавшие условия человеческим языком.
 WITH ref AS (SELECT DATE_SUB(CURRENT_DATE(), INTERVAL 1 DAY) AS yday, DATE_TRUNC(CURRENT_DATE(), MONTH) AS m0),
 a AS (SELECT a.* FROM `project-fa311fc0-4d87-4781-986.wb_mart.V_CT_ACTUAL_DAILY` a CROSS JOIN ref WHERE a.d >= DATE_SUB(ref.m0, INTERVAL 1 MONTH) AND a.d <= ref.yday),
 yday AS (
@@ -901,7 +999,10 @@ mtd AS (
 plan AS (
   SELECT
     SUM(IF(p.plan_date = r.yday, target_cards, 0)) AS plan_cards_yesterday,
+    SUM(IF(p.plan_date = r.yday, target_physical_units, 0)) AS plan_units_yesterday,
     SUM(IF(p.plan_date = r.yday, target_gmv, 0)) AS plan_gmv_yesterday,
+    SUM(IF(p.plan_date = r.yday, target_contribution, 0)) AS plan_contribution_yesterday,
+    SAFE_DIVIDE(SUM(IF(p.plan_date = r.yday, target_ad_spend, 0)), SUM(IF(p.plan_date = r.yday, target_gmv, 0))) * 100 AS plan_drr_yesterday_pct,
     SUM(IF(p.plan_date >= r.m0 AND p.plan_date <= r.yday, target_cards, 0)) AS plan_cards_mtd,
     SUM(IF(p.plan_date >= r.m0 AND p.plan_date <= r.yday, target_physical_units, 0)) AS plan_units_mtd,
     SUM(IF(p.plan_date >= r.m0 AND p.plan_date <= r.yday, target_gmv, 0)) AS plan_gmv_mtd,
@@ -913,6 +1014,7 @@ plan AS (
     MIN(IF(p.plan_date >= r.m0, p.plan_date, NULL)) AS plan_month_from,
     COUNT(DISTINCT IF(p.plan_date >= r.m0 AND p.plan_date <= r.yday, p.plan_date, NULL)) AS plan_days_elapsed,
     COUNT(DISTINCT IF(p.plan_date > r.yday AND p.plan_date <= LAST_DAY(r.m0), p.plan_date, NULL)) AS plan_days_remaining,
+    COUNT(DISTINCT IF(p.plan_date >= r.m0 AND p.plan_date <= LAST_DAY(r.m0), p.plan_date, NULL)) AS plan_days_month,
     SUM(IF(p.plan_date >= r.m0 AND p.plan_date <= r.yday AND p.sales_mode = 'BUNDLE', target_cards, 0)) AS plan_bundles_mtd
   FROM `project-fa311fc0-4d87-4781-986.wb_mart.V_CT_PLAN_ACTIVE` p CROSS JOIN ref r
 ),
@@ -943,6 +1045,8 @@ hc AS (SELECT * FROM `project-fa311fc0-4d87-4781-986.wb_mart.V_CT_HAND_CREAM_CON
 q AS (
   SELECT COUNTIF(is_open) AS open_actions, COUNTIF(is_open AND priority = 'P0 TODAY') AS p0_actions, COUNTIF(is_open AND priority = 'P1 THIS WEEK') AS p1_actions,
     COUNTIF(is_overdue) AS overdue_actions, COUNTIF(status = 'DONE' AND DATE(completed_at) >= DATE_TRUNC(CURRENT_DATE(), MONTH)) AS done_actions_mtd,
+    COUNTIF(is_open AND lane = 'DECISION') AS open_decisions, COUNTIF(is_open AND lane = 'EXECUTION') AS open_executions,
+    COUNTIF(status = 'IN_PROGRESS') AS in_progress_actions,
     ARRAY_AGG(IF(is_open, headline, NULL) IGNORE NULLS ORDER BY queue_rank LIMIT 1)[SAFE_OFFSET(0)] AS top_action
   FROM `project-fa311fc0-4d87-4781-986.wb_mart.V_CT_ACTION_QUEUE`
 ),
@@ -960,20 +1064,31 @@ fr AS (
     COUNTIF(status != 'OK') AS stale_domains_count,
     STRING_AGG(IF(status != 'OK', CONCAT(domain_ru, ' (', IFNULL(FORMAT_DATE('%d.%m', data_as_of), 'нет данных'), ')'), NULL), '; ' ORDER BY sort_order) AS stale_domains
   FROM `project-fa311fc0-4d87-4781-986.wb_mart.V_CT_FRESHNESS`
-)
+),
+avail AS (
+  -- Риск наличия: доля плана ближайших 14 дней у SKU без недельного покрытия (или с нулём) на площадке
+  SELECT
+    SAFE_DIVIDE(SUM(IF(marketplace_units + in_transit_units <= 0 OR cover_days_at_plan_rate < 7, plan_units_next_14d, 0)), SUM(plan_units_next_14d)) * 100 AS availability_risk_plan_share_pct,
+    COUNTIF((marketplace_units + in_transit_units <= 0 OR cover_days_at_plan_rate < 7) AND plan_units_next_14d > 0) AS availability_risk_sku_count,
+    STRING_AGG(IF((marketplace_units + in_transit_units <= 0 OR cover_days_at_plan_rate < 7) AND plan_units_next_14d > 0,
+                  CONCAT(marketplace, ': ', product_name, ' (', IFNULL(CAST(CAST(ROUND(cover_days_at_plan_rate) AS INT64) AS STRING), '0'), ' дн.)'), NULL), ', ' ORDER BY plan_units_next_14d DESC LIMIT 3) AS availability_risk_top
+  FROM `project-fa311fc0-4d87-4781-986.wb_mart.V_CT_SUPPLY_NEED`
+),
+rs AS (SELECT * FROM `project-fa311fc0-4d87-4781-986.wb_mart.V_CT_REFRESH_STATUS`),
+base AS (
 SELECT
   ref.yday AS yesterday_date, CURRENT_DATE() AS as_of, CURRENT_TIMESTAMP() AS generated_at,
   -- YESTERDAY
   yday.cards_ordered_yesterday, yday.cards_sold_yesterday, yday.cards_cancelled_yesterday, yday.units_yesterday, yday.units_sold_yesterday,
   yday.gmv_yesterday, yday.revenue_yesterday, yday.seller_cash_yesterday, yday.contribution_yesterday, yday.ad_spend_yesterday, yday.drr_yesterday_pct,
   yday.wb_cards_yesterday, yday.ozon_cards_yesterday, yday.bundles_ordered_yesterday, yday.units_via_bundles_yesterday,
-  plan.plan_cards_yesterday, plan.plan_gmv_yesterday,
+  plan.plan_cards_yesterday, plan.plan_units_yesterday, plan.plan_gmv_yesterday, plan.plan_contribution_yesterday, plan.plan_drr_yesterday_pct,
   SAFE_DIVIDE(yday.cards_ordered_yesterday, plan.plan_cards_yesterday) * 100 AS yesterday_attainment_pct,
   fr.wb_sales_as_of >= ref.yday AND fr.ozon_sales_as_of >= ref.yday AS yesterday_data_complete,
   -- MTD
   mtd.cards_ordered_mtd, mtd.cards_sold_mtd, mtd.units_mtd, mtd.units_sold_mtd, mtd.gmv_mtd, mtd.seller_cash_mtd, mtd.contribution_mtd, mtd.ad_spend_mtd, mtd.drr_mtd_pct,
   mtd.wb_cards_mtd, mtd.ozon_cards_mtd, mtd.cards_per_day_7d, mtd.gmv_per_day_7d,
-  plan.plan_month_from, plan.plan_days_elapsed, plan.plan_days_remaining,
+  plan.plan_month_from, plan.plan_days_elapsed, plan.plan_days_remaining, plan.plan_days_month,
   plan.plan_cards_mtd, plan.plan_units_mtd, plan.plan_gmv_mtd, plan.plan_contribution_mtd,
   plan.plan_cards_month, plan.plan_units_month, plan.plan_gmv_month, plan.plan_contribution_month,
   aip.cards_ordered_plan_days_mtd, aip.pre_plan_cards,
@@ -989,6 +1104,7 @@ SELECT
   aip.cards_ordered_plan_days_mtd + mtd.cards_per_day_7d * plan.plan_days_remaining AS forecast_eom_cards_plan_days,
   SAFE_DIVIDE(aip.cards_ordered_plan_days_mtd + mtd.cards_per_day_7d * plan.plan_days_remaining, plan.plan_cards_month) * 100 AS forecast_eom_attainment_pct,
   SAFE_DIVIDE(plan.plan_cards_month - aip.cards_ordered_plan_days_mtd, NULLIF(plan.plan_days_remaining, 0)) AS required_daily_velocity_remaining,
+  SAFE_DIVIDE(aip.cards_ordered_plan_days_mtd, NULLIF(plan.plan_days_elapsed, 0)) AS actual_daily_velocity_plan_days,
   -- OPERATING RESULT (month)
   cc_m.opex_allocated AS opex_allocated_mtd, cc_m.plan_opex AS opex_month, cc_m.operating_result AS operating_result_mtd, cc_m.plan_operating_result AS plan_operating_result_month,
   -- SEASON
@@ -1012,11 +1128,16 @@ SELECT
   hc.projected_residual_at_expiry_at_30d_rate AS hc_projected_residual_at_expiry, hc.writeoff_risk_at_30d_rate_rub AS hc_writeoff_risk_rub,
   hc.liquidation_contribution_season_to_date AS hc_liquidation_contribution, hc.status AS hc_status,
   -- ACTIONS / ATTENTION
-  q.open_actions, q.p0_actions, q.p1_actions, q.overdue_actions, q.done_actions_mtd, q.top_action,
+  q.open_actions, q.p0_actions, q.p1_actions, q.overdue_actions, q.done_actions_mtd, q.open_decisions, q.open_executions, q.in_progress_actions, q.top_action,
   att.red_alerts, att.yellow_alerts, att.blue_alerts, att.top_red_alert,
   -- FRESHNESS
   fr.wb_sales_as_of, fr.ozon_sales_as_of, fr.wb_stock_as_of, fr.ozon_stock_as_of, fr.ff_stock_as_of, fr.wb_ads_as_of, fr.ozon_ads_as_of, fr.ct_refreshed_at,
   fr.stale_domains_count, fr.stale_domains, IF(fr.stale_domains_count = 0, 'OK', 'STALE') AS data_status,
+  -- AVAILABILITY
+  avail.availability_risk_plan_share_pct, avail.availability_risk_sku_count, avail.availability_risk_top,
+  -- CONTROL TOWER REFRESH
+  rs.refresh_status AS ct_refresh_status, rs.last_ok_ts AS ct_last_ok_ts, rs.last_ok_msk AS ct_last_ok_msk, rs.hours_since_ok AS ct_hours_since_ok,
+  rs.last_attempt_status AS ct_last_attempt_status, rs.last_error_message AS ct_last_error_message, rs.status_line AS ct_status_line, rs.warn_today AS ct_warn_today,
   -- OVERALL
   CASE
     WHEN fr.stale_domains_count > 0 THEN 'YELLOW'
@@ -1026,5 +1147,33 @@ SELECT
   END AS plan_status
 FROM ref CROSS JOIN yday CROSS JOIN mtd CROSS JOIN plan CROSS JOIN actual_in_plan aip
 LEFT JOIN cc_m ON TRUE LEFT JOIN cc_s ON TRUE LEFT JOIN cc_p ON TRUE
-CROSS JOIN bundles LEFT JOIN hc ON TRUE CROSS JOIN q CROSS JOIN att CROSS JOIN fr
-;
+CROSS JOIN bundles LEFT JOIN hc ON TRUE CROSS JOIN q CROSS JOIN att CROSS JOIN fr CROSS JOIN avail LEFT JOIN rs ON TRUE
+),
+conf AS (
+  SELECT b.*,
+    CASE WHEN plan_days_elapsed >= 10 THEN 3 WHEN plan_days_elapsed >= 3 THEN 2 ELSE 1 END AS conf_base_level,
+    NOT IFNULL(yesterday_data_complete, FALSE) AS conf_flag_data_incomplete,
+    IFNULL(availability_risk_plan_share_pct, 0) >= 10 AS conf_flag_availability,
+    ABS(IFNULL(forecast_eom_attainment_pct, 100) - 100) > 50 AS conf_flag_deviation
+  FROM base b
+),
+conf2 AS (
+  SELECT c.*,
+    GREATEST(1, conf_base_level - IF(conf_flag_data_incomplete, 1, 0) - IF(conf_flag_availability, 1, 0) - IF(conf_flag_deviation, 1, 0)) AS forecast_confidence_score
+  FROM conf c
+)
+SELECT c.* EXCEPT (conf_base_level),
+  CASE forecast_confidence_score WHEN 3 THEN 'HIGH' WHEN 2 THEN 'MEDIUM' ELSE 'LOW' END AS forecast_confidence,
+  CASE forecast_confidence_score WHEN 3 THEN 'высокая' WHEN 2 THEN 'средняя' ELSE 'низкая' END AS forecast_confidence_ru,
+  ARRAY_TO_STRING(ARRAY(
+    SELECT r FROM UNNEST([
+      IF(plan_days_elapsed < 3, CONCAT('только ', CAST(plan_days_elapsed AS STRING), IF(plan_days_elapsed = 1, ' закрытый плановый день', ' закрытых плановых дня'), ' из ', CAST(plan_days_month AS STRING)), NULL),
+      IF(plan_days_elapsed BETWEEN 3 AND 9, CONCAT(CAST(plan_days_elapsed AS STRING), ' плановых дней из ', CAST(plan_days_month AS STRING), ' — меньше двух недель'), NULL),
+      IF(conf_flag_data_incomplete, 'данные за вчера неполные (WB или Ozon не закрыли день)', NULL),
+      IF(conf_flag_availability, CONCAT('риск наличия: ', CAST(CAST(ROUND(availability_risk_plan_share_pct) AS INT64) AS STRING), ' % плана без недельного покрытия (', IFNULL(availability_risk_top, ''), ')'), NULL),
+      IF(conf_flag_deviation, CONCAT('темп расходится с сезонной кривой на ', CAST(CAST(ROUND(ABS(forecast_eom_attainment_pct - 100)) AS INT64) AS STRING), ' %'), NULL)
+    ]) r WHERE r IS NOT NULL), '; ') AS forecast_confidence_reason,
+  CONCAT('Прогноз на ', CASE EXTRACT(MONTH FROM CURRENT_DATE()) WHEN 1 THEN 'январь' WHEN 2 THEN 'февраль' WHEN 3 THEN 'март' WHEN 4 THEN 'апрель' WHEN 5 THEN 'май' WHEN 6 THEN 'июнь' WHEN 7 THEN 'июль' WHEN 8 THEN 'август' WHEN 9 THEN 'сентябрь' WHEN 10 THEN 'октябрь' WHEN 11 THEN 'ноябрь' ELSE 'декабрь' END, ': ', CAST(CAST(ROUND(forecast_eom_cards_plan_days) AS INT64) AS STRING), ' из ', CAST(CAST(ROUND(plan_cards_month) AS INT64) AS STRING), ' карточек (',
+         CAST(CAST(ROUND(forecast_eom_attainment_pct) AS INT64) AS STRING), ' %) · уверенность ',
+         CASE forecast_confidence_score WHEN 3 THEN 'HIGH' WHEN 2 THEN 'MEDIUM' ELSE 'LOW' END) AS forecast_line
+FROM conf2 c;

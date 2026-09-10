@@ -57,6 +57,9 @@ locals {
     # фактическим отказом apply 06.09.2026 (run 34048893917) — пять ресурсов
     # создались, scheduler упал именно на этом.
     ops_health = google_service_account.ops_health.name
+    # Control Tower Phase 1.1: Scheduler ct-refresh-prod вызывает BigQuery от имени sa-ct-refresh
+    # (ct_refresh.tf) — тот же actAs-контракт, что у ops_health.
+    ct_refresh = google_service_account.ct_refresh.name
   }
 }
 

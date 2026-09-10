@@ -1,5 +1,5 @@
 -- =====================================================================================
--- CONTROL TOWER PHASE 1 — ПРОЦЕДУРЫ (evetis_ref.sp_ct_*)
+-- CONTROL TOWER PHASE 1 (+1.1) — ПРОЦЕДУРЫ (evetis_ref.sp_ct_*)
 -- =====================================================================================
 -- sp_ct_generate_actions — правила → очередь действий, с дедупликацией
 -- sp_ct_action_update    — контролируемая смена статуса действия владельцем
@@ -101,21 +101,77 @@ BEGIN
 END;
 
 -- ── Ежедневное обновление Control Tower ─────────────────────────────────────────────
--- Запускать раз в сутки ПОСЛЕ загрузчиков WB/Ozon и сборки MART (ориентир 07:30 МСК).
--- Шаги: 1) перестроить CT_ACTUAL_DAILY; 2) заменить партицию CT_INVENTORY_SNAPSHOT_DAILY
---       за сегодня; 3) прогнать правила очереди действий.
--- Идемпотентна: повторный запуск в тот же день даёт тот же результат.
--- Предохранитель: если LIVE-витрина вернула аномально мало строк, витрина НЕ
---   перезаписывается, шаг падает с ошибкой и пишет ERROR в CT_REFRESH_LOG.
+-- Phase 1.1: запускается автоматически — Cloud Scheduler `ct-refresh-prod` → BigQuery jobs API
+-- → CALL (infra/terraform/ct_refresh.tf), окна 07:40 / 09:40 / 12:40 / 16:40 / 19:40 МСК;
+-- ручной CALL по-прежнему безопасен.
+-- Шаги: 0) guard — отпечаток источников (MART_RUNS, V_DASH_SKU_DAILY, Ozon stocks/postings/supply,
+--          WB stocks, срез ФФ, активная версия плана, очередь): совпал с последним OK-прогоном за
+--          сегодня → SKIP (переопределение: CT_CONFIG.refresh_force = '1', сбрасывается автоматически);
+--       1) freshness_gate — WARN (не падение), если последняя попытка витрины за D-1 не COMPLETE;
+--       2) перестроить CT_ACTUAL_DAILY; 3) заменить партицию CT_INVENTORY_SNAPSHOT_DAILY за сегодня;
+--       4) прогнать правила очереди действий.
+-- Каждый шаг пишет CT_REFRESH_LOG (OK / SKIP / WARN / ERROR); итоговая строка sp_ct_refresh_daily
+-- несёт отпечаток (fp=…) — по ней V_CT_REFRESH_STATUS строит «CONTROL TOWER UPDATED AT».
+-- Идемпотентна в пределах суток. Только DML (DELETE вместо TRUNCATE) — достаточно потабличного
+-- dataEditor для sa-ct-refresh. Предохранители по числу строк сохранены из Phase 1.
 -- Читает production, пишет только CT_*.
 CREATE OR REPLACE PROCEDURE `project-fa311fc0-4d87-4781-986.evetis_ref.sp_ct_refresh_daily`()
-OPTIONS (description = "Control Tower daily refresh (run once per day after WB/Ozon ingestion, e.g. 07:30 MSK): 1) rebuild evetis_ref.CT_ACTUAL_DAILY from wb_mart.V_CT_ACTUAL_DAILY_LIVE; 2) replace today's partition of evetis_ref.CT_INVENTORY_SNAPSHOT_DAILY from wb_mart.V_CT_INVENTORY_TRUTH_LIVE; 3) CALL sp_ct_generate_actions(). Each step is logged to CT_REFRESH_LOG. Idempotent: safe to rerun the same day. Reads production only; writes CT_* objects only.")
+OPTIONS (description = "Control Tower daily refresh (scheduled: Cloud Scheduler ct-refresh-prod → BigQuery jobs API, windows 07:40/09:40/12:40/16:40/19:40 MSK; safe to CALL manually). Steps: 0) guard — skip if an OK run today already used the same source fingerprint (MART_RUNS, V_DASH_SKU_DAILY, Ozon stocks/postings/supply, WB stocks, FF snapshot, action-queue changes) unless CT_CONFIG.refresh_force='1'; 1) freshness gate — WARN (not fail) when the latest MART_RUNS attempt for D-1 is not COMPLETE; 2) rebuild evetis_ref.CT_ACTUAL_DAILY from wb_mart.V_CT_ACTUAL_DAILY_LIVE; 3) replace today's partition of evetis_ref.CT_INVENTORY_SNAPSHOT_DAILY from wb_mart.V_CT_INVENTORY_TRUTH_LIVE; 4) CALL sp_ct_generate_actions(). Every step is logged to CT_REFRESH_LOG (OK / SKIP / WARN / ERROR). Idempotent; reads production only; writes CT_* objects only; DML only (no TRUNCATE) so a table-level dataEditor grant is sufficient.")
 BEGIN
   DECLARE v_run_id STRING DEFAULT GENERATE_UUID();
   DECLARE v_t0 TIMESTAMP DEFAULT CURRENT_TIMESTAMP();
   DECLARE v_t1 TIMESTAMP;
   DECLARE v_rows INT64 DEFAULT 0;
+  DECLARE v_fp STRING;
+  DECLARE v_prev_fp STRING;
+  DECLARE v_force BOOL DEFAULT FALSE;
+  DECLARE v_mart_ok BOOL DEFAULT TRUE;
+  DECLARE v_mart_msg STRING;
 
+  -- 0. GUARD: source fingerprint. Same fingerprint as the last OK run today → nothing to rebuild.
+  SET v_fp = (
+    SELECT CONCAT(
+      'mart=', IFNULL(FORMAT_TIMESTAMP('%Y%m%d%H%M%S', (SELECT MAX(completed_at) FROM `project-fa311fc0-4d87-4781-986.wb_mart.MART_RUNS` WHERE status = 'COMPLETE')), 'none'),
+      '|wb_day=', IFNULL(CAST((SELECT MAX(day) FROM `project-fa311fc0-4d87-4781-986.wb_mart.V_DASH_SKU_DAILY`) AS STRING), 'none'),
+      '|oz_stock=', IFNULL(FORMAT_TIMESTAMP('%Y%m%d%H%M%S', (SELECT MAX(extracted_at) FROM `project-fa311fc0-4d87-4781-986.ozon_raw.RAW_OZON_STOCKS`)), 'none'),
+      '|oz_post=', IFNULL(FORMAT_TIMESTAMP('%Y%m%d%H%M%S', (SELECT MAX(extracted_at) FROM `project-fa311fc0-4d87-4781-986.ozon_raw.RAW_OZON_POSTINGS_FBO`)), 'none'),
+      '|oz_supply=', IFNULL(FORMAT_TIMESTAMP('%Y%m%d%H%M%S', (SELECT MAX(extracted_at) FROM `project-fa311fc0-4d87-4781-986.ozon_raw.RAW_OZON_SUPPLY_ORDERS`)), 'none'),
+      '|wb_stock=', IFNULL(FORMAT_TIMESTAMP('%Y%m%d%H%M%S', (SELECT MAX(snapshot_ts) FROM `project-fa311fc0-4d87-4781-986.wb_raw.V_WB_STOCKS_T5_CURRENT`)), 'none'),
+      '|ff=', IFNULL(CAST((SELECT MAX(snapshot_date) FROM `project-fa311fc0-4d87-4781-986.evetis_ref.CT_STOCK_SNAPSHOT`) AS STRING), 'none'),
+      '|plan=', IFNULL((SELECT STRING_AGG(plan_version ORDER BY plan_version) FROM `project-fa311fc0-4d87-4781-986.evetis_ref.CT_PLAN_VERSION` WHERE plan_status = 'ACTIVE'), 'none'),
+      '|queue=', IFNULL(FORMAT_TIMESTAMP('%Y%m%d%H%M%S', (SELECT MAX(status_updated_at) FROM `project-fa311fc0-4d87-4781-986.evetis_ref.CT_OWNER_ACTION_QUEUE`)), 'none'),
+      '|day=', CAST(CURRENT_DATE() AS STRING))
+  );
+  SET v_force = IFNULL((SELECT MAX(config_value) = '1' FROM `project-fa311fc0-4d87-4781-986.evetis_ref.CT_CONFIG` WHERE config_key = 'refresh_force'), FALSE);
+  SET v_prev_fp = (
+    SELECT REGEXP_EXTRACT(message, r'fp=(.*)$')
+    FROM `project-fa311fc0-4d87-4781-986.evetis_ref.CT_REFRESH_LOG`
+    WHERE step = 'sp_ct_refresh_daily' AND status = 'OK' AND DATE(run_ts) = CURRENT_DATE()
+    ORDER BY run_ts DESC LIMIT 1
+  );
+  IF v_prev_fp IS NOT NULL AND v_prev_fp = v_fp AND NOT v_force THEN
+    INSERT INTO `project-fa311fc0-4d87-4781-986.evetis_ref.CT_REFRESH_LOG` (run_id, run_ts, step, status, rows_affected, message, duration_ms)
+    VALUES (v_run_id, CURRENT_TIMESTAMP(), 'sp_ct_refresh_daily', 'SKIP', 0, CONCAT('guard_skip: sources unchanged since last OK run today; fp=', v_fp), TIMESTAMP_DIFF(CURRENT_TIMESTAMP(), v_t0, MILLISECOND));
+    RETURN;
+  END IF;
+  IF v_force THEN
+    UPDATE `project-fa311fc0-4d87-4781-986.evetis_ref.CT_CONFIG` SET config_value = '0', updated_at = CURRENT_TIMESTAMP() WHERE config_key = 'refresh_force';
+  END IF;
+
+  -- 1. FRESHNESS GATE (observability only): latest MART attempt for D-1 must be COMPLETE.
+  SET v_mart_msg = (
+    SELECT CONCAT('mart D-1 latest attempt: ', IFNULL(status, 'NO_RUN'), IFNULL(CONCAT(' at ', FORMAT_TIMESTAMP('%d.%m %H:%M', started_at, 'Europe/Moscow'), ' MSK'), ''))
+    FROM (SELECT status, started_at FROM `project-fa311fc0-4d87-4781-986.wb_mart.MART_RUNS`
+          WHERE target_date = DATE_SUB(CURRENT_DATE('Europe/Moscow'), INTERVAL 1 DAY)
+          ORDER BY started_at DESC LIMIT 1)
+  );
+  SET v_mart_ok = IFNULL((SELECT status = 'COMPLETE' FROM `project-fa311fc0-4d87-4781-986.wb_mart.MART_RUNS`
+                          WHERE target_date = DATE_SUB(CURRENT_DATE('Europe/Moscow'), INTERVAL 1 DAY)
+                          ORDER BY started_at DESC LIMIT 1), FALSE);
+  INSERT INTO `project-fa311fc0-4d87-4781-986.evetis_ref.CT_REFRESH_LOG` (run_id, run_ts, step, status, rows_affected, message, duration_ms)
+  VALUES (v_run_id, CURRENT_TIMESTAMP(), 'freshness_gate', IF(v_mart_ok, 'OK', 'WARN'), NULL, IFNULL(v_mart_msg, 'mart D-1: NO_RUN'), TIMESTAMP_DIFF(CURRENT_TIMESTAMP(), v_t0, MILLISECOND));
+
+  -- 2. CT_ACTUAL_DAILY
   BEGIN
     SET v_t1 = CURRENT_TIMESTAMP();
     CREATE TEMP TABLE new_actual AS
@@ -128,16 +184,19 @@ BEGIN
     IF v_rows < 1000 THEN
       RAISE USING MESSAGE = CONCAT('sp_ct_refresh_daily: V_CT_ACTUAL_DAILY_LIVE вернул слишком мало строк (', CAST(v_rows AS STRING), ') — витрина не перезаписана');
     END IF;
-    TRUNCATE TABLE `project-fa311fc0-4d87-4781-986.evetis_ref.CT_ACTUAL_DAILY`;
+    DELETE FROM `project-fa311fc0-4d87-4781-986.evetis_ref.CT_ACTUAL_DAILY` WHERE TRUE;
     INSERT INTO `project-fa311fc0-4d87-4781-986.evetis_ref.CT_ACTUAL_DAILY` SELECT * FROM new_actual;
     INSERT INTO `project-fa311fc0-4d87-4781-986.evetis_ref.CT_REFRESH_LOG` (run_id, run_ts, step, status, rows_affected, message, duration_ms)
     VALUES (v_run_id, CURRENT_TIMESTAMP(), 'CT_ACTUAL_DAILY', 'OK', v_rows, 'full rebuild from V_CT_ACTUAL_DAILY_LIVE', TIMESTAMP_DIFF(CURRENT_TIMESTAMP(), v_t1, MILLISECOND));
   EXCEPTION WHEN ERROR THEN
     INSERT INTO `project-fa311fc0-4d87-4781-986.evetis_ref.CT_REFRESH_LOG` (run_id, run_ts, step, status, rows_affected, message, duration_ms)
     VALUES (v_run_id, CURRENT_TIMESTAMP(), 'CT_ACTUAL_DAILY', 'ERROR', 0, @@error.message, TIMESTAMP_DIFF(CURRENT_TIMESTAMP(), v_t1, MILLISECOND));
+    INSERT INTO `project-fa311fc0-4d87-4781-986.evetis_ref.CT_REFRESH_LOG` (run_id, run_ts, step, status, rows_affected, message, duration_ms)
+    VALUES (v_run_id, CURRENT_TIMESTAMP(), 'sp_ct_refresh_daily', 'ERROR', 0, CONCAT('failed at CT_ACTUAL_DAILY: ', @@error.message), TIMESTAMP_DIFF(CURRENT_TIMESTAMP(), v_t0, MILLISECOND));
     RAISE;
   END;
 
+  -- 3. CT_INVENTORY_SNAPSHOT_DAILY (today's partition)
   BEGIN
     SET v_t1 = CURRENT_TIMESTAMP();
     CREATE TEMP TABLE new_inv AS
@@ -154,11 +213,20 @@ BEGIN
   EXCEPTION WHEN ERROR THEN
     INSERT INTO `project-fa311fc0-4d87-4781-986.evetis_ref.CT_REFRESH_LOG` (run_id, run_ts, step, status, rows_affected, message, duration_ms)
     VALUES (v_run_id, CURRENT_TIMESTAMP(), 'CT_INVENTORY_SNAPSHOT_DAILY', 'ERROR', 0, @@error.message, TIMESTAMP_DIFF(CURRENT_TIMESTAMP(), v_t1, MILLISECOND));
+    INSERT INTO `project-fa311fc0-4d87-4781-986.evetis_ref.CT_REFRESH_LOG` (run_id, run_ts, step, status, rows_affected, message, duration_ms)
+    VALUES (v_run_id, CURRENT_TIMESTAMP(), 'sp_ct_refresh_daily', 'ERROR', 0, CONCAT('failed at CT_INVENTORY_SNAPSHOT_DAILY: ', @@error.message), TIMESTAMP_DIFF(CURRENT_TIMESTAMP(), v_t0, MILLISECOND));
     RAISE;
   END;
 
-  CALL `project-fa311fc0-4d87-4781-986.evetis_ref.sp_ct_generate_actions`();
+  -- 4. Rule engine
+  BEGIN
+    CALL `project-fa311fc0-4d87-4781-986.evetis_ref.sp_ct_generate_actions`();
+  EXCEPTION WHEN ERROR THEN
+    INSERT INTO `project-fa311fc0-4d87-4781-986.evetis_ref.CT_REFRESH_LOG` (run_id, run_ts, step, status, rows_affected, message, duration_ms)
+    VALUES (v_run_id, CURRENT_TIMESTAMP(), 'sp_ct_refresh_daily', 'ERROR', 0, CONCAT('failed at sp_ct_generate_actions: ', @@error.message), TIMESTAMP_DIFF(CURRENT_TIMESTAMP(), v_t0, MILLISECOND));
+    RAISE;
+  END;
 
   INSERT INTO `project-fa311fc0-4d87-4781-986.evetis_ref.CT_REFRESH_LOG` (run_id, run_ts, step, status, rows_affected, message, duration_ms)
-  VALUES (v_run_id, CURRENT_TIMESTAMP(), 'sp_ct_refresh_daily', 'OK', NULL, 'daily refresh complete', TIMESTAMP_DIFF(CURRENT_TIMESTAMP(), v_t0, MILLISECOND));
+  VALUES (v_run_id, CURRENT_TIMESTAMP(), 'sp_ct_refresh_daily', 'OK', NULL, CONCAT('daily refresh complete; fp=', v_fp), TIMESTAMP_DIFF(CURRENT_TIMESTAMP(), v_t0, MILLISECOND));
 END;
