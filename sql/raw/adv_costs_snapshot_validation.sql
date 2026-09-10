@@ -119,13 +119,47 @@ WHERE r.run_id IN (SELECT run_id FROM new_runs)
     WHERE j.run_id = r.run_id
       AND SAFE_CAST(j.window_index AS INT64) = SAFE_CAST(r.window_index AS INT64));
 
--- I2. Внутри (run_id, date) — ровно одно окно. Ожидается 0.
+-- I2. Внутри (run_id, date) — ровно одно окно СРЕДИ строк, попавших в своё окно.
+--     Ожидается 0.
+--     🔴 Правка 2026-09-10 (ACK владельца, разбор — docs/ops/STAGE_B_BOOTSTRAP_PASSES.md).
+--     Прежняя формулировка считала нарушением и строки, которые WB присылает за
+--     день, который мы не запрашивали. Это документированное поведение источника,
+--     а не дефект загрузки: загрузчик его знает и считает явно, canonical такие
+--     строки отбрасывает по построению (см. I4). В итоге проверка была
+--     невыполнима в принципе — каждый bootstrap-проход добавлял ещё одно
+--     «нарушение» на дате 2026-07-12, не меняя ни одной цифры в canonical.
+--     Проверяемое свойство осталось прежним: дата не может собираться из двух
+--     окон одного рана. Изменился только периметр — строки вне запрошенного
+--     окна из него исключены, потому что в canonical они и не попадают.
+--     Out-of-window ответы НЕ подавляются и НЕ удаляются: они остаются в RAW и
+--     измеряются отдельно — см. I2b ниже.
 SELECT COUNT(*) AS run_days_with_two_windows FROM (
   SELECT run_id, SUBSTR(updDate,1,10) d
   FROM `project-fa311fc0-4d87-4781-986.wb_raw.RAW_WB_ADV_COSTS`
   WHERE source_method='adv/v1/upd'
+    AND SAFE.PARSE_DATE('%Y-%m-%d', SUBSTR(updDate,1,10))
+        BETWEEN SAFE.PARSE_DATE('%Y-%m-%d', SUBSTR(period_from,1,10))
+            AND SAFE.PARSE_DATE('%Y-%m-%d', SUBSTR(period_to,1,10))
   GROUP BY run_id, d
   HAVING COUNT(DISTINCT FORMAT('%t|%t', period_from, period_to)) > 1);
+
+-- I2b. НАБЛЮДАЕМЫЙ ПОКАЗАТЕЛЬ, не гейт: сколько строк WB прислал вне окна.
+--      Ожидания «0» здесь нет и быть не может — это поведение источника.
+--      Смысл в динамике: резкий рост доли означает, что окна запрашиваются не так,
+--      как мы думаем, и это надо разбирать, а не списывать на WB.
+--      Авторитетный счётчик — журнал окон; RAW пересчитывается для сверки с ним.
+SELECT
+  (SELECT SUM(SAFE_CAST(rows_out_of_window AS INT64))
+     FROM `project-fa311fc0-4d87-4781-986.wb_raw.RAW_WB_ADV_COSTS_RUNS`) AS journal_rows_out_of_window,
+  (SELECT COUNTIF(SAFE.PARSE_DATE('%Y-%m-%d', SUBSTR(updDate,1,10))
+       NOT BETWEEN SAFE.PARSE_DATE('%Y-%m-%d', SUBSTR(period_from,1,10))
+               AND SAFE.PARSE_DATE('%Y-%m-%d', SUBSTR(period_to,1,10)))
+     FROM `project-fa311fc0-4d87-4781-986.wb_raw.RAW_WB_ADV_COSTS`
+     WHERE source_method='adv/v1/upd' AND window_index IS NOT NULL) AS raw_rows_out_of_window,
+  (SELECT COUNT(*) FROM `project-fa311fc0-4d87-4781-986.wb_raw.RAW_WB_ADV_COSTS`
+     WHERE source_method='adv/v1/upd' AND window_index IS NOT NULL) AS raw_rows_journaled;
+-- замер 2026-09-10: journal 5, raw 5, из 6 900 журналированных строк (0,07 %),
+--                   все на одной дате 2026-07-12, окно w2 каждого bootstrap-прохода.
 
 -- I3. (advertId, updTime) уникален внутри (run_id, updDate). Ожидается 0.
 SELECT COUNT(*) AS identity_violations FROM (
