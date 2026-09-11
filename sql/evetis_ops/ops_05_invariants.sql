@@ -116,7 +116,7 @@ ASSERT (
     UNION ALL SELECT table_name FROM `project-fa311fc0-4d87-4781-986.wb_raw.INFORMATION_SCHEMA.TABLES`
     UNION ALL SELECT routine_name FROM `project-fa311fc0-4d87-4781-986.wb_mart.INFORMATION_SCHEMA.ROUTINES`
     UNION ALL SELECT routine_name FROM `project-fa311fc0-4d87-4781-986.evetis_ref.INFORMATION_SCHEMA.ROUTINES`)
-  WHERE n IN ('OPS_CONFIG', 'REF_SKU_LOGISTICS', 'CT_OPENING_FF_SNAPSHOT', 'CT_OPENING_OZON_EVIDENCE', 'CT_STOCK_MOVEMENT',
+  WHERE n IN ('OPS_CONFIG', 'REF_SKU_LOGISTICS', 'REF_CHANNEL_SHIPPING', 'CT_OPENING_FF_SNAPSHOT', 'CT_OPENING_OZON_EVIDENCE', 'CT_STOCK_MOVEMENT',
               'CT_SHIPMENT', 'CT_SHIPMENT_LINE', 'CT_BUNDLE_BUILD', 'CT_OPS_REQUEST_LOG', 'V_OPS_BOM', 'V_OPS_OZON_ORDER_UNITS',
               'V_CT_STOCK_BALANCE', 'V_CT_SHIPMENT_CURRENT', 'V_CT_OZON_ORDER_RECON', 'V_CT_STOCK_STATE',
               'V_CT_BUNDLE_CAPACITY', 'V_CT_SEED_RECON')
@@ -174,6 +174,50 @@ ASSERT (
     ON a.internal_sku = b.internal_sku AND a.channel = b.channel AND a.effective_from < b.effective_from
    AND (a.effective_to IS NULL OR a.effective_to >= b.effective_from)
 ) = 0 AS 'I16: версии настроек логистики пересекаются';
+ASSERT (
+  SELECT COUNT(*)
+  FROM `project-fa311fc0-4d87-4781-986.evetis_ops.REF_CHANNEL_SHIPPING` a
+  JOIN `project-fa311fc0-4d87-4781-986.evetis_ops.REF_CHANNEL_SHIPPING` b
+    ON a.channel = b.channel AND a.shipping_method = b.shipping_method AND a.effective_from < b.effective_from
+   AND (a.effective_to IS NULL OR a.effective_to >= b.effective_from)
+) = 0 AS 'I16: версии настроек канала пересекаются';
+
+-- @@TEST I18 Logistics Master (C0): полнота, правила владельца, заводской короб только как FACT
+ASSERT (
+  -- у каждой текущей карточки канала ровно одна действующая строка настроек, и лишних строк нет
+  WITH cards AS (
+    SELECT DISTINCT internal_sku, UPPER(marketplace) AS channel
+    FROM `project-fa311fc0-4d87-4781-986.evetis_ref.REF_SKU_CHANNEL_MAP`
+    WHERE is_current AND UPPER(marketplace) IN ('WB', 'OZON')),
+  cur AS (
+    SELECT internal_sku, channel, COUNT(*) AS n
+    FROM `project-fa311fc0-4d87-4781-986.evetis_ops.REF_SKU_LOGISTICS`
+    WHERE effective_from <= CURRENT_DATE('Europe/Moscow') AND (effective_to IS NULL OR effective_to >= CURRENT_DATE('Europe/Moscow'))
+    GROUP BY 1, 2)
+  SELECT COUNT(*) FROM cards FULL OUTER JOIN cur USING (internal_sku, channel) WHERE IFNULL(cur.n, 0) != 1 OR cards.internal_sku IS NULL
+) = 0 AS 'I18: не у каждой карточки канала ровно одна действующая строка логистики';
+ASSERT (
+  SELECT COUNTIF(factory_carton_qty IS NOT NULL AND IFNULL(JSON_VALUE(field_provenance, '$.factory_carton_qty.class'), '') != 'FACT')
+       + COUNTIF(shipment_multiple IS NULL OR shipment_multiple <= 0)
+       + COUNTIF(min_shipment_units IS NULL OR min_shipment_units != shipment_multiple)
+       + COUNTIF(channel = 'OZON' AND (shipment_multiple_low_demand IS NULL OR shipment_multiple_low_demand <= 0
+                                       OR shipment_multiple_low_demand > shipment_multiple))
+       + COUNTIF(channel != 'OZON' AND shipment_multiple_low_demand IS NOT NULL)
+       + COUNTIF(fbs_reserve_units IS NULL OR fbs_reserve_units < 0)
+       + COUNTIF(unit_weight_kg IS NOT NULL AND IFNULL(JSON_VALUE(field_provenance, '$.unit_weight_kg.class'), '') = 'OWNER_REQUIRED')
+       + COUNTIF(field_provenance IS NULL OR SAFE.PARSE_JSON(field_provenance) IS NULL)
+  FROM `project-fa311fc0-4d87-4781-986.evetis_ops.REF_SKU_LOGISTICS`
+) = 0 AS 'I18: нарушено правило C0 (короб не FACT, кратность, минимум, кратность низкого спроса, FBS, происхождение)';
+ASSERT (
+  SELECT COUNT(*) FROM (
+    SELECT channel FROM `project-fa311fc0-4d87-4781-986.evetis_ops.REF_CHANNEL_SHIPPING`
+    WHERE is_planning_default AND effective_from <= CURRENT_DATE('Europe/Moscow')
+      AND (effective_to IS NULL OR effective_to >= CURRENT_DATE('Europe/Moscow'))
+    GROUP BY channel HAVING COUNT(*) != 1)
+) + (
+  SELECT 3 - COUNT(DISTINCT channel) FROM `project-fa311fc0-4d87-4781-986.evetis_ops.REF_CHANNEL_SHIPPING`
+  WHERE is_planning_default AND channel IN ('WB', 'OZON', 'FF')
+) = 0 AS 'I18: у канала WB / OZON / FF нет ровно одного действующего способа по умолчанию';
 
 -- @@TEST I17 состояние: FBO- и FBS-наборы различимы, остатки площадок не продублированы в журнал
 ASSERT (

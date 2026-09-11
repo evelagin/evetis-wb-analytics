@@ -84,9 +84,9 @@ def run(sql, sandbox=False, label='job', fetch=False):
 
 
 def statements(path):
-    """Операторы файла DDL: граница — строка, начинающаяся с CREATE / MERGE / INSERT / UPDATE в колонке 0."""
+    """Операторы файла DDL: граница — строка, начинающаяся с CREATE / ALTER / MERGE / INSERT / UPDATE в колонке 0."""
     text = open(path, encoding='utf-8').read()
-    parts = re.split(r'(?m)^(?=(?:CREATE|MERGE|INSERT|UPDATE) )', text)
+    parts = re.split(r'(?m)^(?=(?:CREATE|ALTER|MERGE|INSERT|UPDATE) )', text)
     out = []
     for p in parts:
         body = re.sub(r'(?m)^\s*--.*$', '', p).strip()
