@@ -18,6 +18,7 @@ import { d1Moscow } from './mart/targetDate.js';
 import { pricesLoader } from './prices/index.js';
 import { observationBucket } from './prices/bucket.js';
 import { tariffsLoader } from './tariffs/index.js';
+import { funnelLoader } from './funnel/index.js';
 
 export interface LoaderSpec {
   handler: LoaderHandler;
@@ -50,6 +51,9 @@ export const LOADERS: Record<string, LoaderSpec> = {
   // PR-2: тарифы WB. Период — сутки UTC: ставки меняются реже раза в месяц,
   // и более частый опрос тратил бы лимит без единицы новой информации.
   tariffs: { handler: tariffsLoader, logicalPeriod: (now) => (now ?? new Date()).toISOString().slice(0, 10) },
+  // UNITKA 2.0 R2: воронка продаж. Период — D-1 МСК (сутки должны быть закрыты),
+  // но забирается окно D-FUNNEL_LOOKBACK_DAYS..D-1: WB пересчитывает воронку задним числом.
+  funnel: { handler: funnelLoader, logicalPeriod: (now) => d1Moscow(now) },
 };
 
 export function resolveLoader(name: string): LoaderSpec | undefined {

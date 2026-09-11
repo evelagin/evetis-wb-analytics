@@ -40,6 +40,15 @@ export interface Config {
   wbTariffsHost: string;
   tariffsRawTable: string;
   tariffsObservationsTable: string;
+  // ── funnel loader (UNITKA 2.0 R2) — воронка продаж, тот же аналитический хост и секрет ──
+  /**
+   * Окно перезабора в сутках. Не 1: WB досчитывает воронку задним числом,
+   * и однодневное окно навсегда зафиксировало бы первую (неполную) версию дня.
+   * Не больше 7: без подписки «Джем» WB отдаёт максимум последнюю неделю (R7).
+   */
+  funnelLookbackDays: number;
+  funnelRawTable: string;
+  funnelObservationsTable: string;
 }
 
 type Env = Record<string, string | undefined>;
@@ -94,5 +103,8 @@ export function loadConfig(env: Env = process.env): Config {
     wbTariffsHost: opt(env, 'WB_TARIFFS_HOST', 'https://common-api.wildberries.ru'),
     tariffsRawTable: opt(env, 'TARIFFS_RAW_TABLE', 'RAW_WB_TARIFFS'),
     tariffsObservationsTable: opt(env, 'TARIFFS_OBSERVATIONS_TABLE', 'WB_TARIFF_OBSERVATIONS'),
+    funnelLookbackDays: intOpt(env, 'FUNNEL_LOOKBACK_DAYS', 7),
+    funnelRawTable: opt(env, 'FUNNEL_RAW_TABLE', 'RAW_WB_FUNNEL_DAILY'),
+    funnelObservationsTable: opt(env, 'FUNNEL_OBSERVATIONS_TABLE', 'WB_FUNNEL_OBSERVATIONS'),
   };
 }

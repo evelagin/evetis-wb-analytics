@@ -53,4 +53,19 @@ jobs:
               --image "${{ inputs.image_digest }}" \
               --update-env-vars IMAGE_DIGEST="${{ inputs.image_digest }}",GIT_SHA="${{ inputs.source_git_sha }}"
           done
+      - name: Deploy wb-funnel-prod (отдельным шагом — у него свой секрет)
+        # UNITKA 2.0 R6/R7. Воронка ходит в WB под ОТДЕЛЬНЫМ токеном WB_TOKEN_REPORTS
+        # (решение владельца); WB_TOKEN_ANALYTICS не трогаем — на нём остатки и
+        # платное хранение. Шаг отдельный, чтобы WB_ANALYTICS_SECRET не попал
+        # на остальные Job'ы: у них секрет свой и менять его не требуется.
+        #
+        # env у Job стоит в ignore_changes Terraform'а на UPDATE, поэтому имя
+        # секрета живому Job'у выставляет именно этот шаг, а не apply.
+        # Предусловие: infra.yml apply уже выдал sa-loaders-prod
+        # roles/secretmanager.secretAccessor на WB_TOKEN_REPORTS.
+        run: |
+          gcloud run jobs update wb-funnel-prod \
+            --region ${{ vars.GCP_REGION }} \
+            --image "${{ inputs.image_digest }}" \
+            --update-env-vars IMAGE_DIGEST="${{ inputs.image_digest }}",GIT_SHA="${{ inputs.source_git_sha }}",WB_ANALYTICS_SECRET=WB_TOKEN_REPORTS
       # НЕ включает Scheduler и НЕ меняет IAM.
