@@ -8,6 +8,9 @@ EVETIS WB Analytics — это система управленческой от�
 
 Технологии (фактический стек на 2026-09-08, Stage A):
 - BigQuery — слои `wb_raw` → `wb_mart`, `evetis_ref`, `wb_ops`, `ozon_raw` → `ozon_mart`
+- `evetis_ops` (с 2026-09-11, Stage B) — журнал физических остатков ФФ: писать только
+  процедурами `sp_ops_*`, никогда DML напрямую; запись владельца выключена
+  (`OPS_CONFIG.writeback_enabled = false`). См. `docs/ops/STAGE_B_OPS_BACKEND_2026-09-11.md`
 - Google Apps Script — **production-загрузка** WB: заказы, продажи, финансы,
   реклама, остатки, синхронизация справочника. Не legacy
 - Cloud Run Jobs (`cloud/`, TypeScript) — сборка витрины, наблюдатель цен, тарифы,
