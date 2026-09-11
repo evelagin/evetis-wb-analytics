@@ -3,7 +3,7 @@
 //
 // Диспетчер этапа — ПЕРВАЯ функция файла: редактор Apps Script выбирает её сам
 // при открытии файла, а выпадающий список автоматизации не поддаётся.
-function s8b() { s8qa(); }
+function s8b() { s8brates(); }
 
 var S8B = {
   VER: 'unitka2.0/v8.1.0',
@@ -111,8 +111,12 @@ function s8rates() {
       var st = bl[b].st, nm = bl[b].nm;
       if (!nm) { noNm.push('#' + bl[b].i); continue; }
       var f = fin.get(nm);
-      tbl.push([nm, f.n, f.log, f.comm, f.src, f.conf, bl[b].t.substr(0, 34)]);
-      var pr = [[S8_M.logistics, f.log], [S8_M.commission, f.comm]];
+      tbl.push([nm, f.n, f.log, f.comm, f.src, f.conf, bl[b].t.substr(0, 34)]);   // f.log — только справочно
+      // ЛОГИСТИКА здесь больше НЕ пишется: с модели B её ставка считается из
+      // прямых плеч и живёт в s8brates(). Оставить обе записи — значит вернуть
+      // в колонку ставку «вся логистика / выкупы», внутри которой сидят обратные
+      // плечи отказов, то есть вернуть двойной счёт.
+      var pr = [[S8_M.commission, f.comm]];
       for (var q = 0; q < pr.length; q++) {
         var col = st + pr[q][0], want = pr[q][1], out = [], diff = false;
         for (var d = 0; d < S8.DAYS; d++) {
@@ -144,12 +148,12 @@ function s8rates() {
       if (!bl[b3].nm) continue;
       var f3 = fin.get(bl[b3].nm);
       for (var d3 = 0; d3 < S8.DAYS; d3++) {
-        if (Math.abs(Number(after[d3][bl[b3].st + S8_M.logistics - 1]) - f3.log) > 1e-9) bad++;
         if (Math.abs(Number(after[d3][bl[b3].st + S8_M.commission - 1]) - f3.comm) > 1e-9) bad++;
       }
     }
     L.push('');
     L.push('RATES WRITTEN = ' + (plan.length === 0 ? 'уже актуальны (идемпотентно)' : plan.length + ' колонок'));
+    L.push('ВНИМАНИЕ: колонка логистики пишется s8brates() по модели B, здесь только комиссия');
     L.push('RATES VERIFY = ' + (bad === 0 ? 'PASS' : 'FAIL (' + bad + ')') + ' | ' + Math.round((new Date().getTime() - t0) / 1000) + ' с');
   } catch (e) { L.push('ОШИБКА: ' + e + (e && e.stack ? '\n' + e.stack : '')); }
   s8out_(L);
@@ -836,5 +840,410 @@ function s8futrollback() {
   }
   SpreadsheetApp.flush();
   L.push('восстановлено ячеек: ' + rb.cells.length + ' (снимок ' + rb.ts + ')');
+  s8out_(L);
+}
+
+
+/* ============ §B СОБЫТИЙНАЯ МОДЕЛЬ ЛОГИСТИКИ (решение владельца 11.09) ========
+ * LOGISTICS_DAY = GROSS_ORDERS x DIRECT_LOGISTICS_RATE + CANCELS x REVERSE_LEG_RATE
+ *
+ * Почему не «отмены x полная логистика отказа»: прямое плечо отказанного заказа
+ * уже оплачено внутри GROSS_ORDERS (колонка «Заказы факт» — валовые заказы,
+ * отменённый заказ в них входит). Списать полную логистику отказа — значит
+ * посчитать прямое плечо дважды.
+ *
+ * Почему старая ставка не годится для DIRECT: она считалась как ВСЯ логистика
+ * окна / выкупы и потому содержала обратные плечи отказов. Теперь числитель —
+ * только прямые плечи (+ «Доставка»), знаменатель — все отправления окна.
+ *
+ * Разбиение плеч: у отказа в финотчёте ДВЕ строки «Логистика» с одним srid.
+ * Большая — прямое плечо, меньшая — обратное (подтверждено аудитом:
+ * 63,48 против 33,48 руб на окне 01.06-09.09).
+ *
+ * Ставки не хардкодятся: окно D-30..D-1 от зеркала LAST_CLOSED_DATE,
+ * пересчёт каждым прогоном. Своя ставка SKU — только при n >= 10 наблюдений,
+ * иначе магазинная (для обратного плеча сегодня это все 24 SKU).
+ * ========================================================================== */
+
+var S8BL = {
+  VER: 'unitka2.0/v8.3.0',
+  MIN_N: 10,
+  RB_RATE: 'S8B_RATE_RB', RB_FML: 'S8B_FML_RB',
+  NAME: 'REVERSE_LEG_RATE',
+  RROW: 737            // зеркало ставки обратного плеча: строка 737 колонки S8.MIR
+};
+
+function s8bsql_(d1, d2) {
+  var Q = String.fromCharCode(96), T = Q + S8B.PRJ + '.' + S8B.FIN + Q;
+  var LG = "'\u041b\u043e\u0433\u0438\u0441\u0442\u0438\u043a\u0430'", DL = "'\u0414\u043e\u0441\u0442\u0430\u0432\u043a\u0430'";
+  return 'WITH b AS (SELECT srid, SAFE_CAST(wb_nm_id AS INT64) nm, supplier_oper_name son,' +
+    ' SAFE_CAST(logistics_amount AS NUMERIC) amt FROM ' + T +
+    " WHERE _rr_date BETWEEN DATE '" + d1 + "' AND DATE '" + d2 + "'" +
+    ' AND wb_nm_id IS NOT NULL AND srid IS NOT NULL),' +
+    ' l AS (SELECT srid, nm, amt, ROW_NUMBER() OVER (PARTITION BY srid ORDER BY amt DESC) rn,' +
+    ' COUNT(*) OVER (PARTITION BY srid) legs FROM b WHERE son = ' + LG + '),' +
+    ' p AS (SELECT srid, ANY_VALUE(nm) nm, SUM(IF(rn=1,amt,0)) fwd, SUM(IF(rn>1,amt,0)) rev,' +
+    ' MAX(legs) legs FROM l GROUP BY srid),' +
+    ' d AS (SELECT nm, SUM(amt) dlv FROM b WHERE son = ' + DL + ' GROUP BY nm),' +
+    ' a AS (SELECT nm, COUNT(*) srids, SUM(fwd) fwd, COUNTIF(legs>=2) ref, SUM(rev) rev FROM p GROUP BY nm)' +
+    ' SELECT CAST(a.nm AS STRING), CAST(a.srids AS STRING),' +
+    ' CAST(ROUND(SAFE_DIVIDE(a.fwd + IFNULL(d.dlv,0), NULLIF(a.srids,0)),4) AS STRING),' +
+    ' CAST(a.ref AS STRING), CAST(ROUND(SAFE_DIVIDE(a.rev, NULLIF(a.ref,0)),4) AS STRING),' +
+    ' CAST(ROUND(a.fwd,2) AS STRING), CAST(ROUND(a.rev,2) AS STRING), CAST(ROUND(IFNULL(d.dlv,0),2) AS STRING)' +
+    ' FROM a LEFT JOIN d ON a.nm = d.nm' +
+    " UNION ALL SELECT '0', CAST(SUM(srids) AS STRING)," +
+    ' CAST(ROUND(SAFE_DIVIDE(SUM(fwd) + (SELECT IFNULL(SUM(dlv),0) FROM d), NULLIF(SUM(srids),0)),4) AS STRING),' +
+    ' CAST(SUM(ref) AS STRING), CAST(ROUND(SAFE_DIVIDE(SUM(rev), NULLIF(SUM(ref),0)),4) AS STRING),' +
+    ' CAST(ROUND(SUM(fwd),2) AS STRING), CAST(ROUND(SUM(rev),2) AS STRING),' +
+    ' CAST(ROUND((SELECT IFNULL(SUM(dlv),0) FROM d),2) AS STRING) FROM a';
+}
+
+function s8brates_(d1, d2, L) {
+  var rows = r7query_(s8bsql_(d1, d2)), per = {}, store = null;
+  for (var i = 0; i < rows.length; i++) {
+    var r = rows[i];
+    var o = { n: Number(r[1]) || 0, direct: Number(r[2]), ref: Number(r[3]) || 0, rev: Number(r[4]),
+              fwdsum: Number(r[5]) || 0, revsum: Number(r[6]) || 0, dlvsum: Number(r[7]) || 0 };
+    if (String(r[0]) === '0') store = o; else per[String(r[0])] = o;
+  }
+  if (!store || !store.n) throw new Error('финотчёт за окно ' + d1 + '..' + d2 + ' пуст');
+  if (L) {
+    L.push('окно ставок ' + d1 + '..' + d2 + ', источник ' + S8B.FIN);
+    L.push('МАГАЗИН: отправлений ' + store.n + ', отказов ' + store.ref);
+    L.push('  прямые плечи ' + store.fwdsum.toFixed(2) + ' руб + Доставка ' + store.dlvsum.toFixed(2) +
+      ' руб -> DIRECT = ' + store.direct.toFixed(4) + ' руб/заказ');
+    L.push('  обратные плечи ' + store.revsum.toFixed(2) + ' руб -> REVERSE = ' + store.rev.toFixed(4) + ' руб/отказ');
+    var all = store.fwdsum + store.revsum + store.dlvsum;
+    L.push('  вся логистика окна ' + all.toFixed(2) + ' руб = прямые + обратные + доставка (разбиение полное)');
+    L.push('  старая ставка «вся логистика / выкупы» больше НЕ используется: обратные плечи ' +
+      store.revsum.toFixed(2) + ' руб вынесены из числителя DIRECT');
+  }
+  return {
+    store: store,
+    get: function (nm) {
+      var p = per[nm] || null;
+      var ownD = !!(p && p.n >= S8BL.MIN_N && !isNaN(p.direct) && p.direct > 0);
+      var ownR = !!(p && p.ref >= S8BL.MIN_N && !isNaN(p.rev) && p.rev > 0);
+      return {
+        n: p ? p.n : 0, ref: p ? p.ref : 0,
+        direct: Math.round((ownD ? p.direct : store.direct) * 100) / 100,
+        rev: Math.round((ownR ? p.rev : store.rev) * 100) / 100,
+        srcD: ownD ? 'своя' : 'магазин', srcR: ownR ? 'своя' : 'магазин'
+      };
+    }
+  };
+}
+
+/** ШАГ 1: ставки. DIRECT -> колонка логистики каждого блока, REVERSE -> зеркало + имя. */
+function s8brates() {
+  var L = ['=== STAGE 8 §B.1 · s8brates · ' + S8BL.VER + ' ==='];
+  try {
+    var t0 = new Date().getTime();
+    var ss = SpreadsheetApp.openById(S8.SSID), sh = ss.getSheetByName(S8.SH), tz = ss.getSpreadsheetTimeZone();
+    var w = s8win_(sh, tz);
+    if (!w) { L.push('СТОП: зеркало LAST_CLOSED_DATE не дата'); return s8out_(L); }
+    var fin = s8brates_(w.d1, w.d2, L);
+
+    var head = sh.getRange(S8.TOP, 1, 1, S8.NC).getDisplayValues()[0];
+    var bl = s8blocks_(head);
+    var wide = sh.getRange(S8.FIRST, 1, S8.DAYS, S8.NC), cur = wide.getValues();
+    var plan = [], rb = [], tbl = [];
+
+    for (var b = 0; b < bl.length; b++) {
+      var st = bl[b].st, nm = bl[b].nm;
+      if (!nm) continue;
+      var f = fin.get(nm);
+      tbl.push([nm, f.n, f.direct, f.srcD, f.ref, f.rev, f.srcR, bl[b].t.substr(0, 30)]);
+      var col = st + S8_M.logistics, out = [], diff = false;
+      for (var d = 0; d < S8.DAYS; d++) {
+        out.push([f.direct]);
+        if (Math.abs(Number(cur[d][col - 1]) - f.direct) > 1e-9) diff = true;
+      }
+      if (diff) {
+        plan.push({ col: col, vals: out });
+        for (var d2 = 0; d2 < S8.DAYS; d2++) rb.push([S8.FIRST + d2, col, cur[d2][col - 1]]);
+      }
+    }
+
+    var revCell = sh.getRange(S8BL.RROW, S8.MIR);
+    var oldRev = revCell.getValue();
+    rb.push([S8BL.RROW, S8.MIR, oldRev]);
+    if (rb.length && !r75get_(S8BL.RB_RATE)) { r75put_(S8BL.RB_RATE, { ts: new Date().toISOString(), ver: S8BL.VER, cells: rb }); L.push('откат сохранён: ' + S8BL.RB_RATE); }
+
+    for (var p = 0; p < plan.length; p++) sh.getRange(S8.FIRST, plan[p].col, S8.DAYS, 1).setValues(plan[p].vals);
+    revCell.setValue(fin.store.rev);
+    sh.getRange(S8BL.RROW, S8.MIR - 1).setValue('обратная логистика, руб/отказ (rolling D-30..D-1)');
+    var named = ss.getRangeByName(S8BL.NAME);
+    if (!named) { ss.setNamedRange(S8BL.NAME, revCell); L.push('создано имя ' + S8BL.NAME + ' -> ' + r75col_(S8.MIR) + S8BL.RROW); }
+    else L.push('имя ' + S8BL.NAME + ' уже есть');
+    SpreadsheetApp.flush();
+
+    L.push('');
+    L.push('nmID | отправлений | DIRECT | ист | отказов | REVERSE | ист | товар');
+    tbl.sort(function (a, c) { return c[1] - a[1]; });
+    for (var i = 0; i < tbl.length; i++)
+      L.push(tbl[i][0] + ' | ' + tbl[i][1] + ' | ' + tbl[i][2].toFixed(2) + ' | ' + tbl[i][3] + ' | ' +
+        tbl[i][4] + ' | ' + tbl[i][5].toFixed(2) + ' | ' + tbl[i][6] + ' | ' + tbl[i][7]);
+
+    var after = wide.getValues(), bad = 0;
+    for (var b3 = 0; b3 < bl.length; b3++) {
+      if (!bl[b3].nm) continue;
+      var f3 = fin.get(bl[b3].nm);
+      for (var d3 = 0; d3 < S8.DAYS; d3++)
+        if (Math.abs(Number(after[d3][bl[b3].st + S8_M.logistics - 1]) - f3.direct) > 1e-9) bad++;
+    }
+    L.push('');
+    L.push('колонок логистики переписано: ' + plan.length);
+    L.push('REVERSE_LEG_RATE = ' + fin.store.rev.toFixed(2) + ' руб (было в ячейке: ' + oldRev + ')');
+    L.push('DIRECT RATES VERIFY = ' + (bad === 0 ? 'PASS' : 'FAIL (' + bad + ')') +
+      ' | ' + Math.round((new Date().getTime() - t0) / 1000) + ' с');
+  } catch (e) { L.push('ОШИБКА: ' + e + (e && e.stack ? '\n' + e.stack : '')); }
+  s8out_(L);
+}
+
+
+/**
+ * ШАГ 2: формулы. Дневная доходность блока получает событийную логистику.
+ *
+ * Было:  Q*AI - X - AG - S*AI + Y
+ * Стало: Q*AI - X - AG - S*(AI + AF + REVERSE_LEG_RATE) + Y
+ *
+ * Разбор добавки: -S*AI снимает экономику непроданной единицы (как и раньше);
+ * -S*AF возвращает ПРЯМОЕ плечо, которое WB списал по валовому заказу и которое
+ * вместе с экономикой ошибочно снималось; -S*REVERSE_LEG_RATE добавляет плечо
+ * обратной доставки. Итого логистика дня = Q*AF + S*REVERSE, ровно по соглашению.
+ *
+ * MTD-строка логистики блока перестаёт быть только прямой: к SUMPRODUCT(AF*Q)
+ * добавляется SUM(отмены)*REVERSE_LEG_RATE.
+ *
+ * I767 сводки теряет член «- H767 * $F$45»: отмены теперь учтены внутри блоков,
+ * и повторное вычитание в сводке было бы двойным счётом.
+ */
+function s8bformula() {
+  var L = ['=== STAGE 8 §B.2 · s8bformula · ' + S8BL.VER + ' ==='];
+  try {
+    var t0 = new Date().getTime();
+    var sh = SpreadsheetApp.openById(S8.SSID).getSheetByName(S8.SH);
+    var head = sh.getRange(S8.TOP, 1, 1, S8.NC).getDisplayValues()[0];
+    var bl = s8blocks_(head);
+    var wide = sh.getRange(S8.FIRST, 1, S8.DAYS, S8.NC), fml = wide.getFormulas();
+    var mtd = sh.getRange(S8.MTD, 1, 1, S8.NC), mf = mtd.getFormulas()[0];
+    var plan = [], rb = [], miss = [], done = 0, already = 0;
+
+    for (var b = 0; b < bl.length; b++) {
+      var st = bl[b].st;
+      var CD = r75col_(st), CS = r75col_(st + S8_M.cancels);
+      var CAI = r75col_(st + S8_M.unitProfit), CAF = r75col_(st + S8_M.logistics);
+      var CW = st + S8_M.profitAll;
+      for (var d = 0; d < S8.DAYS; d++) {
+        var r = S8.FIRST + d, f = fml[d][CW - 1];
+        if (!f) continue;
+        if (f.indexOf(S8BL.NAME) >= 0) { already++; continue; }
+        var re = new RegExp('-\\s*' + CS + r + '\\s*\\*\\s*' + CAI + r + '(?![0-9])');
+        if (!re.test(f)) { if (miss.length < 6) miss.push('#' + bl[b].i + ' ' + r75col_(CW) + r); continue; }
+        var nf = f.replace(re, '-' + CS + r + '*(' + CAI + r + '+' + CAF + r + '+' + S8BL.NAME + ')');
+        plan.push({ r: r, c: CW, f: nf });
+        rb.push([r, CW, f]);
+        done++;
+      }
+      var af = mf[st + S8_M.logistics - 1];
+      if (af && af.indexOf(S8BL.NAME) < 0) {
+        var naf = af + '+SUMIF($' + CD + '$' + S8.FIRST + ':$' + CD + '$' + (S8.FIRST + S8.DAYS - 1) +
+          ';"<="&LAST_CLOSED_DATE;' + CS + S8.FIRST + ':' + CS + (S8.FIRST + S8.DAYS - 1) + ')*' + S8BL.NAME;
+        plan.push({ r: S8.MTD, c: st + S8_M.logistics, f: naf });
+        rb.push([S8.MTD, st + S8_M.logistics, af]);
+      }
+    }
+
+    var i767 = sh.getRange(S8.MTD, 9).getFormula();
+    var want767 = '=SUM(I' + S8.FIRST + ':I' + (S8.FIRST + S8.DAYS - 1) + ')';
+    if (i767 !== want767) { plan.push({ r: S8.MTD, c: 9, f: want767 }); rb.push([S8.MTD, 9, i767]); }
+
+    L.push('дневных формул доходности к правке: ' + done + ' (уже с ' + S8BL.NAME + ': ' + already + ')');
+    L.push('не нашли шаблон «-отмены*доходность1шт»: ' + miss.length + (miss.length ? ' ' + miss.join(' ') : ''));
+    L.push('I' + S8.MTD + ' было: ' + i767);
+    L.push('I' + S8.MTD + ' станет: ' + want767);
+    L.push('всего ячеек к записи: ' + plan.length);
+    if (!plan.length) { L.push('нечего менять'); return s8out_(L); }
+    if (!r75get_(S8BL.RB_FML)) { r75put_(S8BL.RB_FML, { ts: new Date().toISOString(), ver: S8BL.VER, cells: rb }); L.push('откат сохранён: ' + S8BL.RB_FML); }
+
+    for (var p = 0; p < plan.length; p++) sh.getRange(plan[p].r, plan[p].c).setFormula(plan[p].f);
+    SpreadsheetApp.flush();
+
+    var af2 = sh.getRange(S8.FIRST, 1, S8.DAYS, S8.NC).getFormulas(), okW = 0;
+    for (var b2 = 0; b2 < bl.length; b2++) {
+      var good = true;
+      for (var d2 = 0; d2 < S8.DAYS; d2++) {
+        var ff = af2[d2][bl[b2].st + S8_M.profitAll - 1];
+        if (ff && ff.indexOf(S8BL.NAME) < 0) good = false;
+        if (ff && ff.split(S8BL.NAME).length - 1 > 1) good = false;
+      }
+      if (good) okW++;
+    }
+    L.push('');
+    L.push('BLOCKS WITH EVENT LOGISTICS ... ' + okW + ' / ' + bl.length);
+    L.push('FORMULA MODEL B = ' + (okW === bl.length && miss.length === 0 ? 'PASS' : 'FAIL') +
+      ' | ' + Math.round((new Date().getTime() - t0) / 1000) + ' с');
+  } catch (e) { L.push('ОШИБКА: ' + e + (e && e.stack ? '\n' + e.stack : '')); }
+  s8out_(L);
+}
+
+/** ОТКАТ шагов §B. */
+function s8brollback() {
+  var L = ['=== STAGE 8 §B · s8brollback ==='];
+  try {
+    var sh = SpreadsheetApp.openById(S8.SSID).getSheetByName(S8.SH);
+    [S8BL.RB_FML, S8BL.RB_RATE].forEach(function (k) {
+      var o = r75get_(k);
+      if (!o || !o.cells) { L.push(k + ': нет'); return; }
+      for (var i = 0; i < o.cells.length; i++) {
+        var c = o.cells[i];
+        if (typeof c[2] === 'string' && c[2].charAt(0) === '=') sh.getRange(c[0], c[1]).setFormula(c[2]);
+        else sh.getRange(c[0], c[1]).setValue(c[2]);
+      }
+      L.push(k + ': восстановлено ячеек ' + o.cells.length);
+    });
+    SpreadsheetApp.flush();
+  } catch (e) { L.push('ОШИБКА: ' + e); }
+  s8out_(L);
+}
+
+
+/**
+ * ШАГ 3: приёмка модели B.
+ * Двойной счёт проверяется СТРУКТУРНО, а не «на глаз»: в цепочке доходности
+ * ссылка на колонку логистики должна встречаться ровно столько раз, сколько
+ * плеч мы намерены списать, и ни разу больше.
+ *   AI (доходность 1 шт)      — ровно 1 ссылка на AF  (прямое плечо проданной единицы)
+ *   W  (доходность дня)       — ровно 1 ссылка на AF  (прямое плечо отменённой единицы)
+ *                               и ровно 1 ссылка на REVERSE_LEG_RATE
+ *   сводка I767               — ни одной ссылки на старую константу отмен
+ * Плюс проверка на уровне ставки: числитель DIRECT не пересекается с обратными
+ * плечами (прямые + обратные + доставка = вся логистика окна).
+ */
+function s8bqa() {
+  var L = ['=== STAGE 8 §B.3 · s8bqa · ' + S8BL.VER + ' ==='];
+  try {
+    var t0 = new Date().getTime();
+    var ss = SpreadsheetApp.openById(S8.SSID), sh = ss.getSheetByName(S8.SH), tz = ss.getSpreadsheetTimeZone();
+    var w = s8win_(sh, tz);
+    var fin = s8brates_(w.d1, w.d2, L);
+    var st0 = fin.store;
+    var all = st0.fwdsum + st0.revsum + st0.dlvsum;
+    var dsum = st0.fwdsum + st0.dlvsum;
+    L.push('');
+    L.push('--- СТАВКИ: непересечение числителей ---');
+    L.push('DIRECT числитель  = прямые ' + st0.fwdsum.toFixed(2) + ' + доставка ' + st0.dlvsum.toFixed(2) + ' = ' + dsum.toFixed(2) + ' руб');
+    L.push('REVERSE числитель = обратные ' + st0.revsum.toFixed(2) + ' руб');
+    L.push('пересечение = ' + (dsum + st0.revsum - all).toFixed(2) + ' руб (должно быть 0,00)');
+    var rateOverlap = Math.abs(dsum + st0.revsum - all) > 0.01 ? 1 : 0;
+
+    var head = sh.getRange(S8.TOP, 1, 1, S8.NC).getDisplayValues()[0];
+    var bl = s8blocks_(head);
+    var rgAll = sh.getRange(S8.FIRST, 1, S8.DAYS, S8.NC);
+    var fml = rgAll.getFormulas(), val = rgAll.getValues(), dsp = rgAll.getDisplayValues();
+    var mtdF = sh.getRange(S8.MTD, 1, 2, S8.NC).getFormulas();
+    var mtdD = sh.getRange(S8.MTD, 1, 2, S8.NC).getDisplayValues();
+
+    var dcnt = 0, rcnt = 0, badAI = [], badW = [];
+    for (var b = 0; b < bl.length; b++) {
+      var st = bl[b].st, CAF = r75col_(st + S8_M.logistics);
+      var wcol = st + S8_M.profitAll - 1, aicol = st + S8_M.unitProfit - 1;
+      for (var d = 0; d < S8.DAYS; d++) {
+        var r = S8.FIRST + d;
+        var fw = fml[d][wcol], fa = fml[d][aicol];
+        var reAF = new RegExp('(?<![A-Z$])' + CAF + r + '(?![0-9])', 'g');
+        if (fa) {
+          var na = (fa.match(reAF) || []).length;
+          if (na !== 1) { dcnt++; if (badAI.length < 5) badAI.push('#' + bl[b].i + ' ' + r75col_(aicol + 1) + r + ':' + na); }
+        }
+        if (fw) {
+          var nw = (fw.match(reAF) || []).length;
+          if (nw !== 1) { dcnt++; if (badW.length < 5) badW.push('#' + bl[b].i + ' ' + r75col_(wcol + 1) + r + ' AF:' + nw); }
+          var nr = fw.split(S8BL.NAME).length - 1;
+          if (nr !== 1) { rcnt++; if (badW.length < 8) badW.push('#' + bl[b].i + ' ' + r75col_(wcol + 1) + r + ' REV:' + nr); }
+        }
+      }
+    }
+
+    // старая константа отмен не должна встречаться в сентябрьских формулах
+    var legacy = 0, legWhere = [];
+    for (var d2 = 0; d2 < S8.DAYS; d2++)
+      for (var cc = 0; cc < S8.NC; cc++)
+        if (fml[d2][cc] && fml[d2][cc].indexOf('$F$45') >= 0) { legacy++; if (legWhere.length < 5) legWhere.push(r75col_(cc + 1) + (S8.FIRST + d2)); }
+    for (var rr = 0; rr < 2; rr++)
+      for (var c2 = 0; c2 < S8.NC; c2++)
+        if (mtdF[rr][c2] && mtdF[rr][c2].indexOf('$F$45') >= 0) { legacy++; if (legWhere.length < 5) legWhere.push(r75col_(c2 + 1) + (S8.MTD + rr)); }
+    rcnt += legacy;
+
+    L.push('');
+    L.push('--- СТРУКТУРА ФОРМУЛ ---');
+    L.push('ссылок на колонку логистики вне нормы (AI и W): ' + dcnt + (badAI.length ? ' AI: ' + badAI.join(' ') : '') + (badW.length ? ' W: ' + badW.join(' ') : ''));
+    L.push('ссылок на ' + S8BL.NAME + ' вне нормы: ' + (rcnt - legacy));
+    L.push('старая константа отмен $F$45 в сентябрьских формулах: ' + legacy + (legWhere.length ? ' ' + legWhere.join(' ') : ''));
+
+    // сверка сводки с суммой блоков по закрытым дням
+    var sumRg = sh.getRange(S8.FIRST, 1, S8.DAYS, 11).getValues();
+    var mirror = sh.getRange(S8.HDR, S8.MIR).getValue();
+    var dates = sh.getRange(S8.FIRST, 2, S8.DAYS, 1).getValues();
+    var mx = 0, nd = 0;
+    for (var d3 = 0; d3 < S8.DAYS; d3++) {
+      if (!(dates[d3][0] instanceof Date) || dates[d3][0].getTime() > mirror.getTime()) continue;
+      var s = 0;
+      for (var b4 = 0; b4 < bl.length; b4++) {
+        var x = val[d3][bl[b4].st + S8_M.profitAll - 1];
+        if (typeof x === 'number') s += x;
+      }
+      var got = Number(sumRg[d3][8]);
+      mx = Math.max(mx, Math.abs(s - got)); nd++;
+    }
+    var i767 = Number(sh.getRange(S8.MTD, 9).getValue()), isum = 0;
+    for (var d4 = 0; d4 < S8.DAYS; d4++) { var y = Number(sumRg[d4][8]); if (!isNaN(y)) isum += y; }
+    L.push('');
+    L.push('--- СВЕРКА СВОДКИ ---');
+    L.push('дней сверено: ' + nd + ', max |Δ| доходности (сумма 24 блоков против I) = ' + mx.toFixed(4));
+    L.push('I' + S8.MTD + ' = ' + i767.toFixed(2) + ', сумма дневных = ' + isum.toFixed(2) + ', |Δ| = ' + Math.abs(i767 - isum).toFixed(4));
+
+    // ошибки формул
+    var err = 0, errW = [];
+    for (var d5 = 0; d5 < S8.DAYS; d5++)
+      for (var c5 = 0; c5 < S8.NC; c5++) {
+        var t = String(dsp[d5][c5]);
+        if (/^#(REF!|VALUE!|NAME\?|DIV\/0!|N\/A|ERROR!|NUM!|NULL!)/.test(t)) { err++; if (errW.length < 5) errW.push(r75col_(c5 + 1) + (S8.FIRST + d5)); }
+      }
+    for (var rr2 = 0; rr2 < 2; rr2++)
+      for (var c6 = 0; c6 < S8.NC; c6++) {
+        var t2 = String(mtdD[rr2][c6]);
+        if (/^#(REF!|VALUE!|NAME\?|DIV\/0!|N\/A|ERROR!|NUM!|NULL!)/.test(t2)) { err++; if (errW.length < 5) errW.push(r75col_(c6 + 1) + (S8.MTD + rr2)); }
+      }
+
+    // материальность на сентябре
+    var canc = 0, gross = 0, logi = 0;
+    for (var b5 = 0; b5 < bl.length; b5++) {
+      for (var d6 = 0; d6 < S8.DAYS; d6++) {
+        if (!(dates[d6][0] instanceof Date) || dates[d6][0].getTime() > mirror.getTime()) continue;
+        var q = Number(val[d6][bl[b5].st + S8_M.orders - 1]) || 0;
+        var sc = Number(val[d6][bl[b5].st + S8_M.cancels - 1]) || 0;
+        var af = Number(val[d6][bl[b5].st + S8_M.logistics - 1]) || 0;
+        gross += q; canc += sc; logi += q * af;
+      }
+    }
+    L.push('');
+    L.push('--- СЕНТЯБРЬ 01-09, ЭФФЕКТ МОДЕЛИ ---');
+    L.push('валовых заказов ' + gross + ', отмен ' + canc);
+    L.push('прямая логистика Q*DIRECT = ' + logi.toFixed(2) + ' руб');
+    L.push('обратная логистика отмен = ' + (canc * st0.rev).toFixed(2) + ' руб (' + canc + ' x ' + st0.rev.toFixed(2) + ')');
+    L.push('было по старой модели: отмены x 50 руб = ' + (canc * 50).toFixed(2) + ' руб в сводке, прямое плечо отмен не списывалось');
+
+    var okD = (dcnt === 0 && rateOverlap === 0), okR = (rcnt === 0);
+    var okS = (mx < 0.01 && Math.abs(i767 - isum) < 0.01);
+    L.push('');
+    L.push('DIRECT LOGISTICS DOUBLE COUNT = ' + (okD ? 0 : dcnt + rateOverlap));
+    L.push('REVERSE LOGISTICS DOUBLE COUNT = ' + (okR ? 0 : rcnt));
+    L.push('SUMMARY RECONCILIATION = ' + (okS ? 'PASS' : 'FAIL'));
+    L.push('FORMULA ERRORS = ' + err + (errW.length ? ' ' + errW.join(' ') : ''));
+    L.push('SEPTEMBER FINANCIAL MASTER READY = ' + (okD && okR && okS && err === 0 ? 'YES' : 'NO') +
+      ' | ' + Math.round((new Date().getTime() - t0) / 1000) + ' с');
+  } catch (e) { L.push('ОШИБКА: ' + e + (e && e.stack ? '\n' + e.stack : '')); }
   s8out_(L);
 }
