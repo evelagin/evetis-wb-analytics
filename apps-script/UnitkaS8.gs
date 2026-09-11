@@ -270,7 +270,10 @@ function s8chunk_(s) {
 //
 // §7/§8: комиссия = BASE 0,422506 + эквайринг SKU; логистика = своя ставка при n >= 10
 // выкупов за окно 11.08–09.09, иначе общемагазинная 70,0101 ₽/ед (решение владельца 11.09).
-var S8_PARAM = {
+// ИСТОРИЯ первого прохода 11.09.2026. С v8.1.0 ставки СЧИТАЮТСЯ функцией s8fin_()
+// (UnitkaS8b.gs) при каждом прогоне — владелец запретил хардкодить текущие ставки.
+// Таблица оставлена только как след измерения; в расчёте НЕ участвует.
+var S8_PARAM_HISTORY_2026_09_11 = {
   '252442517': [73.22, 0.454328, 'HIGH', 212], '305101361': [52.22, 0.455761, 'HIGH', 50],
   '438775617': [61.90, 0.455323, 'HIGH', 37], '535581675': [52.68, 0.453613, 'HIGH', 32],
   '305101272': [59.53, 0.459079, 'MEDIUM', 23], '567668635': [62.84, 0.457412, 'MEDIUM', 22],
@@ -337,6 +340,10 @@ function s8data() {
     var cur = wide.getValues();
     var head = sh.getRange(S8.TOP, 1, 1, S8.NC).getDisplayValues()[0];
 
+    // Ставки §7/§8 — расчёт из финотчёта, не таблица (см. s8fin_ в UnitkaS8b.gs).
+    var FW = s8win_(sh, ss.getSpreadsheetTimeZone());
+    if (!FW) { L.push('СТОП: зеркало LAST_CLOSED_DATE не дата'); return s8out_(L); }
+    var fin = s8fin_(FW.d1, FW.d2, L);
     var plan = [], rb = [], noNm = [], gaps = { opens: 0, carts: 0, stock: 0, price: 0 }, filled = 0;
     for (var b = 0; b < S8.NB; b++) {
       var st0 = S8.B0 + b * S8.BW, title = '';
@@ -359,9 +366,9 @@ function s8data() {
           for (var d2 = 0; d2 < S8_CLOSED; d2++) rb.push([S8.FIRST + d2, col, cur[d2][col - 1] instanceof Date ? '' : cur[d2][col - 1]]);
         }
       }
-      var pr = S8_PARAM[nm2];
+      var pr = fin.get(nm2);
       if (pr) {
-        var pairs = [[S8_M.logistics, pr[0]], [S8_M.commission, pr[1]]];
+        var pairs = [[S8_M.logistics, pr.log], [S8_M.commission, pr.comm]];
         for (var q = 0; q < pairs.length; q++) {
           var col2 = st0 + pairs[q][0], want = pairs[q][1], out2 = [], diff2 = false;
           for (var d3 = 0; d3 < S8.DAYS; d3++) { out2.push([want]); if (Number(cur[d3][col2 - 1]) !== want) diff2 = true; }
