@@ -26,7 +26,7 @@ var S8_M = {
 var S8_AUTO = ['views', 'opens', 'orders', 'carts', 'cancels', 'stock', 'adsIn', 'price', 'storage'];
 var S8_CALC = ['turnover', 'profit1', 'profitAll', 'adsOut', 'drr', 'priceSpp', 'priceMinusComm', 'tax', 'unitProfit'];
 
-function s8() { s8data(); }
+function s8() { s8formulas(); }
 
 // ==================== §1 ИНВЕНТАРИЗАЦИЯ ====================================
 
@@ -402,6 +402,240 @@ function s8data() {
     L.push('GAP оставлено пустыми: переходы ' + gaps.opens + ', корзины ' + gaps.carts + ', остатки ' + gaps.stock + ', цена ' + gaps.price);
     L.push('всего: ' + Math.round((new Date().getTime() - t0) / 1000) + ' с');
     L.push('BLOCKS FILLED = ' + filled + ' из ' + S8.NB + ' | BQ RECONCILIATION = ' + (mism.length === 0 ? 'PASS' : 'FAIL'));
+  } catch (e) { L.push('ОШИБКА: ' + e + (e && e.stack ? '\n' + e.stack : '')); }
+  s8out_(L);
+}
+
+// ==================== PREFLIGHT: чем блоки 2–24 отличаются от эталона ========
+
+var S8_CALC = ['turnover', 'profit1', 'profitAll', 'adsOut', 'drr', 'priceSpp', 'priceMinusComm', 'tax', 'unitProfit', 'weekday'];
+
+/** Нормализация формулы: свои колонки блока -> C{смещение}, свои строки -> R{сдвиг}. */
+function s8norm_(f, start, row) {
+  var s = String(f);
+  return s.replace(/(\$?)([A-Z]{1,3})(\$?)(\d+)/g, function (all, ac, cl, ar, rw) {
+    var col = s8num_(cl), r = Number(rw);
+    if (ac === '$' && ar === '$') return all;
+    if (col < start || col > start + S8.BW - 1) return 'FOREIGN(' + all + ')';
+    return (ac === '$' ? '$' : '') + 'C' + (col - start) + (ar === '$' ? '$' : '') + 'R' + (r - row);
+  });
+}
+
+function s8preflight() {
+  var L = ['=== STAGE 8 PREFLIGHT · ' + S8.VER + ' ==='];
+  try {
+    var ss = SpreadsheetApp.openById(S8.SSID), sh = ss.getSheetByName(S8.SH);
+    var head = sh.getRange(S8.TOP, 1, 1, S8.NC).getDisplayValues()[0];
+    var body = sh.getRange(S8.FIRST, 1, S8.PLAN - S8.FIRST + 1, S8.NC);
+    var frm = body.getFormulas();
+
+    // Эталонные шаблоны блока 1 для строк 737 и 767.
+    var pat = {}, patM = {};
+    for (var i = 0; i < S8_CALC.length; i++) {
+      var off = S8_M[S8_CALC[i]];
+      pat[off] = s8norm_(frm[0][S8.B0 + off - 1], S8.B0, S8.FIRST);
+      patM[off] = s8norm_(frm[S8.MTD - S8.FIRST][S8.B0 + off - 1], S8.B0, S8.MTD);
+    }
+    // Все смещения MTD эталона (не только расчётные).
+    var patMall = {};
+    for (var o2 = 1; o2 < S8.BW; o2++) patMall[o2] = s8norm_(frm[S8.MTD - S8.FIRST][S8.B0 + o2 - 1], S8.B0, S8.MTD);
+
+    L.push('=== ЭТАЛОН: MTD 767 блока 1, какие смещения заполнены ===');
+    var mtdHave = [], mtdEmpty = [];
+    for (var o3 = 1; o3 < S8.BW; o3++) (patMall[o3] ? mtdHave : mtdEmpty).push(o3 + ':' + String(head[S8.B0 + o3 - 1] || '').slice(0, 10));
+    L.push('есть: ' + mtdHave.join(' | '));
+    L.push('пусто: ' + mtdEmpty.join(' | '));
+
+    L.push('');
+    L.push('=== БЛОКИ: расхождение с эталоном по строке 737 и наличие защиты будущего ===');
+    var foreignAll = {}, guardMissing = 0, patMismatch = 0;
+    for (var b = 0; b < S8.NB; b++) {
+      var st = S8.B0 + b * S8.BW, t = '';
+      for (var c = 0; c < S8.BW && !t; c++) t = String(head[st - 1 + c] || '').trim();
+      var nm = (t.match(/\d{6,12}/) || [''])[0];
+      var bad = [], noGuard = [], foreign = {};
+      for (var k = 0; k < S8_CALC.length; k++) {
+        var off2 = S8_M[S8_CALC[k]], f2 = String(frm[0][st + off2 - 1] || '');
+        var n2 = s8norm_(f2, st, S8.FIRST);
+        if (n2 !== pat[off2]) bad.push(S8_CALC[k]);
+        if (S8_CALC[k] !== 'weekday' && f2.indexOf('LAST_CLOSED_DATE') < 0) noGuard.push(S8_CALC[k]);
+        var fm = n2.match(/FOREIGN\([^)]+\)/g) || [];
+        for (var q = 0; q < fm.length; q++) { foreign[fm[q]] = 1; foreignAll[fm[q]] = (foreignAll[fm[q]] || 0) + 1; }
+      }
+      // MTD: сколько смещений отличается от эталона
+      var mtdBad = 0;
+      for (var o4 = 1; o4 < S8.BW; o4++) if (s8norm_(frm[S8.MTD - S8.FIRST][st + o4 - 1], st, S8.MTD) !== patMall[o4]) mtdBad++;
+      if (bad.length) patMismatch++;
+      if (noGuard.length) guardMissing++;
+      L.push('#' + (b + 1) + ' nm=' + nm + ' | шаблон 737 отличается: ' + (bad.length ? bad.join(',') : 'нет') +
+        ' | без защиты будущего: ' + (noGuard.length ? noGuard.length + ' (' + noGuard.join(',') + ')' : 'нет') +
+        ' | MTD отличается смещений: ' + mtdBad + ' | абсолютные ссылки: ' + (Object.keys(foreign).join(' ') || 'нет'));
+    }
+    L.push('');
+    L.push('блоков с отличиями шаблона: ' + patMismatch + ' | без защиты будущего: ' + guardMissing);
+    L.push('все абсолютные ссылки в расчётах: ' + JSON.stringify(foreignAll));
+
+    // Что лежит вокруг R45 — ищем таблицу себестоимости.
+    L.push('');
+    L.push('=== ОКРЕСТНОСТИ $R$45 (строки 40–50, колонки N..V) ===');
+    var cost = sh.getRange(40, 14, 11, 9).getDisplayValues();
+    for (var r = 0; r < cost.length; r++) L.push((40 + r) + ': ' + cost[r].map(function (x, ix) { return r75col_(14 + ix) + '[' + String(x).slice(0, 16) + ']'; }).join(' '));
+  } catch (e) { L.push('ОШИБКА: ' + e + (e && e.stack ? '\n' + e.stack : '')); }
+  s8out_(L);
+}
+
+// ==================== §2 ФОРМУЛЫ ИЗ ЭТАЛОНА ==================================
+// Формулы НЕ пишутся руками и не копируются координатами: берётся формула блока крема,
+// её ссылки на собственный блок превращаются в токены (смещение, сдвиг строки), после чего
+// токены разворачиваются в координаты нужного блока. Семантика гарантированно та же.
+//
+// Исключение — $R$45: это себестоимость ТОЛЬКО крема для рук («вторая партия», 240 ₽),
+// ячейка вне сентябрьских строк. При переносе она заменяется себестоимостью своего SKU
+// из evetis_ref.V_PRODUCT_COGS_EFFECTIVE на 09.09.2026. Блок крема не трогается.
+
+var S8_COGS_CELL = '$R$45';
+var S8_FRB = 'S8_FORMULA_RB';
+var S8_WRITE_OFFSETS = [8, 9, 10, 12, 13, 16, 18, 21, 22];   // расчётные колонки строк 737–766
+
+/** Ссылки на свой блок В СЕНТЯБРЬСКИХ СТРОКАХ -> токен. Прочее (в т.ч. $R$45) — как есть. */
+function s8tok_(f, start, row) {
+  var s = String(f);
+  return s.replace(/(\$?)([A-Z]{1,3})(\$?)(\d+)/g, function (all, ac, cl, ar, rw, idx) {
+    var prev = idx > 0 ? s.charAt(idx - 1) : '';
+    if (/[A-Za-z0-9_Ѐ-ӿ]/.test(prev)) return all;
+    var col = s8num_(cl), r = Number(rw);
+    if (col < start || col > start + S8.BW - 1) return all;
+    if (r < S8.TOP || r > S8.PLAN) return all;
+    return '' + (ac === '$' ? 1 : 0) + '_' + (col - start) + '_' + (ar === '$' ? 1 : 0) + '_' + (r - row) + '';
+  });
+}
+
+function s8untok_(p, start, row) {
+  return String(p).replace(/(\d)_(\d+)_(\d)_(-?\d+)/g, function (all, ac, off, ar, dr) {
+    return (ac === '1' ? '$' : '') + r75col_(start + Number(off)) + (ar === '1' ? '$' : '') + (row + Number(dr));
+  });
+}
+
+/** Себестоимость по каждому nm_id на 09.09.2026 — из источника правды, не из книги. */
+function s8cogs_() {
+  var P = 'project-fa311fc0-4d87-4781-986', Q = String.fromCharCode(96);
+  var T = function (t) { return Q + P + '.' + t + Q; };
+  var sql = 'SELECT CAST(m.nm_id AS STRING), CAST(ROUND(c.product_cogs_rub,2) AS STRING), IFNULL(c.confidence,' + "''" + ')' +
+    ' FROM ' + T('wb_raw.REF_SKU_MASTER') + ' m LEFT JOIN ' + T('evetis_ref.V_PRODUCT_COGS_EFFECTIVE') + ' c' +
+    ' ON c.internal_sku = m.internal_sku AND DATE ' + "'2026-09-09'" + ' >= c.effective_from' +
+    ' AND (c.effective_to IS NULL OR DATE ' + "'2026-09-09'" + ' < c.effective_to)' +
+    " WHERE m.marketplace='WB' AND m.active";
+  var rows = r7query_(sql), out = {};
+  for (var i = 0; i < rows.length; i++) out[String(rows[i][0])] = { cogs: rows[i][1] === null ? null : Number(rows[i][1]), conf: rows[i][2] };
+  return out;
+}
+
+function s8formulas() {
+  var L = ['=== STAGE 8 §2 · s8formulas · ' + S8.VER + ' ==='];
+  try {
+    var t0 = new Date().getTime();
+    var ss = SpreadsheetApp.openById(S8.SSID), sh = ss.getSheetByName(S8.SH);
+    var cogs = s8cogs_();
+    L.push('себестоимость из evetis_ref: SKU с данными ' + Object.keys(cogs).filter(function (k) { return cogs[k].cogs !== null; }).length +
+      ' из ' + Object.keys(cogs).length + ' (' + Math.round((new Date().getTime() - t0) / 1000) + ' с)');
+
+    var head = sh.getRange(S8.TOP, 1, 1, S8.NC).getDisplayValues()[0];
+    var body = sh.getRange(S8.FIRST, 1, S8.PLAN - S8.FIRST + 1, S8.NC);
+    var frm = body.getFormulas(), val = body.getValues();
+
+    // Эталон: строка 737 (расчётные) и строка 767 (MTD, все смещения).
+    var pat737 = {}, pat767 = {};
+    for (var i = 0; i < S8_WRITE_OFFSETS.length; i++) {
+      var o = S8_WRITE_OFFSETS[i];
+      pat737[o] = s8tok_(frm[0][S8.B0 + o - 1], S8.B0, S8.FIRST);
+    }
+    for (var o2 = 0; o2 < S8.BW; o2++) {
+      var f2 = frm[S8.MTD - S8.FIRST][S8.B0 + o2 - 1];
+      if (f2) pat767[o2] = s8tok_(f2, S8.B0, S8.MTD);
+    }
+    L.push('эталон: расчётных шаблонов ' + Object.keys(pat737).length + ', MTD-шаблонов ' + Object.keys(pat767).length);
+
+    // Откат: легаси-шаблон блоков 2–24 (они одинаковы), плюс индивидуальные исключения.
+    var legacy = null, exceptions = {}, sameLegacy = 0;
+    for (var b1 = 1; b1 < S8.NB; b1++) {
+      var s1 = S8.B0 + b1 * S8.BW, sig = {};
+      for (var q1 = 0; q1 < S8_WRITE_OFFSETS.length; q1++) sig[S8_WRITE_OFFSETS[q1]] = s8tok_(frm[0][s1 + S8_WRITE_OFFSETS[q1] - 1], s1, S8.FIRST);
+      for (var o3 = 0; o3 < S8.BW; o3++) { var g = frm[S8.MTD - S8.FIRST][s1 + o3 - 1]; if (g) sig['m' + o3] = s8tok_(g, s1, S8.MTD); }
+      var js = JSON.stringify(sig);
+      if (legacy === null) legacy = js;
+      if (js === legacy) sameLegacy++; else exceptions[b1 + 1] = sig;
+    }
+    L.push('легаси-шаблон блоков 2–24: совпадает у ' + sameLegacy + ' из 23, исключений ' + Object.keys(exceptions).length);
+    if (!r75get_(S8_FRB)) { r75put_(S8_FRB, { ts: new Date().toISOString(), ver: S8.VER, legacy: legacy, exceptions: exceptions }); L.push('откат формул сохранён в ' + S8_FRB); }
+    else L.push('откат формул уже сохранён первым прогоном');
+
+    // Генерация и запись. Блок 1 (эталон) не трогаем.
+    var writes = [], noCogs = [], changed = 0;
+    for (var b = 1; b < S8.NB; b++) {
+      var st = S8.B0 + b * S8.BW, t = '';
+      for (var c = 0; c < S8.BW && !t; c++) t = String(head[st - 1 + c] || '').trim();
+      var nm = (t.match(/\d{6,12}/) || [''])[0];
+      var cg = cogs[nm] && cogs[nm].cogs !== null ? cogs[nm].cogs : null;
+      if (cg === null) { noCogs.push('#' + (b + 1) + ' nm=' + nm); cg = 0; }
+      // Локаль книги: разделитель аргументов «;», десятичный разделитель — ЗАПЯТАЯ.
+      // Литерал с точкой даёт «Синтаксическая ошибка в формуле».
+      var cgs = String(cg).replace('.', ',');
+
+      for (var k = 0; k < S8_WRITE_OFFSETS.length; k++) {
+        var off = S8_WRITE_OFFSETS[k], col = st + off, out = [], diff = false;
+        for (var r = 0; r < S8.DAYS; r++) {
+          var fx = s8untok_(pat737[off], st, S8.FIRST + r).split(S8_COGS_CELL).join(cgs);
+          out.push([fx]);
+          if (frm[r][col - 1] !== fx) diff = true;
+        }
+        if (diff) { writes.push({ row: S8.FIRST, col: col, vals: out }); changed += S8.DAYS; }
+      }
+      // MTD 767 — одной строкой 1×24: где у эталона формула, ставим её, иначе оставляем текущее.
+      var rowOut = [], diffM = false;
+      for (var o4 = 0; o4 < S8.BW; o4++) {
+        var colM = st + o4, curF = frm[S8.MTD - S8.FIRST][colM - 1], curV = val[S8.MTD - S8.FIRST][colM - 1];
+        if (pat767[o4]) {
+          var fm = s8untok_(pat767[o4], st, S8.MTD).split(S8_COGS_CELL).join(cgs);
+          rowOut.push(fm); if (curF !== fm) diffM = true;
+        } else rowOut.push(curF ? curF : curV);
+      }
+      if (diffM) { writes.push({ row: S8.MTD, col: st, vals: [rowOut], wide: true }); changed += S8.BW; }
+    }
+    L.push('SKU без себестоимости в evetis_ref: ' + noCogs.length + (noCogs.length ? ' — ' + noCogs.join(' ') + ' (подставлен 0; в сентябре у них 0 заказов, на экономику не влияет)' : ''));
+    L.push('диапазонов к записи: ' + writes.length + ' | ячеек: ' + changed);
+
+    for (var w = 0; w < writes.length; w++) {
+      if (writes[w].wide) sh.getRange(writes[w].row, writes[w].col, 1, S8.BW).setValues(writes[w].vals);
+      else sh.getRange(writes[w].row, writes[w].col, S8.DAYS, 1).setFormulas(writes[w].vals);
+    }
+    SpreadsheetApp.flush();
+    L.push('запись: ' + Math.round((new Date().getTime() - t0) / 1000) + ' с от старта');
+
+    // Проверка: шаблон совпал, защита будущего есть, ошибок нет.
+    var frmA = body.getFormulas(), valA = body.getValues();
+    var badPat = 0, noGuard = 0, errs = 0, firstErr = '';
+    for (var b2 = 1; b2 < S8.NB; b2++) {
+      var st2 = S8.B0 + b2 * S8.BW;
+      for (var k2 = 0; k2 < S8_WRITE_OFFSETS.length; k2++) {
+        var off2 = S8_WRITE_OFFSETS[k2];
+        for (var r2 = 0; r2 < S8.DAYS; r2++) {
+          var f3 = String(frmA[r2][st2 + off2 - 1] || '');
+          if (s8tok_(f3, st2, S8.FIRST + r2) !== pat737[off2].split(S8_COGS_CELL).join('#')) {
+            var alt = s8tok_(f3, st2, S8.FIRST + r2);
+            if (alt.indexOf('LAST_CLOSED_DATE') < 0) noGuard++;
+            if (alt.replace(/[\d.]+\)/g, 'X)') !== pat737[off2].split(S8_COGS_CELL).join('X').replace(/[\d.]+\)/g, 'X)')) badPat++;
+          }
+        }
+      }
+    }
+    for (var r3 = 0; r3 < valA.length; r3++) for (var c3 = S8.B0 - 1; c3 < S8.B0 - 1 + S8.BW * S8.NB; c3++) {
+      if (/^#(REF!|VALUE!|NAME\?|DIV\/0!|N\/A|ERROR!|NUM!|NULL!)/.test(String(valA[r3][c3]))) { errs++; if (!firstErr) firstErr = r75col_(c3 + 1) + (S8.FIRST + r3); }
+    }
+    L.push('');
+    L.push('BLOCKS FORMULA QA: блоков обработано 23 (эталон не тронут)');
+    L.push('ячеек без защиты будущего после записи: ' + noGuard);
+    L.push('FORMULA ERRORS в сентябрьских блоках: ' + errs + (firstErr ? ' (первая ' + firstErr + ')' : ''));
+    L.push('всего: ' + Math.round((new Date().getTime() - t0) / 1000) + ' с');
   } catch (e) { L.push('ОШИБКА: ' + e + (e && e.stack ? '\n' + e.stack : '')); }
   s8out_(L);
 }
