@@ -1,9 +1,9 @@
 // UNITKA 2.0 STAGE 8 · часть 2 — вычисляемые ставки, экономный визуал, сводка, QA.
-// agent claude-opus-5, v8.1.0. Продолжение UnitkaS8.gs: те же константы S8 и S8_M.
+// agent claude-opus-5, v8.1.0. Продолжение UnitkaS8.gs: те же константы S8 и S8_M. 
 //
 // Диспетчер этапа — ПЕРВАЯ функция файла: редактор Apps Script выбирает её сам
 // при открытии файла, а выпадающий список автоматизации не поддаётся.
-function s8b() { s8brates(); }
+function s8b() { s8qa(); }
 
 var S8B = {
   VER: 'unitka2.0/v8.1.0',
@@ -866,57 +866,74 @@ function s8futrollback() {
  * ========================================================================== */
 
 var S8BL = {
-  VER: 'unitka2.0/v8.3.0',
+  VER: 'unitka2.0/v8.5.0',
   MIN_N: 10,
   RB_RATE: 'S8B_RATE_RB', RB_FML: 'S8B_FML_RB',
   NAME: 'REVERSE_LEG_RATE',
   RROW: 737            // зеркало ставки обратного плеча: строка 737 колонки S8.MIR
 };
 
+// ОДОБРЕНО ВЛАДЕЛЬЦЕМ 11.09: популяция прямых отправлений — УНИКАЛЬНЫЕ srid
+// с операцией IN ('Логистика','Доставка'), а не только 'Логистика'.
+// Это два взаимоисключающих имени ОДНОГО события — прямой перевозки отправления:
+// пересечение srid между ними 0, продаж без транспортной строки 0, смешанных схем 0.
+// Прежде «Доставка» была в числителе, но её отправления не попадали в знаменатель,
+// и оба плеча её отказов считались прямыми. Оба дефекта здесь устранены.
 function s8bsql_(d1, d2) {
   var Q = String.fromCharCode(96), T = Q + S8B.PRJ + '.' + S8B.FIN + Q;
-  var LG = "'\u041b\u043e\u0433\u0438\u0441\u0442\u0438\u043a\u0430'", DL = "'\u0414\u043e\u0441\u0442\u0430\u0432\u043a\u0430'";
+  var LG = "'\u041b\u043e\u0433\u0438\u0441\u0442\u0438\u043a\u0430'", DL = "'\u0414\u043e\u0441\u0442\u0430\u0432\u043a\u0430'", SL = "'\u041f\u0440\u043e\u0434\u0430\u0436\u0430'";
+  var TR = '(' + LG + ', ' + DL + ')';
   return 'WITH b AS (SELECT srid, SAFE_CAST(wb_nm_id AS INT64) nm, supplier_oper_name son,' +
     ' SAFE_CAST(logistics_amount AS NUMERIC) amt FROM ' + T +
     " WHERE _rr_date BETWEEN DATE '" + d1 + "' AND DATE '" + d2 + "'" +
     ' AND wb_nm_id IS NOT NULL AND srid IS NOT NULL),' +
-    ' l AS (SELECT srid, nm, amt, ROW_NUMBER() OVER (PARTITION BY srid ORDER BY amt DESC) rn,' +
-    ' COUNT(*) OVER (PARTITION BY srid) legs FROM b WHERE son = ' + LG + '),' +
-    ' p AS (SELECT srid, ANY_VALUE(nm) nm, SUM(IF(rn=1,amt,0)) fwd, SUM(IF(rn>1,amt,0)) rev,' +
-    ' MAX(legs) legs FROM l GROUP BY srid),' +
-    ' d AS (SELECT nm, SUM(amt) dlv FROM b WHERE son = ' + DL + ' GROUP BY nm),' +
-    ' a AS (SELECT nm, COUNT(*) srids, SUM(fwd) fwd, COUNTIF(legs>=2) ref, SUM(rev) rev FROM p GROUP BY nm)' +
-    ' SELECT CAST(a.nm AS STRING), CAST(a.srids AS STRING),' +
-    ' CAST(ROUND(SAFE_DIVIDE(a.fwd + IFNULL(d.dlv,0), NULLIF(a.srids,0)),4) AS STRING),' +
-    ' CAST(a.ref AS STRING), CAST(ROUND(SAFE_DIVIDE(a.rev, NULLIF(a.ref,0)),4) AS STRING),' +
-    ' CAST(ROUND(a.fwd,2) AS STRING), CAST(ROUND(a.rev,2) AS STRING), CAST(ROUND(IFNULL(d.dlv,0),2) AS STRING)' +
-    ' FROM a LEFT JOIN d ON a.nm = d.nm' +
+    ' sale AS (SELECT COUNT(DISTINCT srid) n FROM b WHERE son = ' + SL + '),' +
+    ' l AS (SELECT srid, nm, son, amt, ROW_NUMBER() OVER (PARTITION BY srid ORDER BY amt DESC) rn,' +
+    ' COUNT(*) OVER (PARTITION BY srid) legs FROM b WHERE son IN ' + TR + '),' +
+    ' p AS (SELECT srid, ANY_VALUE(nm) nm, ANY_VALUE(son) son, SUM(IF(rn=1,amt,0)) fwd,' +
+    ' SUM(IF(rn>1,amt,0)) rev, MAX(legs) legs FROM l GROUP BY srid),' +
+    ' a AS (SELECT nm, COUNT(*) srids, SUM(fwd) fwd, COUNTIF(legs>=2) ref, SUM(rev) rev,' +
+    ' COUNTIF(son = ' + LG + ') nlog, COUNTIF(son = ' + DL + ') ndlv,' +
+    ' SUM(IF(son = ' + DL + ', fwd, 0)) dlvfwd FROM p GROUP BY nm)' +
+    ' SELECT CAST(nm AS STRING), CAST(srids AS STRING),' +
+    ' CAST(ROUND(SAFE_DIVIDE(fwd, NULLIF(srids,0)),4) AS STRING),' +
+    ' CAST(ref AS STRING), CAST(ROUND(SAFE_DIVIDE(rev, NULLIF(ref,0)),4) AS STRING),' +
+    ' CAST(ROUND(fwd,2) AS STRING), CAST(ROUND(rev,2) AS STRING),' +
+    ' CAST(nlog AS STRING), CAST(ndlv AS STRING), CAST(ROUND(dlvfwd,2) AS STRING),' +
+    ' CAST((SELECT n FROM sale) AS STRING) FROM a' +
     " UNION ALL SELECT '0', CAST(SUM(srids) AS STRING)," +
-    ' CAST(ROUND(SAFE_DIVIDE(SUM(fwd) + (SELECT IFNULL(SUM(dlv),0) FROM d), NULLIF(SUM(srids),0)),4) AS STRING),' +
+    ' CAST(ROUND(SAFE_DIVIDE(SUM(fwd), NULLIF(SUM(srids),0)),4) AS STRING),' +
     ' CAST(SUM(ref) AS STRING), CAST(ROUND(SAFE_DIVIDE(SUM(rev), NULLIF(SUM(ref),0)),4) AS STRING),' +
     ' CAST(ROUND(SUM(fwd),2) AS STRING), CAST(ROUND(SUM(rev),2) AS STRING),' +
-    ' CAST(ROUND((SELECT IFNULL(SUM(dlv),0) FROM d),2) AS STRING) FROM a';
+    ' CAST(SUM(nlog) AS STRING), CAST(SUM(ndlv) AS STRING), CAST(ROUND(SUM(dlvfwd),2) AS STRING),' +
+    ' CAST((SELECT n FROM sale) AS STRING) FROM a';
 }
-
 function s8brates_(d1, d2, L) {
   var rows = r7query_(s8bsql_(d1, d2)), per = {}, store = null;
   for (var i = 0; i < rows.length; i++) {
     var r = rows[i];
     var o = { n: Number(r[1]) || 0, direct: Number(r[2]), ref: Number(r[3]) || 0, rev: Number(r[4]),
-              fwdsum: Number(r[5]) || 0, revsum: Number(r[6]) || 0, dlvsum: Number(r[7]) || 0 };
+              fwdsum: Number(r[5]) || 0, revsum: Number(r[6]) || 0,
+              nlog: Number(r[7]) || 0, ndlv: Number(r[8]) || 0, dlvfwd: Number(r[9]) || 0,
+              sales: Number(r[10]) || 0 };
     if (String(r[0]) === '0') store = o; else per[String(r[0])] = o;
   }
   if (!store || !store.n) throw new Error('финотчёт за окно ' + d1 + '..' + d2 + ' пуст');
   if (L) {
     L.push('окно ставок ' + d1 + '..' + d2 + ', источник ' + S8B.FIN);
-    L.push('МАГАЗИН: отправлений ' + store.n + ', отказов ' + store.ref);
-    L.push('  прямые плечи ' + store.fwdsum.toFixed(2) + ' руб + Доставка ' + store.dlvsum.toFixed(2) +
-      ' руб -> DIRECT = ' + store.direct.toFixed(4) + ' руб/заказ');
-    L.push('  обратные плечи ' + store.revsum.toFixed(2) + ' руб -> REVERSE = ' + store.rev.toFixed(4) + ' руб/отказ');
-    var all = store.fwdsum + store.revsum + store.dlvsum;
-    L.push('  вся логистика окна ' + all.toFixed(2) + ' руб = прямые + обратные + доставка (разбиение полное)');
-    L.push('  старая ставка «вся логистика / выкупы» больше НЕ используется: обратные плечи ' +
-      store.revsum.toFixed(2) + ' руб вынесены из числителя DIRECT');
+    L.push('МАГАЗИН: отправлений ' + store.n + ' (Логистика ' + store.nlog +
+      ' + Доставка ' + store.ndlv + '), отказов ' + store.ref + ', продаж ' + store.sales);
+    var inv = (store.n === store.sales + store.ref);
+    L.push('  ИНВАРИАНТ DIRECT SHIPMENTS = SALES + CANCELLED: ' + store.n + ' = ' +
+      store.sales + ' + ' + store.ref + ' -> ' + (inv ? 'PASS' : 'FAIL'));
+    if (!inv) throw new Error('инвариант популяции не сошёлся: ' + store.n + ' вместо ' + (store.sales + store.ref));
+    L.push('  прямые плечи ' + store.fwdsum.toFixed(2) + ' руб (из них «Доставка» ' +
+      store.dlvfwd.toFixed(2) + ' руб) / ' + store.n + ' отправлений -> DIRECT = ' + store.direct.toFixed(4) + ' руб/заказ');
+    L.push('  обратные плечи ' + store.revsum.toFixed(2) + ' руб / ' + store.ref + ' отказов -> REVERSE = ' + store.rev.toFixed(4) + ' руб/отказ');
+    var all = store.fwdsum + store.revsum;
+    L.push('  вся логистика окна ' + all.toFixed(2) + ' руб = прямые + обратные, пересечение 0');
+    L.push('  знаменатель исправлен 11.09: раньше считались только srid «Логистики» (' + store.nlog +
+      '), а деньги «Доставки» входили в числитель целиком, вместе с обратными плечами её отказов');
   }
   return {
     store: store,
@@ -1129,11 +1146,13 @@ function s8bqa() {
     var w = s8win_(sh, tz);
     var fin = s8brates_(w.d1, w.d2, L);
     var st0 = fin.store;
-    var all = st0.fwdsum + st0.revsum + st0.dlvsum;
-    var dsum = st0.fwdsum + st0.dlvsum;
+    var all = st0.fwdsum + st0.revsum;
+    var dsum = st0.fwdsum;
     L.push('');
     L.push('--- СТАВКИ: непересечение числителей ---');
-    L.push('DIRECT числитель  = прямые ' + st0.fwdsum.toFixed(2) + ' + доставка ' + st0.dlvsum.toFixed(2) + ' = ' + dsum.toFixed(2) + ' руб');
+    L.push('популяция  = уникальные srid с операцией Логистика или Доставка: ' + st0.n + ' = ' + st0.nlog + ' + ' + st0.ndlv);
+    L.push('ИНВАРИАНТ = продаж ' + st0.sales + ' + отказов ' + st0.ref + ' = ' + (st0.sales + st0.ref) + ' -> ' + (st0.n === st0.sales + st0.ref ? 'PASS' : 'FAIL'));
+    L.push('DIRECT числитель  = только первые плечи ' + st0.fwdsum.toFixed(2) + ' руб (в т.ч. Доставка ' + st0.dlvfwd.toFixed(2) + ')');
     L.push('REVERSE числитель = обратные ' + st0.revsum.toFixed(2) + ' руб');
     L.push('пересечение = ' + (dsum + st0.revsum - all).toFixed(2) + ' руб (должно быть 0,00)');
     var rateOverlap = Math.abs(dsum + st0.revsum - all) > 0.01 ? 1 : 0;
@@ -1229,7 +1248,7 @@ function s8bqa() {
       }
     }
     L.push('');
-    L.push('--- СЕНТЯБРЬ 01-09, ЭФФЕКТ МОДЕЛИ ---');
+    L.push('--- ЗАКРЫТЫЕ ДНИ СЕНТЯБРЯ, ЭФФЕКТ МОДЕЛИ ---');
     L.push('валовых заказов ' + gross + ', отмен ' + canc);
     L.push('прямая логистика Q*DIRECT = ' + logi.toFixed(2) + ' руб');
     L.push('обратная логистика отмен = ' + (canc * st0.rev).toFixed(2) + ' руб (' + canc + ' x ' + st0.rev.toFixed(2) + ')');
@@ -1245,5 +1264,740 @@ function s8bqa() {
     L.push('SEPTEMBER FINANCIAL MASTER READY = ' + (okD && okR && okS && err === 0 ? 'YES' : 'NO') +
       ' | ' + Math.round((new Date().getTime() - t0) / 1000) + ' с');
   } catch (e) { L.push('ОШИБКА: ' + e + (e && e.stack ? '\n' + e.stack : '')); }
+  s8out_(L);
+}
+
+
+/* ============ /* ============ STAGE 8.2 §1-§7 ВОРОНКА КАК ИСТОЧНИК ПРАВДЫ ====================
+ * Сверка 11.09 по официальному XLSX ЛК WB (01-09.09, 22 артикула):
+ * эндпоинт POST /api/analytics/v3/sales-funnel/products/history воспроизводит
+ * XLSX ТОЧНО: 0 расхождений на всех ячейках nmID × день × 3 метрики (04-09.09).
+ * Прежние «+2..+5 переходов в день» оказались артефактом выгрузки: в XLSX был
+ * выбран список из 22 артикулов, а 252441968, 252442341 и 909951444 в него не вошли.
+ *
+ * ПОЭТОМУ authoritative для «Переходы», «Положили в корзину», «Заказы факт» — воронка.
+ * Приоритет источников на каждый день, печатается в лог:
+ *   1. FUNNEL_API    — V_WB_FUNNEL_DAILY (04.09 и позже)
+ *   2. XLSX_BACKFILL — RAW_WB_FUNNEL_XLSX_BACKFILL (ТОЛЬКО 01-03.09, разовая историческая
+ *      загрузка из официального XLSX: глубина эндпоинта без «Джема» — 7 дней,
+ *      и эти дни из API уже не достать. Для Engine этот путь ЗАКРЫТ.)
+ *   3. ORDERS_API    — FACT_ORDERS, только если нет ни того ни другого.
+ *
+ * ОТМЕНЫ. В ответе history полей отмен НЕТ вообще (openCount, cartCount,
+ * orderCount, orderSum, buyoutCount, buyoutSum, buyoutPercent, addToCartConversion,
+ * cartToOrderConversion, addToWishlistCount), и cancel_count в V_WB_FUNNEL_DAILY NULL
+ * на 100 % строк. Поэтому: 01-03.09 — официальное значение из backfill,
+ * 04.09 и позже — прокси is_cancel из FACT_ORDERS. Это единственная колонка
+ * со смешанной семантикой, и она помечена в контракте.
+ * Мера расхождения прокси на 04-09.09: 3 SKU-дня из ~150.
+ *   +2  отмена в день заказа (cancel_dt = order_dt): WB вообще не считает её
+ *       ни заказом, ни отменой (535580776 от 02.09 и 09.09).
+ *   -1  невыкуп / возврат: в ленте заказов is_cancel = false, в воронке учтен
+ *       как «Отменили» (773170315 от 07.09).
+ *   Отмена НЕ в день заказа считается обоими источниками одинаково
+ *   (252442517: заказ 02.09, отмена 06.09 — и XLSX и FACT_ORDERS дают 1).
+ *
+ * ПОЧЕМУ FACT_ORDERS НЕ ВОСПРОИЗВОДИТ ВОРОНКУ 1:1 (§3).
+ * Это разные продукты WB: /supplier/orders — лента отгрузок, воронка — события
+ * на карточке. 01-09.09: XLSX 137 заказов, FACT_ORDERS 127. Разница — 12 заказов,
+ * которых в ленте заказов НЕТ ни в RAW_WB_ORDERS, ни в витрине, минус 2 заказа,
+ * отменённых в день заказа. Проверено и исключено: сдвиг часового пояса,
+ * дубли srid, sku_match_status, пропуски загрузчика (загрузки есть каждый день,
+ * 10-22 в сутки), WB Клуб и юрлица (в XLSX нули), отсутствие 25-го SKU.
+ * Финотчёт не содержит ни одного srid, которого нет в FACT_ORDERS, то есть витрина
+ * не теряет данные — их не отдаёт сама лента заказов. Поэтому финансовый
+ * контур остаётся на FACT_ORDERS, а визуальная воронка — на отчёте воронки.
+ */
+var S82 = {
+  VER: 'unitka2.0/v8.4.0',
+  D1: '2026-09-01', D2: '2026-09-10',
+  NDAYS: 10,
+  RB: 'S82_DATA_RB'
+};
+
+function s82sql_() {
+  var P = 'project-fa311fc0-4d87-4781-986', Q = String.fromCharCode(96);
+  var T = function (t) { return Q + P + '.' + t + Q; };
+  var D1 = "DATE '" + S82.D1 + "'", D2 = "DATE '" + S82.D2 + "'";
+  var W = ' BETWEEN ' + D1 + ' AND ' + D2;
+  return 'WITH days AS (SELECT d FROM UNNEST(GENERATE_DATE_ARRAY(' + D1 + ', ' + D2 + ')) d),' +
+    ' sku AS (SELECT nm_id FROM ' + T('wb_raw.REF_SKU_MASTER') + " WHERE marketplace='WB' AND active)," +
+    ' g AS (SELECT s.nm_id, d.d FROM sku s CROSS JOIN days d),' +
+    ' o AS (SELECT nm_id, order_date d, SUM(quantity) gross, SUM(IF(is_cancel,quantity,0)) canc,' +
+    ' SAFE_DIVIDE(SUM(price_with_disc*quantity), NULLIF(SUM(quantity),0)) price FROM ' + T('wb_mart.FACT_ORDERS') +
+    ' WHERE order_date' + W + ' GROUP BY 1,2),' +
+    ' m AS (SELECT nm_id, day d, SUM(views) views, SUM(ad_spend) ads FROM ' + T('wb_mart.MART_SKU_DAILY') +
+    ' WHERE day' + W + ' GROUP BY 1,2),' +
+    ' f AS (SELECT nm_id, date_msk d, MAX(open_card_count) opens, MAX(add_to_cart_count) carts,' +
+    ' MAX(orders_count) forders FROM ' + T('wb_raw.V_WB_FUNNEL_DAILY') +
+    ' WHERE date_msk' + W + ' GROUP BY 1,2),' +
+    ' bf AS (SELECT nm_id, date_msk d, open_card_count opens, add_to_cart_count carts,' +
+    ' orders_count forders, cancel_count canc FROM ' + T('wb_raw.RAW_WB_FUNNEL_XLSX_BACKFILL') +
+    ' WHERE date_msk' + W + '),' +
+    ' sd AS (SELECT DISTINCT snapshot_date d FROM ' + T('wb_mart.FACT_STOCKS_SNAPSHOT') + ' WHERE snapshot_date' + W + '),' +
+    ' st AS (SELECT nm_id, snapshot_date d, SUM(quantity) stock FROM ' + T('wb_mart.FACT_STOCKS_SNAPSHOT') +
+    ' WHERE snapshot_date' + W + ' GROUP BY 1,2),' +
+    ' pd AS (SELECT DISTINCT date_msk d FROM ' + T('wb_raw.RAW_WB_PAID_STORAGE') + ' WHERE date_msk' + W + '),' +
+    ' ps AS (SELECT SAFE_CAST(nm_id AS INT64) nm_id, date_msk d, SUM(SAFE_CAST(warehouse_price AS NUMERIC)) storage FROM ' +
+    T('wb_raw.RAW_WB_PAID_STORAGE') + ' WHERE date_msk' + W + ' GROUP BY 1,2)' +
+    ' SELECT CAST(g.nm_id AS STRING), CAST(g.d AS STRING), CAST(IFNULL(m.views,0) AS STRING), CAST(COALESCE(f.opens, bf.opens) AS STRING),' +
+    ' CAST(COALESCE(f.carts, bf.carts) AS STRING),' +
+    ' CAST(COALESCE(f.forders, bf.forders, o.gross, 0) AS STRING),' +
+    ' CAST(COALESCE(bf.canc, o.canc, 0) AS STRING),' +
+    ' CAST(IF(sd.d IS NULL, NULL, IFNULL(st.stock,0)) AS STRING), CAST(ROUND(IFNULL(m.ads,0),2) AS STRING),' +
+    ' CAST(ROUND(o.price,2) AS STRING), CAST(IF(pd.d IS NULL, NULL, ROUND(IFNULL(ps.storage,0),2)) AS STRING),' +
+    " CAST(IF(f.forders IS NOT NULL,'FUNNEL_API',IF(bf.forders IS NOT NULL,'XLSX_BACKFILL','ORDERS_API')) AS STRING)" +
+    ' FROM g LEFT JOIN o ON o.nm_id=g.nm_id AND o.d=g.d LEFT JOIN m ON m.nm_id=g.nm_id AND m.d=g.d' +
+    ' LEFT JOIN f ON f.nm_id=g.nm_id AND f.d=g.d LEFT JOIN st ON st.nm_id=g.nm_id AND st.d=g.d' +
+    ' LEFT JOIN ps ON ps.nm_id=g.nm_id AND ps.d=g.d LEFT JOIN bf ON bf.nm_id=g.nm_id AND bf.d=g.d LEFT JOIN sd ON sd.d=g.d LEFT JOIN pd ON pd.d=g.d ORDER BY 1,2';
+}
+
+function s82data() {
+  var L = ['=== STAGE 8.2 §1/§4/§7 · s82data · ' + S82.VER + ' ==='];
+  try {
+    var t0 = new Date().getTime();
+    var ss = SpreadsheetApp.openById(S8.SSID), sh = ss.getSheetByName(S8.SH);
+    var rows = r7query_(s82sql_());
+    L.push('BigQuery: строк ' + rows.length + ' | окно ' + S82.D1 + '..' + S82.D2);
+
+    var bq = {}, srcDay = {};
+    for (var i = 0; i < rows.length; i++) {
+      var r = rows[i], nm = String(r[0]), dk = String(r[1]);
+      if (!bq[nm]) bq[nm] = {};
+      bq[nm][dk] = r.slice(2);
+      if (!srcDay[dk]) srcDay[dk] = {};
+      srcDay[dk][String(r[11])] = (srcDay[dk][String(r[11])] || 0) + 1;
+    }
+    var IDX = { views: 0, opens: 1, carts: 2, orders: 3, cancels: 4, stock: 5, adsIn: 6, price: 7, storage: 8 };
+    var dk_ = function (i) { var n = i + 1; return '2026-09-' + (n < 10 ? '0' + n : n); };
+
+    var wide = sh.getRange(S8.FIRST, 1, S8.DAYS, S8.NC), cur = wide.getValues();
+    var head = sh.getRange(S8.TOP, 1, 1, S8.NC).getDisplayValues()[0];
+    var plan = [], rb = [], noNm = [], gaps = { opens: 0, carts: 0, stock: 0, price: 0 }, filled = 0;
+
+    for (var b = 0; b < S8.NB; b++) {
+      var st0 = S8.B0 + b * S8.BW, title = '';
+      for (var c = 0; c < S8.BW && !title; c++) title = String(head[st0 - 1 + c] || '').trim();
+      var nm2 = (title.match(/\d{6,12}/) || [''])[0];
+      if (!nm2 || !bq[nm2]) { noNm.push('#' + (b + 1) + ' ' + (nm2 || '?')); continue; }
+      filled++;
+      for (var k = 0; k < S8_ORDER.length; k++) {
+        var key = S8_ORDER[k], col = st0 + S8_M[key], out = [], diff = false;
+        for (var d = 0; d < S82.NDAYS; d++) {
+          var src = bq[nm2][dk_(d)] || [], raw = src[IDX[key]];
+          var v = (raw === null || raw === undefined || raw === '') ? '' : Number(raw);
+          if (v === '' && gaps[key] !== undefined) gaps[key]++;
+          out.push([v]);
+          if (String(cur[d][col - 1]) !== String(v)) diff = true;
+        }
+        if (diff) {
+          plan.push({ col: col, n: S82.NDAYS, vals: out });
+          for (var d2 = 0; d2 < S82.NDAYS; d2++) rb.push([S8.FIRST + d2, col, cur[d2][col - 1] instanceof Date ? '' : cur[d2][col - 1]]);
+        }
+      }
+    }
+    L.push('');
+    L.push('источник «Заказы факт» по дням (SKU в дне):');
+    for (var dd = 0; dd < S82.NDAYS; dd++) {
+      var s = srcDay[dk_(dd)] || {};
+      var parts = [];
+      var ord = ['FUNNEL_API', 'XLSX_BACKFILL', 'ORDERS_API'];
+      for (var q = 0; q < ord.length; q++) if (s[ord[q]]) parts.push(ord[q] + ' ' + s[ord[q]]);
+      for (var k3 in s) if (ord.indexOf(k3) < 0) parts.push(k3 + ' ' + s[k3]);
+      L.push('  ' + dk_(dd) + '  ' + (parts.length ? parts.join(' + ') : 'нет строк'));
+    }
+    L.push('');
+    L.push('блоков сопоставлено: ' + filled + ' | без сопоставления: ' + noNm.length + (noNm.length ? ' — ' + noNm.join(' ') : ''));
+    L.push('диапазонов к записи: ' + plan.length + ' | ячеек в откате: ' + rb.length);
+    if (rb.length && !r75get_(S82.RB)) { r75put_(S82.RB, { ts: new Date().toISOString(), ver: S82.VER, cells: rb }); L.push('откат сохранён: ' + S82.RB); }
+
+    for (var p = 0; p < plan.length; p++) sh.getRange(S8.FIRST, plan[p].col, plan[p].n, 1).setValues(plan[p].vals);
+    SpreadsheetApp.flush();
+
+    var after = wide.getValues(), mism = [], checked = 0;
+    var tot = { opens: 0, carts: 0, orders: 0, cancels: 0 };
+    for (var b2 = 0; b2 < S8.NB; b2++) {
+      var st2 = S8.B0 + b2 * S8.BW, t2 = '';
+      for (var c2 = 0; c2 < S8.BW && !t2; c2++) t2 = String(head[st2 - 1 + c2] || '').trim();
+      var nm3 = (t2.match(/\d{6,12}/) || [''])[0];
+      if (!nm3 || !bq[nm3]) continue;
+      for (var k2 = 0; k2 < S8_ORDER.length; k2++) {
+        var key2 = S8_ORDER[k2], col3 = st2 + S8_M[key2];
+        for (var d5 = 0; d5 < S82.NDAYS; d5++) {
+          var raw2 = (bq[nm3][dk_(d5)] || [])[IDX[key2]];
+          var want2 = (raw2 === null || raw2 === undefined || raw2 === '') ? '' : Number(raw2);
+          var got = after[d5][col3 - 1]; checked++;
+          var ok = (want2 === '') ? (got === '' || got === null) : (Math.abs(Number(got) - want2) < 0.005);
+          if (!ok) mism.push(nm3 + ' ' + key2 + ' ' + r75col_(col3) + (S8.FIRST + d5) + ' лист[' + got + '] BQ[' + want2 + ']');
+          if (tot[key2] !== undefined && want2 !== '' && d5 < 9) tot[key2] += Number(want2);
+        }
+      }
+    }
+    L.push('');
+    L.push('=== QA: лист против BigQuery ===');
+    L.push('сверено ячеек: ' + checked + ' | MISMATCH = ' + mism.length + (mism.length ? ' <-- ' + mism.slice(0, 8).join(' | ') : ''));
+    L.push('GAP оставлено пустыми: переходы ' + gaps.opens + ', корзины ' + gaps.carts + ', остатки ' + gaps.stock + ', цена ' + gaps.price);
+    L.push('');
+    L.push('ИТОГИ 01-09.09 по 24 блокам. Официальный XLSX (22 артикула): 5382 / 523 / 137 / 5.');
+    L.push('  переходы ' + tot.opens + ' | корзины ' + tot.carts + ' | заказы ' + tot.orders + ' | отмены ' + tot.cancels);
+    L.push('BQ RECONCILIATION = ' + (mism.length === 0 ? 'PASS' : 'FAIL') + ' | ' + Math.round((new Date().getTime() - t0) / 1000) + ' с');
+  } catch (e) { L.push('ОШИБКА: ' + e + (e && e.stack ? '\n' + e.stack : '')); }
+  s8out_(L);
+}
+
+/** ОТКАТ s82data. */
+function s82datarollback() {
+  var L = ['=== STAGE 8.2 · s82datarollback ==='];
+  try {
+    var o = r75get_(S82.RB);
+    if (!o || !o.cells) { L.push('откат не найден'); return s8out_(L); }
+    var sh = SpreadsheetApp.openById(S8.SSID).getSheetByName(S8.SH);
+    for (var i = 0; i < o.cells.length; i++) sh.getRange(o.cells[i][0], o.cells[i][1]).setValue(o.cells[i][2]);
+    SpreadsheetApp.flush();
+    L.push('восстановлено ячеек: ' + o.cells.length);
+  } catch (e) { L.push('ОШИБКА: ' + e); }
+  s8out_(L);
+}
+
+
+// ============ STAGE 8.2 §7 · ПЕРЕВОД LAST_CLOSED_DATE НА 10.09 ====================
+// Закрытый день переводится ТОЛЬКО после того, как факт 10.09 загружен s82data().
+var S82L = { VER: 'unitka2.0/v8.4.0', NEW: '2026-09-10', RB: 'S82_LCD_RB' };
+
+function s82lcd() {
+  var L = ['≡≡≡ STAGE 8.2 §7 · s82lcd · ' + S82L.VER + ' ≡≡≡'];
+  try {
+    var ss = SpreadsheetApp.openById(S8.SSID), sh = ss.getSheetByName(S8.SH);
+    var tz = ss.getSpreadsheetTimeZone();
+    var rg = ss.getRangeByName('LAST_CLOSED_DATE');
+    if (!rg) { L.push('НЕТ именованного диапазона LAST_CLOSED_DATE'); s8out_(L); return; }
+    var mir = sh.getRange(S8.HDR, S8.MIR);
+    var fmt = function (v) { return v instanceof Date ? Utilities.formatDate(v, tz, 'yyyy-MM-dd') : String(v); };
+    var was = fmt(rg.getValue()), wasM = fmt(mir.getValue());
+    L.push('было: LAST_CLOSED_DATE '+was+' | зеркало WB736 '+wasM+' | имя на '+rg.getSheet().getName()+'!'+rg.getA1Notation());
+    if (!r75get_(S82L.RB)) r75put_(S82L.RB, { ts: new Date().toISOString(), lcd: was, mirror: wasM, a1: rg.getSheet().getName()+'!'+rg.getA1Notation() });
+    var d = new Date(2026, 8, 10);
+    rg.setValue(d); mir.setValue(d); SpreadsheetApp.flush();
+    var now = fmt(rg.getValue()), nowM = fmt(mir.getValue());
+    L.push('стало: LAST_CLOSED_DATE '+now+' | зеркало WB736 '+nowM);
+    L.push('LCD SYNC = ' + (now === S82L.NEW && nowM === S82L.NEW ? 'PASS' : 'FAIL'));
+
+    var wide = sh.getRange(S8.FIRST, 1, S8.DAYS, S8.NC), vals = wide.getValues();
+    var mtd = sh.getRange(S8.MTD, 1, 1, S8.NC).getValues()[0];
+    var err = 0, errEx = [], leak = 0, leakEx = [], d10 = 0, d10e = [];
+    var isErr = function (v) { return typeof v === 'string' && v.charAt(0) === '#' && /^#(REF|DIV|VALUE|NAME|N\/A|NUM|NULL|ERROR)/.test(v); };
+    for (var r = 0; r < S8.DAYS; r++) for (var c = 0; c < S8.NC; c++) {
+      var v = vals[r][c];
+      if (isErr(v)) { err++; if (errEx.length < 6) errEx.push(r75col_(c+1)+(S8.FIRST+r)+' '+v); }
+      if (r > 9 && c + 1 >= S8.B0 && c + 1 < S8.NC && v !== '' && !(v instanceof Date)) {
+        var off = (c + 1 - S8.B0) % S8.BW;
+        if (off !== S8_M.date && off !== S8_M.weekday && off !== S8_M.logistics && off !== S8_M.commission && off !== S8_M.spp) {
+          leak++; if (leakEx.length < 6) leakEx.push(r75col_(c+1)+(S8.FIRST+r)+' [' + v + ']'); }
+      }
+    }
+    for (var c2 = S8.B0; c2 < S8.NC; c2++) if (isErr(mtd[c2-1])) { err++; if (errEx.length < 6) errEx.push(r75col_(c2)+S8.MTD+' '+mtd[c2-1]); }
+    for (var b = 0; b < S8.NB; b++) { var st = S8.B0 + b * S8.BW;
+      var ks = ['views','opens','orders','carts','cancels'];
+      for (var k = 0; k < ks.length; k++) { var vv = vals[9][st + S8_M[ks[k]] - 1]; if (vv !== '' && vv !== null) d10++; else d10e.push('#'+(b+1)+' '+ks[k]); } }
+    L.push('');
+    L.push('ФАКТ 10.09 заполнен: ' + d10 + ' из ' + (S8.NB*5) + ' ячеек' + (d10e.length ? ' | пусто: ' + d10e.slice(0,8).join(', ') : ''));
+    L.push('FORMULA ERRORS = ' + err + (errEx.length ? ' <-- ' + errEx.join(' | ') : ''));
+    L.push('FUTURE LEAKAGE (11-30.09) = ' + leak + (leakEx.length ? ' <-- ' + leakEx.join(' | ') : ''));
+    L.push('LAST_CLOSED_DATE = 10.09.2026 | откат: ' + S82L.RB);
+  } catch (e) { L.push('ОШИБКА: ' + e + (e && e.stack ? '\n' + e.stack : '')); }
+  s8out_(L);
+}
+
+function s82lcdrollback() {
+  var L = ['≡≡≡ s82lcdrollback ≡≡≡'];
+  try {
+    var o = r75get_(S82L.RB);
+    if (!o) { L.push('нет точки отката ' + S82L.RB); s8out_(L); return; }
+    var ss = SpreadsheetApp.openById(S8.SSID), sh = ss.getSheetByName(S8.SH);
+    var pr = o.lcd.split('-');
+    var d = new Date(Number(pr[0]), Number(pr[1]) - 1, Number(pr[2]));
+    ss.getRangeByName('LAST_CLOSED_DATE').setValue(d);
+    sh.getRange(S8.HDR, S8.MIR).setValue(d);
+    SpreadsheetApp.flush();
+    L.push('восстановлено LAST_CLOSED_DATE ' + o.lcd);
+  } catch (e) { L.push('ОШИБКА: ' + e); }
+  s8out_(L);
+}
+
+
+// ============ STAGE 8.2 §9/§10 · ДИАГНОСТИКА (ТОЛЬКО ЧТЕНИЕ) ============
+function s82diag() {
+  var L = ['≡≡≡ STAGE 8.2 §9/§10 · s82diag · только чтение ≡≡≡'];
+  try {
+    var ss = SpreadsheetApp.openById(S8.SSID), sh = ss.getSheetByName(S8.SH);
+    var last = sh.getLastRow(), lastC = sh.getLastColumn();
+    L.push('лист: строк ' + last + ', колонок ' + lastC);
+
+    L.push('');
+    L.push('--- §10 СТРОКА 768 (сентябрь, S8.PLAN) ---');
+    var r768f = sh.getRange(S8.PLAN, 1, 1, S8.NC).getFormulas()[0];
+    var r768v = sh.getRange(S8.PLAN, 1, 1, S8.NC).getValues()[0];
+    var r768d = sh.getRange(S8.PLAN, 1, 1, S8.NC).getDisplayValues()[0];
+    var nz = [];
+    for (var c = 0; c < S8.NC; c++) {
+      var f = r768f[c], val = r768v[c];
+      if (f || (val !== '' && val !== null)) nz.push(r75col_(c + 1) + S8.PLAN + ' ' + (f ? 'FML ' + f : 'HARD [' + val + ']') + ' -> ' + r768d[c]);
+    }
+    L.push('заполненных ячеек: ' + nz.length);
+    for (var z = 0; z < nz.length && z < 40; z++) L.push('  ' + nz[z]);
+
+    L.push('');
+    L.push('--- кто ссылается на 768 на этом листе ---');
+    var all = sh.getRange(1, 1, last, lastC).getFormulas();
+    var re768 = /(^|[^0-9A-Za-z_])\$?[A-Z]{1,3}\$?768(?![0-9])/;
+    var refs = 0, refEx = [];
+    for (var rr = 0; rr < all.length; rr++) for (var cc = 0; cc < all[rr].length; cc++) {
+      var ff = all[rr][cc];
+      if (ff && re768.test(ff) && (rr + 1) !== S8.PLAN) { refs++; if (refEx.length < 12) refEx.push(r75col_(cc + 1) + (rr + 1) + ' :: ' + String(ff).slice(0, 70)); }
+    }
+    L.push('ссылок на строку 768: ' + refs);
+    for (var z2 = 0; z2 < refEx.length; z2++) L.push('  ' + refEx[z2]);
+
+    L.push('');
+    L.push('--- августовские аналоги строки плана (чтение, август НЕ трогаем) ---');
+    for (var rp = 690; rp <= 740; rp++) {
+      var a1 = sh.getRange(rp, 1, 1, 11).getDisplayValues()[0].join(' | ').trim();
+      if (/план|ПЛАН|План/.test(a1)) L.push('  строка ' + rp + ': ' + a1.slice(0, 120));
+    }
+
+    L.push('');
+    L.push('--- §9 ВЫХОДНЫЕ ---');
+    var dt = sh.getRange(S8.FIRST, 1, S8.DAYS, 2).getValues();
+    var bgA = sh.getRange(S8.FIRST, 1, S8.DAYS, 2).getBackgrounds();
+    var st0 = S8.B0;
+    var bgB = sh.getRange(S8.FIRST, st0, S8.DAYS, 1).getBackgrounds();
+    var bgW = sh.getRange(S8.FIRST, st0 + S8_M.weekday, S8.DAYS, 1).getBackgrounds();
+    for (var d = 0; d < S8.DAYS; d++) {
+      var dv = dt[d][0], wd = (dv instanceof Date) ? ((dv.getDay() + 6) % 7) + 1 : '?';
+      L.push('  ' + (S8.FIRST + d) + ' ' + (dv instanceof Date ? Utilities.formatDate(dv, ss.getSpreadsheetTimeZone(), 'dd.MM') : String(dv)) + ' wd' + wd + ' | A ' + bgA[d][0] + ' B ' + bgA[d][1] + ' | блок дата ' + bgB[d][0] + ' день ' + bgW[d][0]);
+    }
+  } catch (e) { L.push('ОШИБКА: ' + e + (e && e.stack ? '\n' + e.stack : '')); }
+  s8out_(L);
+}
+
+
+// ============ STAGE 8.2 §9 · ВЫХОДНЫЕ: ДИАГНОСТИКА ============
+function s82wk() {
+  var L = ['≡≡≡ s82wk · выходные ≡≡≡'];
+  try {
+    var ss = SpreadsheetApp.openById(S8.SSID), sh = ss.getSheetByName(S8.SH);
+    var rules = sh.getConditionalFormatRules();
+    L.push('всего правил УФ: ' + rules.length);
+    var hit = 0;
+    for (var i = 0; i < rules.length; i++) {
+      var b = rules[i].getBooleanCondition(); if (!b) continue;
+      var vals = b.getCriteriaValues() || [];
+      var f = vals.length ? String(vals[0]) : '';
+      var rgs = rules[i].getRanges(), touch = false;
+      for (var t = 0; t < rgs.length; t++) { var c1 = rgs[t].getColumn(), c2 = c1 + rgs[t].getNumColumns() - 1, r1 = rgs[t].getRow(), r2 = r1 + rgs[t].getNumRows() - 1;
+        if (c1 <= 2 && c2 >= 1 && r1 <= 766 && r2 >= 737) { touch = true; break; } }
+      if (!touch) continue;
+      hit++;
+      var rg = rules[i].getRanges(), a1 = [];
+      for (var j = 0; j < rg.length && j < 4; j++) a1.push(rg[j].getA1Notation());
+      if (hit <= 60) L.push('  #' + i + ' [' + f + '] bg ' + (b.getBackgroundObject() ? b.getBackgroundObject().asRgbColor().asHexString() : 'bg-') + '/' + (b.getFontColorObject() ? b.getFontColorObject().asRgbColor().asHexString() : 'fc-') + ' | диап. ' + rg.length + ': ' + a1.join(', ') + (rg.length > 4 ? ' ...' : ''));
+    }
+    L.push('правил с WEEKDAY: ' + hit);
+    L.push('');
+    L.push('--- статический фон (userEnteredFormat) ---');
+    var res = Sheets.Spreadsheets.get(S8.SSID, { ranges: [S8.SH + '!A' + S8.FIRST + ':B' + (S8.FIRST + S8.DAYS - 1), S8.SH + '!M' + S8.FIRST + ':M' + (S8.FIRST + S8.DAYS - 1), S8.SH + '!AJ' + S8.FIRST + ':AJ' + (S8.FIRST + S8.DAYS - 1)], fields: 'sheets(data(rowData(values(userEnteredFormat(backgroundColor),effectiveFormat(backgroundColor)))))' });
+    var hex = function (c) { if (!c) return '-'; var f = function (x) { var s = Math.round((x || 0) * 255).toString(16); return s.length < 2 ? '0' + s : s; }; return '#' + f(c.red) + f(c.green) + f(c.blue); };
+    var g = function (di, ri, ci) { try { return hex(res.sheets[0].data[di].rowData[ri].values[ci].userEnteredFormat.backgroundColor); } catch (e) { return '-'; } };
+    var ge = function (di, ri, ci) { try { return hex(res.sheets[0].data[di].rowData[ri].values[ci].effectiveFormat.backgroundColor); } catch (e) { return '-'; } };
+    var dts = sh.getRange(S8.FIRST, 2, S8.DAYS, 1).getValues();
+    for (var d = 0; d < S8.DAYS; d++) {
+      var dv = dts[d][0], wd = (dv instanceof Date) ? ((dv.getDay() + 6) % 7) + 1 : 0;
+      L.push('  ' + (S8.FIRST + d) + ' ' + (dv instanceof Date ? Utilities.formatDate(dv, ss.getSpreadsheetTimeZone(), 'dd.MM') : '?') + ' wd' + wd + (wd >= 6 ? ' ВЫХ' : '    ') + ' | стат A ' + g(0, d, 0) + ' B ' + g(0, d, 1) + ' | эфф A ' + ge(0, d, 0) + ' B ' + ge(0, d, 1) + ' M ' + ge(1, d, 0) + ' AJ ' + ge(2, d, 0));
+    }
+  } catch (e) { L.push('ОШИБКА: ' + e + (e && e.stack ? '\n' + e.stack : '')); }
+  s8out_(L);
+}
+
+
+// ============ STAGE 8.2 §9 · ВЫХОДНЫЕ НА ВСЕ 30 ДНЕЙ ============
+// Старые два правила были привязаны ОТНОСИТЕЛЬНОй ссылкой B737 к углу A737,
+// поэтому колонка даты смотрела на СЛЕДУЮЩУЮ колонку (у сводки — на «Блогеры»),
+// и весь закрытый период красился «выходным» фоном, а будущие выходные не красились вовсе.
+// Новые правила: одно на блок + одно на сводку, ссылка на дату АБСОЛЮТНАЯ по колонке.
+var S82W = { RB: 'S82_WK_RB', BG: { red: 0.9882353, green: 0.9372549, blue: 0.8901961 }, SID: 739487431 };
+
+function s82week() {
+  var L = ['≡≡≡ STAGE 8.2 §9 · s82week ≡≡≡'];
+  try {
+    var ss = SpreadsheetApp.openById(S8.SSID), sh = ss.getSheetByName(S8.SH);
+    var rules = sh.getConditionalFormatRules(), old = [];
+    for (var i = 0; i < rules.length; i++) {
+      var b = rules[i].getBooleanCondition(); if (!b) continue;
+      var cv = b.getCriteriaValues() || []; var f = cv.length ? String(cv[0]) : '';
+      if (f.toUpperCase().indexOf('WEEKDAY') < 0) continue;
+      var rg = rules[i].getRanges(), a1 = [];
+      for (var j = 0; j < rg.length; j++) a1.push(rg[j].getA1Notation());
+      old.push({ i: i, f: f, bg: b.getBackgroundObject() ? b.getBackgroundObject().asRgbColor().asHexString() : null, ranges: a1 });
+    }
+    L.push('найдено старых правил WEEKDAY: ' + old.length + ' — индексы ' + old.map(function (o) { return o.i; }).join(', '));
+    if (!r75get_(S82W.RB)) { r75put_(S82W.RB, { ts: new Date().toISOString(), old: old }); L.push('откат сохранён: ' + S82W.RB); }
+
+    var req = [];
+    for (var d = old.length - 1; d >= 0; d--) req.push({ deleteConditionalFormatRule: { sheetId: S82W.SID, index: old[d].i } });
+
+    var mk = function (cols, dateCol) {
+      var rng = [];
+      for (var k = 0; k < cols.length; k++) rng.push({ sheetId: S82W.SID, startRowIndex: S8.FIRST - 1, endRowIndex: S8.FIRST - 1 + S8.DAYS, startColumnIndex: cols[k] - 1, endColumnIndex: cols[k] });
+      return { addConditionalFormatRule: { index: 0, rule: { ranges: rng, booleanRule: {
+        condition: { type: 'CUSTOM_FORMULA', values: [{ userEnteredValue: '=WEEKDAY($' + r75col_(dateCol) + S8.FIRST + '\u003b2)>5' }] },
+        format: { backgroundColor: S82W.BG } } } } };
+    };
+
+    req.push(mk([1, 2], 2));
+    for (var b2 = 0; b2 < S8.NB; b2++) { var dc = S8.B0 + b2 * S8.BW; req.push(mk([dc, dc + S8_M.weekday], dc)); }
+    L.push('запросов: удалить ' + old.length + ', добавить ' + (req.length - old.length));
+    Sheets.Spreadsheets.batchUpdate({ requests: req }, S8.SSID);
+    SpreadsheetApp.flush();
+
+    var res = Sheets.Spreadsheets.get(S8.SSID, { ranges: [S8.SH + '!A' + S8.FIRST + ':B' + (S8.FIRST + S8.DAYS - 1), S8.SH + '!M' + S8.FIRST + ':M' + (S8.FIRST + S8.DAYS - 1), S8.SH + '!AJ' + S8.FIRST + ':AJ' + (S8.FIRST + S8.DAYS - 1), S8.SH + '!US' + S8.FIRST + ':US' + (S8.FIRST + S8.DAYS - 1), S8.SH + '!VP' + S8.FIRST + ':VP' + (S8.FIRST + S8.DAYS - 1)], fields: 'sheets(data(rowData(values(effectiveFormat(backgroundColor)))))' });
+    var hex = function (c) { if (!c) return '-'; var f = function (x) { var s = Math.round((x || 0) * 255).toString(16); return s.length < 2 ? '0' + s : s; }; return '#' + f(c.red) + f(c.green) + f(c.blue); };
+    var ge = function (di, ri, ci) { try { return hex(res.sheets[0].data[di].rowData[ri].values[ci].effectiveFormat.backgroundColor); } catch (e) { return '-'; } };
+    var dts = sh.getRange(S8.FIRST, 2, S8.DAYS, 1).getValues();
+    var want = S82W.BG; var WHEX = hex(want);
+    var okN = 0, badN = 0, bad = [];
+    for (var r = 0; r < S8.DAYS; r++) {
+      var dv = dts[r][0], wd = (dv instanceof Date) ? ((dv.getDay() + 6) % 7) + 1 : 0;
+      var cells = [ge(0, r, 0), ge(0, r, 1), ge(1, r, 0), ge(2, r, 0), ge(3, r, 0), ge(4, r, 0)];
+      var nm = ['A', 'B', 'M(бл1 дата)', 'AJ(бл1 день)', 'US(бл24 дата)', 'VP(бл24 день)'];
+      for (var q = 0; q < cells.length; q++) {
+        var should = (wd >= 6); var isw = (cells[q] === WHEX);
+        if (should === isw) okN++; else { badN++; if (bad.length < 10) bad.push(nm[q] + (S8.FIRST + r) + ' ' + cells[q] + (should ? ' ожид ВЫХ' : ' ожид белый')); }
+      }
+    }
+    L.push('');
+    L.push('проверено ячеек: ' + (okN + badN) + ' (30 дней × 6 контрольных колонок)');
+    L.push('WEEKEND VISUAL QA = ' + (badN === 0 ? 'PASS' : 'FAIL ' + badN) + (bad.length ? ' <-- ' + bad.join(' | ') : ''));
+    L.push('правил УФ стало: ' + sh.getConditionalFormatRules().length);
+  } catch (e) { L.push('ОШИБКА: ' + e + (e && e.stack ? '\n' + e.stack : '')); }
+  s8out_(L);
+}
+
+
+// ============ STAGE 8.2 §12 · ПОЛОСЫ SKU НА СТРОКЕ 735 ============
+// Только строка 735. Структура 736+ НЕ трогается.
+// Семейство определяется по названию товара, а не по списку nmID.
+var S82B = { RB: 'S82_BAND_RB' };
+var S82_FAM = [
+  { k: 'набор',     re: /набор|нобор|\+|,/i,        bg: '#eaeaee' },
+  { k: 'руки',      re: /рук/i,                    bg: '#dce8f2' },
+  { k: 'тело',      re: /тела|амбр|виш/i,          bg: '#f3e2e6' },
+  { k: 'крем лицо', re: /крем.*лиц|лиц.*крем/i,   bg: '#e2eee4' },
+  { k: 'сыворотка', re: /сыворотк/i,             bg: '#f7ead9' },
+  { k: 'тоник',     re: /тоник/i,                  bg: '#e6e3f2' },
+  { k: 'пудра',     re: /пудр/i,                   bg: '#efeae1' }
+];
+
+function s82band() {
+  var L = ['≡≡≡ STAGE 8.2 §12 · s82band ≡≡≡'];
+  try {
+    var ss = SpreadsheetApp.openById(S8.SSID), sh = ss.getSheetByName(S8.SH);
+    var head = sh.getRange(S8.TOP, 1, 1, S8.NC).getDisplayValues()[0];
+    var cur = sh.getRange(S8.TOP, 1, 1, S8.NC).getBackgrounds()[0];
+    if (!r75get_(S82B.RB)) r75put_(S82B.RB, { ts: new Date().toISOString(), bg: cur });
+    var cnt = {}, done = 0, miss = [];
+    for (var b = 0; b < S8.NB; b++) {
+      var st = S8.B0 + b * S8.BW, title = '';
+      for (var c = 0; c < S8.BW && !title; c++) title = String(head[st - 1 + c] || '').trim();
+      var fam = null;
+      for (var q = 0; q < S82_FAM.length; q++) if (S82_FAM[q].re.test(title)) { fam = S82_FAM[q]; break; }
+      if (!fam) { miss.push('#' + (b + 1) + ' ' + title.slice(0, 30)); continue; }
+      sh.getRange(S8.TOP, st, 1, S8.BW).setBackground(fam.bg);
+      cnt[fam.k] = (cnt[fam.k] || 0) + 1; done++;
+    }
+    SpreadsheetApp.flush();
+    L.push('полос поставлено: ' + done + ' из ' + S8.NB + (miss.length ? ' | без семейства: ' + miss.join(', ') : ''));
+    for (var k in cnt) L.push('  ' + k + ': ' + cnt[k] + ' SKU');
+    L.push('SKU BAND QA = ' + (done === S8.NB ? 'PASS' : 'FAIL'));
+    L.push('откат: ' + S82B.RB + ' (s82bandrollback)');
+  } catch (e) { L.push('ОШИБКА: ' + e + (e && e.stack ? '\n' + e.stack : '')); }
+  s8out_(L);
+}
+
+function s82bandrollback() {
+  var L = ['≡≡≡ s82bandrollback ≡≡≡'];
+  var o = r75get_(S82B.RB);
+  if (!o) { L.push('нет точки отката'); return s8out_(L); }
+  var sh = SpreadsheetApp.openById(S8.SSID).getSheetByName(S8.SH);
+  sh.getRange(S8.TOP, 1, 1, S8.NC).setBackgrounds([o.bg]);
+  SpreadsheetApp.flush();
+  L.push('строка 735 восстановлена');
+  s8out_(L);
+}
+
+
+// ============ STAGE 8.2 §11 · СПОКОЙНАЯ ВИЗУАЛЬНАЯ АНАЛИТИКА ============
+// Статический фон, вычисленный скриптом, а НЕ тысячи правил УФ (решение владельца).
+// Приоритет: Заказы (зелёный) > Реклама (тёплый) > Корзина (едва заметный).
+// Показы/переходы остаются нейтральными. Ноль — нейтрален. Шкала — ВНУТРИ SKU.
+var S82V = { RB: 'S82_VIZ_RB', STEPS: 4 };
+var S82_VIZ = [
+  { key: 'orders', off: S8_M.orders, sum: 6,  acc: [0.478, 0.667, 0.478], a: 0.55, nm: 'Заказы' },
+  { key: 'adsIn',  off: S8_M.adsIn,  sum: 10, acc: [0.910, 0.710, 0.384], a: 0.45, nm: 'Реклама' },
+  { key: 'carts',  off: S8_M.carts,  sum: 7,  acc: [0.663, 0.769, 0.831], a: 0.25, nm: 'Корзина' }
+];
+
+function s82hex_(r, g, b) { var f = function (x) { var s = Math.round(Math.max(0, Math.min(1, x)) * 255).toString(16); return s.length < 2 ? '0' + s : s; }; return '#' + f(r) + f(g) + f(b); }
+function s82rgb_(h) { h = String(h || '#ffffff').replace('#', ''); if (h.length === 3) h = h[0]+h[0]+h[1]+h[1]+h[2]+h[2]; return [parseInt(h.substr(0,2),16)/255, parseInt(h.substr(2,2),16)/255, parseInt(h.substr(4,2),16)/255]; }
+function s82mix_(base, acc, t) { var b = s82rgb_(base); return s82hex_(b[0]+(acc[0]-b[0])*t, b[1]+(acc[1]-b[1])*t, b[2]+(acc[2]-b[2])*t); }
+
+function s82viz() {
+  var L = ['≡≡≡ STAGE 8.2 §11 · s82viz ≡≡≡'];
+  try {
+    var ss = SpreadsheetApp.openById(S8.SSID), sh = ss.getSheetByName(S8.SH);
+    var lcd = sh.getRange(S8.HDR, S8.MIR).getValue();
+    var dts = sh.getRange(S8.FIRST, 2, S8.DAYS, 1).getValues();
+    var closed = [];
+    for (var r0 = 0; r0 < S8.DAYS; r0++) closed.push(dts[r0][0] instanceof Date && lcd instanceof Date && dts[r0][0].getTime() <= lcd.getTime());
+    L.push('закрытых дней в шкале: ' + closed.filter(function (x) { return x; }).length);
+
+    var rngs = [], tags = [];
+    for (var q0 = 0; q0 < S82_VIZ.length; q0++) {
+      var mc = S8.B0 + S82_VIZ[q0].off;
+      rngs.push(S8.SH + '!' + r75col_(mc) + S8.FIRST + ':' + r75col_(mc) + (S8.FIRST + S8.DAYS - 1)); tags.push('blk');
+      rngs.push(S8.SH + '!' + r75col_(S82_VIZ[q0].sum) + S8.FIRST + ':' + r75col_(S82_VIZ[q0].sum) + (S8.FIRST + S8.DAYS - 1)); tags.push('sum');
+    }
+    var res = Sheets.Spreadsheets.get(S8.SSID, { ranges: rngs, fields: 'sheets(data(rowData(values(userEnteredFormat(backgroundColor)))))' });
+    var base = function (di) { var out = []; for (var r = 0; r < S8.DAYS; r++) { var c = null; try { c = res.sheets[0].data[di].rowData[r].values[0].userEnteredFormat.backgroundColor; } catch (e) {}; out.push(c ? s82hex_(c.red || 0, c.green || 0, c.blue || 0) : '#ffffff'); }; return out; };
+    var BASE = { blk: {}, sum: {} };
+    for (var q1 = 0; q1 < S82_VIZ.length; q1++) { BASE.blk[S82_VIZ[q1].key] = base(q1 * 2); BASE.sum[S82_VIZ[q1].key] = base(q1 * 2 + 1); }
+    if (!r75get_(S82V.RB)) r75put_(S82V.RB, { ts: new Date().toISOString(), base: BASE });
+
+    var wide = sh.getRange(S8.FIRST, 1, S8.DAYS, S8.NC).getValues();
+    var painted = 0, cells = 0, stat = {};
+    var paint = function (col, vals, cfg, bs) {
+      var mx = 0;
+      for (var r = 0; r < S8.DAYS; r++) if (closed[r]) { var n = Number(vals[r]); if (isFinite(n) && n > mx) mx = n; }
+      var out = [];
+      for (var r2 = 0; r2 < S8.DAYS; r2++) {
+        var n2 = Number(vals[r2]), col2 = bs[r2];
+        if (closed[r2] && mx > 0 && isFinite(n2) && n2 > 0) {
+          var k = Math.ceil(n2 / mx * S82V.STEPS); if (k < 1) k = 1; if (k > S82V.STEPS) k = S82V.STEPS;
+          col2 = s82mix_(bs[r2], cfg.acc, cfg.a * k / S82V.STEPS);
+          stat[cfg.nm + '/' + k] = (stat[cfg.nm + '/' + k] || 0) + 1;
+        }
+        out.push([col2]); cells++;
+      }
+      sh.getRange(S8.FIRST, col, S8.DAYS, 1).setBackgrounds(out); painted++;
+    };
+
+    for (var b = 0; b < S8.NB; b++) {
+      var st = S8.B0 + b * S8.BW;
+      for (var q2 = 0; q2 < S82_VIZ.length; q2++) {
+        var cfg2 = S82_VIZ[q2], cc = st + cfg2.off, vv = [];
+        for (var r3 = 0; r3 < S8.DAYS; r3++) vv.push(wide[r3][cc - 1]);
+        paint(cc, vv, cfg2, BASE.blk[cfg2.key]);
+      }
+    }
+    for (var q3 = 0; q3 < S82_VIZ.length; q3++) {
+      var cfg3 = S82_VIZ[q3], vs = [];
+      for (var r4 = 0; r4 < S8.DAYS; r4++) vs.push(wide[r4][cfg3.sum - 1]);
+      paint(cfg3.sum, vs, cfg3, BASE.sum[cfg3.key]);
+    }
+    SpreadsheetApp.flush();
+    L.push('колонок перекрашено: ' + painted + ' (24 блока × 3 + сводка × 3), ячеек ' + cells);
+    var ks = []; for (var s in stat) ks.push(s + ':' + stat[s]);
+    ks.sort();
+    L.push('ступени (метрика/уровень:ячеек): ' + ks.join('  '));
+    L.push('правил УФ на листе: ' + sh.getConditionalFormatRules().length + ' (новых не добавлено)');
+    L.push('VISUAL ANALYTICS QA = ' + (painted === S8.NB * 3 + 3 ? 'PASS' : 'FAIL'));
+    L.push('откат: ' + S82V.RB + ' (s82vizrollback)');
+  } catch (e) { L.push('ОШИБКА: ' + e + (e && e.stack ? '\n' + e.stack : '')); }
+  s8out_(L);
+}
+
+function s82vizrollback() {
+  var L = ['≡≡≡ s82vizrollback ≡≡≡'];
+  var o = r75get_(S82V.RB);
+  if (!o || !o.base) { L.push('нет точки отката'); return s8out_(L); }
+  var sh = SpreadsheetApp.openById(S8.SSID).getSheetByName(S8.SH), n = 0;
+  var col2d = function (a) { var o2 = []; for (var i = 0; i < a.length; i++) o2.push([a[i]]); return o2; };
+  for (var b = 0; b < S8.NB; b++) for (var q = 0; q < S82_VIZ.length; q++) { sh.getRange(S8.FIRST, S8.B0 + b * S8.BW + S82_VIZ[q].off, S8.DAYS, 1).setBackgrounds(col2d(o.base.blk[S82_VIZ[q].key])); n++; }
+  for (var q4 = 0; q4 < S82_VIZ.length; q4++) { sh.getRange(S8.FIRST, S82_VIZ[q4].sum, S8.DAYS, 1).setBackgrounds(col2d(o.base.sum[S82_VIZ[q4].key])); n++; }
+  SpreadsheetApp.flush();
+  L.push('восстановлено колонок: ' + n);
+  s8out_(L);
+}
+
+
+function s82probe() {
+  var L = ['≡≡≡ s82probe ≡≡≡'];
+  try {
+    var sh = SpreadsheetApp.openById(S8.SSID).getSheetByName(S8.SH);
+    var cols = ['F', 'G', 'J', 'Q', 'R', 'X'];
+    var rngs = [];
+    for (var i = 0; i < cols.length; i++) rngs.push(S8.SH + '!' + cols[i] + '737:' + cols[i] + '746');
+    var res = Sheets.Spreadsheets.get(S8.SSID, { ranges: rngs, fields: 'sheets(data(rowData(values(userEnteredFormat(backgroundColor),effectiveFormat(backgroundColor)))))' });
+    var hx = function (c) { if (!c) return '-'; var f = function (x) { var s = Math.round((x || 0) * 255).toString(16); return s.length < 2 ? '0' + s : s; }; return f(c.red) + f(c.green) + f(c.blue); };
+    for (var d = 0; d < cols.length; d++) {
+      var u = [], ef = [];
+      for (var r = 0; r < 10; r++) {
+        var cell = null; try { cell = res.sheets[0].data[d].rowData[r].values[0]; } catch (e) {}
+        u.push(cell && cell.userEnteredFormat ? hx(cell.userEnteredFormat.backgroundColor) : '-');
+        ef.push(cell && cell.effectiveFormat ? hx(cell.effectiveFormat.backgroundColor) : '-');
+      }
+      L.push(cols[d] + ' стат: ' + u.join(' '));
+      L.push(cols[d] + ' эфф: ' + ef.join(' '));
+    }
+  } catch (e) { L.push('ОШИБКА: ' + e); }
+  s8out_(L);
+}
+
+
+// ============ STAGE 8.2 §11 (версия 2) · АНАЛИТИКА УФ, А НЕ СТАТИКА ============
+// Почему не статика: колонки группы AUTO уже перекрыты правилом УФ с ровным
+// фоном #f1f8f4 — статический фон под ним не виден (замерено s82probe).
+// 4 ступени × 3 метрики × 25 целей (24 блока + сводка) "+E+" 300 правил.
+// Порог — доля от MAX СВОЕЙ же колонки, поэтому шкала живёт внутри SKU
+// и обновляется сама при загрузке нового дня — ежедневный прогон не нужен.
+var S82V2 = { RB: 'S82_VIZ2_RB', SID: 739487431 };
+var S82_VIZ2 = [
+  { off: S8_M.orders, sum: 6,  nm: 'Заказы',  c: ['#e4f1e9', '#d2e8da', '#bfdecb', '#a9d4b8'] },
+  { off: S8_M.adsIn,  sum: 10, nm: 'Реклама', c: ['#faf2e3', '#f5e8cd', '#efdcb4', '#e8cf99'] },
+  { off: S8_M.carts,  sum: 7,  nm: 'Корзина', c: ['#eef4f6', '#e6eff2', '#dee9ee', '#d6e4ea'] }
+];
+var S82_LV = [0, '0,25', '0,5', '0,75'];
+
+function s82viz2() {
+  var L = ['≡≡≡ STAGE 8.2 §11 · s82viz2 ≡≡≡'];
+  try {
+    var ss = SpreadsheetApp.openById(S8.SSID), sh = ss.getSheetByName(S8.SH);
+    var before = sh.getConditionalFormatRules().length;
+    var rgbOf = function (h) { h = h.replace('#', ''); return { red: parseInt(h.substr(0,2),16)/255, green: parseInt(h.substr(2,2),16)/255, blue: parseInt(h.substr(4,2),16)/255 }; };
+    var req = [], cols = [];
+    for (var q = 0; q < S82_VIZ2.length; q++) {
+      cols.push({ c: S82_VIZ2[q].sum, cfg: S82_VIZ2[q] });
+      for (var b = 0; b < S8.NB; b++) cols.push({ c: S8.B0 + b * S8.BW + S82_VIZ2[q].off, cfg: S82_VIZ2[q] });
+    }
+    for (var i = 0; i < cols.length; i++) {
+      var cc = cols[i].c, cf = cols[i].cfg, A = r75col_(cc);
+      var rng = { sheetId: S82V2.SID, startRowIndex: S8.FIRST - 1, endRowIndex: S8.FIRST - 1 + S8.DAYS, startColumnIndex: cc - 1, endColumnIndex: cc };
+      for (var lv = 0; lv < S82_LV.length; lv++) {
+        var cond = S82_LV[lv] === 0
+          ? '\u003dAND($' + A + S8.FIRST + '<>""\u003b$' + A + S8.FIRST + '>0)'
+          : '\u003dAND($' + A + S8.FIRST + '<>""\u003b$' + A + S8.FIRST + '>' + S82_LV[lv] + '*MAX($' + A + '$' + S8.FIRST + ':$' + A + '$' + (S8.FIRST + S8.DAYS - 1) + '))';
+        req.push({ addConditionalFormatRule: { index: 0, rule: { ranges: [rng], booleanRule: { condition: { type: 'CUSTOM_FORMULA', values: [{ userEnteredValue: cond }] }, format: { backgroundColor: rgbOf(cf.c[lv]) } } } } });
+      }
+    }
+    L.push('колонок: ' + cols.length + ' | правил к добавлению: ' + req.length);
+    if (!r75get_(S82V2.RB)) r75put_(S82V2.RB, { ts: new Date().toISOString(), added: req.length, before: before });
+    for (var s = 0; s < req.length; s += 100) Sheets.Spreadsheets.batchUpdate({ requests: req.slice(s, s + 100) }, S8.SSID);
+    SpreadsheetApp.flush();
+
+    var probe = [], names = ['F', 'J', 'G', 'Q', 'X', 'R'];
+    for (var n = 0; n < names.length; n++) probe.push(S8.SH + '!' + names[n] + S8.FIRST + ':' + names[n] + (S8.FIRST + 9));
+    var res = Sheets.Spreadsheets.get(S8.SSID, { ranges: probe, fields: 'sheets(data(rowData(values(effectiveFormat(backgroundColor)))))' });
+    var hx = function (c) { if (!c) return '-'; var f = function (x) { var s = Math.round((x || 0) * 255).toString(16); return s.length < 2 ? '0' + s : s; }; return f(c.red) + f(c.green) + f(c.blue); };
+    var distinct = 0;
+    for (var d = 0; d < names.length; d++) {
+      var row = [], seen = {};
+      for (var r = 0; r < 10; r++) { var c2 = null; try { c2 = res.sheets[0].data[d].rowData[r].values[0].effectiveFormat.backgroundColor; } catch (e) {}; var h = hx(c2); row.push(h); seen[h] = 1; }
+      var k = 0; for (var s2 in seen) k++; if (k > 1) distinct++;
+      L.push(names[d] + ' (' + k + ' оттенков): ' + row.join(' '));
+    }
+    L.push('');
+    L.push('правил УФ: было ' + before + ', стало ' + sh.getConditionalFormatRules().length);
+    L.push('VISUAL ANALYTICS QA = ' + (distinct === names.length ? 'PASS' : 'FAIL ' + distinct + '/' + names.length));
+    L.push('откат: ' + S82V2.RB + ' (s82viz2rollback)');
+  } catch (e) { L.push('ОШИБКА: ' + e + (e && e.stack ? '\n' + e.stack : '')); }
+  s8out_(L);
+}
+
+function s82viz2rollback() {
+  var L = ['≡≡≡ s82viz2rollback ≡≡≡'];
+  var o = r75get_(S82V2.RB);
+  if (!o) { L.push('нет точки отката'); return s8out_(L); }
+  var req = [];
+  for (var i = 0; i < o.added; i++) req.push({ deleteConditionalFormatRule: { sheetId: S82V2.SID, index: 0 } });
+  for (var s = 0; s < req.length; s += 100) Sheets.Spreadsheets.batchUpdate({ requests: req.slice(s, s + 100) }, S8.SSID);
+  L.push('удалено правил: ' + o.added);
+  s8out_(L);
+}
+
+
+// ============ STAGE 8.2 §10 · СНЯТИЕ СТРОКИ 768 ИЗ SEPTEMBER MASTER ============
+// Решение владельца 11.09: это неполный исторический ручной plan-layer:
+// заполнен 5 блоков из 24, смешаны две семантики (план месяца и остаток до плана),
+// ссылок на строку на листе ноль. Новый planning layer СЕЙЧАС НЕ создаётся.
+// Сначала полный снимок в Script Properties и в лог, потом очистка СОДЕРЖИМОГО (формат не трогается).
+var S82R = { RB: 'S82_R768_RB' };
+
+function s82r768() {
+  var L = ['≡≡≡ STAGE 8.2 §10 · s82r768 ≡≡≡'];
+  try {
+    var ss = SpreadsheetApp.openById(S8.SSID), sh = ss.getSheetByName(S8.SH);
+    var rg = sh.getRange(S8.PLAN, 1, 1, S8.NC);
+    var f = rg.getFormulas()[0], val = rg.getValues()[0], dsp = rg.getDisplayValues()[0];
+    var snap = [], head = sh.getRange(S8.TOP, 1, 1, S8.NC).getDisplayValues()[0];
+    for (var c = 0; c < S8.NC; c++) {
+      if (!f[c] && (val[c] === '' || val[c] === null)) continue;
+      var col = c + 1, owner = 'сводка', off = -1;
+      if (col >= S8.B0 && col < S8.NC) {
+        var b = Math.floor((col - S8.B0) / S8.BW), st = S8.B0 + b * S8.BW;
+        off = (col - S8.B0) % S8.BW;
+        owner = 'блок #' + (b + 1);
+        for (var q = 0; q < S8.BW && owner.indexOf(':') < 0; q++) { var t = String(head[st - 1 + q] || '').trim(); if (t) { owner = 'блок #' + (b + 1) + ': ' + t.slice(0, 34); } }
+      }
+      var mname = '-';
+      for (var k in S8_M) if (S8_M[k] === off) mname = k;
+      snap.push({ col: col, a1: r75col_(col) + S8.PLAN, f: f[c] || '', v: (val[c] === null ? '' : String(val[c])), d: dsp[c], owner: owner, metric: mname });
+    }
+    L.push('заполненных ячеек в строке ' + S8.PLAN + ': ' + snap.length);
+    L.push('');
+    L.push('--- АУДИТ СОДЕРЖИМОГО ПЕРЕД ОЧИСТКОЙ ---');
+    for (var s = 0; s < snap.length; s++) {
+      var o = snap[s];
+      L.push('  ' + o.a1 + ' | ' + o.owner + ' | метрика ' + o.metric + ' | ' + (o.f ? 'ФОРМУЛА ' + o.f : 'КОНСТАНТА ' + o.v) + ' -> ' + o.d);
+    }
+
+    var refs = 0, refEx = [];
+    var last = sh.getLastRow(), lastC = sh.getLastColumn();
+    var all = sh.getRange(1, 1, last, lastC).getFormulas();
+    var re = /(^|[^0-9A-Za-z_])\$?[A-Z]{1,3}\$?768(?![0-9])/;
+    for (var rr = 0; rr < all.length; rr++) for (var cc = 0; cc < all[rr].length; cc++) {
+      var ff = all[rr][cc];
+      if (ff && re.test(ff) && (rr + 1) !== S8.PLAN) { refs++; if (refEx.length < 8) refEx.push(r75col_(cc + 1) + (rr + 1)); }
+    }
+    L.push('');
+    L.push('ссылок на строку 768 вне самой строки: ' + refs + (refEx.length ? ' <-- ' + refEx.join(' ') : ''));
+    if (refs > 0) { L.push('ОСТАНОВ: на строку ссылаются, очистка НЕ выполнена'); s8out_(L); return; }
+
+    if (!r75get_(S82R.RB)) { r75put_(S82R.RB, { ts: new Date().toISOString(), row: S8.PLAN, cells: snap }); L.push('снимок сохранён: ' + S82R.RB); }
+    rg.clearContent();
+    SpreadsheetApp.flush();
+
+    var f2 = sh.getRange(S8.PLAN, 1, 1, S8.NC).getFormulas()[0], v2 = sh.getRange(S8.PLAN, 1, 1, S8.NC).getValues()[0];
+    var left = 0, leftEx = [];
+    for (var c2 = 0; c2 < S8.NC; c2++) if (f2[c2] || (v2[c2] !== '' && v2[c2] !== null)) { left++; if (leftEx.length < 8) leftEx.push(r75col_(c2 + 1) + S8.PLAN); }
+    L.push('');
+    L.push('очищено ячеек: ' + snap.length + ' | осталось заполненных: ' + left + (leftEx.length ? ' <-- ' + leftEx.join(' ') : ''));
+    L.push('формат строки НЕ трогался (clearContent, не clearFormat)');
+    L.push('ROW 768 REMOVED FROM SEPTEMBER MASTER = ' + (left === 0 ? 'PASS' : 'FAIL'));
+    L.push('откат: ' + S82R.RB + ' (s82r768rollback)');
+  } catch (e) { L.push('ОШИБКА: ' + e + (e && e.stack ? '\n' + e.stack : '')); }
+  s8out_(L);
+}
+
+function s82r768rollback() {
+  var L = ['≡≡≡ s82r768rollback ≡≡≡'];
+  var o = r75get_(S82R.RB);
+  if (!o || !o.cells) { L.push('нет снимка'); return s8out_(L); }
+  var sh = SpreadsheetApp.openById(S8.SSID).getSheetByName(S8.SH), n = 0;
+  for (var i = 0; i < o.cells.length; i++) {
+    var c = o.cells[i];
+    if (c.f) sh.getRange(o.row, c.col).setFormula(c.f); else sh.getRange(o.row, c.col).setValue(c.v);
+    n++;
+  }
+  SpreadsheetApp.flush();
+  L.push('восстановлено ячеек: ' + n);
   s8out_(L);
 }

@@ -320,6 +320,11 @@ function s8sql_() {
     ' LEFT JOIN ps ON ps.nm_id=g.nm_id AND ps.d=g.d LEFT JOIN sd ON sd.d=g.d LEFT JOIN pd ON pd.d=g.d ORDER BY 1,2';
 }
 
+// УСТАРЕЛО с 11.09.2026 (STAGE 8.2). Актуальный загрузчик факта — s82data() в UnitkaS8b.gs:
+//   «Переходы», «Положили в корзину», «Заказы факт» берутся из воронки (V_WB_FUNNEL_DAILY),
+//   «Отменили товаров» — из FACT_ORDERS (у воронки поля отмен нет вообще).
+// s8data() оставлен как история этапа 8. Он берёт заказы/переходы из другой семантики
+// и знает только 9 закрытых дней, поэтому запускать его на сентябрьском мастере НЕ следует.
 function s8data() {
   var L = ['=== STAGE 8 §4/§7/§8/§9 · s8data · ' + S8.VER + ' ==='];
   try {
@@ -368,7 +373,11 @@ function s8data() {
       }
       var pr = fin.get(nm2);
       if (pr) {
-        var pairs = [[S8_M.logistics, pr.log], [S8_M.commission, pr.comm]];
+        // МОДЕЛЬ B (11.09, решение владельца): ЛОГИСТИКА здесь больше НЕ пишется.
+        // Прежняя ставка «вся логистика окна / выкупы» содержала обратные плечи отказов,
+        // и её запись вернула бы двойной счёт. Прямую ставку (DIRECT) пишет s8brates(),
+        // обратную — именованная ячейка REVERSE_LEG_RATE (WB737). См. docs/UNITKA_2_0_EVENT_LOGISTICS_MODEL_B.md
+        var pairs = [[S8_M.commission, pr.comm]];
         for (var q = 0; q < pairs.length; q++) {
           var col2 = st0 + pairs[q][0], want = pairs[q][1], out2 = [], diff2 = false;
           for (var d3 = 0; d3 < S8.DAYS; d3++) { out2.push([want]); if (Number(cur[d3][col2 - 1]) !== want) diff2 = true; }
