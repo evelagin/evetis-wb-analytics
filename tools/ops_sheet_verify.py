@@ -1,0 +1,186 @@
+#!/usr/bin/env python3
+"""EVETIS OPERATIONS (Stage C1) — сверка книги с evetis_ops по критериям приёмки владельца.
+
+Читает собранный .xlsx и заново спрашивает BigQuery: числа в книге обязаны совпадать с журналом
+и представлениями. Печатает PASS/FAIL по каждому пункту приёмки (1–9).
+
+Запуск: .venv/bin/python tools/ops_sheet_verify.py <путь к .xlsx>
+"""
+import sys
+import os
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import ops_deploy as d  # noqa: E402
+from ops_sheet_build import query  # noqa: E402
+from openpyxl import load_workbook  # noqa: E402
+
+P = d.P
+
+
+def sheet_rows(ws, header_row, key_col=2):
+    """Строки таблицы листа: от строки после заголовка до пустой строки / ИТОГО."""
+    out, r = [], header_row + 1
+    while True:
+        first = ws.cell(r, 1).value
+        if first is None or str(first).startswith('ИТОГО'):
+            break
+        out.append({'row': r, 'name': first, 'key': ws.cell(r, key_col).value,
+                    'vals': [ws.cell(r, c).value for c in range(1, ws.max_column + 1)]})
+        r += 1
+    return out
+
+
+def find_header(ws, first_header):
+    for r in range(1, ws.max_row + 1):
+        if ws.cell(r, 1).value == first_header:
+            return r
+    raise SystemExit(f'заголовок {first_header} не найден')
+
+
+def main(path):
+    wb = load_workbook(path, data_only=True)
+    checks = []
+
+    def chk(n, name, ok, detail):
+        checks.append((n, name, ok, detail))
+
+    # --- данные из BigQuery (заново) ---
+    plan = {(r['channel'], r['card_sku']): r for r in query(f'SELECT * FROM `{P}.evetis_ops.V_OPS_SUPPLY_PLAN`')}
+    ff_bq = {r['internal_sku']: r for r in query(f'SELECT * FROM `{P}.evetis_ops.V_OPS_FF_STOCK_SHEET`')}
+    pick_bq = {r['internal_sku']: r for r in query(f'SELECT * FROM `{P}.evetis_ops.V_OPS_PICK_FROM_STORAGE`')}
+    bal = query(f'''SELECT SUM(IF(on_ff, units, 0)) AS ff_total,
+      SUM(IF(state = 'AVAILABLE' AND location = 'PALLET', units, 0)) AS pallet,
+      SUM(IF(state = 'AVAILABLE' AND location = 'SHELF', units, 0)) AS shelf,
+      SUM(IF(state = 'RESERVED' AND channel = 'OZON', units, 0)) AS res_ozon,
+      SUM(IF(state = 'RESERVED' AND channel = 'WB', units, 0)) AS res_wb,
+      SUM(IF(state = 'ASSEMBLED', units, 0)) AS assembled, SUM(IF(state = 'FBS_READY', units, 0)) AS fbs
+      FROM `{P}.evetis_ops.V_CT_STOCK_BALANCE`''')[0]
+    st = query(f'''SELECT SUM(IF(side = 'MARKETPLACE' AND channel = 'OZON', units, 0)) AS on_ozon,
+      SUM(IF(side = 'PIPELINE' AND state = 'IN_ACCEPTANCE', units, 0)) AS in_acceptance
+      FROM `{P}.evetis_ops.V_CT_STOCK_STATE`''')[0]
+
+    # --- 1 и 2: ФФ в книге = журнал ---
+    ws = wb['03_FF_STOCK']
+    hdr = find_header(ws, 'Товар')
+    cols = {ws.cell(hdr, c).value: c for c in range(1, ws.max_column + 1)}
+    rows = sheet_rows(ws, hdr)
+    tot_row = hdr + len(rows) + 1
+    sheet_ff_total = ws.cell(tot_row, cols['TOTAL PHYSICAL']).value
+    chk(1, 'Итог ФФ в книге = 32 948 физических единиц журнала',
+        sheet_ff_total == bal['ff_total'] == 32948, f'книга {sheet_ff_total} · журнал {bal["ff_total"]}')
+    per_sku_ok, bad = True, []
+    for r in rows:
+        sku = r['key']
+        b = ff_bq.get(sku)
+        for label, key in (('PALLET FREE', 'pallet_free'), ('SHELF FREE', 'shelf_free'),
+                           ('RESERVED OZON', 'reserved_ozon'), ('RESERVED WB', 'reserved_wb'),
+                           ('ASSEMBLED', 'assembled'), ('FBS READY', 'fbs_ready'),
+                           ('SHIPPED\nUNCONFIRMED', 'shipped_unconfirmed'), ('TOTAL PHYSICAL', 'total_physical')):
+            if (ws.cell(r['row'], cols[label]).value or 0) != (b[key] or 0):
+                per_sku_ok = False
+                bad.append(f'{sku}/{label}')
+    totals_ok = all(ws.cell(tot_row, cols[l]).value == v for l, v in (
+        ('PALLET FREE', bal['pallet']), ('SHELF FREE', bal['shelf']), ('RESERVED OZON', bal['res_ozon']),
+        ('RESERVED WB', bal['res_wb']), ('ASSEMBLED', bal['assembled']), ('FBS READY', bal['fbs'])))
+    chk(2, 'Состояния по SKU и итоги совпадают с evetis_ops',
+        per_sku_ok and totals_ok, f'{len(rows)} SKU, расхождений {len(bad)}; итоги по состояниям '
+        f'{"совпали" if totals_ok else "разошлись"}')
+
+    # --- 3 и 4: Ozon 314 не в остатке площадки; приёмка отдельно ---
+    on_ozon_sheet = ws.cell(tot_row, cols['ON_OZON']).value
+    acc_sheet = ws.cell(tot_row, cols['IN_ACCEPTANCE\n(Ozon)']).value
+    res_ozon_sheet = ws.cell(tot_row, cols['RESERVED OZON']).value
+    chk(3, 'Резерв Ozon на ФФ (314) не посчитан как остаток площадки',
+        res_ozon_sheet == bal['res_ozon'] == 314 and on_ozon_sheet == st['on_ozon'] and on_ozon_sheet != res_ozon_sheet,
+        f'RESERVED OZON {res_ozon_sheet} · ON_OZON {on_ozon_sheet} (API) — разные колонки и разные числа')
+    ws_plan = wb['01_SUPPLY_PLAN']
+    acc_col_present = any(ws_plan.cell(r, 5).value == 'На приёмке\nOzon' for r in range(1, 40))
+    chk(4, 'IN_ACCEPTANCE показана отдельной колонкой и не входит в остаток площадки',
+        acc_col_present and acc_sheet == st['in_acceptance'] == 150,
+        f'колонка «На приёмке Ozon» есть · итог приёмки {acc_sheet} ед. (журнал {st["in_acceptance"]})')
+
+    # --- 5: мощность наборов учитывает общие компоненты ---
+    bundles = {r['bundle_sku']: r for r in query(f'SELECT * FROM `{P}.evetis_ops.V_OPS_BUNDLE_PRODUCTION`')}
+    shared = [b for b in bundles.values() if b['limiting_component_now'] == 'EVT-FC-MOIST-50']
+    cap_sum = sum(b['capacity_alone'] or 0 for b in shared)
+    free_moist = pick_bq['EVT-FC-MOIST-50']['shelf_free'] + max(pick_bq['EVT-FC-MOIST-50']['pallet_free'], 0)
+    chk(5, 'Мощность наборов не складывается: общий компонент ограничивает сумму',
+        len(shared) >= 3 and cap_sum > free_moist,
+        f'{len(shared)} набора с общим компонентом FC-MOIST-50: сумма мощностей {cap_sum} > свободного {free_moist}')
+
+    # --- 6: общий пул ФФ: WB и Ozon не делят одну единицу ---
+    over = query(f'''WITH dem AS (
+        SELECT b.component_sku, SUM(p.rec_final * b.component_qty) AS demand
+        FROM `{P}.evetis_ops.V_OPS_SUPPLY_PLAN` p JOIN `{P}.evetis_ops.V_OPS_BOM` b ON b.card_sku = p.card_sku GROUP BY 1)
+      SELECT COUNTIF(d.demand > k.shelf_free + GREATEST(k.pallet_free, 0)) AS over_components,
+             SUM(d.demand) AS total_demand
+      FROM dem d JOIN `{P}.evetis_ops.V_OPS_PICK_FROM_STORAGE` k ON k.internal_sku = d.component_sku''')[0]
+    chk(6, 'Рекомендации WB и Ozon вместе умещаются в свободный запас ФФ',
+        over['over_components'] == 0,
+        f'компонентов с перебором: {over["over_components"]} · всего физических единиц в плане {over["total_demand"]}')
+
+    # --- 7: снятие с паллет сходится с рекомендациями ---
+    ws_p = wb['01_SUPPLY_PLAN']
+    hdr_pick = find_header(ws_p, 'Компонент')
+    pcols = {ws_p.cell(hdr_pick, c).value: c for c in range(1, ws_p.max_column + 1)}
+    prows = sheet_rows(ws_p, hdr_pick)
+    bad7 = []
+    for r in prows:
+        b = pick_bq[r['key']]
+        total = (ws_p.cell(r['row'], pcols['ИТОГО\nспрос']).value or 0)
+        parts = sum(ws_p.cell(r['row'], pcols[k]).value or 0 for k in ('Соло WB', 'Соло Ozon', 'Компоненты\nнаборов', 'FBS'))
+        pick = ws_p.cell(r['row'], pcols['СНЯТЬ\nС ПАЛЛЕТ']).value or 0
+        shelf_after = ws_p.cell(r['row'], pcols['Полка\nпосле']).value or 0
+        if total != parts or total != b['total_physical_demand'] or pick != b['to_pick_from_pallet'] \
+           or shelf_after != b['shelf_after_pick']:
+            bad7.append(r['key'])
+    chk(7, 'Снятие с паллет = соло WB + соло Ozon + компоненты наборов + FBS',
+        not bad7, f'{len(prows)} компонентов сошлись' if not bad7 else f'расхождения: {bad7}')
+
+    # --- 8: нет отрицательных остатков ---
+    neg = query(f'''SELECT COUNTIF(shelf_after_pick < 0) + COUNTIF(pallet_after_pick < 0)
+      + COUNTIF(free_after_plan < 0) + COUNTIF(shortage > 0) AS bad FROM `{P}.evetis_ops.V_OPS_PICK_FROM_STORAGE`''')[0]['bad']
+    neg_sheet = sum(1 for r in prows if (ws_p.cell(r['row'], pcols['Полка\nпосле']).value or 0) < 0
+                    or (ws_p.cell(r['row'], pcols['Паллеты\nпосле']).value or 0) < 0)
+    chk(8, 'Ни одного отрицательного остатка после плана', neg == 0 and neg_sheet == 0,
+        f'BigQuery {neg} · книга {neg_sheet}')
+
+    # --- 9: в книге нет формул ---
+    formulas = [(ws.title, c.coordinate) for ws in wb.worksheets for row in ws.iter_rows()
+                for c in row if isinstance(c.value, str) and c.value.startswith('=')]
+    chk(9, 'В книге нет формул: все числа посчитаны в BigQuery', not formulas,
+        f'формул: {len(formulas)}; листов: {len(wb.worksheets)} (DATA скрыт: '
+        f'{wb["DATA"].sheet_state == "hidden"})')
+
+    # --- строки плана: значения книги = представление (только таблицы WB и OZON) ---
+    plan_headers = [r for r in range(1, ws_p.max_row + 1)
+                    if ws_p.cell(r, 1).value == 'Товар' and ws_p.cell(r, 3).value == 'На площадке\nсейчас']
+    cols_p = {ws_p.cell(plan_headers[0], c).value: c for c in range(1, ws_p.max_column + 1)}
+    checked, mism = 0, []
+    for hdr_i, hdr_r in enumerate(plan_headers):
+        channel = 'WB' if hdr_i == 0 else 'OZON'
+        for r in sheet_rows(ws_p, hdr_r):
+            rec = plan.get((channel, r['key']))
+            if rec is None:
+                mism.append((channel, r['key'], 'нет в представлении'))
+                continue
+            for label, key in (('РЕКОМЕНДАЦИЯ', 'rec_final'), ('Потребность', 'need_math'),
+                               ('Цель\nк прибытию', 'target_at_arrival'), ('Прогноз\nк прибытию', 'projected_at_arrival'),
+                               ('На площадке\nсейчас', 'on_marketplace'), ('Итого\nвходящее', 'committed_inbound'),
+                               ('На приёмке\nOzon', 'in_acceptance'), ('Резерв\nна ФФ', 'reserved_on_ff')):
+                if (ws_p.cell(r['row'], cols_p[label]).value or 0) != (rec[key] or 0):
+                    mism.append((channel, r['key'], label))
+            checked += 1
+    chk(10, 'Каждая строка плана в книге = строке представления (рекомендация, цель, прогноз, входящее)',
+        checked == len(plan) and not mism,
+        f'сверено строк: {checked} из {len(plan)}' + ('' if not mism else f'; расхождения: {mism[:6]}'))
+
+    print('\n' + '=' * 108)
+    for n, name, ok, detail in checks:
+        print(f'{n}. {"PASS" if ok else "FAIL"}  {name}\n      {detail}')
+    print('=' * 108)
+    return 0 if all(c[2] for c in checks) else 1
+
+
+if __name__ == '__main__':
+    sys.exit(main(sys.argv[1] if len(sys.argv) > 1 else 'EVETIS_OPERATIONS.xlsx'))

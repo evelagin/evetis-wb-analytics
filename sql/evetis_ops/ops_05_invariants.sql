@@ -235,3 +235,86 @@ ASSERT (
        + COUNTIF(accepted_unreported AND NOT in_acceptance)
   FROM `project-fa311fc0-4d87-4781-986.evetis_ops.V_CT_OZON_ORDER_RECON`
 ) = 0 AS 'I17: единицы в пути по API не очищены от принятого Ozon или флаг приёмки неверен';
+
+-- @@TEST I19 План поставок C1: каждая строка логистики ровно одна; решения по правилам владельца
+ASSERT (
+  SELECT COUNT(*) FROM (
+    SELECT channel, card_sku, COUNT(*) n FROM `project-fa311fc0-4d87-4781-986.evetis_ops.V_OPS_SUPPLY_PLAN` GROUP BY 1, 2 HAVING n != 1)
+) + ABS((SELECT COUNT(*) FROM `project-fa311fc0-4d87-4781-986.evetis_ops.V_OPS_SUPPLY_PLAN`)
+      - (SELECT COUNT(*) FROM `project-fa311fc0-4d87-4781-986.evetis_ops.REF_SKU_LOGISTICS`
+         WHERE effective_from <= CURRENT_DATE('Europe/Moscow') AND (effective_to IS NULL OR effective_to >= CURRENT_DATE('Europe/Moscow'))))
+  = 0 AS 'I19: строка плана не соответствует строке логистики один к одному';
+ASSERT (
+  SELECT COUNTIF(rec_final < 0 OR rec_final > rec_proposed)
+       + COUNTIF(rec_final > 0 AND MOD(rec_final, multiple_applied) != 0)
+       + COUNTIF(rule = 'UP_TO_MULTIPLE' AND (rec_proposed < need_math OR rec_proposed - need_math >= shipment_multiple))
+       + COUNTIF(rule = 'LOW_DEMAND_MULTIPLE' AND (channel != 'OZON' OR need_math >= shipment_multiple OR need_math < shipment_multiple_low_demand))
+       + COUNTIF(rule = 'WAIT' AND (rec_proposed != 0 OR NOT wait_ok))
+       + COUNTIF(rule = 'SAFETY_MIN' AND (wait_ok OR rec_proposed != min_shipment_units))
+       + COUNTIF(rule IN ('ENOUGH', 'NO_PLAN') AND rec_proposed != 0)
+       + COUNTIF(status_code = 'REVIEW' AND NOT (acceptance_flip OR review_overstock OR review_expiry))
+       + COUNTIF(review_overstock AND status_code NOT IN ('REVIEW'))
+       + COUNTIF(projected_at_arrival_raw != position - demand_until_arrival)
+       + COUNTIF(need_math != GREATEST(target_at_arrival - GREATEST(projected_at_arrival_raw, 0), 0))
+  FROM `project-fa311fc0-4d87-4781-986.evetis_ops.V_OPS_SUPPLY_PLAN`
+) = 0 AS 'I19: округление / ЖДАТЬ / страховой / ворота ПРОВЕРИТЬ нарушают правила C1';
+
+-- @@TEST I20 Общий пул ФФ: WB и Ozon не претендуют на одну и ту же единицу; нет отрицательного остатка
+ASSERT (
+  SELECT COUNTIF(shortage > 0 OR shelf_after_pick < 0 OR pallet_after_pick < 0 OR free_after_plan < 0)
+  FROM `project-fa311fc0-4d87-4781-986.evetis_ops.V_OPS_PICK_FROM_STORAGE`
+) = 0 AS 'I20: план требует больше, чем свободно на ФФ, или остаток после снятия отрицательный';
+ASSERT (
+  WITH dem AS (
+    SELECT b.component_sku, SUM(p.rec_final * b.component_qty) AS demand
+    FROM `project-fa311fc0-4d87-4781-986.evetis_ops.V_OPS_SUPPLY_PLAN` p
+    JOIN `project-fa311fc0-4d87-4781-986.evetis_ops.V_OPS_BOM` b ON b.card_sku = p.card_sku GROUP BY 1),
+  free AS (
+    SELECT internal_sku AS component_sku, shelf_free + GREATEST(pallet_free, 0) AS free
+    FROM `project-fa311fc0-4d87-4781-986.evetis_ops.V_OPS_PICK_FROM_STORAGE`)
+  SELECT COUNT(*) FROM dem LEFT JOIN free USING (component_sku) WHERE dem.demand > IFNULL(free.free, 0)
+) = 0 AS 'I20: сумма рекомендаций WB + Ozon по компоненту превышает свободный остаток ФФ';
+
+-- @@TEST I21 Снятие с паллет сходится с рекомендациями: соло + компоненты наборов + FBS
+ASSERT (
+  WITH plan AS (
+    SELECT b.component_sku AS internal_sku,
+           SUM(IF(NOT p.is_bundle AND p.channel = 'WB', p.rec_final, 0)) AS solo_wb,
+           SUM(IF(NOT p.is_bundle AND p.channel = 'OZON', p.rec_final, 0)) AS solo_oz,
+           SUM(IF(p.is_bundle, p.rec_final * b.component_qty, 0)) AS bund
+    FROM `project-fa311fc0-4d87-4781-986.evetis_ops.V_OPS_SUPPLY_PLAN` p
+    JOIN `project-fa311fc0-4d87-4781-986.evetis_ops.V_OPS_BOM` b ON b.card_sku = p.card_sku GROUP BY 1),
+  exp AS (
+    SELECT component_sku AS internal_sku, SUM(units_from_free) AS from_free
+    FROM `project-fa311fc0-4d87-4781-986.evetis_ops.V_OPS_BUNDLE_BOM_EXPANSION` GROUP BY 1)
+  SELECT COUNT(*)
+  FROM `project-fa311fc0-4d87-4781-986.evetis_ops.V_OPS_PICK_FROM_STORAGE` k
+  LEFT JOIN plan USING (internal_sku) LEFT JOIN exp USING (internal_sku)
+  WHERE k.solo_wb_need != IFNULL(plan.solo_wb, 0) OR k.solo_ozon_need != IFNULL(plan.solo_oz, 0)
+     OR k.bundle_component_need != IFNULL(plan.bund, 0)
+     OR k.bundle_component_need + k.fbs_component_need != IFNULL(exp.from_free, 0)
+     OR k.total_physical_demand != k.solo_wb_need + k.solo_ozon_need + k.bundle_component_need + k.fbs_component_need
+     OR k.to_pick_from_pallet != GREATEST(k.total_physical_demand - k.shelf_free, 0)
+) = 0 AS 'I21: снятие с паллет не сходится с рекомендациями соло + наборов + FBS';
+
+-- @@TEST I22 Ozon: ON_OZON, IN_ACCEPTANCE, RESERVED_OZON_ON_FF раздельны; резерв на ФФ не считается остатком площадки
+ASSERT (
+  (SELECT SUM(reserved_on_ff) FROM `project-fa311fc0-4d87-4781-986.evetis_ops.V_OPS_SUPPLY_PLAN` WHERE channel = 'OZON')
+  = (SELECT SUM(sl.qty_cards) FROM `project-fa311fc0-4d87-4781-986.evetis_ops.CT_SHIPMENT_LINE` sl
+     JOIN `project-fa311fc0-4d87-4781-986.evetis_ops.V_CT_SHIPMENT_CURRENT` sh USING (shipment_id)
+     WHERE sh.channel = 'OZON' AND sh.status = 'RESERVED')
+) AS 'I22: резерв Ozon на ФФ в плане не равен строкам зарезервированных отгрузок';
+ASSERT (
+  (SELECT SUM(reserved_ozon) FROM `project-fa311fc0-4d87-4781-986.evetis_ops.V_OPS_FF_STOCK_SHEET`)
+  = (SELECT SUM(units) FROM `project-fa311fc0-4d87-4781-986.evetis_ops.V_CT_STOCK_BALANCE` WHERE state = 'RESERVED' AND channel = 'OZON')
+  AND (SELECT SUM(total_physical) FROM `project-fa311fc0-4d87-4781-986.evetis_ops.V_OPS_FF_STOCK_SHEET`)
+      = (SELECT SUM(units) FROM `project-fa311fc0-4d87-4781-986.evetis_ops.V_CT_STOCK_BALANCE` WHERE on_ff)
+  AND (SELECT SUM(on_ozon) FROM `project-fa311fc0-4d87-4781-986.evetis_ops.V_OPS_FF_STOCK_SHEET`)
+      = (SELECT SUM(units) FROM `project-fa311fc0-4d87-4781-986.evetis_ops.V_CT_STOCK_STATE` WHERE side = 'MARKETPLACE' AND channel = 'OZON')
+) AS 'I22: итоги листа ФФ не сходятся с журналом / резерв Ozon попал в остаток площадки';
+ASSERT (
+  SELECT COUNTIF(channel = 'WB' AND in_acceptance != 0)
+       + COUNTIF(committed_inbound != in_transit + in_acceptance + reserved_on_ff + api_reserved_unconfirmed + shipped_unconfirmed)
+       + COUNTIF(position != on_marketplace + committed_inbound)
+  FROM `project-fa311fc0-4d87-4781-986.evetis_ops.V_OPS_SUPPLY_PLAN`
+) = 0 AS 'I22: позиция запаса считает входящие не один раз или приёмка вне Ozon';
