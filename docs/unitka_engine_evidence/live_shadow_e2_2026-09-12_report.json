@@ -1,0 +1,73 @@
+{
+  "lcd": "2026-09-10",
+  "d1_msk": "2026-09-11",
+  "lag_days": 1,
+  "closed_days": 10,
+  "blocks": 24,
+  "invariant": {
+    "shipments": 597,
+    "sales": 545,
+    "refusals": 52,
+    "pass": true
+  },
+  "reverse_rate": 32.5256,
+  "rates_own_direct": 16,
+  "rates_own_commission": 15,
+  "expected_cells": 3603,
+  "cells_planned": 668,
+  "by_kind": {
+    "fact": 68,
+    "commission": 600
+  },
+  "gaps": {
+    "opens": 7,
+    "carts": 7,
+    "stock": 24,
+    "price": 179,
+    "storage": 24
+  },
+  "qa": [
+    "BQ_SHEETS_MISMATCH: FAIL (602)",
+    "FORMULA_ERRORS: PASS (0)",
+    "FUTURE_LEAKAGE: PASS (0)",
+    "STOCK_PROJECTION_FUTURE: PASS (455)",
+    "SUMMARY_RECONCILIATION: PASS (0)",
+    "LCD_CONSISTENT: PASS (0)",
+    "BLOCKS: PASS (24)",
+    "DIRECT_LOGISTICS_INVARIANT: PASS (597)",
+    "NO_DUPLICATE_DATE_NMID: PASS (0)"
+  ],
+  "qa_samples": {
+    "BQ_SHEETS_MISMATCH": [
+      "AG746 storage лист[20.7] BQ[]",
+      "AD737 commission лист[0.454322] BQ[0.453985]",
+      "AD738 commission лист[0.454322] BQ[0.453985]",
+      "AD739 commission лист[0.454322] BQ[0.453985]",
+      "AD740 commission лист[0.454322] BQ[0.453985]",
+      "AD741 commission лист[0.454322] BQ[0.453985]",
+      "AD742 commission лист[0.454322] BQ[0.453985]",
+      "AD743 commission лист[0.454322] BQ[0.453985]",
+      "AD744 commission лист[0.454322] BQ[0.453985]",
+      "AD745 commission лист[0.454322] BQ[0.453985]"
+    ]
+  },
+  "book_lcd": "2026-09-10",
+  "by_change_type": {
+    "FACT_CHANGE": 0,
+    "LATE_SOURCE_CORRECTION": 2,
+    "MODEL_PARAMETER_REFRESH": 600,
+    "LCD_ADVANCE": 0,
+    "NO_CHANGE": 66
+  },
+  "stock_projection_future": 455,
+  "legacy_formulas": {
+    "closed": 67,
+    "future": 495,
+    "byKey": {
+      "storage": 75,
+      "stock": 487
+    }
+  },
+  "legacy_replaced": 66,
+  "diff": "668 строк → /sessions/rcw-01k6cvycsvhwcbrn9u1fhwrs/e2_diff.csv"
+}

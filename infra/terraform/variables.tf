@@ -48,3 +48,9 @@ variable "container_image" {
   default     = "us-docker.pkg.dev/cloudrun/container/hello"
   description = "Bootstrap-образ для создания Job. CI продвигает реальный immutable digest (prod образ не пересобирается)."
 }
+
+variable "unitka_alert_email" {
+  description = "UNITKA ENGINE v1: e-mail владельца для алертов о падении прогона. Пусто — алерт-политика не создаётся."
+  type        = string
+  default     = ""
+}

@@ -8,6 +8,10 @@ on:
         description: "plan | apply"
         required: true
         default: "plan"
+      targets:
+        description: "UNITKA ENGINE E2: адреса ресурсов через запятую для targeted plan/apply (-target=…). Пусто — вся конфигурация. См. docs/UNITKA_ENGINE_V1_RUNBOOK.md §2."
+        required: false
+        default: ""
 
 permissions:
   contents: read
@@ -53,7 +57,13 @@ jobs:
           service_account: ${{ vars.TERRAFORM_PLAN_SA }} # read-only
       - uses: hashicorp/setup-terraform@v3
       - run: terraform init -input=false -backend-config="bucket=${{ vars.TF_STATE_BUCKET }}" -backend-config="prefix=evetis/wb-cloud"
-      - run: terraform plan -input=false
+      # targets: ограничивает plan ресурсами Engine, чтобы чужой дрейф (ops_health.tf) не смешивался
+      # с включением Engine. Terraform сам предупредит, что targeted plan — не полная конфигурация.
+      - run: |
+          ARGS=""
+          IFS=',' read -ra T <<< "${{ inputs.targets }}"
+          for t in "${T[@]}"; do t="$(echo "$t" | xargs)"; [ -n "$t" ] && ARGS="$ARGS -target=$t"; done
+          terraform plan -input=false $ARGS
 
   apply:
     needs: preflight
@@ -71,4 +81,8 @@ jobs:
           service_account: ${{ vars.TERRAFORM_APPLY_SA }} # privileged, main-only (WIF ref-условие)
       - uses: hashicorp/setup-terraform@v3
       - run: terraform init -input=false -backend-config="bucket=${{ vars.TF_STATE_BUCKET }}" -backend-config="prefix=evetis/wb-cloud"
-      - run: terraform apply -input=false -auto-approve
+      - run: |
+          ARGS=""
+          IFS=',' read -ra T <<< "${{ inputs.targets }}"
+          for t in "${T[@]}"; do t="$(echo "$t" | xargs)"; [ -n "$t" ] && ARGS="$ARGS -target=$t"; done
+          terraform apply -input=false -auto-approve $ARGS

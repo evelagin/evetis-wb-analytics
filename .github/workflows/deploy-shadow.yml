@@ -45,3 +45,16 @@ jobs:
           gcloud run jobs update wb-stocks-shadow \
             --region ${{ vars.GCP_REGION }} \
             --image "${{ steps.push.outputs.digest }}"
+      - name: Deploy unitka-engine-shadow (тот же digest)
+        # UNITKA ENGINE v1 (Stage E1): shadow-контур Engine живёт на том же образе.
+        # Job создаёт Terraform (infra/terraform/unitka_engine.tf); до первого apply шага нет —
+        # поэтому отсутствие Job'а не валит деплой остатков.
+        run: |
+          if gcloud run jobs describe unitka-engine-shadow --region ${{ vars.GCP_REGION }} >/dev/null 2>&1; then
+            gcloud run jobs update unitka-engine-shadow \
+              --region ${{ vars.GCP_REGION }} \
+              --image "${{ steps.push.outputs.digest }}" \
+              --update-env-vars IMAGE_DIGEST="${{ steps.push.outputs.digest }}",GIT_SHA="${GITHUB_SHA}"
+          else
+            echo "unitka-engine-shadow ещё не создан Terraform'ом — шаг пропущен"
+          fi
