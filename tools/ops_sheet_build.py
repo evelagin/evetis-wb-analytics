@@ -100,12 +100,15 @@ class Sheet:
             self.r += 1
         self.r += 1
 
-    def band(self, text, color, width=21, note=None):
+    def band(self, text, color, width=21, note=None, note_as_comment=False):
         ws = self.ws
         c = ws.cell(self.r, 1, text)
         c.font = Font(FONT, 11, bold=True, color=C_WHITE)
         c.fill = PatternFill('solid', fgColor=color)
         c.alignment = Alignment(vertical='center', indent=1)
+        if note and note_as_comment:
+            c.comment = Comment(note, 'evetis_ops')
+            note = None
         for col in range(2, width + 1):
             ws.cell(self.r, col).fill = PatternFill('solid', fgColor=color)
         ws.merge_cells(start_row=self.r, start_column=1, end_row=self.r, end_column=width)
@@ -157,6 +160,7 @@ class Sheet:
                     on = bool(v)
                     c.font = Font(FONT, 11, bold=on, color='0B5394' if on else C_MUTED)
                     c.fill = PatternFill('solid', fgColor='E8F0FE' if on else 'FFFFFF')
+            ws.row_dimensions[self.r].height = 19
             self.r += 1
         if total:
             for i, col in enumerate(cols, start=1):
@@ -204,15 +208,59 @@ PLAN_COLS = [
     col('Потребность', 'need_math', 11, INT, '= цель к прибытию − прогноз к прибытию, но не меньше 0.'),
     col('Кратность', 'multiple_applied', 9, INT,
         'Операционная кратность отгрузки (конвенция владельца, не заводской короб). Округление — вверх.'),
-    col('РЕКОМЕНДАЦИЯ', 'rec_final', 13, INT,
-        'Сколько отгрузить сейчас. 0 — ждать до следующей поставки или сначала проверить.'),
+    col('План / Факт', 'plan_actual_ratio', 9, F1,
+        'Во сколько раз план выше факта за 30 дней. Больше 2 — план агрессивный, объём требует подтверждения.'),
+    col('Уверенность\nв спросе', 'demand_confidence', 11, None,
+        'HIGH — план ≈ факт (до 1,25×); MEDIUM — до 2×; LOW — больше 2× или продаж за 30 дней не было.'),
+    col('РЕКОМЕНДАЦИЯ,\nпозиций', 'rec_final', 13, INT,
+        'Сколько отгрузить сейчас, в единицах продажи (позициях). 0 — ждать или сначала проверить.'),
+    col('в физических\nединицах', 'rec_physical_units', 12, INT,
+        'Та же рекомендация во флаконах / банках: позиции набора умножены на состав по BOM.'),
     col('Покрытие\nпосле, дн', 'resulting_cover_days', 10, F1,
         'На сколько дней хватит после прибытия. Выше порога (WB 66, Ozon 69) — статус ПРОВЕРИТЬ.'),
-    col('ФФ\nсвободно', 'ff_free_cards_now', 9, INT,
-        'Свободно на ФФ под эту карточку (для набора — комплектов). Общий пул WB и Ozon: '
+    col('ФФ свободно,\nпозиций', 'ff_free_cards_now', 11, INT,
+        'Свободно на ФФ под эту позицию (для набора — комплектов). Общий пул WB и Ozon: '
         'строки обслуживаются по срочности, одна единица не обещана дважды.'),
     col('Статус', 'status_label', 30),
+    col('Внимание', 'demand_warning', 44, None, 'Предупреждение владельцу. Рекомендацию не меняет.'),
     col('Почему', 'reason', 96),
+]
+
+TOP_COLS = [
+    col('Товар', 'product_name', 34),
+    col('Соло / Набор', 'kind', 12, None, 'Набор = одна позиция продажи из нескольких физических единиц.'),
+    col('Позиции, шт.', 'rec_final', 12, INT, 'Проданные / отгружаемые позиции.'),
+    col('Физические\nединицы, шт.', 'rec_physical_units', 13, INT, 'Флаконы / банки после раскладки по BOM.'),
+    col('ФФ свободно,\nпозиций', 'ff_free_cards_now', 12, INT),
+    col('Покрытие\nпосле, дн', 'resulting_cover_days', 11, F1),
+    col('Статус', 'status_label', 30),
+    col('Почему', 'reason_short', 110),
+]
+
+TASK_MOVE_COLS = [
+    col('Товар', 'product_name', 34), col('SKU', 'internal_sku', 24),
+    col('Снять под новые\nотгрузки, шт.', 'move_pallet_to_shelf_new', 15, INT),
+    col('Снять под уже\nзарезервированное, шт.', 'move_pallet_to_shelf_reserved', 18, INT,
+        'Резерв поставок Ozon от 07.09, который физически лежит на паллетах.'),
+    col('ИТОГО снять\nс паллет, шт.', 'move_pallet_to_shelf_total', 15, INT),
+    col('Полка после', 'shelf_after_pick', 11, INT), col('Паллеты после', 'pallet_after_pick', 12, INT),
+]
+
+TASK_BUILD_COLS = [
+    col('Набор', 'product_name', 34), col('Состав', 'bom_text', 40),
+    col('Собрать,\nнаборов', 'to_assemble_now', 11, INT),
+    col('в т.ч. под резерв\nотгрузок', 'to_assemble_reserved', 15, INT),
+    col('Физические\nединицы, шт.', 'assemble_physical_units', 13, INT),
+    col('Лимитирующий\nкомпонент', 'limiting_after_plan', 20),
+]
+
+TASK_COMP_COLS = [
+    col('Товар', 'product_name', 34), col('SKU', 'internal_sku', 24),
+    col('Соло WB, шт.', 'solo_units_wb', 12, INT), col('Соло Ozon, шт.', 'solo_units_ozon', 12, INT),
+    col('В наборы, шт.', 'bundle_component_units', 12, INT), col('FBS, шт.', 'fbs_component_units', 9, INT),
+    col('ИТОГО физических\nединиц, шт.', 'total_physical_units', 16, INT),
+    col('Уже зарезервировано\nна ФФ, шт.', 'reserved_units_already', 17, INT),
+    col('Свободно на ФФ\nпосле операции, шт.', 'free_ff_after_operation', 18, INT),
 ]
 
 BUNDLE_COLS = [
@@ -223,8 +271,8 @@ BUNDLE_COLS = [
         'Мощности разных наборов НЕ складываются.'),
     col('в т.ч.\nс полки', 'capacity_alone_shelf', 9, INT, 'Сколько можно собрать, ничего не снимая с паллет.'),
     col('План/день\nWB', 'plan_day_wb', 9, F1), col('План/день\nOzon', 'plan_day_ozon', 9, F1),
-    col('К отгрузке\nWB', 'ship_wb', 10, INT, 'Рекомендация плана поставок для WB (карточек).'),
-    col('К отгрузке\nOzon', 'ship_ozon', 10, INT, 'Рекомендация плана поставок для Ozon (карточек).'),
+    col('К отгрузке\nWB', 'ship_wb', 10, INT, 'Рекомендация плана поставок для WB, позиций.'),
+    col('К отгрузке\nOzon', 'ship_ozon', 10, INT, 'Рекомендация плана поставок для Ozon, позиций.'),
     col('Резерв\nFBS', 'fbs_reserve', 8, INT, 'FBS выключен (0) — поле сохранено для Stage E.'),
     col('Уже\nсобрано', 'assembled_sets', 9, INT, 'Собранные наборы на ФФ (FBO под отгрузки + FBS).'),
     col('Под резерв\nотгрузок', 'to_assemble_reserved', 11, INT,
@@ -238,8 +286,8 @@ BUNDLE_COLS = [
 
 BOM_COLS = [
     col('Набор', 'product_name', 32), col('Компонент', 'component_sku', 24),
-    col('На 1 набор', 'component_qty', 10, INT), col('Собрать наборов', 'to_assemble_now', 12, INT),
-    col('Всего единиц', 'units_total', 12, INT),
+    col('На 1 набор', 'component_qty', 10, INT), col('Собрать, наборов', 'to_assemble_now', 12, INT),
+    col('Физические\nединицы, шт.', 'units_total', 13, INT),
     col('из них уже\nв резерве', 'units_from_reserved', 12, INT,
         'Компоненты уже зарезервированы под существующие отгрузки — новый запас не нужен.'),
     col('из свободного\nзапаса', 'units_from_free', 13, INT,
@@ -248,8 +296,8 @@ BOM_COLS = [
 
 PICK_COLS = [
     col('Компонент', 'product_name', 32), col('SKU', 'internal_sku', 24),
-    col('Соло WB', 'solo_wb_need', 10, INT, 'Рекомендации плана по одиночным карточкам WB.'),
-    col('Соло Ozon', 'solo_ozon_need', 10, INT, 'Рекомендации плана по одиночным карточкам Ozon.'),
+    col('Соло WB', 'solo_wb_need', 10, INT, 'Рекомендации плана по одиночным позициям WB.'),
+    col('Соло Ozon', 'solo_ozon_need', 10, INT, 'Рекомендации плана по одиночным позициям Ozon.'),
     col('Компоненты\nнаборов', 'bundle_component_need', 12, INT, 'Раскладка рекомендованных наборов по BOM.'),
     col('FBS', 'fbs_component_need', 8, INT),
     col('ИТОГО\nспрос', 'total_physical_demand', 11, INT, 'Сумма — ровно то, что рекомендовано выше.'),
@@ -284,9 +332,10 @@ SHIP_COLS = [
     col('Канал', 'channel', 9), col('Номер', 'order_number', 16),
     col('Этап', 'stage', 36, None, 'Один заказ — один класс: резерв на ФФ, приёмка, в пути или принято.'),
     col('Статус API', 'api_state', 30), col('Статус\nжурнала', 'ledger_status', 11),
-    col('Карточек', 'cards', 10, INT), col('в т.ч.\nнаборов', 'bundle_cards', 9, INT),
-    col('Физ. единиц', 'physical_units', 11, INT, 'После раскладки наборов по BOM.'),
-    col('Резерв\nна ФФ', 'reserved_on_ff_units', 10, INT),
+    col('Позиции, шт.', 'cards', 11, INT, 'Проданные / отгружаемые позиции (набор = одна позиция).'),
+    col('в т.ч.\nнаборов', 'bundle_cards', 9, INT),
+    col('Физические\nединицы, шт.', 'physical_units', 13, INT, 'После раскладки наборов по BOM.'),
+    col('Резерв на ФФ,\nфиз. ед.', 'reserved_on_ff_units', 12, INT),
     col('с полки', 'reserved_shelf', 9, INT), col('с паллет', 'reserved_pallet', 9, INT),
     col('В пути /\nприёмка', 'pipeline_units', 10, INT), col('Принято', 'handed_over_units', 9, INT),
     col('Точка сдачи', 'dropoff', 18), col('План. дата', 'planned_date', 11, DATE),
@@ -304,6 +353,7 @@ def build(path):
     pick = query(f'SELECT * FROM `{P}.evetis_ops.V_OPS_PICK_FROM_STORAGE` ORDER BY to_pick_from_pallet DESC, internal_sku')
     ff = query(f'SELECT * FROM `{P}.evetis_ops.V_OPS_FF_STOCK_SHEET` ORDER BY total_physical DESC, internal_sku')
     ships = query(f'SELECT * FROM `{P}.evetis_ops.V_OPS_SHIPMENTS_SHEET` ORDER BY stage, order_number')
+    task = query(f'SELECT * FROM `{P}.evetis_ops.V_OPS_FF_TASK` ORDER BY move_pallet_to_shelf_total DESC, internal_sku')
     chan = query(f'SELECT * FROM `{P}.evetis_ops.REF_CHANNEL_SHIPPING` ORDER BY channel DESC')
     logi = query(f'''SELECT internal_sku, channel, shipment_multiple, shipment_multiple_low_demand, min_shipment_units,
                      factory_carton_qty, unit_weight_kg, unit_volume_l, box_weight_kg, fbs_reserve_units,
@@ -331,29 +381,101 @@ def build(path):
     ws = wbk.active
     ws.title = '01_SUPPLY_PLAN'
     s = Sheet(ws)
+    for r in plan:
+        r['kind'] = 'Набор' if r['is_bundle'] else 'Соло'
+        r['reason_short'] = (r['demand_warning'] + ' · ' if r['demand_warning'] else '') + (r['reason'] or '')
+    ship_rows = [r for r in plan if (r['rec_final'] or 0) > 0]
+    hold_rows = [r for r in plan if (r['rec_final'] or 0) == 0 and r['status_code'] in ('REVIEW', 'FF LIMIT', 'WAIT')]
+    wb_ship = [r for r in ship_rows if r['channel'] == 'WB']
+    oz_ship = [r for r in ship_rows if r['channel'] == 'OZON']
+
+    def pos(rows):
+        return sum(r['rec_final'] or 0 for r in rows)
+
+    def phys(rows):
+        return sum(r['rec_physical_units'] or 0 for r in rows)
+
+    assemble_pos = sum(b['to_assemble_now'] or 0 for b in bundles)
+    assemble_res = sum(b['to_assemble_reserved'] or 0 for b in bundles)
+    assemble_phys = sum((b['to_assemble_now'] or 0) * (b['components'] or 0) for b in bundles)
+    move_new = sum(r['to_pick_from_pallet'] or 0 for r in pick)
+    move_res = sum(r['reserved_on_pallet_to_pick'] or 0 for r in pick)
+
     s.title('EVETIS OPERATIONS · План поставок', [
-        f'Данные BigQuery evetis_ops на {now} (МСК). ТОЛЬКО ЧТЕНИЕ: правки в листе ни на что не влияют, '
-        f'запись владельца выключена (writeback_enabled = {fresh["writeback"]}).',
-        'Слева направо: что есть на площадке → что уже едет → что будет к прибытию → сколько продаём в день → '
-        'цель → чего не хватает → округление → рекомендация → на сколько хватит → что свободно на ФФ.',
-        f'Отгрузка с ФФ {wb_cal["WB"]["ship_date"]} (сборка 2 рабочих дня). Прибытие: WB {arr["WB"]} · Ozon {arr["OZON"]}. '
-        f'Следующая возможная поставка: отгрузка {wb_cal["WB"]["next_ship_date"]}, прибытие WB {narr["WB"]} · Ozon {narr["OZON"]} '
-        f'(недельный цикл).',
-        'Целевое покрытие 45 дней считается ПОСЛЕ прибытия; страховой запас показан отдельно (WB 7 дней, Ozon 10 дней).',
+        f'ТОЛЬКО ЧТЕНИЕ · данные evetis_ops на {now} МСК · отгрузка с ФФ {wb_cal["WB"]["ship_date"]} → '
+        f'прибытие WB {arr["WB"]} / Ozon {arr["OZON"]} · следующая поставка {wb_cal["WB"]["next_ship_date"]} → '
+        f'{narr["WB"]} / {narr["OZON"]} · покрытие 45 дней считается ПОСЛЕ прибытия, страховой отдельно.',
     ])
+    s.band('ИТОГО СЕГОДНЯ', C_DARK, note='Детали — в блоках ниже; полный расчёт каждой строки — в конце листа.', note_as_comment=True)
+    sum_cols = [col('Что сделать', 'what', 34), col('Позиции, шт.', 'positions', 13, INT),
+                col('Физические\nединицы, шт.', 'units', 14, INT), col('Комментарий', 'comment', 110)]
+    s.header(sum_cols)
+    s.rows(sum_cols, [
+        {'what': 'Отгрузить на WILDBERRIES', 'positions': pos(wb_ship), 'units': phys(wb_ship),
+         'comment': f'{len(wb_ship)} позиций к отгрузке · прибытие {arr["WB"]}'},
+        {'what': 'Отгрузить на OZON', 'positions': pos(oz_ship), 'units': phys(oz_ship),
+         'comment': f'{len(oz_ship)} позиций к отгрузке · прибытие {arr["OZON"]}'},
+        {'what': 'Снять с паллет на полку', 'positions': None, 'units': move_new + move_res,
+         'comment': f'{move_new} под новые отгрузки + {move_res} под уже зарезервированные поставки Ozon от 07.09'},
+        {'what': 'Собрать наборы', 'positions': assemble_pos, 'units': assemble_phys,
+         'comment': f'в т.ч. {assemble_res} наборов под уже зарезервированные отгрузки'},
+        {'what': 'Требуют вашего решения', 'positions': len(hold_rows), 'units': None,
+         'comment': 'ПРОВЕРИТЬ / ФФ не хватает / ЖДАТЬ — блок «ПРОВЕРИТЬ / НЕ ОТГРУЖАТЬ» ниже'},
+    ])
+
+    s.band(f'ОТГРУЗИТЬ WB СЕЙЧАС   ·   {pos(wb_ship)} позиций / {phys(wb_ship)} физических единиц', C_WB,
+           note='Лимит одной поставки WB через ПВЗ: 25 кг / 500 ед. / 200 л.', note_as_comment=True)
+    s.header(TOP_COLS)
+    s.rows(TOP_COLS, sorted(wb_ship, key=lambda r: -(r['rec_physical_units'] or 0)), status_key='status_label',
+           bold_key='rec_final', total={'product_name': 'ИТОГО', 'rec_final': pos(wb_ship),
+                                        'rec_physical_units': phys(wb_ship)})
+    s.band(f'ОТГРУЗИТЬ OZON СЕЙЧАС   ·   {pos(oz_ship)} позиций / {phys(oz_ship)} физических единиц', C_OZ,
+           note='ON_OZON (остаток площадки), IN_ACCEPTANCE (на приёмке) и RESERVED_OZON_ON_FF (резерв на ФФ) — '
+                'разные вещи и не складываются.', note_as_comment=True)
+    s.header(TOP_COLS)
+    s.rows(TOP_COLS, sorted(oz_ship, key=lambda r: -(r['rec_physical_units'] or 0)), status_key='status_label',
+           bold_key='rec_final', total={'product_name': 'ИТОГО', 'rec_final': pos(oz_ship),
+                                        'rec_physical_units': phys(oz_ship)})
+    s.band(f'ПРОВЕРИТЬ / НЕ ОТГРУЖАТЬ   ·   {len(hold_rows)} строк', 'A61C00',
+           note='Количество не уменьшается автоматически: решение принимает владелец.', note_as_comment=True)
+    s.header(TOP_COLS)
+    s.rows(TOP_COLS, sorted(hold_rows, key=lambda r: (r['status_code'], r['channel'], r['card_sku'])),
+           status_key='status_label')
+
+    s.band('ТЗ ДЛЯ ФУЛФИЛМЕНТА (Usend) — можно копировать в задание складу', C_PICK,
+           note='Считается из плана выше. В журнал ничего не пишется: это расчёт, а не операция.')
+    ws.cell(s.r, 1, '1. Снять с паллет на полку').font = Font(FONT, 11, bold=True, color=C_PICK)
+    s.r += 1
+    s.header(TASK_MOVE_COLS)
+    s.rows(TASK_MOVE_COLS, [r for r in task if (r['move_pallet_to_shelf_total'] or 0) > 0], total={
+        'product_name': 'ИТОГО', 'move_pallet_to_shelf_new': move_new, 'move_pallet_to_shelf_reserved': move_res,
+        'move_pallet_to_shelf_total': move_new + move_res})
+    ws.cell(s.r, 1, '2. Собрать наборы').font = Font(FONT, 11, bold=True, color=C_PICK)
+    s.r += 1
+    s.header(TASK_BUILD_COLS)
+    s.rows(TASK_BUILD_COLS, [dict(b, assemble_physical_units=(b['to_assemble_now'] or 0) * (b['components'] or 0))
+                             for b in bundles if (b['to_assemble_now'] or 0) > 0],
+           total={'product_name': 'ИТОГО', 'to_assemble_now': assemble_pos, 'to_assemble_reserved': assemble_res,
+                  'assemble_physical_units': assemble_phys})
+    ws.cell(s.r, 1, '3. Расход компонентов и что остаётся на ФФ').font = Font(FONT, 11, bold=True, color=C_PICK)
+    s.r += 1
+    s.header(TASK_COMP_COLS)
+    s.rows(TASK_COMP_COLS, [r for r in task if (r['total_physical_units'] or 0) > 0 or (r['reserved_units_already'] or 0) > 0],
+           total={'product_name': 'ИТОГО', **{k: sum(r[k] or 0 for r in task) for k in
+                  ('solo_units_wb', 'solo_units_ozon', 'bundle_component_units', 'fbs_component_units',
+                   'total_physical_units', 'reserved_units_already', 'free_ff_after_operation')}})
+
+    s.band('ПОДРОБНЫЙ РАСЧЁТ (для проверки)', C_DARK,
+           note='Полная таблица по каждой строке: позиция запаса, спрос до прибытия, цель, потребность, округление, ворота.')
     for channel, color, name in (('WB', C_WB, 'WILDBERRIES'), ('OZON', C_OZ, 'OZON')):
         c = wb_cal[channel]
         rows = [r for r in plan if r['channel'] == channel]
-        ship = sum(r['rec_final'] or 0 for r in rows)
-        s.band(f'{name}   ·   отгрузка {c["ship_date"]} → прибытие {rows[0]["arrival_date"]}   ·   '
+        s.band(f'{name}   ·   отгрузка {c["ship_date"]} → прибытие {arr[channel]}   ·   '
                f'покрытие {c["target_cover_days"]} дн + страховой {c["safety_stock_days"]} дн   ·   '
-               f'срок канала {c["lead_time_days"]} дн   ·   к отгрузке {ship} карточек', color,
-               note=('Ozon: ON_OZON (остаток), IN_ACCEPTANCE (приёмка) и RESERVED_OZON_ON_FF (резерв на ФФ) — '
-                     'три разные вещи и складывать их нельзя.' if channel == 'OZON' else
-                     'Лимит одной поставки WB через ПВЗ: 25 кг / 500 ед. / 200 л.'))
+               f'срок канала {c["lead_time_days"]} дн   ·   к отгрузке {pos(rows)} позиций / {phys(rows)} физ. ед.', color)
         s.header(PLAN_COLS)
         s.rows(PLAN_COLS, rows, status_key='status_label', bold_key='rec_final',
-               total={'product_name': 'ИТОГО', 'rec_final': ship,
+               total={'product_name': 'ИТОГО', 'rec_final': pos(rows), 'rec_physical_units': phys(rows),
                       'on_marketplace': sum(r['on_marketplace'] or 0 for r in rows),
                       'committed_inbound': sum(r['committed_inbound'] or 0 for r in rows),
                       'need_math': sum(r['need_math'] or 0 for r in rows)})
@@ -362,9 +484,9 @@ def build(path):
         'отгрузки + новые рекомендации + резерв FBS − уже собранное.'))
     s.header(BUNDLE_COLS)
     s.rows(BUNDLE_COLS, bundles, bold_key='to_assemble_now',
-           total={'product_name': 'ИТОГО', 'to_assemble_now': sum(b['to_assemble_now'] or 0 for b in bundles),
-                  'ship_wb': sum(b['ship_wb'] or 0 for b in bundles), 'ship_ozon': sum(b['ship_ozon'] or 0 for b in bundles),
-                  'to_assemble_reserved': sum(b['to_assemble_reserved'] or 0 for b in bundles)})
+           total={'product_name': 'ИТОГО', 'to_assemble_now': assemble_pos,
+                  'ship_wb': sum(b['ship_wb'] or 0 for b in bundles),
+                  'ship_ozon': sum(b['ship_ozon'] or 0 for b in bundles), 'to_assemble_reserved': assemble_res})
     s.band('СОБРАТЬ СЕЙЧАС → компоненты (раскладка по BOM)', C_BUNDLE)
     s.header(BOM_COLS)
     s.rows(BOM_COLS, bom, total={'product_name': 'ИТОГО',
@@ -377,13 +499,13 @@ def build(path):
     s.header(PICK_COLS)
     s.rows(PICK_COLS, pick, total={
         'product_name': 'ИТОГО',
-        'solo_wb_need': sum(r['solo_wb_need'] or 0 for r in pick), 'solo_ozon_need': sum(r['solo_ozon_need'] or 0 for r in pick),
+        'solo_wb_need': sum(r['solo_wb_need'] or 0 for r in pick),
+        'solo_ozon_need': sum(r['solo_ozon_need'] or 0 for r in pick),
         'bundle_component_need': sum(r['bundle_component_need'] or 0 for r in pick),
         'total_physical_demand': sum(r['total_physical_demand'] or 0 for r in pick),
-        'to_pick_from_pallet': sum(r['to_pick_from_pallet'] or 0 for r in pick),
-        'reserved_on_pallet_to_pick': sum(r['reserved_on_pallet_to_pick'] or 0 for r in pick),
+        'to_pick_from_pallet': move_new, 'reserved_on_pallet_to_pick': move_res,
         'pick_total_with_reserved': sum(r['pick_total_with_reserved'] or 0 for r in pick)})
-    ws.freeze_panes = 'C8'
+    ws.freeze_panes = 'C6'
 
     # ---------- 02_SHIPMENTS ----------
     ws = wbk.create_sheet('02_SHIPMENTS')
@@ -485,7 +607,7 @@ def build(path):
     r += 2
     for name, rows in (('V_OPS_SUPPLY_PLAN', plan), ('V_OPS_BUNDLE_PRODUCTION', bundles),
                        ('V_OPS_BUNDLE_BOM_EXPANSION', bom), ('V_OPS_PICK_FROM_STORAGE', pick),
-                       ('V_OPS_FF_STOCK_SHEET', ff), ('V_OPS_SHIPMENTS_SHEET', ships),
+                       ('V_OPS_FF_STOCK_SHEET', ff), ('V_OPS_SHIPMENTS_SHEET', ships), ('V_OPS_FF_TASK', task),
                        ('V_OPS_SUPPLY_CALENDAR', cal)):
         ws.cell(r, 1, name).font = Font(FONT, 10, bold=True, color=C_WB)
         r += 1

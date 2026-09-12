@@ -318,3 +318,27 @@ ASSERT (
        + COUNTIF(position != on_marketplace + committed_inbound)
   FROM `project-fa311fc0-4d87-4781-986.evetis_ops.V_OPS_SUPPLY_PLAN`
 ) = 0 AS 'I22: позиция запаса считает входящие не один раз или приёмка вне Ozon';
+
+-- @@TEST I23 C1.1: единицы продажи ↔ физические единицы; ТЗ для ФФ сходится с планом
+ASSERT (
+  SELECT COUNTIF(rec_physical_units != rec_final * units_per_position)
+       + COUNTIF(units_per_position <= 0)
+       + COUNTIF(NOT is_bundle AND units_per_position != 1)
+       + COUNTIF(demand_confidence IS NULL)
+       + COUNTIF(aggressive_plan != (daily_plan > 0 AND (actual_daily_30d = 0 OR plan_actual_ratio > 2)))
+       + COUNTIF(aggressive_plan AND demand_confidence != 'LOW')
+  FROM `project-fa311fc0-4d87-4781-986.evetis_ops.V_OPS_SUPPLY_PLAN`
+) = 0 AS 'I23: физические единицы или основание спроса посчитаны неверно';
+ASSERT (
+  -- сумма рекомендаций в физических единицах = спрос, разложенный по BOM в снятии с паллет
+  (SELECT SUM(rec_physical_units) FROM `project-fa311fc0-4d87-4781-986.evetis_ops.V_OPS_SUPPLY_PLAN`)
+  = (SELECT SUM(total_physical_demand) FROM `project-fa311fc0-4d87-4781-986.evetis_ops.V_OPS_PICK_FROM_STORAGE`)
+) AS 'I23: рекомендации в физических единицах не равны спросу в снятии с паллет';
+ASSERT (
+  SELECT COUNTIF(t.move_pallet_to_shelf_total != t.move_pallet_to_shelf_new + t.move_pallet_to_shelf_reserved)
+       + COUNTIF(t.total_physical_units != t.solo_units_wb + t.solo_units_ozon + t.bundle_component_units + t.fbs_component_units)
+       + COUNTIF(t.free_ff_after_operation < 0 OR t.shortage > 0)
+       + COUNTIF(t.move_pallet_to_shelf_new != k.to_pick_from_pallet OR t.total_physical_units != k.total_physical_demand)
+  FROM `project-fa311fc0-4d87-4781-986.evetis_ops.V_OPS_FF_TASK` t
+  JOIN `project-fa311fc0-4d87-4781-986.evetis_ops.V_OPS_PICK_FROM_STORAGE` k USING (internal_sku)
+) = 0 AS 'I23: ТЗ для фулфилмента не сходится с планом снятия с паллет';

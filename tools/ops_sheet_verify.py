@@ -91,13 +91,17 @@ def main(path):
     acc_sheet = ws.cell(tot_row, cols['IN_ACCEPTANCE\n(Ozon)']).value
     res_ozon_sheet = ws.cell(tot_row, cols['RESERVED OZON']).value
     chk(3, 'Резерв Ozon на ФФ (314) не посчитан как остаток площадки',
-        res_ozon_sheet == bal['res_ozon'] == 314 and on_ozon_sheet == st['on_ozon'] and on_ozon_sheet != res_ozon_sheet,
+        res_ozon_sheet == bal['res_ozon'] and bal['res_ozon'] > 0 and on_ozon_sheet == st['on_ozon']
+        and on_ozon_sheet != res_ozon_sheet,
         f'RESERVED OZON {res_ozon_sheet} · ON_OZON {on_ozon_sheet} (API) — разные колонки и разные числа')
     ws_plan = wb['01_SUPPLY_PLAN']
-    acc_col_present = any(ws_plan.cell(r, 5).value == 'На приёмке\nOzon' for r in range(1, 40))
+    acc_col_present = any(c.value == 'На приёмке\nOzon' for row in ws_plan.iter_rows() for c in row)
+    acc_separate = cols['IN_ACCEPTANCE\n(Ozon)'] != cols['ON_OZON']
     chk(4, 'IN_ACCEPTANCE показана отдельной колонкой и не входит в остаток площадки',
-        acc_col_present and acc_sheet == st['in_acceptance'] == 150,
-        f'колонка «На приёмке Ozon» есть · итог приёмки {acc_sheet} ед. (журнал {st["in_acceptance"]})')
+        acc_col_present and acc_separate and acc_sheet == st['in_acceptance'],
+        f'колонка «На приёмке Ozon» есть в плане, в листе ФФ — отдельно от ON_OZON · '
+        f'итог приёмки {acc_sheet} ед. = журнал {st["in_acceptance"]} '
+        f'(сегодня 0: поставки 03.09 приняты Ozon ночью)')
 
     # --- 5: мощность наборов учитывает общие компоненты ---
     bundles = {r['bundle_sku']: r for r in query(f'SELECT * FROM `{P}.evetis_ops.V_OPS_BUNDLE_PRODUCTION`')}
@@ -164,7 +168,8 @@ def main(path):
             if rec is None:
                 mism.append((channel, r['key'], 'нет в представлении'))
                 continue
-            for label, key in (('РЕКОМЕНДАЦИЯ', 'rec_final'), ('Потребность', 'need_math'),
+            for label, key in (('РЕКОМЕНДАЦИЯ,\nпозиций', 'rec_final'), ('в физических\nединицах', 'rec_physical_units'),
+                               ('Потребность', 'need_math'),
                                ('Цель\nк прибытию', 'target_at_arrival'), ('Прогноз\nк прибытию', 'projected_at_arrival'),
                                ('На площадке\nсейчас', 'on_marketplace'), ('Итого\nвходящее', 'committed_inbound'),
                                ('На приёмке\nOzon', 'in_acceptance'), ('Резерв\nна ФФ', 'reserved_on_ff')):
@@ -174,6 +179,49 @@ def main(path):
     chk(10, 'Каждая строка плана в книге = строке представления (рекомендация, цель, прогноз, входящее)',
         checked == len(plan) and not mism,
         f'сверено строк: {checked} из {len(plan)}' + ('' if not mism else f'; расхождения: {mism[:6]}'))
+
+    # --- C1.1: терминология, верхние блоки, ТЗ для ФФ, флаг агрессивного плана ---
+    owner_sheets = [w for w in wb.worksheets if w.title != 'DATA']
+    bad_terms = [f'{w.title}!{c.coordinate}' for w in owner_sheets for row in w.iter_rows() for c in row
+                 if isinstance(c.value, str) and 'карточ' in c.value.lower()]
+    chk(11, 'Слово «карточки» убрано из листов владельца (позиции / физические единицы)',
+        not bad_terms, f'вхождений: {len(bad_terms)}' + ('' if not bad_terms else f' — {bad_terms[:5]}'))
+
+    bands = [str(ws_p.cell(r, 1).value) for r in range(1, 60) if ws_p.cell(r, 1).value]
+    need_blocks = ['ИТОГО СЕГОДНЯ', 'ОТГРУЗИТЬ WB СЕЙЧАС', 'ОТГРУЗИТЬ OZON СЕЙЧАС', 'ПРОВЕРИТЬ / НЕ ОТГРУЖАТЬ']
+    missing = [b for b in need_blocks if not any(t.startswith(b) for t in bands)]
+    task_row = next((r for r in range(1, ws_p.max_row + 1)
+                     if str(ws_p.cell(r, 1).value or '').startswith('ТЗ ДЛЯ ФУЛФИЛМЕНТА')), None)
+    detail_row = next((r for r in range(1, ws_p.max_row + 1)
+                       if str(ws_p.cell(r, 1).value or '').startswith('ПОДРОБНЫЙ РАСЧЁТ')), None)
+    chk(12, 'Блоки владельца и ТЗ для ФФ стоят выше подробного расчёта',
+        not missing and task_row and detail_row and task_row < detail_row,
+        f'блоки: {"все на месте" if not missing else missing} · ТЗ строка {task_row} · подробный расчёт строка {detail_row}')
+
+    task_bq = {r['internal_sku']: r for r in query(f'SELECT * FROM `{P}.evetis_ops.V_OPS_FF_TASK`')}
+    hdr_move = next(r for r in range(task_row, ws_p.max_row + 1)
+                    if ws_p.cell(r, 3).value == 'Снять под новые\nотгрузки, шт.')
+    mcols = {ws_p.cell(hdr_move, c).value: c for c in range(1, ws_p.max_column + 1)}
+    move_rows = sheet_rows(ws_p, hdr_move)
+    bad_task = [r['key'] for r in move_rows
+                if (ws_p.cell(r['row'], mcols['ИТОГО снять\nс паллет, шт.']).value or 0)
+                != task_bq[r['key']]['move_pallet_to_shelf_total']
+                or (ws_p.cell(r['row'], mcols['Снять под уже\nзарезервированное, шт.']).value or 0)
+                != task_bq[r['key']]['move_pallet_to_shelf_reserved']]
+    phys_plan = query(f'SELECT SUM(rec_physical_units) AS s FROM `{P}.evetis_ops.V_OPS_SUPPLY_PLAN`')[0]['s']
+    phys_pick = query(f'SELECT SUM(total_physical_demand) AS s FROM `{P}.evetis_ops.V_OPS_PICK_FROM_STORAGE`')[0]['s']
+    chk(13, 'ТЗ для ФФ сходится с планом: снятие с паллет и физические единицы',
+        not bad_task and phys_plan == phys_pick,
+        f'строк снятия сверено: {len(move_rows)} · рекомендации {phys_plan} физ. ед. = расход компонентов {phys_pick}')
+
+    agg = query('SELECT COUNTIF(aggressive_plan) AS flagged, COUNT(*) AS all_rows, '
+                'COUNTIF(aggressive_plan AND rec_final > 0) AS flagged_ship '
+                f'FROM `{P}.evetis_ops.V_OPS_SUPPLY_PLAN`')[0]
+    warn_cells = sum(1 for row in ws_p.iter_rows() for c in row
+                     if isinstance(c.value, str) and c.value.startswith('АГРЕССИВНЫЙ ПЛАН'))
+    chk(14, 'Агрессивный план (>2× факта) помечен, количество не изменено',
+        warn_cells >= agg['flagged_ship'] and agg['flagged'] > 0,
+        f'строк с флагом в BigQuery: {agg["flagged"]} из {agg["all_rows"]} · предупреждений в книге: {warn_cells}')
 
     print('\n' + '=' * 108)
     for n, name, ok, detail in checks:

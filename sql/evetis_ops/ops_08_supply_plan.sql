@@ -298,7 +298,11 @@ ff_free AS (
          GREATEST(b.available_total - IFNULL(u.unconf, 0) - IFNULL(f.fbs, 0), 0) AS free_units
   FROM ff_bal b LEFT JOIN ff_unconf u USING (component_sku) LEFT JOIN ff_fbs f USING (component_sku)
 ),
-cap_now AS (   -- сколько карточек этой строки можно обеспечить свободным запасом ФФ прямо сейчас
+units_per_pos AS (   -- сколько физических единиц в одной позиции продажи (набор = сумма BOM)
+  SELECT card_sku, SUM(component_qty) AS units_per_position
+  FROM `project-fa311fc0-4d87-4781-986.evetis_ops.V_OPS_BOM` GROUP BY 1
+),
+cap_now AS (   -- сколько позиций этой строки можно обеспечить свободным запасом ФФ прямо сейчас
   SELECT b.card_sku, MIN(DIV(IFNULL(f.free_units, 0), b.component_qty)) AS ff_free_cards_now
   FROM `project-fa311fc0-4d87-4781-986.evetis_ops.V_OPS_BOM` b
   LEFT JOIN ff_free f ON f.component_sku = b.component_sku
@@ -335,14 +339,30 @@ fin AS (
          ELSE DIV(la.ff_max_cards, b.multiple_applied) * b.multiple_applied END AS rec_final
   FROM base b LEFT JOIN line_alloc la USING (channel, card_sku)
 ),
-fin2 AS (SELECT f.*, IFNULL(cn.ff_free_cards_now, 0) AS ff_free_cards_now FROM fin f LEFT JOIN cap_now cn USING (card_sku)),
+fin2 AS (
+  SELECT f.*, IFNULL(cn.ff_free_cards_now, 0) AS ff_free_cards_now,
+         IFNULL(up.units_per_position, 1) AS units_per_position,
+         f.rec_final * IFNULL(up.units_per_position, 1) AS rec_physical_units,
+         IFNULL(cn.ff_free_cards_now, 0) * IFNULL(up.units_per_position, 1) AS ff_free_physical_units,
+         SAFE_DIVIDE(f.daily_plan, NULLIF(f.actual_daily_30d, 0)) AS plan_actual_ratio
+  FROM fin f LEFT JOIN cap_now cn USING (card_sku) LEFT JOIN units_per_pos up USING (card_sku)
+),
 gates AS (
   SELECT f.*,
     ROUND(SAFE_DIVIDE(f.projected_at_arrival + f.rec_final, f.daily_plan), 1) AS resulting_cover_days,
     f.target_cover_days + f.safety_stock_days + f.overstock_tolerance_days AS overstock_limit_days,
     DATE_ADD(f.arrival_date, INTERVAL CAST(CEIL(IFNULL(SAFE_DIVIDE(f.projected_at_arrival + f.rec_final, f.daily_plan), 0)) AS INT64) DAY) AS sellout_date,
     DATE_SUB(f.expiry_date, INTERVAL f.expiry_margin_days DAY) AS sellout_deadline,
-    f.rec_alt IS NOT NULL AND ((f.rec_proposed > 0) != (f.rec_alt > 0)) AS acceptance_flip
+    f.rec_alt IS NOT NULL AND ((f.rec_proposed > 0) != (f.rec_alt > 0)) AS acceptance_flip,
+    -- основание спроса: план против факта 30 дней. Рекомендацию НЕ меняет — предупреждение владельцу.
+    f.daily_plan > 0 AND (f.actual_daily_30d = 0 OR f.plan_actual_ratio > 2) AS aggressive_plan,
+    CASE
+      WHEN IFNULL(f.daily_plan, 0) = 0 THEN 'НЕТ ПЛАНА'
+      WHEN f.actual_daily_30d = 0 THEN 'LOW'
+      WHEN f.plan_actual_ratio > 2 THEN 'LOW'
+      WHEN f.plan_actual_ratio > 1.25 THEN 'MEDIUM'
+      ELSE 'HIGH'
+    END AS demand_confidence
   FROM fin2 f
 ),
 flags AS (
@@ -371,7 +391,9 @@ SELECT
   demand_until_next_arrival, projected_at_next_arrival, wait_ok,
   expiry_date, sellout_date, sellout_deadline,
   acceptance_unreported, acceptance_overlap_max, rec_alt, rule_alt, acceptance_flip,
-  ff_fits, ff_max_cards, ff_free_cards_now, ff_limiting_component, urgency_days,
+  ff_fits, ff_max_cards, ff_free_cards_now, ff_free_physical_units, ff_limiting_component, urgency_days,
+  units_per_position, rec_physical_units, plan_actual_ratio, demand_confidence, aggressive_plan,
+  IF(aggressive_plan, 'АГРЕССИВНЫЙ ПЛАН — ОБЪЁМ ТРЕБУЕТ ПОДТВЕРЖДЕНИЯ', NULL) AS demand_warning,
   review_overstock, review_expiry, ff_limited,
   CASE
     WHEN rule = 'NO_PLAN' THEN 'NO PLAN'
@@ -656,3 +678,35 @@ LEFT JOIN cards c USING (order_number)
 LEFT JOIN `project-fa311fc0-4d87-4781-986.evetis_ops.V_CT_SHIPMENT_CURRENT` sh ON sh.shipment_id = r.shipment_id
 LEFT JOIN res_loc rl ON rl.doc = r.shipment_id
 LEFT JOIN ev e USING (order_number);
+
+-- ТЗ ДЛЯ ФУЛФИЛМЕНТА: что физически сделать на складе по утверждённому плану (только чтение).
+-- Ничего не решает: пересобирает уже посчитанные снятие с паллет, сборку наборов и расход компонентов
+-- в вид, который владелец отдаёт складу как задание.
+CREATE OR REPLACE VIEW `project-fa311fc0-4d87-4781-986.evetis_ops.V_OPS_FF_TASK` AS
+WITH pick AS (SELECT * FROM `project-fa311fc0-4d87-4781-986.evetis_ops.V_OPS_PICK_FROM_STORAGE`),
+res AS (
+  SELECT internal_sku,
+         SUM(IF(state = 'RESERVED', units, 0)) AS reserved_units_total,
+         SUM(IF(state = 'RESERVED' AND location = 'PALLET', units, 0)) AS reserved_units_on_pallet
+  FROM `project-fa311fc0-4d87-4781-986.evetis_ops.V_CT_STOCK_BALANCE` GROUP BY 1
+)
+SELECT
+  k.internal_sku, k.product_name,
+  -- 1. снять с паллет на полку
+  k.to_pick_from_pallet        AS move_pallet_to_shelf_new,
+  k.reserved_on_pallet_to_pick AS move_pallet_to_shelf_reserved,
+  k.pick_total_with_reserved   AS move_pallet_to_shelf_total,
+  -- 2. на что уйдут эти единицы
+  k.solo_wb_need               AS solo_units_wb,
+  k.solo_ozon_need             AS solo_units_ozon,
+  k.bundle_component_need      AS bundle_component_units,
+  k.fbs_component_need         AS fbs_component_units,
+  k.total_physical_demand      AS total_physical_units,
+  -- 3. уже зарезервировано под существующие отгрузки
+  IFNULL(r.reserved_units_total, 0)     AS reserved_units_already,
+  IFNULL(r.reserved_units_on_pallet, 0) AS reserved_units_on_pallet,
+  -- 4. что останется на ФФ после операции
+  k.shelf_after_pick, k.pallet_after_pick, k.free_after_plan AS free_ff_after_operation,
+  k.shortage,
+  CURRENT_TIMESTAMP() AS computed_at
+FROM pick k LEFT JOIN res r ON r.internal_sku = k.internal_sku;
