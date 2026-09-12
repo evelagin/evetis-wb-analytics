@@ -52,6 +52,17 @@ export function isFormula(v: CellValue): boolean {
 
 export type CellKind = 'fact' | 'logistics' | 'commission' | 'reverse' | 'lcd';
 
+/**
+ * Классификация изменения (решение владельца 12.09, Stage E2) — чтобы QA и аудит не смешивали
+ * типы правок:
+ *   FACT_CHANGE             — факт нового закрытого дня (дата > LCD книги);
+ *   LATE_SOURCE_CORRECTION  — источник пересчитал уже закрытый в книге день;
+ *   MODEL_PARAMETER_REFRESH — ставки rolling-окна (логистика, комиссия, обратное плечо);
+ *   LCD_ADVANCE             — продвижение LAST_CLOSED_DATE;
+ *   NO_CHANGE               — значение то же, меняется только форма (формула-наследие → значение).
+ */
+export type ChangeType = 'FACT_CHANGE' | 'LATE_SOURCE_CORRECTION' | 'MODEL_PARAMETER_REFRESH' | 'LCD_ADVANCE' | 'NO_CHANGE';
+
 export interface ExpectedCell {
   row: number;
   col: number;
@@ -59,6 +70,10 @@ export interface ExpectedCell {
   kind: CellKind;
   nmId?: number;
   key?: string;
+  /** Дата дня (факт) — YYYY-MM-DD. */
+  date?: string;
+  /** Источник значения (имя вью/таблицы или метка источника воронки). */
+  source?: string;
   /** Именованный диапазон вместо A1 (только для LAST_CLOSED_DATE). */
   namedRange?: string;
   /** Допуск сравнения: 'fact' → 0.005 и пусто≠0; иначе 1e-9. */
@@ -66,6 +81,8 @@ export interface ExpectedCell {
 
 export interface PlannedCell extends ExpectedCell {
   before: CellValue;
+  changeType: ChangeType;
+  reason: string;
 }
 
 export interface RateLine {
@@ -94,6 +111,11 @@ export interface Plan {
   legacy: LegacyFormulas;
   /** Ячейки плана, где вместо значения стояла формула-наследие (входят в cells). */
   legacyReplaced: number;
+  /** LAST_CLOSED_DATE книги до прогона (зеркало WB736). */
+  bookLcd: string;
+  byChangeType: Record<ChangeType, number>;
+  /** Будущие дни: формулы-проекции остатка (KEEP, решение владельца) — informational. */
+  stockProjectionCells: number;
 }
 
 export interface PlanInputs {
@@ -179,6 +201,18 @@ function daysBetween(a: string, b: string): number {
   return Math.round((Date.parse(`${b}T00:00:00Z`) - Date.parse(`${a}T00:00:00Z`)) / 86_400_000);
 }
 
+/** Источник факта по ключу (для diff plan / журнала). */
+function factSource(k: FactKey, f: FactRow): string {
+  switch (k) {
+    case 'views': case 'adsIn': return 'MART_SKU_DAILY';
+    case 'opens': case 'carts': case 'orders': return f.ordersSource;
+    case 'cancels': return f.cancelsSource;
+    case 'stock': return 'FACT_STOCKS_SNAPSHOT';
+    case 'price': return 'FACT_ORDERS';
+    case 'storage': return 'RAW_WB_PAID_STORAGE';
+  }
+}
+
 const FACT_FIELD: Record<FactKey, keyof FactRow> = {
   views: 'views', opens: 'opens', carts: 'carts', orders: 'orders', cancels: 'cancels',
   stock: 'stock', adsIn: 'adsIn', price: 'price', storage: 'storage',
@@ -257,7 +291,7 @@ export function buildPlan(inp: PlanInputs): Plan {
         const raw = f[FACT_FIELD[k]];
         const want = typeof raw === 'number' ? raw : null;
         if (want === null && k in gaps) gaps[k] = (gaps[k] ?? 0) + 1;
-        expected.push({ row: dayRow(i), col: b.start + OFFSET[k], want, kind: 'fact', nmId: b.nmId, key: k });
+        expected.push({ row: dayRow(i), col: b.start + OFFSET[k], want, kind: 'fact', nmId: b.nmId, key: k, date: f.date, source: factSource(k, f) });
       }
     }
     // Ставки — константа на все 30 строк блока (как s8brates/s8rates).
@@ -269,23 +303,28 @@ export function buildPlan(inp: PlanInputs): Plan {
     const comm = round6(ownC ? (c!.commissionRate as number) : cstore.commissionRate);
     rates.push({ nmId: b.nmId, n: p?.shipments ?? 0, direct, directSource: ownD ? 'own' : 'store', commission: comm, commissionSource: ownC ? 'own' : 'store' });
     for (let i = 0; i < GRID.DAYS; i++) {
-      expected.push({ row: dayRow(i), col: b.start + OFFSET.logistics, want: direct, kind: 'logistics', nmId: b.nmId, key: 'logistics' });
-      expected.push({ row: dayRow(i), col: b.start + OFFSET.commission, want: comm, kind: 'commission', nmId: b.nmId, key: 'commission' });
+      expected.push({ row: dayRow(i), col: b.start + OFFSET.logistics, want: direct, kind: 'logistics', nmId: b.nmId, key: 'logistics', source: `V_UNITKA_LOGISTICS_RATES ${store.windowFrom}..${store.windowTo} (${ownD ? 'своя' : 'магазин'})` });
+      expected.push({ row: dayRow(i), col: b.start + OFFSET.commission, want: comm, kind: 'commission', nmId: b.nmId, key: 'commission', source: `V_UNITKA_COMMISSION_RATES ${cstore.windowFrom}..${cstore.windowTo} (${ownC ? 'своя' : 'магазин'})` });
     }
   }
   const reverseRate = store.reverseRate;
-  expected.push({ row: GRID.RROW, col: GRID.MIR, want: reverseRate, kind: 'reverse', key: 'reverse' });
-  expected.push({ row: GRID.HDR, col: GRID.MIR, want: lcdSerial, kind: 'lcd', key: 'lcd_mirror' });
-  expected.push({ row: 0, col: 0, want: lcdSerial, kind: 'lcd', key: 'lcd_named', namedRange: NAMED.LCD });
+  expected.push({ row: GRID.RROW, col: GRID.MIR, want: reverseRate, kind: 'reverse', key: 'reverse', source: `V_UNITKA_LOGISTICS_RATES ${store.windowFrom}..${store.windowTo} (магазин)` });
+  expected.push({ row: GRID.HDR, col: GRID.MIR, want: lcdSerial, kind: 'lcd', key: 'lcd_mirror', date: lcd, source: 'V_UNITKA_LAST_CLOSED_DATE' });
+  expected.push({ row: 0, col: 0, want: lcdSerial, kind: 'lcd', key: 'lcd_named', namedRange: NAMED.LCD, date: lcd, source: 'V_UNITKA_LAST_CLOSED_DATE' });
 
   // FUTURE LEAKAGE в самой книге: факт-ячейки за датами > LCD должны быть пусты.
+  // Решение владельца (E2, KEEP): формульная проекция остатка в будущих днях — visual planning
+  // layer, Engine её не трогает и утечкой не считает. Всё остальное непустое (в т.ч. фактическое
+  // хранение в будущем дне, от формулы или нет) — FUTURE_LEAKAGE.
   const leaks: string[] = [];
+  let stockProjectionCells = 0;
   for (const b of blocks) {
     for (let i = closedDays; i < GRID.DAYS; i++) {
       for (const k of FACT_KEYS) {
         const v = cellAt(snap, dayRow(i), b.start + OFFSET[k]);
-        // Формула-наследие в будущем дне (проекция остатка) — не утечка Engine; учитывается в legacy.
-        if (!isEmpty(v) && !isFormula(formulaAt(snap, dayRow(i), b.start + OFFSET[k]))) leaks.push(`${colA1(b.start + OFFSET[k])}${dayRow(i)}`);
+        if (isEmpty(v)) continue;
+        if (k === 'stock' && isFormula(formulaAt(snap, dayRow(i), b.start + OFFSET[k]))) { stockProjectionCells++; continue; }
+        leaks.push(`${colA1(b.start + OFFSET[k])}${dayRow(i)}`);
       }
     }
   }
@@ -294,15 +333,35 @@ export function buildPlan(inp: PlanInputs): Plan {
   // План = ожидание минус то, что уже стоит в листе.
   const cells: PlannedCell[] = [];
   let legacyReplaced = 0;
+  const bookLcd = serialToIso(prevSerial);
+  const byChangeType: Record<ChangeType, number> = { FACT_CHANGE: 0, LATE_SOURCE_CORRECTION: 0, MODEL_PARAMETER_REFRESH: 0, LCD_ADVANCE: 0, NO_CHANGE: 0 };
   for (const e of expected) {
     const before = currentValue(snap, e);
-    let same = e.kind === 'fact' ? factEqual(before, e.want) : rateEqual(before, e.want as number);
+    const valueSame = e.kind === 'fact' ? factEqual(before, e.want) : rateEqual(before, e.want as number);
+    const wasFormula = !e.namedRange && e.col !== GRID.MIR && isFormula(formulaAt(snap, e.row, e.col));
     // Формула в ячейке контракта (закрытый день / ставка) заменяется значением даже при
     // совпадении результата: после первой записи контракт «факт = значение» становится полным.
-    if (same && !e.namedRange && e.col !== GRID.MIR && isFormula(formulaAt(snap, e.row, e.col))) { same = false; legacyReplaced++; }
-    if (!same) cells.push({ ...e, before });
+    if (valueSame && !wasFormula) continue;
+    if (valueSame && wasFormula) legacyReplaced++;
+    let changeType: ChangeType;
+    let reason: string;
+    if (e.kind === 'lcd') { changeType = 'LCD_ADVANCE'; reason = `LAST_CLOSED_DATE ${bookLcd} → ${lcd}`; }
+    else if (e.kind !== 'fact') { changeType = 'MODEL_PARAMETER_REFRESH'; reason = `ставка rolling-окна пересчитана (${e.source ?? ''})`; }
+    else if (valueSame) { changeType = 'NO_CHANGE'; reason = 'формула-наследие → значение, результат тот же'; }
+    else if ((e.date ?? '') > bookLcd) { changeType = 'FACT_CHANGE'; reason = `новый закрытый день ${e.date} (${e.source ?? ''})`; }
+    else {
+      changeType = 'LATE_SOURCE_CORRECTION';
+      reason = wasFormula
+        ? `день ${e.date} закрыт в книге ${bookLcd}; в ячейке стояла формула-наследие, источник ${e.source ?? ''} даёт ${e.want === null ? 'GAP (пусто)' : e.want}`
+        : `день ${e.date} закрыт в книге ${bookLcd}; источник ${e.source ?? ''} пересчитал значение задним числом`;
+    }
+    byChangeType[changeType]++;
+    cells.push({ ...e, before, changeType, reason });
   }
-  return { lcd, d1Msk: d1, lagDays, monthStart, closedDays, blocks, expected, cells, rates, reverseRate, invariant, sourcesByDay, gaps, legacy: pre.legacy, legacyReplaced };
+  return {
+    lcd, d1Msk: d1, lagDays, monthStart, closedDays, blocks, expected, cells, rates, reverseRate, invariant, sourcesByDay, gaps,
+    legacy: pre.legacy, legacyReplaced, bookLcd, byChangeType, stockProjectionCells,
+  };
 }
 
 /* ───────────────────────── запись ───────────────────────── */
@@ -334,4 +393,25 @@ export function toWriteRanges(cells: readonly PlannedCell[], sheetName: string):
     flush();
   }
   return out;
+}
+
+/** Строка diff plan для отчёта/аудита (DATE · SKU · CELL · OLD · NEW · CHANGE_TYPE · SOURCE · REASON). */
+export interface DiffRow {
+  DATE: string; SKU: string; CELL: string; METRIC: string; OLD: string; NEW: string;
+  CHANGE_TYPE: ChangeType; SOURCE: string; REASON: string;
+}
+
+export function diffRows(plan: Plan): DiffRow[] {
+  const fmt = (v: CellValue | number | null | undefined): string => (v === null || v === undefined || v === '' ? '' : String(v));
+  return plan.cells.map((c) => ({
+    DATE: c.date ?? (c.kind === 'fact' ? '' : `${plan.monthStart.slice(0, 7)} (все 30 строк)`),
+    SKU: c.nmId === undefined ? 'магазин' : String(c.nmId),
+    CELL: c.namedRange ?? `${colA1(c.col)}${c.row}`,
+    METRIC: c.key ?? c.kind,
+    OLD: fmt(c.before),
+    NEW: c.kind === 'lcd' && typeof c.want === 'number' ? serialToIso(c.want) : fmt(c.want),
+    CHANGE_TYPE: c.changeType,
+    SOURCE: c.source ?? '',
+    REASON: c.reason,
+  }));
 }

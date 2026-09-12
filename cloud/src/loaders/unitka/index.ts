@@ -68,8 +68,9 @@ function planSummary(plan: Plan): Record<string, unknown> {
     invariant: plan.invariant, reverse_rate: plan.reverseRate,
     own_direct: plan.rates.filter((r) => r.directSource === 'own').length,
     own_commission: plan.rates.filter((r) => r.commissionSource === 'own').length,
+    book_lcd: plan.bookLcd, by_change_type: plan.byChangeType, stock_projection_future: plan.stockProjectionCells,
     gaps: plan.gaps, legacy_formulas: plan.legacy, legacy_replaced: plan.legacyReplaced, sources_by_day: plan.sourcesByDay,
-    sample: plan.cells.slice(0, 40).map((c) => `${c.namedRange ?? colA1(c.col) + c.row} ${c.key ?? ''} ${String(c.before)}→${c.want === null ? '' : c.want}`),
+    sample: plan.cells.slice(0, 40).map((c) => `${c.changeType} ${c.namedRange ?? colA1(c.col) + c.row} ${c.key ?? ''} ${String(c.before)}→${c.want === null ? '' : c.want}`),
   };
 }
 

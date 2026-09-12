@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { buildPlan, preflight, toWriteRanges, type PlanInputs } from '../src/loaders/unitka/plan.js';
+import { buildPlan, preflight, toWriteRanges, diffRows, type PlanInputs } from '../src/loaders/unitka/plan.js';
 import { GRID, OFFSET, colA1, serialToIso, isoToSerial, findBlocks, factEqual, dayRow } from '../src/loaders/unitka/model.js';
 import { unitkaSlot } from '../src/loaders/unitka/slot.js';
 import { LoaderError } from '../src/errors.js';
@@ -73,8 +73,16 @@ describe('preflight', () => {
     expect(pre.legacy).toEqual({ closed: 1, future: 1, byKey: { storage: 1, stock: 1 } });
     const p = buildPlan(inputs({ snapshot: snap }));           // FUTURE_LEAKAGE не срабатывает
     expect(p.legacyReplaced).toBe(1);
+    expect(p.stockProjectionCells).toBe(1);
     expect(p.cells).toHaveLength(1);
-    expect(p.cells[0]).toMatchObject({ row: 737, col: GRID.B0 + OFFSET.storage, kind: 'fact', want: 4.56 });
+    expect(p.cells[0]).toMatchObject({ row: 737, col: GRID.B0 + OFFSET.storage, kind: 'fact', want: 4.56, changeType: 'NO_CHANGE' });
+  });
+  it('фактическое хранение в будущем дне — FUTURE_LEAKAGE даже из формулы (KEEP только для остатка)', () => {
+    const snap = snapshot({ mutate: (s) => {
+      s.formulas[15]![GRID.B0 - 1 + OFFSET.storage] = '=T752*0.15';
+      s.grid[dayRow(15) - GRID.TOP]![GRID.B0 - 1 + OFFSET.storage] = 12.3;
+    } });
+    expect(codeOf(() => buildPlan(inputs({ snapshot: snap })))).toBe('FUTURE_LEAKAGE');
   });
   it('23 блока — BLOCKS 23/24', () => {
     const snap = snapshot({ mutate: (s) => { s.grid[0]![GRID.B0 + 23 * GRID.BW - 1] = 'без артикула'; } });
@@ -129,7 +137,20 @@ describe('buildPlan', () => {
       snapshot: snapshot({ direct: (nm) => (nm === NM_IDS[0] ? 65.98 : 60.55), commission: (nm) => (nm === NM_IDS[0] ? 0.441234 : 0.45578) }),
     }));
     expect(p.cells).toHaveLength(1);
-    expect(p.cells[0]).toMatchObject({ row: dayRow(6), col: GRID.B0 + 4 * GRID.BW + OFFSET.orders, kind: 'fact', want: row.orders });
+    expect(p.cells[0]).toMatchObject({ row: dayRow(6), col: GRID.B0 + 4 * GRID.BW + OFFSET.orders, kind: 'fact', want: row.orders, changeType: 'LATE_SOURCE_CORRECTION', source: 'FUNNEL_API' });
+    expect(p.byChangeType).toEqual({ FACT_CHANGE: 0, LATE_SOURCE_CORRECTION: 1, MODEL_PARAMETER_REFRESH: 0, LCD_ADVANCE: 0, NO_CHANGE: 0 });
+  });
+  it('классификация: новый день — FACT_CHANGE, ставки — MODEL_PARAMETER_REFRESH, LCD — LCD_ADVANCE', () => {
+    // книга закрыта на 09.09, BQ — на 10.09: факт 10.09 = FACT_CHANGE; комиссия SKU#1 отличается; LCD двигается
+    const p = buildPlan(inputs({ snapshot: snapshot({ lcdInSheet: '2026-09-09', direct: (nm) => (nm === NM_IDS[0] ? 65.98 : 60.55) }) }));
+    expect(p.bookLcd).toBe('2026-09-09');
+    expect(p.byChangeType.FACT_CHANGE).toBe(24 * 9 - 1 - 24); // день 10.09: минус GAP stock SKU#3 и storage у всех
+    expect(p.byChangeType.MODEL_PARAMETER_REFRESH).toBe(30);   // комиссия SKU#1
+    expect(p.byChangeType.LCD_ADVANCE).toBe(2);
+    expect(p.byChangeType.LATE_SOURCE_CORRECTION).toBe(0);
+    const rows = diffRows(p);
+    expect(rows.find((r) => r.CELL === 'LAST_CLOSED_DATE')).toMatchObject({ NEW: LCD, CHANGE_TYPE: 'LCD_ADVANCE' });
+    expect(rows.filter((r) => r.CHANGE_TYPE === 'FACT_CHANGE').every((r) => r.DATE === LCD)).toBe(true);
   });
   it('инвариант n ≠ sales + ref — INVARIANT_FAIL до записи', () => {
     expect(codeOf(() => buildPlan(inputs({ logistics: logistics({ sales: 540 }) })))).toBe('INVARIANT_FAIL');

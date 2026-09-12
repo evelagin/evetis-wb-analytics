@@ -202,7 +202,7 @@ describe('qa.evaluate', () => {
     expect(qa.pass).toBe(false);
     expect(qa.checks.find((c) => c.name === 'FORMULA_ERRORS')!.count).toBe(1);
     expect(qa.checks.find((c) => c.name === 'FUTURE_LEAKAGE')!.count).toBe(1);
-    expect(qa.checks.find((c) => c.name === 'LEGACY_FUTURE_FORMULAS')).toMatchObject({ pass: true, count: 1 });
+    expect(qa.checks.find((c) => c.name === 'STOCK_PROJECTION_FUTURE')).toMatchObject({ pass: true, count: 1 });
   });
   it('readSnapshot читает три диапазона и формулы', async () => {
     const sheets = new FakeSheets(snapshot());

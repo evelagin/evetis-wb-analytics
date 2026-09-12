@@ -21,8 +21,8 @@ storage`), колонки `logistics`/`commission` (30 строк блока), `
 
 | # | шаг | где | проверка |
 |---|---|---|---|
-| 1 | развести чужой дрейф плана (5 in-place изменений, `ops_health.tf`) | `infra.yml` action=plan | план = только добавления Engine |
-| 2 | `infra apply` | `infra.yml` action=apply | Job'ы `unitka-engine-shadow/prod`, 4 Scheduler'а (paused), таблица `wb_ops.UNITKA_ENGINE_RUNS` |
+| 1 | targeted plan только по Engine | `infra.yml` action=plan, `targets=` список из `UNITKA_ENGINE_V1_LIVE_SHADOW_E2_2026-09-12.md` §7 | `15 to add, 0 to change, 0 to destroy` — чужой дрейф (`ops_health.tf`) не затрагивается |
+| 2 | targeted `infra apply` | `infra.yml` action=apply, те же `targets` | Job'ы `unitka-engine-shadow/prod`, 4 Scheduler'а (paused), таблица `wb_ops.UNITKA_ENGINE_RUNS` |
 | 3 | дать доступ к книге `1E4L4JuwfEqr9owhsGkAjb8F24lRpWpWkEyVmSuRxaJg` | Sheets → Настройки доступа | `sa-loaders-shadow@…` Читатель, `sa-loaders-prod@…` Редактор |
 | 4 | включить воронку | `scheduler-control.yml`: `wb-funnel`, prod, resume | `RAW_WB_FUNNEL_DAILY` за D-1 появляется ~09:35 МСК |
 | 5 | применить вью 6 | `bq query < sql/unitka/engine_v1_views.sql` (только блок 6) | `SELECT * FROM wb_mart.V_UNITKA_ENGINE_STATUS` |
@@ -37,6 +37,14 @@ storage`), колонки `logistics`/`commission` (30 строк блока), `
 Запись включается только сочетанием `ENVIRONMENT=prod` **и** `UNITKA_WRITE_ENABLED=1`
 (выставлено Terraform'ом у `unitka-engine-prod`). Shadow-Job получает readonly-scope Sheets
 и физически не может писать.
+
+## 2a. Типы изменений в журнале и diff plan
+
+`qa_json.plan.by_change_type`: `FACT_CHANGE` (новый закрытый день), `LATE_SOURCE_CORRECTION`
+(источник пересчитал уже закрытый в книге день), `MODEL_PARAMETER_REFRESH` (ставки rolling-окна),
+`LCD_ADVANCE`, `NO_CHANGE` (формула-наследие → то же значение). Штатное утро: `FACT_CHANGE` ≈ 200,
+`LCD_ADVANCE` 2, остальное 0; `LATE_SOURCE_CORRECTION` > 0 — WB пересчитал прошлые дни, это
+нормально, но каждую такую ячейку видно в `sample`/diff.
 
 ## 3. Ежедневная норма (что видно в журнале)
 
@@ -65,7 +73,7 @@ SELECT * FROM `wb_mart.V_UNITKA_ENGINE_STATUS`;
 | `LCD_REGRESSION` | BQ LCD раньше, чем в книге | источник откатился (перестроена витрина/воронка) — разобраться с источником |
 | `DUP_KEY` / `BLOCK_MISSING` | вью отдала дубль `nm×date` / у блока нет строк | `REF_SKU_MASTER` (active), состояние вью |
 | `INVARIANT_FAIL` | `shipments ≠ sales + refusals` или пустое окно финансов | `V_WB_FINANCE_CANONICAL` за окно `[LCD−29, LCD]`; смешанные схемы внутри `srid` |
-| `FUTURE_LEAKAGE` | значение (не формула) в факт-ячейке за датой > LCD | кто-то внёс факт руками в будущий день — очистить или дождаться закрытия дня |
+| `FUTURE_LEAKAGE` | непустой факт за датой > LCD (кроме формульной проекции остатка — KEEP) | кто-то внёс факт руками в будущий день или формула хранения даёт значение — очистить или дождаться закрытия дня |
 | `BQ_MISMATCH` / `FORMULA_ERROR` / `SUMMARY_MISMATCH` / `LCD_INCONSISTENT` / `PARTIAL_WRITE` | пост-записной QA не сошёлся | запись уже применена одним batch; `qa_json` показывает ячейки; следующий прогон при тех же источниках ничего не меняет, при исправленных — перепишет |
 | `ENGINE_ERROR` | всё остальное | логи execution (`loader_failed`) |
 

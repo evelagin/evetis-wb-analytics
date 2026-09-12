@@ -67,23 +67,24 @@ export function evaluate(snap: Snapshot, plan: Plan, opts: EvaluateOpts = {}): Q
   checks.push(check('FORMULA_ERRORS', errs));
 
   // FUTURE LEAKAGE = 0 — за датами > LCD все не-разрешённые смещения пусты (правило s8qa).
-  // Значение, которое даёт формула-наследие (проекция остатка `=prev-orders+cancels`), —
-  // не утечка Engine: Engine формулы не пишет. Такие ячейки считаются отдельно (informational).
+  // Исключение по решению владельца (E2, KEEP): формульная проекция ОСТАТКА в будущих днях —
+  // visual planning layer; считается отдельно (STOCK_PROJECTION_FUTURE, informational).
+  // Фактическое хранение/любой другой факт в будущем дне — утечка, формула это или нет.
   const leaks: string[] = [];
-  const legacyFuture: string[] = [];
+  const projection: string[] = [];
   for (const b of plan.blocks) {
     for (let i = plan.closedDays; i < GRID.DAYS; i++) {
       for (let o = 0; o < GRID.BW; o++) {
         if (FUTURE_ALLOWED_OFFSETS.has(o) || o === OFFSET.bloggers) continue;
         const v = cellAt(snap, dayRow(i), b.start + o);
         if (isEmpty(v)) continue;
-        if (isFormula(formulaAt(snap, dayRow(i), b.start + o))) legacyFuture.push(`${colA1(b.start + o)}${dayRow(i)}=${String(v)}`);
+        if (o === OFFSET.stock && isFormula(formulaAt(snap, dayRow(i), b.start + o))) projection.push(`${colA1(b.start + o)}${dayRow(i)}=${String(v)}`);
         else leaks.push(`${colA1(b.start + o)}${dayRow(i)}=${String(v)}`);
       }
     }
   }
   checks.push(check('FUTURE_LEAKAGE', leaks));
-  checks.push({ name: 'LEGACY_FUTURE_FORMULAS', pass: true, count: legacyFuture.length, sample: legacyFuture.slice(0, 10) });
+  checks.push({ name: 'STOCK_PROJECTION_FUTURE', pass: true, count: projection.length, sample: projection.slice(0, 10) });
 
   // SUMMARY RECONCILIATION — закрытые дни: колонка сводки = Σ 24 блоков (|Δ| ≤ 0.01).
   const rec: string[] = [];

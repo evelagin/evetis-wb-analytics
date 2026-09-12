@@ -11,14 +11,13 @@
  *
  * Ничего не пишет ни в Sheets, ни в BigQuery.
  */
-import { readFileSync } from 'node:fs';
+import { readFileSync, writeFileSync } from 'node:fs';
 import { UnitkaBq } from '../dist/loaders/unitka/bq.js';
-import { buildPlan } from '../dist/loaders/unitka/plan.js';
+import { buildPlan, diffRows } from '../dist/loaders/unitka/plan.js';
 import { evaluate } from '../dist/loaders/unitka/qa.js';
-import { colA1 } from '../dist/loaders/unitka/model.js';
 
-const [snapPath, bqPath] = process.argv.slice(2);
-if (!snapPath || !bqPath) { console.error('usage: unitka_offline_shadow.mjs <snapshot.json> <bq.json>'); process.exit(2); }
+const [snapPath, bqPath, diffOut] = process.argv.slice(2);
+if (!snapPath || !bqPath) { console.error('usage: unitka_offline_shadow.mjs <snapshot.json> <bq.json> [diff.csv]'); process.exit(2); }
 const snap = JSON.parse(readFileSync(snapPath, 'utf8'));
 const data = JSON.parse(readFileSync(bqPath, 'utf8'));
 
@@ -55,6 +54,14 @@ const report = {
   expected_cells: plan.expected.length, cells_planned: plan.cells.length, by_kind: byKind, gaps: plan.gaps,
   qa: qa.checks.map((c) => `${c.name}: ${c.pass ? 'PASS' : 'FAIL'} (${c.count})`),
   qa_samples: Object.fromEntries(qa.checks.filter((c) => !c.pass).map((c) => [c.name, c.sample])),
-  diff: plan.cells.map((c) => `${c.namedRange ?? colA1(c.col) + c.row} ${c.nmId ?? ''} ${c.key} лист[${String(c.before)}] → BQ[${c.want === null ? '' : c.want}]`),
+  book_lcd: plan.bookLcd, by_change_type: plan.byChangeType, stock_projection_future: plan.stockProjectionCells,
+  legacy_formulas: plan.legacy, legacy_replaced: plan.legacyReplaced,
+  diff: diffRows(plan),
 };
+if (diffOut) {
+  const cols = ['DATE', 'SKU', 'CELL', 'METRIC', 'OLD', 'NEW', 'CHANGE_TYPE', 'SOURCE', 'REASON'];
+  const esc = (v) => `"${String(v).replace(/"/g, '""')}"`;
+  writeFileSync(diffOut, [cols.join(','), ...report.diff.map((r) => cols.map((c) => esc(r[c])).join(','))].join('\n') + '\n');
+  report.diff = `${report.diff.length} строк → ${diffOut}`;
+}
 console.log(JSON.stringify(report, null, 2));

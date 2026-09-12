@@ -582,3 +582,25 @@ LCD 09.09, окно 11.08–09.09; Engine 12.08–10.09; формула поба
 
 **Не делалось:** октябрь/rollover (`MONTH_ROLLOVER_REQUIRED`), правка Master, август, Ozon,
 Terraform apply, включение Scheduler'ов, запись в книгу.
+
+## 2026-09-12 · UNITKA ENGINE v1 — Stage E2: решения владельца в коде, LIVE SHADOW (без записи)
+
+Stage E1 и архитектура приняты владельцем. Два решения зафиксированы в коде: (1) **KEEP** —
+формульная проекция остатка в будущих днях остаётся visual planning layer, Engine её не трогает
+и не считает утечкой; закрытые дни получают ACTUAL из BigQuery; фактическое хранение в будущем
+дне — `FUTURE_LEAKAGE`; (2) **классификация изменений** `FACT_CHANGE / LATE_SOURCE_CORRECTION /
+MODEL_PARAMETER_REFRESH / LCD_ADVANCE / NO_CHANGE` — в плане, журнале (`by_change_type`) и
+diff plan (`DATE·SKU·CELL·OLD·NEW·CHANGE_TYPE·SOURCE·REASON`). `infra.yml` получил вход
+`targets` для targeted plan/apply. Тесты 228, lint/typecheck/build зелёные.
+
+**LIVE SHADOW** реальным кодом Engine на живой книге (экспорт 08:17 UTC) и живых вью
+(`docs/UNITKA_ENGINE_V1_LIVE_SHADOW_E2_2026-09-12.md`): 8/8 гейтов PASS; план 668 ячеек —
+`LATE_SOURCE_CORRECTION` 2 (`KU743` отмена 07.09 `0→1`, `cancel_dt` 11.09; `AG746` хранение 10.09
+`20,7→GAP`), `MODEL_PARAMETER_REFRESH` 600 (комиссия, сдвиг окна на день), `NO_CHANGE` 66,
+`FACT_CHANGE` 0, `LCD_ADVANCE` 0. Прибыль магазина MTD после записи: `−7 544,57 → −7 886,26`
+(−341,69: отмена −382,97, хранение +20,70, комиссия +20,75) — пересчёт формул Master в LibreOffice.
+**Вердикт: `LIVE SHADOW = PASS`, `SAFE FOR CONTROLLED WRITE = NO (пока)`** — до deployed
+shadow-прогона. Заблокировано в этой сессии (нет GitHub/GCP, Drive отказал в share): targeted
+plan/apply, снятие паузы `wb-funnel-prod`, доступ SA к книге, deploy shadow — пошаговая
+инструкция в §7 документа. В книгу не записано ничего; `UNITKA_WRITE_ENABLED` не включён;
+prod Job не запускался; октябрь не начат.
