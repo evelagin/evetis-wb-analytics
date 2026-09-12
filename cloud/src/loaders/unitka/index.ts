@@ -19,10 +19,10 @@ import type { QueryRunner } from '../mart/bq.js';
 import { UnitkaBq, type EngineRunRecord, type FreshnessRow } from './bq.js';
 import { SheetsRest, type SheetsGateway } from './sheets.js';
 import { GRID, NAMED, colA1 } from './model.js';
-import { buildPlan, toWriteRanges, type Plan, type Snapshot } from './plan.js';
+import { buildPlan, toWriteRanges, toFormatWrites, type Plan, type Snapshot } from './plan.js';
 import { evaluate, failureCode, qaJson } from './qa.js';
 
-export const ENGINE_VERSION = 'unitka-engine/1.0.0';
+export const ENGINE_VERSION = 'unitka-engine/1.1.0';
 
 export interface UnitkaDeps {
   makeRunner: (ctx: LoaderContext) => QueryRunner;
@@ -45,13 +45,17 @@ export async function readSnapshot(sheets: SheetsGateway, sheetName: string): Pr
   const gridRange = `${q}!A${GRID.TOP}:${colA1(GRID.NC)}${GRID.MTD}`;
   const mirrorRange = `${q}!${colA1(GRID.MIR)}${GRID.HDR}:${colA1(GRID.MIR)}${GRID.RROW}`;
   const [grid, mirror, named] = await sheets.readValues([gridRange, mirrorRange, NAMED.LCD]);
-  const formulas = await sheets.readFormulas(`${q}!A${GRID.FIRST}:${colA1(GRID.NC)}${GRID.FIRST + GRID.DAYS - 1}`);
+  const daysRange = `${q}!A${GRID.FIRST}:${colA1(GRID.NC)}${GRID.FIRST + GRID.DAYS - 1}`;
+  const formulas = await sheets.readFormulas(daysRange);
+  const fmt = await sheets.readFormats(daysRange);
   return {
     grid: grid ?? [],
     formulas,
     mirrorLcd: mirror?.[0]?.[0] ?? null,
     mirrorRev: mirror?.[1]?.[0] ?? null,
     namedLcd: named?.[0]?.[0] ?? null,
+    formats: fmt.rows,
+    sheetId: fmt.sheetId,
   };
 }
 
@@ -65,6 +69,8 @@ function planSummary(plan: Plan): Record<string, unknown> {
   return {
     lcd: plan.lcd, lag_days: plan.lagDays, closed_days: plan.closedDays, blocks: plan.blocks.length,
     cells_planned: plan.cells.length, by_kind: byKind,
+    format_cells_planned: plan.formatCells.length, format_contract_cells: plan.formatContractCells,
+    format_sample: plan.formatCells.slice(0, 20).map((c) => `${colA1(c.col)}${c.row} ${c.key}`),
     invariant: plan.invariant, reverse_rate: plan.reverseRate,
     own_direct: plan.rates.filter((r) => r.directSource === 'own').length,
     own_commission: plan.rates.filter((r) => r.commissionSource === 'own').length,
@@ -127,9 +133,9 @@ export async function unitkaLoader(ctx: LoaderContext, deps: UnitkaDeps = defaul
     if (!writeMode) {
       const qa = evaluate(snap, plan, { shadow: true });
       // В SHADOW mismatch и LCD — ожидаемая разница (новый день), дефектами считаются остальные.
-      const SHADOW_DIFF = new Set(['BQ_SHEETS_MISMATCH', 'LCD_CONSISTENT']);
+      const SHADOW_DIFF = new Set(['BQ_SHEETS_MISMATCH', 'LCD_CONSISTENT', 'CLOSED_FORMAT_CONTRACT']);
       const expectedFail = qa.checks.filter((c) => !c.pass && !SHADOW_DIFF.has(c.name));
-      rec.qaStatus = expectedFail.length ? 'SHADOW_FAIL' : (plan.cells.length ? 'SHADOW_DIFF' : 'SHADOW_MATCH');
+      rec.qaStatus = expectedFail.length ? 'SHADOW_FAIL' : (plan.cells.length || plan.formatCells.length ? 'SHADOW_DIFF' : 'SHADOW_MATCH');
       rec.qaJson = qaJson(qa, { plan: planSummary(plan) });
       log.info('unitka_shadow', { qa_status: rec.qaStatus, cells_planned: plan.cells.length, checks: qa.checks.map((c) => `${c.name}:${c.pass ? 'PASS' : 'FAIL(' + c.count + ')'}`) });
       if (expectedFail.length) {
@@ -157,11 +163,19 @@ export async function unitkaLoader(ctx: LoaderContext, deps: UnitkaDeps = defaul
       }
     }
 
+    // 4''. Контракт формата закрытого дня — отдельным spreadsheets.batchUpdate ПОСЛЕ значений.
+    // Только строки ≤ LCD; будущее не форматируется. Идемпотентно: при совпадении — 0 запросов.
+    if (plan.formatCells.length > 0) {
+      const writes = toFormatWrites(plan.formatCells);
+      const applied = await sheets.formatWrite(snap.sheetId, writes);
+      log.info('unitka_format_written', { cells: plan.formatCells.length, requests: writes.length, applied });
+    }
+
     // 5. reconciliation — повторное чтение и полный QA-гейт.
     const after = await readSnapshot(sheets, config.unitkaSheetName);
     const qa = evaluate(after, plan);
     rec.qaStatus = qa.pass ? 'PASS' : 'FAIL';
-    rec.qaJson = qaJson(qa, { plan: planSummary(plan) });
+    rec.qaJson = qaJson(qa, { plan: planSummary(plan), format_cells_written: plan.formatCells.length });
     log.info('unitka_qa', { pass: qa.pass, checks: qa.checks.map((c) => `${c.name}:${c.pass ? 'PASS' : 'FAIL(' + c.count + ')'}`) });
     if (!qa.pass) {
       const code = rec.cellsWritten > 0 && rec.cellsWritten !== plan.cells.length ? 'PARTIAL_WRITE' : failureCode(qa);

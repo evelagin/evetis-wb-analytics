@@ -12,7 +12,7 @@ import {
   GRID, OFFSET, FUTURE_ALLOWED_OFFSETS, SUMMARY_TO_OFFSET, SUMMARY,
   type CellValue, colA1, dayRow, isEmpty, asNumber, factEqual, rateEqual, isFormulaError, isoToSerial,
 } from './model.js';
-import { cellAt, currentValue, formulaAt, isFormula, type Plan, type Snapshot } from './plan.js';
+import { cellAt, currentValue, formulaAt, isFormula, formatContract, type Plan, type Snapshot } from './plan.js';
 
 export interface QaCheck {
   name: string;
@@ -112,6 +112,12 @@ export function evaluate(snap: Snapshot, plan: Plan, opts: EvaluateOpts = {}): Q
   }
   checks.push(check('SUMMARY_RECONCILIATION', rec));
 
+  // CLOSED_FORMAT_CONTRACT — закрытые дни в колонках Engine отформатированы как эталон (строка 737).
+  {
+    const fc = formatContract(snap, plan.blocks, closedDays, plan.monthStart, plan.expected);
+    checks.push(check('CLOSED_FORMAT_CONTRACT', fc.cells.map((c) => `${colA1(c.col)}${c.row} ${c.key} [${c.before.fg ? 'fg' : ''}${c.before.bg ? ' bg' : ''}${c.before.numberFormat ? ' nf' : ''}]`)));
+  }
+
   // LAST_CLOSED_DATE consistent: имя = зеркало = вычисленное.
   const want = isoToSerial(plan.lcd);
   const lcdBad: string[] = [];
@@ -137,6 +143,7 @@ export function failureCode(qa: QaResult): string {
     case 'FUTURE_LEAKAGE': return 'FUTURE_LEAKAGE';
     case 'SUMMARY_RECONCILIATION': return 'SUMMARY_MISMATCH';
     case 'LCD_CONSISTENT': return 'LCD_INCONSISTENT';
+    case 'CLOSED_FORMAT_CONTRACT': return 'FORMAT_CONTRACT';
     default: return first.name;
   }
 }

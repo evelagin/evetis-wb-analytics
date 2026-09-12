@@ -63,6 +63,47 @@ export const SUMMARY_TO_OFFSET: ReadonlyArray<readonly [number, number, string]>
   [SUMMARY.ads, OFFSET.adsIn, 'ads'],
 ];
 
+/**
+ * КАНОНИЧЕСКИЙ КОНТРАКТ ФОРМАТА ЗАКРЫТОГО ДНЯ (E3, post-write аудит 12.09.2026).
+ * В Master «будущий» вид колонок ставок (серый шрифт) и хранения (без заливки) был СТАТИЧЕСКИМ
+ * и заканчивался на строке последнего закрытого дня в момент вёрстки (745 = 09.09). Никто —
+ * ни Apps Script при s82lcd, ни Engine при LCD_ADVANCE — эту границу не двигал.
+ * Контракт: для каждой колонки, которую пишет Engine (9 факт + logistics + commission),
+ * статический формат ячейки ЗАКРЫТОГО дня (дата ≤ LCD) = формат эталонной строки 737
+ * того же блока и той же колонки (первый день месяца — всегда закрыт). Сравниваются и
+ * восстанавливаются ровно три свойства: заливка, цвет шрифта, числовой формат.
+ * Будущие дни Engine не трогает — они сохраняют «будущий» статический вид до закрытия.
+ * Условное форматирование (УФ) не затрагивается вовсе.
+ */
+export const FORMAT_CONTRACT_KEYS = [...FACT_KEYS, 'logistics', 'commission'] as const;
+export type FormatKey = (typeof FORMAT_CONTRACT_KEYS)[number];
+/** Строка-эталон формата закрытого дня — первый день месяца. */
+export const FORMAT_REF_ROW = GRID.FIRST;
+
+export interface RgbColor { red?: number; green?: number; blue?: number }
+export interface NumberFormat { type?: string; pattern?: string }
+/** Нормализованный статический формат ячейки: отсутствие = null. */
+export interface CellFormat {
+  bg: RgbColor | null;
+  fg: RgbColor | null;
+  numberFormat: NumberFormat | null;
+}
+
+function colorEqual(a: RgbColor | null, b: RgbColor | null): boolean {
+  if (a === null || b === null) return a === b;
+  const k = ['red', 'green', 'blue'] as const;
+  return k.every((c) => Math.abs((a[c] ?? 0) - (b[c] ?? 0)) < 1 / 255 / 2);
+}
+export function formatEqual(a: CellFormat, b: CellFormat): boolean {
+  const nf = (x: NumberFormat | null): string => (x === null ? '' : `${x.type ?? ''}|${x.pattern ?? ''}`);
+  return colorEqual(a.bg, b.bg) && colorEqual(a.fg, b.fg) && nf(a.numberFormat) === nf(b.numberFormat);
+}
+export const EMPTY_FORMAT: CellFormat = { bg: null, fg: null, numberFormat: null };
+export function formatDescr(f: CellFormat): string {
+  const c = (x: RgbColor | null): string => (x === null ? '-' : '#' + ['red', 'green', 'blue'].map((k) => Math.round(((x as Record<string, number | undefined>)[k] ?? 0) * 255).toString(16).padStart(2, '0')).join(''));
+  return `bg ${c(f.bg)} fg ${c(f.fg)} nf ${f.numberFormat === null ? '-' : (f.numberFormat.pattern ?? f.numberFormat.type ?? '')}`;
+}
+
 /** Именованные диапазоны книги. */
 export const NAMED = { LCD: 'LAST_CLOSED_DATE', REVERSE: 'REVERSE_LEG_RATE' } as const;
 

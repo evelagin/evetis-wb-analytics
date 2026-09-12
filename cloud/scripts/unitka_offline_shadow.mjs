@@ -13,12 +13,13 @@
  */
 import { readFileSync, writeFileSync } from 'node:fs';
 import { UnitkaBq } from '../dist/loaders/unitka/bq.js';
-import { buildPlan, diffRows } from '../dist/loaders/unitka/plan.js';
+import { buildPlan, diffRows, formatRows } from '../dist/loaders/unitka/plan.js';
 import { evaluate } from '../dist/loaders/unitka/qa.js';
 
 const [snapPath, bqPath, diffOut] = process.argv.slice(2);
 if (!snapPath || !bqPath) { console.error('usage: unitka_offline_shadow.mjs <snapshot.json> <bq.json> [diff.csv]'); process.exit(2); }
 const snap = JSON.parse(readFileSync(snapPath, 'utf8'));
+snap.formats ??= []; snap.sheetId ??= 0;
 const data = JSON.parse(readFileSync(bqPath, 'utf8'));
 
 const runner = {
@@ -56,7 +57,10 @@ const report = {
   qa_samples: Object.fromEntries(qa.checks.filter((c) => !c.pass).map((c) => [c.name, c.sample])),
   book_lcd: plan.bookLcd, by_change_type: plan.byChangeType, stock_projection_future: plan.stockProjectionCells,
   legacy_formulas: plan.legacy, legacy_replaced: plan.legacyReplaced,
-  diff: diffRows(plan),
+  format_contract_cells: plan.formatContractCells, format_cells_planned: plan.formatCells.length,
+  format_by_key: plan.formatCells.reduce((a, c) => ((a[c.key] = (a[c.key] ?? 0) + 1), a), {}),
+  format_by_date: plan.formatCells.reduce((a, c) => ((a[c.date] = (a[c.date] ?? 0) + 1), a), {}),
+  diff: [...diffRows(plan), ...formatRows(plan)],
 };
 if (diffOut) {
   const cols = ['DATE', 'SKU', 'CELL', 'METRIC', 'OLD', 'NEW', 'CHANGE_TYPE', 'SOURCE', 'REASON'];

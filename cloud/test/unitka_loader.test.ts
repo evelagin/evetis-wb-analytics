@@ -2,14 +2,14 @@ import { describe, it, expect } from 'vitest';
 import { unitkaLoader, readSnapshot, type UnitkaDeps } from '../src/loaders/unitka/index.js';
 import { evaluate } from '../src/loaders/unitka/qa.js';
 import { buildPlan } from '../src/loaders/unitka/plan.js';
-import type { SheetsGateway, WriteRange } from '../src/loaders/unitka/sheets.js';
+import type { SheetsGateway, WriteRange, FormatWrite, FormatGrid } from '../src/loaders/unitka/sheets.js';
 import type { QueryRunner } from '../src/loaders/mart/bq.js';
 import { GRID, OFFSET, colA1, isoToSerial, dayRow, type CellValue } from '../src/loaders/unitka/model.js';
 import { LoaderError } from '../src/errors.js';
 import type { LoaderContext } from '../src/loaders/types.js';
 import type { Config } from '../src/config.js';
 import type { Logger } from '../src/logging.js';
-import { snapshot, facts, logistics, commission, LCD, NM_IDS } from './unitka_fixture.js';
+import { snapshot, facts, logistics, commission, LCD, NM_IDS, BLACK, DIM, AUTO_BG } from './unitka_fixture.js';
 
 const silentLogger = { info() {}, warn() {}, error() {}, debug() {}, child() { return silentLogger; } } as unknown as Logger;
 const mkConfig = (environment: 'shadow' | 'prod', writeEnabled: boolean): Config => ({
@@ -24,6 +24,8 @@ const ctx = (config: Config): LoaderContext =>
 class FakeRunner implements QueryRunner {
   readonly projectId = 'proj';
   journal: Array<Record<string, unknown>> = [];
+  /** Тест E3: хранение за 10.09 «появилось» в источнике (вместо GAP). */
+  storageFor10: number | null = null;
   constructor(private readonly o: { lcd?: string; d1?: string; logisticsSales?: number } = {}) {}
   async query<T = Record<string, unknown>>(sql: string, params?: Record<string, unknown>): Promise<T[]> {
     if (sql.includes('V_UNITKA_SOURCE_FRESHNESS')) {
@@ -34,7 +36,8 @@ class FakeRunner implements QueryRunner {
       return facts(this.o.lcd ?? LCD).map((r) => ({
         nm_id: r.nmId, date_msk: { value: r.date }, views: r.views, opens: r.opens, carts: r.carts, orders: r.orders, cancels: r.cancels,
         stock: r.stock, ads_in: r.adsIn === null ? null : String(r.adsIn), price: r.price === null ? null : String(r.price),
-        storage: r.storage === null ? null : String(r.storage), orders_source: r.ordersSource, cancels_source: r.cancelsSource,
+        storage: r.date === '2026-09-10' && this.storageFor10 !== null ? String(this.storageFor10) : (r.storage === null ? null : String(r.storage)),
+        orders_source: r.ordersSource, cancels_source: r.cancelsSource,
       })) as T[];
     }
     if (sql.includes('V_UNITKA_LOGISTICS_RATES')) {
@@ -68,6 +71,17 @@ class FakeSheets implements SheetsGateway {
     });
   }
   async readFormulas(): Promise<CellValue[][]> { return this.snap.formulas; }
+  async readFormats(): Promise<FormatGrid> { return { sheetId: this.snap.sheetId, rows: this.snap.formats.map((r) => r.map((f) => ({ ...f }))) }; }
+  formatWrites: FormatWrite[][] = [];
+  async formatWrite(sheetId: number, writes: FormatWrite[]): Promise<number> {
+    if (this.readonlyScope) throw new LoaderError('403 insufficient scope', 'SHEETS_API');
+    if (sheetId !== this.snap.sheetId) throw new LoaderError('wrong sheetId', 'SHEETS_API');
+    this.formatWrites.push(writes);
+    for (const w of writes) for (let r = w.startRow; r < w.endRow; r++) for (let c = w.startCol; c < w.endCol; c++) {
+      this.snap.formats[r - (GRID.FIRST - 1)]![c] = { ...w.format };
+    }
+    return writes.length;
+  }
   async batchWrite(data: WriteRange[]): Promise<number> {
     if (this.readonlyScope) throw new LoaderError('403 insufficient scope', 'SHEETS_API');
     this.writes.push(data);
@@ -210,5 +224,61 @@ describe('qa.evaluate', () => {
     expect(s.grid).toHaveLength(GRID.MTD - GRID.TOP + 1);
     expect(s.namedLcd).toBe(isoToSerial(LCD));
     expect(s.mirrorRev).toBe(32.5256);
+  });
+});
+
+describe('unitkaLoader — контракт формата закрытого дня (E3)', () => {
+  const dimSheet = () => snapshot({
+    lcdInSheet: '2026-09-09', futureStyleFrom: 9,  // как в Master 12.09: строки 10.09+ в «будущем» виде
+    direct: (nm) => (nm === NM_IDS[0] ? 65.98 : 60.55), commission: (nm) => (nm === NM_IDS[0] ? 0.441234 : 0.45578),
+  });
+  it('SHADOW: считает FORMAT_CHANGE только для закрытых дней 10.09 (2 ставки × 24 блока; хранение 10.09 — GAP, вне контракта) и не пишет', async () => {
+    const runner = new FakeRunner();
+    const sheets = new FakeSheets(dimSheet(), true);
+    await unitkaLoader(ctx(mkConfig('shadow', true)), deps(runner, sheets));
+    const j = JSON.parse(String(runner.journal[0]!.qaJson));
+    expect(j.plan.format_cells_planned).toBe(2 * 24);
+    expect(sheets.formatWrites).toEqual([]);
+    expect(runner.journal[0]!.qaStatus).toBe('SHADOW_DIFF');
+  });
+  it('PROD: приводит закрытые 10.09 к эталону строки 737, будущие 11.09+ остаются «будущими», повтор — 0', async () => {
+    const runner = new FakeRunner();
+    const sheets = new FakeSheets(dimSheet());
+    const cfg = mkConfig('prod', true);
+    await unitkaLoader(ctx(cfg), deps(runner, sheets));
+    expect(runner.journal[0]).toMatchObject({ qaStatus: 'PASS' });
+    expect(sheets.formatWrites).toHaveLength(1);
+    const j = JSON.parse(String(runner.journal[0]!.qaJson));
+    expect(j.format_cells_written).toBe(48);
+    expect(j.checks.find((c: { name: string }) => c.name === 'CLOSED_FORMAT_CONTRACT')).toMatchObject({ pass: true, count: 0 });
+    // 10.09 (индекс 9) закрыт → чёрный шрифт ставок; хранение 10.09 — GAP, его «будущий» вид не тронут;
+    // 11.09 (индекс 10) — по-прежнему «будущий»
+    const st = GRID.B0;
+    expect(sheets.snap.formats[9]![st - 1 + OFFSET.logistics]!.fg).toEqual(BLACK);
+    expect(sheets.snap.formats[9]![st - 1 + OFFSET.storage]!.bg).toBeNull();
+    expect(sheets.snap.formats[10]![st - 1 + OFFSET.logistics]!.fg).toEqual(DIM);
+    expect(sheets.snap.formats[10]![st - 1 + OFFSET.storage]!.bg).toBeNull();
+    // повтор — идемпотентно
+    await unitkaLoader(ctx(cfg), deps(runner, sheets));
+    expect(sheets.formatWrites).toHaveLength(1);
+    expect(JSON.parse(String(runner.journal[1]!.qaJson)).plan.format_cells_planned).toBe(0);
+    expect(runner.journal[1]).toMatchObject({ cellsPlanned: 0, qaStatus: 'PASS' });
+  });
+  it('PROD: хранение 10.09 появилось в источнике → значение и формат закрытого дня в одном прогоне', async () => {
+    const runner = new FakeRunner();
+    runner.storageFor10 = 7.77;
+    const sheets = new FakeSheets(dimSheet());
+    await unitkaLoader(ctx(mkConfig('prod', true)), deps(runner, sheets));
+    expect(runner.journal[0]).toMatchObject({ qaStatus: 'PASS' });
+    const st = GRID.B0;
+    expect(sheets.snap.grid[dayRow(9) - GRID.TOP]![st - 1 + OFFSET.storage]).toBe(7.77);
+    expect(sheets.snap.formats[9]![st - 1 + OFFSET.storage]!.bg).toEqual(AUTO_BG);
+    expect(JSON.parse(String(runner.journal[0]!.qaJson)).format_cells_written).toBe(72);
+  });
+  it('PROD: формат-запись не применилась → CLOSED_FORMAT_CONTRACT FAIL, код FORMAT_CONTRACT', async () => {
+    const runner = new FakeRunner();
+    const sheets = new FakeSheets(dimSheet());
+    sheets.formatWrite = async (_id, w) => { sheets.formatWrites.push(w); return w.length; }; // «применил», но лист не изменился
+    await expect(unitkaLoader(ctx(mkConfig('prod', true)), deps(runner, sheets))).rejects.toMatchObject({ code: 'FORMAT_CONTRACT' });
   });
 });

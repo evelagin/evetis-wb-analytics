@@ -1,0 +1,81 @@
+{
+  "lcd": "2026-09-11",
+  "d1_msk": "2026-09-11",
+  "lag_days": 0,
+  "closed_days": 11,
+  "blocks": 24,
+  "invariant": {
+    "shipments": 571,
+    "sales": 518,
+    "refusals": 53,
+    "pass": true
+  },
+  "reverse_rate": 32.186,
+  "rates_own_direct": 15,
+  "rates_own_commission": 13,
+  "expected_cells": 3819,
+  "cells_planned": 0,
+  "by_kind": {},
+  "gaps": {
+    "opens": 7,
+    "carts": 7,
+    "stock": 24,
+    "price": 196,
+    "storage": 48
+  },
+  "qa": [
+    "BQ_SHEETS_MISMATCH: PASS (0)",
+    "FORMULA_ERRORS: PASS (0)",
+    "FUTURE_LEAKAGE: PASS (0)",
+    "STOCK_PROJECTION_FUTURE: PASS (432)",
+    "SUMMARY_RECONCILIATION: PASS (0)",
+    "CLOSED_FORMAT_CONTRACT: FAIL (96)",
+    "LCD_CONSISTENT: PASS (0)",
+    "BLOCKS: PASS (24)",
+    "DIRECT_LOGISTICS_INVARIANT: PASS (571)",
+    "NO_DUPLICATE_DATE_NMID: PASS (0)"
+  ],
+  "qa_samples": {
+    "CLOSED_FORMAT_CONTRACT": [
+      "AF746 logistics [fg bg nf]",
+      "AF747 logistics [fg bg nf]",
+      "AD746 commission [fg bg nf]",
+      "AD747 commission [fg bg nf]",
+      "BD746 logistics [fg bg nf]",
+      "BD747 logistics [fg bg nf]",
+      "BB746 commission [fg bg nf]",
+      "BB747 commission [fg bg nf]",
+      "CB746 logistics [fg bg nf]",
+      "CB747 logistics [fg bg nf]"
+    ]
+  },
+  "book_lcd": "2026-09-11",
+  "by_change_type": {
+    "FACT_CHANGE": 0,
+    "LATE_SOURCE_CORRECTION": 0,
+    "MODEL_PARAMETER_REFRESH": 0,
+    "LCD_ADVANCE": 0,
+    "NO_CHANGE": 0
+  },
+  "stock_projection_future": 432,
+  "legacy_formulas": {
+    "closed": 0,
+    "future": 470,
+    "byKey": {
+      "stock": 451,
+      "storage": 19
+    }
+  },
+  "legacy_replaced": 0,
+  "format_contract_cells": 2378,
+  "format_cells_planned": 96,
+  "format_by_key": {
+    "logistics": 48,
+    "commission": 48
+  },
+  "format_by_date": {
+    "2026-09-10": 48,
+    "2026-09-11": 48
+  },
+  "diff": "96 строк → /sessions/rcw-01k6cvycsvhwcbrn9u1fhwrs/e3_diff.csv"
+}

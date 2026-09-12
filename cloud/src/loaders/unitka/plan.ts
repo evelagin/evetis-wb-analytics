@@ -11,8 +11,9 @@
 import { LoaderError } from '../../errors.js';
 import type { CommissionRateRow, FactRow, LcdRow, LogisticsRateRow } from './bq.js';
 import {
-  GRID, OFFSET, FACT_KEYS, CALC_OFFSETS, SUMMARY, NAMED,
-  type Block, type CellValue, type FactKey,
+  GRID, OFFSET, FACT_KEYS, CALC_OFFSETS, SUMMARY, NAMED, FORMAT_CONTRACT_KEYS, FORMAT_REF_ROW, EMPTY_FORMAT,
+  type Block, type CellValue, type FactKey, type CellFormat, type FormatKey,
+  formatEqual, formatDescr,
   findBlocks, colA1, isoToSerial, serialToIso, addDaysIso, monthStartIso, dayRow,
   isEmpty, asNumber, factEqual, rateEqual, round2, round6,
 } from './model.js';
@@ -24,6 +25,15 @@ export interface Snapshot {
   mirrorLcd: CellValue;     // WB736
   mirrorRev: CellValue;     // WB737
   namedLcd: CellValue;      // именованный диапазон LAST_CLOSED_DATE
+  /** Статические форматы строк GRID.FIRST..FIRST+DAYS-1 (userEnteredFormat, без УФ). */
+  formats: CellFormat[][];
+  sheetId: number;
+}
+
+export function formatAt(snap: Snapshot, row: number, col: number): CellFormat {
+  const r = snap.formats[row - GRID.FIRST];
+  const v = r ? r[col - 1] : undefined;
+  return v ?? EMPTY_FORMAT;
 }
 
 export function cellAt(snap: Snapshot, row: number, col: number): CellValue {
@@ -85,6 +95,17 @@ export interface PlannedCell extends ExpectedCell {
   reason: string;
 }
 
+/** Ячейка закрытого дня, чей статический формат отличается от эталона строки 737. */
+export interface FormatCell {
+  row: number;
+  col: number;
+  nmId: number;
+  key: FormatKey;
+  date: string;
+  before: CellFormat;
+  want: CellFormat;
+}
+
 export interface RateLine {
   nmId: number;
   n: number;
@@ -116,6 +137,10 @@ export interface Plan {
   byChangeType: Record<ChangeType, number>;
   /** Будущие дни: формулы-проекции остатка (KEEP, решение владельца) — informational. */
   stockProjectionCells: number;
+  /** Контракт формата закрытого дня: ячейки, которые нужно привести к эталону (FORMAT_CHANGE). */
+  formatCells: FormatCell[];
+  /** Сколько ячеек закрытых дней под контрактом формата всего (для отчёта). */
+  formatContractCells: number;
 }
 
 export interface PlanInputs {
@@ -358,9 +383,11 @@ export function buildPlan(inp: PlanInputs): Plan {
     byChangeType[changeType]++;
     cells.push({ ...e, before, changeType, reason });
   }
+  const fmt = formatContract(snap, blocks, closedDays, monthStart, expected);
   return {
     lcd, d1Msk: d1, lagDays, monthStart, closedDays, blocks, expected, cells, rates, reverseRate, invariant, sourcesByDay, gaps,
     legacy: pre.legacy, legacyReplaced, bookLcd, byChangeType, stockProjectionCells,
+    formatCells: fmt.cells, formatContractCells: fmt.total,
   };
 }
 
@@ -413,5 +440,71 @@ export function diffRows(plan: Plan): DiffRow[] {
     CHANGE_TYPE: c.changeType,
     SOURCE: c.source ?? '',
     REASON: c.reason,
+  }));
+}
+
+/* ───────────────────────── формат закрытого дня ───────────────────────── */
+
+/**
+ * Контракт формата закрытого дня (см. model.ts, FORMAT_CONTRACT_KEYS): для строк с датой ≤ LCD
+ * статический формат ячейки в колонках Engine должен равняться формату эталонной строки 737
+ * того же блока. Строки > LCD не рассматриваются вовсе — будущее Engine не форматирует.
+ *
+ * GAP-ячейки (факт, которого нет в источнике: want = null) в контракт НЕ входят: у Master
+ * есть собственная разметка пропусков (например, оранжевый фон остатков 03.09), и Engine её
+ * не переопределяет. Формат следует за значением: как только источник даёт факт, ячейка
+ * получает значение и формат закрытого дня в одном прогоне. Набор «ячейка будет со значением»
+ * берётся из ожидания (expected) — одинаково до и после записи, поэтому post-write QA сходится.
+ */
+export function formatContract(snap: Snapshot, blocks: readonly Block[], closedDays: number, monthStart: string, expected: readonly ExpectedCell[]): { cells: FormatCell[]; total: number } {
+  const cells: FormatCell[] = [];
+  let total = 0;
+  const valued = new Set<string>();
+  for (const e of expected) if (!e.namedRange && e.col !== GRID.MIR && e.want !== null) valued.add(`${e.row}|${e.col}`);
+  for (const b of blocks) {
+    for (const k of FORMAT_CONTRACT_KEYS) {
+      const col = b.start + OFFSET[k];
+      const want = formatAt(snap, FORMAT_REF_ROW, col);
+      for (let i = 0; i < closedDays; i++) {
+        const row = dayRow(i);
+        if (row === FORMAT_REF_ROW) continue;
+        if (!valued.has(`${row}|${col}`)) continue; // GAP — разметка пропуска остаётся за Master
+        total++;
+        const before = formatAt(snap, row, col);
+        if (!formatEqual(before, want)) cells.push({ row, col, nmId: b.nmId, key: k, date: addDaysIso(monthStart, i), before, want });
+      }
+    }
+  }
+  return { cells, total };
+}
+
+/** Группировка формат-ячеек в вертикальные отрезки (0-based, конец исключительно) для repeatCell. */
+export function toFormatWrites(cells: readonly FormatCell[]): Array<{ startRow: number; endRow: number; startCol: number; endCol: number; format: CellFormat }> {
+  const out: Array<{ startRow: number; endRow: number; startCol: number; endCol: number; format: CellFormat }> = [];
+  const byCol = new Map<number, FormatCell[]>();
+  for (const c of cells) (byCol.get(c.col) ?? byCol.set(c.col, []).get(c.col)!).push(c);
+  for (const [col, list] of [...byCol.entries()].sort((a, b) => a[0] - b[0])) {
+    list.sort((a, b) => a.row - b.row);
+    let run: FormatCell[] = [];
+    const flush = () => {
+      if (!run.length) return;
+      out.push({ startRow: run[0]!.row - 1, endRow: run[run.length - 1]!.row, startCol: col - 1, endCol: col, format: run[0]!.want });
+      run = [];
+    };
+    for (const c of list) {
+      // один repeatCell = один формат; разрыв по строке или по формату
+      if (run.length && (c.row !== run[run.length - 1]!.row + 1 || !formatEqual(c.want, run[0]!.want))) flush();
+      run.push(c);
+    }
+    flush();
+  }
+  return out;
+}
+
+export function formatRows(plan: Plan): Array<{ DATE: string; SKU: string; CELL: string; METRIC: string; OLD: string; NEW: string; CHANGE_TYPE: 'FORMAT_CHANGE'; SOURCE: string; REASON: string }> {
+  return plan.formatCells.map((c) => ({
+    DATE: c.date, SKU: String(c.nmId), CELL: `${colA1(c.col)}${c.row}`, METRIC: c.key,
+    OLD: formatDescr(c.before), NEW: formatDescr(c.want), CHANGE_TYPE: 'FORMAT_CHANGE' as const,
+    SOURCE: `эталон ${colA1(c.col)}${FORMAT_REF_ROW}`, REASON: `закрытый день ${c.date}: статический формат ≠ эталону строки ${FORMAT_REF_ROW}`,
   }));
 }

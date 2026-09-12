@@ -604,3 +604,23 @@ shadow-прогона. Заблокировано в этой сессии (не
 plan/apply, снятие паузы `wb-funnel-prod`, доступ SA к книге, deploy shadow — пошаговая
 инструкция в §7 документа. В книгу не записано ничего; `UNITKA_WRITE_ENABLED` не включён;
 prod Job не запускался; октябрь не начат.
+
+## 2026-09-12 · UNITKA ENGINE v1 — Stage E3: post-write аудит первого PROD write, контракт формата закрытого дня
+
+Первый controlled PROD write (`unitka-engine-prod-5npcz`, 1477 ячеек, QA PASS, LCD 10.09 → 11.09)
+принят по значениям, но владелец увидел «бледные» ставки и пустое хранение на 10–11.09.
+Аудит (`docs/UNITKA_ENGINE_V1_E3_POST_WRITE_AUDIT_2026-09-12.md`): **три разные причины**.
+COMMISSION/LOGISTICS — статический серый шрифт `#b7b7b7` на строках 746–766 (граница
+`LAST_CLOSED_DATE = 09.09` в момент вёрстки Master), УФ не участвует, значения верны —
+24/24 блока совпадают с `V_UNITKA_LOGISTICS_RATES` на окне 13.08–11.09 (252442517 65,98→66,39,
+305101272 49,51, 567668636 своя→магазин). STORAGE — upstream: `RAW_WB_PAID_STORAGE` загружен
+один раз ручным `UnitkaR3Ingest.gs` с прошитым окном 01–09.09, production-загрузчика нет;
+Engine корректно оставил GAP.
+
+**Код (`unitka-engine/1.1.0`):** канонический контракт формата закрытого дня — статический
+формат ячейки (заливка, шрифт, числовой формат) в колонках Engine для дат ≤ LCD = формат
+эталонной строки 737 того же блока; будущие дни и GAP-ячейки вне контракта; формат следует за
+значением. `readFormats`/`formatWrite` (repeatCell одним batchUpdate после значений), план
+`FORMAT_CHANGE`, гейт `CLOSED_FORMAT_CONTRACT`. Тесты 236. **Repair plan 10–11.09:** значений 0,
+форматов 96 (ставки × 2 дня × 24), хранение остаётся GAP; повтор — 0/0. Не выполнялось: PROD
+write, deploy, Scheduler. Требуется upstream `wb-storage` (Stage E3-storage).

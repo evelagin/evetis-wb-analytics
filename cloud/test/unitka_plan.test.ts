@@ -1,9 +1,9 @@
 import { describe, it, expect } from 'vitest';
-import { buildPlan, preflight, toWriteRanges, diffRows, type PlanInputs } from '../src/loaders/unitka/plan.js';
+import { buildPlan, preflight, toWriteRanges, diffRows, formatContract, toFormatWrites, formatRows, type PlanInputs } from '../src/loaders/unitka/plan.js';
 import { GRID, OFFSET, colA1, serialToIso, isoToSerial, findBlocks, factEqual, dayRow } from '../src/loaders/unitka/model.js';
 import { unitkaSlot } from '../src/loaders/unitka/slot.js';
 import { LoaderError } from '../src/errors.js';
-import { snapshot, facts, logistics, commission, lcdRow, LCD, NM_IDS } from './unitka_fixture.js';
+import { snapshot, facts, logistics, commission, lcdRow, LCD, NM_IDS, refFormat, DIM } from './unitka_fixture.js';
 
 const inputs = (over: Partial<PlanInputs> = {}): PlanInputs => ({
   snapshot: snapshot(), lcd: lcdRow(), facts: facts(), logistics: logistics(), commission: commission(),
@@ -191,5 +191,49 @@ describe('toWriteRanges', () => {
     const p2 = buildPlan(inputs({ snapshot: snapshot({ mutate: (s) => { s.grid[dayRow(0) - GRID.TOP]![GRID.B0 + 2 * GRID.BW - 1 + OFFSET.stock] = 42; } }) }));
     const w = toWriteRanges(p2.cells.filter((c) => c.kind === 'fact'), 'S');
     expect(w[0]!.values).toEqual([['']]);
+  });
+});
+
+describe('formatContract', () => {
+  it('эталон = строка 737; будущие строки не рассматриваются; идемпотентно на одинаковом листе', () => {
+    const snap = snapshot();
+    const p = buildPlan(inputs({ snapshot: snap }));
+    expect(p.formatCells).toEqual([]);
+    // 9 закрытых строк после эталонной × 11 колонок × 24 блока минус GAP-ячейки (stock SKU#3: 9, storage 10.09: 24)
+    expect(p.formatContractCells).toBe(24 * 11 * 9 - 9 - 24);
+  });
+  it('Master 12.09: «будущий» вид с 10.09 при LCD 11.09 → 2 дня × 3 колонки × 24 блока = 144 ячейки, 11 колонок сверены', () => {
+    const snap = snapshot({ futureStyleFrom: 9 });
+    const p = buildPlan(inputs({ snapshot: snap, lcd: lcdRow('2026-09-11', '2026-09-12'), facts: facts('2026-09-11') }));
+    // 2 дня × 3 колонки × 24 блока = 144, минус GAP хранения 10.09 (фикстура: storage 10.09 = null у всех 24) = 120
+    expect(p.formatCells).toHaveLength(120);
+    expect(new Set(p.formatCells.map((c) => c.key))).toEqual(new Set(['logistics', 'commission', 'storage']));
+    expect(new Set(p.formatCells.map((c) => c.date))).toEqual(new Set(['2026-09-10', '2026-09-11']));
+    expect(p.formatCells.every((c) => c.row <= dayRow(10))).toBe(true);
+    const c0 = p.formatCells.find((c) => c.key === 'logistics')!;
+    expect(c0.before.fg).toEqual(DIM);
+    expect(c0.want).toEqual(refFormat('logistics'));
+    const rows = formatRows(p);
+    expect(rows.find((r) => r.CELL === `${colA1(c0.col)}${c0.row}`)).toMatchObject({ CHANGE_TYPE: 'FORMAT_CHANGE', METRIC: 'logistics', SOURCE: `эталон ${colA1(c0.col)}737` });
+    expect(rows).toHaveLength(120);
+    // группировка: ставки — 2 смежные строки в один repeatCell (48), хранение — только 11.09 (24) → 72 запроса
+    const w = toFormatWrites(p.formatCells);
+    expect(w).toHaveLength(72);
+    const wl = w.find((x) => x.startCol === c0.col - 1)!;
+    expect(wl).toMatchObject({ startRow: dayRow(9) - 1, endRow: dayRow(10), endCol: c0.col }); // строки 746..747 → 0-based [745, 747)
+  });
+  it('будущие строки со «взрослым» форматом не трогаются, закрытые с «будущим» — приводятся', () => {
+    const snap = snapshot({ futureStyleFrom: 20 });
+    const p = buildPlan(inputs({ snapshot: snap }));
+    const fc = formatContract(snap, p.blocks, 10, '2026-09-01', p.expected);
+    expect(fc.cells).toEqual([]); // будущее (индекс ≥ 20) вне контракта
+  });
+  it('GAP-ячейка (want = null) вне контракта: оранжевая разметка пропуска остатков 03.09 не трогается', () => {
+    const snap = snapshot({ mutate: (s) => {
+      // SKU#3: остатков нет весь месяц (GAP) — Master пометил их оранжевым; формат ≠ эталону
+      for (let i = 1; i < 10; i++) s.formats[i]![GRID.B0 + 2 * GRID.BW - 1 + OFFSET.stock] = { bg: { red: 0.988, green: 0.898, blue: 0.804 }, fg: null, numberFormat: null };
+    } });
+    const p = buildPlan(inputs({ snapshot: snap }));
+    expect(p.formatCells).toEqual([]);
   });
 });

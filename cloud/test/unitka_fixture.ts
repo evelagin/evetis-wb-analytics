@@ -3,7 +3,7 @@
  * сводка = Σ блоков. Строится из «истины» BigQuery, чтобы проверять идемпотентность
  * (лист == BQ → пустой план) и все ветки fail-closed.
  */
-import { GRID, OFFSET, FACT_KEYS, CALC_OFFSETS, SUMMARY, SUMMARY_TO_OFFSET, isoToSerial, addDaysIso, dayRow, type CellValue } from '../src/loaders/unitka/model.js';
+import { GRID, OFFSET, FACT_KEYS, CALC_OFFSETS, SUMMARY, SUMMARY_TO_OFFSET, FORMAT_CONTRACT_KEYS, isoToSerial, addDaysIso, dayRow, type CellValue, type CellFormat } from '../src/loaders/unitka/model.js';
 import type { Snapshot } from '../src/loaders/unitka/plan.js';
 import type { FactRow, LogisticsRateRow, CommissionRateRow, LcdRow } from '../src/loaders/unitka/bq.js';
 
@@ -52,12 +52,33 @@ export function commission(): CommissionRateRow[] {
   ];
 }
 
+export const BLACK = { red: 0, green: 0, blue: 0 };
+export const DIM = { red: 0.718, green: 0.718, blue: 0.718 }; // #b7b7b7
+export const AUTO_BG = { red: 0.945, green: 0.973, blue: 0.957 }; // #f1f8f4
+export const NF_INT = { type: 'NUMBER', pattern: '#,##0' };
+export const NF_RUB = { type: 'NUMBER', pattern: '#,##0 "₽"' };
+
+/** Эталонный формат закрытого дня по ключу колонки (как в Master). */
+export function refFormat(key: (typeof FORMAT_CONTRACT_KEYS)[number]): CellFormat {
+  if (key === 'logistics' || key === 'commission') return { bg: null, fg: BLACK, numberFormat: key === 'commission' ? { type: 'PERCENT', pattern: '0.0%' } : NF_RUB };
+  if (key === 'storage' || key === 'adsIn' || key === 'price') return { bg: AUTO_BG, fg: BLACK, numberFormat: NF_RUB };
+  return { bg: AUTO_BG, fg: BLACK, numberFormat: NF_INT };
+}
+/** «Будущий» статический вид Master: ставки серым, хранение без заливки и формата. */
+export function futureFormat(key: (typeof FORMAT_CONTRACT_KEYS)[number]): CellFormat {
+  if (key === 'logistics' || key === 'commission') return { ...refFormat(key), fg: DIM };
+  if (key === 'storage') return { bg: null, fg: null, numberFormat: null };
+  return refFormat(key);
+}
+
 export interface FixtureOpts {
   lcdInSheet?: string;          // дата в зеркале и имени (по умолчанию = LCD)
   applyFacts?: boolean;         // факт уже в листе (идемпотентность)
   direct?: (nm: number) => number;
   commission?: (nm: number) => number;
   reverse?: number;
+  /** С какого индекса дня (0-based) строки несут «будущий» статический вид (как в Master: 9 = 10.09). */
+  futureStyleFrom?: number;
   mutate?: (snap: Snapshot) => void;
 }
 
@@ -110,8 +131,17 @@ export function snapshot(opts: FixtureOpts = {}): Snapshot {
   for (let i = 0; i < closed; i++) { const v = g(dayRow(i))[SUMMARY.profit - 1]; if (typeof v === 'number') mtd += v; }
   g(GRID.MTD)[SUMMARY.profit - 1] = mtd;
 
+  const formats: CellFormat[][] = Array.from({ length: GRID.DAYS }, () => Array<CellFormat>(GRID.NC).fill({ bg: null, fg: null, numberFormat: null }));
+  NM_IDS.forEach((_, b) => {
+    const st = GRID.B0 + b * GRID.BW;
+    for (let i = 0; i < GRID.DAYS; i++) {
+      for (const k of FORMAT_CONTRACT_KEYS) {
+        formats[i]![st - 1 + OFFSET[k]] = opts.futureStyleFrom !== undefined && i >= opts.futureStyleFrom ? futureFormat(k) : refFormat(k);
+      }
+    }
+  });
   const snap: Snapshot = {
-    grid, formulas,
+    grid, formulas, formats, sheetId: 739487431,
     mirrorLcd: isoToSerial(lcdSheet), mirrorRev: opts.reverse ?? 32.5256, namedLcd: isoToSerial(lcdSheet),
   };
   opts.mutate?.(snap);
