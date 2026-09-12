@@ -60,10 +60,13 @@ jobs:
       # targets: ограничивает plan ресурсами Engine, чтобы чужой дрейф (ops_health.tf) не смешивался
       # с включением Engine. Terraform сам предупредит, что targeted plan — не полная конфигурация.
       - run: |
-          ARGS=""
+          ARGS=()
           IFS=',' read -ra T <<< "${{ inputs.targets }}"
-          for t in "${T[@]}"; do t="$(echo "$t" | xargs)"; [ -n "$t" ] && ARGS="$ARGS -target=$t"; done
-          terraform plan -input=false $ARGS
+          for t in "${T[@]}"; do
+            t="${t#"${t%%[![:space:]]*}"}"; t="${t%"${t##*[![:space:]]}"}"
+            [ -n "$t" ] && ARGS+=("-target=$t")
+          done
+          terraform plan -input=false "${ARGS[@]}"
 
   apply:
     needs: preflight
@@ -82,7 +85,10 @@ jobs:
       - uses: hashicorp/setup-terraform@v3
       - run: terraform init -input=false -backend-config="bucket=${{ vars.TF_STATE_BUCKET }}" -backend-config="prefix=evetis/wb-cloud"
       - run: |
-          ARGS=""
+          ARGS=()
           IFS=',' read -ra T <<< "${{ inputs.targets }}"
-          for t in "${T[@]}"; do t="$(echo "$t" | xargs)"; [ -n "$t" ] && ARGS="$ARGS -target=$t"; done
-          terraform apply -input=false -auto-approve $ARGS
+          for t in "${T[@]}"; do
+            t="${t#"${t%%[![:space:]]*}"}"; t="${t%"${t##*[![:space:]]}"}"
+            [ -n "$t" ] && ARGS+=("-target=$t")
+          done
+          terraform apply -input=false -auto-approve "${ARGS[@]}"
