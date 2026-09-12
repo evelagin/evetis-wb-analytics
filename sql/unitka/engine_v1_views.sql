@@ -1,0 +1,262 @@
+-- ============================================================================
+-- UNITKA ENGINE v1 — подготовленный слой BigQuery (Stage E1, 12.09.2026).
+-- Engine (cloud/src/loaders/unitka) читает ТОЛЬКО эти вью и не содержит бизнес-SQL.
+-- Все вью — только чтение production-слоёв; таблиц не создают.
+-- Док: docs/UNITKA_ENGINE_V1_DESIGN.md.
+-- Применение: bq query --use_legacy_sql=false < sql/unitka/engine_v1_views.sql
+-- Вью 1–5 применены 12.09.2026 (MCP BigQuery), вью 6 — после infra apply (см. её заголовок).
+-- ============================================================================
+
+-- ============================================================================
+-- UNITKA ENGINE v1 — подготовленный слой BigQuery (Stage E1, 12.09.2026).
+-- Engine (cloud/src/loaders/unitka) читает ТОЛЬКО эти вью и не содержит бизнес-SQL.
+-- Все вью — только чтение production-слоёв; таблиц не создают.
+-- Док: docs/UNITKA_ENGINE_V1_DESIGN.md.
+-- Применение: bq query --use_legacy_sql=false < sql/unitka/engine_v1_views.sql
+-- ============================================================================
+
+-- ─── 1. Свежесть источников ────────────────────────────────────────────────
+-- gating = TRUE у источников, без которых закрытый день не считается закрытым:
+-- воронка (authoritative для переходов/корзин/заказов) и витрина (показы/реклама,
+-- FACT_ORDERS → отмены-прокси и цена). Остатки, хранение, финансы не гейтят:
+-- их пропуски в Master приняты как «GAP — пусто, не ноль» и дозаполняются позже.
+CREATE OR REPLACE VIEW `project-fa311fc0-4d87-4781-986.wb_mart.V_UNITKA_SOURCE_FRESHNESS` AS
+SELECT 'funnel' AS source, MAX(date_msk) AS max_closed_date, TRUE AS gating,
+       MAX(observed_at) AS observed_at
+FROM `project-fa311fc0-4d87-4781-986.wb_raw.V_WB_FUNNEL_DAILY`
+UNION ALL
+SELECT 'mart', MAX(target_date), TRUE, MAX(completed_at)
+FROM `project-fa311fc0-4d87-4781-986.wb_mart.MART_RUNS`
+WHERE status = 'COMPLETE' AND environment = 'prod'
+UNION ALL
+SELECT 'orders', MAX(order_date), FALSE, MAX(built_at)
+FROM `project-fa311fc0-4d87-4781-986.wb_mart.FACT_ORDERS`
+UNION ALL
+SELECT 'stocks', MAX(snapshot_date), FALSE, MAX(built_at)
+FROM `project-fa311fc0-4d87-4781-986.wb_mart.FACT_STOCKS_SNAPSHOT`
+UNION ALL
+SELECT 'storage', MAX(date_msk), FALSE, MAX(ingested_at)
+FROM `project-fa311fc0-4d87-4781-986.wb_raw.RAW_WB_PAID_STORAGE`
+UNION ALL
+SELECT 'finance', MAX(_rr_date), FALSE, MAX(SAFE_CAST(loaded_at AS TIMESTAMP))
+FROM `project-fa311fc0-4d87-4781-986.wb_raw.V_WB_FINANCE_CANONICAL`;
+-- ─── 2. LAST_CLOSED_DATE ───────────────────────────────────────────────────
+-- MIN по гейтящим источникам, но не позже D-1 МСК (сегодняшний день закрытым не бывает).
+CREATE OR REPLACE VIEW `project-fa311fc0-4d87-4781-986.wb_mart.V_UNITKA_LAST_CLOSED_DATE` AS
+SELECT
+  LEAST(MIN(max_closed_date), DATE_SUB(CURRENT_DATE('Europe/Moscow'), INTERVAL 1 DAY)) AS last_closed_date,
+  DATE_SUB(CURRENT_DATE('Europe/Moscow'), INTERVAL 1 DAY) AS d1_msk,
+  ARRAY_AGG(STRUCT(source, max_closed_date) ORDER BY source) AS gating_sources
+FROM `project-fa311fc0-4d87-4781-986.wb_mart.V_UNITKA_SOURCE_FRESHNESS`
+WHERE gating;
+-- ─── 3. Дневной факт nm_id × дата за текущий месяц до LAST_CLOSED_DATE ─────
+-- Контракт воронки (решение владельца 11.09):
+--   opens / carts / gross orders  = FUNNEL_API (authoritative);
+--   01-03.09 — только исторический XLSX-backfill, ЖЁСТКО ограничен датами ≤ 2026-09-03,
+--              чтобы production Engine не мог использовать XLSX ни за какие другие даты;
+--   cancels 04.09+                = PROXY_FACT_ORDERS (воронка не отдаёт отмены).
+-- Строки эмитируются ТОЛЬКО за даты ≤ LAST_CLOSED_DATE — «утечка будущего» отсекается
+-- на уровне источника. NULL = пропуск источника (Engine пишет пустую ячейку, не ноль).
+CREATE OR REPLACE VIEW `project-fa311fc0-4d87-4781-986.wb_mart.V_UNITKA_DAILY_FACT` AS
+WITH lcd AS (
+  SELECT last_closed_date AS d2, DATE_TRUNC(last_closed_date, MONTH) AS d1
+  FROM `project-fa311fc0-4d87-4781-986.wb_mart.V_UNITKA_LAST_CLOSED_DATE`
+),
+days AS (SELECT d FROM lcd, UNNEST(GENERATE_DATE_ARRAY(lcd.d1, lcd.d2)) AS d),
+sku AS (
+  SELECT nm_id FROM `project-fa311fc0-4d87-4781-986.wb_raw.REF_SKU_MASTER`
+  WHERE marketplace = 'WB' AND active
+),
+g AS (SELECT s.nm_id, d.d FROM sku s CROSS JOIN days d),
+o AS (
+  SELECT nm_id, order_date AS d, SUM(quantity) AS gross, SUM(IF(is_cancel, quantity, 0)) AS canc,
+         SAFE_DIVIDE(SUM(price_with_disc * quantity), NULLIF(SUM(quantity), 0)) AS price
+  FROM `project-fa311fc0-4d87-4781-986.wb_mart.FACT_ORDERS`, lcd
+  WHERE order_date BETWEEN lcd.d1 AND lcd.d2
+  GROUP BY 1, 2
+),
+m AS (
+  SELECT nm_id, day AS d, SUM(views) AS views, SUM(ad_spend) AS ads
+  FROM `project-fa311fc0-4d87-4781-986.wb_mart.MART_SKU_DAILY`, lcd
+  WHERE day BETWEEN lcd.d1 AND lcd.d2
+  GROUP BY 1, 2
+),
+f AS (
+  SELECT nm_id, date_msk AS d, MAX(open_card_count) AS opens, MAX(add_to_cart_count) AS carts,
+         MAX(orders_count) AS forders
+  FROM `project-fa311fc0-4d87-4781-986.wb_raw.V_WB_FUNNEL_DAILY`, lcd
+  WHERE date_msk BETWEEN lcd.d1 AND lcd.d2
+  GROUP BY 1, 2
+),
+bf AS (
+  SELECT nm_id, date_msk AS d, open_card_count AS opens, add_to_cart_count AS carts,
+         orders_count AS forders, cancel_count AS canc
+  FROM `project-fa311fc0-4d87-4781-986.wb_raw.RAW_WB_FUNNEL_XLSX_BACKFILL`
+  WHERE date_msk <= DATE '2026-09-03'   -- разовый исторический backfill, дальше НЕ действует
+),
+sd AS (SELECT DISTINCT snapshot_date AS d FROM `project-fa311fc0-4d87-4781-986.wb_mart.FACT_STOCKS_SNAPSHOT`, lcd WHERE snapshot_date BETWEEN lcd.d1 AND lcd.d2),
+st AS (
+  SELECT nm_id, snapshot_date AS d, SUM(quantity) AS stock
+  FROM `project-fa311fc0-4d87-4781-986.wb_mart.FACT_STOCKS_SNAPSHOT`, lcd
+  WHERE snapshot_date BETWEEN lcd.d1 AND lcd.d2
+  GROUP BY 1, 2
+),
+pd AS (SELECT DISTINCT date_msk AS d FROM `project-fa311fc0-4d87-4781-986.wb_raw.RAW_WB_PAID_STORAGE`, lcd WHERE date_msk BETWEEN lcd.d1 AND lcd.d2),
+ps AS (
+  SELECT SAFE_CAST(nm_id AS INT64) AS nm_id, date_msk AS d, SUM(SAFE_CAST(warehouse_price AS NUMERIC)) AS storage
+  FROM `project-fa311fc0-4d87-4781-986.wb_raw.RAW_WB_PAID_STORAGE`, lcd
+  WHERE date_msk BETWEEN lcd.d1 AND lcd.d2
+  GROUP BY 1, 2
+)
+SELECT
+  g.nm_id,
+  g.d AS date_msk,
+  IFNULL(m.views, 0)                                   AS views,
+  COALESCE(f.opens, bf.opens)                          AS opens,
+  COALESCE(f.carts, bf.carts)                          AS carts,
+  COALESCE(f.forders, bf.forders, o.gross, 0)          AS orders,
+  COALESCE(bf.canc, o.canc, 0)                         AS cancels,
+  IF(sd.d IS NULL, NULL, IFNULL(st.stock, 0))          AS stock,
+  ROUND(IFNULL(m.ads, 0), 2)                           AS ads_in,
+  ROUND(o.price, 2)                                    AS price,
+  IF(pd.d IS NULL, NULL, ROUND(IFNULL(ps.storage, 0), 2)) AS storage,
+  CASE WHEN f.forders IS NOT NULL THEN 'FUNNEL_API'
+       WHEN bf.forders IS NOT NULL THEN 'XLSX_BACKFILL'
+       ELSE 'ORDERS_API' END                           AS orders_source,
+  CASE WHEN bf.canc IS NOT NULL THEN 'XLSX_BACKFILL'
+       ELSE 'PROXY_FACT_ORDERS' END                    AS cancels_source
+FROM g
+LEFT JOIN o  ON o.nm_id  = g.nm_id AND o.d  = g.d
+LEFT JOIN m  ON m.nm_id  = g.nm_id AND m.d  = g.d
+LEFT JOIN f  ON f.nm_id  = g.nm_id AND f.d  = g.d
+LEFT JOIN bf ON bf.nm_id = g.nm_id AND bf.d = g.d
+LEFT JOIN st ON st.nm_id = g.nm_id AND st.d = g.d
+LEFT JOIN ps ON ps.nm_id = g.nm_id AND ps.d = g.d
+LEFT JOIN sd ON sd.d = g.d
+LEFT JOIN pd ON pd.d = g.d;
+-- ─── 4. Ставки логистики, модель B, окно 30 дней [LCD−29, LCD], как s8win_() в Apps Script ──────
+-- Популяция прямых отправлений — уникальные srid с операцией IN ('Логистика','Доставка')
+-- (решение владельца 11.09). Первое плечо srid — прямое, второе — обратное.
+-- Строка nm_id = 0 — магазин (fallback). Инвариант n = sales + ref проверяет Engine.
+CREATE OR REPLACE VIEW `project-fa311fc0-4d87-4781-986.wb_mart.V_UNITKA_LOGISTICS_RATES` AS
+WITH w AS (
+  SELECT DATE_SUB(last_closed_date, INTERVAL 29 DAY) AS d1, last_closed_date AS d2
+  FROM `project-fa311fc0-4d87-4781-986.wb_mart.V_UNITKA_LAST_CLOSED_DATE`
+),
+b AS (
+  SELECT srid, SAFE_CAST(wb_nm_id AS INT64) AS nm, supplier_oper_name AS son,
+         SAFE_CAST(logistics_amount AS NUMERIC) AS amt
+  FROM `project-fa311fc0-4d87-4781-986.wb_raw.V_WB_FINANCE_CANONICAL`, w
+  WHERE _rr_date BETWEEN w.d1 AND w.d2 AND wb_nm_id IS NOT NULL AND srid IS NOT NULL
+),
+sale AS (SELECT COUNT(DISTINCT srid) AS n FROM b WHERE son = 'Продажа'),
+l AS (
+  SELECT srid, nm, son, amt,
+         ROW_NUMBER() OVER (PARTITION BY srid ORDER BY amt DESC) AS rn,
+         COUNT(*) OVER (PARTITION BY srid) AS legs
+  FROM b WHERE son IN ('Логистика', 'Доставка')
+),
+p AS (
+  SELECT srid, ANY_VALUE(nm) AS nm, ANY_VALUE(son) AS son,
+         SUM(IF(rn = 1, amt, 0)) AS fwd, SUM(IF(rn > 1, amt, 0)) AS rev, MAX(legs) AS legs
+  FROM l GROUP BY srid
+),
+a AS (
+  SELECT nm, COUNT(*) AS n, SUM(fwd) AS fwd, COUNTIF(legs >= 2) AS ref, SUM(rev) AS rev,
+         COUNTIF(son = 'Логистика') AS nlog, COUNTIF(son = 'Доставка') AS ndlv,
+         SUM(IF(son = 'Доставка', fwd, 0)) AS dlvfwd
+  FROM p GROUP BY nm
+)
+SELECT nm AS nm_id, n AS shipments, ROUND(SAFE_DIVIDE(fwd, NULLIF(n, 0)), 4) AS direct_rate,
+       ref AS refusals, ROUND(SAFE_DIVIDE(rev, NULLIF(ref, 0)), 4) AS reverse_rate,
+       ROUND(fwd, 2) AS forward_sum, ROUND(rev, 2) AS reverse_sum,
+       nlog AS n_logistics, ndlv AS n_delivery, ROUND(dlvfwd, 2) AS delivery_component_sum,
+       CAST(NULL AS INT64) AS sales, (SELECT d1 FROM w) AS window_from, (SELECT d2 FROM w) AS window_to
+FROM a
+UNION ALL
+SELECT 0, SUM(n), ROUND(SAFE_DIVIDE(SUM(fwd), NULLIF(SUM(n), 0)), 4),
+       SUM(ref), ROUND(SAFE_DIVIDE(SUM(rev), NULLIF(SUM(ref), 0)), 4),
+       ROUND(SUM(fwd), 2), ROUND(SUM(rev), 2),
+       SUM(nlog), SUM(ndlv), ROUND(SUM(dlvfwd), 2),
+       (SELECT n FROM sale), (SELECT d1 FROM w), (SELECT d2 FROM w)
+FROM a;
+-- ─── 5. Комиссия WB + эквайринг, то же окно [LCD−29, LCD] ────────────────────
+-- Точная копия s8finsql_()/s8fin_() из Apps Script: тариф ROUND(cpw/base/100, 6)
+-- + эквайринг ROUND(acq/base, 6) — округление КАЖДОГО слагаемого отдельно, чтобы ячейки
+-- сошлись побайтово. logistics_per_unit нужен Engine только для правила «своя ставка»
+-- (n >= 10 AND logistics_per_unit > 0 AND commission_rate > 0), как в s8fin_().
+CREATE OR REPLACE VIEW `project-fa311fc0-4d87-4781-986.wb_mart.V_UNITKA_COMMISSION_RATES` AS
+WITH w AS (
+  SELECT DATE_SUB(last_closed_date, INTERVAL 29 DAY) AS d1, last_closed_date AS d2
+  FROM `project-fa311fc0-4d87-4781-986.wb_mart.V_UNITKA_LAST_CLOSED_DATE`
+),
+f AS (
+  SELECT SAFE_CAST(wb_nm_id AS INT64) AS nm, supplier_oper_name AS son,
+         SAFE_CAST(quantity AS NUMERIC) AS q, SAFE_CAST(logistics_amount AS NUMERIC) AS lg,
+         SAFE_CAST(acquiring_fee AS NUMERIC) AS acq, SAFE_CAST(retail_price_withdisc_rub AS NUMERIC) AS rev,
+         SAFE_CAST(commission_percent AS NUMERIC) AS cp
+  FROM `project-fa311fc0-4d87-4781-986.wb_raw.V_WB_FINANCE_CANONICAL`, w
+  WHERE _rr_date BETWEEN w.d1 AND w.d2
+),
+s AS (
+  SELECT nm,
+         SUM(IF(son = 'Продажа', q, 0)) AS n,
+         SUM(IF(son IN ('Логистика', 'Доставка'), lg, 0)) AS lg,
+         SUM(IF(son = 'Продажа', acq, 0)) AS acq,
+         SUM(IF(son = 'Продажа', rev * q, 0)) AS base,
+         SUM(IF(son = 'Продажа', cp * rev * q, 0)) AS cpw
+  FROM f WHERE nm IS NOT NULL AND nm > 0 GROUP BY nm
+)
+SELECT nm AS nm_id, CAST(n AS INT64) AS sales,
+       ROUND(SAFE_DIVIDE(lg, NULLIF(n, 0)), 4) AS logistics_per_unit,
+       ROUND(SAFE_DIVIDE(cpw, NULLIF(base, 0)) / 100, 6) AS tariff_rate,
+       ROUND(SAFE_DIVIDE(acq, NULLIF(base, 0)), 6) AS acquiring_rate,
+       ROUND(SAFE_DIVIDE(cpw, NULLIF(base, 0)) / 100, 6) + ROUND(SAFE_DIVIDE(acq, NULLIF(base, 0)), 6) AS commission_rate,
+       (SELECT d1 FROM w) AS window_from, (SELECT d2 FROM w) AS window_to
+FROM s
+UNION ALL
+SELECT 0, CAST(SUM(n) AS INT64),
+       ROUND(SAFE_DIVIDE(SUM(lg), NULLIF(SUM(n), 0)), 4),
+       ROUND(SAFE_DIVIDE(SUM(cpw), NULLIF(SUM(base), 0)) / 100, 6),
+       ROUND(SAFE_DIVIDE(SUM(acq), NULLIF(SUM(base), 0)), 6),
+       ROUND(SAFE_DIVIDE(SUM(cpw), NULLIF(SUM(base), 0)) / 100, 6) + ROUND(SAFE_DIVIDE(SUM(acq), NULLIF(SUM(base), 0)), 6),
+       (SELECT d1 FROM w), (SELECT d2 FROM w)
+FROM s;
+
+-- ─── 6. Статус Engine для дашборда/владельца (применять ПОСЛЕ infra apply, ─────
+--        когда таблица wb_ops.UNITKA_ENGINE_RUNS создана Terraform'ом) ───────────
+-- OK    — последний prod-прогон PASS (или пустой план) не старше 26 ч;
+-- STALE — нет COMPLETE-прогона prod > 26 ч (Scheduler на паузе / Job не запускался);
+-- ERROR — последний prod-прогон FAIL (код в error_code).
+-- Shadow-прогоны показываются отдельными полями, в статус не входят.
+CREATE OR REPLACE VIEW `project-fa311fc0-4d87-4781-986.wb_mart.V_UNITKA_ENGINE_STATUS` AS
+WITH p AS (
+  SELECT * FROM `project-fa311fc0-4d87-4781-986.wb_ops.UNITKA_ENGINE_RUNS`
+  WHERE environment = 'prod' AND mode = 'WRITE' ORDER BY started_at DESC LIMIT 1
+),
+ok AS (
+  SELECT MAX(completed_at) AS last_ok_at FROM `project-fa311fc0-4d87-4781-986.wb_ops.UNITKA_ENGINE_RUNS`
+  WHERE environment = 'prod' AND mode = 'WRITE' AND qa_status = 'PASS'
+),
+s AS (
+  SELECT * FROM `project-fa311fc0-4d87-4781-986.wb_ops.UNITKA_ENGINE_RUNS`
+  WHERE mode = 'SHADOW' ORDER BY started_at DESC LIMIT 1
+)
+SELECT
+  CASE
+    WHEN (SELECT qa_status FROM p) = 'FAIL' THEN 'ERROR'
+    WHEN (SELECT last_ok_at FROM ok) IS NULL
+      OR TIMESTAMP_DIFF(CURRENT_TIMESTAMP(), (SELECT last_ok_at FROM ok), HOUR) > 26 THEN 'STALE'
+    ELSE 'OK'
+  END AS status,
+  (SELECT last_ok_at FROM ok)            AS last_ok_at,
+  (SELECT last_closed_date FROM p)       AS prod_last_closed_date,
+  (SELECT completed_at FROM p)           AS prod_last_run_at,
+  (SELECT qa_status FROM p)              AS prod_qa_status,
+  (SELECT error_code FROM p)             AS prod_error_code,
+  (SELECT cells_written FROM p)          AS prod_cells_written,
+  (SELECT completed_at FROM s)           AS shadow_last_run_at,
+  (SELECT qa_status FROM s)              AS shadow_qa_status,
+  (SELECT cells_planned FROM s)          AS shadow_cells_planned,
+  (SELECT error_code FROM s)             AS shadow_error_code,
+  (SELECT last_closed_date FROM `project-fa311fc0-4d87-4781-986.wb_mart.V_UNITKA_LAST_CLOSED_DATE`) AS bq_last_closed_date;

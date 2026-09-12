@@ -13,7 +13,7 @@ on:
         required: true
         default: "wb-stocks"
         type: choice
-        options: [wb-stocks, wb-mart, wb-prices, wb-tariffs]
+        options: [wb-stocks, wb-mart, wb-prices, wb-tariffs, wb-funnel, unitka-engine]
       action:
         description: "pause | resume | run-now"
         required: true
@@ -40,7 +40,8 @@ jobs:
           # Terraform создаёт единственный Job wb-prices-prod, теневого контура у наблюдателя
           # цен нет (лишний носитель доступа к ценовому секрету не нужен).
           case "${{ inputs.loader }}" in
-            wb-mart|wb-prices|wb-tariffs)
+            wb-mart|wb-prices|wb-tariffs|wb-funnel)
+              # UNITKA 2.0 R3: воронка тоже существует только в prod (wb-funnel-prod).
               if [ "${{ inputs.environment }}" != "prod" ]; then
                 echo "::error title=Invalid combination::${{ inputs.loader }} is prod-only; job ${{ inputs.loader }}-${{ inputs.environment }} does not exist. Use environment=prod."
                 exit 1
@@ -55,9 +56,15 @@ jobs:
       - name: Apply action
         run: |
           JOB="${{ inputs.loader }}-${{ inputs.environment }}"
+          # UNITKA ENGINE v1: у Job'а unitka-engine-<env> ДВА Scheduler'а (-morning, -reserve);
+          # pause/resume действуют на оба, run-now запускает сам Job (infra/terraform/unitka_engine.tf).
+          SCHEDULERS="$JOB"
+          if [ "${{ inputs.loader }}" = "unitka-engine" ]; then
+            SCHEDULERS="${JOB}-morning ${JOB}-reserve"
+          fi
           case "${{ inputs.action }}" in
-            pause)   gcloud scheduler jobs pause  "$JOB" --location ${{ vars.GCP_REGION }} ;;
-            resume)  gcloud scheduler jobs resume "$JOB" --location ${{ vars.GCP_REGION }} ;;
+            pause)   for S in $SCHEDULERS; do gcloud scheduler jobs pause  "$S" --location ${{ vars.GCP_REGION }}; done ;;
+            resume)  for S in $SCHEDULERS; do gcloud scheduler jobs resume "$S" --location ${{ vars.GCP_REGION }}; done ;;
             run-now) gcloud run jobs execute "$JOB" --region ${{ vars.GCP_REGION }} --wait ;;
             *) echo "unknown action"; exit 1 ;;
           esac

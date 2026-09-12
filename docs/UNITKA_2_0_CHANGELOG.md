@@ -533,3 +533,52 @@ API-источник той же семантики.
 **Открыто:** `909951444` без сентябрьского блока (ISSUE); порог `n >= 10` при выборках
 20–21 отправление у Амбры и Вишни; `E3`/`E4` в шапке листа показывают `#REF!` — вне
 сентябрьского мастера, не трогалось. Август, Ozon и Unitka Engine v1 не затрагивались.
+
+## 2026-09-12 · UNITKA ENGINE v1 — Stage E1: подготовленный слой, Engine, инфраструктура, офлайн SHADOW
+
+September Master не менялся. Engine — загрузчик `unitka` на общем образе Cloud Run Jobs;
+Apps Script Stage 8/8.2 остаётся reference implementation и инструментом отката, но
+перестаёт быть механизмом ежедневного обновления. Дизайн `docs/UNITKA_ENGINE_V1_DESIGN.md`,
+runbook `docs/UNITKA_ENGINE_V1_RUNBOOK.md`, evidence `docs/UNITKA_ENGINE_V1_SHADOW_2026-09-12.md`.
+
+**Подготовленный слой BigQuery (применён):** `wb_mart.V_UNITKA_SOURCE_FRESHNESS`,
+`V_UNITKA_LAST_CLOSED_DATE` (MIN по воронке и витрине, ≤ D-1 МСК), `V_UNITKA_DAILY_FACT`
+(месяц ≤ LCD, 9 метрик + источники, XLSX только ≤ 03.09, отмены `PROXY_FACT_ORDERS`),
+`V_UNITKA_LOGISTICS_RATES` (модель B, популяция `srid IN ('Логистика','Доставка')`, окно
+`[LCD−29, LCD]` как `s8win_()`), `V_UNITKA_COMMISSION_RATES` (копия `s8fin_`). Сверено с приёмкой
+Stage 8.2: `597 = 545 + 52`, `DIRECT 60,5487`, `REVERSE 32,5256`, 01–09.09 `5397/523/137/6`.
+`sql/unitka/engine_v1_views.sql`; вью 6 `V_UNITKA_ENGINE_STATUS` — после infra apply.
+
+**Engine (`cloud/src/loaders/unitka/`):** 5 фаз — свежесть/LCD → снимок листа + preflight →
+план (только изменившиеся ячейки; факт 0.005, ставки 1e-9, пусто ≠ 0) → SHADOW-журнал или один
+`values.batchUpdate` → reconciliation. Fail-closed коды: `SOURCE_STALE`, `SHEETS_API`,
+`STRUCTURE_DRIFT`, `MONTH_ROLLOVER_REQUIRED`, `LCD_REGRESSION`, `DUP_KEY`, `BLOCK_MISSING`,
+`INVARIANT_FAIL`, `FUTURE_LEAKAGE`, `BQ_MISMATCH`, `FORMULA_ERROR`, `SUMMARY_MISMATCH`,
+`LCD_INCONSISTENT`, `PARTIAL_WRITE`. Журнал `wb_ops.UNITKA_ENGINE_RUNS`. Запись только при
+`ENVIRONMENT=prod` и `UNITKA_WRITE_ENABLED=1`; shadow — readonly-scope Sheets. Логический период
+guard'а — часовой слот МСК. Sheets REST через `google-auth-library` (ADC), без `googleapis`.
+30 тестов на синтетическом Master 24×30; `typecheck/lint/test/build` зелёные (226 тестов).
+
+**Инфраструктура (`infra/terraform/unitka_engine.tf`, не применена):** таблица журнала,
+IAM (shadow: dataViewer `wb_raw`/`wb_mart`; обе среды: dataEditor на журнал; invoker), Job'ы
+`unitka-engine-shadow/prod`, Scheduler'ы 10:00 и 12:30 МСК на паузе, log-based алерт
+`loader_failed` на `var.unitka_alert_email`; `sheets`/`monitoring` API. Workflows:
+`deploy-shadow`/`deploy-prod` (guarded), `scheduler-control` (`unitka-engine`, `wb-funnel`).
+
+**Офлайн SHADOW на живой книге (экспорт 12.09) и живых вью:** 24/24 блока, формулы на месте,
+`FORMULA ERRORS 0`, `FUTURE LEAKAGE 0`, `SUMMARY RECONCILIATION PASS`, инвариант PASS.
+План 668 ячеек: логистика 0 расхождений; комиссия 600 — сдвиг окна (лист от `s8rates` при
+LCD 09.09, окно 11.08–09.09; Engine 12.08–10.09; формула побайтово та же — проверено);
+факт 68 = 2 реальных (`KU743` отмена 07.09 `0→1` появилась в `FACT_ORDERS` после загрузки;
+`AG746` хранение 10.09 `20,7→GAP` — артефакт формулы-наследия) + 66 формул-наследия с тем же
+результатом. **Найдено наследие:** в `stock`/`storage` части блоков остались `=stock*0.15` и
+`=prev−orders+cancels` (67 в закрытых днях, 495 в будущих). Engine заменяет их значением в
+закрытых днях (как делал `s82data`), будущие дни не трогает и не считает их проекцию утечкой.
+
+**Предусловия владельца (Engine их не обходит):** развести дрейф плана и `infra apply`;
+доступ SA к книге (Читатель/Редактор); **снять паузу с `wb-funnel-prod`** (иначе с 13.09
+`SOURCE_STALE`); `deploy-shadow` → ручной shadow → shadow по расписанию → `deploy-prod` →
+один controlled write-day → 2–3 автоматических прогона → `UNITKA ENGINE v1 PRODUCTION READY`.
+
+**Не делалось:** октябрь/rollover (`MONTH_ROLLOVER_REQUIRED`), правка Master, август, Ozon,
+Terraform apply, включение Scheduler'ов, запись в книгу.

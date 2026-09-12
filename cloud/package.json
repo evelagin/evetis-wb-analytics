@@ -16,7 +16,8 @@
   },
   "dependencies": {
     "@google-cloud/bigquery": "^7.9.0",
-    "@google-cloud/secret-manager": "^5.6.0"
+    "@google-cloud/secret-manager": "^5.6.0",
+    "google-auth-library": "^9.15.1"
   },
   "devDependencies": {
     "@types/node": "^20.14.0",

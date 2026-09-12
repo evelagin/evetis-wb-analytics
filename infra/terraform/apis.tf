@@ -10,6 +10,9 @@ locals {
     "iamcredentials.googleapis.com",
     "sts.googleapis.com",
     "bigquery.googleapis.com",
+    # UNITKA ENGINE v1: запись факта в Google Sheets и алерты по логам Job'а.
+    "sheets.googleapis.com",
+    "monitoring.googleapis.com",
   ]
 }
 

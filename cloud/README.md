@@ -19,6 +19,13 @@ npm test
 DRY_RUN=1 GCP_PROJECT_ID=x BQ_RAW_DATASET=wb_raw ENVIRONMENT=shadow node dist/cli.js noop
 ```
 
+## Загрузчики
+`noop`, `stocks`, `mart` (prodOnly), `prices`, `tariffs`, `funnel`, **`unitka`** — UNITKA ENGINE v1
+(Stage E1): читает `wb_mart.V_UNITKA_*`, обновляет факт-ячейки September Master в Google Sheets
+только после QA-гейта; `ENVIRONMENT=shadow` или `UNITKA_WRITE_ENABLED≠1` — считает и журналирует,
+не пишет. Док: `docs/UNITKA_ENGINE_V1_DESIGN.md`, runbook `docs/UNITKA_ENGINE_V1_RUNBOOK.md`,
+офлайн-прогон `scripts/unitka_offline_shadow.mjs`.
+
 ## Инварианты
 - runtime НЕ создаёт таблицы (их создаёт Terraform);
 - секреты — только Secret Manager (не env, не в коде);

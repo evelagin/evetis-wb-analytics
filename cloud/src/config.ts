@@ -49,6 +49,21 @@ export interface Config {
   funnelLookbackDays: number;
   funnelRawTable: string;
   funnelObservationsTable: string;
+  // ── UNITKA ENGINE v1 (Stage E1) — читает ТОЛЬКО wb_mart.V_UNITKA_*, пишет только факт-ячейки ──
+  unitkaSpreadsheetId: string;
+  unitkaSheetName: string;
+  unitkaMartDataset: string;
+  unitkaOpsDataset: string;
+  unitkaRunsTable: string;
+  /** Порог владельца: своя ставка SKU при n >= 10, иначе fallback магазина. */
+  unitkaMinN: number;
+  /** SOURCE_STALE, если LAST_CLOSED_DATE отстаёт от D-1 МСК больше чем на столько суток. */
+  unitkaMaxLagDays: number;
+  /**
+   * Запись в книгу разрешена ТОЛЬКО при ENVIRONMENT=prod И UNITKA_WRITE_ENABLED=1.
+   * Shadow-Job физически получает readonly-scope Sheets и писать не может.
+   */
+  unitkaWriteEnabled: boolean;
 }
 
 type Env = Record<string, string | undefined>;
@@ -106,5 +121,13 @@ export function loadConfig(env: Env = process.env): Config {
     funnelLookbackDays: intOpt(env, 'FUNNEL_LOOKBACK_DAYS', 7),
     funnelRawTable: opt(env, 'FUNNEL_RAW_TABLE', 'RAW_WB_FUNNEL_DAILY'),
     funnelObservationsTable: opt(env, 'FUNNEL_OBSERVATIONS_TABLE', 'WB_FUNNEL_OBSERVATIONS'),
+    unitkaSpreadsheetId: opt(env, 'UNITKA_SPREADSHEET_ID', '1E4L4JuwfEqr9owhsGkAjb8F24lRpWpWkEyVmSuRxaJg'),
+    unitkaSheetName: opt(env, 'UNITKA_SHEET_NAME', 'WB_Юнит_2025'),
+    unitkaMartDataset: opt(env, 'UNITKA_MART_DATASET', 'wb_mart'),
+    unitkaOpsDataset: opt(env, 'UNITKA_OPS_DATASET', 'wb_ops'),
+    unitkaRunsTable: opt(env, 'UNITKA_RUNS_TABLE', 'UNITKA_ENGINE_RUNS'),
+    unitkaMinN: intOpt(env, 'UNITKA_MIN_N', 10),
+    unitkaMaxLagDays: intOpt(env, 'UNITKA_MAX_LAG_DAYS', 2),
+    unitkaWriteEnabled: opt(env, 'UNITKA_WRITE_ENABLED', '0') === '1',
   };
 }

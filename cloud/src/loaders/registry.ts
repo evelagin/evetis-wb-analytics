@@ -19,6 +19,8 @@ import { pricesLoader } from './prices/index.js';
 import { observationBucket } from './prices/bucket.js';
 import { tariffsLoader } from './tariffs/index.js';
 import { funnelLoader } from './funnel/index.js';
+import { unitkaLoader } from './unitka/index.js';
+import { unitkaSlot } from './unitka/slot.js';
 
 export interface LoaderSpec {
   handler: LoaderHandler;
@@ -54,6 +56,11 @@ export const LOADERS: Record<string, LoaderSpec> = {
   // UNITKA 2.0 R2: воронка продаж. Период — D-1 МСК (сутки должны быть закрыты),
   // но забирается окно D-FUNNEL_LOOKBACK_DAYS..D-1: WB пересчитывает воронку задним числом.
   funnel: { handler: funnelLoader, logicalPeriod: (now) => d1Moscow(now) },
+  // UNITKA ENGINE v1 (Stage E1): читает подготовленный слой wb_mart.V_UNITKA_* и обновляет
+  // факт-ячейки September Master. Период — часовой слот МСК (YYYY-MM-DDTHH), а не сутки:
+  // Engine ходит дважды в день (после витрины и после воронки), суточный ключ подавил бы
+  // второе окно. Внутри слота повтор подавляется guard'ом; ERROR-прогон переигрывается.
+  unitka: { handler: unitkaLoader, logicalPeriod: (now) => unitkaSlot(now) },
 };
 
 export function resolveLoader(name: string): LoaderSpec | undefined {
