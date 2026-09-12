@@ -86,6 +86,14 @@ class Sheet:
     def __init__(self, ws):
         self.ws = ws
         self.r = 1
+        self.widths = {}
+
+    def want_width(self, col_idx, width):
+        self.widths[col_idx] = max(self.widths.get(col_idx, 0), width)
+
+    def apply_widths(self):
+        for i, w in self.widths.items():
+            self.ws.column_dimensions[get_column_letter(i)].width = w
 
     def title(self, text, sub=None, width=21):
         ws = self.ws
@@ -100,56 +108,68 @@ class Sheet:
             self.r += 1
         self.r += 1
 
-    def band(self, text, color, width=21, note=None, note_as_comment=False):
+    def band(self, text, color, width=21, note=None, note_as_comment=False, col0=1, row=None, height=22):
         ws = self.ws
-        c = ws.cell(self.r, 1, text)
+        r0 = row or self.r
+        c = ws.cell(r0, col0, text)
         c.font = Font(FONT, 11, bold=True, color=C_WHITE)
         c.fill = PatternFill('solid', fgColor=color)
         c.alignment = Alignment(vertical='center', indent=1)
         if note and note_as_comment:
             c.comment = Comment(note, 'evetis_ops')
             note = None
-        for col in range(2, width + 1):
-            ws.cell(self.r, col).fill = PatternFill('solid', fgColor=color)
-        ws.merge_cells(start_row=self.r, start_column=1, end_row=self.r, end_column=width)
-        ws.row_dimensions[self.r].height = 22
-        self.r += 1
-        if note:
-            c = ws.cell(self.r, 1, note)
-            c.font = Font(FONT, 9, italic=True, color='666666')
-            ws.merge_cells(start_row=self.r, start_column=1, end_row=self.r, end_column=width)
+        for cc in range(col0 + 1, col0 + width):
+            ws.cell(r0, cc).fill = PatternFill('solid', fgColor=color)
+        ws.merge_cells(start_row=r0, start_column=col0, end_row=r0, end_column=col0 + width - 1)
+        ws.row_dimensions[r0].height = height
+        if row is None:
             self.r += 1
-        return self.r - 1
+        if note:
+            c = ws.cell(self.r, col0, note)
+            c.font = Font(FONT, 9, italic=True, color='666666')
+            ws.merge_cells(start_row=self.r, start_column=col0, end_row=self.r, end_column=col0 + width - 1)
+            self.r += 1
+        return r0
 
-    def header(self, cols):
+    def header(self, cols, col0=1, row=None, height=34):
         ws = self.ws
-        for i, col in enumerate(cols, start=1):
-            c = ws.cell(self.r, i, col['h'])
+        r0 = row or self.r
+        for i, col in enumerate(cols, start=col0):
+            c = ws.cell(r0, i, col['h'])
             c.font = Font(FONT, 9, bold=True, color=C_WHITE)
             c.fill = PatternFill('solid', fgColor=C_DARK)
             c.alignment = Alignment(wrap_text=True, vertical='center',
-                                    horizontal='left' if i <= 2 else 'center')
+                                    horizontal='left' if i < col0 + 2 else 'center')
             c.border = Border(bottom=THIN)
             if col.get('note'):
                 c.comment = Comment(col['note'], 'evetis_ops')
-            ws.column_dimensions[get_column_letter(i)].width = col['w']
-        ws.row_dimensions[self.r].height = 34
-        self.r += 1
+            self.want_width(i, col['w'])
+        ws.row_dimensions[r0].height = height
+        if row is None:
+            self.r += 1
+        return r0
 
-    def rows(self, cols, data, status_key=None, bold_key=None, total=None, color_key='status_code'):
+    def rows(self, cols, data, status_key=None, bold_key=None, total=None, color_key='status_code',
+             col0=1, row=None, height=19, placeholder_keys=()):
         ws = self.ws
+        r0 = row or self.r
         for rec in data:
             code = rec.get(color_key) if status_key else None
             dim = code == 'NO PLAN'
-            for i, col in enumerate(cols, start=1):
+            for i, col in enumerate(cols, start=col0):
                 v = rec.get(col['k'])
-                c = ws.cell(self.r, i, v)
+                c = ws.cell(r0, i, v)
                 c.font = Font(FONT, 10, color=C_MUTED if dim else C_DARK)
                 c.border = Border(bottom=THIN)
                 if col.get('f'):
                     c.number_format = col['f']
                     c.alignment = Alignment(horizontal='right')
-                if i <= 2 or col['k'] in ('reason', 'status_label', 'bom_text', 'stage'):
+                if col['k'] in placeholder_keys:
+                    c.fill = PatternFill('solid', fgColor='FFF9E6')
+                    c.border = Border(bottom=THIN, left=Side(style='dashed', color='BF9000'),
+                                      right=Side(style='dashed', color='BF9000'))
+                if i < col0 + 2 or col['k'] in ('reason', 'short_reason', 'status_label', 'bom_text', 'stage',
+                                                'risk_label', 'what', 'comment'):
                     c.alignment = Alignment(horizontal='left', vertical='center')
                 if status_key and col['k'] == status_key:
                     fill, fg, bold = ST.get(code or '', ('FFFFFF', C_DARK, False))
@@ -160,19 +180,22 @@ class Sheet:
                     on = bool(v)
                     c.font = Font(FONT, 11, bold=on, color='0B5394' if on else C_MUTED)
                     c.fill = PatternFill('solid', fgColor='E8F0FE' if on else 'FFFFFF')
-            ws.row_dimensions[self.r].height = 19
-            self.r += 1
+            ws.row_dimensions[r0].height = height
+            r0 += 1
         if total:
-            for i, col in enumerate(cols, start=1):
+            for i, col in enumerate(cols, start=col0):
                 v = total.get(col['k'])
-                c = ws.cell(self.r, i, v)
+                c = ws.cell(r0, i, v)
                 c.font = Font(FONT, 10, bold=True, color=C_DARK)
                 c.fill = PatternFill('solid', fgColor='F3F3F3')
                 c.border = Border(top=Side(style='medium', color=C_DARK))
                 if col.get('f'):
                     c.number_format = col['f']
-            self.r += 1
-        self.r += 1
+            ws.row_dimensions[r0].height = height
+            r0 += 1
+        if row is None:
+            self.r = r0 + 1
+        return r0
 
 
 def col(h, k, w, f=None, note=None):
@@ -227,40 +250,89 @@ PLAN_COLS = [
 ]
 
 TOP_COLS = [
-    col('Товар', 'product_name', 34),
-    col('Соло / Набор', 'kind', 12, None, 'Набор = одна позиция продажи из нескольких физических единиц.'),
-    col('Позиции, шт.', 'rec_final', 12, INT, 'Проданные / отгружаемые позиции.'),
-    col('Физические\nединицы, шт.', 'rec_physical_units', 13, INT, 'Флаконы / банки после раскладки по BOM.'),
+    col('Товар', 'product_name', 26, None, 'Наборы названы «Набор …» — это одна позиция продажи из нескольких флаконов.'),
+    col('Рекомендация\nмодели, позиций', 'rec_final', 15, INT,
+        'Расчёт BigQuery по утверждённым правилам. Предложение, а не решение.'),
+    col('Физические\nединицы, шт.', 'rec_physical_units', 13, INT, 'Та же рекомендация во флаконах / банках.'),
+    col('Одобрено\nвладельцем', 'owner_approved', 15, INT,
+        'Поле для вашей отметки. Пусто = решение не принято. Система это поле НЕ читает и фактом не считает; '
+        'при следующем обновлении книги оно очищается.'),
     col('ФФ свободно,\nпозиций', 'ff_free_cards_now', 12, INT),
     col('Покрытие\nпосле, дн', 'resulting_cover_days', 11, F1),
-    col('Статус', 'status_label', 30),
-    col('Почему', 'reason_short', 110),
+    col('Риск', 'risk_label', 15, None,
+        'HIGH CONFIDENCE — план близок к факту 30 дней · PLAN-DRIVEN — план выше факта в 2 раза и больше · '
+        'REVIEW — сработали ворота (затоваривание, срок годности, неподтверждённая приёмка).'),
+    col('Почему', 'short_reason', 32, None, 'Короткая причина. Полный расчёт — на листе 05_РАСЧЁТ.'),
 ]
 
+REVIEW_HEAD = [col('Товар', 'product_name', 26), col('Позиции,\nшт.', 'rec_final', 15, INT),
+               col('Статус', 'status_label', 13), col('', '_r1', 15), col('Почему', 'short_reason', 12),
+               col('', '_r2', 11), col('', '_r3', 15), col('', '_r4', 32)]
+
+USEND_COLS = [
+    col('Что сделать', 'what', 26), col('Позиции, шт.', 'positions', 15, INT),
+    col('Физические\nединицы, шт.', 'units', 13, INT), col('Комментарий', 'comment', 15),
+]
+
+
+def merged_table(s, rows, specs, height=13):
+    """Строки под сетку A..H: длинные тексты объединяются по колонкам, ширины не разъезжаются."""
+    ws = s.ws
+    for rec in rows:
+        for key, c0, c1, fmt, color, bold in specs:
+            c = ws.cell(s.r, c0, rec.get(key))
+            c.border = Border(bottom=THIN)
+            c.font = Font(FONT, 10 if c0 == 1 else 9, bold=bold, color=color or C_DARK)
+            if fmt:
+                c.number_format = fmt
+                c.alignment = Alignment(horizontal='right')
+            else:
+                c.alignment = Alignment(horizontal='left', vertical='center')
+            if c1 > c0:
+                ws.merge_cells(start_row=s.r, start_column=c0, end_row=s.r, end_column=c1)
+        ws.row_dimensions[s.r].height = height
+        s.r += 1
+
+
+def usend_block(s, rows, height=13):
+    """ГОТОВОЕ ЗАДАНИЕ USEND: комментарий объединён по D..H."""
+    s.header(USEND_COLS, height=22)
+    merged_table(s, rows, [('what', 1, 1, None, None, True), ('positions', 2, 2, INT, None, False),
+                           ('units', 3, 3, INT, None, False), ('comment', 4, 8, None, '666666', False)], height)
+
+
+def review_block(s, rows, height=13):
+    """ПРОВЕРИТЬ / НЕ ОТГРУЖАТЬ: статус и причина объединены, чтобы уместиться в ту же сетку."""
+    s.header(REVIEW_HEAD, height=22)
+    merged_table(s, rows, [('product_name', 1, 1, None, None, True), ('rec_final', 2, 2, INT, None, False),
+                           ('status_label', 3, 4, None, 'A61C00', True), ('short_reason', 5, 8, None, None, False)],
+                 height)
+
+
 TASK_MOVE_COLS = [
-    col('Товар', 'product_name', 34), col('SKU', 'internal_sku', 24),
-    col('Снять под новые\nотгрузки, шт.', 'move_pallet_to_shelf_new', 15, INT),
-    col('Снять под уже\nзарезервированное, шт.', 'move_pallet_to_shelf_reserved', 18, INT,
+    col('Товар', 'product_name', 26), col('SKU', 'internal_sku', 15),
+    col('Снять под новые\nотгрузки, шт.', 'move_pallet_to_shelf_new', 13, INT),
+    col('Снять под уже\nзарезервированное', 'move_pallet_to_shelf_reserved', 15, INT,
         'Резерв поставок Ozon от 07.09, который физически лежит на паллетах.'),
-    col('ИТОГО снять\nс паллет, шт.', 'move_pallet_to_shelf_total', 15, INT),
-    col('Полка после', 'shelf_after_pick', 11, INT), col('Паллеты после', 'pallet_after_pick', 12, INT),
+    col('ИТОГО снять\nс паллет, шт.', 'move_pallet_to_shelf_total', 12, INT),
+    col('Полка\nпосле', 'shelf_after_pick', 11, INT), col('Паллеты\nпосле', 'pallet_after_pick', 15, INT),
 ]
 
 TASK_BUILD_COLS = [
-    col('Набор', 'product_name', 34), col('Состав', 'bom_text', 40),
-    col('Собрать,\nнаборов', 'to_assemble_now', 11, INT),
-    col('в т.ч. под резерв\nотгрузок', 'to_assemble_reserved', 15, INT),
-    col('Физические\nединицы, шт.', 'assemble_physical_units', 13, INT),
-    col('Лимитирующий\nкомпонент', 'limiting_after_plan', 20),
+    col('Набор', 'product_name', 26), col('Собрать,\nнаборов', 'to_assemble_now', 15, INT),
+    col('в т.ч. под резерв\nотгрузок', 'to_assemble_reserved', 13, INT),
+    col('Физические\nединицы, шт.', 'assemble_physical_units', 15, INT),
+    col('Лимитирующий\nкомпонент', 'limiting_after_plan', 12),
+    col('', '_1', 11), col('', '_2', 15), col('Состав набора', 'bom_text', 32),
 ]
 
 TASK_COMP_COLS = [
-    col('Товар', 'product_name', 34), col('SKU', 'internal_sku', 24),
-    col('Соло WB, шт.', 'solo_units_wb', 12, INT), col('Соло Ozon, шт.', 'solo_units_ozon', 12, INT),
-    col('В наборы, шт.', 'bundle_component_units', 12, INT), col('FBS, шт.', 'fbs_component_units', 9, INT),
-    col('ИТОГО физических\nединиц, шт.', 'total_physical_units', 16, INT),
-    col('Уже зарезервировано\nна ФФ, шт.', 'reserved_units_already', 17, INT),
-    col('Свободно на ФФ\nпосле операции, шт.', 'free_ff_after_operation', 18, INT),
+    col('Товар', 'product_name', 26), col('SKU', 'internal_sku', 15),
+    col('Соло WB,\nшт.', 'solo_units_wb', 13, INT), col('Соло Ozon,\nшт.', 'solo_units_ozon', 15, INT),
+    col('В наборы,\nшт.', 'bundle_component_units', 12, INT),
+    col('Уже зарезер-\nвировано', 'reserved_units_already', 11, INT),
+    col('ИТОГО\nфиз. ед.', 'total_physical_units', 15, INT),
+    col('Свободно на ФФ\nпосле операции', 'free_ff_after_operation', 32, INT),
 ]
 
 BUNDLE_COLS = [
@@ -383,6 +455,7 @@ def build(path):
     s = Sheet(ws)
     for r in plan:
         r['kind'] = 'Набор' if r['is_bundle'] else 'Соло'
+        r['owner_approved'] = None   # заполняет владелец вручную; система это поле не читает
         r['reason_short'] = (r['demand_warning'] + ' · ' if r['demand_warning'] else '') + (r['reason'] or '')
     ship_rows = [r for r in plan if (r['rec_final'] or 0) > 0]
     hold_rows = [r for r in plan if (r['rec_final'] or 0) == 0 and r['status_code'] in ('REVIEW', 'FF LIMIT', 'WAIT')]
@@ -401,111 +474,86 @@ def build(path):
     move_new = sum(r['to_pick_from_pallet'] or 0 for r in pick)
     move_res = sum(r['reserved_on_pallet_to_pick'] or 0 for r in pick)
 
-    s.title('EVETIS OPERATIONS · План поставок', [
-        f'ТОЛЬКО ЧТЕНИЕ · данные evetis_ops на {now} МСК · отгрузка с ФФ {wb_cal["WB"]["ship_date"]} → '
-        f'прибытие WB {arr["WB"]} / Ozon {arr["OZON"]} · следующая поставка {wb_cal["WB"]["next_ship_date"]} → '
-        f'{narr["WB"]} / {narr["OZON"]} · покрытие 45 дней считается ПОСЛЕ прибытия, страховой отдельно.',
-    ])
-    s.band('ИТОГО СЕГОДНЯ', C_DARK, note='Детали — в блоках ниже; полный расчёт каждой строки — в конце листа.', note_as_comment=True)
-    sum_cols = [col('Что сделать', 'what', 34), col('Позиции, шт.', 'positions', 13, INT),
-                col('Физические\nединицы, шт.', 'units', 14, INT), col('Комментарий', 'comment', 110)]
-    s.header(sum_cols)
-    s.rows(sum_cols, [
-        {'what': 'Отгрузить на WILDBERRIES', 'positions': pos(wb_ship), 'units': phys(wb_ship),
-         'comment': f'{len(wb_ship)} позиций к отгрузке · прибытие {arr["WB"]}'},
-        {'what': 'Отгрузить на OZON', 'positions': pos(oz_ship), 'units': phys(oz_ship),
-         'comment': f'{len(oz_ship)} позиций к отгрузке · прибытие {arr["OZON"]}'},
+    reserved_total = sum(r['reserved_units_already'] or 0 for r in task)
+    reserved_pallet = sum(r['reserved_units_on_pallet'] or 0 for r in task)
+    free_after = sum(r['free_ff_after_operation'] or 0 for r in task)
+    usend_rows = [
         {'what': 'Снять с паллет на полку', 'positions': None, 'units': move_new + move_res,
          'comment': f'{move_new} под новые отгрузки + {move_res} под уже зарезервированные поставки Ozon от 07.09'},
         {'what': 'Собрать наборы', 'positions': assemble_pos, 'units': assemble_phys,
-         'comment': f'в т.ч. {assemble_res} наборов под уже зарезервированные отгрузки'},
-        {'what': 'Требуют вашего решения', 'positions': len(hold_rows), 'units': None,
-         'comment': 'ПРОВЕРИТЬ / ФФ не хватает / ЖДАТЬ — блок «ПРОВЕРИТЬ / НЕ ОТГРУЖАТЬ» ниже'},
-    ])
+         'comment': f'позиции = наборы, физические единицы = флаконы в них; в т.ч. {assemble_res} наборов под резерв отгрузок'},
+        {'what': 'Подготовить к отгрузке: WILDBERRIES', 'positions': pos(wb_ship), 'units': phys(wb_ship),
+         'comment': f'{len(wb_ship)} позиций · прибытие {arr["WB"]}'},
+        {'what': 'Подготовить к отгрузке: OZON', 'positions': pos(oz_ship), 'units': phys(oz_ship),
+         'comment': f'{len(oz_ship)} позиций · прибытие {arr["OZON"]}'},
+        {'what': 'Уже зарезервировано на ФФ', 'positions': None, 'units': reserved_total,
+         'comment': f'из них {reserved_pallet} лежит на паллетах — их тоже нужно снять'},
+        {'what': 'Останется свободно на ФФ', 'positions': None, 'units': free_after,
+         'comment': 'после снятия, сборки и отгрузки'},
+    ]
 
-    s.band(f'ОТГРУЗИТЬ WB СЕЙЧАС   ·   {pos(wb_ship)} позиций / {phys(wb_ship)} физических единиц', C_WB,
+    s.title('EVETIS OPERATIONS · План поставок', [
+        f'ТОЛЬКО ЧТЕНИЕ · evetis_ops на {now} МСК · отгрузка с ФФ {wb_cal["WB"]["ship_date"]} → прибытие WB {arr["WB"]} / '
+        f'Ozon {arr["OZON"]} · следующая поставка {wb_cal["WB"]["next_ship_date"]} → {narr["WB"]} / {narr["OZON"]} · '
+        f'покрытие 45 дн считается ПОСЛЕ прибытия · подробный расчёт на листе 05_РАСЧЁТ.',
+    ], width=8)
+    s.r -= 1   # без пустой строки перед первым блоком
+    s.band('ИТОГО СЕГОДНЯ · ГОТОВОЕ ЗАДАНИЕ USEND', C_DARK, width=8, height=18,
+           note='Этот же блок повторён в разделе «ТЗ ДЛЯ ФУЛФИЛМЕНТА» ниже — копируется в задание складу.',
+           note_as_comment=True)
+    usend_block(s, usend_rows)
+
+    s.band(f'ОТГРУЗИТЬ WB СЕЙЧАС   ·   {pos(wb_ship)} позиций / {phys(wb_ship)} физ. единиц', C_WB, width=8, height=18,
            note='Лимит одной поставки WB через ПВЗ: 25 кг / 500 ед. / 200 л.', note_as_comment=True)
-    s.header(TOP_COLS)
-    s.rows(TOP_COLS, sorted(wb_ship, key=lambda r: -(r['rec_physical_units'] or 0)), status_key='status_label',
-           bold_key='rec_final', total={'product_name': 'ИТОГО', 'rec_final': pos(wb_ship),
-                                        'rec_physical_units': phys(wb_ship)})
-    s.band(f'ОТГРУЗИТЬ OZON СЕЙЧАС   ·   {pos(oz_ship)} позиций / {phys(oz_ship)} физических единиц', C_OZ,
+    s.header(TOP_COLS, height=22)
+    s.rows(TOP_COLS, sorted(wb_ship, key=lambda r: -(r['rec_physical_units'] or 0)), status_key='risk_label',
+           color_key='risk_label', bold_key='rec_final', height=13, placeholder_keys=('owner_approved',))
+    s.r -= 1
+
+    s.band(f'ОТГРУЗИТЬ OZON СЕЙЧАС   ·   {pos(oz_ship)} позиций / {phys(oz_ship)} физ. единиц', C_OZ, width=8, height=18,
            note='ON_OZON (остаток площадки), IN_ACCEPTANCE (на приёмке) и RESERVED_OZON_ON_FF (резерв на ФФ) — '
                 'разные вещи и не складываются.', note_as_comment=True)
-    s.header(TOP_COLS)
-    s.rows(TOP_COLS, sorted(oz_ship, key=lambda r: -(r['rec_physical_units'] or 0)), status_key='status_label',
-           bold_key='rec_final', total={'product_name': 'ИТОГО', 'rec_final': pos(oz_ship),
-                                        'rec_physical_units': phys(oz_ship)})
-    s.band(f'ПРОВЕРИТЬ / НЕ ОТГРУЖАТЬ   ·   {len(hold_rows)} строк', 'A61C00',
-           note='Количество не уменьшается автоматически: решение принимает владелец.', note_as_comment=True)
-    s.header(TOP_COLS)
-    s.rows(TOP_COLS, sorted(hold_rows, key=lambda r: (r['status_code'], r['channel'], r['card_sku'])),
-           status_key='status_label')
+    s.header(TOP_COLS, height=22)
+    s.rows(TOP_COLS, sorted(oz_ship, key=lambda r: -(r['rec_physical_units'] or 0)), status_key='risk_label',
+           color_key='risk_label', bold_key='rec_final', height=13, placeholder_keys=('owner_approved',))
+    s.r -= 1
 
-    s.band('ТЗ ДЛЯ ФУЛФИЛМЕНТА (Usend) — можно копировать в задание складу', C_PICK,
+    s.band(f'ПРОВЕРИТЬ / НЕ ОТГРУЖАТЬ   ·   {len(hold_rows)} строк', 'A61C00', width=8, height=18,
+           note='Количество не уменьшается автоматически: решение принимает владелец.', note_as_comment=True)
+    review_block(s, sorted(hold_rows, key=lambda r: (r['status_code'], r['channel'], r['card_sku'])))
+
+    s.band('ТЗ ДЛЯ ФУЛФИЛМЕНТА (Usend) — можно копировать в задание складу', C_PICK, width=8,
            note='Считается из плана выше. В журнал ничего не пишется: это расчёт, а не операция.')
+    ws.cell(s.r, 1, 'ГОТОВОЕ ЗАДАНИЕ USEND').font = Font(FONT, 11, bold=True, color=C_PICK)
+    s.r += 1
+    usend_block(s, usend_rows)
     ws.cell(s.r, 1, '1. Снять с паллет на полку').font = Font(FONT, 11, bold=True, color=C_PICK)
     s.r += 1
-    s.header(TASK_MOVE_COLS)
-    s.rows(TASK_MOVE_COLS, [r for r in task if (r['move_pallet_to_shelf_total'] or 0) > 0], total={
+    s.header(TASK_MOVE_COLS, height=24)
+    s.rows(TASK_MOVE_COLS, [r for r in task if (r['move_pallet_to_shelf_total'] or 0) > 0], height=14, total={
         'product_name': 'ИТОГО', 'move_pallet_to_shelf_new': move_new, 'move_pallet_to_shelf_reserved': move_res,
         'move_pallet_to_shelf_total': move_new + move_res})
     ws.cell(s.r, 1, '2. Собрать наборы').font = Font(FONT, 11, bold=True, color=C_PICK)
     s.r += 1
-    s.header(TASK_BUILD_COLS)
+    s.header(TASK_BUILD_COLS, height=24)
     s.rows(TASK_BUILD_COLS, [dict(b, assemble_physical_units=(b['to_assemble_now'] or 0) * (b['components'] or 0))
-                             for b in bundles if (b['to_assemble_now'] or 0) > 0],
+                             for b in bundles if (b['to_assemble_now'] or 0) > 0], height=14,
            total={'product_name': 'ИТОГО', 'to_assemble_now': assemble_pos, 'to_assemble_reserved': assemble_res,
                   'assemble_physical_units': assemble_phys})
     ws.cell(s.r, 1, '3. Расход компонентов и что остаётся на ФФ').font = Font(FONT, 11, bold=True, color=C_PICK)
     s.r += 1
-    s.header(TASK_COMP_COLS)
+    s.header(TASK_COMP_COLS, height=24)
     s.rows(TASK_COMP_COLS, [r for r in task if (r['total_physical_units'] or 0) > 0 or (r['reserved_units_already'] or 0) > 0],
-           total={'product_name': 'ИТОГО', **{k: sum(r[k] or 0 for r in task) for k in
-                  ('solo_units_wb', 'solo_units_ozon', 'bundle_component_units', 'fbs_component_units',
-                   'total_physical_units', 'reserved_units_already', 'free_ff_after_operation')}})
+           height=14, total={'product_name': 'ИТОГО', **{k: sum(r[k] or 0 for r in task) for k in
+                             ('solo_units_wb', 'solo_units_ozon', 'bundle_component_units',
+                              'total_physical_units', 'reserved_units_already', 'free_ff_after_operation')}})
 
-    s.band('ПОДРОБНЫЙ РАСЧЁТ (для проверки)', C_DARK,
-           note='Полная таблица по каждой строке: позиция запаса, спрос до прибытия, цель, потребность, округление, ворота.')
-    for channel, color, name in (('WB', C_WB, 'WILDBERRIES'), ('OZON', C_OZ, 'OZON')):
-        c = wb_cal[channel]
-        rows = [r for r in plan if r['channel'] == channel]
-        s.band(f'{name}   ·   отгрузка {c["ship_date"]} → прибытие {arr[channel]}   ·   '
-               f'покрытие {c["target_cover_days"]} дн + страховой {c["safety_stock_days"]} дн   ·   '
-               f'срок канала {c["lead_time_days"]} дн   ·   к отгрузке {pos(rows)} позиций / {phys(rows)} физ. ед.', color)
-        s.header(PLAN_COLS)
-        s.rows(PLAN_COLS, rows, status_key='status_label', bold_key='rec_final',
-               total={'product_name': 'ИТОГО', 'rec_final': pos(rows), 'rec_physical_units': phys(rows),
-                      'on_marketplace': sum(r['on_marketplace'] or 0 for r in rows),
-                      'committed_inbound': sum(r['committed_inbound'] or 0 for r in rows),
-                      'need_math': sum(r['need_math'] or 0 for r in rows)})
-    s.band('BUNDLE PRODUCTION · сборка наборов', C_BUNDLE, note=(
-        'Мощности наборов не складываются: наборы делят компоненты. «Собрать сейчас» = под уже зарезервированные '
-        'отгрузки + новые рекомендации + резерв FBS − уже собранное.'))
-    s.header(BUNDLE_COLS)
-    s.rows(BUNDLE_COLS, bundles, bold_key='to_assemble_now',
-           total={'product_name': 'ИТОГО', 'to_assemble_now': assemble_pos,
-                  'ship_wb': sum(b['ship_wb'] or 0 for b in bundles),
-                  'ship_ozon': sum(b['ship_ozon'] or 0 for b in bundles), 'to_assemble_reserved': assemble_res})
-    s.band('СОБРАТЬ СЕЙЧАС → компоненты (раскладка по BOM)', C_BUNDLE)
-    s.header(BOM_COLS)
-    s.rows(BOM_COLS, bom, total={'product_name': 'ИТОГО',
-                                 'units_total': sum(b['units_total'] or 0 for b in bom),
-                                 'units_from_reserved': sum(b['units_from_reserved'] or 0 for b in bom),
-                                 'units_from_free': sum(b['units_from_free'] or 0 for b in bom)})
-    s.band('PICK FROM STORAGE · снять с паллет', C_PICK, note=(
-        'Итог спроса — ровно сумма рекомендаций выше: соло WB + соло Ozon + компоненты наборов + FBS. '
-        'Полка после снятия не может быть отрицательной.'))
-    s.header(PICK_COLS)
-    s.rows(PICK_COLS, pick, total={
-        'product_name': 'ИТОГО',
-        'solo_wb_need': sum(r['solo_wb_need'] or 0 for r in pick),
-        'solo_ozon_need': sum(r['solo_ozon_need'] or 0 for r in pick),
-        'bundle_component_need': sum(r['bundle_component_need'] or 0 for r in pick),
-        'total_physical_demand': sum(r['total_physical_demand'] or 0 for r in pick),
-        'to_pick_from_pallet': move_new, 'reserved_on_pallet_to_pick': move_res,
-        'pick_total_with_reserved': sum(r['pick_total_with_reserved'] or 0 for r in pick)})
-    ws.freeze_panes = 'C6'
+    ws.freeze_panes = 'A4'
+    s.apply_widths()
+    for i, w in enumerate([26, 15, 13, 15, 12, 11, 15, 32], start=1):
+        ws.column_dimensions[get_column_letter(i)].width = w
+
+
 
     # ---------- 02_SHIPMENTS ----------
     ws = wbk.create_sheet('02_SHIPMENTS')
@@ -523,6 +571,7 @@ def build(path):
     ws.cell(s.r, 1, 'Поставок WB в работе нет: последняя поставка 22.07.2026, черновики в кабинете поставками не считаются.')
     ws.cell(s.r, 1).font = Font(FONT, 9, italic=True, color='666666')
     ws.freeze_panes = 'C6'
+    s.apply_widths()
 
     # ---------- 03_FF_STOCK ----------
     ws = wbk.create_sheet('03_FF_STOCK')
@@ -540,6 +589,7 @@ def build(path):
         ('pallet_free', 'shelf_free', 'reserved_wb', 'reserved_ozon', 'reserved_ozon_on_pallet', 'assembled',
          'fbs_ready', 'shipped_unconfirmed', 'total_physical', 'ozon_in_acceptance', 'on_ozon', 'on_wb')}})
     ws.freeze_panes = 'C8'
+    s.apply_widths()
 
     # ---------- 04_SETTINGS ----------
     ws = wbk.create_sheet('04_SETTINGS')
@@ -599,6 +649,56 @@ def build(path):
         ws.cell(s.r, 1, k).font = Font(FONT, 10, color=C_DARK)
         ws.cell(s.r, 3, v).font = Font(FONT, 10, bold=True, color=C_DARK)
         s.r += 1
+    s.apply_widths()
+
+    # ---------- 05_РАСЧЁТ (подробные вычисления, без изменений) ----------
+    ws = wbk.create_sheet('05_РАСЧЁТ')
+    s = Sheet(ws)
+    s.title('Подробный расчёт (для проверки)', [
+        'Те же строки, что и в блоках владельца, со всеми промежуточными числами: позиция запаса, спрос до прибытия, '
+        'цель, потребность, округление, ворота. Формул нет — значения посчитаны в BigQuery.'], width=25)
+    s.band('ПОДРОБНЫЙ РАСЧЁТ (для проверки)', C_DARK,
+           note='Полная таблица по каждой строке: позиция запаса, спрос до прибытия, цель, потребность, округление, ворота.')
+    for channel, color, name in (('WB', C_WB, 'WILDBERRIES'), ('OZON', C_OZ, 'OZON')):
+        c = wb_cal[channel]
+        rows = [r for r in plan if r['channel'] == channel]
+        s.band(f'{name}   ·   отгрузка {c["ship_date"]} → прибытие {arr[channel]}   ·   '
+               f'покрытие {c["target_cover_days"]} дн + страховой {c["safety_stock_days"]} дн   ·   '
+               f'срок канала {c["lead_time_days"]} дн   ·   к отгрузке {pos(rows)} позиций / {phys(rows)} физ. ед.', color)
+        s.header(PLAN_COLS)
+        s.rows(PLAN_COLS, rows, status_key='status_label', bold_key='rec_final',
+               total={'product_name': 'ИТОГО', 'rec_final': pos(rows), 'rec_physical_units': phys(rows),
+                      'on_marketplace': sum(r['on_marketplace'] or 0 for r in rows),
+                      'committed_inbound': sum(r['committed_inbound'] or 0 for r in rows),
+                      'need_math': sum(r['need_math'] or 0 for r in rows)})
+    s.band('BUNDLE PRODUCTION · сборка наборов', C_BUNDLE, note=(
+        'Мощности наборов не складываются: наборы делят компоненты. «Собрать сейчас» = под уже зарезервированные '
+        'отгрузки + новые рекомендации + резерв FBS − уже собранное.'))
+    s.header(BUNDLE_COLS)
+    s.rows(BUNDLE_COLS, bundles, bold_key='to_assemble_now',
+           total={'product_name': 'ИТОГО', 'to_assemble_now': assemble_pos,
+                  'ship_wb': sum(b['ship_wb'] or 0 for b in bundles),
+                  'ship_ozon': sum(b['ship_ozon'] or 0 for b in bundles), 'to_assemble_reserved': assemble_res})
+    s.band('СОБРАТЬ СЕЙЧАС → компоненты (раскладка по BOM)', C_BUNDLE)
+    s.header(BOM_COLS)
+    s.rows(BOM_COLS, bom, total={'product_name': 'ИТОГО',
+                                 'units_total': sum(b['units_total'] or 0 for b in bom),
+                                 'units_from_reserved': sum(b['units_from_reserved'] or 0 for b in bom),
+                                 'units_from_free': sum(b['units_from_free'] or 0 for b in bom)})
+    s.band('PICK FROM STORAGE · снять с паллет', C_PICK, note=(
+        'Итог спроса — ровно сумма рекомендаций выше: соло WB + соло Ozon + компоненты наборов + FBS. '
+        'Полка после снятия не может быть отрицательной.'))
+    s.header(PICK_COLS)
+    s.rows(PICK_COLS, pick, total={
+        'product_name': 'ИТОГО',
+        'solo_wb_need': sum(r['solo_wb_need'] or 0 for r in pick),
+        'solo_ozon_need': sum(r['solo_ozon_need'] or 0 for r in pick),
+        'bundle_component_need': sum(r['bundle_component_need'] or 0 for r in pick),
+        'total_physical_demand': sum(r['total_physical_demand'] or 0 for r in pick),
+        'to_pick_from_pallet': move_new, 'reserved_on_pallet_to_pick': move_res,
+        'pick_total_with_reserved': sum(r['pick_total_with_reserved'] or 0 for r in pick)})
+    ws.freeze_panes = 'C6'
+    s.apply_widths()
 
     # ---------- DATA (скрытый) ----------
     ws = wbk.create_sheet('DATA')

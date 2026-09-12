@@ -416,6 +416,34 @@ SELECT
     WHEN rule = 'SAFETY_MIN' THEN 'ОТГРУЗИТЬ — страховой запас'
     ELSE 'ОТГРУЗИТЬ'
   END AS status_label,
+  -- КОРОТКАЯ причина для верхних блоков владельца (≤ 80 знаков). Полная — в reason ниже.
+  CASE
+    WHEN acceptance_flip THEN 'приёмка Ozon не подтверждена — проверить'
+    WHEN review_overstock THEN FORMAT('покрытие %.0f дн > %d — проверить', resulting_cover_days, overstock_limit_days)
+    WHEN review_expiry THEN FORMAT('распродажа позже срока годности − %d дн', expiry_margin_days)
+    WHEN rec_final = 0 AND ff_limited THEN FORMAT('на ФФ свободно %d (%s)', ff_max_cards, REPLACE(ff_limiting_component, 'EVT-', ''))
+    WHEN ff_limited THEN FORMAT('урезано ФФ до %d (%s)', rec_final, REPLACE(ff_limiting_component, 'EVT-', ''))
+    WHEN rule = 'NO_PLAN' THEN 'плана продаж нет'
+    WHEN rule = 'ENOUGH' THEN FORMAT('запаса хватает: %d ≥ цели %d', projected_at_arrival, target_at_arrival)
+    WHEN rule = 'WAIT' THEN FORMAT('хватит до поставки %s — ждать', FORMAT_DATE('%d.%m', next_arrival_date))
+    WHEN rule = 'SAFETY_MIN' THEN FORMAT('страховой запас: минимум %d', rec_proposed)
+    WHEN rule = 'LOW_DEMAND_MULTIPLE' THEN FORMAT('нужно %d → %d (низкий спрос, кратность %d)', need_math, rec_final, shipment_multiple_low_demand)
+    ELSE FORMAT('нужно %d → %d (кратность %d)', need_math, rec_final, shipment_multiple)
+  END AS short_reason,
+  -- индикатор риска рекомендации: причина — отношение планового темпа к факту 30 дней
+  CASE
+    WHEN acceptance_flip OR review_overstock OR review_expiry THEN 'REVIEW'
+    WHEN aggressive_plan THEN 'PLAN-DRIVEN'
+    WHEN IFNULL(daily_plan, 0) = 0 THEN '—'
+    ELSE 'HIGH CONFIDENCE'
+  END AS risk_label,
+  CASE
+    WHEN acceptance_flip OR review_overstock OR review_expiry THEN 'требует решения владельца'
+    WHEN aggressive_plan AND actual_daily_30d = 0 THEN 'план есть, продаж за 30 дней нет'
+    WHEN aggressive_plan THEN FORMAT('план ×%.1f к факту 30 дн', plan_actual_ratio)
+    WHEN IFNULL(daily_plan, 0) = 0 THEN 'плана нет'
+    ELSE FORMAT('план ×%.1f к факту 30 дн', IFNULL(plan_actual_ratio, 1))
+  END AS risk_note,
   ARRAY_TO_STRING(ARRAY(SELECT x FROM UNNEST([
     CASE rule
       WHEN 'NO_PLAN' THEN 'плана продаж нет'

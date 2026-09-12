@@ -95,7 +95,8 @@ def main(path):
         and on_ozon_sheet != res_ozon_sheet,
         f'RESERVED OZON {res_ozon_sheet} · ON_OZON {on_ozon_sheet} (API) — разные колонки и разные числа')
     ws_plan = wb['01_SUPPLY_PLAN']
-    acc_col_present = any(c.value == 'На приёмке\nOzon' for row in ws_plan.iter_rows() for c in row)
+    ws_calc = wb['05_РАСЧЁТ']
+    acc_col_present = any(c.value == 'На приёмке\nOzon' for row in ws_calc.iter_rows() for c in row)
     acc_separate = cols['IN_ACCEPTANCE\n(Ozon)'] != cols['ON_OZON']
     chk(4, 'IN_ACCEPTANCE показана отдельной колонкой и не входит в остаток площадки',
         acc_col_present and acc_separate and acc_sheet == st['in_acceptance'],
@@ -124,7 +125,7 @@ def main(path):
         f'компонентов с перебором: {over["over_components"]} · всего физических единиц в плане {over["total_demand"]}')
 
     # --- 7: снятие с паллет сходится с рекомендациями ---
-    ws_p = wb['01_SUPPLY_PLAN']
+    ws_p = wb['05_РАСЧЁТ']
     hdr_pick = find_header(ws_p, 'Компонент')
     pcols = {ws_p.cell(hdr_pick, c).value: c for c in range(1, ws_p.max_column + 1)}
     prows = sheet_rows(ws_p, hdr_pick)
@@ -187,27 +188,32 @@ def main(path):
     chk(11, 'Слово «карточки» убрано из листов владельца (позиции / физические единицы)',
         not bad_terms, f'вхождений: {len(bad_terms)}' + ('' if not bad_terms else f' — {bad_terms[:5]}'))
 
-    bands = [str(ws_p.cell(r, 1).value) for r in range(1, 60) if ws_p.cell(r, 1).value]
-    need_blocks = ['ИТОГО СЕГОДНЯ', 'ОТГРУЗИТЬ WB СЕЙЧАС', 'ОТГРУЗИТЬ OZON СЕЙЧАС', 'ПРОВЕРИТЬ / НЕ ОТГРУЖАТЬ']
+    ws_o = wb['01_SUPPLY_PLAN']
+    bands = [str(ws_o.cell(r, 1).value) for r in range(1, 60) if ws_o.cell(r, 1).value]
+    need_blocks = ['ИТОГО СЕГОДНЯ · ГОТОВОЕ ЗАДАНИЕ USEND', 'ОТГРУЗИТЬ WB СЕЙЧАС', 'ОТГРУЗИТЬ OZON СЕЙЧАС',
+                   'ПРОВЕРИТЬ / НЕ ОТГРУЖАТЬ']
     missing = [b for b in need_blocks if not any(t.startswith(b) for t in bands)]
-    task_row = next((r for r in range(1, ws_p.max_row + 1)
-                     if str(ws_p.cell(r, 1).value or '').startswith('ТЗ ДЛЯ ФУЛФИЛМЕНТА')), None)
-    detail_row = next((r for r in range(1, ws_p.max_row + 1)
-                       if str(ws_p.cell(r, 1).value or '').startswith('ПОДРОБНЫЙ РАСЧЁТ')), None)
-    chk(12, 'Блоки владельца и ТЗ для ФФ стоят выше подробного расчёта',
-        not missing and task_row and detail_row and task_row < detail_row,
-        f'блоки: {"все на месте" if not missing else missing} · ТЗ строка {task_row} · подробный расчёт строка {detail_row}')
+    task_row = next((r for r in range(1, ws_o.max_row + 1)
+                     if str(ws_o.cell(r, 1).value or '').startswith('ТЗ ДЛЯ ФУЛФИЛМЕНТА')), None)
+    heights = [(ws_o.row_dimensions[r].height or 21) for r in range(1, 60)]
+    fold = next(r for r in range(1, 60) if sum(heights[:r]) > 715)
+    first_screen = [b for b in need_blocks
+                    if any(str(ws_o.cell(r, 1).value or '').startswith(b) for r in range(1, fold))]
+    chk(12, 'Все блоки владельца и задание Usend умещаются на первом экране 1440×900',
+        not missing and len(first_screen) == len(need_blocks) and task_row,
+        f'на первом экране (до строки {fold}, ~715 px): {len(first_screen)} из {len(need_blocks)} блоков · '
+        f'полное ТЗ — строка {task_row} · подробный расчёт — отдельный лист 05_РАСЧЁТ')
 
     task_bq = {r['internal_sku']: r for r in query(f'SELECT * FROM `{P}.evetis_ops.V_OPS_FF_TASK`')}
-    hdr_move = next(r for r in range(task_row, ws_p.max_row + 1)
-                    if ws_p.cell(r, 3).value == 'Снять под новые\nотгрузки, шт.')
-    mcols = {ws_p.cell(hdr_move, c).value: c for c in range(1, ws_p.max_column + 1)}
-    move_rows = sheet_rows(ws_p, hdr_move)
+    hdr_move = next(r for r in range(task_row, ws_o.max_row + 1)
+                    if str(ws_o.cell(r, 3).value or '').startswith('Снять под новые'))
+    mcols = {str(ws_o.cell(hdr_move, c).value): c for c in range(1, ws_o.max_column + 1)}
+    col_total = next(k for k in mcols if k.startswith('ИТОГО снять'))
+    col_res = next(k for k in mcols if k.startswith('Снять под уже'))
+    move_rows = sheet_rows(ws_o, hdr_move)
     bad_task = [r['key'] for r in move_rows
-                if (ws_p.cell(r['row'], mcols['ИТОГО снять\nс паллет, шт.']).value or 0)
-                != task_bq[r['key']]['move_pallet_to_shelf_total']
-                or (ws_p.cell(r['row'], mcols['Снять под уже\nзарезервированное, шт.']).value or 0)
-                != task_bq[r['key']]['move_pallet_to_shelf_reserved']]
+                if (ws_o.cell(r['row'], mcols[col_total]).value or 0) != task_bq[r['key']]['move_pallet_to_shelf_total']
+                or (ws_o.cell(r['row'], mcols[col_res]).value or 0) != task_bq[r['key']]['move_pallet_to_shelf_reserved']]
     phys_plan = query(f'SELECT SUM(rec_physical_units) AS s FROM `{P}.evetis_ops.V_OPS_SUPPLY_PLAN`')[0]['s']
     phys_pick = query(f'SELECT SUM(total_physical_demand) AS s FROM `{P}.evetis_ops.V_OPS_PICK_FROM_STORAGE`')[0]['s']
     chk(13, 'ТЗ для ФФ сходится с планом: снятие с паллет и физические единицы',
@@ -217,11 +223,38 @@ def main(path):
     agg = query('SELECT COUNTIF(aggressive_plan) AS flagged, COUNT(*) AS all_rows, '
                 'COUNTIF(aggressive_plan AND rec_final > 0) AS flagged_ship '
                 f'FROM `{P}.evetis_ops.V_OPS_SUPPLY_PLAN`')[0]
-    warn_cells = sum(1 for row in ws_p.iter_rows() for c in row
+    warn_cells = sum(1 for row in ws_calc.iter_rows() for c in row
                      if isinstance(c.value, str) and c.value.startswith('АГРЕССИВНЫЙ ПЛАН'))
     chk(14, 'Агрессивный план (>2× факта) помечен, количество не изменено',
         warn_cells >= agg['flagged_ship'] and agg['flagged'] > 0,
         f'строк с флагом в BigQuery: {agg["flagged"]} из {agg["all_rows"]} · предупреждений в книге: {warn_cells}')
+
+    plan_rows = list(plan.values())
+    long_reasons = [r['card_sku'] for r in plan_rows if len(r['short_reason'] or '') > 80]
+    risk_ok = all((r['risk_label'] or '') in ('HIGH CONFIDENCE', 'PLAN-DRIVEN', 'REVIEW', '—') for r in plan_rows)
+    chk(15, 'Короткая причина ≤ 80 знаков, индикатор риска у каждой строки',
+        not long_reasons and risk_ok,
+        f'максимум {max(len(r["short_reason"] or "") for r in plan_rows)} знаков · '
+        f'метки: ' + ', '.join(sorted({r['risk_label'] for r in plan_rows})))
+
+    hdr_rows = [r for r in range(1, 60) if str(ws_o.cell(r, 4).value or '') == 'Одобрено\nвладельцем']
+    appr_col, model_col = 4, 2
+    # строки блоков отгрузки: их видно по метке риска в колонке G
+    data_rows = [r for r in range(1, 60)
+                 if str(ws_o.cell(r, 7).value or '') in ('HIGH CONFIDENCE', 'PLAN-DRIVEN', 'REVIEW', '—')]
+    appr_filled = [r for r in data_rows if ws_o.cell(r, appr_col).value not in (None, '')]
+    model_vals = [ws_o.cell(r, model_col).value for r in data_rows]
+    chk(16, '«Рекомендация модели» и «Одобрено владельцем» — разные колонки; вторая пустая',
+        len(hdr_rows) == 2 and not appr_filled and len(model_vals) >= 20,
+        f'строк с рекомендацией модели: {len(model_vals)} · заполненных ячеек владельца: {len(appr_filled)} '
+        f'(поле read-only placeholder, система его не читает)')
+
+    usend_labels = [str(ws_o.cell(r, 1).value) for r in range(4, 11)]
+    need_lines = ['Снять с паллет', 'Собрать наборы', 'Подготовить к отгрузке: WILDBERRIES',
+                  'Подготовить к отгрузке: OZON', 'Уже зарезервировано', 'Останется свободно']
+    miss_lines = [n for n in need_lines if not any(str(x).startswith(n) for x in usend_labels)]
+    chk(17, 'ГОТОВОЕ ЗАДАНИЕ USEND содержит все требуемые строки', not miss_lines,
+        'строки: ' + ' · '.join(x for x in usend_labels if x and x != 'Что сделать'))
 
     print('\n' + '=' * 108)
     for n, name, ok, detail in checks:
