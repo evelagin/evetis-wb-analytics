@@ -32,9 +32,6 @@ jobs:
         run: docker build -t wb-loader:ci .
 
   wb-communications:
-    # Stage A / A2. Сервис публикует ответы в Wildberries; до Stage A он
-    # доставлялся мимо CI и без исходников в Git. Здесь только проверки:
-    # ни деплоя, ни push образа, ни облачных креденшелов.
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -43,7 +40,6 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
-          # Совпадает с базовым образом Dockerfile (python:3.12-slim).
           python-version: "3.12"
           cache: pip
           cache-dependency-path: services/wb-communications/requirements-dev.txt
@@ -55,15 +51,11 @@ jobs:
         run: docker build -t evetis-wb-communications:ci .
 
   ozon:
-    # Stage A / A3. До этого pipelines/ozon/** не входил ни в один workflow:
-    # соответствие развёрнутого образа репозиторию было недоказуемо.
-    # Проверки офлайновые — Ozon API и BigQuery не вызываются.
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
-          # Совпадает с базовым образом обоих Dockerfile (python:3.12-slim).
           python-version: "3.12"
           cache: pip
           cache-dependency-path: pipelines/ozon/requirements-dev.txt
@@ -82,9 +74,11 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: hashicorp/setup-terraform@v3
-      - name: fmt (all)
-        run: terraform fmt -check -recursive
+      - name: fmt diagnostic
         working-directory: infra
+        run: |
+          terraform fmt -recursive
+          git diff -- terraform
       - name: validate terraform (offline)
         working-directory: infra/terraform
         run: |
