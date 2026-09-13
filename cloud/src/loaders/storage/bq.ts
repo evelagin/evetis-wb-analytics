@@ -23,25 +23,21 @@ export class StorageBq {
   private fqn(t: string): string { return `\`${this.projectId}.${this.dataset}.${t}\``; }
 
   /**
-   * Atomic window replacement:
-   * 1) create a short-lived staging table with the exact target schema;
-   * 2) load and validate staging completely;
-   * 3) DELETE+INSERT the production window in one BigQuery transaction.
-   * A download/load failure therefore leaves the previous production facts intact.
+   * Atomic window replacement with a Terraform-managed fixed staging table.
+   * Runtime SA does not need tables.create/drop: only table-level dataEditor on target + stage.
+   * A failed API/download/staging load leaves the previous target window intact.
    */
   async replaceWindow(table: string, rows: PaidStorageRow[], startDate: string, endDate: string, jobId: string): Promise<number> {
     if (rows.length === 0) throw new Error('Refusing to replace paid-storage window with zero rows');
     if (!/^[A-Za-z0-9_]+$/.test(table)) throw new Error(`Invalid BigQuery table name '${table}'`);
 
-    const suffix = jobId.replace(/[^A-Za-z0-9_]/g, '_').slice(-70);
-    const stageTable = `_TMP_${table}_${suffix}`;
+    const stageTable = `${table}__STAGE`;
     const target = this.fqn(table);
     const stage = this.fqn(stageTable);
-
-    await this.bq.query({ query: `CREATE TABLE ${stage} LIKE ${target}`, location: this.location });
-
+    const suffix = jobId.replace(/[^A-Za-z0-9_]/g, '_').slice(-70);
     const file = join(tmpdir(), `wb_paid_storage_${suffix}.jsonl`);
     writeFileSync(file, rows.map((r) => JSON.stringify(r)).join('\n') + '\n', 'utf8');
+
     const md: JobLoadMetadata = {
       sourceFormat: 'NEWLINE_DELIMITED_JSON',
       writeDisposition: 'WRITE_TRUNCATE',
@@ -52,7 +48,6 @@ export class StorageBq {
 
     try {
       await this.bq.dataset(this.dataset).table(stageTable).load(file, md);
-
       const stageCount = await this.countWindow(stageTable, startDate, endDate);
       if (stageCount !== rows.length) {
         throw new Error(`Paid-storage staging QA failed: expected ${rows.length}, got ${stageCount}`);
@@ -69,13 +64,13 @@ export class StorageBq {
       });
     } finally {
       try { rmSync(file, { force: true }); } catch { /* noop */ }
-      try { await this.bq.query({ query: `DROP TABLE IF EXISTS ${stage}`, location: this.location }); } catch { /* cleanup only */ }
     }
 
     return this.countWindow(table, startDate, endDate);
   }
 
   async countWindow(table: string, startDate: string, endDate: string): Promise<number> {
+    if (!/^[A-Za-z0-9_]+$/.test(table)) throw new Error(`Invalid BigQuery table name '${table}'`);
     const [rows] = await this.bq.query({
       query: `SELECT COUNT(*) AS n FROM ${this.fqn(table)} WHERE date_msk BETWEEN DATE(@start) AND DATE(@end)`,
       params: { start: startDate, end: endDate },
@@ -86,6 +81,7 @@ export class StorageBq {
   }
 
   async qaWindow(table: string, startDate: string, endDate: string): Promise<{ rows: number; days: number; nm: number; storageRub: number }> {
+    if (!/^[A-Za-z0-9_]+$/.test(table)) throw new Error(`Invalid BigQuery table name '${table}'`);
     const [rows] = await this.bq.query({
       query: `SELECT COUNT(*) AS rows, COUNT(DISTINCT date_msk) AS days, COUNT(DISTINCT nm_id) AS nm,
                      ROUND(SUM(IFNULL(warehouse_price,0)), 2) AS storage_rub
