@@ -16,11 +16,11 @@
 
 locals {
   storage_env = {
-    LOADER_NAME             = "storage"
-    WB_ANALYTICS_HOST       = "https://seller-analytics-api.wildberries.ru"
-    WB_ANALYTICS_SECRET     = "WB_TOKEN_ANALYTICS"
-    STORAGE_RAW_TABLE       = "RAW_WB_PAID_STORAGE"
-    STORAGE_LOOKBACK_DAYS   = "8"
+    LOADER_NAME           = "storage"
+    WB_ANALYTICS_HOST     = "https://seller-analytics-api.wildberries.ru"
+    WB_ANALYTICS_SECRET   = "WB_TOKEN_ANALYTICS"
+    STORAGE_RAW_TABLE     = "RAW_WB_PAID_STORAGE"
+    STORAGE_LOOKBACK_DAYS = "8"
   }
 
   storage_schema = [
@@ -77,7 +77,7 @@ resource "google_cloud_run_v2_job" "wb_paid_storage_prod" {
       service_account = google_service_account.loaders_prod.email
       max_retries     = 0
       # Async WB report can spend several minutes in task polling.
-      timeout         = "900s"
+      timeout = "900s"
       containers {
         image = var.container_image
         args  = ["storage"]
@@ -125,8 +125,8 @@ resource "google_bigquery_table_iam_member" "prod_write_paid_storage_stage" {
 }
 
 resource "google_cloud_scheduler_job" "wb_paid_storage_prod" {
-  name      = "wb-paid-storage-prod"
-  region    = var.region
+  name   = "wb-paid-storage-prod"
+  region = var.region
   # 08:45 UTC = 11:45 МСК. Storage не гейтит LAST_CLOSED_DATE; это окно специально
   # перед reserve Engine в 12:30 МСК, чтобы D-1 уже успел сформироваться у WB.
   schedule  = "45 8 * * *"
