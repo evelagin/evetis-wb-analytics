@@ -677,3 +677,17 @@ D4 (`TD765`/`TD730 +1` сохранить, `ISSUE UNEXPLAINED_MANUAL_ADJUSTMENT`
 CF-VISUAL REGRESSION 0, CF ≤ 160 правил / ≤ 900 фрагментов, FORMULA_ERRORS ≤ 73, STRUCTURE.
 🔴 В книгу не записано ничего; запуск — только владельцем по порядку из плана §10, после `e6dryrun`
 и сверки с репетицией.
+
+## 2026-09-13 · UNITKA — reconcile: production-хранение = Stage E4, репозиторий = live BigQuery
+
+Ветка `main` перестроена от `origin/main` = `230c64c` (Stage E4, `wb-paid-storage-prod`): локальная
+реализация E3-storage (`f3705f6`, `wb-storage-prod`) отброшена по решению владельца, не-storage
+работа E5/E6 перенесена cherry-pick'ом, страховка — ветка `backup/pre-e6-reconcile-336e2c2`.
+`sql/unitka/engine_v1_views.sql` сверен с live-определениями (`INFORMATION_SCHEMA.VIEWS`, read-only):
+добавлен раздел 0 — `V_WB_STORAGE_DAILY` / `_COVERAGE` / `_RECONCILIATION` (применены в BQ 13.09),
+`V_UNITKA_SOURCE_FRESHNESS` и `V_UNITKA_DAILY_FACT` читают хранение через `V_WB_STORAGE_DAILY`
+(`storage_rub_exact`) — 8 вью MATCH байт в байт; dry-run тел в BigQuery PASS. Схема
+`RAW_WB_PAID_STORAGE` (25 колонок, `observation_id`) = Terraform E4 = live. Устаревшие определения
+вью из `sql/ddl/wb_raw_paid_storage.sql` заменены ссылкой (таблица без изменений). В docs ссылки на
+`wb-storage`/E3-storage заменены на `wb-paid-storage-prod` / Stage E4 (`230c64c`). BigQuery,
+Google Sheets, scheduler-control, функции E6 не трогались.

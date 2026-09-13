@@ -68,8 +68,9 @@ SELECT * FROM `wb_mart.V_UNITKA_ENGINE_STATUS`;
 
 Отставание LCD > 2 суток → `SOURCE_STALE` и алерт — это сигнал про источник, не про Engine.
 
-⚠ Хранение (`storage`) не гейтит LCD и **пока не имеет production-загрузчика** (E3): после 09.09
-дни остаются GAP, пока не появится `wb-storage` (Stage E3-storage) или разовый R3-backfill.
+⚠ Хранение (`storage`) не гейтит LCD. Production-загрузчик — **Stage E4, commit `230c64c`**
+(`wb-paid-storage-prod`: окно 8 закрытых суток, атомарная замена в `RAW_WB_PAID_STORAGE`); Engine
+читает `V_WB_STORAGE_DAILY`. До его первого прогона дни после 09.09 остаются GAP (пусто, не ноль).
 
 ## 4. Коды ошибок и действия
 

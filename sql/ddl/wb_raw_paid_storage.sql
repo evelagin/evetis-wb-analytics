@@ -32,41 +32,7 @@ CREATE TABLE IF NOT EXISTS `project-fa311fc0-4d87-4781-986.wb_raw.RAW_WB_PAID_ST
 PARTITION BY date_msk
 CLUSTER BY nm_id, warehouse;
 
--- Дневная агрегация по SKU — то, что читает юнитка.
-CREATE OR REPLACE VIEW `project-fa311fc0-4d87-4781-986.wb_raw.V_WB_STORAGE_DAILY` AS
-SELECT
-  date_msk,
-  nm_id,
-  ROUND(SUM(warehouse_price), 4) AS storage_rub,
-  SUM(barcodes_count)            AS units_stored,
-  COUNT(DISTINCT warehouse)      AS warehouses,
-  MAX(observed_at)               AS observed_at
-FROM `project-fa311fc0-4d87-4781-986.wb_raw.RAW_WB_PAID_STORAGE`
-GROUP BY date_msk, nm_id;
-
--- Обязательная сверка: сумма по SKU против факта WB из финансового отчёта.
--- Аллокация не нужна вовсе — WB отдаёт хранение уже в разрезе nmID.
-CREATE OR REPLACE VIEW `project-fa311fc0-4d87-4781-986.wb_raw.V_WB_STORAGE_RECONCILIATION` AS
-WITH ps AS (
-  SELECT date_msk, SUM(warehouse_price) AS storage_api
-  FROM `project-fa311fc0-4d87-4781-986.wb_raw.RAW_WB_PAID_STORAGE`
-  GROUP BY date_msk
-),
-fin AS (
-  SELECT _rr_date AS date_msk,
-         SUM(SAFE_CAST(REPLACE(REPLACE(storage_fee, ' ', ''), ',', '.') AS FLOAT64)) AS storage_finance
-  FROM `project-fa311fc0-4d87-4781-986.wb_raw.V_WB_FINANCE_CANONICAL`
-  GROUP BY _rr_date
-)
-SELECT
-  COALESCE(ps.date_msk, fin.date_msk)                       AS date_msk,
-  ROUND(ps.storage_api, 2)                                  AS storage_api,
-  ROUND(fin.storage_finance, 2)                             AS storage_finance,
-  ROUND(IFNULL(ps.storage_api,0) - IFNULL(fin.storage_finance,0), 2) AS delta,
-  CASE
-    WHEN ps.storage_api IS NULL  THEN 'NO_API_DATA'
-    WHEN fin.storage_finance IS NULL THEN 'NO_FINANCE_DATA'
-    WHEN ABS(ps.storage_api - fin.storage_finance) <= 1 THEN 'OK'
-    ELSE 'MISMATCH'
-  END AS status
-FROM ps FULL OUTER JOIN fin USING (date_msk);
+-- Схема таблицы дублирует infra/terraform/wb_paid_storage_loader.tf (Stage E4, commit 230c64c) —
+-- production-загрузчик Job wb-paid-storage-prod (atomic window replace через RAW_WB_PAID_STORAGE__STAGE).
+-- Вью слоя хранения (V_WB_STORAGE_DAILY / _COVERAGE / _RECONCILIATION) определены в
+-- sql/unitka/engine_v1_views.sql, раздел 0 — единственное место определений, сверено с live BQ 13.09.2026.

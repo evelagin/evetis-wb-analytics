@@ -5,6 +5,10 @@
 -- Док: docs/UNITKA_ENGINE_V1_DESIGN.md.
 -- Применение: bq query --use_legacy_sql=false < sql/unitka/engine_v1_views.sql
 -- Вью 1–5 применены 12.09.2026 (MCP BigQuery), вью 6 — после infra apply (см. её заголовок).
+-- 13.09.2026: слой хранения (раздел 0) и вью 1, 3 переведены на V_WB_STORAGE_DAILY — применено в BQ;
+-- этот файл сверен с live-определениями (INFORMATION_SCHEMA.VIEWS) 13.09.2026 — источник правды BigQuery.
+-- Production-загрузчик хранения = Stage E4, commit 230c64c: Job wb-paid-storage-prod,
+-- infra/terraform/wb_paid_storage_loader.tf (схема RAW_WB_PAID_STORAGE — там же).
 -- ============================================================================
 
 -- ============================================================================
@@ -14,6 +18,77 @@
 -- Док: docs/UNITKA_ENGINE_V1_DESIGN.md.
 -- Применение: bq query --use_legacy_sql=false < sql/unitka/engine_v1_views.sql
 -- ============================================================================
+
+-- ─── 0. Слой платного хранения WB (wb_raw) ────────────────────────────────
+-- Источник: wb_raw.RAW_WB_PAID_STORAGE (пишет Job wb-paid-storage-prod, Stage E4 / 230c64c).
+-- V_WB_STORAGE_DAILY — на каждую дату берётся последнее наблюдение (observation_id по
+-- MAX(observed_at)); с atomic window replace E4 на дату остаётся одно наблюдение — вью
+-- совместима. storage_rub_exact — без округления (для V_UNITKA_DAILY_FACT), storage_rub — 4 знака.
+CREATE OR REPLACE VIEW `project-fa311fc0-4d87-4781-986.wb_raw.V_WB_STORAGE_DAILY` AS
+WITH obs AS (
+  SELECT date_msk, observation_id, MAX(observed_at) AS observed_at
+  FROM `project-fa311fc0-4d87-4781-986.wb_raw.RAW_WB_PAID_STORAGE`
+  GROUP BY date_msk, observation_id
+),
+latest AS (
+  SELECT date_msk, observation_id FROM obs
+  QUALIFY ROW_NUMBER() OVER (PARTITION BY date_msk ORDER BY observed_at DESC, observation_id DESC) = 1
+)
+SELECT
+  r.date_msk,
+  r.nm_id,
+  SUM(r.warehouse_price)           AS storage_rub_exact,
+  ROUND(SUM(r.warehouse_price), 4) AS storage_rub,
+  SUM(r.barcodes_count)            AS units_stored,
+  COUNT(DISTINCT r.warehouse)      AS warehouses,
+  MAX(r.observed_at)               AS observed_at,
+  l.observation_id
+FROM `project-fa311fc0-4d87-4781-986.wb_raw.RAW_WB_PAID_STORAGE` r
+JOIN latest l USING (date_msk, observation_id)
+GROUP BY r.date_msk, r.nm_id, l.observation_id;
+-- Покрытие по датам от первой загруженной до D-1 МСК: MISSING = пропуск (GAP), не ноль.
+CREATE OR REPLACE VIEW `project-fa311fc0-4d87-4781-986.wb_raw.V_WB_STORAGE_COVERAGE` AS
+WITH cal AS (
+  SELECT d AS date_msk
+  FROM UNNEST(GENERATE_DATE_ARRAY(
+    (SELECT MIN(date_msk) FROM `project-fa311fc0-4d87-4781-986.wb_raw.RAW_WB_PAID_STORAGE`),
+    DATE_SUB(CURRENT_DATE('Europe/Moscow'), INTERVAL 1 DAY))) AS d
+)
+SELECT
+  c.date_msk,
+  COUNT(DISTINCT s.nm_id)                    AS nm_with_data,
+  ROUND(SUM(s.storage_rub_exact), 2)         AS storage_total_rub,
+  ANY_VALUE(s.observation_id)                AS observation_id,
+  MAX(s.observed_at)                         AS last_observed_at,
+  IF(COUNT(s.nm_id) = 0, 'MISSING', 'OK')    AS status
+FROM cal c
+LEFT JOIN `project-fa311fc0-4d87-4781-986.wb_raw.V_WB_STORAGE_DAILY` s USING (date_msk)
+GROUP BY c.date_msk;
+-- Сверка суммы по SKU с фактом WB из финансового отчёта (storage_fee), допуск 1 ₽.
+CREATE OR REPLACE VIEW `project-fa311fc0-4d87-4781-986.wb_raw.V_WB_STORAGE_RECONCILIATION` AS
+WITH ps AS (
+  SELECT date_msk, SUM(storage_rub_exact) AS storage_api
+  FROM `project-fa311fc0-4d87-4781-986.wb_raw.V_WB_STORAGE_DAILY`
+  GROUP BY date_msk
+),
+fin AS (
+  SELECT _rr_date AS date_msk,
+         SUM(SAFE_CAST(REPLACE(REPLACE(storage_fee, ' ', ''), ',', '.') AS FLOAT64)) AS storage_finance
+  FROM `project-fa311fc0-4d87-4781-986.wb_raw.V_WB_FINANCE_CANONICAL`
+  GROUP BY _rr_date
+)
+SELECT
+  COALESCE(ps.date_msk, fin.date_msk)                       AS date_msk,
+  ROUND(ps.storage_api, 2)                                  AS storage_api,
+  ROUND(fin.storage_finance, 2)                             AS storage_finance,
+  ROUND(IFNULL(ps.storage_api,0) - IFNULL(fin.storage_finance,0), 2) AS delta,
+  CASE
+    WHEN ps.storage_api IS NULL  THEN 'NO_API_DATA'
+    WHEN fin.storage_finance IS NULL THEN 'NO_FINANCE_DATA'
+    WHEN ABS(ps.storage_api - fin.storage_finance) <= 1 THEN 'OK'
+    ELSE 'MISMATCH'
+  END AS status
+FROM ps FULL OUTER JOIN fin USING (date_msk);
 
 -- ─── 1. Свежесть источников ────────────────────────────────────────────────
 -- gating = TRUE у источников, без которых закрытый день не считается закрытым:
@@ -35,8 +110,8 @@ UNION ALL
 SELECT 'stocks', MAX(snapshot_date), FALSE, MAX(built_at)
 FROM `project-fa311fc0-4d87-4781-986.wb_mart.FACT_STOCKS_SNAPSHOT`
 UNION ALL
-SELECT 'storage', MAX(date_msk), FALSE, MAX(ingested_at)
-FROM `project-fa311fc0-4d87-4781-986.wb_raw.RAW_WB_PAID_STORAGE`
+SELECT 'storage', MAX(date_msk), FALSE, MAX(observed_at)
+FROM `project-fa311fc0-4d87-4781-986.wb_raw.V_WB_STORAGE_DAILY`
 UNION ALL
 SELECT 'finance', MAX(_rr_date), FALSE, MAX(SAFE_CAST(loaded_at AS TIMESTAMP))
 FROM `project-fa311fc0-4d87-4781-986.wb_raw.V_WB_FINANCE_CANONICAL`;
@@ -92,7 +167,7 @@ bf AS (
   SELECT nm_id, date_msk AS d, open_card_count AS opens, add_to_cart_count AS carts,
          orders_count AS forders, cancel_count AS canc
   FROM `project-fa311fc0-4d87-4781-986.wb_raw.RAW_WB_FUNNEL_XLSX_BACKFILL`
-  WHERE date_msk <= DATE '2026-09-03'   -- разовый исторический backfill, дальше НЕ действует
+  WHERE date_msk <= DATE '2026-09-03'
 ),
 sd AS (SELECT DISTINCT snapshot_date AS d FROM `project-fa311fc0-4d87-4781-986.wb_mart.FACT_STOCKS_SNAPSHOT`, lcd WHERE snapshot_date BETWEEN lcd.d1 AND lcd.d2),
 st AS (
@@ -101,12 +176,11 @@ st AS (
   WHERE snapshot_date BETWEEN lcd.d1 AND lcd.d2
   GROUP BY 1, 2
 ),
-pd AS (SELECT DISTINCT date_msk AS d FROM `project-fa311fc0-4d87-4781-986.wb_raw.RAW_WB_PAID_STORAGE`, lcd WHERE date_msk BETWEEN lcd.d1 AND lcd.d2),
+pd AS (SELECT DISTINCT date_msk AS d FROM `project-fa311fc0-4d87-4781-986.wb_raw.V_WB_STORAGE_DAILY`, lcd WHERE date_msk BETWEEN lcd.d1 AND lcd.d2),
 ps AS (
-  SELECT SAFE_CAST(nm_id AS INT64) AS nm_id, date_msk AS d, SUM(SAFE_CAST(warehouse_price AS NUMERIC)) AS storage
-  FROM `project-fa311fc0-4d87-4781-986.wb_raw.RAW_WB_PAID_STORAGE`, lcd
+  SELECT nm_id, date_msk AS d, storage_rub_exact AS storage
+  FROM `project-fa311fc0-4d87-4781-986.wb_raw.V_WB_STORAGE_DAILY`, lcd
   WHERE date_msk BETWEEN lcd.d1 AND lcd.d2
-  GROUP BY 1, 2
 )
 SELECT
   g.nm_id,

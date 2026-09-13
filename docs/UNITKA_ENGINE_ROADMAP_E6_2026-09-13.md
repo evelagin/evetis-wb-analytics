@@ -1,7 +1,9 @@
 # UNITKA ENGINE — дорожная карта после E5: E6, «2025 под сентябрь», новые SKU, авто-октябрь (13.09.2026)
 
-Порядок задан владельцем 13.09: E3-storage → E5 аудит → ДРР → E6 оптимизация → история под
+Порядок задан владельцем 13.09: storage-загрузчик → E5 аудит → ДРР → E6 оптимизация → история под
 сентябрь → новые SKU автоматически → новая месячная таблица за 1–3 дня до конца месяца.
+Production-реализация хранения = **Stage E4, commit `230c64c`** (Job `wb-paid-storage-prod`,
+`infra/terraform/wb_paid_storage_loader.tf`); локальная E3-storage (`wb-storage-prod`) отброшена 13.09.
 Ничего из этого документа не реализовано; это план и список решений.
 
 ## E6 — оптимизация книги (после решений §9 аудита E5)
@@ -55,4 +57,7 @@ Engine v1.1 (E1.1) — `MONTH_ROLLOVER`: за N дней до конца мес�
    и целевая маржа, допустимость пересчёта истории, судьба `Акции`/`OZON`/`Склад`, согласие на
    пересборку УФ.
 2. Порядок: E6.1–E6.5 → история → новые SKU → авто-октябрь (до 28.09 нужен как минимум SHADOW).
-3. Для `wb-storage`: шаги §3 `UNITKA_ENGINE_V1_E3_STORAGE_2026-09-13.md` (plan/apply → deploy → run-now → resume).
+3. Для хранения — rollout Stage E4 (`230c64c`) по заголовку `infra/terraform/wb_paid_storage_loader.tf`:
+   terraform apply (Job `wb-paid-storage-prod` + stage-таблица + IAM + paused Scheduler) → deploy-prod
+   (шаг `wb-paid-storage-prod`) → ручной запуск и QA окна, в т.ч. 10–12.09 → снять pause Scheduler →
+   прогон Engine. Пока E4 не запускался: в `RAW_WB_PAID_STORAGE` только R3-backfill 01–09.09.
