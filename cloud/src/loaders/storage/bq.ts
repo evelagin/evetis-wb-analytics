@@ -23,33 +23,55 @@ export class StorageBq {
   private fqn(t: string): string { return `\`${this.projectId}.${this.dataset}.${t}\``; }
 
   /**
-   * Replace window after the complete WB report is already downloaded and normalized.
-   * Empty input is forbidden by the caller, so a transient empty WB response cannot erase facts.
+   * Atomic window replacement:
+   * 1) create a short-lived staging table with the exact target schema;
+   * 2) load and validate staging completely;
+   * 3) DELETE+INSERT the production window in one BigQuery transaction.
+   * A download/load failure therefore leaves the previous production facts intact.
    */
   async replaceWindow(table: string, rows: PaidStorageRow[], startDate: string, endDate: string, jobId: string): Promise<number> {
     if (rows.length === 0) throw new Error('Refusing to replace paid-storage window with zero rows');
+    if (!/^[A-Za-z0-9_]+$/.test(table)) throw new Error(`Invalid BigQuery table name '${table}'`);
 
-    await this.bq.query({
-      query: `DELETE FROM ${this.fqn(table)} WHERE date_msk BETWEEN DATE(@start) AND DATE(@end)`,
-      params: { start: startDate, end: endDate },
-      types: { start: 'STRING', end: 'STRING' },
-      location: this.location,
-    });
+    const suffix = jobId.replace(/[^A-Za-z0-9_]/g, '_').slice(-70);
+    const stageTable = `_TMP_${table}_${suffix}`;
+    const target = this.fqn(table);
+    const stage = this.fqn(stageTable);
 
-    const file = join(tmpdir(), `wb_paid_storage_${jobId}.jsonl`);
+    await this.bq.query({ query: `CREATE TABLE ${stage} LIKE ${target}`, location: this.location });
+
+    const file = join(tmpdir(), `wb_paid_storage_${suffix}.jsonl`);
     writeFileSync(file, rows.map((r) => JSON.stringify(r)).join('\n') + '\n', 'utf8');
     const md: JobLoadMetadata = {
       sourceFormat: 'NEWLINE_DELIMITED_JSON',
-      writeDisposition: 'WRITE_APPEND',
+      writeDisposition: 'WRITE_TRUNCATE',
       createDisposition: 'CREATE_NEVER',
       jobId,
       location: this.location,
     };
+
     try {
-      await this.bq.dataset(this.dataset).table(table).load(file, md);
+      await this.bq.dataset(this.dataset).table(stageTable).load(file, md);
+
+      const stageCount = await this.countWindow(stageTable, startDate, endDate);
+      if (stageCount !== rows.length) {
+        throw new Error(`Paid-storage staging QA failed: expected ${rows.length}, got ${stageCount}`);
+      }
+
+      await this.bq.query({
+        query: `BEGIN TRANSACTION;
+          DELETE FROM ${target} WHERE date_msk BETWEEN DATE(@start) AND DATE(@end);
+          INSERT INTO ${target} SELECT * FROM ${stage};
+          COMMIT TRANSACTION;`,
+        params: { start: startDate, end: endDate },
+        types: { start: 'STRING', end: 'STRING' },
+        location: this.location,
+      });
     } finally {
       try { rmSync(file, { force: true }); } catch { /* noop */ }
+      try { await this.bq.query({ query: `DROP TABLE IF EXISTS ${stage}`, location: this.location }); } catch { /* cleanup only */ }
     }
+
     return this.countWindow(table, startDate, endDate);
   }
 
