@@ -66,6 +66,18 @@ jobs:
           else
             echo "::warning title=unitka-engine-prod::Job ещё не создан Terraform'ом — шаг пропущен"
           fi
+      - name: Deploy wb-paid-storage-prod (тот же digest)
+        # Stage E4: Job создаётся Terraform'ом. Guard сохраняет совместимость до первого infra apply.
+        # Секрет остаётся WB_TOKEN_ANALYTICS из Terraform env; workflow его не читает и не меняет.
+        run: |
+          if gcloud run jobs describe wb-paid-storage-prod --region ${{ vars.GCP_REGION }} >/dev/null 2>&1; then
+            gcloud run jobs update wb-paid-storage-prod \
+              --region ${{ vars.GCP_REGION }} \
+              --image "${{ inputs.image_digest }}" \
+              --update-env-vars IMAGE_DIGEST="${{ inputs.image_digest }}",GIT_SHA="${{ inputs.source_git_sha }}"
+          else
+            echo "::warning title=wb-paid-storage-prod::Job ещё не создан Terraform'ом — шаг пропущен"
+          fi
       - name: Deploy wb-funnel-prod (отдельным шагом — у него свой секрет)
         # UNITKA 2.0 R6/R7. Воронка ходит в WB под ОТДЕЛЬНЫМ токеном WB_TOKEN_REPORTS
         # (решение владельца); WB_TOKEN_ANALYTICS не трогаем — на нём остатки и

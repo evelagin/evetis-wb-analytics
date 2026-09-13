@@ -1,0 +1,96 @@
+/** BigQuery I/O для фактического платного хранения WB. */
+import { BigQuery, type JobLoadMetadata } from '@google-cloud/bigquery';
+import { writeFileSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import type { PaidStorageRow } from './normalize.js';
+
+export interface StorageBqLike {
+  query(o: { query: string; params?: Record<string, unknown>; types?: Record<string, string>; location?: string }): Promise<[unknown[]]>;
+  dataset(d: string): { table(t: string): { load(src: string, md: JobLoadMetadata): Promise<unknown> } };
+}
+
+export class StorageBq {
+  private readonly bq: StorageBqLike;
+  constructor(
+    private readonly projectId: string,
+    private readonly location: string,
+    private readonly dataset: string,
+    bqClient?: StorageBqLike,
+  ) {
+    this.bq = bqClient ?? (new BigQuery({ projectId }) as unknown as StorageBqLike);
+  }
+  private fqn(t: string): string { return `\`${this.projectId}.${this.dataset}.${t}\``; }
+
+  /**
+   * Atomic window replacement with a Terraform-managed fixed staging table.
+   * Runtime SA does not need tables.create/drop: only table-level dataEditor on target + stage.
+   * A failed API/download/staging load leaves the previous target window intact.
+   */
+  async replaceWindow(table: string, rows: PaidStorageRow[], startDate: string, endDate: string, jobId: string): Promise<number> {
+    if (rows.length === 0) throw new Error('Refusing to replace paid-storage window with zero rows');
+    if (!/^[A-Za-z0-9_]+$/.test(table)) throw new Error(`Invalid BigQuery table name '${table}'`);
+
+    const stageTable = `${table}__STAGE`;
+    const target = this.fqn(table);
+    const stage = this.fqn(stageTable);
+    const suffix = jobId.replace(/[^A-Za-z0-9_]/g, '_').slice(-70);
+    const file = join(tmpdir(), `wb_paid_storage_${suffix}.jsonl`);
+    writeFileSync(file, rows.map((r) => JSON.stringify(r)).join('\n') + '\n', 'utf8');
+
+    const md: JobLoadMetadata = {
+      sourceFormat: 'NEWLINE_DELIMITED_JSON',
+      writeDisposition: 'WRITE_TRUNCATE',
+      createDisposition: 'CREATE_NEVER',
+      jobId,
+      location: this.location,
+    };
+
+    try {
+      await this.bq.dataset(this.dataset).table(stageTable).load(file, md);
+      const stageCount = await this.countWindow(stageTable, startDate, endDate);
+      if (stageCount !== rows.length) {
+        throw new Error(`Paid-storage staging QA failed: expected ${rows.length}, got ${stageCount}`);
+      }
+
+      await this.bq.query({
+        query: `BEGIN TRANSACTION;
+          DELETE FROM ${target} WHERE date_msk BETWEEN DATE(@start) AND DATE(@end);
+          INSERT INTO ${target} SELECT * FROM ${stage};
+          COMMIT TRANSACTION;`,
+        params: { start: startDate, end: endDate },
+        types: { start: 'STRING', end: 'STRING' },
+        location: this.location,
+      });
+    } finally {
+      try { rmSync(file, { force: true }); } catch { /* noop */ }
+    }
+
+    return this.countWindow(table, startDate, endDate);
+  }
+
+  async countWindow(table: string, startDate: string, endDate: string): Promise<number> {
+    if (!/^[A-Za-z0-9_]+$/.test(table)) throw new Error(`Invalid BigQuery table name '${table}'`);
+    const [rows] = await this.bq.query({
+      query: `SELECT COUNT(*) AS n FROM ${this.fqn(table)} WHERE date_msk BETWEEN DATE(@start) AND DATE(@end)`,
+      params: { start: startDate, end: endDate },
+      types: { start: 'STRING', end: 'STRING' },
+      location: this.location,
+    });
+    return Number((rows as Array<{ n?: unknown }>)[0]?.n ?? 0);
+  }
+
+  async qaWindow(table: string, startDate: string, endDate: string): Promise<{ rows: number; days: number; nm: number; storageRub: number }> {
+    if (!/^[A-Za-z0-9_]+$/.test(table)) throw new Error(`Invalid BigQuery table name '${table}'`);
+    const [rows] = await this.bq.query({
+      query: `SELECT COUNT(*) AS rows, COUNT(DISTINCT date_msk) AS days, COUNT(DISTINCT nm_id) AS nm,
+                     ROUND(SUM(IFNULL(warehouse_price,0)), 2) AS storage_rub
+              FROM ${this.fqn(table)} WHERE date_msk BETWEEN DATE(@start) AND DATE(@end)`,
+      params: { start: startDate, end: endDate },
+      types: { start: 'STRING', end: 'STRING' },
+      location: this.location,
+    });
+    const r = (rows as Array<Record<string, unknown>>)[0] ?? {};
+    return { rows: Number(r.rows ?? 0), days: Number(r.days ?? 0), nm: Number(r.nm ?? 0), storageRub: Number(r.storage_rub ?? 0) };
+  }
+}
