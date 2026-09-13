@@ -17,20 +17,34 @@ import { normalizePaidStorage } from './normalize.js';
 import { StorageBq } from './bq.js';
 import { storageWindow } from './window.js';
 
+function storageEnv(): { lookbackDays: number; rawTable: string } {
+  const lookbackRaw = (process.env.STORAGE_LOOKBACK_DAYS ?? '8').trim();
+  const lookbackDays = Number(lookbackRaw);
+  if (!Number.isInteger(lookbackDays) || lookbackDays < 1 || lookbackDays > 8) {
+    throw new LoaderError(`STORAGE_LOOKBACK_DAYS must be an integer 1..8, got '${lookbackRaw}'`, 'STORAGE_BAD_LOOKBACK');
+  }
+  const rawTable = (process.env.STORAGE_RAW_TABLE ?? 'RAW_WB_PAID_STORAGE').trim();
+  if (!/^[A-Za-z0-9_]+$/.test(rawTable)) {
+    throw new LoaderError(`Invalid STORAGE_RAW_TABLE '${rawTable}'`, 'STORAGE_BAD_TABLE');
+  }
+  return { lookbackDays, rawTable };
+}
+
 export async function storageLoader(ctx: LoaderContext): Promise<LoaderResult> {
   const { config, logger, logicalPeriod } = ctx;
   if (config.environment !== 'prod') {
     throw new LoaderError('Paid storage loader writes production RAW and is prod-only', 'STORAGE_PROD_ONLY');
   }
 
-  const w = storageWindow(logicalPeriod, config.storageLookbackDays);
+  const storage = storageEnv();
+  const w = storageWindow(logicalPeriod, storage.lookbackDays);
   const runId = `storage_${randomUUID()}`;
   const observationId = `WBPS_${w.startDate.replace(/-/g, '')}_${w.endDate.replace(/-/g, '')}`;
   const observedAtIso = new Date().toISOString();
   const bq = new StorageBq(config.projectId, config.bqLocation, config.rawDataset);
   const token = await new SecretsClient(config.projectId).access(config.wbAnalyticsSecret);
 
-  logger.info('storage_start', { runId, observationId, startDate: w.startDate, endDate: w.endDate, lookbackDays: config.storageLookbackDays });
+  logger.info('storage_start', { runId, observationId, startDate: w.startDate, endDate: w.endDate, lookbackDays: storage.lookbackDays });
 
   const fetched = await fetchPaidStorage(
     config.wbAnalyticsHost,
@@ -44,10 +58,10 @@ export async function storageLoader(ctx: LoaderContext): Promise<LoaderResult> {
     observationId, runId, observedAtIso, startDate: w.startDate, endDate: w.endDate,
   });
 
-  // Fail closed before DELETE: every requested calendar day must be present.
-  if (normalized.days.length !== config.storageLookbackDays) {
+  // Fail closed before replacement: every requested calendar day must be present.
+  if (normalized.days.length !== storage.lookbackDays) {
     throw new LoaderError(
-      `Paid storage coverage incomplete: expected ${config.storageLookbackDays} days ${w.startDate}..${w.endDate}, got ${normalized.days.length}: ${normalized.days.join(',')}`,
+      `Paid storage coverage incomplete: expected ${storage.lookbackDays} days ${w.startDate}..${w.endDate}, got ${normalized.days.length}: ${normalized.days.join(',')}`,
       'WB_STORAGE_INCOMPLETE_COVERAGE',
     );
   }
@@ -56,10 +70,10 @@ export async function storageLoader(ctx: LoaderContext): Promise<LoaderResult> {
   }
 
   const loadJobId = `wb_paid_storage_${logicalPeriod.replace(/-/g, '')}_${runId.replace(/-/g, '_')}`;
-  const rowsLoaded = await bq.replaceWindow(config.storageRawTable, normalized.rows, w.startDate, w.endDate, loadJobId);
-  const qa = await bq.qaWindow(config.storageRawTable, w.startDate, w.endDate);
+  const rowsLoaded = await bq.replaceWindow(storage.rawTable, normalized.rows, w.startDate, w.endDate, loadJobId);
+  const qa = await bq.qaWindow(storage.rawTable, w.startDate, w.endDate);
 
-  if (rowsLoaded !== normalized.rows.length || qa.rows !== normalized.rows.length || qa.days !== config.storageLookbackDays) {
+  if (rowsLoaded !== normalized.rows.length || qa.rows !== normalized.rows.length || qa.days !== storage.lookbackDays) {
     throw new LoaderError(
       `Paid storage post-load QA failed: normalized=${normalized.rows.length}, loaded=${rowsLoaded}, qa_rows=${qa.rows}, qa_days=${qa.days}`,
       'WB_STORAGE_POSTLOAD_QA',
