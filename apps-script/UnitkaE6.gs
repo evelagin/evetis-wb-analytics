@@ -1,11 +1,14 @@
 /**
- * UNITKA — Stage E6-A (E6.1–E6.5). Bound Apps Script книги «Юнитка_Evetis Cosmetics».
+ * UNITKA — Stage E6-A (E6.1–E6.5). Apps Script проекта книги «Юнитка_Evetis Cosmetics» (проект «Проект без названия» — standalone,
+ * поэтому книга открывается по E6.SSID; getActive() используется, если скрипт когда-либо станет bound).
  * НЕ основной проект evetis-wb-analytics. Требует Advanced Service «Google Sheets API» (v4).
  *
  * Порядок (каждая функция — отдельный запуск из редактора; состояние — ScriptProperties, журнал — ZZ_AUDIT_LOG):
  *   e6backup      — полная копия книги (Drive) → E6_BACKUP_ID
- *   e6snapshot    — снимки для QA и отката: значения/формулы всех листов, фон+цвет шрифта (отрисованные),
- *                   статические фоны (userEnteredFormat), все правила УФ (JSON Sheets API) → Drive-папка UNITKA_E6_<дата>
+ *   e6snapshot    — снимки для QA и отката (часть 1): значения/формулы всех листов, фон+цвет шрифта (отрисованные),
+ *                   все правила УФ (JSON Sheets API) → Drive-папка UNITKA_E6_<дата>
+ *   e6snapshotStatic — часть 2 (отдельный запуск, свежая память — 13.09 одним запуском был Out of memory):
+ *                   статические фоны (userEnteredFormat) → snap_static_bg__<лист>.json
  *   e6dryrun      — план УФ по ЖИВЫМ правилам (без записи) → e6_plan_live.json + сводка в журнал
  *   e6cf          — E6.1: печь фон истории/2024/OZON, удалить все правила, добавить целевые (главный лист)
  *   e6freeze      — E6.2/E6.3: «Акции», «OZON_Юнит_2025» → значения, скрыть
@@ -20,6 +23,7 @@
  */
 
 var E6 = {
+  SSID: '1E4L4JuwfEqr9owhsGkAjb8F24lRpWpWkEyVmSuRxaJg',
   MAIN: 'WB_Юнит_2025',
   Y2024: 'WB_Юнит_2024',
   OZON: 'OZON_Юнит_2025',
@@ -46,7 +50,7 @@ var E6 = {
 };
 
 // ───────────────────────────── инфраструктура ─────────────────────────────
-function ss_() { return SpreadsheetApp.getActive(); }
+function ss_() { return SpreadsheetApp.getActive() || SpreadsheetApp.openById(E6.SSID); }
 function props_() { return PropertiesService.getScriptProperties(); }
 function log_(step, msg) {
   var sh = ss_().getSheetByName(E6.LOG);
@@ -103,6 +107,7 @@ function e6snapshot() {
   saveJson_('snap_values.json', vals);
   saveJson_('snap_formulas.json', forms);
   saveJson_('snap_dims.json', dims);
+  vals = null; forms = null; // освободить память
   log_('snapshot', 'значения/формулы ' + sheets.length + ' листов за ' + ((Date.now() - t0) / 1000) + ' с');
   // отрисованные фон/шрифт — только листы с УФ (главный, 2024, OZON, Склад)
   var vis = {};
@@ -113,6 +118,7 @@ function e6snapshot() {
     vis[n] = { rows: r, cols: c, bg: rg.getBackgrounds(), fg: rg.getFontColors() };
   });
   saveJson_('snap_visual.json', vis);
+  vis = null;
   log_('snapshot', 'отрисованные фон/шрифт за ' + ((Date.now() - t0) / 1000) + ' с');
   // правила УФ — Sheets API (порядок = приоритет)
   var meta = Sheets.Spreadsheets.get(ss.getId(), { fields: 'sheets(properties(sheetId,title),conditionalFormats)' });
@@ -121,10 +127,22 @@ function e6snapshot() {
   saveJson_('snap_cf.json', cf);
   var tot = 0; Object.keys(cf).forEach(function (k) { tot += cf[k].rules.length; });
   log_('snapshot', 'правил УФ: ' + tot + ' (' + Object.keys(cf).map(function (k) { return k + '=' + cf[k].rules.length; }).join(', ') + ')');
-  // статические фоны (userEnteredFormat) — для отката печёных фонов; по секциям главного листа + 2024 + OZON
-  var stat = {};
-  [E6.MAIN, E6.Y2024, E6.OZON].forEach(function (n) { stat[n] = staticBackgrounds_(n); });
-  saveJson_('snap_static_bg.json', stat);
+  meta = null; cf = null;
+  props_().setProperty('E6_SNAPSHOT_MAIN_AT', new Date().toISOString());
+  log_('snapshot', 'часть 1 готова за ' + ((Date.now() - t0) / 1000) + ' с; папка ' + folder_().getName() + '; далее e6snapshotStatic');
+}
+/** Часть 2 снимка — отдельный запуск (свежая память): статические фоны (userEnteredFormat) для отката печёных фонов;
+ *  главный лист + 2024 + OZON → snap_static_bg__<лист>.json */
+function e6snapshotStatic() {
+  var t0 = Date.now(); var f = folder_();
+  [E6.MAIN, E6.Y2024, E6.OZON].forEach(function (n) {
+    var name = 'snap_static_bg__' + n + '.json';
+    if (f.getFilesByName(name).hasNext()) { log_('snapshot', 'статические фоны ' + n + ': уже сняты (' + name + '), пропуск'); return; } // возобновляемо: главный лист один занимает ~330 с
+    var s = staticBackgrounds_(n);
+    saveJson_(name, s);
+    log_('snapshot', 'статические фоны ' + n + ': ' + s.rows + '×' + s.cols + ' за ' + ((Date.now() - t0) / 1000) + ' с');
+    s = null;
+  });
   props_().setProperty('E6_SNAPSHOT_AT', new Date().toISOString());
   log_('snapshot', 'готово за ' + ((Date.now() - t0) / 1000) + ' с; папка ' + folder_().getName());
 }
@@ -132,7 +150,7 @@ function e6snapshot() {
 function staticBackgrounds_(name) {
   var ss = ss_(); var sh = ss.getSheetByName(name);
   var r = sh.getLastRow(), c = Math.min(sh.getLastColumn(), name === E6.MAIN ? E6.MAIN_LAST_COL : sh.getLastColumn());
-  var out = []; var step = 100;
+  var out = []; var step = 50;
   for (var r0 = 1; r0 <= r; r0 += step) {
     var r1 = Math.min(r, r0 + step - 1);
     var res = Sheets.Spreadsheets.get(ss.getId(), { ranges: ["'" + name + "'!A" + r0 + ':' + colA1_(c) + r1], includeGridData: true, fields: 'sheets.data.rowData.values.userEnteredFormat.backgroundColor' });
@@ -181,7 +199,7 @@ function buildCfPlan_(cfSnap) {
   sep.forEach(function (x) {
     var rule = x.rule;
     if (rule.gradientRule) {
-      var key = JSON.stringify(rule.ranges.map(gr_).sort()) + '|' + JSON.stringify(rule.gradientRule);
+      var key = JSON.stringify(rule.ranges.map(gr_).sort()) + '|' + canon_(rule.gradientRule);
       if (seen[key] !== undefined) { dropG.push({ index: x.i, sameAs: seen[key], ranges: rule.ranges.map(gr_) }); return; }
       var cells = []; rule.ranges.forEach(function (g) { for (var c = g.startColumnIndex; c < g.endColumnIndex; c++) for (var r = g.startRowIndex; r < g.endRowIndex; r++) cells.push(c + ':' + r); });
       if (cells.length && cells.every(function (k) { return covered[k]; })) { dropG.push({ index: x.i, sameAs: 'shadowed', ranges: rule.ranges.map(gr_) }); return; }
@@ -191,7 +209,7 @@ function buildCfPlan_(cfSnap) {
   });
   var groups = {}, order = [];
   boolRules.forEach(function (x) {
-    var f = boolFormula_(x.rule); var t = template_(f) + '|' + JSON.stringify(x.rule.booleanRule.format || {});
+    var f = boolFormula_(x.rule); var t = template_(f) + '|' + canon_(x.rule.booleanRule.format || {});
     if (!groups[t]) { groups[t] = []; order.push(t); }
     groups[t].push(x);
   });
@@ -233,6 +251,9 @@ function buildCfPlan_(cfSnap) {
   };
 }
 function gr_(g) { return [g.startRowIndex || 0, g.endRowIndex, g.startColumnIndex || 0, g.endColumnIndex].join(','); }
+/** Канонический JSON (ключи отсортированы): Sheets API отдаёт цвета с разным порядком ключей (red/green/blue),
+ *  из-за чего JSON.stringify давал разные ключи группировки для одинаковых форматов (dry-run 13.09: 403 правила вместо 152). */
+function canon_(o) { if (o === null || typeof o !== 'object') return JSON.stringify(o); if (Array.isArray(o)) return '[' + o.map(canon_).join(',') + ']'; return '{' + Object.keys(o).sort().map(function (k) { return JSON.stringify(k) + ':' + canon_(o[k]); }).join(',') + '}'; }
 function boolFormula_(rule) { var v = rule.booleanRule && rule.booleanRule.condition && rule.booleanRule.condition.values; return (v && v[0] && v[0].userEnteredValue) || ''; }
 function template_(f) { return f.replace(/\$?[A-Z]{1,3}\$?\d+/g, 'REF').replace(/\d+(\.\d+)?/g, '#'); }
 function relativize_(f) { return f.replace(/\$([A-Z]{1,3})(\$?)(\d+)/g, function (m, col, d, row) { return col === 'WB' ? m : col + d + row; }); }
@@ -447,16 +468,16 @@ function e6rollback() {
   var bl = ss.getSheetByName(E6.BLOGGERS);
   if (bl && bl.getRange('A1').getNote().indexOf('RESTORED_FROM_BACKUP') === 0) ss.deleteSheet(bl);
   // cf: удалить текущие правила, вернуть старые; статические фоны — как в снимке
-  var cf0 = loadJson_('snap_cf.json'); var stat = loadJson_('snap_static_bg.json');
+  var cf0 = loadJson_('snap_cf.json');
   var meta = Sheets.Spreadsheets.get(ss.getId(), { fields: 'sheets(properties(sheetId,title),conditionalFormats)' });
   var reqs = [];
   meta.sheets.forEach(function (s) { var n = (s.conditionalFormats || []).length; if (cf0[s.properties.title]) for (var i = 0; i < n; i++) reqs.push({ deleteConditionalFormatRule: { sheetId: s.properties.sheetId, index: 0 } }); });
   Object.keys(cf0).forEach(function (t) { cf0[t].rules.forEach(function (rule, i) { reqs.push({ addConditionalFormatRule: { rule: rule, index: i } }); }); });
   for (var i = 0; i < reqs.length; i += 2000) Sheets.Spreadsheets.batchUpdate({ requests: reqs.slice(i, i + 2000) }, ss.getId());
-  Object.keys(stat).forEach(function (n) {
-    var sh = ss.getSheetByName(n); if (!sh) return; var s = stat[n];
+  [E6.MAIN, E6.Y2024, E6.OZON].forEach(function (n) {
+    var sh = ss.getSheetByName(n); if (!sh) return; var s = loadJson_('snap_static_bg__' + n + '.json');
     var bg = s.bg.map(function (row) { return row.map(function (x) { return x === null ? null : x; }); });
-    sh.getRange(1, 1, s.rows, s.cols).setBackgrounds(bg);
+    sh.getRange(1, 1, s.rows, s.cols).setBackgrounds(bg); s = null;
   });
   log_('rollback', 'откат по снимкам выполнен: размеры, формулы/значения (' + [E6.MAIN, E6.Y2024, E6.AKCII, E6.OZON].join(', ') + '), УФ ' + reqs.length + ' запросов, статические фоны');
 }
