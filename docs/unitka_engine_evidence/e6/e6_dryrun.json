@@ -1,0 +1,1712 @@
+{
+ "generated_at": "2026-09-13T17:00:46.401574Z",
+ "source_export": "book_2026-09-13.xlsx (10:56 UTC)",
+ "cf_main": {
+  "now": {
+   "rules": 4671,
+   "parts": 77861,
+   "gradient": 4279,
+   "boolean": 392
+  },
+  "history": {
+   "rules": 4063,
+   "parts": 76842,
+   "bake_sections": [
+    {
+     "section": "top",
+     "rows": [
+      1,
+      46
+     ],
+     "cols": [
+      1,
+      600
+     ],
+     "rules": 0,
+     "cells": 27600
+    },
+    {
+     "section": "Январь 2025",
+     "rows": [
+      47,
+      81
+     ],
+     "cols": [
+      1,
+      600
+     ],
+     "rules": 35,
+     "cells": 21000
+    },
+    {
+     "section": "Февраль 2025",
+     "rows": [
+      82,
+      113
+     ],
+     "cols": [
+      1,
+      600
+     ],
+     "rules": 35,
+     "cells": 19200
+    },
+    {
+     "section": "Март 2025",
+     "rows": [
+      114,
+      148
+     ],
+     "cols": [
+      1,
+      600
+     ],
+     "rules": 67,
+     "cells": 21000
+    },
+    {
+     "section": "Апрель 2025",
+     "rows": [
+      149,
+      182
+     ],
+     "cols": [
+      1,
+      600
+     ],
+     "rules": 63,
+     "cells": 20400
+    },
+    {
+     "section": "Май 2025",
+     "rows": [
+      183,
+      217
+     ],
+     "cols": [
+      1,
+      600
+     ],
+     "rules": 67,
+     "cells": 21000
+    },
+    {
+     "section": "Июнь 2025",
+     "rows": [
+      218,
+      251
+     ],
+     "cols": [
+      1,
+      600
+     ],
+     "rules": 63,
+     "cells": 20400
+    },
+    {
+     "section": "Июль 2025",
+     "rows": [
+      252,
+      286
+     ],
+     "cols": [
+      1,
+      600
+     ],
+     "rules": 68,
+     "cells": 21000
+    },
+    {
+     "section": "Август 2025",
+     "rows": [
+      287,
+      321
+     ],
+     "cols": [
+      1,
+      600
+     ],
+     "rules": 78,
+     "cells": 21000
+    },
+    {
+     "section": "Сентябрь 2025",
+     "rows": [
+      322,
+      355
+     ],
+     "cols": [
+      1,
+      600
+     ],
+     "rules": 98,
+     "cells": 20400
+    },
+    {
+     "section": "Октябрь 2025",
+     "rows": [
+      356,
+      390
+     ],
+     "cols": [
+      1,
+      600
+     ],
+     "rules": 130,
+     "cells": 21000
+    },
+    {
+     "section": "Ноябрь 2025",
+     "rows": [
+      391,
+      424
+     ],
+     "cols": [
+      1,
+      600
+     ],
+     "rules": 133,
+     "cells": 20400
+    },
+    {
+     "section": "Декабрь 2025",
+     "rows": [
+      425,
+      459
+     ],
+     "cols": [
+      1,
+      600
+     ],
+     "rules": 136,
+     "cells": 21000
+    },
+    {
+     "section": "Январь 2026",
+     "rows": [
+      460,
+      494
+     ],
+     "cols": [
+      1,
+      600
+     ],
+     "rules": 179,
+     "cells": 21000
+    },
+    {
+     "section": "Февраль 2026",
+     "rows": [
+      495,
+      526
+     ],
+     "cols": [
+      1,
+      600
+     ],
+     "rules": 179,
+     "cells": 19200
+    },
+    {
+     "section": "Март 2026",
+     "rows": [
+      527,
+      561
+     ],
+     "cols": [
+      1,
+      600
+     ],
+     "rules": 259,
+     "cells": 21000
+    },
+    {
+     "section": "Апрель 2026",
+     "rows": [
+      562,
+      595
+     ],
+     "cols": [
+      1,
+      600
+     ],
+     "rules": 528,
+     "cells": 20400
+    },
+    {
+     "section": "Май 2026",
+     "rows": [
+      596,
+      630
+     ],
+     "cols": [
+      1,
+      600
+     ],
+     "rules": 553,
+     "cells": 21000
+    },
+    {
+     "section": "Июнь 2026",
+     "rows": [
+      631,
+      664
+     ],
+     "cols": [
+      1,
+      600
+     ],
+     "rules": 475,
+     "cells": 20400
+    },
+    {
+     "section": "Июль 2026",
+     "rows": [
+      665,
+      699
+     ],
+     "cols": [
+      1,
+      600
+     ],
+     "rules": 502,
+     "cells": 21000
+    },
+    {
+     "section": "Август 2026",
+     "rows": [
+      700,
+      734
+     ],
+     "cols": [
+      1,
+      600
+     ],
+     "rules": 415,
+     "cells": 21000
+    }
+   ]
+  },
+  "september": {
+   "rules_now": 608,
+   "parts_now": 1019,
+   "gradient_now": 216,
+   "gradient_dropped": 120,
+   "gradient_after": 96,
+   "boolean_now": 392,
+   "boolean_plan": [
+    {
+     "template": "AND(REF<>\"\",REF>#*MAX(REF:REF))",
+     "fill": "FFD6E4EA",
+     "font": null,
+     "rules_now": 25,
+     "parts_now": 25,
+     "action": "merge-relative",
+     "rules_after": 1,
+     "formula_example": "AND($UX737<>\"\",$UX737>0.75*MAX($UX$737:$UX$766))",
+     "formula_after": "AND(UX737<>\"\",UX737>0.75*MAX(UX$737:UX$766))",
+     "ranges_after": [
+      "UX737:UX766",
+      "TZ737:TZ766",
+      "TB737:TB766",
+      "SD737:SD766",
+      "RF737:RF766",
+      "QH737:QH766",
+      "PJ737:PJ766",
+      "OL737:OL766",
+      "NN737:NN766",
+      "MP737:MP766",
+      "LR737:LR766",
+      "KT737:KT766",
+      "JV737:JV766",
+      "IX737:IX766",
+      "HZ737:HZ766",
+      "HB737:HB766",
+      "GD737:GD766",
+      "FF737:FF766",
+      "EH737:EH766",
+      "DJ737:DJ766",
+      "CL737:CL766",
+      "BN737:BN766",
+      "AP737:AP766",
+      "R737:R766",
+      "G737:G766"
+     ]
+    },
+    {
+     "template": "AND(REF<>\"\",REF>#*MAX(REF:REF))",
+     "fill": "FFDEE9EE",
+     "font": null,
+     "rules_now": 25,
+     "parts_now": 25,
+     "action": "merge-relative",
+     "rules_after": 1,
+     "formula_example": "AND($UX737<>\"\",$UX737>0.5*MAX($UX$737:$UX$766))",
+     "formula_after": "AND(UX737<>\"\",UX737>0.5*MAX(UX$737:UX$766))",
+     "ranges_after": [
+      "UX737:UX766",
+      "TZ737:TZ766",
+      "TB737:TB766",
+      "SD737:SD766",
+      "RF737:RF766",
+      "QH737:QH766",
+      "PJ737:PJ766",
+      "OL737:OL766",
+      "NN737:NN766",
+      "MP737:MP766",
+      "LR737:LR766",
+      "KT737:KT766",
+      "JV737:JV766",
+      "IX737:IX766",
+      "HZ737:HZ766",
+      "HB737:HB766",
+      "GD737:GD766",
+      "FF737:FF766",
+      "EH737:EH766",
+      "DJ737:DJ766",
+      "CL737:CL766",
+      "BN737:BN766",
+      "AP737:AP766",
+      "R737:R766",
+      "G737:G766"
+     ]
+    },
+    {
+     "template": "AND(REF<>\"\",REF>#*MAX(REF:REF))",
+     "fill": "FFE6EFF2",
+     "font": null,
+     "rules_now": 25,
+     "parts_now": 25,
+     "action": "merge-relative",
+     "rules_after": 1,
+     "formula_example": "AND($UX737<>\"\",$UX737>0.25*MAX($UX$737:$UX$766))",
+     "formula_after": "AND(UX737<>\"\",UX737>0.25*MAX(UX$737:UX$766))",
+     "ranges_after": [
+      "UX737:UX766",
+      "TZ737:TZ766",
+      "TB737:TB766",
+      "SD737:SD766",
+      "RF737:RF766",
+      "QH737:QH766",
+      "PJ737:PJ766",
+      "OL737:OL766",
+      "NN737:NN766",
+      "MP737:MP766",
+      "LR737:LR766",
+      "KT737:KT766",
+      "JV737:JV766",
+      "IX737:IX766",
+      "HZ737:HZ766",
+      "HB737:HB766",
+      "GD737:GD766",
+      "FF737:FF766",
+      "EH737:EH766",
+      "DJ737:DJ766",
+      "CL737:CL766",
+      "BN737:BN766",
+      "AP737:AP766",
+      "R737:R766",
+      "G737:G766"
+     ]
+    },
+    {
+     "template": "AND(REF<>\"\",REF>#)",
+     "fill": "FFEEF4F6",
+     "font": null,
+     "rules_now": 25,
+     "parts_now": 25,
+     "action": "merge-relative",
+     "rules_after": 1,
+     "formula_example": "AND($UX737<>\"\",$UX737>0)",
+     "formula_after": "AND(UX737<>\"\",UX737>0)",
+     "ranges_after": [
+      "UX737:UX766",
+      "TZ737:TZ766",
+      "TB737:TB766",
+      "SD737:SD766",
+      "RF737:RF766",
+      "QH737:QH766",
+      "PJ737:PJ766",
+      "OL737:OL766",
+      "NN737:NN766",
+      "MP737:MP766",
+      "LR737:LR766",
+      "KT737:KT766",
+      "JV737:JV766",
+      "IX737:IX766",
+      "HZ737:HZ766",
+      "HB737:HB766",
+      "GD737:GD766",
+      "FF737:FF766",
+      "EH737:EH766",
+      "DJ737:DJ766",
+      "CL737:CL766",
+      "BN737:BN766",
+      "AP737:AP766",
+      "R737:R766",
+      "G737:G766"
+     ]
+    },
+    {
+     "template": "AND(REF<>\"\",REF>#*MAX(REF:REF))",
+     "fill": "FFE8CF99",
+     "font": null,
+     "rules_now": 25,
+     "parts_now": 25,
+     "action": "merge-relative",
+     "rules_after": 1,
+     "formula_example": "AND($VD737<>\"\",$VD737>0.75*MAX($VD$737:$VD$766))",
+     "formula_after": "AND(VD737<>\"\",VD737>0.75*MAX(VD$737:VD$766))",
+     "ranges_after": [
+      "VD737:VD766",
+      "UF737:UF766",
+      "TH737:TH766",
+      "SJ737:SJ766",
+      "RL737:RL766",
+      "QN737:QN766",
+      "PP737:PP766",
+      "OR737:OR766",
+      "NT737:NT766",
+      "MV737:MV766",
+      "LX737:LX766",
+      "KZ737:KZ766",
+      "KB737:KB766",
+      "JD737:JD766",
+      "IF737:IF766",
+      "HH737:HH766",
+      "GJ737:GJ766",
+      "FL737:FL766",
+      "EN737:EN766",
+      "DP737:DP766",
+      "CR737:CR766",
+      "BT737:BT766",
+      "AV737:AV766",
+      "X737:X766",
+      "J737:J766"
+     ]
+    },
+    {
+     "template": "AND(REF<>\"\",REF>#*MAX(REF:REF))",
+     "fill": "FFEFDCB4",
+     "font": null,
+     "rules_now": 25,
+     "parts_now": 25,
+     "action": "merge-relative",
+     "rules_after": 1,
+     "formula_example": "AND($VD737<>\"\",$VD737>0.5*MAX($VD$737:$VD$766))",
+     "formula_after": "AND(VD737<>\"\",VD737>0.5*MAX(VD$737:VD$766))",
+     "ranges_after": [
+      "VD737:VD766",
+      "UF737:UF766",
+      "TH737:TH766",
+      "SJ737:SJ766",
+      "RL737:RL766",
+      "QN737:QN766",
+      "PP737:PP766",
+      "OR737:OR766",
+      "NT737:NT766",
+      "MV737:MV766",
+      "LX737:LX766",
+      "KZ737:KZ766",
+      "KB737:KB766",
+      "JD737:JD766",
+      "IF737:IF766",
+      "HH737:HH766",
+      "GJ737:GJ766",
+      "FL737:FL766",
+      "EN737:EN766",
+      "DP737:DP766",
+      "CR737:CR766",
+      "BT737:BT766",
+      "AV737:AV766",
+      "X737:X766",
+      "J737:J766"
+     ]
+    },
+    {
+     "template": "AND(REF<>\"\",REF>#*MAX(REF:REF))",
+     "fill": "FFF5E8CD",
+     "font": null,
+     "rules_now": 25,
+     "parts_now": 25,
+     "action": "merge-relative",
+     "rules_after": 1,
+     "formula_example": "AND($VD737<>\"\",$VD737>0.25*MAX($VD$737:$VD$766))",
+     "formula_after": "AND(VD737<>\"\",VD737>0.25*MAX(VD$737:VD$766))",
+     "ranges_after": [
+      "VD737:VD766",
+      "UF737:UF766",
+      "TH737:TH766",
+      "SJ737:SJ766",
+      "RL737:RL766",
+      "QN737:QN766",
+      "PP737:PP766",
+      "OR737:OR766",
+      "NT737:NT766",
+      "MV737:MV766",
+      "LX737:LX766",
+      "KZ737:KZ766",
+      "KB737:KB766",
+      "JD737:JD766",
+      "IF737:IF766",
+      "HH737:HH766",
+      "GJ737:GJ766",
+      "FL737:FL766",
+      "EN737:EN766",
+      "DP737:DP766",
+      "CR737:CR766",
+      "BT737:BT766",
+      "AV737:AV766",
+      "X737:X766",
+      "J737:J766"
+     ]
+    },
+    {
+     "template": "AND(REF<>\"\",REF>#)",
+     "fill": "FFFAF2E3",
+     "font": null,
+     "rules_now": 25,
+     "parts_now": 25,
+     "action": "merge-relative",
+     "rules_after": 1,
+     "formula_example": "AND($VD737<>\"\",$VD737>0)",
+     "formula_after": "AND(VD737<>\"\",VD737>0)",
+     "ranges_after": [
+      "VD737:VD766",
+      "UF737:UF766",
+      "TH737:TH766",
+      "SJ737:SJ766",
+      "RL737:RL766",
+      "QN737:QN766",
+      "PP737:PP766",
+      "OR737:OR766",
+      "NT737:NT766",
+      "MV737:MV766",
+      "LX737:LX766",
+      "KZ737:KZ766",
+      "KB737:KB766",
+      "JD737:JD766",
+      "IF737:IF766",
+      "HH737:HH766",
+      "GJ737:GJ766",
+      "FL737:FL766",
+      "EN737:EN766",
+      "DP737:DP766",
+      "CR737:CR766",
+      "BT737:BT766",
+      "AV737:AV766",
+      "X737:X766",
+      "J737:J766"
+     ]
+    },
+    {
+     "template": "AND(REF<>\"\",REF>#*MAX(REF:REF))",
+     "fill": "FFA9D4B8",
+     "font": null,
+     "rules_now": 25,
+     "parts_now": 25,
+     "action": "merge-relative",
+     "rules_after": 1,
+     "formula_example": "AND($UW737<>\"\",$UW737>0.75*MAX($UW$737:$UW$766))",
+     "formula_after": "AND(UW737<>\"\",UW737>0.75*MAX(UW$737:UW$766))",
+     "ranges_after": [
+      "UW737:UW766",
+      "TY737:TY766",
+      "TA737:TA766",
+      "SC737:SC766",
+      "RE737:RE766",
+      "QG737:QG766",
+      "PI737:PI766",
+      "OK737:OK766",
+      "NM737:NM766",
+      "MO737:MO766",
+      "LQ737:LQ766",
+      "KS737:KS766",
+      "JU737:JU766",
+      "IW737:IW766",
+      "HY737:HY766",
+      "HA737:HA766",
+      "GC737:GC766",
+      "FE737:FE766",
+      "EG737:EG766",
+      "DI737:DI766",
+      "CK737:CK766",
+      "BM737:BM766",
+      "AO737:AO766",
+      "Q737:Q766",
+      "F737:F766"
+     ]
+    },
+    {
+     "template": "AND(REF<>\"\",REF>#*MAX(REF:REF))",
+     "fill": "FFBFDECB",
+     "font": null,
+     "rules_now": 25,
+     "parts_now": 25,
+     "action": "merge-relative",
+     "rules_after": 1,
+     "formula_example": "AND($UW737<>\"\",$UW737>0.5*MAX($UW$737:$UW$766))",
+     "formula_after": "AND(UW737<>\"\",UW737>0.5*MAX(UW$737:UW$766))",
+     "ranges_after": [
+      "UW737:UW766",
+      "TY737:TY766",
+      "TA737:TA766",
+      "SC737:SC766",
+      "RE737:RE766",
+      "QG737:QG766",
+      "PI737:PI766",
+      "OK737:OK766",
+      "NM737:NM766",
+      "MO737:MO766",
+      "LQ737:LQ766",
+      "KS737:KS766",
+      "JU737:JU766",
+      "IW737:IW766",
+      "HY737:HY766",
+      "HA737:HA766",
+      "GC737:GC766",
+      "FE737:FE766",
+      "EG737:EG766",
+      "DI737:DI766",
+      "CK737:CK766",
+      "BM737:BM766",
+      "AO737:AO766",
+      "Q737:Q766",
+      "F737:F766"
+     ]
+    },
+    {
+     "template": "AND(REF<>\"\",REF>#*MAX(REF:REF))",
+     "fill": "FFD2E8DA",
+     "font": null,
+     "rules_now": 25,
+     "parts_now": 25,
+     "action": "merge-relative",
+     "rules_after": 1,
+     "formula_example": "AND($UW737<>\"\",$UW737>0.25*MAX($UW$737:$UW$766))",
+     "formula_after": "AND(UW737<>\"\",UW737>0.25*MAX(UW$737:UW$766))",
+     "ranges_after": [
+      "UW737:UW766",
+      "TY737:TY766",
+      "TA737:TA766",
+      "SC737:SC766",
+      "RE737:RE766",
+      "QG737:QG766",
+      "PI737:PI766",
+      "OK737:OK766",
+      "NM737:NM766",
+      "MO737:MO766",
+      "LQ737:LQ766",
+      "KS737:KS766",
+      "JU737:JU766",
+      "IW737:IW766",
+      "HY737:HY766",
+      "HA737:HA766",
+      "GC737:GC766",
+      "FE737:FE766",
+      "EG737:EG766",
+      "DI737:DI766",
+      "CK737:CK766",
+      "BM737:BM766",
+      "AO737:AO766",
+      "Q737:Q766",
+      "F737:F766"
+     ]
+    },
+    {
+     "template": "AND(REF<>\"\",REF>#)",
+     "fill": "FFE4F1E9",
+     "font": null,
+     "rules_now": 25,
+     "parts_now": 25,
+     "action": "merge-relative",
+     "rules_after": 1,
+     "formula_example": "AND($UW737<>\"\",$UW737>0)",
+     "formula_after": "AND(UW737<>\"\",UW737>0)",
+     "ranges_after": [
+      "UW737:UW766",
+      "TY737:TY766",
+      "TA737:TA766",
+      "SC737:SC766",
+      "RE737:RE766",
+      "QG737:QG766",
+      "PI737:PI766",
+      "OK737:OK766",
+      "NM737:NM766",
+      "MO737:MO766",
+      "LQ737:LQ766",
+      "KS737:KS766",
+      "JU737:JU766",
+      "IW737:IW766",
+      "HY737:HY766",
+      "HA737:HA766",
+      "GC737:GC766",
+      "FE737:FE766",
+      "EG737:EG766",
+      "DI737:DI766",
+      "CK737:CK766",
+      "BM737:BM766",
+      "AO737:AO766",
+      "Q737:Q766",
+      "F737:F766"
+     ]
+    },
+    {
+     "template": "WEEKDAY(REF,#)>#",
+     "fill": "FFFCEFE3",
+     "font": null,
+     "rules_now": 25,
+     "parts_now": 50,
+     "action": "merge-relative",
+     "rules_after": 1,
+     "formula_example": "WEEKDAY($US737,2)>5",
+     "formula_after": "WEEKDAY(US737,2)>5",
+     "ranges_after": [
+      "US737:US766",
+      "VP737:VP766",
+      "TU737:TU766",
+      "UR737:UR766",
+      "SW737:SW766",
+      "TT737:TT766",
+      "RY737:RY766",
+      "SV737:SV766",
+      "RA737:RA766",
+      "RX737:RX766",
+      "QC737:QC766",
+      "QZ737:QZ766",
+      "PE737:PE766",
+      "QB737:QB766",
+      "OG737:OG766",
+      "PD737:PD766",
+      "NI737:NI766",
+      "OF737:OF766",
+      "MK737:MK766",
+      "NH737:NH766",
+      "LM737:LM766",
+      "MJ737:MJ766",
+      "KO737:KO766",
+      "LL737:LL766",
+      "JQ737:JQ766",
+      "KN737:KN766",
+      "IS737:IS766",
+      "JP737:JP766",
+      "HU737:HU766",
+      "IR737:IR766",
+      "GW737:GW766",
+      "HT737:HT766",
+      "FY737:FY766",
+      "GV737:GV766",
+      "FA737:FA766",
+      "FX737:FX766",
+      "EC737:EC766",
+      "EZ737:EZ766",
+      "DE737:DE766",
+      "EB737:EB766",
+      "CG737:CG766",
+      "DD737:DD766",
+      "BI737:BI766",
+      "CF737:CF766",
+      "AK737:AK766",
+      "BH737:BH766",
+      "M737:M766",
+      "AJ737:AJ766",
+      "A737:A766",
+      "B737:B766"
+     ]
+    },
+    {
+     "template": "REF>REF",
+     "fill": "00000000",
+     "font": "FFC0C0C0",
+     "rules_now": 25,
+     "parts_now": 26,
+     "action": "keep-per-block",
+     "rules_after": 25,
+     "formula_example": "$M737>$WB$736",
+     "formula_after": "$M737>$WB$736",
+     "ranges_after": null
+    },
+    {
+     "template": "REF<>\"\"",
+     "fill": "FFF1F8F4",
+     "font": "FF000000",
+     "rules_now": 2,
+     "parts_now": 26,
+     "action": "keep-per-block",
+     "rules_after": 2,
+     "formula_example": "D737<>\"\"",
+     "formula_after": "D737<>\"\"",
+     "ranges_after": null
+    },
+    {
+     "template": "REF=\"\"",
+     "fill": "FFF1F8F4",
+     "font": null,
+     "rules_now": 2,
+     "parts_now": 26,
+     "action": "keep-per-block",
+     "rules_after": 2,
+     "formula_example": "D737=\"\"",
+     "formula_after": "D737=\"\"",
+     "ranges_after": null
+    },
+    {
+     "template": "AND(ISNUMBER(REF),REF<=#)",
+     "fill": "FFFCE8E6",
+     "font": "FFA61C00",
+     "rules_now": 1,
+     "parts_now": 24,
+     "action": "keep",
+     "rules_after": 1,
+     "formula_example": "AND(ISNUMBER(U737),U737<=15)",
+     "formula_after": "AND(ISNUMBER(U737),U737<=15)",
+     "ranges_after": null
+    },
+    {
+     "template": "AND(ISNUMBER(REF),REF>#,REF<=#)",
+     "fill": "FFFFF2CC",
+     "font": "FF7F6000",
+     "rules_now": 1,
+     "parts_now": 24,
+     "action": "keep",
+     "rules_after": 1,
+     "formula_example": "AND(ISNUMBER(U737),U737>15,U737<=30)",
+     "formula_after": "AND(ISNUMBER(U737),U737>15,U737<=30)",
+     "ranges_after": null
+    },
+    {
+     "template": "AND(ISNUMBER(REF),REF>#,REF<=#)",
+     "fill": "FFE6F4EA",
+     "font": "FF274E13",
+     "rules_now": 1,
+     "parts_now": 24,
+     "action": "keep",
+     "rules_after": 1,
+     "formula_example": "AND(ISNUMBER(U737),U737>30,U737<=60)",
+     "formula_after": "AND(ISNUMBER(U737),U737>30,U737<=60)",
+     "ranges_after": null
+    },
+    {
+     "template": "AND(ISNUMBER(REF),REF>#)",
+     "fill": "FFEFEFEF",
+     "font": "FF434343",
+     "rules_now": 1,
+     "parts_now": 24,
+     "action": "keep",
+     "rules_after": 1,
+     "formula_example": "AND(ISNUMBER(U737),U737>60)",
+     "formula_after": "AND(ISNUMBER(U737),U737>60)",
+     "ranges_after": null
+    },
+    {
+     "template": "AND(ISNUMBER(REF),REF<#)",
+     "fill": "FFFFFFFF",
+     "font": "FFCC0000",
+     "rules_now": 1,
+     "parts_now": 24,
+     "action": "keep",
+     "rules_after": 1,
+     "formula_example": "AND(ISNUMBER(V737),V737<0)",
+     "formula_after": "AND(ISNUMBER(V737),V737<0)",
+     "ranges_after": null
+    },
+    {
+     "template": "AND(ISNUMBER(REF),REF>#)",
+     "fill": "FFFFFFFF",
+     "font": "FF38761D",
+     "rules_now": 1,
+     "parts_now": 24,
+     "action": "keep",
+     "rules_after": 1,
+     "formula_example": "AND(ISNUMBER(V737),V737>0)",
+     "formula_after": "AND(ISNUMBER(V737),V737>0)",
+     "ranges_after": null
+    },
+    {
+     "template": "AND(ISNUMBER(REF),REF=#)",
+     "fill": "FFFFFFFF",
+     "font": null,
+     "rules_now": 1,
+     "parts_now": 24,
+     "action": "keep",
+     "rules_after": 1,
+     "formula_example": "AND(ISNUMBER(V737),V737=0)",
+     "formula_after": "AND(ISNUMBER(V737),V737=0)",
+     "ranges_after": null
+    },
+    {
+     "template": "NOT(ISNUMBER(REF))",
+     "fill": "FFFFFFFF",
+     "font": null,
+     "rules_now": 1,
+     "parts_now": 24,
+     "action": "keep",
+     "rules_after": 1,
+     "formula_example": "NOT(ISNUMBER(V737))",
+     "formula_after": "NOT(ISNUMBER(V737))",
+     "ranges_after": null
+    },
+    {
+     "template": "AND(ISNUMBER(REF),REF>#)",
+     "fill": "00000000",
+     "font": "FF38761D",
+     "rules_now": 2,
+     "parts_now": 49,
+     "action": "merge",
+     "rules_after": 1,
+     "formula_example": "AND(ISNUMBER(I737),I737>0)",
+     "formula_after": "AND(ISNUMBER(I737),I737>0)",
+     "ranges_after": [
+      "I737:I766",
+      "W737:W766",
+      "AU737:AU766",
+      "BS737:BS766",
+      "CQ737:CQ766",
+      "DO737:DO766",
+      "EM737:EM766",
+      "FK737:FK766",
+      "GI737:GI766",
+      "HG737:HG766",
+      "IE737:IE766",
+      "JC737:JC766",
+      "KA737:KA766",
+      "KY737:KY766",
+      "LW737:LW766",
+      "MU737:MU766",
+      "NS737:NS766",
+      "OQ737:OQ766",
+      "PO737:PO766",
+      "QM737:QM766",
+      "RK737:RK766",
+      "SI737:SI766",
+      "TG737:TG766",
+      "UE737:UE766",
+      "VC737:VC766",
+      "AI737:AI766",
+      "BG737:BG766",
+      "CE737:CE766",
+      "DC737:DC766",
+      "EA737:EA766",
+      "EY737:EY766",
+      "FW737:FW766",
+      "GU737:GU766",
+      "HS737:HS766",
+      "IQ737:IQ766",
+      "JO737:JO766",
+      "KM737:KM766",
+      "LK737:LK766",
+      "MI737:MI766",
+      "NG737:NG766",
+      "OE737:OE766",
+      "PC737:PC766",
+      "QA737:QA766",
+      "QY737:QY766",
+      "RW737:RW766",
+      "SU737:SU766",
+      "TS737:TS766",
+      "UQ737:UQ766",
+      "VO737:VO766"
+     ]
+    },
+    {
+     "template": "AND(ISNUMBER(REF),REF<#)",
+     "fill": "00000000",
+     "font": "FFCC0000",
+     "rules_now": 1,
+     "parts_now": 24,
+     "action": "keep",
+     "rules_after": 1,
+     "formula_example": "AND(ISNUMBER(AI737),AI737<0)",
+     "formula_after": "AND(ISNUMBER(AI737),AI737<0)",
+     "ranges_after": null
+    },
+    {
+     "template": "AND(REF<=REF,ISNUMBER(REF),REF>#,ISNUMBER(REF),OR(REF>=#,AND(REF>=#,REF*#>=REF*#)))",
+     "fill": "FFFCE8E6",
+     "font": "FFA61C00",
+     "rules_now": 1,
+     "parts_now": 25,
+     "action": "keep",
+     "rules_after": 1,
+     "formula_example": "AND(B737<=$WB$736,ISNUMBER(F737),F737>0,ISNUMBER(H737),OR(H737>=3,AND(H737>=2,H737*10>=F737*3)))",
+     "formula_after": "AND(B737<=$WB$736,ISNUMBER(F737),F737>0,ISNUMBER(H737),OR(H737>=3,AND(H737>=2,H737*10>=F737*3)))",
+     "ranges_after": null
+    },
+    {
+     "template": "AND(REF<>\"\",REF<#)",
+     "fill": "00000000",
+     "font": "FFCC0000",
+     "rules_now": 1,
+     "parts_now": 25,
+     "action": "keep",
+     "rules_after": 1,
+     "formula_example": "AND(I737<>\"\",I737<0)",
+     "formula_after": "AND(I737<>\"\",I737<0)",
+     "ranges_after": null
+    },
+    {
+     "template": "AND(REF<>\"\",REF>#)",
+     "fill": "00000000",
+     "font": "FFCC0000",
+     "rules_now": 1,
+     "parts_now": 25,
+     "action": "keep",
+     "rules_after": 1,
+     "formula_example": "AND(K737<>\"\",K737>0.2)",
+     "formula_after": "AND(K737<>\"\",K737>0.2)",
+     "ranges_after": null
+    },
+    {
+     "template": "AND(REF<=TODAY(),REF>#,REF=#)",
+     "fill": "FFFCE8B2",
+     "font": null,
+     "rules_now": 24,
+     "parts_now": 25,
+     "action": "merge-relative",
+     "rules_after": 1,
+     "formula_example": "AND($M737<=TODAY(),D737>0,F737=0)",
+     "formula_after": "AND(M737<=TODAY(),D737>0,F737=0)",
+     "ranges_after": [
+      "F737:F766",
+      "Q737:Q766",
+      "AO737:AO766",
+      "BM737:BM766",
+      "CK737:CK766",
+      "DI737:DI766",
+      "EG737:EG766",
+      "FE737:FE766",
+      "GC737:GC766",
+      "HA737:HA766",
+      "HY737:HY766",
+      "IW737:IW766",
+      "JU737:JU766",
+      "KS737:KS766",
+      "LQ737:LQ766",
+      "MO737:MO766",
+      "NM737:NM766",
+      "OK737:OK766",
+      "PI737:PI766",
+      "QG737:QG766",
+      "RE737:RE766",
+      "SC737:SC766",
+      "TA737:TA766",
+      "TY737:TY766",
+      "UW737:UW766"
+     ]
+    }
+   ],
+   "rules_after": 152,
+   "parts_after": 895
+  },
+  "after": {
+   "rules": 152,
+   "parts": 895
+  },
+  "dropped_gradient_examples": [
+   {
+    "priority": 375,
+    "parts": [
+     "AU737:AU766"
+    ],
+    "same_as": 328
+   },
+   {
+    "priority": 376,
+    "parts": [
+     "BS737:BS766"
+    ],
+    "same_as": 329
+   },
+   {
+    "priority": 377,
+    "parts": [
+     "CQ737:CQ766"
+    ],
+    "same_as": 330
+   },
+   {
+    "priority": 378,
+    "parts": [
+     "DO737:DO766"
+    ],
+    "same_as": 331
+   },
+   {
+    "priority": 379,
+    "parts": [
+     "EM737:EM766"
+    ],
+    "same_as": 332
+   },
+   {
+    "priority": 380,
+    "parts": [
+     "FK737:FK766"
+    ],
+    "same_as": 333
+   },
+   {
+    "priority": 381,
+    "parts": [
+     "GI737:GI766"
+    ],
+    "same_as": 334
+   },
+   {
+    "priority": 382,
+    "parts": [
+     "HG737:HG766"
+    ],
+    "same_as": 335
+   },
+   {
+    "priority": 383,
+    "parts": [
+     "IE737:IE766"
+    ],
+    "same_as": 336
+   },
+   {
+    "priority": 384,
+    "parts": [
+     "JC737:JC766"
+    ],
+    "same_as": 337
+   }
+  ],
+  "cross_boundary_rules_kept": [
+   {
+    "priority": 1610,
+    "parts": [
+     "G737:G766",
+     "R702:R732",
+     "R737:R766"
+    ]
+   },
+   {
+    "priority": 1673,
+    "parts": [
+     "I736",
+     "W700:W701",
+     "W735:W736"
+    ]
+   },
+   {
+    "priority": 1734,
+    "parts": [
+     "V702:V732",
+     "V737:V766"
+    ]
+   },
+   {
+    "priority": 4101,
+    "parts": [
+     "V702:V732",
+     "V737:V766"
+    ]
+   },
+   {
+    "priority": 4143,
+    "parts": [
+     "V702:V732",
+     "V737:V766"
+    ]
+   },
+   {
+    "priority": 4489,
+    "parts": [
+     "V702:V732",
+     "V737:V766"
+    ]
+   }
+  ]
+ },
+ "cf_other": {
+  "WB_Юнит_2024": {
+   "rules": 100,
+   "parts": 501,
+   "action": "bake+delete"
+  },
+  "OZON_Юнит_2025": {
+   "rules": 1183,
+   "parts": 15774,
+   "action": "bake+delete"
+  },
+  "Склад": {
+   "rules": 93,
+   "parts": 976,
+   "action": "keep"
+  },
+  "Ценообразование": {
+   "rules": 0,
+   "parts": 0,
+   "action": "none"
+  },
+  "Акции": {
+   "rules": 0,
+   "parts": 0,
+   "action": "none"
+  },
+  "выкупы": {
+   "rules": 0,
+   "parts": 0,
+   "action": "none"
+  },
+  "ZZ_AUDIT_LOG": {
+   "rules": 0,
+   "parts": 0,
+   "action": "none"
+  },
+  "ZZ_QA_СЕНТЯБРЬ_2026": {
+   "rules": 0,
+   "parts": 0,
+   "action": "none"
+  },
+  "ZZ_CONFIG": {
+   "rules": 0,
+   "parts": 0,
+   "action": "none"
+  }
+ },
+ "fixes": [
+  {
+   "id": "F1",
+   "sheet": "WB_Юнит_2024",
+   "cell": "C3",
+   "before": {
+    "formula": "=O26+AJ26+BE26+12331-1200+6000+'выкупы'!K83+'Блогеры'!I3+'Блогеры'!I4+'Блогеры'!I5",
+    "value": "#REF!"
+   },
+   "after": "без изменений формулы (лист «Блогеры» восстановлен из резервной копии 1H8ldc…, values-only)",
+   "dependents": [
+    "C4",
+    "BU10",
+    "BV10",
+    "BU62",
+    "BU97",
+    "BU131"
+   ]
+  },
+  {
+   "id": "F1",
+   "sheet": "WB_Юнит_2024",
+   "cell": "BU61",
+   "before": {
+    "formula": "=F92-W7-X7-Y9-AR7-AS7-AT9-BM7-BN7-1200+6000+'выкупы'!O4+'выкупы'!O38+'выкупы'!O68+'Блогеры'!I3",
+    "value": "#REF!"
+   },
+   "after": "без изменений формулы (лист «Блогеры» восстановлен из резервной копии 1H8ldc…, values-only)",
+   "dependents": [
+    "C4",
+    "BU10",
+    "BV10",
+    "BU62",
+    "BU97",
+    "BU131"
+   ]
+  },
+  {
+   "id": "F1",
+   "sheet": "WB_Юнит_2024",
+   "cell": "BU96",
+   "before": {
+    "formula": "=F126-W11-X11-Y11-Y12-Y13-Y14-Y17-AR11-AS11-AT11-AT12-AT13-AT14-AT16+'выкупы'!P4+'выкупы'!P38+'Блогеры'!I4",
+    "value": "#REF!"
+   },
+   "after": "без изменений формулы (лист «Блогеры» восстановлен из резервной копии 1H8ldc…, values-only)",
+   "dependents": [
+    "C4",
+    "BU10",
+    "BV10",
+    "BU62",
+    "BU97",
+    "BU131"
+   ]
+  },
+  {
+   "id": "F1",
+   "sheet": "WB_Юнит_2024",
+   "cell": "BU130",
+   "before": {
+    "formula": "=F161-W18-X18-Y18-Y19-Y20-Y21-Y22-Y23-AR17-AS17-AT17-AT18-AT19-AT20-AT21+'Блогеры'!I5",
+    "value": "#REF!"
+   },
+   "after": "без изменений формулы (лист «Блогеры» восстановлен из резервной копии 1H8ldc…, values-only)",
+   "dependents": [
+    "C4",
+    "BU10",
+    "BV10",
+    "BU62",
+    "BU97",
+    "BU131"
+   ]
+  },
+  {
+   "id": "F1",
+   "sheet": "WB_Юнит_2025",
+   "cell": "VW10",
+   "before": {
+    "formula": "=C320-'Блогеры'!K13",
+    "value": "#REF!"
+   },
+   "after": "без изменений формулы (лист «Блогеры» восстановлен)",
+   "dependents": [
+    "VW44",
+    "E3",
+    "E4"
+   ]
+  },
+  {
+   "id": "F2",
+   "sheet": "WB_Юнит_2025",
+   "cell": "DP293",
+   "before": {
+    "formula": null,
+    "value": "ё"
+   },
+   "after": "пусто",
+   "issue": "ADS_MISSING 2025-08-05 305101361",
+   "dependents": [
+    "DO293",
+    "I293",
+    "J293",
+    "I320",
+    "J320",
+    "DO320",
+    "VR289",
+    "VR290",
+    "VR46",
+    "VS46",
+    "DN44",
+    "DN45"
+   ]
+  },
+  {
+   "id": "F3",
+   "sheet": "WB_Юнит_2025",
+   "cell": "BD663",
+   "before": {
+    "formula": "=BD632*AO663",
+    "value": "#VALUE!"
+   },
+   "after": "=BD633*AO663"
+  },
+  {
+   "id": "F3",
+   "sheet": "WB_Юнит_2025",
+   "cell": "CB663",
+   "before": {
+    "formula": "=CB632*BM663",
+    "value": "#VALUE!"
+   },
+   "after": "=CB633*BM663"
+  },
+  {
+   "id": "F4",
+   "sheet": "WB_Юнит_2025",
+   "cell": "JX760",
+   "before": {
+    "formula": "=JX759-JU760+JW759+JX229",
+    "value": 104
+   },
+   "after": "=JX759-JU760+JW759"
+  },
+  {
+   "id": "F5",
+   "sheet": "WB_Юнит_2025",
+   "cells": [
+    {
+     "cell": "C633:C662",
+     "before": "=SUM(FILTER(N633:SX633,MOD(COLUMN(N633:SX633)-COLUMN(N633),24)=0))",
+     "after": "=SUM(FILTER(N633:UT633,MOD(COLUMN(N633:UT633)-COLUMN(N633),24)=0))"
+    },
+    {
+     "cell": "D633:D662",
+     "before": "=SUM(FILTER(O633:SY633,MOD(COLUMN(O633:SY633)-COLUMN(O633),24)=0))",
+     "after": "=SUM(FILTER(O633:UU633,MOD(COLUMN(O633:UU633)-COLUMN(O633),24)=0))"
+    },
+    {
+     "cell": "E633:E662",
+     "before": "=SUM(FILTER(P633:SZ633,MOD(COLUMN(P633:SZ633)-COLUMN(P633),24)=0))",
+     "after": "=SUM(FILTER(P633:UV633,MOD(COLUMN(P633:UV633)-COLUMN(P633),24)=0))"
+    },
+    {
+     "cell": "F633:F662",
+     "before": "=SUM(FILTER(Q633:TA633,MOD(COLUMN(Q633:TA633)-COLUMN(Q633),24)=0))",
+     "after": "=SUM(FILTER(Q633:UW633,MOD(COLUMN(Q633:UW633)-COLUMN(Q633),24)=0))"
+    },
+    {
+     "cell": "G633:G662",
+     "before": "=SUM(FILTER(R633:TB633,MOD(COLUMN(R633:TB633)-COLUMN(R633),24)=0))",
+     "after": "=SUM(FILTER(R633:UX633,MOD(COLUMN(R633:UX633)-COLUMN(R633),24)=0))"
+    },
+    {
+     "cell": "H633:H662",
+     "before": "=SUM(FILTER(S633:TC633,MOD(COLUMN(S633:TC633)-COLUMN(S633),24)=0))",
+     "after": "=SUM(FILTER(S633:UY633,MOD(COLUMN(S633:UY633)-COLUMN(S633),24)=0))"
+    },
+    {
+     "cell": "I633:I662",
+     "before": "=SUM(FILTER(W633:TG633,MOD(COLUMN(W633:TG633)-COLUMN(W633),24)=0))",
+     "after": "=SUM(FILTER(W633:VC633,MOD(COLUMN(W633:VC633)-COLUMN(W633),24)=0))"
+    },
+    {
+     "cell": "J633:J662",
+     "before": "=SUM(FILTER(X633:TH633,MOD(COLUMN(X633:TH633)-COLUMN(X633),24)=0))",
+     "after": "=SUM(FILTER(X633:VD633,MOD(COLUMN(X633:VD633)-COLUMN(X633),24)=0))"
+    }
+   ],
+   "note": "диапазон FILTER до 24-го блока (UT..VD), как в июле–сентябре; значения не меняются (у блоков 23–24 в июне заказов 0)"
+  },
+  {
+   "id": "F6",
+   "sheet": "WB_Юнит_2025",
+   "cell": "TD765",
+   "before": {
+    "formula": "=TD764-TA765+TC764+1",
+    "value": 1
+   },
+   "after": "без изменений (D4: сохранить как предполагаемую ручную поправку; ISSUE UNEXPLAINED_MANUAL_ADJUSTMENT до сверки)"
+  },
+  {
+   "id": "F6",
+   "sheet": "WB_Юнит_2025",
+   "cell": "TD730",
+   "before": {
+    "formula": "=TD729-TA730+TC729+1",
+    "value": 0
+   },
+   "after": "без изменений (D4)"
+  }
+ ],
+ "freeze": {
+  "Акции": {
+   "formulas": 4563,
+   "error_cells": 0,
+   "today": 1,
+   "max_row": 1000,
+   "max_col": 235,
+   "action": "formulas→values, A1 TODAY→дата, A2 пометка АРХИВ, hide"
+  },
+  "OZON_Юнит_2025": {
+   "formulas": 31267,
+   "error_cells": 1764,
+   "today": 0,
+   "max_row": 465,
+   "max_col": 424,
+   "action": "formulas→values, ошибки→пусто, УФ bake+delete, hide"
+  },
+  "WB_Юнит_2024": {
+   "formulas": 4503,
+   "error_cells": 14,
+   "today": 0,
+   "max_row": 1000,
+   "max_col": 80,
+   "action": "только УФ bake+delete (формулы остаются: витрина E2/E3 2025 ссылается на C2/C3)"
+  }
+ },
+ "trim": {
+  "WB_Юнит_2025": {
+   "max_row": 768,
+   "max_col": 650,
+   "last_used_row": 767,
+   "last_used_col": 600,
+   "delete_cols": 50,
+   "delete_rows": 0,
+   "note": "используются колонки до WB (600): сводки VR:VW и зеркало LCD; удалить WC:XZ"
+  },
+  "WB_Юнит_2024": {
+   "max_row": 1000,
+   "max_col": 80,
+   "last_used_row": 161,
+   "last_used_col": 75,
+   "delete_cols": 5,
+   "delete_rows": 789
+  },
+  "OZON_Юнит_2025": {
+   "max_row": 465,
+   "max_col": 424,
+   "last_used_row": 464,
+   "last_used_col": 404,
+   "delete_cols": 20,
+   "delete_rows": 0
+  },
+  "Склад": {
+   "max_row": 1000,
+   "max_col": 87,
+   "last_used_row": 134,
+   "last_used_col": 87,
+   "delete_cols": 0,
+   "delete_rows": 816
+  },
+  "Ценообразование": {
+   "max_row": 1000,
+   "max_col": 64,
+   "last_used_row": 358,
+   "last_used_col": 44,
+   "delete_cols": 20,
+   "delete_rows": 592
+  },
+  "Акции": {
+   "max_row": 1000,
+   "max_col": 235,
+   "last_used_row": 63,
+   "last_used_col": 215,
+   "delete_cols": 20,
+   "delete_rows": 887
+  },
+  "выкупы": {
+   "max_row": 83,
+   "max_col": 51,
+   "last_used_row": 83,
+   "last_used_col": 39,
+   "delete_cols": 12,
+   "delete_rows": 0
+  },
+  "ZZ_AUDIT_LOG": {
+   "max_row": 214,
+   "max_col": 13,
+   "last_used_row": 214,
+   "last_used_col": 13,
+   "delete_cols": 0,
+   "delete_rows": 0
+  },
+  "ZZ_QA_СЕНТЯБРЬ_2026": {
+   "max_row": 127,
+   "max_col": 9,
+   "last_used_row": 127,
+   "last_used_col": 9,
+   "delete_cols": 0,
+   "delete_rows": 0
+  },
+  "ZZ_CONFIG": {
+   "max_row": 27,
+   "max_col": 3,
+   "last_used_row": 27,
+   "last_used_col": 3,
+   "delete_cols": 0,
+   "delete_rows": 0
+  }
+ },
+ "baseline": {
+  "WB_Юнит_2025": {
+   "values": {
+    "cells": 169090,
+    "sha256": "ed055ffc6299ae4f"
+   },
+   "formulas": {
+    "cells": 91667,
+    "sha256": "cb1094b0479bff43"
+   }
+  },
+  "WB_Юнит_2024": {
+   "values": {
+    "cells": 8924,
+    "sha256": "ce07108a233bf873"
+   },
+   "formulas": {
+    "cells": 4503,
+    "sha256": "de9af21b1c226f4a"
+   }
+  },
+  "OZON_Юнит_2025": {
+   "values": {
+    "cells": 58504,
+    "sha256": "a109a04932e55456"
+   },
+   "formulas": {
+    "cells": 31267,
+    "sha256": "6d1ad3dfe22e7e46"
+   }
+  },
+  "Склад": {
+   "values": {
+    "cells": 2809,
+    "sha256": "8d8b52bdedcdd327"
+   },
+   "formulas": {
+    "cells": 1917,
+    "sha256": "d84072e6511f3146"
+   }
+  },
+  "Ценообразование": {
+   "values": {
+    "cells": 4506,
+    "sha256": "4b4c7c9f2575a2f9"
+   },
+   "formulas": {
+    "cells": 1276,
+    "sha256": "4550658f7d0dcf42"
+   }
+  },
+  "Акции": {
+   "values": {
+    "cells": 5721,
+    "sha256": "7549d29a20838ddc"
+   },
+   "formulas": {
+    "cells": 4563,
+    "sha256": "f4df1f391725e4ac"
+   }
+  },
+  "выкупы": {
+   "values": {
+    "cells": 625,
+    "sha256": "9d9241824f9194b9"
+   },
+   "formulas": {
+    "cells": 250,
+    "sha256": "3eb09a9c1e7d4ac5"
+   }
+  },
+  "ZZ_AUDIT_LOG": {
+   "values": {
+    "cells": 2589,
+    "sha256": "8480c7cb7848ff89"
+   },
+   "formulas": {
+    "cells": 0,
+    "sha256": "e3b0c44298fc1c14"
+   }
+  },
+  "ZZ_QA_СЕНТЯБРЬ_2026": {
+   "values": {
+    "cells": 982,
+    "sha256": "5a9e7f4f922c7b61"
+   },
+   "formulas": {
+    "cells": 314,
+    "sha256": "8d59d2c979459cc3"
+   }
+  },
+  "ZZ_CONFIG": {
+   "values": {
+    "cells": 71,
+    "sha256": "657ce8d86785d745"
+   },
+   "formulas": {
+    "cells": 0,
+    "sha256": "e3b0c44298fc1c14"
+   }
+  }
+ },
+ "bloggers_restore": {
+  "source": "1H8ldcUNpMbkceVzfHGTNwdMLqdaNVzP8JJ1qK_i3Z6s («…_BACKUP_до_аудита», 10.09.2026 14:58 UTC)",
+  "evidence": "ZZ_AUDIT_1789053792496.json (снимок 10.09 15:23 UTC): лист «Блогеры» i=9, 2451×21, формул 3018, непустых 8642, ошибок 0",
+  "also_removed_sheets": [
+   "Поставки FBO",
+   "Оборачиваемость товара",
+   "Финальная сс",
+   "реклама ОЗОН",
+   "реклама (динамика)",
+   "тесты CTR"
+  ],
+  "method": "values-only копия в лист «Блогеры» живой книги; формулы 2024!C3/BU61/BU96/BU130 и 2025!VW10 не меняются; провенанс RESTORED_FROM_BACKUP в A1-заметке и ZZ_AUDIT_LOG",
+  "referenced_cells": [
+   "I3",
+   "I4",
+   "I5",
+   "K13"
+  ]
+ }
+}
