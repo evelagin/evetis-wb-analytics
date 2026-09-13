@@ -58,7 +58,7 @@ resource "google_bigquery_table" "wb_paid_storage_stage" {
   dataset_id          = var.raw_dataset
   table_id            = "RAW_WB_PAID_STORAGE__STAGE"
   deletion_protection = false
-  schema               = jsonencode(local.storage_schema)
+  schema              = jsonencode(local.storage_schema)
 
   time_partitioning {
     type  = "DAY"
