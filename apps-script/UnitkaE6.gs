@@ -10,11 +10,12 @@
  *   e6snapshotStatic — часть 2 (отдельный запуск, свежая память — 13.09 одним запуском был Out of memory):
  *                   статические фоны (userEnteredFormat) → snap_static_bg__<лист>.json
  *   e6dryrun      — план УФ по ЖИВЫМ правилам (без записи) → e6_plan_live.json + сводка в журнал
- *   e6cf          — E6.1: печь фон истории/2024/OZON, удалить все правила, добавить целевые (главный лист)
+ *   e6cfBake      — E6.1 ч.1: печь фон истории/2024/OZON (возобновляемо)
+ *   e6cfRules     — E6.1 ч.2: по утверждённому e6_plan_live.json добавить целевые правила, удалить старые (главный/2024/OZON)
  *   e6freeze      — E6.2/E6.3: «Акции», «OZON_Юнит_2025» → значения, скрыть
  *   e6fix         — E6.5: F1 (Блогеры из резервной копии, D2), F2 (DP293), F3 (BD663/CB663), F4 (JX760), F5 (сводка июня)
  *   e6trim        — E6.4: удалить пустые колонки/строки
- *   e6qa          — гейты: VALUE/FORMULA/CF-VISUAL REGRESSION, FORMULA_ERRORS, счётчики УФ, STRUCTURE
+ *   e6qa1 / e6qa2 — гейты: VALUE/FORMULA REGRESSION (+ derived), FORMULA_ERRORS, STRUCTURE, размеры / CF-VISUAL, счётчики УФ
  *   e6rollback    — откат по снимкам (порядок обратный: trim → fix → freeze → cf)
  *
  * Правила владельца (13.09.2026): D1 = V1 (семантика УФ 1:1 по SKU/месяцу, домены не объединять),
@@ -259,36 +260,66 @@ function template_(f) { return f.replace(/\$?[A-Z]{1,3}\$?\d+/g, 'REF').replace(
 function relativize_(f) { return f.replace(/\$([A-Z]{1,3})(\$?)(\d+)/g, function (m, col, d, row) { return col === 'WB' ? m : col + d + row; }); }
 
 // ───────────────────────────── 3. E6.1 УФ ─────────────────────────────
-function e6cf() {
-  var ss = ss_(); var t0 = Date.now();
-  var plan = buildCfPlan_(null);
-  saveJson_('e6_plan_applied.json', plan);
-  // 3a. печь фон: история главного (секции), 2024, OZON — читаем ОТРИСОВАННЫЙ фон до удаления правил
-  var main = ss.getSheetByName(E6.MAIN);
-  var baked = 0;
-  E6.SECTIONS.forEach(function (s) {
-    var rg = main.getRange(s[0], 1, s[1] - s[0] + 1, E6.MAIN_LAST_COL);
+// Две стадии (каждая — отдельный запуск, лимит 6 мин; write-фаза одобрена владельцем 13.09 22:10 МСК):
+//   e6cfBake  — печь ОТРИСОВАННЫЙ фон истории главного (21 секция), 2024, OZON; возобновляемо (E6_CF_BAKED);
+//   e6cfRules — по УТВЕРЖДЁННОМУ dry-run (e6_plan_live.json 21:34 МСК, не пересчитывать): сначала добавить
+//               152 целевых правила (индексы 0..151), затем удалить старые (главный с индекса 152, 2024/OZON с 0).
+//               Первый чанк batchUpdate = adds + deletes (атомарно); возобновляемо (E6_CF_TARGETS_ADDED).
+function liveCf_() {
+  var meta = Sheets.Spreadsheets.get(ss_().getId(), { fields: 'sheets(properties(sheetId,title),conditionalFormats)' });
+  var o = {}; meta.sheets.forEach(function (s) { o[s.properties.title] = { sheetId: s.properties.sheetId, rules: s.conditionalFormats || [] }; });
+  return o;
+}
+function e6cfBake() {
+  var ss = ss_(); var t0 = Date.now(); var p = props_();
+  if (!p.getProperty('E6_SNAPSHOT_AT') || !p.getProperty('E6_DRYRUN_AT')) throw new Error('e6cfBake: нет снимка/dry-run — STOP');
+  var items = E6.SECTIONS.map(function (s) { return { kind: 'main', s: s }; }).concat([{ kind: 'sheet', n: E6.Y2024 }, { kind: 'sheet', n: E6.OZON }]);
+  var done = Number(p.getProperty('E6_CF_BAKED') || 0);
+  var main = ss.getSheetByName(E6.MAIN); var baked = 0;
+  for (var i = done; i < items.length; i++) {
+    var it = items[i]; var rg;
+    if (it.kind === 'main') rg = main.getRange(it.s[0], 1, it.s[1] - it.s[0] + 1, E6.MAIN_LAST_COL);
+    else { var sh = ss.getSheetByName(it.n); if (!sh) { p.setProperty('E6_CF_BAKED', String(i + 1)); continue; } rg = sh.getRange(1, 1, sh.getLastRow(), sh.getLastColumn()); }
     var bg = rg.getBackgrounds();
-    rg.setBackgrounds(bg); baked += bg.length * bg[0].length;
-  });
-  [E6.Y2024, E6.OZON].forEach(function (n) {
-    var sh = ss.getSheetByName(n); if (!sh) return;
-    var rg = sh.getRange(1, 1, sh.getLastRow(), sh.getLastColumn());
-    var bg = rg.getBackgrounds(); rg.setBackgrounds(bg); baked += bg.length * bg[0].length;
-  });
-  SpreadsheetApp.flush();
-  log_('cf', 'фон запечён статически: ' + baked + ' ячеек (история главного, 2024, OZON) за ' + ((Date.now() - t0) / 1000) + ' с');
-  // 3b. один batchUpdate: удалить все правила главного/2024/OZON, добавить целевые на главный
+    rg.setBackgrounds(bg); SpreadsheetApp.flush(); baked += bg.length * bg[0].length;
+    p.setProperty('E6_CF_BAKED', String(i + 1));
+    if (Date.now() - t0 > 300000 && i < items.length - 1) { log_('cf', 'bake: ' + (i + 1) + '/' + items.length + ' частей, ' + baked + ' ячеек за ' + ((Date.now() - t0) / 1000) + ' с — продолжить повторным запуском'); return; }
+  }
+  p.setProperty('E6_CF_BAKED_DONE', new Date().toISOString());
+  log_('cf', 'bake готов: ' + items.length + '/' + items.length + ' частей (21 секция истории + 2024 + OZON), ' + baked + ' ячеек в этом запуске за ' + ((Date.now() - t0) / 1000) + ' с');
+}
+function e6cfRules() {
+  var ss = ss_(); var t0 = Date.now(); var p = props_();
+  if (!p.getProperty('E6_CF_BAKED_DONE')) throw new Error('e6cfRules: сначала e6cfBake — STOP');
+  var plan = loadJson_('e6_plan_live.json'); // утверждённый dry-run
+  var T = plan.target.length;
+  var live = liveCf_();
+  var mainId = live[E6.MAIN].sheetId; if (mainId !== plan.sheetId) throw new Error('sheetId главного листа изменился — STOP');
+  var nMain = live[E6.MAIN].rules.length, n2024 = live[E6.Y2024] ? live[E6.Y2024].rules.length : 0, nOzon = live[E6.OZON] ? live[E6.OZON].rules.length : 0;
   var reqs = [];
-  function delAll(sheetId, n) { for (var i = 0; i < n; i++) reqs.push({ deleteConditionalFormatRule: { sheetId: sheetId, index: 0 } }); }
-  delAll(plan.sheetId, plan.now.rules);
-  if (plan.otherSheetIds.y2024 !== undefined) delAll(plan.otherSheetIds.y2024, plan.other[E6.Y2024]);
-  if (plan.otherSheetIds.ozon !== undefined) delAll(plan.otherSheetIds.ozon, plan.other[E6.OZON]);
-  plan.target.forEach(function (rule, i) { reqs.push({ addConditionalFormatRule: { rule: rule, index: i } }); });
+  if (!p.getProperty('E6_CF_TARGETS_ADDED')) {
+    if (nMain !== plan.now.rules) throw new Error('живых правил главного ' + nMain + ' ≠ dry-run ' + plan.now.rules + ' — STOP');
+    if (n2024 !== plan.other[E6.Y2024] || nOzon !== plan.other[E6.OZON]) throw new Error('живых правил 2024/OZON ' + n2024 + '/' + nOzon + ' ≠ dry-run ' + plan.other[E6.Y2024] + '/' + plan.other[E6.OZON] + ' — STOP');
+    plan.target.forEach(function (rule, i) { reqs.push({ addConditionalFormatRule: { rule: rule, index: i } }); });
+    for (var i = 0; i < nMain; i++) reqs.push({ deleteConditionalFormatRule: { sheetId: mainId, index: T } });
+  } else {
+    for (var j = 0; j < nMain - T; j++) reqs.push({ deleteConditionalFormatRule: { sheetId: mainId, index: T } });
+  }
+  if (live[E6.Y2024]) for (var a = 0; a < n2024; a++) reqs.push({ deleteConditionalFormatRule: { sheetId: live[E6.Y2024].sheetId, index: 0 } });
+  if (live[E6.OZON]) for (var b = 0; b < nOzon; b++) reqs.push({ deleteConditionalFormatRule: { sheetId: live[E6.OZON].sheetId, index: 0 } });
   var chunk = 2000;
-  for (var i = 0; i < reqs.length; i += chunk) Sheets.Spreadsheets.batchUpdate({ requests: reqs.slice(i, i + chunk) }, ss.getId());
-  props_().setProperty('E6_CF_DONE', new Date().toISOString());
-  log_('cf', 'правила: удалено ' + (plan.now.rules + plan.other[E6.Y2024] + plan.other[E6.OZON]) + ', добавлено ' + plan.target.length + ' (фрагментов ' + plan.after.parts + ') за ' + ((Date.now() - t0) / 1000) + ' с');
+  for (var k = 0; k < reqs.length; k += chunk) {
+    Sheets.Spreadsheets.batchUpdate({ requests: reqs.slice(k, k + chunk) }, ss.getId());
+    if (k === 0) p.setProperty('E6_CF_TARGETS_ADDED', new Date().toISOString());
+  }
+  // контроль по живым правилам
+  var after = liveCf_(); var parts = 0; after[E6.MAIN].rules.forEach(function (r) { parts += r.ranges.length; });
+  var res = { main: after[E6.MAIN].rules.length, mainParts: parts, y2024: after[E6.Y2024] ? after[E6.Y2024].rules.length : 0, ozon: after[E6.OZON] ? after[E6.OZON].rules.length : 0, sklad: after[E6.SKLAD] ? after[E6.SKLAD].rules.length : 0 };
+  var ok = res.main === T && res.mainParts === plan.after.parts && res.y2024 === 0 && res.ozon === 0 && res.sklad === plan.other[E6.SKLAD];
+  saveJson_('e6_cf_applied.json', { at: new Date().toISOString(), requests: reqs.length, before: { main: nMain, y2024: n2024, ozon: nOzon }, after: res, expected: { main: T, mainParts: plan.after.parts, sklad: plan.other[E6.SKLAD] }, ok: ok });
+  log_('cf', (ok ? 'OK' : 'MISMATCH') + ': главный ' + plan.now.rules + ' → ' + res.main + ' правил, фрагментов ' + plan.now.parts + ' → ' + res.mainParts + '; 2024 ' + plan.other[E6.Y2024] + ' → ' + res.y2024 + '; OZON ' + plan.other[E6.OZON] + ' → ' + res.ozon + '; Склад ' + res.sklad + ' (keep); запросов ' + reqs.length + ' за ' + ((Date.now() - t0) / 1000) + ' с');
+  if (!ok) throw new Error('e6cfRules: результат не совпал с утверждённым dry-run — STOP (см. e6_cf_applied.json)');
+  p.setProperty('E6_CF_DONE', new Date().toISOString());
 }
 
 // ───────────────────────────── 4. E6.2/E6.3 заморозка ─────────────────────────────
@@ -389,59 +420,96 @@ function e6trim() {
 }
 
 // ───────────────────────────── 7. QA ─────────────────────────────
-function e6qa() {
-  var ss = ss_(); var rep = { at: new Date().toISOString(), gates: {} };
-  var vals0 = loadJson_('snap_values.json'), forms0 = loadJson_('snap_formulas.json'), vis0 = loadJson_('snap_visual.json');
-  var allowed = {}; // ячейки, которым разрешено измениться (F2–F5 + зависимые ошибки)
+// Две стадии (память: снимок значений+формул ≈10 МБ JSON, визуал ≈13 МБ — порознь):
+//   e6qa1 — VALUE/FORMULA REGRESSION, FORMULA_ERRORS, STRUCTURE, размеры листов, Блогеры, заморозка;
+//           изменённые значения делятся на: regression (константы/формулы изменились вне утверждённых правок),
+//           derived (формула не менялась, значение пересчиталось из-за утверждённой правки) — отчёт отдельно;
+//   e6qa2 — CF VISUAL REGRESSION (фон+шрифт) и счётчики УФ; сводный e6_qa_report.json.
+function qaAllowed_() {
+  var allowed = {}; // ячейки, которым разрешено измениться (F2–F5 + F1-fallback из e6_fix_changes.json)
   ['DP293', 'BD663', 'CB663', 'JX760'].forEach(function (a) { allowed[E6.MAIN + '!' + a] = 1; });
   for (var k = 0; k < E6.JUNE.cols.length; k++) for (var r = E6.JUNE.first; r <= E6.JUNE.last; r++) allowed[E6.MAIN + '!' + E6.JUNE.cols[k] + r] = 1;
   try { loadJson_('e6_fix_changes.json').forEach(function (ch) { if (ch[1] && ch[1].indexOf('!') > 0 && ch[1].indexOf(':') < 0) allowed[ch[1]] = 1; }); } catch (e) {}
+  return allowed;
+}
+function e6qa1() {
+  var ss = ss_(); var t0 = Date.now(); var rep = { at: new Date().toISOString(), gates: {} };
+  var vals0 = loadJson_('snap_values.json'), forms0 = loadJson_('snap_formulas.json'), dims0 = loadJson_('snap_dims.json');
+  var allowed = qaAllowed_();
   var frozen = {}; frozen[E6.AKCII] = 1; frozen[E6.OZON] = 1;
-  var vdiff = [], fdiff = [], errsNow = {};
+  var vdiff = [], fdiff = [], derived = [], errsNow = {}, dimsNow = {}, derivedBySheet = {};
   ss.getSheets().forEach(function (sh) {
-    var n = sh.getName(); if (n === E6.LOG || n === E6.BLOGGERS) return;
+    var n = sh.getName();
+    dimsNow[n] = { lastRow: sh.getLastRow(), lastCol: sh.getLastColumn(), maxRows: sh.getMaxRows(), maxCols: sh.getMaxColumns(), hidden: sh.isSheetHidden() };
+    if (n === E6.LOG || n === E6.BLOGGERS) return;
     var v0 = vals0[n], f0 = forms0[n]; if (!v0) return;
     var r = v0.length, c = r ? v0[0].length : 0; if (!r) return;
     var rg = sh.getRange(1, 1, r, c); var v1 = rg.getValues(), f1 = rg.getFormulas(); var e = 0;
     for (var i = 0; i < r; i++) for (var j = 0; j < c; j++) {
-      var a1 = n + '!' + a1_(i + 1, j + 1);
       var x = v1[i][j]; if (typeof x === 'string' && x.charAt(0) === '#') e++;
       if (frozen[n]) continue;
       var y = v0[i][j];
       var same = (x instanceof Date && typeof y === 'string') ? (x.toISOString() === y) : (String(x) === String(y));
-      // ошибки, ставшие числами из-за F1/F2 — допустимы только если раньше была ошибка
-      var wasErr = typeof y === 'string' && y.charAt(0) === '#';
-      if (!same && !allowed[a1] && !wasErr) vdiff.push([a1, y, x]);
-      if (f1[i][j] !== f0[i][j] && !allowed[a1]) fdiff.push([a1, f0[i][j], f1[i][j]]);
+      var fSame = f1[i][j] === f0[i][j];
+      if (same && fSame) continue;
+      var a1 = n + '!' + a1_(i + 1, j + 1);
+      var wasErr = typeof y === 'string' && y.charAt(0) === '#'; // ошибки, ставшие числами из-за F1/F2 — допустимы
+      if (!same && !allowed[a1] && !wasErr) {
+        if (f1[i][j] && fSame) { derived.push([a1, y, x]); derivedBySheet[n] = (derivedBySheet[n] || 0) + 1; }
+        else vdiff.push([a1, y, x]);
+      }
+      if (!fSame && !allowed[a1]) fdiff.push([a1, f0[i][j], f1[i][j]]);
     }
     errsNow[n] = e;
+    v1 = null; f1 = null;
   });
-  rep.gates.VALUE_REGRESSION = { pass: vdiff.length === 0, count: vdiff.length, sample: vdiff.slice(0, 20) };
-  rep.gates.FORMULA_REGRESSION = { pass: fdiff.length === 0, count: fdiff.length, sample: fdiff.slice(0, 20) };
-  // визуальный гейт: фон и цвет шрифта до/после — 0 отличий (V1)
-  var visDiff = [];
-  Object.keys(vis0).forEach(function (n) {
-    var sh = ss.getSheetByName(n); if (!sh) return;
-    var s0 = vis0[n]; var rg = sh.getRange(1, 1, s0.rows, s0.cols);
-    var bg = rg.getBackgrounds(), fg = rg.getFontColors();
-    for (var i = 0; i < s0.rows; i++) for (var j = 0; j < s0.cols; j++) {
-      if (bg[i][j] !== s0.bg[i][j] || fg[i][j] !== s0.fg[i][j]) visDiff.push([n + '!' + a1_(i + 1, j + 1), s0.bg[i][j] + '/' + s0.fg[i][j], bg[i][j] + '/' + fg[i][j]]);
-    }
-  });
-  rep.gates.CF_VISUAL_REGRESSION = { pass: visDiff.length === 0, count: visDiff.length, sample: visDiff.slice(0, 30) };
-  // счётчики УФ
-  var meta = Sheets.Spreadsheets.get(ss.getId(), { fields: 'sheets(properties(title),conditionalFormats)' });
-  var cfc = {}; meta.sheets.forEach(function (s) { var rs = s.conditionalFormats || []; var p = 0; rs.forEach(function (r) { p += r.ranges.length; }); cfc[s.properties.title] = { rules: rs.length, parts: p }; });
-  rep.gates.CF_COUNTS = { pass: cfc[E6.MAIN].parts <= 900 && cfc[E6.MAIN].rules <= 160, counts: cfc };
+  vals0 = null; forms0 = null;
+  rep.gates.VALUE_REGRESSION = { pass: vdiff.length === 0, count: vdiff.length, sample: vdiff.slice(0, 40) };
+  rep.gates.FORMULA_REGRESSION = { pass: fdiff.length === 0, count: fdiff.length, sample: fdiff.slice(0, 40) };
+  rep.derived = { count: derived.length, bySheet: derivedBySheet, sample: derived.slice(0, 60) };
   rep.gates.FORMULA_ERRORS = { pass: (errsNow[E6.MAIN] || 0) <= 73, counts: errsNow };
   // структура: 24 nmID в строке 735, зеркало LCD и имя
   var main = ss.getSheetByName(E6.MAIN); var hdr = main.getRange(E6.SEP_TOP, 13, 1, 24 * 24).getValues()[0]; var nb = 0;
   for (var b = 0; b < 24; b++) if (/^\d{6,}/.test(String(hdr[b * 24] || ''))) nb++;
   var lcdName = ss.getRangeByName('LAST_CLOSED_DATE'); var mirror = main.getRange(E6.SEP_TOP + 1, E6.MAIN_LAST_COL).getValue();
-  rep.gates.STRUCTURE = { pass: nb === 24 && lcdName && String(lcdName.getValue()) === String(mirror), blocks: nb, lcd: String(lcdName && lcdName.getValue()), mirror: String(mirror) };
+  rep.gates.STRUCTURE = { pass: nb === 24 && !!lcdName && String(lcdName.getValue()) === String(mirror), blocks: nb, lcd: String(lcdName && lcdName.getValue()), mirror: String(mirror) };
+  rep.dims = { before: dims0, after: dimsNow };
+  var bl = ss.getSheetByName(E6.BLOGGERS);
+  rep.bloggers = bl ? { restored: true, rows: bl.getLastRow(), cols: bl.getLastColumn(), hidden: bl.isSheetHidden(), note: String(bl.getRange('A1').getNote()).slice(0, 120) } : { restored: false };
+  rep.frozen = {}; [E6.AKCII, E6.OZON].forEach(function (n) { var sh = ss.getSheetByName(n); rep.frozen[n] = sh ? { hidden: sh.isSheetHidden(), formulas: sh.getRange(1, 1, sh.getLastRow(), sh.getLastColumn()).getFormulas().reduce(function (a, row) { return a + row.filter(function (f) { return !!f; }).length; }, 0) } : null; });
+  try { rep.fixChanges = loadJson_('e6_fix_changes.json'); } catch (e) { rep.fixChanges = null; }
+  try { rep.trim = loadJson_('e6_trim_done.json'); } catch (e) { rep.trim = null; }
+  saveJson_('e6_qa1.json', rep);
+  saveJson_('e6_qa_value_diffs.json', { regression: vdiff.slice(0, 5000), derived: derived.slice(0, 5000), formula: fdiff.slice(0, 5000) });
+  props_().setProperty('E6_QA1_AT', new Date().toISOString());
+  log_('qa', 'qa1: VALUE regression ' + vdiff.length + ' | derived ' + derived.length + ' ' + JSON.stringify(derivedBySheet) + ' | FORMULA ' + fdiff.length + ' | ERR ' + JSON.stringify(errsNow) + ' | STRUCT ' + JSON.stringify(rep.gates.STRUCTURE) + ' | Блогеры ' + JSON.stringify(rep.bloggers) + ' за ' + ((Date.now() - t0) / 1000) + ' с');
+  return rep;
+}
+function e6qa2() {
+  var ss = ss_(); var t0 = Date.now();
+  var rep = loadJson_('e6_qa1.json');
+  var vis0 = loadJson_('snap_visual.json');
+  var visDiff = [], visBySheet = {};
+  Object.keys(vis0).forEach(function (n) {
+    var sh = ss.getSheetByName(n); if (!sh) return;
+    var s0 = vis0[n]; var rg = sh.getRange(1, 1, s0.rows, s0.cols);
+    var bg = rg.getBackgrounds(), fg = rg.getFontColors(); var d = 0;
+    for (var i = 0; i < s0.rows; i++) for (var j = 0; j < s0.cols; j++) {
+      if (bg[i][j] !== s0.bg[i][j] || fg[i][j] !== s0.fg[i][j]) { d++; if (visDiff.length < 5000) visDiff.push([n + '!' + a1_(i + 1, j + 1), s0.bg[i][j] + '/' + s0.fg[i][j], bg[i][j] + '/' + fg[i][j]]); }
+    }
+    visBySheet[n] = d; vis0[n] = null; bg = null; fg = null;
+  });
+  var total = 0; Object.keys(visBySheet).forEach(function (k) { total += visBySheet[k]; });
+  rep.gates.CF_VISUAL_REGRESSION = { pass: total === 0, count: total, bySheet: visBySheet, sample: visDiff.slice(0, 40) };
+  var live = liveCf_(); var cfc = {};
+  Object.keys(live).forEach(function (t) { var pp = 0; live[t].rules.forEach(function (r) { pp += r.ranges.length; }); cfc[t] = { rules: live[t].rules.length, parts: pp }; });
+  rep.gates.CF_COUNTS = { pass: cfc[E6.MAIN].parts <= 900 && cfc[E6.MAIN].rules <= 160, counts: cfc, before: { main: { rules: 4671, parts: 77861 }, y2024: 100, ozon: 1183, sklad: 93 } };
   rep.pass = Object.keys(rep.gates).every(function (g) { return rep.gates[g].pass; });
+  rep.at2 = new Date().toISOString();
   saveJson_('e6_qa_report.json', rep);
-  log_('qa', (rep.pass ? 'PASS' : 'FAIL') + ' | VALUE ' + vdiff.length + ' | FORMULA ' + fdiff.length + ' | VISUAL ' + visDiff.length + ' | CF ' + JSON.stringify(cfc[E6.MAIN]) + ' | ERR ' + JSON.stringify(errsNow) + ' | STRUCT ' + JSON.stringify(rep.gates.STRUCTURE));
+  saveJson_('e6_qa_visual_diffs.json', visDiff);
+  props_().setProperty('E6_QA_DONE', new Date().toISOString());
+  log_('qa', (rep.pass ? 'PASS' : 'FAIL') + ' | VALUE ' + rep.gates.VALUE_REGRESSION.count + ' (derived ' + rep.derived.count + ') | FORMULA ' + rep.gates.FORMULA_REGRESSION.count + ' | VISUAL ' + total + ' ' + JSON.stringify(visBySheet) + ' | CF ' + JSON.stringify(cfc[E6.MAIN]) + ' | ERR ' + JSON.stringify(rep.gates.FORMULA_ERRORS.counts) + ' | STRUCT ' + (rep.gates.STRUCTURE.pass ? 'PASS' : 'FAIL') + ' за ' + ((Date.now() - t0) / 1000) + ' с');
   return rep;
 }
 
