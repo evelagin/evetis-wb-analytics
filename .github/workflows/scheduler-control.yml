@@ -13,7 +13,7 @@ on:
         required: true
         default: "wb-stocks"
         type: choice
-        options: [wb-stocks, wb-mart, wb-prices, wb-tariffs, wb-funnel, unitka-engine]
+        options: [wb-stocks, wb-mart, wb-prices, wb-tariffs, wb-funnel, wb-paid-storage, unitka-engine]
       action:
         description: "pause | resume | run-now"
         required: true
@@ -40,8 +40,12 @@ jobs:
           # Terraform создаёт единственный Job wb-prices-prod, теневого контура у наблюдателя
           # цен нет (лишний носитель доступа к ценовому секрету не нужен).
           case "${{ inputs.loader }}" in
-            wb-mart|wb-prices|wb-tariffs|wb-funnel)
+            wb-mart|wb-prices|wb-tariffs|wb-funnel|wb-paid-storage)
               # UNITKA 2.0 R3: воронка тоже существует только в prod (wb-funnel-prod).
+              # Stage E4: платное хранение помечено prodOnly в реестре загрузчиков и пишет
+              # production RAW; Terraform создаёт единственный Job wb-paid-storage-prod,
+              # теневого контура у него нет. Маппинг: wb-paid-storage → wb-paid-storage-prod,
+              # имя Cloud Scheduler совпадает с именем Job (infra/terraform/wb_paid_storage_loader.tf).
               if [ "${{ inputs.environment }}" != "prod" ]; then
                 echo "::error title=Invalid combination::${{ inputs.loader }} is prod-only; job ${{ inputs.loader }}-${{ inputs.environment }} does not exist. Use environment=prod."
                 exit 1

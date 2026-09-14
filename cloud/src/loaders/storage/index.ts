@@ -6,7 +6,8 @@
  *  - overlap 1..8 суток, по умолчанию 8;
  *  - никаких оценок stock × rate: источник только WB Paid Storage API;
  *  - неполный/пустой отчёт не заменяет уже лежащие факты;
- *  - окно перед записью заменяется целиком, поэтому overlap не удваивает хранение.
+ *  - окно перед записью заменяется целиком, поэтому overlap не удваивает хранение;
+ *  - весь блокирующий QA — внутри транзакции до COMMIT: провал откатывает окно целиком.
  */
 import { randomUUID } from 'node:crypto';
 import type { LoaderContext, LoaderResult } from '../types.js';
@@ -70,21 +71,29 @@ export async function storageLoader(ctx: LoaderContext): Promise<LoaderResult> {
   }
 
   const loadJobId = `wb_paid_storage_${logicalPeriod.replace(/-/g, '')}_${runId.replace(/-/g, '_')}`;
-  const rowsLoaded = await bq.replaceWindow(storage.rawTable, normalized.rows, w.startDate, w.endDate, loadJobId);
-  const qa = await bq.qaWindow(storage.rawTable, w.startDate, w.endDate);
 
-  if (rowsLoaded !== normalized.rows.length || qa.rows !== normalized.rows.length || qa.days !== storage.lookbackDays) {
+  // Блокирующий post-load QA (строки / дни / сумма) выполняется ВНУТРИ транзакции замены,
+  // до COMMIT — см. StorageBq.replaceWindow. Провал любой проверки откатывает окно, и target
+  // остаётся в прежнем состоянии; отдельного «QA после коммита» здесь больше нет.
+  const rowsLoaded = await bq.replaceWindow(storage.rawTable, normalized.rows, w.startDate, w.endDate, loadJobId, {
+    rows: normalized.rows.length,
+    days: storage.lookbackDays,
+    storageRub: normalized.storageRub,
+  });
+  if (rowsLoaded !== normalized.rows.length) {
     throw new LoaderError(
-      `Paid storage post-load QA failed: normalized=${normalized.rows.length}, loaded=${rowsLoaded}, qa_rows=${qa.rows}, qa_days=${qa.days}`,
+      `Paid storage post-commit count mismatch: normalized=${normalized.rows.length}, loaded=${rowsLoaded}`,
       'WB_STORAGE_POSTLOAD_QA',
     );
   }
-  const amountDelta = Math.abs(qa.storageRub - normalized.storageRub);
-  if (amountDelta > 0.02) {
-    throw new LoaderError(
-      `Paid storage amount mismatch after load: source=${normalized.storageRub.toFixed(2)}, bq=${qa.storageRub.toFixed(2)}, delta=${amountDelta.toFixed(2)}`,
-      'WB_STORAGE_AMOUNT_QA',
-    );
+
+  // Пост-коммит телеметрия. Запись уже зафиксирована и провалидирована транзакционно, поэтому
+  // сбой самого замера не имеет права превратить успешный прогон в ERROR.
+  let qa: { rows: number; days: number; nm: number; storageRub: number } | null = null;
+  try {
+    qa = await bq.qaWindow(storage.rawTable, w.startDate, w.endDate);
+  } catch (e) {
+    logger.warn('storage_qa_telemetry_failed', { message: e instanceof Error ? e.message : String(e) });
   }
 
   logger.info('storage_complete', {
@@ -95,9 +104,9 @@ export async function storageLoader(ctx: LoaderContext): Promise<LoaderResult> {
     rowsFetched: fetched.rows.length,
     rowsLoaded,
     rejected: normalized.rejected,
-    days: qa.days,
-    nm: qa.nm,
-    storageRub: qa.storageRub,
+    days: qa?.days ?? null,
+    nm: qa?.nm ?? null,
+    storageRub: qa?.storageRub ?? null,
     pollAttempts: fetched.pollAttempts,
   });
   return { rowsFetched: fetched.rows.length, rowsLoaded };
