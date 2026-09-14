@@ -104,6 +104,11 @@ function opsEnableAutoRefresh() {
   console.log('ops: автообновление включено');
 }
 
+function opsEnsureEditTrigger_() {
+  var has = ScriptApp.getProjectTriggers().some(function (t) { return t.getHandlerFunction() === OPS.EDIT_HANDLER; });
+  if (!has) ScriptApp.newTrigger(OPS.EDIT_HANDLER).forSpreadsheet(SpreadsheetApp.getActive()).onEdit().create();
+}
+
 function opsSetAutoRefresh_(on) {
   var ts = ScriptApp.getProjectTriggers().filter(function (t) { return t.getHandlerFunction() === OPS.REFRESH_HANDLER; });
   if (on && !ts.length) ScriptApp.newTrigger(OPS.REFRESH_HANDLER).timeBased().everyHours(1).create();
@@ -386,4 +391,87 @@ function opsLogRun_(run) {
     rr: run.rr, rw: run.rw, sts: run.sts, err: String(run.err || '').slice(0, 180) });
   while (log.length > OPS.RUNLOG_KEEP || JSON.stringify(log).length > 8500) log.pop();
   props.setProperty('OPS_RUNLOG', JSON.stringify(log));
+}
+
+// ───────────────────────────── решение владельца (installable onEdit) ─────────────────────────────
+
+function opsOnEditInstalled(e) {
+  if (!e || !e.range) return;
+  var sheet = e.range.getSheet();
+  if (sheet.getName() !== OPS_SHEET.PLAN) return;
+  var spec = OPS_LAYOUT[OPS_SHEET.PLAN], ss = sheet.getParent();
+  var r0 = e.range.getRow(), n = e.range.getNumRows(), c0 = e.range.getColumn(), c1 = c0 + e.range.getNumColumns() - 1;
+  if (n > 300 || c0 > spec.grid) return;
+  try {
+    var marks = sheet.getRange(r0, spec.sysCol, n, 1).getValues();
+    var owner = c0 <= 4 && c1 >= 4 ? sheet.getRange(r0, 4, n, 1).getValues() : null;
+    var captured = [], generatedTouched = false, notReady = false;
+    for (var i = 0; i < n; i++) {
+      var t;
+      try { t = opsParseMarker_(marks[i][0], r0 + i); } catch (x) { continue; }
+      var ship = t.type === 'R' && (t.id === 'WB_SHIP' || t.id === 'OZON_SHIP');
+      if (ship && owner) {
+        var k = opsSplitShipRowKey_(t.key);
+        if (k.businessKey) captured.push({ key: k.businessKey, fp: k.fingerprint, value: owner[i][0] });
+        else notReady = true;
+      }
+      if (/^[RTVB]$/.test(t.type) && !(ship && c0 === 4 && c1 === 4)) generatedTouched = true;
+    }
+    if (generatedTouched) {
+      ss.toast('Это рассчитанное поле: при следующем обновлении его перезапишут данные BigQuery.', 'EVETIS OPERATIONS', 6);
+    }
+    if (!captured.length) {
+      if (notReady) ss.toast('Сначала обновите данные (EVETIS OPERATIONS → Обновить данные), затем внесите решение.', 'EVETIS OPERATIONS', 8);
+      return;
+    }
+    var lock = LockService.getScriptLock();
+    if (!lock.tryLock(OPS.EDIT_LOCK_WAIT_MS)) {
+      ss.toast('Решение НЕ сохранено: идёт обновление данных. Введите значение ещё раз через минуту.', 'EVETIS OPERATIONS', 12);
+      return;
+    }
+    try {
+      var st = opsReadState_(ss), byKey = {}, events = [], invalid = 0, now = opsNowText_();
+      st.rows.forEach(function (s) { byKey[s.business_key] = s; });
+      captured.forEach(function (c) {
+        var s = byKey[c.key];
+        if (!s) {
+          s = opsNewStateRow_(c.key);
+          s.current_fingerprint = c.fp;
+          st.rows.push(s);
+          byKey[c.key] = s;
+        }
+        var res = opsApplyOwnerEdit_(s, c.value, c.fp, now);
+        if (res.invalid) invalid++;
+        events = events.concat(res.events);
+      });
+      opsWriteState_(ss, st.rows, events, st.eventCount);
+      opsRedrawOwnerCells_(sheet, spec, byKey, captured);
+      if (invalid) ss.toast('В «Одобрено владельцем» нужно целое число позиций (0 или больше). Значение не принято.', 'EVETIS OPERATIONS', 10);
+    } finally {
+      lock.releaseLock();
+    }
+  } catch (err) {
+    console.error(JSON.stringify({ ops_onedit_error: opsErrText_(err) }));
+    ss.toast('Решение не сохранено: ' + opsErrText_(err).slice(0, 140), 'EVETIS OPERATIONS', 12);
+  }
+}
+
+/** Перерисовать «Одобрено владельцем» у строк с этими ключами — там, где строки находятся сейчас. */
+function opsRedrawOwnerCells_(sheet, spec, byKey, captured) {
+  var want = {};
+  captured.forEach(function (c) { want[c.key] = true; });
+  opsReadMarkers_(sheet, spec.sysCol).forEach(function (m, i) {
+    var t;
+    try { t = opsParseMarker_(m, i + 1); } catch (x) { return; }
+    if (t.type !== 'R' || (t.id !== 'WB_SHIP' && t.id !== 'OZON_SHIP')) return;
+    var k = opsSplitShipRowKey_(t.key).businessKey;
+    if (!want[k]) return;
+    var d = opsOwnerDisplay_(byKey[k]), cell = sheet.getRange(i + 1, 4);
+    cell.setValue(d.value);
+    cell.setFontColor(d.fg);
+    cell.setFontWeight(d.bold ? 'bold' : 'normal');
+    cell.setHorizontalAlignment(d.align);
+    cell.setFontSize(d.size);
+    cell.setNote(d.note);
+  });
 }

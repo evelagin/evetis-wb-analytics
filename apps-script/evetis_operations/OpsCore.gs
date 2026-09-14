@@ -274,6 +274,150 @@ function opsParseLayout_(markers, spec, opts) {
   return { blocks: model, endRow: endRow };
 }
 
+// ───────────────────────────── решение владельца: машина состояний ─────────────────────────────
+
+function opsIsShipBlock_(block) {
+  return block === 'WB_SHIP' || block === 'OZON_SHIP';
+}
+
+function opsNewStateRow_(key) {
+  var s = {};
+  OPS_STATE_COLS.forEach(function (c) { s[c] = ''; });
+  s.business_key = key;
+  s.approval_status = 'NONE';
+  return s;
+}
+
+function opsEvent_(at, key, event, qty, fp, reason, source) {
+  return { event_at: at, business_key: key, event: event, qty: qty === undefined ? '' : qty, fingerprint: fp || '',
+    reason: reason || '', source: source };
+}
+
+function opsInvalidate_(s, reason, now) {
+  s.previous_approved_qty = s.approved_qty;
+  s.previous_approved_fingerprint = s.approved_fingerprint;
+  s.previous_approved_at = s.approved_at;
+  s.approved_qty = '';
+  s.approved_fingerprint = '';
+  s.approved_at = '';
+  s.invalidated_at = now;
+  s.invalidation_reason = reason;
+}
+
+/**
+ * Сверяет решения владельца с новой выборкой плана. Решение живёт, пока строка в блоке отгрузки
+ * и отпечаток рекомендации равен одобренному. Иначе — недействительно навсегда: прежнее значение
+ * уходит в previous_*, строка требует нового подтверждения. Старое одобрение само не оживает (T12, T13).
+ */
+function opsReconcileState_(stateRows, planRows, now) {
+  var order = [], byKey = {}, plan = {}, events = [];
+  stateRows.forEach(function (r) {
+    var c = {};
+    OPS_STATE_COLS.forEach(function (k) { c[k] = r[k] === undefined || r[k] === null ? '' : r[k]; });
+    byKey[c.business_key] = c;
+    order.push(c.business_key);
+  });
+  planRows.forEach(function (p) {
+    plan[p.business_key] = p;
+    if (opsIsShipBlock_(p.sheet_block) && !byKey[p.business_key]) {
+      byKey[p.business_key] = opsNewStateRow_(p.business_key);
+      order.push(p.business_key);
+    }
+  });
+  order.forEach(function (k) {
+    var s = byKey[k], p = plan[k] || null, inShip = !!p && opsIsShipBlock_(p.sheet_block);
+    s.current_fingerprint = p ? p.rec_fingerprint : '';
+    s.current_block = p ? (p.sheet_block || 'NONE') : 'ABSENT';
+    s.current_rec_final = p ? opsN_(p.rec_final) : '';
+    if (p) s.last_seen_at = now;
+    switch (s.approval_status) {
+      case 'APPROVED':
+        if (inShip && s.approved_fingerprint === p.rec_fingerprint) break;
+        var reason = inShip ? 'FINGERPRINT_CHANGED' : (p ? 'LEFT_SHIP_BLOCK' : 'KEY_ABSENT');
+        opsInvalidate_(s, reason, now);
+        s.approval_status = inShip ? 'REAPPROVAL_REQUIRED' : 'INACTIVE';
+        events.push(opsEvent_(now, k, 'INVALIDATED', s.previous_approved_qty, s.previous_approved_fingerprint, reason, 'REFRESH'));
+        break;
+      case 'REAPPROVAL_REQUIRED':
+        if (!inShip) {
+          s.approval_status = 'INACTIVE';
+          events.push(opsEvent_(now, k, 'INACTIVE', '', s.current_fingerprint, p ? 'LEFT_SHIP_BLOCK' : 'KEY_ABSENT', 'REFRESH'));
+        }
+        break;
+      case 'INACTIVE':
+        if (inShip) {
+          s.approval_status = 'REAPPROVAL_REQUIRED';
+          events.push(opsEvent_(now, k, 'RETURNED', '', p.rec_fingerprint, 'RETURNED_TO_SHIP_BLOCK', 'REFRESH'));
+        }
+        break;
+      default:
+        s.approval_status = 'NONE';
+    }
+  });
+  return { rows: order.map(function (k) { return byKey[k]; }), byKey: byKey, events: events };
+}
+
+/** Количество из ячейки владельца: целое ≥ 0 или null. */
+function opsParseQty_(raw) {
+  if (typeof raw === 'number') return (isFinite(raw) && raw >= 0 && Math.floor(raw) === raw) ? raw : null;
+  var t = String(raw).replace(/[\s ]/g, '').replace(',', '.');
+  if (!/^\d+(\.0+)?$/.test(t)) return null;
+  return Number(t);
+}
+
+/**
+ * Правка «Одобрено владельцем». shownFingerprint — отпечаток из маркера строки, которую владелец видел.
+ * Возвращает { state, events, ignored?, invalid? }. state мутируется.
+ */
+function opsApplyOwnerEdit_(s, raw, shownFingerprint, now) {
+  var events = [], key = s.business_key;
+  var text = raw === null || raw === undefined ? '' : String(raw).trim();
+  if (text.indexOf('ПЕРЕСОГЛ') === 0) return { state: s, events: events, ignored: true };
+  if (text === '') {
+    if (s.approval_status === 'APPROVED') {
+      opsInvalidate_(s, 'CLEARED_BY_OWNER', now);
+      s.approval_status = 'NONE';
+      events.push(opsEvent_(now, key, 'CLEARED', s.previous_approved_qty, s.previous_approved_fingerprint, 'CLEARED_BY_OWNER', 'ONEDIT'));
+    } else if (s.approval_status === 'REAPPROVAL_REQUIRED' || s.approval_status === 'INACTIVE') {
+      s.approval_status = 'NONE';
+      events.push(opsEvent_(now, key, 'CLEARED', '', shownFingerprint, 'REAPPROVAL_DISMISSED_BY_OWNER', 'ONEDIT'));
+    } else {
+      return { state: s, events: events, ignored: true };
+    }
+    return { state: s, events: events };
+  }
+  var n = opsParseQty_(raw);
+  if (n === null) return { state: s, events: events, invalid: true };
+  var again = s.approval_status === 'REAPPROVAL_REQUIRED' || s.approval_status === 'INACTIVE';
+  s.approved_qty = n;
+  s.approved_fingerprint = shownFingerprint;
+  s.approved_at = now;
+  s.approval_status = 'APPROVED';
+  events.push(opsEvent_(now, key, again ? 'REAPPROVED' : 'APPROVED', n, shownFingerprint, '', 'ONEDIT'));
+  if (s.current_fingerprint && shownFingerprint !== s.current_fingerprint) {
+    // между показом строки и записью решения обновление уже сменило рекомендацию
+    opsInvalidate_(s, 'FINGERPRINT_CHANGED', now);
+    s.approval_status = 'REAPPROVAL_REQUIRED';
+    events.push(opsEvent_(now, key, 'INVALIDATED', n, shownFingerprint, 'FINGERPRINT_CHANGED', 'ONEDIT'));
+  }
+  return { state: s, events: events };
+}
+
+/** Что показать в «Одобрено владельцем». */
+function opsOwnerDisplay_(s) {
+  if (s && s.approval_status === 'APPROVED') {
+    return { value: Number(s.approved_qty), fg: OPS_COLOR.DARK, bold: false, align: 'right', size: 10, note: '' };
+  }
+  if (s && s.approval_status === 'REAPPROVAL_REQUIRED') {
+    return { value: OPS_TEXT.REAPPROVAL_SHORT + s.previous_approved_qty, fg: OPS_COLOR.RED, bold: true, align: 'left', size: 9,
+      note: OPS_TEXT.REAPPROVAL_NOTE_PREFIX + s.previous_approved_qty +
+        (s.previous_approved_at ? ' (одобрено ' + s.previous_approved_at + ')' : '') +
+        '. Рекомендация изменилась или строка уходила из отгрузки после вашего решения. ' +
+        'Введите количество заново — это станет решением по текущей рекомендации.' };
+  }
+  return { value: '', fg: OPS_COLOR.DARK, bold: false, align: 'right', size: 10, note: '' };
+}
+
 function opsShipRowKey_(p) {
   return p.business_key + '#' + p.rec_fingerprint;
 }

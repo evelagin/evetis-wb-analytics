@@ -232,3 +232,49 @@ function opsWriteStatusOnly_(ss, status) {
   var ms = opsParseSheetLayout_(shS, specS, { recovery: true }), b = opsBlockSpec_(specS, 'REFRESH_STATUS');
   opsWriteBlock_(shS, specS, b, ms.blocks.REFRESH_STATUS, { rows: opsRenderStatusRows_(status) }, b.segments);
 }
+
+// ───────────────────────────── _OPS_STATE ─────────────────────────────
+
+function opsStateSheet_(ss) {
+  var sh = ss.getSheetByName(OPS_SHEET.STATE);
+  if (!sh) throw OpsError_('STATE_SHEET', 'нет листа ' + OPS_SHEET.STATE);
+  return sh;
+}
+
+function opsReadState_(ss) {
+  var sh = opsStateSheet_(ss);
+  var head = sh.getRange(1, 1, 1, OPS_STATE_COLS.length).getValues()[0];
+  opsCheck_(head.join('|') === OPS_STATE_COLS.join('|'), 'STATE_SHEET', 'заголовок таблицы состояния изменён');
+  var evHead = sh.getRange(1, OPS_EVENT_COL0, 1, OPS_EVENT_COLS.length).getValues()[0];
+  opsCheck_(evHead.join('|') === OPS_EVENT_COLS.join('|'), 'STATE_SHEET', 'заголовок журнала решений изменён');
+  var last = sh.getLastRow(), rows = [], eventCount = 0, seen = {};
+  if (last >= 2) {
+    sh.getRange(2, 1, last - 1, OPS_STATE_COLS.length).getValues().forEach(function (v) {
+      if (v[0] === '') return;
+      var s = {};
+      OPS_STATE_COLS.forEach(function (c, i) { s[c] = v[i]; });
+      opsCheck_(!seen[s.business_key], 'STATE_SHEET', 'повтор ключа в _OPS_STATE: ' + s.business_key);
+      seen[s.business_key] = true;
+      rows.push(s);
+    });
+    var ev = sh.getRange(2, OPS_EVENT_COL0, last - 1, 1).getValues();
+    while (eventCount < ev.length && ev[eventCount][0] !== '') eventCount++;
+  }
+  return { rows: rows, eventCount: eventCount };
+}
+
+/** Перезаписывает таблицу состояния (ключи только добавляются) и дописывает события в журнал. */
+function opsWriteState_(ss, rows, events, eventCount) {
+  var sh = opsStateSheet_(ss), tz = ss.getSpreadsheetTimeZone();
+  if (rows.length) {
+    sh.getRange(2, 1, rows.length, OPS_STATE_COLS.length).setValues(rows.map(function (s) {
+      return OPS_STATE_COLS.map(function (c) { return opsSheetValue_(s[c], tz); });
+    }));
+  }
+  if (events && events.length) {
+    if (eventCount === undefined) eventCount = opsReadState_(ss).eventCount;
+    sh.getRange(2 + eventCount, OPS_EVENT_COL0, events.length, OPS_EVENT_COLS.length).setValues(events.map(function (e) {
+      return OPS_EVENT_COLS.map(function (c) { return opsSheetValue_(e[c], tz); });
+    }));
+  }
+}

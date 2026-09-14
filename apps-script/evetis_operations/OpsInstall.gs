@@ -301,3 +301,18 @@ function opsInstallData_(ss) {
   bandRows.forEach(function (r) { sh.getRange(r, 2).setFontWeight('bold').setFontColor('#4a148c'); });
   opsProtectSysCol_(sh, OPS_DATA_SYS_COL);
 }
+
+function opsInstallStateSheet_(ss) {
+  var sh = ss.insertSheet(OPS_SHEET.STATE, ss.getSheets().length);
+  sh.getRange(1, 1, 1, OPS_STATE_COLS.length).setValues([OPS_STATE_COLS])
+    .setFontWeight('bold').setFontColor(OPS_COLOR.WHITE).setBackground(OPS_COLOR.DARK);
+  sh.getRange(1, OPS_EVENT_COL0, 1, OPS_EVENT_COLS.length).setValues([OPS_EVENT_COLS])
+    .setFontWeight('bold').setFontColor(OPS_COLOR.WHITE).setBackground('#274e13');
+  sh.getRange(1, 1).setNote(OPS_TEXT.STATE_TITLE);
+  sh.setFrozenRows(1);
+  var p = sh.protect();
+  p.setDescription(OPS_TEXT.STATE_TITLE);
+  p.setWarningOnly(true);
+  sh.hideSheet();
+  ss.getSheetByName(OPS_SHEET.PLAN).activate();
+}

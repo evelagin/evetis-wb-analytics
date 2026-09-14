@@ -280,3 +280,10 @@ var OPS_TEXT = {
   SHIP_EVIDENCE_HEADER: 'Доказательство статуса',
   STATE_TITLE: 'C2 · состояние решений владельца (служебный лист, не редактировать)'
 };
+
+/** _OPS_STATE: таблица состояния (A:N) и журнал событий решений (P:V). */
+var OPS_STATE_COLS = ['business_key', 'current_fingerprint', 'current_block', 'current_rec_final', 'approved_fingerprint',
+  'approved_qty', 'approval_status', 'approved_at', 'last_seen_at', 'previous_approved_qty', 'previous_approved_fingerprint',
+  'previous_approved_at', 'invalidated_at', 'invalidation_reason'];
+var OPS_EVENT_COLS = ['event_at', 'business_key', 'event', 'qty', 'fingerprint', 'reason', 'source'];
+var OPS_EVENT_COL0 = OPS_STATE_COLS.length + 2;   // P
