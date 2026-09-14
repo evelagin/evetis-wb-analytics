@@ -342,3 +342,152 @@ ASSERT (
   FROM `project-fa311fc0-4d87-4781-986.evetis_ops.V_OPS_FF_TASK` t
   JOIN `project-fa311fc0-4d87-4781-986.evetis_ops.V_OPS_PICK_FROM_STORAGE` k USING (internal_sku)
 ) = 0 AS 'I23: ТЗ для фулфилмента не сходится с планом снятия с паллет';
+
+-- @@TEST I24 C2: контракт листов — канонический ключ, отпечаток, блоки, итоги, сверка представлений
+-- Каждый ASSERT обращается не более чем к двум представлениям (иначе BigQuery падает на планировании).
+ASSERT (
+  SELECT COUNT(*) - COUNT(DISTINCT business_key)
+       + COUNTIF(business_key IS NULL OR business_key != CONCAT('SUPPLY_SHIP|', channel, '|', card_sku))
+       + COUNTIF(NOT REGEXP_CONTAINS(IFNULL(rec_fingerprint, ''), r'^[0-9a-f]{16}$'))
+       + COUNTIF(shipping_method IS NULL)
+       + COUNTIF((sheet_block IN ('WB_SHIP', 'OZON_SHIP')) != (IFNULL(rec_final, 0) > 0))
+       + COUNTIF(sheet_block IN ('WB_SHIP', 'OZON_SHIP') AND sheet_block != CONCAT(channel, '_SHIP'))
+       + COUNTIF((sheet_block = 'HOLD') != (IFNULL(rec_final, 0) = 0 AND status_code IN ('REVIEW', 'FF LIMIT', 'WAIT')))
+       + COUNTIF(other_inbound != IFNULL(api_reserved_unconfirmed, 0) + IFNULL(shipped_unconfirmed, 0))
+       + COUNTIF(ch_arrival_date != ch_arrival_date_max OR ch_next_arrival_date != ch_next_arrival_date_max)
+       -- отпечаток — функция ТОЛЬКО сути решения: ключ, способ, статус, правило, количества, ворота
+       + COUNTIF(rec_fingerprint != SUBSTR(TO_HEX(SHA256(CONCAT(business_key, '|', shipping_method, '|',
+           IFNULL(status_code, '-'), '|', IFNULL(rule, '-'), '|', CAST(IFNULL(rec_final, -1) AS STRING), '|',
+           CAST(IFNULL(rec_physical_units, -1) AS STRING), '|', gates))), 1, 16))
+       + COUNTIF(gates != CONCAT(IF(review_overstock, 'O', ''), IF(review_expiry, 'E', ''),
+                                 IF(acceptance_flip, 'A', ''), IF(ff_limited, 'F', '')))
+  FROM `project-fa311fc0-4d87-4781-986.evetis_ops.V_OPS_SHEET_PLAN`
+) = 0 AS 'I24: V_OPS_SHEET_PLAN — ключ, отпечаток или принадлежность к блоку нарушены';
+ASSERT (
+  WITH b AS (
+    SELECT sheet_block, COUNT(*) AS n, COUNT(DISTINCT block_order) AS d, MIN(block_order) AS lo, MAX(block_order) AS hi
+    FROM `project-fa311fc0-4d87-4781-986.evetis_ops.V_OPS_SHEET_PLAN` WHERE sheet_block IS NOT NULL GROUP BY 1),
+  c AS (
+    SELECT channel, COUNT(*) AS n, COUNT(DISTINCT calc_order) AS d, MAX(calc_order) AS hi
+    FROM `project-fa311fc0-4d87-4781-986.evetis_ops.V_OPS_SHEET_PLAN` GROUP BY 1)
+  SELECT (SELECT COUNTIF(n != d OR lo != 1 OR hi != n) FROM b) + (SELECT COUNTIF(n != d OR hi != n) FROM c)
+) = 0 AS 'I24: порядок строк в блоках V_OPS_SHEET_PLAN не сплошной';
+ASSERT (
+  SELECT LOGICAL_AND(wb_ship_rows = s_wb_rows AND wb_ship_positions = s_wb_pos AND wb_ship_physical = s_wb_phys
+     AND ozon_ship_rows = s_oz_rows AND ozon_ship_positions = s_oz_pos AND ozon_ship_physical = s_oz_phys
+     AND hold_rows = s_hold AND ch_rec_final = s_ch_rec AND ch_rec_physical_units = s_ch_phys
+     AND ch_on_marketplace = s_ch_onm AND ch_committed_inbound = s_ch_inb AND ch_need_math = s_ch_need AND ch_rows = s_ch_rows)
+  FROM (
+    SELECT *,
+      COUNTIF(sheet_block = 'WB_SHIP') OVER () AS s_wb_rows,
+      SUM(IF(sheet_block = 'WB_SHIP', rec_final, 0)) OVER () AS s_wb_pos,
+      SUM(IF(sheet_block = 'WB_SHIP', rec_physical_units, 0)) OVER () AS s_wb_phys,
+      COUNTIF(sheet_block = 'OZON_SHIP') OVER () AS s_oz_rows,
+      SUM(IF(sheet_block = 'OZON_SHIP', rec_final, 0)) OVER () AS s_oz_pos,
+      SUM(IF(sheet_block = 'OZON_SHIP', rec_physical_units, 0)) OVER () AS s_oz_phys,
+      COUNTIF(sheet_block = 'HOLD') OVER () AS s_hold,
+      SUM(rec_final) OVER (PARTITION BY channel) AS s_ch_rec,
+      SUM(rec_physical_units) OVER (PARTITION BY channel) AS s_ch_phys,
+      SUM(on_marketplace) OVER (PARTITION BY channel) AS s_ch_onm,
+      SUM(committed_inbound) OVER (PARTITION BY channel) AS s_ch_inb,
+      SUM(need_math) OVER (PARTITION BY channel) AS s_ch_need,
+      COUNT(*) OVER (PARTITION BY channel) AS s_ch_rows
+    FROM `project-fa311fc0-4d87-4781-986.evetis_ops.V_OPS_SHEET_PLAN`)
+) AS 'I24: итоги и счётчики полос V_OPS_SHEET_PLAN не равны суммам строк';
+ASSERT (
+  (SELECT COUNT(*) FROM `project-fa311fc0-4d87-4781-986.evetis_ops.V_OPS_SHEET_PLAN`)
+  = (SELECT COUNT(*) FROM `project-fa311fc0-4d87-4781-986.evetis_ops.V_OPS_SUPPLY_PLAN`)
+) AS 'I24: V_OPS_SHEET_PLAN теряет или размножает строки плана C1';
+ASSERT (
+  SELECT COUNT(*) - COUNT(DISTINCT row_key) + COUNTIF(row_key IS NULL)
+       + COUNT(*) - COUNT(DISTINCT sheet_order) + IF(COUNT(*) > 0 AND MAX(sheet_order) != COUNT(*), 1, 0)
+       + COUNTIF(assemble_physical_units != IFNULL(to_assemble_now, 0) * IFNULL(components, 0))
+       + COUNTIF(is_build_row != (IFNULL(to_assemble_now, 0) > 0))
+       + IF(ANY_VALUE(t_to_assemble_now) != SUM(to_assemble_now), 1, 0)
+       + IF(ANY_VALUE(t_to_assemble_reserved) != SUM(to_assemble_reserved), 1, 0)
+       + IF(ANY_VALUE(t_assemble_physical_units) != SUM(assemble_physical_units), 1, 0)
+       + IF(ANY_VALUE(t_ship_wb) != SUM(ship_wb) OR ANY_VALUE(t_ship_ozon) != SUM(ship_ozon), 1, 0)
+       + IF(ANY_VALUE(build_rows) != COUNTIF(is_build_row), 1, 0)
+  FROM `project-fa311fc0-4d87-4781-986.evetis_ops.V_OPS_SHEET_BUNDLES`
+) = 0 AS 'I24: V_OPS_SHEET_BUNDLES — ключ, порядок или итоги нарушены';
+ASSERT (
+  SELECT COUNT(*) - COUNT(DISTINCT row_key) + COUNT(*) - COUNT(DISTINCT sheet_order)
+       + IF(COUNT(*) > 0 AND MAX(sheet_order) != COUNT(*), 1, 0)
+       + IF(ANY_VALUE(t_units_total) != SUM(units_total), 1, 0)
+       + IF(ANY_VALUE(t_units_from_reserved) != SUM(units_from_reserved), 1, 0)
+       + IF(ANY_VALUE(t_units_from_free) != SUM(units_from_free), 1, 0)
+  FROM `project-fa311fc0-4d87-4781-986.evetis_ops.V_OPS_SHEET_BOM`
+) = 0 AS 'I24: V_OPS_SHEET_BOM — ключ, порядок или итоги нарушены';
+ASSERT (
+  SELECT COUNT(*) - COUNT(DISTINCT row_key) + COUNT(*) - COUNT(DISTINCT sheet_order)
+       + IF(COUNT(*) > 0 AND MAX(sheet_order) != COUNT(*), 1, 0)
+       + IF(ANY_VALUE(t_solo_wb_need) != SUM(solo_wb_need) OR ANY_VALUE(t_solo_ozon_need) != SUM(solo_ozon_need), 1, 0)
+       + IF(ANY_VALUE(t_bundle_component_need) != SUM(bundle_component_need), 1, 0)
+       + IF(ANY_VALUE(t_total_physical_demand) != SUM(total_physical_demand), 1, 0)
+       + IF(ANY_VALUE(t_to_pick_from_pallet) != SUM(to_pick_from_pallet), 1, 0)
+       + IF(ANY_VALUE(t_reserved_on_pallet_to_pick) != SUM(reserved_on_pallet_to_pick), 1, 0)
+       + IF(ANY_VALUE(t_pick_total_with_reserved) != SUM(pick_total_with_reserved), 1, 0)
+       + IF(ANY_VALUE(t_pick_units) != SUM(to_pick_from_pallet) + SUM(reserved_on_pallet_to_pick), 1, 0)
+  FROM `project-fa311fc0-4d87-4781-986.evetis_ops.V_OPS_SHEET_PICK`
+) = 0 AS 'I24: V_OPS_SHEET_PICK — ключ, порядок или итоги нарушены';
+ASSERT (
+  SELECT COUNT(*) - COUNT(DISTINCT row_key) + COUNT(*) - COUNT(DISTINCT sheet_order)
+       + IF(COUNT(*) > 0 AND MAX(sheet_order) != COUNT(*), 1, 0)
+       + IF(ANY_VALUE(move_rows) != COUNTIF(is_move_row) OR ANY_VALUE(comp_rows) != COUNTIF(is_comp_row), 1, 0)
+       + IF(ANY_VALUE(t_move_pallet_to_shelf_new) != SUM(move_pallet_to_shelf_new), 1, 0)
+       + IF(ANY_VALUE(t_move_pallet_to_shelf_reserved) != SUM(move_pallet_to_shelf_reserved), 1, 0)
+       + IF(ANY_VALUE(t_move_pallet_to_shelf_total) != SUM(move_pallet_to_shelf_total), 1, 0)
+       + IF(ANY_VALUE(t_total_physical_units) != SUM(total_physical_units), 1, 0)
+       + IF(ANY_VALUE(t_reserved_units_already) != SUM(reserved_units_already), 1, 0)
+       + IF(ANY_VALUE(t_reserved_units_on_pallet) != SUM(reserved_units_on_pallet), 1, 0)
+       + IF(ANY_VALUE(t_free_ff_after_operation) != SUM(free_ff_after_operation), 1, 0)
+  FROM `project-fa311fc0-4d87-4781-986.evetis_ops.V_OPS_SHEET_FF_TASK`
+) = 0 AS 'I24: V_OPS_SHEET_FF_TASK — ключ, порядок или итоги нарушены';
+ASSERT (
+  (SELECT COUNT(*) - COUNT(DISTINCT row_key) + COUNT(*) - COUNT(DISTINCT sheet_order)
+        + IF(COUNT(*) > 0 AND MAX(sheet_order) != COUNT(*), 1, 0)
+        + IF(ANY_VALUE(t_total_physical) != SUM(total_physical) OR ANY_VALUE(t_reserved_ozon) != SUM(reserved_ozon), 1, 0)
+        + IF(ANY_VALUE(t_on_ozon) != SUM(on_ozon) OR ANY_VALUE(t_on_wb) != SUM(on_wb), 1, 0)
+   FROM `project-fa311fc0-4d87-4781-986.evetis_ops.V_OPS_SHEET_FF_STOCK`)
+  + (SELECT COUNT(*) - COUNT(DISTINCT row_key) + COUNT(*) - COUNT(DISTINCT sheet_order)
+        + IF(ANY_VALUE(t_cards) != SUM(cards) OR ANY_VALUE(t_physical_units) != SUM(physical_units), 1, 0)
+        + IF(ANY_VALUE(wb_rows) + ANY_VALUE(ozon_rows) != COUNT(*), 1, 0)
+     FROM `project-fa311fc0-4d87-4781-986.evetis_ops.V_OPS_SHEET_SHIPMENTS`)
+) = 0 AS 'I24: V_OPS_SHEET_FF_STOCK / V_OPS_SHEET_SHIPMENTS — ключ, порядок или итоги нарушены';
+ASSERT (
+  (SELECT COUNT(*) - COUNT(DISTINCT row_key) FROM `project-fa311fc0-4d87-4781-986.evetis_ops.V_OPS_SHEET_CHANNELS`)
+  + (SELECT COUNT(*) - COUNT(DISTINCT row_key) FROM `project-fa311fc0-4d87-4781-986.evetis_ops.V_OPS_SHEET_CONFIG`)
+  + (SELECT COUNT(*) - COUNT(DISTINCT row_key) FROM `project-fa311fc0-4d87-4781-986.evetis_ops.V_OPS_SHEET_LOGISTICS`)
+  + (SELECT IF(COUNT(*) = 1 AND LOGICAL_AND(wb_ship_date IS NOT NULL AND ozon_ship_date IS NOT NULL
+             AND wb_shipping_method IS NOT NULL AND ozon_shipping_method IS NOT NULL AND max_api_age_hours IS NOT NULL), 0, 1)
+     FROM `project-fa311fc0-4d87-4781-986.evetis_ops.V_OPS_SHEET_META`)
+) = 0 AS 'I24: справочные представления листа (каналы, параметры, логистика, META) нарушены';
+-- сверка между представлениями — те же тождества проверяет Apps Script перед каждой записью в лист
+ASSERT (
+  (SELECT SUM(rec_physical_units) FROM `project-fa311fc0-4d87-4781-986.evetis_ops.V_OPS_SHEET_PLAN`)
+  = (SELECT ANY_VALUE(t_total_physical_demand) FROM `project-fa311fc0-4d87-4781-986.evetis_ops.V_OPS_SHEET_PICK`)
+) AS 'I24 R1: физические единицы рекомендаций ≠ спрос в снятии с паллет';
+ASSERT (
+  (SELECT AS STRUCT SUM(IF(channel = 'WB' AND NOT is_bundle, rec_final, 0)) AS wb, SUM(IF(channel = 'OZON' AND NOT is_bundle, rec_final, 0)) AS oz
+   FROM `project-fa311fc0-4d87-4781-986.evetis_ops.V_OPS_SHEET_PLAN`)
+  = (SELECT AS STRUCT ANY_VALUE(t_solo_wb_need) AS wb, ANY_VALUE(t_solo_ozon_need) AS oz FROM `project-fa311fc0-4d87-4781-986.evetis_ops.V_OPS_SHEET_PICK`)
+) AS 'I24 R2: соло-рекомендации WB / Ozon ≠ соло-спрос в снятии с паллет';
+ASSERT (
+  (SELECT AS STRUCT ANY_VALUE(t_move_pallet_to_shelf_new) AS a, ANY_VALUE(t_move_pallet_to_shelf_reserved) AS b, ANY_VALUE(t_total_physical_units) AS c
+   FROM `project-fa311fc0-4d87-4781-986.evetis_ops.V_OPS_SHEET_FF_TASK`)
+  = (SELECT AS STRUCT ANY_VALUE(t_to_pick_from_pallet) AS a, ANY_VALUE(t_reserved_on_pallet_to_pick) AS b, ANY_VALUE(t_total_physical_demand) AS c
+     FROM `project-fa311fc0-4d87-4781-986.evetis_ops.V_OPS_SHEET_PICK`)
+) AS 'I24 R3: ТЗ для ФФ ≠ снятие с паллет';
+ASSERT (
+  (SELECT ANY_VALUE(t_units_total) FROM `project-fa311fc0-4d87-4781-986.evetis_ops.V_OPS_SHEET_BOM`)
+  = (SELECT ANY_VALUE(t_assemble_physical_units) FROM `project-fa311fc0-4d87-4781-986.evetis_ops.V_OPS_SHEET_BUNDLES`)
+) AS 'I24 R4: раскладка BOM ≠ физические единицы сборки наборов';
+ASSERT (
+  (SELECT AS STRUCT ANY_VALUE(t_ship_wb) AS wb, ANY_VALUE(t_ship_ozon) AS oz FROM `project-fa311fc0-4d87-4781-986.evetis_ops.V_OPS_SHEET_BUNDLES`)
+  = (SELECT AS STRUCT SUM(IF(channel = 'WB' AND is_bundle, rec_final, 0)) AS wb, SUM(IF(channel = 'OZON' AND is_bundle, rec_final, 0)) AS oz
+     FROM `project-fa311fc0-4d87-4781-986.evetis_ops.V_OPS_SHEET_PLAN`)
+) AS 'I24 R5: наборы к отгрузке в сборке ≠ рекомендации наборов в плане';
+ASSERT (
+  (SELECT ANY_VALUE(t_reserved_wb) + ANY_VALUE(t_reserved_ozon) FROM `project-fa311fc0-4d87-4781-986.evetis_ops.V_OPS_SHEET_FF_STOCK`)
+  = (SELECT ANY_VALUE(t_reserved_units_already) FROM `project-fa311fc0-4d87-4781-986.evetis_ops.V_OPS_SHEET_FF_TASK`)
+) AS 'I24 R6: резервы на ФФ в листе остатков ≠ «уже зарезервировано» в ТЗ';
