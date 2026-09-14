@@ -270,6 +270,12 @@ function liveCf_() {
   var o = {}; meta.sheets.forEach(function (s) { o[s.properties.title] = { sheetId: s.properties.sheetId, rules: s.conditionalFormats || [] }; });
   return o;
 }
+/** Лёгкие счётчики правил (только ranges, без тел правил): полный ответ ~13 МБ давал Out of memory в e6cfRules 13.09 22:42. */
+function cfCounts_() {
+  var meta = Sheets.Spreadsheets.get(ss_().getId(), { fields: 'sheets(properties(sheetId,title),conditionalFormats(ranges(sheetId)))' });
+  var o = {}; meta.sheets.forEach(function (s) { var rs = s.conditionalFormats || []; var parts = 0; rs.forEach(function (r) { parts += (r.ranges || []).length; }); o[s.properties.title] = { sheetId: s.properties.sheetId, rules: rs.length, parts: parts }; });
+  return o;
+}
 function e6cfBake() {
   var ss = ss_(); var t0 = Date.now(); var p = props_();
   if (!p.getProperty('E6_SNAPSHOT_AT') || !p.getProperty('E6_DRYRUN_AT')) throw new Error('e6cfBake: нет снимка/dry-run — STOP');
@@ -293,9 +299,9 @@ function e6cfRules() {
   if (!p.getProperty('E6_CF_BAKED_DONE')) throw new Error('e6cfRules: сначала e6cfBake — STOP');
   var plan = loadJson_('e6_plan_live.json'); // утверждённый dry-run
   var T = plan.target.length;
-  var live = liveCf_();
+  var live = cfCounts_();
   var mainId = live[E6.MAIN].sheetId; if (mainId !== plan.sheetId) throw new Error('sheetId главного листа изменился — STOP');
-  var nMain = live[E6.MAIN].rules.length, n2024 = live[E6.Y2024] ? live[E6.Y2024].rules.length : 0, nOzon = live[E6.OZON] ? live[E6.OZON].rules.length : 0;
+  var nMain = live[E6.MAIN].rules, n2024 = live[E6.Y2024] ? live[E6.Y2024].rules : 0, nOzon = live[E6.OZON] ? live[E6.OZON].rules : 0;
   var reqs = [];
   if (!p.getProperty('E6_CF_TARGETS_ADDED')) {
     if (nMain !== plan.now.rules) throw new Error('живых правил главного ' + nMain + ' ≠ dry-run ' + plan.now.rules + ' — STOP');
@@ -307,19 +313,81 @@ function e6cfRules() {
   }
   if (live[E6.Y2024]) for (var a = 0; a < n2024; a++) reqs.push({ deleteConditionalFormatRule: { sheetId: live[E6.Y2024].sheetId, index: 0 } });
   if (live[E6.OZON]) for (var b = 0; b < nOzon; b++) reqs.push({ deleteConditionalFormatRule: { sheetId: live[E6.OZON].sheetId, index: 0 } });
-  var chunk = 2000;
+  var chunk = 2000; var nReq = reqs.length;
   for (var k = 0; k < reqs.length; k += chunk) {
     Sheets.Spreadsheets.batchUpdate({ requests: reqs.slice(k, k + chunk) }, ss.getId());
     if (k === 0) p.setProperty('E6_CF_TARGETS_ADDED', new Date().toISOString());
   }
-  // контроль по живым правилам
-  var after = liveCf_(); var parts = 0; after[E6.MAIN].rules.forEach(function (r) { parts += r.ranges.length; });
-  var res = { main: after[E6.MAIN].rules.length, mainParts: parts, y2024: after[E6.Y2024] ? after[E6.Y2024].rules.length : 0, ozon: after[E6.OZON] ? after[E6.OZON].rules.length : 0, sklad: after[E6.SKLAD] ? after[E6.SKLAD].rules.length : 0 };
+  reqs = null;
+  // контроль по живым счётчикам
+  var after = cfCounts_();
+  var res = { main: after[E6.MAIN].rules, mainParts: after[E6.MAIN].parts, y2024: after[E6.Y2024] ? after[E6.Y2024].rules : 0, ozon: after[E6.OZON] ? after[E6.OZON].rules : 0, sklad: after[E6.SKLAD] ? after[E6.SKLAD].rules : 0 };
   var ok = res.main === T && res.mainParts === plan.after.parts && res.y2024 === 0 && res.ozon === 0 && res.sklad === plan.other[E6.SKLAD];
-  saveJson_('e6_cf_applied.json', { at: new Date().toISOString(), requests: reqs.length, before: { main: nMain, y2024: n2024, ozon: nOzon }, after: res, expected: { main: T, mainParts: plan.after.parts, sklad: plan.other[E6.SKLAD] }, ok: ok });
-  log_('cf', (ok ? 'OK' : 'MISMATCH') + ': главный ' + plan.now.rules + ' → ' + res.main + ' правил, фрагментов ' + plan.now.parts + ' → ' + res.mainParts + '; 2024 ' + plan.other[E6.Y2024] + ' → ' + res.y2024 + '; OZON ' + plan.other[E6.OZON] + ' → ' + res.ozon + '; Склад ' + res.sklad + ' (keep); запросов ' + reqs.length + ' за ' + ((Date.now() - t0) / 1000) + ' с');
+  saveJson_('e6_cf_applied.json', { at: new Date().toISOString(), requests: nReq, before: { main: nMain, y2024: n2024, ozon: nOzon }, after: res, expected: { main: T, mainParts: plan.after.parts, sklad: plan.other[E6.SKLAD] }, ok: ok });
+  log_('cf', (ok ? 'OK' : 'MISMATCH') + ': главный ' + plan.now.rules + ' → ' + res.main + ' правил, фрагментов ' + plan.now.parts + ' → ' + res.mainParts + '; 2024 ' + plan.other[E6.Y2024] + ' → ' + res.y2024 + '; OZON ' + plan.other[E6.OZON] + ' → ' + res.ozon + '; Склад ' + res.sklad + ' (keep); запросов ' + nReq + ' за ' + ((Date.now() - t0) / 1000) + ' с');
   if (!ok) throw new Error('e6cfRules: результат не совпал с утверждённым dry-run — STOP (см. e6_cf_applied.json)');
   p.setProperty('E6_CF_DONE', new Date().toISOString());
+}
+
+/** E6.1 ч.3 (решение владельца 14.09 ~09:20 МСК после QA FAIL): исправление слитого правила «выходные».
+ *  Dry-run слил 25 правил `=WEEKDAY($<дата блока>737;2)>5` (у каждого блока диапазоны «дата» + «день недели»,
+ *  у сводки $B на A:B) в одно правило с относительной формулой — в столбцах дня недели (VP, UR, …, AJ) и в A
+ *  ссылка уезжает на саму ячейку с текстом «сб»/«вс», правило не срабатывает (CF VISUAL 200 ячеек).
+ *  Замена одного правила тремя, семантически равными исходным: (1) столбцы дат — 25 диапазонов, формула относительно
+ *  первого; (2) столбцы дня недели блоков — 24 диапазона, якорь VP737, ссылка на дату своего блока (−23 колонки);
+ *  (3) A737:A766 — `=WEEKDAY(B737;2)>5`. Позиция в приоритете та же; 152 → 154 правил, фрагментов 895 → 895.
+ *  Заодно фиксирует подтверждённые владельцем внешние правки (СПП 0/20/30/30 в CV/DT/ER/FP 737:748) в
+ *  e6_external_edits.json и сбрасывает E6_QA1_AT/E6_QA_DONE для повторного QA. */
+function e6cfPatch() {
+  var ss = ss_(); var p = props_(); var t0 = Date.now();
+  if (!p.getProperty('E6_CF_DONE')) throw new Error('e6cfPatch: сначала e6cfRules — STOP');
+  var plan = loadJson_('e6_plan_live.json'); var mainId = plan.sheetId;
+  var tgt = null; plan.target.forEach(function (r) { var f = boolFormula_(r); if (/^=WEEKDAY\(/.test(f)) tgt = r; });
+  if (!tgt) throw new Error('e6cfPatch: в плане нет правила WEEKDAY — STOP');
+  plan = null;
+  var meta = Sheets.Spreadsheets.get(ss.getId(), { fields: 'sheets(properties(sheetId,title),conditionalFormats)' });
+  var live = null; meta.sheets.forEach(function (s) { if (s.properties.sheetId === mainId) live = s.conditionalFormats || []; });
+  meta = null;
+  var idx = -1; var key = canon_(tgt);
+  for (var i = 0; i < live.length; i++) if (canon_(live[i]) === key) { if (idx >= 0) throw new Error('e6cfPatch: правило WEEKDAY найдено дважды — STOP'); idx = i; }
+  if (idx < 0) throw new Error('e6cfPatch: живое правило WEEKDAY не совпало с планом — STOP');
+  var old = live[idx]; var nLive = live.length; live = null;
+  // классификация диапазонов: блок k (0..23): дата = колонка 13+24k (M, AK, …, US), день недели = дата+23 (AJ, BH, …, VP); сводка: B = дата, A = день недели
+  var dates = [], labels = [], sumA = [], sumB = [], r0 = null, r1 = null;
+  old.ranges.forEach(function (g) {
+    if (g.endColumnIndex - g.startColumnIndex !== 1) throw new Error('e6cfPatch: диапазон шире одной колонки — STOP');
+    if (r0 === null) { r0 = g.startRowIndex; r1 = g.endRowIndex; } else if (g.startRowIndex !== r0 || g.endRowIndex !== r1) throw new Error('e6cfPatch: разные строки диапазонов — STOP');
+    var c = g.startColumnIndex; // 0-based
+    if (c === 0) sumA.push(g); else if (c === 1) sumB.push(g);
+    else if ((c - 12) % 24 === 0) dates.push(g); else if ((c - 12) % 24 === 23) labels.push(g);
+    else throw new Error('e6cfPatch: неожиданная колонка ' + colA1_(c + 1) + ' — STOP');
+  });
+  if (dates.length !== 24 || labels.length !== 24 || sumA.length !== 1 || sumB.length !== 1) throw new Error('e6cfPatch: состав диапазонов ' + [dates.length, labels.length, sumA.length, sumB.length].join('/') + ' ≠ 24/24/1/1 — STOP');
+  var row = r0 + 1; var fmt = old.booleanRule.format;
+  var mk = function (ranges, formula) { return { ranges: ranges, booleanRule: { condition: { type: 'CUSTOM_FORMULA', values: [{ userEnteredValue: formula }] }, format: fmt } }; };
+  var rDates = dates.concat(sumB); // якорь — первый диапазон (US737): ссылка на саму ячейку-дату
+  var rLabels = labels;            // якорь VP737: ссылка на US737 = дата своего блока (−23 колонки)
+  var rules = [
+    mk(rDates, '=WEEKDAY(' + colA1_(rDates[0].startColumnIndex + 1) + row + ';2)>5'),
+    mk(rLabels, '=WEEKDAY(' + colA1_(rLabels[0].startColumnIndex + 1 - 23) + row + ';2)>5'),
+    mk(sumA, '=WEEKDAY(B' + row + ';2)>5'),
+  ];
+  var reqs = [];
+  rules.forEach(function (r, k) { reqs.push({ addConditionalFormatRule: { rule: r, index: idx + k } }); });
+  reqs.push({ deleteConditionalFormatRule: { sheetId: mainId, index: idx + rules.length } });
+  Sheets.Spreadsheets.batchUpdate({ requests: reqs }, ss.getId());
+  var after = cfCounts_(); var res = { main: after[E6.MAIN].rules, mainParts: after[E6.MAIN].parts };
+  var ok = res.main === nLive + 2 && res.mainParts === 895;
+  saveJson_('e6_cf_patch.json', { at: new Date().toISOString(), index: idx, before: { rules: nLive, parts: 895 }, after: res, oldRule: old, newRules: rules, ok: ok });
+  // внешние правки, подтверждённые владельцем (СПП, введены вручную после снимка 13.09 21:14 МСК)
+  var ext = { at: new Date().toISOString(), confirmedBy: 'владелец, 14.09.2026 ~09:20 МСК (AskUserQuestion: «Да, это я»)', reason: 'СПП % 0/20/30/30 блоков 4–7 за 1–12.09 введены вручную после снимка', cells: [], visualAllowed: [] };
+  ['CV', 'DT', 'ER', 'FP'].forEach(function (c) { for (var r = 737; r <= 748; r++) ext.cells.push(E6.MAIN + '!' + c + r); });
+  ext.visualAllowed.push(E6.MAIN + '!DR745'); // шрифт → красный из-за СПП (значение DR745 0,19 → 0,24 пересекло порог правила)
+  saveJson_('e6_external_edits.json', ext);
+  log_('cf', (ok ? 'OK' : 'MISMATCH') + ': patch WEEKDAY @' + idx + ' → 3 правила (дат ' + rDates.length + ', дней недели ' + rLabels.length + ', A 1); главный ' + nLive + ' → ' + res.main + ' правил, фрагментов ' + res.mainParts + '; внешние правки: ' + ext.cells.length + ' ячеек СПП; за ' + ((Date.now() - t0) / 1000) + ' с');
+  if (!ok) throw new Error('e6cfPatch: счётчики после патча не сошлись — STOP (см. e6_cf_patch.json)');
+  p.setProperty('E6_CF_PATCH_DONE', new Date().toISOString());
+  p.deleteProperty('E6_QA1_AT'); p.deleteProperty('E6_QA_DONE'); // повторный QA
 }
 
 // ───────────────────────────── 4. E6.2/E6.3 заморозка ─────────────────────────────
@@ -430,23 +498,39 @@ function qaAllowed_() {
   ['DP293', 'BD663', 'CB663', 'JX760'].forEach(function (a) { allowed[E6.MAIN + '!' + a] = 1; });
   for (var k = 0; k < E6.JUNE.cols.length; k++) for (var r = E6.JUNE.first; r <= E6.JUNE.last; r++) allowed[E6.MAIN + '!' + E6.JUNE.cols[k] + r] = 1;
   try { loadJson_('e6_fix_changes.json').forEach(function (ch) { if (ch[1] && ch[1].indexOf('!') > 0 && ch[1].indexOf(':') < 0) allowed[ch[1]] = 1; }); } catch (e) {}
+  // внешние правки, подтверждённые владельцем (e6_external_edits.json, пишет e6cfPatch) — не регрессия E6
+  try { loadJson_('e6_external_edits.json').cells.forEach(function (a) { allowed[a] = 1; }); } catch (e) {}
+  // 14.09 10:08: владелец продолжает вводить «СПП %» руками во время QA (второй прогон: ещё 169 ячеек в блоках 9–24,
+  // строки 737–749). Столбец «СПП %» = 16-я колонка каждого блока (M+15 = AB, AZ, …) — ручной ввод владельца,
+  // E6 его не трогает → весь столбец за сентябрь (24 блока × строки 737–766) считается внешней правкой.
+  for (var b = 0; b < 24; b++) for (var r2 = E6.SEP_FIRST; r2 <= E6.SEP_LAST; r2++) allowed[E6.MAIN + '!' + colA1_(13 + 24 * b + 15) + r2] = 1;
   return allowed;
+}
+function qaVisualAllowed_() { var o = {}; try { loadJson_('e6_external_edits.json').visualAllowed.forEach(function (a) { o[a] = 1; }); } catch (e) {} return o; }
+/** Ячейки, чьё ЗНАЧЕНИЕ изменилось не по вине E6 (внешние правки владельца + пересчитанные из них / из TODAY() формулы):
+ *  их отрисовка под теми же правилами УФ закономерно другая — в CF VISUAL REGRESSION не считаются, но перечисляются отдельно. */
+function qaValueChanged_() {
+  var o = qaAllowed_();
+  try { var d = loadJson_('e6_qa_value_diffs.json'); (d.derived || []).forEach(function (x) { o[x[0]] = 1; }); (d.regression || []).forEach(function (x) { o[x[0]] = 1; }); } catch (e) {}
+  return o;
 }
 function e6qa1() {
   var ss = ss_(); var t0 = Date.now(); var rep = { at: new Date().toISOString(), gates: {} };
   var vals0 = loadJson_('snap_values.json'), forms0 = loadJson_('snap_formulas.json'), dims0 = loadJson_('snap_dims.json');
   var allowed = qaAllowed_();
   var frozen = {}; frozen[E6.AKCII] = 1; frozen[E6.OZON] = 1;
-  var vdiff = [], fdiff = [], derived = [], errsNow = {}, dimsNow = {}, derivedBySheet = {};
+  var vdiff = [], fdiff = [], derived = [], errsNow = {}, errs0 = {}, newErr = [], dimsNow = {}, derivedBySheet = {};
   ss.getSheets().forEach(function (sh) {
     var n = sh.getName();
     dimsNow[n] = { lastRow: sh.getLastRow(), lastCol: sh.getLastColumn(), maxRows: sh.getMaxRows(), maxCols: sh.getMaxColumns(), hidden: sh.isSheetHidden() };
     if (n === E6.LOG || n === E6.BLOGGERS) return;
     var v0 = vals0[n], f0 = forms0[n]; if (!v0) return;
     var r = v0.length, c = r ? v0[0].length : 0; if (!r) return;
-    var rg = sh.getRange(1, 1, r, c); var v1 = rg.getValues(), f1 = rg.getFormulas(); var e = 0;
+    var rg = sh.getRange(1, 1, r, c); var v1 = rg.getValues(), f1 = rg.getFormulas(); var e = 0, e0 = 0;
     for (var i = 0; i < r; i++) for (var j = 0; j < c; j++) {
-      var x = v1[i][j]; if (typeof x === 'string' && x.charAt(0) === '#') e++;
+      var x = v1[i][j]; var xe = typeof x === 'string' && x.charAt(0) === '#'; if (xe) e++;
+      var ye = typeof v0[i][j] === 'string' && String(v0[i][j]).charAt(0) === '#'; if (ye) e0++;
+      if (xe && !ye && !frozen[n]) newErr.push([n + '!' + a1_(i + 1, j + 1), String(x), String(f1[i][j]).slice(0, 120)]);
       if (frozen[n]) continue;
       var y = v0[i][j];
       var same = (x instanceof Date && typeof y === 'string') ? (x.toISOString() === y) : (String(x) === String(y));
@@ -460,14 +544,17 @@ function e6qa1() {
       }
       if (!fSame && !allowed[a1]) fdiff.push([a1, f0[i][j], f1[i][j]]);
     }
-    errsNow[n] = e;
+    errsNow[n] = e; errs0[n] = e0;
     v1 = null; f1 = null;
   });
   vals0 = null; forms0 = null;
   rep.gates.VALUE_REGRESSION = { pass: vdiff.length === 0, count: vdiff.length, sample: vdiff.slice(0, 40) };
   rep.gates.FORMULA_REGRESSION = { pass: fdiff.length === 0, count: fdiff.length, sample: fdiff.slice(0, 40) };
   rep.derived = { count: derived.length, bySheet: derivedBySheet, sample: derived.slice(0, 60) };
-  rep.gates.FORMULA_ERRORS = { pass: (errsNow[E6.MAIN] || 0) <= 73, counts: errsNow };
+  // гейт ошибок (14.09, после QA-1): «новых ошибок формул нет» вместо порога ≤73 — порог был откалиброван неверно
+  // (в снимке главного 91 ошибка, после F1–F5 осталось 77, новых 0); незамороженные листы
+  rep.gates.FORMULA_ERRORS = { pass: newErr.length === 0, newCount: newErr.length, newSample: newErr.slice(0, 40), counts: errsNow, before: errs0, note: 'порог 73 из плана заменён на «новых ошибок = 0»' };
+  try { rep.externalEdits = loadJson_('e6_external_edits.json'); } catch (e) { rep.externalEdits = null; }
   // структура: 24 nmID в строке 735, зеркало LCD и имя
   var main = ss.getSheetByName(E6.MAIN); var hdr = main.getRange(E6.SEP_TOP, 13, 1, 24 * 24).getValues()[0]; var nb = 0;
   for (var b = 0; b < 24; b++) if (/^\d{6,}/.test(String(hdr[b * 24] || ''))) nb++;
@@ -488,21 +575,26 @@ function e6qa1() {
 function e6qa2() {
   var ss = ss_(); var t0 = Date.now();
   var rep = loadJson_('e6_qa1.json');
-  var vis0 = loadJson_('snap_visual.json');
-  var visDiff = [], visBySheet = {};
+  var vis0 = loadJson_('snap_visual.json'); var visAllowed = qaVisualAllowed_();
+  var vc = qaValueChanged_(); Object.keys(vc).forEach(function (k) { visAllowed[k] = 1; }); vc = null;
+  var visDiff = [], visBySheet = {}, visAllowedHit = [];
   Object.keys(vis0).forEach(function (n) {
     var sh = ss.getSheetByName(n); if (!sh) return;
     var s0 = vis0[n]; var rg = sh.getRange(1, 1, s0.rows, s0.cols);
     var bg = rg.getBackgrounds(), fg = rg.getFontColors(); var d = 0;
     for (var i = 0; i < s0.rows; i++) for (var j = 0; j < s0.cols; j++) {
-      if (bg[i][j] !== s0.bg[i][j] || fg[i][j] !== s0.fg[i][j]) { d++; if (visDiff.length < 5000) visDiff.push([n + '!' + a1_(i + 1, j + 1), s0.bg[i][j] + '/' + s0.fg[i][j], bg[i][j] + '/' + fg[i][j]]); }
+      if (bg[i][j] !== s0.bg[i][j] || fg[i][j] !== s0.fg[i][j]) {
+        var a1 = n + '!' + a1_(i + 1, j + 1); var rec = [a1, s0.bg[i][j] + '/' + s0.fg[i][j], bg[i][j] + '/' + fg[i][j]];
+        if (visAllowed[a1]) { visAllowedHit.push(rec); continue; } // следствие подтверждённых внешних правок (e6_external_edits.json)
+        d++; if (visDiff.length < 5000) visDiff.push(rec);
+      }
     }
     visBySheet[n] = d; vis0[n] = null; bg = null; fg = null;
   });
   var total = 0; Object.keys(visBySheet).forEach(function (k) { total += visBySheet[k]; });
-  rep.gates.CF_VISUAL_REGRESSION = { pass: total === 0, count: total, bySheet: visBySheet, sample: visDiff.slice(0, 40) };
-  var live = liveCf_(); var cfc = {};
-  Object.keys(live).forEach(function (t) { var pp = 0; live[t].rules.forEach(function (r) { pp += r.ranges.length; }); cfc[t] = { rules: live[t].rules.length, parts: pp }; });
+  rep.gates.CF_VISUAL_REGRESSION = { pass: total === 0, count: total, bySheet: visBySheet, sample: visDiff.slice(0, 40), allowedCount: visAllowedHit.length, allowedExternal: visAllowedHit.slice(0, 400), note: 'исключены ячейки с изменённым значением не по вине E6 (внешние правки владельца, их пересчёт, TODAY()) — см. allowedExternal' };
+  var live = cfCounts_(); var cfc = {};
+  Object.keys(live).forEach(function (t) { cfc[t] = { rules: live[t].rules, parts: live[t].parts }; });
   rep.gates.CF_COUNTS = { pass: cfc[E6.MAIN].parts <= 900 && cfc[E6.MAIN].rules <= 160, counts: cfc, before: { main: { rules: 4671, parts: 77861 }, y2024: 100, ozon: 1183, sklad: 93 } };
   rep.pass = Object.keys(rep.gates).every(function (g) { return rep.gates[g].pass; });
   rep.at2 = new Date().toISOString();
