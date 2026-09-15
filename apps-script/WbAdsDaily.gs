@@ -169,10 +169,10 @@ function runWbAdsDailyCore_(triggerType) {
     var results = [];
     results.push(loadWbAdsCampaignsRaw(runId));                    // DIM (дёшево)
     // Stage 3B.1: у расходов СВОЁ окно, независимое от общего rng.
-    //   🔴 ФАЗА A: D−7 … D−1 — то же окно, что и раньше. Расширять его в Фазе A нельзя:
-    //   union умеет только расти, и лишние перечитывания подняли бы суммы FACT ещё до
-    //   cutover. Переход на D−14 … D−1 — шаг B4a Фазы B (наблюдавшаяся ревизия биллинга
-    //   приходила на D+7, ровно на границе 7-дневного окна).
+    //   ДЕЙСТВУЕТ ФАЗА B, шаг B4a: D−14 … D−1. Наблюдавшаяся ревизия биллинга
+    //   приходила на D+7 — ровно на границе прежнего 7-дневного окна, то есть
+    //   наблюдение обрывалось там, где данные ещё менялись. Шаг B4b (V_ADV_COSTS →
+    //   V_ADV_COSTS_SNAPSHOT) в живом BigQuery уже выполнен, canonical-слой ждёт 14 суток.
     //   Размер окна задаётся ОДНОЙ константой WB_ADS_COSTS_OPERATIONAL_DAYS_.
     //   Окна campaigns и fullstats НЕ меняются.
     var costsRng = wbAdsCostsRangeBack_(WB_ADS_COSTS_OPERATIONAL_DAYS_, 1);

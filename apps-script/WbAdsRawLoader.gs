@@ -213,7 +213,7 @@ function addWbAdsRawLoaderMenu() {
     .addSeparator()
     .addItem('Только кампании (RAW)', 'loadWbAdsCampaignsRaw')
     .addItem('Только fullstats (RAW, 7 дней)', 'loadWbAdsFullstatsRawLast7Days')
-    .addItem('Только расходы upd (RAW, 7 дней — Фаза A)', 'loadWbAdsCostsRawOperational')
+    .addItem('Только расходы upd (RAW, 14 дней)', 'loadWbAdsCostsRawOperational')
     .addItem('Расходы upd — недельный аудит D−45…D−8', 'loadWbAdsCostsAudit')
     .addItem('Только поисковые кластеры (RAW, 7 дней)', 'loadWbAdsSearchClustersRawLast7Days')
     .addToUi();
@@ -387,9 +387,10 @@ function wbAdsCostsRunId_(prefix) {
 
 /**
  * OPERATIONAL: ежедневное перечитывание D−WB_ADS_COSTS_OPERATIONAL_DAYS_ … D−1.
- * Одно окно, один запрос (и 7, и 14 суток укладываются в лимит WB в 31 сутки).
- * 🔴 Фаза A: D−7 … D−1. Переход на D−14 … D−1 выполняется в Фазе B (шаг B4a),
- *    одновременно с переключением V_ADV_COSTS на snapshot canonical.
+ * Одно окно, один запрос (14 суток укладываются в лимит WB в 31 сутки).
+ * ДЕЙСТВУЕТ ФАЗА B, шаг B4a: D−14 … D−1. Шаг B4b (переключение V_ADV_COSTS на
+ * V_ADV_COSTS_SNAPSHOT) в живом BigQuery уже выполнен, поэтому canonical-слой
+ * ждёт именно 14-суточное окно; Фаза A с её D−7 … D−1 закрыта.
  */
 function loadWbAdsCostsRawOperational() {
   var r = wbAdsCostsRangeBack_(WB_ADS_COSTS_OPERATIONAL_DAYS_, 1);
