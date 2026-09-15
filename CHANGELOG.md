@@ -1,5 +1,29 @@
 # CHANGELOG.md
 
+## 2026-09-15 — STEP 5A: production hardening контура ADS → MART → UNITKA
+
+Ветка `hardening/step5a-production` (база `e2bf058`). Реакция на инцидент 15.09:
+`runWbAdsDaily` упёрлась в 6-минутный лимит Apps Script, `finally` не выполнился,
+`INGEST_RUNS` остался `STARTED`, freshness-гейт не открылся, витрина и Юнитка встали.
+
+- `apps-script/WbAdsRawLoader.gs` — deadline guard `wbAdsCanStartOp_`/`wbAdsRunHasRoom_`;
+  резервы выведены из фактического retry-контракта `wbFetchWithRetry_`, а не из прототипа.
+- `apps-script/IngestRunLog.gs` — `ingestReapStaleRuns_` (только `source='apps_script'`,
+  порог ≥ 15 мин, activation floor, guarded DML, никогда не ставит `COMPLETE`) и
+  `ingestLatestAttempt_`.
+- `apps-script/WbAdsDaily.gs` — `runWbAdsDailyCore_(triggerType)`, preflight-reaper,
+  catch-up (`wbAdsCatchUpDecision_`, `runWbAdsDailyCatchUp`), provenance SCHEDULED/MANUAL/CATCHUP.
+- `apps-script/WbAdsRawLoader.gs`, `WbAdsDaily.gs` — тексты приведены к фактической Фазе B
+  (D−14 … D−1); константа `WB_ADS_COSTS_OPERATIONAL_DAYS_ = 14` не менялась.
+- `apps-script/WbAdsQueryBids.gs`, `WbAdsQueryStats.gs` — хвост Ads-2/Ads-3 ограничен стеной прогона.
+- `sql/ops/step5a_detectors.sql` — 5 read-only детекторов (dryRun PASS).
+- `tools/step5a_appsscript_tests/` — offline node-`vm` харнесс: 15/15 PASS на репозитории,
+  1/15 на production-выгрузке.
+- `docs/production_hardening/` — реализация, evidence и дизайны отложенных решений.
+
+Production не затронут: Apps Script не обновлён, Script Properties не заданы, триггеры
+не созданы, BigQuery DML не выполнялся.
+
 ## История изменений
 
 ### 2026-09-11 — UNITKA 2.0 Stage 8: сентябрь на всех 24 WB SKU + сводка магазина

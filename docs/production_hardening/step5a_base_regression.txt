@@ -1,0 +1,37 @@
+STEP 5A — BASE REGRESSION (production baseline)
+Источник: Drive-экспорт Apps Script проекта evetis-wb-analitics (10fr6u1Y…),
+снят 15.09.2026, 88 файлов. Пять файлов scope сверены побайтно с пакетом Step 5A:
+  IngestRunLog.gs    01c01ffd3dacc77e41f0b378e25136ec
+  WbAdsRawLoader.gs  2b857ba4d3666bde8b5e3bd2e67582a7
+  WbAdsQueryBids.gs  c5ffb17db558091f0ce30ef9f00d6dc6
+  Wbadsdaily.gs      7f87fcd062c23eaf183fc8ba3099c28e
+  Wbadsquerystats.gs a1716cf63d2f06c6be67c858332f5008
+
+Команда: node tools/step5a_appsscript_tests/run.js <каталог-с-production-выгрузкой>
+
+FAIL  01 stale STARTED → ERROR/STALE_RUN_TIMEOUT с provenance  нет функции ingestReapStaleRuns_
+FAIL  02 COMPLETE неизменяем reaper-ом                        нет функции ingestReapStaleRuns_
+FAIL  03 ERROR неизменяем reaper-ом                           нет функции ingestReapStaleRuns_
+FAIL  04 свежий STARTED (<15 мин) не закрывается              нет функции ingestReapStaleRuns_
+FAIL  05 повтор reaper идемпотентен                           нет функции ingestReapStaleRuns_
+FAIL  05b порог < 15 мин отвергается; нет activation          нет функции ingestReapStaleRuns_
+FAIL  05c исторические STARTED до activation не трогаются     нет функции ingestReapStaleRuns_
+FAIL  05d Cloud Run источник не трогается                     нет функции ingestReapStaleRuns_
+FAIL  06+07 kill → gate закрыт; reaper → закрыт; retry → open нет функции ingestReapStaleRuns_
+FAIL  06b catch-up decision                                   нет функции wbAdsCatchUpDecision_
+FAIL  08 orchestrator запрашивает costs D−14…D−1              costs окно ["2026-09-08","2026-09-14"]
+FAIL  08b ручной запуск помечается MANUAL                     trigger_type=SCHEDULED,SCHEDULED
+PASS  10 нормальный WB (3 c/запрос, 431 id)
+FAIL  11 медленный WB (25 c/запрос): место под финализацию    нет WB_ADS_FINALIZE_RESERVE_MS_
+FAIL  11b хвост (query_stats) не стартует у стены прогона     хвост стартует на 300 c
+
+baseline: 1/15 PASS
+
+ПРОФИЛЬ ВРЕМЕНИ КРИТИЧНОГО ПУТИ (та же симуляция, 431 advertId):
+  perCall  elapsed  calls  stopped  headroom до 360 c
+     3 c     231 c     9    false      129 c
+    10 c     294 c     9    false       66 c
+    15 c     339 c     9    false       21 c   ← финализации (≈38 c) не хватает
+    20 c     343 c     8    true        17 c   ← не хватает
+    25 c     337 c     7    true        23 c   ← не хватает (реальный сценарий 15.09)
+    30 c     321 c     6    true        39 c   ← не хватает
