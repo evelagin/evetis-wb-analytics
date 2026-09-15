@@ -109,6 +109,15 @@ function wbAdsSelfTestOverallStatus() {
  * Возвращает { status, run_id, results, fullstats_max_date, stale }.
  */
 function runWbAdsDaily() {
+  return runWbAdsDailyCore_('SCHEDULED');
+}
+
+/**
+ * STEP 5A: тело прогона вынесено в core, чтобы один и тот же код мог быть запущен
+ * штатным триггером и catch-up-триггером с РАЗНЫМ trigger_type в журнале.
+ * @param {string} triggerType 'SCHEDULED' | 'CATCHUP' (в следующем коммите — ещё 'MANUAL')
+ */
+function runWbAdsDailyCore_(triggerType) {
   var t0 = Date.now();
   var lock = LockService.getScriptLock();
   if (!lock.tryLock(WB_ADS_DAILY_LOCK_WAIT_MS_)) {
@@ -129,14 +138,22 @@ function runWbAdsDaily() {
       wbAdsDailyWriteStatus_(runId, '', '', 'ERROR', 'WB_ADS_BQ_SINK выключен');
       // PR-Mart3a: early-return — фиксируем неуспех явно (точный период API ещё не вычислен,
       // берём закрытый день; в норме он совпадает с rng.to).
-      ingestRunIdAds = ingestRunStart_('ads', ingestClosedDayMsk_(), 'SCHEDULED');
+      ingestRunIdAds = ingestRunStart_('ads', ingestClosedDayMsk_(), triggerType || 'SCHEDULED');
       ingestRunError_(ingestRunIdAds, 'ADS_SINK_OFF', 'WB_ADS_BQ_SINK выключен');
       return { status: 'ERROR', run_id: runId, error_message: 'WB_ADS_BQ_SINK выключен' };
     }
 
     rng = wbAdsLast7Range_();
+
+    // STEP 5A: preflight reaper. Закрывает мёртвый STARTED, оставленный убитым
+    // предыдущим execution, ДО открытия своей строки журнала. Best-effort:
+    // никогда не бросает и не влияет на статус этого прогона.
+    if (typeof ingestReapStaleRuns_ === 'function') {
+      ingestReapStaleRuns_('ads', { reaperRunId: runId, mechanism: 'runWbAdsDaily.preflight' });
+    }
+
     // PR-Mart3a: logical_period = ЦЕЛЕВОЙ ПЕРИОД API (period_to), а не дата запуска.
-    ingestRunIdAds = ingestRunStart_('ads', rng.to, 'SCHEDULED');
+    ingestRunIdAds = ingestRunStart_('ads', rng.to, triggerType || 'SCHEDULED');
     WB_ADS_RAW_RUN_T0_ = t0;   // общий тайм-бюджет для per-source загрузчиков
 
     console.log('═══ runWbAdsDaily run_id=' + runId + ' | ' + rng.from + '…' + rng.to + ' ═══');
@@ -250,6 +267,52 @@ function runWbAdsDaily() {
     WB_ADS_RAW_RUN_T0_ = null;
     lock.releaseLock();
   }
+}
+
+/**
+ * ══════════════════════════════════════════════════════════════
+ * STEP 5A — CATCH-UP
+ * ══════════════════════════════════════════════════════════════
+ * Отдельный триггер повторяет суточный прогон, ТОЛЬКО если последняя попытка за
+ * D−1 не COMPLETE. Семантика отбора — та же LATEST-ATTEMPT, что у freshness-гейта
+ * витрины (ORDER BY started_at DESC, run_id DESC), поэтому гейт не ослабляется:
+ * COMPLETE по-прежнему даёт лишь новый успешный run, catch-up сам ничего не закрывает.
+ * Решение вынесено в чистую функцию и тестируется offline.
+ * @return {'RUN'|'SKIP_COMPLETE'|'SKIP_RUNNING'}
+ */
+function wbAdsCatchUpDecision_(latest, staleThresholdMin) {
+  if (!latest) return 'RUN';
+  if (latest.status === 'COMPLETE') return 'SKIP_COMPLETE';
+  if (latest.status === 'STARTED' && latest.age_min < staleThresholdMin) return 'SKIP_RUNNING';
+  return 'RUN';   // ERROR, либо STARTED старше порога (его закроет preflight-reaper)
+}
+
+function runWbAdsDailyCatchUp(e) {
+  var lp = wbAdsLast7Range_().to;
+  var latest = null;
+  try { latest = ingestLatestAttempt_('ads', lp); }
+  catch (err) {
+    console.error('ads catch-up: не удалось прочитать журнал — ' + ((err && err.message) || err));
+    return { status: 'SKIPPED_JOURNAL_UNAVAILABLE' };
+  }
+  var decision = wbAdsCatchUpDecision_(latest, INGEST_STALE_THRESHOLD_MIN_);
+  console.log('ads catch-up lp=' + lp + ' latest=' + JSON.stringify(latest) + ' → ' + decision);
+  if (decision !== 'RUN') return { status: decision, latest: latest };
+  return runWbAdsDailyCore_('CATCHUP');
+}
+
+/**
+ * Установщик catch-up триггеров. Вызывает ВЛАДЕЛЕЦ после отдельного approval —
+ * в рамках Step 5A триггеры не создаются.
+ */
+function wbAdsInstallCatchUpTriggers() {
+  var fn = 'runWbAdsDailyCatchUp', trs = ScriptApp.getProjectTriggers(), have = 0;
+  for (var i = 0; i < trs.length; i++) if (trs[i].getHandlerFunction() === fn) have++;
+  if (have >= 2) { console.log('catch-up триггеры уже есть: ' + have); return { created: 0, existing: have }; }
+  ScriptApp.newTrigger(fn).timeBased().everyDays(1).atHour(6).nearMinute(15).inTimezone('Europe/Moscow').create();
+  ScriptApp.newTrigger(fn).timeBased().everyDays(1).atHour(8).nearMinute(15).inTimezone('Europe/Moscow').create();
+  console.log('✅ catch-up триггеры созданы: 06:15 и 08:15 МСК');
+  return { created: 2, existing: have };
 }
 
 /** Best-effort запись строки в WB_ADS_STATUS (единое место диагностики). Не роняет прогон. */
