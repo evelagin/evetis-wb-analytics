@@ -171,7 +171,13 @@ function loadWbAdsQueryBidsRaw(runId) {
     var written = 0, pairsWithBids = {}, lastCode = '', anyOk = false, failed = 0;
 
     for (var ch = 0; ch < chunks.length; ch++) {
-      if (Date.now() - t0 > WB_ADS_QBIDS_BUDGET_MS_) {
+      // STEP 5A: помимо собственного бюджета — стена ОБЩЕГО прогона. Хвост Ads-3
+      // не имеет права начать пачку, после которой не останется места на финализацию
+      // манифеста: иначе необязательный источник убивает execution целиком.
+      var qbWallStop = (typeof wbAdsRunHasRoom_ === 'function') &&
+                       !wbAdsRunHasRoom_(ch > 0 ? WB_ADS_QBIDS_PAUSE_MS_ : 0);
+      if (qbWallStop) console.log('  query_bids: остановка по стене прогона (Step 5A) на пачке ' + ch + '/' + chunks.length);
+      if (Date.now() - t0 > WB_ADS_QBIDS_BUDGET_MS_ || qbWallStop) {
         // 🔴 Выход по тайм-бюджету — это НЕПОЛНЫЙ снимок, а не успех.
         //    Раньше break не влиял на статус, и прогон, оборвавшийся после
         //    первой удачной пачки, получал OK. Неполнота ловится ниже

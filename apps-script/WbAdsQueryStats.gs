@@ -757,7 +757,18 @@ function wbAdsQsResolveDays_(fromDay, toDay) {
 }
 
 function wbAdsQsOutOfBudget_(st) {
-  return (Date.now() - st.t0) > WB_ADS_QSTATS_BUDGET_MS_;
+  // STEP 5A: собственный бюджет И стена общего прогона. До этого хвост Ads-2 мог
+  // стартовать на ~345 c и убить execution уже ПОСЛЕ критичного пути, но ДО того,
+  // как манифест успевал закрыться. Потеря хвоста не маскируется: выход по бюджету
+  // здесь и раньше означал неполный срез, статус остаётся неуспешным.
+  if ((Date.now() - st.t0) > WB_ADS_QSTATS_BUDGET_MS_) return true;
+  if (typeof wbAdsRunHasRoom_ !== 'function') return false;
+  if (wbAdsRunHasRoom_(0)) return false;
+  if (!st.wallStopLogged) {
+    st.wallStopLogged = true;
+    console.log('  query_stats: остановка по стене прогона (Step 5A) — срез суток неполный');
+  }
+  return true;
 }
 
 function wbAdsQsAppendMsg_(existing, msg) {
