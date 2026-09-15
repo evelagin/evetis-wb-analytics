@@ -169,7 +169,10 @@ function ingestRunId_(loaderName) {
  * Открывает ран: INSERT строки STARTED. §3: требует affected=1.
  * @param {string} loaderName    'orders' | 'sales' | 'ads'
  * @param {string} logicalPeriod 'YYYY-MM-DD' — детерминированные сутки, которые закрывает ран
- * @param {string=} triggerType  'SCHEDULED' (по умолчанию) | 'MANUAL'
+ * @param {string=} triggerType  'SCHEDULED' (по умолчанию) | 'MANUAL' | 'CATCHUP'
+ *   STEP 5A: provenance различает расписание, ручной запуск и catch-up.
+ *   Колонка свободнотекстовая, whitelist успеха строится по СТАТУСУ загрузчика,
+ *   а не по trigger_type — контракт манифеста не меняется.
  * @return {string|null} runId, либо null если журналирование не удалось.
  */
 function ingestRunStart_(loaderName, logicalPeriod, triggerType) {

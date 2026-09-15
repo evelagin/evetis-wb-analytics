@@ -108,14 +108,22 @@ function wbAdsSelfTestOverallStatus() {
  * Один суточный прогон рекламы под общим ScriptLock.
  * Возвращает { status, run_id, results, fullstats_max_date, stale }.
  */
-function runWbAdsDaily() {
-  return runWbAdsDailyCore_('SCHEDULED');
+/**
+ * Точка входа суточного прогона.
+ * STEP 5A — trigger provenance. Time-driven триггер Apps Script передаёт event
+ * с triggerUid; запуск из редактора приходит без event. Раньше ОБА случая
+ * писались в журнал как SCHEDULED, и отличить ручной прогон от расписания при
+ * разборе инцидента было нельзя.
+ * @param {Object=} e event-объект time-driven триггера (у ручного запуска отсутствует)
+ */
+function runWbAdsDaily(e) {
+  return runWbAdsDailyCore_((e && e.triggerUid) ? 'SCHEDULED' : 'MANUAL');
 }
 
 /**
  * STEP 5A: тело прогона вынесено в core, чтобы один и тот же код мог быть запущен
  * штатным триггером и catch-up-триггером с РАЗНЫМ trigger_type в журнале.
- * @param {string} triggerType 'SCHEDULED' | 'CATCHUP' (в следующем коммите — ещё 'MANUAL')
+ * @param {string} triggerType 'SCHEDULED' | 'MANUAL' | 'CATCHUP'
  */
 function runWbAdsDailyCore_(triggerType) {
   var t0 = Date.now();
