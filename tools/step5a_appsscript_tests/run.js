@@ -137,6 +137,44 @@ t('11b хвост (query_stats) не стартует у стены прогон
   assert(e.ctx.wbAdsQsOutOfBudget_({ t0: c.now() - 1000 }) === true, 'хвост стартует на 300 с');
 });
 
+// 12–13: дефекты, найденные на PRE-PR REVIEW
+t('12 установщик catch-up идемпотентен из ЛЮБОГО состояния (0/1/2/3 → ровно 2)', () => {
+  const c = makeClock(T0);
+  for (const start of [0, 1, 2, 3]) {
+    const e = load(dir, ['WbAdsDaily.gs'], c);
+    need(e.ctx, 'wbAdsInstallCatchUpTriggers');
+    for (let i = 0; i < start; i++) e.triggers.push({ getHandlerFunction: () => 'runWbAdsDailyCatchUp' });
+    e.triggers.push({ getHandlerFunction: () => 'runWbAdsDaily' });          // чужой триггер
+    e.ctx.wbAdsInstallCatchUpTriggers();
+    const mine = e.triggers.filter(x => x.getHandlerFunction() === 'runWbAdsDailyCatchUp');
+    assert(mine.length === 2, 'старт ' + start + ' → ' + mine.length + ' catch-up триггеров');
+    assert(e.triggers.some(x => x.getHandlerFunction() === 'runWbAdsDaily'), 'снесён чужой триггер');
+    const hours = mine.map(x => x.hour).sort();
+    assert(hours[0] === 6 && hours[1] === 8, 'часы ' + JSON.stringify(hours));
+    assert(mine.every(x => x.tz === 'Europe/Moscow'), 'пояс не задан явно');
+  }
+  // повторный вызов подряд тоже даёт 2, а не 4
+  const e2 = load(dir, ['WbAdsDaily.gs'], c);
+  e2.ctx.wbAdsInstallCatchUpTriggers(); e2.ctx.wbAdsInstallCatchUpTriggers();
+  assert(e2.triggers.length === 2, 'два вызова подряд → ' + e2.triggers.length);
+});
+t('13 catch-up не дублирует прогон: COMPLETE, случившийся пока ждали lock, отменяет запуск', () => {
+  const c = makeClock('2026-09-15T06:15:00Z'), e = env(c);
+  need(e.ctx, 'wbAdsCatchUpDecision_');
+  const lp = e.ctx.wbAdsLast7Range_().to;
+  // на момент решения — старый ERROR, значит catch-up решает RUN
+  seed(e, c, [{ run_id: 'OLD', loader_name: 'ads', logical_period: lp, status: 'ERROR',
+                started_at: Date.parse('2026-09-15T02:07:00Z'), completed_at: 1 }]);
+  const before = e.table.length;
+  // конкурент закрылся COMPLETE, пока catch-up ждал ScriptLock
+  const race = () => { e.table.push({ run_id: 'WINNER', loader_name: 'ads', logical_period: lp, status: 'COMPLETE',
+      source: 'apps_script', started_at: c.now() - 60000, completed_at: c.now() }); return 'SKIP_COMPLETE'; };
+  const res = e.ctx.runWbAdsDailyCore_('CATCHUP', race);
+  assert(res && res.status === 'SKIP_COMPLETE' && res.recheck === true, JSON.stringify(res));
+  assert(e.table.length === before + 1, 'catch-up открыл свою строку журнала вопреки отмене');
+  assert(!e.table.some(x => x.trigger_type === 'CATCHUP'), 'создан конкурирующий CATCHUP-run');
+});
+
 results.forEach(r => console.log(r.join('  ')));
 const f = results.filter(r => r[0] === 'FAIL').length;
 console.log(`\n${variant}: ${results.length - f}/${results.length} PASS`);

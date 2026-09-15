@@ -3,6 +3,8 @@ function load(dir, files, clock) {
   const log = [];
   const props = {};
   const table = [];   // INGEST_RUNS
+  const triggers = [];  // ScriptApp project triggers
+  let lockAcquirable = true;
   const P = (params, n) => { const p = (params||[]).find(x => x.name === n); if (!p) return undefined;
     if (p.parameterType.type === 'ARRAY') return p.parameterValue.arrayValues.map(v => v.value); return p.parameterValue.value; };
   const ts = s => Date.parse(s);
@@ -39,7 +41,18 @@ function load(dir, files, clock) {
       formatDate: (d, tz, f) => { const x = new Date(d.getTime() + 3*3600e3).toISOString(); // MSK
         return f.replace('yyyy', x.slice(0,4)).replace('MM', x.slice(5,7)).replace('dd', x.slice(8,10)).replace('HH', x.slice(11,13)).replace('mm', x.slice(14,16)).replace('ss', x.slice(17,19)); } },
     PropertiesService: { getScriptProperties: () => ({ getProperty: k => props[k] || null }) },
-    LockService: { getScriptLock: () => ({ tryLock: () => true, releaseLock: () => {} }) },
+    LockService: { getScriptLock: () => ({ tryLock: () => lockAcquirable, releaseLock: () => {} }) },
+    ScriptApp: {
+      getProjectTriggers: () => triggers.slice(),
+      deleteTrigger: t => { const i = triggers.indexOf(t); if (i >= 0) triggers.splice(i, 1); },
+      newTrigger: fn => { const b = {
+        timeBased: () => b, everyDays: () => b,
+        atHour: h => { b._h = h; return b; }, nearMinute: m => { b._m = m; return b; },
+        inTimezone: tz => { b._tz = tz; return b; },
+        create: () => { const t = { getHandlerFunction: () => fn, hour: b._h, minute: b._m, tz: b._tz };
+                        triggers.push(t); return t; } };
+        return b; }
+    },
     BigQuery: { Jobs: { query: req => fakeQuery(req), getQueryResults: () => { throw new Error('no async'); } } },
     getBqConfig_: () => ({ projectId: 'p', datasetId: 'wb_raw', location: 'EU' }),
     bqQuery_: sql => fakeQuery({ query: sql }),
@@ -50,7 +63,7 @@ function load(dir, files, clock) {
   vm.runInContext('var WB_ADS_IDS_BATCH_=50; var WB_ADS_FULLSTATS_PAUSE_MS_=21000; var WB_ADS_API_HOST_="h"; var WB_ADS_TZ_="Europe/Moscow";', ctx);
   vm.runInContext(fs.readFileSync(path.join(__dirname, 'probe_extract.gs'), 'utf8'), ctx, { filename: 'WbAdsProbe.gs#wbAdsLast7Range_' });
   for (const f of files) vm.runInContext(fs.readFileSync(path.join(dir, f), 'utf8'), ctx, { filename: f });
-  return { ctx, table, props, log };
+  return { ctx, table, props, log, triggers, setLock: v => { lockAcquirable = v; } };
 }
 function makeClock(startIso) { let t = Date.parse(startIso);
   return { now: () => t, advance: ms => { t += ms; }, set: iso => { t = Date.parse(iso); },

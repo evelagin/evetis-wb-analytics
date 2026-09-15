@@ -125,12 +125,26 @@ function runWbAdsDaily(e) {
  * штатным триггером и catch-up-триггером с РАЗНЫМ trigger_type в журнале.
  * @param {string} triggerType 'SCHEDULED' | 'MANUAL' | 'CATCHUP'
  */
-function runWbAdsDailyCore_(triggerType) {
+function runWbAdsDailyCore_(triggerType, recheckAfterLock) {
   var t0 = Date.now();
   var lock = LockService.getScriptLock();
   if (!lock.tryLock(WB_ADS_DAILY_LOCK_WAIT_MS_)) {
     console.log('WB Ads daily: SKIPPED_LOCKED (общий ScriptLock занят)');
     return { status: 'SKIPPED_LOCKED' };
+  }
+
+  // 🔴 PRE-PR REVIEW — TOCTOU. Решение catch-up принимается ДО ожидания ScriptLock.
+  // За время ожидания (до 30 c) конкурирующий прогон мог успеть закрыться COMPLETE.
+  // Без перепроверки catch-up запустил бы ПОЛНЫЙ дублирующий прогон и, упав в
+  // PARTIAL, СДЕЛАЛ БЫ последней попыткой неуспех — то есть ЗАКРЫЛ БЫ уже открытый
+  // freshness-гейт витрины. Перепроверяем под локом и выходим, если решение изменилось.
+  if (typeof recheckAfterLock === 'function') {
+    var again = recheckAfterLock();
+    if (again !== 'RUN') {
+      console.log('WB Ads daily: отменён после взятия lock — ' + again);
+      lock.releaseLock();
+      return { status: again, recheck: true };
+    }
   }
 
   var runId = '';
@@ -306,21 +320,36 @@ function runWbAdsDailyCatchUp(e) {
   var decision = wbAdsCatchUpDecision_(latest, INGEST_STALE_THRESHOLD_MIN_);
   console.log('ads catch-up lp=' + lp + ' latest=' + JSON.stringify(latest) + ' → ' + decision);
   if (decision !== 'RUN') return { status: decision, latest: latest };
-  return runWbAdsDailyCore_('CATCHUP');
+  return runWbAdsDailyCore_('CATCHUP', function () {
+    try { return wbAdsCatchUpDecision_(ingestLatestAttempt_('ads', lp), INGEST_STALE_THRESHOLD_MIN_); }
+    catch (e2) { return 'SKIPPED_JOURNAL_UNAVAILABLE'; }   // fail-closed: не дублируем прогон вслепую
+  });
 }
 
 /**
  * Установщик catch-up триггеров. Вызывает ВЛАДЕЛЕЦ после отдельного approval —
  * в рамках Step 5A триггеры не создаются.
+ *
+ * 🔴 PRE-PR REVIEW: прежняя версия при have === 1 доливала ещё два и давала ТРИ
+ *    триггера. Теперь установщик приводит состояние к ровно двум из ЛЮБОГО
+ *    стартового: свои триггеры сносятся и создаются заново. Удаляются только
+ *    обработчики runWbAdsDailyCatchUp — чужие триггеры не затрагиваются.
+ *
+ * ⚠️ СЕМАНТИКА ВРЕМЕНИ: atHour(6).nearMinute(15) — это ОКНО, а не точная минута.
+ *    Apps Script запускает time-driven триггер в пределах ~15 минут вокруг
+ *    указанного времени. Рассчитывать на секунду нельзя; catch-up к этому
+ *    устойчив, потому что решение принимается по состоянию журнала, а не по часам.
+ *    inTimezone('Europe/Moscow') задаёт пояс явно — не полагаемся на пояс проекта.
  */
 function wbAdsInstallCatchUpTriggers() {
-  var fn = 'runWbAdsDailyCatchUp', trs = ScriptApp.getProjectTriggers(), have = 0;
-  for (var i = 0; i < trs.length; i++) if (trs[i].getHandlerFunction() === fn) have++;
-  if (have >= 2) { console.log('catch-up триггеры уже есть: ' + have); return { created: 0, existing: have }; }
+  var fn = 'runWbAdsDailyCatchUp', trs = ScriptApp.getProjectTriggers(), removed = 0;
+  for (var i = 0; i < trs.length; i++) {
+    if (trs[i].getHandlerFunction() === fn) { ScriptApp.deleteTrigger(trs[i]); removed++; }
+  }
   ScriptApp.newTrigger(fn).timeBased().everyDays(1).atHour(6).nearMinute(15).inTimezone('Europe/Moscow').create();
   ScriptApp.newTrigger(fn).timeBased().everyDays(1).atHour(8).nearMinute(15).inTimezone('Europe/Moscow').create();
-  console.log('✅ catch-up триггеры созданы: 06:15 и 08:15 МСК');
-  return { created: 2, existing: have };
+  console.log('✅ catch-up триггеры: удалено ' + removed + ', создано 2 (окна ~06:15 и ~08:15 МСК)');
+  return { created: 2, removed: removed };
 }
 
 /** Best-effort запись строки в WB_ADS_STATUS (единое место диагностики). Не роняет прогон. */

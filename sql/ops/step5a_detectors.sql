@@ -4,7 +4,13 @@
 DECLARE p STRING DEFAULT 'project-fa311fc0-4d87-4781-986';
 WITH
 stale AS (
-  SELECT 'STALE_INGEST_RUN' check_id, 'CRITICAL' severity, loader_name subject,
+  -- PRE-PR REVIEW: без разделения детектор вечно кричал CRITICAL на 4 исторических
+  -- STARTED (11.09 ads, 29.08 sales, 19.08 orders/sales), которые закрываются только
+  -- отдельным approval владельца. Свежие (< 24 ч) = живой инцидент, старые = долг.
+  SELECT 'STALE_INGEST_RUN' check_id,
+         IF(started_at < TIMESTAMP_SUB(CURRENT_TIMESTAMP(), INTERVAL 24 HOUR), 'HIGH', 'CRITICAL') severity,
+         loader_name || IF(started_at < TIMESTAMP_SUB(CURRENT_TIMESTAMP(), INTERVAL 24 HOUR),
+                           ' (historical, нужен отдельный approval)', '') subject,
          FORMAT('run_id=%s lp=%t age_min=%d', run_id, logical_period, TIMESTAMP_DIFF(CURRENT_TIMESTAMP(), started_at, MINUTE)) observed,
          '<15 мин для apps_script' expected
   FROM `project-fa311fc0-4d87-4781-986.wb_raw.INGEST_RUNS`
