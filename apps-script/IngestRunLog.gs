@@ -365,3 +365,125 @@ function ingestSelfTestCrossState() {
   Logger.log('ERROR→COMPLETE вернул: ' + bCompl + ' (ожидание false); строка: ' + JSON.stringify(bRow));
   Logger.log('  ветка 2 ' + ((bCompl === false && bRow && bRow.status === 'ERROR') ? 'ОК ✓' : 'ПРОВАЛ ✗'));
 }
+
+
+// ═══════════════════════════════════════════════════════════════
+// STEP 5A — STALE-RUN RECOVERY (только Apps Script INGEST_RUNS)
+// ═══════════════════════════════════════════════════════════════
+// Контракт (owner decision, 15.09.2026):
+//  • Apps Script execution физически не живёт дольше ~360 c. STARTED старше
+//    INGEST_STALE_THRESHOLD_MIN_ (>= 15 мин) — ДОКАЗАННО мёртвый execution.
+//  • Только source='apps_script'. Cloud Run (LOADER_RUNS) сюда НЕ входит: там
+//    уже есть собственный lease — BqManifestStore.isActive со скользящим
+//    DEFAULT_STALE_STARTED_MS = 30 мин. Фиксированный порог там неприменим.
+//  • UPDATE повторяет ВСЕ условия отбора (status, source, cutoff, activation)
+//    в самом DML → терминальные строки неизменяемы, живой run закрыть нельзя,
+//    повтор идемпотентен (affected=0).
+//  • Activation floor: строки, открытые РАНЬШЕ INGEST_REAPER_ACTIVATION_TS
+//    (Script Property), не трогаются. Исторические STARTED закрываются только
+//    отдельным approval владельца. Нет свойства → reaper выключен (fail-safe).
+//  • Reaper НИКОГДА не ставит COMPLETE. COMPLETE даёт только новый успешный run,
+//    поэтому freshness-гейт витрины не ослабляется ни на шаг.
+//  • Provenance: error_message содержит mechanism, reaper_run_id, threshold, cutoff.
+var INGEST_STALE_THRESHOLD_MIN_ = 15;
+var INGEST_STALE_THRESHOLD_FLOOR_MIN_ = 15;   // ниже нельзя: hard limit 6 мин + расхождения часов
+var INGEST_REAPER_ACTIVATION_PROP_ = 'INGEST_REAPER_ACTIVATION_TS';
+var INGEST_STALE_ERROR_CODE_ = 'STALE_RUN_TIMEOUT';
+
+/** Массив-параметр STRING для IN UNNEST(@ids). */
+function ingestArrayParam_(name, values) {
+  return {
+    name: name,
+    parameterType: { type: 'ARRAY', arrayType: { type: 'STRING' } },
+    parameterValue: { arrayValues: (values || []).map(function (v) { return { value: String(v) }; }) }
+  };
+}
+
+/** Чистая проверка порога (offline-тестируемая). Бросает на небезопасном значении. */
+function ingestStaleThresholdMin_(requested) {
+  var t = (requested === undefined || requested === null) ? INGEST_STALE_THRESHOLD_MIN_ : Number(requested);
+  if (!isFinite(t) || t < INGEST_STALE_THRESHOLD_FLOOR_MIN_) {
+    throw new Error('stale threshold ' + requested + ' < безопасного минимума ' + INGEST_STALE_THRESHOLD_FLOOR_MIN_ + ' мин');
+  }
+  return t;
+}
+
+/**
+ * Закрывает мёртвые STARTED в ERROR/STALE_RUN_TIMEOUT. Никогда не бросает.
+ * @param {string|null} loaderName  конкретный loader или null = все apps_script loaders
+ * @param {{thresholdMin?:number, reaperRunId?:string, mechanism?:string, activationTs?:string}} opts
+ * @return {{status:string, candidates:string[], reaped:number, cutoff?:string, error?:string}}
+ */
+function ingestReapStaleRuns_(loaderName, opts) {
+  opts = opts || {};
+  var out = { status: 'SKIPPED', candidates: [], reaped: 0 };
+  try {
+    var threshold = ingestStaleThresholdMin_(opts.thresholdMin);
+    var activation = opts.activationTs !== undefined ? opts.activationTs :
+      PropertiesService.getScriptProperties().getProperty(INGEST_REAPER_ACTIVATION_PROP_);
+    if (!activation) { out.status = 'DISABLED_NO_ACTIVATION_TS'; return out; }
+
+    var cutoffMs = Date.now() - threshold * 60000;
+    var cutoffIso = new Date(cutoffMs).toISOString();
+    out.cutoff = cutoffIso;
+    var baseWhere =
+      ' WHERE status="STARTED" AND source=@source' +
+      ' AND started_at < TIMESTAMP(@cutoff) AND started_at >= TIMESTAMP(@activation)' +
+      (loaderName ? ' AND loader_name=@loader_name' : '');
+    var params = [
+      ingestParam_('source', 'STRING', INGEST_SOURCE_APPS_),
+      ingestParam_('cutoff', 'STRING', cutoffIso),
+      ingestParam_('activation', 'STRING', activation)
+    ];
+    if (loaderName) params.push(ingestParam_('loader_name', 'STRING', loaderName));
+
+    // 1) Кандидаты — ради provenance (UPDATE не возвращает run_id).
+    var sel = ingestRunQuery_('SELECT run_id FROM ' + ingestFqn_() + baseWhere + ' ORDER BY started_at LIMIT 100', params);
+    out.candidates = sel.rows.map(function (r) { return String(r.f[0].v); });
+    if (!out.candidates.length) { out.status = 'NOTHING_TO_REAP'; return out; }
+
+    // 2) Guarded DML: повторяет ВСЕ условия + ограничивает найденными run_id.
+    var msg = 'mechanism=' + (opts.mechanism || 'ingestReapStaleRuns_') +
+      '; reaper_run_id=' + (opts.reaperRunId || '') +
+      '; threshold_min=' + threshold + '; cutoff=' + cutoffIso +
+      '; reason=Apps Script execution не может жить дольше 6 мин, финализация не выполнена';
+    var upd = ingestRunQuery_(
+      'UPDATE ' + ingestFqn_() + ' SET status="ERROR", completed_at=CURRENT_TIMESTAMP(), ' +
+      '  error_code=@error_code, error_message=@error_message' + baseWhere + ' AND run_id IN UNNEST(@ids)',
+      params.concat([
+        ingestParam_('error_code', 'STRING', INGEST_STALE_ERROR_CODE_),
+        ingestParam_('error_message', 'STRING', msg),
+        ingestArrayParam_('ids', out.candidates)
+      ])
+    );
+    out.reaped = upd.affected === null ? 0 : upd.affected;
+    if (upd.affected === null || upd.affected > out.candidates.length) {
+      out.status = 'ANOMALY_AFFECTED'; // не должно случаться: affected <= кандидатов
+    } else {
+      out.status = 'REAPED';
+    }
+    console.log('INGEST_REAPER ' + out.status + ' reaped=' + out.reaped + '/' + out.candidates.length +
+      ' ids=' + out.candidates.join(',') + ' | ' + msg);
+    return out;
+  } catch (e) {
+    out.status = 'FAILED'; out.error = (e && e.message) || String(e);
+    console.error('INGEST_REAPER FAILED (не блокирует загрузчик): ' + out.error);
+    return out;
+  }
+}
+
+/**
+ * Последняя попытка loader'а за logical_period — ровно та же LATEST-ATTEMPT
+ * семантика, что у freshness-гейта витрины (ORDER BY started_at DESC, run_id DESC).
+ * @return {{status:string, run_id:string, age_min:number}|null}
+ */
+function ingestLatestAttempt_(loaderName, logicalPeriod) {
+  var res = ingestRunQuery_(
+    'SELECT status, run_id, TIMESTAMP_DIFF(CURRENT_TIMESTAMP(), started_at, MINUTE) FROM ' + ingestFqn_() +
+    ' WHERE loader_name=@loader_name AND logical_period=PARSE_DATE("%Y-%m-%d", @lp)' +
+    ' ORDER BY started_at DESC, run_id DESC LIMIT 1',
+    [ingestParam_('loader_name', 'STRING', loaderName), ingestParam_('lp', 'STRING', logicalPeriod)]
+  );
+  if (!res.rows.length) return null;
+  return { status: String(res.rows[0].f[0].v), run_id: String(res.rows[0].f[1].v), age_min: Number(res.rows[0].f[2].v) };
+}
