@@ -133,6 +133,67 @@ var WB_ADS_SEARCH_MAX_PAIRS_RAW_ = 20;
 var WB_ADS_RAW_TIME_BUDGET_MS_ = 240000;  // одиночный ручной loader: ~4 мин
 var WB_ADS_RAW_RUN_BUDGET_MS_  = 320000;  // общий orchestrator: ~5.3 мин
 
+/**
+ * ══════════════════════════════════════════════════════════════
+ * STEP 5A — СТЕНА APPS SCRIPT И РЕЗЕРВЫ ВРЕМЕНИ
+ * ══════════════════════════════════════════════════════════════
+ * Проблема (инциденты 11.09 и 15.09.2026): проверка «пора остановиться»
+ * стояла ПЕРЕД sleep(21 c) + HTTP, поэтому операция допускалась и
+ * гарантированно пробивала 360 c. Execution убивался на середине,
+ * finally не выполнялся, манифест оставался STARTED навсегда.
+ *
+ * ФАКТИЧЕСКИЙ КОНТРАКТ РЕТРАЯ (прочитан по коду, не предположение):
+ *   wbAdsHttp_ (WbAdsProbe.gs) → wbFetchWithRetry_ (Utils.gs)
+ *     maxRetries  = WB_ADS_MAX_RETRY_429_ = 3      → до 4 попыток
+ *     baseDelayMs = WB_ADS_RETRY_BASE_MS_ = 20000
+ *     maxDelayMs  = 60000  (ДЕФОЛТ wbFetchWithRetry_, вызовом НЕ переопределён)
+ *     пауза n-й попытки = min(60000, 20000 * 2^(n-1)) → 20 c, 40 c, 60 c
+ *     Retry-After имеет приоритет и тоже ограничен 60 c.
+ *   ⇒ ХУДШИЙ случай ОДНОГО вызова = 120 000 мс только на sleep + 4 × RTT.
+ *
+ * 🔴 ВЫВОД, ВАЖНЫЙ ДЛЯ ЧТЕНИЯ ЭТИХ КОНСТАНТ:
+ *   худший случай ретрая (≈120–180 c) ПРИНЦИПИАЛЬНО не помещается в 360 c
+ *   рядом с остальным прогоном. Гарантировать его резервом нельзя — резерв,
+ *   покрывающий 120 c, отсекал бы fullstats почти каждый день, а fullstats
+ *   mart-критичен. Поэтому:
+ *     • WB_ADS_REQUEST_RESERVE_MS_ покрывает ОДИН ответ WB, а не лестницу ретраев;
+ *     • остаточный риск (ретрай внутри уже допущенной операции) закрывают
+ *       reaper STEP5A-2 и catch-up STEP5A-3, а НЕ этот гейт.
+ *   Полностью ограниченный worst case требует передать maxDelayMs/maxRetries
+ *   в wbAdsHttp_ — это WbAdsProbe.gs, вне scope Step 5A (technical debt).
+ *
+ * Резерв финализации выведен из пути, который идёт ПОСЛЕ последней операции:
+ *   wbAdsDailyFreshness_()  — SELECT в BQ                        ~5 c
+ *   wbAdsDailyWriteStatus_() — запись строки в WB_ADS_STATUS      ~3 c
+ *   ingestFinalizeByStatus_() → ingestRunQuery_ (timeoutMs 30000) ~30 c
+ *   ⇒ 38 c + запас = 45 000. Прототипные 35 000 не покрывали даже
+ *     один таймаут BigQuery-запроса.
+ */
+var WB_ADS_HARD_WALL_MS_         = 360000; // жёсткий лимит выполнения Apps Script
+var WB_ADS_FINALIZE_RESERVE_MS_  = 45000;  // freshness + WB_ADS_STATUS + финализация манифеста
+var WB_ADS_REQUEST_RESERVE_MS_   = 30000;  // один ответ WB (наблюдавшийся максимум ~25 c + запас)
+var WB_ADS_RETRY_SLEEP_WORST_MS_ = 120000; // 20+40+60 — документируется, в гейте НЕ используется
+
+/**
+ * Чистая функция (offline-тестируемая): хватит ли времени НАЧАТЬ операцию.
+ * Учитывает обязательную rate-limit паузу перед запросом, сам запрос и
+ * неприкосновенный резерв финализации.
+ */
+function wbAdsCanStartOp_(nowMs, t0Ms, pauseMs) {
+  var mustEndBy = t0Ms + WB_ADS_HARD_WALL_MS_ - WB_ADS_FINALIZE_RESERVE_MS_;
+  return nowMs + (pauseMs || 0) + WB_ADS_REQUEST_RESERVE_MS_ <= mustEndBy;
+}
+
+/**
+ * В контексте orchestrator'а: есть ли место для операции с данной паузой.
+ * Вне orchestrator (одиночный ручной loader, WB_ADS_RAW_RUN_T0_ == null) — true:
+ * там действует собственный WB_ADS_RAW_TIME_BUDGET_MS_.
+ */
+function wbAdsRunHasRoom_(pauseMs) {
+  if (WB_ADS_RAW_RUN_T0_ == null) return true;
+  return wbAdsCanStartOp_(Date.now(), WB_ADS_RAW_RUN_T0_, pauseMs);
+}
+
 var WB_ADV_RAW_JSON_MAX_ = 45000;         // обрезка raw_json под лимит ячейки
 
 /** Устанавливается orchestrator'ом, чтобы тайм-бюджет был общим на весь прогон. */
@@ -764,7 +825,10 @@ function wbAdsFullstatsCollect_(token, allIds, from, to, runId, deadline) {
 function wbAdsFullstatsTryLevel_(token, ids, from, to, runId, ctx) {
   if (!ids.length) return;
   if (ctx.stopped) { for (var z = 0; z < ids.length; z++) ctx.skipped.push(ids[z]); return; }
-  if (Date.now() >= ctx.deadline) {
+  // STEP 5A: к собственному дедлайну добавлена стена прогона — операция не
+  //          начинается, если пауза + запрос + финализация уже не помещаются.
+  var pauseNeeded = ctx.httpCalls > 0 ? WB_ADS_FULLSTATS_PAUSE_MS_ : 0;
+  if (Date.now() >= ctx.deadline || !wbAdsRunHasRoom_(pauseNeeded)) {
     ctx.stopped = true;
     for (var z2 = 0; z2 < ids.length; z2++) ctx.skipped.push(ids[z2]);
     return;
