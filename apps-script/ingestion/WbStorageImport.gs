@@ -1,0 +1,750 @@
+/**
+ * ══════════════════════════════════════════════════════════════
+ * EVETIS WB — WbStorageImport.gs  v1.0
+ *
+ * Изолированный модуль импорта отчёта платного хранения WB
+ * в лист RAW_WB_STORAGE.
+ *
+ * НЕ ТРОГАЕТ: RAW_WB_FINANCE, CLEAN_WB_DAILY, ЮНИТ_*, Config.gs,
+ *             buildMonthlyUnitReportV10().
+ *
+ * Зависимости (из других файлов):
+ *   - getHeaderMap_(sheet), readSheetData_(sheet), findCol_(hMap, variants)
+ *   - normalizeNmId_(val), normalizeDateKey_(val), parseDate_(val)
+ *   - pad2_(n), sec_(tStart), roundTwo_(val)
+ *
+ * Как работает:
+ *   1. Указать FILE_ID xlsx-отчёта хранения WB на Google Drive
+ *   2. Запустить importWbStorageReport_2026_05_18_24()
+ *   3. Модуль конвертирует xlsx → temp Google Sheet
+ *   4. Находит лист «Детальная информация», заголовки в строке 2
+ *   5. Маппит колонки → RAW_WB_STORAGE
+ *   6. Очищает RAW_WB_STORAGE только за период 2026-05-18 — 2026-05-24
+ *   7. Записывает нормализованные строки
+ *   8. Удаляет temp-файл
+ *   9. Выводит контрольный лог + сверку с RAW_WB_FINANCE
+ *
+ * ══════════════════════════════════════════════════════════════
+ */
+
+
+// ═══════════════════════════════════════
+// НАСТРОЙКИ ИМПОРТА
+// ═══════════════════════════════════════
+
+/**
+ * ID файла xlsx на Google Drive.
+ * Заменить на реальный ID перед запуском.
+ *
+ * Как найти ID:
+ *   Откройте файл на Google Drive → ПКМ → Получить ссылку
+ *   https://drive.google.com/file/d/XXXXXXXXX/view
+ *                                    ↑ это ID
+ */
+var STORAGE_REPORT_FILE_ID_ = '1GiCvJGKiUyBz3KPRgH69x19UjgcYkF67';
+
+/**
+ * Период импорта (для идемпотентной очистки).
+ * При повторном запуске — удаляет старые строки за этот период.
+ */
+var STORAGE_IMPORT_DATE_FROM_ = '2026-05-18';
+var STORAGE_IMPORT_DATE_TO_   = '2026-05-24';
+
+/**
+ * Имя листа в xlsx-отчёте WB.
+ */
+var STORAGE_SRC_SHEET_NAME_ = 'Детальная информация';
+
+/**
+ * Строка заголовков в xlsx (1-based). Данные начинаются со следующей строки.
+ */
+var STORAGE_SRC_HEADER_ROW_ = 2;
+
+/**
+ * MIME-типы для конвертации.
+ */
+var STORAGE_GSHEET_MIME_ = 'application/vnd.google-apps.spreadsheet';
+
+
+// ═══════════════════════════════════════
+// МАППИНГ КОЛОНОК: xlsx → RAW_WB_STORAGE
+// ═══════════════════════════════════════
+
+/**
+ * Ключ = имя колонки RAW_WB_STORAGE.
+ * Значение = массив вариантов заголовка xlsx (lowercase, partial match).
+ */
+var STORAGE_COL_MAP_ = {
+  date:             ['дата'],                          // "Дата" (не "Дата исходная")
+  nmID:             ['артикул wb', 'артикул вб'],
+  vendor_code:      ['артикул продавца'],
+  barcode:          ['последний баркод', 'баркод'],
+  warehouse_name:   ['склад'],                         // "Склад" (не "Номер склада")
+  warehouse_id:     ['номер склада'],
+  supply_id:        ['номер поставки'],
+  storage_cost:     ['сумма хранения'],
+  quantity:         ['количество штрих-кодов', 'количество штрих'],
+  volume_l:         ['объем', 'объём'],
+  calculation_type: ['способ расчёта', 'способ расчета'],
+  subject_name:     ['предмет'],
+  brand_name:       ['бренд'],
+  category:         ['категория']
+};
+
+
+// ═══════════════════════════════════════
+// МАППИНГ КОЛОНОК: вспомогательная функция
+// ═══════════════════════════════════════
+
+/**
+ * Строит маппинг {rawColName → srcColIndex} из заголовков xlsx.
+ *
+ * Правила:
+ *   - Точное совпадение (после toLowerCase + trim) — приоритет
+ *   - Частичное: xlsx-заголовок содержит вариант (indexOf >= 0)
+ *   - Для "Дата": точное совпадение "дата" в xlsx — берём первую колонку «Дата»,
+ *     НЕ «Дата исходная» (она резервная)
+ *
+ * @param {string[]} srcHeaders — заголовки из xlsx (raw)
+ * @return {Object} {colName → srcColIdx}
+ */
+function buildStorageColMapping_(srcHeaders) {
+  var srcLower = [];
+  for (var i = 0; i < srcHeaders.length; i++) {
+    srcLower.push(String(srcHeaders[i] || '').trim().toLowerCase());
+  }
+
+  var mapping = {};
+  var rawCols = Object.keys(STORAGE_COL_MAP_);
+
+  for (var ri = 0; ri < rawCols.length; ri++) {
+    var rawCol = rawCols[ri];
+    var variants = STORAGE_COL_MAP_[rawCol];
+    var foundIdx = -1;
+
+    // Проход 1: точное совпадение
+    for (var vi = 0; vi < variants.length; vi++) {
+      var v = variants[vi];
+      for (var si = 0; si < srcLower.length; si++) {
+        if (srcLower[si] === v) {
+          foundIdx = si;
+          break;
+        }
+      }
+      if (foundIdx >= 0) break;
+    }
+
+    // Проход 2: частичное (xlsx содержит вариант)
+    if (foundIdx === -1) {
+      for (var vi = 0; vi < variants.length; vi++) {
+        var v = variants[vi];
+        for (var si = 0; si < srcLower.length; si++) {
+          if (srcLower[si].indexOf(v) >= 0) {
+            // Для "date": НЕ брать "дата исходная"
+            if (rawCol === 'date' && srcLower[si].indexOf('исходн') >= 0) continue;
+            // Для "warehouse_name": НЕ брать "номер склада"
+            if (rawCol === 'warehouse_name' && srcLower[si].indexOf('номер') >= 0) continue;
+            foundIdx = si;
+            break;
+          }
+        }
+        if (foundIdx >= 0) break;
+      }
+    }
+
+    if (foundIdx >= 0) {
+      mapping[rawCol] = foundIdx;
+    }
+  }
+
+  return mapping;
+}
+
+
+// ═══════════════════════════════════════
+// НОРМАЛИЗАЦИЯ ДАТЫ ИЗ XLSX
+// ═══════════════════════════════════════
+
+/**
+ * Нормализует дату из xlsx (может быть Date, строка "2026-05-18", "18.05.2026").
+ * Возвращает строку "YYYY-MM-DD" или null.
+ */
+function normalizeStorageDate_(val) {
+  if (!val) return null;
+
+  // Date-объект
+  if (val instanceof Date) {
+    var y = val.getFullYear();
+    var m = val.getMonth() + 1;
+    var d = val.getDate();
+    if (y < 2020 || y > 2030) return null;
+    return y + '-' + pad2_(m) + '-' + pad2_(d);
+  }
+
+  var s = String(val).trim();
+  if (!s) return null;
+
+  // "YYYY-MM-DD" или "YYYY-MM-DDTHH:MM:SS"
+  var isoMatch = s.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (isoMatch) return isoMatch[1] + '-' + isoMatch[2] + '-' + isoMatch[3];
+
+  // "DD.MM.YYYY"
+  var ruMatch = s.match(/^(\d{1,2})\.(\d{1,2})\.(\d{4})/);
+  if (ruMatch) return ruMatch[3] + '-' + pad2_(Number(ruMatch[2])) + '-' + pad2_(Number(ruMatch[1]));
+
+  // Google Sheets serial number
+  var num = Number(s);
+  if (!isNaN(num) && num > 40000 && num < 60000) {
+    var dt = new Date((num - 25569) * 86400 * 1000);
+    return dt.getFullYear() + '-' + pad2_(dt.getMonth() + 1) + '-' + pad2_(dt.getDate());
+  }
+
+  return null;
+}
+
+
+// ═══════════════════════════════════════
+// КОНВЕРТАЦИЯ XLSX → TEMP GOOGLE SHEET
+// ═══════════════════════════════════════
+
+/**
+ * Конвертирует xlsx → временный Google Sheet через Drive API.
+ * @param {string} fileId — ID xlsx файла
+ * @param {string} fileName — имя файла (для лога)
+ * @return {string|null} — ID временной копии
+ */
+function convertStorageXlsxToGsheet_(fileId, fileName) {
+  console.log('── Конвертация xlsx → Google Sheet ──');
+  console.log('  Файл: ' + fileName + ' (id=' + fileId + ')');
+
+  var timestamp = Utilities.formatDate(new Date(), 'Europe/Moscow', 'yyyyMMdd_HHmmss');
+  var tempName = 'TEMP_IMPORT_WB_STORAGE_' + timestamp;
+
+  if (typeof Drive === 'undefined' || !Drive.Files) {
+    SpreadsheetApp.getUi().alert('❌ Advanced Drive API не подключен',
+      'В Apps Script: Services → добавьте Drive API.\n\n' +
+      '1. Нажмите «+» рядом с «Сервисы»\n' +
+      '2. Найдите «Drive API»\n' +
+      '3. Нажмите «Добавить»\n' +
+      '4. Повторите импорт.',
+      SpreadsheetApp.getUi().ButtonSet.OK);
+    return null;
+  }
+
+  try {
+    var resource = { title: tempName, mimeType: STORAGE_GSHEET_MIME_ };
+    var copiedFile = Drive.Files.copy(resource, fileId, { convert: true });
+    console.log('  ✅ Временная копия: ' + tempName + ' (id=' + copiedFile.id + ')');
+    return copiedFile.id;
+  } catch (e) {
+    console.log('  ⚠️ Drive.Files.copy не сработал: ' + e.message);
+    try {
+      var blob = DriveApp.getFileById(fileId).getBlob();
+      var inserted = Drive.Files.insert(
+        { title: tempName, mimeType: STORAGE_GSHEET_MIME_ },
+        blob,
+        { convert: true }
+      );
+      console.log('  ✅ Альтернативный метод: id=' + inserted.id);
+      return inserted.id;
+    } catch (e2) {
+      SpreadsheetApp.getUi().alert('❌ Ошибка конвертации',
+        'Не удалось конвертировать xlsx.\n' + e.message + '\n' + e2.message,
+        SpreadsheetApp.getUi().ButtonSet.OK);
+      return null;
+    }
+  }
+}
+
+
+/**
+ * Удаляет временный файл.
+ */
+function cleanupStorageTempSheet_(tempId) {
+  try {
+    DriveApp.getFileById(tempId).setTrashed(true);
+    console.log('  🗑️ Временная копия удалена');
+  } catch (e) {
+    console.log('  ⚠️ Не удалось удалить temp: ' + e.message);
+  }
+}
+
+
+// ═══════════════════════════════════════
+// ЧТЕНИЕ RAW_WB_FINANCE — ХРАНЕНИЕ (для сверки)
+// ═══════════════════════════════════════
+
+/**
+ * Считает сумму storage_fee из RAW_WB_FINANCE за указанный период.
+ * Нужно только для контрольной сверки.
+ *
+ * @param {SpreadsheetApp.Spreadsheet} ss
+ * @param {string} dateFrom — "YYYY-MM-DD"
+ * @param {string} dateTo — "YYYY-MM-DD"
+ * @return {number} сумма хранения из фин. отчёта
+ */
+function getFinanceStorageFee_(ss, dateFrom, dateTo) {
+  var sheet = ss.getSheetByName('RAW_WB_FINANCE');
+  if (!sheet || sheet.getLastRow() < 2) return 0;
+
+  var hMap = getHeaderMap_(sheet);
+  var dateCol = findCol_(hMap, ['sale_dt', 'rr_dt', 'order_dt']);
+  var storCol = findCol_(hMap, ['storage_fee']);
+
+  if (dateCol === -1 || storCol === -1) return 0;
+
+  var data = readSheetData_(sheet);
+  var total = 0;
+
+  for (var i = 0; i < data.length; i++) {
+    var dk = normalizeDateKey_(data[i][dateCol]);
+    if (!dk) continue;
+    if (dk < dateFrom || dk > dateTo) continue;
+    total += Math.abs(Number(data[i][storCol]) || 0);
+  }
+
+  return total;
+}
+
+
+// ═══════════════════════════════════════
+// ОЧИСТКА RAW_WB_STORAGE ЗА ПЕРИОД
+// ═══════════════════════════════════════
+
+/**
+ * Удаляет из RAW_WB_STORAGE строки с датой в диапазоне [dateFrom, dateTo].
+ * Идемпотентная операция — можно запускать многократно.
+ *
+ * @param {SpreadsheetApp.Sheet} rawSheet — лист RAW_WB_STORAGE
+ * @param {string} dateFrom — "YYYY-MM-DD"
+ * @param {string} dateTo — "YYYY-MM-DD"
+ * @return {number} количество удалённых строк
+ */
+function clearStoragePeriod_(rawSheet, dateFrom, dateTo) {
+  var lastRow = rawSheet.getLastRow();
+  if (lastRow < 2) return 0;
+
+  var hMap = getHeaderMap_(rawSheet);
+  var dateColIdx = findCol_(hMap, ['date']);
+  if (dateColIdx === -1) {
+    console.log('  ⚠️ Нет колонки date в RAW_WB_STORAGE');
+    return 0;
+  }
+
+  // Читаем колонку date (0-based → 1-based)
+  var dateValues = rawSheet.getRange(2, dateColIdx + 1, lastRow - 1, 1).getValues();
+
+  // Собираем строки на удаление (снизу вверх для стабильных номеров)
+  var rowsToDelete = [];
+  for (var i = 0; i < dateValues.length; i++) {
+    var dk = normalizeStorageDate_(dateValues[i][0]);
+    if (dk && dk >= dateFrom && dk <= dateTo) {
+      rowsToDelete.push(i + 2); // 1-based sheet row
+    }
+  }
+
+  // Удаляем снизу вверх
+  for (var di = rowsToDelete.length - 1; di >= 0; di--) {
+    rawSheet.deleteRow(rowsToDelete[di]);
+  }
+
+  if (rowsToDelete.length > 0) {
+    SpreadsheetApp.flush();
+  }
+
+  return rowsToDelete.length;
+}
+
+
+// ═══════════════════════════════════════
+// ГЛАВНАЯ ФУНКЦИЯ ИМПОРТА
+// ═══════════════════════════════════════
+
+/**
+ * Импорт отчёта хранения WB за 2026-05-18 — 2026-05-24
+ * из xlsx-файла на Google Drive в RAW_WB_STORAGE.
+ *
+ * Вызывать из меню или вручную.
+ */
+function importWbStorageReport_2026_05_18_24() {
+  var t0 = Date.now();
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var dateFrom = STORAGE_IMPORT_DATE_FROM_;
+  var dateTo = STORAGE_IMPORT_DATE_TO_;
+
+  console.log('═══ importWbStorageReport_2026_05_18_24() СТАРТ ═══');
+  console.log('  Период: ' + dateFrom + ' — ' + dateTo);
+
+  // ── Проверка FILE_ID ──
+  if (!STORAGE_REPORT_FILE_ID_ || STORAGE_REPORT_FILE_ID_ === 'ВСТАВИТЬ_ID_ФАЙЛА_ЗДЕСЬ') {
+    SpreadsheetApp.getUi().alert('❌ Ошибка',
+      'Укажите ID файла в переменной STORAGE_REPORT_FILE_ID_.\n\n' +
+      'Откройте WbStorageImport.gs и замените:\n' +
+      "  var STORAGE_REPORT_FILE_ID_ = 'ВСТАВИТЬ_ID_ФАЙЛА_ЗДЕСЬ';\n\n" +
+      'на реальный ID из Google Drive.',
+      SpreadsheetApp.getUi().ButtonSet.OK);
+    return;
+  }
+
+  // ── 1. Проверяем/создаём RAW_WB_STORAGE ──
+  var rawSheet = ss.getSheetByName('RAW_WB_STORAGE');
+  if (!rawSheet) {
+    console.log('  RAW_WB_STORAGE не найден — создаю...');
+    createRawWbStorageSheet();
+    rawSheet = ss.getSheetByName('RAW_WB_STORAGE');
+    if (!rawSheet) {
+      SpreadsheetApp.getUi().alert('❌', 'Не удалось создать RAW_WB_STORAGE.',
+        SpreadsheetApp.getUi().ButtonSet.OK);
+      return;
+    }
+  }
+
+  // Заголовки RAW_WB_STORAGE
+  var rawHMap = getHeaderMap_(rawSheet);
+  var rawHeaders = rawSheet.getRange(1, 1, 1, rawSheet.getLastColumn()).getValues()[0];
+  console.log('  RAW_WB_STORAGE колонки (' + rawHeaders.length + '): ' +
+    rawHeaders.join(', '));
+
+  // ── 2. Получаем имя файла ──
+  var fileName;
+  try {
+    fileName = DriveApp.getFileById(STORAGE_REPORT_FILE_ID_).getName();
+  } catch (e) {
+    SpreadsheetApp.getUi().alert('❌ Файл не найден',
+      'ID: ' + STORAGE_REPORT_FILE_ID_ + '\n' + e.message,
+      SpreadsheetApp.getUi().ButtonSet.OK);
+    return;
+  }
+  console.log('  Файл: ' + fileName);
+
+  // ── 3. Конвертируем xlsx → temp Google Sheet ──
+  var tStep = Date.now();
+  var tempId = convertStorageXlsxToGsheet_(STORAGE_REPORT_FILE_ID_, fileName);
+  if (!tempId) return;
+  console.log('  Конвертация: ' + sec_(tStep) + ' сек');
+
+  var tempDeleted = false;
+
+  try {
+    // ── 4. Читаем данные из temp ──
+    tStep = Date.now();
+    var tempSS = SpreadsheetApp.openById(tempId);
+
+    // Ищем лист «Детальная информация»
+    var srcSheet = tempSS.getSheetByName(STORAGE_SRC_SHEET_NAME_);
+    if (!srcSheet) {
+      // Фолбэк: ищем по частичному имени
+      var allSheets = tempSS.getSheets();
+      console.log('  Листы в xlsx: ' + allSheets.map(function(s) { return s.getName(); }).join(', '));
+      for (var si = 0; si < allSheets.length; si++) {
+        var sn = allSheets[si].getName().toLowerCase();
+        if (sn.indexOf('детальн') >= 0 || sn.indexOf('detail') >= 0) {
+          srcSheet = allSheets[si];
+          break;
+        }
+      }
+      if (!srcSheet) {
+        console.log('❌ Лист "' + STORAGE_SRC_SHEET_NAME_ + '" не найден');
+        SpreadsheetApp.getUi().alert('❌ Ошибка',
+          'Лист "' + STORAGE_SRC_SHEET_NAME_ + '" не найден в файле.\n' +
+          'Листы: ' + allSheets.map(function(s) { return s.getName(); }).join(', '),
+          SpreadsheetApp.getUi().ButtonSet.OK);
+        cleanupStorageTempSheet_(tempId);
+        return;
+      }
+    }
+    console.log('  Лист: ' + srcSheet.getName());
+
+    var srcLastRow = srcSheet.getLastRow();
+    var srcLastCol = srcSheet.getLastColumn();
+    console.log('  Размер: ' + srcLastRow + ' строк × ' + srcLastCol + ' колонок');
+
+    if (srcLastRow < STORAGE_SRC_HEADER_ROW_ + 1) {
+      console.log('❌ Нет данных (заголовки в строке ' + STORAGE_SRC_HEADER_ROW_ + ', данных нет)');
+      cleanupStorageTempSheet_(tempId);
+      return;
+    }
+
+    // Читаем весь лист
+    var srcValues = srcSheet.getRange(1, 1, srcLastRow, srcLastCol).getValues();
+    console.log('  Чтение: ' + sec_(tStep) + ' сек');
+
+    // ── 5. Заголовки из строки 2 (index = 1) ──
+    var headerRowIdx = STORAGE_SRC_HEADER_ROW_ - 1; // 0-based
+    var srcHeaders = srcValues[headerRowIdx];
+
+    console.log('  Заголовки xlsx (' + srcHeaders.length + '): ');
+    for (var hi = 0; hi < srcHeaders.length; hi++) {
+      var hv = String(srcHeaders[hi] || '').trim();
+      if (hv) console.log('    [' + hi + '] ' + hv);
+    }
+
+    // ── 6. Маппинг колонок ──
+    var colMap = buildStorageColMapping_(srcHeaders);
+    var mappedCols = Object.keys(colMap);
+    console.log('  Маппинг (' + mappedCols.length + ' из ' + Object.keys(STORAGE_COL_MAP_).length + '):');
+    for (var mci = 0; mci < mappedCols.length; mci++) {
+      var mc = mappedCols[mci];
+      console.log('    ' + mc + ' ← xlsx[' + colMap[mc] + '] "' +
+        String(srcHeaders[colMap[mc]] || '').trim() + '"');
+    }
+
+    // Проверяем обязательные колонки
+    var requiredCols = ['date', 'nmID', 'storage_cost'];
+    var missingCols = [];
+    for (var rci = 0; rci < requiredCols.length; rci++) {
+      if (colMap[requiredCols[rci]] === undefined) missingCols.push(requiredCols[rci]);
+    }
+    if (missingCols.length > 0) {
+      console.log('❌ Не найдены обязательные колонки: ' + missingCols.join(', '));
+      SpreadsheetApp.getUi().alert('❌ Ошибка маппинга',
+        'Не найдены обязательные колонки:\n' + missingCols.join(', ') +
+        '\n\nПроверьте заголовки в строке ' + STORAGE_SRC_HEADER_ROW_ + ' файла.',
+        SpreadsheetApp.getUi().ButtonSet.OK);
+      cleanupStorageTempSheet_(tempId);
+      return;
+    }
+
+    // ── 7. Нормализация строк ──
+    tStep = Date.now();
+    var loadId = 'STOR_' + Utilities.formatDate(new Date(), 'Europe/Moscow', 'yyyyMMdd_HHmmss');
+    var loadedAt = Utilities.formatDate(new Date(), 'Europe/Moscow', 'yyyy-MM-dd HH:mm:ss');
+    var dataStartRow = headerRowIdx + 1; // 0-based index первой строки данных
+
+    var normalizedRows = [];
+    var skippedCount = 0;
+    var outOfPeriod = 0;
+    var totalStorageCost = 0;
+    var nmIdSet = {};
+    var storageBySku = {};
+    var dateRangeFound = { min: null, max: null };
+
+    // Ширина RAW_WB_STORAGE
+    var rawColCount = rawHeaders.length;
+
+    for (var ri = dataStartRow; ri < srcValues.length; ri++) {
+      var srcRow = srcValues[ri];
+
+      // Дата
+      var dateVal = colMap.date !== undefined ? srcRow[colMap.date] : null;
+      var dk = normalizeStorageDate_(dateVal);
+
+      if (!dk) {
+        skippedCount++;
+        continue;
+      }
+
+      // Фильтр по периоду
+      if (dk < dateFrom || dk > dateTo) {
+        outOfPeriod++;
+        continue;
+      }
+
+      // nmID
+      var nmRaw = colMap.nmID !== undefined ? srcRow[colMap.nmID] : '';
+      var nmId = String(nmRaw || '').trim().replace(/\.0$/, '');
+      // Не пропускаем nm=0 — записываем все строки в RAW как есть
+      // Фильтрация nm=0 происходит позже, при построении ЮНИТ
+
+      // storage_cost
+      var cost = colMap.storage_cost !== undefined ? (Number(srcRow[colMap.storage_cost]) || 0) : 0;
+      totalStorageCost += cost;
+
+      // Агрегация по SKU для лога
+      if (nmId && nmId !== '0') {
+        nmIdSet[nmId] = true;
+        if (!storageBySku[nmId]) storageBySku[nmId] = 0;
+        storageBySku[nmId] += cost;
+      }
+
+      // Отслеживание диапазона дат
+      if (!dateRangeFound.min || dk < dateRangeFound.min) dateRangeFound.min = dk;
+      if (!dateRangeFound.max || dk > dateRangeFound.max) dateRangeFound.max = dk;
+
+      // Строим строку RAW_WB_STORAGE
+      var newRow = new Array(rawColCount);
+      for (var nri = 0; nri < rawColCount; nri++) newRow[nri] = '';
+
+      // Служебные поля
+      if (rawHMap['load_id'] !== undefined)           newRow[rawHMap['load_id']] = loadId;
+      if (rawHMap['loaded_at'] !== undefined)          newRow[rawHMap['loaded_at']] = loadedAt;
+      if (rawHMap['source_report'] !== undefined)      newRow[rawHMap['source_report']] = 'WB_paid_storage';
+
+      // Данные
+      if (rawHMap['date'] !== undefined)               newRow[rawHMap['date']] = dk;
+      if (rawHMap['nmID'] !== undefined)               newRow[rawHMap['nmID']] = nmId;
+      if (rawHMap['storage_cost'] !== undefined)        newRow[rawHMap['storage_cost']] = cost;
+
+      // Остальные поля — маппинг
+      if (rawHMap['vendor_code'] !== undefined && colMap.vendor_code !== undefined)
+        newRow[rawHMap['vendor_code']] = String(srcRow[colMap.vendor_code] || '').trim();
+
+      if (rawHMap['barcode'] !== undefined && colMap.barcode !== undefined)
+        newRow[rawHMap['barcode']] = String(srcRow[colMap.barcode] || '').trim();
+
+      if (rawHMap['warehouse_name'] !== undefined && colMap.warehouse_name !== undefined)
+        newRow[rawHMap['warehouse_name']] = String(srcRow[colMap.warehouse_name] || '').trim();
+
+      if (rawHMap['quantity'] !== undefined && colMap.quantity !== undefined)
+        newRow[rawHMap['quantity']] = Number(srcRow[colMap.quantity]) || 0;
+
+      if (rawHMap['volume'] !== undefined && colMap.volume_l !== undefined)
+        newRow[rawHMap['volume']] = Number(srcRow[colMap.volume_l]) || 0;
+
+      // Дополнительные поля (если RAW_WB_STORAGE имеет эти колонки)
+      if (rawHMap['warehouse_id'] !== undefined && colMap.warehouse_id !== undefined)
+        newRow[rawHMap['warehouse_id']] = String(srcRow[colMap.warehouse_id] || '').trim();
+
+      if (rawHMap['supply_id'] !== undefined && colMap.supply_id !== undefined)
+        newRow[rawHMap['supply_id']] = String(srcRow[colMap.supply_id] || '').trim();
+
+      if (rawHMap['calculation_type'] !== undefined && colMap.calculation_type !== undefined)
+        newRow[rawHMap['calculation_type']] = String(srcRow[colMap.calculation_type] || '').trim();
+
+      if (rawHMap['subject_name'] !== undefined && colMap.subject_name !== undefined)
+        newRow[rawHMap['subject_name']] = String(srcRow[colMap.subject_name] || '').trim();
+
+      if (rawHMap['brand_name'] !== undefined && colMap.brand_name !== undefined)
+        newRow[rawHMap['brand_name']] = String(srcRow[colMap.brand_name] || '').trim();
+
+      if (rawHMap['category'] !== undefined && colMap.category !== undefined)
+        newRow[rawHMap['category']] = String(srcRow[colMap.category] || '').trim();
+
+      // Связь
+      if (rawHMap['source_report_id'] !== undefined)
+        newRow[rawHMap['source_report_id']] = fileName;
+
+      // Обработка
+      if (rawHMap['is_duplicate'] !== undefined)       newRow[rawHMap['is_duplicate']] = 'FALSE';
+      if (rawHMap['processed_status'] !== undefined)   newRow[rawHMap['processed_status']] = 'OK';
+      if (rawHMap['error_message'] !== undefined)      newRow[rawHMap['error_message']] = '';
+
+      normalizedRows.push(newRow);
+    }
+
+    console.log('  Нормализация: ' + sec_(tStep) + ' сек');
+    console.log('  Строк данных: ' + (srcValues.length - dataStartRow));
+    console.log('  Нормализовано: ' + normalizedRows.length);
+    console.log('  Пропущено (нет даты): ' + skippedCount);
+    console.log('  Вне периода: ' + outOfPeriod);
+    console.log('  Даты в файле: ' + (dateRangeFound.min || '?') + ' — ' + (dateRangeFound.max || '?'));
+
+    if (normalizedRows.length === 0) {
+      console.log('⚠️ Нет строк за период ' + dateFrom + ' — ' + dateTo);
+      SpreadsheetApp.getUi().alert('⚠️ Нет данных',
+        'В файле нет строк за период ' + dateFrom + ' — ' + dateTo + '.\n' +
+        'Даты в файле: ' + (dateRangeFound.min || '?') + ' — ' + (dateRangeFound.max || '?'),
+        SpreadsheetApp.getUi().ButtonSet.OK);
+      cleanupStorageTempSheet_(tempId);
+      return;
+    }
+
+    // ── 8. Очистка RAW_WB_STORAGE за период ──
+    tStep = Date.now();
+    var deletedRows = clearStoragePeriod_(rawSheet, dateFrom, dateTo);
+    console.log('  Очищено за период: ' + deletedRows + ' строк, ' + sec_(tStep) + ' сек');
+
+    // ── 9. Запись в RAW_WB_STORAGE ──
+    tStep = Date.now();
+    var insertRow = rawSheet.getLastRow() + 1;
+    if (insertRow < 2) insertRow = 2;
+
+    // Проверяем ширину
+    if (rawSheet.getMaxColumns() < rawColCount) {
+      rawSheet.insertColumnsAfter(rawSheet.getMaxColumns(), rawColCount - rawSheet.getMaxColumns());
+    }
+    if (rawSheet.getMaxRows() < insertRow + normalizedRows.length - 1) {
+      rawSheet.insertRowsAfter(rawSheet.getMaxRows(),
+        insertRow + normalizedRows.length - rawSheet.getMaxRows());
+    }
+
+    rawSheet.getRange(insertRow, 1, normalizedRows.length, rawColCount).setValues(normalizedRows);
+    SpreadsheetApp.flush();
+    console.log('  Записано: ' + normalizedRows.length + ' строк (с строки ' + insertRow + '), ' +
+      sec_(tStep) + ' сек');
+
+    // Удаляем temp-файл
+    cleanupStorageTempSheet_(tempId);
+    tempDeleted = true;
+
+    // ── 10. Контрольная сверка с RAW_WB_FINANCE ──
+    tStep = Date.now();
+    var finStorage = getFinanceStorageFee_(ss, dateFrom, dateTo);
+    var delta = roundTwo_(totalStorageCost - finStorage);
+    var deltaOk = Math.abs(delta) <= 1;
+    console.log('  Сверка с RAW_WB_FINANCE: ' + sec_(tStep) + ' сек');
+
+    // ── 11. Топ-10 SKU по хранению ──
+    var skuList = Object.keys(storageBySku);
+    skuList.sort(function(a, b) { return storageBySku[b] - storageBySku[a]; });
+    var top10 = skuList.slice(0, 10);
+
+    // ══ ИТОГОВЫЙ ЛОГ ══
+    console.log('');
+    console.log('═══════════════════════════════════════');
+    console.log('  РЕЗУЛЬТАТ ИМПОРТА ХРАНЕНИЯ WB');
+    console.log('═══════════════════════════════════════');
+    console.log('  Файл: ' + fileName);
+    console.log('  Период: ' + dateFrom + ' — ' + dateTo);
+    console.log('  RAW_WB_STORAGE строк: ' + normalizedRows.length);
+    console.log('  Уникальных SKU: ' + Object.keys(nmIdSet).length);
+    console.log('  Сумма хранения: ' + roundTwo_(totalStorageCost) + ' ₽');
+    console.log('  Сумма хранения из RAW_WB_FINANCE: ' + roundTwo_(finStorage) + ' ₽');
+    console.log('  Расхождение: ' + delta + ' ₽ ' + (deltaOk ? '✅' : '⚠️'));
+    console.log('');
+    console.log('  Топ-10 SKU по хранению:');
+    for (var ti = 0; ti < top10.length; ti++) {
+      console.log('    ' + (ti + 1) + '. nm=' + top10[ti] +
+        ' → ' + roundTwo_(storageBySku[top10[ti]]) + ' ₽');
+    }
+    console.log('═══════════════════════════════════════');
+
+    var elapsed = sec_(t0);
+    console.log('═══ importWbStorageReport_2026_05_18_24() ЗАВЕРШЕНО: ' + elapsed + ' сек ═══');
+
+    // ── АЛЕРТ ──
+    var alertMsg = '📦 Импорт хранения WB\n\n' +
+      'Файл: ' + fileName + '\n' +
+      'Период: ' + dateFrom + ' — ' + dateTo + '\n\n' +
+      'RAW_WB_STORAGE строк: ' + normalizedRows.length + '\n' +
+      'Уникальных SKU: ' + Object.keys(nmIdSet).length + '\n' +
+      'Сумма хранения: ' + roundTwo_(totalStorageCost) + ' ₽\n\n' +
+      'Сверка с RAW_WB_FINANCE:\n' +
+      '  Фин. отчёт (storage_fee): ' + roundTwo_(finStorage) + ' ₽\n' +
+      '  Расхождение: ' + delta + ' ₽ ' + (deltaOk ? '✅' : '⚠️') + '\n\n' +
+      'Топ-5 SKU по хранению:\n';
+
+    for (var ai = 0; ai < Math.min(5, top10.length); ai++) {
+      alertMsg += '  ' + (ai + 1) + '. nm=' + top10[ai] +
+        ' → ' + roundTwo_(storageBySku[top10[ai]]) + ' ₽\n';
+    }
+
+    alertMsg += '\nВремя: ' + elapsed + ' сек';
+
+    SpreadsheetApp.getUi().alert('📦 Хранение WB импортировано', alertMsg,
+      SpreadsheetApp.getUi().ButtonSet.OK);
+
+  } catch (e) {
+    console.log('❌ ОШИБКА: ' + e.message);
+    console.log(e.stack);
+    if (!tempDeleted) cleanupStorageTempSheet_(tempId);
+    SpreadsheetApp.getUi().alert('❌ Ошибка импорта',
+      e.message + '\n\n' + (e.stack || ''),
+      SpreadsheetApp.getUi().ButtonSet.OK);
+  }
+}
+
+
+// ═══════════════════════════════════════
+// МЕНЮ (добавить в onOpen или вызвать вручную)
+// ═══════════════════════════════════════
+
+/**
+ * Добавляет пункт меню для импорта хранения.
+ * Вызвать из addUnitReportMenuV10() или onOpen().
+ */
+function addStorageImportMenu() {
+  SpreadsheetApp.getUi().createMenu('📦 Хранение WB')
+    .addItem('📦 Импорт хранения 18-24 мая 2026', 'importWbStorageReport_2026_05_18_24')
+    .addToUi();
+}

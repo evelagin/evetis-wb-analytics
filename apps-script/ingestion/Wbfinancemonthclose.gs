@@ -1,0 +1,580 @@
+/**
+ * ══════════════════════════════════════════════════════════════
+ * EVETIS WB — WbFinanceMonthClose.gs  v1.0
+ *
+ * Безопасная схема закрытия месяца по финансам WB.
+ *
+ * ТЕКУЩЕЕ РЕШЕНИЕ (зафиксировано):
+ *   - Finance API подтвердил ключевые суммы XLSX за 18–24 мая,
+ *     НО не подтягивает компенсации и при записи задваивает строки
+ *     (межисточниковый row_hash ненадёжен).
+ *   - Поэтому API используется ТОЛЬКО как audit/compare,
+ *     НЕ как источник записи.
+ *   - На май единственный источник записи в RAW_WB_FINANCE — Drive/XLSX.
+ *   - updateWbFinanceData() с API-записью в ежедневной работе НЕ используем.
+ *
+ * НЕ ТРОГАЕТ И НЕ МЕНЯЕТ:
+ *   - buildMonthlyUnitReportV10(), существующие листы ЮНИТ_* и их данные
+ *   - рабочий парсер XLSX
+ *   - RAW_WB_STORAGE, RAW_WB_ADS
+ *   - WbFinanceLoader.gs / WbFinanceApiDiag.gs (только ВЫЗЫВАЕТ хелперы)
+ *
+ * ЗАВИСИМОСТИ (из WbFinanceLoader.gs / проекта):
+ *   getRawFinanceSheet_, buildFinanceRawHeaderMap_, ensureRawFinanceCols_,
+ *   buildSkuIndex_, ensureImportLogFinanceSheet_, writeFinanceLogEntry_,
+ *   getFinanceProcessedFileIds_, processFinanceFileForLoader_,
+ *   financeRowsDateRange_, fixFinanceRowsPeriodMeta_,
+ *   buildExistingFinanceHashSet_, computeFinanceRowHash_, appendFinanceRows_,
+ *   aggregateFinanceSums_, readFinanceRowsForPeriod_,
+ *   FINANCE_REPORTS_FOLDER_ID_, FINANCE_LOADID_API_PREFIX_,
+ *   FINANCE_LOADID_DRIVE_PREFIX_, FINANCE_SOURCE_DRIVE_,
+ *   FINANCE_RAW_SOURCE_API_, IMPORT_LOG_FINANCE_HEADERS_,
+ *   buildCleanWbDailyWithFinance, normalizeDateKey_, roundTwo_, pad2_, sec_
+ * ══════════════════════════════════════════════════════════════
+ */
+
+
+// ═══════════════════════════════════════
+// ОБЩИЕ ХЕЛПЕРЫ ЭТОГО МОДУЛЯ
+// ═══════════════════════════════════════
+
+/** Границы месяца → {from:'YYYY-MM-01', to:'YYYY-MM-<last>'}. */
+function financeMonthBounds_(year, month) {
+  var last = new Date(year, month, 0).getDate();
+  return {
+    from: year + '-' + pad2_(month) + '-01',
+    to:   year + '-' + pad2_(month) + '-' + pad2_(last)
+  };
+}
+
+/** Пересекается ли период файла [fFrom,fTo] с месяцем [mFrom,mTo]. */
+function financeRangeIntersects_(fFrom, fTo, mFrom, mTo) {
+  if (!fFrom || !fTo) return false;
+  return fFrom <= mTo && fTo >= mFrom;
+}
+
+/** Безопасная пересборка CLEAN_WB_DAILY. Возвращает {ok, error}. */
+function rebuildCleanFinanceSafe_() {
+  try {
+    if (typeof buildCleanWbDailyWithFinance === 'function') {
+      buildCleanWbDailyWithFinance();
+      return { ok: true, error: '' };
+    }
+    return { ok: false, error: 'buildCleanWbDailyWithFinance() не найдена' };
+  } catch (e) {
+    return { ok: false, error: e.message };
+  }
+}
+
+/** Агрегирует суммы по ВСЕМ строкам RAW_WB_FINANCE (без фильтра периода). */
+function aggregateAllFinanceSums_(rawSheet, hMap) {
+  var lr = rawSheet.getLastRow();
+  if (lr < 2) return aggregateFinanceSums_([], hMap);
+  var data = rawSheet.getRange(2, 1, lr - 1, rawSheet.getLastColumn()).getValues();
+  return aggregateFinanceSums_(data, hMap);
+}
+
+
+// ═══════════════════════════════════════
+// ЗАДАЧА 1: ОЧИСТКА API-ДУБЛЕЙ
+// ═══════════════════════════════════════
+
+/**
+ * removeAllFinanceApiRows()
+ *
+ * Удаляет ТОЛЬКО строки RAW_WB_FINANCE, загруженные через API
+ * (load_id начинается на FIN_API_, либо source_api = WB_API_REALIZATION).
+ * Ручной XLSX (load_id "DRIVE_XLSX_FINANCE_") и Drive-загрузчик
+ * (load_id "FIN_DRIVE_") НЕ затрагиваются.
+ *
+ * После удаления пересобирает CLEAN_WB_DAILY и выводит до/после.
+ */
+function removeAllFinanceApiRows() {
+  var t0 = Date.now();
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var ui = SpreadsheetApp.getUi();
+
+  console.log('═══ removeAllFinanceApiRows() СТАРТ ═══');
+
+  var rawSheet = getRawFinanceSheet_(ss);
+  if (!rawSheet) { ui.alert('❌', 'Лист RAW_WB_FINANCE не найден.', ui.ButtonSet.OK); return null; }
+
+  var lr = rawSheet.getLastRow();
+  if (lr < 2) { ui.alert('⚠️', 'RAW_WB_FINANCE пуст.', ui.ButtonSet.OK); return null; }
+
+  var cc = rawSheet.getLastColumn();
+  var hMap = buildFinanceRawHeaderMap_(rawSheet, cc);
+  var loadCol = hMap['load_id'];
+  var srcCol = hMap['source_api'];
+
+  var all = rawSheet.getRange(2, 1, lr - 1, cc).getValues();
+  var rowsBefore = all.length;
+
+  var keep = [], removed = 0;
+  for (var i = 0; i < all.length; i++) {
+    var lid = loadCol !== undefined ? String(all[i][loadCol] || '') : '';
+    var src = srcCol !== undefined ? String(all[i][srcCol] || '') : '';
+    var isApi = (lid.indexOf(FINANCE_LOADID_API_PREFIX_) === 0) || (src === FINANCE_RAW_SOURCE_API_);
+    if (isApi) { removed++; } else { keep.push(all[i]); }
+  }
+
+  if (removed === 0) {
+    ui.alert('✅ Нет API-строк',
+      'В RAW_WB_FINANCE не найдено строк, загруженных через API.\n' +
+      'Строк всего: ' + rowsBefore + '.\nНичего не удалено.',
+      ui.ButtonSet.OK);
+    console.log('  API-строк не найдено. Выход.');
+    return { rows_before: rowsBefore, api_rows_removed: 0, rows_after: rowsBefore };
+  }
+
+  // Перезапись (только не-API строки)
+  rawSheet.getRange(2, 1, lr - 1, cc).clearContent();
+  if (keep.length > 0) rawSheet.getRange(2, 1, keep.length, cc).setValues(keep);
+  SpreadsheetApp.flush();
+  var rowsAfter = keep.length;
+  console.log('  Удалено API-строк: ' + removed + ' (было ' + rowsBefore + ', стало ' + rowsAfter + ')');
+
+  // Пересборка CLEAN
+  var clean = rebuildCleanFinanceSafe_();
+  console.log('  CLEAN_WB_DAILY: ' + (clean.ok ? 'пересобран' : '⚠️ ' + clean.error));
+
+  // Суммы после очистки (по всем оставшимся строкам)
+  var sums = aggregateAllFinanceSums_(rawSheet, hMap);
+
+  console.log('  sales_qty=' + sums.sales_qty + ', gross_revenue=' + sums.gross_revenue +
+    ', wb_for_pay=' + sums.wb_for_pay + ', wb_after_expenses=' + sums.wb_after_expenses);
+  console.log('═══ removeAllFinanceApiRows() ЗАВЕРШЕНО: ' + sec_(t0) + ' сек ═══');
+
+  ui.alert('🧹 Удаление API-дублей финансов',
+    'rows_before: ' + rowsBefore + '\n' +
+    'api_rows_removed: ' + removed + '\n' +
+    'rows_after: ' + rowsAfter + '\n\n' +
+    'CLEAN_WB_DAILY: ' + (clean.ok ? '✅ пересобран' : '⚠️ ' + clean.error) + '\n\n' +
+    '── Суммы после очистки (всё RAW) ──\n' +
+    'sales_qty: ' + sums.sales_qty + '\n' +
+    'gross_revenue: ' + sums.gross_revenue + ' ₽\n' +
+    'wb_for_pay: ' + sums.wb_for_pay + ' ₽\n' +
+    'wb_after_expenses: ' + sums.wb_after_expenses + ' ₽\n\n' +
+    'Время: ' + sec_(t0) + ' сек',
+    ui.ButtonSet.OK);
+
+  return {
+    rows_before: rowsBefore,
+    api_rows_removed: removed,
+    rows_after: rowsAfter,
+    sales_qty: sums.sales_qty,
+    gross_revenue: sums.gross_revenue,
+    wb_for_pay: sums.wb_for_pay,
+    wb_after_expenses: sums.wb_after_expenses,
+    clean_ok: clean.ok
+  };
+}
+
+
+// ═══════════════════════════════════════
+// ЗАДАЧА 2 + 3: DRIVE-ONLY ЗАГРУЗКА МЕСЯЦА (+ PREVIEW)
+// ═══════════════════════════════════════
+
+/**
+ * Внутр.: сканирует папку, классифицирует XLSX-файлы относительно месяца.
+ * Для уже загруженных (file_id в логе со статусом OK) период берётся из лога.
+ * Для новых — файл парсится рабочим парсером в память (без записи),
+ * чтобы определить реальный период.
+ *
+ * @param {number} year
+ * @param {number} month
+ * @param {boolean} previewOnly — true: только классификация, без записи
+ * @return {Object} план/итоги
+ */
+function scanDriveFinanceForMonth_(year, month, previewOnly) {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var bounds = financeMonthBounds_(year, month);
+  var out = {
+    monthFrom: bounds.from, monthTo: bounds.to,
+    folderName: '', fileCount: 0, error: '',
+    toLoad: [], alreadyLoaded: [], skippedOutOfMonth: [], errored: [],
+    newRows: 0, dupes: 0, status: 'ERROR'
+  };
+
+  if (!FINANCE_REPORTS_FOLDER_ID_ || FINANCE_REPORTS_FOLDER_ID_ === 'ВСТАВИТЬ_ID_ПАПКИ_С_ФИН_ОТЧЕТАМИ') {
+    out.error = 'Не задан FINANCE_REPORTS_FOLDER_ID_'; return out;
+  }
+
+  var rawSheet = getRawFinanceSheet_(ss);
+  if (!rawSheet) { out.error = 'Лист RAW_WB_FINANCE не найден'; return out; }
+  var logSheet = ensureImportLogFinanceSheet_(ss);
+
+  var folder;
+  try { folder = DriveApp.getFolderById(FINANCE_REPORTS_FOLDER_ID_); }
+  catch (e) { out.error = 'Папка не найдена: ' + e.message; return out; }
+  out.folderName = folder.getName();
+
+  // Список XLSX
+  var xlsxFiles = [];
+  var it1 = folder.getFilesByType('application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+  while (it1.hasNext()) { var f = it1.next(); xlsxFiles.push({ id: f.getId(), name: f.getName() }); }
+  var it2 = folder.getFilesByType('application/vnd.ms-excel');
+  while (it2.hasNext()) {
+    var f2 = it2.next(), dup = false;
+    for (var d = 0; d < xlsxFiles.length; d++) { if (xlsxFiles[d].id === f2.getId()) { dup = true; break; } }
+    if (!dup) xlsxFiles.push({ id: f2.getId(), name: f2.getName() });
+  }
+  out.fileCount = xlsxFiles.length;
+  if (xlsxFiles.length === 0) { out.status = 'OK'; out.error = 'Папка пуста'; return out; }
+
+  // Уже загруженные file_id + их периоды из лога
+  var processed = getFinanceProcessedFileIds_(logSheet);
+  var logPeriods = readFinanceLogPeriodsByFile_(logSheet);
+
+  var rawLastCol = ensureRawFinanceCols_(rawSheet);
+  var rawHeaderMap = buildFinanceRawHeaderMap_(rawSheet, rawLastCol);
+  var skuIndex = previewOnly ? null : buildSkuIndex_(ss);
+
+  for (var fi = 0; fi < xlsxFiles.length; fi++) {
+    var xf = xlsxFiles[fi];
+
+    // Уже загружен (OK) — не дублируем по file_id
+    if (processed[xf.id] === 'OK') {
+      var lp = logPeriods[xf.id] || { from: '', to: '' };
+      out.alreadyLoaded.push({ id: xf.id, name: xf.name, from: lp.from, to: lp.to });
+      continue;
+    }
+
+    // Определяем период файла (парсинг в память рабочим парсером)
+    var loadId = FINANCE_LOADID_DRIVE_PREFIX_ +
+      Utilities.formatDate(new Date(), 'Europe/Moscow', 'yyyyMMdd_HHmmss') + '_' + fi;
+    var fres = processFinanceFileForLoader_(ss, xf.id,
+      rawHeaderMap, rawLastCol, skuIndex || buildSkuIndexCachedForScan_(ss), loadId);
+
+    if (fres.error) {
+      out.errored.push({ id: xf.id, name: xf.name, error: fres.error });
+      continue;
+    }
+    var rows = fres.rows;
+    if (!rows.length) {
+      out.skippedOutOfMonth.push({ id: xf.id, name: xf.name, reason: 'нет строк / период не определён', from: '', to: '' });
+      continue;
+    }
+
+    var range = financeRowsDateRange_(rows, rawHeaderMap);
+    if (!financeRangeIntersects_(range.from, range.to, bounds.from, bounds.to)) {
+      out.skippedOutOfMonth.push({ id: xf.id, name: xf.name, reason: 'вне месяца',
+        from: range.from || '?', to: range.to || '?' });
+      continue;
+    }
+
+    // Файл относится к месяцу → к загрузке
+    var planItem = { id: xf.id, name: xf.name, from: range.from, to: range.to,
+      rows: rows, rowsCount: rows.length, loadId: loadId };
+    out.toLoad.push(planItem);
+
+    // PREVIEW — не пишем
+    if (previewOnly) continue;
+
+    // ЗАПИСЬ: правим метаданные периода, считаем хэши, дедуп, запись
+    fixFinanceRowsPeriodMeta_(rows, rawHeaderMap, range.from, range.to);
+    var existing = buildExistingFinanceHashSet_(rawSheet, rawHeaderMap);
+    var batchSeen = {}, toWrite = [], dupes = 0;
+    var rhCol = rawHeaderMap['row_hash'];
+    for (var ri = 0; ri < rows.length; ri++) {
+      var h = computeFinanceRowHash_(rows[ri], rawHeaderMap);
+      if (rhCol !== undefined) rows[ri][rhCol] = h;
+      if (existing[h] || batchSeen[h]) { dupes++; continue; }
+      batchSeen[h] = true;
+      toWrite.push(rows[ri]);
+    }
+    appendFinanceRows_(rawSheet, toWrite, rawLastCol);
+
+    var sums = aggregateFinanceSums_(rows, rawHeaderMap);
+    var logRec = {
+      load_id: loadId,
+      loaded_at: Utilities.formatDate(new Date(), 'Europe/Moscow', 'yyyy-MM-dd HH:mm:ss'),
+      source_type: FINANCE_SOURCE_DRIVE_,
+      period_from: range.from, period_to: range.to,
+      file_id: xf.id, file_name: xf.name, task_id: '',
+      rows_imported: toWrite.length,
+      sales_qty: sums.sales_qty, gross_revenue: sums.gross_revenue,
+      wb_for_pay: sums.wb_for_pay, wb_logistics: sums.wb_logistics,
+      wb_storage: sums.wb_storage, wb_deductions: sums.wb_deductions,
+      wb_promotion: sums.wb_promotion, wb_transit_delivery: sums.wb_transit_delivery,
+      wb_compensations: sums.wb_compensations, wb_after_expenses: sums.wb_after_expenses,
+      status: 'OK', error_message: ''
+    };
+    writeFinanceLogEntry_(logSheet, logRec);
+
+    planItem.written = toWrite.length;
+    planItem.dupes = dupes;
+    out.newRows += toWrite.length;
+    out.dupes += dupes;
+  }
+
+  out.status = out.errored.length > 0 ? 'PARTIAL' : 'OK';
+  return out;
+}
+
+/** Кэш SKU-индекса для скана preview (строится один раз). */
+var FINANCE_SCAN_SKU_CACHE_ = null;
+function buildSkuIndexCachedForScan_(ss) {
+  if (!FINANCE_SCAN_SKU_CACHE_) FINANCE_SCAN_SKU_CACHE_ = buildSkuIndex_(ss);
+  return FINANCE_SCAN_SKU_CACHE_;
+}
+
+/** Читает периоды загрузки по file_id из IMPORT_LOG_FINANCE. */
+function readFinanceLogPeriodsByFile_(logSheet) {
+  var res = {};
+  var lr = logSheet.getLastRow();
+  if (lr < 2) return res;
+  var data = logSheet.getRange(2, 1, lr - 1, IMPORT_LOG_FINANCE_HEADERS_.length).getValues();
+  // file_id=5, period_from=3, period_to=4, status=19
+  for (var r = 0; r < data.length; r++) {
+    var fid = String(data[r][5] || '').trim();
+    if (!fid) continue;
+    res[fid] = { from: String(data[r][3] || ''), to: String(data[r][4] || '') };
+  }
+  return res;
+}
+
+
+/**
+ * previewWbFinanceMay2026DriveFiles()
+ *
+ * Только показывает план (ничего не пишет): сколько файлов в папке,
+ * какие относятся к маю, какие уже загружены, какие будут загружены,
+ * какие будут пропущены.
+ */
+function previewWbFinanceMay2026DriveFiles() {
+  var t0 = Date.now();
+  var ui = SpreadsheetApp.getUi();
+  FINANCE_SCAN_SKU_CACHE_ = null;
+  var plan = scanDriveFinanceForMonth_(2026, 5, true /* previewOnly */);
+
+  if (plan.error && plan.status === 'ERROR') {
+    ui.alert('❌ Ошибка', plan.error, ui.ButtonSet.OK);
+    return plan;
+  }
+
+  console.log('── PREVIEW Drive финансы (май 2026) ──');
+  console.log('  Папка: ' + plan.folderName + ', файлов: ' + plan.fileCount);
+  console.log('  К загрузке: ' + plan.toLoad.length + ', уже загружено: ' + plan.alreadyLoaded.length +
+    ', пропуск (вне мая/пусто): ' + plan.skippedOutOfMonth.length + ', ошибок: ' + plan.errored.length);
+
+  function listNames(arr, withPeriod) {
+    var s = '';
+    for (var i = 0; i < Math.min(arr.length, 12); i++) {
+      s += '\n  • ' + arr[i].name +
+        (withPeriod && (arr[i].from || arr[i].to) ? ' (' + (arr[i].from || '?') + '—' + (arr[i].to || '?') + ')' : '') +
+        (arr[i].reason ? ' — ' + arr[i].reason : '') +
+        (arr[i].error ? ' — ' + arr[i].error : '');
+    }
+    if (arr.length > 12) s += '\n  …и ещё ' + (arr.length - 12);
+    return s || '\n  (нет)';
+  }
+
+  var msg = '👀 Предпросмотр загрузки мая 2026 (Drive-only)\n\n' +
+    'Папка: ' + plan.folderName + '\n' +
+    'Период мая: ' + plan.monthFrom + ' — ' + plan.monthTo + '\n' +
+    'Всего файлов в папке: ' + plan.fileCount + '\n\n' +
+    '📥 БУДУТ ЗАГРУЖЕНЫ (' + plan.toLoad.length + '):' + listNames(plan.toLoad, true) + '\n\n' +
+    '✅ УЖЕ ЗАГРУЖЕНЫ (' + plan.alreadyLoaded.length + '):' + listNames(plan.alreadyLoaded, true) + '\n\n' +
+    '⏭️ ПРОПУСК — вне мая/пусто (' + plan.skippedOutOfMonth.length + '):' + listNames(plan.skippedOutOfMonth, true);
+
+  if (plan.errored.length > 0) {
+    msg += '\n\n❌ ОШИБКИ ЧТЕНИЯ (' + plan.errored.length + '):' + listNames(plan.errored, false);
+  }
+  msg += '\n\nЗапись НЕ выполнена (предпросмотр). Время: ' + sec_(t0) + ' сек';
+
+  ui.alert('👀 Preview май 2026', msg, ui.ButtonSet.OK);
+  return plan;
+}
+
+
+/**
+ * updateWbFinanceMay2026FromDriveOnly()
+ *
+ * Загрузка мая ТОЛЬКО из Drive/XLSX (API не вызывается).
+ * Берёт файлы, период которых пересекается с 2026-05-01—2026-05-31,
+ * файлы вне мая пропускает, дубли по file_id не создаёт,
+ * затем пересобирает CLEAN_WB_DAILY и выводит сводку по маю.
+ */
+function updateWbFinanceMay2026FromDriveOnly() {
+  var t0 = Date.now();
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var ui = SpreadsheetApp.getUi();
+
+  console.log('═══ updateWbFinanceMay2026FromDriveOnly() СТАРТ (API НЕ вызывается) ═══');
+
+  FINANCE_SCAN_SKU_CACHE_ = null;
+  var plan = scanDriveFinanceForMonth_(2026, 5, false /* запись */);
+
+  if (plan.error && plan.status === 'ERROR') {
+    ui.alert('❌ Ошибка', plan.error, ui.ButtonSet.OK);
+    return plan;
+  }
+
+  // Пересборка CLEAN
+  var clean = rebuildCleanFinanceSafe_();
+  console.log('  CLEAN_WB_DAILY: ' + (clean.ok ? 'пересобран' : '⚠️ ' + clean.error));
+
+  // Сводка по маю из RAW
+  var rawSheet = getRawFinanceSheet_(ss);
+  var hMap = buildFinanceRawHeaderMap_(rawSheet, rawSheet.getLastColumn());
+  var mayRows = readFinanceRowsForPeriod_(rawSheet, hMap, plan.monthFrom, plan.monthTo);
+  var sums = aggregateFinanceSums_(mayRows, hMap);
+
+  var elapsed = sec_(t0);
+  console.log('  Май: строк ' + mayRows.length + ', for_pay ' + sums.wb_for_pay +
+    ', after_expenses ' + sums.wb_after_expenses);
+  console.log('═══ updateWbFinanceMay2026FromDriveOnly() ЗАВЕРШЕНО: ' + elapsed + ' сек ═══');
+
+  var loadedList = '';
+  for (var i = 0; i < Math.min(plan.toLoad.length, 12); i++) {
+    var it = plan.toLoad[i];
+    loadedList += '\n  • ' + it.name + ' (' + it.from + '—' + it.to + ') → ' +
+      (it.written || 0) + ' строк' + (it.dupes ? ', дублей ' + it.dupes : '');
+  }
+  if (plan.toLoad.length > 12) loadedList += '\n  …и ещё ' + (plan.toLoad.length - 12);
+  if (!loadedList) loadedList = '\n  (новых файлов нет)';
+
+  var msg = '💰 Май 2026 — загрузка из Drive (без API)\n\n' +
+    'Папка: ' + plan.folderName + '\n' +
+    'Период мая: ' + plan.monthFrom + ' — ' + plan.monthTo + '\n\n' +
+    '📥 Загружено файлов: ' + plan.toLoad.length + ' (новых строк ' + plan.newRows +
+    ', дублей ' + plan.dupes + ')' + loadedList + '\n\n' +
+    '✅ Уже было: ' + plan.alreadyLoaded.length +
+    '\n⏭️ Пропущено вне мая/пусто: ' + plan.skippedOutOfMonth.length +
+    (plan.errored.length ? '\n❌ Ошибок чтения: ' + plan.errored.length : '') + '\n\n' +
+    'CLEAN_WB_DAILY: ' + (clean.ok ? '✅ пересобран' : '⚠️ ' + clean.error) + '\n\n' +
+    '── СВОДКА ПО МАЮ (RAW, ' + mayRows.length + ' строк) ──\n' +
+    'Продажи, шт: ' + sums.sales_qty + '\n' +
+    'Реализация: ' + sums.gross_revenue + ' ₽\n' +
+    'К перечислению: ' + sums.wb_for_pay + ' ₽\n' +
+    'Логистика: ' + sums.wb_logistics + ' ₽\n' +
+    'Хранение: ' + sums.wb_storage + ' ₽\n' +
+    'Удержания: ' + sums.wb_deductions + ' ₽\n' +
+    'Компенсации: ' + sums.wb_compensations + ' ₽\n' +
+    'После расходов WB: ' + sums.wb_after_expenses + ' ₽\n\n' +
+    'Время: ' + elapsed + ' сек';
+
+  ui.alert('💰 Май 2026 (Drive-only)', msg, ui.ButtonSet.OK);
+
+  return { plan: plan, sums: sums, mayRowsCount: mayRows.length, clean_ok: clean.ok };
+}
+
+
+// ═══════════════════════════════════════
+// ЗАДАЧА 4: СОЗДАНИЕ ЛИСТА ЮНИТ ДЛЯ НОВОГО МЕСЯЦА
+// (создаёт пустой лист в формате ЮНИТ_MM_YYYY; данные НЕ переносит)
+// ═══════════════════════════════════════
+
+/** Метки товарного блока (как в v10) — для скелета пустого листа. */
+var UNIT_SKU_LABELS_SKELETON_ = [
+  'Заказы, шт', 'Продажи, шт', 'Возвраты, шт', 'Чистые продажи, шт',
+  'Средняя цена продажи, ₽', 'Сумма реализации WB, ₽', 'К перечислению WB за товар, ₽',
+  'Логистика WB, ₽', 'Хранение WB, ₽', 'Расход на рекламу, ₽', 'ДРР, %',
+  'Себестоимость 1 шт, ₽', 'Себестоимость продаж, ₽',
+  'Прибыль до рекламы и хранения, ₽', 'Прибыль после рекламы и хранения, ₽',
+  'Маржинальность после рекламы и хранения, %', 'Остаток, шт', 'Статус данных'
+];
+
+/**
+ * createMonthlyUnitSheetIfNeeded(year, month)
+ *
+ * Создаёт ПУСТОЙ лист ЮНИТ_MM_YYYY, если его ещё нет.
+ * Майские (и любые) данные НЕ переносит — лист только подготавливается.
+ * Полное наполнение делает buildMonthlyUnitReportV10() (его не трогаем
+ * и не вызываем).
+ *
+ * @param {number} year
+ * @param {number} month  (1–12)
+ * @return {Object} {created, sheetName, existed}
+ */
+function createMonthlyUnitSheetIfNeeded(year, month) {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+
+  if (!year || !month || month < 1 || month > 12) {
+    SpreadsheetApp.getUi().alert('❌', 'Некорректные year/month: ' + year + '/' + month, SpreadsheetApp.getUi().ButtonSet.OK);
+    return { created: false, sheetName: '', existed: false };
+  }
+
+  var sheetName = 'ЮНИТ_' + pad2_(month) + '_' + year;
+  var existing = ss.getSheetByName(sheetName);
+  if (existing) {
+    console.log('  Лист ' + sheetName + ' уже существует — ничего не делаю.');
+    return { created: false, sheetName: sheetName, existed: true };
+  }
+
+  var sheet = ss.insertSheet(sheetName);
+
+  // Минимальный скелет (пустой, без данных). Билдер при сборке перезапишет лист.
+  var ruMonths = ['', 'Январь', 'Февраль', 'Март', 'Апрель', 'Май', 'Июнь',
+    'Июль', 'Август', 'Сентябрь', 'Октябрь', 'Ноябрь', 'Декабрь'];
+
+  sheet.getRange(1, 1).setValue('Юнит-экономика WB v10');
+  sheet.getRange(1, 2).setValue(ruMonths[month] + ' ' + year);
+  sheet.getRange(2, 1).setValue('Статус');
+  sheet.getRange(2, 2).setValue('Лист создан, ожидает сборки buildMonthlyUnitReportV10()');
+
+  // Метки товарного блока в колонке A (с 4-й строки) — как ориентир
+  var startRow = 4;
+  var labelVals = [];
+  for (var i = 0; i < UNIT_SKU_LABELS_SKELETON_.length; i++) labelVals.push([UNIT_SKU_LABELS_SKELETON_[i]]);
+  if (sheet.getMaxRows() < startRow + labelVals.length) {
+    sheet.insertRowsAfter(sheet.getMaxRows(), startRow + labelVals.length - sheet.getMaxRows());
+  }
+  sheet.getRange(startRow, 1, labelVals.length, 1).setValues(labelVals);
+
+  sheet.getRange(1, 1, 1, 2).setFontWeight('bold');
+  sheet.setFrozenRows(3);
+  sheet.setFrozenColumns(1);
+  SpreadsheetApp.flush();
+
+  console.log('  ✅ Создан пустой лист ' + sheetName + ' (данные не переносились).');
+  return { created: true, sheetName: sheetName, existed: false };
+}
+
+/**
+ * Удобный вызов: создаёт лист ЮНИТ для текущего месяца, если его нет.
+ * Данные не переносит.
+ */
+function createCurrentMonthUnitSheetIfNeeded() {
+  var now = new Date();
+  var r = createMonthlyUnitSheetIfNeeded(now.getFullYear(), now.getMonth() + 1);
+  SpreadsheetApp.getUi().alert(
+    r.created ? '✅ Лист создан' : (r.existed ? 'ℹ️ Лист уже есть' : '❌ Не создан'),
+    'Лист: ' + r.sheetName + '\n' +
+    (r.created ? 'Создан пустым. Данные не переносились.\nНаполнение — через buildMonthlyUnitReportV10().'
+               : (r.existed ? 'Лист уже существует — ничего не менялось.' : '')),
+    SpreadsheetApp.getUi().ButtonSet.OK
+  );
+  return r;
+}
+
+/** Создать лист ЮНИТ_06_2026 (если нужно). Данные не переносит. */
+function createUnitSheetJune2026IfNeeded() {
+  var r = createMonthlyUnitSheetIfNeeded(2026, 6);
+  SpreadsheetApp.getUi().alert(
+    r.created ? '✅ Лист создан' : (r.existed ? 'ℹ️ Лист уже есть' : '❌ Не создан'),
+    'Лист: ' + r.sheetName + '\n' +
+    (r.created ? 'Создан пустым. Майские данные не переносились.'
+               : (r.existed ? 'Лист уже существует — ничего не менялось.' : '')),
+    SpreadsheetApp.getUi().ButtonSet.OK
+  );
+  return r;
+}
+
+
+// ═══════════════════════════════════════
+// МЕНЮ
+// ═══════════════════════════════════════
+
+function addWbFinanceMonthCloseMenu() {
+  SpreadsheetApp.getUi().createMenu('📅 Финансы: закрытие месяца')
+    .addItem('🧹 Удалить API-дубли (removeAllFinanceApiRows)', 'removeAllFinanceApiRows')
+    .addSeparator()
+    .addItem('👀 Preview май 2026 (Drive)', 'previewWbFinanceMay2026DriveFiles')
+    .addItem('💰 Загрузить май 2026 из Drive (без API)', 'updateWbFinanceMay2026FromDriveOnly')
+    .addSeparator()
+    .addItem('🆕 Создать лист ЮНИТ_06_2026', 'createUnitSheetJune2026IfNeeded')
+    .addItem('🆕 Создать лист ЮНИТ текущего месяца', 'createCurrentMonthUnitSheetIfNeeded')
+    .addToUi();
+}

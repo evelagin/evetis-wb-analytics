@@ -1,0 +1,164 @@
+/**
+ * ══════════════════════════════════════════════════════════════
+ * EVETIS WB — Config.gs
+ * Центральная конфигурация системы: имена листов, цвета, константы
+ * ══════════════════════════════════════════════════════════════
+ */
+
+// ───────────────────────────────────────
+// Версия системы
+// ───────────────────────────────────────
+var SYSTEM_VERSION = '1.0.3-mvp';
+
+// ───────────────────────────────────────
+// Цветовая палитра (используется во всей системе)
+// ───────────────────────────────────────
+var COLORS = {
+  // Заголовки
+  HEADER_BG:          '#1F2937',  // тёмно-серый
+  HEADER_FONT:        '#FFFFFF',  // белый
+  
+  // Блоки настроек
+  SECTION_HEADER_BG:  '#374151',  // тёмно-серый для заголовков блоков
+  SECTION_HEADER_FONT:'#FFFFFF',
+  
+  // Статусы
+  OK_BG:              '#D1FAE5',  // светло-зелёный
+  OK_FONT:            '#065F46',
+  CHECK_BG:           '#FEF3C7',  // светло-жёлтый
+  CHECK_FONT:         '#92400E',
+  ERROR_BG:           '#FEE2E2',  // светло-красный
+  ERROR_FONT:         '#991B1B',
+  
+  // Зоны ввода
+  MANUAL_INPUT_BG:    '#FFFFFF',  // белый — ручной ввод
+  FORMULA_BG:         '#F3F4F6',  // светло-серый — формулы
+  API_BG:             '#EFF6FF',  // светло-синий — данные API
+  DISABLED_BG:        '#E5E7EB',  // серый — неактивно
+  
+  // Подсветка обязательных
+  REQUIRED_BG:        '#FFFBEB',  // лёгкий жёлтый
+  
+  // RAW листы
+  RAW_HEADER_BG:      '#4B5563',  // серый для RAW
+  RAW_HEADER_FONT:    '#FFFFFF',
+  
+  // Аналитические листы
+  ANALYTICS_HEADER_BG:'#1E40AF',  // синий для аналитики
+  ANALYTICS_HEADER_FONT:'#FFFFFF'
+};
+
+// ───────────────────────────────────────
+// Имена листов (единый источник правды)
+// ───────────────────────────────────────
+var SHEET_NAMES = {
+  // Слой 1 — Настройки и справочники
+  SETTINGS:           'Настройки',
+  SKU_MASTER:         'SKU_MASTER',
+  BUNDLES:            'BUNDLES',
+  COST_HISTORY:       'COST_HISTORY',
+  README:             'README',
+  
+  // Слой 2 — Сырые данные API
+  RAW_WB_ORDERS:      'RAW_WB_ORDERS',
+  RAW_WB_SALES:       'RAW_WB_SALES_RETURNS',
+  RAW_WB_FINANCE:     'RAW_WB_FINANCE',
+  RAW_WB_ADS:         'RAW_WB_ADS',
+  RAW_WB_STOCKS:      'RAW_WB_STOCKS',
+  
+  // Слой 3 — Очищенные данные
+  CLEAN_WB_DAILY:     'CLEAN_WB_DAILY',
+  ERRORS_CONTROL:     'ERRORS_CONTROL',
+  
+  // Слой 4 — Аналитика и отчёты
+  DASHBOARD_WB:       'DASHBOARD_WB',
+  FUNNEL_WB:          'Воронка WB',
+  ADS_WB:             'ADS_WB',
+  STOCKS_WB:          'STOCKS_WB',
+  SUPPLY_PLAN:        'SUPPLY_PLAN',
+  WAREHOUSE_ANALYTICS:'WAREHOUSE_ANALYTICS',
+  UNIT_SKU_DAILY:     'UNIT_SKU_DAILY',
+  PNL_TOTAL:          'PNL_TOTAL',
+  ABC_XYZ:            'ABC_XYZ',
+  
+  // Операционные листы
+  FULFILLMENT:        'FULFILLMENT',
+  BANK_EXPENSES:      'BANK_EXPENSES',
+  TAX_USN:            'TAX_USN'
+};
+
+// ───────────────────────────────────────
+// Порядок листов (слева направо в таблице)
+// ───────────────────────────────────────
+var SHEET_ORDER = [
+  SHEET_NAMES.DASHBOARD_WB,
+  SHEET_NAMES.FUNNEL_WB,
+  SHEET_NAMES.ADS_WB,
+  SHEET_NAMES.STOCKS_WB,
+  SHEET_NAMES.SUPPLY_PLAN,
+  SHEET_NAMES.UNIT_SKU_DAILY,
+  SHEET_NAMES.PNL_TOTAL,
+  SHEET_NAMES.ABC_XYZ,
+  SHEET_NAMES.WAREHOUSE_ANALYTICS,
+  SHEET_NAMES.SETTINGS,
+  SHEET_NAMES.SKU_MASTER,
+  SHEET_NAMES.BUNDLES,
+  SHEET_NAMES.COST_HISTORY,
+  SHEET_NAMES.FULFILLMENT,
+  SHEET_NAMES.BANK_EXPENSES,
+  SHEET_NAMES.TAX_USN,
+  SHEET_NAMES.CLEAN_WB_DAILY,
+  SHEET_NAMES.ERRORS_CONTROL,
+  SHEET_NAMES.RAW_WB_FINANCE,
+  SHEET_NAMES.RAW_WB_ADS,
+  SHEET_NAMES.RAW_WB_STOCKS,
+  SHEET_NAMES.RAW_WB_ORDERS,
+  SHEET_NAMES.RAW_WB_SALES,
+  SHEET_NAMES.README
+];
+
+// ───────────────────────────────────────
+// Табы, которые нужно скрыть (RAW-данные)
+// ───────────────────────────────────────
+var HIDDEN_SHEETS = [
+  SHEET_NAMES.RAW_WB_ORDERS,
+  SHEET_NAMES.RAW_WB_SALES,
+  SHEET_NAMES.RAW_WB_FINANCE,
+  SHEET_NAMES.RAW_WB_ADS,
+  SHEET_NAMES.RAW_WB_STOCKS,
+  SHEET_NAMES.CLEAN_WB_DAILY
+];
+
+// ───────────────────────────────────────
+// Цвета вкладок по слоям
+// ───────────────────────────────────────
+var TAB_COLORS = {};
+// Слой 1 — справочники (зелёный)
+TAB_COLORS[SHEET_NAMES.SETTINGS]          = '#10B981';
+TAB_COLORS[SHEET_NAMES.SKU_MASTER]        = '#10B981';
+TAB_COLORS[SHEET_NAMES.BUNDLES]           = '#10B981';
+TAB_COLORS[SHEET_NAMES.COST_HISTORY]      = '#10B981';
+TAB_COLORS[SHEET_NAMES.README]            = '#6B7280';
+// Слой 2 — RAW (серый)
+TAB_COLORS[SHEET_NAMES.RAW_WB_ORDERS]     = '#9CA3AF';
+TAB_COLORS[SHEET_NAMES.RAW_WB_SALES]      = '#9CA3AF';
+TAB_COLORS[SHEET_NAMES.RAW_WB_FINANCE]    = '#9CA3AF';
+TAB_COLORS[SHEET_NAMES.RAW_WB_ADS]        = '#9CA3AF';
+TAB_COLORS[SHEET_NAMES.RAW_WB_STOCKS]     = '#9CA3AF';
+// Слой 3 — CLEAN (жёлтый)
+TAB_COLORS[SHEET_NAMES.CLEAN_WB_DAILY]    = '#F59E0B';
+TAB_COLORS[SHEET_NAMES.ERRORS_CONTROL]    = '#EF4444';
+// Слой 4 — аналитика (синий)
+TAB_COLORS[SHEET_NAMES.DASHBOARD_WB]      = '#3B82F6';
+TAB_COLORS[SHEET_NAMES.FUNNEL_WB]         = '#3B82F6';
+TAB_COLORS[SHEET_NAMES.ADS_WB]            = '#3B82F6';
+TAB_COLORS[SHEET_NAMES.STOCKS_WB]         = '#3B82F6';
+TAB_COLORS[SHEET_NAMES.SUPPLY_PLAN]       = '#3B82F6';
+TAB_COLORS[SHEET_NAMES.WAREHOUSE_ANALYTICS]='#3B82F6';
+TAB_COLORS[SHEET_NAMES.UNIT_SKU_DAILY]    = '#8B5CF6';
+TAB_COLORS[SHEET_NAMES.PNL_TOTAL]         = '#8B5CF6';
+TAB_COLORS[SHEET_NAMES.ABC_XYZ]           = '#8B5CF6';
+// Операционные (оранжевый)
+TAB_COLORS[SHEET_NAMES.FULFILLMENT]       = '#F97316';
+TAB_COLORS[SHEET_NAMES.BANK_EXPENSES]     = '#F97316';
+TAB_COLORS[SHEET_NAMES.TAX_USN]           = '#F97316';

@@ -1,0 +1,272 @@
+/**
+ * ══════════════════════════════════════════════════════════════
+ * EVETIS WB — WbPnlCabinet.gs  v1.0
+ *
+ * ЧЕСТНЫЙ P&L КАБИНЕТА по реальным статьям затрат.
+ *
+ * Что делает: читает уже загруженный RAW_WB_FINANCE за месяц и
+ * раскладывает «Удержания» на реальные статьи (Реклама / Платные
+ * отзывы / Транзит / Утилизация / Подписка / Прочее) по колонке
+ * «Виды логистики, штрафов и корректировок ВВ» (она лежит в raw_json).
+ * Строит прозрачный лист PL_КАБИНЕТ_MM_YYYY.
+ *
+ * НИЧЕГО НЕ ЗАГРУЖАЕТ. Май/любой период не пересобирает.
+ * Самодостаточен: зависит только от базовых хелперов проекта
+ * (roundTwo_, pad2_), RAW_WB_FINANCE и (опционально) листа ЮНИТ_MM_YYYY
+ * для себестоимости/прибыли. От загрузчиков, которые планируем выводить
+ * из эксплуатации, НЕ зависит.
+ *
+ * НЕ ТРОГАЕТ: buildMonthlyUnitReportV10(), ЮНИТ_*, RAW_*, парсер XLSX.
+ * ══════════════════════════════════════════════════════════════
+ */
+
+var PNL_CABINET_SHEET_PREFIX_ = 'PL_КАБИНЕТ_';
+
+
+/** Классификатор удержания по тексту «Виды логистики, штрафов и корректировок ВВ». */
+function classifyWbDeduction_(rawJson) {
+  var t = '';
+  try {
+    var d = JSON.parse(rawJson);
+    t = String(d['Виды логистики, штрафов и корректировок ВВ'] || '').toLowerCase();
+  } catch (e) { t = ''; }
+  if (t.indexOf('продвижени') >= 0 || t.indexOf('реклам') >= 0) return 'Реклама';
+  if (t.indexOf('отзыв') >= 0) return 'Платные отзывы';
+  if (t.indexOf('транзит') >= 0) return 'Транзит';
+  if (t.indexOf('утилиз') >= 0) return 'Утилизация';
+  if (t.indexOf('подписк') >= 0) return 'Подписка';
+  if (t.indexOf('хранени') >= 0) return 'Хранение (удержание)';
+  return 'Прочие удержания';
+}
+
+/** Границы месяца. */
+function pnlMonthBounds_(year, month) {
+  var last = new Date(year, month, 0).getDate();
+  return { from: year + '-' + pad2_(month) + '-01', to: year + '-' + pad2_(month) + '-' + pad2_(last) };
+}
+
+/** YYYY-MM-DD из значения (Date или строка). */
+function pnlDateKey_(v) {
+  if (v === null || v === undefined || v === '') return '';
+  if (Object.prototype.toString.call(v) === '[object Date]') {
+    return v.getFullYear() + '-' + pad2_(v.getMonth() + 1) + '-' + pad2_(v.getDate());
+  }
+  return String(v).substring(0, 10);
+}
+
+/**
+ * Считает честный P&L кабинета за месяц из RAW_WB_FINANCE.
+ * @return {Object|null}
+ */
+function computeCabinetPnL_(year, month) {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var sh = ss.getSheetByName('RAW_WB_FINANCE');
+  if (!sh || sh.getLastRow() < 2) return null;
+
+  var b = pnlMonthBounds_(year, month);
+  var lastCol = sh.getLastColumn();
+  var hdr = sh.getRange(1, 1, 1, lastCol).getValues()[0];
+  var H = {};
+  for (var i = 0; i < hdr.length; i++) { var k = String(hdr[i] || '').trim().toLowerCase(); if (k) H[k] = i; }
+
+  function gi(n) { return H[n]; }
+  var op_i = gi('supplier_oper_name'), dt_i = gi('doc_type_name');
+  var qty_i = gi('quantity'), ret_i = gi('retail_amount'), fp_i = gi('for_pay');
+  var log_i = gi('logistics_amount'), st_i = gi('storage_fee'), ded_i = gi('deduction');
+  var pen_i = gi('penalty'), acq_i = gi('acquiring_fee'), comp_i = gi('compensation_amount');
+  var add_i = gi('additional_payment'), rj_i = gi('raw_json');
+  var sale_i = gi('sale_dt'), rr_i = gi('rr_dt');
+
+  var data = sh.getRange(2, 1, sh.getLastRow() - 1, lastCol).getValues();
+  function num(row, idx) { if (idx === undefined) return 0; var v = Number(row[idx]); return isNaN(v) ? 0 : v; }
+  function str(row, idx) { return idx === undefined ? '' : String(row[idx] || '').trim(); }
+
+  var R = {
+    period_from: b.from, period_to: b.to,
+    sales_qty: 0, realization: 0, for_pay: 0, acquiring: 0,
+    logistics: 0, storage: 0, penalty: 0, compensation: 0,
+    ded_total: 0,
+    ded: { 'Реклама': 0, 'Платные отзывы': 0, 'Транзит': 0, 'Утилизация': 0, 'Подписка': 0, 'Хранение (удержание)': 0, 'Прочие удержания': 0 }
+  };
+
+  for (var r = 0; r < data.length; r++) {
+    var row = data[r];
+    var dk = pnlDateKey_(row[sale_i]) || pnlDateKey_(row[rr_i]);
+    if (!dk || dk < b.from || dk > b.to) continue;
+
+    var op = str(row, op_i), dt = str(row, dt_i), opl = op.toLowerCase();
+
+    if (dt === 'Продажа' && op === 'Продажа') {
+      R.sales_qty += Math.abs(num(row, qty_i));
+      R.realization += Math.abs(num(row, ret_i));
+      R.for_pay += num(row, fp_i);
+      R.acquiring += num(row, acq_i);
+    } else if (opl.indexOf('логистика') >= 0) {        // вкл. «Коррекция логистики»
+      R.logistics += num(row, log_i);
+    } else if (opl.indexOf('хранение') >= 0) {
+      R.storage += num(row, st_i);
+    } else if (opl.indexOf('удержан') >= 0) {
+      var cat = classifyWbDeduction_(rj_i === undefined ? '' : row[rj_i]);
+      var amt = num(row, ded_i);
+      R.ded_total += amt;
+      R.ded[cat] = (R.ded[cat] || 0) + amt;
+    } else if (opl.indexOf('штраф') >= 0) {
+      R.penalty += num(row, pen_i);
+    } else if (opl.indexOf('компенсация скидки') >= 0 || opl.indexOf('лояльност') >= 0) {
+      R.compensation += (num(row, comp_i) || num(row, add_i) || num(row, fp_i));
+    }
+    // «Возмещение издержек/ПВЗ» — qty-маркеры без денег, пропускаем
+  }
+
+  // После расходов WB (денежный поток от ВБ)
+  R.after_wb = R.for_pay - R.logistics - R.storage - R.ded_total - R.penalty + R.compensation;
+
+  // Себестоимость и прибыль — из уже посчитанного ЮНИТ (если есть)
+  var u = readUnitTotals_(year, month);
+  R.cogs = u ? u.cogs : null;
+  R.net_profit = (R.cogs !== null && R.cogs !== undefined) ? (R.after_wb - R.cogs) : null;
+
+  // Производные
+  R.drr = R.realization ? (R.ded['Реклама'] / R.realization) : 0;     // ДРР
+  R.margin = (R.net_profit !== null && R.realization) ? (R.net_profit / R.realization) : null;
+
+  return R;
+}
+
+/** Читает Итого по кабинету из листа ЮНИТ_MM_YYYY: {cogs, profit} или null. */
+function readUnitTotals_(year, month) {
+  var name = 'ЮНИТ_' + pad2_(month) + '_' + year;
+  var sh = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(name);
+  if (!sh) return null;
+  var lastCol = sh.getLastColumn();
+  var lastRow = Math.min(sh.getLastRow(), 35);
+  var data = sh.getRange(1, 1, lastRow, lastCol).getValues();
+
+  // колонка «Итого»
+  var itogoCol = -1;
+  for (var rr = 0; rr < lastRow && itogoCol < 0; rr++) {
+    for (var c = 0; c < lastCol; c++) {
+      if (String(data[rr][c]).trim() === 'Итого') { itogoCol = c; break; }
+    }
+  }
+  if (itogoCol < 0) itogoCol = lastCol - 1;
+
+  function findVal(prefix) {
+    for (var r = 0; r < lastRow; r++) {
+      if (String(data[r][0]).trim().indexOf(prefix) === 0) {
+        var v = Number(data[r][itogoCol]); return isNaN(v) ? null : v;
+      }
+    }
+    return null;
+  }
+  return { cogs: findVal('Себестоимость продаж'), profit: findVal('Прибыль') };
+}
+
+
+/**
+ * buildCabinetPnLSheet(year, month)
+ * Строит прозрачный лист PL_КАБИНЕТ_MM_YYYY с честными статьями.
+ */
+function buildCabinetPnLSheet(year, month) {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var ui = SpreadsheetApp.getUi();
+
+  var R = computeCabinetPnL_(year, month);
+  if (!R) { ui.alert('⚠️', 'RAW_WB_FINANCE пуст.', ui.ButtonSet.OK); return null; }
+
+  var name = PNL_CABINET_SHEET_PREFIX_ + pad2_(month) + '_' + year;
+  var sh = ss.getSheetByName(name);
+  if (sh) sh.clear(); else sh = ss.insertSheet(name);
+
+  function pct(x) { return R.realization ? (x / R.realization) : 0; }
+  var rub = '#,##0.00 ₽';
+  var prc = '0.0%';
+
+  // [label, value, %ofReal, type]  type: head|base|cost|sub|sum|profit|info
+  var ruMonths = ['', 'Январь','Февраль','Март','Апрель','Май','Июнь','Июль','Август','Сентябрь','Октябрь','Ноябрь','Декабрь'];
+  var rows = [];
+  rows.push(['P&L КАБИНЕТА — ' + ruMonths[month] + ' ' + year, '', '', 'head']);
+  rows.push(['Период: ' + R.period_from + ' … ' + R.period_to + ' | источник: RAW_WB_FINANCE', '', '', 'info']);
+  rows.push(['', '', '', 'info']);
+  rows.push(['Показатель', 'Сумма, ₽', '% от реализации', 'colhdr']);
+  rows.push(['Продажи, шт', R.sales_qty, '', 'base']);
+  rows.push(['Реализация WB', R.realization, 1, 'base']);
+  rows.push(['К перечислению за товар', R.for_pay, '', 'base']);
+  rows.push(['', '', '', 'info']);
+  rows.push(['Расходы ВБ:', '', '', 'colhdr']);
+  rows.push(['  − Логистика', -R.logistics, pct(R.logistics), 'cost']);
+  rows.push(['  − Хранение', -R.storage, pct(R.storage), 'cost']);
+  rows.push(['  − Реклама (WB Продвижение)', -R.ded['Реклама'], pct(R.ded['Реклама']), 'cost']);
+  rows.push(['  − Платные отзывы', -R.ded['Платные отзывы'], pct(R.ded['Платные отзывы']), 'cost']);
+  rows.push(['  − Транзит', -R.ded['Транзит'], pct(R.ded['Транзит']), 'cost']);
+  rows.push(['  − Утилизация', -R.ded['Утилизация'], pct(R.ded['Утилизация']), 'cost']);
+  if (R.ded['Подписка']) rows.push(['  − Подписка', -R.ded['Подписка'], pct(R.ded['Подписка']), 'cost']);
+  if (R.ded['Хранение (удержание)']) rows.push(['  − Хранение (удержание)', -R.ded['Хранение (удержание)'], pct(R.ded['Хранение (удержание)']), 'cost']);
+  if (R.ded['Прочие удержания']) rows.push(['  − Прочие удержания', -R.ded['Прочие удержания'], pct(R.ded['Прочие удержания']), 'cost']);
+  rows.push(['  − Штрафы', -R.penalty, pct(R.penalty), 'cost']);
+  rows.push(['  + Компенсации', R.compensation, pct(R.compensation), 'cost']);
+  rows.push(['После расходов WB (итого)', R.after_wb, pct(R.after_wb), 'sum']);
+  rows.push(['', '', '', 'info']);
+  if (R.cogs !== null && R.cogs !== undefined) {
+    rows.push(['  − Себестоимость проданного', -R.cogs, pct(R.cogs), 'cost']);
+    rows.push(['ЧИСТАЯ ПРИБЫЛЬ', R.net_profit, pct(R.net_profit), 'profit']);
+  } else {
+    rows.push(['  − Себестоимость проданного', 'нет ЮНИТ', '', 'info']);
+    rows.push(['ЧИСТАЯ ПРИБЫЛЬ', 'соберите ЮНИТ', '', 'info']);
+  }
+  rows.push(['', '', '', 'info']);
+  rows.push(['ДРР (реклама / реализация)', '', R.drr, 'kpi']);
+  if (R.margin !== null) rows.push(['Маржинальность (прибыль / реализация)', '', R.margin, 'kpi']);
+
+  // Запись
+  var out = rows.map(function (x) { return [x[0], x[1], x[2]]; });
+  sh.getRange(1, 1, out.length, 3).setValues(out);
+
+  // Форматирование
+  for (var i = 0; i < rows.length; i++) {
+    var rr = i + 1, type = rows[i][3];
+    var cell = sh.getRange(rr, 1, 1, 3);
+    if (type === 'head') { sh.getRange(rr,1,1,3).merge(); cell.setFontWeight('bold').setFontSize(13).setBackground('#1F2937').setFontColor('#FFFFFF'); }
+    else if (type === 'colhdr') cell.setFontWeight('bold').setBackground('#E5E7EB');
+    else if (type === 'sum') cell.setFontWeight('bold').setBackground('#DBEAFE');
+    else if (type === 'profit') cell.setFontWeight('bold').setBackground('#D1FAE5').setFontSize(12);
+    else if (type === 'base') sh.getRange(rr,1).setFontWeight('bold');
+    else if (type === 'kpi') sh.getRange(rr,1).setFontWeight('bold');
+    // числовые форматы
+    if (typeof rows[i][1] === 'number') sh.getRange(rr,2).setNumberFormat(rub);
+    if (typeof rows[i][2] === 'number') sh.getRange(rr,3).setNumberFormat(prc);
+  }
+  sh.setColumnWidth(1, 320); sh.setColumnWidth(2, 150); sh.setColumnWidth(3, 150);
+  sh.setFrozenRows(4);
+  SpreadsheetApp.flush();
+
+  // Сводка
+  var msg = 'P&L кабинета — ' + ruMonths[month] + ' ' + year + '\n\n' +
+    'Реализация: ' + roundTwo_(R.realization) + ' ₽ (' + R.sales_qty + ' шт)\n' +
+    'К перечислению за товар: ' + roundTwo_(R.for_pay) + ' ₽\n\n' +
+    'Логистика: ' + roundTwo_(R.logistics) + ' ₽\n' +
+    'Хранение: ' + roundTwo_(R.storage) + ' ₽\n' +
+    '▶ Реклама (WB Продвижение): ' + roundTwo_(R.ded['Реклама']) + ' ₽  (ДРР ' + roundTwo_(R.drr*100) + '%)\n' +
+    'Платные отзывы: ' + roundTwo_(R.ded['Платные отзывы']) + ' ₽\n' +
+    'Транзит: ' + roundTwo_(R.ded['Транзит']) + ' ₽\n' +
+    'Утилизация: ' + roundTwo_(R.ded['Утилизация']) + ' ₽\n' +
+    'Штрафы: ' + roundTwo_(R.penalty) + ' ₽\n' +
+    'Компенсации: +' + roundTwo_(R.compensation) + ' ₽\n\n' +
+    '= После расходов WB: ' + roundTwo_(R.after_wb) + ' ₽\n' +
+    (R.cogs !== null ? ('− Себестоимость: ' + roundTwo_(R.cogs) + ' ₽\n= Чистая прибыль: ' + roundTwo_(R.net_profit) +
+      ' ₽ (маржа ' + roundTwo_(R.margin*100) + '%)') : 'Себестоимость: соберите ЮНИТ') +
+    '\n\nЛист: ' + name;
+
+  ui.alert('💼 P&L кабинета', msg, ui.ButtonSet.OK);
+  return R;
+}
+
+/** P&L кабинета за май 2026. */
+function buildCabinetPnL_May2026() { return buildCabinetPnLSheet(2026, 5); }
+
+/** Меню. */
+function addPnlCabinetMenu() {
+  SpreadsheetApp.getUi().createMenu('💼 P&L кабинета')
+    .addItem('💼 Собрать P&L кабинета за май 2026', 'buildCabinetPnL_May2026')
+    .addToUi();
+}

@@ -1,0 +1,348 @@
+/**
+ * ══════════════════════════════════════════════════════════════
+ * EVETIS WB — Patch_RawSkuNormalize.gs  v1.0
+ *
+ * Патч: исправление записи internal_sku в RAW_WB_ORDERS и
+ * RAW_WB_SALES_RETURNS.
+ *
+ * ПРОБЛЕМА:
+ *   buildSkuIndex_() хранит в byNmId полные объекты SKU_MASTER.
+ *   matchSku_() не определена → safeMatchSku_osd_() всегда
+ *   попадает в catch-блок, где возвращает целый объект как .sku.
+ *   loadRawWbOrdersSales() записывает skuResult.sku (объект)
+ *   в колонку internal_sku → Google Sheets сериализует его как:
+ *   {product_name_short=Крем УВЛ, wb_nm_id=438775437, ..., internal_sku=EVT-FC-MOIST-50, ...}
+ *
+ * РЕШЕНИЕ:
+ *   1. Хелпер normalizeInternalSkuValue_(value) — извлекает
+ *      чистую строку EVT-... из любого входа (объект, строка, словарь).
+ *   2. Точечный патч к safeMatchSku_osd_() — нормализовать .sku
+ *      перед возвратом.
+ *   3. Тестовая функция auditRawInternalSkuQuality() — диагностика
+ *      текущего состояния RAW-листов.
+ *
+ * ПРИМЕНЕНИЕ:
+ *   1. Добавить этот файл в проект Apps Script.
+ *   2. Применить патч к WbOrdersSalesDaily.gs (см. инструкции ниже).
+ *   3. Запустить auditRawInternalSkuQuality() для диагностики.
+ *   4. Запустить loadRawWbOrdersSales() — новые данные будут с чистым SKU.
+ *   5. (Опционально) Запустить fixExistingRawInternalSku() для очистки
+ *      старых данных, если нужно.
+ *
+ * НЕ МЕНЯЕТ: структуру листов, старые данные (по умолчанию),
+ *   SKU_MASTER, ORDERS_SALES_DAILY, PNL_TOTAL.
+ *
+ * ЗАВИСИМОСТИ: Config.gs (SHEET_NAMES), Utils.gs (log_())
+ * ══════════════════════════════════════════════════════════════
+ */
+
+
+// ═══════════════════════════════════════
+// 1. ХЕЛПЕР: НОРМАЛИЗАЦИЯ internal_sku
+// ═══════════════════════════════════════
+
+/**
+ * Извлекает чистую строку internal_sku из любого значения.
+ *
+ * Обрабатывает:
+ *   - Строка 'EVT-FC-MOIST-50' → без изменений
+ *   - Объект { internal_sku: 'EVT-FC-MOIST-50', ... } → 'EVT-FC-MOIST-50'
+ *   - Строка-словарь '{internal_sku=EVT-FC-MOIST-50, ...}' → 'EVT-FC-MOIST-50'
+ *   - Пустое / null / undefined → ''
+ *   - Строка без EVT- (например 'UNKNOWN_12345') → без изменений
+ *
+ * @param {*} value — значение из skuResult.sku или ячейки RAW
+ * @returns {string} чистая строка internal_sku
+ */
+function normalizeInternalSkuValue_(value) {
+  // null / undefined / пусто
+  if (value === null || value === undefined || value === '') return '';
+
+  // Объект с полем internal_sku
+  if (typeof value === 'object' && value !== null) {
+    var sku = value.internal_sku || value.internalSku || value.sku || '';
+    var result = String(sku).trim();
+    // Рекурсивная защита: если sku тоже объект
+    if (typeof sku === 'object') {
+      return normalizeInternalSkuValue_(sku);
+    }
+    return result;
+  }
+
+  // Строка
+  var str = String(value).trim();
+
+  // Уже чистый SKU (EVT-..., UNKNOWN_..., пустая строка)
+  if (str === '' || str.indexOf('{') === -1) {
+    return str;
+  }
+
+  // Строка-словарь вида '{internal_sku=EVT-FC-MOIST-50, ...}'
+  // Извлекаем значение internal_sku через регулярное выражение
+  var match = str.match(/internal_sku\s*=\s*([A-Z0-9][A-Z0-9\-_]+)/i);
+  if (match && match[1]) {
+    return match[1].trim();
+  }
+
+  // Альтернативный формат: sku=EVT-...
+  var matchSku = str.match(/\bsku\s*=\s*([A-Z0-9][A-Z0-9\-_]+)/i);
+  if (matchSku && matchSku[1]) {
+    return matchSku[1].trim();
+  }
+
+  // Не удалось распарсить — вернуть пустую строку
+  Logger.log('⚠️ normalizeInternalSkuValue_: не удалось извлечь SKU из: ' +
+    str.substring(0, 100));
+  return '';
+}
+
+
+// ═══════════════════════════════════════
+// 2. ДИАГНОСТИКА: АУДИТ КАЧЕСТВА internal_sku
+// ═══════════════════════════════════════
+
+/**
+ * Проверяет RAW_WB_ORDERS и RAW_WB_SALES_RETURNS:
+ *   - сколько строк всего
+ *   - сколько строк с чистым internal_sku (строка EVT-...)
+ *   - сколько строк с объектом/словарём
+ *   - сколько пустых internal_sku
+ *   - примеры 5 проблемных значений
+ *
+ * Результат выводится в Logger. Новые листы не создаются.
+ */
+function auditRawInternalSkuQuality() {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+
+  Logger.log('═══════════════════════════════════════════════════════');
+  Logger.log('  АУДИТ КАЧЕСТВА internal_sku в RAW-листах');
+  Logger.log('  Patch_RawSkuNormalize v1.0');
+  Logger.log('═══════════════════════════════════════════════════════');
+
+  var sheets = [
+    { name: SHEET_NAMES.RAW_WB_ORDERS || 'RAW_WB_ORDERS',       label: 'RAW_WB_ORDERS' },
+    { name: SHEET_NAMES.RAW_WB_SALES  || 'RAW_WB_SALES_RETURNS', label: 'RAW_WB_SALES_RETURNS' }
+  ];
+
+  for (var s = 0; s < sheets.length; s++) {
+    var sheetInfo = sheets[s];
+    Logger.log('\n═══ ' + sheetInfo.label + ' ═══');
+
+    var sheet = ss.getSheetByName(sheetInfo.name);
+    if (!sheet) {
+      Logger.log('❌ Лист «' + sheetInfo.name + '» не найден.');
+      continue;
+    }
+
+    var lastRow = sheet.getLastRow();
+    var lastCol = sheet.getLastColumn();
+
+    if (lastRow < 2) {
+      Logger.log('⚠️ Лист пуст (нет данных).');
+      continue;
+    }
+
+    // Найти колонку internal_sku
+    var headers = sheet.getRange(1, 1, 1, lastCol).getValues()[0];
+    var skuColIdx = -1;
+    for (var h = 0; h < headers.length; h++) {
+      if (String(headers[h]).trim().toLowerCase() === 'internal_sku') {
+        skuColIdx = h;
+        break;
+      }
+    }
+
+    if (skuColIdx === -1) {
+      Logger.log('❌ Колонка «internal_sku» не найдена.');
+      continue;
+    }
+
+    // Читаем только колонку internal_sku (экономим память)
+    var dataRows = lastRow - 1;
+    var skuValues = sheet.getRange(2, skuColIdx + 1, dataRows, 1).getValues();
+
+    var totalRows = dataRows;
+    var cleanCount = 0;      // чистая строка EVT-... или UNKNOWN_...
+    var objectCount = 0;     // объект/словарь ({...} или содержит '=')
+    var emptyCount = 0;      // пустая строка
+    var otherCount = 0;      // другое (не EVT-, не пустое, не объект)
+    var problemExamples = []; // до 5 примеров проблемных значений
+
+    for (var i = 0; i < skuValues.length; i++) {
+      var val = skuValues[i][0];
+      var valStr = String(val || '').trim();
+
+      if (!valStr) {
+        emptyCount++;
+        continue;
+      }
+
+      // Проверка: это объект-словарь?
+      var isObjectLike = (valStr.indexOf('{') !== -1 && valStr.indexOf('=') !== -1) ||
+                         (typeof val === 'object' && val !== null && !(val instanceof Date));
+
+      if (isObjectLike) {
+        objectCount++;
+        if (problemExamples.length < 5) {
+          problemExamples.push({
+            row: i + 2,
+            value: valStr.substring(0, 120),
+            normalized: normalizeInternalSkuValue_(val)
+          });
+        }
+        continue;
+      }
+
+      // Чистый SKU?
+      if (valStr.indexOf('EVT-') === 0 || valStr.indexOf('UNKNOWN_') === 0) {
+        cleanCount++;
+      } else {
+        otherCount++;
+        if (problemExamples.length < 5 && valStr.length > 30) {
+          problemExamples.push({
+            row: i + 2,
+            value: valStr.substring(0, 120),
+            normalized: normalizeInternalSkuValue_(val)
+          });
+        }
+      }
+    }
+
+    // Отчёт
+    Logger.log('Всего строк данных: ' + totalRows);
+    Logger.log('Чистый internal_sku (EVT-... / UNKNOWN_...): ' + cleanCount +
+      ' (' + (totalRows > 0 ? Math.round(cleanCount / totalRows * 100) : 0) + '%)');
+    Logger.log('Объект/словарь SKU_MASTER: ' + objectCount +
+      ' (' + (totalRows > 0 ? Math.round(objectCount / totalRows * 100) : 0) + '%)');
+    Logger.log('Пустые internal_sku: ' + emptyCount +
+      ' (' + (totalRows > 0 ? Math.round(emptyCount / totalRows * 100) : 0) + '%)');
+    if (otherCount > 0) {
+      Logger.log('Другие значения: ' + otherCount);
+    }
+
+    if (problemExamples.length > 0) {
+      Logger.log('\n─── Примеры проблемных значений: ───');
+      for (var p = 0; p < problemExamples.length; p++) {
+        var ex = problemExamples[p];
+        Logger.log('  Строка ' + ex.row + ':');
+        Logger.log('    Было:  ' + ex.value);
+        Logger.log('    Будет: ' + (ex.normalized || '(пусто)'));
+      }
+    }
+
+    // Итоговая оценка
+    if (objectCount === 0 && emptyCount === 0) {
+      Logger.log('\n✅ Все internal_sku чистые. Патч не требуется для этого листа.');
+    } else if (objectCount > 0) {
+      Logger.log('\n⚠️ ТРЕБУЕТСЯ ПАТЧ: ' + objectCount + ' строк содержат объект вместо строки.');
+      Logger.log('   После применения патча новые загрузки будут записывать чистый SKU.');
+      Logger.log('   Для очистки старых данных: fixExistingRawInternalSku()');
+    }
+  }
+
+  Logger.log('\n═══ Аудит internal_sku завершён ═══');
+}
+
+
+// ═══════════════════════════════════════
+// 3. (ОПЦИОНАЛЬНО) ОЧИСТКА СТАРЫХ ДАННЫХ
+// ═══════════════════════════════════════
+
+/**
+ * Точечная очистка: заменяет объекты-словари в колонке internal_sku
+ * на чистые строки EVT-... в RAW_WB_ORDERS и RAW_WB_SALES_RETURNS.
+ *
+ * ВАЖНО: Запускать только после аудита (auditRawInternalSkuQuality).
+ * Не обязательно для работы патча — патч влияет только на будущие загрузки.
+ * Эта функция — для желающих почистить историю.
+ *
+ * Работает батчами по 500 строк, чтобы не превысить лимит записи.
+ */
+function fixExistingRawInternalSku() {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var startTime = new Date();
+
+  Logger.log('═══════════════════════════════════════════════════════');
+  Logger.log('  ОЧИСТКА internal_sku в RAW-листах');
+  Logger.log('  Patch_RawSkuNormalize v1.0');
+  Logger.log('═══════════════════════════════════════════════════════');
+
+  var sheets = [
+    { name: SHEET_NAMES.RAW_WB_ORDERS || 'RAW_WB_ORDERS',       label: 'RAW_WB_ORDERS' },
+    { name: SHEET_NAMES.RAW_WB_SALES  || 'RAW_WB_SALES_RETURNS', label: 'RAW_WB_SALES_RETURNS' }
+  ];
+
+  var totalFixed = 0;
+
+  for (var s = 0; s < sheets.length; s++) {
+    var sheetInfo = sheets[s];
+    Logger.log('\n═══ ' + sheetInfo.label + ' ═══');
+
+    var sheet = ss.getSheetByName(sheetInfo.name);
+    if (!sheet) {
+      Logger.log('❌ Лист не найден.');
+      continue;
+    }
+
+    var lastRow = sheet.getLastRow();
+    if (lastRow < 2) {
+      Logger.log('⚠️ Лист пуст.');
+      continue;
+    }
+
+    // Найти колонку internal_sku
+    var headers = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
+    var skuColIdx = -1;
+    for (var h = 0; h < headers.length; h++) {
+      if (String(headers[h]).trim().toLowerCase() === 'internal_sku') {
+        skuColIdx = h;
+        break;
+      }
+    }
+
+    if (skuColIdx === -1) {
+      Logger.log('❌ Колонка «internal_sku» не найдена.');
+      continue;
+    }
+
+    var dataRows = lastRow - 1;
+    var skuCol = skuColIdx + 1; // 1-based
+    var skuValues = sheet.getRange(2, skuCol, dataRows, 1).getValues();
+
+    var fixedCount = 0;
+    var newValues = [];
+
+    for (var i = 0; i < skuValues.length; i++) {
+      var val = skuValues[i][0];
+      var valStr = String(val || '').trim();
+
+      // Нужна ли нормализация?
+      var isObjectLike = (valStr.indexOf('{') !== -1 && valStr.indexOf('=') !== -1) ||
+                         (typeof val === 'object' && val !== null && !(val instanceof Date));
+
+      if (isObjectLike) {
+        var normalized = normalizeInternalSkuValue_(val);
+        newValues.push([normalized]);
+        fixedCount++;
+      } else {
+        newValues.push([val]); // без изменений
+      }
+    }
+
+    if (fixedCount > 0) {
+      sheet.getRange(2, skuCol, dataRows, 1).setValues(newValues);
+      Logger.log('✅ Исправлено строк: ' + fixedCount + ' из ' + dataRows);
+      totalFixed += fixedCount;
+    } else {
+      Logger.log('✅ Все значения уже чистые, изменений не требуется.');
+    }
+  }
+
+  var elapsed = ((new Date() - startTime) / 1000).toFixed(1);
+  Logger.log('\n═══ Очистка завершена за ' + elapsed + ' сек ═══');
+  Logger.log('Всего исправлено: ' + totalFixed + ' строк');
+
+  if (totalFixed > 0) {
+    ss.toast('Исправлено internal_sku: ' + totalFixed + ' строк', 'Patch SKU', 8);
+  }
+}

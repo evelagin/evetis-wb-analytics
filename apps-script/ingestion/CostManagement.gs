@@ -1,0 +1,334 @@
+/**
+ * ══════════════════════════════════════════════════════════════
+ * EVETIS WB — CostManagement.gs
+ * Управление себестоимостью: формулы наборов, журнал изменений
+ *
+ * Публичные функции:
+ *   setupCostFormulas()    — проставить формулы наборам + подсветка
+ *   fillMissingBundleCogs()— дозаполнить current_cogs для наборов без записи
+ *
+ * Триггер (установить вручную):
+ *   onEditCostTracker(e)   — журналирование изменений current_cogs
+ *
+ * Зависимости: Config.gs, Utils.gs
+ * ══════════════════════════════════════════════════════════════
+ */
+
+
+// ═══════════════════════════════════════
+// 1. ФОРМУЛЫ СЕБЕСТОИМОСТИ НАБОРОВ
+// ═══════════════════════════════════════
+
+/**
+ * Для каждого набора (is_bundle=TRUE) в SKU_MASTER:
+ *   current_cogs = сумма (component_cost × component_qty) из BUNDLES
+ *                  + bundle_build_cost из SKU_MASTER
+ *
+ * Если current_cogs уже заполнен вручную — не перезаписывает,
+ * но помечает жёлтым фоном (ручная перезапись).
+ *
+ * Единички (is_bundle=FALSE) — не трогает, ячейка остаётся белой
+ * для ручного ввода.
+ */
+function setupCostFormulas() {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var t0 = Date.now();
+
+  log_('═══ Настройка себестоимости наборов ═══');
+
+  var skuSheet = ss.getSheetByName(SHEET_NAMES.SKU_MASTER);
+  var bundleSheet = ss.getSheetByName(SHEET_NAMES.BUNDLES);
+
+  if (!skuSheet || !bundleSheet) {
+    SpreadsheetApp.getUi().alert('❌ Не найдены листы SKU_MASTER или BUNDLES');
+    return;
+  }
+
+  // ─── Читаем SKU_MASTER ───
+  var skuLastRow = skuSheet.getLastRow();
+  if (skuLastRow < 2) {
+    SpreadsheetApp.getUi().alert('⚠️ SKU_MASTER пуст');
+    return;
+  }
+
+  var skuHeaders = skuSheet.getRange(1, 1, 1, skuSheet.getLastColumn()).getValues()[0];
+  var skuCol = {};
+  for (var h = 0; h < skuHeaders.length; h++) {
+    skuCol[String(skuHeaders[h]).trim()] = h;
+  }
+
+  var skuData = skuSheet.getRange(2, 1, skuLastRow - 1, skuSheet.getLastColumn()).getValues();
+
+  // ─── Читаем BUNDLES ───
+  var bLastRow = bundleSheet.getLastRow();
+  var bHeaders = bundleSheet.getRange(1, 1, 1, bundleSheet.getLastColumn()).getValues()[0];
+  var bCol = {};
+  for (var bh = 0; bh < bHeaders.length; bh++) {
+    bCol[String(bHeaders[bh]).trim()] = bh;
+  }
+
+  // Собираем себестоимость каждого набора из BUNDLES
+  var bundleCosts = {}; // { bundle_sku: total_component_cost }
+  if (bLastRow > 1) {
+    var bData = bundleSheet.getRange(2, 1, bLastRow - 1, bundleSheet.getLastColumn()).getValues();
+    for (var br = 0; br < bData.length; br++) {
+      var bSku = String(bData[br][bCol['bundle_internal_sku']] || '').trim();
+      var compCost = Number(bData[br][bCol['component_cost']] || 0);
+      var compQty = Number(bData[br][bCol['component_qty']] || 1);
+      if (bSku) {
+        bundleCosts[bSku] = (bundleCosts[bSku] || 0) + (compCost * compQty);
+      }
+    }
+  }
+
+  // ─── Проставляем current_cogs для наборов ───
+  var cogsColIdx = skuCol['current_cogs'];
+  var buildCostColIdx = skuCol['bundle_build_cost'];
+  var isBundleColIdx = skuCol['is_bundle'];
+  var skuColIdx = skuCol['internal_sku'];
+
+  if (cogsColIdx === undefined) {
+    SpreadsheetApp.getUi().alert('❌ Колонка current_cogs не найдена в SKU_MASTER');
+    return;
+  }
+
+  var updated = 0;
+  var skipped = 0;
+  var manualOverrides = 0;
+
+  for (var r = 0; r < skuData.length; r++) {
+    var row = skuData[r];
+    var sku = String(row[skuColIdx] || '').trim();
+    var isBundle = String(row[isBundleColIdx] || '').toUpperCase() === 'TRUE';
+    var currentCogs = row[cogsColIdx];
+    var buildCost = Number(row[buildCostColIdx] || 0);
+    var rowNum = r + 2;
+
+    var cell = skuSheet.getRange(rowNum, cogsColIdx + 1);
+
+    if (!isBundle) {
+      // Единичка: белый фон, ручной ввод
+      cell.setBackground('#FFFFFF');
+      cell.setNote('Себестоимость единицы, ₽ (ручной ввод)');
+      skipped++;
+      continue;
+    }
+
+    // Набор: считаем себестоимость
+    var componentsCost = bundleCosts[sku] || 0;
+    var calculatedCogs = componentsCost + buildCost;
+
+    if (calculatedCogs === 0) {
+      log_('⚠️ ' + sku + ': нет данных в BUNDLES, пропуск');
+      cell.setBackground('#FEE2E2'); // красный — нет данных
+      cell.setNote('⚠️ Себестоимость набора: нет данных компонентов в BUNDLES');
+      continue;
+    }
+
+    if (currentCogs && Number(currentCogs) > 0 && Number(currentCogs) !== calculatedCogs) {
+      // Ручная перезапись — жёлтый фон, не трогаем значение
+      cell.setBackground('#FEF3C7');
+      cell.setNote(
+        '⚠️ Ручная перезапись!\n' +
+        'Ваше значение: ' + currentCogs + ' ₽\n' +
+        'Расчётное: ' + calculatedCogs + ' ₽\n' +
+        '(компоненты: ' + componentsCost + ' + сборка: ' + buildCost + ')'
+      );
+      manualOverrides++;
+      log_('📝 ' + sku + ': ручная перезапись (' + currentCogs + ' vs расчёт ' + calculatedCogs + ')');
+    } else {
+      // Формула / автозаполнение — серый фон
+      cell.setValue(calculatedCogs);
+      cell.setBackground('#F3F4F6');
+      cell.setNote(
+        'Себестоимость набора (авто), ₽\n' +
+        'Компоненты: ' + componentsCost + ' ₽\n' +
+        'Сборка на ФФ: ' + buildCost + ' ₽\n' +
+        'Итого: ' + calculatedCogs + ' ₽'
+      );
+      updated++;
+      log_('✅ ' + sku + ': ' + calculatedCogs + ' ₽ (компоненты ' + componentsCost + ' + сборка ' + buildCost + ')');
+    }
+  }
+
+  var elapsed = ((Date.now() - t0) / 1000).toFixed(1);
+  log_('═══ Итого: обновлено ' + updated + ', пропущено ' + skipped +
+       ', ручных ' + manualOverrides + ' за ' + elapsed + ' сек ═══');
+
+  SpreadsheetApp.getUi().alert(
+    '✅ Себестоимость наборов обновлена',
+    'Обновлено (авто): ' + updated + '\n' +
+    'Единички (ручной ввод): ' + skipped + '\n' +
+    'Ручные перезаписи (сохранены): ' + manualOverrides + '\n\n' +
+    'Цветовая легенда:\n' +
+    '⬜ Белый — ручной ввод (единичка)\n' +
+    '🔲 Серый — авторасчёт (набор)\n' +
+    '🟨 Жёлтый — ручная перезапись поверх формулы\n' +
+    '🟥 Красный — нет данных компонентов',
+    SpreadsheetApp.getUi().ButtonSet.OK
+  );
+}
+
+
+// ═══════════════════════════════════════
+// 2. ЖУРНАЛ ИЗМЕНЕНИЙ СЕБЕСТОИМОСТИ
+// ═══════════════════════════════════════
+
+/**
+ * Триггер onEdit: при изменении current_cogs или bundle_build_cost
+ * в SKU_MASTER — записывает изменение в COST_HISTORY.
+ *
+ * УСТАНОВКА ТРИГГЕРА:
+ *   1. Apps Script → Триггеры (⏰ значок)
+ *   2. + Добавить триггер
+ *   3. Функция: onEditCostTracker
+ *   4. Событие: При изменении
+ *   5. Сохранить
+ */
+function onEditCostTracker(e) {
+  if (!e || !e.range) return;
+
+  var sheet = e.range.getSheet();
+  if (sheet.getName() !== SHEET_NAMES.SKU_MASTER) return;
+
+  var editedRow = e.range.getRow();
+  var editedCol = e.range.getColumn();
+
+  // Пропускаем заголовок
+  if (editedRow < 2) return;
+
+  // Определяем колонки
+  var headers = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
+  var colMap = {};
+  for (var h = 0; h < headers.length; h++) {
+    colMap[String(headers[h]).trim()] = h + 1; // 1-based
+  }
+
+  var trackedCols = {
+    'current_cogs': 'Себестоимость единицы',
+    'bundle_build_cost': 'Стоимость сборки набора'
+  };
+
+  // Ищем совпадение
+  var editedHeader = null;
+  var editedLabel = null;
+  var keys = Object.keys(trackedCols);
+  for (var k = 0; k < keys.length; k++) {
+    if (colMap[keys[k]] === editedCol) {
+      editedHeader = keys[k];
+      editedLabel = trackedCols[keys[k]];
+      break;
+    }
+  }
+
+  if (!editedHeader) return; // не наша колонка
+
+  // Данные строки
+  var sku = sheet.getRange(editedRow, colMap['internal_sku']).getValue();
+  var productName = sheet.getRange(editedRow, colMap['product_name_short']).getValue();
+  var oldValue = e.oldValue || '';
+  var newValue = e.value || e.range.getValue() || '';
+
+  if (String(oldValue) === String(newValue)) return; // значение не поменялось
+
+  // Записываем в COST_HISTORY
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var costSheet = ss.getSheetByName(SHEET_NAMES.COST_HISTORY);
+  if (!costSheet) return;
+
+  var costHeaders = costSheet.getRange(1, 1, 1, costSheet.getLastColumn()).getValues()[0];
+  var costCol = {};
+  for (var ch = 0; ch < costHeaders.length; ch++) {
+    costCol[String(costHeaders[ch]).trim()] = ch;
+  }
+
+  // Генерируем cost_id
+  var lastCostRow = costSheet.getLastRow();
+  var newId = 'COST-' + String(lastCostRow).padStart(3, '0');
+
+  // Собираем строку
+  var newRow = new Array(costHeaders.length).fill('');
+
+  if (costCol['cost_id'] !== undefined) newRow[costCol['cost_id']] = newId;
+  if (costCol['internal_sku'] !== undefined) newRow[costCol['internal_sku']] = sku;
+  if (costCol['product_name'] !== undefined) newRow[costCol['product_name']] = productName;
+  if (costCol['valid_from'] !== undefined) newRow[costCol['valid_from']] = Utilities.formatDate(new Date(), 'Europe/Moscow', 'yyyy-MM-dd');
+  if (costCol['is_current'] !== undefined) newRow[costCol['is_current']] = true;
+  if (costCol['cost_type'] !== undefined) newRow[costCol['cost_type']] = 'actual';
+  if (costCol['cogs_per_unit'] !== undefined) newRow[costCol['cogs_per_unit']] = Number(newValue) || 0;
+  if (costCol['reason'] !== undefined) newRow[costCol['reason']] = editedLabel + ': ' + oldValue + ' → ' + newValue;
+  if (costCol['data_quality_status'] !== undefined) newRow[costCol['data_quality_status']] = 'OK';
+  if (costCol['comment'] !== undefined) newRow[costCol['comment']] = 'Авто-запись при изменении в SKU_MASTER';
+
+  // Снимаем is_current с предыдущей записи этого SKU
+  if (lastCostRow > 1) {
+    var costData = costSheet.getRange(2, 1, lastCostRow - 1, costHeaders.length).getValues();
+    for (var cr = 0; cr < costData.length; cr++) {
+      var cSku = String(costData[cr][costCol['internal_sku']] || '');
+      var isCurr = costData[cr][costCol['is_current']];
+      if (cSku === String(sku) && (isCurr === true || String(isCurr).toUpperCase() === 'TRUE')) {
+        costSheet.getRange(cr + 2, costCol['is_current'] + 1).setValue(false);
+        if (costCol['valid_to'] !== undefined) {
+          costSheet.getRange(cr + 2, costCol['valid_to'] + 1)
+            .setValue(Utilities.formatDate(new Date(), 'Europe/Moscow', 'yyyy-MM-dd'));
+        }
+      }
+    }
+  }
+
+  // Записываем новую строку
+  costSheet.getRange(lastCostRow + 1, 1, 1, newRow.length).setValues([newRow]);
+
+  Logger.log('📝 COST_HISTORY: ' + sku + ' | ' + editedLabel + ': ' + oldValue + ' → ' + newValue);
+}
+
+
+// ═══════════════════════════════════════
+// 3. УСТАНОВКА ТРИГГЕРА (ХЕЛПЕР)
+// ═══════════════════════════════════════
+
+/**
+ * Создаёт onEdit триггер для отслеживания изменений.
+ * Запустить один раз.
+ */
+function installCostEditTrigger() {
+  // Удаляем старые триггеры этой функции
+  var triggers = ScriptApp.getProjectTriggers();
+  for (var i = 0; i < triggers.length; i++) {
+    if (triggers[i].getHandlerFunction() === 'onEditCostTracker') {
+      ScriptApp.deleteTrigger(triggers[i]);
+    }
+  }
+
+  // Создаём новый
+  ScriptApp.newTrigger('onEditCostTracker')
+    .forSpreadsheet(SpreadsheetApp.getActiveSpreadsheet())
+    .onEdit()
+    .create();
+
+  SpreadsheetApp.getUi().alert(
+    '✅ Триггер установлен',
+    'Теперь при изменении себестоимости или стоимости сборки\n' +
+    'в SKU_MASTER — запись автоматически попадёт в COST_HISTORY.\n\n' +
+    'Отслеживаемые колонки:\n' +
+    '• current_cogs (себестоимость единицы)\n' +
+    '• bundle_build_cost (стоимость сборки набора)',
+    SpreadsheetApp.getUi().ButtonSet.OK
+  );
+}
+
+
+/**
+ * Удаляет триггер отслеживания.
+ */
+function removeCostEditTrigger() {
+  var triggers = ScriptApp.getProjectTriggers();
+  var removed = 0;
+  for (var i = 0; i < triggers.length; i++) {
+    if (triggers[i].getHandlerFunction() === 'onEditCostTracker') {
+      ScriptApp.deleteTrigger(triggers[i]);
+      removed++;
+    }
+  }
+  SpreadsheetApp.getUi().alert('Удалено триггеров: ' + removed);
+}

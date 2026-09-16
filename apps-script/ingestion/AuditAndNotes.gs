@@ -1,0 +1,556 @@
+/**
+ * ══════════════════════════════════════════════════════════════
+ * EVETIS WB — AuditAndNotes.gs
+ * Аудит SKU_MASTER + COST_HISTORY + русские примечания (notes)
+ *
+ * Публичные функции (вызывать из меню или редактора):
+ *   auditSkuAndCost()         — полный аудит данных
+ *   addRussianNotes()         — русские notes к заголовкам
+ *   auditAndNotes()           — оба действия вместе
+ *
+ * Зависимости: Config.gs (SHEET_NAMES), Utils.gs (log_())
+ * ══════════════════════════════════════════════════════════════
+ */
+
+
+// ═══════════════════════════════════════
+// 1. РУССКИЕ ПРИМЕЧАНИЯ (NOTES)
+// ═══════════════════════════════════════
+
+/**
+ * Словарь: английский заголовок → русский перевод.
+ * Добавляется как note (всплывающая подсказка при наведении).
+ */
+var RUSSIAN_NOTES_ = {
+
+  // ─── SKU_MASTER ───
+  'active':                    'Активен (TRUE/FALSE)',
+  'internal_sku':              'Внутренний артикул EVETIS',
+  'product_name_short':        'Короткое название товара',
+  'product_name_full':         'Полное название товара',
+  'category':                  'Категория (Крем, Сыворотка, Тоник, Набор...)',
+  'line':                      'Линейка (Уход за телом, Уход за лицом...)',
+  'product_type':              'Тип: single (единичка) / bundle (набор)',
+  'status':                    'Статус: active / paused / discontinued',
+  'wb_nm_id':                  'Номенклатура WB (nmId)',
+  'wb_vendor_code':            'Артикул поставщика на WB',
+  'barcode':                   'Штрихкод (баркод)',
+  'wb_subject_id':             'ID предмета на WB (subjectId)',
+  'wb_subject_name':           'Название предмета на WB',
+  'wb_card_url':               'Ссылка на карточку WB',
+  'wb_imt_id':                 'IMT ID карточки WB',
+  'volume_ml':                 'Объём, мл',
+  'weight_g':                  'Вес, г',
+  'color':                     'Цвет',
+  'fragrance':                 'Аромат',
+  'brand':                     'Бренд',
+  'country_of_origin':         'Страна производства',
+  'certification':             'Сертификация',
+  'launch_date':               'Дата запуска на WB',
+  'current_cogs':              'Текущая себестоимость, ₽ (из COST_HISTORY)',
+  'cogs_valid_from':           'Дата начала действия себестоимости',
+  'regular_price':             'РРЦ (рекомендованная розничная цена), ₽',
+  'target_sale_price':         'Целевая цена продажи, ₽',
+  'min_sale_price':            'Минимальная цена продажи, ₽',
+  'current_wb_price':          'Текущая цена на WB, ₽',
+  'current_discount_percent':  'Текущая скидка на WB, %',
+  'price_strategy':            'Ценовая стратегия',
+  'promo_allowed':             'Участие в акциях разрешено (TRUE/FALSE)',
+  'ff_tariff_group':           'Тарифная группа ФФ (А/Б/В)',
+  'units_per_box':             'Штук в коробе',
+  'units_per_masterbox':       'Штук в мастер-коробе',
+  'min_supply_qty':            'Минимальная партия поставки, шт',
+  'target_stock_days':         'Целевой запас на складе WB, дней',
+  'critical_stock_days':       'Критический запас, дней',
+  'supply_priority':           'Приоритет поставки (1-5)',
+  'preferred_warehouses':      'Предпочтительные склады WB',
+  'excluded_warehouses':       'Исключённые склады WB',
+  'is_bundle':                 'Это набор? (TRUE/FALSE)',
+  'bundle_components_source':  'Состав набора (SKU компонентов)',
+  'bundle_build_cost':         'Стоимость сборки набора на ФФ, ₽',
+  'bundle_comment':            'Комментарий по набору',
+  'include_in_pnl':            'Включать в P&L (TRUE/FALSE)',
+  'include_in_ads_analysis':   'Включать в анализ рекламы',
+  'include_in_supply_plan':    'Включать в план поставок',
+  'include_in_stock_alerts':   'Уведомлять по остаткам',
+  'manager_comment':           'Комментарий менеджера',
+  'data_quality_status':       'Качество данных: OK / CHECK / ERROR',
+  'data_quality_comment':      'Комментарий к качеству данных',
+
+  // ─── BUNDLES ───
+  'bundle_internal_sku':       'Артикул набора',
+  'bundle_name':               'Название набора',
+  'component_internal_sku':    'Артикул компонента',
+  'component_name':            'Название компонента',
+  'component_qty':             'Количество компонента в наборе',
+  'component_cost':            'Себестоимость компонента, ₽',
+  'bundle_total_cost':         'Полная себестоимость набора, ₽',
+  // 'bundle_build_cost' — уже выше
+
+  // ─── COST_HISTORY ───
+  'cost_id':                   'ID записи себестоимости',
+  // 'internal_sku' — уже выше
+  'product_name':              'Название товара',
+  'valid_from':                'Действует с (дата)',
+  'valid_to':                  'Действует до (дата, пусто = текущая)',
+  'is_current':                'Текущая запись? (TRUE/FALSE)',
+  'cost_type':                 'Тип: actual / estimated / historical',
+  'purchase_cost_cny':         'Закупочная цена, CNY (юань)',
+  'exchange_rate':             'Курс CNY/RUB',
+  'purchase_cost_rub':         'Закупочная цена, ₽',
+  'logistics_china_rub':       'Логистика Китай→РФ, ₽',
+  'customs_rub':               'Таможня, ₽',
+  'certification_rub':         'Сертификация, ₽',
+  'packaging_rub':             'Упаковка, ₽',
+  'marking_rub':               'Маркировка ЧЗ, ₽',
+  'labeling_rub':              'Наклейка этикеток, ₽',
+  'other_cost_rub':            'Прочие расходы, ₽',
+  'cogs_per_unit':             'Себестоимость единицы (landed), ₽',
+  'batch_id':                  'ID партии',
+  'batch_qty':                 'Количество в партии, шт',
+  'supplier':                  'Поставщик (фабрика)',
+  'reason':                    'Причина записи',
+  'comment':                   'Комментарий'
+};
+
+
+/**
+ * Добавляет русские notes к заголовкам указанного листа.
+ */
+function addNotesToSheet_(ss, sheetName) {
+  var sheet = ss.getSheetByName(sheetName);
+  if (!sheet) {
+    log_('⚠️ Лист не найден: ' + sheetName);
+    return 0;
+  }
+
+  var lastCol = sheet.getLastColumn();
+  if (lastCol < 1) return 0;
+
+  var headers = sheet.getRange(1, 1, 1, lastCol).getValues()[0];
+  var count = 0;
+
+  for (var c = 0; c < headers.length; c++) {
+    var header = String(headers[c]).trim();
+    var note = RUSSIAN_NOTES_[header];
+    if (note) {
+      sheet.getRange(1, c + 1).setNote(note);
+      count++;
+    }
+  }
+
+  log_('📝 Notes добавлены: ' + sheetName + ' — ' + count + ' из ' + headers.length);
+  return count;
+}
+
+
+/**
+ * Публичная функция: добавить русские notes к SKU_MASTER, BUNDLES, COST_HISTORY.
+ */
+function addRussianNotes() {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var t0 = Date.now();
+
+  log_('═══ Добавление русских примечаний ═══');
+
+  var total = 0;
+  total += addNotesToSheet_(ss, SHEET_NAMES.SKU_MASTER);
+  total += addNotesToSheet_(ss, SHEET_NAMES.BUNDLES);
+  total += addNotesToSheet_(ss, SHEET_NAMES.COST_HISTORY);
+
+  var elapsed = ((Date.now() - t0) / 1000).toFixed(1);
+  log_('✅ Всего notes: ' + total + ' за ' + elapsed + ' сек');
+
+  SpreadsheetApp.getUi().alert(
+    '✅ Русские подсказки добавлены',
+    'Наведите курсор на заголовок колонки — увидите описание на русском.\n\n' +
+    'Обработано подсказок: ' + total,
+    SpreadsheetApp.getUi().ButtonSet.OK
+  );
+}
+
+
+// ═══════════════════════════════════════
+// 2. АУДИТ SKU_MASTER
+// ═══════════════════════════════════════
+
+/**
+ * Аудит SKU_MASTER: полнота данных, связки, проблемы.
+ */
+function auditSkuMaster_(ss) {
+  var sheet = ss.getSheetByName(SHEET_NAMES.SKU_MASTER);
+  if (!sheet) {
+    log_('❌ SKU_MASTER не найден');
+    return { errors: ['SKU_MASTER не найден'], warnings: [], stats: {} };
+  }
+
+  var lastRow = sheet.getLastRow();
+  if (lastRow < 2) {
+    log_('⚠️ SKU_MASTER пуст');
+    return { errors: [], warnings: ['SKU_MASTER пуст — нет данных'], stats: {} };
+  }
+
+  var data = sheet.getRange(2, 1, lastRow - 1, sheet.getLastColumn()).getValues();
+  var headers = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
+
+  // Построим карту колонок
+  var col = {};
+  for (var h = 0; h < headers.length; h++) {
+    col[String(headers[h]).trim()] = h;
+  }
+
+  var errors = [];
+  var warnings = [];
+  var stats = {
+    total: data.length,
+    active: 0,
+    singles: 0,
+    bundles: 0,
+    paused: 0,
+    withNmId: 0,
+    withBarcode: 0,
+    withCogs: 0,
+    withPrices: 0,
+    missingFields: []
+  };
+
+  // Обязательные поля для каждой строки
+  var requiredFields = ['internal_sku', 'product_name_short', 'category', 'product_type', 'status'];
+  var importantFields = ['wb_nm_id', 'barcode', 'current_cogs', 'regular_price'];
+
+  for (var r = 0; r < data.length; r++) {
+    var row = data[r];
+    var sku = String(row[col['internal_sku']] || '').trim();
+    var rowNum = r + 2;
+
+    if (!sku) {
+      warnings.push('Строка ' + rowNum + ': пустой internal_sku');
+      continue;
+    }
+
+    // Проверяем обязательные
+    for (var rf = 0; rf < requiredFields.length; rf++) {
+      var fld = requiredFields[rf];
+      if (col[fld] !== undefined && !row[col[fld]]) {
+        errors.push(sku + ': пустое поле «' + fld + '»');
+      }
+    }
+
+    // Статистика
+    var isActive = String(row[col['active']] || '').toUpperCase() === 'TRUE';
+    var isBundleVal = String(row[col['is_bundle']] || '').toUpperCase() === 'TRUE';
+    var prodType = String(row[col['product_type']] || '').toLowerCase();
+    var status = String(row[col['status']] || '').toLowerCase();
+
+    if (isActive) stats.active++;
+    if (prodType === 'single') stats.singles++;
+    if (prodType === 'bundle' || isBundleVal) stats.bundles++;
+    if (status === 'paused') stats.paused++;
+    if (row[col['wb_nm_id']]) stats.withNmId++;
+    if (row[col['barcode']]) stats.withBarcode++;
+    if (row[col['current_cogs']]) stats.withCogs++;
+    if (row[col['regular_price']] || row[col['target_sale_price']]) stats.withPrices++;
+
+    // Важные поля — предупреждение
+    for (var imp = 0; imp < importantFields.length; imp++) {
+      var impFld = importantFields[imp];
+      if (col[impFld] !== undefined && !row[col[impFld]]) {
+        warnings.push(sku + ': не заполнено «' + impFld + '»');
+      }
+    }
+
+    // Набор без компонентов
+    if (isBundleVal && !row[col['bundle_components_source']]) {
+      errors.push(sku + ': набор без bundle_components_source');
+    }
+
+    // Единичка с is_bundle=TRUE
+    if (prodType === 'single' && isBundleVal) {
+      errors.push(sku + ': product_type=single, но is_bundle=TRUE');
+    }
+  }
+
+  return { errors: errors, warnings: warnings, stats: stats };
+}
+
+
+// ═══════════════════════════════════════
+// 3. АУДИТ COST_HISTORY
+// ═══════════════════════════════════════
+
+/**
+ * Аудит COST_HISTORY: полнота, дубли, пробелы.
+ */
+function auditCostHistory_(ss) {
+  var sheet = ss.getSheetByName(SHEET_NAMES.COST_HISTORY);
+  if (!sheet) {
+    log_('❌ COST_HISTORY не найден');
+    return { errors: ['COST_HISTORY не найден'], warnings: [], stats: {} };
+  }
+
+  var lastRow = sheet.getLastRow();
+  if (lastRow < 2) {
+    return { errors: [], warnings: ['COST_HISTORY пуст'], stats: {} };
+  }
+
+  var data = sheet.getRange(2, 1, lastRow - 1, sheet.getLastColumn()).getValues();
+  var headers = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
+
+  var col = {};
+  for (var h = 0; h < headers.length; h++) {
+    col[String(headers[h]).trim()] = h;
+  }
+
+  var errors = [];
+  var warnings = [];
+  var stats = {
+    total: data.length,
+    current: 0,
+    historical: 0,
+    withCogs: 0,
+    uniqueSkus: {},
+    skusWithCurrent: {}
+  };
+
+  for (var r = 0; r < data.length; r++) {
+    var row = data[r];
+    var costId = String(row[col['cost_id']] || '').trim();
+    var sku = String(row[col['internal_sku']] || '').trim();
+    var rowNum = r + 2;
+
+    if (!sku) {
+      warnings.push('Строка ' + rowNum + ': пустой internal_sku');
+      continue;
+    }
+
+    stats.uniqueSkus[sku] = true;
+
+    var isCurrent = String(row[col['is_current']] || '').toUpperCase() === 'TRUE';
+    var cogs = row[col['cogs_per_unit']];
+
+    if (isCurrent) {
+      stats.current++;
+      stats.skusWithCurrent[sku] = (stats.skusWithCurrent[sku] || 0) + 1;
+    } else {
+      stats.historical++;
+    }
+
+    if (cogs && Number(cogs) > 0) {
+      stats.withCogs++;
+    } else {
+      errors.push(costId + ' (' + sku + '): нет cogs_per_unit');
+    }
+
+    // Несколько is_current для одного SKU
+    if (stats.skusWithCurrent[sku] > 1) {
+      errors.push(sku + ': несколько записей is_current=TRUE (дублирование текущей себестоимости)');
+    }
+
+    // valid_from обязательна
+    if (!row[col['valid_from']]) {
+      warnings.push(costId + ' (' + sku + '): нет valid_from');
+    }
+  }
+
+  stats.uniqueSkuCount = Object.keys(stats.uniqueSkus).length;
+
+  return { errors: errors, warnings: warnings, stats: stats };
+}
+
+
+// ═══════════════════════════════════════
+// 4. ПЕРЕКРЁСТНЫЙ АУДИТ
+// ═══════════════════════════════════════
+
+/**
+ * Проверяет, что каждый активный SKU из SKU_MASTER
+ * имеет запись is_current=TRUE в COST_HISTORY.
+ */
+function crossAudit_(ss) {
+  var skuSheet = ss.getSheetByName(SHEET_NAMES.SKU_MASTER);
+  var costSheet = ss.getSheetByName(SHEET_NAMES.COST_HISTORY);
+  if (!skuSheet || !costSheet) return { errors: [], warnings: [] };
+
+  // SKU_MASTER: собираем активные SKU
+  var skuData = skuSheet.getRange(2, 1, Math.max(1, skuSheet.getLastRow() - 1), skuSheet.getLastColumn()).getValues();
+  var skuHeaders = skuSheet.getRange(1, 1, 1, skuSheet.getLastColumn()).getValues()[0];
+  var skuCol = {};
+  for (var h = 0; h < skuHeaders.length; h++) skuCol[String(skuHeaders[h]).trim()] = h;
+
+  var activeSkus = {};
+  for (var r = 0; r < skuData.length; r++) {
+    var sku = String(skuData[r][skuCol['internal_sku']] || '').trim();
+    var isActive = String(skuData[r][skuCol['active']] || '').toUpperCase() === 'TRUE';
+    var isBundleVal = String(skuData[r][skuCol['is_bundle']] || '').toUpperCase() === 'TRUE';
+    if (sku && isActive) {
+      activeSkus[sku] = { isBundle: isBundleVal };
+    }
+  }
+
+  // COST_HISTORY: собираем SKU с is_current=TRUE
+  var costData = costSheet.getRange(2, 1, Math.max(1, costSheet.getLastRow() - 1), costSheet.getLastColumn()).getValues();
+  var costHeaders = costSheet.getRange(1, 1, 1, costSheet.getLastColumn()).getValues()[0];
+  var costCol = {};
+  for (var ch = 0; ch < costHeaders.length; ch++) costCol[String(costHeaders[ch]).trim()] = ch;
+
+  var costedSkus = {};
+  for (var cr = 0; cr < costData.length; cr++) {
+    var cSku = String(costData[cr][costCol['internal_sku']] || '').trim();
+    var isCurr = String(costData[cr][costCol['is_current']] || '').toUpperCase() === 'TRUE';
+    if (cSku && isCurr) costedSkus[cSku] = true;
+  }
+
+  // BUNDLES: проверяем компоненты
+  var bundleSheet = ss.getSheetByName(SHEET_NAMES.BUNDLES);
+  var bundleSkus = {};
+  if (bundleSheet && bundleSheet.getLastRow() > 1) {
+    var bData = bundleSheet.getRange(2, 1, bundleSheet.getLastRow() - 1, bundleSheet.getLastColumn()).getValues();
+    var bHeaders = bundleSheet.getRange(1, 1, 1, bundleSheet.getLastColumn()).getValues()[0];
+    var bCol = {};
+    for (var bh = 0; bh < bHeaders.length; bh++) bCol[String(bHeaders[bh]).trim()] = bh;
+
+    for (var br = 0; br < bData.length; br++) {
+      var bSku = String(bData[br][bCol['bundle_internal_sku']] || '').trim();
+      var compSku = String(bData[br][bCol['component_internal_sku']] || '').trim();
+      if (bSku) {
+        if (!bundleSkus[bSku]) bundleSkus[bSku] = [];
+        if (compSku) bundleSkus[bSku].push(compSku);
+      }
+    }
+  }
+
+  var errors = [];
+  var warnings = [];
+
+  // Проверка: каждый активный SKU должен иметь себестоимость
+  var keys = Object.keys(activeSkus);
+  for (var k = 0; k < keys.length; k++) {
+    var asku = keys[k];
+    if (!costedSkus[asku]) {
+      if (activeSkus[asku].isBundle) {
+        // Набор может не иметь собственной записи в COST_HISTORY
+        // (себестоимость = сумма компонентов + сборка)
+        warnings.push(asku + ': набор без записи в COST_HISTORY (ОК если считается через компоненты)');
+      } else {
+        errors.push(asku + ': активный SKU без текущей себестоимости в COST_HISTORY');
+      }
+    }
+  }
+
+  // Проверка: каждый набор в SKU_MASTER должен быть в BUNDLES
+  for (var k2 = 0; k2 < keys.length; k2++) {
+    var asku2 = keys[k2];
+    if (activeSkus[asku2].isBundle && !bundleSkus[asku2]) {
+      errors.push(asku2 + ': набор в SKU_MASTER, но нет состава в BUNDLES');
+    }
+  }
+
+  // Проверка: компоненты набора должны быть в SKU_MASTER
+  var bundleKeys = Object.keys(bundleSkus);
+  for (var bk = 0; bk < bundleKeys.length; bk++) {
+    var comps = bundleSkus[bundleKeys[bk]];
+    for (var ci = 0; ci < comps.length; ci++) {
+      if (!activeSkus[comps[ci]]) {
+        warnings.push(bundleKeys[bk] + ': компонент ' + comps[ci] + ' не найден / неактивен в SKU_MASTER');
+      }
+    }
+  }
+
+  return { errors: errors, warnings: warnings };
+}
+
+
+// ═══════════════════════════════════════
+// 5. ГЛАВНАЯ ФУНКЦИЯ АУДИТА
+// ═══════════════════════════════════════
+
+/**
+ * Полный аудит SKU_MASTER + COST_HISTORY + BUNDLES + перекрёстные проверки.
+ */
+function auditSkuAndCost() {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var t0 = Date.now();
+
+  log_('╔══════════════════════════════════════════════════════════╗');
+  log_('║  EVETIS WB — АУДИТ СПРАВОЧНИКОВ                        ║');
+  log_('╚══════════════════════════════════════════════════════════╝');
+
+  // 1. SKU_MASTER
+  log_('\n── SKU_MASTER ──');
+  var skuResult = auditSkuMaster_(ss);
+  var s = skuResult.stats;
+
+  log_('  Всего строк: ' + s.total);
+  log_('  Активных: ' + s.active);
+  log_('  Единичных: ' + s.singles + ' | Наборов: ' + s.bundles);
+  log_('  С wb_nm_id: ' + s.withNmId + ' | С barcode: ' + s.withBarcode);
+  log_('  С себестоимостью: ' + s.withCogs + ' | С ценами: ' + s.withPrices);
+
+  // 2. COST_HISTORY
+  log_('\n── COST_HISTORY ──');
+  var costResult = auditCostHistory_(ss);
+  var cs = costResult.stats;
+
+  log_('  Всего записей: ' + cs.total);
+  log_('  Текущих (is_current): ' + cs.current + ' | Исторических: ' + cs.historical);
+  log_('  С cogs_per_unit: ' + cs.withCogs);
+  log_('  Уникальных SKU: ' + cs.uniqueSkuCount);
+
+  // 3. Перекрёстный
+  log_('\n── ПЕРЕКРЁСТНЫЕ ПРОВЕРКИ ──');
+  var crossResult = crossAudit_(ss);
+
+  // 4. Сводка
+  var allErrors = skuResult.errors.concat(costResult.errors, crossResult.errors);
+  var allWarnings = skuResult.warnings.concat(costResult.warnings, crossResult.warnings);
+
+  log_('\n══════════════════════════════════════════════════════════');
+  log_('  ИТОГИ АУДИТА');
+  log_('══════════════════════════════════════════════════════════');
+
+  if (allErrors.length > 0) {
+    log_('\n  ❌ ОШИБКИ (' + allErrors.length + '):');
+    for (var e = 0; e < allErrors.length; e++) {
+      log_('    • ' + allErrors[e]);
+    }
+  }
+
+  if (allWarnings.length > 0) {
+    log_('\n  ⚠️ ПРЕДУПРЕЖДЕНИЯ (' + allWarnings.length + '):');
+    for (var w = 0; w < allWarnings.length; w++) {
+      log_('    • ' + allWarnings[w]);
+    }
+  }
+
+  var status = allErrors.length > 0 ? '❌ ЕСТЬ ОШИБКИ' :
+               allWarnings.length > 0 ? '⚠️ ЕСТЬ ПРЕДУПРЕЖДЕНИЯ' : '✅ ВСЁ ЧИСТО';
+
+  log_('\n  СТАТУС: ' + status);
+  var elapsed = ((Date.now() - t0) / 1000).toFixed(1);
+  log_('  Время: ' + elapsed + ' сек');
+  log_('══════════════════════════════════════════════════════════');
+
+  // Диалог
+  var msg = 'SKU_MASTER: ' + s.total + ' товаров (' + s.active + ' активных)\n' +
+    '  • Единичных: ' + s.singles + ' | Наборов: ' + s.bundles + '\n' +
+    '  • С wb_nm_id: ' + s.withNmId + ' | С barcode: ' + s.withBarcode + '\n\n' +
+    'COST_HISTORY: ' + cs.total + ' записей (' + cs.current + ' текущих)\n' +
+    '  • Уникальных SKU: ' + cs.uniqueSkuCount + '\n\n' +
+    'Ошибок: ' + allErrors.length + ' | Предупреждений: ' + allWarnings.length + '\n\n' +
+    (allErrors.length > 0 ? 'Подробности: View → Logs' : 'Данные в порядке!');
+
+  SpreadsheetApp.getUi().alert(status, msg, SpreadsheetApp.getUi().ButtonSet.OK);
+}
+
+
+// ═══════════════════════════════════════
+// 6. КОМБО: АУДИТ + NOTES
+// ═══════════════════════════════════════
+
+/**
+ * Выполняет оба действия: аудит + русские notes.
+ */
+function auditAndNotes() {
+  addRussianNotes();
+  auditSkuAndCost();
+}

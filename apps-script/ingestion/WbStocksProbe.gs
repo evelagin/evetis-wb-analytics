@@ -1,0 +1,482 @@
+/**
+ * ══════════════════════════════════════════════════════════════
+ * EVETIS WB — WbStocksProbe.gs  v1.0  (test-only)
+ *
+ * Тонкая READ-ONLY обёртка над уже существующими T5/T6 probe из
+ * WbApiTestRunner.gs. Запускает оба кандидата остатков и сводит
+ * результат в один контрольный alert.
+ *
+ * SCOPE (строго):
+ *   - Только ВЫЗОВ существующих wbApiTestStocksA_() (T5) и
+ *     wbApiTestStocksB_() (T6) + чтение их result-объектов + alert.
+ *   - СВОЕЙ записи нет вообще: ни production RAW (RAW_WB_STOCKS и пр.),
+ *     ни листов, ни dashboard. Любая персистентность — это поведение
+ *     самого test-harness (raw JSON в Drive-папку для разбора).
+ *
+ * НЕ ТРОГАЕТ И НЕ МЕНЯЕТ:
+ *   - WbApiTestRunner.gs / WbApiTestConfig.gs (только ВЫЗЫВАЕТ).
+ *   - RAW_WB_STOCKS, RAW_WB_FINANCE, RAW_WB_ORDERS, RAW_WB_SALES_RETURNS.
+ *   - runWbDailyRefresh(), CLEAN/UNIT, dashboard, COGS.
+ *
+ * ЗАВИСИМОСТИ (из WbApiTestRunner.gs):
+ *   wbApiTestStocksA_(), wbApiTestStocksB_()
+ *
+ * ПУБЛИЧНАЯ ТОЧКА ВХОДА:
+ *   probeWbStocksTestOnly()
+ *
+ * МЕНЮ: addWbStocksProbeMenu() — опционально, одной строкой в Menu v2.
+ * ══════════════════════════════════════════════════════════════
+ */
+
+
+/** Достаёт «физический остаток» из checksums кандидата (A и B зовут поле по-разному). */
+function wbStocksProbePhysicalQty_(cs) {
+  if (!cs) return 0;
+  if (cs.stockPhysicalQtyByWarehouses !== undefined) return cs.stockPhysicalQtyByWarehouses; // T5
+  if (cs.totalQuantity !== undefined) return cs.totalQuantity;                                // T6
+  return 0;
+}
+
+/** Краткий статус probe: OK если есть строки и нет ошибок, иначе WARN/ERROR. */
+function wbStocksProbeStatus_(r) {
+  if (!r) return 'ERROR';
+  if (r.errors && r.errors.length) return (r.rowsCount > 0 ? 'WARN' : 'ERROR');
+  return (r.rowsCount > 0 ? 'OK' : 'WARN');
+}
+
+/** Формирует блок текста по одному кандидату. */
+function wbStocksProbeBlock_(title, r) {
+  if (!r) return '── ' + title + ' ──\n(нет результата)\n';
+  var cs = r.checksums || {};
+  var firstErr = (r.errors && r.errors.length) ? r.errors[0] : '';
+  return '── ' + title + ' ──\n' +
+    'Статус: ' + wbStocksProbeStatus_(r) + '\n' +
+    'HTTP: ' + (r.httpStatus !== undefined && r.httpStatus !== null ? r.httpStatus : '—') + '\n' +
+    'Строк: ' + (r.rowsCount || 0) + '\n' +
+    'Уникальных nmId: ' + (cs.uniqueNmId !== undefined ? cs.uniqueNmId : '—') + '\n' +
+    'Физ. остаток (qty): ' + wbStocksProbePhysicalQty_(cs) + '\n' +
+    'Складских строк: ' + (cs.warehouseRows !== undefined ? cs.warehouseRows : '—') + '\n' +
+    'unmatched nmId: ' + (cs.unmatchedNmId !== undefined ? cs.unmatchedNmId : '—') + '\n' +
+    'Решение: ' + (r.decision || '—') + '\n' +
+    (firstErr ? 'Ошибка: ' + firstErr + '\n' : '');
+}
+
+/**
+ * READ-ONLY probe остатков: гоняет T5 (warehouse_remains) и T6
+ * (stocks-report/wb-warehouses) через существующий harness и сводит
+ * результат в один alert. Своей записи не делает.
+ * @return {{T5:Object, T6:Object}}
+ */
+function probeWbStocksTestOnly() {
+  var ui = SpreadsheetApp.getUi();
+  var t0 = Date.now();
+
+  if (typeof wbApiTestStocksA_ !== 'function' || typeof wbApiTestStocksB_ !== 'function') {
+    ui.alert('🧪 Probe остатков',
+      'Не найдены T5/T6 probe (wbApiTestStocksA_/wbApiTestStocksB_) в WbApiTestRunner.gs.',
+      ui.ButtonSet.OK);
+    return { T5: null, T6: null };
+  }
+
+  var a = null, b = null;
+  try { a = wbApiTestStocksA_(); } catch (e) { console.log('❌ T5: ' + e.message); }
+  try { b = wbApiTestStocksB_(); } catch (e) { console.log('❌ T6: ' + e.message); }
+
+  var elapsed = ((Date.now() - t0) / 1000).toFixed(1);
+
+  var msg =
+    wbStocksProbeBlock_('T5 · warehouse_remains (A, GET task-based)', a) + '\n' +
+    wbStocksProbeBlock_('T6 · stocks-report/wb-warehouses (B, POST)', b) + '\n' +
+    'Время: ' + elapsed + ' сек\n\n' +
+    '⚠️ Test-only probe остатков. В production RAW и dashboard НЕ пишет.\n' +
+    'Канон A/B не выбран — загрузчик остатков не кодим (PR #16B).';
+
+  ui.alert('🧪 Probe остатков (T5/T6)', msg, ui.ButtonSet.OK);
+  console.log('🧪 probeWbStocksTestOnly завершён за ' + elapsed + ' сек');
+  return { T5: a, T6: b };
+}
+
+
+// ═══════════════════════════════════════
+// FAIL-OPEN CONSOLE PROBE (Drive-независимый)
+// ═══════════════════════════════════════
+/*
+ * probeWbStocksConsole() — диагностика источника остатков БЕЗ зависимости от Google Drive.
+ * Причина: старый probeWbStocksTestOnly() шёл через wbApiTestPrepare_(), который при
+ * недоступной Drive-папке (`Permission denied while enabling APIs: drive`) возвращает
+ * BLOCKED ещё ДО вызова WB API — то есть T5/T6 не отрабатывали.
+ *
+ * Здесь Drive не нужен для диагностики: обращаемся к WB напрямую и всё выводим в
+ * console.log (endpoint, HTTP, тип ответа, число строк, ключи первой строки, 1–3 примера
+ * без токена, уникальные nmId/barcode/склад, SUM(quantity), физ. и псевдо-склады, ошибки).
+ * Полное сохранение JSON в Drive — ОПЦИОНАЛЬНО (opts.saveJson=true) и НИКОГДА не блокирует:
+ * при недоступном Drive — только WARNING. Токен и заголовки не логируются. Ошибка самого
+ * WB API по-прежнему даёт ERROR/PARTIAL; отсутствие Drive — только WARNING.
+ *
+ * Переиспользует Drive-free хелперы WbApiTest* (токен/HTTP/task/парсинг), harness НЕ меняет.
+ * Точка повторного запуска: probeWbStocksConsole()  (без аргументов — Drive не трогается).
+ */
+
+/** Безопасный лог probe (никогда не принимает токен). */
+function stocksProbeLog_(msg) {
+  console.log('[STOCKS_PROBE] ' + msg);
+}
+
+/** JSON с ограничением длины (примеры строк — без токена, он только в заголовке запроса). */
+function stocksProbeSafeJson_(obj) {
+  var s;
+  try { s = JSON.stringify(obj); } catch (e) { return '(unserializable)'; }
+  if (s.length > 1500) s = s.substring(0, 1500) + '…(обрезано)';
+  return s;
+}
+
+/** Список distinct nmId, отсутствующих в SKU_MASTER. available=false, если SKU_MASTER пуст/недоступен. */
+function stocksProbeUnmatchedNmList_(nmIds, skuSet) {
+  if (!skuSet || !Object.keys(skuSet).length) return { available: false, list: [] };
+  var seen = {}, list = [];
+  for (var i = 0; i < nmIds.length; i++) {
+    var nm = nmIds[i];
+    if (nm && !seen[nm]) { seen[nm] = true; if (!skuSet[nm]) list.push(nm); }
+  }
+  return { available: true, list: list };
+}
+
+/**
+ * Fail-open console-probe остатков (T5 + T6). Drive не требуется.
+ * @param {Object=} opts { saveJson:boolean } — если true, ДОПОЛНИТЕЛЬНО попытаться
+ *   сохранить полный JSON в Drive (не блокирует при недоступности).
+ * @return {{T5:Object, T6:Object}}
+ */
+function probeWbStocksConsole(opts) {
+  opts = opts || {};
+  var saveJson = (opts.saveJson === true);
+  assertWbApiTestMode_();   // предохранитель тест-режима (Drive не трогает)
+
+  stocksProbeLog_('=== Probe остатков (console, Drive-независимый) ===');
+  stocksProbeLog_('Период (для T6 body): ' + WB_API_TEST_DATE_FROM_ + '..' + WB_API_TEST_DATE_TO_ +
+    ' | T5 warehouse_remains — снимок «сейчас».');
+
+  var tk = wbApiTestGetToken_('Analytics');
+  wbApiTestTokenInfo_('Analytics', tk.present);   // печатает только present:yes/no, без значения
+  if (!tk.present) {
+    stocksProbeLog_('❌ ERROR: нет токена Analytics (WB_TOKEN_ANALYTICS) — обращение к WB невозможно.');
+    return { T5: { test: 'T5', status: 'ERROR', rowsCount: 0, errors: ['no Analytics token'] },
+             T6: { test: 'T6', status: 'ERROR', rowsCount: 0, errors: ['no Analytics token'] } };
+  }
+
+  var sku = { set: {}, count: 0 };
+  try { sku = wbApiTestLoadSkuNmIds_(); } catch (e) { stocksProbeLog_('⚠️ SKU_MASTER read-only: ' + e.message); }
+
+  var t5 = probeStocksT5Console_(tk.token, sku);
+  var t6 = probeStocksT6Console_(tk.token, sku);
+
+  // Опциональное сохранение полного JSON в Drive — НЕ обязательно и НЕ блокирует.
+  if (saveJson) {
+    try {
+      var folder = wbApiTestGetResultsFolder_();   // сам ловит ошибки Drive и возвращает null
+      if (folder) {
+        var stamp = Utilities.formatDate(new Date(), 'Europe/Moscow', 'yyyyMMdd_HHmmss');
+        wbApiTestSaveJson_(folder, 'stocks_probe_console_' + stamp + '.json', { T5: t5, T6: t6 });
+      } else {
+        stocksProbeLog_('⚠️ WARNING: Drive-папка недоступна — полный JSON НЕ сохранён (диагностике не мешает).');
+      }
+    } catch (e2) {
+      stocksProbeLog_('⚠️ WARNING: сохранение в Drive не удалось (' + e2.message + ') — диагностике не мешает.');
+    }
+  } else {
+    stocksProbeLog_('ℹ️ Сохранение JSON в Drive отключено (вызови probeWbStocksConsole({saveJson:true}) чтобы включить).');
+  }
+
+  stocksProbeLog_('=== Итог: T5 ' + t5.status + ' (rows=' + t5.rowsCount + '), T6 ' + t6.status +
+    ' (rows=' + t6.rowsCount + ') === Источник остатков выбираем по этим числам.');
+  return { T5: t5, T6: t6 };
+}
+
+/** T5 — warehouse_remains (GET task-based). Разворачивает warehouses[] в физ./псевдо-склады. */
+function probeStocksT5Console_(token, sku) {
+  var taskBase = WB_API_TEST_HOST_ANALYTICS_ + '/api/v1/warehouse_remains';
+  var createUrl = taskBase + '?groupByBrand=false&groupBySubject=false&groupBySa=true' +
+    '&groupByNm=true&groupByBarcode=true&groupBySize=true';
+  var out = { test: 'T5', name: 'warehouse_remains', endpoint: taskBase, status: 'ERROR',
+    httpStatus: null, responseType: '', rowsCount: 0, fields: [], errors: [] };
+
+  stocksProbeLog_('── T5 · warehouse_remains (GET task-based) ──');
+  stocksProbeLog_('T5 endpoint: ' + taskBase);
+
+  var data = [];
+  try {
+    var task = wbApiTestRunTask_(token, createUrl, taskBase);
+    out.httpStatus = task.ok ? 200 : null;
+    out.responseType = Array.isArray(task.data) ? 'array' : (task.data ? typeof task.data : 'null');
+    if (!task.ok) { out.errors.push(task.error); stocksProbeLog_('T5 ❌ task error: ' + task.error); }
+    else if (task.data && task.data.length) data = task.data;
+  } catch (e) { out.errors.push('Исключение: ' + e.message); stocksProbeLog_('T5 ❌ исключение: ' + e.message); }
+
+  out.rowsCount = data.length;
+  out.fields = wbApiTestFieldList_(data);
+
+  var WH_TOTAL_ = 'Всего находится на складах';
+  var WH_TO_CLIENT_ = 'В пути до получателей';
+  var WH_FROM_CLIENT_ = 'В пути возвраты на склад WB';
+  var nmIds = [], barcodes = {}, physWarehouses = {};
+  var physQty = 0, toClient = 0, fromClient = 0, warehouseRows = 0, pseudoRows = 0;
+  for (var i = 0; i < data.length; i++) {
+    var nm = wbApiTestNormNmId_(wbApiTestPick_(data[i], ['nmId', 'nmid', 'nm_id']));
+    if (nm) nmIds.push(nm);
+    var bc = wbApiTestPick_(data[i], ['barcode', 'sku']);
+    if (bc) barcodes[String(bc)] = true;
+    var whs = data[i].warehouses;
+    if (whs && whs.length) {
+      for (var w = 0; w < whs.length; w++) {
+        var name = String(whs[w].warehouseName || whs[w].warehouse || '');
+        var q = Number(whs[w].quantity || 0);
+        if (name === WH_TOTAL_) { pseudoRows++; }
+        else if (name === WH_TO_CLIENT_) { toClient += q; pseudoRows++; }
+        else if (name === WH_FROM_CLIENT_) { fromClient += q; pseudoRows++; }
+        else { physQty += q; warehouseRows++; physWarehouses[name] = true; }
+      }
+    }
+  }
+  var uniq = wbApiTestUniqueAndUnmatched_(nmIds, sku.set);
+  var unm5 = stocksProbeUnmatchedNmList_(nmIds, sku.set);
+  out.uniqueNmId = uniq.unique;
+  out.unmatchedNmId = uniq.unmatched;
+  out.unmatchedNmList = unm5.list;
+  out.uniqueBarcode = Object.keys(barcodes).length;
+  out.uniqueWarehouse = Object.keys(physWarehouses).length;
+  out.sumQuantityPhysical = wbApiTestRound_(physQty);
+  out.inWayToClient = wbApiTestRound_(toClient);
+  out.inWayFromClient = wbApiTestRound_(fromClient);
+  out.warehouseRows = warehouseRows;
+  out.pseudoRows = pseudoRows;
+  out.status = out.errors.length ? (out.rowsCount > 0 ? 'PARTIAL' : 'ERROR') : (out.rowsCount > 0 ? 'OK' : 'WARN');
+
+  stocksProbeLog_('T5 HTTP: ' + (out.httpStatus === null ? '—' : out.httpStatus) + ' | итог: ' + out.status +
+    ' | responseType: ' + out.responseType + ' | rows(items): ' + out.rowsCount);
+  stocksProbeLog_('T5 first-row keys: ' + JSON.stringify(out.fields));
+  stocksProbeLog_('T5 sample rows (1-3, без токена): ' + stocksProbeSafeJson_(wbApiTestFirstRows_(data, 3)));
+  stocksProbeLog_('T5 uniqueNmId: ' + out.uniqueNmId + ' | uniqueBarcode: ' + out.uniqueBarcode +
+    ' | физ.складов: ' + out.uniqueWarehouse + ' | unmatched nmId: ' + out.unmatchedNmId);
+  stocksProbeLog_('T5 unmatched nmId list: ' + (unm5.available ? JSON.stringify(unm5.list) : 'SKU_MASTER недоступен'));
+  stocksProbeLog_('T5 SUM(quantity) физ: ' + out.sumQuantityPhysical + ' | в пути к клиенту: ' + out.inWayToClient +
+    ' | возвраты в пути: ' + out.inWayFromClient);
+  stocksProbeLog_('T5 физ.складских строк: ' + out.warehouseRows + ' | псевдо-строк («всего»/«в пути»): ' + out.pseudoRows);
+  if (out.errors.length) stocksProbeLog_('T5 errors: ' + JSON.stringify(out.errors));
+  return out;
+}
+
+/** T6 — stocks-report/wb-warehouses (POST). Схема не подтверждена → best-effort, логируем как есть. */
+function probeStocksT6Console_(token, sku) {
+  var endpoint = WB_API_TEST_HOST_ANALYTICS_ + '/api/analytics/v1/stocks-report/wb-warehouses';
+  var body = { currentPeriod: { start: WB_API_TEST_DATE_FROM_, end: WB_API_TEST_DATE_TO_ },
+    stockType: '', skipDeletedNm: false };
+  var out = { test: 'T6', name: 'stocks-report/wb-warehouses', endpoint: endpoint, status: 'ERROR',
+    httpStatus: null, responseType: '', rowsCount: 0, fields: [], errors: [] };
+
+  stocksProbeLog_('── T6 · stocks-report/wb-warehouses (POST) ──');
+  stocksProbeLog_('T6 endpoint: ' + endpoint);
+  stocksProbeLog_('T6 body: ' + JSON.stringify(body));
+
+  var data = [];
+  try {
+    var resp = wbApiTestHttp_('post', endpoint, token, body);
+    out.httpStatus = resp.code;
+    if (!resp.ok) { out.errors.push('HTTP ' + resp.code + ': ' + String(resp.body).substring(0, 200)); }
+    var arr = resp.json;
+    if (arr && arr.data && arr.data.items && arr.data.items.length !== undefined) { out.responseType = 'data.items'; arr = arr.data.items; }
+    else if (arr && arr.data && arr.data.length !== undefined) { out.responseType = 'data[]'; arr = arr.data; }
+    else if (Array.isArray(arr)) { out.responseType = 'array'; }
+    else { out.responseType = (arr ? typeof arr : 'null'); arr = []; }
+    if (arr && arr.length) data = arr;
+  } catch (e) { out.errors.push('Исключение: ' + e.message); stocksProbeLog_('T6 ❌ исключение: ' + e.message); }
+
+  out.rowsCount = data.length;
+  out.fields = wbApiTestFieldList_(data);
+  var nmIds = [], warehouses = {}, sumQty = 0, toClient = 0, fromClient = 0;
+  // Естественный ключ строки снимка (доказательство перед RAW): nmId|chrtId|warehouseId.
+  var keySeen = {}, dupKeyRows = 0, qtyPositive = 0, qtyZero = 0, otherRows = 0, otherQty = 0;
+  for (var i = 0; i < data.length; i++) {
+    var row = data[i];
+    var nm = wbApiTestNormNmId_(wbApiTestPick_(row, ['nmId', 'nmid', 'nm_id']));
+    if (nm) nmIds.push(nm);
+    var wn = wbApiTestPick_(row, ['warehouseName', 'warehouse']);
+    if (wn) warehouses[String(wn)] = true;
+    var q = Number(wbApiTestPick_(row, ['quantity', 'qty', 'quantityFull']) || 0);
+    sumQty += q;
+    if (q > 0) qtyPositive++; else qtyZero++;
+    toClient += Number(wbApiTestPick_(row, ['inWayToClient', 'in_way_to_client']) || 0);
+    fromClient += Number(wbApiTestPick_(row, ['inWayFromClient', 'in_way_from_client']) || 0);
+    var chrt = wbApiTestPick_(row, ['chrtId', 'chrt_id']);
+    var whid = wbApiTestPick_(row, ['warehouseId', 'warehouse_id']);
+    var key = String(nm) + '|' + String(chrt === undefined ? '' : chrt) + '|' + String(whid === undefined ? '' : whid);
+    if (keySeen[key]) dupKeyRows++; else keySeen[key] = true;
+    // спец-склад: warehouseId=0 или имя «Остальные» (агрегат, не физический склад).
+    if (String(whid) === '0' || String(wn) === 'Остальные') { otherRows++; otherQty += q; }
+  }
+  var uniqT6 = wbApiTestUniqueAndUnmatched_(nmIds, sku.set);
+  var unm6 = stocksProbeUnmatchedNmList_(nmIds, sku.set);
+  out.uniqueNmId = uniqT6.unique;
+  out.unmatchedNmId = uniqT6.unmatched;
+  out.unmatchedNmList = unm6.list;
+  out.uniqueWarehouse = Object.keys(warehouses).length;
+  out.sumQuantity = wbApiTestRound_(sumQty);
+  out.inWayToClient = wbApiTestRound_(toClient);
+  out.inWayFromClient = wbApiTestRound_(fromClient);
+  out.hasWarehouse = wbApiTestHasField_(data, ['warehouse', 'warehouseName']);
+  out.hasRegion = wbApiTestHasField_(data, ['region', 'regionName', 'oblast']);
+  out.distinctKey = Object.keys(keySeen).length;
+  out.duplicateKeyRows = dupKeyRows;
+  out.qtyPositiveRows = qtyPositive;
+  out.qtyZeroRows = qtyZero;
+  out.otherWarehouseRows = otherRows;
+  out.otherWarehouseQty = wbApiTestRound_(otherQty);
+  out.status = out.errors.length ? (out.rowsCount > 0 ? 'PARTIAL' : 'ERROR') : (out.rowsCount > 0 ? 'OK' : 'WARN');
+
+  stocksProbeLog_('T6 HTTP: ' + (out.httpStatus === null ? '—' : out.httpStatus) + ' | итог: ' + out.status +
+    ' | responseType: ' + out.responseType + ' | rows: ' + out.rowsCount);
+  stocksProbeLog_('T6 first-row keys: ' + JSON.stringify(out.fields));
+  stocksProbeLog_('T6 sample rows (1-3, без токена): ' + stocksProbeSafeJson_(wbApiTestFirstRows_(data, 3)));
+  stocksProbeLog_('T6 uniqueNmId: ' + out.uniqueNmId + ' | складов: ' + out.uniqueWarehouse +
+    ' | hasWarehouse: ' + out.hasWarehouse + ' | hasRegion: ' + out.hasRegion + ' | unmatched nmId: ' + out.unmatchedNmId);
+  stocksProbeLog_('T6 unmatched nmId list: ' + (unm6.available ? JSON.stringify(unm6.list) : 'SKU_MASTER недоступен'));
+  stocksProbeLog_('T6 SUM(quantity): ' + out.sumQuantity + ' | в пути к клиенту: ' + out.inWayToClient +
+    ' | возвраты в пути: ' + out.inWayFromClient);
+  // ── Доказательство естественного ключа RAW ──
+  stocksProbeLog_('T6 КЛЮЧ nmId|chrtId|warehouseId → rows: ' + out.rowsCount + ' | distinct key: ' + out.distinctKey +
+    ' | duplicate keys: ' + out.duplicateKeyRows +
+    ((out.distinctKey === out.rowsCount && out.duplicateKeyRows === 0) ? ' ✅ ключ уникален' : ' ⚠️ ЕСТЬ ДУБЛИ КЛЮЧА'));
+  stocksProbeLog_('T6 quantity>0 строк: ' + out.qtyPositiveRows + ' | quantity=0 строк: ' + out.qtyZeroRows);
+  stocksProbeLog_('T6 спец-склад warehouseId=0/«Остальные»: строк ' + out.otherWarehouseRows + ' | Σquantity ' + out.otherWarehouseQty);
+  if (out.errors.length) stocksProbeLog_('T6 errors: ' + JSON.stringify(out.errors));
+  return out;
+}
+
+
+// ═══════════════════════════════════════
+// B2 · СЕМАНТИКА ПЕРИОДА T6 (перед production-loader)
+// ═══════════════════════════════════════
+/*
+ * probeWbStocksT6Periods() — доказать, влияет ли currentPeriod на снимок T6.
+ * Гоняет T6 ТРИ раза (A старый май / B сегодня / C последние 7 дней) и сравнивает
+ * rows · distinctKey · Σquantity(all/физ) · Σв пути. Вывод:
+ *   • все три идентичны → период не влияет на текущий снимок (берём безопасное окно);
+ *   • различаются → период влияет, выбрать окно, дающее текущие остатки (сверить с T5);
+ *   • сегодня не принимается (не 200) → выбрать подтверждённое допустимое окно.
+ * Drive не нужен, всё в console.log. Токен не логируется. Production body фиксируем
+ * ТОЛЬКО по результату (без хардкодных тестовых дат мая).
+ */
+
+/** Метрики снимка T6: rows, ключ nmId|chrtId|warehouseId, Σqty (весь/физ), Σв пути, uniqueNmId. */
+function stocksProbeT6Metrics_(data) {
+  var keySeen = {}, dup = 0, sumAll = 0, sumPhys = 0, toClient = 0, fromClient = 0, nmSeen = {};
+  for (var i = 0; i < data.length; i++) {
+    var row = data[i];
+    var nm = wbApiTestNormNmId_(wbApiTestPick_(row, ['nmId', 'nmid', 'nm_id']));
+    if (nm) nmSeen[nm] = true;
+    var chrt = wbApiTestPick_(row, ['chrtId', 'chrt_id']);
+    var whid = wbApiTestPick_(row, ['warehouseId', 'warehouse_id']);
+    var wn = wbApiTestPick_(row, ['warehouseName', 'warehouse']);
+    var key = String(nm) + '|' + String(chrt === undefined ? '' : chrt) + '|' + String(whid === undefined ? '' : whid);
+    if (keySeen[key]) dup++; else keySeen[key] = true;
+    var q = Number(wbApiTestPick_(row, ['quantity', 'qty', 'quantityFull']) || 0);
+    sumAll += q;
+    if (!(String(whid) === '0' || String(wn) === 'Остальные')) sumPhys += q;   // физ = без агрегата
+    toClient += Number(wbApiTestPick_(row, ['inWayToClient', 'in_way_to_client']) || 0);
+    fromClient += Number(wbApiTestPick_(row, ['inWayFromClient', 'in_way_from_client']) || 0);
+  }
+  return { rows: data.length, distinctKey: Object.keys(keySeen).length, duplicateKeys: dup,
+    sumAll: wbApiTestRound_(sumAll), sumPhysical: wbApiTestRound_(sumPhys),
+    sumToClient: wbApiTestRound_(toClient), sumFromClient: wbApiTestRound_(fromClient),
+    uniqueNmId: Object.keys(nmSeen).length };
+}
+
+/** Один вызов T6 с заданным currentPeriod; логирует метрики; возвращает объект метрик. */
+function stocksProbeT6Fetch_(token, label, start, end) {
+  var endpoint = WB_API_TEST_HOST_ANALYTICS_ + '/api/analytics/v1/stocks-report/wb-warehouses';
+  var body = { currentPeriod: { start: start, end: end }, stockType: '', skipDeletedNm: false };
+  var out = { label: label, start: start, end: end, httpStatus: null, responseType: '', rows: 0, errors: [] };
+
+  var data = [];
+  try {
+    var resp = wbApiTestHttp_('post', endpoint, token, body);
+    out.httpStatus = resp.code;
+    if (!resp.ok) out.errors.push('HTTP ' + resp.code + ': ' + String(resp.body).substring(0, 200));
+    var arr = resp.json;
+    if (arr && arr.data && arr.data.items && arr.data.items.length !== undefined) { out.responseType = 'data.items'; arr = arr.data.items; }
+    else if (arr && arr.data && arr.data.length !== undefined) { out.responseType = 'data[]'; arr = arr.data; }
+    else if (Array.isArray(arr)) { out.responseType = 'array'; }
+    else { out.responseType = (arr ? typeof arr : 'null'); arr = []; }
+    if (arr && arr.length) data = arr;
+  } catch (e) { out.errors.push('Исключение: ' + e.message); }
+
+  var m = stocksProbeT6Metrics_(data);
+  out.rows = m.rows; out.distinctKey = m.distinctKey; out.duplicateKeys = m.duplicateKeys;
+  out.sumAll = m.sumAll; out.sumPhysical = m.sumPhysical;
+  out.sumToClient = m.sumToClient; out.sumFromClient = m.sumFromClient; out.uniqueNmId = m.uniqueNmId;
+
+  stocksProbeLog_('T6[' + label + '] ' + start + '..' + end + ' | HTTP ' + (out.httpStatus === null ? '—' : out.httpStatus) +
+    ' | rows ' + out.rows + ' | distinctKey ' + out.distinctKey + ' | dup ' + out.duplicateKeys +
+    ' | ΣqtyAll ' + out.sumAll + ' | Σqty физ ' + out.sumPhysical +
+    ' | Σв_путиК ' + out.sumToClient + ' | Σв_путиОт ' + out.sumFromClient + ' | nmId ' + out.uniqueNmId);
+  if (out.errors.length) stocksProbeLog_('T6[' + label + '] errors: ' + JSON.stringify(out.errors));
+  return out;
+}
+
+/** B2: T6 с тремя периодами (A май / B сегодня / C 7 дней) + вердикт влияния периода. */
+function probeWbStocksT6Periods() {
+  assertWbApiTestMode_();
+  stocksProbeLog_('=== B2 · T6 период-семантика: A(старый май) / B(сегодня) / C(последние 7 дней) ===');
+
+  var tk = wbApiTestGetToken_('Analytics');
+  wbApiTestTokenInfo_('Analytics', tk.present);
+  if (!tk.present) { stocksProbeLog_('❌ ERROR: нет токена Analytics (WB_TOKEN_ANALYTICS).'); return { error: 'no token' }; }
+
+  var today = Utilities.formatDate(new Date(), 'Europe/Moscow', 'yyyy-MM-dd');
+  var d7 = Utilities.formatDate(new Date(Date.now() - 6 * 86400000), 'Europe/Moscow', 'yyyy-MM-dd');
+
+  var A = stocksProbeT6Fetch_(tk.token, 'A_май', '2026-05-18', '2026-05-24');
+  Utilities.sleep(1500);
+  var B = stocksProbeT6Fetch_(tk.token, 'B_сегодня', today, today);
+  Utilities.sleep(1500);
+  var C = stocksProbeT6Fetch_(tk.token, 'C_7дней', d7, today);
+
+  function same_(a, b) {
+    return a.httpStatus === 200 && b.httpStatus === 200 &&
+      a.rows === b.rows && a.sumAll === b.sumAll && a.sumPhysical === b.sumPhysical &&
+      a.sumToClient === b.sumToClient && a.sumFromClient === b.sumFromClient &&
+      a.distinctKey === b.distinctKey && a.duplicateKeys === b.duplicateKeys &&
+      a.uniqueNmId === b.uniqueNmId;
+  }
+  var allOk = (A.httpStatus === 200 && B.httpStatus === 200 && C.httpStatus === 200);
+  var allSame = allOk && same_(A, B) && same_(A, C);
+
+  stocksProbeLog_('T6 сводка Σфиз: A=' + A.sumPhysical + ' B=' + B.sumPhysical + ' C=' + C.sumPhysical +
+    ' | rows: A=' + A.rows + ' B=' + B.rows + ' C=' + C.rows);
+  stocksProbeLog_('T6 сводка ключи/SKU: distinctKey A=' + A.distinctKey + ' B=' + B.distinctKey + ' C=' + C.distinctKey +
+    ' | dup A=' + A.duplicateKeys + ' B=' + B.duplicateKeys + ' C=' + C.duplicateKeys +
+    ' | uniqueNmId A=' + A.uniqueNmId + ' B=' + B.uniqueNmId + ' C=' + C.uniqueNmId);
+  if (!allOk) {
+    stocksProbeLog_('⚠️ ВЕРДИКТ: не все варианты вернули 200 (A=' + A.httpStatus + ' B=' + B.httpStatus + ' C=' + C.httpStatus +
+      ') — вероятно, окно ограничено; для production выбрать подтверждённое допустимое окно (см. errors).');
+  } else if (allSame) {
+    stocksProbeLog_('✅ ВЕРДИКТ: все три идентичны → период НЕ влияет на текущий снимок; production body может брать безопасное фиксированное окно.');
+  } else {
+    stocksProbeLog_('⚠️ ВЕРДИКТ: ответы различаются → период ВЛИЯЕТ; выбрать окно, дающее текущие остатки (сверить Σфиз с T5=4565 на момент прогона).');
+  }
+  return { A: A, B: B, C: C, allOk: allOk, allSame: allSame };
+}
+
+
+// ═══════════════════════════════════════
+// МЕНЮ (опционально; подключить в Menu v2 → onOpen:
+//        addWbStocksProbeMenu();)
+// ═══════════════════════════════════════
+
+function addWbStocksProbeMenu() {
+  SpreadsheetApp.getUi()
+    .createMenu('🧪 Probe остатков')
+    .addItem('🔍 Probe T5/T6 (console, без Drive)', 'probeWbStocksConsole')
+    .addItem('🕒 T6 период-семантика (B2)', 'probeWbStocksT6Periods')
+    .addItem('🔍 Probe T5/T6 (с Drive-артефактами)', 'probeWbStocksTestOnly')
+    .addToUi();
+}

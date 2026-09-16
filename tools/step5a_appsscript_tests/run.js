@@ -10,7 +10,7 @@ const assert = (c, m) => { if (!c) throw new Error(m); };
 const need = (ctx, fn) => assert(typeof ctx[fn] === 'function', 'нет функции ' + fn + ' (дефект не исправлен)');
 const T0 = '2026-09-15T02:07:23Z'; // 05:07:23 MSK
 
-function env(clock) { return load(dir, ['IngestRunLog.gs', 'WbAdsRawLoader.gs', 'WbAdsDaily.gs'], clock); }
+function env(clock) { return load(dir, ['IngestRunLog.gs', 'WbAdsRawLoader.gs', 'Wbadsdaily.gs'], clock); }
 function seed(e, clock, rows) { rows.forEach(r => e.table.push(Object.assign({ source: 'apps_script', completed_at: null }, r))); }
 const reap = (e, extra) => e.ctx.ingestReapStaleRuns_ ? e.ctx.ingestReapStaleRuns_('ads', Object.assign({ activationTs: '2026-09-16T00:00:00Z', reaperRunId: 'R1' }, extra)) : null;
 
@@ -132,7 +132,7 @@ t('11 медленный WB (25 с/запрос): последняя опера�
   assert(r.stopped, 'остановка не зафиксирована → статус не станет PARTIAL');
 });
 t('11b хвост (query_stats) не стартует у стены прогона', () => {
-  const c = makeClock(T0), e = load(dir, ['WbAdsRawLoader.gs', 'WbAdsQueryStats.gs'], c);
+  const c = makeClock(T0), e = load(dir, ['WbAdsRawLoader.gs', 'Wbadsquerystats.gs'], c);
   e.ctx.WB_ADS_RAW_RUN_T0_ = c.now(); c.advance(300000);
   assert(e.ctx.wbAdsQsOutOfBudget_({ t0: c.now() - 1000 }) === true, 'хвост стартует на 300 с');
 });
@@ -141,7 +141,7 @@ t('11b хвост (query_stats) не стартует у стены прогон
 t('12 установщик catch-up идемпотентен из ЛЮБОГО состояния (0/1/2/3 → ровно 2)', () => {
   const c = makeClock(T0);
   for (const start of [0, 1, 2, 3]) {
-    const e = load(dir, ['WbAdsDaily.gs'], c);
+    const e = load(dir, ['Wbadsdaily.gs'], c);
     need(e.ctx, 'wbAdsInstallCatchUpTriggers');
     for (let i = 0; i < start; i++) e.triggers.push({ getHandlerFunction: () => 'runWbAdsDailyCatchUp' });
     e.triggers.push({ getHandlerFunction: () => 'runWbAdsDaily' });          // чужой триггер
@@ -154,7 +154,7 @@ t('12 установщик catch-up идемпотентен из ЛЮБОГО �
     assert(mine.every(x => x.tz === 'Europe/Moscow'), 'пояс не задан явно');
   }
   // повторный вызов подряд тоже даёт 2, а не 4
-  const e2 = load(dir, ['WbAdsDaily.gs'], c);
+  const e2 = load(dir, ['Wbadsdaily.gs'], c);
   e2.ctx.wbAdsInstallCatchUpTriggers(); e2.ctx.wbAdsInstallCatchUpTriggers();
   assert(e2.triggers.length === 2, 'два вызова подряд → ' + e2.triggers.length);
 });

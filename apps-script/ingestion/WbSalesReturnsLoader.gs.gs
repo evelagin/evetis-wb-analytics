@@ -1,0 +1,773 @@
+/**
+ * ══════════════════════════════════════════════════════════════
+ * EVETIS WB — WbSalesReturnsLoader.gs  v1.0  (PR #14B)
+ *
+ * Production-загрузчик продаж/возвратов WB через Statistics API
+ *   GET /api/v1/supplier/sales?dateFrom=…&flag=0  →  RAW_WB_SALES_RETURNS.
+ * Только RAW-загрузка. Без CLEAN / UNIT / P&L / dashboards / триггера /
+ * finance logic / orders loader / ads / stocks / SheetsSchema.
+ *
+ * ИДЕМПОТЕНТНОСТЬ (finance/orders-паттерн «replace-slice»):
+ *   1. Удалить СВОИ строки (source_api='WB_API_SALES' / load_id 'SALE_API_*')
+ *      за sale_dt ∈ [from,to].
+ *   2. Записать свежий срез API за период.
+ *   → повторный прогон: rows_imported ≈ rows_total_period, skipped_dupes ≈ 0,
+ *     число СВОИХ строк за период НЕ растёт.
+ *   TEST-строки (source_api='TEST' / load_id='TEST_LOAD_001') НЕ трогаются.
+ *   Весь лист НЕ чистится. createAllSheets / reset НЕ вызываются. Схема НЕ меняется.
+ *
+ * ЦЕЛЕВОЙ ЛИСТ: явно 'RAW_WB_SALES_RETURNS' (в SheetsSchema этот лист заведён
+ *   через ключ SHEET_NAMES.RAW_WB_SALES, но физический лист данных —
+ *   RAW_WB_SALES_RETURNS; на ключ схемы НЕ полагаемся).
+ *
+ * ВОЗВРАТЫ — ПО КОНТРАКТУ (живого return-примера на момент PR нет:
+ *   sales API за 2026-04-01—2026-06-16 дал returns_count=0, в RAW_WB_FINANCE
+ *   товарных возвратов тоже не найдено):
+ *     saleID startsWith 'R' → operation_type='return', is_return=TRUE;
+ *     иначе                  → operation_type='sale',   is_return=FALSE.
+ *   Return-ветка НЕ проверена на проде — проверить при первом реальном возврате.
+ *
+ * ПОЛЯ (схема RAW_WB_SALES_RETURNS, 34 колонки, без расширения):
+ *   paymentSaleAmount НЕ сохраняется (нет колонки), priceWithDisc НЕ сохраняется
+ *   (нет отдельной колонки), order_dt пустой (sales API дату заказа не отдаёт),
+ *   quantity = 1 на строку (sales API qty по строке не отдаёт).
+ *
+ * ПЕРЕИСПОЛЬЗУЕТ (существующие утилиты, без изменений):
+ *   buildSkuIndex_, normalizeNmIdFinance_, normalizeDateKey_, roundTwo_
+ * ══════════════════════════════════════════════════════════════
+ */
+
+
+// ═══════════════════════════════════════
+// КОНФИГ
+// ═══════════════════════════════════════
+
+var WB_SALES_API_BASE_   = 'https://statistics-api.wildberries.ru';
+var WB_SALES_API_PATH_   = '/api/v1/supplier/sales';
+var WB_SALES_TOKEN_KEYS_ = ['WB_TOKEN_STATISTICS', 'WB_TOKEN_ANALYTICS'];
+
+var SALES_RAW_SHEET_          = 'RAW_WB_SALES_RETURNS';   // явно, не через SHEET_NAMES
+var SALES_RAW_SOURCE_API_     = 'WB_API_SALES';
+var SALES_LOADID_API_PREFIX_  = 'SALE_API_';
+var IMPORT_LOG_SALES_SHEET_   = 'IMPORT_LOG_SALES_RETURNS';
+
+var WB_SALES_API_ROLLING_DAYS_ = 14;
+
+// Rate limit Sales API — 1 запрос/мин, burst 1. Поэтому D2a делает РОВНО ОДИН
+// HTTP-вызов: без пагинационного цикла и без авто-retry (повтор через 20 сек
+// почти гарантированно снова словил бы 429 и жёг лимит выполнения). 429/5xx →
+// ERROR; оператор повторяет вручную не ранее чем через 65 секунд.
+// Константы пагинации/429-backoff (WB_SALES_API_MAX_PAGES_/PAGE_PAUSE_/RETRY_*)
+// удалены как неиспользуемые.
+
+var IMPORT_LOG_SALES_HEADERS_ = [
+  'load_id', 'loaded_at', 'period_from', 'period_to',
+  'rows_imported', 'skipped_dupes', 'rows_total_period',
+  'sales_count', 'returns_count',
+  'unique_saleID', 'unique_srid', 'unique_nmId', 'unmatched_nmId',
+  'status', 'error_message',
+  // D2c watermark-инкремент (аддитивно; backfill/rolling пишут '' в эти поля).
+  'watermark_before', 'watermark_after', 'api_rows_received',
+  'rows_after_boundary_dedup', 'rows_written', 'duration_ms'
+];
+
+// Лимит строк одного ответа WB (flag=0). Упор в лимит = граница обрезана →
+// PARTIAL, ничего не пишем (для текущего объёма EVETIS ~3319/90д недостижим).
+var WB_SALES_API_ROWS_CAP_ = 80000;
+
+// Канонический порядок колонок RAW_WB_SALES_RETURNS для BQ-приёмника (Фаза D2a).
+// При включённом sink физического листа нет — hMap строится из этой константы.
+// Порядок/состав менять нельзя без CHANGELOG. Служебная _sale_date (DATE, партиция)
+// в список НЕ входит — её добавляет wbSalesBqAppendRows_. Схема доказана 2 probe
+// живого Sales API (все 28 keys присутствуют): раздельные region_name/oblast_okrug_name,
+// без orderType (в контракте нет), event_key = sale_id.
+var SALES_RAW_HEADERS_ = [
+  'load_id', 'loaded_at', 'source_api', 'row_hash', 'raw_row_number',
+  'sale_id', 'srid', 'g_number', 'income_id',
+  'sale_dt', 'last_change_date',
+  'wb_nm_id', 'wb_vendor_code', 'barcode',
+  'internal_sku', 'sku_match_status',
+  'category', 'subject', 'brand', 'tech_size',
+  'warehouse_name', 'warehouse_type', 'region_name', 'oblast_okrug_name', 'country_name',
+  'total_price', 'discount_percent', 'spp', 'payment_sale_amount', 'price_with_disc', 'finished_price', 'for_pay',
+  'is_supply', 'is_realization',
+  'operation_type', 'is_return',
+  'sticker_id',
+  'processed_status', 'error_message', 'raw_json'
+];
+
+
+// ═══════════════════════════════════════
+// МЕНЮ (вызывать из onOpen — см. правку Menu v2)
+// ═══════════════════════════════════════
+
+function addWbSalesReturnsLoaderMenu() {
+  SpreadsheetApp.getUi()
+    .createMenu('💳 Продажи WB')
+    .addItem('🔄 Обновить продажи (rolling 14)', 'importWbSalesReturnsFromApiRolling14Days')
+    .addItem('📅 Загрузить продажи за период…', 'importWbSalesReturnsFromApiPrompt_')
+    .addItem('🧾 Создать IMPORT_LOG_SALES_RETURNS', 'ensureImportLogSalesMenu_')
+    .addToUi();
+}
+
+function importWbSalesReturnsFromApiPrompt_() {
+  var ui = SpreadsheetApp.getUi();
+  var resp = ui.prompt('Загрузка продаж WB',
+    'Введите период через запятую: YYYY-MM-DD,YYYY-MM-DD\nНапример: 2026-04-01,2026-06-16',
+    ui.ButtonSet.OK_CANCEL);
+  if (resp.getSelectedButton() !== ui.Button.OK) return;
+  var parts = String(resp.getResponseText() || '').split(',');
+  var from = (parts[0] || '').trim(), to = (parts[1] || '').trim();
+  if (!salesValidDate_(from) || !salesValidDate_(to)) {
+    ui.alert('Неверный формат периода. Ожидается YYYY-MM-DD,YYYY-MM-DD'); return;
+  }
+  importWbSalesReturnsFromApi(from, to);
+}
+
+function ensureImportLogSalesMenu_() {
+  ensureImportLogSalesSheet_(SpreadsheetApp.getActiveSpreadsheet());
+  SpreadsheetApp.getUi().alert('IMPORT_LOG_SALES_RETURNS готов.');
+}
+
+
+// ═══════════════════════════════════════
+// ПУБЛИЧНЫЕ ФУНКЦИИ
+// ═══════════════════════════════════════
+
+/** Ручной запуск с alert-сводкой. */
+function importWbSalesReturnsFromApi(dateFrom, dateTo) {
+  var r = importWbSalesReturnsFromApiInternal_(dateFrom, dateTo);
+  var ui = SpreadsheetApp.getUi();
+  var msg =
+    'Статус: ' + r.status + '\n' +
+    'Период: ' + r.period_from + ' — ' + r.period_to + '\n\n' +
+    'Импортировано строк: ' + r.rows_imported + '\n' +
+    'Пропущено дублей (в пакете): ' + r.skipped_dupes + '\n' +
+    'Всего своих строк за период: ' + r.rows_total_period + '\n' +
+    'Продаж: ' + r.sales_count + ', возвратов: ' + r.returns_count + '\n' +
+    'Уник. saleID: ' + r.unique_saleID + ', уник. srid: ' + r.unique_srid +
+      ', уник. nmId: ' + r.unique_nmId + '\n' +
+    'Строк без SKU (not_found): ' + r.unmatched_nmId + '\n' +
+    '\nℹ️ Возвраты обрабатываются по контракту (saleID startsWith "R"). ' +
+      'Живого return-примера пока нет — return-ветка на проде не проверена.' +
+    (r.error_message ? '\n\n' + r.error_message : '');
+  try { ui.alert('💳 Продажи WB', msg, ui.ButtonSet.OK); } catch (e) {}
+  return r;
+}
+
+/** Rolling-14 (вчера−13 … вчера), ручной запуск. */
+function importWbSalesReturnsFromApiRolling14Days() {
+  var yesterday = new Date(); yesterday.setDate(yesterday.getDate() - 1);
+  var from = new Date(yesterday); from.setDate(from.getDate() - (WB_SALES_API_ROLLING_DAYS_ - 1));
+  var tz = 'Europe/Moscow';
+  return importWbSalesReturnsFromApi(
+    Utilities.formatDate(from, tz, 'yyyy-MM-dd'),
+    Utilities.formatDate(yesterday, tz, 'yyyy-MM-dd')
+  );
+}
+
+/**
+ * Ядро без UI. Возвращает result (поля IMPORT_LOG_SALES_RETURNS + rows_imported/skipped_dupes).
+ */
+function importWbSalesReturnsFromApiInternal_(dateFrom, dateTo) {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var tz = 'Europe/Moscow';
+  var stamp = Utilities.formatDate(new Date(), tz, 'yyyyMMdd_HHmmss');
+
+  var result = {
+    load_id: SALES_LOADID_API_PREFIX_ + stamp,
+    loaded_at: Utilities.formatDate(new Date(), tz, 'yyyy-MM-dd HH:mm:ss'),
+    period_from: dateFrom, period_to: dateTo,
+    rows_imported: 0, skipped_dupes: 0, rows_total_period: 0,
+    sales_count: 0, returns_count: 0,
+    unique_saleID: 0, unique_srid: 0, unique_nmId: 0, unmatched_nmId: 0,
+    status: 'ERROR', error_message: ''
+  };
+
+  if (!salesValidDate_(dateFrom) || !salesValidDate_(dateTo)) {
+    result.error_message = 'Неверные dateFrom/dateTo (YYYY-MM-DD)'; return result;
+  }
+
+  var rawSheet = getRawSalesSheet_(ss);
+  if (!rawSheet) { result.error_message = 'Лист ' + SALES_RAW_SHEET_ + ' не найден'; return result; }
+
+  var tk = getSalesToken_();
+  if (!tk) {
+    result.error_message = 'Нет токена WB. Задайте Script Property: ' + WB_SALES_TOKEN_KEYS_.join(' или ');
+    return result;
+  }
+  console.log('  Sales API токен: ' + tk.key);
+
+  var logSheet = ensureImportLogSalesSheet_(ss);
+
+  try {
+    // 1. Тянем продажи/возвраты (пагинация по lastChangeDate, 429-backoff)
+    console.log('  Sales API: запрос ' + dateFrom + ' — ' + dateTo);
+    var fetched = fetchSalesApiData_(tk.token, dateFrom);
+    if (!fetched.ok) {
+      // fail-closed: при любом !ok строки НЕ записываются. PARTIAL (упор в лимит)
+      // отличаем от жёсткой ERROR — статус виден в логе.
+      result.status = fetched.partial ? 'PARTIAL' : 'ERROR';
+      result.error_message = String(fetched.error || '') +
+        (fetched.api_rows_received != null ? ' [строк в ответе: ' + fetched.api_rows_received + ']' : '');
+      writeSalesLogEntry_(logSheet, result);
+      return result;
+    }
+    console.log('  Sales API: получено ' + fetched.data.length + ' строк за ' + fetched.pages + ' страниц');
+
+    var lastCol = rawSheet.getLastColumn();
+    var hMap = buildSalesRawHeaderMap_(rawSheet, lastCol);
+    var skuIndex = (typeof buildSkuIndex_ === 'function') ? buildSkuIndex_(ss) : { byNm: {}, byBarcode: {} };
+
+    // 2. Нормализация. BQ sink (migration/backfill) — noWindow: сохраняем весь
+    //    change-feed от dateFrom (sale_dt может быть раньше). Legacy sheet —
+    //    прежнее окно по sale_dt ∈ [from,to].
+    var noWindow = !!(rawSheet && rawSheet._bqSink);
+    var rows = normalizeSalesApiRows_(fetched.data, hMap, lastCol, result.load_id, result.loaded_at,
+      dateFrom, dateTo, skuIndex, { noWindow: noWindow });
+
+    // 3. Дедуп ВНУТРИ пакета по row_hash (перекрытие страниц пагинации)
+    var seen = {}, unique = [], skipped = 0;
+    var rhIdx = hMap['row_hash'];
+    for (var i = 0; i < rows.length; i++) {
+      var h = (rhIdx !== undefined) ? rows[i][rhIdx] : ('row' + i);
+      if (seen[h]) { skipped++; continue; }
+      seen[h] = 1; unique.push(rows[i]);
+    }
+    result.skipped_dupes = skipped;
+
+    // 4. Replace-slice: удалить свои строки за период, затем записать свежий срез
+    var cleared = clearSalesOwnPeriod_(rawSheet, hMap, dateFrom, dateTo);
+    if (cleared > 0) console.log('  Удалено своих строк WB_API_SALES за период: ' + cleared);
+
+    if (unique.length > 0) appendSalesRows_(rawSheet, unique, lastCol);
+    result.rows_imported = unique.length;
+
+    // 5. Контрольные суммы (по факту в RAW; при sink — из памяти, noWindow:
+    //    считаем весь записанный пакет без повторного отбрасывания sale_dt<dateFrom,
+    //    иначе поздние изменения не попали бы в диагностику).
+    var sums = (rawSheet && rawSheet._bqSink)
+      ? aggregateSalesRowArray_(unique, hMap, dateFrom, dateTo, { noWindow: true })
+      : aggregateSalesSums_(rawSheet, hMap, dateFrom, dateTo);
+    result.rows_total_period = sums.rows_total_period;
+    result.sales_count = sums.sales_count;
+    result.returns_count = sums.returns_count;
+    result.unique_saleID = sums.unique_saleID;
+    result.unique_srid = sums.unique_srid;
+    result.unique_nmId = sums.unique_nmId;
+    result.unmatched_nmId = sums.unmatched_nmId;             // ROW-COUNT not_found (требование приёмки)
+    result.unmatched_unique_nmId = sums.unmatched_unique_nmId; // внутренний доп.показатель (в лог не пишется)
+
+    result.status = 'OK';
+    if (unique.length === 0) result.error_message = 'Нет продаж за период';
+    writeSalesLogEntry_(logSheet, result);
+    console.log('  Sales: импортировано ' + result.rows_imported + ', за период ' + result.rows_total_period +
+      ' (sale=' + result.sales_count + ', return=' + result.returns_count + ')');
+    return result;
+
+  } catch (e) {
+    result.error_message = 'Исключение: ' + e.message;
+    try { writeSalesLogEntry_(logSheet, result); } catch (e2) {}
+    console.log('❌ Sales: ' + e.message);
+    return result;
+  }
+}
+
+
+// ═══════════════════════════════════════
+// FETCH (ОДИН запрос, без пагинации и без retry — rate limit 1 req/min)
+// ═══════════════════════════════════════
+
+/**
+ * ОДИН запрос, fail-closed (Фаза D2a). Пагинация легаси снята: rate limit
+ * Sales API = 1 req/min, а при объёме EVETIS (~3319 строк/90д) весь диапазон
+ * помещается в один ответ (доказано probe). Контракт:
+ *   • HTTP≠200 / битый JSON / не-массив → ok:false, partial:false (ERROR);
+ *   • arr.length >= cap (80 000) → ok:false, partial:true (PARTIAL: граница
+ *     могла обрезаться; ничего не пишем — нужен resumable job);
+ *   • пустой [] → ok:true, data:[] (нет продаж / нет изменений);
+ *   • иначе → ok:true, data:arr.
+ * HTTP идёт через bounded retry (429/5xx, backoff 20/40/60 c); обработка ответа
+ * остаётся fail-closed. Многостраничная выгрузка / watermark-инкремент — фаза D2c.
+ */
+function fetchSalesApiData_(token, dateFrom, transport_) {
+  var url = WB_SALES_API_BASE_ + WB_SALES_API_PATH_ +
+            '?dateFrom=' + encodeURIComponent(dateFrom) + '&flag=0';
+
+  var resp = salesHttpGet_(url, token, transport_);
+  if (!resp.ok) {
+    return { ok: false, partial: false, error: resp.error, data: [], pages: 0, api_rows_received: 0 };
+  }
+
+  var arr;
+  try {
+    arr = JSON.parse(resp.body);
+  } catch (e) {
+    return { ok: false, partial: false, pages: 1, data: [], api_rows_received: 0,
+             error: 'Повреждённый JSON ответа WB: ' + String((e && e.message) || e) };
+  }
+  if (!Array.isArray(arr)) {
+    return { ok: false, partial: false, pages: 1, data: [], api_rows_received: 0,
+             error: 'Ответ WB не является массивом: ' + String(resp.body).substring(0, 200) };
+  }
+  if (arr.length >= WB_SALES_API_ROWS_CAP_) {
+    return { ok: false, partial: true, pages: 1, data: [], api_rows_received: arr.length,
+             error: 'Ответ упёрся в лимит ' + WB_SALES_API_ROWS_CAP_ + ' строк — выгрузка может быть ' +
+                    'НЕПОЛНОЙ (нужен resumable job). Ничего не записано.' };
+  }
+  return { ok: true, partial: false, data: arr, pages: 1, api_rows_received: arr.length };
+}
+
+/**
+ * GET через единый retry-helper проекта wbFetchWithRetry_ (как orders/stocks):
+ * транзиентные 429/5xx + Retry-After, backoff 20/40/60 c, до 3 повторов. Слот cooldown
+ * (wbSalesApiAcquireRequestSlot_) берётся выше по стеку один раз — retry его не трогает.
+ * Исчерпанный 429/5xx → code≠200 → ok:false (fail-closed выше; watermark не двигается).
+ * transport_ инъектируется в self-tests. Токен не логируется.
+ * @return {Object} { ok, code, body, error }.
+ */
+function salesHttpGet_(url, token, transport_) {
+  var fetchRetry_ = transport_ || wbFetchWithRetry_;
+  var resp;
+  try {
+    resp = fetchRetry_(url, {
+      method: 'get',
+      headers: { Authorization: token },
+      muteHttpExceptions: true
+    }, { label: 'Sales', maxRetries: 3, baseDelayMs: 20000, retryCodes: [429, 500, 502, 503, 504] });
+  } catch (e) {
+    return { ok: false, code: 0, body: '', error: 'HTTP исключение: ' + ((e && e.message) || e) };
+  }
+  var code = resp.getResponseCode();
+  var body = resp.getContentText();
+  if (code !== 200) {
+    return { ok: false, code: code, body: body, error: 'HTTP ' + code + ': ' + String(body).substring(0, 200) };
+  }
+  return { ok: true, code: code, body: body, error: '' };
+}
+
+
+// ═══════════════════════════════════════
+// НОРМАЛИЗАЦИЯ
+// ═══════════════════════════════════════
+
+function normalizeSalesApiRows_(apiData, hMap, lastCol, loadId, loadedAt, dateFrom, dateTo, skuIndex, opts) {
+  // opts.noWindow=true (BQ sink: migration/backfill/будущий инкремент) — НЕ
+  // фильтруем по sale_dt. Sales API отдаёт change-feed по lastChangeDate, поэтому
+  // поздно изменённая старая продажа (sale_dt < dateFrom) должна сохраниться —
+  // иначе теряем изменения (probe: date 2026-03-30 при dateFrom 2026-04-13).
+  // Строку без даты продажи всё равно пропускаем (нечем партиционировать _sale_date).
+  var noWindow = !!(opts && opts.noWindow);
+  var rows = [];
+  var rowNo = 0;
+  for (var i = 0; i < apiData.length; i++) {
+    var o = apiData[i];
+    var day = (typeof normalizeDateKey_ === 'function') ? normalizeDateKey_(o.date)
+                                                        : String(o.date || '').substring(0, 10);
+    if (!day) continue;
+    if (!noWindow && (day < dateFrom || day > dateTo)) continue;   // окно по дате продажи (только legacy sheet)
+
+    // ── Contract return handling (эмпирическая конвенция WB, доказана на продажах;
+    //    природный возврат 'R…' пока не наблюдался — постконтроль при первом R) ──
+    var saleId = String(o.saleID || '');
+    var isReturn = (saleId.charAt(0).toUpperCase() === 'R');
+    var opType = isReturn ? 'RETURN' : 'SALE';
+
+    rowNo++;
+    var newRow = [];
+    for (var c = 0; c < lastCol; c++) newRow.push('');
+    function set(name, val) { var idx = hMap[name]; if (idx !== undefined) newRow[idx] = val; }
+
+    set('load_id', loadId);
+    set('loaded_at', loadedAt);
+    set('source_api', SALES_RAW_SOURCE_API_);
+    set('raw_row_number', rowNo);
+
+    set('sale_id', saleId);
+    set('srid', o.srid || '');
+    set('g_number', o.gNumber || '');
+    set('income_id', o.incomeID || '');
+    set('order_dt', '');                       // sales API не отдаёт дату заказа (в BQ-схеме колонки нет)
+    set('sale_dt', o.date || '');
+    set('last_change_date', o.lastChangeDate || '');   // форма 'T' — исходная; вью приводит к TIMESTAMP
+    set('operation_type', opType);
+    set('is_return', isReturn);
+
+    set('wb_nm_id', o.nmId || '');
+    set('wb_vendor_code', o.supplierArticle || '');
+    set('barcode', o.barcode || '');
+    set('category', o.category || '');
+    set('subject', o.subject || '');
+    set('brand', o.brand || '');
+    set('tech_size', o.techSize || '');
+    set('warehouse_name', o.warehouseName || '');
+    set('warehouse_type', o.warehouseType || '');
+    set('region_name', o.regionName || '');            // РАЗДЕЛЬНО (не смешиваем с oblast — урок Orders)
+    set('oblast_okrug_name', o.oblastOkrugName || '');
+    set('country_name', o.countryName || '');
+
+    set('total_price', salesRound_(o.totalPrice));
+    set('discount_percent', Number(o.discountPercent) || 0);
+    set('spp', Number(o.spp) || 0);
+    set('payment_sale_amount', salesRound_(o.paymentSaleAmount));
+    set('price_with_disc', salesRound_(o.priceWithDisc));
+    set('finished_price', salesRound_(o.finishedPrice));
+    set('for_pay', salesRound_(o.forPay));             // предварительная сумма (для P&L НЕ использовать)
+    set('is_supply', o.isSupply === true);
+    set('is_realization', o.isRealization === true);
+    set('quantity', 1);                        // sales API: одна строка = одна единица (в BQ-схеме нет)
+    set('sticker_id', o.sticker || '');
+
+    set('is_duplicate', 'FALSE');
+    // Пустой saleID → карантин: в каноническую вью V_WB_SALES_RETURNS не входит.
+    set('processed_status', saleId ? 'OK' : 'MISSING_EVENT_KEY');
+    set('error_message', '');
+    set('raw_json', JSON.stringify(o));        // исходный ответ WB для аудита/восстановления
+
+    // SKU-привязка (read-only к SKU_MASTER): by nmId → fallback by barcode
+    var nmId = (typeof normalizeNmIdFinance_ === 'function') ? normalizeNmIdFinance_(o.nmId) : String(o.nmId || '');
+    var matched = false;
+    if (nmId && skuIndex.byNm && skuIndex.byNm[nmId]) {
+      matched = true;
+      set('internal_sku', skuIndex.byNm[nmId].sku || '');
+    } else {
+      var bc = String(o.barcode || '').trim();
+      if (bc && skuIndex.byBarcode && skuIndex.byBarcode[bc]) {
+        matched = true;
+        var rNm = skuIndex.byBarcode[bc];
+        if (skuIndex.byNm[rNm]) set('internal_sku', skuIndex.byNm[rNm].sku || '');
+      }
+    }
+    set('sku_match_status', matched ? 'matched' : 'not_found');
+
+    if (hMap['row_hash'] !== undefined) newRow[hMap['row_hash']] = computeSalesRowHash_(newRow, hMap);
+    rows.push(newRow);
+  }
+  return rows;
+}
+
+function salesRound_(v) {
+  if (typeof roundTwo_ === 'function') return roundTwo_(Number(v) || 0);
+  return Math.round((Number(v) || 0) * 100) / 100;
+}
+
+function salesMd5_(s) {
+  var bytes = Utilities.computeDigest(Utilities.DigestAlgorithm.MD5, String(s), Utilities.Charset.UTF_8);
+  var hex = '';
+  for (var i = 0; i < bytes.length; i++) { var b = (bytes[i] + 256) % 256; hex += (b < 16 ? '0' : '') + b.toString(16); }
+  return hex;
+}
+
+/** Стабильный хэш: srid|nmId|sale_dt|sale_id|operation_type. */
+function computeSalesRowHash_(rowArr, hMap) {
+  function g(name) { var i = hMap[name]; return (i === undefined || rowArr[i] === undefined || rowArr[i] === null) ? '' : String(rowArr[i]).trim(); }
+  var nm = (typeof normalizeNmIdFinance_ === 'function') ? normalizeNmIdFinance_(g('wb_nm_id')) : g('wb_nm_id');
+  var dt = (typeof normalizeDateKey_ === 'function') ? normalizeDateKey_(g('sale_dt')) : g('sale_dt');
+  var parts = [ g('srid'), nm, dt, g('sale_id'), g('operation_type') ];
+  return salesMd5_(parts.join('|'));
+}
+
+
+// ═══════════════════════════════════════
+// IDEMPOTENCY: clear-own-period + append
+// ═══════════════════════════════════════
+
+/** Удаляет ТОЛЬКО свои строки (WB_API_SALES / SALE_API_*) за sale_dt ∈ [from,to]. TEST не трогает. */
+function clearSalesOwnPeriod_(sheet, hMap, dateFrom, dateTo) {
+  // BQ-приёмник: append-only, ничего не удаляем — дедуп во вью V_WB_SALES_RETURNS.
+  if (sheet && sheet._bqSink) return 0;
+  var lastRow = sheet.getLastRow(), lastCol = sheet.getLastColumn();
+  if (lastRow < 2) return 0;
+  var values = sheet.getRange(2, 1, lastRow - 1, lastCol).getValues();
+  var srcIdx = hMap['source_api'], loadIdx = hMap['load_id'], sdtIdx = hMap['sale_dt'];
+
+  var keep = [], removed = 0;
+  for (var i = 0; i < values.length; i++) {
+    var row = values[i];
+    var src = srcIdx !== undefined ? String(row[srcIdx] || '') : '';
+    var lid = loadIdx !== undefined ? String(row[loadIdx] || '') : '';
+    var isOwn = (src === SALES_RAW_SOURCE_API_) || (lid.indexOf(SALES_LOADID_API_PREFIX_) === 0);
+    var day = sdtIdx !== undefined ? salesDayKey_(row[sdtIdx]) : '';
+    var inWindow = (day && day >= dateFrom && day <= dateTo);
+
+    if (isOwn && inWindow) { removed++; }   // удаляем (не переносим в keep)
+    else keep.push(row);
+  }
+
+  if (removed === 0) return 0;
+
+  // Перезаписываем тело листа оставшимися строками.
+  sheet.getRange(2, 1, lastRow - 1, lastCol).clearContent();
+  if (keep.length > 0) sheet.getRange(2, 1, keep.length, lastCol).setValues(keep);
+  SpreadsheetApp.flush();
+  return removed;
+}
+
+function appendSalesRows_(sheet, rows, lastCol) {
+  if (!rows.length) return;
+  // BQ-приёмник: массивы-строки → объекты по SALES_RAW_HEADERS_ → в BigQuery.
+  if (sheet && sheet._bqSink) {
+    var objs = [];
+    for (var r = 0; r < rows.length; r++) {
+      var o = {};
+      for (var c = 0; c < SALES_RAW_HEADERS_.length; c++) {
+        var v = rows[r][c];
+        if (v !== '' && v !== null && v !== undefined) o[SALES_RAW_HEADERS_[c]] = v;
+      }
+      objs.push(o);
+    }
+    wbSalesBqAppendRows_(objs);
+    return;
+  }
+  var startRow = sheet.getLastRow() + 1;
+  sheet.getRange(startRow, 1, rows.length, lastCol).setValues(rows);
+  SpreadsheetApp.flush();
+}
+
+
+// ═══════════════════════════════════════
+// АГРЕГАЦИЯ checksums (только СВОИ строки за период)
+// ═══════════════════════════════════════
+
+/**
+ * Контрольные суммы из массива строк (BQ-приёмник: листа для чтения нет).
+ * opts.noWindow=true — считаем весь записанный пакет без фильтра по sale_dt
+ * (backfill/инкремент: поздние изменения старых продаж должны учитываться).
+ */
+function aggregateSalesRowArray_(rows, hMap, dateFrom, dateTo, opts) {
+  var noWindow = !!(opts && opts.noWindow);
+  var out = {
+    rows_total_period: 0, sales_count: 0, returns_count: 0,
+    unique_saleID: 0, unique_srid: 0, unique_nmId: 0,
+    unmatched_nmId: 0, unmatched_unique_nmId: 0
+  };
+  var sdtIdx = hMap['sale_dt'], saleIdx = hMap['sale_id'], sridIdx = hMap['srid'],
+      nmIdx = hMap['wb_nm_id'], retIdx = hMap['is_return'], matchIdx = hMap['sku_match_status'];
+  var saleSet = {}, sridSet = {}, nmSet = {}, unmatchedNmSet = {};
+
+  for (var i = 0; i < rows.length; i++) {
+    var row = rows[i];
+    var day = sdtIdx !== undefined ? salesDayKey_(row[sdtIdx]) : '';
+    if (!noWindow && (!day || day < dateFrom || day > dateTo)) continue;
+
+    out.rows_total_period++;
+
+    var isRet = false;
+    if (retIdx !== undefined) {
+      var rv = row[retIdx];
+      isRet = (rv === true || String(rv).toUpperCase() === 'TRUE');
+    }
+    if (isRet) out.returns_count++; else out.sales_count++;
+
+    if (saleIdx !== undefined) { var sv = String(row[saleIdx] || ''); if (sv) saleSet[sv] = 1; }
+    if (sridIdx !== undefined) { var srv = String(row[sridIdx] || ''); if (srv) sridSet[srv] = 1; }
+
+    var nmRaw = nmIdx !== undefined ? row[nmIdx] : '';
+    var nm = (typeof normalizeNmIdFinance_ === 'function') ? normalizeNmIdFinance_(nmRaw) : String(nmRaw || '');
+    if (nm) nmSet[nm] = 1;
+
+    if (matchIdx !== undefined && String(row[matchIdx] || '') === 'not_found') {
+      out.unmatched_nmId++;
+      if (nm) unmatchedNmSet[nm] = 1;
+    }
+  }
+
+  out.unique_saleID = Object.keys(saleSet).length;
+  out.unique_srid = Object.keys(sridSet).length;
+  out.unique_nmId = Object.keys(nmSet).length;
+  out.unmatched_unique_nmId = Object.keys(unmatchedNmSet).length;
+  return out;
+}
+
+function aggregateSalesSums_(sheet, hMap, dateFrom, dateTo) {
+  var out = {
+    rows_total_period: 0, sales_count: 0, returns_count: 0,
+    unique_saleID: 0, unique_srid: 0, unique_nmId: 0,
+    unmatched_nmId: 0, unmatched_unique_nmId: 0
+  };
+  var lastRow = sheet.getLastRow(), lastCol = sheet.getLastColumn();
+  if (lastRow < 2) return out;
+
+  var values = sheet.getRange(2, 1, lastRow - 1, lastCol).getValues();
+  var srcIdx = hMap['source_api'], loadIdx = hMap['load_id'], sdtIdx = hMap['sale_dt'];
+  var saleIdx = hMap['sale_id'], sridIdx = hMap['srid'], nmIdx = hMap['wb_nm_id'];
+  var retIdx = hMap['is_return'], matchIdx = hMap['sku_match_status'];
+
+  var saleSet = {}, sridSet = {}, nmSet = {}, unmatchedNmSet = {};
+
+  for (var i = 0; i < values.length; i++) {
+    var row = values[i];
+    var src = srcIdx !== undefined ? String(row[srcIdx] || '') : '';
+    var lid = loadIdx !== undefined ? String(row[loadIdx] || '') : '';
+    var isOwn = (src === SALES_RAW_SOURCE_API_) || (lid.indexOf(SALES_LOADID_API_PREFIX_) === 0);
+    if (!isOwn) continue;                                   // TEST и чужие источники игнорируем
+    var day = sdtIdx !== undefined ? salesDayKey_(row[sdtIdx]) : '';
+    if (!day || day < dateFrom || day > dateTo) continue;
+
+    out.rows_total_period++;
+
+    var isRet = false;
+    if (retIdx !== undefined) {
+      var rv = row[retIdx];
+      isRet = (rv === true || String(rv).toUpperCase() === 'TRUE');
+    }
+    if (isRet) out.returns_count++; else out.sales_count++;
+
+    if (saleIdx !== undefined) { var sv = String(row[saleIdx] || ''); if (sv) saleSet[sv] = 1; }
+    if (sridIdx !== undefined) { var srv = String(row[sridIdx] || ''); if (srv) sridSet[srv] = 1; }
+
+    var nmRaw = nmIdx !== undefined ? row[nmIdx] : '';
+    var nm = (typeof normalizeNmIdFinance_ === 'function') ? normalizeNmIdFinance_(nmRaw) : String(nmRaw || '');
+    if (nm) nmSet[nm] = 1;
+
+    if (matchIdx !== undefined && String(row[matchIdx] || '') === 'not_found') {
+      out.unmatched_nmId++;                                 // ROW-COUNT (требование приёмки)
+      if (nm) unmatchedNmSet[nm] = 1;
+    }
+  }
+
+  out.unique_saleID = Object.keys(saleSet).length;
+  out.unique_srid = Object.keys(sridSet).length;
+  out.unique_nmId = Object.keys(nmSet).length;
+  out.unmatched_unique_nmId = Object.keys(unmatchedNmSet).length;
+  return out;
+}
+
+
+// ═══════════════════════════════════════
+// ЛИСТЫ / ЛОГ / ТОКЕН / УТИЛИТЫ
+// ═══════════════════════════════════════
+
+function getRawSalesSheet_(ss) {
+  // BQ-приёмник (Фаза D2a): вместо листа — лёгкая заглушка. hMap/append
+  // работают по SALES_RAW_HEADERS_; физического листа нет.
+  if (typeof wbSalesBqSinkOn_ === 'function' && wbSalesBqSinkOn_()) {
+    wbSalesBqEnsureTable_(SALES_RAW_HEADERS_);
+    return {
+      _bqSink: true,
+      getName: function () { return SALES_RAW_SHEET_; },
+      getLastColumn: function () { return SALES_RAW_HEADERS_.length; }
+    };
+  }
+  return ss.getSheetByName(SALES_RAW_SHEET_);
+}
+
+function buildSalesRawHeaderMap_(sheet, lastCol) {
+  // BQ-приёмник: заголовки берём из канонической константы (листа нет).
+  var headers = (sheet && sheet._bqSink)
+    ? SALES_RAW_HEADERS_
+    : sheet.getRange(1, 1, 1, lastCol).getValues()[0];
+  var map = {};
+  for (var c = 0; c < headers.length; c++) {
+    var name = String(headers[c] || '').trim().toLowerCase();
+    if (name) map[name] = c;
+  }
+  return map;
+}
+
+function getSalesToken_() {
+  for (var i = 0; i < WB_SALES_TOKEN_KEYS_.length; i++) {
+    var key = WB_SALES_TOKEN_KEYS_[i];
+    var v = '';
+    try {
+      if (typeof getScriptProperty_ === 'function') v = getScriptProperty_(key) || '';
+      if (!v) v = PropertiesService.getScriptProperties().getProperty(key) || '';
+    } catch (e) { v = ''; }
+    if (v) return { key: key, token: v };
+  }
+  return null;
+}
+
+function ensureImportLogSalesSheet_(ss) {
+  var sheet = ss.getSheetByName(IMPORT_LOG_SALES_SHEET_);
+  if (!sheet) {
+    sheet = ss.insertSheet(IMPORT_LOG_SALES_SHEET_);
+    sheet.getRange(1, 1, 1, IMPORT_LOG_SALES_HEADERS_.length).setValues([IMPORT_LOG_SALES_HEADERS_]);
+    sheet.setFrozenRows(1);
+  } else if (sheet.getLastRow() < 1) {
+    sheet.getRange(1, 1, 1, IMPORT_LOG_SALES_HEADERS_.length).setValues([IMPORT_LOG_SALES_HEADERS_]);
+    sheet.setFrozenRows(1);
+  }
+  return sheet;
+}
+
+function writeSalesLogEntry_(logSheet, r) {
+  if (!logSheet) return;
+  var rowObj = {
+    load_id: r.load_id, loaded_at: r.loaded_at,
+    period_from: r.period_from, period_to: r.period_to,
+    rows_imported: r.rows_imported, skipped_dupes: r.skipped_dupes,
+    rows_total_period: r.rows_total_period,
+    sales_count: r.sales_count, returns_count: r.returns_count,
+    unique_saleID: r.unique_saleID, unique_srid: r.unique_srid,
+    unique_nmId: r.unique_nmId, unmatched_nmId: r.unmatched_nmId,
+    status: r.status, error_message: r.error_message
+  };
+  var rowArr = [];
+  for (var i = 0; i < IMPORT_LOG_SALES_HEADERS_.length; i++) {
+    var k = IMPORT_LOG_SALES_HEADERS_[i];
+    rowArr.push(rowObj[k] !== undefined ? rowObj[k] : '');
+  }
+  logSheet.getRange(logSheet.getLastRow() + 1, 1, 1, rowArr.length).setValues([rowArr]);
+}
+
+/** 'YYYY-MM-DD' из значения ячейки (Date-объект или строка). */
+function salesDayKey_(v) {
+  if (typeof normalizeDateKey_ === 'function') {
+    var k = normalizeDateKey_(v);
+    if (k) return k;
+  }
+  if (Object.prototype.toString.call(v) === '[object Date]' && !isNaN(v.getTime())) {
+    return Utilities.formatDate(v, 'Europe/Moscow', 'yyyy-MM-dd');
+  }
+  var s = String(v || '');
+  return s.length >= 10 ? s.substring(0, 10) : '';
+}
+
+function salesValidDate_(s) {
+  return /^\d{4}-\d{2}-\d{2}$/.test(String(s || ''));
+}
+
+
+// ═══════════════════════════════════════
+// MOCK-ПРОВЕРКА noWindow (без API / листов / BigQuery)
+// ═══════════════════════════════════════
+
+/**
+ * Проверяет ключевую семантику D2a: поздно изменённая старая продажа
+ * (sale_dt=2026-03-30 < dateFrom=2026-04-13, lastChangeDate=2026-04-13T07:03:54).
+ *   • sink ON (noWindow:true)  → строка нормализуется и учитывается в sums;
+ *   • sink OFF (period-фильтр)  → строка отбрасывается (прежнее листовое поведение).
+ * Ничего не пишет. Запускать вручную из редактора.
+ */
+function wbSalesNoWindowSelfTest() {
+  var hMap = {};
+  for (var c = 0; c < SALES_RAW_HEADERS_.length; c++) hMap[SALES_RAW_HEADERS_[c]] = c;
+  var lastCol = SALES_RAW_HEADERS_.length;
+  var sku = { byNm: {}, byBarcode: {} };
+  var from = '2026-04-13', to = '2026-07-12';
+
+  var apiRow = {
+    saleID: 'S9999999999', srid: 'testsrid', gNumber: 'G1', incomeID: 1,
+    date: '2026-03-30T15:05:44', lastChangeDate: '2026-04-13T07:03:54',
+    nmId: 0, supplierArticle: 'ART', barcode: 'BC',
+    category: 'c', subject: 's', brand: 'b', techSize: '0',
+    warehouseName: 'wh', warehouseType: 'x', regionName: 'Регион', oblastOkrugName: 'Округ', countryName: 'Россия',
+    totalPrice: 100, discountPercent: 10, spp: 5, paymentSaleAmount: 90, priceWithDisc: 90,
+    finishedPrice: 90, forPay: 80, isSupply: false, isRealization: true, sticker: '123'
+  };
+
+  var onRows  = normalizeSalesApiRows_([apiRow], hMap, lastCol, 'TEST', 'TEST', from, to, sku, { noWindow: true });
+  var offRows = normalizeSalesApiRows_([apiRow], hMap, lastCol, 'TEST', 'TEST', from, to, sku, { noWindow: false });
+  var onSums  = aggregateSalesRowArray_(onRows, hMap, from, to, { noWindow: true });
+
+  var pass = (onRows.length === 1) && (offRows.length === 0) &&
+             (onSums.rows_total_period === 1) && (onSums.sales_count === 1);
+
+  console.log('wbSalesNoWindowSelfTest: sink ON rows=' + onRows.length + ' (ожид. 1), ' +
+    'sink OFF rows=' + offRows.length + ' (ожид. 0), ' +
+    'sink ON sums.total=' + onSums.rows_total_period + '/sales=' + onSums.sales_count + ' (ожид. 1/1) → ' +
+    (pass ? '✅ PASS' : '❌ FAIL'));
+  return { pass: pass, onRows: onRows.length, offRows: offRows.length,
+           onSumsTotal: onSums.rows_total_period, onSumsSales: onSums.sales_count };
+}

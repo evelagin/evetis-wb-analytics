@@ -1,5 +1,3 @@
 **/**
-!*.gs
-!*.html
+!Код.gs
 !appsscript.json
-OpsTests.gs
