@@ -1,0 +1,42 @@
+{
+  "_comment": "STEP 5B Phase D. Единственный источник правды о соответствии каталог -> Apps Script проект. Проверяется tools/clasp_prepush_verify.js ПЕРЕД любым clasp push.",
+  "projects": {
+    "ingestion": {
+      "dir": "apps-script/ingestion",
+      "scriptId": "10fr6u1YVdrTvZo7bkd88K4Vuv_-HiPerDbTw-9S9N34AUDQtfg6FtDkS",
+      "projectName": "evetis-wb-analitics",
+      "binding": "container-bound",
+      "container": "1MLOCJEX0UR0Gj9gUcDbTBfPrtAhqQc2ctcsoaepSTiU",
+      "containerName": "Evetis аналитика 2.0",
+      "neverPush": ["WbSalesRetryTest.gs"],
+      "manifestPresent": false
+    },
+    "unitka": {
+      "dir": "apps-script/unitka",
+      "scriptId": "1DrcKy55LH5TrN3aPz6l18WpfPIOCUrRMEy95SP6TQXxaWWXtsPW3SBW3",
+      "projectName": "(без названия) UNITKA",
+      "binding": "standalone",
+      "container": null,
+      "containerName": "openById -> 1E4L4JuwfEqr9owhsGkAjb8F24lRpWpWkEyVmSuRxaJg (Юнитка_Evetis Cosmetics)",
+      "neverPush": [],
+      "manifestPresent": false
+    },
+    "operations": {
+      "dir": "apps-script/operations",
+      "scriptId": "1z4SVOytTs2F8VsHnRKhLrWb0Jw1nthFGyhifhMYEqrnKjKEjvhhrHy3W",
+      "projectName": "EVETIS OPERATIONS · C2",
+      "binding": "container-bound",
+      "container": "19J8EW-Xqz_twHk4ID7IvkumFOop4MTTZeX6U0uaNSAc",
+      "containerName": "EVETIS OPERATIONS",
+      "neverPush": ["OpsTests.gs"],
+      "manifestPresent": true,
+      "note": "В production это ОДИН файл Код.gs — конкатенация OpsConfig+OpsCore+OpsSheetIO+OpsInstall+OpsMain. clasp push залил бы 5 отдельных файлов и удалил Код.gs. Требуется отдельное решение владельца до первого push."
+    }
+  },
+  "excludedLegacyProjects": [
+    { "projectName": "Evetis Ozon", "scriptId": "1MemRXRCwnjwgXVsROYXMHHi3jDLmx5fyaVJxnnQaI4PhQrcDRS3jcqhq", "status": "HISTORICAL/FROZEN" },
+    { "projectName": "Evetis WB", "scriptId": "1k1gICszkM5vYLI0184OsEdytVJsY4DF_o7P6raMd4Xj3bcgl_XXwjeoz", "status": "HISTORICAL/FROZEN" },
+    { "projectName": "EVETIS OPERATIONS · C2 TEST", "scriptId": "12qeynQ7U_Ub-Pz4pvZn2N45epYM0uwHmjeSMeB_vFxfRTEMJMGBSrNCg", "status": "TEST COPY" },
+    { "projectName": "(без названия, проба WB Advert API)", "scriptId": "19Pjunnep_pXESar9pbRwcTOr2cskoKMcgVaU_HBV82allQJHuJUYIHiA", "status": "PROBE" }
+  ]
+}
