@@ -22,7 +22,7 @@ import sys
 import shutil
 import subprocess
 
-BASE = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'apps-script')
+BASE = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'apps-script', 'ingestion')
 BASE = os.path.normpath(BASE)
 SUFFIX = '.pre_mart3a.bak'
 
@@ -293,8 +293,8 @@ def apply_all():
     if failed or not ok:
         print('\nРЕЗУЛЬТАТ: ЕСТЬ ПРОБЛЕМЫ — файлы можно откатить: python3 tools/apply_mart3a_patches.py --restore')
         sys.exit(1)
-    print('\nРЕЗУЛЬТАТ: OK. Проверьте diff (git diff apps-script/) и перенесите правки в Apps Script.')
-    print('После ревью удалите бэкапы: rm apps-script/*%s' % SUFFIX)
+    print('\nРЕЗУЛЬТАТ: OK. Проверьте diff (git diff apps-script/ingestion/) и перенесите правки в Apps Script.')
+    print('После ревью удалите бэкапы: rm apps-script/ingestion/*%s' % SUFFIX)
 
 
 if __name__ == '__main__':

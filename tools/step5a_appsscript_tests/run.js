@@ -1,9 +1,9 @@
 const { load, makeClock } = require('./harness');
 const path = require('path');
-// STEP 5A: по умолчанию тесты гонят исходники репозитория (apps-script/).
+// STEP 5A: по умолчанию тесты гонят исходники репозитория (apps-script/ingestion/).
 // Второй аргумент позволяет указать другой каталог (например выгрузку production)
 // для воспроизведения base-регрессии.
-const dir = process.argv[2] ? path.resolve(process.argv[2]) : path.join(__dirname, '..', '..', 'apps-script');
+const dir = process.argv[2] ? path.resolve(process.argv[2]) : path.join(__dirname, '..', '..', 'apps-script', 'ingestion');
 const variant = path.basename(dir);
 const results = []; const t = (name, fn) => { try { fn(); results.push(['PASS', name]); } catch (e) { results.push(['FAIL', name, e.message.split('\n')[0]]); } };
 const assert = (c, m) => { if (!c) throw new Error(m); };

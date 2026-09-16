@@ -1,7 +1,7 @@
 /**
  * UNITKA ENGINE v1 — геометрия September Master (лист `WB_Юнит_2025`, строки 735–767).
  *
- * Контракт 1-в-1 с Apps Script (`S8`, `S8_M`, `S8_ORDER` в apps-script/UnitkaS8.gs):
+ * Контракт 1-в-1 с Apps Script (`S8`, `S8_M`, `S8_ORDER` в apps-script/unitka/UnitkaS8.gs):
  * Master — immutable reference implementation, Engine его ОБСЛУЖИВАЕТ. Любое отклонение
  * листа от этой геометрии — STRUCTURE_DRIFT, а не повод «подстроиться».
  *
