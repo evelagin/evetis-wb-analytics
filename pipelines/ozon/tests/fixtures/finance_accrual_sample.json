@@ -1,0 +1,1020 @@
+{
+ "_provenance": {
+  "source": "Ozon Seller API POST /v1/finance/accrual/by-day, audit backfill 2026-09-01 (docs/ozon/audit_2026-08-30/raw/backfill_v1/finance, вне Git)",
+  "selection": "по одному начислению на каждую комбинацию ветвей emit() (23 сигнатуры из 1428 начислений за 2026-06-01..2026-08-31), для двух самых частых — по два",
+  "pseudonymized": [
+   "accrual_id",
+   "unit_number",
+   "sku"
+  ],
+  "kept_as_is": [
+   "date",
+   "accrued_category",
+   "type_id",
+   "amount",
+   "currency",
+   "commission_ratio",
+   "total_amount"
+  ],
+  "note": "Идентификаторы заменены согласованно; суммы и структура не изменены. Персональных данных в ответе нет."
+ },
+ "accrual_types": {
+  "accrual_types": [
+   {
+    "id": 1,
+    "name": "Acquiring",
+    "description": "Эквайринг"
+   },
+   {
+    "id": 12,
+    "name": "CrossDock",
+    "description": "Кросс-докинг"
+   },
+   {
+    "id": 15,
+    "name": "Disposal",
+    "description": "Утилизация"
+   },
+   {
+    "id": 25,
+    "name": "ItemCompensation",
+    "description": "Товарная компенсация"
+   },
+   {
+    "id": 29,
+    "name": "LastMileCourier",
+    "description": "Доставка до места выдачи"
+   },
+   {
+    "id": 32,
+    "name": "Logistic",
+    "description": "Логистика"
+   },
+   {
+    "id": 38,
+    "name": "PackageCost",
+    "description": "Обеспечение материалами для упаковки товара"
+   },
+   {
+    "id": 39,
+    "name": "PackingFee",
+    "description": "Упаковка товара партнёрами"
+   },
+   {
+    "id": 41,
+    "name": "PayPerClick",
+    "description": "Оплата за клик"
+   },
+   {
+    "id": 45,
+    "name": "PickUpPointReturnAcceptance",
+    "description": "Обработка возвратов, отмен и невыкупов партнёрами"
+   },
+   {
+    "id": 46,
+    "name": "Placements",
+    "description": "Размещение товаров на складах Ozon"
+   },
+   {
+    "id": 54,
+    "name": "Promotion",
+    "description": "Продвижение товара"
+   },
+   {
+    "id": 59,
+    "name": "ReturnFlowLogistic",
+    "description": "Обратная логистика"
+   },
+   {
+    "id": 71,
+    "name": "SellerReturns",
+    "description": "Вывоз товара со склада силами Ozon"
+   },
+   {
+    "id": 76,
+    "name": "StockInsurance",
+    "description": "Страхование товара от массовых повреждений"
+   },
+   {
+    "id": 77,
+    "name": "SupplyInbound",
+    "description": "Обработка товара"
+   },
+   {
+    "id": 79,
+    "name": "TemporaryPlacementsAgent",
+    "description": "Временное размещение товара партнерами"
+   },
+   {
+    "id": 98,
+    "name": "DeliveryToHandoverPlaceByOzon",
+    "description": "Доставка до места выдачи силами Ozon"
+   },
+   {
+    "id": 116,
+    "name": "FirstCustomerReview",
+    "description": "Сбор первых отзывов"
+   }
+  ]
+ },
+ "days": {
+  "2026-06-01": [
+   {
+    "accrual_id": 900000001,
+    "date": "2026-06-01",
+    "total_amount": {
+     "amount": "-11.24",
+     "currency": "RUB"
+    },
+    "accrued_category": "NON_ITEM",
+    "posting": null,
+    "item_fees": null,
+    "non_item_fee": {
+     "type_id": 76,
+     "accrued": {
+      "amount": "-11.24",
+      "currency": "RUB"
+     }
+    },
+    "container_fees": null
+   },
+   {
+    "accrual_id": 900000002,
+    "date": "2026-06-01",
+    "total_amount": {
+     "amount": "571.99",
+     "currency": "RUB"
+    },
+    "unit_number": "PSEUDO-0001",
+    "accrued_category": "POSTING",
+    "posting": {
+     "delivery_schema": "Fbo",
+     "products": [
+      {
+       "sku": 100000001,
+       "delivery": {
+        "total_accrued": {
+         "amount": "-113",
+         "currency": "RUB"
+        },
+        "services": [
+         {
+          "type_id": 32,
+          "accrued": {
+           "amount": "-88",
+           "currency": "RUB"
+          }
+         },
+         {
+          "type_id": 98,
+          "accrued": {
+           "amount": "-25",
+           "currency": "RUB"
+          }
+         }
+        ]
+       },
+       "commission": {
+        "seller_price": {
+         "amount": "1161",
+         "currency": "RUB"
+        },
+        "sale_price": {
+         "amount": "829",
+         "currency": "RUB"
+        },
+        "sale_commission": {
+         "amount": "-476.01",
+         "currency": "RUB"
+        },
+        "commission": {
+         "amount": "-476.01",
+         "currency": "RUB"
+        },
+        "commission_ratio": "value:\"0.410000\"",
+        "sale_amount": {
+         "amount": "1161",
+         "currency": "RUB"
+        },
+        "coinvestment": {
+         "amount": "0",
+         "currency": "RUB"
+        },
+        "bonus": {
+         "amount": "332",
+         "currency": "RUB"
+        }
+       }
+      }
+     ]
+    },
+    "item_fees": null,
+    "non_item_fee": null,
+    "container_fees": null
+   },
+   {
+    "accrual_id": 900000003,
+    "date": "2026-06-01",
+    "total_amount": {
+     "amount": "-74",
+     "currency": "RUB"
+    },
+    "unit_number": "PSEUDO-0002",
+    "accrued_category": "POSTING",
+    "posting": {
+     "delivery_schema": "Fbo",
+     "products": [
+      {
+       "sku": 100000002,
+       "delivery": {
+        "total_accrued": {
+         "amount": "-74",
+         "currency": "RUB"
+        },
+        "services": [
+         {
+          "type_id": 32,
+          "accrued": {
+           "amount": "-74",
+           "currency": "RUB"
+          }
+         }
+        ]
+       },
+       "commission": null
+      }
+     ]
+    },
+    "item_fees": null,
+    "non_item_fee": null,
+    "container_fees": null
+   },
+   {
+    "accrual_id": 900000004,
+    "date": "2026-06-01",
+    "total_amount": {
+     "amount": "-70",
+     "currency": "RUB"
+    },
+    "unit_number": "PSEUDO-0002",
+    "accrued_category": "POSTING",
+    "posting": {
+     "delivery_schema": "Fbo",
+     "products": [
+      {
+       "sku": 100000002,
+       "delivery": {
+        "total_accrued": {
+         "amount": "-70",
+         "currency": "RUB"
+        },
+        "services": [
+         {
+          "type_id": 59,
+          "accrued": {
+           "amount": "-70",
+           "currency": "RUB"
+          }
+         }
+        ]
+       },
+       "commission": null
+      }
+     ]
+    },
+    "item_fees": null,
+    "non_item_fee": null,
+    "container_fees": null
+   },
+   {
+    "accrual_id": 900000005,
+    "date": "2026-06-01",
+    "total_amount": {
+     "amount": "356.72",
+     "currency": "RUB"
+    },
+    "unit_number": "PSEUDO-0003",
+    "accrued_category": "POSTING",
+    "posting": {
+     "delivery_schema": "Fbo",
+     "products": [
+      {
+       "sku": 100000003,
+       "delivery": {
+        "total_accrued": {
+         "amount": "-73.98",
+         "currency": "RUB"
+        },
+        "services": [
+         {
+          "type_id": 32,
+          "accrued": {
+           "amount": "-66",
+           "currency": "RUB"
+          }
+         },
+         {
+          "type_id": 29,
+          "accrued": {
+           "amount": "-7.98",
+           "currency": "RUB"
+          }
+         }
+        ]
+       },
+       "commission": {
+        "seller_price": {
+         "amount": "730",
+         "currency": "RUB"
+        },
+        "sale_price": {
+         "amount": "341.9",
+         "currency": "RUB"
+        },
+        "sale_commission": {
+         "amount": "-299.3",
+         "currency": "RUB"
+        },
+        "commission": {
+         "amount": "-299.3",
+         "currency": "RUB"
+        },
+        "commission_ratio": "value:\"0.410000\"",
+        "sale_amount": {
+         "amount": "730",
+         "currency": "RUB"
+        },
+        "coinvestment": {
+         "amount": "3.42",
+         "currency": "RUB"
+        },
+        "bonus": {
+         "amount": "384.68",
+         "currency": "RUB"
+        }
+       }
+      }
+     ]
+    },
+    "item_fees": null,
+    "non_item_fee": null,
+    "container_fees": null
+   },
+   {
+    "accrual_id": 900000006,
+    "date": "2026-06-01",
+    "total_amount": {
+     "amount": "-6.5",
+     "currency": "RUB"
+    },
+    "unit_number": "PSEUDO-0003",
+    "accrued_category": "ITEM",
+    "posting": null,
+    "item_fees": {
+     "fees": [
+      {
+       "sku": 100000003,
+       "fees": [
+        {
+         "type_id": 1,
+         "accrued": {
+          "amount": "-6.5",
+          "currency": "RUB"
+         }
+        }
+       ]
+      }
+     ]
+    },
+    "non_item_fee": null,
+    "container_fees": null
+   },
+   {
+    "accrual_id": 900000007,
+    "date": "2026-06-01",
+    "total_amount": {
+     "amount": "-64.31",
+     "currency": "RUB"
+    },
+    "unit_number": "PSEUDO-0004",
+    "accrued_category": "NON_ITEM",
+    "posting": null,
+    "item_fees": null,
+    "non_item_fee": {
+     "type_id": 41,
+     "accrued": {
+      "amount": "-64.31",
+      "currency": "RUB"
+     }
+    },
+    "container_fees": null
+   },
+   {
+    "accrual_id": 900000008,
+    "date": "2026-06-01",
+    "total_amount": {
+     "amount": "-16.41",
+     "currency": "RUB"
+    },
+    "unit_number": "PSEUDO-0005",
+    "accrued_category": "NON_ITEM",
+    "posting": null,
+    "item_fees": null,
+    "non_item_fee": {
+     "type_id": 41,
+     "accrued": {
+      "amount": "-16.41",
+      "currency": "RUB"
+     }
+    },
+    "container_fees": null
+   }
+  ],
+  "2026-06-02": [
+   {
+    "accrual_id": 900000009,
+    "date": "2026-06-02",
+    "total_amount": {
+     "amount": "-5",
+     "currency": "RUB"
+    },
+    "unit_number": "PSEUDO-0006",
+    "accrued_category": "ITEM",
+    "posting": null,
+    "item_fees": {
+     "fees": [
+      {
+       "sku": 100000004,
+       "fees": [
+        {
+         "type_id": 38,
+         "accrued": {
+          "amount": "-5",
+          "currency": "RUB"
+         }
+        }
+       ]
+      }
+     ]
+    },
+    "non_item_fee": null,
+    "container_fees": null
+   },
+   {
+    "accrual_id": 900000010,
+    "date": "2026-06-02",
+    "total_amount": {
+     "amount": "-10",
+     "currency": "RUB"
+    },
+    "unit_number": "PSEUDO-0006",
+    "accrued_category": "ITEM",
+    "posting": null,
+    "item_fees": {
+     "fees": [
+      {
+       "sku": 100000004,
+       "fees": [
+        {
+         "type_id": 39,
+         "accrued": {
+          "amount": "-10",
+          "currency": "RUB"
+         }
+        }
+       ]
+      }
+     ]
+    },
+    "non_item_fee": null,
+    "container_fees": null
+   }
+  ],
+  "2026-06-03": [
+   {
+    "accrual_id": 900000011,
+    "date": "2026-06-03",
+    "total_amount": {
+     "amount": "191.58",
+     "currency": "RUB"
+    },
+    "unit_number": "PSEUDO-0007",
+    "accrued_category": "POSTING",
+    "posting": {
+     "delivery_schema": "Fbo",
+     "products": [
+      {
+       "sku": 100000005,
+       "delivery": {
+        "total_accrued": {
+         "amount": "-91.62",
+         "currency": "RUB"
+        },
+        "services": [
+         {
+          "type_id": 32,
+          "accrued": {
+           "amount": "-85",
+           "currency": "RUB"
+          }
+         },
+         {
+          "type_id": 29,
+          "accrued": {
+           "amount": "-6.62",
+           "currency": "RUB"
+          }
+         }
+        ]
+       },
+       "commission": {
+        "seller_price": {
+         "amount": "480",
+         "currency": "RUB"
+        },
+        "sale_price": {
+         "amount": "256.9",
+         "currency": "RUB"
+        },
+        "sale_commission": {
+         "amount": "-196.8",
+         "currency": "RUB"
+        },
+        "commission": {
+         "amount": "-196.8",
+         "currency": "RUB"
+        },
+        "commission_ratio": "value:\"0.410000\"",
+        "sale_amount": {
+         "amount": "480",
+         "currency": "RUB"
+        },
+        "coinvestment": {
+         "amount": "0",
+         "currency": "RUB"
+        },
+        "bonus": {
+         "amount": "223.1",
+         "currency": "RUB"
+        }
+       }
+      }
+     ]
+    },
+    "item_fees": null,
+    "non_item_fee": null,
+    "container_fees": null
+   }
+  ],
+  "2026-06-04": [
+   {
+    "accrual_id": 900000012,
+    "date": "2026-06-04",
+    "total_amount": {
+     "amount": "-5.59",
+     "currency": "RUB"
+    },
+    "unit_number": "PSEUDO-0006",
+    "accrued_category": "POSTING",
+    "posting": {
+     "delivery_schema": "Fbo",
+     "products": [
+      {
+       "sku": 100000004,
+       "delivery": {
+        "total_accrued": {
+         "amount": "-5.59",
+         "currency": "RUB"
+        },
+        "services": [
+         {
+          "type_id": 29,
+          "accrued": {
+           "amount": "-5.59",
+           "currency": "RUB"
+          }
+         }
+        ]
+       },
+       "commission": null
+      }
+     ]
+    },
+    "item_fees": null,
+    "non_item_fee": null,
+    "container_fees": null
+   },
+   {
+    "accrual_id": 900000013,
+    "date": "2026-06-04",
+    "total_amount": {
+     "amount": "-15",
+     "currency": "RUB"
+    },
+    "unit_number": "PSEUDO-0006",
+    "accrued_category": "POSTING",
+    "posting": {
+     "delivery_schema": "Fbo",
+     "products": [
+      {
+       "sku": 100000004,
+       "delivery": {
+        "total_accrued": {
+         "amount": "-15",
+         "currency": "RUB"
+        },
+        "services": [
+         {
+          "type_id": 45,
+          "accrued": {
+           "amount": "-15",
+           "currency": "RUB"
+          }
+         }
+        ]
+       },
+       "commission": null
+      }
+     ]
+    },
+    "item_fees": null,
+    "non_item_fee": null,
+    "container_fees": null
+   }
+  ],
+  "2026-06-08": [
+   {
+    "accrual_id": 900000014,
+    "date": "2026-06-08",
+    "total_amount": {
+     "amount": "-168",
+     "currency": "RUB"
+    },
+    "unit_number": "PSEUDO-0008",
+    "accrued_category": "NON_ITEM",
+    "posting": null,
+    "item_fees": null,
+    "non_item_fee": {
+     "type_id": 54,
+     "accrued": {
+      "amount": "-168",
+      "currency": "RUB"
+     }
+    },
+    "container_fees": null
+   }
+  ],
+  "2026-06-20": [
+   {
+    "accrual_id": 900000015,
+    "date": "2026-06-20",
+    "total_amount": {
+     "amount": "-95",
+     "currency": "RUB"
+    },
+    "unit_number": "PSEUDO-0009",
+    "accrued_category": "POSTING",
+    "posting": {
+     "delivery_schema": "Fbo",
+     "products": [
+      {
+       "sku": 100000003,
+       "delivery": {
+        "total_accrued": {
+         "amount": "-95",
+         "currency": "RUB"
+        },
+        "services": [
+         {
+          "type_id": 32,
+          "accrued": {
+           "amount": "-70",
+           "currency": "RUB"
+          }
+         },
+         {
+          "type_id": 98,
+          "accrued": {
+           "amount": "-25",
+           "currency": "RUB"
+          }
+         }
+        ]
+       },
+       "commission": null
+      }
+     ]
+    },
+    "item_fees": null,
+    "non_item_fee": null,
+    "container_fees": null
+   }
+  ],
+  "2026-06-26": [
+   {
+    "accrual_id": 900000016,
+    "date": "2026-06-26",
+    "total_amount": {
+     "amount": "-75",
+     "currency": "RUB"
+    },
+    "unit_number": "PSEUDO-0010",
+    "accrued_category": "ITEM",
+    "posting": null,
+    "item_fees": {
+     "fees": [
+      {
+       "sku": 100000006,
+       "fees": [
+        {
+         "type_id": 15,
+         "accrued": {
+          "amount": "-75",
+          "currency": "RUB"
+         }
+        }
+       ]
+      }
+     ]
+    },
+    "non_item_fee": null,
+    "container_fees": null
+   }
+  ],
+  "2026-06-28": [
+   {
+    "accrual_id": 900000017,
+    "date": "2026-06-28",
+    "total_amount": {
+     "amount": "-1.46",
+     "currency": "RUB"
+    },
+    "accrued_category": "NON_ITEM",
+    "posting": null,
+    "item_fees": null,
+    "non_item_fee": {
+     "type_id": 46,
+     "accrued": {
+      "amount": "-1.46",
+      "currency": "RUB"
+     }
+    },
+    "container_fees": null
+   }
+  ],
+  "2026-07-02": [
+   {
+    "accrual_id": 900000018,
+    "date": "2026-07-02",
+    "total_amount": {
+     "amount": "-216",
+     "currency": "RUB"
+    },
+    "unit_number": "PSEUDO-0011",
+    "accrued_category": "NON_ITEM",
+    "posting": null,
+    "item_fees": null,
+    "non_item_fee": {
+     "type_id": 12,
+     "accrued": {
+      "amount": "-216",
+      "currency": "RUB"
+     }
+    },
+    "container_fees": null
+   }
+  ],
+  "2026-07-04": [
+   {
+    "accrual_id": 900000019,
+    "date": "2026-07-04",
+    "total_amount": {
+     "amount": "-374",
+     "currency": "RUB"
+    },
+    "unit_number": "PSEUDO-0012",
+    "accrued_category": "NON_ITEM",
+    "posting": null,
+    "item_fees": null,
+    "non_item_fee": {
+     "type_id": 77,
+     "accrued": {
+      "amount": "-374",
+      "currency": "RUB"
+     }
+    },
+    "container_fees": null
+   }
+  ],
+  "2026-07-20": [
+   {
+    "accrual_id": 900000020,
+    "date": "2026-07-20",
+    "total_amount": {
+     "amount": "-60",
+     "currency": "RUB"
+    },
+    "unit_number": "PSEUDO-0013",
+    "accrued_category": "ITEM",
+    "posting": null,
+    "item_fees": {
+     "fees": [
+      {
+       "sku": 100000007,
+       "fees": [
+        {
+         "type_id": 79,
+         "accrued": {
+          "amount": "-60",
+          "currency": "RUB"
+         }
+        }
+       ]
+      }
+     ]
+    },
+    "non_item_fee": null,
+    "container_fees": null
+   },
+   {
+    "accrual_id": 900000021,
+    "date": "2026-07-20",
+    "total_amount": {
+     "amount": "-24",
+     "currency": "RUB"
+    },
+    "unit_number": "PSEUDO-0014",
+    "accrued_category": "ITEM",
+    "posting": null,
+    "item_fees": {
+     "fees": [
+      {
+       "sku": 100000007,
+       "fees": [
+        {
+         "type_id": 71,
+         "accrued": {
+          "amount": "-24",
+          "currency": "RUB"
+         }
+        }
+       ]
+      }
+     ]
+    },
+    "non_item_fee": null,
+    "container_fees": null
+   }
+  ],
+  "2026-07-27": [
+   {
+    "accrual_id": 900000022,
+    "date": "2026-07-27",
+    "total_amount": {
+     "amount": "-512.4",
+     "currency": "RUB"
+    },
+    "unit_number": "PSEUDO-0015",
+    "accrued_category": "ITEM",
+    "posting": null,
+    "item_fees": {
+     "fees": [
+      {
+       "sku": 100000008,
+       "fees": [
+        {
+         "type_id": 116,
+         "accrued": {
+          "amount": "-512.4",
+          "currency": "RUB"
+         }
+        }
+       ]
+      }
+     ]
+    },
+    "non_item_fee": null,
+    "container_fees": null
+   }
+  ],
+  "2026-07-30": [
+   {
+    "accrual_id": 900000023,
+    "date": "2026-07-30",
+    "total_amount": {
+     "amount": "-7.79",
+     "currency": "RUB"
+    },
+    "unit_number": "PSEUDO-0016",
+    "accrued_category": "ITEM",
+    "posting": null,
+    "item_fees": {
+     "fees": [
+      {
+       "sku": 100000003,
+       "fees": [
+        {
+         "type_id": 1,
+         "accrued": {
+          "amount": "-2.3",
+          "currency": "RUB"
+         }
+        }
+       ]
+      },
+      {
+       "sku": 100000009,
+       "fees": [
+        {
+         "type_id": 1,
+         "accrued": {
+          "amount": "-5.49",
+          "currency": "RUB"
+         }
+        }
+       ]
+      }
+     ]
+    },
+    "non_item_fee": null,
+    "container_fees": null
+   }
+  ],
+  "2026-07-31": [
+   {
+    "accrual_id": 900000024,
+    "date": "2026-07-31",
+    "total_amount": {
+     "amount": "581.33",
+     "currency": "RUB"
+    },
+    "accrued_category": "NON_ITEM",
+    "posting": null,
+    "item_fees": null,
+    "non_item_fee": {
+     "type_id": 25,
+     "accrued": {
+      "amount": "581.33",
+      "currency": "RUB"
+     }
+    },
+    "container_fees": null
+   }
+  ],
+  "2026-08-05": [
+   {
+    "accrual_id": 900000025,
+    "date": "2026-08-05",
+    "total_amount": {
+     "amount": "-649.59",
+     "currency": "RUB"
+    },
+    "unit_number": "PSEUDO-0017",
+    "accrued_category": "POSTING",
+    "posting": {
+     "delivery_schema": "Fbo",
+     "products": [
+      {
+       "sku": 100000008,
+       "delivery": null,
+       "commission": {
+        "seller_price": {
+         "amount": "-1101",
+         "currency": "RUB"
+        },
+        "sale_price": {
+         "amount": "-1",
+         "currency": "RUB"
+        },
+        "sale_commission": {
+         "amount": "451.41",
+         "currency": "RUB"
+        },
+        "commission": {
+         "amount": "451.41",
+         "currency": "RUB"
+        },
+        "commission_ratio": "value:\"0.410000\"",
+        "sale_amount": {
+         "amount": "-1101",
+         "currency": "RUB"
+        },
+        "coinvestment": {
+         "amount": "-434.96",
+         "currency": "RUB"
+        },
+        "bonus": {
+         "amount": "-665.04",
+         "currency": "RUB"
+        }
+       }
+      }
+     ]
+    },
+    "item_fees": null,
+    "non_item_fee": null,
+    "container_fees": null
+   }
+  ]
+ }
+}
