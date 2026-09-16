@@ -196,3 +196,10 @@ Claude outputs/
 
 # Операционные ТЗ фулфилменту (USEND) — партнёрские документы, не аналитика
 docs/tz_ozon_*/
+
+# STEP 5C — clasp credentials НИКОГДА не попадают в репозиторий.
+# .clasp.json (scriptId+rootDir) и .claspignore — конфигурация, они tracked намеренно.
+.clasprc.json
+**/.clasprc.json
+.clasp-auth/
+clasp-credentials*.json
