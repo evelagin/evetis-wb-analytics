@@ -1,5 +1,5 @@
--- ⚠️ 2026-09-16: G-13 — снимок состава датасетов на 2026-08-28 (сейчас 74/77/29),
---    устарела не из-за FIN CONTRACT V2. Прогон 16.09: G-1…G-12, G-14 — PASS.
+-- 2026-09-17 EXECUTIVE V2 PHASE C3: G-11 и G-13 приведены к действующей архитектуре
+--    (G-11 ловил «ope-ratio-ns»/«remune-ratio-n» подстрокой; G-13 — снимок количества объектов).
 -- ============================================================================
 -- STAGE 3.1G — VALIDATION для V_DASH_SETTLEMENT_DAILY
 -- Дата: 2026-08-28.  Запускать ПОСЛЕ pr_dash_settlement_v1.sql.
@@ -94,11 +94,14 @@ ASSERT (
 ) AS 'G-10 FAIL: слой расчётов ссылается на управленческие метрики';
 
 -- ── G-11. Ratio-колонок нет (правило контракта дашборда v2). ──
+--   Сопоставление по токенам имени (между «_»): `LIKE '%ratio%'` ложно ловил
+--   «operations» и «remuneration» (колонки GAP-01/05), а `_` в LIKE — любой символ.
+--   Запрещённые токены расширены: доли и ставки — тоже ratio.
 ASSERT (
   SELECT COUNT(*) = 0
   FROM `wb_mart.INFORMATION_SCHEMA.COLUMNS`
   WHERE table_name = 'V_DASH_SETTLEMENT_DAILY'
-    AND (column_name LIKE '%_pct%' OR column_name LIKE '%margin%' OR column_name LIKE '%ratio%')
+    AND REGEXP_CONTAINS(LOWER(column_name), r'(^|_)(pct|percent|margin|ratio|share|rate)(_|$)')
 ) AS 'G-11 FAIL: в слое расчётов появилась ratio-колонка';
 
 -- ── G-12. Запрещённая терминология в именах колонок. ──
@@ -110,12 +113,24 @@ ASSERT (
       OR column_name LIKE '%cash_flow%' OR column_name LIKE '%bank%')
 ) AS 'G-12 FAIL: имя колонки заявляет больше, чем есть в данных';
 
--- ── G-13. Управленческие слои не тронуты (структурный контроль). ──
+-- ── G-13. Слой расчётов изолирован: объекты на месте, потребители утверждены. ──
+--   Снимок количества объектов (2026-08-28) заменён инвариантами: слой — VIEW; его читает
+--   только sp_build_executive_v2_daily (Phase C2), ни одно view; wb_raw и evetis_ref не
+--   зависят от wb_mart.
 ASSERT (
-  SELECT (SELECT COUNT(*) FROM `wb_mart.INFORMATION_SCHEMA.TABLES`)    = 42
-     AND (SELECT COUNT(*) FROM `wb_raw.INFORMATION_SCHEMA.TABLES`)     = 56
-     AND (SELECT COUNT(*) FROM `evetis_ref.INFORMATION_SCHEMA.TABLES`) = 4
-) AS 'G-13 FAIL: состав датасетов отличается от ожидаемого (42 / 56 / 4)';
+  SELECT (SELECT table_type FROM `wb_mart.INFORMATION_SCHEMA.TABLES`
+          WHERE table_name = 'V_DASH_SETTLEMENT_DAILY') = 'VIEW'
+     AND (SELECT COUNT(*) FROM `wb_mart.INFORMATION_SCHEMA.VIEWS`
+          WHERE table_name != 'V_DASH_SETTLEMENT_DAILY'
+            AND REGEXP_CONTAINS(view_definition, r'V_DASH_SETTLEMENT_DAILY')) = 0
+     AND (SELECT ARRAY_TO_STRING(ARRAY_AGG(routine_name ORDER BY routine_name), ',')
+          FROM `wb_mart.INFORMATION_SCHEMA.ROUTINES`
+          WHERE REGEXP_CONTAINS(routine_definition, r'V_DASH_SETTLEMENT_DAILY')) = 'sp_build_executive_v2_daily'
+     AND (SELECT COUNT(*) FROM `wb_raw.INFORMATION_SCHEMA.VIEWS`
+          WHERE REGEXP_CONTAINS(view_definition, r'wb_mart\.')) = 0
+     AND (SELECT COUNT(*) FROM `evetis_ref.INFORMATION_SCHEMA.VIEWS`
+          WHERE REGEXP_CONTAINS(view_definition, r'wb_mart\.')) = 0
+) AS 'G-13 FAIL: слой расчётов не изолирован (тип, потребители или направление слоёв)';
 
 -- ── G-14. Грейн управленческих слоёв не изменился. ──
 ASSERT (

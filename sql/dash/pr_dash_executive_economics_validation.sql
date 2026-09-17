@@ -1,5 +1,5 @@
--- ⚠️ 2026-09-16: D-12 — снимок состава датасетов на 2026-08-28, устарела не из-за
---    FIN CONTRACT V2. Прогон 16.09: D-1…D-11, D-13…D-15 — PASS.
+-- 2026-09-17 EXECUTIVE V2 PHASE C3: D-12 приведена к действующей архитектуре (снимок количества
+--    объектов 2026-08-28 заменён наличием объектов Stage 3.1A–D и закрытым списком потребителей).
 -- ============================================================================
 -- STAGE 3.1D — VALIDATION для V_DASH_EXECUTIVE_ECONOMICS_DAILY
 -- Дата: 2026-08-28.  Запускать ПОСЛЕ pr_dash_executive_economics_v1.sql.
@@ -124,11 +124,28 @@ ASSERT (
     AND v.internal_sku IS NULL
 ) AS 'D-11 FAIL: bundle COGS не разрешается через evetis_ref.V_PRODUCT_COGS_EFFECTIVE';
 
--- ── D-12. Объекты Stage 3.1A / 3.1B / 3.1C не изменены (структурный контроль). ──
+-- ── D-12. Объекты Stage 3.1A–3.1D на месте, потребители слоя утверждены. ──
+--   Снимок количества объектов в датасетах (2026-08-28) ломался на любом новом объекте и
+--   не проверял сами объекты. Теперь: каждый объект существует с нужным типом, а слой
+--   экономики читает только sp_build_executive_v2_daily (Phase C2) — ни одно view.
 ASSERT (
-  SELECT (SELECT COUNT(*) FROM `evetis_ref.INFORMATION_SCHEMA.TABLES`) = 4
-     AND (SELECT COUNT(*) FROM `wb_mart.INFORMATION_SCHEMA.TABLES`)    = 41
-) AS 'D-12 FAIL: состав датасетов отличается от ожидаемого (evetis_ref 4, wb_mart 41)';
+  SELECT (SELECT ARRAY_TO_STRING(ARRAY_AGG(CONCAT(table_name, ':', table_type) ORDER BY table_name), ',')
+          FROM `wb_mart.INFORMATION_SCHEMA.TABLES`
+          WHERE table_name IN ('REF_COST_MAP', 'V_DASH_EXECUTIVE_ECONOMICS_DAILY', 'V_DASH_FINANCE_CORRECTED_DAILY',
+                               'V_DASH_KPI_DAILY', 'V_FACT_FINANCE_COGS', 'V_MART_SKU_DAILY_COGS'))
+       = 'REF_COST_MAP:BASE TABLE,V_DASH_EXECUTIVE_ECONOMICS_DAILY:VIEW,V_DASH_FINANCE_CORRECTED_DAILY:VIEW,'
+         'V_DASH_KPI_DAILY:VIEW,V_FACT_FINANCE_COGS:VIEW,V_MART_SKU_DAILY_COGS:VIEW'
+     AND (SELECT ARRAY_TO_STRING(ARRAY_AGG(CONCAT(table_name, ':', table_type) ORDER BY table_name), ',')
+          FROM `evetis_ref.INFORMATION_SCHEMA.TABLES`
+          WHERE table_name IN ('REF_BUNDLE_COMPONENTS', 'REF_SKU_COGS_HISTORY', 'V_BUNDLE_COGS_DERIVED', 'V_PRODUCT_COGS_EFFECTIVE'))
+       = 'REF_BUNDLE_COMPONENTS:BASE TABLE,REF_SKU_COGS_HISTORY:BASE TABLE,V_BUNDLE_COGS_DERIVED:VIEW,V_PRODUCT_COGS_EFFECTIVE:VIEW'
+     AND (SELECT COUNT(*) FROM `wb_mart.INFORMATION_SCHEMA.VIEWS`
+          WHERE table_name != 'V_DASH_EXECUTIVE_ECONOMICS_DAILY'
+            AND REGEXP_CONTAINS(view_definition, r'V_DASH_EXECUTIVE_ECONOMICS_DAILY')) = 0
+     AND (SELECT ARRAY_TO_STRING(ARRAY_AGG(routine_name ORDER BY routine_name), ',')
+          FROM `wb_mart.INFORMATION_SCHEMA.ROUTINES`
+          WHERE REGEXP_CONTAINS(routine_definition, r'V_DASH_EXECUTIVE_ECONOMICS_DAILY')) = 'sp_build_executive_v2_daily'
+) AS 'D-12 FAIL: объекта Stage 3.1A–D нет или у слоя экономики неутверждённый потребитель';
 
 -- ── D-13. Прежний слой PR2 не потерял ни строки. ──
 ASSERT (

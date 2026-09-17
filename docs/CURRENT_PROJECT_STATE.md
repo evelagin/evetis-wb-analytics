@@ -879,6 +879,21 @@ credentials не вводились. Дашборд просмотрен све�
 
 ---
 
+## Executive V2 (FIN CONTRACT V2 → Phase C3) — **CLOSED, FROZEN**
+
+Дата 2026-09-17. Итог и реестр: `docs/EXECUTIVE_V2_CLOSEOUT_2026-09-17.md`.
+
+- Dashboard 2 работает на материализованном слое `wb_mart.V_DASH_EXECUTIVE_V2_DAILY` (карточки 187–217),
+  пересборка `executive-v2-layer-build` ежечасно 07:10–23:10 МСК; откат — `tools/metabase_exec_v2_c2_switch.py --rollback`.
+- Валидация 97/97 ASSERT (6 файлов `sql/dash/*validation*.sql`); устаревшие C-7, C-12, C-14…C-17, D-12, G-11, G-13
+  приведены к действующему контракту без ослабления.
+- 🔴 **OPEN KNOWN ISSUES:** KI-2026-09-16-1 (продажа 09.07, +638,72 ₽), KI-2026-09-16-2 (возврат 21.07 с
+  положительным `forPay`), KI-2026-09-16-3 (логистика вне universe, 1 360 ₽ в результате). Не исправлять без решения владельца.
+- **Backlog:** BL-EXEC-V2-01 — optional `skip-if-sources-unchanged` для `EXECUTIVE_V2_DAILY` (не реализовано).
+- Не делается: оптимизация 37 запросов dashboard 2, кеш Metabase. SKU Performance V2 — только по отдельной команде.
+
+---
+
 ## Исторический контекст до Stage 3.1A
 
 Ниже — состояние, зафиксированное до коммита `f8ea31e`. Сохранено как история: оно

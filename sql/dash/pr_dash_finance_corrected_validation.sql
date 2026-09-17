@@ -1,7 +1,7 @@
--- ⛔ 2026-09-16 FIN CONTRACT V2: C-7 проверяет формулу v1 и ЗАМЕЩЕНА DQ-3b в
---    sql/dash/fin_contract_v2_validation.sql. C-12 устарела с Stage 3.1F (исключается и
---    форс-мажор), C-14…C-17 — снимок состава на 2026-08-27. Прогон 16.09: C-1…C-6,
---    C-8…C-11, C-13 — PASS.
+-- 2026-09-17 EXECUTIVE V2 PHASE C3: C-7, C-12, C-14…C-17 приведены к действующему контракту
+--    (FIN CONTRACT V2 от 2026-09-16 и материализованный слой C2 от 2026-09-17). Проверки не
+--    ослаблены: формула v1 заменена формулой V2 с тем же точным равенством, снимки количества
+--    объектов — инвариантами слоёв и закрытым списком потребителей. Все 17 проверок актуальны.
 -- ============================================================================
 -- STAGE 3.1C PR2 — ВАЛИДАЦИЯ (A1-A12 + strict non-regression)
 -- Дата: 2026-08-27.  Сборка: sql/dash/pr_dash_finance_corrected_v1.sql
@@ -66,13 +66,16 @@ ASSERT (SELECT COUNTIF(account_level_total_corrected_rub IS DISTINCT FROM
   AS 'C-6 FAIL: предикатная и перечислительная формы account-level итога разошлись';
 
 -- ── C-7 (A7). Реклама не вычитается дважды и не вычитается трижды ─────────
---   Разница AFTER-BEFORE обязана равняться РОВНО исключённому биллингу.
---   Любое иное значение означало бы, что коррекция задела что-то ещё.
+--   FIN CONTRACT V2: результат = вклад + атрибуция (возврат) − биллинг по дате услуги
+--   − уровень счёта без документов «WB Продвижение» и форс-мажора. Разница AFTER-BEFORE
+--   обязана равняться РОВНО этим четырём слагаемым. Любое иное значение означало бы,
+--   что коррекция задела что-то ещё. Точное равенство, как в v1.
 ASSERT (SELECT COUNTIF((period_result_pre_cogs_corrected_rub - period_result_pre_cogs_rub)
-                       IS DISTINCT FROM ad_billing_reconstructed_rub)
+                       IS DISTINCT FROM (ad_spend_attributed_rub - ad_spend_financial_rub
+                                         + ad_billing_reconstructed_rub + force_majeure_rub))
         FROM `wb_mart.V_DASH_FINANCE_CORRECTED_DAILY`
         WHERE period_result_eligible) = 0
-  AS 'C-7 FAIL: дельта AFTER-BEFORE не равна исключённому рекламному биллингу';
+  AS 'C-7 FAIL: дельта AFTER-BEFORE не равна (атрибуция − биллинг + документы WB Продвижение + форс-мажор)';
 
 -- ── C-8 (A11). Числитель и знаменатель живут на одном множестве суток ─────
 ASSERT (SELECT COUNTIF((period_result_pre_cogs_corrected_rub IS NULL)
@@ -99,11 +102,12 @@ ASSERT (SELECT COUNTIF(NOT IFNULL(ads_attribution_covered, FALSE)
   AS 'C-11 FAIL: unallocated протёк за пределы окна покрытия атрибуции';
 
 -- ── C-12 (A4, A5). Транзит и неклассифицированное ОСТАЮТСЯ расходом ───────
---   Проверка отношением: исправленный итог обязан содержать их целиком.
+--   Проверка отношением: исправленный итог обязан содержать их целиком. С Stage 3.1F из
+--   уровня счёта исключаются ровно две статьи: документы «WB Продвижение» и форс-мажор.
 ASSERT (SELECT COUNTIF(account_level_total_corrected_rub
-                       IS DISTINCT FROM (account_level_total_rub - ad_billing_reconstructed_rub))
+                       IS DISTINCT FROM (account_level_total_rub - ad_billing_reconstructed_rub - force_majeure_rub))
         FROM `wb_mart.V_DASH_FINANCE_CORRECTED_DAILY`) = 0
-  AS 'C-12 FAIL: из account-level исключено не только AD_BILLING_RECONSTRUCTED';
+  AS 'C-12 FAIL: из account-level исключено что-то кроме документов WB Продвижение и форс-мажора';
 
 -- ── C-13 (A8). Product COGS не участвует ──────────────────────────────────
 --   Слой не должен ссылаться ни на один COGS-ОБЪЕКТ Stage 3.1B. Проверяются
@@ -115,41 +119,41 @@ ASSERT (SELECT COUNTIF(REGEXP_CONTAINS(view_definition,
         WHERE table_name = 'V_DASH_FINANCE_CORRECTED_DAILY') = 0
   AS 'C-13 FAIL: слой ссылается на COGS-объекты — Product COGS подключён вне ACK';
 
--- ── C-14 (A9). Соседние слои не тронуты ──────────────────────────────────
-ASSERT (SELECT COUNT(*) FROM `evetis_ref.INFORMATION_SCHEMA.TABLES`) = 4
-  AS 'C-14 FAIL: изменился evetis_ref';
-ASSERT (SELECT COUNT(*) FROM `wb_raw.INFORMATION_SCHEMA.TABLES`) = 56
-  AS 'C-15 FAIL: изменился wb_raw';
-ASSERT (SELECT COUNT(*) FROM `wb_mart.REF_COST_MAP`) = 19
-  AS 'C-16 FAIL: изменился REF_COST_MAP';
+-- ── C-14 (A9). Соседние слои не зависят от витрины ─────────────────────────
+--   Снимок количества объектов (2026-08-27) заменён инвариантом направления слоёв:
+--   evetis_ref — справочник, не читает wb_mart ни во view, ни в процедурах слоя расчётов.
+--   (sp_ct_refresh_daily читает V_DASH_SKU_DAILY — утверждённый Control Tower, не этот слой.)
+ASSERT (SELECT COUNT(*) FROM `evetis_ref.INFORMATION_SCHEMA.VIEWS`
+        WHERE REGEXP_CONTAINS(view_definition, r'wb_mart\.')) = 0
+   AND (SELECT COUNT(*) FROM `evetis_ref.INFORMATION_SCHEMA.ROUTINES`
+        WHERE REGEXP_CONTAINS(routine_definition, r'V_DASH_(FINANCE_CORRECTED|EXECUTIVE_ECONOMICS|SETTLEMENT)_DAILY')) = 0
+  AS 'C-14 FAIL: evetis_ref зависит от финансового слоя wb_mart';
+ASSERT (SELECT COUNT(*) FROM `wb_raw.INFORMATION_SCHEMA.VIEWS`
+        WHERE REGEXP_CONTAINS(view_definition, r'wb_mart\.')) = 0
+   AND (SELECT COUNT(*) FROM `wb_raw.INFORMATION_SCHEMA.ROUTINES`
+        WHERE REGEXP_CONTAINS(routine_definition, r'wb_mart\.')) = 0
+  AS 'C-15 FAIL: wb_raw зависит от wb_mart (нарушено направление RAW → MART)';
 
--- ── C-17 (A12). Metabase не переключён: слой ещё никем не читается ────────
---   Ни один V_DASH_* не должен ссылаться на новый объект.
-ASSERT (SELECT COUNTIF(REGEXP_CONTAINS(view_definition, r'V_DASH_FINANCE_CORRECTED_DAILY'))
+-- ── C-16. REF_COST_MAP = утверждённое состояние FIN CONTRACT V2 ─────────────
+--   21 строка, ключ (op_key, amount_field) уникален, отпечаток смысловых колонок (без note)
+--   совпадает с принятым 2026-09-16. Любая правка классификатора — через ACK и обновление
+--   отпечатка здесь (production уже правился мимо Git: см. REF_COST_MAP seed drift).
+ASSERT (SELECT COUNT(*) = 21
+           AND COUNT(DISTINCT CONCAT(op_key, '|', amount_field)) = 21
+           AND FARM_FINGERPRINT(STRING_AGG(CONCAT(op_key, '|', amount_field, '|', economic_direction, '|',
+                                                  cost_category, '|', CAST(field_normalization_sign AS STRING)),
+                                           '#' ORDER BY op_key, amount_field)) = 7478614899318045374
+        FROM `wb_mart.REF_COST_MAP`)
+  AS 'C-16 FAIL: REF_COST_MAP отличается от утверждённого FIN CONTRACT V2';
+
+-- ── C-17 (A12). Потребители слоя — только утверждённые ──────────────────────
+--   С Stage 3.1D слой читает V_DASH_EXECUTIVE_ECONOMICS_DAILY, с Phase C2 —
+--   sp_build_executive_v2_daily. Закрытый список: новый потребитель без ACK = FAIL.
+ASSERT (SELECT ARRAY_TO_STRING(ARRAY_AGG(table_name ORDER BY table_name), ',')
         FROM `wb_mart.INFORMATION_SCHEMA.VIEWS`
-        WHERE table_name != 'V_DASH_FINANCE_CORRECTED_DAILY') = 0
-  AS 'C-17 FAIL: существующий V_DASH_* уже читает новый слой';
-
--- ── Итоговый снимок для отчёта (значения, а не гейты) ─────────────────────
---   Проценты считаются ratio-of-sums — в самом view их нет по решению O-1.
-SELECT
-  MIN(day) AS period_from, MAX(day) AS period_to,
-  COUNT(*) AS days, SUM(period_result_eligible_day) AS eligible_days,
-  SUM(contribution_pre_cogs_rub)                    AS contribution_pre_cogs_rub,
-  SUM(deduction_rub)                                AS deduction_total_rub,
-  SUM(ad_billing_reconstructed_rub)                 AS ad_billing_reconstructed_rub,
-  SUM(other_wb_deductions_rub)                      AS other_wb_deductions_rub,
-  SUM(account_level_total_rub)                      AS account_level_before_rub,
-  SUM(account_level_total_corrected_rub)            AS account_level_corrected_rub,
-  SUM(period_result_pre_cogs_rub)                   AS period_result_before_rub,
-  SUM(period_result_pre_cogs_corrected_rub)         AS period_result_corrected_rub,
-  SUM(revenue_base_period_result_rub)               AS revenue_base_aligned_rub,
-  SAFE_DIVIDE(SUM(period_result_pre_cogs_corrected_rub),
-              SUM(revenue_base_period_result_rub))  AS period_result_pre_cogs_margin_pct,
-  SAFE_DIVIDE(SUM(contribution_pre_cogs_rub),
-              SUM(revenue_base_contribution_rub))   AS contribution_pre_cogs_margin_pct,
-  SUM(ad_spend_attributed_rub)                      AS ad_spend_attributed_rub,
-  SUM(ad_spend_billed_rub)                          AS ad_spend_billed_rub,
-  SUM(ad_spend_unallocated_rub)                     AS ad_spend_unallocated_rub
-FROM `wb_mart.V_DASH_FINANCE_CORRECTED_DAILY`
-WHERE day BETWEEN DATE '2026-08-01' AND DATE '2026-08-26';
+        WHERE table_name != 'V_DASH_FINANCE_CORRECTED_DAILY'
+          AND REGEXP_CONTAINS(view_definition, r'V_DASH_FINANCE_CORRECTED_DAILY')) = 'V_DASH_EXECUTIVE_ECONOMICS_DAILY'
+   AND (SELECT ARRAY_TO_STRING(ARRAY_AGG(routine_name ORDER BY routine_name), ',')
+        FROM `wb_mart.INFORMATION_SCHEMA.ROUTINES`
+        WHERE REGEXP_CONTAINS(routine_definition, r'V_DASH_FINANCE_CORRECTED_DAILY')) = 'sp_build_executive_v2_daily'
+  AS 'C-17 FAIL: слой читает неутверждённый потребитель (view или процедура)';
