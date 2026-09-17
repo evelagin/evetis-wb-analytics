@@ -1,0 +1,56 @@
+{
+ "dataset_query": {
+  "database": 2,
+  "lib/type": "mbql/query",
+  "stages": [
+   {
+    "lib/type": "mbql.stage/native",
+    "native": "WITH d AS (\n  SELECT day FROM `wb_mart.V_DASH_FINANCE_CORRECTED_DAILY`\n  WHERE {{day}}\n),\ns AS (\n  SELECT\n    e.period_result_eligible               AS el,\n    e.after_product_cogs_eligible          AS el2,\n    e.revenue_base_period_result_rub       AS rev,\n    e.period_result_pre_cogs_corrected_rub AS res,\n    e.product_cogs_rub,\n    k.marketplace_fee_rub, k.ad_spend_attributed_rub, k.logistics_rub, k.storage_rub\n  FROM d\n  JOIN `wb_mart.V_DASH_EXECUTIVE_ECONOMICS_DAILY` e USING (day)\n  JOIN `wb_mart.V_DASH_KPI_DAILY` k USING (day)\n),\nb AS (\n  SELECT\n     SUM(IF(el,  rev, NULL))                        AS s1_revenue,\n    -SUM(IF(el,  marketplace_fee_rub, NULL))        AS s2_fee,\n    -SUM(IF(el,  ad_spend_attributed_rub, NULL))    AS s3_ads,\n    -SUM(IF(el,  logistics_rub, NULL))              AS s4_logistics,\n    -SUM(IF(el,  storage_rub, NULL))                AS s5_storage,\n    -(SUM(IF(el, rev, NULL)) - SUM(IF(el, res, NULL))\n      - SUM(IF(el, marketplace_fee_rub, NULL))\n      - SUM(IF(el, ad_spend_attributed_rub, NULL))\n      - SUM(IF(el, logistics_rub, NULL))\n      - SUM(IF(el, storage_rub, NULL)))             AS s6_other,\n    -SUM(IF(el2, product_cogs_rub, NULL))           AS s7_cogs\n  FROM s\n)\nSELECT\n  CASE metric\n    WHEN 's1_revenue'   THEN 'Выручка'\n    WHEN 's2_fee'       THEN 'Удержано WB из цены'\n    WHEN 's3_ads'       THEN 'Реклама'\n    WHEN 's4_logistics' THEN 'Логистика'\n    WHEN 's5_storage'   THEN 'Хранение'\n    WHEN 's6_other'     THEN 'Прочие расходы WB'\n    WHEN 's7_cogs'      THEN 'Себестоимость товара'\n  END AS step,\n  amount_rub\nFROM b UNPIVOT (amount_rub FOR metric IN (\n  s1_revenue, s2_fee, s3_ads, s4_logistics, s5_storage, s6_other, s7_cogs))\nWHERE amount_rub IS NOT NULL AND amount_rub <> 0\nORDER BY metric",
+    "template-tags": [
+     {
+      "dimension": [
+       "field",
+       {
+        "lib/uuid": "c71ca891-3e69-4d7a-bde9-fc674340b46b"
+       },
+       2622
+      ],
+      "display-name": "Период",
+      "id": "d51ef97c-26e7-4dce-acfc-ca5dfd24a51b",
+      "name": "day",
+      "type": "dimension",
+      "widget-type": "date/all-options"
+     }
+    ]
+   }
+  ]
+ },
+ "description": "Управленческий мост периода: семь шагов и итог. Столбец вниз — расход, вверх — кредит WB, «Итого» — результат после себестоимости товара. Промежуточная сумма после шага «Хранение» плюс «Прочие расходы WB» даёт результат до себестоимости, показанный отдельной карточкой выше. 🔴 «Прочие расходы WB» — ОСТАТОК по построению: выручка минус результат до себестоимости минус четыре названных категории. Внутри — штрафы, транзит, корректировка минимального платежа, утилизация, приёмка и прочие удержания, МИНУС кредиты WB (возмещения, возврат аванса «Баллы за отзывы»). Величина нетто и может быть отрицательной, тогда шаг идёт вверх. Расшифровка бухгалтерского уровня здесь сознательно не выводится: это управленческий мост, а не реестр операций. 🔴 Разовой компенсации форс-мажор в мосте НЕТ — Stage 3.1F OPTION B выводит её за операционный результат; она показана отдельной карточкой. 🔴 Рекламного биллинга WB в мосте НЕТ — в результат входит только атрибутированная на SKU реклама; биллинг показан отдельной контрольной карточкой и вторым расходом не является. ABS не применяется ни к одной статье; знаки источника сохранены. Все шаги взяты на сутках своего гейта (period_result_eligible / after_product_cogs_eligible), поэтому мост сходится к копейке на любом окне.",
+ "display": "waterfall",
+ "id": 51,
+ "name": "От выручки к результату",
+ "visualization_settings": {
+  "column_settings": {
+   "[\"name\",\"amount_rub\"]": {
+    "decimals": 0,
+    "number_style": "decimal",
+    "suffix": " ₽"
+   }
+  },
+  "graph.dimensions": [
+   "step"
+  ],
+  "graph.label_value_formatting": "auto",
+  "graph.metrics": [
+   "amount_rub"
+  ],
+  "graph.show_values": true,
+  "graph.x_axis.axis_enabled": "rotate-45",
+  "graph.x_axis.title_text": "",
+  "graph.y_axis.title_text": "₽",
+  "waterfall.decrease_color": "#E35D5D",
+  "waterfall.increase_color": "#3B9E5B",
+  "waterfall.show_total": true,
+  "waterfall.total_color": "#4C5773"
+ }
+}

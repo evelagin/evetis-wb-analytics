@@ -1,0 +1,3895 @@
+[
+ {
+  "card": 42,
+  "period": "P1_31.08-13.09",
+  "equal": true,
+  "schema": [
+   "period",
+   "orders_gross_qty"
+  ],
+  "rows": [
+   [
+    "2026-08-17",
+    "208"
+   ],
+   [
+    "2026-08-31",
+    "202"
+   ]
+  ],
+  "bytes_old": 59888387,
+  "bytes_new": 36738
+ },
+ {
+  "card": 42,
+  "period": "P2_17-30.08",
+  "equal": true,
+  "schema": [
+   "period",
+   "orders_gross_qty"
+  ],
+  "rows": [
+   [
+    "2026-08-03",
+    "404"
+   ],
+   [
+    "2026-08-17",
+    "208"
+   ]
+  ],
+  "bytes_old": 59888387,
+  "bytes_new": 36738
+ },
+ {
+  "card": 42,
+  "period": "P3_27.07-23.08",
+  "equal": true,
+  "schema": [
+   "period",
+   "orders_gross_qty"
+  ],
+  "rows": [
+   [
+    "2026-06-29",
+    "638"
+   ],
+   [
+    "2026-07-27",
+    "594"
+   ]
+  ],
+  "bytes_old": 59888387,
+  "bytes_new": 36738
+ },
+ {
+  "card": 42,
+  "period": "P4_past30",
+  "equal": true,
+  "schema": [
+   "period",
+   "orders_gross_qty"
+  ],
+  "rows": [
+   [
+    "2026-07-19",
+    "667"
+   ],
+   [
+    "2026-08-18",
+    "426"
+   ]
+  ],
+  "bytes_old": 59888387,
+  "bytes_new": 36738
+ },
+ {
+  "card": 42,
+  "period": "P5_01-16.09",
+  "equal": true,
+  "schema": [
+   "period",
+   "orders_gross_qty"
+  ],
+  "rows": [
+   [
+    "2026-08-16",
+    "235"
+   ],
+   [
+    "2026-09-01",
+    "217"
+   ]
+  ],
+  "bytes_old": 59888387,
+  "bytes_new": 36738
+ },
+ {
+  "card": 42,
+  "period": "P6_01-17.09_today",
+  "equal": true,
+  "schema": [
+   "period",
+   "orders_gross_qty"
+  ],
+  "rows": [
+   [
+    "2026-09-01",
+    "217"
+   ]
+  ],
+  "bytes_old": 59888387,
+  "bytes_new": 36738
+ },
+ {
+  "card": 43,
+  "period": "P1_31.08-13.09",
+  "equal": true,
+  "schema": [
+   "period",
+   "buyouts_qty"
+  ],
+  "rows": [
+   [
+    "2026-08-17",
+    "229"
+   ],
+   [
+    "2026-08-31",
+    "195"
+   ]
+  ],
+  "bytes_old": 59824371,
+  "bytes_new": 36738
+ },
+ {
+  "card": 43,
+  "period": "P2_17-30.08",
+  "equal": true,
+  "schema": [
+   "period",
+   "buyouts_qty"
+  ],
+  "rows": [
+   [
+    "2026-08-03",
+    "314"
+   ],
+   [
+    "2026-08-17",
+    "229"
+   ]
+  ],
+  "bytes_old": 59824371,
+  "bytes_new": 36738
+ },
+ {
+  "card": 43,
+  "period": "P3_27.07-23.08",
+  "equal": true,
+  "schema": [
+   "period",
+   "buyouts_qty"
+  ],
+  "rows": [
+   [
+    "2026-06-29",
+    "581"
+   ],
+   [
+    "2026-07-27",
+    "513"
+   ]
+  ],
+  "bytes_old": 59824371,
+  "bytes_new": 36738
+ },
+ {
+  "card": 43,
+  "period": "P4_past30",
+  "equal": true,
+  "schema": [
+   "period",
+   "buyouts_qty"
+  ],
+  "rows": [
+   [
+    "2026-07-19",
+    "539"
+   ],
+   [
+    "2026-08-18",
+    "450"
+   ]
+  ],
+  "bytes_old": 59824371,
+  "bytes_new": 36738
+ },
+ {
+  "card": 43,
+  "period": "P5_01-16.09",
+  "equal": true,
+  "schema": [
+   "period",
+   "buyouts_qty"
+  ],
+  "rows": [
+   [
+    "2026-08-16",
+    "274"
+   ],
+   [
+    "2026-09-01",
+    "223"
+   ]
+  ],
+  "bytes_old": 59824371,
+  "bytes_new": 36738
+ },
+ {
+  "card": 43,
+  "period": "P6_01-17.09_today",
+  "equal": true,
+  "schema": [
+   "period",
+   "buyouts_qty"
+  ],
+  "rows": [
+   [
+    "2026-09-01",
+    "223"
+   ]
+  ],
+  "bytes_old": 59824371,
+  "bytes_new": 36738
+ },
+ {
+  "card": 44,
+  "period": "P1_31.08-13.09",
+  "equal": true,
+  "schema": [
+   "period",
+   "revenue_rub"
+  ],
+  "rows": [
+   [
+    "2026-08-17",
+    "167529.07"
+   ],
+   [
+    "2026-08-31",
+    "139439.61"
+   ]
+  ],
+  "bytes_old": 59888387,
+  "bytes_new": 37994
+ },
+ {
+  "card": 44,
+  "period": "P2_17-30.08",
+  "equal": true,
+  "schema": [
+   "period",
+   "revenue_rub"
+  ],
+  "rows": [
+   [
+    "2026-08-03",
+    "200718.39"
+   ],
+   [
+    "2026-08-17",
+    "167529.07"
+   ]
+  ],
+  "bytes_old": 59888387,
+  "bytes_new": 37994
+ },
+ {
+  "card": 44,
+  "period": "P3_27.07-23.08",
+  "equal": true,
+  "schema": [
+   "period",
+   "revenue_rub"
+  ],
+  "rows": [
+   [
+    "2026-06-29",
+    "547718.93"
+   ],
+   [
+    "2026-07-27",
+    "363159.18"
+   ]
+  ],
+  "bytes_old": 59888387,
+  "bytes_new": 37994
+ },
+ {
+  "card": 44,
+  "period": "P4_past30",
+  "equal": true,
+  "schema": [
+   "period",
+   "revenue_rub"
+  ],
+  "rows": [
+   [
+    "2026-07-19",
+    "429889.28"
+   ],
+   [
+    "2026-08-18",
+    "327102.77"
+   ]
+  ],
+  "bytes_old": 59888387,
+  "bytes_new": 37994
+ },
+ {
+  "card": 44,
+  "period": "P5_01-16.09",
+  "equal": true,
+  "schema": [
+   "period",
+   "revenue_rub"
+  ],
+  "rows": [
+   [
+    "2026-08-16",
+    "196299.8"
+   ],
+   [
+    "2026-09-01",
+    "158728.58"
+   ]
+  ],
+  "bytes_old": 59888387,
+  "bytes_new": 37994
+ },
+ {
+  "card": 44,
+  "period": "P6_01-17.09_today",
+  "equal": true,
+  "schema": [
+   "period",
+   "revenue_rub"
+  ],
+  "rows": [
+   [
+    "2026-09-01",
+    "158728.58"
+   ]
+  ],
+  "bytes_old": 59888387,
+  "bytes_new": 37994
+ },
+ {
+  "card": 49,
+  "period": "P1_31.08-13.09",
+  "equal": true,
+  "schema": [
+   "settlement_goods_rub"
+  ],
+  "rows": [
+   [
+    "76204.65"
+   ]
+  ],
+  "bytes_old": 97719995,
+  "bytes_new": 46563
+ },
+ {
+  "card": 49,
+  "period": "P2_17-30.08",
+  "equal": true,
+  "schema": [
+   "settlement_goods_rub"
+  ],
+  "rows": [
+   [
+    "91241.55"
+   ]
+  ],
+  "bytes_old": 97985188,
+  "bytes_new": 46563
+ },
+ {
+  "card": 49,
+  "period": "P3_27.07-23.08",
+  "equal": true,
+  "schema": [
+   "settlement_goods_rub"
+  ],
+  "rows": [
+   [
+    "198475.4"
+   ]
+  ],
+  "bytes_old": 98564339,
+  "bytes_new": 46563
+ },
+ {
+  "card": 49,
+  "period": "P4_past30",
+  "equal": true,
+  "schema": [
+   "settlement_goods_rub"
+  ],
+  "rows": [
+   [
+    "161991.01"
+   ]
+  ],
+  "bytes_old": 98424320,
+  "bytes_new": 46563
+ },
+ {
+  "card": 49,
+  "period": "P5_01-16.09",
+  "equal": true,
+  "schema": [
+   "settlement_goods_rub"
+  ],
+  "rows": [
+   [
+    "70338.16"
+   ]
+  ],
+  "bytes_old": 97746727,
+  "bytes_new": 46563
+ },
+ {
+  "card": 49,
+  "period": "P6_01-17.09_today",
+  "equal": true,
+  "schema": [
+   "settlement_goods_rub"
+  ],
+  "rows": [
+   [
+    "70338.16"
+   ]
+  ],
+  "bytes_old": 97746887,
+  "bytes_new": 46563
+ },
+ {
+  "card": 50,
+  "period": "P1_31.08-13.09",
+  "equal": true,
+  "schema": [
+   "day",
+   "revenue_rub",
+   "result_after_cogs_rub"
+  ],
+  "rows": [
+   [
+    "2026-08-31",
+    "10739",
+    "-493.578145"
+   ],
+   [
+    "2026-09-01",
+    "7655",
+    "-425.626516"
+   ],
+   [
+    "2026-09-02",
+    "15412.51",
+    "-28.223258"
+   ],
+   [
+    "2026-09-03",
+    "9183",
+    "351.645"
+   ],
+   [
+    "2026-09-04",
+    "7906",
+    "-838.398258"
+   ],
+   [
+    "2026-09-05",
+    "11529.59",
+    "-207.603258"
+   ],
+   [
+    "2026-09-06",
+    "8698.16",
+    "-177.793258"
+   ],
+   [
+    "2026-09-07",
+    "7213.66",
+    "-247.308258"
+   ],
+   [
+    "2026-09-08",
+    "10087.16",
+    "-58.073258"
+   ],
+   [
+    "2026-09-09",
+    "8295.35",
+    "-227.056629"
+   ],
+   [
+    "2026-09-10",
+    "11435",
+    "-1625.494887"
+   ],
+   [
+    "2026-09-11",
+    "5436",
+    "-1343.539887"
+   ],
+   [
+    "2026-09-12",
+    "11702.18",
+    "-1500.866629"
+   ],
+   [
+    "2026-09-13",
+    "14147",
+    "1340.238371"
+   ]
+  ],
+  "bytes_old": 331163217,
+  "bytes_new": 40490
+ },
+ {
+  "card": 50,
+  "period": "P2_17-30.08",
+  "equal": true,
+  "schema": [
+   "day",
+   "revenue_rub",
+   "result_after_cogs_rub"
+  ],
+  "rows": [
+   [
+    "2026-08-17",
+    "9893.88",
+    "498.576742"
+   ],
+   [
+    "2026-08-18",
+    "10442.12",
+    "584.080113"
+   ],
+   [
+    "2026-08-19",
+    "12855.09",
+    "663.790226"
+   ],
+   [
+    "2026-08-20",
+    "16065.45",
+    "1649.751742"
+   ],
+   [
+    "2026-08-21",
+    "9286.87",
+    "-663.296629"
+   ],
+   [
+    "2026-08-22",
+    "7355.44",
+    "645.745"
+   ],
+   [
+    "2026-08-23",
+    "4957.66",
+    "-195.11"
+   ],
+   [
+    "2026-08-24",
+    "15929",
+    "1933.01"
+   ],
+   [
+    "2026-08-25",
+    "13086.98",
+    "-74.666629"
+   ],
+   [
+    "2026-08-26",
+    "11269",
+    "-52.321629"
+   ],
+   [
+    "2026-08-27",
+    "9785",
+    "383.146742"
+   ],
+   [
+    "2026-08-28",
+    "17978.19",
+    "1173.095113"
+   ],
+   [
+    "2026-08-29",
+    "13777.24",
+    "1040.496742"
+   ],
+   [
+    "2026-08-30",
+    "14847.15",
+    "765.043597"
+   ]
+  ],
+  "bytes_old": 331162449,
+  "bytes_new": 40490
+ },
+ {
+  "card": 50,
+  "period": "P3_27.07-23.08",
+  "equal": true,
+  "schema": [
+   "day",
+   "revenue_rub",
+   "result_after_cogs_rub"
+  ],
+  "rows": [
+   [
+    "2026-07-27",
+    "14289.91",
+    "-885.05"
+   ],
+   [
+    "2026-07-28",
+    "13689",
+    "1570.356742"
+   ],
+   [
+    "2026-07-29",
+    "14866",
+    "506.386742"
+   ],
+   [
+    "2026-07-30",
+    "13506",
+    "1251.605"
+   ],
+   [
+    "2026-07-31",
+    "11566.37",
+    "-25.765"
+   ],
+   [
+    "2026-08-01",
+    "6826",
+    "-1233.235"
+   ],
+   [
+    "2026-08-02",
+    "16841",
+    "1058.15"
+   ],
+   [
+    "2026-08-03",
+    "15746.7",
+    "2248.165"
+   ],
+   [
+    "2026-08-04",
+    "12529.84",
+    "45.738371"
+   ],
+   [
+    "2026-08-05",
+    "9238",
+    "1075.065"
+   ],
+   [
+    "2026-08-06",
+    "4836.09",
+    "-8043.28"
+   ],
+   [
+    "2026-08-07",
+    "14373",
+    "315.776742"
+   ],
+   [
+    "2026-08-08",
+    "8761",
+    "-3329.849887"
+   ],
+   [
+    "2026-08-09",
+    "17804.96",
+    "-1678.618145"
+   ],
+   [
+    "2026-08-10",
+    "14993.86",
+    "-2245.113258"
+   ],
+   [
+    "2026-08-11",
+    "16332",
+    "-3248.349887"
+   ],
+   [
+    "2026-08-12",
+    "18189.76",
+    "-3519.543258"
+   ],
+   [
+    "2026-08-13",
+    "18307",
+    "-4641.974887"
+   ],
+   [
+    "2026-08-14",
+    "19703",
+    "-2039.258258"
+   ],
+   [
+    "2026-08-15",
+    "11871.45",
+    "-3998.658258"
+   ],
+   [
+    "2026-08-16",
+    "18031.73",
+    "763.503371"
+   ],
+   [
+    "2026-08-17",
+    "9893.88",
+    "498.576742"
+   ],
+   [
+    "2026-08-18",
+    "10442.12",
+    "584.080113"
+   ],
+   [
+    "2026-08-19",
+    "12855.09",
+    "663.790226"
+   ],
+   [
+    "2026-08-20",
+    "16065.45",
+    "1649.751742"
+   ],
+   [
+    "2026-08-21",
+    "9286.87",
+    "-663.296629"
+   ],
+   [
+    "2026-08-22",
+    "7355.44",
+    "645.745"
+   ],
+   [
+    "2026-08-23",
+    "4957.66",
+    "-195.11"
+   ]
+  ],
+  "bytes_old": 331211929,
+  "bytes_new": 40490
+ },
+ {
+  "card": 50,
+  "period": "P4_past30",
+  "equal": true,
+  "schema": [
+   "day",
+   "revenue_rub",
+   "result_after_cogs_rub"
+  ],
+  "rows": [
+   [
+    "2026-08-18",
+    "10442.12",
+    "584.080113"
+   ],
+   [
+    "2026-08-19",
+    "12855.09",
+    "663.790226"
+   ],
+   [
+    "2026-08-20",
+    "16065.45",
+    "1649.751742"
+   ],
+   [
+    "2026-08-21",
+    "9286.87",
+    "-663.296629"
+   ],
+   [
+    "2026-08-22",
+    "7355.44",
+    "645.745"
+   ],
+   [
+    "2026-08-23",
+    "4957.66",
+    "-195.11"
+   ],
+   [
+    "2026-08-24",
+    "15929",
+    "1933.01"
+   ],
+   [
+    "2026-08-25",
+    "13086.98",
+    "-74.666629"
+   ],
+   [
+    "2026-08-26",
+    "11269",
+    "-52.321629"
+   ],
+   [
+    "2026-08-27",
+    "9785",
+    "383.146742"
+   ],
+   [
+    "2026-08-28",
+    "17978.19",
+    "1173.095113"
+   ],
+   [
+    "2026-08-29",
+    "13777.24",
+    "1040.496742"
+   ],
+   [
+    "2026-08-30",
+    "14847.15",
+    "765.043597"
+   ],
+   [
+    "2026-08-31",
+    "10739",
+    "-493.578145"
+   ],
+   [
+    "2026-09-01",
+    "7655",
+    "-425.626516"
+   ],
+   [
+    "2026-09-02",
+    "15412.51",
+    "-28.223258"
+   ],
+   [
+    "2026-09-03",
+    "9183",
+    "351.645"
+   ],
+   [
+    "2026-09-04",
+    "7906",
+    "-838.398258"
+   ],
+   [
+    "2026-09-05",
+    "11529.59",
+    "-207.603258"
+   ],
+   [
+    "2026-09-06",
+    "8698.16",
+    "-177.793258"
+   ],
+   [
+    "2026-09-07",
+    "7213.66",
+    "-247.308258"
+   ],
+   [
+    "2026-09-08",
+    "10087.16",
+    "-58.073258"
+   ],
+   [
+    "2026-09-09",
+    "8295.35",
+    "-227.056629"
+   ],
+   [
+    "2026-09-10",
+    "11435",
+    "-1625.494887"
+   ],
+   [
+    "2026-09-11",
+    "5436",
+    "-1343.539887"
+   ],
+   [
+    "2026-09-12",
+    "11702.18",
+    "-1500.866629"
+   ],
+   [
+    "2026-09-13",
+    "14147",
+    "1340.238371"
+   ],
+   [
+    "2026-09-14",
+    "15529.83",
+    "1304.596742"
+   ],
+   [
+    "2026-09-15",
+    "5705.14",
+    "-1538.873258"
+   ],
+   [
+    "2026-09-16",
+    "8793",
+    null
+   ]
+  ],
+  "bytes_old": 331215665,
+  "bytes_new": 40490
+ },
+ {
+  "card": 50,
+  "period": "P5_01-16.09",
+  "equal": true,
+  "schema": [
+   "day",
+   "revenue_rub",
+   "result_after_cogs_rub"
+  ],
+  "rows": [
+   [
+    "2026-09-01",
+    "7655",
+    "-425.626516"
+   ],
+   [
+    "2026-09-02",
+    "15412.51",
+    "-28.223258"
+   ],
+   [
+    "2026-09-03",
+    "9183",
+    "351.645"
+   ],
+   [
+    "2026-09-04",
+    "7906",
+    "-838.398258"
+   ],
+   [
+    "2026-09-05",
+    "11529.59",
+    "-207.603258"
+   ],
+   [
+    "2026-09-06",
+    "8698.16",
+    "-177.793258"
+   ],
+   [
+    "2026-09-07",
+    "7213.66",
+    "-247.308258"
+   ],
+   [
+    "2026-09-08",
+    "10087.16",
+    "-58.073258"
+   ],
+   [
+    "2026-09-09",
+    "8295.35",
+    "-227.056629"
+   ],
+   [
+    "2026-09-10",
+    "11435",
+    "-1625.494887"
+   ],
+   [
+    "2026-09-11",
+    "5436",
+    "-1343.539887"
+   ],
+   [
+    "2026-09-12",
+    "11702.18",
+    "-1500.866629"
+   ],
+   [
+    "2026-09-13",
+    "14147",
+    "1340.238371"
+   ],
+   [
+    "2026-09-14",
+    "15529.83",
+    "1304.596742"
+   ],
+   [
+    "2026-09-15",
+    "5705.14",
+    "-1538.873258"
+   ],
+   [
+    "2026-09-16",
+    "8793",
+    null
+   ]
+  ],
+  "bytes_old": 331169905,
+  "bytes_new": 40490
+ },
+ {
+  "card": 50,
+  "period": "P6_01-17.09_today",
+  "equal": true,
+  "schema": [
+   "day",
+   "revenue_rub",
+   "result_after_cogs_rub"
+  ],
+  "rows": [
+   [
+    "2026-09-01",
+    "7655",
+    "-425.626516"
+   ],
+   [
+    "2026-09-02",
+    "15412.51",
+    "-28.223258"
+   ],
+   [
+    "2026-09-03",
+    "9183",
+    "351.645"
+   ],
+   [
+    "2026-09-04",
+    "7906",
+    "-838.398258"
+   ],
+   [
+    "2026-09-05",
+    "11529.59",
+    "-207.603258"
+   ],
+   [
+    "2026-09-06",
+    "8698.16",
+    "-177.793258"
+   ],
+   [
+    "2026-09-07",
+    "7213.66",
+    "-247.308258"
+   ],
+   [
+    "2026-09-08",
+    "10087.16",
+    "-58.073258"
+   ],
+   [
+    "2026-09-09",
+    "8295.35",
+    "-227.056629"
+   ],
+   [
+    "2026-09-10",
+    "11435",
+    "-1625.494887"
+   ],
+   [
+    "2026-09-11",
+    "5436",
+    "-1343.539887"
+   ],
+   [
+    "2026-09-12",
+    "11702.18",
+    "-1500.866629"
+   ],
+   [
+    "2026-09-13",
+    "14147",
+    "1340.238371"
+   ],
+   [
+    "2026-09-14",
+    "15529.83",
+    "1304.596742"
+   ],
+   [
+    "2026-09-15",
+    "5705.14",
+    "-1538.873258"
+   ],
+   [
+    "2026-09-16",
+    "8793",
+    null
+   ],
+   [
+    "2026-09-17",
+    null,
+    null
+   ]
+  ],
+  "bytes_old": 331169905,
+  "bytes_new": 40490
+ },
+ {
+  "card": 53,
+  "period": "P1_31.08-13.09",
+  "equal": true,
+  "schema": [
+   "period",
+   "period_result_rub"
+  ],
+  "rows": [
+   [
+    "2026-08-17",
+    "61872.14"
+   ],
+   [
+    "2026-08-31",
+    "37535.84"
+   ]
+  ],
+  "bytes_old": 329239390,
+  "bytes_new": 37978
+ },
+ {
+  "card": 53,
+  "period": "P2_17-30.08",
+  "equal": true,
+  "schema": [
+   "period",
+   "period_result_rub"
+  ],
+  "rows": [
+   [
+    "2026-08-03",
+    "43654.83"
+   ],
+   [
+    "2026-08-17",
+    "61872.14"
+   ]
+  ],
+  "bytes_old": 329239390,
+  "bytes_new": 37978
+ },
+ {
+  "card": 53,
+  "period": "P3_27.07-23.08",
+  "equal": true,
+  "schema": [
+   "period",
+   "period_result_rub"
+  ],
+  "rows": [
+   [
+    "2026-06-29",
+    "163314.758032787"
+   ],
+   [
+    "2026-07-27",
+    "92644.14"
+   ]
+  ],
+  "bytes_old": 329239390,
+  "bytes_new": 37978
+ },
+ {
+  "card": 53,
+  "period": "P4_past30",
+  "equal": true,
+  "schema": [
+   "period",
+   "period_result_rub"
+  ],
+  "rows": [
+   [
+    "2026-08-18",
+    "101059.6"
+   ]
+  ],
+  "bytes_old": 329239390,
+  "bytes_new": 37978
+ },
+ {
+  "card": 53,
+  "period": "P5_01-16.09",
+  "equal": true,
+  "schema": [
+   "period",
+   "period_result_rub"
+  ],
+  "rows": [
+   [
+    "2026-09-01",
+    "40337.11"
+   ]
+  ],
+  "bytes_old": 329239390,
+  "bytes_new": 37978
+ },
+ {
+  "card": 53,
+  "period": "P6_01-17.09_today",
+  "equal": true,
+  "schema": [
+   "period",
+   "period_result_rub"
+  ],
+  "rows": [
+   [
+    "2026-09-01",
+    "40337.11"
+   ]
+  ],
+  "bytes_old": 329239390,
+  "bytes_new": 37978
+ },
+ {
+  "card": 54,
+  "period": "P1_31.08-13.09",
+  "equal": true,
+  "schema": [
+   "period_result_margin"
+  ],
+  "rows": [
+   [
+    "0.269190655"
+   ]
+  ],
+  "bytes_old": 328894126,
+  "bytes_new": 39731
+ },
+ {
+  "card": 54,
+  "period": "P2_17-30.08",
+  "equal": true,
+  "schema": [
+   "period_result_margin"
+  ],
+  "rows": [
+   [
+    "0.369321814"
+   ]
+  ],
+  "bytes_old": 328893358,
+  "bytes_new": 39731
+ },
+ {
+  "card": 54,
+  "period": "P3_27.07-23.08",
+  "equal": true,
+  "schema": [
+   "period_result_margin"
+  ],
+  "rows": [
+   [
+    "0.255106149"
+   ]
+  ],
+  "bytes_old": 328917638,
+  "bytes_new": 39731
+ },
+ {
+  "card": 54,
+  "period": "P4_past30",
+  "equal": true,
+  "schema": [
+   "period_result_margin"
+  ],
+  "rows": [
+   [
+    "0.317488213"
+   ]
+  ],
+  "bytes_old": 328917774,
+  "bytes_new": 39731
+ },
+ {
+  "card": 54,
+  "period": "P5_01-16.09",
+  "equal": true,
+  "schema": [
+   "period_result_margin"
+  ],
+  "rows": [
+   [
+    "0.269029606"
+   ]
+  ],
+  "bytes_old": 328897214,
+  "bytes_new": 39731
+ },
+ {
+  "card": 54,
+  "period": "P6_01-17.09_today",
+  "equal": true,
+  "schema": [
+   "period_result_margin"
+  ],
+  "rows": [
+   [
+    "0.269029606"
+   ]
+  ],
+  "bytes_old": 328897214,
+  "bytes_new": 39731
+ },
+ {
+  "card": 74,
+  "period": "P1_31.08-13.09",
+  "equal": true,
+  "schema": [
+   "margin_after_cogs"
+  ],
+  "rows": [
+   [
+    "-0.039312207"
+   ]
+  ],
+  "bytes_old": 331163217,
+  "bytes_new": 39731
+ },
+ {
+  "card": 74,
+  "period": "P2_17-30.08",
+  "equal": true,
+  "schema": [
+   "margin_after_cogs"
+  ],
+  "rows": [
+   [
+    "0.049850101"
+   ]
+  ],
+  "bytes_old": 331162449,
+  "bytes_new": 39731
+ },
+ {
+  "card": 74,
+  "period": "P3_27.07-23.08",
+  "equal": true,
+  "schema": [
+   "margin_after_cogs"
+  ],
+  "rows": [
+   [
+    "-0.062976273"
+   ]
+  ],
+  "bytes_old": 331211929,
+  "bytes_new": 39731
+ },
+ {
+  "card": 74,
+  "period": "P4_past30",
+  "equal": true,
+  "schema": [
+   "margin_after_cogs"
+  ],
+  "rows": [
+   [
+    "0.006712986"
+   ]
+  ],
+  "bytes_old": 331215665,
+  "bytes_new": 39731
+ },
+ {
+  "card": 74,
+  "period": "P5_01-16.09",
+  "equal": true,
+  "schema": [
+   "margin_after_cogs"
+  ],
+  "rows": [
+   [
+    "-0.034830807"
+   ]
+  ],
+  "bytes_old": 331169905,
+  "bytes_new": 39731
+ },
+ {
+  "card": 74,
+  "period": "P6_01-17.09_today",
+  "equal": true,
+  "schema": [
+   "margin_after_cogs"
+  ],
+  "rows": [
+   [
+    "-0.034830807"
+   ]
+  ],
+  "bytes_old": 331169905,
+  "bytes_new": 39731
+ },
+ {
+  "card": 75,
+  "period": "P1_31.08-13.09",
+  "equal": true,
+  "schema": [
+   "post_realization_deductions_rub"
+  ],
+  "rows": [
+   [
+    "-38738.89"
+   ]
+  ],
+  "bytes_old": 319290795,
+  "bytes_new": 46563
+ },
+ {
+  "card": 75,
+  "period": "P2_17-30.08",
+  "equal": true,
+  "schema": [
+   "post_realization_deductions_rub"
+  ],
+  "rows": [
+   [
+    "-27743.51"
+   ]
+  ],
+  "bytes_old": 319290795,
+  "bytes_new": 46563
+ },
+ {
+  "card": 75,
+  "period": "P3_27.07-23.08",
+  "equal": true,
+  "schema": [
+   "post_realization_deductions_rub"
+  ],
+  "rows": [
+   [
+    "-88373.44"
+   ]
+  ],
+  "bytes_old": 319293595,
+  "bytes_new": 46563
+ },
+ {
+  "card": 75,
+  "period": "P4_past30",
+  "equal": true,
+  "schema": [
+   "post_realization_deductions_rub"
+  ],
+  "rows": [
+   [
+    "-65104.57"
+   ]
+  ],
+  "bytes_old": 319293995,
+  "bytes_new": 46563
+ },
+ {
+  "card": 75,
+  "period": "P5_01-16.09",
+  "equal": true,
+  "schema": [
+   "post_realization_deductions_rub"
+  ],
+  "rows": [
+   [
+    "-37621.12"
+   ]
+  ],
+  "bytes_old": 319291195,
+  "bytes_new": 46563
+ },
+ {
+  "card": 75,
+  "period": "P6_01-17.09_today",
+  "equal": true,
+  "schema": [
+   "post_realization_deductions_rub"
+  ],
+  "rows": [
+   [
+    "-37621.12"
+   ]
+  ],
+  "bytes_old": 319291195,
+  "bytes_new": 46563
+ },
+ {
+  "card": 76,
+  "period": "P1_31.08-13.09",
+  "equal": true,
+  "schema": [
+   "wb_payout_rub"
+  ],
+  "rows": [
+   [
+    "37465.76"
+   ]
+  ],
+  "bytes_old": 320125389,
+  "bytes_new": 46563
+ },
+ {
+  "card": 76,
+  "period": "P2_17-30.08",
+  "equal": true,
+  "schema": [
+   "wb_payout_rub"
+  ],
+  "rows": [
+   [
+    "63498.04"
+   ]
+  ],
+  "bytes_old": 320125389,
+  "bytes_new": 46563
+ },
+ {
+  "card": 76,
+  "period": "P3_27.07-23.08",
+  "equal": true,
+  "schema": [
+   "wb_payout_rub"
+  ],
+  "rows": [
+   [
+    "110101.96"
+   ]
+  ],
+  "bytes_old": 320128189,
+  "bytes_new": 46563
+ },
+ {
+  "card": 76,
+  "period": "P4_past30",
+  "equal": true,
+  "schema": [
+   "wb_payout_rub"
+  ],
+  "rows": [
+   [
+    "96886.44"
+   ]
+  ],
+  "bytes_old": 320128589,
+  "bytes_new": 46563
+ },
+ {
+  "card": 76,
+  "period": "P5_01-16.09",
+  "equal": true,
+  "schema": [
+   "wb_payout_rub"
+  ],
+  "rows": [
+   [
+    "32717.04"
+   ]
+  ],
+  "bytes_old": 320125789,
+  "bytes_new": 46563
+ },
+ {
+  "card": 76,
+  "period": "P6_01-17.09_today",
+  "equal": true,
+  "schema": [
+   "wb_payout_rub"
+  ],
+  "rows": [
+   [
+    "32717.04"
+   ]
+  ],
+  "bytes_old": 320125789,
+  "bytes_new": 46563
+ },
+ {
+  "card": 157,
+  "period": "P1_31.08-13.09",
+  "equal": true,
+  "schema": [
+   "data_status"
+  ],
+  "rows": [
+   [
+    "🟡 ПРЕДВАРИТЕЛЬНЫЕ ДАННЫЕ"
+   ]
+  ],
+  "bytes_old": 111563286,
+  "bytes_new": 44325
+ },
+ {
+  "card": 157,
+  "period": "P2_17-30.08",
+  "equal": true,
+  "schema": [
+   "data_status"
+  ],
+  "rows": [
+   [
+    "🟢 ОКОНЧАТЕЛЬНЫЕ ДАННЫЕ"
+   ]
+  ],
+  "bytes_old": 111562518,
+  "bytes_new": 44325
+ },
+ {
+  "card": 157,
+  "period": "P3_27.07-23.08",
+  "equal": true,
+  "schema": [
+   "data_status"
+  ],
+  "rows": [
+   [
+    "🟢 ОКОНЧАТЕЛЬНЫЕ ДАННЫЕ"
+   ]
+  ],
+  "bytes_old": 111606398,
+  "bytes_new": 44325
+ },
+ {
+  "card": 157,
+  "period": "P4_past30",
+  "equal": true,
+  "schema": [
+   "data_status"
+  ],
+  "rows": [
+   [
+    "🔴 НЕПОЛНЫЕ ДАННЫЕ"
+   ]
+  ],
+  "bytes_old": 111609334,
+  "bytes_new": 44325
+ },
+ {
+  "card": 157,
+  "period": "P5_01-16.09",
+  "equal": true,
+  "schema": [
+   "data_status"
+  ],
+  "rows": [
+   [
+    "🔴 НЕПОЛНЫЕ ДАННЫЕ"
+   ]
+  ],
+  "bytes_old": 111569174,
+  "bytes_new": 44325
+ },
+ {
+  "card": 157,
+  "period": "P6_01-17.09_today",
+  "equal": true,
+  "schema": [
+   "data_status"
+  ],
+  "rows": [
+   [
+    "🔴 НЕПОЛНЫЕ ДАННЫЕ"
+   ]
+  ],
+  "bytes_old": 111569174,
+  "bytes_new": 44325
+ },
+ {
+  "card": 158,
+  "period": "P1_31.08-13.09",
+  "equal": true,
+  "schema": [
+   "provisional_days",
+   "final_days",
+   "incomplete_days"
+  ],
+  "rows": [
+   [
+    "11",
+    "3",
+    "0"
+   ]
+  ],
+  "bytes_old": 111563286,
+  "bytes_new": 44325
+ },
+ {
+  "card": 158,
+  "period": "P2_17-30.08",
+  "equal": true,
+  "schema": [
+   "provisional_days",
+   "final_days",
+   "incomplete_days"
+  ],
+  "rows": [
+   [
+    "0",
+    "14",
+    "0"
+   ]
+  ],
+  "bytes_old": 111562518,
+  "bytes_new": 44325
+ },
+ {
+  "card": 158,
+  "period": "P3_27.07-23.08",
+  "equal": true,
+  "schema": [
+   "provisional_days",
+   "final_days",
+   "incomplete_days"
+  ],
+  "rows": [
+   [
+    "0",
+    "28",
+    "0"
+   ]
+  ],
+  "bytes_old": 111606398,
+  "bytes_new": 44325
+ },
+ {
+  "card": 158,
+  "period": "P4_past30",
+  "equal": true,
+  "schema": [
+   "provisional_days",
+   "final_days",
+   "incomplete_days"
+  ],
+  "rows": [
+   [
+    "13",
+    "16",
+    "1"
+   ]
+  ],
+  "bytes_old": 111609334,
+  "bytes_new": 44325
+ },
+ {
+  "card": 158,
+  "period": "P5_01-16.09",
+  "equal": true,
+  "schema": [
+   "provisional_days",
+   "final_days",
+   "incomplete_days"
+  ],
+  "rows": [
+   [
+    "13",
+    "2",
+    "1"
+   ]
+  ],
+  "bytes_old": 111569174,
+  "bytes_new": 44325
+ },
+ {
+  "card": 158,
+  "period": "P6_01-17.09_today",
+  "equal": true,
+  "schema": [
+   "provisional_days",
+   "final_days",
+   "incomplete_days"
+  ],
+  "rows": [
+   [
+    "13",
+    "2",
+    "2"
+   ]
+  ],
+  "bytes_old": 111569174,
+  "bytes_new": 44325
+ },
+ {
+  "card": 160,
+  "period": "P1_31.08-13.09",
+  "equal": true,
+  "schema": [
+   "period",
+   "buyer_paid_rub"
+  ],
+  "rows": [
+   [
+    "2026-08-17",
+    "141529.42"
+   ],
+   [
+    "2026-08-31",
+    "112365.07"
+   ]
+  ],
+  "bytes_old": 59835376,
+  "bytes_new": 37994
+ },
+ {
+  "card": 160,
+  "period": "P2_17-30.08",
+  "equal": true,
+  "schema": [
+   "period",
+   "buyer_paid_rub"
+  ],
+  "rows": [
+   [
+    "2026-08-03",
+    "170919.69"
+   ],
+   [
+    "2026-08-17",
+    "141529.42"
+   ]
+  ],
+  "bytes_old": 59835376,
+  "bytes_new": 37994
+ },
+ {
+  "card": 160,
+  "period": "P3_27.07-23.08",
+  "equal": true,
+  "schema": [
+   "period",
+   "buyer_paid_rub"
+  ],
+  "rows": [
+   [
+    "2026-06-29",
+    "322055.77"
+   ],
+   [
+    "2026-07-27",
+    "287184.29"
+   ]
+  ],
+  "bytes_old": 59835376,
+  "bytes_new": 37994
+ },
+ {
+  "card": 160,
+  "period": "P4_past30",
+  "equal": true,
+  "schema": [
+   "period",
+   "buyer_paid_rub"
+  ],
+  "rows": [
+   [
+    "2026-07-19",
+    "309558.83"
+   ],
+   [
+    "2026-08-18",
+    "268063.98"
+   ]
+  ],
+  "bytes_old": 59835376,
+  "bytes_new": 37994
+ },
+ {
+  "card": 160,
+  "period": "P5_01-16.09",
+  "equal": true,
+  "schema": [
+   "period",
+   "buyer_paid_rub"
+  ],
+  "rows": [
+   [
+    "2026-08-16",
+    "166460.54"
+   ],
+   [
+    "2026-09-01",
+    "126439.12"
+   ]
+  ],
+  "bytes_old": 59835376,
+  "bytes_new": 37994
+ },
+ {
+  "card": 160,
+  "period": "P6_01-17.09_today",
+  "equal": true,
+  "schema": [
+   "period",
+   "buyer_paid_rub"
+  ],
+  "rows": [
+   [
+    "2026-09-01",
+    "126439.12"
+   ]
+  ],
+  "bytes_old": 59835376,
+  "bytes_new": 37994
+ },
+ {
+  "card": 161,
+  "period": "P1_31.08-13.09",
+  "equal": true,
+  "schema": [
+   "buyout_rate"
+  ],
+  "rows": [
+   [
+    "🟡 92,26%"
+   ]
+  ],
+  "bytes_old": 2931670,
+  "bytes_new": 46963
+ },
+ {
+  "card": 161,
+  "period": "P2_17-30.08",
+  "equal": true,
+  "schema": [
+   "buyout_rate"
+  ],
+  "rows": [
+   [
+    "🟡 88,89%"
+   ]
+  ],
+  "bytes_old": 3151667,
+  "bytes_new": 46963
+ },
+ {
+  "card": 161,
+  "period": "P3_27.07-23.08",
+  "equal": true,
+  "schema": [
+   "buyout_rate"
+  ],
+  "rows": [
+   [
+    "🟡 89,19%"
+   ]
+  ],
+  "bytes_old": 4141943,
+  "bytes_new": 46963
+ },
+ {
+  "card": 161,
+  "period": "P4_past30",
+  "equal": true,
+  "schema": [
+   "buyout_rate"
+  ],
+  "rows": [
+   [
+    "🟡 90,06%"
+   ]
+  ],
+  "bytes_old": 3538646,
+  "bytes_new": 46963
+ },
+ {
+  "card": 161,
+  "period": "P5_01-16.09",
+  "equal": true,
+  "schema": [
+   "buyout_rate"
+  ],
+  "rows": [
+   [
+    "🟡 93,55%"
+   ]
+  ],
+  "bytes_old": 2955102,
+  "bytes_new": 46963
+ },
+ {
+  "card": 161,
+  "period": "P6_01-17.09_today",
+  "equal": true,
+  "schema": [
+   "buyout_rate"
+  ],
+  "rows": [
+   [
+    "🟡 93,55%"
+   ]
+  ],
+  "bytes_old": 2955262,
+  "bytes_new": 46963
+ },
+ {
+  "card": 162,
+  "period": "P1_31.08-13.09",
+  "equal": true,
+  "schema": [
+   "resolved_orders",
+   "buyout_orders",
+   "unresolved_orders"
+  ],
+  "rows": [
+   [
+    "168",
+    "155",
+    "34"
+   ]
+  ],
+  "bytes_old": 2931670,
+  "bytes_new": 38507
+ },
+ {
+  "card": 162,
+  "period": "P2_17-30.08",
+  "equal": true,
+  "schema": [
+   "resolved_orders",
+   "buyout_orders",
+   "unresolved_orders"
+  ],
+  "rows": [
+   [
+    "207",
+    "184",
+    "1"
+   ]
+  ],
+  "bytes_old": 3151667,
+  "bytes_new": 38507
+ },
+ {
+  "card": 162,
+  "period": "P3_27.07-23.08",
+  "equal": true,
+  "schema": [
+   "resolved_orders",
+   "buyout_orders",
+   "unresolved_orders"
+  ],
+  "rows": [
+   [
+    "592",
+    "528",
+    "2"
+   ]
+  ],
+  "bytes_old": 4141943,
+  "bytes_new": 38507
+ },
+ {
+  "card": 162,
+  "period": "P4_past30",
+  "equal": true,
+  "schema": [
+   "resolved_orders",
+   "buyout_orders",
+   "unresolved_orders"
+  ],
+  "rows": [
+   [
+    "362",
+    "326",
+    "64"
+   ]
+  ],
+  "bytes_old": 3538646,
+  "bytes_new": 38507
+ },
+ {
+  "card": 162,
+  "period": "P5_01-16.09",
+  "equal": true,
+  "schema": [
+   "resolved_orders",
+   "buyout_orders",
+   "unresolved_orders"
+  ],
+  "rows": [
+   [
+    "155",
+    "145",
+    "62"
+   ]
+  ],
+  "bytes_old": 2955102,
+  "bytes_new": 38507
+ },
+ {
+  "card": 162,
+  "period": "P6_01-17.09_today",
+  "equal": true,
+  "schema": [
+   "resolved_orders",
+   "buyout_orders",
+   "unresolved_orders"
+  ],
+  "rows": [
+   [
+    "155",
+    "145",
+    "62"
+   ]
+  ],
+  "bytes_old": 2955262,
+  "bytes_new": 38507
+ },
+ {
+  "card": 164,
+  "period": "P1_31.08-13.09",
+  "equal": true,
+  "schema": [
+   "seller_price_rub",
+   "spp_rub",
+   "wb_remuneration_rub",
+   "wb_remuneration_vat_rub",
+   "acquiring_rub",
+   "pvz_reward_rub",
+   "goods_payable_rub"
+  ],
+  "rows": [
+   [
+    "139439.53",
+    "-27074.52",
+    "-23737.464344264",
+    "-5222.23",
+    "-4322.46",
+    "-2878.1935",
+    "76204.65"
+   ]
+  ],
+  "bytes_old": 316874285,
+  "bytes_new": 52995
+ },
+ {
+  "card": 164,
+  "period": "P2_17-30.08",
+  "equal": true,
+  "schema": [
+   "seller_price_rub",
+   "spp_rub",
+   "wb_remuneration_rub",
+   "wb_remuneration_vat_rub",
+   "acquiring_rub",
+   "pvz_reward_rub",
+   "goods_payable_rub"
+  ],
+  "rows": [
+   [
+    "167528.97",
+    "-25999.71",
+    "-33982.670081961",
+    "-7476.19",
+    "-5506.83",
+    "-3322.0225",
+    "91241.55"
+   ]
+  ],
+  "bytes_old": 316874285,
+  "bytes_new": 52995
+ },
+ {
+  "card": 164,
+  "period": "P3_27.07-23.08",
+  "equal": true,
+  "schema": [
+   "seller_price_rub",
+   "spp_rub",
+   "wb_remuneration_rub",
+   "wb_remuneration_vat_rub",
+   "acquiring_rub",
+   "pvz_reward_rub",
+   "goods_payable_rub"
+  ],
+  "rows": [
+   [
+    "363159",
+    "-76044.96",
+    "-57400.11065573",
+    "-12628.01",
+    "-11248.77",
+    "-7361.735",
+    "198475.4"
+   ]
+  ],
+  "bytes_old": 316877085,
+  "bytes_new": 52995
+ },
+ {
+  "card": 164,
+  "period": "P4_past30",
+  "equal": true,
+  "schema": [
+   "seller_price_rub",
+   "spp_rub",
+   "wb_remuneration_rub",
+   "wb_remuneration_vat_rub",
+   "acquiring_rub",
+   "pvz_reward_rub",
+   "goods_payable_rub"
+  ],
+  "rows": [
+   [
+    "297074.63",
+    "-51603.92",
+    "-55678.006557374",
+    "-12249.17",
+    "-9570.74",
+    "-5981.792",
+    "161991.01"
+   ]
+  ],
+  "bytes_old": 316877485,
+  "bytes_new": 52995
+ },
+ {
+  "card": 164,
+  "period": "P5_01-16.09",
+  "equal": true,
+  "schema": [
+   "seller_price_rub",
+   "spp_rub",
+   "wb_remuneration_rub",
+   "wb_remuneration_vat_rub",
+   "acquiring_rub",
+   "pvz_reward_rub",
+   "goods_payable_rub"
+  ],
+  "rows": [
+   [
+    "128700.53",
+    "-24854.52",
+    "-22041.16598361",
+    "-4849.05",
+    "-3987.11",
+    "-2630.5175",
+    "70338.16"
+   ]
+  ],
+  "bytes_old": 316874685,
+  "bytes_new": 52995
+ },
+ {
+  "card": 164,
+  "period": "P6_01-17.09_today",
+  "equal": true,
+  "schema": [
+   "seller_price_rub",
+   "spp_rub",
+   "wb_remuneration_rub",
+   "wb_remuneration_vat_rub",
+   "acquiring_rub",
+   "pvz_reward_rub",
+   "goods_payable_rub"
+  ],
+  "rows": [
+   [
+    "128700.53",
+    "-24854.52",
+    "-22041.16598361",
+    "-4849.05",
+    "-3987.11",
+    "-2630.5175",
+    "70338.16"
+   ]
+  ],
+  "bytes_old": 316874685,
+  "bytes_new": 52995
+ },
+ {
+  "card": 167,
+  "period": "P1_31.08-13.09",
+  "equal": true,
+  "schema": [
+   "period",
+   "ad_spend_rub"
+  ],
+  "rows": [
+   [
+    "2026-08-17",
+    "-10936"
+   ],
+   [
+    "2026-08-31",
+    "-20748"
+   ]
+  ],
+  "bytes_old": 61046478,
+  "bytes_new": 37994
+ },
+ {
+  "card": 167,
+  "period": "P2_17-30.08",
+  "equal": true,
+  "schema": [
+   "period",
+   "ad_spend_rub"
+  ],
+  "rows": [
+   [
+    "2026-08-03",
+    "-26752"
+   ],
+   [
+    "2026-08-17",
+    "-10936"
+   ]
+  ],
+  "bytes_old": 61046478,
+  "bytes_new": 37994
+ },
+ {
+  "card": 167,
+  "period": "P3_27.07-23.08",
+  "equal": true,
+  "schema": [
+   "period",
+   "ad_spend_rub"
+  ],
+  "rows": [
+   [
+    "2026-06-29",
+    "-121844"
+   ],
+   [
+    "2026-07-27",
+    "-49906"
+   ]
+  ],
+  "bytes_old": 61046478,
+  "bytes_new": 37994
+ },
+ {
+  "card": 167,
+  "period": "P4_past30",
+  "equal": true,
+  "schema": [
+   "period",
+   "ad_spend_rub"
+  ],
+  "rows": [
+   [
+    "2026-07-19",
+    "-78661"
+   ],
+   [
+    "2026-08-18",
+    "-36944"
+   ]
+  ],
+  "bytes_old": 61046478,
+  "bytes_new": 37994
+ },
+ {
+  "card": 167,
+  "period": "P5_01-16.09",
+  "equal": true,
+  "schema": [
+   "period",
+   "ad_spend_rub"
+  ],
+  "rows": [
+   [
+    "2026-08-16",
+    "-12775"
+   ],
+   [
+    "2026-09-01",
+    "-24187"
+   ]
+  ],
+  "bytes_old": 61046478,
+  "bytes_new": 37994
+ },
+ {
+  "card": 167,
+  "period": "P6_01-17.09_today",
+  "equal": true,
+  "schema": [
+   "period",
+   "ad_spend_rub"
+  ],
+  "rows": [
+   [
+    "2026-09-01",
+    "-24187"
+   ]
+  ],
+  "bytes_old": 61046478,
+  "bytes_new": 37994
+ },
+ {
+  "card": 168,
+  "period": "P1_31.08-13.09",
+  "equal": true,
+  "schema": [
+   "drr",
+   "drr_change"
+  ],
+  "rows": [
+   [
+    "14,9%",
+    "▲ 8,4 п.п. (хуже)"
+   ]
+  ],
+  "bytes_old": 61174510,
+  "bytes_new": 40506
+ },
+ {
+  "card": 168,
+  "period": "P2_17-30.08",
+  "equal": true,
+  "schema": [
+   "drr",
+   "drr_change"
+  ],
+  "rows": [
+   [
+    "6,5%",
+    "▼ 6,8 п.п. (лучше)"
+   ]
+  ],
+  "bytes_old": 61174510,
+  "bytes_new": 40506
+ },
+ {
+  "card": 168,
+  "period": "P3_27.07-23.08",
+  "equal": true,
+  "schema": [
+   "drr",
+   "drr_change"
+  ],
+  "rows": [
+   [
+    "13,7%",
+    "▼ 8,5 п.п. (лучше)"
+   ]
+  ],
+  "bytes_old": 61174510,
+  "bytes_new": 40506
+ },
+ {
+  "card": 168,
+  "period": "P4_past30",
+  "equal": true,
+  "schema": [
+   "drr",
+   "drr_change"
+  ],
+  "rows": [
+   [
+    "11,3%",
+    "▼ 7,0 п.п. (лучше)"
+   ]
+  ],
+  "bytes_old": 61174510,
+  "bytes_new": 40506
+ },
+ {
+  "card": 168,
+  "period": "P5_01-16.09",
+  "equal": true,
+  "schema": [
+   "drr",
+   "drr_change"
+  ],
+  "rows": [
+   [
+    "15,2%",
+    "▲ 8,7 п.п. (хуже)"
+   ]
+  ],
+  "bytes_old": 61174510,
+  "bytes_new": 40506
+ },
+ {
+  "card": 168,
+  "period": "P6_01-17.09_today",
+  "equal": true,
+  "schema": [
+   "drr",
+   "drr_change"
+  ],
+  "rows": [
+   [
+    "15,2%",
+    "нет сопоставимого периода"
+   ]
+  ],
+  "bytes_old": 61174510,
+  "bytes_new": 40506
+ },
+ {
+  "card": 169,
+  "period": "P1_31.08-13.09",
+  "equal": true,
+  "schema": [
+   "period",
+   "logistics_rub"
+  ],
+  "rows": [
+   [
+    "2026-08-17",
+    "-16320.2"
+   ],
+   [
+    "2026-08-31",
+    "-13683.76"
+   ]
+  ],
+  "bytes_old": 61174510,
+  "bytes_new": 47338
+ },
+ {
+  "card": 169,
+  "period": "P2_17-30.08",
+  "equal": true,
+  "schema": [
+   "period",
+   "logistics_rub"
+  ],
+  "rows": [
+   [
+    "2026-08-03",
+    "-22871.51"
+   ],
+   [
+    "2026-08-17",
+    "-16320.2"
+   ]
+  ],
+  "bytes_old": 61174510,
+  "bytes_new": 47338
+ },
+ {
+  "card": 169,
+  "period": "P3_27.07-23.08",
+  "equal": true,
+  "schema": [
+   "period",
+   "logistics_rub"
+  ],
+  "rows": [
+   [
+    "2026-06-29",
+    "-40773.5"
+   ],
+   [
+    "2026-07-27",
+    "-37529.3"
+   ]
+  ],
+  "bytes_old": 61174510,
+  "bytes_new": 47338
+ },
+ {
+  "card": 169,
+  "period": "P4_past30",
+  "equal": true,
+  "schema": [
+   "period",
+   "logistics_rub"
+  ],
+  "rows": [
+   [
+    "2026-08-18",
+    "-30690.53"
+   ]
+  ],
+  "bytes_old": 61174510,
+  "bytes_new": 47338
+ },
+ {
+  "card": 169,
+  "period": "P5_01-16.09",
+  "equal": true,
+  "schema": [
+   "period",
+   "logistics_rub"
+  ],
+  "rows": [
+   [
+    "2026-09-01",
+    "-14619.74"
+   ]
+  ],
+  "bytes_old": 61174510,
+  "bytes_new": 47338
+ },
+ {
+  "card": 169,
+  "period": "P6_01-17.09_today",
+  "equal": true,
+  "schema": [
+   "period",
+   "logistics_rub"
+  ],
+  "rows": [
+   [
+    "2026-09-01",
+    "-14619.74"
+   ]
+  ],
+  "bytes_old": 61174510,
+  "bytes_new": 47338
+ },
+ {
+  "card": 173,
+  "period": "P1_31.08-13.09",
+  "equal": true,
+  "schema": [
+   "period",
+   "storage_rub"
+  ],
+  "rows": [
+   [
+    "2026-08-17",
+    "-2113.31"
+   ],
+   [
+    "2026-08-31",
+    "-1817.13"
+   ]
+  ],
+  "bytes_old": 64653504,
+  "bytes_new": 47338
+ },
+ {
+  "card": 173,
+  "period": "P2_17-30.08",
+  "equal": true,
+  "schema": [
+   "period",
+   "storage_rub"
+  ],
+  "rows": [
+   [
+    "2026-08-03",
+    "-5214.78"
+   ],
+   [
+    "2026-08-17",
+    "-2113.31"
+   ]
+  ],
+  "bytes_old": 64653504,
+  "bytes_new": 47338
+ },
+ {
+  "card": 173,
+  "period": "P3_27.07-23.08",
+  "equal": true,
+  "schema": [
+   "period",
+   "storage_rub"
+  ],
+  "rows": [
+   [
+    "2026-06-29",
+    "-18712.21"
+   ],
+   [
+    "2026-07-27",
+    "-9992.46"
+   ]
+  ],
+  "bytes_old": 64653504,
+  "bytes_new": 47338
+ },
+ {
+  "card": 173,
+  "period": "P4_past30",
+  "equal": true,
+  "schema": [
+   "period",
+   "storage_rub"
+  ],
+  "rows": [
+   [
+    "2026-08-18",
+    "-4021.25"
+   ]
+  ],
+  "bytes_old": 64653504,
+  "bytes_new": 47338
+ },
+ {
+  "card": 173,
+  "period": "P5_01-16.09",
+  "equal": true,
+  "schema": [
+   "period",
+   "storage_rub"
+  ],
+  "rows": [
+   [
+    "2026-09-01",
+    "-1918.59"
+   ]
+  ],
+  "bytes_old": 64653504,
+  "bytes_new": 47338
+ },
+ {
+  "card": 173,
+  "period": "P6_01-17.09_today",
+  "equal": true,
+  "schema": [
+   "period",
+   "storage_rub"
+  ],
+  "rows": [
+   [
+    "2026-09-01",
+    "-1918.59"
+   ]
+  ],
+  "bytes_old": 64653504,
+  "bytes_new": 47338
+ },
+ {
+  "card": 174,
+  "period": "P1_31.08-13.09",
+  "equal": true,
+  "schema": [
+   "storage_per_day",
+   "days"
+  ],
+  "rows": [
+   [
+    "≈129,80 ₽",
+    "14"
+   ]
+  ],
+  "bytes_old": 22103220,
+  "bytes_new": 47338
+ },
+ {
+  "card": 174,
+  "period": "P2_17-30.08",
+  "equal": true,
+  "schema": [
+   "storage_per_day",
+   "days"
+  ],
+  "rows": [
+   [
+    "≈150,95 ₽",
+    "14"
+   ]
+  ],
+  "bytes_old": 22504323,
+  "bytes_new": 47338
+ },
+ {
+  "card": 174,
+  "period": "P3_27.07-23.08",
+  "equal": true,
+  "schema": [
+   "storage_per_day",
+   "days"
+  ],
+  "rows": [
+   [
+    "≈356,87 ₽",
+    "28"
+   ]
+  ],
+  "bytes_old": 24261817,
+  "bytes_new": 47338
+ },
+ {
+  "card": 174,
+  "period": "P4_past30",
+  "equal": true,
+  "schema": [
+   "storage_per_day",
+   "days"
+  ],
+  "rows": [
+   [
+    "≈138,66 ₽",
+    "29"
+   ]
+  ],
+  "bytes_old": 23199191,
+  "bytes_new": 47338
+ },
+ {
+  "card": 174,
+  "period": "P5_01-16.09",
+  "equal": true,
+  "schema": [
+   "storage_per_day",
+   "days"
+  ],
+  "rows": [
+   [
+    "≈127,91 ₽",
+    "15"
+   ]
+  ],
+  "bytes_old": 22145041,
+  "bytes_new": 47338
+ },
+ {
+  "card": 174,
+  "period": "P6_01-17.09_today",
+  "equal": true,
+  "schema": [
+   "storage_per_day",
+   "days"
+  ],
+  "rows": [
+   [
+    "≈127,91 ₽",
+    "15"
+   ]
+  ],
+  "bytes_old": 22145201,
+  "bytes_new": 47338
+ },
+ {
+  "card": 175,
+  "period": "P1_31.08-13.09",
+  "equal": true,
+  "schema": [
+   "tariff_option_rub"
+  ],
+  "rows": [
+   [
+    "-2382"
+   ]
+  ],
+  "bytes_old": 328877326,
+  "bytes_new": 47338
+ },
+ {
+  "card": 175,
+  "period": "P2_17-30.08",
+  "equal": true,
+  "schema": [
+   "tariff_option_rub"
+  ],
+  "rows": [
+   [
+    "0"
+   ]
+  ],
+  "bytes_old": 328876558,
+  "bytes_new": 47338
+ },
+ {
+  "card": 175,
+  "period": "P3_27.07-23.08",
+  "equal": true,
+  "schema": [
+   "tariff_option_rub"
+  ],
+  "rows": [
+   [
+    "-1714.74"
+   ]
+  ],
+  "bytes_old": 328884038,
+  "bytes_new": 47338
+ },
+ {
+  "card": 175,
+  "period": "P4_past30",
+  "equal": true,
+  "schema": [
+   "tariff_option_rub"
+  ],
+  "rows": [
+   [
+    "-2382"
+   ]
+  ],
+  "bytes_old": 328881774,
+  "bytes_new": 47338
+ },
+ {
+  "card": 175,
+  "period": "P5_01-16.09",
+  "equal": true,
+  "schema": [
+   "tariff_option_rub"
+  ],
+  "rows": [
+   [
+    "-2382"
+   ]
+  ],
+  "bytes_old": 328878014,
+  "bytes_new": 47338
+ },
+ {
+  "card": 175,
+  "period": "P6_01-17.09_today",
+  "equal": true,
+  "schema": [
+   "tariff_option_rub"
+  ],
+  "rows": [
+   [
+    "-2382"
+   ]
+  ],
+  "bytes_old": 328878014,
+  "bytes_new": 47338
+ },
+ {
+  "card": 176,
+  "period": "P1_31.08-13.09",
+  "equal": true,
+  "schema": [
+   "other_wb_rub"
+  ],
+  "rows": [
+   [
+    "-38"
+   ]
+  ],
+  "bytes_old": 328877326,
+  "bytes_new": 71050
+ },
+ {
+  "card": 176,
+  "period": "P2_17-30.08",
+  "equal": true,
+  "schema": [
+   "other_wb_rub"
+  ],
+  "rows": [
+   [
+    "0"
+   ]
+  ],
+  "bytes_old": 328876558,
+  "bytes_new": 71050
+ },
+ {
+  "card": 176,
+  "period": "P3_27.07-23.08",
+  "equal": true,
+  "schema": [
+   "other_wb_rub"
+  ],
+  "rows": [
+   [
+    "-6688.94"
+   ]
+  ],
+  "bytes_old": 328884038,
+  "bytes_new": 71050
+ },
+ {
+  "card": 176,
+  "period": "P4_past30",
+  "equal": true,
+  "schema": [
+   "other_wb_rub"
+  ],
+  "rows": [
+   [
+    "-38"
+   ]
+  ],
+  "bytes_old": 328881774,
+  "bytes_new": 71050
+ },
+ {
+  "card": 176,
+  "period": "P5_01-16.09",
+  "equal": true,
+  "schema": [
+   "other_wb_rub"
+  ],
+  "rows": [
+   [
+    "-38"
+   ]
+  ],
+  "bytes_old": 328878014,
+  "bytes_new": 71050
+ },
+ {
+  "card": 176,
+  "period": "P6_01-17.09_today",
+  "equal": true,
+  "schema": [
+   "other_wb_rub"
+  ],
+  "rows": [
+   [
+    "-38"
+   ]
+  ],
+  "bytes_old": 328878014,
+  "bytes_new": 71050
+ },
+ {
+  "card": 177,
+  "period": "P1_31.08-13.09",
+  "equal": true,
+  "schema": [
+   "period",
+   "product_cogs_rub"
+  ],
+  "rows": [
+   [
+    "2026-08-17",
+    "-53520.79887"
+   ],
+   [
+    "2026-08-31",
+    "-43017.51887"
+   ]
+  ],
+  "bytes_old": 112465094,
+  "bytes_new": 47354
+ },
+ {
+  "card": 177,
+  "period": "P2_17-30.08",
+  "equal": true,
+  "schema": [
+   "period",
+   "product_cogs_rub"
+  ],
+  "rows": [
+   [
+    "2026-08-03",
+    "-71951.227354"
+   ],
+   [
+    "2026-08-17",
+    "-53520.79887"
+   ]
+  ],
+  "bytes_old": 112465094,
+  "bytes_new": 47354
+ },
+ {
+  "card": 177,
+  "period": "P3_27.07-23.08",
+  "equal": true,
+  "schema": [
+   "period",
+   "product_cogs_rub"
+  ],
+  "rows": [
+   [
+    "2026-06-29",
+    "-138403.794934"
+   ],
+   [
+    "2026-07-27",
+    "-115514.551676"
+   ]
+  ],
+  "bytes_old": 112465094,
+  "bytes_new": 47354
+ },
+ {
+  "card": 177,
+  "period": "P4_past30",
+  "equal": true,
+  "schema": [
+   "period",
+   "product_cogs_rub"
+  ],
+  "rows": [
+   [
+    "2026-08-18",
+    "-98922.790998"
+   ]
+  ],
+  "bytes_old": 112465094,
+  "bytes_new": 47354
+ },
+ {
+  "card": 177,
+  "period": "P5_01-16.09",
+  "equal": true,
+  "schema": [
+   "period",
+   "product_cogs_rub"
+  ],
+  "rows": [
+   [
+    "2026-09-01",
+    "-45559.487241"
+   ]
+  ],
+  "bytes_old": 112465094,
+  "bytes_new": 47354
+ },
+ {
+  "card": 177,
+  "period": "P6_01-17.09_today",
+  "equal": true,
+  "schema": [
+   "period",
+   "product_cogs_rub"
+  ],
+  "rows": [
+   [
+    "2026-09-01",
+    "-45559.487241"
+   ]
+  ],
+  "bytes_old": 112465094,
+  "bytes_new": 47354
+ },
+ {
+  "card": 178,
+  "period": "P1_31.08-13.09",
+  "equal": true,
+  "schema": [
+   "profit_after_cogs_rub"
+  ],
+  "rows": [
+   [
+    "-5481.67887"
+   ]
+  ],
+  "bytes_old": 331163217,
+  "bytes_new": 37235
+ },
+ {
+  "card": 178,
+  "period": "P2_17-30.08",
+  "equal": true,
+  "schema": [
+   "profit_after_cogs_rub"
+  ],
+  "rows": [
+   [
+    "8351.34113"
+   ]
+  ],
+  "bytes_old": 331162449,
+  "bytes_new": 37235
+ },
+ {
+  "card": 178,
+  "period": "P3_27.07-23.08",
+  "equal": true,
+  "schema": [
+   "profit_after_cogs_rub"
+  ],
+  "rows": [
+   [
+    "-22870.411676"
+   ]
+  ],
+  "bytes_old": 331211929,
+  "bytes_new": 37235
+ },
+ {
+  "card": 178,
+  "period": "P4_past30",
+  "equal": true,
+  "schema": [
+   "profit_after_cogs_rub"
+  ],
+  "rows": [
+   [
+    "2136.809002"
+   ]
+  ],
+  "bytes_old": 331215665,
+  "bytes_new": 37235
+ },
+ {
+  "card": 178,
+  "period": "P5_01-16.09",
+  "equal": true,
+  "schema": [
+   "profit_after_cogs_rub"
+  ],
+  "rows": [
+   [
+    "-5222.377241"
+   ]
+  ],
+  "bytes_old": 331169905,
+  "bytes_new": 37235
+ },
+ {
+  "card": 178,
+  "period": "P6_01-17.09_today",
+  "equal": true,
+  "schema": [
+   "profit_after_cogs_rub"
+  ],
+  "rows": [
+   [
+    "-5222.377241"
+   ]
+  ],
+  "bytes_old": 331169905,
+  "bytes_new": 37235
+ },
+ {
+  "card": 182,
+  "period": "P1_31.08-13.09",
+  "equal": true,
+  "schema": [
+   "item",
+   "amount_rub"
+  ],
+  "rows": [
+   [
+    "Реклама по документам WB",
+    "-20818"
+   ],
+   [
+    "Логистика",
+    "-13683.76"
+   ],
+   [
+    "Хранение",
+    "-1817.13"
+   ],
+   [
+    "Тарифные опции",
+    "-2382"
+   ],
+   [
+    "Утилизация",
+    "-38"
+   ]
+  ],
+  "bytes_old": 329455239,
+  "bytes_new": 200275
+ },
+ {
+  "card": 182,
+  "period": "P2_17-30.08",
+  "equal": true,
+  "schema": [
+   "item",
+   "amount_rub"
+  ],
+  "rows": [
+   [
+    "Реклама по документам WB",
+    "-9310"
+   ],
+   [
+    "Логистика",
+    "-16320.2"
+   ],
+   [
+    "Хранение",
+    "-2113.31"
+   ]
+  ],
+  "bytes_old": 329455239,
+  "bytes_new": 200275
+ },
+ {
+  "card": 182,
+  "period": "P3_27.07-23.08",
+  "equal": true,
+  "schema": [
+   "item",
+   "amount_rub"
+  ],
+  "rows": [
+   [
+    "Реклама по документам WB",
+    "-52838"
+   ],
+   [
+    "Логистика",
+    "-37529.3"
+   ],
+   [
+    "Хранение",
+    "-9992.46"
+   ],
+   [
+    "Тарифные опции",
+    "-1714.74"
+   ],
+   [
+    "Утилизация",
+    "-38"
+   ],
+   [
+    "Транзит поставок",
+    "-3258.94"
+   ],
+   [
+    "Штрафы",
+    "-6320"
+   ],
+   [
+    "Компенсация WB (форс-мажор)",
+    "20000"
+   ],
+   [
+    "Возврат аванса «Баллы за отзывы»",
+    "2928"
+   ],
+   [
+    "Баллы лояльности",
+    "390"
+   ]
+  ],
+  "bytes_old": 329458039,
+  "bytes_new": 200275
+ },
+ {
+  "card": 182,
+  "period": "P4_past30",
+  "equal": true,
+  "schema": [
+   "item",
+   "amount_rub"
+  ],
+  "rows": [
+   [
+    "Реклама по документам WB",
+    "-30128"
+   ],
+   [
+    "Логистика",
+    "-28776.24"
+   ],
+   [
+    "Хранение",
+    "-3780.33"
+   ],
+   [
+    "Тарифные опции",
+    "-2382"
+   ],
+   [
+    "Утилизация",
+    "-38"
+   ]
+  ],
+  "bytes_old": 329458439,
+  "bytes_new": 200275
+ },
+ {
+  "card": 182,
+  "period": "P5_01-16.09",
+  "equal": true,
+  "schema": [
+   "item",
+   "amount_rub"
+  ],
+  "rows": [
+   [
+    "Реклама по документам WB",
+    "-20818"
+   ],
+   [
+    "Логистика",
+    "-12705.45"
+   ],
+   [
+    "Хранение",
+    "-1677.67"
+   ],
+   [
+    "Тарифные опции",
+    "-2382"
+   ],
+   [
+    "Утилизация",
+    "-38"
+   ]
+  ],
+  "bytes_old": 329455639,
+  "bytes_new": 200275
+ },
+ {
+  "card": 182,
+  "period": "P6_01-17.09_today",
+  "equal": true,
+  "schema": [
+   "item",
+   "amount_rub"
+  ],
+  "rows": [
+   [
+    "Реклама по документам WB",
+    "-20818"
+   ],
+   [
+    "Логистика",
+    "-12705.45"
+   ],
+   [
+    "Хранение",
+    "-1677.67"
+   ],
+   [
+    "Тарифные опции",
+    "-2382"
+   ],
+   [
+    "Утилизация",
+    "-38"
+   ]
+  ],
+  "bytes_old": 329455639,
+  "bytes_new": 200275
+ },
+ {
+  "card": 183,
+  "period": "P1_31.08-13.09",
+  "equal": true,
+  "schema": [
+   "withheld_from_price",
+   "closed_days"
+  ],
+  "rows": [
+   [
+    "-63 235 ₽",
+    "14 из 14 сут."
+   ]
+  ],
+  "bytes_old": 316874285,
+  "bytes_new": 48377
+ },
+ {
+  "card": 183,
+  "period": "P2_17-30.08",
+  "equal": true,
+  "schema": [
+   "withheld_from_price",
+   "closed_days"
+  ],
+  "rows": [
+   [
+    "-76 287 ₽",
+    "14 из 14 сут."
+   ]
+  ],
+  "bytes_old": 316874285,
+  "bytes_new": 48377
+ },
+ {
+  "card": 183,
+  "period": "P3_27.07-23.08",
+  "equal": true,
+  "schema": [
+   "withheld_from_price",
+   "closed_days"
+  ],
+  "rows": [
+   [
+    "-164 684 ₽",
+    "28 из 28 сут."
+   ]
+  ],
+  "bytes_old": 316877085,
+  "bytes_new": 48377
+ },
+ {
+  "card": 183,
+  "period": "P4_past30",
+  "equal": true,
+  "schema": [
+   "withheld_from_price",
+   "closed_days"
+  ],
+  "rows": [
+   [
+    "-135 084 ₽",
+    "27 из 30 сут."
+   ]
+  ],
+  "bytes_old": 316877485,
+  "bytes_new": 48377
+ },
+ {
+  "card": 183,
+  "period": "P5_01-16.09",
+  "equal": true,
+  "schema": [
+   "withheld_from_price",
+   "closed_days"
+  ],
+  "rows": [
+   [
+    "-58 362 ₽",
+    "13 из 16 сут."
+   ]
+  ],
+  "bytes_old": 316874685,
+  "bytes_new": 48377
+ },
+ {
+  "card": 183,
+  "period": "P6_01-17.09_today",
+  "equal": true,
+  "schema": [
+   "withheld_from_price",
+   "closed_days"
+  ],
+  "rows": [
+   [
+    "-58 362 ₽",
+    "13 из 17 сут."
+   ]
+  ],
+  "bytes_old": 316874685,
+  "bytes_new": 48377
+ },
+ {
+  "card": 184,
+  "period": "P1_31.08-13.09",
+  "equal": true,
+  "schema": [
+   "sold",
+   "cancellation",
+   "cancel_to_customer",
+   "cancel_from_customer",
+   "per_buyout"
+  ],
+  "rows": [
+   [
+    "-11 863 ₽",
+    "-1 820 ₽",
+    "-1 214 ₽",
+    "-606 ₽",
+    "70,17 ₽"
+   ]
+  ],
+  "bytes_old": 325799994,
+  "bytes_new": 96018
+ },
+ {
+  "card": 184,
+  "period": "P2_17-30.08",
+  "equal": true,
+  "schema": [
+   "sold",
+   "cancellation",
+   "cancel_to_customer",
+   "cancel_from_customer",
+   "per_buyout"
+  ],
+  "rows": [
+   [
+    "-13 734 ₽",
+    "-2 586 ₽",
+    "-1 685 ₽",
+    "-901 ₽",
+    "71,27 ₽"
+   ]
+  ],
+  "bytes_old": 325799226,
+  "bytes_new": 96018
+ },
+ {
+  "card": 184,
+  "period": "P3_27.07-23.08",
+  "equal": true,
+  "schema": [
+   "sold",
+   "cancellation",
+   "cancel_to_customer",
+   "cancel_from_customer",
+   "per_buyout"
+  ],
+  "rows": [
+   [
+    "-30 913 ₽",
+    "-6 616 ₽",
+    "-4 336 ₽",
+    "-2 281 ₽",
+    "73,16 ₽"
+   ]
+  ],
+  "bytes_old": 325815106,
+  "bytes_new": 96018
+ },
+ {
+  "card": 184,
+  "period": "P4_past30",
+  "equal": true,
+  "schema": [
+   "sold",
+   "cancellation",
+   "cancel_to_customer",
+   "cancel_from_customer",
+   "per_buyout"
+  ],
+  "rows": [
+   [
+    "-26 310 ₽",
+    "-4 381 ₽",
+    "-2 877 ₽",
+    "-1 504 ₽",
+    "70,23 ₽"
+   ]
+  ],
+  "bytes_old": 325814042,
+  "bytes_new": 96018
+ },
+ {
+  "card": 184,
+  "period": "P5_01-16.09",
+  "equal": true,
+  "schema": [
+   "sold",
+   "cancellation",
+   "cancel_to_customer",
+   "cancel_from_customer",
+   "per_buyout"
+  ],
+  "rows": [
+   [
+    "-12 739 ₽",
+    "-1 881 ₽",
+    "-1 251 ₽",
+    "-629 ₽",
+    "69,62 ₽"
+   ]
+  ],
+  "bytes_old": 325801882,
+  "bytes_new": 96018
+ },
+ {
+  "card": 184,
+  "period": "P6_01-17.09_today",
+  "equal": true,
+  "schema": [
+   "sold",
+   "cancellation",
+   "cancel_to_customer",
+   "cancel_from_customer",
+   "per_buyout"
+  ],
+  "rows": [
+   [
+    "-12 739 ₽",
+    "-1 881 ₽",
+    "-1 251 ₽",
+    "-629 ₽",
+    "69,62 ₽"
+   ]
+  ],
+  "bytes_old": 325801882,
+  "bytes_new": 96018
+ },
+ {
+  "card": 185,
+  "period": "P1_31.08-13.09",
+  "equal": true,
+  "schema": [
+   "profit_change",
+   "margin_pre_change",
+   "margin_post_change"
+  ],
+  "rows": [
+   [
+    "▼ на 13 833 ₽ хуже",
+    "▼ 10,0 п.п. (хуже)",
+    "▼ 8,9 п.п. (хуже)"
+   ]
+  ],
+  "bytes_old": 332187457,
+  "bytes_new": 46209
+ },
+ {
+  "card": 185,
+  "period": "P2_17-30.08",
+  "equal": true,
+  "schema": [
+   "profit_change",
+   "margin_pre_change",
+   "margin_post_change"
+  ],
+  "rows": [
+   [
+    "▲ на 36 648 ₽ лучше",
+    "▲ 15,2 п.п. (лучше)",
+    "▲ 19,1 п.п. (лучше)"
+   ]
+  ],
+  "bytes_old": 332187457,
+  "bytes_new": 46209
+ },
+ {
+  "card": 185,
+  "period": "P3_27.07-23.08",
+  "equal": true,
+  "schema": [
+   "profit_change",
+   "margin_pre_change",
+   "margin_post_change"
+  ],
+  "rows": [
+   [
+    "▼ на 47 781 ₽ хуже",
+    "▼ 4,3 п.п. (хуже)",
+    "▼ 10,8 п.п. (хуже)"
+   ]
+  ],
+  "bytes_old": 332187457,
+  "bytes_new": 46209
+ },
+ {
+  "card": 185,
+  "period": "P4_past30",
+  "equal": true,
+  "schema": [
+   "profit_change",
+   "margin_pre_change",
+   "margin_post_change"
+  ],
+  "rows": [
+   [
+    "нет сопоставимого периода",
+    "нет сопоставимого периода",
+    "нет сопоставимого периода"
+   ]
+  ],
+  "bytes_old": 332187457,
+  "bytes_new": 46209
+ },
+ {
+  "card": 185,
+  "period": "P5_01-16.09",
+  "equal": true,
+  "schema": [
+   "profit_change",
+   "margin_pre_change",
+   "margin_post_change"
+  ],
+  "rows": [
+   [
+    "нет сопоставимого периода",
+    "нет сопоставимого периода",
+    "нет сопоставимого периода"
+   ]
+  ],
+  "bytes_old": 332187457,
+  "bytes_new": 46209
+ },
+ {
+  "card": 185,
+  "period": "P6_01-17.09_today",
+  "equal": true,
+  "schema": [
+   "profit_change",
+   "margin_pre_change",
+   "margin_post_change"
+  ],
+  "rows": [
+   [
+    "нет сопоставимого периода",
+    "нет сопоставимого периода",
+    "нет сопоставимого периода"
+   ]
+  ],
+  "bytes_old": 332187457,
+  "bytes_new": 46209
+ },
+ {
+  "card": 186,
+  "period": "P1_31.08-13.09",
+  "equal": true,
+  "schema": [
+   "result_status"
+  ],
+  "rows": [
+   [
+    "🟡 Предварительный результат"
+   ]
+  ],
+  "bytes_old": 111563286,
+  "bytes_new": 44325
+ },
+ {
+  "card": 186,
+  "period": "P2_17-30.08",
+  "equal": true,
+  "schema": [
+   "result_status"
+  ],
+  "rows": [
+   [
+    "🟢 Окончательный результат"
+   ]
+  ],
+  "bytes_old": 111562518,
+  "bytes_new": 44325
+ },
+ {
+  "card": 186,
+  "period": "P3_27.07-23.08",
+  "equal": true,
+  "schema": [
+   "result_status"
+  ],
+  "rows": [
+   [
+    "🟢 Окончательный результат"
+   ]
+  ],
+  "bytes_old": 111606398,
+  "bytes_new": 44325
+ },
+ {
+  "card": 186,
+  "period": "P4_past30",
+  "equal": true,
+  "schema": [
+   "result_status"
+  ],
+  "rows": [
+   [
+    "🔴 Предварительный результат · есть неполные данные"
+   ]
+  ],
+  "bytes_old": 111609334,
+  "bytes_new": 44325
+ },
+ {
+  "card": 186,
+  "period": "P5_01-16.09",
+  "equal": true,
+  "schema": [
+   "result_status"
+  ],
+  "rows": [
+   [
+    "🔴 Предварительный результат · есть неполные данные"
+   ]
+  ],
+  "bytes_old": 111569174,
+  "bytes_new": 44325
+ },
+ {
+  "card": 186,
+  "period": "P6_01-17.09_today",
+  "equal": true,
+  "schema": [
+   "result_status"
+  ],
+  "rows": [
+   [
+    "🔴 Предварительный результат · есть неполные данные"
+   ]
+  ],
+  "bytes_old": 111569174,
+  "bytes_new": 44325
+ }
+]

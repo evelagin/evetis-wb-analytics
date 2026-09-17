@@ -1,0 +1,241 @@
+/**
+ * ══════════════════════════════════════════════════════════════
+ * EVETIS WB — Menu.gs  v2.0
+ * Пользовательское меню EVETIS WB в Google Sheets
+ *
+ * Обновлено: подключены реальные функции загрузки финансов.
+ * ══════════════════════════════════════════════════════════════
+ */
+
+/**
+ * Создаёт меню при открытии таблицы
+ */
+function onOpen() {
+  var ui = SpreadsheetApp.getUi();
+
+  // Единое меню EVETIS WB. Все загрузки и операции — подменю здесь.
+  // Отдельные top-level меню (WB Daily, Заказы, Продажи, Хранение, Pilot, UNIT)
+  // больше НЕ создаются: они переполняли панель и уезжали в «…».
+  ui.createMenu('🏷️ EVETIS WB')
+    .addItem('🔧 Полная настройка таблицы', 'setupWorkbook')
+    .addItem('🔄 Обновить WB API (WB Daily)', 'runWbDailyRefresh')
+    .addSeparator()
+
+    // ─── Финансы WB ───
+    // FIX: прежние пункты ссылались на несуществующие функции (previewWbFinanceApi,
+    // loadWbFinanceLastWeek/Period/FullHistory/HistoryChunked, auditRawWbFinance) —
+    // меню было «битым». Перевязано на реальные функции проекта.
+    .addSubMenu(
+      ui.createMenu('💰 Финансы WB')
+        .addItem('🔄 Обновить финансы из API (rolling 14)', 'importWbFinanceFromApiRolling14Days')
+        .addSeparator()
+        .addItem('📁 Показать файлы отчётов на Диске', 'listWbFinanceReportsInDrive')
+        .addSeparator()
+        .addItem('📊 Пересобрать CLEAN с расходами', 'buildCleanWbDailyWithFinance')
+        .addItem('📈 Пересобрать юнит-отчёт', 'buildMonthlyUnitReportWithFinance')
+        .addSeparator()
+        .addItem('🔍 Аудит колонок RAW_WB_FINANCE', 'auditRawWbFinanceColumns')
+        .addItem('📋 Контрольная сверка RAW_WB_FINANCE', 'verifyRawWbFinanceImport')
+    )
+
+    // ─── Заказы WB ───
+    .addSubMenu(
+      ui.createMenu('📦 Заказы WB')
+        .addItem('🔄 Обновить заказы (rolling 14)', 'importWbOrdersFromApiRolling14Days')
+        .addItem('📅 Загрузить заказы за период…', 'importWbOrdersFromApiPrompt_')
+        .addItem('🧾 Создать IMPORT_LOG_ORDERS', 'ensureImportLogOrdersMenu_')
+        .addSeparator()
+        .addItem('🧪 Pilot: orders+sales за 14 дней', 'backfillWbOperationalPilotLast14Days')
+        .addItem('🧪 Pilot: orders+sales за 30 дней', 'backfillWbOperationalPilotLast30Days')
+    )
+
+    // ─── Продажи WB ───
+    .addSubMenu(
+      ui.createMenu('💳 Продажи WB')
+        .addItem('🔄 Обновить продажи (rolling 14)', 'importWbSalesReturnsFromApiRolling14Days')
+        .addItem('📅 Загрузить продажи за период…', 'importWbSalesReturnsFromApiPrompt_')
+        .addItem('🧾 Создать IMPORT_LOG_SALES_RETURNS', 'ensureImportLogSalesMenu_')
+    )
+
+    // ─── Остатки WB ───
+    .addSubMenu(
+      ui.createMenu('📦 Остатки WB')
+        .addItem('🔄 Загрузить остатки WB T5', 'importWbStocksFromApi')
+        .addItem('🧪 Probe остатков T5/T6', 'probeWbStocksTestOnly')
+    )
+
+    // ─── Хранение WB ───
+    .addSubMenu(
+      ui.createMenu('📦 Хранение WB')
+        .addItem('🔄 Обновить хранение WB', 'updateWbStorageData')
+        .addSeparator()
+        .addItem('🌐 API rolling 7 days', 'importWbStorageFromApiRolling7Days')
+        .addItem('📂 Импорт новых файлов из папки', 'importNewWbStorageReportsFromFolder')
+        .addItem('📊 Проверить сверку', 'verifyStorageReconciliation')
+        .addItem('📅 Проверить покрытие', 'checkWbStorageCoverageCurrentMonth')
+        .addSeparator()
+        .addItem('📦 Архивировать месяц', 'archiveWbStorageMonthMenu')
+        .addItem('🔒 Закрыть месяц', 'closeStorageMonthMenu')
+        .addSeparator()
+        .addItem('📋 Создать RAW_WB_STORAGE', 'createRawWbStorageSheet')
+        .addItem('📋 Создать IMPORT_LOG_STORAGE', 'createImportLogStorageSheet')
+    )
+
+    // ─── Реклама WB ───
+    .addSubMenu(
+      ui.createMenu('📊 Реклама WB')
+        .addItem('🧪 Probe: проверить рекламу WB', 'runWbAdsProbeAll')
+        .addItem('🧪 Probe: fullstats single debug', 'probeWbAdsFullstatsSingleCampaignsLast7Days')
+        .addSeparator()
+        .addItem('📥 RAW: загрузить за 7 дней', 'loadWbAdsRawLast7Days')
+        .addItem('📥 RAW: загрузить за период', 'loadWbAdsRawPeriodPrompt')
+        .addSeparator()
+        .addItem('RAW: только кампании', 'loadWbAdsCampaignsRaw')
+        .addItem('RAW: только расходы за 7 дней', 'loadWbAdsCostsRawLast7Days')
+        .addItem('RAW: только расходы за период…', 'loadWbAdsCostsRawPeriodPrompt')
+        .addItem('RAW: только fullstats за 7 дней', 'loadWbAdsFullstatsRawLast7Days')
+        .addItem('RAW: только fullstats за период…', 'loadWbAdsFullstatsRawPeriodPrompt')
+        .addItem('RAW: только кластеры за 7 дней', 'loadWbAdsSearchClustersRawLast7Days')
+        .addSeparator()
+        .addSubMenu(
+          ui.createMenu('🧩 Кластеры за месяц (полный сбор)')
+            .addItem('▶️ Старт: текущий месяц', 'wbAdsClustersJobStartCurrentMonth')
+            .addItem('📅 Старт: выбрать период…', 'wbAdsClustersJobStartPrompt')
+            .addItem('⏭️ Продолжить сбор', 'wbAdsClustersJobContinue')
+            .addItem('📊 Статус сбора', 'wbAdsClustersJobStatus')
+            .addSeparator()
+            .addItem('🤖 Включить авто-сбор (триггер)', 'wbAdsClustersJobInstallTrigger')
+            .addItem('🛑 Выключить авто-сбор', 'wbAdsClustersJobRemoveTrigger')
+        )
+        .addSeparator()
+        .addSubMenu(
+          ui.createMenu('📈 fullstats за месяц')
+            .addItem('▶️ Текущий месяц', 'wbAdsFullstatsMonthCurrent')
+            .addItem('📅 Выбрать период…', 'wbAdsFullstatsMonthPrompt')
+        )
+        .addSeparator()
+        .addSubMenu(
+          // Ads-2 · query-level статистика по поисковым запросам.
+          // «Добрать историю» идёт порциями и сама знает, где остановилась —
+          // берёт непокрытые сутки из V_ADV_QUERY_STATS_COVERAGE, даты не нужны.
+          // «Пересъём за период» — для УЖЕ опубликованных суток, у которых
+          // задним числом вырос scope (пересобрали fullstats → появились пары).
+          ui.createMenu('🔎 Поисковые запросы (Ads-2)')
+            .addItem('⏭️ Добрать историю (порция)', 'wbAdsQueryStatsBackfillNext')
+            .addItem('📅 Пересъём за период…', 'wbAdsQueryStatsPeriodPrompt')
+        )
+    )
+
+    // ─── Расчёты ───
+    .addSubMenu(
+      ui.createMenu('📊 Расчёты')
+        .addItem('Пересчитать UNIT_SKU_DAILY', 'buildUnitSkuDaily')
+        .addItem('Пересчитать PNL_TOTAL', 'notImplementedYet_')
+        .addItem('Обновить дашборд', 'notImplementedYet_')
+        .addItem('ABC/XYZ анализ', 'notImplementedYet_')
+    )
+
+    // ─── Обслуживание ───
+    .addSubMenu(
+      ui.createMenu('⚙️ Обслуживание')
+        .addItem('Пересоздать все листы', 'createAllSheets')
+        .addItem('Обновить форматирование', 'refreshFormatting')
+        .addItem('Обновить валидации', 'refreshValidations')
+        .addItem('Обновить защиту', 'refreshProtections')
+        .addItem('Упорядочить листы', 'reorderSheetsCommand')
+        .addSeparator()
+        .addItem('Скрыть RAW-листы', 'hideRawSheetsCommand')
+        .addItem('Показать RAW-листы', 'showRawSheetsCommand')
+    )
+    .addSeparator()
+
+    // ─── Инфо ───
+    .addItem('🩺 Диагностика системы', 'systemHealthCheck')
+    .addItem('ℹ️ О системе', 'showAbout_')
+    .addToUi();
+
+  // Прежние отдельные строители меню (addWbDailyRefreshMenu, addWbOrdersLoaderMenu,
+  // addWbSalesReturnsLoaderMenu, addUnitSkuDailyMenu, addWbOperationalPilotMenu,
+  // addStorageFolderLoaderMenu) НЕ вызываются — их пункты перенесены в подменю выше.
+  // Сами функции оставлены в своих файлах на случай ручного вызова.
+}
+
+/**
+ * Заглушка для функций, которые ещё не реализованы
+ */
+function notImplementedYet_() {
+  SpreadsheetApp.getUi().alert(
+    '🚧 В разработке',
+    'Эта функция будет реализована на следующем этапе.\n\n' +
+    'Текущий этап: финансовый загрузчик WB.\n' +
+    'Следующий: заказы/продажи, реклама, остатки.',
+    SpreadsheetApp.getUi().ButtonSet.OK
+  );
+}
+
+/**
+ * Информация о системе
+ */
+function showAbout_() {
+  var msg = 'EVETIS WB — Управленческая аналитика\n\n' +
+    'Версия: ' + SYSTEM_VERSION + '\n' +
+    'Платформа: Google Sheets + Apps Script\n' +
+    'Маркетплейс: Wildberries (FBO)\n\n' +
+    'Архитектура: 4 слоя, 24 листа\n' +
+    '• Слой 1: Настройки и справочники\n' +
+    '• Слой 2: Сырые данные API (RAW)\n' +
+    '• Слой 3: Очищенные данные (CLEAN)\n' +
+    '• Слой 4: Аналитика и отчёты\n\n' +
+    'Модули:\n' +
+    '• 💰 Финансы WB — загружен ✅\n' +
+    '• 📦 Заказы/продажи — в разработке\n' +
+    '• 📊 Реклама — в разработке\n' +
+    '• 📋 Остатки — в разработке\n\n' +
+    'Бренд: EVETIS\n' +
+    'Модель: FBO через фулфилмент';
+  
+  SpreadsheetApp.getUi().alert('ℹ️ О системе', msg, SpreadsheetApp.getUi().ButtonSet.OK);
+}
+
+// ═══════════════════════════════════════
+// Команды из меню (обёртки)
+// ═══════════════════════════════════════
+
+function refreshFormatting() {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  applyAllFormatting_(ss);
+  SpreadsheetApp.getUi().alert('✅ Форматирование обновлено');
+}
+
+function refreshValidations() {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  applyAllValidations_(ss);
+  SpreadsheetApp.getUi().alert('✅ Валидации обновлены');
+}
+
+function refreshProtections() {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  protectAllFormulaColumns_(ss);
+  SpreadsheetApp.getUi().alert('✅ Защита обновлена');
+}
+
+function reorderSheetsCommand() {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  reorderSheets_(ss);
+  SpreadsheetApp.getUi().alert('✅ Листы упорядочены');
+}
+
+function hideRawSheetsCommand() {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  hideRawSheets_(ss);
+  SpreadsheetApp.getUi().alert('✅ RAW-листы скрыты');
+}
+
+function showRawSheetsCommand() {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  for (var i = 0; i < HIDDEN_SHEETS.length; i++) {
+    var sheet = ss.getSheetByName(HIDDEN_SHEETS[i]);
+    if (sheet) sheet.showSheet();
+  }
+  SpreadsheetApp.getUi().alert('✅ RAW-листы показаны');
+}

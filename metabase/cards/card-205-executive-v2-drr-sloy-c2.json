@@ -1,0 +1,118 @@
+{
+ "archived": false,
+ "archived_directly": false,
+ "cache_invalidated_at": null,
+ "cache_ttl": null,
+ "card_schema": 23,
+ "collection": {
+  "archive_operation_id": null,
+  "archived": false,
+  "archived_directly": null,
+  "authority_level": null,
+  "created_at": "2026-08-26T15:19:56.740614Z",
+  "description": "Executive MVP: что происходит с бизнесом и зарабатываем ли мы деньги.",
+  "entity_id": "EZUYQWsC5fdY9QqGY-xKC",
+  "id": 6,
+  "is_remote_synced": false,
+  "is_sample": false,
+  "location": "/5/",
+  "name": "01 Executive",
+  "namespace": null,
+  "personal_owner_id": null,
+  "slug": "01_executive",
+  "type": null
+ },
+ "collection_id": 6,
+ "collection_position": null,
+ "collection_preview": true,
+ "created_at": "2026-09-17T07:19:33.718812Z",
+ "creator_id": 2,
+ "dashboard": null,
+ "dashboard_id": null,
+ "database_id": 2,
+ "dataset_query": {
+  "database": 2,
+  "lib/type": "mbql/query",
+  "stages": [
+   {
+    "lib/type": "mbql.stage/native",
+    "native": "-- Phase C2 · wb_mart.V_DASH_EXECUTIVE_V2_DAILY (материализованный слой; логика карточки не менялась)\nWITH b AS (\n  SELECT MIN(day) AS d1, MAX(day) AS d2, COUNT(*) AS len\n  FROM `wb_mart.V_DASH_EXECUTIVE_V2_DAILY`\n  WHERE {{day}}\n),\nagg AS (\n  SELECT\n    IF(k.day >= b.d1, 'cur', 'prv')                             AS w,\n    IF(k.day >= b.d1, b.d1, DATE_SUB(b.d1, INTERVAL b.len DAY)) AS period_start,\n    COUNTIF(c.ads_billing_covered)                                         AS cov,\n    SUM(IF(c.ads_billing_covered, c.ad_spend_financial_rub, NULL)) AS ads, SUM(IF(c.ads_billing_covered, c.sales_revenue_seller_base_rub, NULL))                                                AS rev\n  FROM `wb_mart.V_DASH_EXECUTIVE_V2_DAILY` k\n  JOIN `wb_mart.V_DASH_EXECUTIVE_V2_DAILY` c USING (day), b\n  WHERE k.day BETWEEN DATE_SUB(b.d1, INTERVAL b.len DAY) AND b.d2\n  GROUP BY w, period_start\n)\n, r AS (\n  SELECT MAX(IF(w = 'cur', SAFE_DIVIDE(ads, rev), NULL)) AS cur,\n         MAX(IF(w = 'prv', SAFE_DIVIDE(ads, rev), NULL)) AS prv,\n         MAX(IF(w = 'cur', cov, NULL)) = MAX(IF(w = 'prv', cov, NULL)) AS comparable\n  FROM agg\n)\nSELECT\n  CONCAT(REPLACE(FORMAT('%.1f', cur * 100), '.', ','), '%') AS drr,\n  CASE\n    WHEN NOT comparable OR prv IS NULL OR cur IS NULL THEN 'нет сопоставимого периода'\n    WHEN ROUND((cur - prv) * 100, 1) = 0 THEN 'без изменений'\n    WHEN cur > prv THEN CONCAT('▲ ', REPLACE(FORMAT('%.1f', (cur - prv) * 100), '.', ','), ' п.п. (хуже)')\n    ELSE CONCAT('▼ ', REPLACE(FORMAT('%.1f', (prv - cur) * 100), '.', ','), ' п.п. (лучше)')\n  END AS drr_change\nFROM r",
+    "template-tags": [
+     {
+      "dimension": [
+       "field",
+       {
+        "lib/uuid": "bea05241-1254-492d-8ba7-7dcbb1aa597f"
+       },
+       6498
+      ],
+      "display-name": "Период",
+      "id": "bfff436b-bf9b-45e7-bc94-8e3b7ba5f438",
+      "name": "day",
+      "type": "dimension",
+      "widget-type": "date/all-options"
+     }
+    ]
+   }
+  ]
+ },
+ "description": "ДРР = реклама по биллингу WB ÷ выручка по цене продавца. Изменение — в процентных пунктах к предыдущему периоду той же длины; снижение ДРР лучше.",
+ "dimension_mappings": null,
+ "dimensions": null,
+ "display": "object",
+ "document_id": null,
+ "embedding_params": null,
+ "embedding_type": null,
+ "enable_embedding": false,
+ "entity_id": "Q8hkHHHUcNQhAgPdeVvFK",
+ "id": 205,
+ "is_remote_synced": false,
+ "last_used_at": "2026-09-17T07:32:09.927318Z",
+ "legacy_query": null,
+ "metabase_version": "v0.63.15.1 (ab5ffba)",
+ "name": "Executive V2 · ДРР · слой C2",
+ "param_fields": {
+  "bfff436b-bf9b-45e7-bc94-8e3b7ba5f438": [
+   {
+    "base_type": "type/Date",
+    "dimensions": [],
+    "display_name": "Day",
+    "fk_target_field_id": null,
+    "has_field_values": "none",
+    "id": 6498,
+    "name": "day",
+    "name_field": null,
+    "semantic_type": null,
+    "table_id": 269,
+    "target": null
+   }
+  ]
+ },
+ "parameter_mappings": [],
+ "parameter_usage_count": 0,
+ "parameters": [],
+ "query_type": "native",
+ "source_card_id": null,
+ "table_id": null,
+ "type": "question",
+ "visualization_settings": {
+  "column_settings": {
+   "[\"name\",\"drr\"]": {
+    "column_title": "ДРР"
+   },
+   "[\"name\",\"drr_change\"]": {
+    "column_title": "К прошлому периоду"
+   }
+  },
+  "table.columns": [
+   {
+    "enabled": true,
+    "name": "drr"
+   },
+   {
+    "enabled": true,
+    "name": "drr_change"
+   }
+  ]
+ }
+}

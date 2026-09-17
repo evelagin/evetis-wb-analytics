@@ -1,0 +1,1183 @@
+{
+ "id": 2,
+ "name": "EVETIS · WB Executive",
+ "width": "full",
+ "parameters": [
+  {
+   "id": "date",
+   "type": "date/all-options",
+   "name": "Период",
+   "slug": "date",
+   "sectionId": "date",
+   "default": "past30days"
+  }
+ ],
+ "dashcards": [
+  {
+   "card_id": 157,
+   "row": 0,
+   "col": 0,
+   "size_x": 6,
+   "size_y": 3,
+   "dashboard_tab_id": null,
+   "visualization_settings": {
+    "card.title": "Статус данных"
+   },
+   "parameter_mappings": [
+    {
+     "parameter_id": "date",
+     "target": [
+      "dimension",
+      [
+       "template-tag",
+       "day"
+      ]
+     ],
+     "card_id": 157
+    }
+   ],
+   "series": [],
+   "inline_parameters": []
+  },
+  {
+   "card_id": 158,
+   "row": 0,
+   "col": 6,
+   "size_x": 9,
+   "size_y": 3,
+   "dashboard_tab_id": null,
+   "visualization_settings": {
+    "card.title": "Сутки периода"
+   },
+   "parameter_mappings": [
+    {
+     "parameter_id": "date",
+     "target": [
+      "dimension",
+      [
+       "template-tag",
+       "day"
+      ]
+     ],
+     "card_id": 158
+    }
+   ],
+   "series": [],
+   "inline_parameters": []
+  },
+  {
+   "card_id": 159,
+   "row": 0,
+   "col": 15,
+   "size_x": 9,
+   "size_y": 3,
+   "dashboard_tab_id": null,
+   "visualization_settings": {
+    "card.title": "Свежесть данных"
+   },
+   "parameter_mappings": [],
+   "series": [],
+   "inline_parameters": []
+  },
+  {
+   "card_id": null,
+   "row": 3,
+   "col": 0,
+   "size_x": 24,
+   "size_y": 1,
+   "dashboard_tab_id": null,
+   "visualization_settings": {
+    "virtual_card": {
+     "name": null,
+     "display": "heading",
+     "visualization_settings": {},
+     "dataset_query": {},
+     "archived": false
+    },
+    "text": "Продажи",
+    "dashcard.background": false
+   },
+   "parameter_mappings": [],
+   "series": [],
+   "inline_parameters": []
+  },
+  {
+   "card_id": 42,
+   "row": 4,
+   "col": 0,
+   "size_x": 4,
+   "size_y": 5,
+   "dashboard_tab_id": null,
+   "visualization_settings": {
+    "card.title": "Заказы",
+    "card.description": "Все оформленные заказы за период, включая отменённые. Дата — дата заказа. Сравнение — с предыдущим периодом той же длины."
+   },
+   "parameter_mappings": [
+    {
+     "parameter_id": "date",
+     "target": [
+      "dimension",
+      [
+       "template-tag",
+       "day"
+      ]
+     ],
+     "card_id": 42
+    }
+   ],
+   "series": [],
+   "inline_parameters": []
+  },
+  {
+   "card_id": 43,
+   "row": 4,
+   "col": 4,
+   "size_x": 4,
+   "size_y": 5,
+   "dashboard_tab_id": null,
+   "visualization_settings": {
+    "card.title": "Выкупы",
+    "card.description": "Товары, которые покупатели выкупили. Дата — дата выкупа, поэтому выкупы нельзя делить на заказы того же периода: процент выкупа — в карточке «Выкуп по когортам»."
+   },
+   "parameter_mappings": [
+    {
+     "parameter_id": "date",
+     "target": [
+      "dimension",
+      [
+       "template-tag",
+       "day"
+      ]
+     ],
+     "card_id": 43
+    }
+   ],
+   "series": [],
+   "inline_parameters": []
+  },
+  {
+   "card_id": 44,
+   "row": 4,
+   "col": 8,
+   "size_x": 5,
+   "size_y": 5,
+   "dashboard_tab_id": null,
+   "visualization_settings": {
+    "card.title": "Выручка",
+    "card.description": "Выкупленные товары по цене продавца (после скидки продавца, до СПП). Дата — дата выкупа. База для маржи и ДРР."
+   },
+   "parameter_mappings": [
+    {
+     "parameter_id": "date",
+     "target": [
+      "dimension",
+      [
+       "template-tag",
+       "day"
+      ]
+     ],
+     "card_id": 44
+    }
+   ],
+   "series": [],
+   "inline_parameters": []
+  },
+  {
+   "card_id": 160,
+   "row": 4,
+   "col": 13,
+   "size_x": 5,
+   "size_y": 5,
+   "dashboard_tab_id": null,
+   "visualization_settings": {
+    "card.title": "Оплачено покупателями"
+   },
+   "parameter_mappings": [
+    {
+     "parameter_id": "date",
+     "target": [
+      "dimension",
+      [
+       "template-tag",
+       "day"
+      ]
+     ],
+     "card_id": 160
+    }
+   ],
+   "series": [],
+   "inline_parameters": []
+  },
+  {
+   "card_id": 161,
+   "row": 4,
+   "col": 18,
+   "size_x": 6,
+   "size_y": 2,
+   "dashboard_tab_id": null,
+   "visualization_settings": {
+    "card.title": "Выкуп по когортам"
+   },
+   "parameter_mappings": [
+    {
+     "parameter_id": "date",
+     "target": [
+      "dimension",
+      [
+       "template-tag",
+       "day"
+      ]
+     ],
+     "card_id": 161
+    }
+   ],
+   "series": [],
+   "inline_parameters": []
+  },
+  {
+   "card_id": 162,
+   "row": 6,
+   "col": 18,
+   "size_x": 6,
+   "size_y": 3,
+   "dashboard_tab_id": null,
+   "visualization_settings": {
+    "card.title": "Когорты заказов периода"
+   },
+   "parameter_mappings": [
+    {
+     "parameter_id": "date",
+     "target": [
+      "dimension",
+      [
+       "template-tag",
+       "day"
+      ]
+     ],
+     "card_id": 162
+    }
+   ],
+   "series": [],
+   "inline_parameters": []
+  },
+  {
+   "card_id": null,
+   "row": 9,
+   "col": 0,
+   "size_x": 24,
+   "size_y": 1,
+   "dashboard_tab_id": null,
+   "visualization_settings": {
+    "virtual_card": {
+     "name": null,
+     "display": "heading",
+     "visualization_settings": {},
+     "dataset_query": {},
+     "archived": false
+    },
+    "text": "От цены продавца до начисления WB",
+    "dashcard.background": false
+   },
+   "parameter_mappings": [],
+   "series": [],
+   "inline_parameters": []
+  },
+  {
+   "card_id": 164,
+   "row": 10,
+   "col": 0,
+   "size_x": 6,
+   "size_y": 3,
+   "dashboard_tab_id": null,
+   "visualization_settings": {
+    "scalar.field": "seller_price_rub",
+    "card.title": "Цена продавца",
+    "card.description": "Цена продавца по товарам, реализованным в закрытых финансовых отчётах WB. С выручкой может расходиться на копейки округления."
+   },
+   "parameter_mappings": [
+    {
+     "parameter_id": "date",
+     "target": [
+      "dimension",
+      [
+       "template-tag",
+       "day"
+      ]
+     ],
+     "card_id": 164
+    }
+   ],
+   "series": [],
+   "inline_parameters": []
+  },
+  {
+   "card_id": 164,
+   "row": 10,
+   "col": 6,
+   "size_x": 6,
+   "size_y": 3,
+   "dashboard_tab_id": null,
+   "visualization_settings": {
+    "scalar.field": "spp_rub",
+    "card.title": "СПП",
+    "card.description": "Разница между ценой продавца и суммой, оплаченной покупателем с учётом скидки WB."
+   },
+   "parameter_mappings": [
+    {
+     "parameter_id": "date",
+     "target": [
+      "dimension",
+      [
+       "template-tag",
+       "day"
+      ]
+     ],
+     "card_id": 164
+    }
+   ],
+   "series": [],
+   "inline_parameters": []
+  },
+  {
+   "card_id": 164,
+   "row": 10,
+   "col": 12,
+   "size_x": 6,
+   "size_y": 3,
+   "dashboard_tab_id": null,
+   "visualization_settings": {
+    "scalar.field": "wb_remuneration_rub",
+    "card.title": "Вознаграждение WB",
+    "card.description": "Вознаграждение Wildberries за реализацию товара, без НДС."
+   },
+   "parameter_mappings": [
+    {
+     "parameter_id": "date",
+     "target": [
+      "dimension",
+      [
+       "template-tag",
+       "day"
+      ]
+     ],
+     "card_id": 164
+    }
+   ],
+   "series": [],
+   "inline_parameters": []
+  },
+  {
+   "card_id": 164,
+   "row": 10,
+   "col": 18,
+   "size_x": 6,
+   "size_y": 3,
+   "dashboard_tab_id": null,
+   "visualization_settings": {
+    "scalar.field": "wb_remuneration_vat_rub",
+    "card.title": "НДС на вознаграждение WB",
+    "card.description": "НДС, начисленный на вознаграждение Wildberries."
+   },
+   "parameter_mappings": [
+    {
+     "parameter_id": "date",
+     "target": [
+      "dimension",
+      [
+       "template-tag",
+       "day"
+      ]
+     ],
+     "card_id": 164
+    }
+   ],
+   "series": [],
+   "inline_parameters": []
+  },
+  {
+   "card_id": 164,
+   "row": 13,
+   "col": 0,
+   "size_x": 6,
+   "size_y": 3,
+   "dashboard_tab_id": null,
+   "visualization_settings": {
+    "scalar.field": "acquiring_rub",
+    "card.title": "Эквайринг",
+    "card.description": "Оплата платёжных услуг: приём оплаты от покупателя."
+   },
+   "parameter_mappings": [
+    {
+     "parameter_id": "date",
+     "target": [
+      "dimension",
+      [
+       "template-tag",
+       "day"
+      ]
+     ],
+     "card_id": 164
+    }
+   ],
+   "series": [],
+   "inline_parameters": []
+  },
+  {
+   "card_id": 164,
+   "row": 13,
+   "col": 6,
+   "size_x": 6,
+   "size_y": 3,
+   "dashboard_tab_id": null,
+   "visualization_settings": {
+    "scalar.field": "pvz_reward_rub",
+    "card.title": "Вознаграждение ПВЗ",
+    "card.description": "Вознаграждение партнёрскому пункту выдачи, учтённое WB в расчёте начисления за товар."
+   },
+   "parameter_mappings": [
+    {
+     "parameter_id": "date",
+     "target": [
+      "dimension",
+      [
+       "template-tag",
+       "day"
+      ]
+     ],
+     "card_id": 164
+    }
+   ],
+   "series": [],
+   "inline_parameters": []
+  },
+  {
+   "card_id": 164,
+   "row": 13,
+   "col": 12,
+   "size_x": 6,
+   "size_y": 3,
+   "dashboard_tab_id": null,
+   "visualization_settings": {
+    "scalar.field": "goods_payable_rub",
+    "card.title": "К перечислению за товар",
+    "card.description": "Начисление WB продавцу за реализованные товары до последующих удержаний: цена продавца минус СПП, вознаграждение WB, НДС, эквайринг и ПВЗ. Слагаемые округлены до рубля, поэтому их сумма может отличаться от итога на 1–2 ₽."
+   },
+   "parameter_mappings": [
+    {
+     "parameter_id": "date",
+     "target": [
+      "dimension",
+      [
+       "template-tag",
+       "day"
+      ]
+     ],
+     "card_id": 164
+    }
+   ],
+   "series": [],
+   "inline_parameters": []
+  },
+  {
+   "card_id": 183,
+   "row": 13,
+   "col": 18,
+   "size_x": 6,
+   "size_y": 3,
+   "dashboard_tab_id": null,
+   "visualization_settings": {
+    "card.title": "Итог блока"
+   },
+   "parameter_mappings": [
+    {
+     "parameter_id": "date",
+     "target": [
+      "dimension",
+      [
+       "template-tag",
+       "day"
+      ]
+     ],
+     "card_id": 183
+    }
+   ],
+   "series": [],
+   "inline_parameters": []
+  },
+  {
+   "card_id": null,
+   "row": 16,
+   "col": 0,
+   "size_x": 24,
+   "size_y": 1,
+   "dashboard_tab_id": null,
+   "visualization_settings": {
+    "virtual_card": {
+     "name": null,
+     "display": "heading",
+     "visualization_settings": {},
+     "dataset_query": {},
+     "archived": false
+    },
+    "text": "Операционные расходы периода",
+    "dashcard.background": false
+   },
+   "parameter_mappings": [],
+   "series": [],
+   "inline_parameters": []
+  },
+  {
+   "card_id": 167,
+   "row": 17,
+   "col": 0,
+   "size_x": 6,
+   "size_y": 4,
+   "dashboard_tab_id": null,
+   "visualization_settings": {
+    "card.title": "Реклама"
+   },
+   "parameter_mappings": [
+    {
+     "parameter_id": "date",
+     "target": [
+      "dimension",
+      [
+       "template-tag",
+       "day"
+      ]
+     ],
+     "card_id": 167
+    }
+   ],
+   "series": [],
+   "inline_parameters": []
+  },
+  {
+   "card_id": 169,
+   "row": 17,
+   "col": 6,
+   "size_x": 6,
+   "size_y": 4,
+   "dashboard_tab_id": null,
+   "visualization_settings": {
+    "card.title": "Логистика"
+   },
+   "parameter_mappings": [
+    {
+     "parameter_id": "date",
+     "target": [
+      "dimension",
+      [
+       "template-tag",
+       "day"
+      ]
+     ],
+     "card_id": 169
+    }
+   ],
+   "series": [],
+   "inline_parameters": []
+  },
+  {
+   "card_id": 173,
+   "row": 17,
+   "col": 12,
+   "size_x": 6,
+   "size_y": 4,
+   "dashboard_tab_id": null,
+   "visualization_settings": {
+    "card.title": "Хранение"
+   },
+   "parameter_mappings": [
+    {
+     "parameter_id": "date",
+     "target": [
+      "dimension",
+      [
+       "template-tag",
+       "day"
+      ]
+     ],
+     "card_id": 173
+    }
+   ],
+   "series": [],
+   "inline_parameters": []
+  },
+  {
+   "card_id": 175,
+   "row": 17,
+   "col": 18,
+   "size_x": 6,
+   "size_y": 2,
+   "dashboard_tab_id": null,
+   "visualization_settings": {
+    "card.title": "Тарифные опции WB"
+   },
+   "parameter_mappings": [
+    {
+     "parameter_id": "date",
+     "target": [
+      "dimension",
+      [
+       "template-tag",
+       "day"
+      ]
+     ],
+     "card_id": 175
+    }
+   ],
+   "series": [],
+   "inline_parameters": []
+  },
+  {
+   "card_id": 176,
+   "row": 19,
+   "col": 18,
+   "size_x": 6,
+   "size_y": 2,
+   "dashboard_tab_id": null,
+   "visualization_settings": {
+    "card.title": "Прочие расходы WB"
+   },
+   "parameter_mappings": [
+    {
+     "parameter_id": "date",
+     "target": [
+      "dimension",
+      [
+       "template-tag",
+       "day"
+      ]
+     ],
+     "card_id": 176
+    }
+   ],
+   "series": [],
+   "inline_parameters": []
+  },
+  {
+   "card_id": 168,
+   "row": 21,
+   "col": 0,
+   "size_x": 6,
+   "size_y": 5,
+   "dashboard_tab_id": null,
+   "visualization_settings": {
+    "card.title": "Доля рекламы в выручке"
+   },
+   "parameter_mappings": [
+    {
+     "parameter_id": "date",
+     "target": [
+      "dimension",
+      [
+       "template-tag",
+       "day"
+      ]
+     ],
+     "card_id": 168
+    }
+   ],
+   "series": [],
+   "inline_parameters": []
+  },
+  {
+   "card_id": 184,
+   "row": 21,
+   "col": 6,
+   "size_x": 12,
+   "size_y": 5,
+   "dashboard_tab_id": null,
+   "visualization_settings": {
+    "card.title": "Состав логистики"
+   },
+   "parameter_mappings": [
+    {
+     "parameter_id": "date",
+     "target": [
+      "dimension",
+      [
+       "template-tag",
+       "day"
+      ]
+     ],
+     "card_id": 184
+    }
+   ],
+   "series": [],
+   "inline_parameters": []
+  },
+  {
+   "card_id": 174,
+   "row": 21,
+   "col": 18,
+   "size_x": 6,
+   "size_y": 5,
+   "dashboard_tab_id": null,
+   "visualization_settings": {
+    "card.title": "Хранение в день"
+   },
+   "parameter_mappings": [
+    {
+     "parameter_id": "date",
+     "target": [
+      "dimension",
+      [
+       "template-tag",
+       "day"
+      ]
+     ],
+     "card_id": 174
+    }
+   ],
+   "series": [],
+   "inline_parameters": []
+  },
+  {
+   "card_id": null,
+   "row": 26,
+   "col": 0,
+   "size_x": 24,
+   "size_y": 1,
+   "dashboard_tab_id": null,
+   "visualization_settings": {
+    "virtual_card": {
+     "name": null,
+     "display": "heading",
+     "visualization_settings": {},
+     "dataset_query": {},
+     "archived": false
+    },
+    "text": "Финансовый результат",
+    "dashcard.background": false
+   },
+   "parameter_mappings": [],
+   "series": [],
+   "inline_parameters": []
+  },
+  {
+   "card_id": 186,
+   "row": 27,
+   "col": 0,
+   "size_x": 24,
+   "size_y": 2,
+   "dashboard_tab_id": null,
+   "visualization_settings": {
+    "card.title": "Статус результата"
+   },
+   "parameter_mappings": [
+    {
+     "parameter_id": "date",
+     "target": [
+      "dimension",
+      [
+       "template-tag",
+       "day"
+      ]
+     ],
+     "card_id": 186
+    }
+   ],
+   "series": [],
+   "inline_parameters": []
+  },
+  {
+   "card_id": 53,
+   "row": 29,
+   "col": 0,
+   "size_x": 6,
+   "size_y": 4,
+   "dashboard_tab_id": null,
+   "visualization_settings": {
+    "card.title": "Результат до себестоимости",
+    "card.description": "Выручка минус удержания WB из цены, реклама, логистика, хранение, тарифные опции и прочие расходы WB. Себестоимость, налоги и OPEX не вычтены."
+   },
+   "parameter_mappings": [
+    {
+     "parameter_id": "date",
+     "target": [
+      "dimension",
+      [
+       "template-tag",
+       "day"
+      ]
+     ],
+     "card_id": 53
+    }
+   ],
+   "series": [],
+   "inline_parameters": []
+  },
+  {
+   "card_id": 177,
+   "row": 29,
+   "col": 6,
+   "size_x": 7,
+   "size_y": 4,
+   "dashboard_tab_id": null,
+   "visualization_settings": {
+    "card.title": "Себестоимость проданных товаров"
+   },
+   "parameter_mappings": [
+    {
+     "parameter_id": "date",
+     "target": [
+      "dimension",
+      [
+       "template-tag",
+       "day"
+      ]
+     ],
+     "card_id": 177
+    }
+   ],
+   "series": [],
+   "inline_parameters": []
+  },
+  {
+   "card_id": 178,
+   "row": 29,
+   "col": 13,
+   "size_x": 11,
+   "size_y": 4,
+   "dashboard_tab_id": null,
+   "visualization_settings": {
+    "card.title": "Прибыль после себестоимости"
+   },
+   "parameter_mappings": [
+    {
+     "parameter_id": "date",
+     "target": [
+      "dimension",
+      [
+       "template-tag",
+       "day"
+      ]
+     ],
+     "card_id": 178
+    }
+   ],
+   "series": [],
+   "inline_parameters": []
+  },
+  {
+   "card_id": 54,
+   "row": 33,
+   "col": 0,
+   "size_x": 6,
+   "size_y": 3,
+   "dashboard_tab_id": null,
+   "visualization_settings": {
+    "card.title": "Маржа до себестоимости",
+    "card.description": "Результат до себестоимости ÷ выручка."
+   },
+   "parameter_mappings": [
+    {
+     "parameter_id": "date",
+     "target": [
+      "dimension",
+      [
+       "template-tag",
+       "day"
+      ]
+     ],
+     "card_id": 54
+    }
+   ],
+   "series": [],
+   "inline_parameters": []
+  },
+  {
+   "card_id": 74,
+   "row": 33,
+   "col": 6,
+   "size_x": 7,
+   "size_y": 3,
+   "dashboard_tab_id": null,
+   "visualization_settings": {
+    "card.title": "Маржа после себестоимости",
+    "card.description": "Прибыль после себестоимости ÷ выручка."
+   },
+   "parameter_mappings": [
+    {
+     "parameter_id": "date",
+     "target": [
+      "dimension",
+      [
+       "template-tag",
+       "day"
+      ]
+     ],
+     "card_id": 74
+    }
+   ],
+   "series": [],
+   "inline_parameters": []
+  },
+  {
+   "card_id": 185,
+   "row": 33,
+   "col": 13,
+   "size_x": 11,
+   "size_y": 3,
+   "dashboard_tab_id": null,
+   "visualization_settings": {
+    "card.title": "Изменение к прошлому периоду"
+   },
+   "parameter_mappings": [
+    {
+     "parameter_id": "date",
+     "target": [
+      "dimension",
+      [
+       "template-tag",
+       "day"
+      ]
+     ],
+     "card_id": 185
+    }
+   ],
+   "series": [],
+   "inline_parameters": []
+  },
+  {
+   "card_id": null,
+   "row": 36,
+   "col": 0,
+   "size_x": 24,
+   "size_y": 1,
+   "dashboard_tab_id": null,
+   "visualization_settings": {
+    "virtual_card": {
+     "name": null,
+     "display": "heading",
+     "visualization_settings": {},
+     "dataset_query": {},
+     "archived": false
+    },
+    "text": "Расчёты с Wildberries — по закрытым финансовым отчётам WB, не прибыль",
+    "dashcard.background": false
+   },
+   "parameter_mappings": [],
+   "series": [],
+   "inline_parameters": []
+  },
+  {
+   "card_id": 49,
+   "row": 37,
+   "col": 0,
+   "size_x": 7,
+   "size_y": 3,
+   "dashboard_tab_id": null,
+   "visualization_settings": {
+    "card.title": "К перечислению за товар",
+    "card.description": "Начисление WB продавцу за реализованные товары до последующих удержаний. По закрытым финансовым отчётам WB."
+   },
+   "parameter_mappings": [
+    {
+     "parameter_id": "date",
+     "target": [
+      "dimension",
+      [
+       "template-tag",
+       "day"
+      ]
+     ],
+     "card_id": 49
+    }
+   ],
+   "series": [],
+   "inline_parameters": []
+  },
+  {
+   "card_id": null,
+   "row": 37,
+   "col": 7,
+   "size_x": 1,
+   "size_y": 3,
+   "dashboard_tab_id": null,
+   "visualization_settings": {
+    "virtual_card": {
+     "name": null,
+     "display": "text",
+     "visualization_settings": {},
+     "dataset_query": {},
+     "archived": false
+    },
+    "text": "# −",
+    "text.align_vertical": "middle",
+    "text.align_horizontal": "center",
+    "dashcard.background": false
+   },
+   "parameter_mappings": [],
+   "series": [],
+   "inline_parameters": []
+  },
+  {
+   "card_id": 75,
+   "row": 37,
+   "col": 8,
+   "size_x": 7,
+   "size_y": 3,
+   "dashboard_tab_id": null,
+   "visualization_settings": {
+    "card.title": "Удержания после реализации",
+    "card.description": "Всё, что WB удержал из начисления за товар: реклама по документам WB, логистика, хранение, тарифные опции и прочие удержания. Состав — в таблице ниже."
+   },
+   "parameter_mappings": [
+    {
+     "parameter_id": "date",
+     "target": [
+      "dimension",
+      [
+       "template-tag",
+       "day"
+      ]
+     ],
+     "card_id": 75
+    }
+   ],
+   "series": [],
+   "inline_parameters": []
+  },
+  {
+   "card_id": null,
+   "row": 37,
+   "col": 15,
+   "size_x": 1,
+   "size_y": 3,
+   "dashboard_tab_id": null,
+   "visualization_settings": {
+    "virtual_card": {
+     "name": null,
+     "display": "text",
+     "visualization_settings": {},
+     "dataset_query": {},
+     "archived": false
+    },
+    "text": "# =",
+    "text.align_vertical": "middle",
+    "text.align_horizontal": "center",
+    "dashcard.background": false
+   },
+   "parameter_mappings": [],
+   "series": [],
+   "inline_parameters": []
+  },
+  {
+   "card_id": 76,
+   "row": 37,
+   "col": 16,
+   "size_x": 8,
+   "size_y": 3,
+   "dashboard_tab_id": null,
+   "visualization_settings": {
+    "card.title": "К выплате от WB",
+    "card.description": "К перечислению за товар минус удержания после реализации. Сумма расчёта с WB по закрытым финансовым отчётам, не прибыль."
+   },
+   "parameter_mappings": [
+    {
+     "parameter_id": "date",
+     "target": [
+      "dimension",
+      [
+       "template-tag",
+       "day"
+      ]
+     ],
+     "card_id": 76
+    }
+   ],
+   "series": [],
+   "inline_parameters": []
+  },
+  {
+   "card_id": 182,
+   "row": 40,
+   "col": 8,
+   "size_x": 7,
+   "size_y": 6,
+   "dashboard_tab_id": null,
+   "visualization_settings": {
+    "card.title": "Состав удержаний"
+   },
+   "parameter_mappings": [
+    {
+     "parameter_id": "date",
+     "target": [
+      "dimension",
+      [
+       "template-tag",
+       "day"
+      ]
+     ],
+     "card_id": 182
+    }
+   ],
+   "series": [],
+   "inline_parameters": []
+  },
+  {
+   "card_id": null,
+   "row": 46,
+   "col": 0,
+   "size_x": 24,
+   "size_y": 1,
+   "dashboard_tab_id": null,
+   "visualization_settings": {
+    "virtual_card": {
+     "name": null,
+     "display": "heading",
+     "visualization_settings": {},
+     "dataset_query": {},
+     "archived": false
+    },
+    "text": "Динамика по дням",
+    "dashcard.background": false
+   },
+   "parameter_mappings": [],
+   "series": [],
+   "inline_parameters": []
+  },
+  {
+   "card_id": 50,
+   "row": 47,
+   "col": 0,
+   "size_x": 24,
+   "size_y": 6,
+   "dashboard_tab_id": null,
+   "visualization_settings": {
+    "series_settings": {
+     "revenue_rub": {
+      "display": "bar",
+      "title": "Выручка",
+      "color": "#F2C94C"
+     },
+     "result_after_cogs_rub": {
+      "display": "line",
+      "title": "Прибыль после себестоимости",
+      "color": "#1B7FBD"
+     }
+    },
+    "card.title": "Выручка и прибыль после себестоимости по дням",
+    "card.description": "Столбцы — выручка по цене продавца за сутки; линия — прибыль после себестоимости тех же суток. Разрыв линии — сутки без полной экономики."
+   },
+   "parameter_mappings": [
+    {
+     "parameter_id": "date",
+     "target": [
+      "dimension",
+      [
+       "template-tag",
+       "day"
+      ]
+     ],
+     "card_id": 50
+    }
+   ],
+   "series": [],
+   "inline_parameters": []
+  }
+ ]
+}

@@ -1,0 +1,731 @@
+/**
+ * ══════════════════════════════════════════════════════════════
+ * EVETIS WB — SkuCostAudit.gs  v3.0
+ *
+ * Себестоимость: аудит и синхронизация.
+ * Главный ключ: wb_nm_id (артикул Wildberries).
+ * internal_sku — справочное поле, не ключ.
+ *
+ * Функции:
+ *   1. ensureWbNmIdInCostHistory()          — заполнить wb_nm_id
+ *   2. auditSkuCostLinks()                  — аудит по wb_nm_id
+ *   3. updateCurrentCogsFromCostHistory()    — обновление себестоимости
+ *   4. addSkuCostMenu()                     — меню
+ *
+ * Принцип: никаких угадываний. Только точный wb_nm_id.
+ * ══════════════════════════════════════════════════════════════
+ */
+
+
+// ═══════════════════════════════════════
+// КОНСТАНТЫ
+// ═══════════════════════════════════════
+
+var SKU_COST_AUDIT_SOURCE_ = 'SKU_COST_AUDIT';
+var SKU_COST_UPDATE_SOURCE_ = 'SKU_COST_UPDATE';
+var SKU_NMID_FILL_SOURCE_ = 'SKU_NMID_FILL';
+
+
+// ═══════════════════════════════════════
+// 1. ЗАПОЛНИТЬ wb_nm_id В COST_HISTORY
+// ═══════════════════════════════════════
+
+/**
+ * Проверяет наличие колонки wb_nm_id в COST_HISTORY.
+ * Если нет — добавляет в конец.
+ * Заполняет wb_nm_id из SKU_MASTER по internal_sku.
+ *
+ * Это одноразовая миграция: после неё все отчёты
+ * будут строиться по wb_nm_id.
+ */
+function ensureWbNmIdInCostHistory() {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var ui = SpreadsheetApp.getUi();
+
+  // --- Получаем листы ---
+  var masterSheet = ss.getSheetByName('SKU_MASTER');
+  var costSheet   = ss.getSheetByName('COST_HISTORY');
+
+  if (!masterSheet || !costSheet) {
+    ui.alert('❌ Ошибка', 'Не найден лист SKU_MASTER или COST_HISTORY.', ui.ButtonSet.OK);
+    return;
+  }
+
+  // --- Проверяем колонки SKU_MASTER ---
+  var masterHeaders = getHeaderMap_(masterSheet);
+  if (masterHeaders['internal_sku'] === undefined) {
+    ui.alert('❌ Ошибка', 'В SKU_MASTER нет колонки internal_sku.', ui.ButtonSet.OK);
+    return;
+  }
+  if (masterHeaders['wb_nm_id'] === undefined) {
+    ui.alert('❌ Ошибка', 'В SKU_MASTER нет колонки wb_nm_id.', ui.ButtonSet.OK);
+    return;
+  }
+
+  // --- Строим справочник internal_sku → wb_nm_id ---
+  var masterData = readSheetData_(masterSheet);
+  var mSkuCol = masterHeaders['internal_sku'];
+  var mNmCol  = masterHeaders['wb_nm_id'];
+
+  var skuToNmId = {};  // internal_sku → wb_nm_id
+  for (var i = 0; i < masterData.length; i++) {
+    var sku = normalizeSkuValue_(masterData[i][mSkuCol]);
+    var nmId = masterData[i][mNmCol];
+    if (sku && nmId) {
+      skuToNmId[sku] = normalizeNmId_(nmId);
+    }
+  }
+
+  // --- Проверяем / создаём колонку wb_nm_id в COST_HISTORY ---
+  var costHeaders = getHeaderMap_(costSheet);
+  var costNmCol;   // индекс колонки wb_nm_id (0-based)
+  var costSkuCol = costHeaders['internal_sku'];
+
+  if (costSkuCol === undefined) {
+    ui.alert('❌ Ошибка', 'В COST_HISTORY нет колонки internal_sku.', ui.ButtonSet.OK);
+    return;
+  }
+
+  var colCreated = false;
+  if (costHeaders['wb_nm_id'] !== undefined) {
+    costNmCol = costHeaders['wb_nm_id'];
+  } else {
+    // Добавляем колонку wb_nm_id в конец
+    var lastCol = costSheet.getLastColumn();
+    costNmCol = lastCol;  // 0-based индекс для новой колонки
+    costSheet.getRange(1, lastCol + 1).setValue('wb_nm_id');
+    colCreated = true;
+  }
+
+  // --- Подтверждение ---
+  var skuCount = Object.keys(skuToNmId).length;
+  var confirmMsg = 'Будет заполнена колонка wb_nm_id в COST_HISTORY.\n\n' +
+    'Справочник SKU_MASTER: ' + skuCount + ' товаров с wb_nm_id.\n' +
+    (colCreated ? '⚡ Колонка wb_nm_id создана (была отсутствует).\n' : '') +
+    '\nПродолжить?';
+
+  var confirm = ui.alert('📋 Заполнить wb_nm_id', confirmMsg, ui.ButtonSet.YES_NO);
+  if (confirm !== ui.Button.YES) return;
+
+  // --- Заполняем ---
+  var lastRow = costSheet.getLastRow();
+  if (lastRow < 2) {
+    ui.alert('ℹ️ Нет данных', 'В COST_HISTORY нет строк данных.', ui.ButtonSet.OK);
+    return;
+  }
+
+  // Читаем internal_sku и wb_nm_id
+  var skuRange = costSheet.getRange(2, costSkuCol + 1, lastRow - 1, 1);
+  var skuValues = skuRange.getValues();
+
+  var nmRange = costSheet.getRange(2, costNmCol + 1, lastRow - 1, 1);
+  var nmValues = nmRange.getValues();
+
+  clearErrorsBySource(SKU_NMID_FILL_SOURCE_);
+
+  var filled = 0;
+  var alreadyOk = 0;
+  var errors = 0;
+
+  for (var j = 0; j < skuValues.length; j++) {
+    var sku = normalizeSkuValue_(skuValues[j][0]);
+    var existingNm = nmValues[j][0];
+
+    if (!sku) continue;
+
+    // Если уже заполнен
+    if (existingNm && String(existingNm).trim() !== '') {
+      alreadyOk++;
+      continue;
+    }
+
+    // Ищем в справочнике
+    var nmId = skuToNmId[sku];
+    if (nmId) {
+      nmValues[j][0] = nmId;
+      filled++;
+    } else {
+      writeErrorRow('COST_HISTORY', j + 2, 'Нет wb_nm_id', 'Критично', sku, '',
+        'internal_sku «' + sku + '» не найден в SKU_MASTER. Невозможно определить wb_nm_id.',
+        'Проверить internal_sku в COST_HISTORY или добавить товар в SKU_MASTER');
+      errors++;
+    }
+  }
+
+  // Записываем
+  if (filled > 0) {
+    nmRange.setValues(nmValues);
+    SpreadsheetApp.flush();
+  }
+
+  // --- Итог ---
+  var msg = '📋 Заполнение wb_nm_id в COST_HISTORY\n\n' +
+    '✅ Заполнено: ' + filled + '\n' +
+    '✔️ Уже было заполнено: ' + alreadyOk + '\n' +
+    '❌ Ошибок (нет в SKU_MASTER): ' + errors + '\n';
+
+  if (colCreated) {
+    msg += '\n📎 Колонка wb_nm_id создана в COST_HISTORY.';
+  }
+
+  if (filled > 0 && errors === 0) {
+    msg += '\n\n🎉 Готово! Теперь запустите аудит.';
+  } else if (errors > 0) {
+    msg += '\n\n⚠️ Есть ошибки. Проверьте ERRORS_CONTROL.';
+  }
+
+  ui.alert('📋 wb_nm_id заполнен', msg, ui.ButtonSet.OK);
+}
+
+
+// ═══════════════════════════════════════
+// 2. АУДИТ СВЯЗКИ ПО wb_nm_id
+// ═══════════════════════════════════════
+
+/**
+ * Проверяет связку SKU_MASTER и COST_HISTORY по wb_nm_id.
+ * Только точное совпадение. Никаких угадываний.
+ *
+ * Проверяет:
+ *   — каждый активный товар из SKU_MASTER имеет wb_nm_id
+ *   — каждый wb_nm_id из SKU_MASTER есть в COST_HISTORY
+ *   — для каждого wb_nm_id ровно одна запись is_current=TRUE
+ *   — cogs_per_unit заполнен и > 0
+ *   — в COST_HISTORY нет wb_nm_id, которых нет в SKU_MASTER
+ */
+function auditSkuCostLinks() {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var ui = SpreadsheetApp.getUi();
+
+  var masterSheet = ss.getSheetByName('SKU_MASTER');
+  var costSheet   = ss.getSheetByName('COST_HISTORY');
+  var errSheet    = ss.getSheetByName('ERRORS_CONTROL');
+
+  if (!masterSheet || !costSheet || !errSheet) {
+    ui.alert('❌ Ошибка', 'Не найден один из листов: SKU_MASTER, COST_HISTORY, ERRORS_CONTROL.', ui.ButtonSet.OK);
+    return;
+  }
+
+  var masterHeaders = getHeaderMap_(masterSheet);
+  var costHeaders   = getHeaderMap_(costSheet);
+
+  // Проверяем колонки
+  var missingCols = [];
+  if (masterHeaders['wb_nm_id'] === undefined)     missingCols.push('SKU_MASTER → wb_nm_id');
+  if (masterHeaders['internal_sku'] === undefined)  missingCols.push('SKU_MASTER → internal_sku');
+  if (masterHeaders['current_cogs'] === undefined)  missingCols.push('SKU_MASTER → current_cogs');
+  if (costHeaders['wb_nm_id'] === undefined)        missingCols.push('COST_HISTORY → wb_nm_id');
+  if (costHeaders['cogs_per_unit'] === undefined)   missingCols.push('COST_HISTORY → cogs_per_unit');
+  if (costHeaders['is_current'] === undefined)      missingCols.push('COST_HISTORY → is_current');
+
+  if (missingCols.length > 0) {
+    clearErrorsBySource(SKU_COST_AUDIT_SOURCE_);
+    for (var m = 0; m < missingCols.length; m++) {
+      var parts = missingCols[m].split(' → ');
+      writeErrorRow(parts[0], 1, 'Не найдена колонка', 'Критично', '', '',
+        'Колонка «' + parts[1] + '» не найдена на листе ' + parts[0],
+        'Проверить заголовки. Для wb_nm_id — запустите «Заполнить wb_nm_id».');
+    }
+    ui.alert('❌ Не найдены колонки',
+      'Отсутствуют:\n• ' + missingCols.join('\n• ') +
+      '\n\nЕсли нет wb_nm_id в COST_HISTORY — сначала запустите\n«Заполнить wb_nm_id в COST_HISTORY».',
+      ui.ButtonSet.OK);
+    return;
+  }
+
+  // --- Читаем данные ---
+  var masterData = readSheetData_(masterSheet);
+  var costData   = readSheetData_(costSheet);
+
+  var mNmCol    = masterHeaders['wb_nm_id'];
+  var mSkuCol   = masterHeaders['internal_sku'];
+  var mCogsCol  = masterHeaders['current_cogs'];
+  var mActiveCol = masterHeaders['active'];
+
+  var cNmCol    = costHeaders['wb_nm_id'];
+  var cCogsCol  = costHeaders['cogs_per_unit'];
+  var cCurrCol  = costHeaders['is_current'];
+  var cSkuCol   = costHeaders['internal_sku'];  // для справки
+
+  // --- Собираем активные товары из SKU_MASTER ---
+  var masterItems = {};  // nmId → {row, sku, cogs}
+  for (var i = 0; i < masterData.length; i++) {
+    var isActive = true;
+    if (mActiveCol !== undefined) {
+      isActive = isTrueValue_(masterData[i][mActiveCol]);
+    }
+    if (!isActive) continue;
+
+    var nmId = normalizeNmId_(masterData[i][mNmCol]);
+    var sku  = normalizeSkuValue_(masterData[i][mSkuCol]);
+
+    if (!nmId && !sku) continue;
+
+    masterItems[nmId || ('NO_NM_' + (i + 2))] = {
+      row: i + 2,
+      sku: sku,
+      nmId: nmId,
+      cogs: masterData[i][mCogsCol]
+    };
+  }
+
+  // --- Собираем COST_HISTORY по wb_nm_id ---
+  var costCurrentMap = {};  // nmId → [{row, cogs, sku}]
+  var allCostNmIds = {};
+
+  for (var j = 0; j < costData.length; j++) {
+    var cNmId = normalizeNmId_(costData[j][cNmCol]);
+    if (!cNmId) continue;
+
+    allCostNmIds[cNmId] = true;
+
+    if (isTrueValue_(costData[j][cCurrCol])) {
+      if (!costCurrentMap[cNmId]) costCurrentMap[cNmId] = [];
+      costCurrentMap[cNmId].push({
+        row: j + 2,
+        cogs: costData[j][cCogsCol],
+        sku: cSkuCol !== undefined ? normalizeSkuValue_(costData[j][cSkuCol]) : ''
+      });
+    }
+  }
+
+  // --- Аудит ---
+  clearErrorsBySource(SKU_COST_AUDIT_SOURCE_);
+
+  var errorsCount = 0;
+  var warningsCount = 0;
+  var okCount = 0;
+
+  var masterKeys = Object.keys(masterItems);
+
+  for (var k = 0; k < masterKeys.length; k++) {
+    var key = masterKeys[k];
+    var item = masterItems[key];
+
+    // Проверка: есть ли wb_nm_id
+    if (!item.nmId) {
+      writeErrorRow('SKU_MASTER', item.row, 'Нет wb_nm_id', 'Критично', item.sku, '',
+        'У товара «' + item.sku + '» не заполнен wb_nm_id.',
+        'Заполнить wb_nm_id в SKU_MASTER');
+      errorsCount++;
+      continue;
+    }
+
+    var entries = costCurrentMap[item.nmId];
+
+    // Проверка: есть ли в COST_HISTORY вообще
+    if (!allCostNmIds[item.nmId]) {
+      writeErrorRow('SKU_MASTER', item.row, 'SKU без себестоимости', 'Критично', item.sku, item.nmId,
+        'wb_nm_id ' + item.nmId + ' (SKU «' + item.sku + '») отсутствует в COST_HISTORY.',
+        'Добавить записи себестоимости в COST_HISTORY или запустить «Заполнить wb_nm_id»');
+      errorsCount++;
+      continue;
+    }
+
+    // Проверка: is_current=TRUE
+    if (!entries || entries.length === 0) {
+      writeErrorRow('SKU_MASTER', item.row, 'SKU без себестоимости', 'Критично', item.sku, item.nmId,
+        'wb_nm_id ' + item.nmId + ' есть в COST_HISTORY, но нет записи is_current=TRUE.',
+        'Установить is_current=TRUE для актуальной записи');
+      errorsCount++;
+      continue;
+    }
+
+    // Проверка: дубли is_current
+    if (entries.length > 1) {
+      writeErrorRow('COST_HISTORY', entries[0].row, 'Дубли себестоимости', 'Критично', item.sku, item.nmId,
+        'Найдено ' + entries.length + ' записей is_current=TRUE для wb_nm_id ' + item.nmId + '.',
+        'Оставить одну запись is_current=TRUE, остальные — FALSE');
+      errorsCount++;
+      continue;
+    }
+
+    // Проверка: cogs_per_unit
+    var cogs = entries[0].cogs;
+    if (!cogs || cogs === '' || cogs === 0) {
+      writeErrorRow('COST_HISTORY', entries[0].row, 'Пустая себестоимость', 'Проверить', item.sku, item.nmId,
+        'cogs_per_unit пустой или 0 для wb_nm_id ' + item.nmId + '.',
+        'Заполнить cogs_per_unit');
+      warningsCount++;
+    } else if (typeof cogs === 'number' && cogs < 0) {
+      writeErrorRow('COST_HISTORY', entries[0].row, 'Пустая себестоимость', 'Проверить', item.sku, item.nmId,
+        'cogs_per_unit отрицательный (' + cogs + ') для wb_nm_id ' + item.nmId + '.',
+        'Исправить себестоимость');
+      warningsCount++;
+    } else {
+      okCount++;
+    }
+  }
+
+  // Проверка: лишние wb_nm_id в COST_HISTORY
+  var orphanCount = 0;
+  var costNmKeys = Object.keys(allCostNmIds);
+  var masterNmSet = {};
+  for (var mk = 0; mk < masterKeys.length; mk++) {
+    var mItem = masterItems[masterKeys[mk]];
+    if (mItem.nmId) masterNmSet[mItem.nmId] = true;
+  }
+
+  for (var cn = 0; cn < costNmKeys.length; cn++) {
+    if (!masterNmSet[costNmKeys[cn]]) {
+      writeErrorRow('COST_HISTORY', 0, 'Себестоимость без SKU_MASTER', 'Проверить', '', costNmKeys[cn],
+        'wb_nm_id ' + costNmKeys[cn] + ' есть в COST_HISTORY, но не найден среди активных товаров в SKU_MASTER.',
+        'Удалить лишнюю запись или добавить товар в SKU_MASTER');
+      warningsCount++;
+      orphanCount++;
+    }
+  }
+
+  // --- Итог ---
+  var activeCount = masterKeys.length;
+  var msg = '📊 Аудит себестоимости по wb_nm_id\n\n' +
+    'Активных товаров в SKU_MASTER: ' + activeCount + '\n' +
+    'Уникальных wb_nm_id в COST_HISTORY: ' + costNmKeys.length + '\n\n' +
+    '✅ Всё корректно: ' + okCount + '\n' +
+    '❌ Критичных ошибок: ' + errorsCount + '\n' +
+    '⚠️ Предупреждений: ' + warningsCount + '\n';
+
+  if (orphanCount > 0) {
+    msg += '\n🔍 Лишних wb_nm_id в COST_HISTORY: ' + orphanCount;
+  }
+
+  if (errorsCount > 0) {
+    msg += '\n\n⚡ Есть критичные проблемы!\n';
+    msg += 'P&L может считаться неверно.\n';
+    msg += 'Подробности → ERRORS_CONTROL.';
+  } else if (warningsCount > 0) {
+    msg += '\n\n💡 Есть предупреждения → ERRORS_CONTROL.';
+  } else {
+    msg += '\n\n🎉 Всё в порядке! Себестоимость связана корректно.';
+  }
+
+  ui.alert('🔍 Аудит себестоимости', msg, ui.ButtonSet.OK);
+}
+
+
+// ═══════════════════════════════════════
+// 3. ОБНОВЛЕНИЕ СЕБЕСТОИМОСТИ ПО wb_nm_id
+// ═══════════════════════════════════════
+
+/**
+ * Подтягивает текущую себестоимость из COST_HISTORY в SKU_MASTER.
+ * Ключ: wb_nm_id. Только точное совпадение.
+ *
+ * Правила:
+ *   — берёт только is_current = TRUE
+ *   — если дубли is_current — НЕ обновляет
+ *   — если cogs_per_unit пустой/0 — НЕ обновляет
+ *   — если wb_nm_id нет в SKU_MASTER — ошибка
+ */
+function updateCurrentCogsFromCostHistory() {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var ui = SpreadsheetApp.getUi();
+
+  var confirm = ui.alert(
+    '⚠️ Обновить себестоимость?',
+    'current_cogs в SKU_MASTER будет обновлён\n' +
+    'из COST_HISTORY по wb_nm_id (is_current = TRUE).\n\n' +
+    'Только точное совпадение wb_nm_id.\n\n' +
+    'Продолжить?',
+    ui.ButtonSet.YES_NO
+  );
+  if (confirm !== ui.Button.YES) return;
+
+  var masterSheet = ss.getSheetByName('SKU_MASTER');
+  var costSheet   = ss.getSheetByName('COST_HISTORY');
+
+  if (!masterSheet || !costSheet) {
+    ui.alert('❌ Ошибка', 'Не найден лист SKU_MASTER или COST_HISTORY.', ui.ButtonSet.OK);
+    return;
+  }
+
+  var masterHeaders = getHeaderMap_(masterSheet);
+  var costHeaders   = getHeaderMap_(costSheet);
+
+  // Проверяем колонки
+  if (masterHeaders['wb_nm_id'] === undefined || masterHeaders['current_cogs'] === undefined) {
+    ui.alert('❌ Ошибка', 'В SKU_MASTER нет колонок wb_nm_id / current_cogs.', ui.ButtonSet.OK);
+    return;
+  }
+  if (costHeaders['wb_nm_id'] === undefined || costHeaders['cogs_per_unit'] === undefined || costHeaders['is_current'] === undefined) {
+    ui.alert('❌ Ошибка',
+      'В COST_HISTORY нет нужных колонок.\n' +
+      'Сначала запустите «Заполнить wb_nm_id в COST_HISTORY».', ui.ButtonSet.OK);
+    return;
+  }
+
+  // --- Собираем себестоимость из COST_HISTORY ---
+  var costData = readSheetData_(costSheet);
+  var cNmCol   = costHeaders['wb_nm_id'];
+  var cCogsCol = costHeaders['cogs_per_unit'];
+  var cCurrCol = costHeaders['is_current'];
+  var cSkuCol  = costHeaders['internal_sku'];
+
+  var costCurrentMap = {};  // nmId → [{row, cogs}]
+  for (var j = 0; j < costData.length; j++) {
+    var cNmId = normalizeNmId_(costData[j][cNmCol]);
+    if (!cNmId) continue;
+    if (isTrueValue_(costData[j][cCurrCol])) {
+      if (!costCurrentMap[cNmId]) costCurrentMap[cNmId] = [];
+      costCurrentMap[cNmId].push({
+        row: j + 2,
+        cogs: costData[j][cCogsCol]
+      });
+    }
+  }
+
+  // --- Обновляем SKU_MASTER ---
+  clearErrorsBySource(SKU_COST_UPDATE_SOURCE_);
+
+  var masterData = readSheetData_(masterSheet);
+  var mNmCol   = masterHeaders['wb_nm_id'];
+  var mCogsCol = masterHeaders['current_cogs'];
+  var mSkuCol  = masterHeaders['internal_sku'];
+
+  var updated = 0;
+  var errors  = 0;
+  var warnings = 0;
+  var details = [];
+
+  for (var i = 0; i < masterData.length; i++) {
+    var nmId = normalizeNmId_(masterData[i][mNmCol]);
+    var sku  = mSkuCol !== undefined ? normalizeSkuValue_(masterData[i][mSkuCol]) : '';
+    if (!nmId) continue;
+
+    var rowNum = i + 2;
+    var entries = costCurrentMap[nmId];
+
+    // Нет записей
+    if (!entries || entries.length === 0) {
+      writeErrorRow('SKU_MASTER', rowNum, 'SKU без себестоимости', 'Критично', sku, nmId,
+        'Нет is_current=TRUE в COST_HISTORY для wb_nm_id ' + nmId + '.',
+        'Добавить себестоимость или запустить «Заполнить wb_nm_id»');
+      errors++;
+      continue;
+    }
+
+    // Дубли — НЕ обновляем
+    if (entries.length > 1) {
+      writeErrorRow('COST_HISTORY', entries[0].row, 'Дубли себестоимости', 'Критично', sku, nmId,
+        entries.length + ' записей is_current=TRUE для wb_nm_id ' + nmId + '. Обновление пропущено.',
+        'Оставить одну is_current=TRUE');
+      errors++;
+      continue;
+    }
+
+    // Пустая себестоимость — НЕ обновляем
+    var newCogs = entries[0].cogs;
+    if (!newCogs || newCogs === '' || newCogs === 0) {
+      writeErrorRow('COST_HISTORY', entries[0].row, 'Пустая себестоимость', 'Проверить', sku, nmId,
+        'cogs_per_unit пустой или 0 для wb_nm_id ' + nmId + '. Обновление пропущено.',
+        'Заполнить cogs_per_unit');
+      warnings++;
+      continue;
+    }
+
+    // Всё ок — записываем
+    try {
+      masterSheet.getRange(rowNum, mCogsCol + 1).setValue(newCogs);
+      updated++;
+      details.push(sku + ' (' + nmId + '): ' + newCogs + ' ₽');
+    } catch (e) {
+      writeErrorRow('SKU_MASTER', rowNum, 'Ошибка обновления', 'Критично', sku, nmId,
+        'Не удалось записать: ' + e.message,
+        'Проверить защиту ячейки');
+      errors++;
+    }
+  }
+
+  SpreadsheetApp.flush();
+
+  // --- Итог ---
+  var total = updated + errors + warnings;
+  var msg = '📦 Обновление себестоимости по wb_nm_id\n\n' +
+    '✅ Обновлено: ' + updated + ' из ' + total + '\n' +
+    '❌ Ошибок: ' + errors + '\n' +
+    '⚠️ Предупреждений: ' + warnings + '\n';
+
+  if (details.length > 0 && details.length <= 30) {
+    msg += '\nОбновлённые товары:\n';
+    for (var d = 0; d < details.length; d++) {
+      msg += '• ' + details[d] + '\n';
+    }
+  }
+
+  if (errors === 0 && warnings === 0) {
+    msg += '\n🎉 Все ' + updated + ' товаров обновлены!';
+  } else if (errors > 0) {
+    msg += '\n⚡ Есть ошибки → ERRORS_CONTROL.';
+  }
+
+  ui.alert('📦 Обновление себестоимости', msg, ui.ButtonSet.OK);
+}
+
+
+// ═══════════════════════════════════════
+// 4. ОЧИСТКА ОШИБОК ПО ИСТОЧНИКУ
+// ═══════════════════════════════════════
+
+function clearErrorsBySource(sourceName) {
+  if (!sourceName) return;
+
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var errSheet = ss.getSheetByName('ERRORS_CONTROL');
+  if (!errSheet) return;
+
+  var lastRow = errSheet.getLastRow();
+  if (lastRow < 2) return;
+
+  var errHeaders = getHeaderMap_(errSheet);
+  var filterCol = errHeaders['error_id'];
+  if (filterCol === undefined) return;
+
+  var data = readSheetData_(errSheet);
+
+  for (var i = data.length - 1; i >= 0; i--) {
+    var val = String(data[i][filterCol] || '');
+    if (val.indexOf(sourceName) === 0) {
+      errSheet.deleteRow(i + 2);
+    }
+  }
+}
+
+
+// ═══════════════════════════════════════
+// 5. ЗАПИСЬ СТРОКИ ОШИБКИ В ERRORS_CONTROL
+// ═══════════════════════════════════════
+
+/**
+ * Добавляет строку в ERRORS_CONTROL.
+ * Записывает только в существующие колонки.
+ *
+ * @param {string} sourceSheet  — лист-источник
+ * @param {number} sourceRow    — строка (0 если неизвестно)
+ * @param {string} errorType    — тип ошибки
+ * @param {string} severity     — Критично / Проверить / Инфо
+ * @param {string} internalSku  — справочный SKU
+ * @param {string} wbNmId       — wb_nm_id
+ * @param {string} message      — описание
+ * @param {string} action       — рекомендация
+ */
+function writeErrorRow(sourceSheet, sourceRow, errorType, severity, internalSku, wbNmId, message, action) {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var errSheet = ss.getSheetByName('ERRORS_CONTROL');
+  if (!errSheet) return;
+
+  var errHeaders = getHeaderMap_(errSheet);
+  var lastCol = errSheet.getLastColumn();
+  if (lastCol < 1) return;
+
+  var newRow = [];
+  for (var c = 0; c < lastCol; c++) {
+    newRow.push('');
+  }
+
+  var errorId = SKU_COST_AUDIT_SOURCE_ + '_' + new Date().getTime() + '_' + Math.floor(Math.random() * 1000);
+
+  setIfExists_(newRow, errHeaders, 'error_id', errorId);
+  setIfExists_(newRow, errHeaders, 'detected_at', new Date());
+  setIfExists_(newRow, errHeaders, 'source_sheet', sourceSheet);
+  setIfExists_(newRow, errHeaders, 'source_row', sourceRow || '');
+  setIfExists_(newRow, errHeaders, 'error_type', errorType);
+  setIfExists_(newRow, errHeaders, 'severity', severity);
+  setIfExists_(newRow, errHeaders, 'internal_sku', internalSku);
+  setIfExists_(newRow, errHeaders, 'wb_nm_id', wbNmId);
+  setIfExists_(newRow, errHeaders, 'error_message', message);
+  setIfExists_(newRow, errHeaders, 'message', message);
+  setIfExists_(newRow, errHeaders, 'recommended_action', action);
+  setIfExists_(newRow, errHeaders, 'comment', action);
+  setIfExists_(newRow, errHeaders, 'status', 'Новая');
+  setIfExists_(newRow, errHeaders, 'resolved', false);
+
+  errSheet.appendRow(newRow);
+}
+
+
+// ═══════════════════════════════════════
+// 6. МЕНЮ
+// ═══════════════════════════════════════
+
+/**
+ * Создаёт меню «💊 Себестоимость».
+ * Добавьте addSkuCostMenu() в конец вашей onOpen().
+ */
+function addSkuCostMenu() {
+  var ui = SpreadsheetApp.getUi();
+  ui.createMenu('💊 Себестоимость')
+    .addItem('📋 Заполнить wb_nm_id в COST_HISTORY', 'ensureWbNmIdInCostHistory')
+    .addSeparator()
+    .addItem('🔍 Проверить себестоимость по wb_nm_id', 'auditSkuCostLinks')
+    .addItem('📦 Обновить себестоимость по wb_nm_id', 'updateCurrentCogsFromCostHistory')
+    .addToUi();
+}
+
+
+// ═══════════════════════════════════════
+// ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ
+// ═══════════════════════════════════════
+
+/** Заголовки → map: имя → индекс (0-based). */
+function getHeaderMap_(sheet) {
+  var lastCol = sheet.getLastColumn();
+  if (lastCol < 1) return {};
+  var headers = sheet.getRange(1, 1, 1, lastCol).getValues()[0];
+  var map = {};
+  for (var i = 0; i < headers.length; i++) {
+    var h = String(headers[i] || '').trim().toLowerCase();
+    if (h) map[h] = i;
+  }
+  return map;
+}
+
+/** Все данные без заголовка. */
+function readSheetData_(sheet) {
+  var lastRow = sheet.getLastRow();
+  var lastCol = sheet.getLastColumn();
+  if (lastRow < 2 || lastCol < 1) return [];
+  return sheet.getRange(2, 1, lastRow - 1, lastCol).getValues();
+}
+
+/** Нормализация SKU: trim + uppercase. */
+function normalizeSkuValue_(val) {
+  if (!val && val !== 0) return '';
+  return String(val).trim().toUpperCase();
+}
+
+/**
+ * Нормализация wb_nm_id: убирает дробную часть, возвращает строку.
+ * 252442517.0 → '252442517'
+ * '252442517' → '252442517'
+ * пустое → ''
+ */
+function normalizeNmId_(val) {
+  if (!val && val !== 0) return '';
+  var s = String(val).trim();
+  // Убираем .0 в конце (Google Sheets хранит как float)
+  if (s.match(/^\d+\.0$/)) {
+    s = s.replace('.0', '');
+  }
+  // Убираем любую дробную часть для целых чисел
+  var num = Number(s);
+  if (!isNaN(num) && num === Math.floor(num)) {
+    return String(Math.floor(num));
+  }
+  return s;
+}
+
+/** Проверка на true / TRUE / 1 / Да. */
+function isTrueValue_(val) {
+  if (val === true) return true;
+  if (val === 1) return true;
+  var s = String(val || '').trim().toLowerCase();
+  return (s === 'true' || s === '1' || s === 'да' || s === 'yes');
+}
+
+/** Записывает значение в массив, если колонка есть. */
+function setIfExists_(newRow, headerMap, colName, value) {
+  var idx = headerMap[colName];
+  if (idx !== undefined && idx < newRow.length) {
+    newRow[idx] = value;
+  }
+}

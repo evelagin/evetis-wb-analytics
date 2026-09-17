@@ -1,0 +1,210 @@
+/**
+ * ══════════════════════════════════════════════════════════════
+ * EVETIS WB — Settings.gs
+ * Создание и настройка листа «Настройки» (key-value формат)
+ * ══════════════════════════════════════════════════════════════
+ */
+
+/**
+ * Структура настроек по блокам.
+ * Каждый блок: { title, color, rows: [[параметр, значение, описание]] }
+ */
+function getSettingsBlocks_() {
+  return [
+    // ─── Блок A: WB API ключи ───
+    {
+      title: 'WB API КЛЮЧИ',
+      rows: [
+        ['WB API Token Статистика',        '', 'Токен для API статистики WB'],
+        ['WB API Token Поставки',          '', 'Токен для API поставок WB'],
+        ['WB API Token Продвижение',       '', 'Токен для рекламного API WB'],
+        ['WB API Token Маркетплейс',       '', 'Токен для API маркетплейса WB'],
+        ['WB API Token Аналитика/Остатки', '', 'Токен для API аналитики и остатков WB'],
+        ['WB API Token Финансы',           '', 'Токен для финансового API WB'],
+        ['WB API Token Контент',           '', 'Токен для контентного API WB']
+      ]
+    },
+    // ─── Блок B: Telegram ───
+    {
+      title: 'TELEGRAM БОТ',
+      rows: [
+        ['Bot Token',                      '', 'Имя секрета в Script Properties'],
+        ['Chat ID',                        '', 'ID чата для уведомлений'],
+        ['Режим работы',                   'уведомление', 'уведомление / авто']
+      ]
+    },
+    // ─── Блок C: Google Drive ───
+    {
+      title: 'GOOGLE DRIVE ПАПКИ',
+      rows: [
+        ['Корневая папка WB отчётов',      '', 'Folder ID'],
+        ['Ежедневные отчёты',              '', 'Folder ID'],
+        ['Еженедельные отчёты',            '', 'Folder ID'],
+        ['Платное хранение',               '', 'Folder ID'],
+        ['Раздачи',                        '', 'Folder ID'],
+        ['Логи',                           '', 'Folder ID']
+      ]
+    },
+    // ─── Блок D: Параметры расчётов ───
+    {
+      title: 'ПАРАМЕТРЫ РАСЧЁТОВ',
+      rows: [
+        ['TAX_SYSTEM',                     'USN_INCOME_MINUS_EXPENSES', 'Система налогообложения'],
+        ['USN_RATE_PERCENT',               15,    'Ставка УСН, %'],
+        ['VAT_MODE',                       'NO_VAT', 'Режим НДС'],
+        ['CURRENCY',                       'RUB',  'Валюта модели'],
+        ['STOCK_CRITICAL_DAYS',            7,     'Критический остаток, дней'],
+        ['STOCK_LOW_DAYS',                 14,    'Остаток заканчивается, дней'],
+        ['TARGET_STOCK_DAYS',              30,    'Целевой запас, дней'],
+        ['TRANSPORT_LEAD_TIME_DAYS',       5,     'Доставка ТК до склада WB, дней'],
+        ['CHINA_LEAD_TIME_DAYS',           '',    'Срок партии из Китая (вручную)'],
+        ['MIN_SUPPLY_QTY',                 10,    'Минимальная партия поставки, шт'],
+        ['SALES_AVG_WINDOW_SHORT',         7,     'Окно средних продаж (короткое), дней'],
+        ['SALES_AVG_WINDOW_LONG',          30,    'Окно средних продаж (длинное), дней']
+      ]
+    },
+    // ─── Блок E: Пороговые значения ───
+    {
+      title: 'ПОРОГОВЫЕ ЗНАЧЕНИЯ БИЗНЕСА',
+      rows: [
+        ['TARGET_DRR_PERCENT',             15,    'Целевой ДРР, %'],
+        ['CRITICAL_DRR_PERCENT',           25,    'Критический ДРР, %'],
+        ['TARGET_MARGIN_PERCENT',          25,    'Целевая маржа, %'],
+        ['CRITICAL_MARGIN_PERCENT',        10,    'Критическая маржа, %'],
+        ['MAX_CPC',                        '',    'Максимальная цена клика, ₽ (вручную)'],
+        ['MIN_CTR_PERCENT',                '',    'Минимальный CTR, % (вручную)'],
+        ['MAX_RETURN_RATE_PERCENT',        '',    'Максимальный % возвратов (вручную)'],
+        ['MIN_BUYOUT_RATE_PERCENT',        '',    'Минимальный % выкупа (вручную)']
+      ]
+    },
+    // ─── Блок F: Параметры обновления ───
+    {
+      title: 'ПАРАМЕТРЫ ОБНОВЛЕНИЯ ДАННЫХ',
+      rows: [
+        ['AUTO_UPDATE_ENABLED',            'TRUE', 'Автообновление включено'],
+        ['DAILY_UPDATE_TIME',              '08:00', 'Время утреннего обновления'],
+        ['EVENING_UPDATE_TIME',            '20:00', 'Время вечернего обновления'],
+        ['DEFAULT_LOOKBACK_DAYS',          30,    'Глубина загрузки по умолчанию, дней'],
+        ['RECALC_PAST_DAYS',              14,    'Пересчёт прошлых дней (корректировки WB)'],
+        ['FULL_RELOAD_ALLOWED',            'FALSE', 'Полная перезагрузка разрешена'],
+        ['API_RETRY_COUNT',                3,     'Число повторных попыток API'],
+        ['API_RETRY_PAUSE_SEC',            10,    'Пауза между попытками, сек']
+      ]
+    },
+    // ─── Блок G: Исключения ───
+    {
+      title: 'ИСКЛЮЧЕНИЯ',
+      rows: [
+        ['EXCLUDED_VENDOR_CODES',          '', 'Артикулы через запятую'],
+        ['EXCLUDED_NM_IDS',                '', 'nmID через запятую'],
+        ['EXCLUDED_CAMPAIGN_IDS',          '', 'ID кампаний через запятую'],
+        ['EXCLUDED_WAREHOUSES',            '', 'Склады через запятую'],
+        ['EXCLUDED_OPERATION_TYPES',       '', 'Типы операций через запятую']
+      ]
+    },
+    // ─── Блок H: Служебная информация ───
+    {
+      title: 'СЛУЖЕБНАЯ ИНФОРМАЦИЯ',
+      rows: [
+        ['SYSTEM_VERSION',                 SYSTEM_VERSION, 'Версия системы'],
+        ['LAST_SUCCESSFUL_UPDATE',         '', 'Дата/время последнего обновления'],
+        ['LAST_ERROR',                     '', 'Последняя ошибка'],
+        ['RESPONSIBLE_PERSON',             '', 'Ответственный'],
+        ['COMMENT',                        '', 'Служебный комментарий']
+      ]
+    }
+  ];
+}
+
+/**
+ * Создать и заполнить лист «Настройки»
+ */
+function createSettingsSheet_(ss) {
+  var sheet = getOrCreateSheet_(ss, SHEET_NAMES.SETTINGS);
+  
+  // Очищаем лист
+  sheet.clear();
+  sheet.clearConditionalFormatRules();
+  
+  // Ширина колонок: A = параметр, B = значение, C = описание
+  sheet.setColumnWidth(1, 300);
+  sheet.setColumnWidth(2, 250);
+  sheet.setColumnWidth(3, 350);
+  
+  // Заголовок таблицы
+  var row = 1;
+  sheet.getRange(row, 1, 1, 3).merge()
+    .setValue('EVETIS WB — НАСТРОЙКИ СИСТЕМЫ')
+    .setBackground(COLORS.HEADER_BG)
+    .setFontColor(COLORS.HEADER_FONT)
+    .setFontWeight('bold')
+    .setFontSize(13)
+    .setHorizontalAlignment('center');
+  sheet.setRowHeight(row, 40);
+  row++;
+  
+  // Подзаголовки колонок
+  sheet.getRange(row, 1).setValue('Параметр').setFontWeight('bold');
+  sheet.getRange(row, 2).setValue('Значение').setFontWeight('bold');
+  sheet.getRange(row, 3).setValue('Описание').setFontWeight('bold');
+  sheet.getRange(row, 1, 1, 3)
+    .setBackground('#E5E7EB')
+    .setFontSize(10)
+    .setFontFamily('Arial');
+  row++;
+  
+  // Заполняем блоки
+  var blocks = getSettingsBlocks_();
+  
+  for (var b = 0; b < blocks.length; b++) {
+    var block = blocks[b];
+    
+    // Пустая строка-разделитель
+    row++;
+    
+    // Заголовок блока
+    sheet.getRange(row, 1, 1, 3).merge()
+      .setValue(block.title)
+      .setBackground(COLORS.SECTION_HEADER_BG)
+      .setFontColor(COLORS.SECTION_HEADER_FONT)
+      .setFontWeight('bold')
+      .setFontSize(11)
+      .setFontFamily('Arial');
+    sheet.setRowHeight(row, 32);
+    row++;
+    
+    // Строки блока
+    for (var r = 0; r < block.rows.length; r++) {
+      var rowData = block.rows[r];
+      sheet.getRange(row, 1).setValue(rowData[0]).setFontFamily('Arial').setFontSize(10);
+      sheet.getRange(row, 2).setValue(rowData[1]).setFontFamily('Arial').setFontSize(10);
+      sheet.getRange(row, 3).setValue(rowData[2])
+        .setFontFamily('Arial').setFontSize(10).setFontColor('#6B7280');
+      
+      // Подсветка ячеек значений, где нужен ввод
+      if (rowData[1] === '') {
+        sheet.getRange(row, 2).setBackground(COLORS.REQUIRED_BG);
+      }
+      
+      row++;
+    }
+  }
+  
+  // Предупреждение по безопасности
+  row += 2;
+  sheet.getRange(row, 1, 1, 3).merge()
+    .setValue('⚠️ API-токены хранить в Script Properties, а не в ячейках. Здесь — только имена секретов или пустые ячейки.')
+    .setFontColor('#DC2626')
+    .setFontSize(10)
+    .setFontWeight('bold')
+    .setWrap(true);
+  
+  // Заморозить строки 1-2
+  sheet.setFrozenRows(2);
+  
+  // Цвет вкладки
+  applyTabColor_(sheet, SHEET_NAMES.SETTINGS);
+  
+  Logger.log('✅ Лист Настройки создан и заполнен');
+  return sheet;
+}

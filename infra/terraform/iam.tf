@@ -60,6 +60,9 @@ locals {
     # Control Tower Phase 1.1: Scheduler ct-refresh-prod вызывает BigQuery от имени sa-ct-refresh
     # (ct_refresh.tf) — тот же actAs-контракт, что у ops_health.
     ct_refresh = google_service_account.ct_refresh.name
+    # Executive V2 Phase C2: Scheduler executive-v2-layer-build вызывает BigQuery от имени
+    # sa-exec-v2-layer (executive_v2_layer.tf) — тот же actAs-контракт.
+    exec_v2_layer = google_service_account.exec_v2_layer.name
   }
 }
 

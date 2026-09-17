@@ -1,0 +1,118 @@
+{
+ "archived": false,
+ "archived_directly": false,
+ "cache_invalidated_at": null,
+ "cache_ttl": null,
+ "card_schema": 23,
+ "collection": {
+  "archive_operation_id": null,
+  "archived": false,
+  "archived_directly": null,
+  "authority_level": null,
+  "created_at": "2026-08-26T15:19:56.740614Z",
+  "description": "Executive MVP: что происходит с бизнесом и зарабатываем ли мы деньги.",
+  "entity_id": "EZUYQWsC5fdY9QqGY-xKC",
+  "id": 6,
+  "is_remote_synced": false,
+  "is_sample": false,
+  "location": "/5/",
+  "name": "01 Executive",
+  "namespace": null,
+  "personal_owner_id": null,
+  "slug": "01_executive",
+  "type": null
+ },
+ "collection_id": 6,
+ "collection_position": null,
+ "collection_preview": true,
+ "created_at": "2026-09-17T07:19:41.161456Z",
+ "creator_id": 2,
+ "dashboard": null,
+ "dashboard_id": null,
+ "database_id": 2,
+ "dataset_query": {
+  "database": 2,
+  "lib/type": "mbql/query",
+  "stages": [
+   {
+    "lib/type": "mbql.stage/native",
+    "native": "-- Phase C2 · wb_mart.V_DASH_EXECUTIVE_V2_DAILY (материализованный слой; логика карточки не менялась)\n-- SUM(storage_rub) / COUNTIF(period_result_eligible)\nWITH d AS (SELECT day FROM `wb_mart.V_DASH_EXECUTIVE_V2_DAILY` WHERE {{day}})\nSELECT CONCAT('≈', REPLACE(FORMAT('%.2f', SAFE_DIVIDE(SUM(IF(e.period_result_eligible, k.storage_rub, NULL)), COUNTIF(e.period_result_eligible))), '.', ','),\n              ' ₽') AS storage_per_day,\n       CAST(COUNTIF(e.period_result_eligible) AS STRING) AS days\nFROM d JOIN `wb_mart.V_DASH_EXECUTIVE_V2_DAILY` e USING (day) JOIN `wb_mart.V_DASH_EXECUTIVE_V2_DAILY` k USING (day)",
+    "template-tags": [
+     {
+      "dimension": [
+       "field",
+       {
+        "lib/uuid": "88d35564-9b10-4fb3-83e2-f61f74c206c4"
+       },
+       6498
+      ],
+      "display-name": "Период",
+      "id": "d5741793-67e6-4c66-886f-1304a8895f67",
+      "name": "day",
+      "type": "dimension",
+      "widget-type": "date/all-options"
+     }
+    ]
+   }
+  ]
+ },
+ "description": "Хранение за период ÷ число учтённых суток.",
+ "dimension_mappings": null,
+ "dimensions": null,
+ "display": "object",
+ "document_id": null,
+ "embedding_params": null,
+ "embedding_type": null,
+ "enable_embedding": false,
+ "entity_id": "jwiv8pOwXhXVAyQ5XOS5L",
+ "id": 208,
+ "is_remote_synced": false,
+ "last_used_at": "2026-09-17T07:32:09.927318Z",
+ "legacy_query": null,
+ "metabase_version": "v0.63.15.1 (ab5ffba)",
+ "name": "Executive V2 · Хранение в день · слой C2",
+ "param_fields": {
+  "d5741793-67e6-4c66-886f-1304a8895f67": [
+   {
+    "base_type": "type/Date",
+    "dimensions": [],
+    "display_name": "Day",
+    "fk_target_field_id": null,
+    "has_field_values": "none",
+    "id": 6498,
+    "name": "day",
+    "name_field": null,
+    "semantic_type": null,
+    "table_id": 269,
+    "target": null
+   }
+  ]
+ },
+ "parameter_mappings": [],
+ "parameter_usage_count": 0,
+ "parameters": [],
+ "query_type": "native",
+ "source_card_id": null,
+ "table_id": null,
+ "type": "question",
+ "visualization_settings": {
+  "column_settings": {
+   "[\"name\",\"days\"]": {
+    "column_title": "Учтено суток"
+   },
+   "[\"name\",\"storage_per_day\"]": {
+    "column_title": "В среднем в день"
+   }
+  },
+  "table.columns": [
+   {
+    "enabled": true,
+    "name": "storage_per_day"
+   },
+   {
+    "enabled": true,
+    "name": "days"
+   }
+  ]
+ }
+}

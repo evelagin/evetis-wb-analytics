@@ -1,0 +1,103 @@
+{
+  "_comment": "STEP 5B Phase D. Единственный источник правды о соответствии каталог -> Apps Script проект. Проверяется tools/clasp_prepush_verify.js ПЕРЕД любым clasp push.",
+  "projects": {
+    "ingestion": {
+      "dir": "apps-script/ingestion",
+      "scriptId": "10fr6u1YVdrTvZo7bkd88K4Vuv_-HiPerDbTw-9S9N34AUDQtfg6FtDkS",
+      "projectName": "evetis-wb-analitics",
+      "binding": "container-bound",
+      "container": "1MLOCJEX0UR0Gj9gUcDbTBfPrtAhqQc2ctcsoaepSTiU",
+      "containerName": "Evetis аналитика 2.0",
+      "neverPush": [
+        "WbSalesRetryTest.gs"
+      ],
+      "manifestPresent": true,
+      "temporaryProductionArtifacts": [
+        {
+          "file": "UnitkaR7.gs",
+          "why": "пустая заглушка function myFunction(){} (3 строки) в production INGESTION. Импортирована ТОЛЬКО ради lossless первого push. Канонический UnitkaR7 принадлежит UNITKA. OWNER DECISION 2: пока не удалять из production.",
+          "verdict": "CANDIDATE_REMOVE"
+        },
+        {
+          "file": "FindFinanceReturns_TEMP.gs",
+          "why": "временная диагностика; импортирована ради lossless",
+          "verdict": "CANDIDATE_REMOVE"
+        },
+        {
+          "file": "WbApiGateSalesReturns_TEMP.gs",
+          "why": "временная проба API-шлюза; импортирована ради lossless",
+          "verdict": "CANDIDATE_REMOVE"
+        }
+      ]
+    },
+    "unitka": {
+      "dir": "apps-script/unitka",
+      "scriptId": "1DrcKy55LH5TrN3aPz6l18WpfPIOCUrRMEy95SP6TQXxaWWXtsPW3SBW3",
+      "projectName": "(без названия) UNITKA",
+      "binding": "standalone",
+      "container": null,
+      "containerName": "openById -> 1E4L4JuwfEqr9owhsGkAjb8F24lRpWpWkEyVmSuRxaJg (Юнитка_Evetis Cosmetics)",
+      "neverPush": [],
+      "manifestPresent": true
+    },
+    "operations": {
+      "dir": "apps-script/operations",
+      "scriptId": "1z4SVOytTs2F8VsHnRKhLrWb0Jw1nthFGyhifhMYEqrnKjKEjvhhrHy3W",
+      "projectName": "EVETIS OPERATIONS · C2",
+      "binding": "container-bound",
+      "container": "19J8EW-Xqz_twHk4ID7IvkumFOop4MTTZeX6U0uaNSAc",
+      "containerName": "EVETIS OPERATIONS",
+      "neverPush": [
+        "OpsConfig.gs",
+        "OpsCore.gs",
+        "OpsSheetIO.gs",
+        "OpsInstall.gs",
+        "OpsMain.gs",
+        "OpsTests.gs"
+      ],
+      "manifestPresent": true,
+      "note": "В production проект — ОДИН файл Код.gs. Источник правды в Git — модули Ops*.gs; Код.gs собирается tools/build_ops_monolith.js и байт-в-байт равен production (sha256 0280a3c3f5ee...). Модули исключены из push через .claspignore, поэтому структура проекта не меняется. Миграция монолит -> модули требует отдельного OWNER APPROVAL.",
+      "buildCommand": "node tools/build_ops_monolith.js"
+    }
+  },
+  "excludedLegacyProjects": [
+    {
+      "projectName": "Evetis Ozon",
+      "scriptId": "1MemRXRCwnjwgXVsROYXMHHi3jDLmx5fyaVJxnnQaI4PhQrcDRS3jcqhq",
+      "status": "HISTORICAL/FROZEN"
+    },
+    {
+      "projectName": "Evetis WB",
+      "scriptId": "1k1gICszkM5vYLI0184OsEdytVJsY4DF_o7P6raMd4Xj3bcgl_XXwjeoz",
+      "status": "HISTORICAL/FROZEN"
+    },
+    {
+      "projectName": "EVETIS OPERATIONS · C2 TEST",
+      "scriptId": "12qeynQ7U_Ub-Pz4pvZn2N45epYM0uwHmjeSMeB_vFxfRTEMJMGBSrNCg",
+      "status": "TEST COPY"
+    },
+    {
+      "projectName": "(без названия, проба WB Advert API)",
+      "scriptId": "19Pjunnep_pXESar9pbRwcTOr2cskoKMcgVaU_HBV82allQJHuJUYIHiA",
+      "status": "PROBE"
+    }
+  ],
+  "crossProjectDuplicateNames": [
+    {
+      "file": "UnitkaR7.gs",
+      "projects": [
+        "ingestion",
+        "unitka"
+      ],
+      "why": "в ingestion это пустая заглушка production, в unitka — канонический рабочий файл. Совпадение имён намеренное и проверенное."
+    },
+    {
+      "file": "Код.gs",
+      "projects": [
+        "unitka",
+        "operations"
+      ],
+      "why": "в unitka — сентябрьский QA-скрипт R4 v4.2.0; в operations — монолит-сборка Ops*.gs. Разные проекты, разное содержимое, совпадение имени случайное и проверенное."
+    }
+  ]
+}

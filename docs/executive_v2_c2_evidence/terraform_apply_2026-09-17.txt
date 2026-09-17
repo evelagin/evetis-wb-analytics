@@ -1,0 +1,50 @@
+google_service_account.exec_v2_layer: Creating...
+google_service_account.exec_v2_layer: Still creating... [00m10s elapsed]
+google_service_account.exec_v2_layer: Creation complete after 18s [id=projects/project-fa311fc0-4d87-4781-986/serviceAccounts/sa-exec-v2-layer@project-fa311fc0-4d87-4781-986.iam.gserviceaccount.com]
+google_bigquery_dataset_iam_member.exec_v2_layer_read["wb_raw"]: Creating...
+google_bigquery_dataset_iam_member.exec_v2_layer_read["evetis_ref"]: Creating...
+google_project_iam_member.exec_v2_layer_job_user: Creating...
+google_bigquery_dataset_iam_member.exec_v2_layer_read["wb_mart"]: Creating...
+google_bigquery_table_iam_member.exec_v2_layer_write["_EXECUTIVE_V2_BUILD_LOCK"]: Creating...
+google_bigquery_table_iam_member.exec_v2_layer_write["EXECUTIVE_V2_BUILD_LOG"]: Creating...
+google_bigquery_table_iam_member.exec_v2_layer_write["EXECUTIVE_V2_DAILY"]: Creating...
+google_service_account_iam_member.terraform_apply_actas["exec_v2_layer"]: Creating...
+google_service_account_iam_member.terraform_apply_actas["exec_v2_layer"]: Creation complete after 5s [id=projects/project-fa311fc0-4d87-4781-986/serviceAccounts/sa-exec-v2-layer@project-fa311fc0-4d87-4781-986.iam.gserviceaccount.com/roles/iam.serviceAccountUser/serviceAccount:sa-terraform-apply@project-fa311fc0-4d87-4781-986.iam.gserviceaccount.com]
+google_cloud_scheduler_job.exec_v2_layer_build: Creating...
+google_bigquery_table_iam_member.exec_v2_layer_write["EXECUTIVE_V2_BUILD_LOG"]: Creation complete after 5s [id=projects/project-fa311fc0-4d87-4781-986/datasets/wb_mart/tables/EXECUTIVE_V2_BUILD_LOG/roles/bigquery.dataEditor/serviceAccount:sa-exec-v2-layer@project-fa311fc0-4d87-4781-986.iam.gserviceaccount.com]
+google_bigquery_table_iam_member.exec_v2_layer_write["_EXECUTIVE_V2_BUILD_LOCK"]: Creation complete after 6s [id=projects/project-fa311fc0-4d87-4781-986/datasets/wb_mart/tables/_EXECUTIVE_V2_BUILD_LOCK/roles/bigquery.dataEditor/serviceAccount:sa-exec-v2-layer@project-fa311fc0-4d87-4781-986.iam.gserviceaccount.com]
+google_bigquery_table_iam_member.exec_v2_layer_write["EXECUTIVE_V2_DAILY"]: Creation complete after 6s [id=projects/project-fa311fc0-4d87-4781-986/datasets/wb_mart/tables/EXECUTIVE_V2_DAILY/roles/bigquery.dataEditor/serviceAccount:sa-exec-v2-layer@project-fa311fc0-4d87-4781-986.iam.gserviceaccount.com]
+google_bigquery_dataset_iam_member.exec_v2_layer_read["evetis_ref"]: Creation complete after 7s [id=projects/project-fa311fc0-4d87-4781-986/datasets/evetis_ref/roles/bigquery.dataViewer/serviceAccount:sa-exec-v2-layer@project-fa311fc0-4d87-4781-986.iam.gserviceaccount.com]
+google_cloud_scheduler_job.exec_v2_layer_build: Creation complete after 2s [id=projects/project-fa311fc0-4d87-4781-986/locations/europe-west1/jobs/executive-v2-layer-build]
+google_bigquery_dataset_iam_member.exec_v2_layer_read["wb_mart"]: Creation complete after 7s [id=projects/project-fa311fc0-4d87-4781-986/datasets/wb_mart/roles/bigquery.dataViewer/serviceAccount:sa-exec-v2-layer@project-fa311fc0-4d87-4781-986.iam.gserviceaccount.com]
+google_bigquery_dataset_iam_member.exec_v2_layer_read["wb_raw"]: Creation complete after 7s [id=projects/project-fa311fc0-4d87-4781-986/datasets/wb_raw/roles/bigquery.dataViewer/serviceAccount:sa-exec-v2-layer@project-fa311fc0-4d87-4781-986.iam.gserviceaccount.com]
+google_project_iam_member.exec_v2_layer_job_user: Creation complete after 9s [id=project-fa311fc0-4d87-4781-986/roles/bigquery.jobUser/serviceAccount:sa-exec-v2-layer@project-fa311fc0-4d87-4781-986.iam.gserviceaccount.com]
+
+Warning: Applied changes may be incomplete
+
+The plan was created with the -target option in effect, so some changes
+requested in the configuration may have been ignored and the output values
+may not be fully updated. Run the following command to verify that no other
+changes are pending:
+    terraform plan
+
+Note that the -target option is not suitable for routine use, and is provided
+only for exceptional situations such as recovering from errors or mistakes,
+or when Terraform specifically suggests to use it as part of an error
+message.
+
+Apply complete! Resources: 10 added, 0 changed, 0 destroyed.
+
+Outputs:
+
+artifact_registry_repo = "europe-west1-docker.pkg.dev/project-fa311fc0-4d87-4781-986/wb-loaders"
+deployer_service_account = "sa-deployer@project-fa311fc0-4d87-4781-986.iam.gserviceaccount.com"
+runtime_service_accounts = {
+  "loaders_prod" = "sa-loaders-prod@project-fa311fc0-4d87-4781-986.iam.gserviceaccount.com"
+  "loaders_shadow" = "sa-loaders-shadow@project-fa311fc0-4d87-4781-986.iam.gserviceaccount.com"
+  "scheduler_prod" = "sa-scheduler-prod@project-fa311fc0-4d87-4781-986.iam.gserviceaccount.com"
+  "scheduler_shadow" = "sa-scheduler-shadow@project-fa311fc0-4d87-4781-986.iam.gserviceaccount.com"
+}
+terraform_apply_service_account = "sa-terraform-apply@project-fa311fc0-4d87-4781-986.iam.gserviceaccount.com"
+terraform_plan_service_account = "sa-terraform-plan@project-fa311fc0-4d87-4781-986.iam.gserviceaccount.com"
+workload_identity_provider = "projects/37074083763/locations/global/workloadIdentityPools/github-pool/providers/github-provider"

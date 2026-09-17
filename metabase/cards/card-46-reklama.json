@@ -1,7 +1,7 @@
 {
  "archived": false,
  "archived_directly": false,
- "cache_invalidated_at": "2026-08-28T14:33:02.729396Z",
+ "cache_invalidated_at": "2026-09-16T10:48:38.247034Z",
  "cache_ttl": null,
  "card_schema": 23,
  "collection": {
@@ -36,7 +36,7 @@
   "stages": [
    {
     "lib/type": "mbql.stage/native",
-    "native": "WITH b AS (\n  SELECT MIN(day) AS d1, MAX(day) AS d2, COUNT(*) AS len\n  FROM `wb_mart.V_DASH_KPI_DAILY`\n  WHERE {{day}}\n),\nagg AS (\n  SELECT\n    IF(k.day >= b.d1, 'cur', 'prv')                             AS w,\n    IF(k.day >= b.d1, b.d1, DATE_SUB(b.d1, INTERVAL b.len DAY)) AS period_start,\n    COUNTIF(k.ads_covered)                                             AS cov,\n    SUM(k.ad_spend_attributed_rub)                                                    AS v\n  FROM `wb_mart.V_DASH_KPI_DAILY` k, b\n  WHERE k.day BETWEEN DATE_SUB(b.d1, INTERVAL b.len DAY) AND b.d2\n  GROUP BY w, period_start\n)\nSELECT period_start AS period, v AS ad_spend_rub\nFROM agg\nWHERE w = 'cur'\n   OR (cov = (SELECT cov FROM agg WHERE w = 'cur'))\nORDER BY period",
+    "native": "WITH b AS (\n  SELECT MIN(day) AS d1, MAX(day) AS d2, COUNT(*) AS len\n  FROM `wb_mart.V_DASH_KPI_DAILY`\n  WHERE {{day}}\n),\nagg AS (\n  SELECT\n    IF(k.day >= b.d1, 'cur', 'prv')                             AS w,\n    IF(k.day >= b.d1, b.d1, DATE_SUB(b.d1, INTERVAL b.len DAY)) AS period_start,\n    COUNTIF(k.ads_billing_covered)                                             AS cov,\n    SUM(k.ad_spend_financial_rub)                                                    AS v\n  FROM `wb_mart.V_DASH_FINANCE_CORRECTED_DAILY` k, b\n  WHERE k.day BETWEEN DATE_SUB(b.d1, INTERVAL b.len DAY) AND b.d2\n  GROUP BY w, period_start\n)\nSELECT period_start AS period, v AS ad_spend_rub\nFROM agg\nWHERE w = 'cur'\n   OR (cov = (SELECT cov FROM agg WHERE w = 'cur'))\nORDER BY period",
     "template-tags": [
      {
       "dimension": [
@@ -56,7 +56,7 @@
    }
   ]
  },
- "description": "V_DASH_KPI_DAILY.ad_spend_attributed_rub — АТРИБУЦИЯ рекламной статистики WB на SKU, база даты — дата рекламной активности. Именно эта величина входит в результат периода и в ДРР. 🔴 Это не факт списания с баланса: биллинг WB показан отдельной контрольной карточкой. 🔴 Окраска изменения перевёрнута: реклама — расход, поэтому её снижение показано зелёным. Сравнение с предыдущим сопоставимым периодом той же длины непосредственно перед выбранным: границы берутся из плотного календаря V_DASH_KPI_DAILY, механизм тот же, что у карточки 68 SKU Performance. 🔴 Изменение показывается ТОЛЬКО при равном покрытии обоих окон по маске этой метрики; при неравном покрытии предыдущая точка не выводится и Δ отсутствует — полный период с неполным не сравнивается.",
+ "description": "FIN CONTRACT V2 (2026-09-16). Реклама управленческого P&L = БИЛЛИНГ WB ПО ДАТЕ ОКАЗАНИЯ УСЛУГИ: V_DASH_FINANCE_CORRECTED_DAILY.ad_spend_financial_rub (FACT_ADS_COSTS_DAILY, покрытие — V_ADV_COSTS_DAY_COVERAGE). Именно эта величина вычитается в результате периода. Атрибуция рекламной статистики на SKU — отдельный контракт SKU Performance (ДРР по артикулам) и в результат не входит. Документы «WB Продвижение» из финотчёта — сверка выплаты, а не расход по дате услуги. Сравнение с предыдущим периодом равной длины показывается, только если число суток с покрытием биллинга совпадает. Сутки младше 15 дней — предварительные (ads_billing_is_final = FALSE).",
  "dimension_mappings": null,
  "dimensions": null,
  "display": "smartscalar",
@@ -67,7 +67,7 @@
  "entity_id": "5x6I3WoNX5W4eZJbiU59N",
  "id": 46,
  "is_remote_synced": false,
- "last_used_at": "2026-08-28T14:58:54.063353Z",
+ "last_used_at": "2026-09-16T10:52:44.711686Z",
  "legacy_query": null,
  "metabase_version": "v0.63.15.1 (ab5ffba)",
  "name": "Реклама, ₽",

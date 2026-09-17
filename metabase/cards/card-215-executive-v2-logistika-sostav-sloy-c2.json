@@ -1,0 +1,139 @@
+{
+ "archived": false,
+ "archived_directly": false,
+ "cache_invalidated_at": null,
+ "cache_ttl": null,
+ "card_schema": 23,
+ "collection": {
+  "archive_operation_id": null,
+  "archived": false,
+  "archived_directly": null,
+  "authority_level": null,
+  "created_at": "2026-08-26T15:19:56.740614Z",
+  "description": "Executive MVP: что происходит с бизнесом и зарабатываем ли мы деньги.",
+  "entity_id": "EZUYQWsC5fdY9QqGY-xKC",
+  "id": 6,
+  "is_remote_synced": false,
+  "is_sample": false,
+  "location": "/5/",
+  "name": "01 Executive",
+  "namespace": null,
+  "personal_owner_id": null,
+  "slug": "01_executive",
+  "type": null
+ },
+ "collection_id": 6,
+ "collection_position": null,
+ "collection_preview": true,
+ "created_at": "2026-09-17T07:19:58.890475Z",
+ "creator_id": 2,
+ "dashboard": null,
+ "dashboard_id": null,
+ "database_id": 2,
+ "dataset_query": {
+  "database": 2,
+  "lib/type": "mbql/query",
+  "stages": [
+   {
+    "lib/type": "mbql.stage/native",
+    "native": "-- Phase C2 · wb_mart.V_DASH_EXECUTIVE_V2_DAILY (материализованный слой; логика карточки не менялась)\n-- V_DASH_EXECUTIVE_BREAKDOWN_DAILY: logistics_sold_rub, logistics_cancellation_rub\n--   (= logistics_cancel_to_customer_rub + logistics_cancel_from_customer_rub); logistics_rub / buyouts_qty\nWITH d AS (SELECT day FROM `wb_mart.V_DASH_EXECUTIVE_V2_DAILY` WHERE {{day}}),\ns AS (\n  SELECT\n    SUM(IF(e.period_result_eligible, x.logistics_sold_rub, NULL))                 AS sold,\n    SUM(IF(e.period_result_eligible, x.logistics_cancellation_rub, NULL))         AS cancel,\n    SUM(IF(e.period_result_eligible, x.logistics_cancel_to_customer_rub, NULL))   AS to_c,\n    SUM(IF(e.period_result_eligible, x.logistics_cancel_from_customer_rub, NULL)) AS from_c,\n    SUM(IF(e.period_result_eligible, k.logistics_rub, NULL))                      AS total,\n    SUM(IF(e.period_result_eligible, k.buyouts_qty, NULL))                        AS buyouts\n  FROM d JOIN `wb_mart.V_DASH_EXECUTIVE_V2_DAILY` e USING (day) JOIN `wb_mart.V_DASH_EXECUTIVE_V2_DAILY` x USING (day) JOIN `wb_mart.V_DASH_EXECUTIVE_V2_DAILY` k USING (day)\n)\nSELECT\n  CONCAT(IF(ROUND(-sold) < 0, '-', ''), REPLACE(FORMAT(\"%'d\", ABS(CAST(ROUND(-sold) AS INT64))), ',', ' '), ' ₽')   AS sold,\n  CONCAT(IF(ROUND(-cancel) < 0, '-', ''), REPLACE(FORMAT(\"%'d\", ABS(CAST(ROUND(-cancel) AS INT64))), ',', ' '), ' ₽') AS cancellation,\n  CONCAT(IF(ROUND(-to_c) < 0, '-', ''), REPLACE(FORMAT(\"%'d\", ABS(CAST(ROUND(-to_c) AS INT64))), ',', ' '), ' ₽')   AS cancel_to_customer,\n  CONCAT(IF(ROUND(-from_c) < 0, '-', ''), REPLACE(FORMAT(\"%'d\", ABS(CAST(ROUND(-from_c) AS INT64))), ',', ' '), ' ₽') AS cancel_from_customer,\n  CONCAT(REPLACE(FORMAT('%.2f', SAFE_DIVIDE(total, buyouts)), '.', ','), ' ₽') AS per_buyout\nFROM s",
+    "template-tags": [
+     {
+      "dimension": [
+       "field",
+       {
+        "lib/uuid": "35257f9c-c125-47ff-ab55-2fcea75cc52c"
+       },
+       6498
+      ],
+      "display-name": "Период",
+      "id": "05b39903-00ed-4502-96a7-cf5a6823a0c6",
+      "name": "day",
+      "type": "dimension",
+      "widget-type": "date/all-options"
+     }
+    ]
+   }
+  ]
+ },
+ "description": "Выкупленные товары — доставка к покупателю выкупленных товаров. Отмены и обратная логистика — доставка к клиенту при отмене и обратно от клиента. На один выкуп — вся логистика периода ÷ число выкупов.",
+ "dimension_mappings": null,
+ "dimensions": null,
+ "display": "object",
+ "document_id": null,
+ "embedding_params": null,
+ "embedding_type": null,
+ "enable_embedding": false,
+ "entity_id": "hSWVq9R8i0Y1fwE4gdxJr",
+ "id": 215,
+ "is_remote_synced": false,
+ "last_used_at": "2026-09-17T07:32:09.927318Z",
+ "legacy_query": null,
+ "metabase_version": "v0.63.15.1 (ab5ffba)",
+ "name": "Executive V2 · Логистика: состав · слой C2",
+ "param_fields": {
+  "05b39903-00ed-4502-96a7-cf5a6823a0c6": [
+   {
+    "base_type": "type/Date",
+    "dimensions": [],
+    "display_name": "Day",
+    "fk_target_field_id": null,
+    "has_field_values": "none",
+    "id": 6498,
+    "name": "day",
+    "name_field": null,
+    "semantic_type": null,
+    "table_id": 269,
+    "target": null
+   }
+  ]
+ },
+ "parameter_mappings": [],
+ "parameter_usage_count": 0,
+ "parameters": [],
+ "query_type": "native",
+ "source_card_id": null,
+ "table_id": null,
+ "type": "question",
+ "visualization_settings": {
+  "column_settings": {
+   "[\"name\",\"cancel_from_customer\"]": {
+    "column_title": "  от клиента при отмене"
+   },
+   "[\"name\",\"cancel_to_customer\"]": {
+    "column_title": "  к клиенту при отмене"
+   },
+   "[\"name\",\"cancellation\"]": {
+    "column_title": "Отмены и обратная логистика"
+   },
+   "[\"name\",\"per_buyout\"]": {
+    "column_title": "Логистика на один выкуп"
+   },
+   "[\"name\",\"sold\"]": {
+    "column_title": "Выкупленные товары"
+   }
+  },
+  "table.columns": [
+   {
+    "enabled": true,
+    "name": "sold"
+   },
+   {
+    "enabled": true,
+    "name": "cancellation"
+   },
+   {
+    "enabled": true,
+    "name": "cancel_to_customer"
+   },
+   {
+    "enabled": true,
+    "name": "cancel_from_customer"
+   },
+   {
+    "enabled": true,
+    "name": "per_buyout"
+   }
+  ]
+ }
+}

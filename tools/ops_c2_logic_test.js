@@ -2,7 +2,7 @@
 /**
  * EVETIS OPERATIONS · C2 — локальные тесты чистой логики Apps Script (без Google).
  *
- * Загружает apps-script/evetis_operations/{OpsConfig,OpsCore,OpsInstall}.gs в изолированный контекст и проверяет:
+ * Загружает apps-script/operations/{OpsConfig,OpsCore,OpsInstall}.gs в изолированный контекст и проверяет:
  * проверку выборок (FAIL CLOSED), хеш снимка, отпечаток, контракт раскладки, установку поверх C1.2,
  * машину состояний решения владельца (сценарии тестов 2, 3, 11, 12, 13) и отрисовку.
  *
@@ -20,7 +20,7 @@ if (!FIX) {
   console.error('Укажите каталог фикстур: node tools/ops_c2_logic_test.js <каталог>');
   process.exit(2);
 }
-const SRC = path.join(__dirname, '..', 'apps-script', 'evetis_operations');
+const SRC = path.join(__dirname, '..', 'apps-script', 'operations');
 
 function formatDate(d, tz, pattern) {
   const p = Object.fromEntries(new Intl.DateTimeFormat('en-GB', {

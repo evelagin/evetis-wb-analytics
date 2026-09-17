@@ -1,0 +1,138 @@
+{
+ "archived": false,
+ "archived_directly": false,
+ "cache_invalidated_at": "2026-09-16T14:26:32.079667Z",
+ "cache_ttl": null,
+ "card_schema": 23,
+ "collection": {
+  "archive_operation_id": null,
+  "archived": false,
+  "archived_directly": null,
+  "authority_level": null,
+  "created_at": "2026-08-26T15:19:56.740614Z",
+  "description": "Executive MVP: что происходит с бизнесом и зарабатываем ли мы деньги.",
+  "entity_id": "EZUYQWsC5fdY9QqGY-xKC",
+  "id": 6,
+  "is_remote_synced": false,
+  "is_sample": false,
+  "location": "/5/",
+  "name": "01 Executive",
+  "namespace": null,
+  "personal_owner_id": null,
+  "slug": "01_executive",
+  "type": null
+ },
+ "collection_id": 6,
+ "collection_position": null,
+ "collection_preview": true,
+ "created_at": "2026-09-16T13:46:38.9169Z",
+ "creator_id": 2,
+ "dashboard": null,
+ "dashboard_id": null,
+ "database_id": 2,
+ "dataset_query": {
+  "database": 2,
+  "lib/type": "mbql/query",
+  "stages": [
+   {
+    "lib/type": "mbql.stage/native",
+    "native": "-- V_DASH_SETTLEMENT_DAILY: цепочка settlement_* (GAP-01/05), закрытые сутки финотчётов WB.\n-- Вычеты выводятся со знаком «−» (presentation). Backend-поля положительные.\nWITH d AS (SELECT day FROM `wb_mart.V_DASH_KPI_DAILY` WHERE {{day}})\nSELECT\n   SUM(s.settlement_seller_price_rub)         AS seller_price_rub,\n  -SUM(s.settlement_spp_rub)                  AS spp_rub,\n  -SUM(s.settlement_wb_remuneration_rub)      AS wb_remuneration_rub,\n  -SUM(s.settlement_wb_remuneration_vat_rub)  AS wb_remuneration_vat_rub,\n  -SUM(s.settlement_acquiring_rub)            AS acquiring_rub,\n  -SUM(s.settlement_pvz_reward_rub)           AS pvz_reward_rub,\n   SUM(s.settlement_goods_rub)                AS goods_payable_rub\nFROM d JOIN `wb_mart.V_DASH_SETTLEMENT_DAILY` s USING (day)",
+    "template-tags": [
+     {
+      "dimension": [
+       "field",
+       {
+        "lib/uuid": "8b72a579-3e2e-48fe-a4c5-c994e656a1d2"
+       },
+       909
+      ],
+      "display-name": "Период",
+      "id": "c80bf7c9-bb03-4477-a4c9-1d27a60db611",
+      "name": "day",
+      "type": "dimension",
+      "widget-type": "date/all-options"
+     }
+    ]
+   }
+  ]
+ },
+ "description": "Цепочка по закрытым финансовым отчётам WB: цена продавца минус СПП, вознаграждение WB, НДС, эквайринг и вознаграждение ПВЗ даёт сумму к перечислению за товар. Слагаемые округлены до рубля, поэтому их сумма может отличаться от итога на 1–2 ₽.",
+ "dimension_mappings": null,
+ "dimensions": null,
+ "display": "scalar",
+ "document_id": null,
+ "embedding_params": null,
+ "embedding_type": null,
+ "enable_embedding": false,
+ "entity_id": "FhGGsxE6MSqsFc9G5mGoL",
+ "id": 164,
+ "is_remote_synced": false,
+ "last_used_at": "2026-09-16T14:37:04.731756Z",
+ "legacy_query": null,
+ "metabase_version": "v0.63.15.1 (ab5ffba)",
+ "name": "Executive V2 · От цены продавца до начисления WB",
+ "param_fields": {
+  "c80bf7c9-bb03-4477-a4c9-1d27a60db611": [
+   {
+    "base_type": "type/Date",
+    "dimensions": [],
+    "display_name": "Day",
+    "fk_target_field_id": null,
+    "has_field_values": "none",
+    "id": 909,
+    "name": "day",
+    "name_field": null,
+    "semantic_type": null,
+    "table_id": 38,
+    "target": null
+   }
+  ]
+ },
+ "parameter_mappings": [],
+ "parameter_usage_count": 0,
+ "parameters": [],
+ "query_type": "native",
+ "source_card_id": null,
+ "table_id": null,
+ "type": "question",
+ "visualization_settings": {
+  "column_settings": {
+   "[\"name\",\"acquiring_rub\"]": {
+    "decimals": 0,
+    "number_style": "decimal",
+    "suffix": " ₽"
+   },
+   "[\"name\",\"goods_payable_rub\"]": {
+    "decimals": 0,
+    "number_style": "decimal",
+    "suffix": " ₽"
+   },
+   "[\"name\",\"pvz_reward_rub\"]": {
+    "decimals": 0,
+    "number_style": "decimal",
+    "suffix": " ₽"
+   },
+   "[\"name\",\"seller_price_rub\"]": {
+    "decimals": 0,
+    "number_style": "decimal",
+    "suffix": " ₽"
+   },
+   "[\"name\",\"spp_rub\"]": {
+    "decimals": 0,
+    "number_style": "decimal",
+    "suffix": " ₽"
+   },
+   "[\"name\",\"wb_remuneration_rub\"]": {
+    "decimals": 0,
+    "number_style": "decimal",
+    "suffix": " ₽"
+   },
+   "[\"name\",\"wb_remuneration_vat_rub\"]": {
+    "decimals": 0,
+    "number_style": "decimal",
+    "suffix": " ₽"
+   }
+  },
+  "scalar.field": "goods_payable_rub"
+ }
+}

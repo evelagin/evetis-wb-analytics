@@ -1,0 +1,125 @@
+{
+ "archived": false,
+ "archived_directly": false,
+ "cache_invalidated_at": "2026-09-16T14:26:22.167771Z",
+ "cache_ttl": null,
+ "card_schema": 23,
+ "collection": {
+  "archive_operation_id": null,
+  "archived": false,
+  "archived_directly": null,
+  "authority_level": null,
+  "created_at": "2026-08-26T15:19:56.740614Z",
+  "description": "Executive MVP: что происходит с бизнесом и зарабатываем ли мы деньги.",
+  "entity_id": "EZUYQWsC5fdY9QqGY-xKC",
+  "id": 6,
+  "is_remote_synced": false,
+  "is_sample": false,
+  "location": "/5/",
+  "name": "01 Executive",
+  "namespace": null,
+  "personal_owner_id": null,
+  "slug": "01_executive",
+  "type": null
+ },
+ "collection_id": 6,
+ "collection_position": null,
+ "collection_preview": true,
+ "created_at": "2026-09-16T13:46:23.530125Z",
+ "creator_id": 2,
+ "dashboard": null,
+ "dashboard_id": null,
+ "database_id": 2,
+ "dataset_query": {
+  "database": 2,
+  "lib/type": "mbql/query",
+  "stages": [
+   {
+    "lib/type": "mbql.stage/native",
+    "native": "-- Счётчики суток: executive_provisional_day / executive_final_day / executive_incomplete_day\nWITH d AS (SELECT day FROM `wb_mart.V_DASH_KPI_DAILY` WHERE {{day}})\nSELECT\n  SUM(e.executive_provisional_day)       AS provisional_days,\n  SUM(e.executive_final_day)             AS final_days,\n  SUM(e.executive_incomplete_day)        AS incomplete_days\nFROM d JOIN `wb_mart.V_DASH_EXECUTIVE_ECONOMICS_DAILY` e USING (day)",
+    "template-tags": [
+     {
+      "dimension": [
+       "field",
+       {
+        "lib/uuid": "7320fe11-c0f2-4519-b622-6a9c4e6ac4f3"
+       },
+       909
+      ],
+      "display-name": "Период",
+      "id": "5ee068b3-a560-460e-b933-5d617846b824",
+      "name": "day",
+      "type": "dimension",
+      "widget-type": "date/all-options"
+     }
+    ]
+   }
+  ]
+ },
+ "description": "Сколько суток выбранного периода окончательные, предварительные и неполные. Предварительные сутки уже входят в прибыль, но их цифры ещё могут измениться: рекламный биллинг WB стабилизируется до 15 дней.",
+ "dimension_mappings": null,
+ "dimensions": null,
+ "display": "object",
+ "document_id": null,
+ "embedding_params": null,
+ "embedding_type": null,
+ "enable_embedding": false,
+ "entity_id": "yrvZPjv9MqXbmvM3eeMBA",
+ "id": 158,
+ "is_remote_synced": false,
+ "last_used_at": "2026-09-16T14:36:58.133773Z",
+ "legacy_query": null,
+ "metabase_version": "v0.63.15.1 (ab5ffba)",
+ "name": "Executive V2 · Статус данных: сутки",
+ "param_fields": {
+  "5ee068b3-a560-460e-b933-5d617846b824": [
+   {
+    "base_type": "type/Date",
+    "dimensions": [],
+    "display_name": "Day",
+    "fk_target_field_id": null,
+    "has_field_values": "none",
+    "id": 909,
+    "name": "day",
+    "name_field": null,
+    "semantic_type": null,
+    "table_id": 38,
+    "target": null
+   }
+  ]
+ },
+ "parameter_mappings": [],
+ "parameter_usage_count": 0,
+ "parameters": [],
+ "query_type": "native",
+ "source_card_id": null,
+ "table_id": null,
+ "type": "question",
+ "visualization_settings": {
+  "column_settings": {
+   "[\"name\",\"final_days\"]": {
+    "column_title": "Окончательные сутки"
+   },
+   "[\"name\",\"incomplete_days\"]": {
+    "column_title": "Неполные сутки"
+   },
+   "[\"name\",\"provisional_days\"]": {
+    "column_title": "Предварительные сутки"
+   }
+  },
+  "table.columns": [
+   {
+    "enabled": true,
+    "name": "provisional_days"
+   },
+   {
+    "enabled": true,
+    "name": "final_days"
+   },
+   {
+    "enabled": true,
+    "name": "incomplete_days"
+   }
+  ]
+ }
+}

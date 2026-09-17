@@ -1,0 +1,318 @@
+/**
+ * ══════════════════════════════════════════════════════════════
+ * EVETIS WB — Validations.gs
+ * Выпадающие списки, валидации данных, условное форматирование
+ * ══════════════════════════════════════════════════════════════
+ */
+
+// ───────────────────────────────────────
+// Справочники значений для выпадающих списков
+// ───────────────────────────────────────
+var VALIDATION_LISTS = {
+  // SKU_MASTER
+  category:        ['Крем', 'Сыворотка', 'Тоник', 'Энзимная пудра', 'Набор', 'Другое'],
+  product_type:    ['single', 'bundle', 'sample', 'service'],
+  status:          ['active', 'test', 'paused', 'archive', 'discontinued'],
+  price_strategy:  ['hold', 'grow', 'promo', 'clearance', 'test'],
+  supply_priority: ['high', 'medium', 'low', 'no_supply'],
+  boolean_yn:      ['TRUE', 'FALSE'],
+  
+  // COST_HISTORY
+  cost_type:       ['actual', 'planned', 'estimated'],
+  
+  // BANK_EXPENSES
+  operation_type_bank:  ['expense', 'income', 'transfer', 'refund'],
+  payment_status:       ['paid', 'pending', 'cancelled'],
+  source_type:          ['manual', 'bank_import', 'api'],
+  expense_category:     ['Фулфилмент', 'Логистика', 'Маркетинг', 'Дизайн',
+                         'Бухгалтерия', 'Банк', 'IT / Сервисы', 'Юридическое',
+                         'Закупка товара', 'Сертификация', 'Упаковка',
+                         'Личные переводы', 'Налоги', 'Другое'],
+  expense_nature:       ['cogs', 'opex', 'capex', 'tax', 'transfer', 'correction'],
+  business_area:        ['WB', 'Ozon', 'General', 'Retail'],
+  allocation_level:     ['sku', 'batch', 'category', 'business', 'marketplace'],
+  allocation_method:    ['direct', 'proportional', 'equal', 'manual'],
+  tax_status:           ['accepted', 'questionable', 'not_accepted', 'check'],
+  reconciliation_status:['ok', 'mismatch', 'not_linked', 'check'],
+  
+  // FULFILLMENT
+  ff_operation_type:    ['ff_stickering', 'ff_packaging', 'ff_assembly', 'ff_shipment_to_wb',
+                         'ff_storage', 'ff_return_processing', 'ff_other',
+                         'ff_labeling', 'ff_quality_check'],
+  
+  // PNL_TOTAL
+  report_status:        ['open', 'preliminary', 'closed'],
+  profit_status:        ['profit', 'low_profit', 'loss', 'no_sales', 'no_cogs'],
+  cashflow_status:      ['positive', 'negative', 'check'],
+  
+  // ADS_WB
+  ads_efficiency:       ['scale', 'ok', 'reduce', 'stop', 'test', 'no_data'],
+  ads_limit:            ['no_limit', 'reduce', 'stop'],
+  priority:             ['high', 'medium', 'low'],
+  
+  // Общие
+  data_quality:         ['OK', 'CHECK', 'ERROR'],
+  
+  // ERRORS_CONTROL
+  error_severity:       ['critical', 'warning', 'info'],
+  error_type:           ['sku_not_found', 'no_cogs', 'negative_margin', 'ads_no_orders',
+                         'duplicate', 'data_not_updated', 'missing_field', 'format_error',
+                         'reconciliation_mismatch', 'other'],
+  
+  // SUPPLY_PLAN
+  supply_status:        ['planned', 'approved', 'in_progress', 'shipped',
+                         'delivered', 'cancelled', 'delayed'],
+  
+  // RAW
+  processed_status:     ['raw', 'cleaned', 'error'],
+  sku_match_status:     ['matched', 'not_found', 'duplicate'],
+  record_type_ads:      ['campaign_info', 'campaign_stats', 'nm_stats',
+                         'finance_spend', 'budget', 'search_cluster_stats', 'bid_snapshot']
+};
+
+// ───────────────────────────────────────
+// Маппинг: лист → колонка → список значений
+// ───────────────────────────────────────
+var VALIDATION_MAP = {};
+
+// SKU_MASTER
+VALIDATION_MAP[SHEET_NAMES.SKU_MASTER] = {
+  'active':                   'boolean_yn',
+  'category':                 'category',
+  'product_type':             'product_type',
+  'status':                   'status',
+  'price_strategy':           'price_strategy',
+  'promo_allowed':            'boolean_yn',
+  'supply_priority':          'supply_priority',
+  'is_bundle':                'boolean_yn',
+  'include_in_pnl':           'boolean_yn',
+  'include_in_ads_analysis':  'boolean_yn',
+  'include_in_supply_plan':   'boolean_yn',
+  'include_in_stock_alerts':  'boolean_yn',
+  'data_quality_status':      'data_quality'
+};
+
+// COST_HISTORY
+VALIDATION_MAP[SHEET_NAMES.COST_HISTORY] = {
+  'is_current':               'boolean_yn',
+  'cost_type':                'cost_type',
+  'data_quality_status':      'data_quality'
+};
+
+// BANK_EXPENSES
+VALIDATION_MAP[SHEET_NAMES.BANK_EXPENSES] = {
+  'operation_type':           'operation_type_bank',
+  'payment_status':           'payment_status',
+  'source':                   'source_type',
+  'expense_category':         'expense_category',
+  'expense_nature':           'expense_nature',
+  'business_area':            'business_area',
+  'allocation_level':         'allocation_level',
+  'allocation_method':        'allocation_method',
+  'include_in_cogs':          'boolean_yn',
+  'include_in_pnl':           'boolean_yn',
+  'include_in_cashflow':      'boolean_yn',
+  'include_in_tax_usn':       'boolean_yn',
+  'tax_status':               'tax_status',
+  'reconciliation_status':    'reconciliation_status',
+  'data_quality_status':      'data_quality'
+};
+
+// FULFILLMENT
+VALIDATION_MAP[SHEET_NAMES.FULFILLMENT] = {
+  'operation_type':           'ff_operation_type',
+  'include_in_cogs':          'boolean_yn',
+  'include_in_pnl':           'boolean_yn',
+  'reconciliation_status':    'reconciliation_status',
+  'data_quality_status':      'data_quality'
+};
+
+// PNL_TOTAL
+VALIDATION_MAP[SHEET_NAMES.PNL_TOTAL] = {
+  'report_status':            'report_status',
+  'profit_status':            'profit_status',
+  'cashflow_status':          'cashflow_status',
+  'data_quality_status':      'data_quality'
+};
+
+// ADS_WB
+VALIDATION_MAP[SHEET_NAMES.ADS_WB] = {
+  'ads_efficiency_status':    'ads_efficiency',
+  'recommended_ads_limit':    'ads_limit',
+  'priority':                 'priority',
+  'data_quality_status':      'data_quality'
+};
+
+// STOCKS_WB
+VALIDATION_MAP[SHEET_NAMES.STOCKS_WB] = {
+  'stock_status':             'data_quality',
+  'supply_priority':          'supply_priority',
+  'data_quality_status':      'data_quality'
+};
+
+// SUPPLY_PLAN
+VALIDATION_MAP[SHEET_NAMES.SUPPLY_PLAN] = {
+  'supply_status':            'supply_status',
+  'priority':                 'priority',
+  'data_quality_status':      'data_quality'
+};
+
+// ERRORS_CONTROL
+VALIDATION_MAP[SHEET_NAMES.ERRORS_CONTROL] = {
+  'error_type':               'error_type',
+  'severity':                 'error_severity',
+  'resolved':                 'boolean_yn'
+};
+
+// UNIT_SKU_DAILY
+VALIDATION_MAP[SHEET_NAMES.UNIT_SKU_DAILY] = {
+  'profit_status':            'profit_status',
+  'ads_status':               'ads_efficiency',
+  'data_quality_status':      'data_quality'
+};
+
+// RAW листы
+VALIDATION_MAP[SHEET_NAMES.RAW_WB_ADS] = {
+  'record_type':              'record_type_ads',
+  'sku_match_status':         'sku_match_status',
+  'processed_status':         'processed_status'
+};
+
+VALIDATION_MAP[SHEET_NAMES.RAW_WB_STOCKS] = {
+  'sku_match_status':         'sku_match_status',
+  'processed_status':         'processed_status'
+};
+
+VALIDATION_MAP[SHEET_NAMES.RAW_WB_FINANCE] = {
+  'sku_match_status':         'sku_match_status',
+  'processed_status':         'processed_status'
+};
+
+
+// ═══════════════════════════════════════
+// Функции применения валидаций
+// ═══════════════════════════════════════
+
+/**
+ * Применить выпадающие списки к конкретному листу
+ */
+function applyValidationsToSheet_(sheet, sheetName) {
+  var schema = SHEETS_SCHEMA[sheetName];
+  var valMap = VALIDATION_MAP[sheetName];
+  
+  if (!schema || schema.type !== 'table' || !valMap) return;
+  
+  var headers = schema.headers;
+  var maxRow = 1000; // Диапазон для валидации
+  
+  for (var headerName in valMap) {
+    var colIndex = headers.indexOf(headerName);
+    if (colIndex === -1) continue;
+    
+    var listKey = valMap[headerName];
+    var values = VALIDATION_LISTS[listKey];
+    if (!values || values.length === 0) continue;
+    
+    var rule = SpreadsheetApp.newDataValidation()
+      .requireValueInList(values, true) // true = показать выпадающий список
+      .setAllowInvalid(false)           // запретить произвольные значения
+      .build();
+    
+    // Применяем к колонке (строки 2..maxRow)
+    var range = sheet.getRange(2, colIndex + 1, maxRow, 1);
+    range.setDataValidation(rule);
+  }
+  
+  Logger.log('✅ Валидации применены: ' + sheetName);
+}
+
+/**
+ * Применить валидации ко всем листам
+ */
+function applyAllValidations_(ss) {
+  var sheetNames = Object.keys(VALIDATION_MAP);
+  
+  for (var i = 0; i < sheetNames.length; i++) {
+    var name = sheetNames[i];
+    var sheet = ss.getSheetByName(name);
+    if (!sheet) continue;
+    
+    applyValidationsToSheet_(sheet, name);
+  }
+  
+  Logger.log('📋 Все валидации применены');
+}
+
+/**
+ * Применить условное форматирование для data_quality_status
+ * (OK = зелёный, CHECK = жёлтый, ERROR = красный)
+ */
+function applyConditionalFormatting_(sheet, sheetName) {
+  var schema = SHEETS_SCHEMA[sheetName];
+  if (!schema || schema.type !== 'table') return;
+  
+  var headers = schema.headers;
+  var dqIndex = headers.indexOf('data_quality_status');
+  if (dqIndex === -1) return;
+  
+  var col = dqIndex + 1;
+  var range = sheet.getRange(2, col, 1000, 1);
+  
+  // Очищаем старые правила для этого диапазона
+  var rules = [];
+  
+  // OK → зелёный
+  rules.push(
+    SpreadsheetApp.newConditionalFormatRule()
+      .whenTextEqualTo('OK')
+      .setBackground(COLORS.OK_BG)
+      .setFontColor(COLORS.OK_FONT)
+      .setRanges([range])
+      .build()
+  );
+  
+  // CHECK → жёлтый
+  rules.push(
+    SpreadsheetApp.newConditionalFormatRule()
+      .whenTextEqualTo('CHECK')
+      .setBackground(COLORS.CHECK_BG)
+      .setFontColor(COLORS.CHECK_FONT)
+      .setRanges([range])
+      .build()
+  );
+  
+  // ERROR → красный
+  rules.push(
+    SpreadsheetApp.newConditionalFormatRule()
+      .whenTextEqualTo('ERROR')
+      .setBackground(COLORS.ERROR_BG)
+      .setFontColor(COLORS.ERROR_FONT)
+      .setRanges([range])
+      .build()
+  );
+  
+  // Добавляем к существующим правилам листа
+  var existingRules = sheet.getConditionalFormatRules();
+  var allRules = existingRules.concat(rules);
+  sheet.setConditionalFormatRules(allRules);
+}
+
+/**
+ * Применить условное форматирование ко всем листам
+ */
+function applyAllConditionalFormatting_(ss) {
+  var sheetNames = Object.keys(SHEETS_SCHEMA);
+  
+  for (var i = 0; i < sheetNames.length; i++) {
+    var name = sheetNames[i];
+    var schema = SHEETS_SCHEMA[name];
+    if (!schema || schema.type !== 'table') continue;
+    
+    var sheet = ss.getSheetByName(name);
+    if (!sheet) continue;
+    
+    applyConditionalFormatting_(sheet, name);
+  }
+  
+  Logger.log('🎨 Условное форматирование применено');
+}

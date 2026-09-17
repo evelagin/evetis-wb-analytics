@@ -1,0 +1,125 @@
+{
+ "archived": false,
+ "archived_directly": false,
+ "cache_invalidated_at": "2026-09-16T14:27:09.207203Z",
+ "cache_ttl": null,
+ "card_schema": 23,
+ "collection": {
+  "archive_operation_id": null,
+  "archived": false,
+  "archived_directly": null,
+  "authority_level": null,
+  "created_at": "2026-08-26T15:19:56.740614Z",
+  "description": "Executive MVP: что происходит с бизнесом и зарабатываем ли мы деньги.",
+  "entity_id": "EZUYQWsC5fdY9QqGY-xKC",
+  "id": 6,
+  "is_remote_synced": false,
+  "is_sample": false,
+  "location": "/5/",
+  "name": "01 Executive",
+  "namespace": null,
+  "personal_owner_id": null,
+  "slug": "01_executive",
+  "type": null
+ },
+ "collection_id": 6,
+ "collection_position": null,
+ "collection_preview": true,
+ "created_at": "2026-09-16T13:59:21.789273Z",
+ "creator_id": 2,
+ "dashboard": null,
+ "dashboard_id": null,
+ "database_id": 2,
+ "dataset_query": {
+  "database": 2,
+  "lib/type": "mbql/query",
+  "stages": [
+   {
+    "lib/type": "mbql.stage/native",
+    "native": "-- Δ ₽ прибыли и Δ п.п. маржи к предыдущему окну той же длины; сравнение только при равном покрытии\nWITH b AS (\n  SELECT MIN(day) AS d1, MAX(day) AS d2, COUNT(*) AS len FROM `wb_mart.V_DASH_KPI_DAILY` WHERE {{day}}\n),\nagg AS (\n  SELECT\n    IF(k.day >= b.d1, 'cur', 'prv') AS w,\n    COUNTIF(e.period_result_eligible) AS cov1,\n    COUNTIF(e.after_product_cogs_eligible) AS cov2,\n    SUM(IF(e.period_result_eligible, e.period_result_pre_cogs_corrected_rub, NULL)) AS pre,\n    SUM(IF(e.period_result_eligible, e.revenue_base_period_result_rub, NULL)) AS rev1,\n    SUM(IF(e.after_product_cogs_eligible, e.period_result_after_product_cogs_rub, NULL)) AS post,\n    SUM(IF(e.after_product_cogs_eligible, e.revenue_base_after_product_cogs_rub, NULL)) AS rev2\n  FROM `wb_mart.V_DASH_KPI_DAILY` k JOIN `wb_mart.V_DASH_EXECUTIVE_ECONOMICS_DAILY` e USING (day), b\n  WHERE k.day BETWEEN DATE_SUB(b.d1, INTERVAL b.len DAY) AND b.d2\n  GROUP BY w\n),\nr AS (\n  SELECT\n    MAX(IF(w = 'cur', post, NULL)) AS p_cur, MAX(IF(w = 'prv', post, NULL)) AS p_prv,\n    MAX(IF(w = 'cur', SAFE_DIVIDE(pre, rev1), NULL)) AS m1_cur, MAX(IF(w = 'prv', SAFE_DIVIDE(pre, rev1), NULL)) AS m1_prv,\n    MAX(IF(w = 'cur', SAFE_DIVIDE(post, rev2), NULL)) AS m2_cur, MAX(IF(w = 'prv', SAFE_DIVIDE(post, rev2), NULL)) AS m2_prv,\n    MAX(IF(w = 'cur', cov1, NULL)) = MAX(IF(w = 'prv', cov1, NULL)) AS ok1,\n    MAX(IF(w = 'cur', cov2, NULL)) = MAX(IF(w = 'prv', cov2, NULL)) AS ok2\n  FROM agg\n)\nSELECT\n  CASE WHEN NOT ok2 OR p_prv IS NULL OR p_cur IS NULL THEN 'нет сопоставимого периода'\n       WHEN ROUND(p_cur - p_prv) = 0 THEN 'как в прошлом периоде'\n       WHEN p_cur > p_prv THEN CONCAT('▲ на ', CONCAT(IF(ROUND(p_cur - p_prv) < 0, '-', ''), REPLACE(FORMAT(\"%'d\", ABS(CAST(ROUND(p_cur - p_prv) AS INT64))), ',', ' '), ' ₽'), ' лучше')\n       ELSE CONCAT('▼ на ', CONCAT(IF(ROUND(p_prv - p_cur) < 0, '-', ''), REPLACE(FORMAT(\"%'d\", ABS(CAST(ROUND(p_prv - p_cur) AS INT64))), ',', ' '), ' ₽'), ' хуже') END AS profit_change,\n  CASE WHEN NOT ok1 OR m1_prv IS NULL OR m1_cur IS NULL THEN 'нет сопоставимого периода'\n       WHEN ROUND((m1_cur - m1_prv) * 100, 1) = 0 THEN 'без изменений'\n       WHEN m1_cur > m1_prv THEN CONCAT('▲ ', REPLACE(FORMAT('%.1f', (m1_cur - m1_prv) * 100), '.', ','), ' п.п. (лучше)')\n       ELSE CONCAT('▼ ', REPLACE(FORMAT('%.1f', (m1_prv - m1_cur) * 100), '.', ','), ' п.п. (хуже)') END AS margin_pre_change,\n  CASE WHEN NOT ok2 OR m2_prv IS NULL OR m2_cur IS NULL THEN 'нет сопоставимого периода'\n       WHEN ROUND((m2_cur - m2_prv) * 100, 1) = 0 THEN 'без изменений'\n       WHEN m2_cur > m2_prv THEN CONCAT('▲ ', REPLACE(FORMAT('%.1f', (m2_cur - m2_prv) * 100), '.', ','), ' п.п. (лучше)')\n       ELSE CONCAT('▼ ', REPLACE(FORMAT('%.1f', (m2_prv - m2_cur) * 100), '.', ','), ' п.п. (хуже)') END AS margin_post_change\nFROM r",
+    "template-tags": [
+     {
+      "dimension": [
+       "field",
+       {
+        "lib/uuid": "69b92921-dd6d-4ca0-9c36-384f8f877b0a"
+       },
+       909
+      ],
+      "display-name": "Период",
+      "id": "bd67a43d-7552-4025-b8ab-ee9309feeb23",
+      "name": "day",
+      "type": "dimension",
+      "widget-type": "date/all-options"
+     }
+    ]
+   }
+  ]
+ },
+ "description": "Изменение к предыдущему периоду той же длины: прибыль — в рублях (проценты при смене знака теряют смысл), маржа — в процентных пунктах. Сравнение показывается, только если в обоих периодах одинаковое число учтённых суток.",
+ "dimension_mappings": null,
+ "dimensions": null,
+ "display": "object",
+ "document_id": null,
+ "embedding_params": null,
+ "embedding_type": null,
+ "enable_embedding": false,
+ "entity_id": "-uLfO81VeyCLI2psY91A8",
+ "id": 185,
+ "is_remote_synced": false,
+ "last_used_at": "2026-09-16T14:37:23.811192Z",
+ "legacy_query": null,
+ "metabase_version": "v0.63.15.1 (ab5ffba)",
+ "name": "Executive V2 · Изменение результата к прошлому периоду",
+ "param_fields": {
+  "bd67a43d-7552-4025-b8ab-ee9309feeb23": [
+   {
+    "base_type": "type/Date",
+    "dimensions": [],
+    "display_name": "Day",
+    "fk_target_field_id": null,
+    "has_field_values": "none",
+    "id": 909,
+    "name": "day",
+    "name_field": null,
+    "semantic_type": null,
+    "table_id": 38,
+    "target": null
+   }
+  ]
+ },
+ "parameter_mappings": [],
+ "parameter_usage_count": 0,
+ "parameters": [],
+ "query_type": "native",
+ "source_card_id": null,
+ "table_id": null,
+ "type": "question",
+ "visualization_settings": {
+  "column_settings": {
+   "[\"name\",\"margin_post_change\"]": {
+    "column_title": "Маржа после себестоимости"
+   },
+   "[\"name\",\"margin_pre_change\"]": {
+    "column_title": "Маржа до себестоимости"
+   },
+   "[\"name\",\"profit_change\"]": {
+    "column_title": "Прибыль после себестоимости"
+   }
+  },
+  "table.columns": [
+   {
+    "enabled": true,
+    "name": "profit_change"
+   },
+   {
+    "enabled": true,
+    "name": "margin_pre_change"
+   },
+   {
+    "enabled": true,
+    "name": "margin_post_change"
+   }
+  ]
+ }
+}

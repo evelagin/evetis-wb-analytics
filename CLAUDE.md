@@ -107,7 +107,15 @@ EVETIS WB Analytics — это система управленческой от�
 Прежде чем править объект BigQuery, сверь живое определение с репозиторием:
 production уже дважды опережал Git (`REF_COST_MAP`, `V_PRODUCT_COGS_EFFECTIVE`).
 
-🔴 **Рекламный расход в экономике — это АТРИБУЦИЯ, а не биллинг.** `MART_SKU_DAILY.ad_spend`
+🔴 **FIN CONTRACT V2 (2026-09-16): два рекламных контракта.** Результат периода Executive
+(`V_DASH_FINANCE_CORRECTED_DAILY.period_result_pre_cogs_corrected_rub`) вычитает **биллинг WB
+по дате услуги** (`ad_spend_financial_rub`). SKU Performance и ДРР по артикулам — **атрибуция**
+(`MART_SKU_DAILY.ad_spend`). Документы «WB Продвижение» — только сверка выплаты. Возмещения WB
+(перевозка, ПВЗ) — `REF_COST_MAP.economic_direction = 'MEMO'`, P&L-эффект 0. Не смешивать и не
+распределять биллинг по SKU. См. `docs/FIN_CONTRACT_V2_2026-09-16.md`. Абзац ниже описывает
+SKU-слой (`MART_SKU_DAILY`), он по-прежнему на атрибуции.
+
+🔴 **Рекламный расход в витрине SKU — это АТРИБУЦИЯ, а не биллинг.** `MART_SKU_DAILY.ad_spend`
 берётся из `FACT_ADS_SKU_DAILY.stats_spend_rub` и завышен относительно фактически
 списанного WB на ~1,8 % (замер 2026-09-08: +9 476,42 ₽ за апрель–сентябрь). С 2026-09-10
 источник биллинга переключён на снапшот (Фаза B: `V_ADV_COSTS` → `V_ADV_COSTS_SNAPSHOT`,

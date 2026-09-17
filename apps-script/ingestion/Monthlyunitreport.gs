@@ -1,0 +1,547 @@
+/**
+ * ══════════════════════════════════════════════════════════════
+ * EVETIS WB — MonthlyUnitReport.gs  v1.2
+ *
+ * Блок 3: Юнит-экономика по месяцам.
+ * Один месяц = один лист ЮНИТ_MM_YYYY.
+ *
+ * v1.1 — Оптимизация:
+ *   - Весь лист собирается в один массив, записывается одним setValues()
+ *   - Форматирование крупными диапазонами
+ *   - Условное форматирование через правила, не ручную покраску
+ *   - Статус дня: пустой для нормальных дней
+ * ══════════════════════════════════════════════════════════════
+ */
+
+var UNIT_ROW_LABELS_ = [
+  'Заказы, шт',                    // 0
+  'Продажи, шт',                   // 1
+  'Возвраты, шт',                  // 2
+  'Чистые продажи, шт',            // 3
+  'Средняя цена продажи, ₽',       // 4
+  'Сумма реализации WB, ₽',        // 5
+  'К перечислению WB за товар, ₽', // 6
+  'Логистика WB, ₽',               // 7
+  'Хранение WB, ₽',                // 8
+  'Удержания WB, ₽',               // 9
+  'Компенсации WB, ₽',             // 10
+  'После расходов WB, ₽',          // 11
+  'Расход на рекламу, ₽',          // 12
+  'ДРР, %',                        // 13
+  'Себестоимость 1 шт, ₽',         // 14
+  'Себестоимость продаж, ₽',       // 15
+  'Прибыль, ₽',                    // 16
+  'Маржинальность, %',             // 17
+  'Остаток, шт',                   // 18
+  'Статус дня',                    // 19
+  'Комментарий'                    // 20
+];
+var UNIT_TOTAL_LABELS_ = UNIT_ROW_LABELS_.slice();
+UNIT_TOTAL_LABELS_[14] = 'Средняя себестоимость 1 шт, ₽';
+
+var UNIT_ROWS_COUNT_ = UNIT_ROW_LABELS_.length;
+var RU_MONTHS_ = ['','Январь','Февраль','Март','Апрель','Май','Июнь','Июль','Август','Сентябрь','Октябрь','Ноябрь','Декабрь'];
+var RU_DAYS_ = ['Вс','Пн','Вт','Ср','Чт','Пт','Сб'];
+
+// Индексы строк внутри блока (0-based) — v6
+var R_ = {
+  ORDERS:0, SALES:1, RETURNS:2, NET_SALES:3, AVG_PRICE:4, NET_REV:5,
+  WB_FOR_PAY:6, WB_LOG:7, WB_STOR:8, WB_DEDUCT:9, WB_COMP:10, WB_AFTER:11,
+  ADS:12, DRR:13, COGS_UNIT:14, COGS_TOTAL:15, PROFIT:16, MARGIN:17,
+  STOCK:18, STATUS:19, COMMENT:20
+};
+
+
+// ═══════════════════════════════════════
+// ГЛАВНАЯ ФУНКЦИЯ
+// ═══════════════════════════════════════
+
+function buildMonthlyUnitReport() {
+  var t0 = Date.now();
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  console.log('═══ buildMonthlyUnitReport() v1.1 СТАРТ ═══');
+
+  // ── 1. Читаем CLEAN_WB_DAILY ──
+  var tStep = Date.now();
+  var cleanSheet = ss.getSheetByName('CLEAN_WB_DAILY');
+  if (!cleanSheet || cleanSheet.getLastRow() < 2) {
+    SpreadsheetApp.getUi().alert('❌ Ошибка','CLEAN_WB_DAILY пуст или не найден.',SpreadsheetApp.getUi().ButtonSet.OK);
+    return;
+  }
+  var cH = getHeaderMap_(cleanSheet);
+  var cDateCol=findCol_(cH,['date']), cNmCol=findCol_(cH,['wb_nm_id']);
+  var cNameCol=findCol_(cH,['product_name']), cSkuCol=findCol_(cH,['internal_sku']);
+  var cOrdersCol=findCol_(cH,['orders_qty']), cSalesCol=findCol_(cH,['sales_qty']);
+  var cReturnsCol=findCol_(cH,['returns_qty']), cNetSalesCol=findCol_(cH,['net_sales_qty']);
+  var cNetRevCol=findCol_(cH,['net_revenue']), cAdsCol=findCol_(cH,['ads_spend']);
+  var cStockCol=findCol_(cH,['stock_qty']);
+  if (cDateCol===-1||cNmCol===-1) {
+    SpreadsheetApp.getUi().alert('❌','Нет колонки date или wb_nm_id в CLEAN_WB_DAILY.',SpreadsheetApp.getUi().ButtonSet.OK);
+    return;
+  }
+  var cleanData = readSheetData_(cleanSheet);
+  console.log('✅ Подготовка данных: CLEAN ' + cleanData.length + ' строк, ' + sec_(tStep) + ' сек');
+
+  // ── 2. Читаем SKU_MASTER ──
+  var masterSheet = ss.getSheetByName('SKU_MASTER');
+  var cogsMap = {}, skuInfoMap = {};
+  if (masterSheet) {
+    var mH = getHeaderMap_(masterSheet);
+    var mNmCol=findCol_(mH,['wb_nm_id','nm_id']), mCogsCol=findCol_(mH,['current_cogs']);
+    var mNameCol=findCol_(mH,['product_name_short','product_name']), mSkuCol=findCol_(mH,['internal_sku']);
+    var mCatCol=findCol_(mH,['category']);
+    var mData = readSheetData_(masterSheet);
+    for (var i=0;i<mData.length;i++) {
+      var nm = mNmCol>=0 ? normalizeNmId_(mData[i][mNmCol]) : '';
+      if (!nm) continue;
+      cogsMap[nm] = mCogsCol>=0 ? (Number(mData[i][mCogsCol])||0) : 0;
+      skuInfoMap[nm] = {
+        name: mNameCol>=0 ? String(mData[i][mNameCol]||'') : '',
+        sku: mSkuCol>=0 ? String(mData[i][mSkuCol]||'') : '',
+        category: mCatCol>=0 ? String(mData[i][mCatCol]||'') : ''
+      };
+    }
+  }
+  console.log('  SKU_MASTER: ' + Object.keys(cogsMap).length + ' товаров');
+
+  // ── 3. Группируем по месяцам ──
+  var monthData = {}, allNmIds = {};
+  for (var ci=0;ci<cleanData.length;ci++) {
+    var row=cleanData[ci];
+    var ds=parseDate_(row[cDateCol]); if(!ds) continue;
+    var nm=normalizeNmId_(row[cNmCol]); if(!nm) continue;
+    var p=ds.split('-'), mk=p[0]+'-'+p[1], dd=Number(p[2]);
+    if(!monthData[mk]) monthData[mk]={};
+    if(!monthData[mk][nm]) monthData[mk][nm]={};
+    allNmIds[nm]=true;
+    if(!skuInfoMap[nm]) skuInfoMap[nm]={name:cNameCol>=0?String(row[cNameCol]||''):'',sku:cSkuCol>=0?String(row[cSkuCol]||''):'',category:''};
+    monthData[mk][nm][dd] = {
+      orders:cOrdersCol>=0?(Number(row[cOrdersCol])||0):0,
+      sales:cSalesCol>=0?(Number(row[cSalesCol])||0):0,
+      returns:cReturnsCol>=0?(Number(row[cReturnsCol])||0):0,
+      netSales:cNetSalesCol>=0?(Number(row[cNetSalesCol])||0):0,
+      netRev:cNetRevCol>=0?(Number(row[cNetRevCol])||0):0,
+      ads:cAdsCol>=0?(Number(row[cAdsCol])||0):0,
+      stock:cStockCol>=0?(Number(row[cStockCol])||0):0
+    };
+  }
+  var monthKeys=Object.keys(monthData).sort();
+  var nmIdList=Object.keys(allNmIds).sort();
+  console.log('  Месяцев: '+monthKeys.length+', товаров: '+nmIdList.length);
+
+  // ── 4. Собираем каждый лист ──
+  var tWrite=0, tFormat=0;
+
+  for (var mki=0;mki<monthKeys.length;mki++) {
+    var mk=monthKeys[mki], mP=mk.split('-'), year=Number(mP[0]), month=Number(mP[1]);
+    var daysInMonth=new Date(year,month,0).getDate();
+    var sheetName='ЮНИТ_'+pad2_(month)+'_'+year;
+    var monthNmIds=Object.keys(monthData[mk]).sort();
+    var totalCols=1+daysInMonth+1; // A + дни + Итого
+
+    console.log('  Собираю '+sheetName+' ('+daysInMonth+' дней, '+monthNmIds.length+' товаров)...');
+
+    // ═══ СБОРКА МАССИВА В ПАМЯТИ ═══
+    tStep = Date.now();
+    var allRows = []; // 2D массив всего листа
+    // Мета-массивы: строка → тип формата
+    var rowFormats = []; // 'header','subheader','dates','dow','money','pct','qty','text','separator','empty'
+
+    // ── Строка 1: заголовок ──
+    var r1 = emptyRow_(totalCols);
+    r1[0]='Юнит-экономика WB'; r1[1]=RU_MONTHS_[month]+' '+year;
+    allRows.push(r1); rowFormats.push('title');
+
+    // ── Строка 2: обновлено ──
+    var r2 = emptyRow_(totalCols);
+    r2[0]='Обновлено'; r2[1]=Utilities.formatDate(new Date(),'Europe/Moscow','dd.MM.yyyy HH:mm');
+    allRows.push(r2); rowFormats.push('subtitle');
+
+    // ── Пустая строка ──
+    allRows.push(emptyRow_(totalCols)); rowFormats.push('empty');
+
+    // ── Даты и дни недели ──
+    var dateRow=emptyRow_(totalCols), dowRow=emptyRow_(totalCols);
+    var weekendColIdx=[]; // 0-based column indices
+    dateRow[0]='Показатель'; dowRow[0]='';
+    for (var d=1;d<=daysInMonth;d++) {
+      var dt=new Date(year,month-1,d);
+      dateRow[d]=pad2_(d)+'.'+pad2_(month);
+      var dow=dt.getDay();
+      dowRow[d]=RU_DAYS_[dow];
+      if(dow===0||dow===6) weekendColIdx.push(d); // 0-based col index
+    }
+    dateRow[totalCols-1]='Итого'; dowRow[totalCols-1]='';
+
+    // ═══ БЛОК ИТОГО ═══
+    var totalSepRow = emptyRow_(totalCols);
+    totalSepRow[0] = '📊 ИТОГО ПО КАБИНЕТУ';
+    allRows.push(totalSepRow); rowFormats.push('total_header');
+
+    allRows.push(dateRow.slice()); rowFormats.push('dates');
+    allRows.push(dowRow.slice()); rowFormats.push('dow');
+
+    var totalBlock = buildBlockData_(monthData[mk], monthNmIds, daysInMonth, cogsMap, true);
+    var totalDataStartIdx = allRows.length; // запоминаем для форматирования
+    pushBlockRows_(allRows, rowFormats, totalBlock, UNIT_TOTAL_LABELS_, totalCols, [R_.STATUS, R_.COMMENT]);
+
+    // ── Пустая строка ──
+    allRows.push(emptyRow_(totalCols)); rowFormats.push('empty');
+
+    // ═══ БЛОКИ ПО ТОВАРАМ ═══
+    var skuBlockStarts = []; // [{startIdx, endIdx}]
+    for (var ni=0;ni<monthNmIds.length;ni++) {
+      var nmId=monthNmIds[ni];
+      var info=skuInfoMap[nmId]||{};
+
+      // Разделитель товара
+      var sepRow=emptyRow_(totalCols);
+      sepRow[0]='АРТИКУЛ WB: '+nmId;
+      sepRow[1]=(info.name||'');
+      sepRow[2]=(info.sku||'');
+      if(info.category) sepRow[3]=info.category;
+      allRows.push(sepRow); rowFormats.push('sku_header');
+
+      // Даты и дни недели
+      allRows.push(dateRow.slice()); rowFormats.push('dates');
+      allRows.push(dowRow.slice()); rowFormats.push('dow');
+
+      // Данные
+      var skuBlock=buildBlockData_(monthData[mk],[nmId],daysInMonth,cogsMap,false);
+      var skuDataStart=allRows.length;
+      pushBlockRows_(allRows, rowFormats, skuBlock, UNIT_ROW_LABELS_, totalCols);
+      skuBlockStarts.push({start:skuDataStart, end:allRows.length-1});
+
+      // Пустая строка
+      allRows.push(emptyRow_(totalCols)); rowFormats.push('empty');
+    }
+
+    console.log('  ✅ Сбор массива: '+allRows.length+' строк, '+sec_(tStep)+' сек');
+
+    // ═══ ЗАПИСЬ В ЛИСТ ═══
+    tStep = Date.now();
+    var sheet = ss.getSheetByName(sheetName);
+    if (sheet) { sheet.clear(); sheet.clearConditionalFormatRules(); }
+    else { sheet = ss.insertSheet(sheetName); }
+
+    // Убеждаемся что хватает строк и колонок
+    if (sheet.getMaxRows() < allRows.length) sheet.insertRowsAfter(sheet.getMaxRows(), allRows.length - sheet.getMaxRows());
+    if (sheet.getMaxColumns() < totalCols) sheet.insertColumnsAfter(sheet.getMaxColumns(), totalCols - sheet.getMaxColumns());
+
+    // Снимаем валидации
+    try { sheet.getRange(1,1,sheet.getMaxRows(),sheet.getMaxColumns()).clearDataValidations(); } catch(e){}
+
+    // Одна запись!
+    sheet.getRange(1,1,allRows.length,totalCols).setValues(allRows);
+    SpreadsheetApp.flush();
+
+    var writeTime = sec_(tStep);
+    tWrite += Number(writeTime);
+    console.log('  ✅ Запись значений: '+allRows.length+'×'+totalCols+', '+writeTime+' сек');
+
+    // ═══ ФОРМАТИРОВАНИЕ ═══
+    tStep = Date.now();
+
+    // Ширина колонок
+    sheet.setColumnWidth(1, 230);
+    for (var c=2;c<=totalCols;c++) sheet.setColumnWidth(c, 80);
+    sheet.setFrozenRows(2);
+
+    // Весь лист: шрифт
+    sheet.getRange(1,1,allRows.length,totalCols).setFontFamily('Arial').setFontSize(10);
+
+    // Проходим по rowFormats и применяем крупными диапазонами
+    var fmtRanges = groupFormats_(rowFormats);
+
+    for (var fi=0;fi<fmtRanges.length;fi++) {
+      var fmt = fmtRanges[fi];
+      var range = sheet.getRange(fmt.start+1, 1, fmt.count, totalCols); // +1: 1-based
+
+      switch(fmt.type) {
+        case 'title':
+          range.setFontSize(14).setFontWeight('bold');
+          break;
+        case 'subtitle':
+          range.setFontColor('#6B7280');
+          break;
+        case 'total_header':
+          range.setBackground('#1E40AF').setFontColor('#FFFFFF').setFontWeight('bold').setFontSize(11);
+          break;
+        case 'sku_header':
+          range.setBackground('#DBEAFE').setFontWeight('bold').setFontSize(10);
+          break;
+        case 'dates':
+          range.setFontWeight('bold').setHorizontalAlignment('center').setBackground('#E5E7EB');
+          break;
+        case 'dow':
+          range.setHorizontalAlignment('center').setFontColor('#6B7280').setFontSize(9);
+          break;
+        case 'money':
+          sheet.getRange(fmt.start+1, 2, fmt.count, totalCols-1).setNumberFormat('#,##0');
+          sheet.getRange(fmt.start+1, 1, fmt.count, 1).setFontWeight('bold');
+          break;
+        case 'pct':
+          sheet.getRange(fmt.start+1, 2, fmt.count, totalCols-1).setNumberFormat('0%');
+          sheet.getRange(fmt.start+1, 1, fmt.count, 1).setFontWeight('bold');
+          break;
+        case 'qty':
+          sheet.getRange(fmt.start+1, 2, fmt.count, totalCols-1).setNumberFormat('#,##0');
+          sheet.getRange(fmt.start+1, 1, fmt.count, 1).setFontWeight('bold');
+          break;
+        case 'text':
+          sheet.getRange(fmt.start+1, 1, fmt.count, 1).setFontWeight('bold');
+          break;
+      }
+    }
+
+    // Выходные — серый фон по всем строкам данных
+    for (var wi=0;wi<weekendColIdx.length;wi++) {
+      var wCol = weekendColIdx[wi] + 1; // 1-based
+      sheet.getRange(4, wCol, allRows.length-3, 1).setBackground('#F9FAFB');
+    }
+
+    var formatTime = sec_(tStep);
+    tFormat += Number(formatTime);
+    console.log('  ✅ Форматирование: '+formatTime+' сек');
+
+    // ═══ УСЛОВНОЕ ФОРМАТИРОВАНИЕ (правилами) ═══
+    tStep = Date.now();
+    applyUnitCondRules_(sheet, rowFormats, allRows.length, totalCols);
+    console.log('  ✅ Условное форматирование: '+sec_(tStep)+' сек');
+
+    console.log('  ✅ '+sheetName+' готов: '+allRows.length+' строк');
+  }
+
+  // ── Финал ──
+  var elapsed = sec_(t0);
+  console.log('═══ buildMonthlyUnitReport() ЗАВЕРШЕНО: '+monthKeys.length+' мес, '+
+    nmIdList.length+' товаров, запись: '+tWrite.toFixed(1)+'с, формат: '+tFormat.toFixed(1)+'с, всего: '+elapsed+' сек ═══');
+
+  SpreadsheetApp.getUi().alert('📈 Юнит-экономика собрана',
+    'Листов: '+monthKeys.length+'\n'+
+    'Товаров: '+nmIdList.length+'\n'+
+    'Время: '+elapsed+' сек\n'+
+    '  запись: '+tWrite.toFixed(1)+' сек\n'+
+    '  форматирование: '+tFormat.toFixed(1)+' сек',
+    SpreadsheetApp.getUi().ButtonSet.OK);
+}
+
+
+// ═══════════════════════════════════════
+// СБОРКА ДАННЫХ БЛОКА (в памяти)
+// ═══════════════════════════════════════
+
+function buildBlockData_(monthSkuData, nmIds, daysInMonth, cogsMap, isTotal) {
+  var data = [];
+  for (var i=0;i<UNIT_ROWS_COUNT_;i++) data.push({});
+
+  for (var d=1;d<=daysInMonth;d++) {
+    var dO=0,dS=0,dR=0,dNS=0,dNR=0,dAds=0,dSt=0,dCogsT=0;
+    for (var ni=0;ni<nmIds.length;ni++) {
+      var dd=(monthSkuData[nmIds[ni]]||{})[d];
+      if(!dd) continue;
+      dO+=dd.orders; dS+=dd.sales; dR+=dd.returns; dNS+=dd.netSales;
+      dNR+=dd.netRev; dAds+=dd.ads; dSt+=dd.stock;
+      dCogsT += dd.netSales * (cogsMap[nmIds[ni]]||0);
+    }
+    var avgP = dNS>0 ? Math.round(dNR/dNS) : 0;
+    var drr = dNR>0 ? dAds/dNR : 0;
+    var cogs1 = isTotal ? (dNS>0 ? Math.round(dCogsT/dNS) : 0) : (nmIds.length===1 ? (cogsMap[nmIds[0]]||0) : 0);
+    var profit = dNR - dAds - dCogsT; // WB расходы пока 0
+    var margin = dNR>0 ? profit/dNR : 0;
+
+    // Статус: пустой если всё нормально
+    var status = '';
+    if (dNR===0 && dAds>0) status='Реклама без продаж';
+    else if (profit<0 && dNR>0) status='Убыток';
+    else if (drr>0.25 && dNR>0) status='Высокий ДРР';
+    else if (dSt===0 && (dO>0||dS>0)) status='Нет остатка';
+    // OK и "Нет продаж" — пустой
+
+    data[R_.ORDERS][d]=dO; data[R_.SALES][d]=dS; data[R_.RETURNS][d]=dR;
+    data[R_.NET_SALES][d]=dNS; data[R_.AVG_PRICE][d]=avgP; data[R_.NET_REV][d]=dNR;
+    data[R_.WB_FOR_PAY][d]=0; data[R_.WB_LOG][d]=0; data[R_.WB_STOR][d]=0;
+    data[R_.WB_DEDUCT][d]=0; data[R_.WB_COMP][d]=0; data[R_.WB_AFTER][d]=0;
+    data[R_.ADS][d]=dAds; data[R_.DRR][d]=drr;
+    data[R_.COGS_UNIT][d]=cogs1; data[R_.COGS_TOTAL][d]=dCogsT;
+    data[R_.PROFIT][d]=profit; data[R_.MARGIN][d]=margin;
+    data[R_.STOCK][d]=dSt; data[R_.STATUS][d]=status; data[R_.COMMENT][d]='';
+  }
+
+  // Итого за месяц
+  var sumIdx=[R_.ORDERS,R_.SALES,R_.RETURNS,R_.NET_SALES,R_.NET_REV,
+    R_.WB_FOR_PAY,R_.WB_LOG,R_.WB_STOR,R_.WB_DEDUCT,R_.WB_COMP,R_.WB_AFTER,
+    R_.ADS,R_.COGS_TOTAL,R_.PROFIT];
+
+  for (var si=0;si<sumIdx.length;si++) {
+    var idx=sumIdx[si], s=0;
+    for(var d=1;d<=daysInMonth;d++) s+=(data[idx][d]||0);
+    data[idx].total=s;
+  }
+  // Остаток — последний ненулевой
+  var lastSt=0;
+  for(var d=1;d<=daysInMonth;d++) if(data[R_.STOCK][d]) lastSt=data[R_.STOCK][d];
+  data[R_.STOCK].total=lastSt;
+
+  // Расчётные итого
+  var tNR=data[R_.NET_REV].total||0, tNS=data[R_.NET_SALES].total||0;
+  var tAds=data[R_.ADS].total||0, tCT=data[R_.COGS_TOTAL].total||0, tP=data[R_.PROFIT].total||0;
+  data[R_.AVG_PRICE].total = tNS>0 ? Math.round(tNR/tNS) : 0;
+  data[R_.DRR].total = tNR>0 ? tAds/tNR : 0;
+  data[R_.COGS_UNIT].total = tNS>0 ? Math.round(tCT/tNS) : 0;
+  data[R_.MARGIN].total = tNR>0 ? tP/tNR : 0;
+
+  // Статус итого
+  var st='';
+  if(tNR===0&&tAds>0) st='Реклама без продаж';
+  else if(tP<0&&tNR>0) st='Убыток';
+  else if(tNR>0&&tAds/tNR>0.25) st='Высокий ДРР';
+  data[R_.STATUS].total=st;
+  data[R_.COMMENT].total='';
+
+  return data;
+}
+
+
+// ═══════════════════════════════════════
+// ДОБАВЛЕНИЕ СТРОК БЛОКА В МАССИВ
+// ═══════════════════════════════════════
+
+function pushBlockRows_(allRows, rowFormats, blockData, labels, totalCols, skipRows) {
+  // Типы строк для форматирования — v6
+  var moneyIdx = [R_.AVG_PRICE,R_.NET_REV,R_.WB_FOR_PAY,R_.WB_LOG,R_.WB_STOR,R_.WB_DEDUCT,R_.WB_COMP,R_.WB_AFTER,R_.ADS,R_.COGS_UNIT,R_.COGS_TOTAL,R_.PROFIT];
+  var pctIdx = [R_.DRR,R_.MARGIN];
+  var qtyIdx = [R_.ORDERS,R_.SALES,R_.RETURNS,R_.NET_SALES,R_.STOCK];
+  var skip = skipRows || [];
+
+  for (var li=0;li<UNIT_ROWS_COUNT_;li++) {
+    if (skip.indexOf(li) >= 0) continue;
+    var row = emptyRow_(totalCols);
+    row[0] = labels[li];
+    for (var d=1;d<=totalCols-2;d++) {
+      row[d] = blockData[li][d]!==undefined ? blockData[li][d] : '';
+    }
+    row[totalCols-1] = blockData[li].total!==undefined ? blockData[li].total : '';
+    allRows.push(row);
+
+    // Определяем тип формата
+    if (moneyIdx.indexOf(li)>=0) rowFormats.push('money');
+    else if (pctIdx.indexOf(li)>=0) rowFormats.push('pct');
+    else if (qtyIdx.indexOf(li)>=0) rowFormats.push('qty');
+    else rowFormats.push('text');
+  }
+}
+
+
+// ═══════════════════════════════════════
+// ГРУППИРОВКА ФОРМАТОВ
+// ═══════════════════════════════════════
+
+function groupFormats_(rowFormats) {
+  var groups = [];
+  var i = 0;
+  while (i < rowFormats.length) {
+    var type = rowFormats[i];
+    var start = i;
+    var count = 1;
+    while (i+count < rowFormats.length && rowFormats[i+count] === type) count++;
+    groups.push({type:type, start:start, count:count});
+    i += count;
+  }
+  return groups;
+}
+
+
+// ═══════════════════════════════════════
+// УСЛОВНОЕ ФОРМАТИРОВАНИЕ (правилами)
+// ═══════════════════════════════════════
+
+function applyUnitCondRules_(sheet, rowFormats, totalRows, totalCols) {
+  // Собираем номера строк по типу label
+  var profitRows=[], marginRows=[], drrRows=[], stockRows=[], statusRows=[];
+
+  // Мы знаем rowFormats, но нам нужно по label.
+  // Читаем col A чтобы найти нужные строки (быстрее чем перечитывать всё)
+  var colA = sheet.getRange(1,1,totalRows,1).getValues();
+
+  for (var r=0;r<colA.length;r++) {
+    var v = String(colA[r][0]);
+    if (v==='Прибыль, ₽') profitRows.push(r+1);
+    else if (v==='Маржинальность, %') marginRows.push(r+1);
+    else if (v==='ДРР, %') drrRows.push(r+1);
+    else if (v==='Остаток, шт') stockRows.push(r+1);
+    else if (v==='Статус дня') statusRows.push(r+1);
+    else if (v==='После расходов WB, ₽') profitRows.push(r+1); // отрицательный = проблема
+  }
+
+  var rules = [];
+
+  // Прибыль < 0 → красный
+  for (var i=0;i<profitRows.length;i++) {
+    var rng = sheet.getRange(profitRows[i], 2, 1, totalCols-1);
+    rules.push(SpreadsheetApp.newConditionalFormatRule()
+      .whenNumberLessThan(0).setBackground('#FEE2E2').setRanges([rng]).build());
+  }
+
+  // Маржинальность < 15% → красный
+  for (var i=0;i<marginRows.length;i++) {
+    var rng = sheet.getRange(marginRows[i], 2, 1, totalCols-1);
+    rules.push(SpreadsheetApp.newConditionalFormatRule()
+      .whenNumberLessThan(0.15).setBackground('#FEE2E2').setRanges([rng]).build());
+  }
+
+  // ДРР > 25% → красный, 15-25% → жёлтый
+  for (var i=0;i<drrRows.length;i++) {
+    var rng = sheet.getRange(drrRows[i], 2, 1, totalCols-1);
+    rules.push(SpreadsheetApp.newConditionalFormatRule()
+      .whenNumberGreaterThan(0.25).setBackground('#FEE2E2').setRanges([rng]).build());
+    rules.push(SpreadsheetApp.newConditionalFormatRule()
+      .whenNumberBetween(0.15,0.25).setBackground('#FEF3C7').setRanges([rng]).build());
+  }
+
+  // Остаток = 0 → красный
+  for (var i=0;i<stockRows.length;i++) {
+    var rng = sheet.getRange(stockRows[i], 2, 1, totalCols-1);
+    rules.push(SpreadsheetApp.newConditionalFormatRule()
+      .whenNumberEqualTo(0).setBackground('#FEE2E2').setRanges([rng]).build());
+  }
+
+  // Статус: текстовые правила
+  for (var i=0;i<statusRows.length;i++) {
+    var rng = sheet.getRange(statusRows[i], 2, 1, totalCols-1);
+    rules.push(SpreadsheetApp.newConditionalFormatRule()
+      .whenTextEqualTo('Убыток').setBackground('#FEE2E2').setFontColor('#991B1B').setRanges([rng]).build());
+    rules.push(SpreadsheetApp.newConditionalFormatRule()
+      .whenTextEqualTo('Реклама без продаж').setBackground('#FEE2E2').setFontColor('#991B1B').setRanges([rng]).build());
+    rules.push(SpreadsheetApp.newConditionalFormatRule()
+      .whenTextEqualTo('Высокий ДРР').setBackground('#FEF3C7').setFontColor('#92400E').setRanges([rng]).build());
+    rules.push(SpreadsheetApp.newConditionalFormatRule()
+      .whenTextEqualTo('Нет остатка').setBackground('#FEF3C7').setFontColor('#92400E').setRanges([rng]).build());
+  }
+
+  if (rules.length > 0) {
+    sheet.setConditionalFormatRules(rules);
+  }
+}
+
+
+// ═══════════════════════════════════════
+// УТИЛИТЫ
+// ═══════════════════════════════════════
+
+function emptyRow_(cols) {
+  var r = [];
+  for (var i=0;i<cols;i++) r.push('');
+  return r;
+}
+
+
+// ═══════════════════════════════════════
+// МЕНЮ
+// ═══════════════════════════════════════
+
+function addUnitReportMenu() {
+  SpreadsheetApp.getUi().createMenu('📈 Юнит-экономика')
+    .addItem('📈 Собрать месячный отчет', 'buildMonthlyUnitReport')
+    .addToUi();
+}

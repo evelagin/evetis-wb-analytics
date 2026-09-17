@@ -1,7 +1,7 @@
 {
  "archived": false,
  "archived_directly": false,
- "cache_invalidated_at": "2026-08-28T14:33:12.757881Z",
+ "cache_invalidated_at": "2026-09-16T10:49:07.182999Z",
  "cache_ttl": null,
  "card_schema": 23,
  "collection": {
@@ -56,7 +56,7 @@
    }
   ]
  },
- "description": "Разница между рекламным биллингом WB и рекламой, распределённой на SKU: V_DASH_FINANCE_CORRECTED_DAILY.ad_spend_unallocated_rub. 🔴 Знак источника сохранён, ABS не применяется: плюс означает, что биллинг больше распределённого. 🔴 Это НЕ расход. Расходом в результате периода является только распределённая на SKU реклама; эта карточка — сверка двух измерений одних и тех же денег. Складывать строки контроля нельзя.",
+ "description": "Разница между документами «WB Продвижение» в финотчёте и рекламой, атрибутированной на SKU: V_DASH_FINANCE_CORRECTED_DAILY.ad_spend_unallocated_rub. 🔴 Знак источника сохранён, ABS не применяется: плюс означает, что документы больше атрибуции. 🔴 Это НЕ расход. Расход результата периода — биллинг WB по дате оказания услуги (карточка «Реклама», FIN CONTRACT V2, 2026-09-16); эта карточка — сверка двух других измерений тех же денег. Складывать строки контроля нельзя.",
  "dimension_mappings": null,
  "dimensions": null,
  "display": "scalar",
@@ -67,7 +67,7 @@
  "entity_id": "brjFvNOXhKCg4znCEkJHC",
  "id": 79,
  "is_remote_synced": false,
- "last_used_at": "2026-08-28T15:00:26.911774Z",
+ "last_used_at": "2026-09-16T10:49:51.765255Z",
  "legacy_query": null,
  "metabase_version": "v0.63.15.1 (ab5ffba)",
  "name": "Реклама: нераспределено, ₽",
