@@ -66,6 +66,11 @@ CREATE SCHEMA IF NOT EXISTS `wb_mart` OPTIONS (location = 'EU');
 --    operation_type_normalized в V_WB_FINANCE_SEMANTIC заглушки не нужны.
 --    ⚠️ Порядок обязателен: сначала FACT_FINANCE пересобран из семантического слоя,
 --    только потом этот скрипт. Иначе §5.3 упадёт — и это будет правильно.
+-- 🔴 FIN CONTRACT V2 (2026-09-16) BACK-PORT. Production изменён миграцией
+--    sql/dash/fin_contract_v2_2026-09-16.sql: три строки возмещений переведены
+--    CREDIT → MEMO (техническое перераспределение вознаграждения WB, P&L = 0),
+--    в V_WB_FINANCE_AMOUNTS_LONG_MAPPED добавлена ветка MEMO → 0. Этот seed
+--    воспроизводит production; прогон без back-port вернул бы ложный доход.
 CREATE OR REPLACE TABLE `wb_mart.REF_COST_MAP__BUILD` AS
 SELECT op_key, amount_field, economic_direction, cost_category,
   field_normalization_sign, note, CURRENT_TIMESTAMP() AS seeded_at
@@ -84,8 +89,8 @@ FROM UNNEST([
          'wb_reward' AS cost_category,1 AS field_normalization_sign,
          'Вознаграждение WB (vw) по продаже. НЕ сбор маркетплейса — см. marketplace_fee_gap_rub (PR-B2) | Stage 1.5 (2026-08-26): знакопеременное поле — знак СОХРАНЯЕТСЯ. Построчный ABS() отражал возвраты/кредиты как расход.' AS note),
   ('Возврат','commission_amount','COST','wb_reward',-1,'Вознаграждение WB (vw) по возврату (PR-B2)'),
-  ('Возмещение за выдачу и возврат товаров на ПВЗ','commission_amount','CREDIT','reimbursement_pvz',-1,'Возмещение ПВЗ (кредит)'),
-  ('Возмещение издержек по перевозке/по складским операциям с товаром','commission_amount','CREDIT','reimbursement_logistics',-1,'Возмещение издержек перевозки/склада (кредит)'),
+  ('Возмещение за выдачу и возврат товаров на ПВЗ','commission_amount','MEMO','reimbursement_pvz',-1,'Возмещение ПВЗ (кредит) | FIN CONTRACT V2 (2026-09-16): техническое перераспределение вознаграждения WB (vw + vwNds = −(rebillLogisticCost + ppvzReward), forPay = 0). НЕ доход продавца, P&L-эффект = 0. Решение владельца 2026-09-16.'),
+  ('Возмещение издержек по перевозке/по складским операциям с товаром','commission_amount','MEMO','reimbursement_logistics',-1,'Возмещение издержек перевозки/склада (кредит) | FIN CONTRACT V2 (2026-09-16): техническое перераспределение вознаграждения WB (vw + vwNds = −(rebillLogisticCost + ppvzReward), forPay = 0). НЕ доход продавца, P&L-эффект = 0. Решение владельца 2026-09-16.'),
   -- Stage ADS-1A (2026-09-06): WB ПЕРЕИМЕНОВАЛ операцию с 01.09.2026. Доказательство —
   --   чистая посуточная передача эстафеты без единого дня пересечения: старое имя присутствует
   --   92/92 суток 01.06–31.08 и исчезает 01.09; новое появляется 01.09 и присутствует 5/5 суток.
@@ -100,7 +105,7 @@ FROM UNNEST([
   --   существующая: downstream (dashboard_contract_v2 §fin_long_day) уже разносит
   --   reimbursement_logistics отдельной строкой; новое имя категории молча ушло бы
   --   в остаточные корзины other_sku_rub/other_account_rub и изменило бы «Прочие расходы WB».
-  ('Возмещение издержек по перемещению и операционной обработке товара','commission_amount','CREDIT','reimbursement_logistics',-1,'Возмещение издержек перемещения/операционной обработки (кредит). Stage ADS-1A: переименование WB с 01.09.2026 операции «Возмещение издержек по перевозке/по складским операциям с товаром» — та же семантика, то же поле, тот же знак'),
+  ('Возмещение издержек по перемещению и операционной обработке товара','commission_amount','MEMO','reimbursement_logistics',-1,'Возмещение издержек перемещения/операционной обработки (кредит). Stage ADS-1A: переименование WB с 01.09.2026 операции «Возмещение издержек по перевозке/по складским операциям с товаром» — та же семантика, то же поле, тот же знак | FIN CONTRACT V2 (2026-09-16): техническое перераспределение вознаграждения WB (vw + vwNds = −(rebillLogisticCost + ppvzReward), forPay = 0). НЕ доход продавца, P&L-эффект = 0. Решение владельца 2026-09-16.'),
   ('Коррекция продаж','commission_amount','ADJUSTMENT','wb_reward',-1,'Корректировка вознаграждения WB — знак сохраняется (PR-B2)'),
   ('Продажа','acquiring_fee','COST','acquiring',1,'Эквайринг по продаже (per-SKU COST)'),
   ('Возврат','acquiring_fee','COST','acquiring',1,'Эквайринг по возврату'),
@@ -133,7 +138,7 @@ ASSERT (SELECT COUNT(*) = COUNT(DISTINCT FORMAT('%t|%t', op_key, amount_field))
 ASSERT (SELECT COUNTIF(op_key IS NULL OR TRIM(op_key)='' OR amount_field IS NULL OR TRIM(amount_field)='')
         FROM `wb_mart.REF_COST_MAP__BUILD`) = 0
   AS 'PR-Mart2a seed: NULL/empty op_key/amount_field';
-ASSERT (SELECT COUNTIF(economic_direction IS NULL OR economic_direction NOT IN ('COST','CREDIT','ADJUSTMENT'))
+ASSERT (SELECT COUNTIF(economic_direction IS NULL OR economic_direction NOT IN ('COST','CREDIT','ADJUSTMENT','MEMO'))
         FROM `wb_mart.REF_COST_MAP__BUILD`) = 0
   AS 'PR-Mart2a seed: economic_direction NULL или вне домена';
 ASSERT (SELECT COUNTIF(field_normalization_sign IS NULL OR field_normalization_sign NOT IN (-1, 1))
@@ -166,6 +171,7 @@ SELECT l.is_sku_row, l.op_key, l.amount_field, l.source_signed_amount AS s,
     WHEN 'COST'       THEN ABS(l.source_signed_amount)
     WHEN 'CREDIT'     THEN -ABS(l.source_signed_amount)
     WHEN 'ADJUSTMENT' THEN l.source_signed_amount * r.field_normalization_sign
+    WHEN 'MEMO'       THEN NUMERIC '0'
   END AS cp
 FROM _long l LEFT JOIN `wb_mart.REF_COST_MAP__BUILD` r USING (op_key, amount_field);
 
@@ -207,6 +213,7 @@ ASSERT (SELECT
       COUNTIF(dir = 'COST'       AND cp <> ABS(s))
     + COUNTIF(dir = 'CREDIT'     AND cp <> -ABS(s))
     + COUNTIF(dir = 'ADJUSTMENT' AND cp <> s * sgn)
+    + COUNTIF(dir = 'MEMO'       AND cp <> 0)
     + COUNTIF(cat IS NOT NULL AND cp IS NULL)
     + COUNTIF(is_sku_row IS NULL)
     FROM `_mapped`) = 0
@@ -281,6 +288,7 @@ SELECT
     WHEN 'COST'       THEN ABS(l.source_signed_amount)
     WHEN 'CREDIT'     THEN -ABS(l.source_signed_amount)
     WHEN 'ADJUSTMENT' THEN l.source_signed_amount * r.field_normalization_sign
+    WHEN 'MEMO'       THEN NUMERIC '0'
     ELSE NULL
   END AS cost_amount_positive
 FROM `wb_mart.V_WB_FINANCE_AMOUNTS_LONG` l

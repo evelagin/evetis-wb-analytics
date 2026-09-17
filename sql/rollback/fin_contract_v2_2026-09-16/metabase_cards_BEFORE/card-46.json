@@ -1,0 +1,49 @@
+{
+ "dataset_query": {
+  "database": 2,
+  "lib/type": "mbql/query",
+  "stages": [
+   {
+    "lib/type": "mbql.stage/native",
+    "native": "WITH b AS (\n  SELECT MIN(day) AS d1, MAX(day) AS d2, COUNT(*) AS len\n  FROM `wb_mart.V_DASH_KPI_DAILY`\n  WHERE {{day}}\n),\nagg AS (\n  SELECT\n    IF(k.day >= b.d1, 'cur', 'prv')                             AS w,\n    IF(k.day >= b.d1, b.d1, DATE_SUB(b.d1, INTERVAL b.len DAY)) AS period_start,\n    COUNTIF(k.ads_covered)                                             AS cov,\n    SUM(k.ad_spend_attributed_rub)                                                    AS v\n  FROM `wb_mart.V_DASH_KPI_DAILY` k, b\n  WHERE k.day BETWEEN DATE_SUB(b.d1, INTERVAL b.len DAY) AND b.d2\n  GROUP BY w, period_start\n)\nSELECT period_start AS period, v AS ad_spend_rub\nFROM agg\nWHERE w = 'cur'\n   OR (cov = (SELECT cov FROM agg WHERE w = 'cur'))\nORDER BY period",
+    "template-tags": [
+     {
+      "dimension": [
+       "field",
+       {
+        "lib/uuid": "df70b81a-71bf-4815-9890-057f5ad51cef"
+       },
+       909
+      ],
+      "display-name": "Период",
+      "id": "bd397a7b-9d35-4006-9d0b-03a17ec4dced",
+      "name": "day",
+      "type": "dimension",
+      "widget-type": "date/all-options"
+     }
+    ]
+   }
+  ]
+ },
+ "description": "V_DASH_KPI_DAILY.ad_spend_attributed_rub — АТРИБУЦИЯ рекламной статистики WB на SKU, база даты — дата рекламной активности. Именно эта величина входит в результат периода и в ДРР. 🔴 Это не факт списания с баланса: биллинг WB показан отдельной контрольной карточкой. 🔴 Окраска изменения перевёрнута: реклама — расход, поэтому её снижение показано зелёным. Сравнение с предыдущим сопоставимым периодом той же длины непосредственно перед выбранным: границы берутся из плотного календаря V_DASH_KPI_DAILY, механизм тот же, что у карточки 68 SKU Performance. 🔴 Изменение показывается ТОЛЬКО при равном покрытии обоих окон по маске этой метрики; при неравном покрытии предыдущая точка не выводится и Δ отсутствует — полный период с неполным не сравнивается.",
+ "display": "smartscalar",
+ "id": 46,
+ "name": "Реклама, ₽",
+ "visualization_settings": {
+  "column_settings": {
+   "[\"name\",\"ad_spend_rub\"]": {
+    "decimals": 0,
+    "number_style": "decimal",
+    "suffix": " ₽"
+   }
+  },
+  "scalar.comparisons": [
+   {
+    "id": "prev",
+    "type": "previousValue"
+   }
+  ],
+  "scalar.field": "ad_spend_rub",
+  "scalar.switch_positive_negative": true
+ }
+}

@@ -1,0 +1,42 @@
+{
+ "dataset_query": {
+  "database": 2,
+  "lib/type": "mbql/query",
+  "stages": [
+   {
+    "lib/type": "mbql.stage/native",
+    "native": "SELECT SUM(ad_spend_billed_rub) AS ad_spend_billed_rub\nFROM `wb_mart.V_DASH_FINANCE_CORRECTED_DAILY`\nWHERE {{day}}",
+    "template-tags": [
+     {
+      "dimension": [
+       "field",
+       {
+        "lib/uuid": "7f51e946-41ed-4628-af4a-9d16ee718dab"
+       },
+       2622
+      ],
+      "display-name": "Период",
+      "id": "10dd444e-ec83-4832-b5c3-02be8c35eff6",
+      "name": "day",
+      "type": "dimension",
+      "widget-type": "date/all-options"
+     }
+    ]
+   }
+  ]
+ },
+ "description": "Фактическое списание за рекламу с баланса Wildberries по финансовым отчётам, классифицированное по прямому основанию платежа WB (bonusTypeName, Stage 3.1F). 🔴 Это КОНТРОЛЬНАЯ величина, а не второй рекламный расход. В результат периода входит только «Реклама» из полосы расходов — атрибуция рекламной статистики на SKU. Складывать две величины нельзя. Поартикульное распределение биллинга — отдельный этап (Stage 3B), в Executive его нет.",
+ "display": "scalar",
+ "id": 85,
+ "name": "Реклама: биллинг WB, ₽",
+ "visualization_settings": {
+  "column_settings": {
+   "[\"name\",\"ad_spend_billed_rub\"]": {
+    "decimals": 0,
+    "number_style": "decimal",
+    "suffix": " ₽"
+   }
+  },
+  "scalar.field": "ad_spend_billed_rub"
+ }
+}

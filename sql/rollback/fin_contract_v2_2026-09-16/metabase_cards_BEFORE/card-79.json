@@ -1,0 +1,42 @@
+{
+ "dataset_query": {
+  "database": 2,
+  "lib/type": "mbql/query",
+  "stages": [
+   {
+    "lib/type": "mbql.stage/native",
+    "native": "SELECT SUM(ad_spend_unallocated_rub) AS ad_spend_unallocated_rub\nFROM `wb_mart.V_DASH_FINANCE_CORRECTED_DAILY`\nWHERE {{day}}",
+    "template-tags": [
+     {
+      "dimension": [
+       "field",
+       {
+        "lib/uuid": "ccc8200c-b29a-4a26-81af-bab5921169c1"
+       },
+       2622
+      ],
+      "display-name": "Период",
+      "id": "f2a9bcb6-db56-41cb-a3b4-abbfe64e9760",
+      "name": "day",
+      "type": "dimension",
+      "widget-type": "date/all-options"
+     }
+    ]
+   }
+  ]
+ },
+ "description": "Разница между рекламным биллингом WB и рекламой, распределённой на SKU: V_DASH_FINANCE_CORRECTED_DAILY.ad_spend_unallocated_rub. 🔴 Знак источника сохранён, ABS не применяется: плюс означает, что биллинг больше распределённого. 🔴 Это НЕ расход. Расходом в результате периода является только распределённая на SKU реклама; эта карточка — сверка двух измерений одних и тех же денег. Складывать строки контроля нельзя.",
+ "display": "scalar",
+ "id": 79,
+ "name": "Реклама: нераспределено, ₽",
+ "visualization_settings": {
+  "column_settings": {
+   "[\"name\",\"ad_spend_unallocated_rub\"]": {
+    "decimals": 0,
+    "number_style": "decimal",
+    "suffix": " ₽"
+   }
+  },
+  "scalar.field": "ad_spend_unallocated_rub"
+ }
+}
