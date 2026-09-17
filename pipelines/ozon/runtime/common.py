@@ -8,6 +8,7 @@
 не логируется, не коммитится.
 """
 import hashlib
+import io
 import json
 import os
 import time
@@ -135,41 +136,143 @@ def perf_post(path, body):
 
 
 # ------------------------------------------------------- загрузка в BigQuery
-def merge_rows(table, rows, keys, run_id):
-    """Идемпотентная запись: staging → MERGE по логическому ключу → удаление staging.
+# Страховка на случай, когда процесс убит между созданием staging и finally
+# (таймаут Cloud Run, OOM): таблица исчезнет сама. Прогон длится минуты, сутки —
+# с запасом. Датасетный TTL сознательно не трогаем: он действовал бы и на RAW.
+STAGING_TTL = timedelta(hours=24)
+
+# Режимы обработки строк источника с одинаковым ключом слияния.
+#   collapse_identical — полностью одинаковые строки схлопываются, различающиеся
+#                        роняют загрузку (по умолчанию);
+#   reject             — любой повтор ключа роняет загрузку. Для финансов: две
+#                        одинаковые строки там могут быть двумя реальными
+#                        начислениями на одну сумму, схлопнуть их — потерять деньги.
+DUPLICATE_KEY_MODES = ("collapse_identical", "reject")
+
+# Тот же маркер NULL, что в условии ON оператора MERGE ниже.
+_NULL_KEY = "\x00"
+
+
+class MergeKeyConflictError(RuntimeError):
+    """Несколько строк источника претендуют на один ключ слияния.
+
+    Раньше такие строки молча схлопывались ROW_NUMBER() с недетерминированным
+    выбором победителя. Теперь это явный отказ загрузки до создания staging.
+
+    Сообщение уходит в лог и в OZON_INGESTION_RUNS.error_message, поэтому в нём
+    нет ни значений полезной нагрузки, ни значений ключа (accrual_id, sku,
+    posting_number…). Только таблица, имена колонок ключа, режим, число ключей и
+    строк, имена расходящихся колонок и отпечаток ключа (merge_key_fingerprint).
+    """
+
+
+def merge_key_fingerprint(key):
+    """Короткий детерминированный отпечаток нормализованного ключа слияния.
+
+    SHA-256 от частей merge_key(), разделённых \\x1f; первые 12 hex-символов.
+    Один и тот же ключ даёт один и тот же отпечаток в любом прогоне, поэтому по
+    нему можно найти конфликт повторно, не записывая сами значения в лог.
+    """
+    return hashlib.sha256("\x1f".join(key).encode("utf-8")).hexdigest()[:12]
+
+
+def _clean(v):
+    # BigQuery NUMERIC принимает не более 9 знаков после запятой, а repr(float)
+    # даёт артефакты вида 2000.3700000000001 — округляем до 4 знаков.
+    return round(v, 4) if isinstance(v, float) else v
+
+
+def _loaded_value(v):
+    """Значение ровно в том виде, в каком оно уходит в staging."""
+    return json.dumps(_clean(v), ensure_ascii=False, default=str, sort_keys=True)
+
+
+def merge_key(row, keys):
+    """Ключ слияния так, как его сравнивает MERGE: COALESCE(CAST(k AS STRING), '\\x00').
+
+    Ключевые колонки Ozon — STRING, INT64 и DATE, в Python это str/int. Для них
+    str() совпадает с CAST(... AS STRING), поэтому группировка здесь не мельче,
+    чем в BigQuery: всё, что MERGE сочтёт одним ключом, здесь тоже один ключ.
+    """
+    return tuple(_NULL_KEY if row.get(k) is None else str(row.get(k)) for k in keys)
+
+
+def validate_merge_batch(table, rows, keys, cols, on_duplicate_key="collapse_identical"):
+    """Проверка партии ДО staging и MERGE. Возвращает число схлопнутых дублей.
+
+    Сравниваются все сохраняемые колонки (`cols` — схема целевой таблицы).
+    Технические extracted_at / ingestion_run_id / source_endpoint внутри одного
+    вызова одинаковы, так что ложных конфликтов не дают, а схлопнутые строки
+    побайтно равны по всему, что попадёт в таблицу.
+    """
+    if on_duplicate_key not in DUPLICATE_KEY_MODES:
+        raise ValueError(f"неизвестный режим дублей: {on_duplicate_key!r}")
+    groups = {}
+    for r in rows:
+        groups.setdefault(merge_key(r, keys), []).append(r)
+    dups = {k: g for k, g in groups.items() if len(g) > 1}
+    if not dups:
+        return 0
+    conflicts = []
+    for k, g in dups.items():
+        differing = [c for c in cols if len({_loaded_value(r.get(c)) for r in g}) > 1]
+        if on_duplicate_key == "reject" or differing:
+            conflicts.append((k, len(g), differing))
+    if conflicts:
+        shown = "; ".join(
+            f"key_fp={merge_key_fingerprint(k)} rows={n} "
+            f"differing_columns={','.join(d) or 'none (identical)'}"
+            for k, n, d in conflicts[:5])
+        raise MergeKeyConflictError(
+            f"{table}: {len(conflicts)} ключ(ей) слияния ({','.join(keys)}) "
+            f"с несколькими строками источника, строк {sum(n for _, n, _ in conflicts)}, "
+            f"режим {on_duplicate_key}; первые: {shown}")
+    return sum(len(g) - 1 for g in dups.values())
+
+
+def _drop_staging(client, staging_id):
+    """Удаление staging, которое никогда не бросает.
+
+    Вызывается из finally: исключение отсюда заменило бы исходную ошибку
+    загрузки. Сбой очистки логируется; остаток подчистит STAGING_TTL.
+    """
+    try:
+        client.delete_table(staging_id, not_found_ok=True)
+    except Exception as e:                                        # noqa: BLE001
+        log(event="staging_cleanup_failed", staging=staging_id,
+            error=f"{type(e).__name__}: {str(e)[:200]}",
+            ttl_hours=STAGING_TTL.total_seconds() / 3600)
+
+
+def merge_rows(table, rows, keys, run_id, on_duplicate_key="collapse_identical"):
+    """Идемпотентная запись: проверка партии → staging → MERGE по ключу → удаление staging.
 
     Повторный прогон на том же окне не создаёт дублей и не удваивает суммы.
+    Конфликт ключей роняет загрузку ДО создания staging (MergeKeyConflictError).
+    Staging удаляется в finally при любом исходе; вторая линия — expires на самой
+    staging-таблице.
     """
     if not rows:
         return {"received": 0, "inserted": 0, "updated": 0}
     client = bq()
     tgt = client.get_table(f"{PROJECT}.{DATASET}.{table}")
     cols = [f.name for f in tgt.schema]
+    collapsed = validate_merge_batch(table, rows, keys, cols, on_duplicate_key)
+    if collapsed:
+        log(event="merge_identical_duplicates_collapsed", table=table, rows=collapsed)
     staging = f"_rt_{table}_{run_id.replace('-', '')[:10]}"
-
-    cfg = bigquery.LoadJobConfig(
-        source_format=bigquery.SourceFormat.NEWLINE_DELIMITED_JSON,
-        schema=tgt.schema, write_disposition=bigquery.WriteDisposition.WRITE_TRUNCATE,
-        create_disposition=bigquery.CreateDisposition.CREATE_IF_NEEDED)
-    def _clean(v):
-        # BigQuery NUMERIC принимает не более 9 знаков после запятой, а repr(float)
-        # даёт артефакты вида 2000.3700000000001 — округляем до 4 знаков.
-        return round(v, 4) if isinstance(v, float) else v
+    staging_id = f"{PROJECT}.{DATASET}.{staging}"
 
     data = "\n".join(
         json.dumps({k: _clean(r.get(k)) for k in cols}, ensure_ascii=False, default=str)
         for r in rows).encode()
-    import io
-    job = client.load_table_from_file(io.BytesIO(data), f"{PROJECT}.{DATASET}.{staging}",
-                                      job_config=cfg, location=LOCATION)
-    job.result()
-    if job.errors:
-        raise RuntimeError(f"load job {job.job_id}: {job.errors}")
-
     on = " AND ".join(
         f"COALESCE(CAST(T.{k} AS STRING),'\\x00')=COALESCE(CAST(S.{k} AS STRING),'\\x00')"
         for k in keys)
     setter = ", ".join(f"T.{c}=S.{c}" for c in cols if c not in keys)
+    # Текст MERGE не изменён. ROW_NUMBER остаётся: MERGE требует не более одной
+    # строки источника на ключ. После validate_merge_batch строки одного ключа
+    # равны по всем колонкам, поэтому выбор победителя ни на что не влияет.
     q = (f"MERGE `{PROJECT}.{DATASET}.{table}` T USING "
          f"(SELECT * EXCEPT(_rn) FROM (SELECT *, ROW_NUMBER() OVER "
          f"(PARTITION BY {','.join(keys)} ORDER BY extracted_at DESC) _rn "
@@ -177,13 +280,34 @@ def merge_rows(table, rows, keys, run_id):
          f"WHEN MATCHED THEN UPDATE SET {setter} "
          f"WHEN NOT MATCHED THEN INSERT ({','.join(cols)}) "
          f"VALUES ({','.join('S.'+c for c in cols)})")
-    before = list(client.query(f"SELECT COUNT(*) c FROM `{PROJECT}.{DATASET}.{table}`",
-                               location=LOCATION).result())[0]["c"]
-    m = client.query(q, location=LOCATION)
-    m.result()
-    after = list(client.query(f"SELECT COUNT(*) c FROM `{PROJECT}.{DATASET}.{table}`",
-                              location=LOCATION).result())[0]["c"]
-    client.delete_table(f"{PROJECT}.{DATASET}.{staging}", not_found_ok=True)
+    try:
+        # Остаток с тем же именем (повтор с явным INGESTION_RUN_ID) убираем до
+        # создания: иначе WRITE_APPEND дописал бы партию к чужим строкам.
+        client.delete_table(staging_id, not_found_ok=True)
+        table_obj = bigquery.Table(staging_id, schema=tgt.schema)
+        table_obj.expires = datetime.now(timezone.utc) + STAGING_TTL
+        client.create_table(table_obj)
+        # Таблица только что создана пустой, поэтому APPEND эквивалентен прежнему
+        # TRUNCATE. TRUNCATE не используем: сохраняет ли он expires, в документации
+        # клиента не сказано.
+        cfg = bigquery.LoadJobConfig(
+            source_format=bigquery.SourceFormat.NEWLINE_DELIMITED_JSON,
+            schema=tgt.schema, write_disposition=bigquery.WriteDisposition.WRITE_APPEND,
+            create_disposition=bigquery.CreateDisposition.CREATE_NEVER)
+        job = client.load_table_from_file(io.BytesIO(data), staging_id,
+                                          job_config=cfg, location=LOCATION)
+        job.result()
+        if job.errors:
+            raise RuntimeError(f"load job {job.job_id}: {job.errors}")
+
+        before = list(client.query(f"SELECT COUNT(*) c FROM `{PROJECT}.{DATASET}.{table}`",
+                                   location=LOCATION).result())[0]["c"]
+        m = client.query(q, location=LOCATION)
+        m.result()
+        after = list(client.query(f"SELECT COUNT(*) c FROM `{PROJECT}.{DATASET}.{table}`",
+                                  location=LOCATION).result())[0]["c"]
+    finally:
+        _drop_staging(client, staging_id)
     return {"received": len(rows), "inserted": after - before,
             "updated": len(rows) - (after - before)}
 

@@ -19,6 +19,19 @@ CPC_STATES = ["DATA_FILLING", "READY_TO_SUPPLY", "ACCEPTED_AT_SUPPLY_WAREHOUSE",
               "REPORTS_CONFIRMATION_AWAITING", "REPORT_REJECTED", "COMPLETED",
               "REJECTED_AT_SUPPLY_WAREHOUSE", "CANCELLED", "OVERDUE"]
 
+# Потолки страниц — защита от бесконечного цикла, а не ожидаемый объём.
+# Упор в потолок роняет сущность, а не обрезает данные молча.
+# Лимиты страниц — максимумы из Swagger Seller API (снимок 2026-08-31).
+SUPPLY_LIST_PAGE_LIMIT = 100          # /v3/supply-order/list: limit 1..100
+SUPPLY_LIST_MAX_PAGES = 500           # 50 000 заявок
+BUNDLE_PAGE_LIMIT = 100               # /v1/supply-order/bundle: limit 1..100
+BUNDLE_MAX_PAGES = 500                # 50 000 позиций в одном составе
+
+
+class PaginationError(RuntimeError):
+    """Пагинация не может завершиться корректно: повтор курсора, потолок страниц,
+    обещание следующей страницы без курсора или неполный ответ."""
+
 
 def _meta(endpoint, run_id, ts):
     return {"extracted_at": ts, "source_endpoint": endpoint, "ingestion_run_id": run_id}
@@ -28,13 +41,59 @@ def _num(v):
     return float(v) if v not in (None, "") else None
 
 
-# --------------------------------------------------------------- каталог
-def catalog(run_id, ts, _f, _t):
+# ------------------------------------------------ полнота списочных ответов
+def _product_list_items():
+    """Список товаров одним запросом, но с проверкой полноты.
+
+    Swagger /v3/product/list: пагинация через result.last_id, limit ≤ 1000,
+    result.total — «всего товаров». last_id на последней странице НЕ пуст
+    (ответ 2026-08-30: 20 товаров, total=20, last_id непустой), поэтому по
+    нему конец не определить. Определяем по total: если total больше, чем
+    пришло, ответ неполный — роняем сущность, а не грузим часть каталога.
+    Нет total — проверить нечем, поведение прежнее.
+    """
     code, lst = seller_post("/v3/product/list",
                             {"filter": {"visibility": "ALL"}, "last_id": "", "limit": 1000})
     if code != 200:
         raise RuntimeError(f"product/list {code}: {lst}")
-    ids = [i["product_id"] for i in ((lst.get("result") or {}).get("items") or [])]
+    result = lst.get("result") or {}
+    items = result.get("items") or []
+    total = result.get("total")
+    if isinstance(total, int) and total > len(items):
+        raise PaginationError(
+            f"product/list: получено {len(items)} из total={total}; "
+            "ответ неполный — нужна пагинация по last_id")
+    if not isinstance(total, int):
+        log(event="completeness_unverified", endpoint="/v3/product/list",
+            reason="в ответе нет целого total", items=len(items))
+    return items
+
+
+def _campaign_list(txt):
+    """Список кампаний Performance API с проверкой полноты.
+
+    Swagger GET /api/client/campaign объявляет page/pageSize, размер страницы
+    по умолчанию не указан. Ответ содержит total (строка): 2026-08-31 total="92"
+    при 92 элементах. Если total больше, чем пришло, — ответ неполный.
+    """
+    d = json.loads(txt)
+    items = d.get("list") or []
+    try:
+        total = int(d.get("total"))
+    except (TypeError, ValueError):
+        log(event="completeness_unverified", endpoint="/api/client/campaign",
+            reason="в ответе нет числового total", items=len(items))
+        return items
+    if total > len(items):
+        raise PaginationError(
+            f"campaign: получено {len(items)} из total={total}; "
+            "ответ неполный — нужна пагинация page/pageSize")
+    return items
+
+
+# --------------------------------------------------------------- каталог
+def catalog(run_id, ts, _f, _t):
+    ids = [i["product_id"] for i in _product_list_items()]
     code, info = seller_post("/v3/product/info/list",
                              {"product_id": ids, "offer_id": [], "sku": []})
     if code != 200:
@@ -216,9 +275,9 @@ def seller_info(run_id, ts, _f, _t):
 
 # --------------------------------------------------------------- остатки
 def stocks(run_id, ts, _f, _t):
-    code, cat = seller_post("/v3/product/list",
-                            {"filter": {"visibility": "ALL"}, "last_id": "", "limit": 1000})
-    skus = [str(i["sku"]) for i in ((cat.get("result") or {}).get("items") or [])]
+    # Раньше код ответа product/list здесь не проверялся: при ошибке уходил пустой
+    # фильтр skus. Теперь та же проверка кода и полноты, что в catalog().
+    skus = [str(i["sku"]) for i in _product_list_items()]
     code, r = seller_post("/v1/analytics/stocks", {"skus": skus})
     if code != 200:
         raise RuntimeError(f"stocks {code}: {r}")
@@ -352,8 +411,11 @@ def finance_accrual(run_id, ts, frm, to):
             time.sleep(1)
         cur += timedelta(days=1)
         time.sleep(1)
+    # Грейн не меняется. Аудит 2026-09-16: 1 702 строки за 92 дня, 0 повторов ключа.
+    # reject: любой повтор ключа — отказ загрузки, а не схлопывание. Две одинаковые
+    # строки здесь могут быть двумя реальными начислениями на одну сумму.
     return merge_rows("RAW_OZON_FINANCE_ACCRUAL", rows,
-                      ["accrual_id", "type_id", "sku"], run_id)
+                      ["accrual_id", "type_id", "sku"], run_id, on_duplicate_key="reject")
 
 
 # ------------------------------------------------------- реклама: кампании
@@ -363,7 +425,7 @@ def ads_campaigns(run_id, ts, _f, _t):
         raise RuntimeError(f"campaign {code}")
     d = str(now_msk().date())
     rows = []
-    for c in (json.loads(txt).get("list") or []):
+    for c in _campaign_list(txt):
         rows.append(dict(snapshot_date=d, campaign_id=c["id"], title=c.get("title") or None,
             state=c.get("state", "").replace("CAMPAIGN_STATE_", ""),
             adv_object_type=c.get("advObjectType"),
@@ -438,7 +500,8 @@ def ads_sku_daily(run_id, ts, frm, to):
     Периметр берётся из ВСЕХ кампаний с активностью в окне, а не только RUNNING.
     """
     code, txt = perf_get("/api/client/campaign")
-    ids = [c["id"] for c in (json.loads(txt).get("list") or [])] if code == 200 else []
+    # Ветка code != 200 → пустой периметр оставлена как была (OPEN QUESTION R1).
+    ids = [c["id"] for c in _campaign_list(txt)] if code == 200 else []
     # оставляем только кампании с расходом в окне — иначе отчёт не сформируется
     active = set()
     d0, d1 = date.fromisoformat(str(frm)), date.fromisoformat(str(to))
@@ -516,14 +579,99 @@ def clusters(run_id, ts, _f, _t):
     return merge_rows("RAW_OZON_CLUSTERS", rows, ["snapshot_date", "warehouse_id"], run_id)
 
 
+def _supply_order_ids():
+    """Все id заявок на поставку, постранично по last_id.
+
+    Swagger /v3/supply-order/list: last_id в запросе и ответе, limit 1..100,
+    has_next НЕТ. Конец — пустой last_id в ответе (ответ 2026-08-31: 65 заявок,
+    last_id="") или пустая страница. Первый запрос — прежний, без last_id;
+    фильтр и сортировка не меняются.
+
+    Гарантии завершения: курсор, который уже встречался, — PaginationError;
+    упор в SUPPLY_LIST_MAX_PAGES — PaginationError; не-200 на любой странице —
+    RuntimeError (раньше ошибка неотличима от пустого списка).
+    """
+    base = {"filter": {"states": CPC_STATES}, "limit": SUPPLY_LIST_PAGE_LIMIT,
+            "sort_by": "ORDER_CREATION", "sort_dir": "DESC"}
+    ids, seen_ids, seen_cursors, last, repeated = [], set(), set(), "", 0
+    for page in range(1, SUPPLY_LIST_MAX_PAGES + 1):
+        body = dict(base, last_id=last) if last else base
+        code, r = seller_post("/v3/supply-order/list", body)
+        if code != 200:
+            raise RuntimeError(f"supply-order/list page {page} {code}: {r}")
+        page_ids = r.get("order_ids") or []
+        for i in page_ids:
+            if i in seen_ids:
+                repeated += 1       # тот же объект, повторный get не нужен
+            else:
+                seen_ids.add(i)
+                ids.append(i)
+        nxt = r.get("last_id") or ""
+        if not page_ids or not nxt:
+            log(event="pagination_done", endpoint="/v3/supply-order/list", pages=page,
+                ids=len(ids), repeated_ids=repeated)
+            return ids
+        if nxt in seen_cursors:
+            raise PaginationError(
+                f"supply-order/list: last_id повторился на странице {page}")
+        seen_cursors.add(nxt)
+        last = nxt
+        time.sleep(1)
+    raise PaginationError(
+        f"supply-order/list: достигнут потолок {SUPPLY_LIST_MAX_PAGES} страниц")
+
+
+def _supply_bundle_items(bundle_id):
+    """Все позиции одного состава, постранично по last_id + has_next.
+
+    Swagger /v1/supply-order/bundle: limit 1..100, в ответе items, total_count,
+    has_next, last_id. Конец — has_next=false. last_id на последней странице
+    НЕ пуст (160 ответов из 160 от 2026-08-31), поэтому по нему конец не
+    определяется.
+
+    Гарантии: has_next=true без last_id или с повторным last_id —
+    PaginationError; потолок страниц — PaginationError; не-200 — RuntimeError.
+    total_count проверяется только в одну сторону (позиций меньше, чем total_count
+    → PaginationError): это верно при любом прочтении поля.
+    """
+    items, seen_cursors, last, total = [], set(), "", None
+    for page in range(1, BUNDLE_MAX_PAGES + 1):
+        body = {"bundle_ids": [bundle_id], "limit": BUNDLE_PAGE_LIMIT}
+        if last:
+            body["last_id"] = last
+        code, d = seller_post("/v1/supply-order/bundle", body)
+        if code != 200:
+            raise RuntimeError(f"supply-order/bundle page {page} {code}")
+        items += d.get("items") or []
+        if isinstance(d.get("total_count"), int):
+            total = d["total_count"]
+        if not d.get("has_next"):
+            if total is not None and len(items) < total:
+                raise PaginationError(
+                    f"supply-order/bundle: получено {len(items)} позиций "
+                    f"из total_count={total}")
+            return items
+        nxt = d.get("last_id") or ""
+        if not nxt:
+            raise PaginationError(
+                f"supply-order/bundle: has_next=true без last_id на странице {page}")
+        if nxt in seen_cursors:
+            raise PaginationError(
+                f"supply-order/bundle: last_id повторился на странице {page}")
+        seen_cursors.add(nxt)
+        last = nxt
+        time.sleep(1)
+    raise PaginationError(f"supply-order/bundle: достигнут потолок {BUNDLE_MAX_PAGES} страниц")
+
+
 def supplies(run_id, ts, _f, _t):
-    code, lst = seller_post("/v3/supply-order/list",
-                            {"filter": {"states": CPC_STATES}, "limit": 100,
-                             "sort_by": "ORDER_CREATION", "sort_dir": "DESC"})
-    ids = (lst or {}).get("order_ids") or []
+    ids = _supply_order_ids()
     orders = []
     for i in range(0, len(ids), 25):
         c, d = seller_post("/v3/supply-order/get", {"order_ids": ids[i:i + 25]})
+        if c != 200:
+            # раньше код не проверялся: заявки партии молча выпадали
+            raise RuntimeError(f"supply-order/get {c}")
         orders += (d or {}).get("orders") or []
         time.sleep(1)
     o_rows, s_rows = [], []
@@ -562,12 +710,17 @@ def supplies(run_id, ts, _f, _t):
     # составы
     bmap = {(s["bundle_id"], s["order_id"], s["supply_id"])
             for s in s_rows if s.get("bundle_id")}
-    b_rows = []
+    b_rows, b_failed = [], []
     for bid, oid, sid in sorted(bmap):
-        c, d = seller_post("/v1/supply-order/bundle", {"bundle_ids": [bid], "limit": 100})
-        if c != 200:
+        # Раньше не-200 давал молчаливый `continue`, а позиции сверх первой сотни
+        # терялись. Теперь состав читается целиком или не пишется вовсе: сбой
+        # одного состава не мешает остальным, но сущность в конце падает.
+        try:
+            bundle_items = _supply_bundle_items(bid)
+        except RuntimeError as e:
+            b_failed.append((bid, str(e)[:120]))
             continue
-        for i in (d.get("items") or []):
+        for i in bundle_items:
             b_rows.append(dict(bundle_id=bid, supply_id=sid, order_id=oid,
                 sku=str(i["sku"]), offer_id=str(i.get("offer_id") or ""),
                 product_name=i.get("name"), quantity_planned=i.get("quantity"),
@@ -578,6 +731,10 @@ def supplies(run_id, ts, _f, _t):
                 **_meta("POST /v1/supply-order/bundle", run_id, ts)))
         time.sleep(1)
     r3 = merge_rows("RAW_OZON_SUPPLY_BUNDLES", b_rows, ["bundle_id", "sku"], run_id)
+    if b_failed:
+        raise RuntimeError(
+            f"supply-order/bundle: не прочитано составов {len(b_failed)} из {len(bmap)}; "
+            f"прочитанные записаны; первые: {b_failed[:3]}")
     return {"received": r1["received"] + r2["received"] + r3["received"],
             "inserted": r1["inserted"] + r2["inserted"] + r3["inserted"],
             "updated": r1["updated"] + r2["updated"] + r3["updated"]}

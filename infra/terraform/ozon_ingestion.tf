@@ -53,7 +53,7 @@ locals {
   # 2026-09-06, Stage 3.4D.3: sha256:43fb3a10… → sha256:14f8a4c8…
   # Причина: добавлена сущность seller_info (статус подписки Premium).
   # Откат — sql/ozon/stage3_4d3_rollback.sql, раздел 4.
-  ozon_runtime_image = "europe-west1-docker.pkg.dev/project-fa311fc0-4d87-4781-986/cloud-run-source-deploy/ozon-runtime-ingest@sha256:14f8a4c8d13fde7ae5d4e3364fe1ad5ce82c54d4b5c6d92c2313325d20b3f40c"
+  ozon_runtime_image = "europe-west1-docker.pkg.dev/project-fa311fc0-4d87-4781-986/cloud-run-source-deploy/ozon-runtime-ingest@sha256:b00380d6ce2d811c2146ac84575501b094e3d402ca8def21ed2505460c1546a3"
   ozon_ingestion_sa  = "sa-ozon-ingestion@${var.project_id}.iam.gserviceaccount.com"
   ozon_scheduler_sa  = "sa-ozon-scheduler@${var.project_id}.iam.gserviceaccount.com"
 
