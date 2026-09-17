@@ -1,0 +1,138 @@
+{
+ "archived": false,
+ "archived_directly": false,
+ "cache_invalidated_at": null,
+ "cache_ttl": null,
+ "card_schema": 23,
+ "collection": {
+  "archive_operation_id": null,
+  "archived": false,
+  "archived_directly": null,
+  "authority_level": null,
+  "created_at": "2026-08-26T15:19:56.740614Z",
+  "description": "Executive MVP: что происходит с бизнесом и зарабатываем ли мы деньги.",
+  "entity_id": "EZUYQWsC5fdY9QqGY-xKC",
+  "id": 6,
+  "is_remote_synced": false,
+  "is_sample": false,
+  "location": "/5/",
+  "name": "01 Executive",
+  "namespace": null,
+  "personal_owner_id": null,
+  "slug": "01_executive",
+  "type": null
+ },
+ "collection_id": 6,
+ "collection_position": null,
+ "collection_preview": true,
+ "created_at": "2026-09-17T07:18:58.843953Z",
+ "creator_id": 2,
+ "dashboard": null,
+ "dashboard_id": null,
+ "database_id": 2,
+ "dataset_query": {
+  "database": 2,
+  "lib/type": "mbql/query",
+  "stages": [
+   {
+    "lib/type": "mbql.stage/native",
+    "native": "-- Phase C2 · wb_mart.V_DASH_EXECUTIVE_V2_DAILY (материализованный слой; логика карточки не менялась)\nWITH f AS (\n  SELECT day FROM `wb_mart.V_DASH_EXECUTIVE_V2_DAILY`\n  WHERE {{day}}\n)\nSELECT\n  e.day,\n  e.sales_revenue_seller_base_rub AS revenue_rub,\n  IF(e.after_product_cogs_eligible, e.period_result_after_product_cogs_rub, NULL) AS result_after_cogs_rub\nFROM f JOIN `wb_mart.V_DASH_EXECUTIVE_V2_DAILY` e USING (day)\nORDER BY e.day",
+    "template-tags": [
+     {
+      "dimension": [
+       "field",
+       {
+        "lib/uuid": "d409e921-53a3-494c-8368-13dbe692cb8e"
+       },
+       6498
+      ],
+      "display-name": "Период",
+      "id": "2065efcc-89d7-442a-80ef-87b1aec135eb",
+      "name": "day",
+      "type": "dimension",
+      "widget-type": "date/all-options"
+     }
+    ]
+   }
+  ]
+ },
+ "description": "Столбцы — выручка по цене продавца за сутки; линия — результат тех же суток после себестоимости товара (V_DASH_EXECUTIVE_ECONOMICS_DAILY.period_result_after_product_cogs_rub). Пунктир на нуле разделяет прибыльные и убыточные сутки. Обе серии в ₽ и одного порядка величины, поэтому одна ось корректна. 🔴 Сутки вне гейта after_product_cogs_eligible дают разрыв линии (NULL), а не ноль: экономика этих суток ещё не рассчитана. 🔴 Базы дат внутри суточного результата смешанные (продажа, реклама, финотчёт) — это управленческая, а не расчётная величина.",
+ "dimension_mappings": null,
+ "dimensions": null,
+ "display": "combo",
+ "document_id": null,
+ "embedding_params": null,
+ "embedding_type": null,
+ "enable_embedding": false,
+ "entity_id": "6glFLC_bZOijaevOJlhEG",
+ "id": 191,
+ "is_remote_synced": false,
+ "last_used_at": "2026-09-17T07:32:12.526212Z",
+ "legacy_query": null,
+ "metabase_version": "v0.63.15.1 (ab5ffba)",
+ "name": "Продажи и результат по дням · слой C2",
+ "param_fields": {
+  "2065efcc-89d7-442a-80ef-87b1aec135eb": [
+   {
+    "base_type": "type/Date",
+    "dimensions": [],
+    "display_name": "Day",
+    "fk_target_field_id": null,
+    "has_field_values": "none",
+    "id": 6498,
+    "name": "day",
+    "name_field": null,
+    "semantic_type": null,
+    "table_id": 269,
+    "target": null
+   }
+  ]
+ },
+ "parameter_mappings": [],
+ "parameter_usage_count": 0,
+ "parameters": [],
+ "query_type": "native",
+ "source_card_id": null,
+ "table_id": null,
+ "type": "question",
+ "visualization_settings": {
+  "column_settings": {
+   "[\"name\",\"result_after_cogs_rub\"]": {
+    "decimals": 0,
+    "number_style": "decimal",
+    "suffix": " ₽"
+   },
+   "[\"name\",\"revenue_rub\"]": {
+    "decimals": 0,
+    "number_style": "decimal",
+    "suffix": " ₽"
+   }
+  },
+  "graph.dimensions": [
+   "day"
+  ],
+  "graph.goal_label": "0 ₽",
+  "graph.goal_value": 0,
+  "graph.metrics": [
+   "revenue_rub",
+   "result_after_cogs_rub"
+  ],
+  "graph.show_goal": true,
+  "graph.show_values": false,
+  "graph.x_axis.title_text": "День",
+  "graph.y_axis.auto_split": false,
+  "graph.y_axis.title_text": "₽",
+  "series_settings": {
+   "result_after_cogs_rub": {
+    "color": "#1B7FBD",
+    "display": "line",
+    "title": "Результат после себестоимости"
+   },
+   "revenue_rub": {
+    "color": "#F2C94C",
+    "display": "bar",
+    "title": "Продажи"
+   }
+  }
+ }
+}

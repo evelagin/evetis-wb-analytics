@@ -1,0 +1,108 @@
+{
+ "archived": false,
+ "archived_directly": false,
+ "cache_invalidated_at": null,
+ "cache_ttl": null,
+ "card_schema": 23,
+ "collection": {
+  "archive_operation_id": null,
+  "archived": false,
+  "archived_directly": null,
+  "authority_level": null,
+  "created_at": "2026-08-26T15:19:56.740614Z",
+  "description": "Executive MVP: что происходит с бизнесом и зарабатываем ли мы деньги.",
+  "entity_id": "EZUYQWsC5fdY9QqGY-xKC",
+  "id": 6,
+  "is_remote_synced": false,
+  "is_sample": false,
+  "location": "/5/",
+  "name": "01 Executive",
+  "namespace": null,
+  "personal_owner_id": null,
+  "slug": "01_executive",
+  "type": null
+ },
+ "collection_id": 6,
+ "collection_position": null,
+ "collection_preview": true,
+ "created_at": "2026-09-17T07:19:46.163992Z",
+ "creator_id": 2,
+ "dashboard": null,
+ "dashboard_id": null,
+ "database_id": 2,
+ "dataset_query": {
+  "database": 2,
+  "lib/type": "mbql/query",
+  "stages": [
+   {
+    "lib/type": "mbql.stage/native",
+    "native": "-- Phase C2 · wb_mart.V_DASH_EXECUTIVE_V2_DAILY (материализованный слой; логика карточки не менялась)\n-- account_level_total_corrected_rub − storage_rub − tariff_option_minimum_payment_rub\n-- (утилизация, транзит, штрафы, платная приёмка, прочие удержания; возмещения WB = 0)\nWITH d AS (SELECT day FROM `wb_mart.V_DASH_EXECUTIVE_V2_DAILY` WHERE {{day}})\nSELECT -SUM(IF(c.period_result_eligible,\n               c.account_level_total_corrected_rub - c.storage_rub - c.tariff_option_minimum_payment_rub, NULL)) AS other_wb_rub\nFROM d JOIN `wb_mart.V_DASH_EXECUTIVE_V2_DAILY` c USING (day)",
+    "template-tags": [
+     {
+      "dimension": [
+       "field",
+       {
+        "lib/uuid": "5c613c81-1459-4b1b-8548-fff33cc598bb"
+       },
+       6498
+      ],
+      "display-name": "Период",
+      "id": "c36bdb62-3e80-4de7-a394-aa28fb513ece",
+      "name": "day",
+      "type": "dimension",
+      "widget-type": "date/all-options"
+     }
+    ]
+   }
+  ]
+ },
+ "description": "Остальные расходы уровня кабинета WB: утилизация, транзит поставок, штрафы, платная приёмка и прочие удержания. Реклама, хранение и тарифные опции показаны отдельно; технические возмещения WB расходом не являются.",
+ "dimension_mappings": null,
+ "dimensions": null,
+ "display": "scalar",
+ "document_id": null,
+ "embedding_params": null,
+ "embedding_type": null,
+ "enable_embedding": false,
+ "entity_id": "rXMCiL97yWVvv_vHgjQSZ",
+ "id": 210,
+ "is_remote_synced": false,
+ "last_used_at": "2026-09-17T07:32:09.927318Z",
+ "legacy_query": null,
+ "metabase_version": "v0.63.15.1 (ab5ffba)",
+ "name": "Executive V2 · Прочие расходы WB · слой C2",
+ "param_fields": {
+  "c36bdb62-3e80-4de7-a394-aa28fb513ece": [
+   {
+    "base_type": "type/Date",
+    "dimensions": [],
+    "display_name": "Day",
+    "fk_target_field_id": null,
+    "has_field_values": "none",
+    "id": 6498,
+    "name": "day",
+    "name_field": null,
+    "semantic_type": null,
+    "table_id": 269,
+    "target": null
+   }
+  ]
+ },
+ "parameter_mappings": [],
+ "parameter_usage_count": 0,
+ "parameters": [],
+ "query_type": "native",
+ "source_card_id": null,
+ "table_id": null,
+ "type": "question",
+ "visualization_settings": {
+  "column_settings": {
+   "[\"name\",\"other_wb_rub\"]": {
+    "decimals": 0,
+    "number_style": "decimal",
+    "suffix": " ₽"
+   }
+  },
+  "scalar.field": "other_wb_rub"
+ }
+}

@@ -1,5 +1,23 @@
 # CHANGELOG.md
 
+## 2026-09-17 — EXECUTIVE V2 PHASE C2: материализованный дневной слой
+
+Документ: `docs/EXECUTIVE_V2_PHASE_C2_MATERIALIZED_LAYER_2026-09-17.md`. Только производительность: ни одна
+формула, знак, правило покрытия или финальности не менялись.
+
+- BigQuery `wb_mart`: таблица `EXECUTIVE_V2_DAILY` (73 колонки, грейн `day`), `EXECUTIVE_V2_BUILD_LOG`,
+  `_EXECUTIVE_V2_BUILD_LOCK`, процедура `sp_build_executive_v2_daily` (TEMP → ASSERT A1–A6 → транзакция),
+  view `V_DASH_EXECUTIVE_V2_DAILY` (84 колонки: календарь и статусы момента чтения пересчитываются в view;
+  новые поля свежести `source_data_through`, `layer_built_at`, `last_build_status`, `layer_build_alert`).
+  SQL `sql/dash/executive_v2_daily_v1.sql`, валидация 16/16, откат `sql/rollback/executive_v2_daily_2026-09-17/`.
+- Terraform `infra/terraform/executive_v2_layer.tf` + actAs в `iam.tf`: `sa-exec-v2-layer`, Cloud Scheduler
+  `executive-v2-layer-build` `10 7-23 * * *` МСК. Целевой plan 10/0/0 просмотрен и применён.
+- Metabase: 31 копия «… · слой C2» (187–217), dashboard 2 переключён (`tools/metabase_exec_v2_c2_switch.py`),
+  снимок Phase B `metabase/rollback/exec_v2_phase_c2_before/`; откат проверен до переключения.
+- Эквивалентность: SQL 30 карточек × 6 периодов — 180/180 идентичны до знака; вывод Metabase 180/186 (различие
+  только «Витрина собрана»). Загрузка 1440 px: 66,9 → 14,8 с, 7,55 ГБ → 2 МБ, 47 448 → 163 slot-с.
+  Сборка слоя ~77 с / 1,8 ГБ / 13,1 тыс. slot-с × 17 в сутки.
+
 ## 2026-09-15 — STEP 5A: production hardening контура ADS → MART → UNITKA
 
 Ветка `hardening/step5a-production` (база `e2bf058`). Реакция на инцидент 15.09:
