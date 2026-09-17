@@ -1,5 +1,19 @@
 # CHANGELOG.md
 
+## 2026-09-17 — EXECUTIVE V2 PHASE C3: closeout, Executive V2 FROZEN
+
+Документ: `docs/EXECUTIVE_V2_CLOSEOUT_2026-09-17.md`. Metric contracts, бизнес-логика SQL, раскладка Executive и
+материализованный слой не менялись; BigQuery и Metabase — без изменений.
+
+- Валидация: устаревшие C-7, C-12, C-14…C-17 (`pr_dash_finance_corrected_validation.sql`), D-12
+  (`pr_dash_executive_economics_validation.sql`), G-11, G-13 (`pr_dash_settlement_validation.sql`) приведены к
+  FIN CONTRACT V2 / C2: формула v1 → V2 с точным равенством, снимки количества объектов → инварианты слоёв и
+  закрытые списки потребителей, G-11 — по токенам имени вместо подстроки. Мутационные тесты ловят нарушения.
+  Итог 97/97 ASSERT в 6 файлах.
+- Metabase: репозиторий = live (состав 109/3/4, dashboard 2 целиком); отличия только в `last_used_at` /
+  `query_average_duration`, не коммитятся.
+- KI-2026-09-16-1/2/3 — OPEN KNOWN ISSUES; backlog BL-EXEC-V2-01 `skip-if-sources-unchanged` (не реализовано).
+
 ## 2026-09-17 — EXECUTIVE V2 PHASE C2: материализованный дневной слой
 
 Документ: `docs/EXECUTIVE_V2_PHASE_C2_MATERIALIZED_LAYER_2026-09-17.md`. Только производительность: ни одна
