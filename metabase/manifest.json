@@ -12,7 +12,7 @@
   "image": "metabase/metabase:latest",
   "mb_db_file": "/metabase-data/metabase.db"
  },
- "baseline_commit": "2a46b31d9797d2c08fc9fcb1fb88a4ac3a553a39",
+ "baseline_commit": "0235c0bdfd9f7ee9fc73360e0d1f1dd89beb3804",
  "card_ids": [
   40,
   41,
@@ -70,9 +70,113 @@
   93,
   94,
   95,
-  96
+  96,
+  157,
+  158,
+  159,
+  160,
+  161,
+  162,
+  164,
+  167,
+  168,
+  169,
+  173,
+  174,
+  175,
+  176,
+  177,
+  178,
+  182,
+  183,
+  184,
+  185,
+  186,
+  187,
+  188,
+  189,
+  190,
+  191,
+  192,
+  193,
+  194,
+  195,
+  196,
+  197,
+  198,
+  199,
+  200,
+  201,
+  202,
+  203,
+  204,
+  205,
+  206,
+  207,
+  208,
+  209,
+  210,
+  211,
+  212,
+  213,
+  214,
+  215,
+  216,
+  217
  ],
  "card_to_collection": {
+  "157": 6,
+  "158": 6,
+  "159": 6,
+  "160": 6,
+  "161": 6,
+  "162": 6,
+  "164": 6,
+  "167": 6,
+  "168": 6,
+  "169": 6,
+  "173": 6,
+  "174": 6,
+  "175": 6,
+  "176": 6,
+  "177": 6,
+  "178": 6,
+  "182": 6,
+  "183": 6,
+  "184": 6,
+  "185": 6,
+  "186": 6,
+  "187": 6,
+  "188": 6,
+  "189": 6,
+  "190": 6,
+  "191": 6,
+  "192": 6,
+  "193": 6,
+  "194": 6,
+  "195": 6,
+  "196": 6,
+  "197": 6,
+  "198": 6,
+  "199": 6,
+  "200": 6,
+  "201": 6,
+  "202": 6,
+  "203": 6,
+  "204": 6,
+  "205": 6,
+  "206": 6,
+  "207": 6,
+  "208": 6,
+  "209": 6,
+  "210": 6,
+  "211": 6,
+  "212": 6,
+  "213": 6,
+  "214": 6,
+  "215": 6,
+  "216": 6,
+  "217": 6,
   "40": 6,
   "41": 6,
   "42": 6,
@@ -530,6 +634,370 @@
    "file": "metabase/cards/card-96-vse-zaprosy-okna-polnaya-tablica.json",
    "id": 96,
    "name": "Все запросы окна — полная таблица"
+  },
+  {
+   "collection_id": 6,
+   "display": "scalar",
+   "file": "metabase/cards/card-157-executive-v2-status-dannyh.json",
+   "id": 157,
+   "name": "Executive V2 · Статус данных"
+  },
+  {
+   "collection_id": 6,
+   "display": "object",
+   "file": "metabase/cards/card-158-executive-v2-status-dannyh-sutki.json",
+   "id": 158,
+   "name": "Executive V2 · Статус данных: сутки"
+  },
+  {
+   "collection_id": 6,
+   "display": "object",
+   "file": "metabase/cards/card-159-executive-v2-svezhest-dannyh.json",
+   "id": 159,
+   "name": "Executive V2 · Свежесть данных"
+  },
+  {
+   "collection_id": 6,
+   "display": "smartscalar",
+   "file": "metabase/cards/card-160-executive-v2-oplacheno-pokupatelyami.json",
+   "id": 160,
+   "name": "Executive V2 · Оплачено покупателями"
+  },
+  {
+   "collection_id": 6,
+   "display": "scalar",
+   "file": "metabase/cards/card-161-executive-v2-vykup-po-kogortam.json",
+   "id": 161,
+   "name": "Executive V2 · Выкуп по когортам"
+  },
+  {
+   "collection_id": 6,
+   "display": "object",
+   "file": "metabase/cards/card-162-executive-v2-vykup-po-kogortam-sostav.json",
+   "id": 162,
+   "name": "Executive V2 · Выкуп по когортам: состав"
+  },
+  {
+   "collection_id": 6,
+   "display": "scalar",
+   "file": "metabase/cards/card-164-executive-v2-ot-ceny-prodavca-do-nachisleniya-wb.json",
+   "id": 164,
+   "name": "Executive V2 · От цены продавца до начисления WB"
+  },
+  {
+   "collection_id": 6,
+   "display": "smartscalar",
+   "file": "metabase/cards/card-167-executive-v2-reklama.json",
+   "id": 167,
+   "name": "Executive V2 · Реклама"
+  },
+  {
+   "collection_id": 6,
+   "display": "object",
+   "file": "metabase/cards/card-168-executive-v2-drr.json",
+   "id": 168,
+   "name": "Executive V2 · ДРР"
+  },
+  {
+   "collection_id": 6,
+   "display": "smartscalar",
+   "file": "metabase/cards/card-169-executive-v2-logistika.json",
+   "id": 169,
+   "name": "Executive V2 · Логистика"
+  },
+  {
+   "collection_id": 6,
+   "display": "smartscalar",
+   "file": "metabase/cards/card-173-executive-v2-hranenie.json",
+   "id": 173,
+   "name": "Executive V2 · Хранение"
+  },
+  {
+   "collection_id": 6,
+   "display": "object",
+   "file": "metabase/cards/card-174-executive-v2-hranenie-v-den.json",
+   "id": 174,
+   "name": "Executive V2 · Хранение в день"
+  },
+  {
+   "collection_id": 6,
+   "display": "scalar",
+   "file": "metabase/cards/card-175-executive-v2-tarifnye-opcii-wb.json",
+   "id": 175,
+   "name": "Executive V2 · Тарифные опции WB"
+  },
+  {
+   "collection_id": 6,
+   "display": "scalar",
+   "file": "metabase/cards/card-176-executive-v2-prochie-rashody-wb.json",
+   "id": 176,
+   "name": "Executive V2 · Прочие расходы WB"
+  },
+  {
+   "collection_id": 6,
+   "display": "smartscalar",
+   "file": "metabase/cards/card-177-executive-v2-sebestoimost-prodannyh-tovarov.json",
+   "id": 177,
+   "name": "Executive V2 · Себестоимость проданных товаров"
+  },
+  {
+   "collection_id": 6,
+   "display": "scalar",
+   "file": "metabase/cards/card-178-executive-v2-pribyl-posle-sebestoimosti.json",
+   "id": 178,
+   "name": "Executive V2 · Прибыль после себестоимости"
+  },
+  {
+   "collection_id": 6,
+   "display": "table",
+   "file": "metabase/cards/card-182-executive-v2-uderzhaniya-posle-realizacii-sostav.json",
+   "id": 182,
+   "name": "Executive V2 · Удержания после реализации: состав"
+  },
+  {
+   "collection_id": 6,
+   "display": "object",
+   "file": "metabase/cards/card-183-executive-v2-ot-ceny-prodavca-do-nachisleniya-wb-itog.json",
+   "id": 183,
+   "name": "Executive V2 · От цены продавца до начисления WB: итог"
+  },
+  {
+   "collection_id": 6,
+   "display": "object",
+   "file": "metabase/cards/card-184-executive-v2-logistika-sostav.json",
+   "id": 184,
+   "name": "Executive V2 · Логистика: состав"
+  },
+  {
+   "collection_id": 6,
+   "display": "object",
+   "file": "metabase/cards/card-185-executive-v2-izmenenie-rezul-tata-k-proshlomu-periodu.json",
+   "id": 185,
+   "name": "Executive V2 · Изменение результата к прошлому периоду"
+  },
+  {
+   "collection_id": 6,
+   "display": "scalar",
+   "file": "metabase/cards/card-186-executive-v2-status-rezultata.json",
+   "id": 186,
+   "name": "Executive V2 · Статус результата"
+  },
+  {
+   "collection_id": 6,
+   "display": "smartscalar",
+   "file": "metabase/cards/card-187-zakazy-sht-sloy-c2.json",
+   "id": 187,
+   "name": "Заказы, шт · слой C2"
+  },
+  {
+   "collection_id": 6,
+   "display": "smartscalar",
+   "file": "metabase/cards/card-188-vykupleno-sht-sloy-c2.json",
+   "id": 188,
+   "name": "Выкуплено, шт · слой C2"
+  },
+  {
+   "collection_id": 6,
+   "display": "smartscalar",
+   "file": "metabase/cards/card-189-vyruchka-po-cene-prodavca-sloy-c2.json",
+   "id": 189,
+   "name": "Выручка по цене продавца, ₽ · слой C2"
+  },
+  {
+   "collection_id": 6,
+   "display": "scalar",
+   "file": "metabase/cards/card-190-k-perechisleniyu-za-tovar-sloy-c2.json",
+   "id": 190,
+   "name": "К перечислению за товар · слой C2"
+  },
+  {
+   "collection_id": 6,
+   "display": "combo",
+   "file": "metabase/cards/card-191-prodazhi-i-rezul-tat-po-dnyam-sloy-c2.json",
+   "id": 191,
+   "name": "Продажи и результат по дням · слой C2"
+  },
+  {
+   "collection_id": 6,
+   "display": "smartscalar",
+   "file": "metabase/cards/card-192-rezul-tat-do-sebestoimosti-sloy-c2.json",
+   "id": 192,
+   "name": "Результат до себестоимости, ₽ · слой C2"
+  },
+  {
+   "collection_id": 6,
+   "display": "scalar",
+   "file": "metabase/cards/card-193-rentabel-nost-do-sebestoimosti-sloy-c2.json",
+   "id": 193,
+   "name": "Рентабельность до себестоимости · слой C2"
+  },
+  {
+   "collection_id": 6,
+   "display": "scalar",
+   "file": "metabase/cards/card-194-rentabel-nost-posle-sebestoimosti-sloy-c2.json",
+   "id": 194,
+   "name": "Рентабельность после себестоимости · слой C2"
+  },
+  {
+   "collection_id": 6,
+   "display": "scalar",
+   "file": "metabase/cards/card-195-uderzhaniya-posle-realizacii-sloy-c2.json",
+   "id": 195,
+   "name": "Удержания после реализации · слой C2"
+  },
+  {
+   "collection_id": 6,
+   "display": "scalar",
+   "file": "metabase/cards/card-196-k-vyplate-ot-wb-sloy-c2.json",
+   "id": 196,
+   "name": "К выплате от WB · слой C2"
+  },
+  {
+   "collection_id": 6,
+   "display": "scalar",
+   "file": "metabase/cards/card-197-executive-v2-status-dannyh-sloy-c2.json",
+   "id": 197,
+   "name": "Executive V2 · Статус данных · слой C2"
+  },
+  {
+   "collection_id": 6,
+   "display": "object",
+   "file": "metabase/cards/card-198-executive-v2-status-dannyh-sutki-sloy-c2.json",
+   "id": 198,
+   "name": "Executive V2 · Статус данных: сутки · слой C2"
+  },
+  {
+   "collection_id": 6,
+   "display": "object",
+   "file": "metabase/cards/card-199-executive-v2-svezhest-dannyh-sloy-c2.json",
+   "id": 199,
+   "name": "Executive V2 · Свежесть данных · слой C2"
+  },
+  {
+   "collection_id": 6,
+   "display": "smartscalar",
+   "file": "metabase/cards/card-200-executive-v2-oplacheno-pokupatelyami-sloy-c2.json",
+   "id": 200,
+   "name": "Executive V2 · Оплачено покупателями · слой C2"
+  },
+  {
+   "collection_id": 6,
+   "display": "scalar",
+   "file": "metabase/cards/card-201-executive-v2-vykup-po-kogortam-sloy-c2.json",
+   "id": 201,
+   "name": "Executive V2 · Выкуп по когортам · слой C2"
+  },
+  {
+   "collection_id": 6,
+   "display": "object",
+   "file": "metabase/cards/card-202-executive-v2-vykup-po-kogortam-sostav-sloy-c2.json",
+   "id": 202,
+   "name": "Executive V2 · Выкуп по когортам: состав · слой C2"
+  },
+  {
+   "collection_id": 6,
+   "display": "scalar",
+   "file": "metabase/cards/card-203-executive-v2-ot-ceny-prodavca-do-nachisleniya-wb-sloy-c2.json",
+   "id": 203,
+   "name": "Executive V2 · От цены продавца до начисления WB · слой C2"
+  },
+  {
+   "collection_id": 6,
+   "display": "smartscalar",
+   "file": "metabase/cards/card-204-executive-v2-reklama-sloy-c2.json",
+   "id": 204,
+   "name": "Executive V2 · Реклама · слой C2"
+  },
+  {
+   "collection_id": 6,
+   "display": "object",
+   "file": "metabase/cards/card-205-executive-v2-drr-sloy-c2.json",
+   "id": 205,
+   "name": "Executive V2 · ДРР · слой C2"
+  },
+  {
+   "collection_id": 6,
+   "display": "smartscalar",
+   "file": "metabase/cards/card-206-executive-v2-logistika-sloy-c2.json",
+   "id": 206,
+   "name": "Executive V2 · Логистика · слой C2"
+  },
+  {
+   "collection_id": 6,
+   "display": "smartscalar",
+   "file": "metabase/cards/card-207-executive-v2-hranenie-sloy-c2.json",
+   "id": 207,
+   "name": "Executive V2 · Хранение · слой C2"
+  },
+  {
+   "collection_id": 6,
+   "display": "object",
+   "file": "metabase/cards/card-208-executive-v2-hranenie-v-den-sloy-c2.json",
+   "id": 208,
+   "name": "Executive V2 · Хранение в день · слой C2"
+  },
+  {
+   "collection_id": 6,
+   "display": "scalar",
+   "file": "metabase/cards/card-209-executive-v2-tarifnye-opcii-wb-sloy-c2.json",
+   "id": 209,
+   "name": "Executive V2 · Тарифные опции WB · слой C2"
+  },
+  {
+   "collection_id": 6,
+   "display": "scalar",
+   "file": "metabase/cards/card-210-executive-v2-prochie-rashody-wb-sloy-c2.json",
+   "id": 210,
+   "name": "Executive V2 · Прочие расходы WB · слой C2"
+  },
+  {
+   "collection_id": 6,
+   "display": "smartscalar",
+   "file": "metabase/cards/card-211-executive-v2-sebestoimost-prodannyh-tovarov-sloy-c2.json",
+   "id": 211,
+   "name": "Executive V2 · Себестоимость проданных товаров · слой C2"
+  },
+  {
+   "collection_id": 6,
+   "display": "scalar",
+   "file": "metabase/cards/card-212-executive-v2-pribyl-posle-sebestoimosti-sloy-c2.json",
+   "id": 212,
+   "name": "Executive V2 · Прибыль после себестоимости · слой C2"
+  },
+  {
+   "collection_id": 6,
+   "display": "table",
+   "file": "metabase/cards/card-213-executive-v2-uderzhaniya-posle-realizacii-sostav-sloy-c2.json",
+   "id": 213,
+   "name": "Executive V2 · Удержания после реализации: состав · слой C2"
+  },
+  {
+   "collection_id": 6,
+   "display": "object",
+   "file": "metabase/cards/card-214-executive-v2-ot-ceny-prodavca-do-nachisleniya-wb-itog-sloy-c2.json",
+   "id": 214,
+   "name": "Executive V2 · От цены продавца до начисления WB: итог · слой C2"
+  },
+  {
+   "collection_id": 6,
+   "display": "object",
+   "file": "metabase/cards/card-215-executive-v2-logistika-sostav-sloy-c2.json",
+   "id": 215,
+   "name": "Executive V2 · Логистика: состав · слой C2"
+  },
+  {
+   "collection_id": 6,
+   "display": "object",
+   "file": "metabase/cards/card-216-executive-v2-izmenenie-rezul-tata-k-proshlomu-periodu-sloy-c2.json",
+   "id": 216,
+   "name": "Executive V2 · Изменение результата к прошлому периоду · слой C2"
+  },
+  {
+   "collection_id": 6,
+   "display": "scalar",
+   "file": "metabase/cards/card-217-executive-v2-status-rezul-tata-sloy-c2.json",
+   "id": 217,
+   "name": "Executive V2 · Статус результата · слой C2"
   }
  ],
  "collection_ids": [
@@ -565,7 +1033,7 @@
   }
  ],
  "counts": {
-  "cards": 57,
+  "cards": 109,
   "collections": 4,
   "dashboards": 3
  },
@@ -576,35 +1044,37 @@
  ],
  "dashboard_to_cards": {
   "2": [
-   40,
-   41,
-   42,
-   43,
-   44,
-   46,
-   47,
-   48,
-   49,
-   50,
-   51,
-   52,
-   53,
-   54,
-   55,
-   72,
-   73,
-   74,
-   75,
-   76,
-   77,
-   78,
-   79,
-   80,
-   81,
-   82,
-   83,
-   84,
-   85
+   187,
+   188,
+   189,
+   190,
+   191,
+   192,
+   193,
+   194,
+   195,
+   196,
+   197,
+   198,
+   199,
+   200,
+   201,
+   202,
+   203,
+   204,
+   205,
+   206,
+   207,
+   208,
+   209,
+   210,
+   211,
+   212,
+   213,
+   214,
+   215,
+   216,
+   217
   ],
   "3": [
    40,
@@ -688,25 +1158,56 @@
   "updated_at",
   "view_count"
  ],
- "export_timestamp": "2026-09-06T21:59:50+03:00",
+ "export_timestamp": "2026-09-17T10:33:31+03:00",
  "metabase_version": {
   "date": "2026-08-25",
   "hash": "ab5ffba",
   "tag": "v0.63.15.1"
  },
  "sha256": {
+  "metabase/cards/card-187-zakazy-sht-sloy-c2.json": "f2bd83cd869153633794d20121b13c1cf5509803b7301d9a27cf36d77d4d39c1",
+  "metabase/cards/card-188-vykupleno-sht-sloy-c2.json": "5ffd9048c101765cce2e4bbedf120bb789ddb764d008b6b1a8b0aa0d3cc66ae4",
+  "metabase/cards/card-189-vyruchka-po-cene-prodavca-sloy-c2.json": "00f496eb1b6225db85b9e3c9798601fcaa823a78e4e84a88d748f67917ad0af8",
+  "metabase/cards/card-190-k-perechisleniyu-za-tovar-sloy-c2.json": "eb06ae4d264b83a4ba87dde64b527c3106ddc47fade690fd769f4736e8ca8af1",
+  "metabase/cards/card-191-prodazhi-i-rezul-tat-po-dnyam-sloy-c2.json": "a85f272c3595e4810c943a663f47594065edeaf95139423d6cc3d2bc440aa06f",
+  "metabase/cards/card-192-rezul-tat-do-sebestoimosti-sloy-c2.json": "3a1388d7a8286277a8db595b8982b294ad3be810fbcb70ed0c26203f0d2ae927",
+  "metabase/cards/card-193-rentabel-nost-do-sebestoimosti-sloy-c2.json": "53ed2709dfead8983bcb8e49e7f20863b25248103149007235dae678acb84602",
+  "metabase/cards/card-194-rentabel-nost-posle-sebestoimosti-sloy-c2.json": "5c0eee7059a77f12d7fcce77a9717ef85d7244899d7cd8d4d854cedcd11c29e0",
+  "metabase/cards/card-195-uderzhaniya-posle-realizacii-sloy-c2.json": "8df4dc9dc0e887b7dcdf93f88f15b1e71a4427a0bf12d25f6143ca9ecf57f4e0",
+  "metabase/cards/card-196-k-vyplate-ot-wb-sloy-c2.json": "b6a6b4e0e0dd9f06f80413e410ee460df722d2b1601c3bd89a9e96cba0ca5bb4",
+  "metabase/cards/card-197-executive-v2-status-dannyh-sloy-c2.json": "c7ee77131aca2bfdcae72a5e7c44a63ff2a3827751af7f633999d27a19208201",
+  "metabase/cards/card-198-executive-v2-status-dannyh-sutki-sloy-c2.json": "d3b3d5149294cfc64ecfc9a0e88f179f6a0fa482b90de9b974d59eaa844eb26c",
+  "metabase/cards/card-199-executive-v2-svezhest-dannyh-sloy-c2.json": "7e23cbdaa0fb4b6040f761da7d2a3b129d8252b4bbfd418aa1f9ef2465601920",
+  "metabase/cards/card-200-executive-v2-oplacheno-pokupatelyami-sloy-c2.json": "a496fedf7234ea20ac24269fa5a46d67949343205e054eea8a3722c042343311",
+  "metabase/cards/card-201-executive-v2-vykup-po-kogortam-sloy-c2.json": "2119e914017e742fafbe5e3e7d1b18f78a1dea58ae8e9600bfecd73a27f08f86",
+  "metabase/cards/card-202-executive-v2-vykup-po-kogortam-sostav-sloy-c2.json": "1fbfe7bf2673adba1d014630a5a3845d236c10ceb20e68f7b162a6e4096fe5ac",
+  "metabase/cards/card-203-executive-v2-ot-ceny-prodavca-do-nachisleniya-wb-sloy-c2.json": "0841a97916bd09574c85ecd71db39eee562c25b4b8a64bf44e5fc5a171633e63",
+  "metabase/cards/card-204-executive-v2-reklama-sloy-c2.json": "918c91a0b77ddb81240faf6489378c6d11c80313e45ab531f3d578e20211fae3",
+  "metabase/cards/card-205-executive-v2-drr-sloy-c2.json": "704e6ecf07080773834c27b47df2bcbe8ac7d135cc8c4dd33c7c01c682638ba2",
+  "metabase/cards/card-206-executive-v2-logistika-sloy-c2.json": "a7cacffb52b4b9b368bdec6c6720c37aa153e98191895336f8db20ec8249e4e6",
+  "metabase/cards/card-207-executive-v2-hranenie-sloy-c2.json": "b9723911b2bedb22a507cffd9a3cf3671db556b3dcdfe65917639776beaf7014",
+  "metabase/cards/card-208-executive-v2-hranenie-v-den-sloy-c2.json": "99bef47bd26de89fe40d5f34e36e31070ad32e8edfb874f4d426c4dca49b2740",
+  "metabase/cards/card-209-executive-v2-tarifnye-opcii-wb-sloy-c2.json": "bca5aa821bace8dbf7cf2acba573500ded262c5d915bb4e1630bb7dacb33bd45",
+  "metabase/cards/card-210-executive-v2-prochie-rashody-wb-sloy-c2.json": "869684648d0550ec08e1099c8eeb1590504dfa1473086e9586388edc60726220",
+  "metabase/cards/card-211-executive-v2-sebestoimost-prodannyh-tovarov-sloy-c2.json": "1cad93a39d346468e69aabcd900473908f78d1dc41689474841b93549d037a9a",
+  "metabase/cards/card-212-executive-v2-pribyl-posle-sebestoimosti-sloy-c2.json": "243be0fd06fcbdf0cd5d1239c0a32ade2bcb16f3026116102db10a6cd3d3a0f1",
+  "metabase/cards/card-213-executive-v2-uderzhaniya-posle-realizacii-sostav-sloy-c2.json": "6720ba5a7a0af61b8b9bb024b5338a85aba1a0bfc727762c6c0deae764aab005",
+  "metabase/cards/card-214-executive-v2-ot-ceny-prodavca-do-nachisleniya-wb-itog-sloy-c2.json": "6ab185051e30a7c06981e99a93e99944cd5b3eac350704bfd3d388791424c419",
+  "metabase/cards/card-215-executive-v2-logistika-sostav-sloy-c2.json": "e6fe06e9c3dbea6583272a953702ac502ff765b3f0c544edae781871e436cc5c",
+  "metabase/cards/card-216-executive-v2-izmenenie-rezul-tata-k-proshlomu-periodu-sloy-c2.json": "2940b5b78c5e9e863497aba0a3e0d7a39a744b37053e2690c49b5e4536695a7d",
+  "metabase/cards/card-217-executive-v2-status-rezul-tata-sloy-c2.json": "c38c8bfb9df78a03e42838e49b04562a62cc4b4b1a5fef327863f8bb4998bf29",
   "metabase/cards/card-40-svezhest-dannyh.json": "7dcbded3d5073efd4a160caeb7600a68cc598ca253ebe8f2fd7827835868ae2b",
   "metabase/cards/card-41-kachestvo-vybrannogo-perioda.json": "07d79ac843f1ebc65878516bc33b968de7a721defc6940089e291dae9737c829",
   "metabase/cards/card-42-zakazy-sht.json": "ce1504ad1fded53969919d72062b44c284f50cc789a862b708da1cc6717b35e8",
   "metabase/cards/card-43-vykupy-sht.json": "bf9315086091806c1b29bc655025cbb50caa8ea25bc59c51a0aca16fd66e032e",
   "metabase/cards/card-44-vyruchka.json": "deba365010b3ac7b3522fd3e85530b23279f4f341763b4cd4f746576391f0e33",
   "metabase/cards/card-45-dohod-do-sebestoimosti.json": "efc7d88ae5c915b038c19b65ad675afdcc302daa8f5895b1d117ab91fdef3b8e",
-  "metabase/cards/card-46-reklama.json": "d08c8bd7f56cd702c72452dee35600539d79350152a1079ef8f7a39814fa78ea",
-  "metabase/cards/card-47-drr.json": "a8a798ac0e01ce79d7ab5d92e2cac62ecfdd5dec121bd198847ae1ab2848ca5f",
+  "metabase/cards/card-46-reklama.json": "1b9fb9df987e5c8175b3140e4e6188256bf894ae07e05e9ed865f9dd9b9385bf",
+  "metabase/cards/card-47-drr.json": "b9cce4d9872888dbe6d3d149730e67ae66ffe1fc12ccdec23d30d8955297d14c",
   "metabase/cards/card-48-vozvraty-sht.json": "63aaf4411d01a2b57e0f68950099f86da6016fb8d8889bf7bfbf0af9f857b515",
   "metabase/cards/card-49-k-perechisleniyu-po-sku.json": "791e55312fd2841cf678efa221dc298f7f3370e5ca9035c4172839680efd569e",
   "metabase/cards/card-50-vyruchka-i-vklad-po-dnyam.json": "18b0f43199335839216e9b1a6243e57d4ae8b8845a2fe6f8f7deb766ed17c6f6",
-  "metabase/cards/card-51-struktura-zatrat-za-period.json": "e40ac3e72e7c1bbf04c14e86c865ecea5b6a0b19c0db3f02ff668c23b715ec8b",
+  "metabase/cards/card-51-struktura-zatrat-za-period.json": "3e612e83b6d14b5de2cbdcc16dbf74b08a2859e8a233fce7f50b4340e27a0611",
   "metabase/cards/card-52-sku-za-period.json": "9373eb1258380e7610df178636bb92dbd8faf637116e45e2d282cb2f06b511f5",
   "metabase/cards/card-53-rezultat-perioda-do-sebestoimosti.json": "b0513517d66cbc3d8c8e12cf5a34da07211021f3421e964f99b5028f42f2e0e0",
   "metabase/cards/card-54-rentabelnost-do-sebestoimosti.json": "fd49ca7515b1aa7f03fa4feb40a9320aa0c0a57d797ddae97af94d9b9530583a",
@@ -734,13 +1235,13 @@
   "metabase/cards/card-76-k-vyplate-ot-wb.json": "126d3598d2a4303738f65259c7b33419a704d21048a28413bf3c84a6a4848cd0",
   "metabase/cards/card-77-prodazhi-po-cene-pokupatelya.json": "34dac2100cd90b72f5e2bfe689c33135842410057f220a31a7305bf570ff1888",
   "metabase/cards/card-78-kompensaciya-fors-mazhor.json": "03b3441b406a1eb40a26e7ea722caaac300ee7f81045301525f47abf3e07958d",
-  "metabase/cards/card-79-kontrol-reklamy-wb.json": "785367e9e6f59709ed182ecead3be2373b1f473c58ade6f924fb40a88743c80c",
+  "metabase/cards/card-79-kontrol-reklamy-wb.json": "48ddeffe47ab0a47ff150a369f22f78e0b43957c08c10e544fe3865a9a7ad976",
   "metabase/cards/card-80-uderzhano-wb-iz-ceny.json": "4ff344ff9d6830967180d30fa52c6f624a4e4aed8fb287a88d91d788baf932ef",
   "metabase/cards/card-81-logistika.json": "ea0aba69d6bd6465b05cc86bc7c0147463934e5a9cda916d51bf5000942a632e",
   "metabase/cards/card-82-hranenie.json": "dcc46e6b54cbafe30697e8dc85f4105e2ab8dc51dc1ae04d1c29bc14b53d2980",
-  "metabase/cards/card-83-prochie-rashody-wb-netto.json": "59466952f7116d69201e919d02f651a2ee22154eadb6b4c84b8dade2d2a65d9f",
+  "metabase/cards/card-83-prochie-rashody-wb-netto.json": "564471ab4b5e5453ee0a1791e2d82fbf48d8f627a099b6854805fd7e7bce391d",
   "metabase/cards/card-84-izmenenie-rezultata-k-pred-periodu.json": "5d02d6717ef55176a90ce45900bc7a2525fbf55e698902f029e1328168654baa",
-  "metabase/cards/card-85-reklama-billing-wb.json": "4422757364dfc9de8c7697378132d6f0eef94c5b0f32261d23b8e50bdac00c0b",
+  "metabase/cards/card-85-reklama-billing-wb.json": "1b77372e4d32d08183083bad1cab5fce3b51725813b6941553723db44573d531",
   "metabase/cards/card-86-okno-i-svezhest-dannyh.json": "6bb9731a2325100e3a65be1839947fe96e9b5f4e8b7c3f60dee8947cbb54271b",
   "metabase/cards/card-87-pokrytie-reklamnogo-byudzheta-zaprosami.json": "6b950267396360783f990e9fe42506b5f2439d7ced655b6c5984973332e53e92",
   "metabase/cards/card-88-struktura-reklamnogo-rashoda-okna.json": "0574d2bdcebca846ea2a7a8e9eb0cf8e890680a317f5f2ab2129bbe3cb762001",
@@ -756,7 +1257,7 @@
   "metabase/collections/collection-6-01-executive.json": "cb72952920412540ffc5805a991367fbdd0dfb73bc6bf76f209be1d5b8598562",
   "metabase/collections/collection-7-02-sku-performance.json": "24aad11e9416dd74ba9075c70d4cad39b6a5073582b7f4b5c21caff9e13ca7e7",
   "metabase/collections/collection-8-03-advertising.json": "9617404ea642b1e083cc083acaf2133bd5b4b0ba1e767dc033d0a34544f2dec1",
-  "metabase/dashboards/dashboard-2-evetis-wb-executive.json": "b8141823187614fe73f702c5f724cfa3f78fa0ef73bae79b8cc1471653cc5dd7",
+  "metabase/dashboards/dashboard-2-evetis-wb-executive.json": "f283e7736d4b4596ee34daac082878ce0ec1b72c7d086acbcfb668b64a37b1a7",
   "metabase/dashboards/dashboard-3-evetis-wb-sku-performance.json": "2ae9fff2b3fad2e477bc9fc8790c819a2e641f1fe8ae4fa979dc8e8b160fe219",
   "metabase/dashboards/dashboard-4-search-queries.json": "5fb8a5504fc33a5051b73de9c7d87b5a9624f254226efcfd8dd687cc5c7013b3"
  },

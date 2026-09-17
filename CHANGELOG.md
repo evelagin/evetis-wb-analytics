@@ -18,6 +18,88 @@
   только «Витрина собрана»). Загрузка 1440 px: 66,9 → 14,8 с, 7,55 ГБ → 2 МБ, 47 448 → 163 slot-с.
   Сборка слоя ~77 с / 1,8 ГБ / 13,1 тыс. slot-с × 17 в сутки.
 
+## 2026-09-16 — EXECUTIVE V2 PHASE C: финализация (metadata) + аудит производительности
+
+Документ: `docs/EXECUTIVE_V2_PHASE_C_PERFORMANCE_2026-09-16.md`. BigQuery не менялся; рефакторинг — только предложение.
+
+- Metabase dashboard 2: карточка 186 «Статус результата» (🟢/🟡/🔴) в блоке «Финансовый результат»; короткие
+  описания ключевых KPI (44, 49, 53, 76, плитки 164, карточки 160, 178). Регрессия 30 карточек × 5 окон — идентично.
+- Аудит: одно открытие = 36 запросов, 7,43 ГБ, ~33 300 slot-с, ~67 с в браузере; `V_DASH_KPI_DAILY` пересчитывается 32 раза.
+- Предложение: таблица `wb_mart.EXECUTIVE_V2_DAILY` + `sp_build_executive_v2_daily` + `V_DASH_EXECUTIVE_V2_DAILY`;
+  прототип `sql/dash/proposals/executive_v2_daily_PROPOSAL.sql`, доказательство на temp table: 93/93 пар
+  идентичны, медиана карточки 5,70 → 0,96 с, slot-время 120 509 → 80 с. Скрипты `tools/exec_v2_phase_c/`.
+
+## 2026-09-16 — EXECUTIVE V2 PHASE B: Metabase dashboard 2
+
+Документ: `docs/EXECUTIVE_V2_PHASE_B_IMPLEMENTATION_2026-09-16.md`. BigQuery не менялся.
+
+- Dashboard 2 «EVETIS · WB Executive» переложен: ширина `full`, 7 рядов (статус → продажи → от цены продавца
+  до начисления WB → операционные расходы → финансовый результат → расчёты с WB → динамика), 44 dashcards.
+- Созданы 20 карточек «Executive V2 · …» (157–162, 164, 167–169, 173–178, 182–185) в коллекции 6; 9
+  промежуточных V2-карточек архивированы. Старые карточки не изменены и не удалены — только сняты с раскладки.
+- Сборка `tools/metabase_exec_v2_build.py`, откат `tools/metabase_exec_v2_rollback.py`, снимок «до»
+  `metabase/rollback/exec_v2_phase_b_before/`. Снимок Metabase и `manifest.json` обновлены (77 карточек).
+- Приёмка 31.08–13.09: все контрольные значения сходятся; прибыль −5 484 ₽, выплата 37 466 ₽, статус
+  ПРЕДВАРИТЕЛЬНЫЕ (12/2/0); визуально 1440 и 1920 px.
+
+## 2026-09-16 — EXECUTIVE V2 BACKEND: GAP-01…05 и статус данных
+
+Документ: `docs/EXECUTIVE_V2_BACKEND_2026-09-16.md`. FIN CONTRACT V2 не изменён; Metabase не менялся.
+
+**Production (BigQuery), миграция `sql/dash/executive_v2_backend_2026-09-16.sql`:**
+- NEW `wb_mart.V_WB_FINANCE_PRICE_COMPONENTS` — цепочка цены строки финотчёта (СПП, vw, vwNds,
+  acquiringFee, ppvzReward). LEGACY до 13.07.2026 — NULL (полей в источнике нет).
+- NEW `wb_mart.V_DASH_EXECUTIVE_BREAKDOWN_DAILY` — `spp_rub`, разложение `marketplace_fee_rub`
+  (`wb_remuneration_rub`, `wb_remuneration_vat_rub`, `acquiring_rub`, `pvz_reward_rub`, `fee_spp_rub`),
+  плечи логистики `logistics_*_rub` (сумма = `logistics_rub`).
+- NEW `wb_mart.V_DASH_BUYOUT_COHORT_DAILY` — когортный процент выкупа (srid-связь заказ → исход).
+- ADD `wb_mart.V_DASH_SETTLEMENT_DAILY` — **новые колонки** `post_sale_*_rub` (разложение удержаний
+  после реализации) и `settlement_*` (цепочка цены → к перечислению за товар).
+- ADD `wb_mart.V_DASH_EXECUTIVE_ECONOMICS_DAILY` — **новые колонки** `exec_*_day`,
+  `executive_incomplete_day` / `executive_provisional_day` / `executive_final_day`, `executive_data_status`.
+
+Существующие колонки не удалены, не переименованы и не пересчитаны: 742 дня × 20 контрольных
+колонок до/после — 0 расхождений. Валидация `sql/dash/executive_v2_backend_validation.sql` 16/16,
+`fin_contract_v2_validation.sql` 19/19. Откат: `sql/rollback/executive_v2_backend_2026-09-16/`.
+
+**Не исправлено:** KI-2 — строка «Возврат» 21.07.2026 с положительным `forPay` суммируется как
+поступление; KI-3 — логистика SKU вне universe (14 960 ₽, в результате 1 сутки, 1 360 ₽).
+
+## 2026-09-16 — FIN CONTRACT V2: управленческий финансовый контракт Executive
+
+Решения владельца по forensic reconciliation WDS × SellMonitor (31.08–13.09.2026).
+Документ: `docs/FIN_CONTRACT_V2_2026-09-16.md`.
+
+**Production (BigQuery), миграция `sql/dash/fin_contract_v2_2026-09-16.sql`:**
+- `wb_mart.REF_COST_MAP` — 3 строки возмещений (перевозка/перемещение, ПВЗ)
+  `CREDIT` → `MEMO`: техническое перераспределение вознаграждения WB, P&L-эффект 0.
+- `wb_mart.V_WB_FINANCE_AMOUNTS_LONG_MAPPED` — ветка `MEMO → 0`.
+- `wb_mart.V_DASH_FINANCE_CORRECTED_DAILY` — реклама результата периода = биллинг WB
+  по дате услуги. **Новые колонки:** `ads_billing_covered`, `ads_billing_is_final`,
+  `ads_billing_provisional_day`, `ad_spend_financial_rub`, `ad_billing_campaigns`,
+  `ad_attribution_minus_billing_rub`, `tariff_option_minimum_payment_rub`.
+  `period_result_eligible` дополнен гейтом `ads_billing_covered`.
+  `economics_basis`: `PRE_COGS_AD_BILLING_CORRECTED_EXCL_EXCEPTIONAL` →
+  `PRE_COGS_AD_BILLING_SERVICE_DATE_EXCL_EXCEPTIONAL`. Существующие колонки не удалены
+  и не переименованы.
+
+**Metabase:** карточки 46 «Реклама», 47 «ДРР», 51 «От выручки к результату»,
+83 «Прочие расходы WB» — источник рекламы атрибуция → биллинг; описания 46, 47, 51, 79,
+83, 85 приведены к контракту. Названия, визуализация, фильтры и раскладка не менялись.
+
+**Контрольные суммы 31.08–13.09.2026:** результат после себестоимости −5 527,99 → −5 483,68;
+до себестоимости 37 489,53 → 37 533,84; реклама 20 862,25 → 20 750,00; себестоимость 43 017,52
+и выплата 37 465,76 — без изменений. Вся история: выплата 11 009 085,98 и себестоимость
+971 922,01 без изменений, 0 суток выпало из результата.
+
+**Репозиторий:** back-port MEMO в seed `sql/mart/pr_mart2a_finance_longform.sql`;
+раздел 3/3 `sql/mart/pr_deductions_direct_labels_v1.sql` помечен SUPERSEDED;
+валидация `sql/dash/fin_contract_v2_validation.sql` (19 ASSERT, PASS); откат
+`tools/fin_contract_v2_rollback.sh` + `sql/rollback/fin_contract_v2_2026-09-16/`.
+
+**Не исправлено (KI-2026-09-16-1):** строка продажи 09.07.2026 с `sku_match_status = not_found`
+завышает результат суток на 638,72 ₽; изолирована в валидации по одному ключу.
+
 ## 2026-09-15 — STEP 5A: production hardening контура ADS → MART → UNITKA
 
 Ветка `hardening/step5a-production` (база `e2bf058`). Реакция на инцидент 15.09:

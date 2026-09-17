@@ -1,0 +1,923 @@
+{
+ "dashcards": [
+  {
+   "card_id": null,
+   "col": 0,
+   "dashboard_tab_id": null,
+   "id": 37,
+   "parameter_mappings": [],
+   "row": 3,
+   "series": [],
+   "size_x": 24,
+   "size_y": 1,
+   "visualization_settings": {
+    "dashcard.background": false,
+    "text": "Операционная активность",
+    "virtual_card": {
+     "archived": false,
+     "dataset_query": {},
+     "display": "heading",
+     "name": null,
+     "visualization_settings": {}
+    }
+   }
+  },
+  {
+   "card_id": 40,
+   "col": 0,
+   "dashboard_tab_id": null,
+   "id": 38,
+   "parameter_mappings": [],
+   "row": 0,
+   "series": [],
+   "size_x": 12,
+   "size_y": 3,
+   "visualization_settings": {}
+  },
+  {
+   "card_id": 41,
+   "col": 12,
+   "dashboard_tab_id": null,
+   "id": 39,
+   "parameter_mappings": [
+    {
+     "card_id": 41,
+     "parameter_id": "date",
+     "target": [
+      "dimension",
+      [
+       "template-tag",
+       "day"
+      ]
+     ]
+    }
+   ],
+   "row": 0,
+   "series": [],
+   "size_x": 12,
+   "size_y": 3,
+   "visualization_settings": {}
+  },
+  {
+   "card_id": null,
+   "col": 0,
+   "dashboard_tab_id": null,
+   "id": 40,
+   "parameter_mappings": [],
+   "row": 7,
+   "series": [],
+   "size_x": 24,
+   "size_y": 1,
+   "visualization_settings": {
+    "dashcard.background": false,
+    "text": "Экономика периода",
+    "virtual_card": {
+     "archived": false,
+     "dataset_query": {},
+     "display": "heading",
+     "name": null,
+     "visualization_settings": {}
+    }
+   }
+  },
+  {
+   "card_id": 42,
+   "col": 0,
+   "dashboard_tab_id": null,
+   "id": 41,
+   "parameter_mappings": [
+    {
+     "card_id": 42,
+     "parameter_id": "date",
+     "target": [
+      "dimension",
+      [
+       "template-tag",
+       "day"
+      ]
+     ]
+    }
+   ],
+   "row": 4,
+   "series": [],
+   "size_x": 6,
+   "size_y": 3,
+   "visualization_settings": {}
+  },
+  {
+   "card_id": 43,
+   "col": 12,
+   "dashboard_tab_id": null,
+   "id": 42,
+   "parameter_mappings": [
+    {
+     "card_id": 43,
+     "parameter_id": "date",
+     "target": [
+      "dimension",
+      [
+       "template-tag",
+       "day"
+      ]
+     ]
+    }
+   ],
+   "row": 4,
+   "series": [],
+   "size_x": 6,
+   "size_y": 3,
+   "visualization_settings": {}
+  },
+  {
+   "card_id": 44,
+   "col": 0,
+   "dashboard_tab_id": null,
+   "id": 43,
+   "parameter_mappings": [
+    {
+     "card_id": 44,
+     "parameter_id": "date",
+     "target": [
+      "dimension",
+      [
+       "template-tag",
+       "day"
+      ]
+     ]
+    }
+   ],
+   "row": 8,
+   "series": [],
+   "size_x": 8,
+   "size_y": 4,
+   "visualization_settings": {
+    "card.title": "Выручка по цене продавца"
+   }
+  },
+  {
+   "card_id": 47,
+   "col": 8,
+   "dashboard_tab_id": null,
+   "id": 46,
+   "parameter_mappings": [
+    {
+     "card_id": 47,
+     "parameter_id": "date",
+     "target": [
+      "dimension",
+      [
+       "template-tag",
+       "day"
+      ]
+     ]
+    }
+   ],
+   "row": 20,
+   "series": [],
+   "size_x": 8,
+   "size_y": 3,
+   "visualization_settings": {
+    "card.title": "ДРР"
+   }
+  },
+  {
+   "card_id": 48,
+   "col": 18,
+   "dashboard_tab_id": null,
+   "id": 47,
+   "parameter_mappings": [
+    {
+     "card_id": 48,
+     "parameter_id": "date",
+     "target": [
+      "dimension",
+      [
+       "template-tag",
+       "day"
+      ]
+     ]
+    }
+   ],
+   "row": 4,
+   "series": [],
+   "size_x": 6,
+   "size_y": 3,
+   "visualization_settings": {}
+  },
+  {
+   "card_id": 49,
+   "col": 0,
+   "dashboard_tab_id": null,
+   "id": 48,
+   "parameter_mappings": [
+    {
+     "card_id": 49,
+     "parameter_id": "date",
+     "target": [
+      "dimension",
+      [
+       "template-tag",
+       "day"
+      ]
+     ]
+    }
+   ],
+   "row": 24,
+   "series": [],
+   "size_x": 8,
+   "size_y": 3,
+   "visualization_settings": {
+    "card.title": "К перечислению за товар"
+   }
+  },
+  {
+   "card_id": null,
+   "col": 0,
+   "dashboard_tab_id": null,
+   "id": 49,
+   "parameter_mappings": [],
+   "row": 16,
+   "series": [],
+   "size_x": 24,
+   "size_y": 1,
+   "visualization_settings": {
+    "dashcard.background": false,
+    "text": "Основные расходы периода — куда ушли деньги",
+    "virtual_card": {
+     "archived": false,
+     "dataset_query": {},
+     "display": "heading",
+     "name": null,
+     "visualization_settings": {}
+    }
+   }
+  },
+  {
+   "card_id": 50,
+   "col": 0,
+   "dashboard_tab_id": null,
+   "id": 50,
+   "parameter_mappings": [
+    {
+     "card_id": 50,
+     "parameter_id": "date",
+     "target": [
+      "dimension",
+      [
+       "template-tag",
+       "day"
+      ]
+     ]
+    }
+   ],
+   "row": 28,
+   "series": [],
+   "size_x": 24,
+   "size_y": 7,
+   "visualization_settings": {}
+  },
+  {
+   "card_id": null,
+   "col": 0,
+   "dashboard_tab_id": null,
+   "id": 51,
+   "parameter_mappings": [],
+   "row": 23,
+   "series": [],
+   "size_x": 24,
+   "size_y": 1,
+   "visualization_settings": {
+    "dashcard.background": false,
+    "text": "Расчёты с Wildberries — по закрытым финансовым отчётам WB, не управленческая прибыль",
+    "virtual_card": {
+     "archived": false,
+     "dataset_query": {},
+     "display": "heading",
+     "name": null,
+     "visualization_settings": {}
+    }
+   }
+  },
+  {
+   "card_id": 51,
+   "col": 0,
+   "dashboard_tab_id": null,
+   "id": 52,
+   "parameter_mappings": [
+    {
+     "card_id": 51,
+     "parameter_id": "date",
+     "target": [
+      "dimension",
+      [
+       "template-tag",
+       "day"
+      ]
+     ]
+    }
+   ],
+   "row": 36,
+   "series": [],
+   "size_x": 16,
+   "size_y": 7,
+   "visualization_settings": {}
+  },
+  {
+   "card_id": null,
+   "col": 0,
+   "dashboard_tab_id": null,
+   "id": 53,
+   "parameter_mappings": [],
+   "row": 27,
+   "series": [],
+   "size_x": 24,
+   "size_y": 1,
+   "visualization_settings": {
+    "dashcard.background": false,
+    "text": "Динамика",
+    "virtual_card": {
+     "archived": false,
+     "dataset_query": {},
+     "display": "heading",
+     "name": null,
+     "visualization_settings": {}
+    }
+   }
+  },
+  {
+   "card_id": 52,
+   "col": 0,
+   "dashboard_tab_id": null,
+   "id": 54,
+   "parameter_mappings": [
+    {
+     "card_id": 52,
+     "parameter_id": "date",
+     "target": [
+      "dimension",
+      [
+       "template-tag",
+       "day"
+      ]
+     ]
+    }
+   ],
+   "row": 44,
+   "series": [],
+   "size_x": 24,
+   "size_y": 11,
+   "visualization_settings": {}
+  },
+  {
+   "card_id": null,
+   "col": 0,
+   "dashboard_tab_id": null,
+   "id": 55,
+   "parameter_mappings": [],
+   "row": 35,
+   "series": [],
+   "size_x": 24,
+   "size_y": 1,
+   "visualization_settings": {
+    "dashcard.background": false,
+    "text": "От выручки к результату",
+    "text.align_vertical": "bottom",
+    "virtual_card": {
+     "archived": false,
+     "dataset_query": {},
+     "display": "heading",
+     "name": null,
+     "visualization_settings": {}
+    }
+   }
+  },
+  {
+   "card_id": 53,
+   "col": 8,
+   "dashboard_tab_id": null,
+   "id": 56,
+   "parameter_mappings": [
+    {
+     "card_id": 53,
+     "parameter_id": "date",
+     "target": [
+      "dimension",
+      [
+       "template-tag",
+       "day"
+      ]
+     ]
+    }
+   ],
+   "row": 8,
+   "series": [],
+   "size_x": 8,
+   "size_y": 4,
+   "visualization_settings": {
+    "card.title": "Результат до себестоимости"
+   }
+  },
+  {
+   "card_id": 54,
+   "col": 8,
+   "dashboard_tab_id": null,
+   "id": 57,
+   "parameter_mappings": [
+    {
+     "card_id": 54,
+     "parameter_id": "date",
+     "target": [
+      "dimension",
+      [
+       "template-tag",
+       "day"
+      ]
+     ]
+    }
+   ],
+   "row": 12,
+   "series": [],
+   "size_x": 8,
+   "size_y": 2,
+   "visualization_settings": {
+    "card.title": "Рентабельность до"
+   }
+  },
+  {
+   "card_id": 55,
+   "col": 6,
+   "dashboard_tab_id": null,
+   "id": 58,
+   "parameter_mappings": [
+    {
+     "card_id": 55,
+     "parameter_id": "date",
+     "target": [
+      "dimension",
+      [
+       "template-tag",
+       "day"
+      ]
+     ]
+    }
+   ],
+   "row": 4,
+   "series": [],
+   "size_x": 6,
+   "size_y": 3,
+   "visualization_settings": {}
+  },
+  {
+   "card_id": 72,
+   "col": 8,
+   "dashboard_tab_id": null,
+   "id": 105,
+   "parameter_mappings": [
+    {
+     "card_id": 72,
+     "parameter_id": "date",
+     "target": [
+      "dimension",
+      [
+       "template-tag",
+       "day"
+      ]
+     ]
+    }
+   ],
+   "row": 14,
+   "series": [],
+   "size_x": 8,
+   "size_y": 2,
+   "visualization_settings": {
+    "card.title": "Себестоимость товара"
+   }
+  },
+  {
+   "card_id": 73,
+   "col": 16,
+   "dashboard_tab_id": null,
+   "id": 106,
+   "parameter_mappings": [
+    {
+     "card_id": 73,
+     "parameter_id": "date",
+     "target": [
+      "dimension",
+      [
+       "template-tag",
+       "day"
+      ]
+     ]
+    }
+   ],
+   "row": 8,
+   "series": [],
+   "size_x": 8,
+   "size_y": 4,
+   "visualization_settings": {
+    "card.title": "Результат после себестоимости"
+   }
+  },
+  {
+   "card_id": 74,
+   "col": 16,
+   "dashboard_tab_id": null,
+   "id": 107,
+   "parameter_mappings": [
+    {
+     "card_id": 74,
+     "parameter_id": "date",
+     "target": [
+      "dimension",
+      [
+       "template-tag",
+       "day"
+      ]
+     ]
+    }
+   ],
+   "row": 12,
+   "series": [],
+   "size_x": 8,
+   "size_y": 2,
+   "visualization_settings": {
+    "card.title": "Рентабельность после"
+   }
+  },
+  {
+   "card_id": null,
+   "col": 0,
+   "dashboard_tab_id": null,
+   "id": 108,
+   "parameter_mappings": [],
+   "row": 43,
+   "series": [],
+   "size_x": 24,
+   "size_y": 1,
+   "visualization_settings": {
+    "dashcard.background": false,
+    "text": "Товары за период",
+    "text.align_vertical": "bottom",
+    "virtual_card": {
+     "archived": false,
+     "dataset_query": {},
+     "display": "heading",
+     "name": null,
+     "visualization_settings": {}
+    }
+   }
+  },
+  {
+   "card_id": 75,
+   "col": 8,
+   "dashboard_tab_id": null,
+   "id": 109,
+   "parameter_mappings": [
+    {
+     "card_id": 75,
+     "parameter_id": "date",
+     "target": [
+      "dimension",
+      [
+       "template-tag",
+       "day"
+      ]
+     ]
+    }
+   ],
+   "row": 24,
+   "series": [],
+   "size_x": 8,
+   "size_y": 3,
+   "visualization_settings": {
+    "card.title": "Удержания после реализации"
+   }
+  },
+  {
+   "card_id": 76,
+   "col": 16,
+   "dashboard_tab_id": null,
+   "id": 110,
+   "parameter_mappings": [
+    {
+     "card_id": 76,
+     "parameter_id": "date",
+     "target": [
+      "dimension",
+      [
+       "template-tag",
+       "day"
+      ]
+     ]
+    }
+   ],
+   "row": 24,
+   "series": [],
+   "size_x": 8,
+   "size_y": 3,
+   "visualization_settings": {
+    "card.title": "К выплате от WB"
+   }
+  },
+  {
+   "card_id": 77,
+   "col": 0,
+   "dashboard_tab_id": null,
+   "id": 118,
+   "parameter_mappings": [
+    {
+     "card_id": 77,
+     "parameter_id": "date",
+     "target": [
+      "dimension",
+      [
+       "template-tag",
+       "day"
+      ]
+     ]
+    }
+   ],
+   "row": 12,
+   "series": [],
+   "size_x": 8,
+   "size_y": 2,
+   "visualization_settings": {
+    "card.title": "Оплачено покупателями"
+   }
+  },
+  {
+   "card_id": 84,
+   "col": 16,
+   "dashboard_tab_id": null,
+   "id": 119,
+   "parameter_mappings": [
+    {
+     "card_id": 84,
+     "parameter_id": "date",
+     "target": [
+      "dimension",
+      [
+       "template-tag",
+       "day"
+      ]
+     ]
+    }
+   ],
+   "row": 14,
+   "series": [],
+   "size_x": 8,
+   "size_y": 2,
+   "visualization_settings": {
+    "card.title": "Изменение к пред. периоду"
+   }
+  },
+  {
+   "card_id": 80,
+   "col": 0,
+   "dashboard_tab_id": null,
+   "id": 120,
+   "parameter_mappings": [
+    {
+     "card_id": 80,
+     "parameter_id": "date",
+     "target": [
+      "dimension",
+      [
+       "template-tag",
+       "day"
+      ]
+     ]
+    }
+   ],
+   "row": 17,
+   "series": [],
+   "size_x": 8,
+   "size_y": 3,
+   "visualization_settings": {
+    "card.title": "Удержано WB из цены"
+   }
+  },
+  {
+   "card_id": 81,
+   "col": 16,
+   "dashboard_tab_id": null,
+   "id": 121,
+   "parameter_mappings": [
+    {
+     "card_id": 81,
+     "parameter_id": "date",
+     "target": [
+      "dimension",
+      [
+       "template-tag",
+       "day"
+      ]
+     ]
+    }
+   ],
+   "row": 17,
+   "series": [],
+   "size_x": 8,
+   "size_y": 3,
+   "visualization_settings": {
+    "card.title": "Логистика"
+   }
+  },
+  {
+   "card_id": 82,
+   "col": 0,
+   "dashboard_tab_id": null,
+   "id": 122,
+   "parameter_mappings": [
+    {
+     "card_id": 82,
+     "parameter_id": "date",
+     "target": [
+      "dimension",
+      [
+       "template-tag",
+       "day"
+      ]
+     ]
+    }
+   ],
+   "row": 20,
+   "series": [],
+   "size_x": 8,
+   "size_y": 3,
+   "visualization_settings": {
+    "card.title": "Хранение"
+   }
+  },
+  {
+   "card_id": 83,
+   "col": 16,
+   "dashboard_tab_id": null,
+   "id": 123,
+   "parameter_mappings": [
+    {
+     "card_id": 83,
+     "parameter_id": "date",
+     "target": [
+      "dimension",
+      [
+       "template-tag",
+       "day"
+      ]
+     ]
+    }
+   ],
+   "row": 20,
+   "series": [],
+   "size_x": 8,
+   "size_y": 3,
+   "visualization_settings": {
+    "card.title": "Прочие расходы WB, нетто"
+   }
+  },
+  {
+   "card_id": 85,
+   "col": 16,
+   "dashboard_tab_id": null,
+   "id": 125,
+   "parameter_mappings": [
+    {
+     "card_id": 85,
+     "parameter_id": "date",
+     "target": [
+      "dimension",
+      [
+       "template-tag",
+       "day"
+      ]
+     ]
+    }
+   ],
+   "row": 39,
+   "series": [],
+   "size_x": 8,
+   "size_y": 2,
+   "visualization_settings": {
+    "card.title": "Реклама: биллинг WB"
+   }
+  },
+  {
+   "card_id": 79,
+   "col": 16,
+   "dashboard_tab_id": null,
+   "id": 126,
+   "parameter_mappings": [
+    {
+     "card_id": 79,
+     "parameter_id": "date",
+     "target": [
+      "dimension",
+      [
+       "template-tag",
+       "day"
+      ]
+     ]
+    }
+   ],
+   "row": 41,
+   "series": [],
+   "size_x": 8,
+   "size_y": 2,
+   "visualization_settings": {
+    "card.title": "Реклама: нераспределено"
+   }
+  },
+  {
+   "card_id": 78,
+   "col": 0,
+   "dashboard_tab_id": null,
+   "id": 127,
+   "parameter_mappings": [
+    {
+     "card_id": 78,
+     "parameter_id": "date",
+     "target": [
+      "dimension",
+      [
+       "template-tag",
+       "day"
+      ]
+     ]
+    }
+   ],
+   "row": 14,
+   "series": [],
+   "size_x": 8,
+   "size_y": 2,
+   "visualization_settings": {
+    "card.title": "Разовая компенсация WB"
+   }
+  },
+  {
+   "card_id": 46,
+   "col": 8,
+   "dashboard_tab_id": null,
+   "id": 129,
+   "parameter_mappings": [
+    {
+     "card_id": 46,
+     "parameter_id": "date",
+     "target": [
+      "dimension",
+      [
+       "template-tag",
+       "day"
+      ]
+     ]
+    }
+   ],
+   "row": 17,
+   "series": [],
+   "size_x": 8,
+   "size_y": 3,
+   "visualization_settings": {
+    "card.title": "Реклама"
+   }
+  },
+  {
+   "card_id": 46,
+   "col": 16,
+   "dashboard_tab_id": null,
+   "id": 130,
+   "parameter_mappings": [
+    {
+     "card_id": 46,
+     "parameter_id": "date",
+     "target": [
+      "dimension",
+      [
+       "template-tag",
+       "day"
+      ]
+     ]
+    }
+   ],
+   "row": 36,
+   "series": [],
+   "size_x": 8,
+   "size_y": 3,
+   "visualization_settings": {
+    "card.title": "Реклама: распределено на SKU"
+   }
+  }
+ ],
+ "id": 2,
+ "name": "EVETIS · WB Executive",
+ "parameters": [
+  {
+   "default": "past30days",
+   "id": "date",
+   "name": "Период",
+   "sectionId": "date",
+   "slug": "date",
+   "type": "date/all-options"
+  }
+ ],
+ "width": "fixed"
+}

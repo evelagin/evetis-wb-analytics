@@ -1,0 +1,118 @@
+{
+ "archived": false,
+ "archived_directly": false,
+ "cache_invalidated_at": "2026-09-16T14:26:59.275009Z",
+ "cache_ttl": null,
+ "card_schema": 23,
+ "collection": {
+  "archive_operation_id": null,
+  "archived": false,
+  "archived_directly": null,
+  "authority_level": null,
+  "created_at": "2026-08-26T15:19:56.740614Z",
+  "description": "Executive MVP: что происходит с бизнесом и зарабатываем ли мы деньги.",
+  "entity_id": "EZUYQWsC5fdY9QqGY-xKC",
+  "id": 6,
+  "is_remote_synced": false,
+  "is_sample": false,
+  "location": "/5/",
+  "name": "01 Executive",
+  "namespace": null,
+  "personal_owner_id": null,
+  "slug": "01_executive",
+  "type": null
+ },
+ "collection_id": 6,
+ "collection_position": null,
+ "collection_preview": true,
+ "created_at": "2026-09-16T13:59:10.883799Z",
+ "creator_id": 2,
+ "dashboard": null,
+ "dashboard_id": null,
+ "database_id": 2,
+ "dataset_query": {
+  "database": 2,
+  "lib/type": "mbql/query",
+  "stages": [
+   {
+    "lib/type": "mbql.stage/native",
+    "native": "-- settlement_seller_price_rub − settlement_goods_rub; settlement_price_chain_covered\nWITH d AS (SELECT day FROM `wb_mart.V_DASH_KPI_DAILY` WHERE {{day}})\nSELECT\n  CONCAT(IF(ROUND(-(SUM(s.settlement_seller_price_rub) - SUM(s.settlement_goods_rub))) < 0, '-', ''), REPLACE(FORMAT(\"%'d\", ABS(CAST(ROUND(-(SUM(s.settlement_seller_price_rub) - SUM(s.settlement_goods_rub))) AS INT64))), ',', ' '), ' ₽') AS withheld_from_price,\n  CONCAT(CAST(COUNTIF(s.settlement_price_chain_covered) AS STRING), ' из ', CAST(COUNT(*) AS STRING), ' сут.') AS closed_days\nFROM d LEFT JOIN `wb_mart.V_DASH_SETTLEMENT_DAILY` s USING (day)",
+    "template-tags": [
+     {
+      "dimension": [
+       "field",
+       {
+        "lib/uuid": "72b8bd88-08a4-4799-8cab-89beacdda46a"
+       },
+       909
+      ],
+      "display-name": "Период",
+      "id": "745f9a79-b991-427a-b081-1b3cd99211a9",
+      "name": "day",
+      "type": "dimension",
+      "widget-type": "date/all-options"
+     }
+    ]
+   }
+  ]
+ },
+ "description": "Всего удержано из цены продавца = СПП + вознаграждение WB + НДС + эквайринг + вознаграждение ПВЗ. СПП не является комиссией WB. Блок считается только по суткам, закрытым недельным финансовым отчётом WB.",
+ "dimension_mappings": null,
+ "dimensions": null,
+ "display": "object",
+ "document_id": null,
+ "embedding_params": null,
+ "embedding_type": null,
+ "enable_embedding": false,
+ "entity_id": "Br83j9KnoHTfr_HEh45HE",
+ "id": 183,
+ "is_remote_synced": false,
+ "last_used_at": "2026-09-16T14:37:21.899376Z",
+ "legacy_query": null,
+ "metabase_version": "v0.63.15.1 (ab5ffba)",
+ "name": "Executive V2 · От цены продавца до начисления WB: итог",
+ "param_fields": {
+  "745f9a79-b991-427a-b081-1b3cd99211a9": [
+   {
+    "base_type": "type/Date",
+    "dimensions": [],
+    "display_name": "Day",
+    "fk_target_field_id": null,
+    "has_field_values": "none",
+    "id": 909,
+    "name": "day",
+    "name_field": null,
+    "semantic_type": null,
+    "table_id": 38,
+    "target": null
+   }
+  ]
+ },
+ "parameter_mappings": [],
+ "parameter_usage_count": 0,
+ "parameters": [],
+ "query_type": "native",
+ "source_card_id": null,
+ "table_id": null,
+ "type": "question",
+ "visualization_settings": {
+  "column_settings": {
+   "[\"name\",\"closed_days\"]": {
+    "column_title": "Закрытые отчёты"
+   },
+   "[\"name\",\"withheld_from_price\"]": {
+    "column_title": "Удержано из цены"
+   }
+  },
+  "table.columns": [
+   {
+    "enabled": true,
+    "name": "withheld_from_price"
+   },
+   {
+    "enabled": true,
+    "name": "closed_days"
+   }
+  ]
+ }
+}
