@@ -1,13 +1,16 @@
 -- ═══════════════════════════════════════════════════════════════════════
 -- Откат Stage 3.4D.2.
 --
--- Порядок обратный установке: сначала витрины, потом RAW.
+-- Откатывает только витрины. RAW-слой (RAW_OZON_PRICE_COMMISSIONS и
+-- колонки тарифа в RAW_OZON_PRICES) сохраняется: блок commissions приходит
+-- только в текущем ответе API, историю за прошлые дни Ozon не отдаёт.
+-- Накопленные снимки пережили выкатку этапа и принадлежат жизненному циклу
+-- данных загрузки, а не откату витрин.
 --
--- ⚠️ Откат RAW-слоя НЕОБРАТИМО теряет тарифные компоненты: блок
--- commissions приходит только в текущем ответе API, историю за прошлые
--- дни Ozon не отдаёт. Снимок 2026-09-06 после DROP не восстановится.
---
--- ⚠️ Отдельно от SQL: образ Cloud Run. Все четыре job переведены на
+-- ⛔ SUPERSEDED — DO NOT EXECUTE. Инструкция по образу ниже устарела:
+-- с 2026-09-17 все Ozon job работают на образе R1, и её выполнение вернуло
+-- бы production к коду до R1. Сохранена только как история.
+-- Отдельно от SQL: образ Cloud Run. Все четыре job переведены на
 -- sha256:43fb3a10601b99381571858210bb34e50cd792bca0c6fae72c550672db885422.
 -- Возврат к прежнему образу:
 --   IMG=europe-west1-docker.pkg.dev/project-fa311fc0-4d87-4781-986/\
@@ -33,42 +36,17 @@ DROP VIEW IF EXISTS `project-fa311fc0-4d87-4781-986.ozon_mart.V_OZON_TARIFF_SOUR
 -- этот откат НЕ трогает: Stage 3.4D.2 их не изменял.
 
 -- ── 2. Длинная проекция компонент тарифа ──────────────────────────────
-DROP TABLE IF EXISTS `project-fa311fc0-4d87-4781-986.ozon_raw.RAW_OZON_PRICE_COMMISSIONS`;
+-- ozon_raw.RAW_OZON_PRICE_COMMISSIONS НЕ удаляется и не очищается:
+-- ежедневные снимки тарифа невосстановимы (API отдаёт только текущее
+-- состояние). Таблицу пишет суточная загрузка, её читают витрины ozon_mart.
 
 -- ── 3. Колонки RAW_OZON_PRICES ────────────────────────────────────────
--- BigQuery не умеет DROP COLUMN на партиционированной таблице через
--- ALTER в один приём для NUMERIC-полей с данными — команды ниже
--- выполняются по одной и физически освобождают место не сразу.
--- Осмысленно только если расширение признано ошибкой: сами по себе
--- лишние NULLABLE-колонки ничего не ломают и ничего не стоят.
-ALTER TABLE `project-fa311fc0-4d87-4781-986.ozon_raw.RAW_OZON_PRICES`
-  DROP COLUMN IF EXISTS currency_code,
-  DROP COLUMN IF EXISTS retail_price_rub,
-  DROP COLUMN IF EXISTS vat_rate,
-  DROP COLUMN IF EXISTS auto_action_enabled,
-  DROP COLUMN IF EXISTS auto_add_to_ozon_actions_enabled,
-  DROP COLUMN IF EXISTS volume_weight_l,
-  DROP COLUMN IF EXISTS sales_percent_fbs,
-  DROP COLUMN IF EXISTS sales_percent_rfbs,
-  DROP COLUMN IF EXISTS sales_percent_fbp,
-  DROP COLUMN IF EXISTS fbo_direct_flow_trans_min_rub,
-  DROP COLUMN IF EXISTS fbo_direct_flow_trans_max_rub,
-  DROP COLUMN IF EXISTS fbo_deliv_to_customer_rub,
-  DROP COLUMN IF EXISTS fbo_return_flow_rub,
-  DROP COLUMN IF EXISTS fbs_first_mile_min_rub,
-  DROP COLUMN IF EXISTS fbs_first_mile_max_rub,
-  DROP COLUMN IF EXISTS fbs_direct_flow_trans_min_rub,
-  DROP COLUMN IF EXISTS fbs_direct_flow_trans_max_rub,
-  DROP COLUMN IF EXISTS fbs_deliv_to_customer_rub,
-  DROP COLUMN IF EXISTS fbs_return_flow_rub,
-  DROP COLUMN IF EXISTS ozon_index_min_price_rub,
-  DROP COLUMN IF EXISTS ozon_index_value,
-  DROP COLUMN IF EXISTS self_marketplaces_index_min_price_rub,
-  DROP COLUMN IF EXISTS self_marketplaces_index_value,
-  DROP COLUMN IF EXISTS commissions_json,
-  DROP COLUMN IF EXISTS commissions_field_count,
-  DROP COLUMN IF EXISTS commissions_unknown_fields;
+-- Колонки тарифа, добавленные Stage 3.4D.2, НЕ удаляются: в них хранится
+-- ежедневная история тарифа, их пишет текущая загрузка prices() и читают
+-- витрины ozon_mart. Схему назад не откатываем.
 
 -- ── 4. Код runtime ────────────────────────────────────────────────────
+-- ⛔ SUPERSEDED — DO NOT EXECUTE: код runtime с тех пор изменён (R1), revert
+-- вернул бы production к поведению до R1. Сохранено только как история.
 -- git revert коммита Stage 3.4D.2 по pipelines/ozon/runtime/entities.py
 -- вернёт функцию prices() к записи в одну таблицу.
