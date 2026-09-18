@@ -1,5 +1,22 @@
 # CHANGELOG.md
 
+## 2026-09-18 — SKU PERFORMANCE V2 PHASE B: backend и metric contract
+
+Документ: `docs/SKU_PERFORMANCE_V2_PHASE_B_BACKEND_2026-09-18.md` (аудит — `…_PHASE_A_AUDIT_2026-09-18.md`).
+Dashboard 3, Metabase и Executive V2 не менялись.
+
+- BigQuery `wb_mart`: `SKU_PERFORMANCE_V2_DAILY` (day × nm_id, только суммы, 8 027 строк), журнал, замок,
+  `SKU_PERFORMANCE_V2_CONFIG` (`min_reliable_units = 10`), `sp_build_sku_performance_v2_daily` (TEMP → ASSERT S1–S6 →
+  транзакция), `V_DASH_SKU_PERFORMANCE_V2_DAILY`, `TVF_SKU_PERFORMANCE_V2_PERIOD` (период + предыдущее окно, Δ% / п.п.,
+  надёжность, статус), `V_SKU_PERFORMANCE_V2_EXEC_BRIDGE_DAILY` (мост к Executive, остаток 0 по каждым суткам).
+- Контракт: цена продавца (заказы / выкупы), цена покупателя, начисление — ratio-of-sums; цепочка цены с 13.07 (раньше
+  NULL); хранение SKU с 01.09 (без распределения); реклама — атрибуция; себестоимость по дате выкупа, как Executive;
+  «Вклад SKU до / после себестоимости»; возвраты финотчёта вычитаются (в мосте — строка KI-2, 254,88 ₽).
+- Terraform `infra/terraform/sku_performance_v2_layer.tf` + actAs в `iam.tf`: `sa-sku-v2-layer`, Scheduler
+  `sku-performance-v2-layer-build` `20 7-23 * * *` МСК. Целевой plan 10/0/0 просмотрен и применён.
+- Валидация 39/39; регрессия против независимого пересчёта 735/735 (7 окон); Executive V2 97/97.
+- Поправка Phase A: Executive считает себестоимость по дате выкупа, а не финотчёта.
+
 ## 2026-09-17 — EXECUTIVE V2 PHASE C3: closeout, Executive V2 FROZEN
 
 Документ: `docs/EXECUTIVE_V2_CLOSEOUT_2026-09-17.md`. Metric contracts, бизнес-логика SQL, раскладка Executive и

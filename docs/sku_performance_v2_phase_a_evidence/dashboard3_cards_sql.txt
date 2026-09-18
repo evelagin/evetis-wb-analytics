@@ -1,0 +1,331 @@
+
+######## 40 Свежесть данных [table]
+-- description: Глобальная свежесть слоя данных из V_DASH_FRESHNESS_HEADER. «Данные по» = data_as_of_min: дата, по которую полны ВСЕ слои (самый отстающий слой). Фильтр периода на эту карточку не действует — это состояние источника, а не выбранного окна. Определения свежести не менялись.
+SELECT
+  FORMAT_DATE('%d.%m.%Y', data_as_of_min)                          AS data_as_of,
+  FORMAT_TIMESTAMP('%d.%m %H:%M', mart_built_at, 'Europe/Moscow')  AS mart_built,
+  CONCAT(CAST(layers_ok AS STRING), '/', CAST(layers_total AS STRING)) AS layers_ok
+FROM `wb_mart.V_DASH_FRESHNESS_HEADER`
+
+######## 41 Качество выбранного периода [table]
+-- description: Покрытие ВЫБРАННОГО периода. «Финансы, сут» = COUNTIF(contribution_covered) / COUNT(*): сколько суток окна имеют полную экономику из скольки выбранных. Разница между числителем и знаменателем — сутки без финансового покрытия. «PROVISIONAL» = COUNTIF(contains_provisional_finance): по контракту OPEN-1 такие сутки ВХОДЯТ в контрибуцию, но остаются наблюдаемыми. Флаги — pass-through из V_DASH_COVERAGE_DAILY, определения покрытия не менялись.
+SELECT
+  CONCAT(
+    FORMAT_DATE('%d.%m.%Y', MIN(day)), ' — ', FORMAT_DATE('%d.%m.%Y', MAX(day)),
+    IF(COUNTIF(is_current_day) > 0, ' (вкл. неполный сегодня)', '')
+  )                                                                       AS period,
+  CONCAT(CAST(COUNTIF(contribution_covered) AS STRING), '/', CAST(COUNT(*) AS STRING)) AS finance_days,
+  COUNTIF(contains_provisional_finance)                                   AS provisional_days
+FROM `wb_mart.V_DASH_KPI_DAILY`
+WHERE {{day}}
+
+######## 56 Заказы, шт (SKU) [scalar]
+-- description: БАЗА ДАТ: дата заказа. «Заказы, шт» = gross placed orders — все оформленные заказы периода, включая впоследствии отменённые (orders_gross_qty = orders_qty + canceled_qty). Гейт orders_covered; вне покрытия NULL, не 0.
+SELECT SUM(orders_gross_qty) AS orders_gross_qty
+FROM `wb_mart.V_DASH_SKU_DAILY`
+WHERE {{day}}
+  [[AND {{sku}}]]
+
+######## 57 Отменено, шт (SKU) [scalar]
+-- description: БАЗА ДАТ: дата заказа. Отменённые заказы — часть брутто-заказов той же даты-базы. Гейт orders_covered; вне покрытия NULL, не 0.
+SELECT SUM(canceled_qty) AS canceled_qty
+FROM `wb_mart.V_DASH_SKU_DAILY`
+WHERE {{day}}
+  [[AND {{sku}}]]
+
+######## 58 Выкупы, шт (SKU) [scalar]
+-- description: БАЗА ДАТ: ДАТА ВЫКУПА (sale_date). Это СОБЫТИЕ периода, а не когорта по дате заказа. С «Заказами» в одну воронку не сводится и в отношение не ставится: 01.08–22.08 WB Funnel даёт 410 когортных выкупов против 443 событийных, а по отдельным SKU событийные выкупы превышают брутто-заказы. Гейт sales_covered.
+SELECT SUM(buyouts_qty) AS buyouts_qty
+FROM `wb_mart.V_DASH_SKU_DAILY`
+WHERE {{day}}
+  [[AND {{sku}}]]
+
+######## 59 Выручка, ₽ (SKU) [scalar]
+-- description: БАЗА ДАТ: дата выкупа. Выручка в seller-base. Гейт sales_covered; вне покрытия NULL, не 0.
+SELECT SUM(sales_revenue_seller_base_rub) AS revenue_rub
+FROM `wb_mart.V_DASH_SKU_DAILY`
+WHERE {{day}}
+  [[AND {{sku}}]]
+
+######## 60 Реклама, ₽ (SKU) [scalar]
+-- description: БАЗА ДАТ: дата рекламной активности. «Реклама, ₽» = ATTRIBUTED SPEND (расход, атрибутированный на SKU), а НЕ billing spend. Stage 3B Phase B не выполнен, биллинговой разбивки по SKU в production нет. Замер 01.08–22.08: атрибуция 33 534,38 ₽ против биллинга V_ADV_COSTS 33 536,00 ₽ — расхождение 1,62 ₽ (0,005 %). Гейт ads_covered.
+SELECT SUM(ad_spend_attributed_rub) AS ad_spend_rub
+FROM `wb_mart.V_DASH_SKU_DAILY`
+WHERE {{day}}
+  [[AND {{sku}}]]
+
+######## 61 ДРР, % (SKU) [scalar]
+-- description: Ratio-of-sums за период: SUM(ad_spend_attributed_rub) / SUM(sales_revenue_seller_base_rub). AVG посуточных ДРР не применяется. Числитель — attributed spend, не биллинг. Знаменатель — выручка по дате выкупа.
+SELECT SAFE_DIVIDE(SUM(ad_spend_attributed_rub), SUM(sales_revenue_seller_base_rub)) AS drr
+FROM `wb_mart.V_DASH_SKU_DAILY`
+WHERE {{day}}
+  [[AND {{sku}}]]
+
+######## 62 Доход до себестоимости, ₽ (SKU) [scalar]
+-- description: contribution_pre_cogs: выручка продавца за вычетом сбора маркетплейса, логистики SKU и атрибутированной рекламы. Расходы уровня счёта (хранение, удержания, приёмка) по SKU не разносятся — источник не даёт связки с SKU, они остаются на Executive. Себестоимость товара не вычитается. Показатель не является прибылью. REF_COGS в production отсутствует. Гейт contribution_covered.
+SELECT SUM(contribution_pre_cogs_rub) AS contribution_rub
+FROM `wb_mart.V_DASH_SKU_DAILY`
+WHERE {{day}}
+  [[AND {{sku}}]]
+
+######## 63 Доходность до себестоимости, % (SKU) [scalar]
+-- description: Ratio-of-sums за период: SUM(contribution_pre_cogs_rub) / SUM(sales_revenue_seller_base_rub). AVG посуточных отношений не применяется. Себестоимость товара не вычитается. Показатель не является прибылью. Это не маржа.
+SELECT SAFE_DIVIDE(SUM(contribution_pre_cogs_rub), SUM(sales_revenue_seller_base_rub)) AS contribution_to_revenue
+FROM `wb_mart.V_DASH_SKU_DAILY`
+WHERE {{day}}
+  [[AND {{sku}}]]
+
+######## 64 Рейтинг товаров за период (SKU) [table]
+-- description: Сортировка: SUM(contribution_pre_cogs_rub) DESC. БАЗЫ ДАТ РАЗНЫЕ И НЕ СМЕШИВАЮТСЯ: «Заказы (брутто)» и «Отменено» — дата заказа, «Выкупы» — дата выкупа, «Реклама» — дата рекламной активности, «Выручка» — дата выкупа. Отношение выкупов к заказам не вычисляется. Все ratio — ratio-of-sums за период: доля отмен = SUM(canceled)/NULLIF(SUM(orders_gross),0), ДРР = SUM(ads)/NULLIF(SUM(revenue),0), доходность = SUM(contribution)/NULLIF(SUM(revenue),0). AVG посуточных отношений не применяется. Строки SKU, у которых за период одновременно известны и равны нулю заказы, выкупы, выручка и реклама, из рейтинга скрыты — из модели SKU при этом не удаляются. Неизвестное (NULL, нет покрытия) не скрывается никогда. Себестоимость товара не вычитается: показатель не является прибылью.
+WITH per AS (
+  SELECT
+    nm_id,
+    product_name_short                    AS product,
+    SUM(orders_gross_qty)                 AS orders_gross_qty,
+    SUM(canceled_qty)                     AS canceled_qty,
+    SUM(buyouts_qty)                      AS buyouts_qty,
+    SUM(sales_revenue_seller_base_rub)    AS revenue_rub,
+    SUM(ad_spend_attributed_rub)          AS ad_spend_rub,
+    SUM(contribution_pre_cogs_rub)        AS contribution_rub
+  FROM `wb_mart.V_DASH_SKU_DAILY`
+  WHERE {{day}}
+    [[AND {{sku}}]]
+  GROUP BY nm_id, product
+)
+SELECT
+  nm_id,
+  product,
+  orders_gross_qty,
+  canceled_qty,
+  SAFE_DIVIDE(canceled_qty, NULLIF(orders_gross_qty, 0))    AS canceled_share,
+  buyouts_qty,
+  revenue_rub,
+  ad_spend_rub,
+  SAFE_DIVIDE(ad_spend_rub, NULLIF(revenue_rub, 0))         AS drr,
+  contribution_rub,
+  SAFE_DIVIDE(contribution_rub, NULLIF(revenue_rub, 0))     AS contribution_to_revenue
+FROM per
+WHERE
+  -- Скрываем ТОЛЬКО доказанно неактивные в периоде SKU (все четыре величины известны и равны нулю).
+  -- Неизвестное (NULL, нет покрытия) НЕ скрывается: отсутствие данных не равно отсутствию активности.
+     COALESCE(orders_gross_qty, 0) <> 0
+  OR COALESCE(buyouts_qty, 0)      <> 0
+  OR COALESCE(revenue_rub, 0)      <> 0
+  OR COALESCE(ad_spend_rub, 0)     <> 0
+  OR orders_gross_qty IS NULL
+  OR buyouts_qty      IS NULL
+  OR revenue_rub      IS NULL
+  OR ad_spend_rub     IS NULL
+ORDER BY contribution_rub DESC
+
+
+######## 65 Заказы и отмены по дням (SKU) [line]
+-- description: БАЗА ДАТ: ДАТА ЗАКАЗА для обеих серий. «Заказы» — брутто (orders_gross_qty = orders_qty + canceled_qty), «Отменено» — часть этих же заказов. Обе метрики измерены в одной дате-базе, поэтому их допустимо читать вместе. Выкупы на этом графике сознательно отсутствуют: они живут в базе даты выкупа и отдельным графиком. Гейт orders_covered; сутки вне покрытия дают NULL и разрыв линии, а не ноль.
+SELECT
+  day,
+  SUM(orders_gross_qty) AS orders_gross_qty,
+  SUM(canceled_qty)     AS canceled_qty
+FROM `wb_mart.V_DASH_SKU_DAILY`
+WHERE {{day}}
+  [[AND {{sku}}]]
+GROUP BY day
+ORDER BY day
+
+######## 66 Выручка и доход до себестоимости по дням (SKU) [combo]
+-- description: БАЗЫ ДАТ: выручка — дата выкупа, доход до себестоимости — cross-base величина (сводит выручку по дате выкупа, комиссию и логистику по дате финансовой операции, рекламу по дате рекламной активности), поэтому управленчески осмысленна на горизонте от недели. Обе величины в ₽ и на одной оси — dual-axis не требуется. Сутки вне покрытия дают NULL и разрыв, а не ноль. Себестоимость товара не вычитается. Показатель не является прибылью.
+SELECT
+  day,
+  SUM(sales_revenue_seller_base_rub) AS revenue_rub,
+  SUM(contribution_pre_cogs_rub)     AS contribution_rub
+FROM `wb_mart.V_DASH_SKU_DAILY`
+WHERE {{day}}
+  [[AND {{sku}}]]
+GROUP BY day
+ORDER BY day
+
+######## 67 Сравниваемые периоды (SKU) [table]
+-- description: Календарные границы двух сравниваемых окон одинаковой длины. Фактическое покрытие каждого окна по метрикам показано в карточке «Сравнение с предыдущим периодом» колонкой «Покрытие тек./пред.», покрытие текущего периода по слоям — в карточке «Период и покрытие данных SKU». Карточка не подчиняется фильтру «Товар»: границы периода от выбора товара не зависят.
+WITH b AS (
+  SELECT MIN(day) AS d1, MAX(day) AS d2, COUNT(*) AS len
+  FROM `wb_mart.V_DASH_KPI_DAILY`
+  WHERE {{day}}
+)
+SELECT
+  CONCAT(FORMAT_DATE('%d.%m.%Y', d1), ' — ', FORMAT_DATE('%d.%m.%Y', d2),
+         '  (', CAST(len AS STRING), ' сут)')                                        AS cur_period,
+  CONCAT(FORMAT_DATE('%d.%m.%Y', DATE_SUB(d1, INTERVAL len DAY)), ' — ',
+         FORMAT_DATE('%d.%m.%Y', DATE_SUB(d1, INTERVAL 1 DAY)),
+         '  (', CAST(len AS STRING), ' сут)')                                        AS prv_period
+FROM b
+
+######## 68 Сравнение с предыдущим периодом (SKU) [table]
+-- description: Текущий период против предыдущего той же длины, непосредственно перед ним. Границы восстанавливаются из плотного календаря V_DASH_KPI_DAILY. У КАЖДОЙ МЕТРИКИ СВОЯ БАЗА ДАТ И СВОЁ ПОКРЫТИЕ — колонка «Покрытие тек./пред.» показывает число фактически покрытых суток в каждом окне. Если покрытие окон не совпадает, Δ и Δ% НЕ выводятся: вместо них «н/с» (не сопоставимо). Скрытого приведения 29 суток к 30 не выполняется ни в каком виде. Для ratio (доля отмен, ДРР, доходность) изменение считается как разность ratio-of-sums двух периодов и выражается в процентных пунктах; относительное Δ% для них не выводится как бессмысленное. Отношение выкупов к заказам не вычисляется.
+WITH b AS (
+  SELECT MIN(day) AS d1, MAX(day) AS d2, COUNT(*) AS len
+  FROM `wb_mart.V_DASH_KPI_DAILY`
+  WHERE {{day}}
+),
+-- Покрытие по слоям, отдельно для каждого окна. Считается по календарю KPI,
+-- потому что он плотный: 2024-09-05 … сегодня без разрывов.
+cov AS (
+  SELECT
+    IF(day >= (SELECT d1 FROM b), 'cur', 'prv') AS w,
+    COUNTIF(orders_covered)                        AS d_orders,
+    COUNTIF(sales_covered)                         AS d_sales,
+    COUNTIF(ads_covered)                           AS d_ads,
+    COUNTIF(ads_covered AND sales_covered)         AS d_adsrev,
+    COUNTIF(contribution_covered)                  AS d_contrib,
+    COUNT(*)                                       AS d_total
+  FROM `wb_mart.V_DASH_KPI_DAILY`, b
+  WHERE day BETWEEN DATE_SUB(b.d1, INTERVAL b.len DAY) AND b.d2
+  GROUP BY w
+),
+cv AS (
+  SELECT
+    MAX(IF(w='cur',d_orders, NULL)) AS c_d_orders,  MAX(IF(w='prv',d_orders, NULL)) AS p_d_orders,
+    MAX(IF(w='cur',d_sales,  NULL)) AS c_d_sales,   MAX(IF(w='prv',d_sales,  NULL)) AS p_d_sales,
+    MAX(IF(w='cur',d_ads,    NULL)) AS c_d_ads,     MAX(IF(w='prv',d_ads,    NULL)) AS p_d_ads,
+    MAX(IF(w='cur',d_adsrev, NULL)) AS c_d_adsrev,  MAX(IF(w='prv',d_adsrev, NULL)) AS p_d_adsrev,
+    MAX(IF(w='cur',d_contrib,NULL)) AS c_d_contrib, MAX(IF(w='prv',d_contrib,NULL)) AS p_d_contrib
+  FROM cov
+),
+win AS (
+  SELECT
+    IF(day >= (SELECT d1 FROM b), 'cur', 'prv') AS w,
+    orders_gross_qty, canceled_qty, buyouts_qty,
+    sales_revenue_seller_base_rub, ad_spend_attributed_rub, contribution_pre_cogs_rub
+  FROM `wb_mart.V_DASH_SKU_DAILY`, b
+  WHERE day BETWEEN DATE_SUB(b.d1, INTERVAL b.len DAY) AND b.d2
+    [[AND {{sku}}]]
+),
+agg AS (
+  SELECT w,
+    SUM(orders_gross_qty) AS ord, SUM(canceled_qty) AS can, SUM(buyouts_qty) AS buy,
+    SUM(sales_revenue_seller_base_rub) AS rev, SUM(ad_spend_attributed_rub) AS ads,
+    SUM(contribution_pre_cogs_rub) AS con
+  FROM win GROUP BY w
+),
+p AS (
+  SELECT
+    MAX(IF(w='cur',ord,NULL)) AS c_ord, MAX(IF(w='prv',ord,NULL)) AS p_ord,
+    MAX(IF(w='cur',can,NULL)) AS c_can, MAX(IF(w='prv',can,NULL)) AS p_can,
+    MAX(IF(w='cur',buy,NULL)) AS c_buy, MAX(IF(w='prv',buy,NULL)) AS p_buy,
+    MAX(IF(w='cur',rev,NULL)) AS c_rev, MAX(IF(w='prv',rev,NULL)) AS p_rev,
+    MAX(IF(w='cur',ads,NULL)) AS c_ads, MAX(IF(w='prv',ads,NULL)) AS p_ads,
+    MAX(IF(w='cur',con,NULL)) AS c_con, MAX(IF(w='prv',con,NULL)) AS p_con
+  FROM agg
+),
+m AS (
+  SELECT ord AS sort_ord, metric, basis, unit, cv_, pv_, cd, pd
+  FROM p, cv, UNNEST([
+    STRUCT(1 AS ord, 'Заказы, шт' AS metric, 'дата заказа' AS basis, 'n' AS unit,
+           CAST(c_ord AS NUMERIC) AS cv_, CAST(p_ord AS NUMERIC) AS pv_,
+           c_d_orders AS cd, p_d_orders AS pd),
+    (2,'Отменено, шт',              'дата заказа','n',   CAST(c_can AS NUMERIC), CAST(p_can AS NUMERIC), c_d_orders, p_d_orders),
+    (3,'Доля отмен',                'дата заказа','pct', SAFE_DIVIDE(c_can,c_ord), SAFE_DIVIDE(p_can,p_ord), c_d_orders, p_d_orders),
+    (4,'Выкупы, шт',                'дата выкупа','n',   CAST(c_buy AS NUMERIC), CAST(p_buy AS NUMERIC), c_d_sales, p_d_sales),
+    (5,'Выручка, ₽',                'дата выкупа','n',   c_rev, p_rev,                                   c_d_sales, p_d_sales),
+    (6,'Реклама, ₽',                'дата рекламы','n',  c_ads, p_ads,                                   c_d_ads, p_d_ads),
+    (7,'ДРР',                       'реклама / выручка','pct', SAFE_DIVIDE(c_ads,c_rev), SAFE_DIVIDE(p_ads,p_rev), c_d_adsrev, p_d_adsrev),
+    (8,'Доход до себестоимости, ₽', 'экономика','n',     c_con, p_con,                                   c_d_contrib, p_d_contrib),
+    (9,'Доходность до себестоимости','экономика','pct',  SAFE_DIVIDE(c_con,c_rev), SAFE_DIVIDE(p_con,p_rev), c_d_contrib, p_d_contrib)
+  ])
+)
+SELECT
+  metric,
+  basis,
+  IF(unit='pct', FORMAT('%.1f %%', cv_*100), REPLACE(FORMAT('%\'.0f', cv_), ',', ' ')) AS cur_txt,
+  IF(unit='pct', FORMAT('%.1f %%', pv_*100), REPLACE(FORMAT('%\'.0f', pv_), ',', ' ')) AS prv_txt,
+  IF(cd = pd,
+     IF(unit='pct', FORMAT('%+.1f п.п.', (cv_-pv_)*100), REPLACE(FORMAT('%+\'.0f', cv_-pv_), ',', ' ')),
+     'н/с') AS delta_txt,
+  IF(cd = pd AND unit <> 'pct', SAFE_DIVIDE(cv_-pv_, ABS(NULLIF(pv_,0))), NULL) AS delta_pct,
+  CONCAT(CAST(cd AS STRING),' / ',CAST(pd AS STRING),' сут',
+         IF(cd = pd, '', ' — не сопоставимо')) AS comparability
+FROM m ORDER BY sort_ord
+
+
+######## 69 Требуют внимания (SKU) [table]
+-- description: ТОЛЬКО ЖЁСТКИЕ ОБЪЕКТИВНЫЕ УСЛОВИЯ, ни одного порога: (1) доход до себестоимости < 0 при выручке > 0; (2) расход на рекламу > 0 при нулевой выручке; (3) все заказы периода отменены (canceled = orders_gross > 0). Отношение выкупов к заказам не используется. Пороговые правила («высокий ДРР», «много отмен») владельцем не заданы и сознательно не придуманы; ДРР выводится справочно и фильтром не является. NULL (нет покрытия) ни под одно условие не подпадает: неизвестно ≠ проблема. SKU, подходящий под несколько условий, даёт ОДНУ строку с перечислением причин через «; » — денежные суммы не размножаются. Сортировка: сначала отрицательный доход по возрастанию, затем расход на рекламу по убыванию.
+WITH per AS (
+  SELECT
+    nm_id,
+    product_name_short                    AS product,
+    SUM(orders_gross_qty)                 AS orders_gross_qty,
+    SUM(canceled_qty)                     AS canceled_qty,
+    SUM(sales_revenue_seller_base_rub)    AS revenue_rub,
+    SUM(ad_spend_attributed_rub)          AS ad_spend_rub,
+    SUM(contribution_pre_cogs_rub)        AS contribution_rub
+  FROM `wb_mart.V_DASH_SKU_DAILY`
+  WHERE {{day}}
+    [[AND {{sku}}]]
+  GROUP BY nm_id, product
+),
+flagged AS (
+  SELECT
+    per.*,
+    ARRAY_TO_STRING(ARRAY(
+      SELECT r FROM UNNEST([
+        IF(contribution_rub < 0 AND revenue_rub > 0,           'Отрицательный доход до себестоимости', NULL),
+        IF(ad_spend_rub > 0 AND revenue_rub = 0,               'Есть рекламные расходы без выручки',   NULL),
+        IF(orders_gross_qty > 0 AND canceled_qty = orders_gross_qty, 'Все заказы периода отменены',    NULL)
+      ]) AS r WHERE r IS NOT NULL
+    ), '; ') AS reason
+  FROM per
+)
+SELECT
+  nm_id, product, reason,
+  orders_gross_qty, canceled_qty, revenue_rub, ad_spend_rub,
+  SAFE_DIVIDE(ad_spend_rub, NULLIF(revenue_rub, 0)) AS drr,
+  contribution_rub
+FROM flagged
+WHERE reason <> ''
+ORDER BY
+  IF(contribution_rub < 0, 0, 1) ASC,
+  contribution_rub ASC,
+  ad_spend_rub DESC
+
+
+######## 70 Выкупы по дням (SKU) [line]
+-- description: БАЗА ДАТ: ДАТА ВЫКУПА (sale_date). СОБЫТИЕ, а не когорта. Этот график намеренно отделён от заказов: заказы измеряются по дате заказа, и совмещение двух баз в одной воронке создаёт ложное впечатление конверсии. Отношение выкупов к заказам НЕ вычисляется нигде на экране. Замер 01.08–22.08: WB Funnel даёт 410 когортных выкупов против 443 событийных, а по отдельным SKU событийные выкупы превышают брутто-заказы (Крем УВЛ: 28 против 22). Гейт sales_covered.
+SELECT
+  day,
+  SUM(buyouts_qty) AS buyouts_qty
+FROM `wb_mart.V_DASH_SKU_DAILY`
+WHERE {{day}}
+  [[AND {{sku}}]]
+GROUP BY day
+ORDER BY day
+
+######## 71 Период и покрытие данных SKU [table]
+-- description: Выбранный период против фактически доступных суток SKU-слоя и покрытия по каждому источнику. Границы берутся из плотного календаря V_DASH_KPI_DAILY (2024-09-05 … сегодня, без разрывов), фактические сутки — из V_DASH_SKU_DAILY. Знак ⚠ означает, что слой покрывает НЕ весь выбранный диапазон. Отсутствие данных нулём не подменяется. Карточка намеренно НЕ подчиняется фильтру «Товар»: покрытие определяется посуточно на уровне источника, а не на уровне SKU.
+WITH b AS (
+  SELECT
+    MIN(day) AS d1, MAX(day) AS d2, COUNT(*) AS len,
+    COUNTIF(orders_covered)       AS d_orders,
+    COUNTIF(sales_covered)        AS d_sales,
+    COUNTIF(ads_covered)          AS d_ads,
+    COUNTIF(finance_covered)      AS d_finance,
+    COUNTIF(contribution_covered) AS d_contrib
+  FROM `wb_mart.V_DASH_KPI_DAILY`
+  WHERE {{day}}
+),
+s AS (
+  SELECT MIN(day) AS mn, MAX(day) AS mx, COUNT(DISTINCT day) AS d
+  FROM `wb_mart.V_DASH_SKU_DAILY`
+  WHERE day BETWEEN (SELECT d1 FROM b) AND (SELECT d2 FROM b)
+)
+SELECT
+  CONCAT(FORMAT_DATE('%d.%m.%Y', b.d1), ' — ', FORMAT_DATE('%d.%m.%Y', b.d2),
+         '  (', CAST(b.len AS STRING), ' сут)')                                   AS selected_period,
+  IF(s.mn IS NULL, 'нет данных',
+     CONCAT(FORMAT_DATE('%d.%m.%Y', s.mn), ' — ', FORMAT_DATE('%d.%m.%Y', s.mx),
+            '  (', CAST(s.d AS STRING), ' сут)',
+            IF(s.d = b.len, '', ' ⚠')))                                           AS sku_data_period,
+  CONCAT(CAST(b.d_orders  AS STRING),'/',CAST(b.len AS STRING), IF(b.d_orders =b.len,'',' ⚠')) AS cov_orders,
+  CONCAT(CAST(b.d_sales   AS STRING),'/',CAST(b.len AS STRING), IF(b.d_sales  =b.len,'',' ⚠')) AS cov_sales,
+  CONCAT(CAST(b.d_ads     AS STRING),'/',CAST(b.len AS STRING), IF(b.d_ads    =b.len,'',' ⚠')) AS cov_ads,
+  CONCAT(CAST(b.d_finance AS STRING),'/',CAST(b.len AS STRING), IF(b.d_finance=b.len,'',' ⚠')) AS cov_finance,
+  CONCAT(CAST(b.d_contrib AS STRING),'/',CAST(b.len AS STRING), IF(b.d_contrib=b.len,'',' ⚠')) AS cov_economics
+FROM b, s
+
