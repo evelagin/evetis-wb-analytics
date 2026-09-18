@@ -24,7 +24,7 @@ jobs:
         with:
           python-version: "3.12"
       - name: install pinned dependencies (hash-checked)
-        run: pip install --require-hashes -r tools/requirements-sql-ci.txt
+        run: pip install --only-binary=:all: --require-hashes -r tools/requirements-sql-ci.txt
       - name: validator tests
         run: python -m pytest -q tools/tests
       - name: validate sql/current

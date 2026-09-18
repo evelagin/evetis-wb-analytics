@@ -1,5 +1,5 @@
 # R2B offline SQL CI (.github/workflows/sql-current.yml, tools/validate_current_sql.py).
-# Install: pip install --require-hashes -r tools/requirements-sql-ci.txt
+# Install: pip install --only-binary=:all: --require-hashes -r tools/requirements-sql-ci.txt
 # Exact versions, wheel hashes only (no sdist builds). Pure Python: do NOT install sqlglot[rs] / sqlglotrs.
 # sqlglot has no runtime dependencies; iniconfig, packaging and pluggy are pytest's own runtime
 # dependencies and must be pinned because --require-hashes applies to the full install set.

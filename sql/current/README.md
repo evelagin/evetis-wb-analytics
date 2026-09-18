@@ -120,7 +120,7 @@
 `python tools/validate_current_sql.py` по репозиторию. Локально:
 
 ```bash
-pip install --require-hashes -r tools/requirements-sql-ci.txt
+pip install --only-binary=:all: --require-hashes -r tools/requirements-sql-ci.txt
 python -m pytest -q tools/tests && python tools/validate_current_sql.py
 ```
 
