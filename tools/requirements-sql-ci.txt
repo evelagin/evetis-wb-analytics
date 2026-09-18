@@ -1,0 +1,16 @@
+# R2B offline SQL CI (.github/workflows/sql-current.yml, tools/validate_current_sql.py).
+# Install: pip install --require-hashes -r tools/requirements-sql-ci.txt
+# Exact versions, wheel hashes only (no sdist builds). Pure Python: do NOT install sqlglot[rs] / sqlglotrs.
+# sqlglot has no runtime dependencies; iniconfig, packaging and pluggy are pytest's own runtime
+# dependencies and must be pinned because --require-hashes applies to the full install set.
+# Hashes: PyPI JSON API (https://pypi.org/pypi/<name>/<version>/json), sha256 of the py3-none-any wheel.
+sqlglot==30.18.0 \
+    --hash=sha256:ee0f9a9f3e2193e763c326e52dfb377b96fdb4292f6305c3ff2d9a220e71c601
+pytest==8.3.4 \
+    --hash=sha256:50e16d954148559c9a74109af1eaf0c945ba2d8f30f0a3d3335edde19788b6f6
+iniconfig==2.3.0 \
+    --hash=sha256:f631c04d2c48c52b84d0d0549c99ff3859c98df65b3101406327ecc7d53fbf12
+packaging==26.3 \
+    --hash=sha256:d7193f7c8e4e93f444fde0262bf90af30e16fa0ad0ad44cb553c87339b23cd1c
+pluggy==1.6.0 \
+    --hash=sha256:e920276dd6813095e9377c0bc5566d94c932c33b27a3e3945d8389c374dd4746

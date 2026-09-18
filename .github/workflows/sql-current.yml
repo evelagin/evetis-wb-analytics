@@ -1,0 +1,31 @@
+name: sql-current
+# R2B: офлайн-проверка канонического слоя sql/current/** (манифест v2, canonical_hash_v1,
+# безопасность SQL по AST, граф зависимостей, изоляция маркетплейсов, C17).
+# Без облачных креденшелов, без секретов, без BigQuery. Паритет с production НЕ доказывает (R2C).
+# На каждый PR без фильтра путей и после слияния в main (защита ветки на текущем тарифе недоступна).
+on:
+  pull_request:
+  push:
+    branches: ["main"]
+
+permissions:
+  contents: read
+
+jobs:
+  sql-current:
+    name: sql-current
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: install pinned dependencies (hash-checked)
+        run: pip install --require-hashes -r tools/requirements-sql-ci.txt
+      - name: validator tests
+        run: python -m pytest -q tools/tests
+      - name: validate sql/current
+        run: python tools/validate_current_sql.py
