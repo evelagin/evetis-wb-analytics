@@ -39,6 +39,9 @@ DROP VIEW IF EXISTS `project-fa311fc0-4d87-4781-986.ozon_mart.V_OZON_AGENT_DECIS
 -- циклу витрин: витрины Stage 3.4D.2 на неё не ссылаются, она просто хранится.
 
 -- ── 4. Конфигурация runtime ───────────────────────────────────────────
+-- ⛔ SUPERSEDED — DO NOT EXECUTE: с 2026-09-17 все Ozon job работают на
+-- образе R1; команды ниже вернули бы production к коду до R1 и остановили
+-- бы ежедневные снимки seller_info. Сохранено только как история.
 -- Убрать seller_info из набора сущностей суточного job:
 --   gcloud run jobs update ozon-runtime-daily --region=europe-west1 \
 --     --update-env-vars="^@^ENTITIES=catalog,prices,finance_accrual,ads_campaigns,ads_expense_daily,ads_sku_daily,supplies"
@@ -52,6 +55,7 @@ DROP VIEW IF EXISTS `project-fa311fc0-4d87-4781-986.ozon_mart.V_OZON_AGENT_DECIS
 -- прежний список entities и digest.
 
 -- ── 5. Код runtime ────────────────────────────────────────────────────
+-- ⛔ SUPERSEDED — DO NOT EXECUTE: код runtime с тех пор изменён (R1).
 -- git revert коммита Stage 3.4D.3 по pipelines/ozon/runtime/entities.py
 -- удалит функцию seller_info() и запись в REGISTRY.
 
