@@ -1,0 +1,7696 @@
+{
+ "checks": 3757,
+ "mismatches": 0,
+ "low_sample_contract": {
+  "LS-1": {
+   "checks": 465,
+   "violations": 0
+  },
+  "LS-2": {
+   "checks": 402,
+   "violations": 0
+  },
+  "LS-3": {
+   "checks": 75,
+   "violations": 0
+  },
+  "LS-4": {
+   "checks": 131,
+   "violations": 0
+  }
+ },
+ "detail": [
+  {
+   "window": "last30 (18.08–16.09)",
+   "selection": "all",
+   "card": "c_orders_gross_units",
+   "tvf": "cur_orders_gross_units",
+   "card_value": "428",
+   "tvf_value": "428",
+   "equal": true
+  },
+  {
+   "window": "last30 (18.08–16.09)",
+   "selection": "all",
+   "card": "c_buyout_units",
+   "tvf": "cur_buyout_units",
+   "card_value": "450",
+   "tvf_value": "450",
+   "equal": true
+  },
+  {
+   "window": "last30 (18.08–16.09)",
+   "selection": "all",
+   "card": "c_rate",
+   "tvf": "cur_cohort_buyout_rate",
+   "card_value": "0.900804289544236",
+   "tvf_value": "0.900804289544236",
+   "equal": true
+  },
+  {
+   "window": "last30 (18.08–16.09)",
+   "selection": "all",
+   "card": "c_price",
+   "tvf": "cur_avg_seller_price_orders_rub",
+   "card_value": "766.349742991",
+   "tvf_value": "766.349742991",
+   "equal": true
+  },
+  {
+   "window": "last30 (18.08–16.09)",
+   "selection": "all",
+   "card": "p_price",
+   "tvf": "prv_avg_seller_price_orders_rub",
+   "card_value": "765.448365817",
+   "tvf_value": "765.448365817",
+   "equal": true
+  },
+  {
+   "window": "last30 (18.08–16.09)",
+   "selection": "all",
+   "card": "c_ads_attributed_rub",
+   "tvf": "cur_ads_attributed_rub",
+   "card_value": "37228.69",
+   "tvf_value": "37228.69",
+   "equal": true
+  },
+  {
+   "window": "last30 (18.08–16.09)",
+   "selection": "all",
+   "card": "c_drr",
+   "tvf": "cur_drr",
+   "card_value": "0.113813435",
+   "tvf_value": "0.113813435",
+   "equal": true
+  },
+  {
+   "window": "last30 (18.08–16.09)",
+   "selection": "all",
+   "card": "c_contribution_after_cogs_rub",
+   "tvf": "cur_contribution_after_cogs_rub",
+   "card_value": "6151.135844296",
+   "tvf_value": "6151.135844296",
+   "equal": true
+  },
+  {
+   "window": "last30 (18.08–16.09)",
+   "selection": "all",
+   "card": "c_margin",
+   "tvf": "cur_contribution_margin_after_cogs",
+   "card_value": "0.018804914",
+   "tvf_value": "0.018804914",
+   "equal": true
+  },
+  {
+   "window": "last30 (18.08–16.09)",
+   "selection": "all",
+   "card": "c_per_buyout",
+   "tvf": "cur_contribution_after_cogs_per_buyout_rub",
+   "card_value": "13.669190765",
+   "tvf_value": "13.669190765",
+   "equal": true
+  },
+  {
+   "window": "last30 (18.08–16.09)",
+   "selection": "all",
+   "card": "p_orders_gross_units",
+   "tvf": "prv_orders_gross_units",
+   "card_value": "667",
+   "tvf_value": "667",
+   "equal": true
+  },
+  {
+   "window": "last30 (18.08–16.09)",
+   "selection": "all",
+   "card": "p_rate",
+   "tvf": "prv_cohort_buyout_rate",
+   "card_value": "0.8796992481203008",
+   "tvf_value": "0.8796992481203008",
+   "equal": true
+  },
+  {
+   "window": "last30 (18.08–16.09)",
+   "selection": "all",
+   "card": "orders_cmp",
+   "tvf": "orders_comparable",
+   "card_value": "true",
+   "tvf_value": "true",
+   "equal": true
+  },
+  {
+   "window": "last30 (18.08–16.09)",
+   "selection": "all",
+   "card": "econ_cmp",
+   "tvf": "economics_comparable",
+   "card_value": "true",
+   "tvf_value": "true",
+   "equal": true
+  },
+  {
+   "window": "last30 (18.08–16.09)",
+   "selection": "all",
+   "card": "drr_cmp",
+   "tvf": "drr_comparable",
+   "card_value": "true",
+   "tvf_value": "true",
+   "equal": true
+  },
+  {
+   "window": "last30 (18.08–16.09)",
+   "selection": "Крем Руки",
+   "card": "c_orders_gross_units",
+   "tvf": "cur_orders_gross_units",
+   "card_value": "155",
+   "tvf_value": "155",
+   "equal": true
+  },
+  {
+   "window": "last30 (18.08–16.09)",
+   "selection": "Крем Руки",
+   "card": "c_buyout_units",
+   "tvf": "cur_buyout_units",
+   "card_value": "161",
+   "tvf_value": "161",
+   "equal": true
+  },
+  {
+   "window": "last30 (18.08–16.09)",
+   "selection": "Крем Руки",
+   "card": "c_rate",
+   "tvf": "cur_cohort_buyout_rate",
+   "card_value": "0.9136690647482014",
+   "tvf_value": "0.9136690647482014",
+   "equal": true
+  },
+  {
+   "window": "last30 (18.08–16.09)",
+   "selection": "Крем Руки",
+   "card": "c_price",
+   "tvf": "cur_avg_seller_price_orders_rub",
+   "card_value": "524.480322581",
+   "tvf_value": "524.480322581",
+   "equal": true
+  },
+  {
+   "window": "last30 (18.08–16.09)",
+   "selection": "Крем Руки",
+   "card": "p_price",
+   "tvf": "prv_avg_seller_price_orders_rub",
+   "card_value": "409.635211268",
+   "tvf_value": "409.635211268",
+   "equal": true
+  },
+  {
+   "window": "last30 (18.08–16.09)",
+   "selection": "Крем Руки",
+   "card": "c_ads_attributed_rub",
+   "tvf": "cur_ads_attributed_rub",
+   "card_value": "15471.62",
+   "tvf_value": "15471.62",
+   "equal": true
+  },
+  {
+   "window": "last30 (18.08–16.09)",
+   "selection": "Крем Руки",
+   "card": "c_drr",
+   "tvf": "cur_drr",
+   "card_value": "0.198324888",
+   "tvf_value": "0.198324888",
+   "equal": true
+  },
+  {
+   "window": "last30 (18.08–16.09)",
+   "selection": "Крем Руки",
+   "card": "c_contribution_after_cogs_rub",
+   "tvf": "cur_contribution_after_cogs_rub",
+   "card_value": "-22662.054",
+   "tvf_value": "-22662.054",
+   "equal": true
+  },
+  {
+   "window": "last30 (18.08–16.09)",
+   "selection": "Крем Руки",
+   "card": "c_margin",
+   "tvf": "cur_contribution_margin_after_cogs",
+   "card_value": "-0.290496622",
+   "tvf_value": "-0.290496622",
+   "equal": true
+  },
+  {
+   "window": "last30 (18.08–16.09)",
+   "selection": "Крем Руки",
+   "card": "c_per_buyout",
+   "tvf": "cur_contribution_after_cogs_per_buyout_rub",
+   "card_value": "-140.758099379",
+   "tvf_value": "-140.758099379",
+   "equal": true
+  },
+  {
+   "window": "last30 (18.08–16.09)",
+   "selection": "Крем Руки",
+   "card": "p_orders_gross_units",
+   "tvf": "prv_orders_gross_units",
+   "card_value": "213",
+   "tvf_value": "213",
+   "equal": true
+  },
+  {
+   "window": "last30 (18.08–16.09)",
+   "selection": "Крем Руки",
+   "card": "p_rate",
+   "tvf": "prv_cohort_buyout_rate",
+   "card_value": "0.9292452830188679",
+   "tvf_value": "0.9292452830188679",
+   "equal": true
+  },
+  {
+   "window": "last30 (18.08–16.09)",
+   "selection": "Крем Руки",
+   "card": "orders_cmp",
+   "tvf": "orders_comparable",
+   "card_value": "true",
+   "tvf_value": "true",
+   "equal": true
+  },
+  {
+   "window": "last30 (18.08–16.09)",
+   "selection": "Крем Руки",
+   "card": "econ_cmp",
+   "tvf": "economics_comparable",
+   "card_value": "true",
+   "tvf_value": "true",
+   "equal": true
+  },
+  {
+   "window": "last30 (18.08–16.09)",
+   "selection": "Крем Руки",
+   "card": "drr_cmp",
+   "tvf": "drr_comparable",
+   "card_value": "true",
+   "tvf_value": "true",
+   "equal": true
+  },
+  {
+   "window": "last30 (18.08–16.09)",
+   "selection": "Сыворотка АКНЕ",
+   "card": "c_orders_gross_units",
+   "tvf": "cur_orders_gross_units",
+   "card_value": "41",
+   "tvf_value": "41",
+   "equal": true
+  },
+  {
+   "window": "last30 (18.08–16.09)",
+   "selection": "Сыворотка АКНЕ",
+   "card": "c_buyout_units",
+   "tvf": "cur_buyout_units",
+   "card_value": "45",
+   "tvf_value": "45",
+   "equal": true
+  },
+  {
+   "window": "last30 (18.08–16.09)",
+   "selection": "Сыворотка АКНЕ",
+   "card": "c_rate",
+   "tvf": "cur_cohort_buyout_rate",
+   "card_value": "0.8888888888888888",
+   "tvf_value": "0.8888888888888888",
+   "equal": true
+  },
+  {
+   "window": "last30 (18.08–16.09)",
+   "selection": "Сыворотка АКНЕ",
+   "card": "c_price",
+   "tvf": "cur_avg_seller_price_orders_rub",
+   "card_value": "816.853902439",
+   "tvf_value": "816.853902439",
+   "equal": true
+  },
+  {
+   "window": "last30 (18.08–16.09)",
+   "selection": "Сыворотка АКНЕ",
+   "card": "p_price",
+   "tvf": "prv_avg_seller_price_orders_rub",
+   "card_value": "657.763442623",
+   "tvf_value": "657.763442623",
+   "equal": true
+  },
+  {
+   "window": "last30 (18.08–16.09)",
+   "selection": "Сыворотка АКНЕ",
+   "card": "c_ads_attributed_rub",
+   "tvf": "cur_ads_attributed_rub",
+   "card_value": "8067.96",
+   "tvf_value": "8067.96",
+   "equal": true
+  },
+  {
+   "window": "last30 (18.08–16.09)",
+   "selection": "Сыворотка АКНЕ",
+   "card": "c_drr",
+   "tvf": "cur_drr",
+   "card_value": "0.244939521",
+   "tvf_value": "0.244939521",
+   "equal": true
+  },
+  {
+   "window": "last30 (18.08–16.09)",
+   "selection": "Сыворотка АКНЕ",
+   "card": "c_contribution_after_cogs_rub",
+   "tvf": "cur_contribution_after_cogs_rub",
+   "card_value": "981.694",
+   "tvf_value": "981.694",
+   "equal": true
+  },
+  {
+   "window": "last30 (18.08–16.09)",
+   "selection": "Сыворотка АКНЕ",
+   "card": "c_margin",
+   "tvf": "cur_contribution_margin_after_cogs",
+   "card_value": "0.02980381",
+   "tvf_value": "0.02980381",
+   "equal": true
+  },
+  {
+   "window": "last30 (18.08–16.09)",
+   "selection": "Сыворотка АКНЕ",
+   "card": "c_per_buyout",
+   "tvf": "cur_contribution_after_cogs_per_buyout_rub",
+   "card_value": "21.815422222",
+   "tvf_value": "21.815422222",
+   "equal": true
+  },
+  {
+   "window": "last30 (18.08–16.09)",
+   "selection": "Сыворотка АКНЕ",
+   "card": "p_orders_gross_units",
+   "tvf": "prv_orders_gross_units",
+   "card_value": "61",
+   "tvf_value": "61",
+   "equal": true
+  },
+  {
+   "window": "last30 (18.08–16.09)",
+   "selection": "Сыворотка АКНЕ",
+   "card": "p_rate",
+   "tvf": "prv_cohort_buyout_rate",
+   "card_value": "0.8688524590163934",
+   "tvf_value": "0.8688524590163934",
+   "equal": true
+  },
+  {
+   "window": "last30 (18.08–16.09)",
+   "selection": "Сыворотка АКНЕ",
+   "card": "orders_cmp",
+   "tvf": "orders_comparable",
+   "card_value": "true",
+   "tvf_value": "true",
+   "equal": true
+  },
+  {
+   "window": "last30 (18.08–16.09)",
+   "selection": "Сыворотка АКНЕ",
+   "card": "econ_cmp",
+   "tvf": "economics_comparable",
+   "card_value": "true",
+   "tvf_value": "true",
+   "equal": true
+  },
+  {
+   "window": "last30 (18.08–16.09)",
+   "selection": "Сыворотка АКНЕ",
+   "card": "drr_cmp",
+   "tvf": "drr_comparable",
+   "card_value": "true",
+   "tvf_value": "true",
+   "equal": true
+  },
+  {
+   "window": "last30 (18.08–16.09)",
+   "selection": "Крем Вишня (low)",
+   "card": "c_orders_gross_units",
+   "tvf": "cur_orders_gross_units",
+   "card_value": "11",
+   "tvf_value": "11",
+   "equal": true
+  },
+  {
+   "window": "last30 (18.08–16.09)",
+   "selection": "Крем Вишня (low)",
+   "card": "c_buyout_units",
+   "tvf": "cur_buyout_units",
+   "card_value": "15",
+   "tvf_value": "15",
+   "equal": true
+  },
+  {
+   "window": "last30 (18.08–16.09)",
+   "selection": "Крем Вишня (low)",
+   "card": "c_rate",
+   "tvf": "cur_cohort_buyout_rate",
+   "card_value": "0.9090909090909091",
+   "tvf_value": "0.9090909090909091",
+   "equal": true
+  },
+  {
+   "window": "last30 (18.08–16.09)",
+   "selection": "Крем Вишня (low)",
+   "card": "c_price",
+   "tvf": "cur_avg_seller_price_orders_rub",
+   "card_value": "539",
+   "tvf_value": "539",
+   "equal": true
+  },
+  {
+   "window": "last30 (18.08–16.09)",
+   "selection": "Крем Вишня (low)",
+   "card": "p_price",
+   "tvf": "prv_avg_seller_price_orders_rub",
+   "card_value": "519.38",
+   "tvf_value": "519.38",
+   "equal": true
+  },
+  {
+   "window": "last30 (18.08–16.09)",
+   "selection": "Крем Вишня (low)",
+   "card": "c_ads_attributed_rub",
+   "tvf": "cur_ads_attributed_rub",
+   "card_value": "0",
+   "tvf_value": "0",
+   "equal": true
+  },
+  {
+   "window": "last30 (18.08–16.09)",
+   "selection": "Крем Вишня (low)",
+   "card": "c_drr",
+   "tvf": "cur_drr",
+   "card_value": "0",
+   "tvf_value": "0",
+   "equal": true
+  },
+  {
+   "window": "last30 (18.08–16.09)",
+   "selection": "Крем Вишня (low)",
+   "card": "c_contribution_after_cogs_rub",
+   "tvf": "cur_contribution_after_cogs_rub",
+   "card_value": "775.525565",
+   "tvf_value": "775.525565",
+   "equal": true
+  },
+  {
+   "window": "last30 (18.08–16.09)",
+   "selection": "Крем Вишня (low)",
+   "card": "c_margin",
+   "tvf": "cur_contribution_margin_after_cogs",
+   "card_value": "0.100743773",
+   "tvf_value": "0.100743773",
+   "equal": true
+  },
+  {
+   "window": "last30 (18.08–16.09)",
+   "selection": "Крем Вишня (low)",
+   "card": "c_per_buyout",
+   "tvf": "cur_contribution_after_cogs_per_buyout_rub",
+   "card_value": "51.701704333",
+   "tvf_value": "51.701704333",
+   "equal": true
+  },
+  {
+   "window": "last30 (18.08–16.09)",
+   "selection": "Крем Вишня (low)",
+   "card": "p_orders_gross_units",
+   "tvf": "prv_orders_gross_units",
+   "card_value": "18",
+   "tvf_value": "18",
+   "equal": true
+  },
+  {
+   "window": "last30 (18.08–16.09)",
+   "selection": "Крем Вишня (low)",
+   "card": "p_rate",
+   "tvf": "prv_cohort_buyout_rate",
+   "card_value": "0.8888888888888888",
+   "tvf_value": "0.8888888888888888",
+   "equal": true
+  },
+  {
+   "window": "last30 (18.08–16.09)",
+   "selection": "Крем Вишня (low)",
+   "card": "orders_cmp",
+   "tvf": "orders_comparable",
+   "card_value": "true",
+   "tvf_value": "true",
+   "equal": true
+  },
+  {
+   "window": "last30 (18.08–16.09)",
+   "selection": "Крем Вишня (low)",
+   "card": "econ_cmp",
+   "tvf": "economics_comparable",
+   "card_value": "true",
+   "tvf_value": "true",
+   "equal": true
+  },
+  {
+   "window": "last30 (18.08–16.09)",
+   "selection": "Крем Вишня (low)",
+   "card": "drr_cmp",
+   "tvf": "drr_comparable",
+   "card_value": "true",
+   "tvf_value": "true",
+   "equal": true
+  },
+  {
+   "window": "last30 (18.08–16.09)",
+   "selection": "Набор сыв+крем АКНЕ (bundle)",
+   "card": "c_orders_gross_units",
+   "tvf": "cur_orders_gross_units",
+   "card_value": "17",
+   "tvf_value": "17",
+   "equal": true
+  },
+  {
+   "window": "last30 (18.08–16.09)",
+   "selection": "Набор сыв+крем АКНЕ (bundle)",
+   "card": "c_buyout_units",
+   "tvf": "cur_buyout_units",
+   "card_value": "18",
+   "tvf_value": "18",
+   "equal": true
+  },
+  {
+   "window": "last30 (18.08–16.09)",
+   "selection": "Набор сыв+крем АКНЕ (bundle)",
+   "card": "c_rate",
+   "tvf": "cur_cohort_buyout_rate",
+   "card_value": "0.8571428571428571",
+   "tvf_value": "0.8571428571428571",
+   "equal": true
+  },
+  {
+   "window": "last30 (18.08–16.09)",
+   "selection": "Набор сыв+крем АКНЕ (bundle)",
+   "card": "c_price",
+   "tvf": "cur_avg_seller_price_orders_rub",
+   "card_value": "1303.176470588",
+   "tvf_value": "1303.176470588",
+   "equal": true
+  },
+  {
+   "window": "last30 (18.08–16.09)",
+   "selection": "Набор сыв+крем АКНЕ (bundle)",
+   "card": "p_price",
+   "tvf": "prv_avg_seller_price_orders_rub",
+   "card_value": "1147.28",
+   "tvf_value": "1147.28",
+   "equal": true
+  },
+  {
+   "window": "last30 (18.08–16.09)",
+   "selection": "Набор сыв+крем АКНЕ (bundle)",
+   "card": "c_ads_attributed_rub",
+   "tvf": "cur_ads_attributed_rub",
+   "card_value": "0",
+   "tvf_value": "0",
+   "equal": true
+  },
+  {
+   "window": "last30 (18.08–16.09)",
+   "selection": "Набор сыв+крем АКНЕ (bundle)",
+   "card": "c_drr",
+   "tvf": "cur_drr",
+   "card_value": "0",
+   "tvf_value": "0",
+   "equal": true
+  },
+  {
+   "window": "last30 (18.08–16.09)",
+   "selection": "Набор сыв+крем АКНЕ (bundle)",
+   "card": "c_contribution_after_cogs_rub",
+   "tvf": "cur_contribution_after_cogs_rub",
+   "card_value": "6428.86",
+   "tvf_value": "6428.86",
+   "equal": true
+  },
+  {
+   "window": "last30 (18.08–16.09)",
+   "selection": "Набор сыв+крем АКНЕ (bundle)",
+   "card": "c_margin",
+   "tvf": "cur_contribution_margin_after_cogs",
+   "card_value": "0.282463093",
+   "tvf_value": "0.282463093",
+   "equal": true
+  },
+  {
+   "window": "last30 (18.08–16.09)",
+   "selection": "Набор сыв+крем АКНЕ (bundle)",
+   "card": "c_per_buyout",
+   "tvf": "cur_contribution_after_cogs_per_buyout_rub",
+   "card_value": "357.158888889",
+   "tvf_value": "357.158888889",
+   "equal": true
+  },
+  {
+   "window": "last30 (18.08–16.09)",
+   "selection": "Набор сыв+крем АКНЕ (bundle)",
+   "card": "p_orders_gross_units",
+   "tvf": "prv_orders_gross_units",
+   "card_value": "25",
+   "tvf_value": "25",
+   "equal": true
+  },
+  {
+   "window": "last30 (18.08–16.09)",
+   "selection": "Набор сыв+крем АКНЕ (bundle)",
+   "card": "p_rate",
+   "tvf": "prv_cohort_buyout_rate",
+   "card_value": "0.8",
+   "tvf_value": "0.8",
+   "equal": true
+  },
+  {
+   "window": "last30 (18.08–16.09)",
+   "selection": "Набор сыв+крем АКНЕ (bundle)",
+   "card": "orders_cmp",
+   "tvf": "orders_comparable",
+   "card_value": "true",
+   "tvf_value": "true",
+   "equal": true
+  },
+  {
+   "window": "last30 (18.08–16.09)",
+   "selection": "Набор сыв+крем АКНЕ (bundle)",
+   "card": "econ_cmp",
+   "tvf": "economics_comparable",
+   "card_value": "true",
+   "tvf_value": "true",
+   "equal": true
+  },
+  {
+   "window": "last30 (18.08–16.09)",
+   "selection": "Набор сыв+крем АКНЕ (bundle)",
+   "card": "drr_cmp",
+   "tvf": "drr_comparable",
+   "card_value": "true",
+   "tvf_value": "true",
+   "equal": true
+  },
+  {
+   "window": "last30 (18.08–16.09)",
+   "selection": "Крем УВЛ (low)",
+   "card": "c_orders_gross_units",
+   "tvf": "cur_orders_gross_units",
+   "card_value": "3",
+   "tvf_value": "3",
+   "equal": true
+  },
+  {
+   "window": "last30 (18.08–16.09)",
+   "selection": "Крем УВЛ (low)",
+   "card": "c_buyout_units",
+   "tvf": "cur_buyout_units",
+   "card_value": "5",
+   "tvf_value": "5",
+   "equal": true
+  },
+  {
+   "window": "last30 (18.08–16.09)",
+   "selection": "Крем УВЛ (low)",
+   "card": "c_rate",
+   "tvf": "cur_cohort_buyout_rate",
+   "card_value": "1.0",
+   "tvf_value": "1.0",
+   "equal": true
+  },
+  {
+   "window": "last30 (18.08–16.09)",
+   "selection": "Крем УВЛ (low)",
+   "card": "c_price",
+   "tvf": "cur_avg_seller_price_orders_rub",
+   "card_value": "926",
+   "tvf_value": "926",
+   "equal": true
+  },
+  {
+   "window": "last30 (18.08–16.09)",
+   "selection": "Крем УВЛ (low)",
+   "card": "p_price",
+   "tvf": "prv_avg_seller_price_orders_rub",
+   "card_value": "787.766521739",
+   "tvf_value": "787.766521739",
+   "equal": true
+  },
+  {
+   "window": "last30 (18.08–16.09)",
+   "selection": "Крем УВЛ (low)",
+   "card": "c_ads_attributed_rub",
+   "tvf": "cur_ads_attributed_rub",
+   "card_value": "0",
+   "tvf_value": "0",
+   "equal": true
+  },
+  {
+   "window": "last30 (18.08–16.09)",
+   "selection": "Крем УВЛ (low)",
+   "card": "c_drr",
+   "tvf": "cur_drr",
+   "card_value": "0",
+   "tvf_value": "0",
+   "equal": true
+  },
+  {
+   "window": "last30 (18.08–16.09)",
+   "selection": "Крем УВЛ (low)",
+   "card": "c_contribution_after_cogs_rub",
+   "tvf": "cur_contribution_after_cogs_rub",
+   "card_value": "1102.56",
+   "tvf_value": "1102.56",
+   "equal": true
+  },
+  {
+   "window": "last30 (18.08–16.09)",
+   "selection": "Крем УВЛ (low)",
+   "card": "c_margin",
+   "tvf": "cur_contribution_margin_after_cogs",
+   "card_value": "0.294538315",
+   "tvf_value": "0.294538315",
+   "equal": true
+  },
+  {
+   "window": "last30 (18.08–16.09)",
+   "selection": "Крем УВЛ (low)",
+   "card": "c_per_buyout",
+   "tvf": "cur_contribution_after_cogs_per_buyout_rub",
+   "card_value": "220.512",
+   "tvf_value": "220.512",
+   "equal": true
+  },
+  {
+   "window": "last30 (18.08–16.09)",
+   "selection": "Крем УВЛ (low)",
+   "card": "p_orders_gross_units",
+   "tvf": "prv_orders_gross_units",
+   "card_value": "46",
+   "tvf_value": "46",
+   "equal": true
+  },
+  {
+   "window": "last30 (18.08–16.09)",
+   "selection": "Крем УВЛ (low)",
+   "card": "p_rate",
+   "tvf": "prv_cohort_buyout_rate",
+   "card_value": "0.9333333333333333",
+   "tvf_value": "0.9333333333333333",
+   "equal": true
+  },
+  {
+   "window": "last30 (18.08–16.09)",
+   "selection": "Крем УВЛ (low)",
+   "card": "orders_cmp",
+   "tvf": "orders_comparable",
+   "card_value": "true",
+   "tvf_value": "true",
+   "equal": true
+  },
+  {
+   "window": "last30 (18.08–16.09)",
+   "selection": "Крем УВЛ (low)",
+   "card": "econ_cmp",
+   "tvf": "economics_comparable",
+   "card_value": "true",
+   "tvf_value": "true",
+   "equal": true
+  },
+  {
+   "window": "last30 (18.08–16.09)",
+   "selection": "Крем УВЛ (low)",
+   "card": "drr_cmp",
+   "tvf": "drr_comparable",
+   "card_value": "true",
+   "tvf_value": "true",
+   "equal": true
+  },
+  {
+   "window": "last30 (18.08–16.09)",
+   "selection": "Набор руки+амбра (low)",
+   "card": "c_orders_gross_units",
+   "tvf": "cur_orders_gross_units",
+   "card_value": "12",
+   "tvf_value": "12",
+   "equal": true
+  },
+  {
+   "window": "last30 (18.08–16.09)",
+   "selection": "Набор руки+амбра (low)",
+   "card": "c_buyout_units",
+   "tvf": "cur_buyout_units",
+   "card_value": "7",
+   "tvf_value": "7",
+   "equal": true
+  },
+  {
+   "window": "last30 (18.08–16.09)",
+   "selection": "Набор руки+амбра (low)",
+   "card": "c_rate",
+   "tvf": "cur_cohort_buyout_rate",
+   "card_value": "0.6666666666666666",
+   "tvf_value": "0.6666666666666666",
+   "equal": true
+  },
+  {
+   "window": "last30 (18.08–16.09)",
+   "selection": "Набор руки+амбра (low)",
+   "card": "c_price",
+   "tvf": "cur_avg_seller_price_orders_rub",
+   "card_value": "1053.333333333",
+   "tvf_value": "1053.333333333",
+   "equal": true
+  },
+  {
+   "window": "last30 (18.08–16.09)",
+   "selection": "Набор руки+амбра (low)",
+   "card": "p_price",
+   "tvf": "prv_avg_seller_price_orders_rub",
+   "card_value": "986.1475",
+   "tvf_value": "986.1475",
+   "equal": true
+  },
+  {
+   "window": "last30 (18.08–16.09)",
+   "selection": "Набор руки+амбра (low)",
+   "card": "c_ads_attributed_rub",
+   "tvf": "cur_ads_attributed_rub",
+   "card_value": "0",
+   "tvf_value": "0",
+   "equal": true
+  },
+  {
+   "window": "last30 (18.08–16.09)",
+   "selection": "Набор руки+амбра (low)",
+   "card": "c_drr",
+   "tvf": "cur_drr",
+   "card_value": "0",
+   "tvf_value": "0",
+   "equal": true
+  },
+  {
+   "window": "last30 (18.08–16.09)",
+   "selection": "Набор руки+амбра (low)",
+   "card": "c_contribution_after_cogs_rub",
+   "tvf": "cur_contribution_after_cogs_rub",
+   "card_value": "100.23913332",
+   "tvf_value": "100.23913332",
+   "equal": true
+  },
+  {
+   "window": "last30 (18.08–16.09)",
+   "selection": "Набор руки+амбра (low)",
+   "card": "c_margin",
+   "tvf": "cur_contribution_margin_after_cogs",
+   "card_value": "0.014302346",
+   "tvf_value": "0.014302346",
+   "equal": true
+  },
+  {
+   "window": "last30 (18.08–16.09)",
+   "selection": "Набор руки+амбра (low)",
+   "card": "c_per_buyout",
+   "tvf": "cur_contribution_after_cogs_per_buyout_rub",
+   "card_value": "14.319876189",
+   "tvf_value": "14.319876189",
+   "equal": true
+  },
+  {
+   "window": "last30 (18.08–16.09)",
+   "selection": "Набор руки+амбра (low)",
+   "card": "p_orders_gross_units",
+   "tvf": "prv_orders_gross_units",
+   "card_value": "4",
+   "tvf_value": "4",
+   "equal": true
+  },
+  {
+   "window": "last30 (18.08–16.09)",
+   "selection": "Набор руки+амбра (low)",
+   "card": "p_rate",
+   "tvf": "prv_cohort_buyout_rate",
+   "card_value": "0.75",
+   "tvf_value": "0.75",
+   "equal": true
+  },
+  {
+   "window": "last30 (18.08–16.09)",
+   "selection": "Набор руки+амбра (low)",
+   "card": "orders_cmp",
+   "tvf": "orders_comparable",
+   "card_value": "true",
+   "tvf_value": "true",
+   "equal": true
+  },
+  {
+   "window": "last30 (18.08–16.09)",
+   "selection": "Набор руки+амбра (low)",
+   "card": "econ_cmp",
+   "tvf": "economics_comparable",
+   "card_value": "true",
+   "tvf_value": "true",
+   "equal": true
+  },
+  {
+   "window": "last30 (18.08–16.09)",
+   "selection": "Набор руки+амбра (low)",
+   "card": "drr_cmp",
+   "tvf": "drr_comparable",
+   "card_value": "true",
+   "tvf_value": "true",
+   "equal": true
+  },
+  {
+   "window": "last30 (18.08–16.09)",
+   "attention_card": [
+    "252442517",
+    "535581674",
+    "535580776",
+    "438775617"
+   ],
+   "attention_expected_order": [
+    "252442517",
+    "535581674",
+    "535580776",
+    "438775617"
+   ],
+   "flagged_total": 4,
+   "equal": true
+  },
+  {
+   "window": "last7 (10–16.09)",
+   "selection": "all",
+   "card": "c_orders_gross_units",
+   "tvf": "cur_orders_gross_units",
+   "card_value": "83",
+   "tvf_value": "83",
+   "equal": true
+  },
+  {
+   "window": "last7 (10–16.09)",
+   "selection": "all",
+   "card": "c_buyout_units",
+   "tvf": "cur_buyout_units",
+   "card_value": "100",
+   "tvf_value": "100",
+   "equal": true
+  },
+  {
+   "window": "last7 (10–16.09)",
+   "selection": "all",
+   "card": "c_rate",
+   "tvf": "cur_cohort_buyout_rate",
+   "card_value": "0.9487179487179487",
+   "tvf_value": "0.9487179487179487",
+   "equal": true
+  },
+  {
+   "window": "last7 (10–16.09)",
+   "selection": "all",
+   "card": "c_price",
+   "tvf": "cur_avg_seller_price_orders_rub",
+   "card_value": "810.200843373",
+   "tvf_value": "810.200843373",
+   "equal": true
+  },
+  {
+   "window": "last7 (10–16.09)",
+   "selection": "all",
+   "card": "p_price",
+   "tvf": "prv_avg_seller_price_orders_rub",
+   "card_value": "713.450421053",
+   "tvf_value": "713.450421053",
+   "equal": true
+  },
+  {
+   "window": "last7 (10–16.09)",
+   "selection": "all",
+   "card": "c_ads_attributed_rub",
+   "tvf": "cur_ads_attributed_rub",
+   "card_value": "11915.71",
+   "tvf_value": "11915.71",
+   "equal": true
+  },
+  {
+   "window": "last7 (10–16.09)",
+   "selection": "all",
+   "card": "c_drr",
+   "tvf": "cur_drr",
+   "card_value": "0.163793993",
+   "tvf_value": "0.163793993",
+   "equal": true
+  },
+  {
+   "window": "last7 (10–16.09)",
+   "selection": "all",
+   "card": "c_contribution_after_cogs_rub",
+   "tvf": "cur_contribution_after_cogs_rub",
+   "card_value": "7.88785404",
+   "tvf_value": "7.88785404",
+   "equal": true
+  },
+  {
+   "window": "last7 (10–16.09)",
+   "selection": "all",
+   "card": "c_margin",
+   "tvf": "cur_contribution_margin_after_cogs",
+   "card_value": "0.000106561",
+   "tvf_value": "0.000106561",
+   "equal": true
+  },
+  {
+   "window": "last7 (10–16.09)",
+   "selection": "all",
+   "card": "c_per_buyout",
+   "tvf": "cur_contribution_after_cogs_per_buyout_rub",
+   "card_value": "0.078097565",
+   "tvf_value": "0.078097565",
+   "equal": true
+  },
+  {
+   "window": "last7 (10–16.09)",
+   "selection": "all",
+   "card": "p_orders_gross_units",
+   "tvf": "prv_orders_gross_units",
+   "card_value": "95",
+   "tvf_value": "95",
+   "equal": true
+  },
+  {
+   "window": "last7 (10–16.09)",
+   "selection": "all",
+   "card": "p_rate",
+   "tvf": "prv_cohort_buyout_rate",
+   "card_value": "0.9540229885057471",
+   "tvf_value": "0.9540229885057471",
+   "equal": true
+  },
+  {
+   "window": "last7 (10–16.09)",
+   "selection": "all",
+   "card": "orders_cmp",
+   "tvf": "orders_comparable",
+   "card_value": "true",
+   "tvf_value": "true",
+   "equal": true
+  },
+  {
+   "window": "last7 (10–16.09)",
+   "selection": "all",
+   "card": "econ_cmp",
+   "tvf": "economics_comparable",
+   "card_value": "true",
+   "tvf_value": "true",
+   "equal": true
+  },
+  {
+   "window": "last7 (10–16.09)",
+   "selection": "all",
+   "card": "drr_cmp",
+   "tvf": "drr_comparable",
+   "card_value": "true",
+   "tvf_value": "true",
+   "equal": true
+  },
+  {
+   "window": "last7 (10–16.09)",
+   "selection": "Крем Руки",
+   "card": "c_orders_gross_units",
+   "tvf": "cur_orders_gross_units",
+   "card_value": "21",
+   "tvf_value": "21",
+   "equal": true
+  },
+  {
+   "window": "last7 (10–16.09)",
+   "selection": "Крем Руки",
+   "card": "c_buyout_units",
+   "tvf": "cur_buyout_units",
+   "card_value": "37",
+   "tvf_value": "37",
+   "equal": true
+  },
+  {
+   "window": "last7 (10–16.09)",
+   "selection": "Крем Руки",
+   "card": "c_rate",
+   "tvf": "cur_cohort_buyout_rate",
+   "card_value": "1.0",
+   "tvf_value": "1.0",
+   "equal": true
+  },
+  {
+   "window": "last7 (10–16.09)",
+   "selection": "Крем Руки",
+   "card": "c_price",
+   "tvf": "cur_avg_seller_price_orders_rub",
+   "card_value": "640.033809524",
+   "tvf_value": "640.033809524",
+   "equal": true
+  },
+  {
+   "window": "last7 (10–16.09)",
+   "selection": "Крем Руки",
+   "card": "p_price",
+   "tvf": "prv_avg_seller_price_orders_rub",
+   "card_value": "523.675",
+   "tvf_value": "523.675",
+   "equal": true
+  },
+  {
+   "window": "last7 (10–16.09)",
+   "selection": "Крем Руки",
+   "card": "c_ads_attributed_rub",
+   "tvf": "cur_ads_attributed_rub",
+   "card_value": "3271.54",
+   "tvf_value": "3271.54",
+   "equal": true
+  },
+  {
+   "window": "last7 (10–16.09)",
+   "selection": "Крем Руки",
+   "card": "c_drr",
+   "tvf": "cur_drr",
+   "card_value": "0.160079268",
+   "tvf_value": "0.160079268",
+   "equal": true
+  },
+  {
+   "window": "last7 (10–16.09)",
+   "selection": "Крем Руки",
+   "card": "c_contribution_after_cogs_rub",
+   "tvf": "cur_contribution_after_cogs_rub",
+   "card_value": "-3639.656",
+   "tvf_value": "-3639.656",
+   "equal": true
+  },
+  {
+   "window": "last7 (10–16.09)",
+   "selection": "Крем Руки",
+   "card": "c_margin",
+   "tvf": "cur_contribution_margin_after_cogs",
+   "card_value": "-0.178091501",
+   "tvf_value": "-0.178091501",
+   "equal": true
+  },
+  {
+   "window": "last7 (10–16.09)",
+   "selection": "Крем Руки",
+   "card": "c_per_buyout",
+   "tvf": "cur_contribution_after_cogs_per_buyout_rub",
+   "card_value": "-98.369081081",
+   "tvf_value": "-98.369081081",
+   "equal": true
+  },
+  {
+   "window": "last7 (10–16.09)",
+   "selection": "Крем Руки",
+   "card": "p_orders_gross_units",
+   "tvf": "prv_orders_gross_units",
+   "card_value": "40",
+   "tvf_value": "40",
+   "equal": true
+  },
+  {
+   "window": "last7 (10–16.09)",
+   "selection": "Крем Руки",
+   "card": "p_rate",
+   "tvf": "prv_cohort_buyout_rate",
+   "card_value": "0.9722222222222222",
+   "tvf_value": "0.9722222222222222",
+   "equal": true
+  },
+  {
+   "window": "last7 (10–16.09)",
+   "selection": "Крем Руки",
+   "card": "orders_cmp",
+   "tvf": "orders_comparable",
+   "card_value": "true",
+   "tvf_value": "true",
+   "equal": true
+  },
+  {
+   "window": "last7 (10–16.09)",
+   "selection": "Крем Руки",
+   "card": "econ_cmp",
+   "tvf": "economics_comparable",
+   "card_value": "true",
+   "tvf_value": "true",
+   "equal": true
+  },
+  {
+   "window": "last7 (10–16.09)",
+   "selection": "Крем Руки",
+   "card": "drr_cmp",
+   "tvf": "drr_comparable",
+   "card_value": "true",
+   "tvf_value": "true",
+   "equal": true
+  },
+  {
+   "window": "last7 (10–16.09)",
+   "selection": "Сыворотка АКНЕ",
+   "card": "c_orders_gross_units",
+   "tvf": "cur_orders_gross_units",
+   "card_value": "9",
+   "tvf_value": "9",
+   "equal": true
+  },
+  {
+   "window": "last7 (10–16.09)",
+   "selection": "Сыворотка АКНЕ",
+   "card": "c_buyout_units",
+   "tvf": "cur_buyout_units",
+   "card_value": "9",
+   "tvf_value": "9",
+   "equal": true
+  },
+  {
+   "window": "last7 (10–16.09)",
+   "selection": "Сыворотка АКНЕ",
+   "card": "c_rate",
+   "tvf": "cur_cohort_buyout_rate",
+   "card_value": "1.0",
+   "tvf_value": "1.0",
+   "equal": true
+  },
+  {
+   "window": "last7 (10–16.09)",
+   "selection": "Сыворотка АКНЕ",
+   "card": "c_price",
+   "tvf": "cur_avg_seller_price_orders_rub",
+   "card_value": "806",
+   "tvf_value": "806",
+   "equal": true
+  },
+  {
+   "window": "last7 (10–16.09)",
+   "selection": "Сыворотка АКНЕ",
+   "card": "p_price",
+   "tvf": "prv_avg_seller_price_orders_rub",
+   "card_value": "813.5",
+   "tvf_value": "813.5",
+   "equal": true
+  },
+  {
+   "window": "last7 (10–16.09)",
+   "selection": "Сыворотка АКНЕ",
+   "card": "c_ads_attributed_rub",
+   "tvf": "cur_ads_attributed_rub",
+   "card_value": "2116.28",
+   "tvf_value": "2116.28",
+   "equal": true
+  },
+  {
+   "window": "last7 (10–16.09)",
+   "selection": "Сыворотка АКНЕ",
+   "card": "c_drr",
+   "tvf": "cur_drr",
+   "card_value": "0.289346459",
+   "tvf_value": "0.289346459",
+   "equal": true
+  },
+  {
+   "window": "last7 (10–16.09)",
+   "selection": "Сыворотка АКНЕ",
+   "card": "c_contribution_after_cogs_rub",
+   "tvf": "cur_contribution_after_cogs_rub",
+   "card_value": "-11.524",
+   "tvf_value": "-11.524",
+   "equal": true
+  },
+  {
+   "window": "last7 (10–16.09)",
+   "selection": "Сыворотка АКНЕ",
+   "card": "c_margin",
+   "tvf": "cur_contribution_margin_after_cogs",
+   "card_value": "-0.001575608",
+   "tvf_value": "-0.001575608",
+   "equal": true
+  },
+  {
+   "window": "last7 (10–16.09)",
+   "selection": "Сыворотка АКНЕ",
+   "card": "c_per_buyout",
+   "tvf": "cur_contribution_after_cogs_per_buyout_rub",
+   "card_value": "-1.280444444",
+   "tvf_value": "-1.280444444",
+   "equal": true
+  },
+  {
+   "window": "last7 (10–16.09)",
+   "selection": "Сыворотка АКНЕ",
+   "card": "p_orders_gross_units",
+   "tvf": "prv_orders_gross_units",
+   "card_value": "6",
+   "tvf_value": "6",
+   "equal": true
+  },
+  {
+   "window": "last7 (10–16.09)",
+   "selection": "Сыворотка АКНЕ",
+   "card": "p_rate",
+   "tvf": "prv_cohort_buyout_rate",
+   "card_value": "1.0",
+   "tvf_value": "1.0",
+   "equal": true
+  },
+  {
+   "window": "last7 (10–16.09)",
+   "selection": "Сыворотка АКНЕ",
+   "card": "orders_cmp",
+   "tvf": "orders_comparable",
+   "card_value": "true",
+   "tvf_value": "true",
+   "equal": true
+  },
+  {
+   "window": "last7 (10–16.09)",
+   "selection": "Сыворотка АКНЕ",
+   "card": "econ_cmp",
+   "tvf": "economics_comparable",
+   "card_value": "true",
+   "tvf_value": "true",
+   "equal": true
+  },
+  {
+   "window": "last7 (10–16.09)",
+   "selection": "Сыворотка АКНЕ",
+   "card": "drr_cmp",
+   "tvf": "drr_comparable",
+   "card_value": "true",
+   "tvf_value": "true",
+   "equal": true
+  },
+  {
+   "window": "last7 (10–16.09)",
+   "selection": "Крем Вишня (low)",
+   "card": "c_orders_gross_units",
+   "tvf": "cur_orders_gross_units",
+   "card_value": "0",
+   "tvf_value": "0",
+   "equal": true
+  },
+  {
+   "window": "last7 (10–16.09)",
+   "selection": "Крем Вишня (low)",
+   "card": "c_buyout_units",
+   "tvf": "cur_buyout_units",
+   "card_value": "0",
+   "tvf_value": "0",
+   "equal": true
+  },
+  {
+   "window": "last7 (10–16.09)",
+   "selection": "Крем Вишня (low)",
+   "card": "c_rate",
+   "tvf": "cur_cohort_buyout_rate",
+   "card_value": null,
+   "tvf_value": null,
+   "equal": true
+  },
+  {
+   "window": "last7 (10–16.09)",
+   "selection": "Крем Вишня (low)",
+   "card": "c_price",
+   "tvf": "cur_avg_seller_price_orders_rub",
+   "card_value": null,
+   "tvf_value": null,
+   "equal": true
+  },
+  {
+   "window": "last7 (10–16.09)",
+   "selection": "Крем Вишня (low)",
+   "card": "p_price",
+   "tvf": "prv_avg_seller_price_orders_rub",
+   "card_value": null,
+   "tvf_value": null,
+   "equal": true
+  },
+  {
+   "window": "last7 (10–16.09)",
+   "selection": "Крем Вишня (low)",
+   "card": "c_ads_attributed_rub",
+   "tvf": "cur_ads_attributed_rub",
+   "card_value": "0",
+   "tvf_value": "0",
+   "equal": true
+  },
+  {
+   "window": "last7 (10–16.09)",
+   "selection": "Крем Вишня (low)",
+   "card": "c_drr",
+   "tvf": "cur_drr",
+   "card_value": null,
+   "tvf_value": null,
+   "equal": true
+  },
+  {
+   "window": "last7 (10–16.09)",
+   "selection": "Крем Вишня (low)",
+   "card": "c_contribution_after_cogs_rub",
+   "tvf": "cur_contribution_after_cogs_rub",
+   "card_value": "0",
+   "tvf_value": "0",
+   "equal": true
+  },
+  {
+   "window": "last7 (10–16.09)",
+   "selection": "Крем Вишня (low)",
+   "card": "c_margin",
+   "tvf": "cur_contribution_margin_after_cogs",
+   "card_value": null,
+   "tvf_value": null,
+   "equal": true
+  },
+  {
+   "window": "last7 (10–16.09)",
+   "selection": "Крем Вишня (low)",
+   "card": "c_per_buyout",
+   "tvf": "cur_contribution_after_cogs_per_buyout_rub",
+   "card_value": null,
+   "tvf_value": null,
+   "equal": true
+  },
+  {
+   "window": "last7 (10–16.09)",
+   "selection": "Крем Вишня (low)",
+   "card": "p_orders_gross_units",
+   "tvf": "prv_orders_gross_units",
+   "card_value": "0",
+   "tvf_value": "0",
+   "equal": true
+  },
+  {
+   "window": "last7 (10–16.09)",
+   "selection": "Крем Вишня (low)",
+   "card": "p_rate",
+   "tvf": "prv_cohort_buyout_rate",
+   "card_value": null,
+   "tvf_value": null,
+   "equal": true
+  },
+  {
+   "window": "last7 (10–16.09)",
+   "selection": "Крем Вишня (low)",
+   "card": "orders_cmp",
+   "tvf": "orders_comparable",
+   "card_value": "true",
+   "tvf_value": "true",
+   "equal": true
+  },
+  {
+   "window": "last7 (10–16.09)",
+   "selection": "Крем Вишня (low)",
+   "card": "econ_cmp",
+   "tvf": "economics_comparable",
+   "card_value": "true",
+   "tvf_value": "true",
+   "equal": true
+  },
+  {
+   "window": "last7 (10–16.09)",
+   "selection": "Крем Вишня (low)",
+   "card": "drr_cmp",
+   "tvf": "drr_comparable",
+   "card_value": "true",
+   "tvf_value": "true",
+   "equal": true
+  },
+  {
+   "window": "last7 (10–16.09)",
+   "selection": "Набор сыв+крем АКНЕ (bundle)",
+   "card": "c_orders_gross_units",
+   "tvf": "cur_orders_gross_units",
+   "card_value": "3",
+   "tvf_value": "3",
+   "equal": true
+  },
+  {
+   "window": "last7 (10–16.09)",
+   "selection": "Набор сыв+крем АКНЕ (bundle)",
+   "card": "c_buyout_units",
+   "tvf": "cur_buyout_units",
+   "card_value": "2",
+   "tvf_value": "2",
+   "equal": true
+  },
+  {
+   "window": "last7 (10–16.09)",
+   "selection": "Набор сыв+крем АКНЕ (bundle)",
+   "card": "c_rate",
+   "tvf": "cur_cohort_buyout_rate",
+   "card_value": null,
+   "tvf_value": null,
+   "equal": true
+  },
+  {
+   "window": "last7 (10–16.09)",
+   "selection": "Набор сыв+крем АКНЕ (bundle)",
+   "card": "c_price",
+   "tvf": "cur_avg_seller_price_orders_rub",
+   "card_value": "1294",
+   "tvf_value": "1294",
+   "equal": true
+  },
+  {
+   "window": "last7 (10–16.09)",
+   "selection": "Набор сыв+крем АКНЕ (bundle)",
+   "card": "p_price",
+   "tvf": "prv_avg_seller_price_orders_rub",
+   "card_value": "1294",
+   "tvf_value": "1294",
+   "equal": true
+  },
+  {
+   "window": "last7 (10–16.09)",
+   "selection": "Набор сыв+крем АКНЕ (bundle)",
+   "card": "c_ads_attributed_rub",
+   "tvf": "cur_ads_attributed_rub",
+   "card_value": "0",
+   "tvf_value": "0",
+   "equal": true
+  },
+  {
+   "window": "last7 (10–16.09)",
+   "selection": "Набор сыв+крем АКНЕ (bundle)",
+   "card": "c_drr",
+   "tvf": "cur_drr",
+   "card_value": "0",
+   "tvf_value": "0",
+   "equal": true
+  },
+  {
+   "window": "last7 (10–16.09)",
+   "selection": "Набор сыв+крем АКНЕ (bundle)",
+   "card": "c_contribution_after_cogs_rub",
+   "tvf": "cur_contribution_after_cogs_rub",
+   "card_value": "677.848",
+   "tvf_value": "677.848",
+   "equal": true
+  },
+  {
+   "window": "last7 (10–16.09)",
+   "selection": "Набор сыв+крем АКНЕ (bundle)",
+   "card": "c_margin",
+   "tvf": "cur_contribution_margin_after_cogs",
+   "card_value": "0.261919629",
+   "tvf_value": "0.261919629",
+   "equal": true
+  },
+  {
+   "window": "last7 (10–16.09)",
+   "selection": "Набор сыв+крем АКНЕ (bundle)",
+   "card": "c_per_buyout",
+   "tvf": "cur_contribution_after_cogs_per_buyout_rub",
+   "card_value": "338.924",
+   "tvf_value": "338.924",
+   "equal": true
+  },
+  {
+   "window": "last7 (10–16.09)",
+   "selection": "Набор сыв+крем АКНЕ (bundle)",
+   "card": "p_orders_gross_units",
+   "tvf": "prv_orders_gross_units",
+   "card_value": "3",
+   "tvf_value": "3",
+   "equal": true
+  },
+  {
+   "window": "last7 (10–16.09)",
+   "selection": "Набор сыв+крем АКНЕ (bundle)",
+   "card": "p_rate",
+   "tvf": "prv_cohort_buyout_rate",
+   "card_value": "1.0",
+   "tvf_value": "1.0",
+   "equal": true
+  },
+  {
+   "window": "last7 (10–16.09)",
+   "selection": "Набор сыв+крем АКНЕ (bundle)",
+   "card": "orders_cmp",
+   "tvf": "orders_comparable",
+   "card_value": "true",
+   "tvf_value": "true",
+   "equal": true
+  },
+  {
+   "window": "last7 (10–16.09)",
+   "selection": "Набор сыв+крем АКНЕ (bundle)",
+   "card": "econ_cmp",
+   "tvf": "economics_comparable",
+   "card_value": "true",
+   "tvf_value": "true",
+   "equal": true
+  },
+  {
+   "window": "last7 (10–16.09)",
+   "selection": "Набор сыв+крем АКНЕ (bundle)",
+   "card": "drr_cmp",
+   "tvf": "drr_comparable",
+   "card_value": "true",
+   "tvf_value": "true",
+   "equal": true
+  },
+  {
+   "window": "last7 (10–16.09)",
+   "selection": "Крем УВЛ (low)",
+   "card": "c_orders_gross_units",
+   "tvf": "cur_orders_gross_units",
+   "card_value": "0",
+   "tvf_value": "0",
+   "equal": true
+  },
+  {
+   "window": "last7 (10–16.09)",
+   "selection": "Крем УВЛ (low)",
+   "card": "c_buyout_units",
+   "tvf": "cur_buyout_units",
+   "card_value": "0",
+   "tvf_value": "0",
+   "equal": true
+  },
+  {
+   "window": "last7 (10–16.09)",
+   "selection": "Крем УВЛ (low)",
+   "card": "c_rate",
+   "tvf": "cur_cohort_buyout_rate",
+   "card_value": null,
+   "tvf_value": null,
+   "equal": true
+  },
+  {
+   "window": "last7 (10–16.09)",
+   "selection": "Крем УВЛ (low)",
+   "card": "c_price",
+   "tvf": "cur_avg_seller_price_orders_rub",
+   "card_value": null,
+   "tvf_value": null,
+   "equal": true
+  },
+  {
+   "window": "last7 (10–16.09)",
+   "selection": "Крем УВЛ (low)",
+   "card": "p_price",
+   "tvf": "prv_avg_seller_price_orders_rub",
+   "card_value": null,
+   "tvf_value": null,
+   "equal": true
+  },
+  {
+   "window": "last7 (10–16.09)",
+   "selection": "Крем УВЛ (low)",
+   "card": "c_ads_attributed_rub",
+   "tvf": "cur_ads_attributed_rub",
+   "card_value": "0",
+   "tvf_value": "0",
+   "equal": true
+  },
+  {
+   "window": "last7 (10–16.09)",
+   "selection": "Крем УВЛ (low)",
+   "card": "c_drr",
+   "tvf": "cur_drr",
+   "card_value": null,
+   "tvf_value": null,
+   "equal": true
+  },
+  {
+   "window": "last7 (10–16.09)",
+   "selection": "Крем УВЛ (low)",
+   "card": "c_contribution_after_cogs_rub",
+   "tvf": "cur_contribution_after_cogs_rub",
+   "card_value": "-77.2",
+   "tvf_value": "-77.2",
+   "equal": true
+  },
+  {
+   "window": "last7 (10–16.09)",
+   "selection": "Крем УВЛ (low)",
+   "card": "c_margin",
+   "tvf": "cur_contribution_margin_after_cogs",
+   "card_value": null,
+   "tvf_value": null,
+   "equal": true
+  },
+  {
+   "window": "last7 (10–16.09)",
+   "selection": "Крем УВЛ (low)",
+   "card": "c_per_buyout",
+   "tvf": "cur_contribution_after_cogs_per_buyout_rub",
+   "card_value": null,
+   "tvf_value": null,
+   "equal": true
+  },
+  {
+   "window": "last7 (10–16.09)",
+   "selection": "Крем УВЛ (low)",
+   "card": "p_orders_gross_units",
+   "tvf": "prv_orders_gross_units",
+   "card_value": "0",
+   "tvf_value": "0",
+   "equal": true
+  },
+  {
+   "window": "last7 (10–16.09)",
+   "selection": "Крем УВЛ (low)",
+   "card": "p_rate",
+   "tvf": "prv_cohort_buyout_rate",
+   "card_value": null,
+   "tvf_value": null,
+   "equal": true
+  },
+  {
+   "window": "last7 (10–16.09)",
+   "selection": "Крем УВЛ (low)",
+   "card": "orders_cmp",
+   "tvf": "orders_comparable",
+   "card_value": "true",
+   "tvf_value": "true",
+   "equal": true
+  },
+  {
+   "window": "last7 (10–16.09)",
+   "selection": "Крем УВЛ (low)",
+   "card": "econ_cmp",
+   "tvf": "economics_comparable",
+   "card_value": "true",
+   "tvf_value": "true",
+   "equal": true
+  },
+  {
+   "window": "last7 (10–16.09)",
+   "selection": "Крем УВЛ (low)",
+   "card": "drr_cmp",
+   "tvf": "drr_comparable",
+   "card_value": "true",
+   "tvf_value": "true",
+   "equal": true
+  },
+  {
+   "window": "last7 (10–16.09)",
+   "selection": "Набор руки+амбра (low)",
+   "card": "c_orders_gross_units",
+   "tvf": "cur_orders_gross_units",
+   "card_value": "5",
+   "tvf_value": "5",
+   "equal": true
+  },
+  {
+   "window": "last7 (10–16.09)",
+   "selection": "Набор руки+амбра (low)",
+   "card": "c_buyout_units",
+   "tvf": "cur_buyout_units",
+   "card_value": "2",
+   "tvf_value": "2",
+   "equal": true
+  },
+  {
+   "window": "last7 (10–16.09)",
+   "selection": "Набор руки+амбра (low)",
+   "card": "c_rate",
+   "tvf": "cur_cohort_buyout_rate",
+   "card_value": "1.0",
+   "tvf_value": "1.0",
+   "equal": true
+  },
+  {
+   "window": "last7 (10–16.09)",
+   "selection": "Набор руки+амбра (low)",
+   "card": "c_price",
+   "tvf": "cur_avg_seller_price_orders_rub",
+   "card_value": "1120",
+   "tvf_value": "1120",
+   "equal": true
+  },
+  {
+   "window": "last7 (10–16.09)",
+   "selection": "Набор руки+амбра (low)",
+   "card": "p_price",
+   "tvf": "prv_avg_seller_price_orders_rub",
+   "card_value": "1000",
+   "tvf_value": "1000",
+   "equal": true
+  },
+  {
+   "window": "last7 (10–16.09)",
+   "selection": "Набор руки+амбра (low)",
+   "card": "c_ads_attributed_rub",
+   "tvf": "cur_ads_attributed_rub",
+   "card_value": "0",
+   "tvf_value": "0",
+   "equal": true
+  },
+  {
+   "window": "last7 (10–16.09)",
+   "selection": "Набор руки+амбра (low)",
+   "card": "c_drr",
+   "tvf": "cur_drr",
+   "card_value": "0",
+   "tvf_value": "0",
+   "equal": true
+  },
+  {
+   "window": "last7 (10–16.09)",
+   "selection": "Набор руки+амбра (low)",
+   "card": "c_contribution_after_cogs_rub",
+   "tvf": "cur_contribution_after_cogs_rub",
+   "card_value": "226.81967576",
+   "tvf_value": "226.81967576",
+   "equal": true
+  },
+  {
+   "window": "last7 (10–16.09)",
+   "selection": "Набор руки+амбра (low)",
+   "card": "c_margin",
+   "tvf": "cur_contribution_margin_after_cogs",
+   "card_value": "0.101258784",
+   "tvf_value": "0.101258784",
+   "equal": true
+  },
+  {
+   "window": "last7 (10–16.09)",
+   "selection": "Набор руки+амбра (low)",
+   "card": "c_per_buyout",
+   "tvf": "cur_contribution_after_cogs_per_buyout_rub",
+   "card_value": "113.40983788",
+   "tvf_value": "113.40983788",
+   "equal": true
+  },
+  {
+   "window": "last7 (10–16.09)",
+   "selection": "Набор руки+амбра (low)",
+   "card": "p_orders_gross_units",
+   "tvf": "prv_orders_gross_units",
+   "card_value": "2",
+   "tvf_value": "2",
+   "equal": true
+  },
+  {
+   "window": "last7 (10–16.09)",
+   "selection": "Набор руки+амбра (low)",
+   "card": "p_rate",
+   "tvf": "prv_cohort_buyout_rate",
+   "card_value": "1.0",
+   "tvf_value": "1.0",
+   "equal": true
+  },
+  {
+   "window": "last7 (10–16.09)",
+   "selection": "Набор руки+амбра (low)",
+   "card": "orders_cmp",
+   "tvf": "orders_comparable",
+   "card_value": "true",
+   "tvf_value": "true",
+   "equal": true
+  },
+  {
+   "window": "last7 (10–16.09)",
+   "selection": "Набор руки+амбра (low)",
+   "card": "econ_cmp",
+   "tvf": "economics_comparable",
+   "card_value": "true",
+   "tvf_value": "true",
+   "equal": true
+  },
+  {
+   "window": "last7 (10–16.09)",
+   "selection": "Набор руки+амбра (low)",
+   "card": "drr_cmp",
+   "tvf": "drr_comparable",
+   "card_value": "true",
+   "tvf_value": "true",
+   "equal": true
+  },
+  {
+   "window": "last7 (10–16.09)",
+   "attention_card": [
+    "252442517",
+    "535581674",
+    "910330849",
+    "910584041"
+   ],
+   "attention_expected_order": [
+    "252442517",
+    "535581674",
+    "910330849",
+    "910584041"
+   ],
+   "flagged_total": 4,
+   "equal": true
+  },
+  {
+   "window": "no signals 27.04–10.05",
+   "selection": "all",
+   "card": "c_orders_gross_units",
+   "tvf": "cur_orders_gross_units",
+   "card_value": "623",
+   "tvf_value": "623",
+   "equal": true
+  },
+  {
+   "window": "no signals 27.04–10.05",
+   "selection": "all",
+   "card": "c_buyout_units",
+   "tvf": "cur_buyout_units",
+   "card_value": "582",
+   "tvf_value": "582",
+   "equal": true
+  },
+  {
+   "window": "no signals 27.04–10.05",
+   "selection": "all",
+   "card": "c_rate",
+   "tvf": "cur_cohort_buyout_rate",
+   "card_value": "0.9229534510433387",
+   "tvf_value": "0.9229534510433387",
+   "equal": true
+  },
+  {
+   "window": "no signals 27.04–10.05",
+   "selection": "all",
+   "card": "c_price",
+   "tvf": "cur_avg_seller_price_orders_rub",
+   "card_value": "889.412616372",
+   "tvf_value": "889.412616372",
+   "equal": true
+  },
+  {
+   "window": "no signals 27.04–10.05",
+   "selection": "all",
+   "card": "p_price",
+   "tvf": "prv_avg_seller_price_orders_rub",
+   "card_value": "915.983889695",
+   "tvf_value": "915.983889695",
+   "equal": true
+  },
+  {
+   "window": "no signals 27.04–10.05",
+   "selection": "all",
+   "card": "c_ads_attributed_rub",
+   "tvf": "cur_ads_attributed_rub",
+   "card_value": "72218.43",
+   "tvf_value": "72218.43",
+   "equal": true
+  },
+  {
+   "window": "no signals 27.04–10.05",
+   "selection": "all",
+   "card": "c_drr",
+   "tvf": "cur_drr",
+   "card_value": "0.138352149",
+   "tvf_value": "0.138352149",
+   "equal": true
+  },
+  {
+   "window": "no signals 27.04–10.05",
+   "selection": "all",
+   "card": "c_contribution_after_cogs_rub",
+   "tvf": "cur_contribution_after_cogs_rub",
+   "card_value": "96612.277147",
+   "tvf_value": "96612.277147",
+   "equal": true
+  },
+  {
+   "window": "no signals 27.04–10.05",
+   "selection": "all",
+   "card": "c_margin",
+   "tvf": "cur_contribution_margin_after_cogs",
+   "card_value": "0.185084607",
+   "tvf_value": "0.185084607",
+   "equal": true
+  },
+  {
+   "window": "no signals 27.04–10.05",
+   "selection": "all",
+   "card": "c_per_buyout",
+   "tvf": "cur_contribution_after_cogs_per_buyout_rub",
+   "card_value": "166.000476198",
+   "tvf_value": "166.000476198",
+   "equal": true
+  },
+  {
+   "window": "no signals 27.04–10.05",
+   "selection": "all",
+   "card": "p_orders_gross_units",
+   "tvf": "prv_orders_gross_units",
+   "card_value": "689",
+   "tvf_value": "689",
+   "equal": true
+  },
+  {
+   "window": "no signals 27.04–10.05",
+   "selection": "all",
+   "card": "p_rate",
+   "tvf": "prv_cohort_buyout_rate",
+   "card_value": "0.9143686502177069",
+   "tvf_value": "0.9143686502177069",
+   "equal": true
+  },
+  {
+   "window": "no signals 27.04–10.05",
+   "selection": "all",
+   "card": "orders_cmp",
+   "tvf": "orders_comparable",
+   "card_value": "true",
+   "tvf_value": "true",
+   "equal": true
+  },
+  {
+   "window": "no signals 27.04–10.05",
+   "selection": "all",
+   "card": "econ_cmp",
+   "tvf": "economics_comparable",
+   "card_value": "true",
+   "tvf_value": "true",
+   "equal": true
+  },
+  {
+   "window": "no signals 27.04–10.05",
+   "selection": "all",
+   "card": "drr_cmp",
+   "tvf": "drr_comparable",
+   "card_value": "true",
+   "tvf_value": "true",
+   "equal": true
+  },
+  {
+   "window": "no signals 27.04–10.05",
+   "selection": "Крем Руки",
+   "card": "c_orders_gross_units",
+   "tvf": "cur_orders_gross_units",
+   "card_value": "35",
+   "tvf_value": "35",
+   "equal": true
+  },
+  {
+   "window": "no signals 27.04–10.05",
+   "selection": "Крем Руки",
+   "card": "c_buyout_units",
+   "tvf": "cur_buyout_units",
+   "card_value": "40",
+   "tvf_value": "40",
+   "equal": true
+  },
+  {
+   "window": "no signals 27.04–10.05",
+   "selection": "Крем Руки",
+   "card": "c_rate",
+   "tvf": "cur_cohort_buyout_rate",
+   "card_value": "1.0",
+   "tvf_value": "1.0",
+   "equal": true
+  },
+  {
+   "window": "no signals 27.04–10.05",
+   "selection": "Крем Руки",
+   "card": "c_price",
+   "tvf": "cur_avg_seller_price_orders_rub",
+   "card_value": "741.195428571",
+   "tvf_value": "741.195428571",
+   "equal": true
+  },
+  {
+   "window": "no signals 27.04–10.05",
+   "selection": "Крем Руки",
+   "card": "p_price",
+   "tvf": "prv_avg_seller_price_orders_rub",
+   "card_value": "698.04254902",
+   "tvf_value": "698.04254902",
+   "equal": true
+  },
+  {
+   "window": "no signals 27.04–10.05",
+   "selection": "Крем Руки",
+   "card": "c_ads_attributed_rub",
+   "tvf": "cur_ads_attributed_rub",
+   "card_value": "488.47",
+   "tvf_value": "488.47",
+   "equal": true
+  },
+  {
+   "window": "no signals 27.04–10.05",
+   "selection": "Крем Руки",
+   "card": "c_drr",
+   "tvf": "cur_drr",
+   "card_value": "0.016703547",
+   "tvf_value": "0.016703547",
+   "equal": true
+  },
+  {
+   "window": "no signals 27.04–10.05",
+   "selection": "Крем Руки",
+   "card": "c_contribution_after_cogs_rub",
+   "tvf": "cur_contribution_after_cogs_rub",
+   "card_value": "6006.92",
+   "tvf_value": "6006.92",
+   "equal": true
+  },
+  {
+   "window": "no signals 27.04–10.05",
+   "selection": "Крем Руки",
+   "card": "c_margin",
+   "tvf": "cur_contribution_margin_after_cogs",
+   "card_value": "0.205410714",
+   "tvf_value": "0.205410714",
+   "equal": true
+  },
+  {
+   "window": "no signals 27.04–10.05",
+   "selection": "Крем Руки",
+   "card": "c_per_buyout",
+   "tvf": "cur_contribution_after_cogs_per_buyout_rub",
+   "card_value": "150.173",
+   "tvf_value": "150.173",
+   "equal": true
+  },
+  {
+   "window": "no signals 27.04–10.05",
+   "selection": "Крем Руки",
+   "card": "p_orders_gross_units",
+   "tvf": "prv_orders_gross_units",
+   "card_value": "51",
+   "tvf_value": "51",
+   "equal": true
+  },
+  {
+   "window": "no signals 27.04–10.05",
+   "selection": "Крем Руки",
+   "card": "p_rate",
+   "tvf": "prv_cohort_buyout_rate",
+   "card_value": "0.9607843137254902",
+   "tvf_value": "0.9607843137254902",
+   "equal": true
+  },
+  {
+   "window": "no signals 27.04–10.05",
+   "selection": "Крем Руки",
+   "card": "orders_cmp",
+   "tvf": "orders_comparable",
+   "card_value": "true",
+   "tvf_value": "true",
+   "equal": true
+  },
+  {
+   "window": "no signals 27.04–10.05",
+   "selection": "Крем Руки",
+   "card": "econ_cmp",
+   "tvf": "economics_comparable",
+   "card_value": "true",
+   "tvf_value": "true",
+   "equal": true
+  },
+  {
+   "window": "no signals 27.04–10.05",
+   "selection": "Крем Руки",
+   "card": "drr_cmp",
+   "tvf": "drr_comparable",
+   "card_value": "true",
+   "tvf_value": "true",
+   "equal": true
+  },
+  {
+   "window": "no signals 27.04–10.05",
+   "selection": "Сыворотка АКНЕ",
+   "card": "c_orders_gross_units",
+   "tvf": "cur_orders_gross_units",
+   "card_value": "45",
+   "tvf_value": "45",
+   "equal": true
+  },
+  {
+   "window": "no signals 27.04–10.05",
+   "selection": "Сыворотка АКНЕ",
+   "card": "c_buyout_units",
+   "tvf": "cur_buyout_units",
+   "card_value": "39",
+   "tvf_value": "39",
+   "equal": true
+  },
+  {
+   "window": "no signals 27.04–10.05",
+   "selection": "Сыворотка АКНЕ",
+   "card": "c_rate",
+   "tvf": "cur_cohort_buyout_rate",
+   "card_value": "0.8888888888888888",
+   "tvf_value": "0.8888888888888888",
+   "equal": true
+  },
+  {
+   "window": "no signals 27.04–10.05",
+   "selection": "Сыворотка АКНЕ",
+   "card": "c_price",
+   "tvf": "cur_avg_seller_price_orders_rub",
+   "card_value": "668.568888889",
+   "tvf_value": "668.568888889",
+   "equal": true
+  },
+  {
+   "window": "no signals 27.04–10.05",
+   "selection": "Сыворотка АКНЕ",
+   "card": "p_price",
+   "tvf": "prv_avg_seller_price_orders_rub",
+   "card_value": "658.7",
+   "tvf_value": "658.7",
+   "equal": true
+  },
+  {
+   "window": "no signals 27.04–10.05",
+   "selection": "Сыворотка АКНЕ",
+   "card": "c_ads_attributed_rub",
+   "tvf": "cur_ads_attributed_rub",
+   "card_value": "2969.81",
+   "tvf_value": "2969.81",
+   "equal": true
+  },
+  {
+   "window": "no signals 27.04–10.05",
+   "selection": "Сыворотка АКНЕ",
+   "card": "c_drr",
+   "tvf": "cur_drr",
+   "card_value": "0.115395794",
+   "tvf_value": "0.115395794",
+   "equal": true
+  },
+  {
+   "window": "no signals 27.04–10.05",
+   "selection": "Сыворотка АКНЕ",
+   "card": "c_contribution_after_cogs_rub",
+   "tvf": "cur_contribution_after_cogs_rub",
+   "card_value": "4818.47",
+   "tvf_value": "4818.47",
+   "equal": true
+  },
+  {
+   "window": "no signals 27.04–10.05",
+   "selection": "Сыворотка АКНЕ",
+   "card": "c_margin",
+   "tvf": "cur_contribution_margin_after_cogs",
+   "card_value": "0.18722786",
+   "tvf_value": "0.18722786",
+   "equal": true
+  },
+  {
+   "window": "no signals 27.04–10.05",
+   "selection": "Сыворотка АКНЕ",
+   "card": "c_per_buyout",
+   "tvf": "cur_contribution_after_cogs_per_buyout_rub",
+   "card_value": "123.550512821",
+   "tvf_value": "123.550512821",
+   "equal": true
+  },
+  {
+   "window": "no signals 27.04–10.05",
+   "selection": "Сыворотка АКНЕ",
+   "card": "p_orders_gross_units",
+   "tvf": "prv_orders_gross_units",
+   "card_value": "60",
+   "tvf_value": "60",
+   "equal": true
+  },
+  {
+   "window": "no signals 27.04–10.05",
+   "selection": "Сыворотка АКНЕ",
+   "card": "p_rate",
+   "tvf": "prv_cohort_buyout_rate",
+   "card_value": "0.8666666666666667",
+   "tvf_value": "0.8666666666666667",
+   "equal": true
+  },
+  {
+   "window": "no signals 27.04–10.05",
+   "selection": "Сыворотка АКНЕ",
+   "card": "orders_cmp",
+   "tvf": "orders_comparable",
+   "card_value": "true",
+   "tvf_value": "true",
+   "equal": true
+  },
+  {
+   "window": "no signals 27.04–10.05",
+   "selection": "Сыворотка АКНЕ",
+   "card": "econ_cmp",
+   "tvf": "economics_comparable",
+   "card_value": "true",
+   "tvf_value": "true",
+   "equal": true
+  },
+  {
+   "window": "no signals 27.04–10.05",
+   "selection": "Сыворотка АКНЕ",
+   "card": "drr_cmp",
+   "tvf": "drr_comparable",
+   "card_value": "true",
+   "tvf_value": "true",
+   "equal": true
+  },
+  {
+   "window": "no signals 27.04–10.05",
+   "selection": "Крем Вишня (low)",
+   "card": "c_orders_gross_units",
+   "tvf": "cur_orders_gross_units",
+   "card_value": "16",
+   "tvf_value": "16",
+   "equal": true
+  },
+  {
+   "window": "no signals 27.04–10.05",
+   "selection": "Крем Вишня (low)",
+   "card": "c_buyout_units",
+   "tvf": "cur_buyout_units",
+   "card_value": "20",
+   "tvf_value": "20",
+   "equal": true
+  },
+  {
+   "window": "no signals 27.04–10.05",
+   "selection": "Крем Вишня (low)",
+   "card": "c_rate",
+   "tvf": "cur_cohort_buyout_rate",
+   "card_value": "1.0",
+   "tvf_value": "1.0",
+   "equal": true
+  },
+  {
+   "window": "no signals 27.04–10.05",
+   "selection": "Крем Вишня (low)",
+   "card": "c_price",
+   "tvf": "cur_avg_seller_price_orders_rub",
+   "card_value": "768.5",
+   "tvf_value": "768.5",
+   "equal": true
+  },
+  {
+   "window": "no signals 27.04–10.05",
+   "selection": "Крем Вишня (low)",
+   "card": "p_price",
+   "tvf": "prv_avg_seller_price_orders_rub",
+   "card_value": "780",
+   "tvf_value": "780",
+   "equal": true
+  },
+  {
+   "window": "no signals 27.04–10.05",
+   "selection": "Крем Вишня (low)",
+   "card": "c_ads_attributed_rub",
+   "tvf": "cur_ads_attributed_rub",
+   "card_value": "3525",
+   "tvf_value": "3525",
+   "equal": true
+  },
+  {
+   "window": "no signals 27.04–10.05",
+   "selection": "Крем Вишня (low)",
+   "card": "c_drr",
+   "tvf": "cur_drr",
+   "card_value": "0.227639651",
+   "tvf_value": "0.227639651",
+   "equal": true
+  },
+  {
+   "window": "no signals 27.04–10.05",
+   "selection": "Крем Вишня (low)",
+   "card": "c_contribution_after_cogs_rub",
+   "tvf": "cur_contribution_after_cogs_rub",
+   "card_value": "1246.23742",
+   "tvf_value": "1246.23742",
+   "equal": true
+  },
+  {
+   "window": "no signals 27.04–10.05",
+   "selection": "Крем Вишня (low)",
+   "card": "c_margin",
+   "tvf": "cur_contribution_margin_after_cogs",
+   "card_value": "0.080480298",
+   "tvf_value": "0.080480298",
+   "equal": true
+  },
+  {
+   "window": "no signals 27.04–10.05",
+   "selection": "Крем Вишня (low)",
+   "card": "c_per_buyout",
+   "tvf": "cur_contribution_after_cogs_per_buyout_rub",
+   "card_value": "62.311871",
+   "tvf_value": "62.311871",
+   "equal": true
+  },
+  {
+   "window": "no signals 27.04–10.05",
+   "selection": "Крем Вишня (low)",
+   "card": "p_orders_gross_units",
+   "tvf": "prv_orders_gross_units",
+   "card_value": "20",
+   "tvf_value": "20",
+   "equal": true
+  },
+  {
+   "window": "no signals 27.04–10.05",
+   "selection": "Крем Вишня (low)",
+   "card": "p_rate",
+   "tvf": "prv_cohort_buyout_rate",
+   "card_value": "0.8",
+   "tvf_value": "0.8",
+   "equal": true
+  },
+  {
+   "window": "no signals 27.04–10.05",
+   "selection": "Крем Вишня (low)",
+   "card": "orders_cmp",
+   "tvf": "orders_comparable",
+   "card_value": "false",
+   "tvf_value": "false",
+   "equal": true
+  },
+  {
+   "window": "no signals 27.04–10.05",
+   "selection": "Крем Вишня (low)",
+   "card": "econ_cmp",
+   "tvf": "economics_comparable",
+   "card_value": "false",
+   "tvf_value": "false",
+   "equal": true
+  },
+  {
+   "window": "no signals 27.04–10.05",
+   "selection": "Крем Вишня (low)",
+   "card": "drr_cmp",
+   "tvf": "drr_comparable",
+   "card_value": "false",
+   "tvf_value": "false",
+   "equal": true
+  },
+  {
+   "window": "no signals 27.04–10.05",
+   "selection": "Набор сыв+крем АКНЕ (bundle)",
+   "card": "c_orders_gross_units",
+   "tvf": "cur_orders_gross_units",
+   "card_value": "27",
+   "tvf_value": "27",
+   "equal": true
+  },
+  {
+   "window": "no signals 27.04–10.05",
+   "selection": "Набор сыв+крем АКНЕ (bundle)",
+   "card": "c_buyout_units",
+   "tvf": "cur_buyout_units",
+   "card_value": "21",
+   "tvf_value": "21",
+   "equal": true
+  },
+  {
+   "window": "no signals 27.04–10.05",
+   "selection": "Набор сыв+крем АКНЕ (bundle)",
+   "card": "c_rate",
+   "tvf": "cur_cohort_buyout_rate",
+   "card_value": "0.9259259259259259",
+   "tvf_value": "0.9259259259259259",
+   "equal": true
+  },
+  {
+   "window": "no signals 27.04–10.05",
+   "selection": "Набор сыв+крем АКНЕ (bundle)",
+   "card": "c_price",
+   "tvf": "cur_avg_seller_price_orders_rub",
+   "card_value": "1160.20962963",
+   "tvf_value": "1160.20962963",
+   "equal": true
+  },
+  {
+   "window": "no signals 27.04–10.05",
+   "selection": "Набор сыв+крем АКНЕ (bundle)",
+   "card": "p_price",
+   "tvf": "prv_avg_seller_price_orders_rub",
+   "card_value": "1141.578947368",
+   "tvf_value": "1141.578947368",
+   "equal": true
+  },
+  {
+   "window": "no signals 27.04–10.05",
+   "selection": "Набор сыв+крем АКНЕ (bundle)",
+   "card": "c_ads_attributed_rub",
+   "tvf": "cur_ads_attributed_rub",
+   "card_value": "0.28",
+   "tvf_value": "0.28",
+   "equal": true
+  },
+  {
+   "window": "no signals 27.04–10.05",
+   "selection": "Набор сыв+крем АКНЕ (bundle)",
+   "card": "c_drr",
+   "tvf": "cur_drr",
+   "card_value": "0.000011511",
+   "tvf_value": "0.000011511",
+   "equal": true
+  },
+  {
+   "window": "no signals 27.04–10.05",
+   "selection": "Набор сыв+крем АКНЕ (bundle)",
+   "card": "c_contribution_after_cogs_rub",
+   "tvf": "cur_contribution_after_cogs_rub",
+   "card_value": "7710.44",
+   "tvf_value": "7710.44",
+   "equal": true
+  },
+  {
+   "window": "no signals 27.04–10.05",
+   "selection": "Набор сыв+крем АКНЕ (bundle)",
+   "card": "c_margin",
+   "tvf": "cur_contribution_margin_after_cogs",
+   "card_value": "0.316975951",
+   "tvf_value": "0.316975951",
+   "equal": true
+  },
+  {
+   "window": "no signals 27.04–10.05",
+   "selection": "Набор сыв+крем АКНЕ (bundle)",
+   "card": "c_per_buyout",
+   "tvf": "cur_contribution_after_cogs_per_buyout_rub",
+   "card_value": "367.163809524",
+   "tvf_value": "367.163809524",
+   "equal": true
+  },
+  {
+   "window": "no signals 27.04–10.05",
+   "selection": "Набор сыв+крем АКНЕ (bundle)",
+   "card": "p_orders_gross_units",
+   "tvf": "prv_orders_gross_units",
+   "card_value": "19",
+   "tvf_value": "19",
+   "equal": true
+  },
+  {
+   "window": "no signals 27.04–10.05",
+   "selection": "Набор сыв+крем АКНЕ (bundle)",
+   "card": "p_rate",
+   "tvf": "prv_cohort_buyout_rate",
+   "card_value": "0.8947368421052632",
+   "tvf_value": "0.8947368421052632",
+   "equal": true
+  },
+  {
+   "window": "no signals 27.04–10.05",
+   "selection": "Набор сыв+крем АКНЕ (bundle)",
+   "card": "orders_cmp",
+   "tvf": "orders_comparable",
+   "card_value": "true",
+   "tvf_value": "true",
+   "equal": true
+  },
+  {
+   "window": "no signals 27.04–10.05",
+   "selection": "Набор сыв+крем АКНЕ (bundle)",
+   "card": "econ_cmp",
+   "tvf": "economics_comparable",
+   "card_value": "true",
+   "tvf_value": "true",
+   "equal": true
+  },
+  {
+   "window": "no signals 27.04–10.05",
+   "selection": "Набор сыв+крем АКНЕ (bundle)",
+   "card": "drr_cmp",
+   "tvf": "drr_comparable",
+   "card_value": "true",
+   "tvf_value": "true",
+   "equal": true
+  },
+  {
+   "window": "no signals 27.04–10.05",
+   "selection": "Крем УВЛ (low)",
+   "card": "c_orders_gross_units",
+   "tvf": "cur_orders_gross_units",
+   "card_value": "95",
+   "tvf_value": "95",
+   "equal": true
+  },
+  {
+   "window": "no signals 27.04–10.05",
+   "selection": "Крем УВЛ (low)",
+   "card": "c_buyout_units",
+   "tvf": "cur_buyout_units",
+   "card_value": "99",
+   "tvf_value": "99",
+   "equal": true
+  },
+  {
+   "window": "no signals 27.04–10.05",
+   "selection": "Крем УВЛ (low)",
+   "card": "c_rate",
+   "tvf": "cur_cohort_buyout_rate",
+   "card_value": "0.9263157894736842",
+   "tvf_value": "0.9263157894736842",
+   "equal": true
+  },
+  {
+   "window": "no signals 27.04–10.05",
+   "selection": "Крем УВЛ (low)",
+   "card": "c_price",
+   "tvf": "cur_avg_seller_price_orders_rub",
+   "card_value": "795.369684211",
+   "tvf_value": "795.369684211",
+   "equal": true
+  },
+  {
+   "window": "no signals 27.04–10.05",
+   "selection": "Крем УВЛ (low)",
+   "card": "p_price",
+   "tvf": "prv_avg_seller_price_orders_rub",
+   "card_value": "788.003603604",
+   "tvf_value": "788.003603604",
+   "equal": true
+  },
+  {
+   "window": "no signals 27.04–10.05",
+   "selection": "Крем УВЛ (low)",
+   "card": "c_ads_attributed_rub",
+   "tvf": "cur_ads_attributed_rub",
+   "card_value": "14400.93",
+   "tvf_value": "14400.93",
+   "equal": true
+  },
+  {
+   "window": "no signals 27.04–10.05",
+   "selection": "Крем УВЛ (low)",
+   "card": "c_drr",
+   "tvf": "cur_drr",
+   "card_value": "0.18365516",
+   "tvf_value": "0.18365516",
+   "equal": true
+  },
+  {
+   "window": "no signals 27.04–10.05",
+   "selection": "Крем УВЛ (low)",
+   "card": "c_contribution_after_cogs_rub",
+   "tvf": "cur_contribution_after_cogs_rub",
+   "card_value": "16073.05",
+   "tvf_value": "16073.05",
+   "equal": true
+  },
+  {
+   "window": "no signals 27.04–10.05",
+   "selection": "Крем УВЛ (low)",
+   "card": "c_margin",
+   "tvf": "cur_contribution_margin_after_cogs",
+   "card_value": "0.204979744",
+   "tvf_value": "0.204979744",
+   "equal": true
+  },
+  {
+   "window": "no signals 27.04–10.05",
+   "selection": "Крем УВЛ (low)",
+   "card": "c_per_buyout",
+   "tvf": "cur_contribution_after_cogs_per_buyout_rub",
+   "card_value": "162.354040404",
+   "tvf_value": "162.354040404",
+   "equal": true
+  },
+  {
+   "window": "no signals 27.04–10.05",
+   "selection": "Крем УВЛ (low)",
+   "card": "p_orders_gross_units",
+   "tvf": "prv_orders_gross_units",
+   "card_value": "111",
+   "tvf_value": "111",
+   "equal": true
+  },
+  {
+   "window": "no signals 27.04–10.05",
+   "selection": "Крем УВЛ (low)",
+   "card": "p_rate",
+   "tvf": "prv_cohort_buyout_rate",
+   "card_value": "0.918918918918919",
+   "tvf_value": "0.918918918918919",
+   "equal": true
+  },
+  {
+   "window": "no signals 27.04–10.05",
+   "selection": "Крем УВЛ (low)",
+   "card": "orders_cmp",
+   "tvf": "orders_comparable",
+   "card_value": "true",
+   "tvf_value": "true",
+   "equal": true
+  },
+  {
+   "window": "no signals 27.04–10.05",
+   "selection": "Крем УВЛ (low)",
+   "card": "econ_cmp",
+   "tvf": "economics_comparable",
+   "card_value": "true",
+   "tvf_value": "true",
+   "equal": true
+  },
+  {
+   "window": "no signals 27.04–10.05",
+   "selection": "Крем УВЛ (low)",
+   "card": "drr_cmp",
+   "tvf": "drr_comparable",
+   "card_value": "true",
+   "tvf_value": "true",
+   "equal": true
+  },
+  {
+   "window": "no signals 27.04–10.05",
+   "selection": "Набор руки+амбра (low)",
+   "card": "c_orders_gross_units",
+   "tvf": "cur_orders_gross_units",
+   "card_value": "5",
+   "tvf_value": "5",
+   "equal": true
+  },
+  {
+   "window": "no signals 27.04–10.05",
+   "selection": "Набор руки+амбра (low)",
+   "card": "c_buyout_units",
+   "tvf": "cur_buyout_units",
+   "card_value": "4",
+   "tvf_value": "4",
+   "equal": true
+  },
+  {
+   "window": "no signals 27.04–10.05",
+   "selection": "Набор руки+амбра (low)",
+   "card": "c_rate",
+   "tvf": "cur_cohort_buyout_rate",
+   "card_value": "1.0",
+   "tvf_value": "1.0",
+   "equal": true
+  },
+  {
+   "window": "no signals 27.04–10.05",
+   "selection": "Набор руки+амбра (low)",
+   "card": "c_price",
+   "tvf": "cur_avg_seller_price_orders_rub",
+   "card_value": "1407.2",
+   "tvf_value": "1407.2",
+   "equal": true
+  },
+  {
+   "window": "no signals 27.04–10.05",
+   "selection": "Набор руки+амбра (low)",
+   "card": "p_price",
+   "tvf": "prv_avg_seller_price_orders_rub",
+   "card_value": "1480",
+   "tvf_value": "1480",
+   "equal": true
+  },
+  {
+   "window": "no signals 27.04–10.05",
+   "selection": "Набор руки+амбра (low)",
+   "card": "c_ads_attributed_rub",
+   "tvf": "cur_ads_attributed_rub",
+   "card_value": "0",
+   "tvf_value": "0",
+   "equal": true
+  },
+  {
+   "window": "no signals 27.04–10.05",
+   "selection": "Набор руки+амбра (low)",
+   "card": "c_drr",
+   "tvf": "cur_drr",
+   "card_value": "0",
+   "tvf_value": "0",
+   "equal": true
+  },
+  {
+   "window": "no signals 27.04–10.05",
+   "selection": "Набор руки+амбра (low)",
+   "card": "c_contribution_after_cogs_rub",
+   "tvf": "cur_contribution_after_cogs_rub",
+   "card_value": "1475.253484",
+   "tvf_value": "1475.253484",
+   "equal": true
+  },
+  {
+   "window": "no signals 27.04–10.05",
+   "selection": "Набор руки+амбра (low)",
+   "card": "c_margin",
+   "tvf": "cur_contribution_margin_after_cogs",
+   "card_value": "0.263438122",
+   "tvf_value": "0.263438122",
+   "equal": true
+  },
+  {
+   "window": "no signals 27.04–10.05",
+   "selection": "Набор руки+амбра (low)",
+   "card": "c_per_buyout",
+   "tvf": "cur_contribution_after_cogs_per_buyout_rub",
+   "card_value": "368.813371",
+   "tvf_value": "368.813371",
+   "equal": true
+  },
+  {
+   "window": "no signals 27.04–10.05",
+   "selection": "Набор руки+амбра (low)",
+   "card": "p_orders_gross_units",
+   "tvf": "prv_orders_gross_units",
+   "card_value": "1",
+   "tvf_value": "1",
+   "equal": true
+  },
+  {
+   "window": "no signals 27.04–10.05",
+   "selection": "Набор руки+амбра (low)",
+   "card": "p_rate",
+   "tvf": "prv_cohort_buyout_rate",
+   "card_value": "1.0",
+   "tvf_value": "1.0",
+   "equal": true
+  },
+  {
+   "window": "no signals 27.04–10.05",
+   "selection": "Набор руки+амбра (low)",
+   "card": "orders_cmp",
+   "tvf": "orders_comparable",
+   "card_value": "false",
+   "tvf_value": "false",
+   "equal": true
+  },
+  {
+   "window": "no signals 27.04–10.05",
+   "selection": "Набор руки+амбра (low)",
+   "card": "econ_cmp",
+   "tvf": "economics_comparable",
+   "card_value": "false",
+   "tvf_value": "false",
+   "equal": true
+  },
+  {
+   "window": "no signals 27.04–10.05",
+   "selection": "Набор руки+амбра (low)",
+   "card": "drr_cmp",
+   "tvf": "drr_comparable",
+   "card_value": "false",
+   "tvf_value": "false",
+   "equal": true
+  },
+  {
+   "window": "no signals 27.04–10.05",
+   "attention_card": [],
+   "attention_expected_order": [],
+   "flagged_total": 0,
+   "equal": true
+  },
+  {
+   "window": "31.08–13.09",
+   "selection": "all",
+   "card": "c_orders_gross_units",
+   "tvf": "cur_orders_gross_units",
+   "card_value": "203",
+   "tvf_value": "203",
+   "equal": true
+  },
+  {
+   "window": "31.08–13.09",
+   "selection": "all",
+   "card": "c_buyout_units",
+   "tvf": "cur_buyout_units",
+   "card_value": "195",
+   "tvf_value": "195",
+   "equal": true
+  },
+  {
+   "window": "31.08–13.09",
+   "selection": "all",
+   "card": "c_rate",
+   "tvf": "cur_cohort_buyout_rate",
+   "card_value": "0.92",
+   "tvf_value": "0.92",
+   "equal": true
+  },
+  {
+   "window": "31.08–13.09",
+   "selection": "all",
+   "card": "c_price",
+   "tvf": "cur_avg_seller_price_orders_rub",
+   "card_value": "718.363891626",
+   "tvf_value": "718.363891626",
+   "equal": true
+  },
+  {
+   "window": "31.08–13.09",
+   "selection": "all",
+   "card": "p_price",
+   "tvf": "prv_avg_seller_price_orders_rub",
+   "card_value": "819.356298077",
+   "tvf_value": "819.356298077",
+   "equal": true
+  },
+  {
+   "window": "31.08–13.09",
+   "selection": "all",
+   "card": "c_ads_attributed_rub",
+   "tvf": "cur_ads_attributed_rub",
+   "card_value": "20862.25",
+   "tvf_value": "20862.25",
+   "equal": true
+  },
+  {
+   "window": "31.08–13.09",
+   "selection": "all",
+   "card": "c_drr",
+   "tvf": "cur_drr",
+   "card_value": "0.149614948",
+   "tvf_value": "0.149614948",
+   "equal": true
+  },
+  {
+   "window": "31.08–13.09",
+   "selection": "all",
+   "card": "c_contribution_after_cogs_rub",
+   "tvf": "cur_contribution_after_cogs_rub",
+   "card_value": "-3036.607011824",
+   "tvf_value": "-3036.607011824",
+   "equal": true
+  },
+  {
+   "window": "31.08–13.09",
+   "selection": "all",
+   "card": "c_margin",
+   "tvf": "cur_contribution_margin_after_cogs",
+   "card_value": "-0.021777232",
+   "tvf_value": "-0.021777232",
+   "equal": true
+  },
+  {
+   "window": "31.08–13.09",
+   "selection": "all",
+   "card": "c_per_buyout",
+   "tvf": "cur_contribution_after_cogs_per_buyout_rub",
+   "card_value": "-15.57234365",
+   "tvf_value": "-15.57234365",
+   "equal": true
+  },
+  {
+   "window": "31.08–13.09",
+   "selection": "all",
+   "card": "p_orders_gross_units",
+   "tvf": "prv_orders_gross_units",
+   "card_value": "208",
+   "tvf_value": "208",
+   "equal": true
+  },
+  {
+   "window": "31.08–13.09",
+   "selection": "all",
+   "card": "p_rate",
+   "tvf": "prv_cohort_buyout_rate",
+   "card_value": "0.8888888888888888",
+   "tvf_value": "0.8888888888888888",
+   "equal": true
+  },
+  {
+   "window": "31.08–13.09",
+   "selection": "all",
+   "card": "orders_cmp",
+   "tvf": "orders_comparable",
+   "card_value": "true",
+   "tvf_value": "true",
+   "equal": true
+  },
+  {
+   "window": "31.08–13.09",
+   "selection": "all",
+   "card": "econ_cmp",
+   "tvf": "economics_comparable",
+   "card_value": "true",
+   "tvf_value": "true",
+   "equal": true
+  },
+  {
+   "window": "31.08–13.09",
+   "selection": "all",
+   "card": "drr_cmp",
+   "tvf": "drr_comparable",
+   "card_value": "true",
+   "tvf_value": "true",
+   "equal": true
+  },
+  {
+   "window": "31.08–13.09",
+   "selection": "Крем Руки",
+   "card": "c_orders_gross_units",
+   "tvf": "cur_orders_gross_units",
+   "card_value": "79",
+   "tvf_value": "79",
+   "equal": true
+  },
+  {
+   "window": "31.08–13.09",
+   "selection": "Крем Руки",
+   "card": "c_buyout_units",
+   "tvf": "cur_buyout_units",
+   "card_value": "79",
+   "tvf_value": "79",
+   "equal": true
+  },
+  {
+   "window": "31.08–13.09",
+   "selection": "Крем Руки",
+   "card": "c_rate",
+   "tvf": "cur_cohort_buyout_rate",
+   "card_value": "0.9420289855072463",
+   "tvf_value": "0.9420289855072463",
+   "equal": true
+  },
+  {
+   "window": "31.08–13.09",
+   "selection": "Крем Руки",
+   "card": "c_price",
+   "tvf": "cur_avg_seller_price_orders_rub",
+   "card_value": "534.700253165",
+   "tvf_value": "534.700253165",
+   "equal": true
+  },
+  {
+   "window": "31.08–13.09",
+   "selection": "Крем Руки",
+   "card": "p_price",
+   "tvf": "prv_avg_seller_price_orders_rub",
+   "card_value": "499.005915493",
+   "tvf_value": "499.005915493",
+   "equal": true
+  },
+  {
+   "window": "31.08–13.09",
+   "selection": "Крем Руки",
+   "card": "c_ads_attributed_rub",
+   "tvf": "cur_ads_attributed_rub",
+   "card_value": "8842.55",
+   "tvf_value": "8842.55",
+   "equal": true
+  },
+  {
+   "window": "31.08–13.09",
+   "selection": "Крем Руки",
+   "card": "c_drr",
+   "tvf": "cur_drr",
+   "card_value": "0.21991125",
+   "tvf_value": "0.21991125",
+   "equal": true
+  },
+  {
+   "window": "31.08–13.09",
+   "selection": "Крем Руки",
+   "card": "c_contribution_after_cogs_rub",
+   "tvf": "cur_contribution_after_cogs_rub",
+   "card_value": "-11522.704",
+   "tvf_value": "-11522.704",
+   "equal": true
+  },
+  {
+   "window": "31.08–13.09",
+   "selection": "Крем Руки",
+   "card": "c_margin",
+   "tvf": "cur_contribution_margin_after_cogs",
+   "card_value": "-0.286565994",
+   "tvf_value": "-0.286565994",
+   "equal": true
+  },
+  {
+   "window": "31.08–13.09",
+   "selection": "Крем Руки",
+   "card": "c_per_buyout",
+   "tvf": "cur_contribution_after_cogs_per_buyout_rub",
+   "card_value": "-145.857012658",
+   "tvf_value": "-145.857012658",
+   "equal": true
+  },
+  {
+   "window": "31.08–13.09",
+   "selection": "Крем Руки",
+   "card": "p_orders_gross_units",
+   "tvf": "prv_orders_gross_units",
+   "card_value": "71",
+   "tvf_value": "71",
+   "equal": true
+  },
+  {
+   "window": "31.08–13.09",
+   "selection": "Крем Руки",
+   "card": "p_rate",
+   "tvf": "prv_cohort_buyout_rate",
+   "card_value": "0.8857142857142857",
+   "tvf_value": "0.8857142857142857",
+   "equal": true
+  },
+  {
+   "window": "31.08–13.09",
+   "selection": "Крем Руки",
+   "card": "orders_cmp",
+   "tvf": "orders_comparable",
+   "card_value": "true",
+   "tvf_value": "true",
+   "equal": true
+  },
+  {
+   "window": "31.08–13.09",
+   "selection": "Крем Руки",
+   "card": "econ_cmp",
+   "tvf": "economics_comparable",
+   "card_value": "true",
+   "tvf_value": "true",
+   "equal": true
+  },
+  {
+   "window": "31.08–13.09",
+   "selection": "Крем Руки",
+   "card": "drr_cmp",
+   "tvf": "drr_comparable",
+   "card_value": "true",
+   "tvf_value": "true",
+   "equal": true
+  },
+  {
+   "window": "31.08–13.09",
+   "selection": "Сыворотка АКНЕ",
+   "card": "c_orders_gross_units",
+   "tvf": "cur_orders_gross_units",
+   "card_value": "15",
+   "tvf_value": "15",
+   "equal": true
+  },
+  {
+   "window": "31.08–13.09",
+   "selection": "Сыворотка АКНЕ",
+   "card": "c_buyout_units",
+   "tvf": "cur_buyout_units",
+   "card_value": "17",
+   "tvf_value": "17",
+   "equal": true
+  },
+  {
+   "window": "31.08–13.09",
+   "selection": "Сыворотка АКНЕ",
+   "card": "c_rate",
+   "tvf": "cur_cohort_buyout_rate",
+   "card_value": "1.0",
+   "tvf_value": "1.0",
+   "equal": true
+  },
+  {
+   "window": "31.08–13.09",
+   "selection": "Сыворотка АКНЕ",
+   "card": "c_price",
+   "tvf": "cur_avg_seller_price_orders_rub",
+   "card_value": "813.044",
+   "tvf_value": "813.044",
+   "equal": true
+  },
+  {
+   "window": "31.08–13.09",
+   "selection": "Сыворотка АКНЕ",
+   "card": "p_price",
+   "tvf": "prv_avg_seller_price_orders_rub",
+   "card_value": "821.797826087",
+   "tvf_value": "821.797826087",
+   "equal": true
+  },
+  {
+   "window": "31.08–13.09",
+   "selection": "Сыворотка АКНЕ",
+   "card": "c_ads_attributed_rub",
+   "tvf": "cur_ads_attributed_rub",
+   "card_value": "3748.33",
+   "tvf_value": "3748.33",
+   "equal": true
+  },
+  {
+   "window": "31.08–13.09",
+   "selection": "Сыворотка АКНЕ",
+   "card": "c_drr",
+   "tvf": "cur_drr",
+   "card_value": "0.269124618",
+   "tvf_value": "0.269124618",
+   "equal": true
+  },
+  {
+   "window": "31.08–13.09",
+   "selection": "Сыворотка АКНЕ",
+   "card": "c_contribution_after_cogs_rub",
+   "tvf": "cur_contribution_after_cogs_rub",
+   "card_value": "349.372",
+   "tvf_value": "349.372",
+   "equal": true
+  },
+  {
+   "window": "31.08–13.09",
+   "selection": "Сыворотка АКНЕ",
+   "card": "c_margin",
+   "tvf": "cur_contribution_margin_after_cogs",
+   "card_value": "0.025084435",
+   "tvf_value": "0.025084435",
+   "equal": true
+  },
+  {
+   "window": "31.08–13.09",
+   "selection": "Сыворотка АКНЕ",
+   "card": "c_per_buyout",
+   "tvf": "cur_contribution_after_cogs_per_buyout_rub",
+   "card_value": "20.551294118",
+   "tvf_value": "20.551294118",
+   "equal": true
+  },
+  {
+   "window": "31.08–13.09",
+   "selection": "Сыворотка АКНЕ",
+   "card": "p_orders_gross_units",
+   "tvf": "prv_orders_gross_units",
+   "card_value": "23",
+   "tvf_value": "23",
+   "equal": true
+  },
+  {
+   "window": "31.08–13.09",
+   "selection": "Сыворотка АКНЕ",
+   "card": "p_rate",
+   "tvf": "prv_cohort_buyout_rate",
+   "card_value": "0.8260869565217391",
+   "tvf_value": "0.8260869565217391",
+   "equal": true
+  },
+  {
+   "window": "31.08–13.09",
+   "selection": "Сыворотка АКНЕ",
+   "card": "orders_cmp",
+   "tvf": "orders_comparable",
+   "card_value": "true",
+   "tvf_value": "true",
+   "equal": true
+  },
+  {
+   "window": "31.08–13.09",
+   "selection": "Сыворотка АКНЕ",
+   "card": "econ_cmp",
+   "tvf": "economics_comparable",
+   "card_value": "true",
+   "tvf_value": "true",
+   "equal": true
+  },
+  {
+   "window": "31.08–13.09",
+   "selection": "Сыворотка АКНЕ",
+   "card": "drr_cmp",
+   "tvf": "drr_comparable",
+   "card_value": "true",
+   "tvf_value": "true",
+   "equal": true
+  },
+  {
+   "window": "31.08–13.09",
+   "selection": "Крем Вишня (low)",
+   "card": "c_orders_gross_units",
+   "tvf": "cur_orders_gross_units",
+   "card_value": "3",
+   "tvf_value": "3",
+   "equal": true
+  },
+  {
+   "window": "31.08–13.09",
+   "selection": "Крем Вишня (low)",
+   "card": "c_buyout_units",
+   "tvf": "cur_buyout_units",
+   "card_value": "5",
+   "tvf_value": "5",
+   "equal": true
+  },
+  {
+   "window": "31.08–13.09",
+   "selection": "Крем Вишня (low)",
+   "card": "c_rate",
+   "tvf": "cur_cohort_buyout_rate",
+   "card_value": "1.0",
+   "tvf_value": "1.0",
+   "equal": true
+  },
+  {
+   "window": "31.08–13.09",
+   "selection": "Крем Вишня (low)",
+   "card": "c_price",
+   "tvf": "cur_avg_seller_price_orders_rub",
+   "card_value": "539",
+   "tvf_value": "539",
+   "equal": true
+  },
+  {
+   "window": "31.08–13.09",
+   "selection": "Крем Вишня (low)",
+   "card": "p_price",
+   "tvf": "prv_avg_seller_price_orders_rub",
+   "card_value": "539",
+   "tvf_value": "539",
+   "equal": true
+  },
+  {
+   "window": "31.08–13.09",
+   "selection": "Крем Вишня (low)",
+   "card": "c_ads_attributed_rub",
+   "tvf": "cur_ads_attributed_rub",
+   "card_value": "0",
+   "tvf_value": "0",
+   "equal": true
+  },
+  {
+   "window": "31.08–13.09",
+   "selection": "Крем Вишня (low)",
+   "card": "c_drr",
+   "tvf": "cur_drr",
+   "card_value": "0",
+   "tvf_value": "0",
+   "equal": true
+  },
+  {
+   "window": "31.08–13.09",
+   "selection": "Крем Вишня (low)",
+   "card": "c_contribution_after_cogs_rub",
+   "tvf": "cur_contribution_after_cogs_rub",
+   "card_value": "216.611855",
+   "tvf_value": "216.611855",
+   "equal": true
+  },
+  {
+   "window": "31.08–13.09",
+   "selection": "Крем Вишня (low)",
+   "card": "c_margin",
+   "tvf": "cur_contribution_margin_after_cogs",
+   "card_value": "0.085414769",
+   "tvf_value": "0.085414769",
+   "equal": true
+  },
+  {
+   "window": "31.08–13.09",
+   "selection": "Крем Вишня (low)",
+   "card": "c_per_buyout",
+   "tvf": "cur_contribution_after_cogs_per_buyout_rub",
+   "card_value": "43.322371",
+   "tvf_value": "43.322371",
+   "equal": true
+  },
+  {
+   "window": "31.08–13.09",
+   "selection": "Крем Вишня (low)",
+   "card": "p_orders_gross_units",
+   "tvf": "prv_orders_gross_units",
+   "card_value": "8",
+   "tvf_value": "8",
+   "equal": true
+  },
+  {
+   "window": "31.08–13.09",
+   "selection": "Крем Вишня (low)",
+   "card": "p_rate",
+   "tvf": "prv_cohort_buyout_rate",
+   "card_value": "0.875",
+   "tvf_value": "0.875",
+   "equal": true
+  },
+  {
+   "window": "31.08–13.09",
+   "selection": "Крем Вишня (low)",
+   "card": "orders_cmp",
+   "tvf": "orders_comparable",
+   "card_value": "true",
+   "tvf_value": "true",
+   "equal": true
+  },
+  {
+   "window": "31.08–13.09",
+   "selection": "Крем Вишня (low)",
+   "card": "econ_cmp",
+   "tvf": "economics_comparable",
+   "card_value": "true",
+   "tvf_value": "true",
+   "equal": true
+  },
+  {
+   "window": "31.08–13.09",
+   "selection": "Крем Вишня (low)",
+   "card": "drr_cmp",
+   "tvf": "drr_comparable",
+   "card_value": "true",
+   "tvf_value": "true",
+   "equal": true
+  },
+  {
+   "window": "31.08–13.09",
+   "selection": "Набор сыв+крем АКНЕ (bundle)",
+   "card": "c_orders_gross_units",
+   "tvf": "cur_orders_gross_units",
+   "card_value": "5",
+   "tvf_value": "5",
+   "equal": true
+  },
+  {
+   "window": "31.08–13.09",
+   "selection": "Набор сыв+крем АКНЕ (bundle)",
+   "card": "c_buyout_units",
+   "tvf": "cur_buyout_units",
+   "card_value": "7",
+   "tvf_value": "7",
+   "equal": true
+  },
+  {
+   "window": "31.08–13.09",
+   "selection": "Набор сыв+крем АКНЕ (bundle)",
+   "card": "c_rate",
+   "tvf": "cur_cohort_buyout_rate",
+   "card_value": "0.8",
+   "tvf_value": "0.8",
+   "equal": true
+  },
+  {
+   "window": "31.08–13.09",
+   "selection": "Набор сыв+крем АКНЕ (bundle)",
+   "card": "c_price",
+   "tvf": "cur_avg_seller_price_orders_rub",
+   "card_value": "1294",
+   "tvf_value": "1294",
+   "equal": true
+  },
+  {
+   "window": "31.08–13.09",
+   "selection": "Набор сыв+крем АКНЕ (bundle)",
+   "card": "p_price",
+   "tvf": "prv_avg_seller_price_orders_rub",
+   "card_value": "1312.909090909",
+   "tvf_value": "1312.909090909",
+   "equal": true
+  },
+  {
+   "window": "31.08–13.09",
+   "selection": "Набор сыв+крем АКНЕ (bundle)",
+   "card": "c_ads_attributed_rub",
+   "tvf": "cur_ads_attributed_rub",
+   "card_value": "0",
+   "tvf_value": "0",
+   "equal": true
+  },
+  {
+   "window": "31.08–13.09",
+   "selection": "Набор сыв+крем АКНЕ (bundle)",
+   "card": "c_drr",
+   "tvf": "cur_drr",
+   "card_value": "0",
+   "tvf_value": "0",
+   "equal": true
+  },
+  {
+   "window": "31.08–13.09",
+   "selection": "Набор сыв+крем АКНЕ (bundle)",
+   "card": "c_contribution_after_cogs_rub",
+   "tvf": "cur_contribution_after_cogs_rub",
+   "card_value": "2601.364",
+   "tvf_value": "2601.364",
+   "equal": true
+  },
+  {
+   "window": "31.08–13.09",
+   "selection": "Набор сыв+крем АКНЕ (bundle)",
+   "card": "c_margin",
+   "tvf": "cur_contribution_margin_after_cogs",
+   "card_value": "0.286367679",
+   "tvf_value": "0.286367679",
+   "equal": true
+  },
+  {
+   "window": "31.08–13.09",
+   "selection": "Набор сыв+крем АКНЕ (bundle)",
+   "card": "c_per_buyout",
+   "tvf": "cur_contribution_after_cogs_per_buyout_rub",
+   "card_value": "371.623428571",
+   "tvf_value": "371.623428571",
+   "equal": true
+  },
+  {
+   "window": "31.08–13.09",
+   "selection": "Набор сыв+крем АКНЕ (bundle)",
+   "card": "p_orders_gross_units",
+   "tvf": "prv_orders_gross_units",
+   "card_value": "11",
+   "tvf_value": "11",
+   "equal": true
+  },
+  {
+   "window": "31.08–13.09",
+   "selection": "Набор сыв+крем АКНЕ (bundle)",
+   "card": "p_rate",
+   "tvf": "prv_cohort_buyout_rate",
+   "card_value": "0.9090909090909091",
+   "tvf_value": "0.9090909090909091",
+   "equal": true
+  },
+  {
+   "window": "31.08–13.09",
+   "selection": "Набор сыв+крем АКНЕ (bundle)",
+   "card": "orders_cmp",
+   "tvf": "orders_comparable",
+   "card_value": "true",
+   "tvf_value": "true",
+   "equal": true
+  },
+  {
+   "window": "31.08–13.09",
+   "selection": "Набор сыв+крем АКНЕ (bundle)",
+   "card": "econ_cmp",
+   "tvf": "economics_comparable",
+   "card_value": "true",
+   "tvf_value": "true",
+   "equal": true
+  },
+  {
+   "window": "31.08–13.09",
+   "selection": "Набор сыв+крем АКНЕ (bundle)",
+   "card": "drr_cmp",
+   "tvf": "drr_comparable",
+   "card_value": "true",
+   "tvf_value": "true",
+   "equal": true
+  },
+  {
+   "window": "31.08–13.09",
+   "selection": "Крем УВЛ (low)",
+   "card": "c_orders_gross_units",
+   "tvf": "cur_orders_gross_units",
+   "card_value": "0",
+   "tvf_value": "0",
+   "equal": true
+  },
+  {
+   "window": "31.08–13.09",
+   "selection": "Крем УВЛ (low)",
+   "card": "c_buyout_units",
+   "tvf": "cur_buyout_units",
+   "card_value": "1",
+   "tvf_value": "1",
+   "equal": true
+  },
+  {
+   "window": "31.08–13.09",
+   "selection": "Крем УВЛ (low)",
+   "card": "c_rate",
+   "tvf": "cur_cohort_buyout_rate",
+   "card_value": null,
+   "tvf_value": null,
+   "equal": true
+  },
+  {
+   "window": "31.08–13.09",
+   "selection": "Крем УВЛ (low)",
+   "card": "c_price",
+   "tvf": "cur_avg_seller_price_orders_rub",
+   "card_value": null,
+   "tvf_value": null,
+   "equal": true
+  },
+  {
+   "window": "31.08–13.09",
+   "selection": "Крем УВЛ (low)",
+   "card": "p_price",
+   "tvf": "prv_avg_seller_price_orders_rub",
+   "card_value": "926",
+   "tvf_value": "926",
+   "equal": true
+  },
+  {
+   "window": "31.08–13.09",
+   "selection": "Крем УВЛ (low)",
+   "card": "c_ads_attributed_rub",
+   "tvf": "cur_ads_attributed_rub",
+   "card_value": "0",
+   "tvf_value": "0",
+   "equal": true
+  },
+  {
+   "window": "31.08–13.09",
+   "selection": "Крем УВЛ (low)",
+   "card": "c_drr",
+   "tvf": "cur_drr",
+   "card_value": "0",
+   "tvf_value": "0",
+   "equal": true
+  },
+  {
+   "window": "31.08–13.09",
+   "selection": "Крем УВЛ (low)",
+   "card": "c_contribution_after_cogs_rub",
+   "tvf": "cur_contribution_after_cogs_rub",
+   "card_value": "258.58",
+   "tvf_value": "258.58",
+   "equal": true
+  },
+  {
+   "window": "31.08–13.09",
+   "selection": "Крем УВЛ (low)",
+   "card": "c_margin",
+   "tvf": "cur_contribution_margin_after_cogs",
+   "card_value": "0.27924406",
+   "tvf_value": "0.27924406",
+   "equal": true
+  },
+  {
+   "window": "31.08–13.09",
+   "selection": "Крем УВЛ (low)",
+   "card": "c_per_buyout",
+   "tvf": "cur_contribution_after_cogs_per_buyout_rub",
+   "card_value": "258.58",
+   "tvf_value": "258.58",
+   "equal": true
+  },
+  {
+   "window": "31.08–13.09",
+   "selection": "Крем УВЛ (low)",
+   "card": "p_orders_gross_units",
+   "tvf": "prv_orders_gross_units",
+   "card_value": "3",
+   "tvf_value": "3",
+   "equal": true
+  },
+  {
+   "window": "31.08–13.09",
+   "selection": "Крем УВЛ (low)",
+   "card": "p_rate",
+   "tvf": "prv_cohort_buyout_rate",
+   "card_value": "1.0",
+   "tvf_value": "1.0",
+   "equal": true
+  },
+  {
+   "window": "31.08–13.09",
+   "selection": "Крем УВЛ (low)",
+   "card": "orders_cmp",
+   "tvf": "orders_comparable",
+   "card_value": "true",
+   "tvf_value": "true",
+   "equal": true
+  },
+  {
+   "window": "31.08–13.09",
+   "selection": "Крем УВЛ (low)",
+   "card": "econ_cmp",
+   "tvf": "economics_comparable",
+   "card_value": "true",
+   "tvf_value": "true",
+   "equal": true
+  },
+  {
+   "window": "31.08–13.09",
+   "selection": "Крем УВЛ (low)",
+   "card": "drr_cmp",
+   "tvf": "drr_comparable",
+   "card_value": "true",
+   "tvf_value": "true",
+   "equal": true
+  },
+  {
+   "window": "31.08–13.09",
+   "selection": "Набор руки+амбра (low)",
+   "card": "c_orders_gross_units",
+   "tvf": "cur_orders_gross_units",
+   "card_value": "5",
+   "tvf_value": "5",
+   "equal": true
+  },
+  {
+   "window": "31.08–13.09",
+   "selection": "Набор руки+амбра (low)",
+   "card": "c_buyout_units",
+   "tvf": "cur_buyout_units",
+   "card_value": "5",
+   "tvf_value": "5",
+   "equal": true
+  },
+  {
+   "window": "31.08–13.09",
+   "selection": "Набор руки+амбра (low)",
+   "card": "c_rate",
+   "tvf": "cur_cohort_buyout_rate",
+   "card_value": "1.0",
+   "tvf_value": "1.0",
+   "equal": true
+  },
+  {
+   "window": "31.08–13.09",
+   "selection": "Набор руки+амбра (low)",
+   "card": "c_price",
+   "tvf": "cur_avg_seller_price_orders_rub",
+   "card_value": "1072",
+   "tvf_value": "1072",
+   "equal": true
+  },
+  {
+   "window": "31.08–13.09",
+   "selection": "Набор руки+амбра (low)",
+   "card": "p_price",
+   "tvf": "prv_avg_seller_price_orders_rub",
+   "card_value": "1008",
+   "tvf_value": "1008",
+   "equal": true
+  },
+  {
+   "window": "31.08–13.09",
+   "selection": "Набор руки+амбра (low)",
+   "card": "c_ads_attributed_rub",
+   "tvf": "cur_ads_attributed_rub",
+   "card_value": "0",
+   "tvf_value": "0",
+   "equal": true
+  },
+  {
+   "window": "31.08–13.09",
+   "selection": "Набор руки+амбра (low)",
+   "card": "c_drr",
+   "tvf": "cur_drr",
+   "card_value": "0",
+   "tvf_value": "0",
+   "equal": true
+  },
+  {
+   "window": "31.08–13.09",
+   "selection": "Набор руки+амбра (low)",
+   "card": "c_contribution_after_cogs_rub",
+   "tvf": "cur_contribution_after_cogs_rub",
+   "card_value": "230.94239132",
+   "tvf_value": "230.94239132",
+   "equal": true
+  },
+  {
+   "window": "31.08–13.09",
+   "selection": "Набор руки+амбра (low)",
+   "card": "c_margin",
+   "tvf": "cur_contribution_margin_after_cogs",
+   "card_value": "0.047241201",
+   "tvf_value": "0.047241201",
+   "equal": true
+  },
+  {
+   "window": "31.08–13.09",
+   "selection": "Набор руки+амбра (low)",
+   "card": "c_per_buyout",
+   "tvf": "cur_contribution_after_cogs_per_buyout_rub",
+   "card_value": "46.188478264",
+   "tvf_value": "46.188478264",
+   "equal": true
+  },
+  {
+   "window": "31.08–13.09",
+   "selection": "Набор руки+амбра (low)",
+   "card": "p_orders_gross_units",
+   "tvf": "prv_orders_gross_units",
+   "card_value": "5",
+   "tvf_value": "5",
+   "equal": true
+  },
+  {
+   "window": "31.08–13.09",
+   "selection": "Набор руки+амбра (low)",
+   "card": "p_rate",
+   "tvf": "prv_cohort_buyout_rate",
+   "card_value": "0.4",
+   "tvf_value": "0.4",
+   "equal": true
+  },
+  {
+   "window": "31.08–13.09",
+   "selection": "Набор руки+амбра (low)",
+   "card": "orders_cmp",
+   "tvf": "orders_comparable",
+   "card_value": "true",
+   "tvf_value": "true",
+   "equal": true
+  },
+  {
+   "window": "31.08–13.09",
+   "selection": "Набор руки+амбра (low)",
+   "card": "econ_cmp",
+   "tvf": "economics_comparable",
+   "card_value": "true",
+   "tvf_value": "true",
+   "equal": true
+  },
+  {
+   "window": "31.08–13.09",
+   "selection": "Набор руки+амбра (low)",
+   "card": "drr_cmp",
+   "tvf": "drr_comparable",
+   "card_value": "true",
+   "tvf_value": "true",
+   "equal": true
+  },
+  {
+   "window": "31.08–13.09",
+   "attention_card": [
+    "252442517"
+   ],
+   "attention_expected_order": [
+    "252442517"
+   ],
+   "flagged_total": 1,
+   "equal": true
+  },
+  {
+   "window": "01–14.09",
+   "selection": "all",
+   "card": "c_orders_gross_units",
+   "tvf": "cur_orders_gross_units",
+   "card_value": "198",
+   "tvf_value": "198",
+   "equal": true
+  },
+  {
+   "window": "01–14.09",
+   "selection": "all",
+   "card": "c_buyout_units",
+   "tvf": "cur_buyout_units",
+   "card_value": "202",
+   "tvf_value": "202",
+   "equal": true
+  },
+  {
+   "window": "01–14.09",
+   "selection": "all",
+   "card": "c_rate",
+   "tvf": "cur_cohort_buyout_rate",
+   "card_value": "0.9325153374233128",
+   "tvf_value": "0.9325153374233128",
+   "equal": true
+  },
+  {
+   "window": "01–14.09",
+   "selection": "all",
+   "card": "c_price",
+   "tvf": "cur_avg_seller_price_orders_rub",
+   "card_value": "719.529646465",
+   "tvf_value": "719.529646465",
+   "equal": true
+  },
+  {
+   "window": "01–14.09",
+   "selection": "all",
+   "card": "p_price",
+   "tvf": "prv_avg_seller_price_orders_rub",
+   "card_value": "798.612966507",
+   "tvf_value": "798.612966507",
+   "equal": true
+  },
+  {
+   "window": "01–14.09",
+   "selection": "all",
+   "card": "c_ads_attributed_rub",
+   "tvf": "cur_ads_attributed_rub",
+   "card_value": "20699.52",
+   "tvf_value": "20699.52",
+   "equal": true
+  },
+  {
+   "window": "01–14.09",
+   "selection": "all",
+   "card": "c_drr",
+   "tvf": "cur_drr",
+   "card_value": "0.143517",
+   "tvf_value": "0.143517",
+   "equal": true
+  },
+  {
+   "window": "01–14.09",
+   "selection": "all",
+   "card": "c_contribution_after_cogs_rub",
+   "tvf": "cur_contribution_after_cogs_rub",
+   "card_value": "-1382.189253784",
+   "tvf_value": "-1382.189253784",
+   "equal": true
+  },
+  {
+   "window": "01–14.09",
+   "selection": "all",
+   "card": "c_margin",
+   "tvf": "cur_contribution_margin_after_cogs",
+   "card_value": "-0.009583207",
+   "tvf_value": "-0.009583207",
+   "equal": true
+  },
+  {
+   "window": "01–14.09",
+   "selection": "all",
+   "card": "c_per_buyout",
+   "tvf": "cur_contribution_after_cogs_per_buyout_rub",
+   "card_value": "-6.842521058",
+   "tvf_value": "-6.842521058",
+   "equal": true
+  },
+  {
+   "window": "01–14.09",
+   "selection": "all",
+   "card": "p_orders_gross_units",
+   "tvf": "prv_orders_gross_units",
+   "card_value": "209",
+   "tvf_value": "209",
+   "equal": true
+  },
+  {
+   "window": "01–14.09",
+   "selection": "all",
+   "card": "p_rate",
+   "tvf": "prv_cohort_buyout_rate",
+   "card_value": "0.8743961352657005",
+   "tvf_value": "0.8743961352657005",
+   "equal": true
+  },
+  {
+   "window": "01–14.09",
+   "selection": "all",
+   "card": "orders_cmp",
+   "tvf": "orders_comparable",
+   "card_value": "true",
+   "tvf_value": "true",
+   "equal": true
+  },
+  {
+   "window": "01–14.09",
+   "selection": "all",
+   "card": "econ_cmp",
+   "tvf": "economics_comparable",
+   "card_value": "true",
+   "tvf_value": "true",
+   "equal": true
+  },
+  {
+   "window": "01–14.09",
+   "selection": "all",
+   "card": "drr_cmp",
+   "tvf": "drr_comparable",
+   "card_value": "true",
+   "tvf_value": "true",
+   "equal": true
+  },
+  {
+   "window": "01–14.09",
+   "selection": "Крем Руки",
+   "card": "c_orders_gross_units",
+   "tvf": "cur_orders_gross_units",
+   "card_value": "78",
+   "tvf_value": "78",
+   "equal": true
+  },
+  {
+   "window": "01–14.09",
+   "selection": "Крем Руки",
+   "card": "c_buyout_units",
+   "tvf": "cur_buyout_units",
+   "card_value": "80",
+   "tvf_value": "80",
+   "equal": true
+  },
+  {
+   "window": "01–14.09",
+   "selection": "Крем Руки",
+   "card": "c_rate",
+   "tvf": "cur_cohort_buyout_rate",
+   "card_value": "0.9545454545454546",
+   "tvf_value": "0.9545454545454546",
+   "equal": true
+  },
+  {
+   "window": "01–14.09",
+   "selection": "Крем Руки",
+   "card": "c_price",
+   "tvf": "cur_avg_seller_price_orders_rub",
+   "card_value": "540.581025641",
+   "tvf_value": "540.581025641",
+   "equal": true
+  },
+  {
+   "window": "01–14.09",
+   "selection": "Крем Руки",
+   "card": "p_price",
+   "tvf": "prv_avg_seller_price_orders_rub",
+   "card_value": "499.005833333",
+   "tvf_value": "499.005833333",
+   "equal": true
+  },
+  {
+   "window": "01–14.09",
+   "selection": "Крем Руки",
+   "card": "c_ads_attributed_rub",
+   "tvf": "cur_ads_attributed_rub",
+   "card_value": "8202.45",
+   "tvf_value": "8202.45",
+   "equal": true
+  },
+  {
+   "window": "01–14.09",
+   "selection": "Крем Руки",
+   "card": "c_drr",
+   "tvf": "cur_drr",
+   "card_value": "0.198738244",
+   "tvf_value": "0.198738244",
+   "equal": true
+  },
+  {
+   "window": "01–14.09",
+   "selection": "Крем Руки",
+   "card": "c_contribution_after_cogs_rub",
+   "tvf": "cur_contribution_after_cogs_rub",
+   "card_value": "-10489.822",
+   "tvf_value": "-10489.822",
+   "equal": true
+  },
+  {
+   "window": "01–14.09",
+   "selection": "Крем Руки",
+   "card": "c_margin",
+   "tvf": "cur_contribution_margin_after_cogs",
+   "card_value": "-0.254159467",
+   "tvf_value": "-0.254159467",
+   "equal": true
+  },
+  {
+   "window": "01–14.09",
+   "selection": "Крем Руки",
+   "card": "c_per_buyout",
+   "tvf": "cur_contribution_after_cogs_per_buyout_rub",
+   "card_value": "-131.122775",
+   "tvf_value": "-131.122775",
+   "equal": true
+  },
+  {
+   "window": "01–14.09",
+   "selection": "Крем Руки",
+   "card": "p_orders_gross_units",
+   "tvf": "prv_orders_gross_units",
+   "card_value": "72",
+   "tvf_value": "72",
+   "equal": true
+  },
+  {
+   "window": "01–14.09",
+   "selection": "Крем Руки",
+   "card": "p_rate",
+   "tvf": "prv_cohort_buyout_rate",
+   "card_value": "0.8732394366197183",
+   "tvf_value": "0.8732394366197183",
+   "equal": true
+  },
+  {
+   "window": "01–14.09",
+   "selection": "Крем Руки",
+   "card": "orders_cmp",
+   "tvf": "orders_comparable",
+   "card_value": "true",
+   "tvf_value": "true",
+   "equal": true
+  },
+  {
+   "window": "01–14.09",
+   "selection": "Крем Руки",
+   "card": "econ_cmp",
+   "tvf": "economics_comparable",
+   "card_value": "true",
+   "tvf_value": "true",
+   "equal": true
+  },
+  {
+   "window": "01–14.09",
+   "selection": "Крем Руки",
+   "card": "drr_cmp",
+   "tvf": "drr_comparable",
+   "card_value": "true",
+   "tvf_value": "true",
+   "equal": true
+  },
+  {
+   "window": "01–14.09",
+   "selection": "Сыворотка АКНЕ",
+   "card": "c_orders_gross_units",
+   "tvf": "cur_orders_gross_units",
+   "card_value": "16",
+   "tvf_value": "16",
+   "equal": true
+  },
+  {
+   "window": "01–14.09",
+   "selection": "Сыворотка АКНЕ",
+   "card": "c_buyout_units",
+   "tvf": "cur_buyout_units",
+   "card_value": "19",
+   "tvf_value": "19",
+   "equal": true
+  },
+  {
+   "window": "01–14.09",
+   "selection": "Сыворотка АКНЕ",
+   "card": "c_rate",
+   "tvf": "cur_cohort_buyout_rate",
+   "card_value": "1.0",
+   "tvf_value": "1.0",
+   "equal": true
+  },
+  {
+   "window": "01–14.09",
+   "selection": "Сыворотка АКНЕ",
+   "card": "c_price",
+   "tvf": "cur_avg_seller_price_orders_rub",
+   "card_value": "812.60375",
+   "tvf_value": "812.60375",
+   "equal": true
+  },
+  {
+   "window": "01–14.09",
+   "selection": "Сыворотка АКНЕ",
+   "card": "p_price",
+   "tvf": "prv_avg_seller_price_orders_rub",
+   "card_value": "821.425",
+   "tvf_value": "821.425",
+   "equal": true
+  },
+  {
+   "window": "01–14.09",
+   "selection": "Сыворотка АКНЕ",
+   "card": "c_ads_attributed_rub",
+   "tvf": "cur_ads_attributed_rub",
+   "card_value": "3866.73",
+   "tvf_value": "3866.73",
+   "equal": true
+  },
+  {
+   "window": "01–14.09",
+   "selection": "Сыворотка АКНЕ",
+   "card": "c_drr",
+   "tvf": "cur_drr",
+   "card_value": "0.248826566",
+   "tvf_value": "0.248826566",
+   "equal": true
+  },
+  {
+   "window": "01–14.09",
+   "selection": "Сыворотка АКНЕ",
+   "card": "c_contribution_after_cogs_rub",
+   "tvf": "cur_contribution_after_cogs_rub",
+   "card_value": "735.266",
+   "tvf_value": "735.266",
+   "equal": true
+  },
+  {
+   "window": "01–14.09",
+   "selection": "Сыворотка АКНЕ",
+   "card": "c_margin",
+   "tvf": "cur_contribution_margin_after_cogs",
+   "card_value": "0.047314902",
+   "tvf_value": "0.047314902",
+   "equal": true
+  },
+  {
+   "window": "01–14.09",
+   "selection": "Сыворотка АКНЕ",
+   "card": "c_per_buyout",
+   "tvf": "cur_contribution_after_cogs_per_buyout_rub",
+   "card_value": "38.698210526",
+   "tvf_value": "38.698210526",
+   "equal": true
+  },
+  {
+   "window": "01–14.09",
+   "selection": "Сыворотка АКНЕ",
+   "card": "p_orders_gross_units",
+   "tvf": "prv_orders_gross_units",
+   "card_value": "22",
+   "tvf_value": "22",
+   "equal": true
+  },
+  {
+   "window": "01–14.09",
+   "selection": "Сыворотка АКНЕ",
+   "card": "p_rate",
+   "tvf": "prv_cohort_buyout_rate",
+   "card_value": "0.8181818181818182",
+   "tvf_value": "0.8181818181818182",
+   "equal": true
+  },
+  {
+   "window": "01–14.09",
+   "selection": "Сыворотка АКНЕ",
+   "card": "orders_cmp",
+   "tvf": "orders_comparable",
+   "card_value": "true",
+   "tvf_value": "true",
+   "equal": true
+  },
+  {
+   "window": "01–14.09",
+   "selection": "Сыворотка АКНЕ",
+   "card": "econ_cmp",
+   "tvf": "economics_comparable",
+   "card_value": "true",
+   "tvf_value": "true",
+   "equal": true
+  },
+  {
+   "window": "01–14.09",
+   "selection": "Сыворотка АКНЕ",
+   "card": "drr_cmp",
+   "tvf": "drr_comparable",
+   "card_value": "true",
+   "tvf_value": "true",
+   "equal": true
+  },
+  {
+   "window": "01–14.09",
+   "selection": "Крем Вишня (low)",
+   "card": "c_orders_gross_units",
+   "tvf": "cur_orders_gross_units",
+   "card_value": "2",
+   "tvf_value": "2",
+   "equal": true
+  },
+  {
+   "window": "01–14.09",
+   "selection": "Крем Вишня (low)",
+   "card": "c_buyout_units",
+   "tvf": "cur_buyout_units",
+   "card_value": "4",
+   "tvf_value": "4",
+   "equal": true
+  },
+  {
+   "window": "01–14.09",
+   "selection": "Крем Вишня (low)",
+   "card": "c_rate",
+   "tvf": "cur_cohort_buyout_rate",
+   "card_value": "1.0",
+   "tvf_value": "1.0",
+   "equal": true
+  },
+  {
+   "window": "01–14.09",
+   "selection": "Крем Вишня (low)",
+   "card": "c_price",
+   "tvf": "cur_avg_seller_price_orders_rub",
+   "card_value": "539",
+   "tvf_value": "539",
+   "equal": true
+  },
+  {
+   "window": "01–14.09",
+   "selection": "Крем Вишня (low)",
+   "card": "p_price",
+   "tvf": "prv_avg_seller_price_orders_rub",
+   "card_value": "539",
+   "tvf_value": "539",
+   "equal": true
+  },
+  {
+   "window": "01–14.09",
+   "selection": "Крем Вишня (low)",
+   "card": "c_ads_attributed_rub",
+   "tvf": "cur_ads_attributed_rub",
+   "card_value": "0",
+   "tvf_value": "0",
+   "equal": true
+  },
+  {
+   "window": "01–14.09",
+   "selection": "Крем Вишня (low)",
+   "card": "c_drr",
+   "tvf": "cur_drr",
+   "card_value": "0",
+   "tvf_value": "0",
+   "equal": true
+  },
+  {
+   "window": "01–14.09",
+   "selection": "Крем Вишня (low)",
+   "card": "c_contribution_after_cogs_rub",
+   "tvf": "cur_contribution_after_cogs_rub",
+   "card_value": "123.923484",
+   "tvf_value": "123.923484",
+   "equal": true
+  },
+  {
+   "window": "01–14.09",
+   "selection": "Крем Вишня (low)",
+   "card": "c_margin",
+   "tvf": "cur_contribution_margin_after_cogs",
+   "card_value": "0.062054824",
+   "tvf_value": "0.062054824",
+   "equal": true
+  },
+  {
+   "window": "01–14.09",
+   "selection": "Крем Вишня (low)",
+   "card": "c_per_buyout",
+   "tvf": "cur_contribution_after_cogs_per_buyout_rub",
+   "card_value": "30.980871",
+   "tvf_value": "30.980871",
+   "equal": true
+  },
+  {
+   "window": "01–14.09",
+   "selection": "Крем Вишня (low)",
+   "card": "p_orders_gross_units",
+   "tvf": "prv_orders_gross_units",
+   "card_value": "9",
+   "tvf_value": "9",
+   "equal": true
+  },
+  {
+   "window": "01–14.09",
+   "selection": "Крем Вишня (low)",
+   "card": "p_rate",
+   "tvf": "prv_cohort_buyout_rate",
+   "card_value": "0.8888888888888888",
+   "tvf_value": "0.8888888888888888",
+   "equal": true
+  },
+  {
+   "window": "01–14.09",
+   "selection": "Крем Вишня (low)",
+   "card": "orders_cmp",
+   "tvf": "orders_comparable",
+   "card_value": "true",
+   "tvf_value": "true",
+   "equal": true
+  },
+  {
+   "window": "01–14.09",
+   "selection": "Крем Вишня (low)",
+   "card": "econ_cmp",
+   "tvf": "economics_comparable",
+   "card_value": "true",
+   "tvf_value": "true",
+   "equal": true
+  },
+  {
+   "window": "01–14.09",
+   "selection": "Крем Вишня (low)",
+   "card": "drr_cmp",
+   "tvf": "drr_comparable",
+   "card_value": "true",
+   "tvf_value": "true",
+   "equal": true
+  },
+  {
+   "window": "01–14.09",
+   "selection": "Набор сыв+крем АКНЕ (bundle)",
+   "card": "c_orders_gross_units",
+   "tvf": "cur_orders_gross_units",
+   "card_value": "4",
+   "tvf_value": "4",
+   "equal": true
+  },
+  {
+   "window": "01–14.09",
+   "selection": "Набор сыв+крем АКНЕ (bundle)",
+   "card": "c_buyout_units",
+   "tvf": "cur_buyout_units",
+   "card_value": "6",
+   "tvf_value": "6",
+   "equal": true
+  },
+  {
+   "window": "01–14.09",
+   "selection": "Набор сыв+крем АКНЕ (bundle)",
+   "card": "c_rate",
+   "tvf": "cur_cohort_buyout_rate",
+   "card_value": "1.0",
+   "tvf_value": "1.0",
+   "equal": true
+  },
+  {
+   "window": "01–14.09",
+   "selection": "Набор сыв+крем АКНЕ (bundle)",
+   "card": "c_price",
+   "tvf": "cur_avg_seller_price_orders_rub",
+   "card_value": "1294",
+   "tvf_value": "1294",
+   "equal": true
+  },
+  {
+   "window": "01–14.09",
+   "selection": "Набор сыв+крем АКНЕ (bundle)",
+   "card": "p_price",
+   "tvf": "prv_avg_seller_price_orders_rub",
+   "card_value": "1309.6",
+   "tvf_value": "1309.6",
+   "equal": true
+  },
+  {
+   "window": "01–14.09",
+   "selection": "Набор сыв+крем АКНЕ (bundle)",
+   "card": "c_ads_attributed_rub",
+   "tvf": "cur_ads_attributed_rub",
+   "card_value": "0",
+   "tvf_value": "0",
+   "equal": true
+  },
+  {
+   "window": "01–14.09",
+   "selection": "Набор сыв+крем АКНЕ (bundle)",
+   "card": "c_drr",
+   "tvf": "cur_drr",
+   "card_value": "0",
+   "tvf_value": "0",
+   "equal": true
+  },
+  {
+   "window": "01–14.09",
+   "selection": "Набор сыв+крем АКНЕ (bundle)",
+   "card": "c_contribution_after_cogs_rub",
+   "tvf": "cur_contribution_after_cogs_rub",
+   "card_value": "2192.496",
+   "tvf_value": "2192.496",
+   "equal": true
+  },
+  {
+   "window": "01–14.09",
+   "selection": "Набор сыв+крем АКНЕ (bundle)",
+   "card": "c_margin",
+   "tvf": "cur_contribution_margin_after_cogs",
+   "card_value": "0.281450064",
+   "tvf_value": "0.281450064",
+   "equal": true
+  },
+  {
+   "window": "01–14.09",
+   "selection": "Набор сыв+крем АКНЕ (bundle)",
+   "card": "c_per_buyout",
+   "tvf": "cur_contribution_after_cogs_per_buyout_rub",
+   "card_value": "365.416",
+   "tvf_value": "365.416",
+   "equal": true
+  },
+  {
+   "window": "01–14.09",
+   "selection": "Набор сыв+крем АКНЕ (bundle)",
+   "card": "p_orders_gross_units",
+   "tvf": "prv_orders_gross_units",
+   "card_value": "10",
+   "tvf_value": "10",
+   "equal": true
+  },
+  {
+   "window": "01–14.09",
+   "selection": "Набор сыв+крем АКНЕ (bundle)",
+   "card": "p_rate",
+   "tvf": "prv_cohort_buyout_rate",
+   "card_value": "0.8",
+   "tvf_value": "0.8",
+   "equal": true
+  },
+  {
+   "window": "01–14.09",
+   "selection": "Набор сыв+крем АКНЕ (bundle)",
+   "card": "orders_cmp",
+   "tvf": "orders_comparable",
+   "card_value": "true",
+   "tvf_value": "true",
+   "equal": true
+  },
+  {
+   "window": "01–14.09",
+   "selection": "Набор сыв+крем АКНЕ (bundle)",
+   "card": "econ_cmp",
+   "tvf": "economics_comparable",
+   "card_value": "true",
+   "tvf_value": "true",
+   "equal": true
+  },
+  {
+   "window": "01–14.09",
+   "selection": "Набор сыв+крем АКНЕ (bundle)",
+   "card": "drr_cmp",
+   "tvf": "drr_comparable",
+   "card_value": "true",
+   "tvf_value": "true",
+   "equal": true
+  },
+  {
+   "window": "01–14.09",
+   "selection": "Крем УВЛ (low)",
+   "card": "c_orders_gross_units",
+   "tvf": "cur_orders_gross_units",
+   "card_value": "0",
+   "tvf_value": "0",
+   "equal": true
+  },
+  {
+   "window": "01–14.09",
+   "selection": "Крем УВЛ (low)",
+   "card": "c_buyout_units",
+   "tvf": "cur_buyout_units",
+   "card_value": "0",
+   "tvf_value": "0",
+   "equal": true
+  },
+  {
+   "window": "01–14.09",
+   "selection": "Крем УВЛ (low)",
+   "card": "c_rate",
+   "tvf": "cur_cohort_buyout_rate",
+   "card_value": null,
+   "tvf_value": null,
+   "equal": true
+  },
+  {
+   "window": "01–14.09",
+   "selection": "Крем УВЛ (low)",
+   "card": "c_price",
+   "tvf": "cur_avg_seller_price_orders_rub",
+   "card_value": null,
+   "tvf_value": null,
+   "equal": true
+  },
+  {
+   "window": "01–14.09",
+   "selection": "Крем УВЛ (low)",
+   "card": "p_price",
+   "tvf": "prv_avg_seller_price_orders_rub",
+   "card_value": "926",
+   "tvf_value": "926",
+   "equal": true
+  },
+  {
+   "window": "01–14.09",
+   "selection": "Крем УВЛ (low)",
+   "card": "c_ads_attributed_rub",
+   "tvf": "cur_ads_attributed_rub",
+   "card_value": "0",
+   "tvf_value": "0",
+   "equal": true
+  },
+  {
+   "window": "01–14.09",
+   "selection": "Крем УВЛ (low)",
+   "card": "c_drr",
+   "tvf": "cur_drr",
+   "card_value": null,
+   "tvf_value": null,
+   "equal": true
+  },
+  {
+   "window": "01–14.09",
+   "selection": "Крем УВЛ (low)",
+   "card": "c_contribution_after_cogs_rub",
+   "tvf": "cur_contribution_after_cogs_rub",
+   "card_value": "-77.2",
+   "tvf_value": "-77.2",
+   "equal": true
+  },
+  {
+   "window": "01–14.09",
+   "selection": "Крем УВЛ (low)",
+   "card": "c_margin",
+   "tvf": "cur_contribution_margin_after_cogs",
+   "card_value": null,
+   "tvf_value": null,
+   "equal": true
+  },
+  {
+   "window": "01–14.09",
+   "selection": "Крем УВЛ (low)",
+   "card": "c_per_buyout",
+   "tvf": "cur_contribution_after_cogs_per_buyout_rub",
+   "card_value": null,
+   "tvf_value": null,
+   "equal": true
+  },
+  {
+   "window": "01–14.09",
+   "selection": "Крем УВЛ (low)",
+   "card": "p_orders_gross_units",
+   "tvf": "prv_orders_gross_units",
+   "card_value": "3",
+   "tvf_value": "3",
+   "equal": true
+  },
+  {
+   "window": "01–14.09",
+   "selection": "Крем УВЛ (low)",
+   "card": "p_rate",
+   "tvf": "prv_cohort_buyout_rate",
+   "card_value": "1.0",
+   "tvf_value": "1.0",
+   "equal": true
+  },
+  {
+   "window": "01–14.09",
+   "selection": "Крем УВЛ (low)",
+   "card": "orders_cmp",
+   "tvf": "orders_comparable",
+   "card_value": "true",
+   "tvf_value": "true",
+   "equal": true
+  },
+  {
+   "window": "01–14.09",
+   "selection": "Крем УВЛ (low)",
+   "card": "econ_cmp",
+   "tvf": "economics_comparable",
+   "card_value": "true",
+   "tvf_value": "true",
+   "equal": true
+  },
+  {
+   "window": "01–14.09",
+   "selection": "Крем УВЛ (low)",
+   "card": "drr_cmp",
+   "tvf": "drr_comparable",
+   "card_value": "true",
+   "tvf_value": "true",
+   "equal": true
+  },
+  {
+   "window": "01–14.09",
+   "selection": "Набор руки+амбра (low)",
+   "card": "c_orders_gross_units",
+   "tvf": "cur_orders_gross_units",
+   "card_value": "7",
+   "tvf_value": "7",
+   "equal": true
+  },
+  {
+   "window": "01–14.09",
+   "selection": "Набор руки+амбра (low)",
+   "card": "c_buyout_units",
+   "tvf": "cur_buyout_units",
+   "card_value": "4",
+   "tvf_value": "4",
+   "equal": true
+  },
+  {
+   "window": "01–14.09",
+   "selection": "Набор руки+амбра (low)",
+   "card": "c_rate",
+   "tvf": "cur_cohort_buyout_rate",
+   "card_value": "1.0",
+   "tvf_value": "1.0",
+   "equal": true
+  },
+  {
+   "window": "01–14.09",
+   "selection": "Набор руки+амбра (low)",
+   "card": "c_price",
+   "tvf": "cur_avg_seller_price_orders_rub",
+   "card_value": "1085.714285714",
+   "tvf_value": "1085.714285714",
+   "equal": true
+  },
+  {
+   "window": "01–14.09",
+   "selection": "Набор руки+амбра (low)",
+   "card": "p_price",
+   "tvf": "prv_avg_seller_price_orders_rub",
+   "card_value": "1008",
+   "tvf_value": "1008",
+   "equal": true
+  },
+  {
+   "window": "01–14.09",
+   "selection": "Набор руки+амбра (low)",
+   "card": "c_ads_attributed_rub",
+   "tvf": "cur_ads_attributed_rub",
+   "card_value": "0",
+   "tvf_value": "0",
+   "equal": true
+  },
+  {
+   "window": "01–14.09",
+   "selection": "Набор руки+амбра (low)",
+   "card": "c_drr",
+   "tvf": "cur_drr",
+   "card_value": "0",
+   "tvf_value": "0",
+   "equal": true
+  },
+  {
+   "window": "01–14.09",
+   "selection": "Набор руки+амбра (low)",
+   "card": "c_contribution_after_cogs_rub",
+   "tvf": "cur_contribution_after_cogs_rub",
+   "card_value": "167.58402032",
+   "tvf_value": "167.58402032",
+   "equal": true
+  },
+  {
+   "window": "01–14.09",
+   "selection": "Набор руки+амбра (low)",
+   "card": "c_margin",
+   "tvf": "cur_contribution_margin_after_cogs",
+   "card_value": "0.043096457",
+   "tvf_value": "0.043096457",
+   "equal": true
+  },
+  {
+   "window": "01–14.09",
+   "selection": "Набор руки+амбра (low)",
+   "card": "c_per_buyout",
+   "tvf": "cur_contribution_after_cogs_per_buyout_rub",
+   "card_value": "41.89600508",
+   "tvf_value": "41.89600508",
+   "equal": true
+  },
+  {
+   "window": "01–14.09",
+   "selection": "Набор руки+амбра (low)",
+   "card": "p_orders_gross_units",
+   "tvf": "prv_orders_gross_units",
+   "card_value": "5",
+   "tvf_value": "5",
+   "equal": true
+  },
+  {
+   "window": "01–14.09",
+   "selection": "Набор руки+амбра (low)",
+   "card": "p_rate",
+   "tvf": "prv_cohort_buyout_rate",
+   "card_value": "0.4",
+   "tvf_value": "0.4",
+   "equal": true
+  },
+  {
+   "window": "01–14.09",
+   "selection": "Набор руки+амбра (low)",
+   "card": "orders_cmp",
+   "tvf": "orders_comparable",
+   "card_value": "true",
+   "tvf_value": "true",
+   "equal": true
+  },
+  {
+   "window": "01–14.09",
+   "selection": "Набор руки+амбра (low)",
+   "card": "econ_cmp",
+   "tvf": "economics_comparable",
+   "card_value": "true",
+   "tvf_value": "true",
+   "equal": true
+  },
+  {
+   "window": "01–14.09",
+   "selection": "Набор руки+амбра (low)",
+   "card": "drr_cmp",
+   "tvf": "drr_comparable",
+   "card_value": "true",
+   "tvf_value": "true",
+   "equal": true
+  },
+  {
+   "window": "01–14.09",
+   "attention_card": [
+    "252442517",
+    "535581674"
+   ],
+   "attention_expected_order": [
+    "252442517",
+    "535581674"
+   ],
+   "flagged_total": 2,
+   "equal": true
+  },
+  {
+   "window": "final 27.07–23.08",
+   "selection": "all",
+   "card": "c_orders_gross_units",
+   "tvf": "cur_orders_gross_units",
+   "card_value": "594",
+   "tvf_value": "594",
+   "equal": true
+  },
+  {
+   "window": "final 27.07–23.08",
+   "selection": "all",
+   "card": "c_buyout_units",
+   "tvf": "cur_buyout_units",
+   "card_value": "513",
+   "tvf_value": "513",
+   "equal": true
+  },
+  {
+   "window": "final 27.07–23.08",
+   "selection": "all",
+   "card": "c_rate",
+   "tvf": "cur_cohort_buyout_rate",
+   "card_value": "0.8918918918918919",
+   "tvf_value": "0.8918918918918919",
+   "equal": true
+  },
+  {
+   "window": "final 27.07–23.08",
+   "selection": "all",
+   "card": "c_price",
+   "tvf": "cur_avg_seller_price_orders_rub",
+   "card_value": "689.820218855",
+   "tvf_value": "689.820218855",
+   "equal": true
+  },
+  {
+   "window": "final 27.07–23.08",
+   "selection": "all",
+   "card": "p_price",
+   "tvf": "prv_avg_seller_price_orders_rub",
+   "card_value": "1027.487210031",
+   "tvf_value": "1027.487210031",
+   "equal": true
+  },
+  {
+   "window": "final 27.07–23.08",
+   "selection": "all",
+   "card": "c_ads_attributed_rub",
+   "tvf": "cur_ads_attributed_rub",
+   "card_value": "50194.07",
+   "tvf_value": "50194.07",
+   "equal": true
+  },
+  {
+   "window": "final 27.07–23.08",
+   "selection": "all",
+   "card": "c_drr",
+   "tvf": "cur_drr",
+   "card_value": "0.138215066",
+   "tvf_value": "0.138215066",
+   "equal": true
+  },
+  {
+   "window": "final 27.07–23.08",
+   "selection": "all",
+   "card": "c_contribution_after_cogs_rub",
+   "tvf": "cur_contribution_after_cogs_rub",
+   "card_value": "-4762.521676",
+   "tvf_value": "-4762.521676",
+   "equal": true
+  },
+  {
+   "window": "final 27.07–23.08",
+   "selection": "all",
+   "card": "c_margin",
+   "tvf": "cur_contribution_margin_after_cogs",
+   "card_value": "-0.01311415",
+   "tvf_value": "-0.01311415",
+   "equal": true
+  },
+  {
+   "window": "final 27.07–23.08",
+   "selection": "all",
+   "card": "c_per_buyout",
+   "tvf": "cur_contribution_after_cogs_per_buyout_rub",
+   "card_value": "-9.283667984",
+   "tvf_value": "-9.283667984",
+   "equal": true
+  },
+  {
+   "window": "final 27.07–23.08",
+   "selection": "all",
+   "card": "p_orders_gross_units",
+   "tvf": "prv_orders_gross_units",
+   "card_value": "638",
+   "tvf_value": "638",
+   "equal": true
+  },
+  {
+   "window": "final 27.07–23.08",
+   "selection": "all",
+   "card": "p_rate",
+   "tvf": "prv_cohort_buyout_rate",
+   "card_value": "0.8855799373040752",
+   "tvf_value": "0.8855799373040752",
+   "equal": true
+  },
+  {
+   "window": "final 27.07–23.08",
+   "selection": "all",
+   "card": "orders_cmp",
+   "tvf": "orders_comparable",
+   "card_value": "true",
+   "tvf_value": "true",
+   "equal": true
+  },
+  {
+   "window": "final 27.07–23.08",
+   "selection": "all",
+   "card": "econ_cmp",
+   "tvf": "economics_comparable",
+   "card_value": "true",
+   "tvf_value": "true",
+   "equal": true
+  },
+  {
+   "window": "final 27.07–23.08",
+   "selection": "all",
+   "card": "drr_cmp",
+   "tvf": "drr_comparable",
+   "card_value": "true",
+   "tvf_value": "true",
+   "equal": true
+  },
+  {
+   "window": "final 27.07–23.08",
+   "selection": "Крем Руки",
+   "card": "c_orders_gross_units",
+   "tvf": "cur_orders_gross_units",
+   "card_value": "210",
+   "tvf_value": "210",
+   "equal": true
+  },
+  {
+   "window": "final 27.07–23.08",
+   "selection": "Крем Руки",
+   "card": "c_buyout_units",
+   "tvf": "cur_buyout_units",
+   "card_value": "178",
+   "tvf_value": "178",
+   "equal": true
+  },
+  {
+   "window": "final 27.07–23.08",
+   "selection": "Крем Руки",
+   "card": "c_rate",
+   "tvf": "cur_cohort_buyout_rate",
+   "card_value": "0.9234449760765551",
+   "tvf_value": "0.9234449760765551",
+   "equal": true
+  },
+  {
+   "window": "final 27.07–23.08",
+   "selection": "Крем Руки",
+   "card": "c_price",
+   "tvf": "cur_avg_seller_price_orders_rub",
+   "card_value": "395.98247619",
+   "tvf_value": "395.98247619",
+   "equal": true
+  },
+  {
+   "window": "final 27.07–23.08",
+   "selection": "Крем Руки",
+   "card": "p_price",
+   "tvf": "prv_avg_seller_price_orders_rub",
+   "card_value": "542.103876404",
+   "tvf_value": "542.103876404",
+   "equal": true
+  },
+  {
+   "window": "final 27.07–23.08",
+   "selection": "Крем Руки",
+   "card": "c_ads_attributed_rub",
+   "tvf": "cur_ads_attributed_rub",
+   "card_value": "9409.76",
+   "tvf_value": "9409.76",
+   "equal": true
+  },
+  {
+   "window": "final 27.07–23.08",
+   "selection": "Крем Руки",
+   "card": "c_drr",
+   "tvf": "cur_drr",
+   "card_value": "0.132265456",
+   "tvf_value": "0.132265456",
+   "equal": true
+  },
+  {
+   "window": "final 27.07–23.08",
+   "selection": "Крем Руки",
+   "card": "c_contribution_after_cogs_rub",
+   "tvf": "cur_contribution_after_cogs_rub",
+   "card_value": "-24637.19",
+   "tvf_value": "-24637.19",
+   "equal": true
+  },
+  {
+   "window": "final 27.07–23.08",
+   "selection": "Крем Руки",
+   "card": "c_margin",
+   "tvf": "cur_contribution_margin_after_cogs",
+   "card_value": "-0.34630548",
+   "tvf_value": "-0.34630548",
+   "equal": true
+  },
+  {
+   "window": "final 27.07–23.08",
+   "selection": "Крем Руки",
+   "card": "c_per_buyout",
+   "tvf": "cur_contribution_after_cogs_per_buyout_rub",
+   "card_value": "-138.411179775",
+   "tvf_value": "-138.411179775",
+   "equal": true
+  },
+  {
+   "window": "final 27.07–23.08",
+   "selection": "Крем Руки",
+   "card": "p_orders_gross_units",
+   "tvf": "prv_orders_gross_units",
+   "card_value": "178",
+   "tvf_value": "178",
+   "equal": true
+  },
+  {
+   "window": "final 27.07–23.08",
+   "selection": "Крем Руки",
+   "card": "p_rate",
+   "tvf": "prv_cohort_buyout_rate",
+   "card_value": "0.9325842696629213",
+   "tvf_value": "0.9325842696629213",
+   "equal": true
+  },
+  {
+   "window": "final 27.07–23.08",
+   "selection": "Крем Руки",
+   "card": "orders_cmp",
+   "tvf": "orders_comparable",
+   "card_value": "true",
+   "tvf_value": "true",
+   "equal": true
+  },
+  {
+   "window": "final 27.07–23.08",
+   "selection": "Крем Руки",
+   "card": "econ_cmp",
+   "tvf": "economics_comparable",
+   "card_value": "true",
+   "tvf_value": "true",
+   "equal": true
+  },
+  {
+   "window": "final 27.07–23.08",
+   "selection": "Крем Руки",
+   "card": "drr_cmp",
+   "tvf": "drr_comparable",
+   "card_value": "true",
+   "tvf_value": "true",
+   "equal": true
+  },
+  {
+   "window": "final 27.07–23.08",
+   "selection": "Сыворотка АКНЕ",
+   "card": "c_orders_gross_units",
+   "tvf": "cur_orders_gross_units",
+   "card_value": "48",
+   "tvf_value": "48",
+   "equal": true
+  },
+  {
+   "window": "final 27.07–23.08",
+   "selection": "Сыворотка АКНЕ",
+   "card": "c_buyout_units",
+   "tvf": "cur_buyout_units",
+   "card_value": "44",
+   "tvf_value": "44",
+   "equal": true
+  },
+  {
+   "window": "final 27.07–23.08",
+   "selection": "Сыворотка АКНЕ",
+   "card": "c_rate",
+   "tvf": "cur_cohort_buyout_rate",
+   "card_value": "0.8333333333333334",
+   "tvf_value": "0.8333333333333334",
+   "equal": true
+  },
+  {
+   "window": "final 27.07–23.08",
+   "selection": "Сыворотка АКНЕ",
+   "card": "c_price",
+   "tvf": "cur_avg_seller_price_orders_rub",
+   "card_value": "608.886875",
+   "tvf_value": "608.886875",
+   "equal": true
+  },
+  {
+   "window": "final 27.07–23.08",
+   "selection": "Сыворотка АКНЕ",
+   "card": "p_price",
+   "tvf": "prv_avg_seller_price_orders_rub",
+   "card_value": "810.02173913",
+   "tvf_value": "810.02173913",
+   "equal": true
+  },
+  {
+   "window": "final 27.07–23.08",
+   "selection": "Сыворотка АКНЕ",
+   "card": "c_ads_attributed_rub",
+   "tvf": "cur_ads_attributed_rub",
+   "card_value": "6856.89",
+   "tvf_value": "6856.89",
+   "equal": true
+  },
+  {
+   "window": "final 27.07–23.08",
+   "selection": "Сыворотка АКНЕ",
+   "card": "c_drr",
+   "tvf": "cur_drr",
+   "card_value": "0.247894024",
+   "tvf_value": "0.247894024",
+   "equal": true
+  },
+  {
+   "window": "final 27.07–23.08",
+   "selection": "Сыворотка АКНЕ",
+   "card": "c_contribution_after_cogs_rub",
+   "tvf": "cur_contribution_after_cogs_rub",
+   "card_value": "-482.37",
+   "tvf_value": "-482.37",
+   "equal": true
+  },
+  {
+   "window": "final 27.07–23.08",
+   "selection": "Сыворотка АКНЕ",
+   "card": "c_margin",
+   "tvf": "cur_contribution_margin_after_cogs",
+   "card_value": "-0.017438909",
+   "tvf_value": "-0.017438909",
+   "equal": true
+  },
+  {
+   "window": "final 27.07–23.08",
+   "selection": "Сыворотка АКНЕ",
+   "card": "c_per_buyout",
+   "tvf": "cur_contribution_after_cogs_per_buyout_rub",
+   "card_value": "-10.962954545",
+   "tvf_value": "-10.962954545",
+   "equal": true
+  },
+  {
+   "window": "final 27.07–23.08",
+   "selection": "Сыворотка АКНЕ",
+   "card": "p_orders_gross_units",
+   "tvf": "prv_orders_gross_units",
+   "card_value": "46",
+   "tvf_value": "46",
+   "equal": true
+  },
+  {
+   "window": "final 27.07–23.08",
+   "selection": "Сыворотка АКНЕ",
+   "card": "p_rate",
+   "tvf": "prv_cohort_buyout_rate",
+   "card_value": "0.8695652173913043",
+   "tvf_value": "0.8695652173913043",
+   "equal": true
+  },
+  {
+   "window": "final 27.07–23.08",
+   "selection": "Сыворотка АКНЕ",
+   "card": "orders_cmp",
+   "tvf": "orders_comparable",
+   "card_value": "true",
+   "tvf_value": "true",
+   "equal": true
+  },
+  {
+   "window": "final 27.07–23.08",
+   "selection": "Сыворотка АКНЕ",
+   "card": "econ_cmp",
+   "tvf": "economics_comparable",
+   "card_value": "true",
+   "tvf_value": "true",
+   "equal": true
+  },
+  {
+   "window": "final 27.07–23.08",
+   "selection": "Сыворотка АКНЕ",
+   "card": "drr_cmp",
+   "tvf": "drr_comparable",
+   "card_value": "true",
+   "tvf_value": "true",
+   "equal": true
+  },
+  {
+   "window": "final 27.07–23.08",
+   "selection": "Крем Вишня (low)",
+   "card": "c_orders_gross_units",
+   "tvf": "cur_orders_gross_units",
+   "card_value": "17",
+   "tvf_value": "17",
+   "equal": true
+  },
+  {
+   "window": "final 27.07–23.08",
+   "selection": "Крем Вишня (low)",
+   "card": "c_buyout_units",
+   "tvf": "cur_buyout_units",
+   "card_value": "13",
+   "tvf_value": "13",
+   "equal": true
+  },
+  {
+   "window": "final 27.07–23.08",
+   "selection": "Крем Вишня (low)",
+   "card": "c_rate",
+   "tvf": "cur_cohort_buyout_rate",
+   "card_value": "0.8823529411764706",
+   "tvf_value": "0.8823529411764706",
+   "equal": true
+  },
+  {
+   "window": "final 27.07–23.08",
+   "selection": "Крем Вишня (low)",
+   "card": "c_price",
+   "tvf": "cur_avg_seller_price_orders_rub",
+   "card_value": "460.990588235",
+   "tvf_value": "460.990588235",
+   "equal": true
+  },
+  {
+   "window": "final 27.07–23.08",
+   "selection": "Крем Вишня (low)",
+   "card": "p_price",
+   "tvf": "prv_avg_seller_price_orders_rub",
+   "card_value": "867.719090909",
+   "tvf_value": "867.719090909",
+   "equal": true
+  },
+  {
+   "window": "final 27.07–23.08",
+   "selection": "Крем Вишня (low)",
+   "card": "c_ads_attributed_rub",
+   "tvf": "cur_ads_attributed_rub",
+   "card_value": "559.74",
+   "tvf_value": "559.74",
+   "equal": true
+  },
+  {
+   "window": "final 27.07–23.08",
+   "selection": "Крем Вишня (low)",
+   "card": "c_drr",
+   "tvf": "cur_drr",
+   "card_value": "0.080090544",
+   "tvf_value": "0.080090544",
+   "equal": true
+  },
+  {
+   "window": "final 27.07–23.08",
+   "selection": "Крем Вишня (low)",
+   "card": "c_contribution_after_cogs_rub",
+   "tvf": "cur_contribution_after_cogs_rub",
+   "card_value": "-24.591177",
+   "tvf_value": "-24.591177",
+   "equal": true
+  },
+  {
+   "window": "final 27.07–23.08",
+   "selection": "Крем Вишня (low)",
+   "card": "c_margin",
+   "tvf": "cur_contribution_margin_after_cogs",
+   "card_value": "-0.003518645",
+   "tvf_value": "-0.003518645",
+   "equal": true
+  },
+  {
+   "window": "final 27.07–23.08",
+   "selection": "Крем Вишня (low)",
+   "card": "c_per_buyout",
+   "tvf": "cur_contribution_after_cogs_per_buyout_rub",
+   "card_value": "-1.891629",
+   "tvf_value": "-1.891629",
+   "equal": true
+  },
+  {
+   "window": "final 27.07–23.08",
+   "selection": "Крем Вишня (low)",
+   "card": "p_orders_gross_units",
+   "tvf": "prv_orders_gross_units",
+   "card_value": "11",
+   "tvf_value": "11",
+   "equal": true
+  },
+  {
+   "window": "final 27.07–23.08",
+   "selection": "Крем Вишня (low)",
+   "card": "p_rate",
+   "tvf": "prv_cohort_buyout_rate",
+   "card_value": "1.0",
+   "tvf_value": "1.0",
+   "equal": true
+  },
+  {
+   "window": "final 27.07–23.08",
+   "selection": "Крем Вишня (low)",
+   "card": "orders_cmp",
+   "tvf": "orders_comparable",
+   "card_value": "true",
+   "tvf_value": "true",
+   "equal": true
+  },
+  {
+   "window": "final 27.07–23.08",
+   "selection": "Крем Вишня (low)",
+   "card": "econ_cmp",
+   "tvf": "economics_comparable",
+   "card_value": "true",
+   "tvf_value": "true",
+   "equal": true
+  },
+  {
+   "window": "final 27.07–23.08",
+   "selection": "Крем Вишня (low)",
+   "card": "drr_cmp",
+   "tvf": "drr_comparable",
+   "card_value": "true",
+   "tvf_value": "true",
+   "equal": true
+  },
+  {
+   "window": "final 27.07–23.08",
+   "selection": "Набор сыв+крем АКНЕ (bundle)",
+   "card": "c_orders_gross_units",
+   "tvf": "cur_orders_gross_units",
+   "card_value": "24",
+   "tvf_value": "24",
+   "equal": true
+  },
+  {
+   "window": "final 27.07–23.08",
+   "selection": "Набор сыв+крем АКНЕ (bundle)",
+   "card": "c_buyout_units",
+   "tvf": "cur_buyout_units",
+   "card_value": "19",
+   "tvf_value": "19",
+   "equal": true
+  },
+  {
+   "window": "final 27.07–23.08",
+   "selection": "Набор сыв+крем АКНЕ (bundle)",
+   "card": "c_rate",
+   "tvf": "cur_cohort_buyout_rate",
+   "card_value": "0.875",
+   "tvf_value": "0.875",
+   "equal": true
+  },
+  {
+   "window": "final 27.07–23.08",
+   "selection": "Набор сыв+крем АКНЕ (bundle)",
+   "card": "c_price",
+   "tvf": "cur_avg_seller_price_orders_rub",
+   "card_value": "1112.583333333",
+   "tvf_value": "1112.583333333",
+   "equal": true
+  },
+  {
+   "window": "final 27.07–23.08",
+   "selection": "Набор сыв+крем АКНЕ (bundle)",
+   "card": "p_price",
+   "tvf": "prv_avg_seller_price_orders_rub",
+   "card_value": "1387.941176471",
+   "tvf_value": "1387.941176471",
+   "equal": true
+  },
+  {
+   "window": "final 27.07–23.08",
+   "selection": "Набор сыв+крем АКНЕ (bundle)",
+   "card": "c_ads_attributed_rub",
+   "tvf": "cur_ads_attributed_rub",
+   "card_value": "0.49",
+   "tvf_value": "0.49",
+   "equal": true
+  },
+  {
+   "window": "final 27.07–23.08",
+   "selection": "Набор сыв+крем АКНЕ (bundle)",
+   "card": "c_drr",
+   "tvf": "cur_drr",
+   "card_value": "0.000023166",
+   "tvf_value": "0.000023166",
+   "equal": true
+  },
+  {
+   "window": "final 27.07–23.08",
+   "selection": "Набор сыв+крем АКНЕ (bundle)",
+   "card": "c_contribution_after_cogs_rub",
+   "tvf": "cur_contribution_after_cogs_rub",
+   "card_value": "5043.68",
+   "tvf_value": "5043.68",
+   "equal": true
+  },
+  {
+   "window": "final 27.07–23.08",
+   "selection": "Набор сыв+крем АКНЕ (bundle)",
+   "card": "c_margin",
+   "tvf": "cur_contribution_margin_after_cogs",
+   "card_value": "0.238449319",
+   "tvf_value": "0.238449319",
+   "equal": true
+  },
+  {
+   "window": "final 27.07–23.08",
+   "selection": "Набор сыв+крем АКНЕ (bundle)",
+   "card": "c_per_buyout",
+   "tvf": "cur_contribution_after_cogs_per_buyout_rub",
+   "card_value": "265.456842105",
+   "tvf_value": "265.456842105",
+   "equal": true
+  },
+  {
+   "window": "final 27.07–23.08",
+   "selection": "Набор сыв+крем АКНЕ (bundle)",
+   "card": "p_orders_gross_units",
+   "tvf": "prv_orders_gross_units",
+   "card_value": "17",
+   "tvf_value": "17",
+   "equal": true
+  },
+  {
+   "window": "final 27.07–23.08",
+   "selection": "Набор сыв+крем АКНЕ (bundle)",
+   "card": "p_rate",
+   "tvf": "prv_cohort_buyout_rate",
+   "card_value": "0.8235294117647058",
+   "tvf_value": "0.8235294117647058",
+   "equal": true
+  },
+  {
+   "window": "final 27.07–23.08",
+   "selection": "Набор сыв+крем АКНЕ (bundle)",
+   "card": "orders_cmp",
+   "tvf": "orders_comparable",
+   "card_value": "true",
+   "tvf_value": "true",
+   "equal": true
+  },
+  {
+   "window": "final 27.07–23.08",
+   "selection": "Набор сыв+крем АКНЕ (bundle)",
+   "card": "econ_cmp",
+   "tvf": "economics_comparable",
+   "card_value": "true",
+   "tvf_value": "true",
+   "equal": true
+  },
+  {
+   "window": "final 27.07–23.08",
+   "selection": "Набор сыв+крем АКНЕ (bundle)",
+   "card": "drr_cmp",
+   "tvf": "drr_comparable",
+   "card_value": "true",
+   "tvf_value": "true",
+   "equal": true
+  },
+  {
+   "window": "final 27.07–23.08",
+   "selection": "Крем УВЛ (low)",
+   "card": "c_orders_gross_units",
+   "tvf": "cur_orders_gross_units",
+   "card_value": "29",
+   "tvf_value": "29",
+   "equal": true
+  },
+  {
+   "window": "final 27.07–23.08",
+   "selection": "Крем УВЛ (low)",
+   "card": "c_buyout_units",
+   "tvf": "cur_buyout_units",
+   "card_value": "39",
+   "tvf_value": "39",
+   "equal": true
+  },
+  {
+   "window": "final 27.07–23.08",
+   "selection": "Крем УВЛ (low)",
+   "card": "c_rate",
+   "tvf": "cur_cohort_buyout_rate",
+   "card_value": "0.9642857142857143",
+   "tvf_value": "0.9642857142857143",
+   "equal": true
+  },
+  {
+   "window": "final 27.07–23.08",
+   "selection": "Крем УВЛ (low)",
+   "card": "c_price",
+   "tvf": "cur_avg_seller_price_orders_rub",
+   "card_value": "671.353793103",
+   "tvf_value": "671.353793103",
+   "equal": true
+  },
+  {
+   "window": "final 27.07–23.08",
+   "selection": "Крем УВЛ (low)",
+   "card": "p_price",
+   "tvf": "prv_avg_seller_price_orders_rub",
+   "card_value": "940.110357143",
+   "tvf_value": "940.110357143",
+   "equal": true
+  },
+  {
+   "window": "final 27.07–23.08",
+   "selection": "Крем УВЛ (low)",
+   "card": "c_ads_attributed_rub",
+   "tvf": "cur_ads_attributed_rub",
+   "card_value": "2356.47",
+   "tvf_value": "2356.47",
+   "equal": true
+  },
+  {
+   "window": "final 27.07–23.08",
+   "selection": "Крем УВЛ (low)",
+   "card": "c_drr",
+   "tvf": "cur_drr",
+   "card_value": "0.080066908",
+   "tvf_value": "0.080066908",
+   "equal": true
+  },
+  {
+   "window": "final 27.07–23.08",
+   "selection": "Крем УВЛ (low)",
+   "card": "c_contribution_after_cogs_rub",
+   "tvf": "cur_contribution_after_cogs_rub",
+   "card_value": "6532",
+   "tvf_value": "6532",
+   "equal": true
+  },
+  {
+   "window": "final 27.07–23.08",
+   "selection": "Крем УВЛ (low)",
+   "card": "c_margin",
+   "tvf": "cur_contribution_margin_after_cogs",
+   "card_value": "0.221940889",
+   "tvf_value": "0.221940889",
+   "equal": true
+  },
+  {
+   "window": "final 27.07–23.08",
+   "selection": "Крем УВЛ (low)",
+   "card": "c_per_buyout",
+   "tvf": "cur_contribution_after_cogs_per_buyout_rub",
+   "card_value": "167.487179487",
+   "tvf_value": "167.487179487",
+   "equal": true
+  },
+  {
+   "window": "final 27.07–23.08",
+   "selection": "Крем УВЛ (low)",
+   "card": "p_orders_gross_units",
+   "tvf": "prv_orders_gross_units",
+   "card_value": "56",
+   "tvf_value": "56",
+   "equal": true
+  },
+  {
+   "window": "final 27.07–23.08",
+   "selection": "Крем УВЛ (low)",
+   "card": "p_rate",
+   "tvf": "prv_cohort_buyout_rate",
+   "card_value": "0.9285714285714286",
+   "tvf_value": "0.9285714285714286",
+   "equal": true
+  },
+  {
+   "window": "final 27.07–23.08",
+   "selection": "Крем УВЛ (low)",
+   "card": "orders_cmp",
+   "tvf": "orders_comparable",
+   "card_value": "true",
+   "tvf_value": "true",
+   "equal": true
+  },
+  {
+   "window": "final 27.07–23.08",
+   "selection": "Крем УВЛ (low)",
+   "card": "econ_cmp",
+   "tvf": "economics_comparable",
+   "card_value": "true",
+   "tvf_value": "true",
+   "equal": true
+  },
+  {
+   "window": "final 27.07–23.08",
+   "selection": "Крем УВЛ (low)",
+   "card": "drr_cmp",
+   "tvf": "drr_comparable",
+   "card_value": "true",
+   "tvf_value": "true",
+   "equal": true
+  },
+  {
+   "window": "final 27.07–23.08",
+   "selection": "Набор руки+амбра (low)",
+   "card": "c_orders_gross_units",
+   "tvf": "cur_orders_gross_units",
+   "card_value": "4",
+   "tvf_value": "4",
+   "equal": true
+  },
+  {
+   "window": "final 27.07–23.08",
+   "selection": "Набор руки+амбра (low)",
+   "card": "c_buyout_units",
+   "tvf": "cur_buyout_units",
+   "card_value": "2",
+   "tvf_value": "2",
+   "equal": true
+  },
+  {
+   "window": "final 27.07–23.08",
+   "selection": "Набор руки+амбра (low)",
+   "card": "c_rate",
+   "tvf": "cur_cohort_buyout_rate",
+   "card_value": "0.5",
+   "tvf_value": "0.5",
+   "equal": true
+  },
+  {
+   "window": "final 27.07–23.08",
+   "selection": "Набор руки+амбра (low)",
+   "card": "c_price",
+   "tvf": "cur_avg_seller_price_orders_rub",
+   "card_value": "907.1475",
+   "tvf_value": "907.1475",
+   "equal": true
+  },
+  {
+   "window": "final 27.07–23.08",
+   "selection": "Набор руки+амбра (low)",
+   "card": "p_price",
+   "tvf": "prv_avg_seller_price_orders_rub",
+   "card_value": "1297.705714286",
+   "tvf_value": "1297.705714286",
+   "equal": true
+  },
+  {
+   "window": "final 27.07–23.08",
+   "selection": "Набор руки+амбра (low)",
+   "card": "c_ads_attributed_rub",
+   "tvf": "cur_ads_attributed_rub",
+   "card_value": "0",
+   "tvf_value": "0",
+   "equal": true
+  },
+  {
+   "window": "final 27.07–23.08",
+   "selection": "Набор руки+амбра (low)",
+   "card": "c_drr",
+   "tvf": "cur_drr",
+   "card_value": "0",
+   "tvf_value": "0",
+   "equal": true
+  },
+  {
+   "window": "final 27.07–23.08",
+   "selection": "Набор руки+амбра (low)",
+   "card": "c_contribution_after_cogs_rub",
+   "tvf": "cur_contribution_after_cogs_rub",
+   "card_value": "-216.083258",
+   "tvf_value": "-216.083258",
+   "equal": true
+  },
+  {
+   "window": "final 27.07–23.08",
+   "selection": "Набор руки+амбра (low)",
+   "card": "c_margin",
+   "tvf": "cur_contribution_margin_after_cogs",
+   "card_value": "-0.106131266",
+   "tvf_value": "-0.106131266",
+   "equal": true
+  },
+  {
+   "window": "final 27.07–23.08",
+   "selection": "Набор руки+амбра (low)",
+   "card": "c_per_buyout",
+   "tvf": "cur_contribution_after_cogs_per_buyout_rub",
+   "card_value": "-108.041629",
+   "tvf_value": "-108.041629",
+   "equal": true
+  },
+  {
+   "window": "final 27.07–23.08",
+   "selection": "Набор руки+амбра (low)",
+   "card": "p_orders_gross_units",
+   "tvf": "prv_orders_gross_units",
+   "card_value": "7",
+   "tvf_value": "7",
+   "equal": true
+  },
+  {
+   "window": "final 27.07–23.08",
+   "selection": "Набор руки+амбра (low)",
+   "card": "p_rate",
+   "tvf": "prv_cohort_buyout_rate",
+   "card_value": "1.0",
+   "tvf_value": "1.0",
+   "equal": true
+  },
+  {
+   "window": "final 27.07–23.08",
+   "selection": "Набор руки+амбра (low)",
+   "card": "orders_cmp",
+   "tvf": "orders_comparable",
+   "card_value": "true",
+   "tvf_value": "true",
+   "equal": true
+  },
+  {
+   "window": "final 27.07–23.08",
+   "selection": "Набор руки+амбра (low)",
+   "card": "econ_cmp",
+   "tvf": "economics_comparable",
+   "card_value": "true",
+   "tvf_value": "true",
+   "equal": true
+  },
+  {
+   "window": "final 27.07–23.08",
+   "selection": "Набор руки+амбра (low)",
+   "card": "drr_cmp",
+   "tvf": "drr_comparable",
+   "card_value": "true",
+   "tvf_value": "true",
+   "equal": true
+  },
+  {
+   "window": "final 27.07–23.08",
+   "attention_card": [
+    "252442517",
+    "535581675",
+    "593111985",
+    "535581674",
+    "305101361",
+    "535580776"
+   ],
+   "attention_expected_order": [
+    "252442517",
+    "535581675",
+    "593111985",
+    "535581674",
+    "305101361",
+    "535580776"
+   ],
+   "flagged_total": 8,
+   "equal": true
+  },
+  {
+   "window": "provisional 01–17.09",
+   "selection": "all",
+   "card": "c_orders_gross_units",
+   "tvf": "cur_orders_gross_units",
+   "card_value": "230",
+   "tvf_value": "230",
+   "equal": true
+  },
+  {
+   "window": "provisional 01–17.09",
+   "selection": "all",
+   "card": "c_buyout_units",
+   "tvf": "cur_buyout_units",
+   "card_value": "230",
+   "tvf_value": "230",
+   "equal": true
+  },
+  {
+   "window": "provisional 01–17.09",
+   "selection": "all",
+   "card": "c_rate",
+   "tvf": "cur_cohort_buyout_rate",
+   "card_value": "0.9337349397590361",
+   "tvf_value": "0.9337349397590361",
+   "equal": true
+  },
+  {
+   "window": "provisional 01–17.09",
+   "selection": "all",
+   "card": "c_price",
+   "tvf": "cur_avg_seller_price_orders_rub",
+   "card_value": "735.563391304",
+   "tvf_value": "735.563391304",
+   "equal": true
+  },
+  {
+   "window": "provisional 01–17.09",
+   "selection": "all",
+   "card": "p_price",
+   "tvf": "prv_avg_seller_price_orders_rub",
+   "card_value": "818.60048",
+   "tvf_value": "818.60048",
+   "equal": true
+  },
+  {
+   "window": "provisional 01–17.09",
+   "selection": "all",
+   "card": "c_ads_attributed_rub",
+   "tvf": "cur_ads_attributed_rub",
+   "card_value": "27650.33",
+   "tvf_value": "27650.33",
+   "equal": true
+  },
+  {
+   "window": "provisional 01–17.09",
+   "selection": "all",
+   "card": "c_drr",
+   "tvf": "cur_drr",
+   "card_value": "0.167833791",
+   "tvf_value": "0.167833791",
+   "equal": true
+  },
+  {
+   "window": "provisional 01–17.09",
+   "selection": "all",
+   "card": "c_contribution_after_cogs_rub",
+   "tvf": "cur_contribution_after_cogs_rub",
+   "card_value": "-3194.810398704",
+   "tvf_value": "-3194.810398704",
+   "equal": true
+  },
+  {
+   "window": "provisional 01–17.09",
+   "selection": "all",
+   "card": "c_margin",
+   "tvf": "cur_contribution_margin_after_cogs",
+   "card_value": "-0.020127518",
+   "tvf_value": "-0.020127518",
+   "equal": true
+  },
+  {
+   "window": "provisional 01–17.09",
+   "selection": "all",
+   "card": "c_per_buyout",
+   "tvf": "cur_contribution_after_cogs_per_buyout_rub",
+   "card_value": "-14.32650403",
+   "tvf_value": "-14.32650403",
+   "equal": true
+  },
+  {
+   "window": "provisional 01–17.09",
+   "selection": "all",
+   "card": "p_orders_gross_units",
+   "tvf": "prv_orders_gross_units",
+   "card_value": "250",
+   "tvf_value": "250",
+   "equal": true
+  },
+  {
+   "window": "provisional 01–17.09",
+   "selection": "all",
+   "card": "p_rate",
+   "tvf": "prv_cohort_buyout_rate",
+   "card_value": "0.8870967741935484",
+   "tvf_value": "0.8870967741935484",
+   "equal": true
+  },
+  {
+   "window": "provisional 01–17.09",
+   "selection": "all",
+   "card": "orders_cmp",
+   "tvf": "orders_comparable",
+   "card_value": "true",
+   "tvf_value": "true",
+   "equal": true
+  },
+  {
+   "window": "provisional 01–17.09",
+   "selection": "all",
+   "card": "econ_cmp",
+   "tvf": "economics_comparable",
+   "card_value": "false",
+   "tvf_value": "false",
+   "equal": true
+  },
+  {
+   "window": "provisional 01–17.09",
+   "selection": "all",
+   "card": "drr_cmp",
+   "tvf": "drr_comparable",
+   "card_value": "true",
+   "tvf_value": "true",
+   "equal": true
+  },
+  {
+   "window": "provisional 01–17.09",
+   "selection": "Крем Руки",
+   "card": "c_orders_gross_units",
+   "tvf": "cur_orders_gross_units",
+   "card_value": "84",
+   "tvf_value": "84",
+   "equal": true
+  },
+  {
+   "window": "provisional 01–17.09",
+   "selection": "Крем Руки",
+   "card": "c_buyout_units",
+   "tvf": "cur_buyout_units",
+   "card_value": "90",
+   "tvf_value": "90",
+   "equal": true
+  },
+  {
+   "window": "provisional 01–17.09",
+   "selection": "Крем Руки",
+   "card": "c_rate",
+   "tvf": "cur_cohort_buyout_rate",
+   "card_value": "0.9558823529411765",
+   "tvf_value": "0.9558823529411765",
+   "equal": true
+  },
+  {
+   "window": "provisional 01–17.09",
+   "selection": "Крем Руки",
+   "card": "c_price",
+   "tvf": "cur_avg_seller_price_orders_rub",
+   "card_value": "547.214642857",
+   "tvf_value": "547.214642857",
+   "equal": true
+  },
+  {
+   "window": "provisional 01–17.09",
+   "selection": "Крем Руки",
+   "card": "p_price",
+   "tvf": "prv_avg_seller_price_orders_rub",
+   "card_value": "499.005121951",
+   "tvf_value": "499.005121951",
+   "equal": true
+  },
+  {
+   "window": "provisional 01–17.09",
+   "selection": "Крем Руки",
+   "card": "c_ads_attributed_rub",
+   "tvf": "cur_ads_attributed_rub",
+   "card_value": "10240.03",
+   "tvf_value": "10240.03",
+   "equal": true
+  },
+  {
+   "window": "provisional 01–17.09",
+   "selection": "Крем Руки",
+   "card": "c_drr",
+   "tvf": "cur_drr",
+   "card_value": "0.218019841",
+   "tvf_value": "0.218019841",
+   "equal": true
+  },
+  {
+   "window": "provisional 01–17.09",
+   "selection": "Крем Руки",
+   "card": "c_contribution_after_cogs_rub",
+   "tvf": "cur_contribution_after_cogs_rub",
+   "card_value": "-11664.624",
+   "tvf_value": "-11664.624",
+   "equal": true
+  },
+  {
+   "window": "provisional 01–17.09",
+   "selection": "Крем Руки",
+   "card": "c_margin",
+   "tvf": "cur_contribution_margin_after_cogs",
+   "card_value": "-0.255312689",
+   "tvf_value": "-0.255312689",
+   "equal": true
+  },
+  {
+   "window": "provisional 01–17.09",
+   "selection": "Крем Руки",
+   "card": "c_per_buyout",
+   "tvf": "cur_contribution_after_cogs_per_buyout_rub",
+   "card_value": "-132.552545455",
+   "tvf_value": "-132.552545455",
+   "equal": true
+  },
+  {
+   "window": "provisional 01–17.09",
+   "selection": "Крем Руки",
+   "card": "p_orders_gross_units",
+   "tvf": "prv_orders_gross_units",
+   "card_value": "82",
+   "tvf_value": "82",
+   "equal": true
+  },
+  {
+   "window": "provisional 01–17.09",
+   "selection": "Крем Руки",
+   "card": "p_rate",
+   "tvf": "prv_cohort_buyout_rate",
+   "card_value": "0.8888888888888888",
+   "tvf_value": "0.8888888888888888",
+   "equal": true
+  },
+  {
+   "window": "provisional 01–17.09",
+   "selection": "Крем Руки",
+   "card": "orders_cmp",
+   "tvf": "orders_comparable",
+   "card_value": "true",
+   "tvf_value": "true",
+   "equal": true
+  },
+  {
+   "window": "provisional 01–17.09",
+   "selection": "Крем Руки",
+   "card": "econ_cmp",
+   "tvf": "economics_comparable",
+   "card_value": "false",
+   "tvf_value": "false",
+   "equal": true
+  },
+  {
+   "window": "provisional 01–17.09",
+   "selection": "Крем Руки",
+   "card": "drr_cmp",
+   "tvf": "drr_comparable",
+   "card_value": "true",
+   "tvf_value": "true",
+   "equal": true
+  },
+  {
+   "window": "provisional 01–17.09",
+   "selection": "Сыворотка АКНЕ",
+   "card": "c_orders_gross_units",
+   "tvf": "cur_orders_gross_units",
+   "card_value": "19",
+   "tvf_value": "19",
+   "equal": true
+  },
+  {
+   "window": "provisional 01–17.09",
+   "selection": "Сыворотка АКНЕ",
+   "card": "c_buyout_units",
+   "tvf": "cur_buyout_units",
+   "card_value": "22",
+   "tvf_value": "22",
+   "equal": true
+  },
+  {
+   "window": "provisional 01–17.09",
+   "selection": "Сыворотка АКНЕ",
+   "card": "c_rate",
+   "tvf": "cur_cohort_buyout_rate",
+   "card_value": "1.0",
+   "tvf_value": "1.0",
+   "equal": true
+  },
+  {
+   "window": "provisional 01–17.09",
+   "selection": "Сыворотка АКНЕ",
+   "card": "c_price",
+   "tvf": "cur_avg_seller_price_orders_rub",
+   "card_value": "811.561052632",
+   "tvf_value": "811.561052632",
+   "equal": true
+  },
+  {
+   "window": "provisional 01–17.09",
+   "selection": "Сыворотка АКНЕ",
+   "card": "p_price",
+   "tvf": "prv_avg_seller_price_orders_rub",
+   "card_value": "822.14",
+   "tvf_value": "822.14",
+   "equal": true
+  },
+  {
+   "window": "provisional 01–17.09",
+   "selection": "Сыворотка АКНЕ",
+   "card": "c_ads_attributed_rub",
+   "tvf": "cur_ads_attributed_rub",
+   "card_value": "4946.59",
+   "tvf_value": "4946.59",
+   "equal": true
+  },
+  {
+   "window": "provisional 01–17.09",
+   "selection": "Сыворотка АКНЕ",
+   "card": "c_drr",
+   "tvf": "cur_drr",
+   "card_value": "0.275455427",
+   "tvf_value": "0.275455427",
+   "equal": true
+  },
+  {
+   "window": "provisional 01–17.09",
+   "selection": "Сыворотка АКНЕ",
+   "card": "c_contribution_after_cogs_rub",
+   "tvf": "cur_contribution_after_cogs_rub",
+   "card_value": "173.354",
+   "tvf_value": "173.354",
+   "equal": true
+  },
+  {
+   "window": "provisional 01–17.09",
+   "selection": "Сыворотка АКНЕ",
+   "card": "c_margin",
+   "tvf": "cur_contribution_margin_after_cogs",
+   "card_value": "0.01060539",
+   "tvf_value": "0.01060539",
+   "equal": true
+  },
+  {
+   "window": "provisional 01–17.09",
+   "selection": "Сыворотка АКНЕ",
+   "card": "c_per_buyout",
+   "tvf": "cur_contribution_after_cogs_per_buyout_rub",
+   "card_value": "8.6677",
+   "tvf_value": "8.6677",
+   "equal": true
+  },
+  {
+   "window": "provisional 01–17.09",
+   "selection": "Сыворотка АКНЕ",
+   "card": "p_orders_gross_units",
+   "tvf": "prv_orders_gross_units",
+   "card_value": "24",
+   "tvf_value": "24",
+   "equal": true
+  },
+  {
+   "window": "provisional 01–17.09",
+   "selection": "Сыворотка АКНЕ",
+   "card": "p_rate",
+   "tvf": "prv_cohort_buyout_rate",
+   "card_value": "0.8333333333333334",
+   "tvf_value": "0.8333333333333334",
+   "equal": true
+  },
+  {
+   "window": "provisional 01–17.09",
+   "selection": "Сыворотка АКНЕ",
+   "card": "orders_cmp",
+   "tvf": "orders_comparable",
+   "card_value": "true",
+   "tvf_value": "true",
+   "equal": true
+  },
+  {
+   "window": "provisional 01–17.09",
+   "selection": "Сыворотка АКНЕ",
+   "card": "econ_cmp",
+   "tvf": "economics_comparable",
+   "card_value": "false",
+   "tvf_value": "false",
+   "equal": true
+  },
+  {
+   "window": "provisional 01–17.09",
+   "selection": "Сыворотка АКНЕ",
+   "card": "drr_cmp",
+   "tvf": "drr_comparable",
+   "card_value": "true",
+   "tvf_value": "true",
+   "equal": true
+  },
+  {
+   "window": "provisional 01–17.09",
+   "selection": "Крем Вишня (low)",
+   "card": "c_orders_gross_units",
+   "tvf": "cur_orders_gross_units",
+   "card_value": "2",
+   "tvf_value": "2",
+   "equal": true
+  },
+  {
+   "window": "provisional 01–17.09",
+   "selection": "Крем Вишня (low)",
+   "card": "c_buyout_units",
+   "tvf": "cur_buyout_units",
+   "card_value": "4",
+   "tvf_value": "4",
+   "equal": true
+  },
+  {
+   "window": "provisional 01–17.09",
+   "selection": "Крем Вишня (low)",
+   "card": "c_rate",
+   "tvf": "cur_cohort_buyout_rate",
+   "card_value": "1.0",
+   "tvf_value": "1.0",
+   "equal": true
+  },
+  {
+   "window": "provisional 01–17.09",
+   "selection": "Крем Вишня (low)",
+   "card": "c_price",
+   "tvf": "cur_avg_seller_price_orders_rub",
+   "card_value": "539",
+   "tvf_value": "539",
+   "equal": true
+  },
+  {
+   "window": "provisional 01–17.09",
+   "selection": "Крем Вишня (low)",
+   "card": "p_price",
+   "tvf": "prv_avg_seller_price_orders_rub",
+   "card_value": "538",
+   "tvf_value": "538",
+   "equal": true
+  },
+  {
+   "window": "provisional 01–17.09",
+   "selection": "Крем Вишня (low)",
+   "card": "c_ads_attributed_rub",
+   "tvf": "cur_ads_attributed_rub",
+   "card_value": "0",
+   "tvf_value": "0",
+   "equal": true
+  },
+  {
+   "window": "provisional 01–17.09",
+   "selection": "Крем Вишня (low)",
+   "card": "c_drr",
+   "tvf": "cur_drr",
+   "card_value": "0",
+   "tvf_value": "0",
+   "equal": true
+  },
+  {
+   "window": "provisional 01–17.09",
+   "selection": "Крем Вишня (low)",
+   "card": "c_contribution_after_cogs_rub",
+   "tvf": "cur_contribution_after_cogs_rub",
+   "card_value": "123.923484",
+   "tvf_value": "123.923484",
+   "equal": true
+  },
+  {
+   "window": "provisional 01–17.09",
+   "selection": "Крем Вишня (low)",
+   "card": "c_margin",
+   "tvf": "cur_contribution_margin_after_cogs",
+   "card_value": "0.062054824",
+   "tvf_value": "0.062054824",
+   "equal": true
+  },
+  {
+   "window": "provisional 01–17.09",
+   "selection": "Крем Вишня (low)",
+   "card": "c_per_buyout",
+   "tvf": "cur_contribution_after_cogs_per_buyout_rub",
+   "card_value": "30.980871",
+   "tvf_value": "30.980871",
+   "equal": true
+  },
+  {
+   "window": "provisional 01–17.09",
+   "selection": "Крем Вишня (low)",
+   "card": "p_orders_gross_units",
+   "tvf": "prv_orders_gross_units",
+   "card_value": "10",
+   "tvf_value": "10",
+   "equal": true
+  },
+  {
+   "window": "provisional 01–17.09",
+   "selection": "Крем Вишня (low)",
+   "card": "p_rate",
+   "tvf": "prv_cohort_buyout_rate",
+   "card_value": "0.9",
+   "tvf_value": "0.9",
+   "equal": true
+  },
+  {
+   "window": "provisional 01–17.09",
+   "selection": "Крем Вишня (low)",
+   "card": "orders_cmp",
+   "tvf": "orders_comparable",
+   "card_value": "true",
+   "tvf_value": "true",
+   "equal": true
+  },
+  {
+   "window": "provisional 01–17.09",
+   "selection": "Крем Вишня (low)",
+   "card": "econ_cmp",
+   "tvf": "economics_comparable",
+   "card_value": "false",
+   "tvf_value": "false",
+   "equal": true
+  },
+  {
+   "window": "provisional 01–17.09",
+   "selection": "Крем Вишня (low)",
+   "card": "drr_cmp",
+   "tvf": "drr_comparable",
+   "card_value": "true",
+   "tvf_value": "true",
+   "equal": true
+  },
+  {
+   "window": "provisional 01–17.09",
+   "selection": "Набор сыв+крем АКНЕ (bundle)",
+   "card": "c_orders_gross_units",
+   "tvf": "cur_orders_gross_units",
+   "card_value": "7",
+   "tvf_value": "7",
+   "equal": true
+  },
+  {
+   "window": "provisional 01–17.09",
+   "selection": "Набор сыв+крем АКНЕ (bundle)",
+   "card": "c_buyout_units",
+   "tvf": "cur_buyout_units",
+   "card_value": "6",
+   "tvf_value": "6",
+   "equal": true
+  },
+  {
+   "window": "provisional 01–17.09",
+   "selection": "Набор сыв+крем АКНЕ (bundle)",
+   "card": "c_rate",
+   "tvf": "cur_cohort_buyout_rate",
+   "card_value": "1.0",
+   "tvf_value": "1.0",
+   "equal": true
+  },
+  {
+   "window": "provisional 01–17.09",
+   "selection": "Набор сыв+крем АКНЕ (bundle)",
+   "card": "c_price",
+   "tvf": "cur_avg_seller_price_orders_rub",
+   "card_value": "1294",
+   "tvf_value": "1294",
+   "equal": true
+  },
+  {
+   "window": "provisional 01–17.09",
+   "selection": "Набор сыв+крем АКНЕ (bundle)",
+   "card": "p_price",
+   "tvf": "prv_avg_seller_price_orders_rub",
+   "card_value": "1312.571428571",
+   "tvf_value": "1312.571428571",
+   "equal": true
+  },
+  {
+   "window": "provisional 01–17.09",
+   "selection": "Набор сыв+крем АКНЕ (bundle)",
+   "card": "c_ads_attributed_rub",
+   "tvf": "cur_ads_attributed_rub",
+   "card_value": "0",
+   "tvf_value": "0",
+   "equal": true
+  },
+  {
+   "window": "provisional 01–17.09",
+   "selection": "Набор сыв+крем АКНЕ (bundle)",
+   "card": "c_drr",
+   "tvf": "cur_drr",
+   "card_value": "0",
+   "tvf_value": "0",
+   "equal": true
+  },
+  {
+   "window": "provisional 01–17.09",
+   "selection": "Набор сыв+крем АКНЕ (bundle)",
+   "card": "c_contribution_after_cogs_rub",
+   "tvf": "cur_contribution_after_cogs_rub",
+   "card_value": "2181.28",
+   "tvf_value": "2181.28",
+   "equal": true
+  },
+  {
+   "window": "provisional 01–17.09",
+   "selection": "Набор сыв+крем АКНЕ (bundle)",
+   "card": "c_margin",
+   "tvf": "cur_contribution_margin_after_cogs",
+   "card_value": "0.28001027",
+   "tvf_value": "0.28001027",
+   "equal": true
+  },
+  {
+   "window": "provisional 01–17.09",
+   "selection": "Набор сыв+крем АКНЕ (bundle)",
+   "card": "c_per_buyout",
+   "tvf": "cur_contribution_after_cogs_per_buyout_rub",
+   "card_value": "363.546666667",
+   "tvf_value": "363.546666667",
+   "equal": true
+  },
+  {
+   "window": "provisional 01–17.09",
+   "selection": "Набор сыв+крем АКНЕ (bundle)",
+   "card": "p_orders_gross_units",
+   "tvf": "prv_orders_gross_units",
+   "card_value": "14",
+   "tvf_value": "14",
+   "equal": true
+  },
+  {
+   "window": "provisional 01–17.09",
+   "selection": "Набор сыв+крем АКНЕ (bundle)",
+   "card": "p_rate",
+   "tvf": "prv_cohort_buyout_rate",
+   "card_value": "0.8571428571428571",
+   "tvf_value": "0.8571428571428571",
+   "equal": true
+  },
+  {
+   "window": "provisional 01–17.09",
+   "selection": "Набор сыв+крем АКНЕ (bundle)",
+   "card": "orders_cmp",
+   "tvf": "orders_comparable",
+   "card_value": "true",
+   "tvf_value": "true",
+   "equal": true
+  },
+  {
+   "window": "provisional 01–17.09",
+   "selection": "Набор сыв+крем АКНЕ (bundle)",
+   "card": "econ_cmp",
+   "tvf": "economics_comparable",
+   "card_value": "false",
+   "tvf_value": "false",
+   "equal": true
+  },
+  {
+   "window": "provisional 01–17.09",
+   "selection": "Набор сыв+крем АКНЕ (bundle)",
+   "card": "drr_cmp",
+   "tvf": "drr_comparable",
+   "card_value": "true",
+   "tvf_value": "true",
+   "equal": true
+  },
+  {
+   "window": "provisional 01–17.09",
+   "selection": "Крем УВЛ (low)",
+   "card": "c_orders_gross_units",
+   "tvf": "cur_orders_gross_units",
+   "card_value": "0",
+   "tvf_value": "0",
+   "equal": true
+  },
+  {
+   "window": "provisional 01–17.09",
+   "selection": "Крем УВЛ (low)",
+   "card": "c_buyout_units",
+   "tvf": "cur_buyout_units",
+   "card_value": "0",
+   "tvf_value": "0",
+   "equal": true
+  },
+  {
+   "window": "provisional 01–17.09",
+   "selection": "Крем УВЛ (low)",
+   "card": "c_rate",
+   "tvf": "cur_cohort_buyout_rate",
+   "card_value": null,
+   "tvf_value": null,
+   "equal": true
+  },
+  {
+   "window": "provisional 01–17.09",
+   "selection": "Крем УВЛ (low)",
+   "card": "c_price",
+   "tvf": "cur_avg_seller_price_orders_rub",
+   "card_value": null,
+   "tvf_value": null,
+   "equal": true
+  },
+  {
+   "window": "provisional 01–17.09",
+   "selection": "Крем УВЛ (low)",
+   "card": "p_price",
+   "tvf": "prv_avg_seller_price_orders_rub",
+   "card_value": "926",
+   "tvf_value": "926",
+   "equal": true
+  },
+  {
+   "window": "provisional 01–17.09",
+   "selection": "Крем УВЛ (low)",
+   "card": "c_ads_attributed_rub",
+   "tvf": "cur_ads_attributed_rub",
+   "card_value": "0",
+   "tvf_value": "0",
+   "equal": true
+  },
+  {
+   "window": "provisional 01–17.09",
+   "selection": "Крем УВЛ (low)",
+   "card": "c_drr",
+   "tvf": "cur_drr",
+   "card_value": null,
+   "tvf_value": null,
+   "equal": true
+  },
+  {
+   "window": "provisional 01–17.09",
+   "selection": "Крем УВЛ (low)",
+   "card": "c_contribution_after_cogs_rub",
+   "tvf": "cur_contribution_after_cogs_rub",
+   "card_value": "-77.2",
+   "tvf_value": "-77.2",
+   "equal": true
+  },
+  {
+   "window": "provisional 01–17.09",
+   "selection": "Крем УВЛ (low)",
+   "card": "c_margin",
+   "tvf": "cur_contribution_margin_after_cogs",
+   "card_value": null,
+   "tvf_value": null,
+   "equal": true
+  },
+  {
+   "window": "provisional 01–17.09",
+   "selection": "Крем УВЛ (low)",
+   "card": "c_per_buyout",
+   "tvf": "cur_contribution_after_cogs_per_buyout_rub",
+   "card_value": null,
+   "tvf_value": null,
+   "equal": true
+  },
+  {
+   "window": "provisional 01–17.09",
+   "selection": "Крем УВЛ (low)",
+   "card": "p_orders_gross_units",
+   "tvf": "prv_orders_gross_units",
+   "card_value": "3",
+   "tvf_value": "3",
+   "equal": true
+  },
+  {
+   "window": "provisional 01–17.09",
+   "selection": "Крем УВЛ (low)",
+   "card": "p_rate",
+   "tvf": "prv_cohort_buyout_rate",
+   "card_value": "1.0",
+   "tvf_value": "1.0",
+   "equal": true
+  },
+  {
+   "window": "provisional 01–17.09",
+   "selection": "Крем УВЛ (low)",
+   "card": "orders_cmp",
+   "tvf": "orders_comparable",
+   "card_value": "true",
+   "tvf_value": "true",
+   "equal": true
+  },
+  {
+   "window": "provisional 01–17.09",
+   "selection": "Крем УВЛ (low)",
+   "card": "econ_cmp",
+   "tvf": "economics_comparable",
+   "card_value": "false",
+   "tvf_value": "false",
+   "equal": true
+  },
+  {
+   "window": "provisional 01–17.09",
+   "selection": "Крем УВЛ (low)",
+   "card": "drr_cmp",
+   "tvf": "drr_comparable",
+   "card_value": "true",
+   "tvf_value": "true",
+   "equal": true
+  },
+  {
+   "window": "provisional 01–17.09",
+   "selection": "Набор руки+амбра (low)",
+   "card": "c_orders_gross_units",
+   "tvf": "cur_orders_gross_units",
+   "card_value": "7",
+   "tvf_value": "7",
+   "equal": true
+  },
+  {
+   "window": "provisional 01–17.09",
+   "selection": "Набор руки+амбра (low)",
+   "card": "c_buyout_units",
+   "tvf": "cur_buyout_units",
+   "card_value": "5",
+   "tvf_value": "5",
+   "equal": true
+  },
+  {
+   "window": "provisional 01–17.09",
+   "selection": "Набор руки+амбра (low)",
+   "card": "c_rate",
+   "tvf": "cur_cohort_buyout_rate",
+   "card_value": "1.0",
+   "tvf_value": "1.0",
+   "equal": true
+  },
+  {
+   "window": "provisional 01–17.09",
+   "selection": "Набор руки+амбра (low)",
+   "card": "c_price",
+   "tvf": "cur_avg_seller_price_orders_rub",
+   "card_value": "1085.714285714",
+   "tvf_value": "1085.714285714",
+   "equal": true
+  },
+  {
+   "window": "provisional 01–17.09",
+   "selection": "Набор руки+амбра (low)",
+   "card": "p_price",
+   "tvf": "prv_avg_seller_price_orders_rub",
+   "card_value": "1008",
+   "tvf_value": "1008",
+   "equal": true
+  },
+  {
+   "window": "provisional 01–17.09",
+   "selection": "Набор руки+амбра (low)",
+   "card": "c_ads_attributed_rub",
+   "tvf": "cur_ads_attributed_rub",
+   "card_value": "0",
+   "tvf_value": "0",
+   "equal": true
+  },
+  {
+   "window": "provisional 01–17.09",
+   "selection": "Набор руки+амбра (low)",
+   "card": "c_drr",
+   "tvf": "cur_drr",
+   "card_value": "0",
+   "tvf_value": "0",
+   "equal": true
+  },
+  {
+   "window": "provisional 01–17.09",
+   "selection": "Набор руки+амбра (low)",
+   "card": "c_contribution_after_cogs_rub",
+   "tvf": "cur_contribution_after_cogs_rub",
+   "card_value": "257.77239132",
+   "tvf_value": "257.77239132",
+   "equal": true
+  },
+  {
+   "window": "provisional 01–17.09",
+   "selection": "Набор руки+амбра (low)",
+   "card": "c_margin",
+   "tvf": "cur_contribution_margin_after_cogs",
+   "card_value": "0.051466162",
+   "tvf_value": "0.051466162",
+   "equal": true
+  },
+  {
+   "window": "provisional 01–17.09",
+   "selection": "Набор руки+амбра (low)",
+   "card": "c_per_buyout",
+   "tvf": "cur_contribution_after_cogs_per_buyout_rub",
+   "card_value": "51.554478264",
+   "tvf_value": "51.554478264",
+   "equal": true
+  },
+  {
+   "window": "provisional 01–17.09",
+   "selection": "Набор руки+амбра (low)",
+   "card": "p_orders_gross_units",
+   "tvf": "prv_orders_gross_units",
+   "card_value": "5",
+   "tvf_value": "5",
+   "equal": true
+  },
+  {
+   "window": "provisional 01–17.09",
+   "selection": "Набор руки+амбра (low)",
+   "card": "p_rate",
+   "tvf": "prv_cohort_buyout_rate",
+   "card_value": "0.4",
+   "tvf_value": "0.4",
+   "equal": true
+  },
+  {
+   "window": "provisional 01–17.09",
+   "selection": "Набор руки+амбра (low)",
+   "card": "orders_cmp",
+   "tvf": "orders_comparable",
+   "card_value": "true",
+   "tvf_value": "true",
+   "equal": true
+  },
+  {
+   "window": "provisional 01–17.09",
+   "selection": "Набор руки+амбра (low)",
+   "card": "econ_cmp",
+   "tvf": "economics_comparable",
+   "card_value": "false",
+   "tvf_value": "false",
+   "equal": true
+  },
+  {
+   "window": "provisional 01–17.09",
+   "selection": "Набор руки+амбра (low)",
+   "card": "drr_cmp",
+   "tvf": "drr_comparable",
+   "card_value": "true",
+   "tvf_value": "true",
+   "equal": true
+  },
+  {
+   "window": "provisional 01–17.09",
+   "attention_card": [
+    "252442517",
+    "535581674",
+    "535580776"
+   ],
+   "attention_expected_order": [
+    "252442517",
+    "535581674",
+    "535580776"
+   ],
+   "flagged_total": 3,
+   "equal": true
+  },
+  {
+   "window": "no previous period 13–26.04",
+   "selection": "all",
+   "card": "c_orders_gross_units",
+   "tvf": "cur_orders_gross_units",
+   "card_value": "689",
+   "tvf_value": "689",
+   "equal": true
+  },
+  {
+   "window": "no previous period 13–26.04",
+   "selection": "all",
+   "card": "c_buyout_units",
+   "tvf": "cur_buyout_units",
+   "card_value": "645",
+   "tvf_value": "645",
+   "equal": true
+  },
+  {
+   "window": "no previous period 13–26.04",
+   "selection": "all",
+   "card": "c_rate",
+   "tvf": "cur_cohort_buyout_rate",
+   "card_value": "0.9143686502177069",
+   "tvf_value": "0.9143686502177069",
+   "equal": true
+  },
+  {
+   "window": "no previous period 13–26.04",
+   "selection": "all",
+   "card": "c_price",
+   "tvf": "cur_avg_seller_price_orders_rub",
+   "card_value": "915.983889695",
+   "tvf_value": "915.983889695",
+   "equal": true
+  },
+  {
+   "window": "no previous period 13–26.04",
+   "selection": "all",
+   "card": "p_price",
+   "tvf": "prv_avg_seller_price_orders_rub",
+   "card_value": null,
+   "tvf_value": null,
+   "equal": true
+  },
+  {
+   "window": "no previous period 13–26.04",
+   "selection": "all",
+   "card": "c_ads_attributed_rub",
+   "tvf": "cur_ads_attributed_rub",
+   "card_value": "72844.55",
+   "tvf_value": "72844.55",
+   "equal": true
+  },
+  {
+   "window": "no previous period 13–26.04",
+   "selection": "all",
+   "card": "c_drr",
+   "tvf": "cur_drr",
+   "card_value": "0.126805408",
+   "tvf_value": "0.126805408",
+   "equal": true
+  },
+  {
+   "window": "no previous period 13–26.04",
+   "selection": "all",
+   "card": "c_contribution_after_cogs_rub",
+   "tvf": "cur_contribution_after_cogs_rub",
+   "card_value": "110510.974275",
+   "tvf_value": "110510.974275",
+   "equal": true
+  },
+  {
+   "window": "no previous period 13–26.04",
+   "selection": "all",
+   "card": "c_margin",
+   "tvf": "cur_contribution_margin_after_cogs",
+   "card_value": "0.192373941",
+   "tvf_value": "0.192373941",
+   "equal": true
+  },
+  {
+   "window": "no previous period 13–26.04",
+   "selection": "all",
+   "card": "c_per_buyout",
+   "tvf": "cur_contribution_after_cogs_per_buyout_rub",
+   "card_value": "171.334843837",
+   "tvf_value": "171.334843837",
+   "equal": true
+  },
+  {
+   "window": "no previous period 13–26.04",
+   "selection": "all",
+   "card": "p_orders_gross_units",
+   "tvf": "prv_orders_gross_units",
+   "card_value": null,
+   "tvf_value": null,
+   "equal": true
+  },
+  {
+   "window": "no previous period 13–26.04",
+   "selection": "all",
+   "card": "p_rate",
+   "tvf": "prv_cohort_buyout_rate",
+   "card_value": null,
+   "tvf_value": null,
+   "equal": true
+  },
+  {
+   "window": "no previous period 13–26.04",
+   "selection": "all",
+   "card": "orders_cmp",
+   "tvf": "orders_comparable",
+   "card_value": "false",
+   "tvf_value": "false",
+   "equal": true
+  },
+  {
+   "window": "no previous period 13–26.04",
+   "selection": "all",
+   "card": "econ_cmp",
+   "tvf": "economics_comparable",
+   "card_value": "false",
+   "tvf_value": "false",
+   "equal": true
+  },
+  {
+   "window": "no previous period 13–26.04",
+   "selection": "all",
+   "card": "drr_cmp",
+   "tvf": "drr_comparable",
+   "card_value": "false",
+   "tvf_value": "false",
+   "equal": true
+  },
+  {
+   "window": "no previous period 13–26.04",
+   "selection": "Крем Руки",
+   "card": "c_orders_gross_units",
+   "tvf": "cur_orders_gross_units",
+   "card_value": "51",
+   "tvf_value": "51",
+   "equal": true
+  },
+  {
+   "window": "no previous period 13–26.04",
+   "selection": "Крем Руки",
+   "card": "c_buyout_units",
+   "tvf": "cur_buyout_units",
+   "card_value": "50",
+   "tvf_value": "50",
+   "equal": true
+  },
+  {
+   "window": "no previous period 13–26.04",
+   "selection": "Крем Руки",
+   "card": "c_rate",
+   "tvf": "cur_cohort_buyout_rate",
+   "card_value": "0.9607843137254902",
+   "tvf_value": "0.9607843137254902",
+   "equal": true
+  },
+  {
+   "window": "no previous period 13–26.04",
+   "selection": "Крем Руки",
+   "card": "c_price",
+   "tvf": "cur_avg_seller_price_orders_rub",
+   "card_value": "698.04254902",
+   "tvf_value": "698.04254902",
+   "equal": true
+  },
+  {
+   "window": "no previous period 13–26.04",
+   "selection": "Крем Руки",
+   "card": "p_price",
+   "tvf": "prv_avg_seller_price_orders_rub",
+   "card_value": null,
+   "tvf_value": null,
+   "equal": true
+  },
+  {
+   "window": "no previous period 13–26.04",
+   "selection": "Крем Руки",
+   "card": "c_ads_attributed_rub",
+   "tvf": "cur_ads_attributed_rub",
+   "card_value": "3828.24",
+   "tvf_value": "3828.24",
+   "equal": true
+  },
+  {
+   "window": "no previous period 13–26.04",
+   "selection": "Крем Руки",
+   "card": "c_drr",
+   "tvf": "cur_drr",
+   "card_value": "0.114754054",
+   "tvf_value": "0.114754054",
+   "equal": true
+  },
+  {
+   "window": "no previous period 13–26.04",
+   "selection": "Крем Руки",
+   "card": "c_contribution_after_cogs_rub",
+   "tvf": "cur_contribution_after_cogs_rub",
+   "card_value": "2227.31",
+   "tvf_value": "2227.31",
+   "equal": true
+  },
+  {
+   "window": "no previous period 13–26.04",
+   "selection": "Крем Руки",
+   "card": "c_margin",
+   "tvf": "cur_contribution_margin_after_cogs",
+   "card_value": "0.066765227",
+   "tvf_value": "0.066765227",
+   "equal": true
+  },
+  {
+   "window": "no previous period 13–26.04",
+   "selection": "Крем Руки",
+   "card": "c_per_buyout",
+   "tvf": "cur_contribution_after_cogs_per_buyout_rub",
+   "card_value": "44.5462",
+   "tvf_value": "44.5462",
+   "equal": true
+  },
+  {
+   "window": "no previous period 13–26.04",
+   "selection": "Крем Руки",
+   "card": "p_orders_gross_units",
+   "tvf": "prv_orders_gross_units",
+   "card_value": null,
+   "tvf_value": null,
+   "equal": true
+  },
+  {
+   "window": "no previous period 13–26.04",
+   "selection": "Крем Руки",
+   "card": "p_rate",
+   "tvf": "prv_cohort_buyout_rate",
+   "card_value": null,
+   "tvf_value": null,
+   "equal": true
+  },
+  {
+   "window": "no previous period 13–26.04",
+   "selection": "Крем Руки",
+   "card": "orders_cmp",
+   "tvf": "orders_comparable",
+   "card_value": "false",
+   "tvf_value": "false",
+   "equal": true
+  },
+  {
+   "window": "no previous period 13–26.04",
+   "selection": "Крем Руки",
+   "card": "econ_cmp",
+   "tvf": "economics_comparable",
+   "card_value": "false",
+   "tvf_value": "false",
+   "equal": true
+  },
+  {
+   "window": "no previous period 13–26.04",
+   "selection": "Крем Руки",
+   "card": "drr_cmp",
+   "tvf": "drr_comparable",
+   "card_value": "false",
+   "tvf_value": "false",
+   "equal": true
+  },
+  {
+   "window": "no previous period 13–26.04",
+   "selection": "Сыворотка АКНЕ",
+   "card": "c_orders_gross_units",
+   "tvf": "cur_orders_gross_units",
+   "card_value": "60",
+   "tvf_value": "60",
+   "equal": true
+  },
+  {
+   "window": "no previous period 13–26.04",
+   "selection": "Сыворотка АКНЕ",
+   "card": "c_buyout_units",
+   "tvf": "cur_buyout_units",
+   "card_value": "61",
+   "tvf_value": "61",
+   "equal": true
+  },
+  {
+   "window": "no previous period 13–26.04",
+   "selection": "Сыворотка АКНЕ",
+   "card": "c_rate",
+   "tvf": "cur_cohort_buyout_rate",
+   "card_value": "0.8666666666666667",
+   "tvf_value": "0.8666666666666667",
+   "equal": true
+  },
+  {
+   "window": "no previous period 13–26.04",
+   "selection": "Сыворотка АКНЕ",
+   "card": "c_price",
+   "tvf": "cur_avg_seller_price_orders_rub",
+   "card_value": "658.7",
+   "tvf_value": "658.7",
+   "equal": true
+  },
+  {
+   "window": "no previous period 13–26.04",
+   "selection": "Сыворотка АКНЕ",
+   "card": "p_price",
+   "tvf": "prv_avg_seller_price_orders_rub",
+   "card_value": null,
+   "tvf_value": null,
+   "equal": true
+  },
+  {
+   "window": "no previous period 13–26.04",
+   "selection": "Сыворотка АКНЕ",
+   "card": "c_ads_attributed_rub",
+   "tvf": "cur_ads_attributed_rub",
+   "card_value": "4181.5",
+   "tvf_value": "4181.5",
+   "equal": true
+  },
+  {
+   "window": "no previous period 13–26.04",
+   "selection": "Сыворотка АКНЕ",
+   "card": "c_drr",
+   "tvf": "cur_drr",
+   "card_value": "0.104206644",
+   "tvf_value": "0.104206644",
+   "equal": true
+  },
+  {
+   "window": "no previous period 13–26.04",
+   "selection": "Сыворотка АКНЕ",
+   "card": "c_contribution_after_cogs_rub",
+   "tvf": "cur_contribution_after_cogs_rub",
+   "card_value": "7452.41",
+   "tvf_value": "7452.41",
+   "equal": true
+  },
+  {
+   "window": "no previous period 13–26.04",
+   "selection": "Сыворотка АКНЕ",
+   "card": "c_margin",
+   "tvf": "cur_contribution_margin_after_cogs",
+   "card_value": "0.185720587",
+   "tvf_value": "0.185720587",
+   "equal": true
+  },
+  {
+   "window": "no previous period 13–26.04",
+   "selection": "Сыворотка АКНЕ",
+   "card": "c_per_buyout",
+   "tvf": "cur_contribution_after_cogs_per_buyout_rub",
+   "card_value": "122.170655738",
+   "tvf_value": "122.170655738",
+   "equal": true
+  },
+  {
+   "window": "no previous period 13–26.04",
+   "selection": "Сыворотка АКНЕ",
+   "card": "p_orders_gross_units",
+   "tvf": "prv_orders_gross_units",
+   "card_value": null,
+   "tvf_value": null,
+   "equal": true
+  },
+  {
+   "window": "no previous period 13–26.04",
+   "selection": "Сыворотка АКНЕ",
+   "card": "p_rate",
+   "tvf": "prv_cohort_buyout_rate",
+   "card_value": null,
+   "tvf_value": null,
+   "equal": true
+  },
+  {
+   "window": "no previous period 13–26.04",
+   "selection": "Сыворотка АКНЕ",
+   "card": "orders_cmp",
+   "tvf": "orders_comparable",
+   "card_value": "false",
+   "tvf_value": "false",
+   "equal": true
+  },
+  {
+   "window": "no previous period 13–26.04",
+   "selection": "Сыворотка АКНЕ",
+   "card": "econ_cmp",
+   "tvf": "economics_comparable",
+   "card_value": "false",
+   "tvf_value": "false",
+   "equal": true
+  },
+  {
+   "window": "no previous period 13–26.04",
+   "selection": "Сыворотка АКНЕ",
+   "card": "drr_cmp",
+   "tvf": "drr_comparable",
+   "card_value": "false",
+   "tvf_value": "false",
+   "equal": true
+  },
+  {
+   "window": "no previous period 13–26.04",
+   "selection": "Крем Вишня (low)",
+   "card": "c_orders_gross_units",
+   "tvf": "cur_orders_gross_units",
+   "card_value": "20",
+   "tvf_value": "20",
+   "equal": true
+  },
+  {
+   "window": "no previous period 13–26.04",
+   "selection": "Крем Вишня (low)",
+   "card": "c_buyout_units",
+   "tvf": "cur_buyout_units",
+   "card_value": "9",
+   "tvf_value": "9",
+   "equal": true
+  },
+  {
+   "window": "no previous period 13–26.04",
+   "selection": "Крем Вишня (low)",
+   "card": "c_rate",
+   "tvf": "cur_cohort_buyout_rate",
+   "card_value": "0.8",
+   "tvf_value": "0.8",
+   "equal": true
+  },
+  {
+   "window": "no previous period 13–26.04",
+   "selection": "Крем Вишня (low)",
+   "card": "c_price",
+   "tvf": "cur_avg_seller_price_orders_rub",
+   "card_value": "780",
+   "tvf_value": "780",
+   "equal": true
+  },
+  {
+   "window": "no previous period 13–26.04",
+   "selection": "Крем Вишня (low)",
+   "card": "p_price",
+   "tvf": "prv_avg_seller_price_orders_rub",
+   "card_value": null,
+   "tvf_value": null,
+   "equal": true
+  },
+  {
+   "window": "no previous period 13–26.04",
+   "selection": "Крем Вишня (low)",
+   "card": "c_ads_attributed_rub",
+   "tvf": "cur_ads_attributed_rub",
+   "card_value": "1564",
+   "tvf_value": "1564",
+   "equal": true
+  },
+  {
+   "window": "no previous period 13–26.04",
+   "selection": "Крем Вишня (low)",
+   "card": "c_drr",
+   "tvf": "cur_drr",
+   "card_value": "0.222792023",
+   "tvf_value": "0.222792023",
+   "equal": true
+  },
+  {
+   "window": "no previous period 13–26.04",
+   "selection": "Крем Вишня (low)",
+   "card": "c_contribution_after_cogs_rub",
+   "tvf": "cur_contribution_after_cogs_rub",
+   "card_value": "640.915339",
+   "tvf_value": "640.915339",
+   "equal": true
+  },
+  {
+   "window": "no previous period 13–26.04",
+   "selection": "Крем Вишня (low)",
+   "card": "c_margin",
+   "tvf": "cur_contribution_margin_after_cogs",
+   "card_value": "0.091298481",
+   "tvf_value": "0.091298481",
+   "equal": true
+  },
+  {
+   "window": "no previous period 13–26.04",
+   "selection": "Крем Вишня (low)",
+   "card": "c_per_buyout",
+   "tvf": "cur_contribution_after_cogs_per_buyout_rub",
+   "card_value": "71.212815444",
+   "tvf_value": "71.212815444",
+   "equal": true
+  },
+  {
+   "window": "no previous period 13–26.04",
+   "selection": "Крем Вишня (low)",
+   "card": "p_orders_gross_units",
+   "tvf": "prv_orders_gross_units",
+   "card_value": null,
+   "tvf_value": null,
+   "equal": true
+  },
+  {
+   "window": "no previous period 13–26.04",
+   "selection": "Крем Вишня (low)",
+   "card": "p_rate",
+   "tvf": "prv_cohort_buyout_rate",
+   "card_value": null,
+   "tvf_value": null,
+   "equal": true
+  },
+  {
+   "window": "no previous period 13–26.04",
+   "selection": "Крем Вишня (low)",
+   "card": "orders_cmp",
+   "tvf": "orders_comparable",
+   "card_value": "false",
+   "tvf_value": "false",
+   "equal": true
+  },
+  {
+   "window": "no previous period 13–26.04",
+   "selection": "Крем Вишня (low)",
+   "card": "econ_cmp",
+   "tvf": "economics_comparable",
+   "card_value": "false",
+   "tvf_value": "false",
+   "equal": true
+  },
+  {
+   "window": "no previous period 13–26.04",
+   "selection": "Крем Вишня (low)",
+   "card": "drr_cmp",
+   "tvf": "drr_comparable",
+   "card_value": "false",
+   "tvf_value": "false",
+   "equal": true
+  },
+  {
+   "window": "no previous period 13–26.04",
+   "selection": "Набор сыв+крем АКНЕ (bundle)",
+   "card": "c_orders_gross_units",
+   "tvf": "cur_orders_gross_units",
+   "card_value": "19",
+   "tvf_value": "19",
+   "equal": true
+  },
+  {
+   "window": "no previous period 13–26.04",
+   "selection": "Набор сыв+крем АКНЕ (bundle)",
+   "card": "c_buyout_units",
+   "tvf": "cur_buyout_units",
+   "card_value": "23",
+   "tvf_value": "23",
+   "equal": true
+  },
+  {
+   "window": "no previous period 13–26.04",
+   "selection": "Набор сыв+крем АКНЕ (bundle)",
+   "card": "c_rate",
+   "tvf": "cur_cohort_buyout_rate",
+   "card_value": "0.8947368421052632",
+   "tvf_value": "0.8947368421052632",
+   "equal": true
+  },
+  {
+   "window": "no previous period 13–26.04",
+   "selection": "Набор сыв+крем АКНЕ (bundle)",
+   "card": "c_price",
+   "tvf": "cur_avg_seller_price_orders_rub",
+   "card_value": "1141.578947368",
+   "tvf_value": "1141.578947368",
+   "equal": true
+  },
+  {
+   "window": "no previous period 13–26.04",
+   "selection": "Набор сыв+крем АКНЕ (bundle)",
+   "card": "p_price",
+   "tvf": "prv_avg_seller_price_orders_rub",
+   "card_value": null,
+   "tvf_value": null,
+   "equal": true
+  },
+  {
+   "window": "no previous period 13–26.04",
+   "selection": "Набор сыв+крем АКНЕ (bundle)",
+   "card": "c_ads_attributed_rub",
+   "tvf": "cur_ads_attributed_rub",
+   "card_value": "1.83",
+   "tvf_value": "1.83",
+   "equal": true
+  },
+  {
+   "window": "no previous period 13–26.04",
+   "selection": "Набор сыв+крем АКНЕ (bundle)",
+   "card": "c_drr",
+   "tvf": "cur_drr",
+   "card_value": "0.000069949",
+   "tvf_value": "0.000069949",
+   "equal": true
+  },
+  {
+   "window": "no previous period 13–26.04",
+   "selection": "Набор сыв+крем АКНЕ (bundle)",
+   "card": "c_contribution_after_cogs_rub",
+   "tvf": "cur_contribution_after_cogs_rub",
+   "card_value": "7928.82",
+   "tvf_value": "7928.82",
+   "equal": true
+  },
+  {
+   "window": "no previous period 13–26.04",
+   "selection": "Набор сыв+крем АКНЕ (bundle)",
+   "card": "c_margin",
+   "tvf": "cur_contribution_margin_after_cogs",
+   "card_value": "0.303066279",
+   "tvf_value": "0.303066279",
+   "equal": true
+  },
+  {
+   "window": "no previous period 13–26.04",
+   "selection": "Набор сыв+крем АКНЕ (bundle)",
+   "card": "c_per_buyout",
+   "tvf": "cur_contribution_after_cogs_per_buyout_rub",
+   "card_value": "344.731304348",
+   "tvf_value": "344.731304348",
+   "equal": true
+  },
+  {
+   "window": "no previous period 13–26.04",
+   "selection": "Набор сыв+крем АКНЕ (bundle)",
+   "card": "p_orders_gross_units",
+   "tvf": "prv_orders_gross_units",
+   "card_value": null,
+   "tvf_value": null,
+   "equal": true
+  },
+  {
+   "window": "no previous period 13–26.04",
+   "selection": "Набор сыв+крем АКНЕ (bundle)",
+   "card": "p_rate",
+   "tvf": "prv_cohort_buyout_rate",
+   "card_value": null,
+   "tvf_value": null,
+   "equal": true
+  },
+  {
+   "window": "no previous period 13–26.04",
+   "selection": "Набор сыв+крем АКНЕ (bundle)",
+   "card": "orders_cmp",
+   "tvf": "orders_comparable",
+   "card_value": "false",
+   "tvf_value": "false",
+   "equal": true
+  },
+  {
+   "window": "no previous period 13–26.04",
+   "selection": "Набор сыв+крем АКНЕ (bundle)",
+   "card": "econ_cmp",
+   "tvf": "economics_comparable",
+   "card_value": "false",
+   "tvf_value": "false",
+   "equal": true
+  },
+  {
+   "window": "no previous period 13–26.04",
+   "selection": "Набор сыв+крем АКНЕ (bundle)",
+   "card": "drr_cmp",
+   "tvf": "drr_comparable",
+   "card_value": "false",
+   "tvf_value": "false",
+   "equal": true
+  },
+  {
+   "window": "no previous period 13–26.04",
+   "selection": "Крем УВЛ (low)",
+   "card": "c_orders_gross_units",
+   "tvf": "cur_orders_gross_units",
+   "card_value": "111",
+   "tvf_value": "111",
+   "equal": true
+  },
+  {
+   "window": "no previous period 13–26.04",
+   "selection": "Крем УВЛ (low)",
+   "card": "c_buyout_units",
+   "tvf": "cur_buyout_units",
+   "card_value": "101",
+   "tvf_value": "101",
+   "equal": true
+  },
+  {
+   "window": "no previous period 13–26.04",
+   "selection": "Крем УВЛ (low)",
+   "card": "c_rate",
+   "tvf": "cur_cohort_buyout_rate",
+   "card_value": "0.918918918918919",
+   "tvf_value": "0.918918918918919",
+   "equal": true
+  },
+  {
+   "window": "no previous period 13–26.04",
+   "selection": "Крем УВЛ (low)",
+   "card": "c_price",
+   "tvf": "cur_avg_seller_price_orders_rub",
+   "card_value": "788.003603604",
+   "tvf_value": "788.003603604",
+   "equal": true
+  },
+  {
+   "window": "no previous period 13–26.04",
+   "selection": "Крем УВЛ (low)",
+   "card": "p_price",
+   "tvf": "prv_avg_seller_price_orders_rub",
+   "card_value": null,
+   "tvf_value": null,
+   "equal": true
+  },
+  {
+   "window": "no previous period 13–26.04",
+   "selection": "Крем УВЛ (low)",
+   "card": "c_ads_attributed_rub",
+   "tvf": "cur_ads_attributed_rub",
+   "card_value": "16064.93",
+   "tvf_value": "16064.93",
+   "equal": true
+  },
+  {
+   "window": "no previous period 13–26.04",
+   "selection": "Крем УВЛ (low)",
+   "card": "c_drr",
+   "tvf": "cur_drr",
+   "card_value": "0.204295917",
+   "tvf_value": "0.204295917",
+   "equal": true
+  },
+  {
+   "window": "no previous period 13–26.04",
+   "selection": "Крем УВЛ (low)",
+   "card": "c_contribution_after_cogs_rub",
+   "tvf": "cur_contribution_after_cogs_rub",
+   "card_value": "14502.44",
+   "tvf_value": "14502.44",
+   "equal": true
+  },
+  {
+   "window": "no previous period 13–26.04",
+   "selection": "Крем УВЛ (low)",
+   "card": "c_margin",
+   "tvf": "cur_contribution_margin_after_cogs",
+   "card_value": "0.18442593",
+   "tvf_value": "0.18442593",
+   "equal": true
+  },
+  {
+   "window": "no previous period 13–26.04",
+   "selection": "Крем УВЛ (low)",
+   "card": "c_per_buyout",
+   "tvf": "cur_contribution_after_cogs_per_buyout_rub",
+   "card_value": "143.588514851",
+   "tvf_value": "143.588514851",
+   "equal": true
+  },
+  {
+   "window": "no previous period 13–26.04",
+   "selection": "Крем УВЛ (low)",
+   "card": "p_orders_gross_units",
+   "tvf": "prv_orders_gross_units",
+   "card_value": null,
+   "tvf_value": null,
+   "equal": true
+  },
+  {
+   "window": "no previous period 13–26.04",
+   "selection": "Крем УВЛ (low)",
+   "card": "p_rate",
+   "tvf": "prv_cohort_buyout_rate",
+   "card_value": null,
+   "tvf_value": null,
+   "equal": true
+  },
+  {
+   "window": "no previous period 13–26.04",
+   "selection": "Крем УВЛ (low)",
+   "card": "orders_cmp",
+   "tvf": "orders_comparable",
+   "card_value": "false",
+   "tvf_value": "false",
+   "equal": true
+  },
+  {
+   "window": "no previous period 13–26.04",
+   "selection": "Крем УВЛ (low)",
+   "card": "econ_cmp",
+   "tvf": "economics_comparable",
+   "card_value": "false",
+   "tvf_value": "false",
+   "equal": true
+  },
+  {
+   "window": "no previous period 13–26.04",
+   "selection": "Крем УВЛ (low)",
+   "card": "drr_cmp",
+   "tvf": "drr_comparable",
+   "card_value": "false",
+   "tvf_value": "false",
+   "equal": true
+  },
+  {
+   "window": "no previous period 13–26.04",
+   "selection": "Набор руки+амбра (low)",
+   "card": "c_orders_gross_units",
+   "tvf": "cur_orders_gross_units",
+   "card_value": "1",
+   "tvf_value": "1",
+   "equal": true
+  },
+  {
+   "window": "no previous period 13–26.04",
+   "selection": "Набор руки+амбра (low)",
+   "card": "c_buyout_units",
+   "tvf": "cur_buyout_units",
+   "card_value": "1",
+   "tvf_value": "1",
+   "equal": true
+  },
+  {
+   "window": "no previous period 13–26.04",
+   "selection": "Набор руки+амбра (low)",
+   "card": "c_rate",
+   "tvf": "cur_cohort_buyout_rate",
+   "card_value": "1.0",
+   "tvf_value": "1.0",
+   "equal": true
+  },
+  {
+   "window": "no previous period 13–26.04",
+   "selection": "Набор руки+амбра (low)",
+   "card": "c_price",
+   "tvf": "cur_avg_seller_price_orders_rub",
+   "card_value": "1480",
+   "tvf_value": "1480",
+   "equal": true
+  },
+  {
+   "window": "no previous period 13–26.04",
+   "selection": "Набор руки+амбра (low)",
+   "card": "p_price",
+   "tvf": "prv_avg_seller_price_orders_rub",
+   "card_value": null,
+   "tvf_value": null,
+   "equal": true
+  },
+  {
+   "window": "no previous period 13–26.04",
+   "selection": "Набор руки+амбра (low)",
+   "card": "c_ads_attributed_rub",
+   "tvf": "cur_ads_attributed_rub",
+   "card_value": "0",
+   "tvf_value": "0",
+   "equal": true
+  },
+  {
+   "window": "no previous period 13–26.04",
+   "selection": "Набор руки+амбра (low)",
+   "card": "c_drr",
+   "tvf": "cur_drr",
+   "card_value": "0",
+   "tvf_value": "0",
+   "equal": true
+  },
+  {
+   "window": "no previous period 13–26.04",
+   "selection": "Набор руки+амбра (low)",
+   "card": "c_contribution_after_cogs_rub",
+   "tvf": "cur_contribution_after_cogs_rub",
+   "card_value": "429.598371",
+   "tvf_value": "429.598371",
+   "equal": true
+  },
+  {
+   "window": "no previous period 13–26.04",
+   "selection": "Набор руки+амбра (low)",
+   "card": "c_margin",
+   "tvf": "cur_contribution_margin_after_cogs",
+   "card_value": "0.29026917",
+   "tvf_value": "0.29026917",
+   "equal": true
+  },
+  {
+   "window": "no previous period 13–26.04",
+   "selection": "Набор руки+амбра (low)",
+   "card": "c_per_buyout",
+   "tvf": "cur_contribution_after_cogs_per_buyout_rub",
+   "card_value": "429.598371",
+   "tvf_value": "429.598371",
+   "equal": true
+  },
+  {
+   "window": "no previous period 13–26.04",
+   "selection": "Набор руки+амбра (low)",
+   "card": "p_orders_gross_units",
+   "tvf": "prv_orders_gross_units",
+   "card_value": null,
+   "tvf_value": null,
+   "equal": true
+  },
+  {
+   "window": "no previous period 13–26.04",
+   "selection": "Набор руки+амбра (low)",
+   "card": "p_rate",
+   "tvf": "prv_cohort_buyout_rate",
+   "card_value": null,
+   "tvf_value": null,
+   "equal": true
+  },
+  {
+   "window": "no previous period 13–26.04",
+   "selection": "Набор руки+амбра (low)",
+   "card": "orders_cmp",
+   "tvf": "orders_comparable",
+   "card_value": "false",
+   "tvf_value": "false",
+   "equal": true
+  },
+  {
+   "window": "no previous period 13–26.04",
+   "selection": "Набор руки+амбра (low)",
+   "card": "econ_cmp",
+   "tvf": "economics_comparable",
+   "card_value": "false",
+   "tvf_value": "false",
+   "equal": true
+  },
+  {
+   "window": "no previous period 13–26.04",
+   "selection": "Набор руки+амбра (low)",
+   "card": "drr_cmp",
+   "tvf": "drr_comparable",
+   "card_value": "false",
+   "tvf_value": "false",
+   "equal": true
+  },
+  {
+   "window": "no previous period 13–26.04",
+   "attention_card": [
+    "252442341"
+   ],
+   "attention_expected_order": [
+    "252442341"
+   ],
+   "flagged_total": 1,
+   "equal": true
+  }
+ ]
+}

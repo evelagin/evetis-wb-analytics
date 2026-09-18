@@ -12,7 +12,7 @@
   "image": "metabase/metabase:latest",
   "mb_db_file": "/metabase-data/metabase.db"
  },
- "baseline_commit": "0235c0bdfd9f7ee9fc73360e0d1f1dd89beb3804",
+ "baseline_commit": "c9ad7913ad6054a12daac4722f89f2a2218a914e",
  "card_ids": [
   40,
   41,
@@ -122,7 +122,19 @@
   214,
   215,
   216,
-  217
+  217,
+  218,
+  219,
+  220,
+  221,
+  222,
+  223,
+  224,
+  225,
+  226,
+  227,
+  228,
+  229
  ],
  "card_to_collection": {
   "157": 6,
@@ -177,6 +189,18 @@
   "215": 6,
   "216": 6,
   "217": 6,
+  "218": 7,
+  "219": 7,
+  "220": 7,
+  "221": 7,
+  "222": 7,
+  "223": 7,
+  "224": 7,
+  "225": 7,
+  "226": 7,
+  "227": 7,
+  "228": 7,
+  "229": 7,
   "40": 6,
   "41": 6,
   "42": 6,
@@ -998,6 +1022,90 @@
    "file": "metabase/cards/card-217-executive-v2-status-rezul-tata-sloy-c2.json",
    "id": 217,
    "name": "Executive V2 · Статус результата · слой C2"
+  },
+  {
+   "collection_id": 7,
+   "display": "scalar",
+   "file": "metabase/cards/card-218-sku-v2-status-dannyh.json",
+   "id": 218,
+   "name": "SKU V2 · Статус данных"
+  },
+  {
+   "collection_id": 7,
+   "display": "scalar",
+   "file": "metabase/cards/card-219-sku-v2-zakazy.json",
+   "id": 219,
+   "name": "SKU V2 · Заказы"
+  },
+  {
+   "collection_id": 7,
+   "display": "scalar",
+   "file": "metabase/cards/card-220-sku-v2-vykupy.json",
+   "id": 220,
+   "name": "SKU V2 · Выкупы"
+  },
+  {
+   "collection_id": 7,
+   "display": "scalar",
+   "file": "metabase/cards/card-221-sku-v2-vykup.json",
+   "id": 221,
+   "name": "SKU V2 · Выкуп"
+  },
+  {
+   "collection_id": 7,
+   "display": "scalar",
+   "file": "metabase/cards/card-222-sku-v2-sr-cena.json",
+   "id": 222,
+   "name": "SKU V2 · Ср. цена"
+  },
+  {
+   "collection_id": 7,
+   "display": "scalar",
+   "file": "metabase/cards/card-223-sku-v2-reklama.json",
+   "id": 223,
+   "name": "SKU V2 · Реклама"
+  },
+  {
+   "collection_id": 7,
+   "display": "scalar",
+   "file": "metabase/cards/card-224-sku-v2-drr.json",
+   "id": 224,
+   "name": "SKU V2 · ДРР"
+  },
+  {
+   "collection_id": 7,
+   "display": "scalar",
+   "file": "metabase/cards/card-225-sku-v2-vklad-sku-posle-sebestoimosti.json",
+   "id": 225,
+   "name": "SKU V2 · Вклад SKU после себестоимости"
+  },
+  {
+   "collection_id": 7,
+   "display": "scalar",
+   "file": "metabase/cards/card-226-sku-v2-marzha-vklada.json",
+   "id": 226,
+   "name": "SKU V2 · Маржа вклада"
+  },
+  {
+   "collection_id": 7,
+   "display": "table",
+   "file": "metabase/cards/card-227-sku-v2-trebuyut-vnimaniya.json",
+   "id": 227,
+   "name": "SKU V2 · Требуют внимания"
+  },
+  {
+   "collection_id": 7,
+   "display": "table",
+   "file": "metabase/cards/card-228-sku-v2-tovary.json",
+   "id": 228,
+   "name": "SKU V2 · Товары"
+  },
+  {
+   "collection_id": 7,
+   "display": "combo",
+   "file": "metabase/cards/card-229-sku-v2-zakazy-i-srednyaya-cena-po-dnyam.json",
+   "id": 229,
+   "name": "SKU V2 · Заказы и средняя цена по дням"
   }
  ],
  "collection_ids": [
@@ -1033,16 +1141,31 @@
   }
  ],
  "counts": {
-  "cards": 109,
+  "cards": 121,
   "collections": 4,
-  "dashboards": 3
+  "dashboards": 4
  },
  "dashboard_ids": [
   2,
   3,
-  4
+  4,
+  11
  ],
  "dashboard_to_cards": {
+  "11": [
+   218,
+   219,
+   220,
+   221,
+   222,
+   223,
+   224,
+   225,
+   226,
+   227,
+   228,
+   229
+  ],
   "2": [
    187,
    188,
@@ -1128,6 +1251,12 @@
    "file": "metabase/dashboards/dashboard-4-search-queries.json",
    "id": 4,
    "name": "Search Queries"
+  },
+  {
+   "collection_id": 7,
+   "file": "metabase/dashboards/dashboard-11-evetis-wb-sku-portfolio-v2.json",
+   "id": 11,
+   "name": "EVETIS · WB SKU Portfolio V2"
   }
  ],
  "excluded_volatile_fields": [
@@ -1158,7 +1287,7 @@
   "updated_at",
   "view_count"
  ],
- "export_timestamp": "2026-09-17T10:33:31+03:00",
+ "export_timestamp": "2026-09-18T15:21:55+03:00",
  "metabase_version": {
   "date": "2026-08-25",
   "hash": "ab5ffba",
@@ -1196,6 +1325,18 @@
   "metabase/cards/card-215-executive-v2-logistika-sostav-sloy-c2.json": "e6fe06e9c3dbea6583272a953702ac502ff765b3f0c544edae781871e436cc5c",
   "metabase/cards/card-216-executive-v2-izmenenie-rezul-tata-k-proshlomu-periodu-sloy-c2.json": "2940b5b78c5e9e863497aba0a3e0d7a39a744b37053e2690c49b5e4536695a7d",
   "metabase/cards/card-217-executive-v2-status-rezul-tata-sloy-c2.json": "c38c8bfb9df78a03e42838e49b04562a62cc4b4b1a5fef327863f8bb4998bf29",
+  "metabase/cards/card-218-sku-v2-status-dannyh.json": "42004fba499944f9811796230f223ae64d3c5bc6efc3fa97723fcb3c75954e97",
+  "metabase/cards/card-219-sku-v2-zakazy.json": "c4e5bd27ecd1efcf40c67b90b2e774652bc20b002403ddcbc19f7559e60b6561",
+  "metabase/cards/card-220-sku-v2-vykupy.json": "ef53ee48d303152f0f205c86c3afd08cae3abd6b38935d84066a4a3046603e1b",
+  "metabase/cards/card-221-sku-v2-vykup.json": "7d035415ccd7574a2690c36386793c2e706612506fb00db4f75a3fef1c385e77",
+  "metabase/cards/card-222-sku-v2-sr-cena.json": "884bfb5e5d692d7cee70226416bf3062632e2021d4d4630dd7a045c4629eb7e9",
+  "metabase/cards/card-223-sku-v2-reklama.json": "0ebf7057cd9c8905d94a7da90848433924933e11bb2b3b2f86d90b379603d327",
+  "metabase/cards/card-224-sku-v2-drr.json": "f45e1367927b1b4ef2241bbf987ebb617330ee1c60d629660bc233d79cdd5c0a",
+  "metabase/cards/card-225-sku-v2-vklad-sku-posle-sebestoimosti.json": "e5e27e8a8cb6bd663cd07f3bb2e6a15d38d06da21119ca66312b38f8d2e04dfc",
+  "metabase/cards/card-226-sku-v2-marzha-vklada.json": "b914b4d168c0fbb8fad13da7eeed0279e8f05a48036d33ae7138274792e5bf62",
+  "metabase/cards/card-227-sku-v2-trebuyut-vnimaniya.json": "3b76f0c1b22f18795536d132484a0fa5a0df76593977e6425412332c67875866",
+  "metabase/cards/card-228-sku-v2-tovary.json": "38ae68f062a6625d59b86763ea0452d2811036f31541ce30ea619b8a621eb753",
+  "metabase/cards/card-229-sku-v2-zakazy-i-srednyaya-cena-po-dnyam.json": "1f9e477d66b77d6959dd225eb17d1cbd5fe4d630948954150b6f7e80db9982a7",
   "metabase/cards/card-40-svezhest-dannyh.json": "7dcbded3d5073efd4a160caeb7600a68cc598ca253ebe8f2fd7827835868ae2b",
   "metabase/cards/card-41-kachestvo-vybrannogo-perioda.json": "07d79ac843f1ebc65878516bc33b968de7a721defc6940089e291dae9737c829",
   "metabase/cards/card-42-zakazy-sht.json": "ce1504ad1fded53969919d72062b44c284f50cc789a862b708da1cc6717b35e8",
@@ -1257,6 +1398,7 @@
   "metabase/collections/collection-6-01-executive.json": "cb72952920412540ffc5805a991367fbdd0dfb73bc6bf76f209be1d5b8598562",
   "metabase/collections/collection-7-02-sku-performance.json": "24aad11e9416dd74ba9075c70d4cad39b6a5073582b7f4b5c21caff9e13ca7e7",
   "metabase/collections/collection-8-03-advertising.json": "9617404ea642b1e083cc083acaf2133bd5b4b0ba1e767dc033d0a34544f2dec1",
+  "metabase/dashboards/dashboard-11-evetis-wb-sku-portfolio-v2.json": "73da770712bec427ed767a0e201d8c2c811dbc013f98665a496cddb583987697",
   "metabase/dashboards/dashboard-2-evetis-wb-executive.json": "f283e7736d4b4596ee34daac082878ce0ec1b72c7d086acbcfb668b64a37b1a7",
   "metabase/dashboards/dashboard-3-evetis-wb-sku-performance.json": "2ae9fff2b3fad2e477bc9fc8790c819a2e641f1fe8ae4fa979dc8e8b160fe219",
   "metabase/dashboards/dashboard-4-search-queries.json": "5fb8a5504fc33a5051b73de9c7d87b5a9624f254226efcfd8dd687cc5c7013b3"

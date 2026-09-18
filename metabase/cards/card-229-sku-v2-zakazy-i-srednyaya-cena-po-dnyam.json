@@ -1,0 +1,160 @@
+{
+ "archived": false,
+ "archived_directly": false,
+ "cache_invalidated_at": "2026-09-18T11:55:22.135259Z",
+ "cache_ttl": null,
+ "card_schema": 23,
+ "collection": {
+  "archive_operation_id": null,
+  "archived": false,
+  "archived_directly": null,
+  "authority_level": null,
+  "created_at": "2026-08-26T21:36:24.222972Z",
+  "description": "Stage 2 — экран SKU Performance. Источник: wb_mart.V_DASH_SKU_DAILY (грейн сутки × nm_id). Все ratio — ratio-of-sums. Показатели «до себестоимости»: REF_COGS отсутствует.",
+  "entity_id": "fAATuhpeqreJF4Tq0aTmF",
+  "id": 7,
+  "is_remote_synced": false,
+  "is_sample": false,
+  "location": "/5/",
+  "name": "02 SKU Performance",
+  "namespace": null,
+  "personal_owner_id": null,
+  "slug": "02_sku_performance",
+  "type": null
+ },
+ "collection_id": 7,
+ "collection_position": null,
+ "collection_preview": true,
+ "created_at": "2026-09-18T09:42:30.51928Z",
+ "creator_id": 2,
+ "dashboard": null,
+ "dashboard_id": null,
+ "database_id": 2,
+ "dataset_query": {
+  "database": 2,
+  "lib/type": "mbql/query",
+  "stages": [
+   {
+    "lib/type": "mbql.stage/native",
+    "native": "SELECT\n  day,\n  SUM(orders_gross_units)                                                                AS orders,\n  SAFE_DIVIDE(SUM(orders_gross_seller_price_rub), NULLIF(SUM(orders_gross_units), 0))   AS price\nFROM `wb_mart.V_DASH_SKU_PERFORMANCE_V2_DAILY`\nWHERE {{day}}\n  [[AND {{sku}}]]\nGROUP BY day\nORDER BY day",
+    "template-tags": [
+     {
+      "dimension": [
+       "field",
+       {
+        "lib/uuid": "18b2d70d-f3c1-4ec2-8ac1-26d5fb0f5e6f"
+       },
+       6672
+      ],
+      "display-name": "Период",
+      "id": "e3d3653b-86da-4ef2-af08-fdb4c5e0117c",
+      "name": "day",
+      "type": "dimension",
+      "widget-type": "date/all-options"
+     },
+     {
+      "dimension": [
+       "field",
+       {
+        "lib/uuid": "f9132e46-8061-4fa2-ae7e-02eb9ceec32d"
+       },
+       6675
+      ],
+      "display-name": "Товар",
+      "id": "4f564e1d-ab8e-4ceb-a95d-7aa5b97cdaa1",
+      "name": "sku",
+      "type": "dimension",
+      "widget-type": "string/="
+     }
+    ]
+   }
+  ]
+ },
+ "description": "Столбцы — заказы по дате заказа, линия — средняя цена продавца до СПП в заказах этого дня (сумма цен / число единиц). Для всего ассортимента цена зависит и от набора заказанных товаров; для одного товара выберите его в фильтре «Товар». Совпадение изменений цены и заказов не доказывает причину.",
+ "dimension_mappings": null,
+ "dimensions": null,
+ "display": "combo",
+ "document_id": null,
+ "embedding_params": null,
+ "embedding_type": null,
+ "enable_embedding": false,
+ "entity_id": "BVsrn6DxuL9P3wLZHkakh",
+ "id": 229,
+ "is_remote_synced": false,
+ "last_used_at": "2026-09-18T12:20:32.796707Z",
+ "legacy_query": null,
+ "metabase_version": "v0.63.15.1 (ab5ffba)",
+ "name": "SKU V2 · Заказы и средняя цена по дням",
+ "param_fields": {
+  "4f564e1d-ab8e-4ceb-a95d-7aa5b97cdaa1": [
+   {
+    "base_type": "type/Text",
+    "dimensions": [],
+    "display_name": "Product Name Short",
+    "fk_target_field_id": null,
+    "has_field_values": "list",
+    "id": 6675,
+    "name": "product_name_short",
+    "name_field": null,
+    "semantic_type": "type/Category",
+    "table_id": 274,
+    "target": null
+   }
+  ],
+  "e3d3653b-86da-4ef2-af08-fdb4c5e0117c": [
+   {
+    "base_type": "type/Date",
+    "dimensions": [],
+    "display_name": "Day",
+    "fk_target_field_id": null,
+    "has_field_values": "none",
+    "id": 6672,
+    "name": "day",
+    "name_field": null,
+    "semantic_type": null,
+    "table_id": 274,
+    "target": null
+   }
+  ]
+ },
+ "parameter_mappings": [],
+ "parameter_usage_count": 0,
+ "parameters": [],
+ "query_type": "native",
+ "source_card_id": null,
+ "table_id": null,
+ "type": "question",
+ "visualization_settings": {
+  "column_settings": {
+   "[\"name\",\"price\"]": {
+    "decimals": 0,
+    "number_style": "decimal",
+    "suffix": " ₽"
+   }
+  },
+  "graph.dimensions": [
+   "day"
+  ],
+  "graph.metrics": [
+   "orders",
+   "price"
+  ],
+  "graph.show_values": false,
+  "graph.x_axis.title_text": "",
+  "graph.y_axis.title_text": "",
+  "series_settings": {
+   "orders": {
+    "axis": "left",
+    "color": "#509EE3",
+    "display": "bar",
+    "title": "Заказы"
+   },
+   "price": {
+    "axis": "right",
+    "color": "#7172AD",
+    "display": "line",
+    "title": "Ср. цена, ₽"
+   }
+  }
+ }
+}

@@ -1,0 +1,155 @@
+{
+ "archived": false,
+ "archived_directly": false,
+ "cache_invalidated_at": "2026-09-18T11:55:17.035142Z",
+ "cache_ttl": null,
+ "card_schema": 23,
+ "collection": {
+  "archive_operation_id": null,
+  "archived": false,
+  "archived_directly": null,
+  "authority_level": null,
+  "created_at": "2026-08-26T21:36:24.222972Z",
+  "description": "Stage 2 — экран SKU Performance. Источник: wb_mart.V_DASH_SKU_DAILY (грейн сутки × nm_id). Все ratio — ratio-of-sums. Показатели «до себестоимости»: REF_COGS отсутствует.",
+  "entity_id": "fAATuhpeqreJF4Tq0aTmF",
+  "id": 7,
+  "is_remote_synced": false,
+  "is_sample": false,
+  "location": "/5/",
+  "name": "02 SKU Performance",
+  "namespace": null,
+  "personal_owner_id": null,
+  "slug": "02_sku_performance",
+  "type": null
+ },
+ "collection_id": 7,
+ "collection_position": null,
+ "collection_preview": true,
+ "created_at": "2026-09-18T09:42:26.343781Z",
+ "creator_id": 2,
+ "dashboard": null,
+ "dashboard_id": null,
+ "database_id": 2,
+ "dataset_query": {
+  "database": 2,
+  "lib/type": "mbql/query",
+  "stages": [
+   {
+    "lib/type": "mbql.stage/native",
+    "native": "WITH b AS (\n  SELECT MIN(day) AS d1, MAX(day) AS d2\n  FROM `wb_mart.V_DASH_SKU_PERFORMANCE_V2_DAILY`\n  WHERE {{day}}\n),\nt AS (SELECT * FROM `wb_mart.TVF_SKU_PERFORMANCE_V2_PERIOD`((SELECT d1 FROM b), (SELECT d2 FROM b))),\nsel AS (\n  SELECT DISTINCT nm_id FROM `wb_mart.V_DASH_SKU_PERFORMANCE_V2_DAILY`\n  WHERE TRUE [[AND {{sku}}]]\n),\nr AS (SELECT * FROM t WHERE NOT is_portfolio_total AND nm_id IN (SELECT nm_id FROM sel)),\nx AS (\n  SELECT r.*,\n    SAFE_DIVIDE(cur_ads_attributed_rub, NULLIF(cur_buyout_seller_price_rub, 0)) AS drr_c,\n    (DATE_DIFF(CURRENT_DATE('Europe/Moscow'), period_to, DAY) >= 21 OR cur_cohort_unresolved_orders + cur_cohort_conflict_orders = 0) AS c_mature,\n    (DATE_DIFF(CURRENT_DATE('Europe/Moscow'), prev_to, DAY) >= 21 OR prv_cohort_unresolved_orders + prv_cohort_conflict_orders = 0) AS p_mature\n  FROM r\n),\n-- Один проход по SKU: все правила считаются массивом (BigQuery не материализует CTE, и UNION ALL из пяти\n-- веток вычислял бы функцию периода пять раз).\nrules AS (\n  SELECT nm_id, product_name_short,\n    ARRAY(SELECT AS STRUCT h.* FROM UNNEST([\n      STRUCT(1 AS sev_rank, -cur_contribution_after_cogs_rub AS sev,\n             IF(cur_contribution_after_cogs_rub < 0 AND cur_buyouts_reliable,\n                CONCAT('Отрицательный вклад ', CONCAT(CONCAT(IF(ROUND(cur_contribution_after_cogs_rub) < 0, '−', ''), REPLACE(FORMAT(\"%'d\", ABS(CAST(ROUND(cur_contribution_after_cogs_rub) AS INT64))), ',', ' ')), ' ₽'),\n                       IFNULL(CONCAT(' · ', CONCAT(CONCAT(IF(ROUND(cur_contribution_after_cogs_per_buyout_rub) < 0, '−', ''), REPLACE(FORMAT(\"%'d\", ABS(CAST(ROUND(cur_contribution_after_cogs_per_buyout_rub) AS INT64))), ',', ' ')), ' ₽'), '/выкуп'), '')), NULL) AS what),\n      STRUCT(2, cur_ads_attributed_rub,\n             IF(cur_ads_attributed_rub > 0 AND cur_buyout_units = 0,\n                CONCAT('Реклама ', CONCAT(CONCAT(IF(ROUND(cur_ads_attributed_rub) < 0, '−', ''), REPLACE(FORMAT(\"%'d\", ABS(CAST(ROUND(cur_ads_attributed_rub) AS INT64))), ',', ' ')), ' ₽'), ' · выкупов нет'), NULL)),\n      STRUCT(3, -orders_delta_pct,\n             IF(orders_comparable AND cur_orders_reliable AND prv_orders_reliable AND period_days >= 14\n                AND orders_delta_pct <= -0.5,\n                CONCAT('Заказы ', CASE WHEN NOT IFNULL(TRUE, FALSE) THEN 'н/с' WHEN SAFE_DIVIDE((cur_orders_gross_units) - (prv_orders_gross_units), NULLIF(ABS(prv_orders_gross_units), 0)) IS NULL THEN '—' ELSE CONCAT(IF(ROUND(SAFE_DIVIDE((cur_orders_gross_units) - (prv_orders_gross_units), NULLIF(ABS(prv_orders_gross_units), 0)), 3) > 0, '↑ ', IF(ROUND(SAFE_DIVIDE((cur_orders_gross_units) - (prv_orders_gross_units), NULLIF(ABS(prv_orders_gross_units), 0)), 3) < 0, '↓ ', '→ ')), REPLACE(FORMAT('%.1f', ABS(SAFE_DIVIDE((cur_orders_gross_units) - (prv_orders_gross_units), NULLIF(ABS(prv_orders_gross_units), 0))) * 100), '.', ','), ' %', IF(TRUE, '', ' · мало данных')) END,\n                       ' (', CAST(prv_orders_gross_units AS STRING), ' → ', CAST(cur_orders_gross_units AS STRING), ')',\n                       IFNULL(CONCAT(' · цена ', CASE WHEN NOT IFNULL(TRUE, FALSE) THEN 'н/с' WHEN SAFE_DIVIDE((cur_avg_seller_price_orders_rub) - (prv_avg_seller_price_orders_rub), NULLIF(ABS(prv_avg_seller_price_orders_rub), 0)) IS NULL THEN '—' ELSE CONCAT(IF(ROUND(SAFE_DIVIDE((cur_avg_seller_price_orders_rub) - (prv_avg_seller_price_orders_rub), NULLIF(ABS(prv_avg_seller_price_orders_rub), 0)), 3) > 0, '↑ ', IF(ROUND(SAFE_DIVIDE((cur_avg_seller_price_orders_rub) - (prv_avg_seller_price_orders_rub), NULLIF(ABS(prv_avg_seller_price_orders_rub), 0)), 3) < 0, '↓ ', '→ ')), REPLACE(FORMAT('%.1f', ABS(SAFE_DIVIDE((cur_avg_seller_price_orders_rub) - (prv_avg_seller_price_orders_rub), NULLIF(ABS(prv_avg_seller_price_orders_rub), 0))) * 100), '.', ','), ' %', IF(TRUE, '', ' · мало данных')) END), '')), NULL)),\n      STRUCT(4, -cohort_buyout_rate_delta_pp,\n             IF(orders_comparable AND cur_cohort_reliable AND prv_cohort_reliable AND c_mature AND p_mature\n                AND cohort_buyout_rate_delta_pp <= -14.0,\n                CONCAT('Выкуп ', CONCAT(REPLACE(REPLACE(FORMAT('%.1f', (cur_cohort_buyout_rate) * 100), '.', ','), '-', '−'), ' %'), ' · ',\n                       CASE WHEN NOT IFNULL(TRUE, FALSE) THEN 'н/с' WHEN (cur_cohort_buyout_rate) IS NULL OR (prv_cohort_buyout_rate) IS NULL THEN '—' ELSE CONCAT(IF(ROUND(((cur_cohort_buyout_rate) - (prv_cohort_buyout_rate)) * 100, 1) > 0, '↑ ', IF(ROUND(((cur_cohort_buyout_rate) - (prv_cohort_buyout_rate)) * 100, 1) < 0, '↓ ', '→ ')), REPLACE(FORMAT('%.1f', ABS(((cur_cohort_buyout_rate) - (prv_cohort_buyout_rate)) * 100)), '.', ','), ' п.п.', IF(TRUE, '', ' · мало данных')) END), NULL)),\n      STRUCT(5, drr_c,\n             IF(cur_buyouts_reliable AND drr_c >= 0.41,\n                CONCAT('ДРР ', CONCAT(REPLACE(REPLACE(FORMAT('%.1f', (drr_c) * 100), '.', ','), '-', '−'), ' %'),\n                       IF(drr_comparable AND prv_buyouts_reliable, CONCAT(' · ', CASE WHEN NOT IFNULL(TRUE, FALSE) THEN 'н/с' WHEN (cur_drr) IS NULL OR (prv_drr) IS NULL THEN '—' ELSE CONCAT(IF(ROUND(((cur_drr) - (prv_drr)) * 100, 1) > 0, '↑ ', IF(ROUND(((cur_drr) - (prv_drr)) * 100, 1) < 0, '↓ ', '→ ')), REPLACE(FORMAT('%.1f', ABS(((cur_drr) - (prv_drr)) * 100)), '.', ','), ' п.п.', IF(TRUE, '', ' · мало данных')) END), '')), NULL))\n    ]) AS h WHERE h.what IS NOT NULL) AS hits\n  FROM x\n),\ntop AS (\n  SELECT product_name_short AS product, nm_id, hits[OFFSET(0)].sev_rank AS sev_rank, hits[OFFSET(0)].sev AS sev,\n         ARRAY_TO_STRING(ARRAY(SELECT what FROM UNNEST(hits) ORDER BY sev_rank), ' · ') AS what\n  FROM rules WHERE ARRAY_LENGTH(hits) > 0\n  -- Порядок (детерминированный): 1) тип самого важного сигнала товара: отрицательный вклад → реклама без выкупов →\n  -- падение заказов → падение выкупа → высокий ДРР; 2) внутри типа — величина (больший убыток / сумма рекламы /\n  -- падение / п.п. / ДРР выше); 3) ничья — nm_id по возрастанию.\n  ORDER BY sev_rank, sev DESC, nm_id LIMIT 6\n)\nSELECT\n  IFNULL(top.product, '✅ Нет товаров, требующих внимания')                                                   AS sku,\n  IFNULL(CAST(top.nm_id AS STRING), '')                                                                       AS nm,\n  IFNULL(top.what, 'по правилам: отрицательный вклад, реклама без выкупов, падение заказов, падение выкупа, высокий ДРР') AS what\nFROM (SELECT 1 AS one) LEFT JOIN top ON TRUE\nORDER BY top.sev_rank, top.sev DESC, top.nm_id",
+    "template-tags": [
+     {
+      "dimension": [
+       "field",
+       {
+        "lib/uuid": "6eecd93a-fe63-4ec1-b489-75ed7786702a"
+       },
+       6672
+      ],
+      "display-name": "Период",
+      "id": "414ae97d-4413-422e-818d-7eb1b2450703",
+      "name": "day",
+      "type": "dimension",
+      "widget-type": "date/all-options"
+     },
+     {
+      "dimension": [
+       "field",
+       {
+        "lib/uuid": "947a6eaa-c9ad-437a-bf1b-e0fe0606ff07"
+       },
+       6675
+      ],
+      "display-name": "Товар",
+      "id": "9440b616-dee5-4183-a333-a1b0d60897fe",
+      "name": "sku",
+      "type": "dimension",
+      "widget-type": "string/="
+     }
+    ]
+   }
+  ]
+ },
+ "description": "До 6 товаров. Порядок: сначала отрицательный вклад (больший убыток выше), затем реклама без выкупов (большая сумма выше), затем падение заказов, падение выкупа и высокий ДРР (большее отклонение выше); при равенстве — по артикулу. Правила: (1) отрицательный вклад после себестоимости при ≥ 10 выкупах; (2) есть реклама, а выкупов нет; (3) заказы упали на 50 % и больше при ≥ 10 заказах в обоих периодах и периоде от 14 дней; (4) выкуп упал на 14 п.п. и больше — только по завершённым когортам и ≥ 10 завершённым заказам; (5) ДРР 41 % и выше при ≥ 10 выкупах. Пороги 3–5 — эмпирические пороги V1: 5 % самых крайних значений товаров EVETIS за апрель–август 2026 (14-дневные окна), а не универсальные бизнес-нормативы. Рядом с падением заказов показано изменение цены — это совпадение по времени, не причина.",
+ "dimension_mappings": null,
+ "dimensions": null,
+ "display": "table",
+ "document_id": null,
+ "embedding_params": null,
+ "embedding_type": null,
+ "enable_embedding": false,
+ "entity_id": "wc6Tc7Q2kiX9_3i9UPGiO",
+ "id": 227,
+ "is_remote_synced": false,
+ "last_used_at": "2026-09-18T12:20:32.796707Z",
+ "legacy_query": null,
+ "metabase_version": "v0.63.15.1 (ab5ffba)",
+ "name": "SKU V2 · Требуют внимания",
+ "param_fields": {
+  "414ae97d-4413-422e-818d-7eb1b2450703": [
+   {
+    "base_type": "type/Date",
+    "dimensions": [],
+    "display_name": "Day",
+    "fk_target_field_id": null,
+    "has_field_values": "none",
+    "id": 6672,
+    "name": "day",
+    "name_field": null,
+    "semantic_type": null,
+    "table_id": 274,
+    "target": null
+   }
+  ],
+  "9440b616-dee5-4183-a333-a1b0d60897fe": [
+   {
+    "base_type": "type/Text",
+    "dimensions": [],
+    "display_name": "Product Name Short",
+    "fk_target_field_id": null,
+    "has_field_values": "list",
+    "id": 6675,
+    "name": "product_name_short",
+    "name_field": null,
+    "semantic_type": "type/Category",
+    "table_id": 274,
+    "target": null
+   }
+  ]
+ },
+ "parameter_mappings": [],
+ "parameter_usage_count": 0,
+ "parameters": [],
+ "query_type": "native",
+ "source_card_id": null,
+ "table_id": null,
+ "type": "question",
+ "visualization_settings": {
+  "column_settings": {
+   "[\"name\",\"nm\"]": {
+    "column_title": "Артикул WB"
+   },
+   "[\"name\",\"sku\"]": {
+    "column_title": "Товар"
+   },
+   "[\"name\",\"what\"]": {
+    "column_title": "Что происходит"
+   }
+  },
+  "table.columns": [
+   {
+    "enabled": true,
+    "name": "sku"
+   },
+   {
+    "enabled": true,
+    "name": "nm"
+   },
+   {
+    "enabled": true,
+    "name": "what"
+   }
+  ],
+  "table.row_index": false
+ }
+}

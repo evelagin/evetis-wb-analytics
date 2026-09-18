@@ -1,0 +1,2132 @@
+{
+ "archived": false,
+ "archived_directly": false,
+ "auto_apply_filters": true,
+ "cache_ttl": null,
+ "can_set_cache_policy": true,
+ "caveats": null,
+ "collection": {
+  "archive_operation_id": null,
+  "archived": false,
+  "archived_directly": null,
+  "authority_level": null,
+  "created_at": "2026-08-26T21:36:24.222972Z",
+  "description": "Stage 2 — экран SKU Performance. Источник: wb_mart.V_DASH_SKU_DAILY (грейн сутки × nm_id). Все ratio — ratio-of-sums. Показатели «до себестоимости»: REF_COGS отсутствует.",
+  "entity_id": "fAATuhpeqreJF4Tq0aTmF",
+  "id": 7,
+  "is_remote_synced": false,
+  "is_sample": false,
+  "location": "/5/",
+  "name": "02 SKU Performance",
+  "namespace": null,
+  "personal_owner_id": null,
+  "slug": "02_sku_performance",
+  "type": null
+ },
+ "collection_authority_level": null,
+ "collection_id": 7,
+ "collection_position": null,
+ "created_at": "2026-09-18T09:40:07.672562Z",
+ "creator_id": 2,
+ "dashcards": [
+  {
+   "action_id": null,
+   "card": {
+    "archived": false,
+    "archived_directly": false,
+    "cache_invalidated_at": "2026-09-18T11:54:50.675227Z",
+    "cache_ttl": null,
+    "card_schema": 23,
+    "collection_id": 7,
+    "collection_position": null,
+    "collection_preview": true,
+    "created_at": "2026-09-18T09:39:49.400252Z",
+    "creator_id": 2,
+    "dashboard_id": null,
+    "database_id": 2,
+    "dataset_query": {
+     "database": 2,
+     "lib/type": "mbql/query",
+     "stages": [
+      {
+       "lib/type": "mbql.stage/native",
+       "native": "WITH b AS (\n  SELECT MIN(day) AS d1, MAX(day) AS d2\n  FROM `wb_mart.V_DASH_SKU_PERFORMANCE_V2_DAILY`\n  WHERE {{day}}\n),\nt AS (SELECT * FROM `wb_mart.TVF_SKU_PERFORMANCE_V2_PERIOD`((SELECT d1 FROM b), (SELECT d2 FROM b))),\nsel AS (\n  SELECT DISTINCT nm_id FROM `wb_mart.V_DASH_SKU_PERFORMANCE_V2_DAILY`\n  WHERE TRUE [[AND {{sku}}]]\n),\nr AS (SELECT * FROM t WHERE NOT is_portfolio_total AND nm_id IN (SELECT nm_id FROM sel)),\na AS (\n  SELECT\n    ANY_VALUE(period_from) AS period_from, ANY_VALUE(period_to) AS period_to, ANY_VALUE(period_days) AS len,\n    ANY_VALUE(min_reliable_units) AS min_units, COUNT(*) AS skus,\n    SUM(cur_orders_gross_units) AS c_orders_gross_units, SUM(prv_orders_gross_units) AS p_orders_gross_units, SUM(cur_orders_gross_seller_price_rub) AS c_orders_gross_seller_price_rub, SUM(prv_orders_gross_seller_price_rub) AS p_orders_gross_seller_price_rub, SUM(cur_orders_cancelled_units) AS c_orders_cancelled_units, SUM(prv_orders_cancelled_units) AS p_orders_cancelled_units, SUM(cur_buyout_units) AS c_buyout_units, SUM(prv_buyout_units) AS p_buyout_units, SUM(cur_cohort_buyout_orders) AS c_cohort_buyout_orders, SUM(prv_cohort_buyout_orders) AS p_cohort_buyout_orders, SUM(cur_cohort_resolved_orders) AS c_cohort_resolved_orders, SUM(prv_cohort_resolved_orders) AS p_cohort_resolved_orders, SUM(cur_cohort_unresolved_orders) AS c_cohort_unresolved_orders, SUM(prv_cohort_unresolved_orders) AS p_cohort_unresolved_orders, SUM(cur_cohort_conflict_orders) AS c_cohort_conflict_orders, SUM(prv_cohort_conflict_orders) AS p_cohort_conflict_orders, SUM(cur_ads_attributed_rub) AS c_ads_attributed_rub, SUM(prv_ads_attributed_rub) AS p_ads_attributed_rub, SUM(cur_buyout_seller_price_rub) AS c_buyout_seller_price_rub, SUM(prv_buyout_seller_price_rub) AS p_buyout_seller_price_rub, SUM(cur_fin_seller_price_rub) AS c_fin_seller_price_rub, SUM(prv_fin_seller_price_rub) AS p_fin_seller_price_rub, SUM(cur_fin_sale_units) AS c_fin_sale_units, SUM(prv_fin_sale_units) AS p_fin_sale_units, SUM(cur_fin_return_units) AS c_fin_return_units, SUM(prv_fin_return_units) AS p_fin_return_units, SUM(cur_contribution_after_cogs_rub) AS c_contribution_after_cogs_rub, SUM(prv_contribution_after_cogs_rub) AS p_contribution_after_cogs_rub, SUM(cur_contribution_before_cogs_rub) AS c_contribution_before_cogs_rub, SUM(prv_contribution_before_cogs_rub) AS p_contribution_before_cogs_rub, SUM(cur_credited_for_goods_rub) AS c_credited_for_goods_rub, SUM(prv_credited_for_goods_rub) AS p_credited_for_goods_rub,\n    MAX(cur_orders_cov_days) AS c_orders_cov_days, MAX(prv_orders_cov_days) AS p_orders_cov_days, MAX(cur_sales_cov_days) AS c_sales_cov_days, MAX(prv_sales_cov_days) AS p_sales_cov_days, MAX(cur_ads_cov_days) AS c_ads_cov_days, MAX(prv_ads_cov_days) AS p_ads_cov_days, MAX(cur_finance_cov_days) AS c_finance_cov_days, MAX(prv_finance_cov_days) AS p_finance_cov_days, MAX(cur_storage_cov_days) AS c_storage_cov_days, MAX(prv_storage_cov_days) AS p_storage_cov_days, MAX(cur_finance_provisional_days) AS c_finance_provisional_days, MAX(prv_finance_provisional_days) AS p_finance_provisional_days, MAX(cur_price_chain_missing_days) AS c_price_chain_missing_days, MAX(prv_price_chain_missing_days) AS p_price_chain_missing_days, MAX(cur_current_days) AS c_current_days, MAX(prv_current_days) AS p_current_days, MAX(cur_days_present) AS c_days_present, MAX(prv_days_present) AS p_days_present,\n    SUM(cur_cogs_missing_sku_days) AS c_cogs_missing_sku_days\n  FROM r\n),\nk AS (\n  SELECT a.*,\n    -- сопоставимость окон по метрике: одинаковое число покрытых суток, текущее окно покрыто целиком\n    (c_orders_cov_days = p_orders_cov_days AND c_orders_cov_days = len)                              AS orders_cmp,\n    (c_sales_cov_days = p_sales_cov_days AND c_sales_cov_days = len)                                 AS sales_cmp,\n    (c_ads_cov_days = p_ads_cov_days AND c_ads_cov_days = len AND c_sales_cov_days = len AND p_sales_cov_days = len) AS drr_cmp,\n    (c_finance_cov_days = p_finance_cov_days AND c_finance_cov_days = len\n     AND c_ads_cov_days = len AND p_ads_cov_days = len)                                              AS econ_cmp,\n    -- Зрелость когорты для ПОДАЧИ: нет заказов без исхода ИЛИ окно закончилось ≥ 21 дня назад\n    -- (p99 «заказ → выкуп» = 18 дней, Phase A §F). Флаг Phase B cohort_mature остаётся строгим.\n    (c_cohort_unresolved_orders + c_cohort_conflict_orders = 0\n     OR DATE_DIFF(CURRENT_DATE('Europe/Moscow'), period_to, DAY) >= 21)                              AS c_cohort_mature,\n    (p_cohort_unresolved_orders + p_cohort_conflict_orders = 0\n     OR DATE_DIFF(CURRENT_DATE('Europe/Moscow'), DATE_SUB(period_from, INTERVAL 1 DAY), DAY) >= 21)  AS p_cohort_mature,\n    -- Надёжность сравнения (порог Phase B min_reliable_units): база ≥ порога в ОБОИХ окнах. Это только пометка\n    -- «мало данных» рядом с фактическим изменением; изменение не скрывается (display ≠ alert eligibility).\n    (IFNULL(c_orders_gross_units, 0) >= min_units AND IFNULL(p_orders_gross_units, 0) >= min_units)   AS orders_rel,\n    (IFNULL(c_buyout_units, 0) >= min_units AND IFNULL(p_buyout_units, 0) >= min_units)               AS buyouts_rel,\n    (IFNULL(c_cohort_resolved_orders, 0) >= min_units AND IFNULL(p_cohort_resolved_orders, 0) >= min_units) AS cohort_rel,\n    SAFE_DIVIDE(c_orders_gross_seller_price_rub, NULLIF(c_orders_gross_units, 0)) AS c_price,\n    SAFE_DIVIDE(p_orders_gross_seller_price_rub, NULLIF(p_orders_gross_units, 0)) AS p_price,\n    SAFE_DIVIDE(c_cohort_buyout_orders, NULLIF(c_cohort_resolved_orders, 0))      AS c_rate,\n    SAFE_DIVIDE(p_cohort_buyout_orders, NULLIF(p_cohort_resolved_orders, 0))      AS p_rate,\n    SAFE_DIVIDE(c_ads_attributed_rub, NULLIF(c_buyout_seller_price_rub, 0))       AS c_drr,\n    SAFE_DIVIDE(p_ads_attributed_rub, NULLIF(p_buyout_seller_price_rub, 0))       AS p_drr,\n    SAFE_DIVIDE(c_contribution_after_cogs_rub, NULLIF(c_fin_seller_price_rub, 0)) AS c_margin,\n    SAFE_DIVIDE(p_contribution_after_cogs_rub, NULLIF(p_fin_seller_price_rub, 0)) AS p_margin,\n    SAFE_DIVIDE(c_contribution_after_cogs_rub, NULLIF(c_fin_sale_units - c_fin_return_units, 0)) AS c_per_buyout\n  FROM a\n),\nf AS (\n  SELECT MAX(source_data_through) AS through,\n         MAX(IF(finance_covered, day, NULL)) AS fin_through\n  FROM `wb_mart.V_DASH_SKU_PERFORMANCE_V2_DAILY`\n  WHERE day BETWEEN (SELECT d1 FROM b) AND (SELECT d2 FROM b)\n),\ns AS (\n  SELECT k.*, f.through, f.fin_through,\n         -- пропуски финансов ВНУТРИ периода (не хвост, который ещё не пришёл от WB)\n         DATE_DIFF(f.fin_through, period_from, DAY) + 1 - c_finance_cov_days AS fin_gaps,\n         DATE_DIFF(period_to, f.fin_through, DAY)                          AS fin_tail\n  FROM k CROSS JOIN f\n),\nst AS (\n  SELECT s.*,\n    CASE\n      WHEN c_orders_cov_days < len OR c_sales_cov_days < len OR c_ads_cov_days < len\n        OR IFNULL(fin_gaps, len) > 0 OR fin_through IS NULL                         THEN 'INCOMPLETE'\n      WHEN fin_tail > 0 OR c_finance_provisional_days > 0                          THEN 'PROVISIONAL'\n      ELSE 'FINAL' END AS status_code\n  FROM s\n)\nSELECT CONCAT(\n  CASE status_code WHEN 'FINAL' THEN '🟢 Данные окончательные' WHEN 'PROVISIONAL' THEN '🟡 Предварительно'\n                   ELSE '🔴 Неполные данные' END,\n  ' · ', FORMAT_DATE('%d.%m', period_from), '–', FORMAT_DATE('%d.%m', period_to),\n  IFNULL(CONCAT(' · ', NULLIF(ARRAY_TO_STRING(ARRAY(SELECT x FROM UNNEST([\n    IF(c_orders_cov_days < len OR c_sales_cov_days < len, FORMAT('заказы %d/%d дн.', LEAST(c_orders_cov_days, c_sales_cov_days), len), NULL),\n    IF(c_ads_cov_days < len, FORMAT('реклама %d/%d дн.', c_ads_cov_days, len), NULL),\n    IF(IFNULL(fin_gaps, 0) > 0, FORMAT('нет финансов %d дн.', fin_gaps), NULL),\n    IF(fin_tail > 0, CONCAT('финансы по ', FORMAT_DATE('%d.%m', fin_through)), NULL),\n    IF(c_finance_provisional_days > 0, FORMAT('финансы предв. %d дн.', c_finance_provisional_days), NULL),\n    IF(c_storage_cov_days < len, IF(c_storage_cov_days = 0, 'без хранения по товарам',\n       FORMAT('хранение по товарам %d/%d дн.', c_storage_cov_days, len)), NULL),\n    IF(c_price_chain_missing_days > 0, 'состав удержаний с 13.07', NULL),\n    IF(c_cogs_missing_sku_days > 0, 'себестоимость частично', NULL),\n    IF(NOT c_cohort_mature, FORMAT('выкуп: %d заказов без исхода',\n       c_cohort_unresolved_orders + c_cohort_conflict_orders), NULL)\n  ]) AS x WHERE x IS NOT NULL), ' · '), '')), '')\n) AS status\nFROM st",
+       "template-tags": [
+        {
+         "dimension": [
+          "field",
+          {
+           "lib/uuid": "6e311220-5e59-49b8-a4a4-d6f8c8ff5ad9"
+          },
+          6672
+         ],
+         "display-name": "Период",
+         "id": "4dde4f3c-f1e8-407a-a8c4-46ac91484de6",
+         "name": "day",
+         "type": "dimension",
+         "widget-type": "date/all-options"
+        },
+        {
+         "dimension": [
+          "field",
+          {
+           "lib/uuid": "02f619c4-ae68-47cf-9b60-e8b6fc6b55ca"
+          },
+          6675
+         ],
+         "display-name": "Товар",
+         "id": "4008fd88-c563-466a-939f-e788fa36279a",
+         "name": "sku",
+         "type": "dimension",
+         "widget-type": "string/="
+        }
+       ]
+      }
+     ]
+    },
+    "description": "Качество выбранного периода. 🟢 — все источники покрыты, финансы WB окончательные. 🟡 — финансовый отчёт WB за последние дни ещё не пришёл («финансы по …»: вклад и маржа тогда без сравнения) или предварительный («финансы предв.»). 🔴 — внутри периода нет данных. Оговорки: «хранение по товарам N/M дн.» — хранение по товару WB отдаёт с 01.09.2026, за более ранние дни вклад его не включает; «выкуп: N заказов без исхода» — процент выкупа предварительный; «состав удержаний с 13.07» — разложение удержаний WB из цены есть с 13.07.2026.",
+    "dimension_mappings": null,
+    "dimensions": null,
+    "display": "scalar",
+    "document_id": null,
+    "download_perms": "full",
+    "embedding_params": null,
+    "embedding_type": null,
+    "enable_embedding": false,
+    "entity_id": "j5RqieNa0HA3G5_Dw6xZh",
+    "id": 218,
+    "last_used_at": "2026-09-18T12:20:32.796707Z",
+    "legacy_query": null,
+    "metabase_version": "v0.63.15.1 (ab5ffba)",
+    "name": "SKU V2 · Статус данных",
+    "parameter_mappings": [],
+    "parameters": [],
+    "query_average_duration": null,
+    "query_type": "native",
+    "source_card_id": null,
+    "table_id": null,
+    "type": "question",
+    "visualization_settings": {
+     "scalar.field": "status"
+    }
+   },
+   "card_id": 218,
+   "col": 0,
+   "collection_authority_level": null,
+   "created_at": "2026-09-18T10:38:09.911743Z",
+   "dashboard_id": 11,
+   "dashboard_tab_id": null,
+   "entity_id": "M0WyjbsmUPCvTH3lbnllW",
+   "id": 1269,
+   "inline_parameters": [],
+   "parameter_mappings": [
+    {
+     "card_id": 218,
+     "parameter_id": "date",
+     "target": [
+      "dimension",
+      [
+       "template-tag",
+       "day"
+      ]
+     ]
+    },
+    {
+     "card_id": 218,
+     "parameter_id": "sku",
+     "target": [
+      "dimension",
+      [
+       "template-tag",
+       "sku"
+      ]
+     ]
+    }
+   ],
+   "row": 0,
+   "series": [],
+   "size_x": 24,
+   "size_y": 2,
+   "visualization_settings": {
+    "card.title": "Статус данных"
+   }
+  },
+  {
+   "action_id": null,
+   "card": {
+    "archived": false,
+    "archived_directly": false,
+    "cache_invalidated_at": "2026-09-18T11:54:53.783779Z",
+    "cache_ttl": null,
+    "card_schema": 23,
+    "collection_id": 7,
+    "collection_position": null,
+    "collection_preview": true,
+    "created_at": "2026-09-18T09:39:51.599994Z",
+    "creator_id": 2,
+    "dashboard_id": null,
+    "database_id": 2,
+    "dataset_query": {
+     "database": 2,
+     "lib/type": "mbql/query",
+     "stages": [
+      {
+       "lib/type": "mbql.stage/native",
+       "native": "WITH b AS (\n  SELECT MIN(day) AS d1, MAX(day) AS d2\n  FROM `wb_mart.V_DASH_SKU_PERFORMANCE_V2_DAILY`\n  WHERE {{day}}\n),\nt AS (SELECT * FROM `wb_mart.TVF_SKU_PERFORMANCE_V2_PERIOD`((SELECT d1 FROM b), (SELECT d2 FROM b))),\nsel AS (\n  SELECT DISTINCT nm_id FROM `wb_mart.V_DASH_SKU_PERFORMANCE_V2_DAILY`\n  WHERE TRUE [[AND {{sku}}]]\n),\nr AS (SELECT * FROM t WHERE NOT is_portfolio_total AND nm_id IN (SELECT nm_id FROM sel)),\na AS (\n  SELECT\n    ANY_VALUE(period_from) AS period_from, ANY_VALUE(period_to) AS period_to, ANY_VALUE(period_days) AS len,\n    ANY_VALUE(min_reliable_units) AS min_units, COUNT(*) AS skus,\n    SUM(cur_orders_gross_units) AS c_orders_gross_units, SUM(prv_orders_gross_units) AS p_orders_gross_units, SUM(cur_orders_gross_seller_price_rub) AS c_orders_gross_seller_price_rub, SUM(prv_orders_gross_seller_price_rub) AS p_orders_gross_seller_price_rub, SUM(cur_orders_cancelled_units) AS c_orders_cancelled_units, SUM(prv_orders_cancelled_units) AS p_orders_cancelled_units, SUM(cur_buyout_units) AS c_buyout_units, SUM(prv_buyout_units) AS p_buyout_units, SUM(cur_cohort_buyout_orders) AS c_cohort_buyout_orders, SUM(prv_cohort_buyout_orders) AS p_cohort_buyout_orders, SUM(cur_cohort_resolved_orders) AS c_cohort_resolved_orders, SUM(prv_cohort_resolved_orders) AS p_cohort_resolved_orders, SUM(cur_cohort_unresolved_orders) AS c_cohort_unresolved_orders, SUM(prv_cohort_unresolved_orders) AS p_cohort_unresolved_orders, SUM(cur_cohort_conflict_orders) AS c_cohort_conflict_orders, SUM(prv_cohort_conflict_orders) AS p_cohort_conflict_orders, SUM(cur_ads_attributed_rub) AS c_ads_attributed_rub, SUM(prv_ads_attributed_rub) AS p_ads_attributed_rub, SUM(cur_buyout_seller_price_rub) AS c_buyout_seller_price_rub, SUM(prv_buyout_seller_price_rub) AS p_buyout_seller_price_rub, SUM(cur_fin_seller_price_rub) AS c_fin_seller_price_rub, SUM(prv_fin_seller_price_rub) AS p_fin_seller_price_rub, SUM(cur_fin_sale_units) AS c_fin_sale_units, SUM(prv_fin_sale_units) AS p_fin_sale_units, SUM(cur_fin_return_units) AS c_fin_return_units, SUM(prv_fin_return_units) AS p_fin_return_units, SUM(cur_contribution_after_cogs_rub) AS c_contribution_after_cogs_rub, SUM(prv_contribution_after_cogs_rub) AS p_contribution_after_cogs_rub, SUM(cur_contribution_before_cogs_rub) AS c_contribution_before_cogs_rub, SUM(prv_contribution_before_cogs_rub) AS p_contribution_before_cogs_rub, SUM(cur_credited_for_goods_rub) AS c_credited_for_goods_rub, SUM(prv_credited_for_goods_rub) AS p_credited_for_goods_rub,\n    MAX(cur_orders_cov_days) AS c_orders_cov_days, MAX(prv_orders_cov_days) AS p_orders_cov_days, MAX(cur_sales_cov_days) AS c_sales_cov_days, MAX(prv_sales_cov_days) AS p_sales_cov_days, MAX(cur_ads_cov_days) AS c_ads_cov_days, MAX(prv_ads_cov_days) AS p_ads_cov_days, MAX(cur_finance_cov_days) AS c_finance_cov_days, MAX(prv_finance_cov_days) AS p_finance_cov_days, MAX(cur_storage_cov_days) AS c_storage_cov_days, MAX(prv_storage_cov_days) AS p_storage_cov_days, MAX(cur_finance_provisional_days) AS c_finance_provisional_days, MAX(prv_finance_provisional_days) AS p_finance_provisional_days, MAX(cur_price_chain_missing_days) AS c_price_chain_missing_days, MAX(prv_price_chain_missing_days) AS p_price_chain_missing_days, MAX(cur_current_days) AS c_current_days, MAX(prv_current_days) AS p_current_days, MAX(cur_days_present) AS c_days_present, MAX(prv_days_present) AS p_days_present,\n    SUM(cur_cogs_missing_sku_days) AS c_cogs_missing_sku_days\n  FROM r\n),\nk AS (\n  SELECT a.*,\n    -- сопоставимость окон по метрике: одинаковое число покрытых суток, текущее окно покрыто целиком\n    (c_orders_cov_days = p_orders_cov_days AND c_orders_cov_days = len)                              AS orders_cmp,\n    (c_sales_cov_days = p_sales_cov_days AND c_sales_cov_days = len)                                 AS sales_cmp,\n    (c_ads_cov_days = p_ads_cov_days AND c_ads_cov_days = len AND c_sales_cov_days = len AND p_sales_cov_days = len) AS drr_cmp,\n    (c_finance_cov_days = p_finance_cov_days AND c_finance_cov_days = len\n     AND c_ads_cov_days = len AND p_ads_cov_days = len)                                              AS econ_cmp,\n    -- Зрелость когорты для ПОДАЧИ: нет заказов без исхода ИЛИ окно закончилось ≥ 21 дня назад\n    -- (p99 «заказ → выкуп» = 18 дней, Phase A §F). Флаг Phase B cohort_mature остаётся строгим.\n    (c_cohort_unresolved_orders + c_cohort_conflict_orders = 0\n     OR DATE_DIFF(CURRENT_DATE('Europe/Moscow'), period_to, DAY) >= 21)                              AS c_cohort_mature,\n    (p_cohort_unresolved_orders + p_cohort_conflict_orders = 0\n     OR DATE_DIFF(CURRENT_DATE('Europe/Moscow'), DATE_SUB(period_from, INTERVAL 1 DAY), DAY) >= 21)  AS p_cohort_mature,\n    -- Надёжность сравнения (порог Phase B min_reliable_units): база ≥ порога в ОБОИХ окнах. Это только пометка\n    -- «мало данных» рядом с фактическим изменением; изменение не скрывается (display ≠ alert eligibility).\n    (IFNULL(c_orders_gross_units, 0) >= min_units AND IFNULL(p_orders_gross_units, 0) >= min_units)   AS orders_rel,\n    (IFNULL(c_buyout_units, 0) >= min_units AND IFNULL(p_buyout_units, 0) >= min_units)               AS buyouts_rel,\n    (IFNULL(c_cohort_resolved_orders, 0) >= min_units AND IFNULL(p_cohort_resolved_orders, 0) >= min_units) AS cohort_rel,\n    SAFE_DIVIDE(c_orders_gross_seller_price_rub, NULLIF(c_orders_gross_units, 0)) AS c_price,\n    SAFE_DIVIDE(p_orders_gross_seller_price_rub, NULLIF(p_orders_gross_units, 0)) AS p_price,\n    SAFE_DIVIDE(c_cohort_buyout_orders, NULLIF(c_cohort_resolved_orders, 0))      AS c_rate,\n    SAFE_DIVIDE(p_cohort_buyout_orders, NULLIF(p_cohort_resolved_orders, 0))      AS p_rate,\n    SAFE_DIVIDE(c_ads_attributed_rub, NULLIF(c_buyout_seller_price_rub, 0))       AS c_drr,\n    SAFE_DIVIDE(p_ads_attributed_rub, NULLIF(p_buyout_seller_price_rub, 0))       AS p_drr,\n    SAFE_DIVIDE(c_contribution_after_cogs_rub, NULLIF(c_fin_seller_price_rub, 0)) AS c_margin,\n    SAFE_DIVIDE(p_contribution_after_cogs_rub, NULLIF(p_fin_seller_price_rub, 0)) AS p_margin,\n    SAFE_DIVIDE(c_contribution_after_cogs_rub, NULLIF(c_fin_sale_units - c_fin_return_units, 0)) AS c_per_buyout\n  FROM a\n)\nSELECT CONCAT(IFNULL(CONCAT(IF(ROUND(c_orders_gross_units) < 0, '−', ''), REPLACE(FORMAT(\"%'d\", ABS(CAST(ROUND(c_orders_gross_units) AS INT64))), ',', ' ')), '—'), '  ·  ', IFNULL(CASE WHEN NOT IFNULL(orders_cmp, FALSE) THEN 'н/с' WHEN SAFE_DIVIDE((c_orders_gross_units) - (p_orders_gross_units), NULLIF(ABS(p_orders_gross_units), 0)) IS NULL THEN '—' ELSE CONCAT(IF(ROUND(SAFE_DIVIDE((c_orders_gross_units) - (p_orders_gross_units), NULLIF(ABS(p_orders_gross_units), 0)), 3) > 0, '↑ ', IF(ROUND(SAFE_DIVIDE((c_orders_gross_units) - (p_orders_gross_units), NULLIF(ABS(p_orders_gross_units), 0)), 3) < 0, '↓ ', '→ ')), REPLACE(FORMAT('%.1f', ABS(SAFE_DIVIDE((c_orders_gross_units) - (p_orders_gross_units), NULLIF(ABS(p_orders_gross_units), 0))) * 100), '.', ','), ' %', IF(orders_rel, '', ' · мало данных')) END, '—')) AS kpi FROM k",
+       "template-tags": [
+        {
+         "dimension": [
+          "field",
+          {
+           "lib/uuid": "3e298726-5124-4ccb-b332-bccb5153ddf1"
+          },
+          6672
+         ],
+         "display-name": "Период",
+         "id": "2ced7593-a064-490a-8b3b-6e59369f9a98",
+         "name": "day",
+         "type": "dimension",
+         "widget-type": "date/all-options"
+        },
+        {
+         "dimension": [
+          "field",
+          {
+           "lib/uuid": "456f42f2-5a36-4489-9aff-09a05900aec2"
+          },
+          6675
+         ],
+         "display-name": "Товар",
+         "id": "067d6f59-b23d-4da9-a990-01af8ebe45b8",
+         "name": "sku",
+         "type": "dimension",
+         "widget-type": "string/="
+        }
+       ]
+      }
+     ]
+    },
+    "description": "Все оформленные заказы за период, включая отменённые (дата заказа). Справа — изменение к предыдущему периоду такой же продолжительности; «н/с» — периоды несопоставимы по покрытию данных; «мало данных» — меньше 10 заказов в одном из периодов: изменение фактическое, но выводы делать рано; сигналов «Требуют внимания» по нему нет.",
+    "dimension_mappings": null,
+    "dimensions": null,
+    "display": "scalar",
+    "document_id": null,
+    "download_perms": "full",
+    "embedding_params": null,
+    "embedding_type": null,
+    "enable_embedding": false,
+    "entity_id": "kXZdoHz00FC_mtR7i1axz",
+    "id": 219,
+    "last_used_at": "2026-09-18T12:20:32.796707Z",
+    "legacy_query": null,
+    "metabase_version": "v0.63.15.1 (ab5ffba)",
+    "name": "SKU V2 · Заказы",
+    "parameter_mappings": [],
+    "parameters": [],
+    "query_average_duration": null,
+    "query_type": "native",
+    "source_card_id": null,
+    "table_id": null,
+    "type": "question",
+    "visualization_settings": {
+     "scalar.field": "kpi"
+    }
+   },
+   "card_id": 219,
+   "col": 0,
+   "collection_authority_level": null,
+   "created_at": "2026-09-18T10:38:09.911743Z",
+   "dashboard_id": 11,
+   "dashboard_tab_id": null,
+   "entity_id": "gmpB6X_AgGyMDEmoCjyMD",
+   "id": 1270,
+   "inline_parameters": [],
+   "parameter_mappings": [
+    {
+     "card_id": 219,
+     "parameter_id": "date",
+     "target": [
+      "dimension",
+      [
+       "template-tag",
+       "day"
+      ]
+     ]
+    },
+    {
+     "card_id": 219,
+     "parameter_id": "sku",
+     "target": [
+      "dimension",
+      [
+       "template-tag",
+       "sku"
+      ]
+     ]
+    }
+   ],
+   "row": 2,
+   "series": [],
+   "size_x": 6,
+   "size_y": 2,
+   "visualization_settings": {
+    "card.title": "Заказы"
+   }
+  },
+  {
+   "action_id": null,
+   "card": {
+    "archived": false,
+    "archived_directly": false,
+    "cache_invalidated_at": "2026-09-18T11:54:57.381329Z",
+    "cache_ttl": null,
+    "card_schema": 23,
+    "collection_id": 7,
+    "collection_position": null,
+    "collection_preview": true,
+    "created_at": "2026-09-18T09:39:53.694568Z",
+    "creator_id": 2,
+    "dashboard_id": null,
+    "database_id": 2,
+    "dataset_query": {
+     "database": 2,
+     "lib/type": "mbql/query",
+     "stages": [
+      {
+       "lib/type": "mbql.stage/native",
+       "native": "WITH b AS (\n  SELECT MIN(day) AS d1, MAX(day) AS d2\n  FROM `wb_mart.V_DASH_SKU_PERFORMANCE_V2_DAILY`\n  WHERE {{day}}\n),\nt AS (SELECT * FROM `wb_mart.TVF_SKU_PERFORMANCE_V2_PERIOD`((SELECT d1 FROM b), (SELECT d2 FROM b))),\nsel AS (\n  SELECT DISTINCT nm_id FROM `wb_mart.V_DASH_SKU_PERFORMANCE_V2_DAILY`\n  WHERE TRUE [[AND {{sku}}]]\n),\nr AS (SELECT * FROM t WHERE NOT is_portfolio_total AND nm_id IN (SELECT nm_id FROM sel)),\na AS (\n  SELECT\n    ANY_VALUE(period_from) AS period_from, ANY_VALUE(period_to) AS period_to, ANY_VALUE(period_days) AS len,\n    ANY_VALUE(min_reliable_units) AS min_units, COUNT(*) AS skus,\n    SUM(cur_orders_gross_units) AS c_orders_gross_units, SUM(prv_orders_gross_units) AS p_orders_gross_units, SUM(cur_orders_gross_seller_price_rub) AS c_orders_gross_seller_price_rub, SUM(prv_orders_gross_seller_price_rub) AS p_orders_gross_seller_price_rub, SUM(cur_orders_cancelled_units) AS c_orders_cancelled_units, SUM(prv_orders_cancelled_units) AS p_orders_cancelled_units, SUM(cur_buyout_units) AS c_buyout_units, SUM(prv_buyout_units) AS p_buyout_units, SUM(cur_cohort_buyout_orders) AS c_cohort_buyout_orders, SUM(prv_cohort_buyout_orders) AS p_cohort_buyout_orders, SUM(cur_cohort_resolved_orders) AS c_cohort_resolved_orders, SUM(prv_cohort_resolved_orders) AS p_cohort_resolved_orders, SUM(cur_cohort_unresolved_orders) AS c_cohort_unresolved_orders, SUM(prv_cohort_unresolved_orders) AS p_cohort_unresolved_orders, SUM(cur_cohort_conflict_orders) AS c_cohort_conflict_orders, SUM(prv_cohort_conflict_orders) AS p_cohort_conflict_orders, SUM(cur_ads_attributed_rub) AS c_ads_attributed_rub, SUM(prv_ads_attributed_rub) AS p_ads_attributed_rub, SUM(cur_buyout_seller_price_rub) AS c_buyout_seller_price_rub, SUM(prv_buyout_seller_price_rub) AS p_buyout_seller_price_rub, SUM(cur_fin_seller_price_rub) AS c_fin_seller_price_rub, SUM(prv_fin_seller_price_rub) AS p_fin_seller_price_rub, SUM(cur_fin_sale_units) AS c_fin_sale_units, SUM(prv_fin_sale_units) AS p_fin_sale_units, SUM(cur_fin_return_units) AS c_fin_return_units, SUM(prv_fin_return_units) AS p_fin_return_units, SUM(cur_contribution_after_cogs_rub) AS c_contribution_after_cogs_rub, SUM(prv_contribution_after_cogs_rub) AS p_contribution_after_cogs_rub, SUM(cur_contribution_before_cogs_rub) AS c_contribution_before_cogs_rub, SUM(prv_contribution_before_cogs_rub) AS p_contribution_before_cogs_rub, SUM(cur_credited_for_goods_rub) AS c_credited_for_goods_rub, SUM(prv_credited_for_goods_rub) AS p_credited_for_goods_rub,\n    MAX(cur_orders_cov_days) AS c_orders_cov_days, MAX(prv_orders_cov_days) AS p_orders_cov_days, MAX(cur_sales_cov_days) AS c_sales_cov_days, MAX(prv_sales_cov_days) AS p_sales_cov_days, MAX(cur_ads_cov_days) AS c_ads_cov_days, MAX(prv_ads_cov_days) AS p_ads_cov_days, MAX(cur_finance_cov_days) AS c_finance_cov_days, MAX(prv_finance_cov_days) AS p_finance_cov_days, MAX(cur_storage_cov_days) AS c_storage_cov_days, MAX(prv_storage_cov_days) AS p_storage_cov_days, MAX(cur_finance_provisional_days) AS c_finance_provisional_days, MAX(prv_finance_provisional_days) AS p_finance_provisional_days, MAX(cur_price_chain_missing_days) AS c_price_chain_missing_days, MAX(prv_price_chain_missing_days) AS p_price_chain_missing_days, MAX(cur_current_days) AS c_current_days, MAX(prv_current_days) AS p_current_days, MAX(cur_days_present) AS c_days_present, MAX(prv_days_present) AS p_days_present,\n    SUM(cur_cogs_missing_sku_days) AS c_cogs_missing_sku_days\n  FROM r\n),\nk AS (\n  SELECT a.*,\n    -- сопоставимость окон по метрике: одинаковое число покрытых суток, текущее окно покрыто целиком\n    (c_orders_cov_days = p_orders_cov_days AND c_orders_cov_days = len)                              AS orders_cmp,\n    (c_sales_cov_days = p_sales_cov_days AND c_sales_cov_days = len)                                 AS sales_cmp,\n    (c_ads_cov_days = p_ads_cov_days AND c_ads_cov_days = len AND c_sales_cov_days = len AND p_sales_cov_days = len) AS drr_cmp,\n    (c_finance_cov_days = p_finance_cov_days AND c_finance_cov_days = len\n     AND c_ads_cov_days = len AND p_ads_cov_days = len)                                              AS econ_cmp,\n    -- Зрелость когорты для ПОДАЧИ: нет заказов без исхода ИЛИ окно закончилось ≥ 21 дня назад\n    -- (p99 «заказ → выкуп» = 18 дней, Phase A §F). Флаг Phase B cohort_mature остаётся строгим.\n    (c_cohort_unresolved_orders + c_cohort_conflict_orders = 0\n     OR DATE_DIFF(CURRENT_DATE('Europe/Moscow'), period_to, DAY) >= 21)                              AS c_cohort_mature,\n    (p_cohort_unresolved_orders + p_cohort_conflict_orders = 0\n     OR DATE_DIFF(CURRENT_DATE('Europe/Moscow'), DATE_SUB(period_from, INTERVAL 1 DAY), DAY) >= 21)  AS p_cohort_mature,\n    -- Надёжность сравнения (порог Phase B min_reliable_units): база ≥ порога в ОБОИХ окнах. Это только пометка\n    -- «мало данных» рядом с фактическим изменением; изменение не скрывается (display ≠ alert eligibility).\n    (IFNULL(c_orders_gross_units, 0) >= min_units AND IFNULL(p_orders_gross_units, 0) >= min_units)   AS orders_rel,\n    (IFNULL(c_buyout_units, 0) >= min_units AND IFNULL(p_buyout_units, 0) >= min_units)               AS buyouts_rel,\n    (IFNULL(c_cohort_resolved_orders, 0) >= min_units AND IFNULL(p_cohort_resolved_orders, 0) >= min_units) AS cohort_rel,\n    SAFE_DIVIDE(c_orders_gross_seller_price_rub, NULLIF(c_orders_gross_units, 0)) AS c_price,\n    SAFE_DIVIDE(p_orders_gross_seller_price_rub, NULLIF(p_orders_gross_units, 0)) AS p_price,\n    SAFE_DIVIDE(c_cohort_buyout_orders, NULLIF(c_cohort_resolved_orders, 0))      AS c_rate,\n    SAFE_DIVIDE(p_cohort_buyout_orders, NULLIF(p_cohort_resolved_orders, 0))      AS p_rate,\n    SAFE_DIVIDE(c_ads_attributed_rub, NULLIF(c_buyout_seller_price_rub, 0))       AS c_drr,\n    SAFE_DIVIDE(p_ads_attributed_rub, NULLIF(p_buyout_seller_price_rub, 0))       AS p_drr,\n    SAFE_DIVIDE(c_contribution_after_cogs_rub, NULLIF(c_fin_seller_price_rub, 0)) AS c_margin,\n    SAFE_DIVIDE(p_contribution_after_cogs_rub, NULLIF(p_fin_seller_price_rub, 0)) AS p_margin,\n    SAFE_DIVIDE(c_contribution_after_cogs_rub, NULLIF(c_fin_sale_units - c_fin_return_units, 0)) AS c_per_buyout\n  FROM a\n)\nSELECT CONCAT(IFNULL(CONCAT(IF(ROUND(c_buyout_units) < 0, '−', ''), REPLACE(FORMAT(\"%'d\", ABS(CAST(ROUND(c_buyout_units) AS INT64))), ',', ' ')), '—'), '  ·  ', IFNULL(CASE WHEN NOT IFNULL(sales_cmp, FALSE) THEN 'н/с' WHEN SAFE_DIVIDE((c_buyout_units) - (p_buyout_units), NULLIF(ABS(p_buyout_units), 0)) IS NULL THEN '—' ELSE CONCAT(IF(ROUND(SAFE_DIVIDE((c_buyout_units) - (p_buyout_units), NULLIF(ABS(p_buyout_units), 0)), 3) > 0, '↑ ', IF(ROUND(SAFE_DIVIDE((c_buyout_units) - (p_buyout_units), NULLIF(ABS(p_buyout_units), 0)), 3) < 0, '↓ ', '→ ')), REPLACE(FORMAT('%.1f', ABS(SAFE_DIVIDE((c_buyout_units) - (p_buyout_units), NULLIF(ABS(p_buyout_units), 0))) * 100), '.', ','), ' %', IF(buyouts_rel, '', ' · мало данных')) END, '—')) AS kpi FROM k",
+       "template-tags": [
+        {
+         "dimension": [
+          "field",
+          {
+           "lib/uuid": "6d556530-27a6-482d-89a8-28abb06c6e3f"
+          },
+          6672
+         ],
+         "display-name": "Период",
+         "id": "bbd5a0d2-25b7-4651-9e42-4bc02020b016",
+         "name": "day",
+         "type": "dimension",
+         "widget-type": "date/all-options"
+        },
+        {
+         "dimension": [
+          "field",
+          {
+           "lib/uuid": "fdf94dfe-b68a-4d1d-b4fb-60613a5eec73"
+          },
+          6675
+         ],
+         "display-name": "Товар",
+         "id": "bd22ea0b-0c6a-498e-9284-807ac0cd9ef8",
+         "name": "sku",
+         "type": "dimension",
+         "widget-type": "string/="
+        }
+       ]
+      }
+     ]
+    },
+    "description": "Выкупленные товары по дате выкупа. Это события периода, а не судьба заказов периода: процент выкупа — в карточке «Выкуп». Справа — изменение к предыдущему периоду такой же продолжительности; «мало данных» — меньше 10 выкупов в одном из периодов: изменение фактическое, но выводы делать рано; сигналов «Требуют внимания» по нему нет.",
+    "dimension_mappings": null,
+    "dimensions": null,
+    "display": "scalar",
+    "document_id": null,
+    "download_perms": "full",
+    "embedding_params": null,
+    "embedding_type": null,
+    "enable_embedding": false,
+    "entity_id": "56nGkp8E1NUY_u3JZzXmt",
+    "id": 220,
+    "last_used_at": "2026-09-18T12:20:32.796707Z",
+    "legacy_query": null,
+    "metabase_version": "v0.63.15.1 (ab5ffba)",
+    "name": "SKU V2 · Выкупы",
+    "parameter_mappings": [],
+    "parameters": [],
+    "query_average_duration": null,
+    "query_type": "native",
+    "source_card_id": null,
+    "table_id": null,
+    "type": "question",
+    "visualization_settings": {
+     "scalar.field": "kpi"
+    }
+   },
+   "card_id": 220,
+   "col": 6,
+   "collection_authority_level": null,
+   "created_at": "2026-09-18T10:38:09.911743Z",
+   "dashboard_id": 11,
+   "dashboard_tab_id": null,
+   "entity_id": "rdJM9FYuf2pOPOsFzqu5F",
+   "id": 1271,
+   "inline_parameters": [],
+   "parameter_mappings": [
+    {
+     "card_id": 220,
+     "parameter_id": "date",
+     "target": [
+      "dimension",
+      [
+       "template-tag",
+       "day"
+      ]
+     ]
+    },
+    {
+     "card_id": 220,
+     "parameter_id": "sku",
+     "target": [
+      "dimension",
+      [
+       "template-tag",
+       "sku"
+      ]
+     ]
+    }
+   ],
+   "row": 2,
+   "series": [],
+   "size_x": 6,
+   "size_y": 2,
+   "visualization_settings": {
+    "card.title": "Выкупы"
+   }
+  },
+  {
+   "action_id": null,
+   "card": {
+    "archived": false,
+    "archived_directly": false,
+    "cache_invalidated_at": "2026-09-18T11:55:00.036392Z",
+    "cache_ttl": null,
+    "card_schema": 23,
+    "collection_id": 7,
+    "collection_position": null,
+    "collection_preview": true,
+    "created_at": "2026-09-18T09:39:55.896761Z",
+    "creator_id": 2,
+    "dashboard_id": null,
+    "database_id": 2,
+    "dataset_query": {
+     "database": 2,
+     "lib/type": "mbql/query",
+     "stages": [
+      {
+       "lib/type": "mbql.stage/native",
+       "native": "WITH b AS (\n  SELECT MIN(day) AS d1, MAX(day) AS d2\n  FROM `wb_mart.V_DASH_SKU_PERFORMANCE_V2_DAILY`\n  WHERE {{day}}\n),\nt AS (SELECT * FROM `wb_mart.TVF_SKU_PERFORMANCE_V2_PERIOD`((SELECT d1 FROM b), (SELECT d2 FROM b))),\nsel AS (\n  SELECT DISTINCT nm_id FROM `wb_mart.V_DASH_SKU_PERFORMANCE_V2_DAILY`\n  WHERE TRUE [[AND {{sku}}]]\n),\nr AS (SELECT * FROM t WHERE NOT is_portfolio_total AND nm_id IN (SELECT nm_id FROM sel)),\na AS (\n  SELECT\n    ANY_VALUE(period_from) AS period_from, ANY_VALUE(period_to) AS period_to, ANY_VALUE(period_days) AS len,\n    ANY_VALUE(min_reliable_units) AS min_units, COUNT(*) AS skus,\n    SUM(cur_orders_gross_units) AS c_orders_gross_units, SUM(prv_orders_gross_units) AS p_orders_gross_units, SUM(cur_orders_gross_seller_price_rub) AS c_orders_gross_seller_price_rub, SUM(prv_orders_gross_seller_price_rub) AS p_orders_gross_seller_price_rub, SUM(cur_orders_cancelled_units) AS c_orders_cancelled_units, SUM(prv_orders_cancelled_units) AS p_orders_cancelled_units, SUM(cur_buyout_units) AS c_buyout_units, SUM(prv_buyout_units) AS p_buyout_units, SUM(cur_cohort_buyout_orders) AS c_cohort_buyout_orders, SUM(prv_cohort_buyout_orders) AS p_cohort_buyout_orders, SUM(cur_cohort_resolved_orders) AS c_cohort_resolved_orders, SUM(prv_cohort_resolved_orders) AS p_cohort_resolved_orders, SUM(cur_cohort_unresolved_orders) AS c_cohort_unresolved_orders, SUM(prv_cohort_unresolved_orders) AS p_cohort_unresolved_orders, SUM(cur_cohort_conflict_orders) AS c_cohort_conflict_orders, SUM(prv_cohort_conflict_orders) AS p_cohort_conflict_orders, SUM(cur_ads_attributed_rub) AS c_ads_attributed_rub, SUM(prv_ads_attributed_rub) AS p_ads_attributed_rub, SUM(cur_buyout_seller_price_rub) AS c_buyout_seller_price_rub, SUM(prv_buyout_seller_price_rub) AS p_buyout_seller_price_rub, SUM(cur_fin_seller_price_rub) AS c_fin_seller_price_rub, SUM(prv_fin_seller_price_rub) AS p_fin_seller_price_rub, SUM(cur_fin_sale_units) AS c_fin_sale_units, SUM(prv_fin_sale_units) AS p_fin_sale_units, SUM(cur_fin_return_units) AS c_fin_return_units, SUM(prv_fin_return_units) AS p_fin_return_units, SUM(cur_contribution_after_cogs_rub) AS c_contribution_after_cogs_rub, SUM(prv_contribution_after_cogs_rub) AS p_contribution_after_cogs_rub, SUM(cur_contribution_before_cogs_rub) AS c_contribution_before_cogs_rub, SUM(prv_contribution_before_cogs_rub) AS p_contribution_before_cogs_rub, SUM(cur_credited_for_goods_rub) AS c_credited_for_goods_rub, SUM(prv_credited_for_goods_rub) AS p_credited_for_goods_rub,\n    MAX(cur_orders_cov_days) AS c_orders_cov_days, MAX(prv_orders_cov_days) AS p_orders_cov_days, MAX(cur_sales_cov_days) AS c_sales_cov_days, MAX(prv_sales_cov_days) AS p_sales_cov_days, MAX(cur_ads_cov_days) AS c_ads_cov_days, MAX(prv_ads_cov_days) AS p_ads_cov_days, MAX(cur_finance_cov_days) AS c_finance_cov_days, MAX(prv_finance_cov_days) AS p_finance_cov_days, MAX(cur_storage_cov_days) AS c_storage_cov_days, MAX(prv_storage_cov_days) AS p_storage_cov_days, MAX(cur_finance_provisional_days) AS c_finance_provisional_days, MAX(prv_finance_provisional_days) AS p_finance_provisional_days, MAX(cur_price_chain_missing_days) AS c_price_chain_missing_days, MAX(prv_price_chain_missing_days) AS p_price_chain_missing_days, MAX(cur_current_days) AS c_current_days, MAX(prv_current_days) AS p_current_days, MAX(cur_days_present) AS c_days_present, MAX(prv_days_present) AS p_days_present,\n    SUM(cur_cogs_missing_sku_days) AS c_cogs_missing_sku_days\n  FROM r\n),\nk AS (\n  SELECT a.*,\n    -- сопоставимость окон по метрике: одинаковое число покрытых суток, текущее окно покрыто целиком\n    (c_orders_cov_days = p_orders_cov_days AND c_orders_cov_days = len)                              AS orders_cmp,\n    (c_sales_cov_days = p_sales_cov_days AND c_sales_cov_days = len)                                 AS sales_cmp,\n    (c_ads_cov_days = p_ads_cov_days AND c_ads_cov_days = len AND c_sales_cov_days = len AND p_sales_cov_days = len) AS drr_cmp,\n    (c_finance_cov_days = p_finance_cov_days AND c_finance_cov_days = len\n     AND c_ads_cov_days = len AND p_ads_cov_days = len)                                              AS econ_cmp,\n    -- Зрелость когорты для ПОДАЧИ: нет заказов без исхода ИЛИ окно закончилось ≥ 21 дня назад\n    -- (p99 «заказ → выкуп» = 18 дней, Phase A §F). Флаг Phase B cohort_mature остаётся строгим.\n    (c_cohort_unresolved_orders + c_cohort_conflict_orders = 0\n     OR DATE_DIFF(CURRENT_DATE('Europe/Moscow'), period_to, DAY) >= 21)                              AS c_cohort_mature,\n    (p_cohort_unresolved_orders + p_cohort_conflict_orders = 0\n     OR DATE_DIFF(CURRENT_DATE('Europe/Moscow'), DATE_SUB(period_from, INTERVAL 1 DAY), DAY) >= 21)  AS p_cohort_mature,\n    -- Надёжность сравнения (порог Phase B min_reliable_units): база ≥ порога в ОБОИХ окнах. Это только пометка\n    -- «мало данных» рядом с фактическим изменением; изменение не скрывается (display ≠ alert eligibility).\n    (IFNULL(c_orders_gross_units, 0) >= min_units AND IFNULL(p_orders_gross_units, 0) >= min_units)   AS orders_rel,\n    (IFNULL(c_buyout_units, 0) >= min_units AND IFNULL(p_buyout_units, 0) >= min_units)               AS buyouts_rel,\n    (IFNULL(c_cohort_resolved_orders, 0) >= min_units AND IFNULL(p_cohort_resolved_orders, 0) >= min_units) AS cohort_rel,\n    SAFE_DIVIDE(c_orders_gross_seller_price_rub, NULLIF(c_orders_gross_units, 0)) AS c_price,\n    SAFE_DIVIDE(p_orders_gross_seller_price_rub, NULLIF(p_orders_gross_units, 0)) AS p_price,\n    SAFE_DIVIDE(c_cohort_buyout_orders, NULLIF(c_cohort_resolved_orders, 0))      AS c_rate,\n    SAFE_DIVIDE(p_cohort_buyout_orders, NULLIF(p_cohort_resolved_orders, 0))      AS p_rate,\n    SAFE_DIVIDE(c_ads_attributed_rub, NULLIF(c_buyout_seller_price_rub, 0))       AS c_drr,\n    SAFE_DIVIDE(p_ads_attributed_rub, NULLIF(p_buyout_seller_price_rub, 0))       AS p_drr,\n    SAFE_DIVIDE(c_contribution_after_cogs_rub, NULLIF(c_fin_seller_price_rub, 0)) AS c_margin,\n    SAFE_DIVIDE(p_contribution_after_cogs_rub, NULLIF(p_fin_seller_price_rub, 0)) AS p_margin,\n    SAFE_DIVIDE(c_contribution_after_cogs_rub, NULLIF(c_fin_sale_units - c_fin_return_units, 0)) AS c_per_buyout\n  FROM a\n)\nSELECT CONCAT(IFNULL(CONCAT(IF(c_cohort_mature, '', '🟡 '), CONCAT(REPLACE(REPLACE(FORMAT('%.1f', (c_rate) * 100), '.', ','), '-', '−'), ' %')), '—'), '  ·  ', IFNULL(CASE WHEN NOT IFNULL(orders_cmp AND p_cohort_mature, FALSE) THEN 'н/с' WHEN (c_rate) IS NULL OR (p_rate) IS NULL THEN '—' ELSE CONCAT(IF(ROUND(((c_rate) - (p_rate)) * 100, 1) > 0, '↑ ', IF(ROUND(((c_rate) - (p_rate)) * 100, 1) < 0, '↓ ', '→ ')), REPLACE(FORMAT('%.1f', ABS(((c_rate) - (p_rate)) * 100)), '.', ','), ' п.п.', IF(cohort_rel, '', ' · мало данных')) END, '—')) AS kpi FROM k",
+       "template-tags": [
+        {
+         "dimension": [
+          "field",
+          {
+           "lib/uuid": "ced45ad9-3dc9-4438-b567-c1f342fb62cc"
+          },
+          6672
+         ],
+         "display-name": "Период",
+         "id": "f7dc867c-0496-4f95-b8fc-bc319d597690",
+         "name": "day",
+         "type": "dimension",
+         "widget-type": "date/all-options"
+        },
+        {
+         "dimension": [
+          "field",
+          {
+           "lib/uuid": "f9c2ad6d-238e-484d-a209-dfb3e8ba1de1"
+          },
+          6675
+         ],
+         "display-name": "Товар",
+         "id": "6c210edf-bce9-4a32-b821-67aa1beba57c",
+         "name": "sku",
+         "type": "dimension",
+         "widget-type": "string/="
+        }
+       ]
+      }
+     ]
+    },
+    "description": "Доля завершённых заказов периода, которые были выкуплены: выкуплено / (выкуплено + отменено). Заказы берутся по дате заказа; незавершённые заказы не считаются отказами и в расчёт не входят. 🟡 — у части заказов исход ещё неизвестен, процент предварительный. Изменение — в процентных пунктах; «н/с», если прошлый период тоже ещё не завершён; «мало данных» — меньше 10 завершённых заказов в одном из периодов: изменение фактическое, но выводы делать рано; сигналов «Требуют внимания» по нему нет.",
+    "dimension_mappings": null,
+    "dimensions": null,
+    "display": "scalar",
+    "document_id": null,
+    "download_perms": "full",
+    "embedding_params": null,
+    "embedding_type": null,
+    "enable_embedding": false,
+    "entity_id": "8Yj3fKqiiTadOhyjPleho",
+    "id": 221,
+    "last_used_at": "2026-09-18T12:20:32.796707Z",
+    "legacy_query": null,
+    "metabase_version": "v0.63.15.1 (ab5ffba)",
+    "name": "SKU V2 · Выкуп",
+    "parameter_mappings": [],
+    "parameters": [],
+    "query_average_duration": null,
+    "query_type": "native",
+    "source_card_id": null,
+    "table_id": null,
+    "type": "question",
+    "visualization_settings": {
+     "scalar.field": "kpi"
+    }
+   },
+   "card_id": 221,
+   "col": 12,
+   "collection_authority_level": null,
+   "created_at": "2026-09-18T10:38:09.911743Z",
+   "dashboard_id": 11,
+   "dashboard_tab_id": null,
+   "entity_id": "86-_uKoh_hXnRDUr6GxM9",
+   "id": 1272,
+   "inline_parameters": [],
+   "parameter_mappings": [
+    {
+     "card_id": 221,
+     "parameter_id": "date",
+     "target": [
+      "dimension",
+      [
+       "template-tag",
+       "day"
+      ]
+     ]
+    },
+    {
+     "card_id": 221,
+     "parameter_id": "sku",
+     "target": [
+      "dimension",
+      [
+       "template-tag",
+       "sku"
+      ]
+     ]
+    }
+   ],
+   "row": 2,
+   "series": [],
+   "size_x": 6,
+   "size_y": 2,
+   "visualization_settings": {
+    "card.title": "Выкуп"
+   }
+  },
+  {
+   "action_id": null,
+   "card": {
+    "archived": false,
+    "archived_directly": false,
+    "cache_invalidated_at": "2026-09-18T11:55:02.646937Z",
+    "cache_ttl": null,
+    "card_schema": 23,
+    "collection_id": 7,
+    "collection_position": null,
+    "collection_preview": true,
+    "created_at": "2026-09-18T09:39:58.10879Z",
+    "creator_id": 2,
+    "dashboard_id": null,
+    "database_id": 2,
+    "dataset_query": {
+     "database": 2,
+     "lib/type": "mbql/query",
+     "stages": [
+      {
+       "lib/type": "mbql.stage/native",
+       "native": "WITH b AS (\n  SELECT MIN(day) AS d1, MAX(day) AS d2\n  FROM `wb_mart.V_DASH_SKU_PERFORMANCE_V2_DAILY`\n  WHERE {{day}}\n),\nt AS (SELECT * FROM `wb_mart.TVF_SKU_PERFORMANCE_V2_PERIOD`((SELECT d1 FROM b), (SELECT d2 FROM b))),\nsel AS (\n  SELECT DISTINCT nm_id FROM `wb_mart.V_DASH_SKU_PERFORMANCE_V2_DAILY`\n  WHERE TRUE [[AND {{sku}}]]\n),\nr AS (SELECT * FROM t WHERE NOT is_portfolio_total AND nm_id IN (SELECT nm_id FROM sel)),\na AS (\n  SELECT\n    ANY_VALUE(period_from) AS period_from, ANY_VALUE(period_to) AS period_to, ANY_VALUE(period_days) AS len,\n    ANY_VALUE(min_reliable_units) AS min_units, COUNT(*) AS skus,\n    SUM(cur_orders_gross_units) AS c_orders_gross_units, SUM(prv_orders_gross_units) AS p_orders_gross_units, SUM(cur_orders_gross_seller_price_rub) AS c_orders_gross_seller_price_rub, SUM(prv_orders_gross_seller_price_rub) AS p_orders_gross_seller_price_rub, SUM(cur_orders_cancelled_units) AS c_orders_cancelled_units, SUM(prv_orders_cancelled_units) AS p_orders_cancelled_units, SUM(cur_buyout_units) AS c_buyout_units, SUM(prv_buyout_units) AS p_buyout_units, SUM(cur_cohort_buyout_orders) AS c_cohort_buyout_orders, SUM(prv_cohort_buyout_orders) AS p_cohort_buyout_orders, SUM(cur_cohort_resolved_orders) AS c_cohort_resolved_orders, SUM(prv_cohort_resolved_orders) AS p_cohort_resolved_orders, SUM(cur_cohort_unresolved_orders) AS c_cohort_unresolved_orders, SUM(prv_cohort_unresolved_orders) AS p_cohort_unresolved_orders, SUM(cur_cohort_conflict_orders) AS c_cohort_conflict_orders, SUM(prv_cohort_conflict_orders) AS p_cohort_conflict_orders, SUM(cur_ads_attributed_rub) AS c_ads_attributed_rub, SUM(prv_ads_attributed_rub) AS p_ads_attributed_rub, SUM(cur_buyout_seller_price_rub) AS c_buyout_seller_price_rub, SUM(prv_buyout_seller_price_rub) AS p_buyout_seller_price_rub, SUM(cur_fin_seller_price_rub) AS c_fin_seller_price_rub, SUM(prv_fin_seller_price_rub) AS p_fin_seller_price_rub, SUM(cur_fin_sale_units) AS c_fin_sale_units, SUM(prv_fin_sale_units) AS p_fin_sale_units, SUM(cur_fin_return_units) AS c_fin_return_units, SUM(prv_fin_return_units) AS p_fin_return_units, SUM(cur_contribution_after_cogs_rub) AS c_contribution_after_cogs_rub, SUM(prv_contribution_after_cogs_rub) AS p_contribution_after_cogs_rub, SUM(cur_contribution_before_cogs_rub) AS c_contribution_before_cogs_rub, SUM(prv_contribution_before_cogs_rub) AS p_contribution_before_cogs_rub, SUM(cur_credited_for_goods_rub) AS c_credited_for_goods_rub, SUM(prv_credited_for_goods_rub) AS p_credited_for_goods_rub,\n    MAX(cur_orders_cov_days) AS c_orders_cov_days, MAX(prv_orders_cov_days) AS p_orders_cov_days, MAX(cur_sales_cov_days) AS c_sales_cov_days, MAX(prv_sales_cov_days) AS p_sales_cov_days, MAX(cur_ads_cov_days) AS c_ads_cov_days, MAX(prv_ads_cov_days) AS p_ads_cov_days, MAX(cur_finance_cov_days) AS c_finance_cov_days, MAX(prv_finance_cov_days) AS p_finance_cov_days, MAX(cur_storage_cov_days) AS c_storage_cov_days, MAX(prv_storage_cov_days) AS p_storage_cov_days, MAX(cur_finance_provisional_days) AS c_finance_provisional_days, MAX(prv_finance_provisional_days) AS p_finance_provisional_days, MAX(cur_price_chain_missing_days) AS c_price_chain_missing_days, MAX(prv_price_chain_missing_days) AS p_price_chain_missing_days, MAX(cur_current_days) AS c_current_days, MAX(prv_current_days) AS p_current_days, MAX(cur_days_present) AS c_days_present, MAX(prv_days_present) AS p_days_present,\n    SUM(cur_cogs_missing_sku_days) AS c_cogs_missing_sku_days\n  FROM r\n),\nk AS (\n  SELECT a.*,\n    -- сопоставимость окон по метрике: одинаковое число покрытых суток, текущее окно покрыто целиком\n    (c_orders_cov_days = p_orders_cov_days AND c_orders_cov_days = len)                              AS orders_cmp,\n    (c_sales_cov_days = p_sales_cov_days AND c_sales_cov_days = len)                                 AS sales_cmp,\n    (c_ads_cov_days = p_ads_cov_days AND c_ads_cov_days = len AND c_sales_cov_days = len AND p_sales_cov_days = len) AS drr_cmp,\n    (c_finance_cov_days = p_finance_cov_days AND c_finance_cov_days = len\n     AND c_ads_cov_days = len AND p_ads_cov_days = len)                                              AS econ_cmp,\n    -- Зрелость когорты для ПОДАЧИ: нет заказов без исхода ИЛИ окно закончилось ≥ 21 дня назад\n    -- (p99 «заказ → выкуп» = 18 дней, Phase A §F). Флаг Phase B cohort_mature остаётся строгим.\n    (c_cohort_unresolved_orders + c_cohort_conflict_orders = 0\n     OR DATE_DIFF(CURRENT_DATE('Europe/Moscow'), period_to, DAY) >= 21)                              AS c_cohort_mature,\n    (p_cohort_unresolved_orders + p_cohort_conflict_orders = 0\n     OR DATE_DIFF(CURRENT_DATE('Europe/Moscow'), DATE_SUB(period_from, INTERVAL 1 DAY), DAY) >= 21)  AS p_cohort_mature,\n    -- Надёжность сравнения (порог Phase B min_reliable_units): база ≥ порога в ОБОИХ окнах. Это только пометка\n    -- «мало данных» рядом с фактическим изменением; изменение не скрывается (display ≠ alert eligibility).\n    (IFNULL(c_orders_gross_units, 0) >= min_units AND IFNULL(p_orders_gross_units, 0) >= min_units)   AS orders_rel,\n    (IFNULL(c_buyout_units, 0) >= min_units AND IFNULL(p_buyout_units, 0) >= min_units)               AS buyouts_rel,\n    (IFNULL(c_cohort_resolved_orders, 0) >= min_units AND IFNULL(p_cohort_resolved_orders, 0) >= min_units) AS cohort_rel,\n    SAFE_DIVIDE(c_orders_gross_seller_price_rub, NULLIF(c_orders_gross_units, 0)) AS c_price,\n    SAFE_DIVIDE(p_orders_gross_seller_price_rub, NULLIF(p_orders_gross_units, 0)) AS p_price,\n    SAFE_DIVIDE(c_cohort_buyout_orders, NULLIF(c_cohort_resolved_orders, 0))      AS c_rate,\n    SAFE_DIVIDE(p_cohort_buyout_orders, NULLIF(p_cohort_resolved_orders, 0))      AS p_rate,\n    SAFE_DIVIDE(c_ads_attributed_rub, NULLIF(c_buyout_seller_price_rub, 0))       AS c_drr,\n    SAFE_DIVIDE(p_ads_attributed_rub, NULLIF(p_buyout_seller_price_rub, 0))       AS p_drr,\n    SAFE_DIVIDE(c_contribution_after_cogs_rub, NULLIF(c_fin_seller_price_rub, 0)) AS c_margin,\n    SAFE_DIVIDE(p_contribution_after_cogs_rub, NULLIF(p_fin_seller_price_rub, 0)) AS p_margin,\n    SAFE_DIVIDE(c_contribution_after_cogs_rub, NULLIF(c_fin_sale_units - c_fin_return_units, 0)) AS c_per_buyout\n  FROM a\n)\nSELECT CONCAT(IFNULL(CONCAT(CONCAT(IF(ROUND(c_price) < 0, '−', ''), REPLACE(FORMAT(\"%'d\", ABS(CAST(ROUND(c_price) AS INT64))), ',', ' ')), ' ₽'), '—'), '  ·  ', IFNULL(CASE WHEN NOT IFNULL(orders_cmp, FALSE) THEN 'н/с' WHEN SAFE_DIVIDE((c_price) - (p_price), NULLIF(ABS(p_price), 0)) IS NULL THEN '—' ELSE CONCAT(IF(ROUND(SAFE_DIVIDE((c_price) - (p_price), NULLIF(ABS(p_price), 0)), 3) > 0, '↑ ', IF(ROUND(SAFE_DIVIDE((c_price) - (p_price), NULLIF(ABS(p_price), 0)), 3) < 0, '↓ ', '→ ')), REPLACE(FORMAT('%.1f', ABS(SAFE_DIVIDE((c_price) - (p_price), NULLIF(ABS(p_price), 0))) * 100), '.', ','), ' %', IF(orders_rel, '', ' · мало данных')) END, '—')) AS kpi FROM k",
+       "template-tags": [
+        {
+         "dimension": [
+          "field",
+          {
+           "lib/uuid": "f3c63ffc-57df-4aa7-af30-e85b3b858153"
+          },
+          6672
+         ],
+         "display-name": "Период",
+         "id": "420d9267-91e9-4e26-9473-44d4add9b47d",
+         "name": "day",
+         "type": "dimension",
+         "widget-type": "date/all-options"
+        },
+        {
+         "dimension": [
+          "field",
+          {
+           "lib/uuid": "d98fd329-1893-4f56-b50f-816187a7fc74"
+          },
+          6675
+         ],
+         "display-name": "Товар",
+         "id": "67168a36-2560-4525-87db-d47980c6d468",
+         "name": "sku",
+         "type": "dimension",
+         "widget-type": "string/="
+        }
+       ]
+      }
+     ]
+    },
+    "description": "Средняя установленная продавцом цена до СПП, взвешенная по заказанным единицам: сумма цен всех заказанных единиц / число единиц (включая отменённые заказы). Изменение цены не оценивается как хорошее или плохое. На уровне всего ассортимента зависит и от набора проданных товаров. «мало данных» — меньше 10 заказов в одном из периодов: изменение фактическое, но выводы делать рано; сигналов «Требуют внимания» по нему нет.",
+    "dimension_mappings": null,
+    "dimensions": null,
+    "display": "scalar",
+    "document_id": null,
+    "download_perms": "full",
+    "embedding_params": null,
+    "embedding_type": null,
+    "enable_embedding": false,
+    "entity_id": "KV5tnwc7QV-FZRuEegNtR",
+    "id": 222,
+    "last_used_at": "2026-09-18T12:20:32.796707Z",
+    "legacy_query": null,
+    "metabase_version": "v0.63.15.1 (ab5ffba)",
+    "name": "SKU V2 · Ср. цена",
+    "parameter_mappings": [],
+    "parameters": [],
+    "query_average_duration": null,
+    "query_type": "native",
+    "source_card_id": null,
+    "table_id": null,
+    "type": "question",
+    "visualization_settings": {
+     "scalar.field": "kpi"
+    }
+   },
+   "card_id": 222,
+   "col": 18,
+   "collection_authority_level": null,
+   "created_at": "2026-09-18T10:38:09.911743Z",
+   "dashboard_id": 11,
+   "dashboard_tab_id": null,
+   "entity_id": "1PvZM03sdsCG7yAwG40UA",
+   "id": 1273,
+   "inline_parameters": [],
+   "parameter_mappings": [
+    {
+     "card_id": 222,
+     "parameter_id": "date",
+     "target": [
+      "dimension",
+      [
+       "template-tag",
+       "day"
+      ]
+     ]
+    },
+    {
+     "card_id": 222,
+     "parameter_id": "sku",
+     "target": [
+      "dimension",
+      [
+       "template-tag",
+       "sku"
+      ]
+     ]
+    }
+   ],
+   "row": 2,
+   "series": [],
+   "size_x": 6,
+   "size_y": 2,
+   "visualization_settings": {
+    "card.title": "Ср. цена"
+   }
+  },
+  {
+   "action_id": null,
+   "card": {
+    "archived": false,
+    "archived_directly": false,
+    "cache_invalidated_at": "2026-09-18T11:55:05.334652Z",
+    "cache_ttl": null,
+    "card_schema": 23,
+    "collection_id": 7,
+    "collection_position": null,
+    "collection_preview": true,
+    "created_at": "2026-09-18T09:40:00.164951Z",
+    "creator_id": 2,
+    "dashboard_id": null,
+    "database_id": 2,
+    "dataset_query": {
+     "database": 2,
+     "lib/type": "mbql/query",
+     "stages": [
+      {
+       "lib/type": "mbql.stage/native",
+       "native": "WITH b AS (\n  SELECT MIN(day) AS d1, MAX(day) AS d2\n  FROM `wb_mart.V_DASH_SKU_PERFORMANCE_V2_DAILY`\n  WHERE {{day}}\n),\nt AS (SELECT * FROM `wb_mart.TVF_SKU_PERFORMANCE_V2_PERIOD`((SELECT d1 FROM b), (SELECT d2 FROM b))),\nsel AS (\n  SELECT DISTINCT nm_id FROM `wb_mart.V_DASH_SKU_PERFORMANCE_V2_DAILY`\n  WHERE TRUE [[AND {{sku}}]]\n),\nr AS (SELECT * FROM t WHERE NOT is_portfolio_total AND nm_id IN (SELECT nm_id FROM sel)),\na AS (\n  SELECT\n    ANY_VALUE(period_from) AS period_from, ANY_VALUE(period_to) AS period_to, ANY_VALUE(period_days) AS len,\n    ANY_VALUE(min_reliable_units) AS min_units, COUNT(*) AS skus,\n    SUM(cur_orders_gross_units) AS c_orders_gross_units, SUM(prv_orders_gross_units) AS p_orders_gross_units, SUM(cur_orders_gross_seller_price_rub) AS c_orders_gross_seller_price_rub, SUM(prv_orders_gross_seller_price_rub) AS p_orders_gross_seller_price_rub, SUM(cur_orders_cancelled_units) AS c_orders_cancelled_units, SUM(prv_orders_cancelled_units) AS p_orders_cancelled_units, SUM(cur_buyout_units) AS c_buyout_units, SUM(prv_buyout_units) AS p_buyout_units, SUM(cur_cohort_buyout_orders) AS c_cohort_buyout_orders, SUM(prv_cohort_buyout_orders) AS p_cohort_buyout_orders, SUM(cur_cohort_resolved_orders) AS c_cohort_resolved_orders, SUM(prv_cohort_resolved_orders) AS p_cohort_resolved_orders, SUM(cur_cohort_unresolved_orders) AS c_cohort_unresolved_orders, SUM(prv_cohort_unresolved_orders) AS p_cohort_unresolved_orders, SUM(cur_cohort_conflict_orders) AS c_cohort_conflict_orders, SUM(prv_cohort_conflict_orders) AS p_cohort_conflict_orders, SUM(cur_ads_attributed_rub) AS c_ads_attributed_rub, SUM(prv_ads_attributed_rub) AS p_ads_attributed_rub, SUM(cur_buyout_seller_price_rub) AS c_buyout_seller_price_rub, SUM(prv_buyout_seller_price_rub) AS p_buyout_seller_price_rub, SUM(cur_fin_seller_price_rub) AS c_fin_seller_price_rub, SUM(prv_fin_seller_price_rub) AS p_fin_seller_price_rub, SUM(cur_fin_sale_units) AS c_fin_sale_units, SUM(prv_fin_sale_units) AS p_fin_sale_units, SUM(cur_fin_return_units) AS c_fin_return_units, SUM(prv_fin_return_units) AS p_fin_return_units, SUM(cur_contribution_after_cogs_rub) AS c_contribution_after_cogs_rub, SUM(prv_contribution_after_cogs_rub) AS p_contribution_after_cogs_rub, SUM(cur_contribution_before_cogs_rub) AS c_contribution_before_cogs_rub, SUM(prv_contribution_before_cogs_rub) AS p_contribution_before_cogs_rub, SUM(cur_credited_for_goods_rub) AS c_credited_for_goods_rub, SUM(prv_credited_for_goods_rub) AS p_credited_for_goods_rub,\n    MAX(cur_orders_cov_days) AS c_orders_cov_days, MAX(prv_orders_cov_days) AS p_orders_cov_days, MAX(cur_sales_cov_days) AS c_sales_cov_days, MAX(prv_sales_cov_days) AS p_sales_cov_days, MAX(cur_ads_cov_days) AS c_ads_cov_days, MAX(prv_ads_cov_days) AS p_ads_cov_days, MAX(cur_finance_cov_days) AS c_finance_cov_days, MAX(prv_finance_cov_days) AS p_finance_cov_days, MAX(cur_storage_cov_days) AS c_storage_cov_days, MAX(prv_storage_cov_days) AS p_storage_cov_days, MAX(cur_finance_provisional_days) AS c_finance_provisional_days, MAX(prv_finance_provisional_days) AS p_finance_provisional_days, MAX(cur_price_chain_missing_days) AS c_price_chain_missing_days, MAX(prv_price_chain_missing_days) AS p_price_chain_missing_days, MAX(cur_current_days) AS c_current_days, MAX(prv_current_days) AS p_current_days, MAX(cur_days_present) AS c_days_present, MAX(prv_days_present) AS p_days_present,\n    SUM(cur_cogs_missing_sku_days) AS c_cogs_missing_sku_days\n  FROM r\n),\nk AS (\n  SELECT a.*,\n    -- сопоставимость окон по метрике: одинаковое число покрытых суток, текущее окно покрыто целиком\n    (c_orders_cov_days = p_orders_cov_days AND c_orders_cov_days = len)                              AS orders_cmp,\n    (c_sales_cov_days = p_sales_cov_days AND c_sales_cov_days = len)                                 AS sales_cmp,\n    (c_ads_cov_days = p_ads_cov_days AND c_ads_cov_days = len AND c_sales_cov_days = len AND p_sales_cov_days = len) AS drr_cmp,\n    (c_finance_cov_days = p_finance_cov_days AND c_finance_cov_days = len\n     AND c_ads_cov_days = len AND p_ads_cov_days = len)                                              AS econ_cmp,\n    -- Зрелость когорты для ПОДАЧИ: нет заказов без исхода ИЛИ окно закончилось ≥ 21 дня назад\n    -- (p99 «заказ → выкуп» = 18 дней, Phase A §F). Флаг Phase B cohort_mature остаётся строгим.\n    (c_cohort_unresolved_orders + c_cohort_conflict_orders = 0\n     OR DATE_DIFF(CURRENT_DATE('Europe/Moscow'), period_to, DAY) >= 21)                              AS c_cohort_mature,\n    (p_cohort_unresolved_orders + p_cohort_conflict_orders = 0\n     OR DATE_DIFF(CURRENT_DATE('Europe/Moscow'), DATE_SUB(period_from, INTERVAL 1 DAY), DAY) >= 21)  AS p_cohort_mature,\n    -- Надёжность сравнения (порог Phase B min_reliable_units): база ≥ порога в ОБОИХ окнах. Это только пометка\n    -- «мало данных» рядом с фактическим изменением; изменение не скрывается (display ≠ alert eligibility).\n    (IFNULL(c_orders_gross_units, 0) >= min_units AND IFNULL(p_orders_gross_units, 0) >= min_units)   AS orders_rel,\n    (IFNULL(c_buyout_units, 0) >= min_units AND IFNULL(p_buyout_units, 0) >= min_units)               AS buyouts_rel,\n    (IFNULL(c_cohort_resolved_orders, 0) >= min_units AND IFNULL(p_cohort_resolved_orders, 0) >= min_units) AS cohort_rel,\n    SAFE_DIVIDE(c_orders_gross_seller_price_rub, NULLIF(c_orders_gross_units, 0)) AS c_price,\n    SAFE_DIVIDE(p_orders_gross_seller_price_rub, NULLIF(p_orders_gross_units, 0)) AS p_price,\n    SAFE_DIVIDE(c_cohort_buyout_orders, NULLIF(c_cohort_resolved_orders, 0))      AS c_rate,\n    SAFE_DIVIDE(p_cohort_buyout_orders, NULLIF(p_cohort_resolved_orders, 0))      AS p_rate,\n    SAFE_DIVIDE(c_ads_attributed_rub, NULLIF(c_buyout_seller_price_rub, 0))       AS c_drr,\n    SAFE_DIVIDE(p_ads_attributed_rub, NULLIF(p_buyout_seller_price_rub, 0))       AS p_drr,\n    SAFE_DIVIDE(c_contribution_after_cogs_rub, NULLIF(c_fin_seller_price_rub, 0)) AS c_margin,\n    SAFE_DIVIDE(p_contribution_after_cogs_rub, NULLIF(p_fin_seller_price_rub, 0)) AS p_margin,\n    SAFE_DIVIDE(c_contribution_after_cogs_rub, NULLIF(c_fin_sale_units - c_fin_return_units, 0)) AS c_per_buyout\n  FROM a\n)\nSELECT CONCAT(IFNULL(CONCAT(CONCAT(IF(ROUND(c_ads_attributed_rub) < 0, '−', ''), REPLACE(FORMAT(\"%'d\", ABS(CAST(ROUND(c_ads_attributed_rub) AS INT64))), ',', ' ')), ' ₽'), '—'), '  ·  ', IFNULL(CASE WHEN NOT IFNULL(drr_cmp, FALSE) THEN 'н/с' WHEN SAFE_DIVIDE((c_ads_attributed_rub) - (p_ads_attributed_rub), NULLIF(ABS(p_ads_attributed_rub), 0)) IS NULL THEN '—' ELSE CONCAT(IF(ROUND(SAFE_DIVIDE((c_ads_attributed_rub) - (p_ads_attributed_rub), NULLIF(ABS(p_ads_attributed_rub), 0)), 3) > 0, '↑ ', IF(ROUND(SAFE_DIVIDE((c_ads_attributed_rub) - (p_ads_attributed_rub), NULLIF(ABS(p_ads_attributed_rub), 0)), 3) < 0, '↓ ', '→ ')), REPLACE(FORMAT('%.1f', ABS(SAFE_DIVIDE((c_ads_attributed_rub) - (p_ads_attributed_rub), NULLIF(ABS(p_ads_attributed_rub), 0))) * 100), '.', ','), ' %', IF(TRUE, '', ' · мало данных')) END, '—')) AS kpi FROM k",
+       "template-tags": [
+        {
+         "dimension": [
+          "field",
+          {
+           "lib/uuid": "eecf68d8-7186-43d5-a0c2-0b7aebb1d975"
+          },
+          6672
+         ],
+         "display-name": "Период",
+         "id": "1990e4c7-18de-4410-a10a-c796c1048dd9",
+         "name": "day",
+         "type": "dimension",
+         "widget-type": "date/all-options"
+        },
+        {
+         "dimension": [
+          "field",
+          {
+           "lib/uuid": "231fe81d-45d5-4e46-bc1e-de163318c127"
+          },
+          6675
+         ],
+         "display-name": "Товар",
+         "id": "33526806-6dd3-4097-9c78-72c161f2cdfb",
+         "name": "sku",
+         "type": "dimension",
+         "widget-type": "string/="
+        }
+       ]
+      }
+     ]
+    },
+    "description": "Рекламные расходы, атрибутированные товарам по статистике кампаний WB (дата показа). Могут немного отличаться от рекламного биллинга WB в Executive — это разные контракты, распределение не выполняется.",
+    "dimension_mappings": null,
+    "dimensions": null,
+    "display": "scalar",
+    "document_id": null,
+    "download_perms": "full",
+    "embedding_params": null,
+    "embedding_type": null,
+    "enable_embedding": false,
+    "entity_id": "Al0L3HaRuBOM3mvvl9wo-",
+    "id": 223,
+    "last_used_at": "2026-09-18T12:20:32.796707Z",
+    "legacy_query": null,
+    "metabase_version": "v0.63.15.1 (ab5ffba)",
+    "name": "SKU V2 · Реклама",
+    "parameter_mappings": [],
+    "parameters": [],
+    "query_average_duration": null,
+    "query_type": "native",
+    "source_card_id": null,
+    "table_id": null,
+    "type": "question",
+    "visualization_settings": {
+     "scalar.field": "kpi"
+    }
+   },
+   "card_id": 223,
+   "col": 0,
+   "collection_authority_level": null,
+   "created_at": "2026-09-18T10:38:09.911743Z",
+   "dashboard_id": 11,
+   "dashboard_tab_id": null,
+   "entity_id": "VKPqhLpzzNFeDfhZkUWzp",
+   "id": 1274,
+   "inline_parameters": [],
+   "parameter_mappings": [
+    {
+     "card_id": 223,
+     "parameter_id": "date",
+     "target": [
+      "dimension",
+      [
+       "template-tag",
+       "day"
+      ]
+     ]
+    },
+    {
+     "card_id": 223,
+     "parameter_id": "sku",
+     "target": [
+      "dimension",
+      [
+       "template-tag",
+       "sku"
+      ]
+     ]
+    }
+   ],
+   "row": 4,
+   "series": [],
+   "size_x": 6,
+   "size_y": 2,
+   "visualization_settings": {
+    "card.title": "Реклама"
+   }
+  },
+  {
+   "action_id": null,
+   "card": {
+    "archived": false,
+    "archived_directly": false,
+    "cache_invalidated_at": "2026-09-18T11:55:08.54863Z",
+    "cache_ttl": null,
+    "card_schema": 23,
+    "collection_id": 7,
+    "collection_position": null,
+    "collection_preview": true,
+    "created_at": "2026-09-18T09:40:02.279231Z",
+    "creator_id": 2,
+    "dashboard_id": null,
+    "database_id": 2,
+    "dataset_query": {
+     "database": 2,
+     "lib/type": "mbql/query",
+     "stages": [
+      {
+       "lib/type": "mbql.stage/native",
+       "native": "WITH b AS (\n  SELECT MIN(day) AS d1, MAX(day) AS d2\n  FROM `wb_mart.V_DASH_SKU_PERFORMANCE_V2_DAILY`\n  WHERE {{day}}\n),\nt AS (SELECT * FROM `wb_mart.TVF_SKU_PERFORMANCE_V2_PERIOD`((SELECT d1 FROM b), (SELECT d2 FROM b))),\nsel AS (\n  SELECT DISTINCT nm_id FROM `wb_mart.V_DASH_SKU_PERFORMANCE_V2_DAILY`\n  WHERE TRUE [[AND {{sku}}]]\n),\nr AS (SELECT * FROM t WHERE NOT is_portfolio_total AND nm_id IN (SELECT nm_id FROM sel)),\na AS (\n  SELECT\n    ANY_VALUE(period_from) AS period_from, ANY_VALUE(period_to) AS period_to, ANY_VALUE(period_days) AS len,\n    ANY_VALUE(min_reliable_units) AS min_units, COUNT(*) AS skus,\n    SUM(cur_orders_gross_units) AS c_orders_gross_units, SUM(prv_orders_gross_units) AS p_orders_gross_units, SUM(cur_orders_gross_seller_price_rub) AS c_orders_gross_seller_price_rub, SUM(prv_orders_gross_seller_price_rub) AS p_orders_gross_seller_price_rub, SUM(cur_orders_cancelled_units) AS c_orders_cancelled_units, SUM(prv_orders_cancelled_units) AS p_orders_cancelled_units, SUM(cur_buyout_units) AS c_buyout_units, SUM(prv_buyout_units) AS p_buyout_units, SUM(cur_cohort_buyout_orders) AS c_cohort_buyout_orders, SUM(prv_cohort_buyout_orders) AS p_cohort_buyout_orders, SUM(cur_cohort_resolved_orders) AS c_cohort_resolved_orders, SUM(prv_cohort_resolved_orders) AS p_cohort_resolved_orders, SUM(cur_cohort_unresolved_orders) AS c_cohort_unresolved_orders, SUM(prv_cohort_unresolved_orders) AS p_cohort_unresolved_orders, SUM(cur_cohort_conflict_orders) AS c_cohort_conflict_orders, SUM(prv_cohort_conflict_orders) AS p_cohort_conflict_orders, SUM(cur_ads_attributed_rub) AS c_ads_attributed_rub, SUM(prv_ads_attributed_rub) AS p_ads_attributed_rub, SUM(cur_buyout_seller_price_rub) AS c_buyout_seller_price_rub, SUM(prv_buyout_seller_price_rub) AS p_buyout_seller_price_rub, SUM(cur_fin_seller_price_rub) AS c_fin_seller_price_rub, SUM(prv_fin_seller_price_rub) AS p_fin_seller_price_rub, SUM(cur_fin_sale_units) AS c_fin_sale_units, SUM(prv_fin_sale_units) AS p_fin_sale_units, SUM(cur_fin_return_units) AS c_fin_return_units, SUM(prv_fin_return_units) AS p_fin_return_units, SUM(cur_contribution_after_cogs_rub) AS c_contribution_after_cogs_rub, SUM(prv_contribution_after_cogs_rub) AS p_contribution_after_cogs_rub, SUM(cur_contribution_before_cogs_rub) AS c_contribution_before_cogs_rub, SUM(prv_contribution_before_cogs_rub) AS p_contribution_before_cogs_rub, SUM(cur_credited_for_goods_rub) AS c_credited_for_goods_rub, SUM(prv_credited_for_goods_rub) AS p_credited_for_goods_rub,\n    MAX(cur_orders_cov_days) AS c_orders_cov_days, MAX(prv_orders_cov_days) AS p_orders_cov_days, MAX(cur_sales_cov_days) AS c_sales_cov_days, MAX(prv_sales_cov_days) AS p_sales_cov_days, MAX(cur_ads_cov_days) AS c_ads_cov_days, MAX(prv_ads_cov_days) AS p_ads_cov_days, MAX(cur_finance_cov_days) AS c_finance_cov_days, MAX(prv_finance_cov_days) AS p_finance_cov_days, MAX(cur_storage_cov_days) AS c_storage_cov_days, MAX(prv_storage_cov_days) AS p_storage_cov_days, MAX(cur_finance_provisional_days) AS c_finance_provisional_days, MAX(prv_finance_provisional_days) AS p_finance_provisional_days, MAX(cur_price_chain_missing_days) AS c_price_chain_missing_days, MAX(prv_price_chain_missing_days) AS p_price_chain_missing_days, MAX(cur_current_days) AS c_current_days, MAX(prv_current_days) AS p_current_days, MAX(cur_days_present) AS c_days_present, MAX(prv_days_present) AS p_days_present,\n    SUM(cur_cogs_missing_sku_days) AS c_cogs_missing_sku_days\n  FROM r\n),\nk AS (\n  SELECT a.*,\n    -- сопоставимость окон по метрике: одинаковое число покрытых суток, текущее окно покрыто целиком\n    (c_orders_cov_days = p_orders_cov_days AND c_orders_cov_days = len)                              AS orders_cmp,\n    (c_sales_cov_days = p_sales_cov_days AND c_sales_cov_days = len)                                 AS sales_cmp,\n    (c_ads_cov_days = p_ads_cov_days AND c_ads_cov_days = len AND c_sales_cov_days = len AND p_sales_cov_days = len) AS drr_cmp,\n    (c_finance_cov_days = p_finance_cov_days AND c_finance_cov_days = len\n     AND c_ads_cov_days = len AND p_ads_cov_days = len)                                              AS econ_cmp,\n    -- Зрелость когорты для ПОДАЧИ: нет заказов без исхода ИЛИ окно закончилось ≥ 21 дня назад\n    -- (p99 «заказ → выкуп» = 18 дней, Phase A §F). Флаг Phase B cohort_mature остаётся строгим.\n    (c_cohort_unresolved_orders + c_cohort_conflict_orders = 0\n     OR DATE_DIFF(CURRENT_DATE('Europe/Moscow'), period_to, DAY) >= 21)                              AS c_cohort_mature,\n    (p_cohort_unresolved_orders + p_cohort_conflict_orders = 0\n     OR DATE_DIFF(CURRENT_DATE('Europe/Moscow'), DATE_SUB(period_from, INTERVAL 1 DAY), DAY) >= 21)  AS p_cohort_mature,\n    -- Надёжность сравнения (порог Phase B min_reliable_units): база ≥ порога в ОБОИХ окнах. Это только пометка\n    -- «мало данных» рядом с фактическим изменением; изменение не скрывается (display ≠ alert eligibility).\n    (IFNULL(c_orders_gross_units, 0) >= min_units AND IFNULL(p_orders_gross_units, 0) >= min_units)   AS orders_rel,\n    (IFNULL(c_buyout_units, 0) >= min_units AND IFNULL(p_buyout_units, 0) >= min_units)               AS buyouts_rel,\n    (IFNULL(c_cohort_resolved_orders, 0) >= min_units AND IFNULL(p_cohort_resolved_orders, 0) >= min_units) AS cohort_rel,\n    SAFE_DIVIDE(c_orders_gross_seller_price_rub, NULLIF(c_orders_gross_units, 0)) AS c_price,\n    SAFE_DIVIDE(p_orders_gross_seller_price_rub, NULLIF(p_orders_gross_units, 0)) AS p_price,\n    SAFE_DIVIDE(c_cohort_buyout_orders, NULLIF(c_cohort_resolved_orders, 0))      AS c_rate,\n    SAFE_DIVIDE(p_cohort_buyout_orders, NULLIF(p_cohort_resolved_orders, 0))      AS p_rate,\n    SAFE_DIVIDE(c_ads_attributed_rub, NULLIF(c_buyout_seller_price_rub, 0))       AS c_drr,\n    SAFE_DIVIDE(p_ads_attributed_rub, NULLIF(p_buyout_seller_price_rub, 0))       AS p_drr,\n    SAFE_DIVIDE(c_contribution_after_cogs_rub, NULLIF(c_fin_seller_price_rub, 0)) AS c_margin,\n    SAFE_DIVIDE(p_contribution_after_cogs_rub, NULLIF(p_fin_seller_price_rub, 0)) AS p_margin,\n    SAFE_DIVIDE(c_contribution_after_cogs_rub, NULLIF(c_fin_sale_units - c_fin_return_units, 0)) AS c_per_buyout\n  FROM a\n)\nSELECT CONCAT(IFNULL(CONCAT(REPLACE(REPLACE(FORMAT('%.1f', (c_drr) * 100), '.', ','), '-', '−'), ' %'), '—'), '  ·  ', IFNULL(CASE WHEN NOT IFNULL(drr_cmp, FALSE) THEN 'н/с' WHEN (c_drr) IS NULL OR (p_drr) IS NULL THEN '—' ELSE CONCAT(IF(ROUND(((c_drr) - (p_drr)) * 100, 1) > 0, '↑ ', IF(ROUND(((c_drr) - (p_drr)) * 100, 1) < 0, '↓ ', '→ ')), REPLACE(FORMAT('%.1f', ABS(((c_drr) - (p_drr)) * 100)), '.', ','), ' п.п.', IF(buyouts_rel, '', ' · мало данных')) END, '—')) AS kpi FROM k",
+       "template-tags": [
+        {
+         "dimension": [
+          "field",
+          {
+           "lib/uuid": "e7827735-95aa-43bc-b097-1ede579f6ecd"
+          },
+          6672
+         ],
+         "display-name": "Период",
+         "id": "daab923c-952d-43a4-8e7f-fa3be0575e21",
+         "name": "day",
+         "type": "dimension",
+         "widget-type": "date/all-options"
+        },
+        {
+         "dimension": [
+          "field",
+          {
+           "lib/uuid": "32ccc5c1-f39a-4882-ab69-fca6f8ea8095"
+          },
+          6675
+         ],
+         "display-name": "Товар",
+         "id": "0b1ae4eb-3186-4a60-92de-953fca46769d",
+         "name": "sku",
+         "type": "dimension",
+         "widget-type": "string/="
+        }
+       ]
+      }
+     ]
+    },
+    "description": "Доля рекламных расходов в выручке: реклама / выкупы по цене продавца за период. Изменение — в процентных пунктах; «мало данных» — меньше 10 выкупов в одном из периодов: изменение фактическое, но выводы делать рано; сигналов «Требуют внимания» по нему нет.",
+    "dimension_mappings": null,
+    "dimensions": null,
+    "display": "scalar",
+    "document_id": null,
+    "download_perms": "full",
+    "embedding_params": null,
+    "embedding_type": null,
+    "enable_embedding": false,
+    "entity_id": "Odf6c6y8KXg3sqY4b8Q1w",
+    "id": 224,
+    "last_used_at": "2026-09-18T12:20:32.796707Z",
+    "legacy_query": null,
+    "metabase_version": "v0.63.15.1 (ab5ffba)",
+    "name": "SKU V2 · ДРР",
+    "parameter_mappings": [],
+    "parameters": [],
+    "query_average_duration": null,
+    "query_type": "native",
+    "source_card_id": null,
+    "table_id": null,
+    "type": "question",
+    "visualization_settings": {
+     "scalar.field": "kpi"
+    }
+   },
+   "card_id": 224,
+   "col": 6,
+   "collection_authority_level": null,
+   "created_at": "2026-09-18T10:38:09.911743Z",
+   "dashboard_id": 11,
+   "dashboard_tab_id": null,
+   "entity_id": "99ihVdWxI7jHz4h3jKH1Z",
+   "id": 1275,
+   "inline_parameters": [],
+   "parameter_mappings": [
+    {
+     "card_id": 224,
+     "parameter_id": "date",
+     "target": [
+      "dimension",
+      [
+       "template-tag",
+       "day"
+      ]
+     ]
+    },
+    {
+     "card_id": 224,
+     "parameter_id": "sku",
+     "target": [
+      "dimension",
+      [
+       "template-tag",
+       "sku"
+      ]
+     ]
+    }
+   ],
+   "row": 4,
+   "series": [],
+   "size_x": 6,
+   "size_y": 2,
+   "visualization_settings": {
+    "card.title": "ДРР"
+   }
+  },
+  {
+   "action_id": null,
+   "card": {
+    "archived": false,
+    "archived_directly": false,
+    "cache_invalidated_at": "2026-09-18T11:55:11.15321Z",
+    "cache_ttl": null,
+    "card_schema": 23,
+    "collection_id": 7,
+    "collection_position": null,
+    "collection_preview": true,
+    "created_at": "2026-09-18T09:40:04.385594Z",
+    "creator_id": 2,
+    "dashboard_id": null,
+    "database_id": 2,
+    "dataset_query": {
+     "database": 2,
+     "lib/type": "mbql/query",
+     "stages": [
+      {
+       "lib/type": "mbql.stage/native",
+       "native": "WITH b AS (\n  SELECT MIN(day) AS d1, MAX(day) AS d2\n  FROM `wb_mart.V_DASH_SKU_PERFORMANCE_V2_DAILY`\n  WHERE {{day}}\n),\nt AS (SELECT * FROM `wb_mart.TVF_SKU_PERFORMANCE_V2_PERIOD`((SELECT d1 FROM b), (SELECT d2 FROM b))),\nsel AS (\n  SELECT DISTINCT nm_id FROM `wb_mart.V_DASH_SKU_PERFORMANCE_V2_DAILY`\n  WHERE TRUE [[AND {{sku}}]]\n),\nr AS (SELECT * FROM t WHERE NOT is_portfolio_total AND nm_id IN (SELECT nm_id FROM sel)),\na AS (\n  SELECT\n    ANY_VALUE(period_from) AS period_from, ANY_VALUE(period_to) AS period_to, ANY_VALUE(period_days) AS len,\n    ANY_VALUE(min_reliable_units) AS min_units, COUNT(*) AS skus,\n    SUM(cur_orders_gross_units) AS c_orders_gross_units, SUM(prv_orders_gross_units) AS p_orders_gross_units, SUM(cur_orders_gross_seller_price_rub) AS c_orders_gross_seller_price_rub, SUM(prv_orders_gross_seller_price_rub) AS p_orders_gross_seller_price_rub, SUM(cur_orders_cancelled_units) AS c_orders_cancelled_units, SUM(prv_orders_cancelled_units) AS p_orders_cancelled_units, SUM(cur_buyout_units) AS c_buyout_units, SUM(prv_buyout_units) AS p_buyout_units, SUM(cur_cohort_buyout_orders) AS c_cohort_buyout_orders, SUM(prv_cohort_buyout_orders) AS p_cohort_buyout_orders, SUM(cur_cohort_resolved_orders) AS c_cohort_resolved_orders, SUM(prv_cohort_resolved_orders) AS p_cohort_resolved_orders, SUM(cur_cohort_unresolved_orders) AS c_cohort_unresolved_orders, SUM(prv_cohort_unresolved_orders) AS p_cohort_unresolved_orders, SUM(cur_cohort_conflict_orders) AS c_cohort_conflict_orders, SUM(prv_cohort_conflict_orders) AS p_cohort_conflict_orders, SUM(cur_ads_attributed_rub) AS c_ads_attributed_rub, SUM(prv_ads_attributed_rub) AS p_ads_attributed_rub, SUM(cur_buyout_seller_price_rub) AS c_buyout_seller_price_rub, SUM(prv_buyout_seller_price_rub) AS p_buyout_seller_price_rub, SUM(cur_fin_seller_price_rub) AS c_fin_seller_price_rub, SUM(prv_fin_seller_price_rub) AS p_fin_seller_price_rub, SUM(cur_fin_sale_units) AS c_fin_sale_units, SUM(prv_fin_sale_units) AS p_fin_sale_units, SUM(cur_fin_return_units) AS c_fin_return_units, SUM(prv_fin_return_units) AS p_fin_return_units, SUM(cur_contribution_after_cogs_rub) AS c_contribution_after_cogs_rub, SUM(prv_contribution_after_cogs_rub) AS p_contribution_after_cogs_rub, SUM(cur_contribution_before_cogs_rub) AS c_contribution_before_cogs_rub, SUM(prv_contribution_before_cogs_rub) AS p_contribution_before_cogs_rub, SUM(cur_credited_for_goods_rub) AS c_credited_for_goods_rub, SUM(prv_credited_for_goods_rub) AS p_credited_for_goods_rub,\n    MAX(cur_orders_cov_days) AS c_orders_cov_days, MAX(prv_orders_cov_days) AS p_orders_cov_days, MAX(cur_sales_cov_days) AS c_sales_cov_days, MAX(prv_sales_cov_days) AS p_sales_cov_days, MAX(cur_ads_cov_days) AS c_ads_cov_days, MAX(prv_ads_cov_days) AS p_ads_cov_days, MAX(cur_finance_cov_days) AS c_finance_cov_days, MAX(prv_finance_cov_days) AS p_finance_cov_days, MAX(cur_storage_cov_days) AS c_storage_cov_days, MAX(prv_storage_cov_days) AS p_storage_cov_days, MAX(cur_finance_provisional_days) AS c_finance_provisional_days, MAX(prv_finance_provisional_days) AS p_finance_provisional_days, MAX(cur_price_chain_missing_days) AS c_price_chain_missing_days, MAX(prv_price_chain_missing_days) AS p_price_chain_missing_days, MAX(cur_current_days) AS c_current_days, MAX(prv_current_days) AS p_current_days, MAX(cur_days_present) AS c_days_present, MAX(prv_days_present) AS p_days_present,\n    SUM(cur_cogs_missing_sku_days) AS c_cogs_missing_sku_days\n  FROM r\n),\nk AS (\n  SELECT a.*,\n    -- сопоставимость окон по метрике: одинаковое число покрытых суток, текущее окно покрыто целиком\n    (c_orders_cov_days = p_orders_cov_days AND c_orders_cov_days = len)                              AS orders_cmp,\n    (c_sales_cov_days = p_sales_cov_days AND c_sales_cov_days = len)                                 AS sales_cmp,\n    (c_ads_cov_days = p_ads_cov_days AND c_ads_cov_days = len AND c_sales_cov_days = len AND p_sales_cov_days = len) AS drr_cmp,\n    (c_finance_cov_days = p_finance_cov_days AND c_finance_cov_days = len\n     AND c_ads_cov_days = len AND p_ads_cov_days = len)                                              AS econ_cmp,\n    -- Зрелость когорты для ПОДАЧИ: нет заказов без исхода ИЛИ окно закончилось ≥ 21 дня назад\n    -- (p99 «заказ → выкуп» = 18 дней, Phase A §F). Флаг Phase B cohort_mature остаётся строгим.\n    (c_cohort_unresolved_orders + c_cohort_conflict_orders = 0\n     OR DATE_DIFF(CURRENT_DATE('Europe/Moscow'), period_to, DAY) >= 21)                              AS c_cohort_mature,\n    (p_cohort_unresolved_orders + p_cohort_conflict_orders = 0\n     OR DATE_DIFF(CURRENT_DATE('Europe/Moscow'), DATE_SUB(period_from, INTERVAL 1 DAY), DAY) >= 21)  AS p_cohort_mature,\n    -- Надёжность сравнения (порог Phase B min_reliable_units): база ≥ порога в ОБОИХ окнах. Это только пометка\n    -- «мало данных» рядом с фактическим изменением; изменение не скрывается (display ≠ alert eligibility).\n    (IFNULL(c_orders_gross_units, 0) >= min_units AND IFNULL(p_orders_gross_units, 0) >= min_units)   AS orders_rel,\n    (IFNULL(c_buyout_units, 0) >= min_units AND IFNULL(p_buyout_units, 0) >= min_units)               AS buyouts_rel,\n    (IFNULL(c_cohort_resolved_orders, 0) >= min_units AND IFNULL(p_cohort_resolved_orders, 0) >= min_units) AS cohort_rel,\n    SAFE_DIVIDE(c_orders_gross_seller_price_rub, NULLIF(c_orders_gross_units, 0)) AS c_price,\n    SAFE_DIVIDE(p_orders_gross_seller_price_rub, NULLIF(p_orders_gross_units, 0)) AS p_price,\n    SAFE_DIVIDE(c_cohort_buyout_orders, NULLIF(c_cohort_resolved_orders, 0))      AS c_rate,\n    SAFE_DIVIDE(p_cohort_buyout_orders, NULLIF(p_cohort_resolved_orders, 0))      AS p_rate,\n    SAFE_DIVIDE(c_ads_attributed_rub, NULLIF(c_buyout_seller_price_rub, 0))       AS c_drr,\n    SAFE_DIVIDE(p_ads_attributed_rub, NULLIF(p_buyout_seller_price_rub, 0))       AS p_drr,\n    SAFE_DIVIDE(c_contribution_after_cogs_rub, NULLIF(c_fin_seller_price_rub, 0)) AS c_margin,\n    SAFE_DIVIDE(p_contribution_after_cogs_rub, NULLIF(p_fin_seller_price_rub, 0)) AS p_margin,\n    SAFE_DIVIDE(c_contribution_after_cogs_rub, NULLIF(c_fin_sale_units - c_fin_return_units, 0)) AS c_per_buyout\n  FROM a\n)\nSELECT CONCAT(IFNULL(CONCAT(CONCAT(IF(ROUND(c_contribution_after_cogs_rub) < 0, '−', ''), REPLACE(FORMAT(\"%'d\", ABS(CAST(ROUND(c_contribution_after_cogs_rub) AS INT64))), ',', ' ')), ' ₽'), '—'), '  ·  ', IFNULL(CASE WHEN NOT IFNULL(econ_cmp, FALSE) THEN 'н/с' WHEN (c_contribution_after_cogs_rub) IS NULL OR (p_contribution_after_cogs_rub) IS NULL THEN '—' ELSE CONCAT(IF(ROUND(((c_contribution_after_cogs_rub) - (p_contribution_after_cogs_rub)), 0) > 0, '↑ ', IF(ROUND(((c_contribution_after_cogs_rub) - (p_contribution_after_cogs_rub)), 0) < 0, '↓ ', '→ ')), CONCAT(IF(ROUND(ABS(((c_contribution_after_cogs_rub) - (p_contribution_after_cogs_rub)))) < 0, '−', ''), REPLACE(FORMAT(\"%'d\", ABS(CAST(ROUND(ABS(((c_contribution_after_cogs_rub) - (p_contribution_after_cogs_rub)))) AS INT64))), ',', ' ')), ' ₽', IF(buyouts_rel, '', ' · мало данных')) END, '—')) AS kpi FROM k",
+       "template-tags": [
+        {
+         "dimension": [
+          "field",
+          {
+           "lib/uuid": "9f4fafda-45ca-43a6-8958-4fa39d1968a2"
+          },
+          6672
+         ],
+         "display-name": "Период",
+         "id": "0a773d7a-51e0-4b4e-a0ee-1365c5be4430",
+         "name": "day",
+         "type": "dimension",
+         "widget-type": "date/all-options"
+        },
+        {
+         "dimension": [
+          "field",
+          {
+           "lib/uuid": "49fb4448-d29a-4acf-9485-9929f26ded06"
+          },
+          6675
+         ],
+         "display-name": "Товар",
+         "id": "948a8a48-7145-4916-a3f8-c764c2f1bd05",
+         "name": "sku",
+         "type": "dimension",
+         "widget-type": "string/="
+        }
+       ]
+      }
+     ]
+    },
+    "description": "Сколько товары заработали: начисление WB за товар минус прямая логистика, доступное хранение по товару, атрибутированная реклама и себестоимость. Общие расходы аккаунта (тарифная опция, штрафы, утилизация, прочие удержания) по товарам не распределяются, поэтому сумма не равна результату Executive. Это не прибыль. «мало данных» — меньше 10 выкупов в одном из периодов: изменение фактическое, но выводы делать рано; сигналов «Требуют внимания» по нему нет.",
+    "dimension_mappings": null,
+    "dimensions": null,
+    "display": "scalar",
+    "document_id": null,
+    "download_perms": "full",
+    "embedding_params": null,
+    "embedding_type": null,
+    "enable_embedding": false,
+    "entity_id": "W7zck3wb2SX5Z-oA5bJeN",
+    "id": 225,
+    "last_used_at": "2026-09-18T12:20:32.796707Z",
+    "legacy_query": null,
+    "metabase_version": "v0.63.15.1 (ab5ffba)",
+    "name": "SKU V2 · Вклад SKU после себестоимости",
+    "parameter_mappings": [],
+    "parameters": [],
+    "query_average_duration": null,
+    "query_type": "native",
+    "source_card_id": null,
+    "table_id": null,
+    "type": "question",
+    "visualization_settings": {
+     "scalar.field": "kpi"
+    }
+   },
+   "card_id": 225,
+   "col": 12,
+   "collection_authority_level": null,
+   "created_at": "2026-09-18T10:38:09.911743Z",
+   "dashboard_id": 11,
+   "dashboard_tab_id": null,
+   "entity_id": "k0ODbeORIj3xj272ugFr1",
+   "id": 1276,
+   "inline_parameters": [],
+   "parameter_mappings": [
+    {
+     "card_id": 225,
+     "parameter_id": "date",
+     "target": [
+      "dimension",
+      [
+       "template-tag",
+       "day"
+      ]
+     ]
+    },
+    {
+     "card_id": 225,
+     "parameter_id": "sku",
+     "target": [
+      "dimension",
+      [
+       "template-tag",
+       "sku"
+      ]
+     ]
+    }
+   ],
+   "row": 4,
+   "series": [],
+   "size_x": 6,
+   "size_y": 2,
+   "visualization_settings": {
+    "card.title": "Вклад SKU после себестоимости"
+   }
+  },
+  {
+   "action_id": null,
+   "card": {
+    "archived": false,
+    "archived_directly": false,
+    "cache_invalidated_at": "2026-09-18T11:55:14.414466Z",
+    "cache_ttl": null,
+    "card_schema": 23,
+    "collection_id": 7,
+    "collection_position": null,
+    "collection_preview": true,
+    "created_at": "2026-09-18T09:40:06.521071Z",
+    "creator_id": 2,
+    "dashboard_id": null,
+    "database_id": 2,
+    "dataset_query": {
+     "database": 2,
+     "lib/type": "mbql/query",
+     "stages": [
+      {
+       "lib/type": "mbql.stage/native",
+       "native": "WITH b AS (\n  SELECT MIN(day) AS d1, MAX(day) AS d2\n  FROM `wb_mart.V_DASH_SKU_PERFORMANCE_V2_DAILY`\n  WHERE {{day}}\n),\nt AS (SELECT * FROM `wb_mart.TVF_SKU_PERFORMANCE_V2_PERIOD`((SELECT d1 FROM b), (SELECT d2 FROM b))),\nsel AS (\n  SELECT DISTINCT nm_id FROM `wb_mart.V_DASH_SKU_PERFORMANCE_V2_DAILY`\n  WHERE TRUE [[AND {{sku}}]]\n),\nr AS (SELECT * FROM t WHERE NOT is_portfolio_total AND nm_id IN (SELECT nm_id FROM sel)),\na AS (\n  SELECT\n    ANY_VALUE(period_from) AS period_from, ANY_VALUE(period_to) AS period_to, ANY_VALUE(period_days) AS len,\n    ANY_VALUE(min_reliable_units) AS min_units, COUNT(*) AS skus,\n    SUM(cur_orders_gross_units) AS c_orders_gross_units, SUM(prv_orders_gross_units) AS p_orders_gross_units, SUM(cur_orders_gross_seller_price_rub) AS c_orders_gross_seller_price_rub, SUM(prv_orders_gross_seller_price_rub) AS p_orders_gross_seller_price_rub, SUM(cur_orders_cancelled_units) AS c_orders_cancelled_units, SUM(prv_orders_cancelled_units) AS p_orders_cancelled_units, SUM(cur_buyout_units) AS c_buyout_units, SUM(prv_buyout_units) AS p_buyout_units, SUM(cur_cohort_buyout_orders) AS c_cohort_buyout_orders, SUM(prv_cohort_buyout_orders) AS p_cohort_buyout_orders, SUM(cur_cohort_resolved_orders) AS c_cohort_resolved_orders, SUM(prv_cohort_resolved_orders) AS p_cohort_resolved_orders, SUM(cur_cohort_unresolved_orders) AS c_cohort_unresolved_orders, SUM(prv_cohort_unresolved_orders) AS p_cohort_unresolved_orders, SUM(cur_cohort_conflict_orders) AS c_cohort_conflict_orders, SUM(prv_cohort_conflict_orders) AS p_cohort_conflict_orders, SUM(cur_ads_attributed_rub) AS c_ads_attributed_rub, SUM(prv_ads_attributed_rub) AS p_ads_attributed_rub, SUM(cur_buyout_seller_price_rub) AS c_buyout_seller_price_rub, SUM(prv_buyout_seller_price_rub) AS p_buyout_seller_price_rub, SUM(cur_fin_seller_price_rub) AS c_fin_seller_price_rub, SUM(prv_fin_seller_price_rub) AS p_fin_seller_price_rub, SUM(cur_fin_sale_units) AS c_fin_sale_units, SUM(prv_fin_sale_units) AS p_fin_sale_units, SUM(cur_fin_return_units) AS c_fin_return_units, SUM(prv_fin_return_units) AS p_fin_return_units, SUM(cur_contribution_after_cogs_rub) AS c_contribution_after_cogs_rub, SUM(prv_contribution_after_cogs_rub) AS p_contribution_after_cogs_rub, SUM(cur_contribution_before_cogs_rub) AS c_contribution_before_cogs_rub, SUM(prv_contribution_before_cogs_rub) AS p_contribution_before_cogs_rub, SUM(cur_credited_for_goods_rub) AS c_credited_for_goods_rub, SUM(prv_credited_for_goods_rub) AS p_credited_for_goods_rub,\n    MAX(cur_orders_cov_days) AS c_orders_cov_days, MAX(prv_orders_cov_days) AS p_orders_cov_days, MAX(cur_sales_cov_days) AS c_sales_cov_days, MAX(prv_sales_cov_days) AS p_sales_cov_days, MAX(cur_ads_cov_days) AS c_ads_cov_days, MAX(prv_ads_cov_days) AS p_ads_cov_days, MAX(cur_finance_cov_days) AS c_finance_cov_days, MAX(prv_finance_cov_days) AS p_finance_cov_days, MAX(cur_storage_cov_days) AS c_storage_cov_days, MAX(prv_storage_cov_days) AS p_storage_cov_days, MAX(cur_finance_provisional_days) AS c_finance_provisional_days, MAX(prv_finance_provisional_days) AS p_finance_provisional_days, MAX(cur_price_chain_missing_days) AS c_price_chain_missing_days, MAX(prv_price_chain_missing_days) AS p_price_chain_missing_days, MAX(cur_current_days) AS c_current_days, MAX(prv_current_days) AS p_current_days, MAX(cur_days_present) AS c_days_present, MAX(prv_days_present) AS p_days_present,\n    SUM(cur_cogs_missing_sku_days) AS c_cogs_missing_sku_days\n  FROM r\n),\nk AS (\n  SELECT a.*,\n    -- сопоставимость окон по метрике: одинаковое число покрытых суток, текущее окно покрыто целиком\n    (c_orders_cov_days = p_orders_cov_days AND c_orders_cov_days = len)                              AS orders_cmp,\n    (c_sales_cov_days = p_sales_cov_days AND c_sales_cov_days = len)                                 AS sales_cmp,\n    (c_ads_cov_days = p_ads_cov_days AND c_ads_cov_days = len AND c_sales_cov_days = len AND p_sales_cov_days = len) AS drr_cmp,\n    (c_finance_cov_days = p_finance_cov_days AND c_finance_cov_days = len\n     AND c_ads_cov_days = len AND p_ads_cov_days = len)                                              AS econ_cmp,\n    -- Зрелость когорты для ПОДАЧИ: нет заказов без исхода ИЛИ окно закончилось ≥ 21 дня назад\n    -- (p99 «заказ → выкуп» = 18 дней, Phase A §F). Флаг Phase B cohort_mature остаётся строгим.\n    (c_cohort_unresolved_orders + c_cohort_conflict_orders = 0\n     OR DATE_DIFF(CURRENT_DATE('Europe/Moscow'), period_to, DAY) >= 21)                              AS c_cohort_mature,\n    (p_cohort_unresolved_orders + p_cohort_conflict_orders = 0\n     OR DATE_DIFF(CURRENT_DATE('Europe/Moscow'), DATE_SUB(period_from, INTERVAL 1 DAY), DAY) >= 21)  AS p_cohort_mature,\n    -- Надёжность сравнения (порог Phase B min_reliable_units): база ≥ порога в ОБОИХ окнах. Это только пометка\n    -- «мало данных» рядом с фактическим изменением; изменение не скрывается (display ≠ alert eligibility).\n    (IFNULL(c_orders_gross_units, 0) >= min_units AND IFNULL(p_orders_gross_units, 0) >= min_units)   AS orders_rel,\n    (IFNULL(c_buyout_units, 0) >= min_units AND IFNULL(p_buyout_units, 0) >= min_units)               AS buyouts_rel,\n    (IFNULL(c_cohort_resolved_orders, 0) >= min_units AND IFNULL(p_cohort_resolved_orders, 0) >= min_units) AS cohort_rel,\n    SAFE_DIVIDE(c_orders_gross_seller_price_rub, NULLIF(c_orders_gross_units, 0)) AS c_price,\n    SAFE_DIVIDE(p_orders_gross_seller_price_rub, NULLIF(p_orders_gross_units, 0)) AS p_price,\n    SAFE_DIVIDE(c_cohort_buyout_orders, NULLIF(c_cohort_resolved_orders, 0))      AS c_rate,\n    SAFE_DIVIDE(p_cohort_buyout_orders, NULLIF(p_cohort_resolved_orders, 0))      AS p_rate,\n    SAFE_DIVIDE(c_ads_attributed_rub, NULLIF(c_buyout_seller_price_rub, 0))       AS c_drr,\n    SAFE_DIVIDE(p_ads_attributed_rub, NULLIF(p_buyout_seller_price_rub, 0))       AS p_drr,\n    SAFE_DIVIDE(c_contribution_after_cogs_rub, NULLIF(c_fin_seller_price_rub, 0)) AS c_margin,\n    SAFE_DIVIDE(p_contribution_after_cogs_rub, NULLIF(p_fin_seller_price_rub, 0)) AS p_margin,\n    SAFE_DIVIDE(c_contribution_after_cogs_rub, NULLIF(c_fin_sale_units - c_fin_return_units, 0)) AS c_per_buyout\n  FROM a\n)\nSELECT CONCAT(IFNULL(CONCAT(REPLACE(REPLACE(FORMAT('%.1f', (c_margin) * 100), '.', ','), '-', '−'), ' %'), '—'), '  ·  ', IFNULL(CASE WHEN NOT IFNULL(econ_cmp, FALSE) THEN 'н/с' WHEN (c_margin) IS NULL OR (p_margin) IS NULL THEN '—' ELSE CONCAT(IF(ROUND(((c_margin) - (p_margin)) * 100, 1) > 0, '↑ ', IF(ROUND(((c_margin) - (p_margin)) * 100, 1) < 0, '↓ ', '→ ')), REPLACE(FORMAT('%.1f', ABS(((c_margin) - (p_margin)) * 100)), '.', ','), ' п.п.', IF(buyouts_rel, '', ' · мало данных')) END, '—')) AS kpi FROM k",
+       "template-tags": [
+        {
+         "dimension": [
+          "field",
+          {
+           "lib/uuid": "9ab1e738-80b1-4970-a844-0e9ee8fb03f2"
+          },
+          6672
+         ],
+         "display-name": "Период",
+         "id": "6c9ef8bb-4a1c-4582-a43f-f27e090292f7",
+         "name": "day",
+         "type": "dimension",
+         "widget-type": "date/all-options"
+        },
+        {
+         "dimension": [
+          "field",
+          {
+           "lib/uuid": "f704a991-5e0e-4fc3-b227-8cbeb7df2e86"
+          },
+          6675
+         ],
+         "display-name": "Товар",
+         "id": "fa8c7e0c-371d-400c-875e-9c1c00df1dc9",
+         "name": "sku",
+         "type": "dimension",
+         "widget-type": "string/="
+        }
+       ]
+      }
+     ]
+    },
+    "description": "Вклад SKU после себестоимости / выручка по цене продавца по финансовому отчёту WB (продажи минус возвраты). Изменение — в процентных пунктах; «мало данных» — меньше 10 выкупов в одном из периодов: изменение фактическое, но выводы делать рано; сигналов «Требуют внимания» по нему нет.",
+    "dimension_mappings": null,
+    "dimensions": null,
+    "display": "scalar",
+    "document_id": null,
+    "download_perms": "full",
+    "embedding_params": null,
+    "embedding_type": null,
+    "enable_embedding": false,
+    "entity_id": "pCihSGgPHX64rt_-N-Ztj",
+    "id": 226,
+    "last_used_at": "2026-09-18T12:20:32.796707Z",
+    "legacy_query": null,
+    "metabase_version": "v0.63.15.1 (ab5ffba)",
+    "name": "SKU V2 · Маржа вклада",
+    "parameter_mappings": [],
+    "parameters": [],
+    "query_average_duration": null,
+    "query_type": "native",
+    "source_card_id": null,
+    "table_id": null,
+    "type": "question",
+    "visualization_settings": {
+     "scalar.field": "kpi"
+    }
+   },
+   "card_id": 226,
+   "col": 18,
+   "collection_authority_level": null,
+   "created_at": "2026-09-18T10:38:09.911743Z",
+   "dashboard_id": 11,
+   "dashboard_tab_id": null,
+   "entity_id": "74A3mNgzOTLBCZs5xnc3F",
+   "id": 1277,
+   "inline_parameters": [],
+   "parameter_mappings": [
+    {
+     "card_id": 226,
+     "parameter_id": "date",
+     "target": [
+      "dimension",
+      [
+       "template-tag",
+       "day"
+      ]
+     ]
+    },
+    {
+     "card_id": 226,
+     "parameter_id": "sku",
+     "target": [
+      "dimension",
+      [
+       "template-tag",
+       "sku"
+      ]
+     ]
+    }
+   ],
+   "row": 4,
+   "series": [],
+   "size_x": 6,
+   "size_y": 2,
+   "visualization_settings": {
+    "card.title": "Маржа вклада"
+   }
+  },
+  {
+   "action_id": null,
+   "card": {
+    "archived": false,
+    "archived_directly": false,
+    "cache_invalidated_at": "2026-09-18T11:55:17.035142Z",
+    "cache_ttl": null,
+    "card_schema": 23,
+    "collection_id": 7,
+    "collection_position": null,
+    "collection_preview": true,
+    "created_at": "2026-09-18T09:42:26.343781Z",
+    "creator_id": 2,
+    "dashboard_id": null,
+    "database_id": 2,
+    "dataset_query": {
+     "database": 2,
+     "lib/type": "mbql/query",
+     "stages": [
+      {
+       "lib/type": "mbql.stage/native",
+       "native": "WITH b AS (\n  SELECT MIN(day) AS d1, MAX(day) AS d2\n  FROM `wb_mart.V_DASH_SKU_PERFORMANCE_V2_DAILY`\n  WHERE {{day}}\n),\nt AS (SELECT * FROM `wb_mart.TVF_SKU_PERFORMANCE_V2_PERIOD`((SELECT d1 FROM b), (SELECT d2 FROM b))),\nsel AS (\n  SELECT DISTINCT nm_id FROM `wb_mart.V_DASH_SKU_PERFORMANCE_V2_DAILY`\n  WHERE TRUE [[AND {{sku}}]]\n),\nr AS (SELECT * FROM t WHERE NOT is_portfolio_total AND nm_id IN (SELECT nm_id FROM sel)),\nx AS (\n  SELECT r.*,\n    SAFE_DIVIDE(cur_ads_attributed_rub, NULLIF(cur_buyout_seller_price_rub, 0)) AS drr_c,\n    (DATE_DIFF(CURRENT_DATE('Europe/Moscow'), period_to, DAY) >= 21 OR cur_cohort_unresolved_orders + cur_cohort_conflict_orders = 0) AS c_mature,\n    (DATE_DIFF(CURRENT_DATE('Europe/Moscow'), prev_to, DAY) >= 21 OR prv_cohort_unresolved_orders + prv_cohort_conflict_orders = 0) AS p_mature\n  FROM r\n),\n-- Один проход по SKU: все правила считаются массивом (BigQuery не материализует CTE, и UNION ALL из пяти\n-- веток вычислял бы функцию периода пять раз).\nrules AS (\n  SELECT nm_id, product_name_short,\n    ARRAY(SELECT AS STRUCT h.* FROM UNNEST([\n      STRUCT(1 AS sev_rank, -cur_contribution_after_cogs_rub AS sev,\n             IF(cur_contribution_after_cogs_rub < 0 AND cur_buyouts_reliable,\n                CONCAT('Отрицательный вклад ', CONCAT(CONCAT(IF(ROUND(cur_contribution_after_cogs_rub) < 0, '−', ''), REPLACE(FORMAT(\"%'d\", ABS(CAST(ROUND(cur_contribution_after_cogs_rub) AS INT64))), ',', ' ')), ' ₽'),\n                       IFNULL(CONCAT(' · ', CONCAT(CONCAT(IF(ROUND(cur_contribution_after_cogs_per_buyout_rub) < 0, '−', ''), REPLACE(FORMAT(\"%'d\", ABS(CAST(ROUND(cur_contribution_after_cogs_per_buyout_rub) AS INT64))), ',', ' ')), ' ₽'), '/выкуп'), '')), NULL) AS what),\n      STRUCT(2, cur_ads_attributed_rub,\n             IF(cur_ads_attributed_rub > 0 AND cur_buyout_units = 0,\n                CONCAT('Реклама ', CONCAT(CONCAT(IF(ROUND(cur_ads_attributed_rub) < 0, '−', ''), REPLACE(FORMAT(\"%'d\", ABS(CAST(ROUND(cur_ads_attributed_rub) AS INT64))), ',', ' ')), ' ₽'), ' · выкупов нет'), NULL)),\n      STRUCT(3, -orders_delta_pct,\n             IF(orders_comparable AND cur_orders_reliable AND prv_orders_reliable AND period_days >= 14\n                AND orders_delta_pct <= -0.5,\n                CONCAT('Заказы ', CASE WHEN NOT IFNULL(TRUE, FALSE) THEN 'н/с' WHEN SAFE_DIVIDE((cur_orders_gross_units) - (prv_orders_gross_units), NULLIF(ABS(prv_orders_gross_units), 0)) IS NULL THEN '—' ELSE CONCAT(IF(ROUND(SAFE_DIVIDE((cur_orders_gross_units) - (prv_orders_gross_units), NULLIF(ABS(prv_orders_gross_units), 0)), 3) > 0, '↑ ', IF(ROUND(SAFE_DIVIDE((cur_orders_gross_units) - (prv_orders_gross_units), NULLIF(ABS(prv_orders_gross_units), 0)), 3) < 0, '↓ ', '→ ')), REPLACE(FORMAT('%.1f', ABS(SAFE_DIVIDE((cur_orders_gross_units) - (prv_orders_gross_units), NULLIF(ABS(prv_orders_gross_units), 0))) * 100), '.', ','), ' %', IF(TRUE, '', ' · мало данных')) END,\n                       ' (', CAST(prv_orders_gross_units AS STRING), ' → ', CAST(cur_orders_gross_units AS STRING), ')',\n                       IFNULL(CONCAT(' · цена ', CASE WHEN NOT IFNULL(TRUE, FALSE) THEN 'н/с' WHEN SAFE_DIVIDE((cur_avg_seller_price_orders_rub) - (prv_avg_seller_price_orders_rub), NULLIF(ABS(prv_avg_seller_price_orders_rub), 0)) IS NULL THEN '—' ELSE CONCAT(IF(ROUND(SAFE_DIVIDE((cur_avg_seller_price_orders_rub) - (prv_avg_seller_price_orders_rub), NULLIF(ABS(prv_avg_seller_price_orders_rub), 0)), 3) > 0, '↑ ', IF(ROUND(SAFE_DIVIDE((cur_avg_seller_price_orders_rub) - (prv_avg_seller_price_orders_rub), NULLIF(ABS(prv_avg_seller_price_orders_rub), 0)), 3) < 0, '↓ ', '→ ')), REPLACE(FORMAT('%.1f', ABS(SAFE_DIVIDE((cur_avg_seller_price_orders_rub) - (prv_avg_seller_price_orders_rub), NULLIF(ABS(prv_avg_seller_price_orders_rub), 0))) * 100), '.', ','), ' %', IF(TRUE, '', ' · мало данных')) END), '')), NULL)),\n      STRUCT(4, -cohort_buyout_rate_delta_pp,\n             IF(orders_comparable AND cur_cohort_reliable AND prv_cohort_reliable AND c_mature AND p_mature\n                AND cohort_buyout_rate_delta_pp <= -14.0,\n                CONCAT('Выкуп ', CONCAT(REPLACE(REPLACE(FORMAT('%.1f', (cur_cohort_buyout_rate) * 100), '.', ','), '-', '−'), ' %'), ' · ',\n                       CASE WHEN NOT IFNULL(TRUE, FALSE) THEN 'н/с' WHEN (cur_cohort_buyout_rate) IS NULL OR (prv_cohort_buyout_rate) IS NULL THEN '—' ELSE CONCAT(IF(ROUND(((cur_cohort_buyout_rate) - (prv_cohort_buyout_rate)) * 100, 1) > 0, '↑ ', IF(ROUND(((cur_cohort_buyout_rate) - (prv_cohort_buyout_rate)) * 100, 1) < 0, '↓ ', '→ ')), REPLACE(FORMAT('%.1f', ABS(((cur_cohort_buyout_rate) - (prv_cohort_buyout_rate)) * 100)), '.', ','), ' п.п.', IF(TRUE, '', ' · мало данных')) END), NULL)),\n      STRUCT(5, drr_c,\n             IF(cur_buyouts_reliable AND drr_c >= 0.41,\n                CONCAT('ДРР ', CONCAT(REPLACE(REPLACE(FORMAT('%.1f', (drr_c) * 100), '.', ','), '-', '−'), ' %'),\n                       IF(drr_comparable AND prv_buyouts_reliable, CONCAT(' · ', CASE WHEN NOT IFNULL(TRUE, FALSE) THEN 'н/с' WHEN (cur_drr) IS NULL OR (prv_drr) IS NULL THEN '—' ELSE CONCAT(IF(ROUND(((cur_drr) - (prv_drr)) * 100, 1) > 0, '↑ ', IF(ROUND(((cur_drr) - (prv_drr)) * 100, 1) < 0, '↓ ', '→ ')), REPLACE(FORMAT('%.1f', ABS(((cur_drr) - (prv_drr)) * 100)), '.', ','), ' п.п.', IF(TRUE, '', ' · мало данных')) END), '')), NULL))\n    ]) AS h WHERE h.what IS NOT NULL) AS hits\n  FROM x\n),\ntop AS (\n  SELECT product_name_short AS product, nm_id, hits[OFFSET(0)].sev_rank AS sev_rank, hits[OFFSET(0)].sev AS sev,\n         ARRAY_TO_STRING(ARRAY(SELECT what FROM UNNEST(hits) ORDER BY sev_rank), ' · ') AS what\n  FROM rules WHERE ARRAY_LENGTH(hits) > 0\n  -- Порядок (детерминированный): 1) тип самого важного сигнала товара: отрицательный вклад → реклама без выкупов →\n  -- падение заказов → падение выкупа → высокий ДРР; 2) внутри типа — величина (больший убыток / сумма рекламы /\n  -- падение / п.п. / ДРР выше); 3) ничья — nm_id по возрастанию.\n  ORDER BY sev_rank, sev DESC, nm_id LIMIT 6\n)\nSELECT\n  IFNULL(top.product, '✅ Нет товаров, требующих внимания')                                                   AS sku,\n  IFNULL(CAST(top.nm_id AS STRING), '')                                                                       AS nm,\n  IFNULL(top.what, 'по правилам: отрицательный вклад, реклама без выкупов, падение заказов, падение выкупа, высокий ДРР') AS what\nFROM (SELECT 1 AS one) LEFT JOIN top ON TRUE\nORDER BY top.sev_rank, top.sev DESC, top.nm_id",
+       "template-tags": [
+        {
+         "dimension": [
+          "field",
+          {
+           "lib/uuid": "6eecd93a-fe63-4ec1-b489-75ed7786702a"
+          },
+          6672
+         ],
+         "display-name": "Период",
+         "id": "414ae97d-4413-422e-818d-7eb1b2450703",
+         "name": "day",
+         "type": "dimension",
+         "widget-type": "date/all-options"
+        },
+        {
+         "dimension": [
+          "field",
+          {
+           "lib/uuid": "947a6eaa-c9ad-437a-bf1b-e0fe0606ff07"
+          },
+          6675
+         ],
+         "display-name": "Товар",
+         "id": "9440b616-dee5-4183-a333-a1b0d60897fe",
+         "name": "sku",
+         "type": "dimension",
+         "widget-type": "string/="
+        }
+       ]
+      }
+     ]
+    },
+    "description": "До 6 товаров. Порядок: сначала отрицательный вклад (больший убыток выше), затем реклама без выкупов (большая сумма выше), затем падение заказов, падение выкупа и высокий ДРР (большее отклонение выше); при равенстве — по артикулу. Правила: (1) отрицательный вклад после себестоимости при ≥ 10 выкупах; (2) есть реклама, а выкупов нет; (3) заказы упали на 50 % и больше при ≥ 10 заказах в обоих периодах и периоде от 14 дней; (4) выкуп упал на 14 п.п. и больше — только по завершённым когортам и ≥ 10 завершённым заказам; (5) ДРР 41 % и выше при ≥ 10 выкупах. Пороги 3–5 — эмпирические пороги V1: 5 % самых крайних значений товаров EVETIS за апрель–август 2026 (14-дневные окна), а не универсальные бизнес-нормативы. Рядом с падением заказов показано изменение цены — это совпадение по времени, не причина.",
+    "dimension_mappings": null,
+    "dimensions": null,
+    "display": "table",
+    "document_id": null,
+    "download_perms": "full",
+    "embedding_params": null,
+    "embedding_type": null,
+    "enable_embedding": false,
+    "entity_id": "wc6Tc7Q2kiX9_3i9UPGiO",
+    "id": 227,
+    "last_used_at": "2026-09-18T12:20:32.796707Z",
+    "legacy_query": null,
+    "metabase_version": "v0.63.15.1 (ab5ffba)",
+    "name": "SKU V2 · Требуют внимания",
+    "parameter_mappings": [],
+    "parameters": [],
+    "query_average_duration": null,
+    "query_type": "native",
+    "source_card_id": null,
+    "table_id": null,
+    "type": "question",
+    "visualization_settings": {
+     "column_settings": {
+      "[\"name\",\"nm\"]": {
+       "column_title": "Артикул WB"
+      },
+      "[\"name\",\"sku\"]": {
+       "column_title": "Товар"
+      },
+      "[\"name\",\"what\"]": {
+       "column_title": "Что происходит"
+      }
+     },
+     "table.columns": [
+      {
+       "enabled": true,
+       "name": "sku"
+      },
+      {
+       "enabled": true,
+       "name": "nm"
+      },
+      {
+       "enabled": true,
+       "name": "what"
+      }
+     ],
+     "table.row_index": false
+    }
+   },
+   "card_id": 227,
+   "col": 0,
+   "collection_authority_level": null,
+   "created_at": "2026-09-18T10:38:09.911743Z",
+   "dashboard_id": 11,
+   "dashboard_tab_id": null,
+   "entity_id": "jS9g7ZeElea0HTQ3o4wma",
+   "id": 1278,
+   "inline_parameters": [],
+   "parameter_mappings": [
+    {
+     "card_id": 227,
+     "parameter_id": "date",
+     "target": [
+      "dimension",
+      [
+       "template-tag",
+       "day"
+      ]
+     ]
+    },
+    {
+     "card_id": 227,
+     "parameter_id": "sku",
+     "target": [
+      "dimension",
+      [
+       "template-tag",
+       "sku"
+      ]
+     ]
+    }
+   ],
+   "row": 6,
+   "series": [],
+   "size_x": 24,
+   "size_y": 6,
+   "visualization_settings": {
+    "card.title": "Требуют внимания"
+   }
+  },
+  {
+   "action_id": null,
+   "card": {
+    "archived": false,
+    "archived_directly": false,
+    "cache_invalidated_at": "2026-09-18T11:55:19.608538Z",
+    "cache_ttl": null,
+    "card_schema": 23,
+    "collection_id": 7,
+    "collection_position": null,
+    "collection_preview": true,
+    "created_at": "2026-09-18T09:42:28.504921Z",
+    "creator_id": 2,
+    "dashboard_id": null,
+    "database_id": 2,
+    "dataset_query": {
+     "database": 2,
+     "lib/type": "mbql/query",
+     "stages": [
+      {
+       "lib/type": "mbql.stage/native",
+       "native": "WITH b AS (\n  SELECT MIN(day) AS d1, MAX(day) AS d2\n  FROM `wb_mart.V_DASH_SKU_PERFORMANCE_V2_DAILY`\n  WHERE {{day}}\n),\nt AS (SELECT * FROM `wb_mart.TVF_SKU_PERFORMANCE_V2_PERIOD`((SELECT d1 FROM b), (SELECT d2 FROM b))),\nsel AS (\n  SELECT DISTINCT nm_id FROM `wb_mart.V_DASH_SKU_PERFORMANCE_V2_DAILY`\n  WHERE TRUE [[AND {{sku}}]]\n),\nr AS (SELECT * FROM t WHERE NOT is_portfolio_total AND nm_id IN (SELECT nm_id FROM sel)),\nx AS (\n  SELECT r.*, (cur_orders_reliable AND prv_orders_reliable) AS ord_rel  -- надёжность Δ цены и Δ заказов\n  FROM r\n)\nSELECT\n  product_name_short                                                            AS sku,\n  CAST(nm_id AS STRING)                                                         AS nm,\n  cur_avg_seller_price_orders_rub                                               AS price,\n  IF(orders_comparable, avg_seller_price_orders_delta_pct, NULL)                AS price_d,\n  cur_orders_gross_units                                                        AS orders,\n  IF(orders_comparable, orders_delta_pct, NULL)                                 AS orders_d,\n  cur_buyout_units                                                              AS buyouts,\n  cur_cohort_buyout_rate                                                        AS rate,\n  cur_ads_attributed_rub                                                        AS ads,\n  cur_drr                                                                       AS drr,\n  cur_contribution_after_cogs_rub                                               AS contribution,\n  cur_contribution_margin_after_cogs                                            AS margin,\n  cur_contribution_after_cogs_per_buyout_rub                                    AS per_buyout,\n  ARRAY_TO_STRING(ARRAY(SELECT x FROM UNNEST([\n    -- малая выборка: мало данных сейчас ИЛИ показанное Δ посчитано на базе < порога (значения и Δ не скрываются)\n    IF(low_sample OR (orders_comparable AND NOT ord_rel AND orders_delta_pct IS NOT NULL), 'малая выборка', NULL),\n    IF(is_new_in_period, 'новый', NULL),\n    IF(NOT orders_comparable AND NOT low_sample, 'нет сравнения', NULL)\n  ]) AS x WHERE x IS NOT NULL), ' · ')                                          AS note\nFROM x\nWHERE IFNULL(cur_orders_gross_units, 0) + IFNULL(cur_buyout_units, 0) > 0\n   OR IFNULL(cur_ads_attributed_rub, 0) <> 0 OR IFNULL(cur_contribution_after_cogs_rub, 0) <> 0\nORDER BY contribution DESC",
+       "template-tags": [
+        {
+         "dimension": [
+          "field",
+          {
+           "lib/uuid": "3d904467-e645-425c-b9df-d697ef354319"
+          },
+          6672
+         ],
+         "display-name": "Период",
+         "id": "dbd0d49b-df98-48b1-9606-f0e431e30740",
+         "name": "day",
+         "type": "dimension",
+         "widget-type": "date/all-options"
+        },
+        {
+         "dimension": [
+          "field",
+          {
+           "lib/uuid": "d485a845-77e6-4b75-b849-01b651b5cdfb"
+          },
+          6675
+         ],
+         "display-name": "Товар",
+         "id": "c18d43ed-a7fe-49db-845c-540accd541b8",
+         "name": "sku",
+         "type": "dimension",
+         "widget-type": "string/="
+        }
+       ]
+      }
+     ]
+    },
+    "description": "Экономика каждого товара за период, по убыванию вклада. Ср. цена — средняя цена продавца до СПП по заказанным единицам; Δ цены и Δ заказов — к предыдущему периоду такой же длины (пусто, если периоды несопоставимы по покрытию данных или в прошлом периоде заказов не было). Выкупы — по дате выкупа. Выкуп — доля выкупленных среди завершённых заказов периода. Реклама — расходы, атрибутированные товару по статистике кампаний WB (не биллинг). ДРР — реклама / выкупы по цене продавца. Вклад — вклад SKU после себестоимости: начисление за товар минус логистика, хранение (с 01.09.2026), реклама и себестоимость; общие расходы аккаунта не распределяются. Маржа — вклад / выручка по цене продавца по финансовому отчёту WB. ₽ / выкуп — вклад на выкупленную единицу. «Малая выборка» — меньше 10 заказов и выкупов сейчас или меньше 10 заказов в одном из сравниваемых периодов: значения и изменения фактические, выводы делать рано, сигналов «Требуют внимания» по ним нет.",
+    "dimension_mappings": null,
+    "dimensions": null,
+    "display": "table",
+    "document_id": null,
+    "download_perms": "full",
+    "embedding_params": null,
+    "embedding_type": null,
+    "enable_embedding": false,
+    "entity_id": "TL5DIaNrc6GkUZlVY3wnA",
+    "id": 228,
+    "last_used_at": "2026-09-18T12:20:32.796707Z",
+    "legacy_query": null,
+    "metabase_version": "v0.63.15.1 (ab5ffba)",
+    "name": "SKU V2 · Товары",
+    "parameter_mappings": [],
+    "parameters": [],
+    "query_average_duration": null,
+    "query_type": "native",
+    "source_card_id": null,
+    "table_id": null,
+    "type": "question",
+    "visualization_settings": {
+     "column_settings": {
+      "[\"name\",\"ads\"]": {
+       "column_title": "Реклама",
+       "decimals": 0,
+       "number_style": "decimal",
+       "suffix": " ₽"
+      },
+      "[\"name\",\"buyouts\"]": {
+       "column_title": "Выкупы",
+       "decimals": 0,
+       "number_style": "decimal"
+      },
+      "[\"name\",\"contribution\"]": {
+       "column_title": "Вклад",
+       "decimals": 0,
+       "number_style": "decimal",
+       "suffix": " ₽"
+      },
+      "[\"name\",\"drr\"]": {
+       "column_title": "ДРР",
+       "decimals": 1,
+       "number_style": "percent"
+      },
+      "[\"name\",\"margin\"]": {
+       "column_title": "Маржа",
+       "decimals": 1,
+       "number_style": "percent"
+      },
+      "[\"name\",\"nm\"]": {
+       "column_title": "Артикул WB"
+      },
+      "[\"name\",\"note\"]": {
+       "column_title": "Статус"
+      },
+      "[\"name\",\"orders\"]": {
+       "column_title": "Заказы",
+       "decimals": 0,
+       "number_style": "decimal"
+      },
+      "[\"name\",\"orders_d\"]": {
+       "column_title": "Δ заказов",
+       "decimals": 0,
+       "number_style": "percent"
+      },
+      "[\"name\",\"per_buyout\"]": {
+       "column_title": "₽ / выкуп",
+       "decimals": 0,
+       "number_style": "decimal",
+       "suffix": " ₽"
+      },
+      "[\"name\",\"price\"]": {
+       "column_title": "Ср. цена",
+       "decimals": 0,
+       "number_style": "decimal",
+       "suffix": " ₽"
+      },
+      "[\"name\",\"price_d\"]": {
+       "column_title": "Δ цены",
+       "decimals": 1,
+       "number_style": "percent"
+      },
+      "[\"name\",\"rate\"]": {
+       "column_title": "Выкуп",
+       "decimals": 1,
+       "number_style": "percent"
+      },
+      "[\"name\",\"sku\"]": {
+       "column_title": "Товар"
+      }
+     },
+     "table.column_formatting": [
+      {
+       "color": "#ED6E6E",
+       "columns": [
+        "contribution"
+       ],
+       "highlight_row": false,
+       "id": 0,
+       "operator": "<",
+       "type": "single",
+       "value": 0
+      }
+     ],
+     "table.column_widths": [
+      150,
+      118,
+      93,
+      86,
+      87,
+      101,
+      93,
+      82,
+      94,
+      67,
+      82,
+      83,
+      97,
+      125
+     ],
+     "table.columns": [
+      {
+       "enabled": true,
+       "name": "sku"
+      },
+      {
+       "enabled": true,
+       "name": "nm"
+      },
+      {
+       "enabled": true,
+       "name": "price"
+      },
+      {
+       "enabled": true,
+       "name": "price_d"
+      },
+      {
+       "enabled": true,
+       "name": "orders"
+      },
+      {
+       "enabled": true,
+       "name": "orders_d"
+      },
+      {
+       "enabled": true,
+       "name": "buyouts"
+      },
+      {
+       "enabled": true,
+       "name": "rate"
+      },
+      {
+       "enabled": true,
+       "name": "ads"
+      },
+      {
+       "enabled": true,
+       "name": "drr"
+      },
+      {
+       "enabled": true,
+       "name": "contribution"
+      },
+      {
+       "enabled": true,
+       "name": "margin"
+      },
+      {
+       "enabled": true,
+       "name": "per_buyout"
+      },
+      {
+       "enabled": true,
+       "name": "note"
+      }
+     ],
+     "table.row_index": false
+    }
+   },
+   "card_id": 228,
+   "col": 0,
+   "collection_authority_level": null,
+   "created_at": "2026-09-18T10:38:09.911743Z",
+   "dashboard_id": 11,
+   "dashboard_tab_id": null,
+   "entity_id": "saLa4ga81ZWU3cdcjdRo7",
+   "id": 1279,
+   "inline_parameters": [],
+   "parameter_mappings": [
+    {
+     "card_id": 228,
+     "parameter_id": "date",
+     "target": [
+      "dimension",
+      [
+       "template-tag",
+       "day"
+      ]
+     ]
+    },
+    {
+     "card_id": 228,
+     "parameter_id": "sku",
+     "target": [
+      "dimension",
+      [
+       "template-tag",
+       "sku"
+      ]
+     ]
+    }
+   ],
+   "row": 12,
+   "series": [],
+   "size_x": 24,
+   "size_y": 17,
+   "visualization_settings": {
+    "card.title": "Товары"
+   }
+  },
+  {
+   "action_id": null,
+   "card": {
+    "archived": false,
+    "archived_directly": false,
+    "cache_invalidated_at": "2026-09-18T11:55:22.135259Z",
+    "cache_ttl": null,
+    "card_schema": 23,
+    "collection_id": 7,
+    "collection_position": null,
+    "collection_preview": true,
+    "created_at": "2026-09-18T09:42:30.51928Z",
+    "creator_id": 2,
+    "dashboard_id": null,
+    "database_id": 2,
+    "dataset_query": {
+     "database": 2,
+     "lib/type": "mbql/query",
+     "stages": [
+      {
+       "lib/type": "mbql.stage/native",
+       "native": "SELECT\n  day,\n  SUM(orders_gross_units)                                                                AS orders,\n  SAFE_DIVIDE(SUM(orders_gross_seller_price_rub), NULLIF(SUM(orders_gross_units), 0))   AS price\nFROM `wb_mart.V_DASH_SKU_PERFORMANCE_V2_DAILY`\nWHERE {{day}}\n  [[AND {{sku}}]]\nGROUP BY day\nORDER BY day",
+       "template-tags": [
+        {
+         "dimension": [
+          "field",
+          {
+           "lib/uuid": "18b2d70d-f3c1-4ec2-8ac1-26d5fb0f5e6f"
+          },
+          6672
+         ],
+         "display-name": "Период",
+         "id": "e3d3653b-86da-4ef2-af08-fdb4c5e0117c",
+         "name": "day",
+         "type": "dimension",
+         "widget-type": "date/all-options"
+        },
+        {
+         "dimension": [
+          "field",
+          {
+           "lib/uuid": "f9132e46-8061-4fa2-ae7e-02eb9ceec32d"
+          },
+          6675
+         ],
+         "display-name": "Товар",
+         "id": "4f564e1d-ab8e-4ceb-a95d-7aa5b97cdaa1",
+         "name": "sku",
+         "type": "dimension",
+         "widget-type": "string/="
+        }
+       ]
+      }
+     ]
+    },
+    "description": "Столбцы — заказы по дате заказа, линия — средняя цена продавца до СПП в заказах этого дня (сумма цен / число единиц). Для всего ассортимента цена зависит и от набора заказанных товаров; для одного товара выберите его в фильтре «Товар». Совпадение изменений цены и заказов не доказывает причину.",
+    "dimension_mappings": null,
+    "dimensions": null,
+    "display": "combo",
+    "document_id": null,
+    "download_perms": "full",
+    "embedding_params": null,
+    "embedding_type": null,
+    "enable_embedding": false,
+    "entity_id": "BVsrn6DxuL9P3wLZHkakh",
+    "id": 229,
+    "last_used_at": "2026-09-18T12:20:32.796707Z",
+    "legacy_query": null,
+    "metabase_version": "v0.63.15.1 (ab5ffba)",
+    "name": "SKU V2 · Заказы и средняя цена по дням",
+    "parameter_mappings": [],
+    "parameters": [],
+    "query_average_duration": null,
+    "query_type": "native",
+    "source_card_id": null,
+    "table_id": null,
+    "type": "question",
+    "visualization_settings": {
+     "column_settings": {
+      "[\"name\",\"price\"]": {
+       "decimals": 0,
+       "number_style": "decimal",
+       "suffix": " ₽"
+      }
+     },
+     "graph.dimensions": [
+      "day"
+     ],
+     "graph.metrics": [
+      "orders",
+      "price"
+     ],
+     "graph.show_values": false,
+     "graph.x_axis.title_text": "",
+     "graph.y_axis.title_text": "",
+     "series_settings": {
+      "orders": {
+       "axis": "left",
+       "color": "#509EE3",
+       "display": "bar",
+       "title": "Заказы"
+      },
+      "price": {
+       "axis": "right",
+       "color": "#7172AD",
+       "display": "line",
+       "title": "Ср. цена, ₽"
+      }
+     }
+    }
+   },
+   "card_id": 229,
+   "col": 0,
+   "collection_authority_level": null,
+   "created_at": "2026-09-18T10:38:09.911743Z",
+   "dashboard_id": 11,
+   "dashboard_tab_id": null,
+   "entity_id": "vymzeXB4y4XALOLRCoWF0",
+   "id": 1280,
+   "inline_parameters": [],
+   "parameter_mappings": [
+    {
+     "card_id": 229,
+     "parameter_id": "date",
+     "target": [
+      "dimension",
+      [
+       "template-tag",
+       "day"
+      ]
+     ]
+    },
+    {
+     "card_id": 229,
+     "parameter_id": "sku",
+     "target": [
+      "dimension",
+      [
+       "template-tag",
+       "sku"
+      ]
+     ]
+    }
+   ],
+   "row": 29,
+   "series": [],
+   "size_x": 24,
+   "size_y": 7,
+   "visualization_settings": {
+    "card.title": "Заказы и средняя цена по дням"
+   }
+  }
+ ],
+ "description": "Управленческий экран ассортимента: заказы, выкуп, цена, реклама и вклад товаров за период в сравнении с предыдущим периодом той же длины. Данные — backend SKU Performance V2.",
+ "embedding_params": null,
+ "embedding_type": null,
+ "enable_embedding": false,
+ "entity_id": "B7xELsdVb9owO837vzAMX",
+ "id": 11,
+ "is_remote_synced": false,
+ "name": "EVETIS · WB SKU Portfolio V2",
+ "param_fields": {
+  "067d6f59-b23d-4da9-a990-01af8ebe45b8": [
+   {
+    "base_type": "type/Text",
+    "dimensions": [],
+    "display_name": "Product Name Short",
+    "fk_target_field_id": null,
+    "has_field_values": "list",
+    "id": 6675,
+    "name": "product_name_short",
+    "name_field": null,
+    "semantic_type": "type/Category",
+    "table_id": 274,
+    "target": null
+   }
+  ],
+  "0a773d7a-51e0-4b4e-a0ee-1365c5be4430": [
+   {
+    "base_type": "type/Date",
+    "dimensions": [],
+    "display_name": "Day",
+    "fk_target_field_id": null,
+    "has_field_values": "none",
+    "id": 6672,
+    "name": "day",
+    "name_field": null,
+    "semantic_type": null,
+    "table_id": 274,
+    "target": null
+   }
+  ],
+  "0b1ae4eb-3186-4a60-92de-953fca46769d": [
+   {
+    "base_type": "type/Text",
+    "dimensions": [],
+    "display_name": "Product Name Short",
+    "fk_target_field_id": null,
+    "has_field_values": "list",
+    "id": 6675,
+    "name": "product_name_short",
+    "name_field": null,
+    "semantic_type": "type/Category",
+    "table_id": 274,
+    "target": null
+   }
+  ],
+  "1990e4c7-18de-4410-a10a-c796c1048dd9": [
+   {
+    "base_type": "type/Date",
+    "dimensions": [],
+    "display_name": "Day",
+    "fk_target_field_id": null,
+    "has_field_values": "none",
+    "id": 6672,
+    "name": "day",
+    "name_field": null,
+    "semantic_type": null,
+    "table_id": 274,
+    "target": null
+   }
+  ],
+  "2ced7593-a064-490a-8b3b-6e59369f9a98": [
+   {
+    "base_type": "type/Date",
+    "dimensions": [],
+    "display_name": "Day",
+    "fk_target_field_id": null,
+    "has_field_values": "none",
+    "id": 6672,
+    "name": "day",
+    "name_field": null,
+    "semantic_type": null,
+    "table_id": 274,
+    "target": null
+   }
+  ],
+  "33526806-6dd3-4097-9c78-72c161f2cdfb": [
+   {
+    "base_type": "type/Text",
+    "dimensions": [],
+    "display_name": "Product Name Short",
+    "fk_target_field_id": null,
+    "has_field_values": "list",
+    "id": 6675,
+    "name": "product_name_short",
+    "name_field": null,
+    "semantic_type": "type/Category",
+    "table_id": 274,
+    "target": null
+   }
+  ],
+  "4008fd88-c563-466a-939f-e788fa36279a": [
+   {
+    "base_type": "type/Text",
+    "dimensions": [],
+    "display_name": "Product Name Short",
+    "fk_target_field_id": null,
+    "has_field_values": "list",
+    "id": 6675,
+    "name": "product_name_short",
+    "name_field": null,
+    "semantic_type": "type/Category",
+    "table_id": 274,
+    "target": null
+   }
+  ],
+  "414ae97d-4413-422e-818d-7eb1b2450703": [
+   {
+    "base_type": "type/Date",
+    "dimensions": [],
+    "display_name": "Day",
+    "fk_target_field_id": null,
+    "has_field_values": "none",
+    "id": 6672,
+    "name": "day",
+    "name_field": null,
+    "semantic_type": null,
+    "table_id": 274,
+    "target": null
+   }
+  ],
+  "420d9267-91e9-4e26-9473-44d4add9b47d": [
+   {
+    "base_type": "type/Date",
+    "dimensions": [],
+    "display_name": "Day",
+    "fk_target_field_id": null,
+    "has_field_values": "none",
+    "id": 6672,
+    "name": "day",
+    "name_field": null,
+    "semantic_type": null,
+    "table_id": 274,
+    "target": null
+   }
+  ],
+  "4dde4f3c-f1e8-407a-a8c4-46ac91484de6": [
+   {
+    "base_type": "type/Date",
+    "dimensions": [],
+    "display_name": "Day",
+    "fk_target_field_id": null,
+    "has_field_values": "none",
+    "id": 6672,
+    "name": "day",
+    "name_field": null,
+    "semantic_type": null,
+    "table_id": 274,
+    "target": null
+   }
+  ],
+  "4f564e1d-ab8e-4ceb-a95d-7aa5b97cdaa1": [
+   {
+    "base_type": "type/Text",
+    "dimensions": [],
+    "display_name": "Product Name Short",
+    "fk_target_field_id": null,
+    "has_field_values": "list",
+    "id": 6675,
+    "name": "product_name_short",
+    "name_field": null,
+    "semantic_type": "type/Category",
+    "table_id": 274,
+    "target": null
+   }
+  ],
+  "67168a36-2560-4525-87db-d47980c6d468": [
+   {
+    "base_type": "type/Text",
+    "dimensions": [],
+    "display_name": "Product Name Short",
+    "fk_target_field_id": null,
+    "has_field_values": "list",
+    "id": 6675,
+    "name": "product_name_short",
+    "name_field": null,
+    "semantic_type": "type/Category",
+    "table_id": 274,
+    "target": null
+   }
+  ],
+  "6c210edf-bce9-4a32-b821-67aa1beba57c": [
+   {
+    "base_type": "type/Text",
+    "dimensions": [],
+    "display_name": "Product Name Short",
+    "fk_target_field_id": null,
+    "has_field_values": "list",
+    "id": 6675,
+    "name": "product_name_short",
+    "name_field": null,
+    "semantic_type": "type/Category",
+    "table_id": 274,
+    "target": null
+   }
+  ],
+  "6c9ef8bb-4a1c-4582-a43f-f27e090292f7": [
+   {
+    "base_type": "type/Date",
+    "dimensions": [],
+    "display_name": "Day",
+    "fk_target_field_id": null,
+    "has_field_values": "none",
+    "id": 6672,
+    "name": "day",
+    "name_field": null,
+    "semantic_type": null,
+    "table_id": 274,
+    "target": null
+   }
+  ],
+  "9440b616-dee5-4183-a333-a1b0d60897fe": [
+   {
+    "base_type": "type/Text",
+    "dimensions": [],
+    "display_name": "Product Name Short",
+    "fk_target_field_id": null,
+    "has_field_values": "list",
+    "id": 6675,
+    "name": "product_name_short",
+    "name_field": null,
+    "semantic_type": "type/Category",
+    "table_id": 274,
+    "target": null
+   }
+  ],
+  "948a8a48-7145-4916-a3f8-c764c2f1bd05": [
+   {
+    "base_type": "type/Text",
+    "dimensions": [],
+    "display_name": "Product Name Short",
+    "fk_target_field_id": null,
+    "has_field_values": "list",
+    "id": 6675,
+    "name": "product_name_short",
+    "name_field": null,
+    "semantic_type": "type/Category",
+    "table_id": 274,
+    "target": null
+   }
+  ],
+  "bbd5a0d2-25b7-4651-9e42-4bc02020b016": [
+   {
+    "base_type": "type/Date",
+    "dimensions": [],
+    "display_name": "Day",
+    "fk_target_field_id": null,
+    "has_field_values": "none",
+    "id": 6672,
+    "name": "day",
+    "name_field": null,
+    "semantic_type": null,
+    "table_id": 274,
+    "target": null
+   }
+  ],
+  "bd22ea0b-0c6a-498e-9284-807ac0cd9ef8": [
+   {
+    "base_type": "type/Text",
+    "dimensions": [],
+    "display_name": "Product Name Short",
+    "fk_target_field_id": null,
+    "has_field_values": "list",
+    "id": 6675,
+    "name": "product_name_short",
+    "name_field": null,
+    "semantic_type": "type/Category",
+    "table_id": 274,
+    "target": null
+   }
+  ],
+  "c18d43ed-a7fe-49db-845c-540accd541b8": [
+   {
+    "base_type": "type/Text",
+    "dimensions": [],
+    "display_name": "Product Name Short",
+    "fk_target_field_id": null,
+    "has_field_values": "list",
+    "id": 6675,
+    "name": "product_name_short",
+    "name_field": null,
+    "semantic_type": "type/Category",
+    "table_id": 274,
+    "target": null
+   }
+  ],
+  "daab923c-952d-43a4-8e7f-fa3be0575e21": [
+   {
+    "base_type": "type/Date",
+    "dimensions": [],
+    "display_name": "Day",
+    "fk_target_field_id": null,
+    "has_field_values": "none",
+    "id": 6672,
+    "name": "day",
+    "name_field": null,
+    "semantic_type": null,
+    "table_id": 274,
+    "target": null
+   }
+  ],
+  "date": [
+   {
+    "base_type": "type/Date",
+    "dimensions": [],
+    "display_name": "Day",
+    "fk_target_field_id": null,
+    "has_field_values": "none",
+    "id": 6672,
+    "name": "day",
+    "name_field": null,
+    "semantic_type": null,
+    "table_id": 274,
+    "target": null
+   }
+  ],
+  "dbd0d49b-df98-48b1-9606-f0e431e30740": [
+   {
+    "base_type": "type/Date",
+    "dimensions": [],
+    "display_name": "Day",
+    "fk_target_field_id": null,
+    "has_field_values": "none",
+    "id": 6672,
+    "name": "day",
+    "name_field": null,
+    "semantic_type": null,
+    "table_id": 274,
+    "target": null
+   }
+  ],
+  "e3d3653b-86da-4ef2-af08-fdb4c5e0117c": [
+   {
+    "base_type": "type/Date",
+    "dimensions": [],
+    "display_name": "Day",
+    "fk_target_field_id": null,
+    "has_field_values": "none",
+    "id": 6672,
+    "name": "day",
+    "name_field": null,
+    "semantic_type": null,
+    "table_id": 274,
+    "target": null
+   }
+  ],
+  "f7dc867c-0496-4f95-b8fc-bc319d597690": [
+   {
+    "base_type": "type/Date",
+    "dimensions": [],
+    "display_name": "Day",
+    "fk_target_field_id": null,
+    "has_field_values": "none",
+    "id": 6672,
+    "name": "day",
+    "name_field": null,
+    "semantic_type": null,
+    "table_id": 274,
+    "target": null
+   }
+  ],
+  "fa8c7e0c-371d-400c-875e-9c1c00df1dc9": [
+   {
+    "base_type": "type/Text",
+    "dimensions": [],
+    "display_name": "Product Name Short",
+    "fk_target_field_id": null,
+    "has_field_values": "list",
+    "id": 6675,
+    "name": "product_name_short",
+    "name_field": null,
+    "semantic_type": "type/Category",
+    "table_id": 274,
+    "target": null
+   }
+  ],
+  "sku": [
+   {
+    "base_type": "type/Text",
+    "dimensions": [],
+    "display_name": "Product Name Short",
+    "fk_target_field_id": null,
+    "has_field_values": "list",
+    "id": 6675,
+    "name": "product_name_short",
+    "name_field": null,
+    "semantic_type": "type/Category",
+    "table_id": 274,
+    "target": null
+   }
+  ]
+ },
+ "parameters": [
+  {
+   "default": "past30days-from-1days",
+   "id": "date",
+   "name": "Период",
+   "sectionId": "date",
+   "slug": "date",
+   "type": "date/all-options"
+  },
+  {
+   "id": "sku",
+   "isMultiSelect": true,
+   "name": "Товар",
+   "sectionId": "string",
+   "slug": "sku",
+   "type": "string/="
+  }
+ ],
+ "points_of_interest": null,
+ "position": null,
+ "show_in_getting_started": false,
+ "tabs": [],
+ "width": "full"
+}
