@@ -65,6 +65,8 @@ locals {
     exec_v2_layer = google_service_account.exec_v2_layer.name
     # SKU Performance V2 Phase B: Scheduler sku-performance-v2-layer-build → sa-sku-v2-layer (sku_performance_v2_layer.tf).
     sku_v2_layer = google_service_account.sku_v2_layer.name
+    # Unitka Integrity Guard V1: Scheduler unitka-cogs-publication → sa-unitka-cogs-pub (unitka_cogs_publication.tf).
+    unitka_cogs_pub = google_service_account.unitka_cogs_pub.name
   }
 }
 

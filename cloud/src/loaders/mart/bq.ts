@@ -10,12 +10,18 @@ import { BqClient } from '../../bq/client.js';
 import { LoaderError } from '../../errors.js';
 
 /** Минимальный контракт исполнителя запросов (реализуется BqClient; в тестах — фейк). */
+/** Необязательные параметры задания. jobTimeoutMs — серверный таймаут: BigQuery сам отменяет задание. */
+export interface QueryOptions {
+  jobTimeoutMs?: number;
+}
+
 export interface QueryRunner {
   readonly projectId: string;
   query<T = Record<string, unknown>>(
     query: string,
     params?: Record<string, unknown>,
     types?: Record<string, string>,
+    options?: QueryOptions,
   ): Promise<T[]>;
 }
 

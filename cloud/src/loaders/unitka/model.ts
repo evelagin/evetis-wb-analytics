@@ -104,6 +104,19 @@ export function formatDescr(f: CellFormat): string {
   return `bg ${c(f.bg)} fg ${c(f.fg)} nf ${f.numberFormat === null ? '-' : (f.numberFormat.pattern ?? f.numberFormat.type ?? '')}`;
 }
 
+/**
+ * Integrity Guard V1 — ЗАРЕЗЕРВИРОВАННЫЕ ячейки статуса (решение владельца Q2, Phase 1C1).
+ * Проверено 18.09.2026 на live-экспорте книги: WB738 и WB739 пусты, на них не ссылаются ни формулы,
+ * ни УФ, ни проверки данных, ни именованные диапазоны; в коде используются только WB736/WB737.
+ * Phase 1C1: ТОЛЬКО константы. Engine в эти ячейки НЕ пишет (запись — отдельный гейт).
+ *   WB738 — integrity_status прогона; WB739 — число финансово недостоверных SKU-дней.
+ * Строки заданы относительно HDR, а не литералом сентября.
+ */
+export const INTEGRITY_STATUS_CELLS = {
+  status: { row: GRID.HDR + 2, col: GRID.MIR },
+  invalidRows: { row: GRID.HDR + 3, col: GRID.MIR },
+} as const;
+
 /** Именованные диапазоны книги. */
 export const NAMED = { LCD: 'LAST_CLOSED_DATE', REVERSE: 'REVERSE_LEG_RATE' } as const;
 

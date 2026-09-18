@@ -64,6 +64,25 @@ export interface Config {
    * Shadow-Job физически получает readonly-scope Sheets и писать не может.
    */
   unitkaWriteEnabled: boolean;
+  // ── UNITKA INTEGRITY GUARD V1 (Phase 1C1) — все параметры разбираются МЯГКО: опечатка ──
+  // ── не должна ронять loadConfig и вместе с ним зрелый факт-писатель Unitka.        ──
+  /**
+   * off | observe | enforce. По умолчанию off: образ с Guard без явного включения ведёт себя
+   * как раньше. Неизвестное значение → off (+ предупреждение в логе прогона).
+   * observe — оценить, журналировать, НИКОГДА не менять исход прогона.
+   * enforce — зарезервирован (решение владельца); DATA_ERROR не бросает и там.
+   */
+  unitkaIntegrityMode: 'off' | 'observe' | 'enforce';
+  /** Сырое значение UNITKA_INTEGRITY_MODE, если оно было нераспознано (для предупреждения). */
+  unitkaIntegrityModeInvalid: string | null;
+  /** Срок D−1 для отчёта хранения, "HH:MM" МСК. Нераспознанное → '12:15'. */
+  unitkaStorageDueMsk: string;
+  /**
+   * Бюджет времени Guard на прогон, мс (по умолчанию 90 000; допустимо 5 000–300 000, иначе 90 000).
+   * Передаётся в BigQuery как серверный jobTimeoutMs: зависший запрос Guard отменяет сам BigQuery,
+   * а прогон успевает записать журнал до таймаута Job'а (600 с).
+   */
+  unitkaIntegrityBudgetMs: number;
 }
 
 type Env = Record<string, string | undefined>;
@@ -85,6 +104,21 @@ function intOpt(env: Env, name: string, fallback: number): number {
   const n = Number(raw);
   if (!Number.isInteger(n) || n < 0) throw new ConfigError(`${name} должно быть неотрицательным целым, получено '${raw}'`);
   return n;
+}
+
+/** Integrity Guard: мягкий разбор. Никогда не бросает ConfigError. */
+function integrityConfig(env: Env): Pick<Config, 'unitkaIntegrityMode' | 'unitkaIntegrityModeInvalid' | 'unitkaStorageDueMsk' | 'unitkaIntegrityBudgetMs'> {
+  const raw = (env.UNITKA_INTEGRITY_MODE ?? '').trim().toLowerCase();
+  const known = raw === 'off' || raw === 'observe' || raw === 'enforce';
+  const due = (env.UNITKA_STORAGE_DUE_MSK ?? '').trim();
+  const budgetRaw = Number((env.UNITKA_INTEGRITY_BUDGET_MS ?? '').trim());
+  const budget = Number.isInteger(budgetRaw) && budgetRaw >= 5_000 && budgetRaw <= 300_000 ? budgetRaw : 90_000;
+  return {
+    unitkaIntegrityMode: known ? (raw as 'off' | 'observe' | 'enforce') : 'off',
+    unitkaIntegrityModeInvalid: raw === '' || known ? null : raw,
+    unitkaStorageDueMsk: /^([01]\d|2[0-3]):[0-5]\d$/.test(due) ? due : '12:15',
+    unitkaIntegrityBudgetMs: budget,
+  };
 }
 
 export function loadConfig(env: Env = process.env): Config {
@@ -129,5 +163,6 @@ export function loadConfig(env: Env = process.env): Config {
     unitkaMinN: intOpt(env, 'UNITKA_MIN_N', 10),
     unitkaMaxLagDays: intOpt(env, 'UNITKA_MAX_LAG_DAYS', 2),
     unitkaWriteEnabled: opt(env, 'UNITKA_WRITE_ENABLED', '0') === '1',
+    ...integrityConfig(env),
   };
 }
