@@ -28,7 +28,8 @@
 --   действует несколько лет на неограниченный тираж; отнесение её полной
 --   стоимости только на уже ввезённые 82 841 единицу завысило бы себестоимость.
 --
--- ОТКАТ: sql/ref/stage3_4b1_rollback.sql
+-- ОТКАТ: RETIRED — DO NOT EXECUTE (R2D-3d, 2026-09-18). sql/ref/stage3_4b1_rollback.sql
+--   выведен из эксплуатации; исправления — только forward-fix миграцией.
 --   Снимок: evetis_ref.BAK_20260904B_REF_SKU_COGS_HISTORY (Σ = 3197.45)
 -- ============================================================================
 
@@ -112,13 +113,14 @@ VALUES (S.cost_item_id, S.cost_category, S.payment_date, S.counterparty, S.amoun
 --    двойного начисления.
 --    Условие открытия: ни одна строка ещё не расходится со снимком
 --    BAK_20260904B_REF_SKU_COGS_HISTORY, то есть аллокация не применена.
---    Гейт снимается сам, если история восстановлена из снимка.
+--    Восстанавливать историю из снимка ради повторного прогона нельзя (R2D-3d):
+--    повтор не выполняется, исправления — отдельной forward-fix миграцией.
 ASSERT (SELECT COUNT(*)
         FROM `project-fa311fc0-4d87-4781-986.evetis_ref.REF_SKU_COGS_HISTORY` h
         JOIN `project-fa311fc0-4d87-4781-986.evetis_ref.BAK_20260904B_REF_SKU_COGS_HISTORY` o
           USING (cogs_history_id)
         WHERE h.product_cogs_rub != o.product_cogs_rub) = 0
-  AS 'STAGE 3.4B.1 RE-RUN BLOCKED: аллокация сертификации уже применена к REF_SKU_COGS_HISTORY (расхождение со снимком BAK_20260904B). Повторный прогон UPDATE удвоил бы дополнительную landed-стоимость. Если нужен честный повтор — сначала восстановить историю из снимка, затем запускать файл.';
+  AS 'STAGE 3.4B.1 RE-RUN BLOCKED: аллокация сертификации уже применена к REF_SKU_COGS_HISTORY (расхождение со снимком BAK_20260904B). Повторный прогон UPDATE удвоил бы дополнительную landed-стоимость. Повторный прогон не выполняется; восстановление из снимка выведено (R2D-3d) — исправление отдельной forward-fix миграцией.';
 
 -- Применение решения №1: только строки с accounting_class='IN_MANAGEMENT_LANDED_COGS'
 UPDATE `project-fa311fc0-4d87-4781-986.evetis_ref.REF_SKU_COGS_HISTORY` T
