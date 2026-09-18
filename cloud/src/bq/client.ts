@@ -26,12 +26,15 @@ export class BqClient {
     query: string,
     params?: Record<string, unknown>,
     types?: Record<string, string>,
+    options?: { jobTimeoutMs?: number },
   ): Promise<T[]> {
     const [rows] = await this.bq.query({
       query,
       params: params ?? {},
       types,
       location: this.location,
+      // Серверный таймаут задания (BigQuery отменяет задание сам); без опции — как раньше.
+      ...(options?.jobTimeoutMs !== undefined ? { jobTimeoutMs: options.jobTimeoutMs } : {}),
     });
     return rows as T[];
   }

@@ -51,10 +51,15 @@ jobs:
         # поэтому отсутствие Job'а не валит деплой остатков.
         run: |
           if gcloud run jobs describe unitka-engine-shadow --region ${{ vars.GCP_REGION }} >/dev/null 2>&1; then
+            # UNITKA_INTEGRITY_MODE=observe — Integrity Guard V1 в SHADOW (решение владельца D5, 1C2A).
+            # Владелец runtime-значения — ЭТОТ workflow: env у Job'а в Terraform ignore_changes.
+            # observe не меняет исход прогона: DATA_ERROR ≠ падение, сбой Guard → SYSTEM_ERROR в журнале.
+            # Prod этим не затрагивается: deploy-prod.yml режим не задаёт → в коде по умолчанию off.
+            # Откат: заменить на UNITKA_INTEGRITY_MODE=off (или --remove-env-vars) и передеплоить.
             gcloud run jobs update unitka-engine-shadow \
               --region ${{ vars.GCP_REGION }} \
               --image "${{ steps.push.outputs.digest }}" \
-              --update-env-vars IMAGE_DIGEST="${{ steps.push.outputs.digest }}",GIT_SHA="${GITHUB_SHA}"
+              --update-env-vars IMAGE_DIGEST="${{ steps.push.outputs.digest }}",GIT_SHA="${GITHUB_SHA}",UNITKA_INTEGRITY_MODE=observe
           else
             echo "unitka-engine-shadow ещё не создан Terraform'ом — шаг пропущен"
           fi

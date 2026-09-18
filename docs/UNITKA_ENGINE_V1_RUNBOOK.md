@@ -96,6 +96,31 @@ SELECT * FROM `wb_mart.V_UNITKA_ENGINE_STATUS`;
   Stage 8/8.2 (`s82datarollback`, `s8brollback`, `s82lcdrollback`) остаются в репозитории.
 * Engine никогда не трогает формулы расчётных колонок, УФ и структуру — откатывать там нечего.
 
+## 5a. ⚠ DRY_RUN=1 не означает «без записи»
+
+`unitka` — не `prodOnly`-загрузчик: `DRY_RUN=1` пропускает lease, но вызывает настоящий handler. На
+`unitka-engine-prod` (`ENVIRONMENT=prod`, `UNITKA_WRITE_ENABLED=1`) такой прогон **пишет в книгу**. Прогон без
+записи — только `unitka-engine-shadow` (readonly-scope Sheets) или `UNITKA_WRITE_ENABLED=0`.
+
+## 5b. Integrity Guard V1 (`UNITKA_INTEGRITY_MODE`)
+
+Полный контракт — `UNITKA_INTEGRITY_GUARD_V1.md`. Кратко для оператора:
+
+* **DATA_ERROR ≠ падение Job'а.** Смотреть `JSON_VALUE(qa_json, '$.integrity.status')` в `UNITKA_ENGINE_RUNS`
+  и лог-событие `unitka_integrity`; `qa_status` по-прежнему про запись и сверку.
+* Режим задаёт **deploy-workflow**: `deploy-shadow.yml` → shadow `observe`; prod не задаётся → `off`.
+  Terraform env у Job'ов игнорирует (`ignore_changes`) — правка `unitka_engine.tf` режим не меняет.
+* Канон COGS Guard читает из физической копии `wb_mart.UNITKA_COGS_EFFECTIVE`; её публикует
+  `sa-unitka-cogs-pub` (Scheduler `unitka-cogs-publication`, :50 07–23 МСК). Штатная свежесть ≈ 1 ч;
+  `COGS_SNAPSHOT_STALE` — после 26 ч без успешной публикации; `COGS_SNAPSHOT_UNAVAILABLE` — копию не прочитать.
+  Оба — WARNING, вердиктов COGS в прогоне нет. Проверка публикации:
+  ```sql
+  SELECT started_at, status, rows_published, error_message FROM `wb_mart.UNITKA_COGS_PUBLISH_LOG`
+  ORDER BY started_at DESC LIMIT 5;
+  ```
+* COGS 252442517: канон 231,38 ₽; 240 ₽ в листе — известное неверное значение, исправление отложено.
+* Журнал issue, алерты, УФ — отложены; следующий приоритет после 1C3 — октябрьский rollover.
+
 ## 6. Офлайн SHADOW без облака
 
 ```

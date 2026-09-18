@@ -19,10 +19,18 @@ import type { QueryRunner } from '../mart/bq.js';
 import { UnitkaBq, type EngineRunRecord, type FreshnessRow } from './bq.js';
 import { SheetsRest, type SheetsGateway } from './sheets.js';
 import { GRID, NAMED, colA1 } from './model.js';
-import { buildPlan, toWriteRanges, toFormatWrites, type Plan, type Snapshot } from './plan.js';
+import { buildPlan, toWriteRanges, toFormatWrites, cellAt, formulaAt, type Plan, type Snapshot } from './plan.js';
 import { evaluate, failureCode, qaJson } from './qa.js';
+import {
+  evaluateIntegrity, summarize, classifyCogsSnapshot, parseHhMm, DEFAULT_STORAGE_DUE_MSK, APPROVED_COGS_REFS,
+  type IntegrityIssue, type IntegritySummary, type EvaluationPhase, type IntegrityMode,
+} from './integrity.js';
+import type { CellValue } from './model.js';
+import type { Logger } from '../../logging.js';
+import type { Config } from '../../config.js';
 
-export const ENGINE_VERSION = 'unitka-engine/1.1.0';
+// 1.2.0 — Integrity Guard V1 (Phase 1C1). При UNITKA_INTEGRITY_MODE=off (по умолчанию) поведение = 1.1.0.
+export const ENGINE_VERSION = 'unitka-engine/1.2.0';
 
 export interface UnitkaDeps {
   makeRunner: (ctx: LoaderContext) => QueryRunner;
@@ -59,6 +67,113 @@ export async function readSnapshot(sheets: SheetsGateway, sheetName: string): Pr
   };
 }
 
+/* ───────────────────────── Integrity Guard V1 ───────────────────────── */
+
+export interface IntegrityOutcome {
+  summary: IntegritySummary;
+  issues: IntegrityIssue[];
+}
+
+/** Значения разрешённых абсолютных ссылок COGS (например, $R$45) — одно чтение, только для чтения. */
+async function readCogsRefs(sheets: SheetsGateway, sheetName: string): Promise<Record<string, CellValue>> {
+  const q = quoteSheet(sheetName);
+  const vals = await sheets.readValues(APPROVED_COGS_REFS.map((r) => `${q}!${r}`));
+  const out: Record<string, CellValue> = {};
+  APPROVED_COGS_REFS.forEach((r, i) => { out[r] = vals[i]?.[0]?.[0] ?? null; });
+  return out;
+}
+
+/** Сбой Guard с явной причиной (для subsystem_failure). */
+class IntegrityFailure extends Error {
+  constructor(message: string, readonly code: string) { super(message); }
+}
+
+/**
+ * Оценка целостности. НИКОГДА не бросает: сбой самого Guard превращается в
+ * integrity_status = SYSTEM_ERROR + subsystem_failure, факт-писатель не страдает.
+ *
+ * Бюджет времени (UNITKA_INTEGRITY_BUDGET_MS, 90 с): остаток бюджета уходит в BigQuery как серверный
+ * jobTimeoutMs — зависшее задание отменяет сам BigQuery (никаких брошенных промисов с живой работой).
+ * Исчерпанный бюджет → SYSTEM_ERROR / INTEGRITY_TIME_BUDGET_EXCEEDED, журнал прогона всё равно пишется.
+ * Чтение $R$45 из Sheets ограничено собственным таймаутом шлюза (120 с) и выполняется только при
+ * оставшемся бюджете.
+ *
+ * Копия COGS читается изолированно: её сбой — не SYSTEM_ERROR, а COGS_SNAPSHOT_UNAVAILABLE (WARNING).
+ */
+export async function evaluateIntegrityPhase(a: {
+  bq: UnitkaBq; sheets: SheetsGateway; config: Config; snap: Snapshot; plan: Plan;
+  phase: EvaluationPhase; now: () => Date; log: Logger;
+}): Promise<IntegrityOutcome> {
+  const mode: IntegrityMode = a.config.unitkaIntegrityMode ?? 'off';
+  const budget = a.config.unitkaIntegrityBudgetMs ?? 90_000;
+  const deadline = a.now().getTime() + budget;
+  const remaining = (): number => deadline - a.now().getTime();
+  const timeLeft = (): number => {
+    const r = remaining();
+    if (r <= 0) throw new IntegrityFailure(`бюджет Guard ${budget} мс исчерпан`, 'INTEGRITY_TIME_BUDGET_EXCEEDED');
+    return r;
+  };
+  const unavailable = { state: 'UNAVAILABLE' as const, publishedAt: null, ageHours: null };
+  try {
+    const t = timeLeft();
+    const [factsRes, cogsRes] = await Promise.allSettled([a.bq.integrityFacts(t), a.bq.cogsCanonical(t)]);
+    if (factsRes.status === 'rejected') {
+      if (remaining() <= 0) throw new IntegrityFailure(`V_UNITKA_INTEGRITY: бюджет ${budget} мс исчерпан (${String(factsRes.reason)})`, 'INTEGRITY_TIME_BUDGET_EXCEEDED');
+      throw factsRes.reason;
+    }
+    const cogs = classifyCogsSnapshot(
+      cogsRes.status === 'fulfilled' ? cogsRes.value : { error: cogsRes.reason instanceof Error ? cogsRes.reason.message : String(cogsRes.reason) },
+      a.now(),
+    );
+    if (cogs.state !== 'AVAILABLE') a.log.warn('unitka_integrity_cogs_snapshot', { state: cogs.state, reason: cogs.reason, published_at: cogs.publishedAt });
+    timeLeft();
+    const refValues = await readCogsRefs(a.sheets, a.config.unitkaSheetName);
+    timeLeft();
+    const issues = evaluateIntegrity({
+      facts: factsRes.value, cogs, blocks: a.plan.blocks, lcd: a.plan.lcd, monthStart: a.plan.monthStart,
+      cellAt: (r, c) => cellAt(a.snap, r, c), formulaAt: (r, c) => formulaAt(a.snap, r, c),
+      refValues, now: a.now(),
+      storageDueMinutes: parseHhMm(a.config.unitkaStorageDueMsk ?? DEFAULT_STORAGE_DUE_MSK) ?? parseHhMm(DEFAULT_STORAGE_DUE_MSK)!,
+    });
+    return { issues, summary: summarize(issues, mode, a.phase, a.now(), cogs) };
+  } catch (e) {
+    const failure = {
+      code: e instanceof IntegrityFailure || e instanceof LoaderError ? e.code : 'INTEGRITY_SUBSYSTEM_FAILURE',
+      message: e instanceof Error ? e.message : String(e),
+    };
+    a.log.error('unitka_integrity_failed', failure);
+    return { issues: [], summary: summarize([], mode, a.phase, a.now(), unavailable, failure) };
+  }
+}
+
+/** Лог-событие для будущего алерта (контракт Phase 1B §13). Журнал issue отложен (решение D4). */
+function publishIntegrity(
+  o: IntegrityOutcome, a: { config: Config; log: Logger; runId: string; lcd: string },
+): void {
+  const s = o.summary;
+  const payload = {
+    run_id: a.runId, marketplace: 'WB', environment: a.config.environment, last_closed_date: a.lcd,
+    integrity_status: s.status, mode: s.mode, phase: s.phase, counts: s.counts,
+    financially_invalid_rows: s.financially_invalid_rows, issue_codes: s.issue_codes,
+    error_keys: s.error_keys.slice(0, 20), cogs_source: s.cogs_source, cogs_published_at: s.cogs_published_at,
+    spreadsheet_id: a.config.unitkaSpreadsheetId, sheet: a.config.unitkaSheetName,
+    ...(s.subsystem_failure ? { subsystem_failure: s.subsystem_failure } : {}),
+  };
+  if (s.status === 'DATA_ERROR' || s.status === 'SYSTEM_ERROR') a.log.warn('unitka_integrity', payload);
+  else a.log.info('unitka_integrity', payload);
+}
+
+/**
+ * enforce (зарезервирован): ошибка ТОЛЬКО при сбое самого Guard, никогда из-за DATA_ERROR.
+ * Возвращает ошибку, а не бросает: вызывающий ставит error_code ДО единственной записи журнала.
+ */
+function enforceGate(o: IntegrityOutcome | null, mode: IntegrityMode): LoaderError | null {
+  if (mode === 'enforce' && o?.summary.subsystem_failure) {
+    return new LoaderError(`Integrity Guard недоступен (enforce): ${o.summary.subsystem_failure.message}`, 'INTEGRITY_SUBSYSTEM_FAILURE');
+  }
+  return null;
+}
+
 function freshnessJson(rows: FreshnessRow[]): string {
   return JSON.stringify(rows.map((r) => ({ source: r.source, max_closed_date: r.maxClosedDate, gating: r.gating, observed_at: r.observedAt })));
 }
@@ -80,6 +195,13 @@ function planSummary(plan: Plan): Record<string, unknown> {
   };
 }
 
+/** Добавить integrity в уже собранный qa_json, не ломая остальные поля. */
+function withIntegrity(qaJsonStr: string, summary: IntegritySummary): string {
+  let o: Record<string, unknown> = {};
+  try { o = JSON.parse(qaJsonStr) as Record<string, unknown>; } catch { o = {}; }
+  return JSON.stringify({ ...o, integrity: summary });
+}
+
 export async function unitkaLoader(ctx: LoaderContext, deps: UnitkaDeps = defaultDeps): Promise<LoaderResult> {
   const { config, logger, runId } = ctx;
   const startedAt = deps.now();
@@ -89,6 +211,12 @@ export async function unitkaLoader(ctx: LoaderContext, deps: UnitkaDeps = defaul
 
   const bq = new UnitkaBq(deps.makeRunner(ctx), config.unitkaMartDataset, config.unitkaOpsDataset, config.unitkaRunsTable);
   const sheets = deps.makeSheets(ctx, !writeMode);
+
+  const integrityMode: IntegrityMode = config.unitkaIntegrityMode ?? 'off';
+  if (config.unitkaIntegrityModeInvalid) {
+    log.warn('unitka_integrity_mode_invalid', { value: config.unitkaIntegrityModeInvalid, effective: 'off' });
+  }
+  let integrity: IntegrityOutcome | null = null;
 
   const rec: EngineRunRecord = {
     runId, environment: config.environment, mode,
@@ -131,12 +259,16 @@ export async function unitkaLoader(ctx: LoaderContext, deps: UnitkaDeps = defaul
 
     // 4. SHADOW: QA текущего листа (mismatch = что изменил бы Engine), журнал, выход без записи.
     if (!writeMode) {
+      if (integrityMode !== 'off') {
+        integrity = await evaluateIntegrityPhase({ bq, sheets, config, snap, plan, phase: 'PRE_WRITE', now: deps.now, log });
+        publishIntegrity(integrity, { config, log, runId, lcd: plan.lcd });
+      }
       const qa = evaluate(snap, plan, { shadow: true });
       // В SHADOW mismatch и LCD — ожидаемая разница (новый день), дефектами считаются остальные.
       const SHADOW_DIFF = new Set(['BQ_SHEETS_MISMATCH', 'LCD_CONSISTENT', 'CLOSED_FORMAT_CONTRACT']);
       const expectedFail = qa.checks.filter((c) => !c.pass && !SHADOW_DIFF.has(c.name));
       rec.qaStatus = expectedFail.length ? 'SHADOW_FAIL' : (plan.cells.length || plan.formatCells.length ? 'SHADOW_DIFF' : 'SHADOW_MATCH');
-      rec.qaJson = qaJson(qa, { plan: planSummary(plan) });
+      rec.qaJson = qaJson(qa, { plan: planSummary(plan), ...(integrity ? { integrity: integrity.summary } : {}) });
       log.info('unitka_shadow', { qa_status: rec.qaStatus, cells_planned: plan.cells.length, checks: qa.checks.map((c) => `${c.name}:${c.pass ? 'PASS' : 'FAIL(' + c.count + ')'}`) });
       if (expectedFail.length) {
         rec.errorCode = failureCode({ pass: false, checks: expectedFail });
@@ -144,7 +276,10 @@ export async function unitkaLoader(ctx: LoaderContext, deps: UnitkaDeps = defaul
         await journal();
         throw new LoaderError(`SHADOW: Master не проходит QA — ${rec.errorMessage}`, rec.errorCode);
       }
+      const gate = enforceGate(integrity, integrityMode);
+      if (gate) { rec.errorCode = gate.code; rec.errorMessage = gate.message; }
       await journal();
+      if (gate) throw gate;
       return { rowsFetched: rec.rowsRead, rowsLoaded: 0 };
     }
 
@@ -175,7 +310,15 @@ export async function unitkaLoader(ctx: LoaderContext, deps: UnitkaDeps = defaul
     const after = await readSnapshot(sheets, config.unitkaSheetName);
     const qa = evaluate(after, plan);
     rec.qaStatus = qa.pass ? 'PASS' : 'FAIL';
-    rec.qaJson = qaJson(qa, { plan: planSummary(plan), format_cells_written: plan.formatCells.length });
+    // Integrity — ПОСЛЕ записи и reconciliation, на перечитанном листе. Не влияет на qa_status.
+    if (integrityMode !== 'off') {
+      integrity = await evaluateIntegrityPhase({ bq, sheets, config, snap: after, plan, phase: 'POST_WRITE', now: deps.now, log });
+      publishIntegrity(integrity, { config, log, runId, lcd: plan.lcd });
+    }
+    rec.qaJson = qaJson(qa, {
+      plan: planSummary(plan), format_cells_written: plan.formatCells.length,
+      ...(integrity ? { integrity: integrity.summary } : {}),
+    });
     log.info('unitka_qa', { pass: qa.pass, checks: qa.checks.map((c) => `${c.name}:${c.pass ? 'PASS' : 'FAIL(' + c.count + ')'}`) });
     if (!qa.pass) {
       const code = rec.cellsWritten > 0 && rec.cellsWritten !== plan.cells.length ? 'PARTIAL_WRITE' : failureCode(qa);
@@ -184,10 +327,19 @@ export async function unitkaLoader(ctx: LoaderContext, deps: UnitkaDeps = defaul
       await journal();
       throw new LoaderError(`QA после записи: ${rec.errorMessage}`, code);
     }
+    const gate = enforceGate(integrity, integrityMode);
+    if (gate) { rec.errorCode = gate.code; rec.errorMessage = gate.message; }
     await journal();
+    if (gate) throw gate;
     return { rowsFetched: rec.rowsRead, rowsLoaded: rec.cellsWritten };
   } catch (e) {
     if (rec.errorCode === null) {
+      // Сбой Engine до оценки целостности: integrity_status = SYSTEM_ERROR (если Guard включён).
+      if (integrityMode !== 'off' && integrity === null) {
+        rec.qaJson = withIntegrity(rec.qaJson, summarize([], integrityMode, writeMode ? 'POST_WRITE' : 'PRE_WRITE', deps.now(), { state: 'UNAVAILABLE', publishedAt: null, ageHours: null }, {
+          code: e instanceof LoaderError ? e.code : 'ENGINE_ERROR', message: 'Engine упал до оценки целостности',
+        }));
+      }
       const err = e instanceof LoaderError ? e : new LoaderError(e instanceof Error ? e.message : String(e), 'ENGINE_ERROR');
       rec.errorCode = err.code;
       rec.errorMessage = err.message;

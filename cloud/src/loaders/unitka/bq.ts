@@ -7,6 +7,10 @@
  */
 import type { QueryRunner } from '../mart/bq.js';
 import { LoaderError } from '../../errors.js';
+import type { IntegrityFactsRow, CogsCanonicalRow, PriceState, DivergenceClass } from './integrity.js';
+
+const PRICE_STATES: ReadonlySet<string> = new Set(['PRESENT', 'MISSING_WITH_ACTIVITY', 'MISSING_NO_ACTIVITY']);
+const DIVERGENCE_CLASSES: ReadonlySet<string> = new Set(['EXACT', 'FUNNEL_GT_FACT', 'FACT_GT_FUNNEL', 'ONLY_FUNNEL', 'ONLY_FACT', 'NO_FUNNEL_ROW']);
 
 export interface FreshnessRow {
   source: string;
@@ -196,6 +200,72 @@ export class UnitkaBq {
       windowFrom: date(r.window_from) ?? '',
       windowTo: date(r.window_to) ?? '',
     }));
+  }
+
+  /* ── Integrity Guard V1. Вью применяются отдельным гейтом (1C2B). ──
+   * jobTimeoutMs — серверный таймаут задания BigQuery: по его истечении BigQuery САМ отменяет
+   * задание (реальная отмена, а не брошенный промис). Задаётся из бюджета Guard. */
+
+  /** wb_mart.V_UNITKA_INTEGRITY — факты целостности SKU × день. NULL сохраняются как NULL. */
+  async integrityFacts(jobTimeoutMs?: number): Promise<IntegrityFactsRow[]> {
+    const rows = await this.runner.query(
+      `SELECT marketplace, nm_id, internal_sku, product_name, day, last_closed_date, orders_unitka, cancels_unitka,
+              orders_source, factual_order_price, orders_funnel, fact_order_rows, fact_order_qty,
+              observed_price_diagnostic, observed_price_at, storage_value, storage_date_covered, price_state, divergence_class
+       FROM ${this.fqn(this.martDataset, 'V_UNITKA_INTEGRITY')} ORDER BY nm_id, day`,
+      undefined, undefined, jobTimeoutMs === undefined ? undefined : { jobTimeoutMs },
+    );
+    return rows.map((r) => {
+      const priceState = String(r.price_state);
+      const divergence = String(r.divergence_class);
+      if (!PRICE_STATES.has(priceState)) throw new LoaderError(`V_UNITKA_INTEGRITY: неизвестный price_state '${priceState}'`, 'BQ_SHAPE');
+      if (!DIVERGENCE_CLASSES.has(divergence)) throw new LoaderError(`V_UNITKA_INTEGRITY: неизвестный divergence_class '${divergence}'`, 'BQ_SHAPE');
+      return {
+        marketplace: 'WB' as const,
+        nmId: numReq(r.nm_id, 'nm_id'),
+        internalSku: str(r.internal_sku),
+        productName: str(r.product_name),
+        day: date(r.day) ?? '',
+        lastClosedDate: date(r.last_closed_date) ?? '',
+        ordersUnitka: num(r.orders_unitka),
+        cancelsUnitka: num(r.cancels_unitka),
+        ordersSource: String(r.orders_source ?? ''),
+        factualOrderPrice: num(r.factual_order_price),   // NULL ≠ 0
+        ordersFunnel: num(r.orders_funnel),
+        factOrderRows: num(r.fact_order_rows),
+        factOrderQty: num(r.fact_order_qty),
+        observedPriceDiagnostic: num(r.observed_price_diagnostic), // OBSERVED_PRICE_NOT_FACTUAL_ORDER_PRICE
+        observedPriceAt: str(r.observed_price_at),
+        storageValue: num(r.storage_value),
+        storageDateCovered: r.storage_date_covered === true || r.storage_date_covered === 'true',
+        priceState: priceState as PriceState,
+        divergenceClass: divergence as DivergenceClass,
+      };
+    });
+  }
+
+  /**
+   * wb_mart.V_UNITKA_COGS_CANONICAL — канон COGS из ФИЗИЧЕСКОЙ копии wb_mart.UNITKA_COGS_EFFECTIVE.
+   * Вью не читает evetis_ref. publishedAt — время последней успешной публикации копии (одинаково у всех строк).
+   */
+  async cogsCanonical(jobTimeoutMs?: number): Promise<{ rows: CogsCanonicalRow[]; publishedAt: string | null; runId: string | null }> {
+    const rows = await this.runner.query(
+      `SELECT nm_id, internal_sku, day, cogs_interval_count, canonical_cogs, snapshot_published_at, snapshot_run_id
+       FROM ${this.fqn(this.martDataset, 'V_UNITKA_COGS_CANONICAL')} ORDER BY nm_id, day`,
+      undefined, undefined, jobTimeoutMs === undefined ? undefined : { jobTimeoutMs },
+    );
+    const first = rows[0];
+    return {
+      rows: rows.map((r) => ({
+        nmId: numReq(r.nm_id, 'nm_id'),
+        internalSku: str(r.internal_sku),
+        day: date(r.day) ?? '',
+        cogsIntervalCount: num(r.cogs_interval_count) ?? 0,
+        canonicalCogs: num(r.canonical_cogs), // NULL ≠ 0
+      })),
+      publishedAt: first ? str(first.snapshot_published_at) : null,
+      runId: first ? str(first.snapshot_run_id) : null,
+    };
   }
 
   /** Журнал прогона — одна строка на прогон, append-only INSERT. */

@@ -86,6 +86,15 @@ resource "google_bigquery_table_iam_member" "unitka_runs_write" {
   member     = "serviceAccount:${each.value}"
 }
 
+# ── UNITKA INTEGRITY GUARD V1 ───────────────────────────────────────────────────────
+#    UNITKA_INTEGRITY_MODE = off у обоих Job'ов ниже — ТОЛЬКО значение при СОЗДАНИИ Job'а.
+#    У обоих lifecycle.ignore_changes покрывает env (провайдер v7: env — set, точечно не исключить),
+#    поэтому правка этого значения НЕ меняет уже созданный Job. Владелец runtime-значения — deploy-workflow:
+#    deploy-shadow.yml ставит unitka-engine-shadow UNITKA_INTEGRITY_MODE=observe; deploy-prod.yml его
+#    не задаёт → в prod действует код-по-умолчанию off (решение владельца D5, 1C2A).
+#    Журнал issue (UNITKA_QA_ISSUES), алерты, УФ — отложены (решение D4). Копия COGS для Guard —
+#    infra/terraform/unitka_cogs_publication.tf. Док: docs/UNITKA_INTEGRITY_GUARD_V1.md.
+
 # ── Чтение подготовленного слоя. Вью wb_mart.V_UNITKA_* читают wb_raw и wb_mart,
 #    поэтому SA нужен dataViewer на обоих датасетах (у prod на wb_raw он уже есть —
 #    prod_view_raw; на wb_mart у prod dataEditor — prod_edit_mart). Shadow получает
@@ -117,7 +126,7 @@ resource "google_cloud_run_v2_job" "unitka_engine_shadow" {
         image = var.container_image
         args  = ["unitka"]
         dynamic "env" {
-          for_each = merge(local.common_env, local.unitka_env, local.deploy_managed_env, { ENVIRONMENT = "shadow", UNITKA_WRITE_ENABLED = "0" })
+          for_each = merge(local.common_env, local.unitka_env, local.deploy_managed_env, { ENVIRONMENT = "shadow", UNITKA_WRITE_ENABLED = "0", UNITKA_INTEGRITY_MODE = "off" })
           content {
             name  = env.key
             value = env.value
@@ -154,7 +163,7 @@ resource "google_cloud_run_v2_job" "unitka_engine_prod" {
         image = var.container_image
         args  = ["unitka"]
         dynamic "env" {
-          for_each = merge(local.common_env, local.unitka_env, local.deploy_managed_env, { ENVIRONMENT = "prod", UNITKA_WRITE_ENABLED = "1" })
+          for_each = merge(local.common_env, local.unitka_env, local.deploy_managed_env, { ENVIRONMENT = "prod", UNITKA_WRITE_ENABLED = "1", UNITKA_INTEGRITY_MODE = "off" })
           content {
             name  = env.key
             value = env.value

@@ -1,5 +1,27 @@
 # CHANGELOG.md
 
+## 2026-09-18 — UNITKA INTEGRITY GUARD V1 · shadow-ready foundation (код; НЕ применено)
+
+Документ: `docs/UNITKA_INTEGRITY_GUARD_V1.md`. В BigQuery, Sheets, Cloud Run, Scheduler, IAM ничего не применялось.
+
+- Engine `unitka-engine/1.2.0`: модуль `cloud/src/loaders/unitka/integrity.ts` — правила PRICE_MISSING_WITH_ORDERS,
+  PRICE_MISSING_NO_ORDERS, COGS_ZERO_OR_MISSING, COGS_SOURCE_MISMATCH, COGS_SNAPSHOT_STALE (> 26 ч),
+  COGS_SNAPSHOT_UNAVAILABLE, SKU_WITHOUT_BLOCK, SPP_MISSING, STORAGE_MISSING (время МСК, срок 12:15),
+  ORDERS_SOURCE_DIVERGENCE; `integrity_status` отдельно от `qa_status` (DATA_ERROR ≠ падение Job'а).
+  Режим `UNITKA_INTEGRITY_MODE` off/observe/enforce, по умолчанию off — поведение прежнее. Бюджет Guard
+  `UNITKA_INTEGRITY_BUDGET_MS` (90 с) — серверный `jobTimeoutMs` BigQuery. Колонки и формулы листа не меняются;
+  WB738/WB739 только зарезервированы. `qa_json.integrity` в `UNITKA_ENGINE_RUNS` без изменения схемы.
+- Канонический COGS — физическая копия `wb_mart.UNITKA_COGS_EFFECTIVE` (+ журнал, замок, процедура
+  `sp_publish_unitka_cogs`; `sql/unitka/cogs_publication_v1.sql`): runtime-учётки Unitka не получают доступ к
+  `evetis_ref`. Вью `V_UNITKA_INTEGRITY` и `V_UNITKA_COGS_CANONICAL` (`sql/unitka/integrity_v1.sql`) читают только
+  wb_raw/wb_mart.
+- Terraform (объявлено, не применено): `unitka_cogs_publication.tf` — `sa-unitka-cogs-pub`, jobUser, dataViewer на
+  evetis_ref, routine IAM на одну процедуру, потабличный dataEditor на 3 таблицы, Scheduler `:50 07–23 МСК`;
+  actAs в `iam.tf`; `UNITKA_INTEGRITY_MODE = "off"` у обоих Job'ов (значение при создании).
+- `deploy-shadow.yml`: `unitka-engine-shadow` получает `UNITKA_INTEGRITY_MODE=observe`; prod не активируется.
+- Отложено: журнал issue `UNITKA_QA_ISSUES`, алерты, УФ, production-включение Guard.
+- Тесты: сентябрьские контрольные случаи, свежесть копии COGS, бюджет, статическая граница evetis_ref,
+  qa PASS + DATA_ERROR = exit 0. Зафиксировано: `DRY_RUN=1` для `unitka` не защищает от записи в лист.
 ## 2026-09-18 — SKU PERFORMANCE V2 PHASE C1: Portfolio dashboard
 
 Документ: `docs/SKU_PERFORMANCE_V2_PHASE_C1_PORTFOLIO_2026-09-18.md`. Dashboard 3, Executive V2 и backend Phase B не менялись.
