@@ -1,0 +1,287 @@
+{
+ "archived": false,
+ "archived_directly": false,
+ "cache_invalidated_at": "2026-09-18T11:55:19.608538Z",
+ "cache_ttl": null,
+ "card_schema": 23,
+ "collection": {
+  "archive_operation_id": null,
+  "archived": false,
+  "archived_directly": null,
+  "authority_level": null,
+  "created_at": "2026-08-26T21:36:24.222972Z",
+  "description": "Stage 2 — экран SKU Performance. Источник: wb_mart.V_DASH_SKU_DAILY (грейн сутки × nm_id). Все ratio — ratio-of-sums. Показатели «до себестоимости»: REF_COGS отсутствует.",
+  "entity_id": "fAATuhpeqreJF4Tq0aTmF",
+  "id": 7,
+  "is_remote_synced": false,
+  "is_sample": false,
+  "location": "/5/",
+  "name": "02 SKU Performance",
+  "namespace": null,
+  "personal_owner_id": null,
+  "slug": "02_sku_performance",
+  "type": null
+ },
+ "collection_id": 7,
+ "collection_position": null,
+ "collection_preview": true,
+ "created_at": "2026-09-18T09:42:28.504921Z",
+ "creator_id": 2,
+ "dashboard": null,
+ "dashboard_id": null,
+ "database_id": 2,
+ "dataset_query": {
+  "database": 2,
+  "lib/type": "mbql/query",
+  "stages": [
+   {
+    "lib/type": "mbql.stage/native",
+    "native": "WITH b AS (\n  SELECT MIN(day) AS d1, MAX(day) AS d2\n  FROM `wb_mart.V_DASH_SKU_PERFORMANCE_V2_DAILY`\n  WHERE {{day}}\n),\nt AS (SELECT * FROM `wb_mart.TVF_SKU_PERFORMANCE_V2_PERIOD`((SELECT d1 FROM b), (SELECT d2 FROM b))),\nsel AS (\n  SELECT DISTINCT nm_id FROM `wb_mart.V_DASH_SKU_PERFORMANCE_V2_DAILY`\n  WHERE TRUE [[AND {{sku}}]]\n),\nr AS (SELECT * FROM t WHERE NOT is_portfolio_total AND nm_id IN (SELECT nm_id FROM sel)),\nx AS (\n  SELECT r.*, (cur_orders_reliable AND prv_orders_reliable) AS ord_rel  -- надёжность Δ цены и Δ заказов\n  FROM r\n)\nSELECT\n  product_name_short                                                            AS sku,\n  CAST(nm_id AS STRING)                                                         AS nm,\n  cur_avg_seller_price_orders_rub                                               AS price,\n  IF(orders_comparable, avg_seller_price_orders_delta_pct, NULL)                AS price_d,\n  cur_orders_gross_units                                                        AS orders,\n  IF(orders_comparable, orders_delta_pct, NULL)                                 AS orders_d,\n  cur_buyout_units                                                              AS buyouts,\n  cur_cohort_buyout_rate                                                        AS rate,\n  cur_ads_attributed_rub                                                        AS ads,\n  cur_drr                                                                       AS drr,\n  cur_contribution_after_cogs_rub                                               AS contribution,\n  cur_contribution_margin_after_cogs                                            AS margin,\n  cur_contribution_after_cogs_per_buyout_rub                                    AS per_buyout,\n  ARRAY_TO_STRING(ARRAY(SELECT x FROM UNNEST([\n    -- малая выборка: мало данных сейчас ИЛИ показанное Δ посчитано на базе < порога (значения и Δ не скрываются)\n    IF(low_sample OR (orders_comparable AND NOT ord_rel AND orders_delta_pct IS NOT NULL), 'малая выборка', NULL),\n    IF(is_new_in_period, 'новый', NULL),\n    IF(NOT orders_comparable AND NOT low_sample, 'нет сравнения', NULL)\n  ]) AS x WHERE x IS NOT NULL), ' · ')                                          AS note\nFROM x\nWHERE IFNULL(cur_orders_gross_units, 0) + IFNULL(cur_buyout_units, 0) > 0\n   OR IFNULL(cur_ads_attributed_rub, 0) <> 0 OR IFNULL(cur_contribution_after_cogs_rub, 0) <> 0\nORDER BY contribution DESC",
+    "template-tags": [
+     {
+      "dimension": [
+       "field",
+       {
+        "lib/uuid": "3d904467-e645-425c-b9df-d697ef354319"
+       },
+       6672
+      ],
+      "display-name": "Период",
+      "id": "dbd0d49b-df98-48b1-9606-f0e431e30740",
+      "name": "day",
+      "type": "dimension",
+      "widget-type": "date/all-options"
+     },
+     {
+      "dimension": [
+       "field",
+       {
+        "lib/uuid": "d485a845-77e6-4b75-b849-01b651b5cdfb"
+       },
+       6675
+      ],
+      "display-name": "Товар",
+      "id": "c18d43ed-a7fe-49db-845c-540accd541b8",
+      "name": "sku",
+      "type": "dimension",
+      "widget-type": "string/="
+     }
+    ]
+   }
+  ]
+ },
+ "description": "Экономика каждого товара за период, по убыванию вклада. Ср. цена — средняя цена продавца до СПП по заказанным единицам; Δ цены и Δ заказов — к предыдущему периоду такой же длины (пусто, если периоды несопоставимы по покрытию данных или в прошлом периоде заказов не было). Выкупы — по дате выкупа. Выкуп — доля выкупленных среди завершённых заказов периода. Реклама — расходы, атрибутированные товару по статистике кампаний WB (не биллинг). ДРР — реклама / выкупы по цене продавца. Вклад — вклад SKU после себестоимости: начисление за товар минус логистика, хранение (с 01.09.2026), реклама и себестоимость; общие расходы аккаунта не распределяются. Маржа — вклад / выручка по цене продавца по финансовому отчёту WB. ₽ / выкуп — вклад на выкупленную единицу. «Малая выборка» — меньше 10 заказов и выкупов сейчас или меньше 10 заказов в одном из сравниваемых периодов: значения и изменения фактические, выводы делать рано, сигналов «Требуют внимания» по ним нет.",
+ "dimension_mappings": null,
+ "dimensions": null,
+ "display": "table",
+ "document_id": null,
+ "embedding_params": null,
+ "embedding_type": null,
+ "enable_embedding": false,
+ "entity_id": "TL5DIaNrc6GkUZlVY3wnA",
+ "id": 228,
+ "is_remote_synced": false,
+ "last_used_at": "2026-09-18T12:20:32.796707Z",
+ "legacy_query": null,
+ "metabase_version": "v0.63.15.1 (ab5ffba)",
+ "name": "SKU V2 · Товары",
+ "param_fields": {
+  "c18d43ed-a7fe-49db-845c-540accd541b8": [
+   {
+    "base_type": "type/Text",
+    "dimensions": [],
+    "display_name": "Product Name Short",
+    "fk_target_field_id": null,
+    "has_field_values": "list",
+    "id": 6675,
+    "name": "product_name_short",
+    "name_field": null,
+    "semantic_type": "type/Category",
+    "table_id": 274,
+    "target": null
+   }
+  ],
+  "dbd0d49b-df98-48b1-9606-f0e431e30740": [
+   {
+    "base_type": "type/Date",
+    "dimensions": [],
+    "display_name": "Day",
+    "fk_target_field_id": null,
+    "has_field_values": "none",
+    "id": 6672,
+    "name": "day",
+    "name_field": null,
+    "semantic_type": null,
+    "table_id": 274,
+    "target": null
+   }
+  ]
+ },
+ "parameter_mappings": [],
+ "parameter_usage_count": 0,
+ "parameters": [],
+ "query_type": "native",
+ "source_card_id": null,
+ "table_id": null,
+ "type": "question",
+ "visualization_settings": {
+  "column_settings": {
+   "[\"name\",\"ads\"]": {
+    "column_title": "Реклама",
+    "decimals": 0,
+    "number_style": "decimal",
+    "suffix": " ₽"
+   },
+   "[\"name\",\"buyouts\"]": {
+    "column_title": "Выкупы",
+    "decimals": 0,
+    "number_style": "decimal"
+   },
+   "[\"name\",\"contribution\"]": {
+    "column_title": "Вклад",
+    "decimals": 0,
+    "number_style": "decimal",
+    "suffix": " ₽"
+   },
+   "[\"name\",\"drr\"]": {
+    "column_title": "ДРР",
+    "decimals": 1,
+    "number_style": "percent"
+   },
+   "[\"name\",\"margin\"]": {
+    "column_title": "Маржа",
+    "decimals": 1,
+    "number_style": "percent"
+   },
+   "[\"name\",\"nm\"]": {
+    "column_title": "Артикул WB"
+   },
+   "[\"name\",\"note\"]": {
+    "column_title": "Статус"
+   },
+   "[\"name\",\"orders\"]": {
+    "column_title": "Заказы",
+    "decimals": 0,
+    "number_style": "decimal"
+   },
+   "[\"name\",\"orders_d\"]": {
+    "column_title": "Δ заказов",
+    "decimals": 0,
+    "number_style": "percent"
+   },
+   "[\"name\",\"per_buyout\"]": {
+    "column_title": "₽ / выкуп",
+    "decimals": 0,
+    "number_style": "decimal",
+    "suffix": " ₽"
+   },
+   "[\"name\",\"price\"]": {
+    "column_title": "Ср. цена",
+    "decimals": 0,
+    "number_style": "decimal",
+    "suffix": " ₽"
+   },
+   "[\"name\",\"price_d\"]": {
+    "column_title": "Δ цены",
+    "decimals": 1,
+    "number_style": "percent"
+   },
+   "[\"name\",\"rate\"]": {
+    "column_title": "Выкуп",
+    "decimals": 1,
+    "number_style": "percent"
+   },
+   "[\"name\",\"sku\"]": {
+    "column_title": "Товар"
+   }
+  },
+  "table.column_formatting": [
+   {
+    "color": "#ED6E6E",
+    "columns": [
+     "contribution"
+    ],
+    "highlight_row": false,
+    "id": 0,
+    "operator": "<",
+    "type": "single",
+    "value": 0
+   }
+  ],
+  "table.column_widths": [
+   150,
+   118,
+   93,
+   86,
+   87,
+   101,
+   93,
+   82,
+   94,
+   67,
+   82,
+   83,
+   97,
+   125
+  ],
+  "table.columns": [
+   {
+    "enabled": true,
+    "name": "sku"
+   },
+   {
+    "enabled": true,
+    "name": "nm"
+   },
+   {
+    "enabled": true,
+    "name": "price"
+   },
+   {
+    "enabled": true,
+    "name": "price_d"
+   },
+   {
+    "enabled": true,
+    "name": "orders"
+   },
+   {
+    "enabled": true,
+    "name": "orders_d"
+   },
+   {
+    "enabled": true,
+    "name": "buyouts"
+   },
+   {
+    "enabled": true,
+    "name": "rate"
+   },
+   {
+    "enabled": true,
+    "name": "ads"
+   },
+   {
+    "enabled": true,
+    "name": "drr"
+   },
+   {
+    "enabled": true,
+    "name": "contribution"
+   },
+   {
+    "enabled": true,
+    "name": "margin"
+   },
+   {
+    "enabled": true,
+    "name": "per_buyout"
+   },
+   {
+    "enabled": true,
+    "name": "note"
+   }
+  ],
+  "table.row_index": false
+ }
+}
