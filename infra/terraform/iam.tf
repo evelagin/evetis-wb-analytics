@@ -63,6 +63,8 @@ locals {
     # Executive V2 Phase C2: Scheduler executive-v2-layer-build вызывает BigQuery от имени
     # sa-exec-v2-layer (executive_v2_layer.tf) — тот же actAs-контракт.
     exec_v2_layer = google_service_account.exec_v2_layer.name
+    # SKU Performance V2 Phase B: Scheduler sku-performance-v2-layer-build → sa-sku-v2-layer (sku_performance_v2_layer.tf).
+    sku_v2_layer = google_service_account.sku_v2_layer.name
   }
 }
 
