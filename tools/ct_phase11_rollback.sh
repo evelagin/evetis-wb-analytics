@@ -5,9 +5,14 @@
 # Что делает:
 #   BigQuery  — удаляет витрины Phase 1.1 (V_CT_REFRESH_STATUS, V_CT_SKU_CONTROL,
 #               V_CT_DAILY_BRIEF_LINES, V_CT_DAILY_BRIEF) и возвращает Phase 1-определения
-#               10 витрин ct_04b и 3 процедур sp_ct_* (`git show 075f45a:sql/control_tower/...`).
-#               Оба файла Phase 1 содержат только CREATE OR REPLACE VIEW / PROCEDURE и
-#               не ссылаются на объекты Phase 1.1; их blob-хэши закреплены ниже.
+#               10 витрин ct_04b (`git show 075f45a:sql/control_tower/ct_04b_views_owner.sql`,
+#               только CREATE OR REPLACE VIEW, blob-хэш закреплён ниже).
+#               Процедуры sp_ct_* НЕ откатываются: sp_ct_generate_actions и sp_ct_action_update
+#               в Phase 1 и сейчас побайтно совпадают, а текущая sp_ct_refresh_daily совместима
+#               с витринами Phase 1. Историческая версия Phase 1 использовала TRUNCATE, которого
+#               потабличный dataEditor у sa-ct-refresh может не хватить: планировщик ct-refresh-prod
+#               (5 раз в сутки) падал бы до записи CT_INVENTORY_SNAPSHOT_DAILY — невосполнимые
+#               пропуски истории.
 #   Metabase  — печатает инструкцию: выполнить tools/metabase_ct_phase11_rollback.js в консоли
 #               браузера на localhost:3000 (восстанавливает карточки 97–116 и раскладку
 #               дашбордов 5/6, архивирует карточки и дашборды Phase 1.1).
@@ -15,8 +20,8 @@
 #               в iam.tf, затем workflow `infra` action=apply (удалит SA, IAM и scheduler).
 #
 # 🔴 R2D-3b (2026-09-18): таблица evetis_ref.CT_CONFIG БОЛЬШЕ НЕ УДАЛЯЕТСЯ. В ней настройки
-#   владельца (в т.ч. адрес web-app), которых нет в Git. После отката процедуры Phase 1 её
-#   просто не читают. Ни одна таблица CT_* этим скриптом не удаляется и не меняется.
+#   владельца (в т.ч. адрес web-app), которых нет в Git; текущая sp_ct_refresh_daily
+#   продолжает её читать. Ни одна таблица CT_* этим скриптом не удаляется и не меняется.
 #
 # Порядок слоёв: Phase 1.1 нельзя откатывать под установленной Phase 1.2. Phase 1.2 не
 #   создаёт новых объектов BigQuery, но добавляет в витрины V_CT_* колонки владельца
@@ -37,7 +42,6 @@ PROJECT="${BQ_PROJECT:-project-fa311fc0-4d87-4781-986}"
 BASE_COMMIT="075f45a"
 # Закреплённые blob-хэши файлов Phase 1: скрипт применяет только проверенное содержимое.
 EXPECTED_BLOB_04B="0ad3be32cfe1505fc4a5736221ec3a17f7cc5768"   # sql/control_tower/ct_04b_views_owner.sql
-EXPECTED_BLOB_05="7ac834baeb5682ec817e224f8a965811da02cce9"    # sql/control_tower/ct_05_procedures.sql
 
 # Производные объекты Phase 1.1 — единственные цели удаления.
 P11_VIEWS=(V_CT_DAILY_BRIEF V_CT_DAILY_BRIEF_LINES V_CT_SKU_CONTROL V_CT_REFRESH_STATUS)
@@ -45,7 +49,6 @@ P11_VIEWS=(V_CT_DAILY_BRIEF V_CT_DAILY_BRIEF_LINES V_CT_SKU_CONTROL V_CT_REFRESH
 REDEFINED_VIEWS=(V_CT_INVENTORY_TRUTH_LIVE V_CT_PLAN_VS_ACTUAL_DAILY V_CT_CASH_CONVERSION
           V_CT_BUNDLE_STATUS V_CT_SUPPLY_NEED V_CT_HAND_CREAM_CONTROL V_CT_ATTENTION
           V_CT_ACTION_CANDIDATES V_CT_ACTION_QUEUE V_CT_OWNER_HOME)
-REDEFINED_PROCS=(sp_ct_generate_actions sp_ct_action_update sp_ct_refresh_daily)
 # Колонки, которые появляются только в Phase 1.2.
 P12_MARKER_COLUMNS=(why_owner effect_line effect_kind_ru status_ru channel_ru kind_ru)
 DEP_DATASETS=(wb_raw wb_mart wb_ops evetis_ref evetis_ops evetis_communications ozon_raw ozon_mart)
@@ -89,10 +92,9 @@ bq_scalar() {
 }
 
 check_phase1_sources() {
-  local b04 b05
+  local b04
   b04=$(git rev-parse --verify --quiet "${BASE_COMMIT}:sql/control_tower/ct_04b_views_owner.sql" || true)
-  b05=$(git rev-parse --verify --quiet "${BASE_COMMIT}:sql/control_tower/ct_05_procedures.sql" || true)
-  [[ "$b04" == "$EXPECTED_BLOB_04B" && "$b05" == "$EXPECTED_BLOB_05" ]] \
+  [[ "$b04" == "$EXPECTED_BLOB_04B" ]] \
     || refuse "файлы Phase 1 в ${BASE_COMMIT} не совпадают с закреплёнными (запускайте из корня репозитория EVETIS)."
 }
 
@@ -116,8 +118,7 @@ WHERE STARTS_WITH(table_name, 'V_CT_') AND column_name IN ($(in_list "${P12_MARK
   n=$(bq_scalar "WITH o AS ($(join_by ' ' "${parts[@]/%/ UNION ALL}" | sed 's/ UNION ALL$//'))
 SELECT COUNT(*) FROM o
 WHERE REGEXP_CONTAINS(body, r'${views_re}')
-  AND NOT ((ds = 'wb_mart' AND obj IN ($(in_list "${P11_VIEWS[@]}" "${REDEFINED_VIEWS[@]}")))
-        OR (ds = 'evetis_ref' AND obj IN ($(in_list "${REDEFINED_PROCS[@]}"))))" "внешние зависимости")
+  AND NOT (ds = 'wb_mart' AND obj IN ($(in_list "${P11_VIEWS[@]}" "${REDEFINED_VIEWS[@]}")))" "внешние зависимости")
   [[ "$n" == "0" ]] || refuse "${n} объект(ов) вне отката ссылаются на удаляемые витрины Phase 1.1."
   echo "  OK: внешних ссылок на удаляемые витрины нет"
 }
@@ -139,9 +140,8 @@ if [[ $DO_BQ -eq 1 ]]; then
   for v in V_CT_DAILY_BRIEF V_CT_DAILY_BRIEF_LINES V_CT_SKU_CONTROL; do
     bq_run "DROP VIEW IF EXISTS \`${PROJECT}.wb_mart.${v}\`"
   done
-  echo "--- BigQuery: возврат Phase 1-определений (10 витрин ct_04b, sp_ct_*) ---"
+  echo "--- BigQuery: возврат Phase 1-определений 10 витрин ct_04b (процедуры sp_ct_* не меняются) ---"
   bq_file sql/control_tower/ct_04b_views_owner.sql "владельческие витрины Phase 1 (Owner Home без ссылки на V_CT_REFRESH_STATUS)"
-  bq_file sql/control_tower/ct_05_procedures.sql   "процедуры Phase 1 (sp_ct_refresh_daily с полной пересборкой производной CT_ACTUAL_DAILY)"
   echo "--- BigQuery: удаление оставшейся витрины Phase 1.1 ---"
   bq_run "DROP VIEW IF EXISTS \`${PROJECT}.wb_mart.V_CT_REFRESH_STATUS\`"
   echo "--- BigQuery: evetis_ref.CT_CONFIG и все таблицы CT_* СОХРАНЯЮТСЯ ---"
