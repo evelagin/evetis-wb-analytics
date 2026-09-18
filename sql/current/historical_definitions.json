@@ -1,0 +1,35 @@
+{
+  "version": 1,
+  "purpose": "C17 historical-definition guard. Lists every file OUTSIDE sql/current/ that is known and reviewed to CREATE an object managed by sql/current/, with the exact count per object. These are historical migrations: evidence of how production got here, not current definitions, and never to be re-applied over sql/current/. A new file, or an additional CREATE of a canonical object, fails CI until it is reviewed and added here. The guard does not validate historical SQL correctness or parity.",
+  "entries": [
+    {
+      "path": "sql/ozon/stage3_4c_ozon_mart.sql",
+      "definitions": {
+        "ozon_mart.FCT_OZON_PNL_MONTHLY": 1,
+        "ozon_mart.FCT_OZON_SKU_PNL_MONTHLY": 1,
+        "ozon_mart.V_OZON_LIFETIME_PNL": 1,
+        "ozon_mart.V_OZON_MART_FRESHNESS": 1,
+        "ozon_mart.V_OZON_SKU_UNIT_ECONOMICS_CURRENT": 1
+      }
+    },
+    {
+      "path": "sql/ozon/stage3_4d2_ozon_mart_forward.sql",
+      "definitions": {
+        "ozon_mart.V_OZON_SKU_CURRENT_TARIFF": 1,
+        "ozon_mart.V_OZON_SKU_FBO_FBS_COMPARISON_CURRENT": 1,
+        "ozon_mart.V_OZON_SKU_FORWARD_ECONOMICS_CURRENT": 1,
+        "ozon_mart.V_OZON_TARIFF_CHANGE_LOG": 1,
+        "ozon_mart.V_OZON_TARIFF_SOURCE_HEALTH": 1
+      }
+    },
+    {
+      "path": "sql/ozon/stage3_4d3_ozon_mart_agent_contract.sql",
+      "definitions": {
+        "ozon_mart.V_OZON_AGENT_DECISION_INPUT": 1,
+        "ozon_mart.V_OZON_SKU_CURRENT_TARIFF": 1,
+        "ozon_mart.V_OZON_SKU_FORWARD_ECONOMICS_CURRENT": 1,
+        "ozon_mart.V_OZON_TARIFF_SOURCE_HEALTH": 1
+      }
+    }
+  ]
+}
