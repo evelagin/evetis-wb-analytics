@@ -32,7 +32,8 @@
 --   Stage 3.0.3 сохраняются. Меняются product_cogs_rub, confidence,
 --   source_refs, notes.
 --
--- ОТКАТ: sql/ref/stage3_4b_rollback.sql
+-- ОТКАТ: RETIRED — DO NOT EXECUTE (R2D-3d, 2026-09-18). sql/ref/stage3_4b_rollback.sql
+--   выведен из эксплуатации; исправления — только forward-fix миграцией.
 --   Снимки: evetis_ref.BAK_20260904_REF_SKU_COGS_HISTORY
 --           evetis_ref.BAK_20260904_REF_SKU_CHANNEL_MAP
 --
@@ -226,14 +227,14 @@ VALUES (S.internal_sku, S.marketplace, S.marketplace_sku, NULL, S.offer_id, NULL
 --      ozon_mart.V_OZON_AGENT_DECISION_INPUT
 --    Авторитетное определение действующей редакции:
 --      sql/ref/stage3_4b1_management_landed_cogs.sql
---    Осознанный откат выполняется через sql/ref/stage3_4b1_rollback.sql,
---    который снимает гейт, потому что сначала удаляет REF_COST_ADDITIONAL_LANDED.
+--    Откат через sql/ref/stage3_4b1_rollback.sql выведен (RETIRED — DO NOT EXECUTE,
+--    R2D-3d): гейт не снимается. Исправления — только forward-fix миграцией.
 ASSERT (SELECT COUNTIF(column_name IN ('legal_import_cost_unit_rub',
                                        'additional_documented_unit_rub',
                                        'cost_basis'))
         FROM `project-fa311fc0-4d87-4781-986.evetis_ref.INFORMATION_SCHEMA.COLUMNS`
         WHERE table_name = 'V_PRODUCT_COGS_EFFECTIVE') = 0
-  AS 'COGS CONTRACT REGRESSION BLOCKED: в production действует редакция 3.4B.1 V_PRODUCT_COGS_EFFECTIVE (management landed COGS). Этот файл содержит редакцию Stage 3.4B (15 колонок) и понизил бы контракт. Авторитетный источник — sql/ref/stage3_4b1_management_landed_cogs.sql. Осознанный откат — sql/ref/stage3_4b1_rollback.sql.';
+  AS 'COGS CONTRACT REGRESSION BLOCKED: в production действует редакция 3.4B.1 V_PRODUCT_COGS_EFFECTIVE (management landed COGS). Этот файл содержит редакцию Stage 3.4B (15 колонок) и понизил бы контракт. Авторитетный источник — sql/ref/stage3_4b1_management_landed_cogs.sql. Откат к старым снимкам выведен (R2D-3d) — только forward-fix миграцией.';
 
 CREATE OR REPLACE VIEW `project-fa311fc0-4d87-4781-986.evetis_ref.V_PRODUCT_COGS_EFFECTIVE`
 OPTIONS(description="Действующая себестоимость продукта на дату. Stage 3.4B: значения выведены из семи деклараций. cost_method=EFFECTIVE_DATE, batch_traceability=NOT_PROVEN — метод является соглашением учёта, а не физической прослеживаемостью партии.")

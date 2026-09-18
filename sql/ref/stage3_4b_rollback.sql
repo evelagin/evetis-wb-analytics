@@ -1,80 +1,44 @@
 -- ============================================================================
 -- STAGE 3.4B — ОТКАТ
--- Дата: 2026-09-04. Возвращает evetis_ref в состояние до Stage 3.4B.
+-- RETIRED — DO NOT EXECUTE (R2D-3d, 2026-09-18, решение владельца)
 --
--- Снимки сняты ДО первой изменяющей операции:
---   evetis_ref.BAK_20260904_REF_SKU_COGS_HISTORY   (17 строк, Σ product_cogs_rub = 3294)
---   evetis_ref.BAK_20260904_REF_SKU_CHANNEL_MAP    (45 строк)
+-- Файл больше не является откатом. Единственный оператор ниже — ASSERT FALSE:
+-- при запуске он сразу падает с объяснением и ничего не меняет в BigQuery.
 --
--- Ожидаемое состояние ПОСЛЕ отката:
---   REF_SKU_COGS_HISTORY      17 строк, Σ product_cogs_rub = 3294
---   REF_SKU_CHANNEL_MAP       45 строк, из них OZON = 20
---   V_PRODUCT_COGS_EFFECTIVE  38 строк, Σ product_cogs_rub = 11795.5, 10 колонок
---   V_BUNDLE_COGS_DERIVED     21 строка, Σ product_cogs_rub = 8501.5
---   REF_COST_BATCH / REF_COST_BATCH_SKU — отсутствуют
+-- ЧТО ДЕЛАЛ ПРЕЖНИЙ ФАЙЛ (2026-09-04, текст — в истории Git, blob 76b609cf,
+-- коммит c64e49e): возвращал evetis_ref в состояние до Stage 3.4B —
+--   • пересоздавал REF_SKU_COGS_HISTORY, REF_SKU_CHANNEL_MAP и
+--     REF_BUNDLE_COMPONENTS из снимков BAK_20260904_*;
+--   • возвращал V_PRODUCT_COGS_EFFECTIVE к редакции Stage 3.1A (10 колонок);
+--   • удалял REF_COST_BATCH и REF_COST_BATCH_SKU.
 --
--- ЗАПУСК: выполнять целиком, по порядку. Каждый шаг идемпотентен.
+-- ПОЧЕМУ ВЫВЕДЕН. Это переход в состояние 2026-09-04, которое уже не совместимо
+-- с текущими потребителями. Его запуск сегодня:
+--   • вернул бы старую себестоимость (сумма product_cogs_rub 3214.05 → 3294),
+--     в том числе поверх Stage 3.4B.1, без проверки порядка;
+--   • сократил бы REF_SKU_CHANNEL_MAP (47 → 45 строк, пропали бы две
+--     исторические связки Ozon) и вернул прежние границы составов наборов;
+--   • удалил бы REF_COST_BATCH / REF_COST_BATCH_SKU, которые читает
+--     V_PRODUCT_COGS_EFFECTIVE;
+--   • понизил бы контракт V_PRODUCT_COGS_EFFECTIVE (без cost_basis и др.) и
+--     сломал бы его потребителей: форвардную экономику WB и Ozon, агентную
+--     вью Ozon, Control Tower, Executive V2.
+--
+-- ЧТО ДЕЛАТЬ ВМЕСТО. Исправления себестоимости и справочного слоя — только
+-- forward-fix:
+--   1. назвать конкретные строки / контракты, которые исправляются;
+--   2. снять явное состояние «до» (evidence вне Git);
+--   3. написать новую миграцию вперёд;
+--   4. проверить затронутые вью и контракты потребителей (ASSERT до/после);
+--   5. если нужен откат — написать его для этой миграции, а не для слоя целиком;
+--   6. никогда не возвращать весь справочный слой к старому снимку ради отмены
+--      одной фичи.
+-- Данные сохраняются: REF_SKU_CHANNEL_MAP, REF_PRODUCT_MASTER,
+-- REF_SKU_COGS_HISTORY, REF_BUNDLE_COMPONENTS, REF_COST_BATCH,
+-- REF_COST_BATCH_SKU, REF_COST_ADDITIONAL_LANDED. Снимки BAK_20260904* остаются
+-- как исторические доказательства (BAK_20260904B читает гейт повторного
+-- прогона в stage3_4b1_management_landed_cogs.sql).
 -- ============================================================================
 
--- 1. Вернуть значения себестоимости
-CREATE OR REPLACE TABLE `project-fa311fc0-4d87-4781-986.evetis_ref.REF_SKU_COGS_HISTORY`
-AS SELECT * FROM `project-fa311fc0-4d87-4781-986.evetis_ref.BAK_20260904_REF_SKU_COGS_HISTORY`;
-
--- 2. Вернуть карту идентичностей
-CREATE OR REPLACE TABLE `project-fa311fc0-4d87-4781-986.evetis_ref.REF_SKU_CHANNEL_MAP`
-AS SELECT * FROM `project-fa311fc0-4d87-4781-986.evetis_ref.BAK_20260904_REF_SKU_CHANNEL_MAP`;
-
--- 3. Вернуть view к состоянию Stage 3.1A: десять колонок, без полей происхождения
-CREATE OR REPLACE VIEW `project-fa311fc0-4d87-4781-986.evetis_ref.V_PRODUCT_COGS_EFFECTIVE` AS
-SELECT
-  internal_sku,
-  effective_from,
-  effective_to,
-  product_cogs_rub,
-  'MATERIALIZED'   AS resolver_lane,
-  cogs_origin_type,
-  cogs_history_id  AS resolver_ref,
-  is_reconstructed,
-  confidence,
-  owner_confirmed
-FROM `project-fa311fc0-4d87-4781-986.evetis_ref.REF_SKU_COGS_HISTORY`
-UNION ALL
-SELECT
-  internal_sku,
-  effective_from,
-  effective_to,
-  product_cogs_rub,
-  'DERIVED_BUNDLE' AS resolver_lane,
-  'FF_ASSEMBLED_DERIVED' AS cogs_origin_type,
-  CONCAT('BUNDLE:', internal_sku, ':', FORMAT_DATE('%Y%m%d', effective_from)) AS resolver_ref,
-  TRUE  AS is_reconstructed,
-  'DERIVED_FROM_COMPONENTS' AS confidence,
-  FALSE AS owner_confirmed
-FROM `project-fa311fc0-4d87-4781-986.evetis_ref.V_BUNDLE_COGS_DERIVED`;
-
--- 4. Удалить канонические таблицы Stage 3.4B
-DROP TABLE IF EXISTS `project-fa311fc0-4d87-4781-986.evetis_ref.REF_COST_BATCH_SKU`;
-DROP TABLE IF EXISTS `project-fa311fc0-4d87-4781-986.evetis_ref.REF_COST_BATCH`;
-
--- 5. Проверки отката
-ASSERT (SELECT COUNT(*) FROM `project-fa311fc0-4d87-4781-986.evetis_ref.REF_SKU_COGS_HISTORY`) = 17
-  AS 'откат: REF_SKU_COGS_HISTORY должен вернуться к 17 строкам';
-ASSERT (SELECT SUM(product_cogs_rub) FROM `project-fa311fc0-4d87-4781-986.evetis_ref.REF_SKU_COGS_HISTORY`) = NUMERIC '3294'
-  AS 'откат: сумма product_cogs_rub должна вернуться к 3294';
-ASSERT (SELECT COUNT(*) FROM `project-fa311fc0-4d87-4781-986.evetis_ref.REF_SKU_CHANNEL_MAP`) = 45
-  AS 'откат: REF_SKU_CHANNEL_MAP должен вернуться к 45 строкам';
-ASSERT (SELECT COUNT(*) FROM `project-fa311fc0-4d87-4781-986.evetis_ref.V_PRODUCT_COGS_EFFECTIVE`) = 38
-  AS 'откат: V_PRODUCT_COGS_EFFECTIVE должен вернуться к 38 строкам';
-
--- Снимки BAK_20260904_* намеренно НЕ удаляются: они остаются до отдельного
--- подтверждения владельца, чтобы откат можно было выполнить повторно.
-
--- 6. Вернуть исторические границы состава наборов (закрытие 3.4B)
-CREATE OR REPLACE TABLE `project-fa311fc0-4d87-4781-986.evetis_ref.REF_BUNDLE_COMPONENTS`
-AS SELECT * FROM `project-fa311fc0-4d87-4781-986.evetis_ref.BAK_20260904_REF_BUNDLE_COMPONENTS`;
-
-ASSERT (SELECT COUNT(*) FROM `project-fa311fc0-4d87-4781-986.evetis_ref.REF_BUNDLE_COMPONENTS`) = 33
-  AS 'откат: REF_BUNDLE_COMPONENTS должен вернуться к 33 строкам';
-ASSERT (SELECT MIN(effective_from) FROM `project-fa311fc0-4d87-4781-986.evetis_ref.REF_BUNDLE_COMPONENTS`
-        WHERE bundle_internal_sku = 'EVT-SET-MOIST-TONIC-SERUM') = DATE '2026-07-20'
-  AS 'откат: граница BOM EVT-SET-MOIST-TONIC-SERUM должна вернуться к 2026-07-20';
+ASSERT FALSE
+  AS 'RETIRED — DO NOT EXECUTE: откат Stage 3.4B выведен из эксплуатации (R2D-3d). Он вернул бы evetis_ref к состоянию 2026-09-04 и сломал бы текущих потребителей V_PRODUCT_COGS_EFFECTIVE. Исправления — только forward-fix миграцией. Ничего не изменено.';
