@@ -187,5 +187,12 @@ FUTURE REFRESH POLICY                          DOCUMENTED
 | `S82_BAND_RB` | фон строки 735 | `s82bandrollback()` |
 | `S82_VIZ2_RB` | 300 правил аналитики | `s82viz2rollback()` |
 
-Таблицу backfill удаляет `DROP TABLE wb_raw.RAW_WB_FUNNEL_XLSX_BACKFILL` — после этого
-01–03.09 снова уходят в фолбэк `ORDERS_API`.
+⛔ **RETIRED — DO NOT EXECUTE** (R2D-3c, 2026-09-18): прежняя строка этого раздела предлагала
+удалить таблицу backfill целиком. Таблица `wb_raw.RAW_WB_FUNNEL_XLSX_BACKFILL` **не удаляется и не
+очищается** при откате Unitka: это историческое наблюдение (01–03.09, 65 строк), оно относится к
+жизненному циклу данных, а не к откату логики. Восстановить его неоткуда — API отдаёт не глубже
+7 дней, исходный XLSX в репозитории и на диске не сохранён.
+
+Если нужно вернуть 01–03.09 в фолбэк `ORDERS_API`, backfill исключается в логике чтения
+(`wb_mart.V_UNITKA_DAILY_FACT` в `sql/unitka/engine_v1_views.sql`, источник `XLSX_BACKFILL` в
+`apps-script/unitka/UnitkaS8b.gs`) отдельным изменением — сами строки остаются в таблице.
