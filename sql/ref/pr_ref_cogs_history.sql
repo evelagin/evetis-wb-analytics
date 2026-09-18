@@ -31,7 +31,8 @@
 --   cogs_history_id и bundle_component_id — logical row keys, а их уникальность
 --   гарантируется ASSERT A-1..A-6 ниже, а не декларацией.
 --
--- ОТКАТ: bash tools/stage3_1a_cogs_rollback.sh [--dry-run]
+-- ОТКАТ: RETIRED — DO NOT EXECUTE (R2D-3a, 2026-09-18). tools/stage3_1a_cogs_rollback.sh
+--   выведен из эксплуатации; evetis_ref исправляется только forward-fix.
 -- ============================================================================
 
 CREATE SCHEMA IF NOT EXISTS `project-fa311fc0-4d87-4781-986.evetis_ref`

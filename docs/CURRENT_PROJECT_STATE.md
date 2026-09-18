@@ -393,7 +393,7 @@ Cutover не начат и не начинается без отдельного
 **Commit:** `f8ea31e575db45e0bf4ecf5b9afda85724ff981f`
 Контракт слоя: `docs/STAGE3_1A_COGS_REFERENCE_LAYER_2026-08-27.md`.
 Сборка: `sql/ref/pr_ref_cogs_history.sql`. Acceptance: `sql/ref/pr_ref_cogs_validation.sql`.
-Откат: `tools/stage3_1a_cogs_rollback.sh [--dry-run]`.
+Откат: ⛔ RETIRED — DO NOT EXECUTE (R2D-3a, 2026-09-18) — `tools/stage3_1a_cogs_rollback.sh` выведен из эксплуатации; `evetis_ref` исправляется только forward-fix.
 
 Создан датасет `evetis_ref` (location EU) — marketplace-independent справочный слой
 Product COGS. Четыре production-объекта:

@@ -4,7 +4,7 @@
 **База:** HEAD `7bf0472159089c48da622dd1bdcdadcea3e8cf60`
 **Утверждение контракта:** Stage 3.0.3B, `COGS_CONTRACT_PREIMPLEMENTATION_VALIDATION = PASS`
 **Скрипты:** `sql/ref/pr_ref_cogs_history.sql` (сборка + ASSERT), `sql/ref/pr_ref_cogs_validation.sql` (acceptance)
-**Откат:** `tools/stage3_1a_cogs_rollback.sh [--dry-run]`
+**Откат:** ⛔ RETIRED — DO NOT EXECUTE (R2D-3a, 2026-09-18) — `tools/stage3_1a_cogs_rollback.sh` выведен из эксплуатации; `evetis_ref` исправляется только forward-fix.
 
 ---
 
@@ -146,9 +146,9 @@ bq --project_id=project-fa311fc0-4d87-4781-986 query --nouse_legacy_sql < sql/re
 # acceptance (read-only)
 bq --project_id=project-fa311fc0-4d87-4781-986 query --nouse_legacy_sql < sql/ref/pr_ref_cogs_validation.sql
 
-# откат
-bash tools/stage3_1a_cogs_rollback.sh --dry-run
-bash tools/stage3_1a_cogs_rollback.sh
+# откат — RETIRED — DO NOT EXECUTE (R2D-3a, 2026-09-18):
+# tools/stage3_1a_cogs_rollback.sh выведен из эксплуатации и только
+# печатает отказ; evetis_ref исправляется только forward-fix.
 ```
 
 ## 12. Финансовая чувствительность (справочно, Stage 3.0.3)
