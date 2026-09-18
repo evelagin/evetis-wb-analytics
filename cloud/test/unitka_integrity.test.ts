@@ -13,7 +13,8 @@ import {
   OBSERVED_PRICE_LABEL, ERROR_KEYS_LIMIT, COGS_STALE_THRESHOLD_HOURS,
   type IntegrityFactsRow, type CogsCanonicalRow, type CogsSnapshot, type IntegrityInputs, type IntegrityIssue, type IntegritySeverity,
 } from '../src/loaders/unitka/integrity.js';
-import { OFFSET, blockStart, dayRow, addDaysIso, colA1, type Block, type CellValue } from '../src/loaders/unitka/model.js';
+import { OFFSET, addDaysIso, colA1, type Block, type CellValue } from '../src/loaders/unitka/model.js';
+import { blockStart, dayRow } from './unitka_fixture.js';
 
 /* ───────────── сентябрьская фикстура (LCD 17.09, «сейчас» 18.09) ───────────── */
 
@@ -35,7 +36,7 @@ const SKU = {
 
 /** Порядок блоков в фикстуре (как в live: M, AK, BI, …); 909951444 блока не имеет. */
 const BLOCK_NMS = [SKU.HAND, SKU.BODY, SKU.HAND_BODY, SKU.SERUM_ACNE, SKU.HAND_AMBER];
-const blocks: Block[] = BLOCK_NMS.map((nm, i) => ({ index: i, start: blockStart(i), nmId: nm, title: `${nm} тест` }));
+const blocks: Block[] = BLOCK_NMS.map((nm, i) => ({ index: i, slot: i, start: blockStart(i), nmId: nm, title: `${nm} тест` }));
 const blockOf = (nm: number): Block => blocks.find((b) => b.nmId === nm)!;
 
 /** Четыре известных случая PRICE_MISSING_WITH_ORDERS (Phase 1A, подтверждены BigQuery и листом). */
@@ -133,7 +134,7 @@ function septemberSheet(): SheetFixture {
 function inputs(o: Partial<IntegrityInputs> & { sheet?: SheetFixture } = {}): IntegrityInputs {
   const sheet = o.sheet ?? septemberSheet();
   return {
-    facts: septemberFacts(), cogs: fresh(septemberCogs()), blocks, lcd: LCD, monthStart: MONTH,
+    facts: septemberFacts(), cogs: fresh(septemberCogs()), blocks, lcd: LCD, monthStart: MONTH, firstDailyRow: 737,
     cellAt: (r, c) => sheet.values.get(`${r}|${c}`) ?? null,
     formulaAt: (r, c) => sheet.formulas.get(`${r}|${c}`) ?? null,
     refValues: { R45: 240 }, now: NOW_MORNING, storageDueMinutes: DUE,
@@ -356,14 +357,14 @@ describe('sppRules — пусто ≠ 0 (рваные строки Sheets API)',
   const b = blocks[0]!;
   const facts = [baseRow(SKU.HAND, '2026-09-01')].map((r) => ({ ...r, ordersUnitka: 1 }));
   const run = (v: CellValue | undefined): IntegrityIssue[] =>
-    sppRules({ facts, blocks: [b], lcd: LCD, monthStart: MONTH, cellAt: () => v as CellValue });
+    sppRules({ facts, blocks: [b], lcd: LCD, monthStart: MONTH, firstDailyRow: 737, cellAt: () => v as CellValue });
   it('элемента массива нет (undefined) → пропуск', () => expect(run(undefined)).toHaveLength(1));
   it('null → пропуск', () => expect(run(null)).toHaveLength(1));
   it('пустая строка → пропуск', () => expect(run('')).toHaveLength(1));
   it('числовой 0 → заполнено', () => expect(run(0)).toHaveLength(0));
   it('20 → заполнено', () => expect(run(20)).toHaveLength(0));
   it('Q = 0 → не проверяется даже при пустой ячейке', () => {
-    expect(sppRules({ facts: [baseRow(SKU.HAND, '2026-09-01')], blocks: [b], lcd: LCD, monthStart: MONTH, cellAt: () => null })).toHaveLength(0);
+    expect(sppRules({ facts: [baseRow(SKU.HAND, '2026-09-01')], blocks: [b], lcd: LCD, monthStart: MONTH, firstDailyRow: 737, cellAt: () => null })).toHaveLength(0);
   });
 });
 

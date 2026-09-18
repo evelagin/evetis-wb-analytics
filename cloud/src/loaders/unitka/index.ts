@@ -3,14 +3,16 @@
  *
  * Цикл (16 шагов брифа → 5 фаз):
  *   1. свежесть источников + LAST_CLOSED_DATE       (V_UNITKA_SOURCE_FRESHNESS / V_UNITKA_LAST_CLOSED_DATE)
- *   2. снимок листа + preflight                    (структура Master, формулы на месте)
+ *   2. секция месяца LCD (Phase 2B, section.ts) + снимок + preflight (контракт секции, формулы на месте);
+ *      предпроверка следующего месяца у конца месяца — только предупреждение
  *   3. факт + ставки → план                        (V_UNITKA_DAILY_FACT / *_RATES; инвариант, дубли, будущее)
  *   4. SHADOW → журнал и выход; PROD → один values.batchUpdate
  *   5. reconciliation: повторное чтение → QA-гейт  (mismatch / формулы / утечка / сводка / LCD)
  *
  * Fail-closed на каждом шаге: LoaderError с кодом → exit 1 → execution FAILED → алерт.
  * Частичной записи нет конструктивно: план уходит одним batchUpdate.
- * Engine не содержит бизнес-SQL и не трогает формулы/УФ/структуру Master.
+ * Engine не содержит бизнес-SQL и не трогает формулы/УФ/структуру Master. Месяц не создаёт никогда
+ * (MONTH_SECTION_MISSING до записи); подготовка месяца — отдельный загрузчик unitka-month-prep.
  */
 import type { LoaderContext, LoaderResult } from '../types.js';
 import { LoaderError } from '../../errors.js';
@@ -18,7 +20,8 @@ import { BqClient } from '../../bq/client.js';
 import type { QueryRunner } from '../mart/bq.js';
 import { UnitkaBq, type EngineRunRecord, type FreshnessRow } from './bq.js';
 import { SheetsRest, type SheetsGateway } from './sheets.js';
-import { GRID, NAMED, colA1 } from './model.js';
+import { colA1 } from './model.js';
+import { discoverSection, nextMonthPrecheck, quoteSheet, readSnapshot, type NextMonthPrecheck } from './section.js';
 import { buildPlan, toWriteRanges, toFormatWrites, cellAt, formulaAt, type Plan, type Snapshot } from './plan.js';
 import { evaluate, failureCode, qaJson } from './qa.js';
 import {
@@ -30,7 +33,8 @@ import type { Logger } from '../../logging.js';
 import type { Config } from '../../config.js';
 
 // 1.2.0 — Integrity Guard V1 (Phase 1C1). При UNITKA_INTEGRITY_MODE=off (по умолчанию) поведение = 1.1.0.
-export const ENGINE_VERSION = 'unitka-engine/1.2.0';
+// 2.0.0 — Calendar V2 (Phase 2B): секция месяца по заголовку, любые 28–31 день, слоты блоков (24 — резерв).
+export const ENGINE_VERSION = 'unitka-engine/2.0.0';
 
 export interface UnitkaDeps {
   makeRunner: (ctx: LoaderContext) => QueryRunner;
@@ -38,34 +42,13 @@ export interface UnitkaDeps {
   now: () => Date;
 }
 
-const defaultDeps: UnitkaDeps = {
+export const defaultUnitkaDeps: UnitkaDeps = {
   makeRunner: (ctx) => new BqClient(ctx.config.projectId, ctx.config.bqLocation),
   makeSheets: (ctx, readonly) => new SheetsRest(ctx.config.unitkaSpreadsheetId, readonly),
   now: () => new Date(),
 };
 
-function quoteSheet(name: string): string {
-  return `'${name.replace(/'/g, "''")}'`;
-}
-
-export async function readSnapshot(sheets: SheetsGateway, sheetName: string): Promise<Snapshot> {
-  const q = quoteSheet(sheetName);
-  const gridRange = `${q}!A${GRID.TOP}:${colA1(GRID.NC)}${GRID.MTD}`;
-  const mirrorRange = `${q}!${colA1(GRID.MIR)}${GRID.HDR}:${colA1(GRID.MIR)}${GRID.RROW}`;
-  const [grid, mirror, named] = await sheets.readValues([gridRange, mirrorRange, NAMED.LCD]);
-  const daysRange = `${q}!A${GRID.FIRST}:${colA1(GRID.NC)}${GRID.FIRST + GRID.DAYS - 1}`;
-  const formulas = await sheets.readFormulas(daysRange);
-  const fmt = await sheets.readFormats(daysRange);
-  return {
-    grid: grid ?? [],
-    formulas,
-    mirrorLcd: mirror?.[0]?.[0] ?? null,
-    mirrorRev: mirror?.[1]?.[0] ?? null,
-    namedLcd: named?.[0]?.[0] ?? null,
-    formats: fmt.rows,
-    sheetId: fmt.sheetId,
-  };
-}
+export { readSnapshot } from './section.js';
 
 /* ───────────────────────── Integrity Guard V1 ───────────────────────── */
 
@@ -131,6 +114,7 @@ export async function evaluateIntegrityPhase(a: {
     timeLeft();
     const issues = evaluateIntegrity({
       facts: factsRes.value, cogs, blocks: a.plan.blocks, lcd: a.plan.lcd, monthStart: a.plan.monthStart,
+      firstDailyRow: a.plan.layout.firstDailyRow,
       cellAt: (r, c) => cellAt(a.snap, r, c), formulaAt: (r, c) => formulaAt(a.snap, r, c),
       refValues, now: a.now(),
       storageDueMinutes: parseHhMm(a.config.unitkaStorageDueMsk ?? DEFAULT_STORAGE_DUE_MSK) ?? parseHhMm(DEFAULT_STORAGE_DUE_MSK)!,
@@ -183,6 +167,7 @@ function planSummary(plan: Plan): Record<string, unknown> {
   for (const c of plan.cells) byKind[c.kind] = (byKind[c.kind] ?? 0) + 1;
   return {
     lcd: plan.lcd, lag_days: plan.lagDays, closed_days: plan.closedDays, blocks: plan.blocks.length,
+    section: { month: plan.layout.monthKey, top_row: plan.layout.topRow, first_row: plan.layout.firstDailyRow, last_row: plan.layout.lastDailyRow, mtd_row: plan.layout.mtdRow, days: plan.layout.daysInMonth, slots: plan.blocks.map((b) => b.slot) },
     cells_planned: plan.cells.length, by_kind: byKind,
     format_cells_planned: plan.formatCells.length, format_contract_cells: plan.formatContractCells,
     format_sample: plan.formatCells.slice(0, 20).map((c) => `${colA1(c.col)}${c.row} ${c.key}`),
@@ -202,7 +187,7 @@ function withIntegrity(qaJsonStr: string, summary: IntegritySummary): string {
   return JSON.stringify({ ...o, integrity: summary });
 }
 
-export async function unitkaLoader(ctx: LoaderContext, deps: UnitkaDeps = defaultDeps): Promise<LoaderResult> {
+export async function unitkaLoader(ctx: LoaderContext, deps: UnitkaDeps = defaultUnitkaDeps): Promise<LoaderResult> {
   const { config, logger, runId } = ctx;
   const startedAt = deps.now();
   const writeMode = config.environment === 'prod' && config.unitkaWriteEnabled;
@@ -217,6 +202,7 @@ export async function unitkaLoader(ctx: LoaderContext, deps: UnitkaDeps = defaul
     log.warn('unitka_integrity_mode_invalid', { value: config.unitkaIntegrityModeInvalid, effective: 'off' });
   }
   let integrity: IntegrityOutcome | null = null;
+  let calendar: Record<string, unknown> | null = null;
 
   const rec: EngineRunRecord = {
     runId, environment: config.environment, mode,
@@ -244,8 +230,13 @@ export async function unitkaLoader(ctx: LoaderContext, deps: UnitkaDeps = defaul
     rec.lastClosedDate = lcd.lastClosedDate;
     log.info('unitka_sources', { lcd: lcd.lastClosedDate, d1_msk: lcd.d1Msk, freshness: fresh });
 
-    // 2. снимок листа (preflight выполняется внутри buildPlan до любых вычислений)
-    const snap = await readSnapshot(sheets, config.unitkaSheetName);
+    // 2. секция месяца LCD (MONTH_SECTION_MISSING/AMBIGUOUS/INVALID — до любой записи) и снимок;
+    //    preflight (контракт секции + формулы) выполняется внутри buildPlan до любых вычислений.
+    const found = await discoverSection(sheets, config.unitkaSheetName, lcd.lastClosedDate);
+    const precheck: NextMonthPrecheck = nextMonthPrecheck(found.columnA, lcd.lastClosedDate, config.unitkaMonthPrepWindowDays ?? 5);
+    calendar = { section: found.geometry.monthKey, top_row: found.geometry.topRow, next_month: precheck };
+    if (precheck.code) log.warn('unitka_next_month_section', { code: precheck.code, next_month: precheck.nextMonth, days_left: precheck.daysLeft });
+    const snap = await readSnapshot(sheets, config.unitkaSheetName, found.geometry, found.meta.columnCount);
 
     // 3. факт + ставки → план
     const [facts, logistics, commission] = await Promise.all([bq.facts(), bq.logisticsRates(), bq.commissionRates()]);
@@ -268,7 +259,7 @@ export async function unitkaLoader(ctx: LoaderContext, deps: UnitkaDeps = defaul
       const SHADOW_DIFF = new Set(['BQ_SHEETS_MISMATCH', 'LCD_CONSISTENT', 'CLOSED_FORMAT_CONTRACT']);
       const expectedFail = qa.checks.filter((c) => !c.pass && !SHADOW_DIFF.has(c.name));
       rec.qaStatus = expectedFail.length ? 'SHADOW_FAIL' : (plan.cells.length || plan.formatCells.length ? 'SHADOW_DIFF' : 'SHADOW_MATCH');
-      rec.qaJson = qaJson(qa, { plan: planSummary(plan), ...(integrity ? { integrity: integrity.summary } : {}) });
+      rec.qaJson = qaJson(qa, { plan: planSummary(plan), calendar, ...(integrity ? { integrity: integrity.summary } : {}) });
       log.info('unitka_shadow', { qa_status: rec.qaStatus, cells_planned: plan.cells.length, checks: qa.checks.map((c) => `${c.name}:${c.pass ? 'PASS' : 'FAIL(' + c.count + ')'}`) });
       if (expectedFail.length) {
         rec.errorCode = failureCode({ pass: false, checks: expectedFail });
@@ -307,7 +298,7 @@ export async function unitkaLoader(ctx: LoaderContext, deps: UnitkaDeps = defaul
     }
 
     // 5. reconciliation — повторное чтение и полный QA-гейт.
-    const after = await readSnapshot(sheets, config.unitkaSheetName);
+    const after = await readSnapshot(sheets, config.unitkaSheetName, snap.geometry, snap.width);
     const qa = evaluate(after, plan);
     rec.qaStatus = qa.pass ? 'PASS' : 'FAIL';
     // Integrity — ПОСЛЕ записи и reconciliation, на перечитанном листе. Не влияет на qa_status.
@@ -316,7 +307,7 @@ export async function unitkaLoader(ctx: LoaderContext, deps: UnitkaDeps = defaul
       publishIntegrity(integrity, { config, log, runId, lcd: plan.lcd });
     }
     rec.qaJson = qaJson(qa, {
-      plan: planSummary(plan), format_cells_written: plan.formatCells.length,
+      plan: planSummary(plan), calendar, format_cells_written: plan.formatCells.length,
       ...(integrity ? { integrity: integrity.summary } : {}),
     });
     log.info('unitka_qa', { pass: qa.pass, checks: qa.checks.map((c) => `${c.name}:${c.pass ? 'PASS' : 'FAIL(' + c.count + ')'}`) });

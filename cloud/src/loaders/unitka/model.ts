@@ -1,27 +1,32 @@
 /**
- * UNITKA ENGINE v1 — геометрия September Master (лист `WB_Юнит_2025`, строки 735–767).
+ * UNITKA ENGINE — модель листа `WB_Юнит_2025`: смещения метрик в блоке, якоря книги, форматы.
  *
- * Контракт 1-в-1 с Apps Script (`S8`, `S8_M`, `S8_ORDER` в apps-script/unitka/UnitkaS8.gs):
- * Master — immutable reference implementation, Engine его ОБСЛУЖИВАЕТ. Любое отклонение
- * листа от этой геометрии — STRUCTURE_DRIFT, а не повод «подстроиться».
+ * Геометрия МЕСЯЦА (строки, число дней, блоки) — в calendar.ts (MonthLayout, Phase 2B). Здесь нет
+ * ни одной сентябрьской строки: сентябрь 2026 — лишь одна из секций (заголовок A735, 30 дней).
+ * Контракт блока 1-в-1 с Apps Script (`S8_M`, `S8_ORDER` в apps-script/unitka/UnitkaS8.gs).
  *
  * Чистый модуль без I/O: всё, что здесь, тестируется без Sheets и BigQuery.
  */
+import { BLOCK_WIDTH, isReservedSlot, slotStart, type BlockSlot } from './calendar.js';
 
-/** Строки и колонки Master. Колонки 1-based (A = 1), как в Apps Script. */
-export const GRID = {
-  TOP: 735,   // заголовки блоков (nmID в тексте)
-  HDR: 736,   // шапка метрик; в колонке MIR — зеркало LAST_CLOSED_DATE
-  FIRST: 737, // первый день месяца
-  DAYS: 30,   // строк-дней в блоке (сентябрь)
-  MTD: 767,   // строка MTD (формулы)
-  B0: 13,     // колонка M — первая колонка блока #1
-  BW: 24,     // ширина блока
-  NB: 24,     // блоков (SKU)
-  NC: 589,    // ширина читаемой сетки (A..VQ)
-  MIR: 600,   // колонка WB: зеркала LAST_CLOSED_DATE (736) и REVERSE_LEG_RATE (737)
-  RROW: 737,  // строка зеркала REVERSE_LEG_RATE
+/**
+ * ЯКОРЯ КНИГИ — фиксированные ячейки, НЕ зависящие от месяца (решение владельца 2, Phase 2B).
+ * Они физически стоят в строках сентябрьской секции (WB736..WB739), но принадлежат книге целиком.
+ * Ячейка определяется как якорь ТОЛЬКО по паре (строка, колонка) или по виду ячейки плана,
+ * НИКОГДА по одной колонке: с октября колонка WB (600) внутри строк месяца — обычная ячейка блока 25.
+ */
+export const BOOK_ANCHORS = {
+  COL: 600,             // WB
+  LCD_MIRROR_ROW: 736,  // WB736 — зеркало LAST_CLOSED_DATE
+  REVERSE_ROW: 737,     // WB737 — REVERSE_LEG_RATE (именованный диапазон)
+  STATUS_ROW: 738,      // WB738 — integrity_status (зарезервировано, не пишется)
+  INVALID_ROW: 739,     // WB739 — число финансово недостоверных SKU-дней (зарезервировано)
 } as const;
+
+/** true только для самих ячеек-якорей (строка И колонка). */
+export function isBookAnchorCell(row: number, col: number): boolean {
+  return col === BOOK_ANCHORS.COL && row >= BOOK_ANCHORS.LCD_MIRROR_ROW && row <= BOOK_ANCHORS.INVALID_ROW;
+}
 
 /** Смещения метрик внутри блока (0 = дата). Карта колонок UNITKA 2.0 PHASE 3. */
 export const OFFSET = {
@@ -51,7 +56,7 @@ export const SUMMARY = {
   weekday: 1, date: 2, bloggers: 3, views: 4, opens: 5, orders: 6, carts: 7, cancels: 8, profit: 9, ads: 10, drr: 11,
 } as const;
 
-/** Сводка ↔ смещение в блоке: сумма 24 блоков должна равняться колонке сводки. */
+/** Сводка ↔ смещение в блоке: сумма всех блоков секции должна равняться колонке сводки. */
 export const SUMMARY_TO_OFFSET: ReadonlyArray<readonly [number, number, string]> = [
   [SUMMARY.bloggers, OFFSET.bloggers, 'bloggers'],
   [SUMMARY.views, OFFSET.views, 'views'],
@@ -66,19 +71,17 @@ export const SUMMARY_TO_OFFSET: ReadonlyArray<readonly [number, number, string]>
 /**
  * КАНОНИЧЕСКИЙ КОНТРАКТ ФОРМАТА ЗАКРЫТОГО ДНЯ (E3, post-write аудит 12.09.2026).
  * В Master «будущий» вид колонок ставок (серый шрифт) и хранения (без заливки) был СТАТИЧЕСКИМ
- * и заканчивался на строке последнего закрытого дня в момент вёрстки (745 = 09.09). Никто —
+ * и заканчивался на строке последнего закрытого дня в момент вёрстки (сентябрь: 745 = 09.09). Никто —
  * ни Apps Script при s82lcd, ни Engine при LCD_ADVANCE — эту границу не двигал.
  * Контракт: для каждой колонки, которую пишет Engine (9 факт + logistics + commission),
- * статический формат ячейки ЗАКРЫТОГО дня (дата ≤ LCD) = формат эталонной строки 737
- * того же блока и той же колонки (первый день месяца — всегда закрыт). Сравниваются и
+ * статический формат ячейки ЗАКРЫТОГО дня (дата ≤ LCD) = формат эталонной строки (первый день
+ * секции месяца) того же блока и той же колонки (первый день месяца — всегда закрыт). Сравниваются и
  * восстанавливаются ровно три свойства: заливка, цвет шрифта, числовой формат.
  * Будущие дни Engine не трогает — они сохраняют «будущий» статический вид до закрытия.
  * Условное форматирование (УФ) не затрагивается вовсе.
  */
 export const FORMAT_CONTRACT_KEYS = [...FACT_KEYS, 'logistics', 'commission'] as const;
 export type FormatKey = (typeof FORMAT_CONTRACT_KEYS)[number];
-/** Строка-эталон формата закрытого дня — первый день месяца. */
-export const FORMAT_REF_ROW = GRID.FIRST;
 
 export interface RgbColor { red?: number; green?: number; blue?: number }
 export interface NumberFormat { type?: string; pattern?: string }
@@ -107,14 +110,13 @@ export function formatDescr(f: CellFormat): string {
 /**
  * Integrity Guard V1 — ЗАРЕЗЕРВИРОВАННЫЕ ячейки статуса (решение владельца Q2, Phase 1C1).
  * Проверено 18.09.2026 на live-экспорте книги: WB738 и WB739 пусты, на них не ссылаются ни формулы,
- * ни УФ, ни проверки данных, ни именованные диапазоны; в коде используются только WB736/WB737.
- * Phase 1C1: ТОЛЬКО константы. Engine в эти ячейки НЕ пишет (запись — отдельный гейт).
+ * ни УФ, ни проверки данных, ни именованные диапазоны. Engine в эти ячейки НЕ пишет.
  *   WB738 — integrity_status прогона; WB739 — число финансово недостоверных SKU-дней.
- * Строки заданы относительно HDR, а не литералом сентября.
+ * Phase 2B: фиксированные якоря книги, а не «HDR + 2» — не переезжают с месяцем.
  */
 export const INTEGRITY_STATUS_CELLS = {
-  status: { row: GRID.HDR + 2, col: GRID.MIR },
-  invalidRows: { row: GRID.HDR + 3, col: GRID.MIR },
+  status: { row: BOOK_ANCHORS.STATUS_ROW, col: BOOK_ANCHORS.COL },
+  invalidRows: { row: BOOK_ANCHORS.INVALID_ROW, col: BOOK_ANCHORS.COL },
 } as const;
 
 /** Именованные диапазоны книги. */
@@ -123,12 +125,8 @@ export const NAMED = { LCD: 'LAST_CLOSED_DATE', REVERSE: 'REVERSE_LEG_RATE' } as
 /** Значение ячейки как отдаёт Sheets API (UNFORMATTED_VALUE + SERIAL_NUMBER). */
 export type CellValue = string | number | boolean | null;
 
-export interface Block {
-  index: number;   // 0..23
-  start: number;   // 1-based колонка даты блока
-  nmId: number;
-  title: string;
-}
+/** Блок SKU: index — порядковый номер, slot — позиция в сетке (слот 24 зарезервирован). */
+export type Block = BlockSlot;
 
 /** Номер колонки (1-based) → A1-буквы. */
 export function colA1(col: number): string {
@@ -157,28 +155,23 @@ export function monthStartIso(iso: string): string {
   return `${iso.slice(0, 7)}-01`;
 }
 
-/** Строка листа для i-го дня месяца (0-based). */
-export function dayRow(dayIndex: number): number {
-  return GRID.FIRST + dayIndex;
-}
-
-export function blockStart(index: number): number {
-  return GRID.B0 + index * GRID.BW;
-}
 
 /**
- * Блоки по строке 735: nmID — первое 6–12-значное число в первой непустой ячейке блока
- * (та же эвристика, что в s82data/s8brates Apps Script).
+ * Блоки по строке заголовков секции: nmID — первое 6–12-значное число в первой непустой ячейке
+ * слота (та же эвристика, что в s82data/s8brates Apps Script). Слоты перебираются, пока слот
+ * помещается в прочитанную ширину; зарезервированные слоты пропускаются, пустые — тоже
+ * (выбывший SKU оставляет пустой слот, новые блоки не сдвигают старые).
  */
-export function findBlocks(topRow: readonly CellValue[]): Block[] {
+export function findBlocks(topRow: readonly CellValue[], width: number = topRow.length): Block[] {
   const out: Block[] = [];
-  for (let b = 0; b < GRID.NB; b++) {
-    const st = blockStart(b);
+  for (let slot = 0; slotStart(slot) <= width; slot++) {
+    if (isReservedSlot(slot)) continue;
+    const st = slotStart(slot);
     let title = '';
-    for (let c = 0; c < GRID.BW && !title; c++) title = String(topRow[st - 1 + c] ?? '').trim();
+    for (let c = 0; c < BLOCK_WIDTH && !title; c++) title = String(topRow[st - 1 + c] ?? '').trim();
     const m = title.match(/\d{6,12}/);
     if (!m) continue;
-    out.push({ index: b, start: st, nmId: Number(m[0]), title });
+    out.push({ index: out.length, slot, start: st, nmId: Number(m[0]), title });
   }
   return out;
 }

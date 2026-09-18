@@ -8,6 +8,10 @@
  *
  * Чтение: UNFORMATTED_VALUE + SERIAL_NUMBER — числа как числа, даты как серийные числа,
  * ошибки формул как строки `#REF!`… Запись: valueInputOption=RAW, одним batchUpdate.
+ *
+ * Структурная запись (Phase 2B, подготовка месяца): `structureWrite` — ТОЛЬКО из загрузчика
+ * `unitka-month-prep` в явном режиме записи. Суточный Engine её не вызывает никогда (тест).
+ * На readonly-шлюзе (shadow) метод отказывает ДО любого HTTP-запроса.
  */
 import { GoogleAuth } from 'google-auth-library';
 import { LoaderError } from '../../errors.js';
@@ -34,7 +38,19 @@ export interface FormatWrite {
   format: CellFormat;
 }
 
+/** Свойства листа (сетка): для поиска секции и планирования добавления строк/колонок. */
+export interface SheetMeta {
+  sheetId: number;
+  rowCount: number;
+  columnCount: number;
+}
+
+/** Запрос spreadsheets.batchUpdate (appendDimension, mergeCells, updateCells, copyPaste…) — как в REST v4. */
+export type StructureRequest = Record<string, unknown>;
+
 export interface SheetsGateway {
+  /** Свойства сетки листа по имени (spreadsheets.get, только properties). */
+  readSheetMeta(sheetName: string): Promise<SheetMeta>;
   /** Значения нескольких диапазонов (UNFORMATTED_VALUE, даты серийными числами). */
   readValues(ranges: string[]): Promise<CellValue[][][]>;
   /** Формулы одного диапазона (valueRenderOption=FORMULA): строки '=…' либо значения. */
@@ -45,6 +61,11 @@ export interface SheetsGateway {
   batchWrite(data: WriteRange[]): Promise<number>;
   /** Один spreadsheets.batchUpdate из repeatCell; возвращает число применённых запросов. */
   formatWrite(sheetId: number, writes: FormatWrite[]): Promise<number>;
+  /**
+   * Структурный spreadsheets.batchUpdate подготовки месяца (атомарно на стороне API).
+   * Только загрузчик unitka-month-prep в режиме записи; readonly-шлюз отказывает без HTTP.
+   */
+  structureWrite(requests: StructureRequest[]): Promise<number>;
 }
 
 const API = 'https://sheets.googleapis.com/v4/spreadsheets';
@@ -83,9 +104,28 @@ export class SheetsRest implements SheetsGateway {
 
   constructor(
     private readonly spreadsheetId: string,
-    readonly: boolean,
+    private readonly readonly: boolean,
   ) {
     this.auth = new GoogleAuth({ scopes: [readonly ? SCOPE_RO : SCOPE_RW] });
+  }
+
+  async readSheetMeta(sheetName: string): Promise<SheetMeta> {
+    const fields = 'sheets(properties(sheetId,title,gridProperties(rowCount,columnCount)))';
+    const url = `${API}/${this.spreadsheetId}?fields=${encodeURIComponent(fields)}`;
+    const data = await this.request<{ sheets?: Array<{ properties?: { sheetId?: number; title?: string; gridProperties?: { rowCount?: number; columnCount?: number } } }> }>('GET', url);
+    const p = (data.sheets ?? []).map((x) => x.properties).find((x) => x?.title === sheetName);
+    if (!p || p.sheetId === undefined || !p.gridProperties?.rowCount || !p.gridProperties.columnCount) {
+      throw new LoaderError(`лист «${sheetName}» не найден или без свойств сетки`, 'SHEETS_API');
+    }
+    return { sheetId: p.sheetId, rowCount: p.gridProperties.rowCount, columnCount: p.gridProperties.columnCount };
+  }
+
+  async structureWrite(requests: StructureRequest[]): Promise<number> {
+    if (this.readonly) throw new LoaderError('структурная запись на readonly-шлюзе запрещена', 'STRUCTURE_WRITE_FORBIDDEN');
+    if (requests.length === 0) return 0;
+    const url = `${API}/${this.spreadsheetId}:batchUpdate`;
+    const res = await this.request<SpreadsheetBatchUpdateResp>('POST', url, { requests });
+    return (res.replies ?? requests).length;
   }
 
   private async request<T>(method: 'GET' | 'POST', url: string, body?: unknown): Promise<T> {

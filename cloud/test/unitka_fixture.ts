@@ -2,9 +2,22 @@
  * Синтетический September Master для тестов Engine: 24 блока, 30 дней, формулы на месте,
  * сводка = Σ блоков. Строится из «истины» BigQuery, чтобы проверять идемпотентность
  * (лист == BQ → пустой план) и все ветки fail-closed.
+ *
+ * Phase 2B: сентябрьская геометрия живёт ТОЛЬКО здесь, как историческая фикстура (GRID) — в коде
+ * Engine её больше нет; сентябрь — валидная 30-дневная секция MonthLayout (заголовок A735).
  */
-import { GRID, OFFSET, FACT_KEYS, CALC_OFFSETS, SUMMARY, SUMMARY_TO_OFFSET, FORMAT_CONTRACT_KEYS, isoToSerial, addDaysIso, dayRow, type CellValue, type CellFormat } from '../src/loaders/unitka/model.js';
-import type { Snapshot } from '../src/loaders/unitka/plan.js';
+import { OFFSET, FACT_KEYS, CALC_OFFSETS, SUMMARY, SUMMARY_TO_OFFSET, FORMAT_CONTRACT_KEYS, isoToSerial, addDaysIso, type CellValue, type CellFormat } from '../src/loaders/unitka/model.js';
+import { geometryAt, slotStart } from '../src/loaders/unitka/calendar.js';
+import { DATE_HEADER, MTD_LABEL, type Snapshot } from '../src/loaders/unitka/plan.js';
+
+/** ИСТОРИЧЕСКАЯ фикстура: живая геометрия сентября 2026 (Phase 0/2A). Только для тестов. */
+export const GRID = {
+  TOP: 735, HDR: 736, FIRST: 737, DAYS: 30, MTD: 767,
+  B0: 13, BW: 24, NB: 24, NC: 589, MIR: 600, RROW: 737,
+} as const;
+export const SEPT = geometryAt({ year: 2026, month: 9 }, GRID.TOP);
+export const dayRow = (i: number): number => GRID.FIRST + i;
+export const blockStart = (i: number): number => slotStart(i);
 import type { FactRow, LogisticsRateRow, CommissionRateRow, LcdRow } from '../src/loaders/unitka/bq.js';
 
 export const MONTH = '2026-09-01';
@@ -95,9 +108,13 @@ export function snapshot(opts: FixtureOpts = {}): Snapshot {
   const fx = new Map<string, FactRow>();
   for (const r of facts(lcdSheet)) fx.set(`${r.nmId}|${r.date}`, r);
 
+  g(GRID.TOP)[0] = SEPT.title;
+  g(GRID.HDR)[SUMMARY.date - 1] = DATE_HEADER;
+  g(GRID.MTD)[GRID.B0 - 1] = MTD_LABEL;
   NM_IDS.forEach((nm, b) => {
     const st = GRID.B0 + b * GRID.BW;
     g(GRID.TOP)[st - 1] = `#${b + 1} · ${nm} Товар ${b + 1}`;
+    g(GRID.HDR)[st - 1] = DATE_HEADER;
     for (let i = 0; i < GRID.DAYS; i++) {
       const row = dayRow(i);
       g(row)[st - 1 + OFFSET.date] = isoToSerial(addDaysIso(MONTH, i));
@@ -141,6 +158,7 @@ export function snapshot(opts: FixtureOpts = {}): Snapshot {
     }
   });
   const snap: Snapshot = {
+    geometry: SEPT, width: GRID.NC,
     grid, formulas, formats, sheetId: 739487431,
     mirrorLcd: isoToSerial(lcdSheet), mirrorRev: opts.reverse ?? 32.5256, namedLcd: isoToSerial(lcdSheet),
   };

@@ -16,7 +16,7 @@
  * снимок листа (СПП, формулы AI, блоки). Контракт — docs/UNITKA_INTEGRITY_GUARD_V1.md.
  */
 import {
-  OFFSET, colA1, dayRow, addDaysIso, isEmpty, asNumber,
+  OFFSET, colA1, addDaysIso, isEmpty, asNumber,
   type Block, type CellValue,
 } from './model.js';
 
@@ -269,6 +269,8 @@ export interface IntegrityInputs {
   blocks: readonly Block[];
   lcd: string;
   monthStart: string;
+  /** Строка листа первого дня секции месяца (Phase 2B: из MonthLayout, не константа 737). */
+  firstDailyRow: number;
   /** Снимок: значения (для СПП) и формулы (для AI) закрытых дней. */
   cellAt: (row: number, col: number) => CellValue;
   formulaAt: (row: number, col: number) => CellValue;
@@ -368,7 +370,7 @@ export function coverageRules(facts: readonly IntegrityFactsRow[], blocks: reado
 }
 
 /** Правило 7: СПП. Только закрытый день, Q > 0 (факт Engine), ячейка AB действительно пуста. 0 = заполнено. */
-export function sppRules(inp: Pick<IntegrityInputs, 'facts' | 'blocks' | 'lcd' | 'monthStart' | 'cellAt'>): IntegrityIssue[] {
+export function sppRules(inp: Pick<IntegrityInputs, 'facts' | 'blocks' | 'lcd' | 'monthStart' | 'firstDailyRow' | 'cellAt'>): IntegrityIssue[] {
   const orders = new Map<string, number | null>();
   for (const r of inp.facts) orders.set(`${r.nmId}|${r.day}`, r.ordersUnitka);
   const closedDays = daysBetween(inp.monthStart, inp.lcd) + 1;
@@ -377,7 +379,7 @@ export function sppRules(inp: Pick<IntegrityInputs, 'facts' | 'blocks' | 'lcd' |
     for (let i = 0; i < closedDays; i++) {
       const day = addDaysIso(inp.monthStart, i);
       if (!positive(orders.get(`${b.nmId}|${day}`))) continue;
-      const row = dayRow(i);
+      const row = inp.firstDailyRow + i;
       const col = b.start + OFFSET.spp;
       const v = inp.cellAt(row, col);
       if (!isEmpty(v)) continue; // включая числовой 0 — это заполненное значение
@@ -428,7 +430,7 @@ export function cogsRules(inp: IntegrityInputs): IntegrityIssue[] {
     const canonVals = new Set<string>();
     for (let i = 0; i < closedDays; i++) {
       const day = addDaysIso(inp.monthStart, i);
-      const row = dayRow(i);
+      const row = inp.firstDailyRow + i;
       const t = parseCogsTerm(inp.formulaAt(row, aiCol), b, row);
       let value: number | null = null;
       if (t.kind === 'literal') value = t.value;
@@ -469,7 +471,7 @@ export function cogsRules(inp: IntegrityInputs): IntegrityIssue[] {
     const mism: string[] = [];
     for (let i = 0; i < closedDays; i++) {
       const day = addDaysIso(inp.monthStart, i);
-      const row = dayRow(i);
+      const row = inp.firstDailyRow + i;
       const t = parseCogsTerm(inp.formulaAt(row, aiCol), b, row);
       const value = t.kind === 'literal' ? t.value : asNumber(inp.refValues[(t as { ref: string }).ref]);
       const cv = canon.get(`${b.nmId}|${day}`)!.canonicalCogs as number;
