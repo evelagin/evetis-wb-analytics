@@ -137,21 +137,23 @@ describe('октябрь 2026 — золотая раскладка', () => {
     expect(fmtRuns).toBeGreaterThan(0);
     // 2 append + 1 сброс + серии форматов + 34 строки + 1 заметка + 26 объединений + УФ + размеры (24 колонки блока 25 + 12 хвоста резерва + 6 типов строк)
     expect(plan.dimensionRequests).toHaveLength(42);
-    expect(req).toHaveLength(2 + 1 + fmtRuns + 34 + 1 + 26 + plan.conditionalFormats!.requests.length + 42);
+    expect(req).toHaveLength(2 + 1 + fmtRuns + 34 + 1 + 26 + plan.conditionalFormats!.rules.length + 42);
+    expect(plan.conditionalFormats!.rules).toHaveLength(108);
+    expect(plan.cfStartIndex).toBe(septemberStructure().conditionalFormats.length);
   });
-  it('форматы пишутся явно (repeatCell): день 1 ← 737, дни 2..31 ← 766, блок 25 ← блок 24; резервный слот — сброс', () => {
+  it('форматы пишутся явно (repeatCell): все дни ← 737 (эталон E3), блок 25 ← блок 24; резервный слот — сброс', () => {
     const req = toStructureRequests(plan, 739487431);
     type RC = { range: { startRowIndex: number; endRowIndex: number; startColumnIndex: number; endColumnIndex: number }; cell: { userEnteredFormat?: { numberFormat: { pattern: string } } }; fields: string };
     const runs = req.filter((r) => 'repeatCell' in r).map((r) => r.repeatCell as RC);
     const at = (r: number, c: number) => runs.filter((x) => x.range.startRowIndex < r && x.range.endRowIndex >= r && x.range.startColumnIndex < c && x.range.endColumnIndex >= c);
     const pat = (r: number, c: number) => { const m = at(r, c).filter((x) => x.range.startRowIndex >= 768); expect(m).toHaveLength(1); return m[0]!.cell.userEnteredFormat?.numberFormat.pattern; };
     expect(pat(771, 13)).toBe('737:13');
-    expect(pat(790, 13)).toBe('766:13');
+    expect(pat(790, 13)).toBe('737:13');
     expect(pat(769, 1)).toBe('735:1');
     expect(pat(802, 11)).toBe('767:11');
-    expect(pat(772, 613)).toBe('766:565');
-    expect(pat(772, 636)).toBe('766:588');
-    expect(at(801, 13).find((x) => x.range.startRowIndex >= 768)!.range).toMatchObject({ startRowIndex: 771, endRowIndex: 801 }); // дни 2..31 одним диапазоном
+    expect(pat(772, 613)).toBe('737:565');
+    expect(pat(772, 636)).toBe('737:588');
+    expect(at(801, 13).find((x) => x.range.startRowIndex >= 768)!.range).toMatchObject({ startRowIndex: 770, endRowIndex: 801 }); // все 31 день одним диапазоном
     for (let c = 589; c <= 612; c++) expect(pat(780, c)).toBeUndefined(); // резерв в новых строках — сброс формата
     expect(JSON.stringify(req).length).toBeLessThan(5_000_000);
     const tail = plan.dimensionRequests.map((r) => r.updateDimensionProperties as { range: { startIndex: number; dimension: string }; properties: { pixelSize: number; hiddenByUser: boolean } })
@@ -159,15 +161,38 @@ describe('октябрь 2026 — золотая раскладка', () => {
     expect(tail).toHaveLength(12);
     expect(tail.every((d) => d.properties.pixelSize === 100 && d.properties.hiddenByUser === false)).toBe(true);
   });
+  it('строки дней — нейтральный будущий вид: факт/ставка/расчёт без заливки, ручной ввод жёлтый; шапка и MTD — как шаблон', () => {
+    const bgTpl = (r: number) => Array.from({ length: 600 }, (_, i) => ({ backgroundColor: { red: 0.5, green: 0.5, blue: 0.5 }, numberFormat: { type: 'TEXT', pattern: `${r}:${i + 1}` }, textFormat: { foregroundColor: { red: 0.7, green: 0.7, blue: 0.7 } } }));
+    const rowFormats = new Map([735, 736, 737, 766, 767, 768].map((r) => [r, bgTpl(r)] as const));
+    const p = planMonthPrep({ ...inputs(book, OCT), rowFormats });
+    const req = toStructureRequests(p, 739487431);
+    type RC = { range: { startRowIndex: number; endRowIndex: number; startColumnIndex: number; endColumnIndex: number }; cell: { userEnteredFormat?: Record<string, unknown> } };
+    const runs = req.filter((r) => 'repeatCell' in r).map((r) => r.repeatCell as RC).filter((x) => x.range.startRowIndex >= 768);
+    const fmt = (row: number, col: number) => runs.find((x) => x.range.startRowIndex < row && x.range.endRowIndex >= row && x.range.startColumnIndex < col && x.range.endColumnIndex >= col)!.cell.userEnteredFormat ?? {};
+    for (const row of [771, 772, 801]) {
+      expect(fmt(row, 13 + OFFSET.views).backgroundColor).toBeUndefined();     // факт
+      expect(fmt(row, 13 + OFFSET.commission).backgroundColor).toBeUndefined(); // ставка
+      expect((fmt(row, 13 + OFFSET.commission).textFormat as Record<string, unknown>).foregroundColor).toBeUndefined();
+      expect(fmt(row, 13 + OFFSET.unitProfit).backgroundColor).toBeUndefined(); // расчёт
+      expect(fmt(row, 13 + OFFSET.spp).backgroundColor).toBeDefined();          // ручной ввод — зона ввода
+      expect(fmt(row, 13 + OFFSET.bloggers).backgroundColor).toBeDefined();
+      expect(fmt(row, 3).backgroundColor).toBeDefined();                        // сводка C — как ручной
+      expect(fmt(row, 4).backgroundColor).toBeUndefined();                      // сводка D — факт
+      expect(fmt(row, 613 + OFFSET.orders).backgroundColor).toBeUndefined();    // блок 25
+      expect(fmt(row, 613 + OFFSET.spp).backgroundColor).toBeDefined();
+    }
+    for (const row of [769, 770, 802, 803]) expect(fmt(row, 13 + OFFSET.views).backgroundColor).toBeDefined(); // заголовок, шапка, MTD, план — шаблон
+    expect(fmt(771, 13 + OFFSET.views).numberFormat).toEqual({ type: 'TEXT', pattern: `737:${13 + OFFSET.views}` }); // прочие свойства сохранены
+  });
   it('без форматов строк-шаблонов — BLOCKED TEMPLATE_FORMATS_UNAVAILABLE', () => {
     expect(planMonthPrep({ ...inputs(book, OCT), rowFormats: null }).code).toBe('TEMPLATE_FORMATS_UNAVAILABLE');
   });
-  it('форматы: день 1 ← эталон закрытого дня 737, дни 2..31 ← 766, новый блок ← блок 24 (US..VP)', () => {
+  it('форматы: все дни ← эталон закрытого дня 737, новый блок ← блок 24 (US..VP)', () => {
     const f = plan.formatCopies;
-    expect(f).toContainEqual({ source: { r1: 737, r2: 737, c1: 1, c2: 588 }, dest: { r1: 771, r2: 771, c1: 1, c2: 588 } });
-    expect(f).toContainEqual({ source: { r1: 766, r2: 766, c1: 1, c2: 588 }, dest: { r1: 772, r2: 801, c1: 1, c2: 588 } });
-    expect(f).toContainEqual({ source: { r1: 766, r2: 766, c1: 565, c2: 588 }, dest: { r1: 772, r2: 801, c1: 613, c2: 636 } });
-    expect(plan.conditionalFormats!.carried).toBeGreaterThan(0);
+    expect(f).toContainEqual({ source: { r1: 737, r2: 737, c1: 1, c2: 588 }, dest: { r1: 771, r2: 801, c1: 1, c2: 588 } });
+    expect(f).toContainEqual({ source: { r1: 737, r2: 737, c1: 565, c2: 588 }, dest: { r1: 771, r2: 801, c1: 613, c2: 636 } });
+    expect(f.some((x) => x.source.r1 === 766)).toBe(false);
+    expect(plan.conditionalFormats!.families.weekend).toBe(1);
   });
   it('в формулах нет __xludf.DUMMYFUNCTION и ссылок на строки сентября', () => {
     for (const c of plan.cells) {
@@ -232,6 +257,21 @@ describe('популяция: снимок на момент подготовк�
     const p = planMonthPrep(inputs(book, OCT, { population: population([NEW_NM, 900000001]), cogs: cogsSnapshot({ [NEW_NM]: 426.735, 900000001: 99.5 }) }));
     expect(p.blocks.slice(24).map((b) => [b.nmId, b.slot, colA1(b.start)])).toEqual([[900000001, 25, 'WO'], [NEW_NM, 26, 'XM']]);
     expect(p.appendColumns).toBe(660 - 600);
+  });
+  it('30 SKU: 6 новых → слоты 25..30 (WO..ZH), сетка до 756 колонок, УФ и форматы на каждый новый блок; резерв пуст', () => {
+    const extra = [900000001, 900000002, 900000003, 900000004, 900000005, NEW_NM];
+    const p = planMonthPrep(inputs(book, OCT, { population: population(extra), cogs: cogsSnapshot(Object.fromEntries(extra.map((n) => [n, 100 + (n % 7)]))) }));
+    expect(p.status).toBe('PLAN_CREATE');
+    expect(p.blocks.filter((b) => b.origin === 'NEW').map((b) => b.slot)).toEqual([25, 26, 27, 28, 29, 30]);
+    expect(p.layout!.lastBlockColumn).toBe(slotStart(30) + 23);
+    expect(p.appendColumns).toBe(slotStart(30) + 23 - 600);
+    expect(p.conditionalFormats!.rules).toHaveLength(108 + 5 * 3);
+    const req = toStructureRequests(p, 739487431);
+    expect(JSON.stringify(req)).toContain(`$A771:$${colA1(slotStart(30) + 23)}771`); // идиома «эта ячейка» на всю ширину секции
+    expect(p.dimensionRequests.filter((r) => (r.updateDimensionProperties as { range: { dimension: string } }).range.dimension === 'COLUMNS')).toHaveLength(6 * 24 + 12);
+    expect(p.cells.some((c) => c.col >= slotStart(24) && c.col < slotStart(25))).toBe(false);
+    const sums = p.cells.find((c) => c.row === 771 && c.col === 3)!.value as { text: string };
+    expect(sums.text).toContain(`N771:${colA1(slotStart(30) + 1)}771`); // правая граница сводки — блок 30
   });
   it('дубль nm_id в популяции — BLOCKED DUPLICATE_SKU; пустая популяция — EMPTY_POPULATION', () => {
     expect(planMonthPrep(inputs(book, OCT, { population: [...population(), { nmId: NEW_NM, name: 'x' }] })).code).toBe('DUPLICATE_SKU');

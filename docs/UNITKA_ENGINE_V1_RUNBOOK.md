@@ -136,6 +136,8 @@ SELECT * FROM `wb_mart.V_UNITKA_ENGINE_STATUS`;
 * Отказы: `COGS_MISSING`/`COGS_STALE`/`COGS_UNAVAILABLE` (канон COGS нового SKU), `TEMPLATE_MISMATCH`,
   `PREDECESSOR_*`, `SHEET_TAIL_NOT_EMPTY`, `MONTH_SECTION_PARTIAL/INVALID` — 0 изменений листа.
 * SKU выводить из `REF_SKU_MASTER` только с 1-го числа: посреди месяца Engine упадёт `BLOCK_MISSING` (V1).
+* Внешний вид нового месяца — визуальный контракт `visual.ts` (`docs/UNITKA_CALENDAR_V2.md` §8): пустые будущие
+  дни без заливки, заливка закрытого дня и выходные — правилами УФ месяца; правила прошлого месяца не копируются.
 * Откат созданного месяца: `planMonthRollback` (`monthprep_struct.ts`) — удалить правила УФ новой секции, добавленные
   колонки (если пусты выше секции) и строки секции; затем сверить книгу с предснимком (Phase 2C).
 * Дополнительные отказы Phase 2C: `UNSUPPORTED_LOCALE`, `STRUCTURE_UNAVAILABLE`, `TEMPLATE_FORMATS_UNAVAILABLE`.

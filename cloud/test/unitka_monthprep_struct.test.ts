@@ -1,12 +1,12 @@
 /**
- * UNITKA CALENDAR V2 (Phase 2C) — локаль формул, перенос УФ, размеры, откат.
+ * UNITKA CALENDAR V2 (Phase 2C) — локаль формул, размеры, откат (УФ — unitka_visual.test.ts).
  * Эталоны локали — строки, прочитанные Sheets API из тестовой копии книги (ru_RU) 19.09.2026.
  */
 import { describe, it, expect } from 'vitest';
 import { formulaStyleOf, fromLocaleFormula, toLocaleFormula } from '../src/loaders/unitka/formulas.js';
-import { carryConditionalFormats, dimensionRequests, planMonthRollback, remapCfFormula } from '../src/loaders/unitka/monthprep_struct.js';
+import { dimensionRequests, planMonthRollback } from '../src/loaders/unitka/monthprep_struct.js';
 import { planMonthPrep, toStructureRequests } from '../src/loaders/unitka/monthprep.js';
-import { geometryAt, slotStart } from '../src/loaders/unitka/calendar.js';
+import { geometryAt } from '../src/loaders/unitka/calendar.js';
 import type { CellValue } from '../src/loaders/unitka/model.js';
 import type { Snapshot } from '../src/loaders/unitka/plan.js';
 import type { ConditionalFormatRule } from '../src/loaders/unitka/sheets.js';
@@ -41,57 +41,6 @@ describe('локаль формул: ru_RU ↔ каноническая форм
     for (const f of Object.values(LIVE)) expect(fromLocaleFormula(toLocaleFormula(f, 'SEMICOLON'), 'SEMICOLON')).toBe(f);
     expect(toLocaleFormula('=CHOOSE(2,"пн,вт","a;b")', 'SEMICOLON')).toBe('=CHOOSE(2;"пн,вт";"a;b")');
     expect(toLocaleFormula('=A1-426.735', 'SEMICOLON')).toBe('=A1-426,735');
-  });
-});
-
-describe('перенос условного форматирования', () => {
-  const rules = septemberCfRules();
-  const carry = carryConditionalFormats(rules, SEPT, OCT, Array.from({ length: 24 }, (_, i) => i), [25], SHEET_ID, rules.length);
-  const added = carry.requests.map((r) => (r.addConditionalFormatRule as { rule: ConditionalFormatRule; index: number }));
-  const formulaOf = (r: ConditionalFormatRule) => r.booleanRule?.condition.values?.[0]?.userEnteredValue;
-
-  it('правила добавляются в конец, по порядку; все диапазоны — строки 771..801', () => {
-    expect(added.map((a) => a.index)).toEqual(added.map((_, i) => rules.length + i));
-    for (const a of added) for (const g of a.rule.ranges) expect([g.startRowIndex, g.endRowIndex]).toEqual([770, 801]);
-  });
-  it('per-block «будущий день»: 24 переносятся как есть + клон для блока 25 ($WO771>$WB$736, якорь не сдвигается)', () => {
-    const fut = added.filter((a) => /^=\$[A-Z]+771>\$WB\$736$/.test(formulaOf(a.rule) ?? ''));
-    expect(fut).toHaveLength(25);
-    expect(formulaOf(fut[0]!.rule)).toBe('=$M771>$WB$736');
-    const clone = fut.find((a) => formulaOf(a.rule) === '=$WO771>$WB$736')!;
-    expect(clone.rule.ranges).toEqual([{ sheetId: SHEET_ID, startRowIndex: 770, endRowIndex: 801, startColumnIndex: slotStart(25) - 1, endColumnIndex: slotStart(25) + 5 }]);
-  });
-  it('правило на все блоки: блок 25 получает диапазон того же смещения; формула — только сдвиг строк', () => {
-    const wk = added.find((a) => formulaOf(a.rule) === '=WEEKDAY(US771;2)>5')!;
-    expect(wk.rule.ranges).toHaveLength(25);
-    expect(wk.rule.ranges[24]).toMatchObject({ startColumnIndex: slotStart(25) + 23 - 1, endColumnIndex: slotStart(25) + 23 });
-    const mx = added.find((a) => (formulaOf(a.rule) ?? '').includes('MAX('))!;
-    expect(formulaOf(mx.rule)).toBe('=AND(UX771<>"";UX771>0,75*MAX(UX$771:UX$801))');
-    expect(mx.rule.ranges.some((g) => g.startColumnIndex === slotStart(25) + 5 - 1)).toBe(true);
-    expect(mx.rule.ranges.some((g) => g.startColumnIndex === 6)).toBe(true); // сводка G осталась
-  });
-  it('наследие: «август+сентябрь» — только сентябрьская часть; шапка 735..736 и частичный диапазон — не переносятся', () => {
-    const cross = added.filter((a) => a.rule.gradientRule && a.rule.ranges.length === 1 && a.rule.ranges[0]!.startColumnIndex === slotStart(0) + 9 - 1);
-    expect(cross).toHaveLength(1);
-    expect(carry.skipped.map((x) => x.reason)).toEqual(expect.arrayContaining([
-      expect.stringMatching(/шапка\/прошлые месяцы/), expect.stringMatching(/частичный диапазон/),
-    ]));
-    expect(carry.skipped).toHaveLength(2);
-  });
-  it('per-block шкала: 23 переноса + клон на блок 25; ничего не попадает в резервный слот', () => {
-    const grad10 = added.filter((a) => a.rule.gradientRule && a.rule.ranges.every((g) => ((g.startColumnIndex ?? 0) + 1 - 13) % 24 === 10));
-    expect(grad10).toHaveLength(24);
-    for (const a of added) for (const g of a.rule.ranges) {
-      const c = (g.startColumnIndex ?? 0) + 1;
-      expect(c >= slotStart(24) && c < slotStart(25)).toBe(false);
-    }
-    expect(carry).toMatchObject({ carried: rules.length - 2, cloned: 2, extendedToNewBlocks: 2 });
-  });
-  it('ссылка на строку вне секции (кроме якорей WB736..739) — правило не переносится', () => {
-    expect(remapCfFormula('=A700>0', SEPT, OCT)).toBeNull();
-    expect(remapCfFormula('=$M737>$WB$736', SEPT, OCT)).toBe('=$M771>$WB$736');
-    expect(remapCfFormula('=AND(M737<=TODAY();D737>0;F737=0)', SEPT, OCT)).toBe('=AND(M771<=TODAY();D771>0;F771=0)');
-    expect(remapCfFormula('=LOG10(A737)', SEPT, OCT)).toBe('=LOG10(A771)');
   });
 });
 

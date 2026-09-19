@@ -31,7 +31,8 @@ import {
   type BlockFormulaParams, type FormulaStyle,
 } from './formulas.js';
 import type { RawCellFormat, SheetMeta, SheetStructure, StructureRequest } from './sheets.js';
-import { carryConditionalFormats, dimensionRequests, type CfCarry } from './monthprep_struct.js';
+import { dimensionRequests } from './monthprep_struct.js';
+import { buildConditionalFormats, cfRequests, columnKind, neutralizeDayFormat, type VisualCf } from './visual.js';
 
 export type PrepStatus = 'PLAN_CREATE' | 'NO_CHANGE' | 'MONTH_SECTION_PARTIAL' | 'MONTH_SECTION_INVALID' | 'BLOCKED';
 
@@ -91,8 +92,10 @@ export interface MonthPrepPlan {
   templateFormats: Map<number, RawCellFormat[]> | null;
   /** Сброс форматов, унаследованных добавленными колонками в старых строках (appendDimension копирует формат WB). */
   resetInheritedFormats: GridRect | null;
-  /** УФ новой секции (Phase 2C): перенос правил прошлого месяца, отчёт о пропущенных (наследие). */
-  conditionalFormats: CfCarry | null;
+  /** УФ новой секции — из визуального контракта (visual.ts), не копия правил прошлого месяца. */
+  conditionalFormats: VisualCf | null;
+  /** Индекс, с которого добавляются правила УФ (после существующих правил листа). */
+  cfStartIndex: number;
   /** Ширины/скрытие колонок новых блоков и высоты строк новой секции (Phase 2C). */
   dimensionRequests: StructureRequest[];
   /** Синтаксис формул книги (локаль): в запросах формулы переводятся из канонической формы. */
@@ -124,9 +127,9 @@ export interface PrepInputs {
 /** Ширина новых колонок вне блоков (хвост резервного слота WC..WN): стандартная ширина Sheets. */
 export const DEFAULT_COLUMN_PX = 100;
 
-/** Строки прошлого месяца, чьи форматы нужны для новой секции. */
+/** Строки прошлого месяца, чьи форматы нужны для новой секции (дни — только первый день, эталон E3). */
 export function templateRowsOf(g: MonthGeometry): number[] {
-  return [g.topRow, g.headerRow, g.firstDailyRow, g.lastDailyRow, g.mtdRow, g.spacerRow];
+  return [g.topRow, g.headerRow, g.firstDailyRow, g.mtdRow, g.spacerRow];
 }
 
 const COGS_SOURCE = 'wb_mart.V_UNITKA_COGS_CANONICAL (копия wb_mart.UNITKA_COGS_EFFECTIVE)';
@@ -136,7 +139,7 @@ function emptyPlan(target: string, status: PrepStatus, code: string | null, reas
     status, code, target, reasons, geometry: null, layout: null, predecessor: null, blocks: [], retiredNmIds: [], unmappedActive: [],
     appendRows: 0, appendColumns: 0, merges: [], formatCopies: [], conditionalFormats: null, dimensionRequests: [],
     formulaStyle: 'COMMA', sheetId: 0, cells: [], notes: [], manualBlankCells: 0, cogsProvenance: [],
-    templateFormats: null, resetInheritedFormats: null,
+    templateFormats: null, resetInheritedFormats: null, cfStartIndex: 0,
   };
 }
 
@@ -368,12 +371,14 @@ export function planMonthPrep(inp: PrepInputs): MonthPrepPlan {
     });
   }
 
-  // Форматы: копия строк прошлого месяца по типу строки. День 1 — эталон закрытого дня (первый день
-  // прошлого месяца), дни 2..N — последний день прошлого месяца (будущий вид).
+  // Форматы: копия строк прошлого месяца по типу строки. ВСЕ дни — из первого дня прошлого месяца
+  // (эталон контракта формата закрытого дня, E3): статический формат всех строк дней одинаков по
+  // построению, и контракт Engine выполняется без перекраски; будущий вид даёт нейтрализация (visual.ts)
+  // и правила УФ, а не другая строка-шаблон (в живом сентябре строки 737 и 766 отличались в мелочах).
   const predLast = pv.layout.lastBlockColumn;
   const rowPairs: Array<[number, number, number]> = [
     [pg.topRow, g.topRow, g.topRow], [pg.headerRow, g.headerRow, g.headerRow],
-    [pg.firstDailyRow, g.firstDailyRow, g.firstDailyRow], [pg.lastDailyRow, g.firstDailyRow + 1, g.lastDailyRow],
+    [pg.firstDailyRow, g.firstDailyRow, g.lastDailyRow],
     [pg.mtdRow, g.mtdRow, g.mtdRow], [pg.spacerRow, g.spacerRow, g.spacerRow],
   ];
   const formatCopies: Array<{ source: GridRect; dest: GridRect }> = [];
@@ -399,7 +404,7 @@ export function planMonthPrep(inp: PrepInputs): MonthPrepPlan {
     appendRows: g.spacerRow - inp.meta.rowCount,
     appendColumns: Math.max(0, layout.lastBlockColumn - inp.meta.columnCount),
     merges, formatCopies,
-    conditionalFormats: null, dimensionRequests: [], formulaStyle: style, sheetId: inp.meta.sheetId,
+    conditionalFormats: null, dimensionRequests: [], formulaStyle: style, sheetId: inp.meta.sheetId, cfStartIndex: 0,
     templateFormats: inp.rowFormats ?? null,
     resetInheritedFormats: layout.lastBlockColumn > inp.meta.columnCount
       ? { r1: 1, r2: inp.meta.rowCount, c1: inp.meta.columnCount + 1, c2: layout.lastBlockColumn } : null,
@@ -407,7 +412,8 @@ export function planMonthPrep(inp: PrepInputs): MonthPrepPlan {
   };
   const newSlots = blocks.filter((b) => b.origin === 'NEW').map((b) => b.slot);
   const predSlots = pv.blocks.map((b) => b.slot);
-  plan.conditionalFormats = carryConditionalFormats(inp.structure.conditionalFormats, pg, g, predSlots, newSlots, inp.meta.sheetId, inp.structure.conditionalFormats.length);
+  plan.conditionalFormats = buildConditionalFormats(layout, inp.meta.sheetId, style);
+  plan.cfStartIndex = inp.structure.conditionalFormats.length;
   plan.dimensionRequests = dimensionRequests(inp.structure, pg, g, Math.max(...predSlots), newSlots, inp.meta.sheetId);
   // Новые колонки вне новых блоков (хвост резервного слота): стандартная ширина, видимы — свойства WB не наследуем.
   const newBlockCols = new Set(blocks.filter((b) => b.origin === 'NEW').flatMap((b) => Array.from({ length: BLOCK_WIDTH }, (_, o) => b.start + o)));
@@ -433,7 +439,7 @@ export function assertPlanConfined(plan: MonthPrepPlan): void {
     ...plan.formatCopies.filter((f) => f.dest.r1 < top).map((f) => `format ${f.dest.r1}`),
     // Сброс унаследованных форматов — только в колонках, которых до подготовки не было.
     ...(plan.resetInheritedFormats && plan.resetInheritedFormats.c1 <= (plan.layout?.lastBlockColumn ?? 0) - plan.appendColumns ? ['сброс форматов в существующих колонках'] : []),
-    ...(plan.conditionalFormats?.requests ?? []).flatMap((r) => (r.addConditionalFormatRule as { rule: { ranges: Array<{ startRowIndex?: number }> } }).rule.ranges)
+    ...(plan.conditionalFormats?.rules ?? []).flatMap((r) => r.ranges)
       .filter((x) => (x.startRowIndex ?? 0) < top - 1).map((x) => `УФ ${(x.startRowIndex ?? 0) + 1}`),
     ...plan.dimensionRequests.map((r) => (r.updateDimensionProperties as { range: { dimension: string; startIndex: number } }).range)
       .filter((d) => (d.dimension === 'ROWS' ? d.startIndex < top - 1
@@ -463,7 +469,7 @@ function cellData(v: CellValueWrite | undefined, style: FormulaStyle): Record<st
 /**
  * Запросы одного spreadsheets.batchUpdate: добавить строки/колонки → сброс унаследованных форматов в новых
  * колонках старых строк → значения, формулы (синтаксис локали книги) и явные форматы строк-шаблонов →
- * заметки COGS → объединения заголовков → УФ (перенос правил) → размеры. copyPaste не используется.
+ * заметки COGS → объединения заголовков → УФ (из визуального контракта) → размеры. copyPaste не используется.
  * Только для PLAN_CREATE; иначе — пустой список.
  */
 export function toStructureRequests(plan: MonthPrepPlan, sheetId: number): StructureRequest[] {
@@ -482,10 +488,16 @@ export function toStructureRequests(plan: MonthPrepPlan, sheetId: number): Struc
   // (живой лист: поячеечная запись форматов октября — 16 МБ, больше лимита запроса API).
   const W = plan.layout!.lastBlockColumn;
   const covered = new Map<string, RawCellFormat>();
+  const g = plan.geometry;
   for (const f of plan.formatCopies) {
     const src = plan.templateFormats?.get(f.source.r1);
     if (!src) throw new RangeError(`нет формата строки-шаблона ${f.source.r1}`);
-    for (let c = f.dest.c1; c <= f.dest.c2; c++) covered.set(`${f.dest.r1}|${f.dest.r2}|${c}`, src[f.source.c1 - 1 + (c - f.dest.c1)] ?? null);
+    const dayBand = f.dest.r1 >= g.firstDailyRow && f.dest.r2 <= g.lastDailyRow;
+    for (let c = f.dest.c1; c <= f.dest.c2; c++) {
+      const raw = src[f.source.c1 - 1 + (c - f.dest.c1)] ?? null;
+      // Строки дней — нейтральный будущий вид по семантике колонки (visual.ts); шапки/MTD/план — как шаблон.
+      covered.set(`${f.dest.r1}|${f.dest.r2}|${c}`, dayBand ? neutralizeDayFormat(raw, columnKind(c, plan.layout!)) : raw);
+    }
   }
   const bands = [...new Set(plan.formatCopies.map((f) => `${f.dest.r1}|${f.dest.r2}`))].map((k) => k.split('|').map(Number) as [number, number]);
   for (const [r1, r2] of bands.sort((a, b) => a[0] - b[0])) {
@@ -517,7 +529,7 @@ export function toStructureRequests(plan: MonthPrepPlan, sheetId: number): Struc
     req.push({ updateCells: { start: { sheetId, rowIndex: n.row - 1, columnIndex: n.col - 1 }, rows: [{ values: [{ note: n.note }] }], fields: 'note' } });
   }
   for (const m of plan.merges) req.push({ mergeCells: { range: gridRange(sheetId, m), mergeType: 'MERGE_ALL' } });
-  req.push(...(plan.conditionalFormats?.requests ?? []));
+  if (plan.conditionalFormats) req.push(...cfRequests(plan.conditionalFormats, sheetId, plan.cfStartIndex));
   req.push(...plan.dimensionRequests);
   return req;
 }

@@ -44,7 +44,7 @@ function planLog(plan: MonthPrepPlan): Record<string, unknown> {
     retired: plan.retiredNmIds, unmapped_active: plan.unmappedActive,
     append_rows: plan.appendRows, append_columns: plan.appendColumns,
     cells: plan.cells.length, format_copies: plan.formatCopies.length, merges: plan.merges.length,
-    cf: plan.conditionalFormats ? { carried: plan.conditionalFormats.carried, extended: plan.conditionalFormats.extendedToNewBlocks, cloned: plan.conditionalFormats.cloned, requests: plan.conditionalFormats.requests.length, skipped: plan.conditionalFormats.skipped } : null,
+    cf: plan.conditionalFormats ? { rules: plan.conditionalFormats.rules.length, start_index: plan.cfStartIndex, families: plan.conditionalFormats.families } : null,
     dimension_requests: plan.dimensionRequests.length, formula_style: plan.formulaStyle,
     manual_blank_cells: plan.manualBlankCells, cogs_provenance: plan.cogsProvenance,
   };
