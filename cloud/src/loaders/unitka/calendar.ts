@@ -104,6 +104,15 @@ export function dayIndexOf(k: MonthKey, iso: string): number {
 export const BLOCK_FIRST_COLUMN = 13;
 export const BLOCK_WIDTH = 24;
 
+/**
+ * Тело блока — смещения 0..22 (дата … доходность 1 шт). Смещение 23 — колонка дня недели — существует только
+ * МЕЖДУ блоками: зрительно она начинает следующий SKU. У ПОСЛЕДНЕГО блока месяца её нет — цепочка кончается
+ * последней метрикой, а не «стартером» несуществующего блока (final polish, F2).
+ */
+export const BLOCK_BODY_WIDTH = 23;
+/** Унаследованный хвост книги: 10 скрытых расчётных колонок, подписи и колонка якорей (последняя). */
+export const TAIL_WIDTH = 12;
+
 export function slotStart(slot: number): number {
   if (!Number.isInteger(slot) || slot < 0) throw new RangeError(`слот ${slot}`);
   return BLOCK_FIRST_COLUMN + slot * BLOCK_WIDTH;
@@ -184,13 +193,47 @@ export interface BlockSlot {
 
 export interface MonthLayout extends MonthGeometry {
   blocks: readonly BlockSlot[];
-  /** Последняя колонка последнего занятого слота (0, если блоков нет). */
+  /** Терминальная колонка цепочки: последняя метрика последнего блока (0, если блоков нет). */
   lastBlockColumn: number;
 }
 
 export function layoutOf(g: MonthGeometry, blocks: readonly BlockSlot[]): MonthLayout {
   const maxSlot = blocks.reduce((m, b) => Math.max(m, b.slot), -1);
-  return { ...g, blocks, lastBlockColumn: maxSlot < 0 ? 0 : slotEnd(maxSlot) };
+  return { ...g, blocks, lastBlockColumn: maxSlot < 0 ? 0 : slotStart(maxSlot) + BLOCK_BODY_WIDTH - 1 };
+}
+
+/** Последний блок раскладки (у него нет колонки-разделителя). */
+export function isLastBlock(layout: MonthLayout, b: { slot: number }): boolean {
+  return layout.blocks.every((x) => x.slot <= b.slot);
+}
+/** Последняя колонка блока В РАСКЛАДКЕ: у последнего — последняя метрика, у остальных — разделитель (день недели). */
+export function blockLastColumn(layout: MonthLayout, b: { slot: number; start: number }): number {
+  return isLastBlock(layout, b) ? b.start + BLOCK_BODY_WIDTH - 1 : b.start + BLOCK_WIDTH - 1;
+}
+/** Блок, которому колонка принадлежит в раскладке (колонка за последней метрикой последнего блока — ничья). */
+export function blockOfColumn(layout: MonthLayout, col: number): BlockSlot | null {
+  return layout.blocks.find((b) => col >= b.start && col <= blockLastColumn(layout, b)) ?? null;
+}
+
+/** Первая колонка хвоста книги: якорь — его последняя колонка (колонка якорей — из REVERSE_LEG_RATE). */
+export function tailStartOf(anchorCol: number): number {
+  return anchorCol - TAIL_WIDTH + 1;
+}
+
+/**
+ * Вставка колонок под newCount новых блоков за последним блоком lastSlot. Хвост книги обязан начинаться либо
+ * сразу за колонкой-разделителем последнего блока (книга до Calendar V2: у последнего блока она физически есть),
+ * либо сразу за его последней метрикой (книга после Calendar V2). Вставляется ровно столько колонок, чтобы хвост
+ * встал сразу за последней метрикой нового последнего блока. Иное положение хвоста — отказ.
+ * at — 0-based индекс вставки (= число колонок перед ней).
+ */
+export function insertGeometry(lastSlot: number, tailStart: number, newCount: number): { at: number; count: number; tailStartAfter: number } | { error: 'TAIL_GEOMETRY_UNKNOWN' } {
+  const bodyEnd = slotStart(lastSlot) + BLOCK_BODY_WIDTH - 1;
+  if (tailStart !== bodyEnd + 1 && tailStart !== bodyEnd + 2) return { error: 'TAIL_GEOMETRY_UNKNOWN' };
+  const at = tailStart - 1;
+  if (newCount <= 0) return { at, count: 0, tailStartAfter: tailStart };
+  const tailStartAfter = slotStart(lastSlot + newCount) + BLOCK_BODY_WIDTH;
+  return { at, count: tailStartAfter - tailStart, tailStartAfter };
 }
 
 /* ───────────────────────── поиск секции ───────────────────────── */

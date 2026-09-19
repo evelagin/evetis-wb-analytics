@@ -144,6 +144,11 @@ SELECT * FROM `wb_mart.V_UNITKA_ENGINE_STATUS`;
 * **Порядок выката: ENGINE 2.0 DEPLOYMENT MUST PRECEDE PRODUCTION MONTH PREP.** Подготовка месяца с новым SKU сдвигает
   якоря книги (WB → WZ); Engine 1.1.0 и наследие Apps Script пишут в колонку 600 константой — после вставки колонок
   их использовать нельзя (`docs/UNITKA_CALENDAR_V2.md` §10).
+* Дописывание SKU в существующий текущий месяц (`docs/UNITKA_CALENDAR_V2.md` §11) — НЕ активировано: план в журнале
+  `unitka_month_append_plan`; запись — дополнительно `UNITKA_MONTH_PREP_APPEND=1`. Основание — остаток > 0 или заказы > 0
+  в этом месяце на дату ≤ LCD. Отказы: `TAIL_GEOMETRY_UNKNOWN`, `CF_SECTION_DRIFT`, `LATER_SECTION_EXISTS`,
+  `TEMPLATE_MISMATCH`, `CHAIN_GAP`, `COGS_*`; откат — `planAppendRollback` по журналу плана.
+* Манифест отката подготовки месяца — поля журнала `insert_columns`, `width_upgrades`, `tail_group_detached`.
 * Отказы hardening 2: `CHAIN_GAP` (выбывший SKU оставил бы дыру в сплошной цепочке блоков — решение владельца),
   `CF_TRIM_UNSAFE` (правило УФ до последней колонки блоков ссылается на другой лист — не переиздаём),
   `ANCHOR_UNRESOLVED` (именованный диапазон `REVERSE_LEG_RATE` не одна ячейка строки 737 листа Unitka; Engine и

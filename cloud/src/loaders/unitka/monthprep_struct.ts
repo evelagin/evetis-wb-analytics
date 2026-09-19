@@ -5,44 +5,148 @@
  * месяца НЕ копируются — в живом сентябре их формулы записаны относительно первого диапазона правила и
  * для остальных диапазонов ссылаются в чужие колонки (см. visual.ts).
  */
-import type { ConditionalFormatRule, DimensionProps, SheetStructure, StructureRequest } from './sheets.js';
-import { BLOCK_FIRST_COLUMN, BLOCK_WIDTH, slotStart, type MonthGeometry } from './calendar.js';
+import type { ConditionalFormatRule, DimensionProps, RawCellFormat, SheetStructure, StructureRequest } from './sheets.js';
+import { BLOCK_FIRST_COLUMN, BLOCK_WIDTH, slotStart, type MonthGeometry, type MonthLayout } from './calendar.js';
+import { OFFSET, SUMMARY } from './model.js';
 
-/* ───────────────────────── размеры колонок и строк ───────────────────────── */
+/* ───────────────────────── контракт размеров (final polish, F3) ───────────────────────── */
 
-function dimReq(sheetId: number, dimension: 'ROWS' | 'COLUMNS', start1: number, end1: number, p: DimensionProps): StructureRequest {
-  const properties: Record<string, unknown> = {};
-  const fields: string[] = [];
-  if (p.pixelSize !== undefined) { properties.pixelSize = p.pixelSize; fields.push('pixelSize'); }
-  properties.hiddenByUser = p.hiddenByUser === true; fields.push('hiddenByUser');
-  return { updateDimensionProperties: { range: { sheetId, dimension, startIndex: start1 - 1, endIndex: end1 }, properties, fields: fields.join(',') } };
+/**
+ * Ширина колонки — по СМЫСЛУ, а не по координате. Живая книга: все колонки блока 84 px, разделитель 56 px; итог
+ * месяца (строка MTD) набран кеглем 16 — шестизначная сумма в рублях в 84 px не помещается («####»), поэтому итоговые
+ * денежные колонки шире: «доходность (общая)» — как I сводки (104), «реклама внутренняя» — как J сводки (100).
+ */
+const BLOCK_WIDTH_DEFAULT = 84;
+const BLOCK_WIDTH_BY_OFFSET: Readonly<Record<number, number>> = { [OFFSET.profitAll]: 104, [OFFSET.adsIn]: 100, [OFFSET.weekday]: 56 };
+const SUMMARY_WIDTH: Readonly<Record<number, number>> = {
+  [SUMMARY.weekday]: 73, [SUMMARY.date]: 73, [SUMMARY.bloggers]: 92, [SUMMARY.views]: 102, [SUMMARY.opens]: 82, [SUMMARY.orders]: 85,
+  [SUMMARY.carts]: 85, [SUMMARY.cancels]: 85, [SUMMARY.profit]: 104, [SUMMARY.ads]: 100, [SUMMARY.drr]: 78, [SUMMARY.drr + 1]: 73,
+};
+export function blockColumnWidth(offset: number): number { return BLOCK_WIDTH_BY_OFFSET[offset] ?? BLOCK_WIDTH_DEFAULT; }
+export function summaryColumnWidth(col: number): number { return SUMMARY_WIDTH[col] ?? BLOCK_WIDTH_DEFAULT; }
+
+/** Высота строки под кегль (пт): заголовок 20 пт → 40 px, итог 16 пт → 33 px. В живой книге эти строки 18 px — текст срезан. */
+export function heightForFont(pt: number): number { return Math.ceil(Math.round(pt * 18) / 10) + 4; }
+const HEADER_MAX_HEIGHT = 120;
+const lineHeight = (pt: number): number => Math.ceil((pt * 4 / 3) * 1.25);
+
+/** Оценка числа строк текста с переносом по словам (полужирный Calibri: ≈0,55 кегля на знак; слово длиннее строки рвётся). */
+export function estimateWrappedLines(text: string, widthPx: number, pt: number): number {
+  const words = text.trim().split(/\s+/).filter(Boolean);
+  if (!words.length) return 0;
+  const inner = Math.max(8, widthPx - 4), ch = (pt * 4 / 3) * 0.55;
+  let lines = 1, cur = 0;
+  for (const w of words) {
+    const px = w.length * ch;
+    if (cur > 0 && cur + ch + px <= inner) { cur += ch + px; continue; }
+    if (cur > 0) lines++;
+    lines += Math.ceil(px / inner) - 1;
+    cur = px > inner ? px - inner * (Math.ceil(px / inner) - 1) : px;
+  }
+  return lines;
+}
+
+export type RowHeights = Record<'title' | 'header' | 'dayFirst' | 'day' | 'mtd' | 'plan', number>;
+export interface WidthUpgrade { col: number; from: number; to: number }
+export interface DimensionPlan { requests: StructureRequest[]; widthUpgrades: WidthUpgrade[]; rowHeights: RowHeights }
+
+const fontOf = (f: RawCellFormat | undefined): number | undefined => (f?.textFormat as { fontSize?: number } | undefined)?.fontSize;
+
+/**
+ * Размеры секции. Колонки: вставленные — ширина по контракту, скрытие — как у блока-шаблона (разделитель виден);
+ * существующие колонки раскладки — ТОЛЬКО расширение до контракта (поле pixelSize; скрытие не трогается; ширина колонки
+ * общая для всех месяцев — расширения перечислены в widthUpgrades для журнала и отката). Строки (rows=true): заголовок и
+ * MTD — не ниже высоты под свой кегль, шапка — не ниже шаблона и вмещает перенос своих подписей, дни и план — как в
+ * прошлом месяце. Ни одной координаты месяца: всё из раскладки, шаблона и текстов шапки.
+ */
+export function planDimensions(a: {
+  structure: SheetStructure; prev: MonthGeometry; next: MonthGeometry; layout: MonthLayout;
+  inserted: { at: number; count: number } | null; templateSlot: number;
+  templateFormats: ReadonlyMap<number, RawCellFormat[]> | null; headerTexts: ReadonlyMap<number, string>; sheetId: number; rows: boolean;
+}): DimensionPlan {
+  const { structure: st, layout } = a;
+  const req: StructureRequest[] = [];
+  const ins = a.inserted && a.inserted.count > 0 ? a.inserted : null;
+  const isInserted = (col: number): boolean => !!ins && col > ins.at && col <= ins.at + ins.count;
+  // Колонка листа ДО вставки (для чтения текущих размеров).
+  const before = (col: number): number => (ins && col > ins.at + ins.count ? col - ins.count : col);
+  const cm = (col: number): DimensionProps => st.columnMetadata[before(col) - 1] ?? {};
+  const rm = (row: number): DimensionProps => st.rowMetadata[row - 1] ?? {};
+  const contract = (col: number): number => (col < BLOCK_FIRST_COLUMN ? summaryColumnWidth(col) : blockColumnWidth((col - BLOCK_FIRST_COLUMN) % BLOCK_WIDTH));
+  const widthAfter = new Map<number, number>();
+  const widthUpgrades: WidthUpgrade[] = [];
+  for (let col = 1; col <= layout.lastBlockColumn; col++) {
+    const want = contract(col);
+    if (isInserted(col)) {
+      const off = (col - BLOCK_FIRST_COLUMN) % BLOCK_WIDTH;
+      const hidden = off === BLOCK_WIDTH - 1 ? false : st.columnMetadata[slotStart(a.templateSlot) + off - 1]?.hiddenByUser === true;
+      req.push({ updateDimensionProperties: { range: { sheetId: a.sheetId, dimension: 'COLUMNS', startIndex: col - 1, endIndex: col }, properties: { pixelSize: want, hiddenByUser: hidden }, fields: 'pixelSize,hiddenByUser' } });
+      widthAfter.set(col, want);
+      continue;
+    }
+    const cur = cm(col).pixelSize;
+    if (cur !== undefined && cur < want) {
+      widthUpgrades.push({ col, from: cur, to: want });
+      req.push({ updateDimensionProperties: { range: { sheetId: a.sheetId, dimension: 'COLUMNS', startIndex: col - 1, endIndex: col }, properties: { pixelSize: want }, fields: 'pixelSize' } });
+    }
+    widthAfter.set(col, Math.max(cur ?? want, want));
+  }
+  const tpl = (row: number): RawCellFormat[] => a.templateFormats?.get(row) ?? [];
+  const maxFont = (row: number): number => tpl(row).reduce((m, f) => Math.max(m, fontOf(f) ?? 0), 0) || 10;
+  let header = rm(a.prev.headerRow).pixelSize ?? 21;
+  for (const [col, text] of a.headerTexts) {
+    const srcCol = isInserted(col) ? slotStart(a.templateSlot) + ((col - BLOCK_FIRST_COLUMN) % BLOCK_WIDTH) : before(col);
+    const pt = fontOf(tpl(a.prev.headerRow)[srcCol - 1]) ?? 12;
+    header = Math.max(header, estimateWrappedLines(text, widthAfter.get(col) ?? contract(col), pt) * lineHeight(pt) + 8);
+  }
+  const rowHeights: RowHeights = {
+    title: Math.max(rm(a.prev.topRow).pixelSize ?? 0, heightForFont(maxFont(a.prev.topRow))),
+    header: Math.min(HEADER_MAX_HEIGHT, header),
+    dayFirst: rm(a.prev.firstDailyRow).pixelSize ?? 21,
+    day: rm(a.prev.lastDailyRow).pixelSize ?? 21,
+    mtd: Math.max(rm(a.prev.mtdRow).pixelSize ?? 0, heightForFont(maxFont(a.prev.mtdRow))),
+    plan: rm(a.prev.spacerRow).pixelSize ?? 21,
+  };
+  if (a.rows) {
+    const g = a.next;
+    const bands: Array<[keyof RowHeights, number, number]> = [
+      ['title', g.topRow, g.topRow], ['header', g.headerRow, g.headerRow], ['dayFirst', g.firstDailyRow, g.firstDailyRow],
+      ['day', g.firstDailyRow + 1, g.lastDailyRow], ['mtd', g.mtdRow, g.mtdRow], ['plan', g.spacerRow, g.spacerRow],
+    ];
+    for (const [k, r1, r2] of bands) {
+      req.push({ updateDimensionProperties: { range: { sheetId: a.sheetId, dimension: 'ROWS', startIndex: r1 - 1, endIndex: r2 }, properties: { pixelSize: rowHeights[k], hiddenByUser: false }, fields: 'pixelSize,hiddenByUser' } });
+    }
+  }
+  return { requests: req, widthUpgrades, rowHeights };
+}
+
+/* ───────────────────────── группы колонок у конца цепочки ───────────────────────── */
+
+/**
+ * Sheets сливает стоящие вплотную группы одной глубины в одну. У последнего блока месяца нет колонки-разделителя, его
+ * группа аналитики (смещения 16..22) кончается последней метрикой — а сразу за ней начинается хвост книги, чья группа
+ * скрытых расчётов начинается с первой же колонки хвоста. Чтобы «+/−» последнего SKU не сворачивал заодно хвост (и
+ * чтобы следующая вставка колонок не попала внутрь слитой группы), первая колонка хвоста выводится из его группы: она
+ * остаётся скрытой (hiddenByUser), но между группами появляется несгруппированная колонка. tailStartBefore — первая
+ * колонка хвоста ДО вставки (1-based). Хвост уже отделён или группы нет — null.
+ */
+export function tailGroupDetach(groups: readonly { startIndex: number; endIndex: number }[], tailStartBefore: number, insertCount: number, sheetId: number): { column: number; request: StructureRequest } | null {
+  if (insertCount <= 0 || !groups.some((g) => g.startIndex === tailStartBefore - 1 && g.endIndex > tailStartBefore)) return null;
+  const idx = tailStartBefore - 1 + insertCount;
+  return { column: idx + 1, request: { deleteDimensionGroup: { range: { sheetId, dimension: 'COLUMNS', startIndex: idx, endIndex: idx + 1 } } } };
 }
 
 /**
- * Колонки новых блоков — ширина и скрытие по смещению шаблонного блока (последний блок прошлого месяца;
- * у блоков 2–24 скрыты смещения 16–22). Скрытие резервного слота не копируется никогда. Строки новой
- * секции — высоты строк того же типа в прошлом месяце (заголовок, шапка, день 1, дни 2..N, MTD, разделитель).
+ * insertDimension(inheritFromBefore) РАСШИРЯЕТ группу колонок, которая кончается ровно на колонке перед вставкой (в книге
+ * после Calendar V2 это группа аналитики последнего блока: у него нет разделителя, и новый блок вставляется сразу за ней).
+ * Вставленные колонки выводятся из такой группы сразу — по одному запросу на каждый уровень глубины; затем новые блоки
+ * получают собственные группы. at — 0-based индекс вставки. Проверено на копии книги: без этого группа блока 25
+ * накрывала блок 26 целиком, а его группа становилась вложенной.
  */
-export function dimensionRequests(st: SheetStructure, prev: MonthGeometry, next: MonthGeometry, templateSlot: number, newSlots: readonly number[], sheetId: number): StructureRequest[] {
-  const req: StructureRequest[] = [];
-  const cm = (col: number): DimensionProps => st.columnMetadata[col - 1] ?? {};
-  const rm = (row: number): DimensionProps => st.rowMetadata[row - 1] ?? {};
-  for (const s of newSlots) {
-    for (let o = 0; o < BLOCK_WIDTH; o++) {
-      const p = cm(slotStart(templateSlot) + o);
-      req.push(dimReq(sheetId, 'COLUMNS', slotStart(s) + o, slotStart(s) + o, { pixelSize: p.pixelSize, hiddenByUser: p.hiddenByUser === true }));
-    }
-  }
-  const rows: Array<[number, number, number]> = [
-    [prev.topRow, next.topRow, next.topRow], [prev.headerRow, next.headerRow, next.headerRow],
-    [prev.firstDailyRow, next.firstDailyRow, next.firstDailyRow], [prev.lastDailyRow, next.firstDailyRow + 1, next.lastDailyRow],
-    [prev.mtdRow, next.mtdRow, next.mtdRow], [prev.spacerRow, next.spacerRow, next.spacerRow],
-  ];
-  for (const [src, a, b] of rows) {
-    const p = rm(src);
-    req.push(dimReq(sheetId, 'ROWS', a, b, { pixelSize: p.pixelSize, hiddenByUser: p.hiddenByUser === true }));
-  }
-  return req;
+export function groupInsertTrims(groups: readonly { startIndex: number; endIndex: number }[], at: number, count: number, sheetId: number): StructureRequest[] {
+  if (count <= 0) return [];
+  return groups.filter((g) => g.endIndex === at && g.startIndex < at)
+    .map(() => ({ deleteDimensionGroup: { range: { sheetId, dimension: 'COLUMNS', startIndex: at, endIndex: at + count } } }));
 }
 
 /* ───────────────────────── вставка колонок и УФ прошлых месяцев ───────────────────────── */
@@ -125,6 +229,10 @@ export function planMonthRollback(a: {
   rules: readonly ConditionalFormatRule[];
   /** Колонки блоков, вставленных этим месяцем (1-based, включительно), или null. */
   insertedColumns: [number, number] | null; newColumnsEmptyAbove: boolean;
+  /** Ширины существующих колонок ДО подготовки месяца (из журнала плана: width_upgrades) — возвращаются на место. */
+  restoreWidths?: readonly WidthUpgrade[];
+  /** Первая колонка хвоста ПОСЛЕ удаления вставленных колонок (1-based), выведенная подготовкой из группы хвоста: вернуть. */
+  regroupTailColumn?: number | null;
 }): RollbackPlan {
   const g = a.geometry;
   if (a.rowCount < g.spacerRow) return { requests: [], deletedCfRules: 0, deletedRows: null, deletedColumns: null, refused: 'в листе нет полной секции' };
@@ -144,6 +252,10 @@ export function planMonthRollback(a: {
     req.push({ deleteDimension: { range: { sheetId: a.sheetId, dimension: 'COLUMNS', startIndex: cols[0] - 1, endIndex: cols[1] } } });
   }
   req.push({ deleteDimension: { range: { sheetId: a.sheetId, dimension: 'ROWS', startIndex: g.topRow - 1, endIndex: a.rowCount } } });
+  // Расширенные колонки лежат левее вставки — их индексы удаление не меняет.
+  for (const u of a.restoreWidths ?? []) req.push({ updateDimensionProperties: { range: { sheetId: a.sheetId, dimension: 'COLUMNS', startIndex: u.col - 1, endIndex: u.col }, properties: { pixelSize: u.from }, fields: 'pixelSize' } });
+  // Возврат первой колонки хвоста в его группу: соседние группы одной глубины Sheets сольёт в исходную.
+  if (a.regroupTailColumn) req.push({ addDimensionGroup: { range: { sheetId: a.sheetId, dimension: 'COLUMNS', startIndex: a.regroupTailColumn - 1, endIndex: a.regroupTailColumn } } });
   return { requests: req, deletedCfRules: idx.length, deletedRows: [g.topRow, a.rowCount], deletedColumns: cols, refused: null };
 }
 

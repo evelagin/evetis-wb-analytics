@@ -4,8 +4,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   daysInMonth, nextMonth, previousMonth, monthTitle, formatMonthKey, parseMonthKey, monthKeyOf, dayIndexOf, dayIso,
-  geometryAt, dayRowOf, rowOfDate, slotStart, slotEnd, nextFreeSlot, chainGaps, locateSection, layoutOf,
-} from '../src/loaders/unitka/calendar.js';
+  geometryAt, dayRowOf, rowOfDate, slotStart, slotEnd, nextFreeSlot, chainGaps, locateSection, layoutOf, blockLastColumn, blockOfColumn, insertGeometry, tailStartOf, BLOCK_BODY_WIDTH, TAIL_WIDTH } from '../src/loaders/unitka/calendar.js';
 import { colA1, findBlocks, isBookAnchorCell, BOOK_ANCHORS, integrityStatusCells } from '../src/loaders/unitka/model.js';
 import { nextMonthPrecheck, resolveSection } from '../src/loaders/unitka/section.js';
 import { LoaderError } from '../src/errors.js';
@@ -111,7 +110,7 @@ describe('слоты блоков: сплошная цепочка, дыр не�
     row[slotStart(25) + 10] = 'LAST_CLOSED_DATE (зеркало)'; // подпись хвоста — не блок
     const b = findBlocks(row, 636);
     expect(b.map((x) => [x.slot, x.nmId])).toEqual([[0, 252442517], [2, 252441968], [24, 909951444]]);
-    expect(layoutOf(geometryAt({ year: 2026, month: 10 }, 769), b).lastBlockColumn).toBe(612);
+    expect(layoutOf(geometryAt({ year: 2026, month: 10 }, 769), b).lastBlockColumn).toBe(611);   // последняя метрика блока 25 (WM)
   });
   it('якорь книги — только пара (строка, колонка) при заданной колонке якорей; строки статуса Guard следуют за ней', () => {
     expect(isBookAnchorCell(BOOK_ANCHORS.LCD_MIRROR_ROW, 600, 600)).toBe(true);
@@ -153,5 +152,45 @@ describe('предпроверка следующего месяца (тольк
   it('октябрь подготовлен — PRESENT; декабрь → январь следующего года', () => {
     expect(nextMonthPrecheck(colA({ 735: 'Сентябрь 2026', 769: 'Октябрь 2026' }), '2026-09-29', 5)).toMatchObject({ state: 'PRESENT', code: null });
     expect(nextMonthPrecheck(colA({}), '2026-12-31', 5)).toMatchObject({ nextMonth: '2027-01', state: 'MISSING' });
+  });
+});
+
+describe('терминальный блок: колонка дня недели есть только МЕЖДУ блоками (final polish F2)', () => {
+  const G = geometryAt({ year: 2026, month: 10 }, 769);
+  const lay = (n: number) => layoutOf(G, Array.from({ length: n }, (_, i) => ({ index: i, slot: i, start: slotStart(i), nmId: 100 + i, title: `${100 + i}` })));
+  it.each([1, 24, 25, 26])('%i SKU: цепочка кончается последней метрикой последнего блока — без «стартера» несуществующего следующего', (n) => {
+    const L = lay(n);
+    const last = L.blocks[n - 1]!;
+    expect(BLOCK_BODY_WIDTH).toBe(23);
+    expect(L.lastBlockColumn).toBe(last.start + 22);
+    expect(blockLastColumn(L, last)).toBe(last.start + 22);
+    expect(blockOfColumn(L, last.start + 22)?.nmId).toBe(last.nmId);
+    expect(blockOfColumn(L, last.start + 23)).toBeNull();                       // колонки-сироты нет в раскладке
+    for (const b of L.blocks.slice(0, -1)) {
+      expect(blockLastColumn(L, b)).toBe(slotEnd(b.slot));                      // между блоками разделитель есть
+      expect(blockOfColumn(L, slotEnd(b.slot))?.nmId).toBe(b.nmId);
+      expect(blockLastColumn(L, b) + 1).toBe(L.blocks[b.index + 1]!.start);      // и сразу следующий блок
+    }
+  });
+  it('геометрия вставки: хвост книги — 12 колонок до якоря; вставка ровно до новой терминальной колонки', () => {
+    expect(TAIL_WIDTH).toBe(12);
+    expect(tailStartOf(600)).toBe(589);
+    // (а) книга с физической колонкой дня недели у последнего блока (живой сентябрь: VP), +1 SKU → 23 колонки после VP.
+    expect(insertGeometry(23, tailStartOf(600), 1)).toEqual({ at: 588, count: 23, tailStartAfter: 612 });
+    expect(insertGeometry(23, tailStartOf(600), 2)).toEqual({ at: 588, count: 47, tailStartAfter: 636 });
+    expect(insertGeometry(23, tailStartOf(600), 0)).toEqual({ at: 588, count: 0, tailStartAfter: 589 });
+    // (б) книга, созданная Calendar V2: хвост сразу за последней метрикой (WM), +1 SKU → разделитель + тело = 24 колонки.
+    expect(insertGeometry(24, 612, 1)).toEqual({ at: 611, count: 24, tailStartAfter: 636 });
+    expect(insertGeometry(24, 612, 0)).toEqual({ at: 611, count: 0, tailStartAfter: 612 });
+    expect(insertGeometry(0, 36, 1)).toEqual({ at: 35, count: 24, tailStartAfter: 60 });
+    // хвост не там, где его ждёт цепочка, — отказ, без догадок.
+    expect(insertGeometry(23, 600, 1)).toEqual({ error: 'TAIL_GEOMETRY_UNKNOWN' });
+    expect(insertGeometry(23, 580, 1)).toEqual({ error: 'TAIL_GEOMETRY_UNKNOWN' });
+  });
+  it('после вставки хвост начинается сразу за истинной последней колонкой цепочки', () => {
+    for (const [lastSlot, tail, n] of [[23, 589, 1], [23, 589, 2], [24, 612, 1], [24, 612, 3]] as const) {
+      const r = insertGeometry(lastSlot, tail, n) as { tailStartAfter: number };
+      expect(r.tailStartAfter).toBe(slotStart(lastSlot + n) + 22 + 1);
+    }
   });
 });

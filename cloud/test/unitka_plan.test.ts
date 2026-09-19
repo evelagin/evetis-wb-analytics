@@ -52,7 +52,7 @@ describe('preflight', () => {
     expect(r.issues).toEqual([]);
     expect(r.sectionIssues).toEqual([]);
     expect(r.blocks).toHaveLength(24);
-    expect(r.layout).toMatchObject({ monthKey: '2026-09', topRow: 735, firstDailyRow: 737, lastDailyRow: 766, mtdRow: 767, daysInMonth: 30, lastBlockColumn: 588 });
+    expect(r.layout).toMatchObject({ monthKey: '2026-09', topRow: 735, firstDailyRow: 737, lastDailyRow: 766, mtdRow: 767, daysInMonth: 30, lastBlockColumn: 587 });   // терминальная колонка — последняя метрика блока 24 (VO)
   });
   it('пропавшая формула — STRUCTURE_DRIFT', () => {
     const snap = snapshot({ mutate: (s) => { s.formulas[3]![GRID.B0 - 1 + OFFSET.unitProfit] = 5; } });

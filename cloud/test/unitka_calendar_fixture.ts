@@ -102,6 +102,26 @@ export function applyPlan(plan: MonthPrepPlan, width: number): Snapshot {
   return s;
 }
 
+/** Вставка пустых колонок в снимок секции (как insertDimension): at — число колонок перед вставкой. */
+export function insertColumnsInto(s: Snapshot, at: number, count: number): Snapshot {
+  const ins = (rows: CellValue[][]): CellValue[][] => rows.map((r) => [...r.slice(0, at), ...Array<CellValue>(count).fill(''), ...r.slice(at)]);
+  return { ...s, width: s.width + count, grid: ins(s.grid), formulas: ins(s.formulas), anchorCol: s.anchorCol + count };
+}
+/** Удаление колонок c1..c2 (1-based, включительно) из снимка секции (как deleteDimension). */
+export function deleteColumnsFrom(s: Snapshot, c1: number, c2: number): Snapshot {
+  const del = (rows: CellValue[][]): CellValue[][] => rows.map((r) => [...r.slice(0, c1 - 1), ...r.slice(c2)]);
+  return { ...s, width: s.width - (c2 - c1 + 1), grid: del(s.grid), formulas: del(s.formulas), anchorCol: s.anchorCol - (c2 - c1 + 1) };
+}
+/** Записать ячейки плана в снимок (значения и формулы). */
+export function applyCells(s: Snapshot, cells: MonthPrepPlan['cells']): Snapshot {
+  const out: Snapshot = { ...s, grid: s.grid.map((r) => [...r]), formulas: s.formulas.map((r) => [...r]) };
+  for (const c of cells) {
+    if (c.value.kind === 'formula') setFormula(out, c.row, c.col, c.value.text);
+    else setVal(out, c.row, c.col, c.value.value);
+  }
+  return out;
+}
+
 /** Копия COGS «свежая» (AVAILABLE) по строкам nm → значение на дату. */
 export function cogsSnapshot(values: Record<number, number | null>, day = '2026-09-17', over: Partial<CogsSnapshot> = {}): CogsSnapshot {
   return {
@@ -170,6 +190,8 @@ export function septemberStructure(rowCount = 768, columnCount = 600): SheetStru
   const columnGroups = [
     ...Array.from({ length: 24 }, (_, s) => ({ startIndex: slotStart(s) + 16 - 1, endIndex: slotStart(s) + 22, depth: 1 })).filter((g) => g.startIndex !== slotStart(1) + 15 && g.startIndex !== slotStart(2) + 15),
     { startIndex: slotStart(1) - 1, endIndex: slotStart(2) + 23, depth: 1 },
+    // хвост книги (12 колонок до якоря): группа скрытых расчётов начинается с ПЕРВОЙ колонки хвоста — как в живой книге (VQ..VZ).
+    { startIndex: columnCount - 12, endIndex: columnCount - 2, depth: 1 },
   ];
   return { conditionalFormats: septemberCfRules(), columnMetadata, rowMetadata, merges: [], columnGroups };
 }
@@ -177,6 +199,9 @@ export function septemberStructure(rowCount = 768, columnCount = 600): SheetStru
 /** Форматы строк-шаблонов: у каждой ячейки метка «строка:колонка» (чтобы проверять, откуда взят формат). */
 export function septemberRowFormats(width = 600, rows: readonly number[] = [735, 736, 737, 766, 767, 768]): Map<number, Array<Record<string, unknown> | null>> {
   const m = new Map<number, Array<Record<string, unknown> | null>>();
-  for (const r of rows) m.set(r, Array.from({ length: width }, (_, i) => ({ numberFormat: { type: 'TEXT', pattern: `${r}:${i + 1}` } })));
+  // Кегли как в живой книге: заголовок месяца/блока 20 пт, шапка 12, дни 10, MTD 16 (порядок строк: заголовок, шапка, дни…, MTD, план).
+  const order = [...rows].sort((a, b) => a - b);
+  const fontOf = (r: number): number => (r === order[0] ? 20 : r === order[1] ? 12 : r === order[order.length - 2] ? 16 : 10);
+  for (const r of rows) m.set(r, Array.from({ length: width }, (_, i) => ({ numberFormat: { type: 'TEXT', pattern: `${r}:${i + 1}` }, textFormat: { fontSize: fontOf(r), bold: true } })));
   return m;
 }

@@ -26,7 +26,7 @@
  */
 import { BOOK_ANCHORS, OFFSET, SUMMARY, colA1 } from './model.js';
 import type { MonthGeometry } from './calendar.js';
-import { BLOCK_WIDTH, type MonthLayout } from './calendar.js';
+import { BLOCK_WIDTH, type MonthLayout, blockOfColumn, blockLastColumn } from './calendar.js';
 import type { ConditionalFormatRule, RawCellFormat, StructureRequest } from './sheets.js';
 import { toLocaleFormula, type FormulaStyle } from './formulas.js';
 
@@ -53,7 +53,7 @@ export const SUMMARY_KIND: Readonly<Record<number, ColumnKind>> = {
 
 export function columnKind(col: number, layout: MonthLayout): ColumnKind | null {
   if (col <= SUMMARY.drr + 1) return SUMMARY_KIND[col] ?? null;
-  const b = layout.blocks.find((x) => col >= x.start && col < x.start + BLOCK_WIDTH);
+  const b = blockOfColumn(layout, col);   // колонка за последней метрикой последнего блока — ничья
   return b ? BLOCK_KIND[col - b.start]! : null;
 }
 
@@ -182,8 +182,9 @@ export function buildConditionalFormats(layout: MonthLayout, sheetId: number, st
     families[family] = (families[family] ?? 0) + 1;
   };
   const one = (c: number): Rng => ({ c1: c, c2: c });
-  const off = (o: number): Rng[] => layout.blocks.map((b) => one(b.start + o));
-  const offRun = (o1: number, o2: number): Rng[] => layout.blocks.map((b) => ({ c1: b.start + o1, c2: b.start + o2 }));
+  // Колонка-разделитель (день недели) есть только между блоками: у последнего блока её нет.
+  const off = (o: number): Rng[] => layout.blocks.filter((b) => b.start + o <= blockLastColumn(layout, b)).map((b) => one(b.start + o));
+  const offRun = (o1: number, o2: number): Rng[] => layout.blocks.map((b) => ({ c1: b.start + o1, c2: Math.min(b.start + o2, blockLastColumn(layout, b)) }));
   const tiers = (family: string, sumCol: number, o: number, colors: readonly string[]): void => {
     const cut = ['0.75', '0.5', '0.25', null];
     cut.forEach((c, i) => add(family, [one(sumCol), ...off(o)], { formula: c ? `=AND(${S}<>"",${S}>${c}*${I.COLMAX})` : `=AND(${S}<>"",${S}>0)` }, bg(colors[i]!)));
@@ -270,7 +271,9 @@ export function rowKindOf(g: MonthGeometry, row: number): RowKind | null {
  * между днями принадлежит НИЖНЕЙ строке (её верх), над первым днём — линия шапки, под последним — верх MTD.
  *   контур сводки A..L — толстая чёрная рамка (левая грань A, правая грань L; сверху заголовка, снизу MTD);
  *   «дата | данные» — средняя чёрная (B|C в сводке; дата | блогеры в блоке) — с обеих сторон грани;
- *   SKU | SKU — средняя серая (левая грань даты, правая грань дня недели);
+ *   сводка | SKU — правая грань L (контур сводки); первый блок свою левую грань НЕ задаёт (грань не двоится);
+ *   SKU | SKU — средняя серая (левая грань даты = правая грань колонки-разделителя);
+ *   конец цепочки — правая грань последней метрики последнего блока (колонки-разделителя у него нет);
  *   обычная ячейка дня — волосяная светлая сетка (LINE.hair): тело открытое, без «клетки»;
  *   день недели (A, L, смещение 23 блока) — без горизонталей;
  *   шапка блока — тонкая светло-серая; заголовок месяца/блока — средняя чёрная;
@@ -278,7 +281,7 @@ export function rowKindOf(g: MonthGeometry, row: number): RowKind | null {
  */
 export function borderSpec(kind: RowKind, col: number, layout: MonthLayout): BorderSpec | null {
   const B = LINE.black, G = LINE.block, H = LINE.header, L = LINE.hair;
-  const blk = layout.blocks.find((x) => col >= x.start && col < x.start + BLOCK_WIDTH);
+  const blk = blockOfColumn(layout, col);
   const isDay = kind === 'day' || kind === 'dayFirst';
   // Горизонталь дня — верх нижней строки; у первого дня верха нет (линия шапки).
   const dayTop = (strip: boolean): EdgeSpec => (strip || kind === 'dayFirst' ? N : e('THIN', L));
@@ -299,18 +302,25 @@ export function borderSpec(kind: RowKind, col: number, layout: MonthLayout): Bor
   if (!blk) return null;
   const o = col - blk.start;
   const isDate = o === OFFSET.date, isWk = o === OFFSET.weekday;
-  switch (kind) {
-    case 'title': return { top: e('MEDIUM', B), bottom: e('MEDIUM', B), left: isDate ? e('MEDIUM', G) : N, right: isWk ? e('MEDIUM', G) : N };
-    case 'header': return { top: N, bottom: e('THIN', H), left: isDate ? e('MEDIUM', G) : e('THIN', H), right: isWk ? e('MEDIUM', G) : e('THIN', H) };
-    case 'dayFirst':
-    case 'day':
-      if (isWk) return { top: N, bottom: N, left: N, right: e('MEDIUM', G) };
-      if (isDate) return { top: dayTop(false), bottom: N, left: e('MEDIUM', G), right: e('MEDIUM', B) };
-      // Колонка сразу за датой делит с ней грань «дата | данные» — та же средняя чёрная.
-      return { top: dayTop(false), bottom: N, left: o === OFFSET.date + 1 ? e('MEDIUM', B) : e('THIN', L), right: e('THIN', L) };
-    case 'mtd': return { top: e('MEDIUM', G), bottom: e('MEDIUM', G), left: isWk ? N : e('MEDIUM', G), right: e('MEDIUM', G) };
-    case 'plan': return { top: N, bottom: e('MEDIUM', G), left: isDate ? e('MEDIUM', G) : N, right: isWk ? e('MEDIUM', G) : N };
-  }
+  // Грань сводка | SKU принадлежит сводке (правая грань L): первый блок свою левую грань не задаёт.
+  const blockLeft: EdgeSpec = blk.start === SUMMARY_LAST_COLUMN + 1 ? N : e('MEDIUM', G);
+  // Блок закрывает колонка-разделитель; у последнего блока её нет — цепочку закрывает его последняя метрика.
+  const closes = col === blockLastColumn(layout, blk);
+  const spec = ((): BorderSpec => {
+    switch (kind) {
+      case 'title': return { top: e('MEDIUM', B), bottom: e('MEDIUM', B), left: isDate ? blockLeft : N, right: N };
+      case 'header': return { top: N, bottom: e('THIN', H), left: isDate ? blockLeft : e('THIN', H), right: e('THIN', H) };
+      case 'dayFirst':
+      case 'day':
+        if (isWk) return { top: N, bottom: N, left: N, right: N };
+        if (isDate) return { top: dayTop(false), bottom: N, left: blockLeft, right: e('MEDIUM', B) };
+        // Колонка сразу за датой делит с ней грань «дата | данные» — та же средняя чёрная.
+        return { top: dayTop(false), bottom: N, left: o === OFFSET.date + 1 ? e('MEDIUM', B) : e('THIN', L), right: e('THIN', L) };
+      case 'mtd': return { top: e('MEDIUM', G), bottom: e('MEDIUM', G), left: isWk ? N : isDate ? blockLeft : e('MEDIUM', G), right: e('MEDIUM', G) };
+      case 'plan': return { top: N, bottom: e('MEDIUM', G), left: isDate ? blockLeft : N, right: N };
+    }
+  })();
+  return closes ? { ...spec, right: e('MEDIUM', G) } : spec;
 }
 
 const STYLE: Record<EdgeWeight, string> = { NONE: 'NONE', THIN: 'SOLID', MEDIUM: 'SOLID_MEDIUM', THICK: 'SOLID_THICK' };

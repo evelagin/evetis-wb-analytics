@@ -93,6 +93,11 @@ export interface Config {
    * (отдельно от UNITKA_WRITE_ENABLED). По умолчанию — только план (DRY), без записи.
    */
   unitkaMonthPrepWrite: boolean;
+  /**
+   * unitka-month-prep: дописывание нового SKU в УЖЕ СОЗДАННЫЙ текущий месяц (вставка колонок посреди месяца). Отдельное
+   * явное разрешение поверх UNITKA_MONTH_PREP_WRITE: UNITKA_MONTH_PREP_APPEND=1. Без него — только план в журнале.
+   */
+  unitkaMonthPrepAppend: boolean;
 }
 
 type Env = Record<string, string | undefined>;
@@ -132,12 +137,13 @@ function integrityConfig(env: Env): Pick<Config, 'unitkaIntegrityMode' | 'unitka
 }
 
 /** Calendar V2: мягкий разбор. Никогда не бросает ConfigError — опечатка не роняет суточный Engine. */
-function calendarConfig(env: Env): Pick<Config, 'unitkaMonthPrepWindowDays' | 'unitkaMonthPrepTarget' | 'unitkaMonthPrepWrite'> {
+function calendarConfig(env: Env): Pick<Config, 'unitkaMonthPrepWindowDays' | 'unitkaMonthPrepTarget' | 'unitkaMonthPrepWrite' | 'unitkaMonthPrepAppend'> {
   const w = Number((env.UNITKA_MONTH_PREP_WINDOW_DAYS ?? '').trim());
   return {
     unitkaMonthPrepWindowDays: (env.UNITKA_MONTH_PREP_WINDOW_DAYS ?? '').trim() !== '' && Number.isInteger(w) && w >= 0 && w <= 15 ? w : 5,
     unitkaMonthPrepTarget: (env.UNITKA_MONTH_PREP_TARGET ?? '').trim(),
     unitkaMonthPrepWrite: (env.UNITKA_MONTH_PREP_WRITE ?? '').trim() === '1',
+    unitkaMonthPrepAppend: (env.UNITKA_MONTH_PREP_APPEND ?? '').trim() === '1',
   };
 }
 

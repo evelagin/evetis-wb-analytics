@@ -14,7 +14,7 @@ import type { ConditionalFormatRule } from '../src/loaders/unitka/sheets.js';
 
 const blocks = (slots: number[]): BlockSlot[] => slots.map((s, i) => ({ index: i, slot: s, start: slotStart(s), nmId: 100 + i, title: `${100 + i}` }));
 const OCT25 = layoutOf(geometryAt({ year: 2026, month: 10 }, 769), blocks(Array.from({ length: 25 }, (_, i) => i)));
-const ANCHOR = 624; // WZ — колонка якорей после вставки блока 25
+const ANCHOR = 623; // WY — колонка якорей после вставки блока 25 (23 колонки: у последнего блока нет разделителя)
 const formulaOf = (r: ConditionalFormatRule): string => r.booleanRule?.condition.values?.[0]?.userEnteredValue ?? '';
 const bgOf = (r: ConditionalFormatRule): string | null => hexOf(r.booleanRule?.format?.backgroundColor as never);
 const fgOf = (r: ConditionalFormatRule): string | null => hexOf((r.booleanRule?.format?.textFormat as { foregroundColor?: never } | undefined)?.foregroundColor);
@@ -79,13 +79,13 @@ describe('семантика правил: пусто, ноль, положит�
   });
 });
 
-describe('правила УФ октября 2026 (25 блоков сплошь, якоря в WZ)', () => {
+describe('правила УФ октября 2026 (25 блоков сплошь, якоря в WY)', () => {
   const cf = buildConditionalFormats(OCT25, 7, 'SEMICOLON', ANCHOR);
   const rules = cf.rules;
   it('все диапазоны — строки 771..801, только сводка и колонки блоков; резерв не покрыт', () => {
     for (const r of rules) for (const g of r.ranges) {
       expect([g.startRowIndex, g.endRowIndex, g.sheetId]).toEqual([770, 801, 7]);
-      expect(g.endColumnIndex).toBeLessThanOrEqual(612);
+      expect(g.endColumnIndex).toBeLessThanOrEqual(611);   // терминальная колонка WM: колонки-сироты за последним SKU нет
     }
   });
   it('ни одной относительной ссылки на колонку в формулах (независимость от якоря)', () => {
@@ -93,7 +93,7 @@ describe('правила УФ октября 2026 (25 блоков сплошь,
     expect(fs.length).toBeGreaterThan(20);
     for (const f of fs) expect(relativeColumnRefs(fromLocaleFormula(f, 'SEMICOLON'))).toEqual([]);
     expect(relativeColumnRefs('=WEEKDAY(US771,2)>5')).toEqual(['US771']);
-    expect(relativeColumnRefs('=AND($B771<=$WZ$736,INDEX($A771:$WN771,1,COLUMN())<>"")')).toEqual([]);
+    expect(relativeColumnRefs('=AND($B771<=$WY$736,INDEX($A771:$WM771,1,COLUMN())<>"")')).toEqual([]);
   });
   it('выходные: одна формула по дате строки ($B), заливка #fcefe3 на A, B, L и дате/дне недели каждого блока', () => {
     const wk = rules.filter((r) => formulaOf(r).includes('WEEKDAY'));
@@ -101,19 +101,21 @@ describe('правила УФ октября 2026 (25 блоков сплошь,
     expect(formulaOf(wk[0]!)).toBe('=WEEKDAY($B771;2)>5');
     expect(bgOf(wk[0]!)).toBe(COLOR.weekendBg);
     const c = cols(wk[0]!);
-    expect(c).toEqual(expect.arrayContaining([1, 2, 12, 13, 36, 589, 612]));
-    expect(c).toHaveLength(3 + 25 * 2);
+    expect(c).toEqual(expect.arrayContaining([1, 2, 12, 13, 36, 565, 588, 589]));
+    expect(c).not.toContain(612);                         // у последнего блока нет колонки дня недели
+    expect(c).toHaveLength(3 + 25 + 24);
   });
-  it('будущий день — серый текст: после выходных (первое правило побеждает), сводка A..L и весь блок; якорь — WZ', () => {
-    const fut = rules.findIndex((r) => formulaOf(r) === '=$B771>$WZ$736');
+  it('будущий день — серый текст: после выходных (первое правило побеждает), сводка A..L и весь блок; якорь — WY', () => {
+    const fut = rules.findIndex((r) => formulaOf(r) === '=$B771>$WY$736');
     const wk = rules.findIndex((r) => formulaOf(r).includes('WEEKDAY'));
     expect(fut).toBeGreaterThan(wk);
     expect(fgOf(rules[fut]!)).toBe(COLOR.futureFg);
-    expect(cols(rules[fut]!)).toHaveLength(12 + 25 * 24);
+    expect(cols(rules[fut]!)).toHaveLength(12 + 25 * 24 - 1);
+    expect(Math.max(...cols(rules[fut]!))).toBe(611);
     expect(rules.some((r) => formulaOf(r).includes('$WB$736'))).toBe(false);
   });
   it('заливка закрытого дня: закрыт И значение; факт зелёная, цена жёлтая, ставки голубые; стоят после метрических правил', () => {
-    const closed = rules.map((r, i) => [i, r] as const).filter(([, r]) => formulaOf(r) === '=AND($B771<=$WZ$736;INDEX($A771:$WN771;1;COLUMN())<>"")');
+    const closed = rules.map((r, i) => [i, r] as const).filter(([, r]) => formulaOf(r) === '=AND($B771<=$WY$736;INDEX($A771:$WM771;1;COLUMN())<>"")');
     expect(closed.map(([, r]) => bgOf(r))).toEqual([COLOR.factBg, COLOR.manualBg, COLOR.rateBg]);
     const green = cols(closed[0]![1]);
     expect(green).toEqual(expect.arrayContaining([4, 5, 6, 7, 8, 10, 15, 16, 17, 18, 19, 20, 24, 33, 589 + OFFSET.storage]));
@@ -123,8 +125,8 @@ describe('правила УФ октября 2026 (25 блоков сплошь,
     expect(closed[0]![0]).toBeGreaterThan(lastMetric);
   });
   it('уровни: 3 метрики × 4 уровня, первые по приоритету; формула — «эта ячейка» и MAX колонки', () => {
-    const S = 'INDEX($A771:$WN771;1;COLUMN())';
-    const tier4 = [...['0,75', '0,5', '0,25'].map((c) => `=AND(${S}<>"";${S}>${c}*MAX(INDEX($A$771:$WN$801;0;COLUMN())))`), `=AND(${S}<>"";${S}>0)`];
+    const S = 'INDEX($A771:$WM771;1;COLUMN())';
+    const tier4 = [...['0,75', '0,5', '0,25'].map((c) => `=AND(${S}<>"";${S}>${c}*MAX(INDEX($A$771:$WM$801;0;COLUMN())))`), `=AND(${S}<>"";${S}>0)`];
     expect(rules.slice(0, 12).map(formulaOf)).toEqual([...tier4, ...tier4, ...tier4]);
     expect(rules.slice(0, 4).map(bgOf)).toEqual([...COLOR.tierCarts]);
     expect(cols(rules[0]!)).toEqual([7, ...OCT25.blocks.map((b) => b.start + OFFSET.carts)]);
@@ -134,9 +136,9 @@ describe('правила УФ октября 2026 (25 блоков сплошь,
     const t = rules.filter((r) => /<=15\)$/.test(formulaOf(r)) || /<=30\)$/.test(formulaOf(r)) || /<=60\)$/.test(formulaOf(r)) || />60\)$/.test(formulaOf(r)));
     expect(t.map((r) => [bgOf(r), fgOf(r)])).toEqual(COLOR.turnover.map((x) => [...x]));
     const canc = rules.find((r) => formulaOf(r).includes('>=3'))!;
-    expect(formulaOf(canc)).toContain('INDEX($A771:$WN771;1;COLUMN()-2)>0');
+    expect(formulaOf(canc)).toContain('INDEX($A771:$WM771;1;COLUMN()-2)>0');
     expect(cols(canc)).toEqual([8, ...OCT25.blocks.map((b) => b.start + OFFSET.cancels)]);
-    const zo = rules.find((r) => formulaOf(r).endsWith('=0)') && formulaOf(r).includes('$B771<=$WZ$736'))!;
+    const zo = rules.find((r) => formulaOf(r).endsWith('=0)') && formulaOf(r).includes('$B771<=$WY$736'))!;
     expect(bgOf(zo)).toBe(COLOR.zeroOrdersBg);
     expect(cols(zo)).toEqual([6, ...OCT25.blocks.map((b) => b.start + OFFSET.orders)]);
   });
@@ -148,12 +150,13 @@ describe('правила УФ октября 2026 (25 блоков сплошь,
     expect(rules).toHaveLength(108);
     expect(cfRequests(cf, 7, 154).map((r) => (r.addConditionalFormatRule as { index: number }).index)).toEqual(rules.map((_, i) => 154 + i));
   });
-  it('идиомы и ширина: последняя колонка секции — WN для 25 блоков, XL для 26; якорь по параметру', () => {
-    expect(cfIdioms(OCT25, ANCHOR).SELF).toBe('INDEX($A771:$WN771,1,COLUMN())');
-    expect(cfIdioms(OCT25, ANCHOR).CLOSED).toBe('$B771<=$WZ$736');
+  it('идиомы и ширина: последняя колонка секции — WM для 25 блоков, XK для 26; якорь по параметру', () => {
+    expect(cfIdioms(OCT25, ANCHOR).SELF).toBe('INDEX($A771:$WM771,1,COLUMN())');
+    expect(cfIdioms(OCT25, ANCHOR).CLOSED).toBe('$B771<=$WY$736');
     const l26 = layoutOf(geometryAt({ year: 2026, month: 10 }, 769), blocks(Array.from({ length: 26 }, (_, i) => i)));
-    expect(cfIdioms(l26, 648).COLMAX).toBe(`MAX(INDEX($A$771:$${colA1(636)}$801,0,COLUMN()))`);
-    expect(buildConditionalFormats(l26, 7, 'COMMA', 648).rules).toHaveLength(108 + 3);
+    expect(cfIdioms(l26, 647).COLMAX).toBe(`MAX(INDEX($A$771:$${colA1(635)}$801,0,COLUMN()))`);
+    expect(colA1(635)).toBe('XK');
+    expect(buildConditionalFormats(l26, 7, 'COMMA', 647).rules).toHaveLength(108 + 3);
   });
   it('февраль 2027 (28 дней) и 24 блока: строки 910..937', () => {
     const feb = layoutOf(geometryAt({ year: 2027, month: 2 }, 908), blocks(Array.from({ length: 24 }, (_, i) => i)));
@@ -164,15 +167,17 @@ describe('правила УФ октября 2026 (25 блоков сплошь,
   });
 });
 
-describe('контракт границ (borderSpec): тело дня лёгкое — волосяная светлая сетка; чёрные и серые линии только у смысловых разделителей', () => {
+describe('контракт границ (borderSpec): лёгкое тело дня, один владелец у каждой грани, сводка | SKU, терминальный блок', () => {
   const g = OCT25;
+  const END = g.lastBlockColumn;          // 611 (WM) — последняя метрика блока 25
   type K = 'title' | 'header' | 'dayFirst' | 'day' | 'mtd' | 'plan';
   const KINDS: K[] = ['title', 'header', 'dayFirst', 'day', 'mtd', 'plan'];
   const SIDES = ['top', 'bottom', 'left', 'right'] as const;
   const w = (k: K, c: number) => { const s = borderSpec(k, c, g)!; return [s.top.w, s.bottom.w, s.left.w, s.right.w].join('/'); };
-  it('строки секции по типу (первый день — отдельный тип: над ним линия шапки); вне блоков и сводки — нет контракта', () => {
+  it('строки секции по типу; вне раскладки — нет контракта (в т.ч. колонка за последней метрикой последнего SKU)', () => {
     expect([769, 770, 771, 772, 801, 802, 803, 768, 804].map((r) => rowKindOf(g, r))).toEqual(['title', 'header', 'dayFirst', 'day', 'day', 'mtd', 'plan', null, null]);
-    expect(borderSpec('day', 613, g)).toBeNull(); // хвост книги
+    expect(END).toBe(611);
+    for (const k of KINDS) { expect(borderSpec(k, 612, g)).toBeNull(); expect(borderSpec(k, 613, g)).toBeNull(); }
     expect(SUMMARY_LAST_COLUMN).toBe(12);
   });
   it('сводка: контур A..L толстый, B|C — средний разделитель; внутренние горизонтали дня — волосяные сверху; A и L без горизонталей', () => {
@@ -181,7 +186,7 @@ describe('контракт границ (borderSpec): тело дня лёгко
     expect(w('day', 3)).toBe('THIN/NONE/MEDIUM/THIN');
     expect(w('day', 11)).toBe('THIN/NONE/THIN/THIN');
     expect(w('day', 12)).toBe('NONE/NONE/THIN/THICK');
-    expect(w('dayFirst', 2)).toBe('NONE/NONE/THIN/MEDIUM');   // над первым днём — линия шапки, своей нет
+    expect(w('dayFirst', 2)).toBe('NONE/NONE/THIN/MEDIUM');
     expect(w('header', 12)).toBe('MEDIUM/MEDIUM/THIN/THICK');
     expect(w('mtd', 1)).toBe('MEDIUM/THICK/THICK/THIN');
     expect(w('mtd', 12)).toBe('MEDIUM/THICK/THIN/THICK');
@@ -189,12 +194,22 @@ describe('контракт границ (borderSpec): тело дня лёгко
     expect(w('title', 12)).toBe('THICK/MEDIUM/NONE/THICK');
     expect(w('plan', 12)).toBe('NONE/MEDIUM/NONE/MEDIUM');
   });
-  it('блок: дата — серая средняя слева и чёрная средняя справа (дата | данные), тело — волосяная сетка, день недели — только правая средняя; блок 25 = блок 1', () => {
-    for (const st of [13, 589]) {
+  it('F1 · граница сводка → SKU: грань L|M принадлежит сводке (правая грань L), у первого блока своей левой грани нет', () => {
+    for (const k of KINDS) {
+      const L = borderSpec(k, 12, g)!.right, M = borderSpec(k, 13, g)!.left;
+      expect(M).toEqual({ w: 'NONE' });                                          // не двойная: блок 1 грань не задаёт
+      expect(L.w).not.toBe('NONE');                                             // и не пропавшая
+      expect(L).toEqual(k === 'plan' ? { w: 'MEDIUM', color: LINE.block } : { w: 'THICK', color: LINE.black });
+    }
+    // у остальных блоков левая грань даты — их собственная граница SKU | SKU (она совпадает с правой гранью разделителя).
+    for (const k of KINDS.filter((x) => x !== 'plan')) expect(borderSpec(k, 37, g)!.left).toEqual({ w: 'MEDIUM', color: LINE.block });
+  });
+  it('блок: дата — средняя чёрная справа (дата | данные), тело — волосяная сетка, разделитель — только правая средняя серая', () => {
+    for (const st of [37, 565]) {
       expect(w('day', st)).toBe('THIN/NONE/MEDIUM/MEDIUM');
       expect(borderSpec('day', st, g)!.left.color).toBe(LINE.block);
       expect(borderSpec('day', st, g)!.right.color).toBe(LINE.black);
-      expect(w('day', st + OFFSET.bloggers)).toBe('THIN/NONE/MEDIUM/THIN');       // левая грань = тот же разделитель дата | данные
+      expect(w('day', st + OFFSET.bloggers)).toBe('THIN/NONE/MEDIUM/THIN');
       expect(borderSpec('day', st + OFFSET.bloggers, g)!.left).toEqual(borderSpec('day', st, g)!.right);
       expect(w('day', st + OFFSET.views)).toBe('THIN/NONE/THIN/THIN');
       expect(w('dayFirst', st + OFFSET.views)).toBe('NONE/NONE/THIN/THIN');
@@ -206,13 +221,33 @@ describe('контракт границ (borderSpec): тело дня лёгко
       expect(w('plan', st)).toBe('NONE/MEDIUM/MEDIUM/NONE');
       expect(w('title', st)).toBe('MEDIUM/MEDIUM/MEDIUM/NONE');
     }
-    for (const k of KINDS) expect(Array.from({ length: 24 }, (_, o) => borderSpec(k, 13 + o, g))).toEqual(Array.from({ length: 24 }, (_, o) => borderSpec(k, 589 + o, g)));
+    // все «средние» блоки одинаковы; первый отличается только левой гранью (она у сводки), последний — только концом.
+    for (const k of KINDS) {
+      expect(Array.from({ length: 24 }, (_, o) => borderSpec(k, 37 + o, g))).toEqual(Array.from({ length: 24 }, (_, o) => borderSpec(k, 565 + o, g)));
+      expect(Array.from({ length: 23 }, (_, o) => borderSpec(k, 14 + o, g))).toEqual(Array.from({ length: 23 }, (_, o) => borderSpec(k, 38 + o, g)));
+      expect(Array.from({ length: 22 }, (_, o) => borderSpec(k, 589 + o, g))).toEqual(Array.from({ length: 22 }, (_, o) => borderSpec(k, 37 + o, g)));
+    }
+  });
+  it('F2 · терминальный блок: цепочку закрывает правая грань ПОСЛЕДНЕЙ МЕТРИКИ (средняя серая), колонки дня недели после неё нет', () => {
+    for (const k of KINDS) {
+      expect(borderSpec(k, END, g)!.right).toEqual({ w: 'MEDIUM', color: LINE.block });
+      expect(borderSpec(k, END + 1, g)).toBeNull();
+    }
+    // у не-последнего блока последняя метрика закрыта волосяной/обычной линией, а блок закрывает разделитель.
+    expect(borderSpec('day', 565 + 22, g)!.right).toEqual({ w: 'THIN', color: LINE.hair });
+    expect(borderSpec('day', 565 + 23, g)!.right).toEqual({ w: 'MEDIUM', color: LINE.block });
+    for (const n of [1, 24, 26]) {
+      const l = layoutOf(geometryAt({ year: 2026, month: 10 }, 769), blocks(Array.from({ length: n }, (_, i) => i)));
+      const end = slotStart(n - 1) + 22;
+      expect(l.lastBlockColumn).toBe(end);
+      for (const k of KINDS) { expect(borderSpec(k, end, l)!.right).toEqual({ w: 'MEDIUM', color: LINE.block }); expect(borderSpec(k, end + 1, l)).toBeNull(); }
+    }
   });
   it('тело дня: каждая ТОНКАЯ линия — светлая волосяная; сильные линии — ровно смысловые разделители, и больше нигде', () => {
     expect(LINE.hair).toBe('#d9d9d9');
     for (const k of ['dayFirst', 'day'] as const) {
       const strong: string[] = [];
-      for (let c = 1; c <= 612; c++) {
+      for (let c = 1; c <= END; c++) {
         const s = borderSpec(k, c, g)!;
         for (const side of SIDES) {
           const x = s[side];
@@ -222,10 +257,11 @@ describe('контракт границ (borderSpec): тело дня лёгко
         }
       }
       const want = [
-        `1:left:THICK:${LINE.black}`, `12:right:THICK:${LINE.black}`,           // контур сводки
+        `1:left:THICK:${LINE.black}`, `12:right:THICK:${LINE.black}`,           // контур сводки (он же граница сводка | SKU)
         `2:right:MEDIUM:${LINE.black}`, `3:left:MEDIUM:${LINE.black}`,          // дата | данные сводки
-        ...g.blocks.flatMap((b) => [
-          `${b.start}:left:MEDIUM:${LINE.block}`, `${b.start + 23}:right:MEDIUM:${LINE.block}`,                 // SKU | SKU
+        ...g.blocks.flatMap((b, i) => [
+          ...(i === 0 ? [] : [`${b.start}:left:MEDIUM:${LINE.block}`]),                                          // SKU | SKU (у первого — грань сводки)
+          i === g.blocks.length - 1 ? `${b.start + 22}:right:MEDIUM:${LINE.block}` : `${b.start + 23}:right:MEDIUM:${LINE.block}`,
           `${b.start}:right:MEDIUM:${LINE.black}`, `${b.start + 1}:left:MEDIUM:${LINE.black}`,                  // дата | данные блока
         ]),
       ];
@@ -233,28 +269,27 @@ describe('контракт границ (borderSpec): тело дня лёгко
     }
   });
   it('день не получает ни одной линии снизу и ни одной средней/толстой сверху: горизонталь принадлежит нижней строке, последнюю закрывает MTD', () => {
-    for (let c = 1; c <= 612; c++) for (const k of ['dayFirst', 'day'] as const) {
+    for (let c = 1; c <= END; c++) for (const k of ['dayFirst', 'day'] as const) {
       const s = borderSpec(k, c, g)!;
       expect(s.bottom.w).toBe('NONE');
       expect(['NONE', 'THIN']).toContain(s.top.w);
     }
-    for (let c = 1; c <= 612; c++) expect(borderSpec('dayFirst', c, g)!.top.w).toBe('NONE');
+    for (let c = 1; c <= END; c++) expect(borderSpec('dayFirst', c, g)!.top.w).toBe('NONE');
   });
-  it('у общей грани один владелец: соседние ячейки не задают одну грань по-разному (исключение — контур сводки L | блок 1)', () => {
+  it('у общей грани один владелец — БЕЗ исключений (грань L|M больше не задаётся дважды)', () => {
     const same = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b);
     const vertical: Array<[K, K]> = [['title', 'header'], ['header', 'dayFirst'], ['dayFirst', 'day'], ['day', 'day'], ['day', 'mtd'], ['mtd', 'plan']];
-    for (const [up, down] of vertical) for (let c = 1; c <= 612; c++) {
+    for (const [up, down] of vertical) for (let c = 1; c <= END; c++) {
       const a = borderSpec(up, c, g)!.bottom, b = borderSpec(down, c, g)!.top;
       expect(a.w === 'NONE' || b.w === 'NONE' || same(a, b), `${up}→${down} колонка ${c}`).toBe(true);
     }
-    for (const k of KINDS) for (let c = 1; c < 612; c++) {
-      if (c === SUMMARY_LAST_COLUMN) continue;
+    for (const k of KINDS) for (let c = 1; c < END; c++) {
       const a = borderSpec(k, c, g)!.right, b = borderSpec(k, c + 1, g)!.left;
       expect(a.w === 'NONE' || b.w === 'NONE' || same(a, b), `${k} колонки ${c}|${c + 1}`).toBe(true);
     }
   });
   it('шапка, MTD и строка плана сохраняют структуру (не волосяные); JSON — все четыре стороны явно', () => {
-    for (let c = 1; c <= 612; c++) for (const k of ['title', 'header', 'mtd', 'plan'] as const) {
+    for (let c = 1; c <= END; c++) for (const k of ['title', 'header', 'mtd', 'plan'] as const) {
       const s = borderSpec(k, c, g)!;
       for (const side of SIDES) expect(s[side].color === LINE.hair).toBe(false);
     }
@@ -263,6 +298,11 @@ describe('контракт границ (borderSpec): тело дня лёгко
     expect(j.bottom).toEqual({ style: 'NONE' });
     expect(j.top!.style).toBe('SOLID');
     expect(j.top!.colorStyle!.rgbColor.red).toBeCloseTo(0xd9 / 255, 5);
-    expect((bordersJson(borderSpec('day', 13, g)!) as Record<string, { style: string }>).left!.style).toBe('SOLID_MEDIUM');
+    expect((bordersJson(borderSpec('day', 37, g)!) as Record<string, { style: string }>).left!.style).toBe('SOLID_MEDIUM');
+  });
+  it('семантика колонок: у последнего блока нет колонки «день недели»', () => {
+    expect(columnKind(565 + 23, g)).toBe('weekday');
+    expect(columnKind(589 + 22, g)).toBe('calc');
+    expect(columnKind(589 + 23, g)).toBeNull();
   });
 });
