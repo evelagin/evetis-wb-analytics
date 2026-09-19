@@ -8,7 +8,7 @@
 import { OFFSET, SUMMARY, isoToSerial, addDaysIso, type CellValue } from '../src/loaders/unitka/model.js';
 import { BLOCK_WIDTH, dayRowOf, geometryAt, slotStart, type MonthGeometry, type MonthKey } from '../src/loaders/unitka/calendar.js';
 import { DATE_HEADER, MTD_LABEL, type Snapshot } from '../src/loaders/unitka/plan.js';
-import { blockDayFormulas, blockProjectionFormulas, blockMtdFormulas, summaryDayFormulas, summaryMtdFormulas, type BlockFormulaParams } from '../src/loaders/unitka/formulas.js';
+import { blockDayFormulas, blockProjectionFormulas, blockMtdFormulas, summaryDayFormulas, summaryMtdFormulas, type BlockFormulaParams, type MtdStockFamily } from '../src/loaders/unitka/formulas.js';
 import type { MonthPrepPlan } from '../src/loaders/unitka/monthprep.js';
 import type { CogsSnapshot } from '../src/loaders/unitka/integrity.js';
 
@@ -31,13 +31,16 @@ export const SUMMARY_HEADERS: Array<[number, string]> = [[2, DATE_HEADER], [3, '
 
 export interface SpecBlock { slot: number; nmId: number; title: string; params: Omit<BlockFormulaParams, 'start'> }
 
-/** Параметры сентябрьских блоков как в живом листе: блок 1 — +100, проекции с обёрткой; прочие — +10, проекция остатка без обёртки. */
-export function septemberSpec(): SpecBlock[] {
+/**
+ * Параметры сентябрьских блоков как в живом листе: блок 1 — +100, проекции с обёрткой; прочие — +10, проекция остатка без
+ * обёртки. Остаток MTD — семейство production-книги (native); копия книги держит wrapped (см. unitka_mtd_stock_family).
+ */
+export function septemberSpec(mtdStockFamily: MtdStockFamily = 'native'): SpecBlock[] {
   return SEPT_NMS.map((nm, i) => ({
     slot: i, nmId: nm, title: `${nm} Товар ${i + 1}`,
     params: i === 0
-      ? { cogsTerm: SEPT_COGS[i]!, overhead: '100', stockProjection: 'guarded', storageProjection: 'guarded' }
-      : { cogsTerm: SEPT_COGS[i]!, overhead: '10', stockProjection: 'plain', storageProjection: 'none' },
+      ? { cogsTerm: SEPT_COGS[i]!, overhead: '100', stockProjection: 'guarded', storageProjection: 'guarded', mtdStockFamily }
+      : { cogsTerm: SEPT_COGS[i]!, overhead: '10', stockProjection: 'plain', storageProjection: 'none', mtdStockFamily },
   }));
 }
 
@@ -87,7 +90,7 @@ export function sectionFromSpec(key: MonthKey, topRow: number, spec: readonly Sp
   }
   for (const [c, f] of summaryMtdFormulas(g, lastSlot)) setFormula(s, g.mtdRow, c, f);
   setVal(s, g.mtdRow, firstStart + OFFSET.date, MTD_LABEL);
-  for (const b of spec) for (const [o, f] of blockMtdFormulas(slotStart(b.slot), g)) setFormula(s, g.mtdRow, slotStart(b.slot) + o, f);
+  for (const b of spec) for (const [o, f] of blockMtdFormulas(slotStart(b.slot), g, b.params.mtdStockFamily)) setFormula(s, g.mtdRow, slotStart(b.slot) + o, f);
   return s;
 }
 

@@ -6,6 +6,10 @@
  *   Запись — только ENVIRONMENT=prod И UNITKA_MONTH_PREP_WRITE=1 (отдельный от UNITKA_WRITE_ENABLED
  *   гейт): один spreadsheets.batchUpdate, затем повторное чтение и проверка контракта секции.
  *   В shadow шлюз readonly: структурная запись отказывает до HTTP.
+ *   МАНИФЕСТ ОТКАТА (monthrollback.ts) строится из плана и состояния листа ДО записи и пишется в журнал и в режиме плана, и
+ *   перед записью. Запись создания месяца требует UNITKA_MONTH_PREP_MANIFEST_DIGEST = отпечатку манифеста из ранее
+ *   выполненного плана: пишется ровно просмотренный план, а манифест отката существует до записи. DRY_RUN=1 запрещает
+ *   любую структурную запись независимо от прочих флагов.
  *   Месяц уже есть, а у активного SKU нет блока → план ДОПИСЫВАНИЯ (monthappend.ts): только в текущий месяц LCD, только
  *   при остатке > 0 или заказах > 0 в этом месяце; запись — дополнительно UNITKA_MONTH_PREP_APPEND=1.
  * Phase 2B: загрузчик не активирован — нет расписания, нет шага в deploy-*.yml.
@@ -19,15 +23,16 @@ import { formatMonthKey, geometryAt, locateSection, monthKeyOf, nextMonth, parse
 import { readColumnA, readSnapshot } from './section.js';
 import { planMonthPrep, templateRowsOf, toStructureRequests, type MonthPrepPlan } from './monthprep.js';
 import { planMonthAppend } from './monthappend.js';
+import { buildRollbackManifest, encodeManifest } from './monthrollback.js';
 import { defaultUnitkaDeps, ENGINE_VERSION, type UnitkaDeps } from './index.js';
 import type { Snapshot } from './plan.js';
 import type { SheetsGateway, SheetMeta } from './sheets.js';
 
 export const MONTH_PREP_VERSION = `${ENGINE_VERSION}+month-prep`;
 
-/** Запись разрешена ТОЛЬКО так. Суточный UNITKA_WRITE_ENABLED сюда не входит. */
-export function monthPrepWriteAllowed(config: { environment: string; unitkaMonthPrepWrite?: boolean }): boolean {
-  return config.environment === 'prod' && config.unitkaMonthPrepWrite === true;
+/** Запись разрешена ТОЛЬКО так. Суточный UNITKA_WRITE_ENABLED сюда не входит. DRY_RUN=1 запись запрещает всегда. */
+export function monthPrepWriteAllowed(config: { environment: string; unitkaMonthPrepWrite?: boolean; unitkaDryRun?: boolean }): boolean {
+  return config.environment === 'prod' && config.unitkaMonthPrepWrite === true && config.unitkaDryRun !== true;
 }
 
 async function sectionSnapshot(sheets: SheetsGateway, sheetName: string, columnA: readonly unknown[], meta: SheetMeta, key: MonthKey): Promise<Snapshot | null> {
@@ -44,6 +49,8 @@ function planLog(plan: MonthPrepPlan): Record<string, unknown> {
     section: plan.geometry ? { top: plan.geometry.topRow, first: plan.geometry.firstDailyRow, last: plan.geometry.lastDailyRow, mtd: plan.geometry.mtdRow, spacer: plan.geometry.spacerRow, days: plan.geometry.daysInMonth } : null,
     predecessor: plan.predecessor,
     blocks: plan.blocks.map((b) => ({ slot: b.slot, nm_id: b.nmId, origin: b.origin, cogs: b.params.cogsTerm })),
+    // Семейство формулы остатка MTD, перенесённое из месяца-источника (production: native; копия книги: wrapped).
+    mtd_stock_family: plan.blocks.reduce<Record<string, number>>((m, b) => { m[b.params.mtdStockFamily] = (m[b.params.mtdStockFamily] ?? 0) + 1; return m; }, {}),
     retired: plan.retiredNmIds, unmapped_active: plan.unmappedActive,
     append_rows: plan.appendRows, insert_columns: plan.insertColumns, anchor_col: plan.anchorCol, chain_gaps: plan.chainGaps, cf_trims: plan.cfTrims.length, width_upgrades: plan.widthUpgrades, row_heights: plan.rowHeights, tail_group_detached: plan.tailGroupDetachedColumn, groups: plan.groupRequests.length,
     cells: plan.cells.length, format_copies: plan.formatCopies.length, merges: plan.merges.length,
@@ -123,15 +130,29 @@ export async function unitkaMonthPrepLoader(ctx: LoaderContext, deps: UnitkaDeps
   if (plan.status !== 'PLAN_CREATE') {
     throw new LoaderError(`подготовка ${formatMonthKey(target)}: ${plan.status} ${plan.code ?? ''} — ${plan.reasons.slice(0, 5).join(' | ')}`, plan.code ?? plan.status);
   }
+  // Манифест отката — ДО любой записи: из плана и состояния листа, прочитанного для этого плана.
+  const requests = toStructureRequests(plan, meta.sheetId);
+  if (!structure) throw new LoaderError('структура листа не прочитана — манифест отката не построить', 'STRUCTURE_UNAVAILABLE');
+  const manifest = buildRollbackManifest({
+    plan, meta, structure, spreadsheetId: config.unitkaSpreadsheetId, sheetName: sheet, requests: requests.length,
+    engine: MONTH_PREP_VERSION, gitSha: config.gitSha, now: deps.now(),
+  });
+  log.info('unitka_month_prep_rollback_manifest', { target: plan.target, digest: manifest.digest, manifest, manifest_b64: encodeManifest(manifest) });
   if (!write) {
-    log.info('unitka_month_prep_dry', { target: plan.target, requests: toStructureRequests(plan, meta.sheetId).length, note: 'DRY: запись не выполнялась' });
+    log.info('unitka_month_prep_dry', { target: plan.target, requests: requests.length, rollback_manifest_digest: manifest.digest, note: 'DRY: запись не выполнялась' });
     return { rowsFetched: population.length, rowsLoaded: 0 };
+  }
+  // Пишем только просмотренный план: отпечаток манифеста из плана обязан совпасть с манифестом этой записи.
+  if (!config.unitkaMonthPrepManifestDigest) {
+    throw new LoaderError('запись создания месяца требует UNITKA_MONTH_PREP_MANIFEST_DIGEST — отпечатка манифеста отката из ранее выполненного плана', 'MONTH_PREP_MANIFEST_DIGEST_REQUIRED');
+  }
+  if (config.unitkaMonthPrepManifestDigest !== manifest.digest) {
+    throw new LoaderError(`манифест отката этой записи (${manifest.digest}) не совпадает с предъявленным (${config.unitkaMonthPrepManifestDigest}): книга или план изменились после просмотра — повторите план`, 'MONTH_PREP_MANIFEST_DIGEST_MISMATCH');
   }
 
   // WRITE: один атомарный batchUpdate → повторное чтение → контракт секции.
-  const requests = toStructureRequests(plan, meta.sheetId);
   const applied = await sheets.structureWrite(requests);
-  log.info('unitka_month_prep_written', { spreadsheet_id: config.unitkaSpreadsheetId, sheet_id: meta.sheetId, target: plan.target, requests: requests.length, applied });
+  log.info('unitka_month_prep_written', { spreadsheet_id: config.unitkaSpreadsheetId, sheet_id: meta.sheetId, target: plan.target, requests: requests.length, applied, rollback_manifest_digest: manifest.digest });
   const meta2 = await sheets.readSheetMeta(sheet);
   const colA2 = await readColumnA(sheets, sheet, meta2.rowCount);
   const after = await sectionSnapshot(sheets, sheet, colA2, meta2, target);

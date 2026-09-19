@@ -30,7 +30,7 @@ import { cellAt, formulaAt, isFormula, validateSection, MTD_LABEL, type Snapshot
 import { parseCogsTerm, type CogsSnapshot } from './integrity.js';
 import {
   blockDayFormulas, blockProjectionFormulas, blockMtdFormulas, summaryDayFormulas, summaryMtdFormulas, normFormula,
-  formulaStyleOf, fromLocaleFormula, toLocaleFormula,
+  formulaStyleOf, fromLocaleFormula, toLocaleFormula, recogniseMtdStock,
   type BlockFormulaParams, type FormulaStyle,
 } from './formulas.js';
 import type { RawCellFormat, SheetMeta, SheetStructure, StructureRequest } from './sheets.js';
@@ -217,7 +217,12 @@ export function extractPredecessorParams(pred: Snapshot, layout: MonthLayout, st
     const cogsTerm = t.text; // «240», «159.3» или «$R$45» — ровно как в формуле прошлого месяца
     const overhead = overheadOf(String(fAt(row, b.start + OFFSET.adsOut) ?? ''), cogsTerm);
     if (overhead === null) { mismatches.push(`${colA1(b.start + OFFSET.adsOut)}${row} Y`); continue; }
-    const base: BlockFormulaParams = { start: b.start, cogsTerm, overhead, stockProjection: 'none', storageProjection: 'none' };
+    // Остаток MTD — узкий семантический контракт (formulas.recogniseMtdStock): production держит родную форму INDEX/MATCH,
+    // копия книги — ту же формулу в обёртке ARRAY_CONSTRAIN(ARRAYFORMULA(…), 1, 1). Семейство переносится в новый месяц.
+    const mtdStock = recogniseMtdStock(fAt(g.mtdRow, b.start + OFFSET.stock) ?? cellAt(pred, g.mtdRow, b.start + OFFSET.stock), b.start, g);
+    if ('issue' in mtdStock) mismatches.push(`${colA1(b.start + OFFSET.stock)}${g.mtdRow} остаток MTD: ${mtdStock.issue} (${mtdStock.detail})`);
+    const mtdStockFamily = 'family' in mtdStock ? mtdStock.family : 'native';
+    const base: BlockFormulaParams = { start: b.start, cogsTerm, overhead, stockProjection: 'none', storageProjection: 'none', mtdStockFamily };
     const guardedStock = blockProjectionFormulas({ ...base, stockProjection: 'guarded' }, row, false).get(OFFSET.stock)!;
     const plainStock = blockProjectionFormulas({ ...base, stockProjection: 'plain' }, row, false).get(OFFSET.stock)!;
     const st = projectionStyle(fAt(row, b.start + OFFSET.stock), guardedStock, plainStock);
@@ -232,7 +237,7 @@ export function extractPredecessorParams(pred: Snapshot, layout: MonthLayout, st
       if (off === OFFSET.weekday && b.slot === lastSlot && isEmpty(fAt(row, b.start + off) ?? cellAt(pred, row, b.start + off))) continue;
       check(row, b.start + off, f);
     }
-    for (const [off, f] of blockMtdFormulas(b.start, g)) check(g.mtdRow, b.start + off, f);
+    for (const [off, f] of blockMtdFormulas(b.start, g, mtdStockFamily)) if (off !== OFFSET.stock) check(g.mtdRow, b.start + off, f);
     params.set(b.nmId, p);
   }
   const first = layout.blocks[0];
@@ -347,7 +352,8 @@ export function planMonthPrep(inp: PrepInputs): MonthPrepPlan {
       index: blocks.length, slot, start, nmId: p.nmId, title: `${p.nmId} ${p.name ?? ''}`.trim(), origin: 'NEW',
       // Шаблон — последний перенесённый блок (сентябрь: блок 24 — константа 10, без проекции хранения).
       // Единственное новое — COGS из канона. Проекция остатка — с защитой LCD, как у всех блоков месяца.
-      params: { start, cogsTerm: cogsLiteral(c.cogs), overhead: tmpl.overhead, stockProjection: GENERATED_STOCK_PROJECTION, storageProjection: 'none' },
+      // Семейство формулы остатка MTD — как у блока-шаблона: месяц-источник авторитетен (production — native).
+      params: { start, cogsTerm: cogsLiteral(c.cogs), overhead: tmpl.overhead, stockProjection: GENERATED_STOCK_PROJECTION, storageProjection: 'none', mtdStockFamily: tmpl.mtdStockFamily },
       cogsProvenance: c,
     });
   }
@@ -403,7 +409,7 @@ export function planMonthPrep(inp: PrepInputs): MonthPrepPlan {
   // MTD.
   for (const [col, f] of summaryMtdFormulas(g, lastSlot)) fml(g.mtdRow, col, f);
   put(g.mtdRow, blocks[0]!.start + OFFSET.date, { kind: 'string', value: MTD_LABEL });
-  for (const b of blocks) for (const [off, f] of blockMtdFormulas(b.start, g)) fml(g.mtdRow, b.start + off, f);
+  for (const b of blocks) for (const [off, f] of blockMtdFormulas(b.start, g, b.params.mtdStockFamily)) fml(g.mtdRow, b.start + off, f);
   // Происхождение COGS нового блока — заметка на AI первого дня (видна в листе, по-русски).
   for (const b of blocks) {
     const p = b.cogsProvenance;

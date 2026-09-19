@@ -105,6 +105,11 @@ SELECT * FROM `wb_mart.V_UNITKA_ENGINE_STATUS`;
 `unitka-engine-prod` (`ENVIRONMENT=prod`, `UNITKA_WRITE_ENABLED=1`) такой прогон **пишет в книгу**. Прогон без
 записи — только `unitka-engine-shadow` (readonly-scope Sheets) или `UNITKA_WRITE_ENABLED=0`.
 
+Исключение — структурные записи Calendar V2: для `unitka-month-prep` и `unitka-month-rollback` `DRY_RUN=1` запись
+ЗАПРЕЩАЕТ (шлюз readonly) независимо от `UNITKA_MONTH_PREP_WRITE` / `UNITKA_MONTH_ROLLBACK_WRITE`. План этих загрузчиков
+на prod-job запускать именно с `DRY_RUN=1`: без него прогон берёт часовой lease (`LOADER_RUNS`), и запись в тот же час
+МСК завершится `guard_skip`, не начавшись.
+
 ## 5b. Integrity Guard V1 (`UNITKA_INTEGRITY_MODE`)
 
 Полный контракт — `UNITKA_INTEGRITY_GUARD_V1.md`. Кратко для оператора:
@@ -138,8 +143,30 @@ SELECT * FROM `wb_mart.V_UNITKA_ENGINE_STATUS`;
 * SKU выводить из `REF_SKU_MASTER` только с 1-го числа: посреди месяца Engine упадёт `BLOCK_MISSING` (V1).
 * Внешний вид нового месяца — визуальный контракт `visual.ts` (`docs/UNITKA_CALENDAR_V2.md` §8): пустые будущие
   дни без заливки, заливка закрытого дня и выходные — правилами УФ месяца; правила прошлого месяца не копируются.
-* Откат созданного месяца: `planMonthRollback` (`monthprep_struct.ts`) — удалить правила УФ новой секции, добавленные
-  колонки (если пусты выше секции) и строки секции; затем сверить книгу с предснимком (Phase 2C).
+* **Манифест отката и запись.** План пишет событие `unitka_month_prep_rollback_manifest` (`digest`, `manifest`,
+  `manifest_b64`). Запись создания месяца требует `UNITKA_MONTH_PREP_MANIFEST_DIGEST=<digest из плана>`; без него —
+  `MONTH_PREP_MANIFEST_DIGEST_REQUIRED`, при расхождении (книга или план изменились) — `_MISMATCH`, 0 изменений листа.
+  Порядок: план (`DRY_RUN=1`) → просмотр → запись с отпечатком → сохранить `manifest_b64`.
+  ```
+  gcloud run jobs execute unitka-engine-prod --region europe-west1 --args=unitka-month-prep --wait \
+    --update-env-vars=DRY_RUN=1,UNITKA_MONTH_PREP_TARGET=YYYY-MM                       # план, 0 записей
+  gcloud run jobs execute unitka-engine-prod --region europe-west1 --args=unitka-month-prep --wait \
+    --update-env-vars=UNITKA_MONTH_PREP_TARGET=YYYY-MM,UNITKA_MONTH_PREP_WRITE=1,UNITKA_MONTH_PREP_MANIFEST_DIGEST=<digest>
+  ```
+* **Откат созданного месяца — загрузчик `unitka-month-rollback`** (`docs/UNITKA_CALENDAR_V2.md` §10b): по манифесту, одним
+  `batchUpdate`, fail-closed (`ROLLBACK_*`), затем сверка структуры с состоянием «до». План — без `…_WRITE` или с
+  `DRY_RUN=1`; исполнение — только решение владельца:
+  ```
+  gcloud run jobs execute unitka-engine-prod --region europe-west1 --args=unitka-month-rollback --wait \
+    --update-env-vars=DRY_RUN=1,UNITKA_MONTH_PREP_TARGET=YYYY-MM,UNITKA_MONTH_ROLLBACK_MANIFEST=<manifest_b64>   # план
+  gcloud run jobs execute unitka-engine-prod --region europe-west1 --args=unitka-month-rollback --wait \
+    --update-env-vars=UNITKA_MONTH_PREP_TARGET=YYYY-MM,UNITKA_MONTH_ROLLBACK_WRITE=1,UNITKA_MONTH_ROLLBACK_MANIFEST=<manifest_b64>
+  ```
+  Откат отказывает, если после создания дописан SKU, появился следующий месяц, сдвинут якорь, изменены правила УФ
+  секции, введены СПП/блогеры (`ROLLBACK_MANUAL_DATA_PRESENT`) или вставленные колонки непусты выше секции.
+* `TEMPLATE_MISMATCH … остаток MTD: MTD_STOCK_*` — ячейка остатка MTD прошлого месяца вне контракта (§10a документа):
+  принимаются только родная форма `IFERROR(INDEX(…;MATCH(LAST_CLOSED_DATE;…;0));"")` и та же формула в обёртке
+  `ARRAY_CONSTRAIN(ARRAYFORMULA(…); 1; 1)` со ссылками своего блока и месяца. Новый месяц получает семейство источника.
 * Дополнительные отказы Phase 2C: `UNSUPPORTED_LOCALE`, `STRUCTURE_UNAVAILABLE`, `TEMPLATE_FORMATS_UNAVAILABLE`.
 * **Порядок выката: ENGINE 2.0 DEPLOYMENT MUST PRECEDE PRODUCTION MONTH PREP.** Подготовка месяца с новым SKU сдвигает
   якоря книги (WB → WZ); Engine 1.1.0 и наследие Apps Script пишут в колонку 600 константой — после вставки колонок
@@ -148,7 +175,6 @@ SELECT * FROM `wb_mart.V_UNITKA_ENGINE_STATUS`;
   `unitka_month_append_plan`; запись — дополнительно `UNITKA_MONTH_PREP_APPEND=1`. Основание — остаток > 0 или заказы > 0
   в этом месяце на дату ≤ LCD. Отказы: `TAIL_GEOMETRY_UNKNOWN`, `CF_SECTION_DRIFT`, `LATER_SECTION_EXISTS`,
   `TEMPLATE_MISMATCH`, `CHAIN_GAP`, `COGS_*`; откат — `planAppendRollback` по журналу плана.
-* Манифест отката подготовки месяца — поля журнала `insert_columns`, `width_upgrades`, `tail_group_detached`.
 * Отказы hardening 2: `CHAIN_GAP` (выбывший SKU оставил бы дыру в сплошной цепочке блоков — решение владельца),
   `CF_TRIM_UNSAFE` (правило УФ до последней колонки блоков ссылается на другой лист — не переиздаём),
   `ANCHOR_UNRESOLVED` (именованный диапазон `REVERSE_LEG_RATE` не одна ячейка строки 737 листа Unitka; Engine и

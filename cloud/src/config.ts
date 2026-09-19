@@ -98,6 +98,18 @@ export interface Config {
    * явное разрешение поверх UNITKA_MONTH_PREP_WRITE: UNITKA_MONTH_PREP_APPEND=1. Без него — только план в журнале.
    */
   unitkaMonthPrepAppend: boolean;
+  /**
+   * unitka-month-prep, запись СОЗДАНИЯ месяца: отпечаток манифеста отката из ранее выполненного плана
+   * (UNITKA_MONTH_PREP_MANIFEST_DIGEST). Без него или при несовпадении запись отказывает: пишется ровно тот план,
+   * что был просмотрен, и манифест отката гарантированно существует ДО записи.
+   */
+  unitkaMonthPrepManifestDigest: string;
+  /** unitka-month-rollback: манифест отката (JSON или base64url) — UNITKA_MONTH_ROLLBACK_MANIFEST. */
+  unitkaMonthRollbackManifest: string;
+  /** unitka-month-rollback: исполнение отката. ТОЛЬКО ENVIRONMENT=prod И UNITKA_MONTH_ROLLBACK_WRITE=1; иначе — только план. */
+  unitkaMonthRollbackWrite: boolean;
+  /** DRY_RUN=1: структурные записи Calendar V2 (создание, дописывание, откат) запрещены независимо от прочих флагов. */
+  unitkaDryRun: boolean;
 }
 
 type Env = Record<string, string | undefined>;
@@ -137,13 +149,17 @@ function integrityConfig(env: Env): Pick<Config, 'unitkaIntegrityMode' | 'unitka
 }
 
 /** Calendar V2: мягкий разбор. Никогда не бросает ConfigError — опечатка не роняет суточный Engine. */
-function calendarConfig(env: Env): Pick<Config, 'unitkaMonthPrepWindowDays' | 'unitkaMonthPrepTarget' | 'unitkaMonthPrepWrite' | 'unitkaMonthPrepAppend'> {
+function calendarConfig(env: Env): Pick<Config, 'unitkaMonthPrepWindowDays' | 'unitkaMonthPrepTarget' | 'unitkaMonthPrepWrite' | 'unitkaMonthPrepAppend' | 'unitkaMonthPrepManifestDigest' | 'unitkaMonthRollbackManifest' | 'unitkaMonthRollbackWrite' | 'unitkaDryRun'> {
   const w = Number((env.UNITKA_MONTH_PREP_WINDOW_DAYS ?? '').trim());
   return {
     unitkaMonthPrepWindowDays: (env.UNITKA_MONTH_PREP_WINDOW_DAYS ?? '').trim() !== '' && Number.isInteger(w) && w >= 0 && w <= 15 ? w : 5,
     unitkaMonthPrepTarget: (env.UNITKA_MONTH_PREP_TARGET ?? '').trim(),
     unitkaMonthPrepWrite: (env.UNITKA_MONTH_PREP_WRITE ?? '').trim() === '1',
     unitkaMonthPrepAppend: (env.UNITKA_MONTH_PREP_APPEND ?? '').trim() === '1',
+    unitkaMonthPrepManifestDigest: (env.UNITKA_MONTH_PREP_MANIFEST_DIGEST ?? '').trim().toLowerCase(),
+    unitkaMonthRollbackManifest: (env.UNITKA_MONTH_ROLLBACK_MANIFEST ?? '').trim(),
+    unitkaMonthRollbackWrite: (env.UNITKA_MONTH_ROLLBACK_WRITE ?? '').trim() === '1',
+    unitkaDryRun: (env.DRY_RUN ?? '').trim() === '1',
   };
 }
 

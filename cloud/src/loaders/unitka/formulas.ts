@@ -30,6 +30,8 @@ export interface BlockFormulaParams {
   stockProjection: 'guarded' | 'plain' | 'none';
   /** Проекция хранения T×0.15 в будущих днях (только блок 1 сентября): как в прошлом месяце. */
   storageProjection: 'guarded' | 'none';
+  /** Семейство формулы остатка MTD — переносится из месяца-источника (production: native; копия книги: wrapped). */
+  mtdStockFamily: MtdStockFamily;
 }
 
 const c = (start: number, off: number): string => colA1(start + off);
@@ -125,8 +127,88 @@ export function summaryMtdFormulas(g: MonthGeometry, lastSlot: number): Map<numb
   return m;
 }
 
-/** Формулы блока в строке MTD (смещение → формула). Подпись MTD — отдельно (только первый блок). */
-export function blockMtdFormulas(start: number, g: MonthGeometry): Map<number, string> {
+/* ───────────────────────── остаток MTD: семейства формулы ───────────────────────── */
+
+/**
+ * Остаток MTD = остаток на LAST_CLOSED_DATE в диапазонах дней СВОЕГО блока и СВОЕГО месяца; даты нет — пусто.
+ * Живые формы (Sheets API, 19.09.2026):
+ *   native  — production-книга:  =IFERROR(INDEX(T737:T766,MATCH(LAST_CLOSED_DATE,$M$737:$M$766,0)),"")
+ *   wrapped — копия книги (Drive): та же формула в обёртке ARRAY_CONSTRAIN(ARRAYFORMULA(…), 1, 1) — одна ячейка вывода.
+ * Семантика одна. Генератор НЕ приводит production к форме копии: новый месяц получает семейство месяца-источника.
+ */
+export type MtdStockFamily = 'native' | 'wrapped';
+
+export type MtdStockIssue =
+  | 'MTD_STOCK_NOT_FORMULA' | 'MTD_STOCK_UNKNOWN_WRAPPER' | 'MTD_STOCK_MULTI_CELL_OUTPUT' | 'MTD_STOCK_MALFORMED'
+  | 'MTD_STOCK_WRONG_STOCK_RANGE' | 'MTD_STOCK_WRONG_NAMED_RANGE' | 'MTD_STOCK_WRONG_DATE_RANGE'
+  | 'MTD_STOCK_WRONG_MATCH_TYPE' | 'MTD_STOCK_WRONG_FALLBACK';
+
+const mtdStockRange = (start: number, g: MonthGeometry): string => `${colA1(start + OFFSET.stock)}${g.firstDailyRow}:${colA1(start + OFFSET.stock)}${g.lastDailyRow}`;
+const mtdDateRange = (start: number, g: MonthGeometry): string => `$${colA1(start + OFFSET.date)}$${g.firstDailyRow}:$${colA1(start + OFFSET.date)}$${g.lastDailyRow}`;
+
+/** Каноническая (en) формула остатка MTD блока в заданном семействе. */
+export function mtdStockFormula(start: number, g: MonthGeometry, family: MtdStockFamily): string {
+  const core = `IFERROR(INDEX(${mtdStockRange(start, g)},MATCH(${LCD},${mtdDateRange(start, g)},0)),"")`;
+  return family === 'native' ? `=${core}` : `=ARRAY_CONSTRAIN(ARRAYFORMULA(${core}), 1, 1)`;
+}
+
+const A1_RANGE = /^(\$?)([A-Z]{1,3})(\$?)(\d+):(\$?)([A-Z]{1,3})(\$?)(\d+)$/;
+const colNum = (letters: string): number => [...letters].reduce((n, ch) => n * 26 + ch.charCodeAt(0) - 64, 0);
+
+/** Чем диапазон формулы отличается от ожидаемого — для отчёта; сам отказ от причины не зависит. */
+function rangeDifference(got: string, want: string, offset: number): string | null {
+  const a = A1_RANGE.exec(got), b = A1_RANGE.exec(want);
+  if (!a || !b) return null;
+  const why: string[] = [];
+  if (a[2] !== a[6]) why.push('диапазон шире одной колонки');
+  if (a[2] !== b[2] || a[6] !== b[6]) {
+    const c = colNum(a[2]!);
+    const foreign = c >= 13 && (c - 13) % BLOCK_WIDTH === offset;
+    why.push(foreign ? `колонка ${a[2]} принадлежит другому блоку SKU (слот ${Math.floor((c - 13) / BLOCK_WIDTH)})` : `другая колонка: ${a[2]} вместо ${b[2]}`);
+  }
+  if (a[4] !== b[4] || a[8] !== b[8]) why.push(`другой интервал строк: ${a[4]}..${a[8]} вместо ${b[4]}..${b[8]}`);
+  if (a[1] !== b[1] || a[3] !== b[3] || a[5] !== b[5] || a[7] !== b[7]) why.push('другая абсолютность ссылок ($)');
+  return why.join('; ');
+}
+
+/**
+ * Узкий семантический контракт ячейки остатка MTD. Вход — формула в канонической форме (en). Принимаются ТОЛЬКО два
+ * доказанных семейства, и только если ядро указывает ровно на диапазон остатка и диапазон дат этого блока в днях этого
+ * месяца, имя LAST_CLOSED_DATE, точный поиск (0) и подстановку "". Другой блок, месяц, колонка, интервал строк, имя,
+ * подстановка, неизвестная обёртка, вывод больше одной ячейки, битые ссылки — отказ с кодом (fail-closed).
+ */
+export function recogniseMtdStock(formula: unknown, start: number, g: MonthGeometry): { family: MtdStockFamily } | { issue: MtdStockIssue; detail: string } {
+  // Пробелы и регистр не значимы ТОЛЬКО вне строковых литералов: подстановка " " — не то же, что "".
+  const n = outsideStrings(String(formula ?? ''), (x) => x.replace(/\s+/g, '').toUpperCase());
+  if (!n.startsWith('=')) return { issue: 'MTD_STOCK_NOT_FORMULA', detail: 'в ячейке остатка MTD нет формулы' };
+  const body = n.slice(1);
+  let family: MtdStockFamily = 'native';
+  let core = body;
+  if (!body.startsWith('IFERROR(')) {
+    const w = /^ARRAY_CONSTRAIN\(ARRAYFORMULA\((.*)\),(\d+),(\d+)\)$/.exec(body);
+    if (!w) return { issue: 'MTD_STOCK_UNKNOWN_WRAPPER', detail: 'обёртка формулы не ARRAY_CONSTRAIN(ARRAYFORMULA(…), 1, 1)' };
+    if (w[2] !== '1' || w[3] !== '1') return { issue: 'MTD_STOCK_MULTI_CELL_OUTPUT', detail: `ARRAY_CONSTRAIN ограничивает вывод ${w[2]}×${w[3]}, а не 1×1` };
+    family = 'wrapped';
+    core = w[1]!;
+  }
+  const m = /^IFERROR\(INDEX\(([^,()]+),MATCH\(([^,()]+),([^,()]+),([^,()]+)\)\),(.*)\)$/.exec(core);
+  if (!m) return { issue: 'MTD_STOCK_MALFORMED', detail: 'ядро не IFERROR(INDEX(<остаток>,MATCH(<имя>,<даты>,0)),"")' };
+  const [, stock, named, dates, matchType, fallback] = m as unknown as [string, string, string, string, string, string];
+  if (!A1_RANGE.test(stock) || !A1_RANGE.test(dates)) return { issue: 'MTD_STOCK_MALFORMED', detail: `ссылка не диапазон A1 этого листа: ${A1_RANGE.test(stock) ? dates : stock}` };
+  const wantStock = mtdStockRange(start, g), wantDates = mtdDateRange(start, g);
+  if (stock !== wantStock) return { issue: 'MTD_STOCK_WRONG_STOCK_RANGE', detail: `${stock} вместо ${wantStock}: ${rangeDifference(stock, wantStock, OFFSET.stock) ?? ''}` };
+  if (named !== LCD) return { issue: 'MTD_STOCK_WRONG_NAMED_RANGE', detail: `${named} вместо ${LCD}` };
+  if (dates !== wantDates) return { issue: 'MTD_STOCK_WRONG_DATE_RANGE', detail: `${dates} вместо ${wantDates}: ${rangeDifference(dates, wantDates, OFFSET.date) ?? ''}` };
+  if (matchType !== '0') return { issue: 'MTD_STOCK_WRONG_MATCH_TYPE', detail: `тип поиска ${matchType} вместо 0 (точное совпадение)` };
+  if (fallback !== '""') return { issue: 'MTD_STOCK_WRONG_FALLBACK', detail: `подстановка ${fallback} вместо ""` };
+  return { family };
+}
+
+/**
+ * Формулы блока в строке MTD (смещение → формула). Подпись MTD — отдельно (только первый блок).
+ * stockFamily — семейство формулы остатка MTD месяца-источника (см. recogniseMtdStock).
+ */
+export function blockMtdFormulas(start: number, g: MonthGeometry, stockFamily: MtdStockFamily): Map<number, string> {
   const f = g.firstDailyRow, l = g.lastDailyRow, mt = g.mtdRow;
   const dc = colA1(start + OFFSET.date);
   const Dabs = `$${dc}$${f}:$${dc}$${l}`;
@@ -137,9 +219,7 @@ export function blockMtdFormulas(start: number, g: MonthGeometry): Map<number, s
   const weighted = (off: number): string => `=IFERROR(SUMPRODUCT(${closed(off)},${closed(OFFSET.orders)})/${col(OFFSET.orders)}${mt},"")`;
   const m = new Map<number, string>();
   for (const off of [OFFSET.bloggers, OFFSET.views, OFFSET.opens, OFFSET.orders, OFFSET.carts, OFFSET.cancels]) m.set(off, sumif(off));
-  // Живой лист (Sheets API, 19.09.2026): остаток MTD введён как формула массива — API отдаёт обёртку
-  // ARRAY_CONSTRAIN(ARRAYFORMULA(…), 1, 1). XLSX её прячет. Воспроизводим форму 1-в-1.
-  m.set(OFFSET.stock, `=ARRAY_CONSTRAIN(ARRAYFORMULA(IFERROR(INDEX(${rng(OFFSET.stock)},MATCH(${LCD},${Dabs},0)),"")), 1, 1)`);
+  m.set(OFFSET.stock, mtdStockFormula(start, g, stockFamily));
   m.set(OFFSET.turnover, `=IFERROR(${col(OFFSET.stock)}${mt}/(${col(OFFSET.orders)}${mt}/COUNTIF(${Dabs},"<="&${LCD})),"")`);
   m.set(OFFSET.profit1, `=IFERROR(${col(OFFSET.profitAll)}${mt}/${col(OFFSET.orders)}${mt},"")`);
   for (const off of [OFFSET.profitAll, OFFSET.adsIn, OFFSET.adsOut]) m.set(off, sumif(off));
