@@ -419,7 +419,7 @@ export class UnitkaBq {
           (repair_id, run_id, environment, engine_version, git_sha, detected_at, repaired_at, month_key, business_date, nm_id,
            field, cell_a1, old_value, new_value, source, source_as_of, reason, status)
          SELECT JSON_VALUE(x, '$.repairId'), JSON_VALUE(x, '$.runId'), JSON_VALUE(x, '$.environment'), JSON_VALUE(x, '$.engineVersion'),
-                JSON_VALUE(x, '$.gitSha'), TIMESTAMP(JSON_VALUE(x, '$.detectedAt')), SAFE.TIMESTAMP(JSON_VALUE(x, '$.repairedAt')),
+                JSON_VALUE(x, '$.gitSha'), TIMESTAMP(JSON_VALUE(x, '$.detectedAt')), SAFE_CAST(JSON_VALUE(x, '$.repairedAt') AS TIMESTAMP),
                 JSON_VALUE(x, '$.monthKey'), DATE(JSON_VALUE(x, '$.businessDate')), SAFE_CAST(JSON_VALUE(x, '$.nmId') AS INT64),
                 JSON_VALUE(x, '$.field'), JSON_VALUE(x, '$.cellA1'), JSON_VALUE(x, '$.oldValue'), JSON_VALUE(x, '$.newValue'),
                 JSON_VALUE(x, '$.source'), JSON_VALUE(x, '$.sourceAsOf'), JSON_VALUE(x, '$.reason'), JSON_VALUE(x, '$.status')
@@ -440,7 +440,7 @@ export class UnitkaBq {
           (run_id, environment, evaluated_at, phase, issue_key, business_date, nm_id, field, code, state, severity,
            financial_valid, source, source_value, diagnostic_value, message)
          SELECT JSON_VALUE(x, '$.runId'), JSON_VALUE(x, '$.environment'), TIMESTAMP(JSON_VALUE(x, '$.evaluatedAt')), JSON_VALUE(x, '$.phase'),
-                JSON_VALUE(x, '$.issueKey'), SAFE.DATE(JSON_VALUE(x, '$.businessDate')), SAFE_CAST(JSON_VALUE(x, '$.nmId') AS INT64),
+                JSON_VALUE(x, '$.issueKey'), SAFE_CAST(JSON_VALUE(x, '$.businessDate') AS DATE), SAFE_CAST(JSON_VALUE(x, '$.nmId') AS INT64),
                 JSON_VALUE(x, '$.field'), JSON_VALUE(x, '$.code'), JSON_VALUE(x, '$.state'), JSON_VALUE(x, '$.severity'),
                 SAFE_CAST(JSON_VALUE(x, '$.financialValid') AS BOOL), JSON_VALUE(x, '$.source'), JSON_VALUE(x, '$.sourceValue'),
                 JSON_VALUE(x, '$.diagnosticValue'), JSON_VALUE(x, '$.message')

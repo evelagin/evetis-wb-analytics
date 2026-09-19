@@ -133,6 +133,11 @@ describe('активация: режим сверки не включается 
     for (const m of iam) { expect(m[2]).toContain('google_service_account.loaders_prod.email'); expect(m[2]).not.toMatch(/loaders_shadow|for_each/); expect(m[2]).toContain('roles/bigquery.dataEditor'); }
     expect(tf).not.toMatch(/google_bigquery_dataset_iam_member" "unitka_(repair|integrity_issues)/);
   });
+  it('INSERT журнала и снимка: без SAFE.DATE / SAFE.TIMESTAMP — BigQuery отвергает «SAFE with function date» (найдено проверкой на живом BigQuery)', () => {
+    const bq = read('cloud/src/loaders/unitka/bq.ts');
+    expect(bq).not.toMatch(/SAFE\.(DATE|TIMESTAMP|DATETIME)\s*\(/);
+    expect(bq).toContain("SAFE_CAST(JSON_VALUE(x, '$.businessDate') AS DATE)");
+  });
   it('колонки таблиц = колонкам INSERT в bq.ts', () => {
     const tf = read('infra/terraform/unitka_engine.tf'); const bq = read('cloud/src/loaders/unitka/bq.ts');
     const cols = (table: string): string[] => { const at = tf.indexOf(`table_id            = "${table}"`); const block = tf.slice(at, tf.indexOf('\n  ])', at)); return [...block.matchAll(/\{ name = "(\w+)"/g)].map((m) => m[1]!); };
