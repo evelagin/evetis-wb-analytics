@@ -14,9 +14,9 @@ import { SEPT_LIVE_FORMULAS as LIVE } from './unitka_sept_live_formulas.js';
 const SEPT = geometryAt({ year: 2026, month: 9 }, 735);
 const OCT = geometryAt({ year: 2026, month: 10 }, 769);
 const FEB27 = geometryAt({ year: 2027, month: 2 }, 908);
-const B1: BlockFormulaParams = { start: 13, cogsTerm: '$R$45', overhead: '100', stockProjection: 'guarded', storageProjection: 'guarded' };
+const B1: BlockFormulaParams = { start: 13, cogsTerm: '$R$45', overhead: '100', stockProjection: 'guarded', storageProjection: 'guarded', mtdStockFamily: 'native' };
 const B1_EARLY: BlockFormulaParams = { ...B1, overhead: '10' }; // строки 737–738 блока 1 ещё с «+10»
-const B2: BlockFormulaParams = { start: 37, cogsTerm: '0', overhead: '10', stockProjection: 'plain', storageProjection: 'none' };
+const B2: BlockFormulaParams = { start: 37, cogsTerm: '0', overhead: '10', stockProjection: 'plain', storageProjection: 'none', mtdStockFamily: 'native' };
 
 /** Все ссылки на строки листа в формуле (A1-адреса), без имён диапазонов. */
 function rowsReferenced(f: string): number[] {
@@ -46,7 +46,7 @@ describe('эталон сентября: построители = живые ф�
   });
   it.each([13, 37])('строка MTD 767, блок в колонке %i: все формулы', (start) => {
     let n = 0;
-    for (const [off, f] of blockMtdFormulas(start, SEPT)) { expect(f).toBe(LIVE[`${colA1(start + off)}767`]); n++; }
+    for (const [off, f] of blockMtdFormulas(start, SEPT, 'native')) { expect(f).toBe(LIVE[`${colA1(start + off)}767`]); n++; }
     expect(n).toBe(21);
   });
   it.each([737, 766])('сводка A..L строки %i (24 блока: правая граница UT/UW/VI)', (row) => {
@@ -58,12 +58,14 @@ describe('эталон сентября: построители = живые ф�
 });
 
 describe('октябрь 2026 — 31 день, 25 блоков сплошь (блок 25 = слот 24, VQ..WN)', () => {
-  const B25: BlockFormulaParams = { start: slotStart(24), cogsTerm: '426.735', overhead: '10', stockProjection: 'guarded', storageProjection: 'none' };
+  const B25: BlockFormulaParams = { start: slotStart(24), cogsTerm: '426.735', overhead: '10', stockProjection: 'guarded', storageProjection: 'none', mtdStockFamily: 'native' };
   it('день 31 (строка 801) и MTD (802): диапазоны 771..801', () => {
     expect(blockDayFormulas(B25, 801).get(OFFSET.unitProfit)).toBe('=IF($VQ801>LAST_CLOSED_DATE,"",WI801-WJ801-WL801-426.735)');
-    const mtd = blockMtdFormulas(B25.start, OCT);
+    const mtd = blockMtdFormulas(B25.start, OCT, 'native');
     expect(mtd.get(OFFSET.orders)).toBe('=SUMIF($VQ$771:$VQ$801,"<="&LAST_CLOSED_DATE,VU771:VU801)');
-    expect(mtd.get(OFFSET.stock)).toBe('=ARRAY_CONSTRAIN(ARRAYFORMULA(IFERROR(INDEX(VX771:VX801,MATCH(LAST_CLOSED_DATE,$VQ$771:$VQ$801,0)),"")), 1, 1)');
+    // production-форма (родная INDEX/MATCH); форма копии книги — только если месяц-источник держит её (unitka_mtd_stock_family)
+    expect(mtd.get(OFFSET.stock)).toBe('=IFERROR(INDEX(VX771:VX801,MATCH(LAST_CLOSED_DATE,$VQ$771:$VQ$801,0)),"")');
+    expect(blockMtdFormulas(B25.start, OCT, 'wrapped').get(OFFSET.stock)).toBe('=ARRAY_CONSTRAIN(ARRAYFORMULA(IFERROR(INDEX(VX771:VX801,MATCH(LAST_CLOSED_DATE,$VQ$771:$VQ$801,0)),"")), 1, 1)');
     expect(summaryMtdFormulas(OCT, 24).get(SUMMARY.profit)).toBe('=SUM(I771:I801)');
   });
   it('сводка: правая граница — блок 25 (N→VR, X→WB, Q→VU, AC→WG), FILTER по MOD 24', () => {
@@ -82,7 +84,7 @@ describe('октябрь 2026 — 31 день, 25 блоков сплошь (б�
     for (let r = OCT.firstDailyRow; r <= OCT.lastDailyRow; r++) {
       all.push(...blockDayFormulas(B25, r).values(), ...blockProjectionFormulas(B25, r, r === OCT.firstDailyRow).values(), ...summaryDayFormulas(r, 24, 13).values());
     }
-    all.push(...blockMtdFormulas(B25.start, OCT).values(), ...summaryMtdFormulas(OCT, 24).values());
+    all.push(...blockMtdFormulas(B25.start, OCT, 'native').values(), ...blockMtdFormulas(B25.start, OCT, 'wrapped').values(), ...summaryMtdFormulas(OCT, 24).values());
     const rows = all.flatMap(rowsReferenced);
     expect(rows.length).toBeGreaterThan(1000);
     expect(rows.every((r) => r >= OCT.firstDailyRow && r <= OCT.mtdRow)).toBe(true);
@@ -98,7 +100,7 @@ describe('октябрь 2026 — 31 день, 25 блоков сплошь (б�
 
 describe('февраль: последний день и MTD', () => {
   it('февраль 2027 (28 дней): строки 910..937, MTD 938', () => {
-    const m = blockMtdFormulas(13, FEB27);
+    const m = blockMtdFormulas(13, FEB27, 'native');
     expect(m.get(OFFSET.views)).toBe('=SUMIF($M$910:$M$937,"<="&LAST_CLOSED_DATE,O910:O937)');
     expect(summaryMtdFormulas(FEB27, 23).get(SUMMARY.drr)).toContain('$Q$910:$UW$937');
     expect(blockDayFormulas(B2, 937).get(OFFSET.weekday)).toBe('=IF($AK937="","",CHOOSE(WEEKDAY($AK937,2),"пн","вт","ср","чт","пт","сб","вс"))');
@@ -106,7 +108,7 @@ describe('февраль: последний день и MTD', () => {
   it('февраль 2028 (29 дней): 29.02 — строка 1351, MTD 1352', () => {
     const g = geometryAt({ year: 2028, month: 2 }, 1321);
     expect([g.lastDailyRow, g.mtdRow]).toEqual([1351, 1352]);
-    expect(blockMtdFormulas(13, g).get(OFFSET.adsIn)).toBe('=SUMIF($M$1323:$M$1351,"<="&LAST_CLOSED_DATE,X1323:X1351)');
+    expect(blockMtdFormulas(13, g, 'native').get(OFFSET.adsIn)).toBe('=SUMIF($M$1323:$M$1351,"<="&LAST_CLOSED_DATE,X1323:X1351)');
   });
   it('нормализация сравнения: пробелы и регистр не значимы', () => {
     expect(normFormula('=sum( a1 : a2 )')).toBe(normFormula('=SUM(A1:A2)'));

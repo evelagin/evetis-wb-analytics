@@ -15,6 +15,7 @@ import { storageLoader } from './storage/index.js';
 import { unitkaLoader } from './unitka/index.js';
 import { unitkaSlot } from './unitka/slot.js';
 import { unitkaMonthPrepLoader } from './unitka/prep.js';
+import { unitkaMonthRollbackLoader } from './unitka/rollback.js';
 
 export interface LoaderSpec {
   handler: LoaderHandler;
@@ -37,6 +38,9 @@ export const LOADERS: Record<string, LoaderSpec> = {
   // Calendar V2 (Phase 2B): подготовка секции месяца. По умолчанию ТОЛЬКО план; запись — prod +
   // UNITKA_MONTH_PREP_WRITE=1. Не активирован нигде: нет расписания, нет шага деплоя.
   'unitka-month-prep': { handler: unitkaMonthPrepLoader, logicalPeriod: (now) => unitkaSlot(now) },
+  // Calendar V2: откат СОЗДАНИЯ месяца по манифесту. По умолчанию ТОЛЬКО план; исполнение — prod +
+  // UNITKA_MONTH_ROLLBACK_WRITE=1 + манифест + явный месяц. Нет расписания, нет шага деплоя.
+  'unitka-month-rollback': { handler: unitkaMonthRollbackLoader, logicalPeriod: (now) => unitkaSlot(now) },
 };
 
 export function resolveLoader(name: string): LoaderSpec | undefined {

@@ -194,7 +194,7 @@ export function planMonthAppend(inp: AppendInputs): MonthAppendPlan {
     const start = slotStart(slot);
     fresh.push({
       index: kept.length + fresh.length, slot, start, nmId: c.nmId, title: `${c.nmId} ${c.name ?? ''}`.trim(), origin: 'NEW',
-      params: { start, cogsTerm: cogsLiteral(cg.cogs), overhead: tmpl.overhead, stockProjection: GENERATED_STOCK_PROJECTION, storageProjection: 'none' },
+      params: { start, cogsTerm: cogsLiteral(cg.cogs), overhead: tmpl.overhead, stockProjection: GENERATED_STOCK_PROJECTION, storageProjection: 'none', mtdStockFamily: tmpl.mtdStockFamily },
       cogsProvenance: cg,
     });
   }
@@ -220,7 +220,7 @@ export function planMonthAppend(inp: AppendInputs): MonthAppendPlan {
       const h = headerOf(last.start + o) ?? headerOf(v.blocks[0]!.start + o);
       if (h) str(g.headerRow, b.start + o, h);
     }
-    for (const [off, f] of blockMtdFormulas(b.start, g)) fml(g.mtdRow, b.start + off, f);
+    for (const [off, f] of blockMtdFormulas(b.start, g, b.params.mtdStockFamily)) fml(g.mtdRow, b.start + off, f);
   }
   // 2) Прежний последний блок перестал быть последним — у него появляется колонка-разделитель (день недели).
   const separators = blocks.filter((b) => !isLastBlock(layout, b) && (b.origin === 'NEW' || (b.slot === last.slot && !isFormula(formulaAt(inp.existing!, g.lastDailyRow, b.start + OFFSET.weekday)))));

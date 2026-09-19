@@ -67,6 +67,8 @@ export interface SheetStructure {
   rowMetadata: DimensionProps[];     // [0] = строка 1
   merges: Array<{ startRowIndex?: number; endRowIndex?: number; startColumnIndex?: number; endColumnIndex?: number }>;
   columnGroups: ColumnGroup[];
+  /** Группы строк — только для манифеста отката и сверки после него (подготовка месяца их не меняет). */
+  rowGroups?: ColumnGroup[];
 }
 
 /** Запрос spreadsheets.batchUpdate (appendDimension, mergeCells, updateCells, copyPaste…) — как в REST v4. */
@@ -170,15 +172,17 @@ export class SheetsRest implements SheetsGateway {
   async readSheetStructure(sheetName: string, rowCount: number, columnCount: number): Promise<SheetStructure> {
     const q = `'${sheetName.replace(/'/g, "''")}'`;
     const range = `${q}!A1:${colA1(columnCount)}${rowCount}`;
-    const fields = 'sheets(properties(title),merges,conditionalFormats,columnGroups,data(rowMetadata(pixelSize,hiddenByUser),columnMetadata(pixelSize,hiddenByUser)))';
+    const fields = 'sheets(properties(title),merges,conditionalFormats,columnGroups,rowGroups,data(rowMetadata(pixelSize,hiddenByUser),columnMetadata(pixelSize,hiddenByUser)))';
     const url = `${API}/${this.spreadsheetId}?ranges=${encodeURIComponent(range)}&fields=${encodeURIComponent(fields)}`;
-    const data = await this.request<{ sheets?: Array<{ merges?: SheetStructure['merges']; conditionalFormats?: ConditionalFormatRule[]; columnGroups?: Array<{ range?: { startIndex?: number; endIndex?: number }; depth?: number; collapsed?: boolean }>; data?: Array<{ rowMetadata?: DimensionProps[]; columnMetadata?: DimensionProps[] }> }> }>('GET', url);
+    type ApiGroup = { range?: { startIndex?: number; endIndex?: number }; depth?: number; collapsed?: boolean };
+    const group = (g: ApiGroup): ColumnGroup => ({ startIndex: g.range?.startIndex ?? 0, endIndex: g.range?.endIndex ?? 0, depth: g.depth ?? 1, ...(g.collapsed ? { collapsed: true } : {}) });
+    const data = await this.request<{ sheets?: Array<{ merges?: SheetStructure['merges']; conditionalFormats?: ConditionalFormatRule[]; columnGroups?: ApiGroup[]; rowGroups?: ApiGroup[]; data?: Array<{ rowMetadata?: DimensionProps[]; columnMetadata?: DimensionProps[] }> }> }>('GET', url);
     const sh = data.sheets?.[0];
     if (!sh) throw new LoaderError(`структура листа «${sheetName}» не получена`, 'SHEETS_API');
     return {
       conditionalFormats: sh.conditionalFormats ?? [], merges: sh.merges ?? [],
       rowMetadata: sh.data?.[0]?.rowMetadata ?? [], columnMetadata: sh.data?.[0]?.columnMetadata ?? [],
-      columnGroups: (sh.columnGroups ?? []).map((g) => ({ startIndex: g.range?.startIndex ?? 0, endIndex: g.range?.endIndex ?? 0, depth: g.depth ?? 1, ...(g.collapsed ? { collapsed: true } : {}) })),
+      columnGroups: (sh.columnGroups ?? []).map(group), rowGroups: (sh.rowGroups ?? []).map(group),
     };
   }
 

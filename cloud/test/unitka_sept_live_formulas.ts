@@ -4,7 +4,8 @@
  * (последний день) и 767 (MTD). Текст — формула Google Sheets в том виде, как её хранит лист; из
  * выгрузки XLSX обёртка __xludf.DUMMYFUNCTION СНЯТА и проверена (в этом файле её нет — тест).
  * Численных себестоимостей здесь нет намеренно.
- * T767/AR767 (остаток MTD) — формула массива: сверено с Sheets API (19.09.2026), XLSX обёртку прячет.
+ * T767/AR767 (остаток MTD) — родная форма INDEX/MATCH production-книги (Sheets API, снимок 19.09.2026: 24 блока из 24,
+ * ни одной ARRAY_CONSTRAIN на листе). Обёртку ARRAY_CONSTRAIN(ARRAYFORMULA(…), 1, 1) отдаёт только КОПИЯ книги (Drive).
  */
 export const SEPT_LIVE_FORMULAS: Readonly<Record<string, string>> = {
   A737: "=IF($B737=\"\",\"\",CHOOSE(WEEKDAY($B737,2),\"пн\",\"вт\",\"ср\",\"чт\",\"пт\",\"сб\",\"вс\"))",
@@ -87,7 +88,7 @@ export const SEPT_LIVE_FORMULAS: Readonly<Record<string, string>> = {
   Q767: "=SUMIF($M$737:$M$766,\"<=\"&LAST_CLOSED_DATE,Q737:Q766)",
   R767: "=SUMIF($M$737:$M$766,\"<=\"&LAST_CLOSED_DATE,R737:R766)",
   S767: "=SUMIF($M$737:$M$766,\"<=\"&LAST_CLOSED_DATE,S737:S766)",
-  T767: "=ARRAY_CONSTRAIN(ARRAYFORMULA(IFERROR(INDEX(T737:T766,MATCH(LAST_CLOSED_DATE,$M$737:$M$766,0)),\"\")), 1, 1)",
+  T767: "=IFERROR(INDEX(T737:T766,MATCH(LAST_CLOSED_DATE,$M$737:$M$766,0)),\"\")",
   U767: "=IFERROR(T767/(Q767/COUNTIF($M$737:$M$766,\"<=\"&LAST_CLOSED_DATE)),\"\")",
   V767: "=IFERROR(W767/Q767,\"\")",
   W767: "=SUMIF($M$737:$M$766,\"<=\"&LAST_CLOSED_DATE,W737:W766)",
@@ -108,7 +109,7 @@ export const SEPT_LIVE_FORMULAS: Readonly<Record<string, string>> = {
   AO767: "=SUMIF($AK$737:$AK$766,\"<=\"&LAST_CLOSED_DATE,AO737:AO766)",
   AP767: "=SUMIF($AK$737:$AK$766,\"<=\"&LAST_CLOSED_DATE,AP737:AP766)",
   AQ767: "=SUMIF($AK$737:$AK$766,\"<=\"&LAST_CLOSED_DATE,AQ737:AQ766)",
-  AR767: "=ARRAY_CONSTRAIN(ARRAYFORMULA(IFERROR(INDEX(AR737:AR766,MATCH(LAST_CLOSED_DATE,$AK$737:$AK$766,0)),\"\")), 1, 1)",
+  AR767: "=IFERROR(INDEX(AR737:AR766,MATCH(LAST_CLOSED_DATE,$AK$737:$AK$766,0)),\"\")",
   AS767: "=IFERROR(AR767/(AO767/COUNTIF($AK$737:$AK$766,\"<=\"&LAST_CLOSED_DATE)),\"\")",
   AT767: "=IFERROR(AU767/AO767,\"\")",
   AU767: "=SUMIF($AK$737:$AK$766,\"<=\"&LAST_CLOSED_DATE,AU737:AU766)",

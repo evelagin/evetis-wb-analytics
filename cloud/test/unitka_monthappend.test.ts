@@ -7,6 +7,7 @@ import { describe, it, expect } from 'vitest';
 import { planMonthPrep, toStructureRequests, type PrepInputs } from '../src/loaders/unitka/monthprep.js';
 import { planMonthAppend, planAppendRollback, qualifyMidMonth, sectionCfIndexes, type AppendInputs } from '../src/loaders/unitka/monthappend.js';
 import { buildConditionalFormats } from '../src/loaders/unitka/visual.js';
+import { mtdStockFormula } from '../src/loaders/unitka/formulas.js';
 import { geometryAt, slotStart, type MonthKey } from '../src/loaders/unitka/calendar.js';
 import { OFFSET, SUMMARY, colA1, addDaysIso, isoToSerial, type CellValue } from '../src/loaders/unitka/model.js';
 import { buildPlan, cellAt, formulaAt, validateSection, type Snapshot } from '../src/loaders/unitka/plan.js';
@@ -26,8 +27,8 @@ const pop = (extra: number[] = [], drop: number[] = []) => [...SEPT_NMS, NEW_NM,
 const cogs = cogsSnapshot({ [NEW_NM]: 426.735, [FIX_A]: 111.5, [FIX_B]: 222.25 });
 
 /** Октябрь, созданный генератором из сентября (25 блоков, 23 вставленные колонки, якорь WY = 623). */
-function octoberBook(): { section: Snapshot; structure: SheetStructure; width: number } {
-  const sept = sectionFromSpec({ year: 2026, month: 9 }, 735, septemberSpec(), WIDTH_SEPT);
+function octoberBook(family: 'native' | 'wrapped' = 'native'): { section: Snapshot; structure: SheetStructure; width: number } {
+  const sept = sectionFromSpec({ year: 2026, month: 9 }, 735, septemberSpec(family), WIDTH_SEPT);
   const colA: CellValue[] = Array(768).fill(null); colA[734] = 'Сентябрь 2026';
   const inp: PrepInputs = {
     target: OCT, meta: { sheetId: SHEET_ID, rowCount: 768, columnCount: 600, anchorCol: 600 }, columnA: colA, predecessor: sept, existing: null,
@@ -64,6 +65,19 @@ function inputs(over: Partial<AppendInputs> = {}, book = octoberBook()): AppendI
     facts: facts([...SEPT_NMS, NEW_NM, FIX_A], LCD, { [FIX_A]: { stockFrom: '2026-10-09' } }), lcd: LCD, ...over,
   };
 }
+
+describe('остаток MTD дописанного блока — семейство формулы самого месяца (production: native; копия книги: wrapped)', () => {
+  it.each(['native', 'wrapped'] as const)('месяц в семействе %s → новый блок в том же семействе, существующие ячейки MTD не переписываются', (family) => {
+    const book = octoberBook(family);
+    const ap = planMonthAppend(inputs({}, book));
+    expect(ap.status).toBe('PLAN_APPEND');
+    const nb = ap.blocks[ap.blocks.length - 1]!;
+    expect(nb.params.mtdStockFamily).toBe(family);
+    const f = ap.cells.find((c) => c.row === G.mtdRow && c.col === nb.start + OFFSET.stock)!.value;
+    expect(f.kind === 'formula' && f.text).toBe(mtdStockFormula(nb.start, G, family));
+    expect(ap.cells.some((c) => c.row === G.mtdRow && c.col < nb.start && (c.col - 13) % 24 === OFFSET.stock)).toBe(false);
+  });
+});
 
 describe('квалификация SKU для дописывания в текущий месяц', () => {
   const rep = new Set([...SEPT_NMS, NEW_NM]);

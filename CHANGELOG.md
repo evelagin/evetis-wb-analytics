@@ -1,5 +1,23 @@
 # CHANGELOG.md
 
+## 2026-09-19 — UNITKA CALENDAR V2 · production rollout patch: семейство формулы остатка MTD + исполняемый откат (код; тестовая копия; оригинал не менялся)
+
+Документ: `docs/UNITKA_CALENDAR_V2.md` §10a, §10b; runbook §5a, §5c. Октябрь в production НЕ создан.
+
+- **Причина:** план октября на production остановился `TEMPLATE_MISMATCH` в 24 ячейках остатка MTD (строка 767,
+  смещение 7): production хранит родную форму `IFERROR(INDEX(…;MATCH(…)))`, копия книги — ту же формулу в обёртке
+  `ARRAY_CONSTRAIN(ARRAYFORMULA(…); 1; 1)`, под которую был подогнан построитель.
+- **Формулы создаваемого месяца (структура не меняется):** остаток MTD получает СЕМЕЙСТВО месяца-источника
+  (`BlockFormulaParams.mtdStockFamily`; production — `native`, копия — `wrapped`); семантика и экономика те же.
+  Проверка шаблона этой ячейки — узкий семантический контракт `recogniseMtdStock` (только два доказанных семейства,
+  только диапазоны своего блока и месяца; 9 кодов отказа `MTD_STOCK_*`); остальные формулы сверяются как раньше.
+  Эталон `unitka_sept_live_formulas.ts` исправлен на production-форму.
+- **Откат:** новый загрузчик `unitka-month-rollback` и `monthrollback.ts` — манифест до записи, fail-closed отказы
+  `ROLLBACK_*`, один `batchUpdate`, сверка структуры после. `SheetStructure.rowGroups` (только чтение).
+- **Запись месяца:** обязательный `UNITKA_MONTH_PREP_MANIFEST_DIGEST` (отпечаток манифеста из плана);
+  `DRY_RUN=1` запрещает структурные записи Calendar V2. Новые переменные: `UNITKA_MONTH_PREP_MANIFEST_DIGEST`,
+  `UNITKA_MONTH_ROLLBACK_MANIFEST`, `UNITKA_MONTH_ROLLBACK_WRITE`. Расписаний, Terraform, IAM — без изменений.
+
 ## 2026-09-19 — UNITKA CALENDAR V2 · F1–F4: граница сводки, терминальный блок, контракт размеров, дописывание SKU (код; тестовая копия; оригинал не менялся)
 
 Документ: `docs/UNITKA_CALENDAR_V2.md` §3, §8, §10–§12. Октябрь пересоздан ТОЛЬКО в тестовой копии.

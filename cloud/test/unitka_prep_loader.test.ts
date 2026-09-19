@@ -10,6 +10,7 @@ import { describe, it, expect } from 'vitest';
 import { unitkaLoader, type UnitkaDeps } from '../src/loaders/unitka/index.js';
 import { unitkaMonthPrepLoader, monthPrepWriteAllowed } from '../src/loaders/unitka/prep.js';
 import { planMonthPrep } from '../src/loaders/unitka/monthprep.js';
+import { parseManifest } from '../src/loaders/unitka/monthrollback.js';
 import { SheetsRest, type SheetsGateway, type WriteRange, type FormatWrite, type FormatGrid, type SheetMeta, type SheetStructure, type StructureRequest } from '../src/loaders/unitka/sheets.js';
 import type { QueryRunner } from '../src/loaders/mart/bq.js';
 import { geometryAt } from '../src/loaders/unitka/calendar.js';
@@ -24,6 +25,7 @@ import { loadConfig } from '../src/config.js';
 import { LOADERS } from '../src/loaders/registry.js';
 import { sectionFromSpec, septemberSpec, applyPlan, septemberStructure, septemberRowFormats, cogsSnapshot, SEPT_NMS, NEW_NM, WIDTH_SEPT } from './unitka_calendar_fixture.js';
 import { planMonthPrep } from '../src/loaders/unitka/monthprep.js';
+import { parseManifest } from '../src/loaders/unitka/monthrollback.js';
 
 interface LogLine { level: string; event: string; fields: Record<string, unknown> }
 function recordingLogger(lines: LogLine[]): Logger {
@@ -130,6 +132,8 @@ describe('unitka-month-prep: гейты записи', () => {
     expect(monthPrepWriteAllowed({ environment: 'prod', unitkaMonthPrepWrite: false })).toBe(false);
     expect(monthPrepWriteAllowed({ environment: 'shadow', unitkaMonthPrepWrite: true })).toBe(false);
     expect(monthPrepWriteAllowed({ environment: 'prod' })).toBe(false);
+    expect(monthPrepWriteAllowed({ environment: 'prod', unitkaMonthPrepWrite: true, unitkaDryRun: true })).toBe(false);   // DRY_RUN=1 — запись запрещена всегда
+    expect(loadConfig({ ENVIRONMENT: 'prod', GCP_PROJECT_ID: 'p', BQ_RAW_DATASET: 'wb_raw', DRY_RUN: '1', UNITKA_MONTH_PREP_MANIFEST_DIGEST: ' ABC ' } as Record<string, string>)).toMatchObject({ unitkaDryRun: true, unitkaMonthPrepManifestDigest: 'abc', unitkaMonthRollbackWrite: false, unitkaMonthRollbackManifest: '' });
     expect(baseConfig('prod', { unitkaWriteEnabled: true }).unitkaMonthPrepWrite).toBe(false);
     expect(loadConfig({ ENVIRONMENT: 'prod', GCP_PROJECT_ID: 'p', BQ_RAW_DATASET: 'wb_raw', UNITKA_MONTH_PREP_WRITE: '1' } as Record<string, string>).unitkaMonthPrepWrite).toBe(true);
     expect(loadConfig({ ENVIRONMENT: 'prod', GCP_PROJECT_ID: 'p', BQ_RAW_DATASET: 'wb_raw', UNITKA_MONTH_PREP_WINDOW_DAYS: 'abc' } as Record<string, string>).unitkaMonthPrepWindowDays).toBe(5);
@@ -188,8 +192,30 @@ describe('unitka-month-prep: гейты записи', () => {
       sheets.sections.push(applyPlan(plan, 623));
       sheets.rowCount = 803; sheets.columnCount = 623; sheets.anchorCol = 623;
     };
-    const cfg = baseConfig('prod', { unitkaMonthPrepWrite: true, unitkaMonthPrepTarget: '2026-10' });
-    const res = await unitkaMonthPrepLoader(ctx(cfg), depsOf(runner, sheets));
+    // Сначала ПЛАН: он пишет в журнал манифест отката; запись разрешена только с отпечатком этого манифеста.
+    const planLines: LogLine[] = [];
+    await unitkaMonthPrepLoader(ctx(baseConfig('prod', { unitkaMonthPrepTarget: '2026-10' }), planLines), depsOf(runner, septemberOnly(true)));
+    const mf = planLines.find((l) => l.event === 'unitka_month_prep_rollback_manifest')!.fields as { digest: string; manifest: { created: { insertedColumns: unknown; rowCountAfter: number }; before: { rowCount: number } }; manifest_b64: string };
+    expect(mf.digest).toMatch(/^[0-9a-f]{64}$/);
+    expect(mf.manifest).toMatchObject({ target: '2026-10', before: { rowCount: 768, columnCount: 600, anchorCol: 600 }, created: { topRow: 769, insertedColumns: { at: 588, count: 23 }, rowCountAfter: 803, columnCountAfter: 623, anchorColAfter: 623 } });
+    expect(parseManifest(mf.manifest_b64)).toMatchObject({ digest: mf.digest });
+    expect(planLines.find((l) => l.event === 'unitka_month_prep_dry')?.fields).toMatchObject({ rollback_manifest_digest: mf.digest });
+    // Без отпечатка и с чужим отпечатком — отказ ДО записи.
+    await expect(unitkaMonthPrepLoader(ctx(baseConfig('prod', { unitkaMonthPrepWrite: true, unitkaMonthPrepTarget: '2026-10' })), depsOf(runner, sheets))).rejects.toMatchObject({ code: 'MONTH_PREP_MANIFEST_DIGEST_REQUIRED' });
+    await expect(unitkaMonthPrepLoader(ctx(baseConfig('prod', { unitkaMonthPrepWrite: true, unitkaMonthPrepTarget: '2026-10', unitkaMonthPrepManifestDigest: 'f'.repeat(64) })), depsOf(runner, sheets))).rejects.toMatchObject({ code: 'MONTH_PREP_MANIFEST_DIGEST_MISMATCH' });
+    expect(sheets.structureWrites).toHaveLength(0);
+    // DRY_RUN=1 запрещает запись даже при всех флагах: шлюз readonly, 0 запросов.
+    const madeDry: boolean[] = [];
+    await unitkaMonthPrepLoader(ctx(baseConfig('prod', { unitkaMonthPrepWrite: true, unitkaMonthPrepTarget: '2026-10', unitkaMonthPrepManifestDigest: mf.digest, unitkaDryRun: true })), depsOf(runner, sheets, madeDry));
+    expect([madeDry, sheets.structureWrites.length]).toEqual([[true], 0]);
+    const cfg = baseConfig('prod', { unitkaMonthPrepWrite: true, unitkaMonthPrepTarget: '2026-10', unitkaMonthPrepManifestDigest: mf.digest });
+    const writeLines: LogLine[] = [];
+    const res = await unitkaMonthPrepLoader(ctx(cfg, writeLines), depsOf(runner, sheets));
+    // Манифест записан в журнал ДО события записи, и это тот же манифест, что в плане.
+    const iM = writeLines.findIndex((l) => l.event === 'unitka_month_prep_rollback_manifest'), iW = writeLines.findIndex((l) => l.event === 'unitka_month_prep_written');
+    expect(iM).toBeGreaterThanOrEqual(0);
+    expect(iW).toBeGreaterThan(iM);
+    expect(writeLines[iM]!.fields.digest).toBe(mf.digest);
     expect(sheets.structureWrites).toHaveLength(1);
     expect(sheets.structureWrites[0]![0]).toEqual({ insertDimension: { range: { sheetId: 739487431, dimension: 'COLUMNS', startIndex: 588, endIndex: 611 }, inheritFromBefore: true } });
     expect(sheets.structureWrites[0]!.slice(1, 3).map((r) => Object.keys(r)[0])).toEqual(['updateConditionalFormatRule', 'updateConditionalFormatRule']);
