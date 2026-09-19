@@ -118,3 +118,58 @@ export function colsWritten(plan: MonthPrepPlan, row: number): number[] {
 
 export const WIDTH_SEPT = 600;
 export { BLOCK_WIDTH };
+
+/* ───────────── Phase 2C: структура листа (УФ, размеры) по образцу живой книги 19.09.2026 ───────────── */
+
+import type { ConditionalFormatRule, SheetStructure } from '../src/loaders/unitka/sheets.js';
+import { colA1 } from '../src/loaders/unitka/model.js';
+
+export const SHEET_ID = 739487431;
+const rng = (r1: number, r2: number, c1: number, c2 = c1) => ({ sheetId: SHEET_ID, startRowIndex: r1 - 1, endRowIndex: r2, startColumnIndex: c1 - 1, endColumnIndex: c2 });
+const FMT = { backgroundColor: { red: 0.9, green: 0.9, blue: 0.9 } };
+const boolRule = (ranges: ConditionalFormatRule['ranges'], formula: string): ConditionalFormatRule => ({ ranges, booleanRule: { condition: { type: 'CUSTOM_FORMULA', values: [{ userEnteredValue: formula }] }, format: FMT } });
+const gradRule = (ranges: ConditionalFormatRule['ranges']): ConditionalFormatRule => ({ ranges, gradientRule: { minpoint: { type: 'MIN', color: {} }, midpoint: { type: 'PERCENTILE', value: '50', color: {} }, maxpoint: { type: 'MAX', color: {} } } });
+
+/** Категории правил живой книги (формулы — в локали ru_RU, как отдаёт API). */
+export function septemberCfRules(): ConditionalFormatRule[] {
+  const S = (slot: number) => slotStart(slot);
+  const rules: ConditionalFormatRule[] = [];
+  // 1) per-block «будущий день»: =$<дата блока>737>$WB$736 на смещения 0..5 блока (блок 1 — ещё сводка B..K).
+  for (let s = 0; s < 24; s++) {
+    const ranges = [rng(737, 766, S(s), S(s) + 5)];
+    if (s === 0) ranges.push(rng(737, 766, 2, 11));
+    rules.push(boolRule(ranges, `=$${colA1(S(s))}737>$WB$736`));
+  }
+  // 2) на все блоки: выходной день (колонка дня недели, смещение 23), первая — блок 24.
+  rules.push(boolRule([rng(737, 766, S(23) + 23), ...Array.from({ length: 23 }, (_, s) => rng(737, 766, S(s) + 23))], '=WEEKDAY(US737;2)>5'));
+  // 3) на все блоки + сводка G: доля от максимума в секции (абсолютные строки 737..766).
+  rules.push(boolRule([rng(737, 766, S(23) + 5), ...Array.from({ length: 23 }, (_, s) => rng(737, 766, S(s) + 5)), rng(737, 766, 7)], '=AND(UX737<>"";UX737>0,75*MAX(UX$737:UX$766))'));
+  // 4) наследие «август+сентябрь»: одна шкала на два месяца (блок 1, смещение 9).
+  rules.push(gradRule([rng(702, 732, S(0) + 9), rng(737, 766, S(0) + 9)]));
+  // 5) наследие: шкала на строках заголовка/шапки (735..736) — не переносится.
+  rules.push(gradRule([rng(735, 736, S(0) + 10)]));
+  // 6) per-block шкала на смещение 10 для блоков 2..24 (шаблон — блок 24).
+  for (let s = 1; s < 24; s++) rules.push(gradRule([rng(737, 766, S(s) + 10)]));
+  // 7) частичный диапазон дней (737..750) — не переносится (ничего не угадываем).
+  rules.push(boolRule([rng(737, 750, 3)], '=C737=""'));
+  return rules;
+}
+
+/** Размеры: ширина 100, блоки 2..24 скрывают смещения 16..22, VQ..VZ (резерв) скрыты; строки 18 px. */
+export function septemberStructure(rowCount = 768, columnCount = 600): SheetStructure {
+  const columnMetadata = Array.from({ length: columnCount }, (_, i) => {
+    const c = i + 1;
+    const slot = c >= 13 ? Math.floor((c - 13) / 24) : -1, off = c >= 13 ? (c - 13) % 24 : -1;
+    const hidden = (slot >= 1 && slot <= 23 && off >= 16 && off <= 22) || (c >= 589 && c <= 598);
+    return { pixelSize: off === 0 ? 80 : 100, hiddenByUser: hidden };
+  });
+  const rowMetadata = Array.from({ length: rowCount }, (_, i) => ({ pixelSize: i + 1 === 735 ? 30 : 18 }));
+  return { conditionalFormats: septemberCfRules(), columnMetadata, rowMetadata, merges: [] };
+}
+
+/** Форматы строк-шаблонов: у каждой ячейки метка «строка:колонка» (чтобы проверять, откуда взят формат). */
+export function septemberRowFormats(width = 600, rows: readonly number[] = [735, 736, 737, 766, 767, 768]): Map<number, Array<Record<string, unknown> | null>> {
+  const m = new Map<number, Array<Record<string, unknown> | null>>();
+  for (const r of rows) m.set(r, Array.from({ length: width }, (_, i) => ({ numberFormat: { type: 'TEXT', pattern: `${r}:${i + 1}` } })));
+  return m;
+}

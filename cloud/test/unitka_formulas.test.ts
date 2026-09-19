@@ -63,7 +63,7 @@ describe('октябрь 2026 — 31 день, 25 блоков (слот 24 за
     expect(blockDayFormulas(B25, 801).get(OFFSET.unitProfit)).toBe('=IF($WO801>LAST_CLOSED_DATE,"",XG801-XH801-XJ801-426.735)');
     const mtd = blockMtdFormulas(B25.start, OCT);
     expect(mtd.get(OFFSET.orders)).toBe('=SUMIF($WO$771:$WO$801,"<="&LAST_CLOSED_DATE,WS771:WS801)');
-    expect(mtd.get(OFFSET.stock)).toBe('=IFERROR(INDEX(WV771:WV801,MATCH(LAST_CLOSED_DATE,$WO$771:$WO$801,0)),"")');
+    expect(mtd.get(OFFSET.stock)).toBe('=ARRAY_CONSTRAIN(ARRAYFORMULA(IFERROR(INDEX(WV771:WV801,MATCH(LAST_CLOSED_DATE,$WO$771:$WO$801,0)),"")), 1, 1)');
     expect(summaryMtdFormulas(OCT, 25).get(SUMMARY.profit)).toBe('=SUM(I771:I801)');
   });
   it('сводка: правая граница — блок 25 (N→WP, X→WZ, Q→WS, AC→XE), FILTER через слот 24 по MOD 24', () => {

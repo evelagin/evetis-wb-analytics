@@ -134,7 +134,9 @@ export function blockMtdFormulas(start: number, g: MonthGeometry): Map<number, s
   const weighted = (off: number): string => `=IFERROR(SUMPRODUCT(${closed(off)},${closed(OFFSET.orders)})/${col(OFFSET.orders)}${mt},"")`;
   const m = new Map<number, string>();
   for (const off of [OFFSET.bloggers, OFFSET.views, OFFSET.opens, OFFSET.orders, OFFSET.carts, OFFSET.cancels]) m.set(off, sumif(off));
-  m.set(OFFSET.stock, `=IFERROR(INDEX(${rng(OFFSET.stock)},MATCH(${LCD},${Dabs},0)),"")`);
+  // Живой лист (Sheets API, 19.09.2026): остаток MTD введён как формула массива — API отдаёт обёртку
+  // ARRAY_CONSTRAIN(ARRAYFORMULA(…), 1, 1). XLSX её прячет. Воспроизводим форму 1-в-1.
+  m.set(OFFSET.stock, `=ARRAY_CONSTRAIN(ARRAYFORMULA(IFERROR(INDEX(${rng(OFFSET.stock)},MATCH(${LCD},${Dabs},0)),"")), 1, 1)`);
   m.set(OFFSET.turnover, `=IFERROR(${col(OFFSET.stock)}${mt}/(${col(OFFSET.orders)}${mt}/COUNTIF(${Dabs},"<="&${LCD})),"")`);
   m.set(OFFSET.profit1, `=IFERROR(${col(OFFSET.profitAll)}${mt}/${col(OFFSET.orders)}${mt},"")`);
   for (const off of [OFFSET.profitAll, OFFSET.adsIn, OFFSET.adsOut]) m.set(off, sumif(off));
@@ -149,4 +151,54 @@ export function blockMtdFormulas(start: number, g: MonthGeometry): Map<number, s
 /** Нормализация для сравнения формул листа с построителем: пробелы и регистр не значимы. */
 export function normFormula(f: unknown): string {
   return String(f ?? '').replace(/\s+/g, '').toUpperCase();
+}
+
+/* ───────────────────────── локаль формул (Phase 2C) ───────────────────────── */
+
+/**
+ * Живая проверка 19.09.2026 (тестовая копия книги, Sheets API): книга в локали ru_RU, и API ОТДАЁТ формулы в
+ * форме локали — разделитель аргументов «;», десятичная «,» (`T766*0,15`). Построители пишут каноническую
+ * форму en (`,` и `.`). Перевод — только ВНЕ строковых литералов; имена функций в API всегда английские.
+ * Неизвестная локаль — отказ (fail-closed), а не догадка.
+ */
+export type FormulaStyle = 'COMMA' | 'SEMICOLON';
+
+export function formulaStyleOf(locale: string | null | undefined): FormulaStyle {
+  const l = String(locale ?? '').trim().toLowerCase();
+  if (l === '' || l === 'en' || l.startsWith('en_')) return 'COMMA';
+  if (l === 'ru' || l.startsWith('ru_')) return 'SEMICOLON';
+  throw new RangeError(`локаль книги «${locale}» не поддержана Calendar V2 (ожидается en_* или ru_*)`);
+}
+
+/** Применить fn к кускам формулы вне строковых литералов "…" (кавычки внутри литерала удваиваются). */
+function outsideStrings(f: string, fn: (chunk: string) => string): string {
+  let out = '';
+  let i = 0;
+  while (i < f.length) {
+    const q = f.indexOf('"', i);
+    if (q < 0) { out += fn(f.slice(i)); break; }
+    out += fn(f.slice(i, q));
+    let j = q + 1;
+    for (;;) {
+      const e = f.indexOf('"', j);
+      if (e < 0) { j = f.length; break; }
+      if (f[e + 1] === '"') { j = e + 2; continue; }
+      j = e + 1; break;
+    }
+    out += f.slice(q, j);
+    i = j;
+  }
+  return out;
+}
+
+/** Каноническая форма (en) → форма локали книги. */
+export function toLocaleFormula(f: string, style: FormulaStyle): string {
+  if (style === 'COMMA') return f;
+  return outsideStrings(f, (s) => s.replace(/,/g, ';').replace(/(\d)\.(\d)/g, '$1,$2'));
+}
+
+/** Форма локали книги → каноническая форма (en). В «;»-локали запятая вне строк — только десятичная. */
+export function fromLocaleFormula(f: string, style: FormulaStyle): string {
+  if (style === 'COMMA') return f;
+  return outsideStrings(f, (s) => s.replace(/(\d),(\d)/g, '$1.$2').replace(/;/g, ','));
 }

@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { unitkaLoader, readSnapshot, type UnitkaDeps } from '../src/loaders/unitka/index.js';
 import { evaluate } from '../src/loaders/unitka/qa.js';
 import { buildPlan } from '../src/loaders/unitka/plan.js';
-import type { SheetsGateway, WriteRange, FormatWrite, FormatGrid, SheetMeta } from '../src/loaders/unitka/sheets.js';
+import type { SheetsGateway, WriteRange, FormatWrite, FormatGrid, SheetMeta, SheetStructure } from '../src/loaders/unitka/sheets.js';
 import type { QueryRunner } from '../src/loaders/mart/bq.js';
 import { OFFSET, colA1, isoToSerial, type CellValue } from '../src/loaders/unitka/model.js';
 import { LoaderError } from '../src/errors.js';
@@ -96,6 +96,8 @@ class FakeSheets implements SheetsGateway {
   constructor(public snap = snapshot(), public readonly readonlyScope = false, private readonly o: { breakSummaryAfterWrite?: boolean } = {}) {}
   structureWrites: unknown[][] = [];
   async readSheetMeta(): Promise<SheetMeta> { return { sheetId: this.snap.sheetId, rowCount: this.snap.geometry.spacerRow, columnCount: this.snap.width }; }
+  async readSheetStructure(): Promise<SheetStructure> { throw new LoaderError('суточный Engine не читает структуру листа', 'TEST_FORBIDDEN'); }
+  async readRowFormats(): Promise<Map<number, Array<Record<string, unknown> | null>>> { throw new LoaderError('суточный Engine не читает форматы строк', 'TEST_FORBIDDEN'); }
   async structureWrite(requests: Record<string, unknown>[]): Promise<number> { this.structureWrites.push(requests); throw new LoaderError('суточный Engine не должен вызывать structureWrite', 'TEST_FORBIDDEN'); }
   async readValues(ranges: string[]): Promise<CellValue[][][]> {
     return ranges.map((r) => {

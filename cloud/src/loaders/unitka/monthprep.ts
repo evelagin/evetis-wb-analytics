@@ -27,9 +27,11 @@ import { cellAt, formulaAt, isFormula, validateSection, MTD_LABEL, type Snapshot
 import { parseCogsTerm, type CogsSnapshot } from './integrity.js';
 import {
   blockDayFormulas, blockProjectionFormulas, blockMtdFormulas, summaryDayFormulas, summaryMtdFormulas, normFormula,
-  type BlockFormulaParams,
+  formulaStyleOf, fromLocaleFormula, toLocaleFormula,
+  type BlockFormulaParams, type FormulaStyle,
 } from './formulas.js';
-import type { SheetMeta, StructureRequest } from './sheets.js';
+import type { RawCellFormat, SheetMeta, SheetStructure, StructureRequest } from './sheets.js';
+import { carryConditionalFormats, dimensionRequests, type CfCarry } from './monthprep_struct.js';
 
 export type PrepStatus = 'PLAN_CREATE' | 'NO_CHANGE' | 'MONTH_SECTION_PARTIAL' | 'MONTH_SECTION_INVALID' | 'BLOCKED';
 
@@ -80,9 +82,22 @@ export interface MonthPrepPlan {
   appendRows: number;
   appendColumns: number;
   merges: GridRect[];
+  /**
+   * Карта форматов «строка/колонки прошлого месяца → строки/колонки новой секции». Phase 2C: исполняется
+   * ЯВНОЙ записью userEnteredFormat (copyPaste PASTE_FORMAT на живом листе копирует и УФ — запрещено).
+   */
   formatCopies: Array<{ source: GridRect; dest: GridRect }>;
-  /** УФ: только намерение (копия УФ секции прошлого месяца). В запросы Phase 2B не переводится — проверка в 2C. */
-  conditionalFormatIntents: Array<{ source: GridRect; dest: GridRect; note: string }>;
+  /** Форматы строк-шаблонов прошлого месяца (строка → колонки 1..N), прочитанные из листа. */
+  templateFormats: Map<number, RawCellFormat[]> | null;
+  /** Сброс форматов, унаследованных добавленными колонками в старых строках (appendDimension копирует формат WB). */
+  resetInheritedFormats: GridRect | null;
+  /** УФ новой секции (Phase 2C): перенос правил прошлого месяца, отчёт о пропущенных (наследие). */
+  conditionalFormats: CfCarry | null;
+  /** Ширины/скрытие колонок новых блоков и высоты строк новой секции (Phase 2C). */
+  dimensionRequests: StructureRequest[];
+  /** Синтаксис формул книги (локаль): в запросах формулы переводятся из канонической формы. */
+  formulaStyle: FormulaStyle;
+  sheetId: number;
   cells: CellWrite[];
   notes: NoteWrite[];
   /** Ручные ячейки (СПП, блогеры) новых дней — намеренно пустые. */
@@ -100,6 +115,18 @@ export interface PrepInputs {
   existing: Snapshot | null;
   population: readonly PopulationSku[];
   cogs: CogsSnapshot;
+  /** Структура листа (УФ, размеры) — для переноса УФ и размеров. Без неё PLAN_CREATE не строится. */
+  structure?: SheetStructure | null;
+  /** userEnteredFormat строк-шаблонов прошлого месяца (строка → колонки 1..N). Без них PLAN_CREATE не строится. */
+  rowFormats?: Map<number, RawCellFormat[]> | null;
+}
+
+/** Ширина новых колонок вне блоков (хвост резервного слота WC..WN): стандартная ширина Sheets. */
+export const DEFAULT_COLUMN_PX = 100;
+
+/** Строки прошлого месяца, чьи форматы нужны для новой секции. */
+export function templateRowsOf(g: MonthGeometry): number[] {
+  return [g.topRow, g.headerRow, g.firstDailyRow, g.lastDailyRow, g.mtdRow, g.spacerRow];
 }
 
 const COGS_SOURCE = 'wb_mart.V_UNITKA_COGS_CANONICAL (копия wb_mart.UNITKA_COGS_EFFECTIVE)';
@@ -107,8 +134,9 @@ const COGS_SOURCE = 'wb_mart.V_UNITKA_COGS_CANONICAL (копия wb_mart.UNITKA_
 function emptyPlan(target: string, status: PrepStatus, code: string | null, reasons: string[]): MonthPrepPlan {
   return {
     status, code, target, reasons, geometry: null, layout: null, predecessor: null, blocks: [], retiredNmIds: [], unmappedActive: [],
-    appendRows: 0, appendColumns: 0, merges: [], formatCopies: [], conditionalFormatIntents: [], cells: [], notes: [],
-    manualBlankCells: 0, cogsProvenance: [],
+    appendRows: 0, appendColumns: 0, merges: [], formatCopies: [], conditionalFormats: null, dimensionRequests: [],
+    formulaStyle: 'COMMA', sheetId: 0, cells: [], notes: [], manualBlankCells: 0, cogsProvenance: [],
+    templateFormats: null, resetInheritedFormats: null,
   };
 }
 
@@ -135,28 +163,30 @@ function projectionStyle(f: CellValue, wantGuarded: string, wantPlain: string): 
  * Параметры каждого блока прошлого месяца + доказательство, что построители воспроизводят его
  * формулы: последняя строка дня, строка MTD, сводка. Любое расхождение — TEMPLATE_MISMATCH.
  */
-export function extractPredecessorParams(pred: Snapshot, layout: MonthLayout): { params: Map<number, BlockFormulaParams>; mismatches: string[] } {
+export function extractPredecessorParams(pred: Snapshot, layout: MonthLayout, style: FormulaStyle = 'COMMA'): { params: Map<number, BlockFormulaParams>; mismatches: string[] } {
   const params = new Map<number, BlockFormulaParams>();
   const mismatches: string[] = [];
   const g = pred.geometry;
   const row = g.lastDailyRow;
   const lastSlot = layout.blocks.reduce((m, b) => Math.max(m, b.slot), 0);
+  // Формулы листа — в локали книги; сравнение и разбор — в канонической форме.
+  const fAt = (r: number, c: number): CellValue => { const v = formulaAt(pred, r, c); return typeof v === 'string' && v.startsWith('=') ? fromLocaleFormula(v, style) : v; };
   const check = (r: number, c: number, want: string): void => {
-    const got = formulaAt(pred, r, c) ?? cellAt(pred, r, c);
+    const got = fAt(r, c) ?? cellAt(pred, r, c);
     if (normFormula(got) !== normFormula(want)) mismatches.push(`${colA1(c)}${r}`);
   };
   for (const b of layout.blocks) {
-    const t = parseCogsTerm(formulaAt(pred, row, b.start + OFFSET.unitProfit), b, row);
+    const t = parseCogsTerm(fAt(row, b.start + OFFSET.unitProfit), b, row);
     if (t.kind === 'unrecognised') { mismatches.push(`${colA1(b.start + OFFSET.unitProfit)}${row} COGS`); continue; }
     const cogsTerm = t.text; // «240», «159.3» или «$R$45» — ровно как в формуле прошлого месяца
-    const overhead = overheadOf(String(formulaAt(pred, row, b.start + OFFSET.adsOut) ?? ''), cogsTerm);
+    const overhead = overheadOf(String(fAt(row, b.start + OFFSET.adsOut) ?? ''), cogsTerm);
     if (overhead === null) { mismatches.push(`${colA1(b.start + OFFSET.adsOut)}${row} Y`); continue; }
     const base: BlockFormulaParams = { start: b.start, cogsTerm, overhead, stockProjection: 'none', storageProjection: 'none' };
     const guardedStock = blockProjectionFormulas({ ...base, stockProjection: 'guarded' }, row, false).get(OFFSET.stock)!;
     const plainStock = blockProjectionFormulas({ ...base, stockProjection: 'plain' }, row, false).get(OFFSET.stock)!;
-    const st = projectionStyle(formulaAt(pred, row, b.start + OFFSET.stock), guardedStock, plainStock);
+    const st = projectionStyle(fAt(row, b.start + OFFSET.stock), guardedStock, plainStock);
     const storageF = blockProjectionFormulas({ ...base, storageProjection: 'guarded' }, row, false).get(OFFSET.storage)!;
-    const sg = projectionStyle(formulaAt(pred, row, b.start + OFFSET.storage), storageF, ' ');
+    const sg = projectionStyle(fAt(row, b.start + OFFSET.storage), storageF, '<нет формы plain для хранения>');
     if (st === null) mismatches.push(`${colA1(b.start + OFFSET.stock)}${row} проекция остатка`);
     if (sg === null || sg === 'plain') mismatches.push(`${colA1(b.start + OFFSET.storage)}${row} проекция хранения`);
     const p: BlockFormulaParams = { ...base, stockProjection: st ?? 'none', storageProjection: sg === 'guarded' ? 'guarded' : 'none' };
@@ -196,6 +226,10 @@ export function cogsLiteral(v: number): string {
 
 export function planMonthPrep(inp: PrepInputs): MonthPrepPlan {
   const tk = formatMonthKey(inp.target);
+  let style: FormulaStyle;
+  try { style = formulaStyleOf(inp.meta.locale); } catch (e) {
+    return emptyPlan(tk, 'BLOCKED', 'UNSUPPORTED_LOCALE', [e instanceof Error ? e.message : String(e)]);
+  }
   const loc = locateSection(inp.columnA, inp.target);
 
   // Месяц уже есть → только проверка, никакой записи.
@@ -246,7 +280,7 @@ export function planMonthPrep(inp: PrepInputs): MonthPrepPlan {
   }
   if (seen.size === 0) return emptyPlan(tk, 'BLOCKED', 'EMPTY_POPULATION', ['нет активных SKU WB']);
 
-  const extracted = extractPredecessorParams(pred, pv.layout);
+  const extracted = extractPredecessorParams(pred, pv.layout, style);
   if (extracted.mismatches.length) {
     return emptyPlan(tk, 'BLOCKED', 'TEMPLATE_MISMATCH', [`построители формул не воспроизводят ${pg.monthKey}: ${extracted.mismatches.slice(0, 20).join(', ')}`]);
   }
@@ -353,6 +387,11 @@ export function planMonthPrep(inp: PrepInputs): MonthPrepPlan {
   const merges: GridRect[] = [{ r1: g.topRow, r2: g.topRow, c1: 1, c2: MONTH_TITLE_MERGE_LAST_COL }];
   for (const b of blocks) merges.push({ r1: g.topRow, r2: g.topRow, c1: b.start, c2: b.start + BLOCK_TITLE_MERGE_WIDTH - 1 });
 
+  if (!inp.structure) return emptyPlan(tk, 'BLOCKED', 'STRUCTURE_UNAVAILABLE', ['структура листа (УФ, размеры) не прочитана — секцию без УФ и размеров не создаём']);
+  const needRows = templateRowsOf(pg);
+  if (!inp.rowFormats || needRows.some((r) => !inp.rowFormats!.has(r))) {
+    return emptyPlan(tk, 'BLOCKED', 'TEMPLATE_FORMATS_UNAVAILABLE', [`форматы строк-шаблонов ${needRows.join(', ')} не прочитаны`]);
+  }
   const plan: MonthPrepPlan = {
     status: 'PLAN_CREATE', code: null, target: tk, reasons, geometry: g, layout,
     predecessor: { monthKey: pg.monthKey, topRow: pg.topRow, blocks: pv.blocks.length },
@@ -360,13 +399,22 @@ export function planMonthPrep(inp: PrepInputs): MonthPrepPlan {
     appendRows: g.spacerRow - inp.meta.rowCount,
     appendColumns: Math.max(0, layout.lastBlockColumn - inp.meta.columnCount),
     merges, formatCopies,
-    conditionalFormatIntents: [{
-      source: { r1: pg.firstDailyRow, r2: pg.lastDailyRow, c1: 1, c2: predLast },
-      dest: { r1: g.firstDailyRow, r2: g.lastDailyRow, c1: 1, c2: layout.lastBlockColumn },
-      note: 'УФ секции: одна шкала на колонку на секцию (контракт E6). Способ переноса проверяется в Phase 2C; Phase 2B запросов УФ не порождает.',
-    }],
+    conditionalFormats: null, dimensionRequests: [], formulaStyle: style, sheetId: inp.meta.sheetId,
+    templateFormats: inp.rowFormats ?? null,
+    resetInheritedFormats: layout.lastBlockColumn > inp.meta.columnCount
+      ? { r1: 1, r2: inp.meta.rowCount, c1: inp.meta.columnCount + 1, c2: layout.lastBlockColumn } : null,
     cells, notes, manualBlankCells: manualBlank, cogsProvenance: provenance,
   };
+  const newSlots = blocks.filter((b) => b.origin === 'NEW').map((b) => b.slot);
+  const predSlots = pv.blocks.map((b) => b.slot);
+  plan.conditionalFormats = carryConditionalFormats(inp.structure.conditionalFormats, pg, g, predSlots, newSlots, inp.meta.sheetId, inp.structure.conditionalFormats.length);
+  plan.dimensionRequests = dimensionRequests(inp.structure, pg, g, Math.max(...predSlots), newSlots, inp.meta.sheetId);
+  // Новые колонки вне новых блоков (хвост резервного слота): стандартная ширина, видимы — свойства WB не наследуем.
+  const newBlockCols = new Set(blocks.filter((b) => b.origin === 'NEW').flatMap((b) => Array.from({ length: BLOCK_WIDTH }, (_, o) => b.start + o)));
+  for (let c = inp.meta.columnCount + 1; c <= layout.lastBlockColumn; c++) {
+    if (newBlockCols.has(c)) continue;
+    plan.dimensionRequests.push({ updateDimensionProperties: { range: { sheetId: inp.meta.sheetId, dimension: 'COLUMNS', startIndex: c - 1, endIndex: c }, properties: { pixelSize: DEFAULT_COLUMN_PX, hiddenByUser: false }, fields: 'pixelSize,hiddenByUser' } });
+  }
   assertPlanConfined(plan);
   return plan;
 }
@@ -383,6 +431,15 @@ export function assertPlanConfined(plan: MonthPrepPlan): void {
     ...plan.notes.filter((c) => c.row < top).map((c) => `note ${colA1(c.col)}${c.row}`),
     ...plan.merges.filter((m) => m.r1 < top).map((m) => `merge ${m.r1}`),
     ...plan.formatCopies.filter((f) => f.dest.r1 < top).map((f) => `format ${f.dest.r1}`),
+    // Сброс унаследованных форматов — только в колонках, которых до подготовки не было.
+    ...(plan.resetInheritedFormats && plan.resetInheritedFormats.c1 <= (plan.layout?.lastBlockColumn ?? 0) - plan.appendColumns ? ['сброс форматов в существующих колонках'] : []),
+    ...(plan.conditionalFormats?.requests ?? []).flatMap((r) => (r.addConditionalFormatRule as { rule: { ranges: Array<{ startRowIndex?: number }> } }).rule.ranges)
+      .filter((x) => (x.startRowIndex ?? 0) < top - 1).map((x) => `УФ ${(x.startRowIndex ?? 0) + 1}`),
+    ...plan.dimensionRequests.map((r) => (r.updateDimensionProperties as { range: { dimension: string; startIndex: number } }).range)
+      .filter((d) => (d.dimension === 'ROWS' ? d.startIndex < top - 1
+        : !plan.blocks.some((b) => b.origin === 'NEW' && d.startIndex >= b.start - 1 && d.startIndex < b.start - 1 + BLOCK_WIDTH)
+          && !(plan.resetInheritedFormats && d.startIndex >= plan.resetInheritedFormats.c1 - 1)))
+      .map((d) => `размер ${d.dimension} ${d.startIndex + 1}`),
   ];
   const reserved = plan.cells.filter((c) => { const s = Math.floor((c.col - slotStart(0)) / BLOCK_WIDTH); return c.col >= slotStart(0) && isReservedSlot(s); });
   if (bad.length || reserved.length) {
@@ -396,16 +453,17 @@ const gridRange = (sheetId: number, r: GridRect): Record<string, number> => ({
   sheetId, startRowIndex: r.r1 - 1, endRowIndex: r.r2, startColumnIndex: r.c1 - 1, endColumnIndex: r.c2,
 });
 
-function cellData(v: CellValueWrite | undefined): Record<string, unknown> {
+function cellData(v: CellValueWrite | undefined, style: FormulaStyle): Record<string, unknown> {
   if (!v) return {};
-  if (v.kind === 'formula') return { userEnteredValue: { formulaValue: v.text } };
+  if (v.kind === 'formula') return { userEnteredValue: { formulaValue: toLocaleFormula(v.text, style) } };
   if (v.kind === 'number') return { userEnteredValue: { numberValue: v.value } };
   return { userEnteredValue: { stringValue: v.value } };
 }
 
 /**
- * Запросы одного spreadsheets.batchUpdate: добавить строки/колонки → форматы → значения и формулы
- * (formulaValue — без разбора локали USER_ENTERED) → заметки COGS → объединения заголовков.
+ * Запросы одного spreadsheets.batchUpdate: добавить строки/колонки → сброс унаследованных форматов в новых
+ * колонках старых строк → значения, формулы (синтаксис локали книги) и явные форматы строк-шаблонов →
+ * заметки COGS → объединения заголовков → УФ (перенос правил) → размеры. copyPaste не используется.
  * Только для PLAN_CREATE; иначе — пустой список.
  */
 export function toStructureRequests(plan: MonthPrepPlan, sheetId: number): StructureRequest[] {
@@ -414,20 +472,53 @@ export function toStructureRequests(plan: MonthPrepPlan, sheetId: number): Struc
   const req: StructureRequest[] = [];
   if (plan.appendRows > 0) req.push({ appendDimension: { sheetId, dimension: 'ROWS', length: plan.appendRows } });
   if (plan.appendColumns > 0) req.push({ appendDimension: { sheetId, dimension: 'COLUMNS', length: plan.appendColumns } });
-  for (const f of plan.formatCopies) {
-    req.push({ copyPaste: { source: gridRange(sheetId, f.source), destination: gridRange(sheetId, f.dest), pasteType: 'PASTE_FORMAT', pasteOrientation: 'NORMAL' } });
+  // Сброс форматов, которые appendDimension унаследовал от колонки WB в старых строках (только новые колонки).
+  if (plan.resetInheritedFormats) {
+    req.push({ repeatCell: { range: gridRange(sheetId, plan.resetInheritedFormats), cell: {}, fields: 'userEnteredFormat' } });
   }
+  // ФОРМАТЫ новой секции — явный userEnteredFormat строк-шаблонов (без УФ): repeatCell на каждую серию
+  // соседних колонок с одинаковым форматом в пределах типа строки (дни 2..N — одним диапазоном строк).
+  // Колонки вне карты (резервный слот в новых строках) — явный сброс формата. Так запрос компактен
+  // (живой лист: поячеечная запись форматов октября — 16 МБ, больше лимита запроса API).
+  const W = plan.layout!.lastBlockColumn;
+  const covered = new Map<string, RawCellFormat>();
+  for (const f of plan.formatCopies) {
+    const src = plan.templateFormats?.get(f.source.r1);
+    if (!src) throw new RangeError(`нет формата строки-шаблона ${f.source.r1}`);
+    for (let c = f.dest.c1; c <= f.dest.c2; c++) covered.set(`${f.dest.r1}|${f.dest.r2}|${c}`, src[f.source.c1 - 1 + (c - f.dest.c1)] ?? null);
+  }
+  const bands = [...new Set(plan.formatCopies.map((f) => `${f.dest.r1}|${f.dest.r2}`))].map((k) => k.split('|').map(Number) as [number, number]);
+  for (const [r1, r2] of bands.sort((a, b) => a[0] - b[0])) {
+    let run: { c1: number; key: string; fmt: RawCellFormat } | null = null;
+    const flush = (cEnd: number): void => {
+      if (!run) return;
+      const range = gridRange(sheetId, { r1, r2, c1: run.c1, c2: cEnd });
+      req.push({ repeatCell: { range, cell: run.fmt ? { userEnteredFormat: run.fmt } : {}, fields: 'userEnteredFormat' } });
+      run = null;
+    };
+    for (let c = 1; c <= W; c++) {
+      const fmt = covered.has(`${r1}|${r2}|${c}`) ? covered.get(`${r1}|${r2}|${c}`)! : null; // вне карты — сброс
+      const key = JSON.stringify(fmt);
+      if (run && run.key === key) continue;
+      flush(c - 1);
+      run = { c1: c, key, fmt };
+    }
+    flush(W);
+  }
+  // Значения и формулы — updateCells по строкам (поле userEnteredValue: форматы не трогает).
   const byRow = new Map<number, Map<number, CellValueWrite>>();
   for (const c of plan.cells) (byRow.get(c.row) ?? byRow.set(c.row, new Map()).get(c.row)!).set(c.col, c.value);
   for (const [row, cols] of [...byRow.entries()].sort((a, b) => a[0] - b[0])) {
     const max = Math.max(...cols.keys());
-    const values = Array.from({ length: max }, (_, i) => cellData(cols.get(i + 1)));
+    const values = Array.from({ length: max }, (_, i) => cellData(cols.get(i + 1), plan.formulaStyle));
     req.push({ updateCells: { start: { sheetId, rowIndex: row - 1, columnIndex: 0 }, rows: [{ values }], fields: 'userEnteredValue' } });
   }
   for (const n of plan.notes) {
     req.push({ updateCells: { start: { sheetId, rowIndex: n.row - 1, columnIndex: n.col - 1 }, rows: [{ values: [{ note: n.note }] }], fields: 'note' } });
   }
   for (const m of plan.merges) req.push({ mergeCells: { range: gridRange(sheetId, m), mergeType: 'MERGE_ALL' } });
+  req.push(...(plan.conditionalFormats?.requests ?? []));
+  req.push(...plan.dimensionRequests);
   return req;
 }
 

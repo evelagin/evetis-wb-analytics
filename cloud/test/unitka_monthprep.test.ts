@@ -13,7 +13,7 @@ import { buildPlan, currentValue, type Snapshot } from '../src/loaders/unitka/pl
 import type { FactRow } from '../src/loaders/unitka/bq.js';
 import { LoaderError } from '../src/errors.js';
 import {
-  sectionFromSpec, septemberSpec, applyPlan, cogsSnapshot, SEPT_NMS, NEW_NM, WIDTH_SEPT,
+  sectionFromSpec, septemberSpec, applyPlan, cogsSnapshot, septemberStructure, septemberRowFormats, SEPT_NMS, NEW_NM, WIDTH_SEPT,
 } from './unitka_calendar_fixture.js';
 import { logistics, commission } from './unitka_fixture.js';
 
@@ -37,7 +37,9 @@ function inputs(b: Book, target: MonthKey, over: Partial<PrepInputs> = {}): Prep
   return {
     target, meta: { sheetId: 739487431, rowCount: b.rowCount, columnCount: b.columnCount }, columnA: columnA(b),
     predecessor: find(prevKey), existing: find(target),
-    population: population(), cogs: cogsSnapshot({ [NEW_NM]: 426.735, 252442517: 231.38 }), ...over,
+    population: population(), cogs: cogsSnapshot({ [NEW_NM]: 426.735, 252442517: 231.38 }),
+    structure: septemberStructure(b.rowCount, b.columnCount),
+    rowFormats: (() => { const p = find(prevKey); return p ? septemberRowFormats(b.columnCount, [p.geometry.topRow, p.geometry.headerRow, p.geometry.firstDailyRow, p.geometry.lastDailyRow, p.geometry.mtdRow, p.geometry.spacerRow]) : null; })(), ...over,
   };
 }
 /** Применить план к книге (как batchUpdate) и вернуть новую книгу. */
@@ -116,27 +118,56 @@ describe('октябрь 2026 — золотая раскладка', () => {
     expect(plan.notes[0]).toMatchObject({ row: 771, col: 613 + OFFSET.unitProfit });
     expect(plan.notes[0]!.note).toMatch(/426\.735.*V_UNITKA_COGS_CANONICAL.*2026-09-17.*df35bcb7/);
   });
-  it('все записи плана — только в новой секции (≥ 769); якоря WB736..WB739 и сентябрь не адресуются', () => {
+  it('все записи плана — только в новой секции (≥ 769); старые строки — лишь сброс формата в НОВЫХ колонках 601..636', () => {
     const req = toStructureRequests(plan, 739487431);
     const rowsTouched: number[] = [];
     for (const r of req) {
-      const x = r as { copyPaste?: { destination: { startRowIndex: number } }; updateCells?: { start: { rowIndex: number } }; mergeCells?: { range: { startRowIndex: number } } };
-      if (x.copyPaste) rowsTouched.push(x.copyPaste.destination.startRowIndex + 1);
+      const x = r as { updateCells?: { start: { rowIndex: number } }; mergeCells?: { range: { startRowIndex: number } } };
       if (x.updateCells) rowsTouched.push(x.updateCells.start.rowIndex + 1);
       if (x.mergeCells) rowsTouched.push(x.mergeCells.range.startRowIndex + 1);
     }
     expect(Math.min(...rowsTouched)).toBe(769);
+    const reset = req.filter((r) => 'repeatCell' in r).map((r) => (r.repeatCell as { range: Record<string, number>; fields: string })).filter((x) => x.range.startRowIndex! < 768);
+    expect(reset).toEqual([{ range: { sheetId: 739487431, startRowIndex: 0, endRowIndex: 768, startColumnIndex: 600, endColumnIndex: 636 }, cell: {}, fields: 'userEnteredFormat' }]);
     expect(plan.cells.every((c) => c.row >= 769 && c.row <= 803)).toBe(true);
-    expect(JSON.stringify(req)).not.toMatch(/PASTE_CONDITIONAL_FORMATTING|addConditionalFormatRule|deleteDimension|insertDimension/);
-    expect(req.filter((r) => 'updateCells' in r && (r.updateCells as { fields: string }).fields === 'userEnteredValue')).toHaveLength(34);
-    expect(req).toHaveLength(75); // 2 append + 12 копий формата + 34 строки + 1 заметка + 26 объединений
+    expect(JSON.stringify(req)).not.toMatch(/copyPaste|PASTE_|deleteDimension|insertDimension|deleteConditionalFormatRule/);
+    const rowsUpd = req.filter((r) => 'updateCells' in r && (r.updateCells as { fields: string }).fields === 'userEnteredValue');
+    expect(rowsUpd).toHaveLength(34); // 769..802: значения и формулы (разделитель 803 пуст)
+    const fmtRuns = req.filter((r) => 'repeatCell' in r).length - 1; // минус сброс унаследованного
+    expect(fmtRuns).toBeGreaterThan(0);
+    // 2 append + 1 сброс + серии форматов + 34 строки + 1 заметка + 26 объединений + УФ + размеры (24 колонки блока 25 + 12 хвоста резерва + 6 типов строк)
+    expect(plan.dimensionRequests).toHaveLength(42);
+    expect(req).toHaveLength(2 + 1 + fmtRuns + 34 + 1 + 26 + plan.conditionalFormats!.requests.length + 42);
+  });
+  it('форматы пишутся явно (repeatCell): день 1 ← 737, дни 2..31 ← 766, блок 25 ← блок 24; резервный слот — сброс', () => {
+    const req = toStructureRequests(plan, 739487431);
+    type RC = { range: { startRowIndex: number; endRowIndex: number; startColumnIndex: number; endColumnIndex: number }; cell: { userEnteredFormat?: { numberFormat: { pattern: string } } }; fields: string };
+    const runs = req.filter((r) => 'repeatCell' in r).map((r) => r.repeatCell as RC);
+    const at = (r: number, c: number) => runs.filter((x) => x.range.startRowIndex < r && x.range.endRowIndex >= r && x.range.startColumnIndex < c && x.range.endColumnIndex >= c);
+    const pat = (r: number, c: number) => { const m = at(r, c).filter((x) => x.range.startRowIndex >= 768); expect(m).toHaveLength(1); return m[0]!.cell.userEnteredFormat?.numberFormat.pattern; };
+    expect(pat(771, 13)).toBe('737:13');
+    expect(pat(790, 13)).toBe('766:13');
+    expect(pat(769, 1)).toBe('735:1');
+    expect(pat(802, 11)).toBe('767:11');
+    expect(pat(772, 613)).toBe('766:565');
+    expect(pat(772, 636)).toBe('766:588');
+    expect(at(801, 13).find((x) => x.range.startRowIndex >= 768)!.range).toMatchObject({ startRowIndex: 771, endRowIndex: 801 }); // дни 2..31 одним диапазоном
+    for (let c = 589; c <= 612; c++) expect(pat(780, c)).toBeUndefined(); // резерв в новых строках — сброс формата
+    expect(JSON.stringify(req).length).toBeLessThan(5_000_000);
+    const tail = plan.dimensionRequests.map((r) => r.updateDimensionProperties as { range: { startIndex: number; dimension: string }; properties: { pixelSize: number; hiddenByUser: boolean } })
+      .filter((d) => d.range.dimension === 'COLUMNS' && d.range.startIndex + 1 >= 601 && d.range.startIndex + 1 <= 612);
+    expect(tail).toHaveLength(12);
+    expect(tail.every((d) => d.properties.pixelSize === 100 && d.properties.hiddenByUser === false)).toBe(true);
+  });
+  it('без форматов строк-шаблонов — BLOCKED TEMPLATE_FORMATS_UNAVAILABLE', () => {
+    expect(planMonthPrep({ ...inputs(book, OCT), rowFormats: null }).code).toBe('TEMPLATE_FORMATS_UNAVAILABLE');
   });
   it('форматы: день 1 ← эталон закрытого дня 737, дни 2..31 ← 766, новый блок ← блок 24 (US..VP)', () => {
     const f = plan.formatCopies;
     expect(f).toContainEqual({ source: { r1: 737, r2: 737, c1: 1, c2: 588 }, dest: { r1: 771, r2: 771, c1: 1, c2: 588 } });
     expect(f).toContainEqual({ source: { r1: 766, r2: 766, c1: 1, c2: 588 }, dest: { r1: 772, r2: 801, c1: 1, c2: 588 } });
     expect(f).toContainEqual({ source: { r1: 766, r2: 766, c1: 565, c2: 588 }, dest: { r1: 772, r2: 801, c1: 613, c2: 636 } });
-    expect(plan.conditionalFormatIntents).toHaveLength(1);
+    expect(plan.conditionalFormats!.carried).toBeGreaterThan(0);
   });
   it('в формулах нет __xludf.DUMMYFUNCTION и ссылок на строки сентября', () => {
     for (const c of plan.cells) {

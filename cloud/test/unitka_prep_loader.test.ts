@@ -10,7 +10,7 @@ import { describe, it, expect } from 'vitest';
 import { unitkaLoader, type UnitkaDeps } from '../src/loaders/unitka/index.js';
 import { unitkaMonthPrepLoader, monthPrepWriteAllowed } from '../src/loaders/unitka/prep.js';
 import { planMonthPrep } from '../src/loaders/unitka/monthprep.js';
-import { SheetsRest, type SheetsGateway, type WriteRange, type FormatWrite, type FormatGrid, type SheetMeta, type StructureRequest } from '../src/loaders/unitka/sheets.js';
+import { SheetsRest, type SheetsGateway, type WriteRange, type FormatWrite, type FormatGrid, type SheetMeta, type SheetStructure, type StructureRequest } from '../src/loaders/unitka/sheets.js';
 import type { QueryRunner } from '../src/loaders/mart/bq.js';
 import { geometryAt } from '../src/loaders/unitka/calendar.js';
 import { classifyCogsSnapshot } from '../src/loaders/unitka/integrity.js';
@@ -22,7 +22,7 @@ import type { Config } from '../src/config.js';
 import type { Logger } from '../src/logging.js';
 import { loadConfig } from '../src/config.js';
 import { LOADERS } from '../src/loaders/registry.js';
-import { sectionFromSpec, septemberSpec, applyPlan, SEPT_NMS, NEW_NM, WIDTH_SEPT } from './unitka_calendar_fixture.js';
+import { sectionFromSpec, septemberSpec, applyPlan, septemberStructure, septemberRowFormats, SEPT_NMS, NEW_NM, WIDTH_SEPT } from './unitka_calendar_fixture.js';
 
 interface LogLine { level: string; event: string; fields: Record<string, unknown> }
 function recordingLogger(lines: LogLine[]): Logger {
@@ -50,7 +50,9 @@ class BookSheets implements SheetsGateway {
   constructor(public sections: Snapshot[], public rowCount: number, public columnCount: number, private readonly readonlyScope: boolean) {}
   private byTop(row: number): Snapshot { const s = this.sections.find((x) => x.geometry.topRow === row); if (!s) throw new Error(`нет секции ${row}`); return s; }
   private byFirst(row: number): Snapshot { const s = this.sections.find((x) => x.geometry.firstDailyRow === row); if (!s) throw new Error(`нет секции ${row}`); return s; }
-  async readSheetMeta(): Promise<SheetMeta> { return { sheetId: 739487431, rowCount: this.rowCount, columnCount: this.columnCount }; }
+  async readSheetMeta(): Promise<SheetMeta> { return { sheetId: 739487431, rowCount: this.rowCount, columnCount: this.columnCount, locale: 'en_US' }; }
+  async readSheetStructure(_n: string, rowCount: number, columnCount: number): Promise<SheetStructure> { return septemberStructure(rowCount, columnCount); }
+  async readRowFormats(_n: string, rows: readonly number[], lastColumn: number): Promise<Map<number, Array<Record<string, unknown> | null>>> { return septemberRowFormats(lastColumn, rows); }
   async readValues(ranges: string[]): Promise<CellValue[][][]> {
     return ranges.map((r) => {
       if (r === 'LAST_CLOSED_DATE') return [[46283]];
@@ -177,6 +179,7 @@ describe('unitka-month-prep: гейты записи', () => {
       const plan = planMonthPrep({
         target: { year: 2026, month: 10 }, meta: { sheetId: 1, rowCount: 768, columnCount: 600 }, columnA: colA, predecessor: sept, existing: null,
         population: [...SEPT_NMS, NEW_NM].map((n) => ({ nmId: n, name: n === NEW_NM ? 'Набор анти-акне пудра+сыворотка+крем' : `Товар ${n}` })), cogs,
+        structure: septemberStructure(), rowFormats: septemberRowFormats(),
       });
       sheets.sections.push(applyPlan(plan, 636));
       sheets.rowCount = 803; sheets.columnCount = 636;

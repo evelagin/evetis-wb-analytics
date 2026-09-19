@@ -15,7 +15,7 @@ import { classifyCogsSnapshot } from './integrity.js';
 import { validateSection } from './plan.js';
 import { formatMonthKey, geometryAt, locateSection, monthKeyOf, nextMonth, parseMonthKey, previousMonth, type MonthKey } from './calendar.js';
 import { readColumnA, readSnapshot } from './section.js';
-import { planMonthPrep, toStructureRequests, type MonthPrepPlan } from './monthprep.js';
+import { planMonthPrep, templateRowsOf, toStructureRequests, type MonthPrepPlan } from './monthprep.js';
 import { defaultUnitkaDeps, ENGINE_VERSION, type UnitkaDeps } from './index.js';
 import type { Snapshot } from './plan.js';
 import type { SheetsGateway, SheetMeta } from './sheets.js';
@@ -44,6 +44,8 @@ function planLog(plan: MonthPrepPlan): Record<string, unknown> {
     retired: plan.retiredNmIds, unmapped_active: plan.unmappedActive,
     append_rows: plan.appendRows, append_columns: plan.appendColumns,
     cells: plan.cells.length, format_copies: plan.formatCopies.length, merges: plan.merges.length,
+    cf: plan.conditionalFormats ? { carried: plan.conditionalFormats.carried, extended: plan.conditionalFormats.extendedToNewBlocks, cloned: plan.conditionalFormats.cloned, requests: plan.conditionalFormats.requests.length, skipped: plan.conditionalFormats.skipped } : null,
+    dimension_requests: plan.dimensionRequests.length, formula_style: plan.formulaStyle,
     manual_blank_cells: plan.manualBlankCells, cogs_provenance: plan.cogsProvenance,
   };
 }
@@ -69,15 +71,20 @@ export async function unitkaMonthPrepLoader(ctx: LoaderContext, deps: UnitkaDeps
 
   const meta = await sheets.readSheetMeta(sheet);
   const columnA = await readColumnA(sheets, sheet, meta.rowCount);
-  const [existing, predecessor, population, cogsRead] = await Promise.all([
+  const [existing, predecessor, population, cogsRead, structure] = await Promise.all([
     sectionSnapshot(sheets, sheet, columnA, meta, target),
     sectionSnapshot(sheets, sheet, columnA, meta, previousMonth(target)),
     bq.activeSkus(),
     bq.cogsCanonical().catch((e: unknown) => ({ error: e instanceof Error ? e.message : String(e) })),
+    sheets.readSheetStructure(sheet, meta.rowCount, meta.columnCount),
   ]);
+  // Форматы строк-шаблонов прошлого месяца (только если месяц ещё не создан и прошлый месяц найден).
+  const rowFormats = !existing && predecessor
+    ? await sheets.readRowFormats(sheet, templateRowsOf(predecessor.geometry), meta.columnCount)
+    : null;
   const cogs = classifyCogsSnapshot(cogsRead, deps.now());
-  const plan = planMonthPrep({ target, meta, columnA, predecessor, existing, population, cogs });
-  log.info('unitka_month_prep_plan', planLog(plan));
+  const plan = planMonthPrep({ target, meta, columnA, predecessor, existing, population, cogs, structure, rowFormats });
+  log.info('unitka_month_prep_plan', { spreadsheet_id: config.unitkaSpreadsheetId, sheet_id: meta.sheetId, locale: meta.locale ?? null, ...planLog(plan) });
 
   if (plan.status === 'NO_CHANGE') return { rowsFetched: population.length, rowsLoaded: 0 };
   if (plan.status !== 'PLAN_CREATE') {
@@ -91,7 +98,7 @@ export async function unitkaMonthPrepLoader(ctx: LoaderContext, deps: UnitkaDeps
   // WRITE: один атомарный batchUpdate → повторное чтение → контракт секции.
   const requests = toStructureRequests(plan, meta.sheetId);
   const applied = await sheets.structureWrite(requests);
-  log.info('unitka_month_prep_written', { target: plan.target, requests: requests.length, applied });
+  log.info('unitka_month_prep_written', { spreadsheet_id: config.unitkaSpreadsheetId, sheet_id: meta.sheetId, target: plan.target, requests: requests.length, applied });
   const meta2 = await sheets.readSheetMeta(sheet);
   const colA2 = await readColumnA(sheets, sheet, meta2.rowCount);
   const after = await sectionSnapshot(sheets, sheet, colA2, meta2, target);

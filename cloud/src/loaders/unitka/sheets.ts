@@ -15,7 +15,7 @@
  */
 import { GoogleAuth } from 'google-auth-library';
 import { LoaderError } from '../../errors.js';
-import type { CellValue, CellFormat } from './model.js';
+import { colA1, type CellValue, type CellFormat } from './model.js';
 
 export interface WriteRange {
   range: string;          // A1 с именем листа
@@ -43,14 +43,40 @@ export interface SheetMeta {
   sheetId: number;
   rowCount: number;
   columnCount: number;
+  /** Локаль книги (spreadsheets.properties.locale): от неё зависит синтаксис формул в API (Phase 2C). */
+  locale?: string;
+}
+
+/** Правило условного форматирования как в REST v4 (ranges + booleanRule|gradientRule). */
+export interface ConditionalFormatRule {
+  ranges: Array<{ sheetId?: number; startRowIndex?: number; endRowIndex?: number; startColumnIndex?: number; endColumnIndex?: number }>;
+  booleanRule?: { condition: { type: string; values?: Array<{ userEnteredValue?: string; relativeDate?: string }> }; format?: Record<string, unknown> };
+  gradientRule?: Record<string, unknown>;
+}
+export interface DimensionProps { pixelSize?: number; hiddenByUser?: boolean }
+/** userEnteredFormat ячейки как в REST v4 (null — формата нет). */
+export type RawCellFormat = Record<string, unknown> | null;
+/** Структура листа для подготовки месяца: УФ (весь лист, по порядку), размеры колонок и строк 1..N. */
+export interface SheetStructure {
+  conditionalFormats: ConditionalFormatRule[];
+  columnMetadata: DimensionProps[];  // [0] = колонка A
+  rowMetadata: DimensionProps[];     // [0] = строка 1
+  merges: Array<{ startRowIndex?: number; endRowIndex?: number; startColumnIndex?: number; endColumnIndex?: number }>;
 }
 
 /** Запрос spreadsheets.batchUpdate (appendDimension, mergeCells, updateCells, copyPaste…) — как в REST v4. */
 export type StructureRequest = Record<string, unknown>;
 
 export interface SheetsGateway {
-  /** Свойства сетки листа по имени (spreadsheets.get, только properties). */
+  /** Свойства сетки листа по имени (spreadsheets.get, только properties) и локаль книги. */
   readSheetMeta(sheetName: string): Promise<SheetMeta>;
+  /** Структура листа (УФ, объединения, размеры строк/колонок) — только чтение, для подготовки месяца. */
+  readSheetStructure(sheetName: string, rowCount: number, columnCount: number): Promise<SheetStructure>;
+  /**
+   * Статические форматы (userEnteredFormat) целых строк-шаблонов 1..lastColumn — только чтение. Phase 2C:
+   * формат новой секции пишется явно (copyPaste PASTE_FORMAT на живом листе копирует и УФ — нельзя).
+   */
+  readRowFormats(sheetName: string, rows: readonly number[], lastColumn: number): Promise<Map<number, RawCellFormat[]>>;
   /** Значения нескольких диапазонов (UNFORMATTED_VALUE, даты серийными числами). */
   readValues(ranges: string[]): Promise<CellValue[][][]>;
   /** Формулы одного диапазона (valueRenderOption=FORMULA): строки '=…' либо значения. */
@@ -110,14 +136,43 @@ export class SheetsRest implements SheetsGateway {
   }
 
   async readSheetMeta(sheetName: string): Promise<SheetMeta> {
-    const fields = 'sheets(properties(sheetId,title,gridProperties(rowCount,columnCount)))';
+    const fields = 'properties(locale),sheets(properties(sheetId,title,gridProperties(rowCount,columnCount)))';
     const url = `${API}/${this.spreadsheetId}?fields=${encodeURIComponent(fields)}`;
-    const data = await this.request<{ sheets?: Array<{ properties?: { sheetId?: number; title?: string; gridProperties?: { rowCount?: number; columnCount?: number } } }> }>('GET', url);
+    const data = await this.request<{ properties?: { locale?: string }; sheets?: Array<{ properties?: { sheetId?: number; title?: string; gridProperties?: { rowCount?: number; columnCount?: number } } }> }>('GET', url);
     const p = (data.sheets ?? []).map((x) => x.properties).find((x) => x?.title === sheetName);
     if (!p || p.sheetId === undefined || !p.gridProperties?.rowCount || !p.gridProperties.columnCount) {
       throw new LoaderError(`лист «${sheetName}» не найден или без свойств сетки`, 'SHEETS_API');
     }
-    return { sheetId: p.sheetId, rowCount: p.gridProperties.rowCount, columnCount: p.gridProperties.columnCount };
+    return { sheetId: p.sheetId, rowCount: p.gridProperties.rowCount, columnCount: p.gridProperties.columnCount, locale: data.properties?.locale };
+  }
+
+  async readSheetStructure(sheetName: string, rowCount: number, columnCount: number): Promise<SheetStructure> {
+    const q = `'${sheetName.replace(/'/g, "''")}'`;
+    const range = `${q}!A1:${colA1(columnCount)}${rowCount}`;
+    const fields = 'sheets(properties(title),merges,conditionalFormats,data(rowMetadata(pixelSize,hiddenByUser),columnMetadata(pixelSize,hiddenByUser)))';
+    const url = `${API}/${this.spreadsheetId}?ranges=${encodeURIComponent(range)}&fields=${encodeURIComponent(fields)}`;
+    const data = await this.request<{ sheets?: Array<{ merges?: SheetStructure['merges']; conditionalFormats?: ConditionalFormatRule[]; data?: Array<{ rowMetadata?: DimensionProps[]; columnMetadata?: DimensionProps[] }> }> }>('GET', url);
+    const sh = data.sheets?.[0];
+    if (!sh) throw new LoaderError(`структура листа «${sheetName}» не получена`, 'SHEETS_API');
+    return {
+      conditionalFormats: sh.conditionalFormats ?? [], merges: sh.merges ?? [],
+      rowMetadata: sh.data?.[0]?.rowMetadata ?? [], columnMetadata: sh.data?.[0]?.columnMetadata ?? [],
+    };
+  }
+
+  async readRowFormats(sheetName: string, rows: readonly number[], lastColumn: number): Promise<Map<number, RawCellFormat[]>> {
+    const q = `'${sheetName.replace(/'/g, "''")}'`;
+    const ranges = rows.map((r) => `ranges=${encodeURIComponent(`${q}!A${r}:${colA1(lastColumn)}${r}`)}`).join('&');
+    const url = `${API}/${this.spreadsheetId}?${ranges}&fields=${encodeURIComponent('sheets(data(rowData(values(userEnteredFormat))))')}`;
+    const data = await this.request<{ sheets?: Array<{ data?: Array<{ rowData?: Array<{ values?: Array<{ userEnteredFormat?: Record<string, unknown> }> }> }> }> }>('GET', url);
+    const blocks = data.sheets?.[0]?.data ?? [];
+    if (blocks.length !== rows.length) throw new LoaderError(`форматы строк: получено ${blocks.length} диапазонов из ${rows.length}`, 'SHEETS_API');
+    const out = new Map<number, RawCellFormat[]>();
+    rows.forEach((r, i) => {
+      const vals = blocks[i]?.rowData?.[0]?.values ?? [];
+      out.set(r, Array.from({ length: lastColumn }, (_, c) => vals[c]?.userEnteredFormat ?? null));
+    });
+    return out;
   }
 
   async structureWrite(requests: StructureRequest[]): Promise<number> {
