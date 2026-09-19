@@ -164,20 +164,24 @@ describe('правила УФ октября 2026 (25 блоков сплошь,
   });
 });
 
-describe('контракт границ (borderSpec): сводка A..L — один контур, сетка дня тонкая, границы блоков средние серые', () => {
+describe('контракт границ (borderSpec): тело дня лёгкое — волосяная светлая сетка; чёрные и серые линии только у смысловых разделителей', () => {
   const g = OCT25;
-  const w = (k: 'title' | 'header' | 'day' | 'mtd' | 'plan', c: number) => { const s = borderSpec(k, c, g)!; return [s.top.w, s.bottom.w, s.left.w, s.right.w].join('/'); };
-  it('строки секции по типу; вне блоков и сводки — нет контракта', () => {
-    expect([769, 770, 771, 801, 802, 803, 768, 804].map((r) => rowKindOf(g, r))).toEqual(['title', 'header', 'day', 'day', 'mtd', 'plan', null, null]);
+  type K = 'title' | 'header' | 'dayFirst' | 'day' | 'mtd' | 'plan';
+  const KINDS: K[] = ['title', 'header', 'dayFirst', 'day', 'mtd', 'plan'];
+  const SIDES = ['top', 'bottom', 'left', 'right'] as const;
+  const w = (k: K, c: number) => { const s = borderSpec(k, c, g)!; return [s.top.w, s.bottom.w, s.left.w, s.right.w].join('/'); };
+  it('строки секции по типу (первый день — отдельный тип: над ним линия шапки); вне блоков и сводки — нет контракта', () => {
+    expect([769, 770, 771, 772, 801, 802, 803, 768, 804].map((r) => rowKindOf(g, r))).toEqual(['title', 'header', 'dayFirst', 'day', 'day', 'mtd', 'plan', null, null]);
     expect(borderSpec('day', 613, g)).toBeNull(); // хвост книги
     expect(SUMMARY_LAST_COLUMN).toBe(12);
   });
-  it('сводка: толстая рамка слева A и справа L (контур A..L), B|C — средний разделитель, день — тонкая сетка снизу; A и L без внутренних горизонталей', () => {
+  it('сводка: контур A..L толстый, B|C — средний разделитель; внутренние горизонтали дня — волосяные сверху; A и L без горизонталей', () => {
     expect(w('day', 1)).toBe('NONE/NONE/THICK/THIN');
-    expect(w('day', 2)).toBe('NONE/THIN/THIN/MEDIUM');
-    expect(w('day', 3)).toBe('NONE/THIN/MEDIUM/THIN');
-    expect(w('day', 11)).toBe('NONE/THIN/THIN/THIN');   // K — правая грань больше не толстая
-    expect(w('day', 12)).toBe('NONE/NONE/THIN/THICK');  // L внутри контура
+    expect(w('day', 2)).toBe('THIN/NONE/THIN/MEDIUM');
+    expect(w('day', 3)).toBe('THIN/NONE/MEDIUM/THIN');
+    expect(w('day', 11)).toBe('THIN/NONE/THIN/THIN');
+    expect(w('day', 12)).toBe('NONE/NONE/THIN/THICK');
+    expect(w('dayFirst', 2)).toBe('NONE/NONE/THIN/MEDIUM');   // над первым днём — линия шапки, своей нет
     expect(w('header', 12)).toBe('MEDIUM/MEDIUM/THIN/THICK');
     expect(w('mtd', 1)).toBe('MEDIUM/THICK/THICK/THIN');
     expect(w('mtd', 12)).toBe('MEDIUM/THICK/THIN/THICK');
@@ -185,11 +189,15 @@ describe('контракт границ (borderSpec): сводка A..L — од
     expect(w('title', 12)).toBe('THICK/MEDIUM/NONE/THICK');
     expect(w('plan', 12)).toBe('NONE/MEDIUM/NONE/MEDIUM');
   });
-  it('блок: дата — средняя серая слева и средняя чёрная справа, тело — тонкая сетка, день недели — только правая средняя; блок 25 = блок 1', () => {
+  it('блок: дата — серая средняя слева и чёрная средняя справа (дата | данные), тело — волосяная сетка, день недели — только правая средняя; блок 25 = блок 1', () => {
     for (const st of [13, 589]) {
-      expect(w('day', st)).toBe('NONE/THIN/MEDIUM/MEDIUM');
+      expect(w('day', st)).toBe('THIN/NONE/MEDIUM/MEDIUM');
       expect(borderSpec('day', st, g)!.left.color).toBe(LINE.block);
-      expect(w('day', st + OFFSET.views)).toBe('NONE/THIN/THIN/THIN');
+      expect(borderSpec('day', st, g)!.right.color).toBe(LINE.black);
+      expect(w('day', st + OFFSET.bloggers)).toBe('THIN/NONE/MEDIUM/THIN');       // левая грань = тот же разделитель дата | данные
+      expect(borderSpec('day', st + OFFSET.bloggers, g)!.left).toEqual(borderSpec('day', st, g)!.right);
+      expect(w('day', st + OFFSET.views)).toBe('THIN/NONE/THIN/THIN');
+      expect(w('dayFirst', st + OFFSET.views)).toBe('NONE/NONE/THIN/THIN');
       expect(w('day', st + OFFSET.weekday)).toBe('NONE/NONE/NONE/MEDIUM');
       expect(w('header', st + OFFSET.views)).toBe('NONE/THIN/THIN/THIN');
       expect(borderSpec('header', st + OFFSET.views, g)!.bottom.color).toBe(LINE.header);
@@ -198,14 +206,63 @@ describe('контракт границ (borderSpec): сводка A..L — од
       expect(w('plan', st)).toBe('NONE/MEDIUM/MEDIUM/NONE');
       expect(w('title', st)).toBe('MEDIUM/MEDIUM/MEDIUM/NONE');
     }
-    expect(Array.from({ length: 24 }, (_, o) => w('day', 13 + o))).toEqual(Array.from({ length: 24 }, (_, o) => w('day', 589 + o)));
+    for (const k of KINDS) expect(Array.from({ length: 24 }, (_, o) => borderSpec(k, 13 + o, g))).toEqual(Array.from({ length: 24 }, (_, o) => borderSpec(k, 589 + o, g)));
   });
-  it('день никогда не получает среднюю/толстую линию сверху (нет «клетки» по строкам); JSON — все четыре стороны явно', () => {
-    for (let c = 1; c <= 612; c++) expect(borderSpec('day', c, g)!.top.w).toBe('NONE');
-    const j = bordersJson(borderSpec('day', 13, g)!) as Record<string, { style: string; colorStyle?: { rgbColor: { red: number } } }>;
+  it('тело дня: каждая ТОНКАЯ линия — светлая волосяная; сильные линии — ровно смысловые разделители, и больше нигде', () => {
+    expect(LINE.hair).toBe('#d9d9d9');
+    for (const k of ['dayFirst', 'day'] as const) {
+      const strong: string[] = [];
+      for (let c = 1; c <= 612; c++) {
+        const s = borderSpec(k, c, g)!;
+        for (const side of SIDES) {
+          const x = s[side];
+          if (x.w === 'NONE') continue;
+          if (x.w === 'THIN') { expect(x.color).toBe(LINE.hair); continue; }
+          strong.push(`${c}:${side}:${x.w}:${x.color}`);
+        }
+      }
+      const want = [
+        `1:left:THICK:${LINE.black}`, `12:right:THICK:${LINE.black}`,           // контур сводки
+        `2:right:MEDIUM:${LINE.black}`, `3:left:MEDIUM:${LINE.black}`,          // дата | данные сводки
+        ...g.blocks.flatMap((b) => [
+          `${b.start}:left:MEDIUM:${LINE.block}`, `${b.start + 23}:right:MEDIUM:${LINE.block}`,                 // SKU | SKU
+          `${b.start}:right:MEDIUM:${LINE.black}`, `${b.start + 1}:left:MEDIUM:${LINE.black}`,                  // дата | данные блока
+        ]),
+      ];
+      expect(strong.sort()).toEqual(want.sort());
+    }
+  });
+  it('день не получает ни одной линии снизу и ни одной средней/толстой сверху: горизонталь принадлежит нижней строке, последнюю закрывает MTD', () => {
+    for (let c = 1; c <= 612; c++) for (const k of ['dayFirst', 'day'] as const) {
+      const s = borderSpec(k, c, g)!;
+      expect(s.bottom.w).toBe('NONE');
+      expect(['NONE', 'THIN']).toContain(s.top.w);
+    }
+    for (let c = 1; c <= 612; c++) expect(borderSpec('dayFirst', c, g)!.top.w).toBe('NONE');
+  });
+  it('у общей грани один владелец: соседние ячейки не задают одну грань по-разному (исключение — контур сводки L | блок 1)', () => {
+    const same = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b);
+    const vertical: Array<[K, K]> = [['title', 'header'], ['header', 'dayFirst'], ['dayFirst', 'day'], ['day', 'day'], ['day', 'mtd'], ['mtd', 'plan']];
+    for (const [up, down] of vertical) for (let c = 1; c <= 612; c++) {
+      const a = borderSpec(up, c, g)!.bottom, b = borderSpec(down, c, g)!.top;
+      expect(a.w === 'NONE' || b.w === 'NONE' || same(a, b), `${up}→${down} колонка ${c}`).toBe(true);
+    }
+    for (const k of KINDS) for (let c = 1; c < 612; c++) {
+      if (c === SUMMARY_LAST_COLUMN) continue;
+      const a = borderSpec(k, c, g)!.right, b = borderSpec(k, c + 1, g)!.left;
+      expect(a.w === 'NONE' || b.w === 'NONE' || same(a, b), `${k} колонки ${c}|${c + 1}`).toBe(true);
+    }
+  });
+  it('шапка, MTD и строка плана сохраняют структуру (не волосяные); JSON — все четыре стороны явно', () => {
+    for (let c = 1; c <= 612; c++) for (const k of ['title', 'header', 'mtd', 'plan'] as const) {
+      const s = borderSpec(k, c, g)!;
+      for (const side of SIDES) expect(s[side].color === LINE.hair).toBe(false);
+    }
+    const j = bordersJson(borderSpec('day', 14 + OFFSET.views, g)!) as Record<string, { style: string; colorStyle?: { rgbColor: { red: number } } }>;
     expect(Object.keys(j).sort()).toEqual(['bottom', 'left', 'right', 'top']);
-    expect(j.top).toEqual({ style: 'NONE' });
-    expect(j.left!.style).toBe('SOLID_MEDIUM');
-    expect(j.bottom!.style).toBe('SOLID');
+    expect(j.bottom).toEqual({ style: 'NONE' });
+    expect(j.top!.style).toBe('SOLID');
+    expect(j.top!.colorStyle!.rgbColor.red).toBeCloseTo(0xd9 / 255, 5);
+    expect((bordersJson(borderSpec('day', 13, g)!) as Record<string, { style: string }>).left!.style).toBe('SOLID_MEDIUM');
   });
 });

@@ -7,6 +7,7 @@ import { describe, it, expect } from 'vitest';
 import {
   planMonthPrep, toStructureRequests, manualCellsWritten, resolveCanonicalCogs, type PrepInputs, type MonthPrepPlan,
 } from '../src/loaders/unitka/monthprep.js';
+import { borderSpec, bordersJson, rowKindOf } from '../src/loaders/unitka/visual.js';
 import { geometryAt, nextMonth, slotStart, formatMonthKey, dayRowOf, chainGaps, type MonthKey } from '../src/loaders/unitka/calendar.js';
 import { OFFSET, SUMMARY, colA1, isoToSerial, addDaysIso, type CellValue } from '../src/loaders/unitka/model.js';
 import { buildPlan, currentValue, type Snapshot } from '../src/loaders/unitka/plan.js';
@@ -164,7 +165,9 @@ describe('октябрь 2026 — золотая раскладка', () => {
     expect(pat(802, 11)).toBe('767:11');
     expect(pat(772, 589)).toBe('737:565');
     expect(pat(772, 612)).toBe('737:588');
-    expect(at(801, 13).find((x) => x.range.startRowIndex >= 768)!.range).toMatchObject({ startRowIndex: 770, endRowIndex: 801 }); // все 31 день одним диапазоном
+    // Дни — две полосы одного шаблона: первый день (над ним линия шапки) и дни 2..31 (волосяная линия сверху).
+    expect(at(771, 13).find((x) => x.range.startRowIndex >= 768)!.range).toMatchObject({ startRowIndex: 770, endRowIndex: 771 });
+    expect(at(801, 13).find((x) => x.range.startRowIndex >= 768)!.range).toMatchObject({ startRowIndex: 771, endRowIndex: 801 });
     expect(JSON.stringify(req).length).toBeLessThan(5_000_000);
     const cols = plan.dimensionRequests.map((r) => r.updateDimensionProperties as { range: { startIndex: number; dimension: string }; properties: { pixelSize: number; hiddenByUser: boolean } }).filter((d) => d.range.dimension === 'COLUMNS');
     expect(cols.map((d) => d.range.startIndex + 1)).toEqual(Array.from({ length: 24 }, (_, o) => 589 + o));
@@ -197,8 +200,11 @@ describe('октябрь 2026 — золотая раскладка', () => {
   });
   it('форматы: все дни ← эталон закрытого дня 737, новый блок ← блок 24 (US..VP)', () => {
     const f = plan.formatCopies;
-    expect(f).toContainEqual({ source: { r1: 737, r2: 737, c1: 1, c2: 588 }, dest: { r1: 771, r2: 801, c1: 1, c2: 588 } });
-    expect(f).toContainEqual({ source: { r1: 737, r2: 737, c1: 565, c2: 588 }, dest: { r1: 771, r2: 801, c1: 589, c2: 612 } });
+    for (const [d1, d2] of [[771, 771], [772, 801]]) {
+      expect(f).toContainEqual({ source: { r1: 737, r2: 737, c1: 1, c2: 588 }, dest: { r1: d1, r2: d2, c1: 1, c2: 588 } });
+      expect(f).toContainEqual({ source: { r1: 737, r2: 737, c1: 565, c2: 588 }, dest: { r1: d1, r2: d2, c1: 589, c2: 612 } });
+    }
+    expect(f.filter((x) => x.dest.c1 === 12 && x.dest.r1 >= 771 && x.dest.r2 <= 801)).toEqual([]);   // L в днях — из своего шаблона, не из A
     expect(f.some((x) => x.source.r1 === 766)).toBe(false);
     expect(plan.conditionalFormats!.families.weekend).toBe(1);
   });
@@ -417,6 +423,80 @@ describe('Engine на октябре: 01.10, 02.10 (первая запись), 
   });
 });
 
+describe('границы в запросах подготовки: каждая строка секции получает контракт СВОЕГО типа строки', () => {
+  const plan = planMonthPrep(inputs(septemberBook(), OCT));
+  const g = plan.geometry!;
+  type Rc = { repeatCell: { range: { startRowIndex: number; endRowIndex: number; startColumnIndex: number; endColumnIndex: number }; cell: { userEnteredFormat?: { borders?: Record<string, unknown> } } } };
+  const runs = (toStructureRequests(plan, 739487431) as unknown as Rc[]).filter((r) => r.repeatCell && r.repeatCell.range.startRowIndex >= g.topRow - 1);
+  const bordersAt = (row: number, col: number): Record<string, unknown> | undefined =>
+    runs.find((r) => { const x = r.repeatCell.range; return row - 1 >= x.startRowIndex && row - 1 < x.endRowIndex && col - 1 >= x.startColumnIndex && col - 1 < x.endColumnIndex; })?.repeatCell.cell.userEnteredFormat?.borders;
+  it('все строки 769..803 × все колонки A..WN: границы запроса = bordersJson(borderSpec(тип строки))', () => {
+    for (let row = g.topRow; row <= g.spacerRow; row++) {
+      const kind = rowKindOf(g, row)!;
+      for (const col of [1, 2, 3, 7, 11, 12, 13, 14, 20, 36, 37, 301, 588, 589, 590, 600, 611, 612]) {
+        expect(bordersAt(row, col), `${colA1(col)}${row}`).toEqual(bordersJson(borderSpec(kind, col, plan.layout!)!));
+      }
+    }
+  });
+  it('первый день — без верхней линии; дни 2..31 — волосяная сверху; ни у одного дня нет линии снизу (полоса дней не одна на весь месяц)', () => {
+    const top = (row: number) => (bordersAt(row, 14 + OFFSET.views) as { top: { style: string }; bottom: { style: string } });
+    expect(top(g.firstDailyRow).top.style).toBe('NONE');
+    for (let row = g.firstDailyRow + 1; row <= g.lastDailyRow; row++) expect(top(row).top.style).toBe('SOLID');
+    for (let row = g.firstDailyRow; row <= g.lastDailyRow; row++) expect(top(row).bottom.style).toBe('NONE');
+    expect(top(g.mtdRow).top.style).toBe('SOLID_MEDIUM');
+  });
+});
+
+/** Модель Sheets для формы проекции остатка: =IF($<дата>r>LAST_CLOSED_DATE,"",<остаток>r-1 − <заказы>r + <отмены>r-1); пусто в арифметике = 0. */
+function evalStockProjection(formula: string, env: { date: number; lcd: number; prevStock: number | ''; orders: number | ''; prevCancels: number | '' }): number | '' {
+  const m = /^=IF\(\$[A-Z]+\d+>LAST_CLOSED_DATE,"",[A-Z]+\d+-[A-Z]+\d+\+[A-Z]+\d+\)$/.exec(formula);
+  if (!m) throw new Error(`не форма защищённой проекции остатка: ${formula}`);
+  const n = (v: number | ''): number => (v === '' ? 0 : v);
+  return env.date > env.lcd ? '' : n(env.prevStock) - n(env.orders) + n(env.prevCancels);
+}
+/** Формула блока в координатах смещений: буквы колонок → «c<смещение>», строка → относительная. */
+function relStock(f: string, start: number, row: number): string {
+  const num = (letters: string): number => [...letters].reduce((a, ch) => a * 26 + ch.charCodeAt(0) - 64, 0);
+  return f.replace(/(\$?)([A-Z]{1,3})(\d+)/g, (_, d: string, l: string, r: string) => `${d}c${num(l) - start}r${Number(r) - row}`);
+}
+
+describe('проекция остатка: у КАЖДОГО созданного блока та же защита LAST_CLOSED_DATE, что у блока 1', () => {
+  const plan = planMonthPrep(inputs(septemberBook(), OCT));
+  const g = plan.geometry!;
+  const stockF = (b: { start: number }, row: number): string | undefined => { const v = cellOf(plan, row, b.start + OFFSET.stock); return v?.kind === 'formula' ? v.text : undefined; };
+  it('сентябрь-эталон: блок 1 с защитой, блоки 2..24 без неё — шаблон распознан (нет TEMPLATE_MISMATCH), но в новом месяце защита у всех', () => {
+    expect(plan.status).toBe('PLAN_CREATE');
+    expect(plan.blocks).toHaveLength(25);
+    expect(plan.blocks.map((b) => b.params.stockProjection)).toEqual(Array(25).fill('guarded'));
+  });
+  it('день 1 — без проекции (нет ссылок на прошлый месяц); дни 2..31 — защищённая форма со своей датой, у блока 1 и блока N одинаковая', () => {
+    const ref = relStock(stockF(plan.blocks[0]!, g.firstDailyRow + 1)!, plan.blocks[0]!.start, g.firstDailyRow + 1);
+    expect(ref).toBe('=IF($c0r0>LAST_CLOSED_DATE,"",c7r-1-c4r0+c6r-1)');
+    for (const b of plan.blocks) {
+      expect(stockF(b, g.firstDailyRow)).toBeUndefined();
+      for (let row = g.firstDailyRow + 1; row <= g.lastDailyRow; row++) {
+        const f = stockF(b, row)!;
+        expect(relStock(f, b.start, row)).toBe(ref);
+        expect(f.startsWith(`=IF($${colA1(b.start)}${row}>LAST_CLOSED_DATE,"",`)).toBe(true);
+      }
+    }
+  });
+  it('будущий день — пусто; закрытый день с нулём — число 0; закрытый положительный — число; граница LCD точная', () => {
+    const f = stockF(plan.blocks[24]!, g.firstDailyRow + 4)!;       // 05.10, блок 25
+    const d = isoToSerial('2026-10-05');
+    expect(evalStockProjection(f, { date: d, lcd: d - 1, prevStock: 40, orders: 3, prevCancels: 1 })).toBe('');      // будущее
+    expect(evalStockProjection(f, { date: d, lcd: d, prevStock: 40, orders: 3, prevCancels: 1 })).toBe(38);          // LCD = дата: закрыт
+    expect(evalStockProjection(f, { date: d + 1, lcd: d, prevStock: 40, orders: 3, prevCancels: 1 })).toBe('');      // LCD + 1: будущее
+    const zero = evalStockProjection(f, { date: d, lcd: d + 3, prevStock: 0, orders: '', prevCancels: '' });
+    expect(zero).toBe(0);                                                                                            // настоящий ноль остаётся нулём
+    expect(zero === '').toBe(false);
+    expect(evalStockProjection(f, { date: d, lcd: d + 3, prevStock: 2, orders: 2, prevCancels: 0 })).toBe(0);        // расчётный ноль
+  });
+  it('другие проекции не тронуты: хранение с защитой — только у блока 1 (как в сентябре), у нового блока — нет', () => {
+    expect(plan.blocks.map((b) => b.params.storageProjection)).toEqual(['guarded', ...Array(24).fill('none')]);
+  });
+});
+
 describe('цепочка месяцев: октябрь 2026 → март 2028 (год, 28 и 29 февраля)', () => {
   it('каждый месяц создаётся из предыдущего, повтор — NO_CHANGE; Engine пишет последний день', () => {
     let book = septemberBook();
@@ -430,11 +510,18 @@ describe('цепочка месяцев: октябрь 2026 → март 2028 (
       expect(planMonthPrep(inputs(book, key)).status).toBe('NO_CHANGE');
       const g = p.geometry!;
       seen[g.monthKey] = [g.topRow, g.firstDailyRow, g.lastDailyRow, g.mtdRow, g.daysInMonth, p.blocks.length];
+      // Месяцы 28/29/30/31 дней: защищённая проекция остатка у всех блоков со 2-го дня по последний, в первом дне её нет.
+      for (const b of p.blocks) {
+        const f = (row: number) => { const v = cellOf(p, row, b.start + OFFSET.stock); return v?.kind === 'formula' ? v.text : undefined; };
+        expect(f(g.firstDailyRow)).toBeUndefined();
+        expect(f(g.lastDailyRow)).toBe(`=IF($${colA1(b.start)}${g.lastDailyRow}>LAST_CLOSED_DATE,"",${colA1(b.start + OFFSET.stock)}${g.lastDailyRow - 1}-${colA1(b.start + OFFSET.orders)}${g.lastDailyRow}+${colA1(b.start + OFFSET.cancels)}${g.lastDailyRow - 1})`);
+      }
       const sec = book.sections[book.sections.length - 1]!;
       const last = addDaysIso(g.monthStart, g.daysInMonth - 1);
       const plan = engineOn(sec, last, addDaysIso(last, -1));
       expect(Math.max(...plan.cells.filter((c) => c.kind === 'fact').map((c) => c.row))).toBe(dayRowOf(g, g.daysInMonth - 1));
     }
+    expect(new Set(Object.values(seen).map((v) => v[4]))).toEqual(new Set([28, 29, 30, 31]));
     expect(seen['2026-12']).toEqual([838, 840, 870, 871, 31, 25]);
     expect(seen['2027-01']).toEqual([873, 875, 905, 906, 31, 25]);
     expect(seen['2027-02']).toEqual([908, 910, 937, 938, 28, 25]);

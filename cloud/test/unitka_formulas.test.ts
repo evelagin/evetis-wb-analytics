@@ -57,34 +57,32 @@ describe('эталон сентября: построители = живые ф�
   });
 });
 
-describe('октябрь 2026 — 31 день, 25 блоков (слот 24 зарезервирован)', () => {
-  const B25: BlockFormulaParams = { start: slotStart(25), cogsTerm: '426.735', overhead: '10', stockProjection: 'plain', storageProjection: 'none' };
+describe('октябрь 2026 — 31 день, 25 блоков сплошь (блок 25 = слот 24, VQ..WN)', () => {
+  const B25: BlockFormulaParams = { start: slotStart(24), cogsTerm: '426.735', overhead: '10', stockProjection: 'guarded', storageProjection: 'none' };
   it('день 31 (строка 801) и MTD (802): диапазоны 771..801', () => {
-    expect(blockDayFormulas(B25, 801).get(OFFSET.unitProfit)).toBe('=IF($WO801>LAST_CLOSED_DATE,"",XG801-XH801-XJ801-426.735)');
+    expect(blockDayFormulas(B25, 801).get(OFFSET.unitProfit)).toBe('=IF($VQ801>LAST_CLOSED_DATE,"",WI801-WJ801-WL801-426.735)');
     const mtd = blockMtdFormulas(B25.start, OCT);
-    expect(mtd.get(OFFSET.orders)).toBe('=SUMIF($WO$771:$WO$801,"<="&LAST_CLOSED_DATE,WS771:WS801)');
-    expect(mtd.get(OFFSET.stock)).toBe('=ARRAY_CONSTRAIN(ARRAYFORMULA(IFERROR(INDEX(WV771:WV801,MATCH(LAST_CLOSED_DATE,$WO$771:$WO$801,0)),"")), 1, 1)');
-    expect(summaryMtdFormulas(OCT, 25).get(SUMMARY.profit)).toBe('=SUM(I771:I801)');
+    expect(mtd.get(OFFSET.orders)).toBe('=SUMIF($VQ$771:$VQ$801,"<="&LAST_CLOSED_DATE,VU771:VU801)');
+    expect(mtd.get(OFFSET.stock)).toBe('=ARRAY_CONSTRAIN(ARRAYFORMULA(IFERROR(INDEX(VX771:VX801,MATCH(LAST_CLOSED_DATE,$VQ$771:$VQ$801,0)),"")), 1, 1)');
+    expect(summaryMtdFormulas(OCT, 24).get(SUMMARY.profit)).toBe('=SUM(I771:I801)');
   });
-  it('сводка: правая граница — блок 25 (N→WP, X→WZ, Q→WS, AC→XE), FILTER через слот 24 по MOD 24', () => {
-    const s = summaryDayFormulas(771, 25, 13);
-    expect(s.get(SUMMARY.bloggers)).toBe('=IF($B771>LAST_CLOSED_DATE,"",SUM(FILTER(N771:WP771,MOD(COLUMN(N771:WP771)-COLUMN(N771),24)=0)))');
-    expect(s.get(SUMMARY.ads)).toContain('FILTER(X771:WZ771,');
-    expect(s.get(SUMMARY.drr)).toContain('FILTER($Q$771:$WS$771,');
-    expect(s.get(SUMMARY.drr)).toContain('FILTER($AC$771:$XE$771,');
-    // Колонки полосы, выбранные MOD 24 внутри резерва, — только колонки смещений (WB = X-колонка слота 24).
-    expect((slotStart(24) + OFFSET.adsIn - (13 + OFFSET.adsIn)) % 24).toBe(0);
+  it('сводка: правая граница — блок 25 (N→VR, X→WB, Q→VU, AC→WG), FILTER по MOD 24', () => {
+    const s = summaryDayFormulas(771, 24, 13);
+    expect(s.get(SUMMARY.bloggers)).toBe('=IF($B771>LAST_CLOSED_DATE,"",SUM(FILTER(N771:VR771,MOD(COLUMN(N771:VR771)-COLUMN(N771),24)=0)))');
+    expect(s.get(SUMMARY.ads)).toContain('FILTER(X771:WB771,');
+    expect(s.get(SUMMARY.drr)).toContain('FILTER($Q$771:$VU$771,');
+    expect(s.get(SUMMARY.drr)).toContain('FILTER($AC$771:$WG$771,');
   });
   it('первый день без проекции остатка (никакой ссылки на сентябрь); второй — внутри секции', () => {
     expect(blockProjectionFormulas(B25, 771, true).has(OFFSET.stock)).toBe(false);
-    expect(blockProjectionFormulas(B25, 772, false).get(OFFSET.stock)).toBe('=WV771-WS772+WU771');
+    expect(blockProjectionFormulas(B25, 772, false).get(OFFSET.stock)).toBe('=IF($VQ772>LAST_CLOSED_DATE,"",VX771-VU772+VW771)');
   });
   it('ни одна формула октября не ссылается на строки вне 771..802 (межмесячной утечки нет)', () => {
     const all: string[] = [];
     for (let r = OCT.firstDailyRow; r <= OCT.lastDailyRow; r++) {
-      all.push(...blockDayFormulas(B25, r).values(), ...blockProjectionFormulas(B25, r, r === OCT.firstDailyRow).values(), ...summaryDayFormulas(r, 25, 13).values());
+      all.push(...blockDayFormulas(B25, r).values(), ...blockProjectionFormulas(B25, r, r === OCT.firstDailyRow).values(), ...summaryDayFormulas(r, 24, 13).values());
     }
-    all.push(...blockMtdFormulas(B25.start, OCT).values(), ...summaryMtdFormulas(OCT, 25).values());
+    all.push(...blockMtdFormulas(B25.start, OCT).values(), ...summaryMtdFormulas(OCT, 24).values());
     const rows = all.flatMap(rowsReferenced);
     expect(rows.length).toBeGreaterThan(1000);
     expect(rows.every((r) => r >= OCT.firstDailyRow && r <= OCT.mtdRow)).toBe(true);

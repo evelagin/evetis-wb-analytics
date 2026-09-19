@@ -141,6 +141,9 @@ SELECT * FROM `wb_mart.V_UNITKA_ENGINE_STATUS`;
 * Откат созданного месяца: `planMonthRollback` (`monthprep_struct.ts`) — удалить правила УФ новой секции, добавленные
   колонки (если пусты выше секции) и строки секции; затем сверить книгу с предснимком (Phase 2C).
 * Дополнительные отказы Phase 2C: `UNSUPPORTED_LOCALE`, `STRUCTURE_UNAVAILABLE`, `TEMPLATE_FORMATS_UNAVAILABLE`.
+* **Порядок выката: ENGINE 2.0 DEPLOYMENT MUST PRECEDE PRODUCTION MONTH PREP.** Подготовка месяца с новым SKU сдвигает
+  якоря книги (WB → WZ); Engine 1.1.0 и наследие Apps Script пишут в колонку 600 константой — после вставки колонок
+  их использовать нельзя (`docs/UNITKA_CALENDAR_V2.md` §10).
 * Отказы hardening 2: `CHAIN_GAP` (выбывший SKU оставил бы дыру в сплошной цепочке блоков — решение владельца),
   `CF_TRIM_UNSAFE` (правило УФ до последней колонки блоков ссылается на другой лист — не переиздаём),
   `ANCHOR_UNRESOLVED` (именованный диапазон `REVERSE_LEG_RATE` не одна ячейка строки 737 листа Unitka; Engine и

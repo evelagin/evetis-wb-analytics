@@ -238,20 +238,27 @@ export function cfRequests(cf: VisualCf, sheetId: number, startIndex: number): S
 export const SUMMARY_RIGHT_WEEKDAY = SUMMARY.drr + 1;
 export const SUMMARY_LAST_COLUMN = SUMMARY_RIGHT_WEEKDAY;
 
-export type RowKind = 'title' | 'header' | 'day' | 'mtd' | 'plan';
+/** dayFirst — первый день месяца: над ним линия шапки, своей верхней у него нет. */
+export type RowKind = 'title' | 'header' | 'dayFirst' | 'day' | 'mtd' | 'plan';
 export type EdgeWeight = 'NONE' | 'THIN' | 'MEDIUM' | 'THICK';
 export interface EdgeSpec { w: EdgeWeight; color?: string }
 export interface BorderSpec { top: EdgeSpec; bottom: EdgeSpec; left: EdgeSpec; right: EdgeSpec }
 
-/** Цвета линий живого сентября: рамка/сетка — чёрный, границы блоков и итоги — серый, шапка блока — светло-серый. */
-export const LINE = { black: '#000000', block: '#5f6368', header: '#9aa0a6' } as const;
+/**
+ * Цвета линий: рамка сводки и разделитель «дата | данные» — чёрный, границы блоков и итоги — серый, шапка блока —
+ * светло-серый, сетка обычных ячеек дня — светлая волосяная. В живом сентябре сетка дня — 1 px чёрным на каждой
+ * ячейке, но под статической заливкой и плотным содержимым; в созданном месяце будущие дни нейтрально белые, и та же
+ * чёрная линия читается сплошной «клеткой». Поэтому обычная ячейка дня получает волосяную линию цвета сетки листа.
+ */
+export const LINE = { black: '#000000', block: '#5f6368', header: '#9aa0a6', hair: '#d9d9d9' } as const;
 const N: EdgeSpec = { w: 'NONE' };
 const e = (w: EdgeWeight, color: string): EdgeSpec => ({ w, color });
 
 export function rowKindOf(g: MonthGeometry, row: number): RowKind | null {
   if (row === g.topRow) return 'title';
   if (row === g.headerRow) return 'header';
-  if (row >= g.firstDailyRow && row <= g.lastDailyRow) return 'day';
+  if (row === g.firstDailyRow) return 'dayFirst';
+  if (row > g.firstDailyRow && row <= g.lastDailyRow) return 'day';
   if (row === g.mtdRow) return 'mtd';
   if (row === g.spacerRow) return 'plan';
   return null;
@@ -259,25 +266,32 @@ export function rowKindOf(g: MonthGeometry, row: number): RowKind | null {
 
 /**
  * Границы ячейки по семантике (строка × колонка). Всегда все четыре стороны (NONE — явно), чтобы формат
- * строки-шаблона не «протекал». Семантика:
+ * строки-шаблона не «протекал». У общей грани один владелец (или обе стороны задают её одинаково): горизонталь
+ * между днями принадлежит НИЖНЕЙ строке (её верх), над первым днём — линия шапки, под последним — верх MTD.
  *   контур сводки A..L — толстая чёрная рамка (левая грань A, правая грань L; сверху заголовка, снизу MTD);
- *   разделитель B|C — средняя чёрная (дата | данные); сетка дня — тонкая чёрная снизу и по бокам;
- *   день недели (A, L, смещение 23 блока) — без внутренних горизонталей;
- *   граница блока — средняя серая (левая грань даты, правая грань дня недели), дата|данные — средняя чёрная;
+ *   «дата | данные» — средняя чёрная (B|C в сводке; дата | блогеры в блоке) — с обеих сторон грани;
+ *   SKU | SKU — средняя серая (левая грань даты, правая грань дня недели);
+ *   обычная ячейка дня — волосяная светлая сетка (LINE.hair): тело открытое, без «клетки»;
+ *   день недели (A, L, смещение 23 блока) — без горизонталей;
  *   шапка блока — тонкая светло-серая; заголовок месяца/блока — средняя чёрная;
  *   MTD — средняя серая рамка у блоков, у сводки сверху средняя, снизу толстая; строка плана — средняя серая снизу.
  */
 export function borderSpec(kind: RowKind, col: number, layout: MonthLayout): BorderSpec | null {
-  const B = LINE.black, G = LINE.block, H = LINE.header;
+  const B = LINE.black, G = LINE.block, H = LINE.header, L = LINE.hair;
   const blk = layout.blocks.find((x) => col >= x.start && col < x.start + BLOCK_WIDTH);
+  const isDay = kind === 'day' || kind === 'dayFirst';
+  // Горизонталь дня — верх нижней строки; у первого дня верха нет (линия шапки).
+  const dayTop = (strip: boolean): EdgeSpec => (strip || kind === 'dayFirst' ? N : e('THIN', L));
   if (col <= SUMMARY_LAST_COLUMN) {
     const isA = col === SUMMARY.weekday, isB = col === SUMMARY.date, isC = col === SUMMARY.bloggers, isL = col === SUMMARY_RIGHT_WEEKDAY;
-    const left = isA ? e('THICK', B) : isC ? e('MEDIUM', B) : e('THIN', B);
-    const right = isL ? e('THICK', B) : isB ? e('MEDIUM', B) : e('THIN', B);
+    const thin = isDay ? e('THIN', L) : e('THIN', B);
+    const left = isA ? e('THICK', B) : isC ? e('MEDIUM', B) : thin;
+    const right = isL ? e('THICK', B) : isB ? e('MEDIUM', B) : thin;
     switch (kind) {
       case 'title': return { top: e('THICK', B), bottom: e('MEDIUM', B), left: isA ? e('THICK', B) : N, right: isL ? e('THICK', B) : N };
       case 'header': return { top: e('MEDIUM', B), bottom: e('MEDIUM', B), left, right };
-      case 'day': return { top: N, bottom: (isA || isL) ? N : e('THIN', B), left, right };
+      case 'dayFirst':
+      case 'day': return { top: dayTop(isA || isL), bottom: N, left, right };
       case 'mtd': return { top: e('MEDIUM', B), bottom: e('THICK', B), left, right };
       case 'plan': return { top: N, bottom: e('MEDIUM', G), left: isA ? N : isB ? e('MEDIUM', G) : N, right: isL ? e('MEDIUM', G) : N };
     }
@@ -288,10 +302,12 @@ export function borderSpec(kind: RowKind, col: number, layout: MonthLayout): Bor
   switch (kind) {
     case 'title': return { top: e('MEDIUM', B), bottom: e('MEDIUM', B), left: isDate ? e('MEDIUM', G) : N, right: isWk ? e('MEDIUM', G) : N };
     case 'header': return { top: N, bottom: e('THIN', H), left: isDate ? e('MEDIUM', G) : e('THIN', H), right: isWk ? e('MEDIUM', G) : e('THIN', H) };
+    case 'dayFirst':
     case 'day':
       if (isWk) return { top: N, bottom: N, left: N, right: e('MEDIUM', G) };
-      if (isDate) return { top: N, bottom: e('THIN', B), left: e('MEDIUM', G), right: e('MEDIUM', B) };
-      return { top: N, bottom: e('THIN', B), left: e('THIN', B), right: e('THIN', B) };
+      if (isDate) return { top: dayTop(false), bottom: N, left: e('MEDIUM', G), right: e('MEDIUM', B) };
+      // Колонка сразу за датой делит с ней грань «дата | данные» — та же средняя чёрная.
+      return { top: dayTop(false), bottom: N, left: o === OFFSET.date + 1 ? e('MEDIUM', B) : e('THIN', L), right: e('THIN', L) };
     case 'mtd': return { top: e('MEDIUM', G), bottom: e('MEDIUM', G), left: isWk ? N : e('MEDIUM', G), right: e('MEDIUM', G) };
     case 'plan': return { top: N, bottom: e('MEDIUM', G), left: isDate ? e('MEDIUM', G) : N, right: isWk ? e('MEDIUM', G) : N };
   }

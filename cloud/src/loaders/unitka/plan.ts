@@ -52,7 +52,8 @@ export function cellAt(snap: Snapshot, row: number, col: number): CellValue {
 }
 /**
  * Ячейка контракта — якорь книги (зеркало LCD WB736 или REVERSE_LEG_RATE WB737)? Определяется по ВИДУ
- * ячейки плана, а не по колонке: колонка 600 в строках октября и далее — обычная ячейка блока 25.
+ * ячейки плана, а не по колонке: колонка якорей сдвигается при вставке блоков, а ячейка той же колонки в строках
+ * дней — обычная ячейка блока.
  */
 export function isAnchorExpected(e: { kind: CellKind }): boolean {
   return e.kind === 'lcd' || e.kind === 'reverse';

@@ -162,6 +162,15 @@ function overheadOf(y: string, cogsTerm: string): string | null {
   return m ? m[1]! : null;
 }
 
+/**
+ * Проекция остатка в СОЗДАВАЕМОМ месяце — у каждого блока с защитой LAST_CLOSED_DATE, как у блока 1 живой книги
+ * (решение владельца, final visual polish). В сентябре блоки 2..24 держат форму без защиты: в свежем месяце
+ * «пусто − пусто + пусто» показывает 0 в каждом будущем дне. С защитой будущий день пуст, а закрытый считает то же
+ * самое (настоящий ноль остаётся числом 0). Форма прошлого месяца по-прежнему распознаётся (иначе TEMPLATE_MISMATCH),
+ * но в новый месяц не переносится; от момента подготовки (проекция последнего дня уже заменена фактом) не зависит.
+ */
+export const GENERATED_STOCK_PROJECTION = 'guarded' as const;
+
 function projectionStyle(f: CellValue, wantGuarded: string, wantPlain: string): 'guarded' | 'plain' | 'none' | null {
   if (!isFormula(f)) return 'none';
   const n = normFormula(f);
@@ -300,7 +309,7 @@ export function planMonthPrep(inp: PrepInputs): MonthPrepPlan {
   const retired: number[] = [];
   for (const b of pv.blocks) {
     if (!seen.has(b.nmId)) { retired.push(b.nmId); continue; }
-    blocks.push({ ...b, index: blocks.length, origin: 'CARRIED', params: { ...extracted.params.get(b.nmId)! }, cogsProvenance: null });
+    blocks.push({ ...b, index: blocks.length, origin: 'CARRIED', params: { ...extracted.params.get(b.nmId)!, stockProjection: GENERATED_STOCK_PROJECTION }, cogsProvenance: null });
   }
   const predNm = new Set(pv.blocks.map((b) => b.nmId));
   const fresh = inp.population.filter((p) => !predNm.has(p.nmId)).sort((a, b) => a.nmId - b.nmId);
@@ -315,9 +324,9 @@ export function planMonthPrep(inp: PrepInputs): MonthPrepPlan {
     const tmpl = blocks[blocks.length - 1]?.params ?? [...extracted.params.values()][0]!;
     blocks.push({
       index: blocks.length, slot, start, nmId: p.nmId, title: `${p.nmId} ${p.name ?? ''}`.trim(), origin: 'NEW',
-      // Шаблон — последний перенесённый блок (сентябрь: блок 24 — константа 10, проекция остатка без
-      // обёртки, без проекции хранения). Единственное новое — COGS из канона.
-      params: { start, cogsTerm: cogsLiteral(c.cogs), overhead: tmpl.overhead, stockProjection: tmpl.stockProjection, storageProjection: 'none' },
+      // Шаблон — последний перенесённый блок (сентябрь: блок 24 — константа 10, без проекции хранения).
+      // Единственное новое — COGS из канона. Проекция остатка — с защитой LCD, как у всех блоков месяца.
+      params: { start, cogsTerm: cogsLiteral(c.cogs), overhead: tmpl.overhead, stockProjection: GENERATED_STOCK_PROJECTION, storageProjection: 'none' },
       cogsProvenance: c,
     });
   }
@@ -390,7 +399,9 @@ export function planMonthPrep(inp: PrepInputs): MonthPrepPlan {
   const predLast = pv.layout.lastBlockColumn;
   const rowPairs: Array<[number, number, number]> = [
     [pg.topRow, g.topRow, g.topRow], [pg.headerRow, g.headerRow, g.headerRow],
-    [pg.firstDailyRow, g.firstDailyRow, g.lastDailyRow],
+    // Дни — две полосы одного шаблона (первый день прошлого месяца): у первого дня нет верхней линии (над ним линия
+    // шапки), у дней 2..N она есть — полоса форматов не может объединять строки разного типа границ.
+    [pg.firstDailyRow, g.firstDailyRow, g.firstDailyRow], [pg.firstDailyRow, g.firstDailyRow + 1, g.lastDailyRow],
     [pg.mtdRow, g.mtdRow, g.mtdRow], [pg.spacerRow, g.spacerRow, g.spacerRow],
   ];
   const formatCopies: Array<{ source: GridRect; dest: GridRect }> = [];
@@ -398,7 +409,7 @@ export function planMonthPrep(inp: PrepInputs): MonthPrepPlan {
   for (const [src, d1, d2] of rowPairs) {
     formatCopies.push({ source: { r1: src, r2: src, c1: 1, c2: predLast }, dest: { r1: d1, r2: d2, c1: 1, c2: predLast } });
     // L — часть сводки: заголовок, шапка, MTD и план берут вид колонки A (день недели сводки); границы — контракт.
-    if (d1 !== g.firstDailyRow) formatCopies.push({ source: { r1: src, r2: src, c1: SUMMARY.weekday, c2: SUMMARY.weekday }, dest: { r1: d1, r2: d2, c1: SUMMARY_LAST_COLUMN, c2: SUMMARY_LAST_COLUMN } });
+    if (d1 < g.firstDailyRow || d1 > g.lastDailyRow) formatCopies.push({ source: { r1: src, r2: src, c1: SUMMARY.weekday, c2: SUMMARY.weekday }, dest: { r1: d1, r2: d2, c1: SUMMARY_LAST_COLUMN, c2: SUMMARY_LAST_COLUMN } });
     for (const b of blocks.filter((x) => x.origin === 'NEW')) {
       formatCopies.push({ source: { r1: src, r2: src, c1: lastPred.start, c2: lastPred.start + BLOCK_WIDTH - 1 }, dest: { r1: d1, r2: d2, c1: b.start, c2: b.start + BLOCK_WIDTH - 1 } });
     }
@@ -537,6 +548,8 @@ export function toStructureRequests(plan: MonthPrepPlan, sheetId: number): Struc
   const bands = [...new Set(plan.formatCopies.map((f) => `${f.dest.r1}|${f.dest.r2}`))].map((k) => k.split('|').map(Number) as [number, number]);
   for (const [r1, r2] of bands.sort((a, b) => a[0] - b[0])) {
     const kind = rowKindOf(g, r1);
+    // Полоса форматов — строки ОДНОГО типа: иначе границы всей полосы были бы взяты по её первой строке.
+    for (let r = r1 + 1; r <= r2; r++) if (rowKindOf(g, r) !== kind) throw new RangeError(`полоса форматов ${r1}..${r2} объединяет строки разного типа (${kind} / ${rowKindOf(g, r)})`);
     let run: { c1: number; key: string; fmt: RawCellFormat } | null = null;
     const flush = (cEnd: number): void => {
       if (!run) return;
