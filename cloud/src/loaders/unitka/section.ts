@@ -57,11 +57,11 @@ export async function discoverSection(sheets: SheetsGateway, sheetName: string, 
 }
 
 /** Снимок секции: значения заголовок..MTD, формулы дней и MTD, форматы дней, якоря книги, имя LCD. */
-export async function readSnapshot(sheets: SheetsGateway, sheetName: string, g: MonthGeometry, width: number): Promise<Snapshot> {
+export async function readSnapshot(sheets: SheetsGateway, sheetName: string, g: MonthGeometry, width: number, anchorCol: number): Promise<Snapshot> {
   const q = quoteSheet(sheetName);
   const last = colA1(width);
   const gridRange = `${q}!A${g.topRow}:${last}${g.mtdRow}`;
-  const anchorRange = `${q}!${colA1(BOOK_ANCHORS.COL)}${BOOK_ANCHORS.LCD_MIRROR_ROW}:${colA1(BOOK_ANCHORS.COL)}${BOOK_ANCHORS.REVERSE_ROW}`;
+  const anchorRange = `${q}!${colA1(anchorCol)}${BOOK_ANCHORS.LCD_MIRROR_ROW}:${colA1(anchorCol)}${BOOK_ANCHORS.REVERSE_ROW}`;
   const [grid, anchors, named] = await sheets.readValues([gridRange, anchorRange, NAMED.LCD]);
   // Формулы — дни + строка MTD (подготовка месяца сверяет построители и с MTD); форматы — только дни.
   const formulas = await sheets.readFormulas(`${q}!A${g.firstDailyRow}:${last}${g.mtdRow}`);
@@ -69,6 +69,7 @@ export async function readSnapshot(sheets: SheetsGateway, sheetName: string, g: 
   return {
     geometry: g,
     width,
+    anchorCol,
     grid: grid ?? [],
     formulas,
     mirrorLcd: anchors?.[0]?.[0] ?? null,

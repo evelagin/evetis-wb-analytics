@@ -4,9 +4,9 @@
 import { describe, it, expect } from 'vitest';
 import {
   daysInMonth, nextMonth, previousMonth, monthTitle, formatMonthKey, parseMonthKey, monthKeyOf, dayIndexOf, dayIso,
-  geometryAt, dayRowOf, rowOfDate, slotStart, slotEnd, nextFreeSlot, isReservedSlot, locateSection, layoutOf,
+  geometryAt, dayRowOf, rowOfDate, slotStart, slotEnd, nextFreeSlot, chainGaps, locateSection, layoutOf,
 } from '../src/loaders/unitka/calendar.js';
-import { colA1, findBlocks, isBookAnchorCell, BOOK_ANCHORS, INTEGRITY_STATUS_CELLS } from '../src/loaders/unitka/model.js';
+import { colA1, findBlocks, isBookAnchorCell, BOOK_ANCHORS, integrityStatusCells } from '../src/loaders/unitka/model.js';
 import { nextMonthPrecheck, resolveSection } from '../src/loaders/unitka/section.js';
 import { LoaderError } from '../src/errors.js';
 
@@ -85,49 +85,47 @@ describe('геометрия секции: 28/29/30/31, MTD, разделите�
   });
 });
 
-describe('слоты блоков: слот 24 зарезервирован', () => {
-  it('слот 0 = M..AJ, слот 23 = US..VP, слот 24 (резерв) = VQ..WN, слот 25 = WO..XL (613..636)', () => {
+describe('слоты блоков: сплошная цепочка, дыр нет', () => {
+  it('слот 0 = M..AJ, слот 23 = US..VP, слот 24 = VQ..WN (589..612) — сразу за VP, слот 25 = WO..XL', () => {
     expect([colA1(slotStart(0)), colA1(slotEnd(0))]).toEqual(['M', 'AJ']);
     expect([colA1(slotStart(23)), colA1(slotEnd(23))]).toEqual(['US', 'VP']);
-    expect(isReservedSlot(24)).toBe(true);
-    expect([colA1(slotStart(24)), colA1(slotEnd(24))]).toEqual(['VQ', 'WN']);
-    expect([slotStart(25), slotEnd(25), colA1(slotStart(25)), colA1(slotEnd(25))]).toEqual([613, 636, 'WO', 'XL']);
+    expect([slotStart(24), slotEnd(24), colA1(slotStart(24)), colA1(slotEnd(24))]).toEqual([589, 612, 'VQ', 'WN']);
+    expect(slotStart(24)).toBe(slotEnd(23) + 1);
+    expect([colA1(slotStart(25)), colA1(slotEnd(25))]).toEqual(['WO', 'XL']);
   });
-  it.each([
-    [1, [0]], [24, Array.from({ length: 24 }, (_, i) => i)], [25, [...Array.from({ length: 24 }, (_, i) => i), 25]],
-    [26, [...Array.from({ length: 24 }, (_, i) => i), 25, 26]], [40, [...Array.from({ length: 24 }, (_, i) => i), ...Array.from({ length: 16 }, (_, i) => 25 + i)]],
-  ])('распределение %i SKU подряд пропускает слот 24', (n, want) => {
+  it.each([[1], [24], [25], [26], [40]])('распределение %i SKU подряд — слоты 0..n-1 без пропусков', (n) => {
     const slots: number[] = []; let s = -1;
     for (let i = 0; i < n; i++) { s = nextFreeSlot(s); slots.push(s); }
-    expect(slots).toEqual(want);
-    expect(slots).not.toContain(24);
+    expect(slots).toEqual(Array.from({ length: n }, (_, i) => i));
+    expect(chainGaps(slots.map((slot) => ({ slot })))).toEqual([]);
   });
-  it('findBlocks: nmID в резервном слоте игнорируется, пустые слоты пропускаются, 25-й блок найден в WO', () => {
+  it('дыры в цепочке: выбывший слот 1 — отчёт [1]; пустой список — []', () => {
+    expect(chainGaps([{ slot: 0 }, { slot: 2 }, { slot: 3 }])).toEqual([1]);
+    expect(chainGaps([])).toEqual([]);
+  });
+  it('findBlocks: пустые слоты пропускаются, 25-й блок найден в VQ, хвост книги за блоками nmID не содержит', () => {
     const row: (string | number | null)[] = Array(636).fill('');
     row[slotStart(0) - 1] = '252442517 Крем';
     row[slotStart(2) - 1] = '252441968 Набор';            // слот 1 пуст (выбывший SKU)
-    row[slotStart(24) - 1] = '999999999 мусор в VQ';       // резерв
-    row[slotStart(25) - 1] = '909951444 Набор анти-акне';
+    row[slotStart(24) - 1] = '909951444 Набор анти-акне';
+    row[slotStart(25) + 10] = 'LAST_CLOSED_DATE (зеркало)'; // подпись хвоста — не блок
     const b = findBlocks(row, 636);
-    expect(b.map((x) => [x.slot, x.nmId])).toEqual([[0, 252442517], [2, 252441968], [25, 909951444]]);
-    expect(layoutOf(geometryAt({ year: 2026, month: 10 }, 769), b).lastBlockColumn).toBe(636);
+    expect(b.map((x) => [x.slot, x.nmId])).toEqual([[0, 252442517], [2, 252441968], [24, 909951444]]);
+    expect(layoutOf(geometryAt({ year: 2026, month: 10 }, 769), b).lastBlockColumn).toBe(612);
   });
-  it('якорь книги — только пара (строка, колонка): WB771 (блок 25 октября) не якорь', () => {
-    expect(isBookAnchorCell(BOOK_ANCHORS.LCD_MIRROR_ROW, 600)).toBe(true);
-    expect(isBookAnchorCell(BOOK_ANCHORS.REVERSE_ROW, 600)).toBe(true);
-    expect(isBookAnchorCell(771, 600)).toBe(false);
-    expect(isBookAnchorCell(736, 599)).toBe(false);
-    // WB (600) — колонка X ЗАРЕЗЕРВИРОВАННОГО слота 24; блок 25 (WO..XL) её не содержит, но сводная
-    // полоса J/FILTER октября проходит через WB771..WB801 — эти ячейки не якоря.
-    expect(slotStart(24) + 11).toBe(600);
-    expect(slotStart(25) + 11).toBe(624);
-    expect(INTEGRITY_STATUS_CELLS).toEqual({ status: { row: 738, col: 600 }, invalidRows: { row: 739, col: 600 } });
+  it('якорь книги — только пара (строка, колонка) при заданной колонке якорей; строки статуса Guard следуют за ней', () => {
+    expect(isBookAnchorCell(BOOK_ANCHORS.LCD_MIRROR_ROW, 600, 600)).toBe(true);
+    expect(isBookAnchorCell(BOOK_ANCHORS.REVERSE_ROW, 624, 624)).toBe(true);
+    expect(isBookAnchorCell(771, 600, 600)).toBe(false);
+    expect(isBookAnchorCell(736, 600, 624)).toBe(false);
+    expect(integrityStatusCells(624)).toEqual({ status: { row: 738, col: 624 }, invalidRows: { row: 739, col: 624 } });
+    expect(BOOK_ANCHORS).toEqual({ LCD_MIRROR_ROW: 736, REVERSE_ROW: 737, STATUS_ROW: 738, INVALID_ROW: 739 });
   });
 });
 
 describe('поиск секции по заголовку в колонке A', () => {
   const colA = (entries: Record<number, string>, n = 803): (string | null)[] => Array.from({ length: n }, (_, i) => entries[i + 1] ?? null);
-  const meta = (rowCount: number) => ({ sheetId: 1, rowCount, columnCount: 636 });
+  const meta = (rowCount: number) => ({ sheetId: 1, rowCount, columnCount: 636, anchorCol: 600 });
   it('валидная: ровно один заголовок', () => {
     expect(locateSection(colA({ 356: 'Октябрь 2025', 735: 'Сентябрь 2026', 769: 'Октябрь 2026' }), { year: 2026, month: 10 })).toEqual({ status: 'FOUND', topRow: 769 });
     expect(resolveSection(colA({ 769: 'Октябрь 2026' }), meta(803), { year: 2026, month: 10 }).firstDailyRow).toBe(771);

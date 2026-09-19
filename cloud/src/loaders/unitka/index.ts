@@ -236,7 +236,7 @@ export async function unitkaLoader(ctx: LoaderContext, deps: UnitkaDeps = defaul
     const precheck: NextMonthPrecheck = nextMonthPrecheck(found.columnA, lcd.lastClosedDate, config.unitkaMonthPrepWindowDays ?? 5);
     calendar = { section: found.geometry.monthKey, top_row: found.geometry.topRow, next_month: precheck };
     if (precheck.code) log.warn('unitka_next_month_section', { code: precheck.code, next_month: precheck.nextMonth, days_left: precheck.daysLeft });
-    const snap = await readSnapshot(sheets, config.unitkaSheetName, found.geometry, found.meta.columnCount);
+    const snap = await readSnapshot(sheets, config.unitkaSheetName, found.geometry, found.meta.columnCount, found.meta.anchorCol);
 
     // 3. факт + ставки → план
     const [facts, logistics, commission] = await Promise.all([bq.facts(), bq.logisticsRates(), bq.commissionRates()]);
@@ -298,7 +298,7 @@ export async function unitkaLoader(ctx: LoaderContext, deps: UnitkaDeps = defaul
     }
 
     // 5. reconciliation — повторное чтение и полный QA-гейт.
-    const after = await readSnapshot(sheets, config.unitkaSheetName, snap.geometry, snap.width);
+    const after = await readSnapshot(sheets, config.unitkaSheetName, snap.geometry, snap.width, snap.anchorCol);
     const qa = evaluate(after, plan);
     rec.qaStatus = qa.pass ? 'PASS' : 'FAIL';
     // Integrity — ПОСЛЕ записи и reconciliation, на перечитанном листе. Не влияет на qa_status.

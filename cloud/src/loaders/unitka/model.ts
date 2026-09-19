@@ -7,25 +7,24 @@
  *
  * Чистый модуль без I/O: всё, что здесь, тестируется без Sheets и BigQuery.
  */
-import { BLOCK_WIDTH, isReservedSlot, slotStart, type BlockSlot } from './calendar.js';
+import { BLOCK_WIDTH, slotStart, type BlockSlot } from './calendar.js';
 
 /**
- * ЯКОРЯ КНИГИ — фиксированные ячейки, НЕ зависящие от месяца (решение владельца 2, Phase 2B).
- * Они физически стоят в строках сентябрьской секции (WB736..WB739), но принадлежат книге целиком.
- * Ячейка определяется как якорь ТОЛЬКО по паре (строка, колонка) или по виду ячейки плана,
- * НИКОГДА по одной колонке: с октября колонка WB (600) внутри строк месяца — обычная ячейка блока 25.
+ * ЯКОРЯ КНИГИ — фиксированные СТРОКИ ячеек, не зависящие от месяца. Колонка якорей (в живой книге —
+ * WB, 600) НЕ константа: при вставке колонок нового блока хвост книги сдвигается, и колонку Engine
+ * находит по именованному диапазону REVERSE_LEG_RATE (sheets.readSheetMeta → anchorCol). Ячейка
+ * определяется как якорь по паре (строка, колонка) или по виду ячейки плана, никогда по одной колонке.
  */
 export const BOOK_ANCHORS = {
-  COL: 600,             // WB
-  LCD_MIRROR_ROW: 736,  // WB736 — зеркало LAST_CLOSED_DATE
-  REVERSE_ROW: 737,     // WB737 — REVERSE_LEG_RATE (именованный диапазон)
-  STATUS_ROW: 738,      // WB738 — integrity_status (зарезервировано, не пишется)
-  INVALID_ROW: 739,     // WB739 — число финансово недостоверных SKU-дней (зарезервировано)
+  LCD_MIRROR_ROW: 736,  // зеркало LAST_CLOSED_DATE
+  REVERSE_ROW: 737,     // REVERSE_LEG_RATE (именованный диапазон — источник колонки)
+  STATUS_ROW: 738,      // integrity_status (зарезервировано, не пишется)
+  INVALID_ROW: 739,     // число финансово недостоверных SKU-дней (зарезервировано)
 } as const;
 
 /** true только для самих ячеек-якорей (строка И колонка). */
-export function isBookAnchorCell(row: number, col: number): boolean {
-  return col === BOOK_ANCHORS.COL && row >= BOOK_ANCHORS.LCD_MIRROR_ROW && row <= BOOK_ANCHORS.INVALID_ROW;
+export function isBookAnchorCell(row: number, col: number, anchorCol: number): boolean {
+  return col === anchorCol && row >= BOOK_ANCHORS.LCD_MIRROR_ROW && row <= BOOK_ANCHORS.INVALID_ROW;
 }
 
 /** Смещения метрик внутри блока (0 = дата). Карта колонок UNITKA 2.0 PHASE 3. */
@@ -114,10 +113,9 @@ export function formatDescr(f: CellFormat): string {
  *   WB738 — integrity_status прогона; WB739 — число финансово недостоверных SKU-дней.
  * Phase 2B: фиксированные якоря книги, а не «HDR + 2» — не переезжают с месяцем.
  */
-export const INTEGRITY_STATUS_CELLS = {
-  status: { row: BOOK_ANCHORS.STATUS_ROW, col: BOOK_ANCHORS.COL },
-  invalidRows: { row: BOOK_ANCHORS.INVALID_ROW, col: BOOK_ANCHORS.COL },
-} as const;
+export function integrityStatusCells(anchorCol: number): { status: { row: number; col: number }; invalidRows: { row: number; col: number } } {
+  return { status: { row: BOOK_ANCHORS.STATUS_ROW, col: anchorCol }, invalidRows: { row: BOOK_ANCHORS.INVALID_ROW, col: anchorCol } };
+}
 
 /** Именованные диапазоны книги. */
 export const NAMED = { LCD: 'LAST_CLOSED_DATE', REVERSE: 'REVERSE_LEG_RATE' } as const;
@@ -159,13 +157,12 @@ export function monthStartIso(iso: string): string {
 /**
  * Блоки по строке заголовков секции: nmID — первое 6–12-значное число в первой непустой ячейке
  * слота (та же эвристика, что в s82data/s8brates Apps Script). Слоты перебираются, пока слот
- * помещается в прочитанную ширину; зарезервированные слоты пропускаются, пустые — тоже
- * (выбывший SKU оставляет пустой слот, новые блоки не сдвигают старые).
+ * помещается в прочитанную ширину; пустые пропускаются (выбывший SKU оставляет пустой слот,
+ * хвост книги за последним блоком заголовков nmID не содержит).
  */
 export function findBlocks(topRow: readonly CellValue[], width: number = topRow.length): Block[] {
   const out: Block[] = [];
   for (let slot = 0; slotStart(slot) <= width; slot++) {
-    if (isReservedSlot(slot)) continue;
     const st = slotStart(slot);
     let title = '';
     for (let c = 0; c < BLOCK_WIDTH && !title; c++) title = String(topRow[st - 1 + c] ?? '').trim();

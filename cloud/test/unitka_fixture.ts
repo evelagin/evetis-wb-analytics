@@ -158,7 +158,7 @@ export function snapshot(opts: FixtureOpts = {}): Snapshot {
     }
   });
   const snap: Snapshot = {
-    geometry: SEPT, width: GRID.NC,
+    geometry: SEPT, width: GRID.NC, anchorCol: GRID.MIR,
     grid, formulas, formats, sheetId: 739487431,
     mirrorLcd: isoToSerial(lcdSheet), mirrorRev: opts.reverse ?? 32.5256, namedLcd: isoToSerial(lcdSheet),
   };

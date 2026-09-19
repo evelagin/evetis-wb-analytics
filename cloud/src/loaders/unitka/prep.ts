@@ -32,7 +32,7 @@ async function sectionSnapshot(sheets: SheetsGateway, sheetName: string, columnA
   if (loc.status !== 'FOUND') return null;
   const g = geometryAt(key, loc.topRow);
   if (g.spacerRow > meta.rowCount) return null;
-  return readSnapshot(sheets, sheetName, g, meta.columnCount);
+  return readSnapshot(sheets, sheetName, g, meta.columnCount, meta.anchorCol);
 }
 
 function planLog(plan: MonthPrepPlan): Record<string, unknown> {
@@ -42,7 +42,7 @@ function planLog(plan: MonthPrepPlan): Record<string, unknown> {
     predecessor: plan.predecessor,
     blocks: plan.blocks.map((b) => ({ slot: b.slot, nm_id: b.nmId, origin: b.origin, cogs: b.params.cogsTerm })),
     retired: plan.retiredNmIds, unmapped_active: plan.unmappedActive,
-    append_rows: plan.appendRows, append_columns: plan.appendColumns,
+    append_rows: plan.appendRows, insert_columns: plan.insertColumns, anchor_col: plan.anchorCol, chain_gaps: plan.chainGaps, cf_trims: plan.cfTrims.length, groups: plan.groupRequests.length,
     cells: plan.cells.length, format_copies: plan.formatCopies.length, merges: plan.merges.length,
     cf: plan.conditionalFormats ? { rules: plan.conditionalFormats.rules.length, start_index: plan.cfStartIndex, families: plan.conditionalFormats.families } : null,
     dimension_requests: plan.dimensionRequests.length, formula_style: plan.formulaStyle,

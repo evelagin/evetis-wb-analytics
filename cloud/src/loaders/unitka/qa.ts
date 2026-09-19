@@ -12,7 +12,7 @@ import {
   OFFSET, FUTURE_ALLOWED_OFFSETS, SUMMARY_TO_OFFSET, SUMMARY, BOOK_ANCHORS,
   type CellValue, colA1, isEmpty, asNumber, factEqual, rateEqual, isFormulaError, isoToSerial,
 } from './model.js';
-import { BLOCK_WIDTH, dayRowOf, isReservedSlot, slotOfColumn } from './calendar.js';
+import { BLOCK_WIDTH, dayRowOf } from './calendar.js';
 import { cellAt, currentValue, formulaAt, isFormula, formatContract, type Plan, type Snapshot } from './plan.js';
 
 export interface QaCheck {
@@ -59,13 +59,11 @@ export function evaluate(snap: Snapshot, plan: Plan, opts: EvaluateOpts = {}): Q
   }
   checks.push(check('BQ_SHEETS_MISMATCH', mism));
 
-  // FORMULA ERRORS = 0 — строки секции (заголовок..MTD), колонки сводки и всех слотов до последнего
-  // блока; зарезервированный слот (VQ..WN: унаследованные расчёты и якоря книги) секции не принадлежит.
+  // FORMULA ERRORS = 0 — строки секции (заголовок..MTD), колонки сводки и всех блоков (сплошная цепочка);
+  // хвост книги за последним блоком секции не принадлежит.
   const errs: string[] = [];
   for (let r = L.topRow; r <= L.mtdRow; r++) {
     for (let c = 1; c <= L.lastBlockColumn; c++) {
-      const slot = slotOfColumn(c);
-      if (slot !== null && isReservedSlot(slot)) continue;
       const v = cellAt(snap, r, c);
       if (isFormulaError(v)) errs.push(`${colA1(c)}${r} ${String(v)}`);
     }
@@ -128,7 +126,7 @@ export function evaluate(snap: Snapshot, plan: Plan, opts: EvaluateOpts = {}): Q
   const want = isoToSerial(plan.lcd);
   const lcdBad: string[] = [];
   if (asNumber(snap.namedLcd) !== want) lcdBad.push(`LAST_CLOSED_DATE=${String(snap.namedLcd)} ≠ ${want}`);
-  if (asNumber(snap.mirrorLcd) !== want) lcdBad.push(`${colA1(BOOK_ANCHORS.COL)}${BOOK_ANCHORS.LCD_MIRROR_ROW}=${String(snap.mirrorLcd)} ≠ ${want}`);
+  if (asNumber(snap.mirrorLcd) !== want) lcdBad.push(`${colA1(snap.anchorCol)}${BOOK_ANCHORS.LCD_MIRROR_ROW}=${String(snap.mirrorLcd)} ≠ ${want}`);
   checks.push(check('LCD_CONSISTENT', lcdBad));
 
   // Дубли и инвариант — уже гарантированы планом; фиксируем как PASS для полного отчёта.

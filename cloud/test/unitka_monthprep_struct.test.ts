@@ -4,7 +4,7 @@
  */
 import { describe, it, expect } from 'vitest';
 import { formulaStyleOf, fromLocaleFormula, toLocaleFormula } from '../src/loaders/unitka/formulas.js';
-import { dimensionRequests, planMonthRollback } from '../src/loaders/unitka/monthprep_struct.js';
+import { cfInsertTrims, dimensionRequests, planMonthRollback, shiftColumnRefs } from '../src/loaders/unitka/monthprep_struct.js';
 import { planMonthPrep, toStructureRequests } from '../src/loaders/unitka/monthprep.js';
 import { geometryAt } from '../src/loaders/unitka/calendar.js';
 import type { CellValue } from '../src/loaders/unitka/model.js';
@@ -62,20 +62,20 @@ describe('размеры колонок и строк', () => {
 
 describe('откат созданного месяца', () => {
   const rules = [...septemberCfRules(), { ranges: [{ sheetId: SHEET_ID, startRowIndex: 770, endRowIndex: 801, startColumnIndex: 12, endColumnIndex: 13 }], gradientRule: {} } as ConditionalFormatRule];
-  it('удаляет только УФ новой секции, колонки 601..636 и строки 769..803 — в этом порядке', () => {
-    const p = planMonthRollback({ geometry: OCT, rowCount: 803, columnCount: 636, preColumnCount: 600, sheetId: SHEET_ID, rules, newColumnsEmptyAbove: true });
+  it('удаляет только УФ новой секции, вставленные колонки 589..612 и строки 769..803 — в этом порядке', () => {
+    const p = planMonthRollback({ geometry: OCT, rowCount: 803, sheetId: SHEET_ID, rules, insertedColumns: [589, 612], newColumnsEmptyAbove: true });
     expect(p.refused).toBeNull();
     expect(p.deletedCfRules).toBe(1);
     expect(p.requests[0]).toEqual({ deleteConditionalFormatRule: { sheetId: SHEET_ID, index: rules.length - 1 } });
-    expect(p.requests[1]).toEqual({ deleteDimension: { range: { sheetId: SHEET_ID, dimension: 'COLUMNS', startIndex: 600, endIndex: 636 } } });
+    expect(p.requests[1]).toEqual({ deleteDimension: { range: { sheetId: SHEET_ID, dimension: 'COLUMNS', startIndex: 588, endIndex: 612 } } });
     expect(p.requests[2]).toEqual({ deleteDimension: { range: { sheetId: SHEET_ID, dimension: 'ROWS', startIndex: 768, endIndex: 803 } } });
   });
   it('новые колонки непусты выше секции — отказ', () => {
-    expect(planMonthRollback({ geometry: OCT, rowCount: 803, columnCount: 636, preColumnCount: 600, sheetId: SHEET_ID, rules, newColumnsEmptyAbove: false }).refused).toMatch(/непусты/);
+    expect(planMonthRollback({ geometry: OCT, rowCount: 803, sheetId: SHEET_ID, rules, insertedColumns: [589, 612], newColumnsEmptyAbove: false }).refused).toMatch(/непусты/);
   });
   it('правило «через границу» не удаляется: его диапазон в новой секции обрезает удаление строк (живой лист, Phase 2C)', () => {
     const straddle = [{ ranges: [{ startRowIndex: 736, endRowIndex: 766 }, { startRowIndex: 770, endRowIndex: 801 }] } as ConditionalFormatRule];
-    const p = planMonthRollback({ geometry: OCT, rowCount: 803, columnCount: 636, preColumnCount: 600, sheetId: SHEET_ID, rules: straddle, newColumnsEmptyAbove: true });
+    const p = planMonthRollback({ geometry: OCT, rowCount: 803, sheetId: SHEET_ID, rules: straddle, insertedColumns: [589, 612], newColumnsEmptyAbove: true });
     expect(p.refused).toBeNull();
     expect(p.deletedCfRules).toBe(0);
     expect(p.requests.map((r) => Object.keys(r)[0])).toEqual(['deleteDimension', 'deleteDimension']);
@@ -91,19 +91,60 @@ describe('планировщик в локали ru_RU (как живая кни
     population: [...SEPT_NMS, NEW_NM].map((n) => ({ nmId: n, name: `Товар ${n}` })), cogs: cogsSnapshot({ [NEW_NM]: 426.735 }), structure: septemberStructure(), rowFormats: septemberRowFormats(),
   };
   it('формулы листа в «;»-форме распознаются (нет TEMPLATE_MISMATCH); в запросах — формулы в «;»-форме', () => {
-    const p = planMonthPrep({ ...base, meta: { sheetId: SHEET_ID, rowCount: 768, columnCount: 600, locale: 'ru_RU' } });
+    const p = planMonthPrep({ ...base, meta: { sheetId: SHEET_ID, rowCount: 768, columnCount: 600, locale: 'ru_RU', anchorCol: 600 } });
     expect(p.status).toBe('PLAN_CREATE');
     expect(p.formulaStyle).toBe('SEMICOLON');
     const req = JSON.stringify(toStructureRequests(p, SHEET_ID));
-    expect(req).toContain('XG771-XH771-XJ771-426,735');
-    expect(req).toContain('SUM(FILTER(N771:WP771;MOD(COLUMN(N771:WP771)-COLUMN(N771);24)=0))');
+    expect(req).toContain('WI771-WJ771-WL771-426,735');
+    expect(req).toContain('SUM(FILTER(N771:VR771;MOD(COLUMN(N771:VR771)-COLUMN(N771);24)=0))');
     expect(req).not.toContain('LAST_CLOSED_DATE,');
   });
   it('та же «;»-книга, прочитанная как en_US, — TEMPLATE_MISMATCH (локаль обязательна)', () => {
-    expect(planMonthPrep({ ...base, meta: { sheetId: SHEET_ID, rowCount: 768, columnCount: 600, locale: 'en_US' } }).code).toBe('TEMPLATE_MISMATCH');
+    expect(planMonthPrep({ ...base, meta: { sheetId: SHEET_ID, rowCount: 768, columnCount: 600, locale: 'en_US', anchorCol: 600 } }).code).toBe('TEMPLATE_MISMATCH');
   });
   it('неподдержанная локаль — BLOCKED UNSUPPORTED_LOCALE; без структуры листа — STRUCTURE_UNAVAILABLE', () => {
-    expect(planMonthPrep({ ...base, meta: { sheetId: SHEET_ID, rowCount: 768, columnCount: 600, locale: 'de_DE' } }).code).toBe('UNSUPPORTED_LOCALE');
-    expect(planMonthPrep({ ...base, structure: null, meta: { sheetId: SHEET_ID, rowCount: 768, columnCount: 600, locale: 'ru_RU' } }).code).toBe('STRUCTURE_UNAVAILABLE');
+    expect(planMonthPrep({ ...base, meta: { sheetId: SHEET_ID, rowCount: 768, columnCount: 600, locale: 'de_DE', anchorCol: 600 } }).code).toBe('UNSUPPORTED_LOCALE');
+    expect(planMonthPrep({ ...base, structure: null, meta: { sheetId: SHEET_ID, rowCount: 768, columnCount: 600, locale: 'ru_RU', anchorCol: 600 } }).code).toBe('STRUCTURE_UNAVAILABLE');
+  });
+});
+
+describe('вставка колонок и УФ прошлых месяцев: Sheets расширяет диапазоны, кончающиеся на колонке перед вставкой', () => {
+  it('shiftColumnRefs: сдвигаются только ссылки правее точки вставки — как это делает сам Sheets', () => {
+    expect(shiftColumnRefs('=$US737>$WB$736', 588, 24)).toBe('=$US737>$WZ$736');
+    expect(shiftColumnRefs('=WEEKDAY(US737;2)>5', 588, 24)).toBe('=WEEKDAY(US737;2)>5');
+    expect(shiftColumnRefs('=AND($B737<=$WB$736;WB737<>"")', 588, 24)).toBe('=AND($B737<=$WZ$736;WZ737<>"")');
+    expect(shiftColumnRefs('=VP737+VQ737', 588, 24)).toBe('=VP737+WO737');                 // VP=588 стоит, VQ=589 едет
+    expect(shiftColumnRefs('=SUM($WA:$WB)+SUM(A:B)', 588, 24)).toBe('=SUM($WY:$WZ)+SUM(A:B)');
+    expect(shiftColumnRefs('=IF(A1="WB736";LOG10(WB1);LAST_CLOSED_DATE)', 588, 24)).toBe('=IF(A1="WB736";LOG10(WZ1);LAST_CLOSED_DATE)');
+    expect(shiftColumnRefs('50', 588, 24)).toBe('50');
+  });
+  it('shiftColumnRefs: ссылка на другой лист — отказ (ничего не угадываем)', () => {
+    expect(() => shiftColumnRefs("='Склад'!WB1>0", 588, 24)).toThrow();
+  });
+  it('cfInsertTrims: переиздаются ровно правила с диапазоном до VP; диапазоны не расширены, порядок сохранён, ссылки сдвинуты', () => {
+    const rules = septemberCfRules();
+    const { trims, unsafe } = cfInsertTrims(rules, 588, 24);
+    expect(unsafe).toEqual([]);
+    const expectIdx = rules.map((r, i) => (r.ranges.some((x) => x.endColumnIndex === 588 && (x.startColumnIndex ?? 0) < 588) ? i : -1)).filter((i) => i >= 0);
+    expect(expectIdx).toHaveLength(2);
+    expect(trims.map((t) => t.index)).toEqual(expectIdx);
+    for (const t of trims) {
+      expect(t.rule.ranges).toEqual(rules[t.index]!.ranges);                                 // ни одного диапазона во вставке
+      expect(t.rule.ranges.some((x) => (x.endColumnIndex ?? 0) > 588 && (x.startColumnIndex ?? 0) < 612)).toBe(false);
+    }
+    const f = trims.map((t) => t.rule.booleanRule!.condition.values![0]!.userEnteredValue);
+    expect(f).toEqual(['=$US737>$WZ$736', '=WEEKDAY(US737;2)>5']);
+    expect(rules[expectIdx[0]!]!.booleanRule!.condition.values![0]!.userEnteredValue).toBe('=$US737>$WB$736'); // вход не мутирован
+  });
+  it('cfInsertTrims: диапазон правее вставки едет вместе с хвостом; через вставку — расширяется (это делает и Sheets)', () => {
+    const r: ConditionalFormatRule = { ranges: [{ startColumnIndex: 587, endColumnIndex: 588 }, { startColumnIndex: 598, endColumnIndex: 600 }, { startColumnIndex: 10, endColumnIndex: 600 }], gradientRule: { midpoint: { type: 'NUMBER', value: '=$WB$736' } } };
+    const { trims } = cfInsertTrims([r], 588, 24);
+    expect(trims[0]!.rule.ranges).toEqual([{ startColumnIndex: 587, endColumnIndex: 588 }, { startColumnIndex: 622, endColumnIndex: 624 }, { startColumnIndex: 10, endColumnIndex: 624 }]);
+    expect((trims[0]!.rule.gradientRule as { midpoint: { value: string } }).midpoint.value).toBe('=$WZ$736');
+  });
+  it('cfInsertTrims: нет правил до VP — нечего переиздавать; небезопасная формула — в unsafe', () => {
+    expect(cfInsertTrims(septemberCfRules(), 600, 24).trims).toEqual([]);
+    const bad: ConditionalFormatRule = { ranges: [{ startColumnIndex: 587, endColumnIndex: 588 }], booleanRule: { condition: { type: 'CUSTOM_FORMULA', values: [{ userEnteredValue: "='Склад'!WB1>0" }] } } };
+    expect(cfInsertTrims([bad], 588, 24).unsafe).toHaveLength(1);
   });
 });

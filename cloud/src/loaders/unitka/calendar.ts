@@ -6,8 +6,10 @@
  *   • секция месяца = заголовок месяца (A{top}) · шапка · дни · строка MTD · строка-разделитель;
  *     следующая секция начинается сразу за разделителем (шаг days + 4 — подтверждён на всех
  *     21 секциях листа с января 2025, Phase 2A);
- *   • блоки SKU — слоты по 24 колонки от M; слот 24 (VQ..WN) ЗАРЕЗЕРВИРОВАН: там унаследованные
- *     расчёты VQ..VZ и якоря книги WA/WB736–739 (решение владельца 2, Phase 2B).
+ *   • блоки SKU — слоты по 24 колонки от M, СПЛОШНОЙ цепочкой без дыр (решение владельца, visual
+ *     hardening 2): новый блок вставляется колонками сразу за последним блоком, унаследованный «хвост»
+ *     (расчёты VQ..VZ, подписи WA, якоря книги в колонке WB) сдвигается вправо; колонку якорей Engine
+ *     находит по именованному диапазону REVERSE_LEG_RATE, а не по константе.
  *
  * Бизнес-часовой пояс Unitka — Europe/Moscow, но сюда он не попадает: месяц и строка выводятся
  * из ДАТЫ LAST_CLOSED_DATE (её считает BigQuery в МСК), арифметика дат — в UTC на ISO-строках.
@@ -101,12 +103,6 @@ export function dayIndexOf(k: MonthKey, iso: string): number {
 /** Колонка M — первая колонка слота 0; ширина блока — 24 колонки (карта UNITKA 2.0). */
 export const BLOCK_FIRST_COLUMN = 13;
 export const BLOCK_WIDTH = 24;
-/**
- * Зарезервированные слоты. 24 = VQ..WN (589..612): унаследованные расчёты VQ..VZ, подписи WA736/737
- * и якоря книги WB736..WB739. SKU туда не распределяются НИКОГДА; сводные FILTER(MOD(…,24)) проходят
- * по его колонкам в строках новых месяцев, где они пусты (0 в сумме).
- */
-export const RESERVED_SLOTS: ReadonlySet<number> = new Set([24]);
 
 export function slotStart(slot: number): number {
   if (!Number.isInteger(slot) || slot < 0) throw new RangeError(`слот ${slot}`);
@@ -115,18 +111,23 @@ export function slotStart(slot: number): number {
 export function slotEnd(slot: number): number {
   return slotStart(slot) + BLOCK_WIDTH - 1;
 }
-export function isReservedSlot(slot: number): boolean {
-  return RESERVED_SLOTS.has(slot);
-}
 /** Слот колонки (или null для колонок до M). */
 export function slotOfColumn(col: number): number | null {
   return col < BLOCK_FIRST_COLUMN ? null : Math.floor((col - BLOCK_FIRST_COLUMN) / BLOCK_WIDTH);
 }
-/** Следующий допустимый слот > after (пропуская зарезервированные). */
+/** Следующий слот цепочки: сразу за after (дыр между активными блоками нет). */
 export function nextFreeSlot(after: number): number {
-  let s = after + 1;
-  while (isReservedSlot(s)) s++;
-  return s;
+  return after + 1;
+}
+
+/** Слоты-дыры внутри цепочки блоков (между первым и последним занятым). Контракт: пусто. */
+export function chainGaps(blocks: readonly { slot: number }[]): number[] {
+  if (blocks.length === 0) return [];
+  const used = new Set(blocks.map((b) => b.slot));
+  const min = Math.min(...used), max = Math.max(...used);
+  const gaps: number[] = [];
+  for (let s = min; s <= max; s++) if (!used.has(s)) gaps.push(s);
+  return gaps;
 }
 
 /* ───────────────────────── геометрия секции ───────────────────────── */

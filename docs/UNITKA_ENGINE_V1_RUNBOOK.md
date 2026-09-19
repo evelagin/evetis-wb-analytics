@@ -13,7 +13,7 @@ V_UNITKA_SOURCE_FRESHNESS → V_UNITKA_LAST_CLOSED_DATE → снимок лис�
 ```
 
 Пишет: 9 факт-колонок закрытых дней (`views opens carts orders cancels stock adsIn price
-storage`), колонки `logistics`/`commission` (30 строк блока), `REVERSE_LEG_RATE` (`WB737`),
+storage`), колонки `logistics`/`commission` (30 строк блока), `REVERSE_LEG_RATE` (`WB737`; в Engine 2.0.0 — колонка по имени диапазона),
 `LAST_CLOSED_DATE` (имя + зеркало `WB736`). Не пишет: формулы, УФ, ширины, строку 767/768,
 будущие дни, блогеров, `spp`. Любой FAIL → ничего не записано (план — один batch), `exit 1`.
 
@@ -141,6 +141,10 @@ SELECT * FROM `wb_mart.V_UNITKA_ENGINE_STATUS`;
 * Откат созданного месяца: `planMonthRollback` (`monthprep_struct.ts`) — удалить правила УФ новой секции, добавленные
   колонки (если пусты выше секции) и строки секции; затем сверить книгу с предснимком (Phase 2C).
 * Дополнительные отказы Phase 2C: `UNSUPPORTED_LOCALE`, `STRUCTURE_UNAVAILABLE`, `TEMPLATE_FORMATS_UNAVAILABLE`.
+* Отказы hardening 2: `CHAIN_GAP` (выбывший SKU оставил бы дыру в сплошной цепочке блоков — решение владельца),
+  `CF_TRIM_UNSAFE` (правило УФ до последней колонки блоков ссылается на другой лист — не переиздаём),
+  `ANCHOR_UNRESOLVED` (именованный диапазон `REVERSE_LEG_RATE` не одна ячейка строки 737 листа Unitka; Engine и
+  подготовка месяца находят колонку якорей только по нему — после вставки блока 25 это WZ, а не WB).
 
 ## 6. Офлайн SHADOW без облака
 

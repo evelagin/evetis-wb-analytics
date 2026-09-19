@@ -95,7 +95,7 @@ class FakeSheets implements SheetsGateway {
   writes: WriteRange[][] = [];
   constructor(public snap = snapshot(), public readonly readonlyScope = false, private readonly o: { breakSummaryAfterWrite?: boolean } = {}) {}
   structureWrites: unknown[][] = [];
-  async readSheetMeta(): Promise<SheetMeta> { return { sheetId: this.snap.sheetId, rowCount: this.snap.geometry.spacerRow, columnCount: this.snap.width }; }
+  async readSheetMeta(): Promise<SheetMeta> { return { sheetId: this.snap.sheetId, rowCount: this.snap.geometry.spacerRow, columnCount: this.snap.width, anchorCol: this.snap.anchorCol }; }
   async readSheetStructure(): Promise<SheetStructure> { throw new LoaderError('суточный Engine не читает структуру листа', 'TEST_FORBIDDEN'); }
   async readRowFormats(): Promise<Map<number, Array<Record<string, unknown> | null>>> { throw new LoaderError('суточный Engine не читает форматы строк', 'TEST_FORBIDDEN'); }
   async structureWrite(requests: Record<string, unknown>[]): Promise<number> { this.structureWrites.push(requests); throw new LoaderError('суточный Engine не должен вызывать structureWrite', 'TEST_FORBIDDEN'); }
@@ -262,7 +262,7 @@ describe('qa.evaluate', () => {
   });
   it('readSnapshot читает три диапазона и формулы', async () => {
     const sheets = new FakeSheets(snapshot());
-    const s = await readSnapshot(sheets, 'WB_Юнит_2025', SEPT, GRID.NC);
+    const s = await readSnapshot(sheets, 'WB_Юнит_2025', SEPT, GRID.NC, GRID.MIR);
     expect(s.grid).toHaveLength(GRID.MTD - GRID.TOP + 1);
     expect(s.namedLcd).toBe(isoToSerial(LCD));
     expect(s.mirrorRev).toBe(32.5256);

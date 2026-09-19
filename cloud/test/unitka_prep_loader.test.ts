@@ -50,13 +50,14 @@ class BookSheets implements SheetsGateway {
   constructor(public sections: Snapshot[], public rowCount: number, public columnCount: number, private readonly readonlyScope: boolean) {}
   private byTop(row: number): Snapshot { const s = this.sections.find((x) => x.geometry.topRow === row); if (!s) throw new Error(`нет секции ${row}`); return s; }
   private byFirst(row: number): Snapshot { const s = this.sections.find((x) => x.geometry.firstDailyRow === row); if (!s) throw new Error(`нет секции ${row}`); return s; }
-  async readSheetMeta(): Promise<SheetMeta> { return { sheetId: 739487431, rowCount: this.rowCount, columnCount: this.columnCount, locale: 'en_US' }; }
+  anchorCol = 600;
+  async readSheetMeta(): Promise<SheetMeta> { return { sheetId: 739487431, rowCount: this.rowCount, columnCount: this.columnCount, locale: 'en_US', anchorCol: this.anchorCol }; }
   async readSheetStructure(_n: string, rowCount: number, columnCount: number): Promise<SheetStructure> { return septemberStructure(rowCount, columnCount); }
   async readRowFormats(_n: string, rows: readonly number[], lastColumn: number): Promise<Map<number, Array<Record<string, unknown> | null>>> { return septemberRowFormats(lastColumn, rows); }
   async readValues(ranges: string[]): Promise<CellValue[][][]> {
     return ranges.map((r) => {
       if (r === 'LAST_CLOSED_DATE') return [[46283]];
-      if (/!WB736:WB737$/.test(r)) return [[46283], [32.136]];
+      if (/!(WB|WZ)736:(WB|WZ)737$/.test(r)) return [[46283], [32.136]];
       if (/!R45$/.test(r)) return [[240]];
       const colA = /!A1:A(\d+)$/.exec(r);
       if (colA) {
@@ -143,7 +144,7 @@ describe('unitka-month-prep: гейты записи', () => {
     expect(made).toEqual([true]);
     expect(sheets.structureWrites).toHaveLength(0);
     const planLine = lines.find((l) => l.event === 'unitka_month_prep_plan')!;
-    expect(planLine.fields).toMatchObject({ status: 'PLAN_CREATE', target: '2026-10', append_rows: 35, append_columns: 36 });
+    expect(planLine.fields).toMatchObject({ status: 'PLAN_CREATE', target: '2026-10', append_rows: 35, insert_columns: { at: 588, count: 24 }, anchor_col: 624, chain_gaps: [] });
     expect(lines.some((l) => l.event === 'unitka_month_prep_dry')).toBe(true);
   });
   it('shadow с UNITKA_MONTH_PREP_WRITE=1 — всё равно ПЛАН (readonly)', async () => {
@@ -177,17 +178,19 @@ describe('unitka-month-prep: гейты записи', () => {
       const cogs = classifyCogsSnapshot({ rows: [{ nmId: NEW_NM, internalSku: null, day: '2026-09-27', cogsIntervalCount: 1, canonicalCogs: 426.735 }], publishedAt: '2026-09-28T06:50:02Z', runId: 'run-cogs-1' }, new Date('2026-09-28T07:00:00Z'));
       const colA: CellValue[] = Array(768).fill(null); colA[734] = 'Сентябрь 2026';
       const plan = planMonthPrep({
-        target: { year: 2026, month: 10 }, meta: { sheetId: 1, rowCount: 768, columnCount: 600 }, columnA: colA, predecessor: sept, existing: null,
+        target: { year: 2026, month: 10 }, meta: { sheetId: 1, rowCount: 768, columnCount: 600, anchorCol: 600 }, columnA: colA, predecessor: sept, existing: null,
         population: [...SEPT_NMS, NEW_NM].map((n) => ({ nmId: n, name: n === NEW_NM ? 'Набор анти-акне пудра+сыворотка+крем' : `Товар ${n}` })), cogs,
         structure: septemberStructure(), rowFormats: septemberRowFormats(),
       });
-      sheets.sections.push(applyPlan(plan, 636));
-      sheets.rowCount = 803; sheets.columnCount = 636;
+      sheets.sections.push(applyPlan(plan, 624));
+      sheets.rowCount = 803; sheets.columnCount = 624; sheets.anchorCol = 624;
     };
     const cfg = baseConfig('prod', { unitkaMonthPrepWrite: true, unitkaMonthPrepTarget: '2026-10' });
     const res = await unitkaMonthPrepLoader(ctx(cfg), depsOf(runner, sheets));
     expect(sheets.structureWrites).toHaveLength(1);
-    expect(sheets.structureWrites[0]![0]).toEqual({ appendDimension: { sheetId: 739487431, dimension: 'ROWS', length: 35 } });
+    expect(sheets.structureWrites[0]![0]).toEqual({ insertDimension: { range: { sheetId: 739487431, dimension: 'COLUMNS', startIndex: 588, endIndex: 612 }, inheritFromBefore: true } });
+    expect(sheets.structureWrites[0]!.slice(1, 3).map((r) => Object.keys(r)[0])).toEqual(['updateConditionalFormatRule', 'updateConditionalFormatRule']);
+    expect(sheets.structureWrites[0]![3]).toEqual({ appendDimension: { sheetId: 739487431, dimension: 'ROWS', length: 35 } });
     expect(res.rowsLoaded).toBeGreaterThan(0);
     expect(sheets.batchWrites).toBe(0);
     // Повтор того же месяца: NO_CHANGE, новых запросов нет.

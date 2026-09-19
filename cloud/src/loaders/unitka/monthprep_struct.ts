@@ -45,6 +45,66 @@ export function dimensionRequests(st: SheetStructure, prev: MonthGeometry, next:
   return req;
 }
 
+/* ───────────────────────── вставка колонок и УФ прошлых месяцев ───────────────────────── */
+
+const colNumber = (letters: string): number => [...letters].reduce((n, ch) => n * 26 + ch.charCodeAt(0) - 64, 0);
+function colLetters(n: number): string {
+  let s = '';
+  for (let x = n; x > 0; x = Math.floor((x - 1) / 26)) s = String.fromCharCode(65 + ((x - 1) % 26)) + s;
+  return s;
+}
+
+/** Строковый литерал | ссылка на ячейку ($WB$736) | диапазон колонок ($WA:$WB). Имена функций и диапазонов не задеваются. */
+const REF_TOKEN = /"(?:[^"]|"")*"|(?<![A-Za-z0-9_.$])(\$?)([A-Z]{1,3})(\$?)(\d+)(?![A-Za-z0-9_(])|(?<![A-Za-z0-9_.$])(\$?)([A-Z]{1,3}):(\$?)([A-Z]{1,3})(?![A-Za-z0-9_($])/g;
+
+/**
+ * Сдвиг A1-ссылок формулы УФ при вставке count колонок после колонки insertAt (1-based номер колонки перед
+ * вставкой = 0-based индекс вставки): ссылки на колонки правее едут на count — ровно то, что делает сам Sheets.
+ * Не формула — возвращается как есть. Ссылка на другой лист — отказ: такие формулы не переиздаём.
+ */
+export function shiftColumnRefs(formula: string, insertAt: number, count: number): string {
+  if (!formula.startsWith('=')) return formula;
+  const shift = (letters: string): string => (colNumber(letters) > insertAt ? colLetters(colNumber(letters) + count) : letters);
+  if (formula.replace(/"(?:[^"]|"")*"/g, '').includes('!')) throw new RangeError(`формула УФ ссылается на другой лист: ${formula}`);
+  return formula.replace(REF_TOKEN, (m, d1: string | undefined, c: string | undefined, d2: string, row: string, e1: string, a: string | undefined, e2: string, b: string) => {
+    if (c !== undefined) return `${d1}${shift(c)}${d2}${row}`;
+    if (a !== undefined) return `${e1}${shift(a)}:${e2}${shift(b)}`;
+    return m;
+  });
+}
+
+export interface CfTrim { index: number; rule: ConditionalFormatRule }
+
+/**
+ * insertDimension(inheritFromBefore) РАСШИРЯЕТ диапазоны УФ, которые кончаются ровно на колонке перед вставкой
+ * (живая книга: правило выходных и «будущий день» блока 24 кончаются на VP). Их формулы записаны относительно
+ * первого диапазона правила, во вставленных колонках они ссылаются за край листа, WEEKDAY(пусто)=6 — и сентябрь
+ * получает сплошную полосу на месте нового блока. Поэтому такие правила переиздаются сразу за вставкой в том
+ * виде, какой они имели бы без расширения: те же диапазоны в том же порядке (диапазоны правее вставки едут с
+ * хвостом, диапазон через вставку расширяется), ссылки формул сдвинуты как у Sheets. Остальные правила не трогаем.
+ */
+export function cfInsertTrims(rules: readonly ConditionalFormatRule[], insertAt: number, count: number): { trims: CfTrim[]; unsafe: string[] } {
+  const trims: CfTrim[] = [];
+  const unsafe: string[] = [];
+  rules.forEach((src, index) => {
+    if (!src.ranges.some((r) => r.endColumnIndex === insertAt && (r.startColumnIndex ?? 0) < insertAt)) return;
+    const rule = JSON.parse(JSON.stringify(src)) as ConditionalFormatRule;
+    rule.ranges = rule.ranges.map((r) => ({
+      ...r,
+      ...(r.startColumnIndex !== undefined && r.startColumnIndex >= insertAt ? { startColumnIndex: r.startColumnIndex + count } : {}),
+      ...(r.endColumnIndex !== undefined && r.endColumnIndex > insertAt ? { endColumnIndex: r.endColumnIndex + count } : {}),
+    }));
+    try {
+      for (const v of rule.booleanRule?.condition.values ?? []) if (v.userEnteredValue !== undefined) v.userEnteredValue = shiftColumnRefs(v.userEnteredValue, insertAt, count);
+      for (const pt of Object.values(rule.gradientRule ?? {}) as Array<{ value?: string }>) if (typeof pt?.value === 'string') pt.value = shiftColumnRefs(pt.value, insertAt, count);
+      trims.push({ index, rule });
+    } catch (e) {
+      unsafe.push(`правило УФ ${index}: ${(e as Error).message}`);
+    }
+  });
+  return { trims, unsafe };
+}
+
 /* ───────────────────────── откат ───────────────────────── */
 
 export interface RollbackPlan {
@@ -57,17 +117,19 @@ export interface RollbackPlan {
 
 /**
  * Откат созданного месяца (секция — последняя в листе): удалить правила УФ, целиком лежащие в строках
- * ≥ topRow, затем добавленные колонки (только если они пусты во всех строках < topRow), затем строки
- * topRow..rowCount. Строки и колонки до секции не адресуются.
+ * ≥ topRow, затем вставленные колонки новых блоков (только если они пусты во всех строках < topRow;
+ * группы колонок внутри них удаляются вместе с ними), затем строки topRow..rowCount. Строки и колонки до секции не адресуются.
  */
 export function planMonthRollback(a: {
-  geometry: MonthGeometry; rowCount: number; columnCount: number; preColumnCount: number; sheetId: number;
-  rules: readonly ConditionalFormatRule[]; newColumnsEmptyAbove: boolean;
+  geometry: MonthGeometry; rowCount: number; sheetId: number;
+  rules: readonly ConditionalFormatRule[];
+  /** Колонки блоков, вставленных этим месяцем (1-based, включительно), или null. */
+  insertedColumns: [number, number] | null; newColumnsEmptyAbove: boolean;
 }): RollbackPlan {
   const g = a.geometry;
   if (a.rowCount < g.spacerRow) return { requests: [], deletedCfRules: 0, deletedRows: null, deletedColumns: null, refused: 'в листе нет полной секции' };
-  if (a.columnCount > a.preColumnCount && !a.newColumnsEmptyAbove) {
-    return { requests: [], deletedCfRules: 0, deletedRows: null, deletedColumns: null, refused: 'добавленные колонки непусты выше секции — откат колонок небезопасен' };
+  if (a.insertedColumns && !a.newColumnsEmptyAbove) {
+    return { requests: [], deletedCfRules: 0, deletedRows: null, deletedColumns: null, refused: 'вставленные колонки непусты выше секции — откат колонок небезопасен' };
   }
   const req: StructureRequest[] = [];
   const idx: number[] = [];
@@ -76,9 +138,10 @@ export function planMonthRollback(a: {
   // колонок новой секции само обрезает их диапазоны. Итог отката проверяется сверкой с предснимком.
   for (const i of idx.sort((x, y) => y - x)) req.push({ deleteConditionalFormatRule: { sheetId: a.sheetId, index: i } });
   let cols: [number, number] | null = null;
-  if (a.columnCount > a.preColumnCount) {
-    cols = [a.preColumnCount + 1, a.columnCount];
-    req.push({ deleteDimension: { range: { sheetId: a.sheetId, dimension: 'COLUMNS', startIndex: a.preColumnCount, endIndex: a.columnCount } } });
+  if (a.insertedColumns) {
+    cols = a.insertedColumns;
+    // Удаление вставленных колонок возвращает хвост книги (и именованный диапазон REVERSE_LEG_RATE) на место.
+    req.push({ deleteDimension: { range: { sheetId: a.sheetId, dimension: 'COLUMNS', startIndex: cols[0] - 1, endIndex: cols[1] } } });
   }
   req.push({ deleteDimension: { range: { sheetId: a.sheetId, dimension: 'ROWS', startIndex: g.topRow - 1, endIndex: a.rowCount } } });
   return { requests: req, deletedCfRules: idx.length, deletedRows: [g.topRow, a.rowCount], deletedColumns: cols, refused: null };

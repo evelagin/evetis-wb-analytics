@@ -47,7 +47,7 @@ function blank(g: MonthGeometry, width: number): Snapshot {
     geometry: g, width,
     grid: Array.from({ length: rows }, () => Array<CellValue>(width).fill('')),
     formulas: Array.from({ length: g.mtdRow - g.firstDailyRow + 1 }, () => Array<CellValue>(width).fill('')),
-    formats: [], sheetId: 739487431, mirrorLcd: null, mirrorRev: 32.136, namedLcd: null,
+    formats: [], sheetId: 739487431, anchorCol: 600, mirrorLcd: null, mirrorRev: 32.136, namedLcd: null,
   };
 }
 function setVal(s: Snapshot, row: number, col: number, v: CellValue): void {
@@ -140,6 +140,8 @@ export function septemberCfRules(): ConditionalFormatRule[] {
     if (s === 0) ranges.push(rng(737, 766, 2, 11));
     rules.push(boolRule(ranges, `=$${colA1(S(s))}737>$WB$736`));
   }
+  // 1б) как живое правило 62: «будущий день» на ВЕСЬ блок 24 — диапазон кончается ровно на VP (588), перед вставкой.
+  rules.push(boolRule([rng(737, 766, S(23), S(23) + 23)], '=$US737>$WB$736'));
   // 2) на все блоки: выходной день (колонка дня недели, смещение 23), первая — блок 24.
   rules.push(boolRule([rng(737, 766, S(23) + 23), ...Array.from({ length: 23 }, (_, s) => rng(737, 766, S(s) + 23))], '=WEEKDAY(US737;2)>5'));
   // 3) на все блоки + сводка G: доля от максимума в секции (абсолютные строки 737..766).
@@ -164,7 +166,12 @@ export function septemberStructure(rowCount = 768, columnCount = 600): SheetStru
     return { pixelSize: off === 0 ? 80 : 100, hiddenByUser: hidden };
   });
   const rowMetadata = Array.from({ length: rowCount }, (_, i) => ({ pixelSize: i + 1 === 735 ? 30 : 18 }));
-  return { conditionalFormats: septemberCfRules(), columnMetadata, rowMetadata, merges: [] };
+  // Группы колонок как в живом листе: у каждого блока — аналитика (смещения 16..22), у скрытых блоков 2–3 — целиком.
+  const columnGroups = [
+    ...Array.from({ length: 24 }, (_, s) => ({ startIndex: slotStart(s) + 16 - 1, endIndex: slotStart(s) + 22, depth: 1 })).filter((g) => g.startIndex !== slotStart(1) + 15 && g.startIndex !== slotStart(2) + 15),
+    { startIndex: slotStart(1) - 1, endIndex: slotStart(2) + 23, depth: 1 },
+  ];
+  return { conditionalFormats: septemberCfRules(), columnMetadata, rowMetadata, merges: [], columnGroups };
 }
 
 /** Форматы строк-шаблонов: у каждой ячейки метка «строка:колонка» (чтобы проверять, откуда взят формат). */

@@ -14,12 +14,14 @@
  *   прочие препятствия                       → BLOCKED с кодом (COGS, предыдущий месяц, шаблон…).
  *
  * Популяция (V1): слоты предыдущего месяца сохраняются; выбывший SKU оставляет слот пустым; новые
- * активные SKU — по возрастанию nm_id в следующие свободные слоты ПОСЛЕ последнего занятого,
- * слот 24 пропускается. После принятия месяца раскладка заморожена.
+ * активные SKU — по возрастанию nm_id в слоты СРАЗУ за последним занятым: для них ВСТАВЛЯЮТСЯ колонки
+ * (insertDimension) перед хвостом книги (расчёты VQ..VZ, подписи WA, якоря WB736..739), который
+ * сдвигается вправо вместе с именованным диапазоном REVERSE_LEG_RATE и ссылками формул/УФ (это делает
+ * Sheets). Цепочка блоков сплошная (visual hardening 2). После принятия месяца раскладка заморожена.
  */
 import {
   BLOCK_WIDTH, geometryAt, layoutOf, locateSection, nextFreeSlot, previousMonth, formatMonthKey,
-  slotStart, isReservedSlot, dayRowOf,
+  slotStart, dayRowOf, chainGaps,
   type MonthGeometry, type MonthKey, type MonthLayout, type BlockSlot,
 } from './calendar.js';
 import { OFFSET, SUMMARY, colA1, isoToSerial, addDaysIso, type CellValue } from './model.js';
@@ -31,14 +33,14 @@ import {
   type BlockFormulaParams, type FormulaStyle,
 } from './formulas.js';
 import type { RawCellFormat, SheetMeta, SheetStructure, StructureRequest } from './sheets.js';
-import { dimensionRequests } from './monthprep_struct.js';
-import { buildConditionalFormats, cfRequests, columnKind, neutralizeDayFormat, type VisualCf } from './visual.js';
+import { dimensionRequests, cfInsertTrims, type CfTrim } from './monthprep_struct.js';
+import { buildConditionalFormats, cfRequests, columnKind, neutralizeDayFormat, borderSpec, bordersJson, rowKindOf, SUMMARY_LAST_COLUMN, type VisualCf } from './visual.js';
 
 export type PrepStatus = 'PLAN_CREATE' | 'NO_CHANGE' | 'MONTH_SECTION_PARTIAL' | 'MONTH_SECTION_INVALID' | 'BLOCKED';
 
 /** Ширина объединения заголовка блока (live сентябрь: все 24 блока — 7 колонок) и заголовка месяца A:K. */
 export const BLOCK_TITLE_MERGE_WIDTH = 7;
-export const MONTH_TITLE_MERGE_LAST_COL = SUMMARY.drr; // K
+export const MONTH_TITLE_MERGE_LAST_COL = SUMMARY.drr + 1; // L — сводка A..L одним контуром
 
 export interface PopulationSku { nmId: number; name: string | null }
 
@@ -81,7 +83,16 @@ export interface MonthPrepPlan {
   /** NO_CHANGE: активные SKU без блока в уже принятом месяце (раскладка заморожена — только отчёт). */
   unmappedActive: number[];
   appendRows: number;
-  appendColumns: number;
+  /** Вставка колонок нового блока/блоков сразу за последним блоком прошлого месяца (0-based index = колонка перед вставкой). */
+  insertColumns: { at: number; count: number } | null;
+  /** Правила УФ прошлых месяцев, которые вставка колонок расширила бы на новый блок, — переиздаются без расширения. */
+  cfTrims: CfTrim[];
+  /** Колонка якорей книги ПОСЛЕ вставки (в формулах УФ и для Engine). */
+  anchorCol: number;
+  /** Группы колонок (expand/collapse аналитики) новых блоков — как у блока-шаблона. */
+  groupRequests: StructureRequest[];
+  /** Слоты-дыры внутри цепочки (только отчёт; контракт — пусто). */
+  chainGaps: number[];
   merges: GridRect[];
   /**
    * Карта форматов «строка/колонки прошлого месяца → строки/колонки новой секции». Phase 2C: исполняется
@@ -124,9 +135,6 @@ export interface PrepInputs {
   rowFormats?: Map<number, RawCellFormat[]> | null;
 }
 
-/** Ширина новых колонок вне блоков (хвост резервного слота WC..WN): стандартная ширина Sheets. */
-export const DEFAULT_COLUMN_PX = 100;
-
 /** Строки прошлого месяца, чьи форматы нужны для новой секции (дни — только первый день, эталон E3). */
 export function templateRowsOf(g: MonthGeometry): number[] {
   return [g.topRow, g.headerRow, g.firstDailyRow, g.mtdRow, g.spacerRow];
@@ -137,7 +145,7 @@ const COGS_SOURCE = 'wb_mart.V_UNITKA_COGS_CANONICAL (копия wb_mart.UNITKA_
 function emptyPlan(target: string, status: PrepStatus, code: string | null, reasons: string[]): MonthPrepPlan {
   return {
     status, code, target, reasons, geometry: null, layout: null, predecessor: null, blocks: [], retiredNmIds: [], unmappedActive: [],
-    appendRows: 0, appendColumns: 0, merges: [], formatCopies: [], conditionalFormats: null, dimensionRequests: [],
+    appendRows: 0, insertColumns: null, cfTrims: [], anchorCol: 0, groupRequests: [], chainGaps: [], merges: [], formatCopies: [], conditionalFormats: null, dimensionRequests: [],
     formulaStyle: 'COMMA', sheetId: 0, cells: [], notes: [], manualBlankCells: 0, cogsProvenance: [],
     templateFormats: null, resetInheritedFormats: null, cfStartIndex: 0,
   };
@@ -315,7 +323,11 @@ export function planMonthPrep(inp: PrepInputs): MonthPrepPlan {
   }
   blocks.sort((a, b) => a.slot - b.slot).forEach((b, i) => { b.index = i; });
   if (blocks.length === 0) return emptyPlan(tk, 'BLOCKED', 'EMPTY_POPULATION', ['ни одного блока для нового месяца']);
-  if (retired.length) reasons.push(`выбывшие SKU (слоты остаются пустыми): ${retired.join(', ')}`);
+  // Цепочка блоков обязана быть сплошной (visual hardening 2): выбывший SKU посреди цепочки оставил бы дыру —
+  // месяц не готовится, решение владельца (вернуть SKU в реестр или выводить его блок явно).
+  const gaps = chainGaps(blocks);
+  if (gaps.length) return emptyPlan(tk, 'BLOCKED', 'CHAIN_GAP', [`выбывшие SKU ${retired.join(', ')} оставляют дыру в цепочке блоков (слоты ${gaps.join(', ')}) — сплошная цепочка нарушена; нужно решение владельца`]);
+  if (retired.length) reasons.push(`выбывшие SKU (последние слоты остаются пустыми): ${retired.join(', ')}`);
 
   const g = geometryAt(inp.target, pg.nextTopRow);
   const layout = layoutOf(g, blocks.map(({ index, slot: s, start, nmId, title }) => ({ index, slot: s, start, nmId, title })));
@@ -329,7 +341,7 @@ export function planMonthPrep(inp: PrepInputs): MonthPrepPlan {
   put(g.topRow, 1, { kind: 'string', value: g.title });
   for (const b of blocks) put(g.topRow, b.start, { kind: 'string', value: b.title });
   // Шапка: сводка — из прошлого месяца («N SKU» пересчитано), блок — из того же слота (новый — из первого блока).
-  for (let c = 1; c <= SUMMARY.drr + 1; c++) {
+  for (let c = 1; c <= SUMMARY_LAST_COLUMN; c++) {
     const v = cellAt(pred, pg.headerRow, c);
     if (typeof v === 'string' && v !== '') put(g.headerRow, c, { kind: 'string', value: v.replace(/\b\d+ SKU\b/, `${blocks.length} SKU`) });
   }
@@ -385,10 +397,17 @@ export function planMonthPrep(inp: PrepInputs): MonthPrepPlan {
   const lastPred = pv.blocks[pv.blocks.length - 1]!;
   for (const [src, d1, d2] of rowPairs) {
     formatCopies.push({ source: { r1: src, r2: src, c1: 1, c2: predLast }, dest: { r1: d1, r2: d2, c1: 1, c2: predLast } });
+    // L — часть сводки: заголовок, шапка, MTD и план берут вид колонки A (день недели сводки); границы — контракт.
+    if (d1 !== g.firstDailyRow) formatCopies.push({ source: { r1: src, r2: src, c1: SUMMARY.weekday, c2: SUMMARY.weekday }, dest: { r1: d1, r2: d2, c1: SUMMARY_LAST_COLUMN, c2: SUMMARY_LAST_COLUMN } });
     for (const b of blocks.filter((x) => x.origin === 'NEW')) {
       formatCopies.push({ source: { r1: src, r2: src, c1: lastPred.start, c2: lastPred.start + BLOCK_WIDTH - 1 }, dest: { r1: d1, r2: d2, c1: b.start, c2: b.start + BLOCK_WIDTH - 1 } });
     }
   }
+  // Геометрия вставки: новые блоки идут сплошь за последним блоком прошлого месяца; колонки вставляются
+  // перед хвостом книги, якоря сдвигаются на ширину вставки.
+  const insertAt = pv.layout.lastBlockColumn;                       // 0-based index вставки = колонка VP (588)
+  const insertCount = blocks.filter((b) => b.origin === 'NEW').length * BLOCK_WIDTH;
+  const anchorAfter = inp.meta.anchorCol > insertAt ? inp.meta.anchorCol + insertCount : inp.meta.anchorCol;
   const merges: GridRect[] = [{ r1: g.topRow, r2: g.topRow, c1: 1, c2: MONTH_TITLE_MERGE_LAST_COL }];
   for (const b of blocks) merges.push({ r1: g.topRow, r2: g.topRow, c1: b.start, c2: b.start + BLOCK_TITLE_MERGE_WIDTH - 1 });
 
@@ -402,24 +421,31 @@ export function planMonthPrep(inp: PrepInputs): MonthPrepPlan {
     predecessor: { monthKey: pg.monthKey, topRow: pg.topRow, blocks: pv.blocks.length },
     blocks, retiredNmIds: retired, unmappedActive: [],
     appendRows: g.spacerRow - inp.meta.rowCount,
-    appendColumns: Math.max(0, layout.lastBlockColumn - inp.meta.columnCount),
+    insertColumns: insertCount > 0 ? { at: insertAt, count: insertCount } : null, cfTrims: [],
+    anchorCol: anchorAfter, groupRequests: [], chainGaps: chainGaps(blocks),
     merges, formatCopies,
     conditionalFormats: null, dimensionRequests: [], formulaStyle: style, sheetId: inp.meta.sheetId, cfStartIndex: 0,
     templateFormats: inp.rowFormats ?? null,
-    resetInheritedFormats: layout.lastBlockColumn > inp.meta.columnCount
-      ? { r1: 1, r2: inp.meta.rowCount, c1: inp.meta.columnCount + 1, c2: layout.lastBlockColumn } : null,
+    // Вставленные колонки наследуют формат колонки перед ними (inheritFromBefore) во ВСЕХ старых строках — сброс.
+    resetInheritedFormats: insertCount > 0 ? { r1: 1, r2: inp.meta.rowCount, c1: insertAt + 1, c2: insertAt + insertCount } : null,
     cells, notes, manualBlankCells: manualBlank, cogsProvenance: provenance,
   };
   const newSlots = blocks.filter((b) => b.origin === 'NEW').map((b) => b.slot);
   const predSlots = pv.blocks.map((b) => b.slot);
-  plan.conditionalFormats = buildConditionalFormats(layout, inp.meta.sheetId, style);
+  if (insertCount > 0) {
+    const { trims, unsafe } = cfInsertTrims(inp.structure.conditionalFormats, insertAt, insertCount);
+    if (unsafe.length) return emptyPlan(tk, 'BLOCKED', 'CF_TRIM_UNSAFE', unsafe);
+    plan.cfTrims = trims;
+  }
+  plan.conditionalFormats = buildConditionalFormats(layout, inp.meta.sheetId, style, anchorAfter);
   plan.cfStartIndex = inp.structure.conditionalFormats.length;
   plan.dimensionRequests = dimensionRequests(inp.structure, pg, g, Math.max(...predSlots), newSlots, inp.meta.sheetId);
-  // Новые колонки вне новых блоков (хвост резервного слота): стандартная ширина, видимы — свойства WB не наследуем.
-  const newBlockCols = new Set(blocks.filter((b) => b.origin === 'NEW').flatMap((b) => Array.from({ length: BLOCK_WIDTH }, (_, o) => b.start + o)));
-  for (let c = inp.meta.columnCount + 1; c <= layout.lastBlockColumn; c++) {
-    if (newBlockCols.has(c)) continue;
-    plan.dimensionRequests.push({ updateDimensionProperties: { range: { sheetId: inp.meta.sheetId, dimension: 'COLUMNS', startIndex: c - 1, endIndex: c }, properties: { pixelSize: DEFAULT_COLUMN_PX, hiddenByUser: false }, fields: 'pixelSize,hiddenByUser' } });
+  // Группы колонок новых блоков — как у блока-шаблона (последний блок прошлого месяца): те же смещения.
+  const tpl = Math.max(...predSlots);
+  const tplGroups = inp.structure.columnGroups.filter((gr) => gr.startIndex >= slotStart(tpl) - 1 && gr.endIndex <= slotStart(tpl) + BLOCK_WIDTH - 1);
+  for (const s of newSlots) for (const gr of tplGroups) {
+    const delta = slotStart(s) - slotStart(tpl);
+    plan.groupRequests.push({ addDimensionGroup: { range: { sheetId: inp.meta.sheetId, dimension: 'COLUMNS', startIndex: gr.startIndex + delta, endIndex: gr.endIndex + delta } } });
   }
   assertPlanConfined(plan);
   return plan;
@@ -432,24 +458,29 @@ export function planMonthPrep(inp: PrepInputs): MonthPrepPlan {
 export function assertPlanConfined(plan: MonthPrepPlan): void {
   const top = plan.geometry?.topRow;
   if (top === undefined) return;
+  const ins = plan.insertColumns;
+  const inInserted = (c: number): boolean => !!ins && c >= ins.at + 1 && c <= ins.at + ins.count;
   const bad = [
     ...plan.cells.filter((c) => c.row < top).map((c) => `${colA1(c.col)}${c.row}`),
     ...plan.notes.filter((c) => c.row < top).map((c) => `note ${colA1(c.col)}${c.row}`),
     ...plan.merges.filter((m) => m.r1 < top).map((m) => `merge ${m.r1}`),
     ...plan.formatCopies.filter((f) => f.dest.r1 < top).map((f) => `format ${f.dest.r1}`),
-    // Сброс унаследованных форматов — только в колонках, которых до подготовки не было.
-    ...(plan.resetInheritedFormats && plan.resetInheritedFormats.c1 <= (plan.layout?.lastBlockColumn ?? 0) - plan.appendColumns ? ['сброс форматов в существующих колонках'] : []),
+    // Сброс унаследованных форматов — только во вставленных колонках.
+    ...(plan.resetInheritedFormats && !(inInserted(plan.resetInheritedFormats.c1) && inInserted(plan.resetInheritedFormats.c2)) ? ['сброс форматов вне вставленных колонок'] : []),
     ...(plan.conditionalFormats?.rules ?? []).flatMap((r) => r.ranges)
       .filter((x) => (x.startRowIndex ?? 0) < top - 1).map((x) => `УФ ${(x.startRowIndex ?? 0) + 1}`),
     ...plan.dimensionRequests.map((r) => (r.updateDimensionProperties as { range: { dimension: string; startIndex: number } }).range)
-      .filter((d) => (d.dimension === 'ROWS' ? d.startIndex < top - 1
-        : !plan.blocks.some((b) => b.origin === 'NEW' && d.startIndex >= b.start - 1 && d.startIndex < b.start - 1 + BLOCK_WIDTH)
-          && !(plan.resetInheritedFormats && d.startIndex >= plan.resetInheritedFormats.c1 - 1)))
+      .filter((d) => (d.dimension === 'ROWS' ? d.startIndex < top - 1 : !inInserted(d.startIndex + 1)))
       .map((d) => `размер ${d.dimension} ${d.startIndex + 1}`),
+    ...plan.groupRequests.map((r) => (r.addDimensionGroup as { range: { startIndex: number; endIndex: number } }).range)
+      .filter((d) => !inInserted(d.startIndex + 1) || !inInserted(d.endIndex)).map((d) => `группа ${d.startIndex + 1}`),
+    // Переиздание правил УФ прошлых месяцев: только существующие правила и ни одного диапазона во вставленных колонках.
+    ...plan.cfTrims.filter((t) => !ins || t.index >= plan.cfStartIndex || t.rule.ranges.some((x) => (x.startColumnIndex ?? 0) < ins.at + ins.count && (x.endColumnIndex ?? Infinity) > ins.at))
+      .map((t) => `переиздание УФ ${t.index} задевает вставленные колонки`),
+    ...(plan.chainGaps.length ? [`дыры в цепочке блоков: слоты ${plan.chainGaps.join(', ')}`] : []),
   ];
-  const reserved = plan.cells.filter((c) => { const s = Math.floor((c.col - slotStart(0)) / BLOCK_WIDTH); return c.col >= slotStart(0) && isReservedSlot(s); });
-  if (bad.length || reserved.length) {
-    throw new RangeError(`план подготовки месяца выходит за пределы новой секции: ${[...bad, ...reserved.map((c) => `резерв ${colA1(c.col)}${c.row}`)].slice(0, 10).join(', ')}`);
+  if (bad.length) {
+    throw new RangeError(`план подготовки месяца выходит за пределы новой секции: ${bad.slice(0, 10).join(', ')}`);
   }
 }
 
@@ -467,40 +498,45 @@ function cellData(v: CellValueWrite | undefined, style: FormulaStyle): Record<st
 }
 
 /**
- * Запросы одного spreadsheets.batchUpdate: добавить строки/колонки → сброс унаследованных форматов в новых
- * колонках старых строк → значения, формулы (синтаксис локали книги) и явные форматы строк-шаблонов →
- * заметки COGS → объединения заголовков → УФ (из визуального контракта) → размеры. copyPaste не используется.
+ * Запросы одного spreadsheets.batchUpdate: вставить колонки новых блоков → переиздать правила УФ, которые вставка
+ * расширила бы на новый блок → добавить строки → сброс
+ * унаследованных форматов во вставленных колонках старых строк → форматы (шаблон + контракт границ) →
+ * значения и формулы (синтаксис локали книги) → заметки COGS → объединения → УФ (визуальный контракт) →
+ * размеры → группы колонок. copyPaste не используется.
  * Только для PLAN_CREATE; иначе — пустой список.
  */
 export function toStructureRequests(plan: MonthPrepPlan, sheetId: number): StructureRequest[] {
   if (plan.status !== 'PLAN_CREATE' || !plan.geometry) return [];
   assertPlanConfined(plan);
   const req: StructureRequest[] = [];
+  // Колонки новых блоков — вставка сразу за последним блоком (хвост книги сдвигается вправо);
+  // свойства наследуются от колонки перед вставкой (VP), затем задаются явно (dimensionRequests).
+  if (plan.insertColumns) {
+    req.push({ insertDimension: { range: { sheetId, dimension: 'COLUMNS', startIndex: plan.insertColumns.at, endIndex: plan.insertColumns.at + plan.insertColumns.count }, inheritFromBefore: true } });
+    for (const t of plan.cfTrims) req.push({ updateConditionalFormatRule: { sheetId, index: t.index, rule: t.rule } });
+  }
   if (plan.appendRows > 0) req.push({ appendDimension: { sheetId, dimension: 'ROWS', length: plan.appendRows } });
-  if (plan.appendColumns > 0) req.push({ appendDimension: { sheetId, dimension: 'COLUMNS', length: plan.appendColumns } });
-  // Сброс форматов, которые appendDimension унаследовал от колонки WB в старых строках (только новые колонки).
+  // Сброс форматов, унаследованных вставленными колонками в старых строках.
   if (plan.resetInheritedFormats) {
     req.push({ repeatCell: { range: gridRange(sheetId, plan.resetInheritedFormats), cell: {}, fields: 'userEnteredFormat' } });
   }
-  // ФОРМАТЫ новой секции — явный userEnteredFormat строк-шаблонов (без УФ): repeatCell на каждую серию
-  // соседних колонок с одинаковым форматом в пределах типа строки (дни 2..N — одним диапазоном строк).
-  // Колонки вне карты (резервный слот в новых строках) — явный сброс формата. Так запрос компактен
-  // (живой лист: поячеечная запись форматов октября — 16 МБ, больше лимита запроса API).
+  // ФОРМАТЫ новой секции — явный userEnteredFormat строк-шаблонов (без УФ) + границы по контракту
+  // (borderSpec), repeatCell сериями одинаковых форматов. Колонки вне карты — сброс.
+  const g = plan.geometry;
   const W = plan.layout!.lastBlockColumn;
   const covered = new Map<string, RawCellFormat>();
-  const g = plan.geometry;
   for (const f of plan.formatCopies) {
     const src = plan.templateFormats?.get(f.source.r1);
     if (!src) throw new RangeError(`нет формата строки-шаблона ${f.source.r1}`);
     const dayBand = f.dest.r1 >= g.firstDailyRow && f.dest.r2 <= g.lastDailyRow;
     for (let c = f.dest.c1; c <= f.dest.c2; c++) {
       const raw = src[f.source.c1 - 1 + (c - f.dest.c1)] ?? null;
-      // Строки дней — нейтральный будущий вид по семантике колонки (visual.ts); шапки/MTD/план — как шаблон.
       covered.set(`${f.dest.r1}|${f.dest.r2}|${c}`, dayBand ? neutralizeDayFormat(raw, columnKind(c, plan.layout!)) : raw);
     }
   }
   const bands = [...new Set(plan.formatCopies.map((f) => `${f.dest.r1}|${f.dest.r2}`))].map((k) => k.split('|').map(Number) as [number, number]);
   for (const [r1, r2] of bands.sort((a, b) => a[0] - b[0])) {
+    const kind = rowKindOf(g, r1);
     let run: { c1: number; key: string; fmt: RawCellFormat } | null = null;
     const flush = (cEnd: number): void => {
       if (!run) return;
@@ -509,7 +545,9 @@ export function toStructureRequests(plan: MonthPrepPlan, sheetId: number): Struc
       run = null;
     };
     for (let c = 1; c <= W; c++) {
-      const fmt = covered.has(`${r1}|${r2}|${c}`) ? covered.get(`${r1}|${r2}|${c}`)! : null; // вне карты — сброс
+      const base = covered.has(`${r1}|${r2}|${c}`) ? covered.get(`${r1}|${r2}|${c}`)! : null;
+      const spec = kind ? borderSpec(kind, c, plan.layout!) : null;
+      const fmt: RawCellFormat = spec ? { ...(base ?? {}), borders: bordersJson(spec) } : base;
       const key = JSON.stringify(fmt);
       if (run && run.key === key) continue;
       flush(c - 1);
@@ -531,6 +569,7 @@ export function toStructureRequests(plan: MonthPrepPlan, sheetId: number): Struc
   for (const m of plan.merges) req.push({ mergeCells: { range: gridRange(sheetId, m), mergeType: 'MERGE_ALL' } });
   if (plan.conditionalFormats) req.push(...cfRequests(plan.conditionalFormats, sheetId, plan.cfStartIndex));
   req.push(...plan.dimensionRequests);
+  req.push(...plan.groupRequests);
   return req;
 }
 

@@ -17,7 +17,7 @@ import {
   findBlocks, colA1, isoToSerial, serialToIso, addDaysIso, monthStartIso,
   isEmpty, asNumber, factEqual, rateEqual, round2, round6,
 } from './model.js';
-import { layoutOf, monthKeyOf, sameMonth, dayRowOf, slotStart, isReservedSlot, type MonthGeometry, type MonthLayout } from './calendar.js';
+import { layoutOf, monthKeyOf, sameMonth, dayRowOf, slotStart, type MonthGeometry, type MonthLayout } from './calendar.js';
 
 /**
  * Снимок секции месяца, как его читает index.ts: геометрия найдена по заголовку месяца (Phase 2B),
@@ -27,6 +27,8 @@ import { layoutOf, monthKeyOf, sameMonth, dayRowOf, slotStart, isReservedSlot, t
 export interface Snapshot {
   geometry: MonthGeometry;
   width: number;
+  /** Колонка якорей книги (зеркало LCD, REVERSE_LEG_RATE, статус Guard) — из именованного диапазона. */
+  anchorCol: number;
   grid: CellValue[][];      // строки topRow..mtdRow, колонки 1..width; строки могут быть «рваными»
   formulas: CellValue[][];  // строки firstDailyRow..mtdRow (дни + MTD), valueRenderOption=FORMULA
   mirrorLcd: CellValue;     // якорь книги WB736
@@ -209,7 +211,7 @@ export function validateSection(snap: Snapshot): { sectionIssues: string[]; drif
   // (выбывший SKU при подготовке месяца оставляет слот ПОЛНОСТЬЮ пустым).
   const used = new Set(blocks.map((b) => b.slot));
   for (let slot = 0; slotStart(slot) <= snap.width; slot++) {
-    if (isReservedSlot(slot) || used.has(slot)) continue;
+    if (used.has(slot)) continue;
     if (text(g.headerRow, slotStart(slot) + OFFSET.date) === DATE_HEADER) sectionIssues.push(`слот ${slot} (${colA1(slotStart(slot))}): шапка блока есть, nmID в строке ${g.topRow} нет`);
   }
   const first = blocks[0];
@@ -244,7 +246,7 @@ export function preflight(snap: Snapshot, lcdIso: string): { issues: string[]; s
   const issues = [...v.driftIssues];
   if (!sameMonth(monthKeyOf(lcdIso), g.key)) sectionIssues.unshift(`месяц LAST_CLOSED_DATE ${lcdIso.slice(0, 7)} ≠ месяцу секции ${g.monthKey}`);
   if (!Number.isFinite(asNumber(snap.namedLcd))) issues.push(`именованный диапазон ${NAMED.LCD} пуст или не дата`);
-  if (!Number.isFinite(asNumber(snap.mirrorLcd))) issues.push(`зеркало LAST_CLOSED_DATE (${colA1(BOOK_ANCHORS.COL)}${BOOK_ANCHORS.LCD_MIRROR_ROW}) пусто или не дата`);
+  if (!Number.isFinite(asNumber(snap.mirrorLcd))) issues.push(`зеркало LAST_CLOSED_DATE (${colA1(snap.anchorCol)}${BOOK_ANCHORS.LCD_MIRROR_ROW}) пусто или не дата`);
 
   // Формулы В факт/ставочных ячейках — не дрейф, а наследие (в Master остались `=stock*0.15` и
   // `=prev-orders+cancels` в колонках остатков и хранения; s82data перезаписывал их значениями,
@@ -380,8 +382,8 @@ export function buildPlan(inp: PlanInputs): Plan {
     }
   }
   const reverseRate = store.reverseRate;
-  expected.push({ row: BOOK_ANCHORS.REVERSE_ROW, col: BOOK_ANCHORS.COL, want: reverseRate, kind: 'reverse', key: 'reverse', source: `V_UNITKA_LOGISTICS_RATES ${store.windowFrom}..${store.windowTo} (магазин)` });
-  expected.push({ row: BOOK_ANCHORS.LCD_MIRROR_ROW, col: BOOK_ANCHORS.COL, want: lcdSerial, kind: 'lcd', key: 'lcd_mirror', date: lcd, source: 'V_UNITKA_LAST_CLOSED_DATE' });
+  expected.push({ row: BOOK_ANCHORS.REVERSE_ROW, col: snap.anchorCol, want: reverseRate, kind: 'reverse', key: 'reverse', source: `V_UNITKA_LOGISTICS_RATES ${store.windowFrom}..${store.windowTo} (магазин)` });
+  expected.push({ row: BOOK_ANCHORS.LCD_MIRROR_ROW, col: snap.anchorCol, want: lcdSerial, kind: 'lcd', key: 'lcd_mirror', date: lcd, source: 'V_UNITKA_LAST_CLOSED_DATE' });
   expected.push({ row: 0, col: 0, want: lcdSerial, kind: 'lcd', key: 'lcd_named', namedRange: NAMED.LCD, date: lcd, source: 'V_UNITKA_LAST_CLOSED_DATE' });
 
   // FUTURE LEAKAGE в самой книге: факт-ячейки за датами > LCD должны быть пусты.

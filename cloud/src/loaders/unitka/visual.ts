@@ -5,11 +5,16 @@
  *   • семантика колонок блока (факт / ручной ввод / ставка / расчёт / дата / день недели);
  *   • статические заливки: ручной ввод — всегда (зона ввода); факт/ставка — ТОЛЬКО у закрытого дня со
  *     значением (правило УФ), пустой будущий день — без заливки, читается как пустой;
- *   • выходные: суббота и воскресенье по дате строки (колонка B сводки) — заливка #fcefe3 на ячейке даты
- *     и ячейке дня недели сводки и каждого блока (не вся строка). В живом сентябре это работало только
- *     у сводки A/B и блока 1: формулы `=WEEKDAY(US737;2)>5` записаны относительно первого диапазона
- *     правила (B / AJ), для остальных блоков ссылка уезжает в чужие колонки (пусто → WEEKDAY(0)=6 →
- *     «выходной» каждый день). Здесь формулы не зависят от якоря;
+ *   • выходные: суббота и воскресенье по дате строки (колонка B сводки) — заливка #fcefe3 на ячейках
+ *     даты и дня недели сводки (A, B, L) и каждого блока (не вся строка);
+ *   • сводка A..L — один контур (visual hardening 2): L — правая колонка дня недели сводки, внутри
+ *     толстой рамки, участвует в выходных и «будущем»;
+ *   • границы — явный контракт (borderSpec), а не копия строки-шаблона: в живом сентябре у строки
+ *     первого дня средняя линия сверху (разделитель после шапки), и копирование её на все дни давало
+ *     тяжёлую «клетку» по всей сводке;
+ *   • выходные в живом сентябре работали только у сводки A/B и блока 1: формулы `=WEEKDAY(US737;2)>5`
+ *     записаны относительно первого диапазона правила (B / AJ), для остальных блоков ссылка уезжает
+ *     в чужие колонки (пусто → WEEKDAY(0)=6 → «выходной» каждый день). Здесь формулы не зависят от якоря;
  *   • будущие дни — серый текст (первое совпавшее правило УФ побеждает: Sheets применяет ОДНО правило
  *     на ячейку, поэтому порядок правил = приоритет, как в живом сентябре);
  *   • пороги, уровни и шкалы метрик — те же цвета и границы, что в живом сентябре.
@@ -20,6 +25,7 @@
  * вычисляются по каждой ячейке). Ни одной относительной ссылки на колонку.
  */
 import { BOOK_ANCHORS, OFFSET, SUMMARY, colA1 } from './model.js';
+import type { MonthGeometry } from './calendar.js';
 import { BLOCK_WIDTH, type MonthLayout } from './calendar.js';
 import type { ConditionalFormatRule, RawCellFormat, StructureRequest } from './sheets.js';
 import { toLocaleFormula, type FormulaStyle } from './formulas.js';
@@ -144,11 +150,11 @@ const bg = (hex: string): Record<string, unknown> => ({ backgroundColor: rgb(hex
 const fg = (hex: string): Record<string, unknown> => ({ textFormat: { foregroundColor: rgb(hex) } });
 const bgfg = (b: string, f: string): Record<string, unknown> => ({ backgroundColor: rgb(b), textFormat: { foregroundColor: rgb(f) } });
 
-/** Идиомы, не зависящие от якоря правила. */
-export function cfIdioms(layout: MonthLayout): { SELF: string; NEIGH: (k: number) => string; COLMAX: string; CLOSED: string; FUTURE: string; WEEKEND: string } {
+/** Идиомы, не зависящие от якоря правила. anchorCol — колонка якорей книги ПОСЛЕ вставки колонок. */
+export function cfIdioms(layout: MonthLayout, anchorCol: number): { SELF: string; NEIGH: (k: number) => string; COLMAX: string; CLOSED: string; FUTURE: string; WEEKEND: string } {
   const f = layout.firstDailyRow, l = layout.lastDailyRow, last = colA1(layout.lastBlockColumn);
   const row = `$A${f}:$${last}${f}`;
-  const anchor = `$${colA1(BOOK_ANCHORS.COL)}$${BOOK_ANCHORS.LCD_MIRROR_ROW}`;
+  const anchor = `$${colA1(anchorCol)}$${BOOK_ANCHORS.LCD_MIRROR_ROW}`;
   return {
     SELF: `INDEX(${row},1,COLUMN())`,
     NEIGH: (k) => `INDEX(${row},1,COLUMN()-${k})`,
@@ -165,8 +171,8 @@ export interface VisualCf { rules: ConditionalFormatRule[]; families: Record<str
  * Все правила УФ новой секции, в порядке приоритета (первое совпавшее побеждает) — порядок семей как в
  * живом сентябре; новые семьи «заливка закрытого дня» стоят после всех метрических правил.
  */
-export function buildConditionalFormats(layout: MonthLayout, sheetId: number, style: FormulaStyle): VisualCf {
-  const I = cfIdioms(layout);
+export function buildConditionalFormats(layout: MonthLayout, sheetId: number, style: FormulaStyle, anchorCol: number): VisualCf {
+  const I = cfIdioms(layout, anchorCol);
   const S = I.SELF;
   const rules: ConditionalFormatRule[] = [];
   const families: Record<string, number> = {};
@@ -186,10 +192,10 @@ export function buildConditionalFormats(layout: MonthLayout, sheetId: number, st
   tiers('tier_carts', SUMMARY.carts, OFFSET.carts, COLOR.tierCarts);
   tiers('tier_ads', SUMMARY.ads, OFFSET.adsIn, COLOR.tierAds);
   tiers('tier_orders', SUMMARY.orders, OFFSET.orders, COLOR.tierOrders);
-  // 4. Выходные: дата и день недели сводки и каждого блока.
-  add('weekend', [one(SUMMARY.weekday), one(SUMMARY.date), ...off(OFFSET.date), ...off(OFFSET.weekday)], { formula: `=${I.WEEKEND}` }, bg(COLOR.weekendBg));
-  // 5. Будущий день — серый текст: сводка A..K и весь блок.
-  add('future', [{ c1: SUMMARY.weekday, c2: SUMMARY.drr }, ...offRun(0, BLOCK_WIDTH - 1)], { formula: `=${I.FUTURE}` }, fg(COLOR.futureFg));
+  // 4. Выходные: дата и дни недели сводки (A, B, L) и каждого блока.
+  add('weekend', [one(SUMMARY.weekday), one(SUMMARY.date), one(SUMMARY_RIGHT_WEEKDAY), ...off(OFFSET.date), ...off(OFFSET.weekday)], { formula: `=${I.WEEKEND}` }, bg(COLOR.weekendBg));
+  // 5. Будущий день — серый текст: сводка A..L и весь блок.
+  add('future', [{ c1: SUMMARY.weekday, c2: SUMMARY_RIGHT_WEEKDAY }, ...offRun(0, BLOCK_WIDTH - 1)], { formula: `=${I.FUTURE}` }, fg(COLOR.futureFg));
   // 6. Шкала «Доходность (общая)»: сводка I и каждый блок отдельно (шкала считается по своему диапазону).
   add('grad_profit', [one(SUMMARY.profit)], { gradient: true }, null);
   for (const r of off(OFFSET.profitAll)) add('grad_profit', [r], { gradient: true }, null);
@@ -224,6 +230,78 @@ export function buildConditionalFormats(layout: MonthLayout, sheetId: number, st
 
 export function cfRequests(cf: VisualCf, sheetId: number, startIndex: number): StructureRequest[] {
   return cf.rules.map((rule, i) => ({ addConditionalFormatRule: { rule, index: startIndex + i } }));
+}
+
+/* ───────────────────────── контракт границ ───────────────────────── */
+
+/** Правая колонка сводки — день недели (L). Сводка = A..L, один контур. */
+export const SUMMARY_RIGHT_WEEKDAY = SUMMARY.drr + 1;
+export const SUMMARY_LAST_COLUMN = SUMMARY_RIGHT_WEEKDAY;
+
+export type RowKind = 'title' | 'header' | 'day' | 'mtd' | 'plan';
+export type EdgeWeight = 'NONE' | 'THIN' | 'MEDIUM' | 'THICK';
+export interface EdgeSpec { w: EdgeWeight; color?: string }
+export interface BorderSpec { top: EdgeSpec; bottom: EdgeSpec; left: EdgeSpec; right: EdgeSpec }
+
+/** Цвета линий живого сентября: рамка/сетка — чёрный, границы блоков и итоги — серый, шапка блока — светло-серый. */
+export const LINE = { black: '#000000', block: '#5f6368', header: '#9aa0a6' } as const;
+const N: EdgeSpec = { w: 'NONE' };
+const e = (w: EdgeWeight, color: string): EdgeSpec => ({ w, color });
+
+export function rowKindOf(g: MonthGeometry, row: number): RowKind | null {
+  if (row === g.topRow) return 'title';
+  if (row === g.headerRow) return 'header';
+  if (row >= g.firstDailyRow && row <= g.lastDailyRow) return 'day';
+  if (row === g.mtdRow) return 'mtd';
+  if (row === g.spacerRow) return 'plan';
+  return null;
+}
+
+/**
+ * Границы ячейки по семантике (строка × колонка). Всегда все четыре стороны (NONE — явно), чтобы формат
+ * строки-шаблона не «протекал». Семантика:
+ *   контур сводки A..L — толстая чёрная рамка (левая грань A, правая грань L; сверху заголовка, снизу MTD);
+ *   разделитель B|C — средняя чёрная (дата | данные); сетка дня — тонкая чёрная снизу и по бокам;
+ *   день недели (A, L, смещение 23 блока) — без внутренних горизонталей;
+ *   граница блока — средняя серая (левая грань даты, правая грань дня недели), дата|данные — средняя чёрная;
+ *   шапка блока — тонкая светло-серая; заголовок месяца/блока — средняя чёрная;
+ *   MTD — средняя серая рамка у блоков, у сводки сверху средняя, снизу толстая; строка плана — средняя серая снизу.
+ */
+export function borderSpec(kind: RowKind, col: number, layout: MonthLayout): BorderSpec | null {
+  const B = LINE.black, G = LINE.block, H = LINE.header;
+  const blk = layout.blocks.find((x) => col >= x.start && col < x.start + BLOCK_WIDTH);
+  if (col <= SUMMARY_LAST_COLUMN) {
+    const isA = col === SUMMARY.weekday, isB = col === SUMMARY.date, isC = col === SUMMARY.bloggers, isL = col === SUMMARY_RIGHT_WEEKDAY;
+    const left = isA ? e('THICK', B) : isC ? e('MEDIUM', B) : e('THIN', B);
+    const right = isL ? e('THICK', B) : isB ? e('MEDIUM', B) : e('THIN', B);
+    switch (kind) {
+      case 'title': return { top: e('THICK', B), bottom: e('MEDIUM', B), left: isA ? e('THICK', B) : N, right: isL ? e('THICK', B) : N };
+      case 'header': return { top: e('MEDIUM', B), bottom: e('MEDIUM', B), left, right };
+      case 'day': return { top: N, bottom: (isA || isL) ? N : e('THIN', B), left, right };
+      case 'mtd': return { top: e('MEDIUM', B), bottom: e('THICK', B), left, right };
+      case 'plan': return { top: N, bottom: e('MEDIUM', G), left: isA ? N : isB ? e('MEDIUM', G) : N, right: isL ? e('MEDIUM', G) : N };
+    }
+  }
+  if (!blk) return null;
+  const o = col - blk.start;
+  const isDate = o === OFFSET.date, isWk = o === OFFSET.weekday;
+  switch (kind) {
+    case 'title': return { top: e('MEDIUM', B), bottom: e('MEDIUM', B), left: isDate ? e('MEDIUM', G) : N, right: isWk ? e('MEDIUM', G) : N };
+    case 'header': return { top: N, bottom: e('THIN', H), left: isDate ? e('MEDIUM', G) : e('THIN', H), right: isWk ? e('MEDIUM', G) : e('THIN', H) };
+    case 'day':
+      if (isWk) return { top: N, bottom: N, left: N, right: e('MEDIUM', G) };
+      if (isDate) return { top: N, bottom: e('THIN', B), left: e('MEDIUM', G), right: e('MEDIUM', B) };
+      return { top: N, bottom: e('THIN', B), left: e('THIN', B), right: e('THIN', B) };
+    case 'mtd': return { top: e('MEDIUM', G), bottom: e('MEDIUM', G), left: isWk ? N : e('MEDIUM', G), right: e('MEDIUM', G) };
+    case 'plan': return { top: N, bottom: e('MEDIUM', G), left: isDate ? e('MEDIUM', G) : N, right: isWk ? e('MEDIUM', G) : N };
+  }
+}
+
+const STYLE: Record<EdgeWeight, string> = { NONE: 'NONE', THIN: 'SOLID', MEDIUM: 'SOLID_MEDIUM', THICK: 'SOLID_THICK' };
+/** Объект borders REST v4 по спецификации. */
+export function bordersJson(spec: BorderSpec): Record<string, unknown> {
+  const side = (s: EdgeSpec): Record<string, unknown> => (s.w === 'NONE' ? { style: 'NONE' } : { style: STYLE[s.w], colorStyle: { rgbColor: rgb(s.color ?? LINE.black) } });
+  return { top: side(spec.top), bottom: side(spec.bottom), left: side(spec.left), right: side(spec.right) };
 }
 
 /** Относительные ссылки на колонку (без $ перед буквами) вне строковых литералов — запрещены. */
