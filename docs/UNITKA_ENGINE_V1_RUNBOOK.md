@@ -129,6 +129,31 @@ SELECT * FROM `wb_mart.V_UNITKA_ENGINE_STATUS`;
 * COGS 252442517: канон 231,38 ₽; 240 ₽ в листе — известное неверное значение, исправление отложено.
 * Журнал issue, алерты, УФ — отложены; следующий приоритет после 1C3 — октябрьский rollover.
 
+## 5d. Financial Integrity V1: сверка окна (`UNITKA_RECONCILE_MODE`) — НЕ активировано
+
+Полный контракт — `UNITKA_FIN_INTEGRITY_V1.md`. Кратко для оператора:
+
+* Режимы: `off` (по умолчанию и сейчас в production — поведение Engine 2.0.0), `observe` (считает план сверки
+  и пишет его в журнал, в лист — как `off`), `write` (правит факт-ячейки окна 35 дней, включая прошлые месяцы).
+  Неизвестное значение = `off` + предупреждение `unitka_reconcile_mode_invalid`.
+* **Порядок включения (каждый шаг — разрешение владельца):** infra apply двух таблиц `wb_ops`
+  (`UNITKA_REPAIR_LEDGER`, `UNITKA_INTEGRITY_ISSUES`) → `sql/unitka/reconcile_v1.sql` → деплой образа → `observe`
+  1–2 дня → `write`. `write` без таблиц = отказ `LEDGER_UNAVAILABLE` до записи — это защита, а не авария.
+* Что смотреть: `JSON_VALUE(qa_json, '$.reconcile')` в `UNITKA_ENGINE_RUNS` (окно, секции, отказы,
+  `repairs_planned / repairs_recorded`), события `unitka_reconcile_plan`, `unitka_repairs`; после применения вью:
+  ```sql
+  SELECT * FROM `wb_mart.V_UNITKA_INTEGRITY_STATUS`;
+  SELECT business_date, nm_id, field, cell_a1, old_value, new_value, source, reason
+  FROM `wb_ops.UNITKA_REPAIR_LEDGER` WHERE status = 'REPAIRED' ORDER BY repaired_at DESC LIMIT 50;
+  ```
+* Коды: `RECON_WINDOW_INCONSISTENT` (окно в SQL ≠ окну в коде — отказ до записи), `RECON_SECTION_MISSING |
+  AMBIGUOUS | INVALID | FAILED` (отказ одной прошлой секции; месяц LCD пишется), `RECON_PLAN_NOT_CONFINED`
+  (план вышел за факт-ячейки — отказ), `LEDGER_UNAVAILABLE`, `LEDGER_WRITE_FAILED` (лист записан, журнал нет —
+  записи ремонта лежат в событии `unitka_repairs`; внести в журнал вручную не требуется, следующий прогон даст `NO_CHANGE`).
+* Откат: `UNITKA_RECONCILE_MODE=off`, затем при необходимости `sql/unitka/reconcile_v1_rollback.sql`. Значения ячеек —
+  по `old_value` журнала ремонта. Таблицы `wb_ops` откат не трогает (`deletion_protection`).
+* Сверка не трогает: ставки прошлых месяцев, якоря, формулы, СПП, блогеров, внешнюю рекламу, даты раньше 01.09.2026.
+
 ## 5c. Calendar V2: подготовка месяца (`unitka-month-prep`) — НЕ активировано
 
 Документ: `docs/UNITKA_CALENDAR_V2.md`. Суточный Engine месяц не создаёт; за ≤ 5 дней до конца месяца он пишет

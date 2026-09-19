@@ -1,5 +1,37 @@
 # CHANGELOG.md
 
+## 2026-09-20 — UNITKA FINANCIAL INTEGRITY V1: самовосстанавливающаяся сверка окна 35 дней (код, SQL, Terraform — только в Git; production не менялся)
+
+Документы: `docs/UNITKA_FIN_INTEGRITY_V1.md`, `docs/UNITKA_COGS_ARCHITECTURE_2026-09.md`; runbook §5d.
+В production НЕ применено ничего: вью, таблицы, IAM, env, расписания, оригинал книги — без изменений.
+
+- **Причина:** заказ без цены лист считает убытком (17.09 / 930334396: −466,97 ₽ вместо +122,15 ₽); Engine не
+  возвращается к закрытым дням после смены месяца; состояния данных схлопывались в одно.
+- **Engine `unitka-engine/2.1.0`, новая переменная `UNITKA_RECONCILE_MODE` = `off | observe | write`** (по умолчанию
+  `off` = прежнее поведение). Окно `[LCD−34, LCD]`, не раньше 01.09.2026; прошлые секции ищет Calendar V2; в прошлых
+  месяцах правятся только факт-ячейки (смещения 2, 3, 4, 5, 6, 7, 11, 14, 20); одна запись на прогон; изоляция секций.
+- **Цена с происхождением:** `ORDERS_API` — основной источник; `FUNNEL_FALLBACK` — сумма заказов той же строки воронки,
+  только когда Orders API пуст и счётчики согласны; иначе цена пуста и строка `DATA_ERROR`. Расхождение счётчиков —
+  статус (`LATE_DATA` до 14 дней, затем `WARNING` или `DATA_ERROR`), а не повод пересчитать цену.
+- **Guard — изменение поведения:** `COGS_SOURCE_MISMATCH` при активности теперь `ERROR` и делает SKU-дни фин.
+  недействительными (было `WARNING`); новые коды `PRICE_ZERO_WITH_ORDERS`, `PRICE_FUNNEL_FALLBACK` (INFO),
+  `PRICE_NOT_ON_SHEET`, `STOCK_SNAPSHOT_MISSING`; новая степень `NOT_AVAILABLE`; в сводке — `states`,
+  `affected_sku_days`, `oldest_unresolved*`, `price_provenance`.
+- **Новые объекты (только исходники):** `sql/unitka/reconcile_v1.sql` — вью `V_UNITKA_RECON_WINDOW`,
+  `V_UNITKA_RECON_FACT`, `V_UNITKA_RECON_INTEGRITY`, `V_UNITKA_RECON_COGS_CANONICAL`, `V_UNITKA_INTEGRITY_STATUS`;
+  откат `reconcile_v1_rollback.sql`. Существующие вью `V_UNITKA_*` не меняются.
+- **Новые таблицы `wb_ops` (Terraform, не применён):** `UNITKA_REPAIR_LEDGER` (журнал ремонта: repair_id, run_id,
+  environment, engine_version, git_sha, detected_at, repaired_at, month_key, business_date, nm_id, field, cell_a1,
+  old_value, new_value, source, source_as_of, reason, status) и `UNITKA_INTEGRITY_ISSUES` (снимок issue на прогон:
+  run_id, environment, evaluated_at, phase, issue_key, business_date, nm_id, field, code, state, severity,
+  financial_valid, source, source_value, diagnostic_value, message). IAM: `dataEditor` на эти две таблицы для
+  `sa-loaders-prod`; shadow прав не получает.
+- **COGS 252442517 не исправлялся.** Отчёт по архитектуре: строка 45 листа — общая таблица себестоимости, на 27 её
+  ячеек ссылаются 13 896 формул; рекомендация — таблица интервалов канона на техническом листе и поиск по SKU и дате.
+- **Сентябрьский бэкфилл подготовлен, не выполнен:** 4 цены (DS744, PS745, DS746, PS753), MTD листа
+  −6 548,83 → −4 521,02 ₽.
+- Расписаний, Apps Script, Ozon, Metabase — без изменений.
+
 ## 2026-09-19 — UNITKA CALENDAR V2 · production rollout patch: семейство формулы остатка MTD + исполняемый откат (код; тестовая копия; оригинал не менялся)
 
 Документ: `docs/UNITKA_CALENDAR_V2.md` §10a, §10b; runbook §5a, §5c. Октябрь в production НЕ создан.

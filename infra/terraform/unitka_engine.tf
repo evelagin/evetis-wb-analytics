@@ -86,6 +86,95 @@ resource "google_bigquery_table_iam_member" "unitka_runs_write" {
   member     = "serviceAccount:${each.value}"
 }
 
+# ── UNITKA FINANCIAL INTEGRITY V1 (19.09.2026): журнал ремонта и снимок issue ────────────────
+#    Док: docs/UNITKA_FIN_INTEGRITY_V1.md. Обе таблицы — append-only, пишет Engine (bq.ts: insertRepairs / insertIssues),
+#    читает вью наблюдаемости wb_mart.V_UNITKA_INTEGRITY_STATUS (sql/unitka/reconcile_v1.sql, §4).
+#    Право записи — ПОТАБЛИЧНО и ТОЛЬКО prod (минимальный IAM-дифф): SHADOW лист не пишет и до журнала/снимка не доходит
+#    (index.ts выходит раньше), поэтому sa-loaders-shadow прав на эти таблицы НЕ получает. dataEditor — на две таблицы,
+#    а не на датасет wb_ops.
+#    Engine без журнала ремонта историю не правит (LEDGER_UNAVAILABLE, fail-closed) — поэтому таблицы применяются
+#    ДО включения UNITKA_RECONCILE_MODE=write. Режим сверки этим файлом НЕ включается: env Job'ов под ignore_changes,
+#    значение по умолчанию в коде — off.
+resource "google_bigquery_table" "unitka_repair_ledger" {
+  dataset_id          = "wb_ops"
+  table_id            = "UNITKA_REPAIR_LEDGER"
+  deletion_protection = true
+  description         = "UNITKA: журнал автоматических поправок факт-ячеек листа (что, где, было/стало, из какого источника и почему). Append-only."
+
+  time_partitioning {
+    type  = "DAY"
+    field = "detected_at"
+  }
+  clustering = ["environment", "business_date", "nm_id"]
+
+  schema = jsonencode([
+    { name = "repair_id", type = "STRING", mode = "REQUIRED", description = "run_id|месяц|ячейка — уникален в пределах прогона" },
+    { name = "run_id", type = "STRING", mode = "REQUIRED" },
+    { name = "environment", type = "STRING", mode = "REQUIRED" },
+    { name = "engine_version", type = "STRING" },
+    { name = "git_sha", type = "STRING" },
+    { name = "detected_at", type = "TIMESTAMP", mode = "REQUIRED" },
+    { name = "repaired_at", type = "TIMESTAMP", description = "NULL, пока запись в лист не подтверждена QA" },
+    { name = "month_key", type = "STRING", description = "YYYY-MM секции листа" },
+    { name = "business_date", type = "DATE", mode = "REQUIRED" },
+    { name = "nm_id", type = "INT64" },
+    { name = "field", type = "STRING", mode = "REQUIRED", description = "views | opens | carts | orders | cancels | stock | adsIn | price | storage" },
+    { name = "cell_a1", type = "STRING" },
+    { name = "old_value", type = "STRING", description = "значение ячейки до поправки; NULL = пусто" },
+    { name = "new_value", type = "STRING", description = "значение источника; NULL = источник отозвал значение" },
+    { name = "source", type = "STRING", description = "объект BigQuery и происхождение (для цены: FACT_ORDERS | FUNNEL_FALLBACK)" },
+    { name = "source_as_of", type = "STRING", description = "момент наблюдения/сборки источника, как его отдал слой сверки" },
+    { name = "reason", type = "STRING", description = "LATE_FIRST_FILL | SOURCE_REVISED | SOURCE_WITHDRAWN | PRICE_FUNNEL_FALLBACK" },
+    { name = "status", type = "STRING", mode = "REQUIRED", description = "REPAIRED | PLANNED_NOT_WRITTEN" },
+  ])
+}
+
+resource "google_bigquery_table" "unitka_integrity_issues" {
+  dataset_id          = "wb_ops"
+  table_id            = "UNITKA_INTEGRITY_ISSUES"
+  deletion_protection = true
+  description         = "UNITKA: снимок открытых issue целостности на каждый прогон Engine (состояния контракта не схлопываются). Append-only."
+
+  time_partitioning {
+    type  = "DAY"
+    field = "evaluated_at"
+  }
+  clustering = ["environment", "state", "code"]
+
+  schema = jsonencode([
+    { name = "run_id", type = "STRING", mode = "REQUIRED" },
+    { name = "environment", type = "STRING", mode = "REQUIRED" },
+    { name = "evaluated_at", type = "TIMESTAMP", mode = "REQUIRED" },
+    { name = "phase", type = "STRING" },
+    { name = "issue_key", type = "STRING", description = "дата|nm_id|код; NULL — строка-маркер прогона (code = RUN_MARKER)" },
+    { name = "business_date", type = "DATE" },
+    { name = "nm_id", type = "INT64" },
+    { name = "field", type = "STRING" },
+    { name = "code", type = "STRING", mode = "REQUIRED" },
+    { name = "state", type = "STRING", mode = "REQUIRED", description = "DATA_ERROR | LATE_DATA | MANUAL_REQUIRED | NOT_AVAILABLE | WARNING | INFO | RUN" },
+    { name = "severity", type = "STRING" },
+    { name = "financial_valid", type = "BOOL", description = "FALSE — финансовый результат SKU-дня недействителен" },
+    { name = "source", type = "STRING" },
+    { name = "source_value", type = "STRING" },
+    { name = "diagnostic_value", type = "STRING" },
+    { name = "message", type = "STRING" },
+  ])
+}
+
+resource "google_bigquery_table_iam_member" "unitka_repair_ledger_write" {
+  dataset_id = google_bigquery_table.unitka_repair_ledger.dataset_id
+  table_id   = google_bigquery_table.unitka_repair_ledger.table_id
+  role       = "roles/bigquery.dataEditor"
+  member     = "serviceAccount:${google_service_account.loaders_prod.email}"
+}
+
+resource "google_bigquery_table_iam_member" "unitka_integrity_issues_write" {
+  dataset_id = google_bigquery_table.unitka_integrity_issues.dataset_id
+  table_id   = google_bigquery_table.unitka_integrity_issues.table_id
+  role       = "roles/bigquery.dataEditor"
+  member     = "serviceAccount:${google_service_account.loaders_prod.email}"
+}
+
 # ── UNITKA INTEGRITY GUARD V1 ───────────────────────────────────────────────────────
 #    UNITKA_INTEGRITY_MODE = off у обоих Job'ов ниже — ТОЛЬКО значение при СОЗДАНИИ Job'а.
 #    У обоих lifecycle.ignore_changes покрывает env (провайдер v7: env — set, точечно не исключить),

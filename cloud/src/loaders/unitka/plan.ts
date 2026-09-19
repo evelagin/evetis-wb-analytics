@@ -280,7 +280,8 @@ function factSource(k: FactKey, f: FactRow): string {
     case 'opens': case 'carts': case 'orders': return f.ordersSource;
     case 'cancels': return f.cancelsSource;
     case 'stock': return 'FACT_STOCKS_SNAPSHOT';
-    case 'price': return 'FACT_ORDERS';
+    // Происхождение цены (слой сверки): FUNNEL_FALLBACK — сумма заказов той же строки воронки; иначе Orders API.
+    case 'price': return f.priceSource === 'FUNNEL_FALLBACK' ? 'V_WB_FUNNEL_DAILY.orders_sum_rub (FUNNEL_FALLBACK)' : 'FACT_ORDERS';
     case 'storage': return 'RAW_WB_PAID_STORAGE';
   }
 }
@@ -289,6 +290,59 @@ const FACT_FIELD: Record<FactKey, keyof FactRow> = {
   views: 'views', opens: 'opens', carts: 'carts', orders: 'orders', cancels: 'cancels',
   stock: 'stock', adsIn: 'adsIn', price: 'price', storage: 'storage',
 };
+
+/**
+ * Контракт факт-ячеек блока за заданные дни секции (индексы дней месяца). Общая часть суточного плана месяца LCD
+ * и сверки прошлых месяцев окна (reconcile.ts): одна логика «источник → ячейка», без второй копии.
+ */
+export function expectedFactCells(
+  g: MonthGeometry, b: Block, monthStart: string, dayIndexes: readonly number[], factOf: (nmId: number, date: string) => FactRow | undefined,
+  gaps?: Record<string, number>,
+): ExpectedCell[] {
+  const out: ExpectedCell[] = [];
+  for (const i of dayIndexes) {
+    const f = factOf(b.nmId, addDaysIso(monthStart, i));
+    if (!f) continue;
+    for (const k of FACT_KEYS) {
+      const raw = f[FACT_FIELD[k]];
+      const want = typeof raw === 'number' ? raw : null;
+      if (want === null && gaps && k in gaps) gaps[k] = (gaps[k] ?? 0) + 1;
+      out.push({ row: dayRowOf(g, i), col: b.start + OFFSET[k], want, kind: 'fact', nmId: b.nmId, key: k, date: f.date, source: factSource(k, f) });
+    }
+  }
+  return out;
+}
+
+/** План = ожидание минус то, что уже стоит в листе. bookLcd — LAST_CLOSED_DATE книги до прогона. */
+export function diffExpected(snap: Snapshot, expected: readonly ExpectedCell[], bookLcd: string, lcd: string): { cells: PlannedCell[]; byChangeType: Record<ChangeType, number>; legacyReplaced: number } {
+  const cells: PlannedCell[] = [];
+  let legacyReplaced = 0;
+  const byChangeType: Record<ChangeType, number> = { FACT_CHANGE: 0, LATE_SOURCE_CORRECTION: 0, MODEL_PARAMETER_REFRESH: 0, LCD_ADVANCE: 0, NO_CHANGE: 0 };
+  for (const e of expected) {
+    const before = currentValue(snap, e);
+    const valueSame = e.kind === 'fact' ? factEqual(before, e.want) : rateEqual(before, e.want as number);
+    const wasFormula = !e.namedRange && !isAnchorExpected(e) && isFormula(formulaAt(snap, e.row, e.col));
+    // Формула в ячейке контракта (закрытый день / ставка) заменяется значением даже при
+    // совпадении результата: после первой записи контракт «факт = значение» становится полным.
+    if (valueSame && !wasFormula) continue;
+    if (valueSame && wasFormula) legacyReplaced++;
+    let changeType: ChangeType;
+    let reason: string;
+    if (e.kind === 'lcd') { changeType = 'LCD_ADVANCE'; reason = `LAST_CLOSED_DATE ${bookLcd} → ${lcd}`; }
+    else if (e.kind !== 'fact') { changeType = 'MODEL_PARAMETER_REFRESH'; reason = `ставка rolling-окна пересчитана (${e.source ?? ''})`; }
+    else if (valueSame) { changeType = 'NO_CHANGE'; reason = 'формула-наследие → значение, результат тот же'; }
+    else if ((e.date ?? '') > bookLcd) { changeType = 'FACT_CHANGE'; reason = `новый закрытый день ${e.date} (${e.source ?? ''})`; }
+    else {
+      changeType = 'LATE_SOURCE_CORRECTION';
+      reason = wasFormula
+        ? `день ${e.date} закрыт в книге ${bookLcd}; в ячейке стояла формула-наследие, источник ${e.source ?? ''} даёт ${e.want === null ? 'GAP (пусто)' : e.want}`
+        : `день ${e.date} закрыт в книге ${bookLcd}; источник ${e.source ?? ''} пересчитал значение задним числом`;
+    }
+    byChangeType[changeType]++;
+    cells.push({ ...e, before, changeType, reason });
+  }
+  return { cells, byChangeType, legacyReplaced };
+}
 
 export function buildPlan(inp: PlanInputs): Plan {
   const { snapshot: snap, facts, minN } = inp;
@@ -360,15 +414,7 @@ export function buildPlan(inp: PlanInputs): Plan {
     if (rowsForNm !== closedDays) {
       throw new LoaderError(`блок #${b.index + 1} ${b.nmId}: в V_UNITKA_DAILY_FACT ${rowsForNm} дней из ${closedDays} (SKU не активен в REF_SKU_MASTER?)`, 'BLOCK_MISSING');
     }
-    for (let i = 0; i < closedDays; i++) {
-      const f = byKey.get(`${b.nmId}|${addDaysIso(monthStart, i)}`)!;
-      for (const k of FACT_KEYS) {
-        const raw = f[FACT_FIELD[k]];
-        const want = typeof raw === 'number' ? raw : null;
-        if (want === null && k in gaps) gaps[k] = (gaps[k] ?? 0) + 1;
-        expected.push({ row: dayRowOf(g, i), col: b.start + OFFSET[k], want, kind: 'fact', nmId: b.nmId, key: k, date: f.date, source: factSource(k, f) });
-      }
-    }
+    expected.push(...expectedFactCells(g, b, monthStart, Array.from({ length: closedDays }, (_, i) => i), (nm, d) => byKey.get(`${nm}|${d}`), gaps));
     // Ставки — константа на все строки дней секции (как s8brates/s8rates), сколько бы дней ни было.
     const p = logByNm.get(b.nmId);
     const ownD = !!(p && p.shipments >= minN && p.directRate !== null && p.directRate > 0);
@@ -407,33 +453,8 @@ export function buildPlan(inp: PlanInputs): Plan {
   if (leaks.length) throw new LoaderError(`факт за датами > ${lcd} уже заполнен: ${leaks.slice(0, 10).join(', ')} (всего ${leaks.length})`, 'FUTURE_LEAKAGE');
 
   // План = ожидание минус то, что уже стоит в листе.
-  const cells: PlannedCell[] = [];
-  let legacyReplaced = 0;
   const bookLcd = serialToIso(prevSerial);
-  const byChangeType: Record<ChangeType, number> = { FACT_CHANGE: 0, LATE_SOURCE_CORRECTION: 0, MODEL_PARAMETER_REFRESH: 0, LCD_ADVANCE: 0, NO_CHANGE: 0 };
-  for (const e of expected) {
-    const before = currentValue(snap, e);
-    const valueSame = e.kind === 'fact' ? factEqual(before, e.want) : rateEqual(before, e.want as number);
-    const wasFormula = !e.namedRange && !isAnchorExpected(e) && isFormula(formulaAt(snap, e.row, e.col));
-    // Формула в ячейке контракта (закрытый день / ставка) заменяется значением даже при
-    // совпадении результата: после первой записи контракт «факт = значение» становится полным.
-    if (valueSame && !wasFormula) continue;
-    if (valueSame && wasFormula) legacyReplaced++;
-    let changeType: ChangeType;
-    let reason: string;
-    if (e.kind === 'lcd') { changeType = 'LCD_ADVANCE'; reason = `LAST_CLOSED_DATE ${bookLcd} → ${lcd}`; }
-    else if (e.kind !== 'fact') { changeType = 'MODEL_PARAMETER_REFRESH'; reason = `ставка rolling-окна пересчитана (${e.source ?? ''})`; }
-    else if (valueSame) { changeType = 'NO_CHANGE'; reason = 'формула-наследие → значение, результат тот же'; }
-    else if ((e.date ?? '') > bookLcd) { changeType = 'FACT_CHANGE'; reason = `новый закрытый день ${e.date} (${e.source ?? ''})`; }
-    else {
-      changeType = 'LATE_SOURCE_CORRECTION';
-      reason = wasFormula
-        ? `день ${e.date} закрыт в книге ${bookLcd}; в ячейке стояла формула-наследие, источник ${e.source ?? ''} даёт ${e.want === null ? 'GAP (пусто)' : e.want}`
-        : `день ${e.date} закрыт в книге ${bookLcd}; источник ${e.source ?? ''} пересчитал значение задним числом`;
-    }
-    byChangeType[changeType]++;
-    cells.push({ ...e, before, changeType, reason });
-  }
+  const { cells, byChangeType, legacyReplaced } = diffExpected(snap, expected, bookLcd, lcd);
   const fmt = formatContract(snap, blocks, closedDays, monthStart, expected);
   return {
     layout, lcd, d1Msk: d1, lagDays, monthStart, closedDays, blocks, expected, cells, rates, reverseRate, invariant, sourcesByDay, gaps,
