@@ -4,11 +4,12 @@
  * Книга — в памяти: сентябрь-наследие (24 блока) + октябрь Calendar V2 (25 блоков) [+ ноябрь V2]. Координат месяцев
  * в коде сверки нет — тесты ходят по тем же секциям, что нашёл бы Engine.
  */
+import { createHash } from 'node:crypto';
 import { describe, it, expect } from 'vitest';
 import { unitkaLoader, ENGINE_VERSION, type UnitkaDeps } from '../src/loaders/unitka/index.js';
 import {
   reconcileWindow, windowMonths, sectionWindowDays, buildSectionRepairPlan, assertFactCellsOnly, repairRecords, issueRecords,
-  financialValidity, RECONCILE_WINDOW_DAYS, RECONCILE_FLOOR_DATE,
+  financialValidity, assertNotBeforeEpoch, RECONCILE_WINDOW_DAYS, RECONCILIATION_EPOCH,
 } from '../src/loaders/unitka/reconcile.js';
 import { OFFSET, SUMMARY, colA1 } from '../src/loaders/unitka/model.js';
 import { dayRowOf, slotStart } from '../src/loaders/unitka/calendar.js';
@@ -67,10 +68,10 @@ async function seeded(over: (f: FactRow) => Partial<FactRow> | null = () => null
 
 describe('окно сверки: 35 календарных дней через границы месяцев, нижняя граница — первый месяц под Engine', () => {
   it('константы решения владельца', () => {
-    expect([RECONCILE_WINDOW_DAYS, RECONCILE_FLOOR_DATE, ENGINE_VERSION]).toEqual([35, '2026-09-01', 'unitka-engine/2.1.0']);
+    expect([RECONCILE_WINDOW_DAYS, RECONCILIATION_EPOCH, ENGINE_VERSION]).toEqual([35, '2026-09-01', 'unitka-engine/2.1.0']);
   });
   it('LCD 18.09 → окно с 01.09 (не с 15.08: август вела не Engine — сверка стёрла бы чужие значения)', () => {
-    expect(reconcileWindow('2026-09-18')).toEqual({ from: '2026-09-01', to: '2026-09-18', days: 35, floor: '2026-09-01' });
+    expect(reconcileWindow('2026-09-18')).toEqual({ from: '2026-09-01', to: '2026-09-18', days: 35, epoch: '2026-09-01', rollingFrom: '2026-08-15' });
     expect(windowMonths(reconcileWindow('2026-09-18')).map((k) => `${k.year}-${k.month}`)).toEqual(['2026-9']);
   });
   it('граница 35-го дня: LCD 05.10 включает 01.09, LCD 06.10 — уже нет (день 36 заморожен)', () => {
@@ -85,8 +86,69 @@ describe('окно сверки: 35 календарных дней через �
     expect(windowMonths(w).map((k) => k.month)).toEqual([1, 2, 3]);
     expect(sectionWindowDays({ year: 2027, month: 2 }, w)!.dayIndexes).toHaveLength(28);
   });
-  it('месяц LCD всегда целиком, даже при узком окне', () => {
-    expect(reconcileWindow('2026-10-31', 5).from).toBe('2026-10-01');
+  it('окно короче месяца недопустимо (месяц LCD обязан входить целиком); LCD раньше эпохи — отказ', () => {
+    expect(() => reconcileWindow('2026-10-31', 5)).toThrow(/меньше месяца/);
+    expect(() => reconcileWindow('2026-08-31')).toThrow(/раньше эпохи/);
+    expect(reconcileWindow('2026-10-31', 31).from).toBe('2026-10-01');
+  });
+});
+
+/* ───────────────────────── эпоха сверки ───────────────────────── */
+
+const daysBetweenIso = (a: string, b: string): number => Math.round((Date.parse(`${b}T00:00:00Z`) - Date.parse(`${a}T00:00:00Z`)) / 86_400_000);
+
+describe('ЭПОХА СВЕРКИ 2026-09-01: начало окна = max(скользящие 35 дней, эпоха); август и раньше не меняются никогда', () => {
+  const sha = (snap: { grid: unknown; formulas: unknown }): string => createHash('sha256').update(JSON.stringify([snap.grid, snap.formulas])).digest('hex');
+  it('31.08.2026 исключено, 01.09.2026 включено — пока эпоха связывает окно (LCD 01.09 … 05.10)', () => {
+    for (const lcd of ['2026-09-01', '2026-09-04', '2026-09-18', '2026-09-30', '2026-10-02', '2026-10-05']) {
+      const w = reconcileWindow(lcd);
+      expect([w.from, w.epoch], lcd).toEqual(['2026-09-01', RECONCILIATION_EPOCH]);
+      expect(w.rollingFrom < RECONCILIATION_EPOCH || lcd === '2026-10-05', lcd).toBe(true);        // скользящее начало ушло бы в август
+      expect(sectionWindowDays({ year: 2026, month: 8 }, w), lcd).toBeNull();                       // ни одного дня августа
+      expect(windowMonths(w).some((k) => k.year === 2026 && k.month <= 8), lcd).toBe(false);
+      expect(sectionWindowDays({ year: 2026, month: 9 }, w)!.fromDay, lcd).toBe('2026-09-01');      // 01.09 — первый сверяемый день
+    }
+  });
+  it('будущие окна ведут себя обычно: эпоха перестаёт связывать с LCD 06.10, дальше — чистые скользящие 35 дней', () => {
+    expect(reconcileWindow('2026-10-06')).toMatchObject({ from: '2026-09-02', rollingFrom: '2026-09-02' });
+    expect(reconcileWindow('2026-12-15')).toMatchObject({ from: '2026-11-11', rollingFrom: '2026-11-11', epoch: '2026-09-01' });
+    expect(reconcileWindow('2027-03-01')).toMatchObject({ from: '2027-01-26', rollingFrom: '2027-01-26' });
+    for (const lcd of ['2026-10-06', '2026-12-15', '2027-03-01', '2028-02-29']) { const w = reconcileWindow(lcd); expect(daysBetweenIso(w.from, w.to) + 1, lcd).toBe(35); }
+  });
+  it('сентябрь сверяется из октября (LCD 02.10), а секция августа остаётся побайтно прежней', async () => {
+    const book = buildBook('2026-08-31', { august: true });
+    const runner = new ReconRunner('2026-09-30', reconFactsFor('2026-09-01', '2026-09-30'), '2026-09-01');
+    await run(book, runner);                                                                       // сентябрь заполнен
+    const august = sha(book.section('2026-08'));
+    runner.lcd = '2026-10-02'; runner.facts = patch(reconFactsFor('2026-09-01', '2026-10-02'), SEPT_NM, '2026-09-17', { cancels: 2 });
+    await run(book, runner);                                                                       // LCD в октябре, ремонт в сентябре
+    expect(book.get(septRow(book, '2026-09-17'), blockCol(5, OFFSET.cancels))).toBe(2);
+    expect(runner.ledger.at(-1)).toMatchObject({ monthKey: '2026-09', businessDate: '2026-09-17', field: 'cancels', status: 'REPAIRED' });
+    expect(sha(book.section('2026-08'))).toBe(august);
+    const touched = book.batchWrites.flat().map((w) => Number(/!\D+(\d+):/.exec(w.range)?.[1] ?? 0)).filter((r) => r > 0);
+    expect(Math.min(...touched)).toBeGreaterThanOrEqual(735);                                       // ни одной записи выше заголовка сентября
+  });
+  it('источник отдал строки раньше эпохи (ошибка вью) → RECON_BEFORE_EPOCH до любой записи; август не тронут', async () => {
+    const book = buildBook('2026-08-31', { august: true });
+    const august = sha(book.section('2026-08'));
+    const runner = new ReconRunner('2026-09-18', reconFactsFor('2026-08-29', '2026-09-18'), '2026-09-01');
+    await expect(run(book, runner)).rejects.toMatchObject({ code: 'RECON_BEFORE_EPOCH' });
+    expect([book.batchWrites.length, runner.ledger.length, sha(book.section('2026-08'))]).toEqual([0, 0, august]);
+  });
+  it('вью с другой эпохой или окном, уходящим в август → RECON_WINDOW_INCONSISTENT до любой записи', async () => {
+    const book = buildBook('2026-08-31', { august: true });
+    const august = sha(book.section('2026-08'));
+    const runner = new ReconRunner('2026-09-18', reconFactsFor('2026-09-01', '2026-09-18'), '2026-09-01');
+    runner.windowOverride = { from: '2026-08-15', to: '2026-09-18', epoch: '2026-08-01' };
+    await expect(run(book, runner)).rejects.toMatchObject({ code: 'RECON_WINDOW_INCONSISTENT' });
+    runner.windowOverride = { from: '2026-09-01', to: '2026-09-18', epoch: '2026-08-01' };          // окно верное, эпоха чужая — тоже отказ
+    await expect(run(book, runner)).rejects.toMatchObject({ code: 'RECON_WINDOW_INCONSISTENT' });
+    expect([book.batchWrites.length, sha(book.section('2026-08'))]).toEqual([0, august]);
+  });
+  it('вторая линия защиты — чистая функция: дата раньше эпохи в плане или источнике = отказ', () => {
+    expect(() => assertNotBeforeEpoch(['2026-09-01', '2026-10-02'], 'x')).not.toThrow();
+    expect(() => assertNotBeforeEpoch(['2026-09-01', '2026-08-31'], 'x')).toThrow(/2026-08-31/);
+    try { assertNotBeforeEpoch(['2026-08-31'], 'x'); } catch (e) { expect((e as LoaderError).code).toBe('RECON_BEFORE_EPOCH'); }
   });
 });
 
@@ -113,9 +175,28 @@ describe('режимы: off = поведение 2.0.0, observe = только �
     const p = lines.find((l) => l.event === 'unitka_reconcile_plan')!.fields as { mode: string; repairs_planned: number; sections: Array<{ month: string; cells_planned: number }> };
     expect([p.mode, p.repairs_planned, p.sections.map((s) => [s.month, s.cells_planned])]).toEqual(['observe', 1, [['2026-09', 1]]]);
   });
+  it('observe + Guard: repair_available = true и sheet_financial_valid = false, пока ремонт не записан; write снимает оба', async () => {
+    const { book, runner } = await seeded();
+    const nm = SEPT_NMS[18]!, day = '2026-09-17';
+    const gap = (over: Record<string, unknown>) => ({ marketplace: 'WB', nm_id: nm, internal_sku: 's', product_name: 'p', day, last_closed_date: '2026-10-02', orders_unitka: 1, cancels_unitka: 0, orders_source: 'FUNNEL_API',
+      orders_funnel: 1, fact_order_rows: null, fact_order_qty: null, observed_price_diagnostic: null, observed_price_at: null, storage_value: 0, storage_date_covered: true, divergence_class: 'ONLY_FUNNEL',
+      factual_order_price: 1120, price_source: 'FUNNEL_FALLBACK', price_state: 'PRESENT', funnel_orders_sum: 1120, same_day_cancel_qty: 0, stock_date_covered: true, sku_active: true, ...over });
+    book.set(septRow(book, day), blockCol(18, OFFSET.price), '');                                   // лист: заказ без цены
+    book.set(septRow(book, day), blockCol(18, OFFSET.orders), 1);
+    runner.facts = patch(runner.facts, nm, day, { orders: 1, price: 1120, priceSource: 'FUNNEL_FALLBACK', factOrderQty: 0, funnelOrders: 1, funnelOrdersSum: 1120 });
+    runner.integrityRows = [gap({})]; runner.cogsRows = [];
+    const obs = await run(book, runner, 'observe', { UNITKA_INTEGRITY_MODE: 'observe' });
+    const seen = obs.lines.filter((l) => l.event === 'unitka_integrity').at(-1)!.fields as { repair_available_sku_days: number; financially_invalid_rows: number; price_provenance: { NOT_ON_SHEET: number } };
+    expect([seen.repair_available_sku_days, seen.financially_invalid_rows, seen.price_provenance.NOT_ON_SHEET]).toEqual([1, 1, 1]);
+    expect(book.get(septRow(book, day), blockCol(18, OFFSET.price))).toBe('');                     // observe ничего не записал
+    const wr = await run(book, runner, 'write', { UNITKA_INTEGRITY_MODE: 'observe' });
+    const after = wr.lines.filter((l) => l.event === 'unitka_integrity').at(-1)!.fields as { repair_available_sku_days: number; financially_invalid_rows: number };
+    expect(book.get(septRow(book, day), blockCol(18, OFFSET.price))).toBe(1120);
+    expect([after.repair_available_sku_days, after.financially_invalid_rows]).toEqual([0, 0]);
+  });
   it('окно во вью ≠ окну в коде → RECON_WINDOW_INCONSISTENT до любой записи', async () => {
     const { book, runner } = await seeded();
-    runner.windowOverride = { from: '2026-08-29', to: '2026-10-02', floor: '2026-08-01' };
+    runner.windowOverride = { from: '2026-08-29', to: '2026-10-02', epoch: '2026-08-01' };
     await expect(run(book, runner)).rejects.toMatchObject({ code: 'RECON_WINDOW_INCONSISTENT' });
     expect(book.batchWrites).toHaveLength(0);
   });
@@ -257,7 +338,29 @@ describe('цена: основной источник Orders API, доказан
     await expect(mk({ ...base, price: 1120, price_source: null }).reconFacts()).rejects.toMatchObject({ code: 'BQ_SHAPE' });
     await expect(mk({ ...base, price: null, price_source: 'FUNNEL_FALLBACK' }).reconFacts()).rejects.toMatchObject({ code: 'BQ_SHAPE' });
     await expect(mk({ ...base, price: 1120, price_source: 'PREVIOUS_DAY' }).reconFacts()).rejects.toMatchObject({ code: 'BQ_SHAPE' });
-    await expect(mk({ ...base, price: 1120, price_source: 'FUNNEL_FALLBACK' }).reconFacts()).resolves.toMatchObject([{ price: 1120, priceSource: 'FUNNEL_FALLBACK' }]);
+    const ok = { ...base, price: 1120, price_source: 'FUNNEL_FALLBACK', fact_order_qty: 0, funnel_orders: 1, funnel_orders_sum: 1120 };
+    await expect(mk(ok).reconFacts()).resolves.toMatchObject([{ price: 1120, priceSource: 'FUNNEL_FALLBACK' }]);
+  });
+  it('fallback воронки ЗАПРЕЩЁН при несогласных счётчиках — вторая линия защиты в коде (вью уже не отдаёт такие строки)', async () => {
+    const mk = (row: Record<string, unknown>): UnitkaBq => new UnitkaBq({ projectId: 'p', query: async () => [row] } as never, 'wb_mart', 'wb_ops', 'UNITKA_ENGINE_RUNS');
+    const ok = { nm_id: 1, date_msk: '2026-09-17', orders: 2, orders_source: 'FUNNEL_API', cancels_source: 'PROXY_FACT_ORDERS', price: 750, price_source: 'FUNNEL_FALLBACK', fact_order_qty: 0, funnel_orders: 2, funnel_orders_sum: 1500 };
+    await expect(mk(ok).reconFacts()).resolves.toHaveLength(1);
+    const bad: Array<[string, Record<string, unknown>]> = [
+      ['Orders API дал строку, счётчики 1 ≠ 2 — сумма воронки делиться не может', { fact_order_qty: 1 }],
+      ['счётчик Unitka ≠ воронке', { orders: 3 }],
+      ['счётчик Unitka взят не из воронки', { orders_source: 'ORDERS_API' }],
+      ['суммы воронки нет', { funnel_orders_sum: null }],
+      ['сумма воронки нулевая', { funnel_orders_sum: 0 }],
+      ['заказов в воронке нет', { funnel_orders: 0, orders: 0 }],
+      ['цена не равна сумме той же строки воронки', { price: 806 }],
+    ];
+    for (const [why, over] of bad) await expect(mk({ ...ok, ...over }).reconFacts(), why).rejects.toMatchObject({ code: 'BQ_SHAPE' });
+  });
+  it('Engine: строка с fallback вне условий → отказ до любой записи', async () => {
+    const { book, runner } = await seeded();
+    runner.facts = patch(runner.facts, control.nm, control.date, { price: 560, priceSource: 'FUNNEL_FALLBACK', factOrderQty: 1, funnelOrders: 2, funnelOrdersSum: 1120, orders: 2 });
+    await expect(run(book, runner)).rejects.toMatchObject({ code: 'BQ_SHAPE' });
+    expect([book.batchWrites.length, runner.ledger.length]).toEqual([0, 0]);
   });
 });
 
@@ -358,14 +461,51 @@ describe('журнал ремонта: одна фактическая попр�
     expect(book.get(octRow(book, '2026-10-03'), blockCol(5, OFFSET.opens))).toBe(13);
     expect(runner.ledger).toHaveLength(0);
   });
-  it('сбой записи в лист → ни одной записи REPAIRED', async () => {
+  it('сбой записи в лист → ремонт НЕ объявлен состоявшимся: WRITE_FAILED, ни одной REPAIRED; повтор чинит и пишет REPAIRED', async () => {
     const { book, runner } = await seeded();
     runner.facts = patch(runner.facts, SEPT_NM, '2026-09-17', { cancels: 3 });
     book.failNextWrite = new LoaderError('Sheets API 503', 'SHEETS_API');
     await expect(run(book, runner)).rejects.toMatchObject({ code: 'SHEETS_API' });
+    expect(runner.ledger).toMatchObject([{ field: 'cancels', newValue: '3', status: 'WRITE_FAILED', repairedAt: null }]);
+    expect(runner.ledger.filter((r) => r.status === 'REPAIRED')).toHaveLength(0);
+    expect(runner.journal.at(-1)).toMatchObject({ qaStatus: 'FAIL', errorCode: 'SHEETS_API', cellsWritten: 0 });
+    expect(runner.issues).toHaveLength(0);                                                          // снимок состояния «после ремонта» не пишется
+    // повтор после сбоя: расхождение никуда не делось → тот же ремонт выполняется и только теперь становится REPAIRED
+    await run(book, runner);
+    expect(runner.ledger.map((r) => r.status)).toEqual(['WRITE_FAILED', 'REPAIRED']);
+    expect(runner.ledger[1]).toMatchObject({ field: 'cancels', oldValue: String(runner.ledger[0]!.oldValue), newValue: '3' });
+    expect(typeof runner.ledger[1]!.repairedAt).toBe('string');
+    // идемпотентность успешного ремонта: третий прогон — NO_CHANGE, журнал не растёт
+    const writes = book.batchWrites.length;
+    await run(book, runner);
+    expect([book.batchWrites.length, runner.ledger.length]).toEqual([writes, 2]);
+  });
+  it('лист подтвердил запись, но значения не применил («потерянная запись») → QA FAIL, APPLIED_UNVERIFIED, не REPAIRED', async () => {
+    const { book, runner } = await seeded();
+    runner.facts = patch(runner.facts, SEPT_NM, '2026-09-17', { cancels: 3 });
+    book.dropNextWrite = true;
+    await expect(run(book, runner)).rejects.toMatchObject({ code: expect.stringMatching(/MISMATCH|PARTIAL_WRITE/) });
+    expect(runner.ledger.map((r) => r.status)).toEqual(['APPLIED_UNVERIFIED']);
+    expect(runner.ledger[0]!.repairedAt).toBeNull();
+    await run(book, runner);                                                                       // повтор: теперь запись применяется и проверяется
+    expect(runner.ledger.map((r) => r.status)).toEqual(['APPLIED_UNVERIFIED', 'REPAIRED']);
+  });
+  it('запись прошла, перечитывание упало → APPLIED_UNVERIFIED: происхождение не теряется, успех не объявляется', async () => {
+    const { book, runner } = await seeded();
+    runner.facts = patch(runner.facts, SEPT_NM, '2026-09-17', { cancels: 3 });
+    book.failReadAfterNextWrite(new LoaderError('Sheets API 500 on read-back', 'SHEETS_API'));
+    await expect(run(book, runner)).rejects.toMatchObject({ code: 'SHEETS_API' });
+    expect(runner.ledger).toMatchObject([{ field: 'cancels', newValue: '3', status: 'APPLIED_UNVERIFIED', repairedAt: null }]);
+    // значения уже в листе: следующий прогон расхождения не видит и REPAIRED задним числом не выдумывает
+    await run(book, runner);
+    expect(runner.ledger.map((r) => r.status)).toEqual(['APPLIED_UNVERIFIED']);
+  });
+  it('сбой журнала при неподтверждённой попытке исход прогона не маскирует', async () => {
+    const { book, runner } = await seeded();
+    runner.facts = patch(runner.facts, SEPT_NM, '2026-09-17', { cancels: 3 });
+    book.failNextWrite = new LoaderError('Sheets API 503', 'SHEETS_API'); runner.ledgerInsertFails = true;
+    await expect(run(book, runner)).rejects.toMatchObject({ code: 'SHEETS_API' });                  // не LEDGER_WRITE_FAILED
     expect(runner.ledger).toHaveLength(0);
-    await run(book, runner);                                                                       // следующий прогон чинит и записывает
-    expect(runner.ledger).toMatchObject([{ field: 'cancels', newValue: '3', status: 'REPAIRED' }]);
   });
   it('журнал недоступен → LEDGER_UNAVAILABLE до любой записи: ремонт без происхождения не выполняется', async () => {
     const { book, runner } = await seeded();

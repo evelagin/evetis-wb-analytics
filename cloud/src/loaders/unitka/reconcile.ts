@@ -14,7 +14,7 @@
  */
 import { LoaderError } from '../../errors.js';
 import type { FactRow, RepairRecord, IssueRecord } from './bq.js';
-import { colA1, addDaysIso, monthStartIso, isEmpty, asNumber, isFormulaError, SUMMARY_TO_OFFSET, type CellValue } from './model.js';
+import { colA1, addDaysIso, isEmpty, asNumber, isFormulaError, SUMMARY_TO_OFFSET, type CellValue } from './model.js';
 import { daysInMonth, formatMonthKey, monthKeyOf, dayRowOf, type MonthKey, type MonthGeometry } from './calendar.js';
 import {
   validateSection, expectedFactCells, diffExpected, formatContract, currentValue, cellAt,
@@ -25,24 +25,34 @@ import type { QaCheck } from './qa.js';
 import { contractState, type IntegrityIssue } from './integrity.js';
 
 export const RECONCILE_WINDOW_DAYS = 35;
-export const RECONCILE_FLOOR_DATE = '2026-09-01';
+/**
+ * ЭПОХА СВЕРКИ (решение владельца 20.09.2026 №1) — граница миграции домена, которым управляет Engine.
+ * Сентябрь 2026 — первый месяц под Engine (Stage E1, 12.09.2026). Август 2026 и всё, что раньше, писали прежние
+ * процессы (Apps Script, ручной ввод) из других источников; новая сверка эти месяцы НЕ меняет никогда.
+ * Это не дата, случайно попавшая в запрос, а явный параметр домена: он один в коде (здесь) и один в SQL
+ * (V_UNITKA_RECON_WINDOW.reconciliation_epoch); Engine сверяет их при каждом прогоне.
+ *
+ *   начало окна = max(начало скользящих 35 дней, RECONCILIATION_EPOCH)
+ */
+export const RECONCILIATION_EPOCH = '2026-09-01';
 
 export type ReconcileMode = 'off' | 'observe' | 'write';
 
-export interface ReconcileWindow { from: string; to: string; days: number; floor: string }
+export interface ReconcileWindow { from: string; to: string; days: number; epoch: string; rollingFrom: string }
 
 function daysBetween(a: string, b: string): number {
   return Math.round((Date.parse(`${b}T00:00:00Z`) - Date.parse(`${a}T00:00:00Z`)) / 86_400_000);
 }
 
-/** Окно сверки: [LCD − (days − 1), LCD], месяц LCD целиком, но не раньше нижней границы сверки. */
-export function reconcileWindow(lcd: string, days = RECONCILE_WINDOW_DAYS, floor = RECONCILE_FLOOR_DATE): ReconcileWindow {
-  if (!Number.isInteger(days) || days < 1) throw new RangeError(`окно сверки ${days} дн.`);
-  let from = addDaysIso(lcd, -(days - 1));
-  const ms = monthStartIso(lcd);
-  if (ms < from) from = ms;            // страховка: месяц LCD всегда целиком (месяц ≤ 31 дня < 35)
-  if (from < floor) from = floor;
-  return { from, to: lcd, days, floor };
+/**
+ * Окно сверки: [max(LCD − (days − 1), эпоха), LCD]. Окно не короче самого длинного месяца (31 день), поэтому месяц LCD
+ * входит в него целиком всегда; LCD раньше эпохи — отказ (сверять нечего, домен Engine ещё не начался).
+ */
+export function reconcileWindow(lcd: string, days = RECONCILE_WINDOW_DAYS, epoch = RECONCILIATION_EPOCH): ReconcileWindow {
+  if (!Number.isInteger(days) || days < 31) throw new RangeError(`окно сверки ${days} дн.: меньше месяца — месяц LCD не поместится`);
+  if (lcd < epoch) throw new RangeError(`LCD ${lcd} раньше эпохи сверки ${epoch}`);
+  const rollingFrom = addDaysIso(lcd, -(days - 1));
+  return { from: rollingFrom > epoch ? rollingFrom : epoch, to: lcd, days, epoch, rollingFrom };
 }
 
 /** Месяцы, пересекающие окно, от старого к новому. Последний — месяц LCD. */
@@ -139,6 +149,12 @@ export function assertFactCellsOnly(cells: readonly PlannedCell[], blocks: reado
     if (c.kind !== 'fact' || !b || !AUTOMATIC_FACT_OFFSETS.has(off) || c.row < g.firstDailyRow || c.row > g.lastDailyRow) bad.push(`${colA1(c.col)}${c.row}`);
   }
   if (bad.length) throw new LoaderError(`сверка вышла за автоматические факт-ячейки: ${bad.slice(0, 8).join(', ')}`, 'RECON_PLAN_NOT_CONFINED');
+}
+
+/** Вторая линия защиты эпохи: ни одна ячейка плана и ни одна строка источника не может относиться к дате раньше эпохи. */
+export function assertNotBeforeEpoch(dates: Iterable<string | undefined>, what: string, epoch = RECONCILIATION_EPOCH): void {
+  const bad = [...dates].filter((d): d is string => typeof d === 'string' && d < epoch);
+  if (bad.length) throw new LoaderError(`${what}: даты раньше эпохи сверки ${epoch} (${[...new Set(bad)].sort().slice(0, 5).join(', ')}) — месяцы до эпохи новой сверкой не меняются`, 'RECON_BEFORE_EPOCH');
 }
 
 /* ───────────────────────── QA прошлой секции после записи ───────────────────────── */

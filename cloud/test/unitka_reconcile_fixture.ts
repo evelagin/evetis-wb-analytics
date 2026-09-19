@@ -32,6 +32,11 @@ export class MemoryBook implements SheetsGateway {
   formatWrites = 0;
   reads = 0;
   failNextWrite: Error | null = null;
+  /** Лист ПОДТВЕРЖДАЕТ запись, но значения не применяет («потерянная запись») — ловится только перечитыванием. */
+  dropNextWrite = false;
+  /** Первое чтение ПОСЛЕ следующей успешной записи падает: запись состоялась, проверка — нет. */
+  private readFailure: { error: Error; writesAtArm: number } | null = null;
+  failReadAfterNextWrite(error: Error): void { this.readFailure = { error, writesAtArm: this.batchWrites.length }; }
   lcdSerial: number;
   constructor(public sections: Snapshot[], public rowCount: number, public columnCount: number, public anchorCol: number, lcdIso: string, private readonly readonlyScope = false) {
     this.lcdSerial = isoToSerial(lcdIso);
@@ -53,6 +58,7 @@ export class MemoryBook implements SheetsGateway {
   async readRowFormats(): Promise<Map<number, Array<Record<string, unknown> | null>>> { return new Map(); }
   async readValues(ranges: string[]): Promise<CellValue[][][]> {
     this.reads++;
+    if (this.readFailure && this.batchWrites.length > this.readFailure.writesAtArm) { const e = this.readFailure.error; this.readFailure = null; throw e; }
     return ranges.map((r) => {
       if (r === 'LAST_CLOSED_DATE') return [[this.lcdSerial]];
       const colA = /!A1:A(\d+)$/.exec(r);
@@ -82,6 +88,7 @@ export class MemoryBook implements SheetsGateway {
     if (this.readonlyScope) throw new Error('запись на readonly-шлюзе');
     if (this.failNextWrite) { const e = this.failNextWrite; this.failNextWrite = null; throw e; }
     this.batchWrites.push(data);
+    if (this.dropNextWrite) { this.dropNextWrite = false; return data.reduce((k, d) => k + d.values.length, 0); }
     let n = 0;
     for (const d of data) {
       if (d.range === 'LAST_CLOSED_DATE') { this.lcdSerial = Number(d.values[0]![0]); n++; continue; }
@@ -137,7 +144,7 @@ export class MemoryBook implements SheetsGateway {
 }
 
 /** Сентябрь (наследие, 24 блока) + октябрь Calendar V2 (25 блоков, вставка 23 колонок) [+ ноябрь V2]. */
-export function buildBook(lcdIso: string, opts: { november?: boolean; readonly?: boolean } = {}): MemoryBook {
+export function buildBook(lcdIso: string, opts: { november?: boolean; readonly?: boolean; august?: boolean } = {}): MemoryBook {
   const sept = sectionFromSpec({ year: 2026, month: 9 }, 735, septemberSpec(), WIDTH_SEPT);
   const colA: CellValue[] = Array(768).fill(null); colA[734] = 'Сентябрь 2026';
   const population = [...SEPT_NMS, NEW_NM].map((nmId) => ({ nmId, name: `Товар ${nmId}` }));
@@ -155,6 +162,11 @@ export function buildBook(lcdIso: string, opts: { november?: boolean; readonly?:
   const p10 = prep({ year: 2026, month: 10 }, sept, 768, WIDTH_SEPT, colA);
   const width = WIDTH_SEPT + (p10.insertColumns?.count ?? 0);
   const sections: Snapshot[] = [{ ...insertColumnsInto(sept, p10.insertColumns!.at, p10.insertColumns!.count), anchorCol: width }, { ...applyPlan(p10, width), anchorCol: width }];
+  if (opts.august) {
+    // Август 2026 — месяц ДО эпохи сверки (его вели прежние процессы): строки 700..734, геометрия как в production.
+    const aug = sectionFromSpec({ year: 2026, month: 8 }, 700, septemberSpec(), WIDTH_SEPT);
+    sections.unshift({ ...insertColumnsInto(aug, p10.insertColumns!.at, p10.insertColumns!.count), anchorCol: width });
+  }
   let rows = 803;
   if (opts.november) {
     const a2: CellValue[] = Array(803).fill(null); a2[734] = 'Сентябрь 2026'; a2[768] = 'Октябрь 2026';
@@ -207,7 +219,7 @@ export class ReconRunner implements QueryRunner {
   ledgerAvailable = true;
   ledgerInsertFails = false;
   /** Окно, которое «вернёт вью» (по умолчанию — согласованное с кодом). */
-  windowOverride: { from: string; to: string; floor: string } | null = null;
+  windowOverride: { from: string; to: string; epoch: string } | null = null;
   integrityRows: Array<Record<string, unknown>> = [];
   cogsRows: Array<Record<string, unknown>> = [];
   constructor(public lcd: string, public facts: FactRow[], public windowFrom: string) {}
@@ -229,8 +241,8 @@ export class ReconRunner implements QueryRunner {
     if (sql.includes('UNITKA_REPAIR_LEDGER')) { if (!this.ledgerAvailable) throw new Error('Not found: Table wb_ops.UNITKA_REPAIR_LEDGER'); return [] as T[]; }
     if (sql.includes('V_UNITKA_SOURCE_FRESHNESS')) return [] as T[];
     if (sql.includes('V_UNITKA_RECON_WINDOW')) {
-      const w = this.windowOverride ?? { from: this.windowFrom, to: this.lcd, floor: '2026-09-01' };
-      return [{ last_closed_date: bqDate(this.lcd), window_from: bqDate(w.from), window_to: bqDate(w.to), window_days: 35, reconcile_floor: bqDate(w.floor) }] as T[];
+      const w = this.windowOverride ?? { from: this.windowFrom, to: this.lcd, epoch: '2026-09-01' };
+      return [{ last_closed_date: bqDate(this.lcd), window_from: bqDate(w.from), window_to: bqDate(w.to), window_days: 35, reconciliation_epoch: bqDate(w.epoch) }] as T[];
     }
     if (sql.includes('V_UNITKA_LAST_CLOSED_DATE')) return [{ last_closed_date: bqDate(this.lcd), d1_msk: bqDate(this.lcd) }] as T[];
     if (sql.includes('V_UNITKA_RECON_FACT')) return this.facts.map((f) => this.factRow(f, true)) as T[];

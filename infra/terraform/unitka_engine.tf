@@ -114,7 +114,7 @@ resource "google_bigquery_table" "unitka_repair_ledger" {
     { name = "engine_version", type = "STRING" },
     { name = "git_sha", type = "STRING" },
     { name = "detected_at", type = "TIMESTAMP", mode = "REQUIRED" },
-    { name = "repaired_at", type = "TIMESTAMP", description = "NULL, пока запись в лист не подтверждена QA" },
+    { name = "repaired_at", type = "TIMESTAMP", description = "заполнено только у REPAIRED; NULL у плана и у неподтверждённых попыток" },
     { name = "month_key", type = "STRING", description = "YYYY-MM секции листа" },
     { name = "business_date", type = "DATE", mode = "REQUIRED" },
     { name = "nm_id", type = "INT64" },
@@ -125,7 +125,7 @@ resource "google_bigquery_table" "unitka_repair_ledger" {
     { name = "source", type = "STRING", description = "объект BigQuery и происхождение (для цены: FACT_ORDERS | FUNNEL_FALLBACK)" },
     { name = "source_as_of", type = "STRING", description = "момент наблюдения/сборки источника, как его отдал слой сверки" },
     { name = "reason", type = "STRING", description = "LATE_FIRST_FILL | SOURCE_REVISED | SOURCE_WITHDRAWN | PRICE_FUNNEL_FALLBACK" },
-    { name = "status", type = "STRING", mode = "REQUIRED", description = "REPAIRED | PLANNED_NOT_WRITTEN" },
+    { name = "status", type = "STRING", mode = "REQUIRED", description = "PLANNED_NOT_WRITTEN | WRITE_FAILED | APPLIED_UNVERIFIED | REPAIRED. Ремонт состоялся — только REPAIRED (лист подтвердил запись и проверка перечитыванием пройдена)" },
   ])
 }
 

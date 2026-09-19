@@ -33,7 +33,7 @@ import { evaluate, failureCode, qaJson, type QaCheck } from './qa.js';
 import { formatMonthKey, geometryAt, locateSection } from './calendar.js';
 import { monthStartIso } from './model.js';
 import {
-  reconcileWindow, windowMonths, buildSectionRepairPlan, evaluateRepairedSection, repairRecords, issueRecords,
+  reconcileWindow, windowMonths, assertNotBeforeEpoch, buildSectionRepairPlan, evaluateRepairedSection, repairRecords, issueRecords,
   type ReconcileMode, type ReconcileWindow, type SectionRepairPlan,
 } from './reconcile.js';
 import type { FactRow, RepairRecord } from './bq.js';
@@ -103,6 +103,8 @@ export async function evaluateIntegrityPhase(a: {
   phase: EvaluationPhase; now: () => Date; log: Logger;
   /** Сверка окна: прошлые секции (снимок + дни окна). Задано → факты целостности и канон COGS читаются из слоя сверки. */
   recon?: { sections: ReadonlyArray<{ snap: Snapshot; plan: SectionRepairPlan }> };
+  /** PRE_WRITE: ячейки, которые прогон собирается записать (для PRICE_NOT_ON_SHEET). После записи не задаётся. */
+  pendingWrite?: (row: number, col: number) => boolean;
 }): Promise<IntegrityOutcome> {
   const mode: IntegrityMode = a.config.unitkaIntegrityMode ?? 'off';
   const budget = a.config.unitkaIntegrityBudgetMs ?? 90_000;
@@ -139,7 +141,7 @@ export async function evaluateIntegrityPhase(a: {
       cogs, blocks: a.plan.blocks, lcd: a.plan.lcd, monthStart: a.plan.monthStart,
       firstDailyRow: a.plan.layout.firstDailyRow,
       cellAt: (r, c) => cellAt(a.snap, r, c), formulaAt: (r, c) => formulaAt(a.snap, r, c),
-      refValues, now: a.now(), storageDueMinutes, sheetFinal: a.phase === 'POST_WRITE',
+      refValues, now: a.now(), storageDueMinutes, checkSheetCells: true, ...(a.pendingWrite ? { pendingWrite: a.pendingWrite } : {}),
     });
     for (const sec of a.recon?.sections ?? []) {
       const mk = sec.plan.monthKey;
@@ -147,7 +149,7 @@ export async function evaluateIntegrityPhase(a: {
         facts: allFacts.filter((f) => f.day >= sec.plan.fromDay && f.day <= sec.plan.toDay),
         cogs, blocks: sec.plan.blocks, lcd: a.plan.lcd, monthStart: `${mk}-01`, firstDailyRow: sec.plan.geometry.firstDailyRow,
         cellAt: (r, c) => cellAt(sec.snap, r, c), formulaAt: (r, c) => formulaAt(sec.snap, r, c),
-        refValues, now: a.now(), storageDueMinutes, fromDay: sec.plan.fromDay, toDay: sec.plan.toDay, sheetFinal: a.phase === 'POST_WRITE',
+        refValues, now: a.now(), storageDueMinutes, fromDay: sec.plan.fromDay, toDay: sec.plan.toDay, checkSheetCells: true, ...(a.pendingWrite ? { pendingWrite: a.pendingWrite } : {}),
       }));
     }
     return { issues, summary: summarize(issues, mode, a.phase, a.now(), cogs) };
@@ -169,7 +171,7 @@ function publishIntegrity(
   const payload = {
     run_id: a.runId, marketplace: 'WB', environment: a.config.environment, last_closed_date: a.lcd,
     integrity_status: s.status, mode: s.mode, phase: s.phase, counts: s.counts, states: s.states,
-    affected_sku_days: s.affected_sku_days, oldest_unresolved: s.oldest_unresolved, oldest_unresolved_data_error: s.oldest_unresolved_data_error,
+    affected_sku_days: s.affected_sku_days, repair_available_sku_days: s.repair_available_sku_days, oldest_unresolved: s.oldest_unresolved, oldest_unresolved_data_error: s.oldest_unresolved_data_error,
     price_provenance: s.price_provenance,
     financially_invalid_rows: s.financially_invalid_rows, issue_codes: s.issue_codes,
     error_keys: s.error_keys.slice(0, 20), cogs_source: s.cogs_source, cogs_published_at: s.cogs_published_at,
@@ -299,6 +301,11 @@ export async function unitkaLoader(ctx: LoaderContext, deps: UnitkaDeps = defaul
   let integrity: IntegrityOutcome | null = null;
   let calendar: Record<string, unknown> | null = null;
   let reconcile: ReconcileOutcome | null = null;
+  // Стадия записи листа — чтобы журнал ремонта никогда не объявил состоявшимся то, что не подтверждено:
+  // NOT_ATTEMPTED → ATTEMPTED (вызов ушёл) → ACKNOWLEDGED (лист ответил успехом) → VERIFIED (перечитано, QA PASS).
+  let writeStage: 'NOT_ATTEMPTED' | 'ATTEMPTED' | 'ACKNOWLEDGED' | 'VERIFIED' = 'NOT_ATTEMPTED';
+  let pendingRepairs: RepairRecord[] = [];
+  let attemptRecorded = false;
 
   const rec: EngineRunRecord = {
     runId, environment: config.environment, mode,
@@ -315,6 +322,23 @@ export async function unitkaLoader(ctx: LoaderContext, deps: UnitkaDeps = defaul
     } catch (e) {
       // Журнал не должен маскировать исход прогона; ошибку журнала видно в логах.
       log.error('unitka_journal_failed', { message: e instanceof Error ? e.message : String(e) });
+    }
+  };
+
+  /**
+   * Попытка ремонта без подтверждения: запись листа упала (WRITE_FAILED) либо прошла, но не проверена
+   * (APPLIED_UNVERIFIED). Никогда не REPAIRED. Best-effort: сбой журнала исход прогона не маскирует; записи уже в логе.
+   */
+  const recordUnconfirmed = async (why: string): Promise<void> => {
+    if (attemptRecorded || pendingRepairs.length === 0 || writeStage === 'NOT_ATTEMPTED' || writeStage === 'VERIFIED') return;
+    attemptRecorded = true;
+    const status = writeStage === 'ATTEMPTED' ? 'WRITE_FAILED' as const : 'APPLIED_UNVERIFIED' as const;
+    const rows = pendingRepairs.map((r) => ({ ...r, repairedAt: null, status, reason: `${r.reason}; ${status}: ${why.slice(0, 160)}` }));
+    log.warn('unitka_repairs_unconfirmed', { status, count: rows.length, records: rows.slice(0, 200) });
+    try {
+      await bq.insertRepairs(rows);
+    } catch (e) {
+      log.error('unitka_repairs_unconfirmed_not_recorded', { message: e instanceof Error ? e.message : String(e) });
     }
   };
 
@@ -342,10 +366,12 @@ export async function unitkaLoader(ctx: LoaderContext, deps: UnitkaDeps = defaul
     if (reconcileMode !== 'off') {
       window = reconcileWindow(lcd.lastClosedDate);
       const w = await bq.reconWindow();
-      if (w.lastClosedDate !== lcd.lastClosedDate || w.from !== window.from || w.to !== window.to || w.floor !== window.floor) {
-        throw new LoaderError(`окно сверки: вью ${w.from}..${w.to} (LCD ${w.lastClosedDate}, граница ${w.floor}) ≠ коду ${window.from}..${window.to} (LCD ${lcd.lastClosedDate}, граница ${window.floor})`, 'RECON_WINDOW_INCONSISTENT');
+      if (w.lastClosedDate !== lcd.lastClosedDate || w.from !== window.from || w.to !== window.to || w.epoch !== window.epoch || w.days !== window.days) {
+        throw new LoaderError(`окно сверки: вью ${w.from}..${w.to} (LCD ${w.lastClosedDate}, эпоха ${w.epoch}, ${w.days} дн.) ≠ коду ${window.from}..${window.to} (LCD ${lcd.lastClosedDate}, эпоха ${window.epoch}, ${window.days} дн.)`, 'RECON_WINDOW_INCONSISTENT');
       }
       reconFacts = await bq.reconFacts();
+      // Эпоха сверки — вторая линия защиты: строка источника раньше эпохи = отказ до любой записи.
+      assertNotBeforeEpoch(reconFacts.map((f) => f.date), 'слой сверки');
     }
     const lcdMonthStart = monthStartIso(lcd.lastClosedDate);
     // Месяц LCD из слоя сверки: только активные SKU — правило BLOCK_MISSING (SKU выбыл посреди месяца) сохраняется.
@@ -370,6 +396,7 @@ export async function unitkaLoader(ctx: LoaderContext, deps: UnitkaDeps = defaul
         bookLcd: plan.bookLcd, lcd: plan.lcd, log,
       });
       histCells = reconcile.sections.flatMap((x) => x.plan.cells);
+      assertNotBeforeEpoch(histCells.map((c) => c.date), 'план сверки прошлых секций');
       const byFact = new Map(reconFacts.map((f) => [`${f.nmId}|${f.date}`, f]));
       // В observe месяц LCD записывается по старому слою; что изменил бы слой сверки — считаем отдельным планом.
       const lcdCellsUnderRecon = reconcileMode === 'write' ? plan.cells
@@ -386,6 +413,7 @@ export async function unitkaLoader(ctx: LoaderContext, deps: UnitkaDeps = defaul
       }));
     }
     const writeHistory = reconcileMode === 'write';
+    if (writeHistory) pendingRepairs = repairs;
     const allCells: PlannedCell[] = writeHistory ? [...plan.cells, ...histCells] : plan.cells;
     const allFormatCells = writeHistory && reconcile ? [...plan.formatCells, ...reconcile.sections.flatMap((x) => x.plan.formatCells)] : plan.formatCells;
     rec.cellsPlanned = allCells.length;
@@ -394,7 +422,8 @@ export async function unitkaLoader(ctx: LoaderContext, deps: UnitkaDeps = defaul
     // 4. SHADOW: QA текущего листа (mismatch = что изменил бы Engine), журнал, выход без записи.
     if (!writeMode) {
       if (integrityMode !== 'off') {
-        integrity = await evaluateIntegrityPhase({ bq, sheets, config, snap, plan, phase: 'PRE_WRITE', now: deps.now, log, ...(reconArg ? { recon: reconArg } : {}) });
+        const pending = new Set(allCells.filter((c) => c.namedRange === undefined).map((c) => `${c.row}|${c.col}`));
+        integrity = await evaluateIntegrityPhase({ bq, sheets, config, snap, plan, phase: 'PRE_WRITE', now: deps.now, log, pendingWrite: (r, c) => pending.has(`${r}|${c}`), ...(reconArg ? { recon: reconArg } : {}) });
         publishIntegrity(integrity, { config, log, runId, lcd: plan.lcd });
       }
       const qa = evaluate(snap, plan, { shadow: true });
@@ -424,7 +453,11 @@ export async function unitkaLoader(ctx: LoaderContext, deps: UnitkaDeps = defaul
       log.info('unitka_nothing_to_write', { lcd: plan.lcd });
     } else {
       const ranges = toWriteRanges(allCells, config.unitkaSheetName);
+      // План ремонта — в лог ДО мутации листа: происхождение не теряется при любом исходе записи.
+      if (writeHistory && repairs.length > 0) log.info('unitka_repairs_planned', { count: repairs.length, records: repairs.slice(0, 200) });
+      writeStage = 'ATTEMPTED';
       const updated = await sheets.batchWrite(ranges);
+      writeStage = 'ACKNOWLEDGED';
       rec.cellsWritten = updated;
       log.info('unitka_written', { ranges: ranges.length, cells_planned: allCells.length, cells_lcd_month: plan.cells.length, cells_history: allCells.length - plan.cells.length, cells_updated: updated });
       if (updated !== allCells.length) {
@@ -465,6 +498,8 @@ export async function unitkaLoader(ctx: LoaderContext, deps: UnitkaDeps = defaul
     // Журнал ремонта — ТОЛЬКО после подтверждённой записи (QA PASS): несостоявшийся ремонт не объявляется состоявшимся.
     let repairsRecorded = 0;
     if (writeHistory && qa.pass && repairs.length > 0) {
+      writeStage = 'VERIFIED';
+      attemptRecorded = true;
       const done = repairs.map((r) => ({ ...r, repairedAt: deps.now().toISOString(), status: 'REPAIRED' as const }));
       // Сначала лог (происхождение не теряется, даже если BigQuery откажет), затем таблица.
       log.info('unitka_repairs', { count: done.length, records: done.slice(0, 200) });
@@ -494,6 +529,7 @@ export async function unitkaLoader(ctx: LoaderContext, deps: UnitkaDeps = defaul
       throw new LoaderError(rec.errorMessage ?? 'журнал ремонта недоступен', 'LEDGER_WRITE_FAILED');
     }
     if (!qa.pass) {
+      await recordUnconfirmed('проверка перечитыванием не пройдена');
       const code = rec.cellsWritten > 0 && rec.cellsWritten !== allCells.length ? 'PARTIAL_WRITE' : failureCode(qa);
       rec.errorCode = code;
       rec.errorMessage = qa.checks.filter((c) => !c.pass).map((c) => `${c.name}: ${c.sample.slice(0, 3).join('; ')}`).join(' | ');
@@ -506,6 +542,7 @@ export async function unitkaLoader(ctx: LoaderContext, deps: UnitkaDeps = defaul
     if (gate) throw gate;
     return { rowsFetched: rec.rowsRead, rowsLoaded: rec.cellsWritten };
   } catch (e) {
+    await recordUnconfirmed(e instanceof Error ? e.message : String(e));
     if (rec.errorCode === null) {
       // Сбой Engine до оценки целостности: integrity_status = SYSTEM_ERROR (если Guard включён).
       if (integrityMode !== 'off' && integrity === null) {

@@ -82,6 +82,16 @@ export interface CommissionRateRow {
 }
 
 /** Строка журнала ремонта (wb_ops.UNITKA_REPAIR_LEDGER): одна фактическая поправка автоматической ячейки закрытого дня. */
+/**
+ * Состояние записи журнала ремонта. «Ремонт состоялся» означает ТОЛЬКО `REPAIRED`.
+ *   PLANNED_NOT_WRITTEN — план: запись листа не предпринималась (режим observe; событие журнала до записи).
+ *   WRITE_FAILED        — вызов записи листа завершился ошибкой: подтверждения записи нет. Ремонт НЕ состоялся.
+ *   APPLIED_UNVERIFIED  — лист подтвердил запись, но проверка перечитыванием (QA) не пройдена или не завершилась.
+ *   REPAIRED            — лист подтвердил запись И проверка перечитыванием пройдена.
+ * Порядок: обнаружить → спланировать → попытаться записать → перечитать и проверить → REPAIRED.
+ */
+export type RepairStatus = 'PLANNED_NOT_WRITTEN' | 'WRITE_FAILED' | 'APPLIED_UNVERIFIED' | 'REPAIRED';
+
 export interface RepairRecord {
   repairId: string;
   runId: string;
@@ -100,7 +110,7 @@ export interface RepairRecord {
   source: string;
   sourceAsOf: string | null;
   reason: string;
-  status: 'REPAIRED' | 'PLANNED_NOT_WRITTEN';
+  status: RepairStatus;
 }
 
 /** Строка снимка issue (wb_ops.UNITKA_INTEGRITY_ISSUES). */
@@ -230,17 +240,17 @@ export class UnitkaBq {
   /* ── Слой сверки (sql/unitka/reconcile_v1.sql). Читается ТОЛЬКО при UNITKA_RECONCILE_MODE = observe | write. ── */
 
   /** Окно сверки: [window_from, window_to] ⊂ 35 календарных дней до LCD, не раньше нижней границы сверки. */
-  async reconWindow(): Promise<{ lastClosedDate: string; from: string; to: string; days: number; floor: string }> {
+  async reconWindow(): Promise<{ lastClosedDate: string; from: string; to: string; days: number; epoch: string }> {
     const rows = await this.runner.query(
-      `SELECT last_closed_date, window_from, window_to, window_days, reconcile_floor FROM ${this.fqn(this.martDataset, 'V_UNITKA_RECON_WINDOW')}`,
+      `SELECT last_closed_date, window_from, window_to, window_days, reconciliation_epoch FROM ${this.fqn(this.martDataset, 'V_UNITKA_RECON_WINDOW')}`,
     );
     const r = rows[0];
     const lcd = r ? date(r.last_closed_date) : null;
     const from = r ? date(r.window_from) : null;
     const to = r ? date(r.window_to) : null;
-    const floor = r ? date(r.reconcile_floor) : null;
-    if (!lcd || !from || !to || !floor) throw new LoaderError('V_UNITKA_RECON_WINDOW не вернула окно сверки', 'RECON_WINDOW_UNAVAILABLE');
-    return { lastClosedDate: lcd, from, to, days: numReq(r!.window_days, 'window_days'), floor };
+    const epoch = r ? date(r.reconciliation_epoch) : null;
+    if (!lcd || !from || !to || !epoch) throw new LoaderError('V_UNITKA_RECON_WINDOW не вернула окно сверки', 'RECON_WINDOW_UNAVAILABLE');
+    return { lastClosedDate: lcd, from, to, days: numReq(r!.window_days, 'window_days'), epoch };
   }
 
   /** wb_mart.V_UNITKA_RECON_FACT — факты SKU × день за окно сверки с происхождением цены. NULL сохраняются. */
@@ -257,6 +267,14 @@ export class UnitkaBq {
       const price = num(r.price);
       // Цена без происхождения или происхождение без цены — нарушение контракта слоя (fail-closed).
       if ((price === null) !== (ps === null)) throw new LoaderError(`V_UNITKA_RECON_FACT: price и price_source рассогласованы (${String(r.nm_id)} ${String(date(r.date_msk))})`, 'BQ_SHAPE');
+      // Fallback воронки допустим ТОЛЬКО при согласных счётчиках (решение владельца). Вью это обеспечивает; здесь —
+      // вторая линия: строка с FUNNEL_FALLBACK, нарушающая условия, отвергается до любой записи (fail-closed).
+      if (ps === 'FUNNEL_FALLBACK') {
+        const q = num(r.orders), fq = num(r.fact_order_qty) ?? 0, fo = num(r.funnel_orders), fs = num(r.funnel_orders_sum);
+        const ok = fq === 0 && String(r.orders_source ?? '') === 'FUNNEL_API' && fo !== null && fo > 0 && fo === q && fs !== null && fs > 0
+          && price !== null && Math.abs(price * fo - fs) <= 0.005 * fo + 1e-9;
+        if (!ok) throw new LoaderError(`V_UNITKA_RECON_FACT: FUNNEL_FALLBACK вне доказанных условий (${String(r.nm_id)} ${String(date(r.date_msk))}: fact_qty=${fq}, funnel=${String(fo)}, orders=${String(q)}, sum=${String(fs)}, price=${String(price)})`, 'BQ_SHAPE');
+      }
       return {
         nmId: numReq(r.nm_id, 'nm_id'),
         date: date(r.date_msk) ?? '',
@@ -316,7 +334,7 @@ export class UnitkaBq {
   /** wb_mart.V_UNITKA_INTEGRITY — факты целостности SKU × день. NULL сохраняются как NULL. */
   async integrityFacts(jobTimeoutMs?: number, recon = false): Promise<IntegrityFactsRow[]> {
     // recon = true → слой сверки (окно 35 дней, происхождение цены, сумма воронки, покрытие снимка остатков).
-    const extra = recon ? ', price_source, funnel_orders_sum, stock_date_covered, sku_active' : '';
+    const extra = recon ? ', price_source, funnel_orders_sum, same_day_cancel_qty, stock_date_covered, sku_active' : '';
     const rows = await this.runner.query(
       `SELECT marketplace, nm_id, internal_sku, product_name, day, last_closed_date, orders_unitka, cancels_unitka,
               orders_source, factual_order_price, orders_funnel, fact_order_rows, fact_order_qty,
@@ -352,6 +370,7 @@ export class UnitkaBq {
         ...(recon ? {
           priceSource: str(r.price_source) as PriceSource | null,
           funnelOrdersSum: num(r.funnel_orders_sum),
+          sameDayCancelQty: num(r.same_day_cancel_qty),
           stockDateCovered: r.stock_date_covered === true || r.stock_date_covered === 'true',
           skuActive: r.sku_active === true || r.sku_active === 'true',
         } : {}),

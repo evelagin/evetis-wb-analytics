@@ -8,7 +8,7 @@ import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, it, expect } from 'vitest';
-import { RECONCILE_WINDOW_DAYS, RECONCILE_FLOOR_DATE } from '../src/loaders/unitka/reconcile.js';
+import { RECONCILE_WINDOW_DAYS, RECONCILIATION_EPOCH } from '../src/loaders/unitka/reconcile.js';
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
 const read = (p: string): string => readFileSync(join(root, p), 'utf8');
@@ -49,21 +49,45 @@ describe('слой сверки: состав и граница доступа',
   });
 });
 
-describe('окно сверки: одна константа, та же, что в коде Engine', () => {
+describe('окно и ЭПОХА СВЕРКИ: явный параметр домена, заданный один раз, тот же, что в коде Engine', () => {
   const w = views.get('V_UNITKA_RECON_WINDOW')!;
-  it('35 календарных дней = [LCD−34, LCD]; нижняя граница 2026-09-01; совпадает с reconcile.ts', () => {
-    expect([RECONCILE_WINDOW_DAYS, RECONCILE_FLOOR_DATE]).toEqual([35, '2026-09-01']);
-    expect(w).toMatch(new RegExp(`INTERVAL ${RECONCILE_WINDOW_DAYS - 1} DAY`));
-    expect(w).toMatch(new RegExp(`\\b${RECONCILE_WINDOW_DAYS}\\s+AS window_days`));
-    expect(w).toMatch(new RegExp(`GREATEST\\(.*DATE '${RECONCILE_FLOOR_DATE}'\\) AS window_from`));
-    expect(w).toMatch(/last_closed_date\s+AS window_to/);
+  const flat = w.replace(/\s+/g, ' ');
+  it('эпоха и длина окна заданы один раз в CTE cfg и совпадают с reconcile.ts', () => {
+    expect([RECONCILE_WINDOW_DAYS, RECONCILIATION_EPOCH]).toEqual([35, '2026-09-01']);
+    expect(flat).toContain(`WITH cfg AS ( SELECT DATE '${RECONCILIATION_EPOCH}' AS reconciliation_epoch, ${RECONCILE_WINDOW_DAYS} AS window_days )`);
+    // литерал эпохи — ровно один раз во всём коде слоя (комментарии не в счёт): не «дата, зашитая в логику запросов»
+    expect(code(sql).match(new RegExp(`'${RECONCILIATION_EPOCH}'`, 'g'))).toHaveLength(1);
+  });
+  it('начало окна = max(начало скользящих 35 дней, эпоха); конец = LCD; скользящее начало отдаётся для прозрачности', () => {
+    expect(flat).toContain('GREATEST(DATE_SUB(l.last_closed_date, INTERVAL cfg.window_days - 1 DAY), cfg.reconciliation_epoch) AS window_from');
+    expect(flat).toMatch(/l\.last_closed_date AS window_to/);
+    expect(flat).toMatch(/cfg\.reconciliation_epoch, DATE_SUB\(l\.last_closed_date, INTERVAL cfg\.window_days - 1 DAY\) AS rolling_window_from/);
+    expect(flat).not.toMatch(/LEAST\(/);
   });
   it('границы окна остальные вью берут из V_UNITKA_RECON_WINDOW, а не из своих констант', () => {
     for (const name of ['V_UNITKA_RECON_FACT', 'V_UNITKA_RECON_INTEGRITY', 'V_UNITKA_RECON_COGS_CANONICAL']) {
       const body = views.get(name)!;
       expect(body).not.toMatch(/INTERVAL\s+3[0-9]\s+DAY/);
+      expect(body).not.toContain(RECONCILIATION_EPOCH);
       expect(body).toMatch(/V_UNITKA_RECON_WINDOW|V_UNITKA_RECON_FACT/);
     }
+  });
+  it('Engine читает эпоху из вью тем же именем колонки', () => {
+    expect(read('cloud/src/loaders/unitka/bq.ts')).toContain('window_days, reconciliation_epoch FROM');
+  });
+});
+
+describe('отмена дня заказа — только диагностика расхождения счётчиков', () => {
+  const f = views.get('V_UNITKA_RECON_FACT')!.replace(/\s+/g, ' ');
+  it('считается по Orders API (cancel_dt = order_date) и отдаётся в обе вью', () => {
+    expect(f).toContain('SUM(IF(is_cancel AND SAFE_CAST(SUBSTR(cancel_dt, 1, 10) AS DATE) = order_date, quantity, 0)) AS same_day_canc');
+    expect(f).toMatch(/IFNULL\(o\.same_day_canc, 0\) AS same_day_cancel_qty/);
+    expect(views.get('V_UNITKA_RECON_INTEGRITY')!).toMatch(/f\.same_day_cancel_qty/);
+  });
+  it('в Q, S и цену листа не входит: формулы этих колонок прежние', () => {
+    expect(f).toContain('COALESCE(f.forders, bf.forders, o.gross, 0) AS orders');
+    expect(f).toContain('COALESCE(bf.canc, o.canc, 0) AS cancels');
+    expect(f.match(/same_day_canc\b/g)).toHaveLength(2);                                            // определение + вывод, больше нигде
   });
 });
 
@@ -101,9 +125,9 @@ describe('цена: основной источник, доказанный fall
   });
   it('колонки V_UNITKA_DAILY_FACT сохранены теми же именами и порядком; новые — в хвосте', () => {
     const select = final;
-    const names = ['nm_id', 'date_msk', 'views', 'opens', 'carts', 'orders', 'cancels', 'stock', 'ads_in', 'price', 'storage', 'orders_source', 'cancels_source', 'price_source', 'fact_order_qty', 'funnel_orders', 'funnel_orders_sum', 'sku_active', 'month_key'];
+    const names = ['nm_id', 'date_msk', 'views', 'opens', 'carts', 'orders', 'cancels', 'stock', 'ads_in', 'price', 'storage', 'orders_source', 'cancels_source', 'price_source', 'fact_order_qty', 'funnel_orders', 'funnel_orders_sum', 'sku_active', 'month_key', 'storage_observed_at', 'same_day_cancel_qty'];
     let at = -1;
-    for (const n of names) { const next = select.search(new RegExp(`(\\bAS ${n}\\b|[ ,]${n},)`)); expect(next, n).toBeGreaterThan(at); at = next; }
+    for (const n of names) { const next = select.search(new RegExp(`(\\bAS ${n}\\b|[ ,]${n}(,| FROM))`)); expect(next, n).toBeGreaterThan(at); at = next; }
   });
 });
 

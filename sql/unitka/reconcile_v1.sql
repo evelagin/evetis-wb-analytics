@@ -9,7 +9,7 @@
 -- observe / write. Все вью — только чтение; таблиц не создают; evetis_ref НЕ читают (как integrity_v1.sql).
 --
 -- 1. ОКНО СВЕРКИ — 35 календарных дней [LCD−34, LCD], через границы месяцев (решение владельца), но не раньше
---    нижней границы сверки 2026-09-01 (первый месяц под управлением Engine).
+--    ЭПОХИ СВЕРКИ 2026-09-01 (граница миграции: первый месяц под управлением Engine).
 --    Константа окна — ОДНА, в V_UNITKA_RECON_WINDOW; остальные вью берут границы оттуда.
 --
 -- 2. ЦЕНА — детерминированное разрешение с происхождением (решение владельца):
@@ -29,20 +29,27 @@
 --    1-го числа. sku_active отдаётся явно — правило BLOCK_MISSING месяца LCD Engine применяет по нему.
 -- ============================================================================
 
--- ─── 0. Окно сверки ─────────────────────────────────────────────────────────
+-- ─── 0. Окно сверки и ЭПОХА СВЕРКИ ──────────────────────────────────────────
+-- RECONCILIATION_EPOCH = 2026-09-01 (решение владельца 20.09.2026) — граница миграции домена, которым управляет Engine.
+-- Сентябрь 2026 — первый месяц под Engine (Stage E1, 12.09.2026). Август 2026 и раньше писали прежние процессы
+-- (Apps Script, ручной ввод) из других источников; новая сверка эти месяцы не меняет НИКОГДА.
+-- Эпоха — явный параметр домена, заданный ОДИН раз (CTE cfg), а не дата, зашитая в логику запросов:
+--     window_from = max(начало скользящих 35 дней, reconciliation_epoch)
+-- Остальные вью слоя берут границы только отсюда. То же значение — в reconcile.ts (RECONCILIATION_EPOCH);
+-- Engine сверяет оба при каждом прогоне (RECON_WINDOW_INCONSISTENT) и отвергает строки раньше эпохи (RECON_BEFORE_EPOCH).
 CREATE OR REPLACE VIEW `project-fa311fc0-4d87-4781-986.wb_mart.V_UNITKA_RECON_WINDOW` AS
+WITH cfg AS (
+  SELECT DATE '2026-09-01' AS reconciliation_epoch, 35 AS window_days
+)
 SELECT
-  last_closed_date,
-  -- Месяц LCD входит в окно целиком всегда (месяц ≤ 31 дня < 35); LEAST — страховка, а не второй источник границы.
-  -- НИЖНЯЯ ГРАНИЦА СВЕРКИ 2026-09-01: сентябрь 2026 — первый месяц, который ведёт Engine (Stage E1, 12.09.2026).
-  -- Август 2026 и раньше заполнял Apps Script из других источников (воронки API за них нет): подготовленный слой
-  -- их не воспроизводит, и сверка стёрла бы чужие значения. Даты раньше границы не сверяются НИКОГДА
-  -- (то же правило продублировано в reconcile.ts — RECONCILE_FLOOR_DATE).
-  GREATEST(LEAST(DATE_SUB(last_closed_date, INTERVAL 34 DAY), DATE_TRUNC(last_closed_date, MONTH)), DATE '2026-09-01') AS window_from,
-  last_closed_date                                                                        AS window_to,
-  35                                                                                      AS window_days,
-  DATE '2026-09-01'                                                                       AS reconcile_floor
-FROM `project-fa311fc0-4d87-4781-986.wb_mart.V_UNITKA_LAST_CLOSED_DATE`;
+  l.last_closed_date,
+  GREATEST(DATE_SUB(l.last_closed_date, INTERVAL cfg.window_days - 1 DAY), cfg.reconciliation_epoch) AS window_from,
+  l.last_closed_date                                                                        AS window_to,
+  cfg.window_days,
+  cfg.reconciliation_epoch,
+  DATE_SUB(l.last_closed_date, INTERVAL cfg.window_days - 1 DAY)                            AS rolling_window_from
+FROM `project-fa311fc0-4d87-4781-986.wb_mart.V_UNITKA_LAST_CLOSED_DATE` AS l
+CROSS JOIN cfg;
 
 -- ─── 1. Дневной факт nm_id × дата за окно сверки, с происхождением цены ─────
 -- Колонки V_UNITKA_DAILY_FACT сохранены 1-в-1 (views..cancels_source) — Engine читает их теми же именами.
@@ -60,6 +67,9 @@ sku AS (
 g AS (SELECT s.nm_id, s.sku_active, d.d FROM sku s CROSS JOIN days d),
 o AS (
   SELECT nm_id, order_date AS d, SUM(quantity) AS gross, SUM(IF(is_cancel, quantity, 0)) AS canc,
+         -- Отмена В ДЕНЬ ЗАКАЗА: воронка такой заказ в orders_count не считает (замер 04–18.09.2026: 4 из 4).
+         -- Только диагностика расхождения счётчиков; в Q / S / цену листа не входит.
+         SUM(IF(is_cancel AND SAFE_CAST(SUBSTR(cancel_dt, 1, 10) AS DATE) = order_date, quantity, 0)) AS same_day_canc,
          SAFE_DIVIDE(SUM(price_with_disc * quantity), NULLIF(SUM(quantity), 0)) AS price,
          MAX(built_at) AS built_at
   FROM `project-fa311fc0-4d87-4781-986.wb_mart.FACT_ORDERS`, w
@@ -117,6 +127,7 @@ x AS (
          ELSE 'PROXY_FACT_ORDERS' END                    AS cancels_source,
     o.price                                              AS orders_api_price,
     IFNULL(o.gross, 0)                                   AS fact_order_qty,
+    IFNULL(o.same_day_canc, 0)                           AS same_day_cancel_qty,
     f.forders                                            AS funnel_orders,
     f.fsum                                               AS funnel_orders_sum,
     f.observed_at                                        AS funnel_observed_at,
@@ -162,7 +173,8 @@ SELECT
   FORMAT_DATE('%Y-%m', d)                                AS month_key,
   funnel_observed_at,
   orders_built_at,
-  storage_observed_at
+  storage_observed_at,
+  same_day_cancel_qty
 FROM p;
 
 -- ─── 2. Факты целостности SKU × день за окно сверки ─────────────────────────
@@ -208,6 +220,7 @@ SELECT
   fo.fact_order_rows,
   NULLIF(f.fact_order_qty, 0)   AS fact_order_qty,
   f.funnel_orders_sum,
+  f.same_day_cancel_qty,                                  -- отмены дня заказа: воронка их в orders_count не считает
   obs.o.price                   AS observed_price_diagnostic,  -- OBSERVED_PRICE_NOT_FACTUAL_ORDER_PRICE
   obs.o.observed_at             AS observed_price_at,
   f.storage                     AS storage_value,
@@ -272,8 +285,11 @@ GROUP BY ref.nm_id, ref.internal_sku, days.day;
 -- ─── 4. Наблюдаемость: состояние целостности по двум последним прогонам ─────
 -- Применять ПОСЛЕ infra apply (таблицы wb_ops.UNITKA_INTEGRITY_ISSUES и wb_ops.UNITKA_REPAIR_LEDGER — Terraform).
 -- Состояния не схлопываются: DATA_ERROR / LATE_DATA / MANUAL_REQUIRED / NOT_AVAILABLE / WARNING считаются отдельно;
--- AUTO_REPAIRED — из журнала ремонта. NOT_AVAILABLE и MANUAL_REQUIRED не делают систему «сломанной»:
--- financial_health смотрит только на DATA_ERROR.
+-- AUTO_REPAIRED — из журнала ремонта (только status = 'REPAIRED': лист подтвердил запись и проверка пройдена).
+-- Финансовая действительность — ОТДЕЛЬНО от состояния: financially_invalid_sku_days считает financial_valid = FALSE
+-- при любом состоянии (в т.ч. LATE_DATA с ещё не подтверждёнными деньгами).
+-- Сколько бы ни было ожидаемых NOT_AVAILABLE и MANUAL_REQUIRED, автоматический контур «сломанным» они не делают:
+-- financial_health смотрит ТОЛЬКО на DATA_ERROR; ручной ввод — отдельным флагом manual_input_pending.
 CREATE OR REPLACE VIEW `project-fa311fc0-4d87-4781-986.wb_mart.V_UNITKA_INTEGRITY_STATUS` AS
 WITH runs AS (
   SELECT run_id, MAX(evaluated_at) AS evaluated_at
@@ -294,6 +310,13 @@ rep AS (
   SELECT COUNT(*) AS repaired_cells, COUNT(DISTINCT CONCAT(CAST(nm_id AS STRING), '|', CAST(business_date AS STRING))) AS repaired_sku_days
   FROM `project-fa311fc0-4d87-4781-986.wb_ops.UNITKA_REPAIR_LEDGER`
   WHERE status = 'REPAIRED' AND run_id = (SELECT run_id FROM ranked WHERE rn = 1)
+),
+-- Попытки ремонта без подтверждения за 7 дней (WRITE_FAILED — запись листа упала; APPLIED_UNVERIFIED — записано,
+-- но не проверено). Это НЕ ремонты: в auto_repaired_* они не входят никогда.
+unconf AS (
+  SELECT COUNT(*) AS attempts
+  FROM `project-fa311fc0-4d87-4781-986.wb_ops.UNITKA_REPAIR_LEDGER`
+  WHERE status IN ('WRITE_FAILED', 'APPLIED_UNVERIFIED') AND detected_at >= TIMESTAMP_SUB(CURRENT_TIMESTAMP(), INTERVAL 7 DAY)
 )
 SELECT
   (SELECT run_id FROM ranked WHERE rn = 1)                                         AS run_id,
@@ -314,5 +337,8 @@ SELECT
   COUNTIF(cur.issue_key NOT IN (SELECT issue_key FROM prev))                       AS new_since_previous_run,
   (SELECT COUNT(*) FROM prev WHERE issue_key NOT IN (SELECT issue_key FROM cur))   AS resolved_since_previous_run,
   COUNTIF(cur.code = 'PRICE_FUNNEL_FALLBACK')                                      AS prices_from_funnel_fallback,
+  COUNTIF(cur.code = 'PRICE_NOT_ON_SHEET')                                         AS repair_available_not_written,
+  (SELECT attempts FROM unconf)                                                    AS repair_attempts_unconfirmed_7d,
+  COUNTIF(cur.state = 'MANUAL_REQUIRED') > 0                                       AS manual_input_pending,
   IF(COUNTIF(cur.state = 'DATA_ERROR') = 0, 'OK', 'DATA_ERROR')                    AS financial_health
 FROM cur;

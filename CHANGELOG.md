@@ -13,13 +13,24 @@
 - **Цена с происхождением:** `ORDERS_API` — основной источник; `FUNNEL_FALLBACK` — сумма заказов той же строки воронки,
   только когда Orders API пуст и счётчики согласны; иначе цена пуста и строка `DATA_ERROR`. Расхождение счётчиков —
   статус (`LATE_DATA` до 14 дней, затем `WARNING` или `DATA_ERROR`), а не повод пересчитать цену.
+- **Финальное ревью (решения владельца 20.09):** эпоха сверки `RECONCILIATION_EPOCH = 2026-09-01` — явный параметр
+  (CTE `cfg`, колонка вью `reconciliation_epoch`; отказ `RECON_BEFORE_EPOCH`); расхождение счётчиков — по замерам:
+  Orders API отстаёт ≤ 14 дней (p99 = 13,9 дня) → `LATE_DATA`, дальше `WARNING` только при доказанных деньгах, иначе
+  `DATA_ERROR`; Orders API опережает воронку → `DATA_ERROR` сразу. Новая диагностическая колонка слоя
+  `same_day_cancel_qty`: воронка не считает заказ, отменённый в день заказа, а лист отмену вычитает (4 SKU-дня
+  сентября, занижение ≥ 672,92 ₽) — только обнаружение, Q/S/цена не меняются. Журнал ремонта: состояния
+  `PLANNED_NOT_WRITTEN | WRITE_FAILED | APPLIED_UNVERIFIED | REPAIRED` («состоялся» = только `REPAIRED`).
+  Вторая линия защиты fallback цены в `reconFacts()` (`BQ_SHAPE`). `PRICE_NOT_ON_SHEET` работает и до записи;
+  сводка — `repair_available_sku_days`; вью статуса — `repair_available_not_written`,
+  `repair_attempts_unconfirmed_7d`, `manual_input_pending`.
 - **Guard — изменение поведения:** `COGS_SOURCE_MISMATCH` при активности теперь `ERROR` и делает SKU-дни фин.
   недействительными (было `WARNING`); новые коды `PRICE_ZERO_WITH_ORDERS`, `PRICE_FUNNEL_FALLBACK` (INFO),
   `PRICE_NOT_ON_SHEET`, `STOCK_SNAPSHOT_MISSING`; новая степень `NOT_AVAILABLE`; в сводке — `states`,
   `affected_sku_days`, `oldest_unresolved*`, `price_provenance`.
 - **Новые объекты (только исходники):** `sql/unitka/reconcile_v1.sql` — вью `V_UNITKA_RECON_WINDOW`,
   `V_UNITKA_RECON_FACT`, `V_UNITKA_RECON_INTEGRITY`, `V_UNITKA_RECON_COGS_CANONICAL`, `V_UNITKA_INTEGRITY_STATUS`;
-  откат `reconcile_v1_rollback.sql`. Существующие вью `V_UNITKA_*` не меняются.
+  откат `reconcile_v1_rollback.sql`. Существующие вью `V_UNITKA_*` не меняются. Колонки окна: `window_from`,
+  `window_to`, `window_days`, `reconciliation_epoch`, `rolling_window_from`.
 - **Новые таблицы `wb_ops` (Terraform, не применён):** `UNITKA_REPAIR_LEDGER` (журнал ремонта: repair_id, run_id,
   environment, engine_version, git_sha, detected_at, repaired_at, month_key, business_date, nm_id, field, cell_a1,
   old_value, new_value, source, source_as_of, reason, status) и `UNITKA_INTEGRITY_ISSUES` (снимок issue на прогон:

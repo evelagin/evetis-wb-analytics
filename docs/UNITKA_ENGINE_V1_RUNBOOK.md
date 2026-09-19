@@ -146,13 +146,20 @@ SELECT * FROM `wb_mart.V_UNITKA_ENGINE_STATUS`;
   SELECT business_date, nm_id, field, cell_a1, old_value, new_value, source, reason
   FROM `wb_ops.UNITKA_REPAIR_LEDGER` WHERE status = 'REPAIRED' ORDER BY repaired_at DESC LIMIT 50;
   ```
-* Коды: `RECON_WINDOW_INCONSISTENT` (окно в SQL ≠ окну в коде — отказ до записи), `RECON_SECTION_MISSING |
+* **Эпоха сверки `2026-09-01`**: август 2026 и раньше новая сверка не меняет никогда; начало окна =
+  max(скользящие 35 дней, эпоха). Дата раньше эпохи в источнике или плане — отказ `RECON_BEFORE_EPOCH` до записи.
+* **Журнал ремонта: «состоялся» = только `REPAIRED`.** `WRITE_FAILED` — запись листа упала (следующий прогон повторит
+  ремонт сам); `APPLIED_UNVERIFIED` — записано, но не проверено перечитыванием: сверить ячейки `cell_a1` с `new_value`
+  глазами, повторного ремонта не будет (расхождения уже нет).
+* Коды: `RECON_WINDOW_INCONSISTENT` (окно, длина или эпоха в SQL ≠ коду — отказ до записи), `RECON_SECTION_MISSING |
   AMBIGUOUS | INVALID | FAILED` (отказ одной прошлой секции; месяц LCD пишется), `RECON_PLAN_NOT_CONFINED`
   (план вышел за факт-ячейки — отказ), `LEDGER_UNAVAILABLE`, `LEDGER_WRITE_FAILED` (лист записан, журнал нет —
   записи ремонта лежат в событии `unitka_repairs`; внести в журнал вручную не требуется, следующий прогон даст `NO_CHANGE`).
 * Откат: `UNITKA_RECONCILE_MODE=off`, затем при необходимости `sql/unitka/reconcile_v1_rollback.sql`. Значения ячеек —
   по `old_value` журнала ремонта. Таблицы `wb_ops` откат не трогает (`deletion_protection`).
 * Сверка не трогает: ставки прошлых месяцев, якоря, формулы, СПП, блогеров, внешнюю рекламу, даты раньше 01.09.2026.
+* `ORDERS_SOURCE_DIVERGENCE` с `verdict=SAME_DAY_CANCEL_OUTSIDE_Q` — не сбой загрузки: воронка не считает заказ,
+  отменённый в день заказа, а отмена в S есть. Сверка это не чинит; ждёт решения владельца по контракту отмен.
 
 ## 5c. Calendar V2: подготовка месяца (`unitka-month-prep`) — НЕ активировано
 

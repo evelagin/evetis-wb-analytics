@@ -8,7 +8,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   evaluateIntegrity, summarize, classifyCogsSnapshot, priceRules, priceCellRules, cogsRules, divergenceRules, stockRules, sppRules, sectionDays,
-  amountConfirmedByFunnel, contractState, aggregateStatus, ORDERS_API_MATURITY_DAYS,
+  amountConfirmedByFunnel, contractState, aggregateStatus, ORDERS_API_MATURITY_DAYS, FUNNEL_MATURITY_DAYS,
   type IntegrityFactsRow, type CogsCanonicalRow, type CogsSnapshot, type IntegrityInputs, type IntegrityIssue,
 } from '../src/loaders/unitka/integrity.js';
 import { financialValidity } from '../src/loaders/unitka/reconcile.js';
@@ -76,15 +76,23 @@ describe('цена и действительность строки', () => {
   it('цена есть в источнике, но не в ячейке листа (режим observe, отказ секции) → PRICE_NOT_ON_SHEET: действительность определяет ЛИСТ', () => {
     const facts = replace(septemberQuiet(), withOrders(NM.A, '2026-09-17', 1, 1120, { priceSource: 'FUNNEL_FALLBACK', divergenceClass: 'ONLY_FUNNEL', factOrderQty: null, funnelOrdersSum: 1120 }));
     const priceCol = blocks[0]!.start + OFFSET.price;
-    const blank = inputs(facts, allCanon(), okTerm, { sheetFinal: true });                       // ячейка цены пуста
+    const blank = inputs(facts, allCanon(), okTerm, { checkSheetCells: true });                       // ячейка цены пуста
     const issues = evaluateIntegrity(blank);
     expect(issues.filter((i) => i.code === 'PRICE_NOT_ON_SHEET')).toMatchObject([{ day: '2026-09-17', nmId: NM.A, severity: 'ERROR', financialInvalid: true, source: `SHEET:${colA1(priceCol)}753` }]);
     const s = summarize(issues, 'observe', 'POST_WRITE', NOW, fresh(allCanon()));
     expect([s.status, s.financially_invalid_rows, s.price_provenance]).toEqual(['DATA_ERROR', 1, { FUNNEL_FALLBACK: 1, UNRESOLVED: 0, NOT_ON_SHEET: 1 }]);
+    // режим observe обязан говорить именно это: ремонт доступен, а лист пока недействителен
+    const cellIssue = issues.find((i) => i.code === 'PRICE_NOT_ON_SHEET')!;
+    expect([cellIssue.repairAvailable, cellIssue.financialInvalid, cellIssue.diagnosticValue]).toEqual([true, true, 'repair_available=true; sheet_financial_valid=false']);
+    expect(s.repair_available_sku_days).toBe(1);
     // после записи сверки ячейка заполнена → правило молчит; до записи (PRE_WRITE / SHADOW) правило выключено
     const filled = { ...blank, cellAt: (r: number, c: number): CellValue => (r === 753 && c === priceCol ? 1120 : blank.cellAt(r, c)) };
     expect(priceCellRules(filled)).toEqual([]);
-    expect(evaluateIntegrity({ ...blank, sheetFinal: false }).filter((i) => i.code === 'PRICE_NOT_ON_SHEET')).toEqual([]);
+    expect(summarize(evaluateIntegrity(filled), 'observe', 'POST_WRITE', NOW, fresh(allCanon()))).toMatchObject({ status: 'PASS', repair_available_sku_days: 0, financially_invalid_rows: 0 });
+    // до записи (PRE_WRITE / SHADOW): ячейка, которую прогон сам запишет, дефектом не считается; остальные — считаются
+    expect(priceCellRules({ ...blank, pendingWrite: (r, c) => r === 753 && c === priceCol })).toEqual([]);
+    expect(priceCellRules({ ...blank, pendingWrite: () => false })).toHaveLength(1);
+    expect(evaluateIntegrity({ ...blank, checkSheetCells: false }).filter((i) => i.code === 'PRICE_NOT_ON_SHEET')).toEqual([]);   // по умолчанию — Guard V1
   });
   it('нулевая цена при заказах → PRICE_ZERO_WITH_ORDERS, ERROR', () => {
     const issues = priceRules([withOrders(NM.A, '2026-09-17', 2, 0)], new Set([NM.A]), LCD);
@@ -92,36 +100,67 @@ describe('цена и действительность строки', () => {
   });
 });
 
-describe('расхождение счётчиков: статус, а не повод пересчитать цену', () => {
-  const young = '2026-09-25', old = '2026-09-10';        // возраст на 03.10: 8 и 23 дня; срок зрелости — 14
-  it('срок зрелости Orders API — 14 дней (p99 измеренного запаздывания)', () => expect(ORDERS_API_MATURITY_DAYS).toBe(14));
-  it('в окне запаздывания → LATE_DATA; строка не объявляется ошибкой, цена остаётся ценой Orders API', () => {
-    const r = withOrders(NM.A, young, 2, 806, { factOrderQty: 1, factOrderRows: 1, divergenceClass: 'FUNNEL_GT_FACT', funnelOrdersSum: 1612 });
+describe('расхождение счётчиков (решение владельца 20.09 №2): возраст ничего не доказывает; статус, а не повод пересчитать цену', () => {
+  const young = '2026-09-25', old = '2026-09-10';        // возраст на 03.10: 8 и 23 дня; срок зрелости Orders API — 14
+  const behind = (day: string, over: Partial<IntegrityFactsRow> = {}): IntegrityFactsRow =>
+    withOrders(NM.A, day, 2, 806, { factOrderQty: 1, factOrderRows: 1, divergenceClass: 'FUNNEL_GT_FACT', funnelOrdersSum: 1612, sameDayCancelQty: 0, ...over });
+  it('пороги зрелости — из замеров: Orders API 14 дней (p99 = 13,9 дня на 907 заказах), воронка 0 (0 изменений на 1 575 значениях)', () => {
+    expect([ORDERS_API_MATURITY_DAYS, FUNNEL_MATURITY_DAYS]).toEqual([14, 0]);
+  });
+  it('Orders API отстаёт, в окне запаздывания → LATE_DATA; цена остаётся ценой Orders API и не пересчитывается', () => {
+    const r = behind(young);
     const d = divergenceRules([r], LCD, NOW);
-    expect(d).toMatchObject([{ code: 'ORDERS_SOURCE_DIVERGENCE', severity: 'EXPECTED_DELAY', financialInvalid: false }]);
+    expect(d).toMatchObject([{ code: 'ORDERS_SOURCE_DIVERGENCE', severity: 'EXPECTED_DELAY', financialInvalid: false, blocking: false }]);
     expect(contractState(d[0]!.severity)).toBe('LATE_DATA');
+    expect(d[0]!.sourceValue).toContain('verdict=LATE_DATA');
     expect(priceRules([r], new Set([NM.A]), LCD)).toEqual([]);                                  // цена есть и не трогается
   });
-  it('после срока: сумма воронки подтверждает деньги строки (2 × 806 = 1612) → WARNING, строка действительна', () => {
-    const r = withOrders(NM.A, old, 2, 806, { factOrderQty: 1, factOrderRows: 1, divergenceClass: 'FUNNEL_GT_FACT', funnelOrdersSum: 1612 });
-    expect(amountConfirmedByFunnel(r)).toBe(true);
-    expect(divergenceRules([r], LCD, NOW)).toMatchObject([{ severity: 'WARNING', financialInvalid: false }]);
+  it('в окне запаздывания, но деньги НЕ подтверждены → состояние LATE_DATA, а действительность отдельно: financial_valid = false', () => {
+    const d = divergenceRules([behind(young, { funnelOrdersSum: 1500 })], LCD, NOW);
+    expect(d).toMatchObject([{ severity: 'EXPECTED_DELAY', financialInvalid: true, blocking: false }]);
+    const s = summarize(d, 'observe', 'POST_WRITE', NOW, fresh(allCanon()));
+    expect([s.status, s.states.LATE_DATA, s.states.DATA_ERROR, s.financially_invalid_rows]).toEqual(['PASS', 1, 0, 1]);
   });
-  it('после срока: деньги НЕ подтверждены (второй заказ по другой цене) → DATA_ERROR, недействительна; цена не выдумывается', () => {
-    const r = withOrders(NM.A, old, 2, 806, { factOrderQty: 1, factOrderRows: 1, divergenceClass: 'FUNNEL_GT_FACT', funnelOrdersSum: 1500 });
+  it('срок истёк, финансово значимое расхождение не разрешено → DATA_ERROR, financial_valid = false (НЕ WARNING по возрасту)', () => {
+    const r = behind(old, { funnelOrdersSum: 1500 });                                           // второй заказ шёл по другой цене
     expect(amountConfirmedByFunnel(r)).toBe(false);
     const d = divergenceRules([r], LCD, NOW);
     expect(d).toMatchObject([{ severity: 'ERROR', financialInvalid: true, blocking: true }]);
-    expect(d[0]!.sourceValue).toContain('amount_confirmed=false');
+    expect(d[0]!.sourceValue).toContain('verdict=AMOUNT_NOT_CONFIRMED');
+    expect(summarize(d, 'observe', 'POST_WRITE', NOW, fresh(allCanon())).status).toBe('DATA_ERROR');
+    // цена при этом не выдумывается: правило цены молчит, в строке остаётся цена Orders API
+    expect(priceRules([r], new Set([NM.A]), LCD)).toEqual([]);
   });
-  it('Orders API дал больше заказов, чем воронка / только Orders API — те же правила зрелости', () => {
-    const more = withOrders(NM.A, old, 5, 740, { factOrderQty: 6, factOrderRows: 6, divergenceClass: 'FACT_GT_FUNNEL', funnelOrdersSum: 3700 });
-    const onlyFact = row(NM.A, young, { factOrderQty: 1, factOrderRows: 1, factualOrderPrice: 800, priceSource: 'ORDERS_API', priceState: 'PRESENT', divergenceClass: 'ONLY_FACT', funnelOrdersSum: 0 });
-    expect(divergenceRules([more, onlyFact], LCD, NOW).map((i) => i.severity)).toEqual(['WARNING', 'EXPECTED_DELAY']);
+  it('срок истёк, но доказано, что на результат не влияет (2 × 806 = 1612 = сумма воронки) → WARNING, строка действительна', () => {
+    const r = behind(old);
+    expect(amountConfirmedByFunnel(r)).toBe(true);
+    const d = divergenceRules([r], LCD, NOW);
+    expect(d).toMatchObject([{ severity: 'WARNING', financialInvalid: false }]);
+    expect(d[0]!.sourceValue).toContain('verdict=AMOUNT_CONFIRMED');
   });
-  it('старая вью без суммы воронки — прежнее поведение Guard V1 (INFO / WARNING), ERROR не возникает', () => {
-    const legacy = { ...withOrders(NM.A, old, 2, 806, { factOrderQty: 1, divergenceClass: 'FUNNEL_GT_FACT' }) };
-    delete (legacy as Partial<IntegrityFactsRow>).funnelOrdersSum;
+  it('WARNING даёт только доказательство, а не возраст: та же строка без суммы воронки или без цены → DATA_ERROR', () => {
+    expect(divergenceRules([behind(old, { funnelOrdersSum: null })], LCD, NOW)).toMatchObject([{ severity: 'ERROR', financialInvalid: true }]);
+    expect(divergenceRules([behind(old, { factualOrderPrice: null, priceSource: null })], LCD, NOW)).toMatchObject([{ severity: 'ERROR', financialInvalid: true }]);
+    expect(divergenceRules([behind('2026-09-01')], LCD, NOW)).toMatchObject([{ severity: 'WARNING' }]);   // возраст 32 дня: всё равно нужно доказательство — оно есть
+  });
+  it('Orders API ОПЕРЕЖАЕТ воронку: окна запаздывания нет → DATA_ERROR сразу; отмена дня заказа в S есть, в Q — нет', () => {
+    // 09.09 / 535580776 в production: 3 заказа Orders API, 1 отменён в тот же день, воронка = 2, S = 1
+    const sameDay = withOrders(NM.A, young, 2, 666, { factOrderQty: 3, factOrderRows: 3, cancelsUnitka: 1, divergenceClass: 'FACT_GT_FUNNEL', funnelOrdersSum: 1332, sameDayCancelQty: 1 });
+    const onlyFact = row(NM.A, '2026-10-01', { factOrderQty: 1, factOrderRows: 1, cancelsUnitka: 1, factualOrderPrice: 800, priceSource: 'ORDERS_API', priceState: 'PRESENT', divergenceClass: 'ONLY_FACT', funnelOrdersSum: 0, sameDayCancelQty: 1 });
+    const unexplained = withOrders(NM.A, old, 5, 740, { factOrderQty: 6, factOrderRows: 6, divergenceClass: 'FACT_GT_FUNNEL', funnelOrdersSum: 3700, sameDayCancelQty: 0 });
+    const d = divergenceRules([sameDay, onlyFact, unexplained], LCD, NOW);
+    expect(d.map((i) => [i.severity, i.financialInvalid])).toEqual([['ERROR', true], ['ERROR', true], ['ERROR', true]]);
+    expect(d.map((i) => /verdict=(\w+)/.exec(i.sourceValue!)![1])).toEqual(['SAME_DAY_CANCEL_OUTSIDE_Q', 'SAME_DAY_CANCEL_OUTSIDE_Q', 'ORDERS_API_AHEAD_UNEXPLAINED']);
+    expect(amountConfirmedByFunnel(sameDay)).toBe(true);                                         // сумма воронки сходится — и всё же строка затронута
+    expect(d[0]!.dependentFields).toEqual(['Q', 'S', 'W', 'V']);
+  });
+  it('ONLY_FUNNEL с доказанным fallback — не расхождение денег (INFO); без разрешённой цены — ошибку даёт правило цены', () => {
+    const fb = withOrders(NM.A, old, 1, 1120, { priceSource: 'FUNNEL_FALLBACK', divergenceClass: 'ONLY_FUNNEL', factOrderQty: null, factOrderRows: null, funnelOrdersSum: 1120 });
+    expect(divergenceRules([fb], LCD, NOW)).toMatchObject([{ severity: 'INFO', financialInvalid: false }]);
+  });
+  it('старая вью без суммы воронки (режим off) — прежнее поведение Guard V1 (INFO / WARNING), ERROR не возникает', () => {
+    const legacy = { ...behind(old) };
+    delete (legacy as Partial<IntegrityFactsRow>).funnelOrdersSum; delete (legacy as Partial<IntegrityFactsRow>).sameDayCancelQty;
     expect(divergenceRules([legacy], LCD, NOW)).toMatchObject([{ severity: 'INFO' }]);
   });
 });
