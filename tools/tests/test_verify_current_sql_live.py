@@ -381,14 +381,51 @@ def test_list_failure_is_dataset_unproven(root):
     assert report["summary"] == {"MATCH": 11} and report["overall"] == "UNPROVEN"
 
 
-def test_list_changing_during_capture_is_unproven(root):
+def _listing(root, extra=()):
+    return live_responses(root, extra_tables=extra)[BASE]
+
+
+def _two_snapshots(root, t1_extra, t2_extra):
+    """tables.list answers T1 on the first call and T2 on the final re-read; objects are stable."""
     r = live_responses(root)
-    grown = copy.deepcopy(r[BASE])
-    grown["tables"].append({"tableReference": {"tableId": "V_NEW"}, "type": "VIEW"})
-    r[BASE] = [r[BASE], grown]
-    report, _, _ = verify(root, r)
-    assert {"dataset": DS, "code": "LIST_CHANGED_DURING_CAPTURE"} in report["dataset_unproven"]
-    assert report["overall"] == "UNPROVEN"
+    r[BASE] = [_listing(root, t1_extra), _listing(root, t2_extra)]
+    return r
+
+
+def test_list_stable_canonical_is_authoritative(root):
+    report, _, _ = verify(root, _two_snapshots(root, [], []))
+    assert report["unexpected_live"] == [] and report["dataset_unproven"] == []
+    assert report["overall"] == "MATCH" and vl.EXIT["MATCH"] == 0
+
+
+def test_list_stable_unexpected_object_is_drift(root):
+    x = [("V_OZON_X", "TABLE")]
+    report, _, _ = verify(root, _two_snapshots(root, x, x))
+    assert report["unexpected_live"] == [{"dataset": DS, "object": "V_OZON_X", "live_type": "TABLE",
+                                          "status": "UNEXPECTED_LIVE"}]
+    assert report["dataset_unproven"] == []
+    assert report["overall"] == "DRIFT" and vl.EXIT["DRIFT"] == 1
+
+
+@pytest.mark.parametrize("t1,t2", [
+    ([("V_OZON_X", "TABLE")], []),                            # transient disappearance
+    ([], [("V_OZON_X", "TABLE")]),                            # transient appearance
+    ([("V_OZON_X", "TABLE")], [("V_OZON_X", "VIEW")]),        # same name, type changed between snapshots
+], ids=["disappearance", "appearance", "type-change"])
+def test_list_unstable_is_unproven_never_drift(root, t1, t2):
+    report, _, _ = verify(root, _two_snapshots(root, t1, t2))
+    assert report["unexpected_live"] == []
+    assert report["dataset_unproven"] == [{"dataset": DS, "code": "LIST_CHANGED_DURING_CAPTURE"}]
+    assert report["summary"] == {"MATCH": 11}
+    assert report["overall"] == "UNPROVEN" and vl.EXIT["UNPROVEN"] == 2
+
+
+def test_list_transient_cases_are_symmetric(root):
+    x = [("V_OZON_X", "TABLE")]
+    a, _, _ = verify(root, _two_snapshots(root, x, []))
+    b, _, _ = verify(root, _two_snapshots(root, [], x))
+    strip = lambda r: {k: v for k, v in r.items() if k not in ("captured_at_start", "captured_at_end")}  # noqa: E731
+    assert strip(a) == strip(b)
 
 
 def test_list_pagination(root):

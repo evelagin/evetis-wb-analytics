@@ -545,10 +545,13 @@ def run(args, transport_factory=None, environ=None, runner=subprocess.run, clock
                 listed2 = None
                 ds_unproven.append({"dataset": dataset, "code": f"LIST_{e.code}"})
             if listed1 is not None and listed2 is not None:
+                # The object set is authoritative only when both snapshots agree (names and types).
+                # An unstable list is UNPROVEN: neither snapshot may produce UNEXPECTED_LIVE.
                 if listed1 != listed2:
                     ds_unproven.append({"dataset": dataset, "code": "LIST_CHANGED_DURING_CAPTURE"})
-                for n in sorted(set(listed1) - names):
-                    unexpected.append({"dataset": dataset, "object": n, "live_type": listed1[n], "status": "UNEXPECTED_LIVE"})
+                else:
+                    for n in sorted(set(listed1) - names):
+                        unexpected.append({"dataset": dataset, "object": n, "live_type": listed1[n], "status": "UNEXPECTED_LIVE"})
             for o in man["objects"]:
                 n = o["object_name"]
                 entry = classify(o, first[n], second[n])
