@@ -11,48 +11,62 @@
 import { LoaderError } from '../../errors.js';
 import type { CommissionRateRow, FactRow, LcdRow, LogisticsRateRow } from './bq.js';
 import {
-  GRID, OFFSET, FACT_KEYS, CALC_OFFSETS, SUMMARY, NAMED, FORMAT_CONTRACT_KEYS, FORMAT_REF_ROW, EMPTY_FORMAT,
+  OFFSET, FACT_KEYS, CALC_OFFSETS, SUMMARY, NAMED, FORMAT_CONTRACT_KEYS, EMPTY_FORMAT, BOOK_ANCHORS,
   type Block, type CellValue, type FactKey, type CellFormat, type FormatKey,
   formatEqual, formatDescr,
-  findBlocks, colA1, isoToSerial, serialToIso, addDaysIso, monthStartIso, dayRow,
+  findBlocks, colA1, isoToSerial, serialToIso, addDaysIso, monthStartIso,
   isEmpty, asNumber, factEqual, rateEqual, round2, round6,
 } from './model.js';
+import { layoutOf, monthKeyOf, sameMonth, dayRowOf, slotStart, type MonthGeometry, type MonthLayout } from './calendar.js';
 
-/** Снимок листа, как его читает index.ts (строки TOP..MTD, формулы FIRST..FIRST+DAYS-1). */
+/**
+ * Снимок секции месяца, как его читает index.ts: геометрия найдена по заголовку месяца (Phase 2B),
+ * значения — строки topRow..mtdRow, формулы и форматы — строки firstDailyRow..lastDailyRow,
+ * колонки 1..width (ширина листа на момент чтения).
+ */
 export interface Snapshot {
-  grid: CellValue[][];      // строки GRID.TOP..GRID.MTD (33), колонки 1..NC; строки могут быть «рваными»
-  formulas: CellValue[][];  // строки GRID.FIRST..FIRST+DAYS-1, valueRenderOption=FORMULA
-  mirrorLcd: CellValue;     // WB736
-  mirrorRev: CellValue;     // WB737
+  geometry: MonthGeometry;
+  width: number;
+  /** Колонка якорей книги (зеркало LCD, REVERSE_LEG_RATE, статус Guard) — из именованного диапазона. */
+  anchorCol: number;
+  grid: CellValue[][];      // строки topRow..mtdRow, колонки 1..width; строки могут быть «рваными»
+  formulas: CellValue[][];  // строки firstDailyRow..mtdRow (дни + MTD), valueRenderOption=FORMULA
+  mirrorLcd: CellValue;     // якорь книги WB736
+  mirrorRev: CellValue;     // якорь книги WB737
   namedLcd: CellValue;      // именованный диапазон LAST_CLOSED_DATE
-  /** Статические форматы строк GRID.FIRST..FIRST+DAYS-1 (userEnteredFormat, без УФ). */
+  /** Статические форматы строк firstDailyRow..lastDailyRow (userEnteredFormat, без УФ). */
   formats: CellFormat[][];
   sheetId: number;
 }
 
 export function formatAt(snap: Snapshot, row: number, col: number): CellFormat {
-  const r = snap.formats[row - GRID.FIRST];
+  const r = snap.formats[row - snap.geometry.firstDailyRow];
   const v = r ? r[col - 1] : undefined;
   return v ?? EMPTY_FORMAT;
 }
 
 export function cellAt(snap: Snapshot, row: number, col: number): CellValue {
-  const r = snap.grid[row - GRID.TOP];
+  const r = snap.grid[row - snap.geometry.topRow];
   const v = r ? r[col - 1] : undefined;
   return v === undefined ? null : v;
 }
-/** Текущее значение ячейки контракта: сетка, зеркала WB736/WB737 или именованный диапазон. */
-export function currentValue(snap: Snapshot, e: { row: number; col: number; namedRange?: string }): CellValue {
+/**
+ * Ячейка контракта — якорь книги (зеркало LCD WB736 или REVERSE_LEG_RATE WB737)? Определяется по ВИДУ
+ * ячейки плана, а не по колонке: колонка якорей сдвигается при вставке блоков, а ячейка той же колонки в строках
+ * дней — обычная ячейка блока.
+ */
+export function isAnchorExpected(e: { kind: CellKind }): boolean {
+  return e.kind === 'lcd' || e.kind === 'reverse';
+}
+/** Текущее значение ячейки контракта: сетка секции, якоря книги WB736/WB737 или именованный диапазон. */
+export function currentValue(snap: Snapshot, e: { row: number; col: number; kind: CellKind; namedRange?: string }): CellValue {
   if (e.namedRange) return snap.namedLcd;
-  if (e.col === GRID.MIR) {
-    if (e.row === GRID.HDR) return snap.mirrorLcd;
-    if (e.row === GRID.RROW) return snap.mirrorRev;
-    return null;
-  }
+  if (e.kind === 'lcd') return snap.mirrorLcd;
+  if (e.kind === 'reverse') return snap.mirrorRev;
   return cellAt(snap, e.row, e.col);
 }
 export function formulaAt(snap: Snapshot, row: number, col: number): CellValue {
-  const r = snap.formulas[row - GRID.FIRST];
+  const r = snap.formulas[row - snap.geometry.firstDailyRow];
   const v = r ? r[col - 1] : undefined;
   return v === undefined ? null : v;
 }
@@ -95,7 +109,7 @@ export interface PlannedCell extends ExpectedCell {
   reason: string;
 }
 
-/** Ячейка закрытого дня, чей статический формат отличается от эталона строки 737. */
+/** Ячейка закрытого дня, чей статический формат отличается от эталона (первый день секции). */
 export interface FormatCell {
   row: number;
   col: number;
@@ -116,6 +130,8 @@ export interface RateLine {
 }
 
 export interface Plan {
+  /** Секция месяца LCD: геометрия + блоки (Phase 2B). */
+  layout: MonthLayout;
   lcd: string;
   d1Msk: string;
   lagDays: number;
@@ -156,68 +172,99 @@ export interface PlanInputs {
 /* ───────────────────────── preflight ───────────────────────── */
 
 /**
- * Проверка структуры Master ДО вычислений. Возвращает список нарушений (пусто = PASS).
- * Отдельно: месяц LCD ≠ месяц блоков → MONTH_ROLLOVER_REQUIRED (E1.1, не реализуется).
+ * Проверка секции месяца ДО вычислений (Phase 2B).
+ *   sectionIssues — нарушение контракта секции (заголовок, шапка, даты, MTD, блоки, дубли nmID,
+ *                   месяц LCD ≠ месяц секции) → MONTH_SECTION_INVALID;
+ *   issues        — дрейф формул в валидной секции → STRUCTURE_DRIFT.
+ * Прежний MONTH_ROLLOVER_REQUIRED (Engine v1.1, только сентябрь) в динамическом пути не возникает:
+ * секцию находит index.ts по LAST_CLOSED_DATE; отсутствие — MONTH_SECTION_MISSING.
  */
 export interface LegacyFormulas { closed: number; future: number; byKey: Record<string, number> }
 
-export function preflight(snap: Snapshot, lcdIso: string): { issues: string[]; blocks: Block[]; monthMismatch: boolean; legacy: LegacyFormulas } {
-  const issues: string[] = [];
-  const top = snap.grid[0] ?? [];
-  const blocks = findBlocks(top);
-  if (blocks.length !== GRID.NB) issues.push(`BLOCKS = ${blocks.length}/${GRID.NB}: не все блоки имеют nmID в строке ${GRID.TOP}`);
+/** Текст контракта секции: подпись строки MTD в колонке даты первого блока (как M767 сентября). */
+export const MTD_LABEL = 'MTD ACTUAL';
+/** Текст шапки колонки даты (сводка B и дата каждого блока). */
+export const DATE_HEADER = 'Дата';
+
+/**
+ * Контракт секции месяца БЕЗ привязки к LCD: заголовок, шапка, блоки (уникальные nmID), подпись MTD,
+ * даты ровно дней месяца (сводка и каждый блок), формулы расчётных колонок и сводки на месте.
+ * Используется Engine (preflight) и подготовкой месяца (идемпотентный повтор = NO_CHANGE).
+ */
+export function validateSection(snap: Snapshot): { sectionIssues: string[]; driftIssues: string[]; blocks: Block[]; layout: MonthLayout } {
+  const g = snap.geometry;
+  const sectionIssues: string[] = [];
+  const driftIssues: string[] = [];
+  const blocks = findBlocks(snap.grid[0] ?? [], snap.width);
+  const layout = layoutOf(g, blocks);
+  const text = (row: number, col: number): string => String(cellAt(snap, row, col) ?? '').trim();
+
+  if (text(g.topRow, 1) !== g.title) sectionIssues.push(`A${g.topRow}: ожидался заголовок «${g.title}»`);
+  if (text(g.headerRow, SUMMARY.date) !== DATE_HEADER) sectionIssues.push(`B${g.headerRow}: ожидалась шапка «${DATE_HEADER}»`);
+  if (blocks.length === 0) sectionIssues.push(`строка ${g.topRow}: нет ни одного блока с nmID`);
   const seen = new Set<number>();
   for (const b of blocks) {
-    if (seen.has(b.nmId)) issues.push(`nmID ${b.nmId} встречается в двух блоках`);
+    if (seen.has(b.nmId)) sectionIssues.push(`nmID ${b.nmId} встречается в двух блоках`);
     seen.add(b.nmId);
+    if (text(g.headerRow, b.start + OFFSET.date) !== DATE_HEADER) sectionIssues.push(`блок ${b.nmId}: ${colA1(b.start)}${g.headerRow} ≠ «${DATE_HEADER}»`);
   }
-  if (!Number.isFinite(asNumber(snap.namedLcd))) issues.push(`именованный диапазон ${NAMED.LCD} пуст или не дата`);
-  if (!Number.isFinite(asNumber(snap.mirrorLcd))) issues.push(`зеркало LAST_CLOSED_DATE (${colA1(GRID.MIR)}${GRID.HDR}) пусто или не дата`);
-
-  const monthStart = monthStartIso(lcdIso);
-  let monthMismatch = false;
+  // Слот с шапкой «Дата», но без nmID в заголовке — стёртый/битый блок, а не выбывший SKU
+  // (выбывший SKU при подготовке месяца оставляет слот ПОЛНОСТЬЮ пустым).
+  const used = new Set(blocks.map((b) => b.slot));
+  for (let slot = 0; slotStart(slot) <= snap.width; slot++) {
+    if (used.has(slot)) continue;
+    if (text(g.headerRow, slotStart(slot) + OFFSET.date) === DATE_HEADER) sectionIssues.push(`слот ${slot} (${colA1(slotStart(slot))}): шапка блока есть, nmID в строке ${g.topRow} нет`);
+  }
   const first = blocks[0];
-  if (first) {
-    const d0 = asNumber(cellAt(snap, GRID.FIRST, first.start));
-    if (Number.isFinite(d0) && serialToIso(d0).slice(0, 7) !== lcdIso.slice(0, 7)) monthMismatch = true;
-  }
-  if (!monthMismatch) {
-    for (let i = 0; i < GRID.DAYS; i++) {
-      const want = isoToSerial(addDaysIso(monthStart, i));
-      const sum = asNumber(cellAt(snap, dayRow(i), SUMMARY.date));
-      if (sum !== want) issues.push(`сводка B${dayRow(i)}: ожидалась дата ${addDaysIso(monthStart, i)}`);
-      for (const b of blocks) {
-        const got = asNumber(cellAt(snap, dayRow(i), b.start + OFFSET.date));
-        if (got !== want) { issues.push(`блок #${b.index + 1} ${b.nmId}: дата в строке ${dayRow(i)} ≠ ${addDaysIso(monthStart, i)}`); break; }
-      }
+  if (first && text(g.mtdRow, first.start + OFFSET.date) !== MTD_LABEL) sectionIssues.push(`${colA1(first.start)}${g.mtdRow}: ожидалась подпись «${MTD_LABEL}»`);
+
+  // Даты: ровно дни месяца секции, по строке на день, в сводке и в каждом блоке.
+  for (let i = 0; i < g.daysInMonth; i++) {
+    const row = dayRowOf(g, i);
+    const want = isoToSerial(addDaysIso(g.monthStart, i));
+    if (asNumber(cellAt(snap, row, SUMMARY.date)) !== want) sectionIssues.push(`сводка B${row}: ожидалась дата ${addDaysIso(g.monthStart, i)}`);
+    for (const b of blocks) {
+      if (asNumber(cellAt(snap, row, b.start + OFFSET.date)) !== want) { sectionIssues.push(`блок #${b.index + 1} ${b.nmId}: дата в строке ${row} ≠ ${addDaysIso(g.monthStart, i)}`); break; }
     }
   }
-
-  // Формулы: там, где они должны быть — есть. Формулы В факт/ставочных ячейках — не дрейф,
-  // а наследие (в Master остались `=stock*0.15` и `=prev-orders+cancels` в колонках остатков
-  // и хранения; s82data перезаписывал их значениями, когда значения расходились). Engine
-  // ведёт их учёт (legacyFormulas) и в закрытых днях заменяет значением из BigQuery.
-  const legacy = { closed: 0, future: 0, byKey: {} as Record<string, number> };
-  const closedDays = daysBetween(monthStart, lcdIso) + 1;
   for (const b of blocks) {
     let missing = 0;
-    for (let i = 0; i < GRID.DAYS; i++) {
-      for (const o of CALC_OFFSETS) if (!isFormula(formulaAt(snap, dayRow(i), b.start + o))) missing++;
+    for (let i = 0; i < g.daysInMonth; i++) for (const o of CALC_OFFSETS) if (!isFormula(formulaAt(snap, dayRowOf(g, i), b.start + o))) missing++;
+    if (missing) driftIssues.push(`блок #${b.index + 1} ${b.nmId}: ${missing} расчётных ячеек без формулы`);
+  }
+  let sumMissing = 0;
+  for (let i = 0; i < g.daysInMonth; i++) {
+    for (let c = SUMMARY.bloggers; c <= SUMMARY.drr; c++) if (!isFormula(formulaAt(snap, dayRowOf(g, i), c))) sumMissing++;
+  }
+  if (sumMissing) driftIssues.push(`сводка C..K: ${sumMissing} ячеек без формулы`);
+  return { sectionIssues, driftIssues, blocks, layout };
+}
+
+export function preflight(snap: Snapshot, lcdIso: string): { issues: string[]; sectionIssues: string[]; blocks: Block[]; layout: MonthLayout; legacy: LegacyFormulas } {
+  const g = snap.geometry;
+  const v = validateSection(snap);
+  const sectionIssues = [...v.sectionIssues];
+  const issues = [...v.driftIssues];
+  if (!sameMonth(monthKeyOf(lcdIso), g.key)) sectionIssues.unshift(`месяц LAST_CLOSED_DATE ${lcdIso.slice(0, 7)} ≠ месяцу секции ${g.monthKey}`);
+  if (!Number.isFinite(asNumber(snap.namedLcd))) issues.push(`именованный диапазон ${NAMED.LCD} пуст или не дата`);
+  if (!Number.isFinite(asNumber(snap.mirrorLcd))) issues.push(`зеркало LAST_CLOSED_DATE (${colA1(snap.anchorCol)}${BOOK_ANCHORS.LCD_MIRROR_ROW}) пусто или не дата`);
+
+  // Формулы В факт/ставочных ячейках — не дрейф, а наследие (в Master остались `=stock*0.15` и
+  // `=prev-orders+cancels` в колонках остатков и хранения; s82data перезаписывал их значениями,
+  // когда значения расходились). Engine ведёт их учёт и в закрытых днях заменяет значением из BigQuery.
+  const legacy = { closed: 0, future: 0, byKey: {} as Record<string, number> };
+  const closedDays = Math.min(g.daysInMonth, daysBetween(monthStartIso(lcdIso), lcdIso) + 1);
+  for (const b of v.blocks) {
+    for (let i = 0; i < g.daysInMonth; i++) {
       for (const k of [...FACT_KEYS, 'logistics', 'commission'] as const) {
-        if (isFormula(formulaAt(snap, dayRow(i), b.start + OFFSET[k]))) {
+        if (isFormula(formulaAt(snap, dayRowOf(g, i), b.start + OFFSET[k]))) {
           if (i < closedDays) legacy.closed++; else legacy.future++;
           legacy.byKey[k] = (legacy.byKey[k] ?? 0) + 1;
         }
       }
     }
-    if (missing) issues.push(`блок #${b.index + 1} ${b.nmId}: ${missing} расчётных ячеек без формулы`);
   }
-  let sumMissing = 0;
-  for (let i = 0; i < GRID.DAYS; i++) {
-    for (let c = SUMMARY.bloggers; c <= SUMMARY.drr; c++) if (!isFormula(formulaAt(snap, dayRow(i), c))) sumMissing++;
-  }
-  if (sumMissing) issues.push(`сводка C..K: ${sumMissing} ячеек без формулы`);
-  return { issues, blocks, monthMismatch, legacy };
+  return { issues, sectionIssues, blocks: v.blocks, layout: v.layout, legacy };
 }
 
 /* ───────────────────────── план ───────────────────────── */
@@ -260,11 +307,13 @@ export function buildPlan(inp: PlanInputs): Plan {
   }
 
   const pre = preflight(snap, lcd);
-  if (pre.monthMismatch) {
-    throw new LoaderError(`месяц LAST_CLOSED_DATE (${lcd.slice(0, 7)}) не совпадает с месяцем September Master — rollover не реализован (Engine v1.1)`, 'MONTH_ROLLOVER_REQUIRED');
+  if (pre.sectionIssues.length) {
+    throw new LoaderError(`секция ${snap.geometry.monthKey} (A${snap.geometry.topRow}) не проходит контракт: ${pre.sectionIssues.slice(0, 12).join(' | ')}`, 'MONTH_SECTION_INVALID');
   }
   if (pre.issues.length) throw new LoaderError(pre.issues.slice(0, 12).join(' | '), 'STRUCTURE_DRIFT');
   const blocks = pre.blocks;
+  const layout = pre.layout;
+  const g = snap.geometry;
   const monthStart = monthStartIso(lcd);
   const closedDays = daysBetween(monthStart, lcd) + 1;
 
@@ -304,7 +353,8 @@ export function buildPlan(inp: PlanInputs): Plan {
   const gaps: Record<string, number> = { opens: 0, carts: 0, stock: 0, price: 0, storage: 0 };
 
   for (const b of blocks) {
-    // BLOCKS = 24/24 означает и «у каждого блока есть строки в подготовленном слое».
+    // Каждый блок секции обязан иметь строки в подготовленном слое (fail-closed: SKU выбыл из
+    // REF_SKU_MASTER посреди месяца → BLOCK_MISSING; операционное правило V1 — выводить с 1-го числа).
     let rowsForNm = 0;
     for (let i = 0; i < closedDays; i++) if (byKey.has(`${b.nmId}|${addDaysIso(monthStart, i)}`)) rowsForNm++;
     if (rowsForNm !== closedDays) {
@@ -316,10 +366,10 @@ export function buildPlan(inp: PlanInputs): Plan {
         const raw = f[FACT_FIELD[k]];
         const want = typeof raw === 'number' ? raw : null;
         if (want === null && k in gaps) gaps[k] = (gaps[k] ?? 0) + 1;
-        expected.push({ row: dayRow(i), col: b.start + OFFSET[k], want, kind: 'fact', nmId: b.nmId, key: k, date: f.date, source: factSource(k, f) });
+        expected.push({ row: dayRowOf(g, i), col: b.start + OFFSET[k], want, kind: 'fact', nmId: b.nmId, key: k, date: f.date, source: factSource(k, f) });
       }
     }
-    // Ставки — константа на все 30 строк блока (как s8brates/s8rates).
+    // Ставки — константа на все строки дней секции (как s8brates/s8rates), сколько бы дней ни было.
     const p = logByNm.get(b.nmId);
     const ownD = !!(p && p.shipments >= minN && p.directRate !== null && p.directRate > 0);
     const direct = round2(ownD ? (p!.directRate as number) : store.directRate);
@@ -327,14 +377,14 @@ export function buildPlan(inp: PlanInputs): Plan {
     const ownC = !!(c && c.sales >= minN && c.logisticsPerUnit !== null && c.logisticsPerUnit > 0 && c.commissionRate !== null && c.commissionRate > 0);
     const comm = round6(ownC ? (c!.commissionRate as number) : cstore.commissionRate);
     rates.push({ nmId: b.nmId, n: p?.shipments ?? 0, direct, directSource: ownD ? 'own' : 'store', commission: comm, commissionSource: ownC ? 'own' : 'store' });
-    for (let i = 0; i < GRID.DAYS; i++) {
-      expected.push({ row: dayRow(i), col: b.start + OFFSET.logistics, want: direct, kind: 'logistics', nmId: b.nmId, key: 'logistics', source: `V_UNITKA_LOGISTICS_RATES ${store.windowFrom}..${store.windowTo} (${ownD ? 'своя' : 'магазин'})` });
-      expected.push({ row: dayRow(i), col: b.start + OFFSET.commission, want: comm, kind: 'commission', nmId: b.nmId, key: 'commission', source: `V_UNITKA_COMMISSION_RATES ${cstore.windowFrom}..${cstore.windowTo} (${ownC ? 'своя' : 'магазин'})` });
+    for (let i = 0; i < g.daysInMonth; i++) {
+      expected.push({ row: dayRowOf(g, i), col: b.start + OFFSET.logistics, want: direct, kind: 'logistics', nmId: b.nmId, key: 'logistics', source: `V_UNITKA_LOGISTICS_RATES ${store.windowFrom}..${store.windowTo} (${ownD ? 'своя' : 'магазин'})` });
+      expected.push({ row: dayRowOf(g, i), col: b.start + OFFSET.commission, want: comm, kind: 'commission', nmId: b.nmId, key: 'commission', source: `V_UNITKA_COMMISSION_RATES ${cstore.windowFrom}..${cstore.windowTo} (${ownC ? 'своя' : 'магазин'})` });
     }
   }
   const reverseRate = store.reverseRate;
-  expected.push({ row: GRID.RROW, col: GRID.MIR, want: reverseRate, kind: 'reverse', key: 'reverse', source: `V_UNITKA_LOGISTICS_RATES ${store.windowFrom}..${store.windowTo} (магазин)` });
-  expected.push({ row: GRID.HDR, col: GRID.MIR, want: lcdSerial, kind: 'lcd', key: 'lcd_mirror', date: lcd, source: 'V_UNITKA_LAST_CLOSED_DATE' });
+  expected.push({ row: BOOK_ANCHORS.REVERSE_ROW, col: snap.anchorCol, want: reverseRate, kind: 'reverse', key: 'reverse', source: `V_UNITKA_LOGISTICS_RATES ${store.windowFrom}..${store.windowTo} (магазин)` });
+  expected.push({ row: BOOK_ANCHORS.LCD_MIRROR_ROW, col: snap.anchorCol, want: lcdSerial, kind: 'lcd', key: 'lcd_mirror', date: lcd, source: 'V_UNITKA_LAST_CLOSED_DATE' });
   expected.push({ row: 0, col: 0, want: lcdSerial, kind: 'lcd', key: 'lcd_named', namedRange: NAMED.LCD, date: lcd, source: 'V_UNITKA_LAST_CLOSED_DATE' });
 
   // FUTURE LEAKAGE в самой книге: факт-ячейки за датами > LCD должны быть пусты.
@@ -344,12 +394,13 @@ export function buildPlan(inp: PlanInputs): Plan {
   const leaks: string[] = [];
   let stockProjectionCells = 0;
   for (const b of blocks) {
-    for (let i = closedDays; i < GRID.DAYS; i++) {
+    for (let i = closedDays; i < g.daysInMonth; i++) {
+      const row = dayRowOf(g, i);
       for (const k of FACT_KEYS) {
-        const v = cellAt(snap, dayRow(i), b.start + OFFSET[k]);
+        const v = cellAt(snap, row, b.start + OFFSET[k]);
         if (isEmpty(v)) continue;
-        if (k === 'stock' && isFormula(formulaAt(snap, dayRow(i), b.start + OFFSET[k]))) { stockProjectionCells++; continue; }
-        leaks.push(`${colA1(b.start + OFFSET[k])}${dayRow(i)}`);
+        if (k === 'stock' && isFormula(formulaAt(snap, row, b.start + OFFSET[k]))) { stockProjectionCells++; continue; }
+        leaks.push(`${colA1(b.start + OFFSET[k])}${row}`);
       }
     }
   }
@@ -363,7 +414,7 @@ export function buildPlan(inp: PlanInputs): Plan {
   for (const e of expected) {
     const before = currentValue(snap, e);
     const valueSame = e.kind === 'fact' ? factEqual(before, e.want) : rateEqual(before, e.want as number);
-    const wasFormula = !e.namedRange && e.col !== GRID.MIR && isFormula(formulaAt(snap, e.row, e.col));
+    const wasFormula = !e.namedRange && !isAnchorExpected(e) && isFormula(formulaAt(snap, e.row, e.col));
     // Формула в ячейке контракта (закрытый день / ставка) заменяется значением даже при
     // совпадении результата: после первой записи контракт «факт = значение» становится полным.
     if (valueSame && !wasFormula) continue;
@@ -385,7 +436,7 @@ export function buildPlan(inp: PlanInputs): Plan {
   }
   const fmt = formatContract(snap, blocks, closedDays, monthStart, expected);
   return {
-    lcd, d1Msk: d1, lagDays, monthStart, closedDays, blocks, expected, cells, rates, reverseRate, invariant, sourcesByDay, gaps,
+    layout, lcd, d1Msk: d1, lagDays, monthStart, closedDays, blocks, expected, cells, rates, reverseRate, invariant, sourcesByDay, gaps,
     legacy: pre.legacy, legacyReplaced, bookLcd, byChangeType, stockProjectionCells,
     formatCells: fmt.cells, formatContractCells: fmt.total,
   };
@@ -431,7 +482,7 @@ export interface DiffRow {
 export function diffRows(plan: Plan): DiffRow[] {
   const fmt = (v: CellValue | number | null | undefined): string => (v === null || v === undefined || v === '' ? '' : String(v));
   return plan.cells.map((c) => ({
-    DATE: c.date ?? (c.kind === 'fact' ? '' : `${plan.monthStart.slice(0, 7)} (все 30 строк)`),
+    DATE: c.date ?? (c.kind === 'fact' ? '' : `${plan.monthStart.slice(0, 7)} (все ${plan.layout.daysInMonth} строк)`),
     SKU: c.nmId === undefined ? 'магазин' : String(c.nmId),
     CELL: c.namedRange ?? `${colA1(c.col)}${c.row}`,
     METRIC: c.key ?? c.kind,
@@ -447,8 +498,8 @@ export function diffRows(plan: Plan): DiffRow[] {
 
 /**
  * Контракт формата закрытого дня (см. model.ts, FORMAT_CONTRACT_KEYS): для строк с датой ≤ LCD
- * статический формат ячейки в колонках Engine должен равняться формату эталонной строки 737
- * того же блока. Строки > LCD не рассматриваются вовсе — будущее Engine не форматирует.
+ * статический формат ячейки в колонках Engine должен равняться формату эталонной строки — первого
+ * дня секции месяца (сентябрь: 737) — того же блока. Строки > LCD не рассматриваются вовсе — будущее Engine не форматирует.
  *
  * GAP-ячейки (факт, которого нет в источнике: want = null) в контракт НЕ входят: у Master
  * есть собственная разметка пропусков (например, оранжевый фон остатков 03.09), и Engine её
@@ -460,14 +511,15 @@ export function formatContract(snap: Snapshot, blocks: readonly Block[], closedD
   const cells: FormatCell[] = [];
   let total = 0;
   const valued = new Set<string>();
-  for (const e of expected) if (!e.namedRange && e.col !== GRID.MIR && e.want !== null) valued.add(`${e.row}|${e.col}`);
+  for (const e of expected) if (!e.namedRange && !isAnchorExpected(e) && e.want !== null) valued.add(`${e.row}|${e.col}`);
+  const refRow = snap.geometry.firstDailyRow;
   for (const b of blocks) {
     for (const k of FORMAT_CONTRACT_KEYS) {
       const col = b.start + OFFSET[k];
-      const want = formatAt(snap, FORMAT_REF_ROW, col);
+      const want = formatAt(snap, refRow, col);
       for (let i = 0; i < closedDays; i++) {
-        const row = dayRow(i);
-        if (row === FORMAT_REF_ROW) continue;
+        const row = dayRowOf(snap.geometry, i);
+        if (row === refRow) continue;
         if (!valued.has(`${row}|${col}`)) continue; // GAP — разметка пропуска остаётся за Master
         total++;
         const before = formatAt(snap, row, col);
@@ -505,6 +557,6 @@ export function formatRows(plan: Plan): Array<{ DATE: string; SKU: string; CELL:
   return plan.formatCells.map((c) => ({
     DATE: c.date, SKU: String(c.nmId), CELL: `${colA1(c.col)}${c.row}`, METRIC: c.key,
     OLD: formatDescr(c.before), NEW: formatDescr(c.want), CHANGE_TYPE: 'FORMAT_CHANGE' as const,
-    SOURCE: `эталон ${colA1(c.col)}${FORMAT_REF_ROW}`, REASON: `закрытый день ${c.date}: статический формат ≠ эталону строки ${FORMAT_REF_ROW}`,
+    SOURCE: `эталон ${colA1(c.col)}${plan.layout.firstDailyRow}`, REASON: `закрытый день ${c.date}: статический формат ≠ эталону строки ${plan.layout.firstDailyRow}`,
   }));
 }

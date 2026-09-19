@@ -13,7 +13,7 @@ V_UNITKA_SOURCE_FRESHNESS → V_UNITKA_LAST_CLOSED_DATE → снимок лис�
 ```
 
 Пишет: 9 факт-колонок закрытых дней (`views opens carts orders cancels stock adsIn price
-storage`), колонки `logistics`/`commission` (30 строк блока), `REVERSE_LEG_RATE` (`WB737`),
+storage`), колонки `logistics`/`commission` (30 строк блока), `REVERSE_LEG_RATE` (`WB737`; в Engine 2.0.0 — колонка по имени диапазона),
 `LAST_CLOSED_DATE` (имя + зеркало `WB736`). Не пишет: формулы, УФ, ширины, строку 767/768,
 будущие дни, блогеров, `spp`. Любой FAIL → ничего не записано (план — один batch), `exit 1`.
 
@@ -79,7 +79,10 @@ SELECT * FROM `wb_mart.V_UNITKA_ENGINE_STATUS`;
 | `SOURCE_STALE` | LCD отстаёт от D-1 > `UNITKA_MAX_LAG_DAYS` | проверить `wb-funnel-prod` и `wb-mart-prod` (`LOADER_RUNS`, `MART_RUNS`); Engine ничего не пишет, догонит сам |
 | `SHEETS_API` | 403/404/5xx от Sheets | 403 — доступ SA к книге / Sheets API не включён; 404 — id книги/имя листа; повтор — следующее окно |
 | `STRUCTURE_DRIFT` | нет 24 nmID в строке 735, даты не совпадают, пропали формулы расчётных колонок или сводки | кто-то менял Master; восстановить структуру, не «подстраивать» Engine |
-| `MONTH_ROLLOVER_REQUIRED` | LCD в другом месяце, чем блоки | ожидаемо с 02.10 — Engine v1.1 |
+| `MONTH_SECTION_MISSING` | секции месяца LCD нет в колонке A (Engine 2.0.0) | подготовить месяц: `unitka-month-prep` (§5c); Engine месяц не создаёт |
+| `MONTH_SECTION_AMBIGUOUS` | заголовок месяца встречается дважды | убрать дубль заголовка вручную; записи не было |
+| `MONTH_SECTION_INVALID` | секция не проходит контракт (даты, шапка, MTD, nmID, сетка) | сверить секцию с `docs/UNITKA_CALENDAR_V2.md` §2; не чинить Engine'ом |
+| `MONTH_ROLLOVER_REQUIRED` | (история, Engine ≤ 1.2.0) LCD в другом месяце, чем блоки | в 2.0.0 не возникает — см. `MONTH_SECTION_*` |
 | `LCD_REGRESSION` | BQ LCD раньше, чем в книге | источник откатился (перестроена витрина/воронка) — разобраться с источником |
 | `DUP_KEY` / `BLOCK_MISSING` | вью отдала дубль `nm×date` / у блока нет строк | `REF_SKU_MASTER` (active), состояние вью |
 | `INVARIANT_FAIL` | `shipments ≠ sales + refusals` или пустое окно финансов | `V_WB_FINANCE_CANONICAL` за окно `[LCD−29, LCD]`; смешанные схемы внутри `srid` |
@@ -121,6 +124,36 @@ SELECT * FROM `wb_mart.V_UNITKA_ENGINE_STATUS`;
 * COGS 252442517: канон 231,38 ₽; 240 ₽ в листе — известное неверное значение, исправление отложено.
 * Журнал issue, алерты, УФ — отложены; следующий приоритет после 1C3 — октябрьский rollover.
 
+## 5c. Calendar V2: подготовка месяца (`unitka-month-prep`) — НЕ активировано
+
+Документ: `docs/UNITKA_CALENDAR_V2.md`. Суточный Engine месяц не создаёт; за ≤ 5 дней до конца месяца он пишет
+предупреждение `NEXT_MONTH_SECTION_MISSING`, если следующего месяца нет.
+
+* План (без записи): `node dist/cli.js unitka-month-prep` — лог `unitka_month_prep_plan` (статус, строки, слоты,
+  COGS новых блоков с происхождением).
+* Запись — только решение владельца: `ENVIRONMENT=prod`, `UNITKA_MONTH_PREP_WRITE=1`,
+  `UNITKA_MONTH_PREP_TARGET=YYYY-MM`. Повтор — `NO_CHANGE`.
+* Отказы: `COGS_MISSING`/`COGS_STALE`/`COGS_UNAVAILABLE` (канон COGS нового SKU), `TEMPLATE_MISMATCH`,
+  `PREDECESSOR_*`, `SHEET_TAIL_NOT_EMPTY`, `MONTH_SECTION_PARTIAL/INVALID` — 0 изменений листа.
+* SKU выводить из `REF_SKU_MASTER` только с 1-го числа: посреди месяца Engine упадёт `BLOCK_MISSING` (V1).
+* Внешний вид нового месяца — визуальный контракт `visual.ts` (`docs/UNITKA_CALENDAR_V2.md` §8): пустые будущие
+  дни без заливки, заливка закрытого дня и выходные — правилами УФ месяца; правила прошлого месяца не копируются.
+* Откат созданного месяца: `planMonthRollback` (`monthprep_struct.ts`) — удалить правила УФ новой секции, добавленные
+  колонки (если пусты выше секции) и строки секции; затем сверить книгу с предснимком (Phase 2C).
+* Дополнительные отказы Phase 2C: `UNSUPPORTED_LOCALE`, `STRUCTURE_UNAVAILABLE`, `TEMPLATE_FORMATS_UNAVAILABLE`.
+* **Порядок выката: ENGINE 2.0 DEPLOYMENT MUST PRECEDE PRODUCTION MONTH PREP.** Подготовка месяца с новым SKU сдвигает
+  якоря книги (WB → WZ); Engine 1.1.0 и наследие Apps Script пишут в колонку 600 константой — после вставки колонок
+  их использовать нельзя (`docs/UNITKA_CALENDAR_V2.md` §10).
+* Дописывание SKU в существующий текущий месяц (`docs/UNITKA_CALENDAR_V2.md` §11) — НЕ активировано: план в журнале
+  `unitka_month_append_plan`; запись — дополнительно `UNITKA_MONTH_PREP_APPEND=1`. Основание — остаток > 0 или заказы > 0
+  в этом месяце на дату ≤ LCD. Отказы: `TAIL_GEOMETRY_UNKNOWN`, `CF_SECTION_DRIFT`, `LATER_SECTION_EXISTS`,
+  `TEMPLATE_MISMATCH`, `CHAIN_GAP`, `COGS_*`; откат — `planAppendRollback` по журналу плана.
+* Манифест отката подготовки месяца — поля журнала `insert_columns`, `width_upgrades`, `tail_group_detached`.
+* Отказы hardening 2: `CHAIN_GAP` (выбывший SKU оставил бы дыру в сплошной цепочке блоков — решение владельца),
+  `CF_TRIM_UNSAFE` (правило УФ до последней колонки блоков ссылается на другой лист — не переиздаём),
+  `ANCHOR_UNRESOLVED` (именованный диапазон `REVERSE_LEG_RATE` не одна ячейка строки 737 листа Unitka; Engine и
+  подготовка месяца находят колонку якорей только по нему — после вставки блока 25 это WZ, а не WB).
+
 ## 6. Офлайн SHADOW без облака
 
 ```
@@ -131,4 +164,4 @@ node scripts/unitka_offline_shadow.mjs <snapshot.json> <bq.json>
 
 ## 7. Что не входит в v1
 
-Октябрь и rollover (E1.1), планирование (строка 768), XLSX в production, изменение Master.
+Создание октября в живой книге (Phase 2C/2D), планирование (строка 768), XLSX в production, изменение Master.

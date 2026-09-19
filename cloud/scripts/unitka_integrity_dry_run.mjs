@@ -11,7 +11,8 @@
  *                    Файл отсутствует → COGS_SNAPSHOT_UNAVAILABLE.
  *   --cogs-published-at=ISO — подменить время публикации копии (фикстура STALE / свежей копии).
  *   snapshot.json  — снимок листа: { grid, formulas, refValues } в форме readSnapshot
- *                    (grid — строки GRID.TOP..GRID.MTD, formulas — GRID.FIRST..FIRST+DAYS-1)
+ *                    (grid — строки секции месяца заголовок..MTD, formulas — с первого дня секции).
+ *   --top=N        — строка заголовка секции месяца (Calendar V2; по умолчанию 735 = сентябрь 2026)
  *
  *   npm run build && node scripts/unitka_integrity_dry_run.mjs integrity.json snapshot.json [cogs.json] [--now=ISO]
  *
@@ -19,7 +20,8 @@
  */
 import { readFileSync, existsSync } from 'node:fs';
 import { UnitkaBq } from '../dist/loaders/unitka/bq.js';
-import { findBlocks, GRID } from '../dist/loaders/unitka/model.js';
+import { findBlocks } from '../dist/loaders/unitka/model.js';
+import { geometryAt, monthKeyOf } from '../dist/loaders/unitka/calendar.js';
 import { evaluateIntegrity, summarize, parseHhMm, aggregateStatus, classifyCogsSnapshot } from '../dist/loaders/unitka/integrity.js';
 
 const args = process.argv.slice(2);
@@ -53,12 +55,13 @@ const cogs = classifyCogsSnapshot(cogsRead, now);
 
 const lcd = facts.reduce((m, r) => (r.lastClosedDate > m ? r.lastClosedDate : m), '');
 const monthStart = `${lcd.slice(0, 7)}-01`;
+const g = geometryAt(monthKeyOf(lcd), Number(flags.top ?? 735));
 const blocks = findBlocks(snap.grid[0] ?? []);
-const cellAt = (row, col) => { const r = snap.grid[row - GRID.TOP]; const v = r ? r[col - 1] : undefined; return v === undefined ? null : v; };
-const formulaAt = (row, col) => { const r = snap.formulas[row - GRID.FIRST]; const v = r ? r[col - 1] : undefined; return v === undefined ? null : v; };
+const cellAt = (row, col) => { const r = snap.grid[row - g.topRow]; const v = r ? r[col - 1] : undefined; return v === undefined ? null : v; };
+const formulaAt = (row, col) => { const r = snap.formulas[row - g.firstDailyRow]; const v = r ? r[col - 1] : undefined; return v === undefined ? null : v; };
 
 const issues = evaluateIntegrity({
-  facts, cogs, blocks, lcd, monthStart, cellAt, formulaAt,
+  facts, cogs, blocks, lcd, monthStart, firstDailyRow: g.firstDailyRow, cellAt, formulaAt,
   refValues: snap.refValues ?? {}, now, storageDueMinutes: parseHhMm(flags.due ?? '12:15'),
 });
 const summary = summarize(issues, 'observe', 'PRE_WRITE', now, cogs);

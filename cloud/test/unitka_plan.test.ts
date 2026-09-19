@@ -1,9 +1,9 @@
 import { describe, it, expect } from 'vitest';
 import { buildPlan, preflight, toWriteRanges, diffRows, formatContract, toFormatWrites, formatRows, type PlanInputs } from '../src/loaders/unitka/plan.js';
-import { GRID, OFFSET, colA1, serialToIso, isoToSerial, findBlocks, factEqual, dayRow } from '../src/loaders/unitka/model.js';
+import { OFFSET, colA1, serialToIso, isoToSerial, findBlocks, factEqual } from '../src/loaders/unitka/model.js';
 import { unitkaSlot } from '../src/loaders/unitka/slot.js';
 import { LoaderError } from '../src/errors.js';
-import { snapshot, facts, logistics, commission, lcdRow, LCD, NM_IDS, refFormat, DIM } from './unitka_fixture.js';
+import { snapshot, facts, logistics, commission, lcdRow, LCD, NM_IDS, refFormat, DIM, GRID, dayRow } from './unitka_fixture.js';
 
 const inputs = (over: Partial<PlanInputs> = {}): PlanInputs => ({
   snapshot: snapshot(), lcd: lcdRow(), facts: facts(), logistics: logistics(), commission: commission(),
@@ -50,8 +50,9 @@ describe('preflight', () => {
   it('эталонный лист проходит', () => {
     const r = preflight(snapshot(), LCD);
     expect(r.issues).toEqual([]);
+    expect(r.sectionIssues).toEqual([]);
     expect(r.blocks).toHaveLength(24);
-    expect(r.monthMismatch).toBe(false);
+    expect(r.layout).toMatchObject({ monthKey: '2026-09', topRow: 735, firstDailyRow: 737, lastDailyRow: 766, mtdRow: 767, daysInMonth: 30, lastBlockColumn: 587 });   // терминальная колонка — последняя метрика блока 24 (VO)
   });
   it('пропавшая формула — STRUCTURE_DRIFT', () => {
     const snap = snapshot({ mutate: (s) => { s.formulas[3]![GRID.B0 - 1 + OFFSET.unitProfit] = 5; } });
@@ -84,13 +85,14 @@ describe('preflight', () => {
     } });
     expect(codeOf(() => buildPlan(inputs({ snapshot: snap })))).toBe('FUTURE_LEAKAGE');
   });
-  it('23 блока — BLOCKS 23/24', () => {
+  it('стёртый nmID при живой шапке блока — MONTH_SECTION_INVALID (не «выбывший SKU»)', () => {
     const snap = snapshot({ mutate: (s) => { s.grid[0]![GRID.B0 + 23 * GRID.BW - 1] = 'без артикула'; } });
-    expect(preflight(snap, LCD).issues[0]).toMatch(/BLOCKS = 23\/24/);
+    expect(preflight(snap, LCD).sectionIssues.join()).toMatch(/слот 23 \(US\): шапка блока есть, nmID в строке 735 нет/);
+    expect(codeOf(() => buildPlan(inputs({ snapshot: snap })))).toBe('MONTH_SECTION_INVALID');
   });
-  it('октябрьский LCD на сентябрьском листе — MONTH_ROLLOVER_REQUIRED', () => {
-    expect(preflight(snapshot(), '2026-10-01').monthMismatch).toBe(true);
-    expect(codeOf(() => buildPlan(inputs({ lcd: lcdRow('2026-10-01', '2026-10-02') })))).toBe('MONTH_ROLLOVER_REQUIRED');
+  it('октябрьский LCD на сентябрьской секции — MONTH_SECTION_INVALID (MONTH_ROLLOVER_REQUIRED выведен из пути)', () => {
+    expect(preflight(snapshot(), '2026-10-01').sectionIssues[0]).toMatch(/месяц LAST_CLOSED_DATE 2026-10 ≠ месяцу секции 2026-09/);
+    expect(codeOf(() => buildPlan(inputs({ lcd: lcdRow('2026-10-01', '2026-10-02') })))).toBe('MONTH_SECTION_INVALID');
   });
 });
 

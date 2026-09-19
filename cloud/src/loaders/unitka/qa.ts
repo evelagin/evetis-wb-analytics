@@ -9,9 +9,10 @@
  * mismatch тогда = «что изменил бы Engine», остальные проверки — здоровье Master как есть.
  */
 import {
-  GRID, OFFSET, FUTURE_ALLOWED_OFFSETS, SUMMARY_TO_OFFSET, SUMMARY,
-  type CellValue, colA1, dayRow, isEmpty, asNumber, factEqual, rateEqual, isFormulaError, isoToSerial,
+  OFFSET, FUTURE_ALLOWED_OFFSETS, SUMMARY_TO_OFFSET, SUMMARY, BOOK_ANCHORS,
+  type CellValue, colA1, isEmpty, asNumber, factEqual, rateEqual, isFormulaError, isoToSerial,
 } from './model.js';
+import { BLOCK_WIDTH, dayRowOf } from './calendar.js';
 import { cellAt, currentValue, formulaAt, isFormula, formatContract, type Plan, type Snapshot } from './plan.js';
 
 export interface QaCheck {
@@ -40,6 +41,8 @@ export interface EvaluateOpts {
 
 export function evaluate(snap: Snapshot, plan: Plan, opts: EvaluateOpts = {}): QaResult {
   const checks: QaCheck[] = [];
+  const L = plan.layout;
+  const dayRow = (i: number): number => dayRowOf(L, i);
   let closedDays = plan.closedDays;
   if (opts.shadow) {
     const mirror = asNumber(snap.mirrorLcd);
@@ -56,10 +59,11 @@ export function evaluate(snap: Snapshot, plan: Plan, opts: EvaluateOpts = {}): Q
   }
   checks.push(check('BQ_SHEETS_MISMATCH', mism));
 
-  // FORMULA ERRORS = 0 — строки TOP..MTD, все колонки.
+  // FORMULA ERRORS = 0 — строки секции (заголовок..MTD), колонки сводки и всех блоков (сплошная цепочка);
+  // хвост книги за последним блоком секции не принадлежит.
   const errs: string[] = [];
-  for (let r = GRID.TOP; r <= GRID.MTD; r++) {
-    for (let c = 1; c <= GRID.NC; c++) {
+  for (let r = L.topRow; r <= L.mtdRow; r++) {
+    for (let c = 1; c <= L.lastBlockColumn; c++) {
       const v = cellAt(snap, r, c);
       if (isFormulaError(v)) errs.push(`${colA1(c)}${r} ${String(v)}`);
     }
@@ -73,8 +77,8 @@ export function evaluate(snap: Snapshot, plan: Plan, opts: EvaluateOpts = {}): Q
   const leaks: string[] = [];
   const projection: string[] = [];
   for (const b of plan.blocks) {
-    for (let i = plan.closedDays; i < GRID.DAYS; i++) {
-      for (let o = 0; o < GRID.BW; o++) {
+    for (let i = plan.closedDays; i < L.daysInMonth; i++) {
+      for (let o = 0; o < BLOCK_WIDTH; o++) {
         if (FUTURE_ALLOWED_OFFSETS.has(o) || o === OFFSET.bloggers) continue;
         const v = cellAt(snap, dayRow(i), b.start + o);
         if (isEmpty(v)) continue;
@@ -86,7 +90,7 @@ export function evaluate(snap: Snapshot, plan: Plan, opts: EvaluateOpts = {}): Q
   checks.push(check('FUTURE_LEAKAGE', leaks));
   checks.push({ name: 'STOCK_PROJECTION_FUTURE', pass: true, count: projection.length, sample: projection.slice(0, 10) });
 
-  // SUMMARY RECONCILIATION — закрытые дни: колонка сводки = Σ 24 блоков (|Δ| ≤ 0.01).
+  // SUMMARY RECONCILIATION — закрытые дни: колонка сводки = Σ всех блоков секции (|Δ| ≤ 0.01).
   const rec: string[] = [];
   for (let i = 0; i < closedDays; i++) {
     for (const [sumCol, off, name] of SUMMARY_TO_OFFSET) {
@@ -100,19 +104,19 @@ export function evaluate(snap: Snapshot, plan: Plan, opts: EvaluateOpts = {}): Q
       if (Math.abs(sv - total) > 0.01) rec.push(`${name} ${colA1(sumCol)}${dayRow(i)} сводка[${sv}] Σблоков[${Math.round(total * 100) / 100}]`);
     }
   }
-  // MTD: I767 = Σ дневных I по закрытым дням (как в приёмке Stage 8.2).
+  // MTD: I{mtd} = Σ дневных I по закрытым дням (как в приёмке Stage 8.2; сентябрь — I767).
   {
     let sum = 0;
     for (let i = 0; i < closedDays; i++) {
       const v = asNumber(cellAt(snap, dayRow(i), SUMMARY.profit));
       if (Number.isFinite(v)) sum += v;
     }
-    const mtd = asNumber(cellAt(snap, GRID.MTD, SUMMARY.profit));
-    if (!Number.isFinite(mtd) || Math.abs(mtd - sum) > 0.01) rec.push(`MTD I${GRID.MTD}[${String(cellAt(snap, GRID.MTD, SUMMARY.profit))}] Σдней[${Math.round(sum * 100) / 100}]`);
+    const mtd = asNumber(cellAt(snap, L.mtdRow, SUMMARY.profit));
+    if (!Number.isFinite(mtd) || Math.abs(mtd - sum) > 0.01) rec.push(`MTD I${L.mtdRow}[${String(cellAt(snap, L.mtdRow, SUMMARY.profit))}] Σдней[${Math.round(sum * 100) / 100}]`);
   }
   checks.push(check('SUMMARY_RECONCILIATION', rec));
 
-  // CLOSED_FORMAT_CONTRACT — закрытые дни в колонках Engine отформатированы как эталон (строка 737).
+  // CLOSED_FORMAT_CONTRACT — закрытые дни в колонках Engine отформатированы как эталон (первый день секции).
   {
     const fc = formatContract(snap, plan.blocks, closedDays, plan.monthStart, plan.expected);
     checks.push(check('CLOSED_FORMAT_CONTRACT', fc.cells.map((c) => `${colA1(c.col)}${c.row} ${c.key} [${c.before.fg ? 'fg' : ''}${c.before.bg ? ' bg' : ''}${c.before.numberFormat ? ' nf' : ''}]`)));
@@ -122,11 +126,12 @@ export function evaluate(snap: Snapshot, plan: Plan, opts: EvaluateOpts = {}): Q
   const want = isoToSerial(plan.lcd);
   const lcdBad: string[] = [];
   if (asNumber(snap.namedLcd) !== want) lcdBad.push(`LAST_CLOSED_DATE=${String(snap.namedLcd)} ≠ ${want}`);
-  if (asNumber(snap.mirrorLcd) !== want) lcdBad.push(`${colA1(GRID.MIR)}${GRID.HDR}=${String(snap.mirrorLcd)} ≠ ${want}`);
+  if (asNumber(snap.mirrorLcd) !== want) lcdBad.push(`${colA1(snap.anchorCol)}${BOOK_ANCHORS.LCD_MIRROR_ROW}=${String(snap.mirrorLcd)} ≠ ${want}`);
   checks.push(check('LCD_CONSISTENT', lcdBad));
 
   // Дубли и инвариант — уже гарантированы планом; фиксируем как PASS для полного отчёта.
-  checks.push({ name: 'BLOCKS', pass: plan.blocks.length === GRID.NB, count: plan.blocks.length, sample: [] });
+  // BLOCKS: число блоков — из секции (не константа 24); пустая секция и дубли уже отсеяны preflight.
+  checks.push({ name: 'BLOCKS', pass: plan.blocks.length > 0 && new Set(plan.blocks.map((b) => b.nmId)).size === plan.blocks.length, count: plan.blocks.length, sample: [] });
   checks.push({ name: 'DIRECT_LOGISTICS_INVARIANT', pass: plan.invariant.pass, count: plan.invariant.shipments, sample: [`${plan.invariant.shipments} = ${plan.invariant.sales} + ${plan.invariant.refusals}`] });
   checks.push({ name: 'NO_DUPLICATE_DATE_NMID', pass: true, count: 0, sample: [] });
 

@@ -2,14 +2,14 @@ import { describe, it, expect } from 'vitest';
 import { unitkaLoader, readSnapshot, type UnitkaDeps } from '../src/loaders/unitka/index.js';
 import { evaluate } from '../src/loaders/unitka/qa.js';
 import { buildPlan } from '../src/loaders/unitka/plan.js';
-import type { SheetsGateway, WriteRange, FormatWrite, FormatGrid } from '../src/loaders/unitka/sheets.js';
+import type { SheetsGateway, WriteRange, FormatWrite, FormatGrid, SheetMeta, SheetStructure } from '../src/loaders/unitka/sheets.js';
 import type { QueryRunner } from '../src/loaders/mart/bq.js';
-import { GRID, OFFSET, colA1, isoToSerial, dayRow, type CellValue } from '../src/loaders/unitka/model.js';
+import { OFFSET, colA1, isoToSerial, type CellValue } from '../src/loaders/unitka/model.js';
 import { LoaderError } from '../src/errors.js';
 import type { LoaderContext } from '../src/loaders/types.js';
 import type { Config } from '../src/config.js';
 import type { Logger } from '../src/logging.js';
-import { snapshot, facts, logistics, commission, LCD, NM_IDS, BLACK, DIM, AUTO_BG } from './unitka_fixture.js';
+import { snapshot, facts, logistics, commission, LCD, NM_IDS, BLACK, DIM, AUTO_BG, GRID, SEPT, dayRow } from './unitka_fixture.js';
 
 const silentLogger = { info() {}, warn() {}, error() {}, debug() {}, child() { return silentLogger; } } as unknown as Logger;
 const mkConfig = (environment: 'shadow' | 'prod', writeEnabled: boolean): Config => ({
@@ -94,9 +94,19 @@ class FakeRunner implements QueryRunner {
 class FakeSheets implements SheetsGateway {
   writes: WriteRange[][] = [];
   constructor(public snap = snapshot(), public readonly readonlyScope = false, private readonly o: { breakSummaryAfterWrite?: boolean } = {}) {}
+  structureWrites: unknown[][] = [];
+  async readSheetMeta(): Promise<SheetMeta> { return { sheetId: this.snap.sheetId, rowCount: this.snap.geometry.spacerRow, columnCount: this.snap.width, anchorCol: this.snap.anchorCol }; }
+  async readSheetStructure(): Promise<SheetStructure> { throw new LoaderError('суточный Engine не читает структуру листа', 'TEST_FORBIDDEN'); }
+  async readRowFormats(): Promise<Map<number, Array<Record<string, unknown> | null>>> { throw new LoaderError('суточный Engine не читает форматы строк', 'TEST_FORBIDDEN'); }
+  async structureWrite(requests: Record<string, unknown>[]): Promise<number> { this.structureWrites.push(requests); throw new LoaderError('суточный Engine не должен вызывать structureWrite', 'TEST_FORBIDDEN'); }
   async readValues(ranges: string[]): Promise<CellValue[][][]> {
     return ranges.map((r) => {
       if (r === 'LAST_CLOSED_DATE') return [[this.snap.namedLcd]];
+      const colA = /!A1:A(\d+)$/.exec(r);
+      if (colA) {
+        const top = this.snap.geometry.topRow;
+        return Array.from({ length: Number(colA[1]) }, (_, i) => [this.snap.grid[i + 1 - top]?.[0] ?? null]);
+      }
       if (r.includes(`${colA1(GRID.MIR)}${GRID.HDR}`)) return [[this.snap.mirrorLcd], [this.snap.mirrorRev]];
       if (/!R45$/.test(r)) return [[240]];
       return this.snap.grid;
@@ -252,7 +262,7 @@ describe('qa.evaluate', () => {
   });
   it('readSnapshot читает три диапазона и формулы', async () => {
     const sheets = new FakeSheets(snapshot());
-    const s = await readSnapshot(sheets, 'WB_Юнит_2025');
+    const s = await readSnapshot(sheets, 'WB_Юнит_2025', SEPT, GRID.NC, GRID.MIR);
     expect(s.grid).toHaveLength(GRID.MTD - GRID.TOP + 1);
     expect(s.namedLcd).toBe(isoToSerial(LCD));
     expect(s.mirrorRev).toBe(32.5256);

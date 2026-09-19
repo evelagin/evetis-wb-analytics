@@ -83,6 +83,21 @@ export interface Config {
    * а прогон успевает записать журнал до таймаута Job'а (600 с).
    */
   unitkaIntegrityBudgetMs: number;
+  // ── UNITKA CALENDAR V2 (Phase 2B) — мягкий разбор, как у Guard. ──
+  /** Окно предпроверки: за сколько дней до конца месяца LCD предупреждать NEXT_MONTH_SECTION_MISSING (0–15, по умолчанию 5). */
+  unitkaMonthPrepWindowDays: number;
+  /** unitka-month-prep: целевой месяц YYYY-MM; пусто — следующий за месяцем LCD. */
+  unitkaMonthPrepTarget: string;
+  /**
+   * unitka-month-prep: структурная запись в книгу. ТОЛЬКО ENVIRONMENT=prod И UNITKA_MONTH_PREP_WRITE=1
+   * (отдельно от UNITKA_WRITE_ENABLED). По умолчанию — только план (DRY), без записи.
+   */
+  unitkaMonthPrepWrite: boolean;
+  /**
+   * unitka-month-prep: дописывание нового SKU в УЖЕ СОЗДАННЫЙ текущий месяц (вставка колонок посреди месяца). Отдельное
+   * явное разрешение поверх UNITKA_MONTH_PREP_WRITE: UNITKA_MONTH_PREP_APPEND=1. Без него — только план в журнале.
+   */
+  unitkaMonthPrepAppend: boolean;
 }
 
 type Env = Record<string, string | undefined>;
@@ -118,6 +133,17 @@ function integrityConfig(env: Env): Pick<Config, 'unitkaIntegrityMode' | 'unitka
     unitkaIntegrityModeInvalid: raw === '' || known ? null : raw,
     unitkaStorageDueMsk: /^([01]\d|2[0-3]):[0-5]\d$/.test(due) ? due : '12:15',
     unitkaIntegrityBudgetMs: budget,
+  };
+}
+
+/** Calendar V2: мягкий разбор. Никогда не бросает ConfigError — опечатка не роняет суточный Engine. */
+function calendarConfig(env: Env): Pick<Config, 'unitkaMonthPrepWindowDays' | 'unitkaMonthPrepTarget' | 'unitkaMonthPrepWrite' | 'unitkaMonthPrepAppend'> {
+  const w = Number((env.UNITKA_MONTH_PREP_WINDOW_DAYS ?? '').trim());
+  return {
+    unitkaMonthPrepWindowDays: (env.UNITKA_MONTH_PREP_WINDOW_DAYS ?? '').trim() !== '' && Number.isInteger(w) && w >= 0 && w <= 15 ? w : 5,
+    unitkaMonthPrepTarget: (env.UNITKA_MONTH_PREP_TARGET ?? '').trim(),
+    unitkaMonthPrepWrite: (env.UNITKA_MONTH_PREP_WRITE ?? '').trim() === '1',
+    unitkaMonthPrepAppend: (env.UNITKA_MONTH_PREP_APPEND ?? '').trim() === '1',
   };
 }
 
@@ -164,5 +190,6 @@ export function loadConfig(env: Env = process.env): Config {
     unitkaMaxLagDays: intOpt(env, 'UNITKA_MAX_LAG_DAYS', 2),
     unitkaWriteEnabled: opt(env, 'UNITKA_WRITE_ENABLED', '0') === '1',
     ...integrityConfig(env),
+    ...calendarConfig(env),
   };
 }

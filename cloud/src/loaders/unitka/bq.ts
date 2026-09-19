@@ -268,6 +268,18 @@ export class UnitkaBq {
     };
   }
 
+  /**
+   * Calendar V2 (Phase 2B): популяция активных SKU WB для подготовки месяца — то же определение, что
+   * в V_UNITKA_DAILY_FACT (REF_SKU_MASTER: marketplace='WB' AND active). Только чтение wb_raw.
+   */
+  async activeSkus(): Promise<Array<{ nmId: number; name: string | null }>> {
+    const rows = await this.runner.query(
+      `SELECT nm_id, product_name_short FROM ${this.fqn('wb_raw', 'REF_SKU_MASTER')}
+       WHERE marketplace = 'WB' AND active ORDER BY nm_id`,
+    );
+    return rows.map((r) => ({ nmId: numReq(r.nm_id, 'nm_id'), name: str(r.product_name_short) }));
+  }
+
   /** Журнал прогона — одна строка на прогон, append-only INSERT. */
   async insertRun(rec: EngineRunRecord): Promise<void> {
     const t = this.fqn(this.opsDataset, this.runsTable);
