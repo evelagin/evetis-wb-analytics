@@ -154,16 +154,16 @@ def by_name(report):
 
 @pytest.fixture
 def root(tmp_path):
-    """The captured_live baseline these tests were written against: one managed dataset (ozon_mart), every
-    object captured. Git-first objects that are still pending_deploy in the real repository (SCALE 1: two in
-    ozon_mart plus the evetis_mart dataset) are removed from the COPY — pending behaviour is exercised here
-    by make_pending(), not by whatever happens to be awaiting deployment in the repository today."""
+    """The R2A baseline these tests were written against: one managed dataset (ozon_mart) holding exactly the
+    eleven objects whose hashes are pinned in R2A_BODY_SHA256. Everything added to the real repository later
+    (SCALE 1: two more ozon_mart objects and the evetis_mart dataset, captured 2026-09-20) is removed from
+    the COPY — pending behaviour is exercised here by make_pending(), not by the repository's current state."""
     shutil.copytree(REPO / "sql", tmp_path / "sql")
     for ds_dir in sorted((tmp_path / "sql/current").iterdir()):
         if ds_dir.is_dir() and ds_dir.name != DS:
             shutil.rmtree(ds_dir)
     man = manifest(tmp_path)
-    for o in [o for o in man["objects"] if o["sync_state"] != "captured_live"]:
+    for o in [o for o in man["objects"] if o["object_name"] not in R2A_BODY_SHA256]:
         (tmp_path / o["canonical_path"]).unlink()
         man["objects"].remove(o)
         man["rebuild_order"].remove(o["object_name"])

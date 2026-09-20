@@ -80,7 +80,8 @@
   `canonical_schema == live_schema_at_capture`, `canonical_schema_verification = bigquery_verified`.
   11 объектов `ozon_mart`, снятых в R2A, — в этом состоянии (R2A доказал точный паритет). Объекты SCALE 1
   (`ozon_mart.V_OZON_COMMISSION_RECOVERY`, `ozon_mart.FCT_OZON_SKU_PNL_DAILY`, `evetis_mart.FACT_SKU_DAILY`) —
-  `pending_deploy` до развёртывания владельцем; см. `docs/SCALE1_FACT_SKU_DAILY_2026-09-20.md`.
+  тоже: развёрнуты 2026-09-20 из main `2260c73`, сняты R2C (`PENDING_DEPLOYED_MATCH`); см.
+  `docs/SCALE1_FACT_SKU_DAILY_2026-09-20.md` §8.
 - **`pending_deploy`** — Git-first изменение, намеренно опережающее production. Канонические тело,
   схема и описание могут отличаться от снимка. Поля `live_*_at_capture` — историческое
   доказательство последнего снятия: их **нельзя** переписывать, делая вид, что production уже
