@@ -83,6 +83,16 @@ export interface Config {
    * а прогон успевает записать журнал до таймаута Job'а (600 с).
    */
   unitkaIntegrityBudgetMs: number;
+  /**
+   * UNITKA FINANCIAL INTEGRITY V1 — самовосстанавливающая сверка окна 35 дней через границы месяцев.
+   *   off     (по умолчанию) — поведение Engine 2.0.0: только месяц LCD, старый подготовленный слой;
+   *   observe — запись как при off; дополнительно читается слой сверки и в журнал пишется, что изменил бы write;
+   *   write   — факты месяца LCD и прошлых месяцев окна берутся из слоя сверки (цена с происхождением),
+   *             исторические поправки пишутся в лист и в журнал ремонта.
+   * Разбирается МЯГКО: опечатка = off + предупреждение (как у Guard).
+   */
+  unitkaReconcileMode: 'off' | 'observe' | 'write';
+  unitkaReconcileModeInvalid: string | null;
   // ── UNITKA CALENDAR V2 (Phase 2B) — мягкий разбор, как у Guard. ──
   /** Окно предпроверки: за сколько дней до конца месяца LCD предупреждать NEXT_MONTH_SECTION_MISSING (0–15, по умолчанию 5). */
   unitkaMonthPrepWindowDays: number;
@@ -134,7 +144,9 @@ function intOpt(env: Env, name: string, fallback: number): number {
 }
 
 /** Integrity Guard: мягкий разбор. Никогда не бросает ConfigError. */
-function integrityConfig(env: Env): Pick<Config, 'unitkaIntegrityMode' | 'unitkaIntegrityModeInvalid' | 'unitkaStorageDueMsk' | 'unitkaIntegrityBudgetMs'> {
+function integrityConfig(env: Env): Pick<Config, 'unitkaIntegrityMode' | 'unitkaIntegrityModeInvalid' | 'unitkaStorageDueMsk' | 'unitkaIntegrityBudgetMs' | 'unitkaReconcileMode' | 'unitkaReconcileModeInvalid'> {
+  const recRaw = (env.UNITKA_RECONCILE_MODE ?? '').trim().toLowerCase();
+  const recKnown = recRaw === 'off' || recRaw === 'observe' || recRaw === 'write';
   const raw = (env.UNITKA_INTEGRITY_MODE ?? '').trim().toLowerCase();
   const known = raw === 'off' || raw === 'observe' || raw === 'enforce';
   const due = (env.UNITKA_STORAGE_DUE_MSK ?? '').trim();
@@ -145,6 +157,8 @@ function integrityConfig(env: Env): Pick<Config, 'unitkaIntegrityMode' | 'unitka
     unitkaIntegrityModeInvalid: raw === '' || known ? null : raw,
     unitkaStorageDueMsk: /^([01]\d|2[0-3]):[0-5]\d$/.test(due) ? due : '12:15',
     unitkaIntegrityBudgetMs: budget,
+    unitkaReconcileMode: recKnown ? (recRaw as 'off' | 'observe' | 'write') : 'off',
+    unitkaReconcileModeInvalid: recRaw === '' || recKnown ? null : recRaw,
   };
 }
 

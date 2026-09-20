@@ -22,7 +22,47 @@ import {
 
 /* ───────────────────────── типы ───────────────────────── */
 
-export type IntegritySeverity = 'INFO' | 'EXPECTED_DELAY' | 'WARNING' | 'MANUAL_REQUIRED' | 'ERROR';
+export type IntegritySeverity = 'INFO' | 'NOT_AVAILABLE' | 'EXPECTED_DELAY' | 'WARNING' | 'MANUAL_REQUIRED' | 'ERROR';
+
+/**
+ * Состояние контракта финансовой полноты (Financial Integrity V1). Состояния НЕ схлопываются в один класс:
+ *   DATA_ERROR      — автоматический источник дал неполные/противоречивые данные; строка может быть фин. недействительна;
+ *   LATE_DATA       — источник ещё в принятом окне запаздывания; цена не выдумывается, строка — не ошибка;
+ *   MANUAL_REQUIRED — ждём ручного ввода владельца (СПП); это НЕ дефект источника;
+ *   NOT_AVAILABLE   — источника за дату нет и не будет (снимок остатков задним числом не получить);
+ *   WARNING / INFO  — к сведению.
+ * NOT_AVAILABLE и MANUAL_REQUIRED не делают систему «финансово сломанной».
+ */
+export type ContractState = 'DATA_ERROR' | 'LATE_DATA' | 'MANUAL_REQUIRED' | 'NOT_AVAILABLE' | 'WARNING' | 'INFO';
+
+export function contractState(severity: IntegritySeverity): ContractState {
+  switch (severity) {
+    case 'ERROR': return 'DATA_ERROR';
+    case 'EXPECTED_DELAY': return 'LATE_DATA';
+    case 'MANUAL_REQUIRED': return 'MANUAL_REQUIRED';
+    case 'NOT_AVAILABLE': return 'NOT_AVAILABLE';
+    case 'WARNING': return 'WARNING';
+    default: return 'INFO';
+  }
+}
+
+/**
+ * ЗРЕЛОСТЬ ИСТОЧНИКОВ — из замеров, а не из головы (аудит 19.09.2026, решение владельца 20.09.2026 №2).
+ *
+ * Orders API ОТСТАЁТ от воронки (FUNNEL_GT_FACT, ONLY_FUNNEL). Отстающий источник — statistics API: заказ появляется
+ * в нём с опозданием. Замер по RAW_WB_ORDERS, 907 srid за август–сентябрь 2026: p90 ≈ 4,6 дня (авг) / 2,1 дня (сен),
+ * p99 = 13,9 дня, максимум 21,0 дня; позже 14 дней впервые появился 1,0 % заказов (9 из 907), позже 21 дня — ни один.
+ * Порог 14 дней = p99. Сторона выбрана fail-closed: 1 % опоздавших даёт временный DATA_ERROR, который снимется сам —
+ * окно сверки 35 дней длиннее максимума 21 день.
+ *
+ * Orders API ОПЕРЕЖАЕТ воронку (FACT_GT_FUNNEL, ONLY_FACT). Отстающим источником была бы воронка, но она не
+ * запаздывает: 0 изменений на 1 575 значениях SKU-дней при 7–9 ежедневных перечитываниях. Окна запаздывания нет —
+ * порог 0 дней: такое расхождение никогда не LATE_DATA. Причина по замеру 04–18.09.2026: воронка НЕ считает заказ,
+ * отменённый в день заказа (4 случая из 4; на 91 SKU-дне без таких отмен счётчики равны; отмены следующих дней
+ * воронка не вычитает — 5 из 5).
+ */
+export const ORDERS_API_MATURITY_DAYS = 14;
+export const FUNNEL_MATURITY_DAYS = 0;
 export type IntegrityStatus = 'PASS' | 'PASS_WITH_WARNINGS' | 'MANUAL_REQUIRED' | 'DATA_ERROR' | 'SYSTEM_ERROR';
 export type IntegrityMode = 'off' | 'observe' | 'enforce';
 export type EvaluationPhase = 'PRE_WRITE' | 'POST_WRITE';
@@ -30,6 +70,10 @@ export type EvaluationPhase = 'PRE_WRITE' | 'POST_WRITE';
 export type IntegrityCode =
   | 'PRICE_MISSING_WITH_ORDERS'
   | 'PRICE_MISSING_NO_ORDERS'
+  | 'PRICE_ZERO_WITH_ORDERS'
+  | 'PRICE_FUNNEL_FALLBACK'
+  | 'PRICE_NOT_ON_SHEET'
+  | 'STOCK_SNAPSHOT_MISSING'
   | 'COGS_ZERO_OR_MISSING'
   | 'COGS_SOURCE_MISMATCH'
   | 'SKU_WITHOUT_BLOCK'
@@ -64,6 +108,13 @@ export interface IntegrityFactsRow {
   storageDateCovered: boolean;
   priceState: PriceState;
   divergenceClass: DivergenceClass;
+  /** Слой сверки (V_UNITKA_RECON_INTEGRITY); в старой вью этих полей нет. */
+  priceSource?: 'ORDERS_API' | 'FUNNEL_FALLBACK' | null;
+  funnelOrdersSum?: number | null;
+  /** Заказы Orders API, отменённые в день заказа (cancel_dt = order_date). Воронка их в orders_count не считает. */
+  sameDayCancelQty?: number | null;
+  stockDateCovered?: boolean;
+  skuActive?: boolean;
 }
 
 /** Строка wb_mart.V_UNITKA_COGS_CANONICAL. canonicalCogs NULL ⇔ интервалов не ровно один. */
@@ -138,6 +189,16 @@ export interface IntegrityIssue {
   /** Блокирует доверие к строке/покрытию (НЕ блокирует запись фактов). */
   blocking: boolean;
   financialInvalid: boolean;
+  /**
+   * Для issue уровня SKU (day = null): даты SKU-дней, которые issue делает финансово недействительными
+   * (COGS: дни с заказами/отменами). Для issue уровня дня не заполняется.
+   */
+  invalidDays?: string[];
+  /**
+   * Ремонт доступен, но ещё НЕ записан: источник значение знает, ячейка листа — нет. Пара «repair_available = true,
+   * sheet_financial_valid = false» держится, пока ремонт реально не окажется в листе (режим observe; отказ секции).
+   */
+  repairAvailable?: boolean;
   source: string;
   sourceValue: string | null;
   diagnosticValue: string | null;
@@ -278,6 +339,28 @@ export interface IntegrityInputs {
   refValues: Readonly<Record<string, CellValue>>;
   now: Date;
   storageDueMinutes: number;
+  /**
+   * Сверка окна (Financial Integrity V1): секция прошлого месяца оценивается только за дни окна. По умолчанию —
+   * весь месяц секции до LCD (поведение Guard V1). Даты — YYYY-MM-DD, границы включительно.
+   */
+  fromDay?: string;
+  toDay?: string;
+  /**
+   * Включает правило PRICE_NOT_ON_SHEET (действительность определяет лист). По умолчанию выключено — поведение Guard V1.
+   * pendingWrite — ячейки, которые ЭТОТ прогон собирается записать (фаза PRE_WRITE, SHADOW): новый закрытый день до
+   * записи законно пуст, и дефектом это не считается. После записи (POST_WRITE) ожидающих ячеек нет.
+   */
+  checkSheetCells?: boolean;
+  pendingWrite?: (row: number, col: number) => boolean;
+}
+
+/** Дни секции под оценкой: [max(monthStart, fromDay), min(lcd, toDay)] → индекс дня месяца и дата. */
+export function sectionDays(inp: { monthStart: string; lcd: string; fromDay?: string; toDay?: string }): Array<{ i: number; day: string }> {
+  const first = inp.fromDay !== undefined && inp.fromDay > inp.monthStart ? inp.fromDay : inp.monthStart;
+  const last = inp.toDay !== undefined && inp.toDay < inp.lcd ? inp.toDay : inp.lcd;
+  const out: Array<{ i: number; day: string }> = [];
+  for (let day = first; day <= last; day = addDaysIso(day, 1)) out.push({ i: daysBetween(inp.monthStart, day), day });
+  return out;
 }
 
 const fmt = (v: number | null | undefined): string | null => (v === null || v === undefined ? null : String(v));
@@ -292,8 +375,28 @@ export function priceRules(facts: readonly IntegrityFactsRow[], blockNm: Readonl
   const out: IntegrityIssue[] = [];
   for (const r of facts) {
     if (r.day > lcd || !blockNm.has(r.nmId)) continue;
-    if (r.factualOrderPrice !== null) continue; // PRESENT; 0 ₽ Engine не пишет никогда
     const activity = positive(r.ordersUnitka) || positive(r.cancelsUnitka);
+    if (r.factualOrderPrice !== null) {
+      if (activity && !(r.factualOrderPrice > 0)) {
+        out.push(issue({
+          nmId: r.nmId, day: r.day, field: 'price', code: 'PRICE_ZERO_WITH_ORDERS', severity: 'ERROR',
+          blocking: true, financialInvalid: true, source: 'V_UNITKA_INTEGRITY.factual_order_price',
+          sourceValue: `price=${r.factualOrderPrice}; Q=${fmt(r.ordersUnitka)}; price_source=${r.priceSource ?? 'n/a'}`, diagnosticValue: null,
+          dependentFields: [...PRICE_DEPENDENT_FIELDS],
+          message: `${r.day} ${r.nmId}: цена заказа ${r.factualOrderPrice} при наличии заказов — финансовые поля строки недостоверны`,
+        }));
+      } else if (r.priceSource === 'FUNNEL_FALLBACK') {
+        // Не дефект: цена разрешена по доказанному второму источнику. Issue нужна для наблюдаемости происхождения.
+        out.push(issue({
+          nmId: r.nmId, day: r.day, field: 'price', code: 'PRICE_FUNNEL_FALLBACK', severity: 'INFO',
+          blocking: false, financialInvalid: false, source: 'V_WB_FUNNEL_DAILY.orders_sum_rub / orders_count',
+          sourceValue: `price=${r.factualOrderPrice}; provenance=FUNNEL_FALLBACK; funnel_orders=${fmt(r.ordersFunnel)}; funnel_sum=${fmt(r.funnelOrdersSum) ?? 'NULL'}; fact_order_qty=${fmt(r.factOrderQty) ?? '0'}`,
+          diagnosticValue: null, dependentFields: [],
+          message: `${r.day} ${r.nmId}: Orders API заказ не отдал; цена взята из суммы заказов той же строки воронки`,
+        }));
+      }
+      continue;
+    }
     if (activity) {
       out.push(issue({
         nmId: r.nmId, day: r.day, field: 'price', code: 'PRICE_MISSING_WITH_ORDERS', severity: 'ERROR',
@@ -336,30 +439,104 @@ export function storageRules(facts: readonly IntegrityFactsRow[], lcd: string, n
   return out;
 }
 
-/** Правило 9: расхождение воронки и FACT_ORDERS. INFO по умолчанию; WARNING при ONLY_* или |Δ| ≥ 2. */
-export function divergenceRules(facts: readonly IntegrityFactsRow[], lcd: string): IntegrityIssue[] {
+/** Сумма воронки подтверждает деньги строки: |orders_sum_rub − Q × цена| в пределах округления воронки (0,5 ₽ на заказ). */
+export function amountConfirmedByFunnel(r: Pick<IntegrityFactsRow, 'ordersUnitka' | 'factualOrderPrice' | 'funnelOrdersSum' | 'ordersFunnel'>): boolean {
+  if (r.funnelOrdersSum === null || r.funnelOrdersSum === undefined || r.ordersFunnel === null) return false;
+  const q = r.ordersUnitka ?? 0;
+  if (q === 0) return r.funnelOrdersSum === 0;
+  if (r.factualOrderPrice === null) return false;
+  return Math.abs(r.funnelOrdersSum - q * r.factualOrderPrice) <= 0.5 * q + 0.01;
+}
+
+/**
+ * Правило 9: расхождение счётчиков воронки и Orders API (решение владельца 20.09.2026 №2).
+ *
+ * Возраст сам по себе НИЧЕГО не доказывает: по истечении срока зрелости нерешённое расхождение — DATA_ERROR, а не WARNING.
+ * Цена при расхождении НЕ пересчитывается делением суммы воронки (запрещено) — расхождение это статус строки.
+ * Финансовые входы строки листа: Q = orders_count воронки (решение владельца 11.09), цена = Orders API, S = отмены
+ * Orders API по дате заказа.
+ *
+ *  A. Orders API отстаёт (FUNNEL_GT_FACT, ONLY_FUNNEL без fallback):
+ *     возраст ≤ 14 дней → LATE_DATA; строка действительна, только если деньги уже подтверждены (иначе — предварительно
+ *                          недействительна: financial_valid = false при состоянии LATE_DATA);
+ *     старше            → деньги подтверждены суммой воронки (|orders_sum_rub − Q × цена| ≤ 0,5 ₽ × Q) → WARNING:
+ *                          доказано, что выручка строки равна выручке источника, задающего Q; непришедший заказ шёл
+ *                          по той же цене. Не подтверждены → DATA_ERROR, financial_valid = false.
+ *  B. Orders API опережает (FACT_GT_FUNNEL, ONLY_FACT) → DATA_ERROR сразу: окна запаздывания у воронки нет, а строка
+ *     финансово затронута — S содержит отмену дня заказа, которую Q не содержит, и лист вычитает прибыль заказа,
+ *     которого в Q не было (объяснено: fact − same_day_cancel = funnel). Необъяснённая разница — тоже DATA_ERROR:
+ *     в Orders API есть реальные заказы, которых нет в Q.
+ *  ONLY_FUNNEL с доказанным fallback цены — не расхождение денег: INFO (происхождение — в PRICE_FUNNEL_FALLBACK).
+ *  NO_FUNNEL_ROW (XLSX-бэкфилл, счётчик Orders API) — INFO. Старая вью без суммы воронки — поведение Guard V1.
+ */
+export type DivergenceVerdict = 'LATE_DATA' | 'AMOUNT_CONFIRMED' | 'AMOUNT_NOT_CONFIRMED' | 'SAME_DAY_CANCEL_OUTSIDE_Q' | 'ORDERS_API_AHEAD_UNEXPLAINED';
+
+export function divergenceRules(facts: readonly IntegrityFactsRow[], lcd: string, now?: Date): IntegrityIssue[] {
   const out: IntegrityIssue[] = [];
+  const today = now ? moscowParts(now).date : null;
   for (const r of facts) {
     if (r.day > lcd || r.divergenceClass === 'EXACT') continue;
     const fq = r.factOrderQty ?? 0;
     const delta = r.ordersFunnel === null ? null : Math.abs(r.ordersFunnel - fq);
-    const warn = r.divergenceClass === 'ONLY_FUNNEL' || r.divergenceClass === 'ONLY_FACT' || (delta !== null && delta >= 2);
+    const recon = r.funnelOrdersSum !== undefined;
+    let severity: IntegritySeverity;
+    let invalid = false;
+    let verdict: DivergenceVerdict | null = null;
+    if (!recon || r.divergenceClass === 'NO_FUNNEL_ROW') {
+      severity = r.divergenceClass === 'ONLY_FUNNEL' || r.divergenceClass === 'ONLY_FACT' || (delta !== null && delta >= 2) ? 'WARNING' : 'INFO';
+      if (r.divergenceClass === 'NO_FUNNEL_ROW') severity = 'INFO';
+    } else if (r.divergenceClass === 'ONLY_FUNNEL' && r.priceSource === 'FUNNEL_FALLBACK') {
+      severity = 'INFO';
+    } else if (r.divergenceClass === 'FACT_GT_FUNNEL' || r.divergenceClass === 'ONLY_FACT') {
+      const same = r.sameDayCancelQty ?? 0;
+      verdict = same > 0 && fq - same === (r.ordersFunnel ?? 0) ? 'SAME_DAY_CANCEL_OUTSIDE_Q' : 'ORDERS_API_AHEAD_UNEXPLAINED';
+      severity = 'ERROR'; invalid = true;
+    } else {
+      const age = today === null ? Infinity : daysBetween(r.day, today);
+      const confirmed = amountConfirmedByFunnel(r);
+      if (age <= ORDERS_API_MATURITY_DAYS) { severity = 'EXPECTED_DELAY'; verdict = 'LATE_DATA'; invalid = !confirmed; }
+      else if (confirmed) { severity = 'WARNING'; verdict = 'AMOUNT_CONFIRMED'; }
+      else { severity = 'ERROR'; verdict = 'AMOUNT_NOT_CONFIRMED'; invalid = true; }
+    }
+    const message = verdict === null
+      ? `${r.day} ${r.nmId}: воронка и FACT_ORDERS расходятся (${r.divergenceClass})${r.divergenceClass === 'ONLY_FUNNEL' && recon ? '; цена разрешена по сумме воронки' : '; семантика не доказана — не ошибка'}`
+      : verdict === 'LATE_DATA'
+        ? `${r.day} ${r.nmId}: счётчики расходятся (${r.divergenceClass}) — Orders API ещё в окне запаздывания (${ORDERS_API_MATURITY_DAYS} дн.); цена не пересчитывается${invalid ? '; деньги строки пока НЕ подтверждены суммой воронки — результат предварительный' : ''}`
+        : verdict === 'AMOUNT_CONFIRMED'
+          ? `${r.day} ${r.nmId}: Orders API так и не отдал часть заказов (${r.divergenceClass}), но выручка строки доказана суммой воронки — на финансовый результат не влияет`
+          : verdict === 'AMOUNT_NOT_CONFIRMED'
+            ? `${r.day} ${r.nmId}: счётчики расходятся (${r.divergenceClass}) дольше ${ORDERS_API_MATURITY_DAYS} дней, сумма воронки не подтверждает деньги строки — строка недостоверна`
+            : verdict === 'SAME_DAY_CANCEL_OUTSIDE_Q'
+              ? `${r.day} ${r.nmId}: воронка не считает заказ, отменённый в день заказа (${fmt(r.sameDayCancelQty)} шт.), а отмена в S есть — лист вычитает прибыль заказа, которого нет в Q; результат строки занижен`
+              : `${r.day} ${r.nmId}: в Orders API больше заказов, чем в воронке (${r.divergenceClass}), разница отменами дня заказа не объясняется — Q строки недостоверен`;
     out.push(issue({
-      nmId: r.nmId, day: r.day, field: 'orders', code: 'ORDERS_SOURCE_DIVERGENCE', severity: warn ? 'WARNING' : 'INFO',
-      blocking: false, financialInvalid: false, source: 'V_WB_FUNNEL_DAILY vs FACT_ORDERS',
-      sourceValue: `${r.divergenceClass}; funnel=${fmt(r.ordersFunnel) ?? 'NULL'}; fact_qty=${fmt(r.factOrderQty) ?? 'NULL'}`,
-      diagnosticValue: null, dependentFields: ['Q'],
-      message: `${r.day} ${r.nmId}: воронка и FACT_ORDERS расходятся (${r.divergenceClass}); семантика не доказана — не ошибка`,
+      nmId: r.nmId, day: r.day, field: 'orders', code: 'ORDERS_SOURCE_DIVERGENCE', severity,
+      blocking: severity === 'ERROR', financialInvalid: invalid, source: 'V_WB_FUNNEL_DAILY vs FACT_ORDERS',
+      sourceValue: `${r.divergenceClass}; funnel=${fmt(r.ordersFunnel) ?? 'NULL'}; fact_qty=${fmt(r.factOrderQty) ?? 'NULL'}${recon ? `; funnel_sum=${fmt(r.funnelOrdersSum) ?? 'NULL'}; price=${fmt(r.factualOrderPrice) ?? 'NULL'}; amount_confirmed=${amountConfirmedByFunnel(r)}; same_day_cancel=${fmt(r.sameDayCancelQty) ?? '0'}${verdict ? `; verdict=${verdict}` : ''}` : ''}`,
+      diagnosticValue: null, dependentFields: verdict === 'SAME_DAY_CANCEL_OUTSIDE_Q' ? ['Q', 'S', 'W', 'V'] : ['Q'],
+      message,
     }));
   }
   return out;
+}
+
+/** Остаток: дата без снимка остатков — NOT_AVAILABLE (снимок задним числом не получить), одна issue на дату. */
+export function stockRules(facts: readonly IntegrityFactsRow[], lcd: string): IntegrityIssue[] {
+  const uncovered = new Set<string>();
+  for (const r of facts) if (r.day <= lcd && r.stockDateCovered === false) uncovered.add(r.day);
+  return [...uncovered].sort().map((day) => issue({
+    nmId: null, day, field: 'stock', code: 'STOCK_SNAPSHOT_MISSING', severity: 'NOT_AVAILABLE',
+    blocking: false, financialInvalid: false, source: 'FACT_STOCKS_SNAPSHOT (покрытие даты)',
+    sourceValue: 'date_not_covered', diagnosticValue: null, dependentFields: ['U'],
+    message: `${day}: снимка остатков за дату нет — оборачиваемость пуста; прибыль не затронута`,
+  }));
 }
 
 /** Правило 5: активные SKU источника без блока в листе. */
 export function coverageRules(facts: readonly IntegrityFactsRow[], blocks: readonly Block[], lcd: string): IntegrityIssue[] {
   const blockNm = new Set(blocks.map((b) => b.nmId));
   const names = new Map<number, string | null>();
-  for (const r of facts) if (!names.has(r.nmId)) names.set(r.nmId, r.productName);
+  for (const r of facts) if (r.skuActive !== false && !names.has(r.nmId)) names.set(r.nmId, r.productName);
   return [...names.keys()].filter((nm) => !blockNm.has(nm)).sort((a, b) => a - b).map((nm) => issue({
     nmId: nm, day: null, field: 'block', code: 'SKU_WITHOUT_BLOCK', severity: 'ERROR',
     blocking: true, financialInvalid: false, source: 'V_UNITKA_INTEGRITY (активные REF_SKU_MASTER) vs строка блоков листа',
@@ -370,14 +547,13 @@ export function coverageRules(facts: readonly IntegrityFactsRow[], blocks: reado
 }
 
 /** Правило 7: СПП. Только закрытый день, Q > 0 (факт Engine), ячейка AB действительно пуста. 0 = заполнено. */
-export function sppRules(inp: Pick<IntegrityInputs, 'facts' | 'blocks' | 'lcd' | 'monthStart' | 'firstDailyRow' | 'cellAt'>): IntegrityIssue[] {
+export function sppRules(inp: Pick<IntegrityInputs, 'facts' | 'blocks' | 'lcd' | 'monthStart' | 'firstDailyRow' | 'cellAt' | 'fromDay' | 'toDay'>): IntegrityIssue[] {
   const orders = new Map<string, number | null>();
   for (const r of inp.facts) orders.set(`${r.nmId}|${r.day}`, r.ordersUnitka);
-  const closedDays = daysBetween(inp.monthStart, inp.lcd) + 1;
+  const days = sectionDays(inp);
   const out: IntegrityIssue[] = [];
   for (const b of inp.blocks) {
-    for (let i = 0; i < closedDays; i++) {
-      const day = addDaysIso(inp.monthStart, i);
+    for (const { i, day } of days) {
       if (!positive(orders.get(`${b.nmId}|${day}`))) continue;
       const row = inp.firstDailyRow + i;
       const col = b.start + OFFSET.spp;
@@ -388,6 +564,40 @@ export function sppRules(inp: Pick<IntegrityInputs, 'facts' | 'blocks' | 'lcd' |
         blocking: false, financialInvalid: false, source: `SHEET:${colA1(col)}${row}`,
         sourceValue: 'blank', diagnosticValue: null, dependentFields: [...SPP_DEPENDENT_FIELDS],
         message: `${day} ${b.nmId}: заказы есть, СПП не введена — ДРР и цена с СПП неполны (прибыль не затронута)`,
+      }));
+    }
+  }
+  return out;
+}
+
+/**
+ * Цена есть в источнике, но НЕ в ячейке листа. Действительность SKU-дня определяет ЛИСТ, а не источник: пустая цена
+ * при заказах = заказ посчитан убытком (логистика + COGS), что бы ни знал подготовленный слой. Случаи: режим сверки
+ * observe (цена по fallback воронки разрешена, но не записывается); прошлая секция окна, которую сверка не смогла
+ * править (отказ секции, блок пропущен). После записи в режиме write правило молчит — ячейку заполняет сверка.
+ * До записи (PRE_WRITE, SHADOW) ячейки из плана этого прогона пропускаются: они будут записаны, это не дефект.
+ * Пока правило срабатывает, строка говорит: repair_available = true, sheet_financial_valid = false.
+ * Запись Guard не блокирует (enforceGate реагирует только на сбой самого Guard), поэтому ремонту правило не мешает.
+ */
+export function priceCellRules(inp: Pick<IntegrityInputs, 'facts' | 'blocks' | 'lcd' | 'monthStart' | 'firstDailyRow' | 'cellAt' | 'fromDay' | 'toDay' | 'pendingWrite'>): IntegrityIssue[] {
+  const byKey = new Map<string, IntegrityFactsRow>();
+  for (const r of inp.facts) byKey.set(`${r.nmId}|${r.day}`, r);
+  const out: IntegrityIssue[] = [];
+  for (const b of inp.blocks) {
+    for (const { i, day } of sectionDays(inp)) {
+      const r = byKey.get(`${b.nmId}|${day}`);
+      if (!r || !positive(r.ordersUnitka) || r.factualOrderPrice === null || !(r.factualOrderPrice > 0)) continue;
+      const row = inp.firstDailyRow + i;
+      const col = b.start + OFFSET.price;
+      const v = inp.cellAt(row, col);
+      if (typeof v === 'number' && v > 0) continue;
+      if (inp.pendingWrite?.(row, col)) continue;                 // прогон сам запишет эту ячейку
+      out.push(issue({
+        nmId: b.nmId, day, field: 'price', code: 'PRICE_NOT_ON_SHEET', severity: 'ERROR',
+        blocking: true, financialInvalid: true, repairAvailable: true, source: `SHEET:${colA1(col)}${row}`,
+        sourceValue: `cell=${isEmpty(v) ? 'blank' : String(v)}; source_price=${r.factualOrderPrice}; provenance=${r.priceSource ?? 'ORDERS_API'}; Q=${fmt(r.ordersUnitka)}`,
+        diagnosticValue: 'repair_available=true; sheet_financial_valid=false', dependentFields: [...PRICE_DEPENDENT_FIELDS],
+        message: `${day} ${b.nmId}: источник даёт цену ${r.factualOrderPrice} (${r.priceSource ?? 'ORDERS_API'}), но в ячейке листа цены нет — финансовый результат дня в листе недействителен, пока сверка не запишет цену`,
       }));
     }
   }
@@ -421,15 +631,14 @@ export function cogsRules(inp: IntegrityInputs): IntegrityIssue[] {
       (activeDays.get(r.nmId) ?? activeDays.set(r.nmId, []).get(r.nmId)!).push(r.day);
     }
   }
-  const closedDays = daysBetween(inp.monthStart, inp.lcd) + 1;
+  const days = sectionDays(inp);
   const out: IntegrityIssue[] = [];
   for (const b of inp.blocks) {
     const aiCol = b.start + OFFSET.unitProfit;
     const sheetVals = new Map<string, { value: number | null; text: string }>();
     const problems: string[] = [];
     const canonVals = new Set<string>();
-    for (let i = 0; i < closedDays; i++) {
-      const day = addDaysIso(inp.monthStart, i);
+    for (const { i, day } of days) {
       const row = inp.firstDailyRow + i;
       const t = parseCogsTerm(inp.formulaAt(row, aiCol), b, row);
       let value: number | null = null;
@@ -455,6 +664,7 @@ export function cogsRules(inp: IntegrityInputs): IntegrityIssue[] {
       out.push(issue({
         nmId: b.nmId, day: null, field: 'cogs', code: 'COGS_ZERO_OR_MISSING',
         severity: active ? 'ERROR' : 'WARNING', blocking: active, financialInvalid: active,
+        ...(active ? { invalidDays: [...(activeDays.get(b.nmId) ?? [])] } : {}),
         source: `SHEET:${colA1(aiCol)} + V_UNITKA_COGS_CANONICAL`,
         sourceValue: `sheet=${sheetDesc}; canonical=${canonDesc}; reasons=${[...new Set(problems.map((p) => p.split(':')[1]))].join(',')}`,
         diagnosticValue: active ? `active_days=${(activeDays.get(b.nmId) ?? []).join(',')}` : 'no_activity_this_month (latent)',
@@ -469,21 +679,30 @@ export function cogsRules(inp: IntegrityInputs): IntegrityIssue[] {
     // 15929.4999… и дал бы ложное расхождение.
     const tol = COGS_TOLERANCE_RUB + 1e-9;
     const mism: string[] = [];
-    for (let i = 0; i < closedDays; i++) {
-      const day = addDaysIso(inp.monthStart, i);
+    const mismDays: string[] = [];
+    for (const { i, day } of days) {
       const row = inp.firstDailyRow + i;
       const t = parseCogsTerm(inp.formulaAt(row, aiCol), b, row);
       const value = t.kind === 'literal' ? t.value : asNumber(inp.refValues[(t as { ref: string }).ref]);
       const cv = canon.get(`${b.nmId}|${day}`)!.canonicalCogs as number;
-      if (!(Math.abs(value - cv) <= tol)) mism.push(`${day}:${value}≠${cv}`);
+      if (!(Math.abs(value - cv) <= tol)) { mism.push(`${day}:${value}≠${cv}`); mismDays.push(day); }
     }
     if (mism.length) {
+      // Решение владельца (Financial Integrity V1): SKU-день с финансовой активностью, у которого COGS листа ≠
+      // канону на дату, — ERROR и фин. недействителен (прибыль посчитана на неверной базе). Без активности в дни
+      // расхождения — латентно, WARNING.
+      const activeSet = new Set(activeDays.get(b.nmId) ?? []);
+      const invalidDays = mismDays.filter((d) => activeSet.has(d));
+      const hit = invalidDays.length > 0;
       out.push(issue({
-        nmId: b.nmId, day: null, field: 'cogs', code: 'COGS_SOURCE_MISMATCH', severity: 'WARNING',
-        blocking: false, financialInvalid: false, source: `SHEET:${colA1(aiCol)} + V_UNITKA_COGS_CANONICAL`,
-        sourceValue: `sheet=${sheetDesc}; canonical=${canonDesc}; days=${mism.length}`,
+        nmId: b.nmId, day: null, field: 'cogs', code: 'COGS_SOURCE_MISMATCH', severity: hit ? 'ERROR' : 'WARNING',
+        blocking: hit, financialInvalid: hit, ...(hit ? { invalidDays } : {}),
+        source: `SHEET:${colA1(aiCol)} + V_UNITKA_COGS_CANONICAL`,
+        sourceValue: `sheet=${sheetDesc}; canonical=${canonDesc}; days=${mism.length}; days_with_activity=${invalidDays.length}`,
         diagnosticValue: mism.slice(0, 3).join('; '), dependentFields: [...COGS_DEPENDENT_FIELDS],
-        message: `${b.nmId}: COGS в формуле AI (${sheetDesc}) ≠ канону (${canonDesc}) — прибыль посчитана на неверной базе`,
+        message: hit
+          ? `${b.nmId}: COGS в формуле AI (${sheetDesc}) ≠ канону на дату (${canonDesc}) в ${invalidDays.length} дн. с заказами — прибыль этих строк недостоверна`
+          : `${b.nmId}: COGS в формуле AI (${sheetDesc}) ≠ канону (${canonDesc}); заказов в дни расхождения нет — латентно`,
       }));
     }
   }
@@ -495,11 +714,13 @@ export function evaluateIntegrity(inp: IntegrityInputs): IntegrityIssue[] {
   const blockNm = new Set(inp.blocks.map((b) => b.nmId));
   return [
     ...priceRules(inp.facts, blockNm, inp.lcd),
+    ...(inp.checkSheetCells ? priceCellRules(inp) : []),
     ...cogsRules(inp),
     ...coverageRules(inp.facts, inp.blocks, inp.lcd),
     ...sppRules(inp),
     ...storageRules(inp.facts, inp.lcd, inp.now, inp.storageDueMinutes),
-    ...divergenceRules(inp.facts, inp.lcd),
+    ...stockRules(inp.facts, inp.lcd),
+    ...divergenceRules(inp.facts, inp.lcd, inp.now),
   ];
 }
 
@@ -511,6 +732,19 @@ export interface IntegritySummary {
   evaluated_at: string;
   phase: EvaluationPhase;
   counts: Record<IntegritySeverity, number>;
+  /** Состояния контракта финансовой полноты — отдельными счётчиками (не схлопываются). */
+  states: Record<ContractState, number>;
+  /** SKU-дни с DATA_ERROR / LATE_DATA / MANUAL_REQUIRED (NOT_AVAILABLE и INFO сюда не входят). */
+  affected_sku_days: number;
+  /** SKU-дни, где ремонт доступен в источнике, но в лист ещё не записан (лист при этом фин. недействителен). */
+  repair_available_sku_days: number;
+  /** Самая старая нерешённая дата: среди DATA_ERROR и среди всех требующих действия состояний. */
+  oldest_unresolved_data_error: string | null;
+  oldest_unresolved: string | null;
+  /** Происхождение цены на SKU-днях с активностью. */
+  /** Только исключения (сводка строится по issue): цена по fallback воронки / не разрешена / есть в источнике, но не в листе.
+   *  Остальные SKU-дни с заказами — цена Orders API (основной источник), отдельной issue у них нет. */
+  price_provenance: { FUNNEL_FALLBACK: number; UNRESOLVED: number; NOT_ON_SHEET: number };
   financially_invalid_rows: number;
   issue_codes: Record<string, number>;
   /** Ключи ERROR-issue (≤ 50): «день/nm/код». INFO сюда не попадают никогда. */
@@ -528,20 +762,42 @@ export function summarize(
   issues: readonly IntegrityIssue[], mode: IntegrityMode, phase: EvaluationPhase, evaluatedAt: Date,
   cogs: Pick<CogsSnapshot, 'state' | 'publishedAt' | 'ageHours'>, subsystemFailure?: { code: string; message: string },
 ): IntegritySummary {
-  const counts: Record<IntegritySeverity, number> = { INFO: 0, EXPECTED_DELAY: 0, WARNING: 0, MANUAL_REQUIRED: 0, ERROR: 0 };
+  const counts: Record<IntegritySeverity, number> = { INFO: 0, NOT_AVAILABLE: 0, EXPECTED_DELAY: 0, WARNING: 0, MANUAL_REQUIRED: 0, ERROR: 0 };
+  const states: Record<ContractState, number> = { DATA_ERROR: 0, LATE_DATA: 0, MANUAL_REQUIRED: 0, NOT_AVAILABLE: 0, WARNING: 0, INFO: 0 };
   const codes: Record<string, number> = {};
   const invalidRows = new Set<string>();
+  const affected = new Set<string>();
+  const repairable = new Set<string>();
   const errKeys: string[] = [];
+  let oldestError: string | null = null;
+  let oldestAny: string | null = null;
+  const provenance = { FUNNEL_FALLBACK: 0, UNRESOLVED: 0, NOT_ON_SHEET: 0 };
   for (const i of issues) {
     counts[i.severity]++;
+    const st = contractState(i.severity);
+    states[st]++;
     codes[i.code] = (codes[i.code] ?? 0) + 1;
-    if (i.financialInvalid && i.day !== null) invalidRows.add(`${i.nmId}|${i.day}`);
+    const days = i.day !== null ? [i.day] : (i.invalidDays ?? []);
+    if (i.financialInvalid) for (const d of days) invalidRows.add(`${i.nmId}|${d}`);
+    if (i.repairAvailable) for (const d of days) repairable.add(`${i.nmId}|${d}`);
+    if (st === 'DATA_ERROR' || st === 'LATE_DATA' || st === 'MANUAL_REQUIRED') {
+      for (const d of days) {
+        if (i.nmId !== null) affected.add(`${i.nmId}|${d}`);
+        if (oldestAny === null || d < oldestAny) oldestAny = d;
+        if (st === 'DATA_ERROR' && (oldestError === null || d < oldestError)) oldestError = d;
+      }
+    }
+    if (i.code === 'PRICE_FUNNEL_FALLBACK') provenance.FUNNEL_FALLBACK++;
+    if (i.code === 'PRICE_MISSING_WITH_ORDERS') provenance.UNRESOLVED++;
+    if (i.code === 'PRICE_NOT_ON_SHEET') provenance.NOT_ON_SHEET++;
     if (i.severity === 'ERROR') errKeys.push(`${i.day ?? '-'}/${i.nmId ?? '-'}/${i.code}`);
   }
   errKeys.sort();
   return {
     status: aggregateStatus(issues, subsystemFailure !== undefined),
-    mode, evaluated_at: evaluatedAt.toISOString(), phase, counts,
+    mode, evaluated_at: evaluatedAt.toISOString(), phase, counts, states,
+    affected_sku_days: affected.size, repair_available_sku_days: repairable.size, oldest_unresolved_data_error: oldestError, oldest_unresolved: oldestAny,
+    price_provenance: provenance,
     financially_invalid_rows: invalidRows.size, issue_codes: codes,
     error_keys: errKeys.slice(0, ERROR_KEYS_LIMIT), error_keys_truncated: errKeys.length > ERROR_KEYS_LIMIT,
     cogs_source: cogs.state, cogs_published_at: cogs.publishedAt, cogs_age_hours: cogs.ageHours,

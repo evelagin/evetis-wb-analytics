@@ -166,10 +166,11 @@ describe('Integrity Guard V1 — сентябрьская приёмка (Phase 
     expect(i.sourceValue).not.toContain('1120');
   });
 
-  it('COGS_252442517 = 240.00 → канон 231.38 → COGS_SOURCE_MISMATCH (WARNING)', () => {
+  it('COGS_252442517 = 240.00 → канон 231.38 → COGS_SOURCE_MISMATCH: ERROR и фин. недействительность дней с заказами (решение владельца, Financial Integrity V1)', () => {
     const m = byCode(issues, 'COGS_SOURCE_MISMATCH');
     expect(m).toHaveLength(1);
-    expect(m[0]).toMatchObject({ nmId: SKU.HAND, severity: 'WARNING', blocking: false, financialInvalid: false, day: null });
+    expect(m[0]).toMatchObject({ nmId: SKU.HAND, severity: 'ERROR', blocking: true, financialInvalid: true, day: null });
+    expect(m[0]!.invalidDays!.length).toBeGreaterThan(0);
     expect(m[0]!.sourceValue).toContain('$R$45=240');
     expect(m[0]!.sourceValue).toContain('canonical=231.38');
   });
@@ -229,8 +230,10 @@ describe('Integrity Guard V1 — сентябрьская приёмка (Phase 
   it('сводка: 4 финансово недостоверных SKU-дня, error_keys без INFO', () => {
     const s = summarize(issues, 'observe', 'POST_WRITE', NOW_MORNING, fresh(septemberCogs()));
     expect(s.status).toBe('DATA_ERROR');
-    expect(s.financially_invalid_rows).toBe(4);
-    expect(s.counts.ERROR).toBe(5); // 4 цены + 1 покрытие
+    const cogsDays = byCode(issues, 'COGS_SOURCE_MISMATCH')[0]!.invalidDays!.length;
+    expect(s.financially_invalid_rows).toBe(4 + cogsDays); // 4 цены + дни 252442517 с заказами (COGS ≠ канону)
+    expect(s.counts.ERROR).toBe(6); // 4 цены + 1 покрытие + 1 COGS
+    expect(s.states).toMatchObject({ DATA_ERROR: 6 });
     expect(s.error_keys).toContain('2026-09-17/930334396/PRICE_MISSING_WITH_ORDERS');
     expect(s.error_keys).toContain('-/909951444/SKU_WITHOUT_BLOCK');
     expect(s.error_keys.some((k) => k.includes('PRICE_MISSING_NO_ORDERS'))).toBe(false);

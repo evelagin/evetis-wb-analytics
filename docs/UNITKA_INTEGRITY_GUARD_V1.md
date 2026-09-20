@@ -59,7 +59,7 @@ wb_raw/wb_mart). Статический тест `cloud/test/unitka_integrity_sq
 | `PRICE_MISSING_WITH_ORDERS` | (Q > 0 или S > 0) и фактическая цена NULL; SKU с блоком | ERROR | да (строка) | да |
 | `PRICE_MISSING_NO_ORDERS` | Q = 0, S = 0, цена NULL | INFO (только счётчик) | нет | нет |
 | `COGS_ZERO_OR_MISSING` | копия свежая, и COGS в AI 0 / пусто / формула не по контракту, или канон не ровно один интервал / ≤ 0 (`COGS_CANONICAL_MISSING`) | ERROR при активности SKU в месяце, иначе WARNING (латентно) | при активности | при активности |
-| `COGS_SOURCE_MISMATCH` | копия свежая, присутствие в порядке, \|лист − канон\| > 0,005 ₽ | WARNING | нет | нет |
+| `COGS_SOURCE_MISMATCH` | копия свежая, присутствие в порядке, \|лист − канон\| > 0,005 ₽ | **с 20.09.2026 (Financial Integrity V1, решение владельца 3): ERROR, если в дни расхождения есть заказы/отмены; иначе WARNING (латентно)** | при активности | при активности (дни с активностью — `invalidDays`) |
 | `COGS_SNAPSHOT_STALE` | последняя успешная публикация копии старше **26 ч** | WARNING | нет | нет |
 | `COGS_SNAPSHOT_UNAVAILABLE` | копию не прочитать: нет вью/таблицы, пусто, ошибка запроса, неразборчивое время | WARNING | нет | нет |
 | `SKU_WITHOUT_BLOCK` | активный SKU источника без блока в строке 735 | ERROR | да (покрытие) | нет |
@@ -67,6 +67,11 @@ wb_raw/wb_mart). Статический тест `cloud/test/unitka_integrity_sq
 | `SPP_MISSING` | Q > 0 и ячейка AB **действительно пуста** (числовой 0 — заполнено) | MANUAL_REQUIRED | нет | нет (неполны ДРР/цена с СПП) |
 | `STORAGE_MISSING` | дата не покрыта отчётом хранения; одна issue на дату | D−1 до 12:15 МСК EXPECTED_DELAY, с 12:15 WARNING; D−2 WARNING; старше ERROR | нет | нет |
 | `ORDERS_SOURCE_DIVERGENCE` | воронка ≠ FACT_ORDERS | INFO; WARNING при ONLY_FUNNEL/ONLY_FACT или \|Δ\| ≥ 2 | нет | нет |
+
+> **Financial Integrity V1 (20.09.2026)** расширяет правила в режиме сверки (`UNITKA_RECONCILE_MODE = observe | write`):
+> `PRICE_ZERO_WITH_ORDERS`, `PRICE_FUNNEL_FALLBACK` (INFO), `PRICE_NOT_ON_SHEET`, `STOCK_SNAPSHOT_MISSING` (NOT_AVAILABLE),
+> зрелость расхождения счётчиков (LATE_DATA → WARNING / ERROR). Таблица выше для `ORDERS_SOURCE_DIVERGENCE` описывает
+> режим `off` (старая вью без суммы воронки). Контракт состояний — `UNITKA_FIN_INTEGRITY_V1.md` §2.
 
 **Состояния копии COGS** (решения D2/D3): `COGS_VALID` — свежая копия (≤ 26 ч), интервал ровно один, COGS > 0;
 `COGS_CANONICAL_MISSING` — свежая копия, для SKU нет ровно одного интервала (внутри `COGS_ZERO_OR_MISSING`);
