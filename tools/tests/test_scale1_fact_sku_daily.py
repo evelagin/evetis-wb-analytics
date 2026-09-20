@@ -202,6 +202,42 @@ def test_commission_recovery_has_one_named_source_equal_to_both_inline_copies():
     assert "UNNEST" not in facts(DAILY).body and "0107987069-0115-1" not in DAILY.read_text(encoding="utf-8")
 
 
+def test_channel_map_join_key_is_exactly_the_key_whose_uniqueness_the_identity_gate_proves():
+    """Join-cardinality guard. The daily fact joins RAW postings / finance / ads to REF_SKU_CHANNEL_MAP on
+    (marketplace = 'OZON', marketplace_sku) and nothing else, with NO is_current / validity filter — so every
+    historical mapping row takes part. Such a join cannot multiply source rows if and only if no
+    (marketplace, marketplace_sku) occurs more than once in the WHOLE map. That is gate
+    `fanout_risk_identifier_rows` of V05; this test pins both halves so they cannot drift apart:
+    a different join key, or a gate that stops counting, fails here."""
+    joins = [j for j in body_ast(DAILY).find_all(exp.Join)
+             if isinstance(j.this, exp.Table) and j.this.name == "REF_SKU_CHANNEL_MAP"]
+    assert len(joins) == 4  # postings, posting-linked costs, sku-only costs, ads
+    for j in joins:
+        alias = j.this.alias
+        on = j.args["on"]
+        conds = list(on.flatten()) if isinstance(on, exp.And) else [on]
+        assert len(conds) == 2 and all(isinstance(c, exp.EQ) for c in conds), on.sql()
+        map_side = {}
+        for c in conds:
+            col = next(x for x in (c.this, c.expression) if isinstance(x, exp.Column) and x.table == alias)
+            map_side[col.name] = c.expression if col is c.this else c.this
+        assert set(map_side) == {"marketplace", "marketplace_sku"}, on.sql()
+        assert isinstance(map_side["marketplace"], exp.Literal) and map_side["marketplace"].name == "OZON"
+        assert isinstance(map_side["marketplace_sku"], exp.Column) and map_side["marketplace_sku"].name == "sku"
+
+    gate = check_blocks()["V05_PRODUCT_IDENTITY_GATE"]
+    # uniqueness of the join key over the WHOLE map: no marketplace / is_current filter before the GROUP BY
+    assert ("(SELECT COUNT(*) FROM (SELECT 1 FROM cm GROUP BY marketplace, marketplace_sku HAVING COUNT(*) > 1)) "
+            "fanout_risk_identifier_rows") in gate
+    assert "cm AS (SELECT * FROM `project-fa311fc0-4d87-4781-986.evetis_ref.REF_SKU_CHANNEL_MAP`)" in gate
+    # exactly one = at most one (above) + at least one (no consumed RAW row is left unmapped)
+    status = gate[gate.index("SELECT g.*, IF("):]
+    for counter in ("fanout_risk_identifier_rows", "conflicting_identifier_mappings", "ozon_posting_rows_unmapped",
+                    "ozon_finance_sku_rows_unmapped", "ozon_ads_rows_unmapped"):
+        assert counter in status, counter  # fail-closed: every counter is part of the PASS condition
+    assert "= 0,\n  'PASS', 'FAIL') status" in status
+
+
 # ------------------------------------------------------------------------------------- validation SQL + renderer
 
 def check_blocks():

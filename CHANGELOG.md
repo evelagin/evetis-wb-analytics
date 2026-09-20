@@ -25,9 +25,12 @@
   `fact_date_semantics`. Налог не моделируется; это вклад, не прибыль.
 - **Валидатор:** одна строка политики — `evetis_mart` читает только `wb_mart`, `ozon_mart`, `evetis_ref`; RAW
   запрещён (C13). R2C не расширялся: до развёртывания покажет новые объекты как `MISSING_LIVE`.
-- **Тесты:** `tools/tests/test_scale1_fact_sku_daily.py` (17), фикстуры R2B/R2C приведены к базе снятых объектов;
-  всего 279 проходят. Проверки production — `sql/scale1/fact_sku_daily_validation.sql`; откат —
+- **Тесты:** `tools/tests/test_scale1_fact_sku_daily.py` (18, включая стража кардинальности соединения с
+  `REF_SKU_CHANNEL_MAP`: ключ соединения суточного факта = ключ, уникальность которого доказывает гейт V05
+  `fanout_risk_identifier_rows`), фикстуры R2B/R2C приведены к базе снятых объектов; всего 280 проходят.
+  Проверки production — `sql/scale1/fact_sku_daily_validation.sql`; откат —
   `sql/rollback/scale1_fact_sku_daily_2026-09-20/R_DROP_NEW_VIEWS.sql` (три `DROP VIEW`, данных нет).
+
 ## 2026-09-20 — UNITKA FINANCIAL INTEGRITY · семантика наблюдаемости: NO_RUN_YET / OK / ERROR / STALE, снимок issue в режиме observe (только Git; вью в BigQuery НЕ заменена)
 
 Документы: `docs/UNITKA_FIN_INTEGRITY_V1.md` §7–§8, runbook §5d. Таблицы и Terraform без изменений.
