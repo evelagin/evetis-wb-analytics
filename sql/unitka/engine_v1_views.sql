@@ -142,6 +142,20 @@ WHERE gating;
 --    Поэтому вычитать его через S — ДВОЙНОЙ УЧЁТ: формула W уже не добавляла его прибыль.
 --    Одно бизнес-событие влияет на финансовый результат ровно один раз ⇒ S = отмены СЛЕДУЮЩИХ дней.
 --    Отмены дня заказа остаются видимыми диагностикой (same_day_cancel_qty в слое сверки), но в S не входят.
+--
+-- 🔴 КОНТРАКТ ЦЕНЫ — ОДИН НА ДВА СЛОЯ (введён 20.09.2026 после регрессии production).
+--    Суточный писатель строит план по ЭТОЙ вью, а сверка — по V_UNITKA_RECON_FACT. Пока подстановка
+--    цены из воронки жила только в слое сверки, суточный прогон видел здесь NULL и планировал СТЕРЕТЬ
+--    цену, которую ремонт только что записал (наблюдение unitka-engine-prod-sj7z6: 5 ячеек «806→»).
+--    Разные контракты цены в двух слоях = разрушение отремонтированных данных.
+--    Поэтому выражения `funnel_fallback_ok`, `price` и `price_source` ниже ДОСЛОВНО совпадают
+--    с reconcile_v1.sql; тест unitka_recon_sql.test.ts сравнивает их текст в обоих файлах и падает
+--    при расхождении. Меняешь здесь — меняй там же, одним PR.
+--    Приоритет: FACT_ORDERS (авторитет) → FUNNEL_FALLBACK по шести условиям → NULL (не выдумываем цену).
+--    Подстановка допускается ТОЛЬКО когда Orders API не дал по этому SKU-дню НИ ОДНОГО заказа
+--    (fact_order_qty = 0), счётчик Unitka взят из воронки, он положителен, равен orders и сумма воронки
+--    положительна. Это исключает приём расхождения счётчиков, отмены Orders API, цену в день без заказов
+--    и деление на ноль. Окно этой вью — текущий месяц до LCD, то есть не раньше эпохи сверки 2026-09-01.
 -- Строки эмитируются ТОЛЬКО за даты ≤ LAST_CLOSED_DATE — «утечка будущего» отсекается
 -- на уровне источника. NULL = пропуск источника (Engine пишет пустую ячейку, не ноль).
 CREATE OR REPLACE VIEW `project-fa311fc0-4d87-4781-986.wb_mart.V_UNITKA_DAILY_FACT` AS
@@ -171,8 +185,9 @@ m AS (
   GROUP BY 1, 2
 ),
 f AS (
+  -- fsum — сумма заказов воронки; нужна ТОЛЬКО как делимое подстановки цены (см. контракт цены выше).
   SELECT nm_id, date_msk AS d, MAX(open_card_count) AS opens, MAX(add_to_cart_count) AS carts,
-         MAX(orders_count) AS forders
+         MAX(orders_count) AS forders, MAX(orders_sum_rub) AS fsum
   FROM `project-fa311fc0-4d87-4781-986.wb_raw.V_WB_FUNNEL_DAILY`, lcd
   WHERE date_msk BETWEEN lcd.d1 AND lcd.d2
   GROUP BY 1, 2
@@ -195,33 +210,62 @@ ps AS (
   SELECT nm_id, date_msk AS d, storage_rub_exact AS storage
   FROM `project-fa311fc0-4d87-4781-986.wb_raw.V_WB_STORAGE_DAILY`, lcd
   WHERE date_msk BETWEEN lcd.d1 AND lcd.d2
+),
+x AS (
+  SELECT
+    g.nm_id,
+    g.d,
+    IFNULL(m.views, 0)                                   AS views,
+    COALESCE(f.opens, bf.opens)                          AS opens,
+    COALESCE(f.carts, bf.carts)                          AS carts,
+    COALESCE(f.forders, bf.forders, o.gross, 0)          AS orders,
+    COALESCE(bf.canc, o.canc, 0)                         AS cancels,
+    IF(sd.d IS NULL, NULL, IFNULL(st.stock, 0))          AS stock,
+    ROUND(IFNULL(m.ads, 0), 2)                           AS ads_in,
+    IF(pd.d IS NULL, NULL, ROUND(IFNULL(ps.storage, 0), 2)) AS storage,
+    CASE WHEN f.forders IS NOT NULL THEN 'FUNNEL_API'
+         WHEN bf.forders IS NOT NULL THEN 'XLSX_BACKFILL'
+         ELSE 'ORDERS_API' END                           AS orders_source,
+    CASE WHEN bf.canc IS NOT NULL THEN 'XLSX_BACKFILL'
+         ELSE 'PROXY_FACT_ORDERS' END                    AS cancels_source,
+    o.price                                              AS orders_api_price,
+    IFNULL(o.gross, 0)                                   AS fact_order_qty,
+    f.forders                                            AS funnel_orders,
+    f.fsum                                               AS funnel_orders_sum
+  FROM g
+  LEFT JOIN o  ON o.nm_id  = g.nm_id AND o.d  = g.d
+  LEFT JOIN m  ON m.nm_id  = g.nm_id AND m.d  = g.d
+  LEFT JOIN f  ON f.nm_id  = g.nm_id AND f.d  = g.d
+  LEFT JOIN bf ON bf.nm_id = g.nm_id AND bf.d = g.d
+  LEFT JOIN st ON st.nm_id = g.nm_id AND st.d = g.d
+  LEFT JOIN ps ON ps.nm_id = g.nm_id AND ps.d = g.d
+  LEFT JOIN sd ON sd.d = g.d
+  LEFT JOIN pd ON pd.d = g.d
+),
+p AS (
+  SELECT
+    x.*,
+    -- FUNNEL_FALLBACK разрешён ТОЛЬКО так: Orders API пуст, счётчик Unitka — воронка, сумма воронки положительна.
+    (x.orders_api_price IS NULL AND x.fact_order_qty = 0 AND x.orders_source = 'FUNNEL_API'
+      AND IFNULL(x.funnel_orders, 0) > 0 AND x.funnel_orders = x.orders AND IFNULL(x.funnel_orders_sum, 0) > 0) AS funnel_fallback_ok
+  FROM x
 )
 SELECT
-  g.nm_id,
-  g.d AS date_msk,
-  IFNULL(m.views, 0)                                   AS views,
-  COALESCE(f.opens, bf.opens)                          AS opens,
-  COALESCE(f.carts, bf.carts)                          AS carts,
-  COALESCE(f.forders, bf.forders, o.gross, 0)          AS orders,
-  COALESCE(bf.canc, o.canc, 0)                         AS cancels,
-  IF(sd.d IS NULL, NULL, IFNULL(st.stock, 0))          AS stock,
-  ROUND(IFNULL(m.ads, 0), 2)                           AS ads_in,
-  ROUND(o.price, 2)                                    AS price,
-  IF(pd.d IS NULL, NULL, ROUND(IFNULL(ps.storage, 0), 2)) AS storage,
-  CASE WHEN f.forders IS NOT NULL THEN 'FUNNEL_API'
-       WHEN bf.forders IS NOT NULL THEN 'XLSX_BACKFILL'
-       ELSE 'ORDERS_API' END                           AS orders_source,
-  CASE WHEN bf.canc IS NOT NULL THEN 'XLSX_BACKFILL'
-       ELSE 'PROXY_FACT_ORDERS' END                    AS cancels_source
-FROM g
-LEFT JOIN o  ON o.nm_id  = g.nm_id AND o.d  = g.d
-LEFT JOIN m  ON m.nm_id  = g.nm_id AND m.d  = g.d
-LEFT JOIN f  ON f.nm_id  = g.nm_id AND f.d  = g.d
-LEFT JOIN bf ON bf.nm_id = g.nm_id AND bf.d = g.d
-LEFT JOIN st ON st.nm_id = g.nm_id AND st.d = g.d
-LEFT JOIN ps ON ps.nm_id = g.nm_id AND ps.d = g.d
-LEFT JOIN sd ON sd.d = g.d
-LEFT JOIN pd ON pd.d = g.d;
+  nm_id,
+  d AS date_msk,
+  views, opens, carts, orders, cancels, stock, ads_in,
+  CASE
+    WHEN orders_api_price IS NOT NULL THEN ROUND(orders_api_price, 2)
+    WHEN funnel_fallback_ok THEN ROUND(SAFE_DIVIDE(funnel_orders_sum, funnel_orders), 2)
+  END                                                    AS price,
+  storage,
+  orders_source,
+  cancels_source,
+  CASE
+    WHEN orders_api_price IS NOT NULL THEN 'ORDERS_API'
+    WHEN funnel_fallback_ok THEN 'FUNNEL_FALLBACK'
+  END                                                    AS price_source
+FROM p;
 -- ─── 4. Ставки логистики, модель B, окно 30 дней [LCD−29, LCD], как s8win_() в Apps Script ──────
 -- Популяция прямых отправлений — уникальные srid с операцией IN ('Логистика','Доставка')
 -- (решение владельца 11.09). Первое плечо srid — прямое, второе — обратное.
