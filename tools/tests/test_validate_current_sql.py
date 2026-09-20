@@ -24,6 +24,10 @@ DS = "ozon_mart"
 MANIFEST = Path("sql/current/ozon_mart/MANIFEST.json")
 HISTORICAL = Path("sql/current/historical_definitions.json")
 LEAF = "V_OZON_TARIFF_CHANGE_LOG"  # level 0, no dependants
+# SCALE 1 (2026-09-20): Git-first objects, pending_deploy until the owner deploys them. They are NOT
+# part of the R2A capture and must never be presented as captured_live before a read-only re-capture.
+SCALE1_PENDING = {"ozon_mart": {"V_OZON_COMMISSION_RECOVERY", "FCT_OZON_SKU_PNL_DAILY"},
+                  "evetis_mart": {"FACT_SKU_DAILY"}}
 
 # canonical_hash_v1 body hashes proven equal to production in R2A (PR #140). Pinned literally.
 R2A_BODY_SHA256 = {
@@ -138,7 +142,7 @@ def replace_in_file(path, old, new, count=1):
 def test_real_repository_passes():
     assert_clean(REPO)
     _, summary = v.validate(REPO)
-    assert summary["objects"] == 11 and summary["historical_sites"] == 14
+    assert summary["objects"] == 11 + sum(map(len, SCALE1_PENDING.values())) and summary["historical_sites"] == 14
 
 
 def test_canonical_hash_v1_reproduces_r2a_hashes_byte_for_byte():
@@ -146,14 +150,20 @@ def test_canonical_hash_v1_reproduces_r2a_hashes_byte_for_byte():
         text = (REPO / f"sql/current/ozon_mart/{name}.sql").read_text(encoding="utf-8")
         assert v.sha256_text(v.view_body(text, v.tokenize(text))) == expected, name
     man = load(REPO)
-    assert {o["object_name"]: o["canonical_body_sha256"] for o in man["objects"]} == R2A_BODY_SHA256
+    assert {o["object_name"]: o["canonical_body_sha256"] for o in man["objects"]
+            if o["object_name"] not in SCALE1_PENDING[DS]} == R2A_BODY_SHA256
 
 
 def test_real_manifest_is_v2_captured_live():
     man = load(REPO)
     assert man["manifest_version"] == 2
     assert man["allowed_external_datasets"] == ["evetis_ref", "ozon_raw"]
+    assert {o["object_name"] for o in man["objects"]} == set(R2A_BODY_SHA256) | SCALE1_PENDING[DS]
     for o in man["objects"]:
+        if o["object_name"] in SCALE1_PENDING[DS]:
+            assert o["sync_state"] == "pending_deploy" and o["canonical_schema_verification"] == "unverified"
+            assert o["live_body_sha256_at_capture"] is None and o["capture_main_sha"] is None
+            continue
         assert o["sync_state"] == "captured_live"
         assert o["canonical_schema_verification"] == "bigquery_verified"
         assert o["canonical_body_sha256"] == o["live_body_sha256_at_capture"]
@@ -643,7 +653,8 @@ def test_new_dependency_requires_level_update(repo):
 
 def test_valid_captured_live():
     man = load(REPO)
-    assert all(o["sync_state"] == "captured_live" for o in man["objects"])
+    assert all(o["sync_state"] == "captured_live" for o in man["objects"]
+               if o["object_name"] not in SCALE1_PENDING[DS])
     assert_clean(REPO)
 
 

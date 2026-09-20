@@ -10,9 +10,11 @@
   "rebuild_order": [
     "FCT_OZON_PNL_MONTHLY",
     "FCT_OZON_SKU_PNL_MONTHLY",
+    "V_OZON_COMMISSION_RECOVERY",
     "V_OZON_MART_FRESHNESS",
     "V_OZON_SKU_CURRENT_TARIFF",
     "V_OZON_TARIFF_CHANGE_LOG",
+    "FCT_OZON_SKU_PNL_DAILY",
     "V_OZON_LIFETIME_PNL",
     "V_OZON_SKU_UNIT_ECONOMICS_CURRENT",
     "V_OZON_TARIFF_SOURCE_HEALTH",
@@ -847,6 +849,47 @@
           "ordinal_position": 23,
           "column_name": "computed_at",
           "data_type": "TIMESTAMP",
+          "is_nullable": "YES"
+        }
+      ]
+    },
+    {
+      "dataset": "ozon_mart",
+      "object_name": "V_OZON_COMMISSION_RECOVERY",
+      "object_type": "VIEW",
+      "canonical_path": "sql/current/ozon_mart/V_OZON_COMMISSION_RECOVERY.sql",
+      "sync_state": "pending_deploy",
+      "dependencies": [],
+      "external_dependencies": [],
+      "dependency_level": 0,
+      "capture_main_sha": null,
+      "captured_at": null,
+      "provenance": {
+        "source": "Git-first (SCALE 1, 2026-09-20): new object, not yet deployed to production",
+        "historical_migration": null,
+        "preflight_parity": null,
+        "superseded_historical_definitions": []
+      },
+      "live_body_sha256_at_capture": null,
+      "live_schema_sha256_at_capture": null,
+      "live_description_sha256_at_capture": null,
+      "live_schema_at_capture": null,
+      "canonical_body_sha256": "e8c8f57134bea46b8cbe1bd32f42a33aecc1b5317a83f480daa3fc5e7df6ac57",
+      "canonical_description_sha256": "e9e993fe0c8a254b6370b2775ccb060b09736ff9eca983ab2383511d74c415f4",
+      "canonical_schema_sha256": "00933e58d5185ed128cac8874e4157b0457a28e6a50fb93c04274f754f6378dc",
+      "canonical_schema_verification": "unverified",
+      "canonical_column_count": 2,
+      "canonical_schema": [
+        {
+          "ordinal_position": 1,
+          "column_name": "posting_number",
+          "data_type": "STRING",
+          "is_nullable": "YES"
+        },
+        {
+          "ordinal_position": 2,
+          "column_name": "commission_rub",
+          "data_type": "NUMERIC",
           "is_nullable": "YES"
         }
       ]
@@ -2084,6 +2127,163 @@
           "ordinal_position": 13,
           "column_name": "tariff_change_detected",
           "data_type": "BOOL",
+          "is_nullable": "YES"
+        }
+      ]
+    },
+    {
+      "dataset": "ozon_mart",
+      "object_name": "FCT_OZON_SKU_PNL_DAILY",
+      "object_type": "VIEW",
+      "canonical_path": "sql/current/ozon_mart/FCT_OZON_SKU_PNL_DAILY.sql",
+      "sync_state": "pending_deploy",
+      "dependencies": [
+        "V_OZON_COMMISSION_RECOVERY"
+      ],
+      "external_dependencies": [
+        "evetis_ref.REF_SKU_CHANNEL_MAP",
+        "evetis_ref.V_PRODUCT_COGS_EFFECTIVE",
+        "ozon_raw.RAW_OZON_ADS_SKU_DAILY",
+        "ozon_raw.RAW_OZON_FINANCE_ACCRUAL",
+        "ozon_raw.RAW_OZON_POSTINGS_FBO"
+      ],
+      "dependency_level": 1,
+      "capture_main_sha": null,
+      "captured_at": null,
+      "provenance": {
+        "source": "Git-first (SCALE 1, 2026-09-20): new object, not yet deployed to production",
+        "historical_migration": null,
+        "preflight_parity": null,
+        "superseded_historical_definitions": []
+      },
+      "live_body_sha256_at_capture": null,
+      "live_schema_sha256_at_capture": null,
+      "live_description_sha256_at_capture": null,
+      "live_schema_at_capture": null,
+      "canonical_body_sha256": "f7075d6ce1ddf068925b5ff8ddc75cf9241465006af54a4dba6007fbdbe6eb3b",
+      "canonical_description_sha256": "587028f2621c108e8c7f1342b12ad793c0ef6c60a733148e848de95126fdd728",
+      "canonical_schema_sha256": "f4315247aeee5144542c00fabf387c023e4913cf5945b40e06c663da90db805e",
+      "canonical_schema_verification": "unverified",
+      "canonical_column_count": 20,
+      "canonical_schema": [
+        {
+          "ordinal_position": 1,
+          "column_name": "fact_date",
+          "data_type": "DATE",
+          "is_nullable": "YES"
+        },
+        {
+          "ordinal_position": 2,
+          "column_name": "internal_sku",
+          "data_type": "STRING",
+          "is_nullable": "YES"
+        },
+        {
+          "ordinal_position": 3,
+          "column_name": "gross_qty",
+          "data_type": "INT64",
+          "is_nullable": "YES"
+        },
+        {
+          "ordinal_position": 4,
+          "column_name": "cancelled_qty",
+          "data_type": "INT64",
+          "is_nullable": "YES"
+        },
+        {
+          "ordinal_position": 5,
+          "column_name": "in_transit_qty",
+          "data_type": "INT64",
+          "is_nullable": "YES"
+        },
+        {
+          "ordinal_position": 6,
+          "column_name": "realized_qty",
+          "data_type": "INT64",
+          "is_nullable": "YES"
+        },
+        {
+          "ordinal_position": 7,
+          "column_name": "seller_base_revenue_rub",
+          "data_type": "NUMERIC",
+          "is_nullable": "YES"
+        },
+        {
+          "ordinal_position": 8,
+          "column_name": "commission_rub",
+          "data_type": "NUMERIC",
+          "is_nullable": "YES"
+        },
+        {
+          "ordinal_position": 9,
+          "column_name": "commission_missing_qty",
+          "data_type": "INT64",
+          "is_nullable": "YES"
+        },
+        {
+          "ordinal_position": 10,
+          "column_name": "logistics_rub",
+          "data_type": "NUMERIC",
+          "is_nullable": "YES"
+        },
+        {
+          "ordinal_position": 11,
+          "column_name": "acquiring_rub",
+          "data_type": "NUMERIC",
+          "is_nullable": "YES"
+        },
+        {
+          "ordinal_position": 12,
+          "column_name": "storage_rub",
+          "data_type": "NUMERIC",
+          "is_nullable": "YES"
+        },
+        {
+          "ordinal_position": 13,
+          "column_name": "direct_variable_marketplace_costs_rub",
+          "data_type": "NUMERIC",
+          "is_nullable": "YES"
+        },
+        {
+          "ordinal_position": 14,
+          "column_name": "other_direct_marketplace_costs_rub",
+          "data_type": "NUMERIC",
+          "is_nullable": "YES"
+        },
+        {
+          "ordinal_position": 15,
+          "column_name": "product_cogs_rub",
+          "data_type": "NUMERIC",
+          "is_nullable": "YES"
+        },
+        {
+          "ordinal_position": 16,
+          "column_name": "cogs_missing_qty",
+          "data_type": "INT64",
+          "is_nullable": "YES"
+        },
+        {
+          "ordinal_position": 17,
+          "column_name": "contribution_before_ads_rub",
+          "data_type": "NUMERIC",
+          "is_nullable": "YES"
+        },
+        {
+          "ordinal_position": 18,
+          "column_name": "ad_spend_attributed_rub",
+          "data_type": "NUMERIC",
+          "is_nullable": "YES"
+        },
+        {
+          "ordinal_position": 19,
+          "column_name": "contribution_after_attributed_ads_rub",
+          "data_type": "NUMERIC",
+          "is_nullable": "YES"
+        },
+        {
+          "ordinal_position": 20,
+          "column_name": "fact_date_semantics",
+          "data_type": "STRING",
           "is_nullable": "YES"
         }
       ]

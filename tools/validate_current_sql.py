@@ -49,8 +49,12 @@ HASH_CONTRACT = "canonical_hash_v1 (see sql/current/README.md)"
 # Hard marketplace-isolation policy. A manifest may declare a SUBSET of these datasets in
 # allowed_external_datasets; it can never grant itself more. A dataset directory without an
 # entry here fails closed. WB and Ozon are separate domains; only evetis_ref is shared.
+# evetis_mart (SCALE 1) is the marketplace-neutral layer ABOVE both domains: it may read the two
+# marts and evetis_ref, never wb_raw / ozon_raw — it normalises authoritative marketplace facts and
+# must not recompute marketplace economics from RAW. Neither marketplace mart may read it back.
 EXTERNAL_DATASET_POLICY = {
     "ozon_mart": frozenset({"ozon_raw", "evetis_ref"}),
+    "evetis_mart": frozenset({"wb_mart", "ozon_mart", "evetis_ref"}),
 }
 
 OBJECT_TYPES = {"VIEW"}

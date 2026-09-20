@@ -57,7 +57,8 @@
 
 - **`allowed_external_datasets`** — внешние датасеты, которые объекты этого датасета читают. Это
   **подмножество** жёсткой политики валидатора (`EXTERNAL_DATASET_POLICY` в
-  `tools/validate_current_sql.py`; для `ozon_mart` — только `ozon_raw` и `evetis_ref`). Манифест
+  `tools/validate_current_sql.py`; для `ozon_mart` — только `ozon_raw` и `evetis_ref`; для нейтрального
+  `evetis_mart` (SCALE 1) — только `wb_mart`, `ozon_mart` и `evetis_ref`, RAW ему запрещён). Манифест
   не может разрешить себе больше: ссылка на `wb_*` или любой другой датасет вне политики падает,
   даже если её вписать в манифест. Расширить политику можно только отдельным ревью валидатора.
 
@@ -77,7 +78,9 @@
 - **`captured_live`** — канонический файл сверен read-only с production. CI требует: тело, схема и
   описание канона по хешам равны снимку production (`canonical_* == live_*_at_capture`),
   `canonical_schema == live_schema_at_capture`, `canonical_schema_verification = bigquery_verified`.
-  Все 11 объектов `ozon_mart` — в этом состоянии (R2A доказал точный паритет).
+  11 объектов `ozon_mart`, снятых в R2A, — в этом состоянии (R2A доказал точный паритет). Объекты SCALE 1
+  (`ozon_mart.V_OZON_COMMISSION_RECOVERY`, `ozon_mart.FCT_OZON_SKU_PNL_DAILY`, `evetis_mart.FACT_SKU_DAILY`) —
+  `pending_deploy` до развёртывания владельцем; см. `docs/SCALE1_FACT_SKU_DAILY_2026-09-20.md`.
 - **`pending_deploy`** — Git-first изменение, намеренно опережающее production. Канонические тело,
   схема и описание могут отличаться от снимка. Поля `live_*_at_capture` — историческое
   доказательство последнего снятия: их **нельзя** переписывать, делая вид, что production уже
