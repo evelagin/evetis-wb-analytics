@@ -282,63 +282,123 @@ LEFT JOIN c
  AND (c.effective_to IS NULL OR days.day <= c.effective_to)
 GROUP BY ref.nm_id, ref.internal_sku, days.day;
 
--- ─── 4. Наблюдаемость: состояние целостности по двум последним прогонам ─────
+-- ─── 4. Наблюдаемость: состояние целостности по последней ЗАВЕРШЁННОЙ оценке ─────
 -- Применять ПОСЛЕ infra apply (таблицы wb_ops.UNITKA_INTEGRITY_ISSUES и wb_ops.UNITKA_REPAIR_LEDGER — Terraform).
--- Состояния не схлопываются: DATA_ERROR / LATE_DATA / MANUAL_REQUIRED / NOT_AVAILABLE / WARNING считаются отдельно;
--- AUTO_REPAIRED — из журнала ремонта (только status = 'REPAIRED': лист подтвердил запись и проверка пройдена).
--- Финансовая действительность — ОТДЕЛЬНО от состояния: financially_invalid_sku_days считает financial_valid = FALSE
--- при любом состоянии (в т.ч. LATE_DATA с ещё не подтверждёнными деньгами).
--- Сколько бы ни было ожидаемых NOT_AVAILABLE и MANUAL_REQUIRED, автоматический контур «сломанным» они не делают:
--- financial_health смотрит ТОЛЬКО на DATA_ERROR; ручной ввод — отдельным флагом manual_input_pending.
+--
+-- МОДЕЛЬ СНИМКА. UNITKA_INTEGRITY_ISSUES — append-only снимки ПО ПРОГОНАМ (не «последнее состояние»): прогон пишет
+-- свои issue, а ПОСЛЕДНЕЙ, отдельным оператором — строку-маркер (issue_key IS NULL, code = 'RUN_MARKER').
+-- Маркер = «оценка целостности этого прогона завершена и записана целиком». Поэтому:
+--   * завершённые оценки — это ТОЛЬКО маркеры; снимок без маркера (запись оборвалась) вью не видит вовсе;
+--   * прогон без единой issue всё равно оставляет маркер — «чисто» отличимо от «оценки не было»;
+--   * строки issue берутся строго по run_id выбранного маркера — строки разных прогонов не смешиваются.
+-- Снимок пишет Engine в режимах UNITKA_RECONCILE_MODE = observe | write (это состояние наблюдаемости, не ремонт).
+--
+-- financial_health — ровно четыре значения, по убыванию приоритета:
+--   NO_RUN_YET  завершённой оценки prod-среды нет вообще. НИКОГДА не OK: счётчики при этом NULL («неизвестно»), а не 0.
+--   STALE       оценка есть, но старше порога свежести; её счётчики показаны, доверять им как текущим нельзя.
+--   ERROR       свежая оценка содержит хотя бы один DATA_ERROR.
+--   OK          свежая оценка без DATA_ERROR. MANUAL_REQUIRED, NOT_AVAILABLE, LATE_DATA и WARNING здоровье НЕ портят:
+--               ручной ввод — отдельным флагом manual_input_pending, действительность — financially_invalid_sku_days.
+--
+-- ПОРОГ СВЕЖЕСТИ 1320 минут (22 часа) выведен из рабочего ритма, а не выбран: Engine ходит дважды в сутки — 10:00 и
+-- 12:30 МСК (07:00 и 09:30 UTC, infra/terraform/unitka_engine.tf, local.unitka_schedules). Самый длинный штатный
+-- разрыв между оценками — с 12:30 до 10:00 следующего дня = 21 ч 30 мин = 1290 мин. Плюс предельная длительность
+-- прогона (timeout Job'а 600 с = 10 мин) и 20 мин на старт планировщика, Cloud Run и запись снимка:
+--     1290 + 10 + 20 = 1320 минут.
+-- Смысл: STALE наступает, если утренний прогон 10:00 МСК не дал завершённой оценки примерно к 10:30 МСК.
+-- Меняется расписание — порог пересчитывается (закреплено тестом unitka_status_view.test.ts).
 CREATE OR REPLACE VIEW `project-fa311fc0-4d87-4781-986.wb_mart.V_UNITKA_INTEGRITY_STATUS` AS
-WITH runs AS (
-  SELECT run_id, MAX(evaluated_at) AS evaluated_at
+WITH cfg AS (
+  SELECT 1320 AS stale_after_minutes
+),
+-- Завершённые оценки prod: по одному маркеру на прогон.
+runs AS (
+  SELECT run_id, MAX(evaluated_at) AS evaluated_at, ANY_VALUE(source_value) AS marker_value
   FROM `project-fa311fc0-4d87-4781-986.wb_ops.UNITKA_INTEGRITY_ISSUES`
-  WHERE environment = 'prod' AND evaluated_at >= TIMESTAMP_SUB(CURRENT_TIMESTAMP(), INTERVAL 40 DAY)
+  WHERE environment = 'prod' AND issue_key IS NULL AND code = 'RUN_MARKER'
   GROUP BY run_id
 ),
-ranked AS (SELECT run_id, evaluated_at, ROW_NUMBER() OVER (ORDER BY evaluated_at DESC) AS rn FROM runs),
+ranked AS (SELECT run_id, evaluated_at, marker_value, ROW_NUMBER() OVER (ORDER BY evaluated_at DESC, run_id DESC) AS rn FROM runs),
+latest AS (SELECT run_id, evaluated_at, marker_value FROM ranked WHERE rn = 1),
+previous AS (SELECT run_id FROM ranked WHERE rn = 2),
 cur AS (
   SELECT i.* FROM `project-fa311fc0-4d87-4781-986.wb_ops.UNITKA_INTEGRITY_ISSUES` i
-  JOIN ranked r ON r.run_id = i.run_id AND r.rn = 1 WHERE i.issue_key IS NOT NULL
+  JOIN latest l ON l.run_id = i.run_id WHERE i.environment = 'prod' AND i.issue_key IS NOT NULL
 ),
 prev AS (
   SELECT i.issue_key FROM `project-fa311fc0-4d87-4781-986.wb_ops.UNITKA_INTEGRITY_ISSUES` i
-  JOIN ranked r ON r.run_id = i.run_id AND r.rn = 2 WHERE i.issue_key IS NOT NULL
+  JOIN previous p ON p.run_id = i.run_id WHERE i.environment = 'prod' AND i.issue_key IS NOT NULL
 ),
+agg AS (
+  SELECT
+    COUNTIF(state = 'DATA_ERROR')                                                  AS data_error,
+    COUNTIF(state = 'LATE_DATA')                                                   AS late_data,
+    COUNTIF(state = 'MANUAL_REQUIRED')                                             AS manual_required,
+    COUNTIF(state = 'NOT_AVAILABLE')                                               AS not_available,
+    COUNTIF(state = 'WARNING')                                                     AS warning,
+    COUNT(DISTINCT IF(business_date IS NOT NULL AND state IN ('DATA_ERROR', 'LATE_DATA', 'MANUAL_REQUIRED'),
+                      CONCAT(CAST(nm_id AS STRING), '|', CAST(business_date AS STRING)), NULL)) AS affected_sku_days,
+    COUNT(DISTINCT IF(financial_valid = FALSE AND business_date IS NOT NULL,
+                      CONCAT(CAST(nm_id AS STRING), '|', CAST(business_date AS STRING)), NULL)) AS financially_invalid_sku_days,
+    MIN(IF(state = 'DATA_ERROR', business_date, NULL))                             AS oldest_unresolved_data_error,
+    MIN(IF(state IN ('DATA_ERROR', 'LATE_DATA', 'MANUAL_REQUIRED'), business_date, NULL)) AS oldest_unresolved_any,
+    COUNTIF(issue_key NOT IN (SELECT issue_key FROM prev))                         AS new_since_previous_run,
+    COUNTIF(code = 'PRICE_FUNNEL_FALLBACK')                                        AS prices_from_funnel_fallback,
+    COUNTIF(code = 'PRICE_NOT_ON_SHEET')                                           AS repair_available_not_written
+  FROM cur
+),
+-- AUTO_REPAIRED — только status = 'REPAIRED' и только того же прогона, что и оценка.
 rep AS (
   SELECT COUNT(*) AS repaired_cells, COUNT(DISTINCT CONCAT(CAST(nm_id AS STRING), '|', CAST(business_date AS STRING))) AS repaired_sku_days
   FROM `project-fa311fc0-4d87-4781-986.wb_ops.UNITKA_REPAIR_LEDGER`
-  WHERE status = 'REPAIRED' AND run_id = (SELECT run_id FROM ranked WHERE rn = 1)
+  WHERE status = 'REPAIRED' AND environment = 'prod' AND run_id = (SELECT run_id FROM latest)
 ),
 -- Попытки ремонта без подтверждения за 7 дней (WRITE_FAILED — запись листа упала; APPLIED_UNVERIFIED — записано,
--- но не проверено). Это НЕ ремонты: в auto_repaired_* они не входят никогда.
+-- но не проверено). Это НЕ ремонты: в auto_repaired_* они не входят никогда. Считаются независимо от оценки.
 unconf AS (
   SELECT COUNT(*) AS attempts
   FROM `project-fa311fc0-4d87-4781-986.wb_ops.UNITKA_REPAIR_LEDGER`
-  WHERE status IN ('WRITE_FAILED', 'APPLIED_UNVERIFIED') AND detected_at >= TIMESTAMP_SUB(CURRENT_TIMESTAMP(), INTERVAL 7 DAY)
+  WHERE status IN ('WRITE_FAILED', 'APPLIED_UNVERIFIED') AND environment = 'prod'
+    AND detected_at >= TIMESTAMP_SUB(CURRENT_TIMESTAMP(), INTERVAL 7 DAY)
+),
+s AS (
+  SELECT
+    (SELECT run_id FROM latest)                                                    AS run_id,
+    (SELECT evaluated_at FROM latest)                                              AS evaluated_at,
+    (SELECT REGEXP_EXTRACT(marker_value, r'reconcile_mode=(\w+)') FROM latest)      AS reconcile_mode,
+    (SELECT run_id FROM previous)                                                  AS previous_run_id,
+    (SELECT COUNT(*) FROM runs)                                                    AS completed_evaluations
 )
 SELECT
-  (SELECT run_id FROM ranked WHERE rn = 1)                                         AS run_id,
-  (SELECT evaluated_at FROM ranked WHERE rn = 1)                                   AS evaluated_at,
-  COUNTIF(cur.state = 'DATA_ERROR')                                                AS data_error,
-  COUNTIF(cur.state = 'LATE_DATA')                                                 AS late_data,
-  COUNTIF(cur.state = 'MANUAL_REQUIRED')                                           AS manual_required,
-  COUNTIF(cur.state = 'NOT_AVAILABLE')                                             AS not_available,
-  COUNTIF(cur.state = 'WARNING')                                                   AS warning,
-  (SELECT repaired_cells FROM rep)                                                 AS auto_repaired_cells,
-  (SELECT repaired_sku_days FROM rep)                                              AS auto_repaired_sku_days,
-  COUNT(DISTINCT IF(cur.business_date IS NOT NULL AND cur.state IN ('DATA_ERROR', 'LATE_DATA', 'MANUAL_REQUIRED'),
-                    CONCAT(CAST(cur.nm_id AS STRING), '|', CAST(cur.business_date AS STRING)), NULL)) AS affected_sku_days,
-  COUNT(DISTINCT IF(cur.financial_valid = FALSE AND cur.business_date IS NOT NULL,
-                    CONCAT(CAST(cur.nm_id AS STRING), '|', CAST(cur.business_date AS STRING)), NULL)) AS financially_invalid_sku_days,
-  MIN(IF(cur.state = 'DATA_ERROR', cur.business_date, NULL))                       AS oldest_unresolved_data_error,
-  MIN(IF(cur.state IN ('DATA_ERROR', 'LATE_DATA', 'MANUAL_REQUIRED'), cur.business_date, NULL)) AS oldest_unresolved_any,
-  COUNTIF(cur.issue_key NOT IN (SELECT issue_key FROM prev))                       AS new_since_previous_run,
-  (SELECT COUNT(*) FROM prev WHERE issue_key NOT IN (SELECT issue_key FROM cur))   AS resolved_since_previous_run,
-  COUNTIF(cur.code = 'PRICE_FUNNEL_FALLBACK')                                      AS prices_from_funnel_fallback,
-  COUNTIF(cur.code = 'PRICE_NOT_ON_SHEET')                                         AS repair_available_not_written,
-  (SELECT attempts FROM unconf)                                                    AS repair_attempts_unconfirmed_7d,
-  COUNTIF(cur.state = 'MANUAL_REQUIRED') > 0                                       AS manual_input_pending,
-  IF(COUNTIF(cur.state = 'DATA_ERROR') = 0, 'OK', 'DATA_ERROR')                    AS financial_health
-FROM cur;
+  s.run_id,
+  s.evaluated_at,
+  s.reconcile_mode,                                                                -- observe | write: режим прогона, давшего оценку
+  TIMESTAMP_DIFF(CURRENT_TIMESTAMP(), s.evaluated_at, MINUTE)                      AS evaluation_age_minutes,
+  cfg.stale_after_minutes,
+  s.completed_evaluations,
+  -- Нет завершённой оценки → счётчики NULL («неизвестно»), а не 0: пустота не должна выглядеть как «чисто».
+  IF(s.run_id IS NULL, NULL, agg.data_error)                                       AS data_error,
+  IF(s.run_id IS NULL, NULL, agg.late_data)                                        AS late_data,
+  IF(s.run_id IS NULL, NULL, agg.manual_required)                                  AS manual_required,
+  IF(s.run_id IS NULL, NULL, agg.not_available)                                    AS not_available,
+  IF(s.run_id IS NULL, NULL, agg.warning)                                          AS warning,
+  IF(s.run_id IS NULL, NULL, rep.repaired_cells)                                   AS auto_repaired_cells,
+  IF(s.run_id IS NULL, NULL, rep.repaired_sku_days)                                AS auto_repaired_sku_days,
+  IF(s.run_id IS NULL, NULL, agg.affected_sku_days)                                AS affected_sku_days,
+  IF(s.run_id IS NULL, NULL, agg.financially_invalid_sku_days)                     AS financially_invalid_sku_days,
+  agg.oldest_unresolved_data_error,
+  agg.oldest_unresolved_any,
+  -- Сравнение с прошлой оценкой имеет смысл, только если прошлая завершённая оценка существует.
+  IF(s.previous_run_id IS NULL, NULL, agg.new_since_previous_run)                  AS new_since_previous_run,
+  IF(s.previous_run_id IS NULL, NULL, (SELECT COUNT(*) FROM prev WHERE issue_key NOT IN (SELECT issue_key FROM cur))) AS resolved_since_previous_run,
+  IF(s.run_id IS NULL, NULL, agg.prices_from_funnel_fallback)                      AS prices_from_funnel_fallback,
+  IF(s.run_id IS NULL, NULL, agg.repair_available_not_written)                     AS repair_available_not_written,
+  unconf.attempts                                                                  AS repair_attempts_unconfirmed_7d,
+  IF(s.run_id IS NULL, NULL, agg.manual_required > 0)                              AS manual_input_pending,
+  CASE
+    WHEN s.run_id IS NULL THEN 'NO_RUN_YET'
+    WHEN TIMESTAMP_DIFF(CURRENT_TIMESTAMP(), s.evaluated_at, MINUTE) > cfg.stale_after_minutes THEN 'STALE'
+    WHEN agg.data_error > 0 THEN 'ERROR'
+    ELSE 'OK'
+  END                                                                              AS financial_health
+FROM s CROSS JOIN cfg CROSS JOIN agg CROSS JOIN rep CROSS JOIN unconf;

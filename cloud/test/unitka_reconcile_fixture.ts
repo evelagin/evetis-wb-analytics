@@ -218,6 +218,9 @@ export class ReconRunner implements QueryRunner {
   issues: Array<Record<string, unknown>> = [];
   ledgerAvailable = true;
   ledgerInsertFails = false;
+  /** Снимок issue: число успешных INSERT до отказа (null — без отказа); issueStatements — размер каждой принятой пачки. */
+  issuesFailAfter: number | null = null;
+  issueStatements: number[] = [];
   /** Окно, которое «вернёт вью» (по умолчанию — согласованное с кодом). */
   windowOverride: { from: string; to: string; epoch: string } | null = null;
   integrityRows: Array<Record<string, unknown>> = [];
@@ -236,7 +239,11 @@ export class ReconRunner implements QueryRunner {
       if (this.ledgerInsertFails) throw new Error('ledger insert failed');
       this.ledger.push(...(JSON.parse(String(params!.payload)) as Array<Record<string, unknown>>)); return [] as T[];
     }
-    if (sql.includes('INSERT INTO') && sql.includes('UNITKA_INTEGRITY_ISSUES')) { this.issues.push(...(JSON.parse(String(params!.payload)) as Array<Record<string, unknown>>)); return [] as T[]; }
+    if (sql.includes('INSERT INTO') && sql.includes('UNITKA_INTEGRITY_ISSUES')) {
+      if (this.issuesFailAfter !== null && this.issueStatements.length >= this.issuesFailAfter) throw new Error('issues insert failed');
+      const batch = JSON.parse(String(params!.payload)) as Array<Record<string, unknown>>;
+      this.issueStatements.push(batch.length); this.issues.push(...batch); return [] as T[];
+    }
     if (sql.includes('INSERT INTO') && sql.includes('UNITKA_ENGINE_RUNS')) { this.journal.push(params ?? {}); return [] as T[]; }
     if (sql.includes('UNITKA_REPAIR_LEDGER')) { if (!this.ledgerAvailable) throw new Error('Not found: Table wb_ops.UNITKA_REPAIR_LEDGER'); return [] as T[]; }
     if (sql.includes('V_UNITKA_SOURCE_FRESHNESS')) return [] as T[];

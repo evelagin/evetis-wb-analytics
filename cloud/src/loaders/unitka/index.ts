@@ -510,17 +510,33 @@ export async function unitkaLoader(ctx: LoaderContext, deps: UnitkaDeps = defaul
         rec.errorMessage = `поправки записаны в лист (${done.length}), но журнал ремонта не принял их: ${e instanceof Error ? e.message : String(e)}`;
       }
     }
-    // Снимок открытых issue — наблюдаемость (новые / решённые / самая старая). Сбой снимка прогон не роняет.
-    if (writeHistory && integrity && !integrity.summary.subsystem_failure) {
-      try {
-        await bq.insertIssues(issueRecords(integrity.issues, { runId, environment: config.environment, evaluatedAt: integrity.summary.evaluated_at, phase: integrity.summary.phase }));
-      } catch (e) {
-        log.error('unitka_issue_snapshot_failed', { message: e instanceof Error ? e.message : String(e) });
+    // Снимок issue — СОСТОЯНИЕ НАБЛЮДАЕМОСТИ, а не ремонт: пишется в режимах observe и write (в off — никогда).
+    // В observe это единственная запись сверки: лист, факты и журнал ремонта режим observe не трогает.
+    // Маркер прогона идёт последним (bq.insertIssues): без него вью статуса оценку завершённой не считает.
+    // Сбой снимка прогон не роняет — статус честно станет STALE, когда истечёт порог свежести.
+    let issueSnapshot: 'PERSISTED' | 'FAILED' | 'SKIPPED_GUARD_OFF' | 'SKIPPED_GUARD_FAILED' | 'OFF' = 'OFF';
+    if (reconcileMode !== 'off') {
+      if (!integrity) {
+        // Оценку целостности даёт Guard: без UNITKA_INTEGRITY_MODE снимка нет, и статус остаётся NO_RUN_YET.
+        issueSnapshot = 'SKIPPED_GUARD_OFF';
+        log.warn('unitka_issue_snapshot_skipped', { reason: 'UNITKA_INTEGRITY_MODE=off — оценки целостности нет, снимок не пишется; статус останется NO_RUN_YET / STALE', reconcile_mode: reconcileMode });
+      } else if (integrity.summary.subsystem_failure) {
+        issueSnapshot = 'SKIPPED_GUARD_FAILED';
+      } else {
+        try {
+          const rows = issueRecords(integrity.issues, { runId, environment: config.environment, evaluatedAt: integrity.summary.evaluated_at, phase: integrity.summary.phase, reconcileMode });
+          await bq.insertIssues(rows);
+          issueSnapshot = 'PERSISTED';
+          log.info('unitka_issue_snapshot', { reconcile_mode: reconcileMode, rows: rows.length });
+        } catch (e) {
+          issueSnapshot = 'FAILED';
+          log.error('unitka_issue_snapshot_failed', { message: e instanceof Error ? e.message : String(e) });
+        }
       }
     }
     rec.qaJson = qaJson(qa, {
       plan: planSummary(plan), calendar, format_cells_written: allFormatCells.length,
-      ...(reconcile ? { reconcile: reconcileSummary(reconcile, { repairs_planned: repairs.length, repairs_recorded: repairsRecorded }) } : {}),
+      ...(reconcile ? { reconcile: reconcileSummary(reconcile, { repairs_planned: repairs.length, repairs_recorded: repairsRecorded, issue_snapshot: issueSnapshot }) } : {}),
       ...(integrity ? { integrity: integrity.summary } : {}),
     });
     log.info('unitka_qa', { pass: qa.pass, checks: qa.checks.map((c) => `${c.name}:${c.pass ? 'PASS' : 'FAIL(' + c.count + ')'}`) });

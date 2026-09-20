@@ -542,8 +542,9 @@ describe('наблюдаемость: состояния не схлопываю
       issue({ code: 'COGS_SOURCE_MISMATCH', day: null, invalidDays: ['2026-09-16', '2026-09-17'] }), issue({ code: 'SPP_MISSING', severity: 'MANUAL_REQUIRED', financialInvalid: false }),
       issue({ code: 'STOCK_SNAPSHOT_MISSING', severity: 'NOT_AVAILABLE', nmId: null, financialInvalid: false }), issue({ code: 'ORDERS_SOURCE_DIVERGENCE', severity: 'EXPECTED_DELAY', financialInvalid: false }),
     ] as never, { runId: 'r', environment: 'prod', evaluatedAt: 't', phase: 'POST_WRITE' });
-    expect(recs[0]).toMatchObject({ issueKey: null, code: 'RUN_MARKER', state: 'RUN', businessDate: null, nmId: null });   // чистый прогон тоже оставляет след
-    expect(recs.slice(1).map((r) => [r.issueKey, r.state, r.financialValid])).toEqual([
+    // маркер — ПОСЛЕДНЕЙ строкой: «снимок записан целиком»; несёт режим сверки и число строк
+    expect(recs.at(-1)).toMatchObject({ issueKey: null, code: 'RUN_MARKER', state: 'RUN', businessDate: null, nmId: null, sourceValue: 'reconcile_mode=write; issue_rows=7' });
+    expect(recs.slice(0, -1).map((r) => [r.issueKey, r.state, r.financialValid])).toEqual([
       ['2026-09-17|1|PRICE_MISSING_WITH_ORDERS', 'DATA_ERROR', false], ['2026-09-17|1|PRICE_FUNNEL_FALLBACK', 'INFO', true],
       ['2026-09-16|1|COGS_SOURCE_MISMATCH', 'DATA_ERROR', false], ['2026-09-17|1|COGS_SOURCE_MISMATCH', 'DATA_ERROR', false],
       ['2026-09-17|1|SPP_MISSING', 'MANUAL_REQUIRED', true], ['2026-09-17|-|STOCK_SNAPSHOT_MISSING', 'NOT_AVAILABLE', true], ['2026-09-17|1|ORDERS_SOURCE_DIVERGENCE', 'LATE_DATA', true],
@@ -560,6 +561,116 @@ describe('наблюдаемость: состояния не схлопываю
     expect(runner.journal[0]).toMatchObject({ qaStatus: 'PASS' });
     expect(runner.issues.filter((i) => i.code === 'RUN_MARKER')).toHaveLength(1);                   // маркер — даже когда issue нет
     expect(runner.queries.some((q) => q.includes('V_UNITKA_RECON_INTEGRITY'))).toBe(true);        // Guard читает слой сверки, а не старую вью
+  });
+});
+
+/* ───────────────────────── снимок наблюдаемости по режимам ───────────────────────── */
+
+describe('снимок issue — состояние наблюдаемости: observe пишет ТОЛЬКО его; write — как раньше; off — ничего', () => {
+  const GUARD = { UNITKA_INTEGRITY_MODE: 'observe' };
+  const nm = SEPT_NMS[18]!, day = '2026-09-17';
+  const gapRow = (over: Record<string, unknown> = {}): Record<string, unknown> => ({ marketplace: 'WB', nm_id: nm, internal_sku: 's', product_name: 'p', day, last_closed_date: '2026-10-02', orders_unitka: 1, cancels_unitka: 0,
+    orders_source: 'FUNNEL_API', orders_funnel: 1, fact_order_rows: null, fact_order_qty: null, observed_price_diagnostic: null, observed_price_at: null, storage_value: 0, storage_date_covered: true,
+    divergence_class: 'ONLY_FUNNEL', factual_order_price: 1120, price_source: 'FUNNEL_FALLBACK', price_state: 'PRESENT', funnel_orders_sum: 1120, same_day_cancel_qty: 0, stock_date_covered: true, sku_active: true, ...over });
+  /** Книга, где суточная работа уже сделана, а ремонт сверки ждёт: заказ 17.09 без цены в листе, источник цену знает. */
+  async function pendingRepair(): Promise<{ book: MemoryBook; runner: ReconRunner }> {
+    const { book, runner } = await seeded();
+    book.set(septRow(book, day), blockCol(18, OFFSET.price), ''); book.set(septRow(book, day), blockCol(18, OFFSET.orders), 1);
+    runner.facts = patch(runner.facts, nm, day, { orders: 1, price: 1120, priceSource: 'FUNNEL_FALLBACK', factOrderQty: 0, funnelOrders: 1, funnelOrdersSum: 1120 });
+    runner.integrityRows = [gapRow()]; runner.cogsRows = [];
+    return { book, runner };
+  }
+  const markerOf = (runner: ReconRunner): Record<string, unknown> | undefined => runner.issues.find((r) => r.code === 'RUN_MARKER');
+
+  it('observe: сохраняет снимок issue с DATA_ERROR и маркером; 0 ячеек листа, 0 записей журнала ремонта, журнал даже не опрашивается', async () => {
+    const { book, runner } = await pendingRepair();
+    const priceCell = (): unknown => book.get(septRow(book, day), blockCol(18, OFFSET.price));
+    runner.queries = [];                                                                          // подготовка книги шла в режиме write — её запросы не в счёт
+    const { lines } = await run(book, runner, 'observe', GUARD);
+    expect(book.batchWrites).toHaveLength(0);                                                     // ни одной ячейки: суточный план пуст, ремонт observe не пишет
+    expect(priceCell()).toBe('');
+    expect(runner.ledger).toHaveLength(0);                                                        // ни REPAIRED, ни какой-либо другой записи ремонта
+    expect(runner.queries.some((q) => q.includes('UNITKA_REPAIR_LEDGER'))).toBe(false);
+    expect(runner.issues.at(-1)).toMatchObject({ code: 'RUN_MARKER', issueKey: null, environment: 'prod', sourceValue: `reconcile_mode=observe; issue_rows=${runner.issues.length - 1}` });
+    expect(runner.issues.filter((r) => r.code === 'RUN_MARKER')).toHaveLength(1);
+    expect(runner.issues.find((r) => r.code === 'PRICE_NOT_ON_SHEET')).toMatchObject({ state: 'DATA_ERROR', financialValid: false, businessDate: day, nmId: nm, diagnosticValue: 'repair_available=true; sheet_financial_valid=false' });
+    expect(new Set(runner.issues.map((r) => r.runId)).size).toBe(1);                              // снимок одного прогона
+    expect(lines.find((l) => l.event === 'unitka_issue_snapshot')!.fields).toMatchObject({ reconcile_mode: 'observe', rows: runner.issues.length });
+    expect(JSON.parse(String(runner.journal.at(-1)!.qaJson)).reconcile).toMatchObject({ mode: 'observe', repairs_planned: 1, repairs_recorded: 0, issue_snapshot: 'PERSISTED' });
+  });
+  it('observe пишет в лист ровно то же, что off (суточная работа), — ремонт сверки не добавляет ни ячейки', async () => {
+    const writes = async (mode: string): Promise<string> => {
+      const book = buildBook('2026-08-31'); const runner = new ReconRunner('2026-09-30', reconFactsFor('2026-09-01', '2026-09-30'), '2026-09-01');
+      await run(book, runner, 'off');
+      runner.lcd = '2026-10-02'; runner.facts = patch(reconFactsFor('2026-09-01', '2026-10-02'), SEPT_NM, '2026-09-17', { cancels: 3 });   // поздняя поправка сентября + новые дни октября
+      book.batchWrites = []; await run(book, runner, mode, GUARD);
+      return JSON.stringify(book.batchWrites);
+    };
+    const off = await writes('off'), observe = await writes('observe'), write = await writes('write');
+    expect(observe).toBe(off);
+    expect(write).not.toBe(off);                                                                  // write добавляет поправку прошлого месяца
+  });
+  it('observe без DATA_ERROR: снимок и маркер всё равно пишутся — «чисто» отличимо от «оценки не было»', async () => {
+    const { book, runner } = await seeded();
+    runner.integrityRows = []; runner.cogsRows = [];
+    await run(book, runner, 'observe', GUARD);
+    expect(markerOf(runner)).toMatchObject({ sourceValue: `reconcile_mode=observe; issue_rows=${runner.issues.length - 1}` });
+    expect(runner.issues.filter((r) => r.state === 'DATA_ERROR')).toHaveLength(0);
+    // прогон вообще без issue оставляет ровно одну строку — маркер
+    expect(issueRecords([], { runId: 'r', environment: 'prod', evaluatedAt: 't', phase: 'POST_WRITE', reconcileMode: 'observe' })).toMatchObject([{ issueKey: null, code: 'RUN_MARKER', sourceValue: 'reconcile_mode=observe; issue_rows=0' }]);
+  });
+  it('write: поведение прежнее — ремонт, REPAIRED в журнале, затем снимок с маркером режима write', async () => {
+    const { book, runner } = await pendingRepair();
+    await run(book, runner, 'write', GUARD);
+    expect(book.get(septRow(book, day), blockCol(18, OFFSET.price))).toBe(1120);
+    expect(runner.ledger).toMatchObject([{ field: 'price', newValue: '1120', status: 'REPAIRED', reason: 'PRICE_FUNNEL_FALLBACK' }]);
+    expect(markerOf(runner)).toMatchObject({ sourceValue: `reconcile_mode=write; issue_rows=${runner.issues.length - 1}` });
+    expect(runner.issues.some((r) => r.code === 'PRICE_NOT_ON_SHEET')).toBe(false);               // цена в листе — строка действительна
+  });
+  it('off: ни снимка, ни журнала ремонта, ни чтения слоя сверки — даже при включённом Guard', async () => {
+    const { book, runner } = await pendingRepair();
+    runner.queries = [];
+    await run(book, runner, 'off', GUARD);
+    expect([runner.issues.length, runner.ledger.length]).toEqual([0, 0]);
+    expect(runner.queries.some((q) => /RECON|REPAIR_LEDGER|INTEGRITY_ISSUES/.test(q))).toBe(false);
+    expect(JSON.parse(String(runner.journal.at(-1)!.qaJson)).reconcile).toBeUndefined();
+  });
+  it('observe без Guard (UNITKA_INTEGRITY_MODE=off): оценки нет → снимка нет, явное предупреждение; статус останется NO_RUN_YET', async () => {
+    const { book, runner } = await pendingRepair();
+    const { lines } = await run(book, runner, 'observe');
+    expect(runner.issues).toHaveLength(0);
+    expect(lines.some((l) => l.event === 'unitka_issue_snapshot_skipped' && l.level === 'warn')).toBe(true);
+    expect(JSON.parse(String(runner.journal.at(-1)!.qaJson)).reconcile.issue_snapshot).toBe('SKIPPED_GUARD_OFF');
+  });
+  it('SHADOW не пишет снимок никогда (прав у sa-loaders-shadow нет и не нужно)', async () => {
+    const { runner } = await pendingRepair();
+    const book = buildBook('2026-10-02', { readonly: true });
+    const config = loadConfig({ ENVIRONMENT: 'shadow', GCP_PROJECT_ID: 'p', BQ_RAW_DATASET: 'wb_raw', LOADER_NAME: 'unitka', UNITKA_SPREADSHEET_ID: 'x', UNITKA_WRITE_ENABLED: '0', UNITKA_RECONCILE_MODE: 'observe', UNITKA_INTEGRITY_MODE: 'observe' });
+    const ctx: LoaderContext = { config, logger: recordingLogger([]), logicalPeriod: 'p', targetDate: 'p', runId: 'shadow-1' };
+    await unitkaLoader(ctx, { makeRunner: () => runner, makeSheets: () => book, now: () => new Date('2026-10-03T07:00:00Z') }).catch(() => undefined);
+    expect([runner.issues.length, runner.ledger.length, book.batchWrites.length]).toEqual([0, 0, 0]);
+    expect(runner.queries.some((q) => q.includes('INSERT INTO') && q.includes('UNITKA_INTEGRITY_ISSUES'))).toBe(false);
+  });
+  it('сбой записи снимка прогон не роняет и маркера не оставляет: оценка считается незавершённой', async () => {
+    const { book, runner } = await pendingRepair();
+    runner.issuesFailAfter = 0;
+    const { lines } = await run(book, runner, 'observe', GUARD);
+    expect(runner.journal.at(-1)).toMatchObject({ qaStatus: 'PASS', errorCode: null });
+    expect(markerOf(runner)).toBeUndefined();
+    expect(lines.some((l) => l.event === 'unitka_issue_snapshot_failed')).toBe(true);
+    expect(JSON.parse(String(runner.journal.at(-1)!.qaJson)).reconcile.issue_snapshot).toBe('FAILED');
+  });
+  it('insertIssues: маркер — последним, ОТДЕЛЬНЫМ оператором; сбой пачки issue = маркера нет (снимок не выглядит завершённым)', async () => {
+    const mk = (n: number) => issueRecords(Array.from({ length: n }, (_, i) => ({ marketplace: 'WB' as const, nmId: 1, day: `2026-09-${String((i % 28) + 1).padStart(2, '0')}`, field: 'spp', code: 'SPP_MISSING' as const,
+      severity: 'MANUAL_REQUIRED' as const, blocking: false, financialInvalid: false, source: `s${i}`, sourceValue: null, diagnosticValue: null, dependentFields: [], message: 'm' })) as never,
+      { runId: 'r', environment: 'prod', evaluatedAt: '2026-10-03T07:00:00Z', phase: 'POST_WRITE', reconcileMode: 'observe' });
+    const ok = new ReconRunner('2026-10-02', [], '2026-09-01');
+    await new UnitkaBq(ok, 'wb_mart', 'wb_ops', 'UNITKA_ENGINE_RUNS').insertIssues(mk(450));
+    expect(ok.issueStatements).toEqual([200, 200, 50, 1]);                                        // три пачки issue и отдельно маркер
+    expect(ok.issues.at(-1)).toMatchObject({ code: 'RUN_MARKER', sourceValue: 'reconcile_mode=observe; issue_rows=450' });
+    const broken = new ReconRunner('2026-10-02', [], '2026-09-01'); broken.issuesFailAfter = 2;
+    await expect(new UnitkaBq(broken, 'wb_mart', 'wb_ops', 'UNITKA_ENGINE_RUNS').insertIssues(mk(450))).rejects.toThrow(/issues insert failed/);
+    expect([broken.issues.length, broken.issues.some((r) => r.code === 'RUN_MARKER')]).toEqual([400, false]);
   });
 });
 

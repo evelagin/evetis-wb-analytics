@@ -449,11 +449,19 @@ export class UnitkaBq {
     return rows.length;
   }
 
-  /** Снимок открытых issue прогона — append-only INSERT пачками (наблюдаемость: новые / решённые / самая старая). */
-  async insertIssues(rows: readonly IssueRecord[]): Promise<number> {
+  /**
+   * Снимок issue прогона — append-only INSERT пачками. Строки-маркеры (issue_key = NULL) пишутся ПОСЛЕДНИМ, отдельным
+   * оператором: маркер = «снимок записан целиком». Оборвалась запись раньше — маркера нет, и вью статуса такой прогон
+   * завершённой оценкой не считает.
+   */
+  async insertIssues(all: readonly IssueRecord[]): Promise<number> {
     const t = this.fqn(this.opsDataset, this.issuesTable);
-    for (let i = 0; i < rows.length; i += LEDGER_BATCH) {
-      const payload = JSON.stringify(rows.slice(i, i + LEDGER_BATCH));
+    const issues = all.filter((r) => r.issueKey !== null), markers = all.filter((r) => r.issueKey === null);
+    const batches: IssueRecord[][] = [];
+    for (let i = 0; i < issues.length; i += LEDGER_BATCH) batches.push(issues.slice(i, i + LEDGER_BATCH));
+    if (markers.length > 0) batches.push(markers);
+    for (const batch of batches) {
+      const payload = JSON.stringify(batch);
       await this.runner.query(
         `INSERT INTO ${t}
           (run_id, environment, evaluated_at, phase, issue_key, business_date, nm_id, field, code, state, severity,
@@ -467,7 +475,7 @@ export class UnitkaBq {
         { payload }, { payload: 'STRING' },
       );
     }
-    return rows.length;
+    return all.length;
   }
 
   /** Журнал прогона — одна строка на прогон, append-only INSERT. */
