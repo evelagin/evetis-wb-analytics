@@ -395,6 +395,79 @@ describe('идемпотентность и частичные секции', ()
   });
 });
 
+/**
+ * Перенос параметра себестоимости в следующий месяц. Терм COGS извлекается из формулы AI последнего дня
+ * предшественника, а overheadOf ищет ТОТ ЖЕ терм в формуле Y. Поэтому обе колонки обязаны нести одну ссылку:
+ * иначе подготовка месяца отказывает (TEMPLATE_MISMATCH) и лист не меняется.
+ */
+describe('перенос эпохи COGS: $R$45 (закрытые месяцы) и $S$45 (текущий)', () => {
+  const AI_COL0 = 13 + OFFSET.unitProfit - 1;        // блок 1 начинается в M (13); индекс формул — 0-based
+  const Y_COL0 = 13 + OFFSET.adsOut - 1;
+  const LAST_DAY_IDX = 29;                           // 737..766 → последний день сентября
+
+  /** Сентябрь, у блока 1 терм COGS заменён на `term` (и в AI, и в Y — как в живой книге). */
+  const bookWithTerm = (term: string): Book => {
+    const spec = septemberSpec();
+    spec[0] = { ...spec[0]!, params: { ...spec[0]!.params, cogsTerm: term } };
+    return { sections: [sectionFromSpec({ year: 2026, month: 9 }, 735, spec, WIDTH_SEPT)], rowCount: 768, columnCount: WIDTH_SEPT };
+  };
+
+  it('E. legacy $R$45: подготовка октября проходит и переносит $R$45 (регрессия закрытых месяцев)', () => {
+    const p = planMonthPrep(inputs(bookWithTerm('$R$45'), OCT));
+    expect(p.status).toBe('PLAN_CREATE');
+    expect(p.blocks[0]!.params.cogsTerm).toBe('$R$45');
+    expect(p.blocks[0]!.origin).toBe('CARRIED');
+  });
+
+  it('D. новый $S$45: извлечение предшественника проходит, следующий месяц наследует $S$45', () => {
+    const p = planMonthPrep(inputs(bookWithTerm('$S$45'), OCT));
+    expect(p.status).toBe('PLAN_CREATE');
+    expect(p.code ?? null).toBeNull();
+    expect(p.reasons).toHaveLength(0);
+    expect(p.blocks[0]!.params.cogsTerm).toBe('$S$45');
+    expect(p.blocks[0]!.params.overhead).toBe('100');          // overheadOf нашёл накладные рядом с термом
+    // применяем план: формулы созданного октября действительно несут $S$45 и в AI, и в Y
+    const oct = apply(bookWithTerm('$S$45'), p).sections[1]!;
+    const start = p.blocks[0]!.start;
+    for (const off of [OFFSET.unitProfit, OFFSET.adsOut]) {
+      for (const dayIdx of [0, 30]) {                            // первый и последний день октября
+        const f = String(oct.formulas[dayIdx]![start + off - 1]);
+        expect(f).toContain('$S$45');
+        expect(f).not.toContain('$R$45');
+      }
+    }
+  });
+
+  it('D. рассогласование AI ↔ Y ($S$45 в AI, $R$45 в Y) → TEMPLATE_MISMATCH, 0 изменений листа', () => {
+    const b = bookWithTerm('$S$45');
+    const sept = structuredClone(b.sections[0]!);
+    const y = String(sept.formulas[LAST_DAY_IDX]![Y_COL0]);
+    expect(y).toContain('$S$45');                               // контроль: до порчи терм тот же
+    sept.formulas[LAST_DAY_IDX]![Y_COL0] = y.replace('$S$45', '$R$45');
+    const p = planMonthPrep(inputs({ ...b, sections: [sept] }, OCT));
+    expect([p.status, p.code]).toEqual(['BLOCKED', 'TEMPLATE_MISMATCH']);
+    expect(p.cells).toHaveLength(0);
+  });
+
+  it('обратное рассогласование ($R$45 в AI, $S$45 в Y) тоже отказывает', () => {
+    const b = bookWithTerm('$R$45');
+    const sept = structuredClone(b.sections[0]!);
+    const y = String(sept.formulas[LAST_DAY_IDX]![Y_COL0]);
+    sept.formulas[LAST_DAY_IDX]![Y_COL0] = y.replace('$R$45', '$S$45');
+    expect(planMonthPrep(inputs({ ...b, sections: [sept] }, OCT)).code).toBe('TEMPLATE_MISMATCH');
+  });
+
+  it('неразрешённая ссылка $T$45 в AI → TEMPLATE_MISMATCH (белый список не расширен)', () => {
+    const b = bookWithTerm('$S$45');
+    const sept = structuredClone(b.sections[0]!);
+    for (const col of [AI_COL0, Y_COL0]) {
+      const f = String(sept.formulas[LAST_DAY_IDX]![col]);
+      sept.formulas[LAST_DAY_IDX]![col] = f.replace('$S$45', '$T$45');
+    }
+    expect(planMonthPrep(inputs({ ...b, sections: [sept] }, OCT)).code).toBe('TEMPLATE_MISMATCH');
+  });
+});
+
 /* ───────────── Engine на подготовленных секциях: дни, переходы, колонка 600 ───────────── */
 
 function factsFor(nms: readonly number[], monthStart: string, lcd: string): FactRow[] {
