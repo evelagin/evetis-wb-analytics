@@ -143,16 +143,24 @@ describe('расхождение счётчиков (решение владел
     expect(divergenceRules([behind(old, { factualOrderPrice: null, priceSource: null })], LCD, NOW)).toMatchObject([{ severity: 'ERROR', financialInvalid: true }]);
     expect(divergenceRules([behind('2026-09-01')], LCD, NOW)).toMatchObject([{ severity: 'WARNING' }]);   // возраст 32 дня: всё равно нужно доказательство — оно есть
   });
-  it('Orders API ОПЕРЕЖАЕТ воронку: окна запаздывания нет → DATA_ERROR сразу; отмена дня заказа в S есть, в Q — нет', () => {
-    // 09.09 / 535580776 в production: 3 заказа Orders API, 1 отменён в тот же день, воронка = 2, S = 1
-    const sameDay = withOrders(NM.A, young, 2, 666, { factOrderQty: 3, factOrderRows: 3, cancelsUnitka: 1, divergenceClass: 'FACT_GT_FUNNEL', funnelOrdersSum: 1332, sameDayCancelQty: 1 });
-    const onlyFact = row(NM.A, '2026-10-01', { factOrderQty: 1, factOrderRows: 1, cancelsUnitka: 1, factualOrderPrice: 800, priceSource: 'ORDERS_API', priceState: 'PRESENT', divergenceClass: 'ONLY_FACT', funnelOrdersSum: 0, sameDayCancelQty: 1 });
+  it('Orders API опережает воронку, разница объяснена отменой ДНЯ ЗАКАЗА → INFO, строка достоверна (контракт отмен 20.09.2026)', () => {
+    // Доказано на официальном экспорте воронки WB 01–19.09.2026: заказ, отменённый в день заказа, воронка не
+    // считает НИ в «Заказали товаров», НИ в «Отменили, шт» (5 из 5 случаев). Q его не содержит, и S (только отмены
+    // следующих дней) его не вычитает — двойного учёта больше нет, строка финансово достоверна.
+    const sameDay = withOrders(NM.A, young, 2, 666, { factOrderQty: 3, factOrderRows: 3, cancelsUnitka: 0, divergenceClass: 'FACT_GT_FUNNEL', funnelOrdersSum: 1332, sameDayCancelQty: 1 });
+    const onlyFact = row(NM.A, '2026-10-01', { factOrderQty: 1, factOrderRows: 1, cancelsUnitka: 0, factualOrderPrice: 800, priceSource: 'ORDERS_API', priceState: 'PRESENT', divergenceClass: 'ONLY_FACT', funnelOrdersSum: 0, sameDayCancelQty: 1 });
+    const d = divergenceRules([sameDay, onlyFact], LCD, NOW);
+    expect(d.map((i) => [i.severity, i.financialInvalid])).toEqual([['INFO', false], ['INFO', false]]);
+    expect(d.map((i) => /verdict=(\w+)/.exec(i.sourceValue!)![1])).toEqual(['SAME_DAY_CANCEL_EXCLUDED_BY_FUNNEL', 'SAME_DAY_CANCEL_EXCLUDED_BY_FUNNEL']);
+    expect(d[0]!.dependentFields).toEqual(['Q', 'S']);
+    expect(summarize(d, 'observe', 'POST_WRITE', NOW, fresh(allCanon()))).toMatchObject({ status: 'PASS', financially_invalid_rows: 0 });
+  });
+  it('Orders API опережает воронку, но отменами дня заказа разница НЕ объясняется → DATA_ERROR', () => {
     const unexplained = withOrders(NM.A, old, 5, 740, { factOrderQty: 6, factOrderRows: 6, divergenceClass: 'FACT_GT_FUNNEL', funnelOrdersSum: 3700, sameDayCancelQty: 0 });
-    const d = divergenceRules([sameDay, onlyFact, unexplained], LCD, NOW);
-    expect(d.map((i) => [i.severity, i.financialInvalid])).toEqual([['ERROR', true], ['ERROR', true], ['ERROR', true]]);
-    expect(d.map((i) => /verdict=(\w+)/.exec(i.sourceValue!)![1])).toEqual(['SAME_DAY_CANCEL_OUTSIDE_Q', 'SAME_DAY_CANCEL_OUTSIDE_Q', 'ORDERS_API_AHEAD_UNEXPLAINED']);
-    expect(amountConfirmedByFunnel(sameDay)).toBe(true);                                         // сумма воронки сходится — и всё же строка затронута
-    expect(d[0]!.dependentFields).toEqual(['Q', 'S', 'W', 'V']);
+    const partly = withOrders(NM.A, old, 5, 740, { factOrderQty: 7, factOrderRows: 7, divergenceClass: 'FACT_GT_FUNNEL', funnelOrdersSum: 3700, sameDayCancelQty: 1 });  // 7 − 1 ≠ 5
+    const d = divergenceRules([unexplained, partly], LCD, NOW);
+    expect(d.map((i) => [i.severity, i.financialInvalid])).toEqual([['ERROR', true], ['ERROR', true]]);
+    expect(d.map((i) => /verdict=(\w+)/.exec(i.sourceValue!)![1])).toEqual(['ORDERS_API_AHEAD_UNEXPLAINED', 'ORDERS_API_AHEAD_UNEXPLAINED']);
   });
   it('ONLY_FUNNEL с доказанным fallback — не расхождение денег (INFO); без разрешённой цены — ошибку даёт правило цены', () => {
     const fb = withOrders(NM.A, old, 1, 1120, { priceSource: 'FUNNEL_FALLBACK', divergenceClass: 'ONLY_FUNNEL', factOrderQty: null, factOrderRows: null, funnelOrdersSum: 1120 });

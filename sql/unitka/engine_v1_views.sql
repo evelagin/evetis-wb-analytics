@@ -129,7 +129,19 @@ WHERE gating;
 --   opens / carts / gross orders  = FUNNEL_API (authoritative);
 --   01-03.09 — только исторический XLSX-backfill, ЖЁСТКО ограничен датами ≤ 2026-09-03,
 --              чтобы production Engine не мог использовать XLSX ни за какие другие даты;
---   cancels 04.09+                = PROXY_FACT_ORDERS (воронка не отдаёт отмены).
+--   cancels 04.09+                = PROXY_FACT_ORDERS, ТОЛЬКО отмены СЛЕДУЮЩИХ дней (см. ниже).
+--
+-- 🔴 КОНТРАКТ ОТМЕН (доказан 20.09.2026 на официальном экспорте воронки WB за 01–19.09.2026,
+--    466 строк SKU×день, 129 SKU-дней с заказами; артефакт сверки — scratch, в Git не коммитится):
+--      * отмена В ДЕНЬ ЗАКАЗА: воронка НЕ считает такой заказ в «Заказали товаров» И НЕ показывает его
+--        в «Отменили, шт» — событие исчезает из воронки целиком (5 из 5 случаев сентября);
+--      * отмена СЛЕДУЮЩИХ дней: воронка оставляет заказ в счётчике дня заказа И показывает отмену
+--        в «Отменили, шт» той же даты заказа (128 из 129 SKU-дней; единственное исключение —
+--        05.09/305101361, где отмену не отдал Orders API, а не воронка).
+--    Q листа берётся из воронки, значит заказ, отменённый в день заказа, в Q НЕ входит.
+--    Поэтому вычитать его через S — ДВОЙНОЙ УЧЁТ: формула W уже не добавляла его прибыль.
+--    Одно бизнес-событие влияет на финансовый результат ровно один раз ⇒ S = отмены СЛЕДУЮЩИХ дней.
+--    Отмены дня заказа остаются видимыми диагностикой (same_day_cancel_qty в слое сверки), но в S не входят.
 -- Строки эмитируются ТОЛЬКО за даты ≤ LAST_CLOSED_DATE — «утечка будущего» отсекается
 -- на уровне источника. NULL = пропуск источника (Engine пишет пустую ячейку, не ноль).
 CREATE OR REPLACE VIEW `project-fa311fc0-4d87-4781-986.wb_mart.V_UNITKA_DAILY_FACT` AS
@@ -144,7 +156,9 @@ sku AS (
 ),
 g AS (SELECT s.nm_id, d.d FROM sku s CROSS JOIN days d),
 o AS (
-  SELECT nm_id, order_date AS d, SUM(quantity) AS gross, SUM(IF(is_cancel, quantity, 0)) AS canc,
+  SELECT nm_id, order_date AS d, SUM(quantity) AS gross,
+         -- Только отмены СЛЕДУЮЩИХ дней: отмену дня заказа воронка уже исключила из Q (см. контракт выше).
+         SUM(IF(is_cancel AND SAFE_CAST(SUBSTR(cancel_dt, 1, 10) AS DATE) > order_date, quantity, 0)) AS canc,
          SAFE_DIVIDE(SUM(price_with_disc * quantity), NULLIF(SUM(quantity), 0)) AS price
   FROM `project-fa311fc0-4d87-4781-986.wb_mart.FACT_ORDERS`, lcd
   WHERE order_date BETWEEN lcd.d1 AND lcd.d2
