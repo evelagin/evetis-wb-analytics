@@ -131,6 +131,27 @@ describe('цена: основной источник, доказанный fall
   });
 });
 
+describe('контракт отмен: S = только отмены СЛЕДУЮЩИХ дней (доказан на официальном экспорте WB 01–19.09.2026)', () => {
+  const LATER = "SUM(IF(is_cancel AND SAFE_CAST(SUBSTR(cancel_dt, 1, 10) AS DATE) > order_date, quantity, 0)) AS canc";
+  const SAME  = "SUM(IF(is_cancel AND SAFE_CAST(SUBSTR(cancel_dt, 1, 10) AS DATE) = order_date, quantity, 0)) AS same_day_canc";
+  it.each(['sql/unitka/reconcile_v1.sql', 'sql/unitka/engine_v1_views.sql'])('%s: cancels берёт СТРОГО отмены следующих дней', (file) => {
+    const body = code(read(file));
+    expect(body).toContain(LATER);
+    // отмена дня заказа НИКОГДА не попадает в поле cancels: нет ни безусловного счёта отмен, ни счёта "=" в canc
+    expect(body).not.toMatch(/SUM\(IF\(is_cancel,\s*quantity,\s*0\)\)\s*AS canc\b/);
+    expect(body).not.toMatch(/=\s*order_date, quantity, 0\)\)\s*AS canc\b/);
+    expect(body).toContain('COALESCE(bf.canc, o.canc, 0)');          // XLSX-бэкфилл (сама воронка) остаётся приоритетным источником
+  });
+  it('слой сверки отдаёт отмену дня заказа отдельной ДИАГНОСТИЧЕСКОЙ колонкой, не смешивая её с cancels', () => {
+    const f = views.get('V_UNITKA_RECON_FACT')!;
+    expect(code(f)).toContain(SAME);
+    expect(code(f)).toMatch(/IFNULL\(o\.same_day_canc, 0\)\s+AS same_day_cancel_qty/);
+    const flat = code(f).replace(/\s+/g, ' ');
+    expect(flat).toContain('COALESCE(bf.canc, o.canc, 0) AS cancels');
+    expect(flat).not.toMatch(/same_day_canc[^,]*AS cancels/);
+  });
+});
+
 describe('откат', () => {
   const rb = code(read('sql/unitka/reconcile_v1_rollback.sql'));
   it('только DROP VIEW IF EXISTS пяти новых вью, в порядке зависимостей (сначала потребители)', () => {

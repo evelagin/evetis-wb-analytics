@@ -462,14 +462,14 @@ export function amountConfirmedByFunnel(r: Pick<IntegrityFactsRow, 'ordersUnitka
  *     старше            → деньги подтверждены суммой воронки (|orders_sum_rub − Q × цена| ≤ 0,5 ₽ × Q) → WARNING:
  *                          доказано, что выручка строки равна выручке источника, задающего Q; непришедший заказ шёл
  *                          по той же цене. Не подтверждены → DATA_ERROR, financial_valid = false.
- *  B. Orders API опережает (FACT_GT_FUNNEL, ONLY_FACT) → DATA_ERROR сразу: окна запаздывания у воронки нет, а строка
- *     финансово затронута — S содержит отмену дня заказа, которую Q не содержит, и лист вычитает прибыль заказа,
- *     которого в Q не было (объяснено: fact − same_day_cancel = funnel). Необъяснённая разница — тоже DATA_ERROR:
- *     в Orders API есть реальные заказы, которых нет в Q.
+ *  B. Orders API опережает (FACT_GT_FUNNEL, ONLY_FACT): разница, ПОЛНОСТЬЮ объяснённая отменами дня заказа
+ *     (fact − same_day_cancel = funnel), — штатная семантика воронки, строка достоверна → INFO: воронка такой
+ *     заказ не считает ни в заказах, ни в отменах, и S его не вычитает (контракт доказан на официальном экспорте
+ *     WB за 01–19.09.2026). Необъяснённая разница → DATA_ERROR: в Orders API есть заказы, которых нет в Q.
  *  ONLY_FUNNEL с доказанным fallback цены — не расхождение денег: INFO (происхождение — в PRICE_FUNNEL_FALLBACK).
  *  NO_FUNNEL_ROW (XLSX-бэкфилл, счётчик Orders API) — INFO. Старая вью без суммы воронки — поведение Guard V1.
  */
-export type DivergenceVerdict = 'LATE_DATA' | 'AMOUNT_CONFIRMED' | 'AMOUNT_NOT_CONFIRMED' | 'SAME_DAY_CANCEL_OUTSIDE_Q' | 'ORDERS_API_AHEAD_UNEXPLAINED';
+export type DivergenceVerdict = 'LATE_DATA' | 'AMOUNT_CONFIRMED' | 'AMOUNT_NOT_CONFIRMED' | 'SAME_DAY_CANCEL_EXCLUDED_BY_FUNNEL' | 'ORDERS_API_AHEAD_UNEXPLAINED';
 
 export function divergenceRules(facts: readonly IntegrityFactsRow[], lcd: string, now?: Date): IntegrityIssue[] {
   const out: IntegrityIssue[] = [];
@@ -488,9 +488,13 @@ export function divergenceRules(facts: readonly IntegrityFactsRow[], lcd: string
     } else if (r.divergenceClass === 'ONLY_FUNNEL' && r.priceSource === 'FUNNEL_FALLBACK') {
       severity = 'INFO';
     } else if (r.divergenceClass === 'FACT_GT_FUNNEL' || r.divergenceClass === 'ONLY_FACT') {
+      // Разница, ПОЛНОСТЬЮ объяснённая отменами дня заказа, — доказанная штатная семантика воронки, а не дефект:
+      // такой заказ воронка не считает ни в заказах, ни в отменах, и S его больше не вычитает (контракт отмен).
       const same = r.sameDayCancelQty ?? 0;
-      verdict = same > 0 && fq - same === (r.ordersFunnel ?? 0) ? 'SAME_DAY_CANCEL_OUTSIDE_Q' : 'ORDERS_API_AHEAD_UNEXPLAINED';
-      severity = 'ERROR'; invalid = true;
+      const explainedBySameDay = same > 0 && fq - same === (r.ordersFunnel ?? 0);
+      verdict = explainedBySameDay ? 'SAME_DAY_CANCEL_EXCLUDED_BY_FUNNEL' : 'ORDERS_API_AHEAD_UNEXPLAINED';
+      severity = explainedBySameDay ? 'INFO' : 'ERROR';
+      invalid = !explainedBySameDay;
     } else {
       const age = today === null ? Infinity : daysBetween(r.day, today);
       const confirmed = amountConfirmedByFunnel(r);
@@ -506,14 +510,14 @@ export function divergenceRules(facts: readonly IntegrityFactsRow[], lcd: string
           ? `${r.day} ${r.nmId}: Orders API так и не отдал часть заказов (${r.divergenceClass}), но выручка строки доказана суммой воронки — на финансовый результат не влияет`
           : verdict === 'AMOUNT_NOT_CONFIRMED'
             ? `${r.day} ${r.nmId}: счётчики расходятся (${r.divergenceClass}) дольше ${ORDERS_API_MATURITY_DAYS} дней, сумма воронки не подтверждает деньги строки — строка недостоверна`
-            : verdict === 'SAME_DAY_CANCEL_OUTSIDE_Q'
-              ? `${r.day} ${r.nmId}: воронка не считает заказ, отменённый в день заказа (${fmt(r.sameDayCancelQty)} шт.), а отмена в S есть — лист вычитает прибыль заказа, которого нет в Q; результат строки занижен`
+            : verdict === 'SAME_DAY_CANCEL_EXCLUDED_BY_FUNNEL'
+              ? `${r.day} ${r.nmId}: заказ отменён в день заказа (${fmt(r.sameDayCancelQty)} шт.) — воронка не считает его ни в заказах, ни в отменах, S его не вычитает: результат строки достоверен`
               : `${r.day} ${r.nmId}: в Orders API больше заказов, чем в воронке (${r.divergenceClass}), разница отменами дня заказа не объясняется — Q строки недостоверен`;
     out.push(issue({
       nmId: r.nmId, day: r.day, field: 'orders', code: 'ORDERS_SOURCE_DIVERGENCE', severity,
       blocking: severity === 'ERROR', financialInvalid: invalid, source: 'V_WB_FUNNEL_DAILY vs FACT_ORDERS',
       sourceValue: `${r.divergenceClass}; funnel=${fmt(r.ordersFunnel) ?? 'NULL'}; fact_qty=${fmt(r.factOrderQty) ?? 'NULL'}${recon ? `; funnel_sum=${fmt(r.funnelOrdersSum) ?? 'NULL'}; price=${fmt(r.factualOrderPrice) ?? 'NULL'}; amount_confirmed=${amountConfirmedByFunnel(r)}; same_day_cancel=${fmt(r.sameDayCancelQty) ?? '0'}${verdict ? `; verdict=${verdict}` : ''}` : ''}`,
-      diagnosticValue: null, dependentFields: verdict === 'SAME_DAY_CANCEL_OUTSIDE_Q' ? ['Q', 'S', 'W', 'V'] : ['Q'],
+      diagnosticValue: null, dependentFields: verdict === 'SAME_DAY_CANCEL_EXCLUDED_BY_FUNNEL' ? ['Q', 'S'] : ['Q'],
       message,
     }));
   }

@@ -66,9 +66,12 @@ sku AS (
 ),
 g AS (SELECT s.nm_id, s.sku_active, d.d FROM sku s CROSS JOIN days d),
 o AS (
-  SELECT nm_id, order_date AS d, SUM(quantity) AS gross, SUM(IF(is_cancel, quantity, 0)) AS canc,
-         -- Отмена В ДЕНЬ ЗАКАЗА: воронка такой заказ в orders_count не считает (замер 04–18.09.2026: 4 из 4).
-         -- Только диагностика расхождения счётчиков; в Q / S / цену листа не входит.
+  SELECT nm_id, order_date AS d, SUM(quantity) AS gross,
+         -- S листа = отмены СЛЕДУЮЩИХ дней. Отмену дня заказа воронка уже исключила из Q, поэтому
+         -- вычитать её второй раз нельзя (контракт отмен доказан 20.09.2026, см. engine_v1_views.sql).
+         SUM(IF(is_cancel AND SAFE_CAST(SUBSTR(cancel_dt, 1, 10) AS DATE) > order_date, quantity, 0)) AS canc,
+         -- Отмена В ДЕНЬ ЗАКАЗА: воронка не показывает ни заказ, ни отмену. ТОЛЬКО диагностика расхождения
+         -- счётчиков Orders API и воронки; в Q / S / цену листа не входит.
          SUM(IF(is_cancel AND SAFE_CAST(SUBSTR(cancel_dt, 1, 10) AS DATE) = order_date, quantity, 0)) AS same_day_canc,
          SAFE_DIVIDE(SUM(price_with_disc * quantity), NULLIF(SUM(quantity), 0)) AS price,
          MAX(built_at) AS built_at
