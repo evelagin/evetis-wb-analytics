@@ -138,6 +138,13 @@ SELECT * FROM `wb_mart.V_UNITKA_ENGINE_STATUS`;
   — и больше ничего), `write` (правит факт-ячейки окна 35 дней, включая прошлые месяцы).
 * **Снимок issue строится из оценки Guard:** `observe` в production включать вместе с `UNITKA_INTEGRITY_MODE=observe`,
   иначе снимка нет (предупреждение `unitka_issue_snapshot_skipped`) и статус остаётся `NO_RUN_YET`.
+* **Контролируемый production-observe без записи в книгу** (проверочный прогон перед включением расписания):
+  `gcloud run jobs execute unitka-engine-prod --region europe-west1 --update-env-vars UNITKA_RECONCILE_MODE=observe,UNITKA_INTEGRITY_MODE=observe,UNITKA_WRITE_ENABLED=0,DRY_RUN=1 --wait`
+  — переопределения живут только в этой попытке, определение задания не меняется. Лист при этом физически недоступен
+  для записи (scope `spreadsheets.readonly`), ремонт не исполняется, журнал ремонта не опрашивается, а снимок
+  наблюдаемости сохраняется: `qa_json.reconcile.issue_snapshot = PERSISTED`, в таблице появляется маркер прогона.
+* `issue_snapshot` в `qa_json.reconcile`: `PERSISTED` — снимок записан целиком; `FAILED` — оборвался, маркера нет,
+  статус со временем станет `STALE`; `SKIPPED_GUARD_OFF` — Guard выключен; `SKIPPED_NOT_PRODUCTION` — среда `shadow`.
 * **`V_UNITKA_INTEGRITY_STATUS.financial_health`:** `NO_RUN_YET` — завершённой оценки нет (это не «всё хорошо»);
   `STALE` — последняя оценка старше 22 часов, то есть утренний прогон 10:00 МСК не дал оценки к 10:30: смотреть
   `UNITKA_ENGINE_RUNS` и событие `unitka_issue_snapshot_failed`; `ERROR` — есть `DATA_ERROR`; `OK` — их нет.

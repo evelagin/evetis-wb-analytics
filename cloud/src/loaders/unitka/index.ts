@@ -283,7 +283,16 @@ function reconcileSummary(o: ReconcileOutcome, extra: Record<string, unknown> = 
 export async function unitkaLoader(ctx: LoaderContext, deps: UnitkaDeps = defaultUnitkaDeps): Promise<LoaderResult> {
   const { config, logger, runId } = ctx;
   const startedAt = deps.now();
-  const writeMode = config.environment === 'prod' && config.unitkaWriteEnabled;
+  // ── ТРИ НЕЗАВИСИМЫЕ СПОСОБНОСТИ ПРОГОНА (Rollout Gate 4.1) ──────────────────────────────────
+  // Раньше их заменял один флаг writeMode, поэтому контролируемый production-observe с
+  // UNITKA_WRITE_ENABLED=0 уходил в ветку SHADOW и физически не мог сохранить снимок наблюдаемости.
+  //   SHEET_BUSINESS_WRITE — обычная суточная запись фактов в книгу (и выбор scope Sheets);
+  //   OBSERVABILITY_WRITE  — снимок issue в wb_ops (состояние наблюдаемости, НЕ ремонт);
+  //   REPAIR_EXECUTION     — исторические поправки сверки и журнал ремонта.
+  // Среду различает канонический сигнал config.environment ('prod' | 'shadow', проверяется в config.ts):
+  // настоящая shadow-среда снимок не пишет НАМЕРЕННО, а не потому, что у её SA нет прав (IAM — вторая линия).
+  const sheetBusinessWriteAllowed = config.environment === 'prod' && config.unitkaWriteEnabled;
+  const writeMode = sheetBusinessWriteAllowed;
   const mode: EngineRunRecord['mode'] = writeMode ? 'WRITE' : 'SHADOW';
   const log = logger.child({ engine: ENGINE_VERSION, mode });
 
@@ -298,6 +307,9 @@ export async function unitkaLoader(ctx: LoaderContext, deps: UnitkaDeps = defaul
   if (config.unitkaReconcileModeInvalid) {
     log.warn('unitka_reconcile_mode_invalid', { value: config.unitkaReconcileModeInvalid, effective: 'off' });
   }
+  // Снимок наблюдаемости не зависит от права писать в книгу: он разрешён в production в любом режиме
+  // сверки, кроме off, — и запрещён в настоящей shadow-среде.
+  const observabilityWriteAllowed = config.environment === 'prod' && reconcileMode !== 'off';
   let integrity: IntegrityOutcome | null = null;
   let calendar: Record<string, unknown> | null = null;
   let reconcile: ReconcileOutcome | null = null;
@@ -412,12 +424,47 @@ export async function unitkaLoader(ctx: LoaderContext, deps: UnitkaDeps = defaul
         repairs_sample: repairs.slice(0, 40).map((r) => `${r.businessDate} ${r.nmId} ${r.field} ${r.cellA1} ${r.oldValue ?? ''}→${r.newValue ?? ''} ${r.reason} [${r.source}]`),
       }));
     }
+    // Плановое накопление (какие ячейки входят в контракт записи) — writeHistory;
+    // фактическое ИСПОЛНЕНИЕ ремонта (проба журнала, записи REPAIRED) — REPAIR_EXECUTION:
+    // оно требует ещё и права записи в книгу, поэтому в контролируемом observe невозможно.
     const writeHistory = reconcileMode === 'write';
-    if (writeHistory) pendingRepairs = repairs;
+    const repairExecutionAllowed = sheetBusinessWriteAllowed && writeHistory;
+    if (repairExecutionAllowed) pendingRepairs = repairs;
     const allCells: PlannedCell[] = writeHistory ? [...plan.cells, ...histCells] : plan.cells;
     const allFormatCells = writeHistory && reconcile ? [...plan.formatCells, ...reconcile.sections.flatMap((x) => x.plan.formatCells)] : plan.formatCells;
     rec.cellsPlanned = allCells.length;
     const reconArg = reconcile && reconcileMode !== 'off' ? { sections: reconcile.sections } : undefined;
+
+    // Снимок issue — СОСТОЯНИЕ НАБЛЮДАЕМОСТИ, а не ремонт: одна и та же запись в обычном прогоне и в
+    // контролируемом observe с отключённой записью в книгу. Условие ровно одно — OBSERVABILITY_WRITE.
+    // Маркер прогона пишется ПОСЛЕДНИМ (bq.insertIssues): без него вью статуса оценку завершённой не считает.
+    // Сбой снимка прогон не роняет — статус честно станет STALE, когда истечёт порог свежести.
+    let issueSnapshot: 'PERSISTED' | 'FAILED' | 'SKIPPED_GUARD_OFF' | 'SKIPPED_GUARD_FAILED' | 'SKIPPED_NOT_PRODUCTION' | 'OFF' = 'OFF';
+    const persistIssueSnapshot = async (): Promise<void> => {
+      if (reconcileMode === 'off') return;                       // режим off снимок не пишет никогда
+      if (!observabilityWriteAllowed) {
+        // Настоящая shadow-среда: подавляем запись НАМЕРЕННО, не полагаясь на отказ IAM.
+        issueSnapshot = 'SKIPPED_NOT_PRODUCTION';
+        log.info('unitka_issue_snapshot_skipped', { reason: `environment=${config.environment}: снимок наблюдаемости пишет только production`, reconcile_mode: reconcileMode });
+        return;
+      }
+      if (!integrity) {
+        // Оценку целостности даёт Guard: без UNITKA_INTEGRITY_MODE снимка нет, и статус остаётся NO_RUN_YET.
+        issueSnapshot = 'SKIPPED_GUARD_OFF';
+        log.warn('unitka_issue_snapshot_skipped', { reason: 'UNITKA_INTEGRITY_MODE=off — оценки целостности нет, снимок не пишется; статус останется NO_RUN_YET / STALE', reconcile_mode: reconcileMode });
+        return;
+      }
+      if (integrity.summary.subsystem_failure) { issueSnapshot = 'SKIPPED_GUARD_FAILED'; return; }
+      try {
+        const rows = issueRecords(integrity.issues, { runId, environment: config.environment, evaluatedAt: integrity.summary.evaluated_at, phase: integrity.summary.phase, reconcileMode });
+        await bq.insertIssues(rows);
+        issueSnapshot = 'PERSISTED';
+        log.info('unitka_issue_snapshot', { reconcile_mode: reconcileMode, rows: rows.length, sheet_business_write: sheetBusinessWriteAllowed });
+      } catch (e) {
+        issueSnapshot = 'FAILED';
+        log.error('unitka_issue_snapshot_failed', { message: e instanceof Error ? e.message : String(e) });
+      }
+    };
 
     // 4. SHADOW: QA текущего листа (mismatch = что изменил бы Engine), журнал, выход без записи.
     if (!writeMode) {
@@ -426,12 +473,15 @@ export async function unitkaLoader(ctx: LoaderContext, deps: UnitkaDeps = defaul
         integrity = await evaluateIntegrityPhase({ bq, sheets, config, snap, plan, phase: 'PRE_WRITE', now: deps.now, log, pendingWrite: (r, c) => pending.has(`${r}|${c}`), ...(reconArg ? { recon: reconArg } : {}) });
         publishIntegrity(integrity, { config, log, runId, lcd: plan.lcd });
       }
+      // Контролируемый production-observe (UNITKA_WRITE_ENABLED=0): оценка завершена — снимок сохраняется
+      // здесь, ДО QA-гейта листа, потому что он описывает данные, а не исход записи.
+      await persistIssueSnapshot();
       const qa = evaluate(snap, plan, { shadow: true });
       // В SHADOW mismatch и LCD — ожидаемая разница (новый день), дефектами считаются остальные.
       const SHADOW_DIFF = new Set(['BQ_SHEETS_MISMATCH', 'LCD_CONSISTENT', 'CLOSED_FORMAT_CONTRACT']);
       const expectedFail = qa.checks.filter((c) => !c.pass && !SHADOW_DIFF.has(c.name));
       rec.qaStatus = expectedFail.length ? 'SHADOW_FAIL' : (allCells.length || allFormatCells.length ? 'SHADOW_DIFF' : 'SHADOW_MATCH');
-      rec.qaJson = qaJson(qa, { plan: planSummary(plan), calendar, ...(reconcile ? { reconcile: reconcileSummary(reconcile, { repairs_planned: repairs.length }) } : {}), ...(integrity ? { integrity: integrity.summary } : {}) });
+      rec.qaJson = qaJson(qa, { plan: planSummary(plan), calendar, ...(reconcile ? { reconcile: reconcileSummary(reconcile, { repairs_planned: repairs.length, repairs_recorded: 0, issue_snapshot: issueSnapshot }) } : {}), ...(integrity ? { integrity: integrity.summary } : {}) });
       log.info('unitka_shadow', { qa_status: rec.qaStatus, cells_planned: plan.cells.length, checks: qa.checks.map((c) => `${c.name}:${c.pass ? 'PASS' : 'FAIL(' + c.count + ')'}`) });
       if (expectedFail.length) {
         rec.errorCode = failureCode({ pass: false, checks: expectedFail });
@@ -448,13 +498,13 @@ export async function unitkaLoader(ctx: LoaderContext, deps: UnitkaDeps = defaul
 
     // 4'. PROD: одна запись. В режиме write в неё входят и исторические поправки прошлых месяцев окна.
     // Ремонт без происхождения не выполняется: журнал ремонта обязан быть доступен ДО записи (fail-closed).
-    if (writeHistory) await bq.ledgerProbe();
+    if (repairExecutionAllowed) await bq.ledgerProbe();
     if (allCells.length === 0) {
       log.info('unitka_nothing_to_write', { lcd: plan.lcd });
     } else {
       const ranges = toWriteRanges(allCells, config.unitkaSheetName);
       // План ремонта — в лог ДО мутации листа: происхождение не теряется при любом исходе записи.
-      if (writeHistory && repairs.length > 0) log.info('unitka_repairs_planned', { count: repairs.length, records: repairs.slice(0, 200) });
+      if (repairExecutionAllowed && repairs.length > 0) log.info('unitka_repairs_planned', { count: repairs.length, records: repairs.slice(0, 200) });
       writeStage = 'ATTEMPTED';
       const updated = await sheets.batchWrite(ranges);
       writeStage = 'ACKNOWLEDGED';
@@ -497,7 +547,7 @@ export async function unitkaLoader(ctx: LoaderContext, deps: UnitkaDeps = defaul
     }
     // Журнал ремонта — ТОЛЬКО после подтверждённой записи (QA PASS): несостоявшийся ремонт не объявляется состоявшимся.
     let repairsRecorded = 0;
-    if (writeHistory && qa.pass && repairs.length > 0) {
+    if (repairExecutionAllowed && qa.pass && repairs.length > 0) {
       writeStage = 'VERIFIED';
       attemptRecorded = true;
       const done = repairs.map((r) => ({ ...r, repairedAt: deps.now().toISOString(), status: 'REPAIRED' as const }));
@@ -510,30 +560,7 @@ export async function unitkaLoader(ctx: LoaderContext, deps: UnitkaDeps = defaul
         rec.errorMessage = `поправки записаны в лист (${done.length}), но журнал ремонта не принял их: ${e instanceof Error ? e.message : String(e)}`;
       }
     }
-    // Снимок issue — СОСТОЯНИЕ НАБЛЮДАЕМОСТИ, а не ремонт: пишется в режимах observe и write (в off — никогда).
-    // В observe это единственная запись сверки: лист, факты и журнал ремонта режим observe не трогает.
-    // Маркер прогона идёт последним (bq.insertIssues): без него вью статуса оценку завершённой не считает.
-    // Сбой снимка прогон не роняет — статус честно станет STALE, когда истечёт порог свежести.
-    let issueSnapshot: 'PERSISTED' | 'FAILED' | 'SKIPPED_GUARD_OFF' | 'SKIPPED_GUARD_FAILED' | 'OFF' = 'OFF';
-    if (reconcileMode !== 'off') {
-      if (!integrity) {
-        // Оценку целостности даёт Guard: без UNITKA_INTEGRITY_MODE снимка нет, и статус остаётся NO_RUN_YET.
-        issueSnapshot = 'SKIPPED_GUARD_OFF';
-        log.warn('unitka_issue_snapshot_skipped', { reason: 'UNITKA_INTEGRITY_MODE=off — оценки целостности нет, снимок не пишется; статус останется NO_RUN_YET / STALE', reconcile_mode: reconcileMode });
-      } else if (integrity.summary.subsystem_failure) {
-        issueSnapshot = 'SKIPPED_GUARD_FAILED';
-      } else {
-        try {
-          const rows = issueRecords(integrity.issues, { runId, environment: config.environment, evaluatedAt: integrity.summary.evaluated_at, phase: integrity.summary.phase, reconcileMode });
-          await bq.insertIssues(rows);
-          issueSnapshot = 'PERSISTED';
-          log.info('unitka_issue_snapshot', { reconcile_mode: reconcileMode, rows: rows.length });
-        } catch (e) {
-          issueSnapshot = 'FAILED';
-          log.error('unitka_issue_snapshot_failed', { message: e instanceof Error ? e.message : String(e) });
-        }
-      }
-    }
+    await persistIssueSnapshot();
     rec.qaJson = qaJson(qa, {
       plan: planSummary(plan), calendar, format_cells_written: allFormatCells.length,
       ...(reconcile ? { reconcile: reconcileSummary(reconcile, { repairs_planned: repairs.length, repairs_recorded: repairsRecorded, issue_snapshot: issueSnapshot }) } : {}),
