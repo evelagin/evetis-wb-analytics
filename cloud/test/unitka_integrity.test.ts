@@ -10,7 +10,7 @@ import { describe, it, expect } from 'vitest';
 import {
   evaluateIntegrity, aggregateStatus, storageSeverity, parseHhMm, parseCogsTerm, summarize, classifyCogsSnapshot, parseBqTimestamp,
   priceRules, sppRules, cogsRules, coverageRules, storageRules, divergenceRules, moscowParts,
-  OBSERVED_PRICE_LABEL, ERROR_KEYS_LIMIT, COGS_STALE_THRESHOLD_HOURS,
+  OBSERVED_PRICE_LABEL, ERROR_KEYS_LIMIT, COGS_STALE_THRESHOLD_HOURS, APPROVED_COGS_REFS,
   type IntegrityFactsRow, type CogsCanonicalRow, type CogsSnapshot, type IntegrityInputs, type IntegrityIssue, type IntegritySeverity,
 } from '../src/loaders/unitka/integrity.js';
 import { OFFSET, addDaysIso, colA1, type Block, type CellValue } from '../src/loaders/unitka/model.js';
@@ -283,6 +283,64 @@ describe('parseCogsTerm — контракт формулы AI', () => {
   });
   it('десятичная запятая при «,»-разделителе → unrecognised (неоднозначно)', () => {
     expect(parseCogsTerm(aiFormula(b, row, '406,65', ','), b, row).kind).toBe('unrecognised');
+  });
+});
+
+/**
+ * Две эпохи параметра себестоимости: $R$45 — замороженный параметр закрытых месяцев, $S$45 — текущий.
+ * Разделение по ячейкам позволяет исправить сентябрь 2026 и дальше, не переписав 20 закрытых месяцев.
+ * Белый список остаётся ЯВНЫМ: добавление S45 не открывает строку 45 целиком.
+ */
+describe('APPROVED_COGS_REFS — ровно две эпохи параметра, всё прочее fail-closed', () => {
+  const b = blocks[0]!;
+  const row = 753;
+  it('белый список — ровно [R45, S45]', () => {
+    expect([...APPROVED_COGS_REFS]).toEqual(['R45', 'S45']);
+  });
+  it('legacy $R$45 разбирается как прежде (закрытые месяцы не затронуты)', () => {
+    expect(parseCogsTerm(aiFormula(b, row, '$R$45'), b, row)).toMatchObject({ kind: 'ref', ref: 'R45', text: '$R$45' });
+    expect(parseCogsTerm(aiFormula(b, row, '$R$45', ';'), b, row)).toMatchObject({ kind: 'ref', ref: 'R45' });
+  });
+  it('новый $S$45 разбирается как ссылка', () => {
+    expect(parseCogsTerm(aiFormula(b, row, '$S$45'), b, row)).toMatchObject({ kind: 'ref', ref: 'S45', text: '$S$45' });
+    expect(parseCogsTerm(aiFormula(b, row, '$S$45', ';'), b, row)).toMatchObject({ kind: 'ref', ref: 'S45' });
+  });
+  it.each(['$T$45', '$Q$45', '$A$45', '$S$44', '$S$46', '$R$46', '$SS$45', 'S45', '$S45', 'S$45'])(
+    'ссылка %s НЕ становится разрешённой из-за добавления S45 → unrecognised',
+    (term) => expect(parseCogsTerm(aiFormula(b, row, term), b, row).kind).toBe('unrecognised'));
+});
+
+describe('cogsRules — значение берётся из ячейки, на которую ссылается формула AI', () => {
+  const handSheet = (cogs: string): SheetFixture => {
+    const s = septemberSheet();
+    const hb = blockOf(SKU.HAND);
+    for (let i = 0; i < 30; i++) s.formulas.set(`${dayRow(i)}|${hb.start + OFFSET.unitProfit}`, aiFormula(hb, dayRow(i), cogs));
+    return s;
+  };
+  const hand = (o: Partial<IntegrityInputs> & { sheet?: SheetFixture }): IntegrityIssue[] =>
+    cogsRules(inputs(o)).filter((i) => i.nmId === SKU.HAND);
+
+  it('сегодняшнее production-состояние: AI на $R$45 = 240 при каноне 231,38 → COGS_SOURCE_MISMATCH', () => {
+    const r = hand({ sheet: handSheet('$R$45'), refValues: { R45: 240, S45: 231.38 } });
+    expect(r[0]).toMatchObject({ code: 'COGS_SOURCE_MISMATCH', severity: 'ERROR', financialInvalid: true });
+  });
+  it('после миграции: AI на $S$45 = 231,38 при том же каноне → расхождения НЕТ', () => {
+    expect(hand({ sheet: handSheet('$S$45'), refValues: { R45: 240, S45: 231.38 } })).toHaveLength(0);
+  });
+  it('S45 читается по-настоящему: то же $S$45, но в ячейке 240 → расхождение остаётся', () => {
+    const r = hand({ sheet: handSheet('$S$45'), refValues: { R45: 240, S45: 240 } });
+    expect(r[0]).toMatchObject({ code: 'COGS_SOURCE_MISMATCH' });
+    expect(r[0]!.sourceValue).toContain('$S$45=240');
+  });
+  it('$S$45 пуста → SHEET_BLANK, а не молчаливый ноль (fail-closed до записи параметра)', () => {
+    const r = hand({ sheet: handSheet('$S$45'), refValues: { R45: 240, S45: '' } });
+    expect(r[0]).toMatchObject({ code: 'COGS_ZERO_OR_MISSING', severity: 'ERROR' });
+    expect(r[0]!.sourceValue).toContain('SHEET_BLANK');
+  });
+  it('неразрешённая ссылка в AI остаётся UNRECOGNISED даже при заполненной ячейке', () => {
+    const r = hand({ sheet: handSheet('$T$45'), refValues: { R45: 240, S45: 231.38, T45: 231.38 } });
+    expect(r[0]).toMatchObject({ code: 'COGS_ZERO_OR_MISSING' });
+    expect(r[0]!.sourceValue).toContain('UNRECOGNISED_FORMULA');
   });
 });
 
