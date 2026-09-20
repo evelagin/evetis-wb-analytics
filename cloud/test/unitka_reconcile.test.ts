@@ -674,6 +674,151 @@ describe('снимок issue — состояние наблюдаемости: 
   });
 });
 
+/* ───────────────────────── матрица способностей (Rollout Gate 4.1) ───────────────────────── */
+
+/**
+ * Три способности прогона независимы:
+ *   SHEET_BUSINESS_WRITE — обычная суточная запись в книгу (prod И UNITKA_WRITE_ENABLED=1);
+ *   OBSERVABILITY_WRITE  — снимок issue в wb_ops (prod И режим сверки ≠ off) — НЕ зависит от права записи в книгу;
+ *   REPAIR_EXECUTION     — исторические поправки и журнал ремонта (SHEET_BUSINESS_WRITE И режим write).
+ * Дефект Gate 4: контролируемый production-observe с UNITKA_WRITE_ENABLED=0 уходил в ветку SHADOW,
+ * оценивал целостность, но до снимка не доходил — таблица оставалась пустой, статус NO_RUN_YET.
+ */
+describe('матрица способностей: запись в книгу, снимок наблюдаемости и исполнение ремонта разделены', () => {
+  const GUARD = { UNITKA_INTEGRITY_MODE: 'observe' };
+  const nm = SEPT_NMS[18]!, day = '2026-09-17';
+  const gapRow = (): Record<string, unknown> => ({ marketplace: 'WB', nm_id: nm, internal_sku: 's', product_name: 'p', day, last_closed_date: '2026-10-02', orders_unitka: 1, cancels_unitka: 0,
+    orders_source: 'FUNNEL_API', orders_funnel: 1, fact_order_rows: null, fact_order_qty: null, observed_price_diagnostic: null, observed_price_at: null, storage_value: 0, storage_date_covered: true,
+    divergence_class: 'ONLY_FUNNEL', factual_order_price: 1120, price_source: 'FUNNEL_FALLBACK', price_state: 'PRESENT', funnel_orders_sum: 1120, same_day_cancel_qty: 0, stock_date_covered: true, sku_active: true });
+  /** Книга после суточной работы, где ремонт цены сверкой ещё не записан: 17.09 заказ есть, цены в листе нет. */
+  async function pending(): Promise<{ book: MemoryBook; runner: ReconRunner }> {
+    const { book, runner } = await seeded();
+    book.set(septRow(book, day), blockCol(18, OFFSET.price), ''); book.set(septRow(book, day), blockCol(18, OFFSET.orders), 1);
+    runner.facts = patch(runner.facts, nm, day, { orders: 1, price: 1120, priceSource: 'FUNNEL_FALLBACK', factOrderQty: 0, funnelOrders: 1, funnelOrdersSum: 1120 });
+    runner.integrityRows = [gapRow()]; runner.cogsRows = [];
+    runner.queries = []; book.batchWrites = []; runner.journal = [];
+    return { book, runner };
+  }
+  /** Прогон в произвольной среде: ENVIRONMENT задаётся явно (канонический сигнал config.environment). */
+  async function runIn(env: 'prod' | 'shadow', book: MemoryBook, runner: ReconRunner, over: Record<string, string>): Promise<LogLine[]> {
+    const lines: LogLine[] = [];
+    const config = loadConfig({ ENVIRONMENT: env, GCP_PROJECT_ID: 'proj', BQ_RAW_DATASET: 'wb_raw', GIT_SHA: 'sha-test', LOADER_NAME: 'unitka', UNITKA_SPREADSHEET_ID: 'x', ...over });
+    const ctx: LoaderContext = { config, logger: recordingLogger(lines), logicalPeriod: 'p', targetDate: 'p', runId: `cap-${++seq}` };
+    await unitkaLoader(ctx, { makeRunner: () => runner, makeSheets: () => book, now: () => new Date('2026-10-03T07:00:00Z') }, );
+    return lines;
+  }
+  const snapshotOf = (runner: ReconRunner): string => JSON.parse(String(runner.journal.at(-1)!.qaJson)).reconcile?.issue_snapshot ?? 'ABSENT';
+  const marker = (runner: ReconRunner): Record<string, unknown> | undefined => runner.issues.find((r) => r.code === 'RUN_MARKER');
+
+  it('A. prod + write_enabled=0 + observe: снимок пишется, маркер последним, 0 записей в лист, 0 ремонтов, 0 записей журнала ремонта', async () => {
+    const { book, runner } = await pending();
+    const priceBefore = book.get(septRow(book, day), blockCol(18, OFFSET.price));
+    const lines = await runIn('prod', book, runner, { UNITKA_WRITE_ENABLED: '0', UNITKA_RECONCILE_MODE: 'observe', ...GUARD });
+    // снимок наблюдаемости сохранён, маркер — последней строкой
+    expect(runner.issues.length).toBeGreaterThan(1);
+    expect(runner.issues.at(-1)).toMatchObject({ code: 'RUN_MARKER', issueKey: null, environment: 'prod', sourceValue: `reconcile_mode=observe; issue_rows=${runner.issues.length - 1}` });
+    expect(runner.issueStatements.at(-1)).toBe(1);                                                // маркер — отдельным оператором
+    expect(runner.issues.filter((r) => r.code === 'RUN_MARKER')).toHaveLength(1);
+    expect(runner.issues.find((r) => r.code === 'PRICE_NOT_ON_SHEET')).toMatchObject({ state: 'DATA_ERROR', financialValid: false });
+    expect(new Set(runner.issues.map((r) => r.runId)).size).toBe(1);
+    expect(snapshotOf(runner)).toBe('PERSISTED');
+    // ничего не записано и не отремонтировано
+    expect(book.batchWrites).toHaveLength(0);
+    expect(book.get(septRow(book, day), blockCol(18, OFFSET.price))).toBe(priceBefore);
+    expect(runner.ledger).toHaveLength(0);
+    expect(runner.queries.some((q) => q.includes('UNITKA_REPAIR_LEDGER'))).toBe(false);            // журнал ремонта даже не опрашивается
+    expect(runner.journal.at(-1)).toMatchObject({ mode: 'SHADOW', cellsWritten: 0 });
+    expect(lines.some((l) => l.event === 'unitka_issue_snapshot')).toBe(true);
+  });
+  it('B. настоящая shadow-среда + observe: снимок подавляется НАМЕРЕННО (не отказом IAM); 0 записей везде', async () => {
+    const { book, runner } = await pending();
+    const lines = await runIn('shadow', book, runner, { UNITKA_WRITE_ENABLED: '0', UNITKA_RECONCILE_MODE: 'observe', ...GUARD });
+    expect([runner.issues.length, runner.ledger.length, book.batchWrites.length]).toEqual([0, 0, 0]);
+    expect(marker(runner)).toBeUndefined();
+    expect(runner.queries.some((q) => q.includes('INSERT INTO') && q.includes('UNITKA_INTEGRITY_ISSUES'))).toBe(false);
+    expect(snapshotOf(runner)).toBe('SKIPPED_NOT_PRODUCTION');
+    expect(lines.find((l) => l.event === 'unitka_issue_snapshot_skipped')!.fields).toMatchObject({ reconcile_mode: 'observe' });
+    // Guard при этом оценку выполняет — наблюдаемость shadow остаётся в логе и журнале прогона
+    expect(JSON.parse(String(runner.journal.at(-1)!.qaJson)).integrity.status).toBeDefined();
+  });
+  it('C. prod + write_enabled=1 + observe: суточный писатель работает как раньше, ремонтов 0, снимок пишется', async () => {
+    const { book, runner } = await pending();
+    runner.facts = patch(runner.facts, SEPT_NM, '2026-10-02', { cancels: 4 });                     // обычная суточная поправка закрытого дня месяца LCD (октябрь)
+    const lines = await runIn('prod', book, runner, { UNITKA_WRITE_ENABLED: '1', UNITKA_RECONCILE_MODE: 'observe', ...GUARD });
+    expect(book.batchWrites.length).toBeGreaterThan(0);                                            // лист пишется
+    expect(book.get(septRow(book, day), blockCol(18, OFFSET.price))).toBe('');                     // но ремонт сверки — нет
+    expect(runner.ledger).toHaveLength(0);
+    expect(snapshotOf(runner)).toBe('PERSISTED');
+    expect(marker(runner)).toMatchObject({ sourceValue: `reconcile_mode=observe; issue_rows=${runner.issues.length - 1}` });
+    expect(runner.journal.at(-1)).toMatchObject({ mode: 'WRITE' });
+    expect(lines.some((l) => l.event === 'unitka_repairs')).toBe(false);
+  });
+  it('D. prod + режимы off: поведение прежнее — слой сверки не читается, снимка нет', async () => {
+    const { book, runner } = await pending();
+    await runIn('prod', book, runner, { UNITKA_WRITE_ENABLED: '1' });
+    expect([runner.issues.length, runner.ledger.length]).toEqual([0, 0]);
+    expect(runner.queries.some((q) => /RECON|REPAIR_LEDGER|INTEGRITY_ISSUES/.test(q))).toBe(false);
+    expect(JSON.parse(String(runner.journal.at(-1)!.qaJson)).reconcile).toBeUndefined();
+    expect(snapshotOf(runner)).toBe('ABSENT');
+  });
+  it('E. сбой вставки issue → маркер НЕ пишется: завершённой оценки нет', async () => {
+    const { book, runner } = await pending();
+    runner.issuesFailAfter = 0;
+    await runIn('prod', book, runner, { UNITKA_WRITE_ENABLED: '0', UNITKA_RECONCILE_MODE: 'observe', ...GUARD });
+    expect(marker(runner)).toBeUndefined();
+    expect(snapshotOf(runner)).toBe('FAILED');
+    expect(runner.journal.at(-1)).toMatchObject({ qaStatus: 'SHADOW_MATCH', errorCode: null });    // прогон не падает
+    expect(book.batchWrites).toHaveLength(0);
+  });
+  it('F. сбой вставки МАРКЕРА → строки issue есть, но завершённой оценки нет', async () => {
+    const { book, runner } = await pending();
+    const probe = await pending();                                                                 // сколько операторов issue даст этот снимок
+    await runIn('prod', probe.book, probe.runner, { UNITKA_WRITE_ENABLED: '0', UNITKA_RECONCILE_MODE: 'observe', ...GUARD });
+    const issueBatches = probe.runner.issueStatements.length - 1;
+    runner.issuesFailAfter = issueBatches;                                                          // падает ровно на маркере
+    await runIn('prod', book, runner, { UNITKA_WRITE_ENABLED: '0', UNITKA_RECONCILE_MODE: 'observe', ...GUARD });
+    expect(runner.issues.length).toBeGreaterThan(0);
+    expect(marker(runner)).toBeUndefined();
+    expect(snapshotOf(runner)).toBe('FAILED');
+  });
+  it('G. прогон без DATA_ERROR: маркер всё равно пишется — «чисто» отличимо от «оценки не было»', async () => {
+    const { book, runner } = await pending();
+    runner.integrityRows = []; runner.cogsRows = [];
+    await runIn('prod', book, runner, { UNITKA_WRITE_ENABLED: '0', UNITKA_RECONCILE_MODE: 'observe', ...GUARD });
+    expect(runner.issues.filter((r) => r.state === 'DATA_ERROR')).toHaveLength(0);
+    expect(marker(runner)).toMatchObject({ code: 'RUN_MARKER', state: 'RUN' });
+    expect(snapshotOf(runner)).toBe('PERSISTED');
+    expect(issueRecords([], { runId: 'r', environment: 'prod', evaluatedAt: 't', phase: 'POST_WRITE', reconcileMode: 'observe' })).toMatchObject([{ code: 'RUN_MARKER', sourceValue: 'reconcile_mode=observe; issue_rows=0' }]);
+  });
+  it('H. повтор контролируемого observe идемпотентен: лист не меняется, каждый прогон даёт свой снимок и свой маркер', async () => {
+    const { book, runner } = await pending();
+    await runIn('prod', book, runner, { UNITKA_WRITE_ENABLED: '0', UNITKA_RECONCILE_MODE: 'observe', ...GUARD });
+    const firstRun = String(runner.issues.at(-1)!.runId), firstCount = runner.issues.length;
+    await runIn('prod', book, runner, { UNITKA_WRITE_ENABLED: '0', UNITKA_RECONCILE_MODE: 'observe', ...GUARD });
+    const markers = runner.issues.filter((r) => r.code === 'RUN_MARKER');
+    expect(markers).toHaveLength(2);
+    expect(new Set(markers.map((m) => m.runId)).size).toBe(2);                                     // разные прогоны не смешиваются
+    expect(runner.issues.length).toBe(firstCount * 2);
+    expect(String(runner.issues.at(-1)!.runId)).not.toBe(firstRun);
+    expect([book.batchWrites.length, runner.ledger.length]).toEqual([0, 0]);
+  });
+  it('исполнение ремонта требует И права записи в книгу, И режима write: контролируемый observe его не получает', async () => {
+    const { book, runner } = await pending();
+    runner.facts = patch(runner.facts, SEPT_NM, '2026-09-16', { cancels: 4 });
+    // write + запись отключена → ремонт не исполняется, журнал ремонта не опрашивается
+    await runIn('prod', book, runner, { UNITKA_WRITE_ENABLED: '0', UNITKA_RECONCILE_MODE: 'write', ...GUARD });
+    expect([runner.ledger.length, book.batchWrites.length]).toEqual([0, 0]);
+    expect(runner.queries.some((q) => q.includes('UNITKA_REPAIR_LEDGER'))).toBe(false);
+    // та же книга и те же источники с включённой записью → ремонт исполняется и попадает в журнал
+    runner.queries = [];
+    await runIn('prod', book, runner, { UNITKA_WRITE_ENABLED: '1', UNITKA_RECONCILE_MODE: 'write', ...GUARD });
+    // два ремонта: цена 17.09 (её книга потеряла в pending()) и отмены 16.09
+    expect(new Set(runner.ledger.map((r) => r.status))).toEqual(new Set(['REPAIRED']));
+    expect(runner.ledger.map((r) => r.field).sort()).toEqual(['cancels', 'price']);
+    expect(book.batchWrites.length).toBeGreaterThan(0);
+  });
+});
+
 /* ───────────────────────── статически ───────────────────────── */
 
 describe('статически: никаких подстановок цены и никакого литерала 231.38 в коде', () => {

@@ -1,5 +1,25 @@
 # CHANGELOG.md
 
+## 2026-09-20 — UNITKA FINANCIAL INTEGRITY · разделение способностей прогона: контролируемый observe умеет писать снимок наблюдаемости (только Git)
+
+Документы: `docs/UNITKA_FIN_INTEGRITY_V1.md` §7a, runbook §5d. Terraform, вью и схемы таблиц не менялись.
+
+- **Причина (Rollout Gate 4):** первый боевой контролируемый `observe` (`UNITKA_WRITE_ENABLED=0`) успешно оценил
+  целостность и посчитал план ремонта, но снимок в `wb_ops.UNITKA_INTEGRITY_ISSUES` не сохранил: блок записи снимка
+  стоял ПОСЛЕ раннего выхода ветки SHADOW, куда уводит `writeMode = prod && UNITKA_WRITE_ENABLED`. Маркер прогона не
+  записан, `V_UNITKA_INTEGRITY_STATUS` остался `NO_RUN_YET`.
+- **Что изменено (только `cloud/src/loaders/unitka/index.ts`):** один флаг `writeMode` разделён на три независимые
+  способности — `SHEET_BUSINESS_WRITE` (prod И `UNITKA_WRITE_ENABLED=1`), `OBSERVABILITY_WRITE` (prod И режим сверки
+  ≠ `off`), `REPAIR_EXECUTION` (`SHEET_BUSINESS_WRITE` И режим `write`). Запись снимка вынесена в отдельный шаг
+  `persistIssueSnapshot()` и вызывается из обеих ветвей; в ветви SHADOW — до QA-гейта листа, потому что снимок
+  описывает данные, а не исход записи. Новое значение `issue_snapshot = SKIPPED_NOT_PRODUCTION` для среды `shadow`:
+  подавление намеренное, а не через отказ IAM. Протокол снимка прежний: строки issue одного `run_id`, маркер последним.
+- **Не менялось:** разрешение цены и fallback, окно и эпоха сверки, семантика отмен дня заказа, Q/S, COGS,
+  правила ремонта и журнала ремонта, вью, расписания, схемы таблиц.
+- Тесты: 787 (+9 — матрица способностей A–H: контролируемый observe пишет снимок при 0 записей в лист и 0 ремонтов;
+  настоящая shadow не пишет ничего; `write_enabled=1` + observe сохраняет суточного писателя; режимы off неизменны;
+  сбой issue и сбой маркера не дают завершённой оценки; прогон без DATA_ERROR оставляет маркер; повтор идемпотентен).
+
 ## 2026-09-20 — SCALE 1: суточные факты Ozon и нейтральный `FACT_SKU_DAILY` (только Git; production не менялся)
 
 Документ: `docs/SCALE1_FACT_SKU_DAILY_2026-09-20.md`. В production НЕ применено ничего: три новых объекта —
