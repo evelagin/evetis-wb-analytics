@@ -241,19 +241,20 @@ export function repairRecords(cells: readonly PlannedCell[], ctx: {
 
 /* ───────────────────────── снимок issue и действительность строк ───────────────────────── */
 
+/** Код строки-маркера: «оценка целостности этого прогона завершена и записана целиком». */
+export const RUN_MARKER_CODE = 'RUN_MARKER';
+
 /**
- * Снимок issue прогона для наблюдаемости. INFO не пишется (сотни «заказов нет — цены нет» в месяц), кроме
- * PRICE_FUNNEL_FALLBACK (происхождение цены). Issue уровня SKU с недействительными днями разворачивается по дням —
- * тогда «затронутые SKU-дни» и «самая старая нерешённая» считаются в SQL без разбора строк.
+ * Снимок issue прогона для наблюдаемости — append-only, ПО ПРОГОНАМ (не «последнее состояние»). INFO не пишется (сотни
+ * «заказов нет — цены нет» в месяц), кроме PRICE_FUNNEL_FALLBACK (происхождение цены). Issue уровня SKU с
+ * недействительными днями разворачивается по дням — «затронутые SKU-дни» считаются в SQL без разбора строк.
+ *
+ * Строка-маркер (issue_key = NULL) идёт ПОСЛЕДНЕЙ: bq.insertIssues пишет её отдельным оператором после всех issue.
+ * Вью статуса считает завершёнными оценками только маркеры, поэтому оборванный снимок не виден вовсе, а прогон без
+ * единой issue отличим от «оценки не было» (иначе OK неотличимо от NO_RUN_YET). В маркере — режим сверки и число строк.
  */
-export function issueRecords(issues: readonly IntegrityIssue[], ctx: { runId: string; environment: string; evaluatedAt: string; phase: string }): IssueRecord[] {
-  // Строка-маркер прогона (issue_key = NULL): без неё чистый прогон не оставил бы следа, и V_UNITKA_INTEGRITY_STATUS
-  // продолжала бы показывать прошлый прогон с issue как «текущий» — решённые аномалии никогда бы не стали решёнными.
-  const out: IssueRecord[] = [{
-    runId: ctx.runId, environment: ctx.environment, evaluatedAt: ctx.evaluatedAt, phase: ctx.phase, issueKey: null, businessDate: null, nmId: null,
-    field: '-', code: 'RUN_MARKER', state: 'RUN', severity: 'INFO', financialValid: true, source: 'unitka-engine', sourceValue: null, diagnosticValue: null,
-    message: 'маркер прогона: снимок issue этого прогона полон',
-  }];
+export function issueRecords(issues: readonly IntegrityIssue[], ctx: { runId: string; environment: string; evaluatedAt: string; phase: string; reconcileMode?: ReconcileMode }): IssueRecord[] {
+  const out: IssueRecord[] = [];
   for (const i of issues) {
     if (i.severity === 'INFO' && i.code !== 'PRICE_FUNNEL_FALLBACK') continue;
     const days: Array<string | null> = i.day !== null ? [i.day] : (i.invalidDays?.length ? i.invalidDays : [null]);
@@ -266,6 +267,12 @@ export function issueRecords(issues: readonly IntegrityIssue[], ctx: { runId: st
       });
     }
   }
+  out.push({
+    runId: ctx.runId, environment: ctx.environment, evaluatedAt: ctx.evaluatedAt, phase: ctx.phase, issueKey: null, businessDate: null, nmId: null,
+    field: '-', code: RUN_MARKER_CODE, state: 'RUN', severity: 'INFO', financialValid: true, source: 'unitka-engine',
+    sourceValue: `reconcile_mode=${ctx.reconcileMode ?? 'write'}; issue_rows=${out.length}`, diagnosticValue: null,
+    message: 'маркер прогона: оценка целостности завершена, снимок issue записан целиком',
+  });
   return out;
 }
 

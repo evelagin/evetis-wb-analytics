@@ -1,5 +1,23 @@
 # CHANGELOG.md
 
+## 2026-09-20 — UNITKA FINANCIAL INTEGRITY · семантика наблюдаемости: NO_RUN_YET / OK / ERROR / STALE, снимок issue в режиме observe (только Git; вью в BigQuery НЕ заменена)
+
+Документы: `docs/UNITKA_FIN_INTEGRITY_V1.md` §7–§8, runbook §5d. Таблицы и Terraform без изменений.
+
+- **Причина:** опубликованная в Gate 2 вью `V_UNITKA_INTEGRITY_STATUS` на пустых таблицах показывает
+  `financial_health = OK`, а снимок issue писался только в режиме `write` — весь период `observe` вью оставалась бы пустой.
+- **Вью `V_UNITKA_INTEGRITY_STATUS` (структура колонок меняется):** `financial_health` теперь
+  `NO_RUN_YET | STALE | ERROR | OK` (значение `DATA_ERROR` заменено на `ERROR`); без завершённой оценки счётчики `NULL`, а не 0;
+  новые колонки `reconcile_mode`, `evaluation_age_minutes`, `stale_after_minutes`, `completed_evaluations`;
+  `new_since_previous_run` / `resolved_since_previous_run` — `NULL`, пока нет прошлой завершённой оценки. Завершённая
+  оценка = строка-маркер прогона prod; строки issue берутся по `run_id` маркера. Порог свежести 1320 минут выведен из
+  расписания 10:00 / 12:30 МСК (1290 + 10 + 20) и закреплён тестом по Terraform.
+- **Engine:** снимок issue сохраняется в режимах `observe` и `write` (раньше только `write`); маркер прогона пишется
+  последним, отдельным оператором, и несёт `reconcile_mode` и число строк; `qa_json.reconcile.issue_snapshot`;
+  события `unitka_issue_snapshot`, `unitka_issue_snapshot_skipped`. `observe` по-прежнему не пишет в лист ничего сверх
+  режима `off` и не пишет журнал ремонта. Режимы `write` и `off`, разрешение цены, окно, эпоха, COGS, Q/S — без изменений.
+- Текст INSERT и схемы таблиц не менялись: Terraform-дифф нулевой.
+
 ## 2026-09-20 — UNITKA FINANCIAL INTEGRITY V1: самовосстанавливающаяся сверка окна 35 дней (код, SQL, Terraform — только в Git; production не менялся)
 
 Документы: `docs/UNITKA_FIN_INTEGRITY_V1.md`, `docs/UNITKA_COGS_ARCHITECTURE_2026-09.md`; runbook §5d.

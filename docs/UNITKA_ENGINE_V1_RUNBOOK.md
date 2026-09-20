@@ -134,7 +134,14 @@ SELECT * FROM `wb_mart.V_UNITKA_ENGINE_STATUS`;
 Полный контракт — `UNITKA_FIN_INTEGRITY_V1.md`. Кратко для оператора:
 
 * Режимы: `off` (по умолчанию и сейчас в production — поведение Engine 2.0.0), `observe` (считает план сверки
-  и пишет его в журнал, в лист — как `off`), `write` (правит факт-ячейки окна 35 дней, включая прошлые месяцы).
+  и пишет его в журнал, в лист — как `off`; дополнительно сохраняет снимок issue в `wb_ops.UNITKA_INTEGRITY_ISSUES`
+  — и больше ничего), `write` (правит факт-ячейки окна 35 дней, включая прошлые месяцы).
+* **Снимок issue строится из оценки Guard:** `observe` в production включать вместе с `UNITKA_INTEGRITY_MODE=observe`,
+  иначе снимка нет (предупреждение `unitka_issue_snapshot_skipped`) и статус остаётся `NO_RUN_YET`.
+* **`V_UNITKA_INTEGRITY_STATUS.financial_health`:** `NO_RUN_YET` — завершённой оценки нет (это не «всё хорошо»);
+  `STALE` — последняя оценка старше 22 часов, то есть утренний прогон 10:00 МСК не дал оценки к 10:30: смотреть
+  `UNITKA_ENGINE_RUNS` и событие `unitka_issue_snapshot_failed`; `ERROR` — есть `DATA_ERROR`; `OK` — их нет.
+  `MANUAL_REQUIRED` и `NOT_AVAILABLE` здоровье не портят.
   Неизвестное значение = `off` + предупреждение `unitka_reconcile_mode_invalid`.
 * **Порядок включения (каждый шаг — разрешение владельца):** infra apply двух таблиц `wb_ops`
   (`UNITKA_REPAIR_LEDGER`, `UNITKA_INTEGRITY_ISSUES`) → `sql/unitka/reconcile_v1.sql` → деплой образа → `observe`

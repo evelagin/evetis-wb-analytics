@@ -180,25 +180,63 @@ LCD → окно и эпоха (SQL ↔ код) → слой сверки → п
 всё формулами листа, Engine их не пишет. Доказательства: тест «dependency graph» (ссылки `blockDayFormulas` +
 эмулятор формул) и репетиция §9.
 
-## 7. Журнал ремонта и снимок issue (`wb_ops`, Terraform — НЕ применён)
+## 7. Журнал ремонта и снимок issue (`wb_ops`; таблицы применены 20.09.2026, Rollout Gate 2)
 
 - `UNITKA_REPAIR_LEDGER` — append-only: `repair_id, run_id, environment, engine_version, git_sha, detected_at,
   repaired_at, month_key, business_date, nm_id, field, cell_a1, old_value, new_value, source, source_as_of, reason,
   status (PLANNED_NOT_WRITTEN | WRITE_FAILED | APPLIED_UNVERIFIED | REPAIRED)`. Партиции по `detected_at`, кластер `environment, business_date, nm_id`.
-- `UNITKA_INTEGRITY_ISSUES` — снимок открытых issue на каждый прогон `write` + строка-маркер прогона
-  (`issue_key = NULL, code = RUN_MARKER`): чистый прогон тоже виден, иначе решённые аномалии не стали бы решёнными.
-- IAM: `roles/bigquery.dataEditor` на ЭТИ ДВЕ ТАБЛИЦЫ для `sa-loaders-prod`. SHADOW прав не получает — до журнала
-  он не доходит. Прав на датасет не добавляется.
+  Пишется ТОЛЬКО в режиме `write`.
+- `UNITKA_INTEGRITY_ISSUES` — **append-only снимки по прогонам** (не «последнее состояние»). Прогон пишет свои issue,
+  а последней, отдельным оператором — строку-маркер (`issue_key = NULL, code = RUN_MARKER`, в `source_value` —
+  `reconcile_mode=…; issue_rows=…`). Маркер означает «оценка завершена и записана целиком»:
+  оборванный снимок без маркера вью статуса не видит; прогон без единой issue всё равно оставляет маркер.
+  Пишется в режимах **`observe` и `write`**: это состояние наблюдаемости, а не ремонт.
+- **Что пишет `observe`:** только этот снимок. Лист он пишет ровно так же, как `off` (обычная суточная работа Engine —
+  побайтно тот же набор ячеек), ремонт сверки не добавляет ни одной ячейки; журнал ремонта не пишется и даже не
+  опрашивается; автоматические и ручные факты не меняются.
+- Снимок строится из оценки Guard. При `UNITKA_INTEGRITY_MODE=off` оценки нет — снимок не пишется, в логе
+  предупреждение `unitka_issue_snapshot_skipped`, статус остаётся `NO_RUN_YET`. Включение `observe` в production
+  поэтому требует и `UNITKA_INTEGRITY_MODE=observe` (Guard в этом режиме запись никогда не блокирует).
+- Сбой записи снимка прогон не роняет (`issue_snapshot = FAILED` в `qa_json.reconcile`); маркера нет → оценка
+  считается незавершённой, статус со временем честно станет `STALE`.
+- IAM: `roles/bigquery.dataEditor` на ЭТИ ДВЕ ТАБЛИЦЫ для `sa-loaders-prod`. SHADOW прав не получает и снимок не
+  пишет никогда. Прав на датасет не добавляется.
 
 ## 8. Наблюдаемость
 
 Сводка прогона (`qa_json.integrity`, событие `unitka_integrity`): счётчики по состояниям, `affected_sku_days`,
 `financially_invalid_rows` (независимо от состояния), `repair_available_sku_days`, `oldest_unresolved_data_error`, `oldest_unresolved`, `price_provenance`
 (`FUNNEL_FALLBACK | UNRESOLVED | NOT_ON_SHEET`), `error_keys`. `qa_json.reconcile`: окно, секции, отказы,
-`repairs_planned / repairs_recorded`. Вью `wb_mart.V_UNITKA_INTEGRITY_STATUS` (применять после таблиц): те же счётчики
-+ `auto_repaired_cells / sku_days` (только `REPAIRED`), `repair_available_not_written`, `repair_attempts_unconfirmed_7d`,
-`new_since_previous_run`, `resolved_since_previous_run`, `manual_input_pending`, `financial_health` (только `DATA_ERROR`).
+`repairs_planned / repairs_recorded`, `issue_snapshot` (`PERSISTED | FAILED | SKIPPED_GUARD_OFF | SKIPPED_GUARD_FAILED`).
+
+Вью `wb_mart.V_UNITKA_INTEGRITY_STATUS` всегда даёт ровно одну строку по **последней завершённой оценке prod**
+(маркер с наибольшим `evaluated_at`; строки issue берутся строго по его `run_id`, прогоны не смешиваются).
+`financial_health` — ровно четыре значения, по убыванию приоритета:
+
+| Значение | Когда | Что со счётчиками |
+|---|---|---|
+| `NO_RUN_YET` | завершённой оценки prod нет вообще | `NULL` («неизвестно»), не 0 |
+| `STALE` | оценка есть, но старше 1320 минут | показаны, но это не текущее состояние |
+| `ERROR` | свежая оценка с хотя бы одним `DATA_ERROR` | текущие |
+| `OK` | свежая оценка без `DATA_ERROR` | текущие |
+
+`MANUAL_REQUIRED`, `NOT_AVAILABLE`, `LATE_DATA` и `WARNING` здоровье не портят, сколько бы их ни было: ручной ввод —
+флаг `manual_input_pending`, действительность — `financially_invalid_sku_days`.
+
+**Порог свежести 1320 минут (22 часа) выведен из рабочего ритма.** Engine ходит в 10:00 и 12:30 МСК. Самый длинный
+штатный разрыв между оценками — с 12:30 до 10:00 следующего дня, 1290 минут. Плюс предельная длительность прогона
+(timeout Job'а 600 с = 10 минут) и 20 минут на старт планировщика, Cloud Run и запись снимка: 1290 + 10 + 20 = 1320.
+Смысл: `STALE` наступает, если утренний прогон не дал завершённой оценки примерно к 10:30 МСК. Тест
+`unitka_status_view.test.ts` пересчитывает порог из расписания в Terraform: сменится расписание — тест упадёт.
+
+Прочие колонки: `run_id`, `evaluated_at`, `reconcile_mode` (режим прогона, давшего оценку), `evaluation_age_minutes`,
+`stale_after_minutes`, `completed_evaluations`, `auto_repaired_cells / sku_days` (только `REPAIRED` и только того же
+прогона), `repair_available_not_written`, `repair_attempts_unconfirmed_7d`, `new_since_previous_run`,
+`resolved_since_previous_run` (оба `NULL`, пока нет прошлой завершённой оценки).
 Шесть состояний модели: `DATA_ERROR`, `LATE_DATA`, `MANUAL_REQUIRED`, `NOT_AVAILABLE`, `WARNING`, `AUTO_REPAIRED`.
+
+⚠ На 20.09.2026 в BigQuery опубликована прежняя редакция этой вью (Gate 2): на пустых таблицах она показывает
+`financial_health = OK`. Новая редакция лежит только в Git; публикация — отдельным гейтом после слияния.
 
 ## 9. Репетиция на тестовой копии (20.09.2026)
 
