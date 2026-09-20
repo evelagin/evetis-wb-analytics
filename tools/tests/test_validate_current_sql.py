@@ -24,8 +24,8 @@ DS = "ozon_mart"
 MANIFEST = Path("sql/current/ozon_mart/MANIFEST.json")
 HISTORICAL = Path("sql/current/historical_definitions.json")
 LEAF = "V_OZON_TARIFF_CHANGE_LOG"  # level 0, no dependants
-# SCALE 1 (2026-09-20): Git-first objects, pending_deploy until the owner deploys them. They are NOT
-# part of the R2A capture and must never be presented as captured_live before a read-only re-capture.
+# SCALE 1 (2026-09-20): objects added after R2A. Deployed and captured read-only by R2C on 2026-09-20 at
+# main 2260c73 (PENDING_DEPLOYED_MATCH -> captured_live). They are not part of the pinned R2A hash set.
 SCALE1_PENDING = {"ozon_mart": {"V_OZON_COMMISSION_RECOVERY", "FCT_OZON_SKU_PNL_DAILY"},
                   "evetis_mart": {"FACT_SKU_DAILY"}}
 
@@ -160,10 +160,6 @@ def test_real_manifest_is_v2_captured_live():
     assert man["allowed_external_datasets"] == ["evetis_ref", "ozon_raw"]
     assert {o["object_name"] for o in man["objects"]} == set(R2A_BODY_SHA256) | SCALE1_PENDING[DS]
     for o in man["objects"]:
-        if o["object_name"] in SCALE1_PENDING[DS]:
-            assert o["sync_state"] == "pending_deploy" and o["canonical_schema_verification"] == "unverified"
-            assert o["live_body_sha256_at_capture"] is None and o["capture_main_sha"] is None
-            continue
         assert o["sync_state"] == "captured_live"
         assert o["canonical_schema_verification"] == "bigquery_verified"
         assert o["canonical_body_sha256"] == o["live_body_sha256_at_capture"]
@@ -653,8 +649,7 @@ def test_new_dependency_requires_level_update(repo):
 
 def test_valid_captured_live():
     man = load(REPO)
-    assert all(o["sync_state"] == "captured_live" for o in man["objects"]
-               if o["object_name"] not in SCALE1_PENDING[DS])
+    assert all(o["sync_state"] == "captured_live" for o in man["objects"])
     assert_clean(REPO)
 
 

@@ -85,12 +85,18 @@ def test_repository_contract_holds_with_scale1_objects():
     assert summary["datasets"] == ["evetis_mart", "ozon_mart"]
 
 
-def test_new_objects_are_git_first_pending_deploy_never_claimed_as_captured():
+def test_scale1_objects_are_captured_live_at_the_deployment_sha():
+    """Deployed 2026-09-20 from main 2260c73 and captured read-only by R2C (PENDING_DEPLOYED_MATCH): production
+    body, schema and description equal the canonical files, so the capture equals the canon on all three hashes."""
     for dataset, name in (("ozon_mart", "V_OZON_COMMISSION_RECOVERY"), ("ozon_mart", "FCT_OZON_SKU_PNL_DAILY"),
                           ("evetis_mart", "FACT_SKU_DAILY")):
         _, o = manifest_entry(dataset, name)
-        assert o["sync_state"] == "pending_deploy" and o["canonical_schema_verification"] == "unverified"
-        assert all(o[k] is None for k in v.LIVE_CAPTURE_KEYS), name
+        assert o["sync_state"] == "captured_live" and o["canonical_schema_verification"] == "bigquery_verified"
+        assert o["capture_main_sha"] == "2260c73588d87194b4b0e90d93efb1352d5ec0c7" and o["captured_at"].startswith("2026-09-20T"), name
+        assert o["live_body_sha256_at_capture"] == o["canonical_body_sha256"], name
+        assert o["live_schema_sha256_at_capture"] == o["canonical_schema_sha256"], name
+        assert o["live_description_sha256_at_capture"] == o["canonical_description_sha256"], name
+        assert o["live_schema_at_capture"] == o["canonical_schema"], name
 
 
 def test_existing_ozon_monthly_views_are_not_touched():
@@ -258,9 +264,12 @@ def test_validation_file_is_read_only_selects():
 
 
 def test_predeploy_render_inlines_every_pending_object_and_stays_a_select():
-    bodies = render.pending_bodies()
-    assert set(bodies) == {f"`{P}.ozon_mart.V_OZON_COMMISSION_RECOVERY`", f"`{P}.ozon_mart.FCT_OZON_SKU_PNL_DAILY`",
-                           f"`{P}.evetis_mart.FACT_SKU_DAILY`"}
+    # Nothing is pending after the 2026-09-20 deployment, so the tool is a no-op on the real repository ...
+    assert render.pending_bodies() == {}
+    sample = next(iter(check_blocks().values()))
+    assert render.render(sample, {}) == sample
+    # ... and its inlining logic is still exercised on the same three objects, as if they were pending.
+    bodies = {f"`{P}.{p.parent.name}.{p.stem}`": facts(p).body for p in (RECOVERY, DAILY, NEUTRAL)}
     for cid, sql in check_blocks().items():
         rendered = render.render(sql, bodies)
         assert not any(ref in rendered for ref in bodies), cid
