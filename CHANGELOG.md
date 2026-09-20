@@ -1,5 +1,33 @@
 # CHANGELOG.md
 
+## 2026-09-20 — SCALE 1: суточные факты Ozon и нейтральный `FACT_SKU_DAILY` (только Git; production не менялся)
+
+Документ: `docs/SCALE1_FACT_SKU_DAILY_2026-09-20.md`. В production НЕ применено ничего: три новых объекта —
+`pending_deploy` в `sql/current`, развёртывает владелец после ревью PR.
+
+- **Зачем:** у Ozon не было суточного слоя фактов, а единственным межплощадочным суточным объектом был
+  `CT_ACTUAL_DAILY` со своей логикой Ozon. Нужен один суточный контракт по `internal_sku` для аналитики,
+  фактической юнит-экономики и скорости продаж.
+- **Новые объекты (все — VIEW):** `ozon_mart.V_OZON_COMMISSION_RECOVERY` (29 postings восстановленной комиссии —
+  единый именованный источник), `ozon_mart.FCT_OZON_SKU_PNL_DAILY` (сутки × `internal_sku`, 20 колонок),
+  `evetis_mart.FACT_SKU_DAILY` (сутки × площадка × `internal_sku`, 26 колонок, контракт `FACT_SKU_DAILY_V1`).
+  Новый датасет `evetis_mart` — нейтральный слой вне `wb_mart`.
+- **Вторая реализация экономики не создана.** WB читается из `wb_mart.SKU_PERFORMANCE_V2_DAILY` как есть; суточный
+  факт Ozon повторяет `FCT_OZON_SKU_PNL_MONTHLY` дословно (источники, соединения, `type_id`, атрибуция, COGS) —
+  без `ROUND`. Существующие объекты не менялись: `wb_mart`, `evetis_ref`, RAW, месячные P&L Ozon.
+- **Контрольные цифры (production, только чтение, 11 проверок из 11 PASS):** сутки → месяц Ozon — 173 ячейки
+  (18 месяцев × 22 SKU), штуки точно, деньги 0,00 ₽, COGS ≤ 0,005 ₽ на ячейку (округление месячного вью; после
+  него — 0 расхождений из 173); выручка Ozon 1 887 926,00 ₽, реклама 471 157,89 ₽, комиссия 704 533,74 ₽.
+  Адаптер WB — 8 077 строк, 0 расхождений; адаптер Ozon — 3 706 строк, 0 расхождений; зерно — 11 783 строки =
+  11 783 ключа. Трассы HAND / MOIST / ACNE за август 2026 сходятся на обеих площадках.
+- **NULL ≠ 0:** `return_qty` Ozon, `acquiring_rub` и `other_marketplace_costs_rub` WB — NULL (метрика недоступна или
+  не атрибутируется); COGS закрывается в NULL, если не разрешился. Базис даты различается по площадкам и назван в
+  `fact_date_semantics`. Налог не моделируется; это вклад, не прибыль.
+- **Валидатор:** одна строка политики — `evetis_mart` читает только `wb_mart`, `ozon_mart`, `evetis_ref`; RAW
+  запрещён (C13). R2C не расширялся: до развёртывания покажет новые объекты как `MISSING_LIVE`.
+- **Тесты:** `tools/tests/test_scale1_fact_sku_daily.py` (17), фикстуры R2B/R2C приведены к базе снятых объектов;
+  всего 279 проходят. Проверки production — `sql/scale1/fact_sku_daily_validation.sql`; откат —
+  `sql/rollback/scale1_fact_sku_daily_2026-09-20/R_DROP_NEW_VIEWS.sql` (три `DROP VIEW`, данных нет).
 ## 2026-09-20 — UNITKA FINANCIAL INTEGRITY · семантика наблюдаемости: NO_RUN_YET / OK / ERROR / STALE, снимок issue в режиме observe (только Git; вью в BigQuery НЕ заменена)
 
 Документы: `docs/UNITKA_FIN_INTEGRITY_V1.md` §7–§8, runbook §5d. Таблицы и Terraform без изменений.

@@ -154,7 +154,20 @@ def by_name(report):
 
 @pytest.fixture
 def root(tmp_path):
+    """The captured_live baseline these tests were written against: one managed dataset (ozon_mart), every
+    object captured. Git-first objects that are still pending_deploy in the real repository (SCALE 1: two in
+    ozon_mart plus the evetis_mart dataset) are removed from the COPY — pending behaviour is exercised here
+    by make_pending(), not by whatever happens to be awaiting deployment in the repository today."""
     shutil.copytree(REPO / "sql", tmp_path / "sql")
+    for ds_dir in sorted((tmp_path / "sql/current").iterdir()):
+        if ds_dir.is_dir() and ds_dir.name != DS:
+            shutil.rmtree(ds_dir)
+    man = manifest(tmp_path)
+    for o in [o for o in man["objects"] if o["sync_state"] != "captured_live"]:
+        (tmp_path / o["canonical_path"]).unlink()
+        man["objects"].remove(o)
+        man["rebuild_order"].remove(o["object_name"])
+    save_manifest(tmp_path, man)
     return tmp_path
 
 
@@ -179,8 +192,8 @@ PENDING_COLS = [{"column_name": "a", "data_type": "INT64", "is_nullable": "YES",
 
 # ------------------------------------------------------------------------------------------ positive
 
-def test_all_eleven_match_on_real_repository():
-    report, _, transport = verify(REPO)
+def test_all_eleven_match_on_real_repository(root):
+    report, _, transport = verify(root)
     assert report["overall"] == "MATCH", json.dumps(report, indent=1)[:3000]
     assert report["summary"] == {"MATCH": 11}
     assert report["unexpected_live"] == [] and report["dataset_unproven"] == []
@@ -191,10 +204,11 @@ def test_all_eleven_match_on_real_repository():
     assert len(transport.calls) == 2 + 11 * 2 == report["requests"]
 
 
-def test_live_hash_reuses_r2b_canonical_hash_v1_for_all_eleven():
-    man = manifest(REPO)
+def test_live_hash_reuses_r2b_canonical_hash_v1_for_all_eleven(root):
+    man = manifest(root)
+    assert {o["object_name"] for o in man["objects"]} == set(R2A_BODY_SHA256)
     for o in man["objects"]:
-        body, _ = stored_parts(REPO, o["object_name"])
+        body, _ = stored_parts(root, o["object_name"])
         assert vl.live_body_sha256(P, DS, o["object_name"], body) == R2A_BODY_SHA256[o["object_name"]]
         # BigQuery trims the body and drops one ';' on storage; the hash must be insensitive to exactly that
         assert vl.live_body_sha256(P, DS, o["object_name"], "\n " + body + ";\n") == R2A_BODY_SHA256[o["object_name"]]
@@ -206,9 +220,9 @@ def test_hash_code_is_imported_not_duplicated():
     assert "hashlib" not in src
 
 
-def test_output_is_deterministic_apart_from_timestamps():
-    a, _, _ = verify(REPO)
-    b, _, _ = verify(REPO)
+def test_output_is_deterministic_apart_from_timestamps(root):
+    a, _, _ = verify(root)
+    b, _, _ = verify(root)
     for r in (a, b):
         r.pop("captured_at_start"), r.pop("captured_at_end")
     assert a == b
