@@ -1,12 +1,13 @@
 {
- "manifestVersion": "ozon-unitka-migration/3.0.0",
+ "manifestVersion": "ozon-unitka-migration/4.0.0",
  "generatedAt": "2026-09-21T10:37:26Z",
  "executed": false,
  "ownerDecisions": {
   "D-5E-1": "пересчитать апрель по текущему каноническому контракту",
   "D-5E-2": "формула оборачиваемости во всех канонических месяцах",
   "D-5E-3": "исправить видимую подпись 9099514444 → 909951444",
-  "D-5G-1": "включить пять SKU в апрель: секция обязана представлять ВСЮ авторитетную активность Ozon за 17–30.04, а не только SKU, у которых исторически был блок"
+  "D-5G-1": "включить пять SKU в апрель: секция обязана представлять ВСЮ авторитетную активность Ozon за 17–30.04, а не только SKU, у которых исторически был блок",
+  "G-5I": "починка справочника себестоимости применена в BigQuery; комиссия не восстановлена — первичные документы её не содержат"
  },
  "target": {
   "spreadsheetId": "1E4L4JuwfEqr9owhsGkAjb8F24lRpWpWkEyVmSuRxaJg",
@@ -181,30 +182,33 @@
   },
   "aprilWindow": {
    "legacyHalf": 9997.8224,
-   "canonicalWindow": -1235.001438,
-   "sheetResult": 8762.820962,
-   "note": "01–16.04 легаси-модели не переписываются; движок не считает сутки вне окна, иначе контрольная сумма включила бы половину, которую он не пишет"
+   "canonicalWindow": -1641.653067,
+   "sheetResult": 8356.169333
   },
   "chain": [
    {
     "step": "Gate 5D (принято визуально)",
     "result": 7994.642397,
-    "note": "контракт v1: без эквайринга в комиссии и без OTHER_DIRECT, 16 блоков"
+    "note": "контракт v1, 16 блоков"
    },
    {
     "step": "D-5E-1 текущий контракт",
     "result": 7264.072364,
-    "delta": -730.570033,
-    "note": "эквайринг −412,57 + прочие прямые −318,00"
+    "delta": -730.570033
    },
    {
     "step": "D-5G-1 полнота апреля",
     "result": 8762.820962,
-    "delta": 1498.748598,
-    "note": "включены пять SKU, продававшихся 17–30.04; слоты 16..20 уже существовали"
+    "delta": 1498.748598
+   },
+   {
+    "step": "G-5I починка себестоимости набора",
+    "result": 8356.169333,
+    "delta": -406.651629,
+    "note": "EVT-SET-HAND-CHERRY получил себестоимость на 27.04"
    }
   ],
-  "final": 8762.820962
+  "final": 8356.169333
  },
  "turnoverContract": {
   "decision": "формула во всех канонических месяцах",
@@ -282,7 +286,7 @@
   "conditionalFormatRanges": 7221,
   "mergeCount": 1612,
   "controlTotals": {
-   "2026-04": 8762.820962,
+   "2026-04": 8356.169333,
    "2026-05": -1971.9744446899995,
    "2026-06": -419.49809287999983,
    "2026-07": 6563.04065572,
@@ -303,8 +307,9 @@
   },
   "approvedDifferencesFromGate5D": {
    "D-5E-2 оборачиваемость": 2939,
-   "D-5E-1/D-5G-1 апрель": 1337,
-   "D-5E-3 подпись SKU": 5
+   "D-5E-1/D-5G-1/G-5I апрель": 1337,
+   "D-5E-3 подпись SKU": 5,
+   "дрейф источника in_transit_qty": 2
   },
   "turnoverGuard": {
    "unknownStockCells": 3373,
@@ -327,6 +332,11 @@
    "cfRules": 434,
    "cfRanges": 7221,
    "precondition": "живой размер листа, число правил УФ и идентификатор зеркала читаются ПЕРЕД каждой сборкой плана"
+  },
+  "sourceDrift": {
+   "cells": 2,
+   "financialEffect": 0.0,
+   "detail": "20.08.2026, SKU 930334396, posting 77152971-0050-1 (delivering): в витрине заполнилось in_transit_qty=1. Формула получила терм «в пути», реализации на этих сутках нет — итог августа не изменился."
   }
  },
  "residualMerges": {
@@ -393,5 +403,96 @@
    "сверить отпечатки предусловия"
   ],
   "invariant": "апрель 01–16 в записи не участвует и в откате не изменяется"
+ },
+ "realizationReports": {
+  "filesRead": 8,
+  "period": "2026-01..2026-08",
+  "rowsTotal": 856,
+  "salesRows": 855,
+  "schema": [
+   "№ п/п",
+   "Название товара",
+   "Артикул",
+   "SKU",
+   "Штрих-код",
+   "Реализовано на сумму",
+   "Выплаты по механикам лояльности",
+   "Кол-во",
+   "Цена реализации",
+   "Возвращено на сумму",
+   "Выплаты (возврат)",
+   "Кол-во (возврат)",
+   "Цена реализации (возврат)"
+  ],
+  "joinContract": "(месяц реализации, marketplace_sku, «Цена реализации» = buyer_paid_price_rub); posting_number в документе отсутствует",
+  "proof": "855/855 сопоставлены 1:1 с начислениями; 786 совпали и по «Выплатам по лояльности» = ozon_coinvestment_rub; 0 совпало бы с seller_base_price_rub",
+  "commissionColumnPresent": false,
+  "controlTest": {
+   "rows": 29,
+   "matched": 0,
+   "outsideCoverage": 8,
+   "notFound": 21,
+   "verdict": "существующие 29 восстановлений из этих документов не воспроизводятся: комиссии, ставки и «к перечислению» в них нет. Те 29 взяты из документа другого типа"
+  },
+  "audit": {
+   "matchedSalesRows": 855,
+   "canonicalMissingReportPresent": 0,
+   "canonicalPresentReportMissing": 106,
+   "valueMismatch": 0,
+   "ambiguous": 0
+  },
+  "corroboration": "артикул 9099514444 встречается и в самом документе Ozon (5 строк) наряду с 909951444 (4 строки) для одного sku 3733947454 — исправление подписи Gate 5F подтверждено первичным документом"
+ },
+ "sourceRepair": {
+  "applied": [
+   {
+    "object": "evetis_ref.REF_BUNDLE_COMPONENTS",
+    "rows": [
+     "BC-26",
+     "BC-27"
+    ],
+    "field": "effective_from",
+    "before": "2026-05-01",
+    "after": "2026-04-27",
+    "provenance": "RAW_OZON_POSTINGS_FBO posting 0160098811-0846-1, order_date 2026-04-27, delivered, qty 1 — первое COGS-требующее событие набора EVT-SET-HAND-CHERRY; конвенция справочника подтверждена заметкой EVT-SET-CHERRY-AMBER",
+    "effect": "FCT_OZON_SKU_PNL_DAILY 2026-04-27: cogs_missing_qty 1→0, себестоимость 0→406.651629, вклад −406.651629 (отклонение 0.000000000); WB апрель–май без изменений",
+    "rollbackSql": [
+     "UPDATE `project-fa311fc0-4d87-4781-986.evetis_ref.REF_BUNDLE_COMPONENTS` SET effective_from = DATE '2026-05-01', notes = NULL WHERE bundle_component_id IN ('BC-26','BC-27');"
+    ],
+    "downstream": [
+     "ozon_mart.FCT_OZON_SKU_PNL_DAILY",
+     "ozon_mart.FCT_OZON_PNL_MONTHLY",
+     "ozon_mart.FCT_OZON_SKU_PNL_MONTHLY",
+     "ozon_mart.V_OZON_SKU_CURRENT_TARIFF",
+     "wb_mart.V_MART_SKU_DAILY_COGS",
+     "wb_mart.V_FACT_FINANCE_COGS",
+     "wb_mart.V_WB_SKU_COST_INPUTS",
+     "wb_mart.V_CT_ACTUAL_DAILY_LIVE",
+     "wb_mart.V_CT_CASH_CONVERSION",
+     "wb_mart.V_CT_INVENTORY_TRUTH_LIVE"
+    ]
+   }
+  ],
+  "notApplied": [
+   {
+    "issue": "комиссия по пяти реализациям",
+    "count": 5,
+    "revenue": 6929.0,
+    "postings": [
+     "0136161223-0034-1",
+     "0144805755-0262-1",
+     "0151252173-0059-1",
+     "91224369-0020-1",
+     "0155570588-0181-2"
+    ],
+    "reason": "«Отчет о реализации товара» за 01–08.2026 не содержит ни колонки комиссии, ни posting_number. 855 из 855 строк отчётов сопоставлены 1:1 с начислениями, у которых комиссия УЖЕ есть; свободных строк не осталось — восстанавливать нечем.",
+    "exposureMemo": "1593.67–2910.18 ₽ при наблюдаемых ставках 23–42 % — границы, не оценка"
+   }
+  ]
+ },
+ "lcd": {
+  "productionAtCheck": "2026-09-20",
+  "testCopyAtRehearsal": "2026-09-19",
+  "note": "контрольные суммы посчитаны на LCD 2026-09-19 — собственное значение TEST-копии. Production уже 2026-09-20. Движок читает LCD в момент прогона, поэтому сентябрь при переносе обязан быть пересчитан на живой LCD: канонический итог сентября на LCD 2026-09-20 = −20196.684774 (вклад суток 20.09 = −6394.29)."
  }
 }

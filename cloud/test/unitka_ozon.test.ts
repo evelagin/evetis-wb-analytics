@@ -828,4 +828,12 @@ describe('GATE 5E — источник фактов', () => {
     expect(ozonProvenStockSql({ project: 'p', from: '2026-09-01', to: '2026-09-30' }))
       .toContain('s.extracted_day = s.d');
   });
+
+  it('остаток берётся из фактической колонки RAW_OZON_STOCKS', () => {
+    // Gate 5I: запрос ссылался на несуществующую колонку `present` и падал на живом BigQuery.
+    // Стенд этого не ловил, потому что работал с заранее выгруженным JSON.
+    const sql = ozonProvenStockSql({ project: 'p', from: '2026-09-01', to: '2026-09-30' });
+    expect(sql).toContain('available_stock_count');
+    expect(sql).not.toContain('SUM(present)');
+  });
 });

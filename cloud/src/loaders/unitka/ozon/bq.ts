@@ -62,12 +62,13 @@ WITH m AS (
   SELECT DISTINCT marketplace_sku, offer_id
   FROM \`${project}.evetis_ref.REF_SKU_CHANNEL_MAP\` WHERE marketplace='OZON'),
 s AS (
-  SELECT CAST(snapshot_date AS STRING) d, sku, SUM(present) units,
+  SELECT CAST(snapshot_date AS STRING) d, CAST(sku AS STRING) sku,
+         SUM(available_stock_count) units,
          MAX(CAST(DATE(extracted_at) AS STRING)) extracted_day
   FROM \`${project}.ozon_raw.RAW_OZON_STOCKS\`
   WHERE snapshot_date BETWEEN '${from}' AND '${to}' GROUP BY 1,2)
 SELECT s.d, m.offer_id, s.units
-FROM s JOIN m ON m.marketplace_sku = CAST(s.sku AS STRING)
+FROM s JOIN m ON m.marketplace_sku = s.sku
 WHERE s.extracted_day = s.d           -- снимок доказан только своей датой съёма
 ORDER BY 1,2`.trim();
 }
