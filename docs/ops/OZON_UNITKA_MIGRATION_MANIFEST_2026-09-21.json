@@ -1,6 +1,6 @@
 {
-  "manifestVersion": "ozon-unitka-migration/7.0.0",
-  "generatedAt": "2026-09-21T14:40:00Z",
+  "manifestVersion": "ozon-unitka-migration/8.0.0",
+  "generatedAt": "2026-09-21T17:05:00Z",
   "executed": false,
   "ownerDecisions": {
     "D-5E-1": "пересчитать апрель по текущему каноническому контракту",
@@ -1023,5 +1023,145 @@
       "complete": true,
       "note": "V_OZON_CIS_BUYOUT до гейта не существовал — его откат это DROP VIEW"
     }
+  },
+  "testMigration": {
+    "gate": "6A-TEST",
+    "executed": true,
+    "doc": "docs/ops/GATE6A_TEST_MIGRATION_2026-09-21.md",
+    "workbook": {
+      "title": "TEST_OZON_UNITKA_APRIL_2026_2026-09-20",
+      "spreadsheetId": "17RW1bAYJa8Hp1djxMBtFVwrv5u8037aAl3jivVLHxaM",
+      "sheet": "OZON_5E_CLEAN",
+      "sheetId": 1131394256,
+      "why": "OZON_Юнит_2025 в TEST уже 24-колоночный мигрированный (650x552, 728 правил УФ) — на нём нельзя доказать переход 24→25; база пересобрана из боевого листа побайтно"
+    },
+    "liveLcd": "2026-09-20",
+    "sourceCommit": "96a9463769e353a20eeda66c92e9b1208e08df84",
+    "geometry": {
+      "before": {
+        "rows": 465,
+        "columns": 404
+      },
+      "after": {
+        "rows": 650,
+        "columns": 574
+      },
+      "blockArea": [
+        12,
+        561
+      ],
+      "ownerTail": [
+        562,
+        570
+      ],
+      "lcdMirrorColumn": 573,
+      "physicalSlots": 22,
+      "blockWidth": 25
+    },
+    "migration": {
+      "widenExistingBlocks": 16,
+      "widenDirection": "RIGHT_TO_LEFT",
+      "widenPositions": "393, 369, ..., 33 (шаг 24, смещение 21)",
+      "insertNewBlocks": {
+        "count": 6,
+        "columns": 150,
+        "before": 412
+      },
+      "appendRows": 185,
+      "appendColumns": 4,
+      "durationSeconds": 113
+    },
+    "blocksByMonth": {
+      "2026-04": 21,
+      "2026-05": 21,
+      "2026-06": 21,
+      "2026-07": 22,
+      "2026-08": 22,
+      "2026-09": 22
+    },
+    "titleRows": {
+      "2026-04": 432,
+      "2026-05": 466,
+      "2026-06": 501,
+      "2026-07": 535,
+      "2026-08": 570,
+      "2026-09": 605
+    },
+    "acceptance": {
+      "ownerTailDiffs": 0,
+      "merges": 1604,
+      "mergeDuplicates": 0,
+      "mergesOutOfGrid": 0,
+      "cfRules": 434,
+      "cfRanges": 7221,
+      "cfDuplicates": 0,
+      "cfOutOfGrid": 0,
+      "oldWidthReferencesInFormulas": 0,
+      "otherDirectDoubleCount": 0,
+      "otherDirectOmitted": 0,
+      "buyoutTargetsMatched": "5/5",
+      "unexplainedSkuMonthDiffs": 0
+    },
+    "cart": {
+      "apiStatus": "METRICS_DEPRECATED (400 deprecated metrics used)",
+      "sourceCells": 2183,
+      "inTestAfterMigration": 2183,
+      "positiveMismatches": 0,
+      "zeroMismatches": 0,
+      "erased": 0,
+      "fakeZeroRows": 0,
+      "mechanism": "cartBy в composeMonth: наблюдения читаются из листа и проносятся через запись; без этого сетка значений затёрла бы все 2183 ячейки"
+    },
+    "otherDirect": {
+      "columnOffset": 21,
+      "leftNeighbor": "Хранение (20)",
+      "rightNeighbor": "налог (22)",
+      "sheetTotal": 17726.41,
+      "engineTotal": 17726.41,
+      "delta": 0.0,
+      "composition": "прочие услуги + логистика по нереализованным + эквайринг без выручки + продвижение по SKU",
+      "augustFirstReviews": 9350.08
+    },
+    "monthTotals": {
+      "2026-04": -2322.921832,
+      "2026-05": -2395.514435,
+      "2026-06": -850.698032,
+      "2026-07": 5118.386278,
+      "2026-08": 6864.378785,
+      "2026-09": -14490.039774
+    },
+    "sourceDrift": {
+      "status": "EXPECTED_LATE_ARRIVAL",
+      "month": "2026-09",
+      "delta": 5706.645,
+      "cause": "загрузчик Ozon 21.09 в 16:00 привёз 5 доставленных отправлений 16–19.09 без начислений комиссии",
+      "decomposition": "выручка 6629.00 − себестоимость 789.77 − логистика 0.00 − резерв 2% 132.58 = 5706.645",
+      "unexplained": 0.0,
+      "aprilToAugustUnchanged": true
+    },
+    "premium": {
+      "mayAmount": 9990.0,
+      "includedInSkuUnitka": 0,
+      "includedInOtherDirect": 0,
+      "rowsReachableFromSkuGrain": 0
+    },
+    "idempotency": {
+      "secondRunExecuted": true,
+      "geometryDelta": 0,
+      "valueDelta": 0,
+      "mergeDelta": 0,
+      "cfDelta": 0,
+      "cartDelta": 0,
+      "durationSeconds": 118
+    },
+    "isolation": {
+      "productionOzonWrites": 0,
+      "productionWbWrites": 0,
+      "bqWrites": 0,
+      "productionOzonGeometry": "465x404 до и после",
+      "productionWbGeometry": "803x623 до и после",
+      "productionMergeHashesUnchanged": true
+    },
+    "knownNonDefect": "август, SKU 930334396: лист «заказы − отмены» = 3, витрина realized = 2 — 20.08 единица в статусе delivering (in_transit_qty=1); движок вычитает её отдельным термом, выручка августа совпадает (213104.96)"
   }
 }
