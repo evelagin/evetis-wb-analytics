@@ -1,0 +1,27 @@
+{
+ "namedRanges": 2,
+ "WB_Юнит_2025": {
+  "rows": 803,
+  "columns": 623,
+  "frozenRows": 0,
+  "frozenColumns": 0,
+  "merges": 2475,
+  "cfRules": 262,
+  "cfRanges": 1894,
+  "protectedRanges": 0,
+  "mergesSha256": "ce4786ad17190ebde6c6fe858e5e59d0c117f35f1b4efdc6c928654bfdc3ebb6",
+  "cfSha256": "e2a0a7b6d131433cc088a5bb726d0008c81269432d984e02be68f870b7003610"
+ },
+ "OZON_Юнит_2025": {
+  "rows": 465,
+  "columns": 404,
+  "frozenRows": 0,
+  "frozenColumns": 0,
+  "merges": 1483,
+  "cfRules": 0,
+  "cfRanges": 0,
+  "protectedRanges": 0,
+  "mergesSha256": "7d4563238b40ffbcb3cf74802bb7d667aa5ab638bddadd16bb1c5a44e21fb092",
+  "cfSha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+ }
+}

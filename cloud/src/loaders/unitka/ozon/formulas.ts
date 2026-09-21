@@ -13,7 +13,8 @@
  *     у WB база — «цена» (цена продавца). Расхождение осознанное и вынесено владельцу;
  *   • хранение вычитается в «Доходность (общая)», как в WB, но у Ozon всегда пусто.
  */
-import { OFFSET, colA1 } from '../model.js';
+import { colA1 } from '../model.js';
+import { OZON_OFFSET as OFFSET } from './offsets.js';
 import { OZON_GEOMETRY, OZON_SUMMARY_TO_OFFSET, MANAGEMENT_TAX_RESERVE_RATE, ozonSlotStart } from './contract.js';
 
 const LCD = 'LAST_CLOSED_DATE';
@@ -55,7 +56,7 @@ export function ozonBlockDayFormulas(p: OzonBlockParams, row: number): Map<numbe
   const V = x(OFFSET.profitAll), W = x(OFFSET.adsIn), X = x(OFFSET.adsOut);
   const Z = x(OFFSET.price), AA = x(OFFSET.spp), AB = x(OFFSET.priceSpp), AC = x(OFFSET.commission);
   const AD = x(OFFSET.priceMinusComm), AE = x(OFFSET.logistics), AF = x(OFFSET.storage);
-  const AG = x(OFFSET.tax), AH = x(OFFSET.unitProfit);
+  const AG = x(OFFSET.tax), AH = x(OFFSET.unitProfit), OD = x(OFFSET.otherDirect);
   const taxPct = `${MANAGEMENT_TAX_RESERVE_RATE * 100}%`;
 
   const m = new Map<number, string>();
@@ -66,9 +67,10 @@ export function ozonBlockDayFormulas(p: OzonBlockParams, row: number): Map<numbe
   m.set(OFFSET.tax,             g(`IF(N(${Z})=0,"",${Z}*${taxPct})`));
   m.set(OFFSET.unitProfit,      g(`IF(N(${AD})=0,"",${AD}-N(${AE})-N(${AG})-${p.cogsTerm})`));
   // реализовано = заказы − отмены (тождество проверено: gross−cancelled == realized на всех строках)
-  const od = p.otherDirectTerm && p.otherDirectTerm !== '0' ? `-${p.otherDirectTerm}` : '';
+  // Gate 6A: прочие прямые больше не подставляются литералом в формулу — они лежат в своей
+  // колонке и вычитаются ссылкой. Сумма та же, но величина стала видимой в листе.
   const it = p.inTransitTerm && p.inTransitTerm !== '0' ? `-${p.inTransitTerm}` : '';
-  m.set(OFFSET.profitAll,       g(`(${P}-${R}${it})*N(${AH})-N(${W})-N(${AF})+N(${X})${od}`));
+  m.set(OFFSET.profitAll,       g(`(${P}-${R}${it})*N(${AH})-N(${W})-N(${AF})+N(${X})-N(${OD})`));
   m.set(OFFSET.profit1,         g(`IFERROR(${V}/(${P}-${R}${it}),"")`));
   m.set(OFFSET.drr,             g(`IFERROR(${W}/((${P}-N(${N_}))*${AB}),"")`));
   // Оборачиваемость (дн) = остаток / заказы этих суток — принятая форма WB

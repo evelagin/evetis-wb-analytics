@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { toLocaleFormula, formulaStyleOf } from '../src/loaders/unitka/formulas.js';
-import { OFFSET } from '../src/loaders/unitka/model.js';
+import { OFFSET as WB_OFFSET } from '../src/loaders/unitka/model.js';
+import { OZON_OFFSET as OFFSET, OZON_BLOCK_WIDTH } from '../src/loaders/unitka/ozon/offsets.js';
 import {
   OZON_GEOMETRY, OZON_SUMMARY, OZON_FIELD_SOURCE_MAP, MANAGEMENT_TAX_RESERVE_RATE, ozonSlotStart,
   TAX_RESERVE_BASE, STOCK_POLICY, CART_POLICY, stockAvailability,
@@ -22,10 +23,40 @@ import {
 } from '../src/loaders/unitka/ozon/formulas.js';
 
 describe('OZON adapter — геометрия', () => {
-  it('первый блок L, шаг 24 (WB начинается с M)', () => {
+  it('первый блок L, шаг 25 (WB начинается с M и шагает по 24)', () => {
     expect(OZON_GEOMETRY.BLOCK_FIRST_COLUMN).toBe(12);
     expect(ozonSlotStart(0)).toBe(12);
-    expect(ozonSlotStart(15)).toBe(372); // NH — 16-й блок апреля 2026
+    expect(ozonSlotStart(15)).toBe(12 + 15 * 25); // 387 — 16-й блок апреля 2026
+  });
+
+  it('Gate 6A: блок Ozon шире блока WB ровно на «Прочие прямые»', () => {
+    // Ширина берётся из числа смещений, а не из отдельного числа: иначе карта и геометрия
+    // могли бы разойтись незаметно. Ширина WB при этом обязана остаться прежней.
+    expect(OZON_BLOCK_WIDTH).toBe(25);
+    expect(OZON_GEOMETRY.BLOCK_WIDTH).toBe(25);
+    expect(OZON_GEOMETRY.BLOCK_BODY_WIDTH).toBe(24);
+    expect(Object.keys(WB_OFFSET)).toHaveLength(24);
+    expect((WB_OFFSET as Record<string, number>).otherDirect).toBeUndefined();
+    expect(OZON_BLOCK_WIDTH - Object.keys(WB_OFFSET).length).toBe(1);
+  });
+
+  it('Gate 6A: «Прочие прямые» стоят в расходной части, а не в воронке', () => {
+    expect(OFFSET.otherDirect).toBe(21);
+    expect(OFFSET.storage).toBe(20);   // слева — Хранение
+    expect(OFFSET.tax).toBe(22);       // справа — налоговый резерв
+    // всё, что левее вставки, не сдвинулось: воронка и цена остались на своих местах
+    for (const k of ['date','bloggers','views','opens','orders','carts','cancels','stock','turnover',
+                     'profit1','profitAll','adsIn','adsOut','drr','price','spp','priceSpp',
+                     'commission','priceMinusComm','logistics','storage'] as const) {
+      expect(OFFSET[k]).toBe((WB_OFFSET as Record<string, number>)[k]);
+    }
+  });
+
+  it('Gate 6A: «Положили в корзину» сохранена как KPI воронки и не занята расходом', () => {
+    expect(OFFSET.carts).toBe(5);
+    expect(OFFSET.otherDirect).not.toBe(OFFSET.carts);
+    const cart = OZON_FIELD_SOURCE_MAP.find((f) => f.offset === OFFSET.carts)!;
+    expect(cart.field).toBe('Положили в корзину');
   });
   it('в сводке Ozon нет ДРР (10 колонок против 11 у WB)', () => {
     expect(Object.keys(OZON_SUMMARY)).toHaveLength(10);
@@ -47,7 +78,8 @@ describe('OZON adapter — правила доступности', () => {
     expect(blank(OFFSET.carts)).toBe('BLANK_SOURCE_ABSENT');
     expect(blank(OFFSET.stock)).toBe('BLANK_NOT_INGESTED');
     expect(blank(OFFSET.turnover)).toBe('BLANK_NOT_INGESTED');
-    expect(blank(OFFSET.storage)).toBe('BLANK_NOT_INGESTED');
+    // Хранение больше не пустое: type 79 приходит со sku и пишется как факт (Gate 5L/6A).
+    expect(blank(OFFSET.storage)).toBe('FACT');
   });
   it('комиссия и логистика — факт, а не легаси-константы 0,396 и 72 ₽', () => {
     const f = (o: number) => OZON_FIELD_SOURCE_MAP.find((x) => x.offset === o)!;
@@ -63,7 +95,7 @@ describe('OZON adapter — формулы блока', () => {
 
   it('отмены не штрафуются: экономика только по реализованным единицам', () => {
     const v = m.get(OFFSET.profitAll)!;
-    expect(v).toBe('=IF($L456>LAST_CLOSED_DATE,"",(P456-R456)*N(AH456)-N(W456)-N(AF456)+N(X456))');
+    expect(v).toBe('=IF($L456>LAST_CLOSED_DATE,"",(P456-R456)*N(AI456)-N(W456)-N(AF456)+N(X456)-N(AG456))');
     expect(v).not.toContain('$F$50');        // легаси-ячейка «Отмена товара» = 45 ₽
     expect(v).not.toMatch(/R456\s*\*/);       // легаси «− отмены × маржа» отдельным слагаемым
   });
@@ -76,7 +108,7 @@ describe('OZON adapter — формулы блока', () => {
 
   it('доходность 1 шт использует канонический COGS, а не строку 50', () => {
     const u = m.get(OFFSET.unitProfit)!;
-    expect(u).toBe('=IF($L456>LAST_CLOSED_DATE,"",IF(N(AD456)=0,"",AD456-N(AE456)-N(AG456)-231.38))');
+    expect(u).toBe('=IF($L456>LAST_CLOSED_DATE,"",IF(N(AD456)=0,"",AD456-N(AE456)-N(AH456)-231.38))');
     expect(u).not.toContain('$50');
   });
 
@@ -90,16 +122,16 @@ describe('OZON adapter — формулы блока', () => {
 
 describe('OZON adapter — сводка', () => {
   const s = ozonSummaryDayFormulas(456, 16);
-  it('заказы суммируются по всем 16 блокам с шагом 24', () => {
+  it('заказы суммируются по всем 16 блокам с шагом 25', () => {
     expect(s.get(OZON_SUMMARY.orders)).toBe(
-      '=IF($B456>LAST_CLOSED_DATE,"",IF(COUNT(FILTER(P456:NL456,MOD(COLUMN(P456:NL456)-COLUMN(P456),24)=0))=0,"",'
-      + 'SUM(FILTER(P456:NL456,MOD(COLUMN(P456:NL456)-COLUMN(P456),24)=0))))');
+      '=IF($B456>LAST_CLOSED_DATE,"",IF(COUNT(FILTER(P456:OA456,MOD(COLUMN(P456:OA456)-COLUMN(P456),25)=0))=0,"",'
+      + 'SUM(FILTER(P456:OA456,MOD(COLUMN(P456:OA456)-COLUMN(P456),25)=0))))');
   });
   it('доходность сводки берёт смещение +10 каждого блока', () => {
-    expect(s.get(OZON_SUMMARY.profit)).toContain('V456:NR456');
+    expect(s.get(OZON_SUMMARY.profit)).toContain('V456:OG456');
   });
   it('диапазон растёт вместе с числом блоков', () => {
-    expect(ozonSummaryDayFormulas(456, 22).get(OZON_SUMMARY.orders)).toContain('P456:SZ456');
+    expect(ozonSummaryDayFormulas(456, 22).get(OZON_SUMMARY.orders)).toContain('P456:TU456');
   });
 });
 
@@ -179,9 +211,9 @@ describe('OZON adapter — строка MTD', () => {
 
 describe('OZON adapter — Gate 5A: геометрия мая (31 день)', () => {
   const G = { firstDailyRow: 468, lastDailyRow: 498, mtdRow: 499 };
-  it('21 блок: последний начинается в колонке 492, сводка тянется до него', () => {
-    expect(ozonSlotStart(20)).toBe(492);
-    expect(ozonSummaryDayFormulas(468, 21).get(OZON_SUMMARY.orders)).toContain('P468:SB468');
+  it('21 блок: последний начинается в колонке 512, сводка тянется до него', () => {
+    expect(ozonSlotStart(20)).toBe(512);
+    expect(ozonSummaryDayFormulas(468, 21).get(OZON_SUMMARY.orders)).toContain('P468:SV468');
   });
   it('MTD мая охватывает все 31 сутки', () => {
     expect(ozonSummaryMtdFormulas(G).get(OZON_SUMMARY.orders))
@@ -226,14 +258,19 @@ describe('OZON adapter — Gate 5A: комиссия, эквайринг, про
     expect(Number(r.toFixed(2))).toBe(-1971.97);
   });
   it('отмены дают реальную логистику, но не искусственный штраф', () => {
-    const v = ozonBlockDayFormulas({ start: 12, cogsTerm: '0', otherDirectTerm: '135.5' }, 468).get(OFFSET.profitAll)!;
-    expect(v).toContain('-135.5');            // реальный расход отражён
+    const v = ozonBlockDayFormulas({ start: 12, cogsTerm: '0' }, 468).get(OFFSET.profitAll)!;
+    // Gate 6A: величина прочих прямых больше НЕ вшивается литералом в формулу — она лежит
+    // в своей колонке (AG) и вычитается ссылкой. Расход отражён ровно один раз и стал видимым.
+    expect(v).toContain('-N(AG468)');         // реальный расход отражён ссылкой на колонку
+    expect(v).not.toContain('135.5');         // литерала в формуле больше нет
     expect(v).not.toContain('$F$50');         // легаси-штраф 45 ₽ отсутствует
     expect(v).toContain('(P468-R468)');       // экономика только по реализованным единицам
   });
-  it('нулевой прочий расход не засоряет формулу', () => {
-    const v = ozonBlockDayFormulas({ start: 12, cogsTerm: '0', otherDirectTerm: '0' }, 468).get(OFFSET.profitAll)!;
-    expect(v).toBe('=IF($L468>LAST_CLOSED_DATE,"",(P468-R468)*N(AH468)-N(W468)-N(AF468)+N(X468))');
+  it('формула прибыли не зависит от величины прочих прямых', () => {
+    // Раньше нулевой расход требовал отдельной ветки, иначе в формулу попадал «-0».
+    // Со ссылкой на колонку формула одна и та же при любом значении — ветки больше нет.
+    const v = ozonBlockDayFormulas({ start: 12, cogsTerm: '0' }, 468).get(OFFSET.profitAll)!;
+    expect(v).toBe('=IF($L468>LAST_CLOSED_DATE,"",(P468-R468)*N(AI468)-N(W468)-N(AF468)+N(X468)-N(AG468))');
   });
 });
 
@@ -266,13 +303,13 @@ describe('OZON adapter — Gate 5B: геометрия произвольног�
     const jun = ozonSectionGeometry(2026, 6, 466, 31, MAY21);
     expect(jun.daysInMonth).toBe(30);
     expect([jun.titleRow, jun.firstDailyRow, jun.lastDailyRow, jun.mtdRow]).toEqual([501, 503, 532, 533]);
-    expect(jun.lastColumn).toBe(515);
+    expect(jun.lastColumn).toBe(536);
   });
   it('июль — 31 день и 22 блока', () => {
     const jul = ozonSectionGeometry(2026, 7, 501, 30, B22);
     expect(jul.daysInMonth).toBe(31);
     expect([jul.titleRow, jul.firstDailyRow, jul.lastDailyRow, jul.mtdRow]).toEqual([535, 537, 567, 568]);
-    expect(jul.lastColumn).toBe(539);
+    expect(jul.lastColumn).toBe(561);
   });
   it('август — 31 день', () => {
     const aug = ozonSectionGeometry(2026, 8, 535, 31, B22);
@@ -321,10 +358,10 @@ describe('OZON adapter — Gate 5B: хранение и граница оста�
 });
 
 describe('OZON adapter — Gate 5V: контракт представления', () => {
-  it('роли покрывают все 24 смещения блока ровно один раз', () => {
-    expect(OZON_FIELD_ROLES).toHaveLength(24);
+  it('роли покрывают все 25 смещений блока ровно один раз', () => {
+    expect(OZON_FIELD_ROLES).toHaveLength(25);
     const offs = OZON_FIELD_ROLES.map((r) => ROLE_OFFSET[r]).sort((a, b) => a - b);
-    expect(offs).toEqual(Array.from({ length: 24 }, (_, i) => i));
+    expect(offs).toEqual(Array.from({ length: 25 }, (_, i) => i));
   });
   it('каждой роли назначен визуальный класс из палитры WB', () => {
     const allowed = new Set(['MANUAL', 'FACT', 'TARIFF', 'CALC']);
@@ -389,7 +426,7 @@ describe('OZON adapter — Gate 5C: открытый месяц', () => {
 describe('OZON adapter — Gate 5C: единицы в пути', () => {
   it('в закрытом месяце терм отсутствует — формула та же, что принята в Gate 5A/5B', () => {
     const v = ozonBlockDayFormulas({ start: 12, cogsTerm: '0', inTransitTerm: '0' }, 468).get(OFFSET.profitAll)!;
-    expect(v).toBe('=IF($L468>LAST_CLOSED_DATE,"",(P468-R468)*N(AH468)-N(W468)-N(AF468)+N(X468))');
+    expect(v).toBe('=IF($L468>LAST_CLOSED_DATE,"",(P468-R468)*N(AI468)-N(W468)-N(AF468)+N(X468)-N(AG468))');
   });
   it('в открытом месяце единицы в пути вычитаются: экономика только по реализованным', () => {
     const m = ozonBlockDayFormulas({ start: 12, cogsTerm: '0', inTransitTerm: '1' }, 619);
@@ -755,21 +792,52 @@ describe('GATE 5E — контракт оформления и идемпоте�
 
   it('разъединяем только сводку и блоки — хвост владельца не трогаем', () => {
     const r = unmergeRequests(1, [layout(SEP)], 22) as Array<{ unmergeCells: { range: { endColumnIndex: number } } }>;
-    expect(r[0]!.unmergeCells.range.endColumnIndex).toBe(12 + 24 * 22 - 1);   // до 539, хвост правее
+    expect(r[0]!.unmergeCells.range.endColumnIndex).toBe(12 + 25 * 22 - 1);   // до 561, хвост правее
   });
 
-  const GROWTH = { insertColumnsBefore: 396, insertColumnCount: 144, appendColumnCount: 4, appendRowCount: 185 };
+  // Gate 6A. Миграция ширины блока 24 -> 25 состоит из ДВУХ разных вставок, и путать их нельзя:
+  //   1) каждый из 16 существующих блоков получает свою колонку ВНУТРИ себя (widenBlockAt),
+  //      иначе легаси-апрель 01–16 окажется под чужими смещениями;
+  //   2) только потом перед хвостом владельца вставляются 6 НОВЫХ блоков по 25.
+  // Позиции расширения считаются по СТАРОЙ ширине (24), потому что вставляем в старую раскладку.
+  const WIDEN = Array.from({ length: 16 }, (_, i) => 12 + i * 24 + 21);   // 33, 57, ..., 393
+  const GROWTH = { widenBlockAt: WIDEN, insertColumnsBefore: 396 + WIDEN.length,
+                   insertColumnCount: 6 * 25, appendColumnCount: 4, appendRowCount: 185 };
 
   it('колонки ВСТАВЛЯЮТСЯ перед хвостом, а не дописываются в конец', () => {
     const r = growGridRequests(1, { rows: 465, columns: 404 }, GROWTH) as Array<Record<string, any>>;
-    const ins = r.find((x) => x['insertDimension']);
-    expect(ins).toBeDefined();
-    expect(ins!['insertDimension'].range.startIndex).toBe(395);
-    expect(ins!['insertDimension'].range.endIndex).toBe(395 + 144);
+    const inserts = r.filter((x) => x['insertDimension']);
+    // 16 расширений существующих блоков + 1 вставка шести новых
+    expect(inserts).toHaveLength(17);
+    const wide = inserts.filter((x) => x['insertDimension'].range.endIndex
+                                     - x['insertDimension'].range.startIndex === 1);
+    expect(wide).toHaveLength(16);
+    // расширения идут СПРАВА НАЛЕВО: иначе каждая следующая позиция уехала бы на число вставок
+    const starts = wide.map((x) => x['insertDimension'].range.startIndex);
+    expect(starts).toEqual([...starts].sort((a: number, b: number) => b - a));
+    expect(starts[0]).toBe(392);            // 393 - 1, самый правый блок
+    expect(starts[15]).toBe(32);            // 33 - 1, самый левый блок
+    const big = inserts.find((x) => x['insertDimension'].range.endIndex
+                                  - x['insertDimension'].range.startIndex === 150)!;
+    expect(big['insertDimension'].range.startIndex).toBe(411);   // 412 - 1: хвост уехал на 16
     // дописывание в конец накрыло бы помесячную панель владельца за последним блоком
     expect(r.filter((x) => x['appendDimension']?.dimension === 'COLUMNS').length).toBe(1);
     expect(r.find((x) => x['appendDimension']?.dimension === 'ROWS')!['appendDimension'].length).toBe(185);
-    expect(gridAfterGrowth({ rows: 465, columns: 404 }, GROWTH)).toEqual({ rows: 650, columns: 552 });
+    expect(gridAfterGrowth({ rows: 465, columns: 404 }, GROWTH)).toEqual({ rows: 650, columns: 574 });
+  });
+
+  it('Gate 6A: после миграции блоки 12..561, хвост владельца 562..570', () => {
+    const after = gridAfterGrowth({ rows: 465, columns: 404 }, GROWTH);
+    expect(ozonSlotStart(0)).toBe(12);
+    expect(ozonSlotStart(21) + OZON_GEOMETRY.BLOCK_WIDTH - 1).toBe(561);  // 22 слота по 25
+    expect(after.columns - 561).toBe(13);            // 9 колонок хвоста + 4 под зеркало LCD
+  });
+
+  it('Gate 6A: расширение блока не может повторить позицию и не может выйти за лист', () => {
+    expect(() => growGridRequests(1, { rows: 465, columns: 404 },
+      { ...GROWTH, widenBlockAt: [33, 33] })).toThrow(/позиция повторяется/);
+    expect(() => growGridRequests(1, { rows: 465, columns: 404 },
+      { ...GROWTH, widenBlockAt: [9999] })).toThrow(/вне листа/);
   });
 
   it('повторный прогон не растит сетку: нулевой рост даёт пустой план', () => {

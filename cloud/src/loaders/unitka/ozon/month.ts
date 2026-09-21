@@ -112,6 +112,7 @@ export interface OzonDayCell {
   orders: number; cancel: number;
   shows?: number; clicks?: number; adin?: number;
   price?: number; spp?: number; comm?: number; log?: number; stock?: number; stor?: number;
+  od?: number; cart?: number;
 }
 export interface OzonMonthTotals {
   orders: number; cancel: number; realized: number; revenue: number; cogs: number;
@@ -134,6 +135,10 @@ const r8 = (x: number) => Math.round(x * 1e8) / 1e8;
 
 /**
  * Раскладка месяца. `stockBy` — только ДОКАЗАННЫЕ снимки остатка (ключ `iso|offer_id`).
+ * `cartBy` — уже наблюдённые «Положили в корзину» из самого листа (тот же ключ). Метрика снята
+ * с API Ozon («deprecated metrics used»), новых значений взять неоткуда, а старые — настоящие
+ * наблюдения. Поэтому они проносятся через запись без изменений: сетка значений заполняется
+ * пустыми строками, и колонка, которую никто не выставил, была бы СТЁРТА.
  * `lcd` — LAST_CLOSED_DATE: сутки после него остаются полностью пустыми.
  *
  * `fromDay` — первый день КАНОНИЧЕСКОГО окна месяца (апрель 2026 — гибридный месяц миграции,
@@ -143,7 +148,7 @@ const r8 = (x: number) => Math.round(x * 1e8) / 1e8;
 export function composeMonth(
   spec: OzonMonthSpec, facts: readonly OzonFactRow[],
   stockBy: Readonly<Record<string, number>> = {}, lcd: string | null = null,
-  fromDay = 1,
+  fromDay = 1, cartBy: Readonly<Record<string, number>> = {},
 ): OzonMonthComposition {
   const by = new Map(facts.map((r) => [`${r.d}|${r.offer_id}`, r]));
   const cells: OzonMonthComposition['cells'] = {};
@@ -191,6 +196,9 @@ export function composeMonth(
       }
       const st = stockBy[`${ds}|${o}`];
       if (st !== undefined) c.stock = st;             // только доказанный снимок
+      const ct = cartBy[`${ds}|${o}`];
+      if (ct !== undefined) c.cart = ct;              // наблюдение листа, а не выдуманный ноль
+      if (od) c.od = r6(od);                          // прочие прямые — теперь видимая колонка
       cells[key] = c;
       if (od) {
         other[key] = r6(od);
@@ -216,12 +224,13 @@ export function buildGrid(
   formulas: { day: Record<string, string>; mtd: Record<string, string>; mtdBlank: readonly string[] },
 ): CellValue[][] {
   const g: CellValue[][] = Array.from({ length: spec.days + 1 }, () => Array(spec.ncols).fill(''));
-  const KEYS = ['orders', 'cancel', 'shows', 'clicks', 'adin', 'price', 'spp', 'comm', 'log', 'stock', 'stor'] as const;
+  const KEYS = ['orders', 'cancel', 'shows', 'clicks', 'adin', 'price', 'spp', 'comm', 'log', 'stock', 'stor', 'od', 'cart'] as const;
   const OFF: Record<(typeof KEYS)[number], number> = {
     orders: ROLE_OFFSET.ORDERS, cancel: ROLE_OFFSET.CANCELLATIONS, shows: ROLE_OFFSET.IMPRESSIONS,
     clicks: ROLE_OFFSET.CLICKS, adin: ROLE_OFFSET.INTERNAL_ADS, price: ROLE_OFFSET.SELLER_PRICE,
     spp: ROLE_OFFSET.DISCOUNT, comm: ROLE_OFFSET.COMMISSION, log: ROLE_OFFSET.LOGISTICS,
     stock: ROLE_OFFSET.STOCK, stor: ROLE_OFFSET.STORAGE,
+    od: ROLE_OFFSET.OTHER_DIRECT, cart: ROLE_OFFSET.CART,
   };
   for (const ds of monthDates(spec)) {
     const day = Number(ds.slice(8, 10)); const i = day - 1; const row = spec.firstRow + i;

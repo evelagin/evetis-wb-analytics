@@ -198,6 +198,20 @@ export function lcdMirrorRequests(sheetId: number, row: number, column: number):
 export interface GridGrowth {
   /** 1-based номер колонки, ПЕРЕД которой вставляются новые блоки (первая колонка хвоста). */
   readonly insertColumnsBefore: number;
+  /**
+   * Gate 6A. Колонки (1-based), ПЕРЕД которыми вставляется ровно одна колонка, чтобы расширить
+   * УЖЕ СУЩЕСТВУЮЩИЙ блок с 24 до 25. Нужно потому, что смена ширины блока — это не дописывание
+   * новых блоков: каждый старый блок обязан получить свою колонку ВНУТРИ себя, иначе легаси-данные
+   * апреля 01–16 окажутся под чужими смещениями.
+   *
+   * Вставки выполняются СПРАВА НАЛЕВО: вставка сдвигает всё правее себя, и при обходе слева
+   * направо каждая следующая позиция «уезжала» бы на число уже сделанных вставок.
+   *
+   * Позиция внутри блока выбрана так, что легаси-значения справа от неё сдвигаются ровно на одно
+   * смещение и попадают туда, где им и место в новой карте (налог → 22, доходность → 23,
+   * день недели → 24). Ничего не переписывается — данные едут вместе со своим блоком.
+   */
+  readonly widenBlockAt?: readonly number[];
   /** Сколько колонок блоков вставить (кратно ширине блока). */
   readonly insertColumnCount: number;
   /** Сколько колонок дописать в конец (место под зеркало LAST_CLOSED_DATE). */
@@ -210,16 +224,31 @@ export function growGridRequests(
   sheetId: number, current: { rows: number; columns: number }, growth: GridGrowth,
 ): SheetsRequest[] {
   const { insertColumnsBefore, insertColumnCount, appendColumnCount, appendRowCount } = growth;
+  const widen = [...(growth.widenBlockAt ?? [])];
   if (insertColumnCount % OZON_GEOMETRY.BLOCK_WIDTH !== 0) {
     throw new Error('вставка колонок: не кратно ширине блока');
+  }
+  if (new Set(widen).size !== widen.length) throw new Error('расширение блоков: позиция повторяется');
+  for (const c of widen) {
+    if (!Number.isInteger(c) || c < 1 || c > current.columns + 1) {
+      throw new Error(`расширение блоков: позиция ${c} вне листа`);
+    }
   }
   if (insertColumnCount < 0 || appendColumnCount < 0 || appendRowCount < 0) {
     throw new Error('сжатие листа движком запрещено');
   }
   const out: SheetsRequest[] = [];
   if (appendRowCount > 0) out.push({ appendDimension: { sheetId, dimension: 'ROWS', length: appendRowCount } });
+  // справа налево — иначе каждая следующая позиция уехала бы на число уже сделанных вставок
+  for (const c of widen.slice().sort((a, b) => b - a)) {
+    out.push({ insertDimension: { range: { sheetId, dimension: 'COLUMNS',
+      startIndex: c - 1, endIndex: c }, inheritFromBefore: true } });
+  }
   if (insertColumnCount > 0) {
-    if (insertColumnsBefore < 1 || insertColumnsBefore > current.columns + 1) {
+    // расширения блоков выполняются РАНЬШЕ и уже сдвинули хвост вправо: точку вставки
+    // проверяем относительно листа ПОСЛЕ расширения, иначе корректный план был бы отвергнут
+    const columnsAfterWiden = current.columns + widen.length;
+    if (insertColumnsBefore < 1 || insertColumnsBefore > columnsAfterWiden + 1) {
       throw new Error('вставка колонок: точка вставки вне листа');
     }
     out.push({ insertDimension: { range: { sheetId, dimension: 'COLUMNS',
@@ -235,7 +264,8 @@ export function gridAfterGrowth(
   current: { rows: number; columns: number }, growth: GridGrowth,
 ): { rows: number; columns: number } {
   return { rows: current.rows + growth.appendRowCount,
-           columns: current.columns + growth.insertColumnCount + growth.appendColumnCount };
+           columns: current.columns + (growth.widenBlockAt?.length ?? 0)
+                    + growth.insertColumnCount + growth.appendColumnCount };
 }
 
 /* ── идемпотентность: повторный прогон обязан ничего не менять ───────────────── */

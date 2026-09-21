@@ -8,17 +8,17 @@
  * Перенос идёт по ВИЗУАЛЬНОЙ РОЛИ, а не по номеру колонки: у WB первый SKU-блок в M(13),
  * у Ozon в L(12), но карта смещений внутри блока совпадает 1-в-1 (доказано Gate 3).
  */
-import { OFFSET } from '../model.js';
+import { OZON_OFFSET as OFFSET } from './offsets.js';
 
 /** Визуальные классы ячейки дня — ровно те, что уже существуют в WB. */
 export type VisualClass = 'MANUAL' | 'FACT' | 'TARIFF' | 'CALC';
 
-/** Роли полей блока в порядке смещений 0..23. */
+/** Роли полей блока в порядке смещений 0..24 (Gate 6A: 25 колонок, добавлена OTHER_DIRECT). */
 export const OZON_FIELD_ROLES = [
   'DATE','MANUAL_EXTERNAL','IMPRESSIONS','CLICKS','ORDERS','CART','CANCELLATIONS','STOCK','TURNOVER',
   'UNIT_PROFIT','TOTAL_PROFIT','INTERNAL_ADS','EXTERNAL_ADS','DRR','SELLER_PRICE','DISCOUNT',
-  'BUYER_PRICE','COMMISSION','NET_AFTER_COMMISSION','LOGISTICS','STORAGE','TAX_RESERVE',
-  'FINAL_UNIT_PROFIT','WEEKDAY',
+  'BUYER_PRICE','COMMISSION','NET_AFTER_COMMISSION','LOGISTICS','STORAGE','OTHER_DIRECT',
+  'TAX_RESERVE','FINAL_UNIT_PROFIT','WEEKDAY',
 ] as const;
 export type FieldRole = (typeof OZON_FIELD_ROLES)[number];
 
@@ -29,6 +29,7 @@ export const ROLE_OFFSET: Readonly<Record<FieldRole, number>> = {
   INTERNAL_ADS: OFFSET.adsIn, EXTERNAL_ADS: OFFSET.adsOut, DRR: OFFSET.drr, SELLER_PRICE: OFFSET.price,
   DISCOUNT: OFFSET.spp, BUYER_PRICE: OFFSET.priceSpp, COMMISSION: OFFSET.commission,
   NET_AFTER_COMMISSION: OFFSET.priceMinusComm, LOGISTICS: OFFSET.logistics, STORAGE: OFFSET.storage,
+  OTHER_DIRECT: OFFSET.otherDirect,
   TAX_RESERVE: OFFSET.tax, FINAL_UNIT_PROFIT: OFFSET.unitProfit, WEEKDAY: OFFSET.weekday,
 };
 
@@ -53,6 +54,7 @@ export const OZON_ROLE_CLASS: Readonly<Record<FieldRole, VisualClass>> = {
   NET_AFTER_COMMISSION: 'CALC',
   LOGISTICS: 'FACT',                // фактическая логистика (у WB — тариф)
   STORAGE: 'FACT',
+  OTHER_DIRECT: 'FACT',             // Gate 6A: начисленные прямые расходы SKU, у WB колонки нет
   TAX_RESERVE: 'CALC', FINAL_UNIT_PROFIT: 'CALC', WEEKDAY: 'CALC',
 };
 

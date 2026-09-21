@@ -7,14 +7,19 @@
  *   • первый SKU-блок в колонке L (12) против M (13) у WB;
  *   • источники фактов и правила доступности — ozon_raw / ozon_mart;
  *   • отмены НЕ штрафуются (решение владельца D-3), в отличие от WB.
- * Ширина блока и шаг (24) совпадают с WB, карта смещений внутри блока совпадает 1-в-1.
+ * Ширина блока с Gate 6A — 25 против 24 у WB: добавлена колонка «Прочие прямые», которой
+ * у WB нет. Карта смещений вынесена в ./offsets.js; WB-константа не меняется.
  */
+import { OZON_BLOCK_WIDTH } from './offsets.js';
 
-/** Геометрия листа Ozon. BLOCK_WIDTH намеренно равен WB — расходится только первая колонка. */
+/**
+ * Геометрия листа Ozon. Ширина берётся из числа смещений OZON_OFFSET, а не задаётся числом
+ * отдельно, — иначе карта и геометрия могли бы разойтись незаметно.
+ */
 export const OZON_GEOMETRY = {
   BLOCK_FIRST_COLUMN: 12, // L
-  BLOCK_WIDTH: 24,
-  BLOCK_BODY_WIDTH: 23,
+  BLOCK_WIDTH: OZON_BLOCK_WIDTH,
+  BLOCK_BODY_WIDTH: OZON_BLOCK_WIDTH - 1,
   SHEET_TITLE: 'OZON_Юнит_2025',
 } as const;
 
@@ -86,10 +91,11 @@ export const OZON_FIELD_SOURCE_MAP: ReadonlyArray<{
   { offset: 17, field: 'комиссия',           availability: 'FACT',                source: 'FCT.commission_rub / seller_base_revenue_rub (ФАКТ, не 0,396)' },
   { offset: 18, field: 'цена минус комиссия',availability: 'FORMULA',             source: '= цена × (1 − комиссия)' },
   { offset: 19, field: 'логистика',          availability: 'FACT',                source: 'FCT.logistics_rub / realized_qty (ФАКТ, не 72 ₽)' },
-  { offset: 20, field: 'Хранение',           availability: 'BLANK_NOT_INGESTED',  source: 'FBO-хранение приходит без sku (type 46) — не атрибутируется' },
-  { offset: 21, field: 'налог',              availability: 'FORMULA',             source: '= цена (seller base) × MANAGEMENT_TAX_RESERVE_RATE' },
-  { offset: 22, field: 'доходность 1 шт',    availability: 'FORMULA',             source: '= цена−комиссия − логистика − налог − канон. COGS' },
-  { offset: 23, field: 'день недели',        availability: 'FACT',                source: 'календарь секции' },
+  { offset: 20, field: 'Хранение',           availability: 'FACT',                source: 'FCT.storage_rub (type 79, со sku); FBO-хранение type 46 без sku остаётся расходом кабинета' },
+  { offset: 21, field: 'Прочие прямые',      availability: 'FACT',                source: 'FCT: прочие прямые + продвижение по SKU + логистика по нереализованным + эквайринг без выручки (Gate 6A)' },
+  { offset: 22, field: 'налог',              availability: 'FORMULA',             source: '= цена (seller base) × MANAGEMENT_TAX_RESERVE_RATE' },
+  { offset: 23, field: 'доходность 1 шт',    availability: 'FORMULA',             source: '= цена−комиссия − логистика − налог − канон. COGS' },
+  { offset: 24, field: 'день недели',        availability: 'FACT',                source: 'календарь секции' },
 ];
 
 /**
