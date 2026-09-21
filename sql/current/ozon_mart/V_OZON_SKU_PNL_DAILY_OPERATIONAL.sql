@@ -188,13 +188,16 @@ SELECT
   r.policy_rate commission_policy_rate,
   -- ── ЭФФЕКТИВНАЯ ВЕЛИЧИНА И СОСТОЯНИЕ ──────────────────────────────────────────────────
   r.commission_rub + r.commission_estimated_rub commission_effective_rub,
-  CASE WHEN r.realized_qty = 0 THEN 'NOT_APPLICABLE'
-       WHEN r.commission_not_applicable_qty = r.realized_qty THEN 'NOT_APPLICABLE'
+  -- база состояния — ОЖИДАЕМАЯ реализация: у единицы в пути комиссия не «неприменима»,
+  -- она просто ещё не начислена, и оценка для неё существует
+  CASE WHEN r.gross_qty - r.cancelled_qty = 0 THEN 'NOT_APPLICABLE'
+       WHEN r.commission_not_applicable_qty = r.realized_qty AND r.realized_qty > 0
+            AND r.commission_gap_qty = 0 THEN 'NOT_APPLICABLE'
        WHEN r.commission_gap_qty = 0 THEN 'ACTUAL'
        WHEN r.commission_estimate_method IS NOT NULL THEN 'ESTIMATED'
        ELSE 'UNKNOWN' END commission_state,
   r.logistics_rub + r.logistics_estimated_rub logistics_effective_rub,
-  CASE WHEN r.realized_qty = 0 AND r.logistics_rub = 0 THEN 'NOT_APPLICABLE'
+  CASE WHEN r.gross_qty - r.cancelled_qty = 0 AND r.logistics_rub = 0 THEN 'NOT_APPLICABLE'
        WHEN r.logistics_gap_qty = 0 THEN 'ACTUAL'
        WHEN r.log_per_unit > 0 THEN 'ESTIMATED'
        ELSE 'UNKNOWN' END logistics_state,

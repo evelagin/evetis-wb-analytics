@@ -119,3 +119,42 @@ resource "google_bigquery_dataset_iam_member" "ozon_unitka_read_raw" {
   role       = "roles/bigquery.dataViewer"
   member     = "serviceAccount:${google_service_account.loaders_prod.email}"
 }
+
+# ── Наблюдаемость ─────────────────────────────────────────────────────────────
+# Владелец не должен каждый день заглядывать в логи. Прогон падает с кодом
+# (SOURCE_STALE / NO_FREE_SKU_SLOT / OZON_UNITKA_GEOMETRY / OZON_UNITKA_REF / SHEETS_API),
+# код попадает в метку алерта. Канал тот же, что у WB Engine: второй заводить незачем.
+resource "google_monitoring_alert_policy" "ozon_unitka_failed" {
+  count        = var.unitka_alert_email == "" ? 0 : 1
+  display_name = "OZON Unitka: прогон завершился ошибкой"
+  combiner     = "OR"
+
+  conditions {
+    display_name = "loader_failed в логах ozon-unitka-prod"
+    condition_matched_log {
+      filter = <<-EOT
+        resource.type="cloud_run_job"
+        resource.labels.job_name="ozon-unitka-prod"
+        severity>=ERROR
+        jsonPayload.message="loader_failed"
+      EOT
+      label_extractors = {
+        error_code = "EXTRACT(jsonPayload.code)"
+      }
+    }
+  }
+
+  alert_strategy {
+    notification_rate_limit {
+      period = "3600s"
+    }
+    auto_close = "86400s"
+  }
+
+  notification_channels = [google_monitoring_notification_channel.unitka_email[0].id]
+  documentation {
+    content   = "Ozon-Юнитка не обновилась. Код ошибки — в метке error_code. SOURCE_STALE: не обновился источник Ozon, лист НЕ перезаписан устаревшими данными — это штатная защита, повтор в следующее окно. NO_FREE_SKU_SLOT: появился 23-й SKU при 22 размеченных слотах, нужна миграция геометрии листа. Эксплуатация: docs/ops/OZON_UNITKA_OPERATIONS.md"
+    mime_type = "text/markdown"
+  }
+  depends_on = [google_project_service.enabled]
+}

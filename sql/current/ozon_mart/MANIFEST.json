@@ -2045,7 +2045,7 @@
     "ozon_raw.RAW_OZON_PRICE_COMMISSIONS"
    ],
    "dependency_level": 0,
-   "capture_main_sha": "1132725290185fd8d946c81d7672e58d597c5c0c",
+   "capture_main_sha": "d5cef49c83136d7c0706660fd96e54d88b2ac011",
    "captured_at": "2026-09-21T18:40:00Z",
    "provenance": {
     "source": "Git-first (Gate 8, 2026-09-21): провизорная экономика Ozon",
@@ -2853,7 +2853,7 @@
     "ozon_raw.RAW_OZON_POSTINGS_FBO"
    ],
    "dependency_level": 0,
-   "capture_main_sha": "1132725290185fd8d946c81d7672e58d597c5c0c",
+   "capture_main_sha": "d5cef49c83136d7c0706660fd96e54d88b2ac011",
    "captured_at": "2026-09-21T18:40:00Z",
    "provenance": {
     "source": "Git-first (Gate 8, 2026-09-21): провизорная экономика Ozon",
@@ -6041,7 +6041,7 @@
     "ozon_raw.RAW_OZON_POSTINGS_FBO"
    ],
    "dependency_level": 2,
-   "capture_main_sha": "1132725290185fd8d946c81d7672e58d597c5c0c",
+   "capture_main_sha": "d5cef49c83136d7c0706660fd96e54d88b2ac011",
    "captured_at": "2026-09-21T18:40:00Z",
    "provenance": {
     "source": "Git-first (Gate 8, 2026-09-21): провизорная экономика Ozon",
@@ -6049,7 +6049,7 @@
     "preflight_parity": "DEPLOYED_AND_READBACK_MATCH",
     "superseded_historical_definitions": []
    },
-   "live_body_sha256_at_capture": "82e840f0359a3f7efedeaaee8847a82fb1fbaedc856f3e5901f20ef21f700ff7",
+   "live_body_sha256_at_capture": "605d86b00077c3d6e01f613a9eb78672b7c69c6656ba10aac88265f1d3e16c40",
    "live_schema_sha256_at_capture": "6033f5ddf010233b77506cae51bc410134f5f90609fa8d9745d7c9ce36087323",
    "live_description_sha256_at_capture": "1f54d14655eb39a85b18a92487d68c2a97e9e8768de0cbabb7a9b813653d3191",
    "live_schema_at_capture": [
@@ -6354,7 +6354,7 @@
      "is_nullable": "YES"
     }
    ],
-   "canonical_body_sha256": "82e840f0359a3f7efedeaaee8847a82fb1fbaedc856f3e5901f20ef21f700ff7",
+   "canonical_body_sha256": "605d86b00077c3d6e01f613a9eb78672b7c69c6656ba10aac88265f1d3e16c40",
    "canonical_description_sha256": "1f54d14655eb39a85b18a92487d68c2a97e9e8768de0cbabb7a9b813653d3191",
    "canonical_schema_sha256": "6033f5ddf010233b77506cae51bc410134f5f90609fa8d9745d7c9ce36087323",
    "canonical_schema_verification": "bigquery_verified",
