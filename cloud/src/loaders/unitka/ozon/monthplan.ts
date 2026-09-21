@@ -168,12 +168,12 @@ const term = (v: number | undefined): string | undefined =>
 
 /**
  * Формулы секции целиком: сутки и строка итога, сводка и все блоки.
- * Литералы себестоимости, прочих прямых и «в пути» приходят из раскладки месяца —
+ * Литералы себестоимости и прочих прямых приходят из раскладки месяца —
  * та же величина, что легла в контрольные суммы, без второго источника правды.
  */
 export function sectionFormulas(
   spec: OzonMonthSpec,
-  comp: { cogs: Record<string, number>; other: Record<string, number>; transit: Record<string, number> },
+  comp: { cogs: Record<string, number>; other: Record<string, number> },
   style: FormulaStyle = 'SEMICOLON',
 ): { day: Record<string, string>; mtd: Record<string, string>; mtdBlank: string[] } {
   // Книга владельца в ru_RU: разделитель аргументов «;», десятичный — запятая.
@@ -185,8 +185,7 @@ export function sectionFormulas(
     for (const o of spec.blocks) {
       const start = spec.anchor[o] as number; const key = `${o}|${row}`;
       const p = { start, cogsTerm: term(comp.cogs[key]) ?? '0',
-                  otherDirectTerm: term(comp.other[key]) ?? '0',
-                  inTransitTerm: term(comp.transit[key]) ?? '0' };
+                  otherDirectTerm: term(comp.other[key]) ?? '0' };
       for (const [off, f] of ozonBlockDayFormulas(p, row)) day[`${row}:${start + off}`] = loc(f);
     }
   }

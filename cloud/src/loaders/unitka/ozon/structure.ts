@@ -415,7 +415,11 @@ export function provenanceNoteText(a: {
   const what = a.component === 'COMMISSION' ? 'Комиссия' : 'Логистика';
   const how = a.method === 'POSTING_PAYOUT_EXACT'
     ? 'из отчёта по отправлениям (цена − выплата), тождество проверено на 600 отправлениях из 600'
-    : a.method === 'COMMISSION_POLICY_TARIFF' ? 'по действующему тарифу площадки'
+    : a.method === 'POSTING_PAYOUT_AND_TARIFF'
+      ? 'часть — из отчёта по отправлениям (цена − выплата), часть — по действующему тарифу: '
+        + 'у единиц в пути выплата ещё не известна'
+    : a.method === 'COMMISSION_POLICY_TARIFF'
+      ? 'по действующему тарифу площадки: заказ ещё в пути, выплата станет известна при доставке'
     : a.method === 'SKU_P70_120D' ? 'оценщик SKU_P70_120D (70-й перцентиль по своему SKU за 120 суток)'
     : a.method === 'MARKETPLACE_P70_120D' ? 'оценщик MARKETPLACE_P70_120D (наблюдений по SKU недостаточно)'
     : 'доказанный оценщик';

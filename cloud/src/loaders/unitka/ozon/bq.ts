@@ -57,6 +57,10 @@ SELECT CAST(f.fact_date AS STRING) d, m.offer_id,
   -- ЭФФЕКТИВНАЯ величина: факт там, где он пришёл, оценка там, где Ozon ещё не опубликовал.
   -- Факт и оценка едут рядом отдельными полями и остаются раздельно аудируемыми.
   f.commission_effective_rub commission, f.logistics_effective_rub logistics,
+  -- Gate 9: база операционной экономики — ОЖИДАЕМО реализованные единицы (заказано − отменено),
+  -- а не только доставленные. Единица в пути приносит свою провизорную экономику.
+  f.expected_realized_qty, f.provisional_revenue_rub, f.provisional_cogs_rub,
+  f.provisional_cogs_missing_qty, f.economics_completeness,
   f.commission_rub commission_actual, f.logistics_rub logistics_actual,
   f.commission_estimated_rub, f.logistics_estimated_rub,
   f.commission_state, f.logistics_state, f.storage_state, f.other_direct_state,

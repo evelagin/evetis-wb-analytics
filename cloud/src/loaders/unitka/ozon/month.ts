@@ -102,7 +102,19 @@ export interface OzonFactRow {
   storage_state?: string | null; other_direct_state?: string | null;
   commission_estimate_method?: string | null; logistics_estimate_method?: string | null;
   period_matured?: boolean | null;
+  // Gate 9: заказная (провизорная) база. `expected_realized_qty` = заказано − отменено:
+  // единица в пути уже принесла заказ и обязана принести свою экономику. Выручка и
+  // себестоимость таких единиц лежат отдельно от факта и не переопределяют его.
+  expected_realized_qty?: number | null;
+  provisional_revenue_rub?: number | null;
+  provisional_cogs_rub?: number | null;
+  provisional_cogs_missing_qty?: number | null;
+  economics_completeness?: string | null;
 }
+
+/** Полнота экономики строки суток × SKU (Gate 9 §7F). */
+export type EconomicsCompleteness =
+  'ACTUAL' | 'PROVISIONAL_COMPLETE' | 'PROVISIONAL_PARTIAL' | 'NO_ECONOMICS';
 
 /** Состояние компонента расхода: старшинство ACTUAL > ESTIMATED > NOT_APPLICABLE > UNKNOWN. */
 export type ComponentState = 'ACTUAL' | 'ESTIMATED' | 'NOT_APPLICABLE' | 'UNKNOWN';
@@ -146,7 +158,6 @@ export interface OzonMonthComposition {
   cells: Record<string, OzonDayCell | Record<string, never>>;
   cogs: Record<string, number>;
   other: Record<string, number>;
-  transit: Record<string, number>;
   audit: Array<{ date: string; offerId: string; otherFees: number; logisticsNonRealized: number;
                  acquiringWithoutRevenue: number; skuPromotion: number; total: number }>;
   /** Ячейки, в которых стоит ОЦЕНКА, а не факт. Основание для пометки в листе. */
@@ -177,7 +188,7 @@ export function composeMonth(
   const by = new Map(facts.map((r) => [`${r.d}|${r.offer_id}`, r]));
   const cells: OzonMonthComposition['cells'] = {};
   const cogs: Record<string, number> = {}; const other: Record<string, number> = {};
-  const transit: Record<string, number> = {}; const audit: OzonMonthComposition['audit'] = [];
+  const audit: OzonMonthComposition['audit'] = [];
   const provenance: CellProvenance[] = [];
   const T: OzonMonthTotals = { orders: 0, cancel: 0, realized: 0, revenue: 0, cogs: 0, comm: 0, acq: 0,
     acqComm: 0, acqOther: 0, logRepr: 0, logUnrepr: 0, otherFees: 0, other: 0, ads: 0, tax: 0,
@@ -193,32 +204,43 @@ export function composeMonth(
       const rec = by.get(`${ds}|${o}`);
       const n = (v: number | null | undefined) => v ?? 0;
       const orders = n(rec?.gross_qty), cancel = n(rec?.cancelled_qty), rl = n(rec?.realized_qty);
-      const tr = n(rec?.in_transit_qty), rev = n(rec?.revenue), comm = n(rec?.commission);
+      const comm = n(rec?.commission);
+      // Gate 9: экономика считается на ОЖИДАЕМО реализованных единицах. Для созревших суток
+      // единиц в пути нет, и обе базы совпадают — историю это не двигает (проверено: 3289
+      // созревших строк, расхождений 0). Отменённая единица выпадает из базы при следующем
+      // же прогоне окна перезаписи, поэтому двойного счёта не возникает.
+      const eq = rec?.expected_realized_qty ?? Math.max(0, orders - cancel);
+      const rev = rec?.provisional_revenue_rub ?? n(rec?.revenue);
       const acq = n(rec?.acquiring), log = n(rec?.logistics), oth = n(rec?.other_direct);
-      const cg = n(rec?.cogs_amt), stor = n(rec?.storage), promo = n(rec?.promo);
+      const cg = rec?.provisional_cogs_rub ?? n(rec?.cogs_amt);
+      const stor = n(rec?.storage), promo = n(rec?.promo);
       const hasAds = !!rec && rec.impr !== null && rec.impr !== undefined;
       const ads = hasAds ? n(rec?.ads_spend) : 0;
       const acqC = rev ? acq : 0;          // эквайринг в комиссию только при выручке
       const acqO = rev ? 0 : acq;          // иначе — в прочие прямые, ровно один раз
-      const logR = rl > 0 ? log : 0;
-      const logU = rl > 0 ? 0 : log;
+      const logR = eq > 0 ? log : 0;
+      const logU = eq > 0 ? 0 : log;
       // Продвижение с привязкой к SKU (отзывы, звёздные товары, бонусы) — прямой расход
       // этого SKU-дня. В колонку рекламы НЕ идёт: там атрибуция CPC, а здесь факт начисления.
       const od = oth + logU + acqO + promo;
       const c: OzonDayCell = { orders, cancel };
       if (stor) c.stor = r6(stor);
-      if (tr) transit[key] = tr;
       if (hasAds) { c.shows = n(rec?.impr); c.clicks = n(rec?.clicks); c.adin = r6(ads); }
-      if (rl > 0 && rev) {
-        c.price = r6(rev / rl);
+      if (eq > 0 && rev) {
+        c.price = r6(rev / eq);
         c.comm = r8((comm + acqC) / rev);
-        c.log = r6(logR / rl);
+        c.log = r6(logR / eq);
+        // СПП и цена покупателя существуют ТОЛЬКО в финансовом начислении, то есть после
+        // доставки (2003 строки из 2003). Для единицы в пути их не существует, и выводить
+        // их нечем. Пустая ячейка честнее выдуманной скидки; известную цену продавца
+        // отсутствие СПП не обнуляет.
         if (rec?.buyer_amt !== null && rec?.buyer_amt !== undefined && rec?.seller_amt) {
           c.spp = r6((1 - rec.buyer_amt / rec.seller_amt) * 100);
         }
-        cogs[key] = r6(cg / rl);
+        cogs[key] = r6(cg / eq);
         T.tax += MANAGEMENT_TAX_RESERVE_RATE * rev;   // база — цена продавца
       }
+      // Gate 9: единицы в пути НЕ исключаются из экономики — терм `в пути` больше не нужен
       const st = stockBy[`${ds}|${o}`];
       if (st !== undefined) c.stock = st;             // только доказанный снимок
       const ct = cartBy[`${ds}|${o}`];
@@ -226,7 +248,7 @@ export function composeMonth(
       if (od) c.od = r6(od);                          // прочие прямые — теперь видимая колонка
       // Gate 8: где в ячейке стоит ОЦЕНКА, там об этом остаётся запись. Молча подменить
       // факт оценкой нельзя — провенанс переезжает в лист пометкой на ячейке.
-      if (rl > 0 && rev) {
+      if (eq > 0 && rev) {
         const cEst = n(rec?.commission_estimated_rub), lEst = n(rec?.logistics_estimated_rub);
         if (cEst) provenance.push({ date: ds, offerId: o, row, component: 'COMMISSION',
           state: 'ESTIMATED', method: rec?.commission_estimate_method ?? null,
@@ -241,7 +263,7 @@ export function composeMonth(
         audit.push({ date: ds, offerId: o, otherFees: oth, logisticsNonRealized: logU,
                      acquiringWithoutRevenue: acqO, skuPromotion: promo, total: od });
       }
-      T.orders += orders; T.cancel += cancel; T.realized += rl; T.revenue += rev; T.cogs += cg;
+      T.orders += orders; T.cancel += cancel; T.realized += eq; T.revenue += rev; T.cogs += cg;
       T.comm += comm; T.acq += acq; T.acqComm += acqC; T.acqOther += acqO;
       T.logRepr += logR; T.logUnrepr += logU; T.otherFees += oth; T.promo += promo; T.other += od;
       T.ads += ads; T.storage += stor;
@@ -249,7 +271,7 @@ export function composeMonth(
   }
   T.canonical = T.revenue - T.cogs - (T.comm + T.acqComm) - T.logRepr - T.storage - T.other - T.ads - T.tax;
   if (Math.abs(T.acqComm + T.acqOther - T.acq) > 1e-6) throw new Error('эквайринг посчитан не один раз');
-  return { cells, cogs, other, transit, audit, provenance, totals: T };
+  return { cells, cogs, other, audit, provenance, totals: T };
 }
 
 export type CellValue = string | number | null;

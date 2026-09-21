@@ -444,15 +444,59 @@ describe('OZON adapter — Gate 5C: открытый месяц', () => {
   });
 });
 
-describe('OZON adapter — Gate 5C: единицы в пути', () => {
-  it('в закрытом месяце терм отсутствует — формула та же, что принята в Gate 5A/5B', () => {
-    const v = ozonBlockDayFormulas({ start: 12, cogsTerm: '0', inTransitTerm: '0' }, 468).get(OFFSET.profitAll)!;
+describe('OZON adapter — Gate 9: единицы в пути несут свою экономику', () => {
+  it('формула прибыли — на ОЖИДАЕМО реализованных единицах, без терма «в пути»', () => {
+    const v = ozonBlockDayFormulas({ start: 12, cogsTerm: '0' }, 468).get(OFFSET.profitAll)!;
     expect(v).toBe('=IF($L468>LAST_CLOSED_DATE,"",(P468-R468)*N(AI468)-N(W468)-N(AF468)+N(X468)-N(AG468))');
   });
-  it('в открытом месяце единицы в пути вычитаются: экономика только по реализованным', () => {
-    const m = ozonBlockDayFormulas({ start: 12, cogsTerm: '0', inTransitTerm: '1' }, 619);
-    expect(m.get(OFFSET.profitAll)).toContain('(P619-R619-1)');
-    expect(m.get(OFFSET.profit1)).toContain('/(P619-R619-1)');
+
+  it('терма «в пути» в формулах больше нет ни в открытом, ни в закрытом месяце', () => {
+    for (const row of [468, 619]) {
+      const m = ozonBlockDayFormulas({ start: 12, cogsTerm: '0' }, row);
+      expect(m.get(OFFSET.profitAll)).toContain(`(P${row}-R${row})`);
+      expect(m.get(OFFSET.profitAll)).not.toMatch(new RegExp(`P${row}-R${row}-`));
+      expect(m.get(OFFSET.profit1)).toContain(`/(P${row}-R${row})`);
+    }
+  });
+
+  it('заказ в пути даёт полную провизорную экономику, а не пустые ячейки', () => {
+    // всё в пути: доставленных нет, но заказ известен — цена, комиссия и логистика обязаны быть
+    const c = composeMonth(SEP, [{ d: '2026-09-01', offer_id: 'A', gross_qty: 2, cancelled_qty: 0,
+      realized_qty: 0, in_transit_qty: 2, revenue: 0,
+      expected_realized_qty: 2, provisional_revenue_rub: 2000, provisional_cogs_rub: 300,
+      commission: 1040, logistics: 170 }]);
+    const cell = c.cells['A|607'] as { price?: number; comm?: number; log?: number };
+    expect(cell.price).toBe(1000);            // 2000 / 2 ожидаемых единицы
+    expect(cell.comm).toBeCloseTo(0.52, 6);   // 1040 / 2000
+    expect(cell.log).toBe(85);                // 170 / 2
+    expect(c.cogs['A|607']).toBe(150);        // себестоимость единицы в пути не теряется
+  });
+
+  it('СПП и цена покупателя до доставки НЕ выдумываются, но цену продавца не обнуляют', () => {
+    const c = composeMonth(SEP, [{ d: '2026-09-01', offer_id: 'A', gross_qty: 1, cancelled_qty: 0,
+      realized_qty: 0, in_transit_qty: 1, revenue: 0,
+      expected_realized_qty: 1, provisional_revenue_rub: 1200, provisional_cogs_rub: 100 }]);
+    const cell = c.cells['A|607'] as { price?: number; spp?: number };
+    expect(cell.price).toBe(1200);
+    expect(cell.spp).toBeUndefined();         // источника нет — ячейка пуста, а не 0
+  });
+
+  it('полностью отменённые сутки экономики не получают', () => {
+    const c = composeMonth(SEP, [{ d: '2026-09-01', offer_id: 'A', gross_qty: 2, cancelled_qty: 2,
+      realized_qty: 0, in_transit_qty: 0, revenue: 0,
+      expected_realized_qty: 0, provisional_revenue_rub: 0 }]);
+    const cell = c.cells['A|607'] as { price?: number; comm?: number };
+    expect(cell.price).toBeUndefined();
+    expect(cell.comm).toBeUndefined();
+  });
+
+  it('созревшие сутки не двигаются: без единиц в пути база прежняя', () => {
+    const fact = { d: '2026-09-01', offer_id: 'A', gross_qty: 3, cancelled_qty: 1,
+      realized_qty: 2, in_transit_qty: 0, revenue: 2400, commission: 1000, logistics: 160 };
+    const legacy = composeMonth(SEP, [fact]);
+    const gate9 = composeMonth(SEP, [{ ...fact, expected_realized_qty: 2, provisional_revenue_rub: 2400 }]);
+    expect(gate9.cells['A|607']).toEqual(legacy.cells['A|607']);
+    expect(gate9.totals.revenue).toBe(legacy.totals.revenue);
   });
 });
 
@@ -651,11 +695,12 @@ describe('GATE 5E — движок месяца в боевом коде', () =>
     expect((c.cells['A|610'] as { stock?: number }).stock).toBeUndefined();
   });
 
-  it('единицы в пути отделены от реализованных', () => {
+  it('Gate 9: база количества — ожидаемо реализованные единицы, а не только доставленные', () => {
     const c = composeMonth(SEP, [{ d: '2026-09-01', offer_id: 'A', gross_qty: 3, cancelled_qty: 0,
-      realized_qty: 1, in_transit_qty: 2, revenue: 500 }]);
-    expect(c.transit['A|607']).toBe(2);
-    expect(c.totals.realized).toBe(1);
+      realized_qty: 1, in_transit_qty: 2, revenue: 500,
+      expected_realized_qty: 3, provisional_revenue_rub: 1500 }]);
+    expect(c.totals.realized).toBe(3);          // 3 заказа, ни одной отмены
+    expect((c.cells['A|607'] as { price?: number }).price).toBe(500);   // 1500 / 3
   });
 
   it('гибридный месяц: сутки до канонического окна не дают ни ячеек, ни итогов', () => {
@@ -1458,5 +1503,29 @@ describe('OZON adapter — Gate 8: суточный загрузчик', () => {
   it('опечатка в псевдонимах не роняет конфигурацию', () => {
     const c = loadConfig({ ...CFG_BASE, OZON_UNITKA_OFFER_ALIASES: '{сломано' });
     expect(c.ozonUnitkaOfferAliases).toEqual({});
+  });
+});
+
+/* ════════════════════════════════════════════════════════════════════════════
+ * GATE 9 — цена покупателя и СПП не выдумываются
+ * ════════════════════════════════════════════════════════════════════════════ */
+describe('OZON adapter — Gate 9: СПП и цена покупателя', () => {
+  it('без СПП цена покупателя ПУСТА, а не равна цене продавца', () => {
+    const f = ozonBlockDayFormulas({ start: 12, cogsTerm: '0' }, 625).get(OFFSET.priceSpp) as string;
+    expect(f).toContain('AA625=""');            // пустая СПП — отдельная ветка
+    expect(f).toContain('IF(OR(');
+  });
+
+  it('при известной СПП форма прежняя — цена минус скидка', () => {
+    const f = ozonBlockDayFormulas({ start: 12, cogsTerm: '0' }, 625).get(OFFSET.priceSpp) as string;
+    expect(f).toContain('Z625-Z625*N(AA625)%');
+  });
+
+  it('цена продавца от отсутствия СПП не страдает: это разные колонки', () => {
+    const m = ozonBlockDayFormulas({ start: 12, cogsTerm: '0' }, 625);
+    // цену продавца движок пишет значением, формулы для неё нет — она не зависит от СПП
+    expect(m.has(OFFSET.price)).toBe(false);
+    // «цена минус комиссия» тоже считается от цены продавца, а не от цены покупателя
+    expect(m.get(OFFSET.priceMinusComm)).toContain('Z625-Z625*N(AC625)');
   });
 });

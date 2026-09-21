@@ -39,11 +39,36 @@
 -- ЗРЕЛОСТЬ. Период считается созревшим через MATURITY_DAYS (36) суток после даты факта —
 -- это максимальный наблюдённый срок видимости. До этого отсутствие расхода ничего не
 -- доказывает; после — отсутствие становится содержательным.
+--
+-- ЗАКАЗ, А НЕ ТОЛЬКО РЕАЛИЗАЦИЯ (Gate 9). Юнитка — операционная модель ПО ДАТЕ ЗАКАЗА.
+-- До Gate 9 экономика считалась только по ДОСТАВЛЕННЫМ единицам, и сутки, где все заказы
+-- ещё в пути, выглядели чистым убытком: реклама списана, выручки нет. Замер: 17 строк
+-- сутки × SKU в окне 45 суток, 16 из них показывали результат, суммарно −16 676,73 ₽
+-- мнимого убытка.
+--
+-- Поэтому операционная экономика считается на ОЖИДАЕМО РЕАЛИЗОВАННЫХ единицах
+-- (`expected_realized_qty` = заказано − отменено), а не только на доставленных. Единица
+-- в пути приносит СВОЮ провизорную экономику:
+--   цена продавца — `price_rub` отправления, известна в момент заказа (ДЕТЕРМИНИРОВАНА);
+--   комиссия      — тариф из V_OZON_COMMISSION_POLICY: `payout_rub` до доставки равен нулю
+--                   (0 из 40 отправлений в пути имеют выплату), поэтому точный вывод
+--                   «цена − выплата» здесь неприменим;
+--   логистика     — SKU_P70_120D;
+--   цена покупателя и СПП — НЕ ВЫВОДЯТСЯ. Они существуют только в финансовом начислении
+--                   (2003 строки из 2003), то есть после доставки. Пустая ячейка честнее
+--                   выдуманной скидки, и пустота СПП не обнуляет известную цену продавца.
+--
+-- ДВОЙНОГО СЧЁТА НЕТ: отмена и доставка меняют те же сутки заказа, а окно перезаписи
+-- (45 суток) длиннее максимального наблюдённого срока пребывания в пути (32 суток).
+-- Провизорный вклад отменённой единицы исчезает при следующем же прогоне.
+--
+-- ФАКТ НЕ ТРОНУТ: `seller_base_revenue_rub` и `realized_qty` остаются выручкой и
+-- количеством ДОСТАВЛЕННЫХ единиц. Провизорная часть лежит в своих колонках.
 -- Internal dependencies: FCT_OZON_SKU_PNL_DAILY, V_OZON_CIS_BUYOUT, V_OZON_COMMISSION_POLICY,
--- V_OZON_LOGISTICS_ESTIMATOR.
+-- V_OZON_LOGISTICS_ESTIMATOR. External: evetis_ref.V_PRODUCT_COGS_EFFECTIVE.
 -- ============================================================================
 CREATE OR REPLACE VIEW `project-fa311fc0-4d87-4781-986.ozon_mart.V_OZON_SKU_PNL_DAILY_OPERATIONAL`
-OPTIONS (description = "Операционная (провизорная) экономика Ozon, зерно = сутки x internal_sku. Надстройка над FCT_OZON_SKU_PNL_DAILY: канонические поля факта проходят насквозь неизменными, оценки лежат в отдельных колонках, факт и оценка раздельно аудируемы. Покомпонентное старшинство: ACTUAL > ESTIMATED > NOT_APPLICABLE > UNKNOWN; ноль не ставится только потому, что Ozon ещё не прислал расход. Комиссия оценивается как (price_rub - payout_rub) x quantity из отчёта по отправлениям - тождество проверено на 600 отправлениях из 600 с расхождением 0,00 руб.; резерв - тариф из V_OZON_COMMISSION_POLICY; у выкупов СНГ комиссия NOT_APPLICABLE. Логистика оценивается V_OZON_LOGISTICS_ESTIMATOR (SKU_P70_120D, выбран бэктестом). Хранение, прочие прямые, продвижение и реклама - только факт, оценщика не имеют. Период считается созревшим через 36 суток - максимальный наблюдённый срок видимости начисления.")
+OPTIONS (description = "Операционная (провизорная) экономика Ozon, зерно = сутки x internal_sku. Надстройка над FCT_OZON_SKU_PNL_DAILY: канонические поля факта проходят насквозь неизменными, оценки лежат в отдельных колонках, факт и оценка раздельно аудируемы. Покомпонентное старшинство: ACTUAL > ESTIMATED > NOT_APPLICABLE > UNKNOWN; ноль не ставится только потому, что Ozon ещё не прислал расход. Комиссия оценивается как (price_rub - payout_rub) x quantity из отчёта по отправлениям - тождество проверено на 600 отправлениях из 600 с расхождением 0,00 руб.; резерв - тариф из V_OZON_COMMISSION_POLICY; у выкупов СНГ комиссия NOT_APPLICABLE. Логистика оценивается V_OZON_LOGISTICS_ESTIMATOR (SKU_P70_120D, выбран бэктестом). Хранение, прочие прямые, продвижение и реклама - только факт, оценщика не имеют. Период считается созревшим через 36 суток - максимальный наблюдённый срок видимости начисления. Gate 9: операционная экономика считается на ОЖИДАЕМО реализованных единицах (заказано - отменено), а не только на доставленных: единица в пути приносит свою провизорную экономику (цена продавца из отправления, комиссия по тарифу, логистика по оценщику). Цена покупателя и СПП до доставки не выводятся - они существуют только в финансовом начислении. Факт не тронут: seller_base_revenue_rub и realized_qty остаются величинами доставленных единиц.")
 AS
 WITH map AS (
   SELECT DISTINCT internal_sku, marketplace_sku
@@ -62,6 +87,9 @@ acc AS (
   GROUP BY 1, 2),
 -- тип операции выводится ТЕМ ЖЕ правилом, что в FCT_OZON_SKU_PNL_DAILY: второго классификатора
 -- в системе быть не должно, иначе факт и операционный слой однажды разойдутся молча
+cogs AS (
+  SELECT internal_sku, effective_from, COALESCE(effective_to, DATE '9999-12-31') et, product_cogs_rub u
+  FROM `project-fa311fc0-4d87-4781-986.evetis_ref.V_PRODUCT_COGS_EFFECTIVE`),
 cls AS (
   SELECT p.*, IFNULL(a.n_base, 0) n_base, IFNULL(a.n_log, 0) n_log,
     CASE WHEN b.posting_number IS NOT NULL THEN 'CIS_BUYOUT'
@@ -72,18 +100,31 @@ cls AS (
   LEFT JOIN acc a USING (posting_number, sku)
   LEFT JOIN `project-fa311fc0-4d87-4781-986.ozon_mart.V_OZON_CIS_BUYOUT` b
     ON b.posting_number = p.posting_number),
+-- единицы, чья экономика уже ОЖИДАЕТСЯ: доставленные и находящиеся в пути.
+-- Отменённые сюда не входят никогда: у них экономики не будет.
 gap AS (
   SELECT c.order_date d, c.internal_sku,
+    SUM(IF(c.status <> 'delivered', c.quantity, 0)) in_transit_qty_src,
+    -- выручка единиц в пути по цене отправления: seller_base_price появится только
+    -- в начислении, но price_rub ей тождественно равен (2002 строки из 2003)
+    SUM(IF(c.status <> 'delivered', c.price_rub * c.quantity, NUMERIC '0')) in_transit_revenue_rub,
     SUM(IF(c.op_type = 'MARKETPLACE_SALE' AND c.n_base = 0, c.quantity, 0)) commission_gap_qty,
-    SUM(IF(c.op_type = 'MARKETPLACE_SALE' AND c.n_base = 0,
-           (c.price_rub - IFNULL(c.payout_rub, NUMERIC '0')) * c.quantity, NUMERIC '0')) commission_gap_payout_rub,
+    -- «цена − выплата» применима ТОЛЬКО там, где выплата уже известна, то есть у доставленных
+    SUM(IF(c.op_type = 'MARKETPLACE_SALE' AND c.n_base = 0 AND IFNULL(c.payout_rub, NUMERIC '0') > 0,
+           (c.price_rub - c.payout_rub) * c.quantity, NUMERIC '0')) commission_gap_payout_rub,
     SUM(IF(c.op_type = 'MARKETPLACE_SALE' AND c.n_base = 0 AND IFNULL(c.payout_rub, NUMERIC '0') > 0,
            c.quantity, 0)) commission_gap_payout_qty,
-    SUM(IF(c.op_type = 'MARKETPLACE_SALE' AND c.n_base = 0,
-           c.price_rub * c.quantity, NUMERIC '0')) commission_gap_base_rub,
-    SUM(IF(c.n_log = 0, c.quantity, 0)) logistics_gap_qty
+    -- база тарифа — цена тех единиц, где выплата ещё не известна
+    SUM(IF(c.op_type = 'MARKETPLACE_SALE' AND c.n_base = 0 AND IFNULL(c.payout_rub, NUMERIC '0') = 0,
+           c.price_rub * c.quantity, NUMERIC '0')) commission_gap_tariff_base_rub,
+    SUM(IF(c.n_log = 0, c.quantity, 0)) logistics_gap_qty,
+    -- себестоимость единиц В ПУТИ: в факте её нет (там только доставленные), а без неё
+    -- провизорная прибыль была бы завышена на всю себестоимость — систематический оптимизм
+    SUM(IF(c.status <> 'delivered', IFNULL(k.u, NUMERIC '0') * c.quantity, NUMERIC '0')) in_transit_cogs_rub,
+    SUM(IF(c.status <> 'delivered' AND k.u IS NULL, c.quantity, 0)) in_transit_cogs_missing_qty
   FROM cls c
-  WHERE c.status = 'delivered'
+  LEFT JOIN cogs k ON k.internal_sku = c.internal_sku AND c.order_date BETWEEN k.effective_from AND k.et
+  WHERE c.status <> 'cancelled'
   GROUP BY 1, 2),
 pol AS (
   SELECT internal_sku, effective_from, effective_to, commission_rate
@@ -98,8 +139,11 @@ j AS (
     -- выплата известна в момент отправления: комиссия = цена - выплата, точно
     IFNULL(g.commission_gap_payout_rub, NUMERIC '0') gap_payout_rub,
     IFNULL(g.commission_gap_payout_qty, 0) gap_payout_qty,
-    -- резерв: тариф на дату заказа от цены продавца
-    CAST(IFNULL(g.commission_gap_base_rub, NUMERIC '0') * IFNULL(pol.commission_rate, 0) AS NUMERIC) gap_tariff_rub,
+    -- резерв: тариф на дату заказа от цены продавца тех единиц, где выплата неизвестна
+    CAST(IFNULL(g.commission_gap_tariff_base_rub, NUMERIC '0') * IFNULL(pol.commission_rate, 0) AS NUMERIC) gap_tariff_rub,
+    IFNULL(g.in_transit_revenue_rub, NUMERIC '0') in_transit_revenue_rub,
+    IFNULL(g.in_transit_cogs_rub, NUMERIC '0') in_transit_cogs_rub,
+    IFNULL(g.in_transit_cogs_missing_qty, 0) in_transit_cogs_missing_qty,
     pol.commission_rate policy_rate,
     IFNULL(e.logistics_per_unit_rub, NUMERIC '0') log_per_unit,
     e.estimator_method log_method,
@@ -111,11 +155,11 @@ j AS (
   LEFT JOIN est e ON e.internal_sku = f.internal_sku),
 r AS (
   SELECT j.*,
-    CASE WHEN j.commission_gap_qty = 0 THEN NUMERIC '0'
-         WHEN j.gap_payout_qty = j.commission_gap_qty THEN j.gap_payout_rub
-         ELSE j.gap_tariff_rub END commission_estimated_rub,
+    -- обе части складываются: точная там, где выплата известна, тарифная там, где нет
+    j.gap_payout_rub + j.gap_tariff_rub commission_estimated_rub,
     CASE WHEN j.commission_gap_qty = 0 THEN NULL
          WHEN j.gap_payout_qty = j.commission_gap_qty THEN 'POSTING_PAYOUT_EXACT'
+         WHEN j.gap_payout_qty > 0 AND j.policy_rate IS NOT NULL THEN 'POSTING_PAYOUT_AND_TARIFF'
          WHEN j.policy_rate IS NOT NULL THEN 'COMMISSION_POLICY_TARIFF'
          ELSE NULL END commission_estimate_method,
     CAST(j.logistics_gap_qty * j.log_per_unit AS NUMERIC) logistics_estimated_rub
@@ -132,6 +176,12 @@ SELECT
   r.contribution_before_ads_rub, r.ad_spend_attributed_rub,
   r.contribution_after_attributed_ads_rub, r.fact_date_semantics,
   -- ── ОЦЕНКА: отдельные колонки, факт не затронут ───────────────────────────────────────
+  -- ── ОЖИДАЕМАЯ РЕАЛИЗАЦИЯ: база операционной экономики (Gate 9) ────────────────────────
+  r.gross_qty - r.cancelled_qty expected_realized_qty,
+  r.seller_base_revenue_rub + r.in_transit_revenue_rub provisional_revenue_rub,
+  r.product_cogs_rub + r.in_transit_cogs_rub provisional_cogs_rub,
+  r.in_transit_revenue_rub, r.in_transit_cogs_rub,
+  r.cogs_missing_qty + r.in_transit_cogs_missing_qty provisional_cogs_missing_qty,
   r.commission_gap_qty, r.commission_estimated_rub, r.commission_estimate_method,
   r.logistics_gap_qty, r.logistics_estimated_rub, r.log_method logistics_estimate_method,
   r.log_per_unit logistics_estimated_per_unit_rub,
@@ -155,13 +205,29 @@ SELECT
   CASE WHEN r.other_direct_marketplace_costs_rub <> 0 OR r.sku_promotion_rub <> 0 THEN 'ACTUAL'
        WHEN r.age_days >= 36 THEN 'NOT_APPLICABLE'
        ELSE 'UNKNOWN' END other_direct_state,
-  -- ── ОПЕРАЦИОННЫЙ РЕЗУЛЬТАТ: тот же состав, что у факта, но с эффективными величинами ───
-  r.seller_base_revenue_rub - r.product_cogs_rub
+  -- ── ПОЛНОТА ЭКОНОМИКИ СТРОКИ (Gate 9 §7F) ─────────────────────────────────────────────
+  -- Строка не имеет права выглядеть законченным операционным результатом, если существенные
+  -- составляющие принятой модели молча отсутствуют. Классификация — в данных, а не в описании.
+  CASE
+    WHEN r.gross_qty - r.cancelled_qty = 0 THEN 'NO_ECONOMICS'
+    WHEN r.commission_not_applicable_qty = r.realized_qty AND r.realized_qty > 0 THEN 'ACTUAL'
+    WHEN r.commission_gap_qty = 0 AND r.logistics_gap_qty = 0 THEN 'ACTUAL'
+    WHEN (r.seller_base_revenue_rub + r.in_transit_revenue_rub) > 0
+         AND (r.commission_gap_qty = 0 OR r.commission_estimate_method IS NOT NULL)
+         AND (r.logistics_gap_qty = 0 OR r.log_per_unit > 0)
+         AND r.cogs_missing_qty + r.in_transit_cogs_missing_qty = 0
+      THEN 'PROVISIONAL_COMPLETE'
+    ELSE 'PROVISIONAL_PARTIAL'
+  END economics_completeness,
+  -- ── ОПЕРАЦИОННЫЙ РЕЗУЛЬТАТ: тот же состав, что у факта, но на ОЖИДАЕМОЙ реализации ─────
+  r.seller_base_revenue_rub + r.in_transit_revenue_rub
+    - (r.product_cogs_rub + r.in_transit_cogs_rub)
     - (r.commission_rub + r.commission_estimated_rub)
     - (r.direct_variable_marketplace_costs_rub + r.logistics_estimated_rub)
     - r.other_direct_marketplace_costs_rub - r.sku_promotion_rub
       operational_contribution_before_ads_rub,
-  r.seller_base_revenue_rub - r.product_cogs_rub
+  r.seller_base_revenue_rub + r.in_transit_revenue_rub
+    - (r.product_cogs_rub + r.in_transit_cogs_rub)
     - (r.commission_rub + r.commission_estimated_rub)
     - (r.direct_variable_marketplace_costs_rub + r.logistics_estimated_rub)
     - r.other_direct_marketplace_costs_rub - r.sku_promotion_rub
