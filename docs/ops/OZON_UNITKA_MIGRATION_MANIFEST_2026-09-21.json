@@ -1,7 +1,7 @@
 {
-  "manifestVersion": "ozon-unitka-migration/8.0.0",
-  "generatedAt": "2026-09-21T17:05:00Z",
-  "executed": false,
+  "manifestVersion": "ozon-unitka-migration/9.0.0",
+  "generatedAt": "2026-09-21T18:40:00Z",
+  "executed": true,
   "ownerDecisions": {
     "D-5E-1": "пересчитать апрель по текущему каноническому контракту",
     "D-5E-2": "формула оборачиваемости во всех канонических месяцах",
@@ -1163,5 +1163,150 @@
       "productionMergeHashesUnchanged": true
     },
     "knownNonDefect": "август, SKU 930334396: лист «заказы − отмены» = 3, витрина realized = 2 — 20.08 единица в статусе delivering (in_transit_qty=1); движок вычитает её отдельным термом, выручка августа совпадает (213104.96)"
+  },
+  "productionMigration": {
+    "gate": "6B",
+    "executed": true,
+    "executedAt": "2026-09-21T18:2x:00Z",
+    "doc": "docs/ops/GATE6B_PRODUCTION_MIGRATION_2026-09-21.md",
+    "workbook": {
+      "title": "Юнитка_Evetis Cosmetics",
+      "spreadsheetId": "1E4L4JuwfEqr9owhsGkAjb8F24lRpWpWkEyVmSuRxaJg",
+      "sheet": "OZON_Юнит_2025",
+      "sheetId": 1867941682
+    },
+    "liveLcd": "2026-09-20",
+    "sourceCommit": "96a9463769e353a20eeda66c92e9b1208e08df84",
+    "rehearsalEvidence": "65dedc520f252bc58ab1b8a47f45cda8c8d81a9f",
+    "geometry": {
+      "before": {
+        "rows": 465,
+        "columns": 404
+      },
+      "after": {
+        "rows": 650,
+        "columns": 574
+      },
+      "blockArea": [
+        12,
+        561
+      ],
+      "ownerTail": [
+        562,
+        570
+      ],
+      "ownerTailBefore": [
+        396,
+        404
+      ],
+      "lcdMirrorColumn": 573,
+      "physicalSlots": 22,
+      "ozonBlockWidth": 25,
+      "wbBlockWidth": 24
+    },
+    "execution": {
+      "durationSeconds": 116,
+      "batches": 39,
+      "widenExistingBlocks": 16,
+      "widenDirection": "RIGHT_TO_LEFT",
+      "insertNewBlocks": {
+        "count": 6,
+        "columns": 150,
+        "before": 412
+      },
+      "appendRows": 185,
+      "appendColumns": 4,
+      "merges": {
+        "before": 1483,
+        "after": 1604
+      },
+      "cf": {
+        "before": 0,
+        "afterRules": 434,
+        "afterRanges": 7221
+      }
+    },
+    "acceptance": {
+      "ownerTailUnexplainedDiffs": 0,
+      "structuralUnexplainedDiffs": 0,
+      "skuDayRowsReconciled": 1808,
+      "unexplainedSkuMonthDiffs": 0,
+      "unexplainedFinancialDelta": 0.0,
+      "unexplainedMonthDelta": 0.0,
+      "buyoutTargetsMatched": "5/5",
+      "mergeDuplicates": 0,
+      "mergesOutOfGrid": 0,
+      "cfDuplicates": 0,
+      "cfOutOfGrid": 0,
+      "blocksByMonth": {
+        "2026-04": 21,
+        "2026-05": 21,
+        "2026-06": 21,
+        "2026-07": 22,
+        "2026-08": 22,
+        "2026-09": 22
+      }
+    },
+    "cart": {
+      "sourceCells": 2183,
+      "preserved": 2183,
+      "positiveMismatches": 0,
+      "zeroMismatches": 0,
+      "erased": 0,
+      "fakeZeroRows": 0,
+      "note": "карта построена из ЖИВОГО боевого листа непосредственно перед миграцией"
+    },
+    "otherDirect": {
+      "sheetTotal": 17726.41,
+      "engineTotal": 17726.41,
+      "unexplainedDelta": 0.0,
+      "promotionInWindow": 10318.06,
+      "augustFirstReviews": 9350.08,
+      "columnOffset": 21
+    },
+    "premium": {
+      "mayAmount": 9990.0,
+      "includedInSkuUnitka": 0,
+      "rowsReachableFromSkuGrain": 0
+    },
+    "monthTotals": {
+      "2026-04": -2322.921832,
+      "2026-05": -2395.514435,
+      "2026-06": -850.698032,
+      "2026-07": 5118.386278,
+      "2026-08": 6864.378785,
+      "2026-09": -14490.039774
+    },
+    "idempotency": {
+      "secondProductionWriteExecuted": false,
+      "reason": "свойство доказано двумя реальными прогонами в TEST; лишний риск не оправдан",
+      "secondBuildGeometryDelta": 0,
+      "secondBuildValueDelta": 0,
+      "secondBuildFormulaDelta": 0,
+      "secondBuildMergeDelta": 0,
+      "secondBuildCfResultingRulesDelta": 0,
+      "cfNote": "в плане 434 -> 868 запросов: 434 снятия + 434 постановки, УФ ставится заменой; результирующее число правил остаётся 434"
+    },
+    "isolation": {
+      "productionWbWrites": 0,
+      "bqWrites": 0,
+      "cloudRunDeploys": 0,
+      "schedulerChanges": 0,
+      "wbGeometryDelta": 0,
+      "wbMergeDelta": 0,
+      "wbFingerprintDelta": 0,
+      "namedRanges": {
+        "before": 2,
+        "after": 3,
+        "added": "зеркало LCD листа Ozon"
+      }
+    },
+    "rollback": {
+      "artifacts": "artifacts/gate6a/",
+      "verifiedCurrentBeforeWrite": true,
+      "required": false,
+      "executed": false
+    },
+    "openCosmeticItem": "подпись блока в листе осталась 9099514444 (канонический offer_id 909951444). Решение D-5E-3 предписывает исправить; в этой миграции skuTitles не передавались, заголовок скопирован дословно. На экономику не влияет: идентичность из справочника."
   }
 }
