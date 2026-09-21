@@ -14,7 +14,8 @@ export type Environment = 'shadow' | 'prod';
 function ozonUnitkaConfig(env: NodeJS.ProcessEnv): Pick<Config,
   'ozonUnitkaSheetName' | 'ozonUnitkaWriteEnabled' | 'ozonUnitkaLastClosedDate'
   | 'ozonUnitkaTailFirstColumn' | 'ozonUnitkaBlockSlots' | 'ozonUnitkaLcdRef'
-  | 'ozonUnitkaExistingCfRules' | 'ozonUnitkaOffers' | 'ozonUnitkaOfferAliases'> {
+  | 'ozonUnitkaExistingCfRules' | 'ozonUnitkaOffers' | 'ozonUnitkaOfferAliases'
+  | 'ozonUnitkaMaxSourceLagDays' | 'ozonUnitkaLcdCell'> {
   const list = (v: string | undefined): string[] =>
     (v ?? '').split(',').map((x) => x.trim()).filter(Boolean);
   let aliases: Record<string, string> = {};
@@ -26,10 +27,12 @@ function ozonUnitkaConfig(env: NodeJS.ProcessEnv): Pick<Config,
     ozonUnitkaSheetName: opt(env, 'OZON_UNITKA_SHEET_NAME', 'OZON_Юнит_2025'),
     ozonUnitkaWriteEnabled: opt(env, 'OZON_UNITKA_WRITE_ENABLED', '0') === '1',
     ozonUnitkaLastClosedDate: opt(env, 'OZON_UNITKA_LCD', ''),
+    ozonUnitkaLcdCell: opt(env, 'OZON_UNITKA_LCD_CELL', 'ZZ_CONFIG!B2'),
     ozonUnitkaTailFirstColumn: intOpt(env, 'OZON_UNITKA_TAIL_FIRST_COLUMN', 562),
     ozonUnitkaBlockSlots: intOpt(env, 'OZON_UNITKA_BLOCK_SLOTS', 22),
     ozonUnitkaLcdRef: opt(env, 'OZON_UNITKA_LCD_REF', '$VA$2'),
     ozonUnitkaExistingCfRules: intOpt(env, 'OZON_UNITKA_EXISTING_CF_RULES', 434),
+    ozonUnitkaMaxSourceLagDays: intOpt(env, 'OZON_UNITKA_MAX_SOURCE_LAG_DAYS', 1),
     ozonUnitkaOffers: list(env.OZON_UNITKA_OFFERS),
     ozonUnitkaOfferAliases: aliases,
   };
@@ -97,8 +100,13 @@ export interface Config {
   ozonUnitkaSheetName: string;
   /** Запись в лист Ozon разрешена ТОЛЬКО при ENVIRONMENT=prod И OZON_UNITKA_WRITE_ENABLED=1. */
   ozonUnitkaWriteEnabled: boolean;
-  /** LAST_CLOSED_DATE Ozon-Юнитки (ISO). Источник истины — ZZ_CONFIG!B2. */
+  /**
+   * LAST_CLOSED_DATE Ozon-Юнитки (ISO). По умолчанию ПУСТО: дата читается из книги.
+   * Заполняется только для воспроизведения конкретного прогона.
+   */
   ozonUnitkaLastClosedDate: string;
+  /** Где в книге лежит LAST_CLOSED_DATE. Диапазон в нотации A1 вместе с именем листа. */
+  ozonUnitkaLcdCell: string;
   /** Первая колонка ПАНЕЛИ ВЛАДЕЛЬЦА: правее неё движок не пишет ничего и никогда. */
   ozonUnitkaTailFirstColumn: number;
   /** Сколько слотов блоков размечено в листе. */
@@ -107,6 +115,11 @@ export interface Config {
   ozonUnitkaLcdRef: string;
   /** Сколько правил УФ сейчас на листе: все снимаются перед постановкой своих. */
   ozonUnitkaExistingCfRules: number;
+  /**
+   * Сколько суток источник может отставать, прежде чем прогон откажется писать.
+   * 1 — загрузка суточная: отставание больше суток означает пропущенный или упавший прогон.
+   */
+  ozonUnitkaMaxSourceLagDays: number;
   /** Канонические offer_id Ozon. Подпись блока авторитетной НЕ является. */
   ozonUnitkaOffers: string[];
   /** Подпись блока → канонический offer_id, где подпись в листе содержит опечатку. */

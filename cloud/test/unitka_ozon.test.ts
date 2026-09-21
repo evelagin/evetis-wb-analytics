@@ -30,7 +30,12 @@ import {
   ozonRewriteWindow, ozonDeepWindow, ozonWindowMonths, ozonFromDayFor, isDeepReconciliationDay,
 } from '../src/loaders/unitka/ozon/window.js';
 import { RECONCILE_WINDOW_DAYS } from '../src/loaders/unitka/reconcile.js';
-import { parseLiveLayout } from '../src/loaders/unitka/ozon/loader.js';
+import {
+  parseLiveLayout, assessFreshness, StaleSourceError, OZON_UNITKA_REQUIRED_SOURCES, isoFromSheetValue,
+} from '../src/loaders/unitka/ozon/loader.js';
+import {
+  resolveSections, activateNewSkus, rowsNeeded, NoFreeSkuSlotError,
+} from '../src/loaders/unitka/ozon/lifecycle.js';
 import { LOADERS } from '../src/loaders/registry.js';
 import { loadConfig } from '../src/config.js';
 import {
@@ -1527,5 +1532,229 @@ describe('OZON adapter — Gate 9: СПП и цена покупателя', () 
     expect(m.has(OFFSET.price)).toBe(false);
     // «цена минус комиссия» тоже считается от цены продавца, а не от цены покупателя
     expect(m.get(OFFSET.priceMinusComm)).toContain('Z625-Z625*N(AC625)');
+  });
+});
+
+/* ════════════════════════════════════════════════════════════════════════════
+ * GATE 9 §8–§10 — новый месяц, новый SKU, ёмкость слотов
+ * ════════════════════════════════════════════════════════════════════════════ */
+describe('OZON adapter — Gate 9: новый месяц создаётся сам', () => {
+  // живой лист на 21.09.2026: последняя секция — сентябрь, titleRow 605, 30 дней, 22 блока
+  const SKUS = Array.from({ length: 22 }, (_, i) => `sku${String(i).padStart(2, '0')}`);
+  const LIVE = [
+    { monthKey: '2026-08', titleRow: 570, days: Array(31).fill('d'), blocks: SKUS },
+    { monthKey: '2026-09', titleRow: 605, days: Array(30).fill('d'), blocks: SKUS },
+  ];
+  const ACT = Object.fromEntries(SKUS.map((s) => [s, '2026-04']));
+
+  it('ОКТЯБРЬ 2026: секция достраивается из геометрии сентября, без ручной правки', () => {
+    const plans = resolveSections({ live: LIVE, windowMonths: ['2026-09', '2026-10'],
+      firstActivity: ACT, blockSlots: 22 });
+    expect(plans.map((p) => p.monthKey)).toEqual(['2026-09', '2026-10']);
+    const oct = plans[1]!;
+    expect(oct.isNew).toBe(true);
+    expect(oct.titleRow).toBe(605 + 30 + 4);      // шаг Calendar V2 = дни + 4
+    expect(oct.headerRow).toBe(oct.titleRow + 1);
+    expect(oct.days).toBe(31);                     // октябрь — 31 день
+    expect(oct.blocks).toEqual(SKUS);              // состав SKU переносится
+  });
+
+  it('сентябрь не задваивается и не пересоздаётся', () => {
+    const plans = resolveSections({ live: LIVE, windowMonths: ['2026-09', '2026-10'],
+      firstActivity: ACT, blockSlots: 22 });
+    expect(plans.filter((p) => p.monthKey === '2026-09')).toHaveLength(1);
+    expect(plans.find((p) => p.monthKey === '2026-09')!.isNew).toBe(false);
+    expect(plans.find((p) => p.monthKey === '2026-09')!.titleRow).toBe(605);
+  });
+
+  it('ноябрь после октября встаёт на 31 день октября, а не на 30 сентября', () => {
+    const plans = resolveSections({ live: LIVE, windowMonths: ['2026-10', '2026-11'],
+      firstActivity: ACT, blockSlots: 22 });
+    const [oct, nov] = plans as [typeof plans[0], typeof plans[0]];
+    expect(nov.titleRow).toBe(oct.titleRow + 31 + 4);
+    expect(nov.days).toBe(30);
+  });
+
+  it('февраль високосного 2028 года — 29 дней', () => {
+    const live = [{ monthKey: '2028-01', titleRow: 100, days: Array(31).fill('d'), blocks: SKUS }];
+    const plans = resolveSections({ live, windowMonths: ['2028-02'], firstActivity: ACT, blockSlots: 22 });
+    expect(plans[0]!.days).toBe(29);
+  });
+
+  it('нужное число новых строк выводится из плана, а не задаётся руками', () => {
+    const plans = resolveSections({ live: LIVE, windowMonths: ['2026-09', '2026-10'],
+      firstActivity: ACT, blockSlots: 22 });
+    // октябрь: заголовок 639, шапка 640, дни 641..671, итог 672, разделитель 673
+    expect(rowsNeeded(plans, 650)).toBe(23);
+    expect(rowsNeeded(plans, 700)).toBe(0);        // места уже хватает — не растём
+  });
+
+  it('достраивать ПРОШЛОЕ движок не имеет права', () => {
+    expect(() => resolveSections({ live: LIVE, windowMonths: ['2026-07'],
+      firstActivity: ACT, blockSlots: 22 })).toThrow(/НЕ новее последней/);
+  });
+});
+
+describe('OZON adapter — Gate 9: новый SKU активируется сам', () => {
+  const CUR = ['a', 'b', 'c'];
+  it('SKU с первой активностью в этом месяце получает блок', () => {
+    const r = activateNewSkus({ current: CUR, monthKey: '2026-10',
+      firstActivity: { a: '2026-04', b: '2026-04', c: '2026-05', d: '2026-10' }, blockSlots: 22 });
+    expect(r.activated).toEqual(['d']);
+    expect(r.blocks).toEqual(['a', 'b', 'c', 'd']);
+  });
+
+  it('порядок существующих блоков не меняется: SKU живёт в своём слоте', () => {
+    const r = activateNewSkus({ current: CUR, monthKey: '2026-10',
+      firstActivity: { c: '2026-05', a: '2026-04', z: '2026-10', b: '2026-04' }, blockSlots: 22 });
+    expect(r.blocks.slice(0, 3)).toEqual(CUR);     // прежние — на прежних местах
+    expect(r.blocks[3]).toBe('z');
+  });
+
+  it('SKU из будущего месяца сейчас не активируется', () => {
+    const r = activateNewSkus({ current: CUR, monthKey: '2026-09',
+      firstActivity: { d: '2026-10' }, blockSlots: 22 });
+    expect(r.activated).toEqual([]);
+  });
+
+  it('новый SKU получает блок ТОЙ ЖЕ ширины 25 и полное оформление', () => {
+    const SEC = { titleRow: 10, headerRow: 11, firstRow: 12, lastRow: 41, mtdRow: 42,
+                  spacerRow: 43, blockCount: 4 };
+    const before = staticFormatRequests(7, [{ ...SEC, blockCount: 3 }]);
+    const after = staticFormatRequests(7, [SEC]);
+    // добавился ровно один блок: 25 колонок × 4 роли строк
+    expect(after.length - before.length).toBe(OZON_BLOCK_WIDTH * 4);
+    const widths = columnWidthRequests(7, 4);
+    expect(widths.length - columnWidthRequests(7, 3).length).toBe(OZON_BLOCK_WIDTH);
+    // и «Прочие прямые» нового блока оформлены как у всех
+    const od = blockSpecFor('day', 'OTHER_DIRECT');
+    expect(od.bg).toBe(blockSpecFor('day', 'STORAGE').bg);
+  });
+});
+
+describe('OZON adapter — Gate 9: ёмкость слотов', () => {
+  const S22 = Array.from({ length: 22 }, (_, i) => `s${i}`);
+  it('23-й SKU при 22 слотах — ОТКАЗ, а не перезапись чужого блока', () => {
+    expect(() => activateNewSkus({ current: S22, monthKey: '2026-10',
+      firstActivity: { newbie: '2026-10' }, blockSlots: 22 })).toThrow(NoFreeSkuSlotError);
+  });
+
+  it('отказ называет причину, нехватку и виновный SKU', () => {
+    try {
+      activateNewSkus({ current: S22, monthKey: '2026-10',
+        firstActivity: { newbie: '2026-10' }, blockSlots: 22 });
+      throw new Error('должно было упасть');
+    } catch (e) {
+      const err = e as NoFreeSkuSlotError;
+      expect(err.code).toBe('NO_FREE_SKU_SLOT');
+      expect(err.needed).toBe(23);
+      expect(err.available).toBe(22);
+      expect(err.newSkus).toEqual(['newbie']);
+      expect(err.message).toContain('переписать существующий блок нельзя');
+    }
+  });
+
+  it('новый месяц с переполнением тоже отказывает, а не молча обрезает', () => {
+    const live = [{ monthKey: '2026-09', titleRow: 605, days: Array(30).fill('d'), blocks: S22 }];
+    expect(() => resolveSections({ live, windowMonths: ['2026-10'],
+      firstActivity: { newbie: '2026-10' }, blockSlots: 22 })).toThrow(NoFreeSkuSlotError);
+  });
+
+  it('ровно 22 SKU при 22 слотах проходят', () => {
+    expect(() => activateNewSkus({ current: S22.slice(0, 21), monthKey: '2026-10',
+      firstActivity: { last: '2026-10' }, blockSlots: 22 })).not.toThrow();
+  });
+});
+
+describe('OZON adapter — Gate 9: барьер готовности источников', () => {
+  const REQ = ['finance_accrual', 'fbo_postings'];
+  it('все источники свежие — писать можно', () => {
+    const f = assessFreshness([{ entity: 'finance_accrual', last_ok_date: '2026-09-21' },
+      { entity: 'fbo_postings', last_ok_date: '2026-09-21' }], REQ, '2026-09-21', 1);
+    expect(f.every((x) => !x.stale)).toBe(true);
+  });
+
+  it('источник отстал — писать нельзя', () => {
+    const f = assessFreshness([{ entity: 'finance_accrual', last_ok_date: '2026-09-18' },
+      { entity: 'fbo_postings', last_ok_date: '2026-09-21' }], REQ, '2026-09-21', 1);
+    expect(f.find((x) => x.entity === 'finance_accrual')!.stale).toBe(true);
+    expect(f.find((x) => x.entity === 'fbo_postings')!.stale).toBe(false);
+  });
+
+  it('источник не загружался НИКОГДА — это тоже несвежесть, а не отсутствие проблемы', () => {
+    const f = assessFreshness([], REQ, '2026-09-21', 1);
+    expect(f.every((x) => x.stale)).toBe(true);
+    expect(f[0]!.lastOkMoscowDate).toBeNull();
+  });
+
+  it('отказ называет каждый отставший источник и его последний успех', () => {
+    const stale = assessFreshness([{ entity: 'finance_accrual', last_ok_date: '2026-09-10' }],
+      REQ, '2026-09-21', 1).filter((x) => x.stale);
+    const e = new StaleSourceError(stale);
+    expect(e.code).toBe('SOURCE_STALE');
+    expect(e.message).toContain('finance_accrual');
+    expect(e.message).toContain('2026-09-10');
+    expect(e.message).toContain('Запись отменена');
+  });
+
+  it('перечень обязательных источников включает деньги, отправления и рекламу', () => {
+    expect(OZON_UNITKA_REQUIRED_SOURCES).toContain('finance_accrual');
+    expect(OZON_UNITKA_REQUIRED_SOURCES).toContain('fbo_postings');
+    expect(OZON_UNITKA_REQUIRED_SOURCES).toContain('ads_sku_daily');
+  });
+});
+
+/* ════════════════════════════════════════════════════════════════════════════
+ * GATE 9 §11 — политика итога распространяется на новый месяц и новый SKU
+ * ════════════════════════════════════════════════════════════════════════════ */
+describe('OZON adapter — Gate 9: итог нового месяца и нового SKU', () => {
+  it('новый месяц получает ПОЛНУЮ строку итога — политика следует из геометрии', () => {
+    // октябрь 2026: заголовок 639, дни 641..671, итог 672
+    const oct = ozonBlockMtdFormulas(12, { firstDailyRow: 641, lastDailyRow: 671, mtdRow: 672 });
+    for (const { offset, role, policy } of summaryPolicyMap()) {
+      if (policy === 'NOT_APPLICABLE') expect(oct.has(offset), `${role}`).toBe(false);
+      else expect(oct.has(offset), `${role} без итога в новом месяце`).toBe(true);
+    }
+    expect(oct.get(OFFSET.price)).toContain('641:Z671');    // адреса октября, не сентября
+    expect(oct.get(OFFSET.price)).not.toContain('607');
+  });
+
+  it('новый SKU получает ту же политику: формулы зависят от начала блока', () => {
+    const G = { firstDailyRow: 641, lastDailyRow: 671, mtdRow: 672 };
+    const slot21 = ozonBlockMtdFormulas(12 + 25 * 21, G);
+    for (const { offset, policy } of summaryPolicyMap()) {
+      if (policy !== 'NOT_APPLICABLE') expect(slot21.has(offset)).toBe(true);
+    }
+    // ни одного AVERAGE и в новом блоке
+    for (const [, f] of slot21) expect(f).not.toMatch(/\bAVERAGE\s*\(/);
+  });
+
+  it('методы итога в новом месяце те же, что приняты: взвешивание, а не среднее суток', () => {
+    const oct = ozonBlockMtdFormulas(12, { firstDailyRow: 641, lastDailyRow: 671, mtdRow: 672 });
+    expect(oct.get(OFFSET.price)).toContain('SUMPRODUCT');
+    expect(oct.get(OFFSET.logistics)).toContain('SUMPRODUCT');
+    expect(oct.get(OFFSET.storage)).toContain('SUMIF');
+    expect(oct.get(OFFSET.otherDirect)).toContain('SUMIF');
+    expect(oct.get(OFFSET.stock)).toContain('FILTER(');
+  });
+});
+
+describe('OZON adapter — Gate 9: LAST_CLOSED_DATE читается из книги', () => {
+  it('серийное число книги превращается в ISO', () => {
+    expect(isoFromSheetValue(46285)).toBe('2026-09-20');
+  });
+  it('ru_RU-вид даты тоже понимается', () => {
+    expect(isoFromSheetValue('20.09.2026')).toBe('2026-09-20');
+  });
+  it('ISO проходит как есть, мусор — пустая строка, а не выдуманная дата', () => {
+    expect(isoFromSheetValue('2026-09-20')).toBe('2026-09-20');
+    expect(isoFromSheetValue('')).toBe('');
+    expect(isoFromSheetValue(null)).toBe('');
+    expect(isoFromSheetValue('позавчера')).toBe('');
+  });
+  it('по умолчанию дата НЕ задаётся окружением — источник истины книга', () => {
+    const c = loadConfig({ GCP_PROJECT_ID: 'p', BQ_RAW_DATASET: 'r', ENVIRONMENT: 'prod' });
+    expect(c.ozonUnitkaLastClosedDate).toBe('');
+    expect(c.ozonUnitkaLcdCell).toBe('ZZ_CONFIG!B2');
   });
 });

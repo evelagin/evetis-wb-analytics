@@ -200,3 +200,43 @@ def test_full_audit_archive(entities, captured_merges, monkeypatch):
     assert mismatches == []
     cols = sorted({c for r in rows for c in r})
     assert C.validate_merge_batch(table, rows, keys, cols, **kw) == 0
+
+
+# ── Gate 9: окно ретроспективы финансовых начислений ─────────────────────────
+def test_finance_lookback_is_30_days_with_margin():
+    """Окно загрузки начислений обязано иметь ЗАПАС над сроком поздней публикации.
+
+    Было 14 суток при сроке публикации около 14 — запаса ноль, и один пропущенный
+    суточный прогон терял сутки начислений безвозвратно: окно уезжало дальше.
+    """
+    from pipelines.ozon.runtime.entities import REGISTRY
+    fn, lookback, cadence = REGISTRY["finance_accrual"]
+    assert lookback == 30, "окно начислений сузили — вернётся нулевой запас"
+    assert cadence == "daily"
+
+
+def test_source_windows_stay_independent():
+    """Окно — свойство ИСТОЧНИКА. Общей константы на все сущности быть не должно:
+    у отправлений, рекламы и начислений разные сроки поздней публикации."""
+    from pipelines.ozon.runtime.entities import REGISTRY
+    windows = {name: lb for name, (_fn, lb, _c) in REGISTRY.items()}
+    assert windows["finance_accrual"] == 30
+    assert windows["fbo_postings"] == 30
+    assert windows["ads_sku_daily"] == 7
+    assert windows["catalog"] == 0
+    # окна различаются — значит связаны не одной константой
+    assert len(set(windows.values())) >= 3
+
+
+def test_finance_merge_key_makes_reingestion_idempotent():
+    """Повторная загрузка того же окна не имеет права удвоить деньги.
+
+    Ключ слияния — (accrual_id, type_id, sku); повтор ключа обязан быть ОТКАЗОМ,
+    а не схлопыванием: две одинаковые строки здесь могут быть двумя реальными
+    начислениями на одну сумму.
+    """
+    import inspect
+    from pipelines.ozon.runtime import entities
+    src = inspect.getsource(entities.finance_accrual)
+    assert '"accrual_id", "type_id", "sku"' in src
+    assert 'on_duplicate_key="reject"' in src

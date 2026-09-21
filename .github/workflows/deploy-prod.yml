@@ -66,6 +66,20 @@ jobs:
           else
             echo "::warning title=unitka-engine-prod::Job ещё не создан Terraform'ом — шаг пропущен"
           fi
+      - name: Deploy ozon-unitka-prod (тот же digest)
+        # Gate 9: суточный писатель Ozon-Юнитки. Тот же образ, dispatch args[0]=ozon-unitka.
+        # Пропуск в этом списке оставил бы Job на bootstrap hello, который выходит с кодом 0
+        # и молча ничего не пишет — расхождение не проявилось бы ни в одном «зелёном» прогоне
+        # (урок PR-1). Guard сохраняет совместимость до первого infra apply.
+        run: |
+          if gcloud run jobs describe ozon-unitka-prod --region ${{ vars.GCP_REGION }} >/dev/null 2>&1; then
+            gcloud run jobs update ozon-unitka-prod \
+              --region ${{ vars.GCP_REGION }} \
+              --image "${{ inputs.image_digest }}" \
+              --update-env-vars IMAGE_DIGEST="${{ inputs.image_digest }}",GIT_SHA="${{ inputs.source_git_sha }}"
+          else
+            echo "::warning title=ozon-unitka-prod::Job ещё не создан Terraform'ом — шаг пропущен"
+          fi
       - name: Deploy wb-paid-storage-prod (тот же digest)
         # Stage E4: Job создаётся Terraform'ом. Guard сохраняет совместимость до первого infra apply.
         # Секрет остаётся WB_TOKEN_ANALYTICS из Terraform env; workflow его не читает и не меняет.
