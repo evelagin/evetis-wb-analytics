@@ -1,0 +1,51 @@
+{
+  "registry_version": 1,
+  "comment": "Реестр наборов проверок данных. Исполнитель — tools/run_data_checks.py (только чтение). gate=true означает: набор обязан быть PASS до того, как изменение в затронутой области считается завершённым (docs/architecture/DEFINITION_OF_DONE.md). Набор без gate=true — наблюдение, а не ворота.",
+  "suites": [
+    {
+      "suite": "ozon_unit",
+      "title": "Ozon Unit: суточный факт Ozon и нейтральный FACT_SKU_DAILY",
+      "gate": true,
+      "owner": "evelagin",
+      "scope": [
+        "ozon_mart.V_OZON_COMMISSION_RECOVERY",
+        "ozon_mart.FCT_OZON_SKU_PNL_DAILY",
+        "ozon_mart.FCT_OZON_SKU_PNL_MONTHLY",
+        "evetis_mart.FACT_SKU_DAILY"
+      ],
+      "files": ["sql/scale1/fact_sku_daily_validation.sql"],
+      "dimensions": ["grain", "uniqueness", "identities", "reconciliation", "null_contract", "identity_mapping"],
+      "cadence": "перед слиянием изменения в области scope и после каждого развёртывания",
+      "provenance": "SCALE 1, docs/SCALE1_FACT_SKU_DAILY_2026-09-20.md; пороги согласованы владельцем при приёмке 2026-09-20, здесь не изобретены"
+    }
+  ],
+  "backlog": {
+    "comment": "Приёмочные наборы, написанные до введения контракта `-- @check`: сейчас это мёртвые активы — их прогоняли вручную один раз при сдаче этапа. Перевод каждого файла на контракт — отдельная задача с ревью порогов владельцем (докажи, что порог согласован, а не придуман при переносе).",
+    "files": [
+      "sql/control_tower/ct_phase1_validation.sql",
+      "sql/control_tower/ct_phase11_validation.sql",
+      "sql/control_tower/ct_phase12_validation.sql",
+      "sql/dash/dashboard_contract_v1_validation.sql",
+      "sql/dash/dashboard_contract_v2_validation.sql",
+      "sql/dash/executive_v2_backend_validation.sql",
+      "sql/dash/executive_v2_daily_validation.sql",
+      "sql/dash/fin_contract_v2_validation.sql",
+      "sql/dash/pr_dash_executive_economics_validation.sql",
+      "sql/dash/pr_dash_finance_corrected_validation.sql",
+      "sql/dash/pr_dash_settlement_validation.sql",
+      "sql/dash/sku_performance_v2_daily_validation.sql",
+      "sql/ddl/wb_raw_funnel_validation.sql",
+      "sql/mart/ads_spend_stage3b_validation.sql",
+      "sql/mart/pr_ad_billing_classification_validation.sql",
+      "sql/mart/pr_cogs_consumer_validation.sql",
+      "sql/mart/pr_deductions_direct_labels_validation.sql",
+      "sql/mart/pr_mart1_validation.sql",
+      "sql/mart/pr_mart2a_finance_longform_validation.sql",
+      "sql/mart/pr_mart2b_sku_daily_validation.sql",
+      "sql/mart3/pr_mart3a_validation.sql",
+      "sql/mart3/pr_mart3b_validation.sql",
+      "sql/raw/adv_costs_snapshot_validation.sql",
+      "sql/ref/pr_ref_cogs_validation.sql"
+    ]
+  }
+}
