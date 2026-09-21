@@ -1,51 +1,652 @@
 {
-  "registry_version": 1,
-  "comment": "Реестр наборов проверок данных. Исполнитель — tools/run_data_checks.py (только чтение). gate=true означает: набор обязан быть PASS до того, как изменение в затронутой области считается завершённым (docs/architecture/DEFINITION_OF_DONE.md). Набор без gate=true — наблюдение, а не ворота.",
+  "registry_version": 2,
+  "comment": "Реестр приёмочных наборов. Исполнитель — tools/run_data_checks.py (только чтение). gate=true: набор обязан быть PASS, прежде чем изменение в его scope считается завершённым (docs/architecture/DEFINITION_OF_DONE.md). Бизнес-логика проверок не переписывается: наборы исполняют существующие артефакты адаптерами (tools/lib/acceptance.py). Поадресный реестр самих проверок порождается из этого файла и исходников: quality/contract_registry.json.",
+  "adapters": {
+    "check_blocks": "`-- @check <ID>` + один SELECT с колонкой status ∈ {PASS, FAIL}",
+    "assert_script": "`ASSERT <выражение> AS '<имя>';` — адаптер исполняет то же выражение как SELECT IF(...), условие не меняется",
+    "verdict_select": "самостоятельные SELECT со своей колонкой-вердиктом (status_column)"
+  },
   "suites": [
     {
       "suite": "ozon_unit",
       "title": "Ozon Unit: суточный факт Ozon и нейтральный FACT_SKU_DAILY",
       "gate": true,
+      "severity": "CRITICAL",
+      "domain": "unit_economics",
+      "marketplace": [
+        "OZON",
+        "WB"
+      ],
+      "pipelines": [
+        "mart"
+      ],
+      "layer": "mart",
+      "adapter": "check_blocks",
+      "id_prefix": "",
+      "status_column": "status",
+      "execution_mode": "read_only_select",
+      "expected_result": "all_checks_pass",
       "owner": "evelagin",
+      "timeout_seconds": 180,
+      "files": [
+        "sql/scale1/fact_sku_daily_validation.sql"
+      ],
       "scope": [
         "ozon_mart.V_OZON_COMMISSION_RECOVERY",
         "ozon_mart.FCT_OZON_SKU_PNL_DAILY",
         "ozon_mart.FCT_OZON_SKU_PNL_MONTHLY",
-        "evetis_mart.FACT_SKU_DAILY"
+        "ozon_mart.FCT_OZON_PNL_MONTHLY",
+        "evetis_mart.FACT_SKU_DAILY",
+        "wb_mart.SKU_PERFORMANCE_V2_DAILY"
       ],
-      "files": ["sql/scale1/fact_sku_daily_validation.sql"],
-      "dimensions": ["grain", "uniqueness", "identities", "reconciliation", "null_contract", "identity_mapping"],
+      "dimensions": [
+        "grain",
+        "uniqueness",
+        "identities",
+        "reconciliation",
+        "null_contract",
+        "identity_mapping"
+      ],
       "cadence": "перед слиянием изменения в области scope и после каждого развёртывания",
-      "provenance": "SCALE 1, docs/SCALE1_FACT_SKU_DAILY_2026-09-20.md; пороги согласованы владельцем при приёмке 2026-09-20, здесь не изобретены"
+      "source_contract": "docs/SCALE1_FACT_SKU_DAILY_2026-09-20.md",
+      "business_rule_reference": "docs/ozon/OZON_PNL_POLICY_V1.md, docs/ozon/OZON_FINANCE_TAXONOMY_V1.md",
+      "provenance": "SCALE 1; пороги согласованы владельцем при приёмке 2026-09-20, здесь не изобретены"
+    },
+    {
+      "suite": "wb_sku_performance_v2",
+      "title": "SKU Performance V2: суточный слой WB против независимого пересчёта из источников",
+      "gate": true,
+      "severity": "CRITICAL",
+      "domain": "unit_economics",
+      "marketplace": [
+        "WB"
+      ],
+      "pipelines": [
+        "mart",
+        "finance",
+        "orders",
+        "sales",
+        "ads_daily"
+      ],
+      "layer": "mart",
+      "adapter": "assert_script",
+      "id_prefix": "SKUV2",
+      "status_column": "status",
+      "execution_mode": "read_only_select",
+      "expected_result": "all_checks_pass",
+      "owner": "evelagin",
+      "timeout_seconds": 300,
+      "files": [
+        "sql/dash/sku_performance_v2_daily_validation.sql"
+      ],
+      "scope": [
+        "wb_mart.SKU_PERFORMANCE_V2_DAILY",
+        "wb_mart.V_DASH_SKU_PERFORMANCE_V2_DAILY",
+        "wb_mart.V_SKU_PERFORMANCE_V2_EXEC_BRIDGE_DAILY",
+        "wb_mart.TVF_SKU_PERFORMANCE_V2_PERIOD"
+      ],
+      "dimensions": [
+        "grain",
+        "uniqueness",
+        "source_reconciliation",
+        "identities",
+        "coverage",
+        "regression_windows"
+      ],
+      "cadence": "перед слиянием изменения в области scope и после каждой пересборки слоя",
+      "source_contract": "docs/SKU_PERFORMANCE_V2_PHASE_B_BACKEND_2026-09-18.md",
+      "business_rule_reference": "docs/FIN_CONTRACT_V2_2026-09-16.md",
+      "provenance": "PHASE B; сверки динамические (слой против независимого пересчёта), зашитых сумм нет"
+    },
+    {
+      "suite": "wb_fin_contract_v2",
+      "title": "FIN CONTRACT V2: возмещения MEMO, биллинг рекламы, экономика Executive",
+      "gate": true,
+      "severity": "CRITICAL",
+      "domain": "finance",
+      "marketplace": [
+        "WB"
+      ],
+      "pipelines": [
+        "finance",
+        "ads_costs",
+        "mart"
+      ],
+      "layer": "mart",
+      "adapter": "assert_script",
+      "id_prefix": "FINV2",
+      "status_column": "status",
+      "execution_mode": "read_only_select",
+      "expected_result": "all_checks_pass",
+      "owner": "evelagin",
+      "timeout_seconds": 300,
+      "files": [
+        "sql/dash/fin_contract_v2_validation.sql"
+      ],
+      "scope": [
+        "wb_mart.REF_COST_MAP",
+        "wb_mart.V_WB_FINANCE_AMOUNTS_LONG_MAPPED",
+        "wb_mart.V_DASH_FINANCE_CORRECTED_DAILY",
+        "wb_mart.V_DASH_KPI_DAILY",
+        "wb_mart.V_DASH_EXECUTIVE_ECONOMICS_DAILY",
+        "wb_mart.V_DASH_SETTLEMENT_DAILY"
+      ],
+      "dimensions": [
+        "accounting_policy",
+        "identities",
+        "reconciliation",
+        "null_contract"
+      ],
+      "cadence": "перед слиянием изменения в области scope",
+      "source_contract": "docs/FIN_CONTRACT_V2_2026-09-16.md",
+      "business_rule_reference": "docs/FIN_CONTRACT_V2_2026-09-16.md",
+      "provenance": "FIN CONTRACT V2; условия ASSERT перенесены дословно, ни одно не изменено"
+    },
+    {
+      "gate": true,
+      "execution_mode": "read_only_select",
+      "expected_result": "all_checks_pass",
+      "owner": "evelagin",
+      "status_column": "status",
+      "adapter": "assert_script",
+      "timeout_seconds": 300,
+      "suite": "wb_executive_v2",
+      "title": "Executive V2: бэкенд результата периода и материализованный суточный слой",
+      "severity": "CRITICAL",
+      "domain": "finance",
+      "marketplace": [
+        "WB"
+      ],
+      "pipelines": [
+        "finance",
+        "mart",
+        "ads_costs"
+      ],
+      "layer": "mart",
+      "id_prefix": "EXECV2",
+      "files": [
+        "sql/dash/executive_v2_backend_validation.sql",
+        "sql/dash/executive_v2_daily_validation.sql"
+      ],
+      "scope": [
+        "wb_mart.EXECUTIVE_V2_DAILY",
+        "wb_mart.V_DASH_EXECUTIVE_V2_DAILY",
+        "wb_mart.sp_build_executive_v2_daily"
+      ],
+      "dimensions": [
+        "identities",
+        "reconciliation",
+        "coverage",
+        "materialization_parity"
+      ],
+      "cadence": "перед слиянием изменения в области scope и после пересборки слоя",
+      "source_contract": "docs/EXECUTIVE_V2_BACKEND_2026-09-16.md",
+      "business_rule_reference": "docs/FIN_CONTRACT_V2_2026-09-16.md",
+      "provenance": "Executive V2 Phase B/C2; условия ASSERT перенесены дословно"
+    },
+    {
+      "gate": true,
+      "execution_mode": "read_only_select",
+      "expected_result": "all_checks_pass",
+      "owner": "evelagin",
+      "status_column": "status",
+      "adapter": "assert_script",
+      "timeout_seconds": 300,
+      "suite": "wb_executive_economics",
+      "title": "Executive: экономика периода до себестоимости",
+      "severity": "HIGH",
+      "domain": "finance",
+      "marketplace": [
+        "WB"
+      ],
+      "pipelines": [
+        "finance",
+        "mart"
+      ],
+      "layer": "mart",
+      "id_prefix": "EXECECON",
+      "files": [
+        "sql/dash/pr_dash_executive_economics_validation.sql"
+      ],
+      "scope": [
+        "wb_mart.V_DASH_EXECUTIVE_ECONOMICS_DAILY",
+        "wb_mart.V_DASH_EXECUTIVE_BREAKDOWN_DAILY"
+      ],
+      "dimensions": [
+        "identities",
+        "reconciliation",
+        "null_contract"
+      ],
+      "cadence": "перед слиянием изменения в области scope",
+      "source_contract": "docs/STAGE3_1D_EXECUTIVE_ECONOMICS_2026-08-28.md",
+      "business_rule_reference": "docs/FIN_CONTRACT_V2_2026-09-16.md",
+      "provenance": "Stage 3.1D; условия ASSERT перенесены дословно"
+    },
+    {
+      "gate": true,
+      "execution_mode": "read_only_select",
+      "expected_result": "all_checks_pass",
+      "owner": "evelagin",
+      "status_column": "status",
+      "adapter": "assert_script",
+      "timeout_seconds": 300,
+      "suite": "wb_finance_corrected",
+      "title": "Скорректированный финансовый слой (OPTION B)",
+      "severity": "CRITICAL",
+      "domain": "finance",
+      "marketplace": [
+        "WB"
+      ],
+      "pipelines": [
+        "finance",
+        "ads_costs",
+        "mart"
+      ],
+      "layer": "mart",
+      "id_prefix": "FINCORR",
+      "files": [
+        "sql/dash/pr_dash_finance_corrected_validation.sql"
+      ],
+      "scope": [
+        "wb_mart.V_DASH_FINANCE_CORRECTED_DAILY",
+        "wb_mart.V_WB_DEDUCTIONS_CLASSIFIED"
+      ],
+      "dimensions": [
+        "accounting_policy",
+        "identities",
+        "reconciliation"
+      ],
+      "cadence": "перед слиянием изменения в области scope",
+      "source_contract": "docs/STAGE3_1C_FINANCE_CORRECTED_2026-08-28.md",
+      "business_rule_reference": "docs/FIN_CONTRACT_V2_2026-09-16.md",
+      "provenance": "Stage 3.1C PR2; условия ASSERT перенесены дословно"
+    },
+    {
+      "gate": true,
+      "execution_mode": "read_only_select",
+      "expected_result": "all_checks_pass",
+      "owner": "evelagin",
+      "status_column": "status",
+      "adapter": "assert_script",
+      "timeout_seconds": 300,
+      "suite": "wb_settlement",
+      "title": "Мост расчётов WB: от цены продавца до выплаты",
+      "severity": "HIGH",
+      "domain": "finance",
+      "marketplace": [
+        "WB"
+      ],
+      "pipelines": [
+        "finance",
+        "mart"
+      ],
+      "layer": "mart",
+      "id_prefix": "SETTLE",
+      "files": [
+        "sql/dash/pr_dash_settlement_validation.sql"
+      ],
+      "scope": [
+        "wb_mart.V_DASH_SETTLEMENT_DAILY",
+        "wb_mart.V_WB_FINANCE_PRICE_COMPONENTS"
+      ],
+      "dimensions": [
+        "identities",
+        "reconciliation",
+        "null_contract"
+      ],
+      "cadence": "перед слиянием изменения в области scope",
+      "source_contract": "docs/STAGE3_1G_SETTLEMENT_2026-08-28.md",
+      "business_rule_reference": "docs/FIN_CONTRACT_V2_2026-09-16.md",
+      "provenance": "Stage 3.1G; условия ASSERT перенесены дословно"
+    },
+    {
+      "gate": true,
+      "execution_mode": "read_only_select",
+      "expected_result": "all_checks_pass",
+      "owner": "evelagin",
+      "status_column": "status",
+      "adapter": "assert_script",
+      "timeout_seconds": 300,
+      "suite": "wb_deductions_direct_labels",
+      "title": "Классификация удержаний WB по прямым меткам",
+      "severity": "HIGH",
+      "domain": "finance",
+      "marketplace": [
+        "WB"
+      ],
+      "pipelines": [
+        "finance",
+        "mart"
+      ],
+      "layer": "mart",
+      "id_prefix": "DEDUCT",
+      "files": [
+        "sql/mart/pr_deductions_direct_labels_validation.sql"
+      ],
+      "scope": [
+        "wb_mart.V_WB_DEDUCTIONS_CLASSIFIED",
+        "wb_mart.V_DASH_FINANCE_CORRECTED_DAILY"
+      ],
+      "dimensions": [
+        "accounting_policy",
+        "dictionary",
+        "identities"
+      ],
+      "cadence": "перед слиянием изменения в области scope",
+      "source_contract": "docs/STAGE3_1F_DEDUCTIONS_DIRECT_LABELS_2026-08-28.md",
+      "business_rule_reference": "docs/FIN_CONTRACT_V2_2026-09-16.md",
+      "provenance": "Stage 3.1F; три условия помечены вне ворот самим автором артефакта (шапка файла)",
+      "check_overrides": {
+        "DEDUCT__F_15_FAIL_CONTRIBUTION_ACCOUNT_LEVEL_CORRECTED": {
+          "status": "superseded",
+          "excluded_from_gate": true,
+          "reason": "проверяет формулу v1, в которой реклама — атрибуция; контракт заменён FIN CONTRACT V2 (биллинг по дате услуги)",
+          "evidence": "sql/mart/pr_deductions_direct_labels_validation.sql:1-3 — пометка автора артефакта от 2026-09-16",
+          "replaced_by": "wb_fin_contract_v2 / FINV2__DQ_3B, FINV2__DQ_10B",
+          "observed_2026_09_21": "FAIL"
+        },
+        "DEDUCT__F_16_FAIL": {
+          "status": "superseded",
+          "excluded_from_gate": true,
+          "reason": "то же: дельта корректировки считалась по формуле v1",
+          "evidence": "sql/mart/pr_deductions_direct_labels_validation.sql:1-3",
+          "replaced_by": "wb_fin_contract_v2 / FINV2__DQ_3B, FINV2__DQ_10B",
+          "observed_2026_09_21": "FAIL"
+        },
+        "DEDUCT__F_18_FAIL_4_41_56": {
+          "status": "stale_snapshot",
+          "excluded_from_gate": true,
+          "reason": "фиксирует число таблиц в датасетах на 2026-08-28 (4 / 41 / 56); это снимок состава, а не инвариант — состав датасетов штатно меняется",
+          "evidence": "sql/mart/pr_deductions_direct_labels_validation.sql:2-3; факт 2026-09-21 — evetis_ref 29, wb_mart 97, wb_raw 77 (docs/architecture/system_inventory.json)",
+          "replaced_by": "docs/architecture/system_inventory.json — состав объектов отслеживается снимком, а не ASSERT",
+          "observed_2026_09_21": "FAIL"
+        }
+      }
+    },
+    {
+      "gate": true,
+      "execution_mode": "read_only_select",
+      "expected_result": "all_checks_pass",
+      "owner": "evelagin",
+      "status_column": "status",
+      "adapter": "assert_script",
+      "timeout_seconds": 300,
+      "suite": "wb_mart_ingestion_integrity",
+      "title": "Целостность загрузки RAW→FACT: дедуп rrd_id и склад остатков",
+      "severity": "HIGH",
+      "domain": "ingestion",
+      "marketplace": [
+        "WB"
+      ],
+      "pipelines": [
+        "finance",
+        "stocks_snapshot"
+      ],
+      "layer": "raw",
+      "id_prefix": "MART1",
+      "files": [
+        "sql/mart/pr_mart1_validation.sql"
+      ],
+      "scope": [
+        "wb_raw.V_WB_FINANCE_CANONICAL",
+        "wb_raw.RAW_WB_STOCKS"
+      ],
+      "dimensions": [
+        "uniqueness",
+        "null_contract"
+      ],
+      "cadence": "перед слиянием изменения в области scope",
+      "source_contract": "docs/MART_PR1_2026-07-28.md",
+      "business_rule_reference": null,
+      "provenance": "MART PR-1; исполнимы 2 условия из 12 операторов — остальные информационные SELECT"
+    },
+    {
+      "gate": true,
+      "execution_mode": "read_only_select",
+      "expected_result": "all_checks_pass",
+      "owner": "evelagin",
+      "status_column": "status",
+      "adapter": "assert_script",
+      "timeout_seconds": 300,
+      "suite": "control_tower_phase1",
+      "title": "Control Tower Phase 1: план, факт, свежесть, очередь действий",
+      "severity": "MEDIUM",
+      "domain": "operations",
+      "marketplace": [
+        "WB",
+        "OZON"
+      ],
+      "pipelines": [
+        "mart"
+      ],
+      "layer": "mart",
+      "id_prefix": "CT1",
+      "files": [
+        "sql/control_tower/ct_phase1_validation.sql"
+      ],
+      "scope": [
+        "wb_mart.V_CT_PLAN_ACTIVE",
+        "wb_mart.V_CT_ACTUAL_DAILY",
+        "wb_mart.V_CT_PLAN_VS_ACTUAL_DAILY",
+        "evetis_ref.sp_ct_refresh_daily"
+      ],
+      "dimensions": [
+        "grain",
+        "reconciliation",
+        "freshness",
+        "contract"
+      ],
+      "cadence": "после изменения Control Tower и после CALL sp_ct_refresh_daily()",
+      "source_contract": "docs/control_tower/CT_PHASE1.md",
+      "business_rule_reference": null,
+      "provenance": "CT Phase 1; условия ASSERT перенесены дословно"
+    },
+    {
+      "gate": true,
+      "execution_mode": "read_only_select",
+      "expected_result": "all_checks_pass",
+      "owner": "evelagin",
+      "status_column": "status",
+      "adapter": "assert_script",
+      "timeout_seconds": 300,
+      "suite": "control_tower_owner_screens",
+      "title": "Control Tower Phase 1.1/1.2: экраны владельца",
+      "severity": "MEDIUM",
+      "domain": "operations",
+      "marketplace": [
+        "WB",
+        "OZON"
+      ],
+      "pipelines": [
+        "mart"
+      ],
+      "layer": "mart",
+      "id_prefix": "CTOWN",
+      "files": [
+        "sql/control_tower/ct_phase11_validation.sql",
+        "sql/control_tower/ct_phase12_validation.sql"
+      ],
+      "scope": [
+        "wb_mart.V_CT_OWNER_HOME",
+        "wb_mart.V_CT_SKU_CONTROL",
+        "wb_mart.V_CT_DAILY_BRIEF",
+        "wb_mart.V_CT_DAILY_BRIEF_LINES",
+        "wb_mart.V_CT_ACTION_QUEUE"
+      ],
+      "dimensions": [
+        "contract",
+        "reconciliation",
+        "presentation"
+      ],
+      "cadence": "после изменения экранов Control Tower",
+      "source_contract": "docs/control_tower/CT_PHASE11.md",
+      "business_rule_reference": null,
+      "provenance": "CT Phase 1.1/1.2; два условия помечены known_failing по подтверждённому дефекту UBR-001",
+      "check_overrides": {
+        "CTOWN__T29_FAILED_SKU_CONTROL_TABLE_DOES_NOT_RECONCILE_WITH_OWNER_H": {
+          "status": "known_failing",
+          "excluded_from_gate": true,
+          "reason": "подтверждённый дефект экрана владельца: таблица контроля SKU не показывает SKU, у которых есть заказы, но нет строки плана",
+          "evidence": "UBR-001, docs/architecture/UNRESOLVED_BUSINESS_RULES.md",
+          "unresolved_rule": "UBR-001",
+          "observed_2026_09_21": "FAIL (208 против 210 карточек)"
+        },
+        "CTOWN__T40_FAILED_TOTALS_DRIFTED_BETWEEN_SKU_TABLE_BRIEF_AND_OWNER_": {
+          "status": "known_failing",
+          "excluded_from_gate": true,
+          "reason": "регрессия того же условия, что и T29 (Phase 1.2 повторяет Phase 1.1 T29)",
+          "evidence": "UBR-001, docs/architecture/UNRESOLVED_BUSINESS_RULES.md",
+          "unresolved_rule": "UBR-001",
+          "observed_2026_09_21": "FAIL (208 против 210 карточек)"
+        }
+      }
     }
   ],
   "backlog": {
-    "comment": "Приёмочные наборы, написанные до введения контракта `-- @check`: сейчас это мёртвые активы — их прогоняли вручную один раз при сдаче этапа. Перевод каждого файла на контракт — отдельная задача с ревью порогов владельцем (докажи, что порог согласован, а не придуман при переносе).",
+    "comment": "Приёмочные артефакты, не подключённые к воротам. Каждый ПРОБОВАЛИ исполнить 2026-09-21; результат и точная причина неподключения записаны. Подключение — отдельный шаг после ответа владельца на связанное нерешённое правило (quality/unresolved_business_rules.json).",
     "files": [
-      "sql/control_tower/ct_phase1_validation.sql",
-      "sql/control_tower/ct_phase11_validation.sql",
-      "sql/control_tower/ct_phase12_validation.sql",
-      "sql/dash/dashboard_contract_v1_validation.sql",
-      "sql/dash/dashboard_contract_v2_validation.sql",
-      "sql/dash/executive_v2_backend_validation.sql",
-      "sql/dash/executive_v2_daily_validation.sql",
-      "sql/dash/fin_contract_v2_validation.sql",
-      "sql/dash/pr_dash_executive_economics_validation.sql",
-      "sql/dash/pr_dash_finance_corrected_validation.sql",
-      "sql/dash/pr_dash_settlement_validation.sql",
-      "sql/dash/sku_performance_v2_daily_validation.sql",
-      "sql/ddl/wb_raw_funnel_validation.sql",
-      "sql/mart/ads_spend_stage3b_validation.sql",
-      "sql/mart/pr_ad_billing_classification_validation.sql",
-      "sql/mart/pr_cogs_consumer_validation.sql",
-      "sql/mart/pr_deductions_direct_labels_validation.sql",
-      "sql/mart/pr_mart1_validation.sql",
-      "sql/mart/pr_mart2a_finance_longform_validation.sql",
-      "sql/mart/pr_mart2b_sku_daily_validation.sql",
-      "sql/mart3/pr_mart3a_validation.sql",
-      "sql/mart3/pr_mart3b_validation.sql",
-      "sql/raw/adv_costs_snapshot_validation.sql",
-      "sql/ref/pr_ref_cogs_validation.sql"
+      {
+        "file": "sql/dash/dashboard_contract_v1_validation.sql",
+        "adapter_hint": "verdict_select",
+        "asserts": 0,
+        "status_column": "verdict",
+        "parsed": 18,
+        "executable": 17,
+        "measured_2026_09_21": "PASS 14 / FAIL 2 / ERROR 1",
+        "blocker": "C12 отдаёт вердикт-литерал вместо PASS/FAIL (UBR-003); C16 требует бизнес-ответа (UBR-004); C8 ловит известный необратимый пропуск снимков остатков 18–20.07 и 03.09",
+        "unresolved_rules": [
+          "UBR-003",
+          "UBR-004"
+        ]
+      },
+      {
+        "file": "sql/dash/dashboard_contract_v2_validation.sql",
+        "adapter_hint": "verdict_select",
+        "asserts": 0,
+        "status_column": "verdict",
+        "parsed": 18,
+        "executable": 17,
+        "measured_2026_09_21": "PASS 13 / FAIL 2 / EMPTY 1 / ERROR 1",
+        "blocker": "D16 — вердикт-литерал (UBR-003); D12 — бизнес-ответ (UBR-004); D9 — исключение контракта (UBR-005); D10 возвращает 0 строк",
+        "unresolved_rules": [
+          "UBR-003",
+          "UBR-004",
+          "UBR-005"
+        ]
+      },
+      {
+        "file": "sql/ddl/wb_raw_funnel_validation.sql",
+        "adapter_hint": "verdict_select",
+        "asserts": 0,
+        "status_column": "status",
+        "parsed": 1,
+        "executable": 1,
+        "measured_2026_09_21": "FAIL (1 из 6 строк: T5_opens_ge_ad_clicks, bad=2)",
+        "blocker": "нарушение инварианта воронки требует решения (UBR-006)",
+        "unresolved_rules": [
+          "UBR-006"
+        ]
+      },
+      {
+        "file": "sql/mart/pr_ad_billing_classification_validation.sql",
+        "adapter_hint": "verdict_select",
+        "asserts": 0,
+        "status_column": "verdict",
+        "parsed": 8,
+        "executable": 4,
+        "measured_2026_09_21": "PASS 3 / FAIL 1 / BLOCKED 4",
+        "blocker": "A1 отдаёт FAIL при совпадающих actual и expected (UBR-007)",
+        "unresolved_rules": [
+          "UBR-007"
+        ]
+      },
+      {
+        "file": "sql/mart/pr_cogs_consumer_validation.sql",
+        "adapter_hint": "verdict_select",
+        "asserts": 0,
+        "status_column": "verdict",
+        "parsed": 12,
+        "executable": 11,
+        "measured_2026_09_21": "PASS 10 / ERROR 1",
+        "blocker": "оператор S-5 не исполняется самим BigQuery: алиас `AS nulls` — зарезервированное слово. Дефект артефакта, не данных",
+        "unresolved_rules": []
+      },
+      {
+        "file": "sql/mart3/pr_mart3a_validation.sql",
+        "adapter_hint": "verdict_select",
+        "asserts": 0,
+        "status_column": "status",
+        "parsed": 11,
+        "executable": 0,
+        "measured_2026_09_21": "не исполнялось",
+        "blocker": "ни в одном операторе нет колонки-вердикта: единственный литерал PASS — в тексте сообщения",
+        "unresolved_rules": [
+          "UBR-008"
+        ]
+      },
+      {
+        "file": "sql/ref/pr_ref_cogs_validation.sql",
+        "adapter_hint": "verdict_select",
+        "asserts": 0,
+        "status_column": "verdict",
+        "parsed": 9,
+        "executable": 7,
+        "measured_2026_09_21": "PASS 5 / FAIL 1 / ERROR 1",
+        "blocker": "резолвер COGS отдаёт описательные вердикты вместо PASS/FAIL, у EVT-HC-BODY-300 нет интервала (UBR-002); строка сверки с baseline 7477 — устаревший снимок",
+        "unresolved_rules": [
+          "UBR-002"
+        ]
+      },
+      {
+        "file": "sql/mart/ads_spend_stage3b_validation.sql",
+        "adapter_hint": "none",
+        "asserts": 0,
+        "blocker": "в артефакте нет условия PASS/FAIL",
+        "unresolved_rules": [
+          "UBR-008"
+        ],
+        "measured_2026_09_21": "не исполнялось"
+      },
+      {
+        "file": "sql/mart/pr_mart2a_finance_longform_validation.sql",
+        "adapter_hint": "none",
+        "asserts": 0,
+        "blocker": "в артефакте нет условия PASS/FAIL",
+        "unresolved_rules": [
+          "UBR-008"
+        ],
+        "measured_2026_09_21": "не исполнялось"
+      },
+      {
+        "file": "sql/mart/pr_mart2b_sku_daily_validation.sql",
+        "adapter_hint": "none",
+        "asserts": 0,
+        "blocker": "в артефакте нет условия PASS/FAIL",
+        "unresolved_rules": [
+          "UBR-008"
+        ],
+        "measured_2026_09_21": "не исполнялось"
+      },
+      {
+        "file": "sql/mart3/pr_mart3b_validation.sql",
+        "adapter_hint": "none",
+        "asserts": 0,
+        "blocker": "в артефакте нет условия PASS/FAIL",
+        "unresolved_rules": [
+          "UBR-008"
+        ],
+        "measured_2026_09_21": "не исполнялось"
+      },
+      {
+        "file": "sql/raw/adv_costs_snapshot_validation.sql",
+        "adapter_hint": "none",
+        "asserts": 0,
+        "blocker": "в артефакте нет условия PASS/FAIL",
+        "unresolved_rules": [
+          "UBR-008"
+        ],
+        "measured_2026_09_21": "не исполнялось"
+      }
     ]
   }
 }

@@ -1,6 +1,6 @@
 {
  "schema_version": 1,
- "generated_at": "2026-09-21T05:56:56Z",
+ "generated_at": "2026-09-21T07:09:38Z",
  "generated_by": "tools/architecture_baseline.py",
  "project": "project-fa311fc0-4d87-4781-986",
  "location": "EU",
@@ -16,7 +16,8 @@
   "views_without_canonical_sql": 136,
   "terraform_resources": 132,
   "apps_script_files": 108,
-  "bigquery_queries_issued": 5
+  "bigquery_queries_issued": 6,
+  "objects_read_by_metabase": 170
  },
  "datasets": {
   "evetis_communications": {
@@ -111,7 +112,8 @@
    "partitioned_by": null,
    "clustered_by": [],
    "depends_on": [],
-   "consumed_by": []
+   "consumed_by": [],
+   "external_readers": {}
   },
   "evetis_communications.communication_events": {
    "object": "evetis_communications.communication_events",
@@ -147,7 +149,13 @@
    "partitioned_by": null,
    "clustered_by": [],
    "depends_on": [],
-   "consumed_by": []
+   "consumed_by": [],
+   "external_readers": {
+    "human_or_script": {
+     "queries": 5,
+     "last_read": "2026-09-08"
+    }
+   }
   },
   "evetis_communications.communications_current": {
    "object": "evetis_communications.communications_current",
@@ -185,7 +193,8 @@
    "partitioned_by": null,
    "clustered_by": [],
    "depends_on": [],
-   "consumed_by": []
+   "consumed_by": [],
+   "external_readers": {}
   },
   "evetis_mart.FACT_SKU_DAILY": {
    "object": "evetis_mart.FACT_SKU_DAILY",
@@ -234,7 +243,17 @@
     "ozon_mart.FCT_OZON_SKU_PNL_DAILY",
     "wb_mart.SKU_PERFORMANCE_V2_DAILY"
    ],
-   "consumed_by": []
+   "consumed_by": [],
+   "external_readers": {
+    "metabase": {
+     "queries": 27,
+     "last_read": "2026-09-20"
+    },
+    "human_or_script": {
+     "queries": 32,
+     "last_read": "2026-09-21"
+    }
+   }
   },
   "evetis_ops.CT_BUNDLE_BUILD": {
    "object": "evetis_ops.CT_BUNDLE_BUILD",
@@ -267,7 +286,13 @@
    "depends_on": [],
    "consumed_by": [
     "evetis_ops.V_OPS_BUNDLE_PRODUCTION"
-   ]
+   ],
+   "external_readers": {
+    "human_or_script": {
+     "queries": 4,
+     "last_read": "2026-09-14"
+    }
+   }
   },
   "evetis_ops.CT_OPENING_FF_SNAPSHOT": {
    "object": "evetis_ops.CT_OPENING_FF_SNAPSHOT",
@@ -296,7 +321,13 @@
    "depends_on": [],
    "consumed_by": [
     "evetis_ops.V_CT_SEED_RECON"
-   ]
+   ],
+   "external_readers": {
+    "human_or_script": {
+     "queries": 6,
+     "last_read": "2026-09-17"
+    }
+   }
   },
   "evetis_ops.CT_OPENING_OZON_EVIDENCE": {
    "object": "evetis_ops.CT_OPENING_OZON_EVIDENCE",
@@ -322,7 +353,13 @@
    "consumed_by": [
     "evetis_ops.V_CT_SEED_RECON",
     "evetis_ops.V_OPS_SHIPMENTS_SHEET"
-   ]
+   ],
+   "external_readers": {
+    "human_or_script": {
+     "queries": 9,
+     "last_read": "2026-09-17"
+    }
+   }
   },
   "evetis_ops.CT_OPS_REQUEST_LOG": {
    "object": "evetis_ops.CT_OPS_REQUEST_LOG",
@@ -350,7 +387,13 @@
    "partitioned_by": null,
    "clustered_by": [],
    "depends_on": [],
-   "consumed_by": []
+   "consumed_by": [],
+   "external_readers": {
+    "human_or_script": {
+     "queries": 7,
+     "last_read": "2026-09-18"
+    }
+   }
   },
   "evetis_ops.CT_SHIPMENT": {
    "object": "evetis_ops.CT_SHIPMENT",
@@ -384,7 +427,13 @@
    "depends_on": [],
    "consumed_by": [
     "evetis_ops.V_CT_SHIPMENT_CURRENT"
-   ]
+   ],
+   "external_readers": {
+    "human_or_script": {
+     "queries": 5,
+     "last_read": "2026-09-14"
+    }
+   }
   },
   "evetis_ops.CT_SHIPMENT_LINE": {
    "object": "evetis_ops.CT_SHIPMENT_LINE",
@@ -414,7 +463,13 @@
    "consumed_by": [
     "evetis_ops.V_OPS_BUNDLE_PRODUCTION",
     "evetis_ops.V_OPS_SUPPLY_PLAN"
-   ]
+   ],
+   "external_readers": {
+    "human_or_script": {
+     "queries": 5,
+     "last_read": "2026-09-14"
+    }
+   }
   },
   "evetis_ops.CT_STOCK_MOVEMENT": {
    "object": "evetis_ops.CT_STOCK_MOVEMENT",
@@ -460,7 +515,13 @@
    "consumed_by": [
     "evetis_ops.V_CT_STOCK_BALANCE",
     "evetis_ops.V_OPS_SHEET_META"
-   ]
+   ],
+   "external_readers": {
+    "human_or_script": {
+     "queries": 25,
+     "last_read": "2026-09-19"
+    }
+   }
   },
   "evetis_ops.OPS_CONFIG": {
    "object": "evetis_ops.OPS_CONFIG",
@@ -487,7 +548,13 @@
     "evetis_ops.V_OPS_SHEET_CONFIG",
     "evetis_ops.V_OPS_SHEET_META",
     "evetis_ops.V_OPS_SUPPLY_CALENDAR"
-   ]
+   ],
+   "external_readers": {
+    "human_or_script": {
+     "queries": 35,
+     "last_read": "2026-09-19"
+    }
+   }
   },
   "evetis_ops.REF_CHANNEL_SHIPPING": {
    "object": "evetis_ops.REF_CHANNEL_SHIPPING",
@@ -525,7 +592,13 @@
    "consumed_by": [
     "evetis_ops.V_OPS_SHEET_CHANNELS",
     "evetis_ops.V_OPS_SUPPLY_CALENDAR"
-   ]
+   ],
+   "external_readers": {
+    "human_or_script": {
+     "queries": 15,
+     "last_read": "2026-09-17"
+    }
+   }
   },
   "evetis_ops.REF_SKU_LOGISTICS": {
    "object": "evetis_ops.REF_SKU_LOGISTICS",
@@ -568,7 +641,13 @@
     "evetis_ops.V_OPS_PICK_FROM_STORAGE",
     "evetis_ops.V_OPS_SHEET_LOGISTICS",
     "evetis_ops.V_OPS_SUPPLY_PLAN"
-   ]
+   ],
+   "external_readers": {
+    "human_or_script": {
+     "queries": 18,
+     "last_read": "2026-09-17"
+    }
+   }
   },
   "evetis_ops.V_CT_BUNDLE_CAPACITY": {
    "object": "evetis_ops.V_CT_BUNDLE_CAPACITY",
@@ -600,7 +679,17 @@
    ],
    "consumed_by": [
     "evetis_ops.V_OPS_BUNDLE_PRODUCTION"
-   ]
+   ],
+   "external_readers": {
+    "metabase": {
+     "queries": 9,
+     "last_read": "2026-09-12"
+    },
+    "human_or_script": {
+     "queries": 2,
+     "last_read": "2026-09-11"
+    }
+   }
   },
   "evetis_ops.V_CT_OZON_ORDER_RECON": {
    "object": "evetis_ops.V_CT_OZON_ORDER_RECON",
@@ -653,7 +742,17 @@
     "evetis_ops.V_OPS_PICK_FROM_STORAGE",
     "evetis_ops.V_OPS_SHIPMENTS_SHEET",
     "evetis_ops.V_OPS_SUPPLY_PLAN"
-   ]
+   ],
+   "external_readers": {
+    "human_or_script": {
+     "queries": 5,
+     "last_read": "2026-09-12"
+    },
+    "metabase": {
+     "queries": 26,
+     "last_read": "2026-09-12"
+    }
+   }
   },
   "evetis_ops.V_CT_SEED_RECON": {
    "object": "evetis_ops.V_CT_SEED_RECON",
@@ -695,7 +794,17 @@
     "evetis_ops.V_OPS_OZON_ORDER_UNITS",
     "evetis_ref.CT_STOCK_SNAPSHOT"
    ],
-   "consumed_by": []
+   "consumed_by": [],
+   "external_readers": {
+    "human_or_script": {
+     "queries": 1,
+     "last_read": "2026-09-11"
+    },
+    "metabase": {
+     "queries": 20,
+     "last_read": "2026-09-12"
+    }
+   }
   },
   "evetis_ops.V_CT_SHIPMENT_CURRENT": {
    "object": "evetis_ops.V_CT_SHIPMENT_CURRENT",
@@ -734,7 +843,17 @@
     "evetis_ops.V_OPS_BUNDLE_PRODUCTION",
     "evetis_ops.V_OPS_SHIPMENTS_SHEET",
     "evetis_ops.V_OPS_SUPPLY_PLAN"
-   ]
+   ],
+   "external_readers": {
+    "human_or_script": {
+     "queries": 2,
+     "last_read": "2026-09-11"
+    },
+    "metabase": {
+     "queries": 15,
+     "last_read": "2026-09-12"
+    }
+   }
   },
   "evetis_ops.V_CT_STOCK_BALANCE": {
    "object": "evetis_ops.V_CT_STOCK_BALANCE",
@@ -772,7 +891,17 @@
     "evetis_ops.V_OPS_PICK_FROM_STORAGE",
     "evetis_ops.V_OPS_SHIPMENTS_SHEET",
     "evetis_ops.V_OPS_SUPPLY_PLAN"
-   ]
+   ],
+   "external_readers": {
+    "human_or_script": {
+     "queries": 18,
+     "last_read": "2026-09-14"
+    },
+    "metabase": {
+     "queries": 9,
+     "last_read": "2026-09-12"
+    }
+   }
   },
   "evetis_ops.V_CT_STOCK_STATE": {
    "object": "evetis_ops.V_CT_STOCK_STATE",
@@ -807,7 +936,17 @@
    ],
    "consumed_by": [
     "evetis_ops.V_OPS_FF_STOCK_SHEET"
-   ]
+   ],
+   "external_readers": {
+    "metabase": {
+     "queries": 12,
+     "last_read": "2026-09-12"
+    },
+    "human_or_script": {
+     "queries": 12,
+     "last_read": "2026-09-12"
+    }
+   }
   },
   "evetis_ops.V_OPS_BOM": {
    "object": "evetis_ops.V_OPS_BOM",
@@ -839,7 +978,17 @@
     "evetis_ops.V_OPS_OZON_ORDER_UNITS",
     "evetis_ops.V_OPS_PICK_FROM_STORAGE",
     "evetis_ops.V_OPS_SUPPLY_PLAN"
-   ]
+   ],
+   "external_readers": {
+    "human_or_script": {
+     "queries": 12,
+     "last_read": "2026-09-12"
+    },
+    "metabase": {
+     "queries": 5,
+     "last_read": "2026-09-12"
+    }
+   }
   },
   "evetis_ops.V_OPS_BUNDLE_BOM_EXPANSION": {
    "object": "evetis_ops.V_OPS_BUNDLE_BOM_EXPANSION",
@@ -873,7 +1022,17 @@
    ],
    "consumed_by": [
     "evetis_ops.V_OPS_SHEET_BOM"
-   ]
+   ],
+   "external_readers": {
+    "human_or_script": {
+     "queries": 11,
+     "last_read": "2026-09-14"
+    },
+    "metabase": {
+     "queries": 12,
+     "last_read": "2026-09-12"
+    }
+   }
   },
   "evetis_ops.V_OPS_BUNDLE_PRODUCTION": {
    "object": "evetis_ops.V_OPS_BUNDLE_PRODUCTION",
@@ -930,7 +1089,17 @@
    "consumed_by": [
     "evetis_ops.V_OPS_BUNDLE_BOM_EXPANSION",
     "evetis_ops.V_OPS_SHEET_BUNDLES"
-   ]
+   ],
+   "external_readers": {
+    "human_or_script": {
+     "queries": 23,
+     "last_read": "2026-09-14"
+    },
+    "metabase": {
+     "queries": 26,
+     "last_read": "2026-09-12"
+    }
+   }
   },
   "evetis_ops.V_OPS_FF_STOCK_SHEET": {
    "object": "evetis_ops.V_OPS_FF_STOCK_SHEET",
@@ -972,7 +1141,17 @@
    ],
    "consumed_by": [
     "evetis_ops.V_OPS_SHEET_FF_STOCK"
-   ]
+   ],
+   "external_readers": {
+    "human_or_script": {
+     "queries": 20,
+     "last_read": "2026-09-14"
+    },
+    "metabase": {
+     "queries": 19,
+     "last_read": "2026-09-12"
+    }
+   }
   },
   "evetis_ops.V_OPS_FF_TASK": {
    "object": "evetis_ops.V_OPS_FF_TASK",
@@ -1012,7 +1191,17 @@
    ],
    "consumed_by": [
     "evetis_ops.V_OPS_SHEET_FF_TASK"
-   ]
+   ],
+   "external_readers": {
+    "human_or_script": {
+     "queries": 15,
+     "last_read": "2026-09-14"
+    },
+    "metabase": {
+     "queries": 18,
+     "last_read": "2026-09-12"
+    }
+   }
   },
   "evetis_ops.V_OPS_OZON_ORDER_UNITS": {
    "object": "evetis_ops.V_OPS_OZON_ORDER_UNITS",
@@ -1057,7 +1246,17 @@
     "evetis_ops.V_CT_SEED_RECON",
     "evetis_ops.V_OPS_SHIPMENTS_SHEET",
     "evetis_ops.V_OPS_SUPPLY_PLAN"
-   ]
+   ],
+   "external_readers": {
+    "human_or_script": {
+     "queries": 6,
+     "last_read": "2026-09-11"
+    },
+    "metabase": {
+     "queries": 18,
+     "last_read": "2026-09-12"
+    }
+   }
   },
   "evetis_ops.V_OPS_PICK_FROM_STORAGE": {
    "object": "evetis_ops.V_OPS_PICK_FROM_STORAGE",
@@ -1103,7 +1302,17 @@
     "evetis_ops.V_OPS_BUNDLE_PRODUCTION",
     "evetis_ops.V_OPS_FF_TASK",
     "evetis_ops.V_OPS_SHEET_PICK"
-   ]
+   ],
+   "external_readers": {
+    "human_or_script": {
+     "queries": 48,
+     "last_read": "2026-09-14"
+    },
+    "metabase": {
+     "queries": 18,
+     "last_read": "2026-09-12"
+    }
+   }
   },
   "evetis_ops.V_OPS_SHEET_BOM": {
    "object": "evetis_ops.V_OPS_SHEET_BOM",
@@ -1140,7 +1349,17 @@
    "depends_on": [
     "evetis_ops.V_OPS_BUNDLE_BOM_EXPANSION"
    ],
-   "consumed_by": []
+   "consumed_by": [],
+   "external_readers": {
+    "metabase": {
+     "queries": 18,
+     "last_read": "2026-09-14"
+    },
+    "human_or_script": {
+     "queries": 170,
+     "last_read": "2026-09-21"
+    }
+   }
   },
   "evetis_ops.V_OPS_SHEET_BUNDLES": {
    "object": "evetis_ops.V_OPS_SHEET_BUNDLES",
@@ -1196,7 +1415,17 @@
    "depends_on": [
     "evetis_ops.V_OPS_BUNDLE_PRODUCTION"
    ],
-   "consumed_by": []
+   "consumed_by": [],
+   "external_readers": {
+    "metabase": {
+     "queries": 37,
+     "last_read": "2026-09-14"
+    },
+    "human_or_script": {
+     "queries": 170,
+     "last_read": "2026-09-21"
+    }
+   }
   },
   "evetis_ops.V_OPS_SHEET_CHANNELS": {
    "object": "evetis_ops.V_OPS_SHEET_CHANNELS",
@@ -1232,7 +1461,17 @@
    "depends_on": [
     "evetis_ops.REF_CHANNEL_SHIPPING"
    ],
-   "consumed_by": []
+   "consumed_by": [],
+   "external_readers": {
+    "human_or_script": {
+     "queries": 170,
+     "last_read": "2026-09-21"
+    },
+    "metabase": {
+     "queries": 17,
+     "last_read": "2026-09-14"
+    }
+   }
   },
   "evetis_ops.V_OPS_SHEET_CONFIG": {
    "object": "evetis_ops.V_OPS_SHEET_CONFIG",
@@ -1258,7 +1497,17 @@
    "depends_on": [
     "evetis_ops.OPS_CONFIG"
    ],
-   "consumed_by": []
+   "consumed_by": [],
+   "external_readers": {
+    "human_or_script": {
+     "queries": 170,
+     "last_read": "2026-09-21"
+    },
+    "metabase": {
+     "queries": 7,
+     "last_read": "2026-09-14"
+    }
+   }
   },
   "evetis_ops.V_OPS_SHEET_FF_STOCK": {
    "object": "evetis_ops.V_OPS_SHEET_FF_STOCK",
@@ -1311,7 +1560,17 @@
    "depends_on": [
     "evetis_ops.V_OPS_FF_STOCK_SHEET"
    ],
-   "consumed_by": []
+   "consumed_by": [],
+   "external_readers": {
+    "human_or_script": {
+     "queries": 178,
+     "last_read": "2026-09-21"
+    },
+    "metabase": {
+     "queries": 34,
+     "last_read": "2026-09-14"
+    }
+   }
   },
   "evetis_ops.V_OPS_SHEET_FF_TASK": {
    "object": "evetis_ops.V_OPS_SHEET_FF_TASK",
@@ -1366,7 +1625,17 @@
    "depends_on": [
     "evetis_ops.V_OPS_FF_TASK"
    ],
-   "consumed_by": []
+   "consumed_by": [],
+   "external_readers": {
+    "human_or_script": {
+     "queries": 170,
+     "last_read": "2026-09-21"
+    },
+    "metabase": {
+     "queries": 36,
+     "last_read": "2026-09-14"
+    }
+   }
   },
   "evetis_ops.V_OPS_SHEET_LOGISTICS": {
    "object": "evetis_ops.V_OPS_SHEET_LOGISTICS",
@@ -1405,7 +1674,17 @@
    "depends_on": [
     "evetis_ops.REF_SKU_LOGISTICS"
    ],
-   "consumed_by": []
+   "consumed_by": [],
+   "external_readers": {
+    "human_or_script": {
+     "queries": 170,
+     "last_read": "2026-09-21"
+    },
+    "metabase": {
+     "queries": 20,
+     "last_read": "2026-09-14"
+    }
+   }
   },
   "evetis_ops.V_OPS_SHEET_META": {
    "object": "evetis_ops.V_OPS_SHEET_META",
@@ -1465,7 +1744,17 @@
     "wb_mart.V_CT_PLAN_ACTIVE",
     "wb_raw.V_WB_STOCKS_T5_CURRENT"
    ],
-   "consumed_by": []
+   "consumed_by": [],
+   "external_readers": {
+    "human_or_script": {
+     "queries": 170,
+     "last_read": "2026-09-21"
+    },
+    "metabase": {
+     "queries": 35,
+     "last_read": "2026-09-14"
+    }
+   }
   },
   "evetis_ops.V_OPS_SHEET_PICK": {
    "object": "evetis_ops.V_OPS_SHEET_PICK",
@@ -1514,7 +1803,17 @@
    "depends_on": [
     "evetis_ops.V_OPS_PICK_FROM_STORAGE"
    ],
-   "consumed_by": []
+   "consumed_by": [],
+   "external_readers": {
+    "human_or_script": {
+     "queries": 170,
+     "last_read": "2026-09-21"
+    },
+    "metabase": {
+     "queries": 30,
+     "last_read": "2026-09-14"
+    }
+   }
   },
   "evetis_ops.V_OPS_SHEET_PLAN": {
    "object": "evetis_ops.V_OPS_SHEET_PLAN",
@@ -1639,7 +1938,17 @@
     "evetis_ops.V_OPS_SUPPLY_CALENDAR",
     "evetis_ops.V_OPS_SUPPLY_PLAN"
    ],
-   "consumed_by": []
+   "consumed_by": [],
+   "external_readers": {
+    "human_or_script": {
+     "queries": 178,
+     "last_read": "2026-09-21"
+    },
+    "metabase": {
+     "queries": 105,
+     "last_read": "2026-09-14"
+    }
+   }
   },
   "evetis_ops.V_OPS_SHEET_SHIPMENTS": {
    "object": "evetis_ops.V_OPS_SHEET_SHIPMENTS",
@@ -1690,7 +1999,17 @@
    "depends_on": [
     "evetis_ops.V_OPS_SHIPMENTS_SHEET"
    ],
-   "consumed_by": []
+   "consumed_by": [],
+   "external_readers": {
+    "metabase": {
+     "queries": 32,
+     "last_read": "2026-09-14"
+    },
+    "human_or_script": {
+     "queries": 170,
+     "last_read": "2026-09-21"
+    }
+   }
   },
   "evetis_ops.V_OPS_SHIPMENTS_SHEET": {
    "object": "evetis_ops.V_OPS_SHIPMENTS_SHEET",
@@ -1737,7 +2056,17 @@
    ],
    "consumed_by": [
     "evetis_ops.V_OPS_SHEET_SHIPMENTS"
-   ]
+   ],
+   "external_readers": {
+    "metabase": {
+     "queries": 22,
+     "last_read": "2026-09-12"
+    },
+    "human_or_script": {
+     "queries": 10,
+     "last_read": "2026-09-14"
+    }
+   }
   },
   "evetis_ops.V_OPS_SUPPLY_CALENDAR": {
    "object": "evetis_ops.V_OPS_SUPPLY_CALENDAR",
@@ -1778,7 +2107,17 @@
     "evetis_ops.V_OPS_SHEET_META",
     "evetis_ops.V_OPS_SHEET_PLAN",
     "evetis_ops.V_OPS_SUPPLY_PLAN"
-   ]
+   ],
+   "external_readers": {
+    "human_or_script": {
+     "queries": 13,
+     "last_read": "2026-09-14"
+    },
+    "metabase": {
+     "queries": 17,
+     "last_read": "2026-09-12"
+    }
+   }
   },
   "evetis_ops.V_OPS_SUPPLY_PLAN": {
    "object": "evetis_ops.V_OPS_SUPPLY_PLAN",
@@ -1897,7 +2236,17 @@
     "evetis_ops.V_OPS_BUNDLE_PRODUCTION",
     "evetis_ops.V_OPS_PICK_FROM_STORAGE",
     "evetis_ops.V_OPS_SHEET_PLAN"
-   ]
+   ],
+   "external_readers": {
+    "human_or_script": {
+     "queries": 53,
+     "last_read": "2026-09-14"
+    },
+    "metabase": {
+     "queries": 80,
+     "last_read": "2026-09-12"
+    }
+   }
   },
   "evetis_ref.BAK_20260904B_REF_SKU_COGS_HISTORY": {
    "object": "evetis_ref.BAK_20260904B_REF_SKU_COGS_HISTORY",
@@ -1938,7 +2287,13 @@
    "partitioned_by": null,
    "clustered_by": [],
    "depends_on": [],
-   "consumed_by": []
+   "consumed_by": [],
+   "external_readers": {
+    "human_or_script": {
+     "queries": 11,
+     "last_read": "2026-09-17"
+    }
+   }
   },
   "evetis_ref.BAK_20260904_REF_BUNDLE_COMPONENTS": {
    "object": "evetis_ref.BAK_20260904_REF_BUNDLE_COMPONENTS",
@@ -1973,7 +2328,13 @@
    "partitioned_by": null,
    "clustered_by": [],
    "depends_on": [],
-   "consumed_by": []
+   "consumed_by": [],
+   "external_readers": {
+    "human_or_script": {
+     "queries": 9,
+     "last_read": "2026-09-17"
+    }
+   }
   },
   "evetis_ref.BAK_20260904_REF_SKU_CHANNEL_MAP": {
    "object": "evetis_ref.BAK_20260904_REF_SKU_CHANNEL_MAP",
@@ -2004,7 +2365,13 @@
    "partitioned_by": null,
    "clustered_by": [],
    "depends_on": [],
-   "consumed_by": []
+   "consumed_by": [],
+   "external_readers": {
+    "human_or_script": {
+     "queries": 5,
+     "last_read": "2026-09-17"
+    }
+   }
   },
   "evetis_ref.BAK_20260904_REF_SKU_COGS_HISTORY": {
    "object": "evetis_ref.BAK_20260904_REF_SKU_COGS_HISTORY",
@@ -2045,7 +2412,13 @@
    "partitioned_by": null,
    "clustered_by": [],
    "depends_on": [],
-   "consumed_by": []
+   "consumed_by": [],
+   "external_readers": {
+    "human_or_script": {
+     "queries": 11,
+     "last_read": "2026-09-17"
+    }
+   }
   },
   "evetis_ref.CT_ACTION_STATUS_LOG": {
    "object": "evetis_ref.CT_ACTION_STATUS_LOG",
@@ -2069,7 +2442,17 @@
    "partitioned_by": null,
    "clustered_by": [],
    "depends_on": [],
-   "consumed_by": []
+   "consumed_by": [],
+   "external_readers": {
+    "metabase": {
+     "queries": 13,
+     "last_read": "2026-09-11"
+    },
+    "human_or_script": {
+     "queries": 1,
+     "last_read": "2026-09-10"
+    }
+   }
   },
   "evetis_ref.CT_ACTUAL_DAILY": {
    "object": "evetis_ref.CT_ACTUAL_DAILY",
@@ -2116,7 +2499,13 @@
    "consumed_by": [
     "wb_mart.V_CT_ACTUAL_DAILY",
     "wb_mart.V_CT_FRESHNESS"
-   ]
+   ],
+   "external_readers": {
+    "human_or_script": {
+     "queries": 18,
+     "last_read": "2026-09-21"
+    }
+   }
   },
   "evetis_ref.CT_BUNDLE_PLAN": {
    "object": "evetis_ref.CT_BUNDLE_PLAN",
@@ -2148,7 +2537,13 @@
    "depends_on": [],
    "consumed_by": [
     "wb_mart.V_CT_BUNDLE_STATUS"
-   ]
+   ],
+   "external_readers": {
+    "human_or_script": {
+     "queries": 6,
+     "last_read": "2026-09-17"
+    }
+   }
   },
   "evetis_ref.CT_CONFIG": {
    "object": "evetis_ref.CT_CONFIG",
@@ -2173,7 +2568,17 @@
    "consumed_by": [
     "wb_mart.V_CT_ACTION_QUEUE",
     "wb_mart.V_CT_REFRESH_STATUS"
-   ]
+   ],
+   "external_readers": {
+    "service_account": {
+     "queries": 50,
+     "last_read": "2026-09-21"
+    },
+    "human_or_script": {
+     "queries": 13,
+     "last_read": "2026-09-21"
+    }
+   }
   },
   "evetis_ref.CT_DAILY_CURVE": {
    "object": "evetis_ref.CT_DAILY_CURVE",
@@ -2199,7 +2604,13 @@
    "partitioned_by": null,
    "clustered_by": [],
    "depends_on": [],
-   "consumed_by": []
+   "consumed_by": [],
+   "external_readers": {
+    "human_or_script": {
+     "queries": 8,
+     "last_read": "2026-09-18"
+    }
+   }
   },
   "evetis_ref.CT_EXPIRY_BATCH": {
    "object": "evetis_ref.CT_EXPIRY_BATCH",
@@ -2236,7 +2647,13 @@
     "evetis_ops.V_OPS_SUPPLY_PLAN",
     "wb_mart.V_CT_CASH_CONVERSION",
     "wb_mart.V_CT_INVENTORY_TRUTH_LIVE"
-   ]
+   ],
+   "external_readers": {
+    "human_or_script": {
+     "queries": 9,
+     "last_read": "2026-09-17"
+    }
+   }
   },
   "evetis_ref.CT_INVENTORY_SNAPSHOT_DAILY": {
    "object": "evetis_ref.CT_INVENTORY_SNAPSHOT_DAILY",
@@ -2319,7 +2736,13 @@
    "consumed_by": [
     "wb_mart.V_CT_FRESHNESS",
     "wb_mart.V_CT_INVENTORY_TRUTH"
-   ]
+   ],
+   "external_readers": {
+    "human_or_script": {
+     "queries": 6,
+     "last_read": "2026-09-19"
+    }
+   }
   },
   "evetis_ref.CT_OPEX": {
    "object": "evetis_ref.CT_OPEX",
@@ -2347,7 +2770,13 @@
    "depends_on": [],
    "consumed_by": [
     "wb_mart.V_CT_CASH_CONVERSION"
-   ]
+   ],
+   "external_readers": {
+    "human_or_script": {
+     "queries": 10,
+     "last_read": "2026-09-21"
+    }
+   }
   },
   "evetis_ref.CT_OWNER_ACTION_QUEUE": {
    "object": "evetis_ref.CT_OWNER_ACTION_QUEUE",
@@ -2391,7 +2820,17 @@
    "depends_on": [],
    "consumed_by": [
     "wb_mart.V_CT_ACTION_QUEUE"
-   ]
+   ],
+   "external_readers": {
+    "service_account": {
+     "queries": 86,
+     "last_read": "2026-09-21"
+    },
+    "human_or_script": {
+     "queries": 30,
+     "last_read": "2026-09-21"
+    }
+   }
   },
   "evetis_ref.CT_PLAN_VERSION": {
    "object": "evetis_ref.CT_PLAN_VERSION",
@@ -2436,7 +2875,17 @@
     "wb_mart.V_CT_BUNDLE_STATUS",
     "wb_mart.V_CT_CASH_CONVERSION",
     "wb_mart.V_CT_PLAN_ACTIVE"
-   ]
+   ],
+   "external_readers": {
+    "human_or_script": {
+     "queries": 13,
+     "last_read": "2026-09-21"
+    },
+    "service_account": {
+     "queries": 50,
+     "last_read": "2026-09-21"
+    }
+   }
   },
   "evetis_ref.CT_REFRESH_LOG": {
    "object": "evetis_ref.CT_REFRESH_LOG",
@@ -2455,16 +2904,30 @@
     "message STRING NULL",
     "duration_ms INT64 NULL"
    ],
-   "row_count": 211,
-   "size_bytes": 38243,
-   "last_modified": "2026-09-21T04:41:14Z",
+   "row_count": 212,
+   "size_bytes": 38595,
+   "last_modified": "2026-09-21T06:40:11Z",
    "partitioned_by": "DATE(run_ts)",
    "clustered_by": [],
    "depends_on": [],
    "consumed_by": [
     "wb_mart.V_CT_FRESHNESS",
     "wb_mart.V_CT_REFRESH_STATUS"
-   ]
+   ],
+   "external_readers": {
+    "service_account": {
+     "queries": 50,
+     "last_read": "2026-09-21"
+    },
+    "human_or_script": {
+     "queries": 68,
+     "last_read": "2026-09-21"
+    },
+    "metabase": {
+     "queries": 13,
+     "last_read": "2026-09-11"
+    }
+   }
   },
   "evetis_ref.CT_SEASON_PLAN": {
    "object": "evetis_ref.CT_SEASON_PLAN",
@@ -2511,7 +2974,13 @@
    "depends_on": [],
    "consumed_by": [
     "wb_mart.V_CT_PLAN_ACTIVE"
-   ]
+   ],
+   "external_readers": {
+    "human_or_script": {
+     "queries": 20,
+     "last_read": "2026-09-21"
+    }
+   }
   },
   "evetis_ref.CT_SEASON_PLAN_MONTHLY": {
    "object": "evetis_ref.CT_SEASON_PLAN_MONTHLY",
@@ -2547,7 +3016,13 @@
    "partitioned_by": null,
    "clustered_by": [],
    "depends_on": [],
-   "consumed_by": []
+   "consumed_by": [],
+   "external_readers": {
+    "human_or_script": {
+     "queries": 11,
+     "last_read": "2026-09-21"
+    }
+   }
   },
   "evetis_ref.CT_STOCK_SNAPSHOT": {
    "object": "evetis_ref.CT_STOCK_SNAPSHOT",
@@ -2590,7 +3065,17 @@
     "wb_mart.V_CT_FRESHNESS",
     "wb_mart.V_CT_INVENTORY_TRUTH_LIVE",
     "wb_mart.V_CT_SUPPLY_FLOW"
-   ]
+   ],
+   "external_readers": {
+    "service_account": {
+     "queries": 50,
+     "last_read": "2026-09-21"
+    },
+    "human_or_script": {
+     "queries": 25,
+     "last_read": "2026-09-21"
+    }
+   }
   },
   "evetis_ref.REF_BUNDLE_COMPONENTS": {
    "object": "evetis_ref.REF_BUNDLE_COMPONENTS",
@@ -2629,7 +3114,13 @@
     "evetis_ops.V_OPS_BOM",
     "evetis_ref.V_BUNDLE_COGS_DERIVED",
     "wb_mart.V_CT_BOM_CURRENT"
-   ]
+   ],
+   "external_readers": {
+    "human_or_script": {
+     "queries": 56,
+     "last_read": "2026-09-21"
+    }
+   }
   },
   "evetis_ref.REF_COST_ADDITIONAL_LANDED": {
    "object": "evetis_ref.REF_COST_ADDITIONAL_LANDED",
@@ -2668,7 +3159,13 @@
    "depends_on": [],
    "consumed_by": [
     "evetis_ref.V_PRODUCT_COGS_EFFECTIVE"
-   ]
+   ],
+   "external_readers": {
+    "human_or_script": {
+     "queries": 15,
+     "last_read": "2026-09-17"
+    }
+   }
   },
   "evetis_ref.REF_COST_BATCH": {
    "object": "evetis_ref.REF_COST_BATCH",
@@ -2703,7 +3200,13 @@
    "depends_on": [],
    "consumed_by": [
     "evetis_ref.V_PRODUCT_COGS_EFFECTIVE"
-   ]
+   ],
+   "external_readers": {
+    "human_or_script": {
+     "queries": 21,
+     "last_read": "2026-09-17"
+    }
+   }
   },
   "evetis_ref.REF_COST_BATCH_SKU": {
    "object": "evetis_ref.REF_COST_BATCH_SKU",
@@ -2737,7 +3240,13 @@
    "depends_on": [],
    "consumed_by": [
     "evetis_ref.V_PRODUCT_COGS_EFFECTIVE"
-   ]
+   ],
+   "external_readers": {
+    "human_or_script": {
+     "queries": 16,
+     "last_read": "2026-09-17"
+    }
+   }
   },
   "evetis_ref.REF_MARKETPLACE_COMMISSION_COMPONENT": {
    "object": "evetis_ref.REF_MARKETPLACE_COMMISSION_COMPONENT",
@@ -2771,7 +3280,13 @@
    "depends_on": [],
    "consumed_by": [
     "wb_mart.V_WB_SKU_COST_INPUTS"
-   ]
+   ],
+   "external_readers": {
+    "human_or_script": {
+     "queries": 1,
+     "last_read": "2026-09-14"
+    }
+   }
   },
   "evetis_ref.REF_PRODUCT_MASTER": {
    "object": "evetis_ref.REF_PRODUCT_MASTER",
@@ -2819,7 +3334,17 @@
     "wb_mart.V_CT_BUNDLE_STATUS",
     "wb_mart.V_CT_INVENTORY_TRUTH_LIVE",
     "wb_mart.V_CT_SKU_CONTROL"
-   ]
+   ],
+   "external_readers": {
+    "human_or_script": {
+     "queries": 115,
+     "last_read": "2026-09-21"
+    },
+    "metabase": {
+     "queries": 110,
+     "last_read": "2026-09-11"
+    }
+   }
   },
   "evetis_ref.REF_SKU_CHANNEL_MAP": {
    "object": "evetis_ref.REF_SKU_CHANNEL_MAP",
@@ -2866,7 +3391,13 @@
     "wb_mart.V_CT_BUNDLE_STATUS",
     "wb_mart.V_CT_INVENTORY_TRUTH_LIVE",
     "wb_mart.V_CT_SUPPLY_FLOW"
-   ]
+   ],
+   "external_readers": {
+    "human_or_script": {
+     "queries": 408,
+     "last_read": "2026-09-21"
+    }
+   }
   },
   "evetis_ref.REF_SKU_COGS_HISTORY": {
    "object": "evetis_ref.REF_SKU_COGS_HISTORY",
@@ -2910,7 +3441,13 @@
    "consumed_by": [
     "evetis_ref.V_BUNDLE_COGS_DERIVED",
     "evetis_ref.V_PRODUCT_COGS_EFFECTIVE"
-   ]
+   ],
+   "external_readers": {
+    "human_or_script": {
+     "queries": 51,
+     "last_read": "2026-09-21"
+    }
+   }
   },
   "evetis_ref.REF_WB_COMMISSION_HISTORY": {
    "object": "evetis_ref.REF_WB_COMMISSION_HISTORY",
@@ -2940,7 +3477,13 @@
    "partitioned_by": null,
    "clustered_by": [],
    "depends_on": [],
-   "consumed_by": []
+   "consumed_by": [],
+   "external_readers": {
+    "human_or_script": {
+     "queries": 1,
+     "last_read": "2026-09-10"
+    }
+   }
   },
   "evetis_ref.V_BUNDLE_COGS_DERIVED": {
    "object": "evetis_ref.V_BUNDLE_COGS_DERIVED",
@@ -2968,7 +3511,17 @@
    ],
    "consumed_by": [
     "evetis_ref.V_PRODUCT_COGS_EFFECTIVE"
-   ]
+   ],
+   "external_readers": {
+    "metabase": {
+     "queries": 6,
+     "last_read": "2026-08-27"
+    },
+    "human_or_script": {
+     "queries": 14,
+     "last_read": "2026-09-21"
+    }
+   }
   },
   "evetis_ref.V_PRODUCT_COGS_EFFECTIVE": {
    "object": "evetis_ref.V_PRODUCT_COGS_EFFECTIVE",
@@ -3021,7 +3574,21 @@
     "wb_mart.V_FACT_FINANCE_COGS",
     "wb_mart.V_MART_SKU_DAILY_COGS",
     "wb_mart.V_WB_SKU_COST_INPUTS"
-   ]
+   ],
+   "external_readers": {
+    "human_or_script": {
+     "queries": 184,
+     "last_read": "2026-09-21"
+    },
+    "service_account": {
+     "queries": 42,
+     "last_read": "2026-09-21"
+    },
+    "metabase": {
+     "queries": 20,
+     "last_read": "2026-09-06"
+    }
+   }
   },
   "ozon_mart.FCT_OZON_PNL_MONTHLY": {
    "object": "ozon_mart.FCT_OZON_PNL_MONTHLY",
@@ -3088,7 +3655,17 @@
    ],
    "consumed_by": [
     "ozon_mart.V_OZON_LIFETIME_PNL"
-   ]
+   ],
+   "external_readers": {
+    "metabase": {
+     "queries": 41,
+     "last_read": "2026-09-06"
+    },
+    "human_or_script": {
+     "queries": 48,
+     "last_read": "2026-09-21"
+    }
+   }
   },
   "ozon_mart.FCT_OZON_SKU_PNL_DAILY": {
    "object": "ozon_mart.FCT_OZON_SKU_PNL_DAILY",
@@ -3135,7 +3712,17 @@
    ],
    "consumed_by": [
     "evetis_mart.FACT_SKU_DAILY"
-   ]
+   ],
+   "external_readers": {
+    "metabase": {
+     "queries": 21,
+     "last_read": "2026-09-20"
+    },
+    "human_or_script": {
+     "queries": 63,
+     "last_read": "2026-09-21"
+    }
+   }
   },
   "ozon_mart.FCT_OZON_SKU_PNL_MONTHLY": {
    "object": "ozon_mart.FCT_OZON_SKU_PNL_MONTHLY",
@@ -3187,7 +3774,17 @@
     "ozon_mart.V_OZON_AGENT_DECISION_INPUT",
     "ozon_mart.V_OZON_LIFETIME_PNL",
     "ozon_mart.V_OZON_SKU_UNIT_ECONOMICS_CURRENT"
-   ]
+   ],
+   "external_readers": {
+    "human_or_script": {
+     "queries": 63,
+     "last_read": "2026-09-21"
+    },
+    "metabase": {
+     "queries": 24,
+     "last_read": "2026-09-06"
+    }
+   }
   },
   "ozon_mart.V_OZON_AGENT_DECISION_INPUT": {
    "object": "ozon_mart.V_OZON_AGENT_DECISION_INPUT",
@@ -3265,7 +3862,17 @@
     "ozon_mart.V_OZON_SKU_FORWARD_ECONOMICS_CURRENT",
     "ozon_mart.V_OZON_TARIFF_SOURCE_HEALTH"
    ],
-   "consumed_by": []
+   "consumed_by": [],
+   "external_readers": {
+    "human_or_script": {
+     "queries": 9,
+     "last_read": "2026-09-18"
+    },
+    "metabase": {
+     "queries": 57,
+     "last_read": "2026-09-06"
+    }
+   }
   },
   "ozon_mart.V_OZON_COMMISSION_RECOVERY": {
    "object": "ozon_mart.V_OZON_COMMISSION_RECOVERY",
@@ -3287,7 +3894,13 @@
    "depends_on": [],
    "consumed_by": [
     "ozon_mart.FCT_OZON_SKU_PNL_DAILY"
-   ]
+   ],
+   "external_readers": {
+    "metabase": {
+     "queries": 3,
+     "last_read": "2026-09-20"
+    }
+   }
   },
   "ozon_mart.V_OZON_LIFETIME_PNL": {
    "object": "ozon_mart.V_OZON_LIFETIME_PNL",
@@ -3359,7 +3972,17 @@
     "ozon_mart.V_OZON_MART_FRESHNESS",
     "ozon_raw.RAW_OZON_ADS_EXPENSE_DAILY"
    ],
-   "consumed_by": []
+   "consumed_by": [],
+   "external_readers": {
+    "human_or_script": {
+     "queries": 26,
+     "last_read": "2026-09-18"
+    },
+    "metabase": {
+     "queries": 50,
+     "last_read": "2026-09-06"
+    }
+   }
   },
   "ozon_mart.V_OZON_MART_FRESHNESS": {
    "object": "ozon_mart.V_OZON_MART_FRESHNESS",
@@ -3395,7 +4018,17 @@
    ],
    "consumed_by": [
     "ozon_mart.V_OZON_LIFETIME_PNL"
-   ]
+   ],
+   "external_readers": {
+    "human_or_script": {
+     "queries": 12,
+     "last_read": "2026-09-18"
+    },
+    "metabase": {
+     "queries": 11,
+     "last_read": "2026-09-06"
+    }
+   }
   },
   "ozon_mart.V_OZON_SKU_CURRENT_TARIFF": {
    "object": "ozon_mart.V_OZON_SKU_CURRENT_TARIFF",
@@ -3497,7 +4130,17 @@
     "ozon_mart.V_OZON_SKU_FBO_FBS_COMPARISON_CURRENT",
     "ozon_mart.V_OZON_SKU_FORWARD_ECONOMICS_CURRENT",
     "ozon_mart.V_OZON_TARIFF_SOURCE_HEALTH"
-   ]
+   ],
+   "external_readers": {
+    "metabase": {
+     "queries": 72,
+     "last_read": "2026-09-06"
+    },
+    "human_or_script": {
+     "queries": 16,
+     "last_read": "2026-09-18"
+    }
+   }
   },
   "ozon_mart.V_OZON_SKU_FBO_FBS_COMPARISON_CURRENT": {
    "object": "ozon_mart.V_OZON_SKU_FBO_FBS_COMPARISON_CURRENT",
@@ -3554,7 +4197,17 @@
     "ozon_mart.V_OZON_SKU_CURRENT_TARIFF",
     "ozon_mart.V_OZON_SKU_FORWARD_ECONOMICS_CURRENT"
    ],
-   "consumed_by": []
+   "consumed_by": [],
+   "external_readers": {
+    "metabase": {
+     "queries": 37,
+     "last_read": "2026-09-06"
+    },
+    "human_or_script": {
+     "queries": 9,
+     "last_read": "2026-09-18"
+    }
+   }
   },
   "ozon_mart.V_OZON_SKU_FORWARD_ECONOMICS_CURRENT": {
    "object": "ozon_mart.V_OZON_SKU_FORWARD_ECONOMICS_CURRENT",
@@ -3704,7 +4357,17 @@
    "consumed_by": [
     "ozon_mart.V_OZON_AGENT_DECISION_INPUT",
     "ozon_mart.V_OZON_SKU_FBO_FBS_COMPARISON_CURRENT"
-   ]
+   ],
+   "external_readers": {
+    "metabase": {
+     "queries": 125,
+     "last_read": "2026-09-06"
+    },
+    "human_or_script": {
+     "queries": 24,
+     "last_read": "2026-09-19"
+    }
+   }
   },
   "ozon_mart.V_OZON_SKU_UNIT_ECONOMICS_CURRENT": {
    "object": "ozon_mart.V_OZON_SKU_UNIT_ECONOMICS_CURRENT",
@@ -3762,7 +4425,17 @@
    "depends_on": [
     "ozon_mart.FCT_OZON_SKU_PNL_MONTHLY"
    ],
-   "consumed_by": []
+   "consumed_by": [],
+   "external_readers": {
+    "human_or_script": {
+     "queries": 17,
+     "last_read": "2026-09-18"
+    },
+    "metabase": {
+     "queries": 39,
+     "last_read": "2026-09-06"
+    }
+   }
   },
   "ozon_mart.V_OZON_TARIFF_CHANGE_LOG": {
    "object": "ozon_mart.V_OZON_TARIFF_CHANGE_LOG",
@@ -3795,7 +4468,17 @@
    "depends_on": [
     "ozon_raw.RAW_OZON_PRICE_COMMISSIONS"
    ],
-   "consumed_by": []
+   "consumed_by": [],
+   "external_readers": {
+    "human_or_script": {
+     "queries": 9,
+     "last_read": "2026-09-18"
+    },
+    "metabase": {
+     "queries": 14,
+     "last_read": "2026-09-06"
+    }
+   }
   },
   "ozon_mart.V_OZON_TARIFF_SOURCE_HEALTH": {
    "object": "ozon_mart.V_OZON_TARIFF_SOURCE_HEALTH",
@@ -3853,7 +4536,17 @@
    "consumed_by": [
     "ozon_mart.V_OZON_AGENT_DECISION_INPUT",
     "ozon_mart.V_OZON_SKU_FORWARD_ECONOMICS_CURRENT"
-   ]
+   ],
+   "external_readers": {
+    "human_or_script": {
+     "queries": 17,
+     "last_read": "2026-09-18"
+    },
+    "metabase": {
+     "queries": 32,
+     "last_read": "2026-09-06"
+    }
+   }
   },
   "ozon_raw.OZON_INGESTION_RUNS": {
    "object": "ozon_raw.OZON_INGESTION_RUNS",
@@ -3893,7 +4586,13 @@
    "consumed_by": [
     "ozon_mart.V_OZON_MART_FRESHNESS",
     "ozon_mart.V_OZON_TARIFF_SOURCE_HEALTH"
-   ]
+   ],
+   "external_readers": {
+    "human_or_script": {
+     "queries": 99,
+     "last_read": "2026-09-21"
+    }
+   }
   },
   "ozon_raw.RAW_OZON_ADS_CAMPAIGNS": {
    "object": "ozon_raw.RAW_OZON_ADS_CAMPAIGNS",
@@ -3931,7 +4630,17 @@
     "campaign_id"
    ],
    "depends_on": [],
-   "consumed_by": []
+   "consumed_by": [],
+   "external_readers": {
+    "service_account": {
+     "queries": 48,
+     "last_read": "2026-09-21"
+    },
+    "human_or_script": {
+     "queries": 33,
+     "last_read": "2026-09-20"
+    }
+   }
   },
   "ozon_raw.RAW_OZON_ADS_EXPENSE_DAILY": {
    "object": "ozon_raw.RAW_OZON_ADS_EXPENSE_DAILY",
@@ -3970,7 +4679,17 @@
     "ozon_mart.V_OZON_LIFETIME_PNL",
     "ozon_mart.V_OZON_MART_FRESHNESS",
     "wb_mart.V_CT_FRESHNESS"
-   ]
+   ],
+   "external_readers": {
+    "service_account": {
+     "queries": 58,
+     "last_read": "2026-09-21"
+    },
+    "human_or_script": {
+     "queries": 74,
+     "last_read": "2026-09-20"
+    }
+   }
   },
   "ozon_raw.RAW_OZON_ADS_SKU_DAILY": {
    "object": "ozon_raw.RAW_OZON_ADS_SKU_DAILY",
@@ -4014,7 +4733,17 @@
     "ozon_mart.FCT_OZON_SKU_PNL_MONTHLY",
     "ozon_mart.V_OZON_MART_FRESHNESS",
     "wb_mart.V_CT_ACTUAL_DAILY_LIVE"
-   ]
+   ],
+   "external_readers": {
+    "human_or_script": {
+     "queries": 146,
+     "last_read": "2026-09-21"
+    },
+    "service_account": {
+     "queries": 62,
+     "last_read": "2026-09-21"
+    }
+   }
   },
   "ozon_raw.RAW_OZON_CATALOG": {
    "object": "ozon_raw.RAW_OZON_CATALOG",
@@ -4058,7 +4787,17 @@
    "depends_on": [],
    "consumed_by": [
     "ozon_mart.V_OZON_SKU_CURRENT_TARIFF"
-   ]
+   ],
+   "external_readers": {
+    "human_or_script": {
+     "queries": 70,
+     "last_read": "2026-09-20"
+    },
+    "service_account": {
+     "queries": 52,
+     "last_read": "2026-09-21"
+    }
+   }
   },
   "ozon_raw.RAW_OZON_CLUSTERS": {
    "object": "ozon_raw.RAW_OZON_CLUSTERS",
@@ -4091,7 +4830,17 @@
     "cluster_id"
    ],
    "depends_on": [],
-   "consumed_by": []
+   "consumed_by": [],
+   "external_readers": {
+    "service_account": {
+     "queries": 16,
+     "last_read": "2026-09-21"
+    },
+    "human_or_script": {
+     "queries": 41,
+     "last_read": "2026-09-17"
+    }
+   }
   },
   "ozon_raw.RAW_OZON_FINANCE_ACCRUAL": {
    "object": "ozon_raw.RAW_OZON_FINANCE_ACCRUAL",
@@ -4141,7 +4890,17 @@
     "ozon_mart.V_OZON_MART_FRESHNESS",
     "ozon_mart.V_OZON_SKU_CURRENT_TARIFF",
     "wb_mart.V_CT_ACTUAL_DAILY_LIVE"
-   ]
+   ],
+   "external_readers": {
+    "human_or_script": {
+     "queries": 331,
+     "last_read": "2026-09-21"
+    },
+    "service_account": {
+     "queries": 58,
+     "last_read": "2026-09-21"
+    }
+   }
   },
   "ozon_raw.RAW_OZON_POSTINGS_FBO": {
    "object": "ozon_raw.RAW_OZON_POSTINGS_FBO",
@@ -4197,7 +4956,17 @@
     "wb_mart.V_CT_ACTUAL_DAILY_LIVE",
     "wb_mart.V_CT_FRESHNESS",
     "wb_mart.V_CT_PLAN_VS_ACTUAL_DAILY"
-   ]
+   ],
+   "external_readers": {
+    "service_account": {
+     "queries": 170,
+     "last_read": "2026-09-21"
+    },
+    "human_or_script": {
+     "queries": 259,
+     "last_read": "2026-09-21"
+    }
+   }
   },
   "ozon_raw.RAW_OZON_PRICES": {
    "object": "ozon_raw.RAW_OZON_PRICES",
@@ -4265,7 +5034,17 @@
    "consumed_by": [
     "ozon_mart.V_OZON_SKU_CURRENT_TARIFF",
     "ozon_mart.V_OZON_TARIFF_SOURCE_HEALTH"
-   ]
+   ],
+   "external_readers": {
+    "service_account": {
+     "queries": 50,
+     "last_read": "2026-09-21"
+    },
+    "human_or_script": {
+     "queries": 102,
+     "last_read": "2026-09-20"
+    }
+   }
   },
   "ozon_raw.RAW_OZON_PRICE_COMMISSIONS": {
    "object": "ozon_raw.RAW_OZON_PRICE_COMMISSIONS",
@@ -4303,7 +5082,17 @@
    "consumed_by": [
     "ozon_mart.V_OZON_TARIFF_CHANGE_LOG",
     "ozon_mart.V_OZON_TARIFF_SOURCE_HEALTH"
-   ]
+   ],
+   "external_readers": {
+    "service_account": {
+     "queries": 34,
+     "last_read": "2026-09-21"
+    },
+    "human_or_script": {
+     "queries": 57,
+     "last_read": "2026-09-20"
+    }
+   }
   },
   "ozon_raw.RAW_OZON_SELLER_INFO": {
    "object": "ozon_raw.RAW_OZON_SELLER_INFO",
@@ -4343,7 +5132,17 @@
    "consumed_by": [
     "ozon_mart.V_OZON_SKU_CURRENT_TARIFF",
     "ozon_mart.V_OZON_TARIFF_SOURCE_HEALTH"
-   ]
+   ],
+   "external_readers": {
+    "human_or_script": {
+     "queries": 33,
+     "last_read": "2026-09-20"
+    },
+    "service_account": {
+     "queries": 36,
+     "last_read": "2026-09-21"
+    }
+   }
   },
   "ozon_raw.RAW_OZON_STOCKS": {
    "object": "ozon_raw.RAW_OZON_STOCKS",
@@ -4387,7 +5186,17 @@
     "wb_mart.V_CT_BUNDLE_STATUS",
     "wb_mart.V_CT_FRESHNESS",
     "wb_mart.V_CT_INVENTORY_TRUTH_LIVE"
-   ]
+   ],
+   "external_readers": {
+    "human_or_script": {
+     "queries": 121,
+     "last_read": "2026-09-21"
+    },
+    "service_account": {
+     "queries": 168,
+     "last_read": "2026-09-21"
+    }
+   }
   },
   "ozon_raw.RAW_OZON_SUPPLIES": {
    "object": "ozon_raw.RAW_OZON_SUPPLIES",
@@ -4424,7 +5233,17 @@
     "storage_warehouse_id"
    ],
    "depends_on": [],
-   "consumed_by": []
+   "consumed_by": [],
+   "external_readers": {
+    "service_account": {
+     "queries": 44,
+     "last_read": "2026-09-21"
+    },
+    "human_or_script": {
+     "queries": 21,
+     "last_read": "2026-09-20"
+    }
+   }
   },
   "ozon_raw.RAW_OZON_SUPPLY_BUNDLES": {
    "object": "ozon_raw.RAW_OZON_SUPPLY_BUNDLES",
@@ -4462,7 +5281,17 @@
    "consumed_by": [
     "evetis_ops.V_OPS_OZON_ORDER_UNITS",
     "wb_mart.V_CT_SUPPLY_FLOW"
-   ]
+   ],
+   "external_readers": {
+    "service_account": {
+     "queries": 44,
+     "last_read": "2026-09-21"
+    },
+    "human_or_script": {
+     "queries": 51,
+     "last_read": "2026-09-20"
+    }
+   }
   },
   "ozon_raw.RAW_OZON_SUPPLY_ORDERS": {
    "object": "ozon_raw.RAW_OZON_SUPPLY_ORDERS",
@@ -4507,7 +5336,17 @@
     "evetis_ops.V_OPS_OZON_ORDER_UNITS",
     "evetis_ops.V_OPS_SHEET_META",
     "wb_mart.V_CT_SUPPLY_FLOW"
-   ]
+   ],
+   "external_readers": {
+    "service_account": {
+     "queries": 94,
+     "last_read": "2026-09-21"
+    },
+    "human_or_script": {
+     "queries": 93,
+     "last_read": "2026-09-20"
+    }
+   }
   },
   "wb_mart.EXECUTIVE_V2_BUILD_LOG": {
    "object": "wb_mart.EXECUTIVE_V2_BUILD_LOG",
@@ -4528,15 +5367,21 @@
     "mart_built_at TIMESTAMP NULL",
     "error_message STRING NULL"
    ],
-   "row_count": 77,
-   "size_bytes": 8072,
-   "last_modified": "2026-09-21T05:11:30Z",
+   "row_count": 78,
+   "size_bytes": 8170,
+   "last_modified": "2026-09-21T06:11:20Z",
    "partitioned_by": null,
    "clustered_by": [],
    "depends_on": [],
    "consumed_by": [
     "wb_mart.V_DASH_EXECUTIVE_V2_DAILY"
-   ]
+   ],
+   "external_readers": {
+    "human_or_script": {
+     "queries": 9,
+     "last_read": "2026-09-18"
+    }
+   }
   },
   "wb_mart.EXECUTIVE_V2_DAILY": {
    "object": "wb_mart.EXECUTIVE_V2_DAILY",
@@ -4623,13 +5468,19 @@
    ],
    "row_count": 747,
    "size_bytes": 439566,
-   "last_modified": "2026-09-21T05:11:26Z",
+   "last_modified": "2026-09-21T06:11:16Z",
    "partitioned_by": null,
    "clustered_by": [],
    "depends_on": [],
    "consumed_by": [
     "wb_mart.V_DASH_EXECUTIVE_V2_DAILY"
-   ]
+   ],
+   "external_readers": {
+    "human_or_script": {
+     "queries": 30,
+     "last_read": "2026-09-20"
+    }
+   }
   },
   "wb_mart.FACT_ADS_COSTS_DAILY": {
    "object": "wb_mart.FACT_ADS_COSTS_DAILY",
@@ -4658,7 +5509,17 @@
    "consumed_by": [
     "wb_mart.V_DASH_FINANCE_CORRECTED_DAILY",
     "wb_mart.V_DATA_FRESHNESS"
-   ]
+   ],
+   "external_readers": {
+    "human_or_script": {
+     "queries": 85,
+     "last_read": "2026-09-21"
+    },
+    "metabase": {
+     "queries": 1,
+     "last_read": "2026-08-26"
+    }
+   }
   },
   "wb_mart.FACT_ADS_COSTS_DAILY__BUILD": {
    "object": "wb_mart.FACT_ADS_COSTS_DAILY__BUILD",
@@ -4684,7 +5545,8 @@
     "advert_id;"
    ],
    "depends_on": [],
-   "consumed_by": []
+   "consumed_by": [],
+   "external_readers": {}
   },
   "wb_mart.FACT_ADS_SKU_DAILY": {
    "object": "wb_mart.FACT_ADS_SKU_DAILY",
@@ -4724,7 +5586,21 @@
     "wb_mart.V_CT_FRESHNESS",
     "wb_mart.V_DASH_COVERAGE_DAILY",
     "wb_mart.V_DATA_FRESHNESS"
-   ]
+   ],
+   "external_readers": {
+    "human_or_script": {
+     "queries": 103,
+     "last_read": "2026-09-21"
+    },
+    "metabase": {
+     "queries": 1,
+     "last_read": "2026-08-26"
+    },
+    "service_account": {
+     "queries": 132,
+     "last_read": "2026-09-21"
+    }
+   }
   },
   "wb_mart.FACT_ADS_SKU_DAILY__BUILD": {
    "object": "wb_mart.FACT_ADS_SKU_DAILY__BUILD",
@@ -4759,7 +5635,8 @@
     "advert_id;"
    ],
    "depends_on": [],
-   "consumed_by": []
+   "consumed_by": [],
+   "external_readers": {}
   },
   "wb_mart.FACT_FINANCE": {
    "object": "wb_mart.FACT_FINANCE",
@@ -4819,7 +5696,21 @@
     "wb_mart.V_WB_DEDUCTIONS_CLASSIFIED",
     "wb_mart.V_WB_FINANCE_AMOUNTS_LONG",
     "wb_mart.V_WB_SKU_COST_INPUTS"
-   ]
+   ],
+   "external_readers": {
+    "human_or_script": {
+     "queries": 144,
+     "last_read": "2026-09-21"
+    },
+    "metabase": {
+     "queries": 1,
+     "last_read": "2026-08-26"
+    },
+    "service_account": {
+     "queries": 88,
+     "last_read": "2026-09-21"
+    }
+   }
   },
   "wb_mart.FACT_FINANCE__BUILD": {
    "object": "wb_mart.FACT_FINANCE__BUILD",
@@ -4871,7 +5762,8 @@
     "operation_type_normalized;"
    ],
    "depends_on": [],
-   "consumed_by": []
+   "consumed_by": [],
+   "external_readers": {}
   },
   "wb_mart.FACT_ORDERS": {
    "object": "wb_mart.FACT_ORDERS",
@@ -4919,7 +5811,21 @@
     "wb_mart.V_UNITKA_RECON_FACT",
     "wb_mart.V_UNITKA_RECON_INTEGRITY",
     "wb_mart.V_UNITKA_SOURCE_FRESHNESS"
-   ]
+   ],
+   "external_readers": {
+    "human_or_script": {
+     "queries": 318,
+     "last_read": "2026-09-21"
+    },
+    "metabase": {
+     "queries": 1,
+     "last_read": "2026-08-26"
+    },
+    "service_account": {
+     "queries": 88,
+     "last_read": "2026-09-21"
+    }
+   }
   },
   "wb_mart.FACT_ORDERS__BUILD": {
    "object": "wb_mart.FACT_ORDERS__BUILD",
@@ -4958,7 +5864,8 @@
     "internal_sku;"
    ],
    "depends_on": [],
-   "consumed_by": []
+   "consumed_by": [],
+   "external_readers": {}
   },
   "wb_mart.FACT_SALES": {
    "object": "wb_mart.FACT_SALES",
@@ -5008,7 +5915,21 @@
     "wb_mart.V_DASH_KPI_DAILY",
     "wb_mart.V_DATA_FRESHNESS",
     "wb_mart.V_MART_SKU_DAILY_COGS"
-   ]
+   ],
+   "external_readers": {
+    "service_account": {
+     "queries": 88,
+     "last_read": "2026-09-21"
+    },
+    "metabase": {
+     "queries": 1,
+     "last_read": "2026-08-26"
+    },
+    "human_or_script": {
+     "queries": 122,
+     "last_read": "2026-09-21"
+    }
+   }
   },
   "wb_mart.FACT_SALES__BUILD": {
    "object": "wb_mart.FACT_SALES__BUILD",
@@ -5053,7 +5974,8 @@
     "is_return;"
    ],
    "depends_on": [],
-   "consumed_by": []
+   "consumed_by": [],
+   "external_readers": {}
   },
   "wb_mart.FACT_STOCKS_SNAPSHOT": {
    "object": "wb_mart.FACT_STOCKS_SNAPSHOT",
@@ -5093,7 +6015,17 @@
     "wb_mart.V_UNITKA_DAILY_FACT",
     "wb_mart.V_UNITKA_RECON_FACT",
     "wb_mart.V_UNITKA_SOURCE_FRESHNESS"
-   ]
+   ],
+   "external_readers": {
+    "human_or_script": {
+     "queries": 168,
+     "last_read": "2026-09-20"
+    },
+    "metabase": {
+     "queries": 1,
+     "last_read": "2026-08-26"
+    }
+   }
   },
   "wb_mart.FACT_STOCKS_SNAPSHOT_BAK_20260817": {
    "object": "wb_mart.FACT_STOCKS_SNAPSHOT_BAK_20260817",
@@ -5123,7 +6055,8 @@
    "partitioned_by": null,
    "clustered_by": [],
    "depends_on": [],
-   "consumed_by": []
+   "consumed_by": [],
+   "external_readers": {}
   },
   "wb_mart.FACT_STOCKS_SNAPSHOT__BUILD": {
    "object": "wb_mart.FACT_STOCKS_SNAPSHOT__BUILD",
@@ -5157,7 +6090,8 @@
     "warehouse_key;"
    ],
    "depends_on": [],
-   "consumed_by": []
+   "consumed_by": [],
+   "external_readers": {}
   },
   "wb_mart.MART_RUNS": {
    "object": "wb_mart.MART_RUNS",
@@ -5197,7 +6131,17 @@
    "consumed_by": [
     "wb_mart.V_MART_RUN_LOG",
     "wb_mart.V_UNITKA_SOURCE_FRESHNESS"
-   ]
+   ],
+   "external_readers": {
+    "service_account": {
+     "queries": 409,
+     "last_read": "2026-09-21"
+    },
+    "human_or_script": {
+     "queries": 42,
+     "last_read": "2026-09-17"
+    }
+   }
   },
   "wb_mart.MART_SKU_DAILY": {
    "object": "wb_mart.MART_SKU_DAILY",
@@ -5288,7 +6232,21 @@
     "wb_mart.V_MART_SKU_DAILY_COGS",
     "wb_mart.V_UNITKA_DAILY_FACT",
     "wb_mart.V_UNITKA_RECON_FACT"
-   ]
+   ],
+   "external_readers": {
+    "metabase": {
+     "queries": 1,
+     "last_read": "2026-08-26"
+    },
+    "service_account": {
+     "queries": 265,
+     "last_read": "2026-09-21"
+    },
+    "human_or_script": {
+     "queries": 303,
+     "last_read": "2026-09-21"
+    }
+   }
   },
   "wb_mart.REF_COST_MAP": {
    "object": "wb_mart.REF_COST_MAP",
@@ -5318,7 +6276,13 @@
    "depends_on": [],
    "consumed_by": [
     "wb_mart.V_WB_FINANCE_AMOUNTS_LONG_MAPPED"
-   ]
+   ],
+   "external_readers": {
+    "human_or_script": {
+     "queries": 79,
+     "last_read": "2026-09-21"
+    }
+   }
   },
   "wb_mart.SKU_PERFORMANCE_V2_BUILD_LOG": {
    "object": "wb_mart.SKU_PERFORMANCE_V2_BUILD_LOG",
@@ -5339,15 +6303,21 @@
     "mart_built_at TIMESTAMP NULL",
     "error_message STRING NULL"
    ],
-   "row_count": 57,
-   "size_bytes": 5910,
-   "last_modified": "2026-09-21T05:21:07Z",
+   "row_count": 58,
+   "size_bytes": 6008,
+   "last_modified": "2026-09-21T06:20:54Z",
    "partitioned_by": null,
    "clustered_by": [],
    "depends_on": [],
    "consumed_by": [
     "wb_mart.V_DASH_SKU_PERFORMANCE_V2_DAILY"
-   ]
+   ],
+   "external_readers": {
+    "human_or_script": {
+     "queries": 34,
+     "last_read": "2026-09-18"
+    }
+   }
   },
   "wb_mart.SKU_PERFORMANCE_V2_CONFIG": {
    "object": "wb_mart.SKU_PERFORMANCE_V2_CONFIG",
@@ -5369,7 +6339,8 @@
    "partitioned_by": null,
    "clustered_by": [],
    "depends_on": [],
-   "consumed_by": []
+   "consumed_by": [],
+   "external_readers": {}
   },
   "wb_mart.SKU_PERFORMANCE_V2_DAILY": {
    "object": "wb_mart.SKU_PERFORMANCE_V2_DAILY",
@@ -5455,7 +6426,7 @@
    ],
    "row_count": 8102,
    "size_bytes": 5438788,
-   "last_modified": "2026-09-21T05:21:04Z",
+   "last_modified": "2026-09-21T06:20:50Z",
    "partitioned_by": null,
    "clustered_by": [
     "nm_id",
@@ -5466,7 +6437,13 @@
     "evetis_mart.FACT_SKU_DAILY",
     "wb_mart.V_DASH_SKU_PERFORMANCE_V2_DAILY",
     "wb_mart.V_SKU_PERFORMANCE_V2_EXEC_BRIDGE_DAILY"
-   ]
+   ],
+   "external_readers": {
+    "human_or_script": {
+     "queries": 115,
+     "last_read": "2026-09-21"
+    }
+   }
   },
   "wb_mart.UNITKA_COGS_EFFECTIVE": {
    "object": "wb_mart.UNITKA_COGS_EFFECTIVE",
@@ -5494,7 +6471,7 @@
    ],
    "row_count": 38,
    "size_bytes": 10494,
-   "last_modified": "2026-09-21T05:50:26Z",
+   "last_modified": "2026-09-21T06:50:38Z",
    "partitioned_by": null,
    "clustered_by": [
     "internal_sku"
@@ -5503,7 +6480,13 @@
    "consumed_by": [
     "wb_mart.V_UNITKA_COGS_CANONICAL",
     "wb_mart.V_UNITKA_RECON_COGS_CANONICAL"
-   ]
+   ],
+   "external_readers": {
+    "human_or_script": {
+     "queries": 27,
+     "last_read": "2026-09-20"
+    }
+   }
   },
   "wb_mart.UNITKA_COGS_PUBLISH_LOG": {
    "object": "wb_mart.UNITKA_COGS_PUBLISH_LOG",
@@ -5523,13 +6506,19 @@
     "source_fingerprint STRING NULL",
     "error_message STRING NULL"
    ],
-   "row_count": 41,
-   "size_bytes": 6068,
-   "last_modified": "2026-09-21T05:50:29Z",
+   "row_count": 42,
+   "size_bytes": 6216,
+   "last_modified": "2026-09-21T06:50:42Z",
    "partitioned_by": null,
    "clustered_by": [],
    "depends_on": [],
-   "consumed_by": []
+   "consumed_by": [],
+   "external_readers": {
+    "human_or_script": {
+     "queries": 10,
+     "last_read": "2026-09-18"
+    }
+   }
   },
   "wb_mart.V_ADS_CAMPAIGN_DAILY": {
    "object": "wb_mart.V_ADS_CAMPAIGN_DAILY",
@@ -5582,7 +6571,17 @@
     "wb_raw.V_ADV_CAMPAIGN_CONFIG_DAILY",
     "wb_raw.V_ADV_CAMPAIGN_STATS"
    ],
-   "consumed_by": []
+   "consumed_by": [],
+   "external_readers": {
+    "human_or_script": {
+     "queries": 15,
+     "last_read": "2026-09-15"
+    },
+    "metabase": {
+     "queries": 47,
+     "last_read": "2026-09-12"
+    }
+   }
   },
   "wb_mart.V_ADS_FUNNEL_QUERY_28D": {
    "object": "wb_mart.V_ADS_FUNNEL_QUERY_28D",
@@ -5700,7 +6699,17 @@
     "wb_mart.V_ADS_FUNNEL_SIGNALS",
     "wb_mart.V_ADS_FUNNEL_SKU_28D",
     "wb_mart.V_ADS_SCREEN_QUERY"
-   ]
+   ],
+   "external_readers": {
+    "human_or_script": {
+     "queries": 2,
+     "last_read": "2026-09-06"
+    },
+    "metabase": {
+     "queries": 93,
+     "last_read": "2026-08-26"
+    }
+   }
   },
   "wb_mart.V_ADS_FUNNEL_QUERY_90D": {
    "object": "wb_mart.V_ADS_FUNNEL_QUERY_90D",
@@ -5817,7 +6826,17 @@
    "consumed_by": [
     "wb_mart.V_ADS_FUNNEL_SIGNALS",
     "wb_mart.V_ADS_SCREEN_QUERY"
-   ]
+   ],
+   "external_readers": {
+    "human_or_script": {
+     "queries": 2,
+     "last_read": "2026-09-06"
+    },
+    "metabase": {
+     "queries": 93,
+     "last_read": "2026-08-26"
+    }
+   }
   },
   "wb_mart.V_ADS_FUNNEL_QUERY_DAILY": {
    "object": "wb_mart.V_ADS_FUNNEL_QUERY_DAILY",
@@ -5857,7 +6876,17 @@
    "consumed_by": [
     "wb_mart.V_ADS_FUNNEL_QUERY_28D",
     "wb_mart.V_ADS_FUNNEL_QUERY_90D"
-   ]
+   ],
+   "external_readers": {
+    "human_or_script": {
+     "queries": 22,
+     "last_read": "2026-09-15"
+    },
+    "metabase": {
+     "queries": 31,
+     "last_read": "2026-09-12"
+    }
+   }
   },
   "wb_mart.V_ADS_FUNNEL_SIGNALS": {
    "object": "wb_mart.V_ADS_FUNNEL_SIGNALS",
@@ -5921,7 +6950,17 @@
    ],
    "consumed_by": [
     "wb_mart.V_ADS_SCREEN_QUERY"
-   ]
+   ],
+   "external_readers": {
+    "human_or_script": {
+     "queries": 3,
+     "last_read": "2026-09-06"
+    },
+    "metabase": {
+     "queries": 42,
+     "last_read": "2026-08-26"
+    }
+   }
   },
   "wb_mart.V_ADS_FUNNEL_SKU_28D": {
    "object": "wb_mart.V_ADS_FUNNEL_SKU_28D",
@@ -5977,7 +7016,17 @@
    ],
    "consumed_by": [
     "wb_mart.V_ADS_SCREEN_SKU"
-   ]
+   ],
+   "external_readers": {
+    "human_or_script": {
+     "queries": 10,
+     "last_read": "2026-09-06"
+    },
+    "metabase": {
+     "queries": 34,
+     "last_read": "2026-08-26"
+    }
+   }
   },
   "wb_mart.V_ADS_SCREEN_QUERY": {
    "object": "wb_mart.V_ADS_SCREEN_QUERY",
@@ -6079,7 +7128,17 @@
     "wb_mart.V_ADS_FUNNEL_SIGNALS",
     "wb_raw.REF_SKU_MASTER"
    ],
-   "consumed_by": []
+   "consumed_by": [],
+   "external_readers": {
+    "metabase": {
+     "queries": 145,
+     "last_read": "2026-09-12"
+    },
+    "human_or_script": {
+     "queries": 34,
+     "last_read": "2026-09-21"
+    }
+   }
   },
   "wb_mart.V_ADS_SCREEN_SKU": {
    "object": "wb_mart.V_ADS_SCREEN_SKU",
@@ -6148,7 +7207,17 @@
     "wb_mart.V_ADS_FUNNEL_SKU_28D",
     "wb_raw.REF_SKU_MASTER"
    ],
-   "consumed_by": []
+   "consumed_by": [],
+   "external_readers": {
+    "metabase": {
+     "queries": 50,
+     "last_read": "2026-08-26"
+    },
+    "human_or_script": {
+     "queries": 8,
+     "last_read": "2026-09-21"
+    }
+   }
   },
   "wb_mart.V_ADS_SKU_ECONOMIC_LIMITS": {
    "object": "wb_mart.V_ADS_SKU_ECONOMIC_LIMITS",
@@ -6200,7 +7269,17 @@
    "consumed_by": [
     "wb_mart.V_CT_ACTION_CANDIDATES",
     "wb_mart.V_CT_ATTENTION"
-   ]
+   ],
+   "external_readers": {
+    "human_or_script": {
+     "queries": 17,
+     "last_read": "2026-09-20"
+    },
+    "metabase": {
+     "queries": 28,
+     "last_read": "2026-09-06"
+    }
+   }
   },
   "wb_mart.V_ADVERTISING_RECONCILIATION_DAILY": {
    "object": "wb_mart.V_ADVERTISING_RECONCILIATION_DAILY",
@@ -6243,7 +7322,17 @@
    ],
    "consumed_by": [
     "wb_mart.V_DASH_FINANCE_CORRECTED_DAILY"
-   ]
+   ],
+   "external_readers": {
+    "metabase": {
+     "queries": 22,
+     "last_read": "2026-08-28"
+    },
+    "human_or_script": {
+     "queries": 17,
+     "last_read": "2026-09-21"
+    }
+   }
   },
   "wb_mart.V_CT_ACTION_CANDIDATES": {
    "object": "wb_mart.V_CT_ACTION_CANDIDATES",
@@ -6284,7 +7373,17 @@
     "wb_mart.V_CT_PLAN_VS_ACTUAL_DAILY",
     "wb_mart.V_CT_SUPPLY_NEED"
    ],
-   "consumed_by": []
+   "consumed_by": [],
+   "external_readers": {
+    "human_or_script": {
+     "queries": 3,
+     "last_read": "2026-09-10"
+    },
+    "metabase": {
+     "queries": 16,
+     "last_read": "2026-09-10"
+    }
+   }
   },
   "wb_mart.V_CT_ACTION_QUEUE": {
    "object": "wb_mart.V_CT_ACTION_QUEUE",
@@ -6362,7 +7461,17 @@
    "consumed_by": [
     "wb_mart.V_CT_DAILY_BRIEF_LINES",
     "wb_mart.V_CT_OWNER_HOME"
-   ]
+   ],
+   "external_readers": {
+    "metabase": {
+     "queries": 149,
+     "last_read": "2026-09-11"
+    },
+    "human_or_script": {
+     "queries": 23,
+     "last_read": "2026-09-21"
+    }
+   }
   },
   "wb_mart.V_CT_ACTUAL_DAILY": {
    "object": "wb_mart.V_CT_ACTUAL_DAILY",
@@ -6412,7 +7521,17 @@
     "wb_mart.V_CT_OWNER_HOME",
     "wb_mart.V_CT_PHYSICAL_DAILY",
     "wb_mart.V_CT_PLAN_VS_ACTUAL_DAILY"
-   ]
+   ],
+   "external_readers": {
+    "metabase": {
+     "queries": 23,
+     "last_read": "2026-09-10"
+    },
+    "human_or_script": {
+     "queries": 11,
+     "last_read": "2026-09-21"
+    }
+   }
   },
   "wb_mart.V_CT_ACTUAL_DAILY_LIVE": {
    "object": "wb_mart.V_CT_ACTUAL_DAILY_LIVE",
@@ -6461,7 +7580,17 @@
     "wb_mart.V_DASH_SKU_DAILY",
     "wb_mart.V_MART_SKU_DAILY_COGS"
    ],
-   "consumed_by": []
+   "consumed_by": [],
+   "external_readers": {
+    "metabase": {
+     "queries": 23,
+     "last_read": "2026-09-10"
+    },
+    "human_or_script": {
+     "queries": 3,
+     "last_read": "2026-09-10"
+    }
+   }
   },
   "wb_mart.V_CT_ATTENTION": {
    "object": "wb_mart.V_CT_ATTENTION",
@@ -6503,7 +7632,17 @@
    "consumed_by": [
     "wb_mart.V_CT_DAILY_BRIEF_LINES",
     "wb_mart.V_CT_OWNER_HOME"
-   ]
+   ],
+   "external_readers": {
+    "metabase": {
+     "queries": 72,
+     "last_read": "2026-09-11"
+    },
+    "human_or_script": {
+     "queries": 5,
+     "last_read": "2026-09-21"
+    }
+   }
   },
   "wb_mart.V_CT_BOM_CURRENT": {
    "object": "wb_mart.V_CT_BOM_CURRENT",
@@ -6537,7 +7676,17 @@
     "wb_mart.V_CT_PHYSICAL_DAILY",
     "wb_mart.V_CT_SUPPLY_FLOW",
     "wb_mart.V_CT_SUPPLY_NEED"
-   ]
+   ],
+   "external_readers": {
+    "human_or_script": {
+     "queries": 11,
+     "last_read": "2026-09-21"
+    },
+    "metabase": {
+     "queries": 6,
+     "last_read": "2026-09-10"
+    }
+   }
   },
   "wb_mart.V_CT_BUNDLE_STATUS": {
    "object": "wb_mart.V_CT_BUNDLE_STATUS",
@@ -6612,7 +7761,17 @@
     "wb_mart.V_CT_ATTENTION",
     "wb_mart.V_CT_OWNER_HOME",
     "wb_mart.V_CT_SKU_CONTROL"
-   ]
+   ],
+   "external_readers": {
+    "metabase": {
+     "queries": 88,
+     "last_read": "2026-09-11"
+    },
+    "human_or_script": {
+     "queries": 1,
+     "last_read": "2026-09-10"
+    }
+   }
   },
   "wb_mart.V_CT_CASH_CONVERSION": {
    "object": "wb_mart.V_CT_CASH_CONVERSION",
@@ -6702,7 +7861,17 @@
    ],
    "consumed_by": [
     "wb_mart.V_CT_OWNER_HOME"
-   ]
+   ],
+   "external_readers": {
+    "human_or_script": {
+     "queries": 3,
+     "last_read": "2026-09-21"
+    },
+    "metabase": {
+     "queries": 62,
+     "last_read": "2026-09-10"
+    }
+   }
   },
   "wb_mart.V_CT_DAILY_BRIEF": {
    "object": "wb_mart.V_CT_DAILY_BRIEF",
@@ -6724,7 +7893,17 @@
    "depends_on": [
     "wb_mart.V_CT_DAILY_BRIEF_LINES"
    ],
-   "consumed_by": []
+   "consumed_by": [],
+   "external_readers": {
+    "human_or_script": {
+     "queries": 3,
+     "last_read": "2026-09-21"
+    },
+    "metabase": {
+     "queries": 3,
+     "last_read": "2026-09-10"
+    }
+   }
   },
   "wb_mart.V_CT_DAILY_BRIEF_LINES": {
    "object": "wb_mart.V_CT_DAILY_BRIEF_LINES",
@@ -6754,7 +7933,17 @@
    ],
    "consumed_by": [
     "wb_mart.V_CT_DAILY_BRIEF"
-   ]
+   ],
+   "external_readers": {
+    "metabase": {
+     "queries": 46,
+     "last_read": "2026-09-11"
+    },
+    "human_or_script": {
+     "queries": 10,
+     "last_read": "2026-09-21"
+    }
+   }
   },
   "wb_mart.V_CT_FRESHNESS": {
    "object": "wb_mart.V_CT_FRESHNESS",
@@ -6799,7 +7988,17 @@
     "wb_mart.V_CT_ACTION_CANDIDATES",
     "wb_mart.V_CT_ATTENTION",
     "wb_mart.V_CT_OWNER_HOME"
-   ]
+   ],
+   "external_readers": {
+    "metabase": {
+     "queries": 90,
+     "last_read": "2026-09-12"
+    },
+    "human_or_script": {
+     "queries": 1,
+     "last_read": "2026-09-21"
+    }
+   }
   },
   "wb_mart.V_CT_HAND_CREAM_CONTROL": {
    "object": "wb_mart.V_CT_HAND_CREAM_CONTROL",
@@ -6858,7 +8057,13 @@
    ],
    "consumed_by": [
     "wb_mart.V_CT_OWNER_HOME"
-   ]
+   ],
+   "external_readers": {
+    "metabase": {
+     "queries": 125,
+     "last_read": "2026-09-10"
+    }
+   }
   },
   "wb_mart.V_CT_INVENTORY_TRUTH": {
    "object": "wb_mart.V_CT_INVENTORY_TRUTH",
@@ -6946,7 +8151,17 @@
     "wb_mart.V_CT_CASH_CONVERSION",
     "wb_mart.V_CT_HAND_CREAM_CONTROL",
     "wb_mart.V_CT_SUPPLY_NEED"
-   ]
+   ],
+   "external_readers": {
+    "human_or_script": {
+     "queries": 35,
+     "last_read": "2026-09-21"
+    },
+    "metabase": {
+     "queries": 102,
+     "last_read": "2026-09-11"
+    }
+   }
   },
   "wb_mart.V_CT_INVENTORY_TRUTH_LIVE": {
    "object": "wb_mart.V_CT_INVENTORY_TRUTH_LIVE",
@@ -7034,7 +8249,13 @@
     "wb_mart.V_CT_SUPPLY_FLOW",
     "wb_raw.V_WB_STOCKS_T5_CURRENT"
    ],
-   "consumed_by": []
+   "consumed_by": [],
+   "external_readers": {
+    "metabase": {
+     "queries": 59,
+     "last_read": "2026-09-10"
+    }
+   }
   },
   "wb_mart.V_CT_OWNER_HOME": {
    "object": "wb_mart.V_CT_OWNER_HOME",
@@ -7246,7 +8467,17 @@
    ],
    "consumed_by": [
     "wb_mart.V_CT_DAILY_BRIEF_LINES"
-   ]
+   ],
+   "external_readers": {
+    "metabase": {
+     "queries": 857,
+     "last_read": "2026-09-12"
+    },
+    "human_or_script": {
+     "queries": 23,
+     "last_read": "2026-09-21"
+    }
+   }
   },
   "wb_mart.V_CT_PHYSICAL_DAILY": {
    "object": "wb_mart.V_CT_PHYSICAL_DAILY",
@@ -7282,7 +8513,17 @@
     "wb_mart.V_CT_HAND_CREAM_CONTROL",
     "wb_mart.V_CT_INVENTORY_TRUTH_LIVE",
     "wb_mart.V_CT_SUPPLY_NEED"
-   ]
+   ],
+   "external_readers": {
+    "human_or_script": {
+     "queries": 6,
+     "last_read": "2026-09-21"
+    },
+    "metabase": {
+     "queries": 12,
+     "last_read": "2026-09-10"
+    }
+   }
   },
   "wb_mart.V_CT_PLAN_ACTIVE": {
    "object": "wb_mart.V_CT_PLAN_ACTIVE",
@@ -7342,7 +8583,17 @@
     "wb_mart.V_CT_OWNER_HOME",
     "wb_mart.V_CT_PLAN_VS_ACTUAL_DAILY",
     "wb_mart.V_CT_SUPPLY_NEED"
-   ]
+   ],
+   "external_readers": {
+    "human_or_script": {
+     "queries": 16,
+     "last_read": "2026-09-21"
+    },
+    "metabase": {
+     "queries": 31,
+     "last_read": "2026-09-10"
+    }
+   }
   },
   "wb_mart.V_CT_PLAN_VS_ACTUAL_DAILY": {
    "object": "wb_mart.V_CT_PLAN_VS_ACTUAL_DAILY",
@@ -7424,7 +8675,17 @@
     "wb_mart.V_CT_ACTION_CANDIDATES",
     "wb_mart.V_CT_ATTENTION",
     "wb_mart.V_CT_SKU_CONTROL"
-   ]
+   ],
+   "external_readers": {
+    "metabase": {
+     "queries": 228,
+     "last_read": "2026-09-11"
+    },
+    "human_or_script": {
+     "queries": 6,
+     "last_read": "2026-09-21"
+    }
+   }
   },
   "wb_mart.V_CT_REFRESH_STATUS": {
    "object": "wb_mart.V_CT_REFRESH_STATUS",
@@ -7466,7 +8727,17 @@
    ],
    "consumed_by": [
     "wb_mart.V_CT_OWNER_HOME"
-   ]
+   ],
+   "external_readers": {
+    "human_or_script": {
+     "queries": 3,
+     "last_read": "2026-09-21"
+    },
+    "metabase": {
+     "queries": 20,
+     "last_read": "2026-09-10"
+    }
+   }
   },
   "wb_mart.V_CT_SKU_CONTROL": {
    "object": "wb_mart.V_CT_SKU_CONTROL",
@@ -7519,7 +8790,17 @@
     "wb_mart.V_CT_PLAN_VS_ACTUAL_DAILY",
     "wb_mart.V_CT_SUPPLY_NEED"
    ],
-   "consumed_by": []
+   "consumed_by": [],
+   "external_readers": {
+    "metabase": {
+     "queries": 110,
+     "last_read": "2026-09-11"
+    },
+    "human_or_script": {
+     "queries": 14,
+     "last_read": "2026-09-21"
+    }
+   }
   },
   "wb_mart.V_CT_SUPPLY_FLOW": {
    "object": "wb_mart.V_CT_SUPPLY_FLOW",
@@ -7556,7 +8837,17 @@
    ],
    "consumed_by": [
     "wb_mart.V_CT_INVENTORY_TRUTH_LIVE"
-   ]
+   ],
+   "external_readers": {
+    "human_or_script": {
+     "queries": 2,
+     "last_read": "2026-09-10"
+    },
+    "metabase": {
+     "queries": 10,
+     "last_read": "2026-09-10"
+    }
+   }
   },
   "wb_mart.V_CT_SUPPLY_NEED": {
    "object": "wb_mart.V_CT_SUPPLY_NEED",
@@ -7606,7 +8897,17 @@
     "wb_mart.V_CT_ACTION_CANDIDATES",
     "wb_mart.V_CT_OWNER_HOME",
     "wb_mart.V_CT_SKU_CONTROL"
-   ]
+   ],
+   "external_readers": {
+    "human_or_script": {
+     "queries": 8,
+     "last_read": "2026-09-11"
+    },
+    "metabase": {
+     "queries": 71,
+     "last_read": "2026-09-11"
+    }
+   }
   },
   "wb_mart.V_DASH_BUYOUT_COHORT_DAILY": {
    "object": "wb_mart.V_DASH_BUYOUT_COHORT_DAILY",
@@ -7645,7 +8946,17 @@
     "wb_raw.REF_SKU_MASTER",
     "wb_raw.V_WB_SALES_RETURNS"
    ],
-   "consumed_by": []
+   "consumed_by": [],
+   "external_readers": {
+    "metabase": {
+     "queries": 131,
+     "last_read": "2026-09-17"
+    },
+    "human_or_script": {
+     "queries": 42,
+     "last_read": "2026-09-21"
+    }
+   }
   },
   "wb_mart.V_DASH_COVERAGE_DAILY": {
    "object": "wb_mart.V_DASH_COVERAGE_DAILY",
@@ -7706,7 +9017,17 @@
    "consumed_by": [
     "wb_mart.V_DASH_KPI_DAILY",
     "wb_mart.V_DASH_SKU_DAILY"
-   ]
+   ],
+   "external_readers": {
+    "human_or_script": {
+     "queries": 78,
+     "last_read": "2026-09-21"
+    },
+    "metabase": {
+     "queries": 34,
+     "last_read": "2026-08-26"
+    }
+   }
   },
   "wb_mart.V_DASH_EXECUTIVE_BREAKDOWN_DAILY": {
    "object": "wb_mart.V_DASH_EXECUTIVE_BREAKDOWN_DAILY",
@@ -7760,7 +9081,17 @@
     "wb_raw.REF_SKU_MASTER",
     "wb_raw.V_WB_FINANCE_SEMANTIC"
    ],
-   "consumed_by": []
+   "consumed_by": [],
+   "external_readers": {
+    "metabase": {
+     "queries": 104,
+     "last_read": "2026-09-17"
+    },
+    "human_or_script": {
+     "queries": 38,
+     "last_read": "2026-09-21"
+    }
+   }
   },
   "wb_mart.V_DASH_EXECUTIVE_ECONOMICS_DAILY": {
    "object": "wb_mart.V_DASH_EXECUTIVE_ECONOMICS_DAILY",
@@ -7814,7 +9145,17 @@
     "wb_mart.V_DASH_FINANCE_CORRECTED_DAILY",
     "wb_mart.V_MART_SKU_DAILY_COGS"
    ],
-   "consumed_by": []
+   "consumed_by": [],
+   "external_readers": {
+    "metabase": {
+     "queries": 1233,
+     "last_read": "2026-09-17"
+    },
+    "human_or_script": {
+     "queries": 193,
+     "last_read": "2026-09-21"
+    }
+   }
   },
   "wb_mart.V_DASH_EXECUTIVE_V2_DAILY": {
    "object": "wb_mart.V_DASH_EXECUTIVE_V2_DAILY",
@@ -7921,7 +9262,17 @@
    ],
    "consumed_by": [
     "wb_mart.V_SKU_PERFORMANCE_V2_EXEC_BRIDGE_DAILY"
-   ]
+   ],
+   "external_readers": {
+    "metabase": {
+     "queries": 3433,
+     "last_read": "2026-09-19"
+    },
+    "human_or_script": {
+     "queries": 434,
+     "last_read": "2026-09-21"
+    }
+   }
   },
   "wb_mart.V_DASH_FINANCE_CORRECTED_DAILY": {
    "object": "wb_mart.V_DASH_FINANCE_CORRECTED_DAILY",
@@ -8005,7 +9356,17 @@
    ],
    "consumed_by": [
     "wb_mart.V_DASH_EXECUTIVE_ECONOMICS_DAILY"
-   ]
+   ],
+   "external_readers": {
+    "metabase": {
+     "queries": 1926,
+     "last_read": "2026-09-17"
+    },
+    "human_or_script": {
+     "queries": 177,
+     "last_read": "2026-09-21"
+    }
+   }
   },
   "wb_mart.V_DASH_FRESHNESS_BY_CONTRACT": {
    "object": "wb_mart.V_DASH_FRESHNESS_BY_CONTRACT",
@@ -8039,7 +9400,17 @@
    "depends_on": [
     "wb_mart.V_DATA_FRESHNESS"
    ],
-   "consumed_by": []
+   "consumed_by": [],
+   "external_readers": {
+    "human_or_script": {
+     "queries": 31,
+     "last_read": "2026-09-21"
+    },
+    "metabase": {
+     "queries": 30,
+     "last_read": "2026-08-26"
+    }
+   }
   },
   "wb_mart.V_DASH_FRESHNESS_HEADER": {
    "object": "wb_mart.V_DASH_FRESHNESS_HEADER",
@@ -8079,7 +9450,17 @@
     "wb_mart.MART_SKU_DAILY",
     "wb_mart.V_DATA_FRESHNESS"
    ],
-   "consumed_by": []
+   "consumed_by": [],
+   "external_readers": {
+    "metabase": {
+     "queries": 158,
+     "last_read": "2026-09-18"
+    },
+    "human_or_script": {
+     "queries": 42,
+     "last_read": "2026-09-21"
+    }
+   }
   },
   "wb_mart.V_DASH_KPI_DAILY": {
    "object": "wb_mart.V_DASH_KPI_DAILY",
@@ -8185,7 +9566,17 @@
     "wb_mart.V_DASH_EXECUTIVE_BREAKDOWN_DAILY",
     "wb_mart.V_DASH_FINANCE_CORRECTED_DAILY",
     "wb_mart.V_DASH_SETTLEMENT_DAILY"
-   ]
+   ],
+   "external_readers": {
+    "metabase": {
+     "queries": 7335,
+     "last_read": "2026-09-18"
+    },
+    "human_or_script": {
+     "queries": 1986,
+     "last_read": "2026-09-21"
+    }
+   }
   },
   "wb_mart.V_DASH_SETTLEMENT_DAILY": {
    "object": "wb_mart.V_DASH_SETTLEMENT_DAILY",
@@ -8258,7 +9649,17 @@
     "wb_mart.V_WB_FINANCE_PRICE_COMPONENTS",
     "wb_raw.V_WB_FINANCE_SEMANTIC"
    ],
-   "consumed_by": []
+   "consumed_by": [],
+   "external_readers": {
+    "metabase": {
+     "queries": 640,
+     "last_read": "2026-09-17"
+    },
+    "human_or_script": {
+     "queries": 108,
+     "last_read": "2026-09-21"
+    }
+   }
   },
   "wb_mart.V_DASH_SKU_DAILY": {
    "object": "wb_mart.V_DASH_SKU_DAILY",
@@ -8344,7 +9745,21 @@
     "wb_mart.V_CT_ACTUAL_DAILY_LIVE",
     "wb_mart.V_CT_FRESHNESS",
     "wb_mart.V_CT_PLAN_VS_ACTUAL_DAILY"
-   ]
+   ],
+   "external_readers": {
+    "metabase": {
+     "queries": 2524,
+     "last_read": "2026-09-18"
+    },
+    "service_account": {
+     "queries": 50,
+     "last_read": "2026-09-21"
+    },
+    "human_or_script": {
+     "queries": 184,
+     "last_read": "2026-09-21"
+    }
+   }
   },
   "wb_mart.V_DASH_SKU_PERFORMANCE_V2_DAILY": {
    "object": "wb_mart.V_DASH_SKU_PERFORMANCE_V2_DAILY",
@@ -8449,7 +9864,17 @@
     "wb_mart.SKU_PERFORMANCE_V2_BUILD_LOG",
     "wb_mart.SKU_PERFORMANCE_V2_DAILY"
    ],
-   "consumed_by": []
+   "consumed_by": [],
+   "external_readers": {
+    "metabase": {
+     "queries": 2500,
+     "last_read": "2026-09-20"
+    },
+    "human_or_script": {
+     "queries": 1495,
+     "last_read": "2026-09-21"
+    }
+   }
   },
   "wb_mart.V_DATA_FRESHNESS": {
    "object": "wb_mart.V_DATA_FRESHNESS",
@@ -8517,7 +9942,17 @@
     "wb_mart.V_CT_FRESHNESS",
     "wb_mart.V_DASH_FRESHNESS_BY_CONTRACT",
     "wb_mart.V_DASH_FRESHNESS_HEADER"
-   ]
+   ],
+   "external_readers": {
+    "human_or_script": {
+     "queries": 16,
+     "last_read": "2026-09-21"
+    },
+    "metabase": {
+     "queries": 26,
+     "last_read": "2026-08-26"
+    }
+   }
   },
   "wb_mart.V_FACT_FINANCE_COGS": {
    "object": "wb_mart.V_FACT_FINANCE_COGS",
@@ -8561,7 +9996,17 @@
    ],
    "consumed_by": [
     "wb_mart.V_MART_SKU_DAILY_COGS"
-   ]
+   ],
+   "external_readers": {
+    "metabase": {
+     "queries": 20,
+     "last_read": "2026-08-27"
+    },
+    "human_or_script": {
+     "queries": 26,
+     "last_read": "2026-09-21"
+    }
+   }
   },
   "wb_mart.V_MART_RUN_LOG": {
    "object": "wb_mart.V_MART_RUN_LOG",
@@ -8606,7 +10051,13 @@
     "wb_mart.MART_RUNS",
     "wb_raw.LOADER_RUNS"
    ],
-   "consumed_by": []
+   "consumed_by": [],
+   "external_readers": {
+    "metabase": {
+     "queries": 25,
+     "last_read": "2026-08-26"
+    }
+   }
   },
   "wb_mart.V_MART_SKU_DAILY_COGS": {
    "object": "wb_mart.V_MART_SKU_DAILY_COGS",
@@ -8666,7 +10117,17 @@
     "wb_mart.V_ADS_SKU_ECONOMIC_LIMITS",
     "wb_mart.V_CT_ACTUAL_DAILY_LIVE",
     "wb_mart.V_DASH_EXECUTIVE_ECONOMICS_DAILY"
-   ]
+   ],
+   "external_readers": {
+    "human_or_script": {
+     "queries": 102,
+     "last_read": "2026-09-21"
+    },
+    "metabase": {
+     "queries": 32,
+     "last_read": "2026-08-27"
+    }
+   }
   },
   "wb_mart.V_SKU_PERFORMANCE_V2_EXEC_BRIDGE_DAILY": {
    "object": "wb_mart.V_SKU_PERFORMANCE_V2_EXEC_BRIDGE_DAILY",
@@ -8709,7 +10170,17 @@
     "wb_mart.SKU_PERFORMANCE_V2_DAILY",
     "wb_mart.V_DASH_EXECUTIVE_V2_DAILY"
    ],
-   "consumed_by": []
+   "consumed_by": [],
+   "external_readers": {
+    "metabase": {
+     "queries": 23,
+     "last_read": "2026-09-18"
+    },
+    "human_or_script": {
+     "queries": 8,
+     "last_read": "2026-09-21"
+    }
+   }
   },
   "wb_mart.V_UNITKA_COGS_CANONICAL": {
    "object": "wb_mart.V_UNITKA_COGS_CANONICAL",
@@ -8739,7 +10210,21 @@
     "wb_mart.V_UNITKA_LAST_CLOSED_DATE",
     "wb_raw.REF_SKU_MASTER"
    ],
-   "consumed_by": []
+   "consumed_by": [],
+   "external_readers": {
+    "service_account": {
+     "queries": 5,
+     "last_read": "2026-09-20"
+    },
+    "human_or_script": {
+     "queries": 58,
+     "last_read": "2026-09-19"
+    },
+    "metabase": {
+     "queries": 9,
+     "last_read": "2026-09-18"
+    }
+   }
   },
   "wb_mart.V_UNITKA_COMMISSION_RATES": {
    "object": "wb_mart.V_UNITKA_COMMISSION_RATES",
@@ -8768,7 +10253,21 @@
     "wb_mart.V_UNITKA_LAST_CLOSED_DATE",
     "wb_raw.V_WB_FINANCE_CANONICAL"
    ],
-   "consumed_by": []
+   "consumed_by": [],
+   "external_readers": {
+    "human_or_script": {
+     "queries": 24,
+     "last_read": "2026-09-19"
+    },
+    "service_account": {
+     "queries": 34,
+     "last_read": "2026-09-21"
+    },
+    "metabase": {
+     "queries": 9,
+     "last_read": "2026-09-12"
+    }
+   }
   },
   "wb_mart.V_UNITKA_DAILY_FACT": {
    "object": "wb_mart.V_UNITKA_DAILY_FACT",
@@ -8811,7 +10310,21 @@
    ],
    "consumed_by": [
     "wb_mart.V_UNITKA_INTEGRITY"
-   ]
+   ],
+   "external_readers": {
+    "service_account": {
+     "queries": 33,
+     "last_read": "2026-09-21"
+    },
+    "human_or_script": {
+     "queries": 57,
+     "last_read": "2026-09-20"
+    },
+    "metabase": {
+     "queries": 16,
+     "last_read": "2026-09-20"
+    }
+   }
   },
   "wb_mart.V_UNITKA_INTEGRITY": {
    "object": "wb_mart.V_UNITKA_INTEGRITY",
@@ -8857,7 +10370,21 @@
     "wb_raw.V_WB_FUNNEL_DAILY",
     "wb_raw.V_WB_STORAGE_DAILY"
    ],
-   "consumed_by": []
+   "consumed_by": [],
+   "external_readers": {
+    "metabase": {
+     "queries": 20,
+     "last_read": "2026-09-18"
+    },
+    "service_account": {
+     "queries": 1,
+     "last_read": "2026-09-18"
+    },
+    "human_or_script": {
+     "queries": 5,
+     "last_read": "2026-09-19"
+    }
+   }
   },
   "wb_mart.V_UNITKA_INTEGRITY_STATUS": {
    "object": "wb_mart.V_UNITKA_INTEGRITY_STATUS",
@@ -8902,7 +10429,17 @@
     "wb_ops.UNITKA_INTEGRITY_ISSUES",
     "wb_ops.UNITKA_REPAIR_LEDGER"
    ],
-   "consumed_by": []
+   "consumed_by": [],
+   "external_readers": {
+    "metabase": {
+     "queries": 26,
+     "last_read": "2026-09-20"
+    },
+    "human_or_script": {
+     "queries": 7,
+     "last_read": "2026-09-20"
+    }
+   }
   },
   "wb_mart.V_UNITKA_LAST_CLOSED_DATE": {
    "object": "wb_mart.V_UNITKA_LAST_CLOSED_DATE",
@@ -8932,7 +10469,21 @@
     "wb_mart.V_UNITKA_INTEGRITY",
     "wb_mart.V_UNITKA_LOGISTICS_RATES",
     "wb_mart.V_UNITKA_RECON_WINDOW"
-   ]
+   ],
+   "external_readers": {
+    "service_account": {
+     "queries": 38,
+     "last_read": "2026-09-21"
+    },
+    "human_or_script": {
+     "queries": 171,
+     "last_read": "2026-09-20"
+    },
+    "metabase": {
+     "queries": 3,
+     "last_read": "2026-09-12"
+    }
+   }
   },
   "wb_mart.V_UNITKA_LOGISTICS_RATES": {
    "object": "wb_mart.V_UNITKA_LOGISTICS_RATES",
@@ -8966,7 +10517,21 @@
     "wb_mart.V_UNITKA_LAST_CLOSED_DATE",
     "wb_raw.V_WB_FINANCE_CANONICAL"
    ],
-   "consumed_by": []
+   "consumed_by": [],
+   "external_readers": {
+    "human_or_script": {
+     "queries": 26,
+     "last_read": "2026-09-19"
+    },
+    "service_account": {
+     "queries": 34,
+     "last_read": "2026-09-21"
+    },
+    "metabase": {
+     "queries": 14,
+     "last_read": "2026-09-12"
+    }
+   }
   },
   "wb_mart.V_UNITKA_RECON_COGS_CANONICAL": {
    "object": "wb_mart.V_UNITKA_RECON_COGS_CANONICAL",
@@ -8996,7 +10561,21 @@
     "wb_mart.V_UNITKA_RECON_WINDOW",
     "wb_raw.REF_SKU_MASTER"
    ],
-   "consumed_by": []
+   "consumed_by": [],
+   "external_readers": {
+    "service_account": {
+     "queries": 9,
+     "last_read": "2026-09-21"
+    },
+    "human_or_script": {
+     "queries": 7,
+     "last_read": "2026-09-20"
+    },
+    "metabase": {
+     "queries": 9,
+     "last_read": "2026-09-20"
+    }
+   }
   },
   "wb_mart.V_UNITKA_RECON_FACT": {
    "object": "wb_mart.V_UNITKA_RECON_FACT",
@@ -9048,7 +10627,21 @@
    ],
    "consumed_by": [
     "wb_mart.V_UNITKA_RECON_INTEGRITY"
-   ]
+   ],
+   "external_readers": {
+    "human_or_script": {
+     "queries": 16,
+     "last_read": "2026-09-20"
+    },
+    "service_account": {
+     "queries": 9,
+     "last_read": "2026-09-21"
+    },
+    "metabase": {
+     "queries": 24,
+     "last_read": "2026-09-20"
+    }
+   }
   },
   "wb_mart.V_UNITKA_RECON_INTEGRITY": {
    "object": "wb_mart.V_UNITKA_RECON_INTEGRITY",
@@ -9096,7 +10689,21 @@
     "wb_raw.RAW_WB_PRICES",
     "wb_raw.REF_SKU_MASTER"
    ],
-   "consumed_by": []
+   "consumed_by": [],
+   "external_readers": {
+    "service_account": {
+     "queries": 9,
+     "last_read": "2026-09-21"
+    },
+    "human_or_script": {
+     "queries": 6,
+     "last_read": "2026-09-20"
+    },
+    "metabase": {
+     "queries": 25,
+     "last_read": "2026-09-20"
+    }
+   }
   },
   "wb_mart.V_UNITKA_RECON_WINDOW": {
    "object": "wb_mart.V_UNITKA_RECON_WINDOW",
@@ -9126,7 +10733,21 @@
     "wb_mart.V_UNITKA_RECON_COGS_CANONICAL",
     "wb_mart.V_UNITKA_RECON_FACT",
     "wb_mart.V_UNITKA_RECON_INTEGRITY"
-   ]
+   ],
+   "external_readers": {
+    "service_account": {
+     "queries": 9,
+     "last_read": "2026-09-21"
+    },
+    "human_or_script": {
+     "queries": 1,
+     "last_read": "2026-09-20"
+    },
+    "metabase": {
+     "queries": 7,
+     "last_read": "2026-09-20"
+    }
+   }
   },
   "wb_mart.V_UNITKA_SOURCE_FRESHNESS": {
    "object": "wb_mart.V_UNITKA_SOURCE_FRESHNESS",
@@ -9157,7 +10778,21 @@
    ],
    "consumed_by": [
     "wb_mart.V_UNITKA_LAST_CLOSED_DATE"
-   ]
+   ],
+   "external_readers": {
+    "service_account": {
+     "queries": 34,
+     "last_read": "2026-09-21"
+    },
+    "human_or_script": {
+     "queries": 32,
+     "last_read": "2026-09-19"
+    },
+    "metabase": {
+     "queries": 5,
+     "last_read": "2026-09-12"
+    }
+   }
   },
   "wb_mart.V_WB_DEDUCTIONS_CLASSIFIED": {
    "object": "wb_mart.V_WB_DEDUCTIONS_CLASSIFIED",
@@ -9203,7 +10838,17 @@
    "consumed_by": [
     "wb_mart.V_ADVERTISING_RECONCILIATION_DAILY",
     "wb_mart.V_DASH_SETTLEMENT_DAILY"
-   ]
+   ],
+   "external_readers": {
+    "human_or_script": {
+     "queries": 51,
+     "last_read": "2026-09-21"
+    },
+    "metabase": {
+     "queries": 22,
+     "last_read": "2026-08-28"
+    }
+   }
   },
   "wb_mart.V_WB_FINANCE_AMOUNTS_LONG": {
    "object": "wb_mart.V_WB_FINANCE_AMOUNTS_LONG",
@@ -9234,7 +10879,13 @@
    ],
    "consumed_by": [
     "wb_mart.V_WB_FINANCE_AMOUNTS_LONG_MAPPED"
-   ]
+   ],
+   "external_readers": {
+    "metabase": {
+     "queries": 10,
+     "last_read": "2026-08-26"
+    }
+   }
   },
   "wb_mart.V_WB_FINANCE_AMOUNTS_LONG_MAPPED": {
    "object": "wb_mart.V_WB_FINANCE_AMOUNTS_LONG_MAPPED",
@@ -9271,7 +10922,21 @@
    "consumed_by": [
     "wb_mart.V_DASH_EXECUTIVE_BREAKDOWN_DAILY",
     "wb_mart.V_DASH_KPI_DAILY"
-   ]
+   ],
+   "external_readers": {
+    "service_account": {
+     "queries": 207,
+     "last_read": "2026-09-21"
+    },
+    "human_or_script": {
+     "queries": 102,
+     "last_read": "2026-09-21"
+    },
+    "metabase": {
+     "queries": 14,
+     "last_read": "2026-08-26"
+    }
+   }
   },
   "wb_mart.V_WB_FINANCE_PRICE_COMPONENTS": {
    "object": "wb_mart.V_WB_FINANCE_PRICE_COMPONENTS",
@@ -9317,7 +10982,17 @@
    "consumed_by": [
     "wb_mart.V_DASH_EXECUTIVE_BREAKDOWN_DAILY",
     "wb_mart.V_DASH_SETTLEMENT_DAILY"
-   ]
+   ],
+   "external_readers": {
+    "human_or_script": {
+     "queries": 43,
+     "last_read": "2026-09-21"
+    },
+    "metabase": {
+     "queries": 23,
+     "last_read": "2026-09-16"
+    }
+   }
   },
   "wb_mart.V_WB_PRICING_ECONOMICS_HEALTH": {
    "object": "wb_mart.V_WB_PRICING_ECONOMICS_HEALTH",
@@ -9365,7 +11040,17 @@
     "wb_raw.V_WB_TARIFFS_CURRENT",
     "wb_raw.WB_TARIFF_OBSERVATIONS"
    ],
-   "consumed_by": []
+   "consumed_by": [],
+   "external_readers": {
+    "human_or_script": {
+     "queries": 2,
+     "last_read": "2026-09-08"
+    },
+    "metabase": {
+     "queries": 27,
+     "last_read": "2026-09-08"
+    }
+   }
   },
   "wb_mart.V_WB_SKU_COST_INPUTS": {
    "object": "wb_mart.V_WB_SKU_COST_INPUTS",
@@ -9436,7 +11121,17 @@
    ],
    "consumed_by": [
     "wb_mart.V_WB_SKU_FORWARD_ECONOMICS_CURRENT"
-   ]
+   ],
+   "external_readers": {
+    "metabase": {
+     "queries": 44,
+     "last_read": "2026-09-08"
+    },
+    "human_or_script": {
+     "queries": 1,
+     "last_read": "2026-09-07"
+    }
+   }
   },
   "wb_mart.V_WB_SKU_FORWARD_ECONOMICS_CURRENT": {
    "object": "wb_mart.V_WB_SKU_FORWARD_ECONOMICS_CURRENT",
@@ -9506,7 +11201,17 @@
    ],
    "consumed_by": [
     "wb_mart.V_WB_PRICING_ECONOMICS_HEALTH"
-   ]
+   ],
+   "external_readers": {
+    "metabase": {
+     "queries": 49,
+     "last_read": "2026-09-08"
+    },
+    "human_or_script": {
+     "queries": 15,
+     "last_read": "2026-09-20"
+    }
+   }
   },
   "wb_mart.V_WB_SUPPLIES_DETAIL": {
    "object": "wb_mart.V_WB_SUPPLIES_DETAIL",
@@ -9565,7 +11270,17 @@
    "consumed_by": [
     "wb_mart.V_WB_DEDUCTIONS_CLASSIFIED",
     "wb_mart.V_WB_SUPPLIES_INTAKE_BY_SKU"
-   ]
+   ],
+   "external_readers": {
+    "metabase": {
+     "queries": 36,
+     "last_read": "2026-08-26"
+    },
+    "human_or_script": {
+     "queries": 14,
+     "last_read": "2026-09-14"
+    }
+   }
   },
   "wb_mart.V_WB_SUPPLIES_INTAKE_BY_SKU": {
    "object": "wb_mart.V_WB_SUPPLIES_INTAKE_BY_SKU",
@@ -9598,7 +11313,17 @@
    "depends_on": [
     "wb_mart.V_WB_SUPPLIES_DETAIL"
    ],
-   "consumed_by": []
+   "consumed_by": [],
+   "external_readers": {
+    "human_or_script": {
+     "queries": 1,
+     "last_read": "2026-09-03"
+    },
+    "metabase": {
+     "queries": 14,
+     "last_read": "2026-08-26"
+    }
+   }
   },
   "wb_mart._EXECUTIVE_V2_BUILD_LOCK": {
    "object": "wb_mart._EXECUTIVE_V2_BUILD_LOCK",
@@ -9617,11 +11342,17 @@
    ],
    "row_count": 1,
    "size_bytes": 75,
-   "last_modified": "2026-09-21T05:11:28Z",
+   "last_modified": "2026-09-21T06:11:18Z",
    "partitioned_by": null,
    "clustered_by": [],
    "depends_on": [],
-   "consumed_by": []
+   "consumed_by": [],
+   "external_readers": {
+    "human_or_script": {
+     "queries": 7,
+     "last_read": "2026-09-21"
+    }
+   }
   },
   "wb_mart._MART_BOOTSTRAP_LOCK": {
    "object": "wb_mart._MART_BOOTSTRAP_LOCK",
@@ -9645,7 +11376,13 @@
    "partitioned_by": null,
    "clustered_by": [],
    "depends_on": [],
-   "consumed_by": []
+   "consumed_by": [],
+   "external_readers": {
+    "human_or_script": {
+     "queries": 17,
+     "last_read": "2026-09-11"
+    }
+   }
   },
   "wb_mart._SKU_PERFORMANCE_V2_BUILD_LOCK": {
    "object": "wb_mart._SKU_PERFORMANCE_V2_BUILD_LOCK",
@@ -9664,11 +11401,17 @@
    ],
    "row_count": 1,
    "size_bytes": 81,
-   "last_modified": "2026-09-21T05:21:06Z",
+   "last_modified": "2026-09-21T06:20:52Z",
    "partitioned_by": null,
    "clustered_by": [],
    "depends_on": [],
-   "consumed_by": []
+   "consumed_by": [],
+   "external_readers": {
+    "human_or_script": {
+     "queries": 4,
+     "last_read": "2026-09-18"
+    }
+   }
   },
   "wb_mart._UNITKA_COGS_PUBLISH_LOCK": {
    "object": "wb_mart._UNITKA_COGS_PUBLISH_LOCK",
@@ -9687,11 +11430,17 @@
    ],
    "row_count": 1,
    "size_bytes": 80,
-   "last_modified": "2026-09-21T05:50:27Z",
+   "last_modified": "2026-09-21T06:50:40Z",
    "partitioned_by": null,
    "clustered_by": [],
    "depends_on": [],
-   "consumed_by": []
+   "consumed_by": [],
+   "external_readers": {
+    "human_or_script": {
+     "queries": 3,
+     "last_read": "2026-09-18"
+    }
+   }
   },
   "wb_ops.OPS_ALERT_EVENT": {
    "object": "wb_ops.OPS_ALERT_EVENT",
@@ -9723,7 +11472,7 @@
    ],
    "row_count": 6,
    "size_bytes": 2532,
-   "last_modified": "2026-09-21T03:01:08Z",
+   "last_modified": "2026-09-21T06:00:33Z",
    "partitioned_by": "DATE(created_at)",
    "clustered_by": [
     "state",
@@ -9732,7 +11481,13 @@
    "depends_on": [],
    "consumed_by": [
     "wb_ops.V_OPS_ACTIVE_INCIDENTS"
-   ]
+   ],
+   "external_readers": {
+    "human_or_script": {
+     "queries": 16,
+     "last_read": "2026-09-19"
+    }
+   }
   },
   "wb_ops.OPS_HEALTH_STATE": {
    "object": "wb_ops.OPS_HEALTH_STATE",
@@ -9755,9 +11510,9 @@
     "reason_text STRING NULL",
     "evidence_json JSON NULL"
    ],
-   "row_count": 840,
-   "size_bytes": 292417,
-   "last_modified": "2026-09-21T03:01:01Z",
+   "row_count": 847,
+   "size_bytes": 294850,
+   "last_modified": "2026-09-21T06:00:23Z",
    "partitioned_by": "DATE(check_ts)",
    "clustered_by": [
     "scope",
@@ -9766,7 +11521,13 @@
    "depends_on": [],
    "consumed_by": [
     "wb_ops.V_OPS_CURRENT_HEALTH"
-   ]
+   ],
+   "external_readers": {
+    "human_or_script": {
+     "queries": 26,
+     "last_read": "2026-09-21"
+    }
+   }
   },
   "wb_ops.OPS_INCIDENT": {
    "object": "wb_ops.OPS_INCIDENT",
@@ -9800,7 +11561,7 @@
    ],
    "row_count": 3,
    "size_bytes": 1292,
-   "last_modified": "2026-09-21T03:01:05Z",
+   "last_modified": "2026-09-21T06:00:30Z",
    "partitioned_by": null,
    "clustered_by": [
     "state",
@@ -9811,7 +11572,13 @@
    "consumed_by": [
     "wb_ops.V_OPS_ACTIVE_INCIDENTS",
     "wb_ops.V_OPS_CURRENT_HEALTH"
-   ]
+   ],
+   "external_readers": {
+    "human_or_script": {
+     "queries": 16,
+     "last_read": "2026-09-19"
+    }
+   }
   },
   "wb_ops.OPS_METRIC_COVERAGE": {
    "object": "wb_ops.OPS_METRIC_COVERAGE",
@@ -9838,7 +11605,13 @@
    "partitioned_by": null,
    "clustered_by": [],
    "depends_on": [],
-   "consumed_by": []
+   "consumed_by": [],
+   "external_readers": {
+    "human_or_script": {
+     "queries": 5,
+     "last_read": "2026-09-08"
+    }
+   }
   },
   "wb_ops.OPS_METRIC_COVERAGE_GAPS": {
    "object": "wb_ops.OPS_METRIC_COVERAGE_GAPS",
@@ -9868,7 +11641,13 @@
     "gap_type"
    ],
    "depends_on": [],
-   "consumed_by": []
+   "consumed_by": [],
+   "external_readers": {
+    "human_or_script": {
+     "queries": 4,
+     "last_read": "2026-09-08"
+    }
+   }
   },
   "wb_ops.OPS_PIPELINE_REGISTRY": {
    "object": "wb_ops.OPS_PIPELINE_REGISTRY",
@@ -9917,7 +11696,21 @@
     "criticality"
    ],
    "depends_on": [],
-   "consumed_by": []
+   "consumed_by": [],
+   "external_readers": {
+    "service_account": {
+     "queries": 119,
+     "last_read": "2026-09-21"
+    },
+    "human_or_script": {
+     "queries": 29,
+     "last_read": "2026-09-21"
+    },
+    "metabase": {
+     "queries": 7,
+     "last_read": "2026-09-12"
+    }
+   }
   },
   "wb_ops.UNITKA_ENGINE_RUNS": {
    "object": "wb_ops.UNITKA_ENGINE_RUNS",
@@ -9946,16 +11739,22 @@
     "image_digest STRING NULL",
     "engine_version STRING NULL"
    ],
-   "row_count": 33,
-   "size_bytes": 155729,
-   "last_modified": "2026-09-20T18:23:36Z",
+   "row_count": 34,
+   "size_bytes": 162975,
+   "last_modified": "2026-09-21T07:01:29Z",
    "partitioned_by": "DATE(started_at)",
    "clustered_by": [
     "environment",
     "qa_status"
    ],
    "depends_on": [],
-   "consumed_by": []
+   "consumed_by": [],
+   "external_readers": {
+    "human_or_script": {
+     "queries": 59,
+     "last_read": "2026-09-20"
+    }
+   }
   },
   "wb_ops.UNITKA_INTEGRITY_ISSUES": {
    "object": "wb_ops.UNITKA_INTEGRITY_ISSUES",
@@ -9983,9 +11782,9 @@
     "diagnostic_value STRING NULL",
     "message STRING NULL"
    ],
-   "row_count": 439,
-   "size_bytes": 219387,
-   "last_modified": "2026-09-20T18:23:34Z",
+   "row_count": 490,
+   "size_bytes": 241958,
+   "last_modified": "2026-09-21T07:01:27Z",
    "partitioned_by": "DATE(evaluated_at)",
    "clustered_by": [
     "environment",
@@ -9995,7 +11794,13 @@
    "depends_on": [],
    "consumed_by": [
     "wb_mart.V_UNITKA_INTEGRITY_STATUS"
-   ]
+   ],
+   "external_readers": {
+    "human_or_script": {
+     "queries": 97,
+     "last_read": "2026-09-20"
+    }
+   }
   },
   "wb_ops.UNITKA_REPAIR_LEDGER": {
    "object": "wb_ops.UNITKA_REPAIR_LEDGER",
@@ -10037,7 +11842,17 @@
    "depends_on": [],
    "consumed_by": [
     "wb_mart.V_UNITKA_INTEGRITY_STATUS"
-   ]
+   ],
+   "external_readers": {
+    "human_or_script": {
+     "queries": 68,
+     "last_read": "2026-09-20"
+    },
+    "service_account": {
+     "queries": 1,
+     "last_read": "2026-09-20"
+    }
+   }
   },
   "wb_ops.V_OPS_ACTIVE_INCIDENTS": {
    "object": "wb_ops.V_OPS_ACTIVE_INCIDENTS",
@@ -10075,7 +11890,17 @@
     "wb_ops.OPS_ALERT_EVENT",
     "wb_ops.OPS_INCIDENT"
    ],
-   "consumed_by": []
+   "consumed_by": [],
+   "external_readers": {
+    "human_or_script": {
+     "queries": 15,
+     "last_read": "2026-09-15"
+    },
+    "metabase": {
+     "queries": 144,
+     "last_read": "2026-09-08"
+    }
+   }
   },
   "wb_ops.V_OPS_CURRENT_HEALTH": {
    "object": "wb_ops.V_OPS_CURRENT_HEALTH",
@@ -10117,7 +11942,17 @@
     "wb_ops.OPS_HEALTH_STATE",
     "wb_ops.OPS_INCIDENT"
    ],
-   "consumed_by": []
+   "consumed_by": [],
+   "external_readers": {
+    "human_or_script": {
+     "queries": 26,
+     "last_read": "2026-09-21"
+    },
+    "metabase": {
+     "queries": 21,
+     "last_read": "2026-09-06"
+    }
+   }
   },
   "wb_raw.FINANCE_LOADER_RUNS": {
    "object": "wb_raw.FINANCE_LOADER_RUNS",
@@ -10147,7 +11982,13 @@
    "depends_on": [],
    "consumed_by": [
     "wb_mart.V_DATA_FRESHNESS"
-   ]
+   ],
+   "external_readers": {
+    "human_or_script": {
+     "queries": 7,
+     "last_read": "2026-09-15"
+    }
+   }
   },
   "wb_raw.FINANCE_REPORT_LOADS": {
    "object": "wb_raw.FINANCE_REPORT_LOADS",
@@ -10198,7 +12039,13 @@
    "consumed_by": [
     "wb_raw.V_WB_FINANCE_CANONICAL",
     "wb_raw.V_WB_FINANCE_COMPLETE"
-   ]
+   ],
+   "external_readers": {
+    "human_or_script": {
+     "queries": 501,
+     "last_read": "2026-09-21"
+    }
+   }
   },
   "wb_raw.FINANCE_WEEK_RECON": {
    "object": "wb_raw.FINANCE_WEEK_RECON",
@@ -10224,7 +12071,8 @@
    "partitioned_by": null,
    "clustered_by": [],
    "depends_on": [],
-   "consumed_by": []
+   "consumed_by": [],
+   "external_readers": {}
   },
   "wb_raw.FINANCE_WEEK_STATUS": {
    "object": "wb_raw.FINANCE_WEEK_STATUS",
@@ -10251,7 +12099,13 @@
    "depends_on": [],
    "consumed_by": [
     "wb_raw.V_WB_FINANCE_CANONICAL"
-   ]
+   ],
+   "external_readers": {
+    "human_or_script": {
+     "queries": 272,
+     "last_read": "2026-09-21"
+    }
+   }
   },
   "wb_raw.INGEST_RUNS": {
    "object": "wb_raw.INGEST_RUNS",
@@ -10275,9 +12129,9 @@
     "error_code STRING NULL",
     "error_message STRING NULL"
    ],
-   "row_count": 2380,
-   "size_bytes": 280267,
-   "last_modified": "2026-09-21T05:32:01Z",
+   "row_count": 2382,
+   "size_bytes": 280501,
+   "last_modified": "2026-09-21T06:32:11Z",
    "partitioned_by": "DATE(started_at)",
    "clustered_by": [
     "loader_name",
@@ -10288,7 +12142,13 @@
    "consumed_by": [
     "wb_mart.V_DATA_FRESHNESS",
     "wb_raw.V_INGEST_HEARTBEAT"
-   ]
+   ],
+   "external_readers": {
+    "human_or_script": {
+     "queries": 84,
+     "last_read": "2026-09-21"
+    }
+   }
   },
   "wb_raw.LOADER_RUNS": {
    "object": "wb_raw.LOADER_RUNS",
@@ -10315,9 +12175,9 @@
     "rows_fetched INT64 NULL",
     "rows_loaded INT64 NULL"
    ],
-   "row_count": 1200,
-   "size_bytes": 465941,
-   "last_modified": "2026-09-21T05:41:11Z",
+   "row_count": 1206,
+   "size_bytes": 468277,
+   "last_modified": "2026-09-21T07:01:31Z",
    "partitioned_by": "DATE(started_at)",
    "clustered_by": [
     "environment",
@@ -10329,7 +12189,17 @@
     "wb_mart.V_DATA_FRESHNESS",
     "wb_mart.V_MART_RUN_LOG",
     "wb_raw.V_INGEST_HEARTBEAT"
-   ]
+   ],
+   "external_readers": {
+    "service_account": {
+     "queries": 2444,
+     "last_read": "2026-09-21"
+    },
+    "human_or_script": {
+     "queries": 44,
+     "last_read": "2026-09-19"
+    }
+   }
   },
   "wb_raw.RAW_WB_ADV_BOOSTER_STATS": {
    "object": "wb_raw.RAW_WB_ADV_BOOSTER_STATS",
@@ -10364,7 +12234,17 @@
    "depends_on": [],
    "consumed_by": [
     "wb_raw.V_ADV_BOOSTER_STATS"
-   ]
+   ],
+   "external_readers": {
+    "human_or_script": {
+     "queries": 1,
+     "last_read": "2026-09-06"
+    },
+    "metabase": {
+     "queries": 14,
+     "last_read": "2026-08-26"
+    }
+   }
   },
   "wb_raw.RAW_WB_ADV_CAMPAIGNS": {
    "object": "wb_raw.RAW_WB_ADV_CAMPAIGNS",
@@ -10406,7 +12286,17 @@
    "consumed_by": [
     "wb_raw.V_ADV_CAMPAIGNS",
     "wb_raw.V_ADV_CAMPAIGN_CONFIG_SNAPSHOT"
-   ]
+   ],
+   "external_readers": {
+    "human_or_script": {
+     "queries": 33,
+     "last_read": "2026-09-15"
+    },
+    "metabase": {
+     "queries": 22,
+     "last_read": "2026-08-26"
+    }
+   }
   },
   "wb_raw.RAW_WB_ADV_CAMPAIGN_STATS": {
    "object": "wb_raw.RAW_WB_ADV_CAMPAIGN_STATS",
@@ -10454,7 +12344,17 @@
    "depends_on": [],
    "consumed_by": [
     "wb_raw.V_ADV_CAMPAIGN_STATS"
-   ]
+   ],
+   "external_readers": {
+    "human_or_script": {
+     "queries": 27,
+     "last_read": "2026-09-19"
+    },
+    "metabase": {
+     "queries": 27,
+     "last_read": "2026-08-26"
+    }
+   }
   },
   "wb_raw.RAW_WB_ADV_COSTS": {
    "object": "wb_raw.RAW_WB_ADV_COSTS",
@@ -10496,7 +12396,17 @@
     "wb_raw.V_ADV_COSTS_SNAPSHOT",
     "wb_raw.V_ADV_COSTS_UNION_LEGACY",
     "wb_raw.V_ADV_COSTS_UNION_PREBOOTSTRAP"
-   ]
+   ],
+   "external_readers": {
+    "human_or_script": {
+     "queries": 51,
+     "last_read": "2026-09-17"
+    },
+    "metabase": {
+     "queries": 20,
+     "last_read": "2026-08-26"
+    }
+   }
   },
   "wb_raw.RAW_WB_ADV_COSTS_RUNS": {
    "object": "wb_raw.RAW_WB_ADV_COSTS_RUNS",
@@ -10535,7 +12445,13 @@
    "consumed_by": [
     "wb_raw.V_ADV_COSTS_DAY_COVERAGE",
     "wb_raw.V_ADV_COSTS_SNAPSHOT"
-   ]
+   ],
+   "external_readers": {
+    "human_or_script": {
+     "queries": 58,
+     "last_read": "2026-09-17"
+    }
+   }
   },
   "wb_raw.RAW_WB_ADV_QUERY_BIDS": {
    "object": "wb_raw.RAW_WB_ADV_QUERY_BIDS",
@@ -10574,7 +12490,17 @@
    "depends_on": [],
    "consumed_by": [
     "wb_raw.V_ADV_QUERY_BIDS"
-   ]
+   ],
+   "external_readers": {
+    "human_or_script": {
+     "queries": 5,
+     "last_read": "2026-09-08"
+    },
+    "metabase": {
+     "queries": 19,
+     "last_read": "2026-08-26"
+    }
+   }
   },
   "wb_raw.RAW_WB_ADV_QUERY_BIDS_RUNS": {
    "object": "wb_raw.RAW_WB_ADV_QUERY_BIDS_RUNS",
@@ -10609,7 +12535,21 @@
    "depends_on": [],
    "consumed_by": [
     "wb_raw.V_ADV_QUERY_BIDS"
-   ]
+   ],
+   "external_readers": {
+    "service_account": {
+     "queries": 238,
+     "last_read": "2026-09-21"
+    },
+    "human_or_script": {
+     "queries": 28,
+     "last_read": "2026-09-17"
+    },
+    "metabase": {
+     "queries": 18,
+     "last_read": "2026-08-26"
+    }
+   }
   },
   "wb_raw.RAW_WB_ADV_QUERY_STATS": {
    "object": "wb_raw.RAW_WB_ADV_QUERY_STATS",
@@ -10653,7 +12593,17 @@
    "depends_on": [],
    "consumed_by": [
     "wb_raw.V_ADV_QUERY_STATS"
-   ]
+   ],
+   "external_readers": {
+    "human_or_script": {
+     "queries": 4,
+     "last_read": "2026-09-11"
+    },
+    "metabase": {
+     "queries": 24,
+     "last_read": "2026-08-26"
+    }
+   }
   },
   "wb_raw.RAW_WB_ADV_QUERY_STATS_RUNS": {
    "object": "wb_raw.RAW_WB_ADV_QUERY_STATS_RUNS",
@@ -10696,7 +12646,17 @@
     "wb_mart.V_DATA_FRESHNESS",
     "wb_raw.V_ADV_QUERY_STATS",
     "wb_raw.V_ADV_QUERY_STATS_COVERAGE"
-   ]
+   ],
+   "external_readers": {
+    "human_or_script": {
+     "queries": 23,
+     "last_read": "2026-09-17"
+    },
+    "metabase": {
+     "queries": 24,
+     "last_read": "2026-08-26"
+    }
+   }
   },
   "wb_raw.RAW_WB_ADV_SEARCH_CLUSTERS": {
    "object": "wb_raw.RAW_WB_ADV_SEARCH_CLUSTERS",
@@ -10737,7 +12697,17 @@
    "depends_on": [],
    "consumed_by": [
     "wb_raw.V_ADV_SEARCH_CLUSTERS"
-   ]
+   ],
+   "external_readers": {
+    "human_or_script": {
+     "queries": 5,
+     "last_read": "2026-09-08"
+    },
+    "metabase": {
+     "queries": 21,
+     "last_read": "2026-08-26"
+    }
+   }
   },
   "wb_raw.RAW_WB_FINANCE": {
    "object": "wb_raw.RAW_WB_FINANCE",
@@ -10836,7 +12806,13 @@
     "wb_mart.V_WB_DEDUCTIONS_CLASSIFIED",
     "wb_mart.V_WB_SKU_COST_INPUTS",
     "wb_raw.V_WB_FINANCE_COMPLETE"
-   ]
+   ],
+   "external_readers": {
+    "human_or_script": {
+     "queries": 323,
+     "last_read": "2026-09-21"
+    }
+   }
   },
   "wb_raw.RAW_WB_FUNNEL_DAILY": {
    "object": "wb_raw.RAW_WB_FUNNEL_DAILY",
@@ -10869,9 +12845,9 @@
     "raw_row_json STRING NULL",
     "ingested_at TIMESTAMP NULL"
    ],
-   "row_count": 1750,
-   "size_bytes": 994548,
-   "last_modified": "2026-09-20T06:31:38Z",
+   "row_count": 1925,
+   "size_bytes": 1093151,
+   "last_modified": "2026-09-21T06:30:59Z",
    "partitioned_by": "date_msk",
    "clustered_by": [
     "nm_id",
@@ -10881,7 +12857,17 @@
    "consumed_by": [
     "wb_raw.V_WB_FUNNEL_COVERAGE",
     "wb_raw.V_WB_FUNNEL_DAILY"
-   ]
+   ],
+   "external_readers": {
+    "service_account": {
+     "queries": 11,
+     "last_read": "2026-09-21"
+    },
+    "human_or_script": {
+     "queries": 10,
+     "last_read": "2026-09-21"
+    }
+   }
   },
   "wb_raw.RAW_WB_FUNNEL_XLSX_BACKFILL": {
    "object": "wb_raw.RAW_WB_FUNNEL_XLSX_BACKFILL",
@@ -10914,7 +12900,13 @@
     "wb_mart.V_UNITKA_DAILY_FACT",
     "wb_mart.V_UNITKA_INTEGRITY",
     "wb_mart.V_UNITKA_RECON_FACT"
-   ]
+   ],
+   "external_readers": {
+    "human_or_script": {
+     "queries": 58,
+     "last_read": "2026-09-20"
+    }
+   }
   },
   "wb_raw.RAW_WB_KIZ_SUPPLY": {
    "object": "wb_raw.RAW_WB_KIZ_SUPPLY",
@@ -10946,7 +12938,13 @@
     "gtin;"
    ],
    "depends_on": [],
-   "consumed_by": []
+   "consumed_by": [],
+   "external_readers": {
+    "human_or_script": {
+     "queries": 23,
+     "last_read": "2026-09-16"
+    }
+   }
   },
   "wb_raw.RAW_WB_ORDERS": {
    "object": "wb_raw.RAW_WB_ORDERS",
@@ -10988,9 +12986,9 @@
     "last_change_date STRING NULL",
     "_order_date DATE NULL"
    ],
-   "row_count": 5543,
-   "size_bytes": 2686279,
-   "last_modified": "2026-09-20T23:32:13Z",
+   "row_count": 5545,
+   "size_bytes": 2687223,
+   "last_modified": "2026-09-21T06:32:06Z",
    "partitioned_by": "_order_date",
    "clustered_by": [
     "wb_nm_id",
@@ -10999,7 +12997,13 @@
    "depends_on": [],
    "consumed_by": [
     "wb_raw.V_WB_ORDERS"
-   ]
+   ],
+   "external_readers": {
+    "human_or_script": {
+     "queries": 468,
+     "last_read": "2026-09-21"
+    }
+   }
   },
   "wb_raw.RAW_WB_PAID_STORAGE": {
    "object": "wb_raw.RAW_WB_PAID_STORAGE",
@@ -11048,7 +13052,17 @@
    "consumed_by": [
     "wb_raw.V_WB_STORAGE_COVERAGE",
     "wb_raw.V_WB_STORAGE_DAILY"
-   ]
+   ],
+   "external_readers": {
+    "human_or_script": {
+     "queries": 50,
+     "last_read": "2026-09-19"
+    },
+    "service_account": {
+     "queries": 36,
+     "last_read": "2026-09-20"
+    }
+   }
   },
   "wb_raw.RAW_WB_PAID_STORAGE__STAGE": {
    "object": "wb_raw.RAW_WB_PAID_STORAGE__STAGE",
@@ -11094,7 +13108,17 @@
     "warehouse"
    ],
    "depends_on": [],
-   "consumed_by": []
+   "consumed_by": [],
+   "external_readers": {
+    "human_or_script": {
+     "queries": 3,
+     "last_read": "2026-09-14"
+    },
+    "service_account": {
+     "queries": 36,
+     "last_read": "2026-09-20"
+    }
+   }
   },
   "wb_raw.RAW_WB_PRICES": {
    "object": "wb_raw.RAW_WB_PRICES",
@@ -11127,9 +13151,9 @@
     "source_payload_hash STRING NULL",
     "ingested_at TIMESTAMP NULL"
    ],
-   "row_count": 24825,
-   "size_bytes": 16156108,
-   "last_modified": "2026-09-21T05:41:06Z",
+   "row_count": 24925,
+   "size_bytes": 16220784,
+   "last_modified": "2026-09-21T07:00:47Z",
    "partitioned_by": "DATE(observed_at)",
    "clustered_by": [
     "nm_id",
@@ -11141,7 +13165,17 @@
     "wb_mart.V_UNITKA_RECON_INTEGRITY",
     "wb_raw.V_WB_PRICES_CURRENT",
     "wb_raw.V_WB_PRICES_OBSERVED_CHANGES"
-   ]
+   ],
+   "external_readers": {
+    "service_account": {
+     "queries": 997,
+     "last_read": "2026-09-21"
+    },
+    "human_or_script": {
+     "queries": 53,
+     "last_read": "2026-09-20"
+    }
+   }
   },
   "wb_raw.RAW_WB_SALES_RETURNS": {
    "object": "wb_raw.RAW_WB_SALES_RETURNS",
@@ -11206,7 +13240,13 @@
    "depends_on": [],
    "consumed_by": [
     "wb_raw.V_WB_SALES_RETURNS"
-   ]
+   ],
+   "external_readers": {
+    "human_or_script": {
+     "queries": 297,
+     "last_read": "2026-09-21"
+    }
+   }
   },
   "wb_raw.RAW_WB_STOCKS": {
    "object": "wb_raw.RAW_WB_STOCKS",
@@ -11247,7 +13287,13 @@
    "depends_on": [],
    "consumed_by": [
     "wb_raw.V_WB_STOCKS_CURRENT"
-   ]
+   ],
+   "external_readers": {
+    "human_or_script": {
+     "queries": 65,
+     "last_read": "2026-09-21"
+    }
+   }
   },
   "wb_raw.RAW_WB_STOCKS_T5": {
    "object": "wb_raw.RAW_WB_STOCKS_T5",
@@ -11285,7 +13331,13 @@
    "depends_on": [],
    "consumed_by": [
     "wb_raw.V_WB_STOCKS_T5_CURRENT"
-   ]
+   ],
+   "external_readers": {
+    "human_or_script": {
+     "queries": 31,
+     "last_read": "2026-09-19"
+    }
+   }
   },
   "wb_raw.RAW_WB_STOCKS__CR": {
    "object": "wb_raw.RAW_WB_STOCKS__CR",
@@ -11324,7 +13376,17 @@
     "warehouse_id"
    ],
    "depends_on": [],
-   "consumed_by": []
+   "consumed_by": [],
+   "external_readers": {
+    "service_account": {
+     "queries": 29,
+     "last_read": "2026-09-21"
+    },
+    "human_or_script": {
+     "queries": 12,
+     "last_read": "2026-09-08"
+    }
+   }
   },
   "wb_raw.RAW_WB_SUPPLIES": {
    "object": "wb_raw.RAW_WB_SUPPLIES",
@@ -11378,7 +13440,13 @@
    "depends_on": [],
    "consumed_by": [
     "wb_raw.V_WB_SUPPLIES_CURRENT"
-   ]
+   ],
+   "external_readers": {
+    "human_or_script": {
+     "queries": 55,
+     "last_read": "2026-09-20"
+    }
+   }
   },
   "wb_raw.RAW_WB_SUPPLIES_GOODS": {
    "object": "wb_raw.RAW_WB_SUPPLIES_GOODS",
@@ -11418,7 +13486,13 @@
    "depends_on": [],
    "consumed_by": [
     "wb_raw.V_WB_SUPPLIES_GOODS_CURRENT"
-   ]
+   ],
+   "external_readers": {
+    "human_or_script": {
+     "queries": 7,
+     "last_read": "2026-09-14"
+    }
+   }
   },
   "wb_raw.RAW_WB_TARIFFS": {
    "object": "wb_raw.RAW_WB_TARIFFS",
@@ -11461,7 +13535,17 @@
    "depends_on": [],
    "consumed_by": [
     "wb_raw.V_WB_TARIFFS_CURRENT"
-   ]
+   ],
+   "external_readers": {
+    "service_account": {
+     "queries": 15,
+     "last_read": "2026-09-21"
+    },
+    "human_or_script": {
+     "queries": 9,
+     "last_read": "2026-09-19"
+    }
+   }
   },
   "wb_raw.REF_ACTIVE_VERSION": {
    "object": "wb_raw.REF_ACTIVE_VERSION",
@@ -11485,7 +13569,13 @@
    "consumed_by": [
     "wb_mart.V_DATA_FRESHNESS",
     "wb_raw.REF_SKU_MASTER"
-   ]
+   ],
+   "external_readers": {
+    "human_or_script": {
+     "queries": 30,
+     "last_read": "2026-09-21"
+    }
+   }
   },
   "wb_raw.REF_SKU_MASTER": {
    "object": "wb_raw.REF_SKU_MASTER",
@@ -11548,7 +13638,21 @@
     "wb_mart.V_WB_FINANCE_PRICE_COMPONENTS",
     "wb_mart.V_WB_SKU_COST_INPUTS",
     "wb_raw.V_WB_FINANCE_SEMANTIC"
-   ]
+   ],
+   "external_readers": {
+    "human_or_script": {
+     "queries": 506,
+     "last_read": "2026-09-21"
+    },
+    "metabase": {
+     "queries": 26,
+     "last_read": "2026-08-26"
+    },
+    "service_account": {
+     "queries": 1173,
+     "last_read": "2026-09-21"
+    }
+   }
   },
   "wb_raw.REF_SKU_MASTER_DATA": {
    "object": "wb_raw.REF_SKU_MASTER_DATA",
@@ -11595,7 +13699,13 @@
    "consumed_by": [
     "wb_mart.V_DATA_FRESHNESS",
     "wb_raw.REF_SKU_MASTER"
-   ]
+   ],
+   "external_readers": {
+    "human_or_script": {
+     "queries": 33,
+     "last_read": "2026-09-21"
+    }
+   }
   },
   "wb_raw.REF_SYNC_RUNS": {
    "object": "wb_raw.REF_SYNC_RUNS",
@@ -11624,7 +13734,13 @@
    "depends_on": [],
    "consumed_by": [
     "wb_mart.V_DATA_FRESHNESS"
-   ]
+   ],
+   "external_readers": {
+    "human_or_script": {
+     "queries": 7,
+     "last_read": "2026-09-15"
+    }
+   }
   },
   "wb_raw.REF_SYNC_TABLE_LOG": {
    "object": "wb_raw.REF_SYNC_TABLE_LOG",
@@ -11650,7 +13766,13 @@
    "partitioned_by": null,
    "clustered_by": [],
    "depends_on": [],
-   "consumed_by": []
+   "consumed_by": [],
+   "external_readers": {
+    "human_or_script": {
+     "queries": 1,
+     "last_read": "2026-08-27"
+    }
+   }
   },
   "wb_raw.V_ADV_BOOSTER_STATS": {
    "object": "wb_raw.V_ADV_BOOSTER_STATS",
@@ -11681,7 +13803,17 @@
    "depends_on": [
     "wb_raw.RAW_WB_ADV_BOOSTER_STATS"
    ],
-   "consumed_by": []
+   "consumed_by": [],
+   "external_readers": {
+    "metabase": {
+     "queries": 12,
+     "last_read": "2026-08-26"
+    },
+    "human_or_script": {
+     "queries": 1,
+     "last_read": "2026-09-06"
+    }
+   }
   },
   "wb_raw.V_ADV_CAMPAIGNS": {
    "object": "wb_raw.V_ADV_CAMPAIGNS",
@@ -11720,7 +13852,17 @@
    "depends_on": [
     "wb_raw.RAW_WB_ADV_CAMPAIGNS"
    ],
-   "consumed_by": []
+   "consumed_by": [],
+   "external_readers": {
+    "metabase": {
+     "queries": 20,
+     "last_read": "2026-08-26"
+    },
+    "human_or_script": {
+     "queries": 9,
+     "last_read": "2026-09-06"
+    }
+   }
   },
   "wb_raw.V_ADV_CAMPAIGN_CONFIG_DAILY": {
    "object": "wb_raw.V_ADV_CAMPAIGN_CONFIG_DAILY",
@@ -11770,7 +13912,17 @@
    ],
    "consumed_by": [
     "wb_mart.V_ADS_CAMPAIGN_DAILY"
-   ]
+   ],
+   "external_readers": {
+    "human_or_script": {
+     "queries": 7,
+     "last_read": "2026-09-06"
+    },
+    "metabase": {
+     "queries": 29,
+     "last_read": "2026-09-06"
+    }
+   }
   },
   "wb_raw.V_ADV_CAMPAIGN_CONFIG_SNAPSHOT": {
    "object": "wb_raw.V_ADV_CAMPAIGN_CONFIG_SNAPSHOT",
@@ -11820,7 +13972,17 @@
    ],
    "consumed_by": [
     "wb_raw.V_ADV_CAMPAIGN_CONFIG_DAILY"
-   ]
+   ],
+   "external_readers": {
+    "human_or_script": {
+     "queries": 9,
+     "last_read": "2026-09-06"
+    },
+    "metabase": {
+     "queries": 29,
+     "last_read": "2026-09-06"
+    }
+   }
   },
   "wb_raw.V_ADV_CAMPAIGN_STATS": {
    "object": "wb_raw.V_ADV_CAMPAIGN_STATS",
@@ -11868,7 +14030,17 @@
     "wb_mart.V_ADS_CAMPAIGN_DAILY",
     "wb_mart.V_DATA_FRESHNESS",
     "wb_raw.V_ADV_QUERY_STATS_COVERAGE"
-   ]
+   ],
+   "external_readers": {
+    "human_or_script": {
+     "queries": 195,
+     "last_read": "2026-09-21"
+    },
+    "metabase": {
+     "queries": 25,
+     "last_read": "2026-08-26"
+    }
+   }
   },
   "wb_raw.V_ADV_COSTS": {
    "object": "wb_raw.V_ADV_COSTS",
@@ -11907,7 +14079,17 @@
    ],
    "consumed_by": [
     "wb_mart.V_DATA_FRESHNESS"
-   ]
+   ],
+   "external_readers": {
+    "human_or_script": {
+     "queries": 79,
+     "last_read": "2026-09-21"
+    },
+    "metabase": {
+     "queries": 18,
+     "last_read": "2026-08-26"
+    }
+   }
   },
   "wb_raw.V_ADV_COSTS_DAY_COVERAGE": {
    "object": "wb_raw.V_ADV_COSTS_DAY_COVERAGE",
@@ -11954,7 +14136,17 @@
    ],
    "consumed_by": [
     "wb_mart.V_DASH_FINANCE_CORRECTED_DAILY"
-   ]
+   ],
+   "external_readers": {
+    "human_or_script": {
+     "queries": 61,
+     "last_read": "2026-09-21"
+    },
+    "metabase": {
+     "queries": 25,
+     "last_read": "2026-08-26"
+    }
+   }
   },
   "wb_raw.V_ADV_COSTS_SNAPSHOT": {
    "object": "wb_raw.V_ADV_COSTS_SNAPSHOT",
@@ -11994,7 +14186,17 @@
    ],
    "consumed_by": [
     "wb_raw.V_ADV_COSTS"
-   ]
+   ],
+   "external_readers": {
+    "metabase": {
+     "queries": 18,
+     "last_read": "2026-08-26"
+    },
+    "human_or_script": {
+     "queries": 39,
+     "last_read": "2026-09-11"
+    }
+   }
   },
   "wb_raw.V_ADV_COSTS_UNION_LEGACY": {
    "object": "wb_raw.V_ADV_COSTS_UNION_LEGACY",
@@ -12031,7 +14233,17 @@
    "depends_on": [
     "wb_raw.RAW_WB_ADV_COSTS"
    ],
-   "consumed_by": []
+   "consumed_by": [],
+   "external_readers": {
+    "human_or_script": {
+     "queries": 3,
+     "last_read": "2026-09-08"
+    },
+    "metabase": {
+     "queries": 18,
+     "last_read": "2026-08-26"
+    }
+   }
   },
   "wb_raw.V_ADV_COSTS_UNION_PREBOOTSTRAP": {
    "object": "wb_raw.V_ADV_COSTS_UNION_PREBOOTSTRAP",
@@ -12068,7 +14280,17 @@
    "depends_on": [
     "wb_raw.RAW_WB_ADV_COSTS"
    ],
-   "consumed_by": []
+   "consumed_by": [],
+   "external_readers": {
+    "metabase": {
+     "queries": 18,
+     "last_read": "2026-08-26"
+    },
+    "human_or_script": {
+     "queries": 16,
+     "last_read": "2026-09-10"
+    }
+   }
   },
   "wb_raw.V_ADV_QUERY_BIDS": {
    "object": "wb_raw.V_ADV_QUERY_BIDS",
@@ -12110,7 +14332,17 @@
     "wb_mart.V_ADS_FUNNEL_QUERY_28D",
     "wb_mart.V_ADS_FUNNEL_QUERY_90D",
     "wb_mart.V_DATA_FRESHNESS"
-   ]
+   ],
+   "external_readers": {
+    "human_or_script": {
+     "queries": 10,
+     "last_read": "2026-09-15"
+    },
+    "metabase": {
+     "queries": 18,
+     "last_read": "2026-08-26"
+    }
+   }
   },
   "wb_raw.V_ADV_QUERY_STATS": {
    "object": "wb_raw.V_ADV_QUERY_STATS",
@@ -12156,7 +14388,17 @@
    "consumed_by": [
     "wb_mart.V_ADS_FUNNEL_QUERY_DAILY",
     "wb_mart.V_DATA_FRESHNESS"
-   ]
+   ],
+   "external_readers": {
+    "metabase": {
+     "queries": 30,
+     "last_read": "2026-09-12"
+    },
+    "human_or_script": {
+     "queries": 10,
+     "last_read": "2026-09-06"
+    }
+   }
   },
   "wb_raw.V_ADV_QUERY_STATS_COVERAGE": {
    "object": "wb_raw.V_ADV_QUERY_STATS_COVERAGE",
@@ -12191,7 +14433,21 @@
     "wb_raw.RAW_WB_ADV_QUERY_STATS_RUNS",
     "wb_raw.V_ADV_CAMPAIGN_STATS"
    ],
-   "consumed_by": []
+   "consumed_by": [],
+   "external_readers": {
+    "human_or_script": {
+     "queries": 10,
+     "last_read": "2026-09-08"
+    },
+    "service_account": {
+     "queries": 119,
+     "last_read": "2026-09-21"
+    },
+    "metabase": {
+     "queries": 15,
+     "last_read": "2026-08-26"
+    }
+   }
   },
   "wb_raw.V_ADV_SEARCH_CLUSTERS": {
    "object": "wb_raw.V_ADV_SEARCH_CLUSTERS",
@@ -12229,7 +14485,13 @@
    "depends_on": [
     "wb_raw.RAW_WB_ADV_SEARCH_CLUSTERS"
    ],
-   "consumed_by": []
+   "consumed_by": [],
+   "external_readers": {
+    "metabase": {
+     "queries": 19,
+     "last_read": "2026-08-26"
+    }
+   }
   },
   "wb_raw.V_INGEST_HEARTBEAT": {
    "object": "wb_raw.V_INGEST_HEARTBEAT",
@@ -12262,7 +14524,21 @@
     "wb_raw.INGEST_RUNS",
     "wb_raw.LOADER_RUNS"
    ],
-   "consumed_by": []
+   "consumed_by": [],
+   "external_readers": {
+    "service_account": {
+     "queries": 168,
+     "last_read": "2026-09-21"
+    },
+    "human_or_script": {
+     "queries": 7,
+     "last_read": "2026-09-15"
+    },
+    "metabase": {
+     "queries": 13,
+     "last_read": "2026-08-26"
+    }
+   }
   },
   "wb_raw.V_WB_FINANCE": {
    "object": "wb_raw.V_WB_FINANCE",
@@ -12353,7 +14629,13 @@
    "depends_on": [
     "wb_raw.V_WB_FINANCE_COMPLETE"
    ],
-   "consumed_by": []
+   "consumed_by": [],
+   "external_readers": {
+    "metabase": {
+     "queries": 72,
+     "last_read": "2026-08-26"
+    }
+   }
   },
   "wb_raw.V_WB_FINANCE_CANONICAL": {
    "object": "wb_raw.V_WB_FINANCE_CANONICAL",
@@ -12459,7 +14741,17 @@
     "wb_mart.V_UNITKA_SOURCE_FRESHNESS",
     "wb_raw.V_WB_FINANCE_SEMANTIC",
     "wb_raw.V_WB_STORAGE_RECONCILIATION"
-   ]
+   ],
+   "external_readers": {
+    "human_or_script": {
+     "queries": 117,
+     "last_read": "2026-09-21"
+    },
+    "metabase": {
+     "queries": 78,
+     "last_read": "2026-08-26"
+    }
+   }
   },
   "wb_raw.V_WB_FINANCE_COMPLETE": {
    "object": "wb_raw.V_WB_FINANCE_COMPLETE",
@@ -12557,7 +14849,13 @@
    "consumed_by": [
     "wb_raw.V_WB_FINANCE",
     "wb_raw.V_WB_FINANCE_CANONICAL"
-   ]
+   ],
+   "external_readers": {
+    "metabase": {
+     "queries": 75,
+     "last_read": "2026-08-26"
+    }
+   }
   },
   "wb_raw.V_WB_FINANCE_SEMANTIC": {
    "object": "wb_raw.V_WB_FINANCE_SEMANTIC",
@@ -12669,7 +14967,17 @@
     "wb_mart.V_FACT_FINANCE_COGS",
     "wb_mart.V_WB_DEDUCTIONS_CLASSIFIED",
     "wb_mart.V_WB_FINANCE_PRICE_COMPONENTS"
-   ]
+   ],
+   "external_readers": {
+    "human_or_script": {
+     "queries": 73,
+     "last_read": "2026-09-21"
+    },
+    "metabase": {
+     "queries": 87,
+     "last_read": "2026-08-28"
+    }
+   }
   },
   "wb_raw.V_WB_FUNNEL_COVERAGE": {
    "object": "wb_raw.V_WB_FUNNEL_COVERAGE",
@@ -12696,7 +15004,17 @@
     "wb_raw.RAW_WB_FUNNEL_DAILY",
     "wb_raw.V_WB_FUNNEL_DAILY"
    ],
-   "consumed_by": []
+   "consumed_by": [],
+   "external_readers": {
+    "metabase": {
+     "queries": 7,
+     "last_read": "2026-09-11"
+    },
+    "human_or_script": {
+     "queries": 3,
+     "last_read": "2026-09-21"
+    }
+   }
   },
   "wb_raw.V_WB_FUNNEL_DAILY": {
    "object": "wb_raw.V_WB_FUNNEL_DAILY",
@@ -12739,7 +15057,17 @@
     "wb_mart.V_UNITKA_RECON_FACT",
     "wb_mart.V_UNITKA_SOURCE_FRESHNESS",
     "wb_raw.V_WB_FUNNEL_COVERAGE"
-   ]
+   ],
+   "external_readers": {
+    "human_or_script": {
+     "queries": 92,
+     "last_read": "2026-09-21"
+    },
+    "metabase": {
+     "queries": 18,
+     "last_read": "2026-09-11"
+    }
+   }
   },
   "wb_raw.V_WB_ORDERS": {
    "object": "wb_raw.V_WB_ORDERS",
@@ -12789,7 +15117,17 @@
    "depends_on": [
     "wb_raw.RAW_WB_ORDERS"
    ],
-   "consumed_by": []
+   "consumed_by": [],
+   "external_readers": {
+    "human_or_script": {
+     "queries": 26,
+     "last_read": "2026-09-11"
+    },
+    "metabase": {
+     "queries": 31,
+     "last_read": "2026-08-26"
+    }
+   }
   },
   "wb_raw.V_WB_PRICES_CURRENT": {
    "object": "wb_raw.V_WB_PRICES_CURRENT",
@@ -12827,7 +15165,17 @@
    ],
    "consumed_by": [
     "wb_mart.V_WB_SKU_COST_INPUTS"
-   ]
+   ],
+   "external_readers": {
+    "human_or_script": {
+     "queries": 11,
+     "last_read": "2026-09-20"
+    },
+    "metabase": {
+     "queries": 17,
+     "last_read": "2026-09-08"
+    }
+   }
   },
   "wb_raw.V_WB_PRICES_OBSERVED_CHANGES": {
    "object": "wb_raw.V_WB_PRICES_OBSERVED_CHANGES",
@@ -12869,7 +15217,17 @@
    "depends_on": [
     "wb_raw.RAW_WB_PRICES"
    ],
-   "consumed_by": []
+   "consumed_by": [],
+   "external_readers": {
+    "human_or_script": {
+     "queries": 4,
+     "last_read": "2026-09-20"
+    },
+    "metabase": {
+     "queries": 23,
+     "last_read": "2026-09-08"
+    }
+   }
   },
   "wb_raw.V_WB_PRICES_OBSERVER_HEALTH": {
    "object": "wb_raw.V_WB_PRICES_OBSERVER_HEALTH",
@@ -12912,7 +15270,17 @@
    "depends_on": [
     "wb_raw.WB_PRICES_OBSERVATIONS"
    ],
-   "consumed_by": []
+   "consumed_by": [],
+   "external_readers": {
+    "human_or_script": {
+     "queries": 5,
+     "last_read": "2026-09-07"
+    },
+    "metabase": {
+     "queries": 24,
+     "last_read": "2026-09-08"
+    }
+   }
   },
   "wb_raw.V_WB_SALES_RETURNS": {
    "object": "wb_raw.V_WB_SALES_RETURNS",
@@ -12976,7 +15344,17 @@
    "consumed_by": [
     "wb_mart.V_DASH_BUYOUT_COHORT_DAILY",
     "wb_mart.V_MART_SKU_DAILY_COGS"
-   ]
+   ],
+   "external_readers": {
+    "human_or_script": {
+     "queries": 81,
+     "last_read": "2026-09-21"
+    },
+    "metabase": {
+     "queries": 42,
+     "last_read": "2026-08-26"
+    }
+   }
   },
   "wb_raw.V_WB_STOCKS_CURRENT": {
    "object": "wb_raw.V_WB_STOCKS_CURRENT",
@@ -13015,7 +15393,17 @@
     "wb_raw.RAW_WB_STOCKS",
     "wb_raw.WB_STOCKS_SNAPSHOTS"
    ],
-   "consumed_by": []
+   "consumed_by": [],
+   "external_readers": {
+    "human_or_script": {
+     "queries": 8,
+     "last_read": "2026-09-20"
+    },
+    "metabase": {
+     "queries": 19,
+     "last_read": "2026-08-26"
+    }
+   }
   },
   "wb_raw.V_WB_STOCKS_T5_CURRENT": {
    "object": "wb_raw.V_WB_STOCKS_T5_CURRENT",
@@ -13057,7 +15445,21 @@
     "wb_mart.V_CT_BUNDLE_STATUS",
     "wb_mart.V_CT_FRESHNESS",
     "wb_mart.V_CT_INVENTORY_TRUTH_LIVE"
-   ]
+   ],
+   "external_readers": {
+    "human_or_script": {
+     "queries": 29,
+     "last_read": "2026-09-14"
+    },
+    "service_account": {
+     "queries": 50,
+     "last_read": "2026-09-21"
+    },
+    "metabase": {
+     "queries": 16,
+     "last_read": "2026-08-26"
+    }
+   }
   },
   "wb_raw.V_WB_STORAGE_COVERAGE": {
    "object": "wb_raw.V_WB_STORAGE_COVERAGE",
@@ -13084,7 +15486,17 @@
     "wb_raw.RAW_WB_PAID_STORAGE",
     "wb_raw.V_WB_STORAGE_DAILY"
    ],
-   "consumed_by": []
+   "consumed_by": [],
+   "external_readers": {
+    "human_or_script": {
+     "queries": 30,
+     "last_read": "2026-09-19"
+    },
+    "metabase": {
+     "queries": 7,
+     "last_read": "2026-09-13"
+    }
+   }
   },
   "wb_raw.V_WB_STORAGE_DAILY": {
    "object": "wb_raw.V_WB_STORAGE_DAILY",
@@ -13119,7 +15531,17 @@
     "wb_mart.V_UNITKA_SOURCE_FRESHNESS",
     "wb_raw.V_WB_STORAGE_COVERAGE",
     "wb_raw.V_WB_STORAGE_RECONCILIATION"
-   ]
+   ],
+   "external_readers": {
+    "metabase": {
+     "queries": 10,
+     "last_read": "2026-09-13"
+    },
+    "human_or_script": {
+     "queries": 137,
+     "last_read": "2026-09-21"
+    }
+   }
   },
   "wb_raw.V_WB_STORAGE_RECONCILIATION": {
    "object": "wb_raw.V_WB_STORAGE_RECONCILIATION",
@@ -13145,7 +15567,17 @@
     "wb_raw.V_WB_FINANCE_CANONICAL",
     "wb_raw.V_WB_STORAGE_DAILY"
    ],
-   "consumed_by": []
+   "consumed_by": [],
+   "external_readers": {
+    "metabase": {
+     "queries": 6,
+     "last_read": "2026-09-10"
+    },
+    "human_or_script": {
+     "queries": 7,
+     "last_read": "2026-09-19"
+    }
+   }
   },
   "wb_raw.V_WB_SUPPLIES_CURRENT": {
    "object": "wb_raw.V_WB_SUPPLIES_CURRENT",
@@ -13204,7 +15636,17 @@
     "wb_mart.V_CT_SUPPLY_FLOW",
     "wb_mart.V_WB_SUPPLIES_DETAIL",
     "wb_raw.V_WB_SUPPLIES_GOODS_CURRENT"
-   ]
+   ],
+   "external_readers": {
+    "human_or_script": {
+     "queries": 20,
+     "last_read": "2026-09-16"
+    },
+    "metabase": {
+     "queries": 35,
+     "last_read": "2026-08-26"
+    }
+   }
   },
   "wb_raw.V_WB_SUPPLIES_GOODS_CURRENT": {
    "object": "wb_raw.V_WB_SUPPLIES_GOODS_CURRENT",
@@ -13249,7 +15691,17 @@
     "evetis_ops.V_OPS_SUPPLY_PLAN",
     "wb_mart.V_CT_SUPPLY_FLOW",
     "wb_mart.V_WB_SUPPLIES_DETAIL"
-   ]
+   ],
+   "external_readers": {
+    "human_or_script": {
+     "queries": 12,
+     "last_read": "2026-09-16"
+    },
+    "metabase": {
+     "queries": 21,
+     "last_read": "2026-08-26"
+    }
+   }
   },
   "wb_raw.V_WB_TARIFFS_CURRENT": {
    "object": "wb_raw.V_WB_TARIFFS_CURRENT",
@@ -13287,7 +15739,13 @@
    "consumed_by": [
     "wb_mart.V_WB_PRICING_ECONOMICS_HEALTH",
     "wb_mart.V_WB_SKU_COST_INPUTS"
-   ]
+   ],
+   "external_readers": {
+    "metabase": {
+     "queries": 16,
+     "last_read": "2026-09-08"
+    }
+   }
   },
   "wb_raw.WB_FUNNEL_OBSERVATIONS": {
    "object": "wb_raw.WB_FUNNEL_OBSERVATIONS",
@@ -13320,13 +15778,19 @@
     "error_code STRING NULL",
     "error_message STRING NULL"
    ],
-   "row_count": 10,
-   "size_bytes": 2438,
-   "last_modified": "2026-09-20T06:31:40Z",
+   "row_count": 11,
+   "size_bytes": 2677,
+   "last_modified": "2026-09-21T06:31:01Z",
    "partitioned_by": null,
    "clustered_by": [],
    "depends_on": [],
-   "consumed_by": []
+   "consumed_by": [],
+   "external_readers": {
+    "human_or_script": {
+     "queries": 4,
+     "last_read": "2026-09-21"
+    }
+   }
   },
   "wb_raw.WB_PRICES_OBSERVATIONS": {
    "object": "wb_raw.WB_PRICES_OBSERVATIONS",
@@ -13360,9 +15824,9 @@
     "error_code STRING NULL",
     "error_message STRING NULL"
    ],
-   "row_count": 993,
-   "size_bytes": 251682,
-   "last_modified": "2026-09-21T05:41:09Z",
+   "row_count": 997,
+   "size_bytes": 252682,
+   "last_modified": "2026-09-21T07:00:50Z",
    "partitioned_by": "DATE(started_at)",
    "clustered_by": [
     "environment",
@@ -13371,7 +15835,13 @@
    "depends_on": [],
    "consumed_by": [
     "wb_raw.V_WB_PRICES_OBSERVER_HEALTH"
-   ]
+   ],
+   "external_readers": {
+    "human_or_script": {
+     "queries": 8,
+     "last_read": "2026-09-17"
+    }
+   }
   },
   "wb_raw.WB_STOCKS_SNAPSHOTS": {
    "object": "wb_raw.WB_STOCKS_SNAPSHOTS",
@@ -13425,7 +15895,13 @@
     "wb_mart.V_DATA_FRESHNESS",
     "wb_raw.V_WB_STOCKS_CURRENT",
     "wb_raw.V_WB_STOCKS_T5_CURRENT"
-   ]
+   ],
+   "external_readers": {
+    "human_or_script": {
+     "queries": 51,
+     "last_read": "2026-09-21"
+    }
+   }
   },
   "wb_raw.WB_STOCKS_SNAPSHOTS_BAK_20260816": {
    "object": "wb_raw.WB_STOCKS_SNAPSHOTS_BAK_20260816",
@@ -13475,7 +15951,8 @@
    "partitioned_by": null,
    "clustered_by": [],
    "depends_on": [],
-   "consumed_by": []
+   "consumed_by": [],
+   "external_readers": {}
   },
   "wb_raw.WB_STOCKS_SNAPSHOTS__CR": {
    "object": "wb_raw.WB_STOCKS_SNAPSHOTS__CR",
@@ -13514,7 +15991,13 @@
    "partitioned_by": null,
    "clustered_by": [],
    "depends_on": [],
-   "consumed_by": []
+   "consumed_by": [],
+   "external_readers": {
+    "human_or_script": {
+     "queries": 4,
+     "last_read": "2026-09-08"
+    }
+   }
   },
   "wb_raw.WB_STORAGE_OBSERVATIONS": {
    "object": "wb_raw.WB_STORAGE_OBSERVATIONS",
@@ -13553,7 +16036,8 @@
    "partitioned_by": null,
    "clustered_by": [],
    "depends_on": [],
-   "consumed_by": []
+   "consumed_by": [],
+   "external_readers": {}
   },
   "wb_raw.WB_TARIFF_OBSERVATIONS": {
    "object": "wb_raw.WB_TARIFF_OBSERVATIONS",
@@ -13593,7 +16077,13 @@
    "depends_on": [],
    "consumed_by": [
     "wb_mart.V_WB_PRICING_ECONOMICS_HEALTH"
-   ]
+   ],
+   "external_readers": {
+    "human_or_script": {
+     "queries": 2,
+     "last_read": "2026-09-08"
+    }
+   }
   }
  },
  "routines": [

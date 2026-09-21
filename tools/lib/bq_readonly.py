@@ -27,9 +27,12 @@ ALLOWED_HOSTS = frozenset({"www.googleapis.com", "bigquery.googleapis.com"})
 
 # Отклоняется ДО отправки. Список намеренно широкий: инструмент не обязан уметь
 # отличать безопасный CREATE от опасного — он не делает никаких CREATE вообще.
+# REPLACE намеренно НЕ в списке: это ещё и обычная строковая функция
+# (`REPLACE(x, ',', '.')` встречается в приёмочных проверках). Опасна она только
+# в составе `CREATE OR REPLACE`, а `CREATE` перехватывается отдельно.
 _MUTATING = re.compile(
-    r"\b(INSERT|UPDATE|DELETE|MERGE|TRUNCATE|DROP|ALTER|CREATE|REPLACE|GRANT|REVOKE"
-    r"|EXPORT|LOAD|CALL|BEGIN|COMMIT|ROLLBACK|EXECUTE\s+IMMEDIATE|ASSERT)\b",
+    r"\b(INSERT|UPDATE|DELETE|MERGE|TRUNCATE|DROP|ALTER|CREATE|GRANT|REVOKE"
+    r"|EXPORT|LOAD\s+DATA|CALL|BEGIN|COMMIT|ROLLBACK|EXECUTE\s+IMMEDIATE|ASSERT)\b",
     re.IGNORECASE,
 )
 _STARTS_READONLY = re.compile(r"^\s*(SELECT|WITH)\b", re.IGNORECASE)
@@ -122,8 +125,42 @@ def mask_sql_comments(sql: str) -> str:
     return masked
 
 
+def blank_string_literals(sql: str) -> str:
+    """Заменить СОДЕРЖИМОЕ строковых литералов пробелами, сохранив длину.
+
+    Ключевое слово внутри литерала не является оператором: приёмочная проверка
+    `... LIKE '%TRUNCATE%'` доказывает, что процедура содержит TRUNCATE, и сама
+    ничего не выполняет. Без этого read-only гейт отвергал бы именно те проверки,
+    которые сторожат мутации.
+    """
+    out, i, n = [], 0, len(sql)
+    while i < n:
+        ch = sql[i]
+        if ch in "'\"":
+            quote = ch
+            out.append(ch)
+            i += 1
+            while i < n:
+                if sql[i] == "\\" and i + 1 < n:
+                    out.append("  ")
+                    i += 2
+                    continue
+                if sql[i] == quote:
+                    out.append(quote)
+                    i += 1
+                    break
+                out.append(" ")
+                i += 1
+            continue
+        out.append(ch)
+        i += 1
+    blanked = "".join(out)
+    assert len(blanked) == n, "бланкирование обязано сохранять длину"
+    return blanked
+
+
 def assert_read_only(sql: str) -> None:
-    bare = strip_sql_comments(sql)
+    bare = blank_string_literals(strip_sql_comments(sql))
     if not _STARTS_READONLY.match(bare):
         raise ReadOnlyViolation("только SELECT / WITH; запрос отклонён до отправки")
     hit = _MUTATING.search(bare)

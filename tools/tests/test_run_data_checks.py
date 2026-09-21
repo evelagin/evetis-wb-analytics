@@ -1,8 +1,9 @@
-"""Тесты исполнителя проверок данных. Офлайн: BigQuery не вызывается.
+"""Контракт адаптера `-- @check` и разбора операторов. Офлайн.
 
-Зелёные ворота, которые не умеют краснеть, хуже отсутствия ворот. Поэтому здесь
-проверяется прежде всего то, что исполнитель ОТКЛОНЯЕТ: сломанный контракт файла,
-мутирующий SQL, пустой результат, отсутствие колонки `status`, чужое значение статуса.
+Поведение исполнителя (PASS / FAIL / EMPTY / ERROR / BLOCKED, вердикт набора,
+коды выхода) проверяется в test_evidence_system.py; адаптеры ASSERT и
+verdict_select — в test_acceptance_adapters.py. Здесь остаётся только то, что
+касается исходного формата SCALE 1 и резки текста на операторы.
 """
 from __future__ import annotations
 
@@ -16,39 +17,40 @@ TOOLS = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(TOOLS))
 
 import run_data_checks as R  # noqa: E402
+from lib.acceptance import SuiteContractError, parse_check_blocks, split_statements  # noqa: E402
 from lib.bq_readonly import mask_sql_comments  # noqa: E402
 
 
-# --------------------------------------------------------------- маска/сплит ---
+# --------------------------------------------------------------- маска/резка ---
 
 def test_mask_preserves_length_and_hides_comments():
     text = "SELECT 1 -- ; DROP\nFROM t /* ; */ WHERE x = ';'"
     masked = mask_sql_comments(text)
-    assert len(masked) == len(text)
+    assert len(masked) == len(text)          # иначе смещения врут и SQL режется не там
     assert "DROP" not in masked
-    assert masked.count(";") == 1  # только точка с запятой внутри строкового литерала
+    assert masked.count(";") == 1            # только внутри строкового литерала
 
 
 def test_split_ignores_semicolons_in_strings_and_comments():
     block = "SELECT ';' AS a -- ; comment\nFROM t;"
-    assert R.split_statements(block) == ["SELECT ';' AS a -- ; comment\nFROM t"]
+    assert split_statements(block) == ["SELECT ';' AS a -- ; comment\nFROM t"]
 
 
 def test_split_returns_two_real_statements():
-    assert len(R.split_statements("SELECT 1; SELECT 2;")) == 2
+    assert len(split_statements("SELECT 1; SELECT 2;")) == 2
 
 
-# ------------------------------------------------------------------- парсер ---
+# ------------------------------------------------------- адаптер check_blocks ---
 
 def test_parse_ok():
-    checks = R.parse_checks("шапка\n-- @check A_ONE\nSELECT 1 status;\n", "f.sql")
-    assert [c["check_id"] for c in checks] == ["A_ONE"]
-    assert checks[0]["expect_empty_ok"] is False
+    checks = parse_check_blocks("шапка\n-- @check A_ONE\nSELECT 1 status;\n", "f.sql").checks
+    assert [c.check_id for c in checks] == ["A_ONE"]
+    assert checks[0].expect_empty_ok is False
 
 
 def test_parse_marks_empty_ok():
-    checks = R.parse_checks("-- @check A\n-- @expect empty_ok\nSELECT 1 status;", "f.sql")
-    assert checks[0]["expect_empty_ok"] is True
+    checks = parse_check_blocks("-- @check A\n-- @expect empty_ok\nSELECT 1 status;", "f.sql").checks
+    assert checks[0].expect_empty_ok is True
 
 
 @pytest.mark.parametrize("text, fragment", [
@@ -56,116 +58,45 @@ def test_parse_marks_empty_ok():
     ("-- @check A\nSELECT 1 status;\n-- @check A\nSELECT 2 status;", "повторяющийся"),
     ("-- @check A\nSELECT 1 status; SELECT 2 status;", "ровно один оператор"),
     ("-- @check A\nDROP TABLE t;", "отклонён до отправки"),
-    ("-- @check A\nSELECT 1 status; DELETE FROM t;", "ровно один оператор"),
     ("-- @check A\nCALL `x.sp`();", "отклонён до отправки"),
 ])
 def test_parse_rejects_broken_contract(text, fragment):
-    with pytest.raises(R.SuiteContractError) as e:
-        R.parse_checks(text, "f.sql")
+    with pytest.raises(SuiteContractError) as e:
+        parse_check_blocks(text, "f.sql")
     assert fragment in str(e.value)
 
 
-# --------------------------------------------------------------- исполнение ---
-
-class FakeBQ:
-    """Подставной клиент: отдаёт заранее заданные строки или бросает ошибку."""
-
-    def __init__(self, rows=None, error=None):
-        self._rows, self._error, self.queries_issued = rows or [], error, 0
-
-    def query(self, sql, **kw):
-        self.queries_issued += 1
-        if self._error:
-            raise self._error
-        return self._rows
+def test_legacy_parse_checks_alias_still_returns_checks():
+    """`parse_checks` вызывался напрямую до введения адаптеров — совместимость сохранена."""
+    assert [c.check_id for c in R.parse_checks("-- @check A\nSELECT 1 status;", "f.sql")] == ["A"]
 
 
-def _check(expect_empty_ok=False):
-    return {"check_id": "C", "source": "f.sql", "line": 1,
-            "sql": "SELECT 1", "expect_empty_ok": expect_empty_ok}
-
-
-def test_all_pass():
-    r = R.run_check(FakeBQ([{"status": "PASS"}, {"status": "PASS"}]), _check(), 5)
-    assert r["status"] == R.PASS and r["failing_rows"] == 0
-
-
-def test_one_fail_fails_the_check():
-    r = R.run_check(FakeBQ([{"status": "PASS"}, {"status": "FAIL", "month": "2026-08"}]), _check(), 5)
-    assert r["status"] == R.FAIL
-    assert r["failing_rows"] == 1
-    assert r["failing_sample"][0]["month"] == "2026-08"
-
-
-def test_empty_result_is_not_success():
-    r = R.run_check(FakeBQ([]), _check(), 5)
-    assert r["status"] == R.EMPTY
-
-
-def test_empty_result_allowed_when_declared():
-    assert R.run_check(FakeBQ([]), _check(expect_empty_ok=True), 5)["status"] == R.PASS
-
-
-def test_missing_status_column_is_error():
-    r = R.run_check(FakeBQ([{"rows": "1"}]), _check(), 5)
-    assert r["status"] == R.ERROR and "status" in r["error"]
-
-
-def test_unknown_status_value_is_error_not_fail():
-    r = R.run_check(FakeBQ([{"status": "WARN"}]), _check(), 5)
-    assert r["status"] == R.ERROR
-
-
-def test_bigquery_error_is_error():
-    from lib.bq_readonly import BigQueryError
-    r = R.run_check(FakeBQ(error=BigQueryError("HTTP 404")), _check(), 5)
-    assert r["status"] == R.ERROR and "404" in r["error"]
-
-
-def test_failing_sample_is_capped():
-    rows = [{"status": "FAIL", "i": str(i)} for i in range(50)]
-    r = R.run_check(FakeBQ(rows), _check(), 3)
-    assert r["failing_rows"] == 50 and len(r["failing_sample"]) == 3
-
-
-# ----------------------------------------------------------------- вердикт ---
-
-@pytest.mark.parametrize("statuses, expected", [
-    ([R.PASS, R.PASS], R.PASS),
-    ([R.PASS, R.EMPTY], R.EMPTY),
-    ([R.PASS, R.FAIL, R.EMPTY], R.FAIL),
-    ([R.FAIL, R.ERROR], R.ERROR),
-    ([], R.PASS),
-])
-def test_verdict_precedence(statuses, expected):
-    assert R.verdict([{"status": s} for s in statuses]) == expected
-
-
-def test_exit_codes_are_distinct():
-    assert sorted(R.EXIT.values()) == [0, 1, 2, 3]
-
-
-# ------------------------------------------------------------------ реестр ---
+# ------------------------------------------------------------------- реестр ---
 
 def test_registry_files_exist_and_parse():
     reg = json.loads((TOOLS.parent / "quality" / "suites.json").read_text(encoding="utf-8"))
+    assert reg["registry_version"] == 2
     assert reg["suites"], "реестр наборов пуст"
     for suite in reg["suites"]:
         for rel in suite["files"]:
-            path = TOOLS.parent / rel
-            assert path.exists(), f"{suite['suite']}: нет файла {rel}"
-            checks = R.parse_checks(path.read_text(encoding="utf-8"), rel)
-            assert checks, f"{suite['suite']}: в {rel} нет проверок"
+            assert (TOOLS.parent / rel).exists(), f"{suite['suite']}: нет файла {rel}"
+        assert R.parse_suite(suite).checks, f"{suite['suite']}: ни одной проверки"
 
 
-def test_backlog_files_exist():
-    """Список долга должен указывать на существующие файлы, иначе он врёт о размере долга."""
+def test_every_suite_declares_the_fields_the_registry_promises():
     reg = json.loads((TOOLS.parent / "quality" / "suites.json").read_text(encoding="utf-8"))
-    for rel in reg["backlog"]["files"]:
-        assert (TOOLS.parent / rel).exists(), f"в долге указан несуществующий файл {rel}"
+    required = {"suite", "title", "gate", "severity", "domain", "marketplace", "pipelines",
+                "adapter", "execution_mode", "expected_result", "owner", "files", "scope",
+                "source_contract", "cadence", "provenance"}
+    for s in reg["suites"]:
+        assert required <= set(s), f"{s['suite']}: нет полей {sorted(required - set(s))}"
+        assert s["severity"] in ("CRITICAL", "HIGH", "MEDIUM", "LOW")
+        assert s["adapter"] in ("check_blocks", "assert_script", "verdict_select")
 
 
-def test_backlog_and_suites_do_not_overlap():
+def test_backlog_records_why_each_artifact_is_not_wired():
     reg = json.loads((TOOLS.parent / "quality" / "suites.json").read_text(encoding="utf-8"))
-    in_suites = {f for s in reg["suites"] for f in s["files"]}
-    assert not (in_suites & set(reg["backlog"]["files"])), "файл одновременно в воротах и в долге"
+    for b in reg["backlog"]["files"]:
+        assert (TOOLS.parent / b["file"]).exists(), f"нет файла {b['file']}"
+        assert b.get("blocker"), f"{b['file']}: в долге нет причины неподключения"
+        assert b.get("measured_2026_09_21"), f"{b['file']}: долг без измеренного результата"

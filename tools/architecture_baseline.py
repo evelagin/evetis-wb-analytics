@@ -117,6 +117,11 @@ def collect_bigquery(bq: ReadOnlyBigQuery) -> dict:
     )
     routines = bq.query(union)
 
+    # Кто ЧИТАЕТ объекты снаружи BigQuery. Без этого «потребитель» остаётся
+    # догадкой: граф вью показывает только внутренние связи, а дашборды и листы
+    # ходят в витрину извне. Источник — история заданий, а не предположение.
+    consumption = collect_consumption(bq)
+
     objects: dict[str, dict] = {}
     for t in tables:
         ds, name = t["ds"], t["table_name"]
@@ -176,8 +181,51 @@ def collect_bigquery(bq: ReadOnlyBigQuery) -> dict:
             "last_altered": _iso_s(r.get("altered")),
             "references": refs,
         })
+    for key, obj in objects.items():
+        obj["external_readers"] = consumption.get(key, {})
+
     routine_list.sort(key=lambda x: x["routine"])
-    return {"objects": objects, "routines": routine_list}
+    return {"objects": objects, "routines": routine_list,
+            "consumption_window_days": CONSUMPTION_WINDOW_DAYS}
+
+
+CONSUMPTION_WINDOW_DAYS = 30
+
+
+def collect_consumption(bq: ReadOnlyBigQuery) -> dict[str, dict]:
+    """Обращения к объектам за окно, по идентичности читателя.
+
+    `INFORMATION_SCHEMA.JOBS_BY_PROJECT` может быть недоступен ограниченной
+    учётной записи — тогда карта потребления пуста, и это записывается как
+    отсутствие данных, а не как отсутствие потребителей.
+    """
+    pattern = "|".join(DATASETS)
+    sql = f"""
+    WITH j AS (
+      SELECT user_email, query, creation_time
+      FROM `{bq.project}.region-eu`.INFORMATION_SCHEMA.JOBS_BY_PROJECT
+      WHERE creation_time >= TIMESTAMP_SUB(CURRENT_TIMESTAMP(), INTERVAL {CONSUMPTION_WINDOW_DAYS} DAY)
+        AND job_type = 'QUERY' AND statement_type = 'SELECT' AND query IS NOT NULL
+    ), r AS (
+      SELECT
+        CASE WHEN user_email LIKE 'metabase-read-only@%' THEN 'metabase'
+             WHEN user_email LIKE '%gserviceaccount.com' THEN 'service_account'
+             ELSE 'human_or_script' END AS reader,
+        obj, creation_time
+      FROM j, UNNEST(REGEXP_EXTRACT_ALL(query, r'((?:{pattern})\\.[A-Za-z0-9_]+)')) AS obj
+    )
+    SELECT obj, reader, COUNT(*) AS queries,
+           FORMAT_DATE('%F', MAX(DATE(creation_time))) AS last_read
+    FROM r GROUP BY obj, reader
+    """
+    try:
+        rows = bq.query(sql, max_results=50000)
+    except BigQueryError:
+        return {}
+    out: dict[str, dict] = defaultdict(dict)
+    for r in rows:
+        out[r["obj"]][r["reader"]] = {"queries": int(r["queries"]), "last_read": r["last_read"]}
+    return dict(out)
 
 
 def _partition_of(ddl: str) -> str | None:
@@ -369,6 +417,8 @@ def build(args) -> dict:
             "terraform_resources": repo["terraform_resource_count"],
             "apps_script_files": repo["apps_script"]["file_count"],
             "bigquery_queries_issued": bq.queries_issued,
+            "objects_read_by_metabase": sum(
+                1 for o in objects.values() if "metabase" in (o.get("external_readers") or {})),
         },
         "datasets": {
             ds: {"domain": DOMAIN[ds], **dict(by_dataset[ds])} for ds in sorted(DATASETS)

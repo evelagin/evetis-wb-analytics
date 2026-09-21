@@ -1,0 +1,22 @@
+{
+  "registry_version": 1,
+  "comment": "Соответствие путей кода объектам данных, которые этот код производит. Для SQL соответствие выводится из текста (CREATE ... <ds>.<OBJ>) и здесь не дублируется. Для кода загрузчиков вывести его из текста нельзя — производитель объявлен в wb_ops.OPS_PIPELINE_REGISTRY.target_object и в cloud/src/loaders/registry.ts; значения ниже перенесены оттуда, а не назначены.",
+  "prefixes": [
+    {"path": "cloud/src/loaders/stocks/", "pipeline": "stocks_cloudrun", "produces": ["wb_raw.RAW_WB_STOCKS__CR", "wb_raw.WB_STOCKS_SNAPSHOTS__CR"], "note": "shadow-контур; production-остатки грузит Apps Script"},
+    {"path": "cloud/src/loaders/mart/", "pipeline": "mart", "produces": ["wb_mart.MART_SKU_DAILY", "wb_mart.FACT_ORDERS", "wb_mart.FACT_SALES", "wb_mart.FACT_FINANCE", "wb_mart.FACT_ADS_SKU_DAILY", "wb_mart.FACT_ADS_COSTS_DAILY", "wb_mart.FACT_STOCKS_SNAPSHOT"]},
+    {"path": "cloud/src/loaders/prices/", "pipeline": "wb_prices_observer", "produces": ["wb_raw.RAW_WB_PRICES", "wb_raw.WB_PRICES_OBSERVATIONS"]},
+    {"path": "cloud/src/loaders/tariffs/", "pipeline": "wb_tariffs_loader", "produces": ["wb_raw.RAW_WB_TARIFFS", "wb_raw.WB_TARIFF_OBSERVATIONS"]},
+    {"path": "cloud/src/loaders/funnel/", "pipeline": "wb_funnel", "produces": ["wb_raw.RAW_WB_FUNNEL_DAILY", "wb_raw.WB_FUNNEL_OBSERVATIONS"]},
+    {"path": "cloud/src/loaders/storage/", "pipeline": "wb_paid_storage", "produces": ["wb_raw.RAW_WB_PAID_STORAGE", "wb_raw.WB_STORAGE_OBSERVATIONS"]},
+    {"path": "cloud/src/loaders/unitka/", "pipeline": "unitka_engine", "produces": ["wb_ops.UNITKA_ENGINE_RUNS", "wb_ops.UNITKA_INTEGRITY_ISSUES", "wb_ops.UNITKA_REPAIR_LEDGER"]},
+    {"path": "cloud/src/", "pipeline": "cloud_run_common", "produces": [], "note": "общий код всех загрузчиков Cloud Run: затрагивает каждый из них"},
+    {"path": "pipelines/ozon/runtime/", "pipeline": "ozon_runtime", "produces": ["ozon_raw.RAW_OZON_POSTINGS_FBO", "ozon_raw.RAW_OZON_STOCKS", "ozon_raw.RAW_OZON_PRICES", "ozon_raw.RAW_OZON_CATALOG", "ozon_raw.RAW_OZON_FINANCE_ACCRUAL", "ozon_raw.RAW_OZON_ADS_CAMPAIGNS", "ozon_raw.RAW_OZON_ADS_SKU_DAILY", "ozon_raw.RAW_OZON_ADS_EXPENSE_DAILY", "ozon_raw.RAW_OZON_SUPPLIES", "ozon_raw.RAW_OZON_SELLER_INFO", "ozon_raw.RAW_OZON_CLUSTERS", "ozon_raw.OZON_INGESTION_RUNS"]},
+    {"path": "pipelines/ozon/bootstrap/", "pipeline": "ozon_bootstrap", "produces": ["ozon_raw.RAW_OZON_POSTINGS_FBO", "ozon_raw.RAW_OZON_FINANCE_ACCRUAL"], "note": "исторический дозагрузчик"},
+    {"path": "apps-script/ingestion/", "pipeline": "apps_script_ingestion", "produces": ["wb_raw.RAW_WB_ORDERS", "wb_raw.RAW_WB_SALES_RETURNS", "wb_raw.RAW_WB_FINANCE", "wb_raw.RAW_WB_STOCKS", "wb_raw.RAW_WB_STOCKS_T5", "wb_raw.RAW_WB_ADV_CAMPAIGNS", "wb_raw.RAW_WB_ADV_COSTS", "wb_raw.RAW_WB_ADV_CAMPAIGN_STATS", "wb_raw.RAW_WB_ADV_QUERY_STATS", "wb_raw.RAW_WB_ADV_QUERY_BIDS", "wb_raw.REF_SKU_MASTER_DATA", "wb_raw.INGEST_RUNS"], "note": "production-загрузка WB; вне CI"},
+    {"path": "services/wb-communications/", "pipeline": "wb_communications", "produces": ["evetis_communications.communications_current", "evetis_communications.communication_events"], "note": "единственный канал записи во внешний маркетплейс"},
+    {"path": "infra/terraform/", "pipeline": "infrastructure", "produces": [], "note": "расписания, Jobs, права; данных не производит, но управляет их появлением"},
+    {"path": "tools/", "pipeline": "evidence_system", "produces": [], "note": "сама система доказательств: изменение требует прогона tools/tests"},
+    {"path": "quality/", "pipeline": "evidence_system", "produces": [], "note": "реестры проверок"},
+    {"path": "metabase/", "pipeline": "metabase", "produces": [], "note": "описание дашбордов; потребитель, не производитель"}
+  ]
+}
