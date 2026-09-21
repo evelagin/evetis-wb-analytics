@@ -120,15 +120,21 @@ def test_retired_recovery_object_still_matches_production():
     assert o["live_body_sha256_at_capture"] == o["canonical_body_sha256"]
 
 
-def test_buyout_repair_objects_are_pending_deploy():
-    """Gate 5K is a Git-first change: nothing is deployed, so every touched object is pending_deploy.
-    Claiming captured_live here would assert production parity that does not exist."""
+def test_buyout_repair_objects_are_deployed_and_read_back():
+    """Gate 5M deployed the buyout model to production and read it back: canonical body, schema and
+    description equal the live capture on all three hashes. captured_live is only legitimate when the
+    readback actually matched — it asserts production parity, it does not assume it."""
     for dataset, name in (("ozon_mart", "V_OZON_CIS_BUYOUT"), ("ozon_mart", "FCT_OZON_SKU_PNL_DAILY"),
                           ("ozon_mart", "FCT_OZON_SKU_PNL_MONTHLY"), ("ozon_mart", "FCT_OZON_PNL_MONTHLY"),
                           ("evetis_mart", "FACT_SKU_DAILY")):
         _, o = manifest_entry(dataset, name)
-        assert o["sync_state"] == "pending_deploy", name
-        assert o["canonical_schema_verification"] == "unverified", name
+        assert o["sync_state"] == "captured_live", name
+        assert o["canonical_schema_verification"] == "bigquery_verified", name
+        assert o["canonical_body_sha256"] == o["live_body_sha256_at_capture"], name
+        assert o["canonical_schema_sha256"] == o["live_schema_sha256_at_capture"], name
+        assert o["canonical_description_sha256"] == o["live_description_sha256_at_capture"], name
+        assert o["canonical_schema"] == o["live_schema_at_capture"], name
+        assert o["provenance"]["preflight_parity"] == "DEPLOYED_AND_READBACK_MATCH", name
 
 
 def test_cis_buyout_is_the_single_named_source_of_buyout_revenue():
@@ -377,11 +383,11 @@ def test_validation_file_is_read_only_selects():
 
 
 def test_predeploy_render_inlines_every_pending_object_and_stays_a_select():
-    # Gate 5K is undeployed, so the buyout repair is exactly what the tool must be able to inline.
-    pending = render.pending_bodies()
-    assert {k.rsplit(".", 1)[-1].strip("`") for k in pending} == {
-        "V_OZON_CIS_BUYOUT", "FCT_OZON_SKU_PNL_DAILY", "FCT_OZON_SKU_PNL_MONTHLY",
-        "FCT_OZON_PNL_MONTHLY", "FACT_SKU_DAILY"}
+    # After the Gate 5M deploy nothing is pending, so the tool is a no-op on the real repository ...
+    assert render.pending_bodies() == {}
+    sample = next(iter(check_blocks().values()))
+    assert render.render(sample, {}) == sample
+    # ... and its inlining logic is still exercised on the same objects, as if they were pending.
     bodies = {f"`{P}.{p.parent.name}.{p.stem}`": facts(p).body for p in (CIS_BUYOUT, DAILY, NEUTRAL)}
     for cid, sql in check_blocks().items():
         rendered = render.render(sql, bodies)

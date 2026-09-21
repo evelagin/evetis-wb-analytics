@@ -1,0 +1,703 @@
+{
+ "V_OZON_CIS_BUYOUT": {
+  "exists": false
+ },
+ "FCT_OZON_PNL_MONTHLY": {
+  "exists": true,
+  "dataset": "ozon_mart",
+  "type": "VIEW",
+  "created": "2026-09-04 12:34:40.202+00",
+  "live_body_sha256": "edeb911c810e4179258ade32983c3496440f361f6f1d4ec5bf854b09ea227b25",
+  "columns": [
+   {
+    "ordinal_position": 1,
+    "column_name": "month",
+    "data_type": "DATE",
+    "is_nullable": "YES"
+   },
+   {
+    "ordinal_position": 2,
+    "column_name": "gross_ordered_qty",
+    "data_type": "INT64",
+    "is_nullable": "YES"
+   },
+   {
+    "ordinal_position": 3,
+    "column_name": "cancelled_qty",
+    "data_type": "INT64",
+    "is_nullable": "YES"
+   },
+   {
+    "ordinal_position": 4,
+    "column_name": "in_transit_qty",
+    "data_type": "INT64",
+    "is_nullable": "YES"
+   },
+   {
+    "ordinal_position": 5,
+    "column_name": "realized_qty",
+    "data_type": "INT64",
+    "is_nullable": "YES"
+   },
+   {
+    "ordinal_position": 6,
+    "column_name": "seller_base_revenue_rub",
+    "data_type": "NUMERIC",
+    "is_nullable": "YES"
+   },
+   {
+    "ordinal_position": 7,
+    "column_name": "buyer_paid_revenue_rub",
+    "data_type": "NUMERIC",
+    "is_nullable": "YES"
+   },
+   {
+    "ordinal_position": 8,
+    "column_name": "bonus_rub",
+    "data_type": "NUMERIC",
+    "is_nullable": "YES"
+   },
+   {
+    "ordinal_position": 9,
+    "column_name": "coinvestment_rub",
+    "data_type": "NUMERIC",
+    "is_nullable": "YES"
+   },
+   {
+    "ordinal_position": 10,
+    "column_name": "product_cogs_rub",
+    "data_type": "NUMERIC",
+    "is_nullable": "YES"
+   },
+   {
+    "ordinal_position": 11,
+    "column_name": "cogs_covered_qty",
+    "data_type": "INT64",
+    "is_nullable": "YES"
+   },
+   {
+    "ordinal_position": 12,
+    "column_name": "cogs_missing_qty",
+    "data_type": "INT64",
+    "is_nullable": "YES"
+   },
+   {
+    "ordinal_position": 13,
+    "column_name": "cogs_coverage_pct",
+    "data_type": "FLOAT64",
+    "is_nullable": "YES"
+   },
+   {
+    "ordinal_position": 14,
+    "column_name": "commission_known_rub",
+    "data_type": "NUMERIC",
+    "is_nullable": "YES"
+   },
+   {
+    "ordinal_position": 15,
+    "column_name": "commission_coverage_qty",
+    "data_type": "INT64",
+    "is_nullable": "YES"
+   },
+   {
+    "ordinal_position": 16,
+    "column_name": "commission_missing_qty",
+    "data_type": "INT64",
+    "is_nullable": "YES"
+   },
+   {
+    "ordinal_position": 17,
+    "column_name": "commission_missing_revenue_rub",
+    "data_type": "NUMERIC",
+    "is_nullable": "YES"
+   },
+   {
+    "ordinal_position": 18,
+    "column_name": "commission_uncertainty_lower_rub",
+    "data_type": "NUMERIC",
+    "is_nullable": "YES"
+   },
+   {
+    "ordinal_position": 19,
+    "column_name": "commission_uncertainty_upper_rub",
+    "data_type": "NUMERIC",
+    "is_nullable": "YES"
+   },
+   {
+    "ordinal_position": 20,
+    "column_name": "direct_variable_marketplace_costs_rub",
+    "data_type": "NUMERIC",
+    "is_nullable": "YES"
+   },
+   {
+    "ordinal_position": 21,
+    "column_name": "store_level_variable_costs_rub",
+    "data_type": "NUMERIC",
+    "is_nullable": "YES"
+   },
+   {
+    "ordinal_position": 22,
+    "column_name": "other_marketplace_costs_ex_ads_rub",
+    "data_type": "NUMERIC",
+    "is_nullable": "YES"
+   },
+   {
+    "ordinal_position": 23,
+    "column_name": "l1_gross_seller_contribution_rub",
+    "data_type": "NUMERIC",
+    "is_nullable": "YES"
+   },
+   {
+    "ordinal_position": 24,
+    "column_name": "l2_contribution_before_ads_rub",
+    "data_type": "NUMERIC",
+    "is_nullable": "YES"
+   },
+   {
+    "ordinal_position": 25,
+    "column_name": "advertising_rub",
+    "data_type": "NUMERIC",
+    "is_nullable": "YES"
+   },
+   {
+    "ordinal_position": 26,
+    "column_name": "l3_after_ads_before_fixed_rub",
+    "data_type": "NUMERIC",
+    "is_nullable": "YES"
+   },
+   {
+    "ordinal_position": 27,
+    "column_name": "marketplace_fixed_costs_rub",
+    "data_type": "NUMERIC",
+    "is_nullable": "YES"
+   },
+   {
+    "ordinal_position": 28,
+    "column_name": "compensations_rub",
+    "data_type": "NUMERIC",
+    "is_nullable": "YES"
+   },
+   {
+    "ordinal_position": 29,
+    "column_name": "l4_marketplace_contribution_profit_known_rub",
+    "data_type": "NUMERIC",
+    "is_nullable": "YES"
+   },
+   {
+    "ordinal_position": 30,
+    "column_name": "l4_profit_uncertainty_lower_rub",
+    "data_type": "NUMERIC",
+    "is_nullable": "YES"
+   },
+   {
+    "ordinal_position": 31,
+    "column_name": "l4_profit_uncertainty_upper_rub",
+    "data_type": "NUMERIC",
+    "is_nullable": "YES"
+   },
+   {
+    "ordinal_position": 32,
+    "column_name": "actual_drr_pct",
+    "data_type": "NUMERIC",
+    "is_nullable": "YES"
+   },
+   {
+    "ordinal_position": 33,
+    "column_name": "variable_break_even_drr_pct",
+    "data_type": "NUMERIC",
+    "is_nullable": "YES"
+   },
+   {
+    "ordinal_position": 34,
+    "column_name": "full_marketplace_break_even_drr_pct",
+    "data_type": "NUMERIC",
+    "is_nullable": "YES"
+   },
+   {
+    "ordinal_position": 35,
+    "column_name": "finance_classification_coverage_pct",
+    "data_type": "NUMERIC",
+    "is_nullable": "YES"
+   },
+   {
+    "ordinal_position": 36,
+    "column_name": "ad_total_coverage_pct",
+    "data_type": "NUMERIC",
+    "is_nullable": "YES"
+   },
+   {
+    "ordinal_position": 37,
+    "column_name": "ad_sku_attribution_coverage_pct",
+    "data_type": "NUMERIC",
+    "is_nullable": "YES"
+   },
+   {
+    "ordinal_position": 38,
+    "column_name": "data_confidence",
+    "data_type": "STRING",
+    "is_nullable": "YES"
+   },
+   {
+    "ordinal_position": 39,
+    "column_name": "data_status",
+    "data_type": "STRING",
+    "is_nullable": "YES"
+   },
+   {
+    "ordinal_position": 40,
+    "column_name": "computed_at",
+    "data_type": "TIMESTAMP",
+    "is_nullable": "YES"
+   }
+  ],
+  "column_count": 40,
+  "description": "\"Канонический P&L Ozon, зерно = календарный месяц. VIEW, не таблица: пересчитывается при каждом чтении, устареть относительно ozon_raw не может. Мост L1-L4 по OZON_PNL_POLICY_V1. Продажи и себестоимость привязаны к order_date, расходы уровня магазина - к дате начисления. Отсутствующая комиссия НЕ ноль: см. commission_missing_qty и поля uncertainty.\""
+ },
+ "FCT_OZON_SKU_PNL_DAILY": {
+  "exists": true,
+  "dataset": "ozon_mart",
+  "type": "VIEW",
+  "created": "2026-09-20 10:37:57.908+00",
+  "live_body_sha256": "f7075d6ce1ddf068925b5ff8ddc75cf9241465006af54a4dba6007fbdbe6eb3b",
+  "columns": [
+   {
+    "ordinal_position": 1,
+    "column_name": "fact_date",
+    "data_type": "DATE",
+    "is_nullable": "YES"
+   },
+   {
+    "ordinal_position": 2,
+    "column_name": "internal_sku",
+    "data_type": "STRING",
+    "is_nullable": "YES"
+   },
+   {
+    "ordinal_position": 3,
+    "column_name": "gross_qty",
+    "data_type": "INT64",
+    "is_nullable": "YES"
+   },
+   {
+    "ordinal_position": 4,
+    "column_name": "cancelled_qty",
+    "data_type": "INT64",
+    "is_nullable": "YES"
+   },
+   {
+    "ordinal_position": 5,
+    "column_name": "in_transit_qty",
+    "data_type": "INT64",
+    "is_nullable": "YES"
+   },
+   {
+    "ordinal_position": 6,
+    "column_name": "realized_qty",
+    "data_type": "INT64",
+    "is_nullable": "YES"
+   },
+   {
+    "ordinal_position": 7,
+    "column_name": "seller_base_revenue_rub",
+    "data_type": "NUMERIC",
+    "is_nullable": "YES"
+   },
+   {
+    "ordinal_position": 8,
+    "column_name": "commission_rub",
+    "data_type": "NUMERIC",
+    "is_nullable": "YES"
+   },
+   {
+    "ordinal_position": 9,
+    "column_name": "commission_missing_qty",
+    "data_type": "INT64",
+    "is_nullable": "YES"
+   },
+   {
+    "ordinal_position": 10,
+    "column_name": "logistics_rub",
+    "data_type": "NUMERIC",
+    "is_nullable": "YES"
+   },
+   {
+    "ordinal_position": 11,
+    "column_name": "acquiring_rub",
+    "data_type": "NUMERIC",
+    "is_nullable": "YES"
+   },
+   {
+    "ordinal_position": 12,
+    "column_name": "storage_rub",
+    "data_type": "NUMERIC",
+    "is_nullable": "YES"
+   },
+   {
+    "ordinal_position": 13,
+    "column_name": "direct_variable_marketplace_costs_rub",
+    "data_type": "NUMERIC",
+    "is_nullable": "YES"
+   },
+   {
+    "ordinal_position": 14,
+    "column_name": "other_direct_marketplace_costs_rub",
+    "data_type": "NUMERIC",
+    "is_nullable": "YES"
+   },
+   {
+    "ordinal_position": 15,
+    "column_name": "product_cogs_rub",
+    "data_type": "NUMERIC",
+    "is_nullable": "YES"
+   },
+   {
+    "ordinal_position": 16,
+    "column_name": "cogs_missing_qty",
+    "data_type": "INT64",
+    "is_nullable": "YES"
+   },
+   {
+    "ordinal_position": 17,
+    "column_name": "contribution_before_ads_rub",
+    "data_type": "NUMERIC",
+    "is_nullable": "YES"
+   },
+   {
+    "ordinal_position": 18,
+    "column_name": "ad_spend_attributed_rub",
+    "data_type": "NUMERIC",
+    "is_nullable": "YES"
+   },
+   {
+    "ordinal_position": 19,
+    "column_name": "contribution_after_attributed_ads_rub",
+    "data_type": "NUMERIC",
+    "is_nullable": "YES"
+   },
+   {
+    "ordinal_position": 20,
+    "column_name": "fact_date_semantics",
+    "data_type": "STRING",
+    "is_nullable": "YES"
+   }
+  ],
+  "column_count": 20,
+  "description": "\"Фактическая экономика Ozon, зерно = сутки x internal_sku. VIEW. Суточное выражение семантики FCT_OZON_SKU_PNL_MONTHLY: агрегат до месяца сходится с месячным P&L (деньги <= 0,01 руб., штуки точно). Суммы без ROUND, полная точность NUMERIC. Базис даты смешанный, как в месячном P&L: продажи, комиссия, COGS и расходы с posting_number - по order_date; расходы только со sku - по дате начисления; реклама - по дате статистики. Реализация = delivered. Возвраты и FBS не загружаются; налог и расходы уровня магазина не входят.\""
+ },
+ "FCT_OZON_SKU_PNL_MONTHLY": {
+  "exists": true,
+  "dataset": "ozon_mart",
+  "type": "VIEW",
+  "created": "2026-09-04 12:35:29.816+00",
+  "live_body_sha256": "49b85269eaf1c928049621bcacd4f6a4da37bc9c23271f254c4792e87e441552",
+  "columns": [
+   {
+    "ordinal_position": 1,
+    "column_name": "month",
+    "data_type": "DATE",
+    "is_nullable": "YES"
+   },
+   {
+    "ordinal_position": 2,
+    "column_name": "internal_sku",
+    "data_type": "STRING",
+    "is_nullable": "YES"
+   },
+   {
+    "ordinal_position": 3,
+    "column_name": "product_name",
+    "data_type": "STRING",
+    "is_nullable": "YES"
+   },
+   {
+    "ordinal_position": 4,
+    "column_name": "product_type",
+    "data_type": "STRING",
+    "is_nullable": "YES"
+   },
+   {
+    "ordinal_position": 5,
+    "column_name": "gross_qty",
+    "data_type": "INT64",
+    "is_nullable": "YES"
+   },
+   {
+    "ordinal_position": 6,
+    "column_name": "realized_qty",
+    "data_type": "INT64",
+    "is_nullable": "YES"
+   },
+   {
+    "ordinal_position": 7,
+    "column_name": "seller_base_revenue_rub",
+    "data_type": "NUMERIC",
+    "is_nullable": "YES"
+   },
+   {
+    "ordinal_position": 8,
+    "column_name": "product_cogs_rub",
+    "data_type": "NUMERIC",
+    "is_nullable": "YES"
+   },
+   {
+    "ordinal_position": 9,
+    "column_name": "cogs_status",
+    "data_type": "STRING",
+    "is_nullable": "YES"
+   },
+   {
+    "ordinal_position": 10,
+    "column_name": "commission_rub",
+    "data_type": "NUMERIC",
+    "is_nullable": "YES"
+   },
+   {
+    "ordinal_position": 11,
+    "column_name": "commission_status",
+    "data_type": "STRING",
+    "is_nullable": "YES"
+   },
+   {
+    "ordinal_position": 12,
+    "column_name": "direct_variable_marketplace_costs_rub",
+    "data_type": "NUMERIC",
+    "is_nullable": "YES"
+   },
+   {
+    "ordinal_position": 13,
+    "column_name": "other_direct_marketplace_costs_rub",
+    "data_type": "NUMERIC",
+    "is_nullable": "YES"
+   },
+   {
+    "ordinal_position": 14,
+    "column_name": "contribution_before_ads_rub",
+    "data_type": "NUMERIC",
+    "is_nullable": "YES"
+   },
+   {
+    "ordinal_position": 15,
+    "column_name": "ad_spend_attributed_rub",
+    "data_type": "NUMERIC",
+    "is_nullable": "YES"
+   },
+   {
+    "ordinal_position": 16,
+    "column_name": "contribution_after_attributed_ads_rub",
+    "data_type": "NUMERIC",
+    "is_nullable": "YES"
+   },
+   {
+    "ordinal_position": 17,
+    "column_name": "margin_before_ads_pct",
+    "data_type": "NUMERIC",
+    "is_nullable": "YES"
+   },
+   {
+    "ordinal_position": 18,
+    "column_name": "margin_after_ads_pct",
+    "data_type": "NUMERIC",
+    "is_nullable": "YES"
+   },
+   {
+    "ordinal_position": 19,
+    "column_name": "actual_drr_pct",
+    "data_type": "NUMERIC",
+    "is_nullable": "YES"
+   },
+   {
+    "ordinal_position": 20,
+    "column_name": "variable_break_even_drr_pct",
+    "data_type": "NUMERIC",
+    "is_nullable": "YES"
+   },
+   {
+    "ordinal_position": 21,
+    "column_name": "profitability_status",
+    "data_type": "STRING",
+    "is_nullable": "YES"
+   },
+   {
+    "ordinal_position": 22,
+    "column_name": "attribution_level",
+    "data_type": "STRING",
+    "is_nullable": "YES"
+   },
+   {
+    "ordinal_position": 23,
+    "column_name": "computed_at",
+    "data_type": "TIMESTAMP",
+    "is_nullable": "YES"
+   }
+  ],
+  "column_count": 23,
+  "description": "\"P&L Ozon, зерно = месяц x internal_sku. VIEW, не таблица. Атрибуция: DIRECT_POSTING где finance-строка несёт posting_number (привязка к order_date продажи), DIRECT_SKU где несёт только sku (привязка к дате начисления). REVENUE_PROPORTIONAL_ALL не используется. Расходы уровня магазина на SKU НЕ разносятся, поэтому слоя L4 здесь нет.\""
+ },
+ "FACT_SKU_DAILY": {
+  "exists": true,
+  "dataset": "evetis_mart",
+  "type": "VIEW",
+  "created": "2026-09-20 10:38:01.895+00",
+  "live_body_sha256": "2492833d52ff4ae068856e01953830dea3b3ff0bf623b66a363e48b292223032",
+  "columns": [
+   {
+    "ordinal_position": 1,
+    "column_name": "fact_date",
+    "data_type": "DATE",
+    "is_nullable": "YES"
+   },
+   {
+    "ordinal_position": 2,
+    "column_name": "marketplace",
+    "data_type": "STRING",
+    "is_nullable": "YES"
+   },
+   {
+    "ordinal_position": 3,
+    "column_name": "internal_sku",
+    "data_type": "STRING",
+    "is_nullable": "YES"
+   },
+   {
+    "ordinal_position": 4,
+    "column_name": "marketplace_sku",
+    "data_type": "STRING",
+    "is_nullable": "YES"
+   },
+   {
+    "ordinal_position": 5,
+    "column_name": "product_name",
+    "data_type": "STRING",
+    "is_nullable": "YES"
+   },
+   {
+    "ordinal_position": 6,
+    "column_name": "is_bundle",
+    "data_type": "BOOL",
+    "is_nullable": "YES"
+   },
+   {
+    "ordinal_position": 7,
+    "column_name": "orders_qty",
+    "data_type": "INT64",
+    "is_nullable": "YES"
+   },
+   {
+    "ordinal_position": 8,
+    "column_name": "cancelled_qty",
+    "data_type": "INT64",
+    "is_nullable": "YES"
+   },
+   {
+    "ordinal_position": 9,
+    "column_name": "sold_qty",
+    "data_type": "INT64",
+    "is_nullable": "YES"
+   },
+   {
+    "ordinal_position": 10,
+    "column_name": "return_qty",
+    "data_type": "INT64",
+    "is_nullable": "YES"
+   },
+   {
+    "ordinal_position": 11,
+    "column_name": "seller_revenue_rub",
+    "data_type": "NUMERIC",
+    "is_nullable": "YES"
+   },
+   {
+    "ordinal_position": 12,
+    "column_name": "marketplace_commission_rub",
+    "data_type": "NUMERIC",
+    "is_nullable": "YES"
+   },
+   {
+    "ordinal_position": 13,
+    "column_name": "logistics_rub",
+    "data_type": "NUMERIC",
+    "is_nullable": "YES"
+   },
+   {
+    "ordinal_position": 14,
+    "column_name": "storage_rub",
+    "data_type": "NUMERIC",
+    "is_nullable": "YES"
+   },
+   {
+    "ordinal_position": 15,
+    "column_name": "acquiring_rub",
+    "data_type": "NUMERIC",
+    "is_nullable": "YES"
+   },
+   {
+    "ordinal_position": 16,
+    "column_name": "other_marketplace_costs_rub",
+    "data_type": "NUMERIC",
+    "is_nullable": "YES"
+   },
+   {
+    "ordinal_position": 17,
+    "column_name": "marketplace_costs_total_rub",
+    "data_type": "NUMERIC",
+    "is_nullable": "YES"
+   },
+   {
+    "ordinal_position": 18,
+    "column_name": "advertising_attributed_rub",
+    "data_type": "NUMERIC",
+    "is_nullable": "YES"
+   },
+   {
+    "ordinal_position": 19,
+    "column_name": "contribution_after_ads_rub",
+    "data_type": "NUMERIC",
+    "is_nullable": "YES"
+   },
+   {
+    "ordinal_position": 20,
+    "column_name": "cogs_rub",
+    "data_type": "NUMERIC",
+    "is_nullable": "YES"
+   },
+   {
+    "ordinal_position": 21,
+    "column_name": "contribution_after_cogs_rub",
+    "data_type": "NUMERIC",
+    "is_nullable": "YES"
+   },
+   {
+    "ordinal_position": 22,
+    "column_name": "economics_covered",
+    "data_type": "BOOL",
+    "is_nullable": "YES"
+   },
+   {
+    "ordinal_position": 23,
+    "column_name": "is_provisional",
+    "data_type": "BOOL",
+    "is_nullable": "YES"
+   },
+   {
+    "ordinal_position": 24,
+    "column_name": "fact_date_semantics",
+    "data_type": "STRING",
+    "is_nullable": "YES"
+   },
+   {
+    "ordinal_position": 25,
+    "column_name": "source_contract",
+    "data_type": "STRING",
+    "is_nullable": "YES"
+   },
+   {
+    "ordinal_position": 26,
+    "column_name": "contract_version",
+    "data_type": "STRING",
+    "is_nullable": "YES"
+   }
+  ],
+  "column_count": 26,
+  "description": "\"Нейтральный суточный факт SKU (контракт V1), зерно = fact_date x marketplace x internal_sku. VIEW: приводит wb_mart.SKU_PERFORMANCE_V2_DAILY и ozon_mart.FCT_OZON_SKU_PNL_DAILY к одному контракту, экономику площадок заново не считает. 0 = наблюдаемый ноль, NULL = метрика недоступна или не атрибутируется. contribution_after_ads_rub = выручка продавца - расходы площадки - атрибутированная реклама; contribution_after_cogs_rub = он же - себестоимость. До налога, расходов уровня кабинета, фулфилмента и OPEX: вклад, не прибыль. Реклама - атрибуция, не биллинг. Базис даты различается по площадкам - см. fact_date_semantics.\""
+ }
+}

@@ -29,7 +29,7 @@
       "object_name": "FCT_OZON_PNL_MONTHLY",
       "object_type": "VIEW",
       "canonical_path": "sql/current/ozon_mart/FCT_OZON_PNL_MONTHLY.sql",
-      "sync_state": "pending_deploy",
+      "sync_state": "captured_live",
       "dependencies": [
         "V_OZON_CIS_BUYOUT"
       ],
@@ -42,17 +42,17 @@
         "ozon_raw.RAW_OZON_POSTINGS_FBO"
       ],
       "dependency_level": 1,
-      "capture_main_sha": "eecde14936d19c134c3e2a878532f7442fdb7878",
-      "captured_at": "2026-09-18T14:14:32Z",
+      "capture_main_sha": "821a45e2c2019140a385b0a21ec3f35641c21db7",
+      "captured_at": "2026-09-21T14:30:00Z",
       "provenance": {
-        "source": "production INFORMATION_SCHEMA (read-only capture)",
+        "source": "production INFORMATION_SCHEMA (read-only capture after Gate 5M deploy 2026-09-21)",
         "historical_migration": "sql/ozon/stage3_4c_ozon_mart.sql",
-        "preflight_parity": "COMMENTS_WHITESPACE_ONLY",
+        "preflight_parity": "DEPLOYED_AND_READBACK_MATCH",
         "superseded_historical_definitions": []
       },
-      "live_body_sha256_at_capture": "edeb911c810e4179258ade32983c3496440f361f6f1d4ec5bf854b09ea227b25",
+      "live_body_sha256_at_capture": "1b6bc3ce452ec5504487669aa765d06353bf67037a6ac0394033202ef6e906fb",
       "live_schema_sha256_at_capture": "d9aefd9a4f623cc9fa29716d8e8a41451e842de66107ce603ed310ece835440a",
-      "live_description_sha256_at_capture": "98d48831b8ae72a69614281e8a34f9b7ba21eba71c9a27da926feace032e46eb",
+      "live_description_sha256_at_capture": "8ecb4b427d876e251b284c381545950cecceeaf6be48858fd530bd55ee5c0c49",
       "live_schema_at_capture": [
         {
           "ordinal_position": 1,
@@ -298,7 +298,7 @@
       "canonical_body_sha256": "1b6bc3ce452ec5504487669aa765d06353bf67037a6ac0394033202ef6e906fb",
       "canonical_description_sha256": "8ecb4b427d876e251b284c381545950cecceeaf6be48858fd530bd55ee5c0c49",
       "canonical_schema_sha256": "d9aefd9a4f623cc9fa29716d8e8a41451e842de66107ce603ed310ece835440a",
-      "canonical_schema_verification": "unverified",
+      "canonical_schema_verification": "bigquery_verified",
       "canonical_column_count": 40,
       "canonical_schema": [
         {
@@ -548,7 +548,7 @@
       "object_name": "FCT_OZON_SKU_PNL_DAILY",
       "object_type": "VIEW",
       "canonical_path": "sql/current/ozon_mart/FCT_OZON_SKU_PNL_DAILY.sql",
-      "sync_state": "pending_deploy",
+      "sync_state": "captured_live",
       "dependencies": [
         "V_OZON_CIS_BUYOUT"
       ],
@@ -560,143 +560,167 @@
         "ozon_raw.RAW_OZON_POSTINGS_FBO"
       ],
       "dependency_level": 1,
-      "capture_main_sha": "2260c73588d87194b4b0e90d93efb1352d5ec0c7",
-      "captured_at": "2026-09-20T10:40:12Z",
+      "capture_main_sha": "821a45e2c2019140a385b0a21ec3f35641c21db7",
+      "captured_at": "2026-09-21T14:30:00Z",
       "provenance": {
-        "source": "Git-first (SCALE 1, 2026-09-20): new object, not yet deployed to production",
+        "source": "production INFORMATION_SCHEMA (read-only capture after Gate 5M deploy 2026-09-21)",
         "historical_migration": null,
-        "preflight_parity": null,
+        "preflight_parity": "DEPLOYED_AND_READBACK_MATCH",
         "superseded_historical_definitions": []
       },
-      "live_body_sha256_at_capture": "f7075d6ce1ddf068925b5ff8ddc75cf9241465006af54a4dba6007fbdbe6eb3b",
-      "live_schema_sha256_at_capture": "f4315247aeee5144542c00fabf387c023e4913cf5945b40e06c663da90db805e",
-      "live_description_sha256_at_capture": "587028f2621c108e8c7f1342b12ad793c0ef6c60a733148e848de95126fdd728",
+      "live_body_sha256_at_capture": "c8ea0d3f5d0302406a03f873be962b966ae3a6d7bde689ba244cfd9c3e851285",
+      "live_schema_sha256_at_capture": "3ecf7fccd50fab9bd3964e2e7748a0d0beec05faca9d2e15fb556e03ee2fd48a",
+      "live_description_sha256_at_capture": "f52300c177525f77e3e4c47a04ecd5e2a0ccc99bb1c25a73f4262165c63b7f85",
       "live_schema_at_capture": [
         {
+          "ordinal_position": 1,
           "column_name": "fact_date",
           "data_type": "DATE",
-          "is_nullable": "YES",
-          "ordinal_position": 1
+          "is_nullable": "YES"
         },
         {
+          "ordinal_position": 2,
           "column_name": "internal_sku",
           "data_type": "STRING",
-          "is_nullable": "YES",
-          "ordinal_position": 2
+          "is_nullable": "YES"
         },
         {
+          "ordinal_position": 3,
           "column_name": "gross_qty",
           "data_type": "INT64",
-          "is_nullable": "YES",
-          "ordinal_position": 3
+          "is_nullable": "YES"
         },
         {
+          "ordinal_position": 4,
           "column_name": "cancelled_qty",
           "data_type": "INT64",
-          "is_nullable": "YES",
-          "ordinal_position": 4
+          "is_nullable": "YES"
         },
         {
+          "ordinal_position": 5,
           "column_name": "in_transit_qty",
           "data_type": "INT64",
-          "is_nullable": "YES",
-          "ordinal_position": 5
+          "is_nullable": "YES"
         },
         {
+          "ordinal_position": 6,
           "column_name": "realized_qty",
           "data_type": "INT64",
-          "is_nullable": "YES",
-          "ordinal_position": 6
+          "is_nullable": "YES"
         },
         {
+          "ordinal_position": 7,
           "column_name": "seller_base_revenue_rub",
           "data_type": "NUMERIC",
-          "is_nullable": "YES",
-          "ordinal_position": 7
+          "is_nullable": "YES"
         },
         {
+          "ordinal_position": 8,
           "column_name": "commission_rub",
           "data_type": "NUMERIC",
-          "is_nullable": "YES",
-          "ordinal_position": 8
+          "is_nullable": "YES"
         },
         {
+          "ordinal_position": 9,
           "column_name": "commission_missing_qty",
           "data_type": "INT64",
-          "is_nullable": "YES",
-          "ordinal_position": 9
+          "is_nullable": "YES"
         },
         {
+          "ordinal_position": 10,
+          "column_name": "commission_not_applicable_qty",
+          "data_type": "INT64",
+          "is_nullable": "YES"
+        },
+        {
+          "ordinal_position": 11,
+          "column_name": "buyout_revenue_unproven_qty",
+          "data_type": "INT64",
+          "is_nullable": "YES"
+        },
+        {
+          "ordinal_position": 12,
+          "column_name": "buyout_revenue_unproven_rub",
+          "data_type": "NUMERIC",
+          "is_nullable": "YES"
+        },
+        {
+          "ordinal_position": 13,
           "column_name": "logistics_rub",
           "data_type": "NUMERIC",
-          "is_nullable": "YES",
-          "ordinal_position": 10
+          "is_nullable": "YES"
         },
         {
+          "ordinal_position": 14,
           "column_name": "acquiring_rub",
           "data_type": "NUMERIC",
-          "is_nullable": "YES",
-          "ordinal_position": 11
+          "is_nullable": "YES"
         },
         {
+          "ordinal_position": 15,
           "column_name": "storage_rub",
           "data_type": "NUMERIC",
-          "is_nullable": "YES",
-          "ordinal_position": 12
+          "is_nullable": "YES"
         },
         {
+          "ordinal_position": 16,
           "column_name": "direct_variable_marketplace_costs_rub",
           "data_type": "NUMERIC",
-          "is_nullable": "YES",
-          "ordinal_position": 13
+          "is_nullable": "YES"
         },
         {
+          "ordinal_position": 17,
           "column_name": "other_direct_marketplace_costs_rub",
           "data_type": "NUMERIC",
-          "is_nullable": "YES",
-          "ordinal_position": 14
+          "is_nullable": "YES"
         },
         {
+          "ordinal_position": 18,
           "column_name": "product_cogs_rub",
           "data_type": "NUMERIC",
-          "is_nullable": "YES",
-          "ordinal_position": 15
+          "is_nullable": "YES"
         },
         {
+          "ordinal_position": 19,
           "column_name": "cogs_missing_qty",
           "data_type": "INT64",
-          "is_nullable": "YES",
-          "ordinal_position": 16
+          "is_nullable": "YES"
         },
         {
+          "ordinal_position": 20,
+          "column_name": "sku_promotion_rub",
+          "data_type": "NUMERIC",
+          "is_nullable": "YES"
+        },
+        {
+          "ordinal_position": 21,
           "column_name": "contribution_before_ads_rub",
           "data_type": "NUMERIC",
-          "is_nullable": "YES",
-          "ordinal_position": 17
+          "is_nullable": "YES"
         },
         {
+          "ordinal_position": 22,
           "column_name": "ad_spend_attributed_rub",
           "data_type": "NUMERIC",
-          "is_nullable": "YES",
-          "ordinal_position": 18
+          "is_nullable": "YES"
         },
         {
+          "ordinal_position": 23,
           "column_name": "contribution_after_attributed_ads_rub",
           "data_type": "NUMERIC",
-          "is_nullable": "YES",
-          "ordinal_position": 19
+          "is_nullable": "YES"
         },
         {
+          "ordinal_position": 24,
           "column_name": "fact_date_semantics",
           "data_type": "STRING",
-          "is_nullable": "YES",
-          "ordinal_position": 20
+          "is_nullable": "YES"
         }
       ],
       "canonical_body_sha256": "c8ea0d3f5d0302406a03f873be962b966ae3a6d7bde689ba244cfd9c3e851285",
       "canonical_description_sha256": "f52300c177525f77e3e4c47a04ecd5e2a0ccc99bb1c25a73f4262165c63b7f85",
       "canonical_schema_sha256": "3ecf7fccd50fab9bd3964e2e7748a0d0beec05faca9d2e15fb556e03ee2fd48a",
-      "canonical_schema_verification": "unverified",
+      "canonical_schema_verification": "bigquery_verified",
       "canonical_column_count": 24,
       "canonical_schema": [
         {
@@ -850,7 +874,7 @@
       "object_name": "FCT_OZON_SKU_PNL_MONTHLY",
       "object_type": "VIEW",
       "canonical_path": "sql/current/ozon_mart/FCT_OZON_SKU_PNL_MONTHLY.sql",
-      "sync_state": "pending_deploy",
+      "sync_state": "captured_live",
       "dependencies": [
         "V_OZON_CIS_BUYOUT"
       ],
@@ -863,17 +887,17 @@
         "ozon_raw.RAW_OZON_POSTINGS_FBO"
       ],
       "dependency_level": 1,
-      "capture_main_sha": "eecde14936d19c134c3e2a878532f7442fdb7878",
-      "captured_at": "2026-09-18T14:14:32Z",
+      "capture_main_sha": "821a45e2c2019140a385b0a21ec3f35641c21db7",
+      "captured_at": "2026-09-21T14:30:00Z",
       "provenance": {
-        "source": "production INFORMATION_SCHEMA (read-only capture)",
+        "source": "production INFORMATION_SCHEMA (read-only capture after Gate 5M deploy 2026-09-21)",
         "historical_migration": "sql/ozon/stage3_4c_ozon_mart.sql",
-        "preflight_parity": "EXACT_TEXT",
+        "preflight_parity": "DEPLOYED_AND_READBACK_MATCH",
         "superseded_historical_definitions": []
       },
-      "live_body_sha256_at_capture": "49b85269eaf1c928049621bcacd4f6a4da37bc9c23271f254c4792e87e441552",
-      "live_schema_sha256_at_capture": "b00f87c3731733d0c66fb2fa51163324cd54b2128c336d03dc4d459e5020ef33",
-      "live_description_sha256_at_capture": "a9521d746ad09a3c2f7a375b9e3b8b8b6c1a50a885be9e16dff2e6ea8f96c1dd",
+      "live_body_sha256_at_capture": "b81327e21538a27696b44ecfc7895be770734065c5f1602500c7a40e7c2fb140",
+      "live_schema_sha256_at_capture": "fd7d6e1a23b23c93d36f123fc42c6f9c87f41029e5fdf48af86fb03b16699538",
+      "live_description_sha256_at_capture": "8e49daa1cc1cf069421deb3eb7aa52fe4e76d7d0814afe91eb0f1740093a8f7e",
       "live_schema_at_capture": [
         {
           "ordinal_position": 1,
@@ -955,60 +979,66 @@
         },
         {
           "ordinal_position": 14,
-          "column_name": "contribution_before_ads_rub",
+          "column_name": "sku_promotion_rub",
           "data_type": "NUMERIC",
           "is_nullable": "YES"
         },
         {
           "ordinal_position": 15,
-          "column_name": "ad_spend_attributed_rub",
+          "column_name": "contribution_before_ads_rub",
           "data_type": "NUMERIC",
           "is_nullable": "YES"
         },
         {
           "ordinal_position": 16,
-          "column_name": "contribution_after_attributed_ads_rub",
+          "column_name": "ad_spend_attributed_rub",
           "data_type": "NUMERIC",
           "is_nullable": "YES"
         },
         {
           "ordinal_position": 17,
-          "column_name": "margin_before_ads_pct",
+          "column_name": "contribution_after_attributed_ads_rub",
           "data_type": "NUMERIC",
           "is_nullable": "YES"
         },
         {
           "ordinal_position": 18,
-          "column_name": "margin_after_ads_pct",
+          "column_name": "margin_before_ads_pct",
           "data_type": "NUMERIC",
           "is_nullable": "YES"
         },
         {
           "ordinal_position": 19,
-          "column_name": "actual_drr_pct",
+          "column_name": "margin_after_ads_pct",
           "data_type": "NUMERIC",
           "is_nullable": "YES"
         },
         {
           "ordinal_position": 20,
-          "column_name": "variable_break_even_drr_pct",
+          "column_name": "actual_drr_pct",
           "data_type": "NUMERIC",
           "is_nullable": "YES"
         },
         {
           "ordinal_position": 21,
+          "column_name": "variable_break_even_drr_pct",
+          "data_type": "NUMERIC",
+          "is_nullable": "YES"
+        },
+        {
+          "ordinal_position": 22,
           "column_name": "profitability_status",
           "data_type": "STRING",
           "is_nullable": "YES"
         },
         {
-          "ordinal_position": 22,
+          "ordinal_position": 23,
           "column_name": "attribution_level",
           "data_type": "STRING",
           "is_nullable": "YES"
         },
         {
-          "ordinal_position": 23,
+          "ordinal_position": 24,
           "column_name": "computed_at",
           "data_type": "TIMESTAMP",
           "is_nullable": "YES"
@@ -1017,7 +1047,7 @@
       "canonical_body_sha256": "b81327e21538a27696b44ecfc7895be770734065c5f1602500c7a40e7c2fb140",
       "canonical_description_sha256": "8e49daa1cc1cf069421deb3eb7aa52fe4e76d7d0814afe91eb0f1740093a8f7e",
       "canonical_schema_sha256": "fd7d6e1a23b23c93d36f123fc42c6f9c87f41029e5fdf48af86fb03b16699538",
-      "canonical_schema_verification": "unverified",
+      "canonical_schema_verification": "bigquery_verified",
       "canonical_column_count": 24,
       "canonical_schema": [
         {
@@ -1877,26 +1907,75 @@
       "object_name": "V_OZON_CIS_BUYOUT",
       "object_type": "VIEW",
       "canonical_path": "sql/current/ozon_mart/V_OZON_CIS_BUYOUT.sql",
-      "sync_state": "pending_deploy",
+      "sync_state": "captured_live",
       "dependencies": [],
       "external_dependencies": [],
       "dependency_level": 0,
-      "capture_main_sha": null,
-      "captured_at": null,
+      "capture_main_sha": "821a45e2c2019140a385b0a21ec3f35641c21db7",
+      "captured_at": "2026-09-21T14:30:00Z",
       "provenance": {
-        "source": "Git-first (Gate 5K, 2026-09-21): new object, not yet deployed to production",
+        "source": "production INFORMATION_SCHEMA (read-only capture after Gate 5M deploy 2026-09-21)",
         "historical_migration": null,
-        "preflight_parity": null,
+        "preflight_parity": "DEPLOYED_AND_READBACK_MATCH",
         "superseded_historical_definitions": []
       },
-      "live_body_sha256_at_capture": null,
-      "live_schema_sha256_at_capture": null,
-      "live_description_sha256_at_capture": null,
-      "live_schema_at_capture": null,
+      "live_body_sha256_at_capture": "b233b9ca53d18d8787f2b3ae6b0cca5fe774c0a52ea055869086ba6c871369ba",
+      "live_schema_sha256_at_capture": "fa87b2d07660ed116bfb2e9ace5b45e77707d22fff655ff09e34443721a6f8f6",
+      "live_description_sha256_at_capture": "301297cc880029443f2596e0f553850d9b95f3841adda4e46cef51d862fbd092",
+      "live_schema_at_capture": [
+        {
+          "ordinal_position": 1,
+          "column_name": "posting_number",
+          "data_type": "STRING",
+          "is_nullable": "YES"
+        },
+        {
+          "ordinal_position": 2,
+          "column_name": "document_number",
+          "data_type": "STRING",
+          "is_nullable": "YES"
+        },
+        {
+          "ordinal_position": 3,
+          "column_name": "document_kind",
+          "data_type": "STRING",
+          "is_nullable": "YES"
+        },
+        {
+          "ordinal_position": 4,
+          "column_name": "document_period_start",
+          "data_type": "DATE",
+          "is_nullable": "YES"
+        },
+        {
+          "ordinal_position": 5,
+          "column_name": "document_period_end",
+          "data_type": "DATE",
+          "is_nullable": "YES"
+        },
+        {
+          "ordinal_position": 6,
+          "column_name": "reference_price_rub",
+          "data_type": "NUMERIC",
+          "is_nullable": "YES"
+        },
+        {
+          "ordinal_position": 7,
+          "column_name": "category_discount_pct",
+          "data_type": "NUMERIC",
+          "is_nullable": "YES"
+        },
+        {
+          "ordinal_position": 8,
+          "column_name": "buyout_proceeds_rub",
+          "data_type": "NUMERIC",
+          "is_nullable": "YES"
+        }
+      ],
       "canonical_body_sha256": "b233b9ca53d18d8787f2b3ae6b0cca5fe774c0a52ea055869086ba6c871369ba",
       "canonical_description_sha256": "301297cc880029443f2596e0f553850d9b95f3841adda4e46cef51d862fbd092",
       "canonical_schema_sha256": "fa87b2d07660ed116bfb2e9ace5b45e77707d22fff655ff09e34443721a6f8f6",
-      "canonical_schema_verification": "unverified",
+      "canonical_schema_verification": "bigquery_verified",
       "canonical_column_count": 8,
       "canonical_schema": [
         {

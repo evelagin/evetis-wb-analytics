@@ -30,10 +30,8 @@ LEAF = "V_OZON_TARIFF_CHANGE_LOG"  # level 0, no dependants
 NON_R2A = {"ozon_mart": {"V_OZON_COMMISSION_RECOVERY", "V_OZON_CIS_BUYOUT", "FCT_OZON_SKU_PNL_DAILY",
                          "FCT_OZON_SKU_PNL_MONTHLY", "FCT_OZON_PNL_MONTHLY"},
            "evetis_mart": {"FACT_SKU_DAILY"}}
-# Git-first and NOT deployed: every object Gate 5K rewrote.
-GATE5K_PENDING = {"ozon_mart": {"V_OZON_CIS_BUYOUT", "FCT_OZON_SKU_PNL_DAILY",
-                                "FCT_OZON_SKU_PNL_MONTHLY", "FCT_OZON_PNL_MONTHLY"},
-                  "evetis_mart": {"FACT_SKU_DAILY"}}
+# Gate 5M deployed every object Gate 5K/5L rewrote and read them back, so nothing is pending.
+GATE5K_PENDING = {"ozon_mart": set(), "evetis_mart": set()}
 
 # canonical_hash_v1 body hashes proven equal to production in R2A (PR #140). Pinned literally.
 R2A_BODY_SHA256 = {
@@ -165,10 +163,6 @@ def test_real_manifest_is_v2_captured_live():
     assert man["allowed_external_datasets"] == ["evetis_ref", "ozon_raw"]
     assert {o["object_name"] for o in man["objects"]} == set(R2A_BODY_SHA256) | NON_R2A[DS]
     for o in man["objects"]:
-        if o["object_name"] in GATE5K_PENDING[DS]:
-            assert o["sync_state"] == "pending_deploy"
-            assert o["canonical_schema_verification"] == "unverified"
-            continue
         assert o["sync_state"] == "captured_live"
         assert o["canonical_schema_verification"] == "bigquery_verified"
         assert o["canonical_body_sha256"] == o["live_body_sha256_at_capture"]

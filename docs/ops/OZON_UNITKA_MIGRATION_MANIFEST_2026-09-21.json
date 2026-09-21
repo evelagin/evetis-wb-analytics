@@ -1,6 +1,6 @@
 {
-  "manifestVersion": "ozon-unitka-migration/6.0.0",
-  "generatedAt": "2026-09-21T14:15:00Z",
+  "manifestVersion": "ozon-unitka-migration/7.0.0",
+  "generatedAt": "2026-09-21T14:40:00Z",
   "executed": false,
   "ownerDecisions": {
     "D-5E-1": "пересчитать апрель по текущему каноническому контракту",
@@ -859,6 +859,169 @@
         }
       ],
       "why_not_now": "production Ozon всё ещё 465 × 404 — геометрия Gate 5D–5K не перенесена (Gate 6A). Менять колонки сейчас — обесценить доказанные воспроизведение и идемпотентность."
+    }
+  },
+  "martDeployment": {
+    "gate": "5M",
+    "executed": true,
+    "deployedAt": "2026-09-21T14:27:02Z..14:28:25Z",
+    "liveLcd": "2026-09-20",
+    "candidateSha": "f44033507e7c6a4a7d201f0b713fd4432aa4745b",
+    "sourceDrift": {
+      "status": "NO_DRIFT",
+      "signals": 0,
+      "evidence": "факты окна 2026-04-17..2026-09-20 побайтно совпали со снимком Gate 5L: 0 добавленных строк, 0 удалённых, 0 расхождений ячеек по 17 полям в 6 месяцах"
+    },
+    "order": [
+      "V_OZON_CIS_BUYOUT",
+      "FCT_OZON_PNL_MONTHLY",
+      "FCT_OZON_SKU_PNL_DAILY",
+      "FCT_OZON_SKU_PNL_MONTHLY",
+      "FACT_SKU_DAILY"
+    ],
+    "objects": [
+      {
+        "dataset": "ozon_mart",
+        "object": "V_OZON_CIS_BUYOUT",
+        "jobId": "job_UJEJVQpt46QQfYM6FsGM2nA6y-9O",
+        "beforeHash": null,
+        "afterHash": "b233b9ca53d18d8787f2b3ae6b0cca5fe774c0a52ea055869086ba6c871369ba",
+        "canonicalHash": "b233b9ca53d18d8787f2b3ae6b0cca5fe774c0a52ea055869086ba6c871369ba",
+        "readbackMatch": true,
+        "columns": 8
+      },
+      {
+        "dataset": "ozon_mart",
+        "object": "FCT_OZON_PNL_MONTHLY",
+        "jobId": "job_Ow6CPpIl0kFacwB2s0snoMt-GXjk",
+        "beforeHash": "edeb911c810e4179258ade32983c3496440f361f6f1d4ec5bf854b09ea227b25",
+        "afterHash": "1b6bc3ce452ec5504487669aa765d06353bf67037a6ac0394033202ef6e906fb",
+        "canonicalHash": "1b6bc3ce452ec5504487669aa765d06353bf67037a6ac0394033202ef6e906fb",
+        "readbackMatch": true,
+        "columns": 40
+      },
+      {
+        "dataset": "ozon_mart",
+        "object": "FCT_OZON_SKU_PNL_DAILY",
+        "jobId": "job_l412dQYJ8JxsP5GitSbhNWLEnRnM",
+        "beforeHash": "f7075d6ce1ddf068925b5ff8ddc75cf9241465006af54a4dba6007fbdbe6eb3b",
+        "afterHash": "c8ea0d3f5d0302406a03f873be962b966ae3a6d7bde689ba244cfd9c3e851285",
+        "canonicalHash": "c8ea0d3f5d0302406a03f873be962b966ae3a6d7bde689ba244cfd9c3e851285",
+        "readbackMatch": true,
+        "columns": 24
+      },
+      {
+        "dataset": "ozon_mart",
+        "object": "FCT_OZON_SKU_PNL_MONTHLY",
+        "jobId": "job_xqdW8sWkTUeYPl1mOlVEfkhZTVAa",
+        "beforeHash": "49b85269eaf1c928049621bcacd4f6a4da37bc9c23271f254c4792e87e441552",
+        "afterHash": "b81327e21538a27696b44ecfc7895be770734065c5f1602500c7a40e7c2fb140",
+        "canonicalHash": "b81327e21538a27696b44ecfc7895be770734065c5f1602500c7a40e7c2fb140",
+        "readbackMatch": true,
+        "columns": 24
+      },
+      {
+        "dataset": "evetis_mart",
+        "object": "FACT_SKU_DAILY",
+        "jobId": "job_GFp12qQyAFbuhuXiepqU97U_Jiie",
+        "beforeHash": "2492833d52ff4ae068856e01953830dea3b3ff0bf623b66a363e48b292223032",
+        "afterHash": "29e2b108a8f9a5e4549aaf7ba2c193870e7a77ee914cb41c358d9d7def2bc260",
+        "canonicalHash": "29e2b108a8f9a5e4549aaf7ba2c193870e7a77ee914cb41c358d9d7def2bc260",
+        "readbackMatch": true,
+        "columns": 26
+      }
+    ],
+    "acceptance": {
+      "buyoutEventsTotal": 35,
+      "buyoutDocumentProven": 35,
+      "buyoutRevenueMissingQty": 0,
+      "documentOnly": 0,
+      "bqOnly": 0,
+      "duplicatePostings": 0,
+      "targets": {
+        "0136161223-0034-1": 854.56,
+        "0144805755-0262-1": 560.0,
+        "0151252173-0059-1": 1210.72,
+        "91224369-0020-1": 643.44,
+        "0155570588-0181-2": 611.52
+      },
+      "standardSaleCommissionMissingQty": 0,
+      "cogsMissingQty": 0,
+      "commissionNotApplicableQty": 35,
+      "skuPromotionRub": 10428.67,
+      "unclassifiedFinanceAmount": 0.0,
+      "dailyToMonthlyParity": {
+        "pairs": 175,
+        "unmatched": 0,
+        "qtyDiff": 0,
+        "maxMoneyDiff": 0.005,
+        "tolerance": 0.01,
+        "toleranceReason": "месячные вью применяют ROUND(...,2), суточная — нет"
+      },
+      "normalSaleControlCount": 400,
+      "normalSaleUnexpectedDelta": 0.0,
+      "dependentsResolve": [
+        "V_OZON_LIFETIME_PNL",
+        "V_OZON_SKU_UNIT_ECONOMICS_CURRENT",
+        "V_OZON_AGENT_DECISION_INPUT",
+        "V_OZON_SKU_FORWARD_ECONOMICS_CURRENT",
+        "V_OZON_SKU_FBO_FBS_COMPARISON_CURRENT",
+        "V_OZON_MART_FRESHNESS"
+      ]
+    },
+    "readback": {
+      "method": "производственные объекты, без подстановки тел",
+      "actualMinusExpected": {
+        "2026-04": 0.0,
+        "2026-05": 0.0,
+        "2026-06": 0.0,
+        "2026-07": 0.0,
+        "2026-08": 0.0,
+        "2026-09": 0.0
+      },
+      "windowResults": {
+        "2026-04": -2322.921832,
+        "2026-05": -2395.514435,
+        "2026-06": -850.698032,
+        "2026-07": 5118.386278,
+        "2026-08": 6864.378785,
+        "2026-09": -20196.684774
+      },
+      "note": "апрель — только окно 17..30; полный месяц = легаси 9997,8224 + окно"
+    },
+    "premium": {
+      "2026-05": 9990.0,
+      "2026-06": 0.0,
+      "2026-07": 0.0,
+      "2026-08": 0.0,
+      "classification": "ACCOUNT_LEVEL_EXPENSE",
+      "includedInSkuUnitka": false,
+      "rowsReachableFromSkuGrain": 0,
+      "visibleInAccountPnl": "FCT_OZON_PNL_MONTHLY.marketplace_fixed_costs_rub"
+    },
+    "isolation": {
+      "wbObjectsChanged": 0,
+      "productionSheetWrites": 0,
+      "deploys": 0,
+      "schedulerChanges": 0,
+      "sheetBefore": "OZON 465 x 404, WB 803 x 623, 2 именованных диапазона",
+      "sheetAfter": "OZON 465 x 404, WB 803 x 623, 2 именованных диапазона",
+      "note": "записи в wb_raw.INGEST_RUNS в 14:23 и 14:31 — часовой загрузчик Apps Script по расписанию, не этот гейт"
+    },
+    "rollback": {
+      "runbook": "docs/ops/GATE5M_ROLLBACK_RUNBOOK.md",
+      "artifacts": "artifacts/gate5m/predeploy/ (дословные тела + metadata.json)",
+      "order": [
+        "FACT_SKU_DAILY",
+        "FCT_OZON_SKU_PNL_MONTHLY",
+        "FCT_OZON_SKU_PNL_DAILY",
+        "FCT_OZON_PNL_MONTHLY",
+        "V_OZON_CIS_BUYOUT"
+      ],
+      "statements": 5,
+      "dryRunVerified": true,
+      "complete": true,
+      "note": "V_OZON_CIS_BUYOUT до гейта не существовал — его откат это DROP VIEW"
     }
   }
 }
