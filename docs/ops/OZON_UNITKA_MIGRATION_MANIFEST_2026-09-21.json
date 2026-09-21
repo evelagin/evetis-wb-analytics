@@ -1,0 +1,397 @@
+{
+ "manifestVersion": "ozon-unitka-migration/3.0.0",
+ "generatedAt": "2026-09-21T10:37:26Z",
+ "executed": false,
+ "ownerDecisions": {
+  "D-5E-1": "пересчитать апрель по текущему каноническому контракту",
+  "D-5E-2": "формула оборачиваемости во всех канонических месяцах",
+  "D-5E-3": "исправить видимую подпись 9099514444 → 909951444",
+  "D-5G-1": "включить пять SKU в апрель: секция обязана представлять ВСЮ авторитетную активность Ozon за 17–30.04, а не только SKU, у которых исторически был блок"
+ },
+ "target": {
+  "spreadsheetId": "1E4L4JuwfEqr9owhsGkAjb8F24lRpWpWkEyVmSuRxaJg",
+  "sheetName": "OZON_Юнит_2025",
+  "sheetId": 1867941682
+ },
+ "precondition": {
+  "grid": {
+   "rows": 465,
+   "columns": 404
+  },
+  "namedRanges": [
+   "LAST_CLOSED_DATE",
+   "REVERSE_LEG_RATE"
+  ],
+  "conditionalFormatRules": 0,
+  "mergeCount": 1483,
+  "aprilLegacyBoundary": {
+   "legacyDays": "2026-04-01..2026-04-16",
+   "legacyRows": "434..449",
+   "canonicalDays": "2026-04-17..2026-04-30",
+   "canonicalRows": "450..463",
+   "mtdRow": 464
+  },
+  "ownerTailPanel": {
+   "columns": "396..404",
+   "note": "помесячная панель владельца («Общее количество заказов N SKU», «Общая доходность N SKU», «Реализация»). Колонки ВСТАВЛЯЮТСЯ перед ней, а не дописываются в конец: дописывание накрыло бы панель новыми блоками и уничтожило бы её"
+  },
+  "hashes": {
+   "aprilLegacyHalf": "534fe113c34c51d9b48d4592979cb180681f00f15bf9e042eb0559c08ceffaaf",
+   "aprilHeaderRow": "632864f4cceece635296045c81ab8071c9e32a3bd9f877d2910e550aa3a024e7",
+   "aprilCanonicalHalf": "926353aa9e401e8432aac5f3dce8341efb2ca6f577cb3eaea8bbcfc4df634ebc",
+   "ownerTailPanel": "a3bc81abe770c9bf4c5d84e74c2be6d355e798c822056ca975b7404a46437839",
+   "wholeSheetFormulas": "9aa24edc164c3e9cab688e92395bd2960354d46617f73f4a9c38ecc645ff70f2",
+   "merges": "f73c39b6b9546f3d454be1bb8dfef9633c6da1ad6a8a3492472061403ffe8c55"
+  },
+  "failClosed": "перенос обязан остановиться, если хоть один отпечаток, размер сетки или число объединений не совпали"
+ },
+ "growth": {
+  "insertColumnsBefore": 396,
+  "insertColumnCount": 144,
+  "appendColumnCount": 4,
+  "appendRowCount": 185,
+  "why": "144 = 6 новых SKU-блоков × 24; +4 колонки под зеркало LAST_CLOSED_DATE в $UE$2; +185 строк под секции май–сентябрь"
+ },
+ "namedRangesToCreate": [
+  {
+   "name": "OZON_LCD_MIRROR",
+   "cell": "$UE$2",
+   "formula": "=LAST_CLOSED_DATE",
+   "note": "имя уникально в КНИГЕ: наличие проверяется по имени, а не по листу"
+  }
+ ],
+ "months": [
+  {
+   "key": "2026-04",
+   "title": "Апрель 2026",
+   "titleRow": 432,
+   "blocks": 21,
+   "controlTotal": 8762.820962
+  },
+  {
+   "key": "2026-05",
+   "title": "Май 2026",
+   "titleRow": 466,
+   "blocks": 21,
+   "controlTotal": -1971.9744446899995
+  },
+  {
+   "key": "2026-06",
+   "title": "Июнь 2026",
+   "titleRow": 501,
+   "blocks": 21,
+   "controlTotal": -419.49809287999983
+  },
+  {
+   "key": "2026-07",
+   "title": "Июль 2026",
+   "titleRow": 535,
+   "blocks": 22,
+   "controlTotal": 6563.04065572
+  },
+  {
+   "key": "2026-08",
+   "title": "Август 2026",
+   "titleRow": 570,
+   "blocks": 22,
+   "controlTotal": 17180.77788861
+  },
+  {
+   "key": "2026-09",
+   "title": "Сентябрь 2026",
+   "titleRow": 605,
+   "blocks": 22,
+   "controlTotal": -13802.394729119998
+  }
+ ],
+ "aprilReconciliation": {
+  "old": 7994.642400000004,
+  "new": 7264.072400000005,
+  "oldCanonicalHalf": -2003.1799999999953,
+  "newCanonicalHalf": -2733.749999999995,
+  "delta": -730.5699999999997,
+  "components": {
+   "acquiring": -412.56999999999994,
+   "otherDirect": -318.0,
+   "commissionSemantics": 0.0,
+   "other": 0.0
+  },
+  "detail": {
+   "acquiringIntoCommission": 294.00999999999993,
+   "acquiringIntoOtherDirect": 118.56,
+   "otherFees": 15.0,
+   "logisticsWithoutRealization": 303.0
+  },
+  "unchanged": [
+   "выручка",
+   "себестоимость",
+   "количества",
+   "реклама",
+   "налог",
+   "логистика реализации",
+   "хранение"
+  ],
+  "fiveSkuInclusion": {
+   "decision": "включены (D-5G-1)",
+   "skus": [
+    "593111985",
+    "593111986",
+    "930334395",
+    "930334396",
+    "930334397"
+   ],
+   "slots": [
+    16,
+    17,
+    18,
+    19,
+    20
+   ],
+   "firstActivity": "2026-04-19",
+   "grossQty": 7,
+   "cancelledQty": 1,
+   "inTransitQty": 0,
+   "realizedQty": 6,
+   "sellerRevenue": 7255.0,
+   "cogs": 1226.901403,
+   "rawCommission": 2348.89,
+   "acquiringInCommission": 16.72,
+   "acquiringInOtherDirect": 8.43,
+   "displayedCommission": 2365.61,
+   "logistics": 539.54,
+   "storage": 0.0,
+   "otherDirect": 193.74,
+   "internalAds": 1285.36,
+   "taxReserve": 145.1,
+   "canonicalResult": 1498.748597,
+   "bridge": "Σ contribution_after_attributed_ads_rub 1643,848597 − резерв 145,10 = 1498,748597",
+   "sourceGaps": [
+    {
+     "date": "2026-04-27",
+     "offerId": "930334395",
+     "missing": "себестоимость 1 шт"
+    },
+    {
+     "date": "2026-04-30",
+     "offerId": "930334397",
+     "missing": "комиссия 1 шт"
+    }
+   ],
+   "note": "слоты 16..20 уже существуют в архитектуре переноса — физических блоков не добавляется; состав апреля стал префиксом мая, жизненный цикл мая–сентября не изменился"
+  },
+  "aprilWindow": {
+   "legacyHalf": 9997.8224,
+   "canonicalWindow": -1235.001438,
+   "sheetResult": 8762.820962,
+   "note": "01–16.04 легаси-модели не переписываются; движок не считает сутки вне окна, иначе контрольная сумма включила бы половину, которую он не пишет"
+  },
+  "chain": [
+   {
+    "step": "Gate 5D (принято визуально)",
+    "result": 7994.642397,
+    "note": "контракт v1: без эквайринга в комиссии и без OTHER_DIRECT, 16 блоков"
+   },
+   {
+    "step": "D-5E-1 текущий контракт",
+    "result": 7264.072364,
+    "delta": -730.570033,
+    "note": "эквайринг −412,57 + прочие прямые −318,00"
+   },
+   {
+    "step": "D-5G-1 полнота апреля",
+    "result": 8762.820962,
+    "delta": 1498.748598,
+    "note": "включены пять SKU, продававшихся 17–30.04; слоты 16..20 уже существовали"
+   }
+  ],
+  "final": 8762.820962
+ },
+ "turnoverContract": {
+  "decision": "формула во всех канонических месяцах",
+  "evidenceRule": "неизвестный исторический остаток → оборачиваемость пуста; наблюдаемый остаток → формула считает; наблюдаемый ноль остаётся фактом. Неизвестное НИКОГДА не становится наблюдаемым нулём",
+  "verified": {
+   "unknownStockCells": 3223,
+   "observedCells": 562,
+   "observedZeroCells": 31,
+   "violations": 0
+  }
+ },
+ "skuIdentity": {
+  "source": "evetis_ref.REF_SKU_CHANNEL_MAP (marketplace=OZON)",
+  "rule": "идентичность блока — offer_id из справочника; подпись в листе источником идентичности не является",
+  "labelRule": "подпись = offer_id + ХВОСТ подписи дословно (двойные пробелы владельца сохраняются)",
+  "correctedLabels": [
+   {
+    "block": 14,
+    "was": "9099514444",
+    "now": "909951444"
+   }
+  ],
+  "otherDiscrepancies": [],
+  "titles": {
+   "252442517": " Крем для рук",
+   "252442341": " Крем для тела",
+   "252441968": "  Набор  руки+тело",
+   "305101272": " Сыворотка увлажнение",
+   "305101361": " Сыворотка Акне",
+   "438775437": " Крем лицо увлажнение",
+   "438775617": " крем лицо Акне",
+   "535581674": " Тоник Увлажняющий",
+   "535581675": " Тоник анти акне",
+   "535580776": " Энзимная пудра для лица",
+   "567668636": " Крем сыворотка увлажняющая",
+   "567668635": " Крем сыворотка против прыщей",
+   "910330849": " Увлажняющий тоник + Сыворотка",
+   "910584041": " Тоник + Сыворотка + Крем АКНЕ",
+   "909951444": " Пудра+ Сыворотка + Крем АКНЕ",
+   "868597351": " Пудра + Тоник + Сыворотка + Крем АКНЕ",
+   "593111985": " Крем для тела Амбра",
+   "593111986": " Крем для тела Вишня",
+   "930334395": " Набор руки+вишня",
+   "930334396": " Набор руки+амбра",
+   "930334397": " Набор вишня+амбра",
+   "1083392113": " Набор тоник + сыворотка АКНЕ"
+  }
+ },
+ "sources": {
+  "facts": "ozon_mart.FCT_OZON_SKU_PNL_DAILY",
+  "ads": "ozon_raw.RAW_OZON_ADS_SKU_DAILY",
+  "buyerPrice": "ozon_raw.RAW_OZON_FINANCE_ACCRUAL + ozon_raw.RAW_OZON_POSTINGS_FBO",
+  "stock": "ozon_raw.RAW_OZON_STOCKS (только снимки с extracted_at = snapshot_date)",
+  "reference": "evetis_ref.REF_SKU_CHANNEL_MAP"
+ },
+ "contracts": {
+  "formula": "ozon-unitka-formulas/2.0.0",
+  "presentation": "CANONICAL_CURRENT_WB_PRESENTATION_CONTRACT",
+  "rowGeometry": {
+   "title": 40,
+   "header": 108,
+   "day": 25,
+   "mtd": 33,
+   "spacer": 18
+  },
+  "mtdBand": "e8eaed",
+  "locale": "ru_RU (SEMICOLON)"
+ },
+ "expectedPostMigration": {
+  "grid": {
+   "rows": 650,
+   "columns": 552
+  },
+  "conditionalFormatRules": 434,
+  "conditionalFormatRanges": 7221,
+  "mergeCount": 1612,
+  "controlTotals": {
+   "2026-04": 8762.820962,
+   "2026-05": -1971.9744446899995,
+   "2026-06": -419.49809287999983,
+   "2026-07": 6563.04065572,
+   "2026-08": 17180.77788861,
+   "2026-09": -13802.394729119998
+  }
+ },
+ "reproduction": {
+  "cleanBase": "OZON_5E_CLEAN — точная копия состояния production внутри TEST-книги (465×404, 0 правил УФ, 1483 объединения, Δзначений 0)",
+  "tailOwnerPanelPreserved": true,
+  "result": {
+   "canonicalSectionMergeDiffs": 0,
+   "allMergeDiffs": 0,
+   "cfSemanticsDiffs": 0,
+   "unexplainedValueDiffs": 0,
+   "unexplainedFormulaDiffs": 0,
+   "unexplainedFinancialDelta": 0.0
+  },
+  "approvedDifferencesFromGate5D": {
+   "D-5E-2 оборачиваемость": 2939,
+   "D-5E-1/D-5G-1 апрель": 1337,
+   "D-5E-3 подпись SKU": 5
+  },
+  "turnoverGuard": {
+   "unknownStockCells": 3373,
+   "observedCells": 562,
+   "observedZeroCells": 31,
+   "violations": 0
+  },
+  "idempotency": {
+   "valueChanges": 0,
+   "formulaChanges": 0,
+   "formatChanges": 0,
+   "mergeChanges": 0,
+   "rowHeightChanges": 0,
+   "columnWidthChanges": 0,
+   "gridSizeChanges": 0,
+   "namedRangeChanges": 0,
+   "cfRuleCountChange": 0,
+   "cfRangeCountChange": 0,
+   "cfRulesIdentical": true,
+   "cfRules": 434,
+   "cfRanges": 7221,
+   "precondition": "живой размер листа, число правил УФ и идентификатор зеркала читаются ПЕРЕД каждой сборкой плана"
+  }
+ },
+ "residualMerges": {
+  "list": [
+   [
+    1,
+    401,
+    415
+   ],
+   [
+    1,
+    425,
+    439
+   ],
+   [
+    1,
+    449,
+    463
+   ],
+   [
+    1,
+    473,
+    487
+   ],
+   [
+    1,
+    497,
+    511
+   ],
+   [
+    466,
+    540,
+    541
+   ],
+   [
+    470,
+    545,
+    546
+   ],
+   [
+    471,
+    540,
+    541
+   ]
+  ],
+  "note": "пустые объединения-следы сборки гейтов. В production их нет. Движок создаёт их только по явному списку; для переноса список оставить ПУСТЫМ, если владелец не попросит побайтного совпадения с TEST"
+ },
+ "rollback": {
+  "required": [
+   "снимок значений (FORMULA + UNFORMATTED_VALUE)",
+   "userEnteredFormat всего диапазона",
+   "rowMetadata/columnMetadata (pixelSize)",
+   "merges",
+   "conditionalFormats",
+   "namedRanges",
+   "gridProperties"
+  ],
+  "order": [
+   "снять УФ",
+   "вернуть значения и формулы",
+   "вернуть форматы и размеры",
+   "вернуть merges и namedRanges",
+   "удалить вставленные колонки 396..539 и дописанные строки/колонки",
+   "сверить отпечатки предусловия"
+  ],
+  "invariant": "апрель 01–16 в записи не участвует и в откате не изменяется"
+ }
+}
