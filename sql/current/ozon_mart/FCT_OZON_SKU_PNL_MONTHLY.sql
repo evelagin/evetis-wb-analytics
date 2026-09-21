@@ -4,26 +4,22 @@
 -- not a rollback. Rules: sql/current/README.md. Metadata: MANIFEST.json.
 -- Captured verbatim from production INFORMATION_SCHEMA.VIEWS at 2026-09-18T14:14:32Z
 -- (main eecde14936d1). Historical source: sql/ozon/stage3_4c_ozon_mart.sql (parity: EXACT_TEXT).
--- Internal dependencies: none.
+-- Тип операции (Gate 5K): MARKETPLACE_SALE (агентская реализация) и CIS_BUYOUT (выкуп товара
+-- Ozon у продавца, Беларусь). У выкупа агентского вознаграждения не существует как факта —
+-- комиссия не MISSING, а неприменима; выручка выкупа равна сумме по первичному документу
+-- (ozon_mart.V_OZON_CIS_BUYOUT). Прежний инлайн-CTE rec_comm (29 строк «восстановленной
+-- комиссии») удалён: записанные в нём суммы были «Дисконтом по категории» из документа о
+-- выкупе, а не вознаграждением. Семантика совпадает с FCT_OZON_SKU_PNL_DAILY.
+-- Internal dependencies: V_OZON_CIS_BUYOUT.
 -- The view body below is byte-for-byte the production body: do not reformat it.
 -- ============================================================================
 CREATE OR REPLACE VIEW `project-fa311fc0-4d87-4781-986.ozon_mart.FCT_OZON_SKU_PNL_MONTHLY`
-OPTIONS (description = "P&L Ozon, зерно = месяц x internal_sku. VIEW, не таблица. Атрибуция: DIRECT_POSTING где finance-строка несёт posting_number (привязка к order_date продажи), DIRECT_SKU где несёт только sku (привязка к дате начисления). REVENUE_PROPORTIONAL_ALL не используется. Расходы уровня магазина на SKU НЕ разносятся, поэтому слоя L4 здесь нет.")
+OPTIONS (description = "P&L Ozon, зерно = месяц x internal_sku. VIEW, не таблица. Атрибуция: DIRECT_POSTING где finance-строка несёт posting_number (привязка к order_date продажи), DIRECT_SKU где несёт только sku (привязка к дате начисления). REVENUE_PROPORTIONAL_ALL не используется. Расходы уровня магазина на SKU НЕ разносятся, поэтому слоя L4 здесь нет. Тип операции: MARKETPLACE_SALE и CIS_BUYOUT (выкуп товара Ozon у продавца); у выкупа комиссия неприменима, а выручка равна сумме по первичному документу.")
 AS
-WITH rec_comm AS (
-  SELECT * FROM UNNEST([
-    STRUCT('0107987069-0115-1' AS posting_number, NUMERIC '428.40' AS c),('0107987069-0116-1',NUMERIC '346.50'),
-    ('0111865653-0053-1',NUMERIC '356.16'),('0140207342-0283-1',NUMERIC '446.46'),('0140207342-0294-1',NUMERIC '391.44'),
-    ('0140425762-0336-1',NUMERIC '350.28'),('0143652501-0071-1',NUMERIC '428.40'),('0148296041-0008-1',NUMERIC '346.50'),
-    ('0148983889-0086-1',NUMERIC '262.92'),('0174671740-0036-1',NUMERIC '206.79'),('0180844433-0032-1',NUMERIC '222.65'),
-    ('0184479194-0054-1',NUMERIC '350.28'),('0198758548-0051-1',NUMERIC '382.20'),('0201540221-0097-1',NUMERIC '341.88'),
-    ('0231520423-0001-2',NUMERIC '254.94'),('0233071107-0012-1',NUMERIC '276.36'),('52826697-0003-15',NUMERIC '254.94'),
-    ('57794512-0006-2',NUMERIC '264.00'),('59699516-0310-4',NUMERIC '439.12'),('69799830-0276-1',NUMERIC '229.40'),
-    ('71080184-0023-1',NUMERIC '262.92'),('81535887-0077-1',NUMERIC '350.28'),('90312383-0011-1',NUMERIC '385.56'),
-    ('90831504-0160-1',NUMERIC '352.80'),('92234251-0008-1',NUMERIC '254.94'),('98041754-0004-1',NUMERIC '369.60'),
-    ('98041754-0006-1',NUMERIC '344.40'),('99543424-0109-1',NUMERIC '350.28'),('99543424-0131-1',NUMERIC '387.20')])),
+WITH
 post AS (
-  SELECT p.posting_number, p.sku, p.status, p.order_date, p.quantity, p.price_rub, m.internal_sku
+  SELECT p.posting_number, p.sku, p.status, p.order_date, p.quantity, p.price_rub,
+         p.payout_rub, m.internal_sku
   FROM `project-fa311fc0-4d87-4781-986.ozon_raw.RAW_OZON_POSTINGS_FBO` p
   JOIN `project-fa311fc0-4d87-4781-986.evetis_ref.REF_SKU_CHANNEL_MAP` m
     ON m.marketplace='OZON' AND m.marketplace_sku=p.sku),
@@ -34,14 +30,23 @@ fin_econ AS (
   WHERE seller_base_price_rub IS NOT NULL GROUP BY 1,2),
 cogs AS (SELECT internal_sku, effective_from, COALESCE(effective_to, DATE '9999-12-31') et, product_cogs_rub u
          FROM `project-fa311fc0-4d87-4781-986.evetis_ref.V_PRODUCT_COGS_EFFECTIVE`),
+cls AS (
+  SELECT p.*, f.sp_unit, f.comm, b.buyout_proceeds_rub,
+    CASE WHEN b.posting_number IS NOT NULL THEN 'CIS_BUYOUT'
+         WHEN p.status='delivered' AND f.sp_unit IS NULL AND IFNULL(p.payout_rub, NUMERIC '0')=0
+           THEN 'CIS_BUYOUT'
+         ELSE 'MARKETPLACE_SALE' END op_type
+  FROM post p LEFT JOIN fin_econ f USING (posting_number, sku)
+  LEFT JOIN `project-fa311fc0-4d87-4781-986.ozon_mart.V_OZON_CIS_BUYOUT` b
+    ON b.posting_number=p.posting_number),
 sales AS (
   SELECT DATE_TRUNC(p.order_date, MONTH) m, p.internal_sku, p.status, p.quantity,
-    IFNULL(f.sp_unit, p.price_rub) * p.quantity seller_base,
-    IFNULL(-f.comm, IFNULL(rc.c, NUMERIC '0')) commission_known,
-    IF(f.sp_unit IS NULL AND rc.c IS NULL, p.quantity, 0) comm_missing_qty,
+    CASE WHEN p.buyout_proceeds_rub IS NOT NULL THEN p.buyout_proceeds_rub * p.quantity
+         ELSE IFNULL(p.sp_unit, p.price_rub) * p.quantity END seller_base,
+    IF(p.op_type='MARKETPLACE_SALE', IFNULL(-p.comm, NUMERIC '0'), NUMERIC '0') commission_known,
+    IF(p.op_type='MARKETPLACE_SALE' AND p.sp_unit IS NULL, p.quantity, 0) comm_missing_qty,
     c.u * p.quantity cogs_amt, IF(c.u IS NULL, p.quantity, 0) cogs_missing_qty
-  FROM post p LEFT JOIN fin_econ f USING (posting_number, sku)
-  LEFT JOIN rec_comm rc ON rc.posting_number=p.posting_number
+  FROM cls p
   LEFT JOIN cogs c ON c.internal_sku=p.internal_sku AND p.order_date BETWEEN c.effective_from AND c.et),
 s AS (SELECT m, internal_sku,
     SUM(quantity) gross_qty, SUM(IF(status='delivered', quantity, 0)) realized_qty,

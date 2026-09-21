@@ -24,15 +24,19 @@ DS = "ozon_mart"
 MANIFEST = Path("sql/current/ozon_mart/MANIFEST.json")
 HISTORICAL = Path("sql/current/historical_definitions.json")
 LEAF = "V_OZON_TARIFF_CHANGE_LOG"  # level 0, no dependants
-# SCALE 1 (2026-09-20): objects added after R2A. Deployed and captured read-only by R2C on 2026-09-20 at
-# main 2260c73 (PENDING_DEPLOYED_MATCH -> captured_live). They are not part of the pinned R2A hash set.
-SCALE1_PENDING = {"ozon_mart": {"V_OZON_COMMISSION_RECOVERY", "FCT_OZON_SKU_PNL_DAILY"},
+# Objects outside the pinned R2A hash set: added by SCALE 1 (2026-09-20) or changed by Gate 5K
+# (2026-09-21, the CIS buyout model). V_OZON_COMMISSION_RECOVERY is still captured_live — Gate 5K only
+# retired it from use and changed its comment header, which is not part of canonical_hash_v1.
+NON_R2A = {"ozon_mart": {"V_OZON_COMMISSION_RECOVERY", "V_OZON_CIS_BUYOUT", "FCT_OZON_SKU_PNL_DAILY",
+                         "FCT_OZON_SKU_PNL_MONTHLY", "FCT_OZON_PNL_MONTHLY"},
+           "evetis_mart": {"FACT_SKU_DAILY"}}
+# Git-first and NOT deployed: every object Gate 5K rewrote.
+GATE5K_PENDING = {"ozon_mart": {"V_OZON_CIS_BUYOUT", "FCT_OZON_SKU_PNL_DAILY",
+                                "FCT_OZON_SKU_PNL_MONTHLY", "FCT_OZON_PNL_MONTHLY"},
                   "evetis_mart": {"FACT_SKU_DAILY"}}
 
 # canonical_hash_v1 body hashes proven equal to production in R2A (PR #140). Pinned literally.
 R2A_BODY_SHA256 = {
-    "FCT_OZON_PNL_MONTHLY": "edeb911c810e4179258ade32983c3496440f361f6f1d4ec5bf854b09ea227b25",
-    "FCT_OZON_SKU_PNL_MONTHLY": "49b85269eaf1c928049621bcacd4f6a4da37bc9c23271f254c4792e87e441552",
     "V_OZON_MART_FRESHNESS": "c19355f7a86440fe9fd7d48003e9570ca09b713da677f5c3d2141a46b379394d",
     "V_OZON_SKU_CURRENT_TARIFF": "a155684596e703c6e90c40cf8c65bb6da1b3431d40125c990581f3de92530d80",
     "V_OZON_TARIFF_CHANGE_LOG": "47963b384ae9b88d15da7eba5ac8816545218741021d001293094e1d32c81e54",
@@ -142,7 +146,8 @@ def replace_in_file(path, old, new, count=1):
 def test_real_repository_passes():
     assert_clean(REPO)
     _, summary = v.validate(REPO)
-    assert summary["objects"] == 11 + sum(map(len, SCALE1_PENDING.values())) and summary["historical_sites"] == 14
+    assert summary["objects"] == len(R2A_BODY_SHA256) + sum(map(len, NON_R2A.values()))
+    assert summary["historical_sites"] == 14
 
 
 def test_canonical_hash_v1_reproduces_r2a_hashes_byte_for_byte():
@@ -151,15 +156,19 @@ def test_canonical_hash_v1_reproduces_r2a_hashes_byte_for_byte():
         assert v.sha256_text(v.view_body(text, v.tokenize(text))) == expected, name
     man = load(REPO)
     assert {o["object_name"]: o["canonical_body_sha256"] for o in man["objects"]
-            if o["object_name"] not in SCALE1_PENDING[DS]} == R2A_BODY_SHA256
+            if o["object_name"] not in NON_R2A[DS]} == R2A_BODY_SHA256
 
 
 def test_real_manifest_is_v2_captured_live():
     man = load(REPO)
     assert man["manifest_version"] == 2
     assert man["allowed_external_datasets"] == ["evetis_ref", "ozon_raw"]
-    assert {o["object_name"] for o in man["objects"]} == set(R2A_BODY_SHA256) | SCALE1_PENDING[DS]
+    assert {o["object_name"] for o in man["objects"]} == set(R2A_BODY_SHA256) | NON_R2A[DS]
     for o in man["objects"]:
+        if o["object_name"] in GATE5K_PENDING[DS]:
+            assert o["sync_state"] == "pending_deploy"
+            assert o["canonical_schema_verification"] == "unverified"
+            continue
         assert o["sync_state"] == "captured_live"
         assert o["canonical_schema_verification"] == "bigquery_verified"
         assert o["canonical_body_sha256"] == o["live_body_sha256_at_capture"]
@@ -626,7 +635,7 @@ def test_self_reference_is_a_cycle(repo):
 
 def test_wrong_level(repo):
     man = load(repo)
-    obj(man, "V_OZON_LIFETIME_PNL")["dependency_level"] = 2
+    obj(man, "V_OZON_LIFETIME_PNL")["dependency_level"] = 3  # computed level is 2
     save(repo, man)
     assert_fails(repo, "C14", "dependency_level")
 
@@ -647,9 +656,12 @@ def test_new_dependency_requires_level_update(repo):
 
 # ------------------------------------------------------------------------------------------ sync_state (C18)
 
-def test_valid_captured_live():
+def test_valid_sync_states():
+    """Every object is captured_live except the ones Gate 5K rewrote but did not deploy."""
     man = load(REPO)
-    assert all(o["sync_state"] == "captured_live" for o in man["objects"])
+    pending = {o["object_name"] for o in man["objects"] if o["sync_state"] == "pending_deploy"}
+    assert pending == GATE5K_PENDING[DS]
+    assert all(o["sync_state"] in ("captured_live", "pending_deploy") for o in man["objects"])
     assert_clean(REPO)
 
 

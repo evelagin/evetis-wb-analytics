@@ -21,6 +21,7 @@ P = "project-fa311fc0-4d87-4781-986"
 OZON = REPO / "sql/current/ozon_mart"
 DAILY = OZON / "FCT_OZON_SKU_PNL_DAILY.sql"
 RECOVERY = OZON / "V_OZON_COMMISSION_RECOVERY.sql"
+CIS_BUYOUT = OZON / "V_OZON_CIS_BUYOUT.sql"
 MONTHLY_SKU = OZON / "FCT_OZON_SKU_PNL_MONTHLY.sql"
 MONTHLY_STORE = OZON / "FCT_OZON_PNL_MONTHLY.sql"
 NEUTRAL = REPO / "sql/current/evetis_mart/FACT_SKU_DAILY.sql"
@@ -47,6 +48,10 @@ def facts(path):
     return f
 
 
+def body(path):
+    return facts(path).body
+
+
 def body_ast(path):
     return sqlglot.parse_one(facts(path).body, read="bigquery")
 
@@ -54,6 +59,22 @@ def body_ast(path):
 def manifest_entry(dataset, name):
     man = json.loads((REPO / f"sql/current/{dataset}/MANIFEST.json").read_text(encoding="utf-8"))
     return man, next(o for o in man["objects"] if o["object_name"] == name)
+
+
+def buyout_rows():
+    """[(posting, document, period_start, period_end, reference, discount_pct, proceeds)] of the ledger."""
+    text = facts(CIS_BUYOUT).body
+    first = re.search(
+        r"STRUCT\('([^']+)' AS posting_number, '([^']+)' AS document_number,\s*"
+        r"DATE '([\d-]+)' AS document_period_start, DATE '([\d-]+)' AS document_period_end,\s*"
+        r"NUMERIC '([\d.]+)' AS reference_price_rub,\s*"
+        r"NUMERIC '([\d.]+)' AS category_discount_pct,\s*"
+        r"NUMERIC '([\d.]+)' AS buyout_proceeds_rub\)", text)
+    assert first, "the first ledger row must carry the named STRUCT contract"
+    rest = re.findall(
+        r"\('([^']+)','([^']+)',DATE '([\d-]+)',DATE '([\d-]+)',"
+        r"NUMERIC '([\d.]+)',NUMERIC '([\d.]+)',NUMERIC '([\d.]+)'\)", text)
+    return [first.groups()] + rest
 
 
 def recovery_rows(path):
@@ -85,26 +106,69 @@ def test_repository_contract_holds_with_scale1_objects():
     assert summary["datasets"] == ["evetis_mart", "ozon_mart"]
 
 
-def test_scale1_objects_are_captured_live_at_the_deployment_sha():
-    """Deployed 2026-09-20 from main 2260c73 and captured read-only by R2C (PENDING_DEPLOYED_MATCH): production
-    body, schema and description equal the canonical files, so the capture equals the canon on all three hashes."""
-    for dataset, name in (("ozon_mart", "V_OZON_COMMISSION_RECOVERY"), ("ozon_mart", "FCT_OZON_SKU_PNL_DAILY"),
+def test_retired_recovery_object_still_matches_production():
+    """V_OZON_COMMISSION_RECOVERY is retired from use (Gate 5K) but the object itself is untouched:
+    only its comment header changed, and the header is not part of canonical_hash_v1."""
+    _, o = manifest_entry("ozon_mart", "V_OZON_COMMISSION_RECOVERY")
+    assert o["sync_state"] == "captured_live" and o["canonical_schema_verification"] == "bigquery_verified"
+    assert o["capture_main_sha"] == "2260c73588d87194b4b0e90d93efb1352d5ec0c7"
+    assert o["live_body_sha256_at_capture"] == o["canonical_body_sha256"]
+
+
+def test_buyout_repair_objects_are_pending_deploy():
+    """Gate 5K is a Git-first change: nothing is deployed, so every touched object is pending_deploy.
+    Claiming captured_live here would assert production parity that does not exist."""
+    for dataset, name in (("ozon_mart", "V_OZON_CIS_BUYOUT"), ("ozon_mart", "FCT_OZON_SKU_PNL_DAILY"),
+                          ("ozon_mart", "FCT_OZON_SKU_PNL_MONTHLY"), ("ozon_mart", "FCT_OZON_PNL_MONTHLY"),
                           ("evetis_mart", "FACT_SKU_DAILY")):
         _, o = manifest_entry(dataset, name)
-        assert o["sync_state"] == "captured_live" and o["canonical_schema_verification"] == "bigquery_verified"
-        assert o["capture_main_sha"] == "2260c73588d87194b4b0e90d93efb1352d5ec0c7" and o["captured_at"].startswith("2026-09-20T"), name
-        assert o["live_body_sha256_at_capture"] == o["canonical_body_sha256"], name
-        assert o["live_schema_sha256_at_capture"] == o["canonical_schema_sha256"], name
-        assert o["live_description_sha256_at_capture"] == o["canonical_description_sha256"], name
-        assert o["live_schema_at_capture"] == o["canonical_schema"], name
+        assert o["sync_state"] == "pending_deploy", name
+        assert o["canonical_schema_verification"] == "unverified", name
 
 
-def test_existing_ozon_monthly_views_are_not_touched():
-    man, _ = manifest_entry("ozon_mart", "FCT_OZON_SKU_PNL_MONTHLY")
-    for o in man["objects"]:
-        if o["object_name"] in ("FCT_OZON_SKU_PNL_MONTHLY", "FCT_OZON_PNL_MONTHLY"):
-            assert o["sync_state"] == "captured_live"
-            assert o["canonical_body_sha256"] == o["live_body_sha256_at_capture"]
+def test_cis_buyout_is_the_single_named_source_of_buyout_revenue():
+    """The buyout ledger is data in one object, never a rate and never a per-view inline CTE."""
+    for path in (DAILY, MONTHLY_SKU, MONTHLY_STORE):
+        refs = {n for _, _, n in facts(path).references}
+        assert "V_OZON_CIS_BUYOUT" in refs, path.name
+        assert "V_OZON_COMMISSION_RECOVERY" not in refs, path.name
+        assert "rec_comm" not in body(path), f"{path.name}: inline recovery CTE must be gone"
+
+
+def test_cis_buyout_ledger_is_document_backed_and_arithmetically_exact():
+    """Every row carries its document, and proceeds = reference * (1 - discount) to the kopeck."""
+    all_rows = buyout_rows()
+    assert len(all_rows) == 30, f"expected 30 documented buyouts, got {len(all_rows)}"
+    assert len({r[0] for r in all_rows}) == 30, "posting_number must be unique"
+    for posting, doc, _, _, ref, disc, proceeds in all_rows:
+        assert doc.isdigit() and doc, f"{posting}: document number is the provenance, it cannot be empty"
+        expected = round(float(ref) * (1 - float(disc) / 100), 2)
+        assert abs(expected - float(proceeds)) < 0.005, f"{posting}: {ref} * (1-{disc}%) != {proceeds}"
+    # 21% occurs exactly once and is not derivable from any other rate: rates come from documents only.
+    assert sorted({float(r[5]) for r in all_rows}) == [21.0, 30.5, 33.0, 37.0, 42.0, 44.0]
+    assert round(sum(float(r[6]) for r in all_rows), 2) == 14235.92
+    assert round(sum(float(r[4]) for r in all_rows), 2) == 23976.00
+
+
+def test_buyout_commission_is_not_applicable_rather_than_missing():
+    """A buyout has no agency commission as a fact, so it must never inflate commission_missing_qty."""
+    for path in (DAILY, MONTHLY_SKU, MONTHLY_STORE):
+        text = body(path)
+        assert "op_type='MARKETPLACE_SALE'" in text, path.name
+        assert "op_type='MARKETPLACE_SALE' AND p.sp_unit IS NULL" in text, (
+            f"{path.name}: commission_missing_qty must be raised for ordinary sales only")
+    daily = body(DAILY)
+    assert "commission_not_applicable_qty" in daily
+    assert "buyout_revenue_unproven_qty" in daily and "buyout_revenue_unproven_rub" in daily
+
+
+def test_buyout_revenue_is_never_derived_from_a_rate():
+    """An undocumented buyout keeps an explicit unproven flag; no rate may be applied to invent proceeds."""
+    daily = body(DAILY)
+    assert "buyout_proceeds_rub IS NOT NULL THEN p.buyout_proceeds_rub" in daily, (
+        "documented buyout revenue must come from the ledger")
+    for rate in ("0.44", "0.42", "0.56", "0.58"):
+        assert rate not in daily, f"a discount rate ({rate}) must never appear in the fact view"
 
 
 # ------------------------------------------------------------------------------------- neutral fact
@@ -174,7 +238,7 @@ def test_ozon_daily_fact_is_full_precision_and_deterministic():
 def test_ozon_daily_fact_uses_the_same_sources_as_the_monthly_pnl():
     daily = {(d, n) for _, d, n in facts(DAILY).references}
     monthly = {(d, n) for _, d, n in facts(MONTHLY_SKU).references}
-    assert daily - monthly == {("ozon_mart", "V_OZON_COMMISSION_RECOVERY")}
+    assert daily - monthly == set()  # Gate 5K: both read the same buyout ledger
     assert monthly - daily == {("evetis_ref", "REF_PRODUCT_MASTER")}  # names live in the neutral fact, not here
     assert not any(d.startswith("wb_") for d, _ in daily)
 
@@ -198,14 +262,20 @@ def test_ozon_status_lists_match_the_store_level_monthly_pnl():
     assert statuses(DAILY) == statuses(MONTHLY_STORE) == {frozenset({"delivering", "awaiting_deliver", "awaiting_packaging"})}
 
 
-def test_commission_recovery_has_one_named_source_equal_to_both_inline_copies():
+def test_retired_recovery_rows_are_exactly_the_documented_buyout_discount():
+    """Gate 5K equivalence proof, kept in Git. Each legacy "recovered commission" equals the category
+    discount of its buyout document: reference_price - recovery == documented proceeds, to the kopeck.
+    That is why retiring the object moves no contribution for these 29 postings."""
     shared, n = recovery_rows(RECOVERY)
-    assert n == len(shared) == 29 and sum(map(lambda a: round(float(a) * 100), shared.values())) == 963760
-    for legacy in (MONTHLY_SKU, MONTHLY_STORE):
-        rows, count = recovery_rows(legacy)
-        assert count == 29 and rows == shared, legacy.name
-    # the daily fact must reference the named source, not carry a fourth copy of the rows
-    assert "UNNEST" not in facts(DAILY).body and "0107987069-0115-1" not in DAILY.read_text(encoding="utf-8")
+    assert n == len(shared) == 29 and sum(round(float(a) * 100) for a in shared.values()) == 963760
+    ledger = {r[0]: (float(r[4]), float(r[6])) for r in buyout_rows()}
+    assert set(shared) <= set(ledger), "every retired recovery row must be a documented buyout"
+    for posting, recovered in shared.items():
+        reference, proceeds = ledger[posting]
+        assert abs((reference - float(recovered)) - proceeds) < 0.005, posting
+    # no canonical object carries a copy of the retired rows any more
+    for path in (DAILY, MONTHLY_SKU, MONTHLY_STORE):
+        assert "0107987069-0115-1" not in path.read_text(encoding="utf-8"), path.name
 
 
 def test_channel_map_join_key_is_exactly_the_key_whose_uniqueness_the_identity_gate_proves():
@@ -264,12 +334,12 @@ def test_validation_file_is_read_only_selects():
 
 
 def test_predeploy_render_inlines_every_pending_object_and_stays_a_select():
-    # Nothing is pending after the 2026-09-20 deployment, so the tool is a no-op on the real repository ...
-    assert render.pending_bodies() == {}
-    sample = next(iter(check_blocks().values()))
-    assert render.render(sample, {}) == sample
-    # ... and its inlining logic is still exercised on the same three objects, as if they were pending.
-    bodies = {f"`{P}.{p.parent.name}.{p.stem}`": facts(p).body for p in (RECOVERY, DAILY, NEUTRAL)}
+    # Gate 5K is undeployed, so the buyout repair is exactly what the tool must be able to inline.
+    pending = render.pending_bodies()
+    assert {k.rsplit(".", 1)[-1].strip("`") for k in pending} == {
+        "V_OZON_CIS_BUYOUT", "FCT_OZON_SKU_PNL_DAILY", "FCT_OZON_SKU_PNL_MONTHLY",
+        "FCT_OZON_PNL_MONTHLY", "FACT_SKU_DAILY"}
+    bodies = {f"`{P}.{p.parent.name}.{p.stem}`": facts(p).body for p in (CIS_BUYOUT, DAILY, NEUTRAL)}
     for cid, sql in check_blocks().items():
         rendered = render.render(sql, bodies)
         assert not any(ref in rendered for ref in bodies), cid

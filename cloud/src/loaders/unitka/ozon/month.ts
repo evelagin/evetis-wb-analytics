@@ -84,6 +84,27 @@ export interface OzonFactRow {
   acquiring?: number | null; storage?: number | null; other_direct?: number | null; cogs_amt?: number | null;
   ads_spend?: number | null; impr?: number | null; clicks?: number | null;
   buyer_amt?: number | null; seller_amt?: number | null;
+  // Полнота источника. Комиссия имеет три состояния, а не два: отсутствующая комиссия обычной
+  // продажи (commission_missing_qty) и неприменимая комиссия выкупа
+  // (commission_not_applicable_qty) — разные факты, и смешивать их нельзя.
+  cogs_missing_qty?: number | null;
+  commission_missing_qty?: number | null;
+  commission_not_applicable_qty?: number | null;
+  buyout_revenue_unproven_qty?: number | null;
+  buyout_revenue_unproven_rub?: number | null;
+}
+
+/** Состояние полноты комиссии для строки суток × SKU. */
+export type OzonCommissionState = 'PRESENT' | 'MISSING' | 'NOT_APPLICABLE';
+
+/**
+ * Полнота комиссии по строке факта. NOT_APPLICABLE — не пробел в данных: у выкупа товара
+ * агентского вознаграждения не существует, поэтому такую строку нельзя считать неполной.
+ */
+export function ozonCommissionState(row: OzonFactRow): OzonCommissionState {
+  if ((row.commission_missing_qty ?? 0) > 0) return 'MISSING';
+  if ((row.commission_not_applicable_qty ?? 0) > 0) return 'NOT_APPLICABLE';
+  return 'PRESENT';
 }
 
 export interface OzonDayCell {

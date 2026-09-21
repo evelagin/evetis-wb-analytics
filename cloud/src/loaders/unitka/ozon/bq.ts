@@ -4,6 +4,15 @@
  * Один запрос отдаёт всё, что нужно секции: витрина P&L по SKU за сутки, реклама
  * (показы/переходы из Performance API) и цена покупателя из начислений финотчёта.
  * Приоритет источников соблюдён: ozon_mart поверх ozon_raw, справочник — evetis_ref.
+ *
+ * Полнота комиссии различается ТРЕМЯ состояниями, а не двумя (Gate 5K):
+ *   PRESENT        — commission_missing_qty = 0 и commission_not_applicable_qty = 0;
+ *   MISSING        — commission_missing_qty > 0: обычная продажа без комиссии в источнике;
+ *   NOT_APPLICABLE — commission_not_applicable_qty > 0: выкуп товара Ozon у продавца, где
+ *                    агентского вознаграждения не существует как факта хозяйственной жизни.
+ * Юнитка НЕ знает про Беларусь: она получает канонические поля и флаги полноты, а выкуп
+ * остаётся обычной строкой суток × SKU. Отдельная величина непроверенной выручки выкупа —
+ * buyout_revenue_unproven_qty/_rub: её нельзя молча считать доказанной.
  */
 export interface OzonFactsQuery { project: string; from: string; to: string }
 
@@ -42,6 +51,7 @@ SELECT CAST(f.fact_date AS STRING) d, m.offer_id,
   f.acquiring_rub acquiring, f.storage_rub storage,
   f.other_direct_marketplace_costs_rub other_direct, f.product_cogs_rub cogs_amt,
   f.cogs_missing_qty, f.commission_missing_qty,
+  f.commission_not_applicable_qty, f.buyout_revenue_unproven_qty, f.buyout_revenue_unproven_rub,
   f.ad_spend_attributed_rub ads_spend, f.contribution_after_attributed_ads_rub contrib_after,
   a.impr, a.clicks, b.buyer_amt, b.seller_amt
 FROM f

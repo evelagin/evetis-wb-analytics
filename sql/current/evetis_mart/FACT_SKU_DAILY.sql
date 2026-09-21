@@ -32,7 +32,7 @@
 --
 -- Базис даты различается по площадкам и метрикам; он назван в fact_date_semantics, а не скрыт.
 -- Реклама — АТРИБУЦИЯ на обеих площадках (не биллинг). Налог не моделируется.
--- Порядок развёртывания: ozon_mart.V_OZON_COMMISSION_RECOVERY → ozon_mart.FCT_OZON_SKU_PNL_DAILY →
+-- Порядок развёртывания: ozon_mart.V_OZON_CIS_BUYOUT → ozon_mart.FCT_OZON_SKU_PNL_DAILY →
 -- датасет evetis_mart → этот объект.
 -- Internal dependencies: none.
 -- ============================================================================
@@ -82,7 +82,8 @@ oz AS (
       - d.other_direct_marketplace_costs_rub - d.ad_spend_attributed_rub contribution_after_ads_rub,
     IF(d.cogs_missing_qty = 0, d.product_cogs_rub, NULL) cogs_rub,
     IF(d.cogs_missing_qty = 0, d.contribution_after_attributed_ads_rub, NULL) contribution_after_cogs_rub,
-    d.cogs_missing_qty = 0 AND d.commission_missing_qty = 0 economics_covered,
+    d.cogs_missing_qty = 0 AND d.commission_missing_qty = 0
+      AND d.buyout_revenue_unproven_qty = 0 economics_covered,
     d.in_transit_qty > 0 is_provisional,
     d.fact_date_semantics fact_date_semantics,
     'ozon_mart.FCT_OZON_SKU_PNL_DAILY' source_contract

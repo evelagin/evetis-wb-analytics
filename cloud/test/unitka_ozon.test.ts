@@ -837,3 +837,83 @@ describe('GATE 5E — источник фактов', () => {
     expect(sql).not.toContain('SUM(present)');
   });
 });
+
+// ---------------------------------------------------------------------------------------------
+// Gate 5K — контракт полноты: комиссия имеет ТРИ состояния, а не два.
+// ---------------------------------------------------------------------------------------------
+import { ozonCommissionState, type OzonFactRow } from '../src/loaders/unitka/ozon/month.js';
+
+describe('контракт полноты Ozon (Gate 5K)', () => {
+  const row = (o: Partial<OzonFactRow>): OzonFactRow =>
+    ({ d: '2026-08-02', offer_id: '930334395', gross_qty: 1, cancelled_qty: 0, realized_qty: 1, ...o });
+
+  it('обычная продажа с комиссией — PRESENT', () => {
+    expect(ozonCommissionState(row({ commission: 510.45 }))).toBe('PRESENT');
+  });
+
+  it('обычная продажа без комиссии в источнике — MISSING', () => {
+    expect(ozonCommissionState(row({ commission_missing_qty: 1 }))).toBe('MISSING');
+  });
+
+  it('выкуп товара — NOT_APPLICABLE, а не MISSING', () => {
+    // Комиссии у выкупа не существует как факта хозяйственной жизни. Считать такую строку
+    // неполной — значит сообщать о пробеле в данных, которого нет.
+    const st = ozonCommissionState(row({ commission_not_applicable_qty: 1, commission: 0 }));
+    expect(st).toBe('NOT_APPLICABLE');
+    expect(st).not.toBe('MISSING');
+  });
+
+  it('MISSING имеет приоритет: настоящий пробел не маскируется неприменимостью', () => {
+    expect(ozonCommissionState(row({ commission_missing_qty: 1, commission_not_applicable_qty: 1 })))
+      .toBe('MISSING');
+  });
+
+  it('отсутствие флагов не выдумывает пробел', () => {
+    expect(ozonCommissionState(row({}))).toBe('PRESENT');
+  });
+
+  it('SQL фактов несёт все три флага полноты и величину непроверенной выручки', () => {
+    const sql = ozonMonthFactsSql({ project: 'p', from: '2026-08-01', to: '2026-08-31' });
+    expect(sql).toContain('f.commission_missing_qty');
+    expect(sql).toContain('f.commission_not_applicable_qty');
+    expect(sql).toContain('f.buyout_revenue_unproven_qty');
+    expect(sql).toContain('f.buyout_revenue_unproven_rub');
+  });
+
+  it('Юнитка не знает про Беларусь: никакой географии в контракте фактов', () => {
+    // Тип операции — свойство витрины, а не листа. Если география просочится в загрузчик,
+    // выкуп перестанет быть обычной строкой суток x SKU (Gate 5K, §10 и §14).
+    const sql = ozonMonthFactsSql({ project: 'p', from: '2026-08-01', to: '2026-08-31' });
+    for (const w of ['city', 'Беларус', 'Belarus', 'CIS_BUYOUT', 'payout_rub']) {
+      expect(sql).not.toContain(w);
+    }
+  });
+});
+
+describe('выкуп меняет базу налогового резерва (Gate 5K)', () => {
+  // Выручка и «комиссия» выкупа падают на одну и ту же величину, поэтому вклад не меняется.
+  // Но налоговый резерв считается ОТ ВЫРУЧКИ, а не от вклада: 2 % с цены, которую продавец
+  // никогда не получал, — это завышенный резерв. Канонический итог обязан это отразить.
+  const spec = ozonMonthSpec(2026, 4, 1, 0, ['535580776']);
+  const base = {
+    d: '2026-04-25', offer_id: '535580776',
+    gross_qty: 1, cancelled_qty: 0, realized_qty: 1,
+    logistics: 0, acquiring: 0, storage: 0, other_direct: 0, cogs_amt: 0, ads_spend: 0,
+  };
+  const before = composeMonth(spec, [{ ...base, revenue: 998, commission: 439.12 }], {}, '2026-09-20', 17);
+  const after = composeMonth(spec, [{ ...base, revenue: 558.88, commission: 0 }], {}, '2026-09-20', 17);
+
+  it('вклад до налога не меняется: 998 − 439,12 = 558,88 − 0', () => {
+    expect(before.totals.revenue - before.totals.comm).toBeCloseTo(558.88, 6);
+    expect(after.totals.revenue - after.totals.comm).toBeCloseTo(558.88, 6);
+  });
+
+  it('налоговый резерв падает ровно на 2 % снятого дисконта', () => {
+    expect(before.totals.tax - after.totals.tax).toBeCloseTo(439.12 * MANAGEMENT_TAX_RESERVE_RATE, 9);
+    expect(before.totals.tax - after.totals.tax).toBeCloseTo(8.7824, 9);
+  });
+
+  it('канонический итог растёт ровно на эту же величину и ни на копейку больше', () => {
+    expect(after.totals.canonical - before.totals.canonical).toBeCloseTo(8.7824, 9);
+  });
+});
