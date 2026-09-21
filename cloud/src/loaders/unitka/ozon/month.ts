@@ -93,6 +93,28 @@ export interface OzonFactRow {
   commission_not_applicable_qty?: number | null;
   buyout_revenue_unproven_qty?: number | null;
   buyout_revenue_unproven_rub?: number | null;
+  // Gate 8: провизорная экономика. `commission`/`logistics` выше — ЭФФЕКТИВНЫЕ величины
+  // (факт там, где он есть, оценка там, где Ozon ещё не опубликовал); факт едет рядом
+  // отдельно и не переопределяется, состояние компонента — в *_state.
+  commission_actual?: number | null; logistics_actual?: number | null;
+  commission_estimated_rub?: number | null; logistics_estimated_rub?: number | null;
+  commission_state?: string | null; logistics_state?: string | null;
+  storage_state?: string | null; other_direct_state?: string | null;
+  commission_estimate_method?: string | null; logistics_estimate_method?: string | null;
+  period_matured?: boolean | null;
+}
+
+/** Состояние компонента расхода: старшинство ACTUAL > ESTIMATED > NOT_APPLICABLE > UNKNOWN. */
+export type ComponentState = 'ACTUAL' | 'ESTIMATED' | 'NOT_APPLICABLE' | 'UNKNOWN';
+
+/** Провенанс ячейки: что именно в ней стоит — факт или оценка, и какой оценщик её дал. */
+export interface CellProvenance {
+  readonly date: string; readonly offerId: string; readonly row: number;
+  readonly component: 'COMMISSION' | 'LOGISTICS';
+  readonly state: ComponentState;
+  readonly method: string | null;
+  readonly estimatedRub: number;
+  readonly actualRub: number;
 }
 
 /** Состояние полноты комиссии для строки суток × SKU. */
@@ -127,6 +149,8 @@ export interface OzonMonthComposition {
   transit: Record<string, number>;
   audit: Array<{ date: string; offerId: string; otherFees: number; logisticsNonRealized: number;
                  acquiringWithoutRevenue: number; skuPromotion: number; total: number }>;
+  /** Ячейки, в которых стоит ОЦЕНКА, а не факт. Основание для пометки в листе. */
+  provenance: CellProvenance[];
   totals: OzonMonthTotals;
 }
 
@@ -154,6 +178,7 @@ export function composeMonth(
   const cells: OzonMonthComposition['cells'] = {};
   const cogs: Record<string, number> = {}; const other: Record<string, number> = {};
   const transit: Record<string, number> = {}; const audit: OzonMonthComposition['audit'] = [];
+  const provenance: CellProvenance[] = [];
   const T: OzonMonthTotals = { orders: 0, cancel: 0, realized: 0, revenue: 0, cogs: 0, comm: 0, acq: 0,
     acqComm: 0, acqOther: 0, logRepr: 0, logUnrepr: 0, otherFees: 0, other: 0, ads: 0, tax: 0,
     storage: 0, promo: 0, canonical: 0 };
@@ -199,6 +224,17 @@ export function composeMonth(
       const ct = cartBy[`${ds}|${o}`];
       if (ct !== undefined) c.cart = ct;              // наблюдение листа, а не выдуманный ноль
       if (od) c.od = r6(od);                          // прочие прямые — теперь видимая колонка
+      // Gate 8: где в ячейке стоит ОЦЕНКА, там об этом остаётся запись. Молча подменить
+      // факт оценкой нельзя — провенанс переезжает в лист пометкой на ячейке.
+      if (rl > 0 && rev) {
+        const cEst = n(rec?.commission_estimated_rub), lEst = n(rec?.logistics_estimated_rub);
+        if (cEst) provenance.push({ date: ds, offerId: o, row, component: 'COMMISSION',
+          state: 'ESTIMATED', method: rec?.commission_estimate_method ?? null,
+          estimatedRub: r6(cEst), actualRub: r6(n(rec?.commission_actual)) });
+        if (lEst) provenance.push({ date: ds, offerId: o, row, component: 'LOGISTICS',
+          state: 'ESTIMATED', method: rec?.logistics_estimate_method ?? null,
+          estimatedRub: r6(lEst), actualRub: r6(n(rec?.logistics_actual)) });
+      }
       cells[key] = c;
       if (od) {
         other[key] = r6(od);
@@ -213,7 +249,7 @@ export function composeMonth(
   }
   T.canonical = T.revenue - T.cogs - (T.comm + T.acqComm) - T.logRepr - T.storage - T.other - T.ads - T.tax;
   if (Math.abs(T.acqComm + T.acqOther - T.acq) > 1e-6) throw new Error('эквайринг посчитан не один раз');
-  return { cells, cogs, other, transit, audit, totals: T };
+  return { cells, cogs, other, transit, audit, provenance, totals: T };
 }
 
 export type CellValue = string | number | null;

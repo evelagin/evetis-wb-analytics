@@ -28,9 +28,15 @@ LEAF = "V_OZON_TARIFF_CHANGE_LOG"  # level 0, no dependants
 # (2026-09-21, the CIS buyout model). V_OZON_COMMISSION_RECOVERY is still captured_live — Gate 5K only
 # retired it from use and changed its comment header, which is not part of canonical_hash_v1.
 NON_R2A = {"ozon_mart": {"V_OZON_COMMISSION_RECOVERY", "V_OZON_CIS_BUYOUT", "FCT_OZON_SKU_PNL_DAILY",
-                         "FCT_OZON_SKU_PNL_MONTHLY", "FCT_OZON_PNL_MONTHLY"},
+                         "FCT_OZON_SKU_PNL_MONTHLY", "FCT_OZON_PNL_MONTHLY",
+                         # Gate 8: провизорная экономика Ozon
+                         "V_OZON_COMMISSION_POLICY", "V_OZON_LOGISTICS_ESTIMATOR",
+                         "V_OZON_SKU_PNL_DAILY_OPERATIONAL"},
            "evetis_mart": {"FACT_SKU_DAILY"}}
 # Gate 5M deployed every object Gate 5K/5L rewrote and read them back, so nothing is pending.
+# Gate 8 добавил три объекта Git-first; до развёртывания они pending_deploy, после — captured_live.
+GATE8_OBJECTS = {"V_OZON_COMMISSION_POLICY", "V_OZON_LOGISTICS_ESTIMATOR",
+                 "V_OZON_SKU_PNL_DAILY_OPERATIONAL"}
 GATE5K_PENDING = {"ozon_mart": set(), "evetis_mart": set()}
 
 # canonical_hash_v1 body hashes proven equal to production in R2A (PR #140). Pinned literally.

@@ -5,6 +5,12 @@
  * (показы/переходы из Performance API) и цена покупателя из начислений финотчёта.
  * Приоритет источников соблюдён: ozon_mart поверх ozon_raw, справочник — evetis_ref.
  *
+ * Gate 8: источник — V_OZON_SKU_PNL_DAILY_OPERATIONAL, а не FCT_OZON_SKU_PNL_DAILY напрямую.
+ * Операционный слой добавляет к факту ЭФФЕКТИВНЫЕ величины: там, где Ozon ещё не опубликовал
+ * комиссию и логистику (в среднем 18 суток после заказа, максимум 36), вместо нуля стоит
+ * доказанная оценка. Ноль остался бы мнимой прибылью. Факт при этом не переопределяется:
+ * commission_actual/logistics_actual едут рядом, состояние компонента — в *_state.
+ *
  * Полнота комиссии различается ТРЕМЯ состояниями, а не двумя (Gate 5K):
  *   PRESENT        — commission_missing_qty = 0 и commission_not_applicable_qty = 0;
  *   MISSING        — commission_missing_qty > 0: обычная продажа без комиссии в источнике;
@@ -28,7 +34,7 @@ WITH m AS (
   SELECT DISTINCT internal_sku, marketplace_sku, offer_id
   FROM \`${project}.evetis_ref.REF_SKU_CHANNEL_MAP\` WHERE marketplace='OZON'),
 f AS (
-  SELECT * FROM \`${project}.ozon_mart.FCT_OZON_SKU_PNL_DAILY\`
+  SELECT * FROM \`${project}.ozon_mart.V_OZON_SKU_PNL_DAILY_OPERATIONAL\`
   WHERE fact_date BETWEEN '${from}' AND '${to}'),
 ads AS (
   SELECT date d, sku, SUM(impressions) impr, SUM(clicks) clicks
@@ -47,7 +53,14 @@ buy AS (
   WHERE p.status='delivered' AND p.order_date BETWEEN '${from}' AND '${to}' GROUP BY 1,2)
 SELECT CAST(f.fact_date AS STRING) d, m.offer_id,
   f.gross_qty, f.cancelled_qty, f.realized_qty, f.in_transit_qty,
-  f.seller_base_revenue_rub revenue, f.commission_rub commission, f.logistics_rub logistics,
+  f.seller_base_revenue_rub revenue,
+  -- ЭФФЕКТИВНАЯ величина: факт там, где он пришёл, оценка там, где Ozon ещё не опубликовал.
+  -- Факт и оценка едут рядом отдельными полями и остаются раздельно аудируемыми.
+  f.commission_effective_rub commission, f.logistics_effective_rub logistics,
+  f.commission_rub commission_actual, f.logistics_rub logistics_actual,
+  f.commission_estimated_rub, f.logistics_estimated_rub,
+  f.commission_state, f.logistics_state, f.storage_state, f.other_direct_state,
+  f.commission_estimate_method, f.logistics_estimate_method, f.period_matured,
   f.acquiring_rub acquiring, f.storage_rub storage,
   f.other_direct_marketplace_costs_rub other_direct, f.sku_promotion_rub promo,
   f.product_cogs_rub cogs_amt,

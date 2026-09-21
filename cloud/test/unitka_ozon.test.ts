@@ -22,6 +22,18 @@ import {
   blockSpecFor, blockWidthFor, unstyledBlockRoles, staticFormatRequests, columnWidthRequests,
 } from '../src/loaders/unitka/ozon/structure.js';
 import {
+  OZON_UNITKA_SUMMARY_POLICY, unclassifiedSummaryRoles, summaryPolicyMap,
+} from '../src/loaders/unitka/ozon/summary.js';
+import {
+  OZON_REWRITE_WINDOW_DAYS, OZON_REWRITE_EPOCH, OZON_OBSERVED_MAX_VISIBILITY_DAYS,
+  OZON_DEEP_RECONCILIATION_DAYS, OZON_DEEP_RECONCILIATION_CADENCE,
+  ozonRewriteWindow, ozonDeepWindow, ozonWindowMonths, ozonFromDayFor, isDeepReconciliationDay,
+} from '../src/loaders/unitka/ozon/window.js';
+import { RECONCILE_WINDOW_DAYS } from '../src/loaders/unitka/reconcile.js';
+import { parseLiveLayout } from '../src/loaders/unitka/ozon/loader.js';
+import { LOADERS } from '../src/loaders/registry.js';
+import { loadConfig } from '../src/config.js';
+import {
   ozonBlockDayFormulas, ozonSummaryDayFormulas, ozonSummaryMtdFormulas, ozonBlockMtdFormulas,
   OZON_MTD_BLANK_OFFSETS,
 } from '../src/loaders/unitka/ozon/formulas.js';
@@ -204,12 +216,17 @@ describe('OZON adapter — строка MTD', () => {
       .toBe('=IF(COUNT(P434:P463)=0,"",SUMIF($L$434:$L$463,"<="&LAST_CLOSED_DATE,P434:P463))');
     expect(b.get(OFFSET.profit1)).toBe('=IFERROR(V464/(P464-R464),"")');
   });
-  it('остаток, оборачиваемость и хранение в MTD остаются пустыми', () => {
+  // Gate 8: строка итога перестала быть наполовину пустой. Остаток — запас, а не поток,
+  // поэтому у него последнее наблюдение, а не сумма; хранение — абсолютная сумма суток.
+  it('Gate 8: остаток берётся последним наблюдением, хранение суммируется', () => {
     const b = ozonBlockMtdFormulas(12, G);
-    for (const off of [OFFSET.stock, OFFSET.turnover, OFFSET.storage]) {
-      expect(b.has(off)).toBe(false);
-      expect(OZON_MTD_BLANK_OFFSETS).toContain(off);
-    }
+    expect(b.get(OFFSET.stock)).toContain('FILTER(');
+    expect(b.get(OFFSET.stock)).not.toContain('SUMIF');
+    expect(b.get(OFFSET.storage)).toContain('SUMIF');
+    expect(b.get(OFFSET.turnover)).toContain('/(');
+    // пустыми остаются только подписи: у периода нет одной даты и одного дня недели
+    expect([...OZON_MTD_BLANK_OFFSETS].sort((x, y) => x - y))
+      .toEqual([OFFSET.date, OFFSET.weekday].sort((x, y) => x - y));
   });
 });
 
@@ -696,7 +713,7 @@ describe('GATE 5E — движок месяца в боевом коде', () =>
     const f = sectionFormulas(SEP, c);
     const any = Object.values(f.day)[0] as string;
     expect(any).toContain(';');
-    expect(f.mtdBlank.length).toBe(SEP.blocks.length * 11);
+    expect(f.mtdBlank.length).toBe(SEP.blocks.length * 2);   // Gate 8: пусты только дата и день недели
   });
 });
 
@@ -888,9 +905,15 @@ describe('GATE 5E — контракт оформления и идемпоте�
 describe('GATE 5E — источник фактов', () => {
   it('SQL берёт витрину Ozon и справочник каналов, а не сырьё напрямую', () => {
     const sql = ozonMonthFactsSql({ project: 'p-1', from: '2026-09-01', to: '2026-09-30' });
-    expect(sql).toContain('ozon_mart.FCT_OZON_SKU_PNL_DAILY');
+    // Gate 8: источник — операционный слой над витриной, а не витрина напрямую.
+    // Он добавляет эффективные величины там, где Ozon ещё не опубликовал начисление.
+    expect(sql).toContain('ozon_mart.V_OZON_SKU_PNL_DAILY_OPERATIONAL');
     expect(sql).toContain('evetis_ref.REF_SKU_CHANNEL_MAP');
     expect(sql).toContain("marketplace='OZON'");
+    // факт не переопределяется: он едет рядом с эффективной величиной
+    expect(sql).toContain('f.commission_rub commission_actual');
+    expect(sql).toContain('f.commission_effective_rub commission');
+    expect(sql).toContain('f.commission_state');
   });
 
   it('границы периода валидируются — в текст запроса не попадает произвольная строка', () => {
@@ -1187,5 +1210,253 @@ describe('OZON adapter — Gate 7: оформление «Прочих прям�
   it('ширина блока WB не задета: у WB по-прежнему 24 колонки', () => {
     expect(OZON_BLOCK_WIDTH).toBe(25);
     expect(Object.keys(WB_OFFSET)).toHaveLength(24);
+  });
+});
+
+/* ════════════════════════════════════════════════════════════════════════════
+ * GATE 8 — политика строки итога месяца
+ * ════════════════════════════════════════════════════════════════════════════ */
+describe('OZON adapter — Gate 8: строка итога', () => {
+  const G = { firstDailyRow: 434, lastDailyRow: 463, mtdRow: 464 };
+  const B = ozonBlockMtdFormulas(12, G);
+
+  it('все 25 смещений классифицированы — неклассифицированных нет', () => {
+    expect(unclassifiedSummaryRoles()).toEqual([]);
+    expect(summaryPolicyMap()).toHaveLength(25);
+    expect(summaryPolicyMap().map((x) => x.offset)).toEqual([...Array(25).keys()]);
+  });
+
+  it('каждое содержательное смещение получило формулу; пусты только подписи', () => {
+    for (const { offset, role, policy } of summaryPolicyMap()) {
+      if (policy === 'NOT_APPLICABLE') {
+        expect(B.has(offset), `${role} обязана остаться пустой`).toBe(false);
+        expect(OZON_MTD_BLANK_OFFSETS).toContain(offset);
+      } else {
+        expect(B.has(offset), `${role} осталась без итога`).toBe(true);
+      }
+    }
+    expect(OZON_MTD_BLANK_OFFSETS).toHaveLength(2);
+  });
+
+  it('НИ ОДНОГО AVERAGE по дневным ячейкам: среднее средних запрещено', () => {
+    for (const [off, f] of B) {
+      expect(f, `смещение ${off}`).not.toMatch(/\bAVERAGE\s*\(/);
+      expect(f, `смещение ${off}`).not.toMatch(/\bAVERAGEIF/);
+    }
+  });
+
+  it('все агрегаты отсечены по LAST_CLOSED_DATE — незакрытые сутки в итог не попадают', () => {
+    for (const [off, f] of B) {
+      if (off === OFFSET.profit1) continue;           // ссылается на уже отсечённые ячейки итога
+      expect(f, `смещение ${off}`).toContain('LAST_CLOSED_DATE');
+    }
+  });
+
+  it('цена — средняя реализации, взвешенная единицами, а не среднее по суткам', () => {
+    const f = B.get(OFFSET.price) as string;
+    expect(f).toContain('SUMPRODUCT');
+    expect(f).toContain('(P434:P463-R434:R463)');     // вес = заказы − отмены
+    expect(f).toContain('Z434:Z463');                 // сама цена
+    expect(f).toContain('(Z434:Z463<>"")');           // пустые сутки не разбавляют
+  });
+
+  it('комиссия — эффективная ставка периода: вся комиссия / вся выручка', () => {
+    const f = B.get(OFFSET.commission) as string;
+    expect(f).toContain('*Z434:Z463*AC434:AC463');    // числитель: цена × ставка × единицы
+    expect(f).toMatch(/\/SUMPRODUCT\(\(\$L\$434:\$L\$463<=LAST_CLOSED_DATE\)\*\(P434:P463-R434:R463\)\*Z434:Z463\)/);
+  });
+
+  it('логистика — средняя на реализованную единицу, а НЕ сумма логистики', () => {
+    const f = B.get(OFFSET.logistics) as string;
+    expect(f).toContain('SUMPRODUCT');
+    expect(f).not.toContain('SUMIF');                 // сумма здесь была бы неверна
+    expect(f).toContain('AE434:AE463');
+  });
+
+  it('хранение, прочие прямые и доходность общая — сумма периода', () => {
+    for (const off of [OFFSET.storage, OFFSET.otherDirect, OFFSET.profitAll]) {
+      expect(B.get(off)).toContain('SUMIF');
+      expect(B.get(off)).not.toContain('SUMPRODUCT');
+    }
+  });
+
+  it('налог — сумма периода, собранная взвешиванием: дневная ячейка поединична', () => {
+    const f = B.get(OFFSET.tax) as string;
+    expect(f).toContain('SUMPRODUCT');
+    expect(f).toContain('AH434:AH463');
+    expect(OZON_UNITKA_SUMMARY_POLICY.TAX_RESERVE.policy).toBe('SUM');
+    expect(OZON_UNITKA_SUMMARY_POLICY.TAX_RESERVE.basis).toBe('PER_UNIT');
+  });
+
+  it('доходность 1 шт — вся доходность единиц / все реализованные единицы', () => {
+    expect(B.get(OFFSET.unitProfit)).toContain('AI434:AI463');
+    expect(B.get(OFFSET.unitProfit)).toContain('SUMPRODUCT');
+    expect(OZON_UNITKA_SUMMARY_POLICY.FINAL_UNIT_PROFIT.policy).toBe('WEIGHTED_AVERAGE');
+  });
+
+  it('остаток — последний ДОКАЗАННЫЙ снимок, а не сумма и не легаси-проекция', () => {
+    const f = B.get(OFFSET.stock) as string;
+    expect(f).toContain('FILTER(');
+    expect(f).toContain('INDEX(');
+    // раньше STOCK_POLICY.factualFrom истории остатка не существует: отвергнутая
+    // синтетическая проекция (местами отрицательная) в итог не попадает
+    expect(f).toContain('>=DATE(2026,8,31)');
+    expect(f).not.toContain('LOOKUP');          // идиома LOOKUP(2;1/…) в Sheets даёт ошибку
+    expect(OZON_UNITKA_SUMMARY_POLICY.STOCK.policy).toBe('ENDING_BALANCE');
+  });
+
+  it('«неизвестно» не превращается в ноль: без наблюдений итог пуст', () => {
+    for (const off of [OFFSET.price, OFFSET.commission, OFFSET.logistics, OFFSET.unitProfit,
+                       OFFSET.tax, OFFSET.stock, OFFSET.turnover, OFFSET.spp]) {
+      expect(B.get(off), `смещение ${off}`).toMatch(/IFERROR\(|IF\(COUNT/);
+      expect(B.get(off), `смещение ${off}`).toContain('""');
+    }
+  });
+
+  it('итог живой: ссылается на дневные ячейки, а не на замороженные числа', () => {
+    for (const [off, f] of B) {
+      expect(f.startsWith('='), `смещение ${off}`).toBe(true);
+      expect(f, `смещение ${off}`).toMatch(/[A-Z]+4(34|63|64)/);   // адреса строк секции
+    }
+  });
+
+  it('ru_RU: разделители переводятся, формула не ломается', () => {
+    const loc = toLocaleFormula(B.get(OFFSET.price) as string, 'SEMICOLON');
+    expect(loc).toContain(';');
+    expect(loc).not.toMatch(/,(?=[A-Z$])/);
+  });
+
+  it('геометрия следует секции: формулы сентября ссылаются на строки сентября', () => {
+    const S = ozonBlockMtdFormulas(12, { firstDailyRow: 607, lastDailyRow: 636, mtdRow: 637 });
+    expect(S.get(OFFSET.price)).toContain('607:Z636');
+    expect(S.get(OFFSET.price)).not.toContain('434');
+  });
+});
+
+/* ════════════════════════════════════════════════════════════════════════════
+ * GATE 8 — окно ежедневной перезаписи
+ * ════════════════════════════════════════════════════════════════════════════ */
+describe('OZON adapter — Gate 8: окно перезаписи', () => {
+  it('45 суток: наименьшее окно, накрывающее наблюдённый максимум задержки (36)', () => {
+    expect(OZON_REWRITE_WINDOW_DAYS).toBe(45);
+    expect(OZON_REWRITE_WINDOW_DAYS).toBeGreaterThan(OZON_OBSERVED_MAX_VISIBILITY_DAYS);
+  });
+
+  it('окно короче наблюдённой задержки запрещено — иначе оценка не сменится фактом', () => {
+    expect(() => ozonRewriteWindow('2026-09-20', 35)).toThrow(/короче наблюдённой задержки/);
+    expect(() => ozonRewriteWindow('2026-09-20', 30)).toThrow();
+    expect(() => ozonRewriteWindow('2026-09-20', 36)).not.toThrow();
+  });
+
+  it('окно пересекает границы месяцев', () => {
+    const w = ozonRewriteWindow('2026-09-20');
+    expect(w.from).toBe('2026-08-07');
+    expect(w.to).toBe('2026-09-20');
+    expect(ozonWindowMonths(w)).toEqual(['2026-08', '2026-09']);
+  });
+
+  it('окно не уходит раньше эпохи Ozon: легаси-апрель неприкосновенен', () => {
+    const w = ozonRewriteWindow('2026-05-01');
+    expect(w.rollingFrom).toBe('2026-03-18');
+    expect(w.from).toBe('2026-04-17');                 // обрезано эпохой
+    expect(ozonFromDayFor('2026-04', w)).toBe(17);     // гибридный апрель: с 17-го
+    expect(ozonFromDayFor('2026-05', w)).toBe(1);
+  });
+
+  it('апрель остаётся гибридным даже если окно начинается раньше 17-го', () => {
+    const w = ozonRewriteWindow('2026-05-20', 45, '2026-04-01');
+    expect(w.from).toBe('2026-04-06');
+    expect(ozonFromDayFor('2026-04', w)).toBe(17);     // легаси 01–16 не переписывается никогда
+  });
+
+  it('LCD раньше эпохи — отказ, а не тихая пустая запись', () => {
+    expect(() => ozonRewriteWindow('2026-04-01')).toThrow(/раньше эпохи/);
+  });
+
+  it('глубокая сверка: 120 суток, раз в месяц, первого числа', () => {
+    expect(OZON_DEEP_RECONCILIATION_DAYS).toBe(120);
+    expect(OZON_DEEP_RECONCILIATION_CADENCE).toBe('MONTHLY');
+    expect(ozonDeepWindow('2026-09-20').days).toBe(120);
+    expect(ozonDeepWindow('2026-09-20').deep).toBe(true);
+    expect(isDeepReconciliationDay('2026-10-01')).toBe(true);
+    expect(isDeepReconciliationDay('2026-09-20')).toBe(false);
+  });
+
+  it('окно Ozon независимо от окна WB: константы не общие', () => {
+    expect(OZON_REWRITE_WINDOW_DAYS).not.toBe(RECONCILE_WINDOW_DAYS);
+    expect(OZON_REWRITE_EPOCH).not.toBe('2026-09-01');
+  });
+});
+
+/* ════════════════════════════════════════════════════════════════════════════
+ * GATE 8 — суточный загрузчик
+ * ════════════════════════════════════════════════════════════════════════════ */
+describe('OZON adapter — Gate 8: суточный загрузчик', () => {
+  const CFG_BASE = { GCP_PROJECT_ID: 'project-x', BQ_RAW_DATASET: 'wb_raw', ENVIRONMENT: 'prod' };
+  const canon = (t: string) => (/^\d{6,}$/.test(t) ? t : null);
+  // лист: строка заголовка блока «Дата» в колонке L(12); блоки шагают по 25
+  const mkGrid = () => {
+    const g: (string | number)[][] = Array.from({ length: 40 }, () => Array(600).fill(''));
+    const put = (r: number, c: number, v: string | number) => { (g[r - 1] as (string | number)[])[c - 1] = v; };
+    put(1, 1, 'Сентябрь 2026');
+    put(1, 12, '909951444 крем');
+    put(1, 37, '438775437 тоник');
+    put(2, 12, 'Дата');
+    for (let d = 0; d < 3; d++) {
+      put(3 + d, 12, 46266 + d);                 // 01..03.09.2026
+      put(3 + d, 12 + 5, 10 + d);                // корзина блока 0
+      put(3 + d, 37 + 5, 20 + d);                // корзина блока 1
+    }
+    return g;
+  };
+
+  it('раскладка читается из ЖИВОГО листа, а не из памяти', () => {
+    const { sections, cart } = parseLiveLayout(mkGrid(), 562, canon);
+    expect(sections).toHaveLength(1);
+    expect(sections[0]!.blocks).toEqual(['909951444', '438775437']);
+    expect(sections[0]!.monthKey).toBe('2026-09');
+    expect(sections[0]!.days).toEqual(['2026-09-01', '2026-09-02', '2026-09-03']);
+    expect(sections[0]!.titleRow).toBe(1);
+  });
+
+  it('наблюдения корзины собираются из листа и не выдумываются', () => {
+    const { cart } = parseLiveLayout(mkGrid(), 562, canon);
+    expect(cart['2026-09-01|909951444']).toBe(10);
+    expect(cart['2026-09-03|438775437']).toBe(22);
+    expect(Object.keys(cart)).toHaveLength(6);   // ровно наблюдённые, без нулей-призраков
+  });
+
+  it('панель владельца не читается как блок', () => {
+    const g = mkGrid();
+    (g[0] as (string | number)[])[561] = 'Сентябрь 2026';   // колонка 562 — хвост владельца
+    const { sections } = parseLiveLayout(g, 562, canon);
+    expect(sections[0]!.blocks).toHaveLength(2);
+  });
+
+  it('подпись блока не авторитетна: нераспознанный токен блоком не становится', () => {
+    const g = mkGrid();
+    (g[0] as (string | number)[])[61] = 'Апрель 2026';      // колонка 62 = слот 2
+    const { sections } = parseLiveLayout(g, 562, canon);
+    expect(sections[0]!.blocks).toEqual(['909951444', '438775437']);
+  });
+
+  it('загрузчик зарегистрирован и по умолчанию не пишет', () => {
+    expect(Object.keys(LOADERS)).toContain('ozon-unitka');
+    const c = loadConfig({ ...CFG_BASE });
+    expect(c.ozonUnitkaWriteEnabled).toBe(false);
+    expect(c.ozonUnitkaSheetName).toBe('OZON_Юнит_2025');
+    expect(c.ozonUnitkaTailFirstColumn).toBe(562);
+  });
+
+  it('окружение Ozon не пересекается с окружением WB', () => {
+    const c = loadConfig({ ...CFG_BASE, UNITKA_WRITE_ENABLED: '1', OZON_UNITKA_WRITE_ENABLED: '0' });
+    expect(c.unitkaWriteEnabled).toBe(true);
+    expect(c.ozonUnitkaWriteEnabled).toBe(false);          // включение WB не включает Ozon
+    expect(c.unitkaSheetName).not.toBe(c.ozonUnitkaSheetName);
+  });
+
+  it('опечатка в псевдонимах не роняет конфигурацию', () => {
+    const c = loadConfig({ ...CFG_BASE, OZON_UNITKA_OFFER_ALIASES: '{сломано' });
+    expect(c.ozonUnitkaOfferAliases).toEqual({});
   });
 });

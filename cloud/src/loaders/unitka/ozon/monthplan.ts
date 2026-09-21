@@ -18,7 +18,8 @@ import {
 import {
   staticFormatRequests, observedStockFormatRequests, columnWidthRequests, titleMergeRequests,
   growGridRequests, gridAfterGrowth, lcdMirrorRequestsIdempotent, clearConditionalFormatRequests,
-  unmergeRequests, residualMergeRequests, type GridGrowth,
+  unmergeRequests, residualMergeRequests, clearProvenanceNoteRequests, provenanceNoteRequests,
+  provenanceNoteText, type GridGrowth, type ProvenanceNote,
 } from './structure.js';
 
 export interface OzonSectionInput {
@@ -84,6 +85,7 @@ export function buildOzonPlan(input: OzonPlanInput): OzonWritePlan {
   const values: ValueWrite[] = [];
   const totals: OzonWritePlan['totals'] = {};
   const observed: Array<{ row: number; block: number }> = [];
+  const notes: ProvenanceNote[] = [];
   const q = quote(input.sheetName);
 
   for (const sec of input.sections) {
@@ -105,6 +107,13 @@ export function buildOzonPlan(input: OzonPlanInput): OzonWritePlan {
         if (cell && cell.stock !== undefined) observed.push({ row, block: b });
       }
     });
+    // провенанс: где стоит оценка, там остаётся пометка — иначе факт и оценка неразличимы
+    const slot = new Map(spec.blocks.map((o, b) => [o, b]));
+    for (const pv of comp.provenance) {
+      const b = slot.get(pv.offerId);
+      if (b === undefined) continue;
+      notes.push({ row: pv.row, block: b, component: pv.component, text: provenanceNoteText(pv) });
+    }
   }
 
   const secLayouts = input.sections.map((s) => layoutOf(s.spec));
@@ -124,6 +133,10 @@ export function buildOzonPlan(input: OzonPlanInput): OzonWritePlan {
     ...observedStockFormatRequests(input.sheetId, observed),
     ...rowHeightRequests(input.sheetId, input.allSections),
     ...mtdBandRequests(input.sheetId, input.allSections),
+    // пометки провенанса ставятся ЗАМЕНОЙ: снять со всей области, потом поставить заново,
+    // иначе пометка «это оценка» пережила бы приход факта
+    ...clearProvenanceNoteRequests(input.sheetId, secLayouts),
+    ...provenanceNoteRequests(input.sheetId, notes),
   ];
   // УФ ставится ЗАМЕНОЙ: сначала снимаем всё, что есть, иначе повторный прогон удвоит правила
   const conditional = [

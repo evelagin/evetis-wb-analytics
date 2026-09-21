@@ -16,6 +16,11 @@
 import { colA1 } from '../model.js';
 import { OZON_OFFSET as OFFSET } from './offsets.js';
 import { OZON_GEOMETRY, OZON_SUMMARY_TO_OFFSET, MANAGEMENT_TAX_RESERVE_RATE, ozonSlotStart } from './contract.js';
+import { OZON_MTD_NOT_APPLICABLE_OFFSETS } from './summary.js';
+import { STOCK_POLICY } from './contract.js';
+
+/** Дата, с которой остаток становится ДОКАЗАННЫМ фактом. Раньше истории не существует. */
+const STOCK_FACTUAL_FROM = STOCK_POLICY.factualFrom;
 
 const LCD = 'LAST_CLOSED_DATE';
 const c = (start: number, off: number): string => colA1(start + off);
@@ -126,10 +131,15 @@ export function ozonSummaryMtdFormulas(g: OzonMonthGeometry): Map<number, string
 }
 
 /**
- * Строка MTD внутри SKU-блока. Форма SUMIF с отсечкой по LAST_CLOSED_DATE — из общего слоя.
- * Отличия Ozon: остаток/оборачиваемость/хранение остаются ПУСТЫМИ (не ноль) по политике источника,
- * доходность на 1 шт считается на РЕАЛИЗОВАННЫЕ единицы (заказы − отмены), поунитные колонки
- * (цена, СПП, комиссия, логистика, налог) в MTD не заполняются — как в исторической Ozon-Юнитке.
+ * Строка MTD внутри SKU-блока (Gate 8: полная, а не наполовину пустая).
+ *
+ * Политику для каждого из 25 смещений задаёт `OZON_UNITKA_SUMMARY_POLICY`; здесь только
+ * её механическое выражение в формулах. Ни одного AVERAGE по дневным ячейкам: величины на
+ * единицу собираются отношением агрегатов, иначе сутки с одной продажей весили бы столько
+ * же, сколько сутки с двадцатью.
+ *
+ * Все агрегаты отсечены по `дата <= LAST_CLOSED_DATE` — как принятые SUMIF-итоги. Формулы
+ * ссылаются на дневные ячейки, поэтому смена оценки на факт пересчитывает итог сама.
  */
 export function ozonBlockMtdFormulas(start: number, g: OzonMonthGeometry): Map<number, string> {
   const f = g.firstDailyRow, l = g.lastDailyRow, mt = g.mtdRow;
@@ -137,22 +147,73 @@ export function ozonBlockMtdFormulas(start: number, g: OzonMonthGeometry): Map<n
   const Dabs = `$${dc}$${f}:$${dc}$${l}`;
   const col = (off: number): string => colA1(start + off);
   const rng = (off: number): string => `${col(off)}${f}:${col(off)}${l}`;
+  const at = (off: number): string => `${col(off)}${mt}`;
   // «неизвестно» не превращается в ноль: нет ни одного наблюдения за месяц — ячейка пуста.
   const sumif = (off: number): string =>
     `=IF(COUNT(${rng(off)})=0,"",SUMIF(${Dabs},"<="&${LCD},${rng(off)}))`;
+  // маска закрытых суток и вес — реализованные единицы, тот же счётчик, что у «Доходности на 1 шт»
+  const closed = `(${Dabs}<=${LCD})`;
+  const units = `(${rng(OFFSET.orders)}-${rng(OFFSET.cancels)})`;
+  /** Σ(вес × величина) по закрытым суткам. */
+  const wsum = (off: number): string => `SUMPRODUCT(${closed}*${units}*${rng(off)})`;
+  /** Σ(вес) только по суткам, где величина наблюдалась: пустые сутки не разбавляют среднее. */
+  const wcount = (off: number): string => `SUMPRODUCT(${closed}*${units}*(${rng(off)}<>""))`;
+  /** Среднее, взвешенное реализованными единицами. */
+  const weighted = (off: number): string => `=IFERROR(${wsum(off)}/${wcount(off)},"")`;
+
   const m = new Map<number, string>();
-  for (const off of [OFFSET.bloggers, OFFSET.views, OFFSET.opens, OFFSET.orders, OFFSET.carts, OFFSET.cancels]) {
+  // ── счётчики и абсолютные суммы: сложение ────────────────────────────────────────────
+  for (const off of [OFFSET.bloggers, OFFSET.views, OFFSET.opens, OFFSET.orders, OFFSET.carts,
+                     OFFSET.cancels, OFFSET.profitAll, OFFSET.adsIn, OFFSET.adsOut,
+                     OFFSET.storage, OFFSET.otherDirect]) {
     m.set(off, sumif(off));
   }
-  for (const off of [OFFSET.profitAll, OFFSET.adsIn, OFFSET.adsOut]) m.set(off, sumif(off));
-  m.set(OFFSET.profit1, `=IFERROR(${col(OFFSET.profitAll)}${mt}/(${col(OFFSET.orders)}${mt}-${col(OFFSET.cancels)}${mt}),"")`);
-  m.set(OFFSET.drr, `=IFERROR(${col(OFFSET.adsIn)}${mt}/SUMPRODUCT((${Dabs}<=${LCD})*(${rng(OFFSET.orders)}-${rng(OFFSET.bloggers)})*${rng(OFFSET.priceSpp)}),"")`);
+  // ── величины на единицу: среднее, взвешенное объёмом ────────────────────────────────
+  for (const off of [OFFSET.price, OFFSET.priceSpp, OFFSET.priceMinusComm,
+                     OFFSET.logistics, OFFSET.unitProfit]) {
+    m.set(off, weighted(off));
+  }
+  // ── налог: дневная ячейка — резерв НА ЕДИНИЦУ, поэтому сумма периода собирается
+  //    взвешиванием на единицы. Сложение поединичных величин дало бы бессмыслицу.
+  m.set(OFFSET.tax, `=IFERROR(IF(${wcount(OFFSET.tax)}=0,"",${wsum(OFFSET.tax)}),"")`);
+  // ── отношения агрегатов ─────────────────────────────────────────────────────────────
+  // эффективная ставка комиссии периода = вся комиссия / вся выручка
+  const revenue = `SUMPRODUCT(${closed}*${units}*${rng(OFFSET.price)})`;
+  m.set(OFFSET.commission,
+    `=IFERROR(SUMPRODUCT(${closed}*${units}*${rng(OFFSET.price)}*${rng(OFFSET.commission)})/${revenue},"")`);
+  // СПП периода = 1 − цена покупателя периода / цена продавца периода, в процентах
+  m.set(OFFSET.spp,
+    `=IFERROR((1-SUMPRODUCT(${closed}*${units}*${rng(OFFSET.priceSpp)})/${revenue})*100,"")`);
+  // доходность на 1 шт — принятая форма, не трогается
+  m.set(OFFSET.profit1, `=IFERROR(${at(OFFSET.profitAll)}/(${at(OFFSET.orders)}-${at(OFFSET.cancels)}),"")`);
+  m.set(OFFSET.drr, `=IFERROR(${at(OFFSET.adsIn)}/SUMPRODUCT(${closed}*(${rng(OFFSET.orders)}-${rng(OFFSET.bloggers)})*${rng(OFFSET.priceSpp)}),"")`);
+  // ── остаток: запас, а не поток ──────────────────────────────────────────────────────
+  //
+  // Берётся ПОСЛЕДНИЙ ДОКАЗАННЫЙ снимок. Два ограничения, и оба содержательные:
+  //   • только закрытые сутки — как у всех остальных агрегатов;
+  //   • только сутки от STOCK_POLICY.factualFrom. Раньше этой даты истории остатка НЕ
+  //     СУЩЕСТВУЕТ (Gate 4.1: реестр движений дал 276 шт против фактических 198), и то,
+  //     что лежит в легаси-половине апреля, — отвергнутая синтетическая проекция, местами
+  //     ОТРИЦАТЕЛЬНАЯ. Показать её как «остаток на конец месяца» значило бы вернуть в лист
+  //     ровно ту величину, которую проект признал невоспроизводимой.
+  //
+  // Идиома LOOKUP(2;1/(…)) здесь НЕ используется: в Google Sheets она возвращает ошибку на
+  // массиве с #DIV/0!, и ячейка молча оставалась пустой даже там, где снимок есть.
+  const stockOk = `${closed}*(${Dabs}>=DATE(${STOCK_FACTUAL_FROM.slice(0, 4)},`
+    + `${Number(STOCK_FACTUAL_FROM.slice(5, 7))},${Number(STOCK_FACTUAL_FROM.slice(8, 10))}))`
+    + `*(${rng(OFFSET.stock)}<>"")`;
+  const proven = `FILTER(${rng(OFFSET.stock)},${stockOk})`;
+  m.set(OFFSET.stock, `=IFERROR(INDEX(${proven},ROWS(${proven})),"")`);
+  // ── оборачиваемость: дней запаса = конечный остаток / средний суточный темп заказов ──
+  const closedDays = `SUMPRODUCT(${closed}*(${Dabs}<>""))`;
+  m.set(OFFSET.turnover,
+    `=IFERROR(IF(OR(${at(OFFSET.stock)}="",${at(OFFSET.orders)}=0),"",${at(OFFSET.stock)}/(${at(OFFSET.orders)}/${closedDays})),"")`);
   return m;
 }
 
-/** Смещения блока, которые строка MTD Ozon ОСТАВЛЯЕТ ПУСТЫМИ (нет источника или нет смысла в MTD). */
-export const OZON_MTD_BLANK_OFFSETS: readonly number[] = [
-  OFFSET.stock, OFFSET.turnover, OFFSET.price, OFFSET.spp, OFFSET.priceSpp,
-  OFFSET.commission, OFFSET.priceMinusComm, OFFSET.logistics, OFFSET.storage,
-  OFFSET.tax, OFFSET.unitProfit,
-];
+/**
+ * Смещения блока, которые строка MTD Ozon ОСТАВЛЯЕТ ПУСТЫМИ. После Gate 8 это только
+ * подписи: у периода нет одной даты и одного дня недели. Все содержательные метрики
+ * получили итог — перечень ведёт `OZON_UNITKA_SUMMARY_POLICY`.
+ */
+export const OZON_MTD_BLANK_OFFSETS: readonly number[] = OZON_MTD_NOT_APPLICABLE_OFFSETS;

@@ -16,6 +16,7 @@ import { unitkaLoader } from './unitka/index.js';
 import { unitkaSlot } from './unitka/slot.js';
 import { unitkaMonthPrepLoader } from './unitka/prep.js';
 import { unitkaMonthRollbackLoader } from './unitka/rollback.js';
+import { ozonUnitkaLoader } from './unitka/ozon/loader.js';
 
 export interface LoaderSpec {
   handler: LoaderHandler;
@@ -41,6 +42,10 @@ export const LOADERS: Record<string, LoaderSpec> = {
   // Calendar V2: откат СОЗДАНИЯ месяца по манифесту. По умолчанию ТОЛЬКО план; исполнение — prod +
   // UNITKA_MONTH_ROLLBACK_WRITE=1 + манифест + явный месяц. Нет расписания, нет шага деплоя.
   'unitka-month-rollback': { handler: unitkaMonthRollbackLoader, logicalPeriod: (now) => unitkaSlot(now) },
+  // Gate 8: суточный прогон Ozon-Юнитки. Окно перезаписи 45 суток (раз в месяц 120),
+  // провизорная экономика (факт > оценка). Запись — prod + OZON_UNITKA_WRITE_ENABLED=1;
+  // по умолчанию прогон только считает план. Расписание НЕ создано: см. runbook Gate 8.
+  'ozon-unitka': { handler: ozonUnitkaLoader, logicalPeriod: (now) => unitkaSlot(now) },
 };
 
 export function resolveLoader(name: string): LoaderSpec | undefined {

@@ -363,3 +363,64 @@ export function lcdMirrorRequestsIdempotent(
     ? [write, { updateNamedRange: { namedRange: { namedRangeId: existingId, name, range }, fields: 'range,name' } }]
     : [write, { addNamedRange: { namedRange: { name, range } } }];
 }
+
+/* ── Gate 8: провенанс ячейки — факт или оценка ───────────────────────────────
+ *
+ * «Оценка обязана оставаться отличимой от факта» — в листе это ПРИМЕЧАНИЕ на ячейке.
+ * Цвет для этого не используется сознательно: язык цвета Юнитки занят смыслом метрики,
+ * и новый оттенок читался бы как новая экономическая категория (урок Gate 7).
+ *
+ * Примечания ставятся ЗАМЕНОЙ: сначала снимаются со всей области комиссии и логистики
+ * записываемых секций, потом ставятся заново. Иначе пометка пережила бы приход факта
+ * и утверждала бы «это оценка» про уже подтверждённое начисление.
+ */
+export interface ProvenanceNote {
+  readonly row: number; readonly block: number;
+  readonly component: 'COMMISSION' | 'LOGISTICS';
+  readonly text: string;
+}
+
+/** Снять примечания со всех ячеек комиссии и логистики записываемых секций. */
+export function clearProvenanceNoteRequests(
+  sheetId: number, sections: readonly SectionLayout[],
+): SheetsRequest[] {
+  const out: SheetsRequest[] = [];
+  for (const s of sections) {
+    for (let b = 0; b < s.blockCount; b++) {
+      for (const role of ['COMMISSION', 'LOGISTICS'] as const) {
+        const col = OZON_GEOMETRY.BLOCK_FIRST_COLUMN + OZON_GEOMETRY.BLOCK_WIDTH * b + ROLE_OFFSET[role];
+        out.push({ repeatCell: { range: { sheetId, startRowIndex: s.firstRow - 1, endRowIndex: s.lastRow,
+          startColumnIndex: col - 1, endColumnIndex: col }, cell: { note: '' }, fields: 'note' } });
+      }
+    }
+  }
+  return out;
+}
+
+/** Поставить примечание на каждую ячейку, где стоит оценка. */
+export function provenanceNoteRequests(
+  sheetId: number, notes: readonly ProvenanceNote[],
+): SheetsRequest[] {
+  return notes.map(({ row, block, component, text }) => {
+    const col = OZON_GEOMETRY.BLOCK_FIRST_COLUMN + OZON_GEOMETRY.BLOCK_WIDTH * block + ROLE_OFFSET[component];
+    return { repeatCell: { range: { sheetId, startRowIndex: row - 1, endRowIndex: row,
+      startColumnIndex: col - 1, endColumnIndex: col }, cell: { note: text }, fields: 'note' } };
+  });
+}
+
+/** Текст примечания: что это за величина, откуда она и чем будет заменена. */
+export function provenanceNoteText(a: {
+  component: 'COMMISSION' | 'LOGISTICS'; method: string | null; estimatedRub: number; actualRub: number;
+}): string {
+  const what = a.component === 'COMMISSION' ? 'Комиссия' : 'Логистика';
+  const how = a.method === 'POSTING_PAYOUT_EXACT'
+    ? 'из отчёта по отправлениям (цена − выплата), тождество проверено на 600 отправлениях из 600'
+    : a.method === 'COMMISSION_POLICY_TARIFF' ? 'по действующему тарифу площадки'
+    : a.method === 'SKU_P70_120D' ? 'оценщик SKU_P70_120D (70-й перцентиль по своему SKU за 120 суток)'
+    : a.method === 'MARKETPLACE_P70_120D' ? 'оценщик MARKETPLACE_P70_120D (наблюдений по SKU недостаточно)'
+    : 'доказанный оценщик';
+  const part = a.actualRub > 0 ? ` Часть суток подтверждена фактом: ${a.actualRub.toFixed(2)} ₽.` : '';
+  return `${what}: ОЦЕНКА, а не факт.\nOzon ещё не опубликовал начисление (обычно 18 суток после заказа, максимум 36).\n`
+    + `Оценено ${a.estimatedRub.toFixed(2)} ₽ — ${how}.${part}\n`
+    + 'Заменится фактом автоматически, как только начисление придёт.';
+}
