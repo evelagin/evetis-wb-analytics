@@ -608,8 +608,19 @@ def test_manifest_subset_narrower_than_usage(repo):
 
 
 def test_dataset_without_policy_fails_closed(repo):
-    shutil.copytree(repo / "sql/current/ozon_mart", repo / "sql/current/wb_mart")
+    # The dataset name must be one the validator has NO policy entry for. wb_mart used to
+    # qualify; PHASE 2 gave it a reviewed policy, which silently turned this test into a
+    # check of something else. Pick a name that cannot acquire a policy by accident.
+    assert "sandbox_unreviewed" not in v.EXTERNAL_DATASET_POLICY
+    shutil.copytree(repo / "sql/current/ozon_mart", repo / "sql/current/sandbox_unreviewed")
     assert_fails(repo, "C13", "no marketplace-isolation policy")
+
+
+def test_every_policy_entry_is_reachable_from_a_manifest_or_documented(repo):
+    """Политика — ревью-решение; запись без объяснения незаметно расширяет доверие."""
+    for ds in v.EXTERNAL_DATASET_POLICY:
+        assert ds in {"ozon_mart", "evetis_mart", "wb_mart"}, (
+            f"датасет {ds!r} появился в политике без ревью")
 
 
 def test_dependency_cycle(repo):
