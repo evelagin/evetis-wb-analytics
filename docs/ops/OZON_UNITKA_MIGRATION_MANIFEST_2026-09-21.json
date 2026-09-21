@@ -1,6 +1,6 @@
 {
-  "manifestVersion": "ozon-unitka-migration/5.0.0",
-  "generatedAt": "2026-09-21T13:40:00Z",
+  "manifestVersion": "ozon-unitka-migration/6.0.0",
+  "generatedAt": "2026-09-21T14:15:00Z",
   "executed": false,
   "ownerDecisions": {
     "D-5E-1": "пересчитать апрель по текущему каноническому контракту",
@@ -67,43 +67,49 @@
       "title": "Апрель 2026",
       "titleRow": 432,
       "blocks": 21,
-      "controlTotal": 8364.951733,
-      "controlTotalNote": "Gate 5K: +8,7824 к значению Gate 5I (8356,169333). Причина — налоговый резерв 2 % считается от выручки, а выручка выкупа 25.04 исправлена с 998,00 на 558,88 по первичному документу."
+      "controlTotal": 7674.900533,
+      "controlTotalNote": "Gate 5K: +8,7824 к значению Gate 5I (8356,169333). Причина — налоговый резерв 2 % считается от выручки, а выручка выкупа 25.04 исправлена с 998,00 на 558,88 по первичному документу.",
+      "gate5lDelta": -681.2688
     },
     {
       "key": "2026-05",
       "title": "Май 2026",
       "titleRow": 466,
       "blocks": 21,
-      "controlTotal": -1971.9744446899995
+      "controlTotal": -2395.514445,
+      "gate5lDelta": -423.54
     },
     {
       "key": "2026-06",
       "title": "Июнь 2026",
       "titleRow": 501,
       "blocks": 21,
-      "controlTotal": -419.49809287999983
+      "controlTotal": -850.698093,
+      "gate5lDelta": -431.2
     },
     {
       "key": "2026-07",
       "title": "Июль 2026",
       "titleRow": 535,
       "blocks": 22,
-      "controlTotal": 6563.04065572
+      "controlTotal": 5118.386256,
+      "gate5lDelta": -1444.6544
     },
     {
       "key": "2026-08",
       "title": "Август 2026",
       "titleRow": 570,
       "blocks": 22,
-      "controlTotal": 17180.77788861
+      "controlTotal": 6864.378689,
+      "gate5lDelta": -10316.3992
     },
     {
       "key": "2026-09",
       "title": "Сентябрь 2026",
       "titleRow": 605,
       "blocks": 22,
-      "controlTotal": -13802.394729119998
+      "controlTotal": -20196.684774,
+      "gate5lDelta": 0.0
     }
   ],
   "aprilReconciliation": {
@@ -287,12 +293,12 @@
     "conditionalFormatRanges": 7221,
     "mergeCount": 1612,
     "controlTotals": {
-      "2026-04": 8364.951733,
-      "2026-05": -1971.9744446899995,
-      "2026-06": -419.49809287999983,
-      "2026-07": 6563.04065572,
-      "2026-08": 17180.77788861,
-      "2026-09": -13802.394729119998
+      "2026-04": 7674.900533,
+      "2026-05": -2395.514445,
+      "2026-06": -850.698093,
+      "2026-07": 5118.386256,
+      "2026-08": 6864.378689,
+      "2026-09": -20196.684774
     }
   },
   "reproduction": {
@@ -515,6 +521,17 @@
         "evetis_mart.FACT_SKU_DAILY"
       ],
       "rollback": "Развернуть предыдущие канонические тела из коммита 14af182e (V_OZON_CIS_BUYOUT удалить, остальные четыре восстановить). V_OZON_COMMISSION_RECOVERY не удалялся и остаётся рабочей точкой отката: его тело не менялось, только комментарий-заголовок."
+    },
+    "gate5l": {
+      "bqWrites": 0,
+      "note": "Только Git. Объекты остаются pending_deploy; проверка read-only подстановкой тел в SELECT.",
+      "objectsChanged": [
+        "ozon_mart.V_OZON_CIS_BUYOUT (30 → 35 строк, document_kind, NULL-дисконт)",
+        "ozon_mart.FCT_OZON_SKU_PNL_DAILY (sku_promotion_rub, type 6)",
+        "ozon_mart.FCT_OZON_SKU_PNL_MONTHLY (то же)",
+        "ozon_mart.FCT_OZON_PNL_MONTHLY (type 6)"
+      ],
+      "rollback": "развернуть предыдущие канонические тела из коммита 9b7fd2f"
     }
   },
   "lcd": {
@@ -634,6 +651,214 @@
       "explanation": "Выручка и «комиссия» выкупа падают на одну и ту же величину, поэтому вклад не меняется. Но налоговый резерв считается ОТ ВЫРУЧКИ: 439,12 × 0,02 = 8,7824. Апрель растёт ровно на эту величину — 998,00 × 0,02 = 19,96 против 558,88 × 0,02 = 11,1776.",
       "otherDelta": 0.0,
       "unexplainedDelta": 0.0
+    }
+  },
+  "mayAugustForensic": {
+    "gate": "5L",
+    "documents": {
+      "directory": "Документы/02_Эветис_косметика_маркетплейсы/Озон отчеты май-август",
+      "files": 56,
+      "xlsx": 50,
+      "pdf": 6,
+      "inventory": "docs/ozon/OZON_DOCUMENT_INVENTORY_2026-05_2026-08.json",
+      "allHashesUnique": true,
+      "periodsDerivedFromContent": true,
+      "note": "Файлы «(1)», «(2)», «(3)» различаются ТОЛЬКО содержимым: это июнь, июль и август."
+    },
+    "buyoutClosure": {
+      "targets": 5,
+      "documented": 5,
+      "missingAfter": 0,
+      "rows": [
+        {
+          "posting": "0136161223-0034-1",
+          "doc": "Отчёт о выкупленных товарах №4843050",
+          "period": "2026-05-01..2026-05-15",
+          "reference": 1526.0,
+          "discountPct": 44.0,
+          "proceeds": 854.56,
+          "settlement": "Выкуп товара у селлера №4843050 от 04.05.2026",
+          "payment": "ПП №814398 от 19.05.2026"
+        },
+        {
+          "posting": "0144805755-0262-1",
+          "doc": "Отчёт о выкупленных товарах №5236973",
+          "period": "2026-06-16..2026-06-30",
+          "reference": 1000.0,
+          "discountPct": 44.0,
+          "proceeds": 560.0,
+          "settlement": "Выкуп товара у селлера №5236973 от 20.06.2026",
+          "payment": "ПП №446986 от 07.07.2026"
+        },
+        {
+          "posting": "0151252173-0059-1",
+          "doc": "Детализация по выкупленным товарам, отчёт №506808 от 10.07.2026",
+          "period": "2026-07-01..2026-07-15",
+          "reference": null,
+          "discountPct": null,
+          "proceeds": 1210.72,
+          "settlement": "Выкуп товара у селлера №5380386 от 10.07.2026",
+          "payment": "ПП №438968 от 21.07.2026"
+        },
+        {
+          "posting": "0155570588-0181-2",
+          "doc": "Детализация по выкупленным товарам, отчёт №1963183 от 08.08.2026",
+          "period": "2026-08-01..2026-08-15",
+          "reference": null,
+          "discountPct": null,
+          "proceeds": 611.52,
+          "settlement": "Выкуп товара у селлера №5634248 от 08.08.2026",
+          "payment": "ПП №435246 от 18.08.2026"
+        },
+        {
+          "posting": "91224369-0020-1",
+          "doc": "Детализация по выкупленным товарам, отчёт №1963183 от 08.08.2026",
+          "period": "2026-08-01..2026-08-15",
+          "reference": null,
+          "discountPct": null,
+          "proceeds": 643.44,
+          "settlement": "Выкуп товара у селлера №5634248 от 08.08.2026",
+          "payment": "ПП №435246 от 18.08.2026"
+        }
+      ],
+      "rateNotExtrapolated": "«Детализация» ставку не называет — category_discount_pct остаётся NULL у трёх строк."
+    },
+    "buyoutLedger": {
+      "total": 35,
+      "byReport": 32,
+      "byDetail": 3,
+      "proceedsTotal": 18116.16,
+      "reconciliation": "35 в документах = 35 в BigQuery, 0 DOCUMENT_ONLY, 0 BQ_ONLY"
+    },
+    "droppedSkuCosts": {
+      "types": [
+        116,
+        74,
+        48
+      ],
+      "names": [
+        "Сбор первых отзывов",
+        "Звёздные товары",
+        "Бонусы продавца"
+      ],
+      "total": -10428.67,
+      "august": -9350.08,
+      "defect": "начисления приходили СО SKU, но не попадали ни в одну корзину витрины и молча терялись",
+      "fix": "новая корзина sku_promotion_rub — маркетинг, а не логистика; в колонку рекламы не идёт"
+    },
+    "unclassifiedTypeClosed": {
+      "type": 6,
+      "name": "Обработка отменённых и невостребованных товаров",
+      "amount": 0.0,
+      "note": "сумма нулевая, но неклассифицированный тип — будущая утечка; отнесён к прочим расходам"
+    },
+    "premium": {
+      "2026-05": {
+        "document": "УПД №41833636",
+        "amountWithVat": 9990.0,
+        "bqType": 52,
+        "bqAmount": -9990.0,
+        "match": true
+      },
+      "2026-06": null,
+      "2026-07": null,
+      "2026-08": null,
+      "classification": "ACCOUNT_LEVEL_EXPENSE",
+      "includedInSkuUnitka": false,
+      "note": "Отсутствие после мая — прекращение подписки, а не сбой. Распознаётся по type_id = 52; хардкод запрещён."
+    },
+    "reconciliationsExact": {
+      "logisticsDocumentVsBq": {
+        "2026-05": 9981.83,
+        "2026-06": 6136.57,
+        "2026-07": 6638.25,
+        "2026-08": 14793.5,
+        "delta": 0.0,
+        "note": "«Отчет о суммах услуг» = начисления BigQuery до копейки во все 4 месяца"
+      },
+      "compensationAugust": {
+        "document": 3150.1,
+        "bq": 3150.1
+      },
+      "starGoodsMay": {
+        "document": 413.19,
+        "bq": 413.19
+      },
+      "standardSaleCommissionMissing": {
+        "2026-05": 0,
+        "2026-06": 0,
+        "2026-07": 0,
+        "2026-08": 0
+      }
+    },
+    "perOrderRealizationReport": {
+      "availableFor": [
+        "2026-04"
+      ],
+      "missingFor": [
+        "2026-05",
+        "2026-06",
+        "2026-07",
+        "2026-08"
+      ],
+      "consequence": "Подокументная сверка комиссии по отправлениям за май–август невозможна. Источником комиссии остаётся RAW_OZON_FINANCE_ACCRUAL, где пробелов 0."
+    },
+    "monthDeltaDecomposition": {
+      "2026-04": {
+        "buyoutRevenue": -671.44,
+        "taxReserve": 22.2112,
+        "skuPromotion": -32.04,
+        "unexplained": 0.0
+      },
+      "2026-05": {
+        "buyoutRevenue": 0.0,
+        "taxReserve": 0.0,
+        "skuPromotion": -423.54,
+        "unexplained": 0.0
+      },
+      "2026-06": {
+        "buyoutRevenue": -440.0,
+        "taxReserve": 8.8,
+        "skuPromotion": 0.0,
+        "unexplained": 0.0
+      },
+      "2026-07": {
+        "buyoutRevenue": -951.28,
+        "taxReserve": 19.0256,
+        "skuPromotion": -512.4,
+        "unexplained": 0.0
+      },
+      "2026-08": {
+        "buyoutRevenue": -986.04,
+        "taxReserve": 19.7208,
+        "skuPromotion": -9350.08,
+        "unexplained": 0.0
+      },
+      "2026-09": {
+        "buyoutRevenue": 0.0,
+        "taxReserve": 0.0,
+        "skuPromotion": 0.0,
+        "unexplained": 0.0
+      }
+    },
+    "unitkaColumnDesign": {
+      "doc": "docs/ozon/OZON_UNITKA_COLUMN_DESIGN_2026-09-21.md",
+      "implemented": false,
+      "proposed": [
+        {
+          "offset": 5,
+          "from": "Положили в корзину",
+          "to": "Прочие прямые",
+          "why": "колонка не пишется (провенанс не доказан), а корзина прочих прямых уменьшает итог и нигде не видна"
+        },
+        {
+          "offset": 18,
+          "from": "цена минус комиссия WB",
+          "to": "цена минус комиссия",
+          "why": "наследие WB в листе Ozon; формула верна, меняется подпись"
+        }
+      ],
+      "why_not_now": "production Ozon всё ещё 465 × 404 — геометрия Gate 5D–5K не перенесена (Gate 6A). Менять колонки сейчас — обесценить доказанные воспроизведение и идемпотентность."
     }
   }
 }

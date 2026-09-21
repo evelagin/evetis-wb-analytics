@@ -10,6 +10,9 @@
 -- (ozon_mart.V_OZON_CIS_BUYOUT). Прежний инлайн-CTE rec_comm (29 строк «восстановленной
 -- комиссии») удалён: записанные в нём суммы были «Дисконтом по категории» из документа о
 -- выкупе, а не вознаграждением. Семантика совпадает с FCT_OZON_SKU_PNL_DAILY.
+-- Gate 5L: type_id 6 («Обработка отменённых и невостребованных товаров») не входил ни в одну
+-- корзину. Сумма по нему сегодня 0,00 ₽, но неклассифицированный тип — это будущая утечка,
+-- поэтому он отнесён к прочим расходам площадки.
 -- Internal dependencies: V_OZON_CIS_BUYOUT.
 -- The view body below is byte-for-byte the production body: do not reformat it.
 -- ============================================================================
@@ -74,7 +77,7 @@ f AS (
   SELECT DATE_TRUNC(event_date, MONTH) m,
     ROUND(SUM(IF(type_id IN (32,29,28,98,30,1,59,45,78,9,79), -amount_rub, 0)),2) direct_variable_marketplace_costs_rub,
     ROUND(SUM(IF(type_id IN (12,46), -amount_rub, 0)),2) store_level_variable_costs_rub,
-    ROUND(SUM(IF(type_id IN (77,76,15,71,39,38,57), -amount_rub, 0)),2) other_marketplace_costs_ex_ads_rub,
+    ROUND(SUM(IF(type_id IN (77,76,15,71,39,38,57,6), -amount_rub, 0)),2) other_marketplace_costs_ex_ads_rub,
     ROUND(SUM(IF(type_id=52, -amount_rub, 0)),2) marketplace_fixed_costs_rub,
     ROUND(SUM(IF(type_id IN (25,10), amount_rub, 0)),2) compensations_rub,
     ROUND(SUM(IF(type_id IN (116,47,96,74,48), -amount_rub, 0)),2) ad_reviews_rub

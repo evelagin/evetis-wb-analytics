@@ -917,3 +917,51 @@ describe('выкуп меняет базу налогового резерва (
     expect(after.totals.canonical - before.totals.canonical).toBeCloseTo(8.7824, 9);
   });
 });
+
+describe('продвижение с привязкой к SKU (Gate 5L)', () => {
+  const spec = ozonMonthSpec(2026, 8, 1, 0, ['930334395']);
+  const base = {
+    d: '2026-08-05', offer_id: '930334395',
+    gross_qty: 1, cancelled_qty: 0, realized_qty: 1,
+    revenue: 1000, commission: 400, logistics: 100, acquiring: 0, storage: 0,
+    other_direct: 0, cogs_amt: 200, ads_spend: 0,
+  };
+  const without = composeMonth(spec, [base], {}, '2026-09-20', 1);
+  const withPromo = composeMonth(spec, [{ ...base, promo: 250 }], {}, '2026-09-20', 1);
+
+  it('расход попадает в прочие прямые и уменьшает итог ровно на свою величину', () => {
+    expect(withPromo.totals.promo).toBeCloseTo(250, 9);
+    expect(withPromo.totals.other - without.totals.other).toBeCloseTo(250, 9);
+    expect(without.totals.canonical - withPromo.totals.canonical).toBeCloseTo(250, 9);
+  });
+
+  it('в колонку рекламы НЕ попадает: там атрибуция CPC, а не начисленная услуга', () => {
+    expect(withPromo.totals.ads).toBe(0);
+    const cell = withPromo.cells['930334395|' + (spec.firstRow + 4)] as Record<string, number>;
+    expect(cell.adin).toBeUndefined();
+  });
+
+  it('провенанс сохраняется в аудите, а не растворяется в сумме', () => {
+    const rec = withPromo.audit.find((a) => a.date === '2026-08-05');
+    expect(rec).toBeDefined();
+    expect(rec!.skuPromotion).toBeCloseTo(250, 9);
+    expect(rec!.total).toBeCloseTo(250, 9);
+    // сумма слагаемых аудита обязана совпасть с прочими прямыми: ничего не потеряно и не удвоено
+    expect(rec!.otherFees + rec!.logisticsNonRealized + rec!.acquiringWithoutRevenue + rec!.skuPromotion)
+      .toBeCloseTo(rec!.total, 9);
+  });
+
+  it('налоговый резерв считается от выручки и продвижением НЕ затрагивается', () => {
+    expect(withPromo.totals.tax).toBeCloseTo(without.totals.tax, 9);
+    expect(withPromo.totals.tax).toBeCloseTo(1000 * MANAGEMENT_TAX_RESERVE_RATE, 9);
+  });
+
+  it('отсутствие расхода не создаёт нулевую строку аудита', () => {
+    expect(without.audit).toHaveLength(0);
+  });
+
+  it('SQL фактов запрашивает корзину продвижения', () => {
+    const sql = ozonMonthFactsSql({ project: 'p', from: '2026-08-01', to: '2026-08-31' });
+    expect(sql).toContain('f.sku_promotion_rub promo');
+  });
+});

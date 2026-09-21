@@ -81,7 +81,8 @@ export interface OzonFactRow {
   d: string; offer_id: string;
   gross_qty: number; cancelled_qty: number; realized_qty: number; in_transit_qty?: number | null;
   revenue?: number | null; commission?: number | null; logistics?: number | null;
-  acquiring?: number | null; storage?: number | null; other_direct?: number | null; cogs_amt?: number | null;
+  acquiring?: number | null; storage?: number | null; other_direct?: number | null;
+  promo?: number | null; cogs_amt?: number | null;
   ads_spend?: number | null; impr?: number | null; clicks?: number | null;
   buyer_amt?: number | null; seller_amt?: number | null;
   // Полнота источника. Комиссия имеет три состояния, а не два: отсутствующая комиссия обычной
@@ -115,7 +116,7 @@ export interface OzonDayCell {
 export interface OzonMonthTotals {
   orders: number; cancel: number; realized: number; revenue: number; cogs: number;
   comm: number; acq: number; acqComm: number; acqOther: number;
-  logRepr: number; logUnrepr: number; otherFees: number; other: number;
+  logRepr: number; logUnrepr: number; otherFees: number; promo: number; other: number;
   ads: number; tax: number; storage: number; canonical: number;
 }
 export interface OzonMonthComposition {
@@ -124,7 +125,7 @@ export interface OzonMonthComposition {
   other: Record<string, number>;
   transit: Record<string, number>;
   audit: Array<{ date: string; offerId: string; otherFees: number; logisticsNonRealized: number;
-                 acquiringWithoutRevenue: number; total: number }>;
+                 acquiringWithoutRevenue: number; skuPromotion: number; total: number }>;
   totals: OzonMonthTotals;
 }
 
@@ -150,7 +151,7 @@ export function composeMonth(
   const transit: Record<string, number> = {}; const audit: OzonMonthComposition['audit'] = [];
   const T: OzonMonthTotals = { orders: 0, cancel: 0, realized: 0, revenue: 0, cogs: 0, comm: 0, acq: 0,
     acqComm: 0, acqOther: 0, logRepr: 0, logUnrepr: 0, otherFees: 0, other: 0, ads: 0, tax: 0,
-    storage: 0, canonical: 0 };
+    storage: 0, promo: 0, canonical: 0 };
   for (const ds of monthDates(spec)) {
     const day = Number(ds.slice(8, 10));
     const row = spec.firstRow + day - 1;
@@ -164,14 +165,16 @@ export function composeMonth(
       const orders = n(rec?.gross_qty), cancel = n(rec?.cancelled_qty), rl = n(rec?.realized_qty);
       const tr = n(rec?.in_transit_qty), rev = n(rec?.revenue), comm = n(rec?.commission);
       const acq = n(rec?.acquiring), log = n(rec?.logistics), oth = n(rec?.other_direct);
-      const cg = n(rec?.cogs_amt), stor = n(rec?.storage);
+      const cg = n(rec?.cogs_amt), stor = n(rec?.storage), promo = n(rec?.promo);
       const hasAds = !!rec && rec.impr !== null && rec.impr !== undefined;
       const ads = hasAds ? n(rec?.ads_spend) : 0;
       const acqC = rev ? acq : 0;          // эквайринг в комиссию только при выручке
       const acqO = rev ? 0 : acq;          // иначе — в прочие прямые, ровно один раз
       const logR = rl > 0 ? log : 0;
       const logU = rl > 0 ? 0 : log;
-      const od = oth + logU + acqO;
+      // Продвижение с привязкой к SKU (отзывы, звёздные товары, бонусы) — прямой расход
+      // этого SKU-дня. В колонку рекламы НЕ идёт: там атрибуция CPC, а здесь факт начисления.
+      const od = oth + logU + acqO + promo;
       const c: OzonDayCell = { orders, cancel };
       if (stor) c.stor = r6(stor);
       if (tr) transit[key] = tr;
@@ -192,11 +195,11 @@ export function composeMonth(
       if (od) {
         other[key] = r6(od);
         audit.push({ date: ds, offerId: o, otherFees: oth, logisticsNonRealized: logU,
-                     acquiringWithoutRevenue: acqO, total: od });
+                     acquiringWithoutRevenue: acqO, skuPromotion: promo, total: od });
       }
       T.orders += orders; T.cancel += cancel; T.realized += rl; T.revenue += rev; T.cogs += cg;
       T.comm += comm; T.acq += acq; T.acqComm += acqC; T.acqOther += acqO;
-      T.logRepr += logR; T.logUnrepr += logU; T.otherFees += oth; T.other += od;
+      T.logRepr += logR; T.logUnrepr += logU; T.otherFees += oth; T.promo += promo; T.other += od;
       T.ads += ads; T.storage += stor;
     }
   }

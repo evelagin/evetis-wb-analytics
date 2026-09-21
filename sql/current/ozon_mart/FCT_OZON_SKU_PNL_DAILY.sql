@@ -21,6 +21,12 @@
 --   logistics_rub = LOGISTICS direct (32) + LAST_MILE (29,28,98,30) + RETURN_LOGISTICS (59,45,78,9)
 --   acquiring_rub = ACQUIRING (1);  storage_rub = STORAGE direct (79)
 --   их сумма = direct_variable_marketplace_costs_rub — ровно корзина месячного P&L.
+--   other_direct = утилизация/вывоз/упаковка/материалы (15,71,39,38) + обработка отменённых (6)
+--   sku_promotion_rub = платные механики продвижения С ПРИВЯЗКОЙ К SKU: сбор первых отзывов (116),
+--     звёздные товары (74), бонусы продавца (48). Gate 5L: эти начисления приходили со SKU, но не
+--     попадали НИ В ОДНУ корзину и молча терялись (−10 428,67 ₽ за всю историю). Это маркетинг,
+--     а не логистика, поэтому отдельная корзина, а не досыпка в logistics_rub. От CPC-рекламы
+--     (ad_spend_attributed_rub) отличается источником: это факт начисления, а не атрибуция.
 --
 -- Тип операции (Gate 5K) — две несводимые хозяйственные формы, различаются ДО арифметики:
 --   MARKETPLACE_SALE — агентская реализация: выручка продавца, комиссия Ozon, эквайринг;
@@ -111,7 +117,8 @@ dc AS (SELECT d, internal_sku,
     SUM(IF(type_id = 1, amt, 0)) acquiring,
     SUM(IF(type_id = 79, amt, 0)) storage,
     SUM(IF(type_id IN (32,29,28,98,30,1,59,45,78,9,79), amt, 0)) direct_var,
-    SUM(IF(type_id IN (15,71,39,38), amt, 0)) other_direct
+    SUM(IF(type_id IN (15,71,39,38,6), amt, 0)) other_direct,
+    SUM(IF(type_id IN (116,74,48), amt, 0)) sku_promotion
   FROM dcost GROUP BY 1,2),
 ads AS (SELECT a.date d, mp.internal_sku, SUM(a.attributed_spend_rub) ad_attr
   FROM `project-fa311fc0-4d87-4781-986.ozon_raw.RAW_OZON_ADS_SKU_DAILY` a
@@ -129,6 +136,7 @@ j AS (SELECT COALESCE(s.d, dc.d, ads.d) fact_date,
     IFNULL(dc.logistics,0) logistics_rub, IFNULL(dc.acquiring,0) acquiring_rub, IFNULL(dc.storage,0) storage_rub,
     IFNULL(dc.direct_var,0) direct_variable_marketplace_costs_rub,
     IFNULL(dc.other_direct,0) other_direct_marketplace_costs_rub,
+    IFNULL(dc.sku_promotion,0) sku_promotion_rub,
     IFNULL(s.product_cogs_rub,0) product_cogs_rub, IFNULL(s.cogs_missing_qty,0) cogs_missing_qty,
     IFNULL(ads.ad_attr,0) ad_spend_attributed_rub
   FROM s FULL JOIN dc USING (d, internal_sku)
@@ -139,13 +147,14 @@ SELECT j.fact_date, j.internal_sku,
   j.commission_not_applicable_qty, j.buyout_revenue_unproven_qty, j.buyout_revenue_unproven_rub,
   j.logistics_rub, j.acquiring_rub, j.storage_rub,
   j.direct_variable_marketplace_costs_rub, j.other_direct_marketplace_costs_rub,
-  j.product_cogs_rub, j.cogs_missing_qty,
+  j.product_cogs_rub, j.cogs_missing_qty, j.sku_promotion_rub,
   j.seller_base_revenue_rub - j.product_cogs_rub - j.commission_rub
-    - j.direct_variable_marketplace_costs_rub - j.other_direct_marketplace_costs_rub contribution_before_ads_rub,
+    - j.direct_variable_marketplace_costs_rub - j.other_direct_marketplace_costs_rub
+    - j.sku_promotion_rub contribution_before_ads_rub,
   j.ad_spend_attributed_rub,
   j.seller_base_revenue_rub - j.product_cogs_rub - j.commission_rub
     - j.direct_variable_marketplace_costs_rub - j.other_direct_marketplace_costs_rub
-    - j.ad_spend_attributed_rub contribution_after_attributed_ads_rub,
+    - j.sku_promotion_rub - j.ad_spend_attributed_rub contribution_after_attributed_ads_rub,
   'OZON_V1: orders, sold, revenue, commission, cogs, posting-linked costs = order date; sku-only costs = accrual date; ads = ad stat date' fact_date_semantics
 FROM j
 WHERE j.fact_date IS NOT NULL AND j.internal_sku IS NOT NULL;

@@ -61,20 +61,25 @@ def manifest_entry(dataset, name):
     return man, next(o for o in man["objects"] if o["object_name"] == name)
 
 
+NUM = r"(?:NUMERIC '([\d.]+)'|CAST\(NULL AS NUMERIC\))"
+
+
 def buyout_rows():
-    """[(posting, document, period_start, period_end, reference, discount_pct, proceeds)] of the ledger."""
+    """[(posting, document, kind, ref, discount_pct, proceeds)]; ref/discount are None when the
+    document does not state them (BUYOUT_DETAIL names the proceeds, not the rate)."""
     text = facts(CIS_BUYOUT).body
     first = re.search(
         r"STRUCT\('([^']+)' AS posting_number, '([^']+)' AS document_number,\s*"
-        r"DATE '([\d-]+)' AS document_period_start, DATE '([\d-]+)' AS document_period_end,\s*"
-        r"NUMERIC '([\d.]+)' AS reference_price_rub,\s*"
-        r"NUMERIC '([\d.]+)' AS category_discount_pct,\s*"
+        r"'([A-Z_]+)' AS document_kind,\s*"
+        r"DATE '[\d-]+' AS document_period_start, DATE '[\d-]+' AS document_period_end,\s*"
+        + NUM + r" AS reference_price_rub,\s*"
+        + NUM + r" AS category_discount_pct,\s*"
         r"NUMERIC '([\d.]+)' AS buyout_proceeds_rub\)", text)
     assert first, "the first ledger row must carry the named STRUCT contract"
     rest = re.findall(
-        r"\('([^']+)','([^']+)',DATE '([\d-]+)',DATE '([\d-]+)',"
-        r"NUMERIC '([\d.]+)',NUMERIC '([\d.]+)',NUMERIC '([\d.]+)'\)", text)
-    return [first.groups()] + rest
+        r"\('([^']+)','([^']+)','([A-Z_]+)',DATE '[\d-]+',DATE '[\d-]+',"
+        + NUM + r"," + NUM + r",NUMERIC '([\d.]+)'\)", text)
+    return [tuple(x if x != "" else None for x in r) for r in [first.groups()] + rest]
 
 
 def recovery_rows(path):
@@ -136,18 +141,28 @@ def test_cis_buyout_is_the_single_named_source_of_buyout_revenue():
 
 
 def test_cis_buyout_ledger_is_document_backed_and_arithmetically_exact():
-    """Every row carries its document, and proceeds = reference * (1 - discount) to the kopeck."""
+    """Every row carries its document. Where the document states the rate, the identity
+    proceeds = reference * (1 - discount) holds to the kopeck; where it does not, the rate stays
+    NULL and is never reconstructed."""
     all_rows = buyout_rows()
-    assert len(all_rows) == 30, f"expected 30 documented buyouts, got {len(all_rows)}"
-    assert len({r[0] for r in all_rows}) == 30, "posting_number must be unique"
-    for posting, doc, _, _, ref, disc, proceeds in all_rows:
-        assert doc.isdigit() and doc, f"{posting}: document number is the provenance, it cannot be empty"
+    assert len(all_rows) == 35, f"expected 35 documented buyouts, got {len(all_rows)}"
+    assert len({r[0] for r in all_rows}) == 35, "posting_number must be unique"
+    reports = [r for r in all_rows if r[2] == "BUYOUT_REPORT"]
+    details = [r for r in all_rows if r[2] == "BUYOUT_DETAIL"]
+    assert len(reports) == 32 and len(details) == 3
+    for posting, doc, _kind, ref, disc, proceeds in reports:
+        assert doc.isdigit() and doc, f"{posting}: document number is the provenance"
         expected = round(float(ref) * (1 - float(disc) / 100), 2)
         assert abs(expected - float(proceeds)) < 0.005, f"{posting}: {ref} * (1-{disc}%) != {proceeds}"
+    for posting, doc, _kind, ref, disc, proceeds in details:
+        assert doc.isdigit() and doc, f"{posting}: document number is the provenance"
+        assert ref is None and disc is None, (
+            f"{posting}: «Детализация по выкупленным товарам» does not state the rate — "
+            "storing one would be an invention, not a fact")
+        assert float(proceeds) > 0
     # 21% occurs exactly once and is not derivable from any other rate: rates come from documents only.
-    assert sorted({float(r[5]) for r in all_rows}) == [21.0, 30.5, 33.0, 37.0, 42.0, 44.0]
-    assert round(sum(float(r[6]) for r in all_rows), 2) == 14235.92
-    assert round(sum(float(r[4]) for r in all_rows), 2) == 23976.00
+    assert sorted({float(r[4]) for r in reports}) == [21.0, 30.5, 33.0, 37.0, 42.0, 44.0]
+    assert round(sum(float(r[5]) for r in all_rows), 2) == 18116.16
 
 
 def test_buyout_commission_is_not_applicable_rather_than_missing():
@@ -160,6 +175,30 @@ def test_buyout_commission_is_not_applicable_rather_than_missing():
     daily = body(DAILY)
     assert "commission_not_applicable_qty" in daily
     assert "buyout_revenue_unproven_qty" in daily and "buyout_revenue_unproven_rub" in daily
+
+
+def test_sku_attributable_promotion_is_its_own_bucket():
+    """Gate 5L: 116/74/48 arrive WITH a sku but landed in no bucket at all and were silently lost.
+    They are marketing, not logistics, so they get their own bucket — and they must not be mixed
+    into ad_spend_attributed_rub, which is CPC attribution rather than an accrued fee."""
+    daily = body(DAILY)
+    assert "sku_promotion" in daily and "(116,74,48)" in daily
+    assert "(32,29,28,98,30,59,45,78,9)" in daily, "logistics bucket must not absorb promotion"
+    for path in (DAILY, MONTHLY_SKU):
+        text = body(path)
+        assert "sku_promotion_rub" in text, path.name
+        assert "- j.sku_promotion_rub" in text, f"{path.name}: promotion must reduce contribution"
+
+
+def test_every_operation_type_is_classified_somewhere():
+    """An unclassified type_id is a future silent leak: type 6 cost nothing yet but was in no bucket."""
+    store = body(MONTHLY_STORE)
+    buckets = set()
+    for group in re.findall(r"type_id IN \(([0-9,]+)\)", store):
+        buckets |= {int(x) for x in group.split(",")}
+    observed = {32, 29, 28, 98, 30, 1, 59, 45, 78, 9, 79, 12, 46, 77, 76, 15, 71, 39, 38, 57,
+                25, 10, 116, 47, 96, 74, 48, 6}
+    assert observed <= buckets, f"unclassified operation types: {sorted(observed - buckets)}"
 
 
 def test_buyout_revenue_is_never_derived_from_a_rate():
@@ -245,14 +284,18 @@ def test_ozon_daily_fact_uses_the_same_sources_as_the_monthly_pnl():
 
 def test_ozon_cost_buckets_are_identical_to_the_monthly_pnl():
     monthly = set(in_lists(MONTHLY_SKU))
-    direct_var, other_direct = frozenset({32, 29, 28, 98, 30, 1, 59, 45, 78, 9, 79}), frozenset({15, 71, 39, 38})
-    assert monthly == {direct_var, other_direct}
+    direct_var = frozenset({32, 29, 28, 98, 30, 1, 59, 45, 78, 9, 79})
+    other_direct = frozenset({15, 71, 39, 38, 6})      # Gate 5L: type 6 was in no bucket at all
+    promotion = frozenset({116, 74, 48})               # Gate 5L: sku-attributable marketing
+    assert monthly == {direct_var, other_direct, promotion}
     daily = in_lists(DAILY)
-    assert direct_var in daily and other_direct in daily
+    assert direct_var in daily and other_direct in daily and promotion in daily
     logistics, acquiring, storage = frozenset({32, 29, 28, 98, 30, 59, 45, 78, 9}), frozenset({1}), frozenset({79})
-    assert set(daily) == {direct_var, other_direct, logistics, acquiring, storage}
+    assert set(daily) == {direct_var, other_direct, promotion, logistics, acquiring, storage}
     # the decomposition is a partition of the monthly direct-variable bucket: nothing invented, nothing lost
     assert logistics | acquiring | storage == direct_var
+    # promotion is disjoint from every cost bucket: it is marketing, counted once and only once
+    assert not (promotion & direct_var or promotion & other_direct)
     assert not (logistics & acquiring or logistics & storage or acquiring & storage)
 
 
@@ -268,7 +311,7 @@ def test_retired_recovery_rows_are_exactly_the_documented_buyout_discount():
     That is why retiring the object moves no contribution for these 29 postings."""
     shared, n = recovery_rows(RECOVERY)
     assert n == len(shared) == 29 and sum(round(float(a) * 100) for a in shared.values()) == 963760
-    ledger = {r[0]: (float(r[4]), float(r[6])) for r in buyout_rows()}
+    ledger = {r[0]: (float(r[3]), float(r[5])) for r in buyout_rows() if r[3] is not None}
     assert set(shared) <= set(ledger), "every retired recovery row must be a documented buyout"
     for posting, recovered in shared.items():
         reference, proceeds = ledger[posting]
