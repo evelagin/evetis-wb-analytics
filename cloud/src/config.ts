@@ -14,10 +14,8 @@ export type Environment = 'shadow' | 'prod';
 function ozonUnitkaConfig(env: NodeJS.ProcessEnv): Pick<Config,
   'ozonUnitkaSheetName' | 'ozonUnitkaWriteEnabled' | 'ozonUnitkaLastClosedDate'
   | 'ozonUnitkaTailFirstColumn' | 'ozonUnitkaBlockSlots' | 'ozonUnitkaLcdRef'
-  | 'ozonUnitkaExistingCfRules' | 'ozonUnitkaOffers' | 'ozonUnitkaOfferAliases'
+  | 'ozonUnitkaExistingCfRules' | 'ozonUnitkaOfferAliases'
   | 'ozonUnitkaMaxSourceLagDays' | 'ozonUnitkaLcdCell'> {
-  const list = (v: string | undefined): string[] =>
-    (v ?? '').split(',').map((x) => x.trim()).filter(Boolean);
   let aliases: Record<string, string> = {};
   try {
     const raw = (env.OZON_UNITKA_OFFER_ALIASES ?? '').trim();
@@ -33,7 +31,6 @@ function ozonUnitkaConfig(env: NodeJS.ProcessEnv): Pick<Config,
     ozonUnitkaLcdRef: opt(env, 'OZON_UNITKA_LCD_REF', '$VA$2'),
     ozonUnitkaExistingCfRules: intOpt(env, 'OZON_UNITKA_EXISTING_CF_RULES', 434),
     ozonUnitkaMaxSourceLagDays: intOpt(env, 'OZON_UNITKA_MAX_SOURCE_LAG_DAYS', 1),
-    ozonUnitkaOffers: list(env.OZON_UNITKA_OFFERS),
     ozonUnitkaOfferAliases: aliases,
   };
 }
@@ -120,8 +117,6 @@ export interface Config {
    * 1 — загрузка суточная: отставание больше суток означает пропущенный или упавший прогон.
    */
   ozonUnitkaMaxSourceLagDays: number;
-  /** Канонические offer_id Ozon. Подпись блока авторитетной НЕ является. */
-  ozonUnitkaOffers: string[];
   /** Подпись блока → канонический offer_id, где подпись в листе содержит опечатку. */
   ozonUnitkaOfferAliases: Record<string, string>;
   // ── UNITKA INTEGRITY GUARD V1 (Phase 1C1) — все параметры разбираются МЯГКО: опечатка ──

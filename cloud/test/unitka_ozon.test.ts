@@ -1495,6 +1495,8 @@ describe('OZON adapter — Gate 8: суточный загрузчик', () => {
     const c = loadConfig({ ...CFG_BASE });
     expect(c.ozonUnitkaWriteEnabled).toBe(false);
     expect(c.ozonUnitkaSheetName).toBe('OZON_Юнит_2025');
+    // списка offer_id в окружении НЕТ: идентичность приходит из справочника каналов
+    expect((c as Record<string, unknown>).ozonUnitkaOffers).toBeUndefined();
     expect(c.ozonUnitkaTailFirstColumn).toBe(562);
   });
 

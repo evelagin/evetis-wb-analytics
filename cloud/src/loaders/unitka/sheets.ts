@@ -75,8 +75,14 @@ export interface SheetStructure {
 export type StructureRequest = Record<string, unknown>;
 
 export interface SheetsGateway {
-  /** Свойства сетки листа по имени (spreadsheets.get, только properties) и локаль книги. */
-  readSheetMeta(sheetName: string): Promise<SheetMeta>;
+  /**
+   * Свойства сетки листа по имени (spreadsheets.get, только properties) и локаль книги.
+   *
+   * `requireAnchor` — якорь тарифов WB (`REVERSE_LEG_RATE`, строка 737). У листа Ozon его нет
+   * и быть не должно: тарифы Ozon приходят из BigQuery, а не из ячейки книги. Поэтому для
+   * Ozon якорь не требуется, и `anchorCol` возвращается нулём.
+   */
+  readSheetMeta(sheetName: string, requireAnchor?: boolean): Promise<SheetMeta>;
   /** Структура листа (УФ, объединения, размеры строк/колонок) — только чтение, для подготовки месяца. */
   readSheetStructure(sheetName: string, rowCount: number, columnCount: number): Promise<SheetStructure>;
   /**
@@ -158,7 +164,7 @@ export class SheetsRest implements SheetsGateway {
     this.auth = new GoogleAuth({ scopes: [readonly ? SCOPE_RO : SCOPE_RW] });
   }
 
-  async readSheetMeta(sheetName: string): Promise<SheetMeta> {
+  async readSheetMeta(sheetName: string, requireAnchor = true): Promise<SheetMeta> {
     const fields = 'properties(locale),namedRanges,sheets(properties(sheetId,title,gridProperties(rowCount,columnCount)))';
     const url = `${API}/${this.spreadsheetId}?fields=${encodeURIComponent(fields)}`;
     const data = await this.request<{ properties?: { locale?: string }; namedRanges?: Array<{ name?: string; range?: { sheetId?: number; startRowIndex?: number; endRowIndex?: number; startColumnIndex?: number; endColumnIndex?: number } }>; sheets?: Array<{ properties?: { sheetId?: number; title?: string; gridProperties?: { rowCount?: number; columnCount?: number } } }> }>('GET', url);
@@ -166,7 +172,8 @@ export class SheetsRest implements SheetsGateway {
     if (!p || p.sheetId === undefined || !p.gridProperties?.rowCount || !p.gridProperties.columnCount) {
       throw new LoaderError(`лист «${sheetName}» не найден или без свойств сетки`, 'SHEETS_API');
     }
-    return { sheetId: p.sheetId, rowCount: p.gridProperties.rowCount, columnCount: p.gridProperties.columnCount, locale: data.properties?.locale, anchorCol: resolveAnchorCol(data.namedRanges ?? [], p.sheetId) };
+    return { sheetId: p.sheetId, rowCount: p.gridProperties.rowCount, columnCount: p.gridProperties.columnCount, locale: data.properties?.locale,
+             anchorCol: requireAnchor ? resolveAnchorCol(data.namedRanges ?? [], p.sheetId) : 0 };
   }
 
   async readSheetStructure(sheetName: string, rowCount: number, columnCount: number): Promise<SheetStructure> {

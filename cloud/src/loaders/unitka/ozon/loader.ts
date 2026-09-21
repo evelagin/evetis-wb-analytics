@@ -180,7 +180,8 @@ export async function ozonUnitkaLoader(
   const sheets = deps.makeSheets(ctx, !write);
   const bq = deps.makeBq(ctx);
   const name = ctx.config.ozonUnitkaSheetName;
-  const meta = await sheets.readSheetMeta(name);
+  // якорь тарифов WB (REVERSE_LEG_RATE) листу Ozon не нужен: его тарифы живут в BigQuery
+  const meta = await sheets.readSheetMeta(name, false);
   const q = `'${name.replace(/'/g, "''")}'`;
 
   // LAST_CLOSED_DATE читается ИЗ КНИГИ, а не из окружения: владелец двигает её в ZZ_CONFIG,
@@ -195,27 +196,32 @@ export async function ozonUnitkaLoader(
   const w = isDeepReconciliationDay(today) ? ozonDeepWindow(lcd) : ozonRewriteWindow(lcd);
   const months = new Set(ozonWindowMonths(w));
 
+  // ИДЕНТИЧНОСТЬ SKU — из справочника каналов, НЕ из подписи в листе и не из окружения.
+  // Подпись — это текст, который владелец может опечатать (и опечатал: слот 14 подписан
+  // «9099514444» при каноническом «909951444»). Единственная известная опечатка объявлена
+  // явно в OZON_UNITKA_OFFER_ALIASES — остальное движок не угадывает.
+  const skuRef = await bq.query<{ offer_id: string; first_month: string | null }>(
+    `WITH m AS (SELECT DISTINCT offer_id, internal_sku
+                FROM \`${ctx.config.projectId}.evetis_ref.REF_SKU_CHANNEL_MAP\`
+                WHERE marketplace = 'OZON'),
+          a AS (SELECT internal_sku, MIN(fact_date) d
+                FROM \`${ctx.config.projectId}.ozon_mart.V_OZON_SKU_PNL_DAILY_OPERATIONAL\`
+                WHERE gross_qty > 0 GROUP BY 1)
+     SELECT m.offer_id, CAST(DATE_TRUNC(a.d, MONTH) AS STRING) first_month
+     FROM m LEFT JOIN a USING (internal_sku)`);
+  const canonSet = new Set(skuRef.map((r) => r.offer_id));
+  if (!canonSet.size) throw new LoaderError('OZON_UNITKA_REF', 'справочник каналов Ozon пуст');
+  const firstActivity: Record<string, string> = {};
+  for (const r of skuRef) if (r.first_month) firstActivity[r.offer_id] = r.first_month.slice(0, 7);
+
   const tailFirst = ctx.config.ozonUnitkaTailFirstColumn;
   const [grid] = await sheets.readValues([`${q}!A1:${columnName(tailFirst - 1)}${meta.rowCount}`]);
-  const canonSet = new Set(ctx.config.ozonUnitkaOffers);
   const alias = ctx.config.ozonUnitkaOfferAliases;
   const canonicalOffer = (t: string): string | null =>
     canonSet.has(t) ? t : (alias[t] ?? null);
   const { sections: live, cart } = parseLiveLayout(grid ?? [], tailFirst, canonicalOffer);
   if (!live.length) throw new LoaderError('OZON_UNITKA_LAYOUT', 'секций месяца в листе не найдено');
 
-  // первая активность SKU — из ВИТРИНЫ, а не из подписи в листе: подпись может содержать
-  // опечатку (слот 14 подписан «9099514444» при каноническом «909951444»)
-  const firstActivity: Record<string, string> = {};
-  for (const r of await bq.query<{ offer_id: string; first_month: string }>(
-    `SELECT m.offer_id, CAST(DATE_TRUNC(MIN(f.fact_date), MONTH) AS STRING) first_month
-     FROM \`${ctx.config.projectId}.ozon_mart.V_OZON_SKU_PNL_DAILY_OPERATIONAL\` f
-     JOIN (SELECT DISTINCT offer_id, internal_sku
-           FROM \`${ctx.config.projectId}.evetis_ref.REF_SKU_CHANNEL_MAP\`
-           WHERE marketplace = 'OZON') m USING (internal_sku)
-     WHERE f.gross_qty > 0 GROUP BY 1`)) {
-    firstActivity[r.offer_id] = r.first_month.slice(0, 7);
-  }
   // ── барьер готовности: источники обязаны быть свежими ДО любой записи ────────────────
   const fresh = assessFreshness(
     await bq.query<{ entity: string; last_ok_date: string | null }>(
