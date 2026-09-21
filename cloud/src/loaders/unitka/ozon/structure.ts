@@ -8,7 +8,8 @@
 import { OZON_GEOMETRY } from './contract.js';
 import {
   OZON_FIELD_ROLES, OZON_SUMMARY_ROLES, ROLE_OFFSET, OZON_ROLE_CLASS, SKU_TITLE_MERGE_WIDTH,
-  type FieldRole, type VisualClass,
+  OZON_STYLE_TEMPLATE, OZON_BORDER_OVERRIDES, SECTION_ROW_ROLES,
+  type FieldRole, type VisualClass, type SectionRowRole,
 } from './presentation.js';
 import { CANONICAL_CURRENT_WB_PRESENTATION_CONTRACT as C, type CellFormatSpec } from './wbcontract.js';
 import type { SheetsRequest, SectionLayout } from './requests.js';
@@ -51,7 +52,57 @@ export function toUserEnteredFormat(spec: CellFormatSpec, bgOverride?: string):
   return { format: f, fields };
 }
 
-type RowRoleName = 'title' | 'header' | 'day' | 'mtd';
+type RowRoleName = SectionRowRole;
+
+/* ── Gate 7: разрешение оформления роли, которой нет в снятом контракте WB ──────
+ *
+ * Молчаливый пропуск роли без спецификации — та самая дыра, через которую «Прочие прямые»
+ * уехали в production неоформленными. Здесь пропуска нет: роль либо описана контрактом,
+ * либо указывает роль-образец, либо сборка плана падает.
+ */
+
+/** Спецификация формата роли блока: своя, либо унаследованная от роли-образца. */
+export function blockSpecFor(kind: RowRoleName, role: FieldRole): CellFormatSpec {
+  const own = C.rows[kind].block[role];
+  const tpl = OZON_STYLE_TEMPLATE[role];
+  const base = own ?? (tpl ? C.rows[kind].block[tpl] : undefined);
+  if (!base) {
+    throw new Error(`оформление роли ${role} (${kind}) не определено: нет ни своей спецификации, `
+      + 'ни роли-образца в OZON_STYLE_TEMPLATE');
+  }
+  const over = OZON_BORDER_OVERRIDES.filter((o) => o.row === kind && o.role === role);
+  if (!over.length) return base;
+  const borders = { ...(base.borders ?? {}) };
+  for (const o of over) borders[o.side] = o.style;
+  return { ...base, borders };
+}
+
+/** Ширина колонки роли блока: своя, либо унаследованная от роли-образца. */
+export function blockWidthFor(role: FieldRole): number {
+  const own = C.widths.block[role];
+  const tpl = OZON_STYLE_TEMPLATE[role];
+  const w = own ?? (tpl ? C.widths.block[tpl] : undefined);
+  if (w === undefined) {
+    throw new Error(`ширина роли ${role} не определена: нет ни своей, ни роли-образца`);
+  }
+  return w;
+}
+
+/**
+ * Каждая роль блока обязана иметь оформление во всех четырёх ролях строк и ширину.
+ * Вызывается регрессией: добавление 26-й колонки без образца обязано падать на тесте,
+ * а не проявляться серой полосой в боевом листе.
+ */
+export function unstyledBlockRoles(): string[] {
+  const bad: string[] = [];
+  for (const role of OZON_FIELD_ROLES) {
+    for (const kind of SECTION_ROW_ROLES) {
+      try { blockSpecFor(kind, role); } catch { bad.push(`${role}/${kind}`); }
+    }
+    try { blockWidthFor(role); } catch { bad.push(`${role}/width`); }
+  }
+  return bad;
+}
 
 /**
  * Фон ячейки дня у Ozon. Совпадает с WB везде, кроме доказанных семантических расхождений
@@ -80,7 +131,7 @@ export function staticFormatRequests(sheetId: number, sections: readonly Section
       for (let b = 0; b < s.blockCount; b++) {
         const c0 = OZON_GEOMETRY.BLOCK_FIRST_COLUMN + OZON_GEOMETRY.BLOCK_WIDTH * b;
         for (const role of OZON_FIELD_ROLES) {
-          const spec = C.rows[kind].block[role]; if (!spec) continue;
+          const spec = blockSpecFor(kind, role);
           const bg = kind === 'day' ? dayBackgroundFor(role) : undefined;
           const { format, fields } = toUserEnteredFormat(spec, bg);
           const col = c0 + ROLE_OFFSET[role];
@@ -120,7 +171,7 @@ export function columnWidthRequests(sheetId: number, blocks: number): SheetsRequ
   for (let b = 0; b < blocks; b++) {
     const c0 = OZON_GEOMETRY.BLOCK_FIRST_COLUMN + OZON_GEOMETRY.BLOCK_WIDTH * b;
     for (const role of OZON_FIELD_ROLES) {
-      const w = C.widths.block[role]; if (w === undefined) continue;
+      const w = blockWidthFor(role);
       const col = c0 + ROLE_OFFSET[role];
       out.push({ updateDimensionProperties: { range: { sheetId, dimension: 'COLUMNS',
         startIndex: col - 1, endIndex: col }, properties: { pixelSize: w }, fields: 'pixelSize' } });

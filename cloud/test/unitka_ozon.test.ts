@@ -16,7 +16,11 @@ import {
   OZON_VISUAL_DIVERGENCES, SKU_TITLE_MERGE_WIDTH, roleClassFor, OBSERVATION_DEPENDENT_ROLES,
   OZON_ROW_GEOMETRY, MTD_BAND_COLOUR, OPAQUE_BOOLEAN_ROLES, OZON_CF_FAMILIES,
   OZON_SCALE_TIERS, rowHeightFor, roleOffsetsAlign,
+  OZON_STYLE_TEMPLATE, OZON_BORDER_OVERRIDES,
 } from '../src/loaders/unitka/ozon/presentation.js';
+import {
+  blockSpecFor, blockWidthFor, unstyledBlockRoles, staticFormatRequests, columnWidthRequests,
+} from '../src/loaders/unitka/ozon/structure.js';
 import {
   ozonBlockDayFormulas, ozonSummaryDayFormulas, ozonSummaryMtdFormulas, ozonBlockMtdFormulas,
   OZON_MTD_BLANK_OFFSETS,
@@ -774,13 +778,15 @@ describe('GATE 5E — контракт оформления и идемпоте�
     expect(dayBackgroundFor('CART')).toBe(CLASS_BG.CALC);
   });
 
-  it('статический формат ставится на все четыре роли строк', () => {
+  // Gate 7: счёт ведётся от ШИРИНЫ БЛОКА, а не от литерала 24. Литерал описывал дефект —
+  // «Прочие прямые» молча выпадали из оформления, и тест это фиксировал как норму.
+  it('статический формат ставится на все четыре роли строк и на ВСЕ колонки блока', () => {
     const r = staticFormatRequests(1, [layout(SEP)]);
-    expect(r.length).toBe(4 * (10 + 2 * 24));
+    expect(r.length).toBe(4 * (10 + 2 * OZON_BLOCK_WIDTH));
   });
 
-  it('ширины колонок берутся из контракта, а не подбираются', () => {
-    expect(columnWidthRequests(1, 1).length).toBe(10 + 24);
+  it('ширины колонок берутся из контракта для каждой колонки блока', () => {
+    expect(columnWidthRequests(1, 1).length).toBe(10 + OZON_BLOCK_WIDTH);
   });
 
   it('объединения заголовков: сводка на 10 колонок, SKU — на 7, на КАЖДЫЙ слот блока', () => {
@@ -1031,5 +1037,155 @@ describe('продвижение с привязкой к SKU (Gate 5L)', () => 
   it('SQL фактов запрашивает корзину продвижения', () => {
     const sql = ozonMonthFactsSql({ project: 'p', from: '2026-08-01', to: '2026-08-31' });
     expect(sql).toContain('f.sku_promotion_rub promo');
+  });
+});
+
+/* ════════════════════════════════════════════════════════════════════════════
+ * GATE 7 — визуальная интеграция «Прочих прямых»
+ * ════════════════════════════════════════════════════════════════════════════ */
+describe('OZON adapter — Gate 7: оформление «Прочих прямых»', () => {
+  const SEC = { titleRow: 10, headerRow: 11, firstRow: 12, lastRow: 41, mtdRow: 42, spacerRow: 43, blockCount: 3 };
+  const KINDS = ['title', 'header', 'day', 'mtd'] as const;
+
+  it('ни одна роль блока не остаётся без оформления и ширины', () => {
+    expect(unstyledBlockRoles()).toEqual([]);
+  });
+
+  it('роль без спецификации и без образца — ошибка сборки, а не серая полоса', () => {
+    expect(() => blockSpecFor('day', 'НЕТ_ТАКОЙ' as never)).toThrow(/не определено/);
+    expect(() => blockWidthFor('НЕТ_ТАКОЙ' as never)).toThrow(/не определена/);
+  });
+
+  it('образец «Прочих прямых» — «Хранение»: тот же класс FACT, тот же начисленный расход', () => {
+    expect(OZON_STYLE_TEMPLATE.OTHER_DIRECT).toBe('STORAGE');
+    expect(OZON_ROLE_CLASS.OTHER_DIRECT).toBe(OZON_ROLE_CLASS.STORAGE);
+  });
+
+  it('оформление наследуется от «Хранения» во всех четырёх ролях строк', () => {
+    for (const kind of KINDS) {
+      const od = blockSpecFor(kind, 'OTHER_DIRECT');
+      const st = blockSpecFor(kind, 'STORAGE');
+      expect(od.fontFamily).toBe(st.fontFamily);
+      expect(od.fontSize).toBe(st.fontSize);
+      expect(od.bold).toBe(st.bold);
+      expect(od.ha).toBe(st.ha);
+      expect(od.va).toBe(st.va);
+      expect(od.wrap).toBe(st.wrap);
+      expect(od.numberFormat).toEqual(st.numberFormat);
+      expect(od.bg).toBe(st.bg);
+    }
+  });
+
+  it('ширина 84 — как у всех денежных колонок блока, а не 63', () => {
+    expect(blockWidthFor('OTHER_DIRECT')).toBe(84);
+    for (const r of ['COMMISSION', 'LOGISTICS', 'STORAGE', 'TAX_RESERVE'] as const) {
+      expect(blockWidthFor('OTHER_DIRECT')).toBe(blockWidthFor(r));
+    }
+  });
+
+  it('сутки и итог — рубли, а не безликое число', () => {
+    for (const kind of ['day', 'mtd'] as const) {
+      expect(blockSpecFor(kind, 'OTHER_DIRECT').numberFormat?.pattern).toBe('#,##0\\ "₽"');
+      expect(blockSpecFor(kind, 'OTHER_DIRECT').ha).toBe('RIGHT');
+    }
+  });
+
+  it('шапка: зелёный факт площадки, перенос строки, читаемая подпись', () => {
+    const h = blockSpecFor('header', 'OTHER_DIRECT');
+    expect(h.bg).toBe('#b7e1cd');          // «факт площадки» в языке шапок WB
+    expect(h.wrap).toBe('WRAP');           // «Прочие прямые» переносятся, а не обрезаются
+    expect(h.ha).toBe('CENTER');
+  });
+
+  it('заголовок SKU: колонка внутри полосы блока, а не белый разрыв с подчёркиванием', () => {
+    const t = blockSpecFor('title', 'OTHER_DIRECT');
+    expect(t.bg).toBe('#dce8f2');
+    expect(t.va).toBe('MIDDLE');
+    expect(t.borders).toEqual({ top: 'SOLID_MEDIUM', bottom: 'SOLID_MEDIUM' });
+  });
+
+  it('рамки замкнуты во всех четырёх ролях строк — открытой полосы нет', () => {
+    for (const kind of KINDS) {
+      const b = blockSpecFor(kind, 'OTHER_DIRECT').borders ?? {};
+      expect(Object.keys(b).length).toBeGreaterThan(0);
+      expect(b.top ?? b.bottom).toBeTruthy();
+    }
+    // сутки: колонка полностью в сетке блока
+    expect(blockSpecFor('day', 'OTHER_DIRECT').borders)
+      .toEqual({ top: 'SOLID', bottom: 'SOLID', left: 'SOLID', right: 'SOLID' });
+  });
+
+  it('короб прямых расходов в итоге растёт до трёх ячеек: логистика | хранение | прочие', () => {
+    const log = blockSpecFor('mtd', 'LOGISTICS').borders ?? {};
+    const sto = blockSpecFor('mtd', 'STORAGE').borders ?? {};
+    const od = blockSpecFor('mtd', 'OTHER_DIRECT').borders ?? {};
+    expect(log.left).toBe('SOLID_MEDIUM');   // левая стена короба
+    expect(log.right).toBe('SOLID');         // внутренняя перегородка
+    expect(sto.right).toBe('SOLID');         // стена СНЯТА: короб пошёл дальше
+    expect(od.right).toBe('SOLID_MEDIUM');   // правая стена теперь здесь
+    for (const b of [log, sto, od]) {
+      expect(b.top).toBe('SOLID_MEDIUM');
+      expect(b.bottom).toBe('SOLID_MEDIUM');
+    }
+  });
+
+  it('правка рамки у соседа ровно одна и она объявлена', () => {
+    expect(OZON_BORDER_OVERRIDES).toHaveLength(1);
+    expect(OZON_BORDER_OVERRIDES[0]).toMatchObject({ row: 'mtd', role: 'STORAGE', side: 'right' });
+  });
+
+  it('новый месяц получает оформление из геометрии: запрос на каждый блок каждой секции', () => {
+    const reqs = staticFormatRequests(7, [SEC, { ...SEC, titleRow: 50, headerRow: 51, firstRow: 52,
+      lastRow: 82, mtdRow: 83, spacerRow: 84, blockCount: 3 }]);
+    const odCols = [0, 1, 2].map((b) => 12 + 25 * b + OFFSET.otherDirect);
+    for (const kind of KINDS) void kind;
+    const touched = reqs.filter((r) => {
+      const range = (r as { repeatCell: { range: { startColumnIndex: number } } }).repeatCell.range;
+      return odCols.includes(range.startColumnIndex + 1);
+    });
+    expect(touched).toHaveLength(2 * 3 * 4);      // 2 секции × 3 блока × 4 роли строк
+  });
+
+  it('новый SKU-блок получает то же оформление: 22 слота — 22 запроса на роль строки', () => {
+    const reqs = staticFormatRequests(7, [{ ...SEC, blockCount: 22 }]);
+    const od = reqs.filter((r) => {
+      const range = (r as { repeatCell: { range: { startColumnIndex: number } } }).repeatCell.range;
+      return (range.startColumnIndex + 1 - 12 - OFFSET.otherDirect) % 25 === 0
+        && range.startColumnIndex + 1 >= 12 + OFFSET.otherDirect;
+    });
+    expect(od).toHaveLength(22 * 4);
+    const widths = columnWidthRequests(7, 22).filter((r) => {
+      const range = (r as { updateDimensionProperties: { range: { startIndex: number } } })
+        .updateDimensionProperties.range;
+      return (range.startIndex + 1 - 12 - OFFSET.otherDirect) % 25 === 0
+        && range.startIndex + 1 >= 12 + OFFSET.otherDirect;
+    });
+    expect(widths).toHaveLength(22);
+    for (const w of widths) {
+      expect((w as { updateDimensionProperties: { properties: { pixelSize: number } } })
+        .updateDimensionProperties.properties.pixelSize).toBe(84);
+    }
+  });
+
+  it('повторный прогон не дрейфует и не удваивает рамки', () => {
+    const a = JSON.stringify(staticFormatRequests(7, [SEC]));
+    const b = JSON.stringify(staticFormatRequests(7, [SEC]));
+    expect(a).toBe(b);
+    const wa = JSON.stringify(columnWidthRequests(7, 22));
+    expect(wa).toBe(JSON.stringify(columnWidthRequests(7, 22)));
+  });
+
+  it('оформление пишется форматом: ни одного userEnteredValue в запросах', () => {
+    const all = [...staticFormatRequests(7, [SEC]), ...columnWidthRequests(7, 22)];
+    expect(JSON.stringify(all)).not.toContain('userEnteredValue');
+    for (const r of staticFormatRequests(7, [SEC])) {
+      expect((r as { repeatCell: { fields: string } }).repeatCell.fields)
+        .toMatch(/^userEnteredFormat\./);
+    }
+  });
+
+  it('ширина блока WB не задета: у WB по-прежнему 24 колонки', () => {
+    expect(OZON_BLOCK_WIDTH).toBe(25);
+    expect(Object.keys(WB_OFFSET)).toHaveLength(24);
   });
 });
