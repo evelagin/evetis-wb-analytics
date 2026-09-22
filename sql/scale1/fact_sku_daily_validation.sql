@@ -23,12 +23,16 @@ WITH d0 AS (
     SUM(seller_base_revenue_rub) revenue, SUM(product_cogs_rub) cogs, SUM(commission_rub) commission,
     SUM(direct_variable_marketplace_costs_rub) direct_var, SUM(other_direct_marketplace_costs_rub) other_direct,
     SUM(contribution_before_ads_rub) contrib_before_ads, SUM(ad_spend_attributed_rub) ads,
+    SUM(sku_promotion_rub) promotion,
     SUM(contribution_after_attributed_ads_rub) contrib_after_ads,
     SUM(cogs_missing_qty) cogs_missing_qty, SUM(commission_missing_qty) commission_missing_qty
   FROM `project-fa311fc0-4d87-4781-986.ozon_mart.FCT_OZON_SKU_PNL_DAILY` x GROUP BY 1,2),
 d AS (
+  -- UBR-010: продвижение — слой L3. В «до рекламы» его больше нет, в «после рекламы» оно
+  -- вычитается вместе с рекламой. Состав повторного вывода обязан совпадать с составом вью.
   SELECT *, ROUND(ROUND(revenue, 2) - ROUND(cogs, 2) - ROUND(commission, 2) - ROUND(direct_var, 2) - ROUND(other_direct, 2), 2) r_contrib_before_ads,
-    ROUND(ROUND(revenue, 2) - ROUND(cogs, 2) - ROUND(commission, 2) - ROUND(direct_var, 2) - ROUND(other_direct, 2) - ROUND(ads, 2), 2) r_contrib_after_ads
+    ROUND(ROUND(revenue, 2) - ROUND(cogs, 2) - ROUND(commission, 2) - ROUND(direct_var, 2) - ROUND(other_direct, 2)
+          - ROUND(promotion, 2) - ROUND(ads, 2), 2) r_contrib_after_ads
   FROM d0),
 m AS (SELECT * FROM `project-fa311fc0-4d87-4781-986.ozon_mart.FCT_OZON_SKU_PNL_MONTHLY`),
 cells AS (
@@ -45,6 +49,7 @@ cells AS (
     ('other_direct_marketplace_costs_rub', 'RUB', m.other_direct_marketplace_costs_rub, d.other_direct, ROUND(d.other_direct, 2)),
     ('contribution_before_ads_rub', 'RUB', m.contribution_before_ads_rub, d.contrib_before_ads, d.r_contrib_before_ads),
     ('ad_spend_attributed_rub', 'RUB', m.ad_spend_attributed_rub, d.ads, ROUND(d.ads, 2)),
+    ('sku_promotion_rub', 'RUB', m.sku_promotion_rub, d.promotion, ROUND(d.promotion, 2)),
     ('contribution_after_attributed_ads_rub', 'RUB', m.contribution_after_attributed_ads_rub, d.contrib_after_ads, d.r_contrib_after_ads),
     ('cogs_status=MISSING <=> cogs_missing_qty>0', 'QTY', CAST(IF(m.cogs_status = 'COVERED', 0, 1) AS NUMERIC), CAST(IF(d.cogs_missing_qty > 0, 1, 0) AS NUMERIC), CAST(IF(d.cogs_missing_qty > 0, 1, 0) AS NUMERIC)),
     ('commission_status=MISSING <=> commission_missing_qty>0', 'QTY', CAST(IF(m.commission_status = 'COVERED', 0, 1) AS NUMERIC), CAST(IF(d.commission_missing_qty > 0, 1, 0) AS NUMERIC), CAST(IF(d.commission_missing_qty > 0, 1, 0) AS NUMERIC))
@@ -69,23 +74,29 @@ WITH d0 AS (
   SELECT DATE_TRUNC(fact_date, MONTH) month, internal_sku, SUM(realized_qty) realized_qty,
     ROUND(SUM(seller_base_revenue_rub), 2) revenue, ROUND(SUM(product_cogs_rub), 2) cogs, SUM(product_cogs_rub) cogs_raw,
     ROUND(SUM(commission_rub), 2) + ROUND(SUM(direct_variable_marketplace_costs_rub), 2) + ROUND(SUM(other_direct_marketplace_costs_rub), 2) mp_costs,
-    ROUND(SUM(ad_spend_attributed_rub), 2) ads
+    ROUND(SUM(ad_spend_attributed_rub), 2) ads, ROUND(SUM(sku_promotion_rub), 2) promotion
   FROM `project-fa311fc0-4d87-4781-986.ozon_mart.FCT_OZON_SKU_PNL_DAILY` x GROUP BY 1,2),
 d AS (
+  -- UBR-010: продвижение вычитается на L3, поэтому входит в вклад после рекламы и НЕ входит
+  -- в расходы площадки (mp_costs). Смешение этих двух корзин и было исходным дефектом.
   SELECT month, SUM(realized_qty) realized_qty, SUM(revenue) revenue, SUM(mp_costs) mp_costs, SUM(ads) ads,
-    SUM(cogs) cogs, SUM(cogs_raw) cogs_raw, SUM(ROUND(revenue - cogs - mp_costs - ads, 2)) contrib
+    SUM(promotion) promotion,
+    SUM(cogs) cogs, SUM(cogs_raw) cogs_raw, SUM(ROUND(revenue - cogs - mp_costs - ads - promotion, 2)) contrib
   FROM d0 GROUP BY 1),
 m AS (
   SELECT month, SUM(realized_qty) realized_qty, SUM(seller_base_revenue_rub) revenue,
     SUM(commission_rub + direct_variable_marketplace_costs_rub + other_direct_marketplace_costs_rub) mp_costs,
-    SUM(ad_spend_attributed_rub) ads, SUM(product_cogs_rub) cogs, SUM(contribution_after_attributed_ads_rub) contrib
+    SUM(ad_spend_attributed_rub) ads, SUM(sku_promotion_rub) promotion,
+    SUM(product_cogs_rub) cogs, SUM(contribution_after_attributed_ads_rub) contrib
   FROM `project-fa311fc0-4d87-4781-986.ozon_mart.FCT_OZON_SKU_PNL_MONTHLY` GROUP BY 1)
 SELECT COALESCE(m.month, d.month) month, m.realized_qty monthly_qty, d.realized_qty daily_qty,
   m.revenue monthly_revenue, d.revenue - m.revenue d_revenue, m.mp_costs monthly_mp_costs, d.mp_costs - m.mp_costs d_mp_costs,
-  m.ads monthly_ads, d.ads - m.ads d_ads, m.cogs monthly_cogs, d.cogs - m.cogs d_cogs, ROUND(d.cogs_raw - m.cogs, 6) d_cogs_raw,
+  m.ads monthly_ads, d.ads - m.ads d_ads, m.promotion monthly_promotion, d.promotion - m.promotion d_promotion,
+  m.cogs monthly_cogs, d.cogs - m.cogs d_cogs, ROUND(d.cogs_raw - m.cogs, 6) d_cogs_raw,
   m.contrib monthly_contribution_after_ads, d.contrib - m.contrib d_contribution,
   IF(m.month IS NOT NULL AND d.month IS NOT NULL AND m.realized_qty = d.realized_qty AND d.revenue = m.revenue
-     AND d.mp_costs = m.mp_costs AND d.ads = m.ads AND d.cogs = m.cogs AND d.contrib = m.contrib, 'PASS', 'FAIL') status
+     AND d.mp_costs = m.mp_costs AND d.ads = m.ads AND d.promotion = m.promotion
+     AND d.cogs = m.cogs AND d.contrib = m.contrib, 'PASS', 'FAIL') status
 FROM m FULL JOIN d ON d.month = m.month ORDER BY 1;
 
 -- @check V03_OZON_STORE_LEVEL_SALES_CROSSCHECK
@@ -114,20 +125,23 @@ SELECT COUNT(*) months,
 FROM m LEFT JOIN d ON d.month = m.month;
 
 -- @check V04_OZON_DAILY_GRAIN_AND_IDENTITIES
+-- UBR-010: вклад после рекламы = вклад до рекламы − реклама − продвижение (слой L3).
 SELECT COUNT(*) row_count, COUNT(DISTINCT FORMAT('%t|%s', fact_date, internal_sku)) unique_keys,
   COUNTIF(fact_date IS NULL OR internal_sku IS NULL) null_keys,
   MIN(fact_date) min_date, MAX(fact_date) max_date, COUNT(DISTINCT internal_sku) skus,
   COUNTIF(logistics_rub + acquiring_rub + storage_rub != direct_variable_marketplace_costs_rub) decomposition_failed,
   COUNTIF(contribution_before_ads_rub != seller_base_revenue_rub - product_cogs_rub - commission_rub
           - direct_variable_marketplace_costs_rub - other_direct_marketplace_costs_rub) contribution_before_ads_failed,
-  COUNTIF(contribution_after_attributed_ads_rub != contribution_before_ads_rub - ad_spend_attributed_rub) contribution_after_ads_failed,
+  COUNTIF(contribution_after_attributed_ads_rub != contribution_before_ads_rub - ad_spend_attributed_rub
+          - sku_promotion_rub) contribution_after_ads_failed,
   COUNTIF(gross_qty < cancelled_qty + in_transit_qty + realized_qty) status_split_exceeds_gross,
   COUNTIF(seller_base_revenue_rub IS NULL OR commission_rub IS NULL OR product_cogs_rub IS NULL
           OR direct_variable_marketplace_costs_rub IS NULL OR ad_spend_attributed_rub IS NULL) null_money,
   IF(COUNT(*) = COUNT(DISTINCT FORMAT('%t|%s', fact_date, internal_sku))
      AND COUNTIF(fact_date IS NULL OR internal_sku IS NULL) = 0
      AND COUNTIF(logistics_rub + acquiring_rub + storage_rub != direct_variable_marketplace_costs_rub) = 0
-     AND COUNTIF(contribution_after_attributed_ads_rub != contribution_before_ads_rub - ad_spend_attributed_rub) = 0
+     AND COUNTIF(contribution_after_attributed_ads_rub != contribution_before_ads_rub - ad_spend_attributed_rub
+                 - sku_promotion_rub) = 0
      AND COUNTIF(seller_base_revenue_rub IS NULL OR commission_rub IS NULL OR product_cogs_rub IS NULL) = 0, 'PASS', 'FAIL') status
 FROM `project-fa311fc0-4d87-4781-986.ozon_mart.FCT_OZON_SKU_PNL_DAILY` x;
 
@@ -168,12 +182,12 @@ SELECT COUNT(*) row_count, COUNT(DISTINCT FORMAT('%t|%s|%s', fact_date, marketpl
   MIN(IF(marketplace = 'WB', fact_date, NULL)) wb_min_date, MAX(IF(marketplace = 'WB', fact_date, NULL)) wb_max_date,
   MIN(IF(marketplace = 'OZON', fact_date, NULL)) ozon_min_date, MAX(IF(marketplace = 'OZON', fact_date, NULL)) ozon_max_date,
   COUNT(DISTINCT IF(marketplace = 'WB', internal_sku, NULL)) wb_skus, COUNT(DISTINCT IF(marketplace = 'OZON', internal_sku, NULL)) ozon_skus,
-  COUNTIF(contract_version != 'FACT_SKU_DAILY_V1' OR fact_date_semantics IS NULL OR source_contract IS NULL) contract_metadata_failed,
+  COUNTIF(contract_version != 'FACT_SKU_DAILY_V2' OR fact_date_semantics IS NULL OR source_contract IS NULL) contract_metadata_failed,
   IF(COUNT(*) = COUNT(DISTINCT FORMAT('%t|%s|%s', fact_date, marketplace, internal_sku))
      AND COUNTIF(fact_date IS NULL OR marketplace IS NULL OR internal_sku IS NULL) = 0
      AND COUNTIF(marketplace NOT IN ('WB', 'OZON')) = 0
      AND COUNTIF(product_name IS NULL OR is_bundle IS NULL) = 0
-     AND COUNTIF(contract_version != 'FACT_SKU_DAILY_V1' OR fact_date_semantics IS NULL OR source_contract IS NULL) = 0, 'PASS', 'FAIL') status
+     AND COUNTIF(contract_version != 'FACT_SKU_DAILY_V2' OR fact_date_semantics IS NULL OR source_contract IS NULL) = 0, 'PASS', 'FAIL') status
 FROM `project-fa311fc0-4d87-4781-986.evetis_mart.FACT_SKU_DAILY` x;
 
 -- @check V07_WB_ADAPTER_PARITY
@@ -240,12 +254,15 @@ SELECT marketplace, COUNT(*) row_count,
   COUNTIF(marketplace_costs_total_rub IS NOT NULL AND marketplace_costs_total_rub != marketplace_commission_rub
     + IFNULL(logistics_rub, 0) + IFNULL(storage_rub, 0) + IFNULL(acquiring_rub, 0) + IFNULL(other_marketplace_costs_rub, 0)) costs_total_identity_failed,
   COUNTIF(contribution_after_ads_rub IS NOT NULL
-    AND contribution_after_ads_rub != seller_revenue_rub - marketplace_costs_total_rub - advertising_attributed_rub) contribution_after_ads_identity_failed,
+    AND contribution_after_ads_rub != seller_revenue_rub - marketplace_costs_total_rub - advertising_attributed_rub
+      - IFNULL(promotion_billed_rub, 0)) contribution_after_ads_identity_failed,
   COUNTIF(contribution_after_cogs_rub IS NOT NULL
     AND contribution_after_cogs_rub != contribution_after_ads_rub - cogs_rub) contribution_after_cogs_identity_failed,
   COUNTIF(economics_covered AND contribution_after_cogs_rub IS NULL) covered_but_null_contribution,
   COUNTIF(marketplace = 'WB' AND (acquiring_rub IS NOT NULL OR other_marketplace_costs_rub IS NOT NULL)) wb_unsupported_not_null,
   COUNTIF(marketplace = 'OZON' AND return_qty IS NOT NULL) ozon_unsupported_not_null,
+  COUNTIF(marketplace = 'WB' AND promotion_billed_rub IS NOT NULL) wb_promotion_must_be_null,
+  COUNTIF(marketplace = 'OZON' AND promotion_billed_rub IS NULL) ozon_promotion_must_be_observed,
   COUNTIF(marketplace = 'WB' AND fact_date < DATE '2026-09-01' AND storage_rub IS NOT NULL) wb_storage_before_coverage_not_null,
   COUNTIF(marketplace = 'OZON' AND (seller_revenue_rub IS NULL OR marketplace_costs_total_rub IS NULL OR advertising_attributed_rub IS NULL
     OR orders_qty IS NULL OR sold_qty IS NULL)) ozon_observed_metric_null,
@@ -254,11 +271,14 @@ SELECT marketplace, COUNT(*) row_count,
   IF(COUNTIF(marketplace_costs_total_rub IS NOT NULL AND marketplace_costs_total_rub != marketplace_commission_rub
        + IFNULL(logistics_rub, 0) + IFNULL(storage_rub, 0) + IFNULL(acquiring_rub, 0) + IFNULL(other_marketplace_costs_rub, 0)) = 0
      AND COUNTIF(contribution_after_ads_rub IS NOT NULL
-       AND contribution_after_ads_rub != seller_revenue_rub - marketplace_costs_total_rub - advertising_attributed_rub) = 0
+       AND contribution_after_ads_rub != seller_revenue_rub - marketplace_costs_total_rub - advertising_attributed_rub
+         - IFNULL(promotion_billed_rub, 0)) = 0
      AND COUNTIF(contribution_after_cogs_rub IS NOT NULL AND contribution_after_cogs_rub != contribution_after_ads_rub - cogs_rub) = 0
      AND COUNTIF(economics_covered AND contribution_after_cogs_rub IS NULL) = 0
      AND COUNTIF(marketplace = 'WB' AND (acquiring_rub IS NOT NULL OR other_marketplace_costs_rub IS NOT NULL)) = 0
      AND COUNTIF(marketplace = 'OZON' AND return_qty IS NOT NULL) = 0
+     AND COUNTIF(marketplace = 'WB' AND promotion_billed_rub IS NOT NULL) = 0
+     AND COUNTIF(marketplace = 'OZON' AND promotion_billed_rub IS NULL) = 0
      AND COUNTIF(marketplace = 'WB' AND fact_date < DATE '2026-09-01' AND storage_rub IS NOT NULL) = 0
      AND COUNTIF(marketplace = 'OZON' AND (seller_revenue_rub IS NULL OR marketplace_costs_total_rub IS NULL
        OR advertising_attributed_rub IS NULL OR orders_qty IS NULL OR sold_qty IS NULL)) = 0, 'PASS', 'FAIL') status

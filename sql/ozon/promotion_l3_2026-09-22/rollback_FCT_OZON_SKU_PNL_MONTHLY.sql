@@ -1,4 +1,9 @@
 -- ============================================================================
+-- ОТКАТ UBR-010 · восстановление определения ДО переноса продвижения на слой L3.
+-- Тело взято дословно из Git, коммит 52c9d6eefd4b78681effb49c9a80ecff76101060 (состояние до изменения).
+-- Применять в порядке, обратном развёртыванию. Данных не удаляет: это вью.
+-- ============================================================================
+-- ============================================================================
 -- CANONICAL CURRENT DEFINITION — ozon_mart.FCT_OZON_SKU_PNL_MONTHLY (VIEW)
 -- Authoritative Git definition of the CURRENT production object. Not a migration,
 -- not a rollback. Rules: sql/current/README.md. Metadata: MANIFEST.json.
@@ -10,11 +15,6 @@
 -- (ozon_mart.V_OZON_CIS_BUYOUT). Прежний инлайн-CTE rec_comm (29 строк «восстановленной
 -- комиссии») удалён: записанные в нём суммы были «Дисконтом по категории» из документа о
 -- выкупе, а не вознаграждением. Семантика совпадает с FCT_OZON_SKU_PNL_DAILY.
--- 🔴 UBR-010 (решение владельца 2026-09-22): sku_promotion_rub — слой L3. Вычитается вместе с
--- рекламой, ПОСЛЕ contribution_before_ads_rub. Не уменьшает выручку, не входит в
--- other_direct_marketplace_costs_rub, не смешивается с ad_spend_attributed_rub.
--- Разбор и доказательства: docs/ozon/OZON_SKU_PROMOTION_CLASSIFICATION_2026-09-22.md.
---
 -- Корзина sku_promotion_rub (Gate 5L): платные механики продвижения С ПРИВЯЗКОЙ К SKU —
 -- сбор первых отзывов (116), звёздные товары (74), бонусы продавца (48). Эти начисления
 -- приходили со SKU, но не попадали ни в одну корзину и молча терялись.
@@ -108,39 +108,32 @@ SELECT j.month, j.internal_sku, pm.canonical_product_name product_name,
   CASE WHEN j.comm_missing_qty > 0 THEN 'MISSING_SOURCE' ELSE 'COVERED' END commission_status,
   j.direct_variable_marketplace_costs_rub, j.other_direct_marketplace_costs_rub, j.sku_promotion_rub,
   ROUND(j.seller_base_revenue_rub - j.product_cogs_rub - j.commission_rub
-        - j.direct_variable_marketplace_costs_rub - j.other_direct_marketplace_costs_rub, 2) contribution_before_ads_rub,
+        - j.direct_variable_marketplace_costs_rub - j.other_direct_marketplace_costs_rub - j.sku_promotion_rub, 2) contribution_before_ads_rub,
   j.ad_spend_attributed_rub,
   ROUND(j.seller_base_revenue_rub - j.product_cogs_rub - j.commission_rub
         - j.direct_variable_marketplace_costs_rub - j.other_direct_marketplace_costs_rub - j.sku_promotion_rub
         - j.ad_spend_attributed_rub, 2) contribution_after_attributed_ads_rub,
   ROUND(SAFE_DIVIDE(j.seller_base_revenue_rub - j.product_cogs_rub - j.commission_rub
-        - j.direct_variable_marketplace_costs_rub - j.other_direct_marketplace_costs_rub,
+        - j.direct_variable_marketplace_costs_rub - j.other_direct_marketplace_costs_rub - j.sku_promotion_rub,
         NULLIF(j.seller_base_revenue_rub,0))*100, 4) margin_before_ads_pct,
   ROUND(SAFE_DIVIDE(j.seller_base_revenue_rub - j.product_cogs_rub - j.commission_rub
         - j.direct_variable_marketplace_costs_rub - j.other_direct_marketplace_costs_rub - j.sku_promotion_rub
         - j.ad_spend_attributed_rub, NULLIF(j.seller_base_revenue_rub,0))*100, 4) margin_after_ads_pct,
   ROUND(SAFE_DIVIDE(j.ad_spend_attributed_rub, NULLIF(j.seller_base_revenue_rub,0))*100, 4) actual_drr_pct,
   ROUND(SAFE_DIVIDE(j.seller_base_revenue_rub - j.product_cogs_rub - j.commission_rub
-        - j.direct_variable_marketplace_costs_rub - j.other_direct_marketplace_costs_rub,
+        - j.direct_variable_marketplace_costs_rub - j.other_direct_marketplace_costs_rub - j.sku_promotion_rub,
         NULLIF(j.seller_base_revenue_rub,0))*100, 4) variable_break_even_drr_pct,
   CASE
     WHEN j.cogs_missing_qty > 0 THEN 'COGS_INCOMPLETE'
     WHEN j.realized_qty = 0 THEN 'INSUFFICIENT_DATA'
     WHEN j.seller_base_revenue_rub - j.product_cogs_rub - j.commission_rub
-         - j.direct_variable_marketplace_costs_rub - j.other_direct_marketplace_costs_rub <= 0 THEN 'LOSS_BEFORE_ADS'
+         - j.direct_variable_marketplace_costs_rub - j.other_direct_marketplace_costs_rub - j.sku_promotion_rub <= 0 THEN 'LOSS_BEFORE_ADS'
     WHEN j.seller_base_revenue_rub - j.product_cogs_rub - j.commission_rub
          - j.direct_variable_marketplace_costs_rub - j.other_direct_marketplace_costs_rub - j.sku_promotion_rub
          - j.ad_spend_attributed_rub > 0 THEN 'PROFITABLE_AFTER_ADS'
     ELSE 'PROFITABLE_BEFORE_ADS_ONLY' END profitability_status,
   'DIRECT_POSTING+DIRECT_SKU+ACTUAL_AD_ATTRIBUTION' attribution_level,
-  CURRENT_TIMESTAMP() computed_at,
-  -- UBR-010: полный фактический расход управленческого семейства «продвижение» и его ДРР.
-  -- ⚠️ Основание смешанное и названо здесь явно: ad_spend_attributed_rub — АТРИБУЦИЯ CPC,
-  -- sku_promotion_rub — ФАКТ НАЧИСЛЕНИЯ. Существующие ad_spend_attributed_rub и actual_drr_pct
-  -- НЕ переопределены: они остаются чистой атрибуцией, как и прежде.
-  ROUND(j.ad_spend_attributed_rub + j.sku_promotion_rub, 2) promotion_family_rub,
-  ROUND(SAFE_DIVIDE(j.ad_spend_attributed_rub + j.sku_promotion_rub,
-        NULLIF(j.seller_base_revenue_rub,0))*100, 4) promotion_family_drr_pct
+  CURRENT_TIMESTAMP() computed_at
 FROM j LEFT JOIN `project-fa311fc0-4d87-4781-986.evetis_ref.REF_PRODUCT_MASTER` pm
   ON pm.internal_sku = j.internal_sku
 WHERE j.month IS NOT NULL AND j.internal_sku IS NOT NULL;

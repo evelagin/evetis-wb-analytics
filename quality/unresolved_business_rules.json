@@ -179,7 +179,7 @@
     {
       "id": "UBR-010",
       "title": "Новый компонент экономики Ozon sku_promotion_rub не доведён до потребителей витрины",
-      "status": "open",
+      "status": "answered",
       "severity": "HIGH",
       "domain": "unit_economics",
       "source_artifact": "sql/scale1/fact_sku_daily_validation.sql (V01, V02, V09); sql/control_tower/ct_phase1_validation.sql:115 (T10)",
@@ -200,7 +200,10 @@
         "not_drift": "GIT_PROD_PARITY 18/18 MATCH: развёрнутое определение FACT_SKU_DAILY совпадает со своим каноническим файлом. Дефект в самом определении, а не в дрейфе."
       },
       "why_not_automatable": "Размещение компонента в нейтральном контракте — решение о смысле метрики: продвижение SKU можно считать расходом площадки, скидкой к выручке или отдельной строкой. Любой выбор меняет вклад, который видит владелец.",
-      "minimal_answer_required": "Одно из трёх: (A) sku_promotion_rub входит в other_marketplace_costs_rub нейтрального факта; (B) уменьшает seller_revenue_rub; (C) получает собственную колонку контракта FACT_SKU_DAILY_V2. После ответа обновляются нейтральный факт, CT_ACTUAL_DAILY и формула повторного вывода в V01/V02."
+      "minimal_answer_required": "Одно из трёх: (A) sku_promotion_rub входит в other_marketplace_costs_rub нейтрального факта; (B) уменьшает seller_revenue_rub; (C) получает собственную колонку контракта FACT_SKU_DAILY_V2. После ответа обновляются нейтральный факт, CT_ACTUAL_DAILY и формула повторного вывода в V01/V02.",
+      "answered_at": "2026-09-22",
+      "decision": "Вариант C. promotion_billed_rub — самостоятельный фактически начисленный расход на продвижение Ozon, слой L3. Не уменьшает revenue, не входит в other_marketplace_costs_rub, не смешивается с ad_spend_attributed_rub. Учитывается в управленческом семействе promotion/advertising при расчёте полного фактического расхода на продвижение и соответствующего ДРР.",
+      "implementation": "Git-first, контракт FACT_SKU_DAILY_V2. Изменены: ozon_mart.FCT_OZON_SKU_PNL_DAILY, ozon_mart.FCT_OZON_SKU_PNL_MONTHLY (+ promotion_family_rub, promotion_family_drr_pct), ozon_mart.V_OZON_SKU_PNL_DAILY_OPERATIONAL, evetis_mart.FACT_SKU_DAILY (+ promotion_billed_rub), wb_mart.V_CT_ACTUAL_DAILY_LIVE. Сверка до развёртывания: 9/9 PASS (quality suite promotion_l3). Развёртывание — docs/architecture/PROMOTION_L3_MIGRATION.md, ждёт ACK."
     },
     {
       "id": "UBR-011",
@@ -221,6 +224,27 @@
       },
       "why_not_automatable": "Условие приёмки утверждал владелец. Сделать окно скользящим — значит изменить смысл проверки; переприколоть даты — значит выбрать новые. И то и другое требует его слова.",
       "minimal_answer_required": "Для V9: окно скользящее (например, «последние 14 суток») или новые даты. Для V2: сравнивать только пересечение суток обоих объектов или считать опережение слоя дефектом."
+    },
+    {
+      "id": "UBR-012",
+      "title": "Control Tower и витрина Ozon по-разному определяют выручку: подстановка цены заказа вместо суммы документа",
+      "status": "open",
+      "severity": "HIGH",
+      "domain": "finance",
+      "source_artifact": "wb_mart.V_CT_ACTUAL_DAILY_LIVE, CTE oz_sales; sql/control_tower/ct_phase1_validation.sql:115 (T10)",
+      "blocked_checks": [
+        "CT1__T10_FAILED_OZON_OZON_MART_FCT_OZON_SKU_PNL_MONTHLY"
+      ],
+      "what_is_unknown": "Какая величина является выручкой Ozon там, где начисления реализации нет: цена заказа из отправления (как считает Control Tower) или сумма первичного документа выкупа (как считает витрина).",
+      "evidence": {
+        "measured_at": "2026-09-22",
+        "mechanism": "Control Tower считает выручку как IFNULL(accrual.seller_base_price_rub, posting.price_rub) * quantity — то есть ПОДСТАВЛЯЕТ цену заказа, когда начисления нет. Витрина ozon_mart после Gate 5M берёт для выкупов buyout_proceeds_rub из первичного документа, а без документа объявляет сумму недоказанной.",
+        "scale": "Расхождение выручки Ozon: +12 788,84 ₽ за 13 месяцев (Control Tower выше). Затронуты 2025-05, 2025-08…2026-04, 2026-06…2026-08. За август 2026 — 986,04 ₽.",
+        "buyouts": "У 35 отправлений-выкупов база начислений = 0 при сумме документов 18 116,16 ₽ — Control Tower на этих строках подставляет цену заказа, витрина берёт документ.",
+        "isolated_from_promotion": "После правки продвижения (UBR-010) расхождение вклада за август падает с 10 336,14 ₽ до 986,06 ₽, то есть ровно до разницы выручки. Два дефекта разделены арифметически."
+      },
+      "why_not_automatable": "Это определение выручки — утверждённая финансовая методология. Выбор между подстановкой и первичным документом меняет выручку, маржу и ДРР во всех отчётах Control Tower.",
+      "minimal_answer_required": "Одно из двух: (A) Control Tower берёт выручку Ozon из ozon_mart и перестаёт подставлять цену заказа; (B) подстановка признаётся допустимой оценкой, и тогда T10 сверяет только те строки, где начисление есть."
     }
   ]
 }

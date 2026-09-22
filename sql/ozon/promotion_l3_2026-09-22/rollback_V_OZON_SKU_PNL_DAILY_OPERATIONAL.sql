@@ -1,4 +1,9 @@
 -- ============================================================================
+-- ОТКАТ UBR-010 · восстановление определения ДО переноса продвижения на слой L3.
+-- Тело взято дословно из Git, коммит 52c9d6eefd4b78681effb49c9a80ecff76101060 (состояние до изменения).
+-- Применять в порядке, обратном развёртыванию. Данных не удаляет: это вью.
+-- ============================================================================
+-- ============================================================================
 -- CANONICAL CURRENT DEFINITION — ozon_mart.V_OZON_SKU_PNL_DAILY_OPERATIONAL (VIEW)
 -- Git-first object (Gate 8, 2026-09-21): not in production until deployed. Rules:
 -- sql/current/README.md. Metadata: MANIFEST.json.
@@ -12,10 +17,6 @@
 -- через 18 суток, максимум 36 (замер Gate 8). До этого момента комиссия и логистика в факте
 -- равны нулю — не потому, что их не будет, а потому, что их ещё не напечатали. Лист показывал
 -- за эти сутки мнимую прибыль: выручка есть, расходов нет.
---
--- 🔴 UBR-010 (решение владельца 2026-09-22): sku_promotion_rub — слой L3, вычитается вместе с
--- рекламой. operational_contribution_before_ads_rub его больше НЕ содержит;
--- operational_contribution_after_ads_rub содержит, как и прежде — его значение не изменилось.
 --
 -- ПРАВИЛО СТАРШИНСТВА, покомпонентно (D):
 --   есть факт                                  -> effective = факт,   state = ACTUAL
@@ -231,7 +232,7 @@ SELECT
     - (r.product_cogs_rub + r.in_transit_cogs_rub)
     - (r.commission_rub + r.commission_estimated_rub)
     - (r.direct_variable_marketplace_costs_rub + r.logistics_estimated_rub)
-    - r.other_direct_marketplace_costs_rub
+    - r.other_direct_marketplace_costs_rub - r.sku_promotion_rub
       operational_contribution_before_ads_rub,
   r.seller_base_revenue_rub + r.in_transit_revenue_rub
     - (r.product_cogs_rub + r.in_transit_cogs_rub)

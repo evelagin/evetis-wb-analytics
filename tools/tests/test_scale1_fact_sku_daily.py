@@ -34,6 +34,8 @@ NEUTRAL_SCHEMA = [
     ("seller_revenue_rub", "NUMERIC"), ("marketplace_commission_rub", "NUMERIC"), ("logistics_rub", "NUMERIC"),
     ("storage_rub", "NUMERIC"), ("acquiring_rub", "NUMERIC"), ("other_marketplace_costs_rub", "NUMERIC"),
     ("marketplace_costs_total_rub", "NUMERIC"), ("advertising_attributed_rub", "NUMERIC"),
+    # UBR-010, контракт V2: начисленное продвижение — своя колонка слоя L3
+    ("promotion_billed_rub", "NUMERIC"),
     ("contribution_after_ads_rub", "NUMERIC"), ("cogs_rub", "NUMERIC"), ("contribution_after_cogs_rub", "NUMERIC"),
     ("economics_covered", "BOOL"), ("is_provisional", "BOOL"), ("fact_date_semantics", "STRING"),
     ("source_contract", "STRING"), ("contract_version", "STRING"),
@@ -124,10 +126,18 @@ def test_buyout_repair_objects_are_deployed_and_read_back():
     """Gate 5M deployed the buyout model to production and read it back: canonical body, schema and
     description equal the live capture on all three hashes. captured_live is only legitimate when the
     readback actually matched — it asserts production parity, it does not assume it."""
+    # UBR-010 переписал три из этих объектов Git-first, поэтому они законно pending_deploy:
+    # снимок Gate 5M остаётся доказательством ПРЕЖНЕГО состояния и не переписывается.
+    ubr010_pending = {"FCT_OZON_SKU_PNL_DAILY", "FCT_OZON_SKU_PNL_MONTHLY", "FACT_SKU_DAILY"}
     for dataset, name in (("ozon_mart", "V_OZON_CIS_BUYOUT"), ("ozon_mart", "FCT_OZON_SKU_PNL_DAILY"),
                           ("ozon_mart", "FCT_OZON_SKU_PNL_MONTHLY"), ("ozon_mart", "FCT_OZON_PNL_MONTHLY"),
                           ("evetis_mart", "FACT_SKU_DAILY")):
         _, o = manifest_entry(dataset, name)
+        if name in ubr010_pending:
+            assert o["sync_state"] == "pending_deploy", name
+            assert o["canonical_body_sha256"] != o["live_body_sha256_at_capture"], name
+            assert o["provenance"]["preflight_parity"] == "DEPLOYED_AND_READBACK_MATCH", name
+            continue
         assert o["sync_state"] == "captured_live", name
         assert o["canonical_schema_verification"] == "bigquery_verified", name
         assert o["canonical_body_sha256"] == o["live_body_sha256_at_capture"], name
@@ -218,7 +228,7 @@ def test_buyout_revenue_is_never_derived_from_a_rate():
 
 # ------------------------------------------------------------------------------------- neutral fact
 
-def test_neutral_schema_contract_is_exactly_v1():
+def test_neutral_schema_contract_is_exactly_v2():
     _, o = manifest_entry("evetis_mart", "FACT_SKU_DAILY")
     assert [(c["column_name"], c["data_type"]) for c in o["canonical_schema"]] == NEUTRAL_SCHEMA
     assert all(c["is_nullable"] == "YES" for c in o["canonical_schema"])
@@ -383,8 +393,11 @@ def test_validation_file_is_read_only_selects():
 
 
 def test_predeploy_render_inlines_every_pending_object_and_stays_a_select():
-    # After the Gate 5M deploy nothing is pending, so the tool is a no-op on the real repository ...
-    assert render.pending_bodies() == {}
+    # UBR-010: четыре объекта изменены Git-first и ждут развёртывания, поэтому инструмент
+    # подстановки снова не пустой. Ровно эти четыре и обязаны подставляться.
+    pending = {k.split(".")[-1].rstrip("`") for k in render.pending_bodies()}
+    assert pending == {"FCT_OZON_SKU_PNL_DAILY", "FCT_OZON_SKU_PNL_MONTHLY",
+                       "V_OZON_SKU_PNL_DAILY_OPERATIONAL", "FACT_SKU_DAILY"}
     sample = next(iter(check_blocks().values()))
     assert render.render(sample, {}) == sample
     # ... and its inlining logic is still exercised on the same objects, as if they were pending.

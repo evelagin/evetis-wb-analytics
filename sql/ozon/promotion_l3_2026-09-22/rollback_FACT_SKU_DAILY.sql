@@ -1,4 +1,9 @@
 -- ============================================================================
+-- ОТКАТ UBR-010 · восстановление определения ДО переноса продвижения на слой L3.
+-- Тело взято дословно из Git, коммит 52c9d6eefd4b78681effb49c9a80ecff76101060 (состояние до изменения).
+-- Применять в порядке, обратном развёртыванию. Данных не удаляет: это вью.
+-- ============================================================================
+-- ============================================================================
 -- CANONICAL CURRENT DEFINITION — evetis_mart.FACT_SKU_DAILY (VIEW)
 -- Git-first object (SCALE 1, 2026-09-20): not in production until deployed. Rules:
 -- sql/current/README.md. Metadata: MANIFEST.json.
@@ -18,23 +23,10 @@
 --   OZON — return_qty = NULL: возвраты не загружаются; cogs_rub и contribution_after_cogs_rub =
 --          NULL, если себестоимость хотя бы одной реализованной единицы не разрешилась.
 --
--- Тождества (обе площадки), контракт V2:
+-- Тождества (обе площадки):
 --   marketplace_costs_total_rub = commission + logistics + storage + acquiring + other (NULL → 0)
---   contribution_after_ads_rub  = seller_revenue_rub - marketplace_costs_total_rub
---                                 - advertising_attributed_rub - promotion_billed_rub (NULL → 0)
+--   contribution_after_ads_rub  = seller_revenue_rub - marketplace_costs_total_rub - advertising_attributed_rub
 --   contribution_after_cogs_rub = contribution_after_ads_rub - cogs_rub
---
--- 🔴 promotion_billed_rub (контракт V2, UBR-010, решение владельца 2026-09-22) —
---   фактически НАЧИСЛЕННЫЙ площадкой расход на продвижение с привязкой к SKU, слой L3.
---   Он НЕ уменьшает seller_revenue_rub, НЕ входит в marketplace_costs_total_rub и НЕ
---   смешивается с advertising_attributed_rub: там атрибуция, здесь факт начисления.
---   OZON — ozon_mart.FCT_OZON_SKU_PNL_DAILY.sku_promotion_rub (типы начислений 116, 74, 48).
---   WB   — NULL: на уровне SKU у WB нет начисленного продвижения, только атрибуция; величина
---          «биллинг» существует лишь на уровне кабинета (FIN CONTRACT V2) и на SKU не
---          раскладывается. NULL здесь означает «не покрыто», а не ноль.
---   Дефект, который закрывает V2: в V1 срез OZON вычитал продвижение в
---   contribution_after_cogs_rub, но не в contribution_after_ads_rub — тождество ломалось на
---   71 строке ровно на −10 428,67 ₽. Разбор: docs/ozon/OZON_SKU_PROMOTION_CLASSIFICATION_2026-09-22.md.
 -- Всё — до налога, до расходов уровня кабинета/магазина, до фулфилмента и OPEX. Это вклад, не прибыль.
 --
 -- marketplace_commission_rub — «удержание площадки с цены продажи»:
@@ -50,7 +42,7 @@
 -- Internal dependencies: none.
 -- ============================================================================
 CREATE OR REPLACE VIEW `project-fa311fc0-4d87-4781-986.evetis_mart.FACT_SKU_DAILY`
-OPTIONS (description = "Нейтральный суточный факт SKU (контракт V2), зерно = fact_date x marketplace x internal_sku. VIEW: приводит wb_mart.SKU_PERFORMANCE_V2_DAILY и ozon_mart.FCT_OZON_SKU_PNL_DAILY к одному контракту, экономику площадок заново не считает. 0 = наблюдаемый ноль, NULL = метрика недоступна или не атрибутируется. contribution_after_ads_rub = выручка продавца - расходы площадки - атрибутированная реклама - начисленное продвижение (promotion_billed_rub, слой L3: не уменьшает выручку, не входит в расходы площадки, не смешивается с атрибуцией); contribution_after_cogs_rub = он же - себестоимость. До налога, расходов уровня кабинета, фулфилмента и OPEX: вклад, не прибыль. Реклама - атрибуция, не биллинг. Базис даты различается по площадкам - см. fact_date_semantics.")
+OPTIONS (description = "Нейтральный суточный факт SKU (контракт V1), зерно = fact_date x marketplace x internal_sku. VIEW: приводит wb_mart.SKU_PERFORMANCE_V2_DAILY и ozon_mart.FCT_OZON_SKU_PNL_DAILY к одному контракту, экономику площадок заново не считает. 0 = наблюдаемый ноль, NULL = метрика недоступна или не атрибутируется. contribution_after_ads_rub = выручка продавца - расходы площадки - атрибутированная реклама; contribution_after_cogs_rub = он же - себестоимость. До налога, расходов уровня кабинета, фулфилмента и OPEX: вклад, не прибыль. Реклама - атрибуция, не биллинг. Базис даты различается по площадкам - см. fact_date_semantics.")
 AS
 WITH pm AS (
   SELECT internal_sku, canonical_product_name, is_bundle
@@ -72,7 +64,6 @@ wb AS (
     CAST(NULL AS NUMERIC) acquiring_rub, CAST(NULL AS NUMERIC) other_marketplace_costs_rub,
     t.fin_seller_price_rub - t.credited_for_goods_rub + t.logistics_rub + IFNULL(t.storage_sku_rub, 0) marketplace_costs_total_rub,
     t.ads_attributed_rub advertising_attributed_rub,
-    CAST(NULL AS NUMERIC) promotion_billed_rub,
     t.contribution_before_cogs_rub contribution_after_ads_rub,
     t.cogs_rub cogs_rub,
     t.contribution_after_cogs_rub contribution_after_cogs_rub,
@@ -92,10 +83,8 @@ oz AS (
     d.acquiring_rub acquiring_rub, d.other_direct_marketplace_costs_rub other_marketplace_costs_rub,
     d.commission_rub + d.direct_variable_marketplace_costs_rub + d.other_direct_marketplace_costs_rub marketplace_costs_total_rub,
     d.ad_spend_attributed_rub advertising_attributed_rub,
-    d.sku_promotion_rub promotion_billed_rub,
     d.seller_base_revenue_rub - d.commission_rub - d.direct_variable_marketplace_costs_rub
-      - d.other_direct_marketplace_costs_rub - d.ad_spend_attributed_rub
-      - d.sku_promotion_rub contribution_after_ads_rub,
+      - d.other_direct_marketplace_costs_rub - d.ad_spend_attributed_rub contribution_after_ads_rub,
     IF(d.cogs_missing_qty = 0, d.product_cogs_rub, NULL) cogs_rub,
     IF(d.cogs_missing_qty = 0, d.contribution_after_attributed_ads_rub, NULL) contribution_after_cogs_rub,
     d.cogs_missing_qty = 0 AND d.commission_missing_qty = 0
@@ -111,8 +100,7 @@ SELECT u.fact_date, u.marketplace, u.internal_sku, u.marketplace_sku,
   u.orders_qty, u.cancelled_qty, u.sold_qty, u.return_qty,
   u.seller_revenue_rub, u.marketplace_commission_rub, u.logistics_rub, u.storage_rub,
   u.acquiring_rub, u.other_marketplace_costs_rub, u.marketplace_costs_total_rub,
-  u.advertising_attributed_rub, u.promotion_billed_rub,
-  u.contribution_after_ads_rub, u.cogs_rub, u.contribution_after_cogs_rub,
+  u.advertising_attributed_rub, u.contribution_after_ads_rub, u.cogs_rub, u.contribution_after_cogs_rub,
   u.economics_covered, u.is_provisional, u.fact_date_semantics, u.source_contract,
-  'FACT_SKU_DAILY_V2' contract_version
+  'FACT_SKU_DAILY_V1' contract_version
 FROM u LEFT JOIN pm ON pm.internal_sku = u.internal_sku;

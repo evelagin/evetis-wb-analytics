@@ -50,7 +50,8 @@
       "cadence": "перед слиянием изменения в области scope и после каждого развёртывания",
       "source_contract": "docs/SCALE1_FACT_SKU_DAILY_2026-09-20.md",
       "business_rule_reference": "docs/ozon/OZON_PNL_POLICY_V1.md, docs/ozon/OZON_FINANCE_TAXONOMY_V1.md",
-      "provenance": "SCALE 1; пороги согласованы владельцем при приёмке 2026-09-20, здесь не изобретены"
+      "provenance": "SCALE 1; пороги согласованы владельцем при приёмке 2026-09-20, здесь не изобретены",
+      "pending_deploy_note": "UBR-010: файл проверок приведён к контракту FACT_SKU_DAILY_V2 и опережает production. До развёртывания исполнять через tools/scale1_predeploy_render.py; против живых объектов набор будет красным, и это ожидаемо, а не дефект."
     },
     {
       "suite": "wb_sku_performance_v2",
@@ -500,6 +501,48 @@
           "observed_2026_09_21": "FAIL (208 против 210 карточек)"
         }
       }
+    },
+    {
+      "suite": "promotion_l3",
+      "title": "UBR-010: перенос начисленного продвижения Ozon на слой L3",
+      "gate": true,
+      "severity": "CRITICAL",
+      "domain": "unit_economics",
+      "marketplace": [
+        "OZON"
+      ],
+      "pipelines": [
+        "ozon_finance_accrual",
+        "mart"
+      ],
+      "layer": "mart",
+      "adapter": "check_blocks",
+      "id_prefix": "",
+      "status_column": "status",
+      "execution_mode": "read_only_select",
+      "expected_result": "all_checks_pass",
+      "owner": "evelagin",
+      "timeout_seconds": 300,
+      "files": [
+        "sql/scale1/promotion_l3_reconciliation.sql"
+      ],
+      "scope": [
+        "ozon_mart.FCT_OZON_SKU_PNL_DAILY",
+        "ozon_mart.FCT_OZON_SKU_PNL_MONTHLY",
+        "ozon_mart.FCT_OZON_PNL_MONTHLY",
+        "evetis_mart.FACT_SKU_DAILY"
+      ],
+      "dimensions": [
+        "reconciliation",
+        "identities",
+        "no_double_counting",
+        "regression"
+      ],
+      "cadence": "перед слиянием изменения в области scope и после развёртывания",
+      "source_contract": "docs/ozon/OZON_SKU_PROMOTION_CLASSIFICATION_2026-09-22.md",
+      "business_rule_reference": "UBR-010",
+      "provenance": "Фикстура сверки 10 428,67 ₽ измерена на первичных начислениях; пороги не изобретены, а выведены из решения владельца от 2026-09-22",
+      "pending_deploy_note": "Опережает production: до развёртывания исполнять через tools/scale1_predeploy_render.py."
     }
   ],
   "backlog": {

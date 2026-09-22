@@ -1,4 +1,9 @@
 -- ============================================================================
+-- ОТКАТ UBR-010 · восстановление определения ДО переноса продвижения на слой L3.
+-- Тело взято дословно из Git, коммит 52c9d6eefd4b78681effb49c9a80ecff76101060 (состояние до изменения).
+-- Применять в порядке, обратном развёртыванию. Данных не удаляет: это вью.
+-- ============================================================================
+-- ============================================================================
 -- CANONICAL CURRENT DEFINITION — ozon_mart.FCT_OZON_SKU_PNL_DAILY (VIEW)
 -- Git-first object (SCALE 1, 2026-09-20): not in production until deployed. Rules:
 -- sql/current/README.md. Metadata: MANIFEST.json.
@@ -27,18 +32,6 @@
 --     попадали НИ В ОДНУ корзину и молча терялись (−10 428,67 ₽ за всю историю). Это маркетинг,
 --     а не логистика, поэтому отдельная корзина, а не досыпка в logistics_rub. От CPC-рекламы
 --     (ad_spend_attributed_rub) отличается источником: это факт начисления, а не атрибуция.
---
--- 🔴 UBR-010 (решение владельца 2026-09-22): sku_promotion_rub — самостоятельный фактически
---   начисленный расход на продвижение, СЛОЙ L3. Он НЕ уменьшает выручку, НЕ входит в
---   other_direct_marketplace_costs_rub и НЕ смешивается с ad_spend_attributed_rub.
---   Поэтому он вычитается ВМЕСТЕ с рекламой, ПОСЛЕ contribution_before_ads_rub, а не внутри него.
---   Основание: комиссия Ozon начисляется на полную цену реализации (84 из 84 отправлений),
---   выплата = цена − комиссия без вычета продвижения (84 из 84), тождество цены
---   «оплатил покупатель + баллы + соинвестирование = цена продавца» выполняется без него
---   (0 нарушений). Разбор: docs/ozon/OZON_SKU_PROMOTION_CLASSIFICATION_2026-09-22.md.
---   До 2026-09-22 (Gate 5L) он вычитался внутри contribution_before_ads_rub, что противоречило
---   и OZON_FINANCE_TAXONOMY_V1 (PROMOTION → L3), и магазинной витрине FCT_OZON_PNL_MONTHLY,
---   где эти же типы уже учитывались в advertising_rub на L3.
 --
 -- Тип операции (Gate 5K) — две несводимые хозяйственные формы, различаются ДО арифметики:
 --   MARKETPLACE_SALE — агентская реализация: выручка продавца, комиссия Ozon, эквайринг;
@@ -161,8 +154,8 @@ SELECT j.fact_date, j.internal_sku,
   j.direct_variable_marketplace_costs_rub, j.other_direct_marketplace_costs_rub,
   j.product_cogs_rub, j.cogs_missing_qty, j.sku_promotion_rub,
   j.seller_base_revenue_rub - j.product_cogs_rub - j.commission_rub
-    - j.direct_variable_marketplace_costs_rub
-    - j.other_direct_marketplace_costs_rub contribution_before_ads_rub,
+    - j.direct_variable_marketplace_costs_rub - j.other_direct_marketplace_costs_rub
+    - j.sku_promotion_rub contribution_before_ads_rub,
   j.ad_spend_attributed_rub,
   j.seller_base_revenue_rub - j.product_cogs_rub - j.commission_rub
     - j.direct_variable_marketplace_costs_rub - j.other_direct_marketplace_costs_rub

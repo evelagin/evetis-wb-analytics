@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "purpose": "C17 historical-definition guard. Lists every file OUTSIDE sql/current/ that is known and reviewed to CREATE an object managed by sql/current/, with the exact count per object. These are historical migrations: evidence of how production got here, not current definitions, and never to be re-applied over sql/current/. A new file, or an additional CREATE of a canonical object, fails CI until it is reviewed and added here. The guard does not validate historical SQL correctness or parity.",
+  "purpose": "C17 historical-definition guard. Lists every file OUTSIDE sql/current/ that is known and reviewed to CREATE an object managed by sql/current/, with the exact count per object. These are historical migrations: evidence of how production got here, not current definitions, and never to be re-applied over sql/current/. A new file, or an additional CREATE of a canonical object, fails CI until it is reviewed and added here. The guard does not validate historical SQL correctness or parity. Файлы отката UBR-010 внесены осознанно: они содержат ПРЕЖНЕЕ определение канонического объекта и существуют ровно для отмены миграции продвижения. Повторно поверх sql/current их не применяют; после успешного развёртывания и снятия снимка каталог sql/ozon/promotion_l3_2026-09-22/ подлежит ретайру вместе с этими записями.",
   "entries": [
     {
       "path": "sql/ozon/stage3_4c_ozon_mart.sql",
@@ -29,6 +29,30 @@
         "ozon_mart.V_OZON_SKU_CURRENT_TARIFF": 1,
         "ozon_mart.V_OZON_SKU_FORWARD_ECONOMICS_CURRENT": 1,
         "ozon_mart.V_OZON_TARIFF_SOURCE_HEALTH": 1
+      }
+    },
+    {
+      "path": "sql/ozon/promotion_l3_2026-09-22/rollback_FACT_SKU_DAILY.sql",
+      "definitions": {
+        "evetis_mart.FACT_SKU_DAILY": 1
+      }
+    },
+    {
+      "path": "sql/ozon/promotion_l3_2026-09-22/rollback_FCT_OZON_SKU_PNL_DAILY.sql",
+      "definitions": {
+        "ozon_mart.FCT_OZON_SKU_PNL_DAILY": 1
+      }
+    },
+    {
+      "path": "sql/ozon/promotion_l3_2026-09-22/rollback_FCT_OZON_SKU_PNL_MONTHLY.sql",
+      "definitions": {
+        "ozon_mart.FCT_OZON_SKU_PNL_MONTHLY": 1
+      }
+    },
+    {
+      "path": "sql/ozon/promotion_l3_2026-09-22/rollback_V_OZON_SKU_PNL_DAILY_OPERATIONAL.sql",
+      "definitions": {
+        "ozon_mart.V_OZON_SKU_PNL_DAILY_OPERATIONAL": 1
       }
     }
   ]
