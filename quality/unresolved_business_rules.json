@@ -1,7 +1,11 @@
 {
   "registry_version": 1,
   "comment": "Нерешённые бизнес-правила: места, где приёмочный артефакт не даёт однозначного машинного вердикта и ответ обязан дать владелец. Правило попадает сюда ТОЛЬКО с доказательством — запросом и наблюдёнными значениями. Угадывать порог запрещено: неверный порог хуже отсутствующего, потому что выглядит как проверка.",
-  "status_values": ["open", "answered", "withdrawn"],
+  "status_values": [
+    "open",
+    "answered",
+    "withdrawn"
+  ],
   "rules": [
     {
       "id": "UBR-001",
@@ -10,8 +14,10 @@
       "severity": "HIGH",
       "domain": "operations",
       "source_artifact": "sql/control_tower/ct_phase11_validation.sql:54 (T29), sql/control_tower/ct_phase12_validation.sql:66 (T40)",
-      "blocked_checks": ["CTOWN__T29_FAILED_SKU_CONTROL_TABLE_DOES_NOT_RECONCILE_WITH_OWNER_H",
-                         "CTOWN__T40_FAILED_TOTALS_DRIFTED_BETWEEN_SKU_TABLE_BRIEF_AND_OWNER_"],
+      "blocked_checks": [
+        "CTOWN__T29_FAILED_SKU_CONTROL_TABLE_DOES_NOT_RECONCILE_WITH_OWNER_H",
+        "CTOWN__T40_FAILED_TOTALS_DRIFTED_BETWEEN_SKU_TABLE_BRIEF_AND_OWNER_"
+      ],
       "what_is_unknown": "Должен ли экран «контроль SKU» показывать SKU, который продаётся, но отсутствует в активном плане?",
       "evidence": {
         "measured_at": "2026-09-21",
@@ -30,7 +36,9 @@
       "severity": "HIGH",
       "domain": "cogs",
       "source_artifact": "sql/ref/pr_ref_cogs_validation.sql (проверка резолвера на дату 9999-12-31)",
-      "blocked_checks": ["PR_REF_COGS_VALIDATION__9999_12_31"],
+      "blocked_checks": [
+        "PR_REF_COGS_VALIDATION__9999_12_31"
+      ],
       "what_is_unknown": "Ожидаемая себестоимость 219 ₽ задана, фактический резолв — NULL («нет действующего интервала, fail-closed by design»). Это снятый с продажи SKU или пробел в справочнике?",
       "evidence": {
         "measured_at": "2026-09-21",
@@ -47,7 +55,10 @@
       "severity": "MEDIUM",
       "domain": "dashboard_contract",
       "source_artifact": "sql/dash/dashboard_contract_v1_validation.sql (C12), sql/dash/dashboard_contract_v2_validation.sql (D16)",
-      "blocked_checks": ["DASHBOARD_CONTRACT_V1_VALIDATION__C12", "DASHBOARD_CONTRACT_V2_VALIDATION__D16"],
+      "blocked_checks": [
+        "DASHBOARD_CONTRACT_V1_VALIDATION__C12",
+        "DASHBOARD_CONTRACT_V2_VALIDATION__D16"
+      ],
       "what_is_unknown": "Вердикт этих гейтов — литерал «СВЕРИТЬ С BASELINE ДО ВЫКАТА». Baseline нигде не зафиксирован машиночитаемо.",
       "evidence": {
         "measured_at": "2026-09-21",
@@ -63,7 +74,10 @@
       "severity": "MEDIUM",
       "domain": "dashboard_contract",
       "source_artifact": "sql/dash/dashboard_contract_v1_validation.sql (C16), sql/dash/dashboard_contract_v2_validation.sql (D12)",
-      "blocked_checks": ["DASHBOARD_CONTRACT_V1_VALIDATION__C16", "DASHBOARD_CONTRACT_V2_VALIDATION__D12"],
+      "blocked_checks": [
+        "DASHBOARD_CONTRACT_V1_VALIDATION__C16",
+        "DASHBOARD_CONTRACT_V2_VALIDATION__D12"
+      ],
       "what_is_unknown": "Условие требует last7 > 0; наблюдается 0. Неизвестно, изменился ли бизнес-факт (величина законно обнулилась) или сломался слой.",
       "evidence": {
         "measured_at": "2026-09-21",
@@ -79,9 +93,14 @@
       "severity": "LOW",
       "domain": "dashboard_contract",
       "source_artifact": "sql/dash/dashboard_contract_v2_validation.sql (D9)",
-      "blocked_checks": ["DASHBOARD_CONTRACT_V2_VALIDATION__D9"],
+      "blocked_checks": [
+        "DASHBOARD_CONTRACT_V2_VALIDATION__D9"
+      ],
       "what_is_unknown": "Контракт дашборда запрещает превращать NULL в 0 в витринных вью (NULL = «не покрыто», 0 = наблюдаемый ноль). В V_DASH_KPI_DAILY найдено одно такое место, allowed_exception=0.",
-      "evidence": {"measured_at": "2026-09-21", "observation": "table_name=V_DASH_KPI_DAILY, ifnull_zero=1, coalesce_zero=0, allowed_exception=0"},
+      "evidence": {
+        "measured_at": "2026-09-21",
+        "observation": "table_name=V_DASH_KPI_DAILY, ifnull_zero=1, coalesce_zero=0, allowed_exception=0"
+      },
       "why_not_automatable": "Разрешённое исключение — это решение о смысле метрики, а не о синтаксисе.",
       "minimal_answer_required": "Внести это место в список разрешённых исключений либо убрать IFNULL из вью."
     },
@@ -92,9 +111,14 @@
       "severity": "MEDIUM",
       "domain": "advertising",
       "source_artifact": "sql/ddl/wb_raw_funnel_validation.sql (T5_opens_ge_ad_clicks)",
-      "blocked_checks": ["WB_RAW_FUNNEL_VALIDATION__T1_VIEW_GRAIN"],
+      "blocked_checks": [
+        "WB_RAW_FUNNEL_VALIDATION__T1_VIEW_GRAIN"
+      ],
       "what_is_unknown": "Инвариант «открытий карточки не меньше рекламных кликов» нарушен на 2 строках. Источник данных — WB; неизвестно, дефект это загрузки или расхождение самого источника.",
-      "evidence": {"measured_at": "2026-09-21", "observation": "test=T5_opens_ge_ad_clicks, bad=2 (остальные 5 тестов файла — PASS)"},
+      "evidence": {
+        "measured_at": "2026-09-21",
+        "observation": "test=T5_opens_ge_ad_clicks, bad=2 (остальные 5 тестов файла — PASS)"
+      },
       "why_not_automatable": "Нужно решение, считать ли расхождение источника дефектом платформы или допустимым свойством WB.",
       "minimal_answer_required": "Допустимо ли нарушение этого инварианта, и если да — с каким порогом?"
     },
@@ -105,9 +129,14 @@
       "severity": "MEDIUM",
       "domain": "advertising",
       "source_artifact": "sql/mart/pr_ad_billing_classification_validation.sql (A1)",
-      "blocked_checks": ["PR_AD_BILLING_CLASSIFICATION_VALIDATION__0"],
+      "blocked_checks": [
+        "PR_AD_BILLING_CLASSIFICATION_VALIDATION__0"
+      ],
       "what_is_unknown": "Строка отдаёт actual=378, expected=378 и при этом verdict=FAIL: выражение вердикта сравнивает не те величины, которые выводит.",
-      "evidence": {"measured_at": "2026-09-21", "observation": "check_name='A1 ровно один класс на каждую каноническую операцию', actual=378, expected=378, verdict=FAIL; 1 из 6 строк не PASS"},
+      "evidence": {
+        "measured_at": "2026-09-21",
+        "observation": "check_name='A1 ровно один класс на каждую каноническую операцию', actual=378, expected=378, verdict=FAIL; 1 из 6 строк не PASS"
+      },
       "why_not_automatable": "Прежде чем чинить, нужно знать, какое из двух утверждений верно — выведенные числа или условие вердикта. Это вопрос к автору контракта.",
       "minimal_answer_required": "Что именно должно сравниваться в A1?"
     },
@@ -120,9 +149,32 @@
       "source_artifact": "sql/mart/ads_spend_stage3b_validation.sql, sql/mart/pr_mart2a_finance_longform_validation.sql, sql/mart/pr_mart2b_sku_daily_validation.sql, sql/mart3/pr_mart3b_validation.sql, sql/raw/adv_costs_snapshot_validation.sql",
       "blocked_checks": [],
       "what_is_unknown": "Файлы выводят величины, но нигде не выражают, какое значение считается приемлемым. Условие приёмки существовало в голове или в документе этапа.",
-      "evidence": {"measured_at": "2026-09-21", "observation": "ни одного ASSERT, ни одной колонки-вердикта, ни одного литерала PASS"},
+      "evidence": {
+        "measured_at": "2026-09-21",
+        "observation": "ни одного ASSERT, ни одной колонки-вердикта, ни одного литерала PASS"
+      },
       "why_not_automatable": "Вывести порог из текущих данных — значит закрепить сегодняшнее состояние как эталон, включая возможный дефект.",
       "minimal_answer_required": "Для каждого файла: какое условие означало «принято» на момент сдачи этапа? Достаточно одной строки на файл."
+    },
+    {
+      "id": "UBR-009",
+      "title": "Нет прецедента порога свежести для конвейера с недельной каденцией",
+      "status": "open",
+      "severity": "LOW",
+      "domain": "observability",
+      "source_artifact": "sql/ops/phase2_health/d1_register_ozon_pipelines.sql (строка ozon_clusters)",
+      "blocked_checks": [
+        "ozon_clusters/OZ2_OZON_INGESTION_STALE"
+      ],
+      "what_is_unknown": "Через сколько после пропущенного недельного прогона кластеров Ozon загрузку следует считать просроченной.",
+      "evidence": {
+        "measured_at": "2026-09-22",
+        "observation": "В wb_ops.OPS_PIPELINE_REGISTRY нет ни одного конвейера с cadence_type = WEEKLY. Значения freshness_sla_minutes по типам: DAILY {1200, 2160, 4320}, MULTI_DAILY {2160}, HOURLY {240}, INTERVAL_WORKER {45}, CHILD_AFTER_PARENT {2160, 2880}.",
+        "why_formula_rejected": "Прежняя редакция манифеста выводила порог как «каденция × 1,5». Проверка по реестру формулу опровергла: она совпадает только с суточными (1440 × 1,5 = 2160) и расходится со всеми остальными — sales 240 при 60 × 1,5 = 90, wb_prices_observer 45 при 20 × 1,5 = 30, mart 2160 при каденции 4 раза в сутки. Формула удалена как недоказанная.",
+        "applied_decision": "ozon_clusters внесён с freshness_sla_minutes = NULL; проверка OZ2 такие строки пропускает. Проверка исхода прогона OZ1 работает и без порога."
+      },
+      "why_not_automatable": "Порог свежести — утверждение о том, какой простой загрузки считается приемлемым. Вывести его из данных значит закрепить текущее поведение как норму, включая возможный дефект.",
+      "minimal_answer_required": "Одно число в минутах для ozon_clusters (кластеры складов, каденция раз в неделю, criticality LOW), либо подтверждение, что проверка свежести этому конвейеру не нужна."
     }
   ]
 }

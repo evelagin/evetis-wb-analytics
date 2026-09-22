@@ -18,9 +18,11 @@ FROM `project-fa311fc0-4d87-4781-986.wb_ops.OPS_PIPELINE_REGISTRY`
 WHERE pipeline_id NOT LIKE 'ozon%';
 
 -- @check D3_3_NEW_CHECKS_PRESENT
--- Ожидается 11 OZ1 + 11 OZ2 + H7 + H8 + H9 = 25 новых scope_id.
+-- Ожидается 11 OZ1 + 10 OZ2 + H7 + H8 + H9 = 24 новых scope_id.
+-- OZ2 на единицу меньше: у ozon_clusters (WEEKLY) порога свежести нет, и проверка
+-- сознательно не эмитируется — см. UBR-009.
 SELECT COUNT(DISTINCT scope_id) AS new_checks,
-       IF(COUNT(DISTINCT scope_id) = 25, 'PASS', 'FAIL') AS status
+       IF(COUNT(DISTINCT scope_id) = 24, 'PASS', 'FAIL') AS status
 FROM `project-fa311fc0-4d87-4781-986.wb_ops.OPS_HEALTH_STATE`
 WHERE scope = 'PIPELINE_CHECK'
   AND (scope_id LIKE '%/OZ1_%' OR scope_id LIKE '%/OZ2_%'

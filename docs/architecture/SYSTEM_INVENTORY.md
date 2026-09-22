@@ -2,21 +2,21 @@
 
 <!-- СГЕНЕРИРОВАНО tools/render_architecture_docs.py из docs/architecture/system_inventory.json. Правки в этом файле будут затёрты: меняй генератор или снимок. -->
 
-**Снимок:** 2026-09-21T05:56:56Z · **Проект:** `project-fa311fc0-4d87-4781-986` · **Регион:** EU · собран только чтением (5 запроса к BigQuery).
+**Снимок:** 2026-09-22T04:35:09Z · **Проект:** `project-fa311fc0-4d87-4781-986` · **Регион:** EU · собран только чтением (6 запроса к BigQuery).
 
 ## Итого
 
 | Величина | Значение |
 |---|---|
 | Датасетов | 10 |
-| Объектов BigQuery | 283 |
+| Объектов BigQuery | 287 |
 | — таблиц | 133 |
-| — вью | 150 |
-| Процедур и функций | 22 |
-| Рёбер зависимостей (из тел вью) | 486 |
-| Вью с каноническим Git-определением (`sql/current`) | 14 |
+| — вью | 154 |
+| Процедур и функций | 23 |
+| Рёбер зависимостей (из тел вью) | 503 |
+| Вью с каноническим Git-определением (`sql/current`) | 18 |
 | Вью **без** канонического определения | 136 |
-| Ресурсов Terraform | 132 |
+| Ресурсов Terraform | 137 |
 | Файлов Apps Script (production, вне CI) | 108 |
 
 ## Датасеты
@@ -27,7 +27,7 @@
 | `evetis_mart` | shared | 0 | 1 |
 | `evetis_ops` | shared | 10 | 27 |
 | `evetis_ref` | shared | 27 | 2 |
-| `ozon_mart` | ozon | 0 | 13 |
+| `ozon_mart` | ozon | 0 | 17 |
 | `ozon_raw` | ozon | 15 | 0 |
 | `ozon_stg` | ozon | 0 | 0 |
 | `wb_mart` | wb | 27 | 70 |
@@ -42,82 +42,82 @@
 
 | Объект | Слой | Строк | Размер | Изменена |
 |---|---|---:|---:|---|
-| `wb_mart.EXECUTIVE_V2_BUILD_LOG` | mart | 77 | 7.9 KB | 2026-09-21T05:11:30Z |
-| `wb_mart.EXECUTIVE_V2_DAILY` | mart | 747 | 429.3 KB | 2026-09-21T05:11:26Z |
-| `wb_mart.FACT_ADS_COSTS_DAILY` | mart | 1960 | 248.8 KB | 2026-09-21T04:02:55Z |
-| `wb_mart.FACT_ADS_COSTS_DAILY__BUILD` | mart | 1960 | 248.8 KB | 2026-09-21T04:02:13Z |
-| `wb_mart.FACT_ADS_SKU_DAILY` | mart | 6043 | 1.1 MB | 2026-09-21T04:02:50Z |
-| `wb_mart.FACT_ADS_SKU_DAILY__BUILD` | mart | 6043 | 1.1 MB | 2026-09-21T04:02:03Z |
-| `wb_mart.FACT_FINANCE` | mart | 206965 | 100.0 MB | 2026-09-21T04:02:44Z |
-| `wb_mart.FACT_FINANCE__BUILD` | mart | 206965 | 100.0 MB | 2026-09-21T04:01:40Z |
-| `wb_mart.FACT_ORDERS` | mart | 4786 | 1.6 MB | 2026-09-21T04:02:23Z |
-| `wb_mart.FACT_ORDERS__BUILD` | mart | 4786 | 1.6 MB | 2026-09-21T04:01:01Z |
-| `wb_mart.FACT_SALES` | mart | 4460 | 1.6 MB | 2026-09-21T04:02:28Z |
-| `wb_mart.FACT_SALES__BUILD` | mart | 4460 | 1.6 MB | 2026-09-21T04:01:13Z |
-| `wb_mart.FACT_STOCKS_SNAPSHOT` | mart | 6379 | 1.4 MB | 2026-09-21T04:02:33Z |
+| `wb_mart.EXECUTIVE_V2_BUILD_LOG` | mart | 93 | 9.4 KB | 2026-09-22T04:11:27Z |
+| `wb_mart.EXECUTIVE_V2_DAILY` | mart | 748 | 432.6 KB | 2026-09-22T04:11:24Z |
+| `wb_mart.FACT_ADS_COSTS_DAILY` | mart | 1963 | 249.2 KB | 2026-09-22T04:03:23Z |
+| `wb_mart.FACT_ADS_COSTS_DAILY__BUILD` | mart | 1963 | 249.2 KB | 2026-09-22T04:02:29Z |
+| `wb_mart.FACT_ADS_SKU_DAILY` | mart | 6053 | 1.1 MB | 2026-09-22T04:03:04Z |
+| `wb_mart.FACT_ADS_SKU_DAILY__BUILD` | mart | 6053 | 1.1 MB | 2026-09-22T04:02:17Z |
+| `wb_mart.FACT_FINANCE` | mart | 207029 | 100.0 MB | 2026-09-22T04:02:58Z |
+| `wb_mart.FACT_FINANCE__BUILD` | mart | 207029 | 100.0 MB | 2026-09-22T04:01:51Z |
+| `wb_mart.FACT_ORDERS` | mart | 4798 | 1.6 MB | 2026-09-22T04:02:40Z |
+| `wb_mart.FACT_ORDERS__BUILD` | mart | 4798 | 1.6 MB | 2026-09-22T04:01:06Z |
+| `wb_mart.FACT_SALES` | mart | 4474 | 1.6 MB | 2026-09-22T04:02:44Z |
+| `wb_mart.FACT_SALES__BUILD` | mart | 4474 | 1.6 MB | 2026-09-22T04:01:20Z |
+| `wb_mart.FACT_STOCKS_SNAPSHOT` | mart | 6398 | 1.4 MB | 2026-09-22T04:02:48Z |
 | `wb_mart.FACT_STOCKS_SNAPSHOT_BAK_20260817` | mart | 5591 | 1.2 MB | 2026-08-17T13:11:48Z |
-| `wb_mart.FACT_STOCKS_SNAPSHOT__BUILD` | mart | 6379 | 1.4 MB | 2026-09-21T04:01:20Z |
-| `wb_mart.MART_RUNS` | mart | 69 | 60.9 KB | 2026-09-21T04:04:16Z |
-| `wb_mart.MART_SKU_DAILY` | mart | 8102 | 5.3 MB | 2026-09-21T04:04:05Z |
+| `wb_mart.FACT_STOCKS_SNAPSHOT__BUILD` | mart | 6398 | 1.4 MB | 2026-09-22T04:01:28Z |
+| `wb_mart.MART_RUNS` | mart | 70 | 61.8 KB | 2026-09-22T04:04:41Z |
+| `wb_mart.MART_SKU_DAILY` | mart | 8127 | 5.3 MB | 2026-09-22T04:04:32Z |
 | `wb_mart.REF_COST_MAP` | reference | 21 | 5.4 KB | 2026-09-16T10:32:47Z |
-| `wb_mart.SKU_PERFORMANCE_V2_BUILD_LOG` | mart | 57 | 5.8 KB | 2026-09-21T05:21:07Z |
+| `wb_mart.SKU_PERFORMANCE_V2_BUILD_LOG` | mart | 73 | 7.3 KB | 2026-09-22T04:21:12Z |
 | `wb_mart.SKU_PERFORMANCE_V2_CONFIG` | mart | 1 | 416 B | 2026-09-18T07:59:08Z |
-| `wb_mart.SKU_PERFORMANCE_V2_DAILY` | mart | 8102 | 5.2 MB | 2026-09-21T05:21:04Z |
-| `wb_mart.UNITKA_COGS_EFFECTIVE` | other | 38 | 10.2 KB | 2026-09-21T05:50:26Z |
-| `wb_mart.UNITKA_COGS_PUBLISH_LOG` | operational | 41 | 5.9 KB | 2026-09-21T05:50:29Z |
-| `wb_mart._EXECUTIVE_V2_BUILD_LOCK` | operational | 1 | 75 B | 2026-09-21T05:11:28Z |
-| `wb_mart._MART_BOOTSTRAP_LOCK` | operational | 2 | 221 B | 2026-09-21T04:04:12Z |
-| `wb_mart._SKU_PERFORMANCE_V2_BUILD_LOCK` | operational | 1 | 81 B | 2026-09-21T05:21:06Z |
-| `wb_mart._UNITKA_COGS_PUBLISH_LOCK` | operational | 1 | 80 B | 2026-09-21T05:50:27Z |
-| `wb_ops.OPS_ALERT_EVENT` | operational | 6 | 2.5 KB | 2026-09-21T03:01:08Z |
-| `wb_ops.OPS_HEALTH_STATE` | operational | 840 | 285.6 KB | 2026-09-21T03:01:01Z |
-| `wb_ops.OPS_INCIDENT` | operational | 3 | 1.3 KB | 2026-09-21T03:01:05Z |
+| `wb_mart.SKU_PERFORMANCE_V2_DAILY` | mart | 8127 | 5.2 MB | 2026-09-22T04:21:09Z |
+| `wb_mart.UNITKA_COGS_EFFECTIVE` | other | 38 | 10.2 KB | 2026-09-21T20:50:22Z |
+| `wb_mart.UNITKA_COGS_PUBLISH_LOG` | operational | 56 | 8.1 KB | 2026-09-21T20:50:26Z |
+| `wb_mart._EXECUTIVE_V2_BUILD_LOCK` | operational | 1 | 75 B | 2026-09-22T04:11:26Z |
+| `wb_mart._MART_BOOTSTRAP_LOCK` | operational | 2 | 221 B | 2026-09-22T04:04:38Z |
+| `wb_mart._SKU_PERFORMANCE_V2_BUILD_LOCK` | operational | 1 | 81 B | 2026-09-22T04:21:10Z |
+| `wb_mart._UNITKA_COGS_PUBLISH_LOCK` | operational | 1 | 80 B | 2026-09-21T20:50:24Z |
+| `wb_ops.OPS_ALERT_EVENT` | operational | 6 | 2.5 KB | 2026-09-22T04:33:10Z |
+| `wb_ops.OPS_HEALTH_STATE` | operational | 920 | 311.5 KB | 2026-09-22T04:33:03Z |
+| `wb_ops.OPS_INCIDENT` | operational | 3 | 1.3 KB | 2026-09-22T04:33:07Z |
 | `wb_ops.OPS_METRIC_COVERAGE` | other | 8 | 2.0 KB | 2026-09-02T17:39:51Z |
 | `wb_ops.OPS_METRIC_COVERAGE_GAPS` | other | 8 | 2.3 KB | 2026-09-02T17:39:52Z |
-| `wb_ops.OPS_PIPELINE_REGISTRY` | other | 16 | 8.4 KB | 2026-09-08T10:31:50Z |
-| `wb_ops.UNITKA_ENGINE_RUNS` | operational | 33 | 152.1 KB | 2026-09-20T18:23:36Z |
-| `wb_ops.UNITKA_INTEGRITY_ISSUES` | other | 439 | 214.2 KB | 2026-09-20T18:23:34Z |
+| `wb_ops.OPS_PIPELINE_REGISTRY` | other | 27 | 12.9 KB | 2026-09-22T04:31:49Z |
+| `wb_ops.UNITKA_ENGINE_RUNS` | operational | 35 | 165.1 KB | 2026-09-21T09:31:52Z |
+| `wb_ops.UNITKA_INTEGRITY_ISSUES` | other | 540 | 257.9 KB | 2026-09-21T09:31:51Z |
 | `wb_ops.UNITKA_REPAIR_LEDGER` | other | 9 | 3.7 KB | 2026-09-20T13:18:20Z |
-| `wb_raw.FINANCE_LOADER_RUNS` | operational | 183 | 17.1 KB | 2026-09-21T04:29:33Z |
-| `wb_raw.FINANCE_REPORT_LOADS` | other | 122 | 66.4 KB | 2026-09-21T04:29:30Z |
-| `wb_raw.FINANCE_WEEK_RECON` | other | 126 | 11.3 KB | 2026-09-14T09:27:31Z |
-| `wb_raw.FINANCE_WEEK_STATUS` | other | 20 | 826 B | 2026-09-21T04:26:17Z |
-| `wb_raw.INGEST_RUNS` | operational | 2380 | 273.7 KB | 2026-09-21T05:32:01Z |
-| `wb_raw.LOADER_RUNS` | operational | 1200 | 455.0 KB | 2026-09-21T05:41:11Z |
-| `wb_raw.RAW_WB_ADV_BOOSTER_STATS` | raw | 5025 | 931.2 KB | 2026-09-21T02:11:17Z |
-| `wb_raw.RAW_WB_ADV_CAMPAIGNS` | raw | 29615 | 17.6 MB | 2026-09-21T02:07:45Z |
-| `wb_raw.RAW_WB_ADV_CAMPAIGN_STATS` | raw | 54842 | 15.2 MB | 2026-09-21T02:11:22Z |
-| `wb_raw.RAW_WB_ADV_COSTS` | raw | 12743 | 5.3 MB | 2026-09-21T02:08:03Z |
-| `wb_raw.RAW_WB_ADV_COSTS_RUNS` | raw | 50 | 8.3 KB | 2026-09-21T02:08:06Z |
-| `wb_raw.RAW_WB_ADV_QUERY_BIDS` | raw | 3745 | 1.3 MB | 2026-09-21T02:11:44Z |
-| `wb_raw.RAW_WB_ADV_QUERY_BIDS_RUNS` | raw | 37 | 5.5 KB | 2026-09-21T02:11:48Z |
-| `wb_raw.RAW_WB_ADV_QUERY_STATS` | raw | 55409 | 20.7 MB | 2026-09-21T02:12:11Z |
-| `wb_raw.RAW_WB_ADV_QUERY_STATS_RUNS` | raw | 310 | 50.7 KB | 2026-09-21T02:12:14Z |
+| `wb_raw.FINANCE_LOADER_RUNS` | operational | 186 | 17.4 KB | 2026-09-22T04:27:52Z |
+| `wb_raw.FINANCE_REPORT_LOADS` | other | 125 | 68.0 KB | 2026-09-22T04:27:49Z |
+| `wb_raw.FINANCE_WEEK_RECON` | other | 140 | 12.5 KB | 2026-09-21T09:27:34Z |
+| `wb_raw.FINANCE_WEEK_STATUS` | other | 20 | 880 B | 2026-09-22T04:26:32Z |
+| `wb_raw.INGEST_RUNS` | operational | 2427 | 279.1 KB | 2026-09-22T04:32:24Z |
+| `wb_raw.LOADER_RUNS` | operational | 1274 | 483.0 KB | 2026-09-22T04:21:00Z |
+| `wb_raw.RAW_WB_ADV_BOOSTER_STATS` | raw | 5069 | 939.3 KB | 2026-09-22T02:11:14Z |
+| `wb_raw.RAW_WB_ADV_CAMPAIGNS` | raw | 30046 | 17.8 MB | 2026-09-22T02:07:50Z |
+| `wb_raw.RAW_WB_ADV_CAMPAIGN_STATS` | raw | 55436 | 15.3 MB | 2026-09-22T02:11:17Z |
+| `wb_raw.RAW_WB_ADV_COSTS` | raw | 12833 | 5.3 MB | 2026-09-22T02:08:07Z |
+| `wb_raw.RAW_WB_ADV_COSTS_RUNS` | raw | 51 | 8.4 KB | 2026-09-22T02:08:11Z |
+| `wb_raw.RAW_WB_ADV_QUERY_BIDS` | raw | 3848 | 1.4 MB | 2026-09-22T02:11:42Z |
+| `wb_raw.RAW_WB_ADV_QUERY_BIDS_RUNS` | raw | 38 | 5.6 KB | 2026-09-22T02:11:46Z |
+| `wb_raw.RAW_WB_ADV_QUERY_STATS` | raw | 55520 | 20.8 MB | 2026-09-22T02:12:19Z |
+| `wb_raw.RAW_WB_ADV_QUERY_STATS_RUNS` | raw | 312 | 51.0 KB | 2026-09-22T02:12:23Z |
 | `wb_raw.RAW_WB_ADV_SEARCH_CLUSTERS` | raw | 44 | 15.2 KB | 2026-07-11T20:14:07Z |
-| `wb_raw.RAW_WB_FINANCE` | raw | 211904 | 334.7 MB | 2026-09-21T04:29:25Z |
-| `wb_raw.RAW_WB_FUNNEL_DAILY` | raw | 1750 | 971.2 KB | 2026-09-20T06:31:38Z |
+| `wb_raw.RAW_WB_FINANCE` | raw | 212294 | 335.7 MB | 2026-09-22T04:27:44Z |
+| `wb_raw.RAW_WB_FUNNEL_DAILY` | raw | 1925 | 1.0 MB | 2026-09-21T06:30:59Z |
 | `wb_raw.RAW_WB_FUNNEL_XLSX_BACKFILL` | raw | 65 | 29.8 KB | 2026-09-11T21:21:41Z |
 | `wb_raw.RAW_WB_KIZ_SUPPLY` | raw | 3068 | 521.3 KB | 2026-08-24T15:59:34Z |
-| `wb_raw.RAW_WB_ORDERS` | raw | 5543 | 2.6 MB | 2026-09-20T23:32:13Z |
-| `wb_raw.RAW_WB_PAID_STORAGE` | raw | 6717 | 5.9 MB | 2026-09-20T08:45:57Z |
-| `wb_raw.RAW_WB_PAID_STORAGE__STAGE` | raw | 2657 | 2.3 MB | 2026-09-20T08:45:49Z |
-| `wb_raw.RAW_WB_PRICES` | raw | 24825 | 15.4 MB | 2026-09-21T05:41:06Z |
-| `wb_raw.RAW_WB_SALES_RETURNS` | raw | 4819 | 6.5 MB | 2026-09-20T18:23:09Z |
-| `wb_raw.RAW_WB_STOCKS` | raw | 6649 | 2.6 MB | 2026-09-21T03:23:42Z |
-| `wb_raw.RAW_WB_STOCKS_T5` | raw | 7746 | 1.8 MB | 2026-09-21T03:23:39Z |
-| `wb_raw.RAW_WB_STOCKS__CR` | raw | 4984 | 2.0 MB | 2026-09-21T03:31:23Z |
-| `wb_raw.RAW_WB_SUPPLIES` | raw | 731 | 434.8 KB | 2026-09-20T23:31:36Z |
-| `wb_raw.RAW_WB_SUPPLIES_GOODS` | raw | 910 | 400.6 KB | 2026-09-20T23:31:33Z |
+| `wb_raw.RAW_WB_ORDERS` | raw | 5570 | 2.6 MB | 2026-09-22T04:32:16Z |
+| `wb_raw.RAW_WB_PAID_STORAGE` | raw | 7040 | 6.2 MB | 2026-09-21T08:46:43Z |
+| `wb_raw.RAW_WB_PAID_STORAGE__STAGE` | raw | 2645 | 2.3 MB | 2026-09-21T08:46:28Z |
+| `wb_raw.RAW_WB_PRICES` | raw | 26525 | 16.5 MB | 2026-09-22T04:20:56Z |
+| `wb_raw.RAW_WB_SALES_RETURNS` | raw | 4833 | 6.5 MB | 2026-09-21T18:23:19Z |
+| `wb_raw.RAW_WB_STOCKS` | raw | 6668 | 2.6 MB | 2026-09-22T03:23:41Z |
+| `wb_raw.RAW_WB_STOCKS_T5` | raw | 7941 | 1.8 MB | 2026-09-22T03:23:37Z |
+| `wb_raw.RAW_WB_STOCKS__CR` | raw | 5003 | 2.0 MB | 2026-09-22T03:30:31Z |
+| `wb_raw.RAW_WB_SUPPLIES` | raw | 749 | 443.1 KB | 2026-09-21T23:31:43Z |
+| `wb_raw.RAW_WB_SUPPLIES_GOODS` | raw | 922 | 405.9 KB | 2026-09-21T23:31:40Z |
 | `wb_raw.RAW_WB_TARIFFS` | raw | 675431 | 366.2 MB | 2026-09-21T05:16:09Z |
 | `wb_raw.REF_ACTIVE_VERSION` | reference | 1 | 49 B | 2026-09-21T05:22:50Z |
 | `wb_raw.REF_SKU_MASTER_DATA` | reference | 250 | 72.9 KB | 2026-09-21T05:22:57Z |
 | `wb_raw.REF_SYNC_RUNS` | reference | 62 | 7.7 KB | 2026-09-21T05:22:55Z |
 | `wb_raw.REF_SYNC_TABLE_LOG` | reference | 62 | 5.8 KB | 2026-09-21T05:22:52Z |
-| `wb_raw.WB_FUNNEL_OBSERVATIONS` | operational | 10 | 2.4 KB | 2026-09-20T06:31:40Z |
-| `wb_raw.WB_PRICES_OBSERVATIONS` | operational | 993 | 245.8 KB | 2026-09-21T05:41:09Z |
-| `wb_raw.WB_STOCKS_SNAPSHOTS` | operational | 72 | 17.7 KB | 2026-09-21T03:23:46Z |
+| `wb_raw.WB_FUNNEL_OBSERVATIONS` | operational | 11 | 2.6 KB | 2026-09-21T06:31:01Z |
+| `wb_raw.WB_PRICES_OBSERVATIONS` | operational | 1061 | 262.4 KB | 2026-09-22T04:20:58Z |
+| `wb_raw.WB_STOCKS_SNAPSHOTS` | operational | 73 | 18.0 KB | 2026-09-22T03:23:43Z |
 | `wb_raw.WB_STOCKS_SNAPSHOTS_BAK_20260816` | backup | 6 | 1.4 KB | 2026-08-16T11:58:43Z |
-| `wb_raw.WB_STOCKS_SNAPSHOTS__CR` | other | 57 | 10.7 KB | 2026-09-21T03:31:25Z |
+| `wb_raw.WB_STOCKS_SNAPSHOTS__CR` | other | 58 | 10.9 KB | 2026-09-22T03:30:33Z |
 | `wb_raw.WB_STORAGE_OBSERVATIONS` | operational | 0 | — | 2026-09-13T10:51:54Z |
 | `wb_raw.WB_TARIFF_OBSERVATIONS` | operational | 15 | 3.5 KB | 2026-09-21T05:16:13Z |
 
@@ -125,29 +125,29 @@
 
 | Объект | Слой | Строк | Размер | Изменена |
 |---|---|---:|---:|---|
-| `ozon_raw.OZON_INGESTION_RUNS` | operational | 306 | 53.1 KB | 2026-09-21T04:07:05Z |
-| `ozon_raw.RAW_OZON_ADS_CAMPAIGNS` | raw | 1840 | 486.6 KB | 2026-09-21T03:32:09Z |
-| `ozon_raw.RAW_OZON_ADS_EXPENSE_DAILY` | raw | 2261 | 536.3 KB | 2026-09-21T03:32:33Z |
-| `ozon_raw.RAW_OZON_ADS_SKU_DAILY` | raw | 3870 | 992.6 KB | 2026-09-21T03:38:37Z |
-| `ozon_raw.RAW_OZON_CATALOG` | raw | 400 | 192.4 KB | 2026-09-21T03:31:21Z |
+| `ozon_raw.OZON_INGESTION_RUNS` | operational | 322 | 55.9 KB | 2026-09-22T04:07:26Z |
+| `ozon_raw.RAW_OZON_ADS_CAMPAIGNS` | raw | 1932 | 511.0 KB | 2026-09-22T03:31:26Z |
+| `ozon_raw.RAW_OZON_ADS_EXPENSE_DAILY` | raw | 2272 | 539.3 KB | 2026-09-22T03:31:49Z |
+| `ozon_raw.RAW_OZON_ADS_SKU_DAILY` | raw | 3883 | 996.2 KB | 2026-09-22T03:35:28Z |
+| `ozon_raw.RAW_OZON_CATALOG` | raw | 420 | 202.0 KB | 2026-09-22T03:30:31Z |
 | `ozon_raw.RAW_OZON_CLUSTERS` | raw | 5637 | 1.3 MB | 2026-09-21T02:01:11Z |
-| `ozon_raw.RAW_OZON_FINANCE_ACCRUAL` | raw | 9642 | 2.3 MB | 2026-09-21T03:32:03Z |
-| `ozon_raw.RAW_OZON_POSTINGS_FBO` | raw | 2347 | 1.6 MB | 2026-09-21T04:01:10Z |
-| `ozon_raw.RAW_OZON_PRICES` | raw | 400 | 368.0 KB | 2026-09-21T03:31:27Z |
-| `ozon_raw.RAW_OZON_PRICE_COMMISSIONS` | raw | 4800 | 1.0 MB | 2026-09-21T03:31:32Z |
-| `ozon_raw.RAW_OZON_SELLER_INFO` | raw | 16 | 8.8 KB | 2026-09-21T03:31:38Z |
-| `ozon_raw.RAW_OZON_STOCKS` | raw | 3899 | 1.0 MB | 2026-09-21T04:00:58Z |
-| `ozon_raw.RAW_OZON_SUPPLIES` | raw | 170 | 62.8 KB | 2026-09-21T03:38:54Z |
-| `ozon_raw.RAW_OZON_SUPPLY_BUNDLES` | raw | 648 | 263.6 KB | 2026-09-21T03:42:29Z |
-| `ozon_raw.RAW_OZON_SUPPLY_ORDERS` | raw | 75 | 24.9 KB | 2026-09-21T03:38:48Z |
+| `ozon_raw.RAW_OZON_FINANCE_ACCRUAL` | raw | 9673 | 2.4 MB | 2026-09-22T03:31:19Z |
+| `ozon_raw.RAW_OZON_POSTINGS_FBO` | raw | 2357 | 1.6 MB | 2026-09-22T04:01:31Z |
+| `ozon_raw.RAW_OZON_PRICES` | raw | 420 | 389.6 KB | 2026-09-22T03:30:39Z |
+| `ozon_raw.RAW_OZON_PRICE_COMMISSIONS` | raw | 5100 | 1.1 MB | 2026-09-22T03:30:45Z |
+| `ozon_raw.RAW_OZON_SELLER_INFO` | raw | 17 | 9.3 KB | 2026-09-22T03:30:53Z |
+| `ozon_raw.RAW_OZON_STOCKS` | raw | 4101 | 1.1 MB | 2026-09-22T04:01:21Z |
+| `ozon_raw.RAW_OZON_SUPPLIES` | raw | 170 | 62.7 KB | 2026-09-22T03:35:48Z |
+| `ozon_raw.RAW_OZON_SUPPLY_BUNDLES` | raw | 648 | 263.6 KB | 2026-09-22T03:39:24Z |
+| `ozon_raw.RAW_OZON_SUPPLY_ORDERS` | raw | 75 | 24.9 KB | 2026-09-22T03:35:40Z |
 
 ### Домен `shared`
 
 | Объект | Слой | Строк | Размер | Изменена |
 |---|---|---:|---:|---|
 | `evetis_communications.communication_engine_shadow` | other | 2 | 2.6 KB | 2026-07-23T07:50:46Z |
-| `evetis_communications.communication_events` | other | 398 | 68.6 KB | 2026-09-21T05:44:08Z |
-| `evetis_communications.communications_current` | other | 95 | 117.8 KB | 2026-09-21T05:43:01Z |
+| `evetis_communications.communication_events` | other | 406 | 70.0 KB | 2026-09-21T14:06:33Z |
+| `evetis_communications.communications_current` | other | 97 | 119.9 KB | 2026-09-21T14:00:42Z |
 | `evetis_ops.CT_BUNDLE_BUILD` | reference | 0 | — | 2026-09-11T15:13:18Z |
 | `evetis_ops.CT_OPENING_FF_SNAPSHOT` | reference | 12 | 1.9 KB | 2026-09-11T15:13:24Z |
 | `evetis_ops.CT_OPENING_OZON_EVIDENCE` | reference | 9 | 926 B | 2026-09-11T15:13:27Z |
@@ -162,21 +162,21 @@
 | `evetis_ref.BAK_20260904_REF_BUNDLE_COMPONENTS` | backup | 33 | 4.5 KB | 2026-09-04T09:29:02Z |
 | `evetis_ref.BAK_20260904_REF_SKU_CHANNEL_MAP` | backup | 45 | 8.4 KB | 2026-09-04T07:54:31Z |
 | `evetis_ref.BAK_20260904_REF_SKU_COGS_HISTORY` | backup | 17 | 11.2 KB | 2026-09-04T07:54:07Z |
-| `evetis_ref.CT_ACTION_STATUS_LOG` | reference | 2 | 233 B | 2026-09-21T04:41:09Z |
-| `evetis_ref.CT_ACTUAL_DAILY` | reference | 11826 | 3.1 MB | 2026-09-21T04:40:37Z |
+| `evetis_ref.CT_ACTION_STATUS_LOG` | reference | 2 | 233 B | 2026-09-21T16:41:20Z |
+| `evetis_ref.CT_ACTUAL_DAILY` | reference | 11826 | 3.1 MB | 2026-09-21T16:40:43Z |
 | `evetis_ref.CT_BUNDLE_PLAN` | reference | 83 | 15.7 KB | 2026-09-10T06:31:17Z |
 | `evetis_ref.CT_CONFIG` | reference | 5 | 1.0 KB | 2026-09-11T12:21:55Z |
 | `evetis_ref.CT_DAILY_CURVE` | reference | 424 | 28.9 KB | 2026-09-10T06:27:10Z |
 | `evetis_ref.CT_EXPIRY_BATCH` | reference | 11 | 2.5 KB | 2026-09-10T06:28:40Z |
-| `evetis_ref.CT_INVENTORY_SNAPSHOT_DAILY` | reference | 132 | 79.6 KB | 2026-09-21T04:40:51Z |
+| `evetis_ref.CT_INVENTORY_SNAPSHOT_DAILY` | reference | 132 | 79.6 KB | 2026-09-21T16:40:56Z |
 | `evetis_ref.CT_OPEX` | reference | 20 | 1.5 KB | 2026-09-10T06:28:42Z |
-| `evetis_ref.CT_OWNER_ACTION_QUEUE` | reference | 35 | 21.2 KB | 2026-09-21T04:41:11Z |
+| `evetis_ref.CT_OWNER_ACTION_QUEUE` | reference | 35 | 21.1 KB | 2026-09-21T16:41:22Z |
 | `evetis_ref.CT_PLAN_VERSION` | reference | 1 | 746 B | 2026-09-10T12:21:24Z |
-| `evetis_ref.CT_REFRESH_LOG` | reference | 211 | 37.3 KB | 2026-09-21T04:41:14Z |
+| `evetis_ref.CT_REFRESH_LOG` | reference | 223 | 39.7 KB | 2026-09-21T16:41:25Z |
 | `evetis_ref.CT_SEASON_PLAN` | reference | 7710 | 2.4 MB | 2026-09-10T06:27:14Z |
 | `evetis_ref.CT_SEASON_PLAN_MONTHLY` | reference | 264 | 57.7 KB | 2026-09-10T06:25:47Z |
 | `evetis_ref.CT_STOCK_SNAPSHOT` | reference | 11 | 4.5 KB | 2026-09-10T06:28:44Z |
-| `evetis_ref.REF_BUNDLE_COMPONENTS` | reference | 33 | 7.8 KB | 2026-09-04T09:29:16Z |
+| `evetis_ref.REF_BUNDLE_COMPONENTS` | reference | 33 | 8.5 KB | 2026-09-21T11:14:36Z |
 | `evetis_ref.REF_COST_ADDITIONAL_LANDED` | reference | 16 | 6.3 KB | 2026-09-04T10:20:42Z |
 | `evetis_ref.REF_COST_BATCH` | reference | 7 | 2.6 KB | 2026-09-04T09:05:41Z |
 | `evetis_ref.REF_COST_BATCH_SKU` | reference | 15 | 3.1 KB | 2026-09-04T09:07:13Z |
@@ -197,6 +197,7 @@
 | `executive-v2-layer-build` | ENABLED | `10 7-23 * * *` | Europe/Moscow | bigquery_job · `CALL `wb_mart.sp_build_executive_v2_daily`('scheduler')` |
 | `ozon-daily` | ENABLED | `30 6 * * *` | Europe/Moscow | cloud_run_job |
 | `ozon-fast` | ENABLED | `0 7,13,19 * * *` | Europe/Moscow | cloud_run_job |
+| `ozon-unitka-prod` | PAUSED | `0 10 * * *` | Europe/Moscow | cloud_run_job |
 | `ozon-weekly` | ENABLED | `0 5 * * 1` | Europe/Moscow | cloud_run_job |
 | `sku-performance-v2-layer-build` | ENABLED | `20 7-23 * * *` | Europe/Moscow | bigquery_job · `CALL `wb_mart.sp_build_sku_performance_v2_daily`('scheduler')` |
 | `unitka-cogs-publication` | ENABLED | `50 7-23 * * *` | Europe/Moscow | bigquery_job · `CALL `wb_mart.sp_publish_unitka_cogs`('scheduler')` |
@@ -222,6 +223,7 @@
 | `ozon-runtime-fast` | `—` | да |
 | `ozon-runtime-ingest` | `—` | да |
 | `ozon-runtime-weekly` | `—` | да |
+| `ozon-unitka-prod` | `ozon-unitka` | **НЕТ** |
 | `unitka-engine-prod` | `unitka` | да |
 | `unitka-engine-shadow` | `unitka` | да |
 | `wb-funnel-prod` | `funnel` | да |
@@ -262,6 +264,7 @@
 | `wb_mart.sp_build_mart_sku_daily` | PROCEDURE | 2026-08-26T19:33:10Z | `wb_mart.FACT_ADS_SKU_DAILY`, `wb_mart.FACT_FINANCE`, `wb_mart.FACT_ORDERS`, `wb_mart.FACT_SALES`, `wb_mart.INFORMATION_SCHEMA`, `wb_mart.MART_SKU_DAILY` … (+5) |
 | `wb_mart.sp_build_sku_performance_v2_daily` | PROCEDURE | 2026-09-18T07:59:09Z | `wb_mart.FACT_ORDERS`, `wb_mart.FACT_SALES`, `wb_mart.INFORMATION_SCHEMA`, `wb_mart.MART_SKU_DAILY`, `wb_mart.SKU_PERFORMANCE_V2_BUILD_LOG`, `wb_mart.SKU_PERFORMANCE_V2_DAILY` … (+12) |
 | `wb_mart.sp_publish_unitka_cogs` | PROCEDURE | 2026-09-18T16:58:34Z | `evetis_ref.V_PRODUCT_COGS_EFFECTIVE`, `wb_mart.UNITKA_COGS_EFFECTIVE`, `wb_mart.UNITKA_COGS_PUBLISH_LOG`, `wb_mart._UNITKA_COGS_PUBLISH_LOCK` |
+| `wb_ops.sp_evaluate_health_ext` | PROCEDURE | 2026-09-22T04:32:17Z | `ozon_raw.OZON_INGESTION_RUNS`, `ozon_raw.RAW_OZON_`, `wb_ops.OPS_PIPELINE_REGISTRY`, `wb_ops.sp_ops_apply_health`, `wb_raw.INGEST_RUNS`, `wb_raw.RAW_WB_ORDERS` |
 | `wb_ops.sp_evaluate_pipeline_health` | PROCEDURE | 2026-09-06T16:42:19Z | `wb_mart.MART_RUNS`, `wb_mart.MART_SKU_DAILY`, `wb_mart.V_WB_FINANCE_AMOUNTS_LONG_MAPPED`, `wb_ops.OPS_PIPELINE_REGISTRY`, `wb_ops.sp_ops_apply_health`, `wb_raw.RAW_WB_ADV_QUERY_BIDS_RUNS` … (+2) |
 | `wb_ops.sp_ops_apply_health` | PROCEDURE | 2026-09-06T16:44:22Z | `wb_ops.OPS_ALERT_EVENT`, `wb_ops.OPS_HEALTH_STATE`, `wb_ops.OPS_INCIDENT` |
 

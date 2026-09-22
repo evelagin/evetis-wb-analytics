@@ -1,23 +1,23 @@
 {
  "schema_version": 1,
- "generated_at": "2026-09-21T07:09:38Z",
+ "generated_at": "2026-09-22T04:35:09Z",
  "generated_by": "tools/architecture_baseline.py",
  "project": "project-fa311fc0-4d87-4781-986",
  "location": "EU",
  "read_only": true,
  "summary": {
   "datasets": 10,
-  "objects_total": 283,
+  "objects_total": 287,
   "base_tables": 133,
-  "views": 150,
-  "routines": 22,
-  "dependency_edges": 486,
-  "views_under_canonical_sql": 14,
+  "views": 154,
+  "routines": 23,
+  "dependency_edges": 503,
+  "views_under_canonical_sql": 18,
   "views_without_canonical_sql": 136,
-  "terraform_resources": 132,
+  "terraform_resources": 137,
   "apps_script_files": 108,
   "bigquery_queries_issued": 6,
-  "objects_read_by_metabase": 170
+  "objects_read_by_metabase": 174
  },
  "datasets": {
   "evetis_communications": {
@@ -43,7 +43,7 @@
   "ozon_mart": {
    "domain": "ozon",
    "BASE TABLE": 0,
-   "VIEW": 13
+   "VIEW": 17
   },
   "ozon_raw": {
    "domain": "ozon",
@@ -143,9 +143,9 @@
     "error_message STRING NULL",
     "payload_json STRING NULL"
    ],
-   "row_count": 398,
-   "size_bytes": 70291,
-   "last_modified": "2026-09-21T05:44:08Z",
+   "row_count": 406,
+   "size_bytes": 71707,
+   "last_modified": "2026-09-21T14:06:33Z",
    "partitioned_by": null,
    "clustered_by": [],
    "depends_on": [],
@@ -187,9 +187,9 @@
     "published_at TIMESTAMP NULL",
     "updated_at TIMESTAMP NULL"
    ],
-   "row_count": 95,
-   "size_bytes": 120667,
-   "last_modified": "2026-09-21T05:43:01Z",
+   "row_count": 97,
+   "size_bytes": 122827,
+   "last_modified": "2026-09-21T14:00:42Z",
    "partitioned_by": null,
    "clustered_by": [],
    "depends_on": [],
@@ -234,7 +234,7 @@
    ],
    "row_count": 0,
    "size_bytes": 0,
-   "last_modified": "2026-09-20T10:38:01Z",
+   "last_modified": "2026-09-21T14:28:26Z",
    "partitioned_by": null,
    "clustered_by": [],
    "depends_on": [
@@ -250,7 +250,7 @@
      "last_read": "2026-09-20"
     },
     "human_or_script": {
-     "queries": 32,
+     "queries": 52,
      "last_read": "2026-09-21"
     }
    }
@@ -796,13 +796,13 @@
    ],
    "consumed_by": [],
    "external_readers": {
-    "human_or_script": {
-     "queries": 1,
-     "last_read": "2026-09-11"
-    },
     "metabase": {
      "queries": 20,
      "last_read": "2026-09-12"
+    },
+    "human_or_script": {
+     "queries": 1,
+     "last_read": "2026-09-11"
     }
    }
   },
@@ -1356,8 +1356,8 @@
      "last_read": "2026-09-14"
     },
     "human_or_script": {
-     "queries": 170,
-     "last_read": "2026-09-21"
+     "queries": 191,
+     "last_read": "2026-09-22"
     }
    }
   },
@@ -1422,8 +1422,8 @@
      "last_read": "2026-09-14"
     },
     "human_or_script": {
-     "queries": 170,
-     "last_read": "2026-09-21"
+     "queries": 191,
+     "last_read": "2026-09-22"
     }
    }
   },
@@ -1464,8 +1464,8 @@
    "consumed_by": [],
    "external_readers": {
     "human_or_script": {
-     "queries": 170,
-     "last_read": "2026-09-21"
+     "queries": 191,
+     "last_read": "2026-09-22"
     },
     "metabase": {
      "queries": 17,
@@ -1500,8 +1500,8 @@
    "consumed_by": [],
    "external_readers": {
     "human_or_script": {
-     "queries": 170,
-     "last_read": "2026-09-21"
+     "queries": 191,
+     "last_read": "2026-09-22"
     },
     "metabase": {
      "queries": 7,
@@ -1563,8 +1563,8 @@
    "consumed_by": [],
    "external_readers": {
     "human_or_script": {
-     "queries": 178,
-     "last_read": "2026-09-21"
+     "queries": 200,
+     "last_read": "2026-09-22"
     },
     "metabase": {
      "queries": 34,
@@ -1628,8 +1628,8 @@
    "consumed_by": [],
    "external_readers": {
     "human_or_script": {
-     "queries": 170,
-     "last_read": "2026-09-21"
+     "queries": 191,
+     "last_read": "2026-09-22"
     },
     "metabase": {
      "queries": 36,
@@ -1677,8 +1677,8 @@
    "consumed_by": [],
    "external_readers": {
     "human_or_script": {
-     "queries": 170,
-     "last_read": "2026-09-21"
+     "queries": 191,
+     "last_read": "2026-09-22"
     },
     "metabase": {
      "queries": 20,
@@ -1747,8 +1747,8 @@
    "consumed_by": [],
    "external_readers": {
     "human_or_script": {
-     "queries": 170,
-     "last_read": "2026-09-21"
+     "queries": 191,
+     "last_read": "2026-09-22"
     },
     "metabase": {
      "queries": 35,
@@ -1806,8 +1806,8 @@
    "consumed_by": [],
    "external_readers": {
     "human_or_script": {
-     "queries": 170,
-     "last_read": "2026-09-21"
+     "queries": 191,
+     "last_read": "2026-09-22"
     },
     "metabase": {
      "queries": 30,
@@ -1941,8 +1941,8 @@
    "consumed_by": [],
    "external_readers": {
     "human_or_script": {
-     "queries": 178,
-     "last_read": "2026-09-21"
+     "queries": 203,
+     "last_read": "2026-09-22"
     },
     "metabase": {
      "queries": 105,
@@ -2006,8 +2006,8 @@
      "last_read": "2026-09-14"
     },
     "human_or_script": {
-     "queries": 170,
-     "last_read": "2026-09-21"
+     "queries": 191,
+     "last_read": "2026-09-22"
     }
    }
   },
@@ -2438,7 +2438,7 @@
    ],
    "row_count": 2,
    "size_bytes": 233,
-   "last_modified": "2026-09-21T04:41:09Z",
+   "last_modified": "2026-09-21T16:41:20Z",
    "partitioned_by": null,
    "clustered_by": [],
    "depends_on": [],
@@ -2489,7 +2489,7 @@
    ],
    "row_count": 11826,
    "size_bytes": 3283999,
-   "last_modified": "2026-09-21T04:40:37Z",
+   "last_modified": "2026-09-21T16:40:43Z",
    "partitioned_by": "d",
    "clustered_by": [
     "marketplace",
@@ -2502,7 +2502,7 @@
    ],
    "external_readers": {
     "human_or_script": {
-     "queries": 18,
+     "queries": 23,
      "last_read": "2026-09-21"
     }
    }
@@ -2571,11 +2571,11 @@
    ],
    "external_readers": {
     "service_account": {
-     "queries": 50,
+     "queries": 53,
      "last_read": "2026-09-21"
     },
     "human_or_script": {
-     "queries": 13,
+     "queries": 15,
      "last_read": "2026-09-21"
     }
    }
@@ -2727,7 +2727,7 @@
    ],
    "row_count": 132,
    "size_bytes": 81560,
-   "last_modified": "2026-09-21T04:40:51Z",
+   "last_modified": "2026-09-21T16:40:56Z",
    "partitioned_by": "snapshot_date",
    "clustered_by": [
     "internal_sku"
@@ -2773,7 +2773,7 @@
    ],
    "external_readers": {
     "human_or_script": {
-     "queries": 10,
+     "queries": 11,
      "last_read": "2026-09-21"
     }
    }
@@ -2813,8 +2813,8 @@
     "times_seen INT64 NOT NULL"
    ],
    "row_count": 35,
-   "size_bytes": 21661,
-   "last_modified": "2026-09-21T04:41:11Z",
+   "size_bytes": 21650,
+   "last_modified": "2026-09-21T16:41:22Z",
    "partitioned_by": null,
    "clustered_by": [],
    "depends_on": [],
@@ -2823,11 +2823,11 @@
    ],
    "external_readers": {
     "service_account": {
-     "queries": 86,
+     "queries": 91,
      "last_read": "2026-09-21"
     },
     "human_or_script": {
-     "queries": 30,
+     "queries": 32,
      "last_read": "2026-09-21"
     }
    }
@@ -2878,11 +2878,11 @@
    ],
    "external_readers": {
     "human_or_script": {
-     "queries": 13,
+     "queries": 15,
      "last_read": "2026-09-21"
     },
     "service_account": {
-     "queries": 50,
+     "queries": 53,
      "last_read": "2026-09-21"
     }
    }
@@ -2904,9 +2904,9 @@
     "message STRING NULL",
     "duration_ms INT64 NULL"
    ],
-   "row_count": 212,
-   "size_bytes": 38595,
-   "last_modified": "2026-09-21T06:40:11Z",
+   "row_count": 223,
+   "size_bytes": 40651,
+   "last_modified": "2026-09-21T16:41:25Z",
    "partitioned_by": "DATE(run_ts)",
    "clustered_by": [],
    "depends_on": [],
@@ -2916,11 +2916,11 @@
    ],
    "external_readers": {
     "service_account": {
-     "queries": 50,
+     "queries": 53,
      "last_read": "2026-09-21"
     },
     "human_or_script": {
-     "queries": 68,
+     "queries": 69,
      "last_read": "2026-09-21"
     },
     "metabase": {
@@ -2977,7 +2977,7 @@
    ],
    "external_readers": {
     "human_or_script": {
-     "queries": 20,
+     "queries": 25,
      "last_read": "2026-09-21"
     }
    }
@@ -3019,7 +3019,7 @@
    "consumed_by": [],
    "external_readers": {
     "human_or_script": {
-     "queries": 11,
+     "queries": 12,
      "last_read": "2026-09-21"
     }
    }
@@ -3068,11 +3068,11 @@
    ],
    "external_readers": {
     "service_account": {
-     "queries": 50,
+     "queries": 53,
      "last_read": "2026-09-21"
     },
     "human_or_script": {
-     "queries": 25,
+     "queries": 27,
      "last_read": "2026-09-21"
     }
    }
@@ -3105,8 +3105,8 @@
     "notes STRING NULL"
    ],
    "row_count": 33,
-   "size_bytes": 7982,
-   "last_modified": "2026-09-04T09:29:16Z",
+   "size_bytes": 8694,
+   "last_modified": "2026-09-21T11:14:36Z",
    "partitioned_by": null,
    "clustered_by": [],
    "depends_on": [],
@@ -3117,7 +3117,7 @@
    ],
    "external_readers": {
     "human_or_script": {
-     "queries": 56,
+     "queries": 64,
      "last_read": "2026-09-21"
     }
    }
@@ -3203,8 +3203,8 @@
    ],
    "external_readers": {
     "human_or_script": {
-     "queries": 21,
-     "last_read": "2026-09-17"
+     "queries": 22,
+     "last_read": "2026-09-21"
     }
    }
   },
@@ -3243,8 +3243,8 @@
    ],
    "external_readers": {
     "human_or_script": {
-     "queries": 16,
-     "last_read": "2026-09-17"
+     "queries": 17,
+     "last_read": "2026-09-21"
     }
    }
   },
@@ -3337,7 +3337,7 @@
    ],
    "external_readers": {
     "human_or_script": {
-     "queries": 115,
+     "queries": 120,
      "last_read": "2026-09-21"
     },
     "metabase": {
@@ -3385,8 +3385,11 @@
     "ozon_mart.FCT_OZON_PNL_MONTHLY",
     "ozon_mart.FCT_OZON_SKU_PNL_DAILY",
     "ozon_mart.FCT_OZON_SKU_PNL_MONTHLY",
+    "ozon_mart.V_OZON_COMMISSION_POLICY",
+    "ozon_mart.V_OZON_LOGISTICS_ESTIMATOR",
     "ozon_mart.V_OZON_SKU_CURRENT_TARIFF",
     "ozon_mart.V_OZON_SKU_FORWARD_ECONOMICS_CURRENT",
+    "ozon_mart.V_OZON_SKU_PNL_DAILY_OPERATIONAL",
     "wb_mart.V_CT_ACTUAL_DAILY_LIVE",
     "wb_mart.V_CT_BUNDLE_STATUS",
     "wb_mart.V_CT_INVENTORY_TRUTH_LIVE",
@@ -3394,7 +3397,7 @@
    ],
    "external_readers": {
     "human_or_script": {
-     "queries": 408,
+     "queries": 764,
      "last_read": "2026-09-21"
     }
    }
@@ -3444,7 +3447,7 @@
    ],
    "external_readers": {
     "human_or_script": {
-     "queries": 51,
+     "queries": 52,
      "last_read": "2026-09-21"
     }
    }
@@ -3518,7 +3521,7 @@
      "last_read": "2026-08-27"
     },
     "human_or_script": {
-     "queries": 14,
+     "queries": 15,
      "last_read": "2026-09-21"
     }
    }
@@ -3568,6 +3571,7 @@
     "ozon_mart.FCT_OZON_SKU_PNL_DAILY",
     "ozon_mart.FCT_OZON_SKU_PNL_MONTHLY",
     "ozon_mart.V_OZON_SKU_CURRENT_TARIFF",
+    "ozon_mart.V_OZON_SKU_PNL_DAILY_OPERATIONAL",
     "wb_mart.V_CT_ACTUAL_DAILY_LIVE",
     "wb_mart.V_CT_CASH_CONVERSION",
     "wb_mart.V_CT_INVENTORY_TRUTH_LIVE",
@@ -3577,11 +3581,11 @@
    ],
    "external_readers": {
     "human_or_script": {
-     "queries": 184,
+     "queries": 236,
      "last_read": "2026-09-21"
     },
     "service_account": {
-     "queries": 42,
+     "queries": 56,
      "last_read": "2026-09-21"
     },
     "metabase": {
@@ -3642,12 +3646,13 @@
    ],
    "row_count": 0,
    "size_bytes": 0,
-   "last_modified": "2026-09-04T12:34:40Z",
+   "last_modified": "2026-09-21T14:27:49Z",
    "partitioned_by": null,
    "clustered_by": [],
    "depends_on": [
     "evetis_ref.REF_SKU_CHANNEL_MAP",
     "evetis_ref.V_PRODUCT_COGS_EFFECTIVE",
+    "ozon_mart.V_OZON_CIS_BUYOUT",
     "ozon_raw.RAW_OZON_ADS_EXPENSE_DAILY",
     "ozon_raw.RAW_OZON_ADS_SKU_DAILY",
     "ozon_raw.RAW_OZON_FINANCE_ACCRUAL",
@@ -3662,7 +3667,7 @@
      "last_read": "2026-09-06"
     },
     "human_or_script": {
-     "queries": 48,
+     "queries": 57,
      "last_read": "2026-09-21"
     }
    }
@@ -3674,7 +3679,7 @@
    "domain": "ozon",
    "layer": "mart",
    "type": "VIEW",
-   "columns": 20,
+   "columns": 24,
    "schema": [
     "fact_date DATE NULL",
     "internal_sku STRING NULL",
@@ -3685,6 +3690,9 @@
     "seller_base_revenue_rub NUMERIC NULL",
     "commission_rub NUMERIC NULL",
     "commission_missing_qty INT64 NULL",
+    "commission_not_applicable_qty INT64 NULL",
+    "buyout_revenue_unproven_qty INT64 NULL",
+    "buyout_revenue_unproven_rub NUMERIC NULL",
     "logistics_rub NUMERIC NULL",
     "acquiring_rub NUMERIC NULL",
     "storage_rub NUMERIC NULL",
@@ -3692,6 +3700,7 @@
     "other_direct_marketplace_costs_rub NUMERIC NULL",
     "product_cogs_rub NUMERIC NULL",
     "cogs_missing_qty INT64 NULL",
+    "sku_promotion_rub NUMERIC NULL",
     "contribution_before_ads_rub NUMERIC NULL",
     "ad_spend_attributed_rub NUMERIC NULL",
     "contribution_after_attributed_ads_rub NUMERIC NULL",
@@ -3699,27 +3708,28 @@
    ],
    "row_count": 0,
    "size_bytes": 0,
-   "last_modified": "2026-09-20T10:37:57Z",
+   "last_modified": "2026-09-21T14:28:01Z",
    "partitioned_by": null,
    "clustered_by": [],
    "depends_on": [
     "evetis_ref.REF_SKU_CHANNEL_MAP",
     "evetis_ref.V_PRODUCT_COGS_EFFECTIVE",
-    "ozon_mart.V_OZON_COMMISSION_RECOVERY",
+    "ozon_mart.V_OZON_CIS_BUYOUT",
     "ozon_raw.RAW_OZON_ADS_SKU_DAILY",
     "ozon_raw.RAW_OZON_FINANCE_ACCRUAL",
     "ozon_raw.RAW_OZON_POSTINGS_FBO"
    ],
    "consumed_by": [
-    "evetis_mart.FACT_SKU_DAILY"
+    "evetis_mart.FACT_SKU_DAILY",
+    "ozon_mart.V_OZON_SKU_PNL_DAILY_OPERATIONAL"
    ],
    "external_readers": {
     "metabase": {
-     "queries": 21,
-     "last_read": "2026-09-20"
+     "queries": 26,
+     "last_read": "2026-09-21"
     },
     "human_or_script": {
-     "queries": 63,
+     "queries": 226,
      "last_read": "2026-09-21"
     }
    }
@@ -3731,7 +3741,7 @@
    "domain": "ozon",
    "layer": "mart",
    "type": "VIEW",
-   "columns": 23,
+   "columns": 24,
    "schema": [
     "month DATE NULL",
     "internal_sku STRING NULL",
@@ -3746,6 +3756,7 @@
     "commission_status STRING NULL",
     "direct_variable_marketplace_costs_rub NUMERIC NULL",
     "other_direct_marketplace_costs_rub NUMERIC NULL",
+    "sku_promotion_rub NUMERIC NULL",
     "contribution_before_ads_rub NUMERIC NULL",
     "ad_spend_attributed_rub NUMERIC NULL",
     "contribution_after_attributed_ads_rub NUMERIC NULL",
@@ -3759,13 +3770,14 @@
    ],
    "row_count": 0,
    "size_bytes": 0,
-   "last_modified": "2026-09-04T12:35:29Z",
+   "last_modified": "2026-09-21T14:28:14Z",
    "partitioned_by": null,
    "clustered_by": [],
    "depends_on": [
     "evetis_ref.REF_PRODUCT_MASTER",
     "evetis_ref.REF_SKU_CHANNEL_MAP",
     "evetis_ref.V_PRODUCT_COGS_EFFECTIVE",
+    "ozon_mart.V_OZON_CIS_BUYOUT",
     "ozon_raw.RAW_OZON_ADS_SKU_DAILY",
     "ozon_raw.RAW_OZON_FINANCE_ACCRUAL",
     "ozon_raw.RAW_OZON_POSTINGS_FBO"
@@ -3777,12 +3789,12 @@
    ],
    "external_readers": {
     "human_or_script": {
-     "queries": 63,
+     "queries": 76,
      "last_read": "2026-09-21"
     },
     "metabase": {
-     "queries": 24,
-     "last_read": "2026-09-06"
+     "queries": 26,
+     "last_read": "2026-09-21"
     }
    }
   },
@@ -3865,12 +3877,96 @@
    "consumed_by": [],
    "external_readers": {
     "human_or_script": {
-     "queries": 9,
-     "last_read": "2026-09-18"
+     "queries": 10,
+     "last_read": "2026-09-21"
     },
     "metabase": {
      "queries": 57,
      "last_read": "2026-09-06"
+    }
+   }
+  },
+  "ozon_mart.V_OZON_CIS_BUYOUT": {
+   "object": "ozon_mart.V_OZON_CIS_BUYOUT",
+   "dataset": "ozon_mart",
+   "name": "V_OZON_CIS_BUYOUT",
+   "domain": "ozon",
+   "layer": "semantic",
+   "type": "VIEW",
+   "columns": 8,
+   "schema": [
+    "posting_number STRING NULL",
+    "document_number STRING NULL",
+    "document_kind STRING NULL",
+    "document_period_start DATE NULL",
+    "document_period_end DATE NULL",
+    "reference_price_rub NUMERIC NULL",
+    "category_discount_pct NUMERIC NULL",
+    "buyout_proceeds_rub NUMERIC NULL"
+   ],
+   "row_count": 0,
+   "size_bytes": 0,
+   "last_modified": "2026-09-21T14:27:02Z",
+   "partitioned_by": null,
+   "clustered_by": [],
+   "depends_on": [],
+   "consumed_by": [
+    "ozon_mart.FCT_OZON_PNL_MONTHLY",
+    "ozon_mart.FCT_OZON_SKU_PNL_DAILY",
+    "ozon_mart.FCT_OZON_SKU_PNL_MONTHLY",
+    "ozon_mart.V_OZON_SKU_PNL_DAILY_OPERATIONAL"
+   ],
+   "external_readers": {
+    "human_or_script": {
+     "queries": 26,
+     "last_read": "2026-09-21"
+    },
+    "metabase": {
+     "queries": 9,
+     "last_read": "2026-09-21"
+    }
+   }
+  },
+  "ozon_mart.V_OZON_COMMISSION_POLICY": {
+   "object": "ozon_mart.V_OZON_COMMISSION_POLICY",
+   "dataset": "ozon_mart",
+   "name": "V_OZON_COMMISSION_POLICY",
+   "domain": "ozon",
+   "layer": "semantic",
+   "type": "VIEW",
+   "columns": 8,
+   "schema": [
+    "internal_sku STRING NULL",
+    "effective_from DATE NULL",
+    "effective_to DATE NULL",
+    "commission_rate NUMERIC NULL",
+    "basis STRING NULL",
+    "rate_source STRING NULL",
+    "rate_scope STRING NULL",
+    "evidence STRING NULL"
+   ],
+   "row_count": 0,
+   "size_bytes": 0,
+   "last_modified": "2026-09-21T18:37:45Z",
+   "partitioned_by": "d, internal_sku ORDER BY n DESC, rate DESC) rn",
+   "clustered_by": [],
+   "depends_on": [
+    "evetis_ref.REF_SKU_CHANNEL_MAP",
+    "ozon_raw.RAW_OZON_FINANCE_ACCRUAL",
+    "ozon_raw.RAW_OZON_POSTINGS_FBO",
+    "ozon_raw.RAW_OZON_PRICE_COMMISSIONS"
+   ],
+   "consumed_by": [
+    "ozon_mart.V_OZON_SKU_PNL_DAILY_OPERATIONAL"
+   ],
+   "external_readers": {
+    "human_or_script": {
+     "queries": 1,
+     "last_read": "2026-09-21"
+    },
+    "metabase": {
+     "queries": 9,
+     "last_read": "2026-09-21"
     }
    }
   },
@@ -3892,13 +3988,15 @@
    "partitioned_by": null,
    "clustered_by": [],
    "depends_on": [],
-   "consumed_by": [
-    "ozon_mart.FCT_OZON_SKU_PNL_DAILY"
-   ],
+   "consumed_by": [],
    "external_readers": {
     "metabase": {
      "queries": 3,
      "last_read": "2026-09-20"
+    },
+    "human_or_script": {
+     "queries": 11,
+     "last_read": "2026-09-21"
     }
    }
   },
@@ -3975,12 +4073,55 @@
    "consumed_by": [],
    "external_readers": {
     "human_or_script": {
-     "queries": 26,
-     "last_read": "2026-09-18"
+     "queries": 27,
+     "last_read": "2026-09-21"
     },
     "metabase": {
      "queries": 50,
      "last_read": "2026-09-06"
+    }
+   }
+  },
+  "ozon_mart.V_OZON_LOGISTICS_ESTIMATOR": {
+   "object": "ozon_mart.V_OZON_LOGISTICS_ESTIMATOR",
+   "dataset": "ozon_mart",
+   "name": "V_OZON_LOGISTICS_ESTIMATOR",
+   "domain": "ozon",
+   "layer": "semantic",
+   "type": "VIEW",
+   "columns": 9,
+   "schema": [
+    "internal_sku STRING NULL",
+    "samples INT64 NULL",
+    "logistics_per_unit_rub NUMERIC NULL",
+    "estimator_method STRING NULL",
+    "sku_median_per_unit_rub NUMERIC NULL",
+    "marketplace_p70_rub NUMERIC NULL",
+    "marketplace_samples INT64 NULL",
+    "min_samples INT64 NULL",
+    "window_days INT64 NULL"
+   ],
+   "row_count": 0,
+   "size_bytes": 0,
+   "last_modified": "2026-09-21T18:37:46Z",
+   "partitioned_by": null,
+   "clustered_by": [],
+   "depends_on": [
+    "evetis_ref.REF_SKU_CHANNEL_MAP",
+    "ozon_raw.RAW_OZON_FINANCE_ACCRUAL",
+    "ozon_raw.RAW_OZON_POSTINGS_FBO"
+   ],
+   "consumed_by": [
+    "ozon_mart.V_OZON_SKU_PNL_DAILY_OPERATIONAL"
+   ],
+   "external_readers": {
+    "human_or_script": {
+     "queries": 1,
+     "last_read": "2026-09-21"
+    },
+    "metabase": {
+     "queries": 10,
+     "last_read": "2026-09-21"
     }
    }
   },
@@ -4021,8 +4162,8 @@
    ],
    "external_readers": {
     "human_or_script": {
-     "queries": 12,
-     "last_read": "2026-09-18"
+     "queries": 13,
+     "last_read": "2026-09-21"
     },
     "metabase": {
      "queries": 11,
@@ -4199,13 +4340,13 @@
    ],
    "consumed_by": [],
    "external_readers": {
+    "human_or_script": {
+     "queries": 10,
+     "last_read": "2026-09-21"
+    },
     "metabase": {
      "queries": 37,
      "last_read": "2026-09-06"
-    },
-    "human_or_script": {
-     "queries": 9,
-     "last_read": "2026-09-18"
     }
    }
   },
@@ -4364,8 +4505,95 @@
      "last_read": "2026-09-06"
     },
     "human_or_script": {
-     "queries": 24,
-     "last_read": "2026-09-19"
+     "queries": 25,
+     "last_read": "2026-09-21"
+    }
+   }
+  },
+  "ozon_mart.V_OZON_SKU_PNL_DAILY_OPERATIONAL": {
+   "object": "ozon_mart.V_OZON_SKU_PNL_DAILY_OPERATIONAL",
+   "dataset": "ozon_mart",
+   "name": "V_OZON_SKU_PNL_DAILY_OPERATIONAL",
+   "domain": "ozon",
+   "layer": "semantic",
+   "type": "VIEW",
+   "columns": 50,
+   "schema": [
+    "fact_date DATE NULL",
+    "internal_sku STRING NULL",
+    "gross_qty INT64 NULL",
+    "cancelled_qty INT64 NULL",
+    "in_transit_qty INT64 NULL",
+    "realized_qty INT64 NULL",
+    "seller_base_revenue_rub NUMERIC NULL",
+    "commission_rub NUMERIC NULL",
+    "commission_missing_qty INT64 NULL",
+    "commission_not_applicable_qty INT64 NULL",
+    "buyout_revenue_unproven_qty INT64 NULL",
+    "buyout_revenue_unproven_rub NUMERIC NULL",
+    "logistics_rub NUMERIC NULL",
+    "acquiring_rub NUMERIC NULL",
+    "storage_rub NUMERIC NULL",
+    "direct_variable_marketplace_costs_rub NUMERIC NULL",
+    "other_direct_marketplace_costs_rub NUMERIC NULL",
+    "product_cogs_rub NUMERIC NULL",
+    "cogs_missing_qty INT64 NULL",
+    "sku_promotion_rub NUMERIC NULL",
+    "contribution_before_ads_rub NUMERIC NULL",
+    "ad_spend_attributed_rub NUMERIC NULL",
+    "contribution_after_attributed_ads_rub NUMERIC NULL",
+    "fact_date_semantics STRING NULL",
+    "expected_realized_qty INT64 NULL",
+    "provisional_revenue_rub NUMERIC NULL",
+    "provisional_cogs_rub NUMERIC NULL",
+    "in_transit_revenue_rub NUMERIC NULL",
+    "in_transit_cogs_rub NUMERIC NULL",
+    "provisional_cogs_missing_qty INT64 NULL",
+    "commission_gap_qty INT64 NULL",
+    "commission_estimated_rub NUMERIC NULL",
+    "commission_estimate_method STRING NULL",
+    "logistics_gap_qty INT64 NULL",
+    "logistics_estimated_rub NUMERIC NULL",
+    "logistics_estimate_method STRING NULL",
+    "logistics_estimated_per_unit_rub NUMERIC NULL",
+    "commission_policy_rate NUMERIC NULL",
+    "commission_effective_rub NUMERIC NULL",
+    "commission_state STRING NULL",
+    "logistics_effective_rub NUMERIC NULL",
+    "logistics_state STRING NULL",
+    "storage_state STRING NULL",
+    "other_direct_state STRING NULL",
+    "economics_completeness STRING NULL",
+    "operational_contribution_before_ads_rub NUMERIC NULL",
+    "operational_contribution_after_ads_rub NUMERIC NULL",
+    "age_days INT64 NULL",
+    "period_matured BOOL NULL",
+    "maturity_days INT64 NULL"
+   ],
+   "row_count": 0,
+   "size_bytes": 0,
+   "last_modified": "2026-09-21T20:31:40Z",
+   "partitioned_by": null,
+   "clustered_by": [],
+   "depends_on": [
+    "evetis_ref.REF_SKU_CHANNEL_MAP",
+    "evetis_ref.V_PRODUCT_COGS_EFFECTIVE",
+    "ozon_mart.FCT_OZON_SKU_PNL_DAILY",
+    "ozon_mart.V_OZON_CIS_BUYOUT",
+    "ozon_mart.V_OZON_COMMISSION_POLICY",
+    "ozon_mart.V_OZON_LOGISTICS_ESTIMATOR",
+    "ozon_raw.RAW_OZON_FINANCE_ACCRUAL",
+    "ozon_raw.RAW_OZON_POSTINGS_FBO"
+   ],
+   "consumed_by": [],
+   "external_readers": {
+    "metabase": {
+     "queries": 52,
+     "last_read": "2026-09-21"
+    },
+    "human_or_script": {
+     "queries": 39,
+     "last_read": "2026-09-21"
     }
    }
   },
@@ -4428,8 +4656,8 @@
    "consumed_by": [],
    "external_readers": {
     "human_or_script": {
-     "queries": 17,
-     "last_read": "2026-09-18"
+     "queries": 18,
+     "last_read": "2026-09-21"
     },
     "metabase": {
      "queries": 39,
@@ -4574,9 +4802,9 @@
     "error_message STRING NULL",
     "job_execution STRING NULL"
    ],
-   "row_count": 306,
-   "size_bytes": 54351,
-   "last_modified": "2026-09-21T04:07:05Z",
+   "row_count": 322,
+   "size_bytes": 57191,
+   "last_modified": "2026-09-22T04:07:26Z",
    "partitioned_by": "DATE(started_at)",
    "clustered_by": [
     "entity",
@@ -4589,8 +4817,8 @@
    ],
    "external_readers": {
     "human_or_script": {
-     "queries": 99,
-     "last_read": "2026-09-21"
+     "queries": 116,
+     "last_read": "2026-09-22"
     }
    }
   },
@@ -4622,9 +4850,9 @@
     "ingestion_run_id STRING NOT NULL",
     "source_payload_hash STRING NULL"
    ],
-   "row_count": 1840,
-   "size_bytes": 498251,
-   "last_modified": "2026-09-21T03:32:09Z",
+   "row_count": 1932,
+   "size_bytes": 523213,
+   "last_modified": "2026-09-22T03:31:26Z",
    "partitioned_by": "snapshot_date",
    "clustered_by": [
     "campaign_id"
@@ -4633,12 +4861,12 @@
    "consumed_by": [],
    "external_readers": {
     "service_account": {
-     "queries": 48,
-     "last_read": "2026-09-21"
+     "queries": 50,
+     "last_read": "2026-09-22"
     },
     "human_or_script": {
-     "queries": 33,
-     "last_read": "2026-09-20"
+     "queries": 34,
+     "last_read": "2026-09-21"
     }
    }
   },
@@ -4666,9 +4894,9 @@
     "ingestion_run_id STRING NOT NULL",
     "source_payload_hash STRING NULL"
    ],
-   "row_count": 2261,
-   "size_bytes": 549163,
-   "last_modified": "2026-09-21T03:32:33Z",
+   "row_count": 2272,
+   "size_bytes": 552225,
+   "last_modified": "2026-09-22T03:31:49Z",
    "partitioned_by": "date",
    "clustered_by": [
     "campaign_id"
@@ -4682,12 +4910,12 @@
    ],
    "external_readers": {
     "service_account": {
-     "queries": 58,
-     "last_read": "2026-09-21"
+     "queries": 60,
+     "last_read": "2026-09-22"
     },
     "human_or_script": {
-     "queries": 74,
-     "last_read": "2026-09-20"
+     "queries": 76,
+     "last_read": "2026-09-21"
     }
    }
   },
@@ -4718,9 +4946,9 @@
     "ingestion_run_id STRING NOT NULL",
     "source_payload_hash STRING NULL"
    ],
-   "row_count": 3870,
-   "size_bytes": 1016392,
-   "last_modified": "2026-09-21T03:38:37Z",
+   "row_count": 3883,
+   "size_bytes": 1020136,
+   "last_modified": "2026-09-22T03:35:28Z",
    "partitioned_by": "date",
    "clustered_by": [
     "campaign_id",
@@ -4736,12 +4964,12 @@
    ],
    "external_readers": {
     "human_or_script": {
-     "queries": 146,
+     "queries": 303,
      "last_read": "2026-09-21"
     },
     "service_account": {
-     "queries": 62,
-     "last_read": "2026-09-21"
+     "queries": 64,
+     "last_read": "2026-09-22"
     }
    }
   },
@@ -4777,9 +5005,9 @@
     "ingestion_run_id STRING NOT NULL",
     "source_payload_hash STRING NULL"
    ],
-   "row_count": 400,
-   "size_bytes": 197065,
-   "last_modified": "2026-09-21T03:31:21Z",
+   "row_count": 420,
+   "size_bytes": 206860,
+   "last_modified": "2026-09-22T03:30:31Z",
    "partitioned_by": "snapshot_date",
    "clustered_by": [
     "sku"
@@ -4790,12 +5018,12 @@
    ],
    "external_readers": {
     "human_or_script": {
-     "queries": 70,
-     "last_read": "2026-09-20"
+     "queries": 71,
+     "last_read": "2026-09-21"
     },
     "service_account": {
-     "queries": 52,
-     "last_read": "2026-09-21"
+     "queries": 54,
+     "last_read": "2026-09-22"
     }
    }
   },
@@ -4832,13 +5060,13 @@
    "depends_on": [],
    "consumed_by": [],
    "external_readers": {
+    "human_or_script": {
+     "queries": 46,
+     "last_read": "2026-09-21"
+    },
     "service_account": {
      "queries": 16,
      "last_read": "2026-09-21"
-    },
-    "human_or_script": {
-     "queries": 41,
-     "last_read": "2026-09-17"
     }
    }
   },
@@ -4874,9 +5102,9 @@
     "ingestion_run_id STRING NOT NULL",
     "source_payload_hash STRING NULL"
    ],
-   "row_count": 9642,
-   "size_bytes": 2446032,
-   "last_modified": "2026-09-21T03:32:03Z",
+   "row_count": 9673,
+   "size_bytes": 2471703,
+   "last_modified": "2026-09-22T03:31:19Z",
    "partitioned_by": "event_date",
    "clustered_by": [
     "type_id",
@@ -4887,18 +5115,21 @@
     "ozon_mart.FCT_OZON_PNL_MONTHLY",
     "ozon_mart.FCT_OZON_SKU_PNL_DAILY",
     "ozon_mart.FCT_OZON_SKU_PNL_MONTHLY",
+    "ozon_mart.V_OZON_COMMISSION_POLICY",
+    "ozon_mart.V_OZON_LOGISTICS_ESTIMATOR",
     "ozon_mart.V_OZON_MART_FRESHNESS",
     "ozon_mart.V_OZON_SKU_CURRENT_TARIFF",
+    "ozon_mart.V_OZON_SKU_PNL_DAILY_OPERATIONAL",
     "wb_mart.V_CT_ACTUAL_DAILY_LIVE"
    ],
    "external_readers": {
     "human_or_script": {
-     "queries": 331,
+     "queries": 671,
      "last_read": "2026-09-21"
     },
     "service_account": {
-     "queries": 58,
-     "last_read": "2026-09-21"
+     "queries": 64,
+     "last_read": "2026-09-22"
     }
    }
   },
@@ -4937,9 +5168,9 @@
     "source_payload_hash STRING NULL",
     "warehouse_id STRING NULL"
    ],
-   "row_count": 2347,
-   "size_bytes": 1697826,
-   "last_modified": "2026-09-21T04:01:10Z",
+   "row_count": 2357,
+   "size_bytes": 1704848,
+   "last_modified": "2026-09-22T04:01:31Z",
    "partitioned_by": "order_date",
    "clustered_by": [
     "posting_number",
@@ -4950,21 +5181,24 @@
     "ozon_mart.FCT_OZON_PNL_MONTHLY",
     "ozon_mart.FCT_OZON_SKU_PNL_DAILY",
     "ozon_mart.FCT_OZON_SKU_PNL_MONTHLY",
+    "ozon_mart.V_OZON_COMMISSION_POLICY",
+    "ozon_mart.V_OZON_LOGISTICS_ESTIMATOR",
     "ozon_mart.V_OZON_MART_FRESHNESS",
     "ozon_mart.V_OZON_SKU_CURRENT_TARIFF",
     "ozon_mart.V_OZON_SKU_FORWARD_ECONOMICS_CURRENT",
+    "ozon_mart.V_OZON_SKU_PNL_DAILY_OPERATIONAL",
     "wb_mart.V_CT_ACTUAL_DAILY_LIVE",
     "wb_mart.V_CT_FRESHNESS",
     "wb_mart.V_CT_PLAN_VS_ACTUAL_DAILY"
    ],
    "external_readers": {
-    "service_account": {
-     "queries": 170,
+    "human_or_script": {
+     "queries": 522,
      "last_read": "2026-09-21"
     },
-    "human_or_script": {
-     "queries": 259,
-     "last_read": "2026-09-21"
+    "service_account": {
+     "queries": 179,
+     "last_read": "2026-09-22"
     }
    }
   },
@@ -5023,9 +5257,9 @@
     "commissions_field_count INT64 NULL",
     "commissions_unknown_fields STRING NULL"
    ],
-   "row_count": 400,
-   "size_bytes": 376858,
-   "last_modified": "2026-09-21T03:31:27Z",
+   "row_count": 420,
+   "size_bytes": 398969,
+   "last_modified": "2026-09-22T03:30:39Z",
    "partitioned_by": "snapshot_date",
    "clustered_by": [
     "offer_id"
@@ -5037,12 +5271,12 @@
    ],
    "external_readers": {
     "service_account": {
-     "queries": 50,
-     "last_read": "2026-09-21"
+     "queries": 52,
+     "last_read": "2026-09-22"
     },
     "human_or_script": {
-     "queries": 102,
-     "last_read": "2026-09-20"
+     "queries": 104,
+     "last_read": "2026-09-21"
     }
    }
   },
@@ -5070,9 +5304,9 @@
     "ingestion_run_id STRING NOT NULL",
     "source_payload_hash STRING NULL"
    ],
-   "row_count": 4800,
-   "size_bytes": 1072240,
-   "last_modified": "2026-09-21T03:31:32Z",
+   "row_count": 5100,
+   "size_bytes": 1139255,
+   "last_modified": "2026-09-22T03:30:45Z",
    "partitioned_by": "snapshot_date",
    "clustered_by": [
     "offer_id",
@@ -5080,17 +5314,18 @@
    ],
    "depends_on": [],
    "consumed_by": [
+    "ozon_mart.V_OZON_COMMISSION_POLICY",
     "ozon_mart.V_OZON_TARIFF_CHANGE_LOG",
     "ozon_mart.V_OZON_TARIFF_SOURCE_HEALTH"
    ],
    "external_readers": {
-    "service_account": {
-     "queries": 34,
+    "human_or_script": {
+     "queries": 78,
      "last_read": "2026-09-21"
     },
-    "human_or_script": {
-     "queries": 57,
-     "last_read": "2026-09-20"
+    "service_account": {
+     "queries": 36,
+     "last_read": "2026-09-22"
     }
    }
   },
@@ -5123,9 +5358,9 @@
     "ingestion_run_id STRING NOT NULL",
     "source_payload_hash STRING NULL"
    ],
-   "row_count": 16,
-   "size_bytes": 8992,
-   "last_modified": "2026-09-21T03:31:38Z",
+   "row_count": 17,
+   "size_bytes": 9554,
+   "last_modified": "2026-09-22T03:30:53Z",
    "partitioned_by": "snapshot_date",
    "clustered_by": [],
    "depends_on": [],
@@ -5135,12 +5370,12 @@
    ],
    "external_readers": {
     "human_or_script": {
-     "queries": 33,
-     "last_read": "2026-09-20"
+     "queries": 34,
+     "last_read": "2026-09-21"
     },
     "service_account": {
-     "queries": 36,
-     "last_read": "2026-09-21"
+     "queries": 38,
+     "last_read": "2026-09-22"
     }
    }
   },
@@ -5171,9 +5406,9 @@
     "ingestion_run_id STRING NOT NULL",
     "source_payload_hash STRING NULL"
    ],
-   "row_count": 3899,
-   "size_bytes": 1058363,
-   "last_modified": "2026-09-21T04:00:58Z",
+   "row_count": 4101,
+   "size_bytes": 1113280,
+   "last_modified": "2026-09-22T04:01:21Z",
    "partitioned_by": "snapshot_date",
    "clustered_by": [
     "sku",
@@ -5189,12 +5424,12 @@
    ],
    "external_readers": {
     "human_or_script": {
-     "queries": 121,
+     "queries": 140,
      "last_read": "2026-09-21"
     },
     "service_account": {
-     "queries": 168,
-     "last_read": "2026-09-21"
+     "queries": 177,
+     "last_read": "2026-09-22"
     }
    }
   },
@@ -5225,8 +5460,8 @@
     "source_payload_hash STRING NULL"
    ],
    "row_count": 170,
-   "size_bytes": 64340,
-   "last_modified": "2026-09-21T03:38:54Z",
+   "size_bytes": 64198,
+   "last_modified": "2026-09-22T03:35:48Z",
    "partitioned_by": "DATE(order_created_at)",
    "clustered_by": [
     "supply_id",
@@ -5236,12 +5471,12 @@
    "consumed_by": [],
    "external_readers": {
     "service_account": {
-     "queries": 44,
-     "last_read": "2026-09-21"
+     "queries": 46,
+     "last_read": "2026-09-22"
     },
     "human_or_script": {
-     "queries": 21,
-     "last_read": "2026-09-20"
+     "queries": 22,
+     "last_read": "2026-09-21"
     }
    }
   },
@@ -5271,7 +5506,7 @@
    ],
    "row_count": 648,
    "size_bytes": 269913,
-   "last_modified": "2026-09-21T03:42:29Z",
+   "last_modified": "2026-09-22T03:39:24Z",
    "partitioned_by": null,
    "clustered_by": [
     "bundle_id",
@@ -5283,13 +5518,13 @@
     "wb_mart.V_CT_SUPPLY_FLOW"
    ],
    "external_readers": {
-    "service_account": {
-     "queries": 44,
-     "last_read": "2026-09-21"
-    },
     "human_or_script": {
      "queries": 51,
      "last_read": "2026-09-20"
+    },
+    "service_account": {
+     "queries": 46,
+     "last_read": "2026-09-22"
     }
    }
   },
@@ -5325,8 +5560,8 @@
     "source_payload_hash STRING NULL"
    ],
    "row_count": 75,
-   "size_bytes": 25498,
-   "last_modified": "2026-09-21T03:38:48Z",
+   "size_bytes": 25519,
+   "last_modified": "2026-09-22T03:35:40Z",
    "partitioned_by": "DATE(created_at)",
    "clustered_by": [
     "order_id"
@@ -5339,8 +5574,8 @@
    ],
    "external_readers": {
     "service_account": {
-     "queries": 94,
-     "last_read": "2026-09-21"
+     "queries": 99,
+     "last_read": "2026-09-22"
     },
     "human_or_script": {
      "queries": 93,
@@ -5367,9 +5602,9 @@
     "mart_built_at TIMESTAMP NULL",
     "error_message STRING NULL"
    ],
-   "row_count": 78,
-   "size_bytes": 8170,
-   "last_modified": "2026-09-21T06:11:20Z",
+   "row_count": 93,
+   "size_bytes": 9640,
+   "last_modified": "2026-09-22T04:11:27Z",
    "partitioned_by": null,
    "clustered_by": [],
    "depends_on": [],
@@ -5466,9 +5701,9 @@
     "layer_run_id STRING NULL",
     "layer_built_at TIMESTAMP NULL"
    ],
-   "row_count": 747,
-   "size_bytes": 439566,
-   "last_modified": "2026-09-21T06:11:16Z",
+   "row_count": 748,
+   "size_bytes": 442960,
+   "last_modified": "2026-09-22T04:11:24Z",
    "partitioned_by": null,
    "clustered_by": [],
    "depends_on": [],
@@ -5498,9 +5733,9 @@
     "mart_run_id STRING NULL",
     "built_at TIMESTAMP NULL"
    ],
-   "row_count": 1960,
-   "size_bytes": 254800,
-   "last_modified": "2026-09-21T04:02:55Z",
+   "row_count": 1963,
+   "size_bytes": 255190,
+   "last_modified": "2026-09-22T04:03:23Z",
    "partitioned_by": "date",
    "clustered_by": [
     "advert_id;"
@@ -5512,7 +5747,7 @@
    ],
    "external_readers": {
     "human_or_script": {
-     "queries": 85,
+     "queries": 88,
      "last_read": "2026-09-21"
     },
     "metabase": {
@@ -5537,9 +5772,9 @@
     "mart_run_id STRING NULL",
     "built_at TIMESTAMP NULL"
    ],
-   "row_count": 1960,
-   "size_bytes": 254800,
-   "last_modified": "2026-09-21T04:02:13Z",
+   "row_count": 1963,
+   "size_bytes": 255190,
+   "last_modified": "2026-09-22T04:02:29Z",
    "partitioned_by": "date",
    "clustered_by": [
     "advert_id;"
@@ -5572,9 +5807,9 @@
     "mart_run_id STRING NULL",
     "built_at TIMESTAMP NULL"
    ],
-   "row_count": 6043,
-   "size_bytes": 1184428,
-   "last_modified": "2026-09-21T04:02:50Z",
+   "row_count": 6053,
+   "size_bytes": 1186388,
+   "last_modified": "2026-09-22T04:03:04Z",
    "partitioned_by": "date",
    "clustered_by": [
     "nm_id",
@@ -5589,7 +5824,7 @@
    ],
    "external_readers": {
     "human_or_script": {
-     "queries": 103,
+     "queries": 106,
      "last_read": "2026-09-21"
     },
     "metabase": {
@@ -5598,7 +5833,7 @@
     },
     "service_account": {
      "queries": 132,
-     "last_read": "2026-09-21"
+     "last_read": "2026-09-22"
     }
    }
   },
@@ -5626,9 +5861,9 @@
     "mart_run_id STRING NULL",
     "built_at TIMESTAMP NULL"
    ],
-   "row_count": 6043,
-   "size_bytes": 1184428,
-   "last_modified": "2026-09-21T04:02:03Z",
+   "row_count": 6053,
+   "size_bytes": 1186388,
+   "last_modified": "2026-09-22T04:02:17Z",
    "partitioned_by": "date",
    "clustered_by": [
     "nm_id",
@@ -5678,9 +5913,9 @@
     "mart_run_id STRING NULL",
     "built_at TIMESTAMP NULL"
    ],
-   "row_count": 206965,
-   "size_bytes": 104820566,
-   "last_modified": "2026-09-21T04:02:44Z",
+   "row_count": 207029,
+   "size_bytes": 104845521,
+   "last_modified": "2026-09-22T04:02:58Z",
    "partitioned_by": "finance_date",
    "clustered_by": [
     "nm_id",
@@ -5699,7 +5934,7 @@
    ],
    "external_readers": {
     "human_or_script": {
-     "queries": 144,
+     "queries": 152,
      "last_read": "2026-09-21"
     },
     "metabase": {
@@ -5708,7 +5943,7 @@
     },
     "service_account": {
      "queries": 88,
-     "last_read": "2026-09-21"
+     "last_read": "2026-09-22"
     }
    }
   },
@@ -5752,9 +5987,9 @@
     "mart_run_id STRING NULL",
     "built_at TIMESTAMP NULL"
    ],
-   "row_count": 206965,
-   "size_bytes": 104820566,
-   "last_modified": "2026-09-21T04:01:40Z",
+   "row_count": 207029,
+   "size_bytes": 104845521,
+   "last_modified": "2026-09-22T04:01:51Z",
    "partitioned_by": "finance_date",
    "clustered_by": [
     "nm_id",
@@ -5793,9 +6028,9 @@
     "mart_run_id STRING NULL",
     "built_at TIMESTAMP NULL"
    ],
-   "row_count": 4786,
-   "size_bytes": 1700533,
-   "last_modified": "2026-09-21T04:02:23Z",
+   "row_count": 4798,
+   "size_bytes": 1704813,
+   "last_modified": "2026-09-22T04:02:40Z",
    "partitioned_by": "order_date",
    "clustered_by": [
     "nm_id",
@@ -5814,7 +6049,7 @@
    ],
    "external_readers": {
     "human_or_script": {
-     "queries": 318,
+     "queries": 345,
      "last_read": "2026-09-21"
     },
     "metabase": {
@@ -5823,7 +6058,7 @@
     },
     "service_account": {
      "queries": 88,
-     "last_read": "2026-09-21"
+     "last_read": "2026-09-22"
     }
    }
   },
@@ -5855,9 +6090,9 @@
     "mart_run_id STRING NULL",
     "built_at TIMESTAMP NULL"
    ],
-   "row_count": 4786,
-   "size_bytes": 1700533,
-   "last_modified": "2026-09-21T04:01:01Z",
+   "row_count": 4798,
+   "size_bytes": 1704813,
+   "last_modified": "2026-09-22T04:01:06Z",
    "partitioned_by": "order_date",
    "clustered_by": [
     "nm_id",
@@ -5901,9 +6136,9 @@
     "mart_run_id STRING NULL",
     "built_at TIMESTAMP NULL"
    ],
-   "row_count": 4460,
-   "size_bytes": 1702469,
-   "last_modified": "2026-09-21T04:02:28Z",
+   "row_count": 4474,
+   "size_bytes": 1707678,
+   "last_modified": "2026-09-22T04:02:44Z",
    "partitioned_by": "sale_date",
    "clustered_by": [
     "nm_id",
@@ -5919,14 +6154,14 @@
    "external_readers": {
     "service_account": {
      "queries": 88,
-     "last_read": "2026-09-21"
+     "last_read": "2026-09-22"
     },
     "metabase": {
      "queries": 1,
      "last_read": "2026-08-26"
     },
     "human_or_script": {
-     "queries": 122,
+     "queries": 125,
      "last_read": "2026-09-21"
     }
    }
@@ -5965,9 +6200,9 @@
     "mart_run_id STRING NULL",
     "built_at TIMESTAMP NULL"
    ],
-   "row_count": 4460,
-   "size_bytes": 1702469,
-   "last_modified": "2026-09-21T04:01:13Z",
+   "row_count": 4474,
+   "size_bytes": 1707678,
+   "last_modified": "2026-09-22T04:01:20Z",
    "partitioned_by": "sale_date",
    "clustered_by": [
     "nm_id",
@@ -6000,9 +6235,9 @@
     "mart_run_id STRING NULL",
     "built_at TIMESTAMP NULL"
    ],
-   "row_count": 6379,
-   "size_bytes": 1425698,
-   "last_modified": "2026-09-21T04:02:33Z",
+   "row_count": 6398,
+   "size_bytes": 1429461,
+   "last_modified": "2026-09-22T04:02:48Z",
    "partitioned_by": "snapshot_date",
    "clustered_by": [
     "nm_id",
@@ -6018,8 +6253,8 @@
    ],
    "external_readers": {
     "human_or_script": {
-     "queries": 168,
-     "last_read": "2026-09-20"
+     "queries": 169,
+     "last_read": "2026-09-21"
     },
     "metabase": {
      "queries": 1,
@@ -6081,9 +6316,9 @@
     "mart_run_id STRING NULL",
     "built_at TIMESTAMP NULL"
    ],
-   "row_count": 6379,
-   "size_bytes": 1425698,
-   "last_modified": "2026-09-21T04:01:20Z",
+   "row_count": 6398,
+   "size_bytes": 1429461,
+   "last_modified": "2026-09-22T04:01:28Z",
    "partitioned_by": "snapshot_date",
    "clustered_by": [
     "nm_id",
@@ -6119,9 +6354,9 @@
     "error_code STRING NULL",
     "error_message STRING NULL"
    ],
-   "row_count": 69,
-   "size_bytes": 62368,
-   "last_modified": "2026-09-21T04:04:16Z",
+   "row_count": 70,
+   "size_bytes": 63238,
+   "last_modified": "2026-09-22T04:04:41Z",
    "partitioned_by": "target_date",
    "clustered_by": [
     "environment",
@@ -6134,8 +6369,8 @@
    ],
    "external_readers": {
     "service_account": {
-     "queries": 409,
-     "last_read": "2026-09-21"
+     "queries": 430,
+     "last_read": "2026-09-22"
     },
     "human_or_script": {
      "queries": 42,
@@ -6213,9 +6448,9 @@
     "mart_run_id STRING NULL",
     "built_at TIMESTAMP NULL"
    ],
-   "row_count": 8102,
-   "size_bytes": 5523874,
-   "last_modified": "2026-09-21T04:04:05Z",
+   "row_count": 8127,
+   "size_bytes": 5541381,
+   "last_modified": "2026-09-22T04:04:32Z",
    "partitioned_by": "day",
    "clustered_by": [
     "nm_id;"
@@ -6239,11 +6474,11 @@
      "last_read": "2026-08-26"
     },
     "service_account": {
-     "queries": 265,
-     "last_read": "2026-09-21"
+     "queries": 279,
+     "last_read": "2026-09-22"
     },
     "human_or_script": {
-     "queries": 303,
+     "queries": 316,
      "last_read": "2026-09-21"
     }
    }
@@ -6279,7 +6514,7 @@
    ],
    "external_readers": {
     "human_or_script": {
-     "queries": 79,
+     "queries": 88,
      "last_read": "2026-09-21"
     }
    }
@@ -6303,9 +6538,9 @@
     "mart_built_at TIMESTAMP NULL",
     "error_message STRING NULL"
    ],
-   "row_count": 58,
-   "size_bytes": 6008,
-   "last_modified": "2026-09-21T06:20:54Z",
+   "row_count": 73,
+   "size_bytes": 7478,
+   "last_modified": "2026-09-22T04:21:12Z",
    "partitioned_by": null,
    "clustered_by": [],
    "depends_on": [],
@@ -6424,9 +6659,9 @@
     "layer_run_id STRING NULL",
     "layer_built_at TIMESTAMP NULL"
    ],
-   "row_count": 8102,
-   "size_bytes": 5438788,
-   "last_modified": "2026-09-21T06:20:50Z",
+   "row_count": 8127,
+   "size_bytes": 5461335,
+   "last_modified": "2026-09-22T04:21:09Z",
    "partitioned_by": null,
    "clustered_by": [
     "nm_id",
@@ -6440,7 +6675,7 @@
    ],
    "external_readers": {
     "human_or_script": {
-     "queries": 115,
+     "queries": 190,
      "last_read": "2026-09-21"
     }
    }
@@ -6471,7 +6706,7 @@
    ],
    "row_count": 38,
    "size_bytes": 10494,
-   "last_modified": "2026-09-21T06:50:38Z",
+   "last_modified": "2026-09-21T20:50:22Z",
    "partitioned_by": null,
    "clustered_by": [
     "internal_sku"
@@ -6506,9 +6741,9 @@
     "source_fingerprint STRING NULL",
     "error_message STRING NULL"
    ],
-   "row_count": 42,
-   "size_bytes": 6216,
-   "last_modified": "2026-09-21T06:50:42Z",
+   "row_count": 56,
+   "size_bytes": 8288,
+   "last_modified": "2026-09-21T20:50:26Z",
    "partitioned_by": null,
    "clustered_by": [],
    "depends_on": [],
@@ -6573,13 +6808,13 @@
    ],
    "consumed_by": [],
    "external_readers": {
-    "human_or_script": {
-     "queries": 15,
-     "last_read": "2026-09-15"
-    },
     "metabase": {
      "queries": 47,
      "last_read": "2026-09-12"
+    },
+    "human_or_script": {
+     "queries": 15,
+     "last_read": "2026-09-15"
     }
    }
   },
@@ -6952,13 +7187,13 @@
     "wb_mart.V_ADS_SCREEN_QUERY"
    ],
    "external_readers": {
-    "human_or_script": {
-     "queries": 3,
-     "last_read": "2026-09-06"
-    },
     "metabase": {
      "queries": 42,
      "last_read": "2026-08-26"
+    },
+    "human_or_script": {
+     "queries": 3,
+     "last_read": "2026-09-06"
     }
    }
   },
@@ -7209,13 +7444,13 @@
    ],
    "consumed_by": [],
    "external_readers": {
-    "metabase": {
-     "queries": 50,
-     "last_read": "2026-08-26"
-    },
     "human_or_script": {
      "queries": 8,
      "last_read": "2026-09-21"
+    },
+    "metabase": {
+     "queries": 50,
+     "last_read": "2026-08-26"
     }
    }
   },
@@ -7324,13 +7559,13 @@
     "wb_mart.V_DASH_FINANCE_CORRECTED_DAILY"
    ],
    "external_readers": {
+    "human_or_script": {
+     "queries": 18,
+     "last_read": "2026-09-21"
+    },
     "metabase": {
      "queries": 22,
      "last_read": "2026-08-28"
-    },
-    "human_or_script": {
-     "queries": 17,
-     "last_read": "2026-09-21"
     }
    }
   },
@@ -7375,12 +7610,12 @@
    ],
    "consumed_by": [],
    "external_readers": {
-    "human_or_script": {
-     "queries": 3,
-     "last_read": "2026-09-10"
-    },
     "metabase": {
      "queries": 16,
+     "last_read": "2026-09-10"
+    },
+    "human_or_script": {
+     "queries": 3,
      "last_read": "2026-09-10"
     }
    }
@@ -7463,13 +7698,13 @@
     "wb_mart.V_CT_OWNER_HOME"
    ],
    "external_readers": {
+    "human_or_script": {
+     "queries": 28,
+     "last_read": "2026-09-21"
+    },
     "metabase": {
      "queries": 149,
      "last_read": "2026-09-11"
-    },
-    "human_or_script": {
-     "queries": 23,
-     "last_read": "2026-09-21"
     }
    }
   },
@@ -7528,7 +7763,7 @@
      "last_read": "2026-09-10"
     },
     "human_or_script": {
-     "queries": 11,
+     "queries": 13,
      "last_read": "2026-09-21"
     }
    }
@@ -7639,7 +7874,7 @@
      "last_read": "2026-09-11"
     },
     "human_or_script": {
-     "queries": 5,
+     "queries": 6,
      "last_read": "2026-09-21"
     }
    }
@@ -7679,7 +7914,7 @@
    ],
    "external_readers": {
     "human_or_script": {
-     "queries": 11,
+     "queries": 12,
      "last_read": "2026-09-21"
     },
     "metabase": {
@@ -7864,7 +8099,7 @@
    ],
    "external_readers": {
     "human_or_script": {
-     "queries": 3,
+     "queries": 4,
      "last_read": "2026-09-21"
     },
     "metabase": {
@@ -7896,7 +8131,7 @@
    "consumed_by": [],
    "external_readers": {
     "human_or_script": {
-     "queries": 3,
+     "queries": 4,
      "last_read": "2026-09-21"
     },
     "metabase": {
@@ -7935,13 +8170,13 @@
     "wb_mart.V_CT_DAILY_BRIEF"
    ],
    "external_readers": {
+    "human_or_script": {
+     "queries": 14,
+     "last_read": "2026-09-21"
+    },
     "metabase": {
      "queries": 46,
      "last_read": "2026-09-11"
-    },
-    "human_or_script": {
-     "queries": 10,
-     "last_read": "2026-09-21"
     }
    }
   },
@@ -7990,13 +8225,13 @@
     "wb_mart.V_CT_OWNER_HOME"
    ],
    "external_readers": {
+    "human_or_script": {
+     "queries": 2,
+     "last_read": "2026-09-21"
+    },
     "metabase": {
      "queries": 90,
      "last_read": "2026-09-12"
-    },
-    "human_or_script": {
-     "queries": 1,
-     "last_read": "2026-09-21"
     }
    }
   },
@@ -8154,7 +8389,7 @@
    ],
    "external_readers": {
     "human_or_script": {
-     "queries": 35,
+     "queries": 38,
      "last_read": "2026-09-21"
     },
     "metabase": {
@@ -8469,13 +8704,13 @@
     "wb_mart.V_CT_DAILY_BRIEF_LINES"
    ],
    "external_readers": {
+    "human_or_script": {
+     "queries": 31,
+     "last_read": "2026-09-21"
+    },
     "metabase": {
      "queries": 857,
      "last_read": "2026-09-12"
-    },
-    "human_or_script": {
-     "queries": 23,
-     "last_read": "2026-09-21"
     }
    }
   },
@@ -8516,7 +8751,7 @@
    ],
    "external_readers": {
     "human_or_script": {
-     "queries": 6,
+     "queries": 8,
      "last_read": "2026-09-21"
     },
     "metabase": {
@@ -8682,7 +8917,7 @@
      "last_read": "2026-09-11"
     },
     "human_or_script": {
-     "queries": 6,
+     "queries": 7,
      "last_read": "2026-09-21"
     }
    }
@@ -8730,7 +8965,7 @@
    ],
    "external_readers": {
     "human_or_script": {
-     "queries": 3,
+     "queries": 4,
      "last_read": "2026-09-21"
     },
     "metabase": {
@@ -8797,7 +9032,7 @@
      "last_read": "2026-09-11"
     },
     "human_or_script": {
-     "queries": 14,
+     "queries": 17,
      "last_read": "2026-09-21"
     }
    }
@@ -8839,12 +9074,12 @@
     "wb_mart.V_CT_INVENTORY_TRUTH_LIVE"
    ],
    "external_readers": {
-    "human_or_script": {
-     "queries": 2,
-     "last_read": "2026-09-10"
-    },
     "metabase": {
      "queries": 10,
+     "last_read": "2026-09-10"
+    },
+    "human_or_script": {
+     "queries": 2,
      "last_read": "2026-09-10"
     }
    }
@@ -8953,7 +9188,7 @@
      "last_read": "2026-09-17"
     },
     "human_or_script": {
-     "queries": 42,
+     "queries": 60,
      "last_read": "2026-09-21"
     }
    }
@@ -9088,7 +9323,7 @@
      "last_read": "2026-09-17"
     },
     "human_or_script": {
-     "queries": 38,
+     "queries": 62,
      "last_read": "2026-09-21"
     }
    }
@@ -9147,13 +9382,13 @@
    ],
    "consumed_by": [],
    "external_readers": {
+    "human_or_script": {
+     "queries": 215,
+     "last_read": "2026-09-21"
+    },
     "metabase": {
      "queries": 1233,
      "last_read": "2026-09-17"
-    },
-    "human_or_script": {
-     "queries": 193,
-     "last_read": "2026-09-21"
     }
    }
   },
@@ -9265,11 +9500,11 @@
    ],
    "external_readers": {
     "metabase": {
-     "queries": 3433,
-     "last_read": "2026-09-19"
+     "queries": 3820,
+     "last_read": "2026-09-21"
     },
     "human_or_script": {
-     "queries": 434,
+     "queries": 482,
      "last_read": "2026-09-21"
     }
    }
@@ -9358,13 +9593,13 @@
     "wb_mart.V_DASH_EXECUTIVE_ECONOMICS_DAILY"
    ],
    "external_readers": {
+    "human_or_script": {
+     "queries": 260,
+     "last_read": "2026-09-21"
+    },
     "metabase": {
      "queries": 1926,
      "last_read": "2026-09-17"
-    },
-    "human_or_script": {
-     "queries": 177,
-     "last_read": "2026-09-21"
     }
    }
   },
@@ -9457,7 +9692,7 @@
      "last_read": "2026-09-18"
     },
     "human_or_script": {
-     "queries": 42,
+     "queries": 45,
      "last_read": "2026-09-21"
     }
    }
@@ -9573,7 +9808,7 @@
      "last_read": "2026-09-18"
     },
     "human_or_script": {
-     "queries": 1986,
+     "queries": 2024,
      "last_read": "2026-09-21"
     }
    }
@@ -9651,13 +9886,13 @@
    ],
    "consumed_by": [],
    "external_readers": {
+    "human_or_script": {
+     "queries": 135,
+     "last_read": "2026-09-21"
+    },
     "metabase": {
      "queries": 640,
      "last_read": "2026-09-17"
-    },
-    "human_or_script": {
-     "queries": 108,
-     "last_read": "2026-09-21"
     }
    }
   },
@@ -9747,16 +9982,16 @@
     "wb_mart.V_CT_PLAN_VS_ACTUAL_DAILY"
    ],
    "external_readers": {
+    "service_account": {
+     "queries": 53,
+     "last_read": "2026-09-21"
+    },
     "metabase": {
      "queries": 2524,
      "last_read": "2026-09-18"
     },
-    "service_account": {
-     "queries": 50,
-     "last_read": "2026-09-21"
-    },
     "human_or_script": {
-     "queries": 184,
+     "queries": 190,
      "last_read": "2026-09-21"
     }
    }
@@ -9867,11 +10102,11 @@
    "consumed_by": [],
    "external_readers": {
     "metabase": {
-     "queries": 2500,
-     "last_read": "2026-09-20"
+     "queries": 2501,
+     "last_read": "2026-09-21"
     },
     "human_or_script": {
-     "queries": 1495,
+     "queries": 1498,
      "last_read": "2026-09-21"
     }
    }
@@ -10003,7 +10238,7 @@
      "last_read": "2026-08-27"
     },
     "human_or_script": {
-     "queries": 26,
+     "queries": 27,
      "last_read": "2026-09-21"
     }
    }
@@ -10120,7 +10355,7 @@
    ],
    "external_readers": {
     "human_or_script": {
-     "queries": 102,
+     "queries": 116,
      "last_read": "2026-09-21"
     },
     "metabase": {
@@ -10177,7 +10412,7 @@
      "last_read": "2026-09-18"
     },
     "human_or_script": {
-     "queries": 8,
+     "queries": 14,
      "last_read": "2026-09-21"
     }
    }
@@ -10260,7 +10495,7 @@
      "last_read": "2026-09-19"
     },
     "service_account": {
-     "queries": 34,
+     "queries": 35,
      "last_read": "2026-09-21"
     },
     "metabase": {
@@ -10312,13 +10547,13 @@
     "wb_mart.V_UNITKA_INTEGRITY"
    ],
    "external_readers": {
-    "service_account": {
-     "queries": 33,
-     "last_read": "2026-09-21"
-    },
     "human_or_script": {
      "queries": 57,
      "last_read": "2026-09-20"
+    },
+    "service_account": {
+     "queries": 34,
+     "last_read": "2026-09-21"
     },
     "metabase": {
      "queries": 16,
@@ -10372,17 +10607,17 @@
    ],
    "consumed_by": [],
    "external_readers": {
-    "metabase": {
-     "queries": 20,
-     "last_read": "2026-09-18"
+    "human_or_script": {
+     "queries": 5,
+     "last_read": "2026-09-19"
     },
     "service_account": {
      "queries": 1,
      "last_read": "2026-09-18"
     },
-    "human_or_script": {
-     "queries": 5,
-     "last_read": "2026-09-19"
+    "metabase": {
+     "queries": 20,
+     "last_read": "2026-09-18"
     }
    }
   },
@@ -10431,12 +10666,12 @@
    ],
    "consumed_by": [],
    "external_readers": {
-    "metabase": {
-     "queries": 26,
-     "last_read": "2026-09-20"
-    },
     "human_or_script": {
      "queries": 7,
+     "last_read": "2026-09-20"
+    },
+    "metabase": {
+     "queries": 26,
      "last_read": "2026-09-20"
     }
    }
@@ -10471,13 +10706,13 @@
     "wb_mart.V_UNITKA_RECON_WINDOW"
    ],
    "external_readers": {
-    "service_account": {
-     "queries": 38,
-     "last_read": "2026-09-21"
-    },
     "human_or_script": {
      "queries": 171,
      "last_read": "2026-09-20"
+    },
+    "service_account": {
+     "queries": 39,
+     "last_read": "2026-09-21"
     },
     "metabase": {
      "queries": 3,
@@ -10524,7 +10759,7 @@
      "last_read": "2026-09-19"
     },
     "service_account": {
-     "queries": 34,
+     "queries": 35,
      "last_read": "2026-09-21"
     },
     "metabase": {
@@ -10564,7 +10799,7 @@
    "consumed_by": [],
    "external_readers": {
     "service_account": {
-     "queries": 9,
+     "queries": 10,
      "last_read": "2026-09-21"
     },
     "human_or_script": {
@@ -10634,7 +10869,7 @@
      "last_read": "2026-09-20"
     },
     "service_account": {
-     "queries": 9,
+     "queries": 10,
      "last_read": "2026-09-21"
     },
     "metabase": {
@@ -10692,7 +10927,7 @@
    "consumed_by": [],
    "external_readers": {
     "service_account": {
-     "queries": 9,
+     "queries": 10,
      "last_read": "2026-09-21"
     },
     "human_or_script": {
@@ -10736,7 +10971,7 @@
    ],
    "external_readers": {
     "service_account": {
-     "queries": 9,
+     "queries": 10,
      "last_read": "2026-09-21"
     },
     "human_or_script": {
@@ -10781,7 +11016,7 @@
    ],
    "external_readers": {
     "service_account": {
-     "queries": 34,
+     "queries": 35,
      "last_read": "2026-09-21"
     },
     "human_or_script": {
@@ -10841,7 +11076,7 @@
    ],
    "external_readers": {
     "human_or_script": {
-     "queries": 51,
+     "queries": 66,
      "last_read": "2026-09-21"
     },
     "metabase": {
@@ -10925,11 +11160,11 @@
    ],
    "external_readers": {
     "service_account": {
-     "queries": 207,
-     "last_read": "2026-09-21"
+     "queries": 214,
+     "last_read": "2026-09-22"
     },
     "human_or_script": {
-     "queries": 102,
+     "queries": 111,
      "last_read": "2026-09-21"
     },
     "metabase": {
@@ -10985,7 +11220,7 @@
    ],
    "external_readers": {
     "human_or_script": {
-     "queries": 43,
+     "queries": 55,
      "last_read": "2026-09-21"
     },
     "metabase": {
@@ -11315,13 +11550,13 @@
    ],
    "consumed_by": [],
    "external_readers": {
-    "human_or_script": {
-     "queries": 1,
-     "last_read": "2026-09-03"
-    },
     "metabase": {
      "queries": 14,
      "last_read": "2026-08-26"
+    },
+    "human_or_script": {
+     "queries": 1,
+     "last_read": "2026-09-03"
     }
    }
   },
@@ -11342,14 +11577,14 @@
    ],
    "row_count": 1,
    "size_bytes": 75,
-   "last_modified": "2026-09-21T06:11:18Z",
+   "last_modified": "2026-09-22T04:11:26Z",
    "partitioned_by": null,
    "clustered_by": [],
    "depends_on": [],
    "consumed_by": [],
    "external_readers": {
     "human_or_script": {
-     "queries": 7,
+     "queries": 10,
      "last_read": "2026-09-21"
     }
    }
@@ -11372,7 +11607,7 @@
    ],
    "row_count": 2,
    "size_bytes": 221,
-   "last_modified": "2026-09-21T04:04:12Z",
+   "last_modified": "2026-09-22T04:04:38Z",
    "partitioned_by": null,
    "clustered_by": [],
    "depends_on": [],
@@ -11401,7 +11636,7 @@
    ],
    "row_count": 1,
    "size_bytes": 81,
-   "last_modified": "2026-09-21T06:20:52Z",
+   "last_modified": "2026-09-22T04:21:10Z",
    "partitioned_by": null,
    "clustered_by": [],
    "depends_on": [],
@@ -11430,7 +11665,7 @@
    ],
    "row_count": 1,
    "size_bytes": 80,
-   "last_modified": "2026-09-21T06:50:40Z",
+   "last_modified": "2026-09-21T20:50:24Z",
    "partitioned_by": null,
    "clustered_by": [],
    "depends_on": [],
@@ -11472,7 +11707,7 @@
    ],
    "row_count": 6,
    "size_bytes": 2532,
-   "last_modified": "2026-09-21T06:00:33Z",
+   "last_modified": "2026-09-22T04:33:10Z",
    "partitioned_by": "DATE(created_at)",
    "clustered_by": [
     "state",
@@ -11484,8 +11719,8 @@
    ],
    "external_readers": {
     "human_or_script": {
-     "queries": 16,
-     "last_read": "2026-09-19"
+     "queries": 19,
+     "last_read": "2026-09-22"
     }
    }
   },
@@ -11510,9 +11745,9 @@
     "reason_text STRING NULL",
     "evidence_json JSON NULL"
    ],
-   "row_count": 847,
-   "size_bytes": 294850,
-   "last_modified": "2026-09-21T06:00:23Z",
+   "row_count": 920,
+   "size_bytes": 318948,
+   "last_modified": "2026-09-22T04:33:03Z",
    "partitioned_by": "DATE(check_ts)",
    "clustered_by": [
     "scope",
@@ -11524,8 +11759,8 @@
    ],
    "external_readers": {
     "human_or_script": {
-     "queries": 26,
-     "last_read": "2026-09-21"
+     "queries": 39,
+     "last_read": "2026-09-22"
     }
    }
   },
@@ -11561,7 +11796,7 @@
    ],
    "row_count": 3,
    "size_bytes": 1292,
-   "last_modified": "2026-09-21T06:00:30Z",
+   "last_modified": "2026-09-22T04:33:07Z",
    "partitioned_by": null,
    "clustered_by": [
     "state",
@@ -11575,8 +11810,8 @@
    ],
    "external_readers": {
     "human_or_script": {
-     "queries": 16,
-     "last_read": "2026-09-19"
+     "queries": 20,
+     "last_read": "2026-09-22"
     }
    }
   },
@@ -11687,9 +11922,9 @@
     "notes STRING NULL",
     "updated_at TIMESTAMP NOT NULL"
    ],
-   "row_count": 16,
-   "size_bytes": 8563,
-   "last_modified": "2026-09-08T10:31:50Z",
+   "row_count": 27,
+   "size_bytes": 13214,
+   "last_modified": "2026-09-22T04:31:49Z",
    "partitioned_by": null,
    "clustered_by": [
     "environment",
@@ -11698,13 +11933,13 @@
    "depends_on": [],
    "consumed_by": [],
    "external_readers": {
-    "service_account": {
-     "queries": 119,
-     "last_read": "2026-09-21"
-    },
     "human_or_script": {
-     "queries": 29,
-     "last_read": "2026-09-21"
+     "queries": 52,
+     "last_read": "2026-09-22"
+    },
+    "service_account": {
+     "queries": 126,
+     "last_read": "2026-09-22"
     },
     "metabase": {
      "queries": 7,
@@ -11739,9 +11974,9 @@
     "image_digest STRING NULL",
     "engine_version STRING NULL"
    ],
-   "row_count": 34,
-   "size_bytes": 162975,
-   "last_modified": "2026-09-21T07:01:29Z",
+   "row_count": 35,
+   "size_bytes": 169061,
+   "last_modified": "2026-09-21T09:31:52Z",
    "partitioned_by": "DATE(started_at)",
    "clustered_by": [
     "environment",
@@ -11782,9 +12017,9 @@
     "diagnostic_value STRING NULL",
     "message STRING NULL"
    ],
-   "row_count": 490,
-   "size_bytes": 241958,
-   "last_modified": "2026-09-21T07:01:27Z",
+   "row_count": 540,
+   "size_bytes": 264132,
+   "last_modified": "2026-09-21T09:31:51Z",
    "partitioned_by": "DATE(evaluated_at)",
    "clustered_by": [
     "environment",
@@ -11945,8 +12180,8 @@
    "consumed_by": [],
    "external_readers": {
     "human_or_script": {
-     "queries": 26,
-     "last_read": "2026-09-21"
+     "queries": 32,
+     "last_read": "2026-09-22"
     },
     "metabase": {
      "queries": 21,
@@ -11974,9 +12209,9 @@
     "requests_made INT64 NULL",
     "error_message STRING NULL"
    ],
-   "row_count": 183,
-   "size_bytes": 17536,
-   "last_modified": "2026-09-21T04:29:33Z",
+   "row_count": 186,
+   "size_bytes": 17816,
+   "last_modified": "2026-09-22T04:27:52Z",
    "partitioned_by": null,
    "clustered_by": [],
    "depends_on": [],
@@ -12030,9 +12265,9 @@
     "list_metrics_json STRING NULL",
     "error_message STRING NULL"
    ],
-   "row_count": 122,
-   "size_bytes": 67972,
-   "last_modified": "2026-09-21T04:29:30Z",
+   "row_count": 125,
+   "size_bytes": 69642,
+   "last_modified": "2026-09-22T04:27:49Z",
    "partitioned_by": null,
    "clustered_by": [],
    "depends_on": [],
@@ -12042,8 +12277,8 @@
    ],
    "external_readers": {
     "human_or_script": {
-     "queries": 501,
-     "last_read": "2026-09-21"
+     "queries": 504,
+     "last_read": "2026-09-22"
     }
    }
   },
@@ -12065,9 +12300,9 @@
     "recon_status STRING NULL",
     "checked_at TIMESTAMP NULL"
    ],
-   "row_count": 126,
-   "size_bytes": 11564,
-   "last_modified": "2026-09-14T09:27:31Z",
+   "row_count": 140,
+   "size_bytes": 12846,
+   "last_modified": "2026-09-21T09:27:34Z",
    "partitioned_by": null,
    "clustered_by": [],
    "depends_on": [],
@@ -12092,8 +12327,8 @@
     "notes STRING NULL"
    ],
    "row_count": 20,
-   "size_bytes": 826,
-   "last_modified": "2026-09-21T04:26:17Z",
+   "size_bytes": 880,
+   "last_modified": "2026-09-22T04:26:32Z",
    "partitioned_by": null,
    "clustered_by": [],
    "depends_on": [],
@@ -12103,7 +12338,7 @@
    "external_readers": {
     "human_or_script": {
      "queries": 272,
-     "last_read": "2026-09-21"
+     "last_read": "2026-09-22"
     }
    }
   },
@@ -12129,9 +12364,9 @@
     "error_code STRING NULL",
     "error_message STRING NULL"
    ],
-   "row_count": 2382,
-   "size_bytes": 280501,
-   "last_modified": "2026-09-21T06:32:11Z",
+   "row_count": 2427,
+   "size_bytes": 285761,
+   "last_modified": "2026-09-22T04:32:24Z",
    "partitioned_by": "DATE(started_at)",
    "clustered_by": [
     "loader_name",
@@ -12145,8 +12380,8 @@
    ],
    "external_readers": {
     "human_or_script": {
-     "queries": 84,
-     "last_read": "2026-09-21"
+     "queries": 90,
+     "last_read": "2026-09-22"
     }
    }
   },
@@ -12175,9 +12410,9 @@
     "rows_fetched INT64 NULL",
     "rows_loaded INT64 NULL"
    ],
-   "row_count": 1206,
-   "size_bytes": 468277,
-   "last_modified": "2026-09-21T07:01:31Z",
+   "row_count": 1274,
+   "size_bytes": 494635,
+   "last_modified": "2026-09-22T04:21:00Z",
    "partitioned_by": "DATE(started_at)",
    "clustered_by": [
     "environment",
@@ -12192,8 +12427,8 @@
    ],
    "external_readers": {
     "service_account": {
-     "queries": 2444,
-     "last_read": "2026-09-21"
+     "queries": 2574,
+     "last_read": "2026-09-22"
     },
     "human_or_script": {
      "queries": 44,
@@ -12222,9 +12457,9 @@
     "avg_position STRING NULL",
     "raw_json STRING NULL"
    ],
-   "row_count": 5025,
-   "size_bytes": 953511,
-   "last_modified": "2026-09-21T02:11:17Z",
+   "row_count": 5069,
+   "size_bytes": 961829,
+   "last_modified": "2026-09-22T02:11:14Z",
    "partitioned_by": "DATE(_PARTITIONTIME)",
    "clustered_by": [
     "date",
@@ -12236,13 +12471,13 @@
     "wb_raw.V_ADV_BOOSTER_STATS"
    ],
    "external_readers": {
-    "human_or_script": {
-     "queries": 1,
-     "last_read": "2026-09-06"
-    },
     "metabase": {
      "queries": 14,
      "last_read": "2026-08-26"
+    },
+    "human_or_script": {
+     "queries": 1,
+     "last_read": "2026-09-06"
     }
    }
   },
@@ -12275,9 +12510,9 @@
     "nm_count STRING NULL",
     "raw_json STRING NULL"
    ],
-   "row_count": 29615,
-   "size_bytes": 18427110,
-   "last_modified": "2026-09-21T02:07:45Z",
+   "row_count": 30046,
+   "size_bytes": 18695422,
+   "last_modified": "2026-09-22T02:07:50Z",
    "partitioned_by": "DATE(_PARTITIONTIME)",
    "clustered_by": [
     "advertId;"
@@ -12332,9 +12567,9 @@
     "source_level STRING NULL",
     "raw_json STRING NULL"
    ],
-   "row_count": 54842,
-   "size_bytes": 15973812,
-   "last_modified": "2026-09-21T02:11:22Z",
+   "row_count": 55436,
+   "size_bytes": 16079317,
+   "last_modified": "2026-09-22T02:11:17Z",
    "partitioned_by": "DATE(_PARTITIONTIME)",
    "clustered_by": [
     "date",
@@ -12383,9 +12618,9 @@
     "raw_json STRING NULL",
     "window_index STRING NULL"
    ],
-   "row_count": 12743,
-   "size_bytes": 5517293,
-   "last_modified": "2026-09-21T02:08:03Z",
+   "row_count": 12833,
+   "size_bytes": 5556403,
+   "last_modified": "2026-09-22T02:08:07Z",
    "partitioned_by": "DATE(_PARTITIONTIME)",
    "clustered_by": [
     "advertId;"
@@ -12436,9 +12671,9 @@
     "status STRING NULL",
     "error_message STRING NULL"
    ],
-   "row_count": 50,
-   "size_bytes": 8483,
-   "last_modified": "2026-09-21T02:08:06Z",
+   "row_count": 51,
+   "size_bytes": 8652,
+   "last_modified": "2026-09-22T02:08:11Z",
    "partitioned_by": null,
    "clustered_by": [],
    "depends_on": [],
@@ -12479,9 +12714,9 @@
     "campaign_status STRING NULL",
     "raw_json STRING NULL"
    ],
-   "row_count": 3745,
-   "size_bytes": 1414873,
-   "last_modified": "2026-09-21T02:11:44Z",
+   "row_count": 3848,
+   "size_bytes": 1453473,
+   "last_modified": "2026-09-22T02:11:42Z",
    "partitioned_by": "DATE(_PARTITIONTIME)",
    "clustered_by": [
     "advert_id",
@@ -12492,13 +12727,13 @@
     "wb_raw.V_ADV_QUERY_BIDS"
    ],
    "external_readers": {
-    "human_or_script": {
-     "queries": 5,
-     "last_read": "2026-09-08"
-    },
     "metabase": {
      "queries": 19,
      "last_read": "2026-08-26"
+    },
+    "human_or_script": {
+     "queries": 5,
+     "last_read": "2026-09-08"
     }
    }
   },
@@ -12527,9 +12762,9 @@
     "status STRING NULL",
     "error_message STRING NULL"
    ],
-   "row_count": 37,
-   "size_bytes": 5611,
-   "last_modified": "2026-09-21T02:11:48Z",
+   "row_count": 38,
+   "size_bytes": 5761,
+   "last_modified": "2026-09-22T02:11:46Z",
    "partitioned_by": "DATE(_PARTITIONTIME);",
    "clustered_by": [],
    "depends_on": [],
@@ -12538,8 +12773,8 @@
    ],
    "external_readers": {
     "service_account": {
-     "queries": 238,
-     "last_read": "2026-09-21"
+     "queries": 252,
+     "last_read": "2026-09-22"
     },
     "human_or_script": {
      "queries": 28,
@@ -12582,9 +12817,9 @@
     "currency STRING NULL",
     "raw_json STRING NULL"
    ],
-   "row_count": 55409,
-   "size_bytes": 21729909,
-   "last_modified": "2026-09-21T02:12:11Z",
+   "row_count": 55520,
+   "size_bytes": 21774545,
+   "last_modified": "2026-09-22T02:12:19Z",
    "partitioned_by": "DATE(_PARTITIONTIME)",
    "clustered_by": [
     "advert_id",
@@ -12636,9 +12871,9 @@
     "status STRING NULL",
     "error_message STRING NULL"
    ],
-   "row_count": 310,
-   "size_bytes": 51927,
-   "last_modified": "2026-09-21T02:12:14Z",
+   "row_count": 312,
+   "size_bytes": 52260,
+   "last_modified": "2026-09-22T02:12:23Z",
    "partitioned_by": "DATE(_PARTITIONTIME);",
    "clustered_by": [],
    "depends_on": [],
@@ -12793,9 +13028,9 @@
     "report_type INT64 NULL",
     "run_id STRING NULL"
    ],
-   "row_count": 211904,
-   "size_bytes": 350918953,
-   "last_modified": "2026-09-21T04:29:25Z",
+   "row_count": 212294,
+   "size_bytes": 352005261,
+   "last_modified": "2026-09-22T04:27:44Z",
    "partitioned_by": "_rr_date",
    "clustered_by": [
     "wb_nm_id",
@@ -12809,8 +13044,8 @@
    ],
    "external_readers": {
     "human_or_script": {
-     "queries": 323,
-     "last_read": "2026-09-21"
+     "queries": 327,
+     "last_read": "2026-09-22"
     }
    }
   },
@@ -12941,8 +13176,8 @@
    "consumed_by": [],
    "external_readers": {
     "human_or_script": {
-     "queries": 23,
-     "last_read": "2026-09-16"
+     "queries": 28,
+     "last_read": "2026-09-21"
     }
    }
   },
@@ -12986,9 +13221,9 @@
     "last_change_date STRING NULL",
     "_order_date DATE NULL"
    ],
-   "row_count": 5545,
-   "size_bytes": 2687223,
-   "last_modified": "2026-09-21T06:32:06Z",
+   "row_count": 5570,
+   "size_bytes": 2699226,
+   "last_modified": "2026-09-22T04:32:16Z",
    "partitioned_by": "_order_date",
    "clustered_by": [
     "wb_nm_id",
@@ -13000,8 +13235,8 @@
    ],
    "external_readers": {
     "human_or_script": {
-     "queries": 468,
-     "last_read": "2026-09-21"
+     "queries": 472,
+     "last_read": "2026-09-22"
     }
    }
   },
@@ -13040,9 +13275,9 @@
     "raw_row_json STRING NULL",
     "ingested_at TIMESTAMP NULL"
    ],
-   "row_count": 6717,
-   "size_bytes": 6159040,
-   "last_modified": "2026-09-20T08:45:57Z",
+   "row_count": 7040,
+   "size_bytes": 6457954,
+   "last_modified": "2026-09-21T08:46:43Z",
    "partitioned_by": "date_msk",
    "clustered_by": [
     "nm_id",
@@ -13059,8 +13294,8 @@
      "last_read": "2026-09-19"
     },
     "service_account": {
-     "queries": 36,
-     "last_read": "2026-09-20"
+     "queries": 41,
+     "last_read": "2026-09-21"
     }
    }
   },
@@ -13099,9 +13334,9 @@
     "raw_row_json STRING NULL",
     "ingested_at TIMESTAMP NULL"
    ],
-   "row_count": 2657,
-   "size_bytes": 2457237,
-   "last_modified": "2026-09-20T08:45:49Z",
+   "row_count": 2645,
+   "size_bytes": 2446390,
+   "last_modified": "2026-09-21T08:46:28Z",
    "partitioned_by": "date_msk",
    "clustered_by": [
     "nm_id",
@@ -13115,8 +13350,8 @@
      "last_read": "2026-09-14"
     },
     "service_account": {
-     "queries": 36,
-     "last_read": "2026-09-20"
+     "queries": 41,
+     "last_read": "2026-09-21"
     }
    }
   },
@@ -13151,9 +13386,9 @@
     "source_payload_hash STRING NULL",
     "ingested_at TIMESTAMP NULL"
    ],
-   "row_count": 24925,
-   "size_bytes": 16220784,
-   "last_modified": "2026-09-21T07:00:47Z",
+   "row_count": 26525,
+   "size_bytes": 17255600,
+   "last_modified": "2026-09-22T04:20:56Z",
    "partitioned_by": "DATE(observed_at)",
    "clustered_by": [
     "nm_id",
@@ -13168,8 +13403,8 @@
    ],
    "external_readers": {
     "service_account": {
-     "queries": 997,
-     "last_read": "2026-09-21"
+     "queries": 1061,
+     "last_read": "2026-09-22"
     },
     "human_or_script": {
      "queries": 53,
@@ -13228,9 +13463,9 @@
     "raw_json STRING NULL",
     "_sale_date DATE NULL"
    ],
-   "row_count": 4819,
-   "size_bytes": 6844149,
-   "last_modified": "2026-09-20T18:23:09Z",
+   "row_count": 4833,
+   "size_bytes": 6863875,
+   "last_modified": "2026-09-21T18:23:19Z",
    "partitioned_by": "_sale_date",
    "clustered_by": [
     "sale_id",
@@ -13243,8 +13478,8 @@
    ],
    "external_readers": {
     "human_or_script": {
-     "queries": 297,
-     "last_read": "2026-09-21"
+     "queries": 299,
+     "last_read": "2026-09-22"
     }
    }
   },
@@ -13276,9 +13511,9 @@
     "_snapshot_date DATE NULL",
     "warehouse_code STRING NULL"
    ],
-   "row_count": 6649,
-   "size_bytes": 2767453,
-   "last_modified": "2026-09-21T03:23:42Z",
+   "row_count": 6668,
+   "size_bytes": 2774660,
+   "last_modified": "2026-09-22T03:23:41Z",
    "partitioned_by": "_snapshot_date",
    "clustered_by": [
     "nm_id",
@@ -13290,8 +13525,8 @@
    ],
    "external_readers": {
     "human_or_script": {
-     "queries": 65,
-     "last_read": "2026-09-21"
+     "queries": 66,
+     "last_read": "2026-09-22"
     }
    }
   },
@@ -13320,9 +13555,9 @@
     "sku_match_status STRING NULL",
     "_snapshot_date DATE NULL"
    ],
-   "row_count": 7746,
-   "size_bytes": 1884901,
-   "last_modified": "2026-09-21T03:23:39Z",
+   "row_count": 7941,
+   "size_bytes": 1932216,
+   "last_modified": "2026-09-22T03:23:37Z",
    "partitioned_by": "_snapshot_date",
    "clustered_by": [
     "nm_id",
@@ -13367,9 +13602,9 @@
     "_snapshot_date DATE NULL",
     "warehouse_code STRING NULL"
    ],
-   "row_count": 4984,
-   "size_bytes": 2138656,
-   "last_modified": "2026-09-21T03:31:23Z",
+   "row_count": 5003,
+   "size_bytes": 2146091,
+   "last_modified": "2026-09-22T03:30:31Z",
    "partitioned_by": "_snapshot_date",
    "clustered_by": [
     "nm_id",
@@ -13379,8 +13614,8 @@
    "consumed_by": [],
    "external_readers": {
     "service_account": {
-     "queries": 29,
-     "last_read": "2026-09-21"
+     "queries": 30,
+     "last_read": "2026-09-22"
     },
     "human_or_script": {
      "queries": 12,
@@ -13432,9 +13667,9 @@
     "raw_json STRING NULL",
     "row_hash STRING NULL"
    ],
-   "row_count": 731,
-   "size_bytes": 445222,
-   "last_modified": "2026-09-20T23:31:36Z",
+   "row_count": 749,
+   "size_bytes": 453758,
+   "last_modified": "2026-09-21T23:31:43Z",
    "partitioned_by": "DATE(snapshot_ts);",
    "clustered_by": [],
    "depends_on": [],
@@ -13444,7 +13679,7 @@
    "external_readers": {
     "human_or_script": {
      "queries": 55,
-     "last_read": "2026-09-20"
+     "last_read": "2026-09-21"
     }
    }
   },
@@ -13478,9 +13713,9 @@
     "raw_json STRING NULL",
     "row_hash STRING NULL"
    ],
-   "row_count": 910,
-   "size_bytes": 410263,
-   "last_modified": "2026-09-20T23:31:33Z",
+   "row_count": 922,
+   "size_bytes": 415629,
+   "last_modified": "2026-09-21T23:31:40Z",
    "partitioned_by": "DATE(snapshot_ts);",
    "clustered_by": [],
    "depends_on": [],
@@ -13641,7 +13876,7 @@
    ],
    "external_readers": {
     "human_or_script": {
-     "queries": 506,
+     "queries": 530,
      "last_read": "2026-09-21"
     },
     "metabase": {
@@ -13649,8 +13884,8 @@
      "last_read": "2026-08-26"
     },
     "service_account": {
-     "queries": 1173,
-     "last_read": "2026-09-21"
+     "queries": 1238,
+     "last_read": "2026-09-22"
     }
    }
   },
@@ -13805,13 +14040,13 @@
    ],
    "consumed_by": [],
    "external_readers": {
-    "metabase": {
-     "queries": 12,
-     "last_read": "2026-08-26"
-    },
     "human_or_script": {
      "queries": 1,
      "last_read": "2026-09-06"
+    },
+    "metabase": {
+     "queries": 12,
+     "last_read": "2026-08-26"
     }
    }
   },
@@ -14033,8 +14268,8 @@
    ],
    "external_readers": {
     "human_or_script": {
-     "queries": 195,
-     "last_read": "2026-09-21"
+     "queries": 191,
+     "last_read": "2026-09-22"
     },
     "metabase": {
      "queries": 25,
@@ -14083,7 +14318,7 @@
    "external_readers": {
     "human_or_script": {
      "queries": 79,
-     "last_read": "2026-09-21"
+     "last_read": "2026-09-22"
     },
     "metabase": {
      "queries": 18,
@@ -14139,7 +14374,7 @@
    ],
    "external_readers": {
     "human_or_script": {
-     "queries": 61,
+     "queries": 64,
      "last_read": "2026-09-21"
     },
     "metabase": {
@@ -14334,13 +14569,13 @@
     "wb_mart.V_DATA_FRESHNESS"
    ],
    "external_readers": {
-    "human_or_script": {
-     "queries": 10,
-     "last_read": "2026-09-15"
-    },
     "metabase": {
      "queries": 18,
      "last_read": "2026-08-26"
+    },
+    "human_or_script": {
+     "queries": 10,
+     "last_read": "2026-09-15"
     }
    }
   },
@@ -14390,13 +14625,13 @@
     "wb_mart.V_DATA_FRESHNESS"
    ],
    "external_readers": {
-    "metabase": {
-     "queries": 30,
-     "last_read": "2026-09-12"
-    },
     "human_or_script": {
      "queries": 10,
      "last_read": "2026-09-06"
+    },
+    "metabase": {
+     "queries": 30,
+     "last_read": "2026-09-12"
     }
    }
   },
@@ -14435,13 +14670,13 @@
    ],
    "consumed_by": [],
    "external_readers": {
+    "service_account": {
+     "queries": 126,
+     "last_read": "2026-09-22"
+    },
     "human_or_script": {
      "queries": 10,
      "last_read": "2026-09-08"
-    },
-    "service_account": {
-     "queries": 119,
-     "last_read": "2026-09-21"
     },
     "metabase": {
      "queries": 15,
@@ -14527,8 +14762,8 @@
    "consumed_by": [],
    "external_readers": {
     "service_account": {
-     "queries": 168,
-     "last_read": "2026-09-21"
+     "queries": 175,
+     "last_read": "2026-09-22"
     },
     "human_or_script": {
      "queries": 7,
@@ -14744,7 +14979,7 @@
    ],
    "external_readers": {
     "human_or_script": {
-     "queries": 117,
+     "queries": 118,
      "last_read": "2026-09-21"
     },
     "metabase": {
@@ -14970,7 +15205,7 @@
    ],
    "external_readers": {
     "human_or_script": {
-     "queries": 73,
+     "queries": 77,
      "last_read": "2026-09-21"
     },
     "metabase": {
@@ -15006,13 +15241,13 @@
    ],
    "consumed_by": [],
    "external_readers": {
-    "metabase": {
-     "queries": 7,
-     "last_read": "2026-09-11"
-    },
     "human_or_script": {
      "queries": 3,
      "last_read": "2026-09-21"
+    },
+    "metabase": {
+     "queries": 7,
+     "last_read": "2026-09-11"
     }
    }
   },
@@ -15347,7 +15582,7 @@
    ],
    "external_readers": {
     "human_or_script": {
-     "queries": 81,
+     "queries": 84,
      "last_read": "2026-09-21"
     },
     "metabase": {
@@ -15452,7 +15687,7 @@
      "last_read": "2026-09-14"
     },
     "service_account": {
-     "queries": 50,
+     "queries": 53,
      "last_read": "2026-09-21"
     },
     "metabase": {
@@ -15538,7 +15773,7 @@
      "last_read": "2026-09-13"
     },
     "human_or_script": {
-     "queries": 137,
+     "queries": 140,
      "last_read": "2026-09-21"
     }
    }
@@ -15824,9 +16059,9 @@
     "error_code STRING NULL",
     "error_message STRING NULL"
    ],
-   "row_count": 997,
-   "size_bytes": 252682,
-   "last_modified": "2026-09-21T07:00:50Z",
+   "row_count": 1061,
+   "size_bytes": 268682,
+   "last_modified": "2026-09-22T04:20:58Z",
    "partitioned_by": "DATE(started_at)",
    "clustered_by": [
     "environment",
@@ -15885,9 +16120,9 @@
     "availability_ratio FLOAT64 NULL",
     "availability_status STRING NULL"
    ],
-   "row_count": 72,
-   "size_bytes": 18115,
-   "last_modified": "2026-09-21T03:23:46Z",
+   "row_count": 73,
+   "size_bytes": 18404,
+   "last_modified": "2026-09-22T03:23:43Z",
    "partitioned_by": null,
    "clustered_by": [],
    "depends_on": [],
@@ -15899,7 +16134,7 @@
    "external_readers": {
     "human_or_script": {
      "queries": 51,
-     "last_read": "2026-09-21"
+     "last_read": "2026-09-22"
     }
    }
   },
@@ -15985,9 +16220,9 @@
     "sum_quantity_physical_t6 INT64 NULL",
     "unmatched_nm_ids STRING NULL"
    ],
-   "row_count": 57,
-   "size_bytes": 10966,
-   "last_modified": "2026-09-21T03:31:25Z",
+   "row_count": 58,
+   "size_bytes": 11147,
+   "last_modified": "2026-09-22T03:30:33Z",
    "partitioned_by": null,
    "clustered_by": [],
    "depends_on": [],
@@ -16437,6 +16672,22 @@
    ]
   },
   {
+   "routine": "wb_ops.sp_evaluate_health_ext",
+   "dataset": "wb_ops",
+   "domain": "wb",
+   "type": "PROCEDURE",
+   "body_length": 7054,
+   "last_altered": "2026-09-22T04:32:17Z",
+   "references": [
+    "ozon_raw.OZON_INGESTION_RUNS",
+    "ozon_raw.RAW_OZON_",
+    "wb_ops.OPS_PIPELINE_REGISTRY",
+    "wb_ops.sp_ops_apply_health",
+    "wb_raw.INGEST_RUNS",
+    "wb_raw.RAW_WB_ORDERS"
+   ]
+  },
+  {
    "routine": "wb_ops.sp_evaluate_pipeline_health",
    "dataset": "wb_ops",
    "domain": "wb",
@@ -16813,6 +17064,31 @@
     "file": "infra/terraform/ozon_ingestion.tf"
    },
    {
+    "type": "google_cloud_run_v2_job",
+    "name": "ozon_unitka_prod",
+    "file": "infra/terraform/ozon_unitka.tf"
+   },
+   {
+    "type": "google_cloud_scheduler_job",
+    "name": "ozon_unitka_prod",
+    "file": "infra/terraform/ozon_unitka.tf"
+   },
+   {
+    "type": "google_bigquery_dataset_iam_member",
+    "name": "ozon_unitka_read_mart",
+    "file": "infra/terraform/ozon_unitka.tf"
+   },
+   {
+    "type": "google_bigquery_dataset_iam_member",
+    "name": "ozon_unitka_read_raw",
+    "file": "infra/terraform/ozon_unitka.tf"
+   },
+   {
+    "type": "google_monitoring_alert_policy",
+    "name": "ozon_unitka_failed",
+    "file": "infra/terraform/ozon_unitka.tf"
+   },
+   {
     "type": "google_cloud_scheduler_job",
     "name": "wb_stocks_shadow",
     "file": "infra/terraform/scheduler.tf"
@@ -17173,7 +17449,7 @@
     "file": "infra/terraform/wif.tf"
    }
   ],
-  "terraform_resource_count": 132,
+  "terraform_resource_count": 137,
   "apps_script": {
    "file_count": 108,
    "projects": [
@@ -17240,21 +17516,25 @@
      "FCT_OZON_SKU_PNL_DAILY",
      "FCT_OZON_SKU_PNL_MONTHLY",
      "V_OZON_AGENT_DECISION_INPUT",
+     "V_OZON_CIS_BUYOUT",
+     "V_OZON_COMMISSION_POLICY",
      "V_OZON_COMMISSION_RECOVERY",
      "V_OZON_LIFETIME_PNL",
+     "V_OZON_LOGISTICS_ESTIMATOR",
      "V_OZON_MART_FRESHNESS",
      "V_OZON_SKU_CURRENT_TARIFF",
      "V_OZON_SKU_FBO_FBS_COMPARISON_CURRENT",
      "V_OZON_SKU_FORWARD_ECONOMICS_CURRENT",
+     "V_OZON_SKU_PNL_DAILY_OPERATIONAL",
      "V_OZON_SKU_UNIT_ECONOMICS_CURRENT",
      "V_OZON_TARIFF_CHANGE_LOG",
      "V_OZON_TARIFF_SOURCE_HEALTH"
     ],
-    "count": 13,
+    "count": 17,
     "manifest_version": 2
    }
   },
-  "sql_files_total": 143
+  "sql_files_total": 154
  },
  "orchestration": {
   "cloud_scheduler": [
@@ -17294,6 +17574,14 @@
     "scheduler": "ozon-fast",
     "state": "ENABLED",
     "schedule": "0 7,13,19 * * *",
+    "timezone": "Europe/Moscow",
+    "target_kind": "cloud_run_job",
+    "bigquery_statement": null
+   },
+   {
+    "scheduler": "ozon-unitka-prod",
+    "state": "PAUSED",
+    "schedule": "0 10 * * *",
     "timezone": "Europe/Moscow",
     "target_kind": "cloud_run_job",
     "bigquery_statement": null
@@ -17449,6 +17737,14 @@
     "args": [],
     "image_repository": "europe-west1-docker.pkg.dev/project-fa311fc0-4d87-4781-986/cloud-run-source-deploy/ozon-runtime-ingest",
     "image_digest_pinned": true
+   },
+   {
+    "job": "ozon-unitka-prod",
+    "args": [
+     "ozon-unitka"
+    ],
+    "image_repository": "us-docker.pkg.dev/cloudrun/container/hello",
+    "image_digest_pinned": false
    },
    {
     "job": "unitka-engine-prod",

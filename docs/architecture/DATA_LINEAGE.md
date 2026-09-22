@@ -2,7 +2,7 @@
 
 <!-- СГЕНЕРИРОВАНО tools/render_architecture_docs.py из docs/architecture/system_inventory.json. Правки в этом файле будут затёрты: меняй генератор или снимок. -->
 
-**Снимок:** 2026-09-21T05:56:56Z. Рёбра выведены из тел вью в `INFORMATION_SCHEMA.VIEWS`, а не из имён файлов: это то, что BigQuery исполняет.
+**Снимок:** 2026-09-22T04:35:09Z. Рёбра выведены из тел вью в `INFORMATION_SCHEMA.VIEWS`, а не из имён файлов: это то, что BigQuery исполняет.
 
 Обозначения: `T` — таблица (носитель данных), `V` — вью (вычисление поверх других объектов). Стрелка читается «зависит от».
 
@@ -13,12 +13,13 @@
 | Объект | Тип | Прямых потребителей | Транзитивно |
 |---|---|---:|---:|
 | `wb_raw.REF_SKU_MASTER` | V | 19 | 37 |
+| `evetis_ref.REF_SKU_CHANNEL_MAP` | T | 15 | 43 |
 | `evetis_ref.REF_PRODUCT_MASTER` | T | 13 | 44 |
-| `evetis_ref.REF_SKU_CHANNEL_MAP` | T | 12 | 40 |
-| `evetis_ref.V_PRODUCT_COGS_EFFECTIVE` | V | 10 | 26 |
+| `ozon_raw.RAW_OZON_POSTINGS_FBO` | T | 12 | 24 |
+| `evetis_ref.V_PRODUCT_COGS_EFFECTIVE` | V | 11 | 27 |
 | `wb_mart.MART_SKU_DAILY` | T | 10 | 28 |
 | `evetis_ops.V_CT_STOCK_BALANCE` | V | 9 | 17 |
-| `ozon_raw.RAW_OZON_POSTINGS_FBO` | T | 9 | 21 |
+| `ozon_raw.RAW_OZON_FINANCE_ACCRUAL` | T | 9 | 16 |
 | `wb_mart.V_CT_PLAN_ACTIVE` | V | 9 | 23 |
 | `wb_mart.FACT_ORDERS` | T | 8 | 31 |
 | `wb_mart.FACT_FINANCE` | T | 7 | 30 |
@@ -26,13 +27,12 @@
 | `wb_mart.V_CT_BOM_CURRENT` | V | 7 | 13 |
 | `wb_mart.V_CT_INVENTORY_TRUTH` | V | 7 | 13 |
 | `evetis_ops.V_OPS_BOM` | V | 6 | 19 |
-| `ozon_raw.RAW_OZON_FINANCE_ACCRUAL` | T | 6 | 13 |
 | `wb_mart.V_UNITKA_LAST_CLOSED_DATE` | V | 6 | 9 |
 | `wb_raw.V_WB_FINANCE_CANONICAL` | V | 6 | 30 |
 | `wb_raw.V_WB_STORAGE_DAILY` | V | 6 | 13 |
 | `evetis_ops.V_CT_OZON_ORDER_RECON` | V | 5 | 16 |
 | `evetis_ref.CT_STOCK_SNAPSHOT` | T | 5 | 10 |
-| `ozon_raw.RAW_OZON_ADS_SKU_DAILY` | T | 5 | 9 |
+| `ozon_raw.RAW_OZON_ADS_SKU_DAILY` | T | 5 | 10 |
 | `ozon_raw.RAW_OZON_STOCKS` | T | 5 | 20 |
 | `wb_mart.FACT_STOCKS_SNAPSHOT` | T | 5 | 31 |
 | `wb_raw.V_WB_FINANCE_SEMANTIC` | V | 5 | 16 |
@@ -112,11 +112,13 @@
 
 ### Ozon
 
-Конечных объектов (никто не читает изнутри BigQuery — это выход к Metabase, листам или агентам, либо мёртвый объект): **5**.
+Конечных объектов (никто не читает изнутри BigQuery — это выход к Metabase, листам или агентам, либо мёртвый объект): **7**.
 
 - `ozon_mart.V_OZON_AGENT_DECISION_INPUT` ← `ozon_mart.FCT_OZON_SKU_PNL_MONTHLY`, `ozon_mart.V_OZON_SKU_FORWARD_ECONOMICS_CURRENT`, `ozon_mart.V_OZON_TARIFF_SOURCE_HEALTH`
+- `ozon_mart.V_OZON_COMMISSION_RECOVERY` ← _нет зависимостей_
 - `ozon_mart.V_OZON_LIFETIME_PNL` ← `ozon_mart.FCT_OZON_PNL_MONTHLY`, `ozon_mart.FCT_OZON_SKU_PNL_MONTHLY`, `ozon_mart.V_OZON_MART_FRESHNESS`, `ozon_raw.RAW_OZON_ADS_EXPENSE_DAILY`
 - `ozon_mart.V_OZON_SKU_FBO_FBS_COMPARISON_CURRENT` ← `ozon_mart.V_OZON_SKU_CURRENT_TARIFF`, `ozon_mart.V_OZON_SKU_FORWARD_ECONOMICS_CURRENT`
+- `ozon_mart.V_OZON_SKU_PNL_DAILY_OPERATIONAL` ← `evetis_ref.REF_SKU_CHANNEL_MAP`, `evetis_ref.V_PRODUCT_COGS_EFFECTIVE`, `ozon_mart.FCT_OZON_SKU_PNL_DAILY`, `ozon_mart.V_OZON_CIS_BUYOUT`, `ozon_mart.V_OZON_COMMISSION_POLICY`, `ozon_mart.V_OZON_LOGISTICS_ESTIMATOR`, `ozon_raw.RAW_OZON_FINANCE_ACCRUAL`, `ozon_raw.RAW_OZON_POSTINGS_FBO`
 - `ozon_mart.V_OZON_SKU_UNIT_ECONOMICS_CURRENT` ← `ozon_mart.FCT_OZON_SKU_PNL_MONTHLY`
 - `ozon_mart.V_OZON_TARIFF_CHANGE_LOG` ← `ozon_raw.RAW_OZON_PRICE_COMMISSIONS`
 

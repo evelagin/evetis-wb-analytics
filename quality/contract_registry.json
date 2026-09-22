@@ -1,8 +1,8 @@
 {
  "schema_version": 1,
- "generated_at": "2026-09-21T07:08:44Z",
+ "generated_at": "2026-09-22T04:35:09Z",
  "generated_by": "tools/build_contract_registry.py",
- "inventory_snapshot": "2026-09-21T05:56:56Z",
+ "inventory_snapshot": "2026-09-22T04:35:09Z",
  "summary": {
   "suites": 11,
   "checks_total": 228,
@@ -13,7 +13,7 @@
   "acceptance_artifacts_in_backlog": 12,
   "assets_with_contract": 32,
   "assets_under_gate": 32,
-  "unresolved_business_rules_open": 8,
+  "unresolved_business_rules_open": 9,
   "parse_problems": 0
  },
  "by_severity": {
@@ -7986,10 +7986,12 @@
     "V11_TRACE_SKUS_AUGUST_2026"
    ],
    "direct_consumers": [
-    "evetis_mart.FACT_SKU_DAILY"
+    "evetis_mart.FACT_SKU_DAILY",
+    "ozon_mart.V_OZON_SKU_PNL_DAILY_OPERATIONAL"
    ],
    "transitive_consumers": [
-    "evetis_mart.FACT_SKU_DAILY"
+    "evetis_mart.FACT_SKU_DAILY",
+    "ozon_mart.V_OZON_SKU_PNL_DAILY_OPERATIONAL"
    ],
    "pipelines": [
     "mart"
@@ -8051,13 +8053,8 @@
     "V10_COMBINED_ARITHMETIC",
     "V11_TRACE_SKUS_AUGUST_2026"
    ],
-   "direct_consumers": [
-    "ozon_mart.FCT_OZON_SKU_PNL_DAILY"
-   ],
-   "transitive_consumers": [
-    "evetis_mart.FACT_SKU_DAILY",
-    "ozon_mart.FCT_OZON_SKU_PNL_DAILY"
-   ],
+   "direct_consumers": [],
+   "transitive_consumers": [],
    "pipelines": [
     "mart"
    ]
@@ -9475,6 +9472,9 @@
    "evetis_ops.V_OPS_SUPPLY_PLAN",
    "evetis_ref.V_BUNDLE_COGS_DERIVED",
    "evetis_ref.V_PRODUCT_COGS_EFFECTIVE",
+   "ozon_mart.V_OZON_CIS_BUYOUT",
+   "ozon_mart.V_OZON_COMMISSION_POLICY",
+   "ozon_mart.V_OZON_LOGISTICS_ESTIMATOR",
    "ozon_mart.V_OZON_MART_FRESHNESS",
    "ozon_mart.V_OZON_SKU_CURRENT_TARIFF",
    "ozon_mart.V_OZON_SKU_FORWARD_ECONOMICS_CURRENT",
@@ -9531,7 +9531,7 @@
    "wb_raw.V_WB_SUPPLIES_GOODS_CURRENT",
    "wb_raw.V_WB_TARIFFS_CURRENT"
   ],
-  "count": 72
+  "count": 75
  },
  "unresolved_business_rules": [
   {
@@ -9606,6 +9606,15 @@
    "severity": "MEDIUM",
    "status": "open",
    "blocked_checks": []
+  },
+  {
+   "id": "UBR-009",
+   "title": "Нет прецедента порога свежести для конвейера с недельной каденцией",
+   "severity": "LOW",
+   "status": "open",
+   "blocked_checks": [
+    "ozon_clusters/OZ2_OZON_INGESTION_STALE"
+   ]
   }
  ],
  "parse_problems": []

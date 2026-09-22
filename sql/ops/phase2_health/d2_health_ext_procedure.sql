@@ -14,7 +14,9 @@
 --
 -- Проверяются только доказуемые технические свойства:
 --   OZ1  успешность последнего прогона сущности Ozon (status и errors из журнала);
---   OZ2  свежесть: с последнего OK прошло не больше freshness_sla_minutes;
+--   OZ2  свежесть: с последнего OK прошло не больше freshness_sla_minutes. Эмитируется
+--        только там, где порог задан: конвейер без порога проверки свежести не получает,
+--        а не получает молчаливое HEALTHY;
 --   H7   orders: свежесть последнего COMPLETE по порогу реестра;
 --   H8   sales:  то же;
 --   H9   orders: непрерывность дат заказа за последние 30 суток с учётом
@@ -112,6 +114,10 @@ BEGIN
       is_backfillable AS is_recoverable
     FROM _oz);
 
+  -- OZ2 эмитируется ТОЛЬКО там, где порог задан. Строка с freshness_sla_minutes = NULL
+  -- дала бы IF(NULL, …) = FALSE, то есть молчаливое HEALTHY: проверка без порога выглядела
+  -- бы как пройденная. Такие конвейеры остаются без проверки свежести осознанно — тот же
+  -- паттерн, что у sales_reconcile, finance_backfill и ads_search_clusters.
   SET v_results = ARRAY_CONCAT(v_results, ARRAY(
     SELECT AS STRUCT
       'PIPELINE_CHECK',
@@ -127,7 +133,8 @@ BEGIN
       FORMAT('<= %.1f ч', freshness_sla_minutes / 60),
       missed_run_data_loss,
       is_backfillable
-    FROM _oz));
+    FROM _oz
+    WHERE freshness_sla_minutes IS NOT NULL));
 
   SET v_results = ARRAY_CONCAT(v_results, ARRAY(
     SELECT AS STRUCT
