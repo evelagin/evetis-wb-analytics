@@ -88,15 +88,47 @@ SKU, ставит формулы, оформление, условное фор�
 
 ## 8. Ручной запуск
 
-```
-gcloud run jobs execute ozon-unitka-prod --region europe-west1 --wait
-```
+Штатный пульт — workflow `scheduler-control` (GitHub Actions), `environment=prod`,
+`loader=ozon-unitka`:
+
+* `run-now` — выполнить прогон немедленно;
+* `resume` / `pause` — включить или остановить суточное расписание 10:00 МСК.
+
+Он ходит под тем же привилегированным SA, что и Terraform, и оставляет след в Actions.
+Прямой `gcloud run jobs execute ozon-unitka-prod --region europe-west1 --wait` делает то же
+самое, но мимо журнала — им пользоваться только когда Actions недоступны.
 
 Глубокая сверка (120 суток) включается сама первого числа месяца. Вне этой даты её можно
 вызвать, подставив дату в `G8_TODAY`-эквивалент прогона — отдельного Job для неё нет
 сознательно: это тот же канонический писатель с большим окном, а не вторая экономика.
 
-## 9. Откат
+## 9. Развёртывание и промоушен образа
+
+Ресурсы создаёт `infra` (`action=apply`) ЦЕЛЕВЫМ планом — только четыре адреса Ozon, чтобы
+чужой дрейф не поехал вместе с ними:
+
+```
+google_cloud_run_v2_job.ozon_unitka_prod,google_cloud_scheduler_job.ozon_unitka_prod,
+google_bigquery_dataset_iam_member.ozon_unitka_read_mart,
+google_bigquery_dataset_iam_member.ozon_unitka_read_raw
+```
+
+Terraform создаёт Job с BOOTSTRAP-образом `hello` и держит `image` в `ignore_changes`.
+**Пока образ не продвинут, Job запускать нельзя**: `hello` выходит с кодом 0 и молча ничего
+не пишет — прогон выглядит зелёным, а лист не обновляется. Образ продвигает `deploy-prod`
+парой `(image_digest, source_git_sha)` из summary сборки `deploy-shadow`.
+
+Порядок ровно такой: `infra apply` → `deploy-prod` → `scheduler-control run-now` (первый
+прогон) → `run-now` ещё раз (проверка идемпотентности) → `scheduler-control resume`.
+
+Проверить, что Job действительно на боевом образе:
+
+```
+gcloud run jobs describe ozon-unitka-prod --region europe-west1 \
+  --format='value(spec.template.spec.template.spec.containers[0].image)'
+```
+
+## 10. Откат
 
 Сам прогон идемпотентен: повтор на неизменном источнике не меняет ни одной ячейки
 (проверено двумя прогонами подряд, 108 089 ячеек, 0 расхождений). Поэтому «откат прогона»
@@ -109,7 +141,7 @@ gcloud run jobs execute ozon-unitka-prod --region europe-west1 --wait
 
 Остановить автоматику мгновенно: поставить `ozon-unitka-prod` в Cloud Scheduler на паузу.
 
-## 10. Что делать владельцу в обычной работе
+## 11. Что делать владельцу в обычной работе
 
 Ничего.
 
