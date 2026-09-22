@@ -74,6 +74,35 @@ export interface SheetStructure {
 /** Запрос spreadsheets.batchUpdate (appendDimension, mergeCells, updateCells, copyPaste…) — как в REST v4. */
 export type StructureRequest = Record<string, unknown>;
 
+/**
+ * Как Sheets толкует записываемое значение.
+ *
+ * `RAW` — строка кладётся строкой. Для WB это верно: движок пишет ТОЛЬКО величины, а формулы
+ * там расставлены один раз при создании месяца (`monthprep`, updateCells/formulaValue).
+ *
+ * `USER_ENTERED` — строка, начинающаяся с `=`, становится формулой. Ozon-Юнитка пишет формулы
+ * ВМЕСТЕ со значениями, и под RAW они легли в лист ТЕКСТОМ: «цена минус комиссия», «налог» и
+ * «доходность 1 шт» показывали пустоту, потому что в ячейке лежала не формула, а её текст.
+ * Числа при этом уходят JSON-числами и разбору по локали не подлежат — прочитать «88.09»
+ * как текст в ru_RU невозможно.
+ */
+export type ValueInputOption = 'RAW' | 'USER_ENTERED';
+
+/**
+ * Тело values.batchUpdate. Вынесено отдельной функцией ровно потому, что режим записи —
+ * не деталь транспорта: под RAW формула становится текстом, и лист молча показывает пустоту.
+ */
+export function batchWriteBody(data: WriteRange[], inputOption: ValueInputOption): {
+  valueInputOption: ValueInputOption; includeValuesInResponse: boolean;
+  data: Array<{ range: string; majorDimension: 'ROWS'; values: CellValue[][] }>;
+} {
+  return {
+    valueInputOption: inputOption,
+    includeValuesInResponse: false,
+    data: data.map((d) => ({ range: d.range, majorDimension: 'ROWS' as const, values: d.values })),
+  };
+}
+
 export interface SheetsGateway {
   /**
    * Свойства сетки листа по имени (spreadsheets.get, только properties) и локаль книги.
@@ -97,7 +126,7 @@ export interface SheetsGateway {
   /** Статические форматы одного диапазона (spreadsheets.get + includeGridData). */
   readFormats(range: string): Promise<FormatGrid>;
   /** Один values.batchUpdate; возвращает totalUpdatedCells по ответу API. */
-  batchWrite(data: WriteRange[]): Promise<number>;
+  batchWrite(data: WriteRange[], inputOption?: ValueInputOption): Promise<number>;
   /** Один spreadsheets.batchUpdate из repeatCell; возвращает число применённых запросов. */
   formatWrite(sheetId: number, writes: FormatWrite[]): Promise<number>;
   /**
@@ -273,14 +302,10 @@ export class SheetsRest implements SheetsGateway {
     return (res.replies ?? requests).length;
   }
 
-  async batchWrite(data: WriteRange[]): Promise<number> {
+  async batchWrite(data: WriteRange[], inputOption: ValueInputOption = 'RAW'): Promise<number> {
     if (data.length === 0) return 0;
     const url = `${API}/${this.spreadsheetId}/values:batchUpdate`;
-    const body = {
-      valueInputOption: 'RAW',
-      includeValuesInResponse: false,
-      data: data.map((d) => ({ range: d.range, majorDimension: 'ROWS', values: d.values })),
-    };
+    const body = batchWriteBody(data, inputOption);
     const res = await this.request<BatchUpdateResp>('POST', url, body);
     return Number(res.totalUpdatedCells ?? 0);
   }

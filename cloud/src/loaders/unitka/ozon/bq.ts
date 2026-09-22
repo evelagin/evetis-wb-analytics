@@ -20,6 +20,35 @@
  * остаётся обычной строкой суток × SKU. Отдельная величина непроверенной выручки выкупа —
  * buyout_revenue_unproven_qty/_rub: её нельзя молча считать доказанной.
  */
+/* ── ГРАНИЦА ТИПОВ BigQuery ───────────────────────────────────────────────────
+ * Клиент `@google-cloud/bigquery` отдаёт NUMERIC не числом, а объектом `Big`, а DATE —
+ * объектом `{value}`. Для JavaScript это меняет ДВЕ вещи разом:
+ *
+ *   • объект истинен ВСЕГДА, включая `Big(0)`. Проверка `if (storage)` в сборщике месяца
+ *     срабатывала на нуле и писала в лист 0 там, где значения нет — ровно тот выдуманный
+ *     ноль, который отличать от пустоты и есть смысл колонки;
+ *   • `+` над двумя `Big` склеивает строки, а не складывает числа: комиссия с эквайрингом
+ *     давала `"600"+"12" = "60012"`.
+ *
+ * Локальная отладка этого не ловила: harness приводил NUMERIC к числу сам, и до боевого
+ * прогона дефект был невидим. Поэтому границу держит reader — ровно так же, как у WB
+ * (`loaders/unitka/bq.ts`, функции `str`/`num`). Дальше по коду ходят только примитивы.
+ */
+function bqScalar(v: unknown): unknown {
+  if (v === null || v === undefined || typeof v !== 'object') return v;
+  const o = v as Record<string, unknown>;
+  if ('value' in o) return String(o.value);              // DATE/TIMESTAMP → ISO-строка
+  const n = Number(String(v));                           // Big → число
+  return Number.isFinite(n) ? n : String(v);
+}
+
+/** Строка BigQuery → строка с примитивами. Имена полей и их состав не меняются. */
+export function normalizeBqRow<T>(raw: Record<string, unknown>): T {
+  const out: Record<string, unknown> = {};
+  for (const k of Object.keys(raw)) out[k] = bqScalar(raw[k]);
+  return out as T;
+}
+
 export interface OzonFactsQuery { project: string; from: string; to: string }
 
 const ISO = /^\d{4}-\d{2}-\d{2}$/;

@@ -120,6 +120,17 @@ resource "google_bigquery_dataset_iam_member" "ozon_unitka_read_raw" {
   member     = "serviceAccount:${google_service_account.loaders_prod.email}"
 }
 
+# Справочник каналов и себестоимости. Без него прогон падает на ПЕРВОМ же запросе:
+# идентичность SKU берётся из REF_SKU_CHANNEL_MAP (а не из списка offer_id в env), и та же
+# связка нужна вью операционного слоя — V_PRODUCT_COGS_EFFECTIVE и REF_PRODUCT_MASTER
+# читаются правами вызывающего. Тот же грант тем же способом уже выдан ct_refresh.tf и
+# executive_v2_layer.tf: evetis_ref — общий справочный слой обоих маркетплейсов.
+resource "google_bigquery_dataset_iam_member" "ozon_unitka_read_ref" {
+  dataset_id = "evetis_ref"
+  role       = "roles/bigquery.dataViewer"
+  member     = "serviceAccount:${google_service_account.loaders_prod.email}"
+}
+
 # ── Наблюдаемость ─────────────────────────────────────────────────────────────
 # Владелец не должен каждый день заглядывать в логи. Прогон падает с кодом
 # (SOURCE_STALE / NO_FREE_SKU_SLOT / OZON_UNITKA_GEOMETRY / OZON_UNITKA_REF / SHEETS_API),

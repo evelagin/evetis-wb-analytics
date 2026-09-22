@@ -24,6 +24,12 @@ env:
   TF_VAR_region: ${{ vars.GCP_REGION }}
   TF_VAR_raw_dataset: ${{ vars.BQ_RAW_DATASET }}
   TF_VAR_artifact_repo: ${{ vars.AR_REPO }}
+  # Gate 9B: без этой строки var.unitka_alert_email всегда пуст, и алерт-политики
+  # (WB Engine и Ozon-Юнитки) молча не создаются — падение прогона остаётся только
+  # в логах. Переменная репозитория UNITKA_ALERT_EMAIL не задана: пока она пуста,
+  # поведение прежнее (политики нет), а как только владелец её задаст — apply создаст
+  # канал и обе политики, без правки кода.
+  TF_VAR_unitka_alert_email: ${{ vars.UNITKA_ALERT_EMAIL }}
 
 jobs:
   preflight:

@@ -53,7 +53,14 @@ locals {
   # 2026-09-06, Stage 3.4D.3: sha256:43fb3a10… → sha256:14f8a4c8…
   # Причина: добавлена сущность seller_info (статус подписки Premium).
   # Откат — sql/ozon/stage3_4d3_rollback.sql, раздел 4.
-  ozon_runtime_image = "europe-west1-docker.pkg.dev/project-fa311fc0-4d87-4781-986/cloud-run-source-deploy/ozon-runtime-ingest@sha256:b00380d6ce2d811c2146ac84575501b094e3d402ca8def21ed2505460c1546a3"
+  #
+  # 2026-09-22, Gate 9B: sha256:b00380d6… → sha256:dccc50ae…
+  # Причина: окно загрузки finance_accrual 14 → 30 суток (Gate 9). Изменение лежало в main
+  # с 21.09, но образ собирается вручную (pipelines/ozon вне деплойных workflow), и боевой
+  # прогон 22.09 06:30 МСК всё ещё брал 14 суток — замер по OZON_INGESTION_RUNS.
+  # Потери данных не было: перезагрузка за 113 суток вставила 0 строк.
+  # Собран из main 1b651fd. Откат — вернуть предыдущий digest и применить.
+  ozon_runtime_image = "europe-west1-docker.pkg.dev/project-fa311fc0-4d87-4781-986/cloud-run-source-deploy/ozon-runtime-ingest@sha256:dccc50ae59f77020666c2dbb630dd10f4b6ca8e4bde04ba0f86e91e26c158905"
   ozon_ingestion_sa  = "sa-ozon-ingestion@${var.project_id}.iam.gserviceaccount.com"
   ozon_scheduler_sa  = "sa-ozon-scheduler@${var.project_id}.iam.gserviceaccount.com"
 

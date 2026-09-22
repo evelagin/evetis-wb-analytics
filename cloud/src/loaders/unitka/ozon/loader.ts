@@ -22,7 +22,7 @@ import { LoaderError } from '../../../errors.js';
 import { SheetsRest, type SheetsGateway } from '../sheets.js';
 import { BqClient } from '../../../bq/client.js';
 import { OZON_GEOMETRY } from './contract.js';
-import { ozonMonthFactsSql, ozonProvenStockSql } from './bq.js';
+import { ozonMonthFactsSql, ozonProvenStockSql, normalizeBqRow } from './bq.js';
 import { ozonMonthSpec, composeMonth, type OzonFactRow, type CellValue } from './month.js';
 import type { CellValue as SheetCell } from '../model.js';
 import { buildOzonPlan, sectionFormulas } from './monthplan.js';
@@ -49,7 +49,10 @@ export const defaultOzonUnitkaDeps: OzonUnitkaDeps = {
   makeSheets: (ctx, ro) => new SheetsRest(ctx.config.unitkaSpreadsheetId, ro),
   makeBq: (ctx) => {
     const c = new BqClient(ctx.config.projectId, ctx.config.bqLocation);
-    return { query: <T>(sql: string) => c.query<T>(sql) as Promise<T[]> };
+    // Нормализация — ЗДЕСЬ, на единственной границе с BigQuery, а не в сборщике месяца:
+    // объекты Big и {value} не должны существовать нигде выше (см. bq.ts, «ГРАНИЦА ТИПОВ»).
+    return { query: async <T>(sql: string) => (await c.query<Record<string, unknown>>(sql))
+      .map((r) => normalizeBqRow<T>(r)) };
   },
   now: () => new Date(),
 };
@@ -337,8 +340,13 @@ export async function ozonUnitkaLoader(
       await sheets.structureWrite(group.slice(i, i + 400));
     }
   }
+  // USER_ENTERED, а не RAW: в плане Ozon формулы едут ВМЕСТЕ со значениями, и под RAW они
+  // лягут в лист текстом «=IF(…)» вместо формулы. Числа уходят JSON-числами и по локали
+  // не разбираются, поэтому режим безопасен для величин. WB это не касается: там значение
+  // по умолчанию прежнее, RAW.
   const updated = await sheets.batchWrite(
-    plan.values.map((v) => ({ range: v.range, values: v.values as unknown as SheetCell[][] })));
+    plan.values.map((v) => ({ range: v.range, values: v.values as unknown as SheetCell[][] })),
+    'USER_ENTERED');
   ctx.logger.info('ozon-unitka: записано', { updated, estimatedRows });
   return { rowsFetched: facts.length, rowsLoaded: updated };
 }
