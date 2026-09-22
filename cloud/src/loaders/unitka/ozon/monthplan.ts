@@ -147,6 +147,19 @@ export function buildOzonPlan(input: OzonPlanInput): OzonWritePlan {
   return { values, structure, presentation, conditional, totals };
 }
 
+/**
+ * ПОРЯДОК ФАЗ ЗАПИСИ. Это не стилистика: `values.batchUpdate` СБРАСЫВАЕТ у записанной ячейки
+ * `userEnteredFormat.numberFormat`. Пока оформление шло до величин, боевой прогон стирал
+ * формат «₽» ровно на своём окне перезаписи — граница потери совпадала с первым днём окна
+ * день-в-день, а месяцы вне окна оставались целыми.
+ *
+ * Поэтому оформление идёт ПОСЛЕ величин и оказывается последним словом о виде ячейки.
+ * Структура (геометрия, объединения) обязана идти ДО величин: без строк их некуда писать.
+ */
+export const OZON_WRITE_PHASES = ['structure', 'conditional', 'values', 'presentation'] as const;
+export type OzonWritePhase = (typeof OZON_WRITE_PHASES)[number];
+
+
 /** Ожидаемый размер сетки после переноса — выводится из роста, а не задаётся руками. */
 export function expectedGrid(
   current: { rows: number; columns: number }, growth: GridGrowth,

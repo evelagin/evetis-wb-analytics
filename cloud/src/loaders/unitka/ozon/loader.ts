@@ -25,7 +25,7 @@ import { OZON_GEOMETRY } from './contract.js';
 import { ozonMonthFactsSql, ozonProvenStockSql, normalizeBqRow } from './bq.js';
 import { ozonMonthSpec, composeMonth, type OzonFactRow, type CellValue } from './month.js';
 import type { CellValue as SheetCell } from '../model.js';
-import { buildOzonPlan, sectionFormulas } from './monthplan.js';
+import { buildOzonPlan, sectionFormulas, OZON_WRITE_PHASES } from './monthplan.js';
 import { layoutOf, columnName, type SectionLayout } from './requests.js';
 import {
   ozonRewriteWindow, ozonDeepWindow, ozonWindowMonths, ozonFromDayFor, isDeepReconciliationDay,
@@ -335,18 +335,26 @@ export async function ozonUnitkaLoader(
 
   if (!write) return { rowsFetched: facts.length, rowsLoaded: 0 };
 
-  for (const group of [plan.structure, plan.conditional, plan.presentation]) {
+  const send = async (group: readonly unknown[]): Promise<void> => {
     for (let i = 0; i < group.length; i += 400) {
-      await sheets.structureWrite(group.slice(i, i + 400));
+      await sheets.structureWrite(group.slice(i, i + 400) as never);
+    }
+  };
+  // ПОРЯДОК ФАЗ — не стилистика, а условие правильного листа (см. OZON_WRITE_PHASES).
+  let updated = 0;
+  for (const phase of OZON_WRITE_PHASES) {
+    if (phase === 'values') {
+      // USER_ENTERED, а не RAW: в плане Ozon формулы едут ВМЕСТЕ со значениями, и под RAW
+      // они лягут в лист текстом «=IF(…)» вместо формулы. Числа уходят JSON-числами и по
+      // локали не разбираются, режим безопасен для величин. WB это не касается: там
+      // значение по умолчанию прежнее, RAW.
+      updated = await sheets.batchWrite(
+        plan.values.map((v) => ({ range: v.range, values: v.values as unknown as SheetCell[][] })),
+        'USER_ENTERED');
+    } else {
+      await send(plan[phase]);
     }
   }
-  // USER_ENTERED, а не RAW: в плане Ozon формулы едут ВМЕСТЕ со значениями, и под RAW они
-  // лягут в лист текстом «=IF(…)» вместо формулы. Числа уходят JSON-числами и по локали
-  // не разбираются, поэтому режим безопасен для величин. WB это не касается: там значение
-  // по умолчанию прежнее, RAW.
-  const updated = await sheets.batchWrite(
-    plan.values.map((v) => ({ range: v.range, values: v.values as unknown as SheetCell[][] })),
-    'USER_ENTERED');
   ctx.logger.info('ozon-unitka: записано', { updated, estimatedRows });
   return { rowsFetched: facts.length, rowsLoaded: updated };
 }
