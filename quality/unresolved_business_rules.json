@@ -1,0 +1,262 @@
+{
+  "registry_version": 1,
+  "comment": "Нерешённые бизнес-правила: места, где приёмочный артефакт не даёт однозначного машинного вердикта и ответ обязан дать владелец. Правило попадает сюда ТОЛЬКО с доказательством — запросом и наблюдёнными значениями. Угадывать порог запрещено: неверный порог хуже отсутствующего, потому что выглядит как проверка.",
+  "status_values": [
+    "open",
+    "answered",
+    "withdrawn",
+    "closed"
+  ],
+  "rules": [
+    {
+      "id": "UBR-001",
+      "title": "Таблица контроля SKU не показывает SKU, у которых есть заказы, но нет строки плана",
+      "status": "open",
+      "severity": "HIGH",
+      "domain": "operations",
+      "source_artifact": "sql/control_tower/ct_phase11_validation.sql:54 (T29), sql/control_tower/ct_phase12_validation.sql:66 (T40)",
+      "blocked_checks": [
+        "CTOWN__T29_FAILED_SKU_CONTROL_TABLE_DOES_NOT_RECONCILE_WITH_OWNER_H",
+        "CTOWN__T40_FAILED_TOTALS_DRIFTED_BETWEEN_SKU_TABLE_BRIEF_AND_OWNER_"
+      ],
+      "what_is_unknown": "Должен ли экран «контроль SKU» показывать SKU, который продаётся, но отсутствует в активном плане?",
+      "evidence": {
+        "measured_at": "2026-09-21",
+        "observation": "SUM(actual_cards_mtd) в wb_mart.V_CT_SKU_CONTROL = 208; V_CT_OWNER_HOME.cards_ordered_plan_days_mtd = 210. План сходится точно (дельта 0,0), недопустимых статусов нет.",
+        "localization": "Разница ровно 2 карточки: EVT-SET-TON-CREAM-MOIST (WB, BUNDLE) — 1 карточка 2026-09-13 и 1 карточка 2026-09-18, обе с in_plan = FALSE.",
+        "mechanism": "V_CT_OWNER_HOME суммирует факт по ВСЕМ SKU в окне d >= plan_month_from. V_CT_SKU_CONTROL суммирует только строки с in_plan = TRUE (и только d < CURRENT_DATE). Условие T29/T40 требует равенства, которое выполняется лишь пока каждый продающийся SKU есть в плане.",
+        "query": "WITH oh AS (SELECT plan_month_from pf FROM `wb_mart.V_CT_OWNER_HOME`) SELECT internal_sku, marketplace, d, actual_cards FROM `wb_mart.V_CT_PLAN_VS_ACTUAL_DAILY` WHERE d >= (SELECT pf FROM oh) AND d < CURRENT_DATE() AND NOT in_plan AND IFNULL(actual_cards,0) > 0"
+      },
+      "why_not_automatable": "Это продуктовое решение об экране владельца, а не техническая деталь: можно показывать такой SKU строкой с планом 0, можно исключать его и из Owner Home. Любой выбор меняет число, которое видит владелец.",
+      "minimal_answer_required": "Одно из двух: (A) показывать внеплановые продающиеся SKU в таблице контроля со строкой «плана нет»; (B) исключать их и из Owner Home, чтобы оба экрана считали одно и то же."
+    },
+    {
+      "id": "UBR-002",
+      "title": "У SKU EVT-HC-BODY-300 нет действующего интервала себестоимости",
+      "status": "open",
+      "severity": "HIGH",
+      "domain": "cogs",
+      "source_artifact": "sql/ref/pr_ref_cogs_validation.sql (проверка резолвера на дату 9999-12-31)",
+      "blocked_checks": [
+        "PR_REF_COGS_VALIDATION__9999_12_31"
+      ],
+      "what_is_unknown": "Ожидаемая себестоимость 219 ₽ задана, фактический резолв — NULL («нет действующего интервала, fail-closed by design»). Это снятый с продажи SKU или пробел в справочнике?",
+      "evidence": {
+        "measured_at": "2026-09-21",
+        "observation": "sku=EVT-HC-BODY-300, expected=219, actual=NULL, resolver_lane=NULL; вердикт артефакта — «НЕТ ДЕЙСТВУЮЩЕГО ИНТЕРВАЛА (fail-closed by design)».",
+        "source_of_truth": "evetis_ref.REF_SKU_COGS_HISTORY → evetis_ref.V_PRODUCT_COGS_EFFECTIVE"
+      },
+      "why_not_automatable": "Заполнение интервала себестоимости — ручной ввод владельца и бизнес-факт, а не вычисление.",
+      "minimal_answer_required": "SKU снят (тогда проверка должна его исключать) или интервал нужно завести (тогда это дефект справочника)?"
+    },
+    {
+      "id": "UBR-003",
+      "title": "Гейты C12 / D16 контракта дашбордов не имеют машинного условия",
+      "status": "open",
+      "severity": "MEDIUM",
+      "domain": "dashboard_contract",
+      "source_artifact": "sql/dash/dashboard_contract_v1_validation.sql (C12), sql/dash/dashboard_contract_v2_validation.sql (D16)",
+      "blocked_checks": [
+        "DASHBOARD_CONTRACT_V1_VALIDATION__C12",
+        "DASHBOARD_CONTRACT_V2_VALIDATION__D16"
+      ],
+      "what_is_unknown": "Вердикт этих гейтов — литерал «СВЕРИТЬ С BASELINE ДО ВЫКАТА». Baseline нигде не зафиксирован машиночитаемо.",
+      "evidence": {
+        "measured_at": "2026-09-21",
+        "observation": "C12 вернул mart_rows=8102, mart_ad_spend=569588.8, fact_costs_rows=1960, fact_costs_sum=559652 и вердикт-литерал вместо PASS/FAIL."
+      },
+      "why_not_automatable": "Автоматизировать можно только сравнение с зафиксированным baseline; выбор baseline — решение владельца. Подставить текущее значение значит превратить проверку в тавтологию.",
+      "minimal_answer_required": "Либо назвать baseline (коммит/дата/значения), либо признать гейт информационным и снять с него статус проверки."
+    },
+    {
+      "id": "UBR-004",
+      "title": "Гейты C16 / D12: величина, обязанная быть > 0 за последние 7 суток, равна 0",
+      "status": "open",
+      "severity": "MEDIUM",
+      "domain": "dashboard_contract",
+      "source_artifact": "sql/dash/dashboard_contract_v1_validation.sql (C16), sql/dash/dashboard_contract_v2_validation.sql (D12)",
+      "blocked_checks": [
+        "DASHBOARD_CONTRACT_V1_VALIDATION__C16",
+        "DASHBOARD_CONTRACT_V2_VALIDATION__D12"
+      ],
+      "what_is_unknown": "Условие требует last7 > 0; наблюдается 0. Неизвестно, изменился ли бизнес-факт (величина законно обнулилась) или сломался слой.",
+      "evidence": {
+        "measured_at": "2026-09-21",
+        "observation": "C16: last7_must_be_gt0=0, closed_period_must_be_0=0, all_time=6. D12: last7=0, closed_period=0, contradiction=0."
+      },
+      "why_not_automatable": "Ответ «0 — это нормально сейчас» может дать только тот, кто знает бизнес-смысл величины.",
+      "minimal_answer_required": "Величина обязана быть > 0 всегда, или ноль допустим при отсутствии события в окне?"
+    },
+    {
+      "id": "UBR-005",
+      "title": "Гейт D9: одно нарушение запрета IFNULL(...,0) в V_DASH_KPI_DAILY",
+      "status": "open",
+      "severity": "LOW",
+      "domain": "dashboard_contract",
+      "source_artifact": "sql/dash/dashboard_contract_v2_validation.sql (D9)",
+      "blocked_checks": [
+        "DASHBOARD_CONTRACT_V2_VALIDATION__D9"
+      ],
+      "what_is_unknown": "Контракт дашборда запрещает превращать NULL в 0 в витринных вью (NULL = «не покрыто», 0 = наблюдаемый ноль). В V_DASH_KPI_DAILY найдено одно такое место, allowed_exception=0.",
+      "evidence": {
+        "measured_at": "2026-09-21",
+        "observation": "table_name=V_DASH_KPI_DAILY, ifnull_zero=1, coalesce_zero=0, allowed_exception=0"
+      },
+      "why_not_automatable": "Разрешённое исключение — это решение о смысле метрики, а не о синтаксисе.",
+      "minimal_answer_required": "Внести это место в список разрешённых исключений либо убрать IFNULL из вью."
+    },
+    {
+      "id": "UBR-006",
+      "title": "Воронка WB: показы страницы меньше рекламных кликов на двух строках",
+      "status": "open",
+      "severity": "MEDIUM",
+      "domain": "advertising",
+      "source_artifact": "sql/ddl/wb_raw_funnel_validation.sql (T5_opens_ge_ad_clicks)",
+      "blocked_checks": [
+        "WB_RAW_FUNNEL_VALIDATION__T1_VIEW_GRAIN"
+      ],
+      "what_is_unknown": "Инвариант «открытий карточки не меньше рекламных кликов» нарушен на 2 строках. Источник данных — WB; неизвестно, дефект это загрузки или расхождение самого источника.",
+      "evidence": {
+        "measured_at": "2026-09-21",
+        "observation": "test=T5_opens_ge_ad_clicks, bad=2 (остальные 5 тестов файла — PASS)"
+      },
+      "why_not_automatable": "Нужно решение, считать ли расхождение источника дефектом платформы или допустимым свойством WB.",
+      "minimal_answer_required": "Допустимо ли нарушение этого инварианта, и если да — с каким порогом?"
+    },
+    {
+      "id": "UBR-007",
+      "title": "Гейт A1 классификации рекламного биллинга: вердикт FAIL при совпадении actual и expected",
+      "status": "open",
+      "severity": "MEDIUM",
+      "domain": "advertising",
+      "source_artifact": "sql/mart/pr_ad_billing_classification_validation.sql (A1)",
+      "blocked_checks": [
+        "PR_AD_BILLING_CLASSIFICATION_VALIDATION__0"
+      ],
+      "what_is_unknown": "Строка отдаёт actual=378, expected=378 и при этом verdict=FAIL: выражение вердикта сравнивает не те величины, которые выводит.",
+      "evidence": {
+        "measured_at": "2026-09-21",
+        "observation": "check_name='A1 ровно один класс на каждую каноническую операцию', actual=378, expected=378, verdict=FAIL; 1 из 6 строк не PASS"
+      },
+      "why_not_automatable": "Прежде чем чинить, нужно знать, какое из двух утверждений верно — выведенные числа или условие вердикта. Это вопрос к автору контракта.",
+      "minimal_answer_required": "Что именно должно сравниваться в A1?"
+    },
+    {
+      "id": "UBR-008",
+      "title": "Пять приёмочных артефактов не содержат условия PASS/FAIL",
+      "status": "open",
+      "severity": "MEDIUM",
+      "domain": "acceptance_coverage",
+      "source_artifact": "sql/mart/ads_spend_stage3b_validation.sql, sql/mart/pr_mart2a_finance_longform_validation.sql, sql/mart/pr_mart2b_sku_daily_validation.sql, sql/mart3/pr_mart3b_validation.sql, sql/raw/adv_costs_snapshot_validation.sql",
+      "blocked_checks": [],
+      "what_is_unknown": "Файлы выводят величины, но нигде не выражают, какое значение считается приемлемым. Условие приёмки существовало в голове или в документе этапа.",
+      "evidence": {
+        "measured_at": "2026-09-21",
+        "observation": "ни одного ASSERT, ни одной колонки-вердикта, ни одного литерала PASS"
+      },
+      "why_not_automatable": "Вывести порог из текущих данных — значит закрепить сегодняшнее состояние как эталон, включая возможный дефект.",
+      "minimal_answer_required": "Для каждого файла: какое условие означало «принято» на момент сдачи этапа? Достаточно одной строки на файл."
+    },
+    {
+      "id": "UBR-009",
+      "title": "Нет прецедента порога свежести для конвейера с недельной каденцией",
+      "status": "open",
+      "severity": "LOW",
+      "domain": "observability",
+      "source_artifact": "sql/ops/phase2_health/d1_register_ozon_pipelines.sql (строка ozon_clusters)",
+      "blocked_checks": [
+        "ozon_clusters/OZ2_OZON_INGESTION_STALE"
+      ],
+      "what_is_unknown": "Через сколько после пропущенного недельного прогона кластеров Ozon загрузку следует считать просроченной.",
+      "evidence": {
+        "measured_at": "2026-09-22",
+        "observation": "В wb_ops.OPS_PIPELINE_REGISTRY нет ни одного конвейера с cadence_type = WEEKLY. Значения freshness_sla_minutes по типам: DAILY {1200, 2160, 4320}, MULTI_DAILY {2160}, HOURLY {240}, INTERVAL_WORKER {45}, CHILD_AFTER_PARENT {2160, 2880}.",
+        "why_formula_rejected": "Прежняя редакция манифеста выводила порог как «каденция × 1,5». Проверка по реестру формулу опровергла: она совпадает только с суточными (1440 × 1,5 = 2160) и расходится со всеми остальными — sales 240 при 60 × 1,5 = 90, wb_prices_observer 45 при 20 × 1,5 = 30, mart 2160 при каденции 4 раза в сутки. Формула удалена как недоказанная.",
+        "applied_decision": "ozon_clusters внесён с freshness_sla_minutes = NULL; проверка OZ2 такие строки пропускает. Проверка исхода прогона OZ1 работает и без порога."
+      },
+      "why_not_automatable": "Порог свежести — утверждение о том, какой простой загрузки считается приемлемым. Вывести его из данных значит закрепить текущее поведение как норму, включая возможный дефект.",
+      "minimal_answer_required": "Одно число в минутах для ozon_clusters (кластеры складов, каденция раз в неделю, criticality LOW), либо подтверждение, что проверка свежести этому конвейеру не нужна."
+    },
+    {
+      "id": "UBR-010",
+      "title": "Новый компонент экономики Ozon sku_promotion_rub не доведён до потребителей витрины",
+      "status": "closed",
+      "severity": "HIGH",
+      "domain": "unit_economics",
+      "source_artifact": "sql/scale1/fact_sku_daily_validation.sql (V01, V02, V09); sql/control_tower/ct_phase1_validation.sql:115 (T10)",
+      "blocked_checks": [
+        "V01_OZON_DAILY_TO_MONTHLY_SKU_PARITY",
+        "V02_OZON_PARITY_BY_MONTH",
+        "V09_NEUTRAL_IDENTITIES_AND_NULL_CONTRACT",
+        "CT1__T10_FAILED_OZON_OZON_MART_FCT_OZON_SKU_PNL_MONTHLY"
+      ],
+      "what_is_unknown": "Куда компонент sku_promotion_rub должен попадать в нейтральном факте evetis_mart.FACT_SKU_DAILY и в факте Control Tower evetis_ref.CT_ACTUAL_DAILY: в other_marketplace_costs_rub, в отдельную колонку или в уменьшение выручки.",
+      "evidence": {
+        "measured_at": "2026-09-22",
+        "what_changed": "Gate 5M (модель выкупа CIS, коммиты 9b7fd2f / f440335 / 6787aae) ввёл в ozon_mart.FCT_OZON_SKU_PNL_MONTHLY и FCT_OZON_SKU_PNL_DAILY компонент sku_promotion_rub. Сумма за всю историю — 10 428,67 ₽ на 31 ячейке из 175.",
+        "monthly_view_is_self_consistent": "Тождество месячного вью выполняется ТОЛЬКО с новым компонентом: 0 нарушений с ним, 31 без него. Сами витрины Ozon согласованы между собой — cells_failed_raw = 0, максимальное расхождение ячейки 0,005 ₽.",
+        "defect_1_neutral_fact": "evetis_mart.FACT_SKU_DAILY: тождество contribution_after_cogs_rub = contribution_after_ads_rub - cogs_rub нарушено на 71 строке OZON, суммарный разрыв ровно -10 428,67 ₽. Тождество объявлено в описании самого объекта.",
+        "defect_2_control_tower": "evetis_ref.CT_ACTUAL_DAILY за август: вклад выше витрины на 10 336,14 ₽ при совпадающем количестве (179 шт) — из них 9 350,08 ₽ приходится на sku_promotion_rub августа, остальное на разницу выручки 986,04 ₽.",
+        "stale_check": "V01/V02 выводят вклад заново из пяти компонентов и нового шестого не знают: это устаревание проверки, а не расхождение данных.",
+        "not_drift": "GIT_PROD_PARITY 18/18 MATCH: развёрнутое определение FACT_SKU_DAILY совпадает со своим каноническим файлом. Дефект в самом определении, а не в дрейфе."
+      },
+      "why_not_automatable": "Размещение компонента в нейтральном контракте — решение о смысле метрики: продвижение SKU можно считать расходом площадки, скидкой к выручке или отдельной строкой. Любой выбор меняет вклад, который видит владелец.",
+      "minimal_answer_required": "Одно из трёх: (A) sku_promotion_rub входит в other_marketplace_costs_rub нейтрального факта; (B) уменьшает seller_revenue_rub; (C) получает собственную колонку контракта FACT_SKU_DAILY_V2. После ответа обновляются нейтральный факт, CT_ACTUAL_DAILY и формула повторного вывода в V01/V02.",
+      "answered_at": "2026-09-22",
+      "decision": "Вариант C. promotion_billed_rub — самостоятельный фактически начисленный расход на продвижение Ozon, слой L3. Не уменьшает revenue, не входит в other_marketplace_costs_rub, не смешивается с ad_spend_attributed_rub. Учитывается в управленческом семействе promotion/advertising при расчёте полного фактического расхода на продвижение и соответствующего ДРР.",
+      "implementation": "Git-first, контракт FACT_SKU_DAILY_V2. Изменены: ozon_mart.FCT_OZON_SKU_PNL_DAILY, ozon_mart.FCT_OZON_SKU_PNL_MONTHLY (+ promotion_family_rub, promotion_family_drr_pct), ozon_mart.V_OZON_SKU_PNL_DAILY_OPERATIONAL, evetis_mart.FACT_SKU_DAILY (+ promotion_billed_rub), wb_mart.V_CT_ACTUAL_DAILY_LIVE. Сверка до развёртывания: 9/9 PASS (quality suite promotion_l3). Развёртывание — docs/architecture/PROMOTION_L3_MIGRATION.md, ждёт ACK.",
+      "closed_at": "2026-09-22",
+      "closure_evidence": "Развёрнуто в production 2026-09-22: пять вью заменены, шестой шаг (пересборка CT) оказался no-op по собственному предохранителю процедуры. Сверка на РАЗВЁРНУТЫХ объектах: 10 428,67 ₽ прослежены сырьё → FCT_OZON_SKU_PNL_DAILY → _MONTHLY → evetis_mart.FACT_SKU_DAILY.promotion_billed_rub; у WB колонка NULL на всех строках; contract_version = FACT_SKU_DAILY_V2. Выручка 1 884 733,16 и расходы площадки 883 976,09 не изменились; вклад до рекламы 530 505,93 → 540 934,60; семейство продвижения 477 143,07 → 487 571,74; итог 53 362,86 и маржа 2,8313 % не изменились; остаток цепочки 0,00. promotion_l3 10/10 PASS, ozon_unit 11/11 PASS, verify_current_sql_live — 4 PENDING_DEPLOYED_MATCH + 14 MATCH.",
+      "known_followups": [
+        "Материализованная копия evetis_ref.CT_ACTUAL_DAILY отстаёт на 10 428,67 ₽ вклада Ozon: sp_ct_refresh_daily пропустила пересборку (guard_skip: источники не менялись с последнего успешного прогона за сутки). Живое вью V_CT_ACTUAL_DAILY_LIVE уже верно — расхождение с витриной за август 986,06 ₽ вместо 10 336,14. Копия догонит при ближайшем изменении источников; отдельного действия не требует.",
+        "sync_state четырёх объектов остаётся pending_deploy: R2C не подтверждает провенанс с коммита, не достижимого из origin/main. Перевод в captured_live — отдельным PR после слияния."
+      ]
+    },
+    {
+      "id": "UBR-011",
+      "title": "Две приёмочные проверки привязаны к моменту прогона и устарели сами по себе",
+      "status": "open",
+      "severity": "LOW",
+      "domain": "acceptance_maintenance",
+      "source_artifact": "sql/dash/sku_performance_v2_daily_validation.sql:311 (V9.provisional_window); sql/dash/executive_v2_daily_validation.sql:148 (V2)",
+      "blocked_checks": [
+        "SKUV2__V9_PROVISIONAL_WINDOW_FINAL",
+        "EXECV2__V2_V_DASH_EXECUTIVE_V2_DAILY_V_DASH_SETTLEMENT_DAILY"
+      ],
+      "what_is_unknown": "Переписать ли условия так, чтобы они не зависели от даты прогона, или переприколоть окна к новым датам.",
+      "evidence": {
+        "measured_at": "2026-09-22",
+        "v9": "Проверка требует, чтобы окно 2026-09-01…2026-09-17 НЕ было FINAL. На 18.09 это было верно; на 22.09 все 17 суток окончательны (не окончательных 0, предварительных 0) — финотчёты WB закрылись штатно. Условие стало ложным из-за нормального хода расчётов, а не из-за дефекта.",
+        "v2": "Материализованный слой V_DASH_EXECUTIVE_V2_DAILY содержит 748 суток (по 2026-09-22), канонический V_DASH_SETTLEMENT_DAILY — 747 (по 2026-09-21). Расхождение ровно в одних сутках: почасовая пересборка слоя опережает горизонт D-1 канонического вью. Это гонка момента прогона, а не расхождение величин."
+      },
+      "why_not_automatable": "Условие приёмки утверждал владелец. Сделать окно скользящим — значит изменить смысл проверки; переприколоть даты — значит выбрать новые. И то и другое требует его слова.",
+      "minimal_answer_required": "Для V9: окно скользящее (например, «последние 14 суток») или новые даты. Для V2: сравнивать только пересечение суток обоих объектов или считать опережение слоя дефектом."
+    },
+    {
+      "id": "UBR-012",
+      "title": "Control Tower и витрина Ozon по-разному определяют выручку: подстановка цены заказа вместо суммы документа",
+      "status": "closed",
+      "severity": "HIGH",
+      "domain": "finance",
+      "source_artifact": "wb_mart.V_CT_ACTUAL_DAILY_LIVE, CTE oz_sales; sql/control_tower/ct_phase1_validation.sql:115 (T10)",
+      "blocked_checks": [
+        "CT1__T10_FAILED_OZON_OZON_MART_FCT_OZON_SKU_PNL_MONTHLY"
+      ],
+      "what_is_unknown": "Какая величина является выручкой Ozon там, где начисления реализации нет: цена заказа из отправления (как считает Control Tower) или сумма первичного документа выкупа (как считает витрина).",
+      "evidence": {
+        "measured_at": "2026-09-22",
+        "mechanism": "Control Tower считает выручку как IFNULL(accrual.seller_base_price_rub, posting.price_rub) * quantity — то есть ПОДСТАВЛЯЕТ цену заказа, когда начисления нет. Витрина ozon_mart после Gate 5M берёт для выкупов buyout_proceeds_rub из первичного документа, а без документа объявляет сумму недоказанной.",
+        "scale": "Расхождение выручки Ozon: +12 788,84 ₽ за 13 месяцев (Control Tower выше). Затронуты 2025-05, 2025-08…2026-04, 2026-06…2026-08. За август 2026 — 986,04 ₽.",
+        "buyouts": "У 35 отправлений-выкупов база начислений = 0 при сумме документов 18 116,16 ₽ — Control Tower на этих строках подставляет цену заказа, витрина берёт документ.",
+        "isolated_from_promotion": "После правки продвижения (UBR-010) расхождение вклада за август падает с 10 336,14 ₽ до 986,06 ₽, то есть ровно до разницы выручки. Два дефекта разделены арифметически.",
+        "owner_decision_2026_09_22": "Владелец подтвердил: это не новое бизнес-правило, а дефект потребителя действующего контракта Gate 5K/5M. Канон: обычная реализация — утверждённая каноническая модель; CIS_BUYOUT — сумма подтверждённого первичного документа; цена заказа НЕ является fallback; BUYOUT без доказанного документа остаётся UNPROVEN и даёт выручку 0. 35 текущих выкупов доказаны, unproven_rub = 0.",
+        "git_side_fix": "Готов и проверен 2026-09-22: Control Tower больше не реконструирует выручку Ozon, а читает ozon_mart.FCT_OZON_SKU_PNL_DAILY; три факта ozon_mart сделаны fail-closed для недоказанного выкупа; добавлен детекционный контракт ubr012_revenue_source (12 проверок, U01 ловит незарегистрированный выкуп). Подстановкой тела доказано: поправка −12 788,84 ₽ за 13 месяцев, август −986,04 ₽, WB не затронут, T10 переходит в PASS после пересборки CT_ACTUAL_DAILY.",
+        "why_still_open": "Правило закрывается только после production deployment и reconciliation, а не после Git-side исправления (требование владельца). Живой Control Tower по-прежнему завышает выручку на 12 788,84 ₽.",
+        "closed_2026_09_22": "Развёрнуто четырьмя операторами манифеста. Материализация состоялась 20:05 МСК штатным запуском ct-refresh-prod под sa-ct-refresh: CT_ACTUAL_DAILY 11 864 строки, CT_INVENTORY_SNAPSHOT_DAILY партиция заменена, очередь действий обновлена, новых ERROR нет. Сверка на актуальном состоянии сходится: начисления 1 866 617,00 + документы выкупа 18 116,16 + ожидающие начисления 2 205,00 = 1 886 938,16 = каноническая модель = материализованная CT. T10 и control_tower_phase1 22/22 PASS, ubr012_revenue_source 13/13, ozon_unit 11/11, promotion_l3 10/10.",
+        "incident_and_fix": "Развёртывание сломало плановую пересборку: новое тело CT читает ozon_mart, а у sa-ct-refresh доступа туда не было. Устранено выдачей dataset-level READER на ozon_mart — единственная IAM-мутация, по паттерну проекта (все гранты в проекте уровня датасета; точечный потребовал бы двух записей и ломался бы при новой внутренней зависимости витрины). Прав на запись не выдано. Дефект процесса оформлен: DEFINITION_OF_DONE.md + tools/check_runtime_access.py + quality/runtime_identities.json."
+      },
+      "why_not_automatable": "Это определение выручки — утверждённая финансовая методология. Выбор между подстановкой и первичным документом меняет выручку, маржу и ДРР во всех отчётах Control Tower.",
+      "minimal_answer_required": "Закрыто 2026-09-22 после развёртывания, материализации и сверки."
+    }
+  ]
+}

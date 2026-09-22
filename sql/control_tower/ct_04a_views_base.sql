@@ -46,6 +46,10 @@ WHERE v.plan_status = 'ACTIVE';
 --   ad_spend       — атрибутированная реклама (не биллинг). V_ADV_COSTS не затрагивается.
 -- WB берёт готовую экономику из V_DASH_SKU_DAILY + V_MART_SKU_DAILY_COGS.
 -- OZON собирает дневное зерно по семантике ozon_mart: постинги + accrual + type_id-затраты.
+-- ⚠️ Тело синхронизировано с production 2026-09-22: включает UBR-010 (promotion_billed, L3)
+-- и UBR-012 (выручка Ozon из ozon_mart.FCT_OZON_SKU_PNL_DAILY, без fallback на цену заказа).
+-- Патч-файлы ct_promotion_l3_2026-09-22.sql и ct_ubr012_revenue_2026-09-22.sql — историческая
+-- запись изменений; повторный прогон ЭТОГО файла больше не откатывает оба решения владельца.
 CREATE OR REPLACE VIEW `project-fa311fc0-4d87-4781-986.wb_mart.V_CT_ACTUAL_DAILY_LIVE` AS
 WITH bom AS (SELECT card_sku, MAX(component_count) AS component_count, LOGICAL_OR(is_bundle) AS is_bundle FROM `project-fa311fc0-4d87-4781-986.wb_mart.V_CT_BOM_CURRENT` GROUP BY 1),
 wb AS (
@@ -77,13 +81,20 @@ fin_econ AS (
 ),
 cogs AS (SELECT internal_sku, effective_from, COALESCE(effective_to, DATE '9999-12-31') AS et, product_cogs_rub AS u
          FROM `project-fa311fc0-4d87-4781-986.evetis_ref.V_PRODUCT_COGS_EFFECTIVE`),
+-- UBR-012: выручка НЕ реконструируется здесь. Каноническая модель Ozon уже различает
+-- агентскую реализацию и выкуп CIS и несёт признаки недоказанности.
+oz_rev AS (
+  SELECT fact_date AS d, internal_sku,
+    seller_base_revenue_rub AS revenue_seller_base,
+    buyout_revenue_unproven_qty, buyout_revenue_unproven_rub, commission_missing_qty
+  FROM `project-fa311fc0-4d87-4781-986.ozon_mart.FCT_OZON_SKU_PNL_DAILY`
+),
 oz_sales AS (
   SELECT p.order_date AS d, p.internal_sku,
     SUM(IF(p.status != 'cancelled', p.quantity, 0)) AS cards_ordered,
     SUM(IF(p.status = 'cancelled', p.quantity, 0)) AS cards_cancelled,
     SUM(IF(p.status = 'delivered', p.quantity, 0)) AS cards_sold,
     SUM(IF(p.status != 'cancelled', p.price_rub * p.quantity, 0)) AS gmv_ordered,
-    SUM(IF(p.status = 'delivered', IFNULL(f.sp_unit, p.price_rub) * p.quantity, 0)) AS revenue_seller_base,
     SUM(IF(p.status = 'delivered', IFNULL(-f.comm, 0), 0)) AS commission_rub,
     SUM(IF(p.status = 'delivered', c.u * p.quantity, 0)) AS cogs,
     SUM(IF(p.status = 'delivered' AND c.u IS NULL, p.quantity, 0)) AS cogs_missing_qty
@@ -95,7 +106,8 @@ oz_sales AS (
 oz_cost_post AS (
   SELECT pm.order_date AS d, pm.internal_sku,
     SUM(IF(f.type_id IN (32, 29, 28, 98, 30, 1, 59, 45, 78, 9, 79), -f.amount_rub, 0)) AS direct_var,
-    SUM(IF(f.type_id IN (15, 71, 39, 38), -f.amount_rub, 0)) AS other_direct
+    SUM(IF(f.type_id IN (15, 71, 39, 38), -f.amount_rub, 0)) AS other_direct,
+    SUM(IF(f.type_id IN (116, 74, 48), -f.amount_rub, 0)) AS promotion_billed
   FROM `project-fa311fc0-4d87-4781-986.ozon_raw.RAW_OZON_FINANCE_ACCRUAL` f
   JOIN (SELECT DISTINCT posting_number, sku, internal_sku, order_date FROM post) pm ON pm.posting_number = f.posting_number AND pm.sku = f.sku
   WHERE f.posting_number IS NOT NULL GROUP BY 1, 2
@@ -103,7 +115,8 @@ oz_cost_post AS (
 oz_cost_sku AS (
   SELECT f.event_date AS d, m.internal_sku,
     SUM(IF(f.type_id IN (32, 29, 28, 98, 30, 1, 59, 45, 78, 9, 79), -f.amount_rub, 0)) AS direct_var,
-    SUM(IF(f.type_id IN (15, 71, 39, 38), -f.amount_rub, 0)) AS other_direct
+    SUM(IF(f.type_id IN (15, 71, 39, 38), -f.amount_rub, 0)) AS other_direct,
+    SUM(IF(f.type_id IN (116, 74, 48), -f.amount_rub, 0)) AS promotion_billed
   FROM `project-fa311fc0-4d87-4781-986.ozon_raw.RAW_OZON_FINANCE_ACCRUAL` f
   JOIN oz_map m ON m.marketplace_sku = f.sku
   WHERE f.sku IS NOT NULL AND f.posting_number IS NULL GROUP BY 1, 2
@@ -119,18 +132,21 @@ oz AS (
     IF(STARTS_WITH(COALESCE(s.internal_sku, cp.internal_sku, cs.internal_sku, a.internal_sku), 'EVT-SET-'), 'BUNDLE', 'SOLO') AS sales_mode,
     IFNULL(s.cards_ordered, 0) AS cards_ordered, IFNULL(s.cards_cancelled, 0) AS cards_cancelled, IFNULL(s.cards_sold, 0) AS cards_sold, 0 AS cards_returned,
     IFNULL(s.gmv_ordered, 0) AS gmv_ordered,
-    IFNULL(s.revenue_seller_base, 0) AS revenue_seller_base,
+    IFNULL(r.revenue_seller_base, 0) AS revenue_seller_base,
     IFNULL(s.commission_rub, 0) + IFNULL(cp.direct_var, 0) + IFNULL(cp.other_direct, 0) + IFNULL(cs.direct_var, 0) + IFNULL(cs.other_direct, 0) AS marketplace_costs,
     IFNULL(a.ad_spend, 0) AS ad_spend,
-    IFNULL(s.revenue_seller_base, 0) - (IFNULL(s.commission_rub, 0) + IFNULL(cp.direct_var, 0) + IFNULL(cp.other_direct, 0) + IFNULL(cs.direct_var, 0) + IFNULL(cs.other_direct, 0)) - IFNULL(a.ad_spend, 0) AS seller_cash,
+    IFNULL(r.revenue_seller_base, 0) - (IFNULL(s.commission_rub, 0) + IFNULL(cp.direct_var, 0) + IFNULL(cp.other_direct, 0) + IFNULL(cs.direct_var, 0) + IFNULL(cs.other_direct, 0)) - IFNULL(a.ad_spend, 0) - IFNULL(cp.promotion_billed, 0) - IFNULL(cs.promotion_billed, 0) AS seller_cash,
     IFNULL(s.cogs, 0) AS cogs,
-    IFNULL(s.revenue_seller_base, 0) - (IFNULL(s.commission_rub, 0) + IFNULL(cp.direct_var, 0) + IFNULL(cp.other_direct, 0) + IFNULL(cs.direct_var, 0) + IFNULL(cs.other_direct, 0)) - IFNULL(a.ad_spend, 0) - IFNULL(s.cogs, 0) AS contribution,
-    TRUE AS contribution_covered, IFNULL(s.cogs_missing_qty, 0) = 0 AS cogs_covered, TRUE AS include_in_pnl,
-    'OZON: postings (order basis) + finance accrual seller_base/commission + direct costs by type_id + attributed ads (ozon_mart semantics, daily grain)' AS economics_basis
+    IFNULL(r.revenue_seller_base, 0) - (IFNULL(s.commission_rub, 0) + IFNULL(cp.direct_var, 0) + IFNULL(cp.other_direct, 0) + IFNULL(cs.direct_var, 0) + IFNULL(cs.other_direct, 0)) - IFNULL(a.ad_spend, 0) - IFNULL(cp.promotion_billed, 0) - IFNULL(cs.promotion_billed, 0) - IFNULL(s.cogs, 0) AS contribution,
+    IFNULL(r.buyout_revenue_unproven_qty, 0) = 0 AND IFNULL(r.commission_missing_qty, 0) = 0 AS contribution_covered,
+    IFNULL(s.cogs_missing_qty, 0) = 0 AS cogs_covered, TRUE AS include_in_pnl,
+    'OZON: revenue from ozon_mart.FCT_OZON_SKU_PNL_DAILY (canonical: MARKETPLACE_SALE accrual / CIS_BUYOUT primary document, no order-price fallback) + postings (order basis) for qty/GMV + finance accrual commission + direct costs by type_id + attributed ads + billed SKU promotion (types 116/74/48, L3: subtracted in seller_cash and contribution, NOT in marketplace_costs and NOT in ad_spend) (ozon_mart semantics, daily grain)' AS economics_basis
   FROM oz_sales s
   FULL JOIN oz_cost_post cp ON cp.d = s.d AND cp.internal_sku = s.internal_sku
   FULL JOIN oz_cost_sku cs ON cs.d = COALESCE(s.d, cp.d) AND cs.internal_sku = COALESCE(s.internal_sku, cp.internal_sku)
   FULL JOIN oz_ads a ON a.d = COALESCE(s.d, cp.d, cs.d) AND a.internal_sku = COALESCE(s.internal_sku, cp.internal_sku, cs.internal_sku)
+  LEFT JOIN oz_rev r ON r.d = COALESCE(s.d, cp.d, cs.d, a.d)
+                    AND r.internal_sku = COALESCE(s.internal_sku, cp.internal_sku, cs.internal_sku, a.internal_sku)
 ),
 u AS (SELECT * FROM wb UNION ALL SELECT * FROM oz)
 SELECT u.d, u.marketplace, u.internal_sku, u.sales_mode, IFNULL(b.component_count, 1) AS component_count,

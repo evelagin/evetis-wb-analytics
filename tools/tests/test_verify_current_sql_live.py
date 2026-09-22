@@ -34,8 +34,10 @@ LEAF = "V_OZON_TARIFF_CHANGE_LOG"
 # These tests exercise the live-verification tool, not the economics of any object.
 BASELINE_BODY_SHA256 = {
     "V_OZON_CIS_BUYOUT": "b233b9ca53d18d8787f2b3ae6b0cca5fe774c0a52ea055869086ba6c871369ba",
-    "FCT_OZON_PNL_MONTHLY": "1b6bc3ce452ec5504487669aa765d06353bf67037a6ac0394033202ef6e906fb",
-    "FCT_OZON_SKU_PNL_MONTHLY": "b81327e21538a27696b44ecfc7895be770734065c5f1602500c7a40e7c2fb140",
+    # UBR-012 (2026-09-22): выручка недоказанного выкупа fail-closed, тело изменилось.
+    "FCT_OZON_PNL_MONTHLY": "59f900f2d1fb589e01c2a434b04c796d718def66ffebd240484174fda13d0905",
+    # UBR-010 (2026-09-22): продвижение перенесено на слой L3, тело изменилось.
+    "FCT_OZON_SKU_PNL_MONTHLY": "1692f95acbed5a4472377f7debd782b5d165d95ec5016ccf205b56a990bfdb0d",
     "V_OZON_MART_FRESHNESS": "c19355f7a86440fe9fd7d48003e9570ca09b713da677f5c3d2141a46b379394d",
     "V_OZON_SKU_CURRENT_TARIFF": "a155684596e703c6e90c40cf8c65bb6da1b3431d40125c990581f3de92530d80",
     "V_OZON_TARIFF_CHANGE_LOG": "47963b384ae9b88d15da7eba5ac8816545218741021d001293094e1d32c81e54",
@@ -184,6 +186,22 @@ def root(tmp_path):
         o["live_schema_sha256_at_capture"] = o["canonical_schema_sha256"]
         o["live_description_sha256_at_capture"] = o["canonical_description_sha256"]
         o["live_schema_at_capture"] = o["canonical_schema"]
+    # Список C17 обязан описывать ТОЛЬКО объекты, каноничные в этой копии. Фикстура удаляет
+    # часть объектов, поэтому записи о них становятся устаревшими и валидатор справедливо
+    # ругается. Это свойство фикстуры, а не контракта: в самом репозитории список полон.
+    managed = {f"{DS}.{o['object_name']}" for o in man["objects"]}
+    hist_path = tmp_path / "sql/current/historical_definitions.json"
+    hist = json.loads(hist_path.read_text(encoding="utf-8"))
+    kept = []
+    for entry in hist["entries"]:
+        defs = {k: v for k, v in entry["definitions"].items() if k in managed}
+        if defs:
+            kept.append({"path": entry["path"], "definitions": defs})
+        else:
+            (tmp_path / entry["path"]).unlink(missing_ok=True)
+    hist["entries"] = kept
+    hist_path.write_text(json.dumps(hist, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+
     save_manifest(tmp_path, man)
     return tmp_path
 

@@ -203,3 +203,7 @@ docs/tz_ozon_*/
 **/.clasprc.json
 .clasp-auth/
 clasp-credentials*.json
+
+# Артефакты прогонов Definition of Done: доказательства конкретного прогона,
+# содержат значения данных и не версионируются (docs/architecture/REPOSITORY_DATA_POLICY.md).
+artifacts/

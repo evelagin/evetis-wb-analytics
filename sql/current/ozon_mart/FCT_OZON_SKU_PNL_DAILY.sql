@@ -28,6 +28,18 @@
 --     а не логистика, поэтому отдельная корзина, а не досыпка в logistics_rub. От CPC-рекламы
 --     (ad_spend_attributed_rub) отличается источником: это факт начисления, а не атрибуция.
 --
+-- 🔴 UBR-010 (решение владельца 2026-09-22): sku_promotion_rub — самостоятельный фактически
+--   начисленный расход на продвижение, СЛОЙ L3. Он НЕ уменьшает выручку, НЕ входит в
+--   other_direct_marketplace_costs_rub и НЕ смешивается с ad_spend_attributed_rub.
+--   Поэтому он вычитается ВМЕСТЕ с рекламой, ПОСЛЕ contribution_before_ads_rub, а не внутри него.
+--   Основание: комиссия Ozon начисляется на полную цену реализации (84 из 84 отправлений),
+--   выплата = цена − комиссия без вычета продвижения (84 из 84), тождество цены
+--   «оплатил покупатель + баллы + соинвестирование = цена продавца» выполняется без него
+--   (0 нарушений). Разбор: docs/ozon/OZON_SKU_PROMOTION_CLASSIFICATION_2026-09-22.md.
+--   До 2026-09-22 (Gate 5L) он вычитался внутри contribution_before_ads_rub, что противоречило
+--   и OZON_FINANCE_TAXONOMY_V1 (PROMOTION → L3), и магазинной витрине FCT_OZON_PNL_MONTHLY,
+--   где эти же типы уже учитывались в advertising_rub на L3.
+--
 -- Тип операции (Gate 5K) — две несводимые хозяйственные формы, различаются ДО арифметики:
 --   MARKETPLACE_SALE — агентская реализация: выручка продавца, комиссия Ozon, эквайринг;
 --   CIS_BUYOUT      — выкуп товара Ozon у продавца (Беларусь): Ozon ПОКУПАТЕЛЬ, а не агент.
@@ -37,9 +49,10 @@
 -- в детальном отчёте по эквайрингу), а не обнуление. Логистика начисляется и остаётся расходом.
 -- Выручка выкупа = buyout_proceeds_rub из V_OZON_CIS_BUYOUT (сумма по первичному документу).
 -- Выкуп без документа: тип известен по структурной сигнатуре (delivered, payout_rub = 0,
--- начисления выручки нет), но сумма выкупа НЕ доказана и НЕ выводится ставкой. Такая строка
--- несёт справочную цену в выручке и одновременно buyout_revenue_unproven_qty/_rub — величина
--- непроверенной выручки названа и измерена, а не спрятана.
+-- начисления выручки нет), но сумма выкупа НЕ доказана и НЕ выводится ставкой. UBR-012,
+-- решение владельца 2026-09-22: такая строка даёт выручку 0 (fail-closed) и одновременно
+-- buyout_revenue_unproven_qty/_rub — величина названа и измерена, но НЕ признана выручкой.
+-- Цена заказа выручкой выкупа не становится ни при каких условиях.
 --
 -- Ограничения V1 (унаследованы, этим объектом НЕ исправляются): возвраты и FBS не загружаются;
 -- отсутствующая комиссия обычной продажи считается 0 и видна в commission_missing_qty;
@@ -75,6 +88,7 @@ cls AS (
 sales AS (
   SELECT p.order_date d, p.internal_sku, p.status, p.quantity,
     CASE WHEN p.buyout_proceeds_rub IS NOT NULL THEN p.buyout_proceeds_rub * p.quantity
+         WHEN p.op_type='CIS_BUYOUT' THEN NUMERIC '0'
          ELSE IFNULL(p.sp_unit, p.price_rub) * p.quantity END seller_base,
     IF(p.op_type='MARKETPLACE_SALE', IFNULL(-p.comm, NUMERIC '0'), NUMERIC '0') commission_known,
     IF(p.op_type='MARKETPLACE_SALE' AND p.sp_unit IS NULL, p.quantity, 0) comm_missing_qty,
@@ -149,8 +163,8 @@ SELECT j.fact_date, j.internal_sku,
   j.direct_variable_marketplace_costs_rub, j.other_direct_marketplace_costs_rub,
   j.product_cogs_rub, j.cogs_missing_qty, j.sku_promotion_rub,
   j.seller_base_revenue_rub - j.product_cogs_rub - j.commission_rub
-    - j.direct_variable_marketplace_costs_rub - j.other_direct_marketplace_costs_rub
-    - j.sku_promotion_rub contribution_before_ads_rub,
+    - j.direct_variable_marketplace_costs_rub
+    - j.other_direct_marketplace_costs_rub contribution_before_ads_rub,
   j.ad_spend_attributed_rub,
   j.seller_base_revenue_rub - j.product_cogs_rub - j.commission_rub
     - j.direct_variable_marketplace_costs_rub - j.other_direct_marketplace_costs_rub

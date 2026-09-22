@@ -13,6 +13,10 @@
 -- равны нулю — не потому, что их не будет, а потому, что их ещё не напечатали. Лист показывал
 -- за эти сутки мнимую прибыль: выручка есть, расходов нет.
 --
+-- 🔴 UBR-010 (решение владельца 2026-09-22): sku_promotion_rub — слой L3, вычитается вместе с
+-- рекламой. operational_contribution_before_ads_rub его больше НЕ содержит;
+-- operational_contribution_after_ads_rub содержит, как и прежде — его значение не изменилось.
+--
 -- ПРАВИЛО СТАРШИНСТВА, покомпонентно (D):
 --   есть факт                                  -> effective = факт,   state = ACTUAL
 --   расход ожидается и оценщик доказан         -> effective = оценка, state = ESTIMATED
@@ -227,7 +231,7 @@ SELECT
     - (r.product_cogs_rub + r.in_transit_cogs_rub)
     - (r.commission_rub + r.commission_estimated_rub)
     - (r.direct_variable_marketplace_costs_rub + r.logistics_estimated_rub)
-    - r.other_direct_marketplace_costs_rub - r.sku_promotion_rub
+    - r.other_direct_marketplace_costs_rub
       operational_contribution_before_ads_rub,
   r.seller_base_revenue_rub + r.in_transit_revenue_rub
     - (r.product_cogs_rub + r.in_transit_cogs_rub)

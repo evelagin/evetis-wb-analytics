@@ -45,6 +45,7 @@ cls AS (
 sales AS (
   SELECT DATE_TRUNC(p.order_date, MONTH) m, p.status, p.quantity, p.posting_number,
     CASE WHEN p.buyout_proceeds_rub IS NOT NULL THEN p.buyout_proceeds_rub * p.quantity
+         WHEN p.op_type='CIS_BUYOUT' THEN NUMERIC '0'
          ELSE IFNULL(p.sp_unit, p.price_rub) * p.quantity END AS seller_base,
     IFNULL(p.bp,0) bp, IFNULL(p.bonus,0) bonus, IFNULL(p.coinv,0) coinv,
     IF(p.op_type='MARKETPLACE_SALE', IFNULL(-p.comm, NUMERIC '0'), NUMERIC '0') AS commission_known,

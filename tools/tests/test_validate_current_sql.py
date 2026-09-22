@@ -37,7 +37,14 @@ NON_R2A = {"ozon_mart": {"V_OZON_COMMISSION_RECOVERY", "V_OZON_CIS_BUYOUT", "FCT
 # Gate 8 добавил три объекта Git-first; до развёртывания они pending_deploy, после — captured_live.
 GATE8_OBJECTS = {"V_OZON_COMMISSION_POLICY", "V_OZON_LOGISTICS_ESTIMATOR",
                  "V_OZON_SKU_PNL_DAILY_OPERATIONAL"}
-GATE5K_PENDING = {"ozon_mart": set(), "evetis_mart": set()}
+# UBR-010 (2026-09-22, решение владельца — вариант C): продвижение переносится на слой L3.
+# Изменение Git-first, поэтому до развёртывания четыре объекта в pending_deploy.
+# План применения — docs/architecture/PROMOTION_L3_MIGRATION.md.
+GATE5K_PENDING = {"ozon_mart": {"FCT_OZON_SKU_PNL_DAILY", "FCT_OZON_SKU_PNL_MONTHLY",
+                                "V_OZON_SKU_PNL_DAILY_OPERATIONAL",
+                                # UBR-012 (2026-09-22): выручка недоказанного выкупа fail-closed.
+                                "FCT_OZON_PNL_MONTHLY"},
+                  "evetis_mart": {"FACT_SKU_DAILY"}}
 
 # canonical_hash_v1 body hashes proven equal to production in R2A (PR #140). Pinned literally.
 R2A_BODY_SHA256 = {
@@ -151,7 +158,9 @@ def test_real_repository_passes():
     assert_clean(REPO)
     _, summary = v.validate(REPO)
     assert summary["objects"] == len(R2A_BODY_SHA256) + sum(map(len, NON_R2A.values()))
-    assert summary["historical_sites"] == 14
+    # 14 исторических + 4 файла отката UBR-010 (sql/ozon/promotion_l3_2026-09-22/)
+    # + 3 файла отката UBR-012 (sql/ozon/ubr012_revenue_2026-09-22/)
+    assert summary["historical_sites"] == 21
 
 
 def test_canonical_hash_v1_reproduces_r2a_hashes_byte_for_byte():
@@ -164,11 +173,22 @@ def test_canonical_hash_v1_reproduces_r2a_hashes_byte_for_byte():
 
 
 def test_real_manifest_is_v2_captured_live():
+    """Снятые объекты строго captured_live; Git-first изменения — строго pending_deploy.
+
+    Смысл проверки не в том, что pending нет вовсе, а в том, что состояние объекта не бывает
+    промежуточным: либо он сверен с production, либо честно объявлен опережающим его.
+    """
     man = load(REPO)
     assert man["manifest_version"] == 2
     assert man["allowed_external_datasets"] == ["evetis_ref", "ozon_raw"]
     assert {o["object_name"] for o in man["objects"]} == set(R2A_BODY_SHA256) | NON_R2A[DS]
     for o in man["objects"]:
+        if o["object_name"] in GATE5K_PENDING[DS]:
+            assert o["sync_state"] == "pending_deploy"
+            assert o["canonical_schema_verification"] == "unverified"
+            # снимок production НЕ переписан: он остаётся доказательством прежнего состояния
+            assert o["canonical_body_sha256"] != o["live_body_sha256_at_capture"]
+            continue
         assert o["sync_state"] == "captured_live"
         assert o["canonical_schema_verification"] == "bigquery_verified"
         assert o["canonical_body_sha256"] == o["live_body_sha256_at_capture"]
@@ -617,8 +637,19 @@ def test_manifest_subset_narrower_than_usage(repo):
 
 
 def test_dataset_without_policy_fails_closed(repo):
-    shutil.copytree(repo / "sql/current/ozon_mart", repo / "sql/current/wb_mart")
+    # The dataset name must be one the validator has NO policy entry for. wb_mart used to
+    # qualify; PHASE 2 gave it a reviewed policy, which silently turned this test into a
+    # check of something else. Pick a name that cannot acquire a policy by accident.
+    assert "sandbox_unreviewed" not in v.EXTERNAL_DATASET_POLICY
+    shutil.copytree(repo / "sql/current/ozon_mart", repo / "sql/current/sandbox_unreviewed")
     assert_fails(repo, "C13", "no marketplace-isolation policy")
+
+
+def test_every_policy_entry_is_reachable_from_a_manifest_or_documented(repo):
+    """Политика — ревью-решение; запись без объяснения незаметно расширяет доверие."""
+    for ds in v.EXTERNAL_DATASET_POLICY:
+        assert ds in {"ozon_mart", "evetis_mart", "wb_mart"}, (
+            f"датасет {ds!r} появился в политике без ревью")
 
 
 def test_dependency_cycle(repo):
@@ -657,7 +688,7 @@ def test_new_dependency_requires_level_update(repo):
 # ------------------------------------------------------------------------------------------ sync_state (C18)
 
 def test_valid_sync_states():
-    """Every object is captured_live except the ones Gate 5K rewrote but did not deploy."""
+    """Каждый объект captured_live, кроме тех, что изменены Git-first и ещё не развёрнуты."""
     man = load(REPO)
     pending = {o["object_name"] for o in man["objects"] if o["sync_state"] == "pending_deploy"}
     assert pending == GATE5K_PENDING[DS]

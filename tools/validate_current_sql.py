@@ -52,9 +52,17 @@ HASH_CONTRACT = "canonical_hash_v1 (see sql/current/README.md)"
 # evetis_mart (SCALE 1) is the marketplace-neutral layer ABOVE both domains: it may read the two
 # marts and evetis_ref, never wb_raw / ozon_raw — it normalises authoritative marketplace facts and
 # must not recompute marketplace economics from RAW. Neither marketplace mart may read it back.
+# wb_mart (PHASE 2) mirrors ozon_mart on its own side of the isolation line: its own raw layer,
+# its own ops journals (freshness / integrity / engine runs are legitimate mart inputs) and the
+# shared reference. It may NOT read ozon_* — that is the isolation invariant, not a convenience —
+# and it may not read the neutral evetis_mart back.
+# Consequence, recorded deliberately: the Control Tower views that live in wb_mart and read
+# ozon_raw directly cannot enter the canonical layer until they move to a neutral dataset.
+# See docs/architecture/CANONICAL_COVERAGE.md.
 EXTERNAL_DATASET_POLICY = {
     "ozon_mart": frozenset({"ozon_raw", "evetis_ref"}),
     "evetis_mart": frozenset({"wb_mart", "ozon_mart", "evetis_ref"}),
+    "wb_mart": frozenset({"wb_raw", "wb_ops", "evetis_ref"}),
 }
 
 OBJECT_TYPES = {"VIEW"}

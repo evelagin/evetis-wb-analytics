@@ -17,7 +17,7 @@
       "object_name": "FACT_SKU_DAILY",
       "object_type": "VIEW",
       "canonical_path": "sql/current/evetis_mart/FACT_SKU_DAILY.sql",
-      "sync_state": "captured_live",
+      "sync_state": "pending_deploy",
       "dependencies": [],
       "external_dependencies": [
         "evetis_ref.REF_PRODUCT_MASTER",
@@ -195,11 +195,11 @@
           "is_nullable": "YES"
         }
       ],
-      "canonical_body_sha256": "29e2b108a8f9a5e4549aaf7ba2c193870e7a77ee914cb41c358d9d7def2bc260",
-      "canonical_description_sha256": "c6268909b647a7067154411e54558e5f1e036c18c4ad1e0e3494f71a43f618b2",
-      "canonical_schema_sha256": "ead3cd9281713be27c3f9d92a1c354fdb4d8217f6ae1ecfd10c7abfc2f273e83",
-      "canonical_schema_verification": "bigquery_verified",
-      "canonical_column_count": 26,
+      "canonical_body_sha256": "034e80bd164db304a87f4eafba5cdf07c4044e3e547143f7bf747c3d2ecc22e8",
+      "canonical_description_sha256": "1a4461ff8862fb6e6015f05bf259aecb85f1986a6a05f695dcf2749640143a27",
+      "canonical_schema_sha256": "0ece61423f25968da8691aeaf308ed61f1c5c7ad1943a45379694742c53d3175",
+      "canonical_schema_verification": "unverified",
+      "canonical_column_count": 27,
       "canonical_schema": [
         {
           "ordinal_position": 1,
@@ -311,48 +311,54 @@
         },
         {
           "ordinal_position": 19,
-          "column_name": "contribution_after_ads_rub",
+          "column_name": "promotion_billed_rub",
           "data_type": "NUMERIC",
           "is_nullable": "YES"
         },
         {
           "ordinal_position": 20,
-          "column_name": "cogs_rub",
+          "column_name": "contribution_after_ads_rub",
           "data_type": "NUMERIC",
           "is_nullable": "YES"
         },
         {
           "ordinal_position": 21,
-          "column_name": "contribution_after_cogs_rub",
+          "column_name": "cogs_rub",
           "data_type": "NUMERIC",
           "is_nullable": "YES"
         },
         {
           "ordinal_position": 22,
+          "column_name": "contribution_after_cogs_rub",
+          "data_type": "NUMERIC",
+          "is_nullable": "YES"
+        },
+        {
+          "ordinal_position": 23,
           "column_name": "economics_covered",
           "data_type": "BOOL",
           "is_nullable": "YES"
         },
         {
-          "ordinal_position": 23,
+          "ordinal_position": 24,
           "column_name": "is_provisional",
           "data_type": "BOOL",
           "is_nullable": "YES"
         },
         {
-          "ordinal_position": 24,
+          "ordinal_position": 25,
           "column_name": "fact_date_semantics",
           "data_type": "STRING",
           "is_nullable": "YES"
         },
         {
-          "ordinal_position": 25,
+          "ordinal_position": 26,
           "column_name": "source_contract",
           "data_type": "STRING",
           "is_nullable": "YES"
         },
         {
-          "ordinal_position": 26,
+          "ordinal_position": 27,
           "column_name": "contract_version",
           "data_type": "STRING",
           "is_nullable": "YES"
