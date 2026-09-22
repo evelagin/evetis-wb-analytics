@@ -5,7 +5,6 @@
  * поэтому повторный прогон ничего не меняет. Ни одной ссылки «скопируй с такой-то строки»:
  * оформление берётся из CANONICAL_CURRENT_WB_PRESENTATION_CONTRACT.
  */
-import { OZON_GEOMETRY } from './contract.js';
 import { OZON_SUMMARY_ROLES } from './presentation.js';
 import {
   composeMonth, buildGrid, buildHeaderRows, ozonMonthSpec,

@@ -1535,7 +1535,7 @@ describe('OZON adapter — Gate 8: суточный загрузчик', () => {
   };
 
   it('раскладка читается из ЖИВОГО листа, а не из памяти', () => {
-    const { sections, cart } = parseLiveLayout(mkGrid(), 562, canon);
+    const { sections } = parseLiveLayout(mkGrid(), 562, canon);
     expect(sections).toHaveLength(1);
     expect(sections[0]!.blocks).toEqual(['909951444', '438775437']);
     expect(sections[0]!.monthKey).toBe('2026-09');
