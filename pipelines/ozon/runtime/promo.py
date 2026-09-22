@@ -213,10 +213,18 @@ def promo(run_id, ts, _f, _t):
     started = now_msk()
     r0, t0 = C.STATS["requests"], C.STATS["retries"]
 
+    # Открытие строки манифеста идемпотентно по observation_id: безусловный INSERT
+    # дал бы вторую строку на тот же снимок при повторе слота, и проверка «дублей
+    # грейна нет» падала бы на собственной телеметрии. Дефект пойман валидацией
+    # 2026-09-22: два прогона одного слота оставили две строки на один observation_id.
     bq().query(
         f"INSERT INTO `{PROJECT}.{DATASET}.{TBL_OBSERVATIONS}` "
         f"(observation_id, observation_bucket, environment, run_id, started_at, status) "
-        f"VALUES ('{obs}', '{slot}', '{env}', '{run_id}', TIMESTAMP('{started.isoformat()}'), 'STARTED')",
+        f"SELECT '{obs}', '{slot}', '{env}', '{run_id}', "
+        f"TIMESTAMP('{started.isoformat()}'), 'STARTED' "
+        f"FROM UNNEST([1]) "
+        f"WHERE NOT EXISTS (SELECT 1 FROM `{PROJECT}.{DATASET}.{TBL_OBSERVATIONS}` "
+        f"WHERE observation_id='{obs}')",
         location=C.LOCATION).result()
 
     try:

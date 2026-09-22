@@ -147,13 +147,24 @@ export class PromoBq {
     return Number(r?.n ?? 0);
   }
 
+  /**
+   * Открытие строки манифеста. Идемпотентно по observation_id.
+   *
+   * Безусловный INSERT дал бы вторую строку на тот же снимок при повторе слота —
+   * грейн манифеста (observation_id) нарушался бы, а проверка «дублей грейна нет»
+   * падала бы на собственной телеметрии. Дефект пойман валидацией 2026-09-22:
+   * три прогона одного слота оставили три строки на один observation_id.
+   */
   async observationStart(table: string, s: ObservationStart): Promise<void> {
     await this.bq.query({
       query: `INSERT INTO ${this.fqn(table)}
                 (observation_id, observation_bucket, environment, run_id, started_at, status,
                  window_from, window_to)
-              VALUES (@oid, @bucket, @env, @run, TIMESTAMP(@started), 'STARTED',
-                      TIMESTAMP(@wfrom), TIMESTAMP(@wto))`,
+              SELECT @oid, @bucket, @env, @run, TIMESTAMP(@started), 'STARTED',
+                     TIMESTAMP(@wfrom), TIMESTAMP(@wto)
+              FROM UNNEST([1])
+              WHERE NOT EXISTS (
+                SELECT 1 FROM ${this.fqn(table)} WHERE observation_id = @oid)`,
       params: {
         oid: s.observationId,
         bucket: s.bucket,
