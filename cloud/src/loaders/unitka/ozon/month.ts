@@ -203,7 +203,7 @@ export function composeMonth(
       if (outside) { cells[key] = {}; continue; }
       const rec = by.get(`${ds}|${o}`);
       const n = (v: number | null | undefined) => v ?? 0;
-      const orders = n(rec?.gross_qty), cancel = n(rec?.cancelled_qty), rl = n(rec?.realized_qty);
+      const orders = n(rec?.gross_qty), cancel = n(rec?.cancelled_qty);
       const comm = n(rec?.commission);
       // Gate 9: экономика считается на ОЖИДАЕМО реализованных единицах. Для созревших суток
       // единиц в пути нет, и обе базы совпадают — историю это не двигает (проверено: 3289
