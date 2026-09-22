@@ -1,6 +1,6 @@
 {
  "schema_version": 1,
- "generated_at": "2026-09-22T04:35:09Z",
+ "generated_at": "2026-09-22T04:55:24Z",
  "generated_by": "tools/build_contract_registry.py",
  "inventory_snapshot": "2026-09-22T04:35:09Z",
  "summary": {
@@ -13,7 +13,7 @@
   "acceptance_artifacts_in_backlog": 12,
   "assets_with_contract": 32,
   "assets_under_gate": 32,
-  "unresolved_business_rules_open": 9,
+  "unresolved_business_rules_open": 11,
   "parse_problems": 0
  },
  "by_severity": {
@@ -9614,6 +9614,28 @@
    "status": "open",
    "blocked_checks": [
     "ozon_clusters/OZ2_OZON_INGESTION_STALE"
+   ]
+  },
+  {
+   "id": "UBR-010",
+   "title": "Новый компонент экономики Ozon sku_promotion_rub не доведён до потребителей витрины",
+   "severity": "HIGH",
+   "status": "open",
+   "blocked_checks": [
+    "V01_OZON_DAILY_TO_MONTHLY_SKU_PARITY",
+    "V02_OZON_PARITY_BY_MONTH",
+    "V09_NEUTRAL_IDENTITIES_AND_NULL_CONTRACT",
+    "CT1__T10_FAILED_OZON_OZON_MART_FCT_OZON_SKU_PNL_MONTHLY"
+   ]
+  },
+  {
+   "id": "UBR-011",
+   "title": "Две приёмочные проверки привязаны к моменту прогона и устарели сами по себе",
+   "severity": "LOW",
+   "status": "open",
+   "blocked_checks": [
+    "SKUV2__V9_PROVISIONAL_WINDOW_FINAL",
+    "EXECV2__V2_V_DASH_EXECUTIVE_V2_DAILY_V_DASH_SETTLEMENT_DAILY"
    ]
   }
  ],
