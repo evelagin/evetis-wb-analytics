@@ -1,23 +1,23 @@
 {
  "schema_version": 1,
- "generated_at": "2026-09-22T07:48:04Z",
+ "generated_at": "2026-09-22T11:37:20Z",
  "generated_by": "tools/build_contract_registry.py",
  "inventory_snapshot": "2026-09-22T04:35:09Z",
  "summary": {
-  "suites": 12,
-  "checks_total": 238,
-  "checks_active": 217,
+  "suites": 13,
+  "checks_total": 250,
+  "checks_active": 229,
   "checks_excluded_from_gate": 5,
   "checks_not_executable": 16,
-  "acceptance_artifacts_wired": 14,
+  "acceptance_artifacts_wired": 15,
   "acceptance_artifacts_in_backlog": 12,
-  "assets_with_contract": 32,
-  "assets_under_gate": 32,
+  "assets_with_contract": 34,
+  "assets_under_gate": 34,
   "unresolved_business_rules_open": 11,
   "parse_problems": 0
  },
  "by_severity": {
-  "CRITICAL": 128,
+  "CRITICAL": 140,
   "HIGH": 48,
   "MEDIUM": 41,
   "LOW": 0
@@ -26,7 +26,7 @@
   "finance": 114,
   "ingestion": 2,
   "operations": 41,
-  "unit_economics": 60
+  "unit_economics": 72
  },
  "checks": [
   {
@@ -2385,6 +2385,450 @@
    "freshness_requirement": "перед слиянием изменения в области scope и после развёртывания",
    "business_rule_reference": "UBR-010",
    "label": "P09_LAYER_AGREEMENT_SKU_VS_STORE"
+  },
+  {
+   "check_id": "U01_DETECTION_UNREGISTERED_BUYOUT",
+   "suite": "ubr012_revenue_source",
+   "domain": "unit_economics",
+   "pipelines": [
+    "ozon_postings",
+    "ozon_finance_accrual",
+    "mart"
+   ],
+   "marketplace": [
+    "OZON"
+   ],
+   "layer": "mart",
+   "severity": "CRITICAL",
+   "source_contract": "docs/ozon/OZON_SKU_PROMOTION_CLASSIFICATION_2026-09-22.md",
+   "source_artifact": "sql/scale1/ubr012_revenue_reconciliation.sql:29",
+   "adapter": "check_blocks",
+   "execution_mode": "read_only_select",
+   "expected_result": "status=PASS on every row",
+   "owner": "evelagin",
+   "type": "data_contract",
+   "status": "active",
+   "status_reason": null,
+   "gate_relevant": true,
+   "dependencies": [
+    "evetis_mart.FACT_SKU_DAILY",
+    "ozon_mart.FCT_OZON_PNL_MONTHLY",
+    "ozon_mart.FCT_OZON_SKU_PNL_DAILY",
+    "ozon_mart.FCT_OZON_SKU_PNL_MONTHLY",
+    "ozon_mart.V_OZON_CIS_BUYOUT",
+    "wb_mart.V_CT_ACTUAL_DAILY_LIVE"
+   ],
+   "timeout_seconds": 300,
+   "freshness_requirement": "перед слиянием изменения в области scope, после CALL sp_ct_refresh_daily() и при каждой загрузке отправлений Ozon",
+   "business_rule_reference": "UBR-010",
+   "label": "U01_DETECTION_UNREGISTERED_BUYOUT"
+  },
+  {
+   "check_id": "U02_BUYOUT_REVENUE_IS_PRIMARY_DOCUMENT",
+   "suite": "ubr012_revenue_source",
+   "domain": "unit_economics",
+   "pipelines": [
+    "ozon_postings",
+    "ozon_finance_accrual",
+    "mart"
+   ],
+   "marketplace": [
+    "OZON"
+   ],
+   "layer": "mart",
+   "severity": "CRITICAL",
+   "source_contract": "docs/ozon/OZON_SKU_PROMOTION_CLASSIFICATION_2026-09-22.md",
+   "source_artifact": "sql/scale1/ubr012_revenue_reconciliation.sql:48",
+   "adapter": "check_blocks",
+   "execution_mode": "read_only_select",
+   "expected_result": "status=PASS on every row",
+   "owner": "evelagin",
+   "type": "data_contract",
+   "status": "active",
+   "status_reason": null,
+   "gate_relevant": true,
+   "dependencies": [
+    "evetis_mart.FACT_SKU_DAILY",
+    "ozon_mart.FCT_OZON_PNL_MONTHLY",
+    "ozon_mart.FCT_OZON_SKU_PNL_DAILY",
+    "ozon_mart.FCT_OZON_SKU_PNL_MONTHLY",
+    "ozon_mart.V_OZON_CIS_BUYOUT",
+    "wb_mart.V_CT_ACTUAL_DAILY_LIVE"
+   ],
+   "timeout_seconds": 300,
+   "freshness_requirement": "перед слиянием изменения в области scope, после CALL sp_ct_refresh_daily() и при каждой загрузке отправлений Ozon",
+   "business_rule_reference": "UBR-010",
+   "label": "U02_BUYOUT_REVENUE_IS_PRIMARY_DOCUMENT"
+  },
+  {
+   "check_id": "U03_CT_REVENUE_MATCHES_CANONICAL",
+   "suite": "ubr012_revenue_source",
+   "domain": "unit_economics",
+   "pipelines": [
+    "ozon_postings",
+    "ozon_finance_accrual",
+    "mart"
+   ],
+   "marketplace": [
+    "OZON"
+   ],
+   "layer": "mart",
+   "severity": "CRITICAL",
+   "source_contract": "docs/ozon/OZON_SKU_PROMOTION_CLASSIFICATION_2026-09-22.md",
+   "source_artifact": "sql/scale1/ubr012_revenue_reconciliation.sql:72",
+   "adapter": "check_blocks",
+   "execution_mode": "read_only_select",
+   "expected_result": "status=PASS on every row",
+   "owner": "evelagin",
+   "type": "data_contract",
+   "status": "active",
+   "status_reason": null,
+   "gate_relevant": true,
+   "dependencies": [
+    "evetis_mart.FACT_SKU_DAILY",
+    "ozon_mart.FCT_OZON_PNL_MONTHLY",
+    "ozon_mart.FCT_OZON_SKU_PNL_DAILY",
+    "ozon_mart.FCT_OZON_SKU_PNL_MONTHLY",
+    "ozon_mart.V_OZON_CIS_BUYOUT",
+    "wb_mart.V_CT_ACTUAL_DAILY_LIVE"
+   ],
+   "timeout_seconds": 300,
+   "freshness_requirement": "перед слиянием изменения в области scope, после CALL sp_ct_refresh_daily() и при каждой загрузке отправлений Ozon",
+   "business_rule_reference": "UBR-010",
+   "label": "U03_CT_REVENUE_MATCHES_CANONICAL"
+  },
+  {
+   "check_id": "U04_ANCHOR_HISTORICAL_CORRECTION",
+   "suite": "ubr012_revenue_source",
+   "domain": "unit_economics",
+   "pipelines": [
+    "ozon_postings",
+    "ozon_finance_accrual",
+    "mart"
+   ],
+   "marketplace": [
+    "OZON"
+   ],
+   "layer": "mart",
+   "severity": "CRITICAL",
+   "source_contract": "docs/ozon/OZON_SKU_PROMOTION_CLASSIFICATION_2026-09-22.md",
+   "source_artifact": "sql/scale1/ubr012_revenue_reconciliation.sql:86",
+   "adapter": "check_blocks",
+   "execution_mode": "read_only_select",
+   "expected_result": "status=PASS on every row",
+   "owner": "evelagin",
+   "type": "data_contract",
+   "status": "active",
+   "status_reason": null,
+   "gate_relevant": true,
+   "dependencies": [
+    "evetis_mart.FACT_SKU_DAILY",
+    "ozon_mart.FCT_OZON_PNL_MONTHLY",
+    "ozon_mart.FCT_OZON_SKU_PNL_DAILY",
+    "ozon_mart.FCT_OZON_SKU_PNL_MONTHLY",
+    "ozon_mart.V_OZON_CIS_BUYOUT",
+    "wb_mart.V_CT_ACTUAL_DAILY_LIVE"
+   ],
+   "timeout_seconds": 300,
+   "freshness_requirement": "перед слиянием изменения в области scope, после CALL sp_ct_refresh_daily() и при каждой загрузке отправлений Ozon",
+   "business_rule_reference": "UBR-010",
+   "label": "U04_ANCHOR_HISTORICAL_CORRECTION"
+  },
+  {
+   "check_id": "U05_ANCHOR_AUGUST_CORRECTION",
+   "suite": "ubr012_revenue_source",
+   "domain": "unit_economics",
+   "pipelines": [
+    "ozon_postings",
+    "ozon_finance_accrual",
+    "mart"
+   ],
+   "marketplace": [
+    "OZON"
+   ],
+   "layer": "mart",
+   "severity": "CRITICAL",
+   "source_contract": "docs/ozon/OZON_SKU_PROMOTION_CLASSIFICATION_2026-09-22.md",
+   "source_artifact": "sql/scale1/ubr012_revenue_reconciliation.sql:109",
+   "adapter": "check_blocks",
+   "execution_mode": "read_only_select",
+   "expected_result": "status=PASS on every row",
+   "owner": "evelagin",
+   "type": "data_contract",
+   "status": "active",
+   "status_reason": null,
+   "gate_relevant": true,
+   "dependencies": [
+    "evetis_mart.FACT_SKU_DAILY",
+    "ozon_mart.FCT_OZON_PNL_MONTHLY",
+    "ozon_mart.FCT_OZON_SKU_PNL_DAILY",
+    "ozon_mart.FCT_OZON_SKU_PNL_MONTHLY",
+    "ozon_mart.V_OZON_CIS_BUYOUT",
+    "wb_mart.V_CT_ACTUAL_DAILY_LIVE"
+   ],
+   "timeout_seconds": 300,
+   "freshness_requirement": "перед слиянием изменения в области scope, после CALL sp_ct_refresh_daily() и при каждой загрузке отправлений Ozon",
+   "business_rule_reference": "UBR-010",
+   "label": "U05_ANCHOR_AUGUST_CORRECTION"
+  },
+  {
+   "check_id": "U06_BUYOUT_CLASSIFICATION_COMPLETE",
+   "suite": "ubr012_revenue_source",
+   "domain": "unit_economics",
+   "pipelines": [
+    "ozon_postings",
+    "ozon_finance_accrual",
+    "mart"
+   ],
+   "marketplace": [
+    "OZON"
+   ],
+   "layer": "mart",
+   "severity": "CRITICAL",
+   "source_contract": "docs/ozon/OZON_SKU_PROMOTION_CLASSIFICATION_2026-09-22.md",
+   "source_artifact": "sql/scale1/ubr012_revenue_reconciliation.sql:129",
+   "adapter": "check_blocks",
+   "execution_mode": "read_only_select",
+   "expected_result": "status=PASS on every row",
+   "owner": "evelagin",
+   "type": "data_contract",
+   "status": "active",
+   "status_reason": null,
+   "gate_relevant": true,
+   "dependencies": [
+    "evetis_mart.FACT_SKU_DAILY",
+    "ozon_mart.FCT_OZON_PNL_MONTHLY",
+    "ozon_mart.FCT_OZON_SKU_PNL_DAILY",
+    "ozon_mart.FCT_OZON_SKU_PNL_MONTHLY",
+    "ozon_mart.V_OZON_CIS_BUYOUT",
+    "wb_mart.V_CT_ACTUAL_DAILY_LIVE"
+   ],
+   "timeout_seconds": 300,
+   "freshness_requirement": "перед слиянием изменения в области scope, после CALL sp_ct_refresh_daily() и при каждой загрузке отправлений Ozon",
+   "business_rule_reference": "UBR-010",
+   "label": "U06_BUYOUT_CLASSIFICATION_COMPLETE"
+  },
+  {
+   "check_id": "U07_NO_DOUBLE_COUNTING",
+   "suite": "ubr012_revenue_source",
+   "domain": "unit_economics",
+   "pipelines": [
+    "ozon_postings",
+    "ozon_finance_accrual",
+    "mart"
+   ],
+   "marketplace": [
+    "OZON"
+   ],
+   "layer": "mart",
+   "severity": "CRITICAL",
+   "source_contract": "docs/ozon/OZON_SKU_PROMOTION_CLASSIFICATION_2026-09-22.md",
+   "source_artifact": "sql/scale1/ubr012_revenue_reconciliation.sql:150",
+   "adapter": "check_blocks",
+   "execution_mode": "read_only_select",
+   "expected_result": "status=PASS on every row",
+   "owner": "evelagin",
+   "type": "data_contract",
+   "status": "active",
+   "status_reason": null,
+   "gate_relevant": true,
+   "dependencies": [
+    "evetis_mart.FACT_SKU_DAILY",
+    "ozon_mart.FCT_OZON_PNL_MONTHLY",
+    "ozon_mart.FCT_OZON_SKU_PNL_DAILY",
+    "ozon_mart.FCT_OZON_SKU_PNL_MONTHLY",
+    "ozon_mart.V_OZON_CIS_BUYOUT",
+    "wb_mart.V_CT_ACTUAL_DAILY_LIVE"
+   ],
+   "timeout_seconds": 300,
+   "freshness_requirement": "перед слиянием изменения в области scope, после CALL sp_ct_refresh_daily() и при каждой загрузке отправлений Ozon",
+   "business_rule_reference": "UBR-010",
+   "label": "U07_NO_DOUBLE_COUNTING"
+  },
+  {
+   "check_id": "U08_ORDINARY_SALES_UNCHANGED",
+   "suite": "ubr012_revenue_source",
+   "domain": "unit_economics",
+   "pipelines": [
+    "ozon_postings",
+    "ozon_finance_accrual",
+    "mart"
+   ],
+   "marketplace": [
+    "OZON"
+   ],
+   "layer": "mart",
+   "severity": "CRITICAL",
+   "source_contract": "docs/ozon/OZON_SKU_PROMOTION_CLASSIFICATION_2026-09-22.md",
+   "source_artifact": "sql/scale1/ubr012_revenue_reconciliation.sql:161",
+   "adapter": "check_blocks",
+   "execution_mode": "read_only_select",
+   "expected_result": "status=PASS on every row",
+   "owner": "evelagin",
+   "type": "data_contract",
+   "status": "active",
+   "status_reason": null,
+   "gate_relevant": true,
+   "dependencies": [
+    "evetis_mart.FACT_SKU_DAILY",
+    "ozon_mart.FCT_OZON_PNL_MONTHLY",
+    "ozon_mart.FCT_OZON_SKU_PNL_DAILY",
+    "ozon_mart.FCT_OZON_SKU_PNL_MONTHLY",
+    "ozon_mart.V_OZON_CIS_BUYOUT",
+    "wb_mart.V_CT_ACTUAL_DAILY_LIVE"
+   ],
+   "timeout_seconds": 300,
+   "freshness_requirement": "перед слиянием изменения в области scope, после CALL sp_ct_refresh_daily() и при каждой загрузке отправлений Ozon",
+   "business_rule_reference": "UBR-010",
+   "label": "U08_ORDINARY_SALES_UNCHANGED"
+  },
+  {
+   "check_id": "U09_NON_DELIVERED_NO_REVENUE",
+   "suite": "ubr012_revenue_source",
+   "domain": "unit_economics",
+   "pipelines": [
+    "ozon_postings",
+    "ozon_finance_accrual",
+    "mart"
+   ],
+   "marketplace": [
+    "OZON"
+   ],
+   "layer": "mart",
+   "severity": "CRITICAL",
+   "source_contract": "docs/ozon/OZON_SKU_PROMOTION_CLASSIFICATION_2026-09-22.md",
+   "source_artifact": "sql/scale1/ubr012_revenue_reconciliation.sql:189",
+   "adapter": "check_blocks",
+   "execution_mode": "read_only_select",
+   "expected_result": "status=PASS on every row",
+   "owner": "evelagin",
+   "type": "data_contract",
+   "status": "active",
+   "status_reason": null,
+   "gate_relevant": true,
+   "dependencies": [
+    "evetis_mart.FACT_SKU_DAILY",
+    "ozon_mart.FCT_OZON_PNL_MONTHLY",
+    "ozon_mart.FCT_OZON_SKU_PNL_DAILY",
+    "ozon_mart.FCT_OZON_SKU_PNL_MONTHLY",
+    "ozon_mart.V_OZON_CIS_BUYOUT",
+    "wb_mart.V_CT_ACTUAL_DAILY_LIVE"
+   ],
+   "timeout_seconds": 300,
+   "freshness_requirement": "перед слиянием изменения в области scope, после CALL sp_ct_refresh_daily() и при каждой загрузке отправлений Ozon",
+   "business_rule_reference": "UBR-010",
+   "label": "U09_NON_DELIVERED_NO_REVENUE"
+  },
+  {
+   "check_id": "U10_UNPROVEN_IS_FAIL_CLOSED",
+   "suite": "ubr012_revenue_source",
+   "domain": "unit_economics",
+   "pipelines": [
+    "ozon_postings",
+    "ozon_finance_accrual",
+    "mart"
+   ],
+   "marketplace": [
+    "OZON"
+   ],
+   "layer": "mart",
+   "severity": "CRITICAL",
+   "source_contract": "docs/ozon/OZON_SKU_PROMOTION_CLASSIFICATION_2026-09-22.md",
+   "source_artifact": "sql/scale1/ubr012_revenue_reconciliation.sql:206",
+   "adapter": "check_blocks",
+   "execution_mode": "read_only_select",
+   "expected_result": "status=PASS on every row",
+   "owner": "evelagin",
+   "type": "data_contract",
+   "status": "active",
+   "status_reason": null,
+   "gate_relevant": true,
+   "dependencies": [
+    "evetis_mart.FACT_SKU_DAILY",
+    "ozon_mart.FCT_OZON_PNL_MONTHLY",
+    "ozon_mart.FCT_OZON_SKU_PNL_DAILY",
+    "ozon_mart.FCT_OZON_SKU_PNL_MONTHLY",
+    "ozon_mart.V_OZON_CIS_BUYOUT",
+    "wb_mart.V_CT_ACTUAL_DAILY_LIVE"
+   ],
+   "timeout_seconds": 300,
+   "freshness_requirement": "перед слиянием изменения в области scope, после CALL sp_ct_refresh_daily() и при каждой загрузке отправлений Ozon",
+   "business_rule_reference": "UBR-010",
+   "label": "U10_UNPROVEN_IS_FAIL_CLOSED"
+  },
+  {
+   "check_id": "U11_CT_ROW_SET_IDENTICAL",
+   "suite": "ubr012_revenue_source",
+   "domain": "unit_economics",
+   "pipelines": [
+    "ozon_postings",
+    "ozon_finance_accrual",
+    "mart"
+   ],
+   "marketplace": [
+    "OZON"
+   ],
+   "layer": "mart",
+   "severity": "CRITICAL",
+   "source_contract": "docs/ozon/OZON_SKU_PROMOTION_CLASSIFICATION_2026-09-22.md",
+   "source_artifact": "sql/scale1/ubr012_revenue_reconciliation.sql:216",
+   "adapter": "check_blocks",
+   "execution_mode": "read_only_select",
+   "expected_result": "status=PASS on every row",
+   "owner": "evelagin",
+   "type": "data_contract",
+   "status": "active",
+   "status_reason": null,
+   "gate_relevant": true,
+   "dependencies": [
+    "evetis_mart.FACT_SKU_DAILY",
+    "ozon_mart.FCT_OZON_PNL_MONTHLY",
+    "ozon_mart.FCT_OZON_SKU_PNL_DAILY",
+    "ozon_mart.FCT_OZON_SKU_PNL_MONTHLY",
+    "ozon_mart.V_OZON_CIS_BUYOUT",
+    "wb_mart.V_CT_ACTUAL_DAILY_LIVE"
+   ],
+   "timeout_seconds": 300,
+   "freshness_requirement": "перед слиянием изменения в области scope, после CALL sp_ct_refresh_daily() и при каждой загрузке отправлений Ozon",
+   "business_rule_reference": "UBR-010",
+   "label": "U11_CT_ROW_SET_IDENTICAL"
+  },
+  {
+   "check_id": "U12_PROMOTION_L3_NO_REGRESSION",
+   "suite": "ubr012_revenue_source",
+   "domain": "unit_economics",
+   "pipelines": [
+    "ozon_postings",
+    "ozon_finance_accrual",
+    "mart"
+   ],
+   "marketplace": [
+    "OZON"
+   ],
+   "layer": "mart",
+   "severity": "CRITICAL",
+   "source_contract": "docs/ozon/OZON_SKU_PROMOTION_CLASSIFICATION_2026-09-22.md",
+   "source_artifact": "sql/scale1/ubr012_revenue_reconciliation.sql:231",
+   "adapter": "check_blocks",
+   "execution_mode": "read_only_select",
+   "expected_result": "status=PASS on every row",
+   "owner": "evelagin",
+   "type": "data_contract",
+   "status": "active",
+   "status_reason": null,
+   "gate_relevant": true,
+   "dependencies": [
+    "evetis_mart.FACT_SKU_DAILY",
+    "ozon_mart.FCT_OZON_PNL_MONTHLY",
+    "ozon_mart.FCT_OZON_SKU_PNL_DAILY",
+    "ozon_mart.FCT_OZON_SKU_PNL_MONTHLY",
+    "ozon_mart.V_OZON_CIS_BUYOUT",
+    "wb_mart.V_CT_ACTUAL_DAILY_LIVE"
+   ],
+   "timeout_seconds": 300,
+   "freshness_requirement": "перед слиянием изменения в области scope, после CALL sp_ct_refresh_daily() и при каждой загрузке отправлений Ozon",
+   "business_rule_reference": "UBR-010",
+   "label": "U12_PROMOTION_L3_NO_REGRESSION"
   },
   {
    "check_id": "DEDUCT__F_10_FAIL",
@@ -8213,7 +8657,8 @@
    "domain": "shared",
    "contracts": [
     "ozon_unit",
-    "promotion_l3"
+    "promotion_l3",
+    "ubr012_revenue_source"
    ],
    "checks": [
     "P01_FIXTURE_TRACEABLE_RAW_TO_NEUTRAL",
@@ -8226,6 +8671,18 @@
     "P07_PORTFOLIO_TOTALS",
     "P08_HIGH_IMPACT_SKU_CHERRY_AMBER",
     "P09_LAYER_AGREEMENT_SKU_VS_STORE",
+    "U01_DETECTION_UNREGISTERED_BUYOUT",
+    "U02_BUYOUT_REVENUE_IS_PRIMARY_DOCUMENT",
+    "U03_CT_REVENUE_MATCHES_CANONICAL",
+    "U04_ANCHOR_HISTORICAL_CORRECTION",
+    "U05_ANCHOR_AUGUST_CORRECTION",
+    "U06_BUYOUT_CLASSIFICATION_COMPLETE",
+    "U07_NO_DOUBLE_COUNTING",
+    "U08_ORDINARY_SALES_UNCHANGED",
+    "U09_NON_DELIVERED_NO_REVENUE",
+    "U10_UNPROVEN_IS_FAIL_CLOSED",
+    "U11_CT_ROW_SET_IDENTICAL",
+    "U12_PROMOTION_L3_NO_REGRESSION",
     "V01_OZON_DAILY_TO_MONTHLY_SKU_PARITY",
     "V02_OZON_PARITY_BY_MONTH",
     "V03_OZON_STORE_LEVEL_SALES_CROSSCHECK",
@@ -8242,7 +8699,8 @@
    "transitive_consumers": [],
    "pipelines": [
     "mart",
-    "ozon_finance_accrual"
+    "ozon_finance_accrual",
+    "ozon_postings"
    ]
   },
   "evetis_ref.sp_ct_refresh_daily": {
@@ -8292,7 +8750,8 @@
    "domain": "ozon",
    "contracts": [
     "ozon_unit",
-    "promotion_l3"
+    "promotion_l3",
+    "ubr012_revenue_source"
    ],
    "checks": [
     "P01_FIXTURE_TRACEABLE_RAW_TO_NEUTRAL",
@@ -8305,6 +8764,18 @@
     "P07_PORTFOLIO_TOTALS",
     "P08_HIGH_IMPACT_SKU_CHERRY_AMBER",
     "P09_LAYER_AGREEMENT_SKU_VS_STORE",
+    "U01_DETECTION_UNREGISTERED_BUYOUT",
+    "U02_BUYOUT_REVENUE_IS_PRIMARY_DOCUMENT",
+    "U03_CT_REVENUE_MATCHES_CANONICAL",
+    "U04_ANCHOR_HISTORICAL_CORRECTION",
+    "U05_ANCHOR_AUGUST_CORRECTION",
+    "U06_BUYOUT_CLASSIFICATION_COMPLETE",
+    "U07_NO_DOUBLE_COUNTING",
+    "U08_ORDINARY_SALES_UNCHANGED",
+    "U09_NON_DELIVERED_NO_REVENUE",
+    "U10_UNPROVEN_IS_FAIL_CLOSED",
+    "U11_CT_ROW_SET_IDENTICAL",
+    "U12_PROMOTION_L3_NO_REGRESSION",
     "V01_OZON_DAILY_TO_MONTHLY_SKU_PARITY",
     "V02_OZON_PARITY_BY_MONTH",
     "V03_OZON_STORE_LEVEL_SALES_CROSSCHECK",
@@ -8325,7 +8796,8 @@
    ],
    "pipelines": [
     "mart",
-    "ozon_finance_accrual"
+    "ozon_finance_accrual",
+    "ozon_postings"
    ]
   },
   "ozon_mart.FCT_OZON_SKU_PNL_DAILY": {
@@ -8335,7 +8807,8 @@
    "domain": "ozon",
    "contracts": [
     "ozon_unit",
-    "promotion_l3"
+    "promotion_l3",
+    "ubr012_revenue_source"
    ],
    "checks": [
     "P01_FIXTURE_TRACEABLE_RAW_TO_NEUTRAL",
@@ -8348,6 +8821,18 @@
     "P07_PORTFOLIO_TOTALS",
     "P08_HIGH_IMPACT_SKU_CHERRY_AMBER",
     "P09_LAYER_AGREEMENT_SKU_VS_STORE",
+    "U01_DETECTION_UNREGISTERED_BUYOUT",
+    "U02_BUYOUT_REVENUE_IS_PRIMARY_DOCUMENT",
+    "U03_CT_REVENUE_MATCHES_CANONICAL",
+    "U04_ANCHOR_HISTORICAL_CORRECTION",
+    "U05_ANCHOR_AUGUST_CORRECTION",
+    "U06_BUYOUT_CLASSIFICATION_COMPLETE",
+    "U07_NO_DOUBLE_COUNTING",
+    "U08_ORDINARY_SALES_UNCHANGED",
+    "U09_NON_DELIVERED_NO_REVENUE",
+    "U10_UNPROVEN_IS_FAIL_CLOSED",
+    "U11_CT_ROW_SET_IDENTICAL",
+    "U12_PROMOTION_L3_NO_REGRESSION",
     "V01_OZON_DAILY_TO_MONTHLY_SKU_PARITY",
     "V02_OZON_PARITY_BY_MONTH",
     "V03_OZON_STORE_LEVEL_SALES_CROSSCHECK",
@@ -8370,7 +8855,8 @@
    ],
    "pipelines": [
     "mart",
-    "ozon_finance_accrual"
+    "ozon_finance_accrual",
+    "ozon_postings"
    ]
   },
   "ozon_mart.FCT_OZON_SKU_PNL_MONTHLY": {
@@ -8380,7 +8866,8 @@
    "domain": "ozon",
    "contracts": [
     "ozon_unit",
-    "promotion_l3"
+    "promotion_l3",
+    "ubr012_revenue_source"
    ],
    "checks": [
     "P01_FIXTURE_TRACEABLE_RAW_TO_NEUTRAL",
@@ -8393,6 +8880,18 @@
     "P07_PORTFOLIO_TOTALS",
     "P08_HIGH_IMPACT_SKU_CHERRY_AMBER",
     "P09_LAYER_AGREEMENT_SKU_VS_STORE",
+    "U01_DETECTION_UNREGISTERED_BUYOUT",
+    "U02_BUYOUT_REVENUE_IS_PRIMARY_DOCUMENT",
+    "U03_CT_REVENUE_MATCHES_CANONICAL",
+    "U04_ANCHOR_HISTORICAL_CORRECTION",
+    "U05_ANCHOR_AUGUST_CORRECTION",
+    "U06_BUYOUT_CLASSIFICATION_COMPLETE",
+    "U07_NO_DOUBLE_COUNTING",
+    "U08_ORDINARY_SALES_UNCHANGED",
+    "U09_NON_DELIVERED_NO_REVENUE",
+    "U10_UNPROVEN_IS_FAIL_CLOSED",
+    "U11_CT_ROW_SET_IDENTICAL",
+    "U12_PROMOTION_L3_NO_REGRESSION",
     "V01_OZON_DAILY_TO_MONTHLY_SKU_PARITY",
     "V02_OZON_PARITY_BY_MONTH",
     "V03_OZON_STORE_LEVEL_SALES_CROSSCHECK",
@@ -8417,7 +8916,52 @@
    ],
    "pipelines": [
     "mart",
-    "ozon_finance_accrual"
+    "ozon_finance_accrual",
+    "ozon_postings"
+   ]
+  },
+  "ozon_mart.V_OZON_CIS_BUYOUT": {
+   "exists_in_production": true,
+   "object_type": "VIEW",
+   "layer": "semantic",
+   "domain": "ozon",
+   "contracts": [
+    "ubr012_revenue_source"
+   ],
+   "checks": [
+    "U01_DETECTION_UNREGISTERED_BUYOUT",
+    "U02_BUYOUT_REVENUE_IS_PRIMARY_DOCUMENT",
+    "U03_CT_REVENUE_MATCHES_CANONICAL",
+    "U04_ANCHOR_HISTORICAL_CORRECTION",
+    "U05_ANCHOR_AUGUST_CORRECTION",
+    "U06_BUYOUT_CLASSIFICATION_COMPLETE",
+    "U07_NO_DOUBLE_COUNTING",
+    "U08_ORDINARY_SALES_UNCHANGED",
+    "U09_NON_DELIVERED_NO_REVENUE",
+    "U10_UNPROVEN_IS_FAIL_CLOSED",
+    "U11_CT_ROW_SET_IDENTICAL",
+    "U12_PROMOTION_L3_NO_REGRESSION"
+   ],
+   "direct_consumers": [
+    "ozon_mart.FCT_OZON_PNL_MONTHLY",
+    "ozon_mart.FCT_OZON_SKU_PNL_DAILY",
+    "ozon_mart.FCT_OZON_SKU_PNL_MONTHLY",
+    "ozon_mart.V_OZON_SKU_PNL_DAILY_OPERATIONAL"
+   ],
+   "transitive_consumers": [
+    "evetis_mart.FACT_SKU_DAILY",
+    "ozon_mart.FCT_OZON_PNL_MONTHLY",
+    "ozon_mart.FCT_OZON_SKU_PNL_DAILY",
+    "ozon_mart.FCT_OZON_SKU_PNL_MONTHLY",
+    "ozon_mart.V_OZON_AGENT_DECISION_INPUT",
+    "ozon_mart.V_OZON_LIFETIME_PNL",
+    "ozon_mart.V_OZON_SKU_PNL_DAILY_OPERATIONAL",
+    "ozon_mart.V_OZON_SKU_UNIT_ECONOMICS_CURRENT"
+   ],
+   "pipelines": [
+    "mart",
+    "ozon_finance_accrual",
+    "ozon_postings"
    ]
   },
   "ozon_mart.V_OZON_COMMISSION_RECOVERY": {
@@ -8805,6 +9349,36 @@
    ],
    "pipelines": [
     "mart"
+   ]
+  },
+  "wb_mart.V_CT_ACTUAL_DAILY_LIVE": {
+   "exists_in_production": true,
+   "object_type": "VIEW",
+   "layer": "semantic",
+   "domain": "wb",
+   "contracts": [
+    "ubr012_revenue_source"
+   ],
+   "checks": [
+    "U01_DETECTION_UNREGISTERED_BUYOUT",
+    "U02_BUYOUT_REVENUE_IS_PRIMARY_DOCUMENT",
+    "U03_CT_REVENUE_MATCHES_CANONICAL",
+    "U04_ANCHOR_HISTORICAL_CORRECTION",
+    "U05_ANCHOR_AUGUST_CORRECTION",
+    "U06_BUYOUT_CLASSIFICATION_COMPLETE",
+    "U07_NO_DOUBLE_COUNTING",
+    "U08_ORDINARY_SALES_UNCHANGED",
+    "U09_NON_DELIVERED_NO_REVENUE",
+    "U10_UNPROVEN_IS_FAIL_CLOSED",
+    "U11_CT_ROW_SET_IDENTICAL",
+    "U12_PROMOTION_L3_NO_REGRESSION"
+   ],
+   "direct_consumers": [],
+   "transitive_consumers": [],
+   "pipelines": [
+    "mart",
+    "ozon_finance_accrual",
+    "ozon_postings"
    ]
   },
   "wb_mart.V_CT_DAILY_BRIEF": {
@@ -9860,7 +10434,6 @@
    "evetis_ops.V_OPS_SUPPLY_PLAN",
    "evetis_ref.V_BUNDLE_COGS_DERIVED",
    "evetis_ref.V_PRODUCT_COGS_EFFECTIVE",
-   "ozon_mart.V_OZON_CIS_BUYOUT",
    "ozon_mart.V_OZON_COMMISSION_POLICY",
    "ozon_mart.V_OZON_LOGISTICS_ESTIMATOR",
    "ozon_mart.V_OZON_MART_FRESHNESS",
@@ -9919,7 +10492,7 @@
    "wb_raw.V_WB_SUPPLIES_GOODS_CURRENT",
    "wb_raw.V_WB_TARIFFS_CURRENT"
   ],
-  "count": 75
+  "count": 74
  },
  "unresolved_business_rules": [
   {

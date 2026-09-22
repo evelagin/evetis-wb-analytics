@@ -543,6 +543,52 @@
       "business_rule_reference": "UBR-010",
       "provenance": "Фикстура сверки 10 428,67 ₽ измерена на первичных начислениях; пороги не изобретены, а выведены из решения владельца от 2026-09-22",
       "pending_deploy_note": "Опережает production: до развёртывания исполнять через tools/scale1_predeploy_render.py."
+    },
+    {
+      "suite": "ubr012_revenue_source",
+      "title": "UBR-012: канонический источник выручки Ozon и детекция незарегистрированного выкупа",
+      "gate": true,
+      "severity": "CRITICAL",
+      "domain": "unit_economics",
+      "marketplace": [
+        "OZON"
+      ],
+      "pipelines": [
+        "ozon_postings",
+        "ozon_finance_accrual",
+        "mart"
+      ],
+      "layer": "mart",
+      "adapter": "check_blocks",
+      "id_prefix": "",
+      "status_column": "status",
+      "execution_mode": "read_only_select",
+      "expected_result": "all_checks_pass",
+      "owner": "evelagin",
+      "timeout_seconds": 300,
+      "files": [
+        "sql/scale1/ubr012_revenue_reconciliation.sql"
+      ],
+      "scope": [
+        "ozon_mart.V_OZON_CIS_BUYOUT",
+        "ozon_mart.FCT_OZON_SKU_PNL_DAILY",
+        "ozon_mart.FCT_OZON_SKU_PNL_MONTHLY",
+        "ozon_mart.FCT_OZON_PNL_MONTHLY",
+        "evetis_mart.FACT_SKU_DAILY",
+        "wb_mart.V_CT_ACTUAL_DAILY_LIVE"
+      ],
+      "dimensions": [
+        "reconciliation",
+        "identities",
+        "no_double_counting",
+        "detection",
+        "regression"
+      ],
+      "cadence": "перед слиянием изменения в области scope, после CALL sp_ct_refresh_daily() и при каждой загрузке отправлений Ozon",
+      "source_contract": "docs/ozon/OZON_SKU_PROMOTION_CLASSIFICATION_2026-09-22.md",
+      "business_rule_reference": "UBR-010",
+      "provenance": "Фикстура сверки 10 428,67 ₽ измерена на первичных начислениях; пороги не изобретены, а выведены из решения владельца от 2026-09-22",
+      "pending_deploy_note": "Опережает production: до развёртывания исполнять через tools/scale1_predeploy_render.py."
     }
   ],
   "backlog": {

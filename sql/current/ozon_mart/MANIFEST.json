@@ -32,7 +32,7 @@
       "object_name": "FCT_OZON_PNL_MONTHLY",
       "object_type": "VIEW",
       "canonical_path": "sql/current/ozon_mart/FCT_OZON_PNL_MONTHLY.sql",
-      "sync_state": "captured_live",
+      "sync_state": "pending_deploy",
       "dependencies": [
         "V_OZON_CIS_BUYOUT"
       ],
@@ -298,10 +298,10 @@
           "is_nullable": "YES"
         }
       ],
-      "canonical_body_sha256": "1b6bc3ce452ec5504487669aa765d06353bf67037a6ac0394033202ef6e906fb",
+      "canonical_body_sha256": "59f900f2d1fb589e01c2a434b04c796d718def66ffebd240484174fda13d0905",
       "canonical_description_sha256": "8ecb4b427d876e251b284c381545950cecceeaf6be48858fd530bd55ee5c0c49",
       "canonical_schema_sha256": "d9aefd9a4f623cc9fa29716d8e8a41451e842de66107ce603ed310ece835440a",
-      "canonical_schema_verification": "bigquery_verified",
+      "canonical_schema_verification": "unverified",
       "canonical_column_count": 40,
       "canonical_schema": [
         {
@@ -720,7 +720,7 @@
           "is_nullable": "YES"
         }
       ],
-      "canonical_body_sha256": "0bae021174c4a0140541a2e13aba80734af117c9695eee267f875bea4cf02aa9",
+      "canonical_body_sha256": "8c7068942b2ef81d34449043cc194ff6054171a56382adf306861af09307757c",
       "canonical_description_sha256": "f52300c177525f77e3e4c47a04ecd5e2a0ccc99bb1c25a73f4262165c63b7f85",
       "canonical_schema_sha256": "3ecf7fccd50fab9bd3964e2e7748a0d0beec05faca9d2e15fb556e03ee2fd48a",
       "canonical_schema_verification": "unverified",
@@ -1047,7 +1047,7 @@
           "is_nullable": "YES"
         }
       ],
-      "canonical_body_sha256": "2e0bec9a936416fc4fe50ee6e0286f980b50c3e3105ac24242cc103146d30db6",
+      "canonical_body_sha256": "1692f95acbed5a4472377f7debd782b5d165d95ec5016ccf205b56a990bfdb0d",
       "canonical_description_sha256": "8e49daa1cc1cf069421deb3eb7aa52fe4e76d7d0814afe91eb0f1740093a8f7e",
       "canonical_schema_sha256": "eaab50e6b8138f3ac6d2093c036cec468fc64c27774c12d1fe9ede717fda8995",
       "canonical_schema_verification": "unverified",

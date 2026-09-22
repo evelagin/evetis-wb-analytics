@@ -1,24 +1,4 @@
--- ============================================================================
--- CANONICAL CURRENT DEFINITION — ozon_mart.FCT_OZON_PNL_MONTHLY (VIEW)
--- Authoritative Git definition of the CURRENT production object. Not a migration,
--- not a rollback. Rules: sql/current/README.md. Metadata: MANIFEST.json.
--- Captured verbatim from production INFORMATION_SCHEMA.VIEWS at 2026-09-18T14:14:32Z
--- (main eecde14936d1). Historical source: sql/ozon/stage3_4c_ozon_mart.sql (parity: COMMENTS_WHITESPACE_ONLY).
--- Тип операции (Gate 5K): MARKETPLACE_SALE (агентская реализация) и CIS_BUYOUT (выкуп товара
--- Ozon у продавца, Беларусь). У выкупа агентского вознаграждения не существует как факта —
--- комиссия не MISSING, а неприменима; выручка выкупа равна сумме по первичному документу
--- (ozon_mart.V_OZON_CIS_BUYOUT). Прежний инлайн-CTE rec_comm (29 строк «восстановленной
--- комиссии») удалён: записанные в нём суммы были «Дисконтом по категории» из документа о
--- выкупе, а не вознаграждением. Семантика совпадает с FCT_OZON_SKU_PNL_DAILY.
--- Gate 5L: type_id 6 («Обработка отменённых и невостребованных товаров») не входил ни в одну
--- корзину. Сумма по нему сегодня 0,00 ₽, но неклассифицированный тип — это будущая утечка,
--- поэтому он отнесён к прочим расходам площадки.
--- Internal dependencies: V_OZON_CIS_BUYOUT.
--- The view body below is byte-for-byte the production body: do not reformat it.
--- ============================================================================
-CREATE OR REPLACE VIEW `project-fa311fc0-4d87-4781-986.ozon_mart.FCT_OZON_PNL_MONTHLY`
-OPTIONS (description = "Канонический P&L Ozon, зерно = календарный месяц. VIEW, не таблица: пересчитывается при каждом чтении, устареть относительно ozon_raw не может. Мост L1-L4 по OZON_PNL_POLICY_V1. Продажи и себестоимость привязаны к order_date, расходы уровня магазина - к дате начисления. Отсутствующая комиссия НЕ ноль: см. commission_missing_qty и поля uncertainty. Тип операции: MARKETPLACE_SALE и CIS_BUYOUT (выкуп товара Ozon у продавца); у выкупа комиссия неприменима, а выручка равна сумме по первичному документу.")
-AS
+CREATE OR REPLACE VIEW `project-fa311fc0-4d87-4781-986.ozon_mart.FCT_OZON_PNL_MONTHLY` AS
 WITH
 post AS (
   SELECT p.posting_number, p.sku, p.status, p.order_date, p.quantity, p.price_rub,
@@ -45,7 +25,6 @@ cls AS (
 sales AS (
   SELECT DATE_TRUNC(p.order_date, MONTH) m, p.status, p.quantity, p.posting_number,
     CASE WHEN p.buyout_proceeds_rub IS NOT NULL THEN p.buyout_proceeds_rub * p.quantity
-         WHEN p.op_type='CIS_BUYOUT' THEN NUMERIC '0'
          ELSE IFNULL(p.sp_unit, p.price_rub) * p.quantity END AS seller_base,
     IFNULL(p.bp,0) bp, IFNULL(p.bonus,0) bonus, IFNULL(p.coinv,0) coinv,
     IF(p.op_type='MARKETPLACE_SALE', IFNULL(-p.comm, NUMERIC '0'), NUMERIC '0') AS commission_known,

@@ -41,7 +41,9 @@ GATE8_OBJECTS = {"V_OZON_COMMISSION_POLICY", "V_OZON_LOGISTICS_ESTIMATOR",
 # Изменение Git-first, поэтому до развёртывания четыре объекта в pending_deploy.
 # План применения — docs/architecture/PROMOTION_L3_MIGRATION.md.
 GATE5K_PENDING = {"ozon_mart": {"FCT_OZON_SKU_PNL_DAILY", "FCT_OZON_SKU_PNL_MONTHLY",
-                                "V_OZON_SKU_PNL_DAILY_OPERATIONAL"},
+                                "V_OZON_SKU_PNL_DAILY_OPERATIONAL",
+                                # UBR-012 (2026-09-22): выручка недоказанного выкупа fail-closed.
+                                "FCT_OZON_PNL_MONTHLY"},
                   "evetis_mart": {"FACT_SKU_DAILY"}}
 
 # canonical_hash_v1 body hashes proven equal to production in R2A (PR #140). Pinned literally.
@@ -157,7 +159,8 @@ def test_real_repository_passes():
     _, summary = v.validate(REPO)
     assert summary["objects"] == len(R2A_BODY_SHA256) + sum(map(len, NON_R2A.values()))
     # 14 исторических + 4 файла отката UBR-010 (sql/ozon/promotion_l3_2026-09-22/)
-    assert summary["historical_sites"] == 18
+    # + 3 файла отката UBR-012 (sql/ozon/ubr012_revenue_2026-09-22/)
+    assert summary["historical_sites"] == 21
 
 
 def test_canonical_hash_v1_reproduces_r2a_hashes_byte_for_byte():

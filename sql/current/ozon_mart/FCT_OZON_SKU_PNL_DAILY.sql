@@ -49,9 +49,10 @@
 -- в детальном отчёте по эквайрингу), а не обнуление. Логистика начисляется и остаётся расходом.
 -- Выручка выкупа = buyout_proceeds_rub из V_OZON_CIS_BUYOUT (сумма по первичному документу).
 -- Выкуп без документа: тип известен по структурной сигнатуре (delivered, payout_rub = 0,
--- начисления выручки нет), но сумма выкупа НЕ доказана и НЕ выводится ставкой. Такая строка
--- несёт справочную цену в выручке и одновременно buyout_revenue_unproven_qty/_rub — величина
--- непроверенной выручки названа и измерена, а не спрятана.
+-- начисления выручки нет), но сумма выкупа НЕ доказана и НЕ выводится ставкой. UBR-012,
+-- решение владельца 2026-09-22: такая строка даёт выручку 0 (fail-closed) и одновременно
+-- buyout_revenue_unproven_qty/_rub — величина названа и измерена, но НЕ признана выручкой.
+-- Цена заказа выручкой выкупа не становится ни при каких условиях.
 --
 -- Ограничения V1 (унаследованы, этим объектом НЕ исправляются): возвраты и FBS не загружаются;
 -- отсутствующая комиссия обычной продажи считается 0 и видна в commission_missing_qty;
@@ -87,6 +88,7 @@ cls AS (
 sales AS (
   SELECT p.order_date d, p.internal_sku, p.status, p.quantity,
     CASE WHEN p.buyout_proceeds_rub IS NOT NULL THEN p.buyout_proceeds_rub * p.quantity
+         WHEN p.op_type='CIS_BUYOUT' THEN NUMERIC '0'
          ELSE IFNULL(p.sp_unit, p.price_rub) * p.quantity END seller_base,
     IF(p.op_type='MARKETPLACE_SALE', IFNULL(-p.comm, NUMERIC '0'), NUMERIC '0') commission_known,
     IF(p.op_type='MARKETPLACE_SALE' AND p.sp_unit IS NULL, p.quantity, 0) comm_missing_qty,

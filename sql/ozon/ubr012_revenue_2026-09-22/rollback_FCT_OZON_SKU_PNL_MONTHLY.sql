@@ -1,29 +1,4 @@
--- ============================================================================
--- CANONICAL CURRENT DEFINITION — ozon_mart.FCT_OZON_SKU_PNL_MONTHLY (VIEW)
--- Authoritative Git definition of the CURRENT production object. Not a migration,
--- not a rollback. Rules: sql/current/README.md. Metadata: MANIFEST.json.
--- Captured verbatim from production INFORMATION_SCHEMA.VIEWS at 2026-09-18T14:14:32Z
--- (main eecde14936d1). Historical source: sql/ozon/stage3_4c_ozon_mart.sql (parity: EXACT_TEXT).
--- Тип операции (Gate 5K): MARKETPLACE_SALE (агентская реализация) и CIS_BUYOUT (выкуп товара
--- Ozon у продавца, Беларусь). У выкупа агентского вознаграждения не существует как факта —
--- комиссия не MISSING, а неприменима; выручка выкупа равна сумме по первичному документу
--- (ozon_mart.V_OZON_CIS_BUYOUT). Прежний инлайн-CTE rec_comm (29 строк «восстановленной
--- комиссии») удалён: записанные в нём суммы были «Дисконтом по категории» из документа о
--- выкупе, а не вознаграждением. Семантика совпадает с FCT_OZON_SKU_PNL_DAILY.
--- 🔴 UBR-010 (решение владельца 2026-09-22): sku_promotion_rub — слой L3. Вычитается вместе с
--- рекламой, ПОСЛЕ contribution_before_ads_rub. Не уменьшает выручку, не входит в
--- other_direct_marketplace_costs_rub, не смешивается с ad_spend_attributed_rub.
--- Разбор и доказательства: docs/ozon/OZON_SKU_PROMOTION_CLASSIFICATION_2026-09-22.md.
---
--- Корзина sku_promotion_rub (Gate 5L): платные механики продвижения С ПРИВЯЗКОЙ К SKU —
--- сбор первых отзывов (116), звёздные товары (74), бонусы продавца (48). Эти начисления
--- приходили со SKU, но не попадали ни в одну корзину и молча терялись.
--- Internal dependencies: V_OZON_CIS_BUYOUT.
--- The view body below is byte-for-byte the production body: do not reformat it.
--- ============================================================================
-CREATE OR REPLACE VIEW `project-fa311fc0-4d87-4781-986.ozon_mart.FCT_OZON_SKU_PNL_MONTHLY`
-OPTIONS (description = "P&L Ozon, зерно = месяц x internal_sku. VIEW, не таблица. Атрибуция: DIRECT_POSTING где finance-строка несёт posting_number (привязка к order_date продажи), DIRECT_SKU где несёт только sku (привязка к дате начисления). REVENUE_PROPORTIONAL_ALL не используется. Расходы уровня магазина на SKU НЕ разносятся, поэтому слоя L4 здесь нет. Тип операции: MARKETPLACE_SALE и CIS_BUYOUT (выкуп товара Ozon у продавца); у выкупа комиссия неприменима, а выручка равна сумме по первичному документу.")
-AS
+CREATE OR REPLACE VIEW `project-fa311fc0-4d87-4781-986.ozon_mart.FCT_OZON_SKU_PNL_MONTHLY` AS
 WITH
 post AS (
   SELECT p.posting_number, p.sku, p.status, p.order_date, p.quantity, p.price_rub,
@@ -50,7 +25,6 @@ cls AS (
 sales AS (
   SELECT DATE_TRUNC(p.order_date, MONTH) m, p.internal_sku, p.status, p.quantity,
     CASE WHEN p.buyout_proceeds_rub IS NOT NULL THEN p.buyout_proceeds_rub * p.quantity
-         WHEN p.op_type='CIS_BUYOUT' THEN NUMERIC '0'
          ELSE IFNULL(p.sp_unit, p.price_rub) * p.quantity END seller_base,
     IF(p.op_type='MARKETPLACE_SALE', IFNULL(-p.comm, NUMERIC '0'), NUMERIC '0') commission_known,
     IF(p.op_type='MARKETPLACE_SALE' AND p.sp_unit IS NULL, p.quantity, 0) comm_missing_qty,
