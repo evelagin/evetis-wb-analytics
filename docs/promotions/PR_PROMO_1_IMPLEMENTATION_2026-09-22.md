@@ -349,7 +349,7 @@ runtime — лишняя поверхность.
 | Шаг | Статус |
 |---|---|
 | 1. Перечень объектов и файлов | §18 |
-| 2. Тесты | ✅ зелёные до и после |
+| 2. Тесты | ✅ зелёные до и после (локально; в CI шаг `npm test` не достигается из-за L-8) |
 | 3. `terraform fmt` + `terraform validate` | ✅ `Success! The configuration is valid` |
 | 4. `bq query --dry_run` по DDL | ✅ `Query successfully validated` |
 | 5. **Создание 10 таблиц BigQuery** | ✅ **ВЫПОЛНЕНО** |
@@ -366,6 +366,19 @@ Approval — действие владельца, и подменить его �
 Таблицы BigQuery созданы напрямую DDL-скриптом **по действующей конвенции проекта**:
 Terraform ими не владеет (`bigquery.tf` описывает лишь несколько WB-таблиц
 shadow-контура и права), ровно так же развёрнуты PR-1 и PR-2.
+
+**Целевой план уже выполнен и проверен** (authenticated `terraform plan` через
+`infra.yml`, ветка PR, run 35738907075):
+
+```
+Plan: 4 to add, 0 to change, 0 to destroy.
+  # google_cloud_run_v2_job.ozon_runtime["ozon-runtime-promo"]   will be created
+  # google_cloud_run_v2_job.wb_promo_prod                        will be created
+  # google_cloud_scheduler_job.ozon_runtime["ozon-runtime-promo"] will be created
+  # google_cloud_scheduler_job.wb_promo_prod                     will be created
+```
+
+Ни одного `change`, ни одного `destroy`, ни одного постороннего ресурса.
 
 **Команда для владельца** (после слияния PR в `main`):
 
@@ -461,7 +474,7 @@ Secret Manager через `gcloud` CLI. Подменён только транс
 | L-5 | `marketing_actions.actions[].title` — единственный идентификатор акции в этом источнике; числового id Ozon здесь не даёт. Связь с `/v1/actions` — задача PR-PROMO-2 | внешнее |
 | L-6 | `wb_ops.OPS_PIPELINE_REGISTRY` не пополнен — см. §12. Точка интеграции: PR-PROMO-7 | осознанное |
 | L-7 | Каталожный бэкфилл WB (242 акции за 2 года) не выполнен — см. §9 | осознанное |
-| L-8 | **`npm run lint` в `cloud/` падает 5 ошибками в `unitka/ozon/*` и `unitka_ozon.test.ts`** — файлы этим PR не тронуты, ошибки предсуществуют на `main`. Значит CI шаг `npm run lint` красный и **до** PR-PROMO-1. Мои файлы проходят lint начисто. Чинить чужое в этом PR — выход за периметр | предсуществующее, вне периметра |
+| L-8 | **CI-джоб `cloud` красный на `main`, а не из-за этого PR.** `npm run lint` даёт 5 ошибок `no-unused-vars` в `unitka/ozon/{loader,month,monthplan,requests}.ts` и `test/unitka_ozon.test.ts`. Доказано прогоном eslint на чистом worktree `origin/main` (615878f): те же 5 ошибок, 0 из них в файлах PR-PROMO-1. Коммиты, породившие их, уходили в `main` напрямую, без PR, поэтому CI на них не запускался. **Следствие тяжелее самих ошибок:** в `ci.yml` порядок шагов `typecheck → lint → test`, значит `npm test` в CI **не исполнялся** с момента их появления — все 1113 тестов `cloud` проверены только локально. Чинить чужой модуль внутри PR-PROMO-1 — выход за периметр (§1 задания); заведено отдельной задачей | предсуществующее, вне периметра |
 
 ---
 
