@@ -175,6 +175,52 @@
       },
       "why_not_automatable": "Порог свежести — утверждение о том, какой простой загрузки считается приемлемым. Вывести его из данных значит закрепить текущее поведение как норму, включая возможный дефект.",
       "minimal_answer_required": "Одно число в минутах для ozon_clusters (кластеры складов, каденция раз в неделю, criticality LOW), либо подтверждение, что проверка свежести этому конвейеру не нужна."
+    },
+    {
+      "id": "UBR-010",
+      "title": "Новый компонент экономики Ozon sku_promotion_rub не доведён до потребителей витрины",
+      "status": "open",
+      "severity": "HIGH",
+      "domain": "unit_economics",
+      "source_artifact": "sql/scale1/fact_sku_daily_validation.sql (V01, V02, V09); sql/control_tower/ct_phase1_validation.sql:115 (T10)",
+      "blocked_checks": [
+        "V01_OZON_DAILY_TO_MONTHLY_SKU_PARITY",
+        "V02_OZON_PARITY_BY_MONTH",
+        "V09_NEUTRAL_IDENTITIES_AND_NULL_CONTRACT",
+        "CT1__T10_FAILED_OZON_OZON_MART_FCT_OZON_SKU_PNL_MONTHLY"
+      ],
+      "what_is_unknown": "Куда компонент sku_promotion_rub должен попадать в нейтральном факте evetis_mart.FACT_SKU_DAILY и в факте Control Tower evetis_ref.CT_ACTUAL_DAILY: в other_marketplace_costs_rub, в отдельную колонку или в уменьшение выручки.",
+      "evidence": {
+        "measured_at": "2026-09-22",
+        "what_changed": "Gate 5M (модель выкупа CIS, коммиты 9b7fd2f / f440335 / 6787aae) ввёл в ozon_mart.FCT_OZON_SKU_PNL_MONTHLY и FCT_OZON_SKU_PNL_DAILY компонент sku_promotion_rub. Сумма за всю историю — 10 428,67 ₽ на 31 ячейке из 175.",
+        "monthly_view_is_self_consistent": "Тождество месячного вью выполняется ТОЛЬКО с новым компонентом: 0 нарушений с ним, 31 без него. Сами витрины Ozon согласованы между собой — cells_failed_raw = 0, максимальное расхождение ячейки 0,005 ₽.",
+        "defect_1_neutral_fact": "evetis_mart.FACT_SKU_DAILY: тождество contribution_after_cogs_rub = contribution_after_ads_rub - cogs_rub нарушено на 71 строке OZON, суммарный разрыв ровно -10 428,67 ₽. Тождество объявлено в описании самого объекта.",
+        "defect_2_control_tower": "evetis_ref.CT_ACTUAL_DAILY за август: вклад выше витрины на 10 336,14 ₽ при совпадающем количестве (179 шт) — из них 9 350,08 ₽ приходится на sku_promotion_rub августа, остальное на разницу выручки 986,04 ₽.",
+        "stale_check": "V01/V02 выводят вклад заново из пяти компонентов и нового шестого не знают: это устаревание проверки, а не расхождение данных.",
+        "not_drift": "GIT_PROD_PARITY 18/18 MATCH: развёрнутое определение FACT_SKU_DAILY совпадает со своим каноническим файлом. Дефект в самом определении, а не в дрейфе."
+      },
+      "why_not_automatable": "Размещение компонента в нейтральном контракте — решение о смысле метрики: продвижение SKU можно считать расходом площадки, скидкой к выручке или отдельной строкой. Любой выбор меняет вклад, который видит владелец.",
+      "minimal_answer_required": "Одно из трёх: (A) sku_promotion_rub входит в other_marketplace_costs_rub нейтрального факта; (B) уменьшает seller_revenue_rub; (C) получает собственную колонку контракта FACT_SKU_DAILY_V2. После ответа обновляются нейтральный факт, CT_ACTUAL_DAILY и формула повторного вывода в V01/V02."
+    },
+    {
+      "id": "UBR-011",
+      "title": "Две приёмочные проверки привязаны к моменту прогона и устарели сами по себе",
+      "status": "open",
+      "severity": "LOW",
+      "domain": "acceptance_maintenance",
+      "source_artifact": "sql/dash/sku_performance_v2_daily_validation.sql:311 (V9.provisional_window); sql/dash/executive_v2_daily_validation.sql:148 (V2)",
+      "blocked_checks": [
+        "SKUV2__V9_PROVISIONAL_WINDOW_FINAL",
+        "EXECV2__V2_V_DASH_EXECUTIVE_V2_DAILY_V_DASH_SETTLEMENT_DAILY"
+      ],
+      "what_is_unknown": "Переписать ли условия так, чтобы они не зависели от даты прогона, или переприколоть окна к новым датам.",
+      "evidence": {
+        "measured_at": "2026-09-22",
+        "v9": "Проверка требует, чтобы окно 2026-09-01…2026-09-17 НЕ было FINAL. На 18.09 это было верно; на 22.09 все 17 суток окончательны (не окончательных 0, предварительных 0) — финотчёты WB закрылись штатно. Условие стало ложным из-за нормального хода расчётов, а не из-за дефекта.",
+        "v2": "Материализованный слой V_DASH_EXECUTIVE_V2_DAILY содержит 748 суток (по 2026-09-22), канонический V_DASH_SETTLEMENT_DAILY — 747 (по 2026-09-21). Расхождение ровно в одних сутках: почасовая пересборка слоя опережает горизонт D-1 канонического вью. Это гонка момента прогона, а не расхождение величин."
+      },
+      "why_not_automatable": "Условие приёмки утверждал владелец. Сделать окно скользящим — значит изменить смысл проверки; переприколоть даты — значит выбрать новые. И то и другое требует его слова.",
+      "minimal_answer_required": "Для V9: окно скользящее (например, «последние 14 суток») или новые даты. Для V2: сравнивать только пересечение суток обоих объектов или считать опережение слоя дефектом."
     }
   ]
 }
