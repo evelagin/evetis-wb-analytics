@@ -17,7 +17,7 @@
       "object_name": "FACT_SKU_DAILY",
       "object_type": "VIEW",
       "canonical_path": "sql/current/evetis_mart/FACT_SKU_DAILY.sql",
-      "sync_state": "pending_deploy",
+      "sync_state": "captured_live",
       "dependencies": [],
       "external_dependencies": [
         "evetis_ref.REF_PRODUCT_MASTER",
@@ -26,179 +26,185 @@
         "wb_mart.SKU_PERFORMANCE_V2_DAILY"
       ],
       "dependency_level": 0,
-      "capture_main_sha": "821a45e2c2019140a385b0a21ec3f35641c21db7",
-      "captured_at": "2026-09-21T14:30:00Z",
+      "capture_main_sha": "90f58b34e6ebaddda4e972ff77a9edae2d9075ad",
+      "captured_at": "2026-09-22T18:37:25Z",
       "provenance": {
         "source": "production INFORMATION_SCHEMA (read-only capture after Gate 5M deploy 2026-09-21)",
         "historical_migration": null,
         "preflight_parity": "DEPLOYED_AND_READBACK_MATCH",
         "superseded_historical_definitions": []
       },
-      "live_body_sha256_at_capture": "29e2b108a8f9a5e4549aaf7ba2c193870e7a77ee914cb41c358d9d7def2bc260",
-      "live_schema_sha256_at_capture": "ead3cd9281713be27c3f9d92a1c354fdb4d8217f6ae1ecfd10c7abfc2f273e83",
-      "live_description_sha256_at_capture": "c6268909b647a7067154411e54558e5f1e036c18c4ad1e0e3494f71a43f618b2",
+      "live_body_sha256_at_capture": "034e80bd164db304a87f4eafba5cdf07c4044e3e547143f7bf747c3d2ecc22e8",
+      "live_schema_sha256_at_capture": "0ece61423f25968da8691aeaf308ed61f1c5c7ad1943a45379694742c53d3175",
+      "live_description_sha256_at_capture": "1a4461ff8862fb6e6015f05bf259aecb85f1986a6a05f695dcf2749640143a27",
       "live_schema_at_capture": [
         {
-          "ordinal_position": 1,
           "column_name": "fact_date",
           "data_type": "DATE",
-          "is_nullable": "YES"
+          "is_nullable": "YES",
+          "ordinal_position": 1
         },
         {
-          "ordinal_position": 2,
           "column_name": "marketplace",
           "data_type": "STRING",
-          "is_nullable": "YES"
+          "is_nullable": "YES",
+          "ordinal_position": 2
         },
         {
-          "ordinal_position": 3,
           "column_name": "internal_sku",
           "data_type": "STRING",
-          "is_nullable": "YES"
+          "is_nullable": "YES",
+          "ordinal_position": 3
         },
         {
-          "ordinal_position": 4,
           "column_name": "marketplace_sku",
           "data_type": "STRING",
-          "is_nullable": "YES"
+          "is_nullable": "YES",
+          "ordinal_position": 4
         },
         {
-          "ordinal_position": 5,
           "column_name": "product_name",
           "data_type": "STRING",
-          "is_nullable": "YES"
+          "is_nullable": "YES",
+          "ordinal_position": 5
         },
         {
-          "ordinal_position": 6,
           "column_name": "is_bundle",
           "data_type": "BOOL",
-          "is_nullable": "YES"
+          "is_nullable": "YES",
+          "ordinal_position": 6
         },
         {
-          "ordinal_position": 7,
           "column_name": "orders_qty",
           "data_type": "INT64",
-          "is_nullable": "YES"
+          "is_nullable": "YES",
+          "ordinal_position": 7
         },
         {
-          "ordinal_position": 8,
           "column_name": "cancelled_qty",
           "data_type": "INT64",
-          "is_nullable": "YES"
+          "is_nullable": "YES",
+          "ordinal_position": 8
         },
         {
-          "ordinal_position": 9,
           "column_name": "sold_qty",
           "data_type": "INT64",
-          "is_nullable": "YES"
+          "is_nullable": "YES",
+          "ordinal_position": 9
         },
         {
-          "ordinal_position": 10,
           "column_name": "return_qty",
           "data_type": "INT64",
-          "is_nullable": "YES"
+          "is_nullable": "YES",
+          "ordinal_position": 10
         },
         {
-          "ordinal_position": 11,
           "column_name": "seller_revenue_rub",
           "data_type": "NUMERIC",
-          "is_nullable": "YES"
+          "is_nullable": "YES",
+          "ordinal_position": 11
         },
         {
-          "ordinal_position": 12,
           "column_name": "marketplace_commission_rub",
           "data_type": "NUMERIC",
-          "is_nullable": "YES"
+          "is_nullable": "YES",
+          "ordinal_position": 12
         },
         {
-          "ordinal_position": 13,
           "column_name": "logistics_rub",
           "data_type": "NUMERIC",
-          "is_nullable": "YES"
+          "is_nullable": "YES",
+          "ordinal_position": 13
         },
         {
-          "ordinal_position": 14,
           "column_name": "storage_rub",
           "data_type": "NUMERIC",
-          "is_nullable": "YES"
+          "is_nullable": "YES",
+          "ordinal_position": 14
         },
         {
-          "ordinal_position": 15,
           "column_name": "acquiring_rub",
           "data_type": "NUMERIC",
-          "is_nullable": "YES"
+          "is_nullable": "YES",
+          "ordinal_position": 15
         },
         {
-          "ordinal_position": 16,
           "column_name": "other_marketplace_costs_rub",
           "data_type": "NUMERIC",
-          "is_nullable": "YES"
+          "is_nullable": "YES",
+          "ordinal_position": 16
         },
         {
-          "ordinal_position": 17,
           "column_name": "marketplace_costs_total_rub",
           "data_type": "NUMERIC",
-          "is_nullable": "YES"
+          "is_nullable": "YES",
+          "ordinal_position": 17
         },
         {
-          "ordinal_position": 18,
           "column_name": "advertising_attributed_rub",
           "data_type": "NUMERIC",
-          "is_nullable": "YES"
+          "is_nullable": "YES",
+          "ordinal_position": 18
         },
         {
-          "ordinal_position": 19,
+          "column_name": "promotion_billed_rub",
+          "data_type": "NUMERIC",
+          "is_nullable": "YES",
+          "ordinal_position": 19
+        },
+        {
           "column_name": "contribution_after_ads_rub",
           "data_type": "NUMERIC",
-          "is_nullable": "YES"
+          "is_nullable": "YES",
+          "ordinal_position": 20
         },
         {
-          "ordinal_position": 20,
           "column_name": "cogs_rub",
           "data_type": "NUMERIC",
-          "is_nullable": "YES"
+          "is_nullable": "YES",
+          "ordinal_position": 21
         },
         {
-          "ordinal_position": 21,
           "column_name": "contribution_after_cogs_rub",
           "data_type": "NUMERIC",
-          "is_nullable": "YES"
+          "is_nullable": "YES",
+          "ordinal_position": 22
         },
         {
-          "ordinal_position": 22,
           "column_name": "economics_covered",
           "data_type": "BOOL",
-          "is_nullable": "YES"
+          "is_nullable": "YES",
+          "ordinal_position": 23
         },
         {
-          "ordinal_position": 23,
           "column_name": "is_provisional",
           "data_type": "BOOL",
-          "is_nullable": "YES"
+          "is_nullable": "YES",
+          "ordinal_position": 24
         },
         {
-          "ordinal_position": 24,
           "column_name": "fact_date_semantics",
           "data_type": "STRING",
-          "is_nullable": "YES"
+          "is_nullable": "YES",
+          "ordinal_position": 25
         },
         {
-          "ordinal_position": 25,
           "column_name": "source_contract",
           "data_type": "STRING",
-          "is_nullable": "YES"
+          "is_nullable": "YES",
+          "ordinal_position": 26
         },
         {
-          "ordinal_position": 26,
           "column_name": "contract_version",
           "data_type": "STRING",
-          "is_nullable": "YES"
+          "is_nullable": "YES",
+          "ordinal_position": 27
         }
       ],
       "canonical_body_sha256": "034e80bd164db304a87f4eafba5cdf07c4044e3e547143f7bf747c3d2ecc22e8",
       "canonical_description_sha256": "1a4461ff8862fb6e6015f05bf259aecb85f1986a6a05f695dcf2749640143a27",
       "canonical_schema_sha256": "0ece61423f25968da8691aeaf308ed61f1c5c7ad1943a45379694742c53d3175",
-      "canonical_schema_verification": "unverified",
+      "canonical_schema_verification": "bigquery_verified",
       "canonical_column_count": 27,
       "canonical_schema": [
         {

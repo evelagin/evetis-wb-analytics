@@ -40,11 +40,10 @@ GATE8_OBJECTS = {"V_OZON_COMMISSION_POLICY", "V_OZON_LOGISTICS_ESTIMATOR",
 # UBR-010 (2026-09-22, решение владельца — вариант C): продвижение переносится на слой L3.
 # Изменение Git-first, поэтому до развёртывания четыре объекта в pending_deploy.
 # План применения — docs/architecture/PROMOTION_L3_MIGRATION.md.
-GATE5K_PENDING = {"ozon_mart": {"FCT_OZON_SKU_PNL_DAILY", "FCT_OZON_SKU_PNL_MONTHLY",
-                                "V_OZON_SKU_PNL_DAILY_OPERATIONAL",
-                                # UBR-012 (2026-09-22): выручка недоказанного выкупа fail-closed.
-                                "FCT_OZON_PNL_MONTHLY"},
-                  "evetis_mart": {"FACT_SKU_DAILY"}}
+# После слияния PR #160 Git-first цикл закрыт: всё развёрнуто, провенанс подтверждён
+# чтением production, и пустых множеств здесь ждать — правильно. Непустое множество
+# снова означает изменение, ожидающее развёртывания.
+GATE5K_PENDING = {"ozon_mart": set(), "evetis_mart": set()}
 
 # canonical_hash_v1 body hashes proven equal to production in R2A (PR #140). Pinned literally.
 R2A_BODY_SHA256 = {

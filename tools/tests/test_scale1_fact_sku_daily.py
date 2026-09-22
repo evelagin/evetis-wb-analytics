@@ -126,11 +126,9 @@ def test_buyout_repair_objects_are_deployed_and_read_back():
     """Gate 5M deployed the buyout model to production and read it back: canonical body, schema and
     description equal the live capture on all three hashes. captured_live is only legitimate when the
     readback actually matched — it asserts production parity, it does not assume it."""
-    # UBR-010 переписал три из этих объектов Git-first, UBR-012 добавил четвёртый, поэтому
-    # они законно pending_deploy: снимок Gate 5M остаётся доказательством ПРЕЖНЕГО
-    # состояния и не переписывается.
-    ubr010_pending = {"FCT_OZON_SKU_PNL_DAILY", "FCT_OZON_SKU_PNL_MONTHLY", "FACT_SKU_DAILY",
-                      "FCT_OZON_PNL_MONTHLY"}
+    # PR #160 слит: все объекты развёрнуты, провенанс подтверждён чтением production,
+    # ожидающих развёртывания нет. Каждый из перечисленных ниже обязан быть captured_live.
+    ubr010_pending = set()
     for dataset, name in (("ozon_mart", "V_OZON_CIS_BUYOUT"), ("ozon_mart", "FCT_OZON_SKU_PNL_DAILY"),
                           ("ozon_mart", "FCT_OZON_SKU_PNL_MONTHLY"), ("ozon_mart", "FCT_OZON_PNL_MONTHLY"),
                           ("evetis_mart", "FACT_SKU_DAILY")):
@@ -395,12 +393,11 @@ def test_validation_file_is_read_only_selects():
 
 
 def test_predeploy_render_inlines_every_pending_object_and_stays_a_select():
-    # UBR-010 оставил четыре объекта Git-first, UBR-012 добавил пятый, поэтому инструмент
-    # подстановки снова не пустой. Ровно эти пять и обязаны подставляться.
+    # PR #160 слит: подставлять нечего, и это правильный ответ, а не поломка инструмента.
+    # Логика подстановки всё равно проверяется ниже на тех же объектах, как если бы
+    # они были pending.
     pending = {k.split(".")[-1].rstrip("`") for k in render.pending_bodies()}
-    assert pending == {"FCT_OZON_SKU_PNL_DAILY", "FCT_OZON_SKU_PNL_MONTHLY",
-                       "V_OZON_SKU_PNL_DAILY_OPERATIONAL", "FACT_SKU_DAILY",
-                       "FCT_OZON_PNL_MONTHLY"}
+    assert pending == set()
     sample = next(iter(check_blocks().values()))
     assert render.render(sample, {}) == sample
     # ... and its inlining logic is still exercised on the same objects, as if they were pending.
