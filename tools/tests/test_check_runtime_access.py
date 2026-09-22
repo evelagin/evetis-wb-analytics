@@ -49,3 +49,35 @@ def test_registry_declares_the_control_tower_consumer():
     assert len(ct) == 1
     assert "wb_mart.V_CT_ACTUAL_DAILY_LIVE" in ct[0]["reads"]
     assert "sql/control_tower/ct_ubr012_revenue_2026-09-22.sql" in ct[0]["sql_files"]
+
+
+def test_fail_closed_end_to_end_on_pre_incident_acl(monkeypatch, capsys):
+    """Сквозной негативный тест: с ACL, каким он был ДО инцидента, гейт обязан
+    вернуть ненулевой код и назвать датасет. Это ровно тот класс ошибки, что
+    сломал production 2026-09-22 и не был пойман ни одной существующей проверкой."""
+    pre_incident = {
+        "ozon_mart": {"evelagin@gmail.com",
+                      "sa-loaders-prod@project-fa311fc0-4d87-4781-986.iam.gserviceaccount.com"},
+        "wb_mart": {SA}, "ozon_raw": {SA}, "evetis_ref": {SA}, "wb_raw": {SA},
+    }
+    monkeypatch.setattr(cra, "token", lambda cmd: "fake-token-never-used")
+    monkeypatch.setattr(cra, "dataset_readers",
+                        lambda project, ds, tok: pre_incident.get(ds, set()))
+    monkeypatch.setattr("sys.argv", ["check_runtime_access.py", "--project", P,
+                                     "--token-command", "true"])
+    code = cra.main()
+    out = capsys.readouterr().out
+    assert code == 1, "гейт обязан быть fail-closed при отсутствии read access"
+    assert "ozon_mart" in out and "sa-ct-refresh" in out
+    assert "Развёртывание НЕ начинать" in out
+
+
+def test_passes_once_the_grant_exists(monkeypatch, capsys):
+    """Зеркало предыдущего: с выданным READER тот же вызов обязан вернуть 0."""
+    after = {ds: {SA} for ds in ("ozon_mart", "wb_mart", "ozon_raw", "evetis_ref", "wb_raw")}
+    monkeypatch.setattr(cra, "token", lambda cmd: "fake-token-never-used")
+    monkeypatch.setattr(cra, "dataset_readers", lambda project, ds, tok: after.get(ds, set()))
+    monkeypatch.setattr("sys.argv", ["check_runtime_access.py", "--project", P,
+                                     "--token-command", "true"])
+    assert cra.main() == 0
+    assert "нарушений нет" in capsys.readouterr().out
