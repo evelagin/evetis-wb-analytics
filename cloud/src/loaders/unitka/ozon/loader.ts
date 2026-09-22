@@ -340,8 +340,13 @@ export async function ozonUnitkaLoader(
       await sheets.structureWrite(group.slice(i, i + 400));
     }
   }
+  // USER_ENTERED, а не RAW: в плане Ozon формулы едут ВМЕСТЕ со значениями, и под RAW они
+  // лягут в лист текстом «=IF(…)» вместо формулы. Числа уходят JSON-числами и по локали
+  // не разбираются, поэтому режим безопасен для величин. WB это не касается: там значение
+  // по умолчанию прежнее, RAW.
   const updated = await sheets.batchWrite(
-    plan.values.map((v) => ({ range: v.range, values: v.values as unknown as SheetCell[][] })));
+    plan.values.map((v) => ({ range: v.range, values: v.values as unknown as SheetCell[][] })),
+    'USER_ENTERED');
   ctx.logger.info('ozon-unitka: записано', { updated, estimatedRows });
   return { rowsFetched: facts.length, rowsLoaded: updated };
 }

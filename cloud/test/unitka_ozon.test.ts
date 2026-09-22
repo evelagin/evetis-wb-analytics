@@ -514,6 +514,17 @@ describe('OZON adapter — Gate 9: единицы в пути несут сво�
     expect(c.provenance).toHaveLength(0);
   });
 
+  it('формулы Ozon пишутся как формулы, а не как текст; WB остаётся на RAW', () => {
+    const rows = [{ range: "OZON!A1:B1", values: [[42, '=IF(A1>LAST_CLOSED_DATE;"";A1*2%)']] }];
+    // Ozon: без USER_ENTERED формула легла бы в лист строкой «=IF(…)» — ячейка «налог»
+    // выглядела бы пустой, хотя цена известна. Это и случилось в первом боевом прогоне.
+    expect(batchWriteBody(rows, 'USER_ENTERED').valueInputOption).toBe('USER_ENTERED');
+    // WB пишет ТОЛЬКО величины, формулы там ставит monthprep: режим по умолчанию не меняется.
+    expect(batchWriteBody(rows, 'RAW').valueInputOption).toBe('RAW');
+    // сами величины режим не искажает
+    expect(batchWriteBody(rows, 'USER_ENTERED').data[0]?.values[0]?.[0]).toBe(42);
+  });
+
   it('ненулевой NUMERIC проходит границу без потерь', () => {
     const row = normalizeBqRow<Parameters<typeof composeMonth>[1][number]>({
       d: '2026-09-01', offer_id: 'A', gross_qty: 1, cancelled_qty: 0, realized_qty: 1,
@@ -685,6 +696,7 @@ import {
   residualMergeRequests, unmergeRequests,
 } from '../src/loaders/unitka/ozon/structure.js';
 import { ozonMonthFactsSql, ozonProvenStockSql, normalizeBqRow } from '../src/loaders/unitka/ozon/bq.js';
+import { batchWriteBody } from '../src/loaders/unitka/sheets.js';
 import { CANONICAL_CURRENT_WB_PRESENTATION_CONTRACT } from '../src/loaders/unitka/ozon/wbcontract.js';
 import { sectionFormulas, expectedGrid } from '../src/loaders/unitka/ozon/monthplan.js';
 
