@@ -67,6 +67,14 @@ locals {
     sku_v2_layer = google_service_account.sku_v2_layer.name
     # Unitka Integrity Guard V1: Scheduler unitka-cogs-publication → sa-unitka-cogs-pub (unitka_cogs_publication.tf).
     unitka_cogs_pub = google_service_account.unitka_cogs_pub.name
+    # PR-PROMO-1. Тот же отказ, что у ops_health, повторился 22.09.2026 (run 35741630852):
+    # создание ozon-runtime-promo упало с 403 iam.serviceAccounts.actAs на sa-ozon-ingestion.
+    # Причина не в новом job'е: три существующих Ozon-job'а Terraform НЕ создавал, а
+    # импортировал из ручного состояния GCP (ozon_ingestion.tf, шапка) — поэтому actAs ему
+    # ни разу и не понадобился, и пробел не проявлялся. Первый же СОЗДАВАЕМЫЙ Ozon-job его
+    # обнаружил. Политика обоих SA на момент отказа была пуста (get-iam-policy → только etag).
+    ozon_ingestion = google_service_account.ozon_ingestion.name
+    ozon_scheduler = google_service_account.ozon_scheduler.name
   }
 }
 
