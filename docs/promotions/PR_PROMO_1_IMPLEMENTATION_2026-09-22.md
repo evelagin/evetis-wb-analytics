@@ -522,6 +522,9 @@ Secret Manager через `gcloud` CLI. Подменён только транс
 | `google_cloud_scheduler_job.wb_promo_prod` | create (`paused = true`) |
 | `google_cloud_run_v2_job.ozon_runtime["ozon-runtime-promo"]` | create |
 | `google_cloud_scheduler_job.ozon_runtime["ozon-runtime-promo"]` | create |
+| `google_cloud_run_v2_job_iam_member.ozon_scheduler_invoke["ozon-runtime-promo"]` | create (объявлен `for_each` в `ozon_ingestion.tf`) |
+| `google_bigquery_table_iam_member.prod_write_promo_tables` × 4 | create |
+| `google_cloud_run_v2_job_iam_member.scheduler_promo_prod_invoke` | create |
 
 ### Файлы репозитория
 
