@@ -1,6 +1,6 @@
 {
  "schema_version": 1,
- "generated_at": "2026-09-22T06:29:29Z",
+ "generated_at": "2026-09-22T07:48:04Z",
  "generated_by": "tools/build_contract_registry.py",
  "inventory_snapshot": "2026-09-22T04:35:09Z",
  "summary": {
@@ -10008,7 +10008,7 @@
    "id": "UBR-010",
    "title": "Новый компонент экономики Ozon sku_promotion_rub не доведён до потребителей витрины",
    "severity": "HIGH",
-   "status": "answered",
+   "status": "closed",
    "blocked_checks": [
     "V01_OZON_DAILY_TO_MONTHLY_SKU_PARITY",
     "V02_OZON_PARITY_BY_MONTH",

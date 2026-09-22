@@ -179,7 +179,7 @@
     {
       "id": "UBR-010",
       "title": "Новый компонент экономики Ozon sku_promotion_rub не доведён до потребителей витрины",
-      "status": "answered",
+      "status": "closed",
       "severity": "HIGH",
       "domain": "unit_economics",
       "source_artifact": "sql/scale1/fact_sku_daily_validation.sql (V01, V02, V09); sql/control_tower/ct_phase1_validation.sql:115 (T10)",
@@ -203,7 +203,13 @@
       "minimal_answer_required": "Одно из трёх: (A) sku_promotion_rub входит в other_marketplace_costs_rub нейтрального факта; (B) уменьшает seller_revenue_rub; (C) получает собственную колонку контракта FACT_SKU_DAILY_V2. После ответа обновляются нейтральный факт, CT_ACTUAL_DAILY и формула повторного вывода в V01/V02.",
       "answered_at": "2026-09-22",
       "decision": "Вариант C. promotion_billed_rub — самостоятельный фактически начисленный расход на продвижение Ozon, слой L3. Не уменьшает revenue, не входит в other_marketplace_costs_rub, не смешивается с ad_spend_attributed_rub. Учитывается в управленческом семействе promotion/advertising при расчёте полного фактического расхода на продвижение и соответствующего ДРР.",
-      "implementation": "Git-first, контракт FACT_SKU_DAILY_V2. Изменены: ozon_mart.FCT_OZON_SKU_PNL_DAILY, ozon_mart.FCT_OZON_SKU_PNL_MONTHLY (+ promotion_family_rub, promotion_family_drr_pct), ozon_mart.V_OZON_SKU_PNL_DAILY_OPERATIONAL, evetis_mart.FACT_SKU_DAILY (+ promotion_billed_rub), wb_mart.V_CT_ACTUAL_DAILY_LIVE. Сверка до развёртывания: 9/9 PASS (quality suite promotion_l3). Развёртывание — docs/architecture/PROMOTION_L3_MIGRATION.md, ждёт ACK."
+      "implementation": "Git-first, контракт FACT_SKU_DAILY_V2. Изменены: ozon_mart.FCT_OZON_SKU_PNL_DAILY, ozon_mart.FCT_OZON_SKU_PNL_MONTHLY (+ promotion_family_rub, promotion_family_drr_pct), ozon_mart.V_OZON_SKU_PNL_DAILY_OPERATIONAL, evetis_mart.FACT_SKU_DAILY (+ promotion_billed_rub), wb_mart.V_CT_ACTUAL_DAILY_LIVE. Сверка до развёртывания: 9/9 PASS (quality suite promotion_l3). Развёртывание — docs/architecture/PROMOTION_L3_MIGRATION.md, ждёт ACK.",
+      "closed_at": "2026-09-22",
+      "closure_evidence": "Развёрнуто в production 2026-09-22: пять вью заменены, шестой шаг (пересборка CT) оказался no-op по собственному предохранителю процедуры. Сверка на РАЗВЁРНУТЫХ объектах: 10 428,67 ₽ прослежены сырьё → FCT_OZON_SKU_PNL_DAILY → _MONTHLY → evetis_mart.FACT_SKU_DAILY.promotion_billed_rub; у WB колонка NULL на всех строках; contract_version = FACT_SKU_DAILY_V2. Выручка 1 884 733,16 и расходы площадки 883 976,09 не изменились; вклад до рекламы 530 505,93 → 540 934,60; семейство продвижения 477 143,07 → 487 571,74; итог 53 362,86 и маржа 2,8313 % не изменились; остаток цепочки 0,00. promotion_l3 10/10 PASS, ozon_unit 11/11 PASS, verify_current_sql_live — 4 PENDING_DEPLOYED_MATCH + 14 MATCH.",
+      "known_followups": [
+        "Материализованная копия evetis_ref.CT_ACTUAL_DAILY отстаёт на 10 428,67 ₽ вклада Ozon: sp_ct_refresh_daily пропустила пересборку (guard_skip: источники не менялись с последнего успешного прогона за сутки). Живое вью V_CT_ACTUAL_DAILY_LIVE уже верно — расхождение с витриной за август 986,06 ₽ вместо 10 336,14. Копия догонит при ближайшем изменении источников; отдельного действия не требует.",
+        "sync_state четырёх объектов остаётся pending_deploy: R2C не подтверждает провенанс с коммита, не достижимого из origin/main. Перевод в captured_live — отдельным PR после слияния."
+      ]
     },
     {
       "id": "UBR-011",
