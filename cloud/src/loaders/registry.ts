@@ -9,6 +9,8 @@ import { martLoader } from './mart/index.js';
 import { d1Moscow } from './mart/targetDate.js';
 import { pricesLoader } from './prices/index.js';
 import { observationBucket } from './prices/bucket.js';
+import { promoLoader } from './promo/index.js';
+import { promoSlot } from './promo/slot.js';
 import { tariffsLoader } from './tariffs/index.js';
 import { funnelLoader } from './funnel/index.js';
 import { storageLoader } from './storage/index.js';
@@ -31,6 +33,9 @@ export const LOADERS: Record<string, LoaderSpec> = {
   stocks: { handler: stocksLoader, logicalPeriod: (now) => dailyPeriodMoscow(now) },
   mart: { handler: martLoader, logicalPeriod: (now) => d1Moscow(now), prodOnly: true },
   prices: { handler: pricesLoader, logicalPeriod: (now) => observationBucket(now) },
+  // PR-PROMO-1: наблюдатель акций WB. Период — слот расписания (4 раза в сутки),
+  // а не сутки: суточный период схлопнул бы четыре наблюдения в одно.
+  promo: { handler: promoLoader, logicalPeriod: (now) => promoSlot(now) },
   tariffs: { handler: tariffsLoader, logicalPeriod: (now) => (now ?? new Date()).toISOString().slice(0, 10) },
   funnel: { handler: funnelLoader, logicalPeriod: (now) => d1Moscow(now) },
   // E4: платное хранение — только закрытые сутки, RAW production, overlap внутри loader.

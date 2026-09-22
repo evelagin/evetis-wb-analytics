@@ -312,6 +312,82 @@ def merge_rows(table, rows, keys, run_id, on_duplicate_key="collapse_identical")
             "updated": len(rows) - (after - before)}
 
 
+# ─────────────────────────── append-only наблюдения (PR-PROMO-1)
+# merge_rows выше схлопывает строки по ключу, содержащему snapshot_date: для
+# суточных сущностей это правильно, для наблюдателя акций — губительно. Состав
+# акции и акционные цены меняются ВНУТРИ суток, а наблюдений четыре в день, и
+# каждое обязано остаться отдельной строкой.
+#
+# Поэтому здесь отдельный путь записи: WRITE_APPEND с ДЕТЕРМИНИРОВАННЫМ job_id.
+# BigQuery дедуплицирует load-джобы по job_id, поэтому повтор того же слота не
+# создаёт вторую копию строк, а новый слот (другой job_id) пишется всегда.
+# Ровно та же механика, что у наблюдателя цен WB (cloud/src/loaders/prices/bq.ts).
+
+# Часы запуска наблюдателя акций, UTC. Совпадают с расписанием в Terraform и с
+# PROMO_SLOT_HOURS_UTC наблюдателя WB: два маркетплейса наблюдаются в одних слотах,
+# иначе сравнивать снимки между площадками пришлось бы с поправкой на время.
+PROMO_SLOT_HOURS_UTC = (4, 9, 14, 19)
+
+
+def promo_slot(now=None):
+    """Слот наблюдения YYYY-MM-DDTHH:00 (UTC) — ближайший предшествующий запуск.
+
+    До первого слота суток относится к последнему слоту предыдущих суток.
+    Ретрай внутри слота получает тот же идентификатор и не задваивает историю.
+    """
+    now = now or datetime.now(timezone.utc)
+    now = now.astimezone(timezone.utc)
+    past = [h for h in sorted(PROMO_SLOT_HOURS_UTC) if h <= now.hour]
+    if past:
+        return f"{now:%Y-%m-%d}T{past[-1]:02d}:00"
+    prev = now - timedelta(days=1)
+    return f"{prev:%Y-%m-%d}T{max(PROMO_SLOT_HOURS_UTC):02d}:00"
+
+
+def promo_observation_id(environment, slot):
+    """Детерминированный id снимка. Стабилен между попытками одного слота."""
+    return "OZPROMO_%s_%s" % (environment, slot.replace("-", "").replace(":", "").replace("T", ""))
+
+
+def promo_load_job_id(environment, slot, table):
+    """Детерминированный job_id load-джобы: ключ идемпотентности записи."""
+    t = "".join(c if c.isalnum() else "_" for c in table.lower()).strip("_")
+    return "ozpromo_%s_%s_%s" % (environment, slot.replace("-", "").replace(":", "").replace("T", ""), t)
+
+
+def append_rows(table, rows, job_id):
+    """Append-only запись снимка. Возвращает ('LOADED'|'REUSED', число строк).
+
+    REUSED означает, что load-джоба с таким job_id уже выполнялась: строки на
+    месте, повтор их не задвоил. Это НЕ ошибка и НЕ повод переписывать историю.
+    """
+    if not rows:
+        return "LOADED", 0
+    client = bq()
+    tgt = client.get_table(f"{PROJECT}.{DATASET}.{table}")
+    cols = [f.name for f in tgt.schema]
+    data = "\n".join(
+        json.dumps({k: _clean(r.get(k)) for k in cols}, ensure_ascii=False, default=str)
+        for r in rows).encode()
+    cfg = bigquery.LoadJobConfig(
+        source_format=bigquery.SourceFormat.NEWLINE_DELIMITED_JSON,
+        schema=tgt.schema,
+        write_disposition=bigquery.WriteDisposition.WRITE_APPEND,
+        create_disposition=bigquery.CreateDisposition.CREATE_NEVER)
+    try:
+        job = client.load_table_from_file(io.BytesIO(data), f"{PROJECT}.{DATASET}.{table}",
+                                          job_config=cfg, location=LOCATION, job_id=job_id)
+        job.result()
+        if job.errors:
+            raise RuntimeError(f"load job {job.job_id}: {job.errors}")
+        return "LOADED", len(rows)
+    except Exception as e:                                            # noqa: BLE001
+        if "Already Exists" in str(e) or getattr(e, "code", None) == 409:
+            log(event="promo_append_reused", table=table, job_id=job_id, rows=len(rows))
+            return "REUSED", len(rows)
+        raise
+
+
 def record_run(run_id, entity, started, src_from, src_to, res, status,
                error=None, requests_n=0, retries=0):
     row = {"ingestion_run_id": run_id, "marketplace": "OZON", "entity": entity,

@@ -91,12 +91,27 @@ locals {
       entities = "clusters"
       schedule = "0 5 * * 1"
     }
+    # PR-PROMO-1, 2026-09-22: наблюдатель акций. Отдельный job, а не сущность в
+    # суточном, ровно из-за каденции: состав акции и акционные цены меняются
+    # ВНУТРИ суток, а дата автодобавления наступает в 21:00 UTC (полночь МСК).
+    # Суточный снимок увидел бы автодобавление уже после того, как оно сработало.
+    #
+    # Часы совпадают с наблюдателем акций WB (PROMO_SLOT_HOURS_UTC в
+    # cloud/src/loaders/promo/slot.ts и PROMO_SLOT_HOURS_UTC в
+    # pipelines/ozon/runtime/common.py): снимки двух площадок должны сравниваться
+    # без поправки на время. Планировщики Ozon объявлены в Europe/Moscow, поэтому
+    # 04/09/14/19 UTC записаны здесь как 07/12/17/22 МСК — это те же моменты.
+    "ozon-runtime-promo" = {
+      entities = "promo"
+      schedule = "0 7,12,17,22 * * *"
+    }
   }
 
   ozon_scheduler_names = {
     "ozon-runtime-fast"   = "ozon-fast"
     "ozon-runtime-daily"  = "ozon-daily"
     "ozon-runtime-weekly" = "ozon-weekly"
+    "ozon-runtime-promo"  = "ozon-promo"
   }
 }
 
