@@ -60,7 +60,17 @@ locals {
   # прогон 22.09 06:30 МСК всё ещё брал 14 суток — замер по OZON_INGESTION_RUNS.
   # Потери данных не было: перезагрузка за 113 суток вставила 0 строк.
   # Собран из main 1b651fd. Откат — вернуть предыдущий digest и применить.
-  ozon_runtime_image = "europe-west1-docker.pkg.dev/project-fa311fc0-4d87-4781-986/cloud-run-source-deploy/ozon-runtime-ingest@sha256:dccc50ae59f77020666c2dbb630dd10f4b6ca8e4bde04ba0f86e91e26c158905"
+  #
+  # 2026-09-22, PR-PROMO-1: sha256:dccc50ae… → sha256:24e3c6d6…
+  # Причина: добавлена сущность promo (наблюдатель акций) и модуль promo.py в
+  # состав образа. Прежний образ его не содержал вовсе — Dockerfile копирует
+  # модули поимённо, и без правки job ozon-runtime-promo упал бы при старте с
+  # ImportError. Собран из main 08dfb88. Диф runtime к предыдущему образу
+  # (1b651fd→08dfb88) строго аддитивен: ни одна существующая сущность не
+  # изменена, поэтому один digest получили все ЧЕТЫРЕ job'а, как требует §4
+  # pipelines/ozon/DEPLOYMENT.md. Откат — вернуть предыдущий digest и
+  # прокатить тем же циклом gcloud run jobs update.
+  ozon_runtime_image = "europe-west1-docker.pkg.dev/project-fa311fc0-4d87-4781-986/cloud-run-source-deploy/ozon-runtime-ingest@sha256:24e3c6d6715fa7b73d30b4270f9863d2b8680b4b02d4874ff1ea12b4fd90fa1b"
   ozon_ingestion_sa  = "sa-ozon-ingestion@${var.project_id}.iam.gserviceaccount.com"
   ozon_scheduler_sa  = "sa-ozon-scheduler@${var.project_id}.iam.gserviceaccount.com"
 

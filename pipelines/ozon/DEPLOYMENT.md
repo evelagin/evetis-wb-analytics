@@ -108,7 +108,7 @@ gs://run-sources-…-europe-west1/jobs/ozon-bootstrap-load/1788427420.934997-…
    Образ продвигается так же, как у WB-загрузчиков, — обновлением самих Job'ов:
 
    ```bash
-   for JOB in ozon-runtime-daily ozon-runtime-fast ozon-runtime-weekly; do
+   for JOB in ozon-runtime-daily ozon-runtime-fast ozon-runtime-weekly ozon-runtime-promo; do
      gcloud run jobs update "$JOB" --region europe-west1 \
        --image europe-west1-docker.pkg.dev/project-fa311fc0-4d87-4781-986/\
    cloud-run-source-deploy/ozon-runtime-ingest@sha256:…
@@ -116,8 +116,11 @@ gs://run-sources-…-europe-west1/jobs/ozon-bootstrap-load/1788427420.934997-…
    ```
 
    Digest в `local.ozon_runtime_image` — запись о том, что развёрнуто, а не источник
-   раскатки. Все три джоба обязаны получить ОДИН digest: разъехаться они не могут только
-   потому, что команда одна на всех, а не потому, что это гарантирует Terraform.
+   раскатки. Все **четыре** джоба обязаны получить ОДИН digest: разъехаться они не могут
+   только потому, что команда одна на всех, а не потому, что это гарантирует Terraform.
+   Четвёртый — `ozon-runtime-promo` (PR-PROMO-1, наблюдатель акций, каденция 4 раза в
+   сутки). Состав образа проверяется тестом `tests/test_image_contents.py`: всё, что
+   импортируется от `main.py`, обязано входить в `COPY` Dockerfile.
 
 **Пока не сделано (осознанно, вне Stage A):** образ не несёт `GIT_SHA` в env,
 как это устроено у WB-загрузчиков. Добавление переменной означает новую ревизию
