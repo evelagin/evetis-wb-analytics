@@ -32,7 +32,7 @@ import {
   type OzonRewriteWindow,
 } from './window.js';
 import {
-  resolveSections, activateNewSkus, rowsNeeded, sectionStep, NoFreeSkuSlotError,
+  resolveSections, activateNewSkus, rowsNeeded, NoFreeSkuSlotError,
   type SectionPlan,
 } from './lifecycle.js';
 

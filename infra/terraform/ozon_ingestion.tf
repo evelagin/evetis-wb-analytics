@@ -60,7 +60,17 @@ locals {
   # прогон 22.09 06:30 МСК всё ещё брал 14 суток — замер по OZON_INGESTION_RUNS.
   # Потери данных не было: перезагрузка за 113 суток вставила 0 строк.
   # Собран из main 1b651fd. Откат — вернуть предыдущий digest и применить.
-  ozon_runtime_image = "europe-west1-docker.pkg.dev/project-fa311fc0-4d87-4781-986/cloud-run-source-deploy/ozon-runtime-ingest@sha256:dccc50ae59f77020666c2dbb630dd10f4b6ca8e4bde04ba0f86e91e26c158905"
+  #
+  # 2026-09-22, PR-PROMO-1: sha256:dccc50ae… → sha256:24e3c6d6…
+  # Причина: добавлена сущность promo (наблюдатель акций) и модуль promo.py в
+  # состав образа. Прежний образ его не содержал вовсе — Dockerfile копирует
+  # модули поимённо, и без правки job ozon-runtime-promo упал бы при старте с
+  # ImportError. Собран из main 08dfb88. Диф runtime к предыдущему образу
+  # (1b651fd→08dfb88) строго аддитивен: ни одна существующая сущность не
+  # изменена, поэтому один digest получили все ЧЕТЫРЕ job'а, как требует §4
+  # pipelines/ozon/DEPLOYMENT.md. Откат — вернуть предыдущий digest и
+  # прокатить тем же циклом gcloud run jobs update.
+  ozon_runtime_image = "europe-west1-docker.pkg.dev/project-fa311fc0-4d87-4781-986/cloud-run-source-deploy/ozon-runtime-ingest@sha256:24e3c6d6715fa7b73d30b4270f9863d2b8680b4b02d4874ff1ea12b4fd90fa1b"
   ozon_ingestion_sa  = "sa-ozon-ingestion@${var.project_id}.iam.gserviceaccount.com"
   ozon_scheduler_sa  = "sa-ozon-scheduler@${var.project_id}.iam.gserviceaccount.com"
 
@@ -91,12 +101,27 @@ locals {
       entities = "clusters"
       schedule = "0 5 * * 1"
     }
+    # PR-PROMO-1, 2026-09-22: наблюдатель акций. Отдельный job, а не сущность в
+    # суточном, ровно из-за каденции: состав акции и акционные цены меняются
+    # ВНУТРИ суток, а дата автодобавления наступает в 21:00 UTC (полночь МСК).
+    # Суточный снимок увидел бы автодобавление уже после того, как оно сработало.
+    #
+    # Часы совпадают с наблюдателем акций WB (PROMO_SLOT_HOURS_UTC в
+    # cloud/src/loaders/promo/slot.ts и PROMO_SLOT_HOURS_UTC в
+    # pipelines/ozon/runtime/common.py): снимки двух площадок должны сравниваться
+    # без поправки на время. Планировщики Ozon объявлены в Europe/Moscow, поэтому
+    # 04/09/14/19 UTC записаны здесь как 07/12/17/22 МСК — это те же моменты.
+    "ozon-runtime-promo" = {
+      entities = "promo"
+      schedule = "0 7,12,17,22 * * *"
+    }
   }
 
   ozon_scheduler_names = {
     "ozon-runtime-fast"   = "ozon-fast"
     "ozon-runtime-daily"  = "ozon-daily"
     "ozon-runtime-weekly" = "ozon-weekly"
+    "ozon-runtime-promo"  = "ozon-promo"
   }
 }
 

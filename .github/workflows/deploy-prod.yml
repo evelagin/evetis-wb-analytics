@@ -92,6 +92,27 @@ jobs:
           else
             echo "::warning title=wb-paid-storage-prod::Job ещё не создан Terraform'ом — шаг пропущен"
           fi
+      - name: Deploy wb-promo-prod (тот же digest)
+        # PR-PROMO-1: наблюдатель акций WB. Тот же образ, dispatch args[0]=promo.
+        # Guard сохраняет совместимость до первого infra apply: пока Terraform не
+        # создал Job, шаг предупреждает и не валит промоушен остальных.
+        #
+        # Пропуск Job'а в этом списке — тот самый дефект, ради которого сюда
+        # добавляли wb-prices-prod: Job молча остаётся на bootstrap hello, который
+        # выходит с кодом 0 и НИЧЕГО не наблюдает, а история акций восстановлению
+        # не подлежит — у Ozon исторической выгрузки акций нет вовсе.
+        #
+        # Секрет наблюдателя (WB_PRICES_READ_TOKEN) выставляется Terraform'ом
+        # вместе с остальным env; workflow его не читает и не меняет.
+        run: |
+          if gcloud run jobs describe wb-promo-prod --region ${{ vars.GCP_REGION }} >/dev/null 2>&1; then
+            gcloud run jobs update wb-promo-prod \
+              --region ${{ vars.GCP_REGION }} \
+              --image "${{ inputs.image_digest }}" \
+              --update-env-vars IMAGE_DIGEST="${{ inputs.image_digest }}",GIT_SHA="${{ inputs.source_git_sha }}"
+          else
+            echo "::warning title=wb-promo-prod::Job ещё не создан Terraform'ом — шаг пропущен"
+          fi
       - name: Deploy wb-funnel-prod (отдельным шагом — у него свой секрет)
         # UNITKA 2.0 R6/R7. Воронка ходит в WB под ОТДЕЛЬНЫМ токеном WB_TOKEN_REPORTS
         # (решение владельца); WB_TOKEN_ANALYTICS не трогаем — на нём остатки и

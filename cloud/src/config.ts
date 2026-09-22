@@ -64,6 +64,19 @@ export interface Config {
   wbPricesSecret: string;
   pricesRawTable: string;
   pricesObservationsTable: string;
+  // ── promo observer (PR-PROMO-1) — календарь акций WB ──────────────────────
+  /** Хост категории «Календарь акций». Отдельный от цен и от аналитики. */
+  wbPromoHost: string;
+  /**
+   * Имя секрета с токеном категории «Цены и скидки»: календарь акций живёт
+   * под тем же правом. Секрет тот же, что у наблюдателя цен, — второй носитель
+   * права записи заводить незачем.
+   */
+  wbPromoSecret: string;
+  promoCalendarTable: string;
+  promoRangingTable: string;
+  promoNomenclatureTable: string;
+  promoObservationsTable: string;
   // ── tariffs loader (PR-2) — тот же секрет, что у наблюдателя цен ──────────
   wbTariffsHost: string;
   tariffsRawTable: string;
@@ -260,6 +273,12 @@ export function loadConfig(env: Env = process.env): Config {
     wbPricesSecret: opt(env, 'WB_PRICES_SECRET', 'WB_PRICES_READ_TOKEN'),
     pricesRawTable: opt(env, 'PRICES_RAW_TABLE', 'RAW_WB_PRICES'),
     pricesObservationsTable: opt(env, 'PRICES_OBSERVATIONS_TABLE', 'WB_PRICES_OBSERVATIONS'),
+    wbPromoHost: opt(env, 'WB_PROMO_HOST', 'https://dp-calendar-api.wildberries.ru'),
+    wbPromoSecret: opt(env, 'WB_PROMO_SECRET', 'WB_PRICES_READ_TOKEN'),
+    promoCalendarTable: opt(env, 'PROMO_CALENDAR_TABLE', 'RAW_WB_PROMO_CALENDAR'),
+    promoRangingTable: opt(env, 'PROMO_RANGING_TABLE', 'RAW_WB_PROMO_RANGING'),
+    promoNomenclatureTable: opt(env, 'PROMO_NOMENCLATURE_TABLE', 'RAW_WB_PROMO_NOMENCLATURE'),
+    promoObservationsTable: opt(env, 'PROMO_OBSERVATIONS_TABLE', 'WB_PROMO_OBSERVATIONS'),
     wbTariffsHost: opt(env, 'WB_TARIFFS_HOST', 'https://common-api.wildberries.ru'),
     tariffsRawTable: opt(env, 'TARIFFS_RAW_TABLE', 'RAW_WB_TARIFFS'),
     tariffsObservationsTable: opt(env, 'TARIFFS_OBSERVATIONS_TABLE', 'WB_TARIFF_OBSERVATIONS'),
