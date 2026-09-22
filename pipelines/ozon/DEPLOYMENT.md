@@ -102,8 +102,22 @@ gs://run-sources-…-europe-west1/jobs/ozon-bootstrap-load/1788427420.934997-…
 3. **Фиксация digest** — взять `results.images[].digest` из сборки и записать
    его в `local.ozon_runtime_image`. Коммит этой строки и есть запись о том, что
    развёрнуто.
-4. **Раскатка** — `terraform apply`. Все три джоба получают один и тот же digest
-   из одного места; разъехаться они не могут по построению.
+4. **Раскатка** — НЕ `terraform apply`. Поле `image` у `google_cloud_run_v2_job.ozon_runtime`
+   стоит под `ignore_changes` (см. `lifecycle` в `ozon_ingestion.tf`), поэтому целевой план
+   на этот ресурс даёт «No changes» даже при новом digest в файле — проверено 2026-09-22.
+   Образ продвигается так же, как у WB-загрузчиков, — обновлением самих Job'ов:
+
+   ```bash
+   for JOB in ozon-runtime-daily ozon-runtime-fast ozon-runtime-weekly; do
+     gcloud run jobs update "$JOB" --region europe-west1 \
+       --image europe-west1-docker.pkg.dev/project-fa311fc0-4d87-4781-986/\
+   cloud-run-source-deploy/ozon-runtime-ingest@sha256:…
+   done
+   ```
+
+   Digest в `local.ozon_runtime_image` — запись о том, что развёрнуто, а не источник
+   раскатки. Все три джоба обязаны получить ОДИН digest: разъехаться они не могут только
+   потому, что команда одна на всех, а не потому, что это гарантирует Terraform.
 
 **Пока не сделано (осознанно, вне Stage A):** образ не несёт `GIT_SHA` в env,
 как это устроено у WB-загрузчиков. Добавление переменной означает новую ревизию

@@ -514,6 +514,17 @@ describe('OZON adapter — Gate 9: единицы в пути несут сво�
     expect(c.provenance).toHaveLength(0);
   });
 
+  it('оформление пишется ПОСЛЕ величин, структура — ДО', () => {
+    // values.batchUpdate сбрасывает numberFormat записанной ячейки. Пока оформление шло
+    // первым, боевой прогон стирал формат «₽» ровно на своём окне: день 6 сохранял формат,
+    // день 7 (первый день окна) терял. Поэтому оформление обязано быть последним словом.
+    const i = (p: string): number => OZON_WRITE_PHASES.indexOf(p as never);
+    expect(i('structure')).toBeLessThan(i('values'));      // без строк величины писать некуда
+    expect(i('values')).toBeLessThan(i('presentation'));   // формат ставится после величин
+    expect([...OZON_WRITE_PHASES].sort()).toEqual(
+      ['conditional', 'presentation', 'structure', 'values']);
+  });
+
   it('формулы Ozon пишутся как формулы, а не как текст; WB остаётся на RAW', () => {
     const rows = [{ range: "OZON!A1:B1", values: [[42, '=IF(A1>LAST_CLOSED_DATE;"";A1*2%)']] }];
     // Ozon: без USER_ENTERED формула легла бы в лист строкой «=IF(…)» — ячейка «налог»
@@ -698,7 +709,7 @@ import {
 import { ozonMonthFactsSql, ozonProvenStockSql, normalizeBqRow } from '../src/loaders/unitka/ozon/bq.js';
 import { batchWriteBody } from '../src/loaders/unitka/sheets.js';
 import { CANONICAL_CURRENT_WB_PRESENTATION_CONTRACT } from '../src/loaders/unitka/ozon/wbcontract.js';
-import { sectionFormulas, expectedGrid } from '../src/loaders/unitka/ozon/monthplan.js';
+import { sectionFormulas, expectedGrid, OZON_WRITE_PHASES } from '../src/loaders/unitka/ozon/monthplan.js';
 
 const SEP = ozonMonthSpec(2026, 9, 570, 31, ['A', 'B']);
 const layout = (s: typeof SEP) => ({ titleRow: s.titleRow, headerRow: s.headerRow, firstRow: s.firstRow,
