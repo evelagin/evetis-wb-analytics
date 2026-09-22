@@ -477,6 +477,57 @@ describe('OZON adapter — Gate 9: единицы в пути несут сво�
     expect(c.cogs['A|607']).toBe(150);        // себестоимость единицы в пути не теряется
   });
 
+  // ── Gate 9B: граница типов BigQuery ───────────────────────────────────────────
+  // Первый боевой прогон выявил то, чего не видел ни один прежний тест: клиент BigQuery
+  // отдаёт NUMERIC объектом Big, а не числом. Тесты кормили сборщик числами, harness
+  // приводил типы сам — и обе проверки проходили мимо. Здесь источник ведёт себя ровно
+  // как в production: `Big` — объект, истинный даже в нуле, и склеивающийся под `+`.
+  const big = (x: string) => ({ toString: () => x }) as unknown as number;
+
+  it('NUMERIC из BigQuery не создаёт выдуманных нулей и не склеивает суммы', () => {
+    const raw = {
+      d: { value: '2026-09-01' }, offer_id: 'A',
+      gross_qty: 2, cancelled_qty: 0, realized_qty: 2,
+      expected_realized_qty: 2,
+      provisional_revenue_rub: big('2000'), revenue: big('2000'),
+      provisional_cogs_rub: big('300'),
+      commission: big('1000'), acquiring: big('40'),   // склейка дала бы "100040"/2000
+      logistics: big('170'),
+      storage: big('0'), other_direct: big('0'), promo: big('0'),
+      commission_estimated_rub: big('0'), logistics_estimated_rub: big('0'),
+    };
+    const row = normalizeBqRow<Parameters<typeof composeMonth>[1][number]>(raw);
+
+    expect(row.d).toBe('2026-09-01');                   // {value} развёрнут
+    expect(typeof row.storage).toBe('number');
+    expect(row.storage).toBe(0);
+
+    const c = composeMonth(SEP, [row]);
+    const cell = c.cells['A|607'] as { comm?: number; stor?: number; od?: number; price?: number };
+    expect(cell.price).toBe(1000);
+    // (1000 + 40) / 2000 — сумма, а не конкатенация
+    expect(cell.comm).toBeCloseTo(0.52, 8);
+    // ноль расхода — это ОТСУТСТВИЕ величины в ячейке, а не число 0 в листе
+    expect(cell.stor).toBeUndefined();
+    expect(cell.od).toBeUndefined();
+    // на нулевой оценке пометки «ОЦЕНКА» быть не должно
+    expect(c.provenance).toHaveLength(0);
+  });
+
+  it('ненулевой NUMERIC проходит границу без потерь', () => {
+    const row = normalizeBqRow<Parameters<typeof composeMonth>[1][number]>({
+      d: '2026-09-01', offer_id: 'A', gross_qty: 1, cancelled_qty: 0, realized_qty: 1,
+      expected_realized_qty: 1, provisional_revenue_rub: big('1200'),
+      commission: big('624'), logistics: big('86'),
+      storage: big('6.04'), other_direct: big('2.5'), promo: big('0'),
+    });
+    const c = composeMonth(SEP, [row]);
+    const cell = c.cells['A|607'] as { stor?: number; od?: number; log?: number };
+    expect(cell.stor).toBe(6.04);
+    expect(cell.od).toBe(2.5);
+    expect(cell.log).toBe(86);
+  });
+
   it('СПП и цена покупателя до доставки НЕ выдумываются, но цену продавца не обнуляют', () => {
     const c = composeMonth(SEP, [{ d: '2026-09-01', offer_id: 'A', gross_qty: 1, cancelled_qty: 0,
       realized_qty: 0, in_transit_qty: 1, revenue: 0,
@@ -633,7 +684,7 @@ import {
   clearConditionalFormatRequests, lcdMirrorRequestsIdempotent, dayBackgroundFor, CLASS_BG,
   residualMergeRequests, unmergeRequests,
 } from '../src/loaders/unitka/ozon/structure.js';
-import { ozonMonthFactsSql, ozonProvenStockSql } from '../src/loaders/unitka/ozon/bq.js';
+import { ozonMonthFactsSql, ozonProvenStockSql, normalizeBqRow } from '../src/loaders/unitka/ozon/bq.js';
 import { CANONICAL_CURRENT_WB_PRESENTATION_CONTRACT } from '../src/loaders/unitka/ozon/wbcontract.js';
 import { sectionFormulas, expectedGrid } from '../src/loaders/unitka/ozon/monthplan.js';
 

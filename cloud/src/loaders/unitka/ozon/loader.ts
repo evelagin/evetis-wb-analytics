@@ -22,7 +22,7 @@ import { LoaderError } from '../../../errors.js';
 import { SheetsRest, type SheetsGateway } from '../sheets.js';
 import { BqClient } from '../../../bq/client.js';
 import { OZON_GEOMETRY } from './contract.js';
-import { ozonMonthFactsSql, ozonProvenStockSql } from './bq.js';
+import { ozonMonthFactsSql, ozonProvenStockSql, normalizeBqRow } from './bq.js';
 import { ozonMonthSpec, composeMonth, type OzonFactRow, type CellValue } from './month.js';
 import type { CellValue as SheetCell } from '../model.js';
 import { buildOzonPlan, sectionFormulas } from './monthplan.js';
@@ -49,7 +49,10 @@ export const defaultOzonUnitkaDeps: OzonUnitkaDeps = {
   makeSheets: (ctx, ro) => new SheetsRest(ctx.config.unitkaSpreadsheetId, ro),
   makeBq: (ctx) => {
     const c = new BqClient(ctx.config.projectId, ctx.config.bqLocation);
-    return { query: <T>(sql: string) => c.query<T>(sql) as Promise<T[]> };
+    // Нормализация — ЗДЕСЬ, на единственной границе с BigQuery, а не в сборщике месяца:
+    // объекты Big и {value} не должны существовать нигде выше (см. bq.ts, «ГРАНИЦА ТИПОВ»).
+    return { query: async <T>(sql: string) => (await c.query<Record<string, unknown>>(sql))
+      .map((r) => normalizeBqRow<T>(r)) };
   },
   now: () => new Date(),
 };
