@@ -13,6 +13,7 @@ import zipfile
 from datetime import date, timedelta
 
 from common import (h, log, merge_rows, now_msk, perf_get, perf_post, seller_post)
+from promo import promo
 
 CPC_STATES = ["DATA_FILLING", "READY_TO_SUPPLY", "ACCEPTED_AT_SUPPLY_WAREHOUSE",
               "IN_TRANSIT", "ACCEPTANCE_AT_STORAGE_WAREHOUSE",
@@ -765,4 +766,9 @@ REGISTRY = {
     "ads_sku_daily":     (ads_sku_daily, 7, "daily"),
     "clusters":          (clusters, 0, "weekly"),
     "supplies":          (supplies, 0, "daily"),
+    # PR-PROMO-1: наблюдатель акций. Каденция — 4 раза в сутки, поэтому сущность
+    # живёт в отдельном job'е (ozon-runtime-promo), а не в суточном: состав акции
+    # и акционные цены меняются внутри суток. Окно ретроспективы 0 — это снимок
+    # текущего состояния, у Ozon исторической выгрузки акций нет вовсе.
+    "promo":             (promo, 0, "four_times_daily"),
 }

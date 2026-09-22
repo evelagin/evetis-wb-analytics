@@ -28,6 +28,9 @@ JOB_CADENCE = {
     "ozon-runtime-fast": "twice_daily",
     "ozon-runtime-daily": "daily",
     "ozon-runtime-weekly": "weekly",
+    # PR-PROMO-1: наблюдатель акций. Четыре слота в сутки — обоснование каденса
+    # в docs/promotions/PROMOTION_DECISION_ENGINE_SPEC_2026-09-22.md §9.
+    "ozon-runtime-promo": "four_times_daily",
 }
 
 
