@@ -27,9 +27,15 @@ BASE = f"https://{HOST}/bigquery/v2/projects/{P}/datasets/{DS}/tables"
 TOKEN = "ya29.TEST-TOKEN-must-never-appear-0123456789abcdef"
 SHA = "a" * 40
 LEAF = "V_OZON_TARIFF_CHANGE_LOG"
-R2A_BODY_SHA256 = {
-    "FCT_OZON_PNL_MONTHLY": "edeb911c810e4179258ade32983c3496440f361f6f1d4ec5bf854b09ea227b25",
-    "FCT_OZON_SKU_PNL_MONTHLY": "49b85269eaf1c928049621bcacd4f6a4da37bc9c23271f254c4792e87e441552",
+# The baseline this fixture deploys: a self-consistent ozon_mart whose graph closes. It started as the R2A
+# hash set; Gate 5K (2026-09-21) rewrote both monthly P&L views for the CIS buyout model and added their new
+# dependency V_OZON_CIS_BUYOUT, so all three are pinned here at their current canonical hashes. The monthly
+# views cannot simply be dropped: V_OZON_LIFETIME_PNL and V_OZON_SKU_UNIT_ECONOMICS_CURRENT read them.
+# These tests exercise the live-verification tool, not the economics of any object.
+BASELINE_BODY_SHA256 = {
+    "V_OZON_CIS_BUYOUT": "b233b9ca53d18d8787f2b3ae6b0cca5fe774c0a52ea055869086ba6c871369ba",
+    "FCT_OZON_PNL_MONTHLY": "1b6bc3ce452ec5504487669aa765d06353bf67037a6ac0394033202ef6e906fb",
+    "FCT_OZON_SKU_PNL_MONTHLY": "b81327e21538a27696b44ecfc7895be770734065c5f1602500c7a40e7c2fb140",
     "V_OZON_MART_FRESHNESS": "c19355f7a86440fe9fd7d48003e9570ca09b713da677f5c3d2141a46b379394d",
     "V_OZON_SKU_CURRENT_TARIFF": "a155684596e703c6e90c40cf8c65bb6da1b3431d40125c990581f3de92530d80",
     "V_OZON_TARIFF_CHANGE_LOG": "47963b384ae9b88d15da7eba5ac8816545218741021d001293094e1d32c81e54",
@@ -155,18 +161,29 @@ def by_name(report):
 @pytest.fixture
 def root(tmp_path):
     """The R2A baseline these tests were written against: one managed dataset (ozon_mart) holding exactly the
-    eleven objects whose hashes are pinned in R2A_BODY_SHA256. Everything added to the real repository later
-    (SCALE 1: two more ozon_mart objects and the evetis_mart dataset, captured 2026-09-20) is removed from
-    the COPY — pending behaviour is exercised here by make_pending(), not by the repository's current state."""
+    the objects whose hashes are pinned in BASELINE_BODY_SHA256. Everything the repository added or changed later
+    (SCALE 1, and the Gate 5K CIS buyout model) is removed from the COPY — pending behaviour is exercised
+    here by make_pending(), not by the repository's current state."""
     shutil.copytree(REPO / "sql", tmp_path / "sql")
     for ds_dir in sorted((tmp_path / "sql/current").iterdir()):
         if ds_dir.is_dir() and ds_dir.name != DS:
             shutil.rmtree(ds_dir)
     man = manifest(tmp_path)
-    for o in [o for o in man["objects"] if o["object_name"] not in R2A_BODY_SHA256]:
+    for o in [o for o in man["objects"] if o["object_name"] not in BASELINE_BODY_SHA256]:
         (tmp_path / o["canonical_path"]).unlink()
         man["objects"].remove(o)
         man["rebuild_order"].remove(o["object_name"])
+    # The fixture is a DEPLOYED baseline: anything the repository currently has pending is normalised to
+    # captured_live here, so pending behaviour is exercised only where make_pending() asks for it.
+    for o in man["objects"]:
+        o["sync_state"] = "captured_live"
+        o["canonical_schema_verification"] = "bigquery_verified"
+        o["capture_main_sha"] = o["capture_main_sha"] or SHA
+        o["captured_at"] = o["captured_at"] or "2026-09-21T13:00:00Z"
+        o["live_body_sha256_at_capture"] = o["canonical_body_sha256"]
+        o["live_schema_sha256_at_capture"] = o["canonical_schema_sha256"]
+        o["live_description_sha256_at_capture"] = o["canonical_description_sha256"]
+        o["live_schema_at_capture"] = o["canonical_schema"]
     save_manifest(tmp_path, man)
     return tmp_path
 
@@ -192,26 +209,26 @@ PENDING_COLS = [{"column_name": "a", "data_type": "INT64", "is_nullable": "YES",
 
 # ------------------------------------------------------------------------------------------ positive
 
-def test_all_eleven_match_on_real_repository(root):
+def test_all_baseline_objects_match_on_real_repository(root):
     report, _, transport = verify(root)
     assert report["overall"] == "MATCH", json.dumps(report, indent=1)[:3000]
-    assert report["summary"] == {"MATCH": 11}
+    assert report["summary"] == {"MATCH": len(BASELINE_BODY_SHA256)}
     assert report["unexpected_live"] == [] and report["dataset_unproven"] == []
     assert all(o["etag_stable"] for o in report["objects"])
     assert report["proposed_capture"] == {}
     assert report["canonical_git_sha"] == SHA and report["git_provenance_verified"] is True
     assert all(method == "GET" for method, _ in transport.calls)
-    assert len(transport.calls) == 2 + 11 * 2 == report["requests"]
+    assert len(transport.calls) == 2 + len(BASELINE_BODY_SHA256) * 2 == report["requests"]
 
 
-def test_live_hash_reuses_r2b_canonical_hash_v1_for_all_eleven(root):
+def test_live_hash_reuses_r2b_canonical_hash_v1_for_all_baseline_objects(root):
     man = manifest(root)
-    assert {o["object_name"] for o in man["objects"]} == set(R2A_BODY_SHA256)
+    assert {o["object_name"] for o in man["objects"]} == set(BASELINE_BODY_SHA256)
     for o in man["objects"]:
         body, _ = stored_parts(root, o["object_name"])
-        assert vl.live_body_sha256(P, DS, o["object_name"], body) == R2A_BODY_SHA256[o["object_name"]]
+        assert vl.live_body_sha256(P, DS, o["object_name"], body) == BASELINE_BODY_SHA256[o["object_name"]]
         # BigQuery trims the body and drops one ';' on storage; the hash must be insensitive to exactly that
-        assert vl.live_body_sha256(P, DS, o["object_name"], "\n " + body + ";\n") == R2A_BODY_SHA256[o["object_name"]]
+        assert vl.live_body_sha256(P, DS, o["object_name"], "\n " + body + ";\n") == BASELINE_BODY_SHA256[o["object_name"]]
 
 
 def test_hash_code_is_imported_not_duplicated():
@@ -295,7 +312,7 @@ def test_unexpected_live_object(root, live_type):
     assert report["unexpected_live"] == [{"dataset": DS, "object": "V_OZON_ROGUE", "live_type": live_type,
                                           "status": "UNEXPECTED_LIVE"}]
     assert report["overall"] == "DRIFT" and report["summary"]["UNEXPECTED_LIVE"] == 1
-    assert report["summary"]["MATCH"] == 11
+    assert report["summary"]["MATCH"] == len(BASELINE_BODY_SHA256)
 
 
 def test_multiple_drift_kinds_and_precedence(root):
@@ -392,7 +409,7 @@ def test_list_failure_is_dataset_unproven(root):
     r[BASE] = (403, b"")
     report, _, _ = verify(root, r)
     assert report["dataset_unproven"] == [{"dataset": DS, "code": "LIST_HTTP_403"}]
-    assert report["summary"] == {"MATCH": 11} and report["overall"] == "UNPROVEN"
+    assert report["summary"] == {"MATCH": len(BASELINE_BODY_SHA256)} and report["overall"] == "UNPROVEN"
 
 
 def _listing(root, extra=()):
@@ -430,7 +447,7 @@ def test_list_unstable_is_unproven_never_drift(root, t1, t2):
     report, _, _ = verify(root, _two_snapshots(root, t1, t2))
     assert report["unexpected_live"] == []
     assert report["dataset_unproven"] == [{"dataset": DS, "code": "LIST_CHANGED_DURING_CAPTURE"}]
-    assert report["summary"] == {"MATCH": 11}
+    assert report["summary"] == {"MATCH": len(BASELINE_BODY_SHA256)}
     assert report["overall"] == "UNPROVEN" and vl.EXIT["UNPROVEN"] == 2
 
 

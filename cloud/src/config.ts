@@ -7,6 +7,34 @@ import { ConfigError } from './errors.js';
 
 export type Environment = 'shadow' | 'prod';
 
+/**
+ * Параметры Ozon-Юнитки разбираются МЯГКО, как и Guard: опечатка в окружении не должна
+ * ронять loadConfig и вместе с ним зрелый писатель WB. Запись всё равно выключена по умолчанию.
+ */
+function ozonUnitkaConfig(env: NodeJS.ProcessEnv): Pick<Config,
+  'ozonUnitkaSheetName' | 'ozonUnitkaWriteEnabled' | 'ozonUnitkaLastClosedDate'
+  | 'ozonUnitkaTailFirstColumn' | 'ozonUnitkaBlockSlots' | 'ozonUnitkaLcdRef'
+  | 'ozonUnitkaExistingCfRules' | 'ozonUnitkaOfferAliases'
+  | 'ozonUnitkaMaxSourceLagDays' | 'ozonUnitkaLcdCell'> {
+  let aliases: Record<string, string> = {};
+  try {
+    const raw = (env.OZON_UNITKA_OFFER_ALIASES ?? '').trim();
+    if (raw) aliases = JSON.parse(raw) as Record<string, string>;
+  } catch { aliases = {}; }
+  return {
+    ozonUnitkaSheetName: opt(env, 'OZON_UNITKA_SHEET_NAME', 'OZON_Юнит_2025'),
+    ozonUnitkaWriteEnabled: opt(env, 'OZON_UNITKA_WRITE_ENABLED', '0') === '1',
+    ozonUnitkaLastClosedDate: opt(env, 'OZON_UNITKA_LCD', ''),
+    ozonUnitkaLcdCell: opt(env, 'OZON_UNITKA_LCD_CELL', 'ZZ_CONFIG!B2'),
+    ozonUnitkaTailFirstColumn: intOpt(env, 'OZON_UNITKA_TAIL_FIRST_COLUMN', 562),
+    ozonUnitkaBlockSlots: intOpt(env, 'OZON_UNITKA_BLOCK_SLOTS', 22),
+    ozonUnitkaLcdRef: opt(env, 'OZON_UNITKA_LCD_REF', '$VA$2'),
+    ozonUnitkaExistingCfRules: intOpt(env, 'OZON_UNITKA_EXISTING_CF_RULES', 434),
+    ozonUnitkaMaxSourceLagDays: intOpt(env, 'OZON_UNITKA_MAX_SOURCE_LAG_DAYS', 1),
+    ozonUnitkaOfferAliases: aliases,
+  };
+}
+
 export interface Config {
   projectId: string;
   bqLocation: string;
@@ -64,6 +92,33 @@ export interface Config {
    * Shadow-Job физически получает readonly-scope Sheets и писать не может.
    */
   unitkaWriteEnabled: boolean;
+  // ── OZON UNITKA (Gate 8) — свой лист, своё окно, свой выключатель записи ──────────────
+  // Домены Ozon и WB разделены жёстко: общих параметров у них только идентификатор книги.
+  ozonUnitkaSheetName: string;
+  /** Запись в лист Ozon разрешена ТОЛЬКО при ENVIRONMENT=prod И OZON_UNITKA_WRITE_ENABLED=1. */
+  ozonUnitkaWriteEnabled: boolean;
+  /**
+   * LAST_CLOSED_DATE Ozon-Юнитки (ISO). По умолчанию ПУСТО: дата читается из книги.
+   * Заполняется только для воспроизведения конкретного прогона.
+   */
+  ozonUnitkaLastClosedDate: string;
+  /** Где в книге лежит LAST_CLOSED_DATE. Диапазон в нотации A1 вместе с именем листа. */
+  ozonUnitkaLcdCell: string;
+  /** Первая колонка ПАНЕЛИ ВЛАДЕЛЬЦА: правее неё движок не пишет ничего и никогда. */
+  ozonUnitkaTailFirstColumn: number;
+  /** Сколько слотов блоков размечено в листе. */
+  ozonUnitkaBlockSlots: number;
+  /** Ячейка-зеркало LAST_CLOSED_DATE для условного форматирования. */
+  ozonUnitkaLcdRef: string;
+  /** Сколько правил УФ сейчас на листе: все снимаются перед постановкой своих. */
+  ozonUnitkaExistingCfRules: number;
+  /**
+   * Сколько суток источник может отставать, прежде чем прогон откажется писать.
+   * 1 — загрузка суточная: отставание больше суток означает пропущенный или упавший прогон.
+   */
+  ozonUnitkaMaxSourceLagDays: number;
+  /** Подпись блока → канонический offer_id, где подпись в листе содержит опечатку. */
+  ozonUnitkaOfferAliases: Record<string, string>;
   // ── UNITKA INTEGRITY GUARD V1 (Phase 1C1) — все параметры разбираются МЯГКО: опечатка ──
   // ── не должна ронять loadConfig и вместе с ним зрелый факт-писатель Unitka.        ──
   /**
@@ -219,6 +274,7 @@ export function loadConfig(env: Env = process.env): Config {
     unitkaMinN: intOpt(env, 'UNITKA_MIN_N', 10),
     unitkaMaxLagDays: intOpt(env, 'UNITKA_MAX_LAG_DAYS', 2),
     unitkaWriteEnabled: opt(env, 'UNITKA_WRITE_ENABLED', '0') === '1',
+    ...ozonUnitkaConfig(env),
     ...integrityConfig(env),
     ...calendarConfig(env),
   };

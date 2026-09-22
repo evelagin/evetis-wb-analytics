@@ -1,0 +1,57 @@
+[
+ {
+  "dataset": "ozon_mart",
+  "object": "V_OZON_CIS_BUYOUT",
+  "job_id": "job_UJEJVQpt46QQfYM6FsGM2nA6y-9O",
+  "before_hash": null,
+  "after_hash": "b233b9ca53d18d8787f2b3ae6b0cca5fe774c0a52ea055869086ba6c871369ba",
+  "canonical_hash": "b233b9ca53d18d8787f2b3ae6b0cca5fe774c0a52ea055869086ba6c871369ba",
+  "match": true,
+  "columns": 8,
+  "deployed_at": "2026-09-21T14:27:05Z"
+ },
+ {
+  "dataset": "ozon_mart",
+  "object": "FCT_OZON_PNL_MONTHLY",
+  "job_id": "job_Ow6CPpIl0kFacwB2s0snoMt-GXjk",
+  "before_hash": "edeb911c810e4179258ade32983c3496440f361f6f1d4ec5bf854b09ea227b25",
+  "after_hash": "1b6bc3ce452ec5504487669aa765d06353bf67037a6ac0394033202ef6e906fb",
+  "canonical_hash": "1b6bc3ce452ec5504487669aa765d06353bf67037a6ac0394033202ef6e906fb",
+  "match": true,
+  "columns": 40,
+  "deployed_at": "2026-09-21T14:27:52Z"
+ },
+ {
+  "dataset": "ozon_mart",
+  "object": "FCT_OZON_SKU_PNL_DAILY",
+  "job_id": "job_l412dQYJ8JxsP5GitSbhNWLEnRnM",
+  "before_hash": "f7075d6ce1ddf068925b5ff8ddc75cf9241465006af54a4dba6007fbdbe6eb3b",
+  "after_hash": "c8ea0d3f5d0302406a03f873be962b966ae3a6d7bde689ba244cfd9c3e851285",
+  "canonical_hash": "c8ea0d3f5d0302406a03f873be962b966ae3a6d7bde689ba244cfd9c3e851285",
+  "match": true,
+  "columns": 24,
+  "deployed_at": "2026-09-21T14:28:04Z"
+ },
+ {
+  "dataset": "ozon_mart",
+  "object": "FCT_OZON_SKU_PNL_MONTHLY",
+  "job_id": "job_xqdW8sWkTUeYPl1mOlVEfkhZTVAa",
+  "before_hash": "49b85269eaf1c928049621bcacd4f6a4da37bc9c23271f254c4792e87e441552",
+  "after_hash": "b81327e21538a27696b44ecfc7895be770734065c5f1602500c7a40e7c2fb140",
+  "canonical_hash": "b81327e21538a27696b44ecfc7895be770734065c5f1602500c7a40e7c2fb140",
+  "match": true,
+  "columns": 24,
+  "deployed_at": "2026-09-21T14:28:16Z"
+ },
+ {
+  "dataset": "evetis_mart",
+  "object": "FACT_SKU_DAILY",
+  "job_id": "job_GFp12qQyAFbuhuXiepqU97U_Jiie",
+  "before_hash": "2492833d52ff4ae068856e01953830dea3b3ff0bf623b66a363e48b292223032",
+  "after_hash": "29e2b108a8f9a5e4549aaf7ba2c193870e7a77ee914cb41c358d9d7def2bc260",
+  "canonical_hash": "29e2b108a8f9a5e4549aaf7ba2c193870e7a77ee914cb41c358d9d7def2bc260",
+  "match": true,
+  "columns": 26,
+  "deployed_at": "2026-09-21T14:28:28Z"
+ }
+]

@@ -1,0 +1,25 @@
+{
+ "ozon": {
+  "grid": {
+   "rowCount": 650,
+   "columnCount": 574,
+   "rowGroupControlAfter": true,
+   "columnGroupControlAfter": true
+  },
+  "merges": 1604,
+  "cf": 434,
+  "mergeHash": "785c0832b78a8e28",
+  "cfHash": "24213083685e57d2"
+ },
+ "wb": {
+  "grid": {
+   "rowCount": 803,
+   "columnCount": 623
+  },
+  "merges": 2475,
+  "cf": 262,
+  "mergeHash": "ce4786ad17190ebd",
+  "cfHash": "e2a0a7b6d131433c"
+ },
+ "namedRanges": 3
+}

@@ -1,0 +1,774 @@
+[
+ {
+  "file": "Aкт о страховой премии_20260515.xlsx",
+  "sha256": "e62d528bd55d69ed565f5462155d90d4b4226e43e62d2dbd218fde6eed5da294",
+  "size": 179085,
+  "ext": "xlsx",
+  "sheets": [
+   "Aкт о страховой премии"
+  ],
+  "rows": 23,
+  "doc_type": "Акт о страховой премии №163229 от 15.05.2026",
+  "doc_number": "163229",
+  "period_from": "2026-05-01",
+  "period_to": "2026-05-15"
+ },
+ {
+  "file": "Aкт о страховой премии_20260531.xlsx",
+  "sha256": "4dea7c9688c6b5f288ccbedeb8ed5509e99534f72834823b9c56aba246fc0df6",
+  "size": 179087,
+  "ext": "xlsx",
+  "sheets": [
+   "Aкт о страховой премии"
+  ],
+  "rows": 23,
+  "doc_type": "Акт о страховой премии №193309 от 31.05.2026",
+  "doc_number": "193309",
+  "period_from": "2026-05-16",
+  "period_to": "2026-05-31"
+ },
+ {
+  "file": "Aкт о страховой премии_20260615.xlsx",
+  "sha256": "791c37f29532b3e4e329115dd511fd8a8799d98a988a0aa54f97d8f40cde258d",
+  "size": 179084,
+  "ext": "xlsx",
+  "sheets": [
+   "Aкт о страховой премии"
+  ],
+  "rows": 23,
+  "doc_type": "Акт о страховой премии №228642 от 15.06.2026",
+  "doc_number": "228642",
+  "period_from": "2026-06-01",
+  "period_to": "2026-06-15"
+ },
+ {
+  "file": "Aкт о страховой премии_20260630.xlsx",
+  "sha256": "41bbf99af99022d1a76a67eb484943531e58810744cc68a0b5c755d104e7b0bf",
+  "size": 179087,
+  "ext": "xlsx",
+  "sheets": [
+   "Aкт о страховой премии"
+  ],
+  "rows": 23,
+  "doc_type": "Акт о страховой премии №250658 от 30.06.2026",
+  "doc_number": "250658",
+  "period_from": "2026-06-16",
+  "period_to": "2026-06-30"
+ },
+ {
+  "file": "Aкт о страховой премии_20260815.xlsx",
+  "sha256": "10611a3460d2d41839404fdce89c381236de79bbdea9e50e46f3dbab3915d793",
+  "size": 179086,
+  "ext": "xlsx",
+  "sheets": [
+   "Aкт о страховой премии"
+  ],
+  "rows": 23,
+  "doc_type": "Акт о страховой премии №705130 от 15.08.2026",
+  "doc_number": "705130",
+  "period_from": "2026-08-01",
+  "period_to": "2026-08-15"
+ },
+ {
+  "file": "Aкт о страховой премии_20260831.xlsx",
+  "sha256": "006197bd07fd5340cb340f1221ab493eacc65523ab626279d10d72c1344e2389",
+  "size": 179087,
+  "ext": "xlsx",
+  "sheets": [
+   "Aкт о страховой премии"
+  ],
+  "rows": 23,
+  "doc_type": "Акт о страховой премии №840701 от 31.08.2026",
+  "doc_number": "840701",
+  "period_from": "2026-08-16",
+  "period_to": "2026-08-31"
+ },
+ {
+  "file": "Aкт о страховой премии_20260915.xlsx",
+  "sha256": "ba620c37180fba4609aadf78c1f8f51451f1475a5a75223d50ccaa5cad464fca",
+  "size": 179086,
+  "ext": "xlsx",
+  "sheets": [
+   "Aкт о страховой премии"
+  ],
+  "rows": 23,
+  "doc_type": "Акт о страховой премии №1068657 от 15.09.2026",
+  "doc_number": "1068657",
+  "period_from": "2026-09-01",
+  "period_to": "2026-09-15"
+ },
+ {
+  "file": "BuyoutDetails_01.07.2026-15.07.2026.xlsx",
+  "sha256": "89ad3f428f7f91bcb08594886bde42a0324bb4524f729995c040a39b3563a70a",
+  "size": 4097,
+  "ext": "xlsx",
+  "sheets": [
+   "Детализация"
+  ],
+  "rows": 11,
+  "doc_type": "Детализация по выкупленным товарам за период с 01.07.2026 по 15.07.202",
+  "doc_number": "МП ИР-632590",
+  "period_from": "2026-07-01",
+  "period_to": "2026-07-15"
+ },
+ {
+  "file": "BuyoutDetails_01.08.2026-15.08.2026.xlsx",
+  "sha256": "ff0b08d4eb3b657c808c5d4df54912fde422b0e8a2569cbb21251318f8fa3634",
+  "size": 4070,
+  "ext": "xlsx",
+  "sheets": [
+   "Детализация"
+  ],
+  "rows": 12,
+  "doc_type": "Детализация по выкупленным товарам за период с 01.08.2026 по 15.08.202",
+  "doc_number": "МП ИР-632590",
+  "period_from": "2026-08-01",
+  "period_to": "2026-08-15"
+ },
+ {
+  "file": "CompensationReport_550360_20260805.xlsx",
+  "sha256": "59f7d894ada347546cf9593436f7753a87829573109f0df1cbc9d59712d462b0",
+  "size": 179873,
+  "ext": "xlsx",
+  "sheets": [
+   "Отчет о компенсациях"
+  ],
+  "rows": 17,
+  "doc_type": "Отчет о компенсациях № 550360 от 31.07.2026",
+  "doc_number": "550360",
+  "period_from": null,
+  "period_to": null
+ },
+ {
+  "file": "CompensationReport_727095_20260903.xlsx",
+  "sha256": "b8e691017bec010e28a62c38b3f0ec4fe89f2ae95caf9a121711ce0e3259e749",
+  "size": 180389,
+  "ext": "xlsx",
+  "sheets": [
+   "Отчет о компенсациях"
+  ],
+  "rows": 19,
+  "doc_type": "Отчет о компенсациях № 727095 от 31.08.2026",
+  "doc_number": "727095",
+  "period_from": null,
+  "period_to": null
+ },
+ {
+  "file": "DocumentB2BSales_12297392881090_2773848.xlsx",
+  "sha256": "18423da78172252b4fba936f847855ab2235a1bfb8a4066d7cbe9bcf81e13386",
+  "size": 8408,
+  "ext": "xlsx",
+  "sheets": [
+   "Реестр продаж юридическим лицам"
+  ],
+  "rows": 9,
+  "doc_type": "Реестр продаж юридическим лицам",
+  "doc_number": null,
+  "period_from": null,
+  "period_to": null
+ },
+ {
+  "file": "DocumentB2BSales_12436126106090_2773848.xlsx",
+  "sha256": "64d1be1829770cdb6542d7600f818ffd20f503b72b09cb84a0d33f4f359fa44f",
+  "size": 8435,
+  "ext": "xlsx",
+  "sheets": [
+   "Реестр продаж юридическим лицам"
+  ],
+  "rows": 9,
+  "doc_type": "Реестр продаж юридическим лицам",
+  "doc_number": null,
+  "period_from": null,
+  "period_to": null
+ },
+ {
+  "file": "DocumentRealizationReportCommissionMutualSettlement_16664006_20260531.xlsx",
+  "sha256": "1bf4b08ab9b536456c5efbd976cde138d9d60563fcd1e08e246f66ccda070eca",
+  "size": 8156,
+  "ext": "xlsx",
+  "sheets": [
+   "Отчет о взаиморасчетах динамиче"
+  ],
+  "rows": 28,
+  "doc_type": "Отчет о взаиморасчетах",
+  "doc_number": "ИР-632590",
+  "period_from": "2026-05-01",
+  "period_to": "2026-05-31"
+ },
+ {
+  "file": "DocumentRealizationReportCommissionMutualSettlement_17249753_20260630.xlsx",
+  "sha256": "0edfa4cd3db0e4d49d0840f78b692327fe85eb174efd5c363e6c0d608d7c4867",
+  "size": 7706,
+  "ext": "xlsx",
+  "sheets": [
+   "Отчет о взаиморасчетах динамиче"
+  ],
+  "rows": 23,
+  "doc_type": "Отчет о взаиморасчетах",
+  "doc_number": "ИР-632590",
+  "period_from": "2026-06-01",
+  "period_to": "2026-06-30"
+ },
+ {
+  "file": "DocumentRealizationReportCommissionMutualSettlement_18042203_20260731.xlsx",
+  "sha256": "f366c3c75424621684c8424d99d9bf9aa8c041ef34b7900899e9bf819388102b",
+  "size": 8007,
+  "ext": "xlsx",
+  "sheets": [
+   "Отчет о взаиморасчетах динамиче"
+  ],
+  "rows": 27,
+  "doc_type": "Отчет о взаиморасчетах",
+  "doc_number": "ИР-632590",
+  "period_from": "2026-07-01",
+  "period_to": "2026-07-31"
+ },
+ {
+  "file": "DocumentRealizationReportCommissionMutualSettlement_18530868_20260831.xlsx",
+  "sha256": "ae652aa298230fabfec4904d11c1a4b3928140aac0e970d33da25babae74e638",
+  "size": 8132,
+  "ext": "xlsx",
+  "sheets": [
+   "Отчет о взаиморасчетах динамиче"
+  ],
+  "rows": 28,
+  "doc_type": "Отчет о взаиморасчетах",
+  "doc_number": "ИР-632590",
+  "period_from": "2026-08-01",
+  "period_to": "2026-08-31"
+ },
+ {
+  "file": "RealizationReportCIS-12400974311560.xlsx",
+  "sha256": "86afe56196cd757d8116574352cf88b3097baf3139e338b4ca066c457b959114",
+  "size": 4120,
+  "ext": "xlsx",
+  "sheets": [
+   "Отчёт о выкупленных товарах"
+  ],
+  "rows": 12,
+  "doc_type": "Отчёт о выкупленных товарах № 4843050",
+  "doc_number": "4843050",
+  "period_from": "2026-05-01",
+  "period_to": "2026-05-15"
+ },
+ {
+  "file": "RealizationReportCIS-12460751930680.xlsx",
+  "sha256": "7c7dcf041aa1ab647c179ef2ac27b64b30329bd1b05bc404382ab932e4796f1e",
+  "size": 4139,
+  "ext": "xlsx",
+  "sheets": [
+   "Отчёт о выкупленных товарах"
+  ],
+  "rows": 12,
+  "doc_type": "Отчёт о выкупленных товарах № 5236973",
+  "doc_number": "5236973",
+  "period_from": "2026-06-16",
+  "period_to": "2026-06-30"
+ },
+ {
+  "file": "Акт об оказанных услугах (Звёздные товары)_ЗВ - 350508_20260531.xlsx",
+  "sha256": "1e1b794fc263c831664eab034456357151fb18c73309201d8d9739387e84a007",
+  "size": 179278,
+  "ext": "xlsx",
+  "sheets": [
+   "Акт об оказанных услугах"
+  ],
+  "rows": 18,
+  "doc_type": "Акт об оказанных услугах №ЗВ - 350508 от 31.05.2026",
+  "doc_number": "ЗВ - 350508",
+  "period_from": "2026-05-01",
+  "period_to": "2026-05-31"
+ },
+ {
+  "file": "Детальный отчет о перевыставлении услуг (ПВЗ, Курьеры)_16300058_20260531.xlsx",
+  "sha256": "64344cb0579658c1fef17245b84ce3b6368cc3b7c3ce64893f4691220b0663cb",
+  "size": 8435,
+  "ext": "xlsx",
+  "sheets": [
+   "Детальный отчёт"
+  ],
+  "rows": 102,
+  "doc_type": "Приложение к отчёту №16300058 об исполнении агентского поручения",
+  "doc_number": "16300058",
+  "period_from": "2026-05-01",
+  "period_to": "2026-05-31"
+ },
+ {
+  "file": "Детальный отчет о перевыставлении услуг (ПВЗ, Курьеры)_17067554_20260630.xlsx",
+  "sha256": "5d753a14f8920f44c7b6f0478b0e35895188e1c709e4deafc4869012003eeadd",
+  "size": 6510,
+  "ext": "xlsx",
+  "sheets": [
+   "Детальный отчёт"
+  ],
+  "rows": 59,
+  "doc_type": "Приложение к отчёту №17067554 об исполнении агентского поручения",
+  "doc_number": "17067554",
+  "period_from": "2026-06-01",
+  "period_to": "2026-06-30"
+ },
+ {
+  "file": "Детальный отчет о перевыставлении услуг (ПВЗ, Курьеры)_17896866_20260731.xlsx",
+  "sha256": "e847d102f427cb6b5c989ac4252f18b6c5a24032d876a75c0bff57a58f3b0e33",
+  "size": 7622,
+  "ext": "xlsx",
+  "sheets": [
+   "Детальный отчёт"
+  ],
+  "rows": 79,
+  "doc_type": "Приложение к отчёту №17896866 об исполнении агентского поручения",
+  "doc_number": "17896866",
+  "period_from": "2026-07-01",
+  "period_to": "2026-07-31"
+ },
+ {
+  "file": "Детальный отчет о перевыставлении услуг (ПВЗ, Курьеры)_18674934_20260831.xlsx",
+  "sha256": "3b91f5a10daf61073665f2fda9dfdf5fa318007da383d83e75b11e0261956fa8",
+  "size": 11775,
+  "ext": "xlsx",
+  "sheets": [
+   "Детальный отчёт"
+  ],
+  "rows": 168,
+  "doc_type": "Приложение к отчёту №18674934 об исполнении агентского поручения",
+  "doc_number": "18674934",
+  "period_from": "2026-08-01",
+  "period_to": "2026-08-31"
+ },
+ {
+  "file": "Детальный отчет о перевыставлении услуг (эквайринг)_16300058_20260531.xlsx",
+  "sha256": "bcafa51ed0267531b05a7571eac3fd6e267447e0a3d9870d0e31ecefb9244d50",
+  "size": 5910,
+  "ext": "xlsx",
+  "sheets": [
+   "Детальный отчёт"
+  ],
+  "rows": 94,
+  "doc_type": "Приложение к отчёту №16300058 об исполнении агентского поручения",
+  "doc_number": "16300058",
+  "period_from": "2026-05-01",
+  "period_to": "2026-05-31"
+ },
+ {
+  "file": "Детальный отчет о перевыставлении услуг (эквайринг)_17067554_20260630.xlsx",
+  "sha256": "a6cbe0fac3b8b32ec5a995adab59fb07906216a5f9951760972388cd7324da46",
+  "size": 4927,
+  "ext": "xlsx",
+  "sheets": [
+   "Детальный отчёт"
+  ],
+  "rows": 48,
+  "doc_type": "Приложение к отчёту №17067554 об исполнении агентского поручения",
+  "doc_number": "17067554",
+  "period_from": "2026-06-01",
+  "period_to": "2026-06-30"
+ },
+ {
+  "file": "Детальный отчет о перевыставлении услуг (эквайринг)_17896866_20260731.xlsx",
+  "sha256": "461bf05ed53ed830276124263f53e2744a5e0c359bcfad6911bbd96c456dabfd",
+  "size": 5708,
+  "ext": "xlsx",
+  "sheets": [
+   "Детальный отчёт"
+  ],
+  "rows": 84,
+  "doc_type": "Приложение к отчёту №17896866 об исполнении агентского поручения",
+  "doc_number": "17896866",
+  "period_from": "2026-07-01",
+  "period_to": "2026-07-31"
+ },
+ {
+  "file": "Детальный отчет о перевыставлении услуг (эквайринг)_18674934_20260831.xlsx",
+  "sha256": "b71d51915e3e3c1cdcd6eb200c413f6cd08237b8e604248e4dabc7d8849f68e5",
+  "size": 7590,
+  "ext": "xlsx",
+  "sheets": [
+   "Детальный отчёт"
+  ],
+  "rows": 167,
+  "doc_type": "Приложение к отчёту №18674934 об исполнении агентского поручения",
+  "doc_number": "18674934",
+  "period_from": "2026-08-01",
+  "period_to": "2026-08-31"
+ },
+ {
+  "file": "Отчет о перевыставлении услуг_16300058_20260531.xlsx",
+  "sha256": "84499f969194da37d0a921bb793e0ae2674805ca07391a781abb4578550c13c3",
+  "size": 48362,
+  "ext": "xlsx",
+  "sheets": [
+   "Отчёт о перевыставлении услуг"
+  ],
+  "rows": 106,
+  "doc_type": "Отчёт №16300058 от 31.05.2026",
+  "doc_number": "16300058",
+  "period_from": "2026-05-01",
+  "period_to": "2026-05-31"
+ },
+ {
+  "file": "Отчет о перевыставлении услуг_17067554_20260630.xlsx",
+  "sha256": "1884aa0fa932d930e3c93eb48ef5d12c94b7823a511f09b55e36f04ab54197f7",
+  "size": 46689,
+  "ext": "xlsx",
+  "sheets": [
+   "Отчёт о перевыставлении услуг"
+  ],
+  "rows": 74,
+  "doc_type": "Отчёт №17067554 от 30.06.2026",
+  "doc_number": "17067554",
+  "period_from": "2026-06-01",
+  "period_to": "2026-06-30"
+ },
+ {
+  "file": "Отчет о перевыставлении услуг_17896866_20260731.xlsx",
+  "sha256": "da81be46e1b24057eb67126d731531ce2b680ead09a68c0a93edf8979fee87b1",
+  "size": 47626,
+  "ext": "xlsx",
+  "sheets": [
+   "Отчёт о перевыставлении услуг"
+  ],
+  "rows": 91,
+  "doc_type": "Отчёт №17896866 от 31.07.2026",
+  "doc_number": "17896866",
+  "period_from": "2026-07-01",
+  "period_to": "2026-07-31"
+ },
+ {
+  "file": "Отчет о перевыставлении услуг_18674934_20260831.xlsx",
+  "sha256": "b39d971e2f343d013ba677d533db6dbe07409772f4bc2c32578d5beea4dc4ebf",
+  "size": 51833,
+  "ext": "xlsx",
+  "sheets": [
+   "Отчёт о перевыставлении услуг"
+  ],
+  "rows": 174,
+  "doc_type": "Отчёт №18674934 от 31.08.2026",
+  "doc_number": "18674934",
+  "period_from": "2026-08-01",
+  "period_to": "2026-08-31"
+ },
+ {
+  "file": "Отчет о реализации товара_20260531.xlsx",
+  "sha256": "05b928a67ab5b1318c75239738aa1fdc3bcd9eb823793214bc0e1b3b81517e45",
+  "size": 39843,
+  "ext": "xlsx",
+  "sheets": [
+   "Отчет о реализации"
+  ],
+  "rows": 97,
+  "doc_type": "Отчет о реализации № 16664006 от 31.05.2026",
+  "doc_number": "16664006",
+  "period_from": "2026-05-01",
+  "period_to": "2026-05-31"
+ },
+ {
+  "file": "Отчет о реализации товара_20260630.xlsx",
+  "sha256": "483e7affb6e3e083c912556df2d08beff938751de6ef4596078cb29c47e9b85e",
+  "size": 38753,
+  "ext": "xlsx",
+  "sheets": [
+   "Отчет о реализации"
+  ],
+  "rows": 57,
+  "doc_type": "Отчет о реализации № 17249753 от 30.06.2026",
+  "doc_number": "17249753",
+  "period_from": "2026-06-01",
+  "period_to": "2026-06-30"
+ },
+ {
+  "file": "Отчет о реализации товара_20260731.xlsx",
+  "sha256": "1965b7567d1a358149dfc31a16691d045b9e7fb2050de062eb81c6457ee14cb5",
+  "size": 39928,
+  "ext": "xlsx",
+  "sheets": [
+   "Отчет о реализации"
+  ],
+  "rows": 81,
+  "doc_type": "Отчет о реализации № 18042203 от 31.07.2026",
+  "doc_number": "18042203",
+  "period_from": "2026-07-01",
+  "period_to": "2026-07-31"
+ },
+ {
+  "file": "Отчет о реализации товара_20260831.xlsx",
+  "sha256": "533913cd2a054a0ca983263c18c16cc32aad38b3aee30cf48b3d1b1f90e2c261",
+  "size": 41432,
+  "ext": "xlsx",
+  "sheets": [
+   "Отчет о реализации"
+  ],
+  "rows": 158,
+  "doc_type": "Отчет о реализации № 18530868 от 31.08.2026",
+  "doc_number": "18530868",
+  "period_from": "2026-08-01",
+  "period_to": "2026-08-31"
+ },
+ {
+  "file": "Отчет о суммах услуг и расходах на реализацию (1).xlsx",
+  "sha256": "671b1abfb13f06ff49c707f61bb12afee17bd8e708179e4af3bb0cef5fccae6d",
+  "size": 7087,
+  "ext": "xlsx",
+  "sheets": [
+   "Биллинг"
+  ],
+  "rows": 49,
+  "doc_type": "Отчет о суммах услуг и расходах на реализацию",
+  "doc_number": "МП ИР-632590",
+  "period_from": "2026-06-01",
+  "period_to": "2026-06-30"
+ },
+ {
+  "file": "Отчет о суммах услуг и расходах на реализацию (2).xlsx",
+  "sha256": "28b4a77b06202567bc52d0ad1175148486057a2b36f5f6aafd5297b5ab7a4219",
+  "size": 8690,
+  "ext": "xlsx",
+  "sheets": [
+   "Биллинг"
+  ],
+  "rows": 65,
+  "doc_type": "Отчет о суммах услуг и расходах на реализацию",
+  "doc_number": "МП ИР-632590",
+  "period_from": "2026-07-01",
+  "period_to": "2026-07-31"
+ },
+ {
+  "file": "Отчет о суммах услуг и расходах на реализацию (3).xlsx",
+  "sha256": "df62429444fde3bf3c7284803082a545c2ae4f75f3bdd5ee7cad1730dbfeb10b",
+  "size": 11196,
+  "ext": "xlsx",
+  "sheets": [
+   "Биллинг"
+  ],
+  "rows": 95,
+  "doc_type": "Отчет о суммах услуг и расходах на реализацию",
+  "doc_number": "МП ИР-632590",
+  "period_from": "2026-08-01",
+  "period_to": "2026-08-31"
+ },
+ {
+  "file": "Отчет о суммах услуг и расходах на реализацию.xlsx",
+  "sha256": "68149ef35c514f39e018df81380d0963beb91795dd16404104c94215058a3719",
+  "size": 9689,
+  "ext": "xlsx",
+  "sheets": [
+   "Биллинг"
+  ],
+  "rows": 81,
+  "doc_type": "Отчет о суммах услуг и расходах на реализацию",
+  "doc_number": "МП ИР-632590",
+  "period_from": "2026-05-01",
+  "period_to": "2026-05-31"
+ },
+ {
+  "file": "Отчет по предоплатам за товары (1).xlsx",
+  "sha256": "ef9f76ea81a06c7ccce008ff156d7fe458d81ce562f35a8a0af4f9c591458a06",
+  "size": 4418,
+  "ext": "xlsx",
+  "sheets": [
+   "Лист1"
+  ],
+  "rows": 19,
+  "doc_type": "Отчет по предоплатам за товары",
+  "doc_number": "МП ИР-632590",
+  "period_from": "Период: июнь 2026",
+  "period_to": "Период: июнь 2026"
+ },
+ {
+  "file": "Отчет по предоплатам за товары (2).xlsx",
+  "sha256": "7e3792d23c2dc065eb0605b9dc148fa7878a4c9215b153ee9bbc313687daefcf",
+  "size": 4732,
+  "ext": "xlsx",
+  "sheets": [
+   "Лист1"
+  ],
+  "rows": 23,
+  "doc_type": "Отчет по предоплатам за товары",
+  "doc_number": "МП ИР-632590",
+  "period_from": "Период: июль 2026",
+  "period_to": "Период: июль 2026"
+ },
+ {
+  "file": "Отчет по предоплатам за товары (3).xlsx",
+  "sha256": "15aecd0e052efb313da4485ede072bae0254f77ec11a50ab50fa1403f0356078",
+  "size": 5014,
+  "ext": "xlsx",
+  "sheets": [
+   "Лист1"
+  ],
+  "rows": 31,
+  "doc_type": "Отчет по предоплатам за товары",
+  "doc_number": "МП ИР-632590",
+  "period_from": "Период: август 2026",
+  "period_to": "Период: август 2026"
+ },
+ {
+  "file": "Отчет по предоплатам за товары (b2b) (1).xlsx",
+  "sha256": "140349f891514edb70912a365a3d03fe6932962685da7949b2b9fb86d80d5bc3",
+  "size": 4219,
+  "ext": "xlsx",
+  "sheets": [
+   "Лист1"
+  ],
+  "rows": 11,
+  "doc_type": "Отчет по предоплатам от юридических лиц за товары",
+  "doc_number": "МП ИР-632590",
+  "period_from": "Период: июнь 2026",
+  "period_to": "Период: июнь 2026"
+ },
+ {
+  "file": "Отчет по предоплатам за товары (b2b).xlsx",
+  "sha256": "ae750f9ac565db717cdd02d83a3aa43b77cc6d03fa38facd4e35f2ec9001cea5",
+  "size": 4216,
+  "ext": "xlsx",
+  "sheets": [
+   "Лист1"
+  ],
+  "rows": 11,
+  "doc_type": "Отчет по предоплатам от юридических лиц за товары",
+  "doc_number": "МП ИР-632590",
+  "period_from": "Период: май 2026",
+  "period_to": "Период: май 2026"
+ },
+ {
+  "file": "Отчет по предоплатам за товары.xlsx",
+  "sha256": "7e27be8961fd94084fc7498421cecfa5997247de8ede042e30dad4165e6904cb",
+  "size": 4913,
+  "ext": "xlsx",
+  "sheets": [
+   "Лист1"
+  ],
+  "rows": 28,
+  "doc_type": "Отчет по предоплатам за товары",
+  "doc_number": "МП ИР-632590",
+  "period_from": "Период: май 2026",
+  "period_to": "Период: май 2026"
+ },
+ {
+  "file": "Отчёт по механикам лояльности партнёров_20260531.xlsx",
+  "sha256": "c497a02083bbee2fcd5e6635dcbc3af7361f313b3af8955eb0734bdefa83ee6b",
+  "size": 4064,
+  "ext": "xlsx",
+  "sheets": [
+   "Расшифровка_Программы партнеров"
+  ],
+  "rows": 10,
+  "doc_type": "Расшифровка к Отчету реализации № 16664006 от 31.05.2026",
+  "doc_number": "16664006",
+  "period_from": null,
+  "period_to": null
+ },
+ {
+  "file": "Отчёт по механикам лояльности партнёров_20260630.xlsx",
+  "sha256": "2d0cbe419c8e509a084577f36d6efd62e7859efa784c13bcbecdf861e9b40db7",
+  "size": 4044,
+  "ext": "xlsx",
+  "sheets": [
+   "Расшифровка_Программы партнеров"
+  ],
+  "rows": 10,
+  "doc_type": "Расшифровка к Отчету реализации № 17249753 от 30.06.2026",
+  "doc_number": "17249753",
+  "period_from": null,
+  "period_to": null
+ },
+ {
+  "file": "Отчёт по механикам лояльности партнёров_20260731.xlsx",
+  "sha256": "92e09f2ead8581ab681e775901baa35dfada081e412030e5ef5a4b2a94bec01f",
+  "size": 4057,
+  "ext": "xlsx",
+  "sheets": [
+   "Расшифровка_Программы партнеров"
+  ],
+  "rows": 10,
+  "doc_type": "Расшифровка к Отчету реализации № 18042203 от 31.07.2026",
+  "doc_number": "18042203",
+  "period_from": null,
+  "period_to": null
+ },
+ {
+  "file": "Отчёт по механикам лояльности партнёров_20260831.xlsx",
+  "sha256": "31d6a0d73d8d376b1c98b5b970ed28bb2fd7ecc8bdcf67574b1e72c866cf1678",
+  "size": 4064,
+  "ext": "xlsx",
+  "sheets": [
+   "Расшифровка_Программы партнеров"
+  ],
+  "rows": 10,
+  "doc_type": "Расшифровка к Отчету реализации № 18530868 от 31.08.2026",
+  "doc_number": "18530868",
+  "period_from": null,
+  "period_to": null
+ },
+ {
+  "file": "DocumentConsigInvoice_62041865_20260531.pdf",
+  "sha256": "cd33b220bddeb3a51b4e908ca5f1ab4a0259fa389d43cbd2e3f24589a689957c",
+  "size": 579139,
+  "ext": "pdf",
+  "sheets": null,
+  "rows": null,
+  "doc_type": null,
+  "doc_number": null,
+  "period_from": null,
+  "period_to": null
+ },
+ {
+  "file": "DocumentConsigInvoice_74950707_20260630.pdf",
+  "sha256": "0b06295c0aae617f3ecf49708eb5a24fc3d2ba57de58aefc83c1226e65c357f5",
+  "size": 579452,
+  "ext": "pdf",
+  "sheets": null,
+  "rows": null,
+  "doc_type": null,
+  "doc_number": null,
+  "period_from": null,
+  "period_to": null
+ },
+ {
+  "file": "MarketplaceDocumentExecutionJobAct_41833636_20260531.pdf",
+  "sha256": "298b43e2b5175e6f1178b861983b07e25ade1089eb33f7445007ae6b9459559c",
+  "size": 94958,
+  "ext": "pdf",
+  "sheets": null,
+  "rows": null,
+  "doc_type": null,
+  "doc_number": null,
+  "period_from": null,
+  "period_to": null
+ },
+ {
+  "file": "MarketplaceDocumentExecutionJobAct_58687835_20260630.pdf",
+  "sha256": "2452c4374304740e9ba55877be14fa86f94979a134319e68f645a73f47b616d3",
+  "size": 92126,
+  "ext": "pdf",
+  "sheets": null,
+  "rows": null,
+  "doc_type": null,
+  "doc_number": null,
+  "period_from": null,
+  "period_to": null
+ },
+ {
+  "file": "MarketplaceDocumentExecutionJobAct_74480619_20260731.pdf",
+  "sha256": "0a55d8f4ce7b14e880e50d94cdbfe42d42353b0bc728ca99354af578bdd43b32",
+  "size": 95678,
+  "ext": "pdf",
+  "sheets": null,
+  "rows": null,
+  "doc_type": null,
+  "doc_number": null,
+  "period_from": null,
+  "period_to": null
+ },
+ {
+  "file": "MarketplaceDocumentExecutionJobAct_90426550_20260831.pdf",
+  "sha256": "d4d97861b5ecf731bd4ca202fd6ed4aa8a07bee182737d6bfb2607e9c9817822",
+  "size": 95737,
+  "ext": "pdf",
+  "sheets": null,
+  "rows": null,
+  "doc_type": null,
+  "doc_number": null,
+  "period_from": null,
+  "period_to": null
+ }
+]
