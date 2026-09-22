@@ -125,3 +125,44 @@ resource "google_cloud_scheduler_job" "wb_promo_prod" {
   }
   depends_on = [google_project_service.enabled]
 }
+
+# ── Права на таблицы наблюдателя ────────────────────────────────────────────
+# Таблицы созданы DDL-скриптом (sql/promotions/pr_promo1_raw.sql), Terraform ими
+# не владеет — здесь только права, по той же схеме, что у наблюдателя цен.
+# Уровень таблицы, а не датасета: наблюдателю нужны ровно четыре таблицы, и
+# выдавать ему запись на весь wb_raw (где живут финансы, продажи и остатки) не за что.
+#
+# dataEditor, а не dataViewer: загрузчик делает append в RAW и INSERT/UPDATE строки
+# манифеста. Чтение REF_SKU_MASTER и запись LOADER_RUNS уже выданы в bigquery.tf
+# (prod_read_ref / prod_write_runs) — здесь не дублируются.
+#
+# 🔴 Пропуск этих грантов проявился боевым прогоном 22.09.2026 (execution
+# wb-promo-prod-hxhbt): образ и конфигурация верны, guard захвачен, и ровно на
+# первой записи манифеста — Access Denied на WB_PROMO_OBSERVATIONS.
+resource "google_bigquery_table_iam_member" "prod_write_promo_tables" {
+  for_each = toset([
+    "RAW_WB_PROMO_CALENDAR",
+    "RAW_WB_PROMO_RANGING",
+    "RAW_WB_PROMO_NOMENCLATURE",
+    "WB_PROMO_OBSERVATIONS",
+  ])
+
+  dataset_id = var.raw_dataset
+  table_id   = each.value
+  role       = "roles/bigquery.dataEditor"
+  member     = "serviceAccount:${google_service_account.loaders_prod.email}"
+}
+
+# ── Право Scheduler'а запустить именно этот Job ─────────────────────────────
+# Invoker выдаётся ПОРЕСУРСНО, а не на проект — та же причина, что у
+# scheduler_prices_prod_invoke. Без этой строки Scheduler отрабатывает по
+# расписанию, но получает PERMISSION_DENIED и НЕ создаёт execution: в самом
+# Scheduler'е видно только `status.code = 7`, а в Cloud Run — тишина,
+# неотличимая от «наблюдений не было». У наблюдателя цен этот дефект уже
+# случался 07.09.2026; повторять его нечем.
+resource "google_cloud_run_v2_job_iam_member" "scheduler_promo_prod_invoke" {
+  location = var.region
+  name     = google_cloud_run_v2_job.wb_promo_prod.name
+  role     = "roles/run.invoker"
+  member   = "serviceAccount:${google_service_account.scheduler_prod.email}"
+}
