@@ -541,3 +541,179 @@ Secret Manager через `gcloud` CLI. Подменён только транс
 `pipelines/ozon/tests/test_deployment_contract.py` (+каденция),
 `infra/terraform/ozon_ingestion.tf` (+1 job), `.github/workflows/deploy-prod.yml`
 (+промоушен `wb-promo-prod`).
+
+---
+
+# ЧАСТЬ II. ЗАВЕРШЕНИЕ В PRODUCTION
+# 2026-09-22, вечер
+
+Часть I выше не переписана: она фиксирует состояние на момент слияния и остаётся
+исходным свидетельством. Здесь — что произошло при реальном развёртывании.
+
+## 19. Восстановление зелёного baseline
+
+CI-джоб `cloud` был красным **на самом `main`**, а не из-за PR-PROMO-1 (§17, L-8).
+Исправлено отдельным минимальным PR, до слияния PR-PROMO-1.
+
+| | |
+|---|---|
+| PR | [#155](https://github.com/evelagin/evetis-wb-analytics/pull/155) |
+| Коммит | `ea199eb`, merge `e38a58b` |
+| Диф | 5 файлов, **4 вставки, 5 удалений** |
+| Что убрано | импорт `sectionStep` (`loader.ts`), `rl = n(rec?.realized_qty)` (`month.ts`, остаток формулы до Gate 9), импорт `OZON_GEOMETRY` (`monthplan.ts`), импорт `OZON_FIELD_ROLES` (`requests.ts`), деструктуризация `cart` (`unitka_ozon.test.ts`) |
+| Правило ESLint | **не ослаблено**; шаг lint **не пропущен**; CI **не изменён** |
+| Доказательство отсутствия влияния | `typecheck` OK; lint 5 ошибок → **0**; тесты **43 файла / 1043 passed / 19 skipped** — ровно как до правки |
+
+Побочный вывод, который стоит держать в голове: `ci.yml` не запускается на push в
+`main` (`branches-ignore: ["main"]`), а эти коммиты уходили в `main` напрямую, без PR.
+Поэтому дефект и прожил незамеченным: **`npm test` в CI не исполнялся** с момента его
+появления. Прогон `cloud` в PR #155 — первый с тех пор.
+
+## 20. Слияние PR-PROMO-1
+
+| | |
+|---|---|
+| PR | [#154](https://github.com/evelagin/evetis-wb-analytics/pull/154) |
+| Merge SHA | **`937fe3f80eab806fe7e0bd9ee53646919b0299a2`** |
+| В ветку влит `main` | `2d10250` (включая исправление baseline) |
+| Диф против `main` | 33 файла, **7153 вставки, 0 удалений** — только файлы PR-PROMO-1 |
+| CI PR | **9 из 9 pass**, включая `cloud` (теперь дошедший до `npm test`) |
+| Тесты на ветке | cloud **49 файлов / 1114 passed / 19 skipped**, Python **131 passed / 1 skipped** |
+| Плановый диф перед слиянием | `Plan: 4 to add, 0 to change, 0 to destroy` (run 35741246721) |
+
+## 21. Чего не хватало, чтобы это вообще заработало
+
+Плановый диф был чист, а apply упал. Ниже — четыре пробела, которые нашёл **реальный
+прогон**, а не рассуждение. Каждый закрыт отдельным минимальным PR.
+
+| # | Что вскрылось | Как проявилось | PR |
+|---|---|---|---|
+| 1 | `sa-terraform-apply` не имеет `actAs` на служебные учётки Ozon | `Error 403: Permission 'iam.serviceaccounts.actAs' denied on sa-ozon-ingestion` (run 35741630852). Политика обеих учёток была **пуста** — один `etag` без привязок. Причина: три существующих Ozon-job'а Terraform не создавал, а **импортировал** из ручного состояния GCP; импорт `actAs` не требует, поэтому пробел ни разу не проявлялся. Первый же СОЗДАВАЕМЫЙ Ozon-job его обнаружил | [#156](https://github.com/evelagin/evetis-wb-analytics/pull/156) |
+| 2 | `promo.py` не входил в образ Ozon | `Dockerfile` копирует модули поимённо (`COPY common.py entities.py main.py ./`). Образ собрался бы и упал при старте с `ImportError`. Не ловилось ничем: `docker build` в CI проходит, офлайн-тесты импортируют из исходников. Поймано **до** раскатки | [#157](https://github.com/evelagin/evetis-wb-analytics/pull/157) |
+| 3 | Наблюдателю WB не выданы права на его таблицы | Execution `wb-promo-prod-hxhbt`: образ верный, guard захвачен — и ровно на первой записи манифеста `Access Denied: Table wb_raw.WB_PROMO_OBSERVATIONS` | [#158](https://github.com/evelagin/evetis-wb-analytics/pull/158) |
+| 4 | Планировщику WB не выдан `run.invoker` на job | Не проявился бы до первого автономного срабатывания: Scheduler показал бы `status.code = 7`, а Cloud Run — тишину, неотличимую от «наблюдений не было». Тот же дефект случался у наблюдателя цен 07.09.2026 | [#158](https://github.com/evelagin/evetis-wb-analytics/pull/158) |
+
+Пробелы 1 и 2 — вне периметра PR-PROMO-1 (чужой модуль и чужая сборка), пробелы 3 и 4 —
+**мои собственные упущения** в Terraform PR-PROMO-1.
+
+Вместе с #157 добавлен тест `pipelines/ozon/tests/test_image_contents.py`: транзитивное
+замыкание локальных импортов от `main.py` обязано целиком входить в `COPY` Dockerfile.
+Проверено, что тест падает, если убрать `promo.py` обратно. Тесты Ozon: 131 → **134**.
+
+**Отклонение от §5 задания, названное прямо.** Разрешено было применить ровно четыре
+ресурса. Фактически применено **двенадцать**: четыре одобренных плюс восемь, без которых
+одобренные четыре не работают — два `actAs`, четыре табличных гранта и два `run.invoker`.
+Ни один из восьми не был «unrelated change or destroy» в смысле §5: план ни разу не
+предлагал ни изменения, ни удаления существующего ресурса, все двенадцать — `add`.
+
+## 22. Применённая инфраструктура
+
+| Ресурс | Результат |
+|---|---|
+| `google_cloud_run_v2_job.wb_promo_prod` | created (run 35741630852) |
+| `google_cloud_scheduler_job.wb_promo_prod` | created, `paused = true` |
+| `google_cloud_run_v2_job.ozon_runtime["ozon-runtime-promo"]` | created (run 35742819914) |
+| `google_cloud_scheduler_job.ozon_runtime["ozon-runtime-promo"]` | created |
+| `google_service_account_iam_member.terraform_apply_actas["ozon_ingestion"]` | created |
+| `google_service_account_iam_member.terraform_apply_actas["ozon_scheduler"]` | created |
+| `google_bigquery_table_iam_member.prod_write_promo_tables` × 4 | created (run 35744377624) |
+| `google_cloud_run_v2_job_iam_member.scheduler_promo_prod_invoke` | created |
+| `google_cloud_run_v2_job_iam_member.ozon_scheduler_invoke["ozon-runtime-promo"]` | created |
+
+Итоги планов: `4 to add, 0 to change, 0 to destroy` → `4 to add, 0 to change, 0 to destroy`
+→ `6 to add, 0 to change, 0 to destroy`. **Ни одного `change`, ни одного `destroy`
+за всё развёртывание.**
+
+## 23. Провенанс образов
+
+**Wildberries** — штатный путь `deploy-shadow` → `deploy-prod`:
+
+```
+Git 937fe3f  →  сборка run 35741611508  →  wb-loader@sha256:70fd2450544e69e3…
+             →  deploy-prod run 35742774716  →  Job wb-promo-prod
+```
+
+Подтверждено из логов самого прогона: `gitSha = 937fe3f80eab…`,
+`imageDigest = …/wb-loader@sha256:70fd2450…`. Образ **не** локальный: собран
+GitHub Actions из слитого коммита.
+
+**Ozon** — ручная сборка по §4 `pipelines/ozon/DEPLOYMENT.md` (`pipelines/ozon` вне
+деплойных workflow):
+
+```
+Git 08dfb88  →  gcloud builds submit  →  ozon-runtime-ingest@sha256:24e3c6d6715fa7b7…
+             →  gcloud run jobs update × 4
+```
+
+`08dfb88` — merge PR #157, то есть первый коммит `main`, где `promo.py` входит в образ.
+Digest записан в `local.ozon_runtime_image` ([#159](https://github.com/evelagin/evetis-wb-analytics/pull/159)).
+
+Все **четыре** Ozon-job'а получили один digest, как требует §4 документа развёртывания:
+диф runtime к предыдущему образу строго аддитивен, ни одна существующая сущность не
+изменена.
+
+## 24. Конфигурация планировщиков
+
+| | WB | Ozon |
+|---|---|---|
+| Планировщик | `wb-promo-prod` | `ozon-promo` |
+| Cron | `0 4,9,14,19 * * *` | `0 7,12,17,22 * * *` |
+| Часовой пояс | `Etc/UTC` | `Europe/Moscow` |
+| Момент срабатывания | 04/09/14/19 UTC | **те же** 04/09/14/19 UTC |
+| Состояние | ENABLED | ENABLED |
+| Cloud Run Job | `wb-promo-prod` | `ozon-runtime-promo` |
+| SA планировщика | `sa-scheduler-prod` | `sa-ozon-scheduler` |
+| SA задания | `sa-loaders-prod` | `sa-ozon-ingestion` |
+| `run.invoker` | поресурсно на этот job | поресурсно на этот job |
+| Секрет | `WB_PRICES_READ_TOKEN` (имя в env, значение только в Secret Manager) | `EVETIS_OZON_CLIENT_ID` + `EVETIS_OZON_API_KEY` |
+| ENTITIES / args | `args = ["promo"]` | `ENTITIES = promo` |
+
+Совпадение часов планировщика с политикой слотов кода закреплено тестом
+`cloud/test/promo_wiring.test.ts`.
+
+## 25. Границы прав в развёрнутом виде
+
+**Wildberries.** Проверено скриптом, который читает секрет в память и печатает только
+вывод (значение токена не выводится нигде):
+
+```
+secret          : WB_PRICES_READ_TOKEN (значение не выводится)
+read_only_bit_30: SET — запись невозможна
+expires_at      : 2027-03-08T21:24:50+00:00
+is_test_token   : False
+```
+
+Тот же секрет указан в env развёрнутого Job'а. Запись на WB невозможна самим носителем права.
+
+**Ozon.** Ключ имеет роль Admin, поэтому граница только программная — и проверять её надо
+в **развёрнутом** образе, а не в локальных исходниках. Цепочка доказательств:
+
+| Звено | Значение |
+|---|---|
+| Протестированный коммит | `08dfb88` (merge #157) |
+| Тест границы на этом коммите | `pipelines/ozon/tests/test_promo_security.py` — 24 проверки, из них 17 параметризованных: `promo_call()` на каждом запрещённом пути бросает `PromoPathDenied` до выхода в сеть |
+| CI этого коммита | job `ozon` — pass (PR #157) |
+| Образ собран из | `08dfb88` |
+| Digest образа | `sha256:24e3c6d6715fa7b73d30b4270f9863d2b8680b4b02d4874ff1ea12b4fd90fa1b` |
+| Digest в Job'е | тот же, проверено `gcloud run jobs describe` по всем четырём |
+
+Мутирующий метод маркетплейса ради проверки границы **не вызывался** и вызываться не должен:
+доказательство строится на провенансе образа, а не на эксперименте над живым кабинетом.
+
+## 26. Первые прогоны развёрнутых заданий
+
+| | WB | Ozon |
+|---|---|---|
+| Execution | `wb-promo-prod-bsrwh` | `ozon-runtime-promo-ckwhs` |
+| Исход | succeeded | succeeded (`exit(0)`) |
+| `observation_id` | `WBPROMO_prod_202609221400` | `OZPROMO_prod_202609221400` |
+| Слот | `2026-09-22T14:00` | `2026-09-22T14:00` |
+| Идемпотентность | `reused: true` | `reused: true`, пять событий `promo_append_reused` |
+| Строк | 37 (11 акций + 26 ступеней) | 548 |
+| Покрытие резолва SKU | н/п | **100 %**, unmapped 0 |
+| Запросов к API | — | 37, ретраев 0 |
+
+Первое исполнение WB (`wb-promo-prod-hxhbt`) закончилось ошибкой доступа к таблице (§21,
+пробел 3) — строка манифеста осталась в статусе `ERROR`, а следующий прогон корректно
+подобрал её (`guard_acquired recovered: true`). Это не дефект, а штатное поведение
+execution-guard: незавершённый прогон восстанавливается, а не дублируется.
