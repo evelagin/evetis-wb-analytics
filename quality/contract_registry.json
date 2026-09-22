@@ -1,23 +1,23 @@
 {
  "schema_version": 1,
- "generated_at": "2026-09-22T11:37:20Z",
+ "generated_at": "2026-09-22T17:20:34Z",
  "generated_by": "tools/build_contract_registry.py",
  "inventory_snapshot": "2026-09-22T04:35:09Z",
  "summary": {
   "suites": 13,
-  "checks_total": 250,
-  "checks_active": 229,
+  "checks_total": 251,
+  "checks_active": 230,
   "checks_excluded_from_gate": 5,
   "checks_not_executable": 16,
   "acceptance_artifacts_wired": 15,
   "acceptance_artifacts_in_backlog": 12,
   "assets_with_contract": 34,
   "assets_under_gate": 34,
-  "unresolved_business_rules_open": 11,
+  "unresolved_business_rules_open": 10,
   "parse_problems": 0
  },
  "by_severity": {
-  "CRITICAL": 140,
+  "CRITICAL": 141,
   "HIGH": 48,
   "MEDIUM": 41,
   "LOW": 0
@@ -26,7 +26,7 @@
   "finance": 114,
   "ingestion": 2,
   "operations": 41,
-  "unit_economics": 72
+  "unit_economics": 73
  },
  "checks": [
   {
@@ -2438,7 +2438,7 @@
    "layer": "mart",
    "severity": "CRITICAL",
    "source_contract": "docs/ozon/OZON_SKU_PROMOTION_CLASSIFICATION_2026-09-22.md",
-   "source_artifact": "sql/scale1/ubr012_revenue_reconciliation.sql:48",
+   "source_artifact": "sql/scale1/ubr012_revenue_reconciliation.sql:57",
    "adapter": "check_blocks",
    "execution_mode": "read_only_select",
    "expected_result": "status=PASS on every row",
@@ -2475,7 +2475,7 @@
    "layer": "mart",
    "severity": "CRITICAL",
    "source_contract": "docs/ozon/OZON_SKU_PROMOTION_CLASSIFICATION_2026-09-22.md",
-   "source_artifact": "sql/scale1/ubr012_revenue_reconciliation.sql:72",
+   "source_artifact": "sql/scale1/ubr012_revenue_reconciliation.sql:81",
    "adapter": "check_blocks",
    "execution_mode": "read_only_select",
    "expected_result": "status=PASS on every row",
@@ -2512,7 +2512,7 @@
    "layer": "mart",
    "severity": "CRITICAL",
    "source_contract": "docs/ozon/OZON_SKU_PROMOTION_CLASSIFICATION_2026-09-22.md",
-   "source_artifact": "sql/scale1/ubr012_revenue_reconciliation.sql:86",
+   "source_artifact": "sql/scale1/ubr012_revenue_reconciliation.sql:95",
    "adapter": "check_blocks",
    "execution_mode": "read_only_select",
    "expected_result": "status=PASS on every row",
@@ -2549,7 +2549,7 @@
    "layer": "mart",
    "severity": "CRITICAL",
    "source_contract": "docs/ozon/OZON_SKU_PROMOTION_CLASSIFICATION_2026-09-22.md",
-   "source_artifact": "sql/scale1/ubr012_revenue_reconciliation.sql:109",
+   "source_artifact": "sql/scale1/ubr012_revenue_reconciliation.sql:118",
    "adapter": "check_blocks",
    "execution_mode": "read_only_select",
    "expected_result": "status=PASS on every row",
@@ -2586,7 +2586,7 @@
    "layer": "mart",
    "severity": "CRITICAL",
    "source_contract": "docs/ozon/OZON_SKU_PROMOTION_CLASSIFICATION_2026-09-22.md",
-   "source_artifact": "sql/scale1/ubr012_revenue_reconciliation.sql:129",
+   "source_artifact": "sql/scale1/ubr012_revenue_reconciliation.sql:138",
    "adapter": "check_blocks",
    "execution_mode": "read_only_select",
    "expected_result": "status=PASS on every row",
@@ -2623,7 +2623,7 @@
    "layer": "mart",
    "severity": "CRITICAL",
    "source_contract": "docs/ozon/OZON_SKU_PROMOTION_CLASSIFICATION_2026-09-22.md",
-   "source_artifact": "sql/scale1/ubr012_revenue_reconciliation.sql:150",
+   "source_artifact": "sql/scale1/ubr012_revenue_reconciliation.sql:159",
    "adapter": "check_blocks",
    "execution_mode": "read_only_select",
    "expected_result": "status=PASS on every row",
@@ -2660,7 +2660,7 @@
    "layer": "mart",
    "severity": "CRITICAL",
    "source_contract": "docs/ozon/OZON_SKU_PROMOTION_CLASSIFICATION_2026-09-22.md",
-   "source_artifact": "sql/scale1/ubr012_revenue_reconciliation.sql:161",
+   "source_artifact": "sql/scale1/ubr012_revenue_reconciliation.sql:170",
    "adapter": "check_blocks",
    "execution_mode": "read_only_select",
    "expected_result": "status=PASS on every row",
@@ -2697,7 +2697,7 @@
    "layer": "mart",
    "severity": "CRITICAL",
    "source_contract": "docs/ozon/OZON_SKU_PROMOTION_CLASSIFICATION_2026-09-22.md",
-   "source_artifact": "sql/scale1/ubr012_revenue_reconciliation.sql:189",
+   "source_artifact": "sql/scale1/ubr012_revenue_reconciliation.sql:214",
    "adapter": "check_blocks",
    "execution_mode": "read_only_select",
    "expected_result": "status=PASS on every row",
@@ -2734,7 +2734,7 @@
    "layer": "mart",
    "severity": "CRITICAL",
    "source_contract": "docs/ozon/OZON_SKU_PROMOTION_CLASSIFICATION_2026-09-22.md",
-   "source_artifact": "sql/scale1/ubr012_revenue_reconciliation.sql:206",
+   "source_artifact": "sql/scale1/ubr012_revenue_reconciliation.sql:231",
    "adapter": "check_blocks",
    "execution_mode": "read_only_select",
    "expected_result": "status=PASS on every row",
@@ -2771,7 +2771,7 @@
    "layer": "mart",
    "severity": "CRITICAL",
    "source_contract": "docs/ozon/OZON_SKU_PROMOTION_CLASSIFICATION_2026-09-22.md",
-   "source_artifact": "sql/scale1/ubr012_revenue_reconciliation.sql:216",
+   "source_artifact": "sql/scale1/ubr012_revenue_reconciliation.sql:241",
    "adapter": "check_blocks",
    "execution_mode": "read_only_select",
    "expected_result": "status=PASS on every row",
@@ -2808,7 +2808,7 @@
    "layer": "mart",
    "severity": "CRITICAL",
    "source_contract": "docs/ozon/OZON_SKU_PROMOTION_CLASSIFICATION_2026-09-22.md",
-   "source_artifact": "sql/scale1/ubr012_revenue_reconciliation.sql:231",
+   "source_artifact": "sql/scale1/ubr012_revenue_reconciliation.sql:256",
    "adapter": "check_blocks",
    "execution_mode": "read_only_select",
    "expected_result": "status=PASS on every row",
@@ -2829,6 +2829,43 @@
    "freshness_requirement": "перед слиянием изменения в области scope, после CALL sp_ct_refresh_daily() и при каждой загрузке отправлений Ozon",
    "business_rule_reference": "UBR-010",
    "label": "U12_PROMOTION_L3_NO_REGRESSION"
+  },
+  {
+   "check_id": "U13_PENDING_ACCRUAL_IS_NEVER_SILENT",
+   "suite": "ubr012_revenue_source",
+   "domain": "unit_economics",
+   "pipelines": [
+    "ozon_postings",
+    "ozon_finance_accrual",
+    "mart"
+   ],
+   "marketplace": [
+    "OZON"
+   ],
+   "layer": "mart",
+   "severity": "CRITICAL",
+   "source_contract": "docs/ozon/OZON_SKU_PROMOTION_CLASSIFICATION_2026-09-22.md",
+   "source_artifact": "sql/scale1/ubr012_revenue_reconciliation.sql:275",
+   "adapter": "check_blocks",
+   "execution_mode": "read_only_select",
+   "expected_result": "status=PASS on every row",
+   "owner": "evelagin",
+   "type": "data_contract",
+   "status": "active",
+   "status_reason": null,
+   "gate_relevant": true,
+   "dependencies": [
+    "evetis_mart.FACT_SKU_DAILY",
+    "ozon_mart.FCT_OZON_PNL_MONTHLY",
+    "ozon_mart.FCT_OZON_SKU_PNL_DAILY",
+    "ozon_mart.FCT_OZON_SKU_PNL_MONTHLY",
+    "ozon_mart.V_OZON_CIS_BUYOUT",
+    "wb_mart.V_CT_ACTUAL_DAILY_LIVE"
+   ],
+   "timeout_seconds": 300,
+   "freshness_requirement": "перед слиянием изменения в области scope, после CALL sp_ct_refresh_daily() и при каждой загрузке отправлений Ozon",
+   "business_rule_reference": "UBR-010",
+   "label": "U13_PENDING_ACCRUAL_IS_NEVER_SILENT"
   },
   {
    "check_id": "DEDUCT__F_10_FAIL",
@@ -8683,6 +8720,7 @@
     "U10_UNPROVEN_IS_FAIL_CLOSED",
     "U11_CT_ROW_SET_IDENTICAL",
     "U12_PROMOTION_L3_NO_REGRESSION",
+    "U13_PENDING_ACCRUAL_IS_NEVER_SILENT",
     "V01_OZON_DAILY_TO_MONTHLY_SKU_PARITY",
     "V02_OZON_PARITY_BY_MONTH",
     "V03_OZON_STORE_LEVEL_SALES_CROSSCHECK",
@@ -8776,6 +8814,7 @@
     "U10_UNPROVEN_IS_FAIL_CLOSED",
     "U11_CT_ROW_SET_IDENTICAL",
     "U12_PROMOTION_L3_NO_REGRESSION",
+    "U13_PENDING_ACCRUAL_IS_NEVER_SILENT",
     "V01_OZON_DAILY_TO_MONTHLY_SKU_PARITY",
     "V02_OZON_PARITY_BY_MONTH",
     "V03_OZON_STORE_LEVEL_SALES_CROSSCHECK",
@@ -8833,6 +8872,7 @@
     "U10_UNPROVEN_IS_FAIL_CLOSED",
     "U11_CT_ROW_SET_IDENTICAL",
     "U12_PROMOTION_L3_NO_REGRESSION",
+    "U13_PENDING_ACCRUAL_IS_NEVER_SILENT",
     "V01_OZON_DAILY_TO_MONTHLY_SKU_PARITY",
     "V02_OZON_PARITY_BY_MONTH",
     "V03_OZON_STORE_LEVEL_SALES_CROSSCHECK",
@@ -8892,6 +8932,7 @@
     "U10_UNPROVEN_IS_FAIL_CLOSED",
     "U11_CT_ROW_SET_IDENTICAL",
     "U12_PROMOTION_L3_NO_REGRESSION",
+    "U13_PENDING_ACCRUAL_IS_NEVER_SILENT",
     "V01_OZON_DAILY_TO_MONTHLY_SKU_PARITY",
     "V02_OZON_PARITY_BY_MONTH",
     "V03_OZON_STORE_LEVEL_SALES_CROSSCHECK",
@@ -8940,7 +8981,8 @@
     "U09_NON_DELIVERED_NO_REVENUE",
     "U10_UNPROVEN_IS_FAIL_CLOSED",
     "U11_CT_ROW_SET_IDENTICAL",
-    "U12_PROMOTION_L3_NO_REGRESSION"
+    "U12_PROMOTION_L3_NO_REGRESSION",
+    "U13_PENDING_ACCRUAL_IS_NEVER_SILENT"
    ],
    "direct_consumers": [
     "ozon_mart.FCT_OZON_PNL_MONTHLY",
@@ -9371,7 +9413,8 @@
     "U09_NON_DELIVERED_NO_REVENUE",
     "U10_UNPROVEN_IS_FAIL_CLOSED",
     "U11_CT_ROW_SET_IDENTICAL",
-    "U12_PROMOTION_L3_NO_REGRESSION"
+    "U12_PROMOTION_L3_NO_REGRESSION",
+    "U13_PENDING_ACCRUAL_IS_NEVER_SILENT"
    ],
    "direct_consumers": [],
    "transitive_consumers": [],
@@ -10603,7 +10646,7 @@
    "id": "UBR-012",
    "title": "Control Tower и витрина Ozon по-разному определяют выручку: подстановка цены заказа вместо суммы документа",
    "severity": "HIGH",
-   "status": "open",
+   "status": "closed",
    "blocked_checks": [
     "CT1__T10_FAILED_OZON_OZON_MART_FCT_OZON_SKU_PNL_MONTHLY"
    ]

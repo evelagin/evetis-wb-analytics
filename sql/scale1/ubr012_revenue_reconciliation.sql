@@ -27,9 +27,17 @@
 -- ============================================================================
 
 -- @check U01_DETECTION_UNREGISTERED_BUYOUT
--- ДЕТЕКЦИЯ: доставленная строка без начисления выручки и без первичного документа.
--- Это либо новый выкуп CIS, либо неизвестный класс. И то и другое требует решения
--- владельца, а не автоматической оценки. Ожидание: 0 строк.
+-- ДЕТЕКЦИЯ: доставленная строка с СИГНАТУРОЙ ВЫКУПА (начисления выручки нет И
+-- payout_rub = 0), но без первичного документа. Это либо новый выкуп CIS, либо
+-- неизвестный класс — и то и другое требует решения владельца. Ожидание: 0 строк.
+--
+-- ⚠️ Условие payout_rub = 0 обязательно и добавлено 2026-09-22 после ложного
+-- срабатывания. Без него проверка ловила обычную продажу, по которой начисление
+-- ещё не пришло (лаг до 32 суток) — состояние ожидаемое и безвредное. Именно
+-- payout_rub = 0 отличает выкуп от такой продажи, и ровно это условие использует
+-- классификатор витрины. Сужение делает проверку ТОЧНОЙ, а не мягкой: настоящий
+-- незарегистрированный выкуп по-прежнему роняет ворота, а лаг обычной продажи
+-- измеряется отдельно — U13 и commission_missing_qty.
 WITH acc AS (
   SELECT DISTINCT posting_number, sku
   FROM `project-fa311fc0-4d87-4781-986.ozon_raw.RAW_OZON_FINANCE_ACCRUAL`
@@ -40,7 +48,8 @@ undocumented AS (
   LEFT JOIN acc a ON a.posting_number = p.posting_number AND a.sku = p.sku
   LEFT JOIN `project-fa311fc0-4d87-4781-986.ozon_mart.V_OZON_CIS_BUYOUT` b
     ON b.posting_number = p.posting_number
-  WHERE p.status = 'delivered' AND a.posting_number IS NULL AND b.posting_number IS NULL)
+  WHERE p.status = 'delivered' AND a.posting_number IS NULL AND b.posting_number IS NULL
+    AND IFNULL(p.payout_rub, NUMERIC '0') = 0)
 SELECT (SELECT COUNT(*) FROM undocumented) AS undocumented_lines,
        ROUND(IFNULL((SELECT SUM(order_price) FROM undocumented), 0), 2) AS order_price_at_risk,
        IF((SELECT COUNT(*) FROM undocumented) = 0, 'PASS', 'FAIL') AS status;
@@ -159,8 +168,15 @@ SELECT COUNT(*) AS both_sources,
 FROM acc JOIN `project-fa311fc0-4d87-4781-986.ozon_mart.V_OZON_CIS_BUYOUT` b USING (posting_number);
 
 -- @check U08_ORDINARY_SALES_UNCHANGED
--- ИНВАРИАНТ (AC5): выручка обычных продаж равна сумме начислений реализации.
--- Экономика обычных продаж изменением не затронута.
+-- ИНВАРИАНТ (AC5): выручка витрины раскладывается ровно на три компонента —
+-- начисления реализации (обычные продажи), суммы первичных документов (выкупы) и
+-- продажи, по которым начисление ещё не пришло (оцениваются ценой заказа по
+-- утверждённой канонической модели). Верен при любых данных.
+--
+-- ⚠️ Третий компонент добавлен 2026-09-22. Прежняя формулировка предполагала, что
+-- начисления приходят мгновенно, и ломалась при первой же продаже в лаге. Компонент
+-- не спрятан: его величина выводится отдельной колонкой, а количество строк
+-- сверяется с commission_missing_qty в U13.
 WITH acc AS (
   SELECT posting_number, sku, SUM(seller_base_price_rub) sp
   FROM `project-fa311fc0-4d87-4781-986.ozon_raw.RAW_OZON_FINANCE_ACCRUAL`
@@ -180,11 +196,20 @@ buyout AS (
   FROM `project-fa311fc0-4d87-4781-986.ozon_raw.RAW_OZON_POSTINGS_FBO` p
   JOIN `project-fa311fc0-4d87-4781-986.ozon_mart.V_OZON_CIS_BUYOUT` b
     ON b.posting_number = p.posting_number
-  WHERE p.status = 'delivered')
+  WHERE p.status = 'delivered'),
+pending AS (
+  SELECT ROUND(IFNULL(SUM(p.price_rub * p.quantity), 0), 2) v
+  FROM `project-fa311fc0-4d87-4781-986.ozon_raw.RAW_OZON_POSTINGS_FBO` p
+  JOIN `project-fa311fc0-4d87-4781-986.evetis_ref.REF_SKU_CHANNEL_MAP` m
+    ON m.marketplace = 'OZON' AND m.marketplace_sku = p.sku
+  LEFT JOIN acc a ON a.posting_number = p.posting_number AND a.sku = p.sku
+  LEFT JOIN `project-fa311fc0-4d87-4781-986.ozon_mart.V_OZON_CIS_BUYOUT` b
+    ON b.posting_number = p.posting_number
+  WHERE p.status = 'delivered' AND a.posting_number IS NULL AND b.posting_number IS NULL)
 SELECT (SELECT v FROM ordinary) AS ordinary_revenue, (SELECT v FROM buyout) AS buyout_revenue,
-       (SELECT v FROM mart) AS mart_total,
-       IF(ABS((SELECT v FROM ordinary) + (SELECT v FROM buyout) - (SELECT v FROM mart)) <= 0.01,
-          'PASS', 'FAIL') AS status;
+       (SELECT v FROM pending) AS pending_accrual_revenue, (SELECT v FROM mart) AS mart_total,
+       IF(ABS((SELECT v FROM ordinary) + (SELECT v FROM buyout) + (SELECT v FROM pending)
+              - (SELECT v FROM mart)) <= 0.01, 'PASS', 'FAIL') AS status;
 
 -- @check U09_NON_DELIVERED_NO_REVENUE
 -- ИНВАРИАНТ (AC6): отменённые и недоставленные заказы не создают выручку.
@@ -246,3 +271,28 @@ SELECT (SELECT v FROM raw_sum) AS raw_accrual, (SELECT v FROM daily) AS ozon_dai
        (SELECT v FROM neutral) AS neutral_fact,
        IF(ABS((SELECT v FROM daily) - (SELECT v FROM raw_sum)) <= 0.01
           AND ABS((SELECT v FROM neutral) - (SELECT v FROM raw_sum)) <= 0.01, 'PASS', 'FAIL') AS status;
+
+-- @check U13_PENDING_ACCRUAL_IS_NEVER_SILENT
+-- ИНВАРИАНТ: каждая строка, оценённая ценой заказа в ожидании начисления, посчитана
+-- в commission_missing_qty. Цена заказа может применяться только к обычной продаже
+-- (payout_rub != 0) и только будучи названной. Выкуп под этот путь не попадает
+-- никогда: у него payout_rub = 0, и он либо имеет документ, либо остаётся UNPROVEN.
+WITH acc AS (
+  SELECT DISTINCT posting_number, sku
+  FROM `project-fa311fc0-4d87-4781-986.ozon_raw.RAW_OZON_FINANCE_ACCRUAL`
+  WHERE seller_base_price_rub IS NOT NULL),
+pending AS (
+  SELECT SUM(p.quantity) qty, COUNTIF(IFNULL(p.payout_rub, NUMERIC '0') = 0) buyout_signature
+  FROM `project-fa311fc0-4d87-4781-986.ozon_raw.RAW_OZON_POSTINGS_FBO` p
+  JOIN `project-fa311fc0-4d87-4781-986.evetis_ref.REF_SKU_CHANNEL_MAP` m
+    ON m.marketplace = 'OZON' AND m.marketplace_sku = p.sku
+  LEFT JOIN acc a ON a.posting_number = p.posting_number AND a.sku = p.sku
+  LEFT JOIN `project-fa311fc0-4d87-4781-986.ozon_mart.V_OZON_CIS_BUYOUT` b
+    ON b.posting_number = p.posting_number
+  WHERE p.status = 'delivered' AND a.posting_number IS NULL AND b.posting_number IS NULL)
+SELECT IFNULL((SELECT qty FROM pending), 0) AS pending_qty,
+       (SELECT SUM(commission_missing_qty) FROM `project-fa311fc0-4d87-4781-986.ozon_mart.FCT_OZON_SKU_PNL_DAILY`) AS named_qty,
+       IFNULL((SELECT buyout_signature FROM pending), 0) AS buyout_signature_lines,
+       IF(IFNULL((SELECT qty FROM pending), 0)
+            = (SELECT SUM(commission_missing_qty) FROM `project-fa311fc0-4d87-4781-986.ozon_mart.FCT_OZON_SKU_PNL_DAILY`)
+          AND IFNULL((SELECT buyout_signature FROM pending), 0) = 0, 'PASS', 'FAIL') AS status;

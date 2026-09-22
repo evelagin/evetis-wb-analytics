@@ -1,0 +1,19 @@
+{
+  "registry_version": 1,
+  "comment": "Кто фактически исполняет production-объекты. Развёртывание, добавляющее объекту зависимость на новый датасет, обязано до первой мутации доказать, что ЭТА личность может её прочитать. Проверяется tools/check_runtime_access.py. Повод: UBR-012, 2026-09-22 — вью проверили под правами владельца, а плановая пересборка исполняется sa-ct-refresh и упала с Access Denied.",
+  "consumers": [
+    {
+      "runtime_identity": "sa-ct-refresh@project-fa311fc0-4d87-4781-986.iam.gserviceaccount.com",
+      "triggered_by": "Cloud Scheduler ct-refresh-prod → BigQuery jobs API → CALL evetis_ref.sp_ct_refresh_daily()",
+      "reads": [
+        "wb_mart.V_CT_ACTUAL_DAILY_LIVE",
+        "wb_mart.V_CT_INVENTORY_TRUTH_LIVE"
+      ],
+      "sql_files": [
+        "sql/control_tower/ct_04a_views_base.sql",
+        "sql/control_tower/ct_ubr012_revenue_2026-09-22.sql",
+        "sql/control_tower/ct_promotion_l3_2026-09-22.sql"
+      ]
+    }
+  ]
+}
