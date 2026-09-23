@@ -267,6 +267,45 @@ export function coveredByDailyRuns(
   };
 }
 
+/**
+ * Как прогон загрузчика покрывает сутки. Точный матч «прогон на логический день = день» НЕВЕРЕН
+ * для обоих гейтящих загрузчиков WB — проверено на истории prod:
+ *   • mart — ПОЛНАЯ пересборка (sp_build_mart_sku_daily(target, NULL)): прогон за X покрывает
+ *     ВСЕ сутки ≤ X. Прогонов за 02–04.09.2026 нет вовсе, но эти сутки закрыты верно — их
+ *     пересобрал прогон 05.09. Точный матч объявил бы там дырку и придержал WB на три дня;
+ *   • funnel — окно D-LOOKBACK..D-1 (FUNNEL_LOOKBACK_DAYS = 7): сбой одного прогона закрывает
+ *     следующий, пока день внутри его окна.
+ * EXACT оставлен для загрузчиков, которые действительно грузят ровно один день.
+ */
+export type RunCoverageRule =
+  | { readonly kind: 'EXACT' }
+  | { readonly kind: 'CUMULATIVE' }
+  | { readonly kind: 'WINDOW'; readonly days: number };
+
+export function coveredByLoaderRuns(
+  runs: ReadonlyArray<{ readonly loader: string; readonly period: string }>,
+  rules: Readonly<Record<string, RunCoverageRule>>,
+): (dateIso: string) => boolean {
+  const byLoader = new Map<string, string[]>();
+  for (const r of runs) {
+    const d = r.period.slice(0, 10);
+    if (!ISO.test(d)) continue;
+    (byLoader.get(r.loader) ?? byLoader.set(r.loader, []).get(r.loader)!).push(d);
+  }
+  for (const [name, rule] of Object.entries(rules)) {
+    if (rule.kind === 'WINDOW' && (!Number.isInteger(rule.days) || rule.days < 1)) {
+      throw new RangeError(`окно покрытия ${name}: ${rule.days}`);
+    }
+  }
+  return (date) => Object.entries(rules).every(([loader, rule]) => {
+    const periods = byLoader.get(loader) ?? [];
+    if (rule.kind === 'EXACT') return periods.includes(date);
+    if (rule.kind === 'CUMULATIVE') return periods.some((p) => p >= date);
+    const last = addDaysIso(date, rule.days - 1);
+    return periods.some((p) => p >= date && p <= last);
+  });
+}
+
 /** Окно успешного прогона `source_from..source_to`: Ozon (`OZON_INGESTION_RUNS`). */
 export function coveredByRunWindows(
   runs: ReadonlyArray<{ readonly entity: string; readonly from: string; readonly to: string }>,

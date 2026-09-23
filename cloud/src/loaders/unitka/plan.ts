@@ -167,6 +167,14 @@ export interface PlanInputs {
   commission: CommissionRateRow[];
   minN: number;       // порог владельца: своя ставка при n >= 10
   maxLagDays: number; // SOURCE_STALE, если D-1 − LCD > maxLagDays
+  /**
+   * AUTO-LCD (Gate 10): LCD НЕ входит в пакет данных. До Gate 10 зеркало WB736 и именованный
+   * диапазон LAST_CLOSED_DATE уходили в ТОМ ЖЕ batchUpdate, что и факты, — ДО перечитывания.
+   * Провал QA после записи оставлял LCD уже продвинутым (так 23.09 закрылось 22.09 и у Ozon).
+   * Теперь LCD коммитится отдельно, после записи, перечитывания и проверки (lcd.commitLcd);
+   * `lcd.lastClosedDate` здесь — КАНДИДАТ, по которому планируются данные.
+   */
+  deferLcdCommit?: boolean;
 }
 
 /* ───────────────────────── preflight ───────────────────────── */
@@ -430,8 +438,10 @@ export function buildPlan(inp: PlanInputs): Plan {
   }
   const reverseRate = store.reverseRate;
   expected.push({ row: BOOK_ANCHORS.REVERSE_ROW, col: snap.anchorCol, want: reverseRate, kind: 'reverse', key: 'reverse', source: `V_UNITKA_LOGISTICS_RATES ${store.windowFrom}..${store.windowTo} (магазин)` });
-  expected.push({ row: BOOK_ANCHORS.LCD_MIRROR_ROW, col: snap.anchorCol, want: lcdSerial, kind: 'lcd', key: 'lcd_mirror', date: lcd, source: 'V_UNITKA_LAST_CLOSED_DATE' });
-  expected.push({ row: 0, col: 0, want: lcdSerial, kind: 'lcd', key: 'lcd_named', namedRange: NAMED.LCD, date: lcd, source: 'V_UNITKA_LAST_CLOSED_DATE' });
+  if (!inp.deferLcdCommit) {
+    expected.push({ row: BOOK_ANCHORS.LCD_MIRROR_ROW, col: snap.anchorCol, want: lcdSerial, kind: 'lcd', key: 'lcd_mirror', date: lcd, source: 'V_UNITKA_LAST_CLOSED_DATE' });
+    expected.push({ row: 0, col: 0, want: lcdSerial, kind: 'lcd', key: 'lcd_named', namedRange: NAMED.LCD, date: lcd, source: 'V_UNITKA_LAST_CLOSED_DATE' });
+  }
 
   // FUTURE LEAKAGE в самой книге: факт-ячейки за датами > LCD должны быть пусты.
   // Решение владельца (E2, KEEP): формульная проекция остатка в будущих днях — visual planning
