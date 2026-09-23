@@ -123,6 +123,23 @@ describe('провал ВЫЗОВА по расписанию наблюдаем
     expect(p!.text).toMatch(/severity>=ERROR/);
   });
 
+  /**
+   * logging.ts раскрывает ctx ПОСЛЕДНИМ, поэтому logger.error('loader_failed', {code, message})
+   * затирает имя события текстом ошибки. Фильтр по jsonPayload.message="loader_failed" был
+   * мёртв: за 90 суток нуль совпадений при двадцати реальных падениях. Ловить падение можно
+   * только по коду LoaderError.
+   */
+  it('падение loader’а не ловится по jsonPayload.message — это поле затирается ctx', () => {
+    const loaderPolicies = policies.filter((x) => /resource\.type="cloud_run_job"/.test(x.text));
+    expect(loaderPolicies.length).toBeGreaterThanOrEqual(2);
+    for (const p of loaderPolicies) {
+      expect(p.text, `${p.file}: ${p.label} снова ловит по message — фильтр не совпадёт никогда`)
+        .not.toMatch(/jsonPayload\.message\s*=\s*"loader_failed"/);
+      expect(p.text, `${p.file}: ${p.label} должен ловить по коду LoaderError`)
+        .toMatch(/jsonPayload\.code!=""/);
+    }
+  });
+
   it('политика не сужена до одного расписания — новые Job’ы покрыты сразу', () => {
     const p = policies.find((x) => /resource\.type="cloud_scheduler_job"/.test(x.text))!;
     const filter = /filter\s*=\s*<<-?EOT([\s\S]*?)EOT/.exec(p.text)?.[1] ?? '';

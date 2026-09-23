@@ -356,6 +356,13 @@ resource "google_cloud_scheduler_job" "unitka_engine_prod" {
 #    `loader_failed` с кодом (SOURCE_STALE / SHEETS_API / BQ_MISMATCH / FORMULA_ERROR /
 #    PARTIAL_WRITE / INVARIANT_FAIL / STRUCTURE_DRIFT / …). Алерт — по логу prod-Job'а.
 #    Канал создаётся только при заданном var.unitka_alert_email. ────────────────
+#
+# 🔴 ФИЛЬТР НЕ ПО `message`. Событие пишется как logger.error('loader_failed', {code, message}),
+# а logging.ts:24-30 раскрывает ctx ПОСЛЕДНИМ — поэтому ctx.message (текст ошибки) ЗАТИРАЕТ
+# имя события, и `jsonPayload.message="loader_failed"` не совпадает НИКОГДА. Проверено на
+# живых логах: за 90 суток у `loader_failed` нуль совпадений, тогда как реальных падений
+# двадцать (ozon-unitka-prod 22.09 LOADER_ERROR, wb-mart-prod FRESHNESS_GATE и другие).
+# Признак падения — severity ERROR вместе с кодом LoaderError; по нему и ловим.
 resource "google_monitoring_notification_channel" "unitka_email" {
   count        = var.unitka_alert_email == "" ? 0 : 1
   display_name = "UNITKA Engine — владелец"
@@ -378,7 +385,7 @@ resource "google_monitoring_alert_policy" "unitka_engine_failed" {
         resource.type="cloud_run_job"
         resource.labels.job_name=~"^unitka-engine-"
         severity>=ERROR
-        jsonPayload.message="loader_failed"
+        jsonPayload.code!=""
       EOT
       label_extractors = {
         error_code = "EXTRACT(jsonPayload.code)"
