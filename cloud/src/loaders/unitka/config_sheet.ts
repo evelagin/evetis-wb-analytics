@@ -22,6 +22,8 @@
  * означало бы гадать по содержимому, а гадание здесь уже один раз стоило суток данных.
  */
 
+import { parseLcdMode, isIsoDate, type LcdMode } from './lcd.js';
+
 /** Строки ZZ_CONFIG, которые занимать нельзя: на них стоит живая экономика. */
 export const ZZ_CONFIG_RESERVED_ROWS: Readonly<Record<number, string>> = {
   2: 'LAST_CLOSED_DATE',
@@ -101,4 +103,88 @@ export function gate10SeedCells(ozonLcdIso: string): ConfigSeedCell[] {
     { range: a1(P.ozonMode), value: 'AUTO' },
     { range: labelA1(P.ozonManualLcd), value: P.ozonManualLcd.label },
   ];
+}
+
+/* ─────────────────────────── чтение блока цикла ─────────────────────────── */
+
+
+/** Серийная дата Sheets (эпоха 1899-12-30) → ISO. */
+const SHEET_EPOCH_MS = Date.UTC(1899, 11, 30);
+
+/**
+ * Значение ячейки-даты → ISO. Владелец может ввести дату как дату (придёт серийным числом),
+ * как ISO-текст или как «22.09.2026» (вид книги в ru_RU). Всё остальное — не дата.
+ */
+export function dateCellToIso(v: unknown): string | null {
+  if (typeof v === 'number' && Number.isFinite(v) && Number.isInteger(v) && v > 0) {
+    return new Date(SHEET_EPOCH_MS + v * 86_400_000).toISOString().slice(0, 10);
+  }
+  const s = String(v ?? '').trim();
+  if (s === '') return null;
+  if (isIsoDate(s)) return s;
+  const m = /^(\d{2})\.(\d{2})\.(\d{4})$/.exec(s);
+  if (m && isIsoDate(`${m[3]}-${m[2]}-${m[1]}`)) return `${m[3]}-${m[2]}-${m[1]}`;
+  return null;
+}
+
+export interface PlatformLcdConfig {
+  readonly mode: LcdMode;
+  /** Значение MANUAL_LCD в ISO; undefined — ячейка пуста; null — заполнена НЕ датой. */
+  readonly manualLcd: string | null | undefined;
+  /** Сырое значение ручной даты — для журнала: «что именно ввёл владелец». */
+  readonly manualRaw: unknown;
+}
+
+export type LifecycleConfig =
+  | { readonly state: 'ABSENT' }
+  | { readonly state: 'DRIFT'; readonly issues: readonly string[] }
+  | { readonly state: 'INVALID'; readonly issues: readonly string[] }
+  | { readonly state: 'PRESENT'; readonly wb: PlatformLcdConfig; readonly ozon: PlatformLcdConfig;
+      /** Значение B30 (авторитет Ozon) — для сверки с именованным диапазоном. */
+      readonly ozonLcdCell: string | null };
+
+/** Диапазон, который читает писатель: подписи A и значения B строк 29..34. */
+export const GATE10_BLOCK_RANGE = `${ZZ_CONFIG_SHEET}!A${GATE10_PARAMS.heading.row}:B${GATE10_PARAMS.ozonManualLcd.row}`;
+
+/**
+ * Разбор блока цикла. Три состояния, которые нельзя путать:
+ *   ABSENT  — блока нет вовсе (production до миграции): писатель ведёт себя по-прежнему;
+ *   DRIFT   — блок есть, но подписи не те: кто-то переставил строки — fail-closed, ведь
+ *             прочитать «режим» из чужой ячейки хуже, чем не прочитать никакой;
+ *   INVALID — подписи верны, но значение режима непонятно: отказ, а не молчаливый AUTO.
+ */
+export function parseLifecycleBlock(rows: ReadonlyArray<ReadonlyArray<unknown>>): LifecycleConfig {
+  const at = (row: number): ReadonlyArray<unknown> => rows[row - GATE10_PARAMS.heading.row] ?? [];
+  const params = Object.values(GATE10_PARAMS) as ConfigParam[];
+  const labels = params.map((p) => String(at(p.row)[0] ?? '').trim());
+  if (labels.every((l) => l === '') && params.every((p) => String(at(p.row)[1] ?? '').trim() === '')) {
+    return { state: 'ABSENT' };
+  }
+  const drift = params.filter((p, i) => labels[i] !== p.label)
+    .map((p) => `ZZ_CONFIG!A${p.row}: ожидается «${p.label}», в книге «${String(at(p.row)[0] ?? '')}»`);
+  if (drift.length) return { state: 'DRIFT', issues: drift };
+
+  const P = GATE10_PARAMS;
+  const issues: string[] = [];
+  const platform = (modeP: ConfigParam, manualP: ConfigParam): PlatformLcdConfig | null => {
+    const m = parseLcdMode(at(modeP.row)[1]);
+    if ('code' in m) { issues.push(`${a1(modeP)} = «${m.got}»: режим LCD — AUTO или MANUAL`); return null; }
+    const raw = at(manualP.row)[1];
+    const empty = raw === undefined || raw === null || String(raw).trim() === '';
+    return { mode: m.mode, manualLcd: empty ? undefined : dateCellToIso(raw), manualRaw: empty ? null : raw };
+  };
+  const wb = platform(P.wbMode, P.wbManualLcd);
+  const ozon = platform(P.ozonMode, P.ozonManualLcd);
+  if (!wb || !ozon) return { state: 'INVALID', issues };
+  return { state: 'PRESENT', wb, ozon, ozonLcdCell: dateCellToIso(at(P.ozonLcd.row)[1]) };
+}
+
+/** Минимальный шлюз чтения — чтобы модуль не тянул за собой весь SheetsGateway. */
+export interface ValueReader {
+  readValues(ranges: string[]): Promise<unknown[][][]>;
+}
+
+export async function readLifecycleConfig(sheets: ValueReader): Promise<LifecycleConfig> {
+  const [grid] = await sheets.readValues([GATE10_BLOCK_RANGE]);
+  return parseLifecycleBlock(grid ?? []);
 }

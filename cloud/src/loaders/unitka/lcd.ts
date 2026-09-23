@@ -45,12 +45,19 @@ export type LcdCode =
   | 'LCD_COMMITTED' | 'LCD_NOT_ADVANCED' | 'MANUAL_OVERRIDE_ACTIVE'
   | 'MANUAL_LCD_INVALID' | 'MANUAL_LCD_REGRESSION'
   | 'SOURCE_STALE' | 'INTEGRITY_FAILED' | 'WRITE_FAILED' | 'READBACK_FAILED'
-  | 'LCD_MODE_INVALID';
+  | 'LCD_MODE_INVALID' | 'LCD_COMMIT_CONFLICT' | 'LCD_WRITE_FAILED';
 
 const ISO = /^\d{4}-\d{2}-\d{2}$/;
 
+/**
+ * Настоящая календарная дата. Проверка через обратное преобразование обязательна: Date.parse
+ * НЕ отвергает '2027-02-29' и '2026-02-31', а молча переносит их на 1–3 марта. Без этого
+ * несуществующая дата, введённая владельцем в MANUAL_LCD, была бы принята как 01.03.
+ */
 export function isIsoDate(v: unknown): v is string {
-  return typeof v === 'string' && ISO.test(v) && !Number.isNaN(Date.parse(`${v}T00:00:00Z`));
+  if (typeof v !== 'string' || !ISO.test(v)) return false;
+  const t = Date.parse(`${v}T00:00:00Z`);
+  return !Number.isNaN(t) && new Date(t).toISOString().slice(0, 10) === v;
 }
 
 export function addDaysIso(iso: string, n: number): string {
@@ -135,6 +142,13 @@ export interface CandidateInput {
   readonly d1Msk: string;
   readonly covered: (dateIso: string) => boolean;
   readonly maxStep?: number;
+  /**
+   * Потолок канонической готовности платформы (у WB — V_UNITKA_LAST_CLOSED_DATE). Смежность
+   * по журналу прогонов его НЕ заменяет, а дополняет: кандидат = min(смежный, потолок). Так
+   * новый барьер может только придержать LCD относительно прежнего контракта, но никогда не
+   * ускорить его. Не задан — потолка нет (у Ozon свежесть проверяется отдельным барьером).
+   */
+  readonly sourceCeiling?: string;
 }
 
 export interface CandidateDecision {
@@ -153,35 +167,45 @@ export interface CandidateDecision {
  */
 export function decideCandidate(inp: CandidateInput): CandidateDecision {
   const notes: string[] = [];
+  const ceiling = inp.sourceCeiling;
+  if (ceiling !== undefined && !isIsoDate(ceiling)) throw new RangeError(`sourceCeiling ${ceiling}`);
   if (inp.mode === 'MANUAL') {
     const m = inp.manualLcd;
-    if (!isIsoDate(m)) {
-      return { candidate: inp.committed, willAdvance: false, code: 'MANUAL_LCD_INVALID', gapAt: null,
-        notes: [`MANUAL_LCD = ${JSON.stringify(m ?? null)}: ожидается YYYY-MM-DD`] };
+    const hold = (code: LcdCode, why: string): CandidateDecision =>
+      ({ candidate: inp.committed, willAdvance: false, code, gapAt: null, notes: [why] });
+    if (!isIsoDate(m)) return hold('MANUAL_LCD_INVALID', `MANUAL_LCD = ${JSON.stringify(m ?? null)}: ожидается YYYY-MM-DD`);
+    if (m > inp.d1Msk) return hold('MANUAL_LCD_INVALID', `MANUAL_LCD ${m} позже D-1 МСК ${inp.d1Msk}: сегодняшний день закрытым не бывает`);
+    // MANUAL — это выбор кандидата, а не «записать что угодно»: данных, которых нет в источнике,
+    // override не создаёт. Дата позже готовности источников записала бы пустые сутки как закрытые.
+    if (ceiling !== undefined && m > ceiling) {
+      return hold('MANUAL_LCD_INVALID', `MANUAL_LCD ${m} позже готовности источников ${ceiling}: закрыть день без данных нельзя`);
     }
-    if (m > inp.d1Msk) {
-      return { candidate: inp.committed, willAdvance: false, code: 'MANUAL_LCD_INVALID', gapAt: null,
-        notes: [`MANUAL_LCD ${m} позже D-1 МСК ${inp.d1Msk}: сегодняшний день закрытым не бывает`] };
-    }
-    notes.push(`MANUAL: владелец задал ${m} (AUTO дал бы ${contiguousCandidate(inp).candidate})`);
+    // Откат назад ОТВЕРГАЕТСЯ. Опубликованные сутки после новой даты стали бы «будущими»: WB
+    // упал бы на FUTURE_LEAKAGE, а Ozon, который пишет окно целиком, СТЁР бы их. Исправление
+    // истории делает окно перезаписи, а не откат LCD (§7).
     if (m < inp.committed) {
-      // Откат назад в MANUAL разрешён, но ГРОМКО: это не штатный путь, а аварийный.
-      return { candidate: m, willAdvance: true, code: 'MANUAL_LCD_REGRESSION', gapAt: null,
-        notes: [...notes, `откат назад: ${inp.committed} → ${m}`] };
+      return hold('MANUAL_LCD_REGRESSION', `MANUAL_LCD ${m} раньше закоммиченного ${inp.committed}: откат LCD стёр бы опубликованные сутки — отказ`);
     }
+    notes.push(`MANUAL: владелец задал ${m} (AUTO дал бы ${decideCandidate({ ...inp, mode: 'AUTO' }).candidate})`);
     return { candidate: m, willAdvance: m > inp.committed, code: 'MANUAL_OVERRIDE_ACTIVE', gapAt: null, notes };
   }
 
   const c = contiguousCandidate(inp);
+  let candidate = c.candidate;
   if (c.gapAt) {
     notes.push(`смежность: ${c.gapAt} не покрыта журналом прогонов, дальше не идём`);
     if (c.blockedDays > 1) notes.push(`за дыркой ещё ${c.blockedDays - 1} сут. до D-1 — это дырка, а не конец данных`);
   }
-  if (c.advancedDays === 0) {
+  if (ceiling !== undefined && candidate > ceiling) {
+    // Потолок ниже закоммиченного — не повод откатываться: кандидат не опускается ниже committed.
+    candidate = ceiling < inp.committed ? inp.committed : ceiling;
+    notes.push(`потолок готовности источников ${ceiling}: смежный кандидат ${c.candidate} придержан до ${candidate}`);
+  }
+  if (candidate === inp.committed) {
     return { candidate: inp.committed, willAdvance: false, code: 'LCD_NOT_ADVANCED', gapAt: c.gapAt,
       notes: notes.length ? notes : [`следующий день после ${inp.committed} ещё не закрыт (D-1 МСК = ${inp.d1Msk})`] };
   }
-  return { candidate: c.candidate, willAdvance: true, code: null, gapAt: c.gapAt, notes };
+  return { candidate, willAdvance: true, code: null, gapAt: c.gapAt, notes };
 }
 
 /* ─────────────────────────── атомарный коммит ─────────────────────────── */
@@ -255,4 +279,79 @@ export function coveredByRunWindows(
     by.get(r.entity)!.push({ from: r.from, to: r.to });
   }
   return (date) => required.every((e) => (by.get(e) ?? []).some((w) => w.from <= date && date <= w.to));
+}
+
+/* ─────────────────────────── протокол коммита ─────────────────────────── */
+
+/**
+ * Авторитетная ячейка LCD платформы. У WB — именованный диапазон LAST_CLOSED_DATE (+ зеркало
+ * WB736 в той же записи), у Ozon — OZON_LAST_CLOSED_DATE. read() читает АВТОРИТЕТ, а не
+ * зеркало: зеркало — производное состояние.
+ */
+export interface LcdCell {
+  read(): Promise<string | null>;
+  write(iso: string): Promise<void>;
+}
+
+export type CommitCode = 'LCD_COMMITTED' | 'LCD_NOT_ADVANCED' | 'LCD_COMMIT_CONFLICT' | 'LCD_WRITE_FAILED';
+
+export interface CommitOutcome {
+  readonly code: CommitCode;
+  /** Что книга держит ПОСЛЕ протокола (по перечитыванию, а не по намерению). */
+  readonly bookAfter: string | null;
+  readonly bookBefore: string | null;
+  readonly message: string;
+}
+
+/**
+ * Коммит LCD с барьером compare-before-commit (optimistic concurrency).
+ *
+ *   1. перечитать авторитет; если он НЕ равен ожидаемому закоммиченному — кто-то изменил LCD
+ *      между планированием и коммитом: LCD_COMMIT_CONFLICT, чужое значение НЕ перетирается;
+ *   2. записать кандидата;
+ *   3. перечитать и доказать равенство кандидату. Исход определяет ПЕРЕЧИТЫВАНИЕ, а не ответ
+ *      API: запись может «упасть» по таймауту, уже применившись, — и наоборот.
+ */
+export async function commitLcd(
+  cell: LcdCell, a: { readonly expectedCommitted: string; readonly candidate: string },
+): Promise<CommitOutcome> {
+  const before = await cell.read();
+  if (before !== a.expectedCommitted) {
+    return { code: 'LCD_COMMIT_CONFLICT', bookBefore: before, bookAfter: before,
+      message: `LCD в книге ${before ?? '(пусто)'} ≠ ожидаемому ${a.expectedCommitted}: изменён между планированием и коммитом — не перетираем` };
+  }
+  if (a.candidate === a.expectedCommitted) {
+    return { code: 'LCD_NOT_ADVANCED', bookBefore: before, bookAfter: before, message: `кандидат равен закоммиченному ${before}` };
+  }
+  let writeError: string | null = null;
+  try { await cell.write(a.candidate); } catch (e) { writeError = e instanceof Error ? e.message : String(e); }
+  let after: string | null;
+  try { after = await cell.read(); } catch (e) {
+    return { code: 'LCD_WRITE_FAILED', bookBefore: before, bookAfter: null,
+      message: `перечитать LCD после записи не удалось: ${e instanceof Error ? e.message : String(e)}` };
+  }
+  if (after === a.candidate) {
+    return { code: 'LCD_COMMITTED', bookBefore: before, bookAfter: after,
+      message: writeError ? `запись ответила ошибкой (${writeError}), но перечитывание подтвердило ${after}` : `закоммичен ${after}` };
+  }
+  return { code: 'LCD_WRITE_FAILED', bookBefore: before, bookAfter: after,
+    message: `после записи в книге ${after ?? '(пусто)'} вместо ${a.candidate}${writeError ? `: ${writeError}` : ''}` };
+}
+
+export type RevertCode = 'REVERTED' | 'REVERT_CONFLICT' | 'REVERT_FAILED';
+
+/**
+ * Компенсирующий откат СОБСТВЕННОГО коммита, если проверка после коммита не прошла. Это не
+ * «откат LCD во времени» (§7), а отмена незавершённой транзакции того же прогона: книга
+ * возвращается ровно к состоянию до цикла. Тот же барьер: откатываем, только если в книге
+ * всё ещё наш кандидат, — чужое значение не трогаем.
+ */
+export async function revertLcd(
+  cell: LcdCell, a: { readonly committed: string; readonly from: string },
+): Promise<{ code: RevertCode; bookAfter: string | null }> {
+  const cur = await cell.read();
+  if (cur !== a.from) return { code: 'REVERT_CONFLICT', bookAfter: cur };
+  try { await cell.write(a.committed); } catch { /* исход решает перечитывание */ }
+  const after = await cell.read().catch(() => null);
+  return { code: after === a.committed ? 'REVERTED' : 'REVERT_FAILED', bookAfter: after };
 }

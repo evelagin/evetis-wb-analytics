@@ -9,7 +9,7 @@ import { describe, it, expect } from 'vitest';
 import {
   parseLcdMode, contiguousCandidate, decideCandidate, decideCommit, firstFailedStage,
   coveredByDailyRuns, coveredByRunWindows, addDaysIso, LCD_STAGES,
-  type StageReport, type LcdStage,
+  commitLcd, revertLcd, type LcdCell, type StageReport, type LcdStage,
 } from '../src/loaders/unitka/lcd.js';
 
 const ALL_PASS: StageReport = {
@@ -126,7 +126,7 @@ describe('MANUAL переопределяет ВЫБОР кандидата, н�
   });
 
   it('невалидная MANUAL_LCD отвергается — LCD не двигается', () => {
-    for (const bad of ['', '21.09.2026', '2026-13-01', null, 46287]) {
+    for (const bad of ['', '21.09.2026', '2026-13-01', '2027-02-29', '2026-02-31', '2026-04-31', null, 46287]) {
       const d = decideCandidate({ ...base, mode: 'MANUAL', manualLcd: bad });
       expect(d.code, String(bad)).toBe('MANUAL_LCD_INVALID');
       expect(d.candidate).toBe(base.committed);
@@ -140,10 +140,20 @@ describe('MANUAL переопределяет ВЫБОР кандидата, н�
     expect(d.candidate).toBe(base.committed);
   });
 
-  it('откат назад в MANUAL разрешён, но ГРОМКО — отдельным кодом', () => {
+  it('откат назад в MANUAL ОТВЕРГАЕТСЯ: он стёр бы опубликованные сутки', () => {
+    // Раньше откат разрешался «громко». Пересмотрено (Gate 10 §4): у Ozon сутки после LCD
+    // пишутся пустыми — откат стёр бы данные; у WB упал бы FUTURE_LEAKAGE. Историю чинит
+    // окно перезаписи, а не откат LCD.
     const d = decideCandidate({ ...base, mode: 'MANUAL', manualLcd: '2026-09-18' });
     expect(d.code).toBe('MANUAL_LCD_REGRESSION');
-    expect(d.candidate).toBe('2026-09-18');
+    expect(d.candidate).toBe(base.committed);
+    expect(d.willAdvance).toBe(false);
+  });
+
+  it('MANUAL позже готовности источников отвергается: override не создаёт данные', () => {
+    const d = decideCandidate({ ...base, mode: 'MANUAL', manualLcd: '2026-09-22', sourceCeiling: '2026-09-21' });
+    expect(d.code).toBe('MANUAL_LCD_INVALID');
+    expect(d.candidate).toBe(base.committed);
   });
 
   it('MANUAL НЕ отменяет барьеры: провал целостности — LCD на месте', () => {
@@ -253,4 +263,116 @@ describe('арифметика дат не течёт через границы 
     ['2028-02-28', 1, '2028-02-29'], ['2027-02-28', 1, '2027-03-01'],
     ['2026-03-01', -1, '2026-02-28'],
   ])('%s %+d = %s', (from, n, want) => expect(addDaysIso(from, n as number)).toBe(want));
+});
+
+describe('потолок канонической готовности (WB: V_UNITKA_LAST_CLOSED_DATE)', () => {
+  const base = { platform: 'WB' as const, mode: 'AUTO' as const, committed: '2026-09-20', d1Msk: '2026-09-22' };
+
+  it('смежность может только ПРИДЕРЖАТЬ LCD относительно прежнего контракта', () => {
+    const d = decideCandidate({ ...base, covered: () => true, sourceCeiling: '2026-09-21' });
+    expect(d.candidate).toBe('2026-09-21');
+  });
+
+  it('дырка в журнале прогонов придерживает, даже если канон говорит «готово»', () => {
+    const d = decideCandidate({ ...base, covered: (x) => x !== '2026-09-22', sourceCeiling: '2026-09-22' });
+    expect(d.candidate).toBe('2026-09-21');
+    expect(d.gapAt).toBe('2026-09-22');
+  });
+
+  it('потолок ниже закоммиченного НЕ тянет LCD назад', () => {
+    const d = decideCandidate({ ...base, covered: () => true, sourceCeiling: '2026-09-15' });
+    expect(d.candidate).toBe('2026-09-20');
+    expect(d.code).toBe('LCD_NOT_ADVANCED');
+  });
+});
+
+/** Ячейка LCD в памяти, с инъекцией сбоев — модель поведения API, а не его подмена. */
+class MemCell implements LcdCell {
+  writes: string[] = [];
+  constructor(public value: string | null, private readonly o: {
+    failWrite?: 'throw' | 'throw-after-apply' | 'silent-noop';
+    onBeforeWrite?: () => void;
+  } = {}) {}
+  async read(): Promise<string | null> { return this.value; }
+  async write(iso: string): Promise<void> {
+    this.o.onBeforeWrite?.();
+    this.writes.push(iso);
+    if (this.o.failWrite === 'throw') throw new Error('Sheets API 503');
+    if (this.o.failWrite === 'silent-noop') return;
+    this.value = iso;
+    if (this.o.failWrite === 'throw-after-apply') throw new Error('timeout после применения');
+  }
+}
+
+describe('протокол коммита: compare-before-commit', () => {
+  it('успех: ровно одна запись, перечитывание подтверждает кандидата', async () => {
+    const c = new MemCell('2026-09-21');
+    const r = await commitLcd(c, { expectedCommitted: '2026-09-21', candidate: '2026-09-22' });
+    expect(r.code).toBe('LCD_COMMITTED');
+    expect(c.writes).toEqual(['2026-09-22']);
+    expect(c.value).toBe('2026-09-22');
+  });
+
+  it('LCD_COMMIT_CONFLICT: книга изменилась после планирования — чужое значение НЕ перетирается', async () => {
+    const c = new MemCell('2026-09-19');            // кто-то сдвинул, пока мы писали факты
+    const r = await commitLcd(c, { expectedCommitted: '2026-09-21', candidate: '2026-09-22' });
+    expect(r.code).toBe('LCD_COMMIT_CONFLICT');
+    expect(c.writes).toEqual([]);
+    expect(c.value).toBe('2026-09-19');
+  });
+
+  it('LCD_WRITE_FAILED: запись упала — LCD остаётся прежним', async () => {
+    const c = new MemCell('2026-09-21', { failWrite: 'throw' });
+    const r = await commitLcd(c, { expectedCommitted: '2026-09-21', candidate: '2026-09-22' });
+    expect(r.code).toBe('LCD_WRITE_FAILED');
+    expect(c.value).toBe('2026-09-21');
+  });
+
+  it('«ошибка» после фактического применения — исход решает ПЕРЕЧИТЫВАНИЕ: закоммичено', async () => {
+    const c = new MemCell('2026-09-21', { failWrite: 'throw-after-apply' });
+    const r = await commitLcd(c, { expectedCommitted: '2026-09-21', candidate: '2026-09-22' });
+    expect(r.code).toBe('LCD_COMMITTED');
+    expect(r.message).toMatch(/перечитывание подтвердило/);
+  });
+
+  it('API ответил успехом, но значение не легло — LCD_WRITE_FAILED, а не COMMITTED', async () => {
+    const c = new MemCell('2026-09-21', { failWrite: 'silent-noop' });
+    const r = await commitLcd(c, { expectedCommitted: '2026-09-21', candidate: '2026-09-22' });
+    expect(r.code).toBe('LCD_WRITE_FAILED');
+  });
+
+  it('кандидат равен закоммиченному — ни одной записи', async () => {
+    const c = new MemCell('2026-09-22');
+    const r = await commitLcd(c, { expectedCommitted: '2026-09-22', candidate: '2026-09-22' });
+    expect(r.code).toBe('LCD_NOT_ADVANCED');
+    expect(c.writes).toEqual([]);
+  });
+
+  it('повтор после LCD_WRITE_FAILED коммитит РОВНО один раз', async () => {
+    const c = new MemCell('2026-09-21', { failWrite: 'throw' });
+    await commitLcd(c, { expectedCommitted: '2026-09-21', candidate: '2026-09-22' });
+    const retry = new MemCell(c.value);            // следующий прогон: сбой прошёл
+    const r = await commitLcd(retry, { expectedCommitted: '2026-09-21', candidate: '2026-09-22' });
+    expect(r.code).toBe('LCD_COMMITTED');
+    const again = await commitLcd(retry, { expectedCommitted: '2026-09-22', candidate: '2026-09-22' });
+    expect(again.code, 'LCD_DUPLICATE_ADVANCE').toBe('LCD_NOT_ADVANCED');
+    expect(retry.writes).toEqual(['2026-09-22']);
+  });
+});
+
+describe('компенсирующий откат собственного коммита', () => {
+  it('проверка после коммита не прошла — книга возвращается к состоянию до цикла', async () => {
+    const c = new MemCell('2026-09-22');
+    const r = await revertLcd(c, { committed: '2026-09-21', from: '2026-09-22' });
+    expect(r.code).toBe('REVERTED');
+    expect(c.value).toBe('2026-09-21');
+  });
+
+  it('если в книге уже НЕ наш кандидат — не откатываем чужое', async () => {
+    const c = new MemCell('2026-09-25');
+    const r = await revertLcd(c, { committed: '2026-09-21', from: '2026-09-22' });
+    expect(r.code).toBe('REVERT_CONFLICT');
+    expect(c.value).toBe('2026-09-25');
+    expect(c.writes).toEqual([]);
+  });
 });

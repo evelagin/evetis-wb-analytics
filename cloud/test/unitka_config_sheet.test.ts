@@ -9,7 +9,7 @@ import { describe, it, expect } from 'vitest';
 import {
   GATE10_PARAMS, ZZ_CONFIG_RESERVED_ROWS, GATE10_BLOCK_ROW, assertNoCollision,
   gate10SeedCells, a1, labelA1, OZON_LCD_NAMED_RANGE, WB_LCD_NAMED_RANGE,
-  type ConfigParam,
+  parseLifecycleBlock, dateCellToIso, GATE10_BLOCK_RANGE, type ConfigParam,
 } from '../src/loaders/unitka/config_sheet.js';
 
 const params = Object.values(GATE10_PARAMS) as ConfigParam[];
@@ -80,4 +80,73 @@ describe('начальное наполнение блока', () => {
   it('пишем только колонки A и B — колонка C (пояснения) остаётся владельцу', () => {
     for (const c of seed) expect(c.range, c.range).toMatch(/!(A|B)\d+$/);
   });
+});
+
+describe('чтение блока цикла: три состояния, которые нельзя путать', () => {
+  // строки 29..34 ровно в том виде, в каком их отдаёт Sheets API (UNFORMATTED_VALUE, SERIAL_NUMBER)
+  const good = (over: Record<number, [unknown, unknown]> = {}): unknown[][] => {
+    const base: Record<number, [unknown, unknown]> = {
+      29: ['ЖИЗНЕННЫЙ ЦИКЛ — AUTO-LCD', ''], 30: ['OZON_LAST_CLOSED_DATE', 46287],
+      31: ['WB_LCD_MODE', 'AUTO'], 32: ['WB_MANUAL_LCD', ''],
+      33: ['OZON_LCD_MODE', 'AUTO'], 34: ['OZON_MANUAL_LCD', ''],
+      ...over,
+    };
+    return [29, 30, 31, 32, 33, 34].map((r) => base[r] as unknown[]);
+  };
+
+  it('ABSENT: блока нет вовсе — это production до миграции', () => {
+    expect(parseLifecycleBlock([])).toEqual({ state: 'ABSENT' });
+    expect(parseLifecycleBlock([[], [], []])).toEqual({ state: 'ABSENT' });
+  });
+
+  it('PRESENT: AUTO по умолчанию, ручные даты пусты, B30 читается как дата', () => {
+    const c = parseLifecycleBlock(good());
+    expect(c.state).toBe('PRESENT');
+    if (c.state !== 'PRESENT') return;
+    expect(c.wb).toEqual({ mode: 'AUTO', manualLcd: undefined, manualRaw: null });
+    expect(c.ozon.mode).toBe('AUTO');
+    expect(c.ozonLcdCell).toBe('2026-09-22');       // 46287 — серийная дата
+  });
+
+  it('DRIFT: строки переставлены — fail-closed, режим из чужой ячейки не читаем', () => {
+    const c = parseLifecycleBlock(good({ 31: ['OZON_LCD_MODE', 'MANUAL'], 33: ['WB_LCD_MODE', 'AUTO'] }));
+    expect(c.state).toBe('DRIFT');
+  });
+
+  it('INVALID: непонятный режим — отказ, а НЕ молчаливый AUTO', () => {
+    const c = parseLifecycleBlock(good({ 31: ['WB_LCD_MODE', 'ВКЛ'] }));
+    expect(c.state).toBe('INVALID');
+    if (c.state === 'INVALID') expect(c.issues[0]).toMatch(/B31/);
+  });
+
+  it('MANUAL-дата принимается во всех трёх видах, в которых её может ввести владелец', () => {
+    for (const raw of [46286, '2026-09-21', '21.09.2026']) {
+      const c = parseLifecycleBlock(good({ 31: ['WB_LCD_MODE', 'MANUAL'], 32: ['WB_MANUAL_LCD', raw] }));
+      expect(c.state, String(raw)).toBe('PRESENT');
+      if (c.state === 'PRESENT') expect(c.wb.manualLcd, String(raw)).toBe('2026-09-21');
+    }
+  });
+
+  it('MANUAL-дата, заполненная НЕ датой, — null, а не «пусто»: это ошибка владельца, её видно', () => {
+    const c = parseLifecycleBlock(good({ 32: ['WB_MANUAL_LCD', 'вчера'] }));
+    expect(c.state).toBe('PRESENT');
+    if (c.state === 'PRESENT') { expect(c.wb.manualLcd).toBeNull(); expect(c.wb.manualRaw).toBe('вчера'); }
+  });
+
+  it('ABSENT не путается с «блок есть, но всё пусто»: подписи — признак существования', () => {
+    const labelsOnly = [29, 30, 31, 32, 33, 34].map((r) => [(GATE10_PARAMS as Record<string, { row: number; label: string }>)[
+      Object.keys(GATE10_PARAMS).find((k) => (GATE10_PARAMS as Record<string, { row: number }>)[k]!.row === r)!]!.label, '']);
+    expect(parseLifecycleBlock(labelsOnly).state).toBe('PRESENT');     // режим пуст = AUTO
+  });
+
+  it('читается ровно диапазон A29:B34 — ни строкой выше', () => {
+    expect(GATE10_BLOCK_RANGE).toBe('ZZ_CONFIG!A29:B34');
+  });
+});
+
+describe('dateCellToIso', () => {
+  it.each([[46287, '2026-09-22'], [46023, '2026-01-01'], ['2028-02-29', '2028-02-29'], ['29.02.2028', '2028-02-29']])(
+    '%s → %s', (v, want) => expect(dateCellToIso(v)).toBe(want));
+  it.each([['', null], [null, null], ['2027-02-29', null], ['31.02.2026', null], [46287.5, null], [0, null], ['текст', null]])(
+    '%s → %s', (v, want) => expect(dateCellToIso(v)).toBe(want));
 });
