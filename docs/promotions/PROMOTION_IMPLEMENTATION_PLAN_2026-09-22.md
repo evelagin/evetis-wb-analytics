@@ -124,6 +124,13 @@ read-only токеном WB и allow-list на Ozon. Риск для сущес�
 
 ## PR-PROMO-2 — канонический слой и резолв SKU
 
+> **Реализовано иначе, 2026-09-23** — см. `PR_PROMO_2_CANONICAL_STATE_2026-09-22.md`. Вместо
+> 6 текущих вью — 16: история и текущее разделены (текущее выводится из истории), свидетельства
+> отделены от разрешённого состояния, добавлены вью наблюдений и наблюдаемости. Часть WB живёт
+> вне `sql/current` (датасет `wb_mart` не канонизирован), Ozon и нейтральная часть — в
+> `sql/current` как `pending_deploy`. `V_PROMO_PORTFOLIO_STATE` не создан: портфель — это уже
+> решение, PR-PROMO-3+.
+
 **Что строится.** `sql/promotions/pr_promo2_canonical.sql`:
 `wb_mart.V_WB_PROMO_CURRENT`, `wb_mart.V_WB_PROMO_SKU_CURRENT`,
 `ozon_mart.V_OZON_PROMO_CURRENT`, `ozon_mart.V_OZON_PROMO_SKU_CURRENT`,
