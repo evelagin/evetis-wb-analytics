@@ -1,0 +1,125 @@
+name: autonomy-watch
+# AE v1 · Наблюдатель. ДЕТЕРМИНИРОВАННЫЙ: ни одного вызова модели.
+# Прогоняет существующие ворота (run_data_checks.py, детектор здоровья) read-only,
+# сравнивает с историей и реестром UBR, диспатчит инженера только при устойчивом новом
+# падении. Здоровая система модель не вызывает никогда.
+#
+# Выключатель: repository variable AE_ENABLED. Пока он не 'true', наблюдатель только
+# наблюдает и пишет итог — диспатча нет. Это и есть путь отмены (docs/architecture/AE_V1_RUNBOOK.md).
+on:
+  schedule:
+    - cron: "23 4,10,16 * * *"   # 07:23 / 13:23 / 19:23 МСК, вне окон пересборок CT и загрузок
+  workflow_dispatch:
+    inputs:
+      allow_dispatch:
+        description: "Разрешить диспатч инженера при ACTION (при AE_ENABLED=true)"
+        type: boolean
+        default: false
+
+permissions: {}
+
+concurrency:
+  group: autonomy-watch
+  cancel-in-progress: false
+
+jobs:
+  watch:
+    # Пока владелец не применил autonomy.tf и не задал AE_READER_SA, наблюдателю нечем читать:
+    # job пропускается молча, а не падает трижды в сутки (AE_V1_RUNBOOK.md §2).
+    if: vars.AE_READER_SA != ''
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    permissions:
+      contents: write    # ТОЛЬКО ветка autonomy-state, явный refspec; шаг без модели
+      id-token: write    # read-only SA sa-ae-reader через WIF
+      actions: write     # workflow_dispatch autonomy-run (исключение GitHub для GITHUB_TOKEN)
+      issues: write      # оповещение владельцу только при изменении класса
+    env:
+      STATE_DIR: ${{ github.workspace }}/.ae-state
+      GH_REPO: ${{ github.repository }}
+    steps:
+      - name: guard — только main
+        run: |
+          [ "$GITHUB_REF" = "refs/heads/main" ] || { echo "::error::autonomy-watch исполняется только из main"; exit 1; }
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: install pinned dependencies (hash-checked)
+        run: "pip install --only-binary=:all: --require-hashes -r tools/requirements-sql-ci.txt"
+      - uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ vars.WIF_PROVIDER }}
+          service_account: ${{ vars.AE_READER_SA }}
+      - uses: google-github-actions/setup-gcloud@v2
+      - name: restore durable state (branch autonomy-state)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if git ls-remote --exit-code --heads "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" autonomy-state >/dev/null 2>&1; then
+            bash tools/autonomy/ci/state_clone.sh
+          else
+            mkdir -p "$STATE_DIR" && git -C "$STATE_DIR" init -q -b autonomy-state   # первая запись создаст ветку
+          fi
+      - name: watch (read-only)
+        id: watch
+        run: |
+          python -m tools.autonomy.cli watch --live --state-dir "$STATE_DIR" --out "$STATE_DIR/objectives" \
+            --project "${{ vars.GCP_PROJECT_ID }}" --token-command "gcloud auth print-access-token" \
+            --report "$RUNNER_TEMP/watch.json" > /dev/null
+          python - <<'PY' >> "$GITHUB_OUTPUT"
+          import json, os
+          r = json.load(open(os.path.join(os.environ["RUNNER_TEMP"], "watch.json")))
+          print(f"status={r['status']}")
+          print(f"dispatch_count={len(r['dispatch'])}")
+          print(f"notify_count={len(r['notify'])}")
+          PY
+      - name: summary
+        run: |
+          python - <<'PY' >> "$GITHUB_STEP_SUMMARY"
+          import json, os
+          r = json.load(open(os.path.join(os.environ["RUNNER_TEMP"], "watch.json")))
+          print(f"## autonomy-watch · {r['status']}\n\nвызовов модели: **{r['llm_invocations']}**\n")
+          print("| класс | число |\n|---|---|")
+          for k, v in r["counts"].items():
+              print(f"| {k} | {v} |")
+          for n in r["notify"]:
+              print(f"- `{n['check_id']}` → **{n['class']}**")
+          PY
+      - name: persist state (autonomy-state, явный refspec)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          bash tools/autonomy/ci/state_push.sh "autonomy-watch: ${{ steps.watch.outputs.status }} · run ${{ github.run_id }}"
+      - name: dispatch engineer (только при AE_ENABLED=true)
+        if: >-
+          steps.watch.outputs.dispatch_count != '0' && vars.AE_ENABLED == 'true' &&
+          (github.event_name == 'schedule' || inputs.allow_dispatch)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          python - <<'PY' | while read -r path; do
+          import json, os
+          for d in json.load(open(os.path.join(os.environ["RUNNER_TEMP"], "watch.json")))["dispatch"]:
+              print(os.path.relpath(d["objective_path"], os.environ["STATE_DIR"]))
+          PY
+            gh workflow run autonomy-run.yml --ref main -f objective_path="$path"
+          done
+      - name: notify (только при изменении класса)
+        if: steps.watch.outputs.notify_count != '0'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          python - <<'PY' > "$RUNNER_TEMP/notify.md"
+          import json, os
+          r = json.load(open(os.path.join(os.environ["RUNNER_TEMP"], "watch.json")))
+          print(f"autonomy-watch `{r['watched_at']}` · статус **{r['status']}** · AE_ENABLED=${{ vars.AE_ENABLED }}\n")
+          for n in r["notify"]:
+              print(f"- `{n['check_id']}` ({n['suite']}): **{n['class']}** — {n.get('dispatch', 'без диспатча')}")
+          PY
+          gh label create autonomy --color 5319E7 --description "AE v1" --force >/dev/null
+          num=$(gh issue list --label autonomy --state open --json number --jq '.[0].number' || true)
+          if [ -n "$num" ]; then gh issue comment "$num" --body-file "$RUNNER_TEMP/notify.md"
+          else gh issue create --title "AE v1: сигналы наблюдателя" --label autonomy --body-file "$RUNNER_TEMP/notify.md"; fi

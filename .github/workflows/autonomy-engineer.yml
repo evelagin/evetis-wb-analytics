@@ -1,0 +1,78 @@
+name: autonomy-engineer
+# AE v1 · Инженер (Claude Code). НЕДОВЕРЕННЫЙ job: исполняет модель и её код.
+# Права: contents READ; id-token — для read-only SA в GCP и для короткоживущего токена
+# Claude API. Авторитетное состояние этот job не пишет: он отдаёт ответы агента артефактом,
+# а их sha256 — через outputs. Доверенный job сверяет хеши и воспроизводит ответы сам.
+on:
+  workflow_call:
+    inputs:
+      run_id: {type: string, required: true}
+      state_sha: {type: string, required: true}
+    outputs:
+      hashes:
+        description: "NAME=SHA256 через пробел — для --expect доверенного job"
+        value: ${{ jobs.engineer.outputs.hashes }}
+
+permissions: {}
+
+jobs:
+  engineer:
+    runs-on: ubuntu-latest
+    timeout-minutes: 100
+    permissions:
+      contents: read
+      id-token: write
+    outputs:
+      hashes: ${{ steps.agent.outputs.hashes }}
+    env:
+      STATE_DIR: ${{ github.workspace }}/.ae-state
+      GH_TOKEN: ${{ github.token }}
+      ANTHROPIC_FEDERATION_RULE_ID: ${{ vars.AE_ANTHROPIC_FEDERATION_RULE_ID }}
+      ANTHROPIC_ORGANIZATION_ID: ${{ vars.AE_ANTHROPIC_ORGANIZATION_ID }}
+      ANTHROPIC_SERVICE_ACCOUNT_ID: ${{ vars.AE_ANTHROPIC_SERVICE_ACCOUNT_ID }}
+    steps:
+      - name: guard — только main
+        run: '[ "$GITHUB_REF" = "refs/heads/main" ] || { echo "::error::только из main"; exit 1; }'
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: install pinned dependencies (hash-checked)
+        run: "pip install --only-binary=:all: --require-hashes -r tools/requirements-sql-ci.txt"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - name: install Claude Code (pinned)
+        run: npm install -g @anthropic-ai/claude-code@2.1.251
+      - uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ vars.WIF_PROVIDER }}
+          service_account: ${{ vars.AE_READER_SA }}
+      - uses: google-github-actions/setup-gcloud@v2
+      - name: clone state at pinned sha (read)
+        run: bash tools/autonomy/ci/state_clone.sh "${{ inputs.state_sha }}"
+      - name: agent (PLAN → IMPLEMENT / FIX) on a scratch copy
+        id: agent
+        run: |
+          state=$(python -m tools.autonomy.cli status --state-dir "$STATE_DIR" --run-id "${{ inputs.run_id }}" | awk '{print $2}')
+          case "$state" in PLANNING|IMPLEMENTING|FIXING) ;; *) echo "состояние $state — инженер не нужен"; echo "hashes=" >> "$GITHUB_OUTPUT"; exit 0 ;; esac
+          if [ -n "${ANTHROPIC_API_KEY:-}" ]; then echo "::error::статический ключ перекрыл бы федерацию"; exit 1; fi
+          export ANTHROPIC_IDENTITY_TOKEN_FILE="$RUNNER_TEMP/anthropic-oidc.jwt"
+          bash tools/autonomy/ci/refresh_anthropic_oidc.sh
+          ( while sleep 240; do bash tools/autonomy/ci/refresh_anthropic_oidc.sh || true; done ) &
+          python -m tools.autonomy.cli agent-run --ci --engineer claude --reviewer none \
+            --state-dir "$STATE_DIR" --run-id "${{ inputs.run_id }}" --out "$RUNNER_TEMP/pending" \
+            --sandbox-root "$RUNNER_TEMP/sandboxes" \
+            --project "${{ vars.GCP_PROJECT_ID }}" --token-command "gcloud auth print-access-token" \
+            --audit-identity "${{ vars.AE_READER_SA }}" > "$RUNNER_TEMP/agent.json"
+          python -c 'import json,sys; o=json.load(open(sys.argv[1]))["outputs"]; print("hashes=" + " ".join(f"{k}={v}" for k,v in o.items()))' \
+            "$RUNNER_TEMP/agent.json" >> "$GITHUB_OUTPUT"
+      - uses: actions/upload-artifact@v4
+        if: steps.agent.outputs.hashes != ''
+        with:
+          name: ae-${{ inputs.run_id }}-engineer-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/pending
+          retention-days: 30

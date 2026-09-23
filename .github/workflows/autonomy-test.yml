@@ -1,0 +1,63 @@
+name: autonomy-test
+# AE v1 · Доказательства кандидата. НЕДОВЕРЕННЫЙ job: исполняет КОД КАНДИДАТА (pytest и др.).
+# Поэтому здесь нет ни токена записи, ни решений: только доказательства и их sha256.
+# Переход состояния делает доверенный job на другой машине.
+on:
+  workflow_call:
+    inputs:
+      run_id: {type: string, required: true}
+      state_sha: {type: string, required: true}
+    outputs:
+      evidence_sha:
+        value: ${{ jobs.test.outputs.evidence_sha }}
+
+permissions: {}
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    permissions:
+      contents: read
+      id-token: write    # read-only SA для наборов данных
+    outputs:
+      evidence_sha: ${{ steps.collect.outputs.evidence_sha }}
+    env:
+      STATE_DIR: ${{ github.workspace }}/.ae-state
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - name: guard — только main
+        run: '[ "$GITHUB_REF" = "refs/heads/main" ] || { echo "::error::только из main"; exit 1; }'
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: install pinned dependencies (hash-checked)
+        run: "pip install --only-binary=:all: --require-hashes -r tools/requirements-sql-ci.txt"
+      - uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ vars.WIF_PROVIDER }}
+          service_account: ${{ vars.AE_READER_SA }}
+      - uses: google-github-actions/setup-gcloud@v2
+      - name: clone state at pinned sha (read)
+        run: bash tools/autonomy/ci/state_clone.sh "${{ inputs.state_sha }}"
+      - name: collect candidate evidence
+        id: collect
+        run: |
+          state=$(python -m tools.autonomy.cli status --state-dir "$STATE_DIR" --run-id "${{ inputs.run_id }}" | awk '{print $2}')
+          [ "$state" = "TESTING" ] || { echo "состояние $state — тестировать нечего"; echo "evidence_sha=" >> "$GITHUB_OUTPUT"; exit 0; }
+          python -m tools.autonomy.cli collect --engineer none --reviewer none \
+            --state-dir "$STATE_DIR" --run-id "${{ inputs.run_id }}" --out "$RUNNER_TEMP/pending/evidence.json" \
+            --sandbox-root "$RUNNER_TEMP/sandboxes" \
+            --project "${{ vars.GCP_PROJECT_ID }}" --token-command "gcloud auth print-access-token" > "$RUNNER_TEMP/collect.json"
+          python -c 'import json,sys; print("evidence_sha=" + json.load(open(sys.argv[1]))["evidence.json"])' \
+            "$RUNNER_TEMP/collect.json" >> "$GITHUB_OUTPUT"
+      - uses: actions/upload-artifact@v4
+        if: steps.collect.outputs.evidence_sha != ''
+        with:
+          name: ae-${{ inputs.run_id }}-test-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/pending
+          retention-days: 30
