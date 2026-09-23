@@ -13,9 +13,9 @@
 | **E** запрещённое действие | PASS | **PASS** (локальные структурные проверки) | в CI — после применения IAM (§ «Что не доказано») |
 | **F** перезапуск и идемпотентность | PASS | — | дубликата нет, состояние восстановлено без памяти |
 
-Всего по AE: **110 тестов** — `test_autonomy_acceptance.py` (13), `test_autonomy_ci_trust.py` (6),
-`test_autonomy_security.py` (51), `test_autonomy_units.py` (40). Весь набор `tools/tests`:
-**472 passed**. `validate_current_sql`: C1–C18 OK. `actionlint 1.7.12`: 6 workflows чисты.
+Всего по AE: **111 тестов** — `test_autonomy_acceptance.py` (13), `test_autonomy_ci_trust.py` (6),
+`test_autonomy_security.py` (51), `test_autonomy_units.py` (41). Весь набор `tools/tests` после
+слияния свежего `main` (PROMO-2): **496 passed**. `validate_current_sql`: C1–C18 OK, 29 объектов. `actionlint 1.7.12`: 6 workflows чисты.
 `terraform fmt`/`validate`: OK.
 
 ## A. Здоровый no-op

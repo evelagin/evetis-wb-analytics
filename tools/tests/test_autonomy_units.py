@@ -196,3 +196,12 @@ def test_publisher_refuses_without_ready_gate_and_on_forbidden_content(tmp_path)
     with pytest.raises(PublishRefused, match="production"):
         pub.preflight({**run, "production_mutations": 1}, patch, art)
     assert pub.preflight(run, patch, art) == ["synthetic/calc.py"]
+
+
+def test_deploy_tooling_is_forbidden_supply_chain_path():
+    """Скрипт развёртывания запускает владелец со своими правами на DDL: правка его агентом —
+    путь к production через цепочку поставки, хотя у самого агента прав нет."""
+    deploy = sorted(p.relative_to(F.REPO).as_posix() for p in (F.REPO / "tools").glob("*deploy*.py"))
+    assert deploy, "в tools/ ожидался хотя бы один инструмент развёртывания"
+    assert forbidden_paths(deploy) == deploy
+    assert forbidden_paths(["tools/impact_analysis_helper.py"]) == []
