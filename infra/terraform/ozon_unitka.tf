@@ -76,6 +76,19 @@ resource "google_cloud_run_v2_job" "ozon_unitka_prod" {
   depends_on = [google_project_service.enabled]
 }
 
+# ── Право запуска: ПОРЕСУРСНО, тем же способом, что у unitka-engine-prod. ─────
+# 🔴 Без этой привязки Scheduler получает PERMISSION_DENIED на :run, execution не создаётся,
+# и падение НЕ ВИДНО нигде: алерт ниже слушает логи Job'а, а логов нет — прогона не было.
+# Именно так 23.09.2026 пропали данные за 22.09: расписание сработало в 10:00 МСК,
+# status.code=7, retry_count=0, следующая попытка — только через сутки.
+# Права уровня проекта sa-scheduler-prod НЕ выдаются: он работает только поресурсно.
+resource "google_cloud_run_v2_job_iam_member" "scheduler_ozon_unitka_prod_invoke" {
+  location = var.region
+  name     = google_cloud_run_v2_job.ozon_unitka_prod.name
+  role     = "roles/run.invoker"
+  member   = "serviceAccount:${google_service_account.scheduler_prod.email}"
+}
+
 # ── Расписание ────────────────────────────────────────────────────────────────
 # Создаётся НА ПАУЗЕ: владелец снимает её после первого удачного ручного прогона.
 # Так же устроены расписания unitka-engine (scheduler-control.yml).
@@ -86,11 +99,27 @@ resource "google_cloud_scheduler_job" "ozon_unitka_prod" {
   time_zone = "Europe/Moscow"
   paused    = true
 
-  # Одновременных писателей в один лист быть не должно. Повтор при сбое — следующее окно,
-  # а не немедленный ретрай: он наложился бы на ещё живой execution.
+  # attempt_deadline относится к ОТВЕТУ на :run, а не к прогону: Run Admin API создаёт
+  # execution и отвечает сразу. Длинный дедлайн оставлен намеренно — он делает
+  # неоднозначный исход «запрос принят, ответ потерян» практически недостижимым.
   attempt_deadline = "1800s"
+
+  # Ограниченный повтор ВЫЗОВА. Прежняя редакция ставила retry_count = 0, опасаясь
+  # наложения на живой execution. Это опасение снято замером: повтор происходит только
+  # тогда, когда попытка ВЕРНУЛА не-2xx, то есть execution создан НЕ был, а если он всё же
+  # был создан, второй прогон упирается в распределённый guard (cli.ts: ALREADY_RUNNING /
+  # OK_NO_NEW → выход 0, лист не трогается). Логический период guard'а — ЧАС по МСК
+  # (unitkaSlot), поэтому все повторы обязаны уложиться в тот же час: 60 + 120 + 240 с
+  # < 10 мин от окна 10:00 МСК. Увеличивать эти числа нельзя, не пересмотрев guard.
+  #
+  # Что повтор ЛЕЧИТ: 429/503 Run API, сетевой сбой, недоступность токена.
+  # Чего НЕ лечит: 403/404 — это дефект конфигурации, его ловит алерт в scheduler.tf.
   retry_config {
-    retry_count = 0
+    retry_count          = 3
+    min_backoff_duration = "60s"
+    max_backoff_duration = "300s"
+    max_doublings        = 2
+    max_retry_duration   = "600s"
   }
 
   http_target {

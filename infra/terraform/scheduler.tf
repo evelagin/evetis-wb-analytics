@@ -111,3 +111,52 @@ resource "google_cloud_scheduler_job" "wb_stocks_prod" {
   }
   depends_on = [google_project_service.enabled]
 }
+
+# ── Провал ВЫЗОВА по расписанию — отдельный класс отказа. ─────────────────────
+# 23.09.2026 расписание ozon-unitka-prod отработало в 10:00 МСК и получило
+# PERMISSION_DENIED: у Job'а не было привязки run.invoker. Execution НЕ создался,
+# логов Job'а не появилось — и все алерты проекта промолчали, потому что каждый из них
+# слушает `loader_failed` В ЛОГАХ JOB'А. День Ozon-Юнитки пропал молча.
+#
+# Политика слушает ДРУГОЙ ресурс — сам Cloud Scheduler. Фильтр проверен на реальной
+# записи того отказа: logName cloudscheduler…/executions, severity ERROR,
+# jsonPayload.@type = …AttemptFinished, jsonPayload.status = PERMISSION_DENIED.
+# Условие не сужено до PERMISSION_DENIED намеренно: NOT_FOUND, UNAVAILABLE и
+# DEADLINE_EXCEEDED — тот же класс «день не наступил», и все они попадут сюда.
+#
+# Политика не привязана к одному Job'у: она покрывает ВСЕ расписания проекта, включая
+# будущие, и поэтому не требует правки при добавлении нового Job'а.
+resource "google_monitoring_alert_policy" "scheduler_attempt_failed" {
+  count        = var.unitka_alert_email == "" ? 0 : 1
+  display_name = "Cloud Scheduler: вызов по расписанию не состоялся"
+  combiner     = "OR"
+
+  conditions {
+    display_name = "AttemptFinished с ошибкой в любом расписании проекта"
+    condition_matched_log {
+      filter = <<-EOT
+        resource.type="cloud_scheduler_job"
+        severity>=ERROR
+        jsonPayload."@type"="type.googleapis.com/google.cloud.scheduler.logging.AttemptFinished"
+      EOT
+      label_extractors = {
+        scheduler_job = "EXTRACT(resource.labels.job_id)"
+        status        = "EXTRACT(jsonPayload.status)"
+      }
+    }
+  }
+
+  alert_strategy {
+    notification_rate_limit {
+      period = "3600s"
+    }
+    auto_close = "86400s"
+  }
+
+  notification_channels = [google_monitoring_notification_channel.unitka_email[0].id]
+  documentation {
+    content   = "Расписание сработало, но запуск НЕ состоялся — execution не создан, логов Job'а не будет. В метках: scheduler_job и status. PERMISSION_DENIED — у Job'а нет roles/run.invoker для его SA (привязка объявляется в Terraform рядом с Job'ом, пример: ozon_unitka.tf). NOT_FOUND — Job переименован или удалён. UNAVAILABLE/DEADLINE_EXCEEDED — временный отказ API, ограниченный повтор уже отработал и не помог. День закрывается ручным прогоном: gcloud run jobs execute <job> --region europe-west1 --wait"
+    mime_type = "text/markdown"
+  }
+  depends_on = [google_project_service.enabled]
+}
