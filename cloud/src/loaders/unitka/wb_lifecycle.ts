@@ -38,16 +38,13 @@ import {
   decideCandidate, coveredByLoaderRuns, addDaysIso, type LcdCell, type CandidateDecision, type LcdMode, type RunCoverageRule,
 } from './lcd.js';
 import { readLifecycleConfig, dateCellToIso, type LifecycleConfig } from './config_sheet.js';
+import { logLifecycle, type LifecycleEvent } from './lifecycle_log.js';
 
-/** Идентичность события жизненного цикла. НЕ ctx.message: логгер затирает имя события полем message. */
-export type WbLifecycleEvent =
-  | 'LCD_CANDIDATE' | 'LCD_NOT_ADVANCED' | 'LCD_COMMIT_CONFLICT' | 'LCD_COMMITTED' | 'LCD_WRITE_FAILED'
-  | 'LCD_REVERTED' | 'LCD_MIRROR_REPAIRED' | 'MANUAL_OVERRIDE_ACTIVE' | 'NEW_MONTH_CREATED' | 'INTEGRITY_FAILED';
+/** События WB — общий словарь lifecycle_log.ts; платформа проставляется здесь. */
+export type WbLifecycleEvent = LifecycleEvent;
 
 export function lifecycleLog(log: Logger, event: WbLifecycleEvent, ctx: Record<string, unknown>, level: 'info' | 'warn' | 'error' = 'info'): void {
-  // поле message затёрло бы имя события (logging.ts раскрывает ctx последним) — не пропускаем его
-  const safe = Object.fromEntries(Object.entries(ctx).filter(([k]) => k !== 'message'));
-  log[level]('unitka_lifecycle', { lifecycle_event: event, platform: 'WB', ...safe });
+  logLifecycle(log, 'WB', event, ctx, level);
 }
 
 /* ─────────────────────────── авторитетная ячейка ─────────────────────────── */

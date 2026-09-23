@@ -161,6 +161,26 @@ export function engineCfRuleCount(sheetId: number, sections: readonly SectionLay
   return cfAllRequests(sheetId, sections, lcdRef).length + futureDayRequests(sheetId, sections, lcdRef).length;
 }
 
+/**
+ * Сколько правил УФ движка стоит В ЛИСТЕ СЕЙЧАС. Движок добавляет свои правила в начало списка
+ * (index 0), поэтому его правила — ПРЕФИКС, и все они лежат левее хвоста владельца. Счёт по листу,
+ * а не по генератору, потому что лист мог остаться в промежуточном состоянии: фаза УФ уходит
+ * пачками по 400 запросов, и сбой между пачками оставляет не то число правил, которое вычислил бы
+ * генератор. Удаление по фактическому префиксу самовосстанавливается и не копит правила.
+ * Правила, задевающие хвост (правила владельца), не считаются никогда.
+ */
+export function engineCfPrefix(
+  rules: ReadonlyArray<{ ranges?: ReadonlyArray<{ endColumnIndex?: number; startColumnIndex?: number }> }>, tailFirst: number,
+): number {
+  let n = 0;
+  for (const r of rules) {
+    const ranges = r.ranges ?? [];
+    if (!ranges.length || !ranges.every((g) => (g.endColumnIndex ?? Number.MAX_SAFE_INTEGER) <= tailFirst - 1)) break;
+    n++;
+  }
+  return n;
+}
+
 /* ─────────────────────────── проверка публикации ─────────────────────────── */
 
 export interface WrittenRange { readonly range: string; readonly values: ReadonlyArray<ReadonlyArray<unknown>> }
@@ -234,4 +254,192 @@ export function verifyPublication(a: {
   }
   const chk = (name: string, bad: string[]): PublicationCheck => ({ name, pass: bad.length === 0, count: bad.length, sample: bad.slice(0, 10) });
   return [chk('READBACK_VALUES', lit), chk('READBACK_FORMULAS', frm), chk('FORMULA_ERRORS', err), chk('SUMMARY_RECONCILIATION', sum)];
+}
+
+/* ═══════════════════════════ ввод-вывод цикла ═══════════════════════════ */
+
+import type { Logger } from '../../../logging.js';
+import type { SheetMeta } from '../sheets.js';
+import { decideCandidate, coveredByRunWindows, type CandidateDecision, type LcdMode } from '../lcd.js';
+import { readLifecycleConfig, type LifecycleConfig } from '../config_sheet.js';
+import { logLifecycle } from '../lifecycle_log.js';
+import { planExpansion, isRefusal } from './capacity.js';
+
+export interface OzonCandidate {
+  readonly mode: LcdMode;
+  readonly committed: string;
+  readonly candidate: string;
+  readonly decision: CandidateDecision;
+  readonly d1Msk: string;
+  readonly lifecycle: LifecycleConfig['state'];
+}
+
+/**
+ * Кандидат LCD Ozon: смежность вперёд от ЗАКОММИЧЕННОГО по окнам успешных прогонов
+ * OZON_INGESTION_RUNS (source_from..source_to), а не по наличию заказов: сутки без заказов, но
+ * с покрытием загрузкой — законно закрытые сутки. Нужна только история позже закоммиченного.
+ */
+export async function resolveOzonCandidate(a: {
+  sheets: SheetsGateway; projectId: string; log: Logger; now: Date;
+  query: <T>(sql: string) => Promise<T[]>;
+}): Promise<OzonCandidate> {
+  const life = await readLifecycleConfig(a.sheets);
+  if (life.state === 'DRIFT' || life.state === 'INVALID') {
+    throw new LoaderError(`блок жизненного цикла ZZ_CONFIG: ${life.issues.slice(0, 4).join(' | ')}`, 'LIFECYCLE_CONFIG_INVALID');
+  }
+  const cfg = life.state === 'PRESENT' ? life.ozon : { mode: 'AUTO' as const, manualLcd: undefined, manualRaw: null };
+  const committed = await new OzonLcdCell(a.sheets).read();
+  if (!committed) throw new LoaderError(`${OZON_OWN_LCD_NAME} в книге пуст или не дата`, 'LCD_BOOK_INVALID');
+  if (!/^[A-Za-z0-9-]+$/.test(a.projectId)) throw new LoaderError('идентификатор проекта', 'OZON_UNITKA_CONFIG');
+  const runs = await a.query<{ entity: string; source_from: string | null; source_to: string | null; completed_msk: string | null }>(
+    `SELECT entity, source_from, source_to, CAST(DATE(completed_at, 'Europe/Moscow') AS STRING) AS completed_msk
+     FROM \`${a.projectId}.ozon_raw.OZON_INGESTION_RUNS\`
+     WHERE status = 'OK' AND entity IN (${OZON_COVERAGE_ENTITIES.map((e) => `'${e}'`).join(', ')})
+       AND source_to > '${committed}'`);
+  const d1Msk = d1MoscowOf(a.now);
+  const decision = decideCandidate({
+    platform: 'OZON', mode: cfg.mode, manualLcd: cfg.manualLcd, committed, d1Msk,
+    covered: coveredByRunWindows(runs.map((r) => ({ entity: r.entity, from: String(r.source_from ?? ''),
+      to: completedWindowEnd(String(r.source_to ?? ''), r.completed_msk) })), OZON_COVERAGE_ENTITIES),
+  });
+  if (decision.code === 'MANUAL_LCD_INVALID' || decision.code === 'MANUAL_LCD_REGRESSION') {
+    logLifecycle(a.log, 'OZON', 'MANUAL_OVERRIDE_ACTIVE', { outcome: 'REJECTED', code: decision.code, raw: cfg.manualRaw, notes: decision.notes }, 'error');
+    throw new LoaderError(`OZON_MANUAL_LCD отвергнута: ${decision.notes.join('; ')}`, decision.code);
+  }
+  logLifecycle(a.log, 'OZON', cfg.mode === 'MANUAL' ? 'MANUAL_OVERRIDE_ACTIVE' : 'LCD_CANDIDATE', {
+    mode: cfg.mode, committed, candidate: decision.candidate, d1_msk: d1Msk, will_advance: decision.willAdvance,
+    gap_at: decision.gapAt, lifecycle_block: life.state, notes: decision.notes,
+  }, cfg.mode === 'MANUAL' ? 'warn' : 'info');
+  return { mode: cfg.mode, committed, candidate: decision.candidate, decision, d1Msk, lifecycle: life.state };
+}
+
+/**
+ * Конец окна, за который прогон РЕАЛЬНО ручается. source_to — это дата ЗАПУСКА: прогон, завершённый
+ * 23.09 в 06:32 МСК, пишет source_to = 2026-09-23 — день, который едва начался (замер prod 24.09).
+ * Ручаться прогон может только за сутки, закончившиеся до его завершения: min(source_to, дата
+ * завершения по МСК − 1). Без этого ночной или догоняющий прогон закрыл бы неполные сутки.
+ */
+export function completedWindowEnd(sourceTo: string, completedMsk: string | null): string {
+  if (!completedMsk || !/^\d{4}-\d{2}-\d{2}$/.test(completedMsk)) return '';     // нет даты завершения — не ручается
+  const lastFull = addDaysIso(completedMsk, -1);
+  return sourceTo < lastFull ? sourceTo : lastFull;
+}
+
+/* ─────────────────────────── ёмкость: реальная вставка ─────────────────────────── */
+
+export interface ExpansionOutcome {
+  readonly geometry: OzonGeometry;
+  readonly meta: SheetMeta;
+  readonly grid: SheetCell[][];
+  readonly insertedColumns: number;
+  readonly tailCellsVerified: number;
+}
+
+const q = (name: string) => `'${name.replace(/'/g, "''")}'`;
+
+async function readGrid(sheets: SheetsGateway, name: string, rows: number, cols: number): Promise<SheetCell[][]> {
+  const [g] = await sheets.readValues([`${q(name)}!A1:${columnName(cols)}${rows}`]);
+  return (g ?? []) as SheetCell[][];
+}
+
+function rect(grid: readonly (readonly SheetCell[])[], c1: number, c2: number, rows: number): string[][] {
+  const out: string[][] = [];
+  for (let r = 0; r < rows; r++) {
+    const row = grid[r] ?? [];
+    const line: string[] = [];
+    for (let c = c1; c <= c2; c++) line.push(JSON.stringify(row[c - 1] ?? ''));
+    out.push(line);
+  }
+  return out;
+}
+
+/**
+ * Вставка слотов ПЕРЕД хвостом владельца — со снимком и доказательством после:
+ *   1. план (capacity.planExpansion) — либо безопасный план, либо отказ БЕЗ мутаций;
+ *   2. снимок хвоста: все значения колонок tailFirst..последней;
+ *   3. insertDimension (одна атомарная структурная запись);
+ *   4. доказательства: ширина выросла ровно на вставленное; хвост ПОСЛЕ сдвига побайтно равен
+ *      снимку ДО; вставленные колонки пусты; зеркало LCD сдвинулось ровно на вставленное;
+ *   5. геометрия ЗАНОВО выводится ИЗ ЛИСТА и обязана совпасть с планом. Дальше прогон работает
+ *      только с ней — старое положение хвоста (562) после этого не используется нигде.
+ */
+export async function expandOzonCapacity(a: {
+  sheets: SheetsGateway; sheetName: string; meta: SheetMeta; geometry: OzonGeometry;
+  blocksNeeded: number; log: Logger; envTailFirst?: number;
+}): Promise<ExpansionOutcome> {
+  const { sheets, sheetName: name, meta, geometry: geo } = a;
+  const plan = planExpansion({ slotsNow: geo.physicalSlots, blocksNeeded: a.blocksNeeded, tailFirstLive: geo.tailFirst, sheetColumnCount: meta.columnCount });
+  if (isRefusal(plan)) {
+    logLifecycle(a.log, 'OZON', 'NO_SAFE_EXPANSION_PATH', { code: 'NO_SAFE_EXPANSION_PATH', why: plan.why, blocks_needed: a.blocksNeeded, slots: geo.physicalSlots }, 'error');
+    throw new LoaderError(`расширение листа Ozon невозможно доказать безопасным: ${plan.why}`, 'NO_SAFE_EXPANSION_PATH');
+  }
+  const gridBefore = await readGrid(sheets, name, meta.rowCount, meta.columnCount);
+  if (plan.insertCount === 0) return { geometry: geo, meta, grid: gridBefore, insertedColumns: 0, tailCellsVerified: 0 };
+
+  const tailBefore = rect(gridBefore, geo.tailFirst, meta.columnCount, meta.rowCount);
+  const mirrorBefore = meta.namedRanges?.OZON_LCD_MIRROR ?? null;
+  await sheets.structureWrite([{ insertDimension: {
+    range: { sheetId: meta.sheetId, dimension: 'COLUMNS', startIndex: plan.insertAt, endIndex: plan.insertAt + plan.insertCount },
+    inheritFromBefore: true } }]);
+
+  const meta2 = await sheets.readSheetMeta(name, false);
+  const fail = (why: string): never => {
+    logLifecycle(a.log, 'OZON', 'NO_SAFE_EXPANSION_PATH', { code: 'CAPACITY_EXPANSION_VERIFY_FAILED', why, inserted: plan.insertCount }, 'error');
+    throw new LoaderError(`проверка после вставки колонок: ${why}`, 'CAPACITY_EXPANSION_VERIFY_FAILED');
+  };
+  if (meta2.columnCount !== meta.columnCount + plan.insertCount) fail(`ширина листа ${meta2.columnCount} вместо ${meta.columnCount + plan.insertCount}`);
+  const grid2 = await readGrid(sheets, name, meta2.rowCount, meta2.columnCount);
+  const tailAfter = rect(grid2, geo.tailFirst + plan.insertCount, meta2.columnCount, meta.rowCount);
+  if (JSON.stringify(tailAfter) !== JSON.stringify(tailBefore)) fail('хвост владельца после сдвига не совпал со снимком до вставки');
+  // Пустота проверяется по САМИМ значениям. Первая версия сравнивала дважды сериализованную строку
+  // и на пустых колонках давала ложное «не пусты» (репетиция 24.09: 0 непустых ячеек из 16 250).
+  if (!columnsEmpty(grid2, plan.insertAt + 1, plan.insertAt + plan.insertCount)) fail('вставленные колонки не пусты');
+  const mirror2 = meta2.namedRanges?.OZON_LCD_MIRROR ?? null;
+  if (mirrorBefore && (!mirror2 || mirror2.col !== mirrorBefore.col + plan.insertCount || mirror2.row !== mirrorBefore.row)) {
+    fail(`зеркало LCD ${JSON.stringify(mirrorBefore)} → ${JSON.stringify(mirror2)}, ожидался сдвиг на ${plan.insertCount}`);
+  }
+  const geo2 = deriveOzonGeometry({ grid: grid2, columnCount: meta2.columnCount, mirror: mirror2, envTailFirst: a.envTailFirst });
+  if (geo2.physicalSlots !== plan.slotsAfter || geo2.tailFirst !== plan.tailFirstAfter) {
+    fail(`геометрия из листа ${geo2.physicalSlots} слотов / хвост ${geo2.tailFirst} ≠ плану ${plan.slotsAfter} / ${plan.tailFirstAfter}`);
+  }
+  const tailCells = tailBefore.reduce((n, r) => n + r.filter((c) => c !== '""').length, 0);
+  logLifecycle(a.log, 'OZON', 'CAPACITY_EXPANDED', {
+    slots_before: plan.slotsBefore, slots_after: plan.slotsAfter, inserted_columns: plan.insertCount, insert_at: plan.insertAt,
+    tail_before: plan.tailFirstBefore, tail_after: geo2.tailFirst, tail_cells_verified: tailCells, lcd_ref: geo2.lcdRef,
+  });
+  return { geometry: geo2, meta: meta2, grid: grid2, insertedColumns: plan.insertCount, tailCellsVerified: tailCells };
+}
+
+/* ─────────────────────────── перечитывание опубликованного ─────────────────────────── */
+
+export async function readbackAndVerify(a: {
+  sheets: SheetsGateway; sheetName: string; written: ReadonlyMap<string, unknown>;
+  sections: ReadonlyArray<{ readonly titleRow: number; readonly firstRow: number; readonly lastRow: number; readonly mtdRow: number; readonly blockCount: number }>;
+  tailFirst: number; summaryUpTo: string;
+}): Promise<PublicationCheck[]> {
+  if (!a.sections.length) return [];
+  const top = Math.min(...a.sections.map((s) => s.titleRow));
+  const bottom = Math.max(...a.sections.map((s) => s.mtdRow));
+  const lastCol = a.tailFirst - 1;
+  const box = `${q(a.sheetName)}!A${top}:${columnName(lastCol)}${bottom}`;
+  const [vals] = await a.sheets.readValues([box]);
+  const frm = await a.sheets.readFormulas(box);
+  const at = (g: readonly (readonly unknown[])[] | undefined) => (r: number, c: number): unknown =>
+    (r < top || r > bottom || c > lastCol) ? undefined : ((g?.[r - top] ?? [])[c - 1] ?? '');
+  const values = at(vals), formulas = at(frm);
+  // вне прямоугольника проверки ничего быть не должно: запись в хвост владельца — нарушение
+  const outside: string[] = [];
+  const inBox = new Map<string, unknown>();
+  for (const [k, v] of a.written) {
+    const [r, c] = k.split(':').map(Number) as [number, number];
+    if (c >= a.tailFirst) outside.push(`${columnName(c)}${r}`);
+    else if (r >= top && r <= bottom) inBox.set(k, v);
+  }
+  const EPOCH = Date.UTC(1899, 11, 30);
+  const dateAt = (r: number): string | null => {
+    const v = values(r, 2);
+    return typeof v === 'number' ? new Date(EPOCH + v * 86_400_000).toISOString().slice(0, 10) : null;
+  };
+  const checks = verifyPublication({ written: inBox, values, formulas, sections: a.sections, dateAt, summaryUpTo: a.summaryUpTo });
+  return [...checks, { name: 'NO_WRITE_INTO_OWNER_TAIL', pass: outside.length === 0, count: outside.length, sample: outside.slice(0, 10) }];
 }

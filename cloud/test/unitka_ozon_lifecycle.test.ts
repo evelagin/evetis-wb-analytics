@@ -7,7 +7,7 @@
  */
 import { describe, it, expect } from 'vitest';
 import {
-  resolveOzonAuthority, deriveOzonGeometry, engineCfRuleCount, verifyPublication, writtenCells, d1MoscowOf,
+  resolveOzonAuthority, deriveOzonGeometry, engineCfRuleCount, verifyPublication, writtenCells, d1MoscowOf, completedWindowEnd,
   OZON_COVERAGE_ENTITIES,
 } from '../src/loaders/unitka/ozon/ozon_lifecycle.js';
 import { OZON_GEOMETRY, ozonSlotStart } from '../src/loaders/unitka/ozon/contract.js';
@@ -172,5 +172,107 @@ describe('проверка публикации', () => {
     const post = verifyPublication({ written: new Map(), values: withData, formulas: () => '', sections: [sec], dateAt, summaryUpTo: '2026-09-22' });
     expect(post.find((x) => x.name === 'SUMMARY_RECONCILIATION')!.pass, 'после коммита — сверяется и пустая сводка ловится').toBe(false);
     void W;
+  });
+});
+
+describe('окно покрытия Ozon: прогон ручается только за ЗАКОНЧИВШИЕСЯ сутки', () => {
+  it('прогон 23.09 06:32 МСК с source_to=23.09 ручается только по 22.09 (замер prod)', () => {
+    expect(completedWindowEnd('2026-09-23', '2026-09-23')).toBe('2026-09-22');
+  });
+  it('прогон 24.09 06:30 закрывает 23.09 — штатное утро', () => {
+    expect(completedWindowEnd('2026-09-24', '2026-09-24')).toBe('2026-09-23');
+  });
+  it('исторический прогон с окном, кончившимся раньше, — окно не удлиняется', () => {
+    expect(completedWindowEnd('2026-09-10', '2026-09-23')).toBe('2026-09-10');
+  });
+  it('нет даты завершения — прогон не ручается ни за что', () => {
+    expect(completedWindowEnd('2026-09-23', null)).toBe('');
+  });
+});
+
+/* ── реальный путь вставки: книга в памяти с insertDimension, как у Sheets API ── */
+import { expandOzonCapacity } from '../src/loaders/unitka/ozon/ozon_lifecycle.js';
+import type { SheetsGateway, SheetMeta } from '../src/loaders/unitka/sheets.js';
+
+class InsertBook {
+  constructor(public grid: unknown[][], public mirror: { row: number; col: number }) {}
+  get cols(): number { return this.grid[0]!.length; }
+  meta(): SheetMeta { return { sheetId: 7, rowCount: this.grid.length, columnCount: this.cols, anchorCol: 0, namedRanges: { OZON_LCD_MIRROR: { ...this.mirror } } }; }
+  gateway(o: { corruptTail?: boolean } = {}): SheetsGateway { return insertGateway(this, o); }
+}
+interface InsertReq { insertDimension?: { range: { startIndex: number; endIndex: number } } }
+/** Шлюз книги в памяти: insertDimension сдвигает колонки и именованный диапазон, как Sheets API. */
+function insertGateway(book: InsertBook, o: { corruptTail?: boolean }): SheetsGateway {
+  return {
+    async readSheetMeta() { return book.meta(); },
+    async readValues(ranges: string[]) { return ranges.map(() => book.grid.map((r) => [...r])) as never; },
+    async structureWrite(reqs: InsertReq[]) {
+      for (const r of reqs) {
+        const ins = r.insertDimension; if (!ins) continue;
+        const { startIndex: at, endIndex } = ins.range; const n = endIndex - at;
+        book.grid = book.grid.map((row) => [...row.slice(0, at), ...Array<unknown>(n).fill(''), ...row.slice(at)]);
+        if (book.mirror.col > at) book.mirror = { ...book.mirror, col: book.mirror.col + n };
+        if (o.corruptTail) book.grid[1]![at + n] = 'ПОВРЕЖДЕНО';
+      }
+      return reqs.length;
+    },
+  } as unknown as SheetsGateway;
+}
+const silent = { info() {}, warn() {}, error() {}, debug() {}, child() { return silent; } } as never;
+
+describe('вставка слотов: доказательства после insertDimension', () => {
+  it('SKU #23: 25 колонок перед хвостом, хвост побайтно на месте, геометрия ЗАНОВО из листа', async () => {
+    const book = new InsertBook(sheetGrid(22, 562, 574), { row: 2, col: 573 });
+    const geo = deriveOzonGeometry({ grid: book.grid as never, columnCount: 574, mirror: book.mirror });
+    const ex = await expandOzonCapacity({ sheets: book.gateway(), sheetName: 'S', meta: book.meta(), geometry: geo, blocksNeeded: 23, log: silent });
+    expect(ex.insertedColumns).toBe(25);
+    expect(ex.geometry).toMatchObject({ markedSlots: 22, reservedSlots: 1, physicalSlots: 23, tailFirst: 587, lcdRef: '$VZ$2' });
+    expect(book.cols).toBe(599);
+    expect(ex.tailCellsVerified).toBe(2);                    // таблица владельца и зеркало
+  });
+
+  it('регрессия репетиции 24.09: ПУСТЫЕ вставленные колонки не объявляются непустыми', async () => {
+    const book = new InsertBook(sheetGrid(22, 562, 574), { row: 2, col: 573 });
+    const geo = deriveOzonGeometry({ grid: book.grid as never, columnCount: 574, mirror: book.mirror });
+    await expect(expandOzonCapacity({ sheets: book.gateway(), sheetName: 'S', meta: book.meta(), geometry: geo, blocksNeeded: 23, log: silent }))
+      .resolves.toMatchObject({ insertedColumns: 25 });
+  });
+
+  it('хвост после вставки не совпал со снимком → CAPACITY_EXPANSION_VERIFY_FAILED', async () => {
+    const book = new InsertBook(sheetGrid(22, 562, 574), { row: 2, col: 573 });
+    const geo = deriveOzonGeometry({ grid: book.grid as never, columnCount: 574, mirror: book.mirror });
+    await expect(expandOzonCapacity({ sheets: book.gateway({ corruptTail: true }), sheetName: 'S', meta: book.meta(), geometry: geo, blocksNeeded: 23, log: silent }))
+      .rejects.toMatchObject({ code: 'CAPACITY_EXPANSION_VERIFY_FAILED' });
+  });
+
+  it('ПОВТОР: колонки уже вставлены, блок не активирован → второй вставки НЕТ', async () => {
+    const book = new InsertBook(sheetGrid(22, 562, 574), { row: 2, col: 573 });
+    const g1 = deriveOzonGeometry({ grid: book.grid as never, columnCount: 574, mirror: book.mirror });
+    await expandOzonCapacity({ sheets: book.gateway(), sheetName: 'S', meta: book.meta(), geometry: g1, blocksNeeded: 23, log: silent });
+    // следующий прогон: заново из листа
+    const g2 = deriveOzonGeometry({ grid: book.grid as never, columnCount: book.cols, mirror: book.mirror });
+    expect(g2.physicalSlots).toBe(23);
+    const again = await expandOzonCapacity({ sheets: book.gateway(), sheetName: 'S', meta: book.meta(), geometry: g2, blocksNeeded: 23, log: silent });
+    expect(again.insertedColumns, 'DUPLICATE_CAPACITY_EXPANSION').toBe(0);
+    expect(book.cols).toBe(599);
+  });
+});
+
+import { engineCfPrefix } from '../src/loaders/unitka/ozon/ozon_lifecycle.js';
+describe('правила УФ движка — фактический префикс в листе', () => {
+  const eng = (end: number) => ({ ranges: [{ startColumnIndex: 11, endColumnIndex: end }] });
+  it('все правила левее хвоста и в начале списка — это правила движка', () => {
+    expect(engineCfPrefix([eng(561), eng(561), eng(300)], 562)).toBe(3);
+  });
+  it('правило, задевающее хвост владельца, прерывает префикс и НЕ удаляется', () => {
+    expect(engineCfPrefix([eng(561), { ranges: [{ startColumnIndex: 565, endColumnIndex: 566 }] }, eng(561)], 562)).toBe(1);
+  });
+  it('после расширения хвост дальше — правила нового блока тоже в префиксе', () => {
+    expect(engineCfPrefix([eng(586), eng(561)], 587)).toBe(2);
+    expect(engineCfPrefix([eng(586), eng(561)], 562)).toBe(0);
+  });
+  it('промежуточное состояние (сбой между пачками по 400) лечится: удаляется ровно то, что есть', () => {
+    const partial = Array.from({ length: 300 }, () => eng(561));
+    expect(engineCfPrefix(partial, 562)).toBe(300);
   });
 });

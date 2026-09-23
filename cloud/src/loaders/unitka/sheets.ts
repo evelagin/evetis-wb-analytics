@@ -194,8 +194,13 @@ export class SheetsRest implements SheetsGateway {
   constructor(
     private readonly spreadsheetId: string,
     private readonly readonly: boolean,
+    /**
+     * Внедрённая аутентификация — только для репетиции Gate 10 (сервисный аккаунт репетиции на
+     * тестовой книге). В production не передаётся: остаётся ADC сервисного аккаунта Cloud Run.
+     */
+    auth?: GoogleAuth,
   ) {
-    this.auth = new GoogleAuth({ scopes: [readonly ? SCOPE_RO : SCOPE_RW] });
+    this.auth = auth ?? new GoogleAuth({ scopes: [readonly ? SCOPE_RO : SCOPE_RW] });
   }
 
   async readSheetMeta(sheetName: string, requireAnchor = true): Promise<SheetMeta> {

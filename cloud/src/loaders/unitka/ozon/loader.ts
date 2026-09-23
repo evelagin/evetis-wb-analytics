@@ -18,6 +18,12 @@
  * гейта, не суточного прогона) и не трогает секции вне окна.
  */
 import type { LoaderContext, LoaderResult } from '../../types.js';
+import {
+  resolveOzonAuthority, resolveOzonCandidate, deriveOzonGeometry, expandOzonCapacity, engineCfRuleCount, engineCfPrefix,
+  writtenCells, readbackAndVerify, OzonLcdCell, type OzonCandidate,
+} from './ozon_lifecycle.js';
+import { commitLcd, revertLcd } from '../lcd.js';
+import { logLifecycle } from '../lifecycle_log.js';
 import { LoaderError } from '../../../errors.js';
 import { SheetsRest, type SheetsGateway } from '../sheets.js';
 import { BqClient } from '../../../bq/client.js';
@@ -183,17 +189,29 @@ export async function ozonUnitkaLoader(
   const sheets = deps.makeSheets(ctx, !write);
   const bq = deps.makeBq(ctx);
   const name = ctx.config.ozonUnitkaSheetName;
+  const log = ctx.logger;
   // якорь тарифов WB (REVERSE_LEG_RATE) листу Ozon не нужен: его тарифы живут в BigQuery
-  const meta = await sheets.readSheetMeta(name, false);
+  let meta = await sheets.readSheetMeta(name, false);
   const q = `'${name.replace(/'/g, "''")}'`;
 
-  // LAST_CLOSED_DATE читается ИЗ КНИГИ, а не из окружения: владелец двигает её в ZZ_CONFIG,
-  // и статическая переменная окружения устарела бы на следующий же день.
-  const lcd = ctx.config.ozonUnitkaLastClosedDate
-    || await readLcd(sheets, ctx.config.ozonUnitkaLcdCell);
+  // ── АВТОРИТЕТ LCD (Gate 10). LEGACY — до миграции: LCD читается из B2 (он принадлежит WB) и НЕ
+  //    пишется никогда; OWN — собственный цикл на OZON_LAST_CLOSED_DATE с атомарным коммитом.
+  const authority = resolveOzonAuthority(ctx.config.ozonUnitkaLcdCell);
+  let cycle: OzonCandidate | null = null;
+  let lcd: string;
+  if (authority.kind === 'OWN') {
+    if (ctx.config.ozonUnitkaLastClosedDate) {
+      throw new LoaderError('OZON_UNITKA_LCD задан в окружении при собственном цикле: ручная дата задаётся режимом MANUAL в ZZ_CONFIG, а не переменной', 'OZON_LCD_ENV_OVERRIDE_FORBIDDEN');
+    }
+    cycle = await resolveOzonCandidate({ sheets, projectId: ctx.config.projectId, log, now: deps.now(), query: (sql) => bq.query(sql) });
+    lcd = cycle.candidate;
+  } else {
+    // LAST_CLOSED_DATE читается ИЗ КНИГИ, а не из окружения.
+    lcd = ctx.config.ozonUnitkaLastClosedDate || await readLcd(sheets, authority.read);
+    logLifecycle(log, 'OZON', 'LCD_LEGACY_READONLY', { lcd, authority: authority.read, note: 'до миграции: LCD читается из B2 и не коммитится' });
+  }
   if (!/^\d{4}-\d{2}-\d{2}$/.test(lcd)) {
-    throw new LoaderError('OZON_UNITKA_LCD',
-      `LAST_CLOSED_DATE не прочитана из ${ctx.config.ozonUnitkaLcdCell}: ${lcd || '(пусто)'}`);
+    throw new LoaderError(`LAST_CLOSED_DATE не прочитана из ${authority.read}: ${lcd || '(пусто)'}`, 'OZON_UNITKA_LCD');
   }
   const today = deps.now().toISOString().slice(0, 10);
   const w = isDeepReconciliationDay(today) ? ozonDeepWindow(lcd) : ozonRewriteWindow(lcd);
@@ -213,17 +231,20 @@ export async function ozonUnitkaLoader(
      SELECT m.offer_id, CAST(DATE_TRUNC(a.d, MONTH) AS STRING) first_month
      FROM m LEFT JOIN a USING (internal_sku)`);
   const canonSet = new Set(skuRef.map((r) => r.offer_id));
-  if (!canonSet.size) throw new LoaderError('OZON_UNITKA_REF', 'справочник каналов Ozon пуст');
+  if (!canonSet.size) throw new LoaderError('справочник каналов Ozon пуст', 'OZON_UNITKA_REF');
   const firstActivity: Record<string, string> = {};
   for (const r of skuRef) if (r.first_month) firstActivity[r.offer_id] = r.first_month.slice(0, 7);
 
-  const tailFirst = ctx.config.ozonUnitkaTailFirstColumn;
-  const [grid] = await sheets.readValues([`${q}!A1:${columnName(tailFirst - 1)}${meta.rowCount}`]);
+  // ── ГЕОМЕТРИЯ ИЗ ЛИСТА (Gate 10), а не из окружения: вставка колонок делает 562/22/$VA$2 ложью.
+  let grid = (await sheets.readValues([`${q}!A1:${columnName(meta.columnCount)}${meta.rowCount}`]))[0] ?? [];
+  let geo = deriveOzonGeometry({ grid: grid as SheetCell[][], columnCount: meta.columnCount,
+    mirror: meta.namedRanges?.OZON_LCD_MIRROR ?? null, envTailFirst: ctx.config.ozonUnitkaTailFirstColumn });
+  if (geo.notes.length) log.warn('ozon-unitka: геометрия', { notes: geo.notes });
   const alias = ctx.config.ozonUnitkaOfferAliases;
   const canonicalOffer = (t: string): string | null =>
     canonSet.has(t) ? t : (alias[t] ?? null);
-  const { sections: live, cart } = parseLiveLayout(grid ?? [], tailFirst, canonicalOffer);
-  if (!live.length) throw new LoaderError('OZON_UNITKA_LAYOUT', 'секций месяца в листе не найдено');
+  let { sections: live, cart } = parseLiveLayout(grid as SheetCell[][], geo.tailFirst, canonicalOffer);
+  if (!live.length) throw new LoaderError('секций месяца в листе не найдено', 'OZON_UNITKA_LAYOUT');
 
   // ── барьер готовности: источники обязаны быть свежими ДО любой записи ────────────────
   const fresh = assessFreshness(
@@ -245,42 +266,48 @@ export async function ozonUnitkaLoader(
   const stock: Record<string, number> = {};
   for (const s of stockRows) stock[`${s.d}|${s.offer_id}`] = s.units;
 
-  // эталон подписи и шапки — ПОСЛЕДНЯЯ существующая секция: у неё самый полный состав блоков,
-  // и именно её оформление наследует новый месяц
-  const refFrom = [...live].sort((x, y2) => y2.titleRow - x.titleRow)[0] as LiveSection;
-  const [refRows] = await sheets.readValues(
-    [`${q}!A${refFrom.titleRow}:${columnName(tailFirst - 1)}${refFrom.headerRow}`]);
-  const refTitle = ((refRows ?? [])[0] ?? []) as unknown as CellValue[];
-  const refHeader = ((refRows ?? [])[1] ?? []) as unknown as CellValue[];
-  const refAnchor: Record<string, number> = {};
-  refFrom.blocks.forEach((o, b) => {
-    refAnchor[o] = OZON_GEOMETRY.BLOCK_FIRST_COLUMN + OZON_GEOMETRY.BLOCK_WIDTH * b;
-  });
-
   // секции окна: существующие + недостающие, достроенные из геометрии последней.
   // Новый месяц и новый SKU появляются сами — ручной правки листа не требуется.
+  const planSections = (capacity: number): SectionPlan[] => {
+    const base = resolveSections({ live, windowMonths: [...months], firstActivity, blockSlots: capacity });
+    return base.map((p) => p.isNew ? p : {
+      ...p, blocks: activateNewSkus({ current: p.blocks, monthKey: p.monthKey, firstActivity, blockSlots: capacity }).blocks });
+  };
   let plans: SectionPlan[];
   try {
-    plans = resolveSections({ live, windowMonths: [...months], firstActivity,
-                              blockSlots: ctx.config.ozonUnitkaBlockSlots });
-    plans = plans.map((p) => p.isNew ? p : {
-      ...p, blocks: activateNewSkus({ current: p.blocks, monthKey: p.monthKey, firstActivity,
-                                      blockSlots: ctx.config.ozonUnitkaBlockSlots }).blocks });
+    plans = planSections(geo.physicalSlots);
   } catch (e) {
-    if (e instanceof NoFreeSkuSlotError) {
-      // ёмкость исчерпана: молча переписать чужой блок нельзя — лист потеряет историю SKU
-      ctx.logger.error('ozon-unitka: NO_FREE_SKU_SLOT', { message: e.message });
-      throw new LoaderError('NO_FREE_SKU_SLOT', e.message);
+    if (!(e instanceof NoFreeSkuSlotError)) throw e;
+    // ── ДИНАМИЧЕСКАЯ ЁМКОСТЬ (Gate 10): свободного слота нет — лист расширяется ПЕРЕД хвостом.
+    //    Без права записи — прежний безопасный отказ: переписать чужой блок нельзя.
+    if (!write) {
+      ctx.logger.error('ozon-unitka: NO_FREE_SKU_SLOT', { code: 'NO_FREE_SKU_SLOT', detail: e.message, note: 'в режиме записи лист был бы расширен' });
+      throw new LoaderError(e.message, 'NO_FREE_SKU_SLOT');
     }
-    throw e;
+    const ex = await expandOzonCapacity({ sheets, sheetName: name, meta, geometry: geo, blocksNeeded: e.needed, log, envTailFirst: ctx.config.ozonUnitkaTailFirstColumn });
+    meta = ex.meta; grid = ex.grid; geo = ex.geometry;                 // дальше — ТОЛЬКО новая геометрия
+    ({ sections: live, cart } = parseLiveLayout(grid as SheetCell[][], geo.tailFirst, canonicalOffer));
+    plans = planSections(geo.physicalSlots);
   }
   const created = plans.filter((p) => p.isNew);
   const activated = plans.flatMap((p) => {
     const was = live.find((l) => l.monthKey === p.monthKey);
     return was ? p.blocks.filter((b) => !was.blocks.includes(b)).map((b) => `${p.monthKey}:${b}`) : [];
   });
-  if (created.length) ctx.logger.info('ozon-unitka: созданы секции', { months: created.map((c) => c.monthKey) });
-  if (activated.length) ctx.logger.info('ozon-unitka: активированы SKU', { skus: activated });
+  if (created.length) logLifecycle(log, 'OZON', 'NEW_MONTH_CREATED', { months: created.map((c) => c.monthKey), write });
+  if (activated.length) logLifecycle(log, 'OZON', 'NEW_SKU_ACTIVATED', { skus: activated, write });
+
+  // эталон подписи и шапки — ПОСЛЕДНЯЯ существующая секция: у неё самый полный состав блоков,
+  // и именно её оформление наследует новый месяц
+  const refFrom = [...live].sort((x, y2) => y2.titleRow - x.titleRow)[0] as LiveSection;
+  const [refRows] = await sheets.readValues(
+    [`${q}!A${refFrom.titleRow}:${columnName(geo.tailFirst - 1)}${refFrom.headerRow}`]);
+  const refTitle = ((refRows ?? [])[0] ?? []) as unknown as CellValue[];
+  const refHeader = ((refRows ?? [])[1] ?? []) as unknown as CellValue[];
+  const refAnchor: Record<string, number> = {};
+  refFrom.blocks.forEach((o, b) => {
+    refAnchor[o] = OZON_GEOMETRY.BLOCK_FIRST_COLUMN + OZON_GEOMETRY.BLOCK_WIDTH * b;
+  });
 
   const monthDays = (k: string) => new Date(Date.UTC(Number(k.slice(0, 4)), Number(k.slice(5, 7)), 0)).getUTCDate();
   const built = plans.map((p, i) => {
@@ -290,39 +317,55 @@ export async function ozonUnitkaLoader(
       : (live.filter((l) => l.titleRow < p.titleRow).sort((a, b) => b.titleRow - a.titleRow)[0]?.days.length ?? 0);
     const spec = ozonMonthSpec(y, mo, p.titleRow - prevDays - 4, prevDays, p.blocks);
     if (spec.titleRow !== p.titleRow) {
-      throw new LoaderError('OZON_UNITKA_GEOMETRY',
-        `секция ${p.monthKey}: расчётная строка ${spec.titleRow} против ожидаемой ${p.titleRow}`);
+      throw new LoaderError(`секция ${p.monthKey}: расчётная строка ${spec.titleRow} против ожидаемой ${p.titleRow}`, 'OZON_UNITKA_GEOMETRY');
     }
     const from = ozonFromDayFor(p.monthKey, w);
     const first = `${p.monthKey}-01`;
     const last = `${p.monthKey}-${String(monthDays(p.monthKey)).padStart(2, '0')}`;
     const inSection = facts.filter((f) => f.d >= first && f.d <= last);
     const comp = composeMonth(spec, inSection, stock, lcd, from, cart);
-    return { spec, facts: inSection, stock, formulas: sectionFormulas(spec, comp),
+    return { spec, facts: inSection, stock, formulas: sectionFormulas(spec, comp, 'SEMICOLON', authority.lcdName),
              refTitle, refHeader, refAnchor, fromDay: from,
              estimated: comp.provenance.length };
   });
 
-  const allSections: SectionLayout[] = live.map((s) => {
+  const liveLayouts: SectionLayout[] = live.map((s) => {
     const y = Number(s.monthKey.slice(0, 4)); const mo = Number(s.monthKey.slice(5, 7));
     const prev = live[live.indexOf(s) - 1]; const prevDays = prev ? prev.days.length : 0;
     return layoutOf(ozonMonthSpec(y, mo, s.titleRow - prevDays - 4, prevDays, s.blocks));
   });
-  for (const b of built) if (!allSections.some((x) => x.titleRow === b.spec.titleRow)) allSections.push(layoutOf(b.spec));
+  // Раскладка ПОСЛЕ записи: секции, которые прогон переписывает, берутся из ПЛАНА, а не из листа.
+  // Иначе блок, активированный внутри существующей секции, не получил бы правил УФ, а следующий
+  // прогон, увидев его в листе, насчитал бы правил больше, чем их есть.
+  const builtByRow = new Map(built.map((b) => [b.spec.titleRow, layoutOf(b.spec)]));
+  const allSections: SectionLayout[] = liveLayouts.map((x) => builtByRow.get(x.titleRow) ?? x);
+  for (const [row, lay] of builtByRow) if (!allSections.some((x) => x.titleRow === row)) allSections.push(lay);
   allSections.sort((x, y2) => x.titleRow - y2.titleRow);
   const appendRowCount = rowsNeeded(plans, meta.rowCount);
 
+  // Правила УФ, которые ЭТОТ движок сейчас держит в листе, — тем же генератором из ЖИВОЙ раскладки.
+  // Константа 434 из окружения верна только при 17 секциях × 22 блока: с первым же новым месяцем
+  // (01.10.2026) удаление по ней оставляло бы 23 правила в сутки.
+  const lcdRef = geo.lcdRef ?? ctx.config.ozonUnitkaLcdRef;
+  const structure = await sheets.readSheetStructure(name, meta.rowCount, meta.columnCount);
+  const existingCfRules = engineCfPrefix(structure.conditionalFormats, geo.tailFirst);
+  const derivedCf = engineCfRuleCount(meta.sheetId, liveLayouts, lcdRef);
+  if (existingCfRules !== derivedCf || existingCfRules !== ctx.config.ozonUnitkaExistingCfRules) {
+    log.warn('ozon-unitka: правила УФ', { in_sheet_engine_prefix: existingCfRules, generator_for_live_layout: derivedCf,
+      env: ctx.config.ozonUnitkaExistingCfRules, total_in_sheet: structure.conditionalFormats.length,
+      note: 'удаляется ФАКТИЧЕСКИЙ префикс правил движка; OZON_UNITKA_EXISTING_CF_RULES больше не авторитет' });
+  }
+
   const plan = buildOzonPlan({
     sheetId: meta.sheetId, sheetName: name, allSections, sections: built,
-    // геометрия суточным прогоном НЕ меняется: рост листа — дело миграционного гейта
+    // ширина листа суточным прогоном меняется ТОЛЬКО расширением ёмкости выше (с проверкой хвоста).
+    // Новые СТРОКИ дописываются: без них новый месяц некуда положить.
     grid: { current: { rows: meta.rowCount, columns: meta.columnCount },
-            // ширина листа суточным прогоном НЕ меняется: новые КОЛОНКИ — дело миграционного
-            // гейта. Новые СТРОКИ дописываются: без них новый месяц некуда положить.
-            growth: { widenBlockAt: [], insertColumnsBefore: tailFirst,
+            growth: { widenBlockAt: [], insertColumnsBefore: geo.tailFirst,
                       insertColumnCount: 0, appendColumnCount: 0, appendRowCount } },
-    lcd, lcdMirror: null, lcdRef: ctx.config.ozonUnitkaLcdRef,
-    blocks: ctx.config.ozonUnitkaBlockSlots,
-    existingCfRules: ctx.config.ozonUnitkaExistingCfRules,
+    lcd, lcdMirror: null, lcdRef,
+    blocks: geo.physicalSlots,
+    existingCfRules,
   });
 
   const cells = plan.values.reduce((n, v) => n + v.values.reduce((m, r) => m + r.length, 0), 0);
@@ -331,7 +374,9 @@ export async function ozonUnitkaLoader(
   ctx.logger.info('ozon-unitka: план собран', {
     window: `${w.from}..${w.to}`, days: w.days, deep: w.deep,
     sections: built.map((b) => b.spec.key).join(','), createdSections: created.length,
-    activatedSkus: activated.length, appendRowCount, cells, requests, estimatedRows, write });
+    activatedSkus: activated.length, appendRowCount, cells, requests, estimatedRows, write,
+    lcd_authority: authority.kind, committed_lcd: cycle?.committed ?? lcd, candidate_lcd: lcd,
+    slots: geo.physicalSlots, tail_first: geo.tailFirst, cf_rules_existing: existingCfRules });
 
   if (!write) return { rowsFetched: facts.length, rowsLoaded: 0 };
 
@@ -356,5 +401,58 @@ export async function ozonUnitkaLoader(
     }
   }
   ctx.logger.info('ozon-unitka: записано', { updated, estimatedRows });
+
+  // ── ПЕРЕЧИТЫВАНИЕ И ЦЕЛОСТНОСТЬ (Gate 10). До Gate 10 их не было вовсе. До коммита сводка
+  //    сверяется по дням ≤ закоммиченного LCD: формулы дня-кандидата честно пусты до коммита.
+  const written = writtenCells(plan.values);
+  const verifySections = built.map((b) => ({ titleRow: b.spec.titleRow, firstRow: b.spec.firstRow, lastRow: b.spec.lastRow, mtdRow: b.spec.mtdRow, blockCount: b.spec.blocks.length }));
+  const committedLcd = cycle?.committed ?? lcd;
+  // Барьер compare-before-commit — ПЕРВЫМ, до сверки сводки: если авторитет LCD изменили, пока
+  // писались данные, сводка «разъедется» по чужой дате, и отказ получил бы неверное объяснение.
+  if (cycle) {
+    const now = await new OzonLcdCell(sheets).read();
+    if (now !== cycle.committed) {
+      logLifecycle(log, 'OZON', 'LCD_COMMIT_CONFLICT', { code: 'LCD_COMMIT_CONFLICT', stage: 'PRE_COMMIT', committed: cycle.committed, book_now: now, candidate: cycle.candidate }, 'error');
+      throw new LoaderError(`OZON_LAST_CLOSED_DATE в книге ${now ?? '(пусто)'} ≠ ожидаемому ${cycle.committed}: изменён во время записи — не перетираем`, 'LCD_COMMIT_CONFLICT');
+    }
+  }
+  const pre = await readbackAndVerify({ sheets, sheetName: name, written, sections: verifySections, tailFirst: geo.tailFirst, summaryUpTo: committedLcd });
+  ctx.logger.info('ozon-unitka: проверка', { phase: 'PRE_COMMIT', checks: pre.map((c) => `${c.name}:${c.pass ? 'PASS' : `FAIL(${c.count})`}`) });
+  const preFailed = pre.filter((c) => !c.pass);
+  if (preFailed.length) {
+    logLifecycle(log, 'OZON', 'INTEGRITY_FAILED', { code: 'OZON_PUBLICATION_VERIFY_FAILED', phase: 'PRE_COMMIT', failed: preFailed.map((c) => ({ name: c.name, sample: c.sample.slice(0, 3) })) }, 'error');
+    throw new LoaderError(`проверка после записи: ${preFailed.map((c) => `${c.name}: ${c.sample.slice(0, 3).join('; ')}`).join(' | ')}`, 'OZON_PUBLICATION_VERIFY_FAILED');
+  }
+
+  // ── АТОМАРНЫЙ КОММИТ LCD — только в собственном цикле и только после проверки.
+  if (cycle) {
+    const cell = new OzonLcdCell(sheets);
+    const commit = await commitLcd(cell, { expectedCommitted: cycle.committed, candidate: cycle.candidate });
+    if (commit.code === 'LCD_COMMIT_CONFLICT' || commit.code === 'LCD_WRITE_FAILED') {
+      logLifecycle(log, 'OZON', commit.code, { code: commit.code, committed: cycle.committed, candidate: cycle.candidate, book_after: commit.bookAfter, detail: commit.message }, 'error');
+      throw new LoaderError(commit.message, commit.code);
+    }
+    if (commit.code === 'LCD_COMMITTED') {
+      const post = await readbackAndVerify({ sheets, sheetName: name, written, sections: verifySections, tailFirst: geo.tailFirst, summaryUpTo: cycle.candidate });
+      const mirror = meta.namedRanges?.OZON_LCD_MIRROR;
+      if (mirror) {
+        const [mv] = await sheets.readValues([`${q}!${columnName(mirror.col)}${mirror.row}`]);
+        const want = Math.round((Date.parse(`${cycle.candidate}T00:00:00Z`) - Date.UTC(1899, 11, 30)) / 86_400_000);
+        const got = mv?.[0]?.[0];
+        post.push({ name: 'LCD_MIRROR', pass: got === want, count: got === want ? 0 : 1, sample: got === want ? [] : [`зеркало ${String(got)} ≠ ${want}`] });
+      }
+      ctx.logger.info('ozon-unitka: проверка', { phase: 'POST_COMMIT', checks: post.map((c) => `${c.name}:${c.pass ? 'PASS' : `FAIL(${c.count})`}`) });
+      const postFailed = post.filter((c) => !c.pass);
+      if (postFailed.length) {
+        const rv = await revertLcd(cell, { committed: cycle.committed, from: cycle.candidate });
+        logLifecycle(log, 'OZON', 'LCD_REVERTED', { code: 'POST_COMMIT_QA_FAILED', revert: rv.code, book_after: rv.bookAfter, failed: postFailed.map((c) => c.name) }, 'error');
+        throw new LoaderError(`проверка после коммита LCD: ${postFailed.map((c) => `${c.name}: ${c.sample.slice(0, 3).join('; ')}`).join(' | ')} (откат: ${rv.code})`,
+          rv.code === 'REVERTED' ? 'POST_COMMIT_QA_FAILED' : 'POST_COMMIT_REVERT_FAILED');
+      }
+      logLifecycle(log, 'OZON', 'LCD_COMMITTED', { committed_before: cycle.committed, lcd_after: commit.bookAfter, mode: cycle.mode });
+    } else {
+      logLifecycle(log, 'OZON', 'LCD_NOT_ADVANCED', { committed: cycle.committed, notes: cycle.decision.notes });
+    }
+  }
   return { rowsFetched: facts.length, rowsLoaded: updated };
 }
