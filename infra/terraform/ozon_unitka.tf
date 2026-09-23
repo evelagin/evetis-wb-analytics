@@ -164,6 +164,13 @@ resource "google_bigquery_dataset_iam_member" "ozon_unitka_read_ref" {
 # Владелец не должен каждый день заглядывать в логи. Прогон падает с кодом
 # (SOURCE_STALE / NO_FREE_SKU_SLOT / OZON_UNITKA_GEOMETRY / OZON_UNITKA_REF / SHEETS_API),
 # код попадает в метку алерта. Канал тот же, что у WB Engine: второй заводить незачем.
+#
+# 🔴 ФИЛЬТР НЕ ПО `message`. Событие пишется как logger.error('loader_failed', {code, message}),
+# а logging.ts:24-30 раскрывает ctx ПОСЛЕДНИМ — поэтому ctx.message (текст ошибки) ЗАТИРАЕТ
+# имя события, и `jsonPayload.message="loader_failed"` не совпадает НИКОГДА. Проверено на
+# живых логах: за 90 суток у `loader_failed` нуль совпадений, тогда как реальных падений
+# двадцать (ozon-unitka-prod 22.09 LOADER_ERROR, wb-mart-prod FRESHNESS_GATE и другие).
+# Признак падения — severity ERROR вместе с кодом LoaderError; по нему и ловим.
 resource "google_monitoring_alert_policy" "ozon_unitka_failed" {
   count        = var.unitka_alert_email == "" ? 0 : 1
   display_name = "OZON Unitka: прогон завершился ошибкой"
@@ -176,7 +183,7 @@ resource "google_monitoring_alert_policy" "ozon_unitka_failed" {
         resource.type="cloud_run_job"
         resource.labels.job_name="ozon-unitka-prod"
         severity>=ERROR
-        jsonPayload.message="loader_failed"
+        jsonPayload.code!=""
       EOT
       label_extractors = {
         error_code = "EXTRACT(jsonPayload.code)"
