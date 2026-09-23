@@ -170,7 +170,7 @@ export { ozonMonthSpec, OZON_SUMMARY_ROLES };
 /* ── сборка формул секции из адаптера формул ─────────────────────────────────── */
 import {
   ozonBlockDayFormulas, ozonSummaryDayFormulas, ozonSummaryMtdFormulas, ozonBlockMtdFormulas,
-  OZON_MTD_BLANK_OFFSETS,
+  OZON_MTD_BLANK_OFFSETS, OZON_LEGACY_LCD_NAME,
 } from './formulas.js';
 import { toLocaleFormula, type FormulaStyle } from '../formulas.js';
 
@@ -187,25 +187,27 @@ export function sectionFormulas(
   spec: OzonMonthSpec,
   comp: { cogs: Record<string, number>; other: Record<string, number> },
   style: FormulaStyle = 'SEMICOLON',
+  /** Имя LCD в формулах: прежнее по умолчанию, OZON_LAST_CLOSED_DATE — после миграции (Gate 10). */
+  lcdName: string = OZON_LEGACY_LCD_NAME,
 ): { day: Record<string, string>; mtd: Record<string, string>; mtdBlank: string[] } {
   // Книга владельца в ru_RU: разделитель аргументов «;», десятичный — запятая.
   // Формулы собираются в канонической en-форме и переводятся ОДНИМ местом.
   const loc = (f: string): string => toLocaleFormula(f, style);
   const day: Record<string, string> = {}; const mtd: Record<string, string> = {}; const mtdBlank: string[] = [];
   for (let row = spec.firstRow; row <= spec.lastRow; row++) {
-    for (const [col, f] of ozonSummaryDayFormulas(row, spec.blocks.length)) day[`${row}:${col}`] = loc(f);
+    for (const [col, f] of ozonSummaryDayFormulas(row, spec.blocks.length, lcdName)) day[`${row}:${col}`] = loc(f);
     for (const o of spec.blocks) {
       const start = spec.anchor[o] as number; const key = `${o}|${row}`;
       const p = { start, cogsTerm: term(comp.cogs[key]) ?? '0',
                   otherDirectTerm: term(comp.other[key]) ?? '0' };
-      for (const [off, f] of ozonBlockDayFormulas(p, row)) day[`${row}:${start + off}`] = loc(f);
+      for (const [off, f] of ozonBlockDayFormulas(p, row, lcdName)) day[`${row}:${start + off}`] = loc(f);
     }
   }
   const geom = { firstDailyRow: spec.firstRow, lastDailyRow: spec.lastRow, mtdRow: spec.mtdRow };
   for (const [col, f] of ozonSummaryMtdFormulas(geom)) mtd[`${spec.mtdRow}:${col}`] = loc(f);
   for (const o of spec.blocks) {
     const start = spec.anchor[o] as number;
-    for (const [off, f] of ozonBlockMtdFormulas(start, geom)) mtd[`${spec.mtdRow}:${start + off}`] = loc(f);
+    for (const [off, f] of ozonBlockMtdFormulas(start, geom, lcdName)) mtd[`${spec.mtdRow}:${start + off}`] = loc(f);
     for (const off of OZON_MTD_BLANK_OFFSETS) mtdBlank.push(`${spec.mtdRow}:${start + off}`);
   }
   return { day, mtd, mtdBlank };

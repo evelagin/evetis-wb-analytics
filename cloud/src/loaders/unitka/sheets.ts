@@ -47,6 +47,11 @@ export interface SheetMeta {
   locale?: string;
   /** Колонка якорей книги (1-based) — из именованного диапазона REVERSE_LEG_RATE на этом листе. */
   anchorCol: number;
+  /**
+   * Именованные диапазоны ЭТОГО листа (Gate 10): левый верхний угол, 1-based. Нужны, чтобы вывести
+   * положение зеркала LCD Ozon из листа, а не из переменной окружения: вставка колонок его сдвигает.
+   */
+  namedRanges?: Readonly<Record<string, { row: number; col: number }>>;
 }
 /** Группа колонок (expand/collapse) как в REST v4 (индексы 0-based, конец исключительно). */
 export interface ColumnGroup { startIndex: number; endIndex: number; depth: number; collapsed?: boolean }
@@ -201,8 +206,13 @@ export class SheetsRest implements SheetsGateway {
     if (!p || p.sheetId === undefined || !p.gridProperties?.rowCount || !p.gridProperties.columnCount) {
       throw new LoaderError(`лист «${sheetName}» не найден или без свойств сетки`, 'SHEETS_API');
     }
+    const named: Record<string, { row: number; col: number }> = {};
+    for (const n of data.namedRanges ?? []) {
+      if (!n.name || n.range?.sheetId !== p.sheetId) continue;
+      named[n.name] = { row: (n.range.startRowIndex ?? 0) + 1, col: (n.range.startColumnIndex ?? 0) + 1 };
+    }
     return { sheetId: p.sheetId, rowCount: p.gridProperties.rowCount, columnCount: p.gridProperties.columnCount, locale: data.properties?.locale,
-             anchorCol: requireAnchor ? resolveAnchorCol(data.namedRanges ?? [], p.sheetId) : 0 };
+             anchorCol: requireAnchor ? resolveAnchorCol(data.namedRanges ?? [], p.sheetId) : 0, namedRanges: named };
   }
 
   async readSheetStructure(sheetName: string, rowCount: number, columnCount: number): Promise<SheetStructure> {

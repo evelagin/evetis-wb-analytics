@@ -22,7 +22,19 @@ import { STOCK_POLICY } from './contract.js';
 /** Дата, с которой остаток становится ДОКАЗАННЫМ фактом. Раньше истории не существует. */
 const STOCK_FACTUAL_FROM = STOCK_POLICY.factualFrom;
 
-const LCD = 'LAST_CLOSED_DATE';
+/**
+ * Имя LCD в формулах Ozon. До Gate 10 — общий LAST_CLOSED_DATE (принадлежит WB); после миграции —
+ * OZON_LAST_CLOSED_DATE. Имя приходит ПАРАМЕТРОМ от писателя: суточный прогон переписывает окно
+ * 45 суток, и зашитое имя вернуло бы мигрированные формулы к имени WB на следующий же день —
+ * платформы снова оказались бы связаны. Значение по умолчанию = прежнее поведение.
+ */
+export const OZON_LEGACY_LCD_NAME = 'LAST_CLOSED_DATE';
+export const OZON_OWN_LCD_NAME = 'OZON_LAST_CLOSED_DATE';
+const LCD_NAME_RE = /^[A-Z][A-Z0-9_]*$/;
+function lcdOf(name: string): string {
+  if (!LCD_NAME_RE.test(name)) throw new RangeError(`имя LCD в формуле: ${name}`);
+  return name;
+}
 const c = (start: number, off: number): string => colA1(start + off);
 
 export interface OzonBlockParams {
@@ -43,7 +55,8 @@ export interface OzonBlockParams {
 }
 
 /** Расчётные колонки строки дня: смещение → каноническая формула. */
-export function ozonBlockDayFormulas(p: OzonBlockParams, row: number): Map<number, string> {
+export function ozonBlockDayFormulas(p: OzonBlockParams, row: number, lcdName: string = OZON_LEGACY_LCD_NAME): Map<number, string> {
+  const LCD = lcdOf(lcdName);
   const s = p.start;
   const D = `$${c(s, OFFSET.date)}${row}`;
   const x = (off: number): string => `${c(s, off)}${row}`;
@@ -92,7 +105,8 @@ export function ozonBlockDayFormulas(p: OzonBlockParams, row: number): Map<numbe
  * Сводка магазина A..J строки дня: колонка → каноническая формула.
  * Диапазон суммирования выводится из числа блоков, шаг MOD(COLUMN(...),24) — как в WB.
  */
-export function ozonSummaryDayFormulas(row: number, blockCount: number): Map<number, string> {
+export function ozonSummaryDayFormulas(row: number, blockCount: number, lcdName: string = OZON_LEGACY_LCD_NAME): Map<number, string> {
+  const LCD = lcdOf(lcdName);
   if (!Number.isInteger(blockCount) || blockCount < 1) throw new RangeError(`блоков ${blockCount}`);
   const lastStart = ozonSlotStart(blockCount - 1);
   const m = new Map<number, string>();
@@ -143,7 +157,8 @@ export function ozonSummaryMtdFormulas(g: OzonMonthGeometry): Map<number, string
  * Все агрегаты отсечены по `дата <= LAST_CLOSED_DATE` — как принятые SUMIF-итоги. Формулы
  * ссылаются на дневные ячейки, поэтому смена оценки на факт пересчитывает итог сама.
  */
-export function ozonBlockMtdFormulas(start: number, g: OzonMonthGeometry): Map<number, string> {
+export function ozonBlockMtdFormulas(start: number, g: OzonMonthGeometry, lcdName: string = OZON_LEGACY_LCD_NAME): Map<number, string> {
+  const LCD = lcdOf(lcdName);
   const f = g.firstDailyRow, l = g.lastDailyRow, mt = g.mtdRow;
   const dc = colA1(start + OFFSET.date);
   const Dabs = `$${dc}$${f}:$${dc}$${l}`;
