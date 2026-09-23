@@ -1,0 +1,43 @@
+{
+  "schema_version": 1,
+  "incident_id": "inc-20260923T203926Z-a607b277",
+  "created_at": "2026-09-23T20:39:26Z",
+  "source": "synthetic",
+  "severity": "MEDIUM",
+  "trigger_type": "SYNTHETIC",
+  "triggering_checks": [
+    {
+      "check_id": "SYN_TOTAL",
+      "suite": "synthetic",
+      "status": "FAIL",
+      "source": "synthetic/check_total.py:1"
+    }
+  ],
+  "first_failure_at": "2026-09-23T20:39:26Z",
+  "last_success_at": null,
+  "repository_sha": "fdbde861489177d1bd5a16920eb26cddc1b28478",
+  "affected_assets": [
+    "synthetic.calc_total"
+  ],
+  "downstream_consumers": [],
+  "contract_suites": [
+    "synthetic"
+  ],
+  "known_ubr_links": [],
+  "evidence": {
+    "observations": [
+      {
+        "at": "2026-09-23T20:39:26Z",
+        "failing_rows": 1,
+        "status": "FAIL"
+      },
+      {
+        "at": "2026-09-23T20:39:26Z",
+        "status": "FAIL",
+        "failing_rows": 1
+      }
+    ],
+    "classification": "SYNTHETIC"
+  },
+  "deduplication_key": "synthetic:SYN_TOTAL"
+}

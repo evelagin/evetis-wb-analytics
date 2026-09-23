@@ -1,0 +1,180 @@
+{
+  "policy_version": 1,
+  "comment": "Autonomous Engineering v1. Единственный источник лимитов, бюджетов и запретов. Промпт агента ничего из этого не решает: каждое ограничение исполняет детерминированный код (tools/autonomy/*) или права идентичности. Изменение этого файла агентом = UNSAFE (он сам в forbidden_paths).",
+  "production_mutation_authority": "NONE",
+  "budgets": {
+    "max_engineer_iterations": 3,
+    "max_review_cycles": 3,
+    "max_runtime_minutes": 90,
+    "engineer_max_turns": 60,
+    "reviewer_max_turns": 25,
+    "engineer_max_budget_usd": 15,
+    "reviewer_max_budget_usd": 5,
+    "max_infra_retries": 2,
+    "failed_cooldown_hours": 24,
+    "max_active_runs": 1,
+    "max_workflow_passes": 8,
+    "comment": "max_workflow_passes — жёсткий потолок проходов autonomy-run на один прогон: защищает от цикла «job упал → состояние не сменилось → persist снова диспатчит»."
+  },
+  "retry": {
+    "transient_error_markers": [
+      "ECONNRESET",
+      "ETIMEDOUT",
+      "503",
+      "502",
+      "rate_limit",
+      "overloaded",
+      "Internal error"
+    ],
+    "semantic_failures_retry": false
+  },
+  "watch": {
+    "persistence_threshold": 2,
+    "history_window": 10,
+    "flapping_min_transitions": 2,
+    "dispatch_on": [
+      "NEW_PERSISTENT",
+      "HEALTH_DEGRADED"
+    ],
+    "notify_on": [
+      "NEW_PERSISTENT",
+      "HEALTH_DEGRADED",
+      "FLAPPING",
+      "INFRA_BLOCKED"
+    ]
+  },
+  "branches": {
+    "remediation_prefix": "ae/",
+    "slug_pattern": "^ae/[a-z0-9][a-z0-9-]{2,60}$",
+    "state_branch": "autonomy-state",
+    "protected": [
+      "main"
+    ]
+  },
+  "forbidden_paths": {
+    "comment": "Автономный кандидат, затрагивающий эти пути, получает UNSAFE без права переопределения. Это места, где правка меняет права, развёртывание или запись во внешний мир — решения, которые принадлежат только владельцу.",
+    "globs": [
+      ".github/**",
+      "infra/**",
+      "apps-script/**",
+      "appsscript.json",
+      "services/wb-communications/**",
+      "quality/autonomy/policy.json",
+      "quality/runtime_identities.json",
+      "tools/autonomy/**",
+      "tools/lib/bq_readonly.py",
+      "tools/verify_task.py",
+      "**/*.tfvars",
+      "**/*.pem",
+      "**/*.key",
+      "**/.env",
+      "**/.env.*",
+      ".claude/**",
+      "CLAUDE.md"
+    ]
+  },
+  "gate_weakening": {
+    "comment": "Детерминированные признаки ослабления ворот в диффе. Любое совпадение = UNSAFE, независимо от вердикта ревьюера.",
+    "removed_line_patterns": [
+      "^-\\s*--\\s*@check\\s",
+      "^-\\s*ASSERT\\s",
+      "^-\\s*def test_",
+      "^-\\s*\"gate\":\\s*true"
+    ],
+    "added_line_patterns": [
+      "^\\+.*pytest\\.mark\\.(skip|xfail)",
+      "^\\+.*@unittest\\.skip",
+      "^\\+.*\"gate\":\\s*false",
+      "^\\+.*\"known_failing\"",
+      "^\\+.*\"override\"\\s*:",
+      "^\\+.*--\\s*@expect\\s+empty_ok",
+      "^\\+.*\\bexit\\s+0\\b.*#.*(skip|bypass)"
+    ],
+    "protected_files": [
+      "quality/suites.json",
+      "quality/unresolved_business_rules.json",
+      "tools/run_data_checks.py",
+      "tools/lib/acceptance.py",
+      "tools/validate_current_sql.py",
+      "tools/check_runtime_access.py",
+      "tools/impact_analysis.py"
+    ]
+  },
+  "plan_ack": {
+    "comment": "AI_ENGINEERING.md §3: ACK владельца стоит ДО реализации там, где цена неверно понятой экономики выше цены задержки. Автономно реализуется только то, что план не относит к этим классам; иначе — WAITING_FOR_HUMAN до цифрового ACK (sha256 плана в объекте цели).",
+    "requires_ack_risk_tiers": [
+      "TIER0"
+    ],
+    "requires_ack_path_globs": [
+      "sql/current/**",
+      "sql/control_tower/**",
+      "sql/mart/**",
+      "sql/dash/**",
+      "sql/ref/**"
+    ],
+    "requires_ack_if_plan_declares_business_semantics": true
+  },
+  "engineer_tools": {
+    "comment": "Защита второго эшелона. Граница безопасности — права идентичности (read-only GITHUB_TOKEN, read-only SA), а не этот список: разрешённый `python -m pytest` исполняет произвольный код теста. cat/head/ls/wc убраны намеренно — они обходили ограничение --restricted на рабочие каталоги; файлы агент читает инструментами Read/Grep/Glob.",
+    "tools": [
+      "Read",
+      "Grep",
+      "Glob",
+      "Edit",
+      "Write",
+      "Bash",
+      "WebSearch",
+      "WebFetch"
+    ],
+    "allowed_bash": [
+      "python -m pytest:*",
+      "python tools/validate_current_sql.py:*",
+      "python tools/impact_analysis.py:*",
+      "python tools/run_data_checks.py:*",
+      "python tools/check_runtime_access.py:*",
+      "python tools/verify_current_sql_live.py:*",
+      "git diff:*",
+      "git status:*",
+      "git log:*",
+      "git show:*",
+      "python3 -m pytest:*",
+      "python3 tools/validate_current_sql.py:*",
+      "python3 tools/impact_analysis.py:*",
+      "python3 tools/run_data_checks.py:*",
+      "python3 tools/check_runtime_access.py:*",
+      "python3 tools/verify_current_sql_live.py:*"
+    ],
+    "denied_bash": [
+      "git push:*",
+      "git commit:*",
+      "git remote:*",
+      "git config:*",
+      "gh:*",
+      "gcloud:*",
+      "bq:*",
+      "terraform:*",
+      "curl:*",
+      "wget:*",
+      "ssh:*",
+      "clasp:*",
+      "npm publish:*",
+      "rm -rf:*",
+      "sudo:*",
+      "env:*",
+      "printenv:*"
+    ]
+  },
+  "reviewer_tools": {
+    "tools": [
+      "Read",
+      "Grep",
+      "Glob"
+    ],
+    "restricted_mode": true
+  },
+  "model": {
+    "engineer": "claude-opus-5-5",
+    "reviewer": "claude-opus-5-5",
+    "comment": "Модель ревьюера может отличаться от модели автора; независимость обеспечивает не модель, а чистый контекст и отдельная машина."
+  }
+}

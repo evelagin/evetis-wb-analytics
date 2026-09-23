@@ -1,0 +1,176 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/evelagin/evetis-wb-analytics/quality/autonomy/run_state.schema.json",
+  "title": "AE v1 durable run record",
+  "description": "Единственное состояние системы. Память разговора агента состоянием не является. Запись валидируется при каждой записи на диск.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "run_id",
+    "objective_id",
+    "deduplication_key",
+    "state",
+    "created_at",
+    "updated_at",
+    "repository_sha",
+    "branch",
+    "iteration",
+    "review_cycles",
+    "infra_retries",
+    "transitions",
+    "last_gate",
+    "last_review",
+    "plan_sha256",
+    "production_mutations",
+    "usage"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": 1
+    },
+    "run_id": {
+      "type": "string",
+      "pattern": "^run-[0-9]{8}T[0-9]{6}Z-[0-9a-f]{8}$"
+    },
+    "objective_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "deduplication_key": {
+      "type": "string",
+      "minLength": 1
+    },
+    "state": {
+      "enum": [
+        "RECEIVED",
+        "DISCOVERING",
+        "PLANNING",
+        "IMPLEMENTING",
+        "TESTING",
+        "REVIEWING",
+        "FIXING",
+        "READY_FOR_PR",
+        "WAITING_FOR_HUMAN",
+        "BLOCKED",
+        "FAILED",
+        "COMPLETED"
+      ]
+    },
+    "created_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "updated_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "repository_sha": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{40}$"
+    },
+    "branch": {
+      "type": "string",
+      "pattern": "^ae/[a-z0-9][a-z0-9-]{2,60}$"
+    },
+    "iteration": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "review_cycles": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "infra_retries": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "transitions": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "from",
+          "to",
+          "at",
+          "reason"
+        ],
+        "properties": {
+          "from": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "to": {
+            "type": "string"
+          },
+          "at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "reason": {
+            "type": "string",
+            "maxLength": 2000
+          }
+        }
+      }
+    },
+    "last_gate": {
+      "type": [
+        "object",
+        "null"
+      ]
+    },
+    "last_review": {
+      "type": [
+        "object",
+        "null"
+      ]
+    },
+    "plan_sha256": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "production_mutations": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "usage": {
+      "type": "array",
+      "items": {
+        "type": "object"
+      }
+    },
+    "pr_url": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "notes": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "maxLength": 2000
+      }
+    },
+    "passes": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "audit_status": {
+      "enum": [
+        "PASS",
+        "FAIL",
+        "BLOCKED",
+        "NOT_APPLICABLE"
+      ]
+    }
+  }
+}
