@@ -163,7 +163,12 @@ export function assertNotBeforeEpoch(dates: Iterable<string | undefined>, what: 
  * Перечитанная прошлая секция против контракта: лист == источник по дням окна, нет ошибок формул в секции,
  * сводка дней окна = Σ блоков (исправленный факт обязан дать согласованную строку — зависимые поля это формулы).
  */
-export function evaluateRepairedSection(after: Snapshot, plan: SectionRepairPlan): QaCheck[] {
+/**
+ * `summaryUpTo` (Gate 10, до коммита LCD): сводка сверяется только по дням ≤ закоммиченного LCD книги —
+ * формулы сводки более поздних дней честно пусты, пока LCD не закоммичен. Значения и ошибки формул
+ * проверяются по всем дням. После коммита функция вызывается без опции — полностью.
+ */
+export function evaluateRepairedSection(after: Snapshot, plan: SectionRepairPlan, opts: { summaryUpTo?: string } = {}): QaCheck[] {
   const g = plan.geometry;
   const mism: string[] = [];
   for (const e of plan.expected) {
@@ -178,7 +183,8 @@ export function evaluateRepairedSection(after: Snapshot, plan: SectionRepairPlan
   }
   const rec: string[] = [];
   const ms = `${g.monthKey}-01`;
-  for (let day = plan.fromDay; day <= plan.toDay; day = addDaysIso(day, 1)) {
+  const summaryTo = opts.summaryUpTo !== undefined && opts.summaryUpTo < plan.toDay ? opts.summaryUpTo : plan.toDay;
+  for (let day = plan.fromDay; day <= summaryTo; day = addDaysIso(day, 1)) {
     const row = dayRowOf(g, daysBetween(ms, day));
     for (const [sumCol, off, name] of SUMMARY_TO_OFFSET) {
       let total = 0;

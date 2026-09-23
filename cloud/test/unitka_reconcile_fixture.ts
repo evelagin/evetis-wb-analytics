@@ -38,6 +38,8 @@ export class MemoryBook implements SheetsGateway {
   private readFailure: { error: Error; writesAtArm: number } | null = null;
   failReadAfterNextWrite(error: Error): void { this.readFailure = { error, writesAtArm: this.batchWrites.length }; }
   lcdSerial: number;
+  /** Gate 10: строки ZZ_CONFIG!A29:B34. Пусто — блока нет (production до миграции). */
+  lifecycle: CellValue[][] = [];
   constructor(public sections: Snapshot[], public rowCount: number, public columnCount: number, public anchorCol: number, lcdIso: string, private readonly readonlyScope = false) {
     this.lcdSerial = isoToSerial(lcdIso);
     this.recompute();
@@ -61,6 +63,7 @@ export class MemoryBook implements SheetsGateway {
     if (this.readFailure && this.batchWrites.length > this.readFailure.writesAtArm) { const e = this.readFailure.error; this.readFailure = null; throw e; }
     return ranges.map((r) => {
       if (r === 'LAST_CLOSED_DATE') return [[this.lcdSerial]];
+      if (r === 'ZZ_CONFIG!A29:B34') return this.lifecycle;
       const colA = /!A1:A(\d+)$/.exec(r);
       if (colA) {
         const a: CellValue[][] = Array.from({ length: Number(colA[1]) }, () => [null]);
@@ -247,6 +250,16 @@ export class ReconRunner implements QueryRunner {
     if (sql.includes('INSERT INTO') && sql.includes('UNITKA_ENGINE_RUNS')) { this.journal.push(params ?? {}); return [] as T[]; }
     if (sql.includes('UNITKA_REPAIR_LEDGER')) { if (!this.ledgerAvailable) throw new Error('Not found: Table wb_ops.UNITKA_REPAIR_LEDGER'); return [] as T[]; }
     if (sql.includes('V_UNITKA_SOURCE_FRESHNESS')) return [] as T[];
+    if (sql.includes('LOADER_RUNS')) {
+      // Gate 10: журнал гейтящих загрузчиков — по умолчанию каждые сутки до канонического LCD покрыты
+      const out: Array<{ loader_name: string; logical_period: string }> = [];
+      for (let t = Date.parse(`${String(params?.since)}T00:00:00Z`) + 86_400_000; ; t += 86_400_000) {
+        const iso = new Date(t).toISOString().slice(0, 10);
+        if (iso > this.lcd) break;
+        out.push({ loader_name: 'funnel', logical_period: iso }, { loader_name: 'mart', logical_period: iso });
+      }
+      return out as T[];
+    }
     if (sql.includes('V_UNITKA_RECON_WINDOW')) {
       const w = this.windowOverride ?? { from: this.windowFrom, to: this.lcd, epoch: '2026-09-01' };
       return [{ last_closed_date: bqDate(this.lcd), window_from: bqDate(w.from), window_to: bqDate(w.to), window_days: 35, reconciliation_epoch: bqDate(w.epoch) }] as T[];

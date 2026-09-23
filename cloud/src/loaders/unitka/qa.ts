@@ -60,9 +60,14 @@ export function evaluate(snap: Snapshot, plan: Plan, opts: EvaluateOpts = {}): Q
     const bookClosed = Number.isFinite(mirror) ? mirror - isoToSerial(plan.monthStart) + 1 : 0;
     closedDays = Math.max(0, Math.min(plan.closedDays, bookClosed));
   }
+  // Дни, по которым сверяется СВОДКА. До коммита — только закрытые В КНИГЕ: формулы сводки дня-кандидата
+  // честно пусты (их отсекает прежний LCD). Всё, что от вычисления LCD НЕ зависит, — записанные значения,
+  // статический формат закрытого дня, утечка будущего — проверяется ДО коммита по полному кандидату:
+  // провал записи формата должен остановить коммит, а не всплыть после него.
+  let summaryDays = closedDays;
   if (opts.commitBarrier) {
     const bookClosed = isoToSerial(opts.commitBarrier.committedIso) - isoToSerial(plan.monthStart) + 1;
-    closedDays = Math.max(0, Math.min(plan.closedDays, bookClosed));
+    summaryDays = Math.max(0, Math.min(plan.closedDays, bookClosed));
   }
 
   // BQ → SHEETS MISMATCH = 0 — весь контракт expected, не только записанные ячейки.
@@ -107,7 +112,7 @@ export function evaluate(snap: Snapshot, plan: Plan, opts: EvaluateOpts = {}): Q
 
   // SUMMARY RECONCILIATION — закрытые дни: колонка сводки = Σ всех блоков секции (|Δ| ≤ 0.01).
   const rec: string[] = [];
-  for (let i = 0; i < closedDays; i++) {
+  for (let i = 0; i < summaryDays; i++) {
     for (const [sumCol, off, name] of SUMMARY_TO_OFFSET) {
       let total = 0;
       for (const b of plan.blocks) {
@@ -122,7 +127,7 @@ export function evaluate(snap: Snapshot, plan: Plan, opts: EvaluateOpts = {}): Q
   // MTD: I{mtd} = Σ дневных I по закрытым дням (как в приёмке Stage 8.2; сентябрь — I767).
   {
     let sum = 0;
-    for (let i = 0; i < closedDays; i++) {
+    for (let i = 0; i < summaryDays; i++) {
       const v = asNumber(cellAt(snap, dayRow(i), SUMMARY.profit));
       if (Number.isFinite(v)) sum += v;
     }

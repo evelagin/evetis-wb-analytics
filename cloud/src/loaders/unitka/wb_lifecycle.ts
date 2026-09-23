@@ -28,7 +28,7 @@ import { WB_FUNNEL_COVERAGE_DAYS } from './bq.js';
 import type { SheetsGateway } from './sheets.js';
 import { colA1, isoToSerial, BOOK_ANCHORS } from './model.js';
 import { quoteSheet, readColumnA } from './section.js';
-import { formatMonthKey, locateSection, monthKeyOf, nextMonth, previousMonth, daysInMonth, type MonthKey } from './calendar.js';
+import { formatMonthKey, locateSection, monthKeyOf, nextMonth, previousMonth, type MonthKey } from './calendar.js';
 import { classifyCogsSnapshot } from './integrity.js';
 import { validateSection } from './plan.js';
 import { planMonthPrep, templateRowsOf, toStructureRequests } from './monthprep.js';
@@ -64,18 +64,24 @@ export class WbLcdCell implements LcdCell {
     const [grid] = await this.sheets.readValues([WB_LCD_NAME]);
     return dateCellToIso(grid?.[0]?.[0]);
   }
+  /**
+   * Диапазон зеркала — в том же виде «X736:X736», в каком его всегда писал toWriteRanges: это
+   * проверенный в production формат, а не новый.
+   */
+  private mirrorRange(): string {
+    const c = colA1(this.anchorCol);
+    return `${quoteSheet(this.sheetName)}!${c}${BOOK_ANCHORS.LCD_MIRROR_ROW}:${c}${BOOK_ANCHORS.LCD_MIRROR_ROW}`;
+  }
   async write(iso: string): Promise<void> {
     const serial = isoToSerial(iso);
     await this.sheets.batchWrite([
       { range: WB_LCD_NAME, values: [[serial]] },
-      { range: `${quoteSheet(this.sheetName)}!${colA1(this.anchorCol)}${BOOK_ANCHORS.LCD_MIRROR_ROW}`, values: [[serial]] },
+      { range: this.mirrorRange(), values: [[serial]] },
     ]);
   }
   /** Выравнивание зеркала без движения LCD (производное состояние). */
   async repairMirror(iso: string): Promise<void> {
-    await this.sheets.batchWrite([
-      { range: `${quoteSheet(this.sheetName)}!${colA1(this.anchorCol)}${BOOK_ANCHORS.LCD_MIRROR_ROW}`, values: [[isoToSerial(iso)]] },
-    ]);
+    await this.sheets.batchWrite([{ range: this.mirrorRange(), values: [[isoToSerial(iso)]] }]);
   }
 }
 
@@ -95,13 +101,8 @@ export interface WbCandidate {
   readonly ceiling: string;
   readonly d1Msk: string;
   readonly lifecycle: LifecycleConfig['state'];
-  /** Кандидат придержан до конца следующего за закоммиченным месяца: не больше одной границы за прогон. */
+  /** Зарезервировано для журнала; кандидат по месяцу не зажимается (см. ensureWbMonthSection). */
   readonly clampedToMonth: string | null;
-}
-
-/** Последний день месяца (ISO). */
-function monthEnd(k: MonthKey): string {
-  return `${formatMonthKey(k)}-${String(daysInMonth(k.year, k.month)).padStart(2, '0')}`;
 }
 
 export async function resolveWbCandidate(a: {
@@ -118,6 +119,12 @@ export async function resolveWbCandidate(a: {
   const committed = dateCellToIso(grid?.[0]?.[0]);
   if (!committed) throw new LoaderError(`${WB_LCD_NAME} в книге пуст или не дата: ${JSON.stringify(grid?.[0]?.[0] ?? null)}`, 'LCD_BOOK_INVALID');
 
+  // Порядок проверок — прежний (plan.ts до Gate 10): сначала SOURCE_STALE, затем LCD_REGRESSION.
+  // Одна и та же ситуация обязана давать тот же код, иначе сломаются алерты и разбор инцидентов.
+  const lag = Math.round((Date.parse(`${a.canonical.d1Msk}T00:00:00Z`) - Date.parse(`${a.canonical.lastClosedDate}T00:00:00Z`)) / 86_400_000);
+  if (lag > a.config.unitkaMaxLagDays) {
+    throw new LoaderError(`LAST_CLOSED_DATE = ${a.canonical.lastClosedDate} отстаёт от D-1 (${a.canonical.d1Msk}) на ${lag} дн. > ${a.config.unitkaMaxLagDays}`, 'SOURCE_STALE');
+  }
   // Источник «откатился» ниже опубликованного: планирование по нему ЗАТЁРЛО БЫ уже закрытые
   // сутки пустотой. Это прежний safety-инвариант LCD_REGRESSION — сохраняется без изменений.
   if (a.canonical.lastClosedDate < committed) {
@@ -134,11 +141,16 @@ export async function resolveWbCandidate(a: {
     throw new LoaderError(`WB_MANUAL_LCD отвергнута: ${decision.notes.join('; ')}`, decision.code);
   }
 
-  // не больше одной границы месяца за прогон: следующую секцию создаём, только когда кандидат в неё вошёл
-  let candidate = decision.candidate;
-  let clampedToMonth: string | null = null;
-  const limit = monthEnd(nextMonth(monthKeyOf(committed)));
-  if (candidate > limit) { clampedToMonth = candidate; candidate = limit; }
+  const candidate = decision.candidate;
+  const clampedToMonth: string | null = null;
+  // Суточная вью фактов (V_UNITKA_DAILY_FACT) привязана в SQL к КАНОНИЧЕСКОМУ LCD и отдаёт только его
+  // месяц. Если барьер придержал кандидата в более раннем месяце, фактов этого месяца у писателя нет:
+  // план упал бы на BLOCK_MISSING с неверным объяснением. Отказ — явный и до записи.
+  if (monthKeyOf(candidate).year !== monthKeyOf(a.canonical.lastClosedDate).year
+      || monthKeyOf(candidate).month !== monthKeyOf(a.canonical.lastClosedDate).month) {
+    throw new LoaderError(`кандидат ${candidate} придержан в месяце, которого суточная вью фактов уже не отдаёт `
+      + `(канон ${a.canonical.lastClosedDate}): ${decision.notes.join('; ')}`, 'LCD_CANDIDATE_FACTS_UNAVAILABLE');
+  }
 
   const out: WbCandidate = { mode: wb.mode, committed, candidate, decision, ceiling: a.canonical.lastClosedDate, d1Msk: a.canonical.d1Msk, lifecycle: life.state, clampedToMonth };
   lifecycleLog(a.log, wb.mode === 'MANUAL' ? 'MANUAL_OVERRIDE_ACTIVE' : 'LCD_CANDIDATE', {
@@ -162,11 +174,42 @@ export interface MonthEnsureResult {
  * один атомарный spreadsheets.batchUpdate, затем структурное перечитывание и контракт секции.
  * Провал — исключение: до коммита LCD дело не доходит.
  */
+/** Больше двух новых месяцев за прогон — это не штатный переход, а долгий простой: решает владелец. */
+export const MAX_MONTHS_CREATED_PER_RUN = 2;
+
 export async function ensureWbMonthSection(a: {
-  sheets: SheetsGateway; bq: UnitkaBq; config: Config; log: Logger; candidate: string; write: boolean; now: () => Date;
+  sheets: SheetsGateway; bq: UnitkaBq; config: Config; log: Logger; candidate: string; committed?: string; write: boolean; now: () => Date;
+}): Promise<MonthEnsureResult> {
+  // Месяцы между закоммиченным и кандидатом создаются ПО ПОРЯДКУ: у каждого предшественник уже есть.
+  const last = monthKeyOf(a.candidate);
+  let k = a.committed ? nextMonth(monthKeyOf(a.committed)) : last;
+  const chain: MonthKey[] = [];
+  for (;;) {
+    if (k.year > last.year || (k.year === last.year && k.month > last.month)) break;
+    chain.push(k);
+    k = nextMonth(k);
+  }
+  if (chain.length === 0) chain.push(last);
+  let out: MonthEnsureResult = { target: formatMonthKey(last), created: false, rollbackManifestDigest: null };
+  let createdCount = 0;
+  for (const key of chain) {
+    const r = await ensureOneMonth({ ...a, target: key });
+    if (r.created) {
+      createdCount++;
+      if (createdCount > MAX_MONTHS_CREATED_PER_RUN) {
+        throw new LoaderError(`прогон создал бы больше ${MAX_MONTHS_CREATED_PER_RUN} месяцев подряд — это простой, а не переход месяца`, 'MONTH_SECTION_CHAIN_TOO_LONG');
+      }
+      out = r;
+    }
+  }
+  return out.created ? out : { target: formatMonthKey(last), created: false, rollbackManifestDigest: null };
+}
+
+async function ensureOneMonth(a: {
+  sheets: SheetsGateway; bq: UnitkaBq; config: Config; log: Logger; target: MonthKey; write: boolean; now: () => Date;
 }): Promise<MonthEnsureResult> {
   const sheet = a.config.unitkaSheetName;
-  const target = monthKeyOf(a.candidate);
+  const target = a.target;
   const meta = await a.sheets.readSheetMeta(sheet);
   const columnA = await readColumnA(a.sheets, sheet, meta.rowCount);
   const loc = locateSection(columnA, target);
@@ -177,6 +220,14 @@ export async function ensureWbMonthSection(a: {
   if (!a.write) {
     // SHADOW не создаёт структуру никогда: прежний отказ MONTH_SECTION_MISSING случится ниже
     return { target: formatMonthKey(target), created: false, rollbackManifestDigest: null };
+  }
+  // Создаём только в КОНЕЦ книги: генератор кладёт секцию после предшественника. Дыра в середине
+  // (есть более поздний месяц, а этого нет) — не переход месяца, а повреждённая книга: её разбирает
+  // прежний путь отказа (RECON_SECTION_MISSING / MONTH_SECTION_MISSING), а не достройка наугад.
+  for (let later = nextMonth(target), i = 0; i < 24; later = nextMonth(later), i++) {
+    if (locateSection(columnA, later).status !== 'MISSING') {
+      return { target: formatMonthKey(target), created: false, rollbackManifestDigest: null };
+    }
   }
 
   const [predecessor, population, cogsRead, structure] = await Promise.all([

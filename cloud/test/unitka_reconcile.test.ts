@@ -12,6 +12,7 @@ import {
   financialValidity, assertNotBeforeEpoch, RECONCILE_WINDOW_DAYS, RECONCILIATION_EPOCH,
 } from '../src/loaders/unitka/reconcile.js';
 import { OFFSET, SUMMARY, colA1 } from '../src/loaders/unitka/model.js';
+import { isoToSerial as isoToSerialG10 } from '../src/loaders/unitka/model.js';
 import { dayRowOf, slotStart } from '../src/loaders/unitka/calendar.js';
 import { blockDayFormulas, type BlockFormulaParams } from '../src/loaders/unitka/formulas.js';
 import { UnitkaBq, type FactRow } from '../src/loaders/unitka/bq.js';
@@ -209,7 +210,12 @@ describe('сверка через границу месяца: сентябрь-
     const book = buildBook('2026-08-31');
     const runner = new ReconRunner('2026-10-02', reconFactsFor('2026-09-01', '2026-10-02'), '2026-09-01');
     await run(book, runner);
-    expect(book.batchWrites).toHaveLength(1);                                                   // один values.batchUpdate
+    // Gate 10: данные обоих месяцев — ОДНИМ values.batchUpdate; LCD — отдельной записью после проверки.
+    // Догон через границу месяца (книга на 31.08): сводка сентября сверена уже ПОСЛЕ коммита.
+    expect(book.batchWrites).toHaveLength(2);
+    expect(book.batchWrites[0]!.map((w) => w.range)).not.toContain('LAST_CLOSED_DATE');
+    expect(book.batchWrites[1]!.map((w) => w.range)).toContain('LAST_CLOSED_DATE');
+    expect(book.lcdSerial).toBe(isoToSerialG10('2026-10-02'));
     expect(book.get(septRow(book, '2026-09-17'), blockCol(5, OFFSET.opens))).toBe(27);
     expect(book.get(octRow(book, '2026-10-02'), blockCol(24, OFFSET.opens))).toBe(12);          // блок 25 (909951444) — только в октябре
     expect(book.get(septRow(book, '2026-09-17'), blockCol(24, OFFSET.opens))).toBe('');         // в сентябре блока нет — не пишем
