@@ -138,3 +138,48 @@ describe('отказ вместо частичной мутации (§19)', () 
     expect(again.insertCount, 'DUPLICATE_CAPACITY_EXPANSION').toBe(0);
   });
 });
+
+describe('следующий прогон заново определяет СДВИНУТЫЙ хвост, а не помнит 562', () => {
+  /**
+   * Это и есть причина, по которой граница выводится из листа. Если бы следующий прогон
+   * взял 562 из окружения, он принял бы колонки нового блока за хвост владельца
+   * и затёр таблицу «OZON выплаты 2025».
+   */
+  it('после SKU #23 прогон видит 23 слота и хвост на 587, а не на 562', () => {
+    const p1 = planExpansion({ slotsNow: 22, blocksNeeded: 23, tailFirstLive: 562, sheetColumnCount: 574 });
+    if (isRefusal(p1)) throw new Error('refusal');
+
+    // лист после вставки: у 23-го слота появилась своя подпись шапки
+    const nextRunSlots = markedSlots(headerRow(23));
+    expect(nextRunSlots).toBe(23);
+    const nextRunTail = tailFirstColumn(nextRunSlots);
+    expect(nextRunTail).toBe(587);
+    expect(nextRunTail).toBe(p1.tailFirstAfter);
+    expect(nextRunTail).not.toBe(562);
+  });
+
+  it('устаревшее значение 562 из окружения ОТВЕРГАЕТСЯ, а не используется', () => {
+    // прогон после расширения, но конфиг всё ещё говорит 562
+    const r = planExpansion({ slotsNow: 23, blocksNeeded: 24, tailFirstLive: 562, sheetColumnCount: 599 });
+    expect(isRefusal(r), 'молча доверять устаревшему конфигу нельзя').toBe(true);
+    if (isRefusal(r)) expect(r.why).toMatch(/раскладка не опознана/);
+  });
+
+  it('после SKU #24 — то же самое: хвост на 612', () => {
+    expect(tailFirstColumn(markedSlots(headerRow(24)))).toBe(612);
+  });
+
+  it('цепочка 22→23→24: граница хвоста каждый раз выводится заново и совпадает с планом', () => {
+    let slots = 22;
+    let tail = tailFirstColumn(slots);
+    for (const target of [23, 24]) {
+      const p = planExpansion({ slotsNow: slots, blocksNeeded: target, tailFirstLive: tail, sheetColumnCount: 574 + (slots - 22) * 25 });
+      if (isRefusal(p)) throw new Error(`refusal на ${target}`);
+      slots = p.slotsAfter;
+      tail = tailFirstColumn(markedSlots(headerRow(slots)));   // ЗАНОВО из листа
+      expect(tail).toBe(p.tailFirstAfter);
+    }
+    expect(slots).toBe(24);
+    expect(tail).toBe(612);
+  });
+});
