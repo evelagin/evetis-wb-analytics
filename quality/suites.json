@@ -589,6 +589,77 @@
       "business_rule_reference": "UBR-010",
       "provenance": "Фикстура сверки 10 428,67 ₽ измерена на первичных начислениях; пороги не изобретены, а выведены из решения владельца от 2026-09-22",
       "pending_deploy_note": "Опережает production: до развёртывания исполнять через tools/scale1_predeploy_render.py."
+    },
+    {
+      "suite": "promo_canonical_state",
+      "title": "PR-PROMO-2: каноническое состояние акций WB и Ozon против независимого пересчёта из RAW",
+      "gate": true,
+      "severity": "HIGH",
+      "domain": "promotions",
+      "marketplace": [
+        "WB",
+        "OZON"
+      ],
+      "pipelines": [
+        "wb_promo_observer",
+        "ozon_promo_observer"
+      ],
+      "layer": "mart",
+      "adapter": "check_blocks",
+      "id_prefix": "PROMO2",
+      "status_column": "status",
+      "execution_mode": "read_only_select",
+      "expected_result": "all_checks_pass",
+      "owner": "evelagin",
+      "timeout_seconds": 300,
+      "files": [
+        "sql/promotions/pr_promo2_canonical_validation.sql"
+      ],
+      "scope": [
+        "wb_mart.V_WB_PROMO_OBSERVATION_HISTORY",
+        "wb_mart.V_WB_PROMO_HISTORY",
+        "wb_mart.V_WB_PROMO_RANGING_HISTORY",
+        "wb_mart.V_WB_PROMO_SKU_EVIDENCE_HISTORY",
+        "wb_mart.V_WB_PROMO_SKU_STATE_HISTORY",
+        "ozon_mart.V_OZON_PROMO_OBSERVATION_HISTORY",
+        "ozon_mart.V_OZON_PROMO_HISTORY",
+        "ozon_mart.V_OZON_PROMO_SKU_EVIDENCE_HISTORY",
+        "ozon_mart.V_OZON_PROMO_SKU_STATE_HISTORY",
+        "evetis_mart.V_PROMO_OBSERVATION_HISTORY",
+        "evetis_mart.V_PROMO_STATE_HISTORY",
+        "evetis_mart.V_PROMO_STATE_CURRENT",
+        "evetis_mart.V_PROMO_SKU_EVIDENCE_HISTORY",
+        "evetis_mart.V_PROMO_SKU_STATE_HISTORY",
+        "evetis_mart.V_PROMO_SKU_STATE_CURRENT",
+        "evetis_mart.V_PROMO_OBSERVABILITY_CURRENT",
+        "wb_raw.RAW_WB_PROMO_CALENDAR",
+        "wb_raw.RAW_WB_PROMO_RANGING",
+        "wb_raw.RAW_WB_PROMO_NOMENCLATURE",
+        "wb_raw.WB_PROMO_OBSERVATIONS",
+        "ozon_raw.RAW_OZON_PROMO_ACTIONS",
+        "ozon_raw.RAW_OZON_PROMO_PRODUCTS",
+        "ozon_raw.RAW_OZON_PROMO_AUTO_ADD",
+        "ozon_raw.RAW_OZON_PROMO_PRODUCT_MARKETING",
+        "ozon_raw.RAW_OZON_PROMO_PRODUCT_ACTION",
+        "ozon_raw.OZON_PROMO_OBSERVATIONS"
+      ],
+      "dimensions": [
+        "grain",
+        "uniqueness",
+        "identities",
+        "reconciliation",
+        "null_contract",
+        "identity_mapping",
+        "observability",
+        "temporal_reproducibility",
+        "no_pii",
+        "no_economics"
+      ],
+      "cadence": "перед слиянием изменения в области scope, после развёртывания и после каждого нового слота наблюдения",
+      "source_contract": "docs/promotions/PR_PROMO_2_CANONICAL_STATE_2026-09-22.md",
+      "business_rule_reference": "docs/promotions/PROMOTION_PHASE_0_5_DECISION_GATE_2026-09-22.md",
+      "provenance": "PR-PROMO-2; нулевые пороги — инварианты контракта (зерно, сохранение строк, NULL ≠ 0, приоритет состояний), бизнес-порогов нет. Регрессионные сценарии на фикстурах — tools/promo_canonical_render.py run fixtures",
+      "pending_deploy_note": "До развёртывания исполнять через tools/promo_canonical_render.py run predeploy: V24 (INFORMATION_SCHEMA) до развёртывания FAIL по построению."
     }
   ],
   "backlog": {

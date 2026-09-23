@@ -18,6 +18,25 @@ Terraform не применялись.
 - **Приёмка A–F**: 110 тестов AE, весь `tools/tests` — 472 passed. Живой наблюдатель на production:
   HEALTHY без вызова модели; попутно пойман новый выкуп CIS без документа (детектор UBR-012).
 - **Канарейка UBR-011** подготовлена, не запущена (`execute: false`).
+## 2026-09-23 — PR-PROMO-2: каноническое состояние акций WB и Ozon (16 новых VIEW)
+
+Новые объекты, существующие колонки и объекты не менялись. Экономики и рекомендаций нет.
+
+- **`wb_mart`** (вне `sql/current`, датасет не канонизирован): `V_WB_PROMO_OBSERVATION_HISTORY`,
+  `V_WB_PROMO_HISTORY`, `V_WB_PROMO_RANGING_HISTORY`, `V_WB_PROMO_SKU_EVIDENCE_HISTORY`,
+  `V_WB_PROMO_SKU_STATE_HISTORY`.
+- **`ozon_mart`** (`sql/current`, `pending_deploy`): `V_OZON_PROMO_OBSERVATION_HISTORY`,
+  `V_OZON_PROMO_HISTORY`, `V_OZON_PROMO_SKU_EVIDENCE_HISTORY`, `V_OZON_PROMO_SKU_STATE_HISTORY`.
+- **`evetis_mart`** (`sql/current`, `pending_deploy`): `V_PROMO_OBSERVATION_HISTORY`,
+  `V_PROMO_STATE_HISTORY`, `V_PROMO_STATE_CURRENT`, `V_PROMO_SKU_EVIDENCE_HISTORY`,
+  `V_PROMO_SKU_STATE_HISTORY`, `V_PROMO_SKU_STATE_CURRENT`, `V_PROMO_OBSERVABILITY_CURRENT`.
+- Состояние товара в акции — не булево: оси `participation_state` и `auto_add_state`, итог
+  `resolved_state` по правилам R1–R6 с классом доказательности. Автоакции WB —
+  `NOT_OBSERVABLE` на уровне акции, строк SKU для них нет.
+- Проверки: `sql/promotions/pr_promo2_canonical_validation.sql` (набор `promo_canonical_state`),
+  регрессионные сценарии — `tools/promo_canonical_render.py run fixtures`. Откат —
+  `sql/promotions/pr_promo2_rollback.sql`. Контракт —
+  `docs/promotions/PR_PROMO_2_CANONICAL_STATE_2026-09-22.md`.
 
 ## 2026-09-21 — OZON UNITKA: боевой лист переведён на 25 колонок (Gate 6B)
 
