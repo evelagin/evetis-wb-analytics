@@ -15,7 +15,8 @@ function ozonUnitkaConfig(env: NodeJS.ProcessEnv): Pick<Config,
   'ozonUnitkaSheetName' | 'ozonUnitkaWriteEnabled' | 'ozonUnitkaLastClosedDate'
   | 'ozonUnitkaTailFirstColumn' | 'ozonUnitkaBlockSlots' | 'ozonUnitkaLcdRef'
   | 'ozonUnitkaExistingCfRules' | 'ozonUnitkaOfferAliases'
-  | 'ozonUnitkaMaxSourceLagDays' | 'ozonUnitkaLcdCell'> {
+  | 'ozonUnitkaMaxSourceLagDays' | 'ozonUnitkaLcdCell'
+  | 'ozonLcdMigrationWrite' | 'ozonLcdMigrationExpectedRefs' | 'ozonLcdMigrationExpectedB2'> {
   let aliases: Record<string, string> = {};
   try {
     const raw = (env.OZON_UNITKA_OFFER_ALIASES ?? '').trim();
@@ -32,6 +33,10 @@ function ozonUnitkaConfig(env: NodeJS.ProcessEnv): Pick<Config,
     ozonUnitkaExistingCfRules: intOpt(env, 'OZON_UNITKA_EXISTING_CF_RULES', 434),
     ozonUnitkaMaxSourceLagDays: intOpt(env, 'OZON_UNITKA_MAX_SOURCE_LAG_DAYS', 1),
     ozonUnitkaOfferAliases: aliases,
+    ozonLcdMigrationWrite: opt(env, 'OZON_LCD_MIGRATION_WRITE', '0') === '1',
+    ozonLcdMigrationExpectedRefs: /^\d+$/.test(opt(env, 'OZON_LCD_MIGRATION_EXPECTED_REFS', ''))
+      ? Number(opt(env, 'OZON_LCD_MIGRATION_EXPECTED_REFS', '')) : null,
+    ozonLcdMigrationExpectedB2: opt(env, 'OZON_LCD_MIGRATION_EXPECTED_B2', ''),
   };
 }
 
@@ -117,6 +122,15 @@ export interface Config {
   ozonUnitkaLastClosedDate: string;
   /** Где в книге лежит LAST_CLOSED_DATE. Диапазон в нотации A1 вместе с именем листа. */
   ozonUnitkaLcdCell: string;
+  /**
+   * Gate 10, этап 5 — admin-загрузчик ozon-unitka-lcd-migration. Запись ТОЛЬКО при ENVIRONMENT=prod,
+   * OZON_LCD_MIGRATION_WRITE=1 и совпадении обоих ожиданий с живой книгой; иначе — только план.
+   */
+  ozonLcdMigrationWrite: boolean;
+  /** Число ссылок на LAST_CLOSED_DATE в листе Ozon из просмотренного плана. */
+  ozonLcdMigrationExpectedRefs: number | null;
+  /** Значение B2 (ISO) из просмотренного плана: B30 засевается ровно им. */
+  ozonLcdMigrationExpectedB2: string;
   /** Первая колонка ПАНЕЛИ ВЛАДЕЛЬЦА: правее неё движок не пишет ничего и никогда. */
   ozonUnitkaTailFirstColumn: number;
   /** Сколько слотов блоков размечено в листе. */

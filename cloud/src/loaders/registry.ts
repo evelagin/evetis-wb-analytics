@@ -19,6 +19,7 @@ import { unitkaSlot } from './unitka/slot.js';
 import { unitkaMonthPrepLoader } from './unitka/prep.js';
 import { unitkaMonthRollbackLoader } from './unitka/rollback.js';
 import { ozonUnitkaLoader } from './unitka/ozon/loader.js';
+import { ozonLcdMigrationLoader } from './unitka/ozon/lcd_migration_loader.js';
 
 export interface LoaderSpec {
   handler: LoaderHandler;
@@ -51,6 +52,10 @@ export const LOADERS: Record<string, LoaderSpec> = {
   // провизорная экономика (факт > оценка). Запись — prod + OZON_UNITKA_WRITE_ENABLED=1;
   // по умолчанию прогон только считает план. Расписание НЕ создано: см. runbook Gate 8.
   'ozon-unitka': { handler: ozonUnitkaLoader, logicalPeriod: (now) => unitkaSlot(now) },
+  // Gate 10, этап 5: одноразовый перевод формул Ozon на OZON_LAST_CLOSED_DATE. По умолчанию ТОЛЬКО план;
+  // запись — prod + OZON_LCD_MIGRATION_WRITE=1 + ожидания из плана. Нет расписания, запуск — одно
+  // исполнение ozon-unitka-prod с --args=ozon-unitka-lcd-migration.
+  'ozon-unitka-lcd-migration': { handler: (ctx) => ozonLcdMigrationLoader(ctx), logicalPeriod: (now) => unitkaSlot(now) },
 };
 
 export function resolveLoader(name: string): LoaderSpec | undefined {
