@@ -715,6 +715,65 @@
       "source_contract": "docs/promotions/PR_PROMO_3_ECONOMICS_INTEGRATION_2026-09-24.md",
       "business_rule_reference": "docs/promotions/PROMOTION_PHASE_0_5_DECISION_GATE_2026-09-22.md; решение владельца 2026-09-24 (канон — Forward economics)",
       "provenance": "PR-PROMO-3; допуск сверки 0,00501 ₽ — копеечное округление канона, прочие пороги нулевые. Регрессия — tools/promo_economics_render.py run fixtures. Мост к Юнитке — sql/promotions/pr_promo3_unitka_bridge.sql (замер, не ворота)"
+    },
+    {
+      "suite": "inventory_context",
+      "title": "PR-PROMO-4: запасы и распродажа — позиция, скорость, покрытие, срок годности, цели, наборы и контекст акций поверх Control Tower",
+      "gate": true,
+      "severity": "HIGH",
+      "domain": "promotions",
+      "marketplace": [
+        "WB",
+        "OZON"
+      ],
+      "pipelines": [
+        "ct_refresh",
+        "wb_promo_observer",
+        "ozon_promo_observer"
+      ],
+      "layer": "mart",
+      "adapter": "check_blocks",
+      "id_prefix": "PROMO4",
+      "status_column": "status",
+      "execution_mode": "read_only_select",
+      "expected_result": "all_checks_pass",
+      "owner": "evelagin",
+      "timeout_seconds": 300,
+      "files": [
+        "sql/promotions/pr_promo4_inventory_validation.sql"
+      ],
+      "scope": [
+        "evetis_mart.V_INVENTORY_POSITION_HISTORY",
+        "evetis_mart.V_SKU_SELL_THROUGH_CURRENT",
+        "evetis_mart.V_SKU_INVENTORY_TARGET_CURRENT",
+        "evetis_mart.V_SALES_PLAN_MONTHLY_CURRENT",
+        "evetis_mart.V_SKU_INVENTORY_TRAJECTORY_MONTHLY_CURRENT",
+        "evetis_mart.V_BUNDLE_ASSEMBLY_CAPACITY_CURRENT",
+        "evetis_mart.V_PROMO_INVENTORY_CONTEXT_CURRENT",
+        "evetis_ref.REF_SALES_PLAN_APPROVAL",
+        "evetis_ref.REF_SKU_INVENTORY_TARGET",
+        "evetis_ref.CT_INVENTORY_SNAPSHOT_DAILY",
+        "evetis_ref.CT_EXPIRY_BATCH",
+        "wb_mart.V_CT_INVENTORY_TRUTH",
+        "wb_mart.V_CT_PHYSICAL_DAILY",
+        "wb_mart.V_CT_BUNDLE_STATUS",
+        "wb_mart.V_CT_FRESHNESS"
+      ],
+      "dimensions": [
+        "grain",
+        "uniqueness",
+        "reconciliation",
+        "identities",
+        "null_contract",
+        "freshness",
+        "calendar",
+        "no_pii",
+        "no_recommendation"
+      ],
+      "cadence": "перед слиянием изменения в области scope, после развёртывания и после каждой пересборки Control Tower",
+      "source_contract": "docs/promotions/PR_PROMO_4_INVENTORY_SELL_THROUGH_CONTEXT_2026-09-24.md",
+      "business_rule_reference": "docs/control_tower/CT_PHASE1_IMPLEMENTATION_2026-09-10.md; docs/ops/STAGE_C1_SHEET_2026-09-12.md (c1_expiry_margin_days — решение владельца 12.09); docs/ops/STAGE_C0_LOGISTICS_MASTER_2026-09-11.md (R5 — общий пул ФФ)",
+      "provenance": "PR-PROMO-4; пороги нулевые, FLOAT64 1e-9. Свежесть — сроки V_CT_FRESHNESS (паритет — I05). I33 закрепляет тела 20 объектов Control Tower / evetis_ops, I40 — схемы 15 внешних объектов (контракт фикстур). Регрессия — tools/promo_inventory_render.py run fixtures"
     }
   ],
   "backlog": {

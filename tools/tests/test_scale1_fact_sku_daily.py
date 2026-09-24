@@ -42,7 +42,9 @@ NEUTRAL_SCHEMA = [
     ("source_contract", "STRING"), ("contract_version", "STRING"),
 ]
 import promo_economics_render as promo3_render  # noqa: E402
-PROMO2_OBJECTS = {name for _, name, _ in promo3_render.OBJECTS}
+import promo_inventory_render as promo4_render  # noqa: E402
+# Объекты Git-first слоёв акций (PR-PROMO-2/3/4): их предразвёртывание проверяют свои рендереры.
+PROMO2_OBJECTS = {name for _, name, _ in promo3_render.OBJECTS} | {name for _, name, _ in promo4_render.OBJECTS}
 TAX_WORDS = re.compile(r"tax|vat|usn|nalog|налог|ндс|усн", re.I)
 
 
@@ -246,7 +248,9 @@ def test_neutral_fact_reads_only_authoritative_marts_never_raw():
 
 
 def test_validator_policy_keeps_raw_out_of_the_neutral_layer_and_marts_isolated():
-    assert v.EXTERNAL_DATASET_POLICY["evetis_mart"] == frozenset({"wb_mart", "ozon_mart", "evetis_ref"})
+    # PR-PROMO-4: + evetis_ops (shared: owner conventions). Still no *_raw in the neutral layer.
+    assert v.EXTERNAL_DATASET_POLICY["evetis_mart"] == frozenset({"wb_mart", "ozon_mart", "evetis_ref", "evetis_ops"})
+    assert not any(d.endswith("_raw") for d in v.EXTERNAL_DATASET_POLICY["evetis_mart"])
     assert v.EXTERNAL_DATASET_POLICY["ozon_mart"] == frozenset({"ozon_raw", "evetis_ref"})
     for dataset, allowed in v.EXTERNAL_DATASET_POLICY.items():
         assert "evetis_mart" not in allowed, dataset  # no marketplace mart may read the neutral layer back

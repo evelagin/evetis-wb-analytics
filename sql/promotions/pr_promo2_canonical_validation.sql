@@ -488,7 +488,8 @@ GROUP BY marketplace;
 
 -- @check V24_NO_PII_NO_ECONOMICS_COLUMNS
 -- Ни одно из 16 представлений СОСТОЯНИЯ не выводит ПДн и экономику/рекомендации (контракт PR-PROMO-2 §21–22).
--- Слой экономики PR-PROMO-3 (*_PROMO_ECONOMICS_*) проверяется своим набором (E20) и сюда не входит.
+-- Слой экономики PR-PROMO-3 (*_PROMO_ECONOMICS_*) проверяется своим набором (E20) и сюда не входит;
+-- контекст запаса PR-PROMO-4 (V_PROMO_INVENTORY_*) несёт экономику PR-PROMO-3 дословно и проверяется I30.
 -- До развёртывания FAIL по построению: columns_checked = 0.
 WITH cols AS (
   SELECT table_name, column_name FROM `project-fa311fc0-4d87-4781-986.wb_mart.INFORMATION_SCHEMA.COLUMNS`
@@ -499,6 +500,7 @@ WITH cols AS (
   UNION ALL
   SELECT table_name, column_name FROM `project-fa311fc0-4d87-4781-986.evetis_mart.INFORMATION_SCHEMA.COLUMNS`
   WHERE STARTS_WITH(table_name, 'V_PROMO_') AND NOT STARTS_WITH(table_name, 'V_PROMO_ECONOMICS_')
+    AND NOT STARTS_WITH(table_name, 'V_PROMO_INVENTORY_')
 )
 SELECT COUNT(DISTINCT table_name) AS views_checked, COUNT(*) AS columns_checked,
   COUNTIF(REGEXP_CONTAINS(LOWER(column_name),
