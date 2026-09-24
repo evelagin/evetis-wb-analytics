@@ -47,7 +47,7 @@ PROMO4 = {"ozon_mart": set(),
                           "V_SKU_INVENTORY_TARGET_CURRENT", "V_SALES_PLAN_MONTHLY_CURRENT",
                           "V_SKU_INVENTORY_TRAJECTORY_MONTHLY_CURRENT", "V_BUNDLE_ASSEMBLY_CAPACITY_CURRENT",
                           "V_PROMO_INVENTORY_CONTEXT_CURRENT"}}
-PROMO4_PENDING = {"ozon_mart": set(), "evetis_mart": set(PROMO4["evetis_mart"])}  # до развёртывания и снимка R2C
+PROMO4_PENDING = {"ozon_mart": set(), "evetis_mart": set()}  # сняты R2C после развёртывания 2026-09-24
 NON_R2A = {"ozon_mart": {"V_OZON_COMMISSION_RECOVERY", "V_OZON_CIS_BUYOUT", "FCT_OZON_SKU_PNL_DAILY",
                          "FCT_OZON_SKU_PNL_MONTHLY", "FCT_OZON_PNL_MONTHLY",
                          # Gate 8: провизорная экономика Ozon

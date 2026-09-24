@@ -4133,7 +4133,7 @@
       "object_name": "V_INVENTORY_POSITION_HISTORY",
       "object_type": "VIEW",
       "canonical_path": "sql/current/evetis_mart/V_INVENTORY_POSITION_HISTORY.sql",
-      "sync_state": "pending_deploy",
+      "sync_state": "captured_live",
       "dependencies": [],
       "external_dependencies": [
         "evetis_ref.CT_INVENTORY_SNAPSHOT_DAILY",
@@ -4141,22 +4141,293 @@
         "evetis_ref.REF_SKU_CHANNEL_MAP"
       ],
       "dependency_level": 0,
-      "capture_main_sha": null,
-      "captured_at": null,
+      "capture_main_sha": "2ad14a0b64ab1786b0fa97c13ae7a3f40f012ec1",
+      "captured_at": "2026-09-24T11:16:46Z",
       "provenance": {
-        "source": "PR-PROMO-4 Git-first inventory & sell-through context (docs/promotions/PR_PROMO_4_INVENTORY_SELL_THROUGH_CONTEXT_2026-09-24.md); canonical_schema from BigQuery dry-run of the Git body over live Control Tower objects before deployment (owner reference tables rendered empty)",
+        "source": "production INFORMATION_SCHEMA read-only capture (R2C) after PR-PROMO-4 deploy 2026-09-24 from main 2ad14a0",
         "historical_migration": null,
-        "preflight_parity": "NEW_OBJECT_FIXTURE_AND_PREDEPLOY_CHECKS",
+        "preflight_parity": "DEPLOYED_AND_READBACK_MATCH",
         "superseded_historical_definitions": []
       },
-      "live_body_sha256_at_capture": null,
-      "live_schema_sha256_at_capture": null,
-      "live_description_sha256_at_capture": null,
-      "live_schema_at_capture": null,
+      "live_body_sha256_at_capture": "6661a93abaec6ce79542fcb88cd7349bf2300347517c61514ea9f3bf25f4575a",
+      "live_schema_sha256_at_capture": "62ca2a7cca39c27ba83d4b54dc8fe2872f4bae7f5229a01e5a0e465336d427c9",
+      "live_description_sha256_at_capture": "7b71b435ad0532ded306e9c68f12826ae933631fe71dbabc74b253abc12bfe37",
+      "live_schema_at_capture": [
+        {
+          "column_name": "snapshot_date",
+          "data_type": "DATE",
+          "is_nullable": "YES",
+          "ordinal_position": 1
+        },
+        {
+          "column_name": "inventory_as_of",
+          "data_type": "TIMESTAMP",
+          "is_nullable": "YES",
+          "ordinal_position": 2
+        },
+        {
+          "column_name": "internal_sku",
+          "data_type": "STRING",
+          "is_nullable": "YES",
+          "ordinal_position": 3
+        },
+        {
+          "column_name": "product_name",
+          "data_type": "STRING",
+          "is_nullable": "YES",
+          "ordinal_position": 4
+        },
+        {
+          "column_name": "product_line",
+          "data_type": "STRING",
+          "is_nullable": "YES",
+          "ordinal_position": 5
+        },
+        {
+          "column_name": "mapping_status",
+          "data_type": "STRING",
+          "is_nullable": "YES",
+          "ordinal_position": 6
+        },
+        {
+          "column_name": "wb_nm_ids",
+          "data_type": "STRING",
+          "is_nullable": "YES",
+          "ordinal_position": 7
+        },
+        {
+          "column_name": "wb_vendor_codes",
+          "data_type": "STRING",
+          "is_nullable": "YES",
+          "ordinal_position": 8
+        },
+        {
+          "column_name": "ozon_skus",
+          "data_type": "STRING",
+          "is_nullable": "YES",
+          "ordinal_position": 9
+        },
+        {
+          "column_name": "ozon_offer_ids",
+          "data_type": "STRING",
+          "is_nullable": "YES",
+          "ordinal_position": 10
+        },
+        {
+          "column_name": "listed_on_wb",
+          "data_type": "BOOL",
+          "is_nullable": "YES",
+          "ordinal_position": 11
+        },
+        {
+          "column_name": "listed_on_ozon",
+          "data_type": "BOOL",
+          "is_nullable": "YES",
+          "ordinal_position": 12
+        },
+        {
+          "column_name": "warehouse_ff_units",
+          "data_type": "INT64",
+          "is_nullable": "YES",
+          "ordinal_position": 13
+        },
+        {
+          "column_name": "wb_available_units",
+          "data_type": "INT64",
+          "is_nullable": "YES",
+          "ordinal_position": 14
+        },
+        {
+          "column_name": "ozon_available_units",
+          "data_type": "INT64",
+          "is_nullable": "YES",
+          "ordinal_position": 15
+        },
+        {
+          "column_name": "fbs_units",
+          "data_type": "INT64",
+          "is_nullable": "YES",
+          "ordinal_position": 16
+        },
+        {
+          "column_name": "marketplace_available_units",
+          "data_type": "INT64",
+          "is_nullable": "YES",
+          "ordinal_position": 17
+        },
+        {
+          "column_name": "wb_in_transit_units",
+          "data_type": "INT64",
+          "is_nullable": "YES",
+          "ordinal_position": 18
+        },
+        {
+          "column_name": "ozon_in_transit_units",
+          "data_type": "INT64",
+          "is_nullable": "YES",
+          "ordinal_position": 19
+        },
+        {
+          "column_name": "in_transit_units",
+          "data_type": "INT64",
+          "is_nullable": "YES",
+          "ordinal_position": 20
+        },
+        {
+          "column_name": "inventory_position_units",
+          "data_type": "INT64",
+          "is_nullable": "YES",
+          "ordinal_position": 21
+        },
+        {
+          "column_name": "marketplace_units_inside_bundle_cards",
+          "data_type": "INT64",
+          "is_nullable": "YES",
+          "ordinal_position": 22
+        },
+        {
+          "column_name": "reserved_in_delivery_units",
+          "data_type": "INT64",
+          "is_nullable": "YES",
+          "ordinal_position": 23
+        },
+        {
+          "column_name": "unavailable_claimed_units",
+          "data_type": "INT64",
+          "is_nullable": "YES",
+          "ordinal_position": 24
+        },
+        {
+          "column_name": "inbound_not_received_units",
+          "data_type": "INT64",
+          "is_nullable": "YES",
+          "ordinal_position": 25
+        },
+        {
+          "column_name": "inbound_status",
+          "data_type": "STRING",
+          "is_nullable": "YES",
+          "ordinal_position": 26
+        },
+        {
+          "column_name": "inbound_eta",
+          "data_type": "DATE",
+          "is_nullable": "YES",
+          "ordinal_position": 27
+        },
+        {
+          "column_name": "warehouse_ff_scope",
+          "data_type": "STRING",
+          "is_nullable": "YES",
+          "ordinal_position": 28
+        },
+        {
+          "column_name": "marketplace_available_scope",
+          "data_type": "STRING",
+          "is_nullable": "YES",
+          "ordinal_position": 29
+        },
+        {
+          "column_name": "in_transit_scope",
+          "data_type": "STRING",
+          "is_nullable": "YES",
+          "ordinal_position": 30
+        },
+        {
+          "column_name": "inventory_position_scope",
+          "data_type": "STRING",
+          "is_nullable": "YES",
+          "ordinal_position": 31
+        },
+        {
+          "column_name": "ff_anchor_date",
+          "data_type": "DATE",
+          "is_nullable": "YES",
+          "ordinal_position": 32
+        },
+        {
+          "column_name": "ff_anchor_age_days",
+          "data_type": "INT64",
+          "is_nullable": "YES",
+          "ordinal_position": 33
+        },
+        {
+          "column_name": "ff_anchor_units",
+          "data_type": "INT64",
+          "is_nullable": "YES",
+          "ordinal_position": 34
+        },
+        {
+          "column_name": "ff_outflow_since_anchor_units",
+          "data_type": "INT64",
+          "is_nullable": "YES",
+          "ordinal_position": 35
+        },
+        {
+          "column_name": "wb_stock_as_of",
+          "data_type": "DATE",
+          "is_nullable": "YES",
+          "ordinal_position": 36
+        },
+        {
+          "column_name": "ozon_stock_as_of",
+          "data_type": "DATE",
+          "is_nullable": "YES",
+          "ordinal_position": 37
+        },
+        {
+          "column_name": "ct_policy_status_code",
+          "data_type": "STRING",
+          "is_nullable": "YES",
+          "ordinal_position": 38
+        },
+        {
+          "column_name": "ct_policy_status_reason",
+          "data_type": "STRING",
+          "is_nullable": "YES",
+          "ordinal_position": 39
+        },
+        {
+          "column_name": "ct_policy_status_provenance",
+          "data_type": "STRING",
+          "is_nullable": "YES",
+          "ordinal_position": 40
+        },
+        {
+          "column_name": "ct_units_per_day_30d_at_snapshot",
+          "data_type": "FLOAT64",
+          "is_nullable": "YES",
+          "ordinal_position": 41
+        },
+        {
+          "column_name": "ct_units_per_day_7d_at_snapshot",
+          "data_type": "FLOAT64",
+          "is_nullable": "YES",
+          "ordinal_position": 42
+        },
+        {
+          "column_name": "ct_cover_days_30d_at_snapshot",
+          "data_type": "FLOAT64",
+          "is_nullable": "YES",
+          "ordinal_position": 43
+        },
+        {
+          "column_name": "ct_expiry_date_at_snapshot",
+          "data_type": "DATE",
+          "is_nullable": "YES",
+          "ordinal_position": 44
+        },
+        {
+          "column_name": "inventory_source",
+          "data_type": "STRING",
+          "is_nullable": "YES",
+          "ordinal_position": 45
+        }
+      ],
       "canonical_body_sha256": "6661a93abaec6ce79542fcb88cd7349bf2300347517c61514ea9f3bf25f4575a",
       "canonical_description_sha256": "7b71b435ad0532ded306e9c68f12826ae933631fe71dbabc74b253abc12bfe37",
       "canonical_schema_sha256": "62ca2a7cca39c27ba83d4b54dc8fe2872f4bae7f5229a01e5a0e465336d427c9",
-      "canonical_schema_verification": "unverified",
+      "canonical_schema_verification": "bigquery_verified",
       "canonical_column_count": 45,
       "canonical_schema": [
         {
@@ -4436,7 +4707,7 @@
       "object_name": "V_SKU_SELL_THROUGH_CURRENT",
       "object_type": "VIEW",
       "canonical_path": "sql/current/evetis_mart/V_SKU_SELL_THROUGH_CURRENT.sql",
-      "sync_state": "pending_deploy",
+      "sync_state": "captured_live",
       "dependencies": [
         "V_INVENTORY_POSITION_HISTORY"
       ],
@@ -4448,22 +4719,725 @@
         "wb_mart.V_CT_PHYSICAL_DAILY"
       ],
       "dependency_level": 1,
-      "capture_main_sha": null,
-      "captured_at": null,
+      "capture_main_sha": "2ad14a0b64ab1786b0fa97c13ae7a3f40f012ec1",
+      "captured_at": "2026-09-24T11:16:46Z",
       "provenance": {
-        "source": "PR-PROMO-4 Git-first inventory & sell-through context (docs/promotions/PR_PROMO_4_INVENTORY_SELL_THROUGH_CONTEXT_2026-09-24.md); canonical_schema from BigQuery dry-run of the Git body over live Control Tower objects before deployment (owner reference tables rendered empty)",
+        "source": "production INFORMATION_SCHEMA read-only capture (R2C) after PR-PROMO-4 deploy 2026-09-24 from main 2ad14a0",
         "historical_migration": null,
-        "preflight_parity": "NEW_OBJECT_FIXTURE_AND_PREDEPLOY_CHECKS",
+        "preflight_parity": "DEPLOYED_AND_READBACK_MATCH",
         "superseded_historical_definitions": []
       },
-      "live_body_sha256_at_capture": null,
-      "live_schema_sha256_at_capture": null,
-      "live_description_sha256_at_capture": null,
-      "live_schema_at_capture": null,
+      "live_body_sha256_at_capture": "37aff367c66aad587f411c302a6e0615e9a71b2300574a5effc2fef156a5d307",
+      "live_schema_sha256_at_capture": "fb742aabb2b84d80efb9259e1da2d0b876a94edc3bf3bfba94c8704faaf666a8",
+      "live_description_sha256_at_capture": "9c48cf607f707aaf55f5717c006ea5884845db2f60b498ccc6fa3012ed91d22f",
+      "live_schema_at_capture": [
+        {
+          "column_name": "internal_sku",
+          "data_type": "STRING",
+          "is_nullable": "YES",
+          "ordinal_position": 1
+        },
+        {
+          "column_name": "product_name",
+          "data_type": "STRING",
+          "is_nullable": "YES",
+          "ordinal_position": 2
+        },
+        {
+          "column_name": "product_line",
+          "data_type": "STRING",
+          "is_nullable": "YES",
+          "ordinal_position": 3
+        },
+        {
+          "column_name": "mapping_status",
+          "data_type": "STRING",
+          "is_nullable": "YES",
+          "ordinal_position": 4
+        },
+        {
+          "column_name": "wb_nm_ids",
+          "data_type": "STRING",
+          "is_nullable": "YES",
+          "ordinal_position": 5
+        },
+        {
+          "column_name": "wb_vendor_codes",
+          "data_type": "STRING",
+          "is_nullable": "YES",
+          "ordinal_position": 6
+        },
+        {
+          "column_name": "ozon_skus",
+          "data_type": "STRING",
+          "is_nullable": "YES",
+          "ordinal_position": 7
+        },
+        {
+          "column_name": "ozon_offer_ids",
+          "data_type": "STRING",
+          "is_nullable": "YES",
+          "ordinal_position": 8
+        },
+        {
+          "column_name": "listed_on_wb",
+          "data_type": "BOOL",
+          "is_nullable": "YES",
+          "ordinal_position": 9
+        },
+        {
+          "column_name": "listed_on_ozon",
+          "data_type": "BOOL",
+          "is_nullable": "YES",
+          "ordinal_position": 10
+        },
+        {
+          "column_name": "inventory_as_of_date",
+          "data_type": "DATE",
+          "is_nullable": "YES",
+          "ordinal_position": 11
+        },
+        {
+          "column_name": "inventory_as_of",
+          "data_type": "TIMESTAMP",
+          "is_nullable": "YES",
+          "ordinal_position": 12
+        },
+        {
+          "column_name": "warehouse_ff_units",
+          "data_type": "INT64",
+          "is_nullable": "YES",
+          "ordinal_position": 13
+        },
+        {
+          "column_name": "wb_available_units",
+          "data_type": "INT64",
+          "is_nullable": "YES",
+          "ordinal_position": 14
+        },
+        {
+          "column_name": "ozon_available_units",
+          "data_type": "INT64",
+          "is_nullable": "YES",
+          "ordinal_position": 15
+        },
+        {
+          "column_name": "fbs_units",
+          "data_type": "INT64",
+          "is_nullable": "YES",
+          "ordinal_position": 16
+        },
+        {
+          "column_name": "marketplace_available_units",
+          "data_type": "INT64",
+          "is_nullable": "YES",
+          "ordinal_position": 17
+        },
+        {
+          "column_name": "wb_in_transit_units",
+          "data_type": "INT64",
+          "is_nullable": "YES",
+          "ordinal_position": 18
+        },
+        {
+          "column_name": "ozon_in_transit_units",
+          "data_type": "INT64",
+          "is_nullable": "YES",
+          "ordinal_position": 19
+        },
+        {
+          "column_name": "in_transit_units",
+          "data_type": "INT64",
+          "is_nullable": "YES",
+          "ordinal_position": 20
+        },
+        {
+          "column_name": "inventory_position_units",
+          "data_type": "INT64",
+          "is_nullable": "YES",
+          "ordinal_position": 21
+        },
+        {
+          "column_name": "marketplace_units_inside_bundle_cards",
+          "data_type": "INT64",
+          "is_nullable": "YES",
+          "ordinal_position": 22
+        },
+        {
+          "column_name": "reserved_in_delivery_units",
+          "data_type": "INT64",
+          "is_nullable": "YES",
+          "ordinal_position": 23
+        },
+        {
+          "column_name": "unavailable_claimed_units",
+          "data_type": "INT64",
+          "is_nullable": "YES",
+          "ordinal_position": 24
+        },
+        {
+          "column_name": "inbound_not_received_units",
+          "data_type": "INT64",
+          "is_nullable": "YES",
+          "ordinal_position": 25
+        },
+        {
+          "column_name": "inbound_eta",
+          "data_type": "DATE",
+          "is_nullable": "YES",
+          "ordinal_position": 26
+        },
+        {
+          "column_name": "warehouse_ff_scope",
+          "data_type": "STRING",
+          "is_nullable": "YES",
+          "ordinal_position": 27
+        },
+        {
+          "column_name": "marketplace_available_scope",
+          "data_type": "STRING",
+          "is_nullable": "YES",
+          "ordinal_position": 28
+        },
+        {
+          "column_name": "in_transit_scope",
+          "data_type": "STRING",
+          "is_nullable": "YES",
+          "ordinal_position": 29
+        },
+        {
+          "column_name": "inventory_position_scope",
+          "data_type": "STRING",
+          "is_nullable": "YES",
+          "ordinal_position": 30
+        },
+        {
+          "column_name": "ff_anchor_date",
+          "data_type": "DATE",
+          "is_nullable": "YES",
+          "ordinal_position": 31
+        },
+        {
+          "column_name": "ff_anchor_age_days",
+          "data_type": "INT64",
+          "is_nullable": "YES",
+          "ordinal_position": 32
+        },
+        {
+          "column_name": "wb_stock_as_of",
+          "data_type": "DATE",
+          "is_nullable": "YES",
+          "ordinal_position": 33
+        },
+        {
+          "column_name": "ozon_stock_as_of",
+          "data_type": "DATE",
+          "is_nullable": "YES",
+          "ordinal_position": 34
+        },
+        {
+          "column_name": "ct_snapshot_age_hours",
+          "data_type": "INT64",
+          "is_nullable": "YES",
+          "ordinal_position": 35
+        },
+        {
+          "column_name": "wb_stock_age_days",
+          "data_type": "INT64",
+          "is_nullable": "YES",
+          "ordinal_position": 36
+        },
+        {
+          "column_name": "ozon_stock_age_days",
+          "data_type": "INT64",
+          "is_nullable": "YES",
+          "ordinal_position": 37
+        },
+        {
+          "column_name": "ff_anchor_age_days_now",
+          "data_type": "INT64",
+          "is_nullable": "YES",
+          "ordinal_position": 38
+        },
+        {
+          "column_name": "ct_inventory_freshness",
+          "data_type": "STRING",
+          "is_nullable": "YES",
+          "ordinal_position": 39
+        },
+        {
+          "column_name": "wb_stock_freshness",
+          "data_type": "STRING",
+          "is_nullable": "YES",
+          "ordinal_position": 40
+        },
+        {
+          "column_name": "ozon_stock_freshness",
+          "data_type": "STRING",
+          "is_nullable": "YES",
+          "ordinal_position": 41
+        },
+        {
+          "column_name": "ff_stock_freshness",
+          "data_type": "STRING",
+          "is_nullable": "YES",
+          "ordinal_position": 42
+        },
+        {
+          "column_name": "inventory_freshness_status",
+          "data_type": "STRING",
+          "is_nullable": "YES",
+          "ordinal_position": 43
+        },
+        {
+          "column_name": "inventory_freshness_reason",
+          "data_type": "STRING",
+          "is_nullable": "YES",
+          "ordinal_position": 44
+        },
+        {
+          "column_name": "freshness_contract",
+          "data_type": "STRING",
+          "is_nullable": "YES",
+          "ordinal_position": 45
+        },
+        {
+          "column_name": "sales_event_contract",
+          "data_type": "STRING",
+          "is_nullable": "YES",
+          "ordinal_position": 46
+        },
+        {
+          "column_name": "sales_as_of",
+          "data_type": "DATE",
+          "is_nullable": "YES",
+          "ordinal_position": 47
+        },
+        {
+          "column_name": "wb_sales_as_of",
+          "data_type": "DATE",
+          "is_nullable": "YES",
+          "ordinal_position": 48
+        },
+        {
+          "column_name": "ozon_sales_as_of",
+          "data_type": "DATE",
+          "is_nullable": "YES",
+          "ordinal_position": 49
+        },
+        {
+          "column_name": "ct_actuals_refreshed_at",
+          "data_type": "TIMESTAMP",
+          "is_nullable": "YES",
+          "ordinal_position": 50
+        },
+        {
+          "column_name": "first_order_date",
+          "data_type": "DATE",
+          "is_nullable": "YES",
+          "ordinal_position": 51
+        },
+        {
+          "column_name": "units_ordered_7d",
+          "data_type": "INT64",
+          "is_nullable": "YES",
+          "ordinal_position": 52
+        },
+        {
+          "column_name": "units_ordered_14d",
+          "data_type": "INT64",
+          "is_nullable": "YES",
+          "ordinal_position": 53
+        },
+        {
+          "column_name": "units_ordered_30d",
+          "data_type": "INT64",
+          "is_nullable": "YES",
+          "ordinal_position": 54
+        },
+        {
+          "column_name": "units_ordered_60d",
+          "data_type": "INT64",
+          "is_nullable": "YES",
+          "ordinal_position": 55
+        },
+        {
+          "column_name": "units_ordered_90d",
+          "data_type": "INT64",
+          "is_nullable": "YES",
+          "ordinal_position": 56
+        },
+        {
+          "column_name": "units_per_day_7d",
+          "data_type": "FLOAT64",
+          "is_nullable": "YES",
+          "ordinal_position": 57
+        },
+        {
+          "column_name": "units_per_day_14d",
+          "data_type": "FLOAT64",
+          "is_nullable": "YES",
+          "ordinal_position": 58
+        },
+        {
+          "column_name": "units_per_day_30d",
+          "data_type": "FLOAT64",
+          "is_nullable": "YES",
+          "ordinal_position": 59
+        },
+        {
+          "column_name": "units_per_day_60d",
+          "data_type": "FLOAT64",
+          "is_nullable": "YES",
+          "ordinal_position": 60
+        },
+        {
+          "column_name": "units_per_day_90d",
+          "data_type": "FLOAT64",
+          "is_nullable": "YES",
+          "ordinal_position": 61
+        },
+        {
+          "column_name": "velocity_quality_7d",
+          "data_type": "STRING",
+          "is_nullable": "YES",
+          "ordinal_position": 62
+        },
+        {
+          "column_name": "velocity_quality_14d",
+          "data_type": "STRING",
+          "is_nullable": "YES",
+          "ordinal_position": 63
+        },
+        {
+          "column_name": "velocity_quality_30d",
+          "data_type": "STRING",
+          "is_nullable": "YES",
+          "ordinal_position": 64
+        },
+        {
+          "column_name": "velocity_quality_60d",
+          "data_type": "STRING",
+          "is_nullable": "YES",
+          "ordinal_position": 65
+        },
+        {
+          "column_name": "velocity_quality_90d",
+          "data_type": "STRING",
+          "is_nullable": "YES",
+          "ordinal_position": 66
+        },
+        {
+          "column_name": "availability_observed_days_7d",
+          "data_type": "INT64",
+          "is_nullable": "YES",
+          "ordinal_position": 67
+        },
+        {
+          "column_name": "availability_observed_days_14d",
+          "data_type": "INT64",
+          "is_nullable": "YES",
+          "ordinal_position": 68
+        },
+        {
+          "column_name": "availability_observed_days_30d",
+          "data_type": "INT64",
+          "is_nullable": "YES",
+          "ordinal_position": 69
+        },
+        {
+          "column_name": "availability_observed_days_60d",
+          "data_type": "INT64",
+          "is_nullable": "YES",
+          "ordinal_position": 70
+        },
+        {
+          "column_name": "availability_observed_days_90d",
+          "data_type": "INT64",
+          "is_nullable": "YES",
+          "ordinal_position": 71
+        },
+        {
+          "column_name": "stockout_days_7d",
+          "data_type": "INT64",
+          "is_nullable": "YES",
+          "ordinal_position": 72
+        },
+        {
+          "column_name": "stockout_days_14d",
+          "data_type": "INT64",
+          "is_nullable": "YES",
+          "ordinal_position": 73
+        },
+        {
+          "column_name": "stockout_days_30d",
+          "data_type": "INT64",
+          "is_nullable": "YES",
+          "ordinal_position": 74
+        },
+        {
+          "column_name": "stockout_days_60d",
+          "data_type": "INT64",
+          "is_nullable": "YES",
+          "ordinal_position": 75
+        },
+        {
+          "column_name": "stockout_days_90d",
+          "data_type": "INT64",
+          "is_nullable": "YES",
+          "ordinal_position": 76
+        },
+        {
+          "column_name": "wb_stockout_days_30d",
+          "data_type": "INT64",
+          "is_nullable": "YES",
+          "ordinal_position": 77
+        },
+        {
+          "column_name": "ozon_stockout_days_30d",
+          "data_type": "INT64",
+          "is_nullable": "YES",
+          "ordinal_position": 78
+        },
+        {
+          "column_name": "velocity_ratio_7d_to_90d",
+          "data_type": "FLOAT64",
+          "is_nullable": "YES",
+          "ordinal_position": 79
+        },
+        {
+          "column_name": "velocity_ratio_30d_to_90d",
+          "data_type": "FLOAT64",
+          "is_nullable": "YES",
+          "ordinal_position": 80
+        },
+        {
+          "column_name": "units_sold_30d",
+          "data_type": "INT64",
+          "is_nullable": "YES",
+          "ordinal_position": 81
+        },
+        {
+          "column_name": "units_sold_per_day_30d",
+          "data_type": "FLOAT64",
+          "is_nullable": "YES",
+          "ordinal_position": 82
+        },
+        {
+          "column_name": "reference_velocity_window_days",
+          "data_type": "INT64",
+          "is_nullable": "YES",
+          "ordinal_position": 83
+        },
+        {
+          "column_name": "reference_units_per_day",
+          "data_type": "FLOAT64",
+          "is_nullable": "YES",
+          "ordinal_position": 84
+        },
+        {
+          "column_name": "reference_velocity_quality",
+          "data_type": "STRING",
+          "is_nullable": "YES",
+          "ordinal_position": 85
+        },
+        {
+          "column_name": "cover_numerator",
+          "data_type": "STRING",
+          "is_nullable": "YES",
+          "ordinal_position": 86
+        },
+        {
+          "column_name": "cover_days_7d",
+          "data_type": "FLOAT64",
+          "is_nullable": "YES",
+          "ordinal_position": 87
+        },
+        {
+          "column_name": "cover_days_14d",
+          "data_type": "FLOAT64",
+          "is_nullable": "YES",
+          "ordinal_position": 88
+        },
+        {
+          "column_name": "cover_days_30d",
+          "data_type": "FLOAT64",
+          "is_nullable": "YES",
+          "ordinal_position": 89
+        },
+        {
+          "column_name": "cover_days_60d",
+          "data_type": "FLOAT64",
+          "is_nullable": "YES",
+          "ordinal_position": 90
+        },
+        {
+          "column_name": "cover_days_90d",
+          "data_type": "FLOAT64",
+          "is_nullable": "YES",
+          "ordinal_position": 91
+        },
+        {
+          "column_name": "cover_status_7d",
+          "data_type": "STRING",
+          "is_nullable": "YES",
+          "ordinal_position": 92
+        },
+        {
+          "column_name": "cover_status_14d",
+          "data_type": "STRING",
+          "is_nullable": "YES",
+          "ordinal_position": 93
+        },
+        {
+          "column_name": "cover_status_30d",
+          "data_type": "STRING",
+          "is_nullable": "YES",
+          "ordinal_position": 94
+        },
+        {
+          "column_name": "cover_status_60d",
+          "data_type": "STRING",
+          "is_nullable": "YES",
+          "ordinal_position": 95
+        },
+        {
+          "column_name": "cover_status_90d",
+          "data_type": "STRING",
+          "is_nullable": "YES",
+          "ordinal_position": 96
+        },
+        {
+          "column_name": "marketplace_cover_days_30d",
+          "data_type": "FLOAT64",
+          "is_nullable": "YES",
+          "ordinal_position": 97
+        },
+        {
+          "column_name": "marketplace_cover_status_30d",
+          "data_type": "STRING",
+          "is_nullable": "YES",
+          "ordinal_position": 98
+        },
+        {
+          "column_name": "expiry_evidence_status",
+          "data_type": "STRING",
+          "is_nullable": "YES",
+          "ordinal_position": 99
+        },
+        {
+          "column_name": "expiry_source",
+          "data_type": "STRING",
+          "is_nullable": "YES",
+          "ordinal_position": 100
+        },
+        {
+          "column_name": "expiry_confidence",
+          "data_type": "STRING",
+          "is_nullable": "YES",
+          "ordinal_position": 101
+        },
+        {
+          "column_name": "expiry_batch_id",
+          "data_type": "STRING",
+          "is_nullable": "YES",
+          "ordinal_position": 102
+        },
+        {
+          "column_name": "expiry_batch_manufacture_date",
+          "data_type": "DATE",
+          "is_nullable": "YES",
+          "ordinal_position": 103
+        },
+        {
+          "column_name": "expiry_batch_shelf_life_months",
+          "data_type": "INT64",
+          "is_nullable": "YES",
+          "ordinal_position": 104
+        },
+        {
+          "column_name": "expiry_lots_on_hand",
+          "data_type": "INT64",
+          "is_nullable": "YES",
+          "ordinal_position": 105
+        },
+        {
+          "column_name": "expiry_lots_inbound",
+          "data_type": "INT64",
+          "is_nullable": "YES",
+          "ordinal_position": 106
+        },
+        {
+          "column_name": "expiry_lot_status",
+          "data_type": "STRING",
+          "is_nullable": "YES",
+          "ordinal_position": 107
+        },
+        {
+          "column_name": "earliest_expiry_date",
+          "data_type": "DATE",
+          "is_nullable": "YES",
+          "ordinal_position": 108
+        },
+        {
+          "column_name": "days_to_expiry",
+          "data_type": "INT64",
+          "is_nullable": "YES",
+          "ordinal_position": 109
+        },
+        {
+          "column_name": "expiry_passed",
+          "data_type": "BOOL",
+          "is_nullable": "YES",
+          "ordinal_position": 110
+        },
+        {
+          "column_name": "sell_by_margin_days",
+          "data_type": "INT64",
+          "is_nullable": "YES",
+          "ordinal_position": 111
+        },
+        {
+          "column_name": "sell_by_margin_source",
+          "data_type": "STRING",
+          "is_nullable": "YES",
+          "ordinal_position": 112
+        },
+        {
+          "column_name": "sell_by_date",
+          "data_type": "DATE",
+          "is_nullable": "YES",
+          "ordinal_position": 113
+        },
+        {
+          "column_name": "days_to_sell_by",
+          "data_type": "INT64",
+          "is_nullable": "YES",
+          "ordinal_position": 114
+        },
+        {
+          "column_name": "ct_policy_status_code",
+          "data_type": "STRING",
+          "is_nullable": "YES",
+          "ordinal_position": 115
+        },
+        {
+          "column_name": "ct_policy_status_reason",
+          "data_type": "STRING",
+          "is_nullable": "YES",
+          "ordinal_position": 116
+        },
+        {
+          "column_name": "ct_policy_status_provenance",
+          "data_type": "STRING",
+          "is_nullable": "YES",
+          "ordinal_position": 117
+        }
+      ],
       "canonical_body_sha256": "37aff367c66aad587f411c302a6e0615e9a71b2300574a5effc2fef156a5d307",
       "canonical_description_sha256": "9c48cf607f707aaf55f5717c006ea5884845db2f60b498ccc6fa3012ed91d22f",
       "canonical_schema_sha256": "fb742aabb2b84d80efb9259e1da2d0b876a94edc3bf3bfba94c8704faaf666a8",
-      "canonical_schema_verification": "unverified",
+      "canonical_schema_verification": "bigquery_verified",
       "canonical_column_count": 117,
       "canonical_schema": [
         {
@@ -5175,7 +6149,7 @@
       "object_name": "V_SKU_INVENTORY_TARGET_CURRENT",
       "object_type": "VIEW",
       "canonical_path": "sql/current/evetis_mart/V_SKU_INVENTORY_TARGET_CURRENT.sql",
-      "sync_state": "pending_deploy",
+      "sync_state": "captured_live",
       "dependencies": [
         "V_SKU_SELL_THROUGH_CURRENT"
       ],
@@ -5183,22 +6157,203 @@
         "evetis_ref.REF_SKU_INVENTORY_TARGET"
       ],
       "dependency_level": 2,
-      "capture_main_sha": null,
-      "captured_at": null,
+      "capture_main_sha": "2ad14a0b64ab1786b0fa97c13ae7a3f40f012ec1",
+      "captured_at": "2026-09-24T11:16:46Z",
       "provenance": {
-        "source": "PR-PROMO-4 Git-first inventory & sell-through context (docs/promotions/PR_PROMO_4_INVENTORY_SELL_THROUGH_CONTEXT_2026-09-24.md); canonical_schema from BigQuery dry-run of the Git body over live Control Tower objects before deployment (owner reference tables rendered empty)",
+        "source": "production INFORMATION_SCHEMA read-only capture (R2C) after PR-PROMO-4 deploy 2026-09-24 from main 2ad14a0",
         "historical_migration": null,
-        "preflight_parity": "NEW_OBJECT_FIXTURE_AND_PREDEPLOY_CHECKS",
+        "preflight_parity": "DEPLOYED_AND_READBACK_MATCH",
         "superseded_historical_definitions": []
       },
-      "live_body_sha256_at_capture": null,
-      "live_schema_sha256_at_capture": null,
-      "live_description_sha256_at_capture": null,
-      "live_schema_at_capture": null,
+      "live_body_sha256_at_capture": "5b96394610c7650cc9a619496c423c66006dd4bcf39df4bf3a2e52d438cf1eaf",
+      "live_schema_sha256_at_capture": "21438052d77af0b3a6ab0c7ec9e70e3c55104e4489ffd5edecfa94f1e411e7ef",
+      "live_description_sha256_at_capture": "dc0372a2524305a5fbc3aad4478539bda880f446b2810db021d6769036c4a849",
+      "live_schema_at_capture": [
+        {
+          "column_name": "internal_sku",
+          "data_type": "STRING",
+          "is_nullable": "YES",
+          "ordinal_position": 1
+        },
+        {
+          "column_name": "product_name",
+          "data_type": "STRING",
+          "is_nullable": "YES",
+          "ordinal_position": 2
+        },
+        {
+          "column_name": "target_type",
+          "data_type": "STRING",
+          "is_nullable": "YES",
+          "ordinal_position": 3
+        },
+        {
+          "column_name": "target_key",
+          "data_type": "STRING",
+          "is_nullable": "YES",
+          "ordinal_position": 4
+        },
+        {
+          "column_name": "target_basis",
+          "data_type": "STRING",
+          "is_nullable": "YES",
+          "ordinal_position": 5
+        },
+        {
+          "column_name": "is_operational_target",
+          "data_type": "BOOL",
+          "is_nullable": "YES",
+          "ordinal_position": 6
+        },
+        {
+          "column_name": "target_provenance",
+          "data_type": "STRING",
+          "is_nullable": "YES",
+          "ordinal_position": 7
+        },
+        {
+          "column_name": "target_date",
+          "data_type": "DATE",
+          "is_nullable": "YES",
+          "ordinal_position": 8
+        },
+        {
+          "column_name": "target_ending_units",
+          "data_type": "INT64",
+          "is_nullable": "YES",
+          "ordinal_position": 9
+        },
+        {
+          "column_name": "target_status",
+          "data_type": "STRING",
+          "is_nullable": "YES",
+          "ordinal_position": 10
+        },
+        {
+          "column_name": "inventory_as_of_date",
+          "data_type": "DATE",
+          "is_nullable": "YES",
+          "ordinal_position": 11
+        },
+        {
+          "column_name": "inventory_as_of",
+          "data_type": "TIMESTAMP",
+          "is_nullable": "YES",
+          "ordinal_position": 12
+        },
+        {
+          "column_name": "inventory_freshness_status",
+          "data_type": "STRING",
+          "is_nullable": "YES",
+          "ordinal_position": 13
+        },
+        {
+          "column_name": "inventory_freshness_reason",
+          "data_type": "STRING",
+          "is_nullable": "YES",
+          "ordinal_position": 14
+        },
+        {
+          "column_name": "inventory_position_units",
+          "data_type": "INT64",
+          "is_nullable": "YES",
+          "ordinal_position": 15
+        },
+        {
+          "column_name": "expiry_evidence_status",
+          "data_type": "STRING",
+          "is_nullable": "YES",
+          "ordinal_position": 16
+        },
+        {
+          "column_name": "expiry_lot_status",
+          "data_type": "STRING",
+          "is_nullable": "YES",
+          "ordinal_position": 17
+        },
+        {
+          "column_name": "days_until_target",
+          "data_type": "INT64",
+          "is_nullable": "YES",
+          "ordinal_position": 18
+        },
+        {
+          "column_name": "required_units_to_sell",
+          "data_type": "INT64",
+          "is_nullable": "YES",
+          "ordinal_position": 19
+        },
+        {
+          "column_name": "required_units_per_day",
+          "data_type": "FLOAT64",
+          "is_nullable": "YES",
+          "ordinal_position": 20
+        },
+        {
+          "column_name": "sales_as_of",
+          "data_type": "DATE",
+          "is_nullable": "YES",
+          "ordinal_position": 21
+        },
+        {
+          "column_name": "current_velocity_window_days",
+          "data_type": "INT64",
+          "is_nullable": "YES",
+          "ordinal_position": 22
+        },
+        {
+          "column_name": "current_units_per_day",
+          "data_type": "FLOAT64",
+          "is_nullable": "YES",
+          "ordinal_position": 23
+        },
+        {
+          "column_name": "current_velocity_quality",
+          "data_type": "STRING",
+          "is_nullable": "YES",
+          "ordinal_position": 24
+        },
+        {
+          "column_name": "velocity_gap_units_per_day",
+          "data_type": "FLOAT64",
+          "is_nullable": "YES",
+          "ordinal_position": 25
+        },
+        {
+          "column_name": "required_inventory_uplift_pct",
+          "data_type": "FLOAT64",
+          "is_nullable": "YES",
+          "ordinal_position": 26
+        },
+        {
+          "column_name": "uplift_interpretation",
+          "data_type": "STRING",
+          "is_nullable": "YES",
+          "ordinal_position": 27
+        },
+        {
+          "column_name": "run_rate_units_by_target",
+          "data_type": "FLOAT64",
+          "is_nullable": "YES",
+          "ordinal_position": 28
+        },
+        {
+          "column_name": "run_rate_ending_units",
+          "data_type": "FLOAT64",
+          "is_nullable": "YES",
+          "ordinal_position": 29
+        },
+        {
+          "column_name": "run_rate_method",
+          "data_type": "STRING",
+          "is_nullable": "YES",
+          "ordinal_position": 30
+        }
+      ],
       "canonical_body_sha256": "5b96394610c7650cc9a619496c423c66006dd4bcf39df4bf3a2e52d438cf1eaf",
       "canonical_description_sha256": "dc0372a2524305a5fbc3aad4478539bda880f446b2810db021d6769036c4a849",
       "canonical_schema_sha256": "21438052d77af0b3a6ab0c7ec9e70e3c55104e4489ffd5edecfa94f1e411e7ef",
-      "canonical_schema_verification": "unverified",
+      "canonical_schema_verification": "bigquery_verified",
       "canonical_column_count": 30,
       "canonical_schema": [
         {
@@ -5388,7 +6543,7 @@
       "object_name": "V_SALES_PLAN_MONTHLY_CURRENT",
       "object_type": "VIEW",
       "canonical_path": "sql/current/evetis_mart/V_SALES_PLAN_MONTHLY_CURRENT.sql",
-      "sync_state": "pending_deploy",
+      "sync_state": "captured_live",
       "dependencies": [
         "V_SKU_SELL_THROUGH_CURRENT"
       ],
@@ -5400,22 +6555,257 @@
         "wb_mart.V_CT_BOM_CURRENT"
       ],
       "dependency_level": 2,
-      "capture_main_sha": null,
-      "captured_at": null,
+      "capture_main_sha": "2ad14a0b64ab1786b0fa97c13ae7a3f40f012ec1",
+      "captured_at": "2026-09-24T11:16:46Z",
       "provenance": {
-        "source": "PR-PROMO-4 Git-first inventory & sell-through context (docs/promotions/PR_PROMO_4_INVENTORY_SELL_THROUGH_CONTEXT_2026-09-24.md); canonical_schema from BigQuery dry-run of the Git body over live Control Tower objects before deployment (owner reference tables rendered empty)",
+        "source": "production INFORMATION_SCHEMA read-only capture (R2C) after PR-PROMO-4 deploy 2026-09-24 from main 2ad14a0",
         "historical_migration": null,
-        "preflight_parity": "NEW_OBJECT_FIXTURE_AND_PREDEPLOY_CHECKS",
+        "preflight_parity": "DEPLOYED_AND_READBACK_MATCH",
         "superseded_historical_definitions": []
       },
-      "live_body_sha256_at_capture": null,
-      "live_schema_sha256_at_capture": null,
-      "live_description_sha256_at_capture": null,
-      "live_schema_at_capture": null,
+      "live_body_sha256_at_capture": "2b762627b733410d1b18c41a247d0519864e515b4d6ff5b05a5631cc848f1e68",
+      "live_schema_sha256_at_capture": "b8011fa077a40ca8cdfe19a23e04c8badc296a30240c660a47068d579ffe1da7",
+      "live_description_sha256_at_capture": "629a851783cb0682f6148dcd8efa479335164d04e0c229c6ee0e63b37877d26d",
+      "live_schema_at_capture": [
+        {
+          "column_name": "plan_version",
+          "data_type": "STRING",
+          "is_nullable": "YES",
+          "ordinal_position": 1
+        },
+        {
+          "column_name": "plan_name",
+          "data_type": "STRING",
+          "is_nullable": "YES",
+          "ordinal_position": 2
+        },
+        {
+          "column_name": "scenario_code",
+          "data_type": "STRING",
+          "is_nullable": "YES",
+          "ordinal_position": 3
+        },
+        {
+          "column_name": "ct_plan_status",
+          "data_type": "STRING",
+          "is_nullable": "YES",
+          "ordinal_position": 4
+        },
+        {
+          "column_name": "plan_source_artifact",
+          "data_type": "STRING",
+          "is_nullable": "YES",
+          "ordinal_position": 5
+        },
+        {
+          "column_name": "plan_created_by",
+          "data_type": "STRING",
+          "is_nullable": "YES",
+          "ordinal_position": 6
+        },
+        {
+          "column_name": "plan_created_at",
+          "data_type": "TIMESTAMP",
+          "is_nullable": "YES",
+          "ordinal_position": 7
+        },
+        {
+          "column_name": "plan_approval_status",
+          "data_type": "STRING",
+          "is_nullable": "YES",
+          "ordinal_position": 8
+        },
+        {
+          "column_name": "approved_by",
+          "data_type": "STRING",
+          "is_nullable": "YES",
+          "ordinal_position": 9
+        },
+        {
+          "column_name": "approved_at",
+          "data_type": "TIMESTAMP",
+          "is_nullable": "YES",
+          "ordinal_position": 10
+        },
+        {
+          "column_name": "approval_reference",
+          "data_type": "STRING",
+          "is_nullable": "YES",
+          "ordinal_position": 11
+        },
+        {
+          "column_name": "approved_scope",
+          "data_type": "STRING",
+          "is_nullable": "YES",
+          "ordinal_position": 12
+        },
+        {
+          "column_name": "planning_metrics_status",
+          "data_type": "STRING",
+          "is_nullable": "YES",
+          "ordinal_position": 13
+        },
+        {
+          "column_name": "month",
+          "data_type": "DATE",
+          "is_nullable": "YES",
+          "ordinal_position": 14
+        },
+        {
+          "column_name": "month_end",
+          "data_type": "DATE",
+          "is_nullable": "YES",
+          "ordinal_position": 15
+        },
+        {
+          "column_name": "days_in_month",
+          "data_type": "INT64",
+          "is_nullable": "YES",
+          "ordinal_position": 16
+        },
+        {
+          "column_name": "plan_period_start",
+          "data_type": "DATE",
+          "is_nullable": "YES",
+          "ordinal_position": 17
+        },
+        {
+          "column_name": "plan_period_end",
+          "data_type": "DATE",
+          "is_nullable": "YES",
+          "ordinal_position": 18
+        },
+        {
+          "column_name": "plan_days",
+          "data_type": "INT64",
+          "is_nullable": "YES",
+          "ordinal_position": 19
+        },
+        {
+          "column_name": "is_partial_plan_month",
+          "data_type": "BOOL",
+          "is_nullable": "YES",
+          "ordinal_position": 20
+        },
+        {
+          "column_name": "marketplace",
+          "data_type": "STRING",
+          "is_nullable": "YES",
+          "ordinal_position": 21
+        },
+        {
+          "column_name": "internal_sku",
+          "data_type": "STRING",
+          "is_nullable": "YES",
+          "ordinal_position": 22
+        },
+        {
+          "column_name": "sales_mode",
+          "data_type": "STRING",
+          "is_nullable": "YES",
+          "ordinal_position": 23
+        },
+        {
+          "column_name": "component_count",
+          "data_type": "INT64",
+          "is_nullable": "YES",
+          "ordinal_position": 24
+        },
+        {
+          "column_name": "plan_unit_contract",
+          "data_type": "STRING",
+          "is_nullable": "YES",
+          "ordinal_position": 25
+        },
+        {
+          "column_name": "planned_cards",
+          "data_type": "FLOAT64",
+          "is_nullable": "YES",
+          "ordinal_position": 26
+        },
+        {
+          "column_name": "planned_physical_units",
+          "data_type": "FLOAT64",
+          "is_nullable": "YES",
+          "ordinal_position": 27
+        },
+        {
+          "column_name": "sales_as_of",
+          "data_type": "DATE",
+          "is_nullable": "YES",
+          "ordinal_position": 28
+        },
+        {
+          "column_name": "month_position",
+          "data_type": "STRING",
+          "is_nullable": "YES",
+          "ordinal_position": 29
+        },
+        {
+          "column_name": "elapsed_plan_days",
+          "data_type": "INT64",
+          "is_nullable": "YES",
+          "ordinal_position": 30
+        },
+        {
+          "column_name": "remaining_calendar_days",
+          "data_type": "INT64",
+          "is_nullable": "YES",
+          "ordinal_position": 31
+        },
+        {
+          "column_name": "actual_cards_to_date",
+          "data_type": "INT64",
+          "is_nullable": "YES",
+          "ordinal_position": 32
+        },
+        {
+          "column_name": "remaining_planned_cards",
+          "data_type": "FLOAT64",
+          "is_nullable": "YES",
+          "ordinal_position": 33
+        },
+        {
+          "column_name": "required_cards_per_day_remaining",
+          "data_type": "FLOAT64",
+          "is_nullable": "YES",
+          "ordinal_position": 34
+        },
+        {
+          "column_name": "plan_attainment_pct",
+          "data_type": "FLOAT64",
+          "is_nullable": "YES",
+          "ordinal_position": 35
+        },
+        {
+          "column_name": "current_cards_per_day_30d",
+          "data_type": "FLOAT64",
+          "is_nullable": "YES",
+          "ordinal_position": 36
+        },
+        {
+          "column_name": "run_rate_projection_cards",
+          "data_type": "FLOAT64",
+          "is_nullable": "YES",
+          "ordinal_position": 37
+        },
+        {
+          "column_name": "projection_method",
+          "data_type": "STRING",
+          "is_nullable": "YES",
+          "ordinal_position": 38
+        },
+        {
+          "column_name": "projection_velocity_quality",
+          "data_type": "STRING",
+          "is_nullable": "YES",
+          "ordinal_position": 39
+        }
+      ],
       "canonical_body_sha256": "2b762627b733410d1b18c41a247d0519864e515b4d6ff5b05a5631cc848f1e68",
       "canonical_description_sha256": "629a851783cb0682f6148dcd8efa479335164d04e0c229c6ee0e63b37877d26d",
       "canonical_schema_sha256": "b8011fa077a40ca8cdfe19a23e04c8badc296a30240c660a47068d579ffe1da7",
-      "canonical_schema_verification": "unverified",
+      "canonical_schema_verification": "bigquery_verified",
       "canonical_column_count": 39,
       "canonical_schema": [
         {
@@ -5659,7 +7049,7 @@
       "object_name": "V_SKU_INVENTORY_TRAJECTORY_MONTHLY_CURRENT",
       "object_type": "VIEW",
       "canonical_path": "sql/current/evetis_mart/V_SKU_INVENTORY_TRAJECTORY_MONTHLY_CURRENT.sql",
-      "sync_state": "pending_deploy",
+      "sync_state": "captured_live",
       "dependencies": [
         "V_SALES_PLAN_MONTHLY_CURRENT",
         "V_SKU_INVENTORY_TARGET_CURRENT",
@@ -5670,22 +7060,167 @@
         "wb_mart.V_CT_PHYSICAL_DAILY"
       ],
       "dependency_level": 3,
-      "capture_main_sha": null,
-      "captured_at": null,
+      "capture_main_sha": "2ad14a0b64ab1786b0fa97c13ae7a3f40f012ec1",
+      "captured_at": "2026-09-24T11:16:46Z",
       "provenance": {
-        "source": "PR-PROMO-4 Git-first inventory & sell-through context (docs/promotions/PR_PROMO_4_INVENTORY_SELL_THROUGH_CONTEXT_2026-09-24.md); canonical_schema from BigQuery dry-run of the Git body over live Control Tower objects before deployment (owner reference tables rendered empty)",
+        "source": "production INFORMATION_SCHEMA read-only capture (R2C) after PR-PROMO-4 deploy 2026-09-24 from main 2ad14a0",
         "historical_migration": null,
-        "preflight_parity": "NEW_OBJECT_FIXTURE_AND_PREDEPLOY_CHECKS",
+        "preflight_parity": "DEPLOYED_AND_READBACK_MATCH",
         "superseded_historical_definitions": []
       },
-      "live_body_sha256_at_capture": null,
-      "live_schema_sha256_at_capture": null,
-      "live_description_sha256_at_capture": null,
-      "live_schema_at_capture": null,
+      "live_body_sha256_at_capture": "09ed7602e76b8d8748bb3cd8c8ce34bcc3d05c847b85dae0366ccda044a718c3",
+      "live_schema_sha256_at_capture": "9ed0ef6e58b59217da2fd74fa99dabe1e5779d644b74820688504fedc720b6cb",
+      "live_description_sha256_at_capture": "08cb82e8cc5bb007593f25b0137924ea19bd2b720ae546ec7c76a429986c87f5",
+      "live_schema_at_capture": [
+        {
+          "column_name": "internal_sku",
+          "data_type": "STRING",
+          "is_nullable": "YES",
+          "ordinal_position": 1
+        },
+        {
+          "column_name": "trajectory_basis",
+          "data_type": "STRING",
+          "is_nullable": "YES",
+          "ordinal_position": 2
+        },
+        {
+          "column_name": "basis_key",
+          "data_type": "STRING",
+          "is_nullable": "YES",
+          "ordinal_position": 3
+        },
+        {
+          "column_name": "target_type",
+          "data_type": "STRING",
+          "is_nullable": "YES",
+          "ordinal_position": 4
+        },
+        {
+          "column_name": "target_date",
+          "data_type": "DATE",
+          "is_nullable": "YES",
+          "ordinal_position": 5
+        },
+        {
+          "column_name": "target_ending_units",
+          "data_type": "INT64",
+          "is_nullable": "YES",
+          "ordinal_position": 6
+        },
+        {
+          "column_name": "plan_version",
+          "data_type": "STRING",
+          "is_nullable": "YES",
+          "ordinal_position": 7
+        },
+        {
+          "column_name": "month",
+          "data_type": "DATE",
+          "is_nullable": "YES",
+          "ordinal_position": 8
+        },
+        {
+          "column_name": "period_start",
+          "data_type": "DATE",
+          "is_nullable": "YES",
+          "ordinal_position": 9
+        },
+        {
+          "column_name": "period_end",
+          "data_type": "DATE",
+          "is_nullable": "YES",
+          "ordinal_position": 10
+        },
+        {
+          "column_name": "period_days",
+          "data_type": "INT64",
+          "is_nullable": "YES",
+          "ordinal_position": 11
+        },
+        {
+          "column_name": "days_in_month",
+          "data_type": "INT64",
+          "is_nullable": "YES",
+          "ordinal_position": 12
+        },
+        {
+          "column_name": "is_partial_month",
+          "data_type": "BOOL",
+          "is_nullable": "YES",
+          "ordinal_position": 13
+        },
+        {
+          "column_name": "inventory_as_of_date",
+          "data_type": "DATE",
+          "is_nullable": "YES",
+          "ordinal_position": 14
+        },
+        {
+          "column_name": "trajectory_status",
+          "data_type": "STRING",
+          "is_nullable": "YES",
+          "ordinal_position": 15
+        },
+        {
+          "column_name": "opening_units",
+          "data_type": "FLOAT64",
+          "is_nullable": "YES",
+          "ordinal_position": 16
+        },
+        {
+          "column_name": "sales_units",
+          "data_type": "FLOAT64",
+          "is_nullable": "YES",
+          "ordinal_position": 17
+        },
+        {
+          "column_name": "sales_basis",
+          "data_type": "STRING",
+          "is_nullable": "YES",
+          "ordinal_position": 18
+        },
+        {
+          "column_name": "replenishment_units",
+          "data_type": "FLOAT64",
+          "is_nullable": "YES",
+          "ordinal_position": 19
+        },
+        {
+          "column_name": "replenishment_status",
+          "data_type": "STRING",
+          "is_nullable": "YES",
+          "ordinal_position": 20
+        },
+        {
+          "column_name": "closing_units_unconstrained",
+          "data_type": "FLOAT64",
+          "is_nullable": "YES",
+          "ordinal_position": 21
+        },
+        {
+          "column_name": "projected_shortfall_units",
+          "data_type": "FLOAT64",
+          "is_nullable": "YES",
+          "ordinal_position": 22
+        },
+        {
+          "column_name": "current_velocity_units",
+          "data_type": "FLOAT64",
+          "is_nullable": "YES",
+          "ordinal_position": 23
+        },
+        {
+          "column_name": "current_velocity_gap_units",
+          "data_type": "FLOAT64",
+          "is_nullable": "YES",
+          "ordinal_position": 24
+        }
+      ],
       "canonical_body_sha256": "09ed7602e76b8d8748bb3cd8c8ce34bcc3d05c847b85dae0366ccda044a718c3",
       "canonical_description_sha256": "08cb82e8cc5bb007593f25b0137924ea19bd2b720ae546ec7c76a429986c87f5",
       "canonical_schema_sha256": "9ed0ef6e58b59217da2fd74fa99dabe1e5779d644b74820688504fedc720b6cb",
-      "canonical_schema_verification": "unverified",
+      "canonical_schema_verification": "bigquery_verified",
       "canonical_column_count": 24,
       "canonical_schema": [
         {
@@ -5839,7 +7374,7 @@
       "object_name": "V_BUNDLE_ASSEMBLY_CAPACITY_CURRENT",
       "object_type": "VIEW",
       "canonical_path": "sql/current/evetis_mart/V_BUNDLE_ASSEMBLY_CAPACITY_CURRENT.sql",
-      "sync_state": "pending_deploy",
+      "sync_state": "captured_live",
       "dependencies": [
         "V_SKU_SELL_THROUGH_CURRENT"
       ],
@@ -5850,22 +7385,245 @@
         "wb_mart.V_CT_BUNDLE_STATUS"
       ],
       "dependency_level": 2,
-      "capture_main_sha": null,
-      "captured_at": null,
+      "capture_main_sha": "2ad14a0b64ab1786b0fa97c13ae7a3f40f012ec1",
+      "captured_at": "2026-09-24T11:16:46Z",
       "provenance": {
-        "source": "PR-PROMO-4 Git-first inventory & sell-through context (docs/promotions/PR_PROMO_4_INVENTORY_SELL_THROUGH_CONTEXT_2026-09-24.md); canonical_schema from BigQuery dry-run of the Git body over live Control Tower objects before deployment (owner reference tables rendered empty)",
+        "source": "production INFORMATION_SCHEMA read-only capture (R2C) after PR-PROMO-4 deploy 2026-09-24 from main 2ad14a0",
         "historical_migration": null,
-        "preflight_parity": "NEW_OBJECT_FIXTURE_AND_PREDEPLOY_CHECKS",
+        "preflight_parity": "DEPLOYED_AND_READBACK_MATCH",
         "superseded_historical_definitions": []
       },
-      "live_body_sha256_at_capture": null,
-      "live_schema_sha256_at_capture": null,
-      "live_description_sha256_at_capture": null,
-      "live_schema_at_capture": null,
+      "live_body_sha256_at_capture": "855fdcf7c5ccd8d0d694feac66d67696de573f8de18e49a0f9d6f8f0361cdd99",
+      "live_schema_sha256_at_capture": "f87f5e6b9aa7ee8b05c18a20c29bcb9270bbddf7b4176bfa7b2cf8591c1b46b7",
+      "live_description_sha256_at_capture": "5afc1bc0a55f1485176045beb940c430707f2e826b2c94a2ef887dc75628d52e",
+      "live_schema_at_capture": [
+        {
+          "column_name": "bundle_sku",
+          "data_type": "STRING",
+          "is_nullable": "YES",
+          "ordinal_position": 1
+        },
+        {
+          "column_name": "bundle_name",
+          "data_type": "STRING",
+          "is_nullable": "YES",
+          "ordinal_position": 2
+        },
+        {
+          "column_name": "capacity_status",
+          "data_type": "STRING",
+          "is_nullable": "YES",
+          "ordinal_position": 3
+        },
+        {
+          "column_name": "components",
+          "data_type": "INT64",
+          "is_nullable": "YES",
+          "ordinal_position": 4
+        },
+        {
+          "column_name": "units_per_bundle",
+          "data_type": "INT64",
+          "is_nullable": "YES",
+          "ordinal_position": 5
+        },
+        {
+          "column_name": "component_sku",
+          "data_type": "STRING",
+          "is_nullable": "YES",
+          "ordinal_position": 6
+        },
+        {
+          "column_name": "component_name",
+          "data_type": "STRING",
+          "is_nullable": "YES",
+          "ordinal_position": 7
+        },
+        {
+          "column_name": "component_qty",
+          "data_type": "INT64",
+          "is_nullable": "YES",
+          "ordinal_position": 8
+        },
+        {
+          "column_name": "component_ff_units",
+          "data_type": "INT64",
+          "is_nullable": "YES",
+          "ordinal_position": 9
+        },
+        {
+          "column_name": "component_position_units",
+          "data_type": "INT64",
+          "is_nullable": "YES",
+          "ordinal_position": 10
+        },
+        {
+          "column_name": "component_capacity_units",
+          "data_type": "INT64",
+          "is_nullable": "YES",
+          "ordinal_position": 11
+        },
+        {
+          "column_name": "component_earliest_expiry_date",
+          "data_type": "DATE",
+          "is_nullable": "YES",
+          "ordinal_position": 12
+        },
+        {
+          "column_name": "component_days_to_expiry",
+          "data_type": "INT64",
+          "is_nullable": "YES",
+          "ordinal_position": 13
+        },
+        {
+          "column_name": "is_constraining_component",
+          "data_type": "BOOL",
+          "is_nullable": "YES",
+          "ordinal_position": 14
+        },
+        {
+          "column_name": "technical_assembly_capacity_units",
+          "data_type": "INT64",
+          "is_nullable": "YES",
+          "ordinal_position": 15
+        },
+        {
+          "column_name": "constraining_components",
+          "data_type": "STRING",
+          "is_nullable": "YES",
+          "ordinal_position": 16
+        },
+        {
+          "column_name": "first_constraining_component",
+          "data_type": "STRING",
+          "is_nullable": "YES",
+          "ordinal_position": 17
+        },
+        {
+          "column_name": "bundles_using_component",
+          "data_type": "INT64",
+          "is_nullable": "YES",
+          "ordinal_position": 18
+        },
+        {
+          "column_name": "bundle_earliest_component_expiry_date",
+          "data_type": "DATE",
+          "is_nullable": "YES",
+          "ordinal_position": 19
+        },
+        {
+          "column_name": "bundle_earliest_expiry_component",
+          "data_type": "STRING",
+          "is_nullable": "YES",
+          "ordinal_position": 20
+        },
+        {
+          "column_name": "bundle_earliest_component_days_to_expiry",
+          "data_type": "INT64",
+          "is_nullable": "YES",
+          "ordinal_position": 21
+        },
+        {
+          "column_name": "bundle_components_without_expiry",
+          "data_type": "INT64",
+          "is_nullable": "YES",
+          "ordinal_position": 22
+        },
+        {
+          "column_name": "component_also_sold_standalone",
+          "data_type": "BOOL",
+          "is_nullable": "YES",
+          "ordinal_position": 23
+        },
+        {
+          "column_name": "shares_components_with",
+          "data_type": "STRING",
+          "is_nullable": "YES",
+          "ordinal_position": 24
+        },
+        {
+          "column_name": "capacity_is_independent",
+          "data_type": "BOOL",
+          "is_nullable": "YES",
+          "ordinal_position": 25
+        },
+        {
+          "column_name": "capacity_semantics",
+          "data_type": "STRING",
+          "is_nullable": "YES",
+          "ordinal_position": 26
+        },
+        {
+          "column_name": "capacity_note",
+          "data_type": "STRING",
+          "is_nullable": "YES",
+          "ordinal_position": 27
+        },
+        {
+          "column_name": "wb_bundle_cards_available",
+          "data_type": "INT64",
+          "is_nullable": "YES",
+          "ordinal_position": 28
+        },
+        {
+          "column_name": "ozon_bundle_cards_available",
+          "data_type": "INT64",
+          "is_nullable": "YES",
+          "ordinal_position": 29
+        },
+        {
+          "column_name": "ozon_bundle_cards_in_transit_api",
+          "data_type": "INT64",
+          "is_nullable": "YES",
+          "ordinal_position": 30
+        },
+        {
+          "column_name": "ct_assemblable_now_ff",
+          "data_type": "INT64",
+          "is_nullable": "YES",
+          "ordinal_position": 31
+        },
+        {
+          "column_name": "inventory_as_of",
+          "data_type": "TIMESTAMP",
+          "is_nullable": "YES",
+          "ordinal_position": 32
+        },
+        {
+          "column_name": "inventory_as_of_date",
+          "data_type": "DATE",
+          "is_nullable": "YES",
+          "ordinal_position": 33
+        },
+        {
+          "column_name": "inventory_freshness_status",
+          "data_type": "STRING",
+          "is_nullable": "YES",
+          "ordinal_position": 34
+        },
+        {
+          "column_name": "inventory_freshness_reason",
+          "data_type": "STRING",
+          "is_nullable": "YES",
+          "ordinal_position": 35
+        },
+        {
+          "column_name": "ff_anchor_date",
+          "data_type": "DATE",
+          "is_nullable": "YES",
+          "ordinal_position": 36
+        },
+        {
+          "column_name": "ff_anchor_age_days",
+          "data_type": "INT64",
+          "is_nullable": "YES",
+          "ordinal_position": 37
+        }
+      ],
       "canonical_body_sha256": "855fdcf7c5ccd8d0d694feac66d67696de573f8de18e49a0f9d6f8f0361cdd99",
       "canonical_description_sha256": "5afc1bc0a55f1485176045beb940c430707f2e826b2c94a2ef887dc75628d52e",
       "canonical_schema_sha256": "f87f5e6b9aa7ee8b05c18a20c29bcb9270bbddf7b4176bfa7b2cf8591c1b46b7",
-      "canonical_schema_verification": "unverified",
+      "canonical_schema_verification": "bigquery_verified",
       "canonical_column_count": 37,
       "canonical_schema": [
         {
@@ -6097,7 +7855,7 @@
       "object_name": "V_PROMO_INVENTORY_CONTEXT_CURRENT",
       "object_type": "VIEW",
       "canonical_path": "sql/current/evetis_mart/V_PROMO_INVENTORY_CONTEXT_CURRENT.sql",
-      "sync_state": "pending_deploy",
+      "sync_state": "captured_live",
       "dependencies": [
         "V_BUNDLE_ASSEMBLY_CAPACITY_CURRENT",
         "V_PROMO_ECONOMICS_SCENARIO_CURRENT",
@@ -6110,22 +7868,467 @@
         "evetis_ref.REF_PRODUCT_MASTER"
       ],
       "dependency_level": 3,
-      "capture_main_sha": null,
-      "captured_at": null,
+      "capture_main_sha": "2ad14a0b64ab1786b0fa97c13ae7a3f40f012ec1",
+      "captured_at": "2026-09-24T11:16:46Z",
       "provenance": {
-        "source": "PR-PROMO-4 Git-first inventory & sell-through context (docs/promotions/PR_PROMO_4_INVENTORY_SELL_THROUGH_CONTEXT_2026-09-24.md); canonical_schema from BigQuery dry-run of the Git body over live Control Tower objects before deployment (owner reference tables rendered empty)",
+        "source": "production INFORMATION_SCHEMA read-only capture (R2C) after PR-PROMO-4 deploy 2026-09-24 from main 2ad14a0",
         "historical_migration": null,
-        "preflight_parity": "NEW_OBJECT_FIXTURE_AND_PREDEPLOY_CHECKS",
+        "preflight_parity": "DEPLOYED_AND_READBACK_MATCH",
         "superseded_historical_definitions": []
       },
-      "live_body_sha256_at_capture": null,
-      "live_schema_sha256_at_capture": null,
-      "live_description_sha256_at_capture": null,
-      "live_schema_at_capture": null,
+      "live_body_sha256_at_capture": "3cfba0c25fc4400d698bdac55fee3459825f6fbe72b961fff6d89a7278352c8e",
+      "live_schema_sha256_at_capture": "7bef1aed23fd7dd8357def7b65053fd44790779dd267b8700ddd9f75285e3f39",
+      "live_description_sha256_at_capture": "16e80da4d9f6c9a3e2ffc03f3f9034305b23ebafb954088091af4f3c6863912c",
+      "live_schema_at_capture": [
+        {
+          "column_name": "marketplace",
+          "data_type": "STRING",
+          "is_nullable": "YES",
+          "ordinal_position": 1
+        },
+        {
+          "column_name": "scenario_entity_key",
+          "data_type": "STRING",
+          "is_nullable": "YES",
+          "ordinal_position": 2
+        },
+        {
+          "column_name": "source_promotion_id",
+          "data_type": "STRING",
+          "is_nullable": "YES",
+          "ordinal_position": 3
+        },
+        {
+          "column_name": "promotion_type",
+          "data_type": "STRING",
+          "is_nullable": "YES",
+          "ordinal_position": 4
+        },
+        {
+          "column_name": "promotion_lifecycle_status",
+          "data_type": "STRING",
+          "is_nullable": "YES",
+          "ordinal_position": 5
+        },
+        {
+          "column_name": "promotion_starts_at",
+          "data_type": "TIMESTAMP",
+          "is_nullable": "YES",
+          "ordinal_position": 6
+        },
+        {
+          "column_name": "marketplace_product_id",
+          "data_type": "STRING",
+          "is_nullable": "YES",
+          "ordinal_position": 7
+        },
+        {
+          "column_name": "offer_id",
+          "data_type": "STRING",
+          "is_nullable": "YES",
+          "ordinal_position": 8
+        },
+        {
+          "column_name": "internal_sku",
+          "data_type": "STRING",
+          "is_nullable": "YES",
+          "ordinal_position": 9
+        },
+        {
+          "column_name": "mapping_status",
+          "data_type": "STRING",
+          "is_nullable": "YES",
+          "ordinal_position": 10
+        },
+        {
+          "column_name": "scenario_type",
+          "data_type": "STRING",
+          "is_nullable": "YES",
+          "ordinal_position": 11
+        },
+        {
+          "column_name": "scenario_key",
+          "data_type": "STRING",
+          "is_nullable": "YES",
+          "ordinal_position": 12
+        },
+        {
+          "column_name": "price_interpretation",
+          "data_type": "STRING",
+          "is_nullable": "YES",
+          "ordinal_position": 13
+        },
+        {
+          "column_name": "price_binding_evidence",
+          "data_type": "STRING",
+          "is_nullable": "YES",
+          "ordinal_position": 14
+        },
+        {
+          "column_name": "economics_status",
+          "data_type": "STRING",
+          "is_nullable": "YES",
+          "ordinal_position": 15
+        },
+        {
+          "column_name": "baseline_price_rub",
+          "data_type": "NUMERIC",
+          "is_nullable": "YES",
+          "ordinal_position": 16
+        },
+        {
+          "column_name": "scenario_price_rub",
+          "data_type": "NUMERIC",
+          "is_nullable": "YES",
+          "ordinal_position": 17
+        },
+        {
+          "column_name": "baseline_contribution_expected_rub",
+          "data_type": "NUMERIC",
+          "is_nullable": "YES",
+          "ordinal_position": 18
+        },
+        {
+          "column_name": "promo_contribution_expected_rub",
+          "data_type": "NUMERIC",
+          "is_nullable": "YES",
+          "ordinal_position": 19
+        },
+        {
+          "column_name": "delta_contribution_expected_rub",
+          "data_type": "NUMERIC",
+          "is_nullable": "YES",
+          "ordinal_position": 20
+        },
+        {
+          "column_name": "baseline_margin_expected_pct",
+          "data_type": "NUMERIC",
+          "is_nullable": "YES",
+          "ordinal_position": 21
+        },
+        {
+          "column_name": "promo_margin_expected_pct",
+          "data_type": "NUMERIC",
+          "is_nullable": "YES",
+          "ordinal_position": 22
+        },
+        {
+          "column_name": "break_even_price_expected_rub",
+          "data_type": "NUMERIC",
+          "is_nullable": "YES",
+          "ordinal_position": 23
+        },
+        {
+          "column_name": "downside_case",
+          "data_type": "STRING",
+          "is_nullable": "YES",
+          "ordinal_position": 24
+        },
+        {
+          "column_name": "promo_contribution_downside_rub",
+          "data_type": "NUMERIC",
+          "is_nullable": "YES",
+          "ordinal_position": 25
+        },
+        {
+          "column_name": "promo_downside_negative",
+          "data_type": "BOOL",
+          "is_nullable": "YES",
+          "ordinal_position": 26
+        },
+        {
+          "column_name": "uplift_status",
+          "data_type": "STRING",
+          "is_nullable": "YES",
+          "ordinal_position": 27
+        },
+        {
+          "column_name": "required_sales_uplift_pct",
+          "data_type": "NUMERIC",
+          "is_nullable": "YES",
+          "ordinal_position": 28
+        },
+        {
+          "column_name": "present_in_latest_slot",
+          "data_type": "BOOL",
+          "is_nullable": "YES",
+          "ordinal_position": 29
+        },
+        {
+          "column_name": "last_economics_slot",
+          "data_type": "STRING",
+          "is_nullable": "YES",
+          "ordinal_position": 30
+        },
+        {
+          "column_name": "promo_observed_at",
+          "data_type": "TIMESTAMP",
+          "is_nullable": "YES",
+          "ordinal_position": 31
+        },
+        {
+          "column_name": "economics_basis_as_of",
+          "data_type": "TIMESTAMP",
+          "is_nullable": "YES",
+          "ordinal_position": 32
+        },
+        {
+          "column_name": "inventory_as_of",
+          "data_type": "TIMESTAMP",
+          "is_nullable": "YES",
+          "ordinal_position": 33
+        },
+        {
+          "column_name": "inventory_temporal_gap_minutes",
+          "data_type": "INT64",
+          "is_nullable": "YES",
+          "ordinal_position": 34
+        },
+        {
+          "column_name": "alignment_limit_hours",
+          "data_type": "INT64",
+          "is_nullable": "YES",
+          "ordinal_position": 35
+        },
+        {
+          "column_name": "alignment_rule",
+          "data_type": "STRING",
+          "is_nullable": "YES",
+          "ordinal_position": 36
+        },
+        {
+          "column_name": "inventory_context_status",
+          "data_type": "STRING",
+          "is_nullable": "YES",
+          "ordinal_position": 37
+        },
+        {
+          "column_name": "inventory_entity_type",
+          "data_type": "STRING",
+          "is_nullable": "YES",
+          "ordinal_position": 38
+        },
+        {
+          "column_name": "inventory_freshness_status",
+          "data_type": "STRING",
+          "is_nullable": "YES",
+          "ordinal_position": 39
+        },
+        {
+          "column_name": "inventory_freshness_reason",
+          "data_type": "STRING",
+          "is_nullable": "YES",
+          "ordinal_position": 40
+        },
+        {
+          "column_name": "inventory_position_units",
+          "data_type": "INT64",
+          "is_nullable": "YES",
+          "ordinal_position": 41
+        },
+        {
+          "column_name": "warehouse_ff_units",
+          "data_type": "INT64",
+          "is_nullable": "YES",
+          "ordinal_position": 42
+        },
+        {
+          "column_name": "marketplace_available_units",
+          "data_type": "INT64",
+          "is_nullable": "YES",
+          "ordinal_position": 43
+        },
+        {
+          "column_name": "this_channel_available_units",
+          "data_type": "INT64",
+          "is_nullable": "YES",
+          "ordinal_position": 44
+        },
+        {
+          "column_name": "in_transit_units",
+          "data_type": "INT64",
+          "is_nullable": "YES",
+          "ordinal_position": 45
+        },
+        {
+          "column_name": "inventory_scope",
+          "data_type": "STRING",
+          "is_nullable": "YES",
+          "ordinal_position": 46
+        },
+        {
+          "column_name": "units_per_day_7d",
+          "data_type": "FLOAT64",
+          "is_nullable": "YES",
+          "ordinal_position": 47
+        },
+        {
+          "column_name": "units_per_day_30d",
+          "data_type": "FLOAT64",
+          "is_nullable": "YES",
+          "ordinal_position": 48
+        },
+        {
+          "column_name": "units_per_day_90d",
+          "data_type": "FLOAT64",
+          "is_nullable": "YES",
+          "ordinal_position": 49
+        },
+        {
+          "column_name": "velocity_quality_30d",
+          "data_type": "STRING",
+          "is_nullable": "YES",
+          "ordinal_position": 50
+        },
+        {
+          "column_name": "cover_days_30d",
+          "data_type": "FLOAT64",
+          "is_nullable": "YES",
+          "ordinal_position": 51
+        },
+        {
+          "column_name": "cover_status_30d",
+          "data_type": "STRING",
+          "is_nullable": "YES",
+          "ordinal_position": 52
+        },
+        {
+          "column_name": "expiry_evidence_status",
+          "data_type": "STRING",
+          "is_nullable": "YES",
+          "ordinal_position": 53
+        },
+        {
+          "column_name": "earliest_expiry_date",
+          "data_type": "DATE",
+          "is_nullable": "YES",
+          "ordinal_position": 54
+        },
+        {
+          "column_name": "days_to_expiry",
+          "data_type": "INT64",
+          "is_nullable": "YES",
+          "ordinal_position": 55
+        },
+        {
+          "column_name": "sell_by_date",
+          "data_type": "DATE",
+          "is_nullable": "YES",
+          "ordinal_position": 56
+        },
+        {
+          "column_name": "ct_policy_status_code",
+          "data_type": "STRING",
+          "is_nullable": "YES",
+          "ordinal_position": 57
+        },
+        {
+          "column_name": "sell_by_target_status",
+          "data_type": "STRING",
+          "is_nullable": "YES",
+          "ordinal_position": 58
+        },
+        {
+          "column_name": "sell_by_required_units_per_day",
+          "data_type": "FLOAT64",
+          "is_nullable": "YES",
+          "ordinal_position": 59
+        },
+        {
+          "column_name": "sell_by_required_inventory_uplift_pct",
+          "data_type": "FLOAT64",
+          "is_nullable": "YES",
+          "ordinal_position": 60
+        },
+        {
+          "column_name": "expiry_target_status",
+          "data_type": "STRING",
+          "is_nullable": "YES",
+          "ordinal_position": 61
+        },
+        {
+          "column_name": "expiry_required_units_per_day",
+          "data_type": "FLOAT64",
+          "is_nullable": "YES",
+          "ordinal_position": 62
+        },
+        {
+          "column_name": "expiry_required_inventory_uplift_pct",
+          "data_type": "FLOAT64",
+          "is_nullable": "YES",
+          "ordinal_position": 63
+        },
+        {
+          "column_name": "owner_targets_count",
+          "data_type": "INT64",
+          "is_nullable": "YES",
+          "ordinal_position": 64
+        },
+        {
+          "column_name": "bundle_capacity_status",
+          "data_type": "STRING",
+          "is_nullable": "YES",
+          "ordinal_position": 65
+        },
+        {
+          "column_name": "bundle_inventory_freshness_status",
+          "data_type": "STRING",
+          "is_nullable": "YES",
+          "ordinal_position": 66
+        },
+        {
+          "column_name": "bundle_technical_assembly_capacity_units",
+          "data_type": "INT64",
+          "is_nullable": "YES",
+          "ordinal_position": 67
+        },
+        {
+          "column_name": "bundle_constraining_components",
+          "data_type": "STRING",
+          "is_nullable": "YES",
+          "ordinal_position": 68
+        },
+        {
+          "column_name": "bundle_shares_components_with",
+          "data_type": "STRING",
+          "is_nullable": "YES",
+          "ordinal_position": 69
+        },
+        {
+          "column_name": "this_channel_bundle_cards_available",
+          "data_type": "INT64",
+          "is_nullable": "YES",
+          "ordinal_position": 70
+        },
+        {
+          "column_name": "bundle_earliest_component_expiry_date",
+          "data_type": "DATE",
+          "is_nullable": "YES",
+          "ordinal_position": 71
+        },
+        {
+          "column_name": "bundle_earliest_expiry_component",
+          "data_type": "STRING",
+          "is_nullable": "YES",
+          "ordinal_position": 72
+        },
+        {
+          "column_name": "bundle_earliest_component_days_to_expiry",
+          "data_type": "INT64",
+          "is_nullable": "YES",
+          "ordinal_position": 73
+        },
+        {
+          "column_name": "bundle_components_without_expiry",
+          "data_type": "INT64",
+          "is_nullable": "YES",
+          "ordinal_position": 74
+        }
+      ],
       "canonical_body_sha256": "3cfba0c25fc4400d698bdac55fee3459825f6fbe72b961fff6d89a7278352c8e",
       "canonical_description_sha256": "16e80da4d9f6c9a3e2ffc03f3f9034305b23ebafb954088091af4f3c6863912c",
       "canonical_schema_sha256": "7bef1aed23fd7dd8357def7b65053fd44790779dd267b8700ddd9f75285e3f39",
-      "canonical_schema_verification": "unverified",
+      "canonical_schema_verification": "bigquery_verified",
       "canonical_column_count": 74,
       "canonical_schema": [
         {
