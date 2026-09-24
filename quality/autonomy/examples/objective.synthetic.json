@@ -1,0 +1,90 @@
+{
+  "schema_version": 1,
+  "objective_id": "obj-inc-783e0cf3e9",
+  "kind": "INCIDENT",
+  "created_at": "2026-09-23T20:39:26Z",
+  "requested_by": "autonomy-watch",
+  "title": "Устранить устойчивое падение SYN_TOTAL",
+  "statement": "Проверка SYN_TOTAL набора synthetic устойчиво находится в статусе FAIL и не связана с открытым нерешённым правилом. Установить первопричину. Если причина в коде или SQL репозитория — подготовить исправление с тестом, который краснеет без исправления. Если причина в данных, в production-состоянии или в бизнес-правиле — не исправлять, а вернуть NEEDS_HUMAN с доказательствами.",
+  "incident": {
+    "schema_version": 1,
+    "incident_id": "inc-20260923T203926Z-a607b277",
+    "created_at": "2026-09-23T20:39:26Z",
+    "source": "synthetic",
+    "severity": "MEDIUM",
+    "trigger_type": "SYNTHETIC",
+    "triggering_checks": [
+      {
+        "check_id": "SYN_TOTAL",
+        "suite": "synthetic",
+        "status": "FAIL",
+        "source": "synthetic/check_total.py:1"
+      }
+    ],
+    "first_failure_at": "2026-09-23T20:39:26Z",
+    "last_success_at": null,
+    "repository_sha": "fdbde861489177d1bd5a16920eb26cddc1b28478",
+    "affected_assets": [
+      "synthetic.calc_total"
+    ],
+    "downstream_consumers": [],
+    "contract_suites": [
+      "synthetic"
+    ],
+    "known_ubr_links": [],
+    "evidence": {
+      "observations": [
+        {
+          "at": "2026-09-23T20:39:26Z",
+          "failing_rows": 1,
+          "status": "FAIL"
+        },
+        {
+          "at": "2026-09-23T20:39:26Z",
+          "status": "FAIL",
+          "failing_rows": 1
+        }
+      ],
+      "classification": "SYNTHETIC"
+    },
+    "deduplication_key": "synthetic:SYN_TOTAL"
+  },
+  "acceptance": [
+    "SYN_TOTAL возвращает PASS, либо доказано, что изменение кода не требуется",
+    "ни одна проверка, бывшая PASS на базовой ветке, не становится FAIL",
+    "ни одни ворота не ослаблены: нет удалённых @check, skip, known_failing, override",
+    "production-мутаций: 0"
+  ],
+  "constraints": [
+    "не менять production: никакого DDL/DML, deploy, terraform apply, IAM, расписаний",
+    "не писать в WB и Ozon",
+    "не трогать пути из forbidden_paths политики AE"
+  ],
+  "repository_sha": "fdbde861489177d1bd5a16920eb26cddc1b28478",
+  "affected_assets": [
+    "synthetic.calc_total"
+  ],
+  "downstream_consumers": [],
+  "contract_suites": [
+    "synthetic"
+  ],
+  "known_ubr_links": [],
+  "evidence": {
+    "observations": [
+      {
+        "at": "2026-09-23T20:39:26Z",
+        "failing_rows": 1,
+        "status": "FAIL"
+      },
+      {
+        "at": "2026-09-23T20:39:26Z",
+        "status": "FAIL",
+        "failing_rows": 1
+      }
+    ],
+    "classification": "SYNTHETIC"
+  },
+  "owner_ack": null,
+  "deduplication_key": "synthetic:SYN_TOTAL",
+  "execute": true
+}
