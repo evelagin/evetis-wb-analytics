@@ -1,0 +1,42 @@
+{
+  "captured_at": "2026-09-24",
+  "captured_by": "gcloud (read-only), tools/autonomy/wif_check.py --live --snapshot",
+  "note": "Живой провайдер и привязки SA ДО исправления AE v1. Исторический снимок: доказывает, что текущая конфигурация нарушает инвариант S1.",
+  "provider": {
+    "name": "projects/37074083763/locations/global/workloadIdentityPools/github-pool/providers/github-provider",
+    "attributeCondition": "assertion.repository == \"evelagin/evetis-wb-analytics\"",
+    "attributeMapping": {
+      "attribute.ref": "assertion.ref",
+      "attribute.repo_ref": "assertion.repository + \"@\" + assertion.ref",
+      "attribute.repository": "assertion.repository",
+      "google.subject": "assertion.sub"
+    },
+    "state": "ACTIVE"
+  },
+  "service_account_bindings": {
+    "sa-deployer": [
+      {
+        "role": "roles/iam.workloadIdentityUser",
+        "members": [
+          "principalSet://iam.googleapis.com/projects/37074083763/locations/global/workloadIdentityPools/github-pool/attribute.repository/evelagin/evetis-wb-analytics"
+        ]
+      }
+    ],
+    "sa-terraform-plan": [
+      {
+        "role": "roles/iam.workloadIdentityUser",
+        "members": [
+          "principalSet://iam.googleapis.com/projects/37074083763/locations/global/workloadIdentityPools/github-pool/attribute.repository/evelagin/evetis-wb-analytics"
+        ]
+      }
+    ],
+    "sa-terraform-apply": [
+      {
+        "role": "roles/iam.workloadIdentityUser",
+        "members": [
+          "principalSet://iam.googleapis.com/projects/37074083763/locations/global/workloadIdentityPools/github-pool/attribute.repo_ref/evelagin/evetis-wb-analytics@refs/heads/main"
+        ]
+      }
+    ]
+  }
+}

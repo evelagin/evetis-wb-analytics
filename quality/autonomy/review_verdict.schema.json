@@ -1,0 +1,31 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/evelagin/evetis-wb-analytics/quality/autonomy/review_verdict.schema.json",
+  "title": "AE v1 independent review verdict",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["verdict", "summary", "findings", "gate_weakening_detected", "missing_negative_tests", "human_decision_reason"],
+  "properties": {
+    "verdict": {"enum": ["PASS", "CHANGES_REQUIRED", "BLOCKED", "HUMAN_DECISION_REQUIRED"]},
+    "summary": {"type": "string", "minLength": 1, "maxLength": 4000},
+    "findings": {
+      "type": "array",
+      "items": {
+        "type": "object", "additionalProperties": false,
+        "required": ["severity", "category", "summary", "evidence"],
+        "properties": {
+          "severity": {"enum": ["BLOCKER", "MAJOR", "MINOR"]},
+          "category": {"enum": ["correctness", "semantics", "downstream", "economics", "reversibility",
+                                "runtime_access", "false_pass_risk", "missing_negative_test",
+                                "gate_weakening", "scope", "other"]},
+          "file": {"type": "string", "maxLength": 300},
+          "summary": {"type": "string", "minLength": 1, "maxLength": 2000},
+          "evidence": {"type": "string", "minLength": 1, "maxLength": 2000}
+        }
+      }
+    },
+    "gate_weakening_detected": {"type": "boolean"},
+    "missing_negative_tests": {"type": "array", "items": {"type": "string", "maxLength": 1000}},
+    "human_decision_reason": {"type": ["string", "null"], "maxLength": 2000}
+  }
+}

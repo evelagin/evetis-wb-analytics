@@ -24,6 +24,12 @@
 | [`HEALTH_COVERAGE_MIGRATION.md`](HEALTH_COVERAGE_MIGRATION.md) | Готовая к ACK миграция наблюдаемости Ozon / orders / sales | человек |
 | [`AUTONOMY_READINESS.md`](AUTONOMY_READINESS.md) | Готов ли проект принять автономного агента, по направлениям | человек |
 | [`REPOSITORY_DATA_POLICY.md`](REPOSITORY_DATA_POLICY.md) | Что кладём в Git, а что нет | человек |
+| [`AE_V1_ARCHITECTURE.md`](AE_V1_ARCHITECTURE.md) | Autonomous Engineering v1: компоненты, машина состояний, модель доверия CI, V2 backlog | человек |
+| [`AE_V1_SECURITY.md`](AE_V1_SECURITY.md) | Почему AE не может менять production, модель угроз, матрица прав, находка по WIF | человек |
+| [`AE_V1_OPERATIONS.md`](AE_V1_OPERATIONS.md) | Как AE работает в обычный день, оповещения, стоимость, отмена | человек |
+| [`AE_V1_RUNBOOK.md`](AE_V1_RUNBOOK.md) | Включение по шагам, канарейка UBR-011, остановка и откат | человек |
+| [`AE_V1_ADR_EXECUTION_PLATFORM.md`](AE_V1_ADR_EXECUTION_PLATFORM.md) | ADR-07: GitHub Actions + Claude Code, решение по OpenHands, датированные источники | человек |
+| [`AE_V1_ACCEPTANCE.md`](AE_V1_ACCEPTANCE.md) | Результаты приёмки A–F, что доказано и что нет | человек |
 
 ## Пересобрать снимок
 

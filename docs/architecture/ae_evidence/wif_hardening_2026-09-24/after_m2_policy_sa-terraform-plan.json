@@ -1,0 +1,12 @@
+{
+  "bindings": [
+    {
+      "members": [
+        "principalSet://iam.googleapis.com/projects/37074083763/locations/global/workloadIdentityPools/github-pool/attribute.tf_plan_workflow/infra.yml"
+      ],
+      "role": "roles/iam.workloadIdentityUser"
+    }
+  ],
+  "etag": "BwZcNSLQmBE=",
+  "version": 1
+}

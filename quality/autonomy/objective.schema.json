@@ -1,0 +1,175 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/evelagin/evetis-wb-analytics/quality/autonomy/objective.schema.json",
+  "title": "AE v1 engineering objective",
+  "description": "Единый контракт задачи для инженера: и по инциденту наблюдателя, и по цели владельца. Содержит доказательства и критерии приёмки, но не решение.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "objective_id",
+    "kind",
+    "created_at",
+    "requested_by",
+    "title",
+    "statement",
+    "acceptance",
+    "constraints",
+    "repository_sha",
+    "affected_assets",
+    "contract_suites",
+    "known_ubr_links",
+    "evidence",
+    "owner_ack",
+    "deduplication_key",
+    "execute"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": 1
+    },
+    "objective_id": {
+      "type": "string",
+      "pattern": "^obj-[a-z0-9][a-z0-9-]{2,80}$"
+    },
+    "kind": {
+      "enum": [
+        "INCIDENT",
+        "OWNER_OBJECTIVE"
+      ]
+    },
+    "created_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "requested_by": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 100
+    },
+    "title": {
+      "type": "string",
+      "minLength": 5,
+      "maxLength": 200
+    },
+    "statement": {
+      "type": "string",
+      "minLength": 10,
+      "maxLength": 4000
+    },
+    "incident": {
+      "type": [
+        "object",
+        "null"
+      ]
+    },
+    "acceptance": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "string",
+        "minLength": 5,
+        "maxLength": 500
+      }
+    },
+    "constraints": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 5,
+        "maxLength": 500
+      }
+    },
+    "repository_sha": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{40}$"
+    },
+    "affected_assets": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {
+        "type": "string",
+        "maxLength": 200
+      }
+    },
+    "downstream_consumers": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {
+        "type": "string",
+        "maxLength": 200
+      }
+    },
+    "contract_suites": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {
+        "type": "string",
+        "maxLength": 100
+      }
+    },
+    "known_ubr_links": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {
+        "type": "string",
+        "pattern": "^UBR-[0-9]{3}$"
+      }
+    },
+    "evidence": {
+      "type": "object"
+    },
+    "owner_ack": {
+      "type": [
+        "object",
+        "null"
+      ],
+      "additionalProperties": false,
+      "required": [
+        "plan_sha256",
+        "acked_by",
+        "acked_at"
+      ],
+      "properties": {
+        "plan_sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "acked_by": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 100
+        },
+        "acked_at": {
+          "type": "string",
+          "format": "date-time"
+        }
+      }
+    },
+    "deduplication_key": {
+      "type": "string",
+      "pattern": "^(check|health|parity|synthetic|objective):[A-Za-z0-9_.:-]{1,200}$"
+    },
+    "execute": {
+      "type": "boolean",
+      "description": "false — фикстура подготовлена, но запуск запрещён. Оркестратор отказывается исполнять цель с execute=false."
+    },
+    "commissioning": {
+      "type": [
+        "object",
+        "null"
+      ],
+      "description": "Только для синтетической цели ввода в эксплуатацию (AE_V1_RUNBOOK.md §3). Инженеру НЕ показывается; ревьюер получает протокол, гарантирующий проверку пути итерации.",
+      "additionalProperties": false,
+      "required": [
+        "iteration_marker"
+      ],
+      "properties": {
+        "iteration_marker": {
+          "type": "string",
+          "pattern": "^AE-COMMISSIONING-[A-Z0-9-]{4,40}$"
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,84 @@
+name: autonomy-review
+# AE v1 · Независимый ревьюер. НЕДОВЕРЕННЫЙ job, отдельная машина, чистый контекст.
+# Видит цель, дифф, анализ влияния, доказательства ворот и ЗАЯВЛЕНИЕ автора — не его рассуждения.
+# Инструменты: Read/Grep/Glob в режиме --restricted. Учётных данных GCP нет вовсе: шага auth
+# нет, а привязка sa-ae-reader этот файл (job_workflow_ref) не пропускает — даже OIDC-токен,
+# выпущенный отсюда, в GCP ничего не получает (tools/tests/test_autonomy_wif.py, C1).
+# Идентичность Claude — СВОЯ: отдельный сервисный аккаунт и правило федерации ревьюера.
+# Вердикт уходит артефактом с sha256 в outputs; переход делает доверенный job гейткипера.
+on:
+  workflow_call:
+    inputs:
+      run_id: {type: string, required: true}
+      state_sha: {type: string, required: true}
+    outputs:
+      reviewer_sha:
+        value: ${{ jobs.review.outputs.reviewer_sha }}
+
+permissions: {}
+
+jobs:
+  review:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    permissions:
+      contents: read
+      id-token: write    # только федерация Claude API
+    outputs:
+      reviewer_sha: ${{ steps.review.outputs.reviewer_sha }}
+    env:
+      STATE_DIR: ${{ github.workspace }}/.ae-state
+      RUN_ID: ${{ inputs.run_id }}
+      STATE_SHA: ${{ inputs.state_sha }}
+      ANTHROPIC_FEDERATION_RULE_ID: ${{ vars.AE_ANTHROPIC_REVIEWER_FEDERATION_RULE_ID }}
+      ANTHROPIC_ORGANIZATION_ID: ${{ vars.AE_ANTHROPIC_ORGANIZATION_ID }}
+      ANTHROPIC_SERVICE_ACCOUNT_ID: ${{ vars.AE_ANTHROPIC_REVIEWER_SERVICE_ACCOUNT_ID }}
+      ANTHROPIC_WORKSPACE_ID: ${{ vars.AE_ANTHROPIC_WORKSPACE_ID }}
+      ENGINEER_RULE_ID: ${{ vars.AE_ANTHROPIC_FEDERATION_RULE_ID }}
+    steps:
+      - name: guard — только main, строгие входы
+        run: |
+          [ "$GITHUB_REF" = "refs/heads/main" ] || { echo "::error::только из main"; exit 1; }
+          [[ "$RUN_ID" =~ ^run-[0-9]{8}T[0-9]{6}Z-[0-9a-f]{8}$ ]] || { echo "::error::неверный run_id"; exit 1; }
+          [[ "$STATE_SHA" =~ ^[0-9a-f]{40}$ ]] || { echo "::error::неверный state_sha"; exit 1; }
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: "3.12"
+      - name: install pinned dependencies (hash-checked)
+        run: "pip install --only-binary=:all: --require-hashes -r tools/requirements-sql-ci.txt"
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: "20"
+      - name: install Claude Code (pinned)
+        run: npm install -g @anthropic-ai/claude-code@2.1.251
+      - name: clone state at pinned sha (read)
+        env:
+          GH_TOKEN: ${{ github.token }}   # contents: read — только на этот шаг
+        run: bash tools/autonomy/ci/state_clone.sh "$STATE_SHA"
+      - name: independent review
+        id: review
+        run: |
+          state=$(python -m tools.autonomy.cli status --state-dir "$STATE_DIR" --run-id "$RUN_ID" | awk '{print $2}')
+          [ "$state" = "REVIEWING" ] || { echo "состояние $state — ревью не нужно"; echo "reviewer_sha=" >> "$GITHUB_OUTPUT"; exit 0; }
+          if [ -n "${ANTHROPIC_API_KEY:-}${ANTHROPIC_AUTH_TOKEN:-}${ANTHROPIC_PROFILE:-}${CLAUDE_CODE_OAUTH_TOKEN:-}" ]; then
+            echo "::error::статический ключ/токен/профиль Anthropic перекрыл бы федерацию"; exit 1; fi
+          [ -n "$ANTHROPIC_FEDERATION_RULE_ID" ] && [ "$ANTHROPIC_FEDERATION_RULE_ID" != "$ENGINEER_RULE_ID" ] \
+            || { echo "::error::у ревьюера должно быть СВОЁ правило федерации"; exit 1; }
+          export ANTHROPIC_IDENTITY_TOKEN_FILE="$RUNNER_TEMP/anthropic-oidc.jwt"
+          bash tools/autonomy/ci/refresh_anthropic_oidc.sh
+          ( while sleep 240; do bash tools/autonomy/ci/refresh_anthropic_oidc.sh || true; done ) &
+          python -m tools.autonomy.cli review --ci --engineer none --reviewer claude \
+            --state-dir "$STATE_DIR" --run-id "$RUN_ID" --out "$RUNNER_TEMP/pending" \
+            --sandbox-root "$RUNNER_TEMP/sandboxes" > "$RUNNER_TEMP/review.json"
+          python -c 'import json,sys; print("reviewer_sha=" + json.load(open(sys.argv[1]))["reviewer.json"])' \
+            "$RUNNER_TEMP/review.json" >> "$GITHUB_OUTPUT"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        if: steps.review.outputs.reviewer_sha != ''
+        with:
+          name: ae-${{ inputs.run_id }}-review-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/pending
+          retention-days: 30

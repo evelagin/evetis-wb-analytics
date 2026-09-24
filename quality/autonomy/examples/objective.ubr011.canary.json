@@ -1,0 +1,66 @@
+{
+  "schema_version": 1,
+  "objective_id": "obj-ubr-011-canary",
+  "kind": "OWNER_OBJECTIVE",
+  "created_at": "2026-09-23T00:00:00Z",
+  "requested_by": "owner (prepared by AE v1 setup; NOT executed)",
+  "title": "Resolve UBR-011 to a machine-verifiable conclusion",
+  "statement": "Resolve UBR-011 to a machine-verifiable conclusion without weakening existing acceptance gates. Установить для каждой проверки из blocked_checks, почему она сейчас красная, и прийти к одному из машинно проверяемых выводов: (а) исправление, которое не меняет смысла условия, утверждённого владельцем, с тестом, краснеющим без исправления; или (б) HUMAN_DECISION_REQUIRED с доказательством того, что любое исправление меняет смысл условия.",
+  "incident": null,
+  "acceptance": [
+    "для каждой проверки из blocked_checks UBR-011 есть машинный вывод (а) или (б) с командой и выводом",
+    "ни одни ворота не ослаблены: нет удалённых @check/ASSERT, skip, known_failing, override, gate:false",
+    "ни одна проверка, бывшая PASS на базовой ветке, не становится FAIL",
+    "production-мутаций: 0"
+  ],
+  "constraints": [
+    "условие приёмки утверждал владелец: изменение его СМЫСЛА без ACK запрещено (UBR-011 why_not_automatable)",
+    "не менять production, не писать в WB/Ozon, не трогать forbidden_paths политики AE",
+    "фикстура не содержит решения: его нужно найти, а не взять из текста цели"
+  ],
+  "repository_sha": "2cbc7340b322d633427482e65a86182403a7fd76",
+  "affected_assets": [
+    "wb_mart.EXECUTIVE_V2_DAILY",
+    "wb_mart.SKU_PERFORMANCE_V2_DAILY",
+    "wb_mart.TVF_SKU_PERFORMANCE_V2_PERIOD",
+    "wb_mart.V_DASH_EXECUTIVE_V2_DAILY",
+    "wb_mart.V_DASH_SKU_PERFORMANCE_V2_DAILY",
+    "wb_mart.V_SKU_PERFORMANCE_V2_EXEC_BRIDGE_DAILY",
+    "wb_mart.sp_build_executive_v2_daily"
+  ],
+  "downstream_consumers": [
+    "evetis_mart.FACT_SKU_DAILY"
+  ],
+  "contract_suites": [
+    "wb_sku_performance_v2",
+    "wb_executive_v2"
+  ],
+  "known_ubr_links": [
+    "UBR-011"
+  ],
+  "evidence": {
+    "registry_entry": {
+      "id": "UBR-011",
+      "title": "Две приёмочные проверки привязаны к моменту прогона и устарели сами по себе",
+      "severity": "LOW",
+      "domain": "acceptance_maintenance",
+      "source_artifact": "sql/dash/sku_performance_v2_daily_validation.sql:311 (V9.provisional_window); sql/dash/executive_v2_daily_validation.sql:148 (V2)",
+      "blocked_checks": [
+        "SKUV2__V9_PROVISIONAL_WINDOW_FINAL",
+        "EXECV2__V2_V_DASH_EXECUTIVE_V2_DAILY_V_DASH_SETTLEMENT_DAILY"
+      ],
+      "what_is_unknown": "Переписать ли условия так, чтобы они не зависели от даты прогона, или переприколоть окна к новым датам.",
+      "evidence": {
+        "measured_at": "2026-09-22",
+        "v9": "Проверка требует, чтобы окно 2026-09-01…2026-09-17 НЕ было FINAL. На 18.09 это было верно; на 22.09 все 17 суток окончательны (не окончательных 0, предварительных 0) — финотчёты WB закрылись штатно. Условие стало ложным из-за нормального хода расчётов, а не из-за дефекта.",
+        "v2": "Материализованный слой V_DASH_EXECUTIVE_V2_DAILY содержит 748 суток (по 2026-09-22), канонический V_DASH_SETTLEMENT_DAILY — 747 (по 2026-09-21). Расхождение ровно в одних сутках: почасовая пересборка слоя опережает горизонт D-1 канонического вью. Это гонка момента прогона, а не расхождение величин."
+      },
+      "why_not_automatable": "Условие приёмки утверждал владелец. Сделать окно скользящим — значит изменить смысл проверки; переприколоть даты — значит выбрать новые. И то и другое требует его слова."
+    },
+    "omitted_on_purpose": "поле minimal_answer_required из реестра в фикстуру не включено, чтобы не подсказывать выбор",
+    "repository_sha_note": "перед запуском оператор обновляет repository_sha до актуального origin/main"
+  },
+  "owner_ack": null,
+  "deduplication_key": "objective:UBR-011",
+  "execute": false
+}

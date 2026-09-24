@@ -1,0 +1,225 @@
+name: autonomy-run
+# AE v1 · Один проход цикла. Каждая роль — отдельный job, то есть отдельная эфемерная машина.
+#
+#   prepare (Д) → engineer (Н, модель) → ingest (Д) → test (Н, код кандидата) → verify (Д)
+#   → review (Н, модель) → gate (Д) → publish (Д, запись ae/* + диспатч обязательных workflows)
+#   → ci-verify (Д, решение по фактическим прогонам) → persist (Д)
+#
+# Д — доверенный: детерминированный код main, пишет ветку autonomy-state, чужого кода не исполняет.
+# Н — недоверенный: только чтение; вывод уходит артефактом, sha256 — через outputs.
+# Рекурсии триггеров нет: события GITHUB_TOKEN запусков не создают, кроме workflow_dispatch —
+# а его выполняют только доверенные publish (обязательные workflows из policy.json на ветке
+# кандидата) и persist (следующий проход по решению next-pass, потолок в policy.json).
+# READY_FOR_HUMAN_REVIEW ставит только ci-verify и только по success ВСЕХ обязательных workflows
+# на опубликованном SHA (S8). Выключатель — repository variable AE_ENABLED.
+on:
+  workflow_dispatch:
+    inputs:
+      objective_path:
+        description: "Новый прогон: путь цели в ветке autonomy-state (objectives/*.json)"
+        type: string
+        required: false
+      run_id:
+        description: "Продолжить существующий прогон"
+        type: string
+        required: false
+
+permissions: {}
+
+concurrency:
+  group: autonomy-run          # policy.budgets.max_active_runs = 1
+  cancel-in-progress: false
+
+jobs:
+  enabled:
+    if: vars.AE_ENABLED == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - name: kill switch
+        run: echo "AE_ENABLED=true — проход разрешён"
+
+  prepare:
+    needs: enabled
+    uses: ./.github/workflows/autonomy-gate.yml
+    permissions: {contents: write, id-token: write}
+    with:
+      step: prepare
+      objective_path: ${{ inputs.objective_path }}
+      run_id: ${{ inputs.run_id }}
+
+  engineer:
+    needs: prepare
+    uses: ./.github/workflows/autonomy-engineer.yml
+    permissions: {contents: read, id-token: write}
+    with:
+      run_id: ${{ needs.prepare.outputs.run_id }}
+      state_sha: ${{ needs.prepare.outputs.state_sha }}
+
+  ingest:
+    needs: [prepare, engineer]
+    uses: ./.github/workflows/autonomy-gate.yml
+    permissions: {contents: write, id-token: write}
+    with:
+      step: ingest
+      run_id: ${{ needs.prepare.outputs.run_id }}
+      pending_artifact: ae-${{ needs.prepare.outputs.run_id }}-engineer-${{ github.run_attempt }}
+      expect: ${{ needs.engineer.outputs.hashes }}
+
+  test:
+    needs: [prepare, ingest]
+    uses: ./.github/workflows/autonomy-test.yml
+    permissions: {contents: read, id-token: write}
+    with:
+      run_id: ${{ needs.prepare.outputs.run_id }}
+      state_sha: ${{ needs.ingest.outputs.state_sha }}
+
+  verify:
+    needs: [prepare, test]
+    uses: ./.github/workflows/autonomy-gate.yml
+    permissions: {contents: write, id-token: write}
+    with:
+      step: verify
+      run_id: ${{ needs.prepare.outputs.run_id }}
+      pending_artifact: ae-${{ needs.prepare.outputs.run_id }}-test-${{ github.run_attempt }}
+      expect: ${{ needs.test.outputs.evidence_sha != '' && format('evidence.json={0}', needs.test.outputs.evidence_sha) || '' }}
+
+  review:
+    needs: [prepare, verify]
+    uses: ./.github/workflows/autonomy-review.yml
+    permissions: {contents: read, id-token: write}
+    with:
+      run_id: ${{ needs.prepare.outputs.run_id }}
+      state_sha: ${{ needs.verify.outputs.state_sha }}
+
+  gate:
+    needs: [prepare, review]
+    uses: ./.github/workflows/autonomy-gate.yml
+    permissions: {contents: write, id-token: write}
+    with:
+      step: gate
+      run_id: ${{ needs.prepare.outputs.run_id }}
+      pending_artifact: ae-${{ needs.prepare.outputs.run_id }}-review-${{ github.run_attempt }}
+      expect: ${{ needs.review.outputs.reviewer_sha != '' && format('reviewer.json={0}', needs.review.outputs.reviewer_sha) || '' }}
+
+  publish:
+    needs: [prepare, gate]
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: write          # ТОЛЬКО refs/heads/ae/* и autonomy-state — проверяет publisher.py
+      pull-requests: write     # ТОЛЬКО draft PR
+      actions: write           # ТОЛЬКО workflow_dispatch обязательных workflows на ветке кандидата
+    env:
+      STATE_DIR: ${{ github.workspace }}/.ae-state
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+      RUN_ID: ${{ needs.prepare.outputs.run_id }}
+    steps:
+      - name: guard — только main, строгий run_id
+        run: |
+          [ "$GITHUB_REF" = "refs/heads/main" ] || exit 1
+          [[ "$RUN_ID" =~ ^run-[0-9]{8}T[0-9]{6}Z-[0-9a-f]{8}$ ]] || { echo "::error::неверный run_id"; exit 1; }
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          fetch-depth: 0     # токен сохраняется: этот job публикует, чужого кода не исполняет
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: "3.12"
+      - name: install pinned dependencies (hash-checked)
+        run: "pip install --only-binary=:all: --require-hashes -r tools/requirements-sql-ci.txt"
+      - name: clone state (tip)
+        run: bash tools/autonomy/ci/state_clone.sh
+      - name: publish draft PR + dispatch required workflows (только READY_FOR_PR)
+        run: |
+          state=$(python -m tools.autonomy.cli status --state-dir "$STATE_DIR" --run-id "$RUN_ID" | awk '{print $2}')
+          [ "$state" = "READY_FOR_PR" ] || { echo "состояние $state — публиковать нечего"; exit 0; }
+          python -m tools.autonomy.cli publish --engineer none --reviewer none \
+            --state-dir "$STATE_DIR" --run-id "$RUN_ID" --sandbox-root "$RUNNER_TEMP/sandboxes"
+          bash tools/autonomy/ci/state_push.sh "autonomy-run publish: ${RUN_ID}"
+
+  ci-verify:
+    needs: [prepare, publish]
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    permissions:
+      contents: write    # ТОЛЬКО refs/heads/autonomy-state
+      actions: read      # прогоны обязательных workflows по опубликованному SHA
+    env:
+      STATE_DIR: ${{ github.workspace }}/.ae-state
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+      RUN_ID: ${{ needs.prepare.outputs.run_id }}
+    steps:
+      - name: guard — только main, строгий run_id
+        run: |
+          [ "$GITHUB_REF" = "refs/heads/main" ] || exit 1
+          [[ "$RUN_ID" =~ ^run-[0-9]{8}T[0-9]{6}Z-[0-9a-f]{8}$ ]] || { echo "::error::неверный run_id"; exit 1; }
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: "3.12"
+      - name: install pinned dependencies (hash-checked)
+        run: "pip install --only-binary=:all: --require-hashes -r tools/requirements-sql-ci.txt"
+      - name: clone state (tip)
+        run: bash tools/autonomy/ci/state_clone.sh
+      - name: wait for required verification (детерминированно, API Actions)
+        run: |
+          state=$(python -m tools.autonomy.cli status --state-dir "$STATE_DIR" --run-id "$RUN_ID" | awk '{print $2}')
+          [ "$state" = "AWAITING_VERIFICATION" ] || { echo "состояние $state — проверять нечего"; exit 0; }
+          python -m tools.autonomy.cli verify-ci --engineer none --reviewer none --repo "$GH_REPO" \
+            --state-dir "$STATE_DIR" --run-id "$RUN_ID" --sandbox-root "$RUNNER_TEMP/sandboxes"
+          bash tools/autonomy/ci/state_push.sh "autonomy-run ci-verify: ${RUN_ID}"
+
+  persist:
+    needs: [prepare, engineer, ingest, test, verify, review, gate, publish, ci-verify]
+    if: always() && needs.prepare.result == 'success'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: write    # ТОЛЬКО refs/heads/autonomy-state (счётчик проходов)
+      actions: write     # следующий проход при decision=dispatch
+      issues: write      # итог владельцу
+    env:
+      STATE_DIR: ${{ github.workspace }}/.ae-state
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+      RUN_ID: ${{ needs.prepare.outputs.run_id }}
+    steps:
+      - name: guard — строгий run_id
+        run: '[[ "$RUN_ID" =~ ^run-[0-9]{8}T[0-9]{6}Z-[0-9a-f]{8}$ ]] || { echo "::error::неверный run_id"; exit 1; }'
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: "3.12"
+      - name: install pinned dependencies (hash-checked)
+        run: "pip install --only-binary=:all: --require-hashes -r tools/requirements-sql-ci.txt"
+      - name: clone state (tip)
+        run: bash tools/autonomy/ci/state_clone.sh
+      - name: decide next pass (детерминированно, счётчик проходов в состоянии)
+        id: decide
+        run: |
+          echo "decision=$(python -m tools.autonomy.cli next-pass --state-dir "$STATE_DIR" --run-id "$RUN_ID")" >> "$GITHUB_OUTPUT"
+          echo "state=$(python -m tools.autonomy.cli status --state-dir "$STATE_DIR" --run-id "$RUN_ID" | awk '{print $2}')" >> "$GITHUB_OUTPUT"
+          python -m tools.autonomy.cli report --state-dir "$STATE_DIR" --run-id "$RUN_ID" > "$RUNNER_TEMP/report.md"
+          cat "$RUNNER_TEMP/report.md" >> "$GITHUB_STEP_SUMMARY"
+      - name: persist state
+        env:
+          DECISION: ${{ steps.decide.outputs.decision }}
+        run: |
+          bash tools/autonomy/ci/state_push.sh "autonomy-run persist: ${RUN_ID} · ${DECISION}"
+      - name: dispatch next pass (только decision=dispatch)
+        if: steps.decide.outputs.decision == 'dispatch'
+        run: gh workflow run autonomy-run.yml --ref main -f run_id="$RUN_ID"
+      - name: report to owner
+        if: steps.decide.outputs.decision != 'dispatch'
+        env:
+          DECISION: ${{ steps.decide.outputs.decision }}
+          STATE: ${{ steps.decide.outputs.state }}
+        run: |
+          gh label create autonomy --color 5319E7 --description "AE v1" --force >/dev/null
+          gh issue create --title "AE v1 · ${RUN_ID} · ${STATE} · ${DECISION}" --label autonomy --body-file "$RUNNER_TEMP/report.md"
