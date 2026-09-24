@@ -1,0 +1,19 @@
+{
+  "status": "FAIL",
+  "findings": [],
+  "missing_read": [
+    "bigquery.jobs.create",
+    "bigquery.jobs.listAll",
+    "logging.logEntries.list",
+    "wb_raw: нет доступа",
+    "wb_mart: нет доступа",
+    "wb_ops: нет доступа",
+    "evetis_ref: нет доступа",
+    "evetis_ops: нет доступа",
+    "evetis_mart: нет доступа",
+    "ozon_raw: нет доступа",
+    "ozon_mart: нет доступа"
+  ],
+  "project_roles": [],
+  "effective_permission_count": 0
+}
