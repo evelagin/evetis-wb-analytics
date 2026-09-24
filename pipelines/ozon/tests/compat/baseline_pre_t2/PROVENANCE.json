@@ -1,0 +1,30 @@
+{
+  "purpose": "ИСТОРИЧЕСКОЕ ТЕСТОВОЕ ДОКАЗАТЕЛЬСТВО, не исполняемый production-код. Замороженный Ozon runtime ДО Tenancy T2 — эталон различающего прогона (Tenancy T2.2, L8). Не редактировать, не форматировать, не импортировать из runtime.",
+  "source_commit": "dc7fda451cae302a974d2dc62488a4a940794536",
+  "source_path": "pipelines/ozon/runtime",
+  "equal_to_commits": {
+    "a0a138c03abae12579ce6af1874d32878b2712f2": "база аудита T0",
+    "08dfb88": "источник production-образа (infra/terraform/ozon_ingestion.tf)"
+  },
+  "production_image": "europe-west1-docker.pkg.dev/project-fa311fc0-4d87-4781-986/cloud-run-source-deploy/ozon-runtime-ingest@sha256:24e3c6d6715fa7b73d30b4270f9863d2b8680b4b02d4874ff1ea12b4fd90fa1b",
+  "production_relation": "Код этого эталона побайтно равен коду, из которого собран production-образ Ozon (job'ы ozon-runtime-*), проверено git diff 08dfb88..dc7fda4 -- pipelines/ozon/runtime = пусто, 2026-09-24. Сам образ этим тестом не проверяется.",
+  "not_in_image": "Образ собирается из контекста pipelines/ozon/runtime и копирует файлы поимённо (Dockerfile: COPY common.py entities.py main.py promo.py); tests/compat в контекст сборки не входит.",
+  "files": {
+    "common.py": {
+      "sha256": "93439e871abd73ed50b5a854ff718cd1f9ca42146b7b06987db71a37d591f126",
+      "git_blob": "1c9d5ea4714f61e3eab9c411f93c03ec4555844d"
+    },
+    "entities.py": {
+      "sha256": "2c83d76183acbe24285f5400596e976e2855821775ef0a9dba970f2b58fb8ecf",
+      "git_blob": "efe0d3f6261e949a36ff4af32b50a9793688bdd7"
+    },
+    "main.py": {
+      "sha256": "58dbbfa7059c7a682a90fec1bde06677e5b90216b96f4cca3d135218845c8f43",
+      "git_blob": "0af091270d70d6c15fc86ff39c7ebcc4418f9490"
+    },
+    "promo.py": {
+      "sha256": "fc1082f59f7e88fc825ddea1ae363e64a257503c0ef1b507fe77dea43a10d570",
+      "git_blob": "e80c5557533244112dbaab2f9c7b18cf159bface"
+    }
+  }
+}
