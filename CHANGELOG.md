@@ -1,5 +1,24 @@
 # CHANGELOG.md
 
+## 2026-09-24 — PR-PROMO-3: экономика акций на каноне Forward economics
+
+Новые объекты; существующие объекты, колонки, Юнитка и канон экономики не менялись.
+
+- **Снимки базиса (append-only таблицы):** `wb_raw.WB_PROMO_ECONOMICS_BASIS_SNAPSHOT`,
+  `ozon_raw.OZON_PROMO_ECONOMICS_BASIS_SNAPSHOT` — копия канонических вью WB_FE_V1 и Ozon
+  FORWARD_MODELLED на каждом слоте наблюдения акций. Процедуры
+  `wb_mart.sp_snapshot_wb_promo_economics_basis`, `ozon_mart.sp_snapshot_ozon_promo_economics_basis`;
+  расписание — `infra/terraform/promo_economics_snapshot.tf`.
+- **VIEW:** `wb_mart.V_WB_PROMO_ECONOMICS_{BASIS,SCENARIO}_HISTORY`,
+  `ozon_mart.V_OZON_PROMO_ECONOMICS_{BASIS,SCENARIO}_HISTORY`,
+  `evetis_mart.V_PROMO_ECONOMICS_{SCENARIO_HISTORY,SCENARIO_CURRENT,COVERAGE_CURRENT}`.
+- Вклад при цене акции = `P × удерживаемая доля − постоянные издержки` из снимка канона;
+  EXPECTED, downside своей площадки, break-even, требуемый рост продаж с граничными случаями.
+- Проверки: `sql/promotions/pr_promo3_economics_validation.sql` (набор `promo_economics`),
+  регрессия `tools/promo_economics_render.py run fixtures`, мост к Юнитке (замер)
+  `sql/promotions/pr_promo3_unitka_bridge.sql`. Откат — `sql/promotions/pr_promo3_rollback.sql`.
+- PR-PROMO-2 V24 сужен до вью состояния: вью экономики проверяет E20.
+
 ## 2026-09-23 — PR-PROMO-2: каноническое состояние акций WB и Ozon (16 новых VIEW)
 
 Новые объекты, существующие колонки и объекты не менялись. Экономики и рекомендаций нет.

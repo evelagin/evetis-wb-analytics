@@ -1,24 +1,24 @@
 {
  "schema_version": 1,
- "generated_at": "2026-09-23T21:16:37Z",
+ "generated_at": "2026-09-24T07:13:57Z",
  "generated_by": "tools/build_contract_registry.py",
  "inventory_snapshot": "2026-09-22T04:35:09Z",
  "summary": {
-  "suites": 14,
-  "checks_total": 275,
-  "checks_active": 254,
+  "suites": 15,
+  "checks_total": 296,
+  "checks_active": 275,
   "checks_excluded_from_gate": 5,
   "checks_not_executable": 16,
-  "acceptance_artifacts_wired": 16,
+  "acceptance_artifacts_wired": 17,
   "acceptance_artifacts_in_backlog": 12,
-  "assets_with_contract": 60,
-  "assets_under_gate": 60,
+  "assets_with_contract": 71,
+  "assets_under_gate": 71,
   "unresolved_business_rules_open": 10,
   "parse_problems": 0
  },
  "by_severity": {
   "CRITICAL": 141,
-  "HIGH": 72,
+  "HIGH": 93,
   "MEDIUM": 41,
   "LOW": 0
  },
@@ -26,7 +26,7 @@
   "finance": 114,
   "ingestion": 2,
   "operations": 41,
-  "promotions": 24,
+  "promotions": 45,
   "unit_economics": 73
  },
  "checks": [
@@ -3414,6 +3414,930 @@
    "freshness_requirement": "перед слиянием изменения в области scope, после развёртывания и после каждого нового слота наблюдения",
    "business_rule_reference": "docs/promotions/PROMOTION_PHASE_0_5_DECISION_GATE_2026-09-22.md",
    "label": "V24_NO_PII_NO_ECONOMICS_COLUMNS"
+  },
+  {
+   "check_id": "E01_GRAIN_HISTORY",
+   "suite": "promo_economics",
+   "domain": "promotions",
+   "pipelines": [
+    "promo_econ_basis_wb",
+    "promo_econ_basis_ozon",
+    "wb_promo_observer",
+    "ozon_promo_observer"
+   ],
+   "marketplace": [
+    "WB",
+    "OZON"
+   ],
+   "layer": "mart",
+   "severity": "HIGH",
+   "source_contract": "docs/promotions/PR_PROMO_3_ECONOMICS_INTEGRATION_2026-09-24.md",
+   "source_artifact": "sql/promotions/pr_promo3_economics_validation.sql:13",
+   "adapter": "check_blocks",
+   "execution_mode": "read_only_select",
+   "expected_result": "status=PASS on every row",
+   "owner": "evelagin",
+   "type": "data_contract",
+   "status": "active",
+   "status_reason": null,
+   "gate_relevant": true,
+   "dependencies": [
+    "evetis_mart.V_PROMO_ECONOMICS_COVERAGE_CURRENT",
+    "evetis_mart.V_PROMO_ECONOMICS_SCENARIO_CURRENT",
+    "evetis_mart.V_PROMO_ECONOMICS_SCENARIO_HISTORY",
+    "ozon_mart.V_OZON_PROMO_ECONOMICS_BASIS_HISTORY",
+    "ozon_mart.V_OZON_PROMO_ECONOMICS_SCENARIO_HISTORY",
+    "ozon_mart.V_OZON_SKU_FORWARD_ECONOMICS_CURRENT",
+    "ozon_raw.OZON_PROMO_ECONOMICS_BASIS_SNAPSHOT",
+    "wb_mart.V_WB_PROMO_ECONOMICS_BASIS_HISTORY",
+    "wb_mart.V_WB_PROMO_ECONOMICS_SCENARIO_HISTORY",
+    "wb_mart.V_WB_SKU_FORWARD_ECONOMICS_CURRENT",
+    "wb_raw.WB_PROMO_ECONOMICS_BASIS_SNAPSHOT"
+   ],
+   "timeout_seconds": 300,
+   "freshness_requirement": "перед слиянием изменения в области scope, после развёртывания и после каждого слота снимка базиса",
+   "business_rule_reference": "docs/promotions/PROMOTION_PHASE_0_5_DECISION_GATE_2026-09-22.md; решение владельца 2026-09-24 (канон — Forward economics)",
+   "label": "E01_GRAIN_HISTORY"
+  },
+  {
+   "check_id": "E02B_GRAIN_COVERAGE",
+   "suite": "promo_economics",
+   "domain": "promotions",
+   "pipelines": [
+    "promo_econ_basis_wb",
+    "promo_econ_basis_ozon",
+    "wb_promo_observer",
+    "ozon_promo_observer"
+   ],
+   "marketplace": [
+    "WB",
+    "OZON"
+   ],
+   "layer": "mart",
+   "severity": "HIGH",
+   "source_contract": "docs/promotions/PR_PROMO_3_ECONOMICS_INTEGRATION_2026-09-24.md",
+   "source_artifact": "sql/promotions/pr_promo3_economics_validation.sql:35",
+   "adapter": "check_blocks",
+   "execution_mode": "read_only_select",
+   "expected_result": "status=PASS on every row",
+   "owner": "evelagin",
+   "type": "data_contract",
+   "status": "active",
+   "status_reason": null,
+   "gate_relevant": true,
+   "dependencies": [
+    "evetis_mart.V_PROMO_ECONOMICS_COVERAGE_CURRENT",
+    "evetis_mart.V_PROMO_ECONOMICS_SCENARIO_CURRENT",
+    "evetis_mart.V_PROMO_ECONOMICS_SCENARIO_HISTORY",
+    "ozon_mart.V_OZON_PROMO_ECONOMICS_BASIS_HISTORY",
+    "ozon_mart.V_OZON_PROMO_ECONOMICS_SCENARIO_HISTORY",
+    "ozon_mart.V_OZON_SKU_FORWARD_ECONOMICS_CURRENT",
+    "ozon_raw.OZON_PROMO_ECONOMICS_BASIS_SNAPSHOT",
+    "wb_mart.V_WB_PROMO_ECONOMICS_BASIS_HISTORY",
+    "wb_mart.V_WB_PROMO_ECONOMICS_SCENARIO_HISTORY",
+    "wb_mart.V_WB_SKU_FORWARD_ECONOMICS_CURRENT",
+    "wb_raw.WB_PROMO_ECONOMICS_BASIS_SNAPSHOT"
+   ],
+   "timeout_seconds": 300,
+   "freshness_requirement": "перед слиянием изменения в области scope, после развёртывания и после каждого слота снимка базиса",
+   "business_rule_reference": "docs/promotions/PROMOTION_PHASE_0_5_DECISION_GATE_2026-09-22.md; решение владельца 2026-09-24 (канон — Forward economics)",
+   "label": "E02B_GRAIN_COVERAGE"
+  },
+  {
+   "check_id": "E02_GRAIN_CURRENT",
+   "suite": "promo_economics",
+   "domain": "promotions",
+   "pipelines": [
+    "promo_econ_basis_wb",
+    "promo_econ_basis_ozon",
+    "wb_promo_observer",
+    "ozon_promo_observer"
+   ],
+   "marketplace": [
+    "WB",
+    "OZON"
+   ],
+   "layer": "mart",
+   "severity": "HIGH",
+   "source_contract": "docs/promotions/PR_PROMO_3_ECONOMICS_INTEGRATION_2026-09-24.md",
+   "source_artifact": "sql/promotions/pr_promo3_economics_validation.sql:28",
+   "adapter": "check_blocks",
+   "execution_mode": "read_only_select",
+   "expected_result": "status=PASS on every row",
+   "owner": "evelagin",
+   "type": "data_contract",
+   "status": "active",
+   "status_reason": null,
+   "gate_relevant": true,
+   "dependencies": [
+    "evetis_mart.V_PROMO_ECONOMICS_COVERAGE_CURRENT",
+    "evetis_mart.V_PROMO_ECONOMICS_SCENARIO_CURRENT",
+    "evetis_mart.V_PROMO_ECONOMICS_SCENARIO_HISTORY",
+    "ozon_mart.V_OZON_PROMO_ECONOMICS_BASIS_HISTORY",
+    "ozon_mart.V_OZON_PROMO_ECONOMICS_SCENARIO_HISTORY",
+    "ozon_mart.V_OZON_SKU_FORWARD_ECONOMICS_CURRENT",
+    "ozon_raw.OZON_PROMO_ECONOMICS_BASIS_SNAPSHOT",
+    "wb_mart.V_WB_PROMO_ECONOMICS_BASIS_HISTORY",
+    "wb_mart.V_WB_PROMO_ECONOMICS_SCENARIO_HISTORY",
+    "wb_mart.V_WB_SKU_FORWARD_ECONOMICS_CURRENT",
+    "wb_raw.WB_PROMO_ECONOMICS_BASIS_SNAPSHOT"
+   ],
+   "timeout_seconds": 300,
+   "freshness_requirement": "перед слиянием изменения в области scope, после развёртывания и после каждого слота снимка базиса",
+   "business_rule_reference": "docs/promotions/PROMOTION_PHASE_0_5_DECISION_GATE_2026-09-22.md; решение владельца 2026-09-24 (канон — Forward economics)",
+   "label": "E02_GRAIN_CURRENT"
+  },
+  {
+   "check_id": "E03_COMPUTABLE_PRECONDITIONS",
+   "suite": "promo_economics",
+   "domain": "promotions",
+   "pipelines": [
+    "promo_econ_basis_wb",
+    "promo_econ_basis_ozon",
+    "wb_promo_observer",
+    "ozon_promo_observer"
+   ],
+   "marketplace": [
+    "WB",
+    "OZON"
+   ],
+   "layer": "mart",
+   "severity": "HIGH",
+   "source_contract": "docs/promotions/PR_PROMO_3_ECONOMICS_INTEGRATION_2026-09-24.md",
+   "source_artifact": "sql/promotions/pr_promo3_economics_validation.sql:43",
+   "adapter": "check_blocks",
+   "execution_mode": "read_only_select",
+   "expected_result": "status=PASS on every row",
+   "owner": "evelagin",
+   "type": "data_contract",
+   "status": "active",
+   "status_reason": null,
+   "gate_relevant": true,
+   "dependencies": [
+    "evetis_mart.V_PROMO_ECONOMICS_COVERAGE_CURRENT",
+    "evetis_mart.V_PROMO_ECONOMICS_SCENARIO_CURRENT",
+    "evetis_mart.V_PROMO_ECONOMICS_SCENARIO_HISTORY",
+    "ozon_mart.V_OZON_PROMO_ECONOMICS_BASIS_HISTORY",
+    "ozon_mart.V_OZON_PROMO_ECONOMICS_SCENARIO_HISTORY",
+    "ozon_mart.V_OZON_SKU_FORWARD_ECONOMICS_CURRENT",
+    "ozon_raw.OZON_PROMO_ECONOMICS_BASIS_SNAPSHOT",
+    "wb_mart.V_WB_PROMO_ECONOMICS_BASIS_HISTORY",
+    "wb_mart.V_WB_PROMO_ECONOMICS_SCENARIO_HISTORY",
+    "wb_mart.V_WB_SKU_FORWARD_ECONOMICS_CURRENT",
+    "wb_raw.WB_PROMO_ECONOMICS_BASIS_SNAPSHOT"
+   ],
+   "timeout_seconds": 300,
+   "freshness_requirement": "перед слиянием изменения в области scope, после развёртывания и после каждого слота снимка базиса",
+   "business_rule_reference": "docs/promotions/PROMOTION_PHASE_0_5_DECISION_GATE_2026-09-22.md; решение владельца 2026-09-24 (канон — Forward economics)",
+   "label": "E03_COMPUTABLE_PRECONDITIONS"
+  },
+  {
+   "check_id": "E04_NON_COMPUTABLE_HAS_NO_NUMBERS",
+   "suite": "promo_economics",
+   "domain": "promotions",
+   "pipelines": [
+    "promo_econ_basis_wb",
+    "promo_econ_basis_ozon",
+    "wb_promo_observer",
+    "ozon_promo_observer"
+   ],
+   "marketplace": [
+    "WB",
+    "OZON"
+   ],
+   "layer": "mart",
+   "severity": "HIGH",
+   "source_contract": "docs/promotions/PR_PROMO_3_ECONOMICS_INTEGRATION_2026-09-24.md",
+   "source_artifact": "sql/promotions/pr_promo3_economics_validation.sql:58",
+   "adapter": "check_blocks",
+   "execution_mode": "read_only_select",
+   "expected_result": "status=PASS on every row",
+   "owner": "evelagin",
+   "type": "data_contract",
+   "status": "active",
+   "status_reason": null,
+   "gate_relevant": true,
+   "dependencies": [
+    "evetis_mart.V_PROMO_ECONOMICS_COVERAGE_CURRENT",
+    "evetis_mart.V_PROMO_ECONOMICS_SCENARIO_CURRENT",
+    "evetis_mart.V_PROMO_ECONOMICS_SCENARIO_HISTORY",
+    "ozon_mart.V_OZON_PROMO_ECONOMICS_BASIS_HISTORY",
+    "ozon_mart.V_OZON_PROMO_ECONOMICS_SCENARIO_HISTORY",
+    "ozon_mart.V_OZON_SKU_FORWARD_ECONOMICS_CURRENT",
+    "ozon_raw.OZON_PROMO_ECONOMICS_BASIS_SNAPSHOT",
+    "wb_mart.V_WB_PROMO_ECONOMICS_BASIS_HISTORY",
+    "wb_mart.V_WB_PROMO_ECONOMICS_SCENARIO_HISTORY",
+    "wb_mart.V_WB_SKU_FORWARD_ECONOMICS_CURRENT",
+    "wb_raw.WB_PROMO_ECONOMICS_BASIS_SNAPSHOT"
+   ],
+   "timeout_seconds": 300,
+   "freshness_requirement": "перед слиянием изменения в области scope, после развёртывания и после каждого слота снимка базиса",
+   "business_rule_reference": "docs/promotions/PROMOTION_PHASE_0_5_DECISION_GATE_2026-09-22.md; решение владельца 2026-09-24 (канон — Forward economics)",
+   "label": "E04_NON_COMPUTABLE_HAS_NO_NUMBERS"
+  },
+  {
+   "check_id": "E05_PRICE_SOURCE_CONTRACT",
+   "suite": "promo_economics",
+   "domain": "promotions",
+   "pipelines": [
+    "promo_econ_basis_wb",
+    "promo_econ_basis_ozon",
+    "wb_promo_observer",
+    "ozon_promo_observer"
+   ],
+   "marketplace": [
+    "WB",
+    "OZON"
+   ],
+   "layer": "mart",
+   "severity": "HIGH",
+   "source_contract": "docs/promotions/PR_PROMO_3_ECONOMICS_INTEGRATION_2026-09-24.md",
+   "source_artifact": "sql/promotions/pr_promo3_economics_validation.sql:72",
+   "adapter": "check_blocks",
+   "execution_mode": "read_only_select",
+   "expected_result": "status=PASS on every row",
+   "owner": "evelagin",
+   "type": "data_contract",
+   "status": "active",
+   "status_reason": null,
+   "gate_relevant": true,
+   "dependencies": [
+    "evetis_mart.V_PROMO_ECONOMICS_COVERAGE_CURRENT",
+    "evetis_mart.V_PROMO_ECONOMICS_SCENARIO_CURRENT",
+    "evetis_mart.V_PROMO_ECONOMICS_SCENARIO_HISTORY",
+    "ozon_mart.V_OZON_PROMO_ECONOMICS_BASIS_HISTORY",
+    "ozon_mart.V_OZON_PROMO_ECONOMICS_SCENARIO_HISTORY",
+    "ozon_mart.V_OZON_SKU_FORWARD_ECONOMICS_CURRENT",
+    "ozon_raw.OZON_PROMO_ECONOMICS_BASIS_SNAPSHOT",
+    "wb_mart.V_WB_PROMO_ECONOMICS_BASIS_HISTORY",
+    "wb_mart.V_WB_PROMO_ECONOMICS_SCENARIO_HISTORY",
+    "wb_mart.V_WB_SKU_FORWARD_ECONOMICS_CURRENT",
+    "wb_raw.WB_PROMO_ECONOMICS_BASIS_SNAPSHOT"
+   ],
+   "timeout_seconds": 300,
+   "freshness_requirement": "перед слиянием изменения в области scope, после развёртывания и после каждого слота снимка базиса",
+   "business_rule_reference": "docs/promotions/PROMOTION_PHASE_0_5_DECISION_GATE_2026-09-22.md; решение владельца 2026-09-24 (канон — Forward economics)",
+   "label": "E05_PRICE_SOURCE_CONTRACT"
+  },
+  {
+   "check_id": "E06_LINKAGE_EVIDENCE",
+   "suite": "promo_economics",
+   "domain": "promotions",
+   "pipelines": [
+    "promo_econ_basis_wb",
+    "promo_econ_basis_ozon",
+    "wb_promo_observer",
+    "ozon_promo_observer"
+   ],
+   "marketplace": [
+    "WB",
+    "OZON"
+   ],
+   "layer": "mart",
+   "severity": "HIGH",
+   "source_contract": "docs/promotions/PR_PROMO_3_ECONOMICS_INTEGRATION_2026-09-24.md",
+   "source_artifact": "sql/promotions/pr_promo3_economics_validation.sql:87",
+   "adapter": "check_blocks",
+   "execution_mode": "read_only_select",
+   "expected_result": "status=PASS on every row",
+   "owner": "evelagin",
+   "type": "data_contract",
+   "status": "active",
+   "status_reason": null,
+   "gate_relevant": true,
+   "dependencies": [
+    "evetis_mart.V_PROMO_ECONOMICS_COVERAGE_CURRENT",
+    "evetis_mart.V_PROMO_ECONOMICS_SCENARIO_CURRENT",
+    "evetis_mart.V_PROMO_ECONOMICS_SCENARIO_HISTORY",
+    "ozon_mart.V_OZON_PROMO_ECONOMICS_BASIS_HISTORY",
+    "ozon_mart.V_OZON_PROMO_ECONOMICS_SCENARIO_HISTORY",
+    "ozon_mart.V_OZON_SKU_FORWARD_ECONOMICS_CURRENT",
+    "ozon_raw.OZON_PROMO_ECONOMICS_BASIS_SNAPSHOT",
+    "wb_mart.V_WB_PROMO_ECONOMICS_BASIS_HISTORY",
+    "wb_mart.V_WB_PROMO_ECONOMICS_SCENARIO_HISTORY",
+    "wb_mart.V_WB_SKU_FORWARD_ECONOMICS_CURRENT",
+    "wb_raw.WB_PROMO_ECONOMICS_BASIS_SNAPSHOT"
+   ],
+   "timeout_seconds": 300,
+   "freshness_requirement": "перед слиянием изменения в области scope, после развёртывания и после каждого слота снимка базиса",
+   "business_rule_reference": "docs/promotions/PROMOTION_PHASE_0_5_DECISION_GATE_2026-09-22.md; решение владельца 2026-09-24 (канон — Forward economics)",
+   "label": "E06_LINKAGE_EVIDENCE"
+  },
+  {
+   "check_id": "E07_NO_SYNTHETIC_WB_SKU",
+   "suite": "promo_economics",
+   "domain": "promotions",
+   "pipelines": [
+    "promo_econ_basis_wb",
+    "promo_econ_basis_ozon",
+    "wb_promo_observer",
+    "ozon_promo_observer"
+   ],
+   "marketplace": [
+    "WB",
+    "OZON"
+   ],
+   "layer": "mart",
+   "severity": "HIGH",
+   "source_contract": "docs/promotions/PR_PROMO_3_ECONOMICS_INTEGRATION_2026-09-24.md",
+   "source_artifact": "sql/promotions/pr_promo3_economics_validation.sql:99",
+   "adapter": "check_blocks",
+   "execution_mode": "read_only_select",
+   "expected_result": "status=PASS on every row",
+   "owner": "evelagin",
+   "type": "data_contract",
+   "status": "active",
+   "status_reason": null,
+   "gate_relevant": true,
+   "dependencies": [
+    "evetis_mart.V_PROMO_ECONOMICS_COVERAGE_CURRENT",
+    "evetis_mart.V_PROMO_ECONOMICS_SCENARIO_CURRENT",
+    "evetis_mart.V_PROMO_ECONOMICS_SCENARIO_HISTORY",
+    "ozon_mart.V_OZON_PROMO_ECONOMICS_BASIS_HISTORY",
+    "ozon_mart.V_OZON_PROMO_ECONOMICS_SCENARIO_HISTORY",
+    "ozon_mart.V_OZON_SKU_FORWARD_ECONOMICS_CURRENT",
+    "ozon_raw.OZON_PROMO_ECONOMICS_BASIS_SNAPSHOT",
+    "wb_mart.V_WB_PROMO_ECONOMICS_BASIS_HISTORY",
+    "wb_mart.V_WB_PROMO_ECONOMICS_SCENARIO_HISTORY",
+    "wb_mart.V_WB_SKU_FORWARD_ECONOMICS_CURRENT",
+    "wb_raw.WB_PROMO_ECONOMICS_BASIS_SNAPSHOT"
+   ],
+   "timeout_seconds": 300,
+   "freshness_requirement": "перед слиянием изменения в области scope, после развёртывания и после каждого слота снимка базиса",
+   "business_rule_reference": "docs/promotions/PROMOTION_PHASE_0_5_DECISION_GATE_2026-09-22.md; решение владельца 2026-09-24 (канон — Forward economics)",
+   "label": "E07_NO_SYNTHETIC_WB_SKU"
+  },
+  {
+   "check_id": "E08_BASELINE_RECONCILES_WITH_CANONICAL",
+   "suite": "promo_economics",
+   "domain": "promotions",
+   "pipelines": [
+    "promo_econ_basis_wb",
+    "promo_econ_basis_ozon",
+    "wb_promo_observer",
+    "ozon_promo_observer"
+   ],
+   "marketplace": [
+    "WB",
+    "OZON"
+   ],
+   "layer": "mart",
+   "severity": "HIGH",
+   "source_contract": "docs/promotions/PR_PROMO_3_ECONOMICS_INTEGRATION_2026-09-24.md",
+   "source_artifact": "sql/promotions/pr_promo3_economics_validation.sql:118",
+   "adapter": "check_blocks",
+   "execution_mode": "read_only_select",
+   "expected_result": "status=PASS on every row",
+   "owner": "evelagin",
+   "type": "data_contract",
+   "status": "active",
+   "status_reason": null,
+   "gate_relevant": true,
+   "dependencies": [
+    "evetis_mart.V_PROMO_ECONOMICS_COVERAGE_CURRENT",
+    "evetis_mart.V_PROMO_ECONOMICS_SCENARIO_CURRENT",
+    "evetis_mart.V_PROMO_ECONOMICS_SCENARIO_HISTORY",
+    "ozon_mart.V_OZON_PROMO_ECONOMICS_BASIS_HISTORY",
+    "ozon_mart.V_OZON_PROMO_ECONOMICS_SCENARIO_HISTORY",
+    "ozon_mart.V_OZON_SKU_FORWARD_ECONOMICS_CURRENT",
+    "ozon_raw.OZON_PROMO_ECONOMICS_BASIS_SNAPSHOT",
+    "wb_mart.V_WB_PROMO_ECONOMICS_BASIS_HISTORY",
+    "wb_mart.V_WB_PROMO_ECONOMICS_SCENARIO_HISTORY",
+    "wb_mart.V_WB_SKU_FORWARD_ECONOMICS_CURRENT",
+    "wb_raw.WB_PROMO_ECONOMICS_BASIS_SNAPSHOT"
+   ],
+   "timeout_seconds": 300,
+   "freshness_requirement": "перед слиянием изменения в области scope, после развёртывания и после каждого слота снимка базиса",
+   "business_rule_reference": "docs/promotions/PROMOTION_PHASE_0_5_DECISION_GATE_2026-09-22.md; решение владельца 2026-09-24 (канон — Forward economics)",
+   "label": "E08_BASELINE_RECONCILES_WITH_CANONICAL"
+  },
+  {
+   "check_id": "E09_DOWNSIDE_RECONCILES_AND_BREAK_EVEN_IS_ROOT",
+   "suite": "promo_economics",
+   "domain": "promotions",
+   "pipelines": [
+    "promo_econ_basis_wb",
+    "promo_econ_basis_ozon",
+    "wb_promo_observer",
+    "ozon_promo_observer"
+   ],
+   "marketplace": [
+    "WB",
+    "OZON"
+   ],
+   "layer": "mart",
+   "severity": "HIGH",
+   "source_contract": "docs/promotions/PR_PROMO_3_ECONOMICS_INTEGRATION_2026-09-24.md",
+   "source_artifact": "sql/promotions/pr_promo3_economics_validation.sql:132",
+   "adapter": "check_blocks",
+   "execution_mode": "read_only_select",
+   "expected_result": "status=PASS on every row",
+   "owner": "evelagin",
+   "type": "data_contract",
+   "status": "active",
+   "status_reason": null,
+   "gate_relevant": true,
+   "dependencies": [
+    "evetis_mart.V_PROMO_ECONOMICS_COVERAGE_CURRENT",
+    "evetis_mart.V_PROMO_ECONOMICS_SCENARIO_CURRENT",
+    "evetis_mart.V_PROMO_ECONOMICS_SCENARIO_HISTORY",
+    "ozon_mart.V_OZON_PROMO_ECONOMICS_BASIS_HISTORY",
+    "ozon_mart.V_OZON_PROMO_ECONOMICS_SCENARIO_HISTORY",
+    "ozon_mart.V_OZON_SKU_FORWARD_ECONOMICS_CURRENT",
+    "ozon_raw.OZON_PROMO_ECONOMICS_BASIS_SNAPSHOT",
+    "wb_mart.V_WB_PROMO_ECONOMICS_BASIS_HISTORY",
+    "wb_mart.V_WB_PROMO_ECONOMICS_SCENARIO_HISTORY",
+    "wb_mart.V_WB_SKU_FORWARD_ECONOMICS_CURRENT",
+    "wb_raw.WB_PROMO_ECONOMICS_BASIS_SNAPSHOT"
+   ],
+   "timeout_seconds": 300,
+   "freshness_requirement": "перед слиянием изменения в области scope, после развёртывания и после каждого слота снимка базиса",
+   "business_rule_reference": "docs/promotions/PROMOTION_PHASE_0_5_DECISION_GATE_2026-09-22.md; решение владельца 2026-09-24 (канон — Forward economics)",
+   "label": "E09_DOWNSIDE_RECONCILES_AND_BREAK_EVEN_IS_ROOT"
+  },
+  {
+   "check_id": "E10_ARITHMETIC_CONSISTENT",
+   "suite": "promo_economics",
+   "domain": "promotions",
+   "pipelines": [
+    "promo_econ_basis_wb",
+    "promo_econ_basis_ozon",
+    "wb_promo_observer",
+    "ozon_promo_observer"
+   ],
+   "marketplace": [
+    "WB",
+    "OZON"
+   ],
+   "layer": "mart",
+   "severity": "HIGH",
+   "source_contract": "docs/promotions/PR_PROMO_3_ECONOMICS_INTEGRATION_2026-09-24.md",
+   "source_artifact": "sql/promotions/pr_promo3_economics_validation.sql:159",
+   "adapter": "check_blocks",
+   "execution_mode": "read_only_select",
+   "expected_result": "status=PASS on every row",
+   "owner": "evelagin",
+   "type": "data_contract",
+   "status": "active",
+   "status_reason": null,
+   "gate_relevant": true,
+   "dependencies": [
+    "evetis_mart.V_PROMO_ECONOMICS_COVERAGE_CURRENT",
+    "evetis_mart.V_PROMO_ECONOMICS_SCENARIO_CURRENT",
+    "evetis_mart.V_PROMO_ECONOMICS_SCENARIO_HISTORY",
+    "ozon_mart.V_OZON_PROMO_ECONOMICS_BASIS_HISTORY",
+    "ozon_mart.V_OZON_PROMO_ECONOMICS_SCENARIO_HISTORY",
+    "ozon_mart.V_OZON_SKU_FORWARD_ECONOMICS_CURRENT",
+    "ozon_raw.OZON_PROMO_ECONOMICS_BASIS_SNAPSHOT",
+    "wb_mart.V_WB_PROMO_ECONOMICS_BASIS_HISTORY",
+    "wb_mart.V_WB_PROMO_ECONOMICS_SCENARIO_HISTORY",
+    "wb_mart.V_WB_SKU_FORWARD_ECONOMICS_CURRENT",
+    "wb_raw.WB_PROMO_ECONOMICS_BASIS_SNAPSHOT"
+   ],
+   "timeout_seconds": 300,
+   "freshness_requirement": "перед слиянием изменения в области scope, после развёртывания и после каждого слота снимка базиса",
+   "business_rule_reference": "docs/promotions/PROMOTION_PHASE_0_5_DECISION_GATE_2026-09-22.md; решение владельца 2026-09-24 (канон — Forward economics)",
+   "label": "E10_ARITHMETIC_CONSISTENT"
+  },
+  {
+   "check_id": "E11_UPLIFT_EDGE_CASES",
+   "suite": "promo_economics",
+   "domain": "promotions",
+   "pipelines": [
+    "promo_econ_basis_wb",
+    "promo_econ_basis_ozon",
+    "wb_promo_observer",
+    "ozon_promo_observer"
+   ],
+   "marketplace": [
+    "WB",
+    "OZON"
+   ],
+   "layer": "mart",
+   "severity": "HIGH",
+   "source_contract": "docs/promotions/PR_PROMO_3_ECONOMICS_INTEGRATION_2026-09-24.md",
+   "source_artifact": "sql/promotions/pr_promo3_economics_validation.sql:181",
+   "adapter": "check_blocks",
+   "execution_mode": "read_only_select",
+   "expected_result": "status=PASS on every row",
+   "owner": "evelagin",
+   "type": "data_contract",
+   "status": "active",
+   "status_reason": null,
+   "gate_relevant": true,
+   "dependencies": [
+    "evetis_mart.V_PROMO_ECONOMICS_COVERAGE_CURRENT",
+    "evetis_mart.V_PROMO_ECONOMICS_SCENARIO_CURRENT",
+    "evetis_mart.V_PROMO_ECONOMICS_SCENARIO_HISTORY",
+    "ozon_mart.V_OZON_PROMO_ECONOMICS_BASIS_HISTORY",
+    "ozon_mart.V_OZON_PROMO_ECONOMICS_SCENARIO_HISTORY",
+    "ozon_mart.V_OZON_SKU_FORWARD_ECONOMICS_CURRENT",
+    "ozon_raw.OZON_PROMO_ECONOMICS_BASIS_SNAPSHOT",
+    "wb_mart.V_WB_PROMO_ECONOMICS_BASIS_HISTORY",
+    "wb_mart.V_WB_PROMO_ECONOMICS_SCENARIO_HISTORY",
+    "wb_mart.V_WB_SKU_FORWARD_ECONOMICS_CURRENT",
+    "wb_raw.WB_PROMO_ECONOMICS_BASIS_SNAPSHOT"
+   ],
+   "timeout_seconds": 300,
+   "freshness_requirement": "перед слиянием изменения в области scope, после развёртывания и после каждого слота снимка базиса",
+   "business_rule_reference": "docs/promotions/PROMOTION_PHASE_0_5_DECISION_GATE_2026-09-22.md; решение владельца 2026-09-24 (канон — Forward economics)",
+   "label": "E11_UPLIFT_EDGE_CASES"
+  },
+  {
+   "check_id": "E12_DOWNSIDE_MARKETPLACE_SPECIFIC",
+   "suite": "promo_economics",
+   "domain": "promotions",
+   "pipelines": [
+    "promo_econ_basis_wb",
+    "promo_econ_basis_ozon",
+    "wb_promo_observer",
+    "ozon_promo_observer"
+   ],
+   "marketplace": [
+    "WB",
+    "OZON"
+   ],
+   "layer": "mart",
+   "severity": "HIGH",
+   "source_contract": "docs/promotions/PR_PROMO_3_ECONOMICS_INTEGRATION_2026-09-24.md",
+   "source_artifact": "sql/promotions/pr_promo3_economics_validation.sql:199",
+   "adapter": "check_blocks",
+   "execution_mode": "read_only_select",
+   "expected_result": "status=PASS on every row",
+   "owner": "evelagin",
+   "type": "data_contract",
+   "status": "active",
+   "status_reason": null,
+   "gate_relevant": true,
+   "dependencies": [
+    "evetis_mart.V_PROMO_ECONOMICS_COVERAGE_CURRENT",
+    "evetis_mart.V_PROMO_ECONOMICS_SCENARIO_CURRENT",
+    "evetis_mart.V_PROMO_ECONOMICS_SCENARIO_HISTORY",
+    "ozon_mart.V_OZON_PROMO_ECONOMICS_BASIS_HISTORY",
+    "ozon_mart.V_OZON_PROMO_ECONOMICS_SCENARIO_HISTORY",
+    "ozon_mart.V_OZON_SKU_FORWARD_ECONOMICS_CURRENT",
+    "ozon_raw.OZON_PROMO_ECONOMICS_BASIS_SNAPSHOT",
+    "wb_mart.V_WB_PROMO_ECONOMICS_BASIS_HISTORY",
+    "wb_mart.V_WB_PROMO_ECONOMICS_SCENARIO_HISTORY",
+    "wb_mart.V_WB_SKU_FORWARD_ECONOMICS_CURRENT",
+    "wb_raw.WB_PROMO_ECONOMICS_BASIS_SNAPSHOT"
+   ],
+   "timeout_seconds": 300,
+   "freshness_requirement": "перед слиянием изменения в области scope, после развёртывания и после каждого слота снимка базиса",
+   "business_rule_reference": "docs/promotions/PROMOTION_PHASE_0_5_DECISION_GATE_2026-09-22.md; решение владельца 2026-09-24 (канон — Forward economics)",
+   "label": "E12_DOWNSIDE_MARKETPLACE_SPECIFIC"
+  },
+  {
+   "check_id": "E13_BASIS_SNAPSHOTS_IMMUTABLE_AND_ALIGNED",
+   "suite": "promo_economics",
+   "domain": "promotions",
+   "pipelines": [
+    "promo_econ_basis_wb",
+    "promo_econ_basis_ozon",
+    "wb_promo_observer",
+    "ozon_promo_observer"
+   ],
+   "marketplace": [
+    "WB",
+    "OZON"
+   ],
+   "layer": "mart",
+   "severity": "HIGH",
+   "source_contract": "docs/promotions/PR_PROMO_3_ECONOMICS_INTEGRATION_2026-09-24.md",
+   "source_artifact": "sql/promotions/pr_promo3_economics_validation.sql:208",
+   "adapter": "check_blocks",
+   "execution_mode": "read_only_select",
+   "expected_result": "status=PASS on every row",
+   "owner": "evelagin",
+   "type": "data_contract",
+   "status": "active",
+   "status_reason": null,
+   "gate_relevant": true,
+   "dependencies": [
+    "evetis_mart.V_PROMO_ECONOMICS_COVERAGE_CURRENT",
+    "evetis_mart.V_PROMO_ECONOMICS_SCENARIO_CURRENT",
+    "evetis_mart.V_PROMO_ECONOMICS_SCENARIO_HISTORY",
+    "ozon_mart.V_OZON_PROMO_ECONOMICS_BASIS_HISTORY",
+    "ozon_mart.V_OZON_PROMO_ECONOMICS_SCENARIO_HISTORY",
+    "ozon_mart.V_OZON_SKU_FORWARD_ECONOMICS_CURRENT",
+    "ozon_raw.OZON_PROMO_ECONOMICS_BASIS_SNAPSHOT",
+    "wb_mart.V_WB_PROMO_ECONOMICS_BASIS_HISTORY",
+    "wb_mart.V_WB_PROMO_ECONOMICS_SCENARIO_HISTORY",
+    "wb_mart.V_WB_SKU_FORWARD_ECONOMICS_CURRENT",
+    "wb_raw.WB_PROMO_ECONOMICS_BASIS_SNAPSHOT"
+   ],
+   "timeout_seconds": 300,
+   "freshness_requirement": "перед слиянием изменения в области scope, после развёртывания и после каждого слота снимка базиса",
+   "business_rule_reference": "docs/promotions/PROMOTION_PHASE_0_5_DECISION_GATE_2026-09-22.md; решение владельца 2026-09-24 (канон — Forward economics)",
+   "label": "E13_BASIS_SNAPSHOTS_IMMUTABLE_AND_ALIGNED"
+  },
+  {
+   "check_id": "E14_ECONOMICS_FROM_SAME_SLOT",
+   "suite": "promo_economics",
+   "domain": "promotions",
+   "pipelines": [
+    "promo_econ_basis_wb",
+    "promo_econ_basis_ozon",
+    "wb_promo_observer",
+    "ozon_promo_observer"
+   ],
+   "marketplace": [
+    "WB",
+    "OZON"
+   ],
+   "layer": "mart",
+   "severity": "HIGH",
+   "source_contract": "docs/promotions/PR_PROMO_3_ECONOMICS_INTEGRATION_2026-09-24.md",
+   "source_artifact": "sql/promotions/pr_promo3_economics_validation.sql:229",
+   "adapter": "check_blocks",
+   "execution_mode": "read_only_select",
+   "expected_result": "status=PASS on every row",
+   "owner": "evelagin",
+   "type": "data_contract",
+   "status": "active",
+   "status_reason": null,
+   "gate_relevant": true,
+   "dependencies": [
+    "evetis_mart.V_PROMO_ECONOMICS_COVERAGE_CURRENT",
+    "evetis_mart.V_PROMO_ECONOMICS_SCENARIO_CURRENT",
+    "evetis_mart.V_PROMO_ECONOMICS_SCENARIO_HISTORY",
+    "ozon_mart.V_OZON_PROMO_ECONOMICS_BASIS_HISTORY",
+    "ozon_mart.V_OZON_PROMO_ECONOMICS_SCENARIO_HISTORY",
+    "ozon_mart.V_OZON_SKU_FORWARD_ECONOMICS_CURRENT",
+    "ozon_raw.OZON_PROMO_ECONOMICS_BASIS_SNAPSHOT",
+    "wb_mart.V_WB_PROMO_ECONOMICS_BASIS_HISTORY",
+    "wb_mart.V_WB_PROMO_ECONOMICS_SCENARIO_HISTORY",
+    "wb_mart.V_WB_SKU_FORWARD_ECONOMICS_CURRENT",
+    "wb_raw.WB_PROMO_ECONOMICS_BASIS_SNAPSHOT"
+   ],
+   "timeout_seconds": 300,
+   "freshness_requirement": "перед слиянием изменения в области scope, после развёртывания и после каждого слота снимка базиса",
+   "business_rule_reference": "docs/promotions/PROMOTION_PHASE_0_5_DECISION_GATE_2026-09-22.md; решение владельца 2026-09-24 (канон — Forward economics)",
+   "label": "E14_ECONOMICS_FROM_SAME_SLOT"
+  },
+  {
+   "check_id": "E15_EVERY_SLOT_SINCE_FIRST_SNAPSHOT_HAS_BASIS",
+   "suite": "promo_economics",
+   "domain": "promotions",
+   "pipelines": [
+    "promo_econ_basis_wb",
+    "promo_econ_basis_ozon",
+    "wb_promo_observer",
+    "ozon_promo_observer"
+   ],
+   "marketplace": [
+    "WB",
+    "OZON"
+   ],
+   "layer": "mart",
+   "severity": "HIGH",
+   "source_contract": "docs/promotions/PR_PROMO_3_ECONOMICS_INTEGRATION_2026-09-24.md",
+   "source_artifact": "sql/promotions/pr_promo3_economics_validation.sql:241",
+   "adapter": "check_blocks",
+   "execution_mode": "read_only_select",
+   "expected_result": "status=PASS on every row",
+   "owner": "evelagin",
+   "type": "data_contract",
+   "status": "active",
+   "status_reason": null,
+   "gate_relevant": true,
+   "dependencies": [
+    "evetis_mart.V_PROMO_ECONOMICS_COVERAGE_CURRENT",
+    "evetis_mart.V_PROMO_ECONOMICS_SCENARIO_CURRENT",
+    "evetis_mart.V_PROMO_ECONOMICS_SCENARIO_HISTORY",
+    "ozon_mart.V_OZON_PROMO_ECONOMICS_BASIS_HISTORY",
+    "ozon_mart.V_OZON_PROMO_ECONOMICS_SCENARIO_HISTORY",
+    "ozon_mart.V_OZON_SKU_FORWARD_ECONOMICS_CURRENT",
+    "ozon_raw.OZON_PROMO_ECONOMICS_BASIS_SNAPSHOT",
+    "wb_mart.V_WB_PROMO_ECONOMICS_BASIS_HISTORY",
+    "wb_mart.V_WB_PROMO_ECONOMICS_SCENARIO_HISTORY",
+    "wb_mart.V_WB_SKU_FORWARD_ECONOMICS_CURRENT",
+    "wb_raw.WB_PROMO_ECONOMICS_BASIS_SNAPSHOT"
+   ],
+   "timeout_seconds": 300,
+   "freshness_requirement": "перед слиянием изменения в области scope, после развёртывания и после каждого слота снимка базиса",
+   "business_rule_reference": "docs/promotions/PROMOTION_PHASE_0_5_DECISION_GATE_2026-09-22.md; решение владельца 2026-09-24 (канон — Forward economics)",
+   "label": "E15_EVERY_SLOT_SINCE_FIRST_SNAPSHOT_HAS_BASIS"
+  },
+  {
+   "check_id": "E16_CURRENT_DERIVED_FROM_HISTORY",
+   "suite": "promo_economics",
+   "domain": "promotions",
+   "pipelines": [
+    "promo_econ_basis_wb",
+    "promo_econ_basis_ozon",
+    "wb_promo_observer",
+    "ozon_promo_observer"
+   ],
+   "marketplace": [
+    "WB",
+    "OZON"
+   ],
+   "layer": "mart",
+   "severity": "HIGH",
+   "source_contract": "docs/promotions/PR_PROMO_3_ECONOMICS_INTEGRATION_2026-09-24.md",
+   "source_artifact": "sql/promotions/pr_promo3_economics_validation.sql:267",
+   "adapter": "check_blocks",
+   "execution_mode": "read_only_select",
+   "expected_result": "status=PASS on every row",
+   "owner": "evelagin",
+   "type": "data_contract",
+   "status": "active",
+   "status_reason": null,
+   "gate_relevant": true,
+   "dependencies": [
+    "evetis_mart.V_PROMO_ECONOMICS_COVERAGE_CURRENT",
+    "evetis_mart.V_PROMO_ECONOMICS_SCENARIO_CURRENT",
+    "evetis_mart.V_PROMO_ECONOMICS_SCENARIO_HISTORY",
+    "ozon_mart.V_OZON_PROMO_ECONOMICS_BASIS_HISTORY",
+    "ozon_mart.V_OZON_PROMO_ECONOMICS_SCENARIO_HISTORY",
+    "ozon_mart.V_OZON_SKU_FORWARD_ECONOMICS_CURRENT",
+    "ozon_raw.OZON_PROMO_ECONOMICS_BASIS_SNAPSHOT",
+    "wb_mart.V_WB_PROMO_ECONOMICS_BASIS_HISTORY",
+    "wb_mart.V_WB_PROMO_ECONOMICS_SCENARIO_HISTORY",
+    "wb_mart.V_WB_SKU_FORWARD_ECONOMICS_CURRENT",
+    "wb_raw.WB_PROMO_ECONOMICS_BASIS_SNAPSHOT"
+   ],
+   "timeout_seconds": 300,
+   "freshness_requirement": "перед слиянием изменения в области scope, после развёртывания и после каждого слота снимка базиса",
+   "business_rule_reference": "docs/promotions/PROMOTION_PHASE_0_5_DECISION_GATE_2026-09-22.md; решение владельца 2026-09-24 (канон — Forward economics)",
+   "label": "E16_CURRENT_DERIVED_FROM_HISTORY"
+  },
+  {
+   "check_id": "E17_OZON_SCENARIOS_COVER_EVIDENCE",
+   "suite": "promo_economics",
+   "domain": "promotions",
+   "pipelines": [
+    "promo_econ_basis_wb",
+    "promo_econ_basis_ozon",
+    "wb_promo_observer",
+    "ozon_promo_observer"
+   ],
+   "marketplace": [
+    "WB",
+    "OZON"
+   ],
+   "layer": "mart",
+   "severity": "HIGH",
+   "source_contract": "docs/promotions/PR_PROMO_3_ECONOMICS_INTEGRATION_2026-09-24.md",
+   "source_artifact": "sql/promotions/pr_promo3_economics_validation.sql:286",
+   "adapter": "check_blocks",
+   "execution_mode": "read_only_select",
+   "expected_result": "status=PASS on every row",
+   "owner": "evelagin",
+   "type": "data_contract",
+   "status": "active",
+   "status_reason": null,
+   "gate_relevant": true,
+   "dependencies": [
+    "evetis_mart.V_PROMO_ECONOMICS_COVERAGE_CURRENT",
+    "evetis_mart.V_PROMO_ECONOMICS_SCENARIO_CURRENT",
+    "evetis_mart.V_PROMO_ECONOMICS_SCENARIO_HISTORY",
+    "ozon_mart.V_OZON_PROMO_ECONOMICS_BASIS_HISTORY",
+    "ozon_mart.V_OZON_PROMO_ECONOMICS_SCENARIO_HISTORY",
+    "ozon_mart.V_OZON_SKU_FORWARD_ECONOMICS_CURRENT",
+    "ozon_raw.OZON_PROMO_ECONOMICS_BASIS_SNAPSHOT",
+    "wb_mart.V_WB_PROMO_ECONOMICS_BASIS_HISTORY",
+    "wb_mart.V_WB_PROMO_ECONOMICS_SCENARIO_HISTORY",
+    "wb_mart.V_WB_SKU_FORWARD_ECONOMICS_CURRENT",
+    "wb_raw.WB_PROMO_ECONOMICS_BASIS_SNAPSHOT"
+   ],
+   "timeout_seconds": 300,
+   "freshness_requirement": "перед слиянием изменения в области scope, после развёртывания и после каждого слота снимка базиса",
+   "business_rule_reference": "docs/promotions/PROMOTION_PHASE_0_5_DECISION_GATE_2026-09-22.md; решение владельца 2026-09-24 (канон — Forward economics)",
+   "label": "E17_OZON_SCENARIOS_COVER_EVIDENCE"
+  },
+  {
+   "check_id": "E18_BASELINE_PRICE_MATCHES_SNAPSHOT",
+   "suite": "promo_economics",
+   "domain": "promotions",
+   "pipelines": [
+    "promo_econ_basis_wb",
+    "promo_econ_basis_ozon",
+    "wb_promo_observer",
+    "ozon_promo_observer"
+   ],
+   "marketplace": [
+    "WB",
+    "OZON"
+   ],
+   "layer": "mart",
+   "severity": "HIGH",
+   "source_contract": "docs/promotions/PR_PROMO_3_ECONOMICS_INTEGRATION_2026-09-24.md",
+   "source_artifact": "sql/promotions/pr_promo3_economics_validation.sql:299",
+   "adapter": "check_blocks",
+   "execution_mode": "read_only_select",
+   "expected_result": "status=PASS on every row",
+   "owner": "evelagin",
+   "type": "data_contract",
+   "status": "active",
+   "status_reason": null,
+   "gate_relevant": true,
+   "dependencies": [
+    "evetis_mart.V_PROMO_ECONOMICS_COVERAGE_CURRENT",
+    "evetis_mart.V_PROMO_ECONOMICS_SCENARIO_CURRENT",
+    "evetis_mart.V_PROMO_ECONOMICS_SCENARIO_HISTORY",
+    "ozon_mart.V_OZON_PROMO_ECONOMICS_BASIS_HISTORY",
+    "ozon_mart.V_OZON_PROMO_ECONOMICS_SCENARIO_HISTORY",
+    "ozon_mart.V_OZON_SKU_FORWARD_ECONOMICS_CURRENT",
+    "ozon_raw.OZON_PROMO_ECONOMICS_BASIS_SNAPSHOT",
+    "wb_mart.V_WB_PROMO_ECONOMICS_BASIS_HISTORY",
+    "wb_mart.V_WB_PROMO_ECONOMICS_SCENARIO_HISTORY",
+    "wb_mart.V_WB_SKU_FORWARD_ECONOMICS_CURRENT",
+    "wb_raw.WB_PROMO_ECONOMICS_BASIS_SNAPSHOT"
+   ],
+   "timeout_seconds": 300,
+   "freshness_requirement": "перед слиянием изменения в области scope, после развёртывания и после каждого слота снимка базиса",
+   "business_rule_reference": "docs/promotions/PROMOTION_PHASE_0_5_DECISION_GATE_2026-09-22.md; решение владельца 2026-09-24 (канон — Forward economics)",
+   "label": "E18_BASELINE_PRICE_MATCHES_SNAPSHOT"
+  },
+  {
+   "check_id": "E19_NO_RECOMMENDATION_VALUES",
+   "suite": "promo_economics",
+   "domain": "promotions",
+   "pipelines": [
+    "promo_econ_basis_wb",
+    "promo_econ_basis_ozon",
+    "wb_promo_observer",
+    "ozon_promo_observer"
+   ],
+   "marketplace": [
+    "WB",
+    "OZON"
+   ],
+   "layer": "mart",
+   "severity": "HIGH",
+   "source_contract": "docs/promotions/PR_PROMO_3_ECONOMICS_INTEGRATION_2026-09-24.md",
+   "source_artifact": "sql/promotions/pr_promo3_economics_validation.sql:308",
+   "adapter": "check_blocks",
+   "execution_mode": "read_only_select",
+   "expected_result": "status=PASS on every row",
+   "owner": "evelagin",
+   "type": "data_contract",
+   "status": "active",
+   "status_reason": null,
+   "gate_relevant": true,
+   "dependencies": [
+    "evetis_mart.V_PROMO_ECONOMICS_COVERAGE_CURRENT",
+    "evetis_mart.V_PROMO_ECONOMICS_SCENARIO_CURRENT",
+    "evetis_mart.V_PROMO_ECONOMICS_SCENARIO_HISTORY",
+    "ozon_mart.V_OZON_PROMO_ECONOMICS_BASIS_HISTORY",
+    "ozon_mart.V_OZON_PROMO_ECONOMICS_SCENARIO_HISTORY",
+    "ozon_mart.V_OZON_SKU_FORWARD_ECONOMICS_CURRENT",
+    "ozon_raw.OZON_PROMO_ECONOMICS_BASIS_SNAPSHOT",
+    "wb_mart.V_WB_PROMO_ECONOMICS_BASIS_HISTORY",
+    "wb_mart.V_WB_PROMO_ECONOMICS_SCENARIO_HISTORY",
+    "wb_mart.V_WB_SKU_FORWARD_ECONOMICS_CURRENT",
+    "wb_raw.WB_PROMO_ECONOMICS_BASIS_SNAPSHOT"
+   ],
+   "timeout_seconds": 300,
+   "freshness_requirement": "перед слиянием изменения в области scope, после развёртывания и после каждого слота снимка базиса",
+   "business_rule_reference": "docs/promotions/PROMOTION_PHASE_0_5_DECISION_GATE_2026-09-22.md; решение владельца 2026-09-24 (канон — Forward economics)",
+   "label": "E19_NO_RECOMMENDATION_VALUES"
+  },
+  {
+   "check_id": "E20_NO_PII_NO_DECISION_COLUMNS",
+   "suite": "promo_economics",
+   "domain": "promotions",
+   "pipelines": [
+    "promo_econ_basis_wb",
+    "promo_econ_basis_ozon",
+    "wb_promo_observer",
+    "ozon_promo_observer"
+   ],
+   "marketplace": [
+    "WB",
+    "OZON"
+   ],
+   "layer": "mart",
+   "severity": "HIGH",
+   "source_contract": "docs/promotions/PR_PROMO_3_ECONOMICS_INTEGRATION_2026-09-24.md",
+   "source_artifact": "sql/promotions/pr_promo3_economics_validation.sql:319",
+   "adapter": "check_blocks",
+   "execution_mode": "read_only_select",
+   "expected_result": "status=PASS on every row",
+   "owner": "evelagin",
+   "type": "data_contract",
+   "status": "active",
+   "status_reason": null,
+   "gate_relevant": true,
+   "dependencies": [
+    "evetis_mart.V_PROMO_ECONOMICS_COVERAGE_CURRENT",
+    "evetis_mart.V_PROMO_ECONOMICS_SCENARIO_CURRENT",
+    "evetis_mart.V_PROMO_ECONOMICS_SCENARIO_HISTORY",
+    "ozon_mart.V_OZON_PROMO_ECONOMICS_BASIS_HISTORY",
+    "ozon_mart.V_OZON_PROMO_ECONOMICS_SCENARIO_HISTORY",
+    "ozon_mart.V_OZON_SKU_FORWARD_ECONOMICS_CURRENT",
+    "ozon_raw.OZON_PROMO_ECONOMICS_BASIS_SNAPSHOT",
+    "wb_mart.V_WB_PROMO_ECONOMICS_BASIS_HISTORY",
+    "wb_mart.V_WB_PROMO_ECONOMICS_SCENARIO_HISTORY",
+    "wb_mart.V_WB_SKU_FORWARD_ECONOMICS_CURRENT",
+    "wb_raw.WB_PROMO_ECONOMICS_BASIS_SNAPSHOT"
+   ],
+   "timeout_seconds": 300,
+   "freshness_requirement": "перед слиянием изменения в области scope, после развёртывания и после каждого слота снимка базиса",
+   "business_rule_reference": "docs/promotions/PROMOTION_PHASE_0_5_DECISION_GATE_2026-09-22.md; решение владельца 2026-09-24 (канон — Forward economics)",
+   "label": "E20_NO_PII_NO_DECISION_COLUMNS"
   },
   {
    "check_id": "P01_FIXTURE_TRACEABLE_RAW_TO_NEUTRAL",
@@ -10110,6 +11034,126 @@
     "ozon_postings"
    ]
   },
+  "evetis_mart.V_PROMO_ECONOMICS_COVERAGE_CURRENT": {
+   "exists_in_production": false,
+   "object_type": null,
+   "layer": null,
+   "domain": null,
+   "contracts": [
+    "promo_economics"
+   ],
+   "checks": [
+    "E01_GRAIN_HISTORY",
+    "E02B_GRAIN_COVERAGE",
+    "E02_GRAIN_CURRENT",
+    "E03_COMPUTABLE_PRECONDITIONS",
+    "E04_NON_COMPUTABLE_HAS_NO_NUMBERS",
+    "E05_PRICE_SOURCE_CONTRACT",
+    "E06_LINKAGE_EVIDENCE",
+    "E07_NO_SYNTHETIC_WB_SKU",
+    "E08_BASELINE_RECONCILES_WITH_CANONICAL",
+    "E09_DOWNSIDE_RECONCILES_AND_BREAK_EVEN_IS_ROOT",
+    "E10_ARITHMETIC_CONSISTENT",
+    "E11_UPLIFT_EDGE_CASES",
+    "E12_DOWNSIDE_MARKETPLACE_SPECIFIC",
+    "E13_BASIS_SNAPSHOTS_IMMUTABLE_AND_ALIGNED",
+    "E14_ECONOMICS_FROM_SAME_SLOT",
+    "E15_EVERY_SLOT_SINCE_FIRST_SNAPSHOT_HAS_BASIS",
+    "E16_CURRENT_DERIVED_FROM_HISTORY",
+    "E17_OZON_SCENARIOS_COVER_EVIDENCE",
+    "E18_BASELINE_PRICE_MATCHES_SNAPSHOT",
+    "E19_NO_RECOMMENDATION_VALUES",
+    "E20_NO_PII_NO_DECISION_COLUMNS"
+   ],
+   "direct_consumers": [],
+   "transitive_consumers": [],
+   "pipelines": [
+    "ozon_promo_observer",
+    "promo_econ_basis_ozon",
+    "promo_econ_basis_wb",
+    "wb_promo_observer"
+   ]
+  },
+  "evetis_mart.V_PROMO_ECONOMICS_SCENARIO_CURRENT": {
+   "exists_in_production": false,
+   "object_type": null,
+   "layer": null,
+   "domain": null,
+   "contracts": [
+    "promo_economics"
+   ],
+   "checks": [
+    "E01_GRAIN_HISTORY",
+    "E02B_GRAIN_COVERAGE",
+    "E02_GRAIN_CURRENT",
+    "E03_COMPUTABLE_PRECONDITIONS",
+    "E04_NON_COMPUTABLE_HAS_NO_NUMBERS",
+    "E05_PRICE_SOURCE_CONTRACT",
+    "E06_LINKAGE_EVIDENCE",
+    "E07_NO_SYNTHETIC_WB_SKU",
+    "E08_BASELINE_RECONCILES_WITH_CANONICAL",
+    "E09_DOWNSIDE_RECONCILES_AND_BREAK_EVEN_IS_ROOT",
+    "E10_ARITHMETIC_CONSISTENT",
+    "E11_UPLIFT_EDGE_CASES",
+    "E12_DOWNSIDE_MARKETPLACE_SPECIFIC",
+    "E13_BASIS_SNAPSHOTS_IMMUTABLE_AND_ALIGNED",
+    "E14_ECONOMICS_FROM_SAME_SLOT",
+    "E15_EVERY_SLOT_SINCE_FIRST_SNAPSHOT_HAS_BASIS",
+    "E16_CURRENT_DERIVED_FROM_HISTORY",
+    "E17_OZON_SCENARIOS_COVER_EVIDENCE",
+    "E18_BASELINE_PRICE_MATCHES_SNAPSHOT",
+    "E19_NO_RECOMMENDATION_VALUES",
+    "E20_NO_PII_NO_DECISION_COLUMNS"
+   ],
+   "direct_consumers": [],
+   "transitive_consumers": [],
+   "pipelines": [
+    "ozon_promo_observer",
+    "promo_econ_basis_ozon",
+    "promo_econ_basis_wb",
+    "wb_promo_observer"
+   ]
+  },
+  "evetis_mart.V_PROMO_ECONOMICS_SCENARIO_HISTORY": {
+   "exists_in_production": false,
+   "object_type": null,
+   "layer": null,
+   "domain": null,
+   "contracts": [
+    "promo_economics"
+   ],
+   "checks": [
+    "E01_GRAIN_HISTORY",
+    "E02B_GRAIN_COVERAGE",
+    "E02_GRAIN_CURRENT",
+    "E03_COMPUTABLE_PRECONDITIONS",
+    "E04_NON_COMPUTABLE_HAS_NO_NUMBERS",
+    "E05_PRICE_SOURCE_CONTRACT",
+    "E06_LINKAGE_EVIDENCE",
+    "E07_NO_SYNTHETIC_WB_SKU",
+    "E08_BASELINE_RECONCILES_WITH_CANONICAL",
+    "E09_DOWNSIDE_RECONCILES_AND_BREAK_EVEN_IS_ROOT",
+    "E10_ARITHMETIC_CONSISTENT",
+    "E11_UPLIFT_EDGE_CASES",
+    "E12_DOWNSIDE_MARKETPLACE_SPECIFIC",
+    "E13_BASIS_SNAPSHOTS_IMMUTABLE_AND_ALIGNED",
+    "E14_ECONOMICS_FROM_SAME_SLOT",
+    "E15_EVERY_SLOT_SINCE_FIRST_SNAPSHOT_HAS_BASIS",
+    "E16_CURRENT_DERIVED_FROM_HISTORY",
+    "E17_OZON_SCENARIOS_COVER_EVIDENCE",
+    "E18_BASELINE_PRICE_MATCHES_SNAPSHOT",
+    "E19_NO_RECOMMENDATION_VALUES",
+    "E20_NO_PII_NO_DECISION_COLUMNS"
+   ],
+   "direct_consumers": [],
+   "transitive_consumers": [],
+   "pipelines": [
+    "ozon_promo_observer",
+    "promo_econ_basis_ozon",
+    "promo_econ_basis_wb",
+    "wb_promo_observer"
+   ]
+  },
   "evetis_mart.V_PROMO_OBSERVABILITY_CURRENT": {
    "exists_in_production": false,
    "object_type": null,
@@ -10689,6 +11733,86 @@
     "mart"
    ]
   },
+  "ozon_mart.V_OZON_PROMO_ECONOMICS_BASIS_HISTORY": {
+   "exists_in_production": false,
+   "object_type": null,
+   "layer": null,
+   "domain": null,
+   "contracts": [
+    "promo_economics"
+   ],
+   "checks": [
+    "E01_GRAIN_HISTORY",
+    "E02B_GRAIN_COVERAGE",
+    "E02_GRAIN_CURRENT",
+    "E03_COMPUTABLE_PRECONDITIONS",
+    "E04_NON_COMPUTABLE_HAS_NO_NUMBERS",
+    "E05_PRICE_SOURCE_CONTRACT",
+    "E06_LINKAGE_EVIDENCE",
+    "E07_NO_SYNTHETIC_WB_SKU",
+    "E08_BASELINE_RECONCILES_WITH_CANONICAL",
+    "E09_DOWNSIDE_RECONCILES_AND_BREAK_EVEN_IS_ROOT",
+    "E10_ARITHMETIC_CONSISTENT",
+    "E11_UPLIFT_EDGE_CASES",
+    "E12_DOWNSIDE_MARKETPLACE_SPECIFIC",
+    "E13_BASIS_SNAPSHOTS_IMMUTABLE_AND_ALIGNED",
+    "E14_ECONOMICS_FROM_SAME_SLOT",
+    "E15_EVERY_SLOT_SINCE_FIRST_SNAPSHOT_HAS_BASIS",
+    "E16_CURRENT_DERIVED_FROM_HISTORY",
+    "E17_OZON_SCENARIOS_COVER_EVIDENCE",
+    "E18_BASELINE_PRICE_MATCHES_SNAPSHOT",
+    "E19_NO_RECOMMENDATION_VALUES",
+    "E20_NO_PII_NO_DECISION_COLUMNS"
+   ],
+   "direct_consumers": [],
+   "transitive_consumers": [],
+   "pipelines": [
+    "ozon_promo_observer",
+    "promo_econ_basis_ozon",
+    "promo_econ_basis_wb",
+    "wb_promo_observer"
+   ]
+  },
+  "ozon_mart.V_OZON_PROMO_ECONOMICS_SCENARIO_HISTORY": {
+   "exists_in_production": false,
+   "object_type": null,
+   "layer": null,
+   "domain": null,
+   "contracts": [
+    "promo_economics"
+   ],
+   "checks": [
+    "E01_GRAIN_HISTORY",
+    "E02B_GRAIN_COVERAGE",
+    "E02_GRAIN_CURRENT",
+    "E03_COMPUTABLE_PRECONDITIONS",
+    "E04_NON_COMPUTABLE_HAS_NO_NUMBERS",
+    "E05_PRICE_SOURCE_CONTRACT",
+    "E06_LINKAGE_EVIDENCE",
+    "E07_NO_SYNTHETIC_WB_SKU",
+    "E08_BASELINE_RECONCILES_WITH_CANONICAL",
+    "E09_DOWNSIDE_RECONCILES_AND_BREAK_EVEN_IS_ROOT",
+    "E10_ARITHMETIC_CONSISTENT",
+    "E11_UPLIFT_EDGE_CASES",
+    "E12_DOWNSIDE_MARKETPLACE_SPECIFIC",
+    "E13_BASIS_SNAPSHOTS_IMMUTABLE_AND_ALIGNED",
+    "E14_ECONOMICS_FROM_SAME_SLOT",
+    "E15_EVERY_SLOT_SINCE_FIRST_SNAPSHOT_HAS_BASIS",
+    "E16_CURRENT_DERIVED_FROM_HISTORY",
+    "E17_OZON_SCENARIOS_COVER_EVIDENCE",
+    "E18_BASELINE_PRICE_MATCHES_SNAPSHOT",
+    "E19_NO_RECOMMENDATION_VALUES",
+    "E20_NO_PII_NO_DECISION_COLUMNS"
+   ],
+   "direct_consumers": [],
+   "transitive_consumers": [],
+   "pipelines": [
+    "ozon_promo_observer",
+    "promo_econ_basis_ozon",
+    "promo_econ_basis_wb",
+    "wb_promo_observer"
+   ]
+  },
   "ozon_mart.V_OZON_PROMO_HISTORY": {
    "exists_in_production": false,
    "object_type": null,
@@ -10850,6 +11974,92 @@
    "transitive_consumers": [],
    "pipelines": [
     "ozon_promo_observer",
+    "wb_promo_observer"
+   ]
+  },
+  "ozon_mart.V_OZON_SKU_FORWARD_ECONOMICS_CURRENT": {
+   "exists_in_production": true,
+   "object_type": "VIEW",
+   "layer": "semantic",
+   "domain": "ozon",
+   "contracts": [
+    "promo_economics"
+   ],
+   "checks": [
+    "E01_GRAIN_HISTORY",
+    "E02B_GRAIN_COVERAGE",
+    "E02_GRAIN_CURRENT",
+    "E03_COMPUTABLE_PRECONDITIONS",
+    "E04_NON_COMPUTABLE_HAS_NO_NUMBERS",
+    "E05_PRICE_SOURCE_CONTRACT",
+    "E06_LINKAGE_EVIDENCE",
+    "E07_NO_SYNTHETIC_WB_SKU",
+    "E08_BASELINE_RECONCILES_WITH_CANONICAL",
+    "E09_DOWNSIDE_RECONCILES_AND_BREAK_EVEN_IS_ROOT",
+    "E10_ARITHMETIC_CONSISTENT",
+    "E11_UPLIFT_EDGE_CASES",
+    "E12_DOWNSIDE_MARKETPLACE_SPECIFIC",
+    "E13_BASIS_SNAPSHOTS_IMMUTABLE_AND_ALIGNED",
+    "E14_ECONOMICS_FROM_SAME_SLOT",
+    "E15_EVERY_SLOT_SINCE_FIRST_SNAPSHOT_HAS_BASIS",
+    "E16_CURRENT_DERIVED_FROM_HISTORY",
+    "E17_OZON_SCENARIOS_COVER_EVIDENCE",
+    "E18_BASELINE_PRICE_MATCHES_SNAPSHOT",
+    "E19_NO_RECOMMENDATION_VALUES",
+    "E20_NO_PII_NO_DECISION_COLUMNS"
+   ],
+   "direct_consumers": [
+    "ozon_mart.V_OZON_AGENT_DECISION_INPUT",
+    "ozon_mart.V_OZON_SKU_FBO_FBS_COMPARISON_CURRENT"
+   ],
+   "transitive_consumers": [
+    "ozon_mart.V_OZON_AGENT_DECISION_INPUT",
+    "ozon_mart.V_OZON_SKU_FBO_FBS_COMPARISON_CURRENT"
+   ],
+   "pipelines": [
+    "ozon_promo_observer",
+    "promo_econ_basis_ozon",
+    "promo_econ_basis_wb",
+    "wb_promo_observer"
+   ]
+  },
+  "ozon_raw.OZON_PROMO_ECONOMICS_BASIS_SNAPSHOT": {
+   "exists_in_production": false,
+   "object_type": null,
+   "layer": null,
+   "domain": null,
+   "contracts": [
+    "promo_economics"
+   ],
+   "checks": [
+    "E01_GRAIN_HISTORY",
+    "E02B_GRAIN_COVERAGE",
+    "E02_GRAIN_CURRENT",
+    "E03_COMPUTABLE_PRECONDITIONS",
+    "E04_NON_COMPUTABLE_HAS_NO_NUMBERS",
+    "E05_PRICE_SOURCE_CONTRACT",
+    "E06_LINKAGE_EVIDENCE",
+    "E07_NO_SYNTHETIC_WB_SKU",
+    "E08_BASELINE_RECONCILES_WITH_CANONICAL",
+    "E09_DOWNSIDE_RECONCILES_AND_BREAK_EVEN_IS_ROOT",
+    "E10_ARITHMETIC_CONSISTENT",
+    "E11_UPLIFT_EDGE_CASES",
+    "E12_DOWNSIDE_MARKETPLACE_SPECIFIC",
+    "E13_BASIS_SNAPSHOTS_IMMUTABLE_AND_ALIGNED",
+    "E14_ECONOMICS_FROM_SAME_SLOT",
+    "E15_EVERY_SLOT_SINCE_FIRST_SNAPSHOT_HAS_BASIS",
+    "E16_CURRENT_DERIVED_FROM_HISTORY",
+    "E17_OZON_SCENARIOS_COVER_EVIDENCE",
+    "E18_BASELINE_PRICE_MATCHES_SNAPSHOT",
+    "E19_NO_RECOMMENDATION_VALUES",
+    "E20_NO_PII_NO_DECISION_COLUMNS"
+   ],
+   "direct_consumers": [],
+   "transitive_consumers": [],
+   "pipelines": [
+    "ozon_promo_observer",
+    "promo_econ_basis_ozon",
+    "promo_econ_basis_wb",
     "wb_promo_observer"
    ]
   },
@@ -12371,6 +13581,86 @@
     "mart"
    ]
   },
+  "wb_mart.V_WB_PROMO_ECONOMICS_BASIS_HISTORY": {
+   "exists_in_production": false,
+   "object_type": null,
+   "layer": null,
+   "domain": null,
+   "contracts": [
+    "promo_economics"
+   ],
+   "checks": [
+    "E01_GRAIN_HISTORY",
+    "E02B_GRAIN_COVERAGE",
+    "E02_GRAIN_CURRENT",
+    "E03_COMPUTABLE_PRECONDITIONS",
+    "E04_NON_COMPUTABLE_HAS_NO_NUMBERS",
+    "E05_PRICE_SOURCE_CONTRACT",
+    "E06_LINKAGE_EVIDENCE",
+    "E07_NO_SYNTHETIC_WB_SKU",
+    "E08_BASELINE_RECONCILES_WITH_CANONICAL",
+    "E09_DOWNSIDE_RECONCILES_AND_BREAK_EVEN_IS_ROOT",
+    "E10_ARITHMETIC_CONSISTENT",
+    "E11_UPLIFT_EDGE_CASES",
+    "E12_DOWNSIDE_MARKETPLACE_SPECIFIC",
+    "E13_BASIS_SNAPSHOTS_IMMUTABLE_AND_ALIGNED",
+    "E14_ECONOMICS_FROM_SAME_SLOT",
+    "E15_EVERY_SLOT_SINCE_FIRST_SNAPSHOT_HAS_BASIS",
+    "E16_CURRENT_DERIVED_FROM_HISTORY",
+    "E17_OZON_SCENARIOS_COVER_EVIDENCE",
+    "E18_BASELINE_PRICE_MATCHES_SNAPSHOT",
+    "E19_NO_RECOMMENDATION_VALUES",
+    "E20_NO_PII_NO_DECISION_COLUMNS"
+   ],
+   "direct_consumers": [],
+   "transitive_consumers": [],
+   "pipelines": [
+    "ozon_promo_observer",
+    "promo_econ_basis_ozon",
+    "promo_econ_basis_wb",
+    "wb_promo_observer"
+   ]
+  },
+  "wb_mart.V_WB_PROMO_ECONOMICS_SCENARIO_HISTORY": {
+   "exists_in_production": false,
+   "object_type": null,
+   "layer": null,
+   "domain": null,
+   "contracts": [
+    "promo_economics"
+   ],
+   "checks": [
+    "E01_GRAIN_HISTORY",
+    "E02B_GRAIN_COVERAGE",
+    "E02_GRAIN_CURRENT",
+    "E03_COMPUTABLE_PRECONDITIONS",
+    "E04_NON_COMPUTABLE_HAS_NO_NUMBERS",
+    "E05_PRICE_SOURCE_CONTRACT",
+    "E06_LINKAGE_EVIDENCE",
+    "E07_NO_SYNTHETIC_WB_SKU",
+    "E08_BASELINE_RECONCILES_WITH_CANONICAL",
+    "E09_DOWNSIDE_RECONCILES_AND_BREAK_EVEN_IS_ROOT",
+    "E10_ARITHMETIC_CONSISTENT",
+    "E11_UPLIFT_EDGE_CASES",
+    "E12_DOWNSIDE_MARKETPLACE_SPECIFIC",
+    "E13_BASIS_SNAPSHOTS_IMMUTABLE_AND_ALIGNED",
+    "E14_ECONOMICS_FROM_SAME_SLOT",
+    "E15_EVERY_SLOT_SINCE_FIRST_SNAPSHOT_HAS_BASIS",
+    "E16_CURRENT_DERIVED_FROM_HISTORY",
+    "E17_OZON_SCENARIOS_COVER_EVIDENCE",
+    "E18_BASELINE_PRICE_MATCHES_SNAPSHOT",
+    "E19_NO_RECOMMENDATION_VALUES",
+    "E20_NO_PII_NO_DECISION_COLUMNS"
+   ],
+   "direct_consumers": [],
+   "transitive_consumers": [],
+   "pipelines": [
+    "ozon_promo_observer",
+    "promo_econ_basis_ozon",
+    "promo_econ_basis_wb",
+    "wb_promo_observer"
+   ]
+  },
   "wb_mart.V_WB_PROMO_HISTORY": {
    "exists_in_production": false,
    "object_type": null,
@@ -12573,6 +13863,50 @@
    "transitive_consumers": [],
    "pipelines": [
     "ozon_promo_observer",
+    "wb_promo_observer"
+   ]
+  },
+  "wb_mart.V_WB_SKU_FORWARD_ECONOMICS_CURRENT": {
+   "exists_in_production": true,
+   "object_type": "VIEW",
+   "layer": "semantic",
+   "domain": "wb",
+   "contracts": [
+    "promo_economics"
+   ],
+   "checks": [
+    "E01_GRAIN_HISTORY",
+    "E02B_GRAIN_COVERAGE",
+    "E02_GRAIN_CURRENT",
+    "E03_COMPUTABLE_PRECONDITIONS",
+    "E04_NON_COMPUTABLE_HAS_NO_NUMBERS",
+    "E05_PRICE_SOURCE_CONTRACT",
+    "E06_LINKAGE_EVIDENCE",
+    "E07_NO_SYNTHETIC_WB_SKU",
+    "E08_BASELINE_RECONCILES_WITH_CANONICAL",
+    "E09_DOWNSIDE_RECONCILES_AND_BREAK_EVEN_IS_ROOT",
+    "E10_ARITHMETIC_CONSISTENT",
+    "E11_UPLIFT_EDGE_CASES",
+    "E12_DOWNSIDE_MARKETPLACE_SPECIFIC",
+    "E13_BASIS_SNAPSHOTS_IMMUTABLE_AND_ALIGNED",
+    "E14_ECONOMICS_FROM_SAME_SLOT",
+    "E15_EVERY_SLOT_SINCE_FIRST_SNAPSHOT_HAS_BASIS",
+    "E16_CURRENT_DERIVED_FROM_HISTORY",
+    "E17_OZON_SCENARIOS_COVER_EVIDENCE",
+    "E18_BASELINE_PRICE_MATCHES_SNAPSHOT",
+    "E19_NO_RECOMMENDATION_VALUES",
+    "E20_NO_PII_NO_DECISION_COLUMNS"
+   ],
+   "direct_consumers": [
+    "wb_mart.V_WB_PRICING_ECONOMICS_HEALTH"
+   ],
+   "transitive_consumers": [
+    "wb_mart.V_WB_PRICING_ECONOMICS_HEALTH"
+   ],
+   "pipelines": [
+    "ozon_promo_observer",
+    "promo_econ_basis_ozon",
+    "promo_econ_basis_wb",
     "wb_promo_observer"
    ]
   },
@@ -12850,6 +14184,46 @@
     "stocks_snapshot"
    ]
   },
+  "wb_raw.WB_PROMO_ECONOMICS_BASIS_SNAPSHOT": {
+   "exists_in_production": false,
+   "object_type": null,
+   "layer": null,
+   "domain": null,
+   "contracts": [
+    "promo_economics"
+   ],
+   "checks": [
+    "E01_GRAIN_HISTORY",
+    "E02B_GRAIN_COVERAGE",
+    "E02_GRAIN_CURRENT",
+    "E03_COMPUTABLE_PRECONDITIONS",
+    "E04_NON_COMPUTABLE_HAS_NO_NUMBERS",
+    "E05_PRICE_SOURCE_CONTRACT",
+    "E06_LINKAGE_EVIDENCE",
+    "E07_NO_SYNTHETIC_WB_SKU",
+    "E08_BASELINE_RECONCILES_WITH_CANONICAL",
+    "E09_DOWNSIDE_RECONCILES_AND_BREAK_EVEN_IS_ROOT",
+    "E10_ARITHMETIC_CONSISTENT",
+    "E11_UPLIFT_EDGE_CASES",
+    "E12_DOWNSIDE_MARKETPLACE_SPECIFIC",
+    "E13_BASIS_SNAPSHOTS_IMMUTABLE_AND_ALIGNED",
+    "E14_ECONOMICS_FROM_SAME_SLOT",
+    "E15_EVERY_SLOT_SINCE_FIRST_SNAPSHOT_HAS_BASIS",
+    "E16_CURRENT_DERIVED_FROM_HISTORY",
+    "E17_OZON_SCENARIOS_COVER_EVIDENCE",
+    "E18_BASELINE_PRICE_MATCHES_SNAPSHOT",
+    "E19_NO_RECOMMENDATION_VALUES",
+    "E20_NO_PII_NO_DECISION_COLUMNS"
+   ],
+   "direct_consumers": [],
+   "transitive_consumers": [],
+   "pipelines": [
+    "ozon_promo_observer",
+    "promo_econ_basis_ozon",
+    "promo_econ_basis_wb",
+    "wb_promo_observer"
+   ]
+  },
   "wb_raw.WB_PROMO_OBSERVATIONS": {
    "exists_in_production": false,
    "object_type": null,
@@ -12916,7 +14290,6 @@
    "ozon_mart.V_OZON_LOGISTICS_ESTIMATOR",
    "ozon_mart.V_OZON_MART_FRESHNESS",
    "ozon_mart.V_OZON_SKU_CURRENT_TARIFF",
-   "ozon_mart.V_OZON_SKU_FORWARD_ECONOMICS_CURRENT",
    "ozon_mart.V_OZON_TARIFF_SOURCE_HEALTH",
    "wb_mart.V_ADS_FUNNEL_QUERY_28D",
    "wb_mart.V_ADS_FUNNEL_QUERY_90D",
@@ -12948,7 +14321,6 @@
    "wb_mart.V_UNITKA_SOURCE_FRESHNESS",
    "wb_mart.V_WB_FINANCE_AMOUNTS_LONG",
    "wb_mart.V_WB_SKU_COST_INPUTS",
-   "wb_mart.V_WB_SKU_FORWARD_ECONOMICS_CURRENT",
    "wb_mart.V_WB_SUPPLIES_DETAIL",
    "wb_raw.REF_SKU_MASTER",
    "wb_raw.V_ADV_CAMPAIGN_CONFIG_DAILY",
@@ -12970,7 +14342,7 @@
    "wb_raw.V_WB_SUPPLIES_GOODS_CURRENT",
    "wb_raw.V_WB_TARIFFS_CURRENT"
   ],
-  "count": 74
+  "count": 72
  },
  "unresolved_business_rules": [
   {

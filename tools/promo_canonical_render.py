@@ -89,61 +89,65 @@ REF_SKU_CHANNEL_MAP_SCHEMA: list[tuple[str, str]] = [
 REF_RE = re.compile(r"`" + re.escape(PROJECT) + r"\.([A-Za-z_][A-Za-z0-9_]*)\.([A-Za-z_][A-Za-z0-9_]*)`")
 
 
-def object_path(dataset: str, name: str) -> Path:
-    for ds, obj, folder in OBJECTS:
+def object_path(dataset: str, name: str, objects=None) -> Path:
+    for ds, obj, folder in (objects or OBJECTS):
         if ds == dataset and obj == name:
             return ROOT / folder / f"{obj}.sql"
     raise KeyError(f"{dataset}.{name}")
 
 
-def view_body(dataset: str, name: str) -> str:
+def view_body(dataset: str, name: str, objects=None) -> str:
     """Тело представления: текст после строки `AS` оператора CREATE OR REPLACE VIEW."""
-    sql = object_path(dataset, name).read_text(encoding="utf-8")
+    sql = object_path(dataset, name, objects).read_text(encoding="utf-8")
     head, sep, body = sql.partition("\nAS\n")
     if not sep or "CREATE OR REPLACE VIEW" not in head:
-        raise SystemExit(f"cannot locate the view body in {object_path(dataset, name)}")
+        raise SystemExit(f"cannot locate the view body in {object_path(dataset, name, objects)}")
     return body.strip().rstrip(";").strip()
 
 
-def cte_name(dataset: str, name: str) -> str:
-    return f"{'fx' if (dataset, name) in RAW_TABLES else 'v'}__{dataset}__{name}"
+def cte_name(dataset: str, name: str, raw_tables=None) -> str:
+    return f"{'fx' if (dataset, name) in (raw_tables or RAW_TABLES) else 'v'}__{dataset}__{name}"
 
 
-def _replace_refs(sql: str, replace_raw: bool) -> tuple[str, set[tuple[str, str]]]:
+def _replace_refs(sql: str, replace_raw: bool, objects=None, raw_tables=None) -> tuple[str, set[tuple[str, str]]]:
     """Заменить ссылки на объекты слоя (и, по флагу, на RAW) именами CTE."""
     used: set[tuple[str, str]] = set()
-    objects = {(d, n) for d, n, _ in OBJECTS}
+    raw_tables = raw_tables or RAW_TABLES
+    keys = {(d, n) for d, n, _ in (objects or OBJECTS)}
 
     def sub(m: re.Match) -> str:
         key = (m.group(1), m.group(2))
-        if key in objects or (replace_raw and key in RAW_TABLES):
+        if key in keys or (replace_raw and key in raw_tables):
             used.add(key)
-            return cte_name(*key)
+            return cte_name(*key, raw_tables=raw_tables)
         return m.group(0)
 
     return REF_RE.sub(sub, sql), used
 
 
-def view_ctes(needed: set[tuple[str, str]], replace_raw: bool) -> tuple[list[str], set[tuple[str, str]]]:
+def view_ctes(needed: set[tuple[str, str]], replace_raw: bool, objects=None,
+              raw_tables=None) -> tuple[list[str], set[tuple[str, str]]]:
     """CTE для всех нужных представлений (транзитивно), в порядке зависимостей."""
+    objects = objects or OBJECTS
+    raw_tables = raw_tables or RAW_TABLES
     closure: set[tuple[str, str]] = set()
     raw_used: set[tuple[str, str]] = set()
-    pending = [k for k in needed if k not in RAW_TABLES]
+    pending = [k for k in needed if k not in raw_tables]
     bodies: dict[tuple[str, str], str] = {}
     while pending:
         key = pending.pop()
         if key in closure:
             continue
         closure.add(key)
-        body, used = _replace_refs(view_body(*key), replace_raw)
+        body, used = _replace_refs(view_body(*key, objects=objects), replace_raw, objects, raw_tables)
         bodies[key] = body
         for u in used:
-            if u in RAW_TABLES:
+            if u in raw_tables:
                 raw_used.add(u)
             elif u not in closure:
                 pending.append(u)
-    ordered = [(d, n) for d, n, _ in OBJECTS if (d, n) in closure]
-    return [f"{cte_name(*k)} AS (\n{bodies[k]}\n)" for k in ordered], raw_used
+    ordered = [(d, n) for d, n, _ in objects if (d, n) in closure]
+    return [f"{cte_name(*k, raw_tables=raw_tables)} AS (\n{bodies[k]}\n)" for k in ordered], raw_used
 
 
 def _merge_with(ctes: list[str], query: str) -> str:
@@ -157,14 +161,14 @@ def _merge_with(ctes: list[str], query: str) -> str:
     return "WITH\n" + ",\n".join(ctes) + "\n" + q
 
 
-def render_predeploy(query: str) -> str:
+def render_predeploy(query: str, objects=None) -> str:
     """Запрос к живым RAW, но к представлениям слоя из Git (до развёртывания)."""
-    q, used = _replace_refs(query, replace_raw=False)
-    ctes, _ = view_ctes(used, replace_raw=False)
+    q, used = _replace_refs(query, replace_raw=False, objects=objects)
+    ctes, _ = view_ctes(used, replace_raw=False, objects=objects)
     return _merge_with(ctes, q)
 
 
-def render_predeploy_file(text: str) -> str:
+def render_predeploy_file(text: str, objects=None) -> str:
     """Отрендерить файл проверок: каждый блок `-- @check` отдельно, заголовки сохраняются."""
     parts = re.split(r"(?m)^(?=-- @check )", text)
     out = []
@@ -180,25 +184,25 @@ def render_predeploy_file(text: str) -> str:
         if not stmt:
             out.append("".join(header))
             continue
-        out.append("".join(header) + render_predeploy(stmt) + ";\n\n")
+        out.append("".join(header) + render_predeploy(stmt, objects) + ";\n\n")
     return "".join(out)
 
 
 # ─────────────────────────────────────────────────────────────── фикстуры
-def raw_schemas() -> dict[tuple[str, str], list[tuple[str, str]]]:
+def raw_schemas(ddl_paths=None, raw_tables=None) -> dict[tuple[str, str], list[tuple[str, str]]]:
     """Схемы RAW-таблиц из DDL PR-PROMO-1 (единственный авторитетный источник их формы)."""
-    text = RAW_DDL.read_text(encoding="utf-8")
+    text = "\n".join(Path(d).read_text(encoding="utf-8") for d in (ddl_paths or [RAW_DDL]))
     out: dict[tuple[str, str], list[tuple[str, str]]] = {}
     for m in re.finditer(r"CREATE TABLE IF NOT EXISTS `" + re.escape(PROJECT) + r"\.(\w+)\.(\w+)`\s*\((.*?)\n\)",
                          text, re.S):
         cols = []
         for line in m.group(3).splitlines():
-            cm = re.match(r"^\s{2}([a-z_][a-z0-9_]*)\s+(TIMESTAMP|STRING|INT64|NUMERIC|BOOL|DATE)\b", line)
+            cm = re.match(r"^\s{2}([a-z_][a-z0-9_]*)\s+(TIMESTAMP|STRING|INT64|NUMERIC|FLOAT64|BOOL|DATE)\b", line)
             if cm:
                 cols.append((cm.group(1), cm.group(2)))
         out[(m.group(1), m.group(2))] = cols
     out[("evetis_ref", "REF_SKU_CHANNEL_MAP")] = list(REF_SKU_CHANNEL_MAP_SCHEMA)
-    missing = [t for t in RAW_TABLES if t not in out]
+    missing = [t for t in (raw_tables or RAW_TABLES) if t not in out]
     if missing:
         raise SystemExit(f"DDL не содержит таблиц: {missing}")
     return out
@@ -213,6 +217,8 @@ def _lit(value, dtype: str) -> str:
         return str(int(value))
     if dtype == "NUMERIC":
         return f"NUMERIC '{Decimal(str(value))}'"
+    if dtype == "FLOAT64":
+        return f"CAST('{float(value)!r}' AS FLOAT64)"
     if dtype == "TIMESTAMP":
         return f"TIMESTAMP '{value}'"
     if dtype == "DATE":
@@ -221,7 +227,7 @@ def _lit(value, dtype: str) -> str:
     return f'"{s}"'
 
 
-def fixture_cte(key: tuple[str, str], schema: list[tuple[str, str]], rows: list[dict]) -> str:
+def fixture_cte(key: tuple[str, str], schema: list[tuple[str, str]], rows: list[dict], raw_tables=None) -> str:
     cols = {c for c, _ in schema}
     for r in rows:
         unknown = set(r) - cols
@@ -229,7 +235,8 @@ def fixture_cte(key: tuple[str, str], schema: list[tuple[str, str]], rows: list[
             raise SystemExit(f"фикстура {key}: неизвестные колонки {sorted(unknown)}")
     struct = ", ".join(f"{c} {t}" for c, t in schema)
     values = ",\n    ".join("(" + ", ".join(_lit(r.get(c), t) for c, t in schema) + ")" for r in rows)
-    return f"{cte_name(*key)} AS (\n  SELECT * FROM UNNEST(ARRAY<STRUCT<{struct}>>[\n    {values}\n  ])\n)"
+    return (f"{cte_name(*key, raw_tables=raw_tables)} AS (\n  SELECT * FROM UNNEST(ARRAY<STRUCT<{struct}>>[\n"
+            f"    {values}\n  ])\n)")
 
 
 # Сценарии. Данные намеренно маленькие и читаемые: каждая строка существует ради
@@ -703,18 +710,20 @@ ASSERTIONS: list[tuple[str, str, str]] = [
 ]
 
 
-def render_block(assertions: list[tuple[str, str, str]]) -> str:
+def render_block(assertions: list[tuple[str, str, str]], objects=None, raw_tables=None, schemas=None,
+                 data=None) -> str:
     """Один оператор: фикстуры и представления, которые нужны этим утверждениям, и сами утверждения."""
-    schemas = raw_schemas()
-    data = fixtures()
+    raw_tables = raw_tables or RAW_TABLES
+    schemas = schemas or raw_schemas()
+    data = fixtures() if data is None else data
     assertion_sql = "\n  UNION ALL\n".join(
         f"  SELECT '{sid}' AS scenario, '{name}' AS assertion, ({expr}) AS ok" for sid, name, expr in assertions)
     query = (f"SELECT scenario, assertion, IF(ok IS TRUE, 'PASS', 'FAIL') AS status\nFROM (\n{assertion_sql}\n)\n"
              f"ORDER BY scenario, assertion")
-    q, used = _replace_refs(query, replace_raw=True)
-    vctes, raw_used = view_ctes(used, replace_raw=True)
-    raw_used |= {k for k in used if k in RAW_TABLES}
-    fctes = [fixture_cte(k, schemas[k], data.get(k, [])) for k in RAW_TABLES if k in raw_used]
+    q, used = _replace_refs(query, replace_raw=True, objects=objects, raw_tables=raw_tables)
+    vctes, raw_used = view_ctes(used, replace_raw=True, objects=objects, raw_tables=raw_tables)
+    raw_used |= {k for k in used if k in raw_tables}
+    fctes = [fixture_cte(k, schemas[k], data.get(k, []), raw_tables) for k in raw_tables if k in raw_used]
     return _merge_with(fctes + vctes, q)
 
 
