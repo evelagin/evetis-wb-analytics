@@ -44,6 +44,9 @@ import {
 import type { CellValue } from './model.js';
 import type { Logger } from '../../logging.js';
 import type { Config } from '../../config.js';
+import { commitLcd, revertLcd, type CommitOutcome } from './lcd.js';
+import { resolveWbCandidate, ensureWbMonthSection, WbLcdCell, lifecycleLog, type WbCandidate, type MonthEnsureResult } from './wb_lifecycle.js';
+import { asNumber, isoToSerial } from './model.js';
 
 // 1.2.0 — Integrity Guard V1 (Phase 1C1). При UNITKA_INTEGRITY_MODE=off (по умолчанию) поведение = 1.1.0.
 // 2.0.0 — Calendar V2 (Phase 2B): секция месяца по заголовку, любые 28–31 день, слоты блоков (24 — резерв).
@@ -318,6 +321,18 @@ export async function unitkaLoader(ctx: LoaderContext, deps: UnitkaDeps = defaul
   let writeStage: 'NOT_ATTEMPTED' | 'ATTEMPTED' | 'ACKNOWLEDGED' | 'VERIFIED' = 'NOT_ATTEMPTED';
   let pendingRepairs: RepairRecord[] = [];
   let attemptRecorded = false;
+  // AUTO-LCD (Gate 10): три разных LCD — закоммиченный, кандидат, итог по перечитыванию.
+  let life: WbCandidate | null = null;
+  let monthEnsure: MonthEnsureResult | null = null;
+  let commit: CommitOutcome | null = null;
+  let reverted: string | null = null;
+  const lifecycleSummary = (): Record<string, unknown> => ({
+    mode: life?.mode ?? null, committed_before: life?.committed ?? null, candidate: life?.candidate ?? null,
+    canonical_ceiling: life?.ceiling ?? null, gap_at: life?.decision.gapAt ?? null, clamped_from: life?.clampedToMonth ?? null,
+    lifecycle_block: life?.lifecycle ?? null, notes: life?.decision.notes ?? [],
+    month: monthEnsure, commit: commit ? { code: commit.code, book_after: commit.bookAfter, message: commit.message } : 'NOT_ATTEMPTED',
+    reverted,
+  });
 
   const rec: EngineRunRecord = {
     runId, environment: config.environment, mode,
@@ -358,9 +373,16 @@ export async function unitkaLoader(ctx: LoaderContext, deps: UnitkaDeps = defaul
     // 1. свежесть и LAST_CLOSED_DATE
     const fresh = await bq.freshness();
     rec.sourceFreshnessJson = freshnessJson(fresh);
-    const lcd = await bq.lastClosedDate();
+    // Канон V_UNITKA_LAST_CLOSED_DATE — теперь ПОТОЛОК, а не LCD: день закрывает только завершённый цикл.
+    const canonical = await bq.lastClosedDate();
+    life = await resolveWbCandidate({ sheets, bq, config, log, canonical });
+    const lcd = { lastClosedDate: life.candidate, d1Msk: canonical.d1Msk };
     rec.lastClosedDate = lcd.lastClosedDate;
-    log.info('unitka_sources', { lcd: lcd.lastClosedDate, d1_msk: lcd.d1Msk, freshness: fresh });
+    log.info('unitka_sources', { lcd: lcd.lastClosedDate, committed_lcd: life.committed, canonical_lcd: canonical.lastClosedDate, d1_msk: lcd.d1Msk, freshness: fresh });
+
+    // 1'. Секция месяца кандидата: есть — или создаётся тем же генератором, что у unitka-month-prep.
+    //     Провал — исключение ДО записи данных: LCD не двигается.
+    monthEnsure = await ensureWbMonthSection({ sheets, bq, config, log, candidate: lcd.lastClosedDate, committed: life.committed, write: writeMode, now: deps.now });
 
     // 2. секция месяца LCD (MONTH_SECTION_MISSING/AMBIGUOUS/INVALID — до любой записи) и снимок;
     //    preflight (контракт секции + формулы) выполняется внутри buildPlan до любых вычислений.
@@ -376,14 +398,23 @@ export async function unitkaLoader(ctx: LoaderContext, deps: UnitkaDeps = defaul
     let reconFacts: FactRow[] | null = null;
     let window: ReconcileWindow | null = null;
     if (reconcileMode !== 'off') {
-      window = reconcileWindow(lcd.lastClosedDate);
+      // Две реализации ОДНОГО правила окна обязаны совпасть. SQL якорит окно на КАНОНИЧЕСКОМ LCD, поэтому
+      // и сверяем правило на нём. Окно ЭТОГО прогона якорится на КАНДИДАТЕ (Gate 10): если барьер
+      // придержал день, факты после кандидата в окно не входят, а начало окна не раньше того, что отдала вью.
+      const ruleWindow = reconcileWindow(canonical.lastClosedDate);
       const w = await bq.reconWindow();
-      if (w.lastClosedDate !== lcd.lastClosedDate || w.from !== window.from || w.to !== window.to || w.epoch !== window.epoch || w.days !== window.days) {
-        throw new LoaderError(`окно сверки: вью ${w.from}..${w.to} (LCD ${w.lastClosedDate}, эпоха ${w.epoch}, ${w.days} дн.) ≠ коду ${window.from}..${window.to} (LCD ${lcd.lastClosedDate}, эпоха ${window.epoch}, ${window.days} дн.)`, 'RECON_WINDOW_INCONSISTENT');
+      if (w.lastClosedDate !== canonical.lastClosedDate || w.from !== ruleWindow.from || w.to !== ruleWindow.to || w.epoch !== ruleWindow.epoch || w.days !== ruleWindow.days) {
+        throw new LoaderError(`окно сверки: вью ${w.from}..${w.to} (LCD ${w.lastClosedDate}, эпоха ${w.epoch}, ${w.days} дн.) ≠ коду ${ruleWindow.from}..${ruleWindow.to} (LCD ${canonical.lastClosedDate}, эпоха ${ruleWindow.epoch}, ${ruleWindow.days} дн.)`, 'RECON_WINDOW_INCONSISTENT');
       }
-      reconFacts = await bq.reconFacts();
+      window = reconcileWindow(lcd.lastClosedDate);
+      const effFrom = window.from > w.from ? window.from : w.from;
+      const effTo = window.to;
       // Эпоха сверки — вторая линия защиты: строка источника раньше эпохи = отказ до любой записи.
-      assertNotBeforeEpoch(reconFacts.map((f) => f.date), 'слой сверки');
+      // Проверяется на СЫРЫХ строках вью, ДО фильтра окна: иначе фильтр молча выбросил бы именно те
+      // строки, по которым видна ошибка вью, и защита перестала бы срабатывать.
+      const rawRecon = await bq.reconFacts();
+      assertNotBeforeEpoch(rawRecon.map((f) => f.date), 'слой сверки');
+      reconFacts = rawRecon.filter((f) => f.date >= effFrom && f.date <= effTo);
     }
     const lcdMonthStart = monthStartIso(lcd.lastClosedDate);
     // Месяц LCD из слоя сверки: только активные SKU — правило BLOCK_MISSING (SKU выбыл посреди месяца) сохраняется.
@@ -391,11 +422,19 @@ export async function unitkaLoader(ctx: LoaderContext, deps: UnitkaDeps = defaul
     const [legacyFacts, logistics, commission] = await Promise.all([
       reconcileMode === 'write' ? Promise.resolve<FactRow[]>([]) : bq.facts(), bq.logisticsRates(), bq.commissionRates(),
     ]);
-    const facts = reconcileMode === 'write' ? reconLcdFacts! : legacyFacts;
+    // Суточная вью фактов якорится в SQL на КАНОНИЧЕСКОМ LCD. Её прежний инвариант «ни одной даты позже
+    // LCD» проверяется против канона (сама вью не должна забегать вперёд), а затем факты обрезаются по
+    // КАНДИДАТУ: если барьер придержал день, более поздние сутки этим прогоном не публикуются.
+    const beyond = legacyFacts.find((f) => f.date > canonical.lastClosedDate);
+    if (beyond) throw new LoaderError(`V_UNITKA_DAILY_FACT отдал дату ${beyond.date} > LAST_CLOSED_DATE ${canonical.lastClosedDate}`, 'FUTURE_LEAKAGE');
+    const legacyAtCandidate = legacyFacts.filter((f) => f.date <= lcd.lastClosedDate);
+    const facts = reconcileMode === 'write' ? reconLcdFacts! : legacyAtCandidate;
     rec.rowsRead = (reconFacts?.length ?? 0) + legacyFacts.length + logistics.length + commission.length;
     const plan = buildPlan({
       snapshot: snap, lcd, facts, logistics, commission,
-      minN: config.unitkaMinN, maxLagDays: config.unitkaMaxLagDays,
+      // SOURCE_STALE — свойство ИСТОЧНИКОВ, и оно уже проверено на каноне (resolveWbCandidate). Кандидат,
+      // придержанный барьером или владельцем (MANUAL), — не устаревший источник: план его не отвергает.
+      minN: config.unitkaMinN, maxLagDays: Number.MAX_SAFE_INTEGER, deferLcdCommit: true,
     });
     log.info('unitka_plan', planSummary(plan));
 
@@ -412,7 +451,7 @@ export async function unitkaLoader(ctx: LoaderContext, deps: UnitkaDeps = defaul
       const byFact = new Map(reconFacts.map((f) => [`${f.nmId}|${f.date}`, f]));
       // В observe месяц LCD записывается по старому слою; что изменил бы слой сверки — считаем отдельным планом.
       const lcdCellsUnderRecon = reconcileMode === 'write' ? plan.cells
-        : buildPlan({ snapshot: snap, lcd, facts: reconLcdFacts!, logistics, commission, minN: config.unitkaMinN, maxLagDays: config.unitkaMaxLagDays }).cells;
+        : buildPlan({ snapshot: snap, lcd, facts: reconLcdFacts!, logistics, commission, minN: config.unitkaMinN, maxLagDays: Number.MAX_SAFE_INTEGER, deferLcdCommit: true }).cells;
       repairs = repairRecords([...lcdCellsUnderRecon, ...histCells], {
         runId, environment: config.environment, engineVersion: ENGINE_VERSION, gitSha: config.gitSha, detectedAt: deps.now().toISOString(),
         repairedAt: null, status: 'PLANNED_NOT_WRITTEN', factOf: (nm, d) => byFact.get(`${nm}|${d}`),
@@ -525,21 +564,26 @@ export async function unitkaLoader(ctx: LoaderContext, deps: UnitkaDeps = defaul
       log.info('unitka_format_written', { cells: allFormatCells.length, requests: writes.length, applied });
     }
 
-    // 5. reconciliation — повторное чтение и полный QA-гейт (месяц LCD + каждая прошлая секция окна в режиме write).
+    // 5. reconciliation ДО КОММИТА LCD (Gate 10): данные записаны, B2 ещё прежний. QA сверяет сводку по
+    //    дням, закрытым В КНИГЕ, а LCD_CONSISTENT работает как барьер compare-before-commit: B2 обязан
+    //    держать ожидаемый закоммиченный LCD. Прежний инвариант «имя = зеркало = LCD» — после коммита.
+    const cycle = life!;
     const after = await readSnapshot(sheets, config.unitkaSheetName, snap.geometry, snap.width, snap.anchorCol);
-    const qaLcd = evaluate(after, plan);
+    const qaLcd = evaluate(after, plan, { commitBarrier: { committedIso: cycle.committed } });
     const reconChecks: QaCheck[] = [];
     const afterSections: ReconcileSection[] = [];
     if (writeHistory && reconcile) {
       for (const sec of reconcile.sections) {
         const again = await readSnapshot(sheets, config.unitkaSheetName, sec.snap.geometry, sec.snap.width, sec.snap.anchorCol);
         afterSections.push({ snap: again, plan: sec.plan });
-        reconChecks.push(...evaluateRepairedSection(again, sec.plan));
+        reconChecks.push(...evaluateRepairedSection(again, sec.plan, { summaryUpTo: cycle.committed }));
       }
     }
     const qa = { pass: qaLcd.pass && reconChecks.every((c) => c.pass), checks: [...qaLcd.checks, ...reconChecks] };
     rec.qaStatus = qa.pass ? 'PASS' : 'FAIL';
-    // Integrity — ПОСЛЕ записи и reconciliation, на перечитанном листе. Не влияет на qa_status.
+    // Integrity — ПОСЛЕ записи и reconciliation, на перечитанном листе, ДО коммита LCD. Guard читает
+    // значения фактов и ТЕКСТ формул, а не результаты формул под отсечкой LCD, поэтому незакоммиченный
+    // день-кандидат ложных issue не даёт. Не влияет на qa_status.
     if (integrityMode !== 'off') {
       const reconAfter = reconArg ? { sections: writeHistory ? afterSections : reconcile!.sections } : undefined;
       integrity = await evaluateIntegrityPhase({ bq, sheets, config, snap: after, plan, phase: 'POST_WRITE', now: deps.now, log, ...(reconAfter ? { recon: reconAfter } : {}) });
@@ -561,30 +605,103 @@ export async function unitkaLoader(ctx: LoaderContext, deps: UnitkaDeps = defaul
       }
     }
     await persistIssueSnapshot();
-    rec.qaJson = qaJson(qa, {
-      plan: planSummary(plan), calendar, format_cells_written: allFormatCells.length,
-      ...(reconcile ? { reconcile: reconcileSummary(reconcile, { repairs_planned: repairs.length, repairs_recorded: repairsRecorded, issue_snapshot: issueSnapshot }) } : {}),
-      ...(integrity ? { integrity: integrity.summary } : {}),
-    });
-    log.info('unitka_qa', { pass: qa.pass, checks: qa.checks.map((c) => `${c.name}:${c.pass ? 'PASS' : 'FAIL(' + c.count + ')'}`) });
+    const setQaJson = (checks: QaCheck[] = qa.checks, pass: boolean = qa.pass): void => {
+      rec.qaJson = qaJson({ pass, checks }, {
+        plan: planSummary(plan), calendar, format_cells_written: allFormatCells.length,
+        ...(reconcile ? { reconcile: reconcileSummary(reconcile, { repairs_planned: repairs.length, repairs_recorded: repairsRecorded, issue_snapshot: issueSnapshot }) } : {}),
+        ...(integrity ? { integrity: integrity.summary } : {}),
+        lifecycle: lifecycleSummary(),
+      });
+    };
+    setQaJson();
+    log.info('unitka_qa', { pass: qa.pass, phase: 'PRE_COMMIT', checks: qa.checks.map((c) => `${c.name}:${c.pass ? 'PASS' : 'FAIL(' + c.count + ')'}`) });
+    // Любой провал ДО коммита: LCD_AFTER = LCD_BEFORE конструктивно — коммит просто не начинается.
     if (rec.errorCode === 'LEDGER_WRITE_FAILED') {
       await journal();
       throw new LoaderError(rec.errorMessage ?? 'журнал ремонта недоступен', 'LEDGER_WRITE_FAILED');
     }
     if (!qa.pass) {
       await recordUnconfirmed('проверка перечитыванием не пройдена');
-      const code = rec.cellsWritten > 0 && rec.cellsWritten !== allCells.length ? 'PARTIAL_WRITE' : failureCode(qa);
+      const barrier = qaLcd.checks.find((c) => c.name === 'LCD_CONSISTENT' && !c.pass);
+      const code = barrier ? 'LCD_COMMIT_CONFLICT'
+        : rec.cellsWritten > 0 && rec.cellsWritten !== allCells.length ? 'PARTIAL_WRITE' : failureCode(qa);
       rec.errorCode = code;
       rec.errorMessage = qa.checks.filter((c) => !c.pass).map((c) => `${c.name}: ${c.sample.slice(0, 3).join('; ')}`).join(' | ');
+      if (barrier) lifecycleLog(log, 'LCD_COMMIT_CONFLICT', { stage: 'PRE_COMMIT_QA', committed: cycle.committed, candidate: cycle.candidate, sample: barrier.sample }, 'error');
       await journal();
       throw new LoaderError(`QA после записи: ${rec.errorMessage}`, code);
     }
     const gate = enforceGate(integrity, integrityMode);
-    if (gate) { rec.errorCode = gate.code; rec.errorMessage = gate.message; }
+    if (gate) {
+      rec.errorCode = gate.code; rec.errorMessage = gate.message;
+      lifecycleLog(log, 'INTEGRITY_FAILED', { committed: cycle.committed, candidate: cycle.candidate, code: gate.code }, 'error');
+      await journal();
+      throw gate;
+    }
+
+    // 6. КОММИТ LCD. Только здесь, после записи, перечитывания, QA и целостности. Барьер: книга обязана
+    //    держать тот же LCD, что при планировании; исход решает перечитывание, а не ответ API.
+    const cell = new WbLcdCell(sheets, config.unitkaSheetName, snap.anchorCol);
+    commit = await commitLcd(cell, { expectedCommitted: cycle.committed, candidate: cycle.candidate });
+    if (commit.code === 'LCD_COMMIT_CONFLICT' || commit.code === 'LCD_WRITE_FAILED') {
+      // Данные уже опубликованы и проверены, LCD — прежний. Повтор идемпотентен: план данных будет
+      // пуст (лист = BigQuery), и коммит пройдёт ровно один раз.
+      lifecycleLog(log, commit.code, { committed: cycle.committed, candidate: cycle.candidate, book_after: commit.bookAfter, detail: commit.message }, 'error');
+      rec.errorCode = commit.code; rec.errorMessage = commit.message;
+      setQaJson();
+      await journal();
+      throw new LoaderError(commit.message, commit.code);
+    }
+    if (commit.code === 'LCD_NOT_ADVANCED') {
+      lifecycleLog(log, 'LCD_NOT_ADVANCED', { committed: cycle.committed, notes: cycle.decision.notes });
+      // зеркало — производное состояние: выравниваем, не трогая LCD
+      if (asNumber(after.mirrorLcd) !== isoToSerial(cycle.committed)) {
+        await cell.repairMirror(cycle.committed);
+        lifecycleLog(log, 'LCD_MIRROR_REPAIRED', { mirror_before: after.mirrorLcd, lcd: cycle.committed });
+      }
+    } else {
+      // 7. Проверка ПОСЛЕ коммита: полный прежний инвариант (имя = зеркало = кандидат) и сводка дня-кандидата,
+      //    который теперь впервые считается формулами. Провал — компенсирующий откат собственного коммита.
+      const committedSnap = await readSnapshot(sheets, config.unitkaSheetName, snap.geometry, snap.width, snap.anchorCol);
+      const qaPostLcd = evaluate(committedSnap, plan);
+      // прошлые секции окна, чьи дни стали видны только с коммитом (догон через границу месяца)
+      const postRecon: QaCheck[] = [];
+      if (writeHistory && reconcile) {
+        for (const sec of reconcile.sections) {
+          if (sec.plan.toDay <= cycle.committed) continue;       // до коммита уже проверена целиком
+          const again = await readSnapshot(sheets, config.unitkaSheetName, sec.snap.geometry, sec.snap.width, sec.snap.anchorCol);
+          postRecon.push(...evaluateRepairedSection(again, sec.plan));
+        }
+      }
+      const qaPost = { pass: qaPostLcd.pass && postRecon.every((c) => c.pass), checks: [...qaPostLcd.checks, ...postRecon] };
+      log.info('unitka_qa', { pass: qaPost.pass, phase: 'POST_COMMIT', checks: qaPost.checks.map((c) => `${c.name}:${c.pass ? 'PASS' : 'FAIL(' + c.count + ')'}`) });
+      if (!qaPost.pass) {
+        const rv = await revertLcd(cell, { committed: cycle.committed, from: cycle.candidate });
+        reverted = rv.code;
+        lifecycleLog(log, 'LCD_REVERTED', { committed: cycle.committed, candidate: cycle.candidate, revert: rv.code, book_after: rv.bookAfter,
+          failed: qaPost.checks.filter((c) => !c.pass).map((c) => c.name) }, 'error');
+        rec.errorCode = rv.code === 'REVERTED' ? 'POST_COMMIT_QA_FAILED' : 'POST_COMMIT_REVERT_FAILED';
+        rec.errorMessage = qaPost.checks.filter((c) => !c.pass).map((c) => `${c.name}: ${c.sample.slice(0, 3).join('; ')}`).join(' | ');
+        rec.qaStatus = 'FAIL';
+        setQaJson(qaPost.checks, false);
+        await journal();
+        throw new LoaderError(`QA после коммита LCD: ${rec.errorMessage} (откат: ${rv.code})`, rec.errorCode);
+      }
+      lifecycleLog(log, 'LCD_COMMITTED', { committed_before: cycle.committed, lcd_after: commit.bookAfter, mode: cycle.mode });
+    }
+    // AUTO придержан дыркой покрытия дольше допуска: безопасная часть опубликована и закоммичена, но это
+    // нерешённый сбой источника — событие уровня ERROR с кодом попадает в действующую алерт-политику
+    // (severity>=ERROR AND jsonPayload.code!=""), не роняя прогон. MANUAL-удержание — выбор владельца, без алерта.
+    const held = Math.round((Date.parse(`${canonical.d1Msk}T00:00:00Z`) - Date.parse(`${cycle.candidate}T00:00:00Z`)) / 86_400_000);
+    if (cycle.mode === 'AUTO' && held > config.unitkaMaxLagDays) {
+      lifecycleLog(log, 'LCD_NOT_ADVANCED', {
+        code: 'LCD_HELD_BY_COVERAGE_GAP', lcd: cycle.candidate, d1_msk: canonical.d1Msk, held_days: held,
+        gap_at: cycle.decision.gapAt, canonical_ceiling: cycle.ceiling, notes: cycle.decision.notes,
+      }, 'error');
+    }
+    setQaJson();
     await journal();
-    if (gate) throw gate;
-    return { rowsFetched: rec.rowsRead, rowsLoaded: rec.cellsWritten };
-  } catch (e) {
+    return { rowsFetched: rec.rowsRead, rowsLoaded: rec.cellsWritten };  } catch (e) {
     await recordUnconfirmed(e instanceof Error ? e.message : String(e));
     if (rec.errorCode === null) {
       // Сбой Engine до оценки целостности: integrity_status = SYSTEM_ERROR (если Guard включён).
@@ -594,6 +711,7 @@ export async function unitkaLoader(ctx: LoaderContext, deps: UnitkaDeps = defaul
         }));
       }
       const err = e instanceof LoaderError ? e : new LoaderError(e instanceof Error ? e.message : String(e), 'ENGINE_ERROR');
+      try { rec.qaJson = JSON.stringify({ ...JSON.parse(rec.qaJson || '{}'), lifecycle: lifecycleSummary() }); } catch { /* журнал не должен падать */ }
       rec.errorCode = err.code;
       rec.errorMessage = err.message;
       if (rec.qaStatus === 'NOT_RUN') rec.qaStatus = 'FAIL';

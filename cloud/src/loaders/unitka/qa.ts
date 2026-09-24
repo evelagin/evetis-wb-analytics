@@ -37,6 +37,17 @@ export interface EvaluateOpts {
    * закрытым В КНИГЕ (зеркало WB736); mismatch и LCD — это «что изменил бы Engine», не дефект.
    */
   shadow?: boolean;
+  /**
+   * AUTO-LCD, проверка ДО коммита (Gate 10). Данные уже записаны, LCD — ещё нет: формулы
+   * сводки для дня-кандидата честно пусты (их отсекает прежний LCD книги), поэтому сводка
+   * сверяется по дням, закрытым В КНИГЕ, — ровно как в SHADOW.
+   *
+   * LCD_CONSISTENT при этом НЕ отключается, а меняет смысл на барьер compare-before-commit:
+   * именованный диапазон обязан держать ОЖИДАЕМЫЙ закоммиченный LCD. Если кто-то изменил его
+   * между планированием и коммитом — это провал, а не повод перетереть чужое значение.
+   * Прежний инвариант «LCD = вычисленный» проверяется ПОСЛЕ коммита (вызов без этой опции).
+   */
+  commitBarrier?: { readonly committedIso: string };
 }
 
 export function evaluate(snap: Snapshot, plan: Plan, opts: EvaluateOpts = {}): QaResult {
@@ -48,6 +59,15 @@ export function evaluate(snap: Snapshot, plan: Plan, opts: EvaluateOpts = {}): Q
     const mirror = asNumber(snap.mirrorLcd);
     const bookClosed = Number.isFinite(mirror) ? mirror - isoToSerial(plan.monthStart) + 1 : 0;
     closedDays = Math.max(0, Math.min(plan.closedDays, bookClosed));
+  }
+  // Дни, по которым сверяется СВОДКА. До коммита — только закрытые В КНИГЕ: формулы сводки дня-кандидата
+  // честно пусты (их отсекает прежний LCD). Всё, что от вычисления LCD НЕ зависит, — записанные значения,
+  // статический формат закрытого дня, утечка будущего — проверяется ДО коммита по полному кандидату:
+  // провал записи формата должен остановить коммит, а не всплыть после него.
+  let summaryDays = closedDays;
+  if (opts.commitBarrier) {
+    const bookClosed = isoToSerial(opts.commitBarrier.committedIso) - isoToSerial(plan.monthStart) + 1;
+    summaryDays = Math.max(0, Math.min(plan.closedDays, bookClosed));
   }
 
   // BQ → SHEETS MISMATCH = 0 — весь контракт expected, не только записанные ячейки.
@@ -92,7 +112,7 @@ export function evaluate(snap: Snapshot, plan: Plan, opts: EvaluateOpts = {}): Q
 
   // SUMMARY RECONCILIATION — закрытые дни: колонка сводки = Σ всех блоков секции (|Δ| ≤ 0.01).
   const rec: string[] = [];
-  for (let i = 0; i < closedDays; i++) {
+  for (let i = 0; i < summaryDays; i++) {
     for (const [sumCol, off, name] of SUMMARY_TO_OFFSET) {
       let total = 0;
       for (const b of plan.blocks) {
@@ -107,7 +127,7 @@ export function evaluate(snap: Snapshot, plan: Plan, opts: EvaluateOpts = {}): Q
   // MTD: I{mtd} = Σ дневных I по закрытым дням (как в приёмке Stage 8.2; сентябрь — I767).
   {
     let sum = 0;
-    for (let i = 0; i < closedDays; i++) {
+    for (let i = 0; i < summaryDays; i++) {
       const v = asNumber(cellAt(snap, dayRow(i), SUMMARY.profit));
       if (Number.isFinite(v)) sum += v;
     }
@@ -122,11 +142,21 @@ export function evaluate(snap: Snapshot, plan: Plan, opts: EvaluateOpts = {}): Q
     checks.push(check('CLOSED_FORMAT_CONTRACT', fc.cells.map((c) => `${colA1(c.col)}${c.row} ${c.key} [${c.before.fg ? 'fg' : ''}${c.before.bg ? ' bg' : ''}${c.before.numberFormat ? ' nf' : ''}]`)));
   }
 
-  // LAST_CLOSED_DATE consistent: имя = зеркало = вычисленное.
-  const want = isoToSerial(plan.lcd);
+  // LAST_CLOSED_DATE consistent.
+  //   после коммита (и до Gate 10): имя = зеркало = вычисленное;
+  //   до коммита: имя = ОЖИДАЕМЫЙ закоммиченный (барьер compare-before-commit). Зеркало —
+  //   производное состояние: оно выравнивается записью коммита и проверяется после него.
   const lcdBad: string[] = [];
-  if (asNumber(snap.namedLcd) !== want) lcdBad.push(`LAST_CLOSED_DATE=${String(snap.namedLcd)} ≠ ${want}`);
-  if (asNumber(snap.mirrorLcd) !== want) lcdBad.push(`${colA1(snap.anchorCol)}${BOOK_ANCHORS.LCD_MIRROR_ROW}=${String(snap.mirrorLcd)} ≠ ${want}`);
+  if (opts.commitBarrier) {
+    const want = isoToSerial(opts.commitBarrier.committedIso);
+    if (asNumber(snap.namedLcd) !== want) {
+      lcdBad.push(`LAST_CLOSED_DATE=${String(snap.namedLcd)} ≠ ожидаемому закоммиченному ${want} (${opts.commitBarrier.committedIso}): изменён между планированием и коммитом`);
+    }
+  } else {
+    const want = isoToSerial(plan.lcd);
+    if (asNumber(snap.namedLcd) !== want) lcdBad.push(`LAST_CLOSED_DATE=${String(snap.namedLcd)} ≠ ${want}`);
+    if (asNumber(snap.mirrorLcd) !== want) lcdBad.push(`${colA1(snap.anchorCol)}${BOOK_ANCHORS.LCD_MIRROR_ROW}=${String(snap.mirrorLcd)} ≠ ${want}`);
+  }
   checks.push(check('LCD_CONSISTENT', lcdBad));
 
   // Дубли и инвариант — уже гарантированы планом; фиксируем как PASS для полного отчёта.

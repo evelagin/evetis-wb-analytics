@@ -40,6 +40,9 @@ class FakeRunner implements QueryRunner {
     hangMs?: number;
     clock?: { t: number };
   } = {};
+  /** Gate 10: журнал прогонов гейтящих загрузчиков. По умолчанию каждые сутки до D-1 покрыты. */
+  coverage: Array<{ loader_name: string; logical_period: string }> | null = null;
+  coverageQueries = 0;
   constructor(private readonly o: { lcd?: string; d1?: string; logisticsSales?: number } = {}) {}
   async query<T = Record<string, unknown>>(sql: string, params?: Record<string, unknown>, _types?: Record<string, string>, options?: { jobTimeoutMs?: number }): Promise<T[]> {
     if (sql.includes('V_UNITKA_COGS_CANONICAL')) {
@@ -59,6 +62,19 @@ class FakeRunner implements QueryRunner {
       return (this.integrity.rows ? this.integrity.rows() : []) as T[];
     }
     if (/\b(INSERT|UPDATE|DELETE|MERGE)\b/.test(sql) && !sql.includes('UNITKA_ENGINE_RUNS')) this.otherWrites.push(sql.slice(0, 60));
+    if (sql.includes('LOADER_RUNS')) {
+      this.coverageQueries++;
+      if (this.coverage) return this.coverage.filter((r) => r.logical_period > String(params?.since)) as T[];
+      const out: Array<{ loader_name: string; logical_period: string }> = [];
+      const end = this.o.d1 ?? '2026-09-11';
+      for (let d = new Date(`${String(params?.since)}T00:00:00Z`); ; ) {
+        d = new Date(d.getTime() + 86_400_000);
+        const iso = d.toISOString().slice(0, 10);
+        if (iso > end) break;
+        out.push({ loader_name: 'funnel', logical_period: iso }, { loader_name: 'mart', logical_period: iso });
+      }
+      return out as T[];
+    }
     if (sql.includes('V_UNITKA_SOURCE_FRESHNESS')) {
       return [{ source: 'funnel', max_closed_date: { value: this.o.lcd ?? LCD }, gating: true, observed_at: { value: '2026-09-11T06:50:00Z' } }] as T[];
     }
@@ -95,6 +111,12 @@ class FakeSheets implements SheetsGateway {
   writes: WriteRange[][] = [];
   constructor(public snap = snapshot(), public readonly readonlyScope = false, private readonly o: { breakSummaryAfterWrite?: boolean } = {}) {}
   structureWrites: unknown[][] = [];
+  /** Gate 10: строки ZZ_CONFIG!A29:B34. Пусто — блока нет (production до миграции). */
+  lifecycle: unknown[][] = [];
+  /** Gate 10: сбой ТОЛЬКО записи LCD (данные пишутся). 'throw' | 'noop' — модель ответа API. */
+  failLcdWrite: 'throw' | 'noop' | null = null;
+  /** Gate 10: кто-то меняет B2 после записи данных — до коммита. */
+  tamperLcdAfterDataWrite: number | null = null;
   async readSheetMeta(): Promise<SheetMeta> { return { sheetId: this.snap.sheetId, rowCount: this.snap.geometry.spacerRow, columnCount: this.snap.width, anchorCol: this.snap.anchorCol }; }
   async readSheetStructure(): Promise<SheetStructure> { throw new LoaderError('суточный Engine не читает структуру листа', 'TEST_FORBIDDEN'); }
   async readRowFormats(): Promise<Map<number, Array<Record<string, unknown> | null>>> { throw new LoaderError('суточный Engine не читает форматы строк', 'TEST_FORBIDDEN'); }
@@ -102,6 +124,7 @@ class FakeSheets implements SheetsGateway {
   async readValues(ranges: string[]): Promise<CellValue[][][]> {
     return ranges.map((r) => {
       if (r === 'LAST_CLOSED_DATE') return [[this.snap.namedLcd]];
+      if (r === 'ZZ_CONFIG!A29:B34') return this.lifecycle as CellValue[][];
       const colA = /!A1:A(\d+)$/.exec(r);
       if (colA) {
         const top = this.snap.geometry.topRow;
@@ -124,9 +147,15 @@ class FakeSheets implements SheetsGateway {
     }
     return writes.length;
   }
+  /** Gate 10: сбой следующей записи ДАННЫХ (модель: Job не отработал / Sheets отказал). */
+  failNextDataWrite = false;
   async batchWrite(data: WriteRange[]): Promise<number> {
     if (this.readonlyScope) throw new LoaderError('403 insufficient scope', 'SHEETS_API');
+    const isLcdCommit = data.some((d) => d.range === 'LAST_CLOSED_DATE');
+    if (!isLcdCommit && this.failNextDataWrite) { this.failNextDataWrite = false; throw new LoaderError('Sheets API 503 на записи данных', 'SHEETS_API'); }
+    if (isLcdCommit && this.failLcdWrite === 'throw') throw new LoaderError('Sheets API 503 на записи LCD', 'SHEETS_API');
     this.writes.push(data);
+    if (isLcdCommit && this.failLcdWrite === 'noop') return data.length;          // «успех» без применения
     let n = 0;
     for (const d of data) {
       if (d.range === 'LAST_CLOSED_DATE') { this.snap.namedLcd = d.values[0]![0]!; n++; continue; }
@@ -142,6 +171,7 @@ class FakeSheets implements SheetsGateway {
       });
     }
     this.recalc();
+    if (!isLcdCommit && this.tamperLcdAfterDataWrite !== null) this.snap.namedLcd = this.tamperLcdAfterDataWrite;
     return n;
   }
   /** «Формулы» сводки: Σ блоков по всем строкам с датой ≤ LCD книги. */
@@ -219,7 +249,11 @@ describe('unitkaLoader — PROD', () => {
     const sheets = new FakeSheets(snapshot({ applyFacts: false, lcdInSheet: '2026-09-01' }));
     const cfg = mkConfig('prod', true);
     const res = await unitkaLoader(ctx(cfg), deps(runner, sheets));
-    expect(sheets.writes).toHaveLength(1);
+    // Gate 10: данные — одним batchUpdate, LCD — ОТДЕЛЬНОЙ записью ПОСЛЕ перечитывания и QA.
+    // До Gate 10 LCD уходил в том же пакете, что факты, — до проверки (так 23.09 закрылось 22.09 у Ozon).
+    expect(sheets.writes).toHaveLength(2);
+    expect(sheets.writes[0]!.map((w) => w.range)).not.toContain('LAST_CLOSED_DATE');
+    expect(sheets.writes[1]!.map((w) => w.range)).toEqual(['LAST_CLOSED_DATE', `'WB_Юнит_2025'!${colA1(GRID.MIR)}${GRID.HDR}:${colA1(GRID.MIR)}${GRID.HDR}`]);
     expect(res.rowsLoaded).toBe(runner.journal[0]!.cellsPlanned);
     expect(runner.journal[0]).toMatchObject({ mode: 'WRITE', qaStatus: 'PASS', errorCode: null });
     expect(sheets.snap.namedLcd).toBe(isoToSerial(LCD));
@@ -228,7 +262,7 @@ describe('unitkaLoader — PROD', () => {
 
     const res2 = await unitkaLoader(ctx(cfg), deps(runner, sheets));
     expect(res2.rowsLoaded).toBe(0);
-    expect(sheets.writes).toHaveLength(1);
+    expect(sheets.writes, 'повтор: ни данных, ни второго коммита LCD').toHaveLength(2);
     expect(runner.journal[1]).toMatchObject({ cellsPlanned: 0, cellsWritten: 0, qaStatus: 'PASS' });
   });
   it('сводка не сошлась после записи — SUMMARY_MISMATCH, журнал FAIL', async () => {
@@ -460,7 +494,9 @@ describe('Integrity Guard V1 — интеграция с Engine', () => {
     expect(runner.jobTimeouts.every((t) => typeof t === 'number' && t > 0 && t <= 90_000)).toBe(true);
     expect(runner.journal).toHaveLength(1);
     expect(runner.journal[0]).toMatchObject({ qaStatus: 'PASS', errorCode: null });
-    expect(sheets.writes).toHaveLength(1); // факт-запись состоялась и не откатывалась
+    // Gate 10: факт-запись и ОТДЕЛЬНЫЙ коммит LCD — оба состоялись, ни один не откатывался
+    expect(sheets.writes).toHaveLength(2);
+    expect(sheets.writes[1]!.map((w) => w.range)).toContain('LAST_CLOSED_DATE');
     expect(qaOf(runner).integrity).toMatchObject({ status: 'SYSTEM_ERROR', subsystem_failure: { code: 'INTEGRITY_TIME_BUDGET_EXCEEDED' } });
   });
 
@@ -517,5 +553,225 @@ describe('Integrity Guard V1 — конфигурация и код выхода
     const code = await runCli(['node', 'cli.js', 'unitka'], env({ LOG_LEVEL: 'error', DRY_RUN: '1', UNITKA_WRITE_ENABLED: '1' }), cliDeps);
     expect(code).toBe(EXIT_OK);
     expect(handlerCalls).toBe(1); // unitka не prodOnly → DRY_RUN вызывает настоящий handler
+  });
+});
+
+/* ═══════════════════════ Gate 10: AUTO-LCD WB в настоящем оркестраторе ═══════════════════════ */
+
+const serial = (iso: string): number => isoToSerial(iso);
+/** Блок цикла ZZ_CONFIG!A29:B34 ровно в том виде, в каком его отдаёт Sheets API. */
+const lifecycleBlock = (wbMode: string, wbManual: unknown = ''): unknown[][] => [
+  ['ЖИЗНЕННЫЙ ЦИКЛ — AUTO-LCD', ''], ['OZON_LAST_CLOSED_DATE', 46287], ['WB_LCD_MODE', wbMode],
+  ['WB_MANUAL_LCD', wbManual], ['OZON_LCD_MODE', 'AUTO'], ['OZON_MANUAL_LCD', ''],
+];
+const COMMITTED = '2026-09-01';
+const freshBook = (): FakeSheets => new FakeSheets(snapshot({ applyFacts: false, lcdInSheet: COMMITTED }));
+const dataWrites = (s: FakeSheets) => s.writes.filter((w) => !w.some((d) => d.range === 'LAST_CLOSED_DATE'));
+const lcdCommits = (s: FakeSheets) => s.writes.filter((w) => w.some((d) => d.range === 'LAST_CLOSED_DATE'));
+
+describe('Gate 10 · WB AUTO-LCD: провал любой стадии оставляет LCD на месте', () => {
+  it('SUCCESS: B2 сдвигается РОВНО один раз и только ПОСЛЕ записи и проверки; повтор — без мутаций', async () => {
+    const runner = new FakeRunner(); const sheets = freshBook();
+    await unitkaLoader(ctx(mkConfig('prod', true)), deps(runner, sheets));
+    expect(dataWrites(sheets)).toHaveLength(1);
+    expect(lcdCommits(sheets)).toHaveLength(1);
+    expect(sheets.writes.indexOf(lcdCommits(sheets)[0]!)).toBeGreaterThan(sheets.writes.indexOf(dataWrites(sheets)[0]!));
+    expect(sheets.snap.namedLcd).toBe(serial(LCD));
+    expect(sheets.snap.mirrorLcd).toBe(serial(LCD));
+    const qa = JSON.parse(String(runner.journal[0]!.qaJson));
+    expect(qa.lifecycle).toMatchObject({ mode: 'AUTO', committed_before: COMMITTED, candidate: LCD, commit: { code: 'LCD_COMMITTED' } });
+
+    await unitkaLoader(ctx(mkConfig('prod', true)), deps(runner, sheets));
+    expect(sheets.writes, 'LCD_DUPLICATE_ADVANCE=0, данных тоже нет').toHaveLength(2);
+    expect(JSON.parse(String(runner.journal[1]!.qaJson)).lifecycle.commit.code).toBe('LCD_NOT_ADVANCED');
+  });
+
+  it('SOURCE_STALE → ни одной записи, LCD прежний (прежний код, прежний порядок проверок)', async () => {
+    const runner = new FakeRunner({ d1: '2026-09-14' }); const sheets = freshBook();
+    await expect(unitkaLoader(ctx(mkConfig('prod', true)), deps(runner, sheets))).rejects.toMatchObject({ code: 'SOURCE_STALE' });
+    expect(sheets.writes).toEqual([]);
+    expect(sheets.snap.namedLcd).toBe(serial(COMMITTED));
+  });
+
+  it('GAP_IN_REQUIRED_COVERAGE → кандидат останавливается ПЕРЕД дыркой, день после неё не пишется', async () => {
+    const runner = new FakeRunner(); const sheets = freshBook();
+    // воронка отработала по 09.09 включительно (её окно покрывает 03..09), mart — по 11.09
+    runner.coverage = [
+      ...['02', '03', '04', '05', '06', '07', '08', '09'].map((d) => ({ loader_name: 'funnel', logical_period: `2026-09-${d}` })),
+      ...['02', '03', '04', '05', '06', '07', '08', '09', '10', '11'].map((d) => ({ loader_name: 'mart', logical_period: `2026-09-${d}` })),
+    ];
+    await unitkaLoader(ctx(mkConfig('prod', true)), deps(runner, sheets));
+    expect(sheets.snap.namedLcd).toBe(serial('2026-09-09'));
+    const qa = JSON.parse(String(runner.journal[0]!.qaJson));
+    expect(qa.lifecycle).toMatchObject({ candidate: '2026-09-09', gap_at: '2026-09-10', canonical_ceiling: LCD });
+    expect(sheets.snap.grid[dayRow(9) - GRID.TOP]![GRID.B0 - 1 + OFFSET.views], 'факт 10.09 не опубликован').toBe('');
+  });
+
+  it('SHEET_WRITE_FAILED → LCD прежний', async () => {
+    const runner = new FakeRunner(); const sheets = freshBook();
+    sheets.failNextDataWrite = true;
+    await expect(unitkaLoader(ctx(mkConfig('prod', true)), deps(runner, sheets))).rejects.toMatchObject({ code: 'SHEETS_API' });
+    expect(lcdCommits(sheets)).toHaveLength(0);
+    expect(sheets.snap.namedLcd).toBe(serial(COMMITTED));
+  });
+
+  it('READBACK/QA FAILED → LCD прежний: коммит не начинается', async () => {
+    const runner = new FakeRunner();
+    const sheets = new FakeSheets(snapshot({ applyFacts: false, lcdInSheet: COMMITTED }), false, { breakSummaryAfterWrite: true });
+    await expect(unitkaLoader(ctx(mkConfig('prod', true)), deps(runner, sheets))).rejects.toMatchObject({ code: 'SUMMARY_MISMATCH' });
+    expect(lcdCommits(sheets)).toHaveLength(0);
+    expect(sheets.snap.namedLcd).toBe(serial(COMMITTED));
+  });
+
+  it('INTEGRITY_FAILED (enforce + сбой Guard) → LCD прежний, данные записаны', async () => {
+    const runner = new FakeRunner(); const sheets = freshBook();
+    runner.integrity = { throwFacts: true };
+    await expect(unitkaLoader(ctx(withIntegrity(mkConfig('prod', true), 'enforce')), deps(runner, sheets))).rejects.toMatchObject({ code: 'INTEGRITY_SUBSYSTEM_FAILURE' });
+    expect(dataWrites(sheets)).toHaveLength(1);
+    expect(lcdCommits(sheets)).toHaveLength(0);
+    expect(sheets.snap.namedLcd).toBe(serial(COMMITTED));
+  });
+
+  it('LCD_COMMIT_CONFLICT: B2 изменили между планированием и коммитом → чужое значение НЕ перетирается', async () => {
+    const runner = new FakeRunner(); const sheets = freshBook();
+    sheets.tamperLcdAfterDataWrite = serial('2026-09-05');
+    await expect(unitkaLoader(ctx(mkConfig('prod', true)), deps(runner, sheets))).rejects.toMatchObject({ code: 'LCD_COMMIT_CONFLICT' });
+    expect(lcdCommits(sheets)).toHaveLength(0);
+    expect(sheets.snap.namedLcd).toBe(serial('2026-09-05'));
+  });
+
+  it('LCD_WRITE_FAILED: данные опубликованы, LCD прежний; повтор коммитит РОВНО один раз без повторной записи данных', async () => {
+    const runner = new FakeRunner(); const sheets = freshBook();
+    sheets.failLcdWrite = 'throw';
+    await expect(unitkaLoader(ctx(mkConfig('prod', true)), deps(runner, sheets))).rejects.toMatchObject({ code: 'LCD_WRITE_FAILED' });
+    expect(dataWrites(sheets)).toHaveLength(1);
+    expect(sheets.snap.namedLcd).toBe(serial(COMMITTED));
+
+    sheets.failLcdWrite = null;
+    await unitkaLoader(ctx(mkConfig('prod', true)), deps(runner, sheets));
+    expect(dataWrites(sheets), 'повтор не переписывает данные').toHaveLength(1);
+    expect(lcdCommits(sheets)).toHaveLength(1);
+    expect(sheets.snap.namedLcd).toBe(serial(LCD));
+
+    await unitkaLoader(ctx(mkConfig('prod', true)), deps(runner, sheets));
+    expect(sheets.writes).toHaveLength(2);
+  });
+
+  it('API ответил успехом, но LCD не лёг → LCD_WRITE_FAILED, а не «закоммичено»', async () => {
+    const runner = new FakeRunner(); const sheets = freshBook();
+    sheets.failLcdWrite = 'noop';
+    await expect(unitkaLoader(ctx(mkConfig('prod', true)), deps(runner, sheets))).rejects.toMatchObject({ code: 'LCD_WRITE_FAILED' });
+    expect(sheets.snap.namedLcd).toBe(serial(COMMITTED));
+  });
+});
+
+describe('Gate 10 · WB: регрессия инцидента 23.09 на уровне писателя', () => {
+  it('источники ГОТОВЫ, запись не состоялась → LCD НЕ двигается; тот же кандидат, успех → двигается', async () => {
+    const runner = new FakeRunner(); const sheets = freshBook();
+    sheets.failNextDataWrite = true;
+    await expect(unitkaLoader(ctx(mkConfig('prod', true)), deps(runner, sheets))).rejects.toBeDefined();
+    expect(sheets.snap.namedLcd, 'LCD_ADVANCE=NO').toBe(serial(COMMITTED));
+
+    await unitkaLoader(ctx(mkConfig('prod', true)), deps(runner, sheets));
+    expect(sheets.snap.namedLcd, 'LCD_ADVANCE=YES').toBe(serial(LCD));
+  });
+});
+
+describe('Gate 10 · WB MANUAL: явный выбор кандидата, а не «force everything»', () => {
+  it('MANUAL 05.09 → коммит ровно 05.09, событие MANUAL_OVERRIDE_ACTIVE', async () => {
+    const lines: Array<{ event: string; fields: Record<string, unknown> }> = [];
+    const logger = { info: (e: string, f: Record<string, unknown>) => lines.push({ event: e, fields: f }), warn: (e: string, f: Record<string, unknown>) => lines.push({ event: e, fields: f }), error() {}, debug() {}, child() { return logger; } } as unknown as Logger;
+    const runner = new FakeRunner(); const sheets = freshBook();
+    sheets.lifecycle = lifecycleBlock('MANUAL', serial('2026-09-05'));
+    await unitkaLoader({ ...ctx(mkConfig('prod', true)), logger }, deps(runner, sheets));
+    expect(sheets.snap.namedLcd).toBe(serial('2026-09-05'));
+    expect(lines.some((l) => l.event === 'unitka_lifecycle' && l.fields.lifecycle_event === 'MANUAL_OVERRIDE_ACTIVE' && l.fields.candidate === '2026-09-05')).toBe(true);
+  });
+
+  it('MANUAL-дата не дата → MANUAL_LCD_INVALID, ни одной записи', async () => {
+    const runner = new FakeRunner(); const sheets = freshBook();
+    sheets.lifecycle = lifecycleBlock('MANUAL', 'вчера');
+    await expect(unitkaLoader(ctx(mkConfig('prod', true)), deps(runner, sheets))).rejects.toMatchObject({ code: 'MANUAL_LCD_INVALID' });
+    expect(sheets.writes).toEqual([]);
+  });
+
+  it('MANUAL позже готовности источников → отказ: override не создаёт данных', async () => {
+    const runner = new FakeRunner(); const sheets = freshBook();
+    sheets.lifecycle = lifecycleBlock('MANUAL', serial('2026-09-11'));      // канон 10.09
+    await expect(unitkaLoader(ctx(mkConfig('prod', true)), deps(runner, sheets))).rejects.toMatchObject({ code: 'MANUAL_LCD_INVALID' });
+    expect(sheets.writes).toEqual([]);
+  });
+
+  it('MANUAL-откат назад → MANUAL_LCD_REGRESSION: опубликованное не стирается', async () => {
+    const runner = new FakeRunner(); const sheets = new FakeSheets(snapshot({ lcdInSheet: '2026-09-10' }));
+    sheets.lifecycle = lifecycleBlock('MANUAL', serial('2026-09-03'));
+    await expect(unitkaLoader(ctx(mkConfig('prod', true)), deps(runner, sheets))).rejects.toMatchObject({ code: 'MANUAL_LCD_REGRESSION' });
+    expect(sheets.writes).toEqual([]);
+  });
+
+  it('MANUAL НЕ обходит QA: провал проверки → LCD прежний', async () => {
+    const runner = new FakeRunner();
+    const sheets = new FakeSheets(snapshot({ applyFacts: false, lcdInSheet: COMMITTED }), false, { breakSummaryAfterWrite: true });
+    sheets.lifecycle = lifecycleBlock('MANUAL', serial('2026-09-05'));
+    await expect(unitkaLoader(ctx(mkConfig('prod', true)), deps(runner, sheets))).rejects.toMatchObject({ code: 'SUMMARY_MISMATCH' });
+    expect(sheets.snap.namedLcd).toBe(serial(COMMITTED));
+  });
+
+  it('блок цикла переставлен (DRIFT) → LIFECYCLE_CONFIG_INVALID до чтения фактов', async () => {
+    const runner = new FakeRunner(); const sheets = freshBook();
+    const b = lifecycleBlock('AUTO'); [b[2], b[4]] = [b[4]!, b[2]!];
+    sheets.lifecycle = b;
+    await expect(unitkaLoader(ctx(mkConfig('prod', true)), deps(runner, sheets))).rejects.toMatchObject({ code: 'LIFECYCLE_CONFIG_INVALID' });
+    expect(sheets.writes).toEqual([]);
+    expect(runner.coverageQueries).toBe(0);
+  });
+
+  it('возврат в AUTO продолжает цикл от закоммиченного MANUAL-состояния', async () => {
+    const runner = new FakeRunner(); const sheets = freshBook();
+    sheets.lifecycle = lifecycleBlock('MANUAL', serial('2026-09-05'));
+    await unitkaLoader(ctx(mkConfig('prod', true)), deps(runner, sheets));
+    sheets.lifecycle = lifecycleBlock('AUTO');
+    await unitkaLoader(ctx(mkConfig('prod', true)), deps(runner, sheets));
+    expect(sheets.snap.namedLcd).toBe(serial(LCD));
+  });
+});
+
+describe('Gate 10 · WB: долгое удержание — видимый инцидент, а не молчание', () => {
+  const recLogger = (lines: Array<{ level: string; event: string; fields: Record<string, unknown> }>): Logger => {
+    const l = {
+      info: (e: string, f: Record<string, unknown>) => lines.push({ level: 'info', event: e, fields: f }),
+      warn: (e: string, f: Record<string, unknown>) => lines.push({ level: 'warn', event: e, fields: f }),
+      error: (e: string, f: Record<string, unknown>) => lines.push({ level: 'error', event: e, fields: f }),
+      debug() {}, child() { return l; },
+    };
+    return l as unknown as Logger;
+  };
+
+  it('AUTO придержан дыркой > 2 суток: безопасная часть опубликована, событие ERROR с кодом ловит алерт', async () => {
+    const lines: Array<{ level: string; event: string; fields: Record<string, unknown> }> = [];
+    const runner = new FakeRunner(); const sheets = freshBook();
+    // воронка отработала только по 06.09 (окно 31.08..06.09), mart — по 11.09 → кандидат 06.09, D-1 = 11.09
+    runner.coverage = [
+      ...['02', '03', '04', '05', '06'].map((d) => ({ loader_name: 'funnel', logical_period: `2026-09-${d}` })),
+      ...['02', '03', '04', '05', '06', '07', '08', '09', '10', '11'].map((d) => ({ loader_name: 'mart', logical_period: `2026-09-${d}` })),
+    ];
+    await unitkaLoader({ ...ctx(mkConfig('prod', true)), logger: recLogger(lines) }, deps(runner, sheets));
+    expect(sheets.snap.namedLcd).toBe(serial('2026-09-06'));
+    const held = lines.find((l) => l.fields.lifecycle_event === 'LCD_NOT_ADVANCED' && l.fields.code === 'LCD_HELD_BY_COVERAGE_GAP');
+    expect(held?.level, 'уровень ERROR и поле code — ровно то, что ловит алерт-политика').toBe('error');
+    expect(held?.fields).toMatchObject({ lcd: '2026-09-06', held_days: 5, gap_at: '2026-09-07' });
+    expect(runner.journal[0]!.errorCode, 'прогон не падает: опубликовано то, что безопасно').toBeNull();
+    // событие не затирает своё имя полем message (известный долг логгера)
+    expect(held?.event).toBe('unitka_lifecycle');
+    expect('message' in (held?.fields ?? {})).toBe(false);
+  });
+
+  it('MANUAL-удержание — выбор владельца: алерт-событие НЕ генерируется', async () => {
+    const lines: Array<{ level: string; event: string; fields: Record<string, unknown> }> = [];
+    const runner = new FakeRunner(); const sheets = freshBook();
+    sheets.lifecycle = lifecycleBlock('MANUAL', serial('2026-09-05'));
+    await unitkaLoader({ ...ctx(mkConfig('prod', true)), logger: recLogger(lines) }, deps(runner, sheets));
+    expect(lines.some((l) => l.fields.code === 'LCD_HELD_BY_COVERAGE_GAP')).toBe(false);
+    expect(lines.filter((l) => l.level === 'error')).toEqual([]);
   });
 });

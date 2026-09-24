@@ -17,6 +17,7 @@ import { geometryAt } from '../src/loaders/unitka/calendar.js';
 import { classifyCogsSnapshot } from '../src/loaders/unitka/integrity.js';
 import { LoaderError } from '../src/errors.js';
 import type { CellValue } from '../src/loaders/unitka/model.js';
+import { isoToSerial } from '../src/loaders/unitka/model.js';
 import type { Snapshot } from '../src/loaders/unitka/plan.js';
 import type { LoaderContext } from '../src/loaders/types.js';
 import type { Config } from '../src/config.js';
@@ -54,13 +55,16 @@ class BookSheets implements SheetsGateway {
   private byTop(row: number): Snapshot { const s = this.sections.find((x) => x.geometry.topRow === row); if (!s) throw new Error(`нет секции ${row}`); return s; }
   private byFirst(row: number): Snapshot { const s = this.sections.find((x) => x.geometry.firstDailyRow === row); if (!s) throw new Error(`нет секции ${row}`); return s; }
   anchorCol = 600;
+  /** LAST_CLOSED_DATE книги (серийная): 46283 = 2026-09-18. */
+  bookLcd = 46283;
   async readSheetMeta(): Promise<SheetMeta> { return { sheetId: 739487431, rowCount: this.rowCount, columnCount: this.columnCount, locale: 'en_US', anchorCol: this.anchorCol }; }
   structure: SheetStructure | null = null;
   async readSheetStructure(_n: string, rowCount: number, columnCount: number): Promise<SheetStructure> { return this.structure ?? septemberStructure(rowCount, columnCount); }
   async readRowFormats(_n: string, rows: readonly number[], lastColumn: number): Promise<Map<number, Array<Record<string, unknown> | null>>> { return septemberRowFormats(lastColumn, rows); }
   async readValues(ranges: string[]): Promise<CellValue[][][]> {
     return ranges.map((r) => {
-      if (r === 'LAST_CLOSED_DATE') return [[46283]];
+      if (r === 'LAST_CLOSED_DATE') return [[this.bookLcd]];
+      if (r === 'ZZ_CONFIG!A29:B34') return [];                       // блока цикла нет — как production до миграции
       if (/!(WB|WY)736:(WB|WY)737$/.test(r)) return [[46283], [32.136]];
       if (/!R45$/.test(r)) return [[240]];
       const colA = /!A1:A(\d+)$/.exec(r);
@@ -90,10 +94,20 @@ class BookSheets implements SheetsGateway {
 class PrepRunner implements QueryRunner {
   readonly projectId = 'proj';
   queries: string[] = [];
-  constructor(private readonly o: { lcd: string; cogs?: number | null; extraActive?: number[]; facts?: Array<Record<string, unknown>>; cogsNm?: number[] }) {}
-  async query<T = Record<string, unknown>>(sql: string): Promise<T[]> {
+  constructor(private readonly o: { lcd: string; d1?: string; cogs?: number | null; extraActive?: number[]; facts?: Array<Record<string, unknown>>; cogsNm?: number[] }) {}
+  async query<T = Record<string, unknown>>(sql: string, params?: Record<string, unknown>): Promise<T[]> {
     this.queries.push(sql);
-    if (sql.includes('V_UNITKA_LAST_CLOSED_DATE')) return [{ last_closed_date: { value: this.o.lcd }, d1_msk: { value: '2026-09-28' } }] as T[];
+    if (sql.includes('V_UNITKA_LAST_CLOSED_DATE')) return [{ last_closed_date: { value: this.o.lcd }, d1_msk: { value: this.o.d1 ?? '2026-09-28' } }] as T[];
+    if (sql.includes('LOADER_RUNS')) {
+      const out: Array<{ loader_name: string; logical_period: string }> = [];
+      const end = this.o.d1 ?? '2026-09-28';
+      for (let t = Date.parse(`${String(params?.since)}T00:00:00Z`) + 86_400_000; ; t += 86_400_000) {
+        const iso = new Date(t).toISOString().slice(0, 10);
+        if (iso > end) break;
+        out.push({ loader_name: 'funnel', logical_period: iso }, { loader_name: 'mart', logical_period: iso });
+      }
+      return out as T[];
+    }
     if (sql.includes('V_UNITKA_SOURCE_FRESHNESS')) return [] as T[];
     if (sql.includes('REF_SKU_MASTER')) return [...SEPT_NMS, ...(this.o.extraActive ?? [NEW_NM])].map((n) => ({ nm_id: n, product_name_short: n === NEW_NM ? 'Набор анти-акне пудра+сыворотка+крем' : `Товар ${n}` })) as T[];
     if (sql.includes('V_UNITKA_COGS_CANONICAL')) {
@@ -110,19 +124,76 @@ const depsOf = (runner: QueryRunner, sheets: BookSheets, made: boolean[] = []): 
   makeRunner: () => runner, makeSheets: (_c, ro) => { made.push(ro); return sheets; }, now: () => new Date('2026-09-28T07:00:00Z'),
 });
 
-describe('суточный Engine: поиск секции', () => {
-  it('LCD 01.10, октября нет → MONTH_SECTION_MISSING до любой записи; structureWrite не вызывается', async () => {
+describe('суточный Engine: месяц кандидата (Gate 10)', () => {
+  /** Книга, в которой секция октября появляется после структурной записи — как в живом листе. */
+  function septemberBookThatCreatesOctober(): BookSheets {
     const sheets = septemberOnly(false);
-    const runner = new PrepRunner({ lcd: '2026-10-01' });
-    await expect(unitkaLoader(ctx(baseConfig('prod', { unitkaWriteEnabled: true })), depsOf(runner, sheets))).rejects.toMatchObject({ code: 'MONTH_SECTION_MISSING' });
+    sheets.bookLcd = isoToSerial('2026-09-30');
+    sheets.onStructureWrite = () => {
+      const sept = sheets.sections[0]!;
+      const colA: CellValue[] = Array(768).fill(null); colA[734] = 'Сентябрь 2026';
+      const plan = planMonthPrep({ target: { year: 2026, month: 10 }, meta: { sheetId: 739487431, rowCount: 768, columnCount: 600, locale: 'en_US', anchorCol: 600 }, columnA: colA, predecessor: sept, existing: null,
+        population: [...SEPT_NMS, NEW_NM].map((n) => ({ nmId: n, name: `Товар ${n}` })), cogs: cogsSnapshot({ [NEW_NM]: 426.735 }), structure: septemberStructure(), rowFormats: septemberRowFormats() });
+      sheets.sections.push({ ...applyPlan(plan, 623), anchorCol: 623 });
+      sheets.rowCount = 803; sheets.columnCount = 623; sheets.anchorCol = 623;
+    };
+    return sheets;
+  }
+
+  it('SHADOW: октября нет → MONTH_SECTION_MISSING до любой записи; структура не создаётся', async () => {
+    const sheets = septemberOnly(true);
+    sheets.bookLcd = isoToSerial('2026-09-30');
+    const runner = new PrepRunner({ lcd: '2026-10-01', d1: '2026-10-01' });
+    await expect(unitkaLoader(ctx(baseConfig('shadow')), depsOf(runner, sheets))).rejects.toMatchObject({ code: 'MONTH_SECTION_MISSING' });
     expect(sheets.batchWrites).toBe(0);
     expect(sheets.structureWrites).toHaveLength(0);
     expect(runner.queries.some((q) => q.includes('V_UNITKA_DAILY_FACT'))).toBe(false); // отказ раньше чтения фактов
   });
-  it('суточный Engine не импортирует и не вызывает планировщик/структурную запись (статически)', async () => {
+
+  it('PROD: кандидат вошёл в октябрь → секция создаётся ОДИН раз каноническим генератором ДО данных', async () => {
+    const sheets = septemberBookThatCreatesOctober();
+    const lines: LogLine[] = [];
+    const runner = new PrepRunner({ lcd: '2026-10-01', d1: '2026-10-01' });
+    // Фейк не отдаёт ставки — прогон упадёт ПОСЛЕ создания месяца: так проверяется атомарность цикла.
+    await expect(unitkaLoader(ctx(baseConfig('prod', { unitkaWriteEnabled: true }), lines), depsOf(runner, sheets))).rejects.toBeDefined();
+    expect(sheets.structureWrites).toHaveLength(1);
+    expect(sheets.sections.map((x) => x.geometry.monthKey)).toEqual(['2026-09', '2026-10']);
+    const created = lines.find((l) => l.event === 'unitka_lifecycle' && l.fields.lifecycle_event === 'NEW_MONTH_CREATED');
+    expect(created?.fields).toMatchObject({ target: '2026-10', days: 31, top_row: 769 });
+    // манифест отката записан в журнал ДО структурной записи
+    const iManifest = lines.findIndex((l) => l.event === 'unitka_month_prep_rollback_manifest');
+    const iCreated = lines.findIndex((l) => l.fields.lifecycle_event === 'NEW_MONTH_CREATED');
+    expect(iManifest).toBeGreaterThanOrEqual(0);
+    expect(iManifest).toBeLessThan(iCreated);
+    // следующий этап упал → LCD книги не сдвинулся
+    expect(sheets.bookLcd).toBe(isoToSerial('2026-09-30'));
+    expect(sheets.batchWrites).toBe(0);
+  });
+
+  it('PROD: повтор после сбоя следующего этапа НЕ создаёт месяц второй раз (DUPLICATE_MONTH_SECTIONS=0)', async () => {
+    const sheets = septemberBookThatCreatesOctober();
+    const runner = new PrepRunner({ lcd: '2026-10-01', d1: '2026-10-01' });
+    await unitkaLoader(ctx(baseConfig('prod', { unitkaWriteEnabled: true })), depsOf(runner, sheets)).catch(() => undefined);
+    await unitkaLoader(ctx(baseConfig('prod', { unitkaWriteEnabled: true })), depsOf(runner, sheets)).catch(() => undefined);
+    expect(sheets.structureWrites, 'второй прогон видит октябрь и структуру не пишет').toHaveLength(1);
+    expect(sheets.sections.filter((x) => x.geometry.monthKey === '2026-10')).toHaveLength(1);
+  });
+
+  it('структура — только через цикл месяца (wb_lifecycle) и только каноническим генератором', async () => {
     const { readFileSync } = await import('node:fs');
-    const src = readFileSync(new URL('../src/loaders/unitka/index.ts', import.meta.url), 'utf8');
-    expect(src).not.toMatch(/structureWrite|monthprep|toStructureRequests/);
+    const index = readFileSync(new URL('../src/loaders/unitka/index.ts', import.meta.url), 'utf8');
+    // суточный оркестратор сам структуру не пишет и генератор не вызывает: всё — через ensureWbMonthSection
+    expect(index).not.toMatch(/structureWrite|toStructureRequests|planMonthPrep/);
+    expect(index).toMatch(/ensureWbMonthSection\(/);
+    const life = readFileSync(new URL('../src/loaders/unitka/wb_lifecycle.ts', import.meta.url), 'utf8');
+    // второго генератора месяца нет: планировщик и запросы — из monthprep.ts
+    expect(life).toMatch(/from '\.\/monthprep\.js'/);
+    expect(life).toMatch(/planMonthPrep\(/);
+    expect(life).toMatch(/toStructureRequests\(/);
+    expect(life).not.toMatch(/insertDimension|updateCells|copyPaste|mergeCells/);
+    // структурная запись — только в режиме записи
+    expect(life.indexOf('if (!a.write)')).toBeGreaterThan(0);
+    expect(life.indexOf('if (!a.write)')).toBeLessThan(life.indexOf('structureWrite('));
   });
 });
 

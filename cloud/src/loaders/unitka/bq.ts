@@ -178,6 +178,14 @@ function date(v: unknown): string | null {
   return s === null ? null : s.slice(0, 10);
 }
 
+/** Гейтящие загрузчики WB — те же два источника, что гейтят V_UNITKA_SOURCE_FRESHNESS. */
+export const WB_GATING_LOADERS: readonly string[] = ['funnel', 'mart'];
+/**
+ * Окно воронки = FUNNEL_LOOKBACK_DAYS задания wb-funnel-prod. Контракт с Terraform проверяет тест:
+ * укоротят окно в infra — упадёт тест, и семантику покрытия придётся пересмотреть осознанно.
+ */
+export const WB_FUNNEL_COVERAGE_DAYS = 7;
+
 export class UnitkaBq {
   constructor(
     private readonly runner: QueryRunner,
@@ -213,6 +221,28 @@ export class UnitkaBq {
     const d1 = r ? date(r.d1_msk) : null;
     if (!lcd || !d1) throw new LoaderError('V_UNITKA_LAST_CLOSED_DATE не вернула дату — гейтящие источники пусты', 'SOURCE_STALE');
     return { lastClosedDate: lcd, d1Msk: d1 };
+  }
+
+  /**
+   * AUTO-LCD WB (Gate 10): покрытие суток ПРОГОНАМИ гейтящих загрузчиков — funnel и mart, те же два
+   * гейтящих источника, что у V_UNITKA_SOURCE_FRESHNESS. Покрытие — это завершённый прогон на
+   * логический день, а не наличие бизнес-строк: сутки без продаж — законный ноль, а не дырка.
+   *
+   * Только сутки ПОЗЖЕ закоммиченного LCD: смежность идёт вперёд от него, и старая история
+   * журнала (он короче данных) не нужна и не должна влиять на результат.
+   * Среда источников — всегда prod: даже shadow-Engine пишет факты prod-витрины.
+   */
+  async wbRunCoverage(rawDataset: string, sinceIso: string): Promise<Array<{ loader: string; period: string }>> {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(sinceIso)) throw new LoaderError(`wbRunCoverage: дата ${sinceIso}`, 'LCD_BOOK_INVALID');
+    const rows = await this.runner.query(
+      `SELECT loader_name, logical_period FROM ${this.fqn(rawDataset, 'LOADER_RUNS')}
+       WHERE environment = 'prod' AND status = 'COMPLETE'
+         AND loader_name IN (${WB_GATING_LOADERS.map((l) => `'${l}'`).join(', ')})
+         AND logical_period > @since
+       ORDER BY logical_period`,
+      { since: sinceIso },
+    );
+    return rows.map((r) => ({ loader: String(r.loader_name), period: String(r.logical_period) }));
   }
 
   async facts(): Promise<FactRow[]> {
