@@ -1,0 +1,23 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/evelagin/evetis-wb-analytics/quality/autonomy/engineer_report.schema.json",
+  "title": "AE v1 engineer structured output",
+  "description": "Структурированный вывод инженера. Это заявление, а не доказательство: оркестратор сам вычисляет дифф, сам прогоняет тесты и сверяет заявленное с фактическим.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["phase", "status", "summary", "root_cause", "root_cause_established", "intended_files",
+               "changed_files", "business_semantics_change", "commands_run", "uncertainty", "questions_for_owner"],
+  "properties": {
+    "phase": {"enum": ["PLAN", "IMPLEMENT"]},
+    "status": {"enum": ["PLAN_READY", "CANDIDATE_READY", "NEEDS_HUMAN", "CANNOT_PROCEED"]},
+    "summary": {"type": "string", "minLength": 1, "maxLength": 4000},
+    "root_cause": {"type": "string", "maxLength": 4000},
+    "root_cause_established": {"type": "boolean"},
+    "intended_files": {"type": "array", "items": {"type": "string", "maxLength": 300}},
+    "changed_files": {"type": "array", "items": {"type": "string", "maxLength": 300}},
+    "business_semantics_change": {"type": "boolean"},
+    "commands_run": {"type": "array", "items": {"type": "string", "maxLength": 500}},
+    "uncertainty": {"type": "array", "items": {"type": "string", "maxLength": 1000}},
+    "questions_for_owner": {"type": "array", "items": {"type": "string", "maxLength": 1000}}
+  }
+}

@@ -1,5 +1,82 @@
 # CHANGELOG.md
 
+## 2026-09-24 — PR-PROMO-3: экономика акций на каноне Forward economics
+
+Новые объекты; существующие объекты, колонки, Юнитка и канон экономики не менялись.
+
+- **Снимки базиса (append-only таблицы):** `wb_raw.WB_PROMO_ECONOMICS_BASIS_SNAPSHOT`,
+  `ozon_raw.OZON_PROMO_ECONOMICS_BASIS_SNAPSHOT` — копия канонических вью WB_FE_V1 и Ozon
+  FORWARD_MODELLED на каждом слоте наблюдения акций. Процедуры
+  `wb_mart.sp_snapshot_wb_promo_economics_basis`, `ozon_mart.sp_snapshot_ozon_promo_economics_basis`;
+  расписание — `infra/terraform/promo_economics_snapshot.tf`.
+- **VIEW:** `wb_mart.V_WB_PROMO_ECONOMICS_{BASIS,SCENARIO}_HISTORY`,
+  `ozon_mart.V_OZON_PROMO_ECONOMICS_{BASIS,SCENARIO}_HISTORY`,
+  `evetis_mart.V_PROMO_ECONOMICS_{SCENARIO_HISTORY,SCENARIO_CURRENT,COVERAGE_CURRENT}`.
+- Вклад при цене акции = `P × удерживаемая доля − постоянные издержки` из снимка канона;
+  EXPECTED, downside своей площадки, break-even, требуемый рост продаж с граничными случаями.
+- Проверки: `sql/promotions/pr_promo3_economics_validation.sql` (набор `promo_economics`),
+  регрессия `tools/promo_economics_render.py run fixtures`, мост к Юнитке (замер)
+  `sql/promotions/pr_promo3_unitka_bridge.sql`. Откат — `sql/promotions/pr_promo3_rollback.sql`.
+- PR-PROMO-2 V24 сужен до вью состояния: вью экономики проверяет E20.
+
+## 2026-09-24 — AE v1: атакующий разбор безопасности (Git, выключен, IAM не менялся)
+
+Что обнаружено: живой WIF отдаёт `sa-deployer`/`sa-terraform-plan` любому workflow, а
+`sa-terraform-apply` — любому workflow на `main`, включая job'ы AE (снимок: 24/25 FAIL). В коде
+AE доверенный шаг `verify` исполнял инструмент анализа влияния из песочницы кандидата рядом с
+токеном записи. Воспроизведение недоверенного вывода было fail-open без `--expect`.
+Переименование из запрещённого пути не замечалось. PR от `GITHUB_TOKEN` доходил до «готово» без CI.
+
+Что изменено: WIF по точным `workflow_ref`/`job_workflow_ref` (`wif.tf`, `autonomy.tf`, **не
+применено**) и проверка `tools/autonomy/wif_check.py`. Доверенная база (TCB, 7 классов) →
+`HUMAN_DECISION_REQUIRED`. Состояния `AWAITING_VERIFICATION` → `READY_FOR_HUMAN_REVIEW`, диспатч
+`sql-current.yml`/`ci.yml` (добавлен `workflow_dispatch`, из `ci.yml` убран pip-кэш). Спецификация
+федерации Anthropic (`quality/autonomy/anthropic_federation.json`). Синтетическая цель ввода в
+эксплуатацию (`execute: false`, мишень `tools/commissioning/ae_canary.py`). У `autonomy-watch`
+убрано расписание. Действия закреплены по SHA, входы workflows строго проверяются.
+
+Листы Google Sheets и объекты BigQuery не затронуты. Проверка: `tools/tests` 679 passed (AE 294),
+`validate_current_sql` C1–C18, actionlint, `terraform validate`. Отчёт:
+`docs/architecture/AE_V1_SECURITY_COMMISSIONING.md`, раскатка — `AE_V1_RUNBOOK.md` §2.
+
+## 2026-09-24 — Autonomous Engineering v1: контур наблюдатель → инженер → ревьюер → гейткипер (Git, выключен)
+
+Реализован в Git, **выключен** (`AE_ENABLED` не задан). Production не менялся, IAM, расписания и
+Terraform не применялись.
+
+- **Детерминированный каркас** `tools/autonomy/`: наблюдатель без модели, машина состояний с
+  долговременной записью, гейткипер (модель может только ужесточить итог), детектор ослабления
+  ворот, публикатор только в `ae/*` и только draft PR, аудит мутаций по журналу BigQuery.
+- **Схемы** `quality/autonomy/`: инцидент, цель, отчёт инженера, вердикт ревьюера, запись прогона;
+  единая политика бюджетов и запретов `policy.json`.
+- **6 workflows** `autonomy-*.yml`: каждая роль — отдельная эфемерная машина; авторитетное состояние
+  пишут только доверенные jobs; недоверенный вывод воспроизводится по sha256 из outputs.
+- **Terraform (не применено)**: `sa-ae-reader` только с ролями чтения; **привилегированные SA
+  `deployer` и `terraform_apply` привязаны к своим workflow-файлам** — до этого их мог получить
+  любой workflow репозитория / любой workflow на main.
+- **Приёмка A–F**: 111 тестов AE, весь `tools/tests` — 496 passed (после слияния PROMO-2). Живой наблюдатель на production:
+  HEALTHY без вызова модели; попутно пойман новый выкуп CIS без документа (детектор UBR-012).
+- **Канарейка UBR-011** подготовлена, не запущена (`execute: false`).
+## 2026-09-23 — PR-PROMO-2: каноническое состояние акций WB и Ozon (16 новых VIEW)
+
+Новые объекты, существующие колонки и объекты не менялись. Экономики и рекомендаций нет.
+
+- **`wb_mart`** (вне `sql/current`, датасет не канонизирован): `V_WB_PROMO_OBSERVATION_HISTORY`,
+  `V_WB_PROMO_HISTORY`, `V_WB_PROMO_RANGING_HISTORY`, `V_WB_PROMO_SKU_EVIDENCE_HISTORY`,
+  `V_WB_PROMO_SKU_STATE_HISTORY`.
+- **`ozon_mart`** (`sql/current`, `pending_deploy`): `V_OZON_PROMO_OBSERVATION_HISTORY`,
+  `V_OZON_PROMO_HISTORY`, `V_OZON_PROMO_SKU_EVIDENCE_HISTORY`, `V_OZON_PROMO_SKU_STATE_HISTORY`.
+- **`evetis_mart`** (`sql/current`, `pending_deploy`): `V_PROMO_OBSERVATION_HISTORY`,
+  `V_PROMO_STATE_HISTORY`, `V_PROMO_STATE_CURRENT`, `V_PROMO_SKU_EVIDENCE_HISTORY`,
+  `V_PROMO_SKU_STATE_HISTORY`, `V_PROMO_SKU_STATE_CURRENT`, `V_PROMO_OBSERVABILITY_CURRENT`.
+- Состояние товара в акции — не булево: оси `participation_state` и `auto_add_state`, итог
+  `resolved_state` по правилам R1–R6 с классом доказательности. Автоакции WB —
+  `NOT_OBSERVABLE` на уровне акции, строк SKU для них нет.
+- Проверки: `sql/promotions/pr_promo2_canonical_validation.sql` (набор `promo_canonical_state`),
+  регрессионные сценарии — `tools/promo_canonical_render.py run fixtures`. Откат —
+  `sql/promotions/pr_promo2_rollback.sql`. Контракт —
+  `docs/promotions/PR_PROMO_2_CANONICAL_STATE_2026-09-22.md`.
+
 ## 2026-09-21 — OZON UNITKA: боевой лист переведён на 25 колонок (Gate 6B)
 
 `OZON_Юнит_2025` мигрирован: `465 x 404 -> 650 x 574` за 116 с, 39 батчей. WB не тронут,

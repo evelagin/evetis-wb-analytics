@@ -14,6 +14,7 @@ from sqlglot import exp
 
 REPO = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO / "tools"))
+import promo_canonical_render as promo_render  # noqa: E402
 import scale1_predeploy_render as render  # noqa: E402
 import validate_current_sql as v  # noqa: E402
 
@@ -40,6 +41,8 @@ NEUTRAL_SCHEMA = [
     ("economics_covered", "BOOL"), ("is_provisional", "BOOL"), ("fact_date_semantics", "STRING"),
     ("source_contract", "STRING"), ("contract_version", "STRING"),
 ]
+import promo_economics_render as promo3_render  # noqa: E402
+PROMO2_OBJECTS = {name for _, name, _ in promo3_render.OBJECTS}
 TAX_WORDS = re.compile(r"tax|vat|usn|nalog|налог|ндс|усн", re.I)
 
 
@@ -396,8 +399,10 @@ def test_predeploy_render_inlines_every_pending_object_and_stays_a_select():
     # PR #160 слит: подставлять нечего, и это правильный ответ, а не поломка инструмента.
     # Логика подстановки всё равно проверяется ниже на тех же объектах, как если бы
     # они были pending.
+    # PR-PROMO-2 (2026-09-23) добавил 11 объектов Git-first; их предразвёртывание проверяет
+    # tools/promo_canonical_render.py, объекты SCALE 1 по-прежнему не pending.
     pending = {k.split(".")[-1].rstrip("`") for k in render.pending_bodies()}
-    assert pending == set()
+    assert pending - PROMO2_OBJECTS == set()
     sample = next(iter(check_blocks().values()))
     assert render.render(sample, {}) == sample
     # ... and its inlining logic is still exercised on the same objects, as if they were pending.

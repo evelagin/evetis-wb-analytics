@@ -1,0 +1,55 @@
+google_project_service.enabled["bigquery.googleapis.com"]: Refreshing state... [id=project-fa311fc0-4d87-4781-986/bigquery.googleapis.com]
+google_project_service.enabled["monitoring.googleapis.com"]: Refreshing state... [id=project-fa311fc0-4d87-4781-986/monitoring.googleapis.com]
+google_project_service.enabled["artifactregistry.googleapis.com"]: Refreshing state... [id=project-fa311fc0-4d87-4781-986/artifactregistry.googleapis.com]
+google_project_service.enabled["sheets.googleapis.com"]: Refreshing state... [id=project-fa311fc0-4d87-4781-986/sheets.googleapis.com]
+google_project_service.enabled["cloudscheduler.googleapis.com"]: Refreshing state... [id=project-fa311fc0-4d87-4781-986/cloudscheduler.googleapis.com]
+google_project_service.enabled["iamcredentials.googleapis.com"]: Refreshing state... [id=project-fa311fc0-4d87-4781-986/iamcredentials.googleapis.com]
+google_project_service.enabled["iam.googleapis.com"]: Refreshing state... [id=project-fa311fc0-4d87-4781-986/iam.googleapis.com]
+google_project_service.enabled["cloudresourcemanager.googleapis.com"]: Refreshing state... [id=project-fa311fc0-4d87-4781-986/cloudresourcemanager.googleapis.com]
+google_project_service.enabled["cloudbuild.googleapis.com"]: Refreshing state... [id=project-fa311fc0-4d87-4781-986/cloudbuild.googleapis.com]
+google_project_service.enabled["run.googleapis.com"]: Refreshing state... [id=project-fa311fc0-4d87-4781-986/run.googleapis.com]
+google_project_service.enabled["secretmanager.googleapis.com"]: Refreshing state... [id=project-fa311fc0-4d87-4781-986/secretmanager.googleapis.com]
+google_project_service.enabled["sts.googleapis.com"]: Refreshing state... [id=project-fa311fc0-4d87-4781-986/sts.googleapis.com]
+google_iam_workload_identity_pool.github: Refreshing state... [id=projects/project-fa311fc0-4d87-4781-986/locations/global/workloadIdentityPools/github-pool]
+google_iam_workload_identity_pool_provider.github: Refreshing state... [id=projects/project-fa311fc0-4d87-4781-986/locations/global/workloadIdentityPools/github-pool/providers/github-provider]
+
+Terraform used the selected providers to generate the following execution
+plan. Resource actions are indicated with the following symbols:
+  ~ update in-place
+
+Terraform will perform the following actions:
+
+  # google_iam_workload_identity_pool_provider.github will be updated in-place
+  ~ resource "google_iam_workload_identity_pool_provider" "github" {
+      ~ attribute_mapping                  = {
+          + "attribute.job_workflow_ref" = "assertion.job_workflow_ref"
+          + "attribute.tf_plan_workflow" = "(assertion.workflow_ref == assertion.repository + '/.github/workflows/infra.yml@' + assertion.ref && !assertion.ref.startsWith('refs/heads/ae/')) ? 'infra.yml' : 'none'"
+          + "attribute.workflow_ref"     = "assertion.workflow_ref"
+            # (4 unchanged elements hidden)
+        }
+        id                                 = "projects/project-fa311fc0-4d87-4781-986/locations/global/workloadIdentityPools/github-pool/providers/github-provider"
+        name                               = "projects/37074083763/locations/global/workloadIdentityPools/github-pool/providers/github-provider"
+        # (9 unchanged attributes hidden)
+
+        # (1 unchanged block hidden)
+    }
+
+Plan: 0 to add, 1 to change, 0 to destroy.
+
+Warning: Resource targeting is in effect
+
+You are creating a plan with the -target option, which means that the result
+of this plan may not represent all of the changes requested by the current
+configuration.
+
+The -target option is not for routine use, and is provided only for
+exceptional situations such as recovering from errors or mistakes, or when
+Terraform specifically suggests to use it as part of an error message.
+
+─────────────────────────────────────────────────────────────────────────────
+
+Saved the plan to: m1.plan
+
+To perform exactly these actions, run the following command to apply:
+    terraform apply "m1.plan"
+exit=0
