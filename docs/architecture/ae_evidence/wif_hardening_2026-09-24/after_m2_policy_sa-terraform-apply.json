@@ -1,0 +1,13 @@
+{
+  "bindings": [
+    {
+      "members": [
+        "principalSet://iam.googleapis.com/projects/37074083763/locations/global/workloadIdentityPools/github-pool/attribute.workflow_ref/evelagin/evetis-wb-analytics/.github/workflows/infra.yml@refs/heads/main",
+        "principalSet://iam.googleapis.com/projects/37074083763/locations/global/workloadIdentityPools/github-pool/attribute.workflow_ref/evelagin/evetis-wb-analytics/.github/workflows/scheduler-control.yml@refs/heads/main"
+      ],
+      "role": "roles/iam.workloadIdentityUser"
+    }
+  ],
+  "etag": "BwZcNSMYzY0=",
+  "version": 1
+}

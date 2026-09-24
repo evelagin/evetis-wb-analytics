@@ -130,3 +130,29 @@ def test_token_without_claim_is_rejected_not_matched():
 def test_cli_exit_code_on_desired_state():
     assert wif_check.main([]) == 0
     assert wif_check.main(["--snapshot", str(SNAPSHOT)]) == 1
+
+
+# ------------------------------------------------------------------------ фазы раскатки ---
+def _without_reader(cfg):
+    return WifConfig(cfg.source, cfg.condition, cfg.mapping,
+                     {sa: m for sa, m in cfg.bindings.items() if sa != "sa-ae-reader"})
+
+
+def test_phase1_state_passes_phase1_check_and_fails_full_check_only_on_reader():
+    """После M1–M2 (без M3): фаза 1 — 25/25; полная матрица падает ТОЛЬКО на отсутствии
+    sa-ae-reader, ни одной утечки привилегий."""
+    phase1 = _without_reader(DESIRED)
+    assert all(r["status"] == "PASS" for r in wif_check.verify(phase1, "wif-hardening"))
+    full = [r for r in wif_check.verify(phase1) if r["status"] == "FAIL"]
+    assert {r["case"] for r in full} == {"A6", "A7", "B1", "B2"}
+    assert all(r["expect"] == ["sa-ae-reader"] and r["got"] == [] and not r["privileged_leak"] for r in full)
+
+
+def test_phase1_check_rejects_premature_reader():
+    assert not all(r["status"] == "PASS" for r in wif_check.verify(DESIRED, "wif-hardening"))
+
+
+def test_phase1_check_still_catches_the_live_snapshot_before_fix():
+    live = wif_check.from_snapshot(json.loads(SNAPSHOT.read_text(encoding="utf-8")), "snapshot")
+    rows = wif_check.verify(live, "wif-hardening")
+    assert sum(r["status"] == "FAIL" for r in rows) >= 20

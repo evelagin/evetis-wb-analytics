@@ -473,10 +473,24 @@ def cases() -> list[Case]:
     ]
 
 
-def verify(config: WifConfig) -> list[dict]:
+# Фазы раскатки (AE_V1_RUNBOOK.md §2). Полная матрица — целевое состояние после M3. Фаза 1
+# (M1–M2) закрывает только привилегированные SA: sa-ae-reader ещё НЕ существует и существовать
+# не должен, поэтому его ожидание снимается, а его появление — нарушение фазы.
+PHASES = {"full": None, "wif-hardening": {"sa-ae-reader"}}
+
+
+def verify(config: WifConfig, phase: str = "full") -> list[dict]:
+    absent = PHASES[phase] or set()
     rows = []
     for c in cases():
         got = config.obtainable(c.claims)
+        if absent:
+            if got & absent:
+                rows.append({"case": c.id, "title": c.title, "expect": sorted(c.expect - absent), "got": sorted(got),
+                             "privileged_leak": sorted(got & absent),
+                             "status": "FAIL"})
+                continue
+            c = Case(c.id, c.title, c.claims, frozenset(c.expect - absent))
         rows.append({"case": c.id, "title": c.title, "expect": sorted(c.expect), "got": sorted(got),
                      "privileged_leak": sorted((got - c.expect) & PRIVILEGED),
                      "status": "PASS" if got == c.expect else "FAIL"})
@@ -490,6 +504,8 @@ def main(argv: list[str] | None = None) -> int:
     src.add_argument("--live", action="store_true")
     ap.add_argument("--project", default="project-fa311fc0-4d87-4781-986")
     ap.add_argument("--json", action="store_true")
+    ap.add_argument("--phase", choices=sorted(PHASES), default="full",
+                    help="full — целевое состояние (после M3); wif-hardening — фаза 1 (M1–M2), sa-ae-reader отсутствует")
     a = ap.parse_args(argv)
     if a.live:
         cfg = from_snapshot(capture_live(a.project), "live")
@@ -497,11 +513,11 @@ def main(argv: list[str] | None = None) -> int:
         cfg = from_snapshot(json.loads(a.snapshot.read_text(encoding="utf-8")), str(a.snapshot))
     else:
         cfg = load_terraform()
-    rows = verify(cfg)
+    rows = verify(cfg, a.phase)
     if a.json:
-        print(json.dumps({"source": cfg.source, "results": rows}, ensure_ascii=False, indent=2))
+        print(json.dumps({"source": cfg.source, "phase": a.phase, "results": rows}, ensure_ascii=False, indent=2))
     else:
-        print(f"источник: {cfg.source}")
+        print(f"источник: {cfg.source} · фаза: {a.phase}")
         for r in rows:
             leak = f"  УТЕЧКА {r['privileged_leak']}" if r["privileged_leak"] else ""
             print(f"{r['status']:4} {r['case']:3} {r['title'][:70]:70} → {r['got']}{leak}")

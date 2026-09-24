@@ -32,6 +32,13 @@ Workflows AE лежат в `main`, но ничего не делают:
 
 ### Фаза 1 — закрыть привилегированный WIF (S1)
 
+> **Выполнено 2026-09-24 по ACK владельца: `WIF_HARDENING_VERIFIED`.** Путь (б), сохранённые планы
+> M1 (`1 to change`) и M2 (`5 to add, 3 to destroy`). Проверка:
+> `wif_check --live --phase wif-hardening` → 25/25, утечек 0. Доказательства —
+> [`ae_evidence/wif_hardening_2026-09-24/`](ae_evidence/wif_hardening_2026-09-24/README.md).
+> ⚠️ Пока `wif.tf` из PR #165 не в `main`, не применять из `main` провайдер и `*_wif`: откат
+> маппинга лишит deploy-* и infra авторизации.
+
 #### M1. Маппинг атрибутов провайдера (только добавление)
 
 | | |
@@ -54,7 +61,7 @@ Workflows AE лежат в `main`, но ничего не делают:
 | Желаемое | deployer: `attribute.workflow_ref/…/deploy-prod.yml@refs/heads/main` и `…/deploy-shadow.yml@refs/heads/main`; apply: `…/infra.yml@refs/heads/main` и `…/scheduler-control.yml@refs/heads/main`; plan: `attribute.tf_plan_workflow/infra.yml` |
 | targets | `google_service_account_iam_member.deployer_wif,google_service_account_iam_member.terraform_apply_wif,google_service_account_iam_member.terraform_plan_wif` |
 | Ожидаемый diff | `5 to add, 0 to change, 3 to destroy`: 2 новых deployer, 2 новых apply; plan `must be replaced`; старые `deployer_wif` и `terraform_apply_wif` destroyed «because resource uses count or for_each» |
-| Проверка | 1) `python -m tools.autonomy.wif_check --live` → **код 0, 25/25 PASS** (это и есть S1); 2) `infra.yml action=plan` с feature-ветки — авторизация plan; 3) следующий `deploy-shadow` (push в `main`) — авторизация deployer; 4) JSON-политика SA: `gcloud iam service-accounts get-iam-policy sa-deployer@project-fa311fc0-4d87-4781-986.iam.gserviceaccount.com --format=json` — `value(bindings.role)` скрывает условия |
+| Проверка | 1) `python -m tools.autonomy.wif_check --live --phase wif-hardening` → **код 0, 25/25 PASS** (до M3; после M3 — без `--phase`, это и есть S1); 2) `infra.yml action=plan` с feature-ветки — авторизация plan; 3) следующий `deploy-shadow` (push в `main`) — авторизация deployer; 4) JSON-политика SA: `gcloud iam service-accounts get-iam-policy sa-deployer@project-fa311fc0-4d87-4781-986.iam.gserviceaccount.com --format=json` — `value(bindings.role)` скрывает условия |
 | Откат | `gcloud iam service-accounts add-iam-policy-binding <SA> --role=roles/iam.workloadIdentityUser --member=<старый member>` для трёх строк из «Текущее» (префикс `principalSet://iam.googleapis.com/projects/37074083763/locations/global/workloadIdentityPools/github-pool/`). Откат возвращает риск §2 документа безопасности |
 
 Блокировки себя нет. Job `infra.yml` apply получает токен в начале job'а, а новая привязка его

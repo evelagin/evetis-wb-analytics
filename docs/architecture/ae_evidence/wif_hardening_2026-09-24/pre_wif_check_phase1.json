@@ -1,0 +1,383 @@
+{
+  "source": "docs/architecture/ae_evidence/wif_hardening_2026-09-24/pre_live_snapshot.json",
+  "phase": "wif-hardening",
+  "results": [
+    {
+      "case": "A1",
+      "title": "deploy-prod.yml, dispatch из main (environment production)",
+      "expect": [
+        "sa-deployer"
+      ],
+      "got": [
+        "sa-deployer",
+        "sa-terraform-apply",
+        "sa-terraform-plan"
+      ],
+      "privileged_leak": [
+        "sa-terraform-apply",
+        "sa-terraform-plan"
+      ],
+      "status": "FAIL"
+    },
+    {
+      "case": "A2",
+      "title": "deploy-shadow.yml, push в main",
+      "expect": [
+        "sa-deployer"
+      ],
+      "got": [
+        "sa-deployer",
+        "sa-terraform-apply",
+        "sa-terraform-plan"
+      ],
+      "privileged_leak": [
+        "sa-terraform-apply",
+        "sa-terraform-plan"
+      ],
+      "status": "FAIL"
+    },
+    {
+      "case": "A3",
+      "title": "infra.yml plan, dispatch с feature-ветки",
+      "expect": [
+        "sa-terraform-plan"
+      ],
+      "got": [
+        "sa-deployer",
+        "sa-terraform-plan"
+      ],
+      "privileged_leak": [
+        "sa-deployer"
+      ],
+      "status": "FAIL"
+    },
+    {
+      "case": "A4",
+      "title": "infra.yml apply/plan, dispatch из main (environment infra)",
+      "expect": [
+        "sa-terraform-apply",
+        "sa-terraform-plan"
+      ],
+      "got": [
+        "sa-deployer",
+        "sa-terraform-apply",
+        "sa-terraform-plan"
+      ],
+      "privileged_leak": [
+        "sa-deployer"
+      ],
+      "status": "FAIL"
+    },
+    {
+      "case": "A5",
+      "title": "scheduler-control.yml, dispatch из main (environment production)",
+      "expect": [
+        "sa-terraform-apply"
+      ],
+      "got": [
+        "sa-deployer",
+        "sa-terraform-apply",
+        "sa-terraform-plan"
+      ],
+      "privileged_leak": [
+        "sa-deployer",
+        "sa-terraform-plan"
+      ],
+      "status": "FAIL"
+    },
+    {
+      "case": "A6",
+      "title": "autonomy-watch.yml из main → только sa-ae-reader",
+      "expect": [],
+      "got": [
+        "sa-deployer",
+        "sa-terraform-apply",
+        "sa-terraform-plan"
+      ],
+      "privileged_leak": [
+        "sa-deployer",
+        "sa-terraform-apply",
+        "sa-terraform-plan"
+      ],
+      "status": "FAIL"
+    },
+    {
+      "case": "A7",
+      "title": "autonomy-run → job autonomy-gate.yml → только sa-ae-reader",
+      "expect": [],
+      "got": [
+        "sa-deployer",
+        "sa-terraform-apply",
+        "sa-terraform-plan"
+      ],
+      "privileged_leak": [
+        "sa-deployer",
+        "sa-terraform-apply",
+        "sa-terraform-plan"
+      ],
+      "status": "FAIL"
+    },
+    {
+      "case": "B1",
+      "title": "autonomy-run → job autonomy-engineer.yml (код агента)",
+      "expect": [],
+      "got": [
+        "sa-deployer",
+        "sa-terraform-apply",
+        "sa-terraform-plan"
+      ],
+      "privileged_leak": [
+        "sa-deployer",
+        "sa-terraform-apply",
+        "sa-terraform-plan"
+      ],
+      "status": "FAIL"
+    },
+    {
+      "case": "B2",
+      "title": "autonomy-run → job autonomy-test.yml (код кандидата)",
+      "expect": [],
+      "got": [
+        "sa-deployer",
+        "sa-terraform-apply",
+        "sa-terraform-plan"
+      ],
+      "privileged_leak": [
+        "sa-deployer",
+        "sa-terraform-apply",
+        "sa-terraform-plan"
+      ],
+      "status": "FAIL"
+    },
+    {
+      "case": "C1",
+      "title": "autonomy-run → job autonomy-review.yml",
+      "expect": [],
+      "got": [
+        "sa-deployer",
+        "sa-terraform-apply",
+        "sa-terraform-plan"
+      ],
+      "privileged_leak": [
+        "sa-deployer",
+        "sa-terraform-apply",
+        "sa-terraform-plan"
+      ],
+      "status": "FAIL"
+    },
+    {
+      "case": "D1",
+      "title": "deploy-prod.yml, dispatch на ветке кандидата ae/*",
+      "expect": [],
+      "got": [
+        "sa-deployer",
+        "sa-terraform-plan"
+      ],
+      "privileged_leak": [
+        "sa-deployer",
+        "sa-terraform-plan"
+      ],
+      "status": "FAIL"
+    },
+    {
+      "case": "D2",
+      "title": "deploy-shadow.yml на ветке кандидата",
+      "expect": [],
+      "got": [
+        "sa-deployer",
+        "sa-terraform-plan"
+      ],
+      "privileged_leak": [
+        "sa-deployer",
+        "sa-terraform-plan"
+      ],
+      "status": "FAIL"
+    },
+    {
+      "case": "D3",
+      "title": "infra.yml на ветке кандидата",
+      "expect": [],
+      "got": [
+        "sa-deployer",
+        "sa-terraform-plan"
+      ],
+      "privileged_leak": [
+        "sa-deployer",
+        "sa-terraform-plan"
+      ],
+      "status": "FAIL"
+    },
+    {
+      "case": "D4",
+      "title": "autonomy-run.yml на ветке кандидата → engineer",
+      "expect": [],
+      "got": [
+        "sa-deployer",
+        "sa-terraform-plan"
+      ],
+      "privileged_leak": [
+        "sa-deployer",
+        "sa-terraform-plan"
+      ],
+      "status": "FAIL"
+    },
+    {
+      "case": "D5",
+      "title": "pull_request по PR кандидата (ci.yml)",
+      "expect": [],
+      "got": [
+        "sa-deployer",
+        "sa-terraform-plan"
+      ],
+      "privileged_leak": [
+        "sa-deployer",
+        "sa-terraform-plan"
+      ],
+      "status": "FAIL"
+    },
+    {
+      "case": "D6",
+      "title": "обязательная проверка: ci.yml dispatch на ветке кандидата",
+      "expect": [],
+      "got": [
+        "sa-deployer",
+        "sa-terraform-plan"
+      ],
+      "privileged_leak": [
+        "sa-deployer",
+        "sa-terraform-plan"
+      ],
+      "status": "FAIL"
+    },
+    {
+      "case": "E1",
+      "title": "файл «deploy-prod.yml@x.yml» на ветке x (extract до первого @)",
+      "expect": [],
+      "got": [
+        "sa-deployer",
+        "sa-terraform-plan"
+      ],
+      "privileged_leak": [
+        "sa-deployer",
+        "sa-terraform-plan"
+      ],
+      "status": "FAIL"
+    },
+    {
+      "case": "E2",
+      "title": "файл «infra.yml@x.yml» на main (extract до первого @)",
+      "expect": [],
+      "got": [
+        "sa-deployer",
+        "sa-terraform-apply",
+        "sa-terraform-plan"
+      ],
+      "privileged_leak": [
+        "sa-deployer",
+        "sa-terraform-apply",
+        "sa-terraform-plan"
+      ],
+      "status": "FAIL"
+    },
+    {
+      "case": "E3",
+      "title": "ветка «main-evil»",
+      "expect": [],
+      "got": [
+        "sa-deployer",
+        "sa-terraform-plan"
+      ],
+      "privileged_leak": [
+        "sa-deployer",
+        "sa-terraform-plan"
+      ],
+      "status": "FAIL"
+    },
+    {
+      "case": "E4",
+      "title": "тег refs/tags/main",
+      "expect": [],
+      "got": [
+        "sa-deployer",
+        "sa-terraform-plan"
+      ],
+      "privileged_leak": [
+        "sa-deployer",
+        "sa-terraform-plan"
+      ],
+      "status": "FAIL"
+    },
+    {
+      "case": "E5",
+      "title": "AE-workflow вызывает deploy-prod.yml как переиспользуемый",
+      "expect": [],
+      "got": [
+        "sa-deployer",
+        "sa-terraform-apply",
+        "sa-terraform-plan"
+      ],
+      "privileged_leak": [
+        "sa-deployer",
+        "sa-terraform-apply",
+        "sa-terraform-plan"
+      ],
+      "status": "FAIL"
+    },
+    {
+      "case": "E6",
+      "title": "AE-workflow вызывает infra.yml как переиспользуемый",
+      "expect": [],
+      "got": [
+        "sa-deployer",
+        "sa-terraform-apply",
+        "sa-terraform-plan"
+      ],
+      "privileged_leak": [
+        "sa-deployer",
+        "sa-terraform-apply",
+        "sa-terraform-plan"
+      ],
+      "status": "FAIL"
+    },
+    {
+      "case": "E7",
+      "title": "другой репозиторий с тем же путём",
+      "expect": [],
+      "got": [],
+      "privileged_leak": [],
+      "status": "PASS"
+    },
+    {
+      "case": "E8",
+      "title": "environment production на непривилегированном файле из main",
+      "expect": [],
+      "got": [
+        "sa-deployer",
+        "sa-terraform-apply",
+        "sa-terraform-plan"
+      ],
+      "privileged_leak": [
+        "sa-deployer",
+        "sa-terraform-apply",
+        "sa-terraform-plan"
+      ],
+      "status": "FAIL"
+    },
+    {
+      "case": "E9",
+      "title": "каталог-двойник .github/workflows/x/../deploy-prod.yml",
+      "expect": [],
+      "got": [
+        "sa-deployer",
+        "sa-terraform-apply",
+        "sa-terraform-plan"
+      ],
+      "privileged_leak": [
+        "sa-deployer",
+        "sa-terraform-apply",
+        "sa-terraform-plan"
+      ],
+      "status": "FAIL"
+    }
+  ]
+}

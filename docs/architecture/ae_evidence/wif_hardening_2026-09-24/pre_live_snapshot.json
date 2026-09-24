@@ -1,0 +1,41 @@
+{
+  "captured_at": "2026-09-24 (перед M1)",
+  "source": "wif_check.capture_live (read-only gcloud)",
+  "provider": {
+    "name": "projects/37074083763/locations/global/workloadIdentityPools/github-pool/providers/github-provider",
+    "attributeCondition": "assertion.repository == \"evelagin/evetis-wb-analytics\"",
+    "attributeMapping": {
+      "attribute.ref": "assertion.ref",
+      "attribute.repo_ref": "assertion.repository + \"@\" + assertion.ref",
+      "attribute.repository": "assertion.repository",
+      "google.subject": "assertion.sub"
+    },
+    "state": "ACTIVE"
+  },
+  "service_account_bindings": {
+    "sa-terraform-plan": [
+      {
+        "role": "roles/iam.workloadIdentityUser",
+        "members": [
+          "principalSet://iam.googleapis.com/projects/37074083763/locations/global/workloadIdentityPools/github-pool/attribute.repository/evelagin/evetis-wb-analytics"
+        ]
+      }
+    ],
+    "sa-deployer": [
+      {
+        "role": "roles/iam.workloadIdentityUser",
+        "members": [
+          "principalSet://iam.googleapis.com/projects/37074083763/locations/global/workloadIdentityPools/github-pool/attribute.repository/evelagin/evetis-wb-analytics"
+        ]
+      }
+    ],
+    "sa-terraform-apply": [
+      {
+        "role": "roles/iam.workloadIdentityUser",
+        "members": [
+          "principalSet://iam.googleapis.com/projects/37074083763/locations/global/workloadIdentityPools/github-pool/attribute.repo_ref/evelagin/evetis-wb-analytics@refs/heads/main"
+        ]
+      }
+    ]
+  }
+}
