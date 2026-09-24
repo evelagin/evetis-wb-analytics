@@ -40,7 +40,7 @@ PROMO2_PENDING = {"ozon_mart": set(), "evetis_mart": set()}  # сняты R2C п
 PROMO3 = {"ozon_mart": {"V_OZON_PROMO_ECONOMICS_BASIS_HISTORY", "V_OZON_PROMO_ECONOMICS_SCENARIO_HISTORY"},
           "evetis_mart": {"V_PROMO_ECONOMICS_SCENARIO_HISTORY", "V_PROMO_ECONOMICS_SCENARIO_CURRENT",
                           "V_PROMO_ECONOMICS_COVERAGE_CURRENT"}}
-PROMO3_PENDING = PROMO3
+PROMO3_PENDING = {"ozon_mart": set(), "evetis_mart": set()}  # сняты R2C после развёртывания 2026-09-24
 NON_R2A = {"ozon_mart": {"V_OZON_COMMISSION_RECOVERY", "V_OZON_CIS_BUYOUT", "FCT_OZON_SKU_PNL_DAILY",
                          "FCT_OZON_SKU_PNL_MONTHLY", "FCT_OZON_PNL_MONTHLY",
                          # Gate 8: провизорная экономика Ozon
