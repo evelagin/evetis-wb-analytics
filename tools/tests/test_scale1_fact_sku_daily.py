@@ -41,7 +41,8 @@ NEUTRAL_SCHEMA = [
     ("economics_covered", "BOOL"), ("is_provisional", "BOOL"), ("fact_date_semantics", "STRING"),
     ("source_contract", "STRING"), ("contract_version", "STRING"),
 ]
-PROMO2_OBJECTS = {name for _, name, _ in promo_render.OBJECTS}
+import promo_economics_render as promo3_render  # noqa: E402
+PROMO2_OBJECTS = {name for _, name, _ in promo3_render.OBJECTS}
 TAX_WORDS = re.compile(r"tax|vat|usn|nalog|налог|ндс|усн", re.I)
 
 

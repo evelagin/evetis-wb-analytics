@@ -487,17 +487,18 @@ FROM `project-fa311fc0-4d87-4781-986.evetis_mart.V_PROMO_OBSERVATION_HISTORY`
 GROUP BY marketplace;
 
 -- @check V24_NO_PII_NO_ECONOMICS_COLUMNS
--- Ни одно из 16 представлений не выводит ПДн и экономику/рекомендации (контракт PR-PROMO-2 §21–22).
+-- Ни одно из 16 представлений СОСТОЯНИЯ не выводит ПДн и экономику/рекомендации (контракт PR-PROMO-2 §21–22).
+-- Слой экономики PR-PROMO-3 (*_PROMO_ECONOMICS_*) проверяется своим набором (E20) и сюда не входит.
 -- До развёртывания FAIL по построению: columns_checked = 0.
 WITH cols AS (
   SELECT table_name, column_name FROM `project-fa311fc0-4d87-4781-986.wb_mart.INFORMATION_SCHEMA.COLUMNS`
-  WHERE STARTS_WITH(table_name, 'V_WB_PROMO_')
+  WHERE STARTS_WITH(table_name, 'V_WB_PROMO_') AND NOT STARTS_WITH(table_name, 'V_WB_PROMO_ECONOMICS_')
   UNION ALL
   SELECT table_name, column_name FROM `project-fa311fc0-4d87-4781-986.ozon_mart.INFORMATION_SCHEMA.COLUMNS`
-  WHERE STARTS_WITH(table_name, 'V_OZON_PROMO_')
+  WHERE STARTS_WITH(table_name, 'V_OZON_PROMO_') AND NOT STARTS_WITH(table_name, 'V_OZON_PROMO_ECONOMICS_')
   UNION ALL
   SELECT table_name, column_name FROM `project-fa311fc0-4d87-4781-986.evetis_mart.INFORMATION_SCHEMA.COLUMNS`
-  WHERE STARTS_WITH(table_name, 'V_PROMO_')
+  WHERE STARTS_WITH(table_name, 'V_PROMO_') AND NOT STARTS_WITH(table_name, 'V_PROMO_ECONOMICS_')
 )
 SELECT COUNT(DISTINCT table_name) AS views_checked, COUNT(*) AS columns_checked,
   COUNTIF(REGEXP_CONTAINS(LOWER(column_name),

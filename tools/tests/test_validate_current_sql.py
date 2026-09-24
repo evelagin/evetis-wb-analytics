@@ -36,12 +36,17 @@ PROMO2 = {"ozon_mart": {"V_OZON_PROMO_OBSERVATION_HISTORY", "V_OZON_PROMO_HISTOR
                           "V_PROMO_SKU_EVIDENCE_HISTORY", "V_PROMO_SKU_STATE_HISTORY",
                           "V_PROMO_SKU_STATE_CURRENT", "V_PROMO_OBSERVABILITY_CURRENT"}}
 PROMO2_PENDING = {"ozon_mart": set(), "evetis_mart": set()}  # сняты R2C после развёртывания 2026-09-23
+# PR-PROMO-3 (2026-09-24): экономика акций, 5 новых канонических объектов Git-first.
+PROMO3 = {"ozon_mart": {"V_OZON_PROMO_ECONOMICS_BASIS_HISTORY", "V_OZON_PROMO_ECONOMICS_SCENARIO_HISTORY"},
+          "evetis_mart": {"V_PROMO_ECONOMICS_SCENARIO_HISTORY", "V_PROMO_ECONOMICS_SCENARIO_CURRENT",
+                          "V_PROMO_ECONOMICS_COVERAGE_CURRENT"}}
+PROMO3_PENDING = PROMO3
 NON_R2A = {"ozon_mart": {"V_OZON_COMMISSION_RECOVERY", "V_OZON_CIS_BUYOUT", "FCT_OZON_SKU_PNL_DAILY",
                          "FCT_OZON_SKU_PNL_MONTHLY", "FCT_OZON_PNL_MONTHLY",
                          # Gate 8: провизорная экономика Ozon
                          "V_OZON_COMMISSION_POLICY", "V_OZON_LOGISTICS_ESTIMATOR",
-                         "V_OZON_SKU_PNL_DAILY_OPERATIONAL"} | PROMO2["ozon_mart"],
-           "evetis_mart": {"FACT_SKU_DAILY"} | PROMO2["evetis_mart"]}
+                         "V_OZON_SKU_PNL_DAILY_OPERATIONAL"} | PROMO2["ozon_mart"] | PROMO3["ozon_mart"],
+           "evetis_mart": {"FACT_SKU_DAILY"} | PROMO2["evetis_mart"] | PROMO3["evetis_mart"]}
 # Gate 5M deployed every object Gate 5K/5L rewrote and read them back, so nothing is pending.
 # Gate 8 добавил три объекта Git-first; до развёртывания они pending_deploy, после — captured_live.
 GATE8_OBJECTS = {"V_OZON_COMMISSION_POLICY", "V_OZON_LOGISTICS_ESTIMATOR",
@@ -52,8 +57,8 @@ GATE8_OBJECTS = {"V_OZON_COMMISSION_POLICY", "V_OZON_LOGISTICS_ESTIMATOR",
 # После слияния PR #160 Git-first цикл закрыт: всё развёрнуто, провенанс подтверждён
 # чтением production, и пустых множеств здесь ждать — правильно. Непустое множество
 # снова означает изменение, ожидающее развёртывания.
-GATE5K_PENDING = {"ozon_mart": set() | PROMO2_PENDING["ozon_mart"],
-                  "evetis_mart": set() | PROMO2_PENDING["evetis_mart"]}
+GATE5K_PENDING = {"ozon_mart": set() | PROMO2_PENDING["ozon_mart"] | PROMO3_PENDING["ozon_mart"],
+                  "evetis_mart": set() | PROMO2_PENDING["evetis_mart"] | PROMO3_PENDING["evetis_mart"]}
 
 # canonical_hash_v1 body hashes proven equal to production in R2A (PR #140). Pinned literally.
 R2A_BODY_SHA256 = {

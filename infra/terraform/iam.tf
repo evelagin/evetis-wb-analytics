@@ -75,6 +75,10 @@ locals {
     # обнаружил. Политика обоих SA на момент отказа была пуста (get-iam-policy → только etag).
     ozon_ingestion = google_service_account.ozon_ingestion.name
     ozon_scheduler = google_service_account.ozon_scheduler.name
+    # PR-PROMO-3: Scheduler promo-econ-basis-{wb,ozon} вызывает BigQuery от имени
+    # sa-promo-econ-{wb,ozon} (promo_economics_snapshot.tf) — тот же actAs-контракт.
+    promo_econ_wb   = google_service_account.promo_econ["wb"].name
+    promo_econ_ozon = google_service_account.promo_econ["ozon"].name
   }
 }
 
