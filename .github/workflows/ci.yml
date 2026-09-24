@@ -5,11 +5,13 @@ on:
   # (test_tenant_portability читает tenants/**), поэтому они в фильтре путей.
   pull_request:
     paths: ["cloud/**", "services/**", "pipelines/**", "infra/**", ".github/workflows/**",
-            "tenants/**", "tools/tenancy/**", "tools/autonomy/schema.py"]
+            "tenants/**", "tools/tenancy/**", "tools/autonomy/schema.py",
+            "tools/tests/test_tenancy*.py"]
   push:
     branches-ignore: ["main"]
     paths: ["cloud/**", "services/**", "pipelines/**", "infra/**",
-            "tenants/**", "tools/tenancy/**", "tools/autonomy/schema.py"]
+            "tenants/**", "tools/tenancy/**", "tools/autonomy/schema.py",
+            "tools/tests/test_tenancy*.py"]
   # AE v1 (S8): обязательная проверка ветки кандидата ae/* (диспатч публикатора, без фильтра путей).
   workflow_dispatch:
 
@@ -95,7 +97,7 @@ jobs:
       - name: validate tenant registry
         run: python tools/tenancy/registry.py validate
       - name: tenancy tests
-        run: python -m pytest -q tools/tests/test_tenancy.py
+        run: python -m pytest -q tools/tests/test_tenancy.py tools/tests/test_tenancy_hardening.py
 
   infra:
     runs-on: ubuntu-latest

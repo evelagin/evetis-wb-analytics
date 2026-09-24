@@ -12,6 +12,11 @@
    ошибку «вставил ключ вместо имени», и только.
 
 Сообщения никогда не содержат подозрительное значение — только путь и правило.
+
+T2.1: документ арендатора читается ТОЛЬКО через load_tenant_document /
+parse_tenant_json — строгий разбор без повторяющихся ключей и без NaN/Infinity.
+Шаблоны схемы проверяются ПОЛНЫМ совпадением (strict_pattern_findings): общий
+валидатор AE ищет шаблон через re.search, где «$» совпадает и перед «\\n» в конце.
 """
 from __future__ import annotations
 
@@ -59,11 +64,83 @@ class Finding:
         return f"{self.source}: {self.path}: [{self.rule}] {self.message}"
 
 
+# ─────────────────────────────────────────── строгий разбор JSON (T2.1/L2)
+class TenantDocumentError(ValueError):
+    """Документ нельзя разобрать однозначно. В сообщении нет содержимого документа."""
+
+
+_SAFE_KEY = re.compile(r"[a-z][a-z0-9_]{0,63}")
+
+
+def _reject_duplicate_keys(pairs):
+    obj = {}
+    for key, value in pairs:
+        if key in obj:
+            # Имя ключа показываем, только если оно похоже на имя поля контракта:
+            # ключом по ошибке мог оказаться сам секрет.
+            shown = repr(key) if _SAFE_KEY.fullmatch(key) else "<ключ скрыт>"
+            raise TenantDocumentError(
+                f"повторяющийся ключ {shown} в объекте JSON: разные парсеры берут разное "
+                "значение (Python — последнее, другие — первое или ошибку)")
+        obj[key] = value
+    return obj
+
+
+def _reject_constant(name):
+    raise TenantDocumentError(f"нестандартная константа JSON {name} недопустима")
+
+
+def parse_tenant_json(text: str):
+    """ЕДИНСТВЕННЫЙ разбор документа арендатора (и его схемы).
+
+    Отвергает повторяющиеся ключи на любой вложенности (даже с одинаковым
+    значением) и NaN/Infinity, которые json.loads по умолчанию принимает, а
+    стандартный JSON — нет. Иначе два потребителя одного файла могли бы увидеть
+    разные значения.
+    """
+    try:
+        return json.loads(text, object_pairs_hook=_reject_duplicate_keys,
+                          parse_constant=_reject_constant)
+    except json.JSONDecodeError as e:
+        raise TenantDocumentError(f"не JSON: строка {e.lineno}, столбец {e.colno}") from None
+
+
+def load_tenant_document(path: Path):
+    try:
+        text = path.read_text(encoding="utf-8")
+    except UnicodeDecodeError:
+        raise TenantDocumentError("файл не в UTF-8") from None
+    return parse_tenant_json(text)
+
+
 # ─────────────────────────────────────────────────────────────── схема
 def load_schema() -> dict:
-    schema = json.loads(SCHEMA_PATH.read_text(encoding="utf-8"))
+    schema = load_tenant_document(SCHEMA_PATH)
     check_schema(schema)            # схема не может требовать того, что валидатор не проверяет
     return schema
+
+
+def strict_pattern_findings(instance, schema: dict, source: str, path: str = "$") -> list[Finding]:
+    """Каждый `pattern` схемы — полным совпадением строки (T2.1/L5).
+
+    Общий валидатор AE (tools/autonomy/schema.py) ищет шаблон через re.search, а в
+    Python «$» совпадает и перед завершающим «\\n»: "client_001\\n" проходил бы
+    `^...$`. По стандарту JSON Schema (ECMA-262) такая строка шаблону НЕ
+    соответствует. Здесь семантика восстановлена без изменения общего валидатора.
+    """
+    out = []
+    if isinstance(instance, str) and "pattern" in schema:
+        if not re.fullmatch(schema["pattern"], instance):
+            out.append(Finding(source, path, "schema_exact",
+                               f"значение не совпадает целиком с шаблоном {schema['pattern']}"))
+    if isinstance(instance, dict):
+        for key, value in instance.items():
+            if key in schema.get("properties", {}):
+                out += strict_pattern_findings(value, schema["properties"][key], source, f"{path}.{key}")
+    if isinstance(instance, list) and isinstance(schema.get("items"), dict):
+        for i, item in enumerate(instance):
+            out += strict_pattern_findings(item, schema["items"], source, f"{path}[{i}]")
+    return out
 
 
 def load_ozon_entities() -> frozenset[str]:
@@ -153,7 +230,9 @@ def validate_tenant(doc, source: str, schema: dict | None = None,
     schema_errors = schema_validate(doc, schema)
     out += [Finding(source, e.split(":", 1)[0], "schema", e.split(":", 1)[-1].strip())
             for e in schema_errors]
-    if schema_errors:
+    exact_errors = strict_pattern_findings(doc, schema, source)
+    out += exact_errors
+    if schema_errors or exact_errors:
         return out          # инварианты ниже рассчитаны на форму, которую дала схема
 
     tid = doc["tenant_id"]
@@ -240,6 +319,9 @@ def _legacy_evetis_invariants(doc, err) -> None:
         err("$.scheduler_state", "evetis_protected", "расписаниями EVETIS управляет Terraform: NOT_MANAGED")
     if doc["status"] != "ACTIVE":
         err("$.status", "evetis_protected", "EVETIS — действующий production-арендатор: ACTIVE")
+    if "project_id_revision" in db:
+        err("$.data_boundary.project_id_revision", "evetis_protected",
+            "проект EVETIS не выводится из пространства имён арендаторов: ревизии у него нет")
 
 
 def _dedicated_invariants(doc, err, ozon_entities: frozenset[str]) -> None:
@@ -247,17 +329,18 @@ def _dedicated_invariants(doc, err, ozon_entities: frozenset[str]) -> None:
     db, ozon, mods = doc["data_boundary"], doc["marketplaces"]["ozon"], doc["modules"]
     L = N.LEGACY_EVETIS
 
-    # проект: выведен из tenant_id и не является проектом EVETIS
+    # проект: ровно канонический вывод из (tenant_id, ревизия) и не проект EVETIS
     pid = db["gcp_project_id"]
     if pid == L["gcp_project_id"]:
         err("$.data_boundary.gcp_project_id", "evetis_protected",
             "выделенный арендатор не может указывать на проект EVETIS")
     else:
         try:
-            if not N.project_id_belongs_to(tid, pid):
+            expected = N.derive_project_id(tid, db.get("project_id_revision"))
+            if pid != expected:
                 err("$.data_boundary.gcp_project_id", "naming",
-                    f"ID проекта должен выводиться из tenant_id: {N.derive_project_id(tid)}"
-                    "[-<суффикс>] (tools/tenancy/naming.py)")
+                    f"ID проекта обязан быть каноническим выводом из tenant_id и ревизии: "
+                    f"{expected} (tools/tenancy/naming.py)")
         except N.NamingError as e:
             err("$.data_boundary.gcp_project_id", "naming", str(e))
 

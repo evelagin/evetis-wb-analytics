@@ -25,8 +25,9 @@ from tools.tenancy import registry as R  # noqa: E402
 from tools.tenancy import validation as V  # noqa: E402
 
 TENANTS = REPO / "tenants"
-EVETIS = json.loads((TENANTS / "evetis" / "tenant.json").read_text(encoding="utf-8"))
-CLIENT = json.loads((TENANTS / "client_001" / "tenant.json").read_text(encoding="utf-8"))
+# Документы арендаторов читаются только каноническим строгим загрузчиком (T2.1/L2).
+EVETIS = V.load_tenant_document(TENANTS / "evetis" / "tenant.json")
+CLIENT = V.load_tenant_document(TENANTS / "client_001" / "tenant.json")
 
 
 def rules(doc, source="t.json"):
@@ -85,7 +86,8 @@ def test_schema_has_no_field_for_secret_values():
 def test_derivation_is_deterministic_and_normalized():
     assert N.derive_project_id("client_001") == "mpa-t-client-001"
     assert N.derive_project_id("client_001") == N.derive_project_id("client_001")
-    assert N.derive_project_id("client_001", "x7") == "mpa-t-client-001-x7"
+    # T2.1/L6: ревизия — на фиксированной позиции префикса, а не хвостом к slug
+    assert N.derive_project_id("client_001", 7) == "mpa-t7-client-001"
     assert N.slug("client_001") == "client-001"
     assert N.terraform_state_prefix("client_001") == "tenants/client_001"
     assert N.resource_labels("client_001") == {"tenant": "client_001"}
@@ -126,17 +128,21 @@ def test_maximum_lengths():
     N.check_tenant_id("a" * 31)                     # сам ID допустим по контракту…
     with pytest.raises(N.NamingError, match="длиннее 30"):
         N.derive_project_id("a" * 25)               # …но для проекта слишком длинный
-    with pytest.raises(N.NamingError):
-        N.derive_project_id("abc", "toolong7")
-    assert len(N.derive_project_id("a" * 17, "abcdef")) == 30
+    assert len(N.derive_project_id("a" * 23, 9)) == 30     # ревизия занимает один символ
+    with pytest.raises(N.NamingError, match="длиннее 30"):
+        N.derive_project_id("a" * 24, 2)            # без обрезки: отказ
 
 
 def test_project_ownership():
-    assert N.project_id_belongs_to("client_001", "mpa-t-client-001")
-    assert N.project_id_belongs_to("client_001", "mpa-t-client-001-a1")
-    assert not N.project_id_belongs_to("client_001", "mpa-t-client-002")
-    assert not N.project_id_belongs_to("client_001", "mpa-t-client-001-")
-    assert not N.project_id_belongs_to("client_001", N.LEGACY_EVETIS["gcp_project_id"])
+    """У каждого допустимого ID проекта ровно один владелец (обратное отображение)."""
+    assert N.parse_project_id("mpa-t-client-001") == ("client_001", 1)
+    assert N.parse_project_id("mpa-t2-client-001") == ("client_001", 2)
+    # бывшая «суффиксная» форма принадлежит ДРУГОМУ арендатору, а не client_001
+    assert N.parse_project_id("mpa-t-client-001-a1") == ("client_001_a1", 1)
+    for bad in ("mpa-t1-client-001", "mpa-t-client-001-",
+                "mpa-t--client-001", N.LEGACY_EVETIS["gcp_project_id"], "mpa-t-evetis_x"):
+        with pytest.raises(N.NamingError):
+            N.parse_project_id(bad)
 
 
 # ───────────────────────────────────── EVETIS-факт сверен с production-контрактом
@@ -262,11 +268,22 @@ def _write(root, tid, doc):
     (root / tid / "tenant.json").write_text(json.dumps(doc), encoding="utf-8")
 
 
-def test_registry_detects_project_collision(tmp_path):
+def test_l6_suffix_collision_is_structurally_impossible(tmp_path):
+    """T2.1/L6: прежде client + суффикс «001» давал ID проекта client_001. Теперь
+    такой ID не выводится из tenant 'client' ни при какой ревизии."""
     root = _copy_registry(tmp_path)
     other = mutate(CLIENT, "tenant_id", "client")
-    other["data_boundary"]["gcp_project_id"] = "mpa-t-client-001"    # client + суффикс 001
+    other["data_boundary"]["gcp_project_id"] = "mpa-t-client-001"
     _write(root, "client", other)
+    found = R.validate_root(root)
+    assert any(f.rule == "naming" and "client.tenant.json" not in f.source
+               and f.path == "$.data_boundary.gcp_project_id" for f in found)
+
+
+def test_registry_detects_duplicate_identity(tmp_path):
+    """Защита в глубину: тот же документ во втором каталоге — коллизия проекта и ID."""
+    root = _copy_registry(tmp_path)
+    _write(root, "client_002", CLIENT)
     assert any(f.rule == "collision" for f in R.validate_root(root))
 
 
