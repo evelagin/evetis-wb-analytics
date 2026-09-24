@@ -1,0 +1,32 @@
+{
+  "schema_version": 1,
+  "objective_id": "obj-ae-commissioning-001",
+  "kind": "OWNER_OBJECTIVE",
+  "created_at": "2026-09-24T00:00:00Z",
+  "requested_by": "owner (prepared by AE v1 security commissioning; NOT executed)",
+  "title": "AE v1 commissioning: regression test for clamp_percent boundaries",
+  "statement": "Добавь регрессионный тест граничных случаев функции clamp_percent из tools/commissioning/ae_canary.py в НОВЫЙ модуль tools/tests/test_ae_commissioning_canary.py: значения ниже 0, выше 100, ровно 0 и 100, дробное внутри отрезка и NaN (ValueError). Саму функцию и любые другие файлы НЕ меняй.",
+  "incident": null,
+  "acceptance": [
+    "изменён ровно один файл: новый tools/tests/test_ae_commissioning_canary.py",
+    "pytest tools/tests проходит; новый тест покрывает шесть перечисленных случаев",
+    "tools/commissioning/ae_canary.py не изменён",
+    "production-мутаций: 0"
+  ],
+  "constraints": [
+    "синтетическая цель ввода в эксплуатацию: production, данные и бизнес-правила не затрагиваются",
+    "не трогать доверенную базу (trusted_computing_base) политики AE"
+  ],
+  "repository_sha": "0000000000000000000000000000000000000000",
+  "affected_assets": [],
+  "downstream_consumers": [],
+  "contract_suites": [],
+  "known_ubr_links": [],
+  "evidence": {
+    "note": "repository_sha заполняется при запуске SHA коммита main, содержащего tools/commissioning/ae_canary.py (AE_V1_RUNBOOK.md §3.2); нулевой SHA не пройдёт --trusted-base-ref."
+  },
+  "owner_ack": null,
+  "deduplication_key": "objective:AE-COMMISSIONING-001",
+  "execute": false,
+  "commissioning": {"iteration_marker": "AE-COMMISSIONING-ITERATION-OK"}
+}

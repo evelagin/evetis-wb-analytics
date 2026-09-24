@@ -117,7 +117,7 @@ def objective_from_incident(incident: dict) -> dict:
         "constraints": [
             "не менять production: никакого DDL/DML, deploy, terraform apply, IAM, расписаний",
             "не писать в WB и Ozon",
-            "не трогать пути из forbidden_paths политики AE",
+            "не трогать доверенную базу (trusted_computing_base) и секреты (forbidden_paths) политики AE",
         ],
         "repository_sha": incident["repository_sha"],
         "affected_assets": incident["affected_assets"],

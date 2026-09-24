@@ -1,5 +1,25 @@
 # CHANGELOG.md
 
+## 2026-09-24 — AE v1: атакующий разбор безопасности (Git, выключен, IAM не менялся)
+
+Что обнаружено: живой WIF отдаёт `sa-deployer`/`sa-terraform-plan` любому workflow, а
+`sa-terraform-apply` — любому workflow на `main`, включая job'ы AE (снимок: 24/25 FAIL). В коде
+AE доверенный шаг `verify` исполнял инструмент анализа влияния из песочницы кандидата рядом с
+токеном записи. Воспроизведение недоверенного вывода было fail-open без `--expect`.
+Переименование из запрещённого пути не замечалось. PR от `GITHUB_TOKEN` доходил до «готово» без CI.
+
+Что изменено: WIF по точным `workflow_ref`/`job_workflow_ref` (`wif.tf`, `autonomy.tf`, **не
+применено**) и проверка `tools/autonomy/wif_check.py`. Доверенная база (TCB, 7 классов) →
+`HUMAN_DECISION_REQUIRED`. Состояния `AWAITING_VERIFICATION` → `READY_FOR_HUMAN_REVIEW`, диспатч
+`sql-current.yml`/`ci.yml` (добавлен `workflow_dispatch`, из `ci.yml` убран pip-кэш). Спецификация
+федерации Anthropic (`quality/autonomy/anthropic_federation.json`). Синтетическая цель ввода в
+эксплуатацию (`execute: false`, мишень `tools/commissioning/ae_canary.py`). У `autonomy-watch`
+убрано расписание. Действия закреплены по SHA, входы workflows строго проверяются.
+
+Листы Google Sheets и объекты BigQuery не затронуты. Проверка: `tools/tests` 679 passed (AE 294),
+`validate_current_sql` C1–C18, actionlint, `terraform validate`. Отчёт:
+`docs/architecture/AE_V1_SECURITY_COMMISSIONING.md`, раскатка — `AE_V1_RUNBOOK.md` §2.
+
 ## 2026-09-24 — Autonomous Engineering v1: контур наблюдатель → инженер → ревьюер → гейткипер (Git, выключен)
 
 Реализован в Git, **выключен** (`AE_ENABLED` не задан). Production не менялся, IAM, расписания и

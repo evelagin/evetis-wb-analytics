@@ -18,7 +18,8 @@ from typing import Callable
 from tools.autonomy import gatekeeper
 from tools.autonomy.agents import AgentAdapter, AgentResult, SCHEMA_OF_ROLE
 from tools.autonomy.evidence import EvidenceRunner, Sandbox
-from tools.autonomy.policy import detect_gate_weakening, forbidden_paths, load_policy, plan_requires_ack
+from tools.autonomy.policy import (detect_gate_weakening, forbidden_paths, load_policy, plan_requires_ack,
+                                   tcb_globs, tcb_paths)
 from tools.autonomy.schema import load_schema, require_valid
 from tools.autonomy.state import PARKED, TERMINAL, StateStore, TransitionError
 
@@ -44,7 +45,8 @@ class Orchestrator:
     def __init__(self, store: StateStore, repo: Path, engineer: AgentAdapter, reviewer: AgentAdapter,
                  evidence: EvidenceRunner, sandbox_root: Path,
                  audit: Callable[[dict], dict | int] = lambda run: {"status": "NOT_APPLICABLE", "mutations": 0},
-                 publisher=None, now: Callable[[], datetime] | None = None):
+                 publisher=None, now: Callable[[], datetime] | None = None,
+                 verifier: Callable[[dict], dict] | None = None, trusted_base_ref: str | None = None):
         if engineer is reviewer:
             # Один объект-адаптер на обе роли — это одна и та же «голова». Ревью не независимо.
             raise ValueError("инженер и ревьюер обязаны быть разными экземплярами адаптера")
@@ -53,6 +55,11 @@ class Orchestrator:
         self.sandbox_root, self.audit, self.publisher = Path(sandbox_root), audit, publisher
         self.now = now or (lambda: datetime.now(timezone.utc))
         self.policy = load_policy()
+        # S8: решение по обязательным workflows опубликованного кандидата (verification.py).
+        self.verifier = verifier
+        # Базовый коммит прогона исполняется доверенным job'ом (доказательства базы). Поэтому он
+        # обязан лежать в истории доверенной ветки: цель с чужим sha — это чужой код.
+        self.trusted_base_ref = trusted_base_ref
 
     # ------------------------------------------------------------ артефакты ---
     def _art(self, run: dict) -> Path:
@@ -75,6 +82,7 @@ class Orchestrator:
     # --------------------------------------------------------------- приём ---
     def submit(self, objective: dict) -> tuple[dict, bool]:
         require_valid(objective, "objective")
+        self._require_trusted_base(objective["repository_sha"])
         if not objective["execute"]:
             raise TransitionError(f"{objective['objective_id']}: execute=false — цель подготовлена, "
                                   "но её запуск не разрешён")
@@ -83,6 +91,16 @@ class Orchestrator:
         if created:
             self._put(run, "objective.json", objective)
         return run, created
+
+    def _require_trusted_base(self, sha: str) -> None:
+        if not self.trusted_base_ref:
+            return
+        import subprocess
+        r = subprocess.run(["git", "merge-base", "--is-ancestor", sha, self.trusted_base_ref], cwd=self.repo,
+                           capture_output=True, text=True)
+        if r.returncode != 0:
+            raise TransitionError(f"repository_sha {sha[:12]} не входит в историю {self.trusted_base_ref}: "
+                                  "доверенный job не исполняет код вне доверенной ветки")
 
     # -------------------------------------------------------------- бюджеты ---
     def _over_time(self, run: dict) -> bool:
@@ -126,10 +144,12 @@ class Orchestrator:
         return self._prompt("engineer", phase=phase, iteration=str(run["iteration"]),
                             max_iterations=str(self.policy["budgets"]["max_engineer_iterations"]),
                             phase_instructions=PHASE_TEXT[phase],
-                            objective_json=json.dumps(self._get(run, "objective.json"), ensure_ascii=False,
-                                                      indent=2)[:20000],
+                            objective_json=json.dumps({k: v for k, v in self._get(run, "objective.json").items()
+                                                       if k != "commissioning"},   # протокол — только ревьюеру
+                                                      ensure_ascii=False, indent=2)[:20000],
                             feedback_block=fb,
-                            forbidden_paths=", ".join(self.policy["forbidden_paths"]["globs"]))
+                            forbidden_paths=", ".join(self.policy["forbidden_paths"]["globs"]),
+                            tcb_paths=", ".join(tcb_globs(self.policy)))
 
     # ---------------------------------------------------------------- шаги ---
     def advance(self, run_id: str, stop_before: set[str] | None = None, max_steps: int = 50) -> dict:
@@ -139,7 +159,12 @@ class Orchestrator:
                 return run
             if run["state"] == "READY_FOR_PR" and self.publisher is None:
                 return run
+            if run["state"] == "AWAITING_VERIFICATION" and self.verifier is None:
+                return run
+            before = run["state"]
             run = getattr(self, "_step_" + run["state"].lower())(run)
+            if run["state"] == before:          # PENDING: ждать — дело вызывающего (verify-ci)
+                return run
         return run
 
     def _sandbox(self, run: dict) -> Sandbox:
@@ -149,6 +174,10 @@ class Orchestrator:
         return self.store.transition(run, "DISCOVERING", "цель валидна, открыт прогон")
 
     def _step_discovering(self, run: dict) -> dict:
+        try:
+            self._require_trusted_base(run["repository_sha"])
+        except TransitionError as e:
+            return self.store.transition(run, "BLOCKED", str(e)[:500])
         sb = self._sandbox(run)
         try:
             ws = sb.create()
@@ -182,6 +211,9 @@ class Orchestrator:
         if plan["status"] == "CANNOT_PROCEED":
             return self.store.transition(run, "BLOCKED", "инженер: задачу нельзя решить — " + plan["summary"][:500])
         plan_sha = _sha(plan)
+        tcb = tcb_paths(plan["intended_files"])
+        if tcb:
+            return self._human_tcb(run, tcb, "план затрагивает доверенную базу", plan_sha256=plan_sha)
         imp = self.evidence.impact(self.repo, plan["intended_files"])
         need, why = plan_requires_ack(plan["intended_files"], imp.get("risk_tier"),
                                       plan["business_semantics_change"], objective, plan_sha)
@@ -220,7 +252,12 @@ class Orchestrator:
         self._put(run, "candidate.patch", patch)
         bad = forbidden_paths(files)
         if bad:
-            return self._unsafe(run, files, f"кандидат затронул запрещённые пути: {bad[:5]}")
+            return self._unsafe(run, files, f"кандидат затронул секретный материал: {bad[:5]}")
+        # TCB проверяется ДО ACK плана: owner_ack.plan_sha256 разрешает реализацию плана, но не
+        # делает изменение доверенной базы самоодобряемым.
+        tcb = tcb_paths(files)
+        if tcb:
+            return self._human_tcb(run, tcb, "кандидат меняет доверенную базу")
         if report["status"] == "NEEDS_HUMAN":
             return self.store.transition(run, "WAITING_FOR_HUMAN", "инженер: нужен владелец — " + report["summary"][:500])
         if report["status"] == "CANNOT_PROCEED":
@@ -240,6 +277,14 @@ class Orchestrator:
         self._put(run, "gate.json", gate)
         return self.store.transition(run, "BLOCKED", "UNSAFE: " + reason, last_gate={"verdict": "UNSAFE",
                                                                                       "reason": reason[:500]})
+
+    def _human_tcb(self, run: dict, tcb: list[str], reason: str, **extra) -> dict:
+        gate = gatekeeper.evaluate({}, {}, None, {"tcb_paths": tcb})
+        gate["verdict"] = "HUMAN_DECISION_REQUIRED"   # минимум; секреты/мутации уже отсеяны выше
+        self._put(run, "gate.json", gate)
+        return self.store.transition(run, "WAITING_FOR_HUMAN", f"TCB_MODIFICATION: {reason}: {tcb[:5]}",
+                                     last_gate={"verdict": "HUMAN_DECISION_REQUIRED",
+                                                "reason": f"TCB_MODIFICATION {tcb[:5]}"[:500]}, **extra)
 
     def _step_implementing(self, run: dict) -> dict:
         return self._implement(run, fixing=False)
@@ -277,6 +322,17 @@ class Orchestrator:
                                          last_gate={"verdict": gate["verdict"]})
         return self.store.transition(run, "REVIEWING", "детерминированные доказательства собраны")
 
+    @staticmethod
+    def _commissioning_block(objective: dict) -> str:
+        c = objective.get("commissioning")
+        if not c:
+            return ""
+        marker = c["iteration_marker"]
+        return ("## Протокол ввода в эксплуатацию (данные владельца)\n\n"
+                "Это синтетическая цель, проверяющая сам контур. Кроме обычного ревью: если в диффе кандидата "
+                f"НЕТ строки `{marker}`, верни CHANGES_REQUIRED с находкой severity MAJOR: «добавь в docstring "
+                f"нового тестового модуля маркер {marker}». Если маркер есть — оцени кандидата как обычно.\n")
+
     def _perform_review(self, run: dict) -> tuple[dict, AgentResult | None, dict | None]:
         """Независимое ревью: отдельная песочница с кандидатом, вход — только данные."""
         objective, ev = self._get(run, "objective.json"), self._get(run, "evidence.json")
@@ -289,7 +345,8 @@ class Orchestrator:
                                      indent=2)[:15000],
             engineer_report_json=json.dumps(self._get(run, "engineer_report.json"), ensure_ascii=False,
                                             indent=2)[:8000],
-            diff=patch[:60000])
+            diff=patch[:60000],
+            commissioning_block=self._commissioning_block(objective))
         # Ревьюер получает СВОЮ песочницу с кандидатом — не каталог инженера.
         sb = Sandbox(self.repo, run["repository_sha"], self.sandbox_root / run["run_id"] / "review")
         try:
@@ -323,6 +380,7 @@ class Orchestrator:
         objective_ubr = set(objective.get("known_ubr_links", []))
         context = {
             "forbidden_paths": forbidden_paths(ev.get("changed_files", [])),
+            "tcb_paths": tcb_paths(ev.get("changed_files", [])),
             "gate_weakening": weakening,
             "production_mutations": run["production_mutations"],
             "audit_status": run.get("audit_status", "NOT_APPLICABLE"),
@@ -360,8 +418,37 @@ class Orchestrator:
         gate = self._get(run, "gate.json")
         if not gate or gate["verdict"] != "READY_FOR_PR":
             raise TransitionError("публикация без READY_FOR_PR невозможна")
-        url = self.publisher.publish(run, self._get(run, "candidate.patch") or "", self._art(run))
-        return self.store.transition(run, "COMPLETED", f"опубликован draft PR: {url}", pr_url=url)
+        pub = self.publisher.publish(run, self._get(run, "candidate.patch") or "", self._art(run),
+                                     self.policy["required_verification"]["workflows"])
+        return self.store.transition(
+            run, "AWAITING_VERIFICATION",
+            f"опубликован draft PR {pub['url']}; обязательные workflows запущены на {pub['head_sha'][:12]}",
+            pr_url=pub["url"], verification={"head_sha": pub["head_sha"], "dispatched_at": pub["dispatched_at"],
+                                             "workflows": pub["workflows"], "result": None})
+
+    def _step_awaiting_verification(self, run: dict) -> dict:
+        """S8: READY_FOR_HUMAN_REVIEW — только по факту исполнения обязательных workflows."""
+        from tools.autonomy.verification import timed_out
+        rv = self.policy["required_verification"]
+        result = self.verifier(run)
+        self._put(run, "verification.json", result)
+        run = {**run, "verification": {**run["verification"], "result": result}}
+        if result["status"] == "PASS":
+            return self.store.transition(run, "READY_FOR_HUMAN_REVIEW",
+                                         "обязательные workflows прошли на опубликованном SHA: "
+                                         + ", ".join(r["workflow"] for r in result["runs"]),
+                                         last_gate={**(run.get("last_gate") or {}), "required_verification": "PASS"})
+        if result["status"] == "FAIL":
+            failed = [r["workflow"] for r in result["runs"] if r["status"] == "FAIL"]
+            return self.store.transition(run, "BLOCKED", f"обязательные workflows упали: {failed}",
+                                         last_gate={"verdict": "BLOCKED_BY_TEST",
+                                                    "reason": f"required verification FAIL {failed}"})
+        if timed_out(run, rv["timeout_minutes"], self.now()):
+            return self.store.transition(run, "BLOCKED", f"обязательные workflows не завершились за "
+                                                         f"{rv['timeout_minutes']} мин",
+                                         last_gate={"verdict": "INCONCLUSIVE", "reason": "required verification timeout"})
+        self.store.save(run)
+        return run
 
 
 def review_only(orch: Orchestrator, run_id: str, out_dir: Path | None = None) -> Path:
@@ -385,7 +472,8 @@ def next_pass(store: StateStore, run_id: str) -> str:
 
       dispatch       — состояние FIXING и потолок проходов не достигнут
       report         — прогон припаркован или завершён: итог владельцу
-      infra_failure  — прогон остался в рабочем состоянии, значит какой-то job упал;
+      infra_failure  — прогон остался в рабочем состоянии (в т.ч. READY_FOR_PR — публикация
+                       не состоялась, AWAITING_VERIFICATION — ci-verify не дождался), значит job упал;
                        повторного диспатча НЕТ, иначе падающий job зациклил бы систему
       exhausted      — потолок проходов достигнут
     """
@@ -394,7 +482,7 @@ def next_pass(store: StateStore, run_id: str) -> str:
     passes = run.get("passes", 0) + 1
     run = {**run, "passes": passes}
     store.save(run)
-    if run["state"] in TERMINAL or run["state"] in PARKED or run["state"] == "READY_FOR_PR":
+    if run["state"] in TERMINAL or run["state"] in PARKED:
         return "report"
     if run["state"] != "FIXING":
         return "infra_failure"

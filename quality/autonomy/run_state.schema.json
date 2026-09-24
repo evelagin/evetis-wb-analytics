@@ -51,6 +51,8 @@
         "REVIEWING",
         "FIXING",
         "READY_FOR_PR",
+        "AWAITING_VERIFICATION",
+        "READY_FOR_HUMAN_REVIEW",
         "WAITING_FOR_HUMAN",
         "BLOCKED",
         "FAILED",
@@ -171,6 +173,42 @@
         "BLOCKED",
         "NOT_APPLICABLE"
       ]
+    },
+    "verification": {
+      "type": [
+        "object",
+        "null"
+      ],
+      "description": "S8: обязательная проверка опубликованного кандидата (tools/autonomy/verification.py)",
+      "additionalProperties": false,
+      "required": [
+        "head_sha",
+        "dispatched_at",
+        "workflows"
+      ],
+      "properties": {
+        "head_sha": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{40}$"
+        },
+        "dispatched_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "workflows": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "minItems": 1
+        },
+        "result": {
+          "type": [
+            "object",
+            "null"
+          ]
+        }
+      }
     }
   }
 }

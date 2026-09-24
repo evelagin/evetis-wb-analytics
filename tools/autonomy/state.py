@@ -21,7 +21,9 @@ from pathlib import Path
 from tools.autonomy.schema import require_valid
 
 TERMINAL = {"COMPLETED", "FAILED"}
-PARKED = {"WAITING_FOR_HUMAN", "BLOCKED"}   # активны: блокируют дубликаты до решения человека
+# Активны: блокируют дубликаты до решения человека. READY_FOR_HUMAN_REVIEW — работа AE окончена
+# (draft PR прошёл обязательную проверку), но ветка кандидата жива, пока человек не решит.
+PARKED = {"WAITING_FOR_HUMAN", "BLOCKED", "READY_FOR_HUMAN_REVIEW"}
 
 TRANSITIONS: dict[str | None, set[str]] = {
     None: {"RECEIVED"},
@@ -32,7 +34,11 @@ TRANSITIONS: dict[str | None, set[str]] = {
     "TESTING": {"REVIEWING", "FIXING", "BLOCKED", "FAILED"},
     "REVIEWING": {"READY_FOR_PR", "FIXING", "WAITING_FOR_HUMAN", "BLOCKED", "FAILED"},
     "FIXING": {"TESTING", "WAITING_FOR_HUMAN", "BLOCKED", "FAILED"},
-    "READY_FOR_PR": {"COMPLETED", "FAILED"},
+    # READY_FOR_PR — вердикт гейткипера ДО публикации. Опубликованный draft PR ещё не «готов»:
+    # сначала обязательные workflows на опубликованном SHA (S8).
+    "READY_FOR_PR": {"AWAITING_VERIFICATION", "FAILED"},
+    "AWAITING_VERIFICATION": {"READY_FOR_HUMAN_REVIEW", "BLOCKED", "FAILED"},
+    "READY_FOR_HUMAN_REVIEW": {"COMPLETED"},
     "WAITING_FOR_HUMAN": {"PLANNING", "IMPLEMENTING", "COMPLETED"},
     "BLOCKED": {"PLANNING", "COMPLETED"},
     "FAILED": set(),

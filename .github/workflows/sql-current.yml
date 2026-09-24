@@ -7,6 +7,9 @@ on:
   pull_request:
   push:
     branches: ["main"]
+  # AE v1 (S8): PR от GITHUB_TOKEN не запускает pull_request. Публикатор AE диспатчит этот
+  # workflow на ветке кандидата ae/*; READY_FOR_HUMAN_REVIEW — только по его success.
+  workflow_dispatch:
 
 permissions:
   contents: read

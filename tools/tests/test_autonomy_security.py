@@ -109,11 +109,73 @@ def test_trusted_step_never_runs_an_agent():
 
 def test_write_tokens_only_in_deterministic_jobs():
     allowed = {("autonomy-watch.yml", "watch"), ("autonomy-gate.yml", "step"),
-               ("autonomy-run.yml", "publish"), ("autonomy-run.yml", "persist")}
+               ("autonomy-run.yml", "publish"), ("autonomy-run.yml", "ci-verify"), ("autonomy-run.yml", "persist")}
     for wf in AE_WORKFLOWS:
         for job, body in jobs(text(wf)).items():
             if "contents: write" in body and "uses: ./" not in body:
                 assert (wf.name, job) in allowed, f"{wf.name}/{job} получил contents: write"
+
+
+def test_actions_write_only_in_trusted_dispatchers():
+    """actions: write = право запустить ЛЮБОЙ workflow, включая deploy-prod и infra (environments
+    на тарифе без правил защиты). Поэтому оно есть только у детерминированных job'ов без кода агента."""
+    allowed = {("autonomy-watch.yml", "watch"), ("autonomy-run.yml", "publish"), ("autonomy-run.yml", "persist")}
+    for wf in AE_WORKFLOWS:
+        for job, body in jobs(text(wf)).items():
+            if "actions: write" in body:
+                assert (wf.name, job) in allowed, f"{wf.name}/{job} получил actions: write"
+
+
+def test_no_scheduled_autonomy():
+    """Фаза READY_FOR_CONTROLLED_CANARY: ни планового наблюдения, ни автоматического исправления."""
+    for wf in AE_WORKFLOWS:
+        on = text(wf).split("\non:\n", 1)[1].split("\npermissions:", 1)[0]
+        assert "schedule" not in on and "cron" not in on, f"{wf.name}: расписание"
+        assert "github.event_name == 'schedule'" not in text(wf)
+
+
+@pytest.mark.parametrize("wf", AE_WORKFLOWS, ids=lambda p: p.name)
+def test_third_party_actions_pinned_by_commit_sha(wf):
+    for m in re.finditer(r"uses:\s*([^\s#]+)", text(wf)):
+        ref = m.group(1)
+        if ref.startswith("./"):
+            continue
+        assert re.fullmatch(r"[\w.-]+/[\w.-]+@[0-9a-f]{40}", ref), f"{wf.name}: {ref} не закреплён по SHA"
+
+
+@pytest.mark.parametrize("wf", AE_WORKFLOWS, ids=lambda p: p.name)
+def test_no_expression_interpolation_inside_run_scripts(wf):
+    """${{ }} в run: подставляется ДО bash — входы/outputs становятся кодом. Только через env."""
+    lines = text(wf).splitlines()
+    i = 0
+    while i < len(lines):
+        m = re.match(r"^(\s*)(- )?run: ?(.*)$", lines[i])
+        if not m:
+            i += 1
+            continue
+        ind = len(m.group(1)) + (2 if m.group(2) else 0)
+        block, j = [m.group(3)], i + 1
+        if m.group(3).strip() in ("|", ">", "|-", ">-"):
+            while j < len(lines) and (not lines[j].strip() or len(lines[j]) - len(lines[j].lstrip()) > ind):
+                block.append(lines[j]); j += 1
+        assert not any("${{" in b for b in block), f"{wf.name}:{i + 1}: выражение внутри run"
+        i = j
+
+
+@pytest.mark.parametrize("name", ["autonomy-engineer.yml", "autonomy-review.yml"])
+def test_static_anthropic_credentials_fail_closed_before_agent(name):
+    src = text(WF / name)
+    for var in ("ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN", "ANTHROPIC_PROFILE", "CLAUDE_CODE_OAUTH_TOKEN"):
+        assert "${" + var + ":-}" in src, f"{name}: нет проверки {var}"
+
+
+def test_run_id_is_strictly_validated_in_every_ae_job_that_receives_it():
+    rx = "^run-[0-9]{8}T[0-9]{6}Z-[0-9a-f]{8}$"
+    for name in ("autonomy-gate.yml", "autonomy-engineer.yml", "autonomy-test.yml", "autonomy-review.yml"):
+        assert rx in text(WF / name), name
+    run = text(WF / "autonomy-run.yml")
+    for job in ("publish", "ci-verify", "persist"):
+        assert rx in jobs(run)[job], job
 
 
 def test_every_git_push_targets_only_autonomy_state():
@@ -143,21 +205,16 @@ def test_ae_reader_has_only_read_roles():
         assert bad not in src
 
 
-def test_ae_reader_identity_is_bound_only_to_ae_workflows_on_main():
-    src = text(TF / "autonomy.tf")
-    assert 'ae_workflows = toset(["autonomy-watch.yml", "autonomy-run.yml"])' in src
-    assert "attribute.workflow_ref/${var.github_repo}/.github/workflows/${each.value}@refs/heads/main" in src
-    assert "attribute.repository/" not in src and "attribute.repo_ref/" not in src
-
-
-def test_privileged_service_accounts_are_pinned_to_their_workflow_files():
-    src = text(TF / "wif.tf")
-    for sa in ("deployer_wif", "terraform_apply_wif"):
-        block = src.split(f'"{sa}"', 1)[1].split("\n}\n", 1)[0]
-        assert "attribute.repository/" not in block and "attribute.repo_ref/" not in block, sa
-        assert "attribute.workflow_path/" in block or "attribute.workflow_ref/" in block, sa
-    assert '"attribute.workflow_path" = "assertion.workflow_ref.extract(\'{path}@\')"' in src
-    assert 'terraform_apply_workflows = toset(["infra.yml", "scheduler-control.yml"])' in src
+def test_wif_bindings_are_proven_semantically_not_by_string_match():
+    """Строковые проверки привязок заменены решением GCP на точных claims GitHub
+    (tools/tests/test_autonomy_wif.py, случаи A–E). Здесь — только что модель видит ВСЕ
+    привязки workloadIdentityUser из Terraform, а не часть."""
+    from tools.autonomy.wif_check import load_terraform
+    tf = "\n".join(p.read_text() for p in TF.glob("*.tf"))
+    declared = tf.count('role               = "roles/iam.workloadIdentityUser"')
+    model = load_terraform()
+    assert declared == 4    # deployer, terraform_plan, terraform_apply, ae_reader (for_each внутри)
+    assert set(model.bindings) == {"sa-deployer", "sa-terraform-plan", "sa-terraform-apply", "sa-ae-reader"}
 
 
 # ------------------------------------------------------------------- агент ---

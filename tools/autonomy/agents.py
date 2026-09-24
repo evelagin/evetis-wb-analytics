@@ -229,17 +229,19 @@ class ReplayAdapter:
 
     name = "replay"
 
-    def __init__(self, pending_dir: Path, expect: dict[str, str] | None = None):
-        self.dir, self.expect = Path(pending_dir), expect
+    def __init__(self, pending_dir: Path, expect: dict[str, str]):
+        # Без объявленных хешей воспроизведение не проверяемо — это не «мягкий режим», а отказ.
+        if expect is None:
+            raise IntegrityError("ReplayAdapter без --expect: вывод недоверенного job'а не с чем сверить")
+        self.dir, self.expect = Path(pending_dir), dict(expect)
 
     def _verified(self, name: str) -> Path:
         path = self.dir / name
         if not path.exists():
             raise AgentNotPermitted(f"нет недоверенного вывода {name} в {self.dir}")
-        if self.expect is not None:
-            want = self.expect.get(name)
-            if not want or want != sha256_file(path):
-                raise IntegrityError(f"{name}: sha256 не совпал с объявленным производителем")
+        want = self.expect.get(name)
+        if not want or want != sha256_file(path):
+            raise IntegrityError(f"{name}: sha256 не совпал с объявленным производителем")
         return path
 
     def run(self, role, prompt, workdir, schema):

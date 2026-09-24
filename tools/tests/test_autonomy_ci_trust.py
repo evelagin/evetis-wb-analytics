@@ -36,9 +36,10 @@ class Pipeline:
         shutil.copytree(self.branch.root, root)
         return StateStore(root)
 
-    def orch(self, store, engineer=None, reviewer=None, evidence=None, publisher=None):
+    def orch(self, store, engineer=None, reviewer=None, evidence=None, publisher=None, verifier=None):
         return Orchestrator(store, self.repo, engineer or NoAgentAdapter(), reviewer or NoAgentAdapter(),
-                            evidence or F.SyntheticEvidenceRunner(), self.tmp / "sandboxes", publisher=publisher)
+                            evidence or F.SyntheticEvidenceRunner(), self.tmp / "sandboxes", publisher=publisher,
+                            verifier=verifier, trusted_base_ref="main")
 
     def objective(self) -> dict:
         out = self.tmp / "objectives"
@@ -76,7 +77,7 @@ def test_full_pipeline_across_isolated_runners(tmp_path):
     ev_out = tmp_path / "pending-test" / "evidence.json"
     ev_sha = collect_candidate_evidence(p.orch(p.machine("test")), run_id, ev_out)
     # verify (доверенный): доказательства → переход
-    verify = p.orch(p.branch, evidence=ReplayEvidenceRunner(ev_out, ev_sha, F.SyntheticEvidenceRunner()))
+    verify = p.orch(p.branch, evidence=ReplayEvidenceRunner(ev_out, ev_sha, F.SyntheticEvidenceRunner(), p.repo))
     assert verify.advance(run_id, stop_before={"REVIEWING"})["state"] == "REVIEWING"
     # review (модель, чистая машина): только вердикт
     rv_dir = tmp_path / "pending-review"
@@ -89,7 +90,10 @@ def test_full_pipeline_across_isolated_runners(tmp_path):
     # publish (доверенный, запись только ae/*)
     pub = GitPublisher(p.repo, dry_run=True)
     run = p.orch(p.branch, publisher=pub).advance(run_id)
-    assert run["state"] == "COMPLETED" and run["production_mutations"] == 0
+    assert run["state"] == "AWAITING_VERIFICATION" and run["production_mutations"] == 0
+    # ci-verify (доверенный, actions: read): решение по фактическим прогонам на опубликованном SHA
+    run = p.orch(p.branch, verifier=F.ci_verifier()).advance(run_id)
+    assert run["state"] == "READY_FOR_HUMAN_REVIEW"
     assert next_pass(p.branch, run_id) == "report"
 
 
@@ -127,13 +131,13 @@ def test_tampered_or_mismatched_evidence_is_rejected(tmp_path):
     ev_sha = collect_candidate_evidence(p.orch(p.machine("test")), run_id, ev_out)
     forged = json.loads(ev_out.read_text()); forged["tests"][0]["status"] = "PASS"
     ev_out.write_text(json.dumps(forged))
-    verify = p.orch(p.branch, evidence=ReplayEvidenceRunner(ev_out, ev_sha, F.SyntheticEvidenceRunner()))
+    verify = p.orch(p.branch, evidence=ReplayEvidenceRunner(ev_out, ev_sha, F.SyntheticEvidenceRunner(), p.repo))
     with pytest.raises(IntegrityError, match="sha256"):
         verify.advance(run_id, stop_before={"REVIEWING"})
     other = dict(forged, changed_files=["synthetic/other.py"])
     ev_out.write_text(json.dumps(other))
     from tools.autonomy.agents import sha256_file
-    verify = p.orch(p.branch, evidence=ReplayEvidenceRunner(ev_out, sha256_file(ev_out), F.SyntheticEvidenceRunner()))
+    verify = p.orch(p.branch, evidence=ReplayEvidenceRunner(ev_out, sha256_file(ev_out), F.SyntheticEvidenceRunner(), p.repo))
     with pytest.raises(IntegrityError, match="не по этому кандидату"):
         verify.advance(run_id, stop_before={"REVIEWING"})
     assert p.branch.load(run_id)["state"] == "TESTING"

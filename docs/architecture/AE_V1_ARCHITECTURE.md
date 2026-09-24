@@ -43,16 +43,19 @@
 ## 3. Машина состояний
 
 ```
-RECEIVED → DISCOVERING → PLANNING ──→ IMPLEMENTING → TESTING → REVIEWING → READY_FOR_PR → COMPLETED
-                             │               ▲           │           │
-                             │               └─ FIXING ◄─┴───────────┘   (бюджет итераций/ревью)
-                             └→ WAITING_FOR_HUMAN   (нужен ACK плана или решение владельца)
-                  любое → BLOCKED (исчерпан бюджет, UNSAFE, нет доказательства) · FAILED (инфраструктура)
+RECEIVED → DISCOVERING → PLANNING ──→ IMPLEMENTING → TESTING → REVIEWING → READY_FOR_PR
+                             │               ▲           │           │             │ publish (draft PR +
+                             │               └─ FIXING ◄─┴───────────┘             ▼  диспатч обязательного CI)
+                             │                                           AWAITING_VERIFICATION
+                             └→ WAITING_FOR_HUMAN   (ACK плана, TCB,              │ ci-verify: success ВСЕХ
+                                                     решение владельца)            ▼ на опубликованном SHA
+                                                                         READY_FOR_HUMAN_REVIEW → COMPLETED (человек)
+                  любое → BLOCKED (бюджет, UNSAFE, провал/таймаут CI, нет доказательства) · FAILED (инфраструктура)
 ```
 
 Допустимые переходы — `state.TRANSITIONS`; недопустимый переход — исключение. Каждый переход
 пишется с причиной. Запись прогона (`quality/autonomy/run_state.schema.json`) валидируется
-при каждой записи. `WAITING_FOR_HUMAN` и `BLOCKED` — «припаркованы»: они блокируют дубликаты
+при каждой записи. `WAITING_FOR_HUMAN`, `BLOCKED` и `READY_FOR_HUMAN_REVIEW` — «припаркованы»: они блокируют дубликаты
 по ключу дедупликации, пока человек не решит. `FAILED` — терминален, повтор по тому же ключу
 запрещён 24 часа.
 

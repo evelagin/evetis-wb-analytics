@@ -61,4 +61,5 @@
 {diff}
 ```
 
+{commissioning_block}
 Ответ — строго JSON по выданной схеме.

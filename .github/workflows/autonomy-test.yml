@@ -2,6 +2,8 @@ name: autonomy-test
 # AE v1 · Доказательства кандидата. НЕДОВЕРЕННЫЙ job: исполняет КОД КАНДИДАТА (pytest и др.).
 # Поэтому здесь нет ни токена записи, ни решений: только доказательства и их sha256.
 # Переход состояния делает доверенный job на другой машине.
+# id-token — только ради sa-ae-reader (job_workflow_ref этого файла): правило федерации Claude API
+# этот файл не пропускает, привилегированные SA — тоже (tools/tests/test_autonomy_wif.py, B2).
 on:
   workflow_call:
     inputs:
@@ -24,38 +26,45 @@ jobs:
       evidence_sha: ${{ steps.collect.outputs.evidence_sha }}
     env:
       STATE_DIR: ${{ github.workspace }}/.ae-state
-      GH_TOKEN: ${{ github.token }}
+      RUN_ID: ${{ inputs.run_id }}
+      STATE_SHA: ${{ inputs.state_sha }}
+      GCP_PROJECT_ID: ${{ vars.GCP_PROJECT_ID }}
     steps:
-      - name: guard — только main
-        run: '[ "$GITHUB_REF" = "refs/heads/main" ] || { echo "::error::только из main"; exit 1; }'
-      - uses: actions/checkout@v4
+      - name: guard — только main, строгие входы
+        run: |
+          [ "$GITHUB_REF" = "refs/heads/main" ] || { echo "::error::только из main"; exit 1; }
+          [[ "$RUN_ID" =~ ^run-[0-9]{8}T[0-9]{6}Z-[0-9a-f]{8}$ ]] || { echo "::error::неверный run_id"; exit 1; }
+          [[ "$STATE_SHA" =~ ^[0-9a-f]{40}$ ]] || { echo "::error::неверный state_sha"; exit 1; }
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           persist-credentials: false
           fetch-depth: 0
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
         with:
           python-version: "3.12"
       - name: install pinned dependencies (hash-checked)
         run: "pip install --only-binary=:all: --require-hashes -r tools/requirements-sql-ci.txt"
-      - uses: google-github-actions/auth@v2
+      - uses: google-github-actions/auth@c200f3691d83b41bf9bbd8638997a462592937ed # v2
         with:
           workload_identity_provider: ${{ vars.WIF_PROVIDER }}
           service_account: ${{ vars.AE_READER_SA }}
-      - uses: google-github-actions/setup-gcloud@v2
+      - uses: google-github-actions/setup-gcloud@e427ad8a34f8676edf47cf7d7925499adf3eb74f # v2
       - name: clone state at pinned sha (read)
-        run: bash tools/autonomy/ci/state_clone.sh "${{ inputs.state_sha }}"
+        env:
+          GH_TOKEN: ${{ github.token }}   # contents: read — только на этот шаг
+        run: bash tools/autonomy/ci/state_clone.sh "$STATE_SHA"
       - name: collect candidate evidence
         id: collect
         run: |
-          state=$(python -m tools.autonomy.cli status --state-dir "$STATE_DIR" --run-id "${{ inputs.run_id }}" | awk '{print $2}')
+          state=$(python -m tools.autonomy.cli status --state-dir "$STATE_DIR" --run-id "$RUN_ID" | awk '{print $2}')
           [ "$state" = "TESTING" ] || { echo "состояние $state — тестировать нечего"; echo "evidence_sha=" >> "$GITHUB_OUTPUT"; exit 0; }
           python -m tools.autonomy.cli collect --engineer none --reviewer none \
-            --state-dir "$STATE_DIR" --run-id "${{ inputs.run_id }}" --out "$RUNNER_TEMP/pending/evidence.json" \
+            --state-dir "$STATE_DIR" --run-id "$RUN_ID" --out "$RUNNER_TEMP/pending/evidence.json" \
             --sandbox-root "$RUNNER_TEMP/sandboxes" \
-            --project "${{ vars.GCP_PROJECT_ID }}" --token-command "gcloud auth print-access-token" > "$RUNNER_TEMP/collect.json"
+            --project "$GCP_PROJECT_ID" --token-command "gcloud auth print-access-token" > "$RUNNER_TEMP/collect.json"
           python -c 'import json,sys; print("evidence_sha=" + json.load(open(sys.argv[1]))["evidence.json"])' \
             "$RUNNER_TEMP/collect.json" >> "$GITHUB_OUTPUT"
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         if: steps.collect.outputs.evidence_sha != ''
         with:
           name: ae-${{ inputs.run_id }}-test-${{ github.run_attempt }}

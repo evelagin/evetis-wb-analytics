@@ -7,6 +7,7 @@
   python -m tools.autonomy.cli status --state-dir D [--run-id R]
   python -m tools.autonomy.cli report --state-dir D --run-id R
   python -m tools.autonomy.cli publish --state-dir D --run-id R [--dry-run]
+  python -m tools.autonomy.cli verify-ci --state-dir D --run-id R --repo OWNER/NAME
 """
 from __future__ import annotations
 
@@ -64,7 +65,8 @@ def _evidence(a):
     runner = RepoEvidenceRunner(a.project, a.token_command)
     if getattr(a, "evidence", "live") == "replay":
         exp = _expect(a) or {}
-        return ReplayEvidenceRunner(Path(a.pending_dir) / "evidence.json", exp.get("evidence.json"), runner)
+        return ReplayEvidenceRunner(Path(a.pending_dir) / "evidence.json", exp.get("evidence.json", ""), runner,
+                                    trusted_repo=REPO)
     return runner
 
 
@@ -80,10 +82,16 @@ def _orchestrator(a, store: StateStore):
         def audit(run):  # noqa: F811 — BLOCKED остаётся BLOCKED, а не нулём
             return count_mutations(a.project, a.token_command, run["created_at"], ids)
     publisher = GitPublisher(REPO, dry_run=a.dry_run) if getattr(a, "publish", False) else None
+    verifier = None
+    if getattr(a, "verify_repo", None):
+        from tools.autonomy.policy import load_policy
+        from tools.autonomy.verification import GitHubVerifier
+        verifier = GitHubVerifier(a.verify_repo, load_policy()["required_verification"]["workflows"])
     return Orchestrator(store, REPO, _adapter(getattr(a, "engineer", "claude"), a, store),
                         _adapter(getattr(a, "reviewer", "claude"), a, store),
                         _evidence(a), Path(a.sandbox_root),
-                        audit=audit, publisher=publisher)
+                        audit=audit, publisher=publisher, verifier=verifier,
+                        trusted_base_ref=getattr(a, "trusted_base_ref", None))
 
 
 def main(argv=None) -> int:
@@ -98,7 +106,8 @@ def main(argv=None) -> int:
     w.add_argument("--token-command"); w.add_argument("--suites", nargs="*")
     w.add_argument("--no-health", action="store_true"); w.add_argument("--report")
     s = sub.add_parser("submit"); s.add_argument("--state-dir", required=True); s.add_argument("--objective", required=True)
-    for name in ("advance", "publish", "review", "agent-run", "collect"):
+    s.add_argument("--trusted-base-ref", help="repository_sha цели обязан быть предком этого ref (CI: origin/main)")
+    for name in ("advance", "publish", "review", "agent-run", "collect", "verify-ci"):
         p = sub.add_parser(name)
         p.add_argument("--engineer", choices=["claude", "replay", "none"], default="claude")
         p.add_argument("--reviewer", choices=["claude", "replay", "none"], default="claude")
@@ -111,6 +120,10 @@ def main(argv=None) -> int:
         p.add_argument("--project"); p.add_argument("--token-command"); p.add_argument("--audit-identity", nargs="*")
         p.add_argument("--sandbox-root", default=str(Path.home() / ".cache" / "evetis-ae" / "sandboxes"))
         p.add_argument("--stop-before", nargs="*", default=[]); p.add_argument("--dry-run", action="store_true")
+        p.add_argument("--trusted-base-ref", help="repository_sha прогона обязан быть предком этого ref")
+        if name == "verify-ci":
+            p.add_argument("--repo", dest="verify_repo", required=True, help="OWNER/NAME для API Actions")
+            p.add_argument("--timeout-minutes", type=int); p.add_argument("--poll-seconds", type=int)
     st = sub.add_parser("status"); st.add_argument("--state-dir", required=True); st.add_argument("--run-id")
     r = sub.add_parser("report"); r.add_argument("--state-dir", required=True); r.add_argument("--run-id", required=True)
     n = sub.add_parser("next-pass"); n.add_argument("--state-dir", required=True); n.add_argument("--run-id", required=True)
@@ -166,6 +179,22 @@ def main(argv=None) -> int:
         from tools.autonomy.agents import sha256_file
         path = review_only(_orchestrator(a, store), a.run_id, Path(a.out) if a.out else None)
         print(json.dumps({"run_id": a.run_id, "reviewer.json": sha256_file(path)}, ensure_ascii=False))
+        return 0
+    if a.cmd == "verify-ci":
+        # Доверенный job ci-verify (actions: read): ждать обязательные workflows опубликованного SHA.
+        import time
+        from tools.autonomy.policy import load_policy
+        rv = load_policy()["required_verification"]
+        a.engineer = a.reviewer = "none"
+        orch = _orchestrator(a, store)
+        deadline = time.monotonic() + 60 * (a.timeout_minutes or rv["timeout_minutes"] + 5)
+        while True:
+            run = orch.advance(a.run_id)
+            if run["state"] != "AWAITING_VERIFICATION" or time.monotonic() > deadline:
+                break
+            time.sleep(a.poll_seconds or rv["poll_seconds"])
+        print(json.dumps({"run_id": run["run_id"], "state": run["state"],
+                          "verification": (run.get("verification") or {}).get("result")}, ensure_ascii=False))
         return 0
     if a.cmd in ("advance", "publish"):
         a.publish = a.cmd == "publish"

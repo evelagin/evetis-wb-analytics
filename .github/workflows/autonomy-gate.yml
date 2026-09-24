@@ -1,11 +1,14 @@
 name: autonomy-gate
 # AE v1 · ДОВЕРЕННЫЙ детерминированный шаг. Единственный, кто меняет авторитетное состояние
 # (ветка autonomy-state). Код агента и кода кандидата здесь НЕ исполняется: недоверенный
-# вывод только проверяется по sha256 из outputs job'а-производителя и воспроизводится.
-#   prepare — открыть/продолжить прогон, собрать доказательства БАЗОВОГО коммита (код main)
+# вывод только проверяется по sha256 из outputs job'а-производителя и воспроизводится,
+# а анализ влияния считается инструментом ДОВЕРЕННОГО checkout (main), не песочницы кандидата.
+#   prepare — открыть/продолжить прогон, собрать доказательства БАЗОВОГО коммита (он обязан
+#             лежать в истории origin/main — --trusted-base-ref)
 #   ingest  — воспроизвести план и реализацию инженера → TESTING / WAITING_FOR_HUMAN / BLOCKED
 #   verify  — воспроизвести доказательства кандидата → REVIEWING / FIXING / BLOCKED
 #   gate    — воспроизвести вердикт ревьюера, решить гейткипером → READY_FOR_PR / FIXING / …
+# Действия закреплены по SHA коммита: этот job держит токен записи.
 on:
   workflow_call:
     inputs:
@@ -30,79 +33,83 @@ jobs:
     timeout-minutes: 60
     permissions:
       contents: write    # ТОЛЬКО refs/heads/autonomy-state (tools/autonomy/ci/state_push.sh)
-      id-token: write    # read-only SA: доказательства базового коммита в prepare
+      id-token: write    # sa-ae-reader (job_workflow_ref autonomy-gate.yml): доказательства базы и аудит
     outputs:
       run_id: ${{ steps.run.outputs.run_id }}
       state_sha: ${{ steps.push.outputs.state_sha }}
       state: ${{ steps.run.outputs.state }}
     env:
       STATE_DIR: ${{ github.workspace }}/.ae-state
-      GH_TOKEN: ${{ github.token }}
-      PENDING: ${{ github.workspace }}/.ae-pending
+      STEP: ${{ inputs.step }}
+      OBJECTIVE_PATH: ${{ inputs.objective_path }}
+      RUN_ID_IN: ${{ inputs.run_id }}
+      EXPECT: ${{ inputs.expect }}
+      GCP_PROJECT_ID: ${{ vars.GCP_PROJECT_ID }}
+      AE_READER_SA: ${{ vars.AE_READER_SA }}
     steps:
-      - name: guard — только main и известный шаг
-        env:
-          STEP: ${{ inputs.step }}
-          OBJECTIVE_PATH: ${{ inputs.objective_path }}
-          RUN_ID: ${{ inputs.run_id }}
+      - name: guard — только main, известный шаг, строгие входы
         run: |
           [ "$GITHUB_REF" = "refs/heads/main" ] || { echo "::error::только из main"; exit 1; }
           case "$STEP" in prepare|ingest|verify|gate) ;; *) echo "::error::неизвестный шаг"; exit 1 ;; esac
-          case "$OBJECTIVE_PATH" in ""|objectives/*.json) ;; *) echo "::error::цель только из objectives/"; exit 1 ;; esac
-          case "$RUN_ID" in ""|run-*) ;; *) echo "::error::неверный run_id"; exit 1 ;; esac
-      - uses: actions/checkout@v4
+          [[ -z "$OBJECTIVE_PATH" || "$OBJECTIVE_PATH" =~ ^objectives/[A-Za-z0-9._-]+\.json$ ]] \
+            || { echo "::error::цель только objectives/<имя>.json"; exit 1; }
+          [[ -z "$RUN_ID_IN" || "$RUN_ID_IN" =~ ^run-[0-9]{8}T[0-9]{6}Z-[0-9a-f]{8}$ ]] \
+            || { echo "::error::неверный run_id"; exit 1; }
+          [[ -z "$EXPECT" || "$EXPECT" =~ ^([a-z_]+\.(json|patch)=[0-9a-f]{64}( |$))+$ ]] \
+            || { echo "::error::неверный expect"; exit 1; }
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           persist-credentials: false
           fetch-depth: 0
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
         with:
           python-version: "3.12"
       - name: install pinned dependencies (hash-checked)
         run: "pip install --only-binary=:all: --require-hashes -r tools/requirements-sql-ci.txt"
-      - uses: google-github-actions/auth@v2
+      - uses: google-github-actions/auth@c200f3691d83b41bf9bbd8638997a462592937ed # v2
         if: inputs.step == 'prepare'
         with:
           workload_identity_provider: ${{ vars.WIF_PROVIDER }}
           service_account: ${{ vars.AE_READER_SA }}
-      - uses: google-github-actions/setup-gcloud@v2
+      - uses: google-github-actions/setup-gcloud@e427ad8a34f8676edf47cf7d7925499adf3eb74f # v2
         if: inputs.step == 'prepare'
       - name: clone state (tip)
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: bash tools/autonomy/ci/state_clone.sh
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         if: inputs.pending_artifact != '' && inputs.expect != ''
         with:
           name: ${{ inputs.pending_artifact }}
-          path: ${{ env.PENDING }}
+          # Вне рабочего каталога: недоверенный архив не ложится рядом с исполняемым кодом.
+          path: ${{ runner.temp }}/ae-pending
       - name: deterministic transition
         id: run
         env:
-          STEP: ${{ inputs.step }}
-          OBJECTIVE_PATH: ${{ inputs.objective_path }}
-          RUN_ID: ${{ inputs.run_id }}
-          EXPECT: ${{ inputs.expect }}
+          PENDING: ${{ runner.temp }}/ae-pending
         run: |
-          common=(--state-dir "$STATE_DIR" --sandbox-root "$RUNNER_TEMP/sandboxes")
+          common=(--state-dir "$STATE_DIR" --sandbox-root "$RUNNER_TEMP/sandboxes" --trusted-base-ref origin/main)
+          RUN_ID="$RUN_ID_IN"
           if [ "$STEP" = "prepare" ] && [ -n "$OBJECTIVE_PATH" ]; then
             python -m tools.autonomy.cli validate --kind objective "$STATE_DIR/$OBJECTIVE_PATH"
             RUN_ID=$(python -m tools.autonomy.cli submit --state-dir "$STATE_DIR" --objective "$STATE_DIR/$OBJECTIVE_PATH" \
-              | python -c 'import json,sys; print(json.load(sys.stdin)["run_id"])')
+              --trusted-base-ref origin/main | python -c 'import json,sys; print(json.load(sys.stdin)["run_id"])')
           fi
-          [ -n "$RUN_ID" ] || { echo "::error::нет run_id"; exit 1; }
+          [[ "$RUN_ID" =~ ^run-[0-9]{8}T[0-9]{6}Z-[0-9a-f]{8}$ ]] || { echo "::error::нет run_id"; exit 1; }
           echo "run_id=$RUN_ID" >> "$GITHUB_OUTPUT"
           state=$(python -m tools.autonomy.cli status --state-dir "$STATE_DIR" --run-id "$RUN_ID" | awk '{print $2}')
           read -r -a expect <<< "$EXPECT"
           case "$STEP" in
             prepare)
               python -m tools.autonomy.cli advance --engineer none --reviewer none "${common[@]}" --run-id "$RUN_ID" \
-                --project "${{ vars.GCP_PROJECT_ID }}" --token-command "gcloud auth print-access-token" \
-                --audit-identity "${{ vars.AE_READER_SA }}" \
+                --project "$GCP_PROJECT_ID" --token-command "gcloud auth print-access-token" \
+                --audit-identity "$AE_READER_SA" \
                 --stop-before PLANNING IMPLEMENTING FIXING TESTING REVIEWING ;;
             ingest)
-              case "$state" in PLANNING|IMPLEMENTING|FIXING) ;; *) echo "ingest: состояние $state — нечего воспроизводить" ;; esac
               if [[ "$state" =~ ^(PLANNING|IMPLEMENTING|FIXING)$ ]] && [ ${#expect[@]} -gt 0 ]; then
                 python -m tools.autonomy.cli advance --engineer replay --reviewer none "${common[@]}" --run-id "$RUN_ID" \
                   --pending-dir "$PENDING" --expect "${expect[@]}" --stop-before TESTING REVIEWING
-              fi ;;
+              else echo "ingest: состояние $state — нечего воспроизводить"; fi ;;
             verify)
               if [ "$state" = "TESTING" ] && [ ${#expect[@]} -gt 0 ]; then
                 python -m tools.autonomy.cli advance --engineer none --reviewer none --evidence replay "${common[@]}" \
@@ -118,6 +125,10 @@ jobs:
           echo "state=$(python -m tools.autonomy.cli status --state-dir "$STATE_DIR" --run-id "$RUN_ID" | awk '{print $2}')" >> "$GITHUB_OUTPUT"
       - name: persist authoritative state
         id: push
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RUN_ID: ${{ steps.run.outputs.run_id }}
+          NEW_STATE: ${{ steps.run.outputs.state }}
         run: |
-          sha=$(bash tools/autonomy/ci/state_push.sh "autonomy-gate ${{ inputs.step }}: ${{ steps.run.outputs.run_id }} → ${{ steps.run.outputs.state }}" | tail -1)
+          sha=$(bash tools/autonomy/ci/state_push.sh "autonomy-gate ${STEP}: ${RUN_ID} → ${NEW_STATE}" | tail -1)
           echo "state_sha=$sha" >> "$GITHUB_OUTPUT"

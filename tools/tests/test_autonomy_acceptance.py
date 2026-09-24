@@ -44,10 +44,11 @@ def dispatch_synthetic(env) -> dict:
     return objective
 
 
-def orchestrator(env, engineer, reviewer, audit=lambda run: 0, publish=True):
+def orchestrator(env, engineer, reviewer, audit=lambda run: 0, publish=True, verifier=None):
     pub = GitPublisher(env["repo"], dry_run=True) if publish else None
     orch = Orchestrator(env["store"], env["repo"], engineer, reviewer, F.SyntheticEvidenceRunner(),
-                        env["sandboxes"], audit=audit, publisher=pub)
+                        env["sandboxes"], audit=audit, publisher=pub, verifier=verifier or F.ci_verifier(),
+                        trusted_base_ref="main")
     return orch, pub
 
 
@@ -83,8 +84,10 @@ def test_B_synthetic_failure_end_to_end(env):
     assert created and run["branch"] == dedup_slug(objective["deduplication_key"])
     run = orch.advance(run["run_id"])
 
-    assert run["state"] == "COMPLETED", run["transitions"]
+    assert run["state"] == "READY_FOR_HUMAN_REVIEW", run["transitions"]
     assert run["pr_url"] == f"dry-run://{run['branch']}"
+    assert run["verification"]["result"]["status"] == "PASS"
+    assert run["verification"]["head_sha"] != env["sha"]           # проверен именно опубликованный коммит
     assert run["production_mutations"] == 0
     art = env["store"].root / "artifacts" / run["run_id"]
     assert json.loads((art / "gate.json").read_text())["verdict"] == "READY_FOR_PR"
@@ -102,9 +105,11 @@ def test_B_synthetic_failure_end_to_end(env):
     pushes = [c for c in pub.log if c[:2] == ["git", "push"]]
     assert pushes == [["git", "push", "origin", f"HEAD:refs/heads/{run['branch']}"]]
     assert any(c[:4] == ["gh", "pr", "create", "--draft"] for c in pub.log)
+    dispatches = [c for c in pub.log if c[:3] == ["gh", "workflow", "run"]]
+    assert dispatches == [["gh", "workflow", "run", wf, "--ref", run["branch"]] for wf in ("sql-current.yml", "ci.yml")]
     states = [t["to"] for t in run["transitions"]]
     assert states == ["RECEIVED", "DISCOVERING", "PLANNING", "IMPLEMENTING", "TESTING", "REVIEWING",
-                      "READY_FOR_PR", "COMPLETED"]
+                      "READY_FOR_PR", "AWAITING_VERIFICATION", "READY_FOR_HUMAN_REVIEW"]
 
 
 # ======================================================================= C ===
@@ -144,7 +149,7 @@ def test_D_reviewer_rejection_returns_work_to_engineer(env):
                                         {"respond": F.verdict("PASS")}]})
     orch, _ = orchestrator(env, eng, rev)
     run = orch.advance(orch.submit(objective)[0]["run_id"])
-    assert run["state"] == "COMPLETED"
+    assert run["state"] == "READY_FOR_HUMAN_REVIEW"
     assert run["iteration"] == 2 and run["review_cycles"] == 2
     fix_prompt = [c for c in eng.calls if c["role"] == "engineer_implement"][1]["prompt"]
     assert "нет теста на пустой список" in fix_prompt          # находка дошла до инженера
@@ -166,11 +171,26 @@ def test_D_iteration_budget_is_finite(env):
 
 
 # ======================================================================= E ===
-@pytest.mark.parametrize("editor", [F.edit_workflow, F.edit_infra], ids=["github-workflow", "infra-terraform"])
-def test_E_forbidden_paths_are_unsafe_and_never_published(env, editor):
+@pytest.mark.parametrize("tcb_class", sorted(F.TCB_EDITORS))
+def test_E_tcb_changes_force_human_decision_and_are_never_published(env, tcb_class):
     objective = dispatch_synthetic(env)
     eng = ScriptedAdapter({"engineer_plan": [{"respond": F.plan()}],
-                           "engineer_implement": [{"edit": editor, "respond": F.implemented()}]})
+                           "engineer_implement": [{"edit": F.TCB_EDITORS[tcb_class], "respond": F.implemented()}]})
+    rev = ScriptedAdapter({"reviewer": [{"respond": F.verdict("PASS")}]})
+    orch, pub = orchestrator(env, eng, rev)
+    run = orch.advance(orch.submit(objective)[0]["run_id"])
+    assert run["state"] == "WAITING_FOR_HUMAN"
+    assert run["last_gate"]["verdict"] == "HUMAN_DECISION_REQUIRED"
+    assert "TCB_MODIFICATION" in run["last_gate"]["reason"]
+    assert rev.calls == [] and pub.log == []
+    # Продолжение из парковки снова упирается в ту же проверку: публикации нет ни при каком пути.
+    assert orch.advance(run["run_id"])["state"] == "WAITING_FOR_HUMAN"
+
+
+def test_E_secret_material_is_unsafe(env):
+    objective = dispatch_synthetic(env)
+    eng = ScriptedAdapter({"engineer_plan": [{"respond": F.plan()}],
+                           "engineer_implement": [{"edit": F.edit_secret, "respond": F.implemented()}]})
     rev = ScriptedAdapter({"reviewer": [{"respond": F.verdict("PASS")}]})
     orch, pub = orchestrator(env, eng, rev)
     run = orch.advance(orch.submit(objective)[0]["run_id"])
@@ -235,7 +255,7 @@ def test_F_restart_recovers_from_durable_state_without_memory(env):
     rev = ScriptedAdapter({"reviewer": [{"respond": F.verdict("PASS")}]})
     orch2, _ = orchestrator(env, eng, rev)
     run = orch2.advance(run_id)
-    assert run["state"] == "COMPLETED"
+    assert run["state"] == "READY_FOR_HUMAN_REVIEW"
     assert [c["role"] for c in eng.calls] == ["engineer_implement"]   # план заново не строился
 
 

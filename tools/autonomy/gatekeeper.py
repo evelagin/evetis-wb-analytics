@@ -40,7 +40,7 @@ def _regressions(candidate: dict, baseline: dict) -> tuple[list[str], list[str],
 def evaluate(evidence: dict, baseline: dict, review: dict | None, context: dict) -> dict:
     """Вернуть {"verdict", "reasons", "informational", "review_requests_changes"}.
 
-    context: forbidden_paths, gate_weakening, production_mutations, plan_ack_required,
+    context: forbidden_paths, tcb_paths, gate_weakening, production_mutations, plan_ack_required,
     touches_open_ubr, objective_resolution ("RESOLVED" | "NOT_DEMONSTRATED" | "NOT_APPLICABLE"),
     no_change (bool)."""
     hits: dict[str, list[str]] = {s: [] for s in PRIORITY}
@@ -102,6 +102,12 @@ def evaluate(evidence: dict, baseline: dict, review: dict | None, context: dict)
         hits["INCONCLUSIVE"].append(f"Git↔production parity: {par}")
 
     # --- решения, принадлежащие человеку --------------------------------------
+    # TCB: ворота, доказательства, CI, IAM, развёртывание. Автономный контур не одобряет
+    # изменения собственной доверенной базы — ни ревьюер, ни ACK плана этого не снимают.
+    if context.get("tcb_paths"):
+        hits["HUMAN_DECISION_REQUIRED"].append(
+            f"TCB_MODIFICATION: кандидат меняет доверенную базу {context['tcb_paths'][:10]} — "
+            "AE такие изменения не публикует; решение и PR — только человек")
     if context.get("plan_ack_required"):
         hits["HUMAN_DECISION_REQUIRED"].append(f"нужен ACK плана: {context['plan_ack_required']}")
     if context.get("touches_open_ubr"):

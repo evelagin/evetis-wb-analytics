@@ -6,6 +6,8 @@ on:
   push:
     branches-ignore: ["main"]
     paths: ["cloud/**", "services/**", "pipelines/**", "infra/**"]
+  # AE v1 (S8): обязательная проверка ветки кандидата ae/* (диспатч публикатора, без фильтра путей).
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -45,8 +47,6 @@ jobs:
         with:
           # Совпадает с базовым образом Dockerfile (python:3.12-slim).
           python-version: "3.12"
-          cache: pip
-          cache-dependency-path: services/wb-communications/requirements-dev.txt
       - run: pip install -r requirements-dev.txt
       - name: Compile all sources
         run: python -m compileall -q app scripts
@@ -65,8 +65,6 @@ jobs:
         with:
           # Совпадает с базовым образом обоих Dockerfile (python:3.12-slim).
           python-version: "3.12"
-          cache: pip
-          cache-dependency-path: pipelines/ozon/requirements-dev.txt
       - run: pip install -r pipelines/ozon/requirements-dev.txt
       - name: Compile all sources
         run: python -m compileall -q pipelines/ozon/runtime pipelines/ozon/bootstrap pipelines/ozon/tests

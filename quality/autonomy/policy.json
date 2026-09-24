@@ -51,29 +51,125 @@
       "main"
     ]
   },
+  "required_verification": {
+    "comment": "S8: PR от GITHUB_TOKEN не запускает pull_request-CI. Публикатор диспатчит эти workflows на ветке кандидата (workflow_dispatch — исключение GitHub для GITHUB_TOKEN), job ci-verify ждёт их по API Actions. READY_FOR_HUMAN_REVIEW — только если ВСЕ завершены success на опубликованном SHA. Иначе BLOCKED.",
+    "workflows": [
+      "sql-current.yml",
+      "ci.yml"
+    ],
+    "timeout_minutes": 45,
+    "poll_seconds": 30
+  },
+  "trusted_computing_base": {
+    "comment": "Доверенная вычислительная база (AE_V1_SECURITY.md §5). Кандидат, затронувший хотя бы один из этих путей, получает минимум HUMAN_DECISION_REQUIRED и НИКОГДА не публикуется AE: ни ACK плана (owner_ack), ни PASS ревьюера этот запрет не снимают. Критерий включения: путь определяет права, развёртывание, запись во внешний мир, сами ворота и их доказательства, либо исполняется автоматически с чужими правами (CI, pytest, pip/npm, IDE, владелец со своими правами на DDL).",
+    "classes": {
+      "ci_and_delivery": [
+        ".github/**"
+      ],
+      "autonomy_itself": [
+        "tools/autonomy/**",
+        "quality/autonomy/**"
+      ],
+      "gates_and_evidence": [
+        "quality/**",
+        "tools/lib/**",
+        "tools/run_data_checks.py",
+        "tools/verify_task.py",
+        "tools/validate_current_sql.py",
+        "tools/verify_current_sql_live.py",
+        "tools/check_runtime_access.py",
+        "tools/impact_analysis.py",
+        "tools/architecture_baseline.py",
+        "tools/build_contract_registry.py",
+        "tools/requirements-sql-ci.txt",
+        "tools/tests/ae_fixtures.py",
+        "tools/tests/test_autonomy_*.py",
+        "tools/tests/test_check_runtime_access.py",
+        "tools/tests/test_run_data_checks.py",
+        "tools/tests/test_validate_current_sql.py",
+        "tools/tests/test_verify_current_sql_live.py",
+        "tools/tests/test_evidence_system.py",
+        "tools/tests/test_acceptance_adapters.py"
+      ],
+      "iam_and_infrastructure": [
+        "infra/**",
+        "**/*.tf",
+        "**/*.tf.json",
+        "quality/runtime_identities.json"
+      ],
+      "deployment_and_rollback": [
+        "tools/*deploy*",
+        "tools/*rollback*",
+        "tools/capture_canonical_sql.py",
+        "tools/scale1_predeploy_render.py",
+        "tools/promo_canonical_render.py",
+        "tools/apply_*",
+        "tools/metabase_*",
+        "tools/clasp_*",
+        "tools/ops_sheet_build.py",
+        "tools/build_ops_monolith.js",
+        "**/*rollback*",
+        "**/rollback/**",
+        "**/deploy/**",
+        "**/Dockerfile*",
+        "**/cloudbuild*.yaml",
+        "**/cloudbuild*.yml",
+        "metabase/**"
+      ],
+      "external_write_paths": [
+        "apps-script/**",
+        "appsscript.json",
+        "services/wb-communications/**"
+      ],
+      "auto_executed_and_supply_chain": [
+        "**/conftest.py",
+        "**/pytest.ini",
+        "**/pyproject.toml",
+        "**/setup.cfg",
+        "**/setup.py",
+        "**/tox.ini",
+        "**/sitecustomize.py",
+        "**/usercustomize.py",
+        "**/*.pth",
+        "**/Makefile",
+        "**/requirements*.txt",
+        "**/package.json",
+        "**/package-lock.json",
+        "**/.npmrc",
+        ".pre-commit-config.yaml",
+        "**/.envrc",
+        ".vscode/**",
+        ".idea/**",
+        ".devcontainer/**",
+        "**/.gitattributes",
+        ".gitmodules"
+      ],
+      "agent_instructions": [
+        ".claude/**",
+        "**/CLAUDE.md",
+        "**/AGENTS.md",
+        "skills/**"
+      ]
+    }
+  },
   "forbidden_paths": {
-    "comment": "Автономный кандидат, затрагивающий эти пути, получает UNSAFE без права переопределения. Это места, где правка меняет права, развёртывание или запись во внешний мир — решения, которые принадлежат только владельцу. Инструменты развёртывания (tools/*deploy*.py и др.) запрещены отдельно: их запускает владелец со своими правами на DDL, поэтому правка такого скрипта агентом — путь к production через цепочку поставки, даже если сам агент прав не имеет.",
+    "comment": "Секретный материал. Появление такого файла в диффе — не решение человека, а инцидент: UNSAFE без права переопределения. Всё прочее, что агенту трогать нельзя, — trusted_computing_base (HUMAN_DECISION_REQUIRED).",
     "globs": [
-      ".github/**",
-      "infra/**",
-      "apps-script/**",
-      "appsscript.json",
-      "services/wb-communications/**",
-      "quality/autonomy/policy.json",
-      "quality/runtime_identities.json",
-      "tools/autonomy/**",
-      "tools/lib/bq_readonly.py",
-      "tools/verify_task.py",
       "**/*.tfvars",
+      "**/*.tfstate",
+      "**/*.tfstate.*",
       "**/*.pem",
       "**/*.key",
+      "**/*.p12",
+      "**/*.pfx",
+      "**/*.jks",
       "**/.env",
       "**/.env.*",
-      ".claude/**",
-      "CLAUDE.md",
-      "tools/*deploy*.py",
-      "tools/capture_canonical_sql.py",
-      "tools/scale1_predeploy_render.py"
+      "**/*credentials*.json",
+      "**/*service-account*.json",
+      "**/*service_account*.json",
+      "**/id_rsa*",
+      "**/id_ed25519*"
     ]
   },
   "gate_weakening": {

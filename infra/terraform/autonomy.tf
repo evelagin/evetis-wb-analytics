@@ -10,7 +10,9 @@
 # добросовестности агента. tools/tests/test_autonomy_security.py проверяет, что сюда
 # не просочилась роль шире разрешённого набора.
 #
-# Кто может выпустить токен этого SA: только workflow-файлы AE на main (attribute.workflow_ref).
+# Кто может выпустить токен этого SA: только перечисленные job'ы AE на main
+# (attribute.job_workflow_ref). Ревьюер (autonomy-review.yml) в списке ОТСУТСТВУЕТ: у него
+# id-token есть только ради федерации Claude API, данных production ему не нужно.
 
 resource "google_service_account" "ae_reader" {
   account_id   = "sa-ae-reader"
@@ -27,7 +29,9 @@ locals {
     "roles/bigquery.resourceViewer", # INFORMATION_SCHEMA.JOBS_BY_PROJECT — аудит мутаций
     "roles/logging.viewer",          # чтение логов Cloud Run/Scheduler при расследовании
   ])
-  ae_workflows = toset(["autonomy-watch.yml", "autonomy-run.yml"])
+  # Файлы, где ОБЪЯВЛЕН job (job_workflow_ref). У autonomy-watch.yml (верхний уровень) он равен
+  # workflow_ref; остальные — переиспользуемые, вызываемые из autonomy-run.yml.
+  ae_reader_jobs = toset(["autonomy-watch.yml", "autonomy-gate.yml", "autonomy-engineer.yml", "autonomy-test.yml"])
 }
 
 resource "google_project_iam_member" "ae_reader" {
@@ -45,8 +49,8 @@ resource "google_bigquery_dataset_iam_member" "ae_reader_read" {
 }
 
 resource "google_service_account_iam_member" "ae_reader_wif" {
-  for_each           = local.ae_workflows
+  for_each           = local.ae_reader_jobs
   service_account_id = google_service_account.ae_reader.name
   role               = "roles/iam.workloadIdentityUser"
-  member             = "${local.pool_principal}/attribute.workflow_ref/${var.github_repo}/.github/workflows/${each.value}@refs/heads/main"
+  member             = "${local.pool_principal}/attribute.job_workflow_ref/${local.github_workflows}/${each.value}@refs/heads/main"
 }

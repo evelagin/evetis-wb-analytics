@@ -46,8 +46,23 @@ def glob_match(path: str, pattern: str) -> bool:
 
 
 def forbidden_paths(files: list[str], policy: dict | None = None) -> list[str]:
+    """Секретный материал в диффе → UNSAFE."""
     policy = policy or load_policy()
     globs = policy["forbidden_paths"]["globs"]
+    return sorted(f for f in files if any(glob_match(f, g) for g in globs))
+
+
+def tcb_globs(policy: dict | None = None) -> list[str]:
+    policy = policy or load_policy()
+    return [g for globs in policy["trusted_computing_base"]["classes"].values() for g in globs]
+
+
+def tcb_paths(files: list[str], policy: dict | None = None) -> list[str]:
+    """Пути доверенной вычислительной базы → минимум HUMAN_DECISION_REQUIRED, публикации нет.
+
+    Проверка идёт по ОБОИМ именам переименования и по любому файлу диффа: переименование
+    `.github/workflows/x.yml → docs/x.yml` тоже меняет TCB."""
+    globs = tcb_globs(policy)
     return sorted(f for f in files if any(glob_match(f, g) for g in globs))
 
 

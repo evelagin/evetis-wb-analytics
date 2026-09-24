@@ -9,7 +9,7 @@ import pytest
 
 import ae_fixtures as F  # noqa: E402
 from tools.autonomy import gatekeeper as G
-from tools.autonomy.policy import detect_gate_weakening, forbidden_paths, glob_match, plan_requires_ack
+from tools.autonomy.policy import detect_gate_weakening, forbidden_paths, glob_match, plan_requires_ack, tcb_paths
 from tools.autonomy.publisher import GitPublisher, PublishRefused
 from tools.autonomy.schema import SchemaError, check_schema, load_schema, require_valid, validate
 from tools.autonomy.state import StateStore, TransitionError, dedup_slug
@@ -58,11 +58,11 @@ def test_glob_does_not_strip_the_leading_dot():
     assert not glob_match("github/workflows/a.yml", ".github/**")
 
 
-def test_policy_itself_and_autonomy_code_are_forbidden_to_the_agent():
-    assert forbidden_paths(["quality/autonomy/policy.json", "tools/autonomy/gatekeeper.py",
-                            "tools/verify_task.py", "tools/lib/bq_readonly.py"]) == sorted(
-        ["quality/autonomy/policy.json", "tools/autonomy/gatekeeper.py", "tools/verify_task.py",
-         "tools/lib/bq_readonly.py"])
+def test_policy_itself_and_autonomy_code_are_trusted_computing_base():
+    tcb = ["quality/autonomy/policy.json", "tools/autonomy/gatekeeper.py", "tools/verify_task.py",
+           "tools/lib/bq_readonly.py"]
+    assert tcb_paths(tcb) == sorted(tcb)
+    assert forbidden_paths(tcb) == []          # TCB — решение человека, а не «секрет»
 
 
 @pytest.mark.parametrize("line", [
@@ -203,5 +203,5 @@ def test_deploy_tooling_is_forbidden_supply_chain_path():
     путь к production через цепочку поставки, хотя у самого агента прав нет."""
     deploy = sorted(p.relative_to(F.REPO).as_posix() for p in (F.REPO / "tools").glob("*deploy*.py"))
     assert deploy, "в tools/ ожидался хотя бы один инструмент развёртывания"
-    assert forbidden_paths(deploy) == deploy
-    assert forbidden_paths(["tools/impact_analysis_helper.py"]) == []
+    assert tcb_paths(deploy) == deploy
+    assert tcb_paths(["tools/impact_analysis_helper.py"]) == []

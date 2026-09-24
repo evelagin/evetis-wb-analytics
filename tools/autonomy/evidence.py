@@ -47,12 +47,15 @@ class Sandbox:
     def diff(self) -> str:
         assert self.path
         _git(self.path, "add", "-A")
-        return _git(self.path, "diff", "--cached", "--binary", self.base_sha)
+        # --no-renames: переименование — это удаление старого пути плюс новый путь. Иначе
+        # `.github/workflows/x.yml → docs/x.yml` выглядело бы как правка одного docs/x.yml.
+        return _git(self.path, "diff", "--cached", "--binary", "--no-renames", self.base_sha)
 
     def changed_files(self) -> list[str]:
         assert self.path
         _git(self.path, "add", "-A")
-        return [f for f in _git(self.path, "diff", "--cached", "--name-only", self.base_sha).splitlines() if f]
+        return [f for f in _git(self.path, "-c", "core.quotepath=false", "diff", "--cached", "--name-only",
+                                "--no-renames", self.base_sha).splitlines() if f]
 
     def cleanup(self) -> None:
         if self.path and self.path.exists():
@@ -68,9 +71,24 @@ class EvidenceRunner(Protocol):
     def impact(self, workdir: Path, files: list[str]) -> dict: ...
 
 
+# Переменные, которые инструментам доказательств не нужны и не должны достаться коду, который
+# они исполняют (pytest исполняет conftest/тесты рабочего дерева): токены GitHub, выпуск
+# OIDC-токенов, runtime-токен Actions (кэш и артефакты), идентификация Claude API.
+EVIDENCE_ENV_DENY_PREFIXES = ("ACTIONS_", "GITHUB_TOKEN", "GH_", "ANTHROPIC_", "CLAUDE_")
+EVIDENCE_ENV_DENY = {"GH_TOKEN", "GITHUB_TOKEN", "ACTIONS_ID_TOKEN_REQUEST_TOKEN", "ACTIONS_ID_TOKEN_REQUEST_URL",
+                     "ACTIONS_RUNTIME_TOKEN", "ACTIONS_CACHE_URL", "ACTIONS_RESULTS_URL"}
+
+
+def evidence_env(base: dict | None = None) -> dict:
+    base = dict(os.environ if base is None else base)
+    return {k: v for k, v in base.items()
+            if k not in EVIDENCE_ENV_DENY and not k.startswith(EVIDENCE_ENV_DENY_PREFIXES)}
+
+
 def _run(cmd: list[str], cwd: Path, timeout: int = 1800, env: dict | None = None) -> dict:
     try:
-        r = subprocess.run(cmd, cwd=cwd, capture_output=True, text=True, timeout=timeout, env=env)
+        r = subprocess.run(cmd, cwd=cwd, capture_output=True, text=True, timeout=timeout,
+                           env=evidence_env(env))
     except subprocess.TimeoutExpired:
         return {"exit_code": 124, "tail": "timeout"}
     except FileNotFoundError as e:
@@ -175,17 +193,25 @@ class ReplayEvidenceRunner:
 
     REQUIRED = ("tests", "sql_validation", "runtime_access", "parity", "data_suites", "objective_resolution")
 
-    def __init__(self, pending_file: Path, expect_sha256: str | None, impact_runner):
+    def __init__(self, pending_file: Path, expect_sha256: str, impact_runner, trusted_repo: Path):
+        from tools.autonomy.agents import IntegrityError
+        if not expect_sha256:
+            raise IntegrityError("ReplayEvidenceRunner без sha256 производителя: доказательства не с чем сверить")
         self.file, self.expect, self.impact_runner = Path(pending_file), expect_sha256, impact_runner
+        # Анализ влияния — инструмент репозитория, т.е. КОД. В доверенном job'е он исполняется
+        # только из доверенного checkout (main), НИКОГДА из песочницы с кандидатом: иначе
+        # кандидат подменил бы tools/impact_analysis.py (или положил tools/json.py) и исполнил
+        # свой код рядом с токеном записи.
+        self.trusted_repo = Path(trusted_repo)
 
     def impact(self, workdir: Path, files: list[str]) -> dict:
-        return self.impact_runner.impact(workdir, files)
+        return self.impact_runner.impact(self.trusted_repo, files)
 
     def collect(self, workdir: Path, changed_files: list[str], objective: dict) -> dict:
         from tools.autonomy.agents import IntegrityError, sha256_file
         if not self.file.exists():
             raise IntegrityError(f"нет недоверенных доказательств {self.file}")
-        if self.expect is not None and sha256_file(self.file) != self.expect:
+        if sha256_file(self.file) != self.expect:
             raise IntegrityError("доказательства кандидата: sha256 не совпал с объявленным производителем")
         ev = json.loads(self.file.read_text(encoding="utf-8"))
         missing = [k for k in self.REQUIRED if k not in ev]
@@ -194,7 +220,7 @@ class ReplayEvidenceRunner:
         declared = sorted(ev.get("changed_files", changed_files))
         if declared != sorted(changed_files):
             raise IntegrityError(f"доказательства собраны не по этому кандидату: {declared} != {sorted(changed_files)}")
-        ev["impact"] = {k: v for k, v in self.impact_runner.impact(workdir, changed_files).items()
+        ev["impact"] = {k: v for k, v in self.impact(workdir, changed_files).items()
                         if k in ("risk_tier", "affected_total", "required_contracts", "assets_without_contract",
                                  "flags", "downstream_assets")}
         return ev

@@ -1,5 +1,10 @@
 # Autonomous Engineering v1 — приёмка
 
+> **Обновлено 2026-09-24 (security commissioning).** Финал прогона теперь `READY_FOR_HUMAN_REVIEW`
+> (после обязательного CI), а не `COMPLETED`. Запреты разделены: TCB → `HUMAN_DECISION_REQUIRED`,
+> секреты → `UNSAFE`. Итоги S1–S10 и находки — [AE_V1_SECURITY_COMMISSIONING.md](AE_V1_SECURITY_COMMISSIONING.md).
+> Ниже — исходная приёмка A–F как историческая запись.
+
 Дата: 2026-09-24 · Базовый коммит: `origin/main` = `2cbc7340` на начало работы.
 
 ## Итог
