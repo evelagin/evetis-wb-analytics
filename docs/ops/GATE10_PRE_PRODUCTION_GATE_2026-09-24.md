@@ -98,17 +98,26 @@ Live readback: `ZZ_CONFIG!A29:B34` пусты (коллизий нет); зна�
    собственный LCD не пишет; работают ёмкость и снятие реального префикса УФ.
    Итоговое состояние книги WB не отличается от нынешнего (раздел 2).
 
-**Этап 2 — миграция LCD Ozon (изменение книги, в окне между прогонами Ozon).**
-1. Засеять `ZZ_CONFIG!A29:B34` (6 строк; `B30` = текущее значение `B2`).
-2. Создать именованный диапазон `OZON_LAST_CLOSED_DATE` → `ZZ_CONFIG!B30`.
-3. Переписать 32 967 формул листа Ozon модулем `ozon/lcd_migration.ts` (`verifyPlan` = ok).
-4. Сверить отпечаток значений до/после — обязан совпасть.
-5. Целевой apply `ozon_unitka.tf`: `OZON_UNITKA_LCD_CELL = "OZON_LAST_CLOSED_DATE"`.
-   Константы `OZON_UNITKA_TAIL_FIRST_COLUMN`, `OZON_UNITKA_BLOCK_SLOTS`,
-   `OZON_UNITKA_LCD_REF`, `OZON_UNITKA_EXISTING_CF_RULES` после Gate 10 не авторитетны
-   (писатель выводит их из листа и только предупреждает о расхождении).
-6. Ручной запуск `ozon-unitka-prod` и проверка: PRE/POST_COMMIT PASS, `LCD_COMMITTED`
+**Этап 2 — миграция LCD Ozon (изменение книги, в окне между прогонами Ozon и WB).**
+Выполняет admin-загрузчик `ozon-unitka-lcd-migration` (тот же образ, учётная запись
+`sa-loaders-prod`, модуль `ozon/lcd_migration.ts`), одно исполнение Job:
+1. План: `gcloud run jobs execute ozon-unitka-prod --args=ozon-unitka-lcd-migration` — только
+   чтение; в журнале `ozon_lcd_migration_plan` живые число ссылок и `B2`.
+2. Запись: то же исполнение с `--update-env-vars=OZON_LCD_MIGRATION_WRITE=1,
+   OZON_LCD_MIGRATION_EXPECTED_REFS=<из плана>,OZON_LCD_MIGRATION_EXPECTED_B2=<из плана>`.
+   Засев `ZZ_CONFIG!A29:B34` (`B30` = то же число, что `B2`) → имя `OZON_LAST_CLOSED_DATE` →
+   перевод формул → перечитывание: значения Ozon побайтно те же, формулы WB, `B2`, `B3` те же,
+   ссылок на имя WB в листе Ozon нет. Провал — откат формул.
+3. Отдельный PR: `infra/terraform/ozon_unitka.tf` `OZON_UNITKA_LCD_CELL = "OZON_LAST_CLOSED_DATE"`,
+   затем целевой apply только `ozon-unitka-prod`. Константы `OZON_UNITKA_TAIL_FIRST_COLUMN`,
+   `OZON_UNITKA_BLOCK_SLOTS`, `OZON_UNITKA_LCD_REF`, `OZON_UNITKA_EXISTING_CF_RULES` после Gate 10
+   не авторитетны (писатель выводит их из листа и только предупреждает о расхождении).
+4. Ручной запуск `ozon-unitka-prod` и проверка: PRE/POST_COMMIT PASS, `LCD_COMMITTED`
    или `LCD_NOT_ADVANCED`, лист WB не изменился.
+
+Репетиция admin-загрузчика на тестовой книге (24.09): 33 753 формулы переведены, значения —
+0 изменений, УФ и лист WB не изменились, повтор — `NO_CHANGE`; следом писатель в режиме OWN
+закрыл 23.09 (`B30` 46287 → 46288) при неизменной `B2` = 22.09.
 
 **Откат.**
 - Этап 1: `deploy-prod` с прежним digest
