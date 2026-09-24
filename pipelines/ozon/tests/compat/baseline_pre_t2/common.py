@@ -6,130 +6,22 @@
 
 Секреты живут в памяти процесса. Токен Performance API эфемерный: не сохраняется,
 не логируется, не коммитится.
-
-Арендатор (Tenancy T2, ADR-08). Код один для всех арендаторов: продавца выбирает
-ТОЛЬКО конфигурация процесса — проект, датасеты и ИМЕНА секретов из переменных
-окружения (resolve_config ниже). Ветвлений по арендатору в коде нет и быть не должно.
 """
-import collections
 import hashlib
 import io
 import json
 import os
-import re
-import sys
 import time
-import traceback
 import urllib.error
-import urllib.parse
 import urllib.request
 from datetime import datetime, timedelta, timezone
 
 from google.cloud import bigquery, secretmanager
 
 MSK = timezone(timedelta(hours=3))
-
-
-# ───────────────────────────────────────────── конфигурация процесса (T2)
-class ConfigError(RuntimeError):
-    """Конфигурация процесса неполна или недопустима. Прогон не начинается."""
-
-
-# Имена секретов EVETIS — значения ПО УМОЛЧАНИЮ на переходный период T2.
-# Production-job'ы EVETIS переменные OZON_SECRET_* не задают (проверено 2026-09-24,
-# gcloud run jobs describe по всем ozon-*), поэтому поведение EVETIS не меняется.
-# Внешний арендатор передаёт свои имена явно; их выводит tools/tenancy/naming.py.
-LEGACY_EVETIS_SECRET_DEFAULTS = {
-    "OZON_SECRET_SELLER_CLIENT_ID": "EVETIS_OZON_CLIENT_ID",
-    "OZON_SECRET_SELLER_API_KEY": "EVETIS_OZON_API_KEY",
-    "OZON_SECRET_PERF_CLIENT_ID": "EVETIS_OZON_PERFORMANCE_CLIENT_ID",
-    "OZON_SECRET_PERF_CLIENT_SECRET": "EVETIS_OZON_PERFORMANCE_CLIENT_SECRET",
-}
-# Справочный датасет EVETIS: переходное значение по умолчанию (T2), не переименовывается.
-LEGACY_EVETIS_REF_DATASET = "evetis_ref"
-
-# Ограничения GCP. ID секрета: буквы, цифры, «-» и «_», до 255 символов; символ «/»
-# запрещён (Secret Manager REST projects.secrets.create, поле secretId).
-_PROJECT_ID_RE = re.compile(r"^[a-z][a-z0-9-]{4,28}[a-z0-9]$")
-_DATASET_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]{0,1023}$")
-_SECRET_ID_RE = re.compile(r"^[A-Za-z0-9_-]{1,255}$")
-_LOCATION_RE = re.compile(r"^[A-Za-z0-9-]{2,32}$")
-
-RuntimeConfig = collections.namedtuple("RuntimeConfig", [
-    "project", "raw_dataset", "ref_dataset", "location",
-    "secret_seller_client_id", "secret_seller_api_key",
-    "secret_perf_client_id", "secret_perf_client_secret",
-    "strict_page_caps"])
-
-
-def _env_value(env, name, default=None):
-    """Значение переменной. Не задана — default; задана пустой строкой — ошибка.
-
-    Пустая строка — явная, но сломанная конфигурация (например, пустое значение
-    в Terraform). Молча подставить вместо неё значение EVETIS нельзя.
-    """
-    if name not in env:
-        return default
-    v = env[name].strip()
-    if not v:
-        raise ConfigError(f"{name} задана пустой строкой")
-    return v
-
-
-def resolve_config(env):
-    """Конфигурация Ozon runtime из окружения. Чистая функция: сети и облака не трогает.
-
-    GCP_PROJECT_ID обязателен (fail-closed). Прежний неявный fallback на проект
-    EVETIS удалён: job без явного проекта мог бы писать не туда, куда его назначили.
-    """
-    project = _env_value(env, "GCP_PROJECT_ID")
-    if project is None:
-        raise ConfigError(
-            "GCP_PROJECT_ID не задан. Проект указывается явно для каждого job'а "
-            "(infra/terraform/ozon_ingestion.tf → ozon_common_env); неявного проекта "
-            "по умолчанию больше нет")
-    if not _PROJECT_ID_RE.match(project):
-        raise ConfigError(f"GCP_PROJECT_ID не похож на ID проекта GCP: {project!r}")
-
-    raw_dataset = _env_value(env, "BQ_RAW_DATASET", "ozon_raw")
-    ref_dataset = _env_value(env, "BQ_REF_DATASET", LEGACY_EVETIS_REF_DATASET)
-    for name, v in (("BQ_RAW_DATASET", raw_dataset), ("BQ_REF_DATASET", ref_dataset)):
-        if not _DATASET_RE.match(v):
-            raise ConfigError(f"{name} не является именем датасета BigQuery: {v!r}")
-    location = _env_value(env, "BQ_LOCATION", "EU")
-    if not _LOCATION_RE.match(location):
-        raise ConfigError(f"BQ_LOCATION недопустима: {location!r}")
-
-    refs = {}
-    for var, default in LEGACY_EVETIS_SECRET_DEFAULTS.items():
-        v = _env_value(env, var, default)
-        if not _SECRET_ID_RE.match(v):
-            # Значение в сообщение не попадает: вдруг туда по ошибке вставили сам ключ.
-            raise ConfigError(
-                f"{var} не является ID секрета Secret Manager "
-                "(разрешены буквы, цифры, '-' и '_', до 255 символов)")
-        refs[var] = v
-
-    strict_raw = _env_value(env, "STRICT_PAGE_CAPS", "0")
-    if strict_raw not in ("0", "1"):
-        raise ConfigError(f"STRICT_PAGE_CAPS допускает только 0 или 1, получено {strict_raw!r}")
-
-    return RuntimeConfig(
-        project=project, raw_dataset=raw_dataset, ref_dataset=ref_dataset,
-        location=location,
-        secret_seller_client_id=refs["OZON_SECRET_SELLER_CLIENT_ID"],
-        secret_seller_api_key=refs["OZON_SECRET_SELLER_API_KEY"],
-        secret_perf_client_id=refs["OZON_SECRET_PERF_CLIENT_ID"],
-        secret_perf_client_secret=refs["OZON_SECRET_PERF_CLIENT_SECRET"],
-        strict_page_caps=(strict_raw == "1"))
-
-
-CONFIG = resolve_config(os.environ)
-PROJECT = CONFIG.project
-DATASET = CONFIG.raw_dataset
-REF_DATASET = CONFIG.ref_dataset
-LOCATION = CONFIG.location
-STRICT_PAGE_CAPS = CONFIG.strict_page_caps
+PROJECT = os.environ.get("GCP_PROJECT_ID", "project-fa311fc0-4d87-4781-986")
+DATASET = os.environ.get("BQ_RAW_DATASET", "ozon_raw")
+LOCATION = os.environ.get("BQ_LOCATION", "EU")
 RUNS_TABLE = "OZON_INGESTION_RUNS"
 
 SELLER = "https://api-seller.ozon.ru"
@@ -142,170 +34,12 @@ _perf_token = {"value": None, "at": 0}
 STATS = {"requests": 0, "retries": 0}
 
 
-# ─────────────────────── граница безопасности учётных данных (Tenancy T2.2)
-# ЕДИНСТВЕННОЕ место, где решается, что из учётных данных может покинуть процесс.
-#
-# Классификация (docs/architecture/TECH_DEBT.md, P2-8):
-#   СЕКРЕТ — Api-Key Seller API, client_secret Performance API, токен доступа
-#     Performance API. Вырезаются из ЛЮБОГО текста, покидающего процесс, как
-#     подстрока, включая экранированные формы, и заменяются маркером
-#     «<redacted:роль>» без единого символа секрета.
-#   ИДЕНТИФИКАТОР — client_id Performance API и Client-Id Seller API. Основания
-#     разные, и завышать их нельзя:
-#       * client_id Performance API — OAuth 2.0; RFC 6749 §2.2 прямо: «The client
-#         identifier is not a secret»;
-#       * Client-Id Seller API — документация Ozon требует его вместе с Api-Key в
-#         каждом запросе, но прямого утверждения о его (не)конфиденциальности не
-#         содержит. Считать его идентификатором — КЛАССИФИКАЦИЯ ПЛАТФОРМЫ: сам по себе
-#         он не аутентифицирует, а вырезание короткого числа подавляло бы невинные
-#         события (находка L4).
-#     Идентификаторы не вырезаются.
-#
-# Выходы наружу — log() (stdout), record_run() (OZON_INGESTION_RUNS), текст ошибок
-# (safe_error_text) и необработанные исключения (safe_excepthook → stderr). Решение
-# принимается на СТРУКТУРИРОВАННЫХ значениях до сериализации (redact_value, L7);
-# поиск по готовой строке — только страховка. Обрезка недоверенного текста — только
-# ПОСЛЕ вырезания (safe_error_text): иначе фрагмент секрета на границе обрезки не
-# узнаётся. Без загруженных секретов всё это тождественно прежнему поведению.
-LEAK_MARKER = "credential_material_suppressed"
-_redactions = {}             # вариант записи секрета → маркер
-_redaction_re = None         # один regex на все варианты, длинные раньше коротких
-
-
-def _escape_forms(s):
-    """Формы, в которых строка встречается после одного шага сериализации."""
-    return {s, json.dumps(s, ensure_ascii=False)[1:-1], json.dumps(s)[1:-1],
-            repr(s)[1:-1], s.encode("unicode_escape").decode("ascii")}
-
-
-def _secret_variants(value):
-    """Все записи значения, в которых оно может дойти до выхода.
-
-    До трёх уровней вложенного экранирования: сообщение с repr() словаря внутри
-    repr() исключения внутри JSON-строки лога — обычный путь ошибки API.
-    """
-    forms, frontier = {value}, {value}
-    for _ in range(3):
-        grown = set().union(*(_escape_forms(f) for f in frontier)) - forms
-        forms |= grown
-        frontier = grown
-    forms |= {repr(value.encode("utf-8"))[2:-1],
-              urllib.parse.quote(value, safe=""), urllib.parse.quote_plus(value)}
-    return {f for f in forms if f}
-
-
-def register_secret(value, role):
-    """Внести значение класса СЕКРЕТ в вырезание. Роль — имя в маркере, не значение."""
-    global _redaction_re
-    if not value:
-        return
-    marker = f"<redacted:{role}>"
-    for v in _secret_variants(value):
-        _redactions.setdefault(v, marker)
-    # Один проход по всем вариантам: вставленный маркер повторно не просматривается,
-    # а более длинное значение (секрет, содержащий другой секрет) вырезается первым.
-    _redaction_re = re.compile("|".join(
-        re.escape(v) for v in sorted(_redactions, key=len, reverse=True)))
-
-
-def redact_text(text):
-    """Строка без секретов. Идентификаторы и прочие данные не трогаются."""
-    if _redaction_re is None or not isinstance(text, str):
-        return text
-    return _redaction_re.sub(lambda m: _redactions[m.group(0)], text)
-
-
-def redact_value(obj):
-    """Структурированное значение без секретов — ДО сериализации (L7).
-
-    Типы, которые json.dumps сам не знает, превращаются в str() здесь, а не в
-    default=str: иначе их строковая форма миновала бы вырезание.
-    """
-    if _redaction_re is None:
-        return obj
-    if isinstance(obj, str):
-        return redact_text(obj)
-    if obj is None or isinstance(obj, (bool, int, float)):
-        return obj
-    if isinstance(obj, dict):
-        return {(redact_text(k) if isinstance(k, str) else k): redact_value(v)
-                for k, v in obj.items()}
-    if isinstance(obj, (list, tuple)):
-        return [redact_value(v) for v in obj]
-    return redact_text(str(obj))
-
-
-def safe_error_text(err, limit=400):
-    """Текст ошибки для журнала, OZON_INGESTION_RUNS и сообщений исключений.
-
-    Сначала вырезание по ПОЛНОМУ тексту, потом обрезка: так на границе `limit`
-    не остаётся фрагмента секрета, а остальная диагностика сохраняется.
-    """
-    return redact_text(str(err))[:limit]
-
-
-class JournalWriteError(RuntimeError):
-    """Запись в OZON_INGESTION_RUNS не удалась при обработке ошибки сущности.
-
-    Заменяет неявную цепочку исключений (L3): прежде сырой текст исходной ошибки —
-    вместе с повторённым сервером ключом — уходил в stderr через «During handling
-    of the above exception…». Оба текста здесь уже очищены, категория обеих
-    ошибок и имя сущности сохранены.
-    """
-
-    def __init__(self, entity, primary, journal):
-        super().__init__(
-            f"{entity}: запись в {RUNS_TABLE} не удалась — {type(journal).__name__}: "
-            f"{safe_error_text(journal, 300)}; исходная ошибка сущности — "
-            f"{type(primary).__name__}: {safe_error_text(primary, 300)}")
-
-
-def format_exception_safely(exc_type, exc, tb):
-    """Полная трассировка, включая цепочку, — с вырезанными секретами."""
-    return redact_text("".join(traceback.format_exception(exc_type, exc, tb)))
-
-
-def safe_excepthook(exc_type, exc, tb):
-    """sys.excepthook runtime: трассировка остаётся полезной, секреты — нет.
-
-    Хук НИКОГДА не выбрасывает исключение. Если бы он упал, CPython напечатал бы
-    «Error in sys.excepthook … Original exception was:» и следом — исходное
-    исключение стандартным путём, то есть без вырезания. Поэтому:
-      * сбой форматирования или вырезания → печатается только тип исключения;
-      * сбой записи в sys.stderr → попытка в исходный sys.__stderr__;
-      * не удалось и это → молча: процесс и так завершается с ненулевым кодом.
-    Без секретов вывод совпадает со стандартной трассировкой Python.
-    """
-    try:
-        text = format_exception_safely(exc_type, exc, tb)
-    except BaseException:                                         # noqa: BLE001
-        text = (f"{getattr(exc_type, '__name__', 'Exception')}: "
-                "<текст исключения не удалось безопасно отформатировать>\n")
-    for stream in (sys.stderr, sys.__stderr__):
-        try:
-            stream.write(text)
-            stream.flush()
-            return
-        except BaseException:                                     # noqa: BLE001
-            continue
-
-
 def log(**kw):
-    """Структурный лог. Секреты вырезаются из значений до сериализации."""
-    line = json.dumps(redact_value(kw), ensure_ascii=False, default=str)
-    if _redaction_re is not None and _redaction_re.search(line):
-        # Страховка: сюда нельзя попасть, если вырезание значений отработало.
-        # Печатать строку с секретом нельзя ни при каких условиях.
-        line = json.dumps({"event": LEAK_MARKER,
-                           "suppressed_event": redact_text(str(kw.get("event")))[:80]},
-                          ensure_ascii=False)
-    print(line, flush=True)
+    """Структурный лог. Секреты и токены сюда не попадают по построению."""
+    print(json.dumps(kw, ensure_ascii=False, default=str), flush=True)
 
 
 _sm = None
-# Имя секрета → роль класса СЕКРЕТ. Имена идентификаторов сюда не входят (L4).
-_SECRET_ROLE_BY_NAME = {CONFIG.secret_seller_api_key: "seller_api_key",
-                        CONFIG.secret_perf_client_secret: "performance_client_secret"}
 
 
 def secret(name):
@@ -317,20 +51,7 @@ def secret(name):
         path = f"projects/{PROJECT}/secrets/{name}/versions/latest"
         _secrets[name] = _sm.access_secret_version(
             request={"name": path}).payload.data.decode("utf-8").strip()
-        if name in _SECRET_ROLE_BY_NAME:
-            register_secret(_secrets[name], _SECRET_ROLE_BY_NAME[name])
     return _secrets[name]
-
-
-def seller_headers():
-    """Заголовки Seller API по ИМЕНАМ секретов из конфигурации процесса.
-
-    Единственное место, где собираются учётные данные Seller API: им пользуются
-    и seller_post, и наблюдатель акций (promo.promo_call).
-    """
-    return {"Client-Id": secret(CONFIG.secret_seller_client_id),
-            "Api-Key": secret(CONFIG.secret_seller_api_key),
-            "Content-Type": "application/json"}
 
 
 def bq():
@@ -365,18 +86,21 @@ def _request(req, attempt=0, raw_text=False):
             STATS["retries"] += 1
             time.sleep(BACKOFF[attempt])
             return _request(req, attempt + 1, raw_text)
-        return e.code, {"_error": safe_error_text(payload, 400)}
+        return e.code, {"_error": payload[:400]}
     except Exception as e:                                        # SSL, таймаут, обрыв
         if attempt < len(BACKOFF):
             STATS["retries"] += 1
             time.sleep(BACKOFF[attempt])
             return _request(req, attempt + 1, raw_text)
-        return "NET_ERROR", {"_error": safe_error_text(repr(e), 300)}
+        return "NET_ERROR", {"_error": repr(e)[:300]}
 
 
 def seller_post(path, body):
     req = urllib.request.Request(
-        SELLER + path, data=json.dumps(body).encode(), headers=seller_headers())
+        SELLER + path, data=json.dumps(body).encode(),
+        headers={"Client-Id": secret("EVETIS_OZON_CLIENT_ID"),
+                 "Api-Key": secret("EVETIS_OZON_API_KEY"),
+                 "Content-Type": "application/json"})
     return _request(req)
 
 
@@ -384,8 +108,8 @@ def perf_token():
     """Эфемерный токен Performance API. Живёт 1800 с, обновляем каждые 25 минут."""
     if _perf_token["value"] and time.time() - _perf_token["at"] < 1500:
         return _perf_token["value"]
-    body = json.dumps({"client_id": secret(CONFIG.secret_perf_client_id),
-                       "client_secret": secret(CONFIG.secret_perf_client_secret),
+    body = json.dumps({"client_id": secret("EVETIS_OZON_PERFORMANCE_CLIENT_ID"),
+                       "client_secret": secret("EVETIS_OZON_PERFORMANCE_CLIENT_SECRET"),
                        "grant_type": "client_credentials"}).encode()
     req = urllib.request.Request(PERF + "/api/client/token", data=body,
                                  headers={"Content-Type": "application/json"})
@@ -393,9 +117,6 @@ def perf_token():
     if code != 200:
         raise RuntimeError("не удалось получить токен Performance API")
     _perf_token["value"] = d["access_token"]
-    # Токен — класс СЕКРЕТ. Старые токены из вырезания не удаляются: процесс мог
-    # запомнить их в тексте ошибки до обновления.
-    register_secret(_perf_token["value"], "performance_access_token")
     _perf_token["at"] = time.time()
     return _perf_token["value"]
 
@@ -519,7 +240,7 @@ def _drop_staging(client, staging_id):
         client.delete_table(staging_id, not_found_ok=True)
     except Exception as e:                                        # noqa: BLE001
         log(event="staging_cleanup_failed", staging=staging_id,
-            error=f"{type(e).__name__}: {safe_error_text(e, 200)}",
+            error=f"{type(e).__name__}: {str(e)[:200]}",
             ttl_hours=STAGING_TTL.total_seconds() / 3600)
 
 
@@ -669,14 +390,13 @@ def append_rows(table, rows, job_id):
 
 def record_run(run_id, entity, started, src_from, src_to, res, status,
                error=None, requests_n=0, retries=0):
-    error_message = safe_error_text(error) if error else None
     row = {"ingestion_run_id": run_id, "marketplace": "OZON", "entity": entity,
            "started_at": started.isoformat(), "completed_at": now_msk().isoformat(),
            "source_from": str(src_from), "source_to": str(src_to),
            "requests": requests_n, "rows_received": res.get("received", 0),
            "rows_inserted": res.get("inserted", 0), "rows_updated": res.get("updated", 0),
            "errors": 0 if status == "OK" else 1, "retry_count": retries,
-           "status": status, "error_message": error_message,
+           "status": status, "error_message": (str(error)[:400] if error else None),
            "job_execution": os.environ.get("CLOUD_RUN_EXECUTION")}
     bq().insert_rows_json(f"{PROJECT}.{DATASET}.{RUNS_TABLE}", [row])
     log(event="entity_done", **{k: row[k] for k in
