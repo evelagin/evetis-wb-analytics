@@ -22,12 +22,17 @@ locals {
     UNITKA_SPREADSHEET_ID  = "1E4L4JuwfEqr9owhsGkAjb8F24lRpWpWkEyVmSuRxaJg"
     OZON_UNITKA_SHEET_NAME = "OZON_Юнит_2025"
     # Геометрия принятого листа. Правее панели владельца движок не пишет никогда.
+    # GATE 10: четыре константы ниже НЕ авторитетны — хвост, слоты, зеркало LCD и префикс правил УФ
+    # писатель выводит из листа и лишь предупреждает о расхождении. Оставлены как перекрёстная проверка.
     OZON_UNITKA_TAIL_FIRST_COLUMN = "562"
     OZON_UNITKA_BLOCK_SLOTS       = "22"
     OZON_UNITKA_LCD_REF           = "$VA$2"
     OZON_UNITKA_EXISTING_CF_RULES = "434"
-    # LAST_CLOSED_DATE читается ИЗ КНИГИ: владелец двигает её сам.
-    OZON_UNITKA_LCD_CELL = "ZZ_CONFIG!B2"
+    # GATE 10: собственный LCD Ozon (именованный диапазон → ZZ_CONFIG!B30). Писатель сам коммитит
+    # его после записи, перечитывания и проверки публикации; B2 — LCD WB, Ozon его больше не читает.
+    # ⚠ env этого Job в lifecycle.ignore_changes: значение применяется `gcloud run jobs update
+    # --update-env-vars`, файл фиксирует его для пересоздания Job'а. Откат — "ZZ_CONFIG!B2" (LEGACY).
+    OZON_UNITKA_LCD_CELL = "OZON_LAST_CLOSED_DATE"
     # Загрузка суточная: отставание больше суток — это упавший или пропущенный прогон.
     OZON_UNITKA_MAX_SOURCE_LAG_DAYS = "1"
     # Идентичность SKU берётся из evetis_ref.REF_SKU_CHANNEL_MAP — списка offer_id здесь НЕТ
