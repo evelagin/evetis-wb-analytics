@@ -72,13 +72,21 @@ Workflows AE лежат в `main`, но ничего не делают:
 
 #### M3. `sa-ae-reader` (read-only)
 
+> **2026-09-24: первое применение откатано — `AE_READER_IDENTITY_FAILED_ROLLED_BACK`.** По
+> эффективным правам `roles/bigquery.jobUser` оказался не только запуском запросов:
+> `dataform.repositories.create`, `dataform.folders.create` (Dataform API включён),
+> `geminidataanalytics.locations.chat`. WIF-часть работала: строгий `wif_check --live` дал 25/25.
+> Дизайн исправлен в Git: пользовательская роль `aeBigQueryJobRunner` (`bigquery.jobs.create`,
+> `bigquery.config.get`) вместо `jobUser`. Доказательства —
+> [`ae_evidence/ae_reader_m3_2026-09-24/`](ae_evidence/ae_reader_m3_2026-09-24/README.md).
+
 | | |
 |---|---|
 | Текущее | нет |
-| Желаемое | SA, `bigquery.jobUser`, `bigquery.resourceViewer`, `logging.viewer`, `bigquery.dataViewer` на 8 датасетах, 4 привязки WIF по `job_workflow_ref` (watch, gate, engineer, test — **без** review) |
-| targets | `google_service_account.ae_reader,google_project_iam_member.ae_reader,google_bigquery_dataset_iam_member.ae_reader_read,google_service_account_iam_member.ae_reader_wif` |
-| Ожидаемый diff | `16 to add, 0 to change, 0 to destroy` |
-| Проверка | `wif_check --live` снова код 0, теперь с `sa-ae-reader`: B1/B2 получают только его, C1 — ничего. Проектная политика: у SA ровно 3 роли; `bq show --format=json <ds>` — роль `READER` |
+| Желаемое | SA, пользовательская роль `aeBigQueryJobRunner` (`bigquery.jobs.create`, `bigquery.config.get`), `bigquery.resourceViewer`, `logging.viewer`, `bigquery.dataViewer` на 8 датасетах, 4 привязки WIF по `job_workflow_ref` (watch, gate, engineer, test — **без** review). **Не** `roles/bigquery.jobUser` |
+| targets | `google_service_account.ae_reader,google_project_iam_custom_role.ae_job_runner,google_project_iam_member.ae_reader,google_project_iam_member.ae_reader_job_runner,google_bigquery_dataset_iam_member.ae_reader_read,google_service_account_iam_member.ae_reader_wif` |
+| Ожидаемый diff | `17 to add, 0 to change, 0 to destroy` (read-only plan 2026-09-24: `terraform_fixed_design_plan.txt`) |
+| Проверка | 1) `python -m tools.autonomy.iam_check --live` → код 0 (эффективные права: ни одного права создания/изменения, кроме `bigquery.jobs.create`; чтение восьми датасетов, `jobs.listAll`, `logEntries.list` есть); 2) `wif_check --live` **без `--phase`** → 25/25: B1/B2 получают только `sa-ae-reader`, C1 — ничего |
 | Откат | `terraform destroy` с теми же targets (или удалить SA: `gcloud iam service-accounts delete`, привязки уйдут вместе с ним) |
 
 #### M4. Переменные репозитория

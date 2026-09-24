@@ -1,0 +1,202 @@
+{
+  "bindings": [
+    {
+      "members": [
+        "serviceAccount:sa-terraform-apply@project-fa311fc0-4d87-4781-986.iam.gserviceaccount.com"
+      ],
+      "role": "roles/artifactregistry.admin"
+    },
+    {
+      "members": [
+        "serviceAccount:service-37074083763@gcp-sa-artifactregistry.iam.gserviceaccount.com"
+      ],
+      "role": "roles/artifactregistry.serviceAgent"
+    },
+    {
+      "members": [
+        "serviceAccount:37074083763-compute@developer.gserviceaccount.com",
+        "serviceAccount:sa-deployer@project-fa311fc0-4d87-4781-986.iam.gserviceaccount.com"
+      ],
+      "role": "roles/artifactregistry.writer"
+    },
+    {
+      "members": [
+        "serviceAccount:sa-terraform-apply@project-fa311fc0-4d87-4781-986.iam.gserviceaccount.com"
+      ],
+      "role": "roles/bigquery.admin"
+    },
+    {
+      "condition": {
+        "description": "Запись только в датасет ozon_raw и его таблицы",
+        "expression": "resource.name.startsWith(\"projects/project-fa311fc0-4d87-4781-986/datasets/ozon_raw\")",
+        "title": "ozon_raw_only"
+      },
+      "members": [
+        "serviceAccount:sa-ozon-ingestion@project-fa311fc0-4d87-4781-986.iam.gserviceaccount.com"
+      ],
+      "role": "roles/bigquery.dataEditor"
+    },
+    {
+      "members": [
+        "serviceAccount:metabase-read-only@project-fa311fc0-4d87-4781-986.iam.gserviceaccount.com"
+      ],
+      "role": "roles/bigquery.dataViewer"
+    },
+    {
+      "condition": {
+        "description": "Чтение только общего справочного слоя",
+        "expression": "resource.name.startsWith(\"projects/project-fa311fc0-4d87-4781-986/datasets/evetis_ref\")",
+        "title": "evetis_ref_only"
+      },
+      "members": [
+        "serviceAccount:sa-ozon-ingestion@project-fa311fc0-4d87-4781-986.iam.gserviceaccount.com"
+      ],
+      "role": "roles/bigquery.dataViewer"
+    },
+    {
+      "members": [
+        "serviceAccount:evetis-wb-comms@project-fa311fc0-4d87-4781-986.iam.gserviceaccount.com",
+        "serviceAccount:metabase-read-only@project-fa311fc0-4d87-4781-986.iam.gserviceaccount.com",
+        "serviceAccount:sa-ct-refresh@project-fa311fc0-4d87-4781-986.iam.gserviceaccount.com",
+        "serviceAccount:sa-exec-v2-layer@project-fa311fc0-4d87-4781-986.iam.gserviceaccount.com",
+        "serviceAccount:sa-loaders-prod@project-fa311fc0-4d87-4781-986.iam.gserviceaccount.com",
+        "serviceAccount:sa-loaders-shadow@project-fa311fc0-4d87-4781-986.iam.gserviceaccount.com",
+        "serviceAccount:sa-ops-health@project-fa311fc0-4d87-4781-986.iam.gserviceaccount.com",
+        "serviceAccount:sa-ozon-ingestion@project-fa311fc0-4d87-4781-986.iam.gserviceaccount.com",
+        "serviceAccount:sa-promo-econ-ozon@project-fa311fc0-4d87-4781-986.iam.gserviceaccount.com",
+        "serviceAccount:sa-promo-econ-wb@project-fa311fc0-4d87-4781-986.iam.gserviceaccount.com",
+        "serviceAccount:sa-sku-v2-layer@project-fa311fc0-4d87-4781-986.iam.gserviceaccount.com",
+        "serviceAccount:sa-unitka-cogs-pub@project-fa311fc0-4d87-4781-986.iam.gserviceaccount.com"
+      ],
+      "role": "roles/bigquery.jobUser"
+    },
+    {
+      "members": [
+        "serviceAccount:service-37074083763@gcp-sa-bigquerydatatransfer.iam.gserviceaccount.com"
+      ],
+      "role": "roles/bigquerydatatransfer.serviceAgent"
+    },
+    {
+      "members": [
+        "serviceAccount:37074083763@cloudbuild.gserviceaccount.com"
+      ],
+      "role": "roles/cloudbuild.builds.builder"
+    },
+    {
+      "members": [
+        "serviceAccount:service-37074083763@gcp-sa-cloudbuild.iam.gserviceaccount.com"
+      ],
+      "role": "roles/cloudbuild.serviceAgent"
+    },
+    {
+      "members": [
+        "serviceAccount:sa-terraform-apply@project-fa311fc0-4d87-4781-986.iam.gserviceaccount.com"
+      ],
+      "role": "roles/cloudscheduler.admin"
+    },
+    {
+      "members": [
+        "serviceAccount:service-37074083763@gcp-sa-cloudscheduler.iam.gserviceaccount.com"
+      ],
+      "role": "roles/cloudscheduler.serviceAgent"
+    },
+    {
+      "members": [
+        "serviceAccount:service-37074083763@containerregistry.iam.gserviceaccount.com"
+      ],
+      "role": "roles/containerregistry.ServiceAgent"
+    },
+    {
+      "members": [
+        "serviceAccount:evetis-wb-comms@project-fa311fc0-4d87-4781-986.iam.gserviceaccount.com"
+      ],
+      "role": "roles/datastore.user"
+    },
+    {
+      "members": [
+        "serviceAccount:service-37074083763@firebase-rules.iam.gserviceaccount.com"
+      ],
+      "role": "roles/firebaserules.system"
+    },
+    {
+      "members": [
+        "serviceAccount:service-37074083763@gcp-sa-firestore.iam.gserviceaccount.com"
+      ],
+      "role": "roles/firestore.serviceAgent"
+    },
+    {
+      "members": [
+        "serviceAccount:sa-terraform-apply@project-fa311fc0-4d87-4781-986.iam.gserviceaccount.com"
+      ],
+      "role": "roles/iam.serviceAccountAdmin"
+    },
+    {
+      "members": [
+        "serviceAccount:sa-terraform-apply@project-fa311fc0-4d87-4781-986.iam.gserviceaccount.com"
+      ],
+      "role": "roles/iam.workloadIdentityPoolAdmin"
+    },
+    {
+      "members": [
+        "user:evelagin@gmail.com"
+      ],
+      "role": "roles/owner"
+    },
+    {
+      "members": [
+        "serviceAccount:service-37074083763@gcp-sa-pubsub.iam.gserviceaccount.com"
+      ],
+      "role": "roles/pubsub.serviceAgent"
+    },
+    {
+      "members": [
+        "serviceAccount:sa-terraform-apply@project-fa311fc0-4d87-4781-986.iam.gserviceaccount.com"
+      ],
+      "role": "roles/resourcemanager.projectIamAdmin"
+    },
+    {
+      "members": [
+        "serviceAccount:sa-terraform-apply@project-fa311fc0-4d87-4781-986.iam.gserviceaccount.com"
+      ],
+      "role": "roles/run.admin"
+    },
+    {
+      "members": [
+        "serviceAccount:sa-deployer@project-fa311fc0-4d87-4781-986.iam.gserviceaccount.com"
+      ],
+      "role": "roles/run.developer"
+    },
+    {
+      "members": [
+        "serviceAccount:service-37074083763@serverless-robot-prod.iam.gserviceaccount.com"
+      ],
+      "role": "roles/run.serviceAgent"
+    },
+    {
+      "members": [
+        "serviceAccount:sa-terraform-apply@project-fa311fc0-4d87-4781-986.iam.gserviceaccount.com"
+      ],
+      "role": "roles/secretmanager.admin"
+    },
+    {
+      "members": [
+        "serviceAccount:sa-terraform-apply@project-fa311fc0-4d87-4781-986.iam.gserviceaccount.com"
+      ],
+      "role": "roles/serviceusage.serviceUsageAdmin"
+    },
+    {
+      "members": [
+        "serviceAccount:37074083763-compute@developer.gserviceaccount.com"
+      ],
+      "role": "roles/storage.objectViewer"
+    },
+    {
+      "members": [
+        "serviceAccount:sa-terraform-plan@project-fa311fc0-4d87-4781-986.iam.gserviceaccount.com"
+      ],
+      "role": "roles/viewer"
+    }
+  ],
+  "etag": "BwZcNlbkNcA=",
+  "version": 3
+}

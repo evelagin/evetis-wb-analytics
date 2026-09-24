@@ -199,8 +199,12 @@ def test_agent_version_is_pinned():
 def test_ae_reader_has_only_read_roles():
     src = text(TF / "autonomy.tf")
     roles = set(re.findall(r'"(roles/[a-zA-Z.]+)"', src))
-    assert roles == {"roles/bigquery.jobUser", "roles/bigquery.resourceViewer", "roles/logging.viewer",
+    assert roles == {"roles/bigquery.resourceViewer", "roles/logging.viewer",
                      "roles/bigquery.dataViewer", "roles/iam.workloadIdentityUser"}
+    # jobUser запрещён: в нём создание ресурсов Dataform и чат Gemini (откат M3 2026-09-24).
+    assert '"roles/bigquery.jobUser"' not in src
+    custom = re.search(r'"ae_job_runner" \{.*?permissions = \[(.*?)\]', src, re.S).group(1)
+    assert sorted(re.findall(r'"([a-z.]+)"', custom)) == ["bigquery.config.get", "bigquery.jobs.create"]
     for bad in ("dataEditor", "dataOwner", "admin", "roles/editor", "roles/owner", "run.developer", "secretAccessor"):
         assert bad not in src
 

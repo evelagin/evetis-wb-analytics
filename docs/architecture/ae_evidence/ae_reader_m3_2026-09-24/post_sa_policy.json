@@ -1,0 +1,15 @@
+{
+  "bindings": [
+    {
+      "members": [
+        "principalSet://iam.googleapis.com/projects/37074083763/locations/global/workloadIdentityPools/github-pool/attribute.job_workflow_ref/evelagin/evetis-wb-analytics/.github/workflows/autonomy-engineer.yml@refs/heads/main",
+        "principalSet://iam.googleapis.com/projects/37074083763/locations/global/workloadIdentityPools/github-pool/attribute.job_workflow_ref/evelagin/evetis-wb-analytics/.github/workflows/autonomy-gate.yml@refs/heads/main",
+        "principalSet://iam.googleapis.com/projects/37074083763/locations/global/workloadIdentityPools/github-pool/attribute.job_workflow_ref/evelagin/evetis-wb-analytics/.github/workflows/autonomy-test.yml@refs/heads/main",
+        "principalSet://iam.googleapis.com/projects/37074083763/locations/global/workloadIdentityPools/github-pool/attribute.job_workflow_ref/evelagin/evetis-wb-analytics/.github/workflows/autonomy-watch.yml@refs/heads/main"
+      ],
+      "role": "roles/iam.workloadIdentityUser"
+    }
+  ],
+  "etag": "BwZcNkjReFw=",
+  "version": 1
+}

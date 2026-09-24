@@ -125,8 +125,11 @@ Job инженера, тестов и даже ревьюера AE исполн�
 | ci-verify | `contents: write` → только `autonomy-state`, `actions: read` | — | — |
 | persist | `contents: write` → только `autonomy-state`, `actions: write` → следующий проход, `issues: write` | — | — |
 
-`sa-ae-reader`: `bigquery.dataViewer` на восьми датасетах ворот, `bigquery.jobUser`,
-`bigquery.resourceViewer` (журнал заданий для аудита), `logging.viewer`. Ролей записи нет, доступа
+`sa-ae-reader`: `bigquery.dataViewer` на восьми датасетах ворот, пользовательская роль
+`aeBigQueryJobRunner` (`bigquery.jobs.create`, `bigquery.config.get`) — **не** `roles/bigquery.jobUser`,
+в котором на 2026-09-24 есть создание ресурсов Dataform и чат Gemini;
+`bigquery.resourceViewer` (журнал заданий для аудита), `logging.viewer`. Проверка по эффективным
+правам — `tools/autonomy/iam_check.py --live`. Ролей записи нет, доступа
 к Secret Manager нет.
 
 Ограничение тарифа. Репозиторий приватный на Free: защита ветки и rulesets недоступны (HTTP 403),
