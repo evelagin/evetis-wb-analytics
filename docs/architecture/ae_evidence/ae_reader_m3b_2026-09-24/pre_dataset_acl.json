@@ -1,0 +1,282 @@
+{
+  "wb_raw": {
+    "etag": "dyRS5SMouG7LeGCPyAwWaQ==",
+    "access": [
+      {
+        "role": "WRITER",
+        "specialGroup": "projectWriters"
+      },
+      {
+        "role": "OWNER",
+        "specialGroup": "projectOwners"
+      },
+      {
+        "role": "OWNER",
+        "userByEmail": "evelagin@gmail.com"
+      },
+      {
+        "role": "READER",
+        "specialGroup": "projectReaders"
+      },
+      {
+        "role": "READER",
+        "userByEmail": "sa-ct-refresh@project-fa311fc0-4d87-4781-986.iam.gserviceaccount.com"
+      },
+      {
+        "role": "READER",
+        "userByEmail": "sa-exec-v2-layer@project-fa311fc0-4d87-4781-986.iam.gserviceaccount.com"
+      },
+      {
+        "role": "READER",
+        "userByEmail": "sa-loaders-prod@project-fa311fc0-4d87-4781-986.iam.gserviceaccount.com"
+      },
+      {
+        "role": "READER",
+        "userByEmail": "sa-loaders-shadow@project-fa311fc0-4d87-4781-986.iam.gserviceaccount.com"
+      },
+      {
+        "role": "READER",
+        "userByEmail": "sa-ops-health@project-fa311fc0-4d87-4781-986.iam.gserviceaccount.com"
+      },
+      {
+        "role": "READER",
+        "userByEmail": "sa-promo-econ-wb@project-fa311fc0-4d87-4781-986.iam.gserviceaccount.com"
+      },
+      {
+        "role": "READER",
+        "userByEmail": "sa-sku-v2-layer@project-fa311fc0-4d87-4781-986.iam.gserviceaccount.com"
+      }
+    ]
+  },
+  "wb_mart": {
+    "etag": "ThdH0oklrWWV/DvFSop5pw==",
+    "access": [
+      {
+        "role": "WRITER",
+        "specialGroup": "projectWriters"
+      },
+      {
+        "role": "WRITER",
+        "userByEmail": "sa-loaders-prod@project-fa311fc0-4d87-4781-986.iam.gserviceaccount.com"
+      },
+      {
+        "role": "OWNER",
+        "specialGroup": "projectOwners"
+      },
+      {
+        "role": "OWNER",
+        "userByEmail": "evelagin@gmail.com"
+      },
+      {
+        "role": "READER",
+        "specialGroup": "projectReaders"
+      },
+      {
+        "role": "READER",
+        "userByEmail": "sa-ct-refresh@project-fa311fc0-4d87-4781-986.iam.gserviceaccount.com"
+      },
+      {
+        "role": "READER",
+        "userByEmail": "sa-exec-v2-layer@project-fa311fc0-4d87-4781-986.iam.gserviceaccount.com"
+      },
+      {
+        "role": "READER",
+        "userByEmail": "sa-loaders-shadow@project-fa311fc0-4d87-4781-986.iam.gserviceaccount.com"
+      },
+      {
+        "role": "READER",
+        "userByEmail": "sa-ops-health@project-fa311fc0-4d87-4781-986.iam.gserviceaccount.com"
+      },
+      {
+        "role": "READER",
+        "userByEmail": "sa-promo-econ-wb@project-fa311fc0-4d87-4781-986.iam.gserviceaccount.com"
+      },
+      {
+        "role": "READER",
+        "userByEmail": "sa-sku-v2-layer@project-fa311fc0-4d87-4781-986.iam.gserviceaccount.com"
+      }
+    ]
+  },
+  "wb_ops": {
+    "etag": "CQJAeWSlCmlmkYBy9Wxtcw==",
+    "access": [
+      {
+        "role": "WRITER",
+        "specialGroup": "projectWriters"
+      },
+      {
+        "role": "WRITER",
+        "userByEmail": "sa-ops-health@project-fa311fc0-4d87-4781-986.iam.gserviceaccount.com"
+      },
+      {
+        "role": "OWNER",
+        "specialGroup": "projectOwners"
+      },
+      {
+        "role": "OWNER",
+        "userByEmail": "evelagin@gmail.com"
+      },
+      {
+        "role": "READER",
+        "specialGroup": "projectReaders"
+      }
+    ]
+  },
+  "evetis_ref": {
+    "etag": "3whiQUD3yy/fsmJZ5ogDkQ==",
+    "access": [
+      {
+        "role": "WRITER",
+        "specialGroup": "projectWriters"
+      },
+      {
+        "role": "OWNER",
+        "specialGroup": "projectOwners"
+      },
+      {
+        "role": "OWNER",
+        "userByEmail": "evelagin@gmail.com"
+      },
+      {
+        "role": "READER",
+        "specialGroup": "projectReaders"
+      },
+      {
+        "role": "READER",
+        "userByEmail": "sa-ct-refresh@project-fa311fc0-4d87-4781-986.iam.gserviceaccount.com"
+      },
+      {
+        "role": "READER",
+        "userByEmail": "sa-exec-v2-layer@project-fa311fc0-4d87-4781-986.iam.gserviceaccount.com"
+      },
+      {
+        "role": "READER",
+        "userByEmail": "sa-loaders-prod@project-fa311fc0-4d87-4781-986.iam.gserviceaccount.com"
+      },
+      {
+        "role": "READER",
+        "userByEmail": "sa-promo-econ-ozon@project-fa311fc0-4d87-4781-986.iam.gserviceaccount.com"
+      },
+      {
+        "role": "READER",
+        "userByEmail": "sa-promo-econ-wb@project-fa311fc0-4d87-4781-986.iam.gserviceaccount.com"
+      },
+      {
+        "role": "READER",
+        "userByEmail": "sa-sku-v2-layer@project-fa311fc0-4d87-4781-986.iam.gserviceaccount.com"
+      },
+      {
+        "role": "READER",
+        "userByEmail": "sa-unitka-cogs-pub@project-fa311fc0-4d87-4781-986.iam.gserviceaccount.com"
+      }
+    ]
+  },
+  "evetis_ops": {
+    "etag": "ndfNeBE7sjkqLQK3A589LQ==",
+    "access": [
+      {
+        "role": "WRITER",
+        "specialGroup": "projectWriters"
+      },
+      {
+        "role": "OWNER",
+        "specialGroup": "projectOwners"
+      },
+      {
+        "role": "OWNER",
+        "userByEmail": "evelagin@gmail.com"
+      },
+      {
+        "role": "READER",
+        "specialGroup": "projectReaders"
+      }
+    ]
+  },
+  "evetis_mart": {
+    "etag": "hdxnYBK9BlEfzozrin8hAQ==",
+    "access": [
+      {
+        "role": "WRITER",
+        "specialGroup": "projectWriters"
+      },
+      {
+        "role": "OWNER",
+        "specialGroup": "projectOwners"
+      },
+      {
+        "role": "OWNER",
+        "userByEmail": "evelagin@gmail.com"
+      },
+      {
+        "role": "READER",
+        "specialGroup": "projectReaders"
+      }
+    ]
+  },
+  "ozon_raw": {
+    "etag": "OBt+woHHwoqQkl6moJhnPw==",
+    "access": [
+      {
+        "role": "WRITER",
+        "specialGroup": "projectWriters"
+      },
+      {
+        "role": "OWNER",
+        "specialGroup": "projectOwners"
+      },
+      {
+        "role": "OWNER",
+        "userByEmail": "evelagin@gmail.com"
+      },
+      {
+        "role": "READER",
+        "specialGroup": "projectReaders"
+      },
+      {
+        "role": "READER",
+        "userByEmail": "sa-ct-refresh@project-fa311fc0-4d87-4781-986.iam.gserviceaccount.com"
+      },
+      {
+        "role": "READER",
+        "userByEmail": "sa-loaders-prod@project-fa311fc0-4d87-4781-986.iam.gserviceaccount.com"
+      },
+      {
+        "role": "READER",
+        "userByEmail": "sa-promo-econ-ozon@project-fa311fc0-4d87-4781-986.iam.gserviceaccount.com"
+      }
+    ]
+  },
+  "ozon_mart": {
+    "etag": "lnhJMnlIMk8WtgibU12SUQ==",
+    "access": [
+      {
+        "role": "WRITER",
+        "specialGroup": "projectWriters"
+      },
+      {
+        "role": "OWNER",
+        "specialGroup": "projectOwners"
+      },
+      {
+        "role": "OWNER",
+        "userByEmail": "evelagin@gmail.com"
+      },
+      {
+        "role": "READER",
+        "specialGroup": "projectReaders"
+      },
+      {
+        "role": "READER",
+        "userByEmail": "sa-ct-refresh@project-fa311fc0-4d87-4781-986.iam.gserviceaccount.com"
+      },
+      {
+        "role": "READER",
+        "userByEmail": "sa-loaders-prod@project-fa311fc0-4d87-4781-986.iam.gserviceaccount.com"
+      },
+      {
+        "role": "READER",
+        "userByEmail": "sa-promo-econ-ozon@project-fa311fc0-4d87-4781-986.iam.gserviceaccount.com"
+      }
+    ]
+  }
+}

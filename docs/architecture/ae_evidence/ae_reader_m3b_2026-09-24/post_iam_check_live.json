@@ -1,0 +1,11 @@
+{
+  "status": "PASS",
+  "findings": [],
+  "missing_read": [],
+  "project_roles": [
+    "projects/project-fa311fc0-4d87-4781-986/roles/aeBigQueryJobRunner",
+    "roles/bigquery.resourceViewer",
+    "roles/logging.viewer"
+  ],
+  "effective_permission_count": 66
+}
