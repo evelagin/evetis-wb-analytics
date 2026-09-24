@@ -11,7 +11,11 @@
     "cogs_policy", "tax_policy", "modules", "scheduler_state", "bi_access", "lifecycle"
   ],
   "properties": {
-    "schema_version": {"const": 1},
+    "schema_version": {
+      "type": "integer",
+      "const": 1,
+      "$comment": "type integer обязателен: const сравнивает через ==, а в Python True == 1 и 1.0 == 1. Проверка integer отвергает bool и float (T2.1/I1)."
+    },
     "tenant_id": {
       "type": "string",
       "pattern": "^[a-z][a-z0-9_]{2,30}$",
@@ -34,6 +38,12 @@
       "properties": {
         "kind": {"enum": ["dedicated_project", "legacy_evetis_project"]},
         "gcp_project_id": {"type": "string", "pattern": "^[a-z][a-z0-9-]{4,28}[a-z0-9]$"},
+        "project_id_revision": {
+          "type": "integer",
+          "minimum": 2,
+          "maximum": 9,
+          "description": "Только для выделенного проекта и только если базовый ID mpa-t-<slug> глобально занят в GCP. Даёт ID mpa-t<ревизия>-<slug>. Выбирает владелец платформы при создании проекта; после создания не меняется. Отсутствие поля = ревизия 1 (базовый ID). Грамматика — tools/tenancy/naming.py, заморожена после T2.1."
+        },
         "bq_location": {"enum": ["EU"]},
         "datasets": {
           "type": "object",
@@ -121,7 +131,8 @@
         "principals": {
           "type": "array",
           "uniqueItems": true,
-          "items": {"type": "string", "pattern": "^(user|group):[^@\\s]+@[^@\\s]+\\.[^@\\s]+$"}
+          "items": {"type": "string", "pattern": "^(user|group):[A-Za-z0-9._%+-]{1,64}@[A-Za-z0-9-]{1,63}(\\.[A-Za-z0-9-]{1,63})*\\.[A-Za-z]{2,63}$",
+                    "$comment": "Только ASCII (T2.1/L5): прежний шаблон [^@\\s] пропускал невидимые символы Юникода (U+200B и т.п.)."}
         }
       }
     },

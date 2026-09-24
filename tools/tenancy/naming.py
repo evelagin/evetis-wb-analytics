@@ -13,13 +13,16 @@
 EVETIS — унаследованный арендатор. Его имена не выводятся, а зафиксированы как
 факт (LEGACY_EVETIS) и сверяются с живой конфигурацией тестами. Реестр EVETIS
 не управляет (config_authority = LEGACY_EXISTING_CONFIG).
+
+Все проверки идентификаторов — ПОЛНОЕ совпадение строки (re.fullmatch, T2.1/L5):
+значение либо целиком допустимо, либо отвергается. Ничего не нормализуется молча.
 """
 from __future__ import annotations
 
 import re
 
 # ── tenant_id ──────────────────────────────────────────────────────────────
-TENANT_ID_RE = re.compile(r"^[a-z][a-z0-9_]{2,30}$")   # контракт tenant.v1
+TENANT_ID_RE = re.compile(r"[a-z][a-z0-9_]{2,30}")      # контракт tenant.v1, fullmatch
 TENANT_ID_MAX = 31
 
 # Зарезервированы для платформы. Внешний арендатор не может называться так, чтобы
@@ -34,15 +37,61 @@ RESERVED_TENANT_IDS = frozenset({
 RESERVED_TENANT_PREFIXES = ("evetis", "platform", "mpa", "goog")
 
 # ── GCP ────────────────────────────────────────────────────────────────────
-PROJECT_ID_RE = re.compile(r"^[a-z][a-z0-9-]{4,28}[a-z0-9]$")  # 6–30 символов
-PROJECT_ID_MAX = 30
-# Префикс проектов выделенных арендаторов: mpa = marketplace analytics.
-# Утверждён владельцем 2026-09-24 (ADR-08, A2). Проект GCP не переименовывается.
-DEDICATED_PROJECT_PREFIX = "mpa-t-"
-PROJECT_SUFFIX_RE = re.compile(r"^[a-z0-9]{1,6}$")
-SECRET_ID_RE = re.compile(r"^[A-Za-z0-9_-]{1,255}$")          # Secret Manager secretId
-DATASET_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]{0,1023}$")
-LABEL_VALUE_RE = re.compile(r"^[a-z0-9_-]{0,63}$")
+# Источник: https://docs.cloud.google.com/resource-manager/docs/creating-managing-projects
+# (страница обновлена 2026-09-18 UTC, прочитана 2026-09-24).
+#
+# ТРЕБОВАНИЯ GOOGLE CLOUD (проверяются ниже как есть):
+#   * 6–30 символов; только строчные буквы, цифры и дефис;
+#   * первый символ — буква; последний — не дефис;
+#   * «restricted strings such as google and ssl» — запрещены (список НЕ
+#     исчерпывающий: «such as»);
+#   * null и undefined: в списке требований — «avoid», но раздел API прямо
+#     говорит, что projects.create() отвергает google, null, undefined и ssl
+#     с INVALID_ARGUMENT. Поэтому для нас они тоже запрет, а не пожелание.
+#   * Двойной дефис Google НЕ упоминает — ни запрета, ни гарантии.
+#   * ID не должен быть занят или использован раньше (включая удалённые проекты) —
+#     это выясняется только при создании (T3); на этот случай есть ревизия.
+#
+# ПОЛИТИКА ПЛАТФОРМЫ (строже Google; см. TENANT_ID_RE, RESERVED_*, грамматику ниже):
+#   * префикс mpa-t и ревизия на шестой позиции;
+#   * slug только из tenant_id: [a-z][a-z0-9_]{2,30}, без «__» и «_» в конце —
+#     поэтому в slug нет «--» и дефиса в конце;
+#   * зарезервированные tenant_id и префиксы;
+#   * длина: отказ вместо обрезки (slug ≤ 24, с ревизией ≤ 23).
+PROJECT_ID_RE = re.compile(r"[a-z][a-z0-9-]{4,28}[a-z0-9]")    # требование GCP, fullmatch
+PROJECT_ID_MAX = 30                                            # требование GCP
+PROJECT_ID_FORBIDDEN_SUBSTRINGS = ("google", "ssl", "null", "undefined")   # требование GCP (API)
+
+# ── Пространство имён проектов выделенных арендаторов (ЗАМОРОЖЕНО, T2.1) ──
+#
+#   ревизия 1 (по умолчанию):  mpa-t-<slug>
+#   ревизия r ∈ {2..9}:        mpa-t<r>-<slug>
+#
+# slug = tenant_id с «_» → «-». Признак ревизии стоит на ФИКСИРОВАННОЙ позиции —
+# шестом символе ID: в базовой форме там всегда «-», в ревизии — цифра. Поэтому
+# ревизия не может совпасть ни с каким slug (прежняя схема mpa-t-<slug>-<суффикс>
+# давала client + «001» = client_001, находка L6). Отображение
+# (tenant_id, ревизия) → ID проекта инъективно и обратимо (parse_project_id).
+# Двойной дефис как разделитель не используется: грамматика GCP его не запрещает,
+# но и не гарантирует, а эта схема обходится одиночными дефисами.
+#
+# Ревизия нужна ТОЛЬКО если базовый ID глобально занят в GCP (ID проектов общие
+# для всех клиентов Google и не освобождаются даже после удаления). Её выбирает
+# владелец платформы при создании проекта, хранится она в tenant.json
+# (data_boundary.project_id_revision); случайных суффиксов нет.
+#
+# Грамматика заморожена для провижининга внешних арендаторов после T2.1. После
+# создания первого физического проекта (T3) любое изменение — только через ADR
+# миграции. Эталонные значения закреплены в tools/tests/test_tenancy.py.
+# Префикс утверждён владельцем 2026-09-24 (ADR-08, A2): mpa = marketplace analytics.
+DEDICATED_PROJECT_PREFIX = "mpa-t"
+PROJECT_REVISION_MIN, PROJECT_REVISION_MAX = 2, 9
+_DEDICATED_PROJECT_ID_RE = re.compile(
+    r"mpa-t(?P<rev>[2-9])?-(?P<slug>[a-z][a-z0-9]*(?:-[a-z0-9]+)*)")   # fullmatch
+
+SECRET_ID_RE = re.compile(r"[A-Za-z0-9_-]{1,255}")             # Secret Manager secretId
+DATASET_RE = re.compile(r"[A-Za-z_][A-Za-z0-9_]{0,1023}")
+LABEL_VALUE_RE = re.compile(r"[a-z0-9_-]{0,63}")
 
 # ── Имена внутри проекта выделенного арендатора ───────────────────────────
 # Одинаковы у всех выделенных арендаторов: изоляция — проектом (ADR-08).
@@ -94,7 +143,7 @@ def check_tenant_id(tenant_id: str, *, legacy: bool = False) -> None:
     * зарезервированные ID и префиксы недоступны выделенным арендаторам;
       «evetis» допустим только для унаследованного арендатора.
     """
-    if not isinstance(tenant_id, str) or not TENANT_ID_RE.match(tenant_id):
+    if not isinstance(tenant_id, str) or not TENANT_ID_RE.fullmatch(tenant_id):
         raise NamingError(f"tenant_id {tenant_id!r} не соответствует {TENANT_ID_RE.pattern}")
     if "__" in tenant_id:
         raise NamingError(f"tenant_id {tenant_id!r}: двойное подчёркивание запрещено")
@@ -116,44 +165,66 @@ def slug(tenant_id: str) -> str:
     return tenant_id.replace("_", "-")
 
 
-def derive_project_id(tenant_id: str, suffix: str | None = None) -> str:
-    """ID проекта выделенного арендатора: mpa-t-<slug>[-<suffix>].
+def check_project_revision(revision) -> int:
+    """Ревизия ID проекта: None → 1 (базовая форма), иначе целое 2..9, не bool."""
+    if revision is None:
+        return 1
+    if (isinstance(revision, bool) or not isinstance(revision, int)
+            or not PROJECT_REVISION_MIN <= revision <= PROJECT_REVISION_MAX):
+        raise NamingError(
+            f"ревизия ID проекта — целое {PROJECT_REVISION_MIN}..{PROJECT_REVISION_MAX} "
+            "(ревизия 1 — это отсутствие поля)")
+    return revision
 
-    suffix нужен только если имя уже занято в GCP (ID проектов глобальны).
-    Слишком длинный результат — ошибка, а не обрезка: обрезка сделала бы имена
-    двух арендаторов одинаковыми.
+
+def check_gcp_project_id(project_id) -> None:
+    """Допустим ли ID проекта по грамматике GCP (полное совпадение)."""
+    if not isinstance(project_id, str) or not PROJECT_ID_RE.fullmatch(project_id):
+        raise NamingError(f"ID проекта {project_id!r} не соответствует грамматике GCP")
+    bad = [s for s in PROJECT_ID_FORBIDDEN_SUBSTRINGS if s in project_id]
+    if bad:
+        raise NamingError(f"ID проекта {project_id!r} содержит запрещённые в GCP подстроки {bad}")
+
+
+def derive_project_id(tenant_id: str, revision: int | None = None) -> str:
+    """ID проекта выделенного арендатора: mpa-t-<slug> или mpa-t<r>-<slug>.
+
+    Слишком длинный результат — ошибка, а не обрезка: обрезка могла бы сделать
+    имена двух арендаторов одинаковыми.
     """
     check_tenant_id(tenant_id)
-    if suffix is not None and not PROJECT_SUFFIX_RE.match(suffix):
-        raise NamingError(f"суффикс проекта {suffix!r} не соответствует {PROJECT_SUFFIX_RE.pattern}")
-    pid = DEDICATED_PROJECT_PREFIX + slug(tenant_id) + (f"-{suffix}" if suffix else "")
+    rev = check_project_revision(revision)
+    marker = "" if rev == 1 else str(rev)
+    pid = f"{DEDICATED_PROJECT_PREFIX}{marker}-{slug(tenant_id)}"
     if len(pid) > PROJECT_ID_MAX:
         raise NamingError(
             f"ID проекта {pid!r} длиннее {PROJECT_ID_MAX} символов: tenant_id слишком "
-            f"длинный для выделенного проекта (максимум "
-            f"{PROJECT_ID_MAX - len(DEDICATED_PROJECT_PREFIX)} символов slug)")
-    if not PROJECT_ID_RE.match(pid):
-        raise NamingError(f"ID проекта {pid!r} недопустим в GCP")
+            "длинный для выделенного проекта (slug до 24 символов, с ревизией до 23)")
+    check_gcp_project_id(pid)
     return pid
 
 
-def project_id_belongs_to(tenant_id: str, project_id: str) -> bool:
-    """Выведен ли project_id из tenant_id (с суффиксом или без)."""
-    base = derive_project_id(tenant_id)
-    if project_id == base:
-        return True
-    if not project_id.startswith(base + "-"):
-        return False
-    try:
-        return derive_project_id(tenant_id, project_id[len(base) + 1:]) == project_id
-    except NamingError:
-        return False
+def parse_project_id(project_id: str) -> tuple[str, int]:
+    """Обратное отображение: ID проекта выделенного арендатора → (tenant_id, ревизия).
+
+    Принимает только то, что derive_project_id выдал бы сам (проверяется обратным
+    выводом), поэтому у каждого допустимого ID ровно один владелец.
+    """
+    m = (_DEDICATED_PROJECT_ID_RE.fullmatch(project_id)
+         if isinstance(project_id, str) else None)
+    if not m:
+        raise NamingError(f"{project_id!r} не принадлежит пространству проектов арендаторов")
+    tenant_id = m["slug"].replace("-", "_")
+    revision = int(m["rev"]) if m["rev"] else 1
+    if derive_project_id(tenant_id, None if revision == 1 else revision) != project_id:
+        raise NamingError(f"{project_id!r} не является каноническим выводом из tenant_id")
+    return tenant_id, revision
 
 
 def resource_labels(tenant_id: str) -> dict[str, str]:
     """Метки ресурсов арендатора (биллинг, фильтры журналов)."""
     check_tenant_id(tenant_id, legacy=(tenant_id == LEGACY_TENANT_ID))
-    if not LABEL_VALUE_RE.match(tenant_id):
+    if not LABEL_VALUE_RE.fullmatch(tenant_id):
         raise NamingError(f"tenant_id {tenant_id!r} недопустим как значение метки GCP")
     return {"tenant": tenant_id}
 
