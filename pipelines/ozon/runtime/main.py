@@ -8,6 +8,17 @@ ENV:
   ENTITIES     список через запятую; по умолчанию все
   SINCE/UNTIL  явное окно YYYY-MM-DD; по умолчанию lookback сущности
   LOOKBACK_OVERRIDE  переопределить окно ретроспективы в днях
+
+  Конфигурация арендатора (common.resolve_config, Tenancy T2):
+  GCP_PROJECT_ID     ОБЯЗАТЕЛЕН; без него процесс не стартует
+  BQ_RAW_DATASET     по умолчанию ozon_raw
+  BQ_REF_DATASET     по умолчанию evetis_ref (переходно, T2)
+  BQ_LOCATION        по умолчанию EU
+  OZON_SECRET_SELLER_CLIENT_ID / OZON_SECRET_SELLER_API_KEY /
+  OZON_SECRET_PERF_CLIENT_ID / OZON_SECRET_PERF_CLIENT_SECRET
+                     ИМЕНА секретов Secret Manager; по умолчанию имена EVETIS
+  STRICT_PAGE_CAPS   1 — упор в потолок страниц/окна API роняет сущность с
+                     диагностикой (режим бэкфилла); 0 или не задана — как раньше
 """
 import os, sys, uuid
 from datetime import date, timedelta
@@ -48,7 +59,7 @@ def main():
             C.record_run(run_id, name, started, frm, to, {}, "FAILED", error=repr(e),
                          requests_n=C.STATS["requests"] - r0,
                          retries=C.STATS["retries"] - t0)
-            C.log(event="entity_failed", entity=name, error=repr(e)[:400])
+            C.log(event="entity_failed", entity=name, error=C.safe_error_text(repr(e)))
             failed += 1
     C.log(event="run_end", ingestion_run_id=run_id, entities_ok=ok,
           entities_failed=failed, total_requests=C.STATS["requests"],

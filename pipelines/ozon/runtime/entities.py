@@ -12,6 +12,7 @@ import time
 import zipfile
 from datetime import date, timedelta
 
+import common as C
 from common import (h, log, merge_rows, now_msk, perf_get, perf_post, seller_post)
 from promo import promo
 
@@ -32,6 +33,41 @@ BUNDLE_MAX_PAGES = 500                # 50 000 позиций в одном со
 class PaginationError(RuntimeError):
     """Пагинация не может завершиться корректно: повтор курсора, потолок страниц,
     обещание следующей страницы без курсора или неполный ответ."""
+
+
+# ─────────────────────────────── строгие лимиты бэкфилла (Tenancy T2)
+# Места ниже исторически обрезают данные МОЛЧА: упор в потолок страниц или
+# пропуск отчёта заканчивается частичной загрузкой со статусом OK. Для суточного
+# прогона EVETIS это известный и принятый риск (окна короткие). Для бэкфилла
+# нового арендатора молчаливая обрезка недопустима: история выглядела бы полной.
+#
+# STRICT_PAGE_CAPS=1 превращает каждое такое место в явный отказ сущности с
+# диагностикой. Без флага (или =0) поведение прежнее, байт в байт.
+FBO_POSTINGS_MAX_PAGES = 200            # прежний литерал `page > 200`
+FINANCE_ACCRUAL_MAX_PAGES_PER_DAY = 60  # прежний литерал `page > 60`
+ADS_REPORT_POLL_ATTEMPTS = 60           # прежний литерал range(60)
+# Performance API, POST /api/client/statistics, поля from/to: «Максимальный
+# период, за который можно получить отчёт — 62 дня». Окно длиннее отдаёт ноль
+# строк при HTTP 200 (замер EVETIS: 65 дней → 0 строк).
+PERFORMANCE_REPORT_MAX_DAYS = 62
+
+
+class StrictLimitError(PaginationError):
+    """STRICT_PAGE_CAPS=1: источник отдал бы неполные данные, а прогон — статус OK."""
+
+
+def _strict_cap(entity, what, hint, **diag):
+    """В строгом режиме — отказ с диагностикой; иначе ничего (прежнее поведение).
+
+    В сообщение попадают только коды ответов, окно и счётчики — никаких
+    заголовков, тел запросов и учётных данных.
+    """
+    if not C.STRICT_PAGE_CAPS:
+        return
+    details = ", ".join(f"{k}={v}" for k, v in diag.items())
+    raise StrictLimitError(
+        f"{entity}: {what} [{details}]. STRICT_PAGE_CAPS=1: данные были бы неполными "
+        f"при статусе OK. Что сделать: {hint}")
 
 
 def _meta(endpoint, run_id, ts):
@@ -334,7 +370,14 @@ def fbo_postings(run_id, ts, frm, to):
                     source_payload_hash=h(p["posting_number"], sku),
                     **_meta("POST /v3/posting/fbo/list", run_id, ts)))
         cursor = d.get("cursor") or ""
-        if not d.get("has_next") or not cursor or page > 200:
+        if not d.get("has_next") or not cursor:
+            break
+        if page > FBO_POSTINGS_MAX_PAGES:
+            # has_next=true и курсор есть: источник говорит, что данные ещё есть.
+            _strict_cap("fbo_postings",
+                        f"упор в потолок {FBO_POSTINGS_MAX_PAGES} страниц при has_next=true",
+                        "сузить окно SINCE/UNTIL и загрузить его частями",
+                        window=f"{frm}..{to}", pages=page, rows=len(rows))
             break
         time.sleep(1)
     return merge_rows("RAW_OZON_POSTINGS_FBO", rows, ["posting_number", "sku"], run_id)
@@ -407,7 +450,16 @@ def finance_accrual(run_id, ts, frm, to):
                                      posting=pn, econ=econ if first else None)
                                 first = False
             last = r.get("last_id") or ""
-            if not last or not chunk or page > 60:
+            if not last or not chunk:
+                break
+            if page > FINANCE_ACCRUAL_MAX_PAGES_PER_DAY:
+                # last_id непуст и страница непуста: начисления за сутки ещё есть.
+                _strict_cap("finance_accrual",
+                            f"упор в потолок {FINANCE_ACCRUAL_MAX_PAGES_PER_DAY} страниц "
+                            "за одни сутки при непустом last_id",
+                            "поднять потолок после проверки объёма суток; окно уже "
+                            "идёт по одному дню, сузить его нельзя",
+                            day=ds, pages=page, rows_so_far=len(rows))
                 break
             time.sleep(1)
         cur += timedelta(days=1)
@@ -500,17 +552,35 @@ def ads_sku_daily(run_id, ts, frm, to):
 
     Периметр берётся из ВСЕХ кампаний с активностью в окне, а не только RUNNING.
     """
+    d0, d1 = date.fromisoformat(str(frm)), date.fromisoformat(str(to))
+    # Окно отчёта — от d0T00:00Z до d1T00:00Z, то есть (d1 - d0) суток. Длиннее
+    # PERFORMANCE_REPORT_MAX_DAYS Ozon молча отдаёт ноль строк. Окно здесь НЕ
+    # дробится: границы — UTC-моменты, а сутки отчёта московские, и любое
+    # дробление даёт либо разрыв, либо одни сутки в двух частях
+    # (docs/architecture/TECH_DEBT.md, P2-5).
+    if (d1 - d0).days > PERFORMANCE_REPORT_MAX_DAYS:
+        _strict_cap("ads_sku_daily",
+                    f"окно {(d1 - d0).days} сут. длиннее {PERFORMANCE_REPORT_MAX_DAYS} сут., "
+                    "Performance API вернёт ноль строк",
+                    f"запускать окнами не длиннее {PERFORMANCE_REPORT_MAX_DAYS} сут. "
+                    "до решения по границам суток (TECH_DEBT P2-5)",
+                    window=f"{d0}..{d1}")
     code, txt = perf_get("/api/client/campaign")
     # Ветка code != 200 → пустой периметр оставлена как была (OPEN QUESTION R1).
+    if code != 200:
+        _strict_cap("ads_sku_daily", "список кампаний не получен, периметр пуст",
+                    "повторить прогон; проверить доступ Performance API", http=code)
     ids = [c["id"] for c in _campaign_list(txt)] if code == 200 else []
     # оставляем только кампании с расходом в окне — иначе отчёт не сформируется
     active = set()
-    d0, d1 = date.fromisoformat(str(frm)), date.fromisoformat(str(to))
     c2, t2 = perf_get(f"/api/client/statistics/expense?dateFrom={d0}&dateTo={d1}")
     if c2 == 200:
         for r in _csv_rows(t2):
             if r.get("ID") and _rub(r.get("Расход")) > 0:
                 active.add(r["ID"])
+    else:
+        _strict_cap("ads_sku_daily", "расход кампаний за окно не получен, периметр пуст",
+                    "повторить прогон", http=c2, window=f"{d0}..{d1}")
     ids = [i for i in ids if i in active]
     rows = []
     for i in range(0, len(ids), 10):
@@ -520,20 +590,39 @@ def ads_sku_daily(run_id, ts, frm, to):
                                "to": f"{d1}T00:00:00Z", "groupBy": "DATE"})
         uuid = (sub or {}).get("UUID")
         if not uuid:
+            _strict_cap("ads_sku_daily", "отчёт не заказан: в ответе нет UUID",
+                        "повторить прогон", http=code, batch_size=len(batch),
+                        window=f"{d0}..{d1}")
             continue
-        for _ in range(60):
+        state = None
+        for _ in range(ADS_REPORT_POLL_ATTEMPTS):
             time.sleep(10)
             c3, st = perf_get(f"/api/client/statistics/{uuid}", raw_text=False)
+            state = st.get("state") if c3 == 200 else None
             if c3 == 200 and st.get("state") in ("OK", "ERROR"):
                 break
+        if state != "OK":
+            _strict_cap("ads_sku_daily", "отчёт не готов или завершился ошибкой",
+                        "повторить прогон", state=state, batch_size=len(batch),
+                        window=f"{d0}..{d1}")
         c4, blob = perf_get(f"/api/client/statistics/report?UUID={uuid}", raw_text=True)
         if c4 != 200:
+            _strict_cap("ads_sku_daily", "отчёт не скачан", "повторить прогон",
+                        http=c4, batch_size=len(batch), window=f"{d0}..{d1}")
             continue
         try:
             z = zipfile.ZipFile(io.BytesIO(blob.encode("utf-8", "surrogateescape")))
             files = [z.read(n).decode("utf-8-sig") for n in z.namelist()]
             names = z.namelist()
         except Exception:
+            # Партия из ОДНОЙ кампании приходит text/csv, а не ZIP (документация
+            # /api/client/statistics/report). Такая партия сейчас теряется молча —
+            # это известный дефект, исправление меняет поведение EVETIS
+            # (docs/architecture/TECH_DEBT.md, P2-6).
+            _strict_cap("ads_sku_daily", "отчёт не разобран как ZIP-архив",
+                        "если в партии одна кампания, ответ — CSV (известный дефект); "
+                        "до исправления такая партия не загружается",
+                        batch_size=len(batch), window=f"{d0}..{d1}")
             continue
         for name, txt2 in zip(names, files):
             cid = name.split("_")[0]

@@ -9,6 +9,7 @@
 
 from __future__ import annotations
 
+import os
 import sys
 import types
 from pathlib import Path
@@ -18,6 +19,21 @@ import pytest
 RUNTIME = Path(__file__).resolve().parents[1] / "runtime"
 FIXTURES = Path(__file__).resolve().parent / "fixtures"
 sys.path.insert(0, str(RUNTIME))
+
+# Tenancy T2: common.py не стартует без явного GCP_PROJECT_ID (fail-closed).
+# Тестовый процесс получает заведомо не-production проект, а переменные
+# арендатора из окружения разработчика вычищаются: тесты не должны зависеть от
+# того, что выставлено в чьей-то оболочке, и не должны выглядеть как обращение
+# к production. Конфигурации EVETIS и синтетического арендатора проверяются явно
+# (test_runtime_config.py, test_tenant_portability.py), а не через это окружение.
+OFFLINE_TEST_PROJECT = "offline-test-project"
+TENANT_ENV_VARS = ("GCP_PROJECT_ID", "BQ_RAW_DATASET", "BQ_REF_DATASET", "BQ_LOCATION",
+                   "OZON_SECRET_SELLER_CLIENT_ID", "OZON_SECRET_SELLER_API_KEY",
+                   "OZON_SECRET_PERF_CLIENT_ID", "OZON_SECRET_PERF_CLIENT_SECRET",
+                   "STRICT_PAGE_CAPS")
+for _var in TENANT_ENV_VARS:
+    os.environ.pop(_var, None)
+os.environ["GCP_PROJECT_ID"] = OFFLINE_TEST_PROJECT
 
 
 def _install_cloud_stubs():

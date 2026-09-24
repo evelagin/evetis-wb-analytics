@@ -18,7 +18,11 @@ from datetime import datetime, timezone
 
 from google.cloud import bigquery
 
-PROJECT = os.environ.get("GCP_PROJECT_ID", "project-fa311fc0-4d87-4781-986")
+# Tenancy T2: неявного проекта по умолчанию нет (fail-closed), как и в runtime.
+# Job ozon-bootstrap-load задаёт GCP_PROJECT_ID явно (проверено 2026-09-24).
+PROJECT = os.environ.get("GCP_PROJECT_ID", "").strip()
+if not PROJECT:
+    sys.exit("GCP_PROJECT_ID не задан: проект указывается явно, проекта по умолчанию нет")
 DATASET = os.environ.get("BQ_RAW_DATASET", "ozon_raw")
 LOCATION = os.environ.get("BQ_LOCATION", "EU")
 BUCKET = os.environ["STAGING_BUCKET"]

@@ -1,0 +1,1304 @@
+{
+ "purpose": "PR-PROMO-4 fixture contract: live column lists of the external objects the 7 inventory-context views read. Captured read-only from INFORMATION_SCHEMA.COLUMNS; the live DQ check I20 fails if production drifts from this file.",
+ "captured_at": "2026-09-24T10:15:18Z",
+ "objects": {
+  "evetis_mart.V_PROMO_ECONOMICS_SCENARIO_CURRENT": [
+   {
+    "column_name": "marketplace",
+    "data_type": "STRING"
+   },
+   {
+    "column_name": "scenario_entity_key",
+    "data_type": "STRING"
+   },
+   {
+    "column_name": "source_promotion_id",
+    "data_type": "STRING"
+   },
+   {
+    "column_name": "promotion_type",
+    "data_type": "STRING"
+   },
+   {
+    "column_name": "promotion_lifecycle_status",
+    "data_type": "STRING"
+   },
+   {
+    "column_name": "promotion_starts_at",
+    "data_type": "TIMESTAMP"
+   },
+   {
+    "column_name": "marketplace_product_id",
+    "data_type": "STRING"
+   },
+   {
+    "column_name": "offer_id",
+    "data_type": "STRING"
+   },
+   {
+    "column_name": "internal_sku",
+    "data_type": "STRING"
+   },
+   {
+    "column_name": "mapping_status",
+    "data_type": "STRING"
+   },
+   {
+    "column_name": "sku_state",
+    "data_type": "STRING"
+   },
+   {
+    "column_name": "scenario_type",
+    "data_type": "STRING"
+   },
+   {
+    "column_name": "scenario_key",
+    "data_type": "STRING"
+   },
+   {
+    "column_name": "price_interpretation",
+    "data_type": "STRING"
+   },
+   {
+    "column_name": "auto_add_at",
+    "data_type": "TIMESTAMP"
+   },
+   {
+    "column_name": "currency",
+    "data_type": "STRING"
+   },
+   {
+    "column_name": "scenario_price_rub",
+    "data_type": "NUMERIC"
+   },
+   {
+    "column_name": "price_source",
+    "data_type": "STRING"
+   },
+   {
+    "column_name": "price_evidence_status",
+    "data_type": "STRING"
+   },
+   {
+    "column_name": "price_binding_evidence",
+    "data_type": "STRING"
+   },
+   {
+    "column_name": "promotion_link_evidence",
+    "data_type": "STRING"
+   },
+   {
+    "column_name": "observed_seller_price_rub",
+    "data_type": "NUMERIC"
+   },
+   {
+    "column_name": "baseline_price_rub",
+    "data_type": "NUMERIC"
+   },
+   {
+    "column_name": "baseline_price_source",
+    "data_type": "STRING"
+   },
+   {
+    "column_name": "baseline_price_observed_at",
+    "data_type": "TIMESTAMP"
+   },
+   {
+    "column_name": "baseline_includes_promotion_effect",
+    "data_type": "BOOL"
+   },
+   {
+    "column_name": "cogs_rub",
+    "data_type": "NUMERIC"
+   },
+   {
+    "column_name": "cogs_effective_from",
+    "data_type": "DATE"
+   },
+   {
+    "column_name": "economics_model_version",
+    "data_type": "STRING"
+   },
+   {
+    "column_name": "temporal_basis",
+    "data_type": "STRING"
+   },
+   {
+    "column_name": "economics_status",
+    "data_type": "STRING"
+   },
+   {
+    "column_name": "baseline_contribution_expected_rub",
+    "data_type": "NUMERIC"
+   },
+   {
+    "column_name": "promo_contribution_expected_rub",
+    "data_type": "NUMERIC"
+   },
+   {
+    "column_name": "delta_contribution_expected_rub",
+    "data_type": "NUMERIC"
+   },
+   {
+    "column_name": "baseline_margin_expected_pct",
+    "data_type": "NUMERIC"
+   },
+   {
+    "column_name": "promo_margin_expected_pct",
+    "data_type": "NUMERIC"
+   },
+   {
+    "column_name": "break_even_price_expected_rub",
+    "data_type": "NUMERIC"
+   },
+   {
+    "column_name": "promo_price_minus_break_even_rub",
+    "data_type": "NUMERIC"
+   },
+   {
+    "column_name": "downside_case",
+    "data_type": "STRING"
+   },
+   {
+    "column_name": "baseline_contribution_downside_rub",
+    "data_type": "NUMERIC"
+   },
+   {
+    "column_name": "promo_contribution_downside_rub",
+    "data_type": "NUMERIC"
+   },
+   {
+    "column_name": "promo_downside_negative",
+    "data_type": "BOOL"
+   },
+   {
+    "column_name": "uplift_status",
+    "data_type": "STRING"
+   },
+   {
+    "column_name": "required_sales_uplift_pct",
+    "data_type": "NUMERIC"
+   },
+   {
+    "column_name": "uplift_interpretation",
+    "data_type": "STRING"
+   },
+   {
+    "column_name": "last_economics_slot",
+    "data_type": "STRING"
+   },
+   {
+    "column_name": "last_observation_id",
+    "data_type": "STRING"
+   },
+   {
+    "column_name": "last_basis_snapshot_id",
+    "data_type": "STRING"
+   },
+   {
+    "column_name": "last_basis_captured_at",
+    "data_type": "TIMESTAMP"
+   },
+   {
+    "column_name": "first_economics_slot",
+    "data_type": "STRING"
+   },
+   {
+    "column_name": "slots_count",
+    "data_type": "INT64"
+   },
+   {
+    "column_name": "present_in_latest_slot",
+    "data_type": "BOOL"
+   },
+   {
+    "column_name": "marketplace_latest_economics_slot",
+    "data_type": "STRING"
+   },
+   {
+    "column_name": "basis_age_minutes",
+    "data_type": "INT64"
+   }
+  ],
+  "evetis_mart.V_PROMO_OBSERVATION_HISTORY": [
+   {
+    "column_name": "marketplace",
+    "data_type": "STRING"
+   },
+   {
+    "column_name": "observation_id",
+    "data_type": "STRING"
+   },
+   {
+    "column_name": "observation_slot",
+    "data_type": "STRING"
+   },
+   {
+    "column_name": "observed_at",
+    "data_type": "TIMESTAMP"
+   },
+   {
+    "column_name": "observed_at_basis",
+    "data_type": "STRING"
+   },
+   {
+    "column_name": "manifest_observed_at",
+    "data_type": "TIMESTAMP"
+   },
+   {
+    "column_name": "history_class",
+    "data_type": "STRING"
+   },
+   {
+    "column_name": "observation_status",
+    "data_type": "STRING"
+   },
+   {
+    "column_name": "promotions_observed",
+    "data_type": "INT64"
+   },
+   {
+    "column_name": "catalog_products_observed",
+    "data_type": "INT64"
+   }
+  ],
+  "evetis_ops.OPS_CONFIG": [
+   {
+    "column_name": "config_key",
+    "data_type": "STRING"
+   },
+   {
+    "column_name": "config_value",
+    "data_type": "STRING"
+   },
+   {
+    "column_name": "note",
+    "data_type": "STRING"
+   },
+   {
+    "column_name": "updated_at",
+    "data_type": "TIMESTAMP"
+   },
+   {
+    "column_name": "updated_by",
+    "data_type": "STRING"
+   }
+  ],
+  "evetis_ref.CT_ACTUAL_DAILY": [
+   {
+    "column_name": "d",
+    "data_type": "DATE"
+   },
+   {
+    "column_name": "marketplace",
+    "data_type": "STRING"
+   },
+   {
+    "column_name": "internal_sku",
+    "data_type": "STRING"
+   },
+   {
+    "column_name": "sales_mode",
+    "data_type": "STRING"
+   },
+   {
+    "column_name": "component_count",
+    "data_type": "INT64"
+   },
+   {
+    "column_name": "cards_ordered",
+    "data_type": "INT64"
+   },
+   {
+    "column_name": "cards_cancelled",
+    "data_type": "INT64"
+   },
+   {
+    "column_name": "cards_sold",
+    "data_type": "INT64"
+   },
+   {
+    "column_name": "cards_returned",
+    "data_type": "INT64"
+   },
+   {
+    "column_name": "units_ordered",
+    "data_type": "INT64"
+   },
+   {
+    "column_name": "units_sold",
+    "data_type": "INT64"
+   },
+   {
+    "column_name": "gmv_ordered",
+    "data_type": "NUMERIC"
+   },
+   {
+    "column_name": "revenue_seller_base",
+    "data_type": "NUMERIC"
+   },
+   {
+    "column_name": "marketplace_costs",
+    "data_type": "NUMERIC"
+   },
+   {
+    "column_name": "ad_spend",
+    "data_type": "NUMERIC"
+   },
+   {
+    "column_name": "seller_cash",
+    "data_type": "NUMERIC"
+   },
+   {
+    "column_name": "cogs",
+    "data_type": "NUMERIC"
+   },
+   {
+    "column_name": "contribution",
+    "data_type": "NUMERIC"
+   },
+   {
+    "column_name": "contribution_covered",
+    "data_type": "BOOL"
+   },
+   {
+    "column_name": "cogs_covered",
+    "data_type": "BOOL"
+   },
+   {
+    "column_name": "include_in_pnl",
+    "data_type": "BOOL"
+   },
+   {
+    "column_name": "economics_basis",
+    "data_type": "STRING"
+   },
+   {
+    "column_name": "refreshed_at",
+    "data_type": "TIMESTAMP"
+   }
+  ],
+  "evetis_ref.CT_CONFIG": [
+   {
+    "column_name": "config_key",
+    "data_type": "STRING"
+   },
+   {
+    "column_name": "config_value",
+    "data_type": "STRING"
+   },
+   {
+    "column_name": "note",
+    "data_type": "STRING"
+   },
+   {
+    "column_name": "updated_at",
+    "data_type": "TIMESTAMP"
+   }
+  ],
+  "evetis_ref.CT_EXPIRY_BATCH": [
+   {
+    "column_name": "internal_sku",
+    "data_type": "STRING"
+   },
+   {
+    "column_name": "batch_id",
+    "data_type": "STRING"
+   },
+   {
+    "column_name": "batch_number",
+    "data_type": "STRING"
+   },
+   {
+    "column_name": "import_date",
+    "data_type": "DATE"
+   },
+   {
+    "column_name": "manufacture_date",
+    "data_type": "DATE"
+   },
+   {
+    "column_name": "shelf_life_months",
+    "data_type": "INT64"
+   },
+   {
+    "column_name": "expiry_date",
+    "data_type": "DATE"
+   },
+   {
+    "column_name": "expiry_source",
+    "data_type": "STRING"
+   },
+   {
+    "column_name": "expiry_confidence",
+    "data_type": "STRING"
+   },
+   {
+    "column_name": "units_at_snapshot",
+    "data_type": "INT64"
+   },
+   {
+    "column_name": "snapshot_date",
+    "data_type": "DATE"
+   },
+   {
+    "column_name": "is_inbound",
+    "data_type": "BOOL"
+   },
+   {
+    "column_name": "note",
+    "data_type": "STRING"
+   },
+   {
+    "column_name": "source_artifact",
+    "data_type": "STRING"
+   },
+   {
+    "column_name": "created_at",
+    "data_type": "TIMESTAMP"
+   }
+  ],
+  "evetis_ref.CT_INVENTORY_SNAPSHOT_DAILY": [
+   {
+    "column_name": "snapshot_date",
+    "data_type": "DATE"
+   },
+   {
+    "column_name": "snapshot_ts",
+    "data_type": "TIMESTAMP"
+   },
+   {
+    "column_name": "internal_sku",
+    "data_type": "STRING"
+   },
+   {
+    "column_name": "product_name",
+    "data_type": "STRING"
+   },
+   {
+    "column_name": "product_line",
+    "data_type": "STRING"
+   },
+   {
+    "column_name": "ff_snapshot_date",
+    "data_type": "DATE"
+   },
+   {
+    "column_name": "ff_operational_snapshot",
+    "data_type": "INT64"
+   },
+   {
+    "column_name": "ff_pallet_snapshot",
+    "data_type": "INT64"
+   },
+   {
+    "column_name": "ozon_transit_snapshot",
+    "data_type": "INT64"
+   },
+   {
+    "column_name": "ozon_fbo_snapshot",
+    "data_type": "INT64"
+   },
+   {
+    "column_name": "ff_outflow_since_snapshot",
+    "data_type": "INT64"
+   },
+   {
+    "column_name": "ozon_seed_era_completed_units",
+    "data_type": "INT64"
+   },
+   {
+    "column_name": "ozon_post_snapshot_open_units",
+    "data_type": "INT64"
+   },
+   {
+    "column_name": "ozon_post_snapshot_completed_units",
+    "data_type": "INT64"
+   },
+   {
+    "column_name": "ozon_units_ordered_since_snapshot",
+    "data_type": "INT64"
+   },
+   {
+    "column_name": "wb_in_transit_units",
+    "data_type": "INT64"
+   },
+   {
+    "column_name": "wb_fbo_live_units",
+    "data_type": "INT64"
+   },
+   {
+    "column_name": "wb_fbo_units_in_bundles",
+    "data_type": "INT64"
+   },
+   {
+    "column_name": "wb_lost_claimed_units",
+    "data_type": "INT64"
+   },
+   {
+    "column_name": "wb_to_client_units",
+    "data_type": "INT64"
+   },
+   {
+    "column_name": "wb_stock_as_of",
+    "data_type": "DATE"
+   },
+   {
+    "column_name": "ozon_fbo_units",
+    "data_type": "INT64"
+   },
+   {
+    "column_name": "ozon_fbo_units_in_bundles",
+    "data_type": "INT64"
+   },
+   {
+    "column_name": "ozon_api_transit_units",
+    "data_type": "INT64"
+   },
+   {
+    "column_name": "ozon_stock_as_of",
+    "data_type": "DATE"
+   },
+   {
+    "column_name": "fbs_units",
+    "data_type": "INT64"
+   },
+   {
+    "column_name": "inbound_units",
+    "data_type": "INT64"
+   },
+   {
+    "column_name": "inbound_status",
+    "data_type": "STRING"
+   },
+   {
+    "column_name": "inbound_eta",
+    "data_type": "DATE"
+   },
+   {
+    "column_name": "unit_cogs_rub",
+    "data_type": "NUMERIC"
+   },
+   {
+    "column_name": "expiry_date",
+    "data_type": "DATE"
+   },
+   {
+    "column_name": "expiry_source",
+    "data_type": "STRING"
+   },
+   {
+    "column_name": "units_per_day_30d",
+    "data_type": "FLOAT64"
+   },
+   {
+    "column_name": "units_per_day_7d",
+    "data_type": "FLOAT64"
+   },
+   {
+    "column_name": "units_per_day_30d_via_bundle",
+    "data_type": "FLOAT64"
+   },
+   {
+    "column_name": "units_sold_season_to_date",
+    "data_type": "INT64"
+   },
+   {
+    "column_name": "plan_units_next_45d",
+    "data_type": "FLOAT64"
+   },
+   {
+    "column_name": "plan_units_per_day_next_45d",
+    "data_type": "FLOAT64"
+   },
+   {
+    "column_name": "plan_units_to_season_end",
+    "data_type": "FLOAT64"
+   },
+   {
+    "column_name": "ff_total_units",
+    "data_type": "INT64"
+   },
+   {
+    "column_name": "ozon_landed_since_snapshot",
+    "data_type": "INT64"
+   },
+   {
+    "column_name": "ozon_transit_units",
+    "data_type": "INT64"
+   },
+   {
+    "column_name": "inbound_expected_in_season",
+    "data_type": "INT64"
+   },
+   {
+    "column_name": "sellable_units",
+    "data_type": "INT64"
+   },
+   {
+    "column_name": "marketplace_units",
+    "data_type": "INT64"
+   },
+   {
+    "column_name": "assembled_bundle_units_on_marketplaces",
+    "data_type": "INT64"
+   },
+   {
+    "column_name": "days_to_expiry",
+    "data_type": "INT64"
+   },
+   {
+    "column_name": "sellable_value_rub",
+    "data_type": "NUMERIC"
+   },
+   {
+    "column_name": "days_of_stock_total_at_30d_rate",
+    "data_type": "FLOAT64"
+   },
+   {
+    "column_name": "days_of_stock_marketplace_at_30d_rate",
+    "data_type": "FLOAT64"
+   },
+   {
+    "column_name": "days_of_stock_total_at_plan_rate",
+    "data_type": "FLOAT64"
+   },
+   {
+    "column_name": "target_stock_units_45d",
+    "data_type": "FLOAT64"
+   },
+   {
+    "column_name": "required_units_per_month_to_expiry",
+    "data_type": "FLOAT64"
+   },
+   {
+    "column_name": "current_units_per_month",
+    "data_type": "FLOAT64"
+   },
+   {
+    "column_name": "projected_residual_31_03_2027_at_plan",
+    "data_type": "FLOAT64"
+   },
+   {
+    "column_name": "projected_shortfall_31_03_2027_at_plan",
+    "data_type": "FLOAT64"
+   },
+   {
+    "column_name": "projected_residual_31_03_2027_at_30d_rate",
+    "data_type": "FLOAT64"
+   },
+   {
+    "column_name": "status",
+    "data_type": "STRING"
+   },
+   {
+    "column_name": "status_code",
+    "data_type": "STRING"
+   },
+   {
+    "column_name": "status_reason",
+    "data_type": "STRING"
+   }
+  ],
+  "evetis_ref.CT_PLAN_VERSION": [
+   {
+    "column_name": "plan_version",
+    "data_type": "STRING"
+   },
+   {
+    "column_name": "plan_name",
+    "data_type": "STRING"
+   },
+   {
+    "column_name": "scenario_code",
+    "data_type": "STRING"
+   },
+   {
+    "column_name": "plan_status",
+    "data_type": "STRING"
+   },
+   {
+    "column_name": "horizon_from",
+    "data_type": "DATE"
+   },
+   {
+    "column_name": "horizon_to",
+    "data_type": "DATE"
+   },
+   {
+    "column_name": "curve_version",
+    "data_type": "STRING"
+   },
+   {
+    "column_name": "assumption_version",
+    "data_type": "STRING"
+   },
+   {
+    "column_name": "source_artifact",
+    "data_type": "STRING"
+   },
+   {
+    "column_name": "source_commit",
+    "data_type": "STRING"
+   },
+   {
+    "column_name": "target_cards_total",
+    "data_type": "FLOAT64"
+   },
+   {
+    "column_name": "target_units_total",
+    "data_type": "FLOAT64"
+   },
+   {
+    "column_name": "target_gmv_total",
+    "data_type": "FLOAT64"
+   },
+   {
+    "column_name": "target_seller_cash_total",
+    "data_type": "FLOAT64"
+   },
+   {
+    "column_name": "target_contribution_total",
+    "data_type": "FLOAT64"
+   },
+   {
+    "column_name": "opening_inventory_as_of",
+    "data_type": "DATE"
+   },
+   {
+    "column_name": "opening_inventory_units",
+    "data_type": "INT64"
+   },
+   {
+    "column_name": "opening_inventory_value_rub",
+    "data_type": "FLOAT64"
+   },
+   {
+    "column_name": "created_at",
+    "data_type": "TIMESTAMP"
+   },
+   {
+    "column_name": "created_by",
+    "data_type": "STRING"
+   },
+   {
+    "column_name": "superseded_at",
+    "data_type": "TIMESTAMP"
+   },
+   {
+    "column_name": "notes",
+    "data_type": "STRING"
+   }
+  ],
+  "evetis_ref.CT_SEASON_PLAN_MONTHLY": [
+   {
+    "column_name": "plan_version",
+    "data_type": "STRING"
+   },
+   {
+    "column_name": "month",
+    "data_type": "DATE"
+   },
+   {
+    "column_name": "marketplace",
+    "data_type": "STRING"
+   },
+   {
+    "column_name": "internal_sku",
+    "data_type": "STRING"
+   },
+   {
+    "column_name": "sales_mode",
+    "data_type": "STRING"
+   },
+   {
+    "column_name": "target_cards",
+    "data_type": "FLOAT64"
+   },
+   {
+    "column_name": "target_physical_units",
+    "data_type": "FLOAT64"
+   },
+   {
+    "column_name": "target_price",
+    "data_type": "FLOAT64"
+   },
+   {
+    "column_name": "target_drr_pct",
+    "data_type": "FLOAT64"
+   },
+   {
+    "column_name": "target_gmv",
+    "data_type": "FLOAT64"
+   },
+   {
+    "column_name": "target_marketplace_costs",
+    "data_type": "FLOAT64"
+   },
+   {
+    "column_name": "target_ad_spend",
+    "data_type": "FLOAT64"
+   },
+   {
+    "column_name": "target_seller_cash",
+    "data_type": "FLOAT64"
+   },
+   {
+    "column_name": "target_cogs",
+    "data_type": "FLOAT64"
+   },
+   {
+    "column_name": "target_contribution",
+    "data_type": "FLOAT64"
+   },
+   {
+    "column_name": "source_artifact",
+    "data_type": "STRING"
+   },
+   {
+    "column_name": "source_row_hash",
+    "data_type": "STRING"
+   },
+   {
+    "column_name": "created_at",
+    "data_type": "TIMESTAMP"
+   }
+  ],
+  "evetis_ref.REF_PRODUCT_MASTER": [
+   {
+    "column_name": "internal_sku",
+    "data_type": "STRING"
+   },
+   {
+    "column_name": "canonical_product_name",
+    "data_type": "STRING"
+   },
+   {
+    "column_name": "product_name_short",
+    "data_type": "STRING"
+   },
+   {
+    "column_name": "brand",
+    "data_type": "STRING"
+   },
+   {
+    "column_name": "category",
+    "data_type": "STRING"
+   },
+   {
+    "column_name": "product_line",
+    "data_type": "STRING"
+   },
+   {
+    "column_name": "product_type",
+    "data_type": "STRING"
+   },
+   {
+    "column_name": "is_bundle",
+    "data_type": "BOOL"
+   },
+   {
+    "column_name": "volume",
+    "data_type": "STRING"
+   },
+   {
+    "column_name": "barcode",
+    "data_type": "STRING"
+   },
+   {
+    "column_name": "active_from",
+    "data_type": "DATE"
+   },
+   {
+    "column_name": "active_to",
+    "data_type": "DATE"
+   },
+   {
+    "column_name": "source_system",
+    "data_type": "STRING"
+   },
+   {
+    "column_name": "loaded_at",
+    "data_type": "TIMESTAMP"
+   }
+  ],
+  "evetis_ref.REF_SKU_CHANNEL_MAP": [
+   {
+    "column_name": "internal_sku",
+    "data_type": "STRING"
+   },
+   {
+    "column_name": "marketplace",
+    "data_type": "STRING"
+   },
+   {
+    "column_name": "marketplace_sku",
+    "data_type": "STRING"
+   },
+   {
+    "column_name": "marketplace_product_id",
+    "data_type": "STRING"
+   },
+   {
+    "column_name": "offer_id",
+    "data_type": "STRING"
+   },
+   {
+    "column_name": "vendor_code",
+    "data_type": "STRING"
+   },
+   {
+    "column_name": "valid_from",
+    "data_type": "DATE"
+   },
+   {
+    "column_name": "valid_to",
+    "data_type": "DATE"
+   },
+   {
+    "column_name": "is_current",
+    "data_type": "BOOL"
+   },
+   {
+    "column_name": "mapping_source",
+    "data_type": "STRING"
+   },
+   {
+    "column_name": "mapping_status",
+    "data_type": "STRING"
+   },
+   {
+    "column_name": "verified_at",
+    "data_type": "DATE"
+   },
+   {
+    "column_name": "loaded_at",
+    "data_type": "TIMESTAMP"
+   }
+  ],
+  "wb_mart.V_CT_ACTUAL_DAILY": [
+   {
+    "column_name": "d",
+    "data_type": "DATE"
+   },
+   {
+    "column_name": "marketplace",
+    "data_type": "STRING"
+   },
+   {
+    "column_name": "internal_sku",
+    "data_type": "STRING"
+   },
+   {
+    "column_name": "sales_mode",
+    "data_type": "STRING"
+   },
+   {
+    "column_name": "component_count",
+    "data_type": "INT64"
+   },
+   {
+    "column_name": "cards_ordered",
+    "data_type": "INT64"
+   },
+   {
+    "column_name": "cards_cancelled",
+    "data_type": "INT64"
+   },
+   {
+    "column_name": "cards_sold",
+    "data_type": "INT64"
+   },
+   {
+    "column_name": "cards_returned",
+    "data_type": "INT64"
+   },
+   {
+    "column_name": "units_ordered",
+    "data_type": "INT64"
+   },
+   {
+    "column_name": "units_sold",
+    "data_type": "INT64"
+   },
+   {
+    "column_name": "gmv_ordered",
+    "data_type": "NUMERIC"
+   },
+   {
+    "column_name": "revenue_seller_base",
+    "data_type": "NUMERIC"
+   },
+   {
+    "column_name": "marketplace_costs",
+    "data_type": "NUMERIC"
+   },
+   {
+    "column_name": "ad_spend",
+    "data_type": "NUMERIC"
+   },
+   {
+    "column_name": "seller_cash",
+    "data_type": "NUMERIC"
+   },
+   {
+    "column_name": "cogs",
+    "data_type": "NUMERIC"
+   },
+   {
+    "column_name": "contribution",
+    "data_type": "NUMERIC"
+   },
+   {
+    "column_name": "contribution_covered",
+    "data_type": "BOOL"
+   },
+   {
+    "column_name": "cogs_covered",
+    "data_type": "BOOL"
+   },
+   {
+    "column_name": "include_in_pnl",
+    "data_type": "BOOL"
+   },
+   {
+    "column_name": "economics_basis",
+    "data_type": "STRING"
+   }
+  ],
+  "wb_mart.V_CT_BOM_CURRENT": [
+   {
+    "column_name": "card_sku",
+    "data_type": "STRING"
+   },
+   {
+    "column_name": "component_sku",
+    "data_type": "STRING"
+   },
+   {
+    "column_name": "component_qty",
+    "data_type": "INT64"
+   },
+   {
+    "column_name": "component_count",
+    "data_type": "INT64"
+   },
+   {
+    "column_name": "is_bundle",
+    "data_type": "BOOL"
+   }
+  ],
+  "wb_mart.V_CT_BUNDLE_STATUS": [
+   {
+    "column_name": "bundle_sku",
+    "data_type": "STRING"
+   },
+   {
+    "column_name": "product_name",
+    "data_type": "STRING"
+   },
+   {
+    "column_name": "product_line",
+    "data_type": "STRING"
+   },
+   {
+    "column_name": "component_count",
+    "data_type": "INT64"
+   },
+   {
+    "column_name": "components",
+    "data_type": "STRING"
+   },
+   {
+    "column_name": "wb_cards_live",
+    "data_type": "INT64"
+   },
+   {
+    "column_name": "ozon_cards_live",
+    "data_type": "INT64"
+   },
+   {
+    "column_name": "ozon_cards_transit_api",
+    "data_type": "INT64"
+   },
+   {
+    "column_name": "marketplace_cards_live",
+    "data_type": "INT64"
+   },
+   {
+    "column_name": "assemblable_now_ff",
+    "data_type": "INT64"
+   },
+   {
+    "column_name": "limiting_component",
+    "data_type": "STRING"
+   },
+   {
+    "column_name": "limiting_component_ff_units",
+    "data_type": "INT64"
+   },
+   {
+    "column_name": "waits_for_inbound",
+    "data_type": "BOOL"
+   },
+   {
+    "column_name": "inbound_eta",
+    "data_type": "DATE"
+   },
+   {
+    "column_name": "cards_ordered_yesterday",
+    "data_type": "INT64"
+   },
+   {
+    "column_name": "cards_ordered_mtd",
+    "data_type": "INT64"
+   },
+   {
+    "column_name": "cards_ordered_mtd_wb",
+    "data_type": "INT64"
+   },
+   {
+    "column_name": "cards_ordered_mtd_ozon",
+    "data_type": "INT64"
+   },
+   {
+    "column_name": "cards_ordered_season",
+    "data_type": "INT64"
+   },
+   {
+    "column_name": "cards_sold_season",
+    "data_type": "INT64"
+   },
+   {
+    "column_name": "units_released_season",
+    "data_type": "INT64"
+   },
+   {
+    "column_name": "contribution_season",
+    "data_type": "NUMERIC"
+   },
+   {
+    "column_name": "cards_per_day_30d",
+    "data_type": "FLOAT64"
+   },
+   {
+    "column_name": "plan_cards_mtd",
+    "data_type": "FLOAT64"
+   },
+   {
+    "column_name": "plan_cards_this_month",
+    "data_type": "FLOAT64"
+   },
+   {
+    "column_name": "plan_cards_next_45d",
+    "data_type": "FLOAT64"
+   },
+   {
+    "column_name": "plan_cards_to_season_end",
+    "data_type": "FLOAT64"
+   },
+   {
+    "column_name": "plan_contribution_to_season_end",
+    "data_type": "FLOAT64"
+   },
+   {
+    "column_name": "plan_assemble_this_week",
+    "data_type": "INT64"
+   },
+   {
+    "column_name": "plan_assemble_next_week",
+    "data_type": "INT64"
+   },
+   {
+    "column_name": "plan_assemble_remaining_8w",
+    "data_type": "INT64"
+   },
+   {
+    "column_name": "plan_limiting_component",
+    "data_type": "STRING"
+   },
+   {
+    "column_name": "next_assembly_week_start",
+    "data_type": "DATE"
+   },
+   {
+    "column_name": "next_assembly_qty",
+    "data_type": "INT64"
+   },
+   {
+    "column_name": "mtd_attainment_pct",
+    "data_type": "FLOAT64"
+   },
+   {
+    "column_name": "days_cover_marketplace_at_30d_rate",
+    "data_type": "FLOAT64"
+   },
+   {
+    "column_name": "days_cover_marketplace_at_plan_rate",
+    "data_type": "FLOAT64"
+   },
+   {
+    "column_name": "assembly_need_next_45d",
+    "data_type": "INT64"
+   },
+   {
+    "column_name": "status_code",
+    "data_type": "STRING"
+   },
+   {
+    "column_name": "status",
+    "data_type": "STRING"
+   },
+   {
+    "column_name": "as_of",
+    "data_type": "DATE"
+   }
+  ],
+  "wb_mart.V_CT_PHYSICAL_DAILY": [
+   {
+    "column_name": "d",
+    "data_type": "DATE"
+   },
+   {
+    "column_name": "marketplace",
+    "data_type": "STRING"
+   },
+   {
+    "column_name": "internal_sku",
+    "data_type": "STRING"
+   },
+   {
+    "column_name": "units_ordered_solo",
+    "data_type": "INT64"
+   },
+   {
+    "column_name": "units_ordered_via_bundle",
+    "data_type": "INT64"
+   },
+   {
+    "column_name": "units_ordered",
+    "data_type": "INT64"
+   },
+   {
+    "column_name": "units_sold_solo",
+    "data_type": "INT64"
+   },
+   {
+    "column_name": "units_sold_via_bundle",
+    "data_type": "INT64"
+   },
+   {
+    "column_name": "units_sold",
+    "data_type": "INT64"
+   },
+   {
+    "column_name": "bundle_cards_ordered_containing_sku",
+    "data_type": "INT64"
+   },
+   {
+    "column_name": "units_cancelled",
+    "data_type": "INT64"
+   }
+  ]
+ }
+}
