@@ -41,7 +41,11 @@ export function toUserEnteredFormat(spec: CellFormatSpec, bgOverride?: string):
   if (spec.va) f['verticalAlignment'] = spec.va;
   if (spec.wrap) f['wrapStrategy'] = spec.wrap;
   if (spec.borders) {
-    f['borders'] = Object.fromEntries(Object.entries(spec.borders).map(([k, v]) => [k, { style: v }]));
+    const colour = spec.borderColors ?? {};
+    f['borders'] = Object.fromEntries(Object.entries(spec.borders).map(([k, v]) => {
+      const c = colour[k as keyof typeof colour];
+      return [k, c ? { style: v, colorStyle: { rgbColor: rgb(c) } } : { style: v }];
+    }));
   }
   if (spec.numberFormat?.pattern) {
     f['numberFormat'] = { type: spec.numberFormat.type ?? 'NUMBER', pattern: spec.numberFormat.pattern };

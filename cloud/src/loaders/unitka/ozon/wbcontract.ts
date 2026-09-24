@@ -11,11 +11,18 @@
  *
  * Файл сгенерирован замером живого листа и правится только повторным замером,
  * а не редактированием значений вручную.
+ *
+ * VISUAL PARITY (2026-09-24): первый замер снял у рамок только СТИЛЬ, без цвета, и Ozon рисовал
+ * чёрным всё, что у WB серое: контур заголовка SKU и строки итога (#5f6368) и сетку шапки
+ * (#9aa0a6). Повторный замер той же секции добавил `borderColors` — только для сторон, чей цвет
+ * отличается от чёрного (#000000 / тема TEXT). Стили рамок при этом совпали с замером.
  */
 export interface CellFormatSpec {
   fontFamily?: string; fontSize?: number; bold?: boolean; italic?: boolean;
   fg?: string; bg?: string; ha?: string; va?: string; wrap?: string;
   borders?: Partial<Record<'top' | 'bottom' | 'left' | 'right', string>>;
+  /** Цвет стороны рамки, если он не чёрный. Сторона без записи — чёрная, как и раньше. */
+  borderColors?: Partial<Record<'top' | 'bottom' | 'left' | 'right', string>>;
   numberFormat?: { type?: string; pattern?: string };
 }
 export interface PresentationContract {
@@ -131,6 +138,11 @@ export const CANONICAL_CURRENT_WB_PRESENTATION_CONTRACT: PresentationContract =
             "bottom": "SOLID_MEDIUM",
             "left": "SOLID_MEDIUM"
           },
+          "borderColors": {
+            "top": "#5f6368",
+            "bottom": "#5f6368",
+            "left": "#5f6368"
+          },
           "numberFormat": {
             "type": "TEXT"
           }
@@ -164,6 +176,10 @@ export const CANONICAL_CURRENT_WB_PRESENTATION_CONTRACT: PresentationContract =
             "top": "SOLID_MEDIUM",
             "bottom": "SOLID_MEDIUM"
           },
+          "borderColors": {
+            "top": "#5f6368",
+            "bottom": "#5f6368"
+          },
           "numberFormat": {
             "type": "TEXT"
           }
@@ -178,6 +194,10 @@ export const CANONICAL_CURRENT_WB_PRESENTATION_CONTRACT: PresentationContract =
           "borders": {
             "top": "SOLID_MEDIUM",
             "bottom": "SOLID_MEDIUM"
+          },
+          "borderColors": {
+            "top": "#5f6368",
+            "bottom": "#5f6368"
           },
           "numberFormat": {
             "type": "TEXT"
@@ -194,6 +214,10 @@ export const CANONICAL_CURRENT_WB_PRESENTATION_CONTRACT: PresentationContract =
             "top": "SOLID_MEDIUM",
             "bottom": "SOLID_MEDIUM"
           },
+          "borderColors": {
+            "top": "#5f6368",
+            "bottom": "#5f6368"
+          },
           "numberFormat": {
             "type": "TEXT"
           }
@@ -208,6 +232,10 @@ export const CANONICAL_CURRENT_WB_PRESENTATION_CONTRACT: PresentationContract =
           "borders": {
             "top": "SOLID_MEDIUM",
             "bottom": "SOLID_MEDIUM"
+          },
+          "borderColors": {
+            "top": "#5f6368",
+            "bottom": "#5f6368"
           },
           "numberFormat": {
             "type": "TEXT"
@@ -224,6 +252,10 @@ export const CANONICAL_CURRENT_WB_PRESENTATION_CONTRACT: PresentationContract =
             "top": "SOLID_MEDIUM",
             "bottom": "SOLID_MEDIUM"
           },
+          "borderColors": {
+            "top": "#5f6368",
+            "bottom": "#5f6368"
+          },
           "numberFormat": {
             "type": "TEXT"
           }
@@ -238,6 +270,10 @@ export const CANONICAL_CURRENT_WB_PRESENTATION_CONTRACT: PresentationContract =
           "borders": {
             "top": "SOLID_MEDIUM",
             "bottom": "SOLID_MEDIUM"
+          },
+          "borderColors": {
+            "top": "#5f6368",
+            "bottom": "#5f6368"
           },
           "numberFormat": {
             "type": "TEXT"
@@ -254,6 +290,10 @@ export const CANONICAL_CURRENT_WB_PRESENTATION_CONTRACT: PresentationContract =
             "top": "SOLID_MEDIUM",
             "bottom": "SOLID_MEDIUM"
           },
+          "borderColors": {
+            "top": "#5f6368",
+            "bottom": "#5f6368"
+          },
           "numberFormat": {
             "type": "TEXT"
           }
@@ -268,6 +308,10 @@ export const CANONICAL_CURRENT_WB_PRESENTATION_CONTRACT: PresentationContract =
           "borders": {
             "top": "SOLID_MEDIUM",
             "bottom": "SOLID_MEDIUM"
+          },
+          "borderColors": {
+            "top": "#5f6368",
+            "bottom": "#5f6368"
           },
           "numberFormat": {
             "type": "TEXT"
@@ -284,6 +328,10 @@ export const CANONICAL_CURRENT_WB_PRESENTATION_CONTRACT: PresentationContract =
             "top": "SOLID_MEDIUM",
             "bottom": "SOLID_MEDIUM"
           },
+          "borderColors": {
+            "top": "#5f6368",
+            "bottom": "#5f6368"
+          },
           "numberFormat": {
             "type": "TEXT"
           }
@@ -298,6 +346,10 @@ export const CANONICAL_CURRENT_WB_PRESENTATION_CONTRACT: PresentationContract =
           "borders": {
             "top": "SOLID_MEDIUM",
             "bottom": "SOLID_MEDIUM"
+          },
+          "borderColors": {
+            "top": "#5f6368",
+            "bottom": "#5f6368"
           },
           "numberFormat": {
             "type": "TEXT"
@@ -314,6 +366,10 @@ export const CANONICAL_CURRENT_WB_PRESENTATION_CONTRACT: PresentationContract =
             "top": "SOLID_MEDIUM",
             "bottom": "SOLID_MEDIUM"
           },
+          "borderColors": {
+            "top": "#5f6368",
+            "bottom": "#5f6368"
+          },
           "numberFormat": {
             "type": "TEXT"
           }
@@ -328,6 +384,10 @@ export const CANONICAL_CURRENT_WB_PRESENTATION_CONTRACT: PresentationContract =
           "borders": {
             "top": "SOLID_MEDIUM",
             "bottom": "SOLID_MEDIUM"
+          },
+          "borderColors": {
+            "top": "#5f6368",
+            "bottom": "#5f6368"
           },
           "numberFormat": {
             "type": "TEXT"
@@ -344,6 +404,10 @@ export const CANONICAL_CURRENT_WB_PRESENTATION_CONTRACT: PresentationContract =
             "top": "SOLID_MEDIUM",
             "bottom": "SOLID_MEDIUM"
           },
+          "borderColors": {
+            "top": "#5f6368",
+            "bottom": "#5f6368"
+          },
           "numberFormat": {
             "type": "TEXT"
           }
@@ -358,6 +422,10 @@ export const CANONICAL_CURRENT_WB_PRESENTATION_CONTRACT: PresentationContract =
           "borders": {
             "top": "SOLID_MEDIUM",
             "bottom": "SOLID_MEDIUM"
+          },
+          "borderColors": {
+            "top": "#5f6368",
+            "bottom": "#5f6368"
           },
           "numberFormat": {
             "type": "TEXT"
@@ -374,6 +442,10 @@ export const CANONICAL_CURRENT_WB_PRESENTATION_CONTRACT: PresentationContract =
             "top": "SOLID_MEDIUM",
             "bottom": "SOLID_MEDIUM"
           },
+          "borderColors": {
+            "top": "#5f6368",
+            "bottom": "#5f6368"
+          },
           "numberFormat": {
             "type": "TEXT"
           }
@@ -388,6 +460,10 @@ export const CANONICAL_CURRENT_WB_PRESENTATION_CONTRACT: PresentationContract =
           "borders": {
             "top": "SOLID_MEDIUM",
             "bottom": "SOLID_MEDIUM"
+          },
+          "borderColors": {
+            "top": "#5f6368",
+            "bottom": "#5f6368"
           },
           "numberFormat": {
             "type": "TEXT"
@@ -404,6 +480,11 @@ export const CANONICAL_CURRENT_WB_PRESENTATION_CONTRACT: PresentationContract =
             "top": "SOLID_MEDIUM",
             "bottom": "SOLID_MEDIUM",
             "right": "SOLID_MEDIUM"
+          },
+          "borderColors": {
+            "top": "#5f6368",
+            "bottom": "#5f6368",
+            "right": "#5f6368"
           },
           "numberFormat": {
             "type": "TEXT"
@@ -574,6 +655,11 @@ export const CANONICAL_CURRENT_WB_PRESENTATION_CONTRACT: PresentationContract =
             "bottom": "SOLID",
             "left": "SOLID",
             "right": "SOLID"
+          },
+          "borderColors": {
+            "bottom": "#9aa0a6",
+            "left": "#9aa0a6",
+            "right": "#9aa0a6"
           }
         },
         "MANUAL_EXTERNAL": {
@@ -588,6 +674,11 @@ export const CANONICAL_CURRENT_WB_PRESENTATION_CONTRACT: PresentationContract =
             "bottom": "SOLID",
             "left": "SOLID",
             "right": "SOLID"
+          },
+          "borderColors": {
+            "bottom": "#9aa0a6",
+            "left": "#9aa0a6",
+            "right": "#9aa0a6"
           }
         },
         "IMPRESSIONS": {
@@ -602,6 +693,11 @@ export const CANONICAL_CURRENT_WB_PRESENTATION_CONTRACT: PresentationContract =
             "bottom": "SOLID",
             "left": "SOLID",
             "right": "SOLID"
+          },
+          "borderColors": {
+            "bottom": "#9aa0a6",
+            "left": "#9aa0a6",
+            "right": "#9aa0a6"
           }
         },
         "CLICKS": {
@@ -616,6 +712,11 @@ export const CANONICAL_CURRENT_WB_PRESENTATION_CONTRACT: PresentationContract =
             "bottom": "SOLID",
             "left": "SOLID",
             "right": "SOLID"
+          },
+          "borderColors": {
+            "bottom": "#9aa0a6",
+            "left": "#9aa0a6",
+            "right": "#9aa0a6"
           }
         },
         "ORDERS": {
@@ -630,6 +731,11 @@ export const CANONICAL_CURRENT_WB_PRESENTATION_CONTRACT: PresentationContract =
             "bottom": "SOLID",
             "left": "SOLID",
             "right": "SOLID"
+          },
+          "borderColors": {
+            "bottom": "#9aa0a6",
+            "left": "#9aa0a6",
+            "right": "#9aa0a6"
           }
         },
         "CART": {
@@ -644,6 +750,11 @@ export const CANONICAL_CURRENT_WB_PRESENTATION_CONTRACT: PresentationContract =
             "bottom": "SOLID",
             "left": "SOLID",
             "right": "SOLID"
+          },
+          "borderColors": {
+            "bottom": "#9aa0a6",
+            "left": "#9aa0a6",
+            "right": "#9aa0a6"
           }
         },
         "CANCELLATIONS": {
@@ -658,6 +769,11 @@ export const CANONICAL_CURRENT_WB_PRESENTATION_CONTRACT: PresentationContract =
             "bottom": "SOLID",
             "left": "SOLID",
             "right": "SOLID"
+          },
+          "borderColors": {
+            "bottom": "#9aa0a6",
+            "left": "#9aa0a6",
+            "right": "#9aa0a6"
           }
         },
         "STOCK": {
@@ -672,6 +788,11 @@ export const CANONICAL_CURRENT_WB_PRESENTATION_CONTRACT: PresentationContract =
             "bottom": "SOLID",
             "left": "SOLID",
             "right": "SOLID"
+          },
+          "borderColors": {
+            "bottom": "#9aa0a6",
+            "left": "#9aa0a6",
+            "right": "#9aa0a6"
           }
         },
         "TURNOVER": {
@@ -686,6 +807,11 @@ export const CANONICAL_CURRENT_WB_PRESENTATION_CONTRACT: PresentationContract =
             "bottom": "SOLID",
             "left": "SOLID",
             "right": "SOLID"
+          },
+          "borderColors": {
+            "bottom": "#9aa0a6",
+            "left": "#9aa0a6",
+            "right": "#9aa0a6"
           }
         },
         "UNIT_PROFIT": {
@@ -700,6 +826,11 @@ export const CANONICAL_CURRENT_WB_PRESENTATION_CONTRACT: PresentationContract =
             "bottom": "SOLID",
             "left": "SOLID",
             "right": "SOLID"
+          },
+          "borderColors": {
+            "bottom": "#9aa0a6",
+            "left": "#9aa0a6",
+            "right": "#9aa0a6"
           }
         },
         "TOTAL_PROFIT": {
@@ -714,6 +845,11 @@ export const CANONICAL_CURRENT_WB_PRESENTATION_CONTRACT: PresentationContract =
             "bottom": "SOLID",
             "left": "SOLID",
             "right": "SOLID"
+          },
+          "borderColors": {
+            "bottom": "#9aa0a6",
+            "left": "#9aa0a6",
+            "right": "#9aa0a6"
           }
         },
         "INTERNAL_ADS": {
@@ -728,6 +864,11 @@ export const CANONICAL_CURRENT_WB_PRESENTATION_CONTRACT: PresentationContract =
             "bottom": "SOLID",
             "left": "SOLID",
             "right": "SOLID"
+          },
+          "borderColors": {
+            "bottom": "#9aa0a6",
+            "left": "#9aa0a6",
+            "right": "#9aa0a6"
           }
         },
         "EXTERNAL_ADS": {
@@ -742,6 +883,11 @@ export const CANONICAL_CURRENT_WB_PRESENTATION_CONTRACT: PresentationContract =
             "bottom": "SOLID",
             "left": "SOLID",
             "right": "SOLID"
+          },
+          "borderColors": {
+            "bottom": "#9aa0a6",
+            "left": "#9aa0a6",
+            "right": "#9aa0a6"
           }
         },
         "DRR": {
@@ -756,6 +902,11 @@ export const CANONICAL_CURRENT_WB_PRESENTATION_CONTRACT: PresentationContract =
             "bottom": "SOLID",
             "left": "SOLID",
             "right": "SOLID"
+          },
+          "borderColors": {
+            "bottom": "#9aa0a6",
+            "left": "#9aa0a6",
+            "right": "#9aa0a6"
           }
         },
         "SELLER_PRICE": {
@@ -770,6 +921,11 @@ export const CANONICAL_CURRENT_WB_PRESENTATION_CONTRACT: PresentationContract =
             "bottom": "SOLID",
             "left": "SOLID",
             "right": "SOLID"
+          },
+          "borderColors": {
+            "bottom": "#9aa0a6",
+            "left": "#9aa0a6",
+            "right": "#9aa0a6"
           }
         },
         "DISCOUNT": {
@@ -784,6 +940,11 @@ export const CANONICAL_CURRENT_WB_PRESENTATION_CONTRACT: PresentationContract =
             "bottom": "SOLID",
             "left": "SOLID",
             "right": "SOLID"
+          },
+          "borderColors": {
+            "bottom": "#9aa0a6",
+            "left": "#9aa0a6",
+            "right": "#9aa0a6"
           }
         },
         "BUYER_PRICE": {
@@ -798,6 +959,11 @@ export const CANONICAL_CURRENT_WB_PRESENTATION_CONTRACT: PresentationContract =
             "bottom": "SOLID",
             "left": "SOLID",
             "right": "SOLID"
+          },
+          "borderColors": {
+            "bottom": "#9aa0a6",
+            "left": "#9aa0a6",
+            "right": "#9aa0a6"
           }
         },
         "COMMISSION": {
@@ -812,6 +978,11 @@ export const CANONICAL_CURRENT_WB_PRESENTATION_CONTRACT: PresentationContract =
             "bottom": "SOLID",
             "left": "SOLID",
             "right": "SOLID"
+          },
+          "borderColors": {
+            "bottom": "#9aa0a6",
+            "left": "#9aa0a6",
+            "right": "#9aa0a6"
           }
         },
         "NET_AFTER_COMMISSION": {
@@ -826,6 +997,11 @@ export const CANONICAL_CURRENT_WB_PRESENTATION_CONTRACT: PresentationContract =
             "bottom": "SOLID",
             "left": "SOLID",
             "right": "SOLID"
+          },
+          "borderColors": {
+            "bottom": "#9aa0a6",
+            "left": "#9aa0a6",
+            "right": "#9aa0a6"
           }
         },
         "LOGISTICS": {
@@ -840,6 +1016,11 @@ export const CANONICAL_CURRENT_WB_PRESENTATION_CONTRACT: PresentationContract =
             "bottom": "SOLID",
             "left": "SOLID",
             "right": "SOLID"
+          },
+          "borderColors": {
+            "bottom": "#9aa0a6",
+            "left": "#9aa0a6",
+            "right": "#9aa0a6"
           }
         },
         "STORAGE": {
@@ -854,6 +1035,11 @@ export const CANONICAL_CURRENT_WB_PRESENTATION_CONTRACT: PresentationContract =
             "bottom": "SOLID",
             "left": "SOLID",
             "right": "SOLID"
+          },
+          "borderColors": {
+            "bottom": "#9aa0a6",
+            "left": "#9aa0a6",
+            "right": "#9aa0a6"
           }
         },
         "TAX_RESERVE": {
@@ -868,6 +1054,11 @@ export const CANONICAL_CURRENT_WB_PRESENTATION_CONTRACT: PresentationContract =
             "bottom": "SOLID",
             "left": "SOLID",
             "right": "SOLID"
+          },
+          "borderColors": {
+            "bottom": "#9aa0a6",
+            "left": "#9aa0a6",
+            "right": "#9aa0a6"
           }
         },
         "FINAL_UNIT_PROFIT": {
@@ -882,6 +1073,11 @@ export const CANONICAL_CURRENT_WB_PRESENTATION_CONTRACT: PresentationContract =
             "bottom": "SOLID",
             "left": "SOLID",
             "right": "SOLID"
+          },
+          "borderColors": {
+            "bottom": "#9aa0a6",
+            "left": "#9aa0a6",
+            "right": "#9aa0a6"
           }
         },
         "WEEKDAY": {
@@ -897,6 +1093,11 @@ export const CANONICAL_CURRENT_WB_PRESENTATION_CONTRACT: PresentationContract =
             "bottom": "SOLID",
             "left": "SOLID",
             "right": "SOLID"
+          },
+          "borderColors": {
+            "bottom": "#9aa0a6",
+            "left": "#9aa0a6",
+            "right": "#9aa0a6"
           }
         }
       }
@@ -1081,6 +1282,9 @@ export const CANONICAL_CURRENT_WB_PRESENTATION_CONTRACT: PresentationContract =
             "bottom": "SOLID",
             "left": "SOLID_MEDIUM",
             "right": "SOLID_MEDIUM"
+          },
+          "borderColors": {
+            "left": "#5f6368"
           },
           "numberFormat": {
             "type": "DATE",
@@ -1467,6 +1671,9 @@ export const CANONICAL_CURRENT_WB_PRESENTATION_CONTRACT: PresentationContract =
           "borders": {
             "right": "SOLID_MEDIUM"
           },
+          "borderColors": {
+            "right": "#5f6368"
+          },
           "numberFormat": {
             "type": "NUMBER",
             "pattern": "General"
@@ -1661,6 +1868,11 @@ export const CANONICAL_CURRENT_WB_PRESENTATION_CONTRACT: PresentationContract =
             "bottom": "SOLID_MEDIUM",
             "left": "SOLID_MEDIUM",
             "right": "SOLID_MEDIUM"
+          },
+          "borderColors": {
+            "top": "#5f6368",
+            "bottom": "#5f6368",
+            "left": "#5f6368"
           }
         },
         "MANUAL_EXTERNAL": {
@@ -1675,6 +1887,10 @@ export const CANONICAL_CURRENT_WB_PRESENTATION_CONTRACT: PresentationContract =
             "bottom": "SOLID_MEDIUM",
             "left": "SOLID_MEDIUM",
             "right": "SOLID_MEDIUM"
+          },
+          "borderColors": {
+            "top": "#5f6368",
+            "bottom": "#5f6368"
           },
           "numberFormat": {
             "type": "NUMBER",
@@ -1694,6 +1910,10 @@ export const CANONICAL_CURRENT_WB_PRESENTATION_CONTRACT: PresentationContract =
             "left": "SOLID_MEDIUM",
             "right": "SOLID_MEDIUM"
           },
+          "borderColors": {
+            "top": "#5f6368",
+            "bottom": "#5f6368"
+          },
           "numberFormat": {
             "type": "NUMBER",
             "pattern": "#,##0"
@@ -1711,6 +1931,10 @@ export const CANONICAL_CURRENT_WB_PRESENTATION_CONTRACT: PresentationContract =
             "bottom": "SOLID_MEDIUM",
             "left": "SOLID_MEDIUM",
             "right": "SOLID_MEDIUM"
+          },
+          "borderColors": {
+            "top": "#5f6368",
+            "bottom": "#5f6368"
           },
           "numberFormat": {
             "type": "NUMBER",
@@ -1730,6 +1954,10 @@ export const CANONICAL_CURRENT_WB_PRESENTATION_CONTRACT: PresentationContract =
             "left": "SOLID_MEDIUM",
             "right": "SOLID_MEDIUM"
           },
+          "borderColors": {
+            "top": "#5f6368",
+            "bottom": "#5f6368"
+          },
           "numberFormat": {
             "type": "NUMBER",
             "pattern": "#,##0"
@@ -1747,6 +1975,10 @@ export const CANONICAL_CURRENT_WB_PRESENTATION_CONTRACT: PresentationContract =
             "bottom": "SOLID_MEDIUM",
             "left": "SOLID_MEDIUM",
             "right": "SOLID_MEDIUM"
+          },
+          "borderColors": {
+            "top": "#5f6368",
+            "bottom": "#5f6368"
           },
           "numberFormat": {
             "type": "NUMBER",
@@ -1766,6 +1998,10 @@ export const CANONICAL_CURRENT_WB_PRESENTATION_CONTRACT: PresentationContract =
             "left": "SOLID_MEDIUM",
             "right": "SOLID_MEDIUM"
           },
+          "borderColors": {
+            "top": "#5f6368",
+            "bottom": "#5f6368"
+          },
           "numberFormat": {
             "type": "NUMBER",
             "pattern": "#,##0"
@@ -1783,6 +2019,10 @@ export const CANONICAL_CURRENT_WB_PRESENTATION_CONTRACT: PresentationContract =
             "bottom": "SOLID_MEDIUM",
             "left": "SOLID_MEDIUM",
             "right": "SOLID_MEDIUM"
+          },
+          "borderColors": {
+            "top": "#5f6368",
+            "bottom": "#5f6368"
           },
           "numberFormat": {
             "type": "NUMBER",
@@ -1802,6 +2042,10 @@ export const CANONICAL_CURRENT_WB_PRESENTATION_CONTRACT: PresentationContract =
             "left": "SOLID_MEDIUM",
             "right": "SOLID_MEDIUM"
           },
+          "borderColors": {
+            "top": "#5f6368",
+            "bottom": "#5f6368"
+          },
           "numberFormat": {
             "type": "NUMBER",
             "pattern": "#,##0"
@@ -1819,6 +2063,10 @@ export const CANONICAL_CURRENT_WB_PRESENTATION_CONTRACT: PresentationContract =
             "bottom": "SOLID_MEDIUM",
             "left": "SOLID_MEDIUM",
             "right": "SOLID_MEDIUM"
+          },
+          "borderColors": {
+            "top": "#5f6368",
+            "bottom": "#5f6368"
           },
           "numberFormat": {
             "type": "NUMBER",
@@ -1838,6 +2086,10 @@ export const CANONICAL_CURRENT_WB_PRESENTATION_CONTRACT: PresentationContract =
             "left": "SOLID_MEDIUM",
             "right": "SOLID_MEDIUM"
           },
+          "borderColors": {
+            "top": "#5f6368",
+            "bottom": "#5f6368"
+          },
           "numberFormat": {
             "type": "NUMBER",
             "pattern": "#,##0\\ \"₽\""
@@ -1855,6 +2107,10 @@ export const CANONICAL_CURRENT_WB_PRESENTATION_CONTRACT: PresentationContract =
             "bottom": "SOLID_MEDIUM",
             "left": "SOLID_MEDIUM",
             "right": "SOLID_MEDIUM"
+          },
+          "borderColors": {
+            "top": "#5f6368",
+            "bottom": "#5f6368"
           },
           "numberFormat": {
             "type": "NUMBER",
@@ -1874,6 +2130,10 @@ export const CANONICAL_CURRENT_WB_PRESENTATION_CONTRACT: PresentationContract =
             "left": "SOLID_MEDIUM",
             "right": "SOLID_MEDIUM"
           },
+          "borderColors": {
+            "top": "#5f6368",
+            "bottom": "#5f6368"
+          },
           "numberFormat": {
             "type": "NUMBER",
             "pattern": "#,##0\\ \"₽\""
@@ -1892,6 +2152,10 @@ export const CANONICAL_CURRENT_WB_PRESENTATION_CONTRACT: PresentationContract =
             "left": "SOLID_MEDIUM",
             "right": "SOLID_MEDIUM"
           },
+          "borderColors": {
+            "top": "#5f6368",
+            "bottom": "#5f6368"
+          },
           "numberFormat": {
             "type": "PERCENT",
             "pattern": "0.0%"
@@ -1907,6 +2171,10 @@ export const CANONICAL_CURRENT_WB_PRESENTATION_CONTRACT: PresentationContract =
           "borders": {
             "top": "SOLID_MEDIUM",
             "bottom": "SOLID_MEDIUM"
+          },
+          "borderColors": {
+            "top": "#5f6368",
+            "bottom": "#5f6368"
           },
           "numberFormat": {
             "type": "NUMBER",
@@ -1924,6 +2192,10 @@ export const CANONICAL_CURRENT_WB_PRESENTATION_CONTRACT: PresentationContract =
             "top": "SOLID_MEDIUM",
             "bottom": "SOLID_MEDIUM"
           },
+          "borderColors": {
+            "top": "#5f6368",
+            "bottom": "#5f6368"
+          },
           "numberFormat": {
             "type": "NUMBER",
             "pattern": "#,##0"
@@ -1939,6 +2211,10 @@ export const CANONICAL_CURRENT_WB_PRESENTATION_CONTRACT: PresentationContract =
           "borders": {
             "top": "SOLID_MEDIUM",
             "bottom": "SOLID_MEDIUM"
+          },
+          "borderColors": {
+            "top": "#5f6368",
+            "bottom": "#5f6368"
           },
           "numberFormat": {
             "type": "NUMBER",
@@ -1956,6 +2232,10 @@ export const CANONICAL_CURRENT_WB_PRESENTATION_CONTRACT: PresentationContract =
             "top": "SOLID_MEDIUM",
             "bottom": "SOLID_MEDIUM"
           },
+          "borderColors": {
+            "top": "#5f6368",
+            "bottom": "#5f6368"
+          },
           "numberFormat": {
             "type": "PERCENT",
             "pattern": "0.0%"
@@ -1972,6 +2252,10 @@ export const CANONICAL_CURRENT_WB_PRESENTATION_CONTRACT: PresentationContract =
             "top": "SOLID_MEDIUM",
             "bottom": "SOLID_MEDIUM",
             "right": "SOLID_MEDIUM"
+          },
+          "borderColors": {
+            "top": "#5f6368",
+            "bottom": "#5f6368"
           },
           "numberFormat": {
             "type": "NUMBER",
@@ -1991,6 +2275,10 @@ export const CANONICAL_CURRENT_WB_PRESENTATION_CONTRACT: PresentationContract =
             "left": "SOLID_MEDIUM",
             "right": "SOLID"
           },
+          "borderColors": {
+            "top": "#5f6368",
+            "bottom": "#5f6368"
+          },
           "numberFormat": {
             "type": "NUMBER",
             "pattern": "#,##0\\ \"₽\""
@@ -2009,6 +2297,10 @@ export const CANONICAL_CURRENT_WB_PRESENTATION_CONTRACT: PresentationContract =
             "left": "SOLID",
             "right": "SOLID_MEDIUM"
           },
+          "borderColors": {
+            "top": "#5f6368",
+            "bottom": "#5f6368"
+          },
           "numberFormat": {
             "type": "NUMBER",
             "pattern": "#,##0\\ \"₽\""
@@ -2024,6 +2316,10 @@ export const CANONICAL_CURRENT_WB_PRESENTATION_CONTRACT: PresentationContract =
           "borders": {
             "top": "SOLID_MEDIUM",
             "bottom": "SOLID_MEDIUM"
+          },
+          "borderColors": {
+            "top": "#5f6368",
+            "bottom": "#5f6368"
           },
           "numberFormat": {
             "type": "NUMBER",
@@ -2041,6 +2337,10 @@ export const CANONICAL_CURRENT_WB_PRESENTATION_CONTRACT: PresentationContract =
             "top": "SOLID_MEDIUM",
             "bottom": "SOLID_MEDIUM"
           },
+          "borderColors": {
+            "top": "#5f6368",
+            "bottom": "#5f6368"
+          },
           "numberFormat": {
             "type": "NUMBER",
             "pattern": "#,##0\\ \"₽\""
@@ -2057,6 +2357,11 @@ export const CANONICAL_CURRENT_WB_PRESENTATION_CONTRACT: PresentationContract =
             "top": "SOLID_MEDIUM",
             "bottom": "SOLID_MEDIUM",
             "right": "SOLID_MEDIUM"
+          },
+          "borderColors": {
+            "top": "#5f6368",
+            "bottom": "#5f6368",
+            "right": "#5f6368"
           }
         }
       }
