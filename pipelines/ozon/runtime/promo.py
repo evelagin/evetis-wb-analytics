@@ -28,8 +28,8 @@ import os
 import urllib.request
 
 import common as C
-from common import (DATASET, PROJECT, append_rows, bq, h, log, now_msk,
-                    promo_load_job_id, promo_observation_id, promo_slot, secret)
+from common import (DATASET, PROJECT, REF_DATASET, append_rows, bq, h, log, now_msk,
+                    promo_load_job_id, promo_observation_id, promo_slot, seller_headers)
 
 # ── Разрешённые пути. Закрытый список. ──────────────────────────────────────
 P_ACTIONS = "/v1/actions"
@@ -88,11 +88,9 @@ def promo_call(path, body=None):
     if path not in ALLOWED_PATHS:
         raise PromoPathDenied(f"путь {path} не входит в разрешённый список наблюдателя акций")
     data = json.dumps(body).encode() if body is not None else None
+    # Учётные данные — по ИМЕНАМ секретов из конфигурации процесса (Tenancy T2).
     req = urllib.request.Request(
-        C.SELLER + path, data=data,
-        headers={"Client-Id": secret("EVETIS_OZON_CLIENT_ID"),
-                 "Api-Key": secret("EVETIS_OZON_API_KEY"),
-                 "Content-Type": "application/json"},
+        C.SELLER + path, data=data, headers=seller_headers(),
         method="POST" if data is not None else "GET")
     return C._request(req)
 
@@ -137,10 +135,11 @@ def _meta(endpoint, obs, slot, env, run_id, ts, *hash_parts):
 def _sku_maps():
     """product_id → internal_sku и offer_id → internal_sku из справочника каналов.
 
-    Изоляция маркетплейсов соблюдена: читается только evetis_ref, ничего из wb_*.
+    Изоляция маркетплейсов соблюдена: читается только справочный датасет
+    (BQ_REF_DATASET, у EVETIS — evetis_ref), ничего из wb_*.
     """
     q = (f"SELECT marketplace_product_id, offer_id, internal_sku "
-         f"FROM `{PROJECT}.evetis_ref.REF_SKU_CHANNEL_MAP` "
+         f"FROM `{PROJECT}.{REF_DATASET}.REF_SKU_CHANNEL_MAP` "
          f"WHERE marketplace='OZON' AND is_current")
     by_pid, by_offer = {}, {}
     for r in bq().query(q, location=C.LOCATION).result():

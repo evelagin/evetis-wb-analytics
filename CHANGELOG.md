@@ -21,6 +21,34 @@
 - Проверки: набор `inventory_context` (36 блоков), регрессия на фикстурах 43 оператора
   (45 сценариев спецификации), офлайн-тесты 18. Контракт:
   `docs/promotions/PR_PROMO_4_INVENTORY_SELL_THROUGH_CONTEXT_2026-09-24.md`.
+## 2026-09-24 — Tenancy T1 + T2: контракт арендатора и переносимый Ozon runtime (ADR-08)
+
+Изменение кода и контракта конфигурации. **Не развёрнуто:** изменённый Ozon runtime в
+production не выкатывался, образ job'ов `ozon-*` прежний. Production, Terraform, BigQuery,
+расписания и канонический SQL не менялись. Колонки и таблицы не менялись. Поведение EVETIS при текущем окружении job'ов прежнее — кроме
+намеренного fail-closed по `GCP_PROJECT_ID`, который все job'ы `ozon-*` уже задают (проверено
+2026-09-24).
+
+- **ADR-08:** выделенный GCP-проект на внешнего клиента, EVETIS — унаследованный арендатор;
+  `TENANCY_DESIGN.md` приведён в соответствие.
+- **Реестр арендаторов:** `tenants/_schema/tenant.schema.json` (`tenant.v1`, только ссылки на
+  секреты), `tenants/evetis/tenant.json` (только описание), `tenants/client_001/tenant.json`
+  (синтетика). `tools/tenancy/` — единственный вывод имён, валидация, поиск учётных данных.
+  Ворота CI `ci / tenancy`.
+- **Ozon runtime, новые переменные окружения:** `OZON_SECRET_SELLER_CLIENT_ID`,
+  `OZON_SECRET_SELLER_API_KEY`, `OZON_SECRET_PERF_CLIENT_ID`, `OZON_SECRET_PERF_CLIENT_SECRET`
+  (по умолчанию — прежние имена `EVETIS_OZON_*`), `BQ_REF_DATASET` (по умолчанию `evetis_ref`),
+  `STRICT_PAGE_CAPS` (по умолчанию 0 — прежнее поведение).
+- **Ozon runtime и bootstrap:** `GCP_PROJECT_ID` обязателен; неявный проект EVETIS по умолчанию
+  удалён.
+- **Журнал:** значение загруженного секрета не попадает ни в `log()`, ни в
+  `OZON_INGESTION_RUNS.error_message`. Проверка идёт по полному тексту до обрезки до 400
+  символов.
+- **Отложено в бэклог** (`docs/architecture/TECH_DEBT.md`):
+  - P2-5 — границы суток и окна Performance длиннее 62 суток;
+  - P2-6 — молчаливая потеря CSV-партии из одной кампании;
+  - P2-7 — пути арендаторов в доверенной базе AE;
+  - P3-4 — схема продаж Client #1.
 
 ## 2026-09-24 — GATE 10: автономный жизненный цикл Юнитки (WB + Ozon)
 

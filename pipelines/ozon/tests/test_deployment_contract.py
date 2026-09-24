@@ -106,6 +106,43 @@ def test_declared_cadence_matches_the_job_it_runs_in():
             )
 
 
+def _ozon_common_env() -> str:
+    tf = OZON_TF.read_text(encoding="utf-8")
+    block = re.search(r"ozon_common_env\s*=\s*\{(.*?)\n  \}", tf, re.S)
+    assert block, "local.ozon_common_env не найден в ozon_ingestion.tf"
+    return block.group(1)
+
+
+def test_every_ozon_job_sets_gcp_project_id_explicitly():
+    """Tenancy T2: common.py больше не подставляет проект EVETIS по умолчанию.
+
+    Значит, каждый job обязан задавать GCP_PROJECT_ID сам. Доказательство —
+    три звена: проект есть в общем окружении, общее окружение подмешивается в
+    env каждого job'а, и env не исключён из управления Terraform.
+    Живая проверка 2026-09-24 (gcloud run jobs describe): у всех ozon-* задан.
+    """
+    assert re.search(r"GCP_PROJECT_ID\s*=\s*var\.project_id", _ozon_common_env())
+    tf = OZON_TF.read_text(encoding="utf-8")
+    assert re.search(r"for_each\s*=\s*merge\(local\.ozon_common_env,", tf), \
+        "env job'ов обязан включать ozon_common_env"
+    lifecycle = re.search(r'resource "google_cloud_run_v2_job" "ozon_runtime".*?'
+                          r"ignore_changes\s*=\s*\[(.*?)\]", tf, re.S)
+    assert lifecycle, "lifecycle.ignore_changes job'ов не найден"
+    assert "env" not in lifecycle.group(1), \
+        "env под ignore_changes: Terraform не доказывал бы, что проект задан в живом job'е"
+
+
+def test_evetis_jobs_rely_on_legacy_secret_and_ref_defaults():
+    """EVETIS не задаёт имён секретов и справочника: работают значения по умолчанию
+    из common.py, равные прежним литералам. Появление этих переменных в
+    Terraform EVETIS — это изменение production, которое требует отдельного решения."""
+    tf = OZON_TF.read_text(encoding="utf-8")
+    for var in ("OZON_SECRET_SELLER_CLIENT_ID", "OZON_SECRET_SELLER_API_KEY",
+                "OZON_SECRET_PERF_CLIENT_ID", "OZON_SECRET_PERF_CLIENT_SECRET",
+                "BQ_REF_DATASET", "STRICT_PAGE_CAPS"):
+        assert var not in tf, f"{var} появилась в Terraform EVETIS"
+
+
 def test_runtime_image_is_pinned_by_digest():
     """Тег mutable — не идентификатор production.
 
