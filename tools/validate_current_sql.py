@@ -52,6 +52,9 @@ HASH_CONTRACT = "canonical_hash_v1 (see sql/current/README.md)"
 # evetis_mart (SCALE 1) is the marketplace-neutral layer ABOVE both domains: it may read the two
 # marts and evetis_ref, never wb_raw / ozon_raw — it normalises authoritative marketplace facts and
 # must not recompute marketplace economics from RAW. Neither marketplace mart may read it back.
+# PR-PROMO-4 (2026-09-24): evetis_mart may also read evetis_ops — the other SHARED dataset
+# (tools/architecture_baseline.py DOMAIN), the home of owner conventions (OPS_CONFIG, e.g. the
+# C1 expiry sell-by margin). Shared reads shared; no marketplace RAW is opened by this.
 # wb_mart (PHASE 2) mirrors ozon_mart on its own side of the isolation line: its own raw layer,
 # its own ops journals (freshness / integrity / engine runs are legitimate mart inputs) and the
 # shared reference. It may NOT read ozon_* — that is the isolation invariant, not a convenience —
@@ -61,7 +64,7 @@ HASH_CONTRACT = "canonical_hash_v1 (see sql/current/README.md)"
 # See docs/architecture/CANONICAL_COVERAGE.md.
 EXTERNAL_DATASET_POLICY = {
     "ozon_mart": frozenset({"ozon_raw", "evetis_ref"}),
-    "evetis_mart": frozenset({"wb_mart", "ozon_mart", "evetis_ref"}),
+    "evetis_mart": frozenset({"wb_mart", "ozon_mart", "evetis_ref", "evetis_ops"}),
     "wb_mart": frozenset({"wb_raw", "wb_ops", "evetis_ref"}),
 }
 

@@ -1,5 +1,27 @@
 # CHANGELOG.md
 
+## 2026-09-24 — PR-PROMO-4: запасы и распродажа (контекст для акций)
+
+Новые объекты; ни один объект Control Tower, evetis_ops, Юнитки, PR-PROMO-1/2/3 не меняется
+(тела 20 объектов CT/evetis_ops закреплены проверкой I33). Второй системы запасов нет.
+
+- **VIEW `evetis_mart`:** `V_INVENTORY_POSITION_HISTORY` (понятия запаса поверх
+  `evetis_ref.CT_INVENTORY_SNAPSHOT_DAILY`), `V_SKU_SELL_THROUGH_CURRENT` (скорость 7/14/30/60/90,
+  качество окна, покрытие, срок годности, буфер C1), `V_SKU_INVENTORY_TARGET_CURRENT` (требуемая
+  распродажа к цели с происхождением), `V_SALES_PLAN_MONTHLY_CURRENT` (план CT и исполнение),
+  `V_SKU_INVENTORY_TRAJECTORY_MONTHLY_CURRENT`, `V_BUNDLE_ASSEMBLY_CAPACITY_CURRENT`,
+  `V_PROMO_INVENTORY_CONTEXT_CURRENT` (сценарии PR-PROMO-3 + контекст запаса, экономика дословно).
+- **Таблицы `evetis_ref` (новые, пустые, пишет только владелец):** `REF_SALES_PLAN_APPROVAL`
+  (утверждение версии плана CT), `REF_SKU_INVENTORY_TARGET` (цель остатка на дату).
+- **Политика изоляции:** `evetis_mart` может читать `evetis_ops` (shared → shared; нужен
+  `OPS_CONFIG.c1_expiry_margin_days` — буфер срока, решение владельца 12.09). RAW закрыт по-прежнему.
+- **PR-PROMO-2 V24:** область сужена — `V_PROMO_INVENTORY_*` проверяется своим набором (I30).
+- Запас устаревший по контракту CT (срез ФФ 09.09, SLA 7 дней) → требуемые скорости не считаются
+  (`INVENTORY_STALE`); план CT не утверждён записью владельца → метрики плана пусты.
+- Проверки: набор `inventory_context` (36 блоков), регрессия на фикстурах 43 оператора
+  (45 сценариев спецификации), офлайн-тесты 18. Контракт:
+  `docs/promotions/PR_PROMO_4_INVENTORY_SELL_THROUGH_CONTEXT_2026-09-24.md`.
+
 ## 2026-09-24 — GATE 10: автономный жизненный цикл Юнитки (WB + Ozon)
 
 Экономика листов не менялась (регрессия `main` ↔ ветка: WB 138 суточных прогонов и Ozon план
