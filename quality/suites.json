@@ -714,8 +714,7 @@
       "cadence": "перед слиянием изменения в области scope, после развёртывания и после каждого слота снимка базиса",
       "source_contract": "docs/promotions/PR_PROMO_3_ECONOMICS_INTEGRATION_2026-09-24.md",
       "business_rule_reference": "docs/promotions/PROMOTION_PHASE_0_5_DECISION_GATE_2026-09-22.md; решение владельца 2026-09-24 (канон — Forward economics)",
-      "provenance": "PR-PROMO-3; допуск сверки 0,00501 ₽ — копеечное округление канона, прочие пороги нулевые. Регрессия — tools/promo_economics_render.py run fixtures. Мост к Юнитке — sql/promotions/pr_promo3_unitka_bridge.sql (замер, не ворота)",
-      "pending_deploy_note": "До развёртывания исполнять через tools/promo_economics_render.py run predeploy (виртуальный снимок): E20 до развёртывания FAIL по построению."
+      "provenance": "PR-PROMO-3; допуск сверки 0,00501 ₽ — копеечное округление канона, прочие пороги нулевые. Регрессия — tools/promo_economics_render.py run fixtures. Мост к Юнитке — sql/promotions/pr_promo3_unitka_bridge.sql (замер, не ворота)"
     }
   ],
   "backlog": {
