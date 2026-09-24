@@ -1,0 +1,53 @@
+{
+  "schema_version": 1,
+  "tenant_id": "evetis",
+  "legal_name": "EVETIS (унаследованный арендатор; реквизиты юрлица в реестре не хранятся)",
+  "display_name": "EVETIS",
+  "status": "ACTIVE",
+  "config_authority": "LEGACY_EXISTING_CONFIG",
+  "data_boundary": {
+    "kind": "legacy_evetis_project",
+    "gcp_project_id": "project-fa311fc0-4d87-4781-986",
+    "bq_location": "EU",
+    "datasets": {
+      "ozon_raw": "ozon_raw",
+      "ref": "evetis_ref"
+    }
+  },
+  "marketplaces": {
+    "ozon": {
+      "enabled": true,
+      "secret_refs": {
+        "seller_client_id": "EVETIS_OZON_CLIENT_ID",
+        "seller_api_key": "EVETIS_OZON_API_KEY",
+        "performance_client_id": "EVETIS_OZON_PERFORMANCE_CLIENT_ID",
+        "performance_client_secret": "EVETIS_OZON_PERFORMANCE_CLIENT_SECRET"
+      }
+    },
+    "wb": {
+      "enabled": true
+    }
+  },
+  "timezone": "Europe/Moscow",
+  "currency": "RUB",
+  "product_master_source": "LEGACY_EVETIS_REF",
+  "cogs_policy": "LEGACY_EVETIS",
+  "tax_policy": "LEGACY_EVETIS",
+  "modules": {
+    "ozon_core": true,
+    "ozon_ads": true,
+    "ozon_promo": true,
+    "forward_economics": true,
+    "unitka": true,
+    "control_tower": true,
+    "wb": true
+  },
+  "scheduler_state": "NOT_MANAGED",
+  "bi_access": {
+    "mode": "LEGACY_EVETIS_METABASE"
+  },
+  "lifecycle": {
+    "created_at": "2026-09-24T00:00:00+03:00"
+  },
+  "notes": "ТОЛЬКО ОПИСАНИЕ (ADR-08). Авторитет конфигурации EVETIS — infra/terraform/** и живые ресурсы; этот файл их не меняет и не заменяет. Значения зафиксированы в tools/tenancy/naming.py (LEGACY_EVETIS) и сверяются тестами с Terraform и pipelines/ozon/runtime/common.py. created_at — дата появления дескриптора, а не начала работы EVETIS."
+}

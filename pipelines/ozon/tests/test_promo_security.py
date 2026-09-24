@@ -93,7 +93,7 @@ def test_promo_call_refuses_denied_path(path, monkeypatch):
         raise AssertionError("запрос ушёл в сеть, хотя путь запрещён")
 
     monkeypatch.setattr(M.C, "_request", _boom)
-    monkeypatch.setattr(M, "secret", lambda n: "fake")
+    monkeypatch.setattr(M.C, "secret", lambda n: "fake")
     with pytest.raises(M.PromoPathDenied):
         M.promo_call(path, {})
 
@@ -109,7 +109,7 @@ def test_promo_call_allows_listed_path(monkeypatch):
         return 200, {"result": []}
 
     monkeypatch.setattr(M.C, "_request", _fake_request)
-    monkeypatch.setattr(M, "secret", lambda n: "fake")
+    monkeypatch.setattr(M.C, "secret", lambda n: "fake")
     code, _ = M.promo_call("/v1/actions")
     assert code == 200
     assert captured["method"] == "GET"
@@ -117,7 +117,13 @@ def test_promo_call_allows_listed_path(monkeypatch):
 
 
 def test_no_secret_value_in_source(src):
-    """Секреты читаются по ИМЕНИ из Secret Manager и не хардкодятся."""
-    assert "EVETIS_OZON_API_KEY" in src          # имя секрета — можно
+    """Секреты читаются по ИМЕНИ из Secret Manager и не хардкодятся.
+
+    Tenancy T2: имена секретов promo не знает вовсе — заголовки собирает
+    common.seller_headers() по конфигурации процесса. Литерал имени секрета
+    EVETIS здесь означал бы, что наблюдатель привязан к одному продавцу.
+    """
+    assert "seller_headers()" in src             # единственный путь к учётным данным
+    assert "EVETIS_OZON_" not in src             # имя секрета конкретного продавца — нельзя
     for marker in ("Api-Key: ", "client_secret=", "-----BEGIN"):
         assert marker not in src                 # значение — нельзя

@@ -1,0 +1,141 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "tenant.v1",
+  "title": "EVETIS Marketplace Analytics — контракт арендатора v1",
+  "$comment": "ADR-08 (docs/architecture/ADR-08_TENANT_ISOLATION.md). Схема допускает ТОЛЬКО ссылки на секреты (ID секретов Secret Manager), поля для значений секретов в ней нет ни одного: additionalProperties=false на каждом уровне. Валидатор — tools/autonomy/schema.py (подмножество draft 2020-12, неизвестное ключевое слово = ошибка); инварианты сверх схемы — tools/tenancy/validation.py.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version", "tenant_id", "legal_name", "display_name", "status", "config_authority",
+    "data_boundary", "marketplaces", "timezone", "currency", "product_master_source",
+    "cogs_policy", "tax_policy", "modules", "scheduler_state", "bi_access", "lifecycle"
+  ],
+  "properties": {
+    "schema_version": {"const": 1},
+    "tenant_id": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9_]{2,30}$",
+      "description": "Стабильный идентификатор арендатора. Совпадает с именем каталога tenants/<tenant_id>/. Дополнительные ограничения (без '__' и без '_' в конце, зарезервированные ID) — tools/tenancy/naming.py."
+    },
+    "legal_name": {"type": "string", "minLength": 1, "maxLength": 200},
+    "display_name": {"type": "string", "minLength": 1, "maxLength": 100},
+    "status": {
+      "enum": ["NEW", "CREDENTIALS_PENDING", "VALIDATING", "PROVISIONING", "BACKFILLING",
+               "RECONCILING", "READY", "ACTIVE", "SUSPENDED", "OFFBOARDING", "OFFBOARDED", "FAILED"]
+    },
+    "config_authority": {
+      "enum": ["TENANT_REGISTRY", "LEGACY_EXISTING_CONFIG"],
+      "description": "TENANT_REGISTRY — этот файл и есть желаемое состояние арендатора. LEGACY_EXISTING_CONFIG — файл только описывает уже существующую конфигурацию (EVETIS); авторитетом остаются Terraform и живые ресурсы."
+    },
+    "data_boundary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "gcp_project_id", "bq_location", "datasets"],
+      "properties": {
+        "kind": {"enum": ["dedicated_project", "legacy_evetis_project"]},
+        "gcp_project_id": {"type": "string", "pattern": "^[a-z][a-z0-9-]{4,28}[a-z0-9]$"},
+        "bq_location": {"enum": ["EU"]},
+        "datasets": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["ozon_raw", "ref"],
+          "properties": {
+            "ozon_raw": {"type": "string", "pattern": "^[A-Za-z_][A-Za-z0-9_]{0,1023}$"},
+            "ref": {"type": "string", "pattern": "^[A-Za-z_][A-Za-z0-9_]{0,1023}$"}
+          }
+        }
+      }
+    },
+    "marketplaces": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["ozon", "wb"],
+      "properties": {
+        "ozon": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["enabled"],
+          "properties": {
+            "enabled": {"type": "boolean"},
+            "fulfillment_schemes": {
+              "type": "array",
+              "uniqueItems": true,
+              "items": {"enum": ["FBO", "FBS", "RFBS"]},
+              "description": "Схемы продаж продавца. Runtime T2 загружает заказы только FBO (решение D3 по FBS/rFBS не принято) — валидатор отвергает FBS/RFBS."
+            },
+            "secret_refs": {
+              "type": "object",
+              "additionalProperties": false,
+              "description": "ИМЕНА секретов Secret Manager в проекте арендатора. Значения секретов в Git не хранятся никогда.",
+              "properties": {
+                "seller_client_id": {"type": "string", "pattern": "^[A-Za-z0-9_-]{1,255}$"},
+                "seller_api_key": {"type": "string", "pattern": "^[A-Za-z0-9_-]{1,255}$"},
+                "performance_client_id": {"type": "string", "pattern": "^[A-Za-z0-9_-]{1,255}$"},
+                "performance_client_secret": {"type": "string", "pattern": "^[A-Za-z0-9_-]{1,255}$"}
+              }
+            },
+            "entities": {
+              "type": "array",
+              "uniqueItems": true,
+              "items": {"type": "string", "pattern": "^[a-z][a-z0-9_]{1,40}$"},
+              "description": "Сущности Ozon runtime (REGISTRY в pipelines/ozon/runtime/entities.py). Для legacy-арендатора не задаются: состав job'ов описан в Terraform."
+            },
+            "backfill_start_date": {"type": "string", "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$"}
+          }
+        },
+        "wb": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["enabled"],
+          "properties": {"enabled": {"type": "boolean"}}
+        }
+      }
+    },
+    "timezone": {"const": "Europe/Moscow"},
+    "currency": {"const": "RUB"},
+    "product_master_source": {"enum": ["LEGACY_EVETIS_REF", "BOOTSTRAP_FROM_CATALOG", "OWNER_UPLOAD"]},
+    "cogs_policy": {"enum": ["LEGACY_EVETIS", "NONE_PRE_COGS", "EFFECTIVE_DATED_MANUAL"]},
+    "tax_policy": {"enum": ["LEGACY_EVETIS", "NOT_MODELLED"]},
+    "modules": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["ozon_core", "ozon_ads", "ozon_promo", "forward_economics", "unitka",
+                   "control_tower", "wb"],
+      "properties": {
+        "ozon_core": {"type": "boolean"},
+        "ozon_ads": {"type": "boolean"},
+        "ozon_promo": {"type": "boolean"},
+        "forward_economics": {"type": "boolean"},
+        "unitka": {"type": "boolean"},
+        "control_tower": {"type": "boolean"},
+        "wb": {"type": "boolean"}
+      }
+    },
+    "scheduler_state": {"enum": ["NOT_MANAGED", "PAUSED", "ENABLED"]},
+    "bi_access": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["mode"],
+      "properties": {
+        "mode": {"enum": ["NONE", "LEGACY_EVETIS_METABASE", "ANALYTICS_SHARE_VIEWER"]},
+        "principals": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {"type": "string", "pattern": "^(user|group):[^@\\s]+@[^@\\s]+\\.[^@\\s]+$"}
+        }
+      }
+    },
+    "lifecycle": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["created_at"],
+      "properties": {
+        "created_at": {"type": "string", "format": "date-time"},
+        "status_changed_at": {"type": "string", "format": "date-time"},
+        "suspended_at": {"type": "string", "format": "date-time"},
+        "offboarded_at": {"type": "string", "format": "date-time"}
+      }
+    },
+    "notes": {"type": "string", "maxLength": 2000}
+  }
+}

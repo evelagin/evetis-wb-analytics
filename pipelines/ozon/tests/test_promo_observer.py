@@ -110,7 +110,8 @@ def promo_mod(monkeypatch):
     import promo as M
 
     monkeypatch.setattr(M, "log", lambda **_: None)
-    monkeypatch.setattr(M, "secret", lambda name: f"fake-{name}")
+    # Учётные данные promo берёт через common.seller_headers → common.secret (T2).
+    monkeypatch.setattr(M.C, "secret", lambda name: f"fake-{name}")
     monkeypatch.setattr(M, "_sku_maps", lambda: ({1563818723: "EVT-FS-MOIST-30"},
                                                  {"305101272": "EVT-FS-MOIST-30"}))
     return M

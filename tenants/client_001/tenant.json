@@ -1,0 +1,59 @@
+{
+  "schema_version": 1,
+  "tenant_id": "client_001",
+  "legal_name": "SYNTHETIC — не реальная компания",
+  "display_name": "Синтетический арендатор 001",
+  "status": "NEW",
+  "config_authority": "TENANT_REGISTRY",
+  "data_boundary": {
+    "kind": "dedicated_project",
+    "gcp_project_id": "mpa-t-client-001",
+    "bq_location": "EU",
+    "datasets": {
+      "ozon_raw": "ozon_raw",
+      "ref": "ref"
+    }
+  },
+  "marketplaces": {
+    "ozon": {
+      "enabled": true,
+      "fulfillment_schemes": ["FBO"],
+      "secret_refs": {
+        "seller_client_id": "ozon-seller-client-id",
+        "seller_api_key": "ozon-seller-api-key",
+        "performance_client_id": "ozon-perf-client-id",
+        "performance_client_secret": "ozon-perf-client-secret"
+      },
+      "entities": [
+        "catalog", "prices", "seller_info", "stocks", "fbo_postings", "finance_accrual",
+        "ads_campaigns", "ads_expense_daily", "ads_sku_daily", "clusters", "supplies"
+      ],
+      "backfill_start_date": "2026-01-01"
+    },
+    "wb": {
+      "enabled": false
+    }
+  },
+  "timezone": "Europe/Moscow",
+  "currency": "RUB",
+  "product_master_source": "BOOTSTRAP_FROM_CATALOG",
+  "cogs_policy": "NONE_PRE_COGS",
+  "tax_policy": "NOT_MODELLED",
+  "modules": {
+    "ozon_core": true,
+    "ozon_ads": true,
+    "ozon_promo": false,
+    "forward_economics": false,
+    "unitka": false,
+    "control_tower": false,
+    "wb": false
+  },
+  "scheduler_state": "PAUSED",
+  "bi_access": {
+    "mode": "NONE"
+  },
+  "lifecycle": {
+    "created_at": "2026-09-24T00:00:00+03:00"
+  },
+  "notes": "СИНТЕТИКА (Tenancy T1/T2). Доказывает только переносимость конфигурации: проект mpa-t-client-001 не создан, секретов нет, API не вызывается, реальных данных будущего клиента здесь нет. fulfillment_schemes=FBO — допущение синтетики, а не решение D3."
+}

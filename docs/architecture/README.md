@@ -19,6 +19,7 @@
 | [`DEFINITION_OF_DONE.md`](DEFINITION_OF_DONE.md) | Когда задача действительно закончена | человек |
 | [`AI_ENGINEERING.md`](AI_ENGINEERING.md) | Как здесь работает агент и что ему запрещено | человек |
 | [`TENANCY_DESIGN.md`](TENANCY_DESIGN.md) | Где зашит один продавец и как это снять | человек |
+| [`ADR-08_TENANT_ISOLATION.md`](ADR-08_TENANT_ISOLATION.md) | ADR-08: выделенный проект на внешнего клиента, EVETIS — унаследованный арендатор; авторитет по мультиарендности | человек |
 | [`TOOLING_DECISIONS.md`](TOOLING_DECISIONS.md) | Почему выбрано и почему отвергнуто (ADR) | человек |
 | [`CANONICAL_COVERAGE.md`](CANONICAL_COVERAGE.md) | Тиры вью и измеренная граница канонического слоя | человек |
 | [`HEALTH_COVERAGE_MIGRATION.md`](HEALTH_COVERAGE_MIGRATION.md) | Готовая к ACK миграция наблюдаемости Ozon / orders / sales | человек |
