@@ -228,7 +228,11 @@ def test_evidence_subprocesses_do_not_inherit_github_or_actions_tokens(monkeypat
               "ACTIONS_RUNTIME_TOKEN", "ANTHROPIC_API_KEY"):
         monkeypatch.setenv(k, "secret-value")
     monkeypatch.setenv("GOOGLE_APPLICATION_CREDENTIALS", "/tmp/gha-creds.json")
-    r = _run([sys.executable, "-c", "import os, json; print(json.dumps(sorted(os.environ)))"], tmp_path)
+    probe = ("GH_TOKEN", "GITHUB_TOKEN", "ACTIONS_ID_TOKEN_REQUEST_TOKEN", "ACTIONS_ID_TOKEN_REQUEST_URL",
+             "ACTIONS_RUNTIME_TOKEN", "ANTHROPIC_API_KEY", "GOOGLE_APPLICATION_CREDENTIALS")
+    # Печатаем только пробу: полное окружение раннера длиннее хвоста, который хранит _run.
+    r = _run([sys.executable, "-c", f"import os, json; print(json.dumps([k for k in {probe!r} if k in os.environ]))"],
+             tmp_path)
     seen = set(json.loads(r["tail"]))
     assert not seen & {"GH_TOKEN", "GITHUB_TOKEN", "ACTIONS_ID_TOKEN_REQUEST_TOKEN", "ACTIONS_ID_TOKEN_REQUEST_URL",
                        "ACTIONS_RUNTIME_TOKEN", "ANTHROPIC_API_KEY"}
