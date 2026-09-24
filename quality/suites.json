@@ -658,8 +658,7 @@
       "cadence": "перед слиянием изменения в области scope, после развёртывания и после каждого нового слота наблюдения",
       "source_contract": "docs/promotions/PR_PROMO_2_CANONICAL_STATE_2026-09-22.md",
       "business_rule_reference": "docs/promotions/PROMOTION_PHASE_0_5_DECISION_GATE_2026-09-22.md",
-      "provenance": "PR-PROMO-2; нулевые пороги — инварианты контракта (зерно, сохранение строк, NULL ≠ 0, приоритет состояний), бизнес-порогов нет. Регрессионные сценарии на фикстурах — tools/promo_canonical_render.py run fixtures",
-      "pending_deploy_note": "До развёртывания исполнять через tools/promo_canonical_render.py run predeploy: V24 (INFORMATION_SCHEMA) до развёртывания FAIL по построению."
+      "provenance": "PR-PROMO-2; нулевые пороги — инварианты контракта (зерно, сохранение строк, NULL ≠ 0, приоритет состояний), бизнес-порогов нет. Регрессионные сценарии на фикстурах — tools/promo_canonical_render.py run fixtures"
     }
   ],
   "backlog": {
