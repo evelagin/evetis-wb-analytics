@@ -1,0 +1,213 @@
+google_project_service.enabled["iamcredentials.googleapis.com"]: Refreshing state... [id=project-fa311fc0-4d87-4781-986/iamcredentials.googleapis.com]
+google_project_service.enabled["cloudscheduler.googleapis.com"]: Refreshing state... [id=project-fa311fc0-4d87-4781-986/cloudscheduler.googleapis.com]
+google_project_service.enabled["run.googleapis.com"]: Refreshing state... [id=project-fa311fc0-4d87-4781-986/run.googleapis.com]
+google_project_service.enabled["iam.googleapis.com"]: Refreshing state... [id=project-fa311fc0-4d87-4781-986/iam.googleapis.com]
+google_project_service.enabled["sts.googleapis.com"]: Refreshing state... [id=project-fa311fc0-4d87-4781-986/sts.googleapis.com]
+google_project_service.enabled["secretmanager.googleapis.com"]: Refreshing state... [id=project-fa311fc0-4d87-4781-986/secretmanager.googleapis.com]
+google_project_service.enabled["bigquery.googleapis.com"]: Refreshing state... [id=project-fa311fc0-4d87-4781-986/bigquery.googleapis.com]
+google_project_service.enabled["sheets.googleapis.com"]: Refreshing state... [id=project-fa311fc0-4d87-4781-986/sheets.googleapis.com]
+google_project_service.enabled["cloudresourcemanager.googleapis.com"]: Refreshing state... [id=project-fa311fc0-4d87-4781-986/cloudresourcemanager.googleapis.com]
+google_project_service.enabled["monitoring.googleapis.com"]: Refreshing state... [id=project-fa311fc0-4d87-4781-986/monitoring.googleapis.com]
+google_project_service.enabled["artifactregistry.googleapis.com"]: Refreshing state... [id=project-fa311fc0-4d87-4781-986/artifactregistry.googleapis.com]
+google_project_service.enabled["cloudbuild.googleapis.com"]: Refreshing state... [id=project-fa311fc0-4d87-4781-986/cloudbuild.googleapis.com]
+google_iam_workload_identity_pool.github: Refreshing state... [id=projects/project-fa311fc0-4d87-4781-986/locations/global/workloadIdentityPools/github-pool]
+
+Terraform used the selected providers to generate the following execution
+plan. Resource actions are indicated with the following symbols:
+  + create
+
+Terraform will perform the following actions:
+
+  # google_bigquery_dataset_iam_member.ae_reader_read["evetis_mart"] will be created
+  + resource "google_bigquery_dataset_iam_member" "ae_reader_read" {
+      + dataset_id = "evetis_mart"
+      + etag       = (known after apply)
+      + id         = (known after apply)
+      + member     = "serviceAccount:sa-ae-reader@project-fa311fc0-4d87-4781-986.iam.gserviceaccount.com"
+      + project    = (known after apply)
+      + role       = "roles/bigquery.dataViewer"
+    }
+
+  # google_bigquery_dataset_iam_member.ae_reader_read["evetis_ops"] will be created
+  + resource "google_bigquery_dataset_iam_member" "ae_reader_read" {
+      + dataset_id = "evetis_ops"
+      + etag       = (known after apply)
+      + id         = (known after apply)
+      + member     = "serviceAccount:sa-ae-reader@project-fa311fc0-4d87-4781-986.iam.gserviceaccount.com"
+      + project    = (known after apply)
+      + role       = "roles/bigquery.dataViewer"
+    }
+
+  # google_bigquery_dataset_iam_member.ae_reader_read["evetis_ref"] will be created
+  + resource "google_bigquery_dataset_iam_member" "ae_reader_read" {
+      + dataset_id = "evetis_ref"
+      + etag       = (known after apply)
+      + id         = (known after apply)
+      + member     = "serviceAccount:sa-ae-reader@project-fa311fc0-4d87-4781-986.iam.gserviceaccount.com"
+      + project    = (known after apply)
+      + role       = "roles/bigquery.dataViewer"
+    }
+
+  # google_bigquery_dataset_iam_member.ae_reader_read["ozon_mart"] will be created
+  + resource "google_bigquery_dataset_iam_member" "ae_reader_read" {
+      + dataset_id = "ozon_mart"
+      + etag       = (known after apply)
+      + id         = (known after apply)
+      + member     = "serviceAccount:sa-ae-reader@project-fa311fc0-4d87-4781-986.iam.gserviceaccount.com"
+      + project    = (known after apply)
+      + role       = "roles/bigquery.dataViewer"
+    }
+
+  # google_bigquery_dataset_iam_member.ae_reader_read["ozon_raw"] will be created
+  + resource "google_bigquery_dataset_iam_member" "ae_reader_read" {
+      + dataset_id = "ozon_raw"
+      + etag       = (known after apply)
+      + id         = (known after apply)
+      + member     = "serviceAccount:sa-ae-reader@project-fa311fc0-4d87-4781-986.iam.gserviceaccount.com"
+      + project    = (known after apply)
+      + role       = "roles/bigquery.dataViewer"
+    }
+
+  # google_bigquery_dataset_iam_member.ae_reader_read["wb_mart"] will be created
+  + resource "google_bigquery_dataset_iam_member" "ae_reader_read" {
+      + dataset_id = "wb_mart"
+      + etag       = (known after apply)
+      + id         = (known after apply)
+      + member     = "serviceAccount:sa-ae-reader@project-fa311fc0-4d87-4781-986.iam.gserviceaccount.com"
+      + project    = (known after apply)
+      + role       = "roles/bigquery.dataViewer"
+    }
+
+  # google_bigquery_dataset_iam_member.ae_reader_read["wb_ops"] will be created
+  + resource "google_bigquery_dataset_iam_member" "ae_reader_read" {
+      + dataset_id = "wb_ops"
+      + etag       = (known after apply)
+      + id         = (known after apply)
+      + member     = "serviceAccount:sa-ae-reader@project-fa311fc0-4d87-4781-986.iam.gserviceaccount.com"
+      + project    = (known after apply)
+      + role       = "roles/bigquery.dataViewer"
+    }
+
+  # google_bigquery_dataset_iam_member.ae_reader_read["wb_raw"] will be created
+  + resource "google_bigquery_dataset_iam_member" "ae_reader_read" {
+      + dataset_id = "wb_raw"
+      + etag       = (known after apply)
+      + id         = (known after apply)
+      + member     = "serviceAccount:sa-ae-reader@project-fa311fc0-4d87-4781-986.iam.gserviceaccount.com"
+      + project    = (known after apply)
+      + role       = "roles/bigquery.dataViewer"
+    }
+
+  # google_project_iam_custom_role.ae_job_runner will be created
+  + resource "google_project_iam_custom_role" "ae_job_runner" {
+      + deleted         = (known after apply)
+      + deletion_policy = "DELETE"
+      + description     = "AE v1: запуск заданий BigQuery без побочных прав roles/bigquery.jobUser (Dataform, Gemini)."
+      + id              = (known after apply)
+      + name            = (known after apply)
+      + permissions     = [
+          + "bigquery.config.get",
+          + "bigquery.jobs.create",
+        ]
+      + project         = "project-fa311fc0-4d87-4781-986"
+      + role_id         = "aeBigQueryJobRunner"
+      + stage           = "GA"
+      + title           = "AE v1 BigQuery job runner (SELECT only)"
+    }
+
+  # google_project_iam_member.ae_reader["roles/bigquery.resourceViewer"] will be created
+  + resource "google_project_iam_member" "ae_reader" {
+      + etag    = (known after apply)
+      + id      = (known after apply)
+      + member  = "serviceAccount:sa-ae-reader@project-fa311fc0-4d87-4781-986.iam.gserviceaccount.com"
+      + project = "project-fa311fc0-4d87-4781-986"
+      + role    = "roles/bigquery.resourceViewer"
+    }
+
+  # google_project_iam_member.ae_reader["roles/logging.viewer"] will be created
+  + resource "google_project_iam_member" "ae_reader" {
+      + etag    = (known after apply)
+      + id      = (known after apply)
+      + member  = "serviceAccount:sa-ae-reader@project-fa311fc0-4d87-4781-986.iam.gserviceaccount.com"
+      + project = "project-fa311fc0-4d87-4781-986"
+      + role    = "roles/logging.viewer"
+    }
+
+  # google_project_iam_member.ae_reader_job_runner will be created
+  + resource "google_project_iam_member" "ae_reader_job_runner" {
+      + etag    = (known after apply)
+      + id      = (known after apply)
+      + member  = "serviceAccount:sa-ae-reader@project-fa311fc0-4d87-4781-986.iam.gserviceaccount.com"
+      + project = "project-fa311fc0-4d87-4781-986"
+      + role    = (known after apply)
+    }
+
+  # google_service_account.ae_reader will be created
+  + resource "google_service_account" "ae_reader" {
+      + account_id      = "sa-ae-reader"
+      + deletion_policy = "DELETE"
+      + description     = "AE v1: чтение данных для доказательств ворот. Ролей записи нет по построению."
+      + disabled        = false
+      + display_name    = "EVETIS Autonomous Engineering v1 (READ-ONLY)"
+      + email           = "sa-ae-reader@project-fa311fc0-4d87-4781-986.iam.gserviceaccount.com"
+      + id              = (known after apply)
+      + member          = "serviceAccount:sa-ae-reader@project-fa311fc0-4d87-4781-986.iam.gserviceaccount.com"
+      + name            = (known after apply)
+      + project         = "project-fa311fc0-4d87-4781-986"
+      + unique_id       = (known after apply)
+    }
+
+  # google_service_account_iam_member.ae_reader_wif["autonomy-engineer.yml"] will be created
+  + resource "google_service_account_iam_member" "ae_reader_wif" {
+      + etag               = (known after apply)
+      + id                 = (known after apply)
+      + member             = "principalSet://iam.googleapis.com/projects/37074083763/locations/global/workloadIdentityPools/github-pool/attribute.job_workflow_ref/evelagin/evetis-wb-analytics/.github/workflows/autonomy-engineer.yml@refs/heads/main"
+      + role               = "roles/iam.workloadIdentityUser"
+      + service_account_id = (known after apply)
+    }
+
+  # google_service_account_iam_member.ae_reader_wif["autonomy-gate.yml"] will be created
+  + resource "google_service_account_iam_member" "ae_reader_wif" {
+      + etag               = (known after apply)
+      + id                 = (known after apply)
+      + member             = "principalSet://iam.googleapis.com/projects/37074083763/locations/global/workloadIdentityPools/github-pool/attribute.job_workflow_ref/evelagin/evetis-wb-analytics/.github/workflows/autonomy-gate.yml@refs/heads/main"
+      + role               = "roles/iam.workloadIdentityUser"
+      + service_account_id = (known after apply)
+    }
+
+  # google_service_account_iam_member.ae_reader_wif["autonomy-test.yml"] will be created
+  + resource "google_service_account_iam_member" "ae_reader_wif" {
+      + etag               = (known after apply)
+      + id                 = (known after apply)
+      + member             = "principalSet://iam.googleapis.com/projects/37074083763/locations/global/workloadIdentityPools/github-pool/attribute.job_workflow_ref/evelagin/evetis-wb-analytics/.github/workflows/autonomy-test.yml@refs/heads/main"
+      + role               = "roles/iam.workloadIdentityUser"
+      + service_account_id = (known after apply)
+    }
+
+  # google_service_account_iam_member.ae_reader_wif["autonomy-watch.yml"] will be created
+  + resource "google_service_account_iam_member" "ae_reader_wif" {
+      + etag               = (known after apply)
+      + id                 = (known after apply)
+      + member             = "principalSet://iam.googleapis.com/projects/37074083763/locations/global/workloadIdentityPools/github-pool/attribute.job_workflow_ref/evelagin/evetis-wb-analytics/.github/workflows/autonomy-watch.yml@refs/heads/main"
+      + role               = "roles/iam.workloadIdentityUser"
+      + service_account_id = (known after apply)
+    }
+
+Plan: 17 to add, 0 to change, 0 to destroy.
+
+Warning: Resource targeting is in effect
+
+You are creating a plan with the -target option, which means that the result
+of this plan may not represent all of the changes requested by the current
+configuration.
+
+The -target option is not for routine use, and is provided only for
+exceptional situations such as recovering from errors or mistakes, or when
+Terraform specifically suggests to use it as part of an error message.
+
+─────────────────────────────────────────────────────────────────────────────
+
+Saved the plan to: m3b.plan
+
+To perform exactly these actions, run the following command to apply:
+    terraform apply "m3b.plan"
