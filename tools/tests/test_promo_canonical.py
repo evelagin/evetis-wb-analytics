@@ -219,7 +219,7 @@ def test_rollback_drops_exactly_the_sixteen_views_in_reverse_order():
     assert re.findall(r"\b(DROP|DELETE|TRUNCATE|ALTER|INSERT|UPDATE|MERGE|CREATE)\b", body, re.I) == ["DROP"] * 16
 
 
-def test_canonical_objects_are_pending_deploy_with_declared_schema(all_facts):
+def test_canonical_objects_declare_their_schema_in_the_manifest(all_facts):
     for ds in ("ozon_mart", "evetis_mart"):
         man = json.loads((REPO / f"sql/current/{ds}/MANIFEST.json").read_text(encoding="utf-8"))
         entries = {o["object_name"]: o for o in man["objects"]}

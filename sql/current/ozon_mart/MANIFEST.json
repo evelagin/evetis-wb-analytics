@@ -3171,7 +3171,7 @@
       "object_name": "V_OZON_PROMO_HISTORY",
       "object_type": "VIEW",
       "canonical_path": "sql/current/ozon_mart/V_OZON_PROMO_HISTORY.sql",
-      "sync_state": "pending_deploy",
+      "sync_state": "captured_live",
       "dependencies": [
         "V_OZON_PROMO_OBSERVATION_HISTORY"
       ],
@@ -3180,22 +3180,227 @@
         "ozon_raw.RAW_OZON_PROMO_PRODUCTS"
       ],
       "dependency_level": 1,
-      "capture_main_sha": null,
-      "captured_at": null,
+      "capture_main_sha": "000b253cc86dfb720b51f61cd46a9322936b5e82",
+      "captured_at": "2026-09-23T21:15:03Z",
       "provenance": {
-        "source": "PR-PROMO-2 Git-first canonical promotion state (docs/promotions/PR_PROMO_2_CANONICAL_STATE_2026-09-22.md); canonical_schema from BigQuery dry-run of the Git body before deployment",
+        "source": "production INFORMATION_SCHEMA read-only capture (R2C) after PR-PROMO-2 deploy 2026-09-23 from main 000b253",
         "historical_migration": null,
-        "preflight_parity": "NEW_OBJECT_FIXTURE_AND_PREDEPLOY_CHECKS",
+        "preflight_parity": "DEPLOYED_AND_READBACK_MATCH",
         "superseded_historical_definitions": []
       },
-      "live_body_sha256_at_capture": null,
-      "live_schema_sha256_at_capture": null,
-      "live_description_sha256_at_capture": null,
-      "live_schema_at_capture": null,
+      "live_body_sha256_at_capture": "d3fe119ea94e65aed4eac75598620836a15b44332ab001e8bddacd52db019ef6",
+      "live_schema_sha256_at_capture": "aa6327e7f6507227f4c8732e467d95a880c6b8bfc1f0f1cab62e08af13916a7a",
+      "live_description_sha256_at_capture": "307a0fb7bf849222d9d7d5e882d7ab19a9f01695fb7aa422994393d88606adaa",
+      "live_schema_at_capture": [
+        {
+          "column_name": "marketplace",
+          "data_type": "STRING",
+          "is_nullable": "YES",
+          "ordinal_position": 1
+        },
+        {
+          "column_name": "observation_id",
+          "data_type": "STRING",
+          "is_nullable": "YES",
+          "ordinal_position": 2
+        },
+        {
+          "column_name": "observation_slot",
+          "data_type": "STRING",
+          "is_nullable": "YES",
+          "ordinal_position": 3
+        },
+        {
+          "column_name": "observed_at",
+          "data_type": "TIMESTAMP",
+          "is_nullable": "YES",
+          "ordinal_position": 4
+        },
+        {
+          "column_name": "history_class",
+          "data_type": "STRING",
+          "is_nullable": "YES",
+          "ordinal_position": 5
+        },
+        {
+          "column_name": "observation_status",
+          "data_type": "STRING",
+          "is_nullable": "YES",
+          "ordinal_position": 6
+        },
+        {
+          "column_name": "action_id",
+          "data_type": "INT64",
+          "is_nullable": "YES",
+          "ordinal_position": 7
+        },
+        {
+          "column_name": "promotion_name",
+          "data_type": "STRING",
+          "is_nullable": "YES",
+          "ordinal_position": 8
+        },
+        {
+          "column_name": "promotion_type",
+          "data_type": "STRING",
+          "is_nullable": "YES",
+          "ordinal_position": 9
+        },
+        {
+          "column_name": "starts_at",
+          "data_type": "TIMESTAMP",
+          "is_nullable": "YES",
+          "ordinal_position": 10
+        },
+        {
+          "column_name": "ends_at",
+          "data_type": "TIMESTAMP",
+          "is_nullable": "YES",
+          "ordinal_position": 11
+        },
+        {
+          "column_name": "starts_on_msk",
+          "data_type": "DATE",
+          "is_nullable": "YES",
+          "ordinal_position": 12
+        },
+        {
+          "column_name": "ends_on_msk",
+          "data_type": "DATE",
+          "is_nullable": "YES",
+          "ordinal_position": 13
+        },
+        {
+          "column_name": "lifecycle_status",
+          "data_type": "STRING",
+          "is_nullable": "YES",
+          "ordinal_position": 14
+        },
+        {
+          "column_name": "lifecycle_evidence_class",
+          "data_type": "STRING",
+          "is_nullable": "YES",
+          "ordinal_position": 15
+        },
+        {
+          "column_name": "freeze_at",
+          "data_type": "TIMESTAMP",
+          "is_nullable": "YES",
+          "ordinal_position": 16
+        },
+        {
+          "column_name": "auto_add_dates_count",
+          "data_type": "INT64",
+          "is_nullable": "YES",
+          "ordinal_position": 17
+        },
+        {
+          "column_name": "next_auto_add_at",
+          "data_type": "TIMESTAMP",
+          "is_nullable": "YES",
+          "ordinal_position": 18
+        },
+        {
+          "column_name": "is_participating",
+          "data_type": "BOOL",
+          "is_nullable": "YES",
+          "ordinal_position": 19
+        },
+        {
+          "column_name": "seller_participation_state",
+          "data_type": "STRING",
+          "is_nullable": "YES",
+          "ordinal_position": 20
+        },
+        {
+          "column_name": "seller_participation_evidence_class",
+          "data_type": "STRING",
+          "is_nullable": "YES",
+          "ordinal_position": 21
+        },
+        {
+          "column_name": "aggregate_state",
+          "data_type": "STRING",
+          "is_nullable": "YES",
+          "ordinal_position": 22
+        },
+        {
+          "column_name": "participating_products_count",
+          "data_type": "INT64",
+          "is_nullable": "YES",
+          "ordinal_position": 23
+        },
+        {
+          "column_name": "potential_products_count",
+          "data_type": "INT64",
+          "is_nullable": "YES",
+          "ordinal_position": 24
+        },
+        {
+          "column_name": "banned_products_count",
+          "data_type": "INT64",
+          "is_nullable": "YES",
+          "ordinal_position": 25
+        },
+        {
+          "column_name": "enumerated_participating",
+          "data_type": "INT64",
+          "is_nullable": "YES",
+          "ordinal_position": 26
+        },
+        {
+          "column_name": "enumerated_candidates",
+          "data_type": "INT64",
+          "is_nullable": "YES",
+          "ordinal_position": 27
+        },
+        {
+          "column_name": "sku_membership_observability",
+          "data_type": "STRING",
+          "is_nullable": "YES",
+          "ordinal_position": 28
+        },
+        {
+          "column_name": "sku_membership_observability_reason",
+          "data_type": "STRING",
+          "is_nullable": "YES",
+          "ordinal_position": 29
+        },
+        {
+          "column_name": "discount_type",
+          "data_type": "STRING",
+          "is_nullable": "YES",
+          "ordinal_position": 30
+        },
+        {
+          "column_name": "discount_value",
+          "data_type": "NUMERIC",
+          "is_nullable": "YES",
+          "ordinal_position": 31
+        },
+        {
+          "column_name": "is_voucher_action",
+          "data_type": "BOOL",
+          "is_nullable": "YES",
+          "ordinal_position": 32
+        },
+        {
+          "column_name": "with_targeting",
+          "data_type": "BOOL",
+          "is_nullable": "YES",
+          "ordinal_position": 33
+        },
+        {
+          "column_name": "source_payload_hash",
+          "data_type": "STRING",
+          "is_nullable": "YES",
+          "ordinal_position": 34
+        }
+      ],
       "canonical_body_sha256": "d3fe119ea94e65aed4eac75598620836a15b44332ab001e8bddacd52db019ef6",
       "canonical_description_sha256": "307a0fb7bf849222d9d7d5e882d7ab19a9f01695fb7aa422994393d88606adaa",
       "canonical_schema_sha256": "aa6327e7f6507227f4c8732e467d95a880c6b8bfc1f0f1cab62e08af13916a7a",
-      "canonical_schema_verification": "unverified",
+      "canonical_schema_verification": "bigquery_verified",
       "canonical_column_count": 34,
       "canonical_schema": [
         {
@@ -3409,7 +3614,7 @@
       "object_name": "V_OZON_PROMO_OBSERVATION_HISTORY",
       "object_type": "VIEW",
       "canonical_path": "sql/current/ozon_mart/V_OZON_PROMO_OBSERVATION_HISTORY.sql",
-      "sync_state": "pending_deploy",
+      "sync_state": "captured_live",
       "dependencies": [],
       "external_dependencies": [
         "ozon_raw.OZON_PROMO_OBSERVATIONS",
@@ -3417,22 +3622,83 @@
         "ozon_raw.RAW_OZON_PROMO_PRODUCT_MARKETING"
       ],
       "dependency_level": 0,
-      "capture_main_sha": null,
-      "captured_at": null,
+      "capture_main_sha": "000b253cc86dfb720b51f61cd46a9322936b5e82",
+      "captured_at": "2026-09-23T21:15:03Z",
       "provenance": {
-        "source": "PR-PROMO-2 Git-first canonical promotion state (docs/promotions/PR_PROMO_2_CANONICAL_STATE_2026-09-22.md); canonical_schema from BigQuery dry-run of the Git body before deployment",
+        "source": "production INFORMATION_SCHEMA read-only capture (R2C) after PR-PROMO-2 deploy 2026-09-23 from main 000b253",
         "historical_migration": null,
-        "preflight_parity": "NEW_OBJECT_FIXTURE_AND_PREDEPLOY_CHECKS",
+        "preflight_parity": "DEPLOYED_AND_READBACK_MATCH",
         "superseded_historical_definitions": []
       },
-      "live_body_sha256_at_capture": null,
-      "live_schema_sha256_at_capture": null,
-      "live_description_sha256_at_capture": null,
-      "live_schema_at_capture": null,
+      "live_body_sha256_at_capture": "7f29b42499b9bde13dc1d5d314b6f9ede7c9d280cf40567886781ff22018fc9f",
+      "live_schema_sha256_at_capture": "2498d445db41479d74623863f4553f831eeb8a91b5a1bcf4867b3807ed9fc131",
+      "live_description_sha256_at_capture": "1889d7826333e9a4e983fda46f876c9ef3c8537866488898499cea43f53126e8",
+      "live_schema_at_capture": [
+        {
+          "column_name": "marketplace",
+          "data_type": "STRING",
+          "is_nullable": "YES",
+          "ordinal_position": 1
+        },
+        {
+          "column_name": "observation_id",
+          "data_type": "STRING",
+          "is_nullable": "YES",
+          "ordinal_position": 2
+        },
+        {
+          "column_name": "observation_slot",
+          "data_type": "STRING",
+          "is_nullable": "YES",
+          "ordinal_position": 3
+        },
+        {
+          "column_name": "observed_at",
+          "data_type": "TIMESTAMP",
+          "is_nullable": "YES",
+          "ordinal_position": 4
+        },
+        {
+          "column_name": "observed_at_basis",
+          "data_type": "STRING",
+          "is_nullable": "YES",
+          "ordinal_position": 5
+        },
+        {
+          "column_name": "manifest_observed_at",
+          "data_type": "TIMESTAMP",
+          "is_nullable": "YES",
+          "ordinal_position": 6
+        },
+        {
+          "column_name": "history_class",
+          "data_type": "STRING",
+          "is_nullable": "YES",
+          "ordinal_position": 7
+        },
+        {
+          "column_name": "observation_status",
+          "data_type": "STRING",
+          "is_nullable": "YES",
+          "ordinal_position": 8
+        },
+        {
+          "column_name": "promotions_observed",
+          "data_type": "INT64",
+          "is_nullable": "YES",
+          "ordinal_position": 9
+        },
+        {
+          "column_name": "catalog_products_observed",
+          "data_type": "INT64",
+          "is_nullable": "YES",
+          "ordinal_position": 10
+        }
+      ],
       "canonical_body_sha256": "7f29b42499b9bde13dc1d5d314b6f9ede7c9d280cf40567886781ff22018fc9f",
       "canonical_description_sha256": "1889d7826333e9a4e983fda46f876c9ef3c8537866488898499cea43f53126e8",
       "canonical_schema_sha256": "2498d445db41479d74623863f4553f831eeb8a91b5a1bcf4867b3807ed9fc131",
-      "canonical_schema_verification": "unverified",
+      "canonical_schema_verification": "bigquery_verified",
       "canonical_column_count": 10,
       "canonical_schema": [
         {
@@ -3502,7 +3768,7 @@
       "object_name": "V_OZON_PROMO_SKU_EVIDENCE_HISTORY",
       "object_type": "VIEW",
       "canonical_path": "sql/current/ozon_mart/V_OZON_PROMO_SKU_EVIDENCE_HISTORY.sql",
-      "sync_state": "pending_deploy",
+      "sync_state": "captured_live",
       "dependencies": [
         "V_OZON_PROMO_OBSERVATION_HISTORY"
       ],
@@ -3514,22 +3780,209 @@
         "ozon_raw.RAW_OZON_PROMO_PRODUCT_ACTION"
       ],
       "dependency_level": 1,
-      "capture_main_sha": null,
-      "captured_at": null,
+      "capture_main_sha": "000b253cc86dfb720b51f61cd46a9322936b5e82",
+      "captured_at": "2026-09-23T21:15:03Z",
       "provenance": {
-        "source": "PR-PROMO-2 Git-first canonical promotion state (docs/promotions/PR_PROMO_2_CANONICAL_STATE_2026-09-22.md); canonical_schema from BigQuery dry-run of the Git body before deployment",
+        "source": "production INFORMATION_SCHEMA read-only capture (R2C) after PR-PROMO-2 deploy 2026-09-23 from main 000b253",
         "historical_migration": null,
-        "preflight_parity": "NEW_OBJECT_FIXTURE_AND_PREDEPLOY_CHECKS",
+        "preflight_parity": "DEPLOYED_AND_READBACK_MATCH",
         "superseded_historical_definitions": []
       },
-      "live_body_sha256_at_capture": null,
-      "live_schema_sha256_at_capture": null,
-      "live_description_sha256_at_capture": null,
-      "live_schema_at_capture": null,
+      "live_body_sha256_at_capture": "553ae8efdbc6376afe106ad208f3946452b707c7c776133ec3a7b88d4e2aaf57",
+      "live_schema_sha256_at_capture": "02c4fcf424c544b4fc7083965c7482b87c4fde850419291f956e655e896ac971",
+      "live_description_sha256_at_capture": "d34ab8cc0de17553807f7d311ec40d9ed85e40da0db485dd40d7db3c5748f679",
+      "live_schema_at_capture": [
+        {
+          "column_name": "marketplace",
+          "data_type": "STRING",
+          "is_nullable": "YES",
+          "ordinal_position": 1
+        },
+        {
+          "column_name": "observation_id",
+          "data_type": "STRING",
+          "is_nullable": "YES",
+          "ordinal_position": 2
+        },
+        {
+          "column_name": "observation_slot",
+          "data_type": "STRING",
+          "is_nullable": "YES",
+          "ordinal_position": 3
+        },
+        {
+          "column_name": "observed_at",
+          "data_type": "TIMESTAMP",
+          "is_nullable": "YES",
+          "ordinal_position": 4
+        },
+        {
+          "column_name": "history_class",
+          "data_type": "STRING",
+          "is_nullable": "YES",
+          "ordinal_position": 5
+        },
+        {
+          "column_name": "evidence_source",
+          "data_type": "STRING",
+          "is_nullable": "YES",
+          "ordinal_position": 6
+        },
+        {
+          "column_name": "source_endpoint",
+          "data_type": "STRING",
+          "is_nullable": "YES",
+          "ordinal_position": 7
+        },
+        {
+          "column_name": "source_state",
+          "data_type": "STRING",
+          "is_nullable": "YES",
+          "ordinal_position": 8
+        },
+        {
+          "column_name": "evidence_class",
+          "data_type": "STRING",
+          "is_nullable": "YES",
+          "ordinal_position": 9
+        },
+        {
+          "column_name": "action_id",
+          "data_type": "INT64",
+          "is_nullable": "YES",
+          "ordinal_position": 10
+        },
+        {
+          "column_name": "promotion_link_method",
+          "data_type": "STRING",
+          "is_nullable": "YES",
+          "ordinal_position": 11
+        },
+        {
+          "column_name": "link_candidate_action_ids",
+          "data_type": "STRING",
+          "is_nullable": "YES",
+          "ordinal_position": 12
+        },
+        {
+          "column_name": "product_id",
+          "data_type": "INT64",
+          "is_nullable": "YES",
+          "ordinal_position": 13
+        },
+        {
+          "column_name": "offer_id",
+          "data_type": "STRING",
+          "is_nullable": "YES",
+          "ordinal_position": 14
+        },
+        {
+          "column_name": "ozon_sku",
+          "data_type": "STRING",
+          "is_nullable": "YES",
+          "ordinal_position": 15
+        },
+        {
+          "column_name": "internal_sku",
+          "data_type": "STRING",
+          "is_nullable": "YES",
+          "ordinal_position": 16
+        },
+        {
+          "column_name": "mapping_status",
+          "data_type": "STRING",
+          "is_nullable": "YES",
+          "ordinal_position": 17
+        },
+        {
+          "column_name": "auto_add_at",
+          "data_type": "TIMESTAMP",
+          "is_nullable": "YES",
+          "ordinal_position": 18
+        },
+        {
+          "column_name": "add_mode",
+          "data_type": "STRING",
+          "is_nullable": "YES",
+          "ordinal_position": 19
+        },
+        {
+          "column_name": "price_rub",
+          "data_type": "NUMERIC",
+          "is_nullable": "YES",
+          "ordinal_position": 20
+        },
+        {
+          "column_name": "action_price_rub",
+          "data_type": "NUMERIC",
+          "is_nullable": "YES",
+          "ordinal_position": 21
+        },
+        {
+          "column_name": "max_action_price_rub",
+          "data_type": "NUMERIC",
+          "is_nullable": "YES",
+          "ordinal_position": 22
+        },
+        {
+          "column_name": "action_price_to_auto_add_rub",
+          "data_type": "NUMERIC",
+          "is_nullable": "YES",
+          "ordinal_position": 23
+        },
+        {
+          "column_name": "current_boost_pct",
+          "data_type": "NUMERIC",
+          "is_nullable": "YES",
+          "ordinal_position": 24
+        },
+        {
+          "column_name": "min_boost_pct",
+          "data_type": "NUMERIC",
+          "is_nullable": "YES",
+          "ordinal_position": 25
+        },
+        {
+          "column_name": "max_boost_pct",
+          "data_type": "NUMERIC",
+          "is_nullable": "YES",
+          "ordinal_position": 26
+        },
+        {
+          "column_name": "action_ordinal",
+          "data_type": "INT64",
+          "is_nullable": "YES",
+          "ordinal_position": 27
+        },
+        {
+          "column_name": "source_action_title",
+          "data_type": "STRING",
+          "is_nullable": "YES",
+          "ordinal_position": 28
+        },
+        {
+          "column_name": "source_date_from",
+          "data_type": "TIMESTAMP",
+          "is_nullable": "YES",
+          "ordinal_position": 29
+        },
+        {
+          "column_name": "source_date_to",
+          "data_type": "TIMESTAMP",
+          "is_nullable": "YES",
+          "ordinal_position": 30
+        },
+        {
+          "column_name": "evidence_key",
+          "data_type": "STRING",
+          "is_nullable": "YES",
+          "ordinal_position": 31
+        }
+      ],
       "canonical_body_sha256": "553ae8efdbc6376afe106ad208f3946452b707c7c776133ec3a7b88d4e2aaf57",
       "canonical_description_sha256": "d34ab8cc0de17553807f7d311ec40d9ed85e40da0db485dd40d7db3c5748f679",
       "canonical_schema_sha256": "02c4fcf424c544b4fc7083965c7482b87c4fde850419291f956e655e896ac971",
-      "canonical_schema_verification": "unverified",
+      "canonical_schema_verification": "bigquery_verified",
       "canonical_column_count": 31,
       "canonical_schema": [
         {
@@ -3725,7 +4178,7 @@
       "object_name": "V_OZON_PROMO_SKU_STATE_HISTORY",
       "object_type": "VIEW",
       "canonical_path": "sql/current/ozon_mart/V_OZON_PROMO_SKU_STATE_HISTORY.sql",
-      "sync_state": "pending_deploy",
+      "sync_state": "captured_live",
       "dependencies": [
         "V_OZON_PROMO_HISTORY",
         "V_OZON_PROMO_SKU_EVIDENCE_HISTORY"
@@ -3735,22 +4188,203 @@
         "ozon_raw.RAW_OZON_PROMO_PRODUCT_MARKETING"
       ],
       "dependency_level": 2,
-      "capture_main_sha": null,
-      "captured_at": null,
+      "capture_main_sha": "000b253cc86dfb720b51f61cd46a9322936b5e82",
+      "captured_at": "2026-09-23T21:15:03Z",
       "provenance": {
-        "source": "PR-PROMO-2 Git-first canonical promotion state (docs/promotions/PR_PROMO_2_CANONICAL_STATE_2026-09-22.md); canonical_schema from BigQuery dry-run of the Git body before deployment",
+        "source": "production INFORMATION_SCHEMA read-only capture (R2C) after PR-PROMO-2 deploy 2026-09-23 from main 000b253",
         "historical_migration": null,
-        "preflight_parity": "NEW_OBJECT_FIXTURE_AND_PREDEPLOY_CHECKS",
+        "preflight_parity": "DEPLOYED_AND_READBACK_MATCH",
         "superseded_historical_definitions": []
       },
-      "live_body_sha256_at_capture": null,
-      "live_schema_sha256_at_capture": null,
-      "live_description_sha256_at_capture": null,
-      "live_schema_at_capture": null,
+      "live_body_sha256_at_capture": "ae3969e8974d0c66c1d4f80baf2ccf87801bbdae82b6cc4fc1f9178b7fd328d1",
+      "live_schema_sha256_at_capture": "37e687c9635844ad5beedc5158094d011dd1501c5818b5c45732127b60f65a54",
+      "live_description_sha256_at_capture": "c3890ff7de08827bcb008ed0aadc566a97ce3fbfd37de0a72eb9906bf4affc68",
+      "live_schema_at_capture": [
+        {
+          "column_name": "marketplace",
+          "data_type": "STRING",
+          "is_nullable": "YES",
+          "ordinal_position": 1
+        },
+        {
+          "column_name": "observation_id",
+          "data_type": "STRING",
+          "is_nullable": "YES",
+          "ordinal_position": 2
+        },
+        {
+          "column_name": "observation_slot",
+          "data_type": "STRING",
+          "is_nullable": "YES",
+          "ordinal_position": 3
+        },
+        {
+          "column_name": "observed_at",
+          "data_type": "TIMESTAMP",
+          "is_nullable": "YES",
+          "ordinal_position": 4
+        },
+        {
+          "column_name": "history_class",
+          "data_type": "STRING",
+          "is_nullable": "YES",
+          "ordinal_position": 5
+        },
+        {
+          "column_name": "action_id",
+          "data_type": "INT64",
+          "is_nullable": "YES",
+          "ordinal_position": 6
+        },
+        {
+          "column_name": "promotion_type",
+          "data_type": "STRING",
+          "is_nullable": "YES",
+          "ordinal_position": 7
+        },
+        {
+          "column_name": "promotion_lifecycle_status",
+          "data_type": "STRING",
+          "is_nullable": "YES",
+          "ordinal_position": 8
+        },
+        {
+          "column_name": "product_id",
+          "data_type": "INT64",
+          "is_nullable": "YES",
+          "ordinal_position": 9
+        },
+        {
+          "column_name": "offer_id",
+          "data_type": "STRING",
+          "is_nullable": "YES",
+          "ordinal_position": 10
+        },
+        {
+          "column_name": "ozon_sku",
+          "data_type": "STRING",
+          "is_nullable": "YES",
+          "ordinal_position": 11
+        },
+        {
+          "column_name": "internal_sku",
+          "data_type": "STRING",
+          "is_nullable": "YES",
+          "ordinal_position": 12
+        },
+        {
+          "column_name": "mapping_status",
+          "data_type": "STRING",
+          "is_nullable": "YES",
+          "ordinal_position": 13
+        },
+        {
+          "column_name": "participation_state",
+          "data_type": "STRING",
+          "is_nullable": "YES",
+          "ordinal_position": 14
+        },
+        {
+          "column_name": "participation_evidence_class",
+          "data_type": "STRING",
+          "is_nullable": "YES",
+          "ordinal_position": 15
+        },
+        {
+          "column_name": "auto_add_state",
+          "data_type": "STRING",
+          "is_nullable": "YES",
+          "ordinal_position": 16
+        },
+        {
+          "column_name": "auto_add_evidence_class",
+          "data_type": "STRING",
+          "is_nullable": "YES",
+          "ordinal_position": 17
+        },
+        {
+          "column_name": "resolved_state",
+          "data_type": "STRING",
+          "is_nullable": "YES",
+          "ordinal_position": 18
+        },
+        {
+          "column_name": "resolved_state_evidence_class",
+          "data_type": "STRING",
+          "is_nullable": "YES",
+          "ordinal_position": 19
+        },
+        {
+          "column_name": "resolution_rule",
+          "data_type": "STRING",
+          "is_nullable": "YES",
+          "ordinal_position": 20
+        },
+        {
+          "column_name": "in_participants_list",
+          "data_type": "BOOL",
+          "is_nullable": "YES",
+          "ordinal_position": 21
+        },
+        {
+          "column_name": "in_candidates_list",
+          "data_type": "BOOL",
+          "is_nullable": "YES",
+          "ordinal_position": 22
+        },
+        {
+          "column_name": "in_auto_add_scheduled_list",
+          "data_type": "BOOL",
+          "is_nullable": "YES",
+          "ordinal_position": 23
+        },
+        {
+          "column_name": "in_auto_add_eligible_list",
+          "data_type": "BOOL",
+          "is_nullable": "YES",
+          "ordinal_position": 24
+        },
+        {
+          "column_name": "evidence_conflict",
+          "data_type": "BOOL",
+          "is_nullable": "YES",
+          "ordinal_position": 25
+        },
+        {
+          "column_name": "participation_add_mode",
+          "data_type": "STRING",
+          "is_nullable": "YES",
+          "ordinal_position": 26
+        },
+        {
+          "column_name": "next_scheduled_auto_add_at",
+          "data_type": "TIMESTAMP",
+          "is_nullable": "YES",
+          "ordinal_position": 27
+        },
+        {
+          "column_name": "next_eligible_auto_add_at",
+          "data_type": "TIMESTAMP",
+          "is_nullable": "YES",
+          "ordinal_position": 28
+        },
+        {
+          "column_name": "scheduled_add_modes",
+          "data_type": "STRING",
+          "is_nullable": "YES",
+          "ordinal_position": 29
+        },
+        {
+          "column_name": "marketing_actions_corroborated",
+          "data_type": "BOOL",
+          "is_nullable": "YES",
+          "ordinal_position": 30
+        }
+      ],
       "canonical_body_sha256": "ae3969e8974d0c66c1d4f80baf2ccf87801bbdae82b6cc4fc1f9178b7fd328d1",
       "canonical_description_sha256": "c3890ff7de08827bcb008ed0aadc566a97ce3fbfd37de0a72eb9906bf4affc68",
       "canonical_schema_sha256": "37e687c9635844ad5beedc5158094d011dd1501c5818b5c45732127b60f65a54",
-      "canonical_schema_verification": "unverified",
+      "canonical_schema_verification": "bigquery_verified",
       "canonical_column_count": 30,
       "canonical_schema": [
         {
