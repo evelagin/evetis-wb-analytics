@@ -97,7 +97,7 @@ jobs:
       - name: validate tenant registry
         run: python tools/tenancy/registry.py validate
       - name: tenancy tests
-        run: python -m pytest -q tools/tests/test_tenancy.py tools/tests/test_tenancy_hardening.py tools/tests/test_tenancy_t32.py
+        run: python -m pytest -q tools/tests/test_tenancy.py tools/tests/test_tenancy_hardening.py tools/tests/test_tenancy_t32.py tools/tests/test_tenancy_t32_remediation.py
       - name: ozon schema parity (offline)
         run: python tools/tenancy/ozon_schema_parity.py
 
@@ -127,3 +127,5 @@ jobs:
       - name: tenant root tests (mock provider, no cloud)
         working-directory: infra/tenant
         run: terraform test
+      - name: tenant root mutation check (weakened rules must fail the tests)
+        run: python3 tools/tenancy/tf_mutation_check.py

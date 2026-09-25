@@ -42,6 +42,14 @@ WIF_ATTRIBUTE_CONDITION = (
     "assertion.ref_type == 'branch' && assertion.workflow_ref == "
     "'evelagin/evetis-wb-analytics/.github/workflows/tenant-infra.yml@refs/heads/main' && "
     "assertion.event_name == 'workflow_dispatch' && assertion.runner_environment == 'github-hosted'")
+# ПРЕДЛОЖЕНИЕ к T3.3 (НЕ применено в GCP): дополнительно закрепить job_workflow_ref,
+# чтобы токен не получал reusable workflow, вызванный из tenant-infra.yml (M5).
+# NEEDS_LIVE_PROOF: GitHub документирует job_workflow_ref как ref reusable-workflow;
+# присутствует ли claim у обычного job'а, проверяется пробным токеном до замены
+# условия — если claim отсутствует, условие станет ложным (fail-closed, но сломает план).
+PROPOSED_WIF_ATTRIBUTE_CONDITION = (
+    WIF_ATTRIBUTE_CONDITION + " && assertion.job_workflow_ref == assertion.workflow_ref")
+PLATFORM_MARKERS = (PLATFORM_PROJECT_ID, PLATFORM_PROJECT_NUMBER, STATE_BUCKET)
 
 # ── API проекта арендатора ────────────────────────────────────────────────
 # Провайдер Terraform арендатора ведёт квоту на проект арендатора

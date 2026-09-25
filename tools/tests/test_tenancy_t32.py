@@ -25,7 +25,6 @@ from tools.tenancy import platform as PL  # noqa: E402
 from tools.tenancy import registry as R  # noqa: E402
 from tools.tenancy import synthetic as SY  # noqa: E402
 from tools.tenancy import tenant_infra as TI  # noqa: E402
-from tools.tenancy.plan_scan import scan_plan  # noqa: E402
 
 TENANT_ROOT = REPO / "infra" / "tenant"
 WORKFLOW = REPO / PL.TENANT_INFRA_WORKFLOW
@@ -47,7 +46,7 @@ def test_terraform_inputs_is_deterministic_and_sorted():
 
 
 def test_terraform_inputs_contract_shape_for_client_001():
-    c = R.terraform_inputs(R.load_tenant("client_001"))
+    c = R.terraform_inputs("client_001")
     assert c["contract_version"] == 1 and c["tenant_id"] == "client_001"
     assert c["project_id"] == N.derive_project_id("client_001") == "mpa-t-client-001"
     assert c["project_id_revision"] == 1
@@ -81,19 +80,19 @@ def test_backend_prefix_is_derived_only_from_registry(tmp_path):
     backend = json.loads((tmp_path / "backend.json").read_text())
     assert backend == {"bucket": PL.STATE_BUCKET, "prefix": N.terraform_state_prefix("client_001")}
     contract = json.loads((tmp_path / TI.CONTRACT_FILE).read_text())["contract"]
-    assert contract == R.terraform_inputs(R.load_tenant("client_001"))
+    assert contract == R.terraform_inputs("client_001")
 
 
 def test_legacy_evetis_cannot_be_exported_to_tenant_terraform():
     with pytest.raises(N.NamingError):
-        R.terraform_inputs(R.load_tenant("evetis"))
+        R.terraform_inputs("evetis")
 
 
 def test_scheduler_state_other_than_paused_is_refused():
     doc = copy.deepcopy(R.load_tenant("client_001"))
     doc["scheduler_state"] = "ENABLED"
     with pytest.raises(N.NamingError):
-        R.terraform_inputs(doc)
+        R._terraform_contract(doc)
 
 
 # ═══════════════════════════════════════ каденция: единый контракт = EVETIS
@@ -172,7 +171,7 @@ def test_seven_previously_uncaptured_tables_now_have_schemas(table):
 
 
 def test_client_001_bootstrap_covers_every_table_its_entities_write():
-    c = R.terraform_inputs(R.load_tenant("client_001"))
+    c = R.terraform_inputs("client_001")
     have = {t["table_id"] for t in c["tables"]}
     entities = R.load_tenant("client_001")["marketplaces"]["ozon"]["entities"]
     need = {"OZON_INGESTION_RUNS"} | {t for e in entities for t in OC.ENTITY_TABLES[e]}
@@ -187,7 +186,7 @@ def test_schema_snapshots_are_project_neutral():
 
 
 def test_tenant_tables_carry_no_evetis_descriptions():
-    c = R.terraform_inputs(R.load_tenant("client_001"))
+    c = R.terraform_inputs("client_001")
     assert "EVETIS" not in json.dumps(c, ensure_ascii=False)
     assert all('"description"' not in t["schema_json"] for t in c["tables"])
 
@@ -249,7 +248,8 @@ def test_tenant_root_never_manages_the_project_billing_folder_or_keys():
     for forbidden in (r'resource\s+"google_project"\s', r'"google_billing_', r'"google_folder',
                       r'"google_organization', r'"google_project_iam_(policy|binding)"',
                       r'"google_service_account_key"', r'"google_secret_manager_secret_version"',
-                      r'"google_storage_', r'"google_artifact_registry_', r'"google_iam_workload_identity'):
+                      r'"google_storage_', r'"google_artifact_registry_', r'"google_iam_workload_identity',
+                      r'"google_cloud_run_v2_job_iam_'):
         assert not re.search(forbidden, text), forbidden
 
 
@@ -272,12 +272,11 @@ def test_guards_cover_parent_billing_activity_and_workspace():
     assert "depends_on = [terraform_data.guard]" in (TENANT_ROOT / "main.tf").read_text(encoding="utf-8")
 
 
-def test_schedulers_are_hard_paused_and_destructive_protection_is_on():
+def test_schedulers_are_paused_as_second_layer_and_destructive_protection_is_on():
     mod = (TENANT_ROOT / "modules" / "ozon_runtime" / "main.tf").read_text(encoding="utf-8")
     assert re.search(r"\n\s*paused\s*=\s*true\n", mod)
     assert "deletion_protection = true" in mod
     assert "deletion_protection      = true" in (TENANT_ROOT / "main.tf").read_text(encoding="utf-8")
-    assert "cloudscheduler" not in mod.split("paused", 1)[0].split("google_cloud_scheduler_job")[0][-1:]
 
 
 def test_provider_quota_goes_to_tenant_project_not_platform():
@@ -344,99 +343,7 @@ def test_rendered_artifacts_contain_secret_names_only(tmp_path):
     assert {k for k in env if k.startswith("OZON_SECRET_")} == set(N.OZON_SECRET_ENV_VARS.values())
 
 
-# ═══════════════════════════════════════ сканер плана
-def _plan_for(contract):
-    """Реалистичный план: те же типы и адреса, что даёт корень для этого контракта."""
-    p, o = contract["project_id"], contract["marketplaces"]["ozon"]
-    rc = []
-
-    def add(addr, rtype, after, mode="managed", actions=("create",)):
-        rc.append({"address": addr, "mode": mode, "type": rtype,
-                   "change": {"actions": list(actions), "after": after}})
-    add("terraform_data.guard", "terraform_data", {"input": {"project_id": p}})
-    for api in contract["apis"]:
-        add(f'google_project_service.this["{api}"]', "google_project_service", {"project": p, "service": api})
-    for k, ds in contract["datasets"].items():
-        add(f'google_bigquery_dataset.this["{k}"]', "google_bigquery_dataset", {"project": p, "dataset_id": ds})
-    for t in contract["tables"]:
-        add(f'google_bigquery_table.this["{t["dataset_key"]}.{t["table_id"]}"]', "google_bigquery_table",
-            {"project": p, "dataset_id": t["dataset_key"], "table_id": t["table_id"], "schema": t["schema_json"]})
-    rt = f"sa-ozon-runtime@{p}.iam.gserviceaccount.com"
-    add('module.ozon[0].google_project_iam_member.runtime_job_user', "google_project_iam_member",
-        {"project": p, "role": "roles/bigquery.jobUser", "member": f"serviceAccount:{rt}"})
-    for role, sid in o["secret_ids"].items():
-        add(f'module.ozon[0].google_secret_manager_secret.ozon["{role}"]', "google_secret_manager_secret",
-            {"project": p, "secret_id": sid})
-    for job, spec in o["jobs"].items():
-        add(f'module.ozon[0].google_cloud_run_v2_job.this["{job}"]', "google_cloud_run_v2_job",
-            {"project": p, "name": job, "location": "europe-west1", "template": [{"template": [{
-                "service_account": rt, "containers": [{"image": o["runtime_image"],
-                                                       "env": [{"name": k, "value": v} for k, v in spec["env"].items()]}]}]}]})
-        add(f'module.ozon[0].google_cloud_scheduler_job.this["{job}"]', "google_cloud_scheduler_job",
-            {"project": p, "name": spec["scheduler"], "paused": True, "http_target": [{
-                "uri": f"https://europe-west1-run.googleapis.com/v2/projects/{p}/locations/europe-west1/jobs/{job}:run"}]})
-    return {"format_version": "1.2", "resource_changes": rc,
-            "configuration": {"provider_config": {"google": {"expressions": {}}}}}
-
-
-@pytest.fixture
-def contract():
-    return SY.fixture_contract("client_001")
-
-
-def test_scanner_accepts_the_expected_tenant_plan(contract):
-    assert scan_plan(_plan_for(contract), contract) == []
-
-
-MUTATIONS = {
-    "evetis_project_anywhere": lambda p: p["resource_changes"][1]["change"]["after"].update(
-        {"service": "x", "note": "project-fa311fc0-4d87-4781-986"}),
-    "evetis_number": lambda p: p["configuration"].update({"x": "service-37074083763@serverless"}),
-    "evetis_state_bucket": lambda p: p.update({"backend": {"bucket": "evetis-wb-tfstate-37074083763"}}),
-    "evetis_secret": lambda p: p["resource_changes"].append({"address": "x", "mode": "managed",
-        "type": "google_secret_manager_secret", "change": {"actions": ["create"],
-        "after": {"project": "mpa-t-client-001", "secret_id": "EVETIS_OZON_API_KEY"}}}),
-    "foreign_project_attr": lambda p: p["resource_changes"][2]["change"]["after"].update({"project": "mpa-t-client-002"}),
-    "foreign_project_path": lambda p: p["resource_changes"][2]["change"]["after"].update(
-        {"parent": "projects/some-other-project/secrets/x"}),
-    "foreign_sa_domain": lambda p: p["resource_changes"][2]["change"]["after"].update(
-        {"member": "serviceAccount:sa@mpa-platform.iam.gserviceaccount.com"}),
-    "project_resource": lambda p: p["resource_changes"].append({"address": "google_project.p", "mode": "managed",
-        "type": "google_project", "change": {"actions": ["create"], "after": {"project_id": "mpa-t-client-001"}}}),
-    "project_deletion": lambda p: p["resource_changes"][2]["change"].update({"actions": ["delete"]}),
-    "replace": lambda p: p["resource_changes"][2]["change"].update({"actions": ["delete", "create"]}),
-    "billing": lambda p: p["resource_changes"].append({"address": "b", "mode": "managed",
-        "type": "google_billing_project_info", "change": {"actions": ["create"], "after": {"project": "mpa-t-client-001"}}}),
-    "folder_iam": lambda p: p["resource_changes"].append({"address": "f", "mode": "managed",
-        "type": "google_folder_iam_member", "change": {"actions": ["create"], "after": {"folder": "folders/881419274207"}}}),
-    "org_iam": lambda p: p["resource_changes"].append({"address": "o", "mode": "managed",
-        "type": "google_organization_iam_member", "change": {"actions": ["create"], "after": {"org_id": "1"}}}),
-    "platform_registry_iam": lambda p: p["resource_changes"].append({"address": "ar", "mode": "managed",
-        "type": "google_artifact_registry_repository_iam_member", "change": {"actions": ["create"],
-        "after": {"project": "mpa-platform", "repository": "mpa-runtime"}}}),
-    "sa_key": lambda p: p["resource_changes"].append({"address": "k", "mode": "managed",
-        "type": "google_service_account_key", "change": {"actions": ["create"], "after": {}}}),
-    "secret_version": lambda p: p["resource_changes"].append({"address": "v", "mode": "managed",
-        "type": "google_secret_manager_secret_version", "change": {"actions": ["create"], "after": {}}}),
-    "unpaused_scheduler": lambda p: next(r for r in p["resource_changes"] if r["type"] == "google_cloud_scheduler_job")
-        ["change"]["after"].update({"paused": False}),
-    "other_image": lambda p: next(r for r in p["resource_changes"] if r["type"] == "google_cloud_run_v2_job")
-        ["change"]["after"]["template"][0]["template"][0]["containers"][0].update(
-            {"image": PL.RUNTIME_REGISTRY + "/ozon-runtime@sha256:" + "0" * 64}),
-    "platform_registry_elsewhere": lambda p: p["resource_changes"][2]["change"]["after"].update(
-        {"labels": {"x": PL.RUNTIME_REGISTRY + "/y"}}),
-    "project_role_outside_allowlist": lambda p: next(r for r in p["resource_changes"]
-        if r["type"] == "google_project_iam_member")["change"]["after"].update({"role": "roles/owner"}),
-    "unknown_type": lambda p: p["resource_changes"].append({"address": "c", "mode": "managed",
-        "type": "google_compute_instance", "change": {"actions": ["create"], "after": {"project": "mpa-t-client-001"}}}),
-}
-
-
-@pytest.mark.parametrize("name", sorted(MUTATIONS))
-def test_scanner_negative_controls(contract, name):
-    plan = _plan_for(contract)
-    MUTATIONS[name](plan)
-    assert scan_plan(plan, contract) != [], name
+# Сканер плана: tools/tests/test_tenancy_t32_remediation.py (правила H1/M1/M2/H2).
 
 
 # ═══════════════════════════════════════ workflow и WIF

@@ -125,11 +125,43 @@ plan, apply, refresh, `state pull/push`, блокировка и `force-unlock` 
 4. Решение по секретам и роли провижионера (ниже), затем `tenant-infra.yml` — план, сканер плана
    (`tools/tenancy/plan_scan.py`), и только потом применение по отдельному ACK.
 
-**Решения к T3.3.** Для создания пользовательских ролей нужен `roles/iam.organizationRoleAdmin`
-у владельца. Предложения (не применены): роль контейнеров секретов без значений, минимальная роль
-провижионера вместо admin-ролей T3.1B (без чтения строк, запуска job'ов, снятия паузы, удаления),
-deny-политика на `tenants/` против чтения строк и значений секретов провижионером —
-`tools/tenancy/iam_proposals.py`.
+**Безопасность расписаний (ADR-08 И2).** Задание Scheduler создаётся ENABLED и ставится на паузу
+вторым вызовом; пауза — не механизм безопасности. Механизм — отсутствие права: у `sa-ozon-scheduler`
+нет `run.invoker`, у runtime SA нет `run.jobs.run`, поэтому сработавшее задание получает 403, а
+не загрузку. Права вызова выдают только ворота активации.
+
+**Секреты (ADR-08 И1).** Terraform ведёт только контейнеры секретов и их IAM; версий и значений —
+никогда; учётные данные вносятся вне Terraform и его state (T5).
+
+**Решения к T3.3 (не применено; `tools/tenancy/iam_proposals.py`).**
+- **Роль провижионера** `mpaTenantProvisioner` — 27 разрешений вместо admin-ролей T3.1B, каждое с
+  классом (нужно всегда / только при онбординге / доказать на живом плане / удалить). Прямые права:
+  создание ресурсов арендатора, обновление образа job'а, IAM датасетов и секретов, jobUser на проект.
+  **Косвенные возможности (остаются):** `cloudscheduler.jobs.create` + `actAs` дают исполнение —
+  созданное задание активно и может вызвать API Google от имени runtime SA (например, выгрузить
+  строки арендатора наружу через BigQuery EXPORT DATA); `setIamPolicy` на датасеты и секреты
+  выдаёт доступ членам, которых допускает org policy; `run.jobs.update` подменяет код, который
+  исполнится после активации. **Предотвращено:** значения секретов, вызов job'ов, удаление, токены и
+  ключи SA, IAM папки/организации/EVETIS/платформы, state `platform/*`. Текущие живые admin-роли
+  T3.1B сильнее: `run.admin` запускает job'ы, `bigquery.admin` читает строки (P2-9).
+- **Сдерживание членов IAM** — org policy `iam.managed.allowedPolicyMembers` на `tenants/`:
+  набор принципалов организации + владелец. Закрывает выдачу внешним принципалам, `allUsers`,
+  `allAuthenticatedUsers`. Не закрывает выдачу SA внутри организации (её ловит сканер плана) и
+  вынос через EXPORT DATA.
+- **Необязательно:** deny-политика на провижионера против чтения строк и значений секретов.
+- **WIF:** предлагаемое условие добавляет `job_workflow_ref == workflow_ref`; живое условие не
+  менялось, наличие claim у обычного job'а — проверить пробным токеном.
+- Для пользовательских ролей нужен `roles/iam.organizationRoleAdmin` у владельца.
+
+**Проверка биллинга.** Провайдер Terraform заполняет `billing_account` из `billingAccountName` и
+`billingEnabled` не читает. Поэтому guard в Terraform проверяет только привязку (null и пусто —
+отказ), а `tools/tenancy/tenant_infra.py` до плана читает `projects.getBillingInfo` (нужно лишь
+`resourcemanager.projects.get`) и требует `billingEnabled == true`; любая ошибка чтения — отказ.
+
+**Префикс state в условиях IAM.** Ключ backend — `tenants/<tenant_id>` (backend сам добавляет
+`/default.tfstate`). Любое будущее условие IAM по арендатору строится от
+`naming.terraform_state_iam_prefix` = `tenants/<tenant_id>/` со слэшем: иначе `tenants/abc`
+покрыл бы `tenants/abc_x/…`.
 
 **WB.** Проектная граница не зависит от площадки. WB добавится соседним модулем (`sa-wb-*`,
 `wb_raw`/`wb_mart`, свои секреты и job'ы) и расширением `tenant.v1` (датасеты и `secret_refs`
@@ -167,7 +199,7 @@ AI-ассистент / BI клиента
 ```
 PR: tenants/<tenant_id>/tenant.json (status NEW) → ворота ci / tenancy
   → T3: проект строго naming.derive_project_id (mpa-t-<slug>, при занятом ID — mpa-t<r>-<slug>),
-        датасеты ozon_raw/ref, контейнеры секретов, job'ы (расписания на паузе)
+        датасеты ozon_raw/ref, контейнеры секретов, job'ы (расписания без права вызова, И2)
   → владелец вносит значения ключей в секреты проекта арендатора (stdin, не Git, не чат):
         ozon-seller-client-id, ozon-seller-api-key, ozon-perf-client-id, ozon-perf-client-secret
   → проверка ключей read-only вызовом каждого API

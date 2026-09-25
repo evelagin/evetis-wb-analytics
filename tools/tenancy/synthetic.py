@@ -18,7 +18,7 @@ from pathlib import Path
 
 from tools.tenancy import naming as N
 from tools.tenancy import platform as PL
-from tools.tenancy.registry import TENANTS_DIR, load_tenant, terraform_inputs
+from tools.tenancy.registry import TENANTS_DIR, _terraform_contract, load_tenant
 from tools.tenancy.validation import load_tenant_document
 
 FIXTURE_IMAGE = f"{PL.RUNTIME_REGISTRY}/ozon-runtime@sha256:" + "f" * 64
@@ -43,7 +43,8 @@ def fixture_contract(tenant_id: str) -> dict:
         raise ValueError(f"фикстуры только для синтетики {SYNTHETIC_TENANTS}")
     with tempfile.TemporaryDirectory() as tmp:
         root = _with_ephemeral_client_002(TENANTS_DIR, Path(tmp) / "tenants")
-        contract = terraform_inputs(load_tenant(tenant_id, root))
+        # Только тесты: тот же строгий load_tenant, но во временной копии реестра.
+        contract = _terraform_contract(load_tenant(tenant_id, root))
     contract["marketplaces"]["ozon"]["runtime_image"] = FIXTURE_IMAGE
     return contract
 

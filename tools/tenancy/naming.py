@@ -238,9 +238,19 @@ def resource_labels(tenant_id: str) -> dict[str, str]:
 
 
 def terraform_state_prefix(tenant_id: str) -> str:
-    """Префикс state Terraform арендатора (T3)."""
+    """Префикс state для -backend-config=prefix (T3). Backend сам добавляет «/default.tfstate»."""
     check_tenant_id(tenant_id)
     return f"tenants/{tenant_id}"
+
+
+def terraform_state_iam_prefix(tenant_id: str) -> str:
+    """Префикс объектов state для УСЛОВИЙ IAM — всегда со слэшем на конце (T3.2).
+
+    Строка «tenants/abc» является префиксом «tenants/abc_x/…», поэтому условие
+    startsWith(".../objects/tenants/abc") выдало бы арендатору abc state арендатора
+    abc_x. Условия по арендатору строятся только от этого значения.
+    """
+    return terraform_state_prefix(tenant_id) + "/"
 
 
 def expected_datasets(tenant_id: str) -> dict[str, str]:

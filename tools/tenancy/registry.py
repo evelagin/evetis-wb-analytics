@@ -168,12 +168,23 @@ def load_tenant(tenant_id: str, root: Path = TENANTS_DIR) -> dict:
 TERRAFORM_CONTRACT_VERSION = 1
 
 
-def terraform_inputs(doc: dict, repo: Path = REPO) -> dict:
-    """Контракт «реестр → Terraform арендатора» (T3.2). Только выведенные значения.
+def terraform_inputs(tenant_id: str) -> dict:
+    """Контракт «реестр → Terraform арендатора» (T3.2) — ЕДИНСТВЕННЫЙ производственный путь.
 
-    Вход — документ, уже прошедший valid_tenants()/load_tenant(). Никакого второго
-    разборщика: имена — naming, расписание и таблицы — ozon_contract, факты
-    платформы — platform. Оператор задаёт только tenant_id.
+    tenant_id → канонический TENANTS_DIR → строгий загрузчик (load_tenant) → naming → контракт.
+    Ни готового документа, ни другого корня реестра этот вход не принимает (L3): иначе
+    экспорт можно было бы кормить документом, который реестр не проверял.
+    """
+    return _terraform_contract(load_tenant(tenant_id, TENANTS_DIR))
+
+
+def _terraform_contract(doc: dict, repo: Path = REPO) -> dict:
+    """Сборка контракта из УЖЕ провалидированного документа. Не для производства.
+
+    Вызывают только terraform_inputs(tenant_id) и синтетические фикстуры тестов
+    (tools/tenancy/synthetic.py), которые кладут документ во временную копию реестра
+    и проводят его через тот же load_tenant. Никакого второго разборщика: имена —
+    naming, расписание и таблицы — ozon_contract, факты платформы — platform.
     """
     from tools.tenancy import ozon_contract as OC
     from tools.tenancy import platform as PL
@@ -266,7 +277,7 @@ def main(argv: list[str]) -> int:
             return 3
         if argv[0] == "terraform-inputs":
             # Детерминированный JSON: отсортированные ключи, без меток времени.
-            print(json.dumps(terraform_inputs(load_tenant(argv[1])), indent=2,
+            print(json.dumps(terraform_inputs(argv[1]), indent=2,
                              ensure_ascii=False, sort_keys=True))
             return 0
         # Окружение выдаётся только из целиком валидного реестра (load_tenant →

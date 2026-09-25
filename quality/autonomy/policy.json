@@ -144,6 +144,7 @@
         "**/.gitattributes",
         ".gitmodules"
       ],
+      "tenant_provisioning": ["tools/tenancy/**", "tenants/**", "pipelines/ozon/schema/**", "infra/tenant/**", ".github/workflows/tenant-infra.yml"],
       "agent_instructions": [
         ".claude/**",
         "**/CLAUDE.md",

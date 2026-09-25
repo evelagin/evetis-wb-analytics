@@ -1,19 +1,15 @@
 # Tenancy T3.2 — офлайн-доказательства корня арендатора (terraform test, мок провайдера).
 # Ни облака, ни state: провайдер google подменён. Фикстуры — вывод реестра
 # (tools/tenancy/synthetic.py); их актуальность проверяет tools/tests/test_tenancy_t32.py.
+# По умолчанию поиск возвращает ЧУЖОЙ проект: каждый положительный прогон обязан явно
+# подставить найденный проект арендатора, иначе guard его отвергнет.
 
 mock_provider "google" {
   mock_data "google_project" {
-    defaults = {
-      folder_id       = "881419274207"
-      number          = "123456789012"
-      billing_account = "000000-000000-000000"
-    }
+    defaults = { folder_id = "881419274207", number = "123456789012", billing_account = "000000-000000-000000" }
   }
   mock_data "google_projects" {
-    defaults = {
-      projects = [{ project_id = "mock-tenant-project" }]
-    }
+    defaults = { projects = [{ project_id = "not-the-tenant", number = "123456789012", lifecycle_state = "ACTIVE", parent = { id = "881419274207", type = "folder" } }] }
   }
 }
 
@@ -21,6 +17,10 @@ run "client_001_renders" {
   command = plan
   variables {
     contract = jsondecode(file("tests/fixtures/client_001.contract.json"))
+  }
+  override_data {
+    target = data.google_projects.tenant_active
+    values = { projects = [{ project_id = "mpa-t-client-001", number = "123456789012", lifecycle_state = "ACTIVE", parent = { id = "881419274207", type = "folder" } }] }
   }
   assert {
     condition     = output.project_id == "mpa-t-client-001" && output.state_prefix == "tenants/client_001"
@@ -36,7 +36,7 @@ run "client_001_renders" {
   }
   assert {
     condition     = alltrue([for k, p in output.ozon.paused : p == true]) && length(output.ozon.paused) == 3
-    error_message = "расписания обязаны создаваться на паузе"
+    error_message = "расписания обязаны быть на паузе (второй слой; первый — отсутствие run.invoker, ADR-08 И2)"
   }
   assert {
     condition     = alltrue([for k, i in output.ozon.images : i == "europe-west1-docker.pkg.dev/mpa-platform/mpa-runtime/ozon-runtime@sha256:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"])
@@ -50,12 +50,20 @@ run "client_001_renders" {
     condition     = output.ozon.secrets == tolist(["performance_client_id", "performance_client_secret", "seller_api_key", "seller_client_id"])
     error_message = "контейнеры секретов — ровно четыре роли Ozon"
   }
+  assert {
+    condition     = output.ozon.runtime_sa == "sa-ozon-runtime@mpa-t-client-001.iam.gserviceaccount.com" && output.ozon.scheduler_sa == "sa-ozon-scheduler@mpa-t-client-001.iam.gserviceaccount.com"
+    error_message = "идентичности выводятся детерминированно и известны на плане"
+  }
 }
 
 run "client_002_same_code_different_tenant" {
   command = plan
   variables {
     contract = jsondecode(file("tests/fixtures/client_002.contract.json"))
+  }
+  override_data {
+    target = data.google_projects.tenant_active
+    values = { projects = [{ project_id = "mpa-t-client-002", number = "123456789012", lifecycle_state = "ACTIVE", parent = { id = "881419274207", type = "folder" } }] }
   }
   assert {
     condition     = output.project_id == "mpa-t-client-002" && output.state_prefix == "tenants/client_002"
@@ -80,6 +88,10 @@ run "guard_rejects_project_outside_tenants_folder" {
     target = data.google_project.tenant
     values = { folder_id = "999999999999", number = "123456789012", billing_account = "000000-000000-000000" }
   }
+  override_data {
+    target = data.google_projects.tenant_active
+    values = { projects = [{ project_id = "mpa-t-client-001", number = "123456789012", lifecycle_state = "ACTIVE", parent = { id = "881419274207", type = "folder" } }] }
+  }
   expect_failures = [terraform_data.guard]
 }
 
@@ -91,6 +103,26 @@ run "guard_rejects_project_without_billing" {
   override_data {
     target = data.google_project.tenant
     values = { folder_id = "881419274207", number = "123456789012", billing_account = "" }
+  }
+  override_data {
+    target = data.google_projects.tenant_active
+    values = { projects = [{ project_id = "mpa-t-client-001", number = "123456789012", lifecycle_state = "ACTIVE", parent = { id = "881419274207", type = "folder" } }] }
+  }
+  expect_failures = [terraform_data.guard]
+}
+
+run "guard_rejects_null_billing" {
+  command = plan
+  variables {
+    contract = jsondecode(file("tests/fixtures/client_001.contract.json"))
+  }
+  override_data {
+    target = data.google_project.tenant
+    values = { folder_id = "881419274207", number = "123456789012", billing_account = null }
+  }
+  override_data {
+    target = data.google_projects.tenant_active
+    values = { projects = [{ project_id = "mpa-t-client-001", number = "123456789012", lifecycle_state = "ACTIVE", parent = { id = "881419274207", type = "folder" } }] }
   }
   expect_failures = [terraform_data.guard]
 }
@@ -115,6 +147,86 @@ run "guard_rejects_evetis_project_number" {
   override_data {
     target = data.google_project.tenant
     values = { folder_id = "881419274207", number = "37074083763", billing_account = "000000-000000-000000" }
+  }
+  override_data {
+    target = data.google_projects.tenant_active
+    values = { projects = [{ project_id = "mpa-t-client-001", number = "37074083763", lifecycle_state = "ACTIVE", parent = { id = "881419274207", type = "folder" } }] }
+  }
+  expect_failures = [terraform_data.guard]
+}
+
+run "guard_rejects_platform_project_number" {
+  command = plan
+  variables {
+    contract = jsondecode(file("tests/fixtures/client_001.contract.json"))
+  }
+  override_data {
+    target = data.google_project.tenant
+    values = { folder_id = "881419274207", number = "777428383056", billing_account = "000000-000000-000000" }
+  }
+  override_data {
+    target = data.google_projects.tenant_active
+    values = { projects = [{ project_id = "mpa-t-client-001", number = "777428383056", lifecycle_state = "ACTIVE", parent = { id = "881419274207", type = "folder" } }] }
+  }
+  expect_failures = [terraform_data.guard]
+}
+
+run "guard_rejects_search_returning_other_project" {
+  command = plan
+  variables {
+    contract = jsondecode(file("tests/fixtures/client_001.contract.json"))
+  }
+  override_data {
+    target = data.google_projects.tenant_active
+    values = { projects = [{ project_id = "mpa-t-client-002", number = "123456789012", lifecycle_state = "ACTIVE", parent = { id = "881419274207", type = "folder" } }] }
+  }
+  expect_failures = [terraform_data.guard]
+}
+
+run "guard_rejects_default_mock_search_result" {
+  command = plan
+  variables {
+    contract = jsondecode(file("tests/fixtures/client_001.contract.json"))
+  }
+  expect_failures = [terraform_data.guard]
+}
+
+run "guard_rejects_search_parent_outside_tenants" {
+  command = plan
+  variables {
+    contract = jsondecode(file("tests/fixtures/client_001.contract.json"))
+  }
+  override_data {
+    target = data.google_projects.tenant_active
+    values = { projects = [{ project_id = "mpa-t-client-001", number = "123456789012", lifecycle_state = "ACTIVE", parent = { id = "1043233412973", type = "organization" } }] }
+  }
+  expect_failures = [terraform_data.guard]
+}
+
+run "guard_rejects_number_mismatch_between_apis" {
+  command = plan
+  variables {
+    contract = jsondecode(file("tests/fixtures/client_001.contract.json"))
+  }
+  override_data {
+    target = data.google_projects.tenant_active
+    values = { projects = [{ project_id = "mpa-t-client-001", number = "999999999999", lifecycle_state = "ACTIVE", parent = { id = "881419274207", type = "folder" } }] }
+  }
+  expect_failures = [terraform_data.guard]
+}
+
+run "guard_rejects_empty_project_number" {
+  command = plan
+  variables {
+    contract = jsondecode(file("tests/fixtures/client_001.contract.json"))
+  }
+  override_data {
+    target = data.google_project.tenant
+    values = { folder_id = "881419274207", number = "", billing_account = "000000-000000-000000" }
+  }
+  override_data {
+    target = data.google_projects.tenant_active
+    values = { projects = [{ project_id = "mpa-t-client-001", number = "", lifecycle_state = "ACTIVE", parent = { id = "881419274207", type = "folder" } }] }
   }
   expect_failures = [terraform_data.guard]
 }
