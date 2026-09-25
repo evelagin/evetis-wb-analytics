@@ -96,6 +96,11 @@ Workflows AE лежат в `main`, но ничего не делают:
 
 #### M4. Переменные репозитория
 
+> **Выполнено:** M4a (`AE_READER_SA`, 2026-09-25 10:48 UTC, из Terraform state и живого SA) и M4b
+> (шесть `AE_ANTHROPIC_*`, владелец, 2026-09-25 14:24 UTC). Значения сверены с живыми идентификаторами.
+> `AE_ENABLED` нет. M5 выполнен владельцем в Console, но с исключением scope (`AE_V1_SECURITY.md` §6).
+> План M6 — [`AE_V1_M6_COMMISSIONING_PLAN.md`](AE_V1_M6_COMMISSIONING_PLAN.md).
+
 | | |
 |---|---|
 | Текущее | есть `WIF_PROVIDER`, `GCP_PROJECT_ID`; переменных AE нет |
