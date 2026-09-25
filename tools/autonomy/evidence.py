@@ -18,11 +18,13 @@ import tempfile
 from pathlib import Path
 from typing import Protocol
 
+from tools.autonomy.redact import redact_tail, redact_text
+
 
 def _git(cwd: Path, *args: str, check: bool = True, input: str | None = None) -> str:
     r = subprocess.run(["git", *args], cwd=cwd, capture_output=True, text=True, input=input)
     if check and r.returncode != 0:
-        raise RuntimeError(f"git {' '.join(args)}: {r.stderr.strip()[:400]}")
+        raise RuntimeError(f"git {' '.join(args)}: {redact_text(r.stderr.strip()[:400])}")
     return r.stdout
 
 
@@ -93,7 +95,8 @@ def _run(cmd: list[str], cwd: Path, timeout: int = 1800, env: dict | None = None
         return {"exit_code": 124, "tail": "timeout"}
     except FileNotFoundError as e:
         return {"exit_code": 127, "tail": str(e)}
-    return {"exit_code": r.returncode, "tail": ((r.stdout or "") + (r.stderr or ""))[-1500:]}
+    # Хвост вывода — недоверенный текст (repr stdout теста мог содержать токен, инцидент M6).
+    return {"exit_code": r.returncode, "tail": redact_tail((r.stdout or "") + (r.stderr or ""), 1500)}
 
 
 class RepoEvidenceRunner:

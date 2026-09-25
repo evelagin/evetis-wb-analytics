@@ -18,6 +18,7 @@ import tempfile
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
+from tools.autonomy.redact import safe_dumps
 from tools.autonomy.schema import require_valid
 
 TERMINAL = {"COMPLETED", "FAILED"}
@@ -81,9 +82,11 @@ class StateStore:
 
     def _write(self, path: Path, doc: dict) -> None:
         # Атомарно: частично записанная запись не должна пережить падение процесса.
+        # Секретоподобное — редактируется ДО записи; остаток после редакции — отказ (redact.py).
+        text = safe_dumps(doc, indent=2, sort_keys=True)
         fd, tmp = tempfile.mkstemp(dir=path.parent, prefix=".tmp-")
         with os.fdopen(fd, "w", encoding="utf-8") as f:
-            json.dump(doc, f, ensure_ascii=False, indent=2, sort_keys=True)
+            f.write(text)
             f.write("\n")
         os.replace(tmp, path)
 
