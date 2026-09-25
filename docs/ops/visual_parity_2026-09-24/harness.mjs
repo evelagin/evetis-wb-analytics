@@ -7,6 +7,7 @@
 //   node harness.mjs <distRoot> writer  <spreadsheet> <sheetName>   -> runs ozonUnitkaLoader (TEST only)
 import fs from 'fs';
 import { execFileSync } from 'child_process';
+import { createHash } from 'crypto';
 import { OAuth2Client } from 'google-auth-library';
 
 const [,, distRoot, mode, spreadsheet, sheetName] = process.argv;
@@ -14,7 +15,13 @@ const TEST = '1HTgd__BMvvuDsS02HdiGtkpyrzWqeX5pp9TrN6k8ftY';
 const PROD = '1E4L4JuwfEqr9owhsGkAjb8F24lRpWpWkEyVmSuRxaJg';
 const SA = 'sa-unitka-sheet-rehearsal@project-fa311fc0-4d87-4781-986.iam.gserviceaccount.com';
 const planFile = process.argv[6] ?? 'migration_plan.json';
-if ((mode === 'apply' || mode === 'writer') && spreadsheet !== TEST) throw new Error('writes allowed ONLY into TEST');
+// Запись в PRODUCTION — только `apply` и только по отпечатку ПРОВЕРЕННОГО плана: владелец/оператор передаёт
+// sha256 файла плана в VISUAL_PARITY_PROD_PLAN_SHA256. Любой другой файл, режим или книга — отказ.
+const planSha = fs.existsSync(planFile) ? createHash('sha256').update(fs.readFileSync(planFile)).digest('hex') : null;
+const prodApply = mode === 'apply' && spreadsheet === PROD && !!process.env.VISUAL_PARITY_PROD_PLAN_SHA256
+  && process.env.VISUAL_PARITY_PROD_PLAN_SHA256 === planSha;
+if (mode === 'writer' && spreadsheet !== TEST) throw new Error('writer runs ONLY against TEST');
+if (mode === 'apply' && spreadsheet !== TEST && !prodApply) throw new Error('PROD apply requires VISUAL_PARITY_PROD_PLAN_SHA256 = sha256 of the plan file');
 if (![TEST, PROD].includes(spreadsheet)) throw new Error('unknown spreadsheet');
 
 const imp = (p) => import(`${distRoot}/${p}`);
@@ -56,6 +63,7 @@ const CANONICAL_FROM = '2026-05';
 
 if (mode === 'plan' || mode === 'apply') {
   const sheets = new SheetsRest(spreadsheet, mode === 'plan', authFor(mode === 'plan'));
+  if (mode === 'apply') console.log(JSON.stringify({ apply: planFile, sha256: planSha, spreadsheet }));
   if (mode === 'plan') {
     const { meta, geo, layouts } = await liveLayouts(sheets);
     const all = layouts.map((x) => x.layout);
@@ -74,7 +82,13 @@ if (mode === 'plan' || mode === 'apply') {
     console.log(JSON.stringify({ sections: plan.sections.length, canonical: plan.canonical, counts: plan.counts }));
   } else {
     const plan = JSON.parse(fs.readFileSync(planFile, 'utf8'));
-    if (plan.spreadsheet !== TEST || plan.sheetName !== sheetName) throw new Error('plan is not for this TEST sheet');
+    if (plan.spreadsheet !== spreadsheet || plan.sheetName !== sheetName) throw new Error('plan is for another sheet');
+    const kinds = new Set(plan.requests.map((r) => `${Object.keys(r)[0]}:${Object.values(r)[0].fields}`));
+    for (const k of kinds) {
+      if (!['updateDimensionProperties:pixelSize', 'repeatCell:userEnteredFormat.borders', 'updateCells:userEnteredFormat.borders'].includes(k)) {
+        throw new Error(`request outside format-only scope: ${k}`);
+      }
+    }
     let n = 0;
     for (let i = 0; i < plan.requests.length; i += 400) n += await sheets.structureWrite(plan.requests.slice(i, i + 400));
     console.log(JSON.stringify({ applied: plan.requests.length, replies: n }));

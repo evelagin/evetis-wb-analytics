@@ -216,3 +216,78 @@ NORMAL_DAY_ROW_HEIGHT=21  BORDER_COLOR_MIGRATION=PASS  VISUAL_DRIFT_AFTER_WRITER
 - Блоки Ozon раскрыты по-разному (видимая ширина 1 352 – 2 108 px) — свёрнутые группы,
   состояние просмотра, не менялось.
 - Gate 11 не начат.
+
+## 10. Журнал вывода в production (25.09.2026)
+
+Условие выполнено: приёмка Gate 10 после прогона 25.09 10:00 МСК — PASS (WB `B2` и Ozon `B30`
+23.09 → 24.09 независимо, оба `LCD_COMMITTED`, регресс 0). Разрешение владельца на вывод — 25.09.
+
+| время UTC | шаг | исход |
+|---|---|---|
+| до 07:47 | PR #176: `main` дважды ушёл вперёд (#177, #178) → слит в ветку, конфликт только `CHANGELOG.md`; `cloud/` в `main` с `a0a138c` не менялся | CLEAN, CI 11/11 зелёный |
+| 07:47:39 | слияние PR #176 | `main` = `59a099fa7b8e…`, дерево = проверенной голове `e569c5e` |
+| 07:47–07:49 | `deploy-shadow` | `wb-loader@sha256:dfe3fd3ed8395be62f7d33ba22a1527a76e63f6c26b8225517aac82e7968cf6e`, тег и метка `git-sha` = `59a099f` |
+| 07:49–07:50 | содержимое образа (слои из реестра, без запуска) | `presentation.js` `day: 21`, `wbcontract.js` 68 блоков `borderColors`, `structure.js` `colorStyle`; побайтно = локальной сборке дерева слияния |
+| 07:50–07:52 | `deploy-prod` | все 9 prod-job на новом digest, `GIT_SHA=59a099f`; env Ozon/WB прежние |
+| ≈07:52 | предусловия | `B2`=`B30`=24.09, режимы AUTO, УФ 434, 650×574, 22 слота, хвост и геометрия без изменений |
+| ≈07:53 | план с живого листа | 10 284 запроса, sha256 `57d23e48…220b` — побайтно = отрепетированному; только `pixelSize` и `userEnteredFormat.borders` |
+| 07:55:44 | снимок отката | `rollback_plan.json` 259 запросов, sha256 `dbe084c8…af08`: 586 высот (день 25), 332 002 стороны рамок (все чёрные) |
+| 07:55:56–07:57:04 | запись (harness, допуск по sha256 плана) | 10 284 / 10 284 |
+| 07:57–08:03 | независимая сверка | см. ниже |
+| 08:04–08:05 | контрольный прогон `ozon-unitka-prod-fjmkc` (слот T11) | exit 0, источники свежие, `LCD_NOT_ADVANCED` 24.09, PRE_COMMIT PASS |
+
+После записи (весь лист, до/после):
+
+```
+VALUES_MUTATIONS=0  FORMULA_MUTATIONS=0  NUMBER_FORMAT_MUTATIONS=0  NAMED_RANGE_MUTATIONS=0
+MERGE_MUTATIONS=0  CF_LOGIC_MUTATIONS=0  OWNER_TAIL_MUTATIONS=0  COLUMN_WIDTH_MUTATIONS=0
+TYPOGRAPHY_MUTATIONS=0  ALIGNMENT_MUTATIONS=0  FILL_MUTATIONS=0  LCD_MUTATIONS=0
+NORMAL_DAY_ROW_HEIGHT=21   (518 строк 25→21; прочие 132 строки без изменений)
+BORDER_COLOR_MIGRATION=PASS (14 062 ячейки, строки 466–637, колонки 12–561; стиль 0 изменений;
+                             чёрный→#5f6368 16 546 сторон, чёрный→#9aa0a6 8 100; набор = репетиции;
+                             readback 332 002 / 0 расхождений)
+UNEXPLAINED_FORMAT_MUTATIONS=0
+```
+
+После контрольного прогона писателя:
+
+```
+WRITER_EXIT=0  SOURCE_STALE=NO  LCD_MONOTONICITY=PASS (24.09 → 24.09)
+VISUAL_DRIFT_AFTER_WRITER=0  FINANCIAL_REGRESSION=0  STRUCTURAL_REGRESSION=0
+WB_MUTATIONS=0 (лист WB и ZZ_CONFIG побайтно те же)
+VISUAL_PARITY_PRODUCTION=PASS
+```
+
+## 11. Артефакты и откат
+
+Крупные планы в Git не хранятся. Неизменяемые копии — в штатном бакете доказательств
+`gs://evetis-audit-evidence-37074083763` (версионирование, удержание 3 года, публичный доступ запрещён);
+после загрузки файлы скачаны обратно и sha256 совпали.
+
+| объект | generation | размер | sha256 |
+|---|---|---|---|
+| `ozon/unitka_visual_parity_2026-09-25/rollback_plan.json` (снимок до записи, 07:55:44Z, 259 запросов) | `1790326455789700` | 21 912 019 | `dbe084c87f78638bc3e505d921893678f0ccc7d09f7fcb0684e45baad897af08` |
+| `ozon/unitka_visual_parity_2026-09-25/migration_plan.json` (применённый, 10 284 запроса) | `1790326460545348` | 5 045 072 | `57d23e48c5f467dff577ae1af7789d592fcbd888718d334c3c42d8fb0589220b` |
+| `ozon/unitka_visual_parity_2026-09-25/MANIFEST.sha256` | `1790326462713475` | 171 | — |
+
+В Git: `visual_parity_2026-09-24/production_2026-09-25/ARTIFACTS_MANIFEST.json` (адреса, поколения,
+хеши, образ runtime), `MANIFEST.sha256` и отпечатки Ozon/WB до записи, после записи и после писателя.
+
+**Откат только оформления** (данные и Gate 10 не затрагиваются; доказан на копии
+`OZON_VISUAL_ROLLBACK_TEST`: снимок → миграция → откат = исходное состояние по 14 отпечаткам,
+0 ячеек формата):
+1. Runtime с прежним форматтером: `deploy-prod` на `sha256:31b2d480394e88d988598ca83632c79ff1973ccacdef1f0b5d347dc9ec3ccaa6`
+   (если в `cloud/` после `59a099f` ничего не слито) или revert #176 + деплой. Иначе писатель вернёт 21 px.
+2. Скачать `rollback_plan.json` нужного поколения (`gcloud storage cp gs://evetis-audit-evidence-37074083763/ozon/unitka_visual_parity_2026-09-25/rollback_plan.json#1790326455789700 .`),
+   проверить sha256.
+3. `VISUAL_PARITY_PROD_PLAN_SHA256=dbe084c87f78638bc3e505d921893678f0ccc7d09f7fcb0684e45baad897af08 node harness.mjs <dist> apply <prod> OZON_Юнит_2025 rollback_plan.json`
+   (harness примет только запросы высоты строки и рамок), затем `readback`/`fp.py`.
+
+Если понадобится новый снимок (например, лист изменился после 25.09): `harness.mjs plan` + `harness.mjs snapshot`
+с живого листа строят его заново тем же кодом; хранить рядом с его sha256.
+
+```
+VISUAL_PARITY_PRODUCTION=PASS
+VISUAL_DRIFT_AFTER_WRITER=0
+ROLLBACK_PROVEN=PASS
+```
