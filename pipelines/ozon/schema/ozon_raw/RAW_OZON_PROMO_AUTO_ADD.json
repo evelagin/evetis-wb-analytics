@@ -1,0 +1,174 @@
+{
+  "clustering": [
+    "action_id",
+    "list_kind",
+    "product_id"
+  ],
+  "schema": [
+    {
+      "mode": "REQUIRED",
+      "name": "observed_at",
+      "type": "TIMESTAMP"
+    },
+    {
+      "mode": "REQUIRED",
+      "name": "observation_bucket",
+      "type": "STRING"
+    },
+    {
+      "mode": "REQUIRED",
+      "name": "observation_id",
+      "type": "STRING"
+    },
+    {
+      "mode": "REQUIRED",
+      "name": "environment",
+      "type": "STRING"
+    },
+    {
+      "mode": "NULLABLE",
+      "name": "run_id",
+      "type": "STRING"
+    },
+    {
+      "mode": "REQUIRED",
+      "name": "action_id",
+      "type": "INTEGER"
+    },
+    {
+      "description": "Дата и время автодобавления из result.auto_add_dates[] метода /v1/actions. Параметр запроса, часть грейна.",
+      "mode": "REQUIRED",
+      "name": "auto_add_at",
+      "type": "TIMESTAMP"
+    },
+    {
+      "description": "SCHEDULED — площадка ДОБАВИТ (/auto-add/products/list); ELIGIBLE — площадка МОЖЕТ добавить (/auto-add/products/candidates). Схлопывать запрещено.",
+      "mode": "REQUIRED",
+      "name": "list_kind",
+      "type": "STRING"
+    },
+    {
+      "description": "products[].product_id.",
+      "mode": "REQUIRED",
+      "name": "product_id",
+      "type": "INTEGER"
+    },
+    {
+      "description": "products[].offer_id — артикул продавца.",
+      "mode": "NULLABLE",
+      "name": "offer_id",
+      "type": "STRING"
+    },
+    {
+      "description": "products[].sku.",
+      "mode": "NULLABLE",
+      "name": "ozon_sku",
+      "type": "INTEGER"
+    },
+    {
+      "description": "Канонический SKU EVETIS. NULL = не разрешён; строка НЕ отбрасывается.",
+      "mode": "NULLABLE",
+      "name": "internal_sku",
+      "type": "STRING"
+    },
+    {
+      "description": "RESOLVED_BY_PRODUCT_ID | RESOLVED_BY_OFFER_ID | UNRESOLVED.",
+      "mode": "NULLABLE",
+      "name": "sku_resolution_status",
+      "type": "STRING"
+    },
+    {
+      "description": "products[].name, дословно.",
+      "mode": "NULLABLE",
+      "name": "product_name",
+      "type": "STRING"
+    },
+    {
+      "description": "products[].price — текущая цена продавца.",
+      "mode": "NULLABLE",
+      "name": "price_rub",
+      "type": "NUMERIC"
+    },
+    {
+      "description": "products[].base_price.",
+      "mode": "NULLABLE",
+      "name": "base_price_rub",
+      "type": "NUMERIC"
+    },
+    {
+      "description": "products[].max_discount_price.",
+      "mode": "NULLABLE",
+      "name": "max_discount_price_rub",
+      "type": "NUMERIC"
+    },
+    {
+      "description": "products[].min_seller_price.",
+      "mode": "NULLABLE",
+      "name": "min_seller_price_rub",
+      "type": "NUMERIC"
+    },
+    {
+      "description": "products[].marketplace_seller_price.",
+      "mode": "NULLABLE",
+      "name": "marketplace_seller_price_rub",
+      "type": "NUMERIC"
+    },
+    {
+      "description": "products[].action_price_to_auto_add — цена, по которой площадка добавит товар.",
+      "mode": "NULLABLE",
+      "name": "action_price_to_auto_add_rub",
+      "type": "NUMERIC"
+    },
+    {
+      "description": "products[].min_action_quantity.",
+      "mode": "NULLABLE",
+      "name": "min_action_quantity",
+      "type": "INTEGER"
+    },
+    {
+      "description": "products[].quantity_to_auto_add.",
+      "mode": "NULLABLE",
+      "name": "quantity_to_auto_add",
+      "type": "INTEGER"
+    },
+    {
+      "description": "products[].currency.",
+      "mode": "NULLABLE",
+      "name": "currency_code",
+      "type": "STRING"
+    },
+    {
+      "description": "products[].add_mode. Возвращается только методом /list; у /candidates отсутствует → NULL.",
+      "mode": "NULLABLE",
+      "name": "add_mode",
+      "type": "STRING"
+    },
+    {
+      "description": "Элемент products[] дословно.",
+      "mode": "NULLABLE",
+      "name": "raw_item_json",
+      "type": "STRING"
+    },
+    {
+      "mode": "NULLABLE",
+      "name": "source_endpoint",
+      "type": "STRING"
+    },
+    {
+      "description": "sha256 от (observation_id, action_id, auto_add_at, list_kind, product_id).",
+      "mode": "NULLABLE",
+      "name": "source_payload_hash",
+      "type": "STRING"
+    },
+    {
+      "mode": "NULLABLE",
+      "name": "ingested_at",
+      "type": "TIMESTAMP"
+    }
+  ],
+  "table_id": "RAW_OZON_PROMO_AUTO_ADD",
+  "time_partitioning": {
+    "field": "observed_at",
+    "type": "DAY"
+  }
+}

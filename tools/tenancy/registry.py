@@ -6,6 +6,7 @@
   python tools/tenancy/registry.py validate            # ворота CI
   python tools/tenancy/registry.py list                # валидированные арендаторы, JSON
   python tools/tenancy/registry.py runtime-env <tenant_id>
+  python tools/tenancy/registry.py terraform-inputs <tenant_id>   # контракт Terraform (T3.2)
 
 Коды выхода: 0 — успех (реестр валиден), 1 — есть нарушения, 3 — сбой инструмента.
 
@@ -164,6 +165,76 @@ def load_tenant(tenant_id: str, root: Path = TENANTS_DIR) -> dict:
     return tenants[tenant_id]
 
 
+TERRAFORM_CONTRACT_VERSION = 1
+
+
+def terraform_inputs(doc: dict, repo: Path = REPO) -> dict:
+    """Контракт «реестр → Terraform арендатора» (T3.2). Только выведенные значения.
+
+    Вход — документ, уже прошедший valid_tenants()/load_tenant(). Никакого второго
+    разборщика: имена — naming, расписание и таблицы — ozon_contract, факты
+    платформы — platform. Оператор задаёт только tenant_id.
+    """
+    from tools.tenancy import ozon_contract as OC
+    from tools.tenancy import platform as PL
+
+    tid, db = doc["tenant_id"], doc["data_boundary"]
+    if db["kind"] != "dedicated_project" or doc["config_authority"] != "TENANT_REGISTRY":
+        raise N.NamingError(f"{tid!r} не выделенный арендатор реестра: Terraform арендатора "
+                            "к нему неприменим (EVETIS ведёт свой Terraform)")
+    revision = db.get("project_id_revision")
+    project_id = N.derive_project_id(tid, revision)
+    if project_id != db["gcp_project_id"]:           # валидатор уже проверил; не доверяем молча
+        raise N.NamingError(f"{tid!r}: gcp_project_id не равен каноническому {project_id!r}")
+    if doc["scheduler_state"] != "PAUSED":
+        raise N.NamingError(f"{tid!r}: до ворот активации (T3.3+) scheduler_state обязан быть PAUSED")
+
+    releases = PL.load_runtime_release(repo)
+    marketplaces, apis = {}, set(PL.TENANT_BASE_APIS)
+    ozon = doc["marketplaces"]["ozon"]
+    entities = list(ozon.get("entities", [])) if ozon["enabled"] else []
+    if ozon["enabled"]:
+        base_env = ozon_runtime_env(doc)
+        jobs = {}
+        for job, spec in OC.jobs_for(entities).items():
+            env = dict(base_env, ENTITIES=",".join(spec["entities"]),
+                       STRICT_PAGE_CAPS=OC.DEDICATED_STRICT_PAGE_CAPS)
+            jobs[job] = {"scheduler": spec["scheduler"], "schedule": spec["schedule"],
+                         "time_zone": spec["time_zone"], "entities": spec["entities"], "env": env}
+        marketplaces["ozon"] = {
+            "service_accounts": N.dedicated_service_accounts(tid, "ozon"),
+            "secret_ids": dict(sorted(ozon["secret_refs"].items())),
+            "raw_dataset_key": "ozon_raw",
+            "ref_dataset_key": "ref",
+            "jobs": jobs,
+            "runtime_image": releases.get("ozon"),
+        }
+        apis.update(OC.OZON_APIS)
+
+    tables = []
+    for ds_key, names in OC.tables_for(entities).items():
+        tables += [OC.terraform_table(ds_key, t) for t in names]
+
+    return {
+        "contract_version": TERRAFORM_CONTRACT_VERSION,
+        "tenant_id": tid,
+        "status": doc["status"],
+        "project_id": project_id,
+        "project_id_revision": revision or 1,
+        "parent_folder": PL.TENANTS_FOLDER,
+        "region": PL.RUNTIME_REGION,
+        "bq_location": db["bq_location"],
+        "labels": dict(N.resource_labels(tid), managed_by="vts-tenant-infra"),
+        "state": {"bucket": PL.STATE_BUCKET, "prefix": N.terraform_state_prefix(tid)},
+        "scheduler_state": doc["scheduler_state"],
+        "bootstrap_apis": sorted(PL.TENANT_BOOTSTRAP_APIS),
+        "apis": sorted(apis),
+        "datasets": dict(sorted(db["datasets"].items())),
+        "tables": sorted(tables, key=lambda t: (t["dataset_key"], t["table_id"])),
+        "marketplaces": marketplaces,
+    }
+
+
 def tenant_summary(doc: dict) -> dict:
     """Идентичность арендатора для потребителей: без ссылок на секреты и прочего."""
     db = doc["data_boundary"]
@@ -174,7 +245,7 @@ def tenant_summary(doc: dict) -> dict:
 
 
 def main(argv: list[str]) -> int:
-    if not argv or argv[0] not in ("validate", "list", "runtime-env"):
+    if not argv or argv[0] not in ("validate", "list", "runtime-env", "terraform-inputs"):
         print(__doc__, file=sys.stderr)
         return 3
     try:
@@ -191,8 +262,13 @@ def main(argv: list[str]) -> int:
                              indent=2, ensure_ascii=False))
             return 0
         if len(argv) != 2:
-            print("runtime-env <tenant_id>", file=sys.stderr)
+            print(f"{argv[0]} <tenant_id>", file=sys.stderr)
             return 3
+        if argv[0] == "terraform-inputs":
+            # Детерминированный JSON: отсортированные ключи, без меток времени.
+            print(json.dumps(terraform_inputs(load_tenant(argv[1])), indent=2,
+                             ensure_ascii=False, sort_keys=True))
+            return 0
         # Окружение выдаётся только из целиком валидного реестра (load_tenant →
         # valid_tenants): коллизия у соседа делает небезопасным и этого арендатора.
         print(json.dumps(ozon_runtime_env(load_tenant(argv[1])), indent=2, ensure_ascii=False))
@@ -201,7 +277,7 @@ def main(argv: list[str]) -> int:
         for f in e.findings:
             print(f"FAIL {f}", file=sys.stderr)
         return 1
-    except N.NamingError as e:
+    except ValueError as e:   # NamingError, ContractError, RuntimeReleaseError — нарушение контракта
         print(f"FAIL {e}", file=sys.stderr)
         return 1
     except Exception as e:  # noqa: BLE001 — сбой инструмента отличаем от нарушения

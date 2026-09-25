@@ -1,0 +1,106 @@
+{
+  "clustering": [
+    "offer_id",
+    "action_ordinal"
+  ],
+  "schema": [
+    {
+      "mode": "REQUIRED",
+      "name": "observed_at",
+      "type": "TIMESTAMP"
+    },
+    {
+      "mode": "REQUIRED",
+      "name": "observation_bucket",
+      "type": "STRING"
+    },
+    {
+      "mode": "REQUIRED",
+      "name": "observation_id",
+      "type": "STRING"
+    },
+    {
+      "mode": "REQUIRED",
+      "name": "environment",
+      "type": "STRING"
+    },
+    {
+      "mode": "NULLABLE",
+      "name": "run_id",
+      "type": "STRING"
+    },
+    {
+      "mode": "REQUIRED",
+      "name": "offer_id",
+      "type": "STRING"
+    },
+    {
+      "mode": "NULLABLE",
+      "name": "product_id",
+      "type": "INTEGER"
+    },
+    {
+      "description": "Канонический SKU EVETIS. NULL = не разрешён.",
+      "mode": "NULLABLE",
+      "name": "internal_sku",
+      "type": "STRING"
+    },
+    {
+      "description": "Позиция в actions[], начиная с 0. Порядок источника сохраняется.",
+      "mode": "REQUIRED",
+      "name": "action_ordinal",
+      "type": "INTEGER"
+    },
+    {
+      "description": "actions[].title дословно. Ozon не отдаёт здесь идентификатор акции — только название.",
+      "mode": "NULLABLE",
+      "name": "action_title",
+      "type": "STRING"
+    },
+    {
+      "description": "actions[].value БЕЗ интерпретации единицы. Рубли у ценовых акций, месяцы у рассрочки, 100 у программ «за 1 рубль».",
+      "mode": "NULLABLE",
+      "name": "action_value_num",
+      "type": "NUMERIC"
+    },
+    {
+      "description": "actions[].date_from.",
+      "mode": "NULLABLE",
+      "name": "action_date_from",
+      "type": "TIMESTAMP"
+    },
+    {
+      "description": "actions[].date_to.",
+      "mode": "NULLABLE",
+      "name": "action_date_to",
+      "type": "TIMESTAMP"
+    },
+    {
+      "description": "Элемент actions[] дословно.",
+      "mode": "NULLABLE",
+      "name": "raw_item_json",
+      "type": "STRING"
+    },
+    {
+      "mode": "NULLABLE",
+      "name": "source_endpoint",
+      "type": "STRING"
+    },
+    {
+      "description": "sha256 от (observation_id, offer_id, action_ordinal).",
+      "mode": "NULLABLE",
+      "name": "source_payload_hash",
+      "type": "STRING"
+    },
+    {
+      "mode": "NULLABLE",
+      "name": "ingested_at",
+      "type": "TIMESTAMP"
+    }
+  ],
+  "table_id": "RAW_OZON_PROMO_PRODUCT_ACTION",
+  "time_partitioning": {
+    "field": "observed_at",
+    "type": "DAY"
+  }
+}

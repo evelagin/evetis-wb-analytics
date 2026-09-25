@@ -1,0 +1,114 @@
+{
+  "schema": [
+    {
+      "mode": "REQUIRED",
+      "name": "snapshot_date",
+      "type": "DATE"
+    },
+    {
+      "description": "Момент обращения к API, МСК",
+      "mode": "REQUIRED",
+      "name": "retrieved_at",
+      "type": "TIMESTAMP"
+    },
+    {
+      "description": "Ни /v1/seller/info, ни /v1/rating/summary идентификатор продавца не возвращают. Колонка зарезервирована и сегодня всегда NULL",
+      "mode": "NULLABLE",
+      "name": "seller_id",
+      "type": "STRING"
+    },
+    {
+      "description": "/v1/seller/info subscription.is_premium",
+      "mode": "NULLABLE",
+      "name": "is_premium",
+      "type": "BOOLEAN"
+    },
+    {
+      "description": "/v1/seller/info subscription.type; UNSPECIFIED = подписки нет",
+      "mode": "NULLABLE",
+      "name": "subscription_type",
+      "type": "STRING"
+    },
+    {
+      "description": "/v1/rating/summary premium",
+      "mode": "NULLABLE",
+      "name": "premium",
+      "type": "BOOLEAN"
+    },
+    {
+      "description": "/v1/rating/summary premium_plus",
+      "mode": "NULLABLE",
+      "name": "premium_plus",
+      "type": "BOOLEAN"
+    },
+    {
+      "mode": "NULLABLE",
+      "name": "penalty_score_exceeded",
+      "type": "BOOLEAN"
+    },
+    {
+      "description": "Налоговый режим продавца",
+      "mode": "NULLABLE",
+      "name": "tax_system",
+      "type": "STRING"
+    },
+    {
+      "mode": "NULLABLE",
+      "name": "country",
+      "type": "STRING"
+    },
+    {
+      "mode": "NULLABLE",
+      "name": "currency",
+      "type": "STRING"
+    },
+    {
+      "description": "Ставка НДС на уровне продавца в этих методах НЕ возвращается — всегда NULL. Авторитетное значение по товару лежит в RAW_OZON_PRICES.vat_rate (price.vat)",
+      "mode": "NULLABLE",
+      "name": "vat_rate",
+      "type": "NUMERIC"
+    },
+    {
+      "description": "/v1/rating/summary localization_index[0].localization_percentage",
+      "mode": "NULLABLE",
+      "name": "localization_percentage",
+      "type": "NUMERIC"
+    },
+    {
+      "mode": "NULLABLE",
+      "name": "localization_calculated_at",
+      "type": "STRING"
+    },
+    {
+      "description": "Оба ответа без идентификаторов компании: ИНН, ОГРН и названия не сохраняются",
+      "mode": "NULLABLE",
+      "name": "raw_json",
+      "type": "STRING"
+    },
+    {
+      "mode": "REQUIRED",
+      "name": "extracted_at",
+      "type": "TIMESTAMP"
+    },
+    {
+      "mode": "REQUIRED",
+      "name": "source_endpoint",
+      "type": "STRING"
+    },
+    {
+      "mode": "REQUIRED",
+      "name": "ingestion_run_id",
+      "type": "STRING"
+    },
+    {
+      "mode": "NULLABLE",
+      "name": "source_payload_hash",
+      "type": "STRING"
+    }
+  ],
+  "table_id": "RAW_OZON_SELLER_INFO",
+  "time_partitioning": {
+    "field": "snapshot_date",
+    "type": "DAY"
+  }
+}

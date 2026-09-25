@@ -1,0 +1,81 @@
+{
+  "clustering": [
+    "bundle_id",
+    "sku"
+  ],
+  "schema": [
+    {
+      "mode": "REQUIRED",
+      "name": "bundle_id",
+      "type": "STRING"
+    },
+    {
+      "mode": "NULLABLE",
+      "name": "supply_id",
+      "type": "INTEGER"
+    },
+    {
+      "mode": "NULLABLE",
+      "name": "order_id",
+      "type": "INTEGER"
+    },
+    {
+      "mode": "REQUIRED",
+      "name": "sku",
+      "type": "STRING"
+    },
+    {
+      "mode": "NULLABLE",
+      "name": "offer_id",
+      "type": "STRING"
+    },
+    {
+      "mode": "NULLABLE",
+      "name": "product_name",
+      "type": "STRING"
+    },
+    {
+      "description": "Заявленное количество",
+      "mode": "NULLABLE",
+      "name": "quantity_planned",
+      "type": "INTEGER"
+    },
+    {
+      "description": "Фактически принято. NULL если API не отдаёт",
+      "mode": "NULLABLE",
+      "name": "quantity_accepted",
+      "type": "INTEGER"
+    },
+    {
+      "mode": "NULLABLE",
+      "name": "volume_in_litres",
+      "type": "NUMERIC"
+    },
+    {
+      "mode": "NULLABLE",
+      "name": "item_tags",
+      "type": "STRING"
+    },
+    {
+      "mode": "REQUIRED",
+      "name": "extracted_at",
+      "type": "TIMESTAMP"
+    },
+    {
+      "mode": "REQUIRED",
+      "name": "source_endpoint",
+      "type": "STRING"
+    },
+    {
+      "mode": "REQUIRED",
+      "name": "ingestion_run_id",
+      "type": "STRING"
+    },
+    {
+      "mode": "NULLABLE",
+      "name": "source_payload_hash",
+      "type": "STRING"
+    }
+  ],
+  "table_id": "RAW_OZON_SUPPLY_BUNDLES"
+}

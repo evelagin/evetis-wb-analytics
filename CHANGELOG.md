@@ -1,5 +1,31 @@
 # CHANGELOG.md
 
+## 2026-09-25 — Tenancy T3.2: универсальный корень Terraform арендатора и контракт реестра
+
+**Не развёрнуто. Ни одного ресурса арендатора не создано, `terraform apply` не выполнялся.**
+
+- `registry.py terraform-inputs <tenant_id>` — детерминированный контракт реестр → Terraform: проект,
+  префикс state, датасеты, таблицы со схемами из Git, job'ы и расписания, имена секретов и SA,
+  утверждённый образ. Оператор задаёт только `tenant_id`.
+- `tools/tenancy/ozon_contract.py` — единственная каденция Ozon и карта «сущность → таблицы» для
+  выделенных арендаторов (сверка с EVETIS тестом; расписание EVETIS не менялось).
+- `infra/tenant/` — один корень для всех арендаторов: API, датасеты `ozon_raw`/`ref`, 15 таблиц
+  runtime для `client_001`, SA `sa-ozon-runtime`/`sa-ozon-scheduler`, контейнеры секретов без
+  версий, job'ы Cloud Run на неизменяемом образе платформы, расписания только PAUSED. Проект и
+  биллинг — человек; guards проверяют проект до изменений. `terraform test` (мок провайдера):
+  23 прогона, `client_001` и эфемерный `client_002` одним кодом.
+- `pipelines/ozon/schema/` — схемы 21 таблицы `ozon_raw` и `ref.REF_SKU_CHANNEL_MAP` из метаданных
+  EVETIS (без строк), включая 7 таблиц без DDL в Git. Паритет: офлайн с DDL, live с EVETIS — 0 расхождений.
+  Структура колонок таблиц EVETIS не менялась.
+- `tools/tenancy/plan_scan.py` — сканер плана: EVETIS, чужие проекты, проект/биллинг/папки/
+  организация, delete/replace, версии секретов, ключи SA, расписания не на паузе, неутверждённый образ.
+- `.github/workflows/tenant-infra.yml` — только `workflow_dispatch` из `main`, вход только
+  `tenant_id`, WIF `tenant-infra-pool`, провижионер; fmt/validate/plan/сканер, **без apply**.
+- Эксперимент backend GCS (живой, префикс удалён): state и блокировка работают без
+  `storage.objects.list` — один бакет платформы, провижионер с условием на `tenants/*`.
+- Архитектура: `analytics_share` — единственный клиентский интерфейс данных (BI и AI клиента,
+  только чтение), ADR-08 и TENANCY_DESIGN §4b. Новый долг P2-9.
+
 ## 2026-09-24 — Tenancy T2.2: безопасность Ozon runtime и различающий прогон
 
 Только код и тесты `pipelines/ozon/**` плюс документы. **Не развёрнуто:** образ Ozon runtime

@@ -1,0 +1,139 @@
+{
+  "clustering": [
+    "posting_number",
+    "sku"
+  ],
+  "schema": [
+    {
+      "mode": "REQUIRED",
+      "name": "posting_number",
+      "type": "STRING"
+    },
+    {
+      "mode": "REQUIRED",
+      "name": "sku",
+      "type": "STRING"
+    },
+    {
+      "mode": "REQUIRED",
+      "name": "order_date",
+      "type": "DATE"
+    },
+    {
+      "mode": "NULLABLE",
+      "name": "order_id",
+      "type": "INTEGER"
+    },
+    {
+      "mode": "NULLABLE",
+      "name": "order_number",
+      "type": "STRING"
+    },
+    {
+      "mode": "NULLABLE",
+      "name": "status",
+      "type": "STRING"
+    },
+    {
+      "mode": "NULLABLE",
+      "name": "substatus",
+      "type": "STRING"
+    },
+    {
+      "mode": "NULLABLE",
+      "name": "created_at",
+      "type": "TIMESTAMP"
+    },
+    {
+      "mode": "NULLABLE",
+      "name": "in_process_at",
+      "type": "TIMESTAMP"
+    },
+    {
+      "mode": "NULLABLE",
+      "name": "cancel_reason_id",
+      "type": "INTEGER"
+    },
+    {
+      "mode": "NULLABLE",
+      "name": "quantity",
+      "type": "INTEGER"
+    },
+    {
+      "mode": "NULLABLE",
+      "name": "price_rub",
+      "type": "NUMERIC"
+    },
+    {
+      "mode": "NULLABLE",
+      "name": "old_price_rub",
+      "type": "NUMERIC"
+    },
+    {
+      "mode": "NULLABLE",
+      "name": "total_discount_value_rub",
+      "type": "NUMERIC"
+    },
+    {
+      "mode": "NULLABLE",
+      "name": "commission_amount_rub",
+      "type": "NUMERIC"
+    },
+    {
+      "mode": "NULLABLE",
+      "name": "payout_rub",
+      "type": "NUMERIC"
+    },
+    {
+      "mode": "REPEATED",
+      "name": "actions",
+      "type": "STRING"
+    },
+    {
+      "mode": "NULLABLE",
+      "name": "warehouse_name",
+      "type": "STRING"
+    },
+    {
+      "mode": "NULLABLE",
+      "name": "city",
+      "type": "STRING"
+    },
+    {
+      "mode": "REQUIRED",
+      "name": "extracted_at",
+      "type": "TIMESTAMP"
+    },
+    {
+      "mode": "NULLABLE",
+      "name": "source_event_time",
+      "type": "TIMESTAMP"
+    },
+    {
+      "mode": "REQUIRED",
+      "name": "source_endpoint",
+      "type": "STRING"
+    },
+    {
+      "mode": "REQUIRED",
+      "name": "ingestion_run_id",
+      "type": "STRING"
+    },
+    {
+      "mode": "NULLABLE",
+      "name": "source_payload_hash",
+      "type": "STRING"
+    },
+    {
+      "description": "Идентификатор склада отгрузки из analytics_data. Резолвится в кластер через RAW_OZON_CLUSTERS. Имя склада для связи НЕ использовать",
+      "mode": "NULLABLE",
+      "name": "warehouse_id",
+      "type": "STRING"
+    }
+  ],
+  "table_id": "RAW_OZON_POSTINGS_FBO",
+  "time_partitioning": {
+    "field": "order_date",
+    "type": "DAY"
+  }
+}

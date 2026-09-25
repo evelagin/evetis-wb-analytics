@@ -268,6 +268,20 @@ production-образе `sha256:24e3c6d6…` до отдельных ворот 
 
 ---
 
+## P2-9. Провижионер арендаторов на admin-ролях T3.1B (Tenancy T3.2)
+
+`sa-tenant-provisioner` держит на `tenants/` предопределённые `run.admin`, `cloudscheduler.admin`,
+`bigquery.admin` (включает чтение строк), `iam.serviceAccountAdmin`, `serviceusage.serviceUsageAdmin`
+и не имеет прав на секреты вовсе. Корню `infra/tenant/` нужны контейнеры секретов, а чтение строк,
+запуск job'ов, снятие паузы расписаний и удаление — не нужны. Замена — одна пользовательская роль
+`mpaTenantProvisioner` и deny-политика против чтения строк и значений секретов
+(`tools/tenancy/iam_proposals.py`). Блокирует применение T3.3: без прав на секреты корень не
+применится. Нужен `roles/iam.organizationRoleAdmin` у владельца — решение T3.3.
+
+Попутно: каденция Ozon для выделенных арендаторов теперь живёт в `tools/tenancy/ozon_contract.py`
+и сверяется тестом с locals EVETIS (`infra/terraform/ozon_ingestion.tf`) — это ещё одно место к
+P2-3, но с проверкой расхождения, а не молчаливой копией.
+
 ## P3-1. Каталог `_to_delete/` (82 записи) в рабочем дереве
 
 Ничего не ломает, но при поиске по репозиторию выдаёт устаревшие ответы — в том числе агенту.

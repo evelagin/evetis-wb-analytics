@@ -1,0 +1,168 @@
+{
+  "clustering": [
+    "action_id",
+    "membership",
+    "product_id"
+  ],
+  "schema": [
+    {
+      "mode": "REQUIRED",
+      "name": "observed_at",
+      "type": "TIMESTAMP"
+    },
+    {
+      "mode": "REQUIRED",
+      "name": "observation_bucket",
+      "type": "STRING"
+    },
+    {
+      "mode": "REQUIRED",
+      "name": "observation_id",
+      "type": "STRING"
+    },
+    {
+      "mode": "REQUIRED",
+      "name": "environment",
+      "type": "STRING"
+    },
+    {
+      "mode": "NULLABLE",
+      "name": "run_id",
+      "type": "STRING"
+    },
+    {
+      "mode": "REQUIRED",
+      "name": "action_id",
+      "type": "INTEGER"
+    },
+    {
+      "description": "PARTICIPATING — из /v1/actions/products; CANDIDATE — из /v1/actions/candidates. Часть грейна. Схлопывать запрещено.",
+      "mode": "REQUIRED",
+      "name": "membership",
+      "type": "STRING"
+    },
+    {
+      "description": "products[].id — product_id Ozon.",
+      "mode": "REQUIRED",
+      "name": "product_id",
+      "type": "INTEGER"
+    },
+    {
+      "description": "Канонический SKU EVETIS через REF_SKU_CHANNEL_MAP.marketplace_product_id. NULL = не разрешён; строка НЕ отбрасывается.",
+      "mode": "NULLABLE",
+      "name": "internal_sku",
+      "type": "STRING"
+    },
+    {
+      "description": "RESOLVED_BY_PRODUCT_ID | UNRESOLVED.",
+      "mode": "NULLABLE",
+      "name": "sku_resolution_status",
+      "type": "STRING"
+    },
+    {
+      "description": "products[].price — текущая цена продавца.",
+      "mode": "NULLABLE",
+      "name": "price_rub",
+      "type": "NUMERIC"
+    },
+    {
+      "description": "products[].action_price — акционная цена. У кандидатов источник отдаёт 0: это «не назначена», а не «бесплатно».",
+      "mode": "NULLABLE",
+      "name": "action_price_rub",
+      "type": "NUMERIC"
+    },
+    {
+      "description": "products[].max_action_price — максимально допустимая акционная цена.",
+      "mode": "NULLABLE",
+      "name": "max_action_price_rub",
+      "type": "NUMERIC"
+    },
+    {
+      "description": "products[].alert_max_action_price. Описания подполя в документации Ozon нет — значение источника.",
+      "mode": "NULLABLE",
+      "name": "alert_max_action_price_rub",
+      "type": "NUMERIC"
+    },
+    {
+      "description": "products[].alert_max_action_price_failed. Значение источника без интерпретации.",
+      "mode": "NULLABLE",
+      "name": "alert_max_action_price_failed",
+      "type": "BOOLEAN"
+    },
+    {
+      "description": "products[].add_mode: MANUAL | AUTO | NOT_SET. Как товар попал в акцию.",
+      "mode": "NULLABLE",
+      "name": "add_mode",
+      "type": "STRING"
+    },
+    {
+      "description": "products[].stock. НЕ складской остаток: наблюдался 0 при ненулевом FBO. Семантика не доказана — значение источника.",
+      "mode": "NULLABLE",
+      "name": "stock",
+      "type": "INTEGER"
+    },
+    {
+      "description": "products[].min_stock — требование к количеству для участия.",
+      "mode": "NULLABLE",
+      "name": "min_stock",
+      "type": "INTEGER"
+    },
+    {
+      "description": "products[].current_boost — текущий бустинг, %.",
+      "mode": "NULLABLE",
+      "name": "current_boost_pct",
+      "type": "NUMERIC"
+    },
+    {
+      "description": "products[].min_boost.",
+      "mode": "NULLABLE",
+      "name": "min_boost_pct",
+      "type": "NUMERIC"
+    },
+    {
+      "description": "products[].max_boost.",
+      "mode": "NULLABLE",
+      "name": "max_boost_pct",
+      "type": "NUMERIC"
+    },
+    {
+      "description": "products[].price_min_elastic. Наблюдалось соответствие МИНИМАЛЬНОМУ бустингу (цена выше). Имя источника сохранено намеренно: семантика не подтверждена документацией.",
+      "mode": "NULLABLE",
+      "name": "price_min_elastic_rub",
+      "type": "NUMERIC"
+    },
+    {
+      "description": "products[].price_max_elastic. Наблюдалось соответствие МАКСИМАЛЬНОМУ бустингу (цена ниже).",
+      "mode": "NULLABLE",
+      "name": "price_max_elastic_rub",
+      "type": "NUMERIC"
+    },
+    {
+      "description": "Элемент products[] дословно.",
+      "mode": "NULLABLE",
+      "name": "raw_item_json",
+      "type": "STRING"
+    },
+    {
+      "mode": "NULLABLE",
+      "name": "source_endpoint",
+      "type": "STRING"
+    },
+    {
+      "description": "sha256 от (observation_id, action_id, membership, product_id).",
+      "mode": "NULLABLE",
+      "name": "source_payload_hash",
+      "type": "STRING"
+    },
+    {
+      "mode": "NULLABLE",
+      "name": "ingested_at",
+      "type": "TIMESTAMP"
+    }
+  ],
+  "table_id": "RAW_OZON_PROMO_PRODUCTS",
+  "time_partitioning": {
+    "field": "observed_at",
+    "type": "DAY"
+  }
+}

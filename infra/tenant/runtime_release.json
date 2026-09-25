@@ -1,0 +1,7 @@
+{
+  "schema_version": 1,
+  "images": {
+    "ozon": null
+  },
+  "notes": "Утверждённые образы runtime выделенных арендаторов. Только europe-west1-docker.pkg.dev/mpa-platform/mpa-runtime/<image>@sha256:<64 hex>. Меняется только через PR в main после ворот выпуска образа (T3.2b); откат — PR с прежним digest. null = образ не утверждён: план арендатора отказывает."
+}

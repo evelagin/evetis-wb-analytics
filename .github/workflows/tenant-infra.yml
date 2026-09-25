@@ -1,0 +1,62 @@
+name: tenant-infra
+# Tenancy T3.2 — ПЛАН инфраструктуры выделенного арендатора. Применения здесь нет.
+#
+# Доверие WIF (mpa-platform, tenant-infra-pool / github-tenant-infra) выдаётся ТОЛЬКО
+# этому файлу, из refs/heads/main, событию workflow_dispatch, на github-hosted раннере
+# (условие провайдера, T3.1B). Любая другая ветка, событие или workflow токена не получит.
+#
+# Вход — только tenant_id. Проект, префикс state, образ и команды Terraform выводятся
+# из реестра (tools/tenancy/tenant_infra.py); передать их вызывающий не может.
+# apply появится только в T3.3 и только по отдельному ACK владельца.
+on:
+  workflow_dispatch:
+    inputs:
+      tenant_id:
+        description: "tenant_id из реестра tenants/ (например client_001). Только он."
+        required: true
+        type: string
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: tenant-infra-${{ inputs.tenant_id }}
+  cancel-in-progress: false
+
+jobs:
+  plan:
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main' && github.event_name == 'workflow_dispatch'
+    timeout-minutes: 20
+    env:
+      TENANT_ID: ${{ inputs.tenant_id }}
+    steps:
+      - name: only main
+        run: |
+          test "$GITHUB_REF" = "refs/heads/main" || { echo "только refs/heads/main"; exit 1; }
+      - name: tenant_id shape (before anything else)
+        run: |
+          printf '%s' "$TENANT_ID" | grep -Eqx '[a-z][a-z0-9_]{2,30}' || { echo "tenant_id недопустим"; exit 1; }
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: install pinned dependencies (hash-checked)
+        run: "pip install --only-binary=:all: --require-hashes -r tools/requirements-sql-ci.txt"
+      - name: validate tenant registry
+        run: python tools/tenancy/registry.py validate
+      - name: render contract (registry authority)
+        run: python tools/tenancy/tenant_infra.py render "$TENANT_ID" "$RUNNER_TEMP/tenant"
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "1.15.8"
+          terraform_wrapper: false
+      - uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: projects/777428383056/locations/global/workloadIdentityPools/tenant-infra-pool/providers/github-tenant-infra
+          service_account: sa-tenant-provisioner@mpa-platform.iam.gserviceaccount.com
+      - name: fmt, init, validate, plan, plan-scan (no apply)
+        run: python tools/tenancy/tenant_infra.py plan "$TENANT_ID" "$RUNNER_TEMP/tenant"

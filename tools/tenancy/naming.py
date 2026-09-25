@@ -104,6 +104,14 @@ DEDICATED_OZON_SECRET_IDS = {
     "performance_client_secret": "ozon-perf-client-secret",
 }
 
+# Сервисные аккаунты выделенного арендатора — по одному набору на площадку (T3.2).
+# Runtime и планировщик разделены: планировщик только вызывает job'ы, данные и
+# секреты видит только runtime. WB позже добавит свой набор (sa-wb-*), не трогая Ozon.
+DEDICATED_SERVICE_ACCOUNTS = {
+    "ozon": {"runtime": "sa-ozon-runtime", "scheduler": "sa-ozon-scheduler"},
+}
+SERVICE_ACCOUNT_ID_RE = re.compile(r"[a-z][a-z0-9-]{4,28}[a-z0-9]")   # требование GCP, fullmatch
+
 # ── EVETIS: зафиксированный факт, не вывод ────────────────────────────────
 # Значения сверяются тестами с живым контрактом развёртывания:
 # infra/terraform/terraform.tfvars.example (проект), ozon_ingestion.tf
@@ -240,6 +248,14 @@ def expected_datasets(tenant_id: str) -> dict[str, str]:
         return dict(LEGACY_EVETIS["datasets"])
     check_tenant_id(tenant_id)
     return dict(DEDICATED_DATASETS)
+
+
+def dedicated_service_accounts(tenant_id: str, marketplace: str) -> dict[str, str]:
+    """ID сервисных аккаунтов площадки в проекте выделенного арендатора."""
+    check_tenant_id(tenant_id)
+    if marketplace not in DEDICATED_SERVICE_ACCOUNTS:
+        raise NamingError(f"для площадки {marketplace!r} сервисные аккаунты не определены")
+    return dict(DEDICATED_SERVICE_ACCOUNTS[marketplace])
 
 
 def expected_ozon_secret_ids(tenant_id: str) -> dict[str, str]:

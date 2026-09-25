@@ -1,0 +1,94 @@
+{
+  "clustering": [
+    "supply_id",
+    "storage_warehouse_id"
+  ],
+  "schema": [
+    {
+      "mode": "REQUIRED",
+      "name": "supply_id",
+      "type": "INTEGER"
+    },
+    {
+      "mode": "REQUIRED",
+      "name": "order_id",
+      "type": "INTEGER"
+    },
+    {
+      "mode": "NULLABLE",
+      "name": "bundle_id",
+      "type": "STRING"
+    },
+    {
+      "mode": "NULLABLE",
+      "name": "state",
+      "type": "STRING"
+    },
+    {
+      "mode": "NULLABLE",
+      "name": "is_crossdock",
+      "type": "BOOLEAN"
+    },
+    {
+      "mode": "NULLABLE",
+      "name": "storage_warehouse_id",
+      "type": "STRING"
+    },
+    {
+      "mode": "NULLABLE",
+      "name": "storage_warehouse_name",
+      "type": "STRING"
+    },
+    {
+      "mode": "NULLABLE",
+      "name": "storage_address",
+      "type": "STRING"
+    },
+    {
+      "description": "Поле API. На 2026-09-03 пусто во всех наблюдениях",
+      "mode": "NULLABLE",
+      "name": "arrival_date",
+      "type": "TIMESTAMP"
+    },
+    {
+      "mode": "NULLABLE",
+      "name": "macrolocal_cluster_id",
+      "type": "INTEGER"
+    },
+    {
+      "mode": "NULLABLE",
+      "name": "order_created_at",
+      "type": "TIMESTAMP"
+    },
+    {
+      "mode": "NULLABLE",
+      "name": "order_state",
+      "type": "STRING"
+    },
+    {
+      "mode": "REQUIRED",
+      "name": "extracted_at",
+      "type": "TIMESTAMP"
+    },
+    {
+      "mode": "REQUIRED",
+      "name": "source_endpoint",
+      "type": "STRING"
+    },
+    {
+      "mode": "REQUIRED",
+      "name": "ingestion_run_id",
+      "type": "STRING"
+    },
+    {
+      "mode": "NULLABLE",
+      "name": "source_payload_hash",
+      "type": "STRING"
+    }
+  ],
+  "table_id": "RAW_OZON_SUPPLIES",
+  "time_partitioning": {
+    "field": "order_created_at",
+    "type": "DAY"
+  }
+}

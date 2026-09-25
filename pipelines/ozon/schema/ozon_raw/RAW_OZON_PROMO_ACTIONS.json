@@ -1,0 +1,170 @@
+{
+  "clustering": [
+    "action_id",
+    "action_type"
+  ],
+  "schema": [
+    {
+      "mode": "REQUIRED",
+      "name": "observed_at",
+      "type": "TIMESTAMP"
+    },
+    {
+      "description": "6-часовое окно UTC, YYYY-MM-DDTHH:MM.",
+      "mode": "REQUIRED",
+      "name": "observation_bucket",
+      "type": "STRING"
+    },
+    {
+      "description": "Детерминированный id снимка. Ключ идемпотентности load-джобы.",
+      "mode": "REQUIRED",
+      "name": "observation_id",
+      "type": "STRING"
+    },
+    {
+      "mode": "REQUIRED",
+      "name": "environment",
+      "type": "STRING"
+    },
+    {
+      "mode": "NULLABLE",
+      "name": "run_id",
+      "type": "STRING"
+    },
+    {
+      "description": "result[].id.",
+      "mode": "REQUIRED",
+      "name": "action_id",
+      "type": "INTEGER"
+    },
+    {
+      "description": "result[].title, дословно.",
+      "mode": "NULLABLE",
+      "name": "title",
+      "type": "STRING"
+    },
+    {
+      "description": "result[].action_type. Наблюдались ELASTIC_BOOSTING и STOCK_DISCOUNT. Значение источника.",
+      "mode": "NULLABLE",
+      "name": "action_type",
+      "type": "STRING"
+    },
+    {
+      "description": "result[].date_start.",
+      "mode": "NULLABLE",
+      "name": "date_start",
+      "type": "TIMESTAMP"
+    },
+    {
+      "description": "result[].date_end.",
+      "mode": "NULLABLE",
+      "name": "date_end",
+      "type": "TIMESTAMP"
+    },
+    {
+      "description": "result[].freeze_date. Пустая строка источника → NULL, а не эпоха. Заполнено = нельзя повышать цены, менять состав и уменьшать количество.",
+      "mode": "NULLABLE",
+      "name": "freeze_at",
+      "type": "TIMESTAMP"
+    },
+    {
+      "description": "result[].auto_add_dates[] через запятую, ISO-8601. Даты, в которые площадка меняет состав без нашего участия.",
+      "mode": "NULLABLE",
+      "name": "auto_add_dates_csv",
+      "type": "STRING"
+    },
+    {
+      "description": "Число дат автодобавления.",
+      "mode": "NULLABLE",
+      "name": "auto_add_dates_count",
+      "type": "INTEGER"
+    },
+    {
+      "description": "result[].is_participating — участвуем ли мы в акции.",
+      "mode": "NULLABLE",
+      "name": "is_participating",
+      "type": "BOOLEAN"
+    },
+    {
+      "description": "result[].potential_products_count — товаров, доступных для акции.",
+      "mode": "NULLABLE",
+      "name": "potential_products_count",
+      "type": "INTEGER"
+    },
+    {
+      "description": "result[].participating_products_count — товаров в акции.",
+      "mode": "NULLABLE",
+      "name": "participating_products_count",
+      "type": "INTEGER"
+    },
+    {
+      "description": "result[].banned_products_count.",
+      "mode": "NULLABLE",
+      "name": "banned_products_count",
+      "type": "INTEGER"
+    },
+    {
+      "description": "result[].is_voucher_action.",
+      "mode": "NULLABLE",
+      "name": "is_voucher_action",
+      "type": "BOOLEAN"
+    },
+    {
+      "description": "result[].with_targeting.",
+      "mode": "NULLABLE",
+      "name": "with_targeting",
+      "type": "BOOLEAN"
+    },
+    {
+      "description": "result[].order_amount.",
+      "mode": "NULLABLE",
+      "name": "order_amount",
+      "type": "NUMERIC"
+    },
+    {
+      "description": "result[].discount_type. Значение источника.",
+      "mode": "NULLABLE",
+      "name": "discount_type",
+      "type": "STRING"
+    },
+    {
+      "description": "result[].discount_value.",
+      "mode": "NULLABLE",
+      "name": "discount_value",
+      "type": "NUMERIC"
+    },
+    {
+      "description": "result[].description — условия акции, дословно (HTML источника).",
+      "mode": "NULLABLE",
+      "name": "description",
+      "type": "STRING"
+    },
+    {
+      "description": "Элемент result[] дословно.",
+      "mode": "NULLABLE",
+      "name": "raw_action_json",
+      "type": "STRING"
+    },
+    {
+      "mode": "NULLABLE",
+      "name": "source_endpoint",
+      "type": "STRING"
+    },
+    {
+      "description": "sha256 от (observation_id, action_id).",
+      "mode": "NULLABLE",
+      "name": "source_payload_hash",
+      "type": "STRING"
+    },
+    {
+      "mode": "NULLABLE",
+      "name": "ingested_at",
+      "type": "TIMESTAMP"
+    }
+  ],
+  "table_id": "RAW_OZON_PROMO_ACTIONS",
+  "time_partitioning": {
+    "field": "observed_at",
+    "type": "DAY"
+  }
+}

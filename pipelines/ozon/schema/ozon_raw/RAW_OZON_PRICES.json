@@ -1,0 +1,263 @@
+{
+  "clustering": [
+    "offer_id"
+  ],
+  "schema": [
+    {
+      "mode": "REQUIRED",
+      "name": "snapshot_ts",
+      "type": "TIMESTAMP"
+    },
+    {
+      "mode": "REQUIRED",
+      "name": "snapshot_date",
+      "type": "DATE"
+    },
+    {
+      "mode": "REQUIRED",
+      "name": "offer_id",
+      "type": "STRING"
+    },
+    {
+      "mode": "NULLABLE",
+      "name": "product_id",
+      "type": "STRING"
+    },
+    {
+      "mode": "NULLABLE",
+      "name": "price_rub",
+      "type": "NUMERIC"
+    },
+    {
+      "mode": "NULLABLE",
+      "name": "old_price_rub",
+      "type": "NUMERIC"
+    },
+    {
+      "mode": "NULLABLE",
+      "name": "min_price_rub",
+      "type": "NUMERIC"
+    },
+    {
+      "mode": "NULLABLE",
+      "name": "marketing_seller_price_rub",
+      "type": "NUMERIC"
+    },
+    {
+      "mode": "NULLABLE",
+      "name": "net_price_rub",
+      "type": "NUMERIC"
+    },
+    {
+      "mode": "NULLABLE",
+      "name": "acquiring_rub",
+      "type": "NUMERIC"
+    },
+    {
+      "mode": "NULLABLE",
+      "name": "sales_percent_fbo",
+      "type": "NUMERIC"
+    },
+    {
+      "mode": "NULLABLE",
+      "name": "price_index_color",
+      "type": "STRING"
+    },
+    {
+      "mode": "NULLABLE",
+      "name": "external_min_price_rub",
+      "type": "NUMERIC"
+    },
+    {
+      "mode": "NULLABLE",
+      "name": "external_index_value",
+      "type": "NUMERIC"
+    },
+    {
+      "mode": "NULLABLE",
+      "name": "ozon_actions_exist",
+      "type": "BOOLEAN"
+    },
+    {
+      "mode": "REQUIRED",
+      "name": "extracted_at",
+      "type": "TIMESTAMP"
+    },
+    {
+      "mode": "REQUIRED",
+      "name": "source_endpoint",
+      "type": "STRING"
+    },
+    {
+      "mode": "REQUIRED",
+      "name": "ingestion_run_id",
+      "type": "STRING"
+    },
+    {
+      "mode": "NULLABLE",
+      "name": "source_payload_hash",
+      "type": "STRING"
+    },
+    {
+      "description": "price.currency_code",
+      "mode": "NULLABLE",
+      "name": "currency_code",
+      "type": "STRING"
+    },
+    {
+      "description": "price.retail_price",
+      "mode": "NULLABLE",
+      "name": "retail_price_rub",
+      "type": "NUMERIC"
+    },
+    {
+      "description": "price.vat, доля (0 = без НДС)",
+      "mode": "NULLABLE",
+      "name": "vat_rate",
+      "type": "NUMERIC"
+    },
+    {
+      "description": "price.auto_action_enabled",
+      "mode": "NULLABLE",
+      "name": "auto_action_enabled",
+      "type": "BOOLEAN"
+    },
+    {
+      "description": "price.auto_add_to_ozon_actions_list_enabled",
+      "mode": "NULLABLE",
+      "name": "auto_add_to_ozon_actions_enabled",
+      "type": "BOOLEAN"
+    },
+    {
+      "description": "volume_weight — объёмный вес, литры",
+      "mode": "NULLABLE",
+      "name": "volume_weight_l",
+      "type": "NUMERIC"
+    },
+    {
+      "description": "commissions.sales_percent_fbs, проценты",
+      "mode": "NULLABLE",
+      "name": "sales_percent_fbs",
+      "type": "NUMERIC"
+    },
+    {
+      "description": "commissions.sales_percent_rfbs, проценты",
+      "mode": "NULLABLE",
+      "name": "sales_percent_rfbs",
+      "type": "NUMERIC"
+    },
+    {
+      "description": "commissions.sales_percent_fbp, проценты",
+      "mode": "NULLABLE",
+      "name": "sales_percent_fbp",
+      "type": "NUMERIC"
+    },
+    {
+      "description": "Логистика FBO, нижняя граница = универсальный тариф по объёму (лист «Тарифы по умолчанию», logistika-fbo-fbs-28082026.xlsx). Сверено 20/20 на 2026-09-06",
+      "mode": "NULLABLE",
+      "name": "fbo_direct_flow_trans_min_rub",
+      "type": "NUMERIC"
+    },
+    {
+      "description": "Логистика FBO, верхняя граница = максимум по 848 маршрутам матрицы кластер→кластер. Сверено 20/20",
+      "mode": "NULLABLE",
+      "name": "fbo_direct_flow_trans_max_rub",
+      "type": "NUMERIC"
+    },
+    {
+      "description": "Доставка до места выдачи FBO, п. 2.7",
+      "mode": "NULLABLE",
+      "name": "fbo_deliv_to_customer_rub",
+      "type": "NUMERIC"
+    },
+    {
+      "description": "Обратная логистика FBO, п. 2.1.2",
+      "mode": "NULLABLE",
+      "name": "fbo_return_flow_rub",
+      "type": "NUMERIC"
+    },
+    {
+      "description": "Обработка отправления FBS, нижняя граница = 0 ₽ при отгрузке в СЦ (п. 2.3.2 с 25.08.2026)",
+      "mode": "NULLABLE",
+      "name": "fbs_first_mile_min_rub",
+      "type": "NUMERIC"
+    },
+    {
+      "description": "Обработка отправления FBS, верхняя граница = 10 ₽ ПВЗ/ППЗ (п. 2.3.2)",
+      "mode": "NULLABLE",
+      "name": "fbs_first_mile_max_rub",
+      "type": "NUMERIC"
+    },
+    {
+      "description": "Логистика FBS, нижняя граница",
+      "mode": "NULLABLE",
+      "name": "fbs_direct_flow_trans_min_rub",
+      "type": "NUMERIC"
+    },
+    {
+      "description": "Логистика FBS, верхняя граница",
+      "mode": "NULLABLE",
+      "name": "fbs_direct_flow_trans_max_rub",
+      "type": "NUMERIC"
+    },
+    {
+      "description": "Доставка до места выдачи FBS",
+      "mode": "NULLABLE",
+      "name": "fbs_deliv_to_customer_rub",
+      "type": "NUMERIC"
+    },
+    {
+      "description": "Обратная логистика FBS, п. 2.3.4",
+      "mode": "NULLABLE",
+      "name": "fbs_return_flow_rub",
+      "type": "NUMERIC"
+    },
+    {
+      "description": "price_indexes.ozon_index_data.min_price",
+      "mode": "NULLABLE",
+      "name": "ozon_index_min_price_rub",
+      "type": "NUMERIC"
+    },
+    {
+      "description": "price_indexes.ozon_index_data.price_index_value",
+      "mode": "NULLABLE",
+      "name": "ozon_index_value",
+      "type": "NUMERIC"
+    },
+    {
+      "description": "price_indexes.self_marketplaces_index_data.min_price",
+      "mode": "NULLABLE",
+      "name": "self_marketplaces_index_min_price_rub",
+      "type": "NUMERIC"
+    },
+    {
+      "description": "price_indexes.self_marketplaces_index_data.price_index_value",
+      "mode": "NULLABLE",
+      "name": "self_marketplaces_index_value",
+      "type": "NUMERIC"
+    },
+    {
+      "description": "Сырой блок commissions, ключи отсортированы",
+      "mode": "NULLABLE",
+      "name": "commissions_json",
+      "type": "STRING"
+    },
+    {
+      "description": "Число ключей в блоке commissions",
+      "mode": "NULLABLE",
+      "name": "commissions_field_count",
+      "type": "INTEGER"
+    },
+    {
+      "description": "Ключи commissions вне COMMISSION_MAP runtime. Непусто ⇒ forward_economics_ready = FALSE",
+      "mode": "NULLABLE",
+      "name": "commissions_unknown_fields",
+      "type": "STRING"
+    }
+  ],
+  "table_id": "RAW_OZON_PRICES",
+  "time_partitioning": {
+    "field": "snapshot_date",
+    "type": "DAY"
+  }
+}

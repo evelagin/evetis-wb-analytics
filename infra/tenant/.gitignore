@@ -1,0 +1,10 @@
+.terraform/
+*.tfstate
+*.tfstate.*
+# Контракт и план генерирует tools/tenancy/tenant_infra.py во временном каталоге;
+# в Git они не попадают никогда.
+*.tfvars
+*.tfvars.json
+*.tfplan
+plan.json
+# .terraform.lock.hcl НЕ игнорируем — коммитим (pin версий провайдера)
