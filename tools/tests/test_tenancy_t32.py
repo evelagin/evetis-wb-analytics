@@ -339,7 +339,8 @@ def test_rendered_artifacts_contain_secret_names_only(tmp_path):
             if finding.rule == "suspicious_key":
                 assert values <= names, finding
             else:   # детектор длинных токенов: допустимы только точные факты платформы
-                assert values <= {PL.STATE_BUCKET}, finding
+                # (бакет state и утверждённый digest образа из runtime_release.json, T3.2b)
+                assert values <= {PL.STATE_BUCKET, PL.load_runtime_release(REPO)["ozon"]}, finding
     contract = json.loads((tmp_path / TI.CONTRACT_FILE).read_text())["contract"]
     assert contract["marketplaces"]["ozon"]["secret_ids"] == N.DEDICATED_OZON_SECRET_IDS
     env = contract["marketplaces"]["ozon"]["jobs"]["ozon-runtime-daily"]["env"]

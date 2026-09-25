@@ -20,7 +20,6 @@ client_001 (реестр) и эфемерного client_002 (tools/tenancy/synt
 """
 from __future__ import annotations
 
-import json
 import subprocess
 import sys
 from pathlib import Path
@@ -30,6 +29,7 @@ sys.path.insert(0, str(REPO))
 
 from tools.tenancy import platform as PL  # noqa: E402
 from tools.tenancy import registry as R  # noqa: E402
+from tools.tenancy.validation import parse_tenant_json  # noqa: E402
 
 TESTS = REPO / "pipelines" / "ozon" / "tests"
 EVETIS_MARKERS = (PL.EVETIS_PROJECT_ID, PL.EVETIS_PROJECT_NUMBER, "EVETIS_OZON_", "evetis_ref")
@@ -56,15 +56,9 @@ def _run(image: str, env: dict[str, str], driver: str | None = None) -> subproce
 
 def tenant_envs() -> dict[str, dict[str, dict[str, str]]]:
     """Окружение каждого job'а двух арендаторов — тем же путём, что и контракт Terraform."""
-    import tempfile
-
     from tools.tenancy import synthetic as SY
-    from tools.tenancy.registry import _terraform_contract, load_tenant
 
-    out = {"client_001": R.terraform_inputs("client_001")}
-    with tempfile.TemporaryDirectory() as tmp:
-        root = SY._with_ephemeral_client_002(R.TENANTS_DIR, Path(tmp) / "tenants")
-        out["client_002"] = _terraform_contract(load_tenant("client_002", root))
+    out = {"client_001": R.terraform_inputs("client_001"), "client_002": SY.release_contract("client_002")}
     return {tid: {"project": c["project_id"],
                   "secret_ids": sorted(c["marketplaces"]["ozon"]["secret_ids"].values()),
                   "jobs": {j: s["env"] for j, s in c["marketplaces"]["ozon"]["jobs"].items()}}
@@ -75,7 +69,7 @@ def check(image: str, source_sha: str) -> list[str]:
     PL.check_runtime_image(image)
     fails: list[str] = []
 
-    cfg = json.loads(_docker(["image", "inspect", image, "--format", "{{json .Config}}"]).stdout)
+    cfg = parse_tenant_json(_docker(["image", "inspect", image, "--format", "{{json .Config}}"]).stdout)
     if cfg.get("Entrypoint") != ["python", "main.py"] or cfg.get("WorkingDir") != "/app":
         fails.append(f"точка входа/каталог: {cfg.get('Entrypoint')} {cfg.get('WorkingDir')}")
     if (cfg.get("Labels") or {}).get("org.opencontainers.image.revision") != source_sha:
@@ -94,7 +88,7 @@ def check(image: str, source_sha: str) -> list[str]:
             if r.returncode != 0:
                 fails.append(f"{tid}/{job}: драйвер пустых секретов упал: {r.stderr[-300:]}")
                 continue
-            seen = json.loads(r.stdout.strip().splitlines()[-1])
+            seen = parse_tenant_json(r.stdout.strip().splitlines()[-1])
             if seen["exit"] != 1 or seen["http"] or not seen["secret_paths"]:
                 fails.append(f"{tid}/{job}: без версий секретов нет отказа до HTTP ({seen['exit']}, {seen['http']})")
             if not set(seen["secret_paths"]) <= allowed:
@@ -110,7 +104,7 @@ def check(image: str, source_sha: str) -> list[str]:
         if r.returncode != 0:
             fails.append(f"{tid}: драйвер переносимости упал: {r.stderr[-300:]}")
         else:
-            seen = json.loads(r.stdout.strip().splitlines()[-1])
+            seen = parse_tenant_json(r.stdout.strip().splitlines()[-1])
             if seen["config"]["project"] != t["project"] or not set(seen["secret_paths"]) <= allowed:
                 fails.append(f"{tid}: переносимость — проект или секреты не арендатора")
             if any(not ref.startswith(t["project"] + ".") for _, ref in seen["bq_objects"]):
