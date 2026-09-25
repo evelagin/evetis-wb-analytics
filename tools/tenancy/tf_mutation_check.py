@@ -10,7 +10,6 @@
 """
 from __future__ import annotations
 
-import json
 import os
 import re
 import shutil
@@ -82,6 +81,7 @@ def _computed_fields_check(workdir: Path, env: dict) -> list[str]:
     исключение сканера перестанет быть безопасным — отказ.
     """
     from tools.tenancy.plan_scan import COMPUTED_APPLIER_FIELDS
+    from tools.tenancy.validation import parse_tenant_json   # единый строгий разборщик JSON
 
     # providers schema требует инициализированный backend: в отдельной копии — локальный
     # (override-файл), чтобы не нужен был GCS. Провайдер — тот же, из lockfile и кэша.
@@ -92,7 +92,7 @@ def _computed_fields_check(workdir: Path, env: dict) -> list[str]:
                    capture_output=True, text=True, check=True)
     out = subprocess.run(["terraform", "providers", "schema", "-json"], cwd=schema_dir, env=env,
                          capture_output=True, text=True, check=True).stdout
-    res = json.loads(out)["provider_schemas"]["registry.terraform.io/hashicorp/google"]["resource_schemas"]
+    res = parse_tenant_json(out)["provider_schemas"]["registry.terraform.io/hashicorp/google"]["resource_schemas"]
     bad = []
     for rtype, fields in COMPUTED_APPLIER_FIELDS.items():
         for f in sorted(fields):
