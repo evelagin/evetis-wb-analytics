@@ -24,6 +24,7 @@ from pathlib import Path
 
 from tools.autonomy.envelope import build_incident, known_checks, objective_from_incident, suites_index
 from tools.autonomy.policy import load_policy
+from tools.autonomy.redact import safe_dumps
 from tools.autonomy.state import StateStore, now_iso
 
 REPO = Path(__file__).resolve().parent.parent.parent
@@ -132,7 +133,7 @@ def watch(observations: list[dict], store: StateStore, repository_sha: str, out_
                 incident = build_incident(o, entry["observations"], repository_sha, cls, synthetic)
                 objective = objective_from_incident(incident)
                 p = out_dir / f"{objective['objective_id']}.json"
-                p.write_text(json.dumps(objective, ensure_ascii=False, indent=2), encoding="utf-8")
+                p.write_text(safe_dumps(objective, indent=2), encoding="utf-8")
                 row["dispatch"] = str(p)
                 dispatch.append({"objective_path": str(p), "deduplication_key": o["key"],
                                  "incident_id": incident["incident_id"]})
@@ -140,7 +141,7 @@ def watch(observations: list[dict], store: StateStore, repository_sha: str, out_
             notify.append(row)
         results.append(row)
 
-    hist_path.write_text(json.dumps(history, ensure_ascii=False, indent=2, sort_keys=True), encoding="utf-8")
+    hist_path.write_text(safe_dumps(history, indent=2, sort_keys=True), encoding="utf-8")
     classes = {r["class"] for r in results}
     if dispatch:
         status = "ACTION"

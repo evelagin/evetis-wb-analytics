@@ -262,9 +262,11 @@ def test_ci_keep_list_passes_only_read_identity():
 
 @pytest.mark.skipif(not shutil.which("gcloud"), reason="gcloud не установлен")
 def test_gcloud_is_unauthenticated_inside_agent_env():
-    r = subprocess.run(["gcloud", "auth", "print-access-token"], env=scrubbed_env(), capture_output=True, text=True,
-                       timeout=60)
-    assert r.returncode != 0, "агент получил бы токен GCP"
+    # stdout/stderr НЕ захватываются: при провале здесь был бы токен, а pytest печатает repr
+    # CompletedProcess в отчёт (инцидент M6 2026-09-25). Проверяется только код возврата.
+    rc = subprocess.run(["gcloud", "auth", "print-access-token"], env=scrubbed_env(), stdout=subprocess.DEVNULL,
+                        stderr=subprocess.DEVNULL, timeout=60).returncode
+    assert rc != 0, "агент получил бы токен GCP"
 
 
 def test_git_has_no_credential_helper_inside_agent_env():

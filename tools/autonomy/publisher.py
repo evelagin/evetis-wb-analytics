@@ -14,6 +14,7 @@ import tempfile
 from pathlib import Path
 
 from tools.autonomy.policy import branch_allowed, detect_gate_weakening, forbidden_paths, tcb_paths
+from tools.autonomy.redact import find_secrets, redact_text, safe_text
 from tools.autonomy.report import render_report
 
 
@@ -39,7 +40,7 @@ class GitPublisher:
             return "dry-run"
         r = subprocess.run(cmd, cwd=cwd, capture_output=True, text=True)
         if r.returncode != 0:
-            raise PublishRefused(f"{' '.join(cmd[:3])}: {r.stderr.strip()[:400]}")
+            raise PublishRefused(f"{' '.join(cmd[:3])}: {redact_text(r.stderr.strip()[:400])}")
         return r.stdout.strip()
 
     def preflight(self, run: dict, patch: str, art_dir: Path) -> list[str]:
@@ -54,6 +55,9 @@ class GitPublisher:
         bad = forbidden_paths(files)
         if bad:
             raise PublishRefused(f"запрещённые пути (секреты): {bad}")
+        leaked = find_secrets(patch)
+        if leaked:
+            raise PublishRefused(f"секретоподобный материал в диффе: {leaked}")
         tcb = tcb_paths(files)
         if tcb:
             raise PublishRefused(f"запрещённые пути (TCB — только человек): {tcb}")
@@ -74,7 +78,7 @@ class GitPublisher:
         branch = run["branch"]
         refspec = f"HEAD:refs/heads/{branch}"
         assert refspec.startswith("HEAD:refs/heads/ae/"), refspec   # последний рубеж
-        body = render_report(run, art_dir)
+        body = safe_text(render_report(run, art_dir))
         with tempfile.TemporaryDirectory(prefix="ae-publish-") as td:
             ws = Path(td) / "ws"
             self._x(["git", "worktree", "add", "--detach", str(ws), run["repository_sha"]], self.repo)
