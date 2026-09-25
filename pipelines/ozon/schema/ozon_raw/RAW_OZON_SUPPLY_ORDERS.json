@@ -1,0 +1,119 @@
+{
+  "clustering": [
+    "order_id"
+  ],
+  "schema": [
+    {
+      "mode": "REQUIRED",
+      "name": "order_id",
+      "type": "INTEGER"
+    },
+    {
+      "mode": "NULLABLE",
+      "name": "order_number",
+      "type": "STRING"
+    },
+    {
+      "mode": "NULLABLE",
+      "name": "state",
+      "type": "STRING"
+    },
+    {
+      "description": "created_date заявки",
+      "mode": "NULLABLE",
+      "name": "created_at",
+      "type": "TIMESTAMP"
+    },
+    {
+      "mode": "NULLABLE",
+      "name": "state_updated_at",
+      "type": "TIMESTAMP"
+    },
+    {
+      "mode": "NULLABLE",
+      "name": "data_filling_deadline",
+      "type": "TIMESTAMP"
+    },
+    {
+      "description": "timeslot.from — ПЛАНОВЫЙ интервал, не факт приёмки",
+      "mode": "NULLABLE",
+      "name": "planned_arrival_from",
+      "type": "TIMESTAMP"
+    },
+    {
+      "mode": "NULLABLE",
+      "name": "planned_arrival_to",
+      "type": "TIMESTAMP"
+    },
+    {
+      "mode": "NULLABLE",
+      "name": "timeslot_timezone",
+      "type": "STRING"
+    },
+    {
+      "mode": "NULLABLE",
+      "name": "dropoff_warehouse_id",
+      "type": "STRING"
+    },
+    {
+      "mode": "NULLABLE",
+      "name": "dropoff_warehouse_name",
+      "type": "STRING"
+    },
+    {
+      "mode": "NULLABLE",
+      "name": "dropoff_address",
+      "type": "STRING"
+    },
+    {
+      "mode": "NULLABLE",
+      "name": "is_super_fbo",
+      "type": "BOOLEAN"
+    },
+    {
+      "mode": "NULLABLE",
+      "name": "is_virtual",
+      "type": "BOOLEAN"
+    },
+    {
+      "mode": "NULLABLE",
+      "name": "is_econom",
+      "type": "BOOLEAN"
+    },
+    {
+      "mode": "NULLABLE",
+      "name": "is_pickup",
+      "type": "BOOLEAN"
+    },
+    {
+      "mode": "NULLABLE",
+      "name": "supplies_count",
+      "type": "INTEGER"
+    },
+    {
+      "mode": "REQUIRED",
+      "name": "extracted_at",
+      "type": "TIMESTAMP"
+    },
+    {
+      "mode": "REQUIRED",
+      "name": "source_endpoint",
+      "type": "STRING"
+    },
+    {
+      "mode": "REQUIRED",
+      "name": "ingestion_run_id",
+      "type": "STRING"
+    },
+    {
+      "mode": "NULLABLE",
+      "name": "source_payload_hash",
+      "type": "STRING"
+    }
+  ],
+  "table_id": "RAW_OZON_SUPPLY_ORDERS",
+  "time_partitioning": {
+    "field": "created_at",
+    "type": "DAY"
+  }
+}

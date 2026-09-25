@@ -211,13 +211,13 @@ Cloud Scheduler (Terraform), триггеры Apps Script (код) и `cadence_s
 - **Исправление:** разбирать и CSV по `Content-Type` или по отсутствию сигнатуры ZIP.
   Затем паритетный прогон EVETIS: строк станет больше ровно на потерянные партии.
 
-## P2-7. Пути арендаторов вне доверенной базы AE v1 (решение A7)
+## P2-7. Пути арендаторов вне доверенной базы AE v1 (решение A7) — ✅ закрыто в T3.2
 
-`tenants/**` и `tools/tenancy/**` определяют проекты, ссылки на секреты и правила имён
-арендаторов. В `quality/autonomy/policy.json` они не входят в `trusted_computing_base`.
-Это **обязательное условие до того, как автономной инженерии разрешат менять конфигурацию
-арендаторов**. Сейчас это не риск: AE v1 в `main` выключен. Отдельное изменение AE по ACK
-владельца.
+`tenants/**`, `tools/tenancy/**`, `pipelines/ozon/schema/**`, `infra/tenant/**` и
+`.github/workflows/tenant-infra.yml` входят в класс `tenant_provisioning` доверенной базы
+(`quality/autonomy/policy.json`): кандидат AE, затронувший их, получает минимум
+HUMAN_DECISION_REQUIRED и не публикуется (тест `test_tenant_provisioning_paths_are_tcb`). Этот код
+исполняется с правами провижионера в `tenant-infra.yml`. AE v1 в `main` по-прежнему выключен.
 
 ## P2-8. Предохранитель журнала Ozon runtime: слабые места ревью PR #171 (L3, L4, L7, L8)
 
@@ -267,6 +267,23 @@ production-образе `sha256:24e3c6d6…` до отдельных ворот 
 - I1 — `schema_version: true` и `1.0`.
 
 ---
+
+## P2-9. Провижионер арендаторов на admin-ролях T3.1B (Tenancy T3.2)
+
+Живые роли `sa-tenant-provisioner` на `tenants/`: `run.admin` (включает запуск job'ов),
+`cloudscheduler.admin` (включает enable/run расписаний), `bigquery.admin` (включает чтение строк),
+`iam.serviceAccountAdmin` (включает setIamPolicy на SA — самовыдачу создания токенов),
+`serviceusage.serviceUsageAdmin`, условный `projectIamAdmin`. Прав на секреты нет вовсе, поэтому
+корень `infra/tenant/` не применится. Замена — роль `mpaTenantProvisioner` из 27 разрешений с
+классами, org policy `iam.managed.allowedPolicyMembers` на `tenants/` и необязательная
+deny-политика (`tools/tenancy/iam_proposals.py`). Даже после замены остаются задокументированные
+косвенные возможности внутри границы арендатора (исполнение через создаваемое ENABLED задание
+Scheduler с `actAs`, выдача доступа членам организации, подмена образа до активации).
+Блокирует применение T3.3; нужен `roles/iam.organizationRoleAdmin` у владельца.
+
+Попутно: каденция Ozon для выделенных арендаторов теперь живёт в `tools/tenancy/ozon_contract.py`
+и сверяется тестом с locals EVETIS (`infra/terraform/ozon_ingestion.tf`) — это ещё одно место к
+P2-3, но с проверкой расхождения, а не молчаливой копией.
 
 ## P3-1. Каталог `_to_delete/` (82 записи) в рабочем дереве
 

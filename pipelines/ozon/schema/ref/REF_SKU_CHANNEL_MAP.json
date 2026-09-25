@@ -1,0 +1,87 @@
+{
+  "clustering": [
+    "marketplace",
+    "internal_sku"
+  ],
+  "schema": [
+    {
+      "description": "Внутренний артикул EVETIS",
+      "mode": "REQUIRED",
+      "name": "internal_sku",
+      "type": "STRING"
+    },
+    {
+      "description": "Код площадки: WB или OZON",
+      "mode": "REQUIRED",
+      "name": "marketplace",
+      "type": "STRING"
+    },
+    {
+      "description": "Идентификатор товара на площадке. Для WB это nm_id, для OZON это ozon_sku. Хранится явной строкой",
+      "mode": "REQUIRED",
+      "name": "marketplace_sku",
+      "type": "STRING"
+    },
+    {
+      "description": "Внутренний id товара на площадке. Для OZON это product_id",
+      "mode": "NULLABLE",
+      "name": "marketplace_product_id",
+      "type": "STRING"
+    },
+    {
+      "description": "Артикул продавца на площадке",
+      "mode": "NULLABLE",
+      "name": "offer_id",
+      "type": "STRING"
+    },
+    {
+      "description": "Артикул продавца в терминах площадки",
+      "mode": "NULLABLE",
+      "name": "vendor_code",
+      "type": "STRING"
+    },
+    {
+      "description": "Начало действия связки",
+      "mode": "REQUIRED",
+      "name": "valid_from",
+      "type": "DATE"
+    },
+    {
+      "description": "Конец действия связки, NULL = действует",
+      "mode": "NULLABLE",
+      "name": "valid_to",
+      "type": "DATE"
+    },
+    {
+      "description": "Признак действующей строки",
+      "mode": "REQUIRED",
+      "name": "is_current",
+      "type": "BOOLEAN"
+    },
+    {
+      "description": "Чем подтверждена связка",
+      "mode": "NULLABLE",
+      "name": "mapping_source",
+      "type": "STRING"
+    },
+    {
+      "description": "RESOLVED_FROM_OZON_API | MIGRATED_FROM_WB_REFERENCE",
+      "mode": "NULLABLE",
+      "name": "mapping_status",
+      "type": "STRING"
+    },
+    {
+      "description": "Дата последней проверки",
+      "mode": "NULLABLE",
+      "name": "verified_at",
+      "type": "DATE"
+    },
+    {
+      "description": "Момент загрузки",
+      "mode": "NULLABLE",
+      "name": "loaded_at",
+      "type": "TIMESTAMP"
+    }
+  ],
+  "table_id": "REF_SKU_CHANNEL_MAP"
+}

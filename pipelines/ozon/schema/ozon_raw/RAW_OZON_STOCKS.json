@@ -1,0 +1,98 @@
+{
+  "clustering": [
+    "sku",
+    "warehouse_id"
+  ],
+  "schema": [
+    {
+      "mode": "REQUIRED",
+      "name": "snapshot_date",
+      "type": "DATE"
+    },
+    {
+      "mode": "REQUIRED",
+      "name": "sku",
+      "type": "STRING"
+    },
+    {
+      "mode": "REQUIRED",
+      "name": "warehouse_id",
+      "type": "STRING"
+    },
+    {
+      "mode": "NULLABLE",
+      "name": "warehouse_name",
+      "type": "STRING"
+    },
+    {
+      "mode": "NULLABLE",
+      "name": "cluster_id",
+      "type": "STRING"
+    },
+    {
+      "mode": "NULLABLE",
+      "name": "cluster_name",
+      "type": "STRING"
+    },
+    {
+      "mode": "NULLABLE",
+      "name": "available_stock_count",
+      "type": "INTEGER"
+    },
+    {
+      "mode": "NULLABLE",
+      "name": "valid_stock_count",
+      "type": "INTEGER"
+    },
+    {
+      "mode": "NULLABLE",
+      "name": "transit_stock_count",
+      "type": "INTEGER"
+    },
+    {
+      "mode": "NULLABLE",
+      "name": "excess_stock_count",
+      "type": "INTEGER"
+    },
+    {
+      "mode": "NULLABLE",
+      "name": "days_without_sales",
+      "type": "INTEGER"
+    },
+    {
+      "mode": "NULLABLE",
+      "name": "turnover_grade",
+      "type": "STRING"
+    },
+    {
+      "mode": "NULLABLE",
+      "name": "idc",
+      "type": "NUMERIC"
+    },
+    {
+      "mode": "REQUIRED",
+      "name": "extracted_at",
+      "type": "TIMESTAMP"
+    },
+    {
+      "mode": "REQUIRED",
+      "name": "source_endpoint",
+      "type": "STRING"
+    },
+    {
+      "mode": "REQUIRED",
+      "name": "ingestion_run_id",
+      "type": "STRING"
+    },
+    {
+      "mode": "NULLABLE",
+      "name": "source_payload_hash",
+      "type": "STRING"
+    }
+  ],
+  "table_id": "RAW_OZON_STOCKS",
+  "time_partitioning": {
+    "field": "snapshot_date",
+    "type": "DAY"
+  }
+}

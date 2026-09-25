@@ -1,0 +1,73 @@
+{
+  "clustering": [
+    "warehouse_id",
+    "cluster_id"
+  ],
+  "schema": [
+    {
+      "mode": "REQUIRED",
+      "name": "snapshot_date",
+      "type": "DATE"
+    },
+    {
+      "mode": "REQUIRED",
+      "name": "cluster_id",
+      "type": "INTEGER"
+    },
+    {
+      "mode": "NULLABLE",
+      "name": "cluster_name",
+      "type": "STRING"
+    },
+    {
+      "mode": "NULLABLE",
+      "name": "cluster_type",
+      "type": "STRING"
+    },
+    {
+      "mode": "NULLABLE",
+      "name": "macrolocal_cluster_id",
+      "type": "INTEGER"
+    },
+    {
+      "mode": "REQUIRED",
+      "name": "warehouse_id",
+      "type": "STRING"
+    },
+    {
+      "mode": "NULLABLE",
+      "name": "warehouse_name",
+      "type": "STRING"
+    },
+    {
+      "mode": "NULLABLE",
+      "name": "warehouse_type",
+      "type": "STRING"
+    },
+    {
+      "mode": "REQUIRED",
+      "name": "extracted_at",
+      "type": "TIMESTAMP"
+    },
+    {
+      "mode": "REQUIRED",
+      "name": "source_endpoint",
+      "type": "STRING"
+    },
+    {
+      "mode": "REQUIRED",
+      "name": "ingestion_run_id",
+      "type": "STRING"
+    },
+    {
+      "mode": "NULLABLE",
+      "name": "source_payload_hash",
+      "type": "STRING"
+    }
+  ],
+  "table_id": "RAW_OZON_CLUSTERS",
+  "time_partitioning": {
+    "field": "snapshot_date",
+    "type": "DAY"
+  }
+}

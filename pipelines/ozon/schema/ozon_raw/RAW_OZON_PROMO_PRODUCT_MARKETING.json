@@ -1,0 +1,144 @@
+{
+  "clustering": [
+    "offer_id",
+    "internal_sku"
+  ],
+  "schema": [
+    {
+      "mode": "REQUIRED",
+      "name": "observed_at",
+      "type": "TIMESTAMP"
+    },
+    {
+      "mode": "REQUIRED",
+      "name": "observation_bucket",
+      "type": "STRING"
+    },
+    {
+      "mode": "REQUIRED",
+      "name": "observation_id",
+      "type": "STRING"
+    },
+    {
+      "mode": "REQUIRED",
+      "name": "environment",
+      "type": "STRING"
+    },
+    {
+      "mode": "NULLABLE",
+      "name": "run_id",
+      "type": "STRING"
+    },
+    {
+      "description": "items[].offer_id — артикул продавца.",
+      "mode": "REQUIRED",
+      "name": "offer_id",
+      "type": "STRING"
+    },
+    {
+      "description": "items[].product_id.",
+      "mode": "NULLABLE",
+      "name": "product_id",
+      "type": "INTEGER"
+    },
+    {
+      "description": "Канонический SKU EVETIS. NULL = не разрешён; строка НЕ отбрасывается.",
+      "mode": "NULLABLE",
+      "name": "internal_sku",
+      "type": "STRING"
+    },
+    {
+      "description": "RESOLVED_BY_PRODUCT_ID | RESOLVED_BY_OFFER_ID | UNRESOLVED.",
+      "mode": "NULLABLE",
+      "name": "sku_resolution_status",
+      "type": "STRING"
+    },
+    {
+      "description": "marketing_actions.ozon_actions_exist ДОСЛОВНО. ⚠️ НЕ АВТОРИТЕТЕН для участия в акциях: наблюдался FALSE при 19 непустых элементах actions[] в том же блоке. Хранится как факт источника и только.",
+      "mode": "NULLABLE",
+      "name": "source_actions_exist_flag",
+      "type": "BOOLEAN"
+    },
+    {
+      "description": "marketing_actions.current_period_from.",
+      "mode": "NULLABLE",
+      "name": "current_period_from",
+      "type": "TIMESTAMP"
+    },
+    {
+      "description": "marketing_actions.current_period_to.",
+      "mode": "NULLABLE",
+      "name": "current_period_to",
+      "type": "TIMESTAMP"
+    },
+    {
+      "description": "Длина marketing_actions.actions[]. Сами элементы — в RAW_OZON_PROMO_PRODUCT_ACTION.",
+      "mode": "NULLABLE",
+      "name": "actions_count",
+      "type": "INTEGER"
+    },
+    {
+      "description": "price.price.",
+      "mode": "NULLABLE",
+      "name": "price_rub",
+      "type": "NUMERIC"
+    },
+    {
+      "description": "price.min_price — порог автоприменения скидок. Наблюдался равным price у 20/20.",
+      "mode": "NULLABLE",
+      "name": "min_price_rub",
+      "type": "NUMERIC"
+    },
+    {
+      "description": "price.marketing_seller_price — база комиссии в канонической экономике Ozon.",
+      "mode": "NULLABLE",
+      "name": "marketing_seller_price_rub",
+      "type": "NUMERIC"
+    },
+    {
+      "description": "price.old_price.",
+      "mode": "NULLABLE",
+      "name": "old_price_rub",
+      "type": "NUMERIC"
+    },
+    {
+      "description": "price.auto_action_enabled, дословно.",
+      "mode": "NULLABLE",
+      "name": "auto_action_enabled",
+      "type": "BOOLEAN"
+    },
+    {
+      "description": "price.auto_add_to_ozon_actions_list_enabled, дословно.",
+      "mode": "NULLABLE",
+      "name": "auto_add_to_ozon_actions_enabled",
+      "type": "BOOLEAN"
+    },
+    {
+      "description": "Блок marketing_actions целиком, дословно. Гарантия отсутствия потерь при эволюции схемы.",
+      "mode": "NULLABLE",
+      "name": "marketing_actions_json",
+      "type": "STRING"
+    },
+    {
+      "mode": "NULLABLE",
+      "name": "source_endpoint",
+      "type": "STRING"
+    },
+    {
+      "description": "sha256 от (observation_id, offer_id).",
+      "mode": "NULLABLE",
+      "name": "source_payload_hash",
+      "type": "STRING"
+    },
+    {
+      "mode": "NULLABLE",
+      "name": "ingested_at",
+      "type": "TIMESTAMP"
+    }
+  ],
+  "table_id": "RAW_OZON_PROMO_PRODUCT_MARKETING",
+  "time_partitioning": {
+    "field": "observed_at",
+    "type": "DAY"
+  }
+}

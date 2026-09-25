@@ -1,0 +1,102 @@
+{
+  "clustering": [
+    "campaign_id"
+  ],
+  "schema": [
+    {
+      "mode": "REQUIRED",
+      "name": "snapshot_date",
+      "type": "DATE"
+    },
+    {
+      "mode": "REQUIRED",
+      "name": "campaign_id",
+      "type": "STRING"
+    },
+    {
+      "mode": "NULLABLE",
+      "name": "title",
+      "type": "STRING"
+    },
+    {
+      "mode": "NULLABLE",
+      "name": "state",
+      "type": "STRING"
+    },
+    {
+      "mode": "NULLABLE",
+      "name": "adv_object_type",
+      "type": "STRING"
+    },
+    {
+      "mode": "NULLABLE",
+      "name": "payment_type",
+      "type": "STRING"
+    },
+    {
+      "mode": "NULLABLE",
+      "name": "expense_strategy",
+      "type": "STRING"
+    },
+    {
+      "mode": "NULLABLE",
+      "name": "placement",
+      "type": "STRING"
+    },
+    {
+      "mode": "NULLABLE",
+      "name": "weekly_budget_rub",
+      "type": "NUMERIC"
+    },
+    {
+      "mode": "NULLABLE",
+      "name": "daily_budget_rub",
+      "type": "NUMERIC"
+    },
+    {
+      "mode": "NULLABLE",
+      "name": "product_autopilot_strategy",
+      "type": "STRING"
+    },
+    {
+      "mode": "NULLABLE",
+      "name": "autostop_status",
+      "type": "STRING"
+    },
+    {
+      "mode": "NULLABLE",
+      "name": "campaign_created_at",
+      "type": "TIMESTAMP"
+    },
+    {
+      "mode": "NULLABLE",
+      "name": "campaign_updated_at",
+      "type": "TIMESTAMP"
+    },
+    {
+      "mode": "REQUIRED",
+      "name": "extracted_at",
+      "type": "TIMESTAMP"
+    },
+    {
+      "mode": "REQUIRED",
+      "name": "source_endpoint",
+      "type": "STRING"
+    },
+    {
+      "mode": "REQUIRED",
+      "name": "ingestion_run_id",
+      "type": "STRING"
+    },
+    {
+      "mode": "NULLABLE",
+      "name": "source_payload_hash",
+      "type": "STRING"
+    }
+  ],
+  "table_id": "RAW_OZON_ADS_CAMPAIGNS",
+  "time_partitioning": {
+    "field": "snapshot_date",
+    "type": "DAY"
+  }
+}

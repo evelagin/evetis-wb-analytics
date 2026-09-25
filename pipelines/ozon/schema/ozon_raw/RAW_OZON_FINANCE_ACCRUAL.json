@@ -1,0 +1,123 @@
+{
+  "clustering": [
+    "type_id",
+    "sku"
+  ],
+  "schema": [
+    {
+      "mode": "REQUIRED",
+      "name": "event_date",
+      "type": "DATE"
+    },
+    {
+      "mode": "REQUIRED",
+      "name": "accrual_id",
+      "type": "INTEGER"
+    },
+    {
+      "mode": "REQUIRED",
+      "name": "type_id",
+      "type": "INTEGER"
+    },
+    {
+      "mode": "NULLABLE",
+      "name": "operation_name",
+      "type": "STRING"
+    },
+    {
+      "mode": "NULLABLE",
+      "name": "accrued_category",
+      "type": "STRING"
+    },
+    {
+      "mode": "NULLABLE",
+      "name": "unit_number",
+      "type": "STRING"
+    },
+    {
+      "mode": "NULLABLE",
+      "name": "unit_number_meaning",
+      "type": "STRING"
+    },
+    {
+      "mode": "NULLABLE",
+      "name": "posting_number",
+      "type": "STRING"
+    },
+    {
+      "mode": "NULLABLE",
+      "name": "sku",
+      "type": "STRING"
+    },
+    {
+      "mode": "NULLABLE",
+      "name": "amount_rub",
+      "type": "NUMERIC"
+    },
+    {
+      "mode": "NULLABLE",
+      "name": "currency",
+      "type": "STRING"
+    },
+    {
+      "mode": "NULLABLE",
+      "name": "seller_base_price_rub",
+      "type": "NUMERIC"
+    },
+    {
+      "mode": "NULLABLE",
+      "name": "buyer_paid_price_rub",
+      "type": "NUMERIC"
+    },
+    {
+      "mode": "NULLABLE",
+      "name": "ozon_bonus_rub",
+      "type": "NUMERIC"
+    },
+    {
+      "mode": "NULLABLE",
+      "name": "ozon_coinvestment_rub",
+      "type": "NUMERIC"
+    },
+    {
+      "mode": "NULLABLE",
+      "name": "commission_rub",
+      "type": "NUMERIC"
+    },
+    {
+      "mode": "NULLABLE",
+      "name": "commission_ratio",
+      "type": "NUMERIC"
+    },
+    {
+      "mode": "NULLABLE",
+      "name": "quantity",
+      "type": "INTEGER"
+    },
+    {
+      "mode": "REQUIRED",
+      "name": "extracted_at",
+      "type": "TIMESTAMP"
+    },
+    {
+      "mode": "REQUIRED",
+      "name": "source_endpoint",
+      "type": "STRING"
+    },
+    {
+      "mode": "REQUIRED",
+      "name": "ingestion_run_id",
+      "type": "STRING"
+    },
+    {
+      "mode": "NULLABLE",
+      "name": "source_payload_hash",
+      "type": "STRING"
+    }
+  ],
+  "table_id": "RAW_OZON_FINANCE_ACCRUAL",
+  "time_partitioning": {
+    "field": "event_date",
+    "type": "DAY"
+  }
+}

@@ -1,0 +1,82 @@
+{
+  "clustering": [
+    "campaign_id"
+  ],
+  "schema": [
+    {
+      "mode": "REQUIRED",
+      "name": "date",
+      "type": "DATE"
+    },
+    {
+      "mode": "REQUIRED",
+      "name": "campaign_id",
+      "type": "STRING"
+    },
+    {
+      "mode": "NULLABLE",
+      "name": "campaign_title",
+      "type": "STRING"
+    },
+    {
+      "mode": "NULLABLE",
+      "name": "expense_rub",
+      "type": "NUMERIC"
+    },
+    {
+      "mode": "NULLABLE",
+      "name": "bonus_expense_rub",
+      "type": "NUMERIC"
+    },
+    {
+      "mode": "NULLABLE",
+      "name": "subscription_expense_rub",
+      "type": "NUMERIC"
+    },
+    {
+      "mode": "NULLABLE",
+      "name": "impressions",
+      "type": "INTEGER"
+    },
+    {
+      "mode": "NULLABLE",
+      "name": "clicks",
+      "type": "INTEGER"
+    },
+    {
+      "mode": "NULLABLE",
+      "name": "orders",
+      "type": "INTEGER"
+    },
+    {
+      "mode": "NULLABLE",
+      "name": "revenue_rub",
+      "type": "NUMERIC"
+    },
+    {
+      "mode": "REQUIRED",
+      "name": "extracted_at",
+      "type": "TIMESTAMP"
+    },
+    {
+      "mode": "REQUIRED",
+      "name": "source_endpoint",
+      "type": "STRING"
+    },
+    {
+      "mode": "REQUIRED",
+      "name": "ingestion_run_id",
+      "type": "STRING"
+    },
+    {
+      "mode": "NULLABLE",
+      "name": "source_payload_hash",
+      "type": "STRING"
+    }
+  ],
+  "table_id": "RAW_OZON_ADS_EXPENSE_DAILY",
+  "time_partitioning": {
+    "field": "date",
+    "type": "DAY"
+  }
+}

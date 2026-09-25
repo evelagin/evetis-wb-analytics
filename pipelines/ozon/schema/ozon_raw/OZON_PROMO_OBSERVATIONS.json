@@ -1,0 +1,178 @@
+{
+  "clustering": [
+    "environment",
+    "observation_bucket"
+  ],
+  "schema": [
+    {
+      "mode": "REQUIRED",
+      "name": "observation_id",
+      "type": "STRING"
+    },
+    {
+      "mode": "REQUIRED",
+      "name": "observation_bucket",
+      "type": "STRING"
+    },
+    {
+      "mode": "REQUIRED",
+      "name": "environment",
+      "type": "STRING"
+    },
+    {
+      "mode": "NULLABLE",
+      "name": "run_id",
+      "type": "STRING"
+    },
+    {
+      "mode": "REQUIRED",
+      "name": "started_at",
+      "type": "TIMESTAMP"
+    },
+    {
+      "mode": "NULLABLE",
+      "name": "observed_at",
+      "type": "TIMESTAMP"
+    },
+    {
+      "mode": "NULLABLE",
+      "name": "completed_at",
+      "type": "TIMESTAMP"
+    },
+    {
+      "description": "STARTED | COMPLETE | ERROR | REUSED.",
+      "mode": "REQUIRED",
+      "name": "status",
+      "type": "STRING"
+    },
+    {
+      "description": "Число HTTP-запросов к Seller API за снимок.",
+      "mode": "NULLABLE",
+      "name": "requests",
+      "type": "INTEGER"
+    },
+    {
+      "description": "Число повторов 429/5xx.",
+      "mode": "NULLABLE",
+      "name": "retries",
+      "type": "INTEGER"
+    },
+    {
+      "description": "Акций в /v1/actions.",
+      "mode": "NULLABLE",
+      "name": "actions_total",
+      "type": "INTEGER"
+    },
+    {
+      "description": "Акций с is_participating = TRUE.",
+      "mode": "NULLABLE",
+      "name": "actions_participating",
+      "type": "INTEGER"
+    },
+    {
+      "description": "Строк membership='PARTICIPATING'.",
+      "mode": "NULLABLE",
+      "name": "products_participating",
+      "type": "INTEGER"
+    },
+    {
+      "description": "Строк membership='CANDIDATE'.",
+      "mode": "NULLABLE",
+      "name": "products_candidate",
+      "type": "INTEGER"
+    },
+    {
+      "description": "Строк list_kind='SCHEDULED'.",
+      "mode": "NULLABLE",
+      "name": "auto_add_scheduled_rows",
+      "type": "INTEGER"
+    },
+    {
+      "description": "Строк list_kind='ELIGIBLE'.",
+      "mode": "NULLABLE",
+      "name": "auto_add_eligible_rows",
+      "type": "INTEGER"
+    },
+    {
+      "description": "Пар (акция, дата автодобавления), опрошенных в снимке.",
+      "mode": "NULLABLE",
+      "name": "auto_add_pairs",
+      "type": "INTEGER"
+    },
+    {
+      "description": "Товаров в /v5/product/info/prices.",
+      "mode": "NULLABLE",
+      "name": "marketing_products",
+      "type": "INTEGER"
+    },
+    {
+      "description": "Строк длинной проекции actions[].",
+      "mode": "NULLABLE",
+      "name": "marketing_action_rows",
+      "type": "INTEGER"
+    },
+    {
+      "description": "Уникальных product_id/offer_id, встреченных в снимке.",
+      "mode": "NULLABLE",
+      "name": "source_products",
+      "type": "INTEGER"
+    },
+    {
+      "description": "Из них разрешённых в internal_sku.",
+      "mode": "NULLABLE",
+      "name": "mapped_products",
+      "type": "INTEGER"
+    },
+    {
+      "description": "Не разрешённых. Не отбрасываются.",
+      "mode": "NULLABLE",
+      "name": "unmapped_products",
+      "type": "INTEGER"
+    },
+    {
+      "description": "Список неразрешённых идентификаторов через запятую.",
+      "mode": "NULLABLE",
+      "name": "unmapped_ids",
+      "type": "STRING"
+    },
+    {
+      "description": "mapped / source × 100.",
+      "mode": "NULLABLE",
+      "name": "mapping_coverage_pct",
+      "type": "NUMERIC"
+    },
+    {
+      "description": "Сумма строк по пяти RAW-таблицам Ozon.",
+      "mode": "NULLABLE",
+      "name": "rows_written",
+      "type": "INTEGER"
+    },
+    {
+      "description": "OK | DRIFT_NEW_FIELDS | DRIFT_MISSING_FIELDS.",
+      "mode": "NULLABLE",
+      "name": "schema_status",
+      "type": "STRING"
+    },
+    {
+      "description": "Поля ответа Ozon вне нашего контракта.",
+      "mode": "NULLABLE",
+      "name": "schema_unknown_fields",
+      "type": "STRING"
+    },
+    {
+      "mode": "NULLABLE",
+      "name": "error_code",
+      "type": "STRING"
+    },
+    {
+      "mode": "NULLABLE",
+      "name": "error_message",
+      "type": "STRING"
+    }
+  ],
+  "table_id": "OZON_PROMO_OBSERVATIONS",
+  "time_partitioning": {
+    "field": "started_at",
+    "type": "DAY"
+  }
+}
