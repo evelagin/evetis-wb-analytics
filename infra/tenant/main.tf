@@ -16,6 +16,23 @@ resource "google_project_service" "this" {
 # Состав датасетов — из контракта (сейчас ozon_raw и ref; T4 добавит ozon_mart и
 # analytics_share без изменения этого файла). Таблицы — все, что runtime пишет для
 # включённых сущностей арендатора (tools/tenancy/ozon_contract.py), со схемами из Git.
+#
+# ACL датасета — АВТОРИТЕТНЫЙ и полный (T3.3). Если access не задан при создании, BigQuery
+# добавляет создателя датасета (провижионера) как OWNER — это чтение, запись и удаление
+# данных арендатора в обход роли провижионера. Поэтому доступ перечислен целиком:
+#   * projectOwners → OWNER (владелец проекта арендатора; у него это есть и через roles/owner);
+#   * runtime SA площадки → WRITER на свой raw, READER на ref (эквиваленты dataEditor/dataViewer).
+# Больше никого: ни провижионера, ни SA планировщика, ни клиента. Лишнюю запись (в т.ч.
+# созданную API) Terraform увидит как дрейф и снимет; сканер плана сверяет ACL точно.
+locals {
+  ozon               = var.contract.marketplaces.ozon
+  ozon_runtime_email = local.ozon == null ? null : one(module.ozon[*].runtime_email)
+  dataset_data_grants = local.ozon == null ? [] : [
+    { dataset_key = local.ozon.raw_dataset_key, role = "WRITER", user_by_email = local.ozon_runtime_email },
+    { dataset_key = local.ozon.ref_dataset_key, role = "READER", user_by_email = local.ozon_runtime_email },
+  ]
+}
+
 resource "google_bigquery_dataset" "this" {
   for_each = var.contract.datasets
 
@@ -24,6 +41,19 @@ resource "google_bigquery_dataset" "this" {
   location                   = var.contract.bq_location
   description                = "VTS tenant ${var.contract.tenant_id}: ${each.key}"
   delete_contents_on_destroy = false
+
+  access {
+    role          = "OWNER"
+    special_group = "projectOwners"
+  }
+
+  dynamic "access" {
+    for_each = [for g in local.dataset_data_grants : g if g.dataset_key == each.key]
+    content {
+      role          = access.value.role
+      user_by_email = access.value.user_by_email
+    }
+  }
 
   depends_on = [google_project_service.this]
 }
@@ -55,12 +85,11 @@ module "ozon" {
   source = "./modules/ozon_runtime"
   count  = var.contract.marketplaces.ozon == null ? 0 : 1
 
-  project_id  = var.contract.project_id
-  region      = var.contract.region
-  tenant_id   = var.contract.tenant_id
-  ozon        = var.contract.marketplaces.ozon
-  raw_dataset = google_bigquery_dataset.this[var.contract.marketplaces.ozon.raw_dataset_key].dataset_id
-  ref_dataset = google_bigquery_dataset.this[var.contract.marketplaces.ozon.ref_dataset_key].dataset_id
+  project_id = var.contract.project_id
+  region     = var.contract.region
+  tenant_id  = var.contract.tenant_id
+  ozon       = var.contract.marketplaces.ozon
 
-  depends_on = [google_project_service.this, google_bigquery_table.this]
+  # Датасеты ждут runtime SA (он в их ACL), поэтому модуль от датасетов и таблиц не зависит.
+  depends_on = [google_project_service.this]
 }

@@ -55,24 +55,25 @@ def _plan_for(contract, number=NUMBER):
                                                                     "project_id": p}}, {"id": True})]
     rcs += [_rc(f'google_project_service.this["{a}"]', "google_project_service",
                 {"project": p, "service": a, "disable_on_destroy": False}, {"id": True}) for a in contract["apis"]]
+    grants = {o["raw_dataset_key"]: "WRITER", o["ref_dataset_key"]: "READER"}
     rcs += [_rc(f'google_bigquery_dataset.this["{k}"]', "google_bigquery_dataset",
-                {"project": p, "dataset_id": ds, "location": "EU"}, {"etag": True, "id": True})
+                {"project": p, "dataset_id": ds, "location": "EU",
+                 "access": [_acl("OWNER", special_group="projectOwners")]
+                           + ([_acl(grants[k], user_by_email=rt)] if k in grants else [])},
+                {"etag": True, "id": True, "access": [{}, {}]})
             for k, ds in contract["datasets"].items()]
     rcs += [_rc(f'google_bigquery_table.this["{t["dataset_key"]}.{t["table_id"]}"]', "google_bigquery_table",
                 {"project": p, "dataset_id": contract["datasets"][t["dataset_key"]], "table_id": t["table_id"],
                  "schema": t["schema_json"], "deletion_protection": True}, {"etag": True})
             for t in contract["tables"]]
+    # Как у провайдера google 7.x (живой план T3.3): email и member известны на плане.
     for key in ("runtime", "scheduler"):
+        email = f"{o['service_accounts'][key]}@{p}.iam.gserviceaccount.com"
         rcs.append(_rc(f"{m}.google_service_account.{key}", "google_service_account",
-                       {"project": p, "account_id": o["service_accounts"][key]},
-                       {"email": True, "unique_id": True, "member": True}, module=m))
+                       {"project": p, "account_id": o["service_accounts"][key], "email": email,
+                        "member": f"serviceAccount:{email}"},
+                       {"id": True, "name": True, "unique_id": True}, module=m))
     member = f"serviceAccount:{rt}"
-    rcs.append(_rc(f"{m}.google_bigquery_dataset_iam_member.runtime_raw_editor", "google_bigquery_dataset_iam_member",
-                   {"project": p, "dataset_id": contract["datasets"]["ozon_raw"], "role": "roles/bigquery.dataEditor",
-                    "member": member}, {"etag": True}, module=m))
-    rcs.append(_rc(f"{m}.google_bigquery_dataset_iam_member.runtime_ref_viewer", "google_bigquery_dataset_iam_member",
-                   {"project": p, "dataset_id": contract["datasets"]["ref"], "role": "roles/bigquery.dataViewer",
-                    "member": member}, {"etag": True}, module=m))
     rcs.append(_rc(f"{m}.google_project_iam_member.runtime_job_user", "google_project_iam_member",
                    {"project": p, "role": "roles/bigquery.jobUser", "member": member}, {"etag": True}, module=m))
     for role, sid in o["secret_ids"].items():
@@ -105,7 +106,7 @@ def _plan_for(contract, number=NUMBER):
     root_cfg += [{"address": f"{t}.this", "mode": "managed", "type": t, "provider_config_key": "google"}
                  for t in ("google_project_service", "google_bigquery_dataset", "google_bigquery_table")]
     mod_cfg = [{"address": f"{t}.x", "mode": "managed", "type": t, "provider_config_key": "module.ozon:google"}
-               for t in ("google_service_account", "google_bigquery_dataset_iam_member", "google_project_iam_member",
+               for t in ("google_service_account", "google_project_iam_member",
                          "google_secret_manager_secret", "google_secret_manager_secret_iam_member",
                          "google_cloud_run_v2_job", "google_cloud_scheduler_job")]
     return {
@@ -138,6 +139,24 @@ def _mutated(contract, fn):
     plan = _plan_for(contract)
     fn(plan, contract)
     return plan
+
+
+def _acl(role, **who):
+    """Запись access датасета в форме terraform show -json провайдера google 7.x."""
+    entry = {"condition": [], "dataset": [], "domain": "", "group_by_email": "", "iam_member": "",
+             "role": role, "routine": [], "special_group": "", "user_by_email": "", "view": []}
+    entry.update(who)
+    return entry
+
+
+def _ds(plan, name):
+    return next(r for r in plan["resource_changes"]
+                if r["type"] == "google_bigquery_dataset" and r["change"]["after"]["dataset_id"] == name)
+
+
+def _sa(plan, key):
+    return next(r for r in plan["resource_changes"]
+                if r["type"] == "google_service_account" and r["address"].endswith(f".{key}"))
 
 
 def _add(plan, rc):
@@ -212,6 +231,34 @@ NEGATIVE = {
     "H2 job runs as foreign SA": lambda p, c: _first(p, "google_cloud_run_v2_job")["change"]["after"]["template"][0]["template"][0].update({"service_account": "x@mpa-t-client-002.iam.gserviceaccount.com"}),
     # И1 — секреты
     "И1 secret version resource": lambda p, c: _add(p, _rc(f"{M}.google_secret_manager_secret_version.v", "google_secret_manager_secret_version", {"secret": f"projects/{P1}/secrets/ozon-seller-api-key", "secret_data": "x"}, module=M)),
+    # D — ACL датасетов (T3.3): авторитетный, ровно по контракту
+    "D provisioner OWNER on raw (creator default)": lambda p, c: _ds(p, "ozon_raw")["change"]["after"]["access"].append(_acl("OWNER", user_by_email=PL.PROVISIONER_SA)),
+    "D provisioner READER on ref": lambda p, c: _ds(p, "ref")["change"]["after"]["access"].append(_acl("READER", user_by_email=PL.PROVISIONER_SA)),
+    "D allUsers via iam_member": lambda p, c: _ds(p, "ref")["change"]["after"]["access"].append(_acl("READER", iam_member="allUsers")),
+    "D allAuthenticatedUsers special group": lambda p, c: _ds(p, "ozon_raw")["change"]["after"]["access"].append(_acl("READER", special_group="allAuthenticatedUsers")),
+    "D scheduler SA READER": lambda p, c: _ds(p, "ozon_raw")["change"]["after"]["access"].append(_acl("READER", user_by_email=f"sa-ozon-scheduler@{P1}.iam.gserviceaccount.com")),
+    "D other tenant SA": lambda p, c: _ds(p, "ozon_raw")["change"]["after"]["access"].append(_acl("READER", user_by_email="sa-ozon-runtime@mpa-t-client-002.iam.gserviceaccount.com")),
+    "D EVETIS SA": lambda p, c: _ds(p, "ref")["change"]["after"]["access"].append(_acl("READER", user_by_email="sa-loaders-prod@project-fa311fc0-4d87-4781-986.iam.gserviceaccount.com")),
+    "D projectWriters special group": lambda p, c: _ds(p, "ozon_raw")["change"]["after"]["access"].append(_acl("WRITER", special_group="projectWriters")),
+    "D projectReaders special group": lambda p, c: _ds(p, "ref")["change"]["after"]["access"].append(_acl("READER", special_group="projectReaders")),
+    "D domain": lambda p, c: _ds(p, "ref")["change"]["after"]["access"].append(_acl("READER", domain="example.com")),
+    "D group": lambda p, c: _ds(p, "ref")["change"]["after"]["access"].append(_acl("READER", group_by_email="clients@example.com")),
+    "D customer user": lambda p, c: _ds(p, "ozon_raw")["change"]["after"]["access"].append(_acl("READER", user_by_email="customer@example.com")),
+    "D runtime WRITER on ref (wider)": lambda p, c: _ds(p, "ref")["change"]["after"]["access"].__setitem__(1, _acl("WRITER", user_by_email=f"sa-ozon-runtime@{P1}.iam.gserviceaccount.com")),
+    "D runtime OWNER on raw (wider)": lambda p, c: _ds(p, "ozon_raw")["change"]["after"]["access"].__setitem__(1, _acl("OWNER", user_by_email=f"sa-ozon-runtime@{P1}.iam.gserviceaccount.com")),
+    "D runtime grant missing": lambda p, c: _ds(p, "ozon_raw")["change"]["after"]["access"].pop(1),
+    "D ACL unknown on plan": lambda p, c: (_ds(p, "ozon_raw")["change"]["after"].pop("access"), _ds(p, "ozon_raw")["change"]["after_unknown"].update({"access": True})),
+    "D authorized view entry": lambda p, c: _ds(p, "ref")["change"]["after"]["access"].append(_acl("", view=[{"project_id": P1, "dataset_id": "x", "table_id": "v"}])),
+    "D entry with two principals": lambda p, c: _ds(p, "ref")["change"]["after"]["access"].append(_acl("READER", special_group="projectOwners", user_by_email="x@example.com")),
+    "D separate dataset_iam_member even for runtime": lambda p, c: _add(p, _rc(f"{M}.google_bigquery_dataset_iam_member.x", "google_bigquery_dataset_iam_member", {"project": P1, "dataset_id": "ozon_raw", "role": "roles/bigquery.dataEditor", "member": f"serviceAccount:sa-ozon-runtime@{P1}.iam.gserviceaccount.com"}, module=M)),
+    # E — computed member сервисного аккаунта: только он сам и только SA контракта
+    "E SA member is another email": lambda p, c: _sa(p, "runtime")["change"]["after"].update({"member": f"serviceAccount:sa-other@{P1}.iam.gserviceaccount.com"}),
+    "E SA member is the other contract SA": lambda p, c: _sa(p, "runtime")["change"]["after"].update({"member": f"serviceAccount:sa-ozon-scheduler@{P1}.iam.gserviceaccount.com"}),
+    "E SA member is external user": lambda p, c: _sa(p, "runtime")["change"]["after"].update({"member": "user:attacker@gmail.com"}),
+    "E SA member unknown": lambda p, c: (_sa(p, "runtime")["change"]["after"].pop("member"), _sa(p, "runtime")["change"]["after_unknown"].update({"member": True})),
+    "E SA email/member of foreign project": lambda p, c: _sa(p, "runtime")["change"]["after"].update({"email": "sa-ozon-runtime@mpa-t-client-002.iam.gserviceaccount.com", "member": "serviceAccount:sa-ozon-runtime@mpa-t-client-002.iam.gserviceaccount.com"}),
+    "E extra SA not in contract": lambda p, c: _add(p, _rc(f"{M}.google_service_account.extra", "google_service_account", {"project": P1, "account_id": "sa-extra", "email": f"sa-extra@{P1}.iam.gserviceaccount.com", "member": f"serviceAccount:sa-extra@{P1}.iam.gserviceaccount.com"}, module=M)),
+    "E own member smuggled into description": lambda p, c: _sa(p, "runtime")["change"]["after"].update({"description": f"serviceAccount:sa-ozon-runtime@{P1}.iam.gserviceaccount.com"}),
     # образ
     "image not the approved digest": lambda p, c: _first(p, "google_cloud_run_v2_job")["change"]["after"]["template"][0]["template"][0]["containers"][0].update({"image": PL.RUNTIME_REGISTRY + "/ozon-runtime@sha256:" + "0" * 64}),
 }
@@ -219,6 +266,35 @@ NEGATIVE = {
 
 def test_scanner_accepts_the_expected_tenant_plan(contract):
     assert PS.scan_plan(_plan_for(contract), contract) == []
+
+
+def test_sa_member_exception_is_what_lets_the_real_provider_shape_pass(contract, monkeypatch):
+    """Без правила E живой план провайдера 7.x (member известен) падал бы — T3.3, план a7ba1c71."""
+    monkeypatch.setattr(PS, "_own_sa_member", lambda *a: False)
+    findings = PS.scan_plan(_plan_for(contract), contract)
+    assert findings and all(".member" in f and "google_service_account" in f for f in findings)
+
+
+def test_dataset_acl_in_expected_plan_excludes_provisioner_and_scheduler(contract):
+    plan = _plan_for(contract)
+    acl = json.dumps([r["change"]["after"]["access"] for r in plan["resource_changes"]
+                      if r["type"] == "google_bigquery_dataset"])
+    assert PL.PROVISIONER_SA not in acl and "sa-ozon-scheduler" not in acl
+    want = PS.expected_dataset_access(contract)
+    assert want == {"ozon_raw": {("OWNER", "special_group", "projectOwners"),
+                                 ("WRITER", "user_by_email", f"sa-ozon-runtime@{P1}.iam.gserviceaccount.com")},
+                    "ref": {("OWNER", "special_group", "projectOwners"),
+                            ("READER", "user_by_email", f"sa-ozon-runtime@{P1}.iam.gserviceaccount.com")}}
+
+
+def test_reconciling_away_a_creator_owner_is_allowed(contract):
+    """Если API всё же добавил создателя, следующий план снимает его (update): это проходит."""
+    plan = _plan_for(contract)
+    ds = _ds(plan, "ozon_raw")
+    ds["change"]["actions"] = ["update"]
+    ds["change"]["before"] = dict(ds["change"]["after"], access=ds["change"]["after"]["access"]
+                                  + [_acl("OWNER", user_by_email=PL.PROVISIONER_SA)])
+    assert PS.scan_plan(plan, contract) == []
 
 
 def test_scanner_accepts_the_same_shape_for_client_002():
@@ -253,6 +329,12 @@ SCANNER_MUTATIONS = {
                                     mp.setattr(PS, "expected_iam", lambda c: _Everything()),
                                     mp.setattr(PS, "RUN_INVOKING_ROLES", frozenset())),
                         "H2 run.invoker to runtime SA"),
+    # Провижионера в ACL ловит ещё и правило маркеров платформы (защита в глубину), поэтому
+    # нагрузку правила D доказывает запись, которую не видит больше ни одно правило.
+    "dataset ACL rule": (lambda mp: mp.setattr(PS, "dataset_acl_findings", lambda *a: []),
+                         "D customer user"),
+    "SA member exception conditions": (lambda mp: mp.setattr(PS, "_own_sa_member", lambda *a: True),
+                                       "E SA member is another email"),
     "data-source allow-list": (lambda mp: mp.setattr(PS, "ALLOWED_DATA_SOURCES",
                                                      dict(PS.ALLOWED_DATA_SOURCES, **{"data.google_projects.evil": "google_projects"})),
                                "M2 unexpected data source (config)"),

@@ -34,6 +34,27 @@
   - развёртывание: `tools/plan1_deploy.py`; откат: `sql/plan/plan1_rollback.sql`.
 - **Исправление `tools/lib/bq_readonly.strip_sql_comments`:** экранированный символ в строковом
   литерале (`'\n'`) больше не теряется. Раньше ломалась проверка ключевых слов в SQL с `'\n'`.
+## 2026-09-25 — Tenancy T3.3: авторитетный ACL датасетов арендатора (security remediation)
+
+**Не развёрнуто.** Первый реальный план `client_001` (`a7ba1c71…`, отклонён, не применялся) создавал
+датасеты без `access`: BigQuery сделал бы провижионера OWNER — доступ к данным арендатора.
+
+- `infra/tenant/main.tf`: `google_bigquery_dataset.access` авторитетный — `projectOwners` OWNER,
+  runtime SA WRITER (`ozon_raw`) / READER (`ref`). `google_bigquery_dataset_iam_member` удалены из
+  модуля; модуль отдаёт `runtime_email` после создания SA и больше не зависит от датасетов.
+- `tools/tenancy/plan_scan.py`: правило D — `access` критичен и ровно равен контракту; правило E —
+  вычисляемый `google_service_account.member` допустим только как собственный email SA контракта
+  (ложное срабатывание на живом плане провайдера 7.x). `dataset_iam_member` — запрещённый тип.
+- Тесты: 26 отрицательных контролей D/E, 2 мутации сканера, 3 мутации Terraform, точные ACL в
+  `terraform test` для `client_001`/`client_002`. Синтетический план — в форме провайдера 7.x.
+
+## 2026-09-25 — Tenancy: исправлена модель прав на state арендаторов (T3.3)
+
+Живой первый `terraform init` T3.3 опроверг вывод T3.2: backend GCS при холодном init перечисляет
+workspaces и требует `storage.objects.list` на весь бакет state. `TENANCY_DESIGN.md` §4a «State»
+исправлен: листинг — отдельной ролью `mpaTenantStateLister` на бакет (имена и метаданные всех
+объектов), содержимое — по-прежнему только `tenants/*`. Архитектура backend не менялась;
+исполняемых проверок на эту тему не было. Только документация.
 
 ## 2026-09-25 — Tenancy T3.2b: первый выпуск образа runtime арендатора
 

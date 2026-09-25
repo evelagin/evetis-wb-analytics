@@ -14,6 +14,10 @@ output "datasets" {
   value = { for k, d in google_bigquery_dataset.this : k => d.dataset_id }
 }
 
+output "dataset_access" {
+  value = { for k, d in google_bigquery_dataset.this : k => [for a in d.access : { role = a.role, special_group = a.special_group, user_by_email = a.user_by_email }] }
+}
+
 output "tables" {
   value = sort(keys(google_bigquery_table.this))
 }
