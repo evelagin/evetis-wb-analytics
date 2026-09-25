@@ -1,0 +1,33 @@
+{
+  "schema_version": 1,
+  "comment": "Утверждённый реестр ВСЕХ доменов доверия GCP WIF, которые принимают OIDC-токены этого репозитория (S1). tools/autonomy/wif_domains.py проверяет каждый домен на точных claims GitHub и падает (fail closed), если живой скан проектов находит провайдер GitHub, доверяющий репозиторию, которого здесь нет. Добавить домен — осознанное изменение TCB с тестами.",
+  "repository": "evelagin/evetis-wb-analytics",
+  "repository_id": "1260095567",
+  "repository_owner_id": "286048501",
+  "github_issuer": "https://token.actions.githubusercontent.com",
+  "domains": [
+    {
+      "id": "evetis-prod",
+      "project": "project-fa311fc0-4d87-4781-986",
+      "project_number": "37074083763",
+      "pool": "github-pool",
+      "provider": "github-provider",
+      "desired": {"source": "terraform", "path": "infra/terraform"},
+      "expectations": "wif_check.cases",
+      "privileged": ["sa-deployer", "sa-terraform-apply", "sa-terraform-plan"],
+      "read_only": ["sa-ae-reader"]
+    },
+    {
+      "id": "mpa-tenant-infra",
+      "project": "mpa-platform",
+      "project_number": "777428383056",
+      "pool": "tenant-infra-pool",
+      "provider": "github-tenant-infra",
+      "desired": {"source": "snapshot", "path": "quality/autonomy/wif_tenant_pool_snapshot_2026-09-25.json"},
+      "expectations": "tenant_cases",
+      "privileged": ["sa-tenant-provisioner"],
+      "read_only": [],
+      "invariant": "sa-tenant-provisioner получает ТОЛЬКО tenant-infra.yml@refs/heads/main, workflow_dispatch, github-hosted, repository_id 1260095567, repository_owner_id 286048501"
+    }
+  ]
+}

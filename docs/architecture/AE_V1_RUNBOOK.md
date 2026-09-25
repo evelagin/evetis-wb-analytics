@@ -109,7 +109,7 @@ Workflows AE лежат в `main`, но ничего не делают:
 | | |
 |---|---|
 | Текущее | нет |
-| Желаемое | по `quality/autonomy/anthropic_federation.json`: issuer GitHub Actions (`check_jti` включён), workspace `evetis-ae` с лимитом расходов, аккаунты `evetis-ae-engineer` и `evetis-ae-reviewer`, два правила (claims — точные строки из файла), `workspace:developer`, 600 с |
+| Желаемое | по `quality/autonomy/anthropic_federation.json`: issuer GitHub Actions (`check_jti` включён), workspace `evetis-ae` с лимитом расходов, аккаунты `evetis-ae-engineer` и `evetis-ae-reviewer`, два правила (claims — точные строки из файла, включая `repository_id` и `repository_owner_id`), `workspace:inference`, 600 с |
 | Где | Claude Console → Settings → Workload identity → Connect workload → GitHub Actions; затем «Advanced rule options»: вставить `claims` из файла, `subject_prefix` без `*` |
 | Проверка | первый прогон §3: в истории аутентификации два разных правила, у job'а `test` обменов нет |
 | Откат | выключить правила или удалить аккаунты в консоли |
@@ -133,7 +133,7 @@ Workflows AE лежат в `main`, но ничего не делают:
 
 ## 3. Ввод в эксплуатацию (S9): синтетическая цель, не UBR-011
 
-Предусловия: M1–M7 выполнены, `wif_check --live` даёт код 0.
+Предусловия: M1–M7 выполнены, `wif_check --live` и `wif_domains --live` дают код 0.
 
 1. Взять `quality/autonomy/examples/objective.commissioning.json`. Задать `repository_sha` = текущий
    `origin/main`: в нём должен лежать `tools/commissioning/ae_canary.py`. Задать `execute: true` и

@@ -35,6 +35,10 @@ from pathlib import Path
 REPO = Path(__file__).resolve().parent.parent.parent
 TF_DIR = REPO / "infra" / "terraform"
 GITHUB_REPO = "evelagin/evetis-wb-analytics"
+# Неизменяемые числовые идентификаторы GitHub (строками, как в OIDC-токене). Имя репозитория можно
+# освободить и занять заново; эти ID — нет. Источник: живое условие tenant-infra-pool и API GitHub.
+GITHUB_REPOSITORY_ID = "1260095567"
+GITHUB_REPOSITORY_OWNER_ID = "286048501"
 PRIVILEGED = {"sa-deployer", "sa-terraform-apply", "sa-terraform-plan"}
 
 
@@ -380,7 +384,9 @@ def capture_live(project: str) -> dict:
 
 # ----------------------------------------------------------------- claims и случаи ---
 def claims(workflow: str, ref: str, event: str = "workflow_dispatch", job_workflow: str | None = None,
-           repo: str = GITHUB_REPO, environment: str | None = None, job_ref: str | None = None) -> dict:
+           repo: str = GITHUB_REPO, environment: str | None = None, job_ref: str | None = None,
+           repository_id: str | None = None, repository_owner_id: str | None = None,
+           runner_environment: str = "github-hosted") -> dict:
     """OIDC-токен GitHub так, как его выпускает token.actions.githubusercontent.com.
 
     workflow — файл верхнего уровня; job_workflow — файл, где объявлен job (переиспользуемый),
@@ -398,7 +404,12 @@ def claims(workflow: str, ref: str, event: str = "workflow_dispatch", job_workfl
          "sub": sub, "repository": repo, "repository_owner": repo.split("/")[0], "ref": ref,
          "ref_type": "tag" if ref.startswith("refs/tags/") else "branch", "event_name": event,
          "workflow_ref": wf_ref, "job_workflow_ref": job_wf_ref, "sha": "0" * 40,
-         "workflow_sha": "0" * 40, "job_workflow_sha": "0" * 40, "runner_environment": "github-hosted"}
+         "workflow_sha": "0" * 40, "job_workflow_sha": "0" * 40, "runner_environment": runner_environment,
+         # Чужой репозиторий (или пересозданный с тем же именем) — другие ID.
+         "repository_id": repository_id or (GITHUB_REPOSITORY_ID if repo == GITHUB_REPO else "999999999"),
+         "repository_owner_id": repository_owner_id or (GITHUB_REPOSITORY_OWNER_ID
+                                                        if repo.split("/")[0] == GITHUB_REPO.split("/")[0]
+                                                        else "888888888")}
     if environment:
         c["environment"] = environment
     return c
