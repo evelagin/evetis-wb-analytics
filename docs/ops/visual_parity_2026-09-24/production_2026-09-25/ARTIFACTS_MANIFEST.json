@@ -1,0 +1,43 @@
+{
+ "purpose": "Ozon Unitka visual parity rollout 2026-09-25 — immutable copies of the applied migration plan and the format-only rollback snapshot",
+ "bucket": "gs://evetis-audit-evidence-37074083763",
+ "bucket_policy": {
+  "versioning": true,
+  "retention_seconds": 94672800,
+  "public_access_prevention": "enforced"
+ },
+ "objects": [
+  {
+   "object": "ozon/unitka_visual_parity_2026-09-25/rollback_plan.json",
+   "generation": "1790326455789700",
+   "size": 21912019,
+   "sha256": "dbe084c87f78638bc3e505d921893678f0ccc7d09f7fcb0684e45baad897af08",
+   "crc32c": "O8+peA==",
+   "md5": "3sGJUh6MbAre2M156vrjXQ==",
+   "taken_at": "2026-09-25T07:55:44.420Z",
+   "requests": 259
+  },
+  {
+   "object": "ozon/unitka_visual_parity_2026-09-25/migration_plan.json",
+   "generation": "1790326460545348",
+   "size": 5045072,
+   "sha256": "57d23e48c5f467dff577ae1af7789d592fcbd888718d334c3c42d8fb0589220b",
+   "crc32c": "/YW/jQ==",
+   "md5": "gjvcJsWMLgVA1tDhSUMEqA==",
+   "applied": "2026-09-25T07:55:56Z..07:57:04Z",
+   "requests": 10284
+  },
+  {
+   "object": "ozon/unitka_visual_parity_2026-09-25/MANIFEST.sha256",
+   "generation": "1790326462713475",
+   "size": 171
+  }
+ ],
+ "readback": "downloaded after upload; sha256 of both plans matched",
+ "runtime": {
+  "image": "europe-west1-docker.pkg.dev/project-fa311fc0-4d87-4781-986/wb-loaders/wb-loader@sha256:dfe3fd3ed8395be62f7d33ba22a1527a76e63f6c26b8225517aac82e7968cf6e",
+  "git_sha": "59a099fa7b8ed3e7d62060b485a1df163f2ec804",
+  "previous_image": "sha256:31b2d480394e88d988598ca83632c79ff1973ccacdef1f0b5d347dc9ec3ccaa6"
+ },
+ "local_copy": "/Users/evgenelagin/Projects/evetis-evidence-local/unitka_visual_parity_2026-09-25/ (outside git)"
+}
