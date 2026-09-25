@@ -1,5 +1,25 @@
 # CHANGELOG.md
 
+## 2026-09-25 — Tenancy T3.2b: первый выпуск образа runtime арендатора
+
+**Образ опубликован в `mpa-platform/mpa-runtime`, но нигде не развёрнут.** Проектов арендаторов
+нет, `terraform apply` не выполнялся, EVETIS остаётся на `sha256:24e3c6d6…`.
+
+- `infra/tenant/runtime_release.json` — Ozon: `…/mpa-runtime/ozon-runtime@sha256:884ee5dd…`
+  (раньше `null`). Источник выпуска — коммит `08f9438` (слияние T3.2), а не текущий `main`.
+- `infra/tenant/releases/ozon/08f9438.json` — запись провенанса: коммит, дерево и хеши файлов
+  контекста, хеш архива исходников, сборка Cloud Build `dc72ca9f` от `sa-runtime-builder`,
+  базовый образ по digest, пакеты, проверки, «EVETIS не развёрнут».
+- `infra/tenant/releases/ozon-runtime.cloudbuild.yaml` — сборка из архива коммита; гейт
+  идентичности сборки, проверка состава `/app` и отказа без `GCP_PROJECT_ID` до публикации.
+- `tools/tenancy/runtime_image_check.py` — проверка опубликованного образа без сети с
+  конфигурацией двух синтетических арендаторов (драйверы `pipelines/ozon/tests`).
+- Тесты: `tools/tests/test_tenancy_t32b.py`; `terraform test` — два прогона на настоящем digest
+  (`client_001` и эфемерный `client_002`: один образ, разные проект, state, SA, окружение).
+- `mpa-platform`: включены Cloud Build и Logging (зависимые API — автоматически), SA
+  `sa-runtime-builder`, бакет исходников сборки; с устаревшего SA Cloud Build снята
+  `roles/cloudbuild.builds.builder`. Структура колонок и расписания EVETIS не менялись.
+
 ## 2026-09-25 — Tenancy T3.2: универсальный корень Terraform арендатора и контракт реестра
 
 **Не развёрнуто. Ни одного ресурса арендатора не создано, `terraform apply` не выполнялся.**

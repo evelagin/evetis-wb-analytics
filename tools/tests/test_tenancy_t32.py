@@ -58,7 +58,7 @@ def test_terraform_inputs_contract_shape_for_client_001():
     ozon = c["marketplaces"]["ozon"]
     assert set(ozon["jobs"]) == {"ozon-runtime-fast", "ozon-runtime-daily", "ozon-runtime-weekly"}
     assert ozon["service_accounts"] == {"runtime": "sa-ozon-runtime", "scheduler": "sa-ozon-scheduler"}
-    assert ozon["runtime_image"] is None        # выпуск образа — T3.2b
+    assert ozon["runtime_image"] == PL.load_runtime_release(REPO)["ozon"]   # выпуск T3.2b, по digest
     assert set(c["marketplaces"]) == {"ozon"}   # WB не включён
 
 
@@ -220,10 +220,13 @@ def test_mutable_or_foreign_image_is_rejected(ref):
 
 def test_immutable_platform_digest_is_accepted_and_release_file_is_valid():
     assert PL.check_runtime_image(SY.FIXTURE_IMAGE) == SY.FIXTURE_IMAGE
-    assert PL.load_runtime_release(REPO) == {"ozon": None}
+    release = PL.load_runtime_release(REPO)
+    assert set(release) == {"ozon"} and PL.check_runtime_image(release["ozon"]) == release["ozon"]
 
 
-def test_plan_refuses_without_an_approved_image(tmp_path):
+def test_plan_refuses_without_an_approved_image(tmp_path, monkeypatch):
+    # Отказ при null в дескрипторе остаётся (откат выпуска = PR с null или прежним digest).
+    monkeypatch.setattr(PL, "load_runtime_release", lambda _repo: {"ozon": None})
     with pytest.raises(TI.TenantInfraError, match="нет утверждённого образа"):
         TI.plan("client_001", tmp_path)
 

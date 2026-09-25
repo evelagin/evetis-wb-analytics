@@ -72,7 +72,7 @@ tenant └─ product — internal_sku (независим от площадки
 | **T2** | Ozon runtime выбирает продавца только конфигурацией: явный проект, имена секретов `OZON_SECRET_*`, `BQ_REF_DATASET`, `STRICT_PAGE_CAPS`, журнал без учётных данных | ✅ PR #171 (слит; образ не выкачен) |
 | **T2.1** | Укрепление реестра и пространства имён: строгий JSON без повторяющихся ключей, полное совпадение строк, белый список `_schema/`, запрет символических ссылок, однозначная грамматика ID проекта (заморожена), точный `schema_version`, правило авторитета реестра | ✅ PR #175 (слит) |
 | **T2.2** | Безопасность Ozon runtime перед выкатом образа: единая граница вырезания секретов (секреты — да, идентификаторы — нет), вырезание до сериализации и до обрезки, безопасный `excepthook` и `JournalWriteError`, различающий прогон против эталона до T2 в CI | ✅ PR #177 (слит 54776e3; образ не выкачен) |
-| **T3** | Физическая изоляция: T3.0 разведка (только чтение); T3.1A lien на EVETIS и папка `tenants/`; T3.1B проект платформы `mpa-platform` (state, реестр образов, WIF, провижионер); **T3.2 универсальный корень `infra/tenant/` и контракт реестра → Terraform**; T3.2b выпуск образа; T3.3 синтетический `client_001`; T3.4 доказательство изоляции | T3.0–T3.1B ✅ (2026-09-25); T3.2 — PR |
+| **T3** | Физическая изоляция: T3.0 разведка (только чтение); T3.1A lien на EVETIS и папка `tenants/`; T3.1B проект платформы `mpa-platform` (state, реестр образов, WIF, провижионер); **T3.2 универсальный корень `infra/tenant/` и контракт реестра → Terraform**; T3.2b выпуск образа; T3.3 синтетический `client_001`; T3.4 доказательство изоляции | T3.0–T3.2 ✅ (2026-09-25; T3.2 — PR #179, слит 08f9438); T3.2b — PR (образ опубликован, не развёрнут) |
 | **T4** | Рендер канонического SQL в проект арендатора; вынос литералов EVETIS из канонических вью (только за воротами паритета и по отдельному ACK, D4); бутстрап карты SKU из каталога | не начато |
 | **T5** | Провижининг по реестру, бэкфилл в строгом режиме, набор проверок арендатора | не начато |
 | **T6** | `analytics_share` и доступ клиента только к нему (D2) | не начато |
@@ -93,7 +93,9 @@ organizations/1043233412973
 │   ├── gs://mpa-platform-tfstate-777428383056   platform/*  ·  tenants/<tenant_id>/*
 │   ├── mpa-runtime (europe-west1, неизменяемые теги)   общий образ runtime по digest
 │   ├── tenant-infra-pool / github-tenant-infra          только tenant-infra.yml@main, workflow_dispatch
-│   └── sa-tenant-provisioner                            права только на tenants/
+│   ├── sa-tenant-provisioner                            права только на tenants/
+│   ├── sa-runtime-builder (T3.2b)                        запись только в mpa-runtime; Cloud Build
+│   └── gs://mpa-platform-runtime-build-777428383056     архивы исходников сборок (провенанс)
 └── folders/881419274207 "tenants"   проекты арендаторов mpa-t-<slug>
 ```
 
@@ -106,6 +108,36 @@ organizations/1043233412973
 `client_002` — это новый дескриптор, а не новый код. Проект и биллинг создаёт человек; корень
 работает внутри готового проекта и проверяет до изменений: проект существует, ACTIVE, лежит прямо
 в `tenants/`, с биллингом, не EVETIS и не платформа.
+
+**Выпуск образа runtime (T3.2b, 2026-09-25).** Образ один на всех арендаторов; отличаются
+только окружение, проект и идентичности. Выпуск — ворота, а не деплой:
+1. Квалификация runtime (`pipelines/ozon/tests`: differential T2/T2.2, пустые секреты,
+   переносимость, вырезание учётных данных, strict caps, состав образа).
+2. Источник — архив ровно одного коммита `main`:
+   `git archive --format=tar.gz <SHA> pipelines/ozon/runtime` (детерминирован, SHA коммита в
+   pax-заголовке). Рабочее дерево в сборку не попадает.
+3. Cloud Build в `mpa-platform` по `infra/tenant/releases/ozon-runtime.cloudbuild.yaml` от
+   `sa-runtime-builder`. Первый шаг сверяет идентичность сборки с metadata server и отказывает,
+   если это не `sa-runtime-builder`. Образ пушится, только если прошли шаги состава `/app` и отказа
+   без `GCP_PROJECT_ID`. Сборщик закреплён по digest, build args и секретов нет, тег = SHA коммита
+   (теги репозитория неизменяемы).
+4. `tools/tenancy/runtime_image_check.py <образ@digest> --source-sha <SHA>` — опубликованный образ
+   локально, без сети, с конфигурацией `client_001` и эфемерного `client_002`: отказ без проекта,
+   отказ без версий секретов до HTTP, секреты и BigQuery только своего проекта, EVETIS не упомянут.
+5. PR: digest в `infra/tenant/runtime_release.json` и запись провенанса
+   `infra/tenant/releases/ozon/<sha7>.json` (исходник, дерево, хеши файлов и архива, сборка,
+   идентичность, базовый образ, пакеты, проверки, «EVETIS не развёрнут»). Конфиг сборки привязан к
+   записи хешем: изменить его можно только вместе с новым выпуском. Откат — PR с прежним digest.
+
+Права `sa-runtime-builder` (постоянные): `roles/artifactregistry.writer` только на `mpa-runtime`,
+`roles/storage.objectViewer` только на бакет исходников сборки, `roles/logging.logWriter` на
+`mpa-platform`. Ни EVETIS, ни папки `tenants`, ни state, ни Secret Manager, ни IAM org/folder, ни
+биллинга. Роль `roles/cloudbuild.builds.builder`, которую Google автоматически выдаёт устаревшему SA
+`777428383056@cloudbuild.gserviceaccount.com` при включении Cloud Build, снята (решение владельца
+2026-09-25): сборка без явного `--service-account` не получает доступа ни к state, ни к реестру.
+Запускать сборки может только владелец (`cloudbuild.builds.create` и `actAs` на SA). Первый выпуск —
+`ozon-runtime@sha256:884ee5dd…` из `08f9438` (сборка `dc72ca9f`). Образ инертен, пока план и
+применение T3.3 на него не сошлются; на EVETIS он не выкатывается (EVETIS остаётся на `24e3c6d6`).
 
 **State.** Эксперимент T3.2 (провижионер, префикс `tenants/_t32_backend_probe`, удалён): init,
 plan, apply, refresh, `state pull/push`, блокировка и `force-unlock` работают только с правами на
@@ -121,7 +153,7 @@ plan, apply, refresh, `state pull/push`, блокировка и `force-unlock` 
 2. Человек: `roles/artifactregistry.reader` на `mpa-runtime` для
    `service-<номер проекта>@serverless-robot-prod.iam.gserviceaccount.com` и для провижионера
    (`tools/tenancy/iam_proposals.py::ARTIFACT_REGISTRY_BINDINGS`).
-3. Выпуск образа (T3.2b) и digest в `runtime_release.json` через PR.
+3. ~~Выпуск образа (T3.2b) и digest в `runtime_release.json` через PR.~~ Сделано в T3.2b (выше).
 4. Решение по секретам и роли провижионера (ниже), затем `tenant-infra.yml` — план, сканер плана
    (`tools/tenancy/plan_scan.py`), и только потом применение по отдельному ACK.
 
