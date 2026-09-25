@@ -72,6 +72,11 @@ Workflows AE лежат в `main`, но ничего не делают:
 
 #### M3. `sa-ae-reader` (read-only)
 
+> **Выполнено 2026-09-24 (повторно, исправленный дизайн): `AE_READER_IDENTITY_VERIFIED`.** PR #169 →
+> `main` `e5b7bbc`; plan `17 to add`; `iam_check --live` — PASS; строгий `wif_check --live` — 25/25.
+> Реальное чтение — `NOT_EXECUTABLE_AT_M3` (первое — в M6). Доказательства —
+> [`ae_evidence/ae_reader_m3b_2026-09-24/`](ae_evidence/ae_reader_m3b_2026-09-24/README.md).
+
 > **2026-09-24: первое применение откатано — `AE_READER_IDENTITY_FAILED_ROLLED_BACK`.** По
 > эффективным правам `roles/bigquery.jobUser` оказался не только запуском запросов:
 > `dataform.repositories.create`, `dataform.folders.create` (Dataform API включён),

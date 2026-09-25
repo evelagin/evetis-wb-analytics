@@ -1,0 +1,45 @@
+google_project_service.enabled["run.googleapis.com"]: Refreshing state... [id=project-fa311fc0-4d87-4781-986/run.googleapis.com]
+google_project_service.enabled["monitoring.googleapis.com"]: Refreshing state... [id=project-fa311fc0-4d87-4781-986/monitoring.googleapis.com]
+google_project_service.enabled["bigquery.googleapis.com"]: Refreshing state... [id=project-fa311fc0-4d87-4781-986/bigquery.googleapis.com]
+google_project_service.enabled["secretmanager.googleapis.com"]: Refreshing state... [id=project-fa311fc0-4d87-4781-986/secretmanager.googleapis.com]
+google_project_service.enabled["cloudresourcemanager.googleapis.com"]: Refreshing state... [id=project-fa311fc0-4d87-4781-986/cloudresourcemanager.googleapis.com]
+google_project_service.enabled["iam.googleapis.com"]: Refreshing state... [id=project-fa311fc0-4d87-4781-986/iam.googleapis.com]
+google_project_service.enabled["cloudscheduler.googleapis.com"]: Refreshing state... [id=project-fa311fc0-4d87-4781-986/cloudscheduler.googleapis.com]
+google_project_service.enabled["artifactregistry.googleapis.com"]: Refreshing state... [id=project-fa311fc0-4d87-4781-986/artifactregistry.googleapis.com]
+google_project_iam_custom_role.ae_job_runner: Refreshing state... [id=projects/project-fa311fc0-4d87-4781-986/roles/aeBigQueryJobRunner]
+google_service_account.ae_reader: Refreshing state... [id=projects/project-fa311fc0-4d87-4781-986/serviceAccounts/sa-ae-reader@project-fa311fc0-4d87-4781-986.iam.gserviceaccount.com]
+google_project_service.enabled["sheets.googleapis.com"]: Refreshing state... [id=project-fa311fc0-4d87-4781-986/sheets.googleapis.com]
+google_project_service.enabled["iamcredentials.googleapis.com"]: Refreshing state... [id=project-fa311fc0-4d87-4781-986/iamcredentials.googleapis.com]
+google_project_service.enabled["sts.googleapis.com"]: Refreshing state... [id=project-fa311fc0-4d87-4781-986/sts.googleapis.com]
+google_project_iam_member.ae_reader["roles/bigquery.resourceViewer"]: Refreshing state... [id=project-fa311fc0-4d87-4781-986/roles/bigquery.resourceViewer/serviceAccount:sa-ae-reader@project-fa311fc0-4d87-4781-986.iam.gserviceaccount.com]
+google_bigquery_dataset_iam_member.ae_reader_read["evetis_mart"]: Refreshing state... [id=projects/project-fa311fc0-4d87-4781-986/datasets/evetis_mart/roles/bigquery.dataViewer/serviceAccount:sa-ae-reader@project-fa311fc0-4d87-4781-986.iam.gserviceaccount.com]
+google_project_service.enabled["cloudbuild.googleapis.com"]: Refreshing state... [id=project-fa311fc0-4d87-4781-986/cloudbuild.googleapis.com]
+google_bigquery_dataset_iam_member.ae_reader_read["ozon_raw"]: Refreshing state... [id=projects/project-fa311fc0-4d87-4781-986/datasets/ozon_raw/roles/bigquery.dataViewer/serviceAccount:sa-ae-reader@project-fa311fc0-4d87-4781-986.iam.gserviceaccount.com]
+google_bigquery_dataset_iam_member.ae_reader_read["wb_raw"]: Refreshing state... [id=projects/project-fa311fc0-4d87-4781-986/datasets/wb_raw/roles/bigquery.dataViewer/serviceAccount:sa-ae-reader@project-fa311fc0-4d87-4781-986.iam.gserviceaccount.com]
+google_bigquery_dataset_iam_member.ae_reader_read["wb_mart"]: Refreshing state... [id=projects/project-fa311fc0-4d87-4781-986/datasets/wb_mart/roles/bigquery.dataViewer/serviceAccount:sa-ae-reader@project-fa311fc0-4d87-4781-986.iam.gserviceaccount.com]
+google_project_iam_member.ae_reader["roles/logging.viewer"]: Refreshing state... [id=project-fa311fc0-4d87-4781-986/roles/logging.viewer/serviceAccount:sa-ae-reader@project-fa311fc0-4d87-4781-986.iam.gserviceaccount.com]
+google_bigquery_dataset_iam_member.ae_reader_read["evetis_ops"]: Refreshing state... [id=projects/project-fa311fc0-4d87-4781-986/datasets/evetis_ops/roles/bigquery.dataViewer/serviceAccount:sa-ae-reader@project-fa311fc0-4d87-4781-986.iam.gserviceaccount.com]
+google_bigquery_dataset_iam_member.ae_reader_read["evetis_ref"]: Refreshing state... [id=projects/project-fa311fc0-4d87-4781-986/datasets/evetis_ref/roles/bigquery.dataViewer/serviceAccount:sa-ae-reader@project-fa311fc0-4d87-4781-986.iam.gserviceaccount.com]
+google_bigquery_dataset_iam_member.ae_reader_read["ozon_mart"]: Refreshing state... [id=projects/project-fa311fc0-4d87-4781-986/datasets/ozon_mart/roles/bigquery.dataViewer/serviceAccount:sa-ae-reader@project-fa311fc0-4d87-4781-986.iam.gserviceaccount.com]
+google_project_iam_member.ae_reader_job_runner: Refreshing state... [id=project-fa311fc0-4d87-4781-986/projects/project-fa311fc0-4d87-4781-986/roles/aeBigQueryJobRunner/serviceAccount:sa-ae-reader@project-fa311fc0-4d87-4781-986.iam.gserviceaccount.com]
+google_bigquery_dataset_iam_member.ae_reader_read["wb_ops"]: Refreshing state... [id=projects/project-fa311fc0-4d87-4781-986/datasets/wb_ops/roles/bigquery.dataViewer/serviceAccount:sa-ae-reader@project-fa311fc0-4d87-4781-986.iam.gserviceaccount.com]
+google_iam_workload_identity_pool.github: Refreshing state... [id=projects/project-fa311fc0-4d87-4781-986/locations/global/workloadIdentityPools/github-pool]
+google_service_account_iam_member.ae_reader_wif["autonomy-watch.yml"]: Refreshing state... [id=projects/project-fa311fc0-4d87-4781-986/serviceAccounts/sa-ae-reader@project-fa311fc0-4d87-4781-986.iam.gserviceaccount.com/roles/iam.workloadIdentityUser/principalSet://iam.googleapis.com/projects/37074083763/locations/global/workloadIdentityPools/github-pool/attribute.job_workflow_ref/evelagin/evetis-wb-analytics/.github/workflows/autonomy-watch.yml@refs/heads/main]
+google_service_account_iam_member.ae_reader_wif["autonomy-engineer.yml"]: Refreshing state... [id=projects/project-fa311fc0-4d87-4781-986/serviceAccounts/sa-ae-reader@project-fa311fc0-4d87-4781-986.iam.gserviceaccount.com/roles/iam.workloadIdentityUser/principalSet://iam.googleapis.com/projects/37074083763/locations/global/workloadIdentityPools/github-pool/attribute.job_workflow_ref/evelagin/evetis-wb-analytics/.github/workflows/autonomy-engineer.yml@refs/heads/main]
+google_service_account_iam_member.ae_reader_wif["autonomy-gate.yml"]: Refreshing state... [id=projects/project-fa311fc0-4d87-4781-986/serviceAccounts/sa-ae-reader@project-fa311fc0-4d87-4781-986.iam.gserviceaccount.com/roles/iam.workloadIdentityUser/principalSet://iam.googleapis.com/projects/37074083763/locations/global/workloadIdentityPools/github-pool/attribute.job_workflow_ref/evelagin/evetis-wb-analytics/.github/workflows/autonomy-gate.yml@refs/heads/main]
+google_service_account_iam_member.ae_reader_wif["autonomy-test.yml"]: Refreshing state... [id=projects/project-fa311fc0-4d87-4781-986/serviceAccounts/sa-ae-reader@project-fa311fc0-4d87-4781-986.iam.gserviceaccount.com/roles/iam.workloadIdentityUser/principalSet://iam.googleapis.com/projects/37074083763/locations/global/workloadIdentityPools/github-pool/attribute.job_workflow_ref/evelagin/evetis-wb-analytics/.github/workflows/autonomy-test.yml@refs/heads/main]
+
+No changes. Your infrastructure matches the configuration.
+
+Terraform has compared your real infrastructure against your configuration
+and found no differences, so no changes are needed.
+
+Warning: Resource targeting is in effect
+
+You are creating a plan with the -target option, which means that the result
+of this plan may not represent all of the changes requested by the current
+configuration.
+
+The -target option is not for routine use, and is provided only for
+exceptional situations such as recovering from errors or mistakes, or when
+Terraform specifically suggests to use it as part of an error message.

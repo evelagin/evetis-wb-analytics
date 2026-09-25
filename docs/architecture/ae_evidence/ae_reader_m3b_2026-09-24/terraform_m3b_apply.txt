@@ -1,0 +1,71 @@
+google_project_iam_custom_role.ae_job_runner: Creating...
+google_service_account.ae_reader: Creating...
+google_project_iam_custom_role.ae_job_runner: Creation complete after 3s [id=projects/project-fa311fc0-4d87-4781-986/roles/aeBigQueryJobRunner]
+google_service_account.ae_reader: Still creating... [00m10s elapsed]
+google_service_account.ae_reader: Still creating... [00m20s elapsed]
+google_service_account.ae_reader: Creation complete after 21s [id=projects/project-fa311fc0-4d87-4781-986/serviceAccounts/sa-ae-reader@project-fa311fc0-4d87-4781-986.iam.gserviceaccount.com]
+google_bigquery_dataset_iam_member.ae_reader_read["evetis_ref"]: Creating...
+google_bigquery_dataset_iam_member.ae_reader_read["evetis_ops"]: Creating...
+google_bigquery_dataset_iam_member.ae_reader_read["wb_raw"]: Creating...
+google_project_iam_member.ae_reader_job_runner: Creating...
+google_bigquery_dataset_iam_member.ae_reader_read["wb_mart"]: Creating...
+google_bigquery_dataset_iam_member.ae_reader_read["wb_ops"]: Creating...
+google_service_account_iam_member.ae_reader_wif["autonomy-gate.yml"]: Creating...
+google_service_account_iam_member.ae_reader_wif["autonomy-watch.yml"]: Creating...
+google_bigquery_dataset_iam_member.ae_reader_read["evetis_mart"]: Creating...
+google_service_account_iam_member.ae_reader_wif["autonomy-engineer.yml"]: Creating...
+google_bigquery_dataset_iam_member.ae_reader_read["wb_mart"]: Creation complete after 8s [id=projects/project-fa311fc0-4d87-4781-986/datasets/wb_mart/roles/bigquery.dataViewer/serviceAccount:sa-ae-reader@project-fa311fc0-4d87-4781-986.iam.gserviceaccount.com]
+google_bigquery_dataset_iam_member.ae_reader_read["wb_ops"]: Creation complete after 8s [id=projects/project-fa311fc0-4d87-4781-986/datasets/wb_ops/roles/bigquery.dataViewer/serviceAccount:sa-ae-reader@project-fa311fc0-4d87-4781-986.iam.gserviceaccount.com]
+google_bigquery_dataset_iam_member.ae_reader_read["evetis_ref"]: Creation complete after 8s [id=projects/project-fa311fc0-4d87-4781-986/datasets/evetis_ref/roles/bigquery.dataViewer/serviceAccount:sa-ae-reader@project-fa311fc0-4d87-4781-986.iam.gserviceaccount.com]
+google_bigquery_dataset_iam_member.ae_reader_read["evetis_mart"]: Creation complete after 8s [id=projects/project-fa311fc0-4d87-4781-986/datasets/evetis_mart/roles/bigquery.dataViewer/serviceAccount:sa-ae-reader@project-fa311fc0-4d87-4781-986.iam.gserviceaccount.com]
+google_bigquery_dataset_iam_member.ae_reader_read["wb_raw"]: Creation complete after 8s [id=projects/project-fa311fc0-4d87-4781-986/datasets/wb_raw/roles/bigquery.dataViewer/serviceAccount:sa-ae-reader@project-fa311fc0-4d87-4781-986.iam.gserviceaccount.com]
+google_bigquery_dataset_iam_member.ae_reader_read["ozon_raw"]: Creating...
+google_project_iam_member.ae_reader["roles/logging.viewer"]: Creating...
+google_bigquery_dataset_iam_member.ae_reader_read["ozon_mart"]: Creating...
+google_service_account_iam_member.ae_reader_wif["autonomy-test.yml"]: Creating...
+google_project_iam_member.ae_reader["roles/bigquery.resourceViewer"]: Creating...
+google_bigquery_dataset_iam_member.ae_reader_read["evetis_ops"]: Creation complete after 8s [id=projects/project-fa311fc0-4d87-4781-986/datasets/evetis_ops/roles/bigquery.dataViewer/serviceAccount:sa-ae-reader@project-fa311fc0-4d87-4781-986.iam.gserviceaccount.com]
+google_project_iam_member.ae_reader_job_runner: Still creating... [00m10s elapsed]
+google_service_account_iam_member.ae_reader_wif["autonomy-watch.yml"]: Still creating... [00m10s elapsed]
+google_service_account_iam_member.ae_reader_wif["autonomy-gate.yml"]: Still creating... [00m10s elapsed]
+google_service_account_iam_member.ae_reader_wif["autonomy-engineer.yml"]: Still creating... [00m10s elapsed]
+google_project_iam_member.ae_reader_job_runner: Creation complete after 10s [id=project-fa311fc0-4d87-4781-986/projects/project-fa311fc0-4d87-4781-986/roles/aeBigQueryJobRunner/serviceAccount:sa-ae-reader@project-fa311fc0-4d87-4781-986.iam.gserviceaccount.com]
+google_service_account_iam_member.ae_reader_wif["autonomy-gate.yml"]: Creation complete after 15s [id=projects/project-fa311fc0-4d87-4781-986/serviceAccounts/sa-ae-reader@project-fa311fc0-4d87-4781-986.iam.gserviceaccount.com/roles/iam.workloadIdentityUser/principalSet://iam.googleapis.com/projects/37074083763/locations/global/workloadIdentityPools/github-pool/attribute.job_workflow_ref/evelagin/evetis-wb-analytics/.github/workflows/autonomy-gate.yml@refs/heads/main]
+google_bigquery_dataset_iam_member.ae_reader_read["ozon_mart"]: Creation complete after 7s [id=projects/project-fa311fc0-4d87-4781-986/datasets/ozon_mart/roles/bigquery.dataViewer/serviceAccount:sa-ae-reader@project-fa311fc0-4d87-4781-986.iam.gserviceaccount.com]
+google_bigquery_dataset_iam_member.ae_reader_read["ozon_raw"]: Creation complete after 7s [id=projects/project-fa311fc0-4d87-4781-986/datasets/ozon_raw/roles/bigquery.dataViewer/serviceAccount:sa-ae-reader@project-fa311fc0-4d87-4781-986.iam.gserviceaccount.com]
+google_project_iam_member.ae_reader["roles/logging.viewer"]: Creation complete after 9s [id=project-fa311fc0-4d87-4781-986/roles/logging.viewer/serviceAccount:sa-ae-reader@project-fa311fc0-4d87-4781-986.iam.gserviceaccount.com]
+google_project_iam_member.ae_reader["roles/bigquery.resourceViewer"]: Creation complete after 9s [id=project-fa311fc0-4d87-4781-986/roles/bigquery.resourceViewer/serviceAccount:sa-ae-reader@project-fa311fc0-4d87-4781-986.iam.gserviceaccount.com]
+google_service_account_iam_member.ae_reader_wif["autonomy-test.yml"]: Still creating... [00m10s elapsed]
+google_service_account_iam_member.ae_reader_wif["autonomy-engineer.yml"]: Creation complete after 20s [id=projects/project-fa311fc0-4d87-4781-986/serviceAccounts/sa-ae-reader@project-fa311fc0-4d87-4781-986.iam.gserviceaccount.com/roles/iam.workloadIdentityUser/principalSet://iam.googleapis.com/projects/37074083763/locations/global/workloadIdentityPools/github-pool/attribute.job_workflow_ref/evelagin/evetis-wb-analytics/.github/workflows/autonomy-engineer.yml@refs/heads/main]
+google_service_account_iam_member.ae_reader_wif["autonomy-watch.yml"]: Still creating... [00m20s elapsed]
+google_service_account_iam_member.ae_reader_wif["autonomy-watch.yml"]: Creation complete after 20s [id=projects/project-fa311fc0-4d87-4781-986/serviceAccounts/sa-ae-reader@project-fa311fc0-4d87-4781-986.iam.gserviceaccount.com/roles/iam.workloadIdentityUser/principalSet://iam.googleapis.com/projects/37074083763/locations/global/workloadIdentityPools/github-pool/attribute.job_workflow_ref/evelagin/evetis-wb-analytics/.github/workflows/autonomy-watch.yml@refs/heads/main]
+google_service_account_iam_member.ae_reader_wif["autonomy-test.yml"]: Creation complete after 12s [id=projects/project-fa311fc0-4d87-4781-986/serviceAccounts/sa-ae-reader@project-fa311fc0-4d87-4781-986.iam.gserviceaccount.com/roles/iam.workloadIdentityUser/principalSet://iam.googleapis.com/projects/37074083763/locations/global/workloadIdentityPools/github-pool/attribute.job_workflow_ref/evelagin/evetis-wb-analytics/.github/workflows/autonomy-test.yml@refs/heads/main]
+
+Warning: Applied changes may be incomplete
+
+The plan was created with the -target option in effect, so some changes
+requested in the configuration may have been ignored and the output values
+may not be fully updated. Run the following command to verify that no other
+changes are pending:
+    terraform plan
+
+Note that the -target option is not suitable for routine use, and is provided
+only for exceptional situations such as recovering from errors or mistakes,
+or when Terraform specifically suggests to use it as part of an error
+message.
+
+Apply complete! Resources: 17 added, 0 changed, 0 destroyed.
+
+Outputs:
+
+artifact_registry_repo = "europe-west1-docker.pkg.dev/project-fa311fc0-4d87-4781-986/wb-loaders"
+deployer_service_account = "sa-deployer@project-fa311fc0-4d87-4781-986.iam.gserviceaccount.com"
+runtime_service_accounts = {
+  "loaders_prod" = "sa-loaders-prod@project-fa311fc0-4d87-4781-986.iam.gserviceaccount.com"
+  "loaders_shadow" = "sa-loaders-shadow@project-fa311fc0-4d87-4781-986.iam.gserviceaccount.com"
+  "scheduler_prod" = "sa-scheduler-prod@project-fa311fc0-4d87-4781-986.iam.gserviceaccount.com"
+  "scheduler_shadow" = "sa-scheduler-shadow@project-fa311fc0-4d87-4781-986.iam.gserviceaccount.com"
+}
+terraform_apply_service_account = "sa-terraform-apply@project-fa311fc0-4d87-4781-986.iam.gserviceaccount.com"
+terraform_plan_service_account = "sa-terraform-plan@project-fa311fc0-4d87-4781-986.iam.gserviceaccount.com"
+workload_identity_provider = "projects/37074083763/locations/global/workloadIdentityPools/github-pool/providers/github-provider"
