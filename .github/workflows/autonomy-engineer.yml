@@ -12,6 +12,11 @@ on:
     inputs:
       run_id: {type: string, required: true}
       state_sha: {type: string, required: true}
+      mode:
+        description: "run — проход AE; preflight — только аутентификация Claude API (Фаза 0)"
+        type: string
+        required: false
+        default: run
     outputs:
       hashes:
         description: "NAME=SHA256 через пробел — для --expect доверенного job"
@@ -21,6 +26,7 @@ permissions: {}
 
 jobs:
   engineer:
+    if: inputs.mode == 'run'
     runs-on: ubuntu-latest
     timeout-minutes: 100
     permissions:
@@ -93,3 +99,34 @@ jobs:
           name: ae-${{ inputs.run_id }}-engineer-${{ github.run_attempt }}
           path: ${{ runner.temp }}/pending
           retention-days: 30
+
+  # Фаза 0: только аутентификация Claude API инженера. Тот же файл → тот же job_workflow_ref, что у
+  # прохода, поэтому совпадает правило федерации. Нет: Claude Code, модели, GCP (sa-ae-reader),
+  # autonomy-state, артефактов. Двойной выключатель: вход mode и AE_PREFLIGHT_ENABLED.
+  preflight:
+    if: inputs.mode == 'preflight' && vars.AE_PREFLIGHT_ENABLED == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      id-token: write    # только OIDC → обмен на токен Claude API
+    env:
+      ANTHROPIC_FEDERATION_RULE_ID: ${{ vars.AE_ANTHROPIC_FEDERATION_RULE_ID }}
+      ANTHROPIC_ORGANIZATION_ID: ${{ vars.AE_ANTHROPIC_ORGANIZATION_ID }}
+      ANTHROPIC_SERVICE_ACCOUNT_ID: ${{ vars.AE_ANTHROPIC_SERVICE_ACCOUNT_ID }}
+      ANTHROPIC_WORKSPACE_ID: ${{ vars.AE_ANTHROPIC_WORKSPACE_ID }}
+    steps:
+      - name: guard — только main, только autonomy-run.yml@main, только workflow_dispatch
+        run: |
+          [ "$GITHUB_REF" = "refs/heads/main" ] || { echo "::error::только из main"; exit 1; }
+          [ "$GITHUB_EVENT_NAME" = "workflow_dispatch" ] || { echo "::error::только workflow_dispatch"; exit 1; }
+          [ "$GITHUB_WORKFLOW_REF" = "$GITHUB_REPOSITORY/.github/workflows/autonomy-run.yml@refs/heads/main" ] \
+            || { echo "::error::только из autonomy-run.yml@main"; exit 1; }
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: "3.12"
+      - name: Claude API WIF preflight — только обмен токена (stdlib, без модели)
+        run: python -m tools.autonomy.anthropic_scope preflight --role engineer

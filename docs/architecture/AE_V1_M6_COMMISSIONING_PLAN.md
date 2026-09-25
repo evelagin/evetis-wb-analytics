@@ -15,6 +15,30 @@
 | P6 | **Лимит расходов workspace `evetis-ae`** задан (Console → Workspaces → evetis-ae → Limits → Spend limits) и уведомление о расходах включено | аттестация владельца с суммой | ⏳ владелец (в отчёте M5 не указан) |
 | P7 | Ни один workflow AE не запускался, ветки `autonomy-state` нет | `gh run list --workflow=autonomy-*`, `git ls-remote` | ✅ |
 
+## 0.1 Фаза 0 — preflight аутентификации Claude API (ACK владельца 2026-09-25)
+
+Добавлен после попытки №1: сторож ревьюера в обычном прогоне срабатывает только после работы
+инженера, а для проверки нужны состояние и `AE_ENABLED`. Preflight проверяет обе идентичности
+заранее, без модели, GCP и состояния.
+
+- Запуск: `AE_PREFLIGHT_ENABLED=true` (временно), затем
+  `gh workflow run autonomy-run.yml --ref main -f preflight=true`, после — удалить переменную.
+- Цепочка та же: `autonomy-run.yml@main → autonomy-{engineer,review}.yml@main`, поэтому claims OIDC
+  совпадают с правилами федерации без правок в Console. В reusable-файлах — отдельный job
+  `preflight` (вход `mode: preflight` + `AE_PREFLIGHT_ENABLED`); job'ы прохода при этом недостижимы.
+- Выключатели независимы: `AE_PREFLIGHT_ENABLED` не открывает ни одного job'а прохода, `AE_ENABLED`
+  не открывает preflight, а при `AE_ENABLED=true` preflight не запускается вовсе.
+- Job preflight: checkout `main` без сохранения токена, Python (stdlib), затем
+  `python -m tools.autonomy.anthropic_scope preflight --role …`. Нет: Claude Code, модели,
+  GCP/`sa-ae-reader`, BigQuery, `autonomy-state`, артефактов.
+- Проверки: вид ID правила/SA/workspace/организации; у ревьюера правило и SA не инженерские;
+  claims OIDC-токена совпадают со спецификацией правила роли (иначе обмена нет); обмен;
+  `decide`: `workspace:inference` → PASS, `workspace:developer` → PASS_WITH_EXCEPTION до 2026-10-09,
+  прочее (включая `org:admin`, срок > 600 с, отказ обмена) → FAIL.
+- Доказательства (лог и итог job'а, через редакцию #194): роль, ID правила/SA/workspace, scope,
+  expires_in, решение, request-id Anthropic, несекретные claims.
+- Регрессия: `tools/tests/test_autonomy_preflight.py` (перебор всех сочетаний выключателей).
+
 ## 1. Bootstrap состояния
 
 1. Создать ветку-сироту `autonomy-state` с одним файлом `objectives/obj-ae-commissioning-001.json`.

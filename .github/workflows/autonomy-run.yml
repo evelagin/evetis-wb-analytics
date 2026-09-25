@@ -12,6 +12,11 @@ name: autonomy-run
 # кандидата) и persist (следующий проход по решению next-pass, потолок в policy.json).
 # READY_FOR_HUMAN_REVIEW ставит только ci-verify и только по success ВСЕХ обязательных workflows
 # на опубликованном SHA (S8). Выключатель — repository variable AE_ENABLED.
+#
+# preflight=true (Фаза 0 ввода, AE_V1_M6_COMMISSIONING_PLAN.md §0.1) — ТОЛЬКО аутентификация Claude API
+# инженера и ревьюера через ту же цепочку autonomy-run.yml@main → autonomy-{engineer,review}.yml@main
+# (claims OIDC идентичны правилам федерации). Свой выключатель AE_PREFLIGHT_ENABLED; при включённом
+# AE_ENABLED preflight не запускается. Ни модели, ни GCP, ни autonomy-state, ни job'ов прохода.
 on:
   workflow_dispatch:
     inputs:
@@ -23,6 +28,11 @@ on:
         description: "Продолжить существующий прогон"
         type: string
         required: false
+      preflight:
+        description: "Только проверка аутентификации Claude API (без модели, GCP и состояния)"
+        type: boolean
+        required: false
+        default: false
 
 permissions: {}
 
@@ -32,12 +42,45 @@ concurrency:
 
 jobs:
   enabled:
-    if: vars.AE_ENABLED == 'true'
+    if: vars.AE_ENABLED == 'true' && !inputs.preflight
     runs-on: ubuntu-latest
     timeout-minutes: 2
     steps:
       - name: kill switch
         run: echo "AE_ENABLED=true — проход разрешён"
+
+  # ---- Фаза 0: preflight аутентификации (никакой job прохода от него не зависит) ----
+  preflight-enabled:
+    if: inputs.preflight && vars.AE_PREFLIGHT_ENABLED == 'true' && vars.AE_ENABLED != 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    env:
+      OBJECTIVE_PATH: ${{ inputs.objective_path }}
+      RUN_ID: ${{ inputs.run_id }}
+    steps:
+      - name: preflight switch — только аутентификация, без цели и прогона
+        run: |
+          [ "$GITHUB_REF" = "refs/heads/main" ] || { echo "::error::только из main"; exit 1; }
+          [ -z "$OBJECTIVE_PATH$RUN_ID" ] || { echo "::error::preflight не принимает objective_path/run_id"; exit 1; }
+          echo "AE_PREFLIGHT_ENABLED=true — только обмен токенов Claude API"
+
+  preflight-engineer:
+    needs: preflight-enabled
+    uses: ./.github/workflows/autonomy-engineer.yml
+    permissions: {contents: read, id-token: write}
+    with:
+      mode: preflight
+      run_id: ""
+      state_sha: ""
+
+  preflight-reviewer:
+    needs: preflight-enabled
+    uses: ./.github/workflows/autonomy-review.yml
+    permissions: {contents: read, id-token: write}
+    with:
+      mode: preflight
+      run_id: ""
+      state_sha: ""
 
   prepare:
     needs: enabled
