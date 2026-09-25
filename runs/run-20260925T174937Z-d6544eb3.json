@@ -8,6 +8,7 @@
   "last_review": null,
   "notes": [],
   "objective_id": "obj-ae-commissioning-001",
+  "passes": 1,
   "plan_sha256": null,
   "pr_url": null,
   "production_mutations": 0,
