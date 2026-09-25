@@ -32,6 +32,7 @@
   - регрессия §17 на фикстурах: `tools/plan1_render.py`, 81 утверждение;
   - FX42 и I37/I39 PR-PROMO-4 переведены на контракт версий;
   - развёртывание: `tools/plan1_deploy.py`; откат: `sql/plan/plan1_rollback.sql`.
+- **Исправление `sp_plan_propose_observed_run_rate` (после первого вызова в production):** в `UNION ALL` допущений `scope_month` был нетипизированным `NULL` (INT64). Теперь `CAST(NULL AS DATE)`. Транзакция первого вызова откатилась, записей не было.
 - **Исправление `tools/lib/bq_readonly.strip_sql_comments`:** экранированный символ в строковом
   литерале (`'\n'`) больше не теряется. Раньше ломалась проверка ключевых слов в SQL с `'\n'`.
 ## 2026-09-25 — Tenancy T3.3: авторитетный ACL датасетов арендатора (security remediation)

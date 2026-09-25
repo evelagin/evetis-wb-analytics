@@ -238,7 +238,7 @@ BEGIN
     INSERT INTO `project-fa311fc0-4d87-4781-986.evetis_ref.PLAN_ASSUMPTION`
       (plan_version, assumption_id, assumption_type, scope_marketplace, scope_sku, scope_month, value_numeric, value_text,
        unit, evidence_class, source, created_at)
-    SELECT p_plan_version, id, t, mp, sku, NULL, v, txt, u, ev, src, v_now
+    SELECT p_plan_version, id, t, mp, sku, CAST(NULL AS DATE), v, txt, u, ev, src, v_now
     FROM UNNEST([
       STRUCT('M01' AS id, 'METHOD' AS t, CAST(NULL AS STRING) AS mp, CAST(NULL AS STRING) AS sku, CAST(NULL AS NUMERIC) AS v,
              'Темп заказов без отмен за 30 полных суток × календарные дни месяца; ROUND до 0,1 карточки' AS txt,
@@ -253,7 +253,7 @@ BEGIN
              'evetis_mart.V_SKU_SELL_THROUGH_CURRENT')
     ])
     UNION ALL
-    SELECT p_plan_version, CONCAT('R-', marketplace, '-', internal_sku), 'OBSERVED_RATE', marketplace, internal_sku, NULL,
+    SELECT p_plan_version, CONCAT('R-', marketplace, '-', internal_sku), 'OBSERVED_RATE', marketplace, internal_sku, CAST(NULL AS DATE),
       cards_per_day, CONCAT('Карточек в день, 30 суток по ', CAST(v_sales_as_of AS STRING)), 'cards/day', 'FACT',
       'wb_mart.V_CT_ACTUAL_DAILY', v_now
     FROM _rate;
