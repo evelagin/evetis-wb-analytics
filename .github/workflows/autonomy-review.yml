@@ -68,6 +68,8 @@ jobs:
             echo "::error::статический ключ/токен/профиль Anthropic перекрыл бы федерацию"; exit 1; fi
           [ -n "$ANTHROPIC_FEDERATION_RULE_ID" ] && [ "$ANTHROPIC_FEDERATION_RULE_ID" != "$ENGINEER_RULE_ID" ] \
             || { echo "::error::у ревьюера должно быть СВОЁ правило федерации"; exit 1; }
+          # Фактический scope и срок токена Claude — ДО агента (policy.json → anthropic_runtime).
+          python -m tools.autonomy.anthropic_scope check --role reviewer
           export ANTHROPIC_IDENTITY_TOKEN_FILE="$RUNNER_TEMP/anthropic-oidc.jwt"
           bash tools/autonomy/ci/refresh_anthropic_oidc.sh
           ( while sleep 240; do bash tools/autonomy/ci/refresh_anthropic_oidc.sh || true; done ) &

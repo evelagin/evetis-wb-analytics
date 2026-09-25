@@ -60,6 +60,25 @@
     "timeout_minutes": 45,
     "poll_seconds": 30
   },
+  "anthropic_runtime": {
+    "comment": "Сторож идентичности Claude API в job'ах инженера и ревьюера (tools/autonomy/anthropic_scope.py). До запуска агента job обменивает ОТДЕЛЬНЫЙ свежий OIDC-токен, читает scope и expires_in из ответа и отбрасывает токен. Scope шире desired_scope допустим ТОЛЬКО по исключению из списка ниже с неистёкшим сроком; org:admin и любой не-workspace scope — никогда. Желаемое состояние — quality/autonomy/anthropic_federation.json (workspace:inference); исключение его не меняет.",
+    "desired_scope": "workspace:inference",
+    "max_token_lifetime_seconds": 600,
+    "max_exception_days": 30,
+    "scope_exceptions": [
+      {
+        "scope": "workspace:developer",
+        "applies_to": [
+          "engineer",
+          "reviewer"
+        ],
+        "reason": "Claude Console (2026-09-25) не предлагает workspace:inference в выборе scope правила федерации; Admin API федерации отвечает 404. Живые правила fdrl_017uB6D6… (инженер) и fdrl_01HCwTPK… (ревьюер) созданы с workspace:developer. Исключение ввода в эксплуатацию, не новая база.",
+        "approved_on": "2026-09-25",
+        "expires": "2026-10-09",
+        "approved_by": "owner (M5 report 2026-09-25)"
+      }
+    ]
+  },
   "trusted_computing_base": {
     "comment": "Доверенная вычислительная база (AE_V1_SECURITY.md §5). Кандидат, затронувший хотя бы один из этих путей, получает минимум HUMAN_DECISION_REQUIRED и НИКОГДА не публикуется AE: ни ACK плана (owner_ack), ни PASS ревьюера этот запрет не снимают. Критерий включения: путь определяет права, развёртывание, запись во внешний мир, сами ворота и их доказательства, либо исполняется автоматически с чужими правами (CI, pytest, pip/npm, IDE, владелец со своими правами на DDL).",
     "classes": {
@@ -144,7 +163,13 @@
         "**/.gitattributes",
         ".gitmodules"
       ],
-      "tenant_provisioning": ["tools/tenancy/**", "tenants/**", "pipelines/ozon/schema/**", "infra/tenant/**", ".github/workflows/tenant-infra.yml"],
+      "tenant_provisioning": [
+        "tools/tenancy/**",
+        "tenants/**",
+        "pipelines/ozon/schema/**",
+        "infra/tenant/**",
+        ".github/workflows/tenant-infra.yml"
+      ],
       "agent_instructions": [
         ".claude/**",
         "**/CLAUDE.md",
