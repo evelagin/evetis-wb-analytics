@@ -28,8 +28,8 @@ import os
 import urllib.request
 
 import common as C
-from common import (DATASET, PROJECT, REF_DATASET, append_rows, bq, h, log, now_msk,
-                    promo_load_job_id, promo_observation_id, promo_slot, seller_headers)
+from common import (DATASET, PROJECT, append_rows, bq, h, log, now_msk,
+                    promo_load_job_id, promo_observation_id, promo_slot, secret)
 
 # ── Разрешённые пути. Закрытый список. ──────────────────────────────────────
 P_ACTIONS = "/v1/actions"
@@ -88,9 +88,11 @@ def promo_call(path, body=None):
     if path not in ALLOWED_PATHS:
         raise PromoPathDenied(f"путь {path} не входит в разрешённый список наблюдателя акций")
     data = json.dumps(body).encode() if body is not None else None
-    # Учётные данные — по ИМЕНАМ секретов из конфигурации процесса (Tenancy T2).
     req = urllib.request.Request(
-        C.SELLER + path, data=data, headers=seller_headers(),
+        C.SELLER + path, data=data,
+        headers={"Client-Id": secret("EVETIS_OZON_CLIENT_ID"),
+                 "Api-Key": secret("EVETIS_OZON_API_KEY"),
+                 "Content-Type": "application/json"},
         method="POST" if data is not None else "GET")
     return C._request(req)
 
@@ -135,11 +137,10 @@ def _meta(endpoint, obs, slot, env, run_id, ts, *hash_parts):
 def _sku_maps():
     """product_id → internal_sku и offer_id → internal_sku из справочника каналов.
 
-    Изоляция маркетплейсов соблюдена: читается только справочный датасет
-    (BQ_REF_DATASET, у EVETIS — evetis_ref), ничего из wb_*.
+    Изоляция маркетплейсов соблюдена: читается только evetis_ref, ничего из wb_*.
     """
     q = (f"SELECT marketplace_product_id, offer_id, internal_sku "
-         f"FROM `{PROJECT}.{REF_DATASET}.REF_SKU_CHANNEL_MAP` "
+         f"FROM `{PROJECT}.evetis_ref.REF_SKU_CHANNEL_MAP` "
          f"WHERE marketplace='OZON' AND is_current")
     by_pid, by_offer = {}, {}
     for r in bq().query(q, location=C.LOCATION).result():
@@ -175,7 +176,7 @@ def _paged_products(path, action_id):
             body["last_id"] = last_id
         code, r = promo_call(path, body)
         if code != 200:
-            raise RuntimeError(f"{path} action_id={action_id} → {code}: {C.safe_error_text(r, 200)}")
+            raise RuntimeError(f"{path} action_id={action_id} → {code}: {str(r)[:200]}")
         res = r.get("result") or {}
         items = res.get("products") or []
         out.extend(items)
@@ -193,7 +194,7 @@ def _paged_auto_add(path, action_id, auto_add_date):
         code, r = promo_call(path, {"action_id": action_id, "auto_add_date": auto_add_date,
                                     "limit": PAGE_LIMIT, "offset": offset})
         if code != 200:
-            raise RuntimeError(f"{path} action_id={action_id} → {code}: {C.safe_error_text(r, 200)}")
+            raise RuntimeError(f"{path} action_id={action_id} → {code}: {str(r)[:200]}")
         res = r.get("result", r) or {}
         items = res.get("products") or []
         out.extend(items)
@@ -233,7 +234,7 @@ def promo(run_id, ts, _f, _t):
         # ── 1. Список акций ────────────────────────────────────────────────
         code, r = promo_call(P_ACTIONS)
         if code != 200:
-            raise RuntimeError(f"{P_ACTIONS} → {code}: {C.safe_error_text(r, 200)}")
+            raise RuntimeError(f"{P_ACTIONS} → {code}: {str(r)[:200]}")
         actions = r.get("result") or []
         observed_at = now_msk().isoformat()
         unknown |= _unknown(actions, KNOWN_ACTION_FIELDS, "action")
@@ -332,7 +333,7 @@ def promo(run_id, ts, _f, _t):
                                             "filter": {"offer_id": [], "product_id": [],
                                                        "visibility": "ALL"}})
             if code != 200:
-                raise RuntimeError(f"{P_PRICES} → {code}: {C.safe_error_text(r, 200)}")
+                raise RuntimeError(f"{P_PRICES} → {code}: {str(r)[:200]}")
             items = r.get("items") or []
             for i in items:
                 offer = str(i.get("offer_id"))
@@ -421,7 +422,7 @@ def promo(run_id, ts, _f, _t):
                 "updated": written if reused else 0}
 
     except Exception as e:                                            # noqa: BLE001
-        msg = C.safe_error_text(repr(e), 400).replace("'", "")
+        msg = repr(e)[:400].replace("'", "")
         try:
             bq().query(
                 f"UPDATE `{PROJECT}.{DATASET}.{TBL_OBSERVATIONS}` SET "
@@ -429,5 +430,5 @@ def promo(run_id, ts, _f, _t):
                 f"error_code='{type(e).__name__}', error_message='{msg}' "
                 f"WHERE observation_id='{obs}'", location=C.LOCATION).result()
         except Exception as e2:                                       # noqa: BLE001
-            log(event="ozon_promo_manifest_finalize_failed", error=C.safe_error_text(repr(e2), 200))
+            log(event="ozon_promo_manifest_finalize_failed", error=repr(e2)[:200])
         raise
