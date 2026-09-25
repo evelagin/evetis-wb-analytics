@@ -158,9 +158,13 @@ T3.3: холодный `terraform init` с backend GCS перечисляет wo
 1. Человек: `gcloud projects create mpa-t-client-001 --folder=881419274207`, привязка биллинга,
    включение `cloudbilling`, `cloudresourcemanager`, `serviceusage` и `run` (сервис-агент Cloud Run
    должен существовать до привязки к реестру образов).
-2. Человек: `roles/artifactregistry.reader` на `mpa-runtime` для
+2. Человек: `roles/artifactregistry.reader` **только на репозиторий** `mpa-runtime` для
    `service-<номер проекта>@serverless-robot-prod.iam.gserviceaccount.com` и для провижионера
-   (`tools/tenancy/iam_proposals.py::ARTIFACT_REGISTRY_BINDINGS`).
+   (`tools/tenancy/iam_proposals.py::ARTIFACT_REGISTRY_BINDINGS`). Оба нужны — доказано вживую
+   в T3.3: сервис-агент тянет образ при запуске, а `Jobs.CreateJob` проверяет
+   `artifactregistry.repositories.downloadArtifacts` у **создающей** идентичности (без него первый
+   apply `client_001` упал с 403 на создании job'ов). Runtime SA и SA планировщика чтения реестра
+   не получают; образ в проект арендатора не копируется.
 3. ~~Выпуск образа (T3.2b) и digest в `runtime_release.json` через PR.~~ Сделано в T3.2b (выше).
 4. Решение по секретам и роли провижионера (ниже), затем `tenant-infra.yml` — план, сканер плана
    (`tools/tenancy/plan_scan.py`), и только потом применение по отдельному ACK.
