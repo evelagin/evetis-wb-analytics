@@ -1,5 +1,40 @@
 # CHANGELOG.md
 
+## 2026-09-25 — PR-PLAN-1: версии плана продаж и помесячная траектория запаса
+
+Контракт: `docs/plan/PR_PLAN_1_SALES_PLAN_TRAJECTORY_2026-09-25.md`. Control Tower, C1, Юнитка и
+экономика не переключены и не изменены. Утверждений нет: план утверждает только владелец.
+
+- **Новые таблицы `evetis_ref` (только добавление строк):** `PLAN_VERSION`, `PLAN_LINE_MONTHLY`,
+  `PLAN_ASSUMPTION`, `PLAN_BOM_BASIS`, `INBOUND_LOT_EVENT`.
+- **Изменение структуры `REF_SALES_PLAN_APPROVAL`:** добавлены две nullable-колонки,
+  `content_sha256` и `effective_from_month`. Статусы событий: PROPOSED | APPROVED | REVOKED |
+  WITHDRAWN. Второго реестра утверждений нет.
+- **Новые представления `evetis_mart`:** `V_PLAN_LINE_MONTHLY_ALL` (включая адаптер legacy CT без
+  копирования строк), `V_PLAN_VERSION_STATUS`, `V_SALES_PLAN_APPROVED`, `V_PLAN_PHYSICAL_MONTHLY`,
+  `V_INBOUND_LOT_CURRENT`, `V_PLAN_TRAJECTORY_MONTHLY`, `V_PLANNING_EXCEPTIONS`,
+  `V_PLANNING_SKU_OVERVIEW`, `V_PLANNING_HEADER`.
+- **Изменение структуры колонок `V_SALES_PLAN_MONTHLY_CURRENT`** (PR-PROMO-4). Источник плана —
+  `V_SALES_PLAN_APPROVED`, строки есть только в окнах утверждённых версий.
+  - Убраны `scenario_code`, `ct_plan_status`, `plan_source_artifact`, `approved_scope`.
+  - Добавлены `plan_kind`, `method_id`, `version_lifecycle_status`, `approved_content_sha256`,
+    `effective_from_month`, `effective_to_month_exclusive`.
+  - `planning_metrics_status` принимает значения COMPUTED | SALES_FACTS_UNAVAILABLE | BOM_BASIS_MISSING.
+  - Типы плановых колонок сохранены (FLOAT64).
+- **`V_SKU_INVENTORY_TRAJECTORY_MONTHLY_CURRENT`:** основа `APPROVED_SALES_PLAN` убрана, осталась
+  `TARGET_REQUIRED_RUN_RATE`. Траектория плана теперь только в `V_PLAN_TRAJECTORY_MONTHLY`.
+  Состав колонок не менялся.
+- **Процедуры `evetis_ref`, только ручной CALL:** `sp_plan_register_legacy_ct`,
+  `sp_plan_propose_observed_run_rate`, `sp_plan_event_core`, `sp_plan_submit`, `sp_plan_approve`,
+  `sp_plan_close`, `sp_inbound_record`.
+- **Проверки:**
+  - DQ-набор `sales_plan` (P01–P18);
+  - регрессия §17 на фикстурах: `tools/plan1_render.py`, 81 утверждение;
+  - FX42 и I37/I39 PR-PROMO-4 переведены на контракт версий;
+  - развёртывание: `tools/plan1_deploy.py`; откат: `sql/plan/plan1_rollback.sql`.
+- **Исправление `tools/lib/bq_readonly.strip_sql_comments`:** экранированный символ в строковом
+  литерале (`'\n'`) больше не теряется. Раньше ломалась проверка ключевых слов в SQL с `'\n'`.
+
 ## 2026-09-25 — Tenancy T3.2b: первый выпуск образа runtime арендатора
 
 **Образ опубликован в `mpa-platform/mpa-runtime`, но нигде не развёрнут.** Проектов арендаторов

@@ -492,15 +492,13 @@ SELECT internal_sku, inventory_position_units, sellable_units AS ct_sellable_uni
 FROM r ORDER BY internal_sku;
 
 -- @check I37_NO_FABRICATED_PLAN
--- Без записи утверждения владельца плановые числа, исполнение и прогноз пусты.
-SELECT plan_version, plan_approval_status, COUNT(*) AS n_rows,
-  COUNTIF(planned_cards IS NOT NULL OR planned_physical_units IS NOT NULL OR plan_attainment_pct IS NOT NULL
-          OR run_rate_projection_cards IS NOT NULL OR required_cards_per_day_remaining IS NOT NULL) AS populated,
-  IF(plan_approval_status = 'APPROVED'
-     OR COUNTIF(planned_cards IS NOT NULL OR planned_physical_units IS NOT NULL OR plan_attainment_pct IS NOT NULL
-                OR run_rate_projection_cards IS NOT NULL OR required_cards_per_day_remaining IS NOT NULL) = 0, 'PASS', 'FAIL') AS status
-FROM `project-fa311fc0-4d87-4781-986.evetis_mart.V_SALES_PLAN_MONTHLY_CURRENT`
-GROUP BY plan_version, plan_approval_status;
+-- С PR-PLAN-1: строки исполнения плана есть только для месяцев окон утверждённых версий
+-- (V_SALES_PLAN_APPROVED); модельные, черновые и предложенные версии сюда не попадают.
+SELECT COUNT(*) AS n_rows, COUNTIF(a.plan_version IS NULL) AS outside_approved_contract,
+  COUNTIF(p.plan_approval_status != 'APPROVED') AS not_approved_rows,
+  IF(COUNTIF(a.plan_version IS NULL) + COUNTIF(p.plan_approval_status != 'APPROVED') = 0, 'PASS', 'FAIL') AS status
+FROM `project-fa311fc0-4d87-4781-986.evetis_mart.V_SALES_PLAN_MONTHLY_CURRENT` p
+LEFT JOIN `project-fa311fc0-4d87-4781-986.evetis_mart.V_SALES_PLAN_APPROVED` a USING (plan_version, month, marketplace, internal_sku);
 
 -- @check I38_TRAJECTORY_ARITHMETIC
 -- Остаток на конец = начало − продажи; пополнение не моделируется; дни месяца — календарные.
@@ -515,13 +513,14 @@ SELECT COUNT(*) AS n_rows,
 FROM `project-fa311fc0-4d87-4781-986.evetis_mart.V_SKU_INVENTORY_TRAJECTORY_MONTHLY_CURRENT`;
 
 -- @check I39_OWNER_INPUT_VALID
--- Справочники владельца: утверждение ссылается на версию плана Control Tower, статусы и цели
--- из закрытого списка, целевой остаток ≥ 0.
+-- Справочники владельца: события плана — из закрытого списка PR-PLAN-1 и ссылаются на версию
+-- evetis_ref.PLAN_VERSION (с PR-PLAN-1 утверждается версия, а не план Control Tower); цели из
+-- закрытого списка, целевой остаток ≥ 0.
 SELECT 'REF_SALES_PLAN_APPROVAL' AS object_name, COUNT(*) AS n_rows,
-  COUNTIF(a.approval_status NOT IN ('APPROVED', 'REVOKED') OR v.plan_version IS NULL) AS invalid_rows,
-  IF(COUNTIF(a.approval_status NOT IN ('APPROVED', 'REVOKED') OR v.plan_version IS NULL) = 0, 'PASS', 'FAIL') AS status
+  COUNTIF(a.approval_status NOT IN ('PROPOSED', 'APPROVED', 'REVOKED', 'WITHDRAWN') OR v.plan_version IS NULL) AS invalid_rows,
+  IF(COUNTIF(a.approval_status NOT IN ('PROPOSED', 'APPROVED', 'REVOKED', 'WITHDRAWN') OR v.plan_version IS NULL) = 0, 'PASS', 'FAIL') AS status
 FROM `project-fa311fc0-4d87-4781-986.evetis_ref.REF_SALES_PLAN_APPROVAL` a
-LEFT JOIN `project-fa311fc0-4d87-4781-986.evetis_ref.CT_PLAN_VERSION` v USING (plan_version)
+LEFT JOIN (SELECT DISTINCT plan_version FROM `project-fa311fc0-4d87-4781-986.evetis_ref.PLAN_VERSION`) v USING (plan_version)
 UNION ALL
 SELECT 'REF_SKU_INVENTORY_TARGET', COUNT(*),
   COUNTIF(target_type NOT IN ('SEASON_END', 'MANUAL_DATE') OR target_status NOT IN ('ACTIVE', 'CANCELLED') OR target_ending_units < 0),

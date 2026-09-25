@@ -43,8 +43,8 @@ NEUTRAL_SCHEMA = [
 ]
 import promo_economics_render as promo3_render  # noqa: E402
 import promo_inventory_render as promo4_render  # noqa: E402
-# Объекты Git-first слоёв акций (PR-PROMO-2/3/4): их предразвёртывание проверяют свои рендереры.
-PROMO2_OBJECTS = {name for _, name, _ in promo3_render.OBJECTS} | {name for _, name, _ in promo4_render.OBJECTS}
+# Объекты Git-first слоёв акций и плана (PR-PROMO-2/3/4, PR-PLAN-1): их предразвёртывание проверяют свои рендереры.
+PROMO2_OBJECTS = {name for _, name, _ in promo3_render.OBJECTS} | {name for _, name, _ in promo4_render.RENDER_OBJECTS}
 TAX_WORDS = re.compile(r"tax|vat|usn|nalog|налог|ндс|усн", re.I)
 
 

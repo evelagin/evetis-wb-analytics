@@ -774,6 +774,69 @@
       "source_contract": "docs/promotions/PR_PROMO_4_INVENTORY_SELL_THROUGH_CONTEXT_2026-09-24.md",
       "business_rule_reference": "docs/control_tower/CT_PHASE1_IMPLEMENTATION_2026-09-10.md; docs/ops/STAGE_C1_SHEET_2026-09-12.md (c1_expiry_margin_days — решение владельца 12.09); docs/ops/STAGE_C0_LOGISTICS_MASTER_2026-09-11.md (R5 — общий пул ФФ)",
       "provenance": "PR-PROMO-4; пороги нулевые, FLOAT64 1e-9. Свежесть — сроки V_CT_FRESHNESS (паритет — I05). I33 закрепляет тела 20 объектов Control Tower / evetis_ops, I40 — схемы 15 внешних объектов (контракт фикстур). Регрессия — tools/promo_inventory_render.py run fixtures"
+    },
+    {
+      "suite": "sales_plan",
+      "title": "PR-PLAN-1: версии плана продаж, утверждение по хешу, физическая потребность по BOM версии, поступления и траектория запаса",
+      "gate": true,
+      "severity": "HIGH",
+      "domain": "planning",
+      "marketplace": [
+        "WB",
+        "OZON"
+      ],
+      "pipelines": [
+        "ct_refresh"
+      ],
+      "layer": "mart",
+      "adapter": "check_blocks",
+      "id_prefix": "PLAN1",
+      "status_column": "status",
+      "execution_mode": "read_only_select",
+      "expected_result": "all_checks_pass",
+      "owner": "evelagin",
+      "timeout_seconds": 300,
+      "files": [
+        "sql/plan/plan1_validation.sql"
+      ],
+      "scope": [
+        "evetis_mart.V_PLAN_LINE_MONTHLY_ALL",
+        "evetis_mart.V_PLAN_VERSION_STATUS",
+        "evetis_mart.V_SALES_PLAN_APPROVED",
+        "evetis_mart.V_PLAN_PHYSICAL_MONTHLY",
+        "evetis_mart.V_INBOUND_LOT_CURRENT",
+        "evetis_mart.V_PLAN_TRAJECTORY_MONTHLY",
+        "evetis_mart.V_PLANNING_EXCEPTIONS",
+        "evetis_mart.V_PLANNING_SKU_OVERVIEW",
+        "evetis_mart.V_PLANNING_HEADER",
+        "evetis_mart.V_SALES_PLAN_MONTHLY_CURRENT",
+        "evetis_ref.PLAN_VERSION",
+        "evetis_ref.PLAN_LINE_MONTHLY",
+        "evetis_ref.PLAN_ASSUMPTION",
+        "evetis_ref.PLAN_BOM_BASIS",
+        "evetis_ref.INBOUND_LOT_EVENT",
+        "evetis_ref.REF_SALES_PLAN_APPROVAL",
+        "evetis_ref.CT_SEASON_PLAN_MONTHLY",
+        "wb_mart.V_CT_PLAN_ACTIVE"
+      ],
+      "dimensions": [
+        "grain",
+        "immutability",
+        "content_hash",
+        "approval_gate",
+        "reconciliation",
+        "identities",
+        "calendar",
+        "inbound_eligibility",
+        "freshness",
+        "no_economics",
+        "consumer_isolation"
+      ],
+      "cadence": "перед слиянием изменения в области scope, после развёртывания, после каждой записи версии, события или поступления и после пересборки Control Tower",
+      "source_contract": "docs/plan/PR_PLAN_1_SALES_PLAN_TRAJECTORY_2026-09-25.md",
+      "business_rule_reference": "Спецификация PR-PLAN-1 (владелец, 2026-09-25): MODEL_SCENARIO не утверждается, утверждение только по точному content_sha256, поступление в базовой траектории только с доказанными SKU, количеством, состоянием и датой; docs/ops/STAGE_C1_SHEET_2026-09-12.md (c1_expiry_margin_days)",
+      "provenance": "PR-PLAN-1; пороги нулевые (NUMERIC точен), FLOAT64 1e-6, паритет legacy 0,01 карточки (FLOAT64 → NUMERIC). Регрессия §17 — tools/plan1_render.py run fixtures (PX10–PX22)",
+      "pending_deploy_note": "До развёртывания таблиц PR-PLAN-1 блоки против живых объектов падают с «not found»; исполнять tools/plan1_render.py run predeploy (новые таблицы пустые)."
     }
   ],
   "backlog": {

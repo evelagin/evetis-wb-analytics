@@ -4,16 +4,17 @@
 -- Origin: PR-PROMO-4 (Git-first, pending_deploy). Contract:
 -- docs/promotions/PR_PROMO_4_INVENTORY_SELL_THROUGH_CONTEXT_2026-09-24.md.
 --
--- Месячный план продаж и его исполнение. ВТОРОГО ХРАНИЛИЩА ПЛАНА НЕТ: план живёт в
--- Control Tower (evetis_ref.CT_PLAN_VERSION + CT_SEASON_PLAN_MONTHLY, версионирован, есть
--- статус, источник, автор). Здесь добавлено одно — утверждение владельца
--- (evetis_ref.REF_SALES_PLAN_APPROVAL). Без строки APPROVED версия плана — модельный
--- сценарий: плановые числа и метрики исполнения НЕ выводятся (NULL + planning_metrics_status).
+-- Исполнение УТВЕРЖДЁННОГО владельцем плана продаж по месяцам.
+-- С PR-PLAN-1 источник плана — единственный контракт evetis_mart.V_SALES_PLAN_APPROVED
+-- (версии evetis_ref.PLAN_VERSION, утверждение с точным content_sha256 в
+-- evetis_ref.REF_SALES_PLAN_APPROVAL, окна действия). Строки есть только для месяцев, в которых
+-- утверждённая версия действует; модельный сценарий Control Tower (SET_2026-09-09 и подобные),
+-- черновики и предложенные версии сюда не попадают. Пока утверждения нет — представление пусто.
+-- Control Tower (V_CT_PLAN_ACTIVE, C1) продолжает читать свой план и не переключается.
 --
 -- Единицы плана — карточки заказа без отмен (контракт Control Tower: факт = cards_ordered);
--- физические единицы = карточки × число компонентов BOM. Грейн плана — родной:
--- версия × месяц × канал × карточка. Это же ключ будущего моста к вкладу
--- (marketplace, internal_sku) PR-PROMO-3 — формулы экономики здесь нет.
+-- физические единицы = карточки × сумма количеств в снимке BOM версии (PLAN_BOM_BASIS);
+-- набор без снимка BOM — физические единицы NULL (BOM_BASIS_MISSING), не выдумываются.
 --
 -- Календарь — настоящий: плановый период месяца = [max(1-е число, начало горизонта);
 -- min(последний день месяца, конец горизонта)], дни считаются датами (28/29/30/31).
@@ -22,34 +23,19 @@
 -- это не модель спроса. Качество скорости видно: для одиночной карточки — качество окна
 -- 30 дней её физического SKU, для набора — не оценивается.
 --
--- Грейн: plan_version × month × marketplace × internal_sku. Только ACTIVE-версии Control Tower.
+-- Грейн: plan_version × month × marketplace × internal_sku (строки утверждённых окон).
 -- ============================================================================
 CREATE OR REPLACE VIEW `project-fa311fc0-4d87-4781-986.evetis_mart.V_SALES_PLAN_MONTHLY_CURRENT`
-OPTIONS (description = "PR-PROMO-4. Месячный план продаж Control Tower (карточки × канал × SKU) и его исполнение: факт с начала планового периода, остаток, оставшиеся календарные дни, требуемый темп, % исполнения, RUN_RATE_PROJECTION. Плановые числа и метрики выводятся только для версии, утверждённой владельцем в REF_SALES_PLAN_APPROVAL; иначе — NULL и статус PLAN_APPROVAL_NOT_RECORDED.")
+OPTIONS (description = "PR-PROMO-4, источник плана с PR-PLAN-1 — V_SALES_PLAN_APPROVED. Исполнение утверждённого владельцем плана продаж (карточки × канал × SKU): факт с начала планового периода, остаток, оставшиеся календарные дни, требуемый темп, % исполнения, RUN_RATE_PROJECTION. Только месяцы окон действия утверждённых версий; модельные сценарии Control Tower сюда не попадают.")
 AS
-WITH v AS (
+WITH p AS (
   SELECT *
-  FROM `project-fa311fc0-4d87-4781-986.evetis_ref.CT_PLAN_VERSION`
-  WHERE plan_status = 'ACTIVE'
-),
-approval AS (
-  SELECT *
-  FROM `project-fa311fc0-4d87-4781-986.evetis_ref.REF_SALES_PLAN_APPROVAL`
-  QUALIFY ROW_NUMBER() OVER (PARTITION BY plan_version ORDER BY recorded_at DESC) = 1
+  FROM `project-fa311fc0-4d87-4781-986.evetis_mart.V_SALES_PLAN_APPROVED`
 ),
 bom AS (
-  SELECT card_sku, MAX(component_count) AS component_count
-  FROM `project-fa311fc0-4d87-4781-986.wb_mart.V_CT_BOM_CURRENT`
-  GROUP BY card_sku
-),
-plan AS (
-  SELECT
-    m.plan_version, m.month, UPPER(m.marketplace) AS marketplace, m.internal_sku,
-    ANY_VALUE(m.sales_mode) AS sales_mode,
-    SUM(m.target_cards) AS target_cards
-  FROM `project-fa311fc0-4d87-4781-986.evetis_ref.CT_SEASON_PLAN_MONTHLY` m
-  JOIN v USING (plan_version)
-  GROUP BY m.plan_version, m.month, UPPER(m.marketplace), m.internal_sku
+  SELECT plan_version, bundle_sku, SUM(component_qty) AS component_count
+  FROM `project-fa311fc0-4d87-4781-986.evetis_ref.PLAN_BOM_BASIS`
+  GROUP BY plan_version, bundle_sku
 ),
 quality AS (
   -- Одно чтение V_SKU_SELL_THROUGH_CURRENT: и качество окна, и sales_as_of (одинаков во всех строках).
@@ -62,22 +48,20 @@ sell AS (
 ),
 base AS (
   SELECT
-    p.*,
-    v.plan_name, v.scenario_code, v.plan_status, v.horizon_from, v.horizon_to, v.source_artifact AS plan_source_artifact,
-    v.created_by AS plan_created_by, v.created_at AS plan_created_at,
-    IFNULL(a.approval_status, 'APPROVAL_NOT_RECORDED') AS plan_approval_status,
-    a.approved_by, a.approved_at, a.approval_reference, a.approved_scope,
-    IFNULL(b.component_count, 1) AS component_count,
+    p.plan_version, p.month, p.marketplace, p.internal_sku, p.sales_mode,
+    CAST(p.planned_cards AS FLOAT64) AS target_cards,  -- тип колонок витрины PR-PROMO-4 сохраняется (FLOAT64)
+    p.plan_name, p.plan_kind, p.method_id, p.horizon_from, p.horizon_to, p.plan_created_by, p.plan_created_at,
+    p.version_lifecycle_status, p.effective_from_month, p.effective_to_month_exclusive,
+    p.approved_by, p.approved_at, p.approval_reference, p.approved_content_sha256,
+    IF(p.sales_mode = 'BUNDLE', b.component_count, 1) AS component_count,
     LAST_DAY(p.month) AS month_end,
     EXTRACT(DAY FROM LAST_DAY(p.month)) AS days_in_month,
-    GREATEST(p.month, v.horizon_from) AS plan_period_start,
-    LEAST(LAST_DAY(p.month), v.horizon_to) AS plan_period_end,
+    GREATEST(p.month, p.horizon_from) AS plan_period_start,
+    LEAST(LAST_DAY(p.month), p.horizon_to) AS plan_period_end,
     s.sales_as_of,
     s.q
-  FROM plan p
-  JOIN v USING (plan_version)
-  LEFT JOIN approval a USING (plan_version)
-  LEFT JOIN bom b ON b.card_sku = p.internal_sku
+  FROM p
+  LEFT JOIN bom b ON b.plan_version = p.plan_version AND b.bundle_sku = p.internal_sku
   CROSS JOIN sell s
 ),
 act AS (
@@ -105,27 +89,28 @@ m AS (
       AS elapsed_plan_days,
     IF(b.sales_as_of IS NULL, NULL, IFNULL(x.actual_cards, 0)) AS actual_cards_to_date,
     IF(b.sales_as_of IS NULL, NULL, IFNULL(x.cards_per_day_30d, 0)) AS current_cards_per_day_30d,
-    b.plan_approval_status = 'APPROVED' AS approved
+    TRUE AS approved
   FROM base b
   LEFT JOIN act x USING (plan_version, month, marketplace, internal_sku)
 )
 SELECT
   m.plan_version,
   m.plan_name,
-  m.scenario_code,
-  m.plan_status AS ct_plan_status,
-  m.plan_source_artifact,
+  m.plan_kind,
+  m.method_id,
   m.plan_created_by,
   m.plan_created_at,
-  m.plan_approval_status,
+  'APPROVED' AS plan_approval_status,
+  m.version_lifecycle_status,
   m.approved_by,
   m.approved_at,
   m.approval_reference,
-  m.approved_scope,
+  m.approved_content_sha256,
+  m.effective_from_month,
+  m.effective_to_month_exclusive,
   CASE
-    WHEN m.plan_approval_status = 'REVOKED' THEN 'PLAN_APPROVAL_REVOKED'
-    WHEN NOT m.approved THEN 'PLAN_APPROVAL_NOT_RECORDED'
     WHEN m.sales_as_of IS NULL THEN 'SALES_FACTS_UNAVAILABLE'
+    WHEN m.component_count IS NULL THEN 'BOM_BASIS_MISSING'
     ELSE 'COMPUTED'
   END AS planning_metrics_status,
   m.month,

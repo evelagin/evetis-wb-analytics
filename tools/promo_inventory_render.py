@@ -23,10 +23,12 @@ usage:
 from __future__ import annotations
 
 import calendar
+import hashlib
 import json
 import re
 import sys
 from datetime import date, datetime, timedelta, timezone
+from decimal import ROUND_HALF_UP, Decimal
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
@@ -35,6 +37,7 @@ import promo_canonical_render as base  # noqa: E402
 ROOT = base.ROOT
 PROJECT = base.PROJECT
 REFS_DDL = ROOT / "sql" / "promotions" / "pr_promo4_planning_refs.sql"
+PLAN_DDL = ROOT / "sql" / "plan" / "plan1_storage.sql"
 EXTERNAL_SCHEMAS = ROOT / "sql" / "promotions" / "pr_promo4_external_schemas.json"
 
 OBJECTS: list[tuple[str, str, str]] = [
@@ -50,6 +53,35 @@ NEW_TABLES: list[tuple[str, str]] = [
     ("evetis_ref", "REF_SALES_PLAN_APPROVAL"),
     ("evetis_ref", "REF_SKU_INVENTORY_TARGET"),
 ]
+# PR-PLAN-1: план продаж читается из контракта версий. Его объекты — отдельный список (своё
+# развёртывание и откат), а рендер фикстур использует объединение в порядке зависимостей.
+PLAN1_OBJECTS: list[tuple[str, str, str]] = [
+    ("evetis_mart", "V_PLAN_LINE_MONTHLY_ALL", "sql/current/evetis_mart"),
+    ("evetis_mart", "V_PLAN_VERSION_STATUS", "sql/current/evetis_mart"),
+    ("evetis_mart", "V_SALES_PLAN_APPROVED", "sql/current/evetis_mart"),
+    ("evetis_mart", "V_PLAN_PHYSICAL_MONTHLY", "sql/current/evetis_mart"),
+    ("evetis_mart", "V_INBOUND_LOT_CURRENT", "sql/current/evetis_mart"),
+    ("evetis_mart", "V_PLAN_TRAJECTORY_MONTHLY", "sql/current/evetis_mart"),
+    ("evetis_mart", "V_PLANNING_EXCEPTIONS", "sql/current/evetis_mart"),
+    ("evetis_mart", "V_PLANNING_SKU_OVERVIEW", "sql/current/evetis_mart"),
+    ("evetis_mart", "V_PLANNING_HEADER", "sql/current/evetis_mart"),
+]
+PLAN1_TABLES: list[tuple[str, str]] = [
+    ("evetis_ref", "PLAN_VERSION"),
+    ("evetis_ref", "PLAN_LINE_MONTHLY"),
+    ("evetis_ref", "PLAN_ASSUMPTION"),
+    ("evetis_ref", "PLAN_BOM_BASIS"),
+    ("evetis_ref", "INBOUND_LOT_EVENT"),
+]
+_ORDER = ["V_INVENTORY_POSITION_HISTORY", "V_SKU_SELL_THROUGH_CURRENT", "V_SKU_INVENTORY_TARGET_CURRENT",
+          "V_PLAN_LINE_MONTHLY_ALL", "V_PLAN_VERSION_STATUS", "V_SALES_PLAN_APPROVED", "V_PLAN_PHYSICAL_MONTHLY",
+          "V_INBOUND_LOT_CURRENT", "V_SALES_PLAN_MONTHLY_CURRENT", "V_SKU_INVENTORY_TRAJECTORY_MONTHLY_CURRENT",
+          "V_BUNDLE_ASSEMBLY_CAPACITY_CURRENT", "V_PROMO_INVENTORY_CONTEXT_CURRENT", "V_PLAN_TRAJECTORY_MONTHLY",
+          "V_PLANNING_EXCEPTIONS", "V_PLANNING_SKU_OVERVIEW", "V_PLANNING_HEADER"]
+RENDER_OBJECTS: list[tuple[str, str, str]] = sorted(OBJECTS + PLAN1_OBJECTS, key=lambda o: _ORDER.index(o[1]))
+RENDER_TABLES: list[tuple[str, str]] = NEW_TABLES + PLAN1_TABLES
+# PR-PLAN-1 расширяет реестр утверждений (ALTER ... ADD COLUMN) — эти колонки добавляются к схеме DDL.
+APPROVAL_PLAN1_COLUMNS: list[tuple[str, str]] = [("content_sha256", "STRING"), ("effective_from_month", "DATE")]
 
 
 def external_schemas() -> dict[tuple[str, str], list[tuple[str, str]]]:
@@ -59,12 +91,13 @@ def external_schemas() -> dict[tuple[str, str], list[tuple[str, str]]]:
 
 
 EXTERNALS: list[tuple[str, str]] = sorted(external_schemas())
-RAW_TABLES = EXTERNALS + NEW_TABLES
+RAW_TABLES = EXTERNALS + RENDER_TABLES
 
 
 def schemas() -> dict[tuple[str, str], list[tuple[str, str]]]:
     out = external_schemas()
-    out.update({k: v for k, v in base.raw_schemas([REFS_DDL, base.RAW_DDL], NEW_TABLES).items() if k in NEW_TABLES})
+    out.update({k: v for k, v in base.raw_schemas([REFS_DDL, PLAN_DDL, base.RAW_DDL], RENDER_TABLES).items() if k in RENDER_TABLES})
+    out[("evetis_ref", "REF_SALES_PLAN_APPROVAL")] = out[("evetis_ref", "REF_SALES_PLAN_APPROVAL")] + APPROVAL_PLAN1_COLUMNS
     return out
 
 
@@ -567,46 +600,102 @@ scenario("FX32", "promotion scenarios receive inventory context without changing
 ])
 
 # 37–45 · Месячный план: без утверждения — пусто; с утверждением — исполнение, остаток, темп.
+# С PR-PLAN-1 план утверждается только в контракте версий: шапка PLAN_VERSION с content_sha256,
+# строки PLAN_LINE_MONTHLY, события REF_SALES_PLAN_APPROVAL с тем же хешем.
 PS, PB = "EVT-FX-PLAN", "EVT-FX-PLANSO"
 plan_start = TODAY - timedelta(days=5)
 
 
-def plan_version(pv: str, status="ACTIVE", start=plan_start, end=date(LEAP_TARGET.year, 3, 31)) -> dict:
-    return dict(plan_version=pv, plan_name=pv, scenario_code="FIXTURE", plan_status=status, horizon_from=start.isoformat(),
-                horizon_to=end.isoformat(), source_artifact="fixture.csv", created_at=ts(NOW - timedelta(days=10)),
-                created_by="fixture")
+def num_str(x) -> str:
+    """CAST(ROUND(x, 4) AS STRING) для NUMERIC BigQuery: без хвостовых нулей и экспоненты."""
+    q = Decimal(str(x)).quantize(Decimal("0.0001"), rounding=ROUND_HALF_UP)
+    out = format(q.normalize(), "f")
+    return "0" if out in ("-0", "") else out
 
 
-def plan_month(pv: str, month: date, mp: str, s: str, cards: float, mode="SOLO") -> dict:
-    return dict(plan_version=pv, month=month.isoformat(), marketplace=mp, internal_sku=s, sales_mode=mode,
-                target_cards=cards, target_physical_units=cards, created_at=ts(NOW))
+def plan_sha(lines: list[tuple], bom: list[tuple]) -> str:
+    """content_sha256 — тот же канон, что V_PLAN_VERSION_STATUS и процедуры sql/plan/plan1_procedures.sql."""
+    lk = sorted(f"{m.isoformat()}|{mp}|{sk}|{num_str(c)}" for m, mp, sk, c, *_ in lines)
+    bk = sorted(f"{b}|{c}|{q}" for b, c, q in bom)
+    return hashlib.sha256(("\n".join(lk) + "\n#BOM\n" + "\n".join(bk)).encode()).hexdigest()
 
 
-def actual(s: str, first: int, last: int, cards: int, mp="WB") -> list[dict]:
-    return [dict(d=d(k), marketplace=mp, internal_sku=s, sales_mode="SOLO", cards_ordered=cards) for k in range(first, last + 1)]
+def plan_tables(versions: list[dict]) -> dict:
+    """Строки PLAN_VERSION / PLAN_LINE_MONTHLY / PLAN_BOM_BASIS / REF_SALES_PLAN_APPROVAL / CT_SEASON_PLAN_MONTHLY.
+
+    Версия: pv, kind, lines [(month, mp, sku, cards[, mode])], bom [(bundle, comp, qty)], start, end,
+    events [(event, hours_ago[, effective_month[, sha_override]])], legacy (строки идут в CT_SEASON_PLAN_MONTHLY),
+    tamper [(month, mp, sku, cards)] — строки, добавленные ПОСЛЕ расчёта хеша шапки, created_hours_ago.
+    """
+    out = {k: [] for k in ("evetis_ref__PLAN_VERSION", "evetis_ref__PLAN_LINE_MONTHLY", "evetis_ref__PLAN_BOM_BASIS",
+                           "evetis_ref__REF_SALES_PLAN_APPROVAL", "evetis_ref__CT_SEASON_PLAN_MONTHLY")}
+    for v in versions:
+        pv, lines, bom = v["pv"], v.get("lines", []), v.get("bom", [])
+        agg: dict[tuple, float] = {}
+        for ln in lines:
+            key = (ln[0], ln[1].upper(), ln[2])
+            agg[key] = agg.get(key, 0.0) + float(ln[3])
+        sha = v.get("sha") or plan_sha([(k[0], k[1], k[2], c) for k, c in agg.items()], bom)
+        legacy = v.get("legacy", False)
+        all_lines = lines + v.get("tamper", [])
+        out["evetis_ref__PLAN_VERSION"].append(dict(
+            plan_version=pv, plan_kind=v.get("kind", "SYSTEM_PROPOSED"), plan_name=f"fixture {pv}",
+            method_id="FIXTURE", source_kind="LEGACY_CT_SEASON_PLAN_MONTHLY" if legacy else "PLAN_LINE_MONTHLY",
+            source_ref=v.get("source_ref", pv) if legacy else None,
+            horizon_from=v.get("start", CUR_MONTH).isoformat(), horizon_to=v["end"].isoformat(), marketplaces="WB,OZON",
+            line_count=v.get("line_count", len(agg)), bom_basis_rows=len(bom), content_sha256=sha,
+            created_at=ts(NOW - timedelta(hours=v.get("created_hours_ago", 24))), created_by="fixture"))
+        for ln in all_lines:
+            mode = ln[4] if len(ln) > 4 else "SOLO"
+            if legacy:
+                out["evetis_ref__CT_SEASON_PLAN_MONTHLY"].append(dict(
+                    plan_version=v.get("source_ref", pv), month=ln[0].isoformat(), marketplace=ln[1], internal_sku=ln[2],
+                    sales_mode=mode, target_cards=float(ln[3]), target_physical_units=float(ln[3]), created_at=ts(NOW)))
+            else:
+                out["evetis_ref__PLAN_LINE_MONTHLY"].append(dict(
+                    plan_version=pv, month=ln[0].isoformat(), marketplace=ln[1], internal_sku=ln[2], sales_mode=mode,
+                    planned_cards=ln[3], line_basis="FIXTURE", created_at=ts(NOW)))
+        for b_, c_, q_ in bom:
+            out["evetis_ref__PLAN_BOM_BASIS"].append(dict(plan_version=pv, bundle_sku=b_, component_sku=c_, component_qty=q_,
+                                                         captured_at=ts(NOW)))
+        for ev in v.get("events", []):
+            event, ago = ev[0], ev[1]
+            eff = ev[2] if len(ev) > 2 else None
+            esha = ev[3] if len(ev) > 3 else sha
+            at = ts(NOW - timedelta(hours=ago))
+            out["evetis_ref__REF_SALES_PLAN_APPROVAL"].append(dict(
+                plan_version=pv, approval_status=event, approved_scope="PLAN_VERSION_MONTH_CHANNEL_CARD", approved_by="owner",
+                approved_at=at, recorded_at=at, recorded_by="fixture", content_sha256=esha,
+                effective_from_month=eff.isoformat() if eff else None))
+    return out
+
+
+def actual(s: str, first: int, last: int, cards: int, mp="WB", mode="SOLO") -> list[dict]:
+    return [dict(d=d(k), marketplace=mp, internal_sku=s, sales_mode=mode, cards_ordered=cards) for k in range(first, last + 1)]
 
 
 elapsed = (A - max(plan_start, CUR_MONTH)).days + 1 if A >= max(plan_start, CUR_MONTH) else 0
 cur_plan_days = (calendar.monthrange(TODAY.year, TODAY.month)[1] - max(plan_start, CUR_MONTH).day + 1)
 months = [CUR_MONTH, FEB_NONLEAP, FEB_LEAP, M30, M31]
-plan_rows = [plan_month(pv, m, "WB", s, 300.0) for pv in ("PV-APPROVED", "PV-DRAFTONLY") for m in months for s in (PS, PB)]
+PLAN_END = date(LEAP_TARGET.year, 3, 31)
+fx42_lines = [(m, "WB", s_, 300.0) for m in months for s_ in (PS, PB)]
 scenario("FX42", "monthly plan machinery: approval gate, calendar, attainment, run-rate", world(
     **mapped(PS, PB),
     evetis_ref__CT_INVENTORY_SNAPSHOT_DAILY=history(PS, 40, ff=5000) + history(PB, 40, ff=5000, wb=0, oz=0),
     wb_mart__V_CT_PHYSICAL_DAILY=phys(PS, -120, -1, 4) + phys(PB, -120, -1, 4),
     wb_mart__V_CT_ACTUAL_DAILY=actual(PS, -120, -1, 4) + actual(PB, -120, -1, 4),
     wb_mart__V_CT_BOM_CURRENT=[bomrow(PS, PS, 1), bomrow(PB, PB, 1)],
-    evetis_ref__CT_PLAN_VERSION=[plan_version("PV-APPROVED"), plan_version("PV-DRAFTONLY"),
-                                 plan_version("PV-SUPERSEDED", status="SUPERSEDED")],
-    evetis_ref__CT_SEASON_PLAN_MONTHLY=plan_rows + [plan_month("PV-SUPERSEDED", CUR_MONTH, "WB", PS, 1.0)],
-    evetis_ref__REF_SALES_PLAN_APPROVAL=[dict(plan_version="PV-APPROVED", approval_status="APPROVED",
-                                              approved_scope="MONTHLY_SKU_CHANNEL_UNITS", approved_by="owner",
-                                              approved_at=ts(NOW - timedelta(days=1)), recorded_at=ts(NOW - timedelta(days=1)),
-                                              recorded_by="owner")]), [
-    ("unapproved_plan_not_populated", f"{cnt(PL, 'plan_version = "PV-DRAFTONLY" AND (planned_cards IS NOT NULL OR plan_attainment_pct IS NOT NULL OR run_rate_projection_cards IS NOT NULL)')} = 0"),
-    ("unapproved_status", f"{cnt(PL, 'plan_version = "PV-DRAFTONLY" AND planning_metrics_status != "PLAN_APPROVAL_NOT_RECORDED"')} = 0"),
-    ("superseded_excluded", f"{cnt(PL, 'plan_version = "PV-SUPERSEDED"')} = 0"),
+    **plan_tables([
+        dict(pv="PV-APPROVED", lines=fx42_lines, start=plan_start, end=PLAN_END,
+             events=[("PROPOSED", 3), ("APPROVED", 2, CUR_MONTH)]),
+        dict(pv="PV-DRAFTONLY", lines=fx42_lines, start=plan_start, end=PLAN_END, events=[("PROPOSED", 3)]),
+        dict(pv="PV-MODEL", kind="MODEL_SCENARIO", legacy=True, lines=fx42_lines, start=plan_start, end=PLAN_END,
+             events=[("PROPOSED", 3), ("APPROVED", 2, CUR_MONTH)]),
+    ])), [
+    ("unapproved_plan_absent", f"{cnt(PL, 'plan_version = "PV-DRAFTONLY"')} = 0"),
+    ("model_scenario_never_approved", f"{cnt(PL, 'plan_version = "PV-MODEL"')} = 0"),
     ("approved_populated", f"{cnt(PL, 'plan_version = "PV-APPROVED" AND planned_cards = 300')} = {len(months) * 2}"),
+    ("approved_hash_carried", f"{cnt(PL, 'plan_version = "PV-APPROVED" AND approved_content_sha256 IS NULL')} = 0"),
     ("feb_non_leap_28_days", f"{one(PL, f"plan_version = 'PV-APPROVED' AND month = DATE '{FEB_NONLEAP.isoformat()}'", 'plan_days')} = 28"),
     ("feb_leap_29_days", f"{one(PL, f"plan_version = 'PV-APPROVED' AND month = DATE '{FEB_LEAP.isoformat()}'", 'plan_days')} = 29"),
     ("month_30_days", f"{one(PL, f"plan_version = 'PV-APPROVED' AND month = DATE '{M30.isoformat()}'", 'days_in_month')} = 30"),
@@ -623,10 +712,7 @@ scenario("FX42", "monthly plan machinery: approval gate, calendar, attainment, r
     ("run_rate_quality_reliable", f"{one(PL, f"plan_version = 'PV-APPROVED' AND month = DATE '{CUR_MONTH.isoformat()}' AND internal_sku = '{PS}'", 'projection_velocity_quality')} = 'NORMAL'"),
     ("run_rate_quality_constrained", f"{one(PL, f"plan_version = 'PV-APPROVED' AND month = DATE '{CUR_MONTH.isoformat()}' AND internal_sku = '{PB}'", 'projection_velocity_quality')} = 'STOCKOUT_CONSTRAINED'"),
     ("projection_labelled", f"{cnt(PL, 'plan_version = "PV-APPROVED" AND projection_method NOT LIKE "RUN_RATE_PROJECTION%"')} = 0"),
-    ("trajectory_plan_rows", f"{cnt(TR, f"trajectory_basis = 'APPROVED_SALES_PLAN' AND internal_sku = '{PS}'")} = {len(months)}"),
-    ("trajectory_opening_is_position", near(one(TR, f"trajectory_basis = 'APPROVED_SALES_PLAN' AND internal_sku = '{PS}' AND month = DATE '{CUR_MONTH.isoformat()}'", "opening_units"), 5020.0)),
-    ("trajectory_chain", f"(SELECT LOGICAL_AND(ABS(opening_units - prev_closing) < 1e-6) FROM (SELECT opening_units, LAG(closing_units_unconstrained) OVER (ORDER BY month) AS prev_closing FROM {ref(TR)} WHERE trajectory_basis = 'APPROVED_SALES_PLAN' AND internal_sku = '{PS}') WHERE prev_closing IS NOT NULL)"),
-    ("trajectory_unapproved_absent", f"{cnt(TR, 'plan_version = "PV-DRAFTONLY"')} = 0"),
+    ("promo4_trajectory_has_no_plan_basis", f"{cnt(TR, 'trajectory_basis != "TARGET_REQUIRED_RUN_RATE"')} = 0"),
 ])
 
 # Сценарии спецификации §51 (1–45) → блоки регрессии. Тест проверяет полноту карты.
@@ -643,7 +729,7 @@ SPEC_SCENARIOS: dict[int, tuple[str, ...]] = {
 
 # ─────────────────────────────────────────────────────────────── рендер
 def render_block(assertions: list[tuple[str, str, str]], data: dict) -> str:
-    return base.render_block(assertions, objects=OBJECTS, raw_tables=RAW_TABLES, schemas=schemas(), data=data)
+    return base.render_block(assertions, objects=RENDER_OBJECTS, raw_tables=RAW_TABLES, schemas=schemas(), data=data)
 
 
 # Сколько утверждений в одном операторе: каждое утверждение раскрывает дерево представлений
@@ -657,7 +743,7 @@ def render_fixture_checks() -> str:
         "-- ============================================================================\n"
         "-- PR-PROMO-4 · регрессионные сценарии слоя запасов и распродажи на фикстурах.\n"
         "-- СГЕНЕРИРОВАНО tools/promo_inventory_render.py fixtures. НЕ РЕДАКТИРОВАТЬ.\n"
-        "-- Тела 7 представлений взяты из Git дословно; каждый внешний объект заменён типизированной\n"
+        f"-- Тела {len(RENDER_OBJECTS)} представлений взяты из Git дословно; каждый внешний объект заменён типизированной\n"
         "-- фикстурой своего сценария. Ни одной таблицы не читается.\n"
         f"-- Время фикстур: NOW = {ts(NOW)} (UTC). Сценариев: {len(SCENARIOS)}, утверждений: "
         f"{sum(len(a) for *_, a in SCENARIOS)}.\n"
@@ -677,7 +763,7 @@ def render_fixture_checks() -> str:
 def _empty_new_tables(sql: str) -> str:
     """До развёртывания новых справочников — пустые типизированные CTE вместо таблиц."""
     sch = schemas()
-    used = [k for k in NEW_TABLES if f"`{PROJECT}.{k[0]}.{k[1]}`" in sql]
+    used = [k for k in RENDER_TABLES if f"`{PROJECT}.{k[0]}.{k[1]}`" in sql]
     for k in used:
         sql = sql.replace(f"`{PROJECT}.{k[0]}.{k[1]}`", f"empty__{k[0]}__{k[1]}")
     ctes = [f"empty__{k[0]}__{k[1]} AS (SELECT * FROM UNNEST(ARRAY<STRUCT<"
@@ -686,7 +772,7 @@ def _empty_new_tables(sql: str) -> str:
 
 
 def render_predeploy(query: str) -> str:
-    return _empty_new_tables(base.render_predeploy(query, OBJECTS))
+    return _empty_new_tables(base.render_predeploy(query, RENDER_OBJECTS))
 
 
 def render_predeploy_file(text: str) -> str:
