@@ -162,7 +162,18 @@ GitHub, доверяющий репозиторию и не внесённый �
   `runner_environment = github-hosted`, `workflow_ref = …/autonomy-run.yml@main`,
   `job_workflow_ref = …/autonomy-engineer.yml@main` (у ревьюера — `autonomy-review.yml`);
 - `oauth_scope = workspace:inference` (только Messages, Models, подсчёт токенов; без Files, Skills,
-  Managed Agents), `token_lifetime_seconds = 600`. Итоговый срок не больше
+  Managed Agents), `token_lifetime_seconds = 600`.
+
+> **Исключение ввода в эксплуатацию (2026-09-25 … 2026-10-09).** Console не предлагает
+> `workspace:inference`, поэтому живые правила созданы с `workspace:developer`. Admin API федерации
+> отвечает 404, машинно прочитать правила нельзя. Желаемое состояние не меняется. Лишнее по сравнению с inference —
+> Files, Skills, Managed Agents в workspace `evetis-ae`. Их может получить и код кандидата в job'е
+> инженера: он выпускает OIDC-токен сам. Что держит: отдельный workspace с лимитом расходов (структурно);
+> AE эти ресурсы не читает, поэтому остаток между прогонами на агентов не влияет; административных
+> endpoint'ов scope не даёт. Сторож `tools/autonomy/anthropic_scope.py` до запуска агента обменивает
+> отдельный свежий OIDC-токен и читает `scope` и `expires_in` из ответа. `workspace:developer` допускается
+> только по исключению из `policy.json → anthropic_runtime` с датой истечения. `org:admin`, любой
+> не-workspace scope, срок больше 600 с или истёкшее исключение дают FAIL, и агент не запускается. Итоговый срок не больше
   удвоенного остатка жизни JWT GitHub (около 5 минут), а файл токена обновляется каждые 240 с.
 
 Правило клиент выбирает по ID, а ID лежат в переменных репозитория, то есть не секретны. Поэтому
