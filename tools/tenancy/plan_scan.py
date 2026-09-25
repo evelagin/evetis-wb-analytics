@@ -36,6 +36,12 @@
   E. Исключение для google_service_account.member (вычисляемое поле провайдера 7.x,
      «serviceAccount:<свой email>»): допустимо ТОЛЬКО это поле, ровно свой email, и только
      для SA из контракта. Это не выдача прав и не список разрешённых привязок.
+  F. Вычисляемые метаданные job'а Cloud Run после refresh (T3.3): creator и last_modifier
+     (в схеме провайдера только computed) равны email провижионера, выполнявшего apply. Это
+     не ссылка на платформу, если одновременно: тип ровно google_cloud_run_v2_job, поле ровно
+     верхнего уровня creator/last_modifier, значение ровно PL.PROVISIONER_SA, и поле НЕ задано
+     в конфигурации ресурса. Всё прочее — env, annotations, labels, образ, SA, URI, IAM, другие
+     типы, другой email, вложенные строки — по-прежнему отказ.
 """
 from __future__ import annotations
 
@@ -86,6 +92,9 @@ CRITICAL_FIELDS = {
                                    ("http_target", W, "oauth_token", W, "service_account_email")],
     "terraform_data": [],
 }
+
+# ── F. Вычисляемые (computed-only в схеме провайдера) поля с identity исполнителя apply ──
+COMPUTED_APPLIER_FIELDS = {"google_cloud_run_v2_job": frozenset({"creator", "last_modifier"})}
 
 # ── I. Роли, дающие вызов Cloud Run ──────────────────────────────────────────
 RUN_INVOKING_ROLES = frozenset({"roles/run.invoker", "roles/run.developer", "roles/run.admin",
@@ -188,6 +197,28 @@ def _tenant_number(plan: dict) -> str | None:
                 n = (r.get("values") or {}).get("number")
                 return n if isinstance(n, str) and re.fullmatch(_NUM, n) else None
     return None
+
+
+def _configured_attributes(plan: dict) -> dict[tuple[str, str], set[str]]:
+    """(модуль, адрес ресурса в конфигурации) → атрибуты, заданные в конфигурации (expressions)."""
+    out = {}
+    for prefix, module in _walk_config_modules((plan.get("configuration") or {}).get("root_module") or {}):
+        for r in module.get("resources", []) or []:
+            out[(prefix, r.get("address", ""))] = set((r.get("expressions") or {}).keys())
+    return out
+
+
+def _computed_applier_identity(rtype, addr, path, s, configured) -> bool:
+    """Правило F: вычисляемое creator/last_modifier job'а = провижионер, поле не задано в конфигурации.
+
+    configured is None — конфигурация ресурса в плане не найдена: доказать, что поле не задано,
+    нельзя, исключение не действует (fail closed).
+    """
+    if configured is None:
+        return False
+    fields = COMPUTED_APPLIER_FIELDS.get(rtype, frozenset())
+    field = path[len(addr) + 1:] if path.startswith(addr + ".") else None
+    return field in fields and s == PL.PROVISIONER_SA and field not in configured
 
 
 def _walk_state_modules(module: dict):
@@ -365,6 +396,7 @@ def scan_plan(plan: dict, contract: dict) -> list[str]:
     elif tenant_number in (PL.EVETIS_PROJECT_NUMBER, PL.PLATFORM_PROJECT_NUMBER):
         findings.append(f"номер проекта арендатора {tenant_number} принадлежит EVETIS или платформе")
 
+    config_attrs = _configured_attributes(plan)
     for rc in plan.get("resource_changes", []):
         addr, rtype, mode = rc.get("address", "?"), rc.get("type", ""), rc.get("mode")
         change = rc.get("change", {})
@@ -394,9 +426,13 @@ def scan_plan(plan: dict, contract: dict) -> list[str]:
                 findings.append(f"{addr}: {'.'.join(fpath)} неизвестно на плане — проверить нельзя")
 
         # R/M. Ссылки и маркеры платформы.
+        cfg_key = (re.sub(r"\[[^\]]*\]", "", module_prefix), f"{rtype}.{rc.get('name', '')}")
+        configured = config_attrs.get(cfg_key)
         for path, s in _strings(after, addr):
             if approved_image and s == approved_image and rtype == "google_cloud_run_v2_job" \
                     and path.endswith(".image"):
+                continue
+            if _computed_applier_identity(rtype, addr, path, s, configured):
                 continue
             for marker in platform_markers:
                 if any(marker in f for f in _decoded_forms(s)):

@@ -18,7 +18,9 @@ import sys
 import tempfile
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parents[2] / "infra" / "tenant"
+REPO = Path(__file__).resolve().parents[2]
+ROOT = REPO / "infra" / "tenant"
+sys.path.insert(0, str(REPO))
 
 # (имя, файл, регулярное выражение, замена)
 MUTATIONS = [
@@ -59,6 +61,9 @@ MUTATIONS = [
      "\\1\n  access {\n    role          = \"OWNER\"\n    user_by_email = \"sa-tenant-provisioner@mpa-platform.iam.gserviceaccount.com\"\n  }\n"),
     ("runtime raw grant widened to OWNER", "main.tf",
      r'role = "WRITER", user_by_email', 'role = "OWNER", user_by_email'),
+    # T3.3: явный retry_count = 0 API не хранит — вечный дрейф сходимости.
+    ("scheduler redundant retry_config restored", "modules/ozon_runtime/main.tf",
+     r"(\n  paused    = true\n)", "\\1\n  retry_config {\n    retry_count = 0\n  }\n"),
 ]
 
 
@@ -67,6 +72,36 @@ def _tf_test(workdir: Path, env: dict) -> int:
                    capture_output=True, text=True, check=True)
     return subprocess.run(["terraform", "test", "-no-color"], cwd=workdir, env=env,
                           capture_output=True, text=True).returncode
+
+
+def _computed_fields_check(workdir: Path, env: dict) -> list[str]:
+    """Правило F сканера опирается на то, что creator/last_modifier в схеме провайдера только computed.
+
+    Проверка по схеме провайдера из lockfile: если поле станет задаваемым (optional/required),
+    исключение сканера перестанет быть безопасным — отказ.
+    """
+    from tools.tenancy.plan_scan import COMPUTED_APPLIER_FIELDS
+    from tools.tenancy.validation import parse_tenant_json   # единый строгий разборщик JSON
+
+    # providers schema требует инициализированный backend: в отдельной копии — локальный
+    # (override-файл), чтобы не нужен был GCS. Провайдер — тот же, из lockfile и кэша.
+    schema_dir = workdir.parent / "schema"
+    shutil.copytree(workdir, schema_dir, ignore=shutil.ignore_patterns(".terraform"))
+    (schema_dir / "backend_override.tf").write_text('terraform {\n  backend "local" {}\n}\n', encoding="utf-8")
+    subprocess.run(["terraform", "init", "-input=false", "-lockfile=readonly"], cwd=schema_dir, env=env,
+                   capture_output=True, text=True, check=True)
+    out = subprocess.run(["terraform", "providers", "schema", "-json"], cwd=schema_dir, env=env,
+                         capture_output=True, text=True, check=True).stdout
+    res = parse_tenant_json(out)["provider_schemas"]["registry.terraform.io/hashicorp/google"]["resource_schemas"]
+    bad = []
+    for rtype, fields in COMPUTED_APPLIER_FIELDS.items():
+        for f in sorted(fields):
+            a = res[rtype]["block"]["attributes"].get(f, {})
+            ok = a.get("computed") is True and not a.get("optional") and not a.get("required")
+            print(f"{'computed-only' if ok else 'CONFIGURABLE'}  {rtype}.{f}")
+            if not ok:
+                bad.append(f"{rtype}.{f}: не computed-only в схеме провайдера — правило F сканера небезопасно")
+    return bad
 
 
 def main() -> int:
@@ -79,6 +114,7 @@ def main() -> int:
         if _tf_test(base, env) != 0:
             print("FAIL: немутированный корень не проходит terraform test")
             return 1
+        failures += _computed_fields_check(base, env)
         for name, rel, pattern, repl in MUTATIONS:
             work = Path(tmp) / re.sub(r"\W+", "_", name)
             shutil.copytree(ROOT, work, ignore=shutil.ignore_patterns(".terraform"))
