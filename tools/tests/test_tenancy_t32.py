@@ -58,7 +58,7 @@ def test_terraform_inputs_contract_shape_for_client_001():
     ozon = c["marketplaces"]["ozon"]
     assert set(ozon["jobs"]) == {"ozon-runtime-fast", "ozon-runtime-daily", "ozon-runtime-weekly"}
     assert ozon["service_accounts"] == {"runtime": "sa-ozon-runtime", "scheduler": "sa-ozon-scheduler"}
-    assert ozon["runtime_image"] is None        # выпуск образа — T3.2b
+    assert ozon["runtime_image"] == PL.load_runtime_release(REPO)["ozon"]   # выпуск T3.2b, по digest
     assert set(c["marketplaces"]) == {"ozon"}   # WB не включён
 
 
@@ -220,10 +220,13 @@ def test_mutable_or_foreign_image_is_rejected(ref):
 
 def test_immutable_platform_digest_is_accepted_and_release_file_is_valid():
     assert PL.check_runtime_image(SY.FIXTURE_IMAGE) == SY.FIXTURE_IMAGE
-    assert PL.load_runtime_release(REPO) == {"ozon": None}
+    release = PL.load_runtime_release(REPO)
+    assert set(release) == {"ozon"} and PL.check_runtime_image(release["ozon"]) == release["ozon"]
 
 
-def test_plan_refuses_without_an_approved_image(tmp_path):
+def test_plan_refuses_without_an_approved_image(tmp_path, monkeypatch):
+    # Отказ при null в дескрипторе остаётся (откат выпуска = PR с null или прежним digest).
+    monkeypatch.setattr(PL, "load_runtime_release", lambda _repo: {"ozon": None})
     with pytest.raises(TI.TenantInfraError, match="нет утверждённого образа"):
         TI.plan("client_001", tmp_path)
 
@@ -336,7 +339,8 @@ def test_rendered_artifacts_contain_secret_names_only(tmp_path):
             if finding.rule == "suspicious_key":
                 assert values <= names, finding
             else:   # детектор длинных токенов: допустимы только точные факты платформы
-                assert values <= {PL.STATE_BUCKET}, finding
+                # (бакет state и утверждённый digest образа из runtime_release.json, T3.2b)
+                assert values <= {PL.STATE_BUCKET, PL.load_runtime_release(REPO)["ozon"]}, finding
     contract = json.loads((tmp_path / TI.CONTRACT_FILE).read_text())["contract"]
     assert contract["marketplaces"]["ozon"]["secret_ids"] == N.DEDICATED_OZON_SECRET_IDS
     env = contract["marketplaces"]["ozon"]["jobs"]["ozon-runtime-daily"]["env"]

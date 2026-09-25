@@ -53,6 +53,25 @@ def fixture_text(tenant_id: str) -> str:
     return json.dumps(fixture_contract(tenant_id), indent=2, ensure_ascii=False, sort_keys=True) + "\n"
 
 
+RELEASE_FIXTURE_DIR = FIXTURE_DIR / "release"
+
+
+def release_contract(tenant_id: str) -> dict:
+    """Контракт с НАСТОЯЩИМ утверждённым образом из runtime_release.json (T3.2b), без подмены."""
+    if tenant_id not in SYNTHETIC_TENANTS:
+        raise ValueError(f"фикстуры только для синтетики {SYNTHETIC_TENANTS}")
+    with tempfile.TemporaryDirectory() as tmp:
+        root = _with_ephemeral_client_002(TENANTS_DIR, Path(tmp) / "tenants")
+        contract = _terraform_contract(load_tenant(tenant_id, root))
+    if not contract["marketplaces"]["ozon"]["runtime_image"]:
+        raise ValueError("в runtime_release.json нет утверждённого образа Ozon")
+    return contract
+
+
+def release_fixture_text(tenant_id: str) -> str:
+    return json.dumps(release_contract(tenant_id), indent=2, ensure_ascii=False, sort_keys=True) + "\n"
+
+
 EVETIS_IMAGE = ("europe-west1-docker.pkg.dev/project-fa311fc0-4d87-4781-986/cloud-run-source-deploy/"
                 "ozon-runtime-ingest@sha256:24e3c6d6715fa7b73d30b4270f9863d2b8680b4b02d4874ff1ea12b4fd90fa1b")
 

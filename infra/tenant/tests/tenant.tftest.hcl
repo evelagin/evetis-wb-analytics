@@ -79,6 +79,59 @@ run "client_002_same_code_different_tenant" {
   }
 }
 
+# T3.2b: настоящий утверждённый образ из runtime_release.json (фикстуры release/ — вывод
+# synthetic.release_contract; совпадение с дескриптором и общий digest у обоих арендаторов
+# проверяет tools/tests/test_tenancy_t32b.py). Образ один, проект/state/SA/окружение — свои.
+run "release_client_001_uses_approved_digest" {
+  command = plan
+  variables {
+    contract = jsondecode(file("tests/fixtures/release/client_001.contract.json"))
+  }
+  override_data {
+    target = data.google_projects.tenant_active
+    values = { projects = [{ project_id = "mpa-t-client-001", number = "123456789012", lifecycle_state = "ACTIVE", parent = { id = "881419274207", type = "folder" } }] }
+  }
+  assert {
+    condition     = alltrue([for k, i in output.ozon.images : i == var.contract.marketplaces.ozon.runtime_image]) && length(output.ozon.images) == 3
+    error_message = "все job'ы client_001 — на утверждённом digest выпуска"
+  }
+  assert {
+    condition     = !strcontains(var.contract.marketplaces.ozon.runtime_image, "ffffffffffffffff")
+    error_message = "фикстура выпуска обязана нести настоящий digest, а не синтетический"
+  }
+  assert {
+    condition     = output.project_id == "mpa-t-client-001" && output.state_prefix == "tenants/client_001" && output.ozon.runtime_sa == "sa-ozon-runtime@mpa-t-client-001.iam.gserviceaccount.com"
+    error_message = "client_001: проект, state и идентичность — свои"
+  }
+  assert {
+    condition     = alltrue([for k, e in output.ozon.env : e["GCP_PROJECT_ID"] == "mpa-t-client-001"])
+    error_message = "client_001: окружение — своего проекта"
+  }
+}
+
+run "release_client_002_same_digest_different_tenant" {
+  command = plan
+  variables {
+    contract = jsondecode(file("tests/fixtures/release/client_002.contract.json"))
+  }
+  override_data {
+    target = data.google_projects.tenant_active
+    values = { projects = [{ project_id = "mpa-t-client-002", number = "123456789012", lifecycle_state = "ACTIVE", parent = { id = "881419274207", type = "folder" } }] }
+  }
+  assert {
+    condition     = alltrue([for k, i in output.ozon.images : i == var.contract.marketplaces.ozon.runtime_image]) && length(output.ozon.images) == 3
+    error_message = "все job'ы client_002 — на утверждённом digest выпуска"
+  }
+  assert {
+    condition     = output.project_id == "mpa-t-client-002" && output.state_prefix == "tenants/client_002" && output.ozon.runtime_sa == "sa-ozon-runtime@mpa-t-client-002.iam.gserviceaccount.com" && output.ozon.scheduler_sa == "sa-ozon-scheduler@mpa-t-client-002.iam.gserviceaccount.com"
+    error_message = "client_002: проект, state и идентичности — свои"
+  }
+  assert {
+    condition     = alltrue([for k, e in output.ozon.env : e["GCP_PROJECT_ID"] == "mpa-t-client-002"])
+    error_message = "client_002: окружение — своего проекта"
+  }
+}
+
 run "guard_rejects_project_outside_tenants_folder" {
   command = plan
   variables {

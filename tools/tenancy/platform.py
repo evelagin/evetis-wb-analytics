@@ -31,6 +31,10 @@ RUNTIME_REGION = "europe-west1"
 RUNTIME_REPOSITORY = "mpa-runtime"
 RUNTIME_REGISTRY = f"{RUNTIME_REGION}-docker.pkg.dev/{PLATFORM_PROJECT_ID}/{RUNTIME_REPOSITORY}"
 PROVISIONER_SA = f"sa-tenant-provisioner@{PLATFORM_PROJECT_ID}.iam.gserviceaccount.com"
+# Выпуск образов runtime (T3.2b): Cloud Build от выделенной идентичности. Запись — только в
+# mpa-runtime, чтение — только бакета исходников сборки; ни арендаторов, ни state, ни EVETIS.
+RUNTIME_BUILDER_SA = f"sa-runtime-builder@{PLATFORM_PROJECT_ID}.iam.gserviceaccount.com"
+RUNTIME_BUILD_BUCKET = f"{PLATFORM_PROJECT_ID}-runtime-build-{PLATFORM_PROJECT_NUMBER}"
 WIF_PROVIDER = (f"projects/{PLATFORM_PROJECT_NUMBER}/locations/global/workloadIdentityPools/"
                 "tenant-infra-pool/providers/github-tenant-infra")
 TENANT_INFRA_WORKFLOW = ".github/workflows/tenant-infra.yml"
@@ -73,6 +77,7 @@ EVETIS_FORBIDDEN_MARKERS = (
 
 # ── Утверждённый образ runtime (выпуск — T3.2b, файл infra/tenant/runtime_release.json) ──
 RUNTIME_RELEASE_FILE = "infra/tenant/runtime_release.json"
+RUNTIME_RELEASES_DIR = "infra/tenant/releases"          # записи провенанса выпусков
 RUNTIME_IMAGE_RE = re.compile(re.escape(RUNTIME_REGISTRY) + r"/[a-z0-9][a-z0-9._-]*@sha256:[0-9a-f]{64}")
 
 
