@@ -20,7 +20,9 @@ import {
 } from '../src/loaders/unitka/ozon/presentation.js';
 import {
   blockSpecFor, blockWidthFor, unstyledBlockRoles, staticFormatRequests, columnWidthRequests,
+  toUserEnteredFormat,
 } from '../src/loaders/unitka/ozon/structure.js';
+import { CANONICAL_CURRENT_WB_PRESENTATION_CONTRACT as WB_CONTRACT } from '../src/loaders/unitka/ozon/wbcontract.js';
 import {
   OZON_UNITKA_SUMMARY_POLICY, unclassifiedSummaryRoles, summaryPolicyMap,
 } from '../src/loaders/unitka/ozon/summary.js';
@@ -613,18 +615,19 @@ describe('GATE 5D — геометрия строк и язык цвета', () 
   it('высота строки выводится из структурной роли, а не из месяца', () => {
     expect(rowHeightFor('title')).toBe(40);
     expect(rowHeightFor('header')).toBe(108);
-    expect(rowHeightFor('day')).toBe(25);
+    expect(rowHeightFor('day')).toBe(21);
     expect(rowHeightFor('mtd')).toBe(33);
     expect(rowHeightFor('spacer')).toBe(18);
   });
 
-  it('высоты подчинены правилу «≈2,05 × кегль» живого WB', () => {
-    // заголовок 20 пт, итог 16 пт, день 12 пт — те же значения хранит Октябрь 2026 у WB
-    expect(OZON_ROW_GEOMETRY.title / 20).toBeCloseTo(2.0, 1);
-    expect(OZON_ROW_GEOMETRY.mtd / 16).toBeCloseTo(2.06, 1);
-    expect(OZON_ROW_GEOMETRY.day / 12).toBeCloseTo(2.08, 1);
-    // шапка — четыре строки переноса
-    expect(OZON_ROW_GEOMETRY.header).toBeGreaterThanOrEqual(4 * OZON_ROW_GEOMETRY.day);
+  it('заголовок, шапка и итог — явные высоты текущего поколения WB (Октябрь 2026)', () => {
+    expect([OZON_ROW_GEOMETRY.title, OZON_ROW_GEOMETRY.header, OZON_ROW_GEOMETRY.mtd]).toEqual([40, 108, 33]);
+  });
+
+  it('VISUAL PARITY: строка дня не выше подобранной высоты WB (≈20,5 px в браузере)', () => {
+    // 25 px делали Ozon на 22 % выше WB; 21 — ближайшее целое, не меньшее высоты WB
+    expect(OZON_ROW_GEOMETRY.day).toBeLessThanOrEqual(21);
+    expect(OZON_ROW_GEOMETRY.day).toBeGreaterThanOrEqual(20);
   });
 
   it('строка дня выше прежних 18 px: иначе Sheets режет и суммы, и заголовок', () => {
@@ -1832,5 +1835,39 @@ describe('OZON adapter — Gate 9: LAST_CLOSED_DATE читается из кни
     const c = loadConfig({ GCP_PROJECT_ID: 'p', BQ_RAW_DATASET: 'r', ENVIRONMENT: 'prod' });
     expect(c.ozonUnitkaLastClosedDate).toBe('');
     expect(c.ozonUnitkaLcdCell).toBe('ZZ_CONFIG!B2');
+  });
+});
+
+describe('VISUAL PARITY 2026-09-24 — цвет рамок WB', () => {
+  const grey = { red: 0x5f / 255, green: 0x63 / 255, blue: 0x68 / 255 };
+  const lattice = { red: 0x9a / 255, green: 0xa0 / 255, blue: 0xa6 / 255 };
+  const kinds = ['title', 'header', 'day', 'mtd'] as const;
+  const specs = () => kinds.flatMap((k) => (['summary', 'block'] as const)
+    .flatMap((sc) => Object.entries(WB_CONTRACT.rows[k][sc]).map(([role, spec]) => ({ k, sc, role, spec }))));
+
+  it('палитра рамок — ровно два серых WB, чёрный остаётся неявным', () => {
+    const used = new Set(specs().flatMap(({ spec }) => Object.values(spec.borderColors ?? {})));
+    expect([...used].sort()).toEqual(['#5f6368', '#9aa0a6']);
+  });
+  it('цвет задан только для стороны, у которой есть стиль', () => {
+    for (const { spec } of specs()) {
+      for (const side of Object.keys(spec.borderColors ?? {})) {
+        expect(spec.borders?.[side as 'top']).toBeDefined();
+      }
+    }
+  });
+  it('сетка шапки блока — #9aa0a6, контур заголовка SKU и итога — #5f6368, как у WB', () => {
+    const b = (k: typeof kinds[number], role: Parameters<typeof blockSpecFor>[1]) =>
+      toUserEnteredFormat(blockSpecFor(k, role)).format['borders'] as Record<string, { style: string; colorStyle?: { rgbColor: unknown } }>;
+    expect(b('header', 'ORDERS')['bottom']).toEqual({ style: 'SOLID', colorStyle: { rgbColor: lattice } });
+    expect(b('title', 'STOCK')['top']).toEqual({ style: 'SOLID_MEDIUM', colorStyle: { rgbColor: grey } });
+    expect(b('mtd', 'DRR')['bottom']).toEqual({ style: 'SOLID_MEDIUM', colorStyle: { rgbColor: grey } });
+    // решётка дня у WB чёрная (тема TEXT) — Ozon её не меняет
+    expect(b('day', 'ORDERS')['top']).toEqual({ style: 'SOLID' });
+  });
+  it('«Прочие прямые» наследуют цвет «Хранения» вместе со стилем', () => {
+    for (const k of kinds) {
+      expect(blockSpecFor(k, 'OTHER_DIRECT').borderColors).toEqual(blockSpecFor(k, 'STORAGE').borderColors);
+    }
   });
 });

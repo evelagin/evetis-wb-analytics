@@ -1,0 +1,206 @@
+{
+ "spreadsheet": "1E4L4JuwfEqr9owhsGkAjb8F24lRpWpWkEyVmSuRxaJg",
+ "sheetName": "OZON_Юнит_2025",
+ "sheetId": 1867941682,
+ "tailFirst": 562,
+ "sections": [
+  {
+   "key": "2025-05",
+   "blocks": 5,
+   "titleRow": 53,
+   "headerRow": 54,
+   "firstRow": 55,
+   "lastRow": 85,
+   "mtdRow": 86,
+   "spacerRow": 87,
+   "blockCount": 5
+  },
+  {
+   "key": "2025-06",
+   "blocks": 5,
+   "titleRow": 88,
+   "headerRow": 89,
+   "firstRow": 90,
+   "lastRow": 119,
+   "mtdRow": 120,
+   "spacerRow": 121,
+   "blockCount": 5
+  },
+  {
+   "key": "2025-07",
+   "blocks": 5,
+   "titleRow": 122,
+   "headerRow": 123,
+   "firstRow": 124,
+   "lastRow": 154,
+   "mtdRow": 155,
+   "spacerRow": 156,
+   "blockCount": 5
+  },
+  {
+   "key": "2025-08",
+   "blocks": 5,
+   "titleRow": 157,
+   "headerRow": 158,
+   "firstRow": 159,
+   "lastRow": 189,
+   "mtdRow": 190,
+   "spacerRow": 191,
+   "blockCount": 5
+  },
+  {
+   "key": "2025-09",
+   "blocks": 5,
+   "titleRow": 192,
+   "headerRow": 193,
+   "firstRow": 194,
+   "lastRow": 223,
+   "mtdRow": 224,
+   "spacerRow": 225,
+   "blockCount": 5
+  },
+  {
+   "key": "2025-10",
+   "blocks": 7,
+   "titleRow": 226,
+   "headerRow": 227,
+   "firstRow": 228,
+   "lastRow": 258,
+   "mtdRow": 259,
+   "spacerRow": 260,
+   "blockCount": 7
+  },
+  {
+   "key": "2025-11",
+   "blocks": 7,
+   "titleRow": 261,
+   "headerRow": 262,
+   "firstRow": 263,
+   "lastRow": 292,
+   "mtdRow": 293,
+   "spacerRow": 294,
+   "blockCount": 7
+  },
+  {
+   "key": "2025-12",
+   "blocks": 7,
+   "titleRow": 295,
+   "headerRow": 296,
+   "firstRow": 297,
+   "lastRow": 327,
+   "mtdRow": 328,
+   "spacerRow": 329,
+   "blockCount": 7
+  },
+  {
+   "key": "2026-01",
+   "blocks": 7,
+   "titleRow": 330,
+   "headerRow": 331,
+   "firstRow": 332,
+   "lastRow": 362,
+   "mtdRow": 363,
+   "spacerRow": 364,
+   "blockCount": 7
+  },
+  {
+   "key": "2026-02",
+   "blocks": 10,
+   "titleRow": 365,
+   "headerRow": 366,
+   "firstRow": 367,
+   "lastRow": 394,
+   "mtdRow": 395,
+   "spacerRow": 396,
+   "blockCount": 10
+  },
+  {
+   "key": "2026-03",
+   "blocks": 16,
+   "titleRow": 397,
+   "headerRow": 398,
+   "firstRow": 399,
+   "lastRow": 429,
+   "mtdRow": 430,
+   "spacerRow": 431,
+   "blockCount": 16
+  },
+  {
+   "key": "2026-04",
+   "blocks": 21,
+   "titleRow": 432,
+   "headerRow": 433,
+   "firstRow": 434,
+   "lastRow": 463,
+   "mtdRow": 464,
+   "spacerRow": 465,
+   "blockCount": 21
+  },
+  {
+   "key": "2026-05",
+   "blocks": 21,
+   "titleRow": 466,
+   "headerRow": 467,
+   "firstRow": 468,
+   "lastRow": 498,
+   "mtdRow": 499,
+   "spacerRow": 500,
+   "blockCount": 21
+  },
+  {
+   "key": "2026-06",
+   "blocks": 21,
+   "titleRow": 501,
+   "headerRow": 502,
+   "firstRow": 503,
+   "lastRow": 532,
+   "mtdRow": 533,
+   "spacerRow": 534,
+   "blockCount": 21
+  },
+  {
+   "key": "2026-07",
+   "blocks": 22,
+   "titleRow": 535,
+   "headerRow": 536,
+   "firstRow": 537,
+   "lastRow": 567,
+   "mtdRow": 568,
+   "spacerRow": 569,
+   "blockCount": 22
+  },
+  {
+   "key": "2026-08",
+   "blocks": 22,
+   "titleRow": 570,
+   "headerRow": 571,
+   "firstRow": 572,
+   "lastRow": 602,
+   "mtdRow": 603,
+   "spacerRow": 604,
+   "blockCount": 22
+  },
+  {
+   "key": "2026-09",
+   "blocks": 22,
+   "titleRow": 605,
+   "headerRow": 606,
+   "firstRow": 607,
+   "lastRow": 636,
+   "mtdRow": 637,
+   "spacerRow": 638,
+   "blockCount": 22
+  }
+ ],
+ "canonical": [
+  "2026-05",
+  "2026-06",
+  "2026-07",
+  "2026-08",
+  "2026-09"
+ ],
+ "counts": {
+  "rowHeights": 85,
+  "borders": 10199
+ }
+}
