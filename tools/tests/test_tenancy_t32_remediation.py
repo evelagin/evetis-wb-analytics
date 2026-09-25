@@ -105,10 +105,13 @@ def _plan_for(contract, number=NUMBER):
                  "provider_config_key": "google"}]
     root_cfg += [{"address": f"{t}.this", "mode": "managed", "type": t, "provider_config_key": "google"}
                  for t in ("google_project_service", "google_bigquery_dataset", "google_bigquery_table")]
-    mod_cfg = [{"address": f"{t}.x", "mode": "managed", "type": t, "provider_config_key": "module.ozon:google"}
-               for t in ("google_service_account", "google_project_iam_member",
-                         "google_secret_manager_secret", "google_secret_manager_secret_iam_member",
-                         "google_cloud_run_v2_job", "google_cloud_scheduler_job")]
+    # Адреса — как в конфигурации корня infra/tenant (terraform show -json).
+    mod_cfg = [{"address": a, "mode": "managed", "type": a.split(".")[0], "provider_config_key": "module.ozon:google",
+                "expressions": {"project": {"references": ["var.project_id"]}}}
+               for a in ("google_service_account.runtime", "google_service_account.scheduler",
+                         "google_project_iam_member.runtime_job_user", "google_secret_manager_secret.ozon",
+                         "google_secret_manager_secret_iam_member.runtime_access",
+                         "google_cloud_run_v2_job.this", "google_cloud_scheduler_job.this")]
     return {
         "format_version": "1.2", "terraform_version": "1.15.8",
         "variables": {"contract": {"value": contract}},
@@ -334,6 +337,78 @@ def test_refreshed_secret_iam_normalization_is_tenant_scoped(contract, name):
     plan = _refreshed(_plan_for(contract), P1)
     rc = next(r for r in plan["resource_changes"] if r["type"] == "google_secret_manager_secret_iam_member")
     rc["change"]["after"]["secret_id"] = REFRESHED_SECRET_NEGATIVE[name]
+    assert PS.scan_plan(plan, contract) != [], name
+
+
+# ═════════════════════════════════════ F — вычисляемые creator/last_modifier job'а (T3.3)
+BUILDER_SA = "sa-runtime-builder@mpa-platform.iam.gserviceaccount.com"
+
+
+def _job(plan, i=0):
+    return [r for r in plan["resource_changes"] if r["type"] == "google_cloud_run_v2_job"][i]
+
+
+def _converged(plan):
+    """Форма плана сходимости: job'ы после refresh — no-op, creator/last_modifier = провижионер."""
+    for rc in plan["resource_changes"]:
+        if rc["type"] == "google_cloud_run_v2_job":
+            rc["change"]["after"].update({"creator": PL.PROVISIONER_SA, "last_modifier": PL.PROVISIONER_SA})
+            rc["change"].update({"actions": ["no-op"], "before": copy.deepcopy(rc["change"]["after"])})
+    return plan
+
+
+def test_scanner_accepts_computed_creator_and_last_modifier_of_refreshed_jobs(contract):
+    assert PS.scan_plan(_converged(_plan_for(contract)), contract) == []
+
+
+def test_computed_applier_exception_is_load_bearing(contract, monkeypatch):
+    monkeypatch.setattr(PS, "_computed_applier_identity", lambda *a: False)
+    findings = PS.scan_plan(_converged(_plan_for(contract)), contract)
+    assert findings and all((".creator" in f or ".last_modifier" in f) for f in findings)
+
+
+def test_computed_applier_exception_fails_closed_without_resource_configuration(contract):
+    plan = _converged(_plan_for(contract))
+    mod = plan["configuration"]["root_module"]["module_calls"]["ozon"]["module"]["resources"]
+    mod[:] = [r for r in mod if r["type"] != "google_cloud_run_v2_job"]
+    assert any(".creator" in f for f in PS.scan_plan(plan, contract))
+
+
+def test_computed_applier_fields_are_computed_only_in_provider_schema():
+    """Схема google 7.46.1 (T3.3): creator/last_modifier — только computed; задать их нельзя."""
+    assert PS.COMPUTED_APPLIER_FIELDS == {"google_cloud_run_v2_job": frozenset({"creator", "last_modifier"})}
+
+
+def _cfg_job(plan):
+    mod = plan["configuration"]["root_module"]["module_calls"]["ozon"]["module"]["resources"]
+    return next(r for r in mod if r["type"] == "google_cloud_run_v2_job")
+
+
+F_NEGATIVE = {
+    "provisioner email in env": lambda p: _job(p)["change"]["after"]["template"][0]["template"][0]["containers"][0]["env"].append({"name": "X", "value": PL.PROVISIONER_SA}),
+    "provisioner email in annotation": lambda p: _job(p)["change"]["after"].update({"annotations": {"x": PL.PROVISIONER_SA}}),
+    "provisioner email in configurable client": lambda p: _job(p)["change"]["after"].update({"client": PL.PROVISIONER_SA}),
+    "provisioner email in labels": lambda p: _job(p)["change"]["after"].update({"labels": {"x": PL.PROVISIONER_SA}}),
+    "provisioner email nested in template": lambda p: _job(p)["change"]["after"]["template"][0].update({"annotations": {"creator": PL.PROVISIONER_SA}}),
+    "creator configured (not computed)": lambda p: (_job(p)["change"]["after"].update({"creator": PL.PROVISIONER_SA}), _cfg_job(p).setdefault("expressions", {}).update({"creator": {"constant_value": PL.PROVISIONER_SA}})),
+    "builder email in creator": lambda p: _job(p)["change"]["after"].update({"creator": BUILDER_SA}),
+    "builder email in last_modifier": lambda p: _job(p)["change"]["after"].update({"last_modifier": BUILDER_SA}),
+    "arbitrary mpa-platform identity in creator": lambda p: _job(p)["change"]["after"].update({"creator": "x@mpa-platform.iam.gserviceaccount.com"}),
+    "EVETIS identity in creator": lambda p: _job(p)["change"]["after"].update({"creator": "sa-deployer@project-fa311fc0-4d87-4781-986.iam.gserviceaccount.com"}),
+    "client_002 identity in last_modifier": lambda p: _job(p)["change"]["after"].update({"last_modifier": "sa-ozon-runtime@mpa-t-client-002.iam.gserviceaccount.com"}),
+    "provisioner in scheduler creator field": lambda p: _first(p, "google_cloud_scheduler_job")["change"]["after"].update({"creator": PL.PROVISIONER_SA}),
+    "provisioner in dataset field": lambda p: _first(p, "google_bigquery_dataset")["change"]["after"].update({"creator": PL.PROVISIONER_SA}),
+    "provisioner as IAM member": lambda p: _add(p, _rc(f"{M}.google_secret_manager_secret_iam_member.x", "google_secret_manager_secret_iam_member", {"project": P1, "secret_id": "ozon-seller-api-key", "role": "roles/secretmanager.secretAccessor", "member": f"serviceAccount:{PL.PROVISIONER_SA}"}, module=M)),
+    "provisioner email with suffix in creator": lambda p: _job(p)["change"]["after"].update({"creator": PL.PROVISIONER_SA + ".evil"}),
+    "platform project path in env": lambda p: _job(p)["change"]["after"]["template"][0]["template"][0]["containers"][0]["env"].append({"name": "X", "value": "projects/mpa-platform/secrets/x"}),
+    "platform state bucket in creator": lambda p: _job(p)["change"]["after"].update({"creator": "gs://" + PL.STATE_BUCKET}),
+}
+
+
+@pytest.mark.parametrize("name", sorted(F_NEGATIVE))
+def test_computed_applier_exception_is_strictly_bounded(contract, name):
+    plan = _converged(_plan_for(contract))
+    F_NEGATIVE[name](plan)
     assert PS.scan_plan(plan, contract) != [], name
 
 

@@ -66,6 +66,10 @@ run "client_001_renders" {
     condition     = !strcontains(jsonencode(output.dataset_access), "sa-tenant-provisioner") && !strcontains(jsonencode(output.dataset_access), "sa-ozon-scheduler")
     error_message = "в ACL датасетов нет ни провижионера, ни SA планировщика"
   }
+  assert {
+    condition     = alltrue([for k, j in module.ozon[0].scheduler_retry : length(j) == 0])
+    error_message = "retry_config у Scheduler не задаётся: default retryCount = 0, явный блок даёт вечный дрейф (T3.3)"
+  }
 }
 
 run "client_002_same_code_different_tenant" {

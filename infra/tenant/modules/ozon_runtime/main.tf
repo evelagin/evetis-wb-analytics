@@ -181,9 +181,9 @@ resource "google_cloud_scheduler_job" "this" {
   time_zone = each.value.time_zone
   paused    = true
 
-  retry_config {
-    retry_count = 0
-  }
+  # retry_config не задаётся (T3.3): retryCount по умолчанию 0 — неудачная попытка не
+  # повторяется (Cloud Scheduler REST, RetryConfig). Явный retry_count = 0 API не хранит,
+  # и Terraform видел вечный дрейф [] → [{retry_count = 0}] на каждом плане.
 
   http_target {
     http_method = "POST"
@@ -202,6 +202,11 @@ resource "google_cloud_scheduler_job" "this" {
 output "runtime_email" {
   value      = local.runtime_email
   depends_on = [google_service_account.runtime]
+}
+
+# Для terraform test: заданный в конфигурации retry_config (ожидается пустым, T3.3).
+output "scheduler_retry" {
+  value = { for k, s in google_cloud_scheduler_job.this : k => s.retry_config }
 }
 
 output "summary" {
