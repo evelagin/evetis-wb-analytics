@@ -58,6 +58,7 @@ def strip_sql_comments(sql: str) -> str:
             while i < n:
                 out.append(sql[i])
                 if sql[i] == "\\":
+                    out.append(sql[i + 1: i + 2])  # экранированный символ переносится, а не теряется
                     i += 2
                     continue
                 if sql[i] == quote:

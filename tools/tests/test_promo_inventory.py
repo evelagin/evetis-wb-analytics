@@ -78,11 +78,16 @@ def test_heavy_control_tower_freshness_view_is_not_read_by_the_layer():
 
 
 def test_external_fixture_contract_covers_exactly_the_external_reads():
+    # С PR-PLAN-1 фикстуры рендерят объединённый граф (PR-PROMO-4 + PR-PLAN-1). CT_PLAN_VERSION
+    # представления больше не читают (его читает только процедура регистрации legacy-версии), но
+    # он остаётся в контракте схем: на нём стоит отпечаток I40.
+    render = [n for _, n, _ in ir.RENDER_OBJECTS]
     external = set()
-    for name in VIEWS:
-        external |= {(d, n) for d, n in refs(name) if not (d == "evetis_mart" and n in VIEWS)}
-    external -= set(ir.NEW_TABLES)
-    assert external == set(ir.EXTERNALS)
+    for name in render:
+        external |= {(d, n) for d, n in refs(name) if not (d == "evetis_mart" and n in render)}
+    external -= set(ir.RENDER_TABLES)
+    assert external <= set(ir.EXTERNALS), external - set(ir.EXTERNALS)
+    assert set(ir.EXTERNALS) - external == {("evetis_ref", "CT_PLAN_VERSION")}
 
 
 def test_validation_fingerprint_matches_the_fixture_contract():
@@ -145,10 +150,14 @@ def test_targets_have_provenance_and_no_invented_types():
 
 
 def test_plan_numbers_only_with_owner_approval():
+    # С PR-PLAN-1 план читается только из контракта утверждённых версий, план Control Tower — нет.
     body = facts("V_SALES_PLAN_MONTHLY_CURRENT").body
-    assert ("evetis_ref", "REF_SALES_PLAN_APPROVAL") in refs("V_SALES_PLAN_MONTHLY_CURRENT")
+    r = refs("V_SALES_PLAN_MONTHLY_CURRENT")
+    assert ("evetis_mart", "V_SALES_PLAN_APPROVED") in r
+    assert not {("evetis_ref", "CT_SEASON_PLAN_MONTHLY"), ("evetis_ref", "CT_PLAN_VERSION"),
+                ("evetis_ref", "REF_SALES_PLAN_APPROVAL")} & r
     assert "IF(m.approved, m.target_cards, NULL) AS planned_cards" in body
-    assert "'PLAN_APPROVAL_NOT_RECORDED'" in body
+    assert ("evetis_mart", "V_SALES_PLAN_MONTHLY_CURRENT") not in refs("V_SKU_INVENTORY_TRAJECTORY_MONTHLY_CURRENT")
 
 
 def test_bundle_capacity_only_from_authoritative_bom():
@@ -200,7 +209,10 @@ def test_owner_reference_tables_have_no_automated_writer():
         for t in ("REF_SALES_PLAN_APPROVAL", "REF_SKU_INVENTORY_TARGET"):
             if t in text:
                 hits.append(str(path.relative_to(REPO)))
+    # PR-PLAN-1: реестр событий плана пишут только процедуры sql/plan/plan1_procedures.sql, которые
+    # запускаются вручную (расписаний и сервисных аккаунтов нет — tools/tests/test_plan1.py).
     allowed = {"sql/promotions/pr_promo4_planning_refs.sql", "sql/promotions/pr_promo4_inventory_validation.sql",
-               "sql/promotions/pr_promo4_rollback.sql", "sql/current/evetis_mart/V_SALES_PLAN_MONTHLY_CURRENT.sql",
-               "sql/current/evetis_mart/V_SKU_INVENTORY_TARGET_CURRENT.sql"}
+               "sql/promotions/pr_promo4_rollback.sql", "sql/current/evetis_mart/V_SKU_INVENTORY_TARGET_CURRENT.sql",
+               "sql/plan/plan1_storage.sql", "sql/plan/plan1_procedures.sql", "sql/plan/plan1_validation.sql",
+               "sql/current/evetis_mart/V_PLAN_VERSION_STATUS.sql", "sql/current/evetis_mart/V_SALES_PLAN_MONTHLY_CURRENT.sql"}
     assert set(hits) <= allowed, set(hits) - allowed

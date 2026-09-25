@@ -1,24 +1,24 @@
 {
  "schema_version": 1,
- "generated_at": "2026-09-24T10:55:40Z",
+ "generated_at": "2026-09-25T12:10:04Z",
  "generated_by": "tools/build_contract_registry.py",
  "inventory_snapshot": "2026-09-22T04:35:09Z",
  "summary": {
-  "suites": 16,
-  "checks_total": 332,
-  "checks_active": 311,
+  "suites": 17,
+  "checks_total": 350,
+  "checks_active": 329,
   "checks_excluded_from_gate": 5,
   "checks_not_executable": 16,
-  "acceptance_artifacts_wired": 18,
+  "acceptance_artifacts_wired": 19,
   "acceptance_artifacts_in_backlog": 12,
-  "assets_with_contract": 86,
-  "assets_under_gate": 86,
+  "assets_with_contract": 101,
+  "assets_under_gate": 101,
   "unresolved_business_rules_open": 10,
   "parse_problems": 0
  },
  "by_severity": {
   "CRITICAL": 141,
-  "HIGH": 129,
+  "HIGH": 147,
   "MEDIUM": 41,
   "LOW": 0
  },
@@ -26,6 +26,7 @@
   "finance": 114,
   "ingestion": 2,
   "operations": 41,
+  "planning": 18,
   "promotions": 81,
   "unit_economics": 73
  },
@@ -3124,7 +3125,7 @@
    "layer": "mart",
    "severity": "HIGH",
    "source_contract": "docs/promotions/PR_PROMO_4_INVENTORY_SELL_THROUGH_CONTEXT_2026-09-24.md",
-   "source_artifact": "sql/promotions/pr_promo4_inventory_validation.sql:505",
+   "source_artifact": "sql/promotions/pr_promo4_inventory_validation.sql:503",
    "adapter": "check_blocks",
    "execution_mode": "read_only_select",
    "expected_result": "status=PASS on every row",
@@ -3171,7 +3172,7 @@
    "layer": "mart",
    "severity": "HIGH",
    "source_contract": "docs/promotions/PR_PROMO_4_INVENTORY_SELL_THROUGH_CONTEXT_2026-09-24.md",
-   "source_artifact": "sql/promotions/pr_promo4_inventory_validation.sql:517",
+   "source_artifact": "sql/promotions/pr_promo4_inventory_validation.sql:515",
    "adapter": "check_blocks",
    "execution_mode": "read_only_select",
    "expected_result": "status=PASS on every row",
@@ -3218,7 +3219,7 @@
    "layer": "mart",
    "severity": "HIGH",
    "source_contract": "docs/promotions/PR_PROMO_4_INVENTORY_SELL_THROUGH_CONTEXT_2026-09-24.md",
-   "source_artifact": "sql/promotions/pr_promo4_inventory_validation.sql:532",
+   "source_artifact": "sql/promotions/pr_promo4_inventory_validation.sql:531",
    "adapter": "check_blocks",
    "execution_mode": "read_only_select",
    "expected_result": "status=PASS on every row",
@@ -3265,7 +3266,7 @@
    "layer": "mart",
    "severity": "HIGH",
    "source_contract": "docs/promotions/PR_PROMO_4_INVENTORY_SELL_THROUGH_CONTEXT_2026-09-24.md",
-   "source_artifact": "sql/promotions/pr_promo4_inventory_validation.sql:558",
+   "source_artifact": "sql/promotions/pr_promo4_inventory_validation.sql:557",
    "adapter": "check_blocks",
    "execution_mode": "read_only_select",
    "expected_result": "status=PASS on every row",
@@ -3312,7 +3313,7 @@
    "layer": "mart",
    "severity": "HIGH",
    "source_contract": "docs/promotions/PR_PROMO_4_INVENTORY_SELL_THROUGH_CONTEXT_2026-09-24.md",
-   "source_artifact": "sql/promotions/pr_promo4_inventory_validation.sql:573",
+   "source_artifact": "sql/promotions/pr_promo4_inventory_validation.sql:572",
    "adapter": "check_blocks",
    "execution_mode": "read_only_select",
    "expected_result": "status=PASS on every row",
@@ -6370,6 +6371,870 @@
    "freshness_requirement": "перед слиянием изменения в области scope и после развёртывания",
    "business_rule_reference": "UBR-010",
    "label": "P09_LAYER_AGREEMENT_SKU_VS_STORE"
+  },
+  {
+   "check_id": "P01_VERSION_INTEGRITY",
+   "suite": "sales_plan",
+   "domain": "planning",
+   "pipelines": [
+    "ct_refresh"
+   ],
+   "marketplace": [
+    "WB",
+    "OZON"
+   ],
+   "layer": "mart",
+   "severity": "HIGH",
+   "source_contract": "docs/plan/PR_PLAN_1_SALES_PLAN_TRAJECTORY_2026-09-25.md",
+   "source_artifact": "sql/plan/plan1_validation.sql:8",
+   "adapter": "check_blocks",
+   "execution_mode": "read_only_select",
+   "expected_result": "status=PASS on every row",
+   "owner": "evelagin",
+   "type": "data_contract",
+   "status": "active",
+   "status_reason": null,
+   "gate_relevant": true,
+   "dependencies": [
+    "evetis_mart.V_INBOUND_LOT_CURRENT",
+    "evetis_mart.V_PLANNING_EXCEPTIONS",
+    "evetis_mart.V_PLANNING_HEADER",
+    "evetis_mart.V_PLANNING_SKU_OVERVIEW",
+    "evetis_mart.V_PLAN_LINE_MONTHLY_ALL",
+    "evetis_mart.V_PLAN_PHYSICAL_MONTHLY",
+    "evetis_mart.V_PLAN_TRAJECTORY_MONTHLY",
+    "evetis_mart.V_PLAN_VERSION_STATUS",
+    "evetis_mart.V_SALES_PLAN_APPROVED",
+    "evetis_mart.V_SALES_PLAN_MONTHLY_CURRENT",
+    "evetis_ref.CT_SEASON_PLAN_MONTHLY",
+    "evetis_ref.INBOUND_LOT_EVENT",
+    "evetis_ref.PLAN_ASSUMPTION",
+    "evetis_ref.PLAN_BOM_BASIS",
+    "evetis_ref.PLAN_LINE_MONTHLY",
+    "evetis_ref.PLAN_VERSION",
+    "evetis_ref.REF_SALES_PLAN_APPROVAL",
+    "wb_mart.V_CT_PLAN_ACTIVE"
+   ],
+   "timeout_seconds": 300,
+   "freshness_requirement": "перед слиянием изменения в области scope, после развёртывания, после каждой записи версии, события или поступления и после пересборки Control Tower",
+   "business_rule_reference": "Спецификация PR-PLAN-1 (владелец, 2026-09-25): MODEL_SCENARIO не утверждается, утверждение только по точному content_sha256, поступление в базовой траектории только с доказанными SKU, количеством, состоянием и датой; docs/ops/STAGE_C1_SHEET_2026-09-12.md (c1_expiry_margin_days)",
+   "label": "P01_VERSION_INTEGRITY"
+  },
+  {
+   "check_id": "P02_MODEL_NEVER_PROPOSED_OR_APPROVED",
+   "suite": "sales_plan",
+   "domain": "planning",
+   "pipelines": [
+    "ct_refresh"
+   ],
+   "marketplace": [
+    "WB",
+    "OZON"
+   ],
+   "layer": "mart",
+   "severity": "HIGH",
+   "source_contract": "docs/plan/PR_PLAN_1_SALES_PLAN_TRAJECTORY_2026-09-25.md",
+   "source_artifact": "sql/plan/plan1_validation.sql:14",
+   "adapter": "check_blocks",
+   "execution_mode": "read_only_select",
+   "expected_result": "status=PASS on every row",
+   "owner": "evelagin",
+   "type": "data_contract",
+   "status": "active",
+   "status_reason": null,
+   "gate_relevant": true,
+   "dependencies": [
+    "evetis_mart.V_INBOUND_LOT_CURRENT",
+    "evetis_mart.V_PLANNING_EXCEPTIONS",
+    "evetis_mart.V_PLANNING_HEADER",
+    "evetis_mart.V_PLANNING_SKU_OVERVIEW",
+    "evetis_mart.V_PLAN_LINE_MONTHLY_ALL",
+    "evetis_mart.V_PLAN_PHYSICAL_MONTHLY",
+    "evetis_mart.V_PLAN_TRAJECTORY_MONTHLY",
+    "evetis_mart.V_PLAN_VERSION_STATUS",
+    "evetis_mart.V_SALES_PLAN_APPROVED",
+    "evetis_mart.V_SALES_PLAN_MONTHLY_CURRENT",
+    "evetis_ref.CT_SEASON_PLAN_MONTHLY",
+    "evetis_ref.INBOUND_LOT_EVENT",
+    "evetis_ref.PLAN_ASSUMPTION",
+    "evetis_ref.PLAN_BOM_BASIS",
+    "evetis_ref.PLAN_LINE_MONTHLY",
+    "evetis_ref.PLAN_VERSION",
+    "evetis_ref.REF_SALES_PLAN_APPROVAL",
+    "wb_mart.V_CT_PLAN_ACTIVE"
+   ],
+   "timeout_seconds": 300,
+   "freshness_requirement": "перед слиянием изменения в области scope, после развёртывания, после каждой записи версии, события или поступления и после пересборки Control Tower",
+   "business_rule_reference": "Спецификация PR-PLAN-1 (владелец, 2026-09-25): MODEL_SCENARIO не утверждается, утверждение только по точному content_sha256, поступление в базовой траектории только с доказанными SKU, количеством, состоянием и датой; docs/ops/STAGE_C1_SHEET_2026-09-12.md (c1_expiry_margin_days)",
+   "label": "P02_MODEL_NEVER_PROPOSED_OR_APPROVED"
+  },
+  {
+   "check_id": "P03_APPROVAL_EXACT_HASH",
+   "suite": "sales_plan",
+   "domain": "planning",
+   "pipelines": [
+    "ct_refresh"
+   ],
+   "marketplace": [
+    "WB",
+    "OZON"
+   ],
+   "layer": "mart",
+   "severity": "HIGH",
+   "source_contract": "docs/plan/PR_PLAN_1_SALES_PLAN_TRAJECTORY_2026-09-25.md",
+   "source_artifact": "sql/plan/plan1_validation.sql:25",
+   "adapter": "check_blocks",
+   "execution_mode": "read_only_select",
+   "expected_result": "status=PASS on every row",
+   "owner": "evelagin",
+   "type": "data_contract",
+   "status": "active",
+   "status_reason": null,
+   "gate_relevant": true,
+   "dependencies": [
+    "evetis_mart.V_INBOUND_LOT_CURRENT",
+    "evetis_mart.V_PLANNING_EXCEPTIONS",
+    "evetis_mart.V_PLANNING_HEADER",
+    "evetis_mart.V_PLANNING_SKU_OVERVIEW",
+    "evetis_mart.V_PLAN_LINE_MONTHLY_ALL",
+    "evetis_mart.V_PLAN_PHYSICAL_MONTHLY",
+    "evetis_mart.V_PLAN_TRAJECTORY_MONTHLY",
+    "evetis_mart.V_PLAN_VERSION_STATUS",
+    "evetis_mart.V_SALES_PLAN_APPROVED",
+    "evetis_mart.V_SALES_PLAN_MONTHLY_CURRENT",
+    "evetis_ref.CT_SEASON_PLAN_MONTHLY",
+    "evetis_ref.INBOUND_LOT_EVENT",
+    "evetis_ref.PLAN_ASSUMPTION",
+    "evetis_ref.PLAN_BOM_BASIS",
+    "evetis_ref.PLAN_LINE_MONTHLY",
+    "evetis_ref.PLAN_VERSION",
+    "evetis_ref.REF_SALES_PLAN_APPROVAL",
+    "wb_mart.V_CT_PLAN_ACTIVE"
+   ],
+   "timeout_seconds": 300,
+   "freshness_requirement": "перед слиянием изменения в области scope, после развёртывания, после каждой записи версии, события или поступления и после пересборки Control Tower",
+   "business_rule_reference": "Спецификация PR-PLAN-1 (владелец, 2026-09-25): MODEL_SCENARIO не утверждается, утверждение только по точному content_sha256, поступление в базовой траектории только с доказанными SKU, количеством, состоянием и датой; docs/ops/STAGE_C1_SHEET_2026-09-12.md (c1_expiry_margin_days)",
+   "label": "P03_APPROVAL_EXACT_HASH"
+  },
+  {
+   "check_id": "P04_EVENT_LEDGER_VALID",
+   "suite": "sales_plan",
+   "domain": "planning",
+   "pipelines": [
+    "ct_refresh"
+   ],
+   "marketplace": [
+    "WB",
+    "OZON"
+   ],
+   "layer": "mart",
+   "severity": "HIGH",
+   "source_contract": "docs/plan/PR_PLAN_1_SALES_PLAN_TRAJECTORY_2026-09-25.md",
+   "source_artifact": "sql/plan/plan1_validation.sql:33",
+   "adapter": "check_blocks",
+   "execution_mode": "read_only_select",
+   "expected_result": "status=PASS on every row",
+   "owner": "evelagin",
+   "type": "data_contract",
+   "status": "active",
+   "status_reason": null,
+   "gate_relevant": true,
+   "dependencies": [
+    "evetis_mart.V_INBOUND_LOT_CURRENT",
+    "evetis_mart.V_PLANNING_EXCEPTIONS",
+    "evetis_mart.V_PLANNING_HEADER",
+    "evetis_mart.V_PLANNING_SKU_OVERVIEW",
+    "evetis_mart.V_PLAN_LINE_MONTHLY_ALL",
+    "evetis_mart.V_PLAN_PHYSICAL_MONTHLY",
+    "evetis_mart.V_PLAN_TRAJECTORY_MONTHLY",
+    "evetis_mart.V_PLAN_VERSION_STATUS",
+    "evetis_mart.V_SALES_PLAN_APPROVED",
+    "evetis_mart.V_SALES_PLAN_MONTHLY_CURRENT",
+    "evetis_ref.CT_SEASON_PLAN_MONTHLY",
+    "evetis_ref.INBOUND_LOT_EVENT",
+    "evetis_ref.PLAN_ASSUMPTION",
+    "evetis_ref.PLAN_BOM_BASIS",
+    "evetis_ref.PLAN_LINE_MONTHLY",
+    "evetis_ref.PLAN_VERSION",
+    "evetis_ref.REF_SALES_PLAN_APPROVAL",
+    "wb_mart.V_CT_PLAN_ACTIVE"
+   ],
+   "timeout_seconds": 300,
+   "freshness_requirement": "перед слиянием изменения в области scope, после развёртывания, после каждой записи версии, события или поступления и после пересборки Control Tower",
+   "business_rule_reference": "Спецификация PR-PLAN-1 (владелец, 2026-09-25): MODEL_SCENARIO не утверждается, утверждение только по точному content_sha256, поступление в базовой траектории только с доказанными SKU, количеством, состоянием и датой; docs/ops/STAGE_C1_SHEET_2026-09-12.md (c1_expiry_margin_days)",
+   "label": "P04_EVENT_LEDGER_VALID"
+  },
+  {
+   "check_id": "P05_APPROVED_PLAN_GRAIN",
+   "suite": "sales_plan",
+   "domain": "planning",
+   "pipelines": [
+    "ct_refresh"
+   ],
+   "marketplace": [
+    "WB",
+    "OZON"
+   ],
+   "layer": "mart",
+   "severity": "HIGH",
+   "source_contract": "docs/plan/PR_PLAN_1_SALES_PLAN_TRAJECTORY_2026-09-25.md",
+   "source_artifact": "sql/plan/plan1_validation.sql:44",
+   "adapter": "check_blocks",
+   "execution_mode": "read_only_select",
+   "expected_result": "status=PASS on every row",
+   "owner": "evelagin",
+   "type": "data_contract",
+   "status": "active",
+   "status_reason": null,
+   "gate_relevant": true,
+   "dependencies": [
+    "evetis_mart.V_INBOUND_LOT_CURRENT",
+    "evetis_mart.V_PLANNING_EXCEPTIONS",
+    "evetis_mart.V_PLANNING_HEADER",
+    "evetis_mart.V_PLANNING_SKU_OVERVIEW",
+    "evetis_mart.V_PLAN_LINE_MONTHLY_ALL",
+    "evetis_mart.V_PLAN_PHYSICAL_MONTHLY",
+    "evetis_mart.V_PLAN_TRAJECTORY_MONTHLY",
+    "evetis_mart.V_PLAN_VERSION_STATUS",
+    "evetis_mart.V_SALES_PLAN_APPROVED",
+    "evetis_mart.V_SALES_PLAN_MONTHLY_CURRENT",
+    "evetis_ref.CT_SEASON_PLAN_MONTHLY",
+    "evetis_ref.INBOUND_LOT_EVENT",
+    "evetis_ref.PLAN_ASSUMPTION",
+    "evetis_ref.PLAN_BOM_BASIS",
+    "evetis_ref.PLAN_LINE_MONTHLY",
+    "evetis_ref.PLAN_VERSION",
+    "evetis_ref.REF_SALES_PLAN_APPROVAL",
+    "wb_mart.V_CT_PLAN_ACTIVE"
+   ],
+   "timeout_seconds": 300,
+   "freshness_requirement": "перед слиянием изменения в области scope, после развёртывания, после каждой записи версии, события или поступления и после пересборки Control Tower",
+   "business_rule_reference": "Спецификация PR-PLAN-1 (владелец, 2026-09-25): MODEL_SCENARIO не утверждается, утверждение только по точному content_sha256, поступление в базовой траектории только с доказанными SKU, количеством, состоянием и датой; docs/ops/STAGE_C1_SHEET_2026-09-12.md (c1_expiry_margin_days)",
+   "label": "P05_APPROVED_PLAN_GRAIN"
+  },
+  {
+   "check_id": "P06_LEGACY_ADAPTER_PARITY",
+   "suite": "sales_plan",
+   "domain": "planning",
+   "pipelines": [
+    "ct_refresh"
+   ],
+   "marketplace": [
+    "WB",
+    "OZON"
+   ],
+   "layer": "mart",
+   "severity": "HIGH",
+   "source_contract": "docs/plan/PR_PLAN_1_SALES_PLAN_TRAJECTORY_2026-09-25.md",
+   "source_artifact": "sql/plan/plan1_validation.sql:50",
+   "adapter": "check_blocks",
+   "execution_mode": "read_only_select",
+   "expected_result": "status=PASS on every row",
+   "owner": "evelagin",
+   "type": "data_contract",
+   "status": "active",
+   "status_reason": null,
+   "gate_relevant": true,
+   "dependencies": [
+    "evetis_mart.V_INBOUND_LOT_CURRENT",
+    "evetis_mart.V_PLANNING_EXCEPTIONS",
+    "evetis_mart.V_PLANNING_HEADER",
+    "evetis_mart.V_PLANNING_SKU_OVERVIEW",
+    "evetis_mart.V_PLAN_LINE_MONTHLY_ALL",
+    "evetis_mart.V_PLAN_PHYSICAL_MONTHLY",
+    "evetis_mart.V_PLAN_TRAJECTORY_MONTHLY",
+    "evetis_mart.V_PLAN_VERSION_STATUS",
+    "evetis_mart.V_SALES_PLAN_APPROVED",
+    "evetis_mart.V_SALES_PLAN_MONTHLY_CURRENT",
+    "evetis_ref.CT_SEASON_PLAN_MONTHLY",
+    "evetis_ref.INBOUND_LOT_EVENT",
+    "evetis_ref.PLAN_ASSUMPTION",
+    "evetis_ref.PLAN_BOM_BASIS",
+    "evetis_ref.PLAN_LINE_MONTHLY",
+    "evetis_ref.PLAN_VERSION",
+    "evetis_ref.REF_SALES_PLAN_APPROVAL",
+    "wb_mart.V_CT_PLAN_ACTIVE"
+   ],
+   "timeout_seconds": 300,
+   "freshness_requirement": "перед слиянием изменения в области scope, после развёртывания, после каждой записи версии, события или поступления и после пересборки Control Tower",
+   "business_rule_reference": "Спецификация PR-PLAN-1 (владелец, 2026-09-25): MODEL_SCENARIO не утверждается, утверждение только по точному content_sha256, поступление в базовой траектории только с доказанными SKU, количеством, состоянием и датой; docs/ops/STAGE_C1_SHEET_2026-09-12.md (c1_expiry_margin_days)",
+   "label": "P06_LEGACY_ADAPTER_PARITY"
+  },
+  {
+   "check_id": "P07_PHYSICAL_RECONCILIATION",
+   "suite": "sales_plan",
+   "domain": "planning",
+   "pipelines": [
+    "ct_refresh"
+   ],
+   "marketplace": [
+    "WB",
+    "OZON"
+   ],
+   "layer": "mart",
+   "severity": "HIGH",
+   "source_contract": "docs/plan/PR_PLAN_1_SALES_PLAN_TRAJECTORY_2026-09-25.md",
+   "source_artifact": "sql/plan/plan1_validation.sql:75",
+   "adapter": "check_blocks",
+   "execution_mode": "read_only_select",
+   "expected_result": "status=PASS on every row",
+   "owner": "evelagin",
+   "type": "data_contract",
+   "status": "active",
+   "status_reason": null,
+   "gate_relevant": true,
+   "dependencies": [
+    "evetis_mart.V_INBOUND_LOT_CURRENT",
+    "evetis_mart.V_PLANNING_EXCEPTIONS",
+    "evetis_mart.V_PLANNING_HEADER",
+    "evetis_mart.V_PLANNING_SKU_OVERVIEW",
+    "evetis_mart.V_PLAN_LINE_MONTHLY_ALL",
+    "evetis_mart.V_PLAN_PHYSICAL_MONTHLY",
+    "evetis_mart.V_PLAN_TRAJECTORY_MONTHLY",
+    "evetis_mart.V_PLAN_VERSION_STATUS",
+    "evetis_mart.V_SALES_PLAN_APPROVED",
+    "evetis_mart.V_SALES_PLAN_MONTHLY_CURRENT",
+    "evetis_ref.CT_SEASON_PLAN_MONTHLY",
+    "evetis_ref.INBOUND_LOT_EVENT",
+    "evetis_ref.PLAN_ASSUMPTION",
+    "evetis_ref.PLAN_BOM_BASIS",
+    "evetis_ref.PLAN_LINE_MONTHLY",
+    "evetis_ref.PLAN_VERSION",
+    "evetis_ref.REF_SALES_PLAN_APPROVAL",
+    "wb_mart.V_CT_PLAN_ACTIVE"
+   ],
+   "timeout_seconds": 300,
+   "freshness_requirement": "перед слиянием изменения в области scope, после развёртывания, после каждой записи версии, события или поступления и после пересборки Control Tower",
+   "business_rule_reference": "Спецификация PR-PLAN-1 (владелец, 2026-09-25): MODEL_SCENARIO не утверждается, утверждение только по точному content_sha256, поступление в базовой траектории только с доказанными SKU, количеством, состоянием и датой; docs/ops/STAGE_C1_SHEET_2026-09-12.md (c1_expiry_margin_days)",
+   "label": "P07_PHYSICAL_RECONCILIATION"
+  },
+  {
+   "check_id": "P08_CHANNEL_AND_BUNDLE_SPLIT",
+   "suite": "sales_plan",
+   "domain": "planning",
+   "pipelines": [
+    "ct_refresh"
+   ],
+   "marketplace": [
+    "WB",
+    "OZON"
+   ],
+   "layer": "mart",
+   "severity": "HIGH",
+   "source_contract": "docs/plan/PR_PLAN_1_SALES_PLAN_TRAJECTORY_2026-09-25.md",
+   "source_artifact": "sql/plan/plan1_validation.sql:96",
+   "adapter": "check_blocks",
+   "execution_mode": "read_only_select",
+   "expected_result": "status=PASS on every row",
+   "owner": "evelagin",
+   "type": "data_contract",
+   "status": "active",
+   "status_reason": null,
+   "gate_relevant": true,
+   "dependencies": [
+    "evetis_mart.V_INBOUND_LOT_CURRENT",
+    "evetis_mart.V_PLANNING_EXCEPTIONS",
+    "evetis_mart.V_PLANNING_HEADER",
+    "evetis_mart.V_PLANNING_SKU_OVERVIEW",
+    "evetis_mart.V_PLAN_LINE_MONTHLY_ALL",
+    "evetis_mart.V_PLAN_PHYSICAL_MONTHLY",
+    "evetis_mart.V_PLAN_TRAJECTORY_MONTHLY",
+    "evetis_mart.V_PLAN_VERSION_STATUS",
+    "evetis_mart.V_SALES_PLAN_APPROVED",
+    "evetis_mart.V_SALES_PLAN_MONTHLY_CURRENT",
+    "evetis_ref.CT_SEASON_PLAN_MONTHLY",
+    "evetis_ref.INBOUND_LOT_EVENT",
+    "evetis_ref.PLAN_ASSUMPTION",
+    "evetis_ref.PLAN_BOM_BASIS",
+    "evetis_ref.PLAN_LINE_MONTHLY",
+    "evetis_ref.PLAN_VERSION",
+    "evetis_ref.REF_SALES_PLAN_APPROVAL",
+    "wb_mart.V_CT_PLAN_ACTIVE"
+   ],
+   "timeout_seconds": 300,
+   "freshness_requirement": "перед слиянием изменения в области scope, после развёртывания, после каждой записи версии, события или поступления и после пересборки Control Tower",
+   "business_rule_reference": "Спецификация PR-PLAN-1 (владелец, 2026-09-25): MODEL_SCENARIO не утверждается, утверждение только по точному content_sha256, поступление в базовой траектории только с доказанными SKU, количеством, состоянием и датой; docs/ops/STAGE_C1_SHEET_2026-09-12.md (c1_expiry_margin_days)",
+   "label": "P08_CHANNEL_AND_BUNDLE_SPLIT"
+  },
+  {
+   "check_id": "P09_AS_OF_PARITY",
+   "suite": "sales_plan",
+   "domain": "planning",
+   "pipelines": [
+    "ct_refresh"
+   ],
+   "marketplace": [
+    "WB",
+    "OZON"
+   ],
+   "layer": "mart",
+   "severity": "HIGH",
+   "source_contract": "docs/plan/PR_PLAN_1_SALES_PLAN_TRAJECTORY_2026-09-25.md",
+   "source_artifact": "sql/plan/plan1_validation.sql:108",
+   "adapter": "check_blocks",
+   "execution_mode": "read_only_select",
+   "expected_result": "status=PASS on every row",
+   "owner": "evelagin",
+   "type": "data_contract",
+   "status": "active",
+   "status_reason": null,
+   "gate_relevant": true,
+   "dependencies": [
+    "evetis_mart.V_INBOUND_LOT_CURRENT",
+    "evetis_mart.V_PLANNING_EXCEPTIONS",
+    "evetis_mart.V_PLANNING_HEADER",
+    "evetis_mart.V_PLANNING_SKU_OVERVIEW",
+    "evetis_mart.V_PLAN_LINE_MONTHLY_ALL",
+    "evetis_mart.V_PLAN_PHYSICAL_MONTHLY",
+    "evetis_mart.V_PLAN_TRAJECTORY_MONTHLY",
+    "evetis_mart.V_PLAN_VERSION_STATUS",
+    "evetis_mart.V_SALES_PLAN_APPROVED",
+    "evetis_mart.V_SALES_PLAN_MONTHLY_CURRENT",
+    "evetis_ref.CT_SEASON_PLAN_MONTHLY",
+    "evetis_ref.INBOUND_LOT_EVENT",
+    "evetis_ref.PLAN_ASSUMPTION",
+    "evetis_ref.PLAN_BOM_BASIS",
+    "evetis_ref.PLAN_LINE_MONTHLY",
+    "evetis_ref.PLAN_VERSION",
+    "evetis_ref.REF_SALES_PLAN_APPROVAL",
+    "wb_mart.V_CT_PLAN_ACTIVE"
+   ],
+   "timeout_seconds": 300,
+   "freshness_requirement": "перед слиянием изменения в области scope, после развёртывания, после каждой записи версии, события или поступления и после пересборки Control Tower",
+   "business_rule_reference": "Спецификация PR-PLAN-1 (владелец, 2026-09-25): MODEL_SCENARIO не утверждается, утверждение только по точному content_sha256, поступление в базовой траектории только с доказанными SKU, количеством, состоянием и датой; docs/ops/STAGE_C1_SHEET_2026-09-12.md (c1_expiry_margin_days)",
+   "label": "P09_AS_OF_PARITY"
+  },
+  {
+   "check_id": "P10_TRAJECTORY_ARITHMETIC",
+   "suite": "sales_plan",
+   "domain": "planning",
+   "pipelines": [
+    "ct_refresh"
+   ],
+   "marketplace": [
+    "WB",
+    "OZON"
+   ],
+   "layer": "mart",
+   "severity": "HIGH",
+   "source_contract": "docs/plan/PR_PLAN_1_SALES_PLAN_TRAJECTORY_2026-09-25.md",
+   "source_artifact": "sql/plan/plan1_validation.sql:116",
+   "adapter": "check_blocks",
+   "execution_mode": "read_only_select",
+   "expected_result": "status=PASS on every row",
+   "owner": "evelagin",
+   "type": "data_contract",
+   "status": "active",
+   "status_reason": null,
+   "gate_relevant": true,
+   "dependencies": [
+    "evetis_mart.V_INBOUND_LOT_CURRENT",
+    "evetis_mart.V_PLANNING_EXCEPTIONS",
+    "evetis_mart.V_PLANNING_HEADER",
+    "evetis_mart.V_PLANNING_SKU_OVERVIEW",
+    "evetis_mart.V_PLAN_LINE_MONTHLY_ALL",
+    "evetis_mart.V_PLAN_PHYSICAL_MONTHLY",
+    "evetis_mart.V_PLAN_TRAJECTORY_MONTHLY",
+    "evetis_mart.V_PLAN_VERSION_STATUS",
+    "evetis_mart.V_SALES_PLAN_APPROVED",
+    "evetis_mart.V_SALES_PLAN_MONTHLY_CURRENT",
+    "evetis_ref.CT_SEASON_PLAN_MONTHLY",
+    "evetis_ref.INBOUND_LOT_EVENT",
+    "evetis_ref.PLAN_ASSUMPTION",
+    "evetis_ref.PLAN_BOM_BASIS",
+    "evetis_ref.PLAN_LINE_MONTHLY",
+    "evetis_ref.PLAN_VERSION",
+    "evetis_ref.REF_SALES_PLAN_APPROVAL",
+    "wb_mart.V_CT_PLAN_ACTIVE"
+   ],
+   "timeout_seconds": 300,
+   "freshness_requirement": "перед слиянием изменения в области scope, после развёртывания, после каждой записи версии, события или поступления и после пересборки Control Tower",
+   "business_rule_reference": "Спецификация PR-PLAN-1 (владелец, 2026-09-25): MODEL_SCENARIO не утверждается, утверждение только по точному content_sha256, поступление в базовой траектории только с доказанными SKU, количеством, состоянием и датой; docs/ops/STAGE_C1_SHEET_2026-09-12.md (c1_expiry_margin_days)",
+   "label": "P10_TRAJECTORY_ARITHMETIC"
+  },
+  {
+   "check_id": "P11_STALE_AND_PLAN_GATING",
+   "suite": "sales_plan",
+   "domain": "planning",
+   "pipelines": [
+    "ct_refresh"
+   ],
+   "marketplace": [
+    "WB",
+    "OZON"
+   ],
+   "layer": "mart",
+   "severity": "HIGH",
+   "source_contract": "docs/plan/PR_PLAN_1_SALES_PLAN_TRAJECTORY_2026-09-25.md",
+   "source_artifact": "sql/plan/plan1_validation.sql:133",
+   "adapter": "check_blocks",
+   "execution_mode": "read_only_select",
+   "expected_result": "status=PASS on every row",
+   "owner": "evelagin",
+   "type": "data_contract",
+   "status": "active",
+   "status_reason": null,
+   "gate_relevant": true,
+   "dependencies": [
+    "evetis_mart.V_INBOUND_LOT_CURRENT",
+    "evetis_mart.V_PLANNING_EXCEPTIONS",
+    "evetis_mart.V_PLANNING_HEADER",
+    "evetis_mart.V_PLANNING_SKU_OVERVIEW",
+    "evetis_mart.V_PLAN_LINE_MONTHLY_ALL",
+    "evetis_mart.V_PLAN_PHYSICAL_MONTHLY",
+    "evetis_mart.V_PLAN_TRAJECTORY_MONTHLY",
+    "evetis_mart.V_PLAN_VERSION_STATUS",
+    "evetis_mart.V_SALES_PLAN_APPROVED",
+    "evetis_mart.V_SALES_PLAN_MONTHLY_CURRENT",
+    "evetis_ref.CT_SEASON_PLAN_MONTHLY",
+    "evetis_ref.INBOUND_LOT_EVENT",
+    "evetis_ref.PLAN_ASSUMPTION",
+    "evetis_ref.PLAN_BOM_BASIS",
+    "evetis_ref.PLAN_LINE_MONTHLY",
+    "evetis_ref.PLAN_VERSION",
+    "evetis_ref.REF_SALES_PLAN_APPROVAL",
+    "wb_mart.V_CT_PLAN_ACTIVE"
+   ],
+   "timeout_seconds": 300,
+   "freshness_requirement": "перед слиянием изменения в области scope, после развёртывания, после каждой записи версии, события или поступления и после пересборки Control Tower",
+   "business_rule_reference": "Спецификация PR-PLAN-1 (владелец, 2026-09-25): MODEL_SCENARIO не утверждается, утверждение только по точному content_sha256, поступление в базовой траектории только с доказанными SKU, количеством, состоянием и датой; docs/ops/STAGE_C1_SHEET_2026-09-12.md (c1_expiry_margin_days)",
+   "label": "P11_STALE_AND_PLAN_GATING"
+  },
+  {
+   "check_id": "P12_INBOUND_ELIGIBILITY",
+   "suite": "sales_plan",
+   "domain": "planning",
+   "pipelines": [
+    "ct_refresh"
+   ],
+   "marketplace": [
+    "WB",
+    "OZON"
+   ],
+   "layer": "mart",
+   "severity": "HIGH",
+   "source_contract": "docs/plan/PR_PLAN_1_SALES_PLAN_TRAJECTORY_2026-09-25.md",
+   "source_artifact": "sql/plan/plan1_validation.sql:146",
+   "adapter": "check_blocks",
+   "execution_mode": "read_only_select",
+   "expected_result": "status=PASS on every row",
+   "owner": "evelagin",
+   "type": "data_contract",
+   "status": "active",
+   "status_reason": null,
+   "gate_relevant": true,
+   "dependencies": [
+    "evetis_mart.V_INBOUND_LOT_CURRENT",
+    "evetis_mart.V_PLANNING_EXCEPTIONS",
+    "evetis_mart.V_PLANNING_HEADER",
+    "evetis_mart.V_PLANNING_SKU_OVERVIEW",
+    "evetis_mart.V_PLAN_LINE_MONTHLY_ALL",
+    "evetis_mart.V_PLAN_PHYSICAL_MONTHLY",
+    "evetis_mart.V_PLAN_TRAJECTORY_MONTHLY",
+    "evetis_mart.V_PLAN_VERSION_STATUS",
+    "evetis_mart.V_SALES_PLAN_APPROVED",
+    "evetis_mart.V_SALES_PLAN_MONTHLY_CURRENT",
+    "evetis_ref.CT_SEASON_PLAN_MONTHLY",
+    "evetis_ref.INBOUND_LOT_EVENT",
+    "evetis_ref.PLAN_ASSUMPTION",
+    "evetis_ref.PLAN_BOM_BASIS",
+    "evetis_ref.PLAN_LINE_MONTHLY",
+    "evetis_ref.PLAN_VERSION",
+    "evetis_ref.REF_SALES_PLAN_APPROVAL",
+    "wb_mart.V_CT_PLAN_ACTIVE"
+   ],
+   "timeout_seconds": 300,
+   "freshness_requirement": "перед слиянием изменения в области scope, после развёртывания, после каждой записи версии, события или поступления и после пересборки Control Tower",
+   "business_rule_reference": "Спецификация PR-PLAN-1 (владелец, 2026-09-25): MODEL_SCENARIO не утверждается, утверждение только по точному content_sha256, поступление в базовой траектории только с доказанными SKU, количеством, состоянием и датой; docs/ops/STAGE_C1_SHEET_2026-09-12.md (c1_expiry_margin_days)",
+   "label": "P12_INBOUND_ELIGIBILITY"
+  },
+  {
+   "check_id": "P13_TRAJECTORY_INBOUND_ONLY_ELIGIBLE",
+   "suite": "sales_plan",
+   "domain": "planning",
+   "pipelines": [
+    "ct_refresh"
+   ],
+   "marketplace": [
+    "WB",
+    "OZON"
+   ],
+   "layer": "mart",
+   "severity": "HIGH",
+   "source_contract": "docs/plan/PR_PLAN_1_SALES_PLAN_TRAJECTORY_2026-09-25.md",
+   "source_artifact": "sql/plan/plan1_validation.sql:161",
+   "adapter": "check_blocks",
+   "execution_mode": "read_only_select",
+   "expected_result": "status=PASS on every row",
+   "owner": "evelagin",
+   "type": "data_contract",
+   "status": "active",
+   "status_reason": null,
+   "gate_relevant": true,
+   "dependencies": [
+    "evetis_mart.V_INBOUND_LOT_CURRENT",
+    "evetis_mart.V_PLANNING_EXCEPTIONS",
+    "evetis_mart.V_PLANNING_HEADER",
+    "evetis_mart.V_PLANNING_SKU_OVERVIEW",
+    "evetis_mart.V_PLAN_LINE_MONTHLY_ALL",
+    "evetis_mart.V_PLAN_PHYSICAL_MONTHLY",
+    "evetis_mart.V_PLAN_TRAJECTORY_MONTHLY",
+    "evetis_mart.V_PLAN_VERSION_STATUS",
+    "evetis_mart.V_SALES_PLAN_APPROVED",
+    "evetis_mart.V_SALES_PLAN_MONTHLY_CURRENT",
+    "evetis_ref.CT_SEASON_PLAN_MONTHLY",
+    "evetis_ref.INBOUND_LOT_EVENT",
+    "evetis_ref.PLAN_ASSUMPTION",
+    "evetis_ref.PLAN_BOM_BASIS",
+    "evetis_ref.PLAN_LINE_MONTHLY",
+    "evetis_ref.PLAN_VERSION",
+    "evetis_ref.REF_SALES_PLAN_APPROVAL",
+    "wb_mart.V_CT_PLAN_ACTIVE"
+   ],
+   "timeout_seconds": 300,
+   "freshness_requirement": "перед слиянием изменения в области scope, после развёртывания, после каждой записи версии, события или поступления и после пересборки Control Tower",
+   "business_rule_reference": "Спецификация PR-PLAN-1 (владелец, 2026-09-25): MODEL_SCENARIO не утверждается, утверждение только по точному content_sha256, поступление в базовой траектории только с доказанными SKU, количеством, состоянием и датой; docs/ops/STAGE_C1_SHEET_2026-09-12.md (c1_expiry_margin_days)",
+   "label": "P13_TRAJECTORY_INBOUND_ONLY_ELIGIBLE"
+  },
+  {
+   "check_id": "P14_PROPOSAL_METHOD_CALENDAR",
+   "suite": "sales_plan",
+   "domain": "planning",
+   "pipelines": [
+    "ct_refresh"
+   ],
+   "marketplace": [
+    "WB",
+    "OZON"
+   ],
+   "layer": "mart",
+   "severity": "HIGH",
+   "source_contract": "docs/plan/PR_PLAN_1_SALES_PLAN_TRAJECTORY_2026-09-25.md",
+   "source_artifact": "sql/plan/plan1_validation.sql:183",
+   "adapter": "check_blocks",
+   "execution_mode": "read_only_select",
+   "expected_result": "status=PASS on every row",
+   "owner": "evelagin",
+   "type": "data_contract",
+   "status": "active",
+   "status_reason": null,
+   "gate_relevant": true,
+   "dependencies": [
+    "evetis_mart.V_INBOUND_LOT_CURRENT",
+    "evetis_mart.V_PLANNING_EXCEPTIONS",
+    "evetis_mart.V_PLANNING_HEADER",
+    "evetis_mart.V_PLANNING_SKU_OVERVIEW",
+    "evetis_mart.V_PLAN_LINE_MONTHLY_ALL",
+    "evetis_mart.V_PLAN_PHYSICAL_MONTHLY",
+    "evetis_mart.V_PLAN_TRAJECTORY_MONTHLY",
+    "evetis_mart.V_PLAN_VERSION_STATUS",
+    "evetis_mart.V_SALES_PLAN_APPROVED",
+    "evetis_mart.V_SALES_PLAN_MONTHLY_CURRENT",
+    "evetis_ref.CT_SEASON_PLAN_MONTHLY",
+    "evetis_ref.INBOUND_LOT_EVENT",
+    "evetis_ref.PLAN_ASSUMPTION",
+    "evetis_ref.PLAN_BOM_BASIS",
+    "evetis_ref.PLAN_LINE_MONTHLY",
+    "evetis_ref.PLAN_VERSION",
+    "evetis_ref.REF_SALES_PLAN_APPROVAL",
+    "wb_mart.V_CT_PLAN_ACTIVE"
+   ],
+   "timeout_seconds": 300,
+   "freshness_requirement": "перед слиянием изменения в области scope, после развёртывания, после каждой записи версии, события или поступления и после пересборки Control Tower",
+   "business_rule_reference": "Спецификация PR-PLAN-1 (владелец, 2026-09-25): MODEL_SCENARIO не утверждается, утверждение только по точному content_sha256, поступление в базовой траектории только с доказанными SKU, количеством, состоянием и датой; docs/ops/STAGE_C1_SHEET_2026-09-12.md (c1_expiry_margin_days)",
+   "label": "P14_PROPOSAL_METHOD_CALENDAR"
+  },
+  {
+   "check_id": "P15_PROPOSAL_INHERITS_NO_MODEL_POLICY",
+   "suite": "sales_plan",
+   "domain": "planning",
+   "pipelines": [
+    "ct_refresh"
+   ],
+   "marketplace": [
+    "WB",
+    "OZON"
+   ],
+   "layer": "mart",
+   "severity": "HIGH",
+   "source_contract": "docs/plan/PR_PLAN_1_SALES_PLAN_TRAJECTORY_2026-09-25.md",
+   "source_artifact": "sql/plan/plan1_validation.sql:203",
+   "adapter": "check_blocks",
+   "execution_mode": "read_only_select",
+   "expected_result": "status=PASS on every row",
+   "owner": "evelagin",
+   "type": "data_contract",
+   "status": "active",
+   "status_reason": null,
+   "gate_relevant": true,
+   "dependencies": [
+    "evetis_mart.V_INBOUND_LOT_CURRENT",
+    "evetis_mart.V_PLANNING_EXCEPTIONS",
+    "evetis_mart.V_PLANNING_HEADER",
+    "evetis_mart.V_PLANNING_SKU_OVERVIEW",
+    "evetis_mart.V_PLAN_LINE_MONTHLY_ALL",
+    "evetis_mart.V_PLAN_PHYSICAL_MONTHLY",
+    "evetis_mart.V_PLAN_TRAJECTORY_MONTHLY",
+    "evetis_mart.V_PLAN_VERSION_STATUS",
+    "evetis_mart.V_SALES_PLAN_APPROVED",
+    "evetis_mart.V_SALES_PLAN_MONTHLY_CURRENT",
+    "evetis_ref.CT_SEASON_PLAN_MONTHLY",
+    "evetis_ref.INBOUND_LOT_EVENT",
+    "evetis_ref.PLAN_ASSUMPTION",
+    "evetis_ref.PLAN_BOM_BASIS",
+    "evetis_ref.PLAN_LINE_MONTHLY",
+    "evetis_ref.PLAN_VERSION",
+    "evetis_ref.REF_SALES_PLAN_APPROVAL",
+    "wb_mart.V_CT_PLAN_ACTIVE"
+   ],
+   "timeout_seconds": 300,
+   "freshness_requirement": "перед слиянием изменения в области scope, после развёртывания, после каждой записи версии, события или поступления и после пересборки Control Tower",
+   "business_rule_reference": "Спецификация PR-PLAN-1 (владелец, 2026-09-25): MODEL_SCENARIO не утверждается, утверждение только по точному content_sha256, поступление в базовой траектории только с доказанными SKU, количеством, состоянием и датой; docs/ops/STAGE_C1_SHEET_2026-09-12.md (c1_expiry_margin_days)",
+   "label": "P15_PROPOSAL_INHERITS_NO_MODEL_POLICY"
+  },
+  {
+   "check_id": "P16_CONTROL_TOWER_NOT_SWITCHED",
+   "suite": "sales_plan",
+   "domain": "planning",
+   "pipelines": [
+    "ct_refresh"
+   ],
+   "marketplace": [
+    "WB",
+    "OZON"
+   ],
+   "layer": "mart",
+   "severity": "HIGH",
+   "source_contract": "docs/plan/PR_PLAN_1_SALES_PLAN_TRAJECTORY_2026-09-25.md",
+   "source_artifact": "sql/plan/plan1_validation.sql:215",
+   "adapter": "check_blocks",
+   "execution_mode": "read_only_select",
+   "expected_result": "status=PASS on every row",
+   "owner": "evelagin",
+   "type": "data_contract",
+   "status": "active",
+   "status_reason": null,
+   "gate_relevant": true,
+   "dependencies": [
+    "evetis_mart.V_INBOUND_LOT_CURRENT",
+    "evetis_mart.V_PLANNING_EXCEPTIONS",
+    "evetis_mart.V_PLANNING_HEADER",
+    "evetis_mart.V_PLANNING_SKU_OVERVIEW",
+    "evetis_mart.V_PLAN_LINE_MONTHLY_ALL",
+    "evetis_mart.V_PLAN_PHYSICAL_MONTHLY",
+    "evetis_mart.V_PLAN_TRAJECTORY_MONTHLY",
+    "evetis_mart.V_PLAN_VERSION_STATUS",
+    "evetis_mart.V_SALES_PLAN_APPROVED",
+    "evetis_mart.V_SALES_PLAN_MONTHLY_CURRENT",
+    "evetis_ref.CT_SEASON_PLAN_MONTHLY",
+    "evetis_ref.INBOUND_LOT_EVENT",
+    "evetis_ref.PLAN_ASSUMPTION",
+    "evetis_ref.PLAN_BOM_BASIS",
+    "evetis_ref.PLAN_LINE_MONTHLY",
+    "evetis_ref.PLAN_VERSION",
+    "evetis_ref.REF_SALES_PLAN_APPROVAL",
+    "wb_mart.V_CT_PLAN_ACTIVE"
+   ],
+   "timeout_seconds": 300,
+   "freshness_requirement": "перед слиянием изменения в области scope, после развёртывания, после каждой записи версии, события или поступления и после пересборки Control Tower",
+   "business_rule_reference": "Спецификация PR-PLAN-1 (владелец, 2026-09-25): MODEL_SCENARIO не утверждается, утверждение только по точному content_sha256, поступление в базовой траектории только с доказанными SKU, количеством, состоянием и датой; docs/ops/STAGE_C1_SHEET_2026-09-12.md (c1_expiry_margin_days)",
+   "label": "P16_CONTROL_TOWER_NOT_SWITCHED"
+  },
+  {
+   "check_id": "P17_HEADER_EXCEPTION_CONSISTENCY",
+   "suite": "sales_plan",
+   "domain": "planning",
+   "pipelines": [
+    "ct_refresh"
+   ],
+   "marketplace": [
+    "WB",
+    "OZON"
+   ],
+   "layer": "mart",
+   "severity": "HIGH",
+   "source_contract": "docs/plan/PR_PLAN_1_SALES_PLAN_TRAJECTORY_2026-09-25.md",
+   "source_artifact": "sql/plan/plan1_validation.sql:229",
+   "adapter": "check_blocks",
+   "execution_mode": "read_only_select",
+   "expected_result": "status=PASS on every row",
+   "owner": "evelagin",
+   "type": "data_contract",
+   "status": "active",
+   "status_reason": null,
+   "gate_relevant": true,
+   "dependencies": [
+    "evetis_mart.V_INBOUND_LOT_CURRENT",
+    "evetis_mart.V_PLANNING_EXCEPTIONS",
+    "evetis_mart.V_PLANNING_HEADER",
+    "evetis_mart.V_PLANNING_SKU_OVERVIEW",
+    "evetis_mart.V_PLAN_LINE_MONTHLY_ALL",
+    "evetis_mart.V_PLAN_PHYSICAL_MONTHLY",
+    "evetis_mart.V_PLAN_TRAJECTORY_MONTHLY",
+    "evetis_mart.V_PLAN_VERSION_STATUS",
+    "evetis_mart.V_SALES_PLAN_APPROVED",
+    "evetis_mart.V_SALES_PLAN_MONTHLY_CURRENT",
+    "evetis_ref.CT_SEASON_PLAN_MONTHLY",
+    "evetis_ref.INBOUND_LOT_EVENT",
+    "evetis_ref.PLAN_ASSUMPTION",
+    "evetis_ref.PLAN_BOM_BASIS",
+    "evetis_ref.PLAN_LINE_MONTHLY",
+    "evetis_ref.PLAN_VERSION",
+    "evetis_ref.REF_SALES_PLAN_APPROVAL",
+    "wb_mart.V_CT_PLAN_ACTIVE"
+   ],
+   "timeout_seconds": 300,
+   "freshness_requirement": "перед слиянием изменения в области scope, после развёртывания, после каждой записи версии, события или поступления и после пересборки Control Tower",
+   "business_rule_reference": "Спецификация PR-PLAN-1 (владелец, 2026-09-25): MODEL_SCENARIO не утверждается, утверждение только по точному content_sha256, поступление в базовой траектории только с доказанными SKU, количеством, состоянием и датой; docs/ops/STAGE_C1_SHEET_2026-09-12.md (c1_expiry_margin_days)",
+   "label": "P17_HEADER_EXCEPTION_CONSISTENCY"
+  },
+  {
+   "check_id": "P18_OVERVIEW_GRAIN",
+   "suite": "sales_plan",
+   "domain": "planning",
+   "pipelines": [
+    "ct_refresh"
+   ],
+   "marketplace": [
+    "WB",
+    "OZON"
+   ],
+   "layer": "mart",
+   "severity": "HIGH",
+   "source_contract": "docs/plan/PR_PLAN_1_SALES_PLAN_TRAJECTORY_2026-09-25.md",
+   "source_artifact": "sql/plan/plan1_validation.sql:236",
+   "adapter": "check_blocks",
+   "execution_mode": "read_only_select",
+   "expected_result": "status=PASS on every row",
+   "owner": "evelagin",
+   "type": "data_contract",
+   "status": "active",
+   "status_reason": null,
+   "gate_relevant": true,
+   "dependencies": [
+    "evetis_mart.V_INBOUND_LOT_CURRENT",
+    "evetis_mart.V_PLANNING_EXCEPTIONS",
+    "evetis_mart.V_PLANNING_HEADER",
+    "evetis_mart.V_PLANNING_SKU_OVERVIEW",
+    "evetis_mart.V_PLAN_LINE_MONTHLY_ALL",
+    "evetis_mart.V_PLAN_PHYSICAL_MONTHLY",
+    "evetis_mart.V_PLAN_TRAJECTORY_MONTHLY",
+    "evetis_mart.V_PLAN_VERSION_STATUS",
+    "evetis_mart.V_SALES_PLAN_APPROVED",
+    "evetis_mart.V_SALES_PLAN_MONTHLY_CURRENT",
+    "evetis_ref.CT_SEASON_PLAN_MONTHLY",
+    "evetis_ref.INBOUND_LOT_EVENT",
+    "evetis_ref.PLAN_ASSUMPTION",
+    "evetis_ref.PLAN_BOM_BASIS",
+    "evetis_ref.PLAN_LINE_MONTHLY",
+    "evetis_ref.PLAN_VERSION",
+    "evetis_ref.REF_SALES_PLAN_APPROVAL",
+    "wb_mart.V_CT_PLAN_ACTIVE"
+   ],
+   "timeout_seconds": 300,
+   "freshness_requirement": "перед слиянием изменения в области scope, после развёртывания, после каждой записи версии, события или поступления и после пересборки Control Tower",
+   "business_rule_reference": "Спецификация PR-PLAN-1 (владелец, 2026-09-25): MODEL_SCENARIO не утверждается, утверждение только по точному content_sha256, поступление в базовой траектории только с доказанными SKU, количеством, состоянием и датой; docs/ops/STAGE_C1_SHEET_2026-09-12.md (c1_expiry_margin_days)",
+   "label": "P18_OVERVIEW_GRAIN"
   },
   {
    "check_id": "U01_DETECTION_UNREGISTERED_BUYOUT",
@@ -12780,6 +13645,40 @@
     "wb_promo_observer"
    ]
   },
+  "evetis_mart.V_INBOUND_LOT_CURRENT": {
+   "exists_in_production": false,
+   "object_type": null,
+   "layer": null,
+   "domain": null,
+   "contracts": [
+    "sales_plan"
+   ],
+   "checks": [
+    "P01_VERSION_INTEGRITY",
+    "P02_MODEL_NEVER_PROPOSED_OR_APPROVED",
+    "P03_APPROVAL_EXACT_HASH",
+    "P04_EVENT_LEDGER_VALID",
+    "P05_APPROVED_PLAN_GRAIN",
+    "P06_LEGACY_ADAPTER_PARITY",
+    "P07_PHYSICAL_RECONCILIATION",
+    "P08_CHANNEL_AND_BUNDLE_SPLIT",
+    "P09_AS_OF_PARITY",
+    "P10_TRAJECTORY_ARITHMETIC",
+    "P11_STALE_AND_PLAN_GATING",
+    "P12_INBOUND_ELIGIBILITY",
+    "P13_TRAJECTORY_INBOUND_ONLY_ELIGIBLE",
+    "P14_PROPOSAL_METHOD_CALENDAR",
+    "P15_PROPOSAL_INHERITS_NO_MODEL_POLICY",
+    "P16_CONTROL_TOWER_NOT_SWITCHED",
+    "P17_HEADER_EXCEPTION_CONSISTENCY",
+    "P18_OVERVIEW_GRAIN"
+   ],
+   "direct_consumers": [],
+   "transitive_consumers": [],
+   "pipelines": [
+    "ct_refresh"
+   ]
+  },
   "evetis_mart.V_INVENTORY_POSITION_HISTORY": {
    "exists_in_production": false,
    "object_type": null,
@@ -12832,6 +13731,244 @@
     "ct_refresh",
     "ozon_promo_observer",
     "wb_promo_observer"
+   ]
+  },
+  "evetis_mart.V_PLANNING_EXCEPTIONS": {
+   "exists_in_production": false,
+   "object_type": null,
+   "layer": null,
+   "domain": null,
+   "contracts": [
+    "sales_plan"
+   ],
+   "checks": [
+    "P01_VERSION_INTEGRITY",
+    "P02_MODEL_NEVER_PROPOSED_OR_APPROVED",
+    "P03_APPROVAL_EXACT_HASH",
+    "P04_EVENT_LEDGER_VALID",
+    "P05_APPROVED_PLAN_GRAIN",
+    "P06_LEGACY_ADAPTER_PARITY",
+    "P07_PHYSICAL_RECONCILIATION",
+    "P08_CHANNEL_AND_BUNDLE_SPLIT",
+    "P09_AS_OF_PARITY",
+    "P10_TRAJECTORY_ARITHMETIC",
+    "P11_STALE_AND_PLAN_GATING",
+    "P12_INBOUND_ELIGIBILITY",
+    "P13_TRAJECTORY_INBOUND_ONLY_ELIGIBLE",
+    "P14_PROPOSAL_METHOD_CALENDAR",
+    "P15_PROPOSAL_INHERITS_NO_MODEL_POLICY",
+    "P16_CONTROL_TOWER_NOT_SWITCHED",
+    "P17_HEADER_EXCEPTION_CONSISTENCY",
+    "P18_OVERVIEW_GRAIN"
+   ],
+   "direct_consumers": [],
+   "transitive_consumers": [],
+   "pipelines": [
+    "ct_refresh"
+   ]
+  },
+  "evetis_mart.V_PLANNING_HEADER": {
+   "exists_in_production": false,
+   "object_type": null,
+   "layer": null,
+   "domain": null,
+   "contracts": [
+    "sales_plan"
+   ],
+   "checks": [
+    "P01_VERSION_INTEGRITY",
+    "P02_MODEL_NEVER_PROPOSED_OR_APPROVED",
+    "P03_APPROVAL_EXACT_HASH",
+    "P04_EVENT_LEDGER_VALID",
+    "P05_APPROVED_PLAN_GRAIN",
+    "P06_LEGACY_ADAPTER_PARITY",
+    "P07_PHYSICAL_RECONCILIATION",
+    "P08_CHANNEL_AND_BUNDLE_SPLIT",
+    "P09_AS_OF_PARITY",
+    "P10_TRAJECTORY_ARITHMETIC",
+    "P11_STALE_AND_PLAN_GATING",
+    "P12_INBOUND_ELIGIBILITY",
+    "P13_TRAJECTORY_INBOUND_ONLY_ELIGIBLE",
+    "P14_PROPOSAL_METHOD_CALENDAR",
+    "P15_PROPOSAL_INHERITS_NO_MODEL_POLICY",
+    "P16_CONTROL_TOWER_NOT_SWITCHED",
+    "P17_HEADER_EXCEPTION_CONSISTENCY",
+    "P18_OVERVIEW_GRAIN"
+   ],
+   "direct_consumers": [],
+   "transitive_consumers": [],
+   "pipelines": [
+    "ct_refresh"
+   ]
+  },
+  "evetis_mart.V_PLANNING_SKU_OVERVIEW": {
+   "exists_in_production": false,
+   "object_type": null,
+   "layer": null,
+   "domain": null,
+   "contracts": [
+    "sales_plan"
+   ],
+   "checks": [
+    "P01_VERSION_INTEGRITY",
+    "P02_MODEL_NEVER_PROPOSED_OR_APPROVED",
+    "P03_APPROVAL_EXACT_HASH",
+    "P04_EVENT_LEDGER_VALID",
+    "P05_APPROVED_PLAN_GRAIN",
+    "P06_LEGACY_ADAPTER_PARITY",
+    "P07_PHYSICAL_RECONCILIATION",
+    "P08_CHANNEL_AND_BUNDLE_SPLIT",
+    "P09_AS_OF_PARITY",
+    "P10_TRAJECTORY_ARITHMETIC",
+    "P11_STALE_AND_PLAN_GATING",
+    "P12_INBOUND_ELIGIBILITY",
+    "P13_TRAJECTORY_INBOUND_ONLY_ELIGIBLE",
+    "P14_PROPOSAL_METHOD_CALENDAR",
+    "P15_PROPOSAL_INHERITS_NO_MODEL_POLICY",
+    "P16_CONTROL_TOWER_NOT_SWITCHED",
+    "P17_HEADER_EXCEPTION_CONSISTENCY",
+    "P18_OVERVIEW_GRAIN"
+   ],
+   "direct_consumers": [],
+   "transitive_consumers": [],
+   "pipelines": [
+    "ct_refresh"
+   ]
+  },
+  "evetis_mart.V_PLAN_LINE_MONTHLY_ALL": {
+   "exists_in_production": false,
+   "object_type": null,
+   "layer": null,
+   "domain": null,
+   "contracts": [
+    "sales_plan"
+   ],
+   "checks": [
+    "P01_VERSION_INTEGRITY",
+    "P02_MODEL_NEVER_PROPOSED_OR_APPROVED",
+    "P03_APPROVAL_EXACT_HASH",
+    "P04_EVENT_LEDGER_VALID",
+    "P05_APPROVED_PLAN_GRAIN",
+    "P06_LEGACY_ADAPTER_PARITY",
+    "P07_PHYSICAL_RECONCILIATION",
+    "P08_CHANNEL_AND_BUNDLE_SPLIT",
+    "P09_AS_OF_PARITY",
+    "P10_TRAJECTORY_ARITHMETIC",
+    "P11_STALE_AND_PLAN_GATING",
+    "P12_INBOUND_ELIGIBILITY",
+    "P13_TRAJECTORY_INBOUND_ONLY_ELIGIBLE",
+    "P14_PROPOSAL_METHOD_CALENDAR",
+    "P15_PROPOSAL_INHERITS_NO_MODEL_POLICY",
+    "P16_CONTROL_TOWER_NOT_SWITCHED",
+    "P17_HEADER_EXCEPTION_CONSISTENCY",
+    "P18_OVERVIEW_GRAIN"
+   ],
+   "direct_consumers": [],
+   "transitive_consumers": [],
+   "pipelines": [
+    "ct_refresh"
+   ]
+  },
+  "evetis_mart.V_PLAN_PHYSICAL_MONTHLY": {
+   "exists_in_production": false,
+   "object_type": null,
+   "layer": null,
+   "domain": null,
+   "contracts": [
+    "sales_plan"
+   ],
+   "checks": [
+    "P01_VERSION_INTEGRITY",
+    "P02_MODEL_NEVER_PROPOSED_OR_APPROVED",
+    "P03_APPROVAL_EXACT_HASH",
+    "P04_EVENT_LEDGER_VALID",
+    "P05_APPROVED_PLAN_GRAIN",
+    "P06_LEGACY_ADAPTER_PARITY",
+    "P07_PHYSICAL_RECONCILIATION",
+    "P08_CHANNEL_AND_BUNDLE_SPLIT",
+    "P09_AS_OF_PARITY",
+    "P10_TRAJECTORY_ARITHMETIC",
+    "P11_STALE_AND_PLAN_GATING",
+    "P12_INBOUND_ELIGIBILITY",
+    "P13_TRAJECTORY_INBOUND_ONLY_ELIGIBLE",
+    "P14_PROPOSAL_METHOD_CALENDAR",
+    "P15_PROPOSAL_INHERITS_NO_MODEL_POLICY",
+    "P16_CONTROL_TOWER_NOT_SWITCHED",
+    "P17_HEADER_EXCEPTION_CONSISTENCY",
+    "P18_OVERVIEW_GRAIN"
+   ],
+   "direct_consumers": [],
+   "transitive_consumers": [],
+   "pipelines": [
+    "ct_refresh"
+   ]
+  },
+  "evetis_mart.V_PLAN_TRAJECTORY_MONTHLY": {
+   "exists_in_production": false,
+   "object_type": null,
+   "layer": null,
+   "domain": null,
+   "contracts": [
+    "sales_plan"
+   ],
+   "checks": [
+    "P01_VERSION_INTEGRITY",
+    "P02_MODEL_NEVER_PROPOSED_OR_APPROVED",
+    "P03_APPROVAL_EXACT_HASH",
+    "P04_EVENT_LEDGER_VALID",
+    "P05_APPROVED_PLAN_GRAIN",
+    "P06_LEGACY_ADAPTER_PARITY",
+    "P07_PHYSICAL_RECONCILIATION",
+    "P08_CHANNEL_AND_BUNDLE_SPLIT",
+    "P09_AS_OF_PARITY",
+    "P10_TRAJECTORY_ARITHMETIC",
+    "P11_STALE_AND_PLAN_GATING",
+    "P12_INBOUND_ELIGIBILITY",
+    "P13_TRAJECTORY_INBOUND_ONLY_ELIGIBLE",
+    "P14_PROPOSAL_METHOD_CALENDAR",
+    "P15_PROPOSAL_INHERITS_NO_MODEL_POLICY",
+    "P16_CONTROL_TOWER_NOT_SWITCHED",
+    "P17_HEADER_EXCEPTION_CONSISTENCY",
+    "P18_OVERVIEW_GRAIN"
+   ],
+   "direct_consumers": [],
+   "transitive_consumers": [],
+   "pipelines": [
+    "ct_refresh"
+   ]
+  },
+  "evetis_mart.V_PLAN_VERSION_STATUS": {
+   "exists_in_production": false,
+   "object_type": null,
+   "layer": null,
+   "domain": null,
+   "contracts": [
+    "sales_plan"
+   ],
+   "checks": [
+    "P01_VERSION_INTEGRITY",
+    "P02_MODEL_NEVER_PROPOSED_OR_APPROVED",
+    "P03_APPROVAL_EXACT_HASH",
+    "P04_EVENT_LEDGER_VALID",
+    "P05_APPROVED_PLAN_GRAIN",
+    "P06_LEGACY_ADAPTER_PARITY",
+    "P07_PHYSICAL_RECONCILIATION",
+    "P08_CHANNEL_AND_BUNDLE_SPLIT",
+    "P09_AS_OF_PARITY",
+    "P10_TRAJECTORY_ARITHMETIC",
+    "P11_STALE_AND_PLAN_GATING",
+    "P12_INBOUND_ELIGIBILITY",
+    "P13_TRAJECTORY_INBOUND_ONLY_ELIGIBLE",
+    "P14_PROPOSAL_METHOD_CALENDAR",
+    "P15_PROPOSAL_INHERITS_NO_MODEL_POLICY",
+    "P16_CONTROL_TOWER_NOT_SWITCHED",
+    "P17_HEADER_EXCEPTION_CONSISTENCY",
+    "P18_OVERVIEW_GRAIN"
+   ],
+   "direct_consumers": [],
+   "transitive_consumers": [],
+   "pipelines": [
+    "ct_refresh"
    ]
   },
   "evetis_mart.V_PROMO_ECONOMICS_COVERAGE_CURRENT": {
@@ -13295,13 +14432,48 @@
     "wb_promo_observer"
    ]
   },
+  "evetis_mart.V_SALES_PLAN_APPROVED": {
+   "exists_in_production": false,
+   "object_type": null,
+   "layer": null,
+   "domain": null,
+   "contracts": [
+    "sales_plan"
+   ],
+   "checks": [
+    "P01_VERSION_INTEGRITY",
+    "P02_MODEL_NEVER_PROPOSED_OR_APPROVED",
+    "P03_APPROVAL_EXACT_HASH",
+    "P04_EVENT_LEDGER_VALID",
+    "P05_APPROVED_PLAN_GRAIN",
+    "P06_LEGACY_ADAPTER_PARITY",
+    "P07_PHYSICAL_RECONCILIATION",
+    "P08_CHANNEL_AND_BUNDLE_SPLIT",
+    "P09_AS_OF_PARITY",
+    "P10_TRAJECTORY_ARITHMETIC",
+    "P11_STALE_AND_PLAN_GATING",
+    "P12_INBOUND_ELIGIBILITY",
+    "P13_TRAJECTORY_INBOUND_ONLY_ELIGIBLE",
+    "P14_PROPOSAL_METHOD_CALENDAR",
+    "P15_PROPOSAL_INHERITS_NO_MODEL_POLICY",
+    "P16_CONTROL_TOWER_NOT_SWITCHED",
+    "P17_HEADER_EXCEPTION_CONSISTENCY",
+    "P18_OVERVIEW_GRAIN"
+   ],
+   "direct_consumers": [],
+   "transitive_consumers": [],
+   "pipelines": [
+    "ct_refresh"
+   ]
+  },
   "evetis_mart.V_SALES_PLAN_MONTHLY_CURRENT": {
    "exists_in_production": false,
    "object_type": null,
    "layer": null,
    "domain": null,
    "contracts": [
-    "inventory_context"
+    "inventory_context",
+    "sales_plan"
    ],
    "checks": [
     "I01A_GRAIN_POSITION",
@@ -13339,7 +14511,25 @@
     "I39_OWNER_INPUT_VALID",
     "I40_EXTERNAL_SCHEMA_CONTRACT",
     "I41_CONTEXT_TEMPORAL_ALIGNMENT",
-    "I42_AXES_SEPARATE"
+    "I42_AXES_SEPARATE",
+    "P01_VERSION_INTEGRITY",
+    "P02_MODEL_NEVER_PROPOSED_OR_APPROVED",
+    "P03_APPROVAL_EXACT_HASH",
+    "P04_EVENT_LEDGER_VALID",
+    "P05_APPROVED_PLAN_GRAIN",
+    "P06_LEGACY_ADAPTER_PARITY",
+    "P07_PHYSICAL_RECONCILIATION",
+    "P08_CHANNEL_AND_BUNDLE_SPLIT",
+    "P09_AS_OF_PARITY",
+    "P10_TRAJECTORY_ARITHMETIC",
+    "P11_STALE_AND_PLAN_GATING",
+    "P12_INBOUND_ELIGIBILITY",
+    "P13_TRAJECTORY_INBOUND_ONLY_ELIGIBLE",
+    "P14_PROPOSAL_METHOD_CALENDAR",
+    "P15_PROPOSAL_INHERITS_NO_MODEL_POLICY",
+    "P16_CONTROL_TOWER_NOT_SWITCHED",
+    "P17_HEADER_EXCEPTION_CONSISTENCY",
+    "P18_OVERVIEW_GRAIN"
    ],
    "direct_consumers": [],
    "transitive_consumers": [],
@@ -13658,13 +14848,218 @@
     "wb_promo_observer"
    ]
   },
+  "evetis_ref.CT_SEASON_PLAN_MONTHLY": {
+   "exists_in_production": true,
+   "object_type": "BASE TABLE",
+   "layer": "reference",
+   "domain": "shared",
+   "contracts": [
+    "sales_plan"
+   ],
+   "checks": [
+    "P01_VERSION_INTEGRITY",
+    "P02_MODEL_NEVER_PROPOSED_OR_APPROVED",
+    "P03_APPROVAL_EXACT_HASH",
+    "P04_EVENT_LEDGER_VALID",
+    "P05_APPROVED_PLAN_GRAIN",
+    "P06_LEGACY_ADAPTER_PARITY",
+    "P07_PHYSICAL_RECONCILIATION",
+    "P08_CHANNEL_AND_BUNDLE_SPLIT",
+    "P09_AS_OF_PARITY",
+    "P10_TRAJECTORY_ARITHMETIC",
+    "P11_STALE_AND_PLAN_GATING",
+    "P12_INBOUND_ELIGIBILITY",
+    "P13_TRAJECTORY_INBOUND_ONLY_ELIGIBLE",
+    "P14_PROPOSAL_METHOD_CALENDAR",
+    "P15_PROPOSAL_INHERITS_NO_MODEL_POLICY",
+    "P16_CONTROL_TOWER_NOT_SWITCHED",
+    "P17_HEADER_EXCEPTION_CONSISTENCY",
+    "P18_OVERVIEW_GRAIN"
+   ],
+   "direct_consumers": [],
+   "transitive_consumers": [],
+   "pipelines": [
+    "ct_refresh"
+   ]
+  },
+  "evetis_ref.INBOUND_LOT_EVENT": {
+   "exists_in_production": false,
+   "object_type": null,
+   "layer": null,
+   "domain": null,
+   "contracts": [
+    "sales_plan"
+   ],
+   "checks": [
+    "P01_VERSION_INTEGRITY",
+    "P02_MODEL_NEVER_PROPOSED_OR_APPROVED",
+    "P03_APPROVAL_EXACT_HASH",
+    "P04_EVENT_LEDGER_VALID",
+    "P05_APPROVED_PLAN_GRAIN",
+    "P06_LEGACY_ADAPTER_PARITY",
+    "P07_PHYSICAL_RECONCILIATION",
+    "P08_CHANNEL_AND_BUNDLE_SPLIT",
+    "P09_AS_OF_PARITY",
+    "P10_TRAJECTORY_ARITHMETIC",
+    "P11_STALE_AND_PLAN_GATING",
+    "P12_INBOUND_ELIGIBILITY",
+    "P13_TRAJECTORY_INBOUND_ONLY_ELIGIBLE",
+    "P14_PROPOSAL_METHOD_CALENDAR",
+    "P15_PROPOSAL_INHERITS_NO_MODEL_POLICY",
+    "P16_CONTROL_TOWER_NOT_SWITCHED",
+    "P17_HEADER_EXCEPTION_CONSISTENCY",
+    "P18_OVERVIEW_GRAIN"
+   ],
+   "direct_consumers": [],
+   "transitive_consumers": [],
+   "pipelines": [
+    "ct_refresh"
+   ]
+  },
+  "evetis_ref.PLAN_ASSUMPTION": {
+   "exists_in_production": false,
+   "object_type": null,
+   "layer": null,
+   "domain": null,
+   "contracts": [
+    "sales_plan"
+   ],
+   "checks": [
+    "P01_VERSION_INTEGRITY",
+    "P02_MODEL_NEVER_PROPOSED_OR_APPROVED",
+    "P03_APPROVAL_EXACT_HASH",
+    "P04_EVENT_LEDGER_VALID",
+    "P05_APPROVED_PLAN_GRAIN",
+    "P06_LEGACY_ADAPTER_PARITY",
+    "P07_PHYSICAL_RECONCILIATION",
+    "P08_CHANNEL_AND_BUNDLE_SPLIT",
+    "P09_AS_OF_PARITY",
+    "P10_TRAJECTORY_ARITHMETIC",
+    "P11_STALE_AND_PLAN_GATING",
+    "P12_INBOUND_ELIGIBILITY",
+    "P13_TRAJECTORY_INBOUND_ONLY_ELIGIBLE",
+    "P14_PROPOSAL_METHOD_CALENDAR",
+    "P15_PROPOSAL_INHERITS_NO_MODEL_POLICY",
+    "P16_CONTROL_TOWER_NOT_SWITCHED",
+    "P17_HEADER_EXCEPTION_CONSISTENCY",
+    "P18_OVERVIEW_GRAIN"
+   ],
+   "direct_consumers": [],
+   "transitive_consumers": [],
+   "pipelines": [
+    "ct_refresh"
+   ]
+  },
+  "evetis_ref.PLAN_BOM_BASIS": {
+   "exists_in_production": false,
+   "object_type": null,
+   "layer": null,
+   "domain": null,
+   "contracts": [
+    "sales_plan"
+   ],
+   "checks": [
+    "P01_VERSION_INTEGRITY",
+    "P02_MODEL_NEVER_PROPOSED_OR_APPROVED",
+    "P03_APPROVAL_EXACT_HASH",
+    "P04_EVENT_LEDGER_VALID",
+    "P05_APPROVED_PLAN_GRAIN",
+    "P06_LEGACY_ADAPTER_PARITY",
+    "P07_PHYSICAL_RECONCILIATION",
+    "P08_CHANNEL_AND_BUNDLE_SPLIT",
+    "P09_AS_OF_PARITY",
+    "P10_TRAJECTORY_ARITHMETIC",
+    "P11_STALE_AND_PLAN_GATING",
+    "P12_INBOUND_ELIGIBILITY",
+    "P13_TRAJECTORY_INBOUND_ONLY_ELIGIBLE",
+    "P14_PROPOSAL_METHOD_CALENDAR",
+    "P15_PROPOSAL_INHERITS_NO_MODEL_POLICY",
+    "P16_CONTROL_TOWER_NOT_SWITCHED",
+    "P17_HEADER_EXCEPTION_CONSISTENCY",
+    "P18_OVERVIEW_GRAIN"
+   ],
+   "direct_consumers": [],
+   "transitive_consumers": [],
+   "pipelines": [
+    "ct_refresh"
+   ]
+  },
+  "evetis_ref.PLAN_LINE_MONTHLY": {
+   "exists_in_production": false,
+   "object_type": null,
+   "layer": null,
+   "domain": null,
+   "contracts": [
+    "sales_plan"
+   ],
+   "checks": [
+    "P01_VERSION_INTEGRITY",
+    "P02_MODEL_NEVER_PROPOSED_OR_APPROVED",
+    "P03_APPROVAL_EXACT_HASH",
+    "P04_EVENT_LEDGER_VALID",
+    "P05_APPROVED_PLAN_GRAIN",
+    "P06_LEGACY_ADAPTER_PARITY",
+    "P07_PHYSICAL_RECONCILIATION",
+    "P08_CHANNEL_AND_BUNDLE_SPLIT",
+    "P09_AS_OF_PARITY",
+    "P10_TRAJECTORY_ARITHMETIC",
+    "P11_STALE_AND_PLAN_GATING",
+    "P12_INBOUND_ELIGIBILITY",
+    "P13_TRAJECTORY_INBOUND_ONLY_ELIGIBLE",
+    "P14_PROPOSAL_METHOD_CALENDAR",
+    "P15_PROPOSAL_INHERITS_NO_MODEL_POLICY",
+    "P16_CONTROL_TOWER_NOT_SWITCHED",
+    "P17_HEADER_EXCEPTION_CONSISTENCY",
+    "P18_OVERVIEW_GRAIN"
+   ],
+   "direct_consumers": [],
+   "transitive_consumers": [],
+   "pipelines": [
+    "ct_refresh"
+   ]
+  },
+  "evetis_ref.PLAN_VERSION": {
+   "exists_in_production": false,
+   "object_type": null,
+   "layer": null,
+   "domain": null,
+   "contracts": [
+    "sales_plan"
+   ],
+   "checks": [
+    "P01_VERSION_INTEGRITY",
+    "P02_MODEL_NEVER_PROPOSED_OR_APPROVED",
+    "P03_APPROVAL_EXACT_HASH",
+    "P04_EVENT_LEDGER_VALID",
+    "P05_APPROVED_PLAN_GRAIN",
+    "P06_LEGACY_ADAPTER_PARITY",
+    "P07_PHYSICAL_RECONCILIATION",
+    "P08_CHANNEL_AND_BUNDLE_SPLIT",
+    "P09_AS_OF_PARITY",
+    "P10_TRAJECTORY_ARITHMETIC",
+    "P11_STALE_AND_PLAN_GATING",
+    "P12_INBOUND_ELIGIBILITY",
+    "P13_TRAJECTORY_INBOUND_ONLY_ELIGIBLE",
+    "P14_PROPOSAL_METHOD_CALENDAR",
+    "P15_PROPOSAL_INHERITS_NO_MODEL_POLICY",
+    "P16_CONTROL_TOWER_NOT_SWITCHED",
+    "P17_HEADER_EXCEPTION_CONSISTENCY",
+    "P18_OVERVIEW_GRAIN"
+   ],
+   "direct_consumers": [],
+   "transitive_consumers": [],
+   "pipelines": [
+    "ct_refresh"
+   ]
+  },
   "evetis_ref.REF_SALES_PLAN_APPROVAL": {
    "exists_in_production": false,
    "object_type": null,
    "layer": null,
    "domain": null,
    "contracts": [
-    "inventory_context"
+    "inventory_context",
+    "sales_plan"
    ],
    "checks": [
     "I01A_GRAIN_POSITION",
@@ -13702,7 +15097,25 @@
     "I39_OWNER_INPUT_VALID",
     "I40_EXTERNAL_SCHEMA_CONTRACT",
     "I41_CONTEXT_TEMPORAL_ALIGNMENT",
-    "I42_AXES_SEPARATE"
+    "I42_AXES_SEPARATE",
+    "P01_VERSION_INTEGRITY",
+    "P02_MODEL_NEVER_PROPOSED_OR_APPROVED",
+    "P03_APPROVAL_EXACT_HASH",
+    "P04_EVENT_LEDGER_VALID",
+    "P05_APPROVED_PLAN_GRAIN",
+    "P06_LEGACY_ADAPTER_PARITY",
+    "P07_PHYSICAL_RECONCILIATION",
+    "P08_CHANNEL_AND_BUNDLE_SPLIT",
+    "P09_AS_OF_PARITY",
+    "P10_TRAJECTORY_ARITHMETIC",
+    "P11_STALE_AND_PLAN_GATING",
+    "P12_INBOUND_ELIGIBILITY",
+    "P13_TRAJECTORY_INBOUND_ONLY_ELIGIBLE",
+    "P14_PROPOSAL_METHOD_CALENDAR",
+    "P15_PROPOSAL_INHERITS_NO_MODEL_POLICY",
+    "P16_CONTROL_TOWER_NOT_SWITCHED",
+    "P17_HEADER_EXCEPTION_CONSISTENCY",
+    "P18_OVERVIEW_GRAIN"
    ],
    "direct_consumers": [],
    "transitive_consumers": [],
@@ -15430,7 +16843,8 @@
    "layer": "semantic",
    "domain": "wb",
    "contracts": [
-    "control_tower_phase1"
+    "control_tower_phase1",
+    "sales_plan"
    ],
    "checks": [
     "CT1__NONASSERT_1",
@@ -15456,7 +16870,25 @@
     "CT1__T6_FAILED_SKU_REF_PRODUCT_MASTER_BOM",
     "CT1__T7_FAILED_CT_ACTUAL_DAILY",
     "CT1__T8_FAILED",
-    "CT1__T9_FAILED_WB_WB_MART_V_DASH_SKU_DAILY"
+    "CT1__T9_FAILED_WB_WB_MART_V_DASH_SKU_DAILY",
+    "P01_VERSION_INTEGRITY",
+    "P02_MODEL_NEVER_PROPOSED_OR_APPROVED",
+    "P03_APPROVAL_EXACT_HASH",
+    "P04_EVENT_LEDGER_VALID",
+    "P05_APPROVED_PLAN_GRAIN",
+    "P06_LEGACY_ADAPTER_PARITY",
+    "P07_PHYSICAL_RECONCILIATION",
+    "P08_CHANNEL_AND_BUNDLE_SPLIT",
+    "P09_AS_OF_PARITY",
+    "P10_TRAJECTORY_ARITHMETIC",
+    "P11_STALE_AND_PLAN_GATING",
+    "P12_INBOUND_ELIGIBILITY",
+    "P13_TRAJECTORY_INBOUND_ONLY_ELIGIBLE",
+    "P14_PROPOSAL_METHOD_CALENDAR",
+    "P15_PROPOSAL_INHERITS_NO_MODEL_POLICY",
+    "P16_CONTROL_TOWER_NOT_SWITCHED",
+    "P17_HEADER_EXCEPTION_CONSISTENCY",
+    "P18_OVERVIEW_GRAIN"
    ],
    "direct_consumers": [
     "evetis_ops.V_OPS_SHEET_META",
@@ -15495,6 +16927,7 @@
     "wb_mart.V_CT_SUPPLY_NEED"
    ],
    "pipelines": [
+    "ct_refresh",
     "mart"
    ]
   },
