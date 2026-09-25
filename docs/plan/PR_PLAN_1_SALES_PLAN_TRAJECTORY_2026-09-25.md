@@ -205,3 +205,21 @@ opening(текущий месяц) = позиция запаса на дату �
 
 Для PLAN-2 нужны выбор экономического канона (WB_FE_V1 / Forward Ozon) и правило цены по
 месяцам. Оба решения — за владельцем.
+
+## 10. Журнал развёртывания (2026-09-25)
+
+| Шаг | Что | Результат |
+| --- | --- | --- |
+| ACK владельца | развёртывание PR-PLAN-1 и перечисленные записи; утверждение предложения — **не** давалось | — |
+| Проверки перед записью | HEAD = слитый `origin/main`, дерево чистое, только объекты PLAN-1, ни одно представление `wb_mart` / `evetis_ops` / `ozon_mart` не читает переключаемые, секретов и разрушающих операций нет | PASS |
+| Развёртывание 1 | `tools/plan1_deploy.py --apply` из `866a294` (PR #186): хранилище + ALTER, 11 VIEW, 7 процедур | DONE |
+| Регистрация legacy | `sp_plan_register_legacy_ct('SET_2026-09-09')` → `MODEL_SCENARIO`, 264 строки, 31 строка BOM, 8 допущений L01–L08, хеш `c32122c5…` (= хешу симуляции до развёртывания) | DONE |
+| Предложение, попытка 1 | `sp_plan_propose_observed_run_rate` упал на типе `scope_month` — транзакция откатилась, записей нет | исправлено PR #187 |
+| Развёртывание 2 | из `2a60a76` (PR #187): изменилась только процедура | DONE |
+| Предложение | `SP-OBS30-20260925T125457`, `SYSTEM_PROPOSED`, 315 строк (45 карточек × 7 месяцев), 3 823,4 карточки, хеш `db5d3df5…` (= хешу симуляции) → `sp_plan_submit` → **PROPOSED**. Не утверждено | DONE |
+| Поступления | `EVT-FC-MOIST-50-BATCH08`: 5 000, PRODUCED, AWAITING_PAYMENT, даты нет → `BLOCKED`, в траектории нет. `EVT-FC-ACNE-50-POTENTIAL-3000`: 3 000, PLANNED → `EXCLUDED_HYPOTHETICAL` | DONE |
+| DQ production | `sales_plan` 18/18, `inventory_context` 36/36, `control_tower_phase1` 22/22, `control_tower_owner_screens` 19 PASS + 2 известных вне ворот (UBR-001), `promo_canonical_state` 24/24, `promo_economics` 21/21 | PASS |
+| R2C | 11 объектов `PENDING_DEPLOYED_MATCH` → снимок внесён, `overall: MATCH` | DONE |
+| Metabase | дашборд 43 «EVETIS PLANNING · план продаж и остатки по месяцам» в коллекции 9, 4 вкладки, 18 карточек `PLAN · …` (`tools/metabase_plan1_build.py --all`; откат `--rollback`). Коллекция 9 не входит в снимок `metabase/` — Git-запись экрана — этот скрипт, как у экранов Control Tower | DONE |
+
+**Ждёт владельца:** утверждение (или отказ от) `SP-OBS30-20260925T125457` на хеш `db5d3df5f6b63a5439a0c4103b540f9b308dc6f6ae64a9201d588de2c819da26`; обновление среза ФФ (без него бизнес-траектория не считается даже после утверждения).
