@@ -142,6 +142,13 @@ Job инженера, тестов и даже ревьюера AE исполн�
 по §2. После применения проверка `python -m tools.autonomy.wif_check --live` должна давать
 код 0: это та же модель, что в тестах, но на живом провайдере.
 
+**Все домены доверия GCP (с 2026-09-25).** У репозитория два домена WIF: пул EVETIS и
+`mpa-platform / tenant-infra-pool` (T3.1A, вне Terraform этого репозитория; `sa-tenant-provisioner`
+получает только `tenant-infra.yml@main`, dispatch, github-hosted, `repository_id`/`repository_owner_id`).
+Реестр — `quality/autonomy/wif_trust_domains.json`. `python -m tools.autonomy.wif_domains --live`
+проверяет оба домена на точных claims (35 случаев каждый) и сканирует все доступные проекты: провайдер
+GitHub, доверяющий репозиторию и не внесённый в реестр, или невычислимое условие — FAIL.
+
 **GitHub → Claude API.** Anthropic WIF, спецификация — `quality/autonomy/anthropic_federation.json`:
 
 - issuer `https://token.actions.githubusercontent.com`, `check_jti = true`: повторный обмен одного
@@ -149,10 +156,13 @@ Job инженера, тестов и даже ревьюера AE исполн�
 - workspace `evetis-ae` с лимитом расходов;
 - два сервисных аккаунта (`evetis-ae-engineer`, `evetis-ae-reviewer`) и два правила. Условия:
   точный `sub` (`repo:<repo>:ref:refs/heads/main`), audience `https://api.anthropic.com`, claims
-  `repository`, `repository_owner`, `ref`, `event_name = workflow_dispatch`,
+  `repository`, `repository_owner`, неизменяемые `repository_id = 1260095567` и
+  `repository_owner_id = 286048501` (имя репозитория можно освободить и занять заново, ID — нет),
+  `ref`, `event_name = workflow_dispatch`,
   `runner_environment = github-hosted`, `workflow_ref = …/autonomy-run.yml@main`,
   `job_workflow_ref = …/autonomy-engineer.yml@main` (у ревьюера — `autonomy-review.yml`);
-- `oauth_scope = workspace:developer`, `token_lifetime_seconds = 600`. Итоговый срок не больше
+- `oauth_scope = workspace:inference` (только Messages, Models, подсчёт токенов; без Files, Skills,
+  Managed Agents), `token_lifetime_seconds = 600`. Итоговый срок не больше
   удвоенного остатка жизни JWT GitHub (около 5 минут), а файл токена обновляется каждые 240 с.
 
 Правило клиент выбирает по ID, а ID лежат в переменных репозитория, то есть не секретны. Поэтому

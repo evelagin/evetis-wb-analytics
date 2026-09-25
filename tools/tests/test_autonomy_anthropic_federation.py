@@ -91,7 +91,7 @@ def test_roles_have_distinct_service_accounts():
 def test_token_lifetime_and_scope_are_bounded():
     for role, r in RULES.items():
         assert 60 <= r["token_lifetime_seconds"] <= 600, role       # не дольше 10 мин (и ≤ 2× жизни JWT GitHub)
-        assert r["oauth_scope"] == "workspace:developer", role       # никаких org:admin
+        assert r["oauth_scope"] == "workspace:inference", role       # только Messages/Models; не developer, не org:admin
     assert CFG["issuer"]["check_jti"] is True                         # повторный обмен одного JWT отвергается
 
 
@@ -118,3 +118,40 @@ def test_workflows_request_exactly_these_identities_and_no_static_key():
 def test_oidc_token_file_lives_outside_the_workspace():
     src = (REPO / "tools/autonomy/ci/refresh_anthropic_oidc.sh").read_text()
     assert "GITHUB_WORKSPACE" in src and "exit 2" in src and "chmod 600" in src
+
+
+# ------------------------------------------------------ 2026-09-25: неизменяемые ID и scope ---
+@pytest.mark.parametrize("role", sorted(RULES))
+def test_scope_is_minimal_inference(role):
+    assert RULES[role]["oauth_scope"] == "workspace:inference"
+
+
+@pytest.mark.parametrize("role", sorted(RULES))
+def test_immutable_github_ids_are_required_in_addition_to_names(role):
+    c = RULES[role]["match"]["claims"]
+    assert c["repository_id"] == "1260095567" and c["repository_owner_id"] == "286048501"
+    for kept in ("repository", "repository_owner", "ref", "event_name", "runner_environment",
+                 "workflow_ref", "job_workflow_ref"):
+        assert kept in c, kept                           # добавлены, а не вместо
+    assert RULES[role]["match"]["subject_prefix"] == "repo:evelagin/evetis-wb-analytics:ref:refs/heads/main"
+
+
+@pytest.mark.parametrize("field,value", [("repository_id", "1111111111"), ("repository_owner_id", "2222222")])
+def test_recreated_repo_or_owner_with_same_name_is_rejected(field, value):
+    for jwt in (ENGINEER, REVIEWER):
+        assert matching({**jwt, field: value}) == set()
+
+
+@pytest.mark.parametrize("field", ["repository_id", "repository_owner_id"])
+def test_token_without_immutable_id_is_rejected(field):
+    for jwt in (ENGINEER, REVIEWER):
+        assert matching({k: v for k, v in jwt.items() if k != field}) == set()
+
+
+def test_reviewer_cannot_obtain_engineer_identity():
+    assert not rule_matches(RULES["engineer"], REVIEWER)
+
+
+def test_candidate_test_job_obtains_neither_identity():
+    assert matching(CASES["test_job_runs_candidate_code"][0]) == set()
+    assert matching(CASES["candidate_branch_engineer"][0]) == set()
