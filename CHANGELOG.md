@@ -1,5 +1,11 @@
 # CHANGELOG.md
 
+## 2026-09-25 — Tenancy T3.3: сканер плана понимает refresh-форму secret_id
+
+План восстановления `client_001` (после частичного apply) — 23 create и 18 no-op — сканер отверг
+4 ложными находками: после refresh провайдер пишет `secret_id` у `google_secret_manager_secret_iam_member`
+полным именем `projects/<проект>/secrets/<id>`. `plan_scan._iam_target` сводит эту форму к `<id>`
+только для проекта арендатора; чужой проект, номер, лишние сегменты — по-прежнему отказ.
 ## 2026-09-25 — Tenancy T3.3: чтение реестра образов провижионером доказано вживую
 
 Первый apply `client_001` упал на `Jobs.CreateJob`: Cloud Run требует
