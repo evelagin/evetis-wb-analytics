@@ -240,9 +240,22 @@ def _access_entries(access) -> tuple[set[tuple[str, str, str]], list[str]]:
     return entries, bad
 
 
-def _iam_target(rtype: str, after: dict) -> str | None:
-    return {"google_project_iam_member": after.get("project"),
-            "google_secret_manager_secret_iam_member": after.get("secret_id")}.get(rtype)
+def _iam_target(rtype: str, after: dict, project: str) -> str | None:
+    """Цель привязки в форме контракта.
+
+    После refresh провайдер записывает secret_id полным именем «projects/<проект>/secrets/<id>»
+    (живой план восстановления T3.3). Это та же привязка: полная форма сводится к <id> ТОЛЬКО
+    для проекта арендатора; чужой проект, номер вместо ID, лишние сегменты — не сводятся и
+    дают отказ (тройки нет в разрешённых), ссылки на чужие проекты ловит и правило R.
+    """
+    if rtype == "google_secret_manager_secret_iam_member":
+        sid = after.get("secret_id")
+        if isinstance(sid, str):
+            m = re.fullmatch(r"projects/([^/]+)/secrets/([A-Za-z0-9_-]+)", sid)
+            if m and m.group(1) == project:
+                return m.group(2)
+        return sid
+    return {"google_project_iam_member": after.get("project")}.get(rtype)
 
 
 def dataset_acl_findings(addr, after, unknown, dataset_acl, scheduler_email) -> list[str]:
@@ -404,7 +417,7 @@ def scan_plan(plan: dict, contract: dict) -> list[str]:
         # P/I. Принципалы и роли.
         principals = [(p, s) for p, s in _strings(after, addr) if _PRINCIPAL_PREFIX.match(s)]
         if rtype.endswith("_iam_member"):
-            triple = (rtype, _iam_target(rtype, after), after.get("role"), after.get("member"))
+            triple = (rtype, _iam_target(rtype, after, project), after.get("role"), after.get("member"))
             if triple not in iam_allowed:
                 findings.append(f"{addr}: привязка {triple[1:]!r} не входит в разрешённые контрактом")
             if after.get("role") in RUN_INVOKING_ROLES:

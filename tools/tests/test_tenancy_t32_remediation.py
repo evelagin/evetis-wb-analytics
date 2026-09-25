@@ -297,6 +297,46 @@ def test_reconciling_away_a_creator_owner_is_allowed(contract):
     assert PS.scan_plan(plan, contract) == []
 
 
+def _refreshed(plan, project):
+    """Форма плана восстановления T3.3: уже созданные привязки секретов — no-op, secret_id полным именем."""
+    for rc in plan["resource_changes"]:
+        if rc["type"] == "google_secret_manager_secret_iam_member":
+            a = rc["change"]["after"]
+            a["secret_id"] = f"projects/{project}/secrets/{a['secret_id']}"
+            rc["change"].update({"actions": ["no-op"], "before": copy.deepcopy(a)})
+    return plan
+
+
+def test_scanner_accepts_refreshed_secret_iam_in_full_resource_form(contract):
+    assert PS.scan_plan(_refreshed(_plan_for(contract), P1), contract) == []
+
+
+def test_refreshed_secret_iam_without_normalization_would_fail(contract, monkeypatch):
+    """Нормализация несёт нагрузку: без неё живой план восстановления T3.3 падал (4 ложные находки)."""
+    monkeypatch.setattr(PS, "_iam_target", lambda rtype, after, project: after.get("secret_id") or after.get("project"))
+    findings = PS.scan_plan(_refreshed(_plan_for(contract), P1), contract)
+    assert len(findings) == 4 and all("secretAccessor" in f for f in findings)
+
+
+REFRESHED_SECRET_NEGATIVE = {
+    "other tenant project": f"projects/mpa-t-client-002/secrets/ozon-seller-api-key",
+    "platform project": "projects/mpa-platform/secrets/ozon-seller-api-key",
+    "EVETIS project": "projects/project-fa311fc0-4d87-4781-986/secrets/ozon-seller-api-key",
+    "project number instead of id": "projects/210987654321/secrets/ozon-seller-api-key",
+    "secret outside contract": f"projects/{P1}/secrets/some-other-secret",
+    "extra path segment": f"projects/{P1}/secrets/ozon-seller-api-key/versions/1",
+    "wrong collection": f"projects/{P1}/topics/ozon-seller-api-key",
+}
+
+
+@pytest.mark.parametrize("name", sorted(REFRESHED_SECRET_NEGATIVE))
+def test_refreshed_secret_iam_normalization_is_tenant_scoped(contract, name):
+    plan = _refreshed(_plan_for(contract), P1)
+    rc = next(r for r in plan["resource_changes"] if r["type"] == "google_secret_manager_secret_iam_member")
+    rc["change"]["after"]["secret_id"] = REFRESHED_SECRET_NEGATIVE[name]
+    assert PS.scan_plan(plan, contract) != [], name
+
+
 def test_scanner_accepts_the_same_shape_for_client_002():
     c2 = SY.fixture_contract("client_002")
     assert PS.scan_plan(_plan_for(c2, number="210987654321"), c2) == []
