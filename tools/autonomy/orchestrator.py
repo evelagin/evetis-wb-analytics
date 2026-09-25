@@ -18,7 +18,7 @@ from typing import Callable
 from tools.autonomy import gatekeeper
 from tools.autonomy.agents import AgentAdapter, AgentResult, SCHEMA_OF_ROLE
 from tools.autonomy.evidence import EvidenceRunner, Sandbox
-from tools.autonomy.redact import ensure_clean, find_secrets, redact_text, safe_dumps, safe_text
+from tools.autonomy.redact import RedactionError, diff_added_secrets, ensure_clean, redact_obj, redact_text, safe_dumps, safe_text
 from tools.autonomy.policy import (detect_gate_weakening, forbidden_paths, load_policy, plan_requires_ack,
                                    tcb_globs, tcb_paths)
 from tools.autonomy.schema import load_schema, require_valid
@@ -71,9 +71,11 @@ class Orchestrator:
     def _put(self, run: dict, name: str, doc) -> None:
         p = self._art(run) / name
         if name.endswith(".patch"):
-            # Дифф кандидата не редактируется (это изменило бы код): секретоподобное в нём
-            # отсеивается раньше (_implement → UNSAFE); здесь — последний рубеж, fail closed.
-            p.write_text(ensure_clean(doc), encoding="utf-8")
+            # Дифф кандидата не редактируется (это изменило бы код): секретоподобное в ДОБАВЛЕННЫХ
+            # строках отсеивается раньше (_implement → UNSAFE); здесь — последний рубеж, fail closed.
+            if diff_added_secrets(doc):
+                raise RedactionError("секретоподобное в добавленных строках диффа — запись отменена")
+            p.write_text(doc, encoding="utf-8")
             return
         p.write_text(safe_text(doc) if isinstance(doc, str) else safe_dumps(doc, indent=2), encoding="utf-8")
 
@@ -207,7 +209,8 @@ class Orchestrator:
         if res.structured is None:
             return self.store.transition(run, "FAILED" if res.transient else "BLOCKED",
                                          f"план не получен: {redact_text(res.error or '')}")
-        plan = res.structured
+        # Хеш плана (для ACK владельца) — по той же, отредактированной форме, что сохраняется на диск.
+        plan = redact_obj(res.structured)
         self._put(run, "plan.json", plan)
         if leaked:
             return self.store.transition(run, "BLOCKED", f"фаза плана изменила файлы, хотя права правки нет: {leaked[:5]}")
@@ -253,7 +256,7 @@ class Orchestrator:
             return self.store.transition(run, "FAILED" if res.transient else "BLOCKED",
                                          f"кандидат не получен: {redact_text(res.error or '')}")
         report = res.structured
-        leaked_secrets = find_secrets(patch)
+        leaked_secrets = diff_added_secrets(patch)
         if leaked_secrets:
             # Секретоподобный материал в диффе — не решение человека, а инцидент; дифф не сохраняется.
             return self._unsafe(run, files, f"секретоподобный материал в диффе кандидата: {leaked_secrets}")

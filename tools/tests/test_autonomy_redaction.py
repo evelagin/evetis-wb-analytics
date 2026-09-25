@@ -201,9 +201,16 @@ def test_ci_keep_list_keeps_only_the_intended_read_only_identity():
 
 
 def test_gcloud_test_never_captures_credentials():
-    src = (REPO / "tools/tests/test_autonomy_security.py").read_text()
-    block = src.split("def test_gcloud_is_unauthenticated_inside_agent_env", 1)[1].split("\ndef ", 1)[0]
-    assert "capture_output" not in block and "subprocess.DEVNULL" in block
+    import ast
+    tree = ast.parse((REPO / "tools/tests/test_autonomy_security.py").read_text())
+    fn = next(n for n in ast.walk(tree) if isinstance(n, ast.FunctionDef)
+              and n.name == "test_gcloud_is_unauthenticated_inside_agent_env")
+    calls = [c for c in ast.walk(fn) if isinstance(c, ast.Call) and getattr(c.func, "attr", "") == "run"]
+    assert calls
+    for c in calls:
+        kw = {k.arg: ast.unparse(k.value) for k in c.keywords}
+        assert "capture_output" not in kw and "text" not in kw
+        assert kw.get("stdout") == "subprocess.DEVNULL" and kw.get("stderr") == "subprocess.DEVNULL"
 
 
 # ----------------------------------------------------- диагностика отказа федерации ---
@@ -246,3 +253,92 @@ def test_diagnostics_never_contain_jwt_signature_or_jti(monkeypatch, capsys):
     assert "unique-jti-123" not in out and "jti" not in json.loads(out)["claims"]
     assert any(m["claim"] == "repository_id" for m in json.loads(out)["mismatches_vs_spec"])
     assert set(json.loads(out)["claims"]) <= set(S.SAFE_CLAIMS) | {"lifetime_seconds"}
+
+
+# ------------------------------------------------------ замечания независимого review ---
+def test_token_on_slice_boundary_keeps_no_restorable_prefix():
+    long_tok = fake("ya29") + "Q" * 1400
+    tail = R.redact_tail("noise " + long_tok + " end", 1500)
+    assert R.find_secrets(tail) == [] and "Q" * 50 not in tail
+
+
+@pytest.mark.parametrize("text", [
+    "token_" + "ya" + "29." + "abcDEF123",
+    "ya" + "29%2E" + "abcDEF123", "ya" + "29\\u002e" + "abcDEF123",
+    "1//0" + "g" * 30,
+])
+def test_boundary_and_encoded_forms(text):
+    assert R.find_secrets(R.redact_text(text)) == [] and "[REDACTED:" in R.redact_text(text)
+
+
+def test_bare_prefix_and_prose_are_not_flagged():
+    for text in ("docs mention the ya29. prefix", "sk-ant- keys are forbidden", "Bearer authentication_required"):
+        assert R.find_secrets(text) == [], text
+
+
+def test_sensitive_keys_are_redacted_without_crash():
+    text = R.safe_dumps(dict(private_key="x", access_token="short", nested=dict(client_secret="s")))
+    assert json.loads(text)["private_key"] == "[REDACTED:secret_field]"
+
+
+def test_diff_context_and_removed_lines_are_not_blocking():
+    patch = ("diff --git a/t.py b/t.py\n--- a/t.py\n+++ b/t.py\n@@ -1,3 +1,3 @@\n"
+             f" FIXTURE = '{fake('ya29')}'\n-LEAK = '{fake('ghp')}'\n+CLEAN = 1\n")
+    assert R.diff_added_secrets(patch) == []
+    assert R.diff_added_secrets(patch + f"+NEW = '{fake('sk_ant')}'\n") == ["anthropic_key"]
+
+
+def test_ci_split_missing_untrusted_output_is_controlled_refusal(tmp_path):
+    from tools.autonomy.agents import ReplayAdapter
+    res = ReplayAdapter(tmp_path, {}).run("engineer_implement", "", tmp_path, {})
+    assert res.structured is None and "отсутствует" in res.error
+
+
+def test_ci_split_secret_diff_ends_blocked_not_crash(env, tmp_path):
+    from tools.autonomy.orchestrator import agent_run
+
+    def leak(ws):
+        F.edit_fix(ws)
+        (ws / "synthetic" / "conf.py").write_text("TOKEN = '" + fake("ghp") + "'\n")
+
+    objective = dispatch_synthetic(env)
+    make = lambda eng: (lambda s: Orchestrator(s, env["repo"], eng, ScriptedAdapter({}),  # noqa: E731
+                                                F.SyntheticEvidenceRunner(), env["sandboxes"],
+                                                trusted_base_ref="main"))
+    trusted = make(ScriptedAdapter({}))(env["store"])
+    run_id = trusted.submit(objective)[0]["run_id"]
+    trusted.advance(run_id, stop_before={"PLANNING"})
+    eng = ScriptedAdapter({"engineer_plan": [{"respond": F.plan()}],
+                           "engineer_implement": [{"edit": leak, "respond": F.implemented()}]})
+    out = tmp_path / "pending"
+    hashes = agent_run(make(eng), env["store"], run_id, out)
+    assert "engineer_implement.patch" not in hashes and not (out / "engineer_implement.patch").exists()
+    from tools.autonomy.agents import ReplayAdapter
+    run = make(ReplayAdapter(out, hashes))(env["store"]).advance(run_id, stop_before={"TESTING"})
+    assert run["state"] == "BLOCKED"
+
+
+def test_plan_hash_matches_the_stored_plan(env):
+    from tools.autonomy.orchestrator import _sha
+    plan = F.plan(); plan["summary"] = "ключ " + fake("sk_ant")
+    eng = ScriptedAdapter({"engineer_plan": [{"respond": plan}]})
+    orch, _ = orchestrator(env, eng, ScriptedAdapter({}))
+    run = orch.advance(orch.submit(dispatch_synthetic(env))[0]["run_id"], stop_before={"IMPLEMENTING"})
+    stored = json.loads((env["store"].root / "artifacts" / run["run_id"] / "plan.json").read_text())
+    assert run["plan_sha256"] == _sha(stored) and R.find_secrets(json.dumps(stored)) == []
+
+
+def test_agent_is_error_result_is_redacted(tmp_path):
+    script = tmp_path / "fake-claude"
+    payload = json.dumps({"is_error": True, "result": "boom " + fake("sk_ant")})
+    script.write_text(f"#!/bin/sh\ncat <<'EOF'\n{payload}\nEOF\n")
+    script.chmod(0o755)
+    res = ClaudeCliAdapter(binary=str(script)).run("reviewer", "p", tmp_path, {"type": "object"})
+    assert "boom" in (res.error or "") and R.find_secrets(res.error or "") == []
+
+
+def test_agent_env_drops_actions_file_command_paths():
+    base = {**CI_ENV, "GITHUB_ENV": "/f/env", "GITHUB_PATH": "/f/path", "GITHUB_OUTPUT": "/f/out",
+            "GITHUB_STATE": "/f/state", "GITHUB_STEP_SUMMARY": "/f/sum"}
+    env = scrubbed_env(base, keep=CI_KEEP_ENV)
+    assert not {"GITHUB_ENV", "GITHUB_PATH", "GITHUB_OUTPUT", "GITHUB_STATE", "GITHUB_STEP_SUMMARY"} & set(env)

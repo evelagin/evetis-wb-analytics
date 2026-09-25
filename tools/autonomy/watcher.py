@@ -24,7 +24,7 @@ from pathlib import Path
 
 from tools.autonomy.envelope import build_incident, known_checks, objective_from_incident, suites_index
 from tools.autonomy.policy import load_policy
-from tools.autonomy.redact import safe_dumps
+from tools.autonomy.redact import redact_tail, safe_dumps
 from tools.autonomy.state import StateStore, now_iso
 
 REPO = Path(__file__).resolve().parent.parent.parent
@@ -49,7 +49,7 @@ def live_source(project: str, token_command: str, suites: list[str],
                                timeout=1800)
             if not out.exists():
                 obs.append({"key": f"suite:{suite}", "kind": "suite", "check_id": suite, "suite": suite,
-                            "status": "BLOCKED", "detail": (r.stderr or r.stdout)[-300:]})
+                            "status": "BLOCKED", "detail": redact_tail(r.stderr or r.stdout or "", 300)})
                 continue
             rep = json.loads(out.read_text(encoding="utf-8"))
         for c in rep["checks"]:

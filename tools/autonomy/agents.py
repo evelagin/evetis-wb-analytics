@@ -20,7 +20,7 @@ from pathlib import Path
 from typing import Callable, Protocol
 
 from tools.autonomy.policy import load_policy
-from tools.autonomy.redact import redact_text
+from tools.autonomy.redact import redact_tail, redact_text
 from tools.autonomy.schema import validate
 
 ROLES = {"engineer_plan", "engineer_implement", "reviewer"}
@@ -35,7 +35,9 @@ SCRUB_ENV = ("GITHUB_TOKEN", "GH_TOKEN", "GOOGLE_APPLICATION_CREDENTIALS", "CLOU
              "GOOGLE_CLOUD_KEYFILE_JSON", "GOOGLE_OAUTH_ACCESS_TOKEN", "CLOUDSDK_AUTH_ACCESS_TOKEN_FILE",
              "BQ_TOKEN", "WB_", "OZON_", "EVETIS_", "TF_VAR_", "ACTIONS_RUNTIME_TOKEN",
              "ACTIONS_ID_TOKEN_REQUEST_TOKEN", "ACTIONS_ID_TOKEN_REQUEST_URL", "SSH_AUTH_SOCK",
-             "ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN", "ANTHROPIC_IDENTITY_TOKEN", "CLAUDE_CODE_OAUTH_TOKEN")
+             "ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN", "ANTHROPIC_IDENTITY_TOKEN", "CLAUDE_CODE_OAUTH_TOKEN",
+             # Файлы команд Actions: агенту незачем менять окружение, PATH, outputs и итог следующих шагов.
+             "GITHUB_ENV", "GITHUB_PATH", "GITHUB_OUTPUT", "GITHUB_STATE", "GITHUB_STEP_SUMMARY")
 
 
 @dataclass
@@ -148,7 +150,7 @@ class ClaudeCliAdapter:
                                env=scrubbed_env(extra=self.env_extra, keep=self.keep_env))
         except subprocess.TimeoutExpired:
             return AgentResult(role, None, 124, "превышено время агента", transient=True)
-        tail = redact_text((r.stdout or "")[-2000:] + (r.stderr or "")[-1000:])
+        tail = redact_tail(r.stdout or "", 2000) + redact_tail(r.stderr or "", 1000)
         try:
             doc = json.loads(r.stdout)
         except json.JSONDecodeError:
@@ -164,7 +166,7 @@ class ClaudeCliAdapter:
             except json.JSONDecodeError:
                 structured = None
         # Текст ошибки рантайма — в причину: «не JSON» или «ошибка» без текста не диагностируемы.
-        err = (f"агент завершился с ошибкой: {redact_text(str(doc.get('result'))[:300])}" if doc.get("is_error")
+        err = (f"агент завершился с ошибкой: {redact_text(str(doc.get('result')))[:300]}" if doc.get("is_error")
                else _check(role, structured, schema))
         return AgentResult(role, structured if err is None else None, r.returncode, err, usage=usage,
                            raw_tail=tail)
@@ -252,9 +254,14 @@ class ReplayAdapter:
         return path
 
     def run(self, role, prompt, workdir, schema):
-        structured = json.loads(self._verified(f"{role}.json").read_text(encoding="utf-8"))
+        try:
+            structured = json.loads(self._verified(f"{role}.json").read_text(encoding="utf-8"))
+            patch = self._verified(f"{role}.patch").read_text(encoding="utf-8") if role == "engineer_implement" else ""
+        except AgentNotPermitted as e:
+            # Недоверенный job не отдал вывод (например, сам отверг дифф с секретом): управляемый
+            # отказ → BLOCKED, а не падение доверенного шага. Подмена (IntegrityError) — по-прежнему исключение.
+            return AgentResult(role, None, 1, f"недоверенный вывод отсутствует: {e}")
         if role == "engineer_implement":
-            patch = self._verified(f"{role}.patch").read_text(encoding="utf-8")
             # Патч — ПОЛНЫЙ кандидат относительно базового коммита, поэтому песочница сначала
             # возвращается к базе (при FIXING в ней лежит прошлый кандидат).
             subprocess.run(["git", "reset", "-q", "--hard", "HEAD"], cwd=workdir, capture_output=True)
@@ -264,7 +271,7 @@ class ReplayAdapter:
                                    text=True, capture_output=True)
                 if r.returncode != 0:
                     return AgentResult(role, None, 1, "патч недоверенного вывода не применяется: "
-                                       + redact_text(r.stderr[-300:]))
+                                       + redact_tail(r.stderr, 300))
         err = _check(role, structured, schema)
         return AgentResult(role, structured if err is None else None, 0 if err is None else 1, err,
                            usage={"adapter": self.name})

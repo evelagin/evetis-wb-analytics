@@ -14,7 +14,7 @@ import tempfile
 from pathlib import Path
 
 from tools.autonomy.policy import branch_allowed, detect_gate_weakening, forbidden_paths, tcb_paths
-from tools.autonomy.redact import find_secrets, redact_text, safe_text
+from tools.autonomy.redact import diff_added_secrets, redact_text, safe_text
 from tools.autonomy.report import render_report
 
 
@@ -55,7 +55,7 @@ class GitPublisher:
         bad = forbidden_paths(files)
         if bad:
             raise PublishRefused(f"запрещённые пути (секреты): {bad}")
-        leaked = find_secrets(patch)
+        leaked = diff_added_secrets(patch)
         if leaked:
             raise PublishRefused(f"секретоподобный материал в диффе: {leaked}")
         tcb = tcb_paths(files)

@@ -18,7 +18,7 @@ import tempfile
 from pathlib import Path
 from typing import Protocol
 
-from tools.autonomy.redact import redact_text
+from tools.autonomy.redact import redact_tail, redact_text
 
 
 def _git(cwd: Path, *args: str, check: bool = True, input: str | None = None) -> str:
@@ -96,7 +96,7 @@ def _run(cmd: list[str], cwd: Path, timeout: int = 1800, env: dict | None = None
     except FileNotFoundError as e:
         return {"exit_code": 127, "tail": str(e)}
     # Хвост вывода — недоверенный текст (repr stdout теста мог содержать токен, инцидент M6).
-    return {"exit_code": r.returncode, "tail": redact_text(((r.stdout or "") + (r.stderr or ""))[-1500:])}
+    return {"exit_code": r.returncode, "tail": redact_tail((r.stdout or "") + (r.stderr or ""), 1500)}
 
 
 class RepoEvidenceRunner:

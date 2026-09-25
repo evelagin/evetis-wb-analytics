@@ -145,7 +145,8 @@ def main(argv=None) -> int:
         else:
             ap.error("нужен --fixture или --live")
         rep = watch(obs, store, _sha(), Path(a.out), synthetic=bool(a.fixture and "synthetic" in a.fixture))
-        text = json.dumps(rep, ensure_ascii=False, indent=2)
+        from tools.autonomy.redact import safe_dumps
+        text = safe_dumps(rep, indent=2)
         if a.report:
             Path(a.report).write_text(text, encoding="utf-8")
         print(text)
