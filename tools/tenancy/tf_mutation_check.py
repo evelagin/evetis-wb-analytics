@@ -51,6 +51,14 @@ MUTATIONS = [
      r'condition = var\.contract\.project_id == format\("mpa-t%s-%s",',
      'condition = var.contract.project_id != "" || var.contract.project_id == format("mpa-t%s-%s",'),
     ("schedulers unpaused", "modules/ozon_runtime/main.tf", r"\n  paused    = true\n", "\n  paused    = false\n"),
+    # T3.3: ACL датасета авторитетный. Без него BigQuery делает создателя (провижионера) OWNER.
+    ("dataset ACL dropped (creator OWNER default)", "main.tf",
+     r"\n  access \{\n    role          = \"OWNER\"\n.*?\n  \}\n\n  dynamic \"access\" \{.*?\n  \}\n", "\n"),
+    ("provisioner added to dataset ACL", "main.tf",
+     r"(\n  access \{\n    role          = \"OWNER\"\n    special_group = \"projectOwners\"\n  \}\n)",
+     "\\1\n  access {\n    role          = \"OWNER\"\n    user_by_email = \"sa-tenant-provisioner@mpa-platform.iam.gserviceaccount.com\"\n  }\n"),
+    ("runtime raw grant widened to OWNER", "main.tf",
+     r'role = "WRITER", user_by_email', 'role = "OWNER", user_by_email'),
 ]
 
 

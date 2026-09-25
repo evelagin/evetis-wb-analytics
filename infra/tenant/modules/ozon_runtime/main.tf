@@ -22,14 +22,6 @@ variable "tenant_id" {
   type = string
 }
 
-variable "raw_dataset" {
-  type = string
-}
-
-variable "ref_dataset" {
-  type = string
-}
-
 variable "ozon" {
   type = object({
     service_accounts = object({
@@ -77,24 +69,11 @@ resource "google_service_account" "scheduler" {
   description  = "Без ролей до ворот активации: вызывать job'ы не может. run.invoker выдают только ворота активации."
 }
 
-# ── BigQuery: права на датасеты, а не на проект ─────────────────────────────
-resource "google_bigquery_dataset_iam_member" "runtime_raw_editor" {
-  project    = var.project_id
-  dataset_id = var.raw_dataset
-  role       = "roles/bigquery.dataEditor"
-  member     = local.runtime_member
-
-  depends_on = [google_service_account.runtime]
-}
-
-resource "google_bigquery_dataset_iam_member" "runtime_ref_viewer" {
-  project    = var.project_id
-  dataset_id = var.ref_dataset
-  role       = "roles/bigquery.dataViewer"
-  member     = local.runtime_member
-
-  depends_on = [google_service_account.runtime]
-}
+# ── BigQuery: доступ к датасетам — НЕ здесь ─────────────────────────────────
+# Весь ACL датасета задаётся авторитетно в самом google_bigquery_dataset (корень,
+# main.tf, T3.3). Отдельные google_bigquery_dataset_iam_member перетирали бы его и
+# оставляли создателя датасета (провижионера) OWNER'ом. Модуль лишь отдаёт email
+# runtime SA (output runtime_email) — после создания SA.
 
 # Задания BigQuery (загрузка, MERGE) запускаются от проекта. Роль — единственная в
 # allow-list условного projectIamAdmin провижионера (T3.1B).
@@ -173,8 +152,6 @@ resource "google_cloud_run_v2_job" "this" {
 
   depends_on = [
     google_service_account.runtime,
-    google_bigquery_dataset_iam_member.runtime_raw_editor,
-    google_bigquery_dataset_iam_member.runtime_ref_viewer,
     google_project_iam_member.runtime_job_user,
     google_secret_manager_secret_iam_member.runtime_access,
   ]
@@ -217,6 +194,14 @@ resource "google_cloud_scheduler_job" "this" {
   }
 
   depends_on = [google_cloud_run_v2_job.this, google_service_account.scheduler]
+}
+
+# Email runtime SA для ACL датасетов в корне. Значение детерминировано (известно на
+# плане, сканер сверяет его точно), зависимость — от СОЗДАНИЯ SA: BigQuery принимает в
+# ACL только существующий аккаунт.
+output "runtime_email" {
+  value      = local.runtime_email
+  depends_on = [google_service_account.runtime]
 }
 
 output "summary" {

@@ -29,6 +29,13 @@
      значениях ресурсов, кроме ровно утверждённого образа в поле image job'а.
   V. Расписания paused = true, URI — ровно run-вызов своего job'а, OAuth SA — свой
      планировщик. Образ job'а — ровно утверждённый digest контракта.
+  D. ACL датасетов (T3.3) — авторитетный google_bigquery_dataset.access: известен на плане
+     и ровно равен контракту (projectOwners OWNER + runtime SA WRITER/READER на свои
+     датасеты). Провижионер, SA планировщика, публичные, внешние и чужие принципалы —
+     отказ. Отдельных google_bigquery_dataset_iam_* быть не может.
+  E. Исключение для google_service_account.member (вычисляемое поле провайдера 7.x,
+     «serviceAccount:<свой email>»): допустимо ТОЛЬКО это поле, ровно свой email, и только
+     для SA из контракта. Это не выдача прав и не список разрешённых привязок.
 """
 from __future__ import annotations
 
@@ -48,7 +55,7 @@ from tools.tenancy import platform as PL  # noqa: E402
 ALLOWED_MANAGED_TYPES = frozenset({
     "terraform_data",
     "google_project_service",
-    "google_bigquery_dataset", "google_bigquery_table", "google_bigquery_dataset_iam_member",
+    "google_bigquery_dataset", "google_bigquery_table",
     "google_project_iam_member",
     "google_service_account",
     "google_secret_manager_secret", "google_secret_manager_secret_iam_member",
@@ -65,11 +72,10 @@ ALLOWED_ACTIONS = ({"create"}, {"update"}, {"no-op"})
 W = "*"
 CRITICAL_FIELDS = {
     "google_project_service": [("project",), ("service",)],
-    "google_bigquery_dataset": [("project",), ("dataset_id",)],
+    "google_bigquery_dataset": [("project",), ("dataset_id",), ("access",)],
     "google_bigquery_table": [("project",), ("dataset_id",), ("table_id",), ("schema",)],
-    "google_bigquery_dataset_iam_member": [("project",), ("dataset_id",), ("role",), ("member",)],
     "google_project_iam_member": [("project",), ("role",), ("member",)],
-    "google_service_account": [("project",), ("account_id",)],
+    "google_service_account": [("project",), ("account_id",), ("email",), ("member",)],
     "google_secret_manager_secret": [("project",), ("secret_id",)],
     "google_secret_manager_secret_iam_member": [("project",), ("secret_id",), ("role",), ("member",)],
     "google_cloud_run_v2_job": [("project",), ("name",), ("location",),
@@ -197,20 +203,82 @@ def expected_iam(contract: dict) -> set[tuple[str, str, str, str]]:
     if ozon:
         runtime = f"serviceAccount:{ozon['service_accounts']['runtime']}@{p}.iam.gserviceaccount.com"
         allowed.add(("google_project_iam_member", p, "roles/bigquery.jobUser", runtime))
-        allowed.add(("google_bigquery_dataset_iam_member", contract["datasets"][ozon["raw_dataset_key"]],
-                     "roles/bigquery.dataEditor", runtime))
-        allowed.add(("google_bigquery_dataset_iam_member", contract["datasets"][ozon["ref_dataset_key"]],
-                     "roles/bigquery.dataViewer", runtime))
         for sid in ozon["secret_ids"].values():
             allowed.add(("google_secret_manager_secret_iam_member", sid, "roles/secretmanager.secretAccessor",
                          runtime))
     return allowed
 
 
+def expected_dataset_access(contract: dict) -> dict[str, set[tuple[str, str, str]]]:
+    """ACL каждого датасета — ровно (роль, вид принципала, принципал) из контракта (правило D)."""
+    p, ozon = contract["project_id"], contract["marketplaces"].get("ozon")
+    acl = {ds: {("OWNER", "special_group", "projectOwners")} for ds in contract["datasets"].values()}
+    if ozon:
+        runtime = f"{ozon['service_accounts']['runtime']}@{p}.iam.gserviceaccount.com"
+        acl[contract["datasets"][ozon["raw_dataset_key"]]].add(("WRITER", "user_by_email", runtime))
+        acl[contract["datasets"][ozon["ref_dataset_key"]]].add(("READER", "user_by_email", runtime))
+    return acl
+
+
+_ACCESS_PRINCIPAL_KEYS = ("user_by_email", "group_by_email", "domain", "special_group", "iam_member")
+_ACCESS_NESTED_KEYS = ("view", "dataset", "routine", "condition")
+
+
+def _access_entries(access) -> tuple[set[tuple[str, str, str]], list[str]]:
+    """Нормализованные записи ACL датасета и описания записей, которые нормализовать нельзя."""
+    entries, bad = set(), []
+    for i, a in enumerate(access if isinstance(access, list) else []):
+        if not isinstance(a, dict):
+            bad.append(f"access[{i}] не объект")
+            continue
+        who = [(k, a.get(k)) for k in _ACCESS_PRINCIPAL_KEYS if a.get(k)]
+        nested = [k for k in _ACCESS_NESTED_KEYS if a.get(k)]
+        if nested or len(who) != 1:
+            bad.append(f"access[{i}] {sorted(k for k, _v in who) + nested}")
+            continue
+        entries.add((str(a.get("role")), who[0][0], str(who[0][1])))
+    return entries, bad
+
+
 def _iam_target(rtype: str, after: dict) -> str | None:
     return {"google_project_iam_member": after.get("project"),
-            "google_bigquery_dataset_iam_member": after.get("dataset_id"),
             "google_secret_manager_secret_iam_member": after.get("secret_id")}.get(rtype)
+
+
+def dataset_acl_findings(addr, after, unknown, dataset_acl, scheduler_email) -> list[str]:
+    """Правило D для одного датасета: ACL ровно равен контракту."""
+    out = []
+    want = dataset_acl.get(after.get("dataset_id"))
+    got, bad = _access_entries(after.get("access"))
+    for b in bad:
+        out.append(f"{addr}: запись ACL вне контракта ({b})")
+    if want is None:
+        out.append(f"{addr}: датасет {after.get('dataset_id')!r} вне контракта")
+    elif not _unknown_at(unknown, ("access",)):
+        for role, kind, who in sorted(got - want):
+            out.append(f"{addr}: ACL датасета — лишняя запись {role} {kind}={who!r}{_acl_hint(who, scheduler_email)}")
+        for role, kind, who in sorted(want - got):
+            out.append(f"{addr}: ACL датасета — нет обязательной записи {role} {kind}={who!r}")
+    return out
+
+
+def _own_sa_member(addr, path, s, after, project, contract_sa_emails) -> bool:
+    """Правило E: вычисляемое member сервисного аккаунта = он сам, и SA ожидается контрактом."""
+    email = after.get("email")
+    return (path == f"{addr}.member" and isinstance(email, str)
+            and email == f"{after.get('account_id')}@{project}.iam.gserviceaccount.com"
+            and email in contract_sa_emails and s == f"serviceAccount:{email}")
+
+
+def _acl_hint(who: str, scheduler_email: str | None) -> str:
+    low = who.lower()
+    if PL.PROVISIONER_SA in low or "sa-tenant-provisioner" in low:
+        return " (провижионер не может быть в ACL данных арендатора)"
+    if scheduler_email and scheduler_email in low:
+        return " (SA планировщика не получает доступа к данным)"
+    if who in ("allUsers", "allAuthenticatedUsers"):
+        return " (публичный доступ)"
+    return ""
 
 
 def invocation_grants(plan: dict) -> list[str]:
@@ -240,6 +308,8 @@ def scan_plan(plan: dict, contract: dict) -> list[str]:
     scheduler_email = f"{ozon['service_accounts']['scheduler']}@{project}.iam.gserviceaccount.com" if ozon else None
     platform_markers = (PL.PLATFORM_PROJECT_ID, PL.PLATFORM_PROJECT_NUMBER, PL.STATE_BUCKET)
     iam_allowed = expected_iam(contract)
+    dataset_acl = expected_dataset_access(contract)
+    contract_sa_emails = {e for e in (runtime_email, scheduler_email) if e}
 
     # M. EVETIS — нигде: configuration, prior_state, переменные, значения.
     for path, s in _strings(plan):
@@ -343,7 +413,14 @@ def scan_plan(plan: dict, contract: dict) -> list[str]:
                 findings.append(f"{addr}: SA планировщика не получает ролей до ворот активации")
         else:
             for path, s in principals:
+                if rtype == "google_service_account" and _own_sa_member(addr, path, s, after, project,
+                                                                          contract_sa_emails):
+                    continue
                 findings.append(f"{path}: принципал {s!r} вне IAM-ресурса контракта")
+
+        # D. ACL датасета — известен и ровно равен контракту.
+        if rtype == "google_bigquery_dataset":
+            findings += dataset_acl_findings(addr, after, unknown, dataset_acl, scheduler_email)
 
         if rtype == "google_cloud_run_v2_job":
             for path, s in _strings(after, addr):

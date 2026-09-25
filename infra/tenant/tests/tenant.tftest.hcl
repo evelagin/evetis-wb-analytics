@@ -54,6 +54,18 @@ run "client_001_renders" {
     condition     = output.ozon.runtime_sa == "sa-ozon-runtime@mpa-t-client-001.iam.gserviceaccount.com" && output.ozon.scheduler_sa == "sa-ozon-scheduler@mpa-t-client-001.iam.gserviceaccount.com"
     error_message = "идентичности выводятся детерминированно и известны на плане"
   }
+  assert {
+    condition     = toset([for a in output.dataset_access["ozon_raw"] : "${a.role}|${a.special_group == null ? "" : a.special_group}|${a.user_by_email == null ? "" : a.user_by_email}"]) == toset(["OWNER|projectOwners|", "WRITER||sa-ozon-runtime@mpa-t-client-001.iam.gserviceaccount.com"])
+    error_message = "ACL ozon_raw: ровно projectOwners OWNER и runtime SA WRITER (T3.3: без создателя-провижионера)"
+  }
+  assert {
+    condition     = toset([for a in output.dataset_access["ref"] : "${a.role}|${a.special_group == null ? "" : a.special_group}|${a.user_by_email == null ? "" : a.user_by_email}"]) == toset(["OWNER|projectOwners|", "READER||sa-ozon-runtime@mpa-t-client-001.iam.gserviceaccount.com"])
+    error_message = "ACL ref: ровно projectOwners OWNER и runtime SA READER"
+  }
+  assert {
+    condition     = !strcontains(jsonencode(output.dataset_access), "sa-tenant-provisioner") && !strcontains(jsonencode(output.dataset_access), "sa-ozon-scheduler")
+    error_message = "в ACL датасетов нет ни провижионера, ни SA планировщика"
+  }
 }
 
 run "client_002_same_code_different_tenant" {
@@ -76,6 +88,18 @@ run "client_002_same_code_different_tenant" {
   assert {
     condition     = alltrue([for k, e in output.ozon.env : e["GCP_PROJECT_ID"] == "mpa-t-client-002"])
     error_message = "client_002: job'ы обязаны смотреть в свой проект"
+  }
+  assert {
+    condition     = toset([for a in output.dataset_access["ozon_raw"] : "${a.role}|${a.special_group == null ? "" : a.special_group}|${a.user_by_email == null ? "" : a.user_by_email}"]) == toset(["OWNER|projectOwners|", "WRITER||sa-ozon-runtime@mpa-t-client-002.iam.gserviceaccount.com"])
+    error_message = "ACL ozon_raw: ровно projectOwners OWNER и runtime SA WRITER (T3.3: без создателя-провижионера)"
+  }
+  assert {
+    condition     = toset([for a in output.dataset_access["ref"] : "${a.role}|${a.special_group == null ? "" : a.special_group}|${a.user_by_email == null ? "" : a.user_by_email}"]) == toset(["OWNER|projectOwners|", "READER||sa-ozon-runtime@mpa-t-client-002.iam.gserviceaccount.com"])
+    error_message = "ACL ref: ровно projectOwners OWNER и runtime SA READER"
+  }
+  assert {
+    condition     = !strcontains(jsonencode(output.dataset_access), "sa-tenant-provisioner") && !strcontains(jsonencode(output.dataset_access), "sa-ozon-scheduler")
+    error_message = "в ACL датасетов нет ни провижионера, ни SA планировщика"
   }
 }
 
