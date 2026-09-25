@@ -212,9 +212,8 @@ def test_01_to_05_preflight_job_is_authentication_only(name, role):
     for bad in FORBIDDEN_IN_PREFLIGHT:
         assert bad not in body, f"{name}/preflight: {bad}"
     runs = re.findall(r"^\s*(?:- )?run: (.+)$", body, re.M)
-    assert f"python -m tools.autonomy.anthropic_scope preflight --role {role}" in runs
-    assert [r for r in runs if "python" in r] == [f"python -m tools.autonomy.anthropic_scope preflight --role {role}"]
-    assert set(re.findall(r"uses: ([\w./-]+)@", body)) == {"actions/checkout", "actions/setup-python"}
+    assert [r for r in runs if "python" in r] == [f"python3 -m tools.autonomy.anthropic_scope preflight --role {role}"]
+    assert set(re.findall(r"uses: ([\w./-]+)@", body)) == {"actions/checkout"}          # stdlib: ни pip, ни setup-python
     assert "persist-credentials: false" in body and "id-token: write" in body and "contents: read" in body
 
 
@@ -376,7 +375,8 @@ def test_12_developer_passes_only_inside_the_exception_window(role):
                                        ("workspace:unknown", 600), ("workspace:manage_tunnels", 600),
                                        ("", 600), (None, 600), ("workspace:developer", 601),
                                        ("workspace:inference", 3600), ("workspace:inference", None),
-                                       ("workspace:inference", 0)])
+                                       ("workspace:inference", 0), ("workspace:inference", True),
+                                       ("workspace:developer", False), ("workspace:inference", 600.0)])
 def test_13_admin_unknown_scope_or_long_ttl_fail_closed(scope, ttl):
     ev = pf(exch=Exch(scope=scope, ttl=ttl))[0]
     assert ev["decision"] == "FAIL"
@@ -449,8 +449,10 @@ def test_14_success_output_has_no_credentials(monkeypatch, tmp_path, capsys, rol
         assert secret not in out
     assert find_secrets(out) == []
     ev = json.loads(out[:out.index("\n}") + 2])
-    assert set(ev) <= {"mode", "role", "decision", "federation_rule_id", "service_account_id", "workspace_id",
-                       "scope", "expires_in", "request_id", "desired_scope", "claims", "reason", "exception_expires"}
+    assert set(ev) <= {"mode", "role", "decision", "requested_federation_rule_id", "requested_service_account_id",
+                       "requested_workspace_id", "scope", "expires_in", "request_id", "desired_scope", "claims",
+                       "reason", "exception_expires", "identity_proof"}
+    assert ev["requested_workspace_id"] == (REV_ENV if role == "reviewer" else ENG_ENV)["ANTHROPIC_WORKSPACE_ID"]
     assert "jti" not in ev["claims"] and ev["expires_in"] == 600 and ev["scope"] == "workspace:developer"
 
 
@@ -486,3 +488,21 @@ def test_14_output_path_redacts_even_if_evidence_carries_a_secret(monkeypatch, t
     assert S.run_preflight("engineer") == 1
     out = capsys.readouterr().out + summary.read_text()
     assert leak not in out and "[REDACTED:" in out and find_secrets(out) == []
+
+
+@pytest.mark.parametrize("name", sorted(REUSABLE))
+def test_run_job_still_rejects_empty_run_id_and_state_sha(name):
+    """run_id/state_sha больше не required (preflight их не передаёт) — job прохода обязан отвергать пустые."""
+    body = jobs(text(WF / name))[{"autonomy-engineer.yml": "engineer", "autonomy-review.yml": "review"}[name]]
+    guard = body.split("steps:", 1)[1].split("- uses:", 1)[0]
+    assert '[[ "$RUN_ID" =~ ^run-[0-9]{8}T[0-9]{6}Z-[0-9a-f]{8}$ ]]' in guard
+    assert '[[ "$STATE_SHA" =~ ^[0-9a-f]{40}$ ]]' in guard
+
+
+def test_14_redaction_refusal_is_fail_without_traceback(monkeypatch, capsys):
+    def refuse(*a, **k):
+        raise S.RedactionError("остаток")
+    monkeypatch.setattr(S, "preflight", lambda *a, **k: {"mode": "preflight", "role": "engineer", "decision": "PASS"})
+    monkeypatch.setattr(S, "safe_dumps", refuse)
+    monkeypatch.delenv("GITHUB_STEP_SUMMARY", raising=False)
+    assert S.run_preflight("engineer") == 1 and '"decision": "FAIL"' in capsys.readouterr().out

@@ -46,7 +46,7 @@ import urllib.request
 from datetime import date
 
 from tools.autonomy.policy import REPO, load_policy
-from tools.autonomy.redact import redact_text, safe_dumps, safe_text
+from tools.autonomy.redact import RedactionError, redact_text, safe_dumps, safe_text
 
 TOKEN_URL = "https://api.anthropic.com/v1/oauth/token"
 AUDIENCE = "https://api.anthropic.com"
@@ -126,7 +126,7 @@ def decide(scope: str | None, expires_in: int | None, role: str, rt: dict, today
            "exception": None}
     if not scope or not scope.startswith("workspace:"):
         return {**res, "decision": "FAIL", "reason": f"scope {scope!r}: административный или неизвестный — никогда"}
-    if not isinstance(expires_in, int) or expires_in <= 0 or expires_in > rt["max_token_lifetime_seconds"]:
+    if type(expires_in) is not int or expires_in <= 0 or expires_in > rt["max_token_lifetime_seconds"]:
         return {**res, "decision": "FAIL",
                 "reason": f"expires_in {expires_in!r} вне 1…{rt['max_token_lifetime_seconds']} с"}
     if scope == rt["desired_scope"]:
@@ -195,9 +195,11 @@ def preflight(role: str, env, rt: dict, spec: dict, today: date, oidc=None, exch
     """Фаза 0: только аутентификация. Никакого запроса к модели, GCP или состоянию AE."""
     oidc, exch = oidc or _oidc, exch or exchange
     ev = {"mode": "preflight", "role": role, "decision": "FAIL",
-          "federation_rule_id": env.get("ANTHROPIC_FEDERATION_RULE_ID"),
-          "service_account_id": env.get("ANTHROPIC_SERVICE_ACCOUNT_ID"),
-          "workspace_id": env.get("ANTHROPIC_WORKSPACE_ID"),
+          # Запрошенные ID. Ответ обмена их не возвращает (только scope/срок), поэтому доказательство
+          # идентичности — ПРИНЯТИЕ обмена Anthropic по этим rule/SA/workspace (Admin API федерации 404).
+          "requested_federation_rule_id": env.get("ANTHROPIC_FEDERATION_RULE_ID"),
+          "requested_service_account_id": env.get("ANTHROPIC_SERVICE_ACCOUNT_ID"),
+          "requested_workspace_id": env.get("ANTHROPIC_WORKSPACE_ID"),
           "scope": None, "expires_in": None, "request_id": None, "desired_scope": rt["desired_scope"]}
     problems = config_problems(role, env)
     if problems:
@@ -217,6 +219,7 @@ def preflight(role: str, env, rt: dict, spec: dict, today: date, oidc=None, exch
         del assertion
     res = decide(scope, ttl, role, rt, today)
     return {**ev, "scope": scope, "expires_in": ttl, "request_id": request_id, "decision": res["decision"],
+            "identity_proof": "обмен принят Anthropic для запрошенных rule/SA/workspace",
             "reason": res["reason"], "exception_expires": (res["exception"] or {}).get("expires")}
 
 
@@ -235,7 +238,11 @@ def run_preflight(role: str) -> int:
     except Exception as e:           # сеть, OIDC, политика — любой сбой = FAIL, без трассировки с данными
         ev = {"mode": "preflight", "role": role, "decision": "FAIL",
               "reason": f"{type(e).__name__}: {redact_text(str(e))[:200]}"}
-    text = safe_dumps(ev, indent=2)
+    try:
+        text = safe_dumps(ev, indent=2)
+    except RedactionError:
+        ev = {"mode": "preflight", "role": role, "decision": "FAIL", "reason": "редакция отказала в выводе доказательств"}
+        text = json.dumps(ev, ensure_ascii=False, indent=2)
     print(text)
     _summary(safe_text(f"### Claude API WIF preflight ({role}): **{ev['decision']}**\n\n```json\n{text}\n```\n"))
     return 0 if ev["decision"] in ("PASS", "PASS_WITH_EXCEPTION") else 1

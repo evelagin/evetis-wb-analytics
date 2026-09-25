@@ -70,8 +70,6 @@ jobs:
     permissions: {contents: read, id-token: write}
     with:
       mode: preflight
-      run_id: ""
-      state_sha: ""
 
   preflight-reviewer:
     needs: preflight-enabled
@@ -79,8 +77,6 @@ jobs:
     permissions: {contents: read, id-token: write}
     with:
       mode: preflight
-      run_id: ""
-      state_sha: ""
 
   prepare:
     needs: enabled

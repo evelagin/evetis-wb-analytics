@@ -9,8 +9,9 @@ name: autonomy-review
 on:
   workflow_call:
     inputs:
-      run_id: {type: string, required: true}
-      state_sha: {type: string, required: true}
+      # Не required: preflight их не передаёт; job прохода строго проверяет оба (пустое → отказ).
+      run_id: {type: string, required: false, default: ""}
+      state_sha: {type: string, required: false, default: ""}
       mode:
         description: "run — проход AE; preflight — только аутентификация Claude API (Фаза 0)"
         type: string
@@ -118,8 +119,5 @@ jobs:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           persist-credentials: false
-      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
-        with:
-          python-version: "3.12"
       - name: Claude API WIF preflight — только обмен токена (stdlib, без модели)
-        run: python -m tools.autonomy.anthropic_scope preflight --role reviewer
+        run: python3 -m tools.autonomy.anthropic_scope preflight --role reviewer

@@ -35,8 +35,15 @@
   claims OIDC-токена совпадают со спецификацией правила роли (иначе обмена нет); обмен;
   `decide`: `workspace:inference` → PASS, `workspace:developer` → PASS_WITH_EXCEPTION до 2026-10-09,
   прочее (включая `org:admin`, срок > 600 с, отказ обмена) → FAIL.
-- Доказательства (лог и итог job'а, через редакцию #194): роль, ID правила/SA/workspace, scope,
-  expires_in, решение, request-id Anthropic, несекретные claims.
+- Доказательства (лог и итог job'а, через редакцию #194): роль, ЗАПРОШЕННЫЕ ID правила/SA/workspace,
+  scope, expires_in, решение, request-id Anthropic, несекретные claims. Ответ обмена ID не
+  возвращает, поэтому доказательство идентичности — принятие обмена Anthropic для запрошенных
+  rule/SA/workspace; сверка — история аутентификации Console по request-id.
+- Диспатчить только при отсутствующем `AE_ENABLED` и без прогона `autonomy-run` в очереди: у группы
+  concurrency `autonomy-run` новый запуск вытесняет ожидающий.
+- Токен OIDC job'а preflight теоретически обменивается на `sa-ae-reader` (тот же `job_workflow_ref`,
+  что у инженера, — это не расширение: инженер уже имеет эту идентичность). В job'е нет шага GCP,
+  его код — код `main`; запрет закреплён тестом содержимого job'а.
 - Регрессия: `tools/tests/test_autonomy_preflight.py` (перебор всех сочетаний выключателей).
 
 ## 1. Bootstrap состояния
