@@ -6,6 +6,13 @@
 4 ложными находками: после refresh провайдер пишет `secret_id` у `google_secret_manager_secret_iam_member`
 полным именем `projects/<проект>/secrets/<id>`. `plan_scan._iam_target` сводит эту форму к `<id>`
 только для проекта арендатора; чужой проект, номер, лишние сегменты — по-прежнему отказ.
+## 2026-09-25 — Tenancy T3.3: чтение реестра образов провижионером доказано вживую
+
+Первый apply `client_001` упал на `Jobs.CreateJob`: Cloud Run требует
+`artifactregistry.repositories.downloadArtifacts` у создающей идентичности (провижионера), а не
+только у сервис-агента. `roles/artifactregistry.reader` выдан провижионеру только на репозиторий
+`mpa-runtime` (действует: `downloadArtifacts`, `get`). `iam_proposals.py` и `TENANCY_DESIGN §4a`
+обновлены. Архитектура runtime не менялась, образ в проект арендатора не копируется.
 
 ## 2026-09-25 — PR-PLAN-1: версии плана продаж и помесячная траектория запаса
 

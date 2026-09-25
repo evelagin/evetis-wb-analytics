@@ -220,8 +220,10 @@ ARTIFACT_REGISTRY_BINDINGS = {
                   f"{PL.RUNTIME_REPOSITORY}",
     "bindings": [
         {"member": f"serviceAccount:{PL.PROVISIONER_SA}", "role": "roles/artifactregistry.reader",
-         "why": "деплоящей идентичности нужно чтение репозитория образа другого проекта (документировано "
-                "для сервисов Cloud Run; для job'ов — NEEDS_LIVE_PROOF отрицательным тестом в T3.3)"},
+         "why": "ДОКАЗАНО ВЖИВУЮ (T3.3, 2026-09-25): Cloud Run Jobs.CreateJob проверяет у СОЗДАЮЩЕЙ "
+                "идентичности artifactregistry.repositories.downloadArtifacts на образ чужого проекта; "
+                "reader сервис-агента для этого недостаточен (403 у провижионера при run.jobs.create=true). "
+                "Действует: downloadArtifacts и get; записи, удаления, тегов и IAM нет"},
         {"member": "serviceAccount:service-<TENANT_PROJECT_NUMBER>@serverless-robot-prod.iam.gserviceaccount.com",
          "role": "roles/artifactregistry.reader",
          "why": "сервис-агент Cloud Run проекта арендатора тянет образ при каждом запуске"},
