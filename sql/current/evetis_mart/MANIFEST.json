@@ -6552,7 +6552,7 @@
       "object_name": "V_SALES_PLAN_MONTHLY_CURRENT",
       "object_type": "VIEW",
       "canonical_path": "sql/current/evetis_mart/V_SALES_PLAN_MONTHLY_CURRENT.sql",
-      "sync_state": "pending_deploy",
+      "sync_state": "captured_live",
       "dependencies": [
         "V_SALES_PLAN_APPROVED",
         "V_SKU_SELL_THROUGH_CURRENT"
@@ -6562,17 +6562,17 @@
         "wb_mart.V_CT_ACTUAL_DAILY"
       ],
       "dependency_level": 3,
-      "capture_main_sha": "2ad14a0b64ab1786b0fa97c13ae7a3f40f012ec1",
-      "captured_at": "2026-09-24T11:16:46Z",
+      "capture_main_sha": "2a60a76724ac7197ff87de2f267cbf2f0202f0cb",
+      "captured_at": "2026-09-25T13:10:45Z",
       "provenance": {
-        "source": "production INFORMATION_SCHEMA read-only capture (R2C) after PR-PROMO-4 deploy 2026-09-24 from main 2ad14a0",
+        "source": "production INFORMATION_SCHEMA read-only capture (R2C) after PR-PLAN-1 deploy 2026-09-25 from main 2a60a76",
         "historical_migration": null,
         "preflight_parity": "DEPLOYED_AND_READBACK_MATCH",
         "superseded_historical_definitions": []
       },
-      "live_body_sha256_at_capture": "2b762627b733410d1b18c41a247d0519864e515b4d6ff5b05a5631cc848f1e68",
-      "live_schema_sha256_at_capture": "b8011fa077a40ca8cdfe19a23e04c8badc296a30240c660a47068d579ffe1da7",
-      "live_description_sha256_at_capture": "629a851783cb0682f6148dcd8efa479335164d04e0c229c6ee0e63b37877d26d",
+      "live_body_sha256_at_capture": "ad9c70e3d864f42a0ebebab862fa80646a19f9c449381e5c7a5026b04a65377c",
+      "live_schema_sha256_at_capture": "577e8fd75e25a2e9186beccac732b1ef8dfaf7debf2f0195d61290115bb6ad76",
+      "live_description_sha256_at_capture": "f3300a72671ad414ed64258ad783a3d206c28b6573b26a5e9e0f604f56612253",
       "live_schema_at_capture": [
         {
           "column_name": "plan_version",
@@ -6587,37 +6587,37 @@
           "ordinal_position": 2
         },
         {
-          "column_name": "scenario_code",
+          "column_name": "plan_kind",
           "data_type": "STRING",
           "is_nullable": "YES",
           "ordinal_position": 3
         },
         {
-          "column_name": "ct_plan_status",
+          "column_name": "method_id",
           "data_type": "STRING",
           "is_nullable": "YES",
           "ordinal_position": 4
         },
         {
-          "column_name": "plan_source_artifact",
+          "column_name": "plan_created_by",
           "data_type": "STRING",
           "is_nullable": "YES",
           "ordinal_position": 5
         },
         {
-          "column_name": "plan_created_by",
-          "data_type": "STRING",
+          "column_name": "plan_created_at",
+          "data_type": "TIMESTAMP",
           "is_nullable": "YES",
           "ordinal_position": 6
         },
         {
-          "column_name": "plan_created_at",
-          "data_type": "TIMESTAMP",
+          "column_name": "plan_approval_status",
+          "data_type": "STRING",
           "is_nullable": "YES",
           "ordinal_position": 7
         },
         {
-          "column_name": "plan_approval_status",
+          "column_name": "version_lifecycle_status",
           "data_type": "STRING",
           "is_nullable": "YES",
           "ordinal_position": 8
@@ -6641,178 +6641,190 @@
           "ordinal_position": 11
         },
         {
-          "column_name": "approved_scope",
+          "column_name": "approved_content_sha256",
           "data_type": "STRING",
           "is_nullable": "YES",
           "ordinal_position": 12
         },
         {
-          "column_name": "planning_metrics_status",
-          "data_type": "STRING",
+          "column_name": "effective_from_month",
+          "data_type": "DATE",
           "is_nullable": "YES",
           "ordinal_position": 13
         },
         {
-          "column_name": "month",
+          "column_name": "effective_to_month_exclusive",
           "data_type": "DATE",
           "is_nullable": "YES",
           "ordinal_position": 14
         },
         {
-          "column_name": "month_end",
-          "data_type": "DATE",
+          "column_name": "planning_metrics_status",
+          "data_type": "STRING",
           "is_nullable": "YES",
           "ordinal_position": 15
         },
         {
-          "column_name": "days_in_month",
-          "data_type": "INT64",
+          "column_name": "month",
+          "data_type": "DATE",
           "is_nullable": "YES",
           "ordinal_position": 16
         },
         {
-          "column_name": "plan_period_start",
+          "column_name": "month_end",
           "data_type": "DATE",
           "is_nullable": "YES",
           "ordinal_position": 17
         },
         {
+          "column_name": "days_in_month",
+          "data_type": "INT64",
+          "is_nullable": "YES",
+          "ordinal_position": 18
+        },
+        {
+          "column_name": "plan_period_start",
+          "data_type": "DATE",
+          "is_nullable": "YES",
+          "ordinal_position": 19
+        },
+        {
           "column_name": "plan_period_end",
           "data_type": "DATE",
           "is_nullable": "YES",
-          "ordinal_position": 18
+          "ordinal_position": 20
         },
         {
           "column_name": "plan_days",
           "data_type": "INT64",
           "is_nullable": "YES",
-          "ordinal_position": 19
+          "ordinal_position": 21
         },
         {
           "column_name": "is_partial_plan_month",
           "data_type": "BOOL",
           "is_nullable": "YES",
-          "ordinal_position": 20
+          "ordinal_position": 22
         },
         {
           "column_name": "marketplace",
           "data_type": "STRING",
           "is_nullable": "YES",
-          "ordinal_position": 21
+          "ordinal_position": 23
         },
         {
           "column_name": "internal_sku",
           "data_type": "STRING",
           "is_nullable": "YES",
-          "ordinal_position": 22
+          "ordinal_position": 24
         },
         {
           "column_name": "sales_mode",
           "data_type": "STRING",
           "is_nullable": "YES",
-          "ordinal_position": 23
+          "ordinal_position": 25
         },
         {
           "column_name": "component_count",
           "data_type": "INT64",
           "is_nullable": "YES",
-          "ordinal_position": 24
+          "ordinal_position": 26
         },
         {
           "column_name": "plan_unit_contract",
           "data_type": "STRING",
           "is_nullable": "YES",
-          "ordinal_position": 25
+          "ordinal_position": 27
         },
         {
           "column_name": "planned_cards",
           "data_type": "FLOAT64",
           "is_nullable": "YES",
-          "ordinal_position": 26
+          "ordinal_position": 28
         },
         {
           "column_name": "planned_physical_units",
           "data_type": "FLOAT64",
           "is_nullable": "YES",
-          "ordinal_position": 27
+          "ordinal_position": 29
         },
         {
           "column_name": "sales_as_of",
           "data_type": "DATE",
           "is_nullable": "YES",
-          "ordinal_position": 28
+          "ordinal_position": 30
         },
         {
           "column_name": "month_position",
           "data_type": "STRING",
           "is_nullable": "YES",
-          "ordinal_position": 29
+          "ordinal_position": 31
         },
         {
           "column_name": "elapsed_plan_days",
           "data_type": "INT64",
           "is_nullable": "YES",
-          "ordinal_position": 30
+          "ordinal_position": 32
         },
         {
           "column_name": "remaining_calendar_days",
           "data_type": "INT64",
           "is_nullable": "YES",
-          "ordinal_position": 31
+          "ordinal_position": 33
         },
         {
           "column_name": "actual_cards_to_date",
           "data_type": "INT64",
           "is_nullable": "YES",
-          "ordinal_position": 32
+          "ordinal_position": 34
         },
         {
           "column_name": "remaining_planned_cards",
           "data_type": "FLOAT64",
           "is_nullable": "YES",
-          "ordinal_position": 33
+          "ordinal_position": 35
         },
         {
           "column_name": "required_cards_per_day_remaining",
           "data_type": "FLOAT64",
           "is_nullable": "YES",
-          "ordinal_position": 34
+          "ordinal_position": 36
         },
         {
           "column_name": "plan_attainment_pct",
           "data_type": "FLOAT64",
           "is_nullable": "YES",
-          "ordinal_position": 35
+          "ordinal_position": 37
         },
         {
           "column_name": "current_cards_per_day_30d",
           "data_type": "FLOAT64",
           "is_nullable": "YES",
-          "ordinal_position": 36
+          "ordinal_position": 38
         },
         {
           "column_name": "run_rate_projection_cards",
           "data_type": "FLOAT64",
           "is_nullable": "YES",
-          "ordinal_position": 37
+          "ordinal_position": 39
         },
         {
           "column_name": "projection_method",
           "data_type": "STRING",
           "is_nullable": "YES",
-          "ordinal_position": 38
+          "ordinal_position": 40
         },
         {
           "column_name": "projection_velocity_quality",
           "data_type": "STRING",
           "is_nullable": "YES",
-          "ordinal_position": 39
+          "ordinal_position": 41
         }
       ],
       "canonical_body_sha256": "ad9c70e3d864f42a0ebebab862fa80646a19f9c449381e5c7a5026b04a65377c",
       "canonical_description_sha256": "f3300a72671ad414ed64258ad783a3d206c28b6573b26a5e9e0f604f56612253",
       "canonical_schema_sha256": "577e8fd75e25a2e9186beccac732b1ef8dfaf7debf2f0195d61290115bb6ad76",
-      "canonical_schema_verification": "unverified",
+      "canonical_schema_verification": "bigquery_verified",
       "canonical_column_count": 41,
       "canonical_schema": [
         {
@@ -7068,23 +7080,23 @@
       "object_name": "V_SKU_INVENTORY_TRAJECTORY_MONTHLY_CURRENT",
       "object_type": "VIEW",
       "canonical_path": "sql/current/evetis_mart/V_SKU_INVENTORY_TRAJECTORY_MONTHLY_CURRENT.sql",
-      "sync_state": "pending_deploy",
+      "sync_state": "captured_live",
       "dependencies": [
         "V_SKU_INVENTORY_TARGET_CURRENT"
       ],
       "external_dependencies": [],
       "dependency_level": 3,
-      "capture_main_sha": "2ad14a0b64ab1786b0fa97c13ae7a3f40f012ec1",
-      "captured_at": "2026-09-24T11:16:46Z",
+      "capture_main_sha": "2a60a76724ac7197ff87de2f267cbf2f0202f0cb",
+      "captured_at": "2026-09-25T13:10:45Z",
       "provenance": {
-        "source": "production INFORMATION_SCHEMA read-only capture (R2C) after PR-PROMO-4 deploy 2026-09-24 from main 2ad14a0",
+        "source": "production INFORMATION_SCHEMA read-only capture (R2C) after PR-PLAN-1 deploy 2026-09-25 from main 2a60a76",
         "historical_migration": null,
         "preflight_parity": "DEPLOYED_AND_READBACK_MATCH",
         "superseded_historical_definitions": []
       },
-      "live_body_sha256_at_capture": "09ed7602e76b8d8748bb3cd8c8ce34bcc3d05c847b85dae0366ccda044a718c3",
+      "live_body_sha256_at_capture": "e91c94d7af93aae5e305a8657751752eae2849d19fda6b406da8960c09244773",
       "live_schema_sha256_at_capture": "9ed0ef6e58b59217da2fd74fa99dabe1e5779d644b74820688504fedc720b6cb",
-      "live_description_sha256_at_capture": "08cb82e8cc5bb007593f25b0137924ea19bd2b720ae546ec7c76a429986c87f5",
+      "live_description_sha256_at_capture": "2c670d28985ccf489cc32c5ae52e4be9a64590fe845edb797772ff033edbcd6e",
       "live_schema_at_capture": [
         {
           "column_name": "internal_sku",
@@ -7234,7 +7246,7 @@
       "canonical_body_sha256": "e91c94d7af93aae5e305a8657751752eae2849d19fda6b406da8960c09244773",
       "canonical_description_sha256": "2c670d28985ccf489cc32c5ae52e4be9a64590fe845edb797772ff033edbcd6e",
       "canonical_schema_sha256": "9ed0ef6e58b59217da2fd74fa99dabe1e5779d644b74820688504fedc720b6cb",
-      "canonical_schema_verification": "unverified",
+      "canonical_schema_verification": "bigquery_verified",
       "canonical_column_count": 24,
       "canonical_schema": [
         {
@@ -8796,7 +8808,7 @@
       "object_name": "V_PLAN_LINE_MONTHLY_ALL",
       "object_type": "VIEW",
       "canonical_path": "sql/current/evetis_mart/V_PLAN_LINE_MONTHLY_ALL.sql",
-      "sync_state": "pending_deploy",
+      "sync_state": "captured_live",
       "dependencies": [],
       "external_dependencies": [
         "evetis_ref.CT_SEASON_PLAN_MONTHLY",
@@ -8804,22 +8816,71 @@
         "evetis_ref.PLAN_VERSION"
       ],
       "dependency_level": 0,
-      "capture_main_sha": null,
-      "captured_at": null,
+      "capture_main_sha": "2a60a76724ac7197ff87de2f267cbf2f0202f0cb",
+      "captured_at": "2026-09-25T13:10:45Z",
       "provenance": {
-        "source": "PR-PLAN-1 Git-first sales plan & forward inventory trajectory (docs/plan/PR_PLAN_1_SALES_PLAN_TRAJECTORY_2026-09-25.md); canonical_schema from BigQuery dry-run of the Git body over live objects before deployment (PR-PLAN-1 tables rendered empty)",
+        "source": "production INFORMATION_SCHEMA read-only capture (R2C) after PR-PLAN-1 deploy 2026-09-25 from main 2a60a76",
         "historical_migration": null,
-        "preflight_parity": "NEW_OBJECT_FIXTURE_AND_PREDEPLOY_CHECKS",
+        "preflight_parity": "DEPLOYED_AND_READBACK_MATCH",
         "superseded_historical_definitions": []
       },
-      "live_body_sha256_at_capture": null,
-      "live_schema_sha256_at_capture": null,
-      "live_description_sha256_at_capture": null,
-      "live_schema_at_capture": null,
+      "live_body_sha256_at_capture": "2c7ca12d4b474b68be4d33373a7818090fc12edbbbd9b30162ddc21a01c875ca",
+      "live_schema_sha256_at_capture": "84d10739dbd85bea2757d99328597c9873df401d0ffcfbe959bc86fbd2f72631",
+      "live_description_sha256_at_capture": "914d9576c30da35cd2ddf84c7c815069c9fbc7f5d8599277fb08e394f0650ac0",
+      "live_schema_at_capture": [
+        {
+          "column_name": "plan_version",
+          "data_type": "STRING",
+          "is_nullable": "YES",
+          "ordinal_position": 1
+        },
+        {
+          "column_name": "plan_kind",
+          "data_type": "STRING",
+          "is_nullable": "YES",
+          "ordinal_position": 2
+        },
+        {
+          "column_name": "month",
+          "data_type": "DATE",
+          "is_nullable": "YES",
+          "ordinal_position": 3
+        },
+        {
+          "column_name": "marketplace",
+          "data_type": "STRING",
+          "is_nullable": "YES",
+          "ordinal_position": 4
+        },
+        {
+          "column_name": "internal_sku",
+          "data_type": "STRING",
+          "is_nullable": "YES",
+          "ordinal_position": 5
+        },
+        {
+          "column_name": "sales_mode",
+          "data_type": "STRING",
+          "is_nullable": "YES",
+          "ordinal_position": 6
+        },
+        {
+          "column_name": "planned_cards",
+          "data_type": "NUMERIC",
+          "is_nullable": "YES",
+          "ordinal_position": 7
+        },
+        {
+          "column_name": "line_basis",
+          "data_type": "STRING",
+          "is_nullable": "YES",
+          "ordinal_position": 8
+        }
+      ],
       "canonical_body_sha256": "2c7ca12d4b474b68be4d33373a7818090fc12edbbbd9b30162ddc21a01c875ca",
       "canonical_description_sha256": "914d9576c30da35cd2ddf84c7c815069c9fbc7f5d8599277fb08e394f0650ac0",
       "canonical_schema_sha256": "84d10739dbd85bea2757d99328597c9873df401d0ffcfbe959bc86fbd2f72631",
-      "canonical_schema_verification": "unverified",
+      "canonical_schema_verification": "bigquery_verified",
       "canonical_column_count": 8,
       "canonical_schema": [
         {
@@ -8877,7 +8938,7 @@
       "object_name": "V_PLAN_VERSION_STATUS",
       "object_type": "VIEW",
       "canonical_path": "sql/current/evetis_mart/V_PLAN_VERSION_STATUS.sql",
-      "sync_state": "pending_deploy",
+      "sync_state": "captured_live",
       "dependencies": [
         "V_PLAN_LINE_MONTHLY_ALL"
       ],
@@ -8887,22 +8948,263 @@
         "evetis_ref.REF_SALES_PLAN_APPROVAL"
       ],
       "dependency_level": 1,
-      "capture_main_sha": null,
-      "captured_at": null,
+      "capture_main_sha": "2a60a76724ac7197ff87de2f267cbf2f0202f0cb",
+      "captured_at": "2026-09-25T13:10:45Z",
       "provenance": {
-        "source": "PR-PLAN-1 Git-first sales plan & forward inventory trajectory (docs/plan/PR_PLAN_1_SALES_PLAN_TRAJECTORY_2026-09-25.md); canonical_schema from BigQuery dry-run of the Git body over live objects before deployment (PR-PLAN-1 tables rendered empty)",
+        "source": "production INFORMATION_SCHEMA read-only capture (R2C) after PR-PLAN-1 deploy 2026-09-25 from main 2a60a76",
         "historical_migration": null,
-        "preflight_parity": "NEW_OBJECT_FIXTURE_AND_PREDEPLOY_CHECKS",
+        "preflight_parity": "DEPLOYED_AND_READBACK_MATCH",
         "superseded_historical_definitions": []
       },
-      "live_body_sha256_at_capture": null,
-      "live_schema_sha256_at_capture": null,
-      "live_description_sha256_at_capture": null,
-      "live_schema_at_capture": null,
+      "live_body_sha256_at_capture": "a848aaf083f124bd324eee526a5d6d464d865beb9315711139b3698240f49e8e",
+      "live_schema_sha256_at_capture": "b7d3e87d90f165e4189ca17c54761bf851890eeac103c0fab8a75ee6a6bee30b",
+      "live_description_sha256_at_capture": "07d0d94926f17292bf141f57f41a5ca61a8c043a314297aaf0f256cbabee494a",
+      "live_schema_at_capture": [
+        {
+          "column_name": "plan_version",
+          "data_type": "STRING",
+          "is_nullable": "YES",
+          "ordinal_position": 1
+        },
+        {
+          "column_name": "plan_kind",
+          "data_type": "STRING",
+          "is_nullable": "YES",
+          "ordinal_position": 2
+        },
+        {
+          "column_name": "plan_name",
+          "data_type": "STRING",
+          "is_nullable": "YES",
+          "ordinal_position": 3
+        },
+        {
+          "column_name": "method_id",
+          "data_type": "STRING",
+          "is_nullable": "YES",
+          "ordinal_position": 4
+        },
+        {
+          "column_name": "method_version",
+          "data_type": "STRING",
+          "is_nullable": "YES",
+          "ordinal_position": 5
+        },
+        {
+          "column_name": "parent_plan_version",
+          "data_type": "STRING",
+          "is_nullable": "YES",
+          "ordinal_position": 6
+        },
+        {
+          "column_name": "source_kind",
+          "data_type": "STRING",
+          "is_nullable": "YES",
+          "ordinal_position": 7
+        },
+        {
+          "column_name": "source_ref",
+          "data_type": "STRING",
+          "is_nullable": "YES",
+          "ordinal_position": 8
+        },
+        {
+          "column_name": "horizon_from",
+          "data_type": "DATE",
+          "is_nullable": "YES",
+          "ordinal_position": 9
+        },
+        {
+          "column_name": "horizon_to",
+          "data_type": "DATE",
+          "is_nullable": "YES",
+          "ordinal_position": 10
+        },
+        {
+          "column_name": "marketplaces",
+          "data_type": "STRING",
+          "is_nullable": "YES",
+          "ordinal_position": 11
+        },
+        {
+          "column_name": "basis_sales_as_of",
+          "data_type": "DATE",
+          "is_nullable": "YES",
+          "ordinal_position": 12
+        },
+        {
+          "column_name": "basis_inventory_as_of",
+          "data_type": "DATE",
+          "is_nullable": "YES",
+          "ordinal_position": 13
+        },
+        {
+          "column_name": "basis_inventory_freshness",
+          "data_type": "STRING",
+          "is_nullable": "YES",
+          "ordinal_position": 14
+        },
+        {
+          "column_name": "created_at",
+          "data_type": "TIMESTAMP",
+          "is_nullable": "YES",
+          "ordinal_position": 15
+        },
+        {
+          "column_name": "created_by",
+          "data_type": "STRING",
+          "is_nullable": "YES",
+          "ordinal_position": 16
+        },
+        {
+          "column_name": "notes",
+          "data_type": "STRING",
+          "is_nullable": "YES",
+          "ordinal_position": 17
+        },
+        {
+          "column_name": "content_sha256",
+          "data_type": "STRING",
+          "is_nullable": "YES",
+          "ordinal_position": 18
+        },
+        {
+          "column_name": "recomputed_sha256",
+          "data_type": "STRING",
+          "is_nullable": "YES",
+          "ordinal_position": 19
+        },
+        {
+          "column_name": "header_rows",
+          "data_type": "INT64",
+          "is_nullable": "YES",
+          "ordinal_position": 20
+        },
+        {
+          "column_name": "line_count_declared",
+          "data_type": "INT64",
+          "is_nullable": "YES",
+          "ordinal_position": 21
+        },
+        {
+          "column_name": "line_rows_actual",
+          "data_type": "INT64",
+          "is_nullable": "YES",
+          "ordinal_position": 22
+        },
+        {
+          "column_name": "bom_rows_declared",
+          "data_type": "INT64",
+          "is_nullable": "YES",
+          "ordinal_position": 23
+        },
+        {
+          "column_name": "bom_rows_actual",
+          "data_type": "INT64",
+          "is_nullable": "YES",
+          "ordinal_position": 24
+        },
+        {
+          "column_name": "planned_cards_total",
+          "data_type": "NUMERIC",
+          "is_nullable": "YES",
+          "ordinal_position": 25
+        },
+        {
+          "column_name": "integrity_ok",
+          "data_type": "BOOL",
+          "is_nullable": "YES",
+          "ordinal_position": 26
+        },
+        {
+          "column_name": "events_total",
+          "data_type": "INT64",
+          "is_nullable": "YES",
+          "ordinal_position": 27
+        },
+        {
+          "column_name": "events_ignored",
+          "data_type": "INT64",
+          "is_nullable": "YES",
+          "ordinal_position": 28
+        },
+        {
+          "column_name": "ignored_events",
+          "data_type": "STRING",
+          "is_nullable": "YES",
+          "ordinal_position": 29
+        },
+        {
+          "column_name": "proposed_at",
+          "data_type": "TIMESTAMP",
+          "is_nullable": "YES",
+          "ordinal_position": 30
+        },
+        {
+          "column_name": "withdrawn_at",
+          "data_type": "TIMESTAMP",
+          "is_nullable": "YES",
+          "ordinal_position": 31
+        },
+        {
+          "column_name": "approved_at",
+          "data_type": "TIMESTAMP",
+          "is_nullable": "YES",
+          "ordinal_position": 32
+        },
+        {
+          "column_name": "approved_by",
+          "data_type": "STRING",
+          "is_nullable": "YES",
+          "ordinal_position": 33
+        },
+        {
+          "column_name": "approval_reference",
+          "data_type": "STRING",
+          "is_nullable": "YES",
+          "ordinal_position": 34
+        },
+        {
+          "column_name": "approved_content_sha256",
+          "data_type": "STRING",
+          "is_nullable": "YES",
+          "ordinal_position": 35
+        },
+        {
+          "column_name": "revoked_at",
+          "data_type": "TIMESTAMP",
+          "is_nullable": "YES",
+          "ordinal_position": 36
+        },
+        {
+          "column_name": "effective_from_month",
+          "data_type": "DATE",
+          "is_nullable": "YES",
+          "ordinal_position": 37
+        },
+        {
+          "column_name": "effective_to_month_exclusive",
+          "data_type": "DATE",
+          "is_nullable": "YES",
+          "ordinal_position": 38
+        },
+        {
+          "column_name": "lifecycle_status",
+          "data_type": "STRING",
+          "is_nullable": "YES",
+          "ordinal_position": 39
+        },
+        {
+          "column_name": "approvable_now",
+          "data_type": "BOOL",
+          "is_nullable": "YES",
+          "ordinal_position": 40
+        }
+      ],
       "canonical_body_sha256": "a848aaf083f124bd324eee526a5d6d464d865beb9315711139b3698240f49e8e",
       "canonical_description_sha256": "07d0d94926f17292bf141f57f41a5ca61a8c043a314297aaf0f256cbabee494a",
       "canonical_schema_sha256": "b7d3e87d90f165e4189ca17c54761bf851890eeac103c0fab8a75ee6a6bee30b",
-      "canonical_schema_verification": "unverified",
+      "canonical_schema_verification": "bigquery_verified",
       "canonical_column_count": 40,
       "canonical_schema": [
         {
@@ -9152,29 +9454,150 @@
       "object_name": "V_SALES_PLAN_APPROVED",
       "object_type": "VIEW",
       "canonical_path": "sql/current/evetis_mart/V_SALES_PLAN_APPROVED.sql",
-      "sync_state": "pending_deploy",
+      "sync_state": "captured_live",
       "dependencies": [
         "V_PLAN_LINE_MONTHLY_ALL",
         "V_PLAN_VERSION_STATUS"
       ],
       "external_dependencies": [],
       "dependency_level": 2,
-      "capture_main_sha": null,
-      "captured_at": null,
+      "capture_main_sha": "2a60a76724ac7197ff87de2f267cbf2f0202f0cb",
+      "captured_at": "2026-09-25T13:10:45Z",
       "provenance": {
-        "source": "PR-PLAN-1 Git-first sales plan & forward inventory trajectory (docs/plan/PR_PLAN_1_SALES_PLAN_TRAJECTORY_2026-09-25.md); canonical_schema from BigQuery dry-run of the Git body over live objects before deployment (PR-PLAN-1 tables rendered empty)",
+        "source": "production INFORMATION_SCHEMA read-only capture (R2C) after PR-PLAN-1 deploy 2026-09-25 from main 2a60a76",
         "historical_migration": null,
-        "preflight_parity": "NEW_OBJECT_FIXTURE_AND_PREDEPLOY_CHECKS",
+        "preflight_parity": "DEPLOYED_AND_READBACK_MATCH",
         "superseded_historical_definitions": []
       },
-      "live_body_sha256_at_capture": null,
-      "live_schema_sha256_at_capture": null,
-      "live_description_sha256_at_capture": null,
-      "live_schema_at_capture": null,
+      "live_body_sha256_at_capture": "1d264b7fb01e36ad78619e86cd5d72bce9fc68d9c43808c954eebb18d5523299",
+      "live_schema_sha256_at_capture": "621af6fb2153175d6645be68da434a7f1326d46b25a520564ae543f9bb3e8ca5",
+      "live_description_sha256_at_capture": "6cdcbfd8e7e31377e27d7b5043e896d12451d31c914a31b1205bdcb1f6ee60dd",
+      "live_schema_at_capture": [
+        {
+          "column_name": "month",
+          "data_type": "DATE",
+          "is_nullable": "YES",
+          "ordinal_position": 1
+        },
+        {
+          "column_name": "marketplace",
+          "data_type": "STRING",
+          "is_nullable": "YES",
+          "ordinal_position": 2
+        },
+        {
+          "column_name": "internal_sku",
+          "data_type": "STRING",
+          "is_nullable": "YES",
+          "ordinal_position": 3
+        },
+        {
+          "column_name": "sales_mode",
+          "data_type": "STRING",
+          "is_nullable": "YES",
+          "ordinal_position": 4
+        },
+        {
+          "column_name": "planned_cards",
+          "data_type": "NUMERIC",
+          "is_nullable": "YES",
+          "ordinal_position": 5
+        },
+        {
+          "column_name": "plan_version",
+          "data_type": "STRING",
+          "is_nullable": "YES",
+          "ordinal_position": 6
+        },
+        {
+          "column_name": "plan_kind",
+          "data_type": "STRING",
+          "is_nullable": "YES",
+          "ordinal_position": 7
+        },
+        {
+          "column_name": "plan_name",
+          "data_type": "STRING",
+          "is_nullable": "YES",
+          "ordinal_position": 8
+        },
+        {
+          "column_name": "method_id",
+          "data_type": "STRING",
+          "is_nullable": "YES",
+          "ordinal_position": 9
+        },
+        {
+          "column_name": "horizon_from",
+          "data_type": "DATE",
+          "is_nullable": "YES",
+          "ordinal_position": 10
+        },
+        {
+          "column_name": "horizon_to",
+          "data_type": "DATE",
+          "is_nullable": "YES",
+          "ordinal_position": 11
+        },
+        {
+          "column_name": "plan_created_at",
+          "data_type": "TIMESTAMP",
+          "is_nullable": "YES",
+          "ordinal_position": 12
+        },
+        {
+          "column_name": "plan_created_by",
+          "data_type": "STRING",
+          "is_nullable": "YES",
+          "ordinal_position": 13
+        },
+        {
+          "column_name": "version_lifecycle_status",
+          "data_type": "STRING",
+          "is_nullable": "YES",
+          "ordinal_position": 14
+        },
+        {
+          "column_name": "effective_from_month",
+          "data_type": "DATE",
+          "is_nullable": "YES",
+          "ordinal_position": 15
+        },
+        {
+          "column_name": "effective_to_month_exclusive",
+          "data_type": "DATE",
+          "is_nullable": "YES",
+          "ordinal_position": 16
+        },
+        {
+          "column_name": "approved_at",
+          "data_type": "TIMESTAMP",
+          "is_nullable": "YES",
+          "ordinal_position": 17
+        },
+        {
+          "column_name": "approved_by",
+          "data_type": "STRING",
+          "is_nullable": "YES",
+          "ordinal_position": 18
+        },
+        {
+          "column_name": "approval_reference",
+          "data_type": "STRING",
+          "is_nullable": "YES",
+          "ordinal_position": 19
+        },
+        {
+          "column_name": "approved_content_sha256",
+          "data_type": "STRING",
+          "is_nullable": "YES",
+          "ordinal_position": 20
+        }
+      ],
       "canonical_body_sha256": "1d264b7fb01e36ad78619e86cd5d72bce9fc68d9c43808c954eebb18d5523299",
       "canonical_description_sha256": "6cdcbfd8e7e31377e27d7b5043e896d12451d31c914a31b1205bdcb1f6ee60dd",
       "canonical_schema_sha256": "621af6fb2153175d6645be68da434a7f1326d46b25a520564ae543f9bb3e8ca5",
-      "canonical_schema_verification": "unverified",
+      "canonical_schema_verification": "bigquery_verified",
       "canonical_column_count": 20,
       "canonical_schema": [
         {
@@ -9304,7 +9727,7 @@
       "object_name": "V_PLAN_PHYSICAL_MONTHLY",
       "object_type": "VIEW",
       "canonical_path": "sql/current/evetis_mart/V_PLAN_PHYSICAL_MONTHLY.sql",
-      "sync_state": "pending_deploy",
+      "sync_state": "captured_live",
       "dependencies": [
         "V_PLAN_LINE_MONTHLY_ALL"
       ],
@@ -9316,22 +9739,125 @@
         "wb_mart.V_CT_ACTUAL_DAILY"
       ],
       "dependency_level": 1,
-      "capture_main_sha": null,
-      "captured_at": null,
+      "capture_main_sha": "2a60a76724ac7197ff87de2f267cbf2f0202f0cb",
+      "captured_at": "2026-09-25T13:10:45Z",
       "provenance": {
-        "source": "PR-PLAN-1 Git-first sales plan & forward inventory trajectory (docs/plan/PR_PLAN_1_SALES_PLAN_TRAJECTORY_2026-09-25.md); canonical_schema from BigQuery dry-run of the Git body over live objects before deployment (PR-PLAN-1 tables rendered empty)",
+        "source": "production INFORMATION_SCHEMA read-only capture (R2C) after PR-PLAN-1 deploy 2026-09-25 from main 2a60a76",
         "historical_migration": null,
-        "preflight_parity": "NEW_OBJECT_FIXTURE_AND_PREDEPLOY_CHECKS",
+        "preflight_parity": "DEPLOYED_AND_READBACK_MATCH",
         "superseded_historical_definitions": []
       },
-      "live_body_sha256_at_capture": null,
-      "live_schema_sha256_at_capture": null,
-      "live_description_sha256_at_capture": null,
-      "live_schema_at_capture": null,
+      "live_body_sha256_at_capture": "6c1a6e21e337b20ee6e7973559d7463f15eaeaa29cc182acba8755626e23a279",
+      "live_schema_sha256_at_capture": "92cbe0649e8c545eeb85f7bb1427b146f8018b20f002d18a8456acfcd4f90851",
+      "live_description_sha256_at_capture": "964bd4db79292038554bcd62f66fa04af17c0a4de732f8b25d3cbadc2a675816",
+      "live_schema_at_capture": [
+        {
+          "column_name": "plan_version",
+          "data_type": "STRING",
+          "is_nullable": "YES",
+          "ordinal_position": 1
+        },
+        {
+          "column_name": "plan_kind",
+          "data_type": "STRING",
+          "is_nullable": "YES",
+          "ordinal_position": 2
+        },
+        {
+          "column_name": "month",
+          "data_type": "DATE",
+          "is_nullable": "YES",
+          "ordinal_position": 3
+        },
+        {
+          "column_name": "month_position",
+          "data_type": "STRING",
+          "is_nullable": "YES",
+          "ordinal_position": 4
+        },
+        {
+          "column_name": "component_sku",
+          "data_type": "STRING",
+          "is_nullable": "YES",
+          "ordinal_position": 5
+        },
+        {
+          "column_name": "expansion_status",
+          "data_type": "STRING",
+          "is_nullable": "YES",
+          "ordinal_position": 6
+        },
+        {
+          "column_name": "bundles_without_bom_basis",
+          "data_type": "STRING",
+          "is_nullable": "YES",
+          "ordinal_position": 7
+        },
+        {
+          "column_name": "planned_units_full_month",
+          "data_type": "NUMERIC",
+          "is_nullable": "YES",
+          "ordinal_position": 8
+        },
+        {
+          "column_name": "planned_units_remaining",
+          "data_type": "NUMERIC",
+          "is_nullable": "YES",
+          "ordinal_position": 9
+        },
+        {
+          "column_name": "standalone_units_full_month",
+          "data_type": "NUMERIC",
+          "is_nullable": "YES",
+          "ordinal_position": 10
+        },
+        {
+          "column_name": "standalone_units_remaining",
+          "data_type": "NUMERIC",
+          "is_nullable": "YES",
+          "ordinal_position": 11
+        },
+        {
+          "column_name": "via_bundle_units_full_month",
+          "data_type": "NUMERIC",
+          "is_nullable": "YES",
+          "ordinal_position": 12
+        },
+        {
+          "column_name": "via_bundle_units_remaining",
+          "data_type": "NUMERIC",
+          "is_nullable": "YES",
+          "ordinal_position": 13
+        },
+        {
+          "column_name": "wb_units_remaining",
+          "data_type": "NUMERIC",
+          "is_nullable": "YES",
+          "ordinal_position": 14
+        },
+        {
+          "column_name": "ozon_units_remaining",
+          "data_type": "NUMERIC",
+          "is_nullable": "YES",
+          "ordinal_position": 15
+        },
+        {
+          "column_name": "bundle_breakdown_full",
+          "data_type": "STRING",
+          "is_nullable": "YES",
+          "ordinal_position": 16
+        },
+        {
+          "column_name": "bundle_breakdown_remaining",
+          "data_type": "STRING",
+          "is_nullable": "YES",
+          "ordinal_position": 17
+        }
+      ],
       "canonical_body_sha256": "6c1a6e21e337b20ee6e7973559d7463f15eaeaa29cc182acba8755626e23a279",
       "canonical_description_sha256": "964bd4db79292038554bcd62f66fa04af17c0a4de732f8b25d3cbadc2a675816",
       "canonical_schema_sha256": "92cbe0649e8c545eeb85f7bb1427b146f8018b20f002d18a8456acfcd4f90851",
-      "canonical_schema_verification": "unverified",
+      "canonical_schema_verification": "bigquery_verified",
       "canonical_column_count": 17,
       "canonical_schema": [
         {
@@ -9443,29 +9969,192 @@
       "object_name": "V_INBOUND_LOT_CURRENT",
       "object_type": "VIEW",
       "canonical_path": "sql/current/evetis_mart/V_INBOUND_LOT_CURRENT.sql",
-      "sync_state": "pending_deploy",
+      "sync_state": "captured_live",
       "dependencies": [],
       "external_dependencies": [
         "evetis_ref.CT_INVENTORY_SNAPSHOT_DAILY",
         "evetis_ref.INBOUND_LOT_EVENT"
       ],
       "dependency_level": 0,
-      "capture_main_sha": null,
-      "captured_at": null,
+      "capture_main_sha": "2a60a76724ac7197ff87de2f267cbf2f0202f0cb",
+      "captured_at": "2026-09-25T13:10:45Z",
       "provenance": {
-        "source": "PR-PLAN-1 Git-first sales plan & forward inventory trajectory (docs/plan/PR_PLAN_1_SALES_PLAN_TRAJECTORY_2026-09-25.md); canonical_schema from BigQuery dry-run of the Git body over live objects before deployment (PR-PLAN-1 tables rendered empty)",
+        "source": "production INFORMATION_SCHEMA read-only capture (R2C) after PR-PLAN-1 deploy 2026-09-25 from main 2a60a76",
         "historical_migration": null,
-        "preflight_parity": "NEW_OBJECT_FIXTURE_AND_PREDEPLOY_CHECKS",
+        "preflight_parity": "DEPLOYED_AND_READBACK_MATCH",
         "superseded_historical_definitions": []
       },
-      "live_body_sha256_at_capture": null,
-      "live_schema_sha256_at_capture": null,
-      "live_description_sha256_at_capture": null,
-      "live_schema_at_capture": null,
+      "live_body_sha256_at_capture": "5941d9a7f2a30638dbe1c997792c71b91658edd0be235a9342ce72e159271404",
+      "live_schema_sha256_at_capture": "5bfb0a00ab9a9e374ab53943ca822d801832e93a1b4cfc4168b3dacea390e7db",
+      "live_description_sha256_at_capture": "c88f57370342a5d626c93967e6d985b0381f4e048e106ead550d4670a633d178",
+      "live_schema_at_capture": [
+        {
+          "column_name": "inbound_id",
+          "data_type": "STRING",
+          "is_nullable": "YES",
+          "ordinal_position": 1
+        },
+        {
+          "column_name": "internal_sku",
+          "data_type": "STRING",
+          "is_nullable": "YES",
+          "ordinal_position": 2
+        },
+        {
+          "column_name": "quantity",
+          "data_type": "INT64",
+          "is_nullable": "YES",
+          "ordinal_position": 3
+        },
+        {
+          "column_name": "lot_state",
+          "data_type": "STRING",
+          "is_nullable": "YES",
+          "ordinal_position": 4
+        },
+        {
+          "column_name": "blocker",
+          "data_type": "STRING",
+          "is_nullable": "YES",
+          "ordinal_position": 5
+        },
+        {
+          "column_name": "eta_date",
+          "data_type": "DATE",
+          "is_nullable": "YES",
+          "ordinal_position": 6
+        },
+        {
+          "column_name": "eta_status",
+          "data_type": "STRING",
+          "is_nullable": "YES",
+          "ordinal_position": 7
+        },
+        {
+          "column_name": "received_date",
+          "data_type": "DATE",
+          "is_nullable": "YES",
+          "ordinal_position": 8
+        },
+        {
+          "column_name": "received_quantity",
+          "data_type": "INT64",
+          "is_nullable": "YES",
+          "ordinal_position": 9
+        },
+        {
+          "column_name": "expiry_batch_id",
+          "data_type": "STRING",
+          "is_nullable": "YES",
+          "ordinal_position": 10
+        },
+        {
+          "column_name": "evidence_class",
+          "data_type": "STRING",
+          "is_nullable": "YES",
+          "ordinal_position": 11
+        },
+        {
+          "column_name": "evidence_ref",
+          "data_type": "STRING",
+          "is_nullable": "YES",
+          "ordinal_position": 12
+        },
+        {
+          "column_name": "note",
+          "data_type": "STRING",
+          "is_nullable": "YES",
+          "ordinal_position": 13
+        },
+        {
+          "column_name": "state_recorded_at",
+          "data_type": "TIMESTAMP",
+          "is_nullable": "YES",
+          "ordinal_position": 14
+        },
+        {
+          "column_name": "state_recorded_by",
+          "data_type": "STRING",
+          "is_nullable": "YES",
+          "ordinal_position": 15
+        },
+        {
+          "column_name": "first_recorded_at",
+          "data_type": "TIMESTAMP",
+          "is_nullable": "YES",
+          "ordinal_position": 16
+        },
+        {
+          "column_name": "events_total",
+          "data_type": "INT64",
+          "is_nullable": "YES",
+          "ordinal_position": 17
+        },
+        {
+          "column_name": "inventory_as_of_date",
+          "data_type": "DATE",
+          "is_nullable": "YES",
+          "ordinal_position": 18
+        },
+        {
+          "column_name": "ff_anchor_date",
+          "data_type": "DATE",
+          "is_nullable": "YES",
+          "ordinal_position": 19
+        },
+        {
+          "column_name": "inclusion_status",
+          "data_type": "STRING",
+          "is_nullable": "YES",
+          "ordinal_position": 20
+        },
+        {
+          "column_name": "in_base_trajectory",
+          "data_type": "BOOL",
+          "is_nullable": "YES",
+          "ordinal_position": 21
+        },
+        {
+          "column_name": "trajectory_units",
+          "data_type": "INT64",
+          "is_nullable": "YES",
+          "ordinal_position": 22
+        },
+        {
+          "column_name": "trajectory_month",
+          "data_type": "DATE",
+          "is_nullable": "YES",
+          "ordinal_position": 23
+        },
+        {
+          "column_name": "committed_units_not_in_trajectory",
+          "data_type": "INT64",
+          "is_nullable": "YES",
+          "ordinal_position": 24
+        },
+        {
+          "column_name": "ct_model_inbound_units",
+          "data_type": "INT64",
+          "is_nullable": "YES",
+          "ordinal_position": 25
+        },
+        {
+          "column_name": "ct_model_inbound_eta",
+          "data_type": "DATE",
+          "is_nullable": "YES",
+          "ordinal_position": 26
+        },
+        {
+          "column_name": "ct_model_inbound_contract",
+          "data_type": "STRING",
+          "is_nullable": "YES",
+          "ordinal_position": 27
+        }
+      ],
       "canonical_body_sha256": "5941d9a7f2a30638dbe1c997792c71b91658edd0be235a9342ce72e159271404",
       "canonical_description_sha256": "c88f57370342a5d626c93967e6d985b0381f4e048e106ead550d4670a633d178",
       "canonical_schema_sha256": "5bfb0a00ab9a9e374ab53943ca822d801832e93a1b4cfc4168b3dacea390e7db",
-      "canonical_schema_verification": "unverified",
+      "canonical_schema_verification": "bigquery_verified",
       "canonical_column_count": 27,
       "canonical_schema": [
         {
@@ -9637,7 +10326,7 @@
       "object_name": "V_PLAN_TRAJECTORY_MONTHLY",
       "object_type": "VIEW",
       "canonical_path": "sql/current/evetis_mart/V_PLAN_TRAJECTORY_MONTHLY.sql",
-      "sync_state": "pending_deploy",
+      "sync_state": "captured_live",
       "dependencies": [
         "V_INBOUND_LOT_CURRENT",
         "V_PLAN_PHYSICAL_MONTHLY",
@@ -9646,22 +10335,287 @@
       ],
       "external_dependencies": [],
       "dependency_level": 3,
-      "capture_main_sha": null,
-      "captured_at": null,
+      "capture_main_sha": "2a60a76724ac7197ff87de2f267cbf2f0202f0cb",
+      "captured_at": "2026-09-25T13:10:45Z",
       "provenance": {
-        "source": "PR-PLAN-1 Git-first sales plan & forward inventory trajectory (docs/plan/PR_PLAN_1_SALES_PLAN_TRAJECTORY_2026-09-25.md); canonical_schema from BigQuery dry-run of the Git body over live objects before deployment (PR-PLAN-1 tables rendered empty)",
+        "source": "production INFORMATION_SCHEMA read-only capture (R2C) after PR-PLAN-1 deploy 2026-09-25 from main 2a60a76",
         "historical_migration": null,
-        "preflight_parity": "NEW_OBJECT_FIXTURE_AND_PREDEPLOY_CHECKS",
+        "preflight_parity": "DEPLOYED_AND_READBACK_MATCH",
         "superseded_historical_definitions": []
       },
-      "live_body_sha256_at_capture": null,
-      "live_schema_sha256_at_capture": null,
-      "live_description_sha256_at_capture": null,
-      "live_schema_at_capture": null,
+      "live_body_sha256_at_capture": "1841303fc1dab9adbed574b2bc85368bde1cb48aa297f7c13a9a2ae6325203bc",
+      "live_schema_sha256_at_capture": "bce26d70db81353c3db6aedeffc4b6f80b4c65014503f853612130110fa0266e",
+      "live_description_sha256_at_capture": "8e05c945513e159d7db68175ada06d139327c23814485ae633b15f25626717d6",
+      "live_schema_at_capture": [
+        {
+          "column_name": "trajectory_basis",
+          "data_type": "STRING",
+          "is_nullable": "YES",
+          "ordinal_position": 1
+        },
+        {
+          "column_name": "plan_version",
+          "data_type": "STRING",
+          "is_nullable": "YES",
+          "ordinal_position": 2
+        },
+        {
+          "column_name": "plan_kind",
+          "data_type": "STRING",
+          "is_nullable": "YES",
+          "ordinal_position": 3
+        },
+        {
+          "column_name": "version_lifecycle_status",
+          "data_type": "STRING",
+          "is_nullable": "YES",
+          "ordinal_position": 4
+        },
+        {
+          "column_name": "plan_created_at",
+          "data_type": "TIMESTAMP",
+          "is_nullable": "YES",
+          "ordinal_position": 5
+        },
+        {
+          "column_name": "plan_source_version",
+          "data_type": "STRING",
+          "is_nullable": "YES",
+          "ordinal_position": 6
+        },
+        {
+          "column_name": "plan_source_lifecycle_status",
+          "data_type": "STRING",
+          "is_nullable": "YES",
+          "ordinal_position": 7
+        },
+        {
+          "column_name": "internal_sku",
+          "data_type": "STRING",
+          "is_nullable": "YES",
+          "ordinal_position": 8
+        },
+        {
+          "column_name": "product_name",
+          "data_type": "STRING",
+          "is_nullable": "YES",
+          "ordinal_position": 9
+        },
+        {
+          "column_name": "month",
+          "data_type": "DATE",
+          "is_nullable": "YES",
+          "ordinal_position": 10
+        },
+        {
+          "column_name": "period_start",
+          "data_type": "DATE",
+          "is_nullable": "YES",
+          "ordinal_position": 11
+        },
+        {
+          "column_name": "period_end",
+          "data_type": "DATE",
+          "is_nullable": "YES",
+          "ordinal_position": 12
+        },
+        {
+          "column_name": "period_days",
+          "data_type": "INT64",
+          "is_nullable": "YES",
+          "ordinal_position": 13
+        },
+        {
+          "column_name": "days_in_month",
+          "data_type": "INT64",
+          "is_nullable": "YES",
+          "ordinal_position": 14
+        },
+        {
+          "column_name": "is_current_month",
+          "data_type": "BOOL",
+          "is_nullable": "YES",
+          "ordinal_position": 15
+        },
+        {
+          "column_name": "trajectory_status",
+          "data_type": "STRING",
+          "is_nullable": "YES",
+          "ordinal_position": 16
+        },
+        {
+          "column_name": "trajectory_meaning",
+          "data_type": "STRING",
+          "is_nullable": "YES",
+          "ordinal_position": 17
+        },
+        {
+          "column_name": "inventory_as_of_date",
+          "data_type": "DATE",
+          "is_nullable": "YES",
+          "ordinal_position": 18
+        },
+        {
+          "column_name": "inventory_freshness_status",
+          "data_type": "STRING",
+          "is_nullable": "YES",
+          "ordinal_position": 19
+        },
+        {
+          "column_name": "inventory_freshness_reason",
+          "data_type": "STRING",
+          "is_nullable": "YES",
+          "ordinal_position": 20
+        },
+        {
+          "column_name": "sales_as_of",
+          "data_type": "DATE",
+          "is_nullable": "YES",
+          "ordinal_position": 21
+        },
+        {
+          "column_name": "opening_units",
+          "data_type": "NUMERIC",
+          "is_nullable": "YES",
+          "ordinal_position": 22
+        },
+        {
+          "column_name": "eligible_inbound_units",
+          "data_type": "INT64",
+          "is_nullable": "YES",
+          "ordinal_position": 23
+        },
+        {
+          "column_name": "eligible_inbound_ids",
+          "data_type": "STRING",
+          "is_nullable": "YES",
+          "ordinal_position": 24
+        },
+        {
+          "column_name": "planned_physical_units",
+          "data_type": "NUMERIC",
+          "is_nullable": "YES",
+          "ordinal_position": 25
+        },
+        {
+          "column_name": "planned_physical_units_full_month",
+          "data_type": "NUMERIC",
+          "is_nullable": "YES",
+          "ordinal_position": 26
+        },
+        {
+          "column_name": "planned_standalone_units",
+          "data_type": "NUMERIC",
+          "is_nullable": "YES",
+          "ordinal_position": 27
+        },
+        {
+          "column_name": "planned_via_bundle_units",
+          "data_type": "NUMERIC",
+          "is_nullable": "YES",
+          "ordinal_position": 28
+        },
+        {
+          "column_name": "planned_wb_units",
+          "data_type": "NUMERIC",
+          "is_nullable": "YES",
+          "ordinal_position": 29
+        },
+        {
+          "column_name": "planned_ozon_units",
+          "data_type": "NUMERIC",
+          "is_nullable": "YES",
+          "ordinal_position": 30
+        },
+        {
+          "column_name": "planned_bundle_breakdown",
+          "data_type": "STRING",
+          "is_nullable": "YES",
+          "ordinal_position": 31
+        },
+        {
+          "column_name": "closing_units",
+          "data_type": "NUMERIC",
+          "is_nullable": "YES",
+          "ordinal_position": 32
+        },
+        {
+          "column_name": "shortfall_units",
+          "data_type": "NUMERIC",
+          "is_nullable": "YES",
+          "ordinal_position": 33
+        },
+        {
+          "column_name": "shortfall_status",
+          "data_type": "STRING",
+          "is_nullable": "YES",
+          "ordinal_position": 34
+        },
+        {
+          "column_name": "observed_units_per_day_30d",
+          "data_type": "FLOAT64",
+          "is_nullable": "YES",
+          "ordinal_position": 35
+        },
+        {
+          "column_name": "observed_velocity_quality_30d",
+          "data_type": "STRING",
+          "is_nullable": "YES",
+          "ordinal_position": 36
+        },
+        {
+          "column_name": "observed_run_rate_units",
+          "data_type": "FLOAT64",
+          "is_nullable": "YES",
+          "ordinal_position": 37
+        },
+        {
+          "column_name": "sell_by_date",
+          "data_type": "DATE",
+          "is_nullable": "YES",
+          "ordinal_position": 38
+        },
+        {
+          "column_name": "expiry_date",
+          "data_type": "DATE",
+          "is_nullable": "YES",
+          "ordinal_position": 39
+        },
+        {
+          "column_name": "sell_by_target_status",
+          "data_type": "STRING",
+          "is_nullable": "YES",
+          "ordinal_position": 40
+        },
+        {
+          "column_name": "required_units_per_day_to_sell_by",
+          "data_type": "FLOAT64",
+          "is_nullable": "YES",
+          "ordinal_position": 41
+        },
+        {
+          "column_name": "required_units_to_sell_by",
+          "data_type": "FLOAT64",
+          "is_nullable": "YES",
+          "ordinal_position": 42
+        },
+        {
+          "column_name": "projected_units_at_sell_by",
+          "data_type": "NUMERIC",
+          "is_nullable": "YES",
+          "ordinal_position": 43
+        },
+        {
+          "column_name": "sell_by_projection_method",
+          "data_type": "STRING",
+          "is_nullable": "YES",
+          "ordinal_position": 44
+        }
+      ],
       "canonical_body_sha256": "1841303fc1dab9adbed574b2bc85368bde1cb48aa297f7c13a9a2ae6325203bc",
       "canonical_description_sha256": "8e05c945513e159d7db68175ada06d139327c23814485ae633b15f25626717d6",
       "canonical_schema_sha256": "bce26d70db81353c3db6aedeffc4b6f80b4c65014503f853612130110fa0266e",
-      "canonical_schema_verification": "unverified",
+      "canonical_schema_verification": "bigquery_verified",
       "canonical_column_count": 44,
       "canonical_schema": [
         {
@@ -9935,7 +10889,7 @@
       "object_name": "V_PLANNING_EXCEPTIONS",
       "object_type": "VIEW",
       "canonical_path": "sql/current/evetis_mart/V_PLANNING_EXCEPTIONS.sql",
-      "sync_state": "pending_deploy",
+      "sync_state": "captured_live",
       "dependencies": [
         "V_INBOUND_LOT_CURRENT",
         "V_PLAN_PHYSICAL_MONTHLY",
@@ -9944,22 +10898,101 @@
       ],
       "external_dependencies": [],
       "dependency_level": 4,
-      "capture_main_sha": null,
-      "captured_at": null,
+      "capture_main_sha": "2a60a76724ac7197ff87de2f267cbf2f0202f0cb",
+      "captured_at": "2026-09-25T13:10:45Z",
       "provenance": {
-        "source": "PR-PLAN-1 Git-first sales plan & forward inventory trajectory (docs/plan/PR_PLAN_1_SALES_PLAN_TRAJECTORY_2026-09-25.md); canonical_schema from BigQuery dry-run of the Git body over live objects before deployment (PR-PLAN-1 tables rendered empty)",
+        "source": "production INFORMATION_SCHEMA read-only capture (R2C) after PR-PLAN-1 deploy 2026-09-25 from main 2a60a76",
         "historical_migration": null,
-        "preflight_parity": "NEW_OBJECT_FIXTURE_AND_PREDEPLOY_CHECKS",
+        "preflight_parity": "DEPLOYED_AND_READBACK_MATCH",
         "superseded_historical_definitions": []
       },
-      "live_body_sha256_at_capture": null,
-      "live_schema_sha256_at_capture": null,
-      "live_description_sha256_at_capture": null,
-      "live_schema_at_capture": null,
+      "live_body_sha256_at_capture": "7863ff21f5e366382798196b565149778b7a962dfc807b2b6ec199672969c793",
+      "live_schema_sha256_at_capture": "9fc7a956d2f2c0e6548f51d90d43dbea4c1456d0a81c783e975e763169bca383",
+      "live_description_sha256_at_capture": "cbcb67b48cfb0f02e2f0b5241bf091d1496b8727a693b031e5b6fe67481aeb14",
+      "live_schema_at_capture": [
+        {
+          "column_name": "exception_code",
+          "data_type": "STRING",
+          "is_nullable": "YES",
+          "ordinal_position": 1
+        },
+        {
+          "column_name": "severity",
+          "data_type": "STRING",
+          "is_nullable": "YES",
+          "ordinal_position": 2
+        },
+        {
+          "column_name": "trajectory_basis",
+          "data_type": "STRING",
+          "is_nullable": "YES",
+          "ordinal_position": 3
+        },
+        {
+          "column_name": "plan_version",
+          "data_type": "STRING",
+          "is_nullable": "YES",
+          "ordinal_position": 4
+        },
+        {
+          "column_name": "plan_kind",
+          "data_type": "STRING",
+          "is_nullable": "YES",
+          "ordinal_position": 5
+        },
+        {
+          "column_name": "internal_sku",
+          "data_type": "STRING",
+          "is_nullable": "YES",
+          "ordinal_position": 6
+        },
+        {
+          "column_name": "product_name",
+          "data_type": "STRING",
+          "is_nullable": "YES",
+          "ordinal_position": 7
+        },
+        {
+          "column_name": "inbound_id",
+          "data_type": "STRING",
+          "is_nullable": "YES",
+          "ordinal_position": 8
+        },
+        {
+          "column_name": "month",
+          "data_type": "DATE",
+          "is_nullable": "YES",
+          "ordinal_position": 9
+        },
+        {
+          "column_name": "units",
+          "data_type": "FLOAT64",
+          "is_nullable": "YES",
+          "ordinal_position": 10
+        },
+        {
+          "column_name": "detail",
+          "data_type": "STRING",
+          "is_nullable": "YES",
+          "ordinal_position": 11
+        },
+        {
+          "column_name": "evidence",
+          "data_type": "STRING",
+          "is_nullable": "YES",
+          "ordinal_position": 12
+        },
+        {
+          "column_name": "severity_rank",
+          "data_type": "INT64",
+          "is_nullable": "YES",
+          "ordinal_position": 13
+        }
+      ],
       "canonical_body_sha256": "7863ff21f5e366382798196b565149778b7a962dfc807b2b6ec199672969c793",
       "canonical_description_sha256": "cbcb67b48cfb0f02e2f0b5241bf091d1496b8727a693b031e5b6fe67481aeb14",
       "canonical_schema_sha256": "9fc7a956d2f2c0e6548f51d90d43dbea4c1456d0a81c783e975e763169bca383",
-      "canonical_schema_verification": "unverified",
+      "canonical_schema_verification": "bigquery_verified",
       "canonical_column_count": 13,
       "canonical_schema": [
         {
@@ -10047,7 +11080,7 @@
       "object_name": "V_PLANNING_SKU_OVERVIEW",
       "object_type": "VIEW",
       "canonical_path": "sql/current/evetis_mart/V_PLANNING_SKU_OVERVIEW.sql",
-      "sync_state": "pending_deploy",
+      "sync_state": "captured_live",
       "dependencies": [
         "V_INBOUND_LOT_CURRENT",
         "V_PLAN_TRAJECTORY_MONTHLY",
@@ -10055,22 +11088,287 @@
       ],
       "external_dependencies": [],
       "dependency_level": 4,
-      "capture_main_sha": null,
-      "captured_at": null,
+      "capture_main_sha": "2a60a76724ac7197ff87de2f267cbf2f0202f0cb",
+      "captured_at": "2026-09-25T13:10:45Z",
       "provenance": {
-        "source": "PR-PLAN-1 Git-first sales plan & forward inventory trajectory (docs/plan/PR_PLAN_1_SALES_PLAN_TRAJECTORY_2026-09-25.md); canonical_schema from BigQuery dry-run of the Git body over live objects before deployment (PR-PLAN-1 tables rendered empty)",
+        "source": "production INFORMATION_SCHEMA read-only capture (R2C) after PR-PLAN-1 deploy 2026-09-25 from main 2a60a76",
         "historical_migration": null,
-        "preflight_parity": "NEW_OBJECT_FIXTURE_AND_PREDEPLOY_CHECKS",
+        "preflight_parity": "DEPLOYED_AND_READBACK_MATCH",
         "superseded_historical_definitions": []
       },
-      "live_body_sha256_at_capture": null,
-      "live_schema_sha256_at_capture": null,
-      "live_description_sha256_at_capture": null,
-      "live_schema_at_capture": null,
+      "live_body_sha256_at_capture": "59221cf5b093163308520f89ecee81adb2388e71c80a79c20af67689ef6c8ed5",
+      "live_schema_sha256_at_capture": "cd026d6e3485d5ec2f9d96226cf91886a734d9c6587a1d370410263efb62bb21",
+      "live_description_sha256_at_capture": "391cfd092c8db5f7f613b9f3ff524415868a07f5c9fd4c9809d08c9f0ba4cdda",
+      "live_schema_at_capture": [
+        {
+          "column_name": "internal_sku",
+          "data_type": "STRING",
+          "is_nullable": "YES",
+          "ordinal_position": 1
+        },
+        {
+          "column_name": "product_name",
+          "data_type": "STRING",
+          "is_nullable": "YES",
+          "ordinal_position": 2
+        },
+        {
+          "column_name": "product_line",
+          "data_type": "STRING",
+          "is_nullable": "YES",
+          "ordinal_position": 3
+        },
+        {
+          "column_name": "inventory_as_of_date",
+          "data_type": "DATE",
+          "is_nullable": "YES",
+          "ordinal_position": 4
+        },
+        {
+          "column_name": "inventory_freshness_status",
+          "data_type": "STRING",
+          "is_nullable": "YES",
+          "ordinal_position": 5
+        },
+        {
+          "column_name": "inventory_freshness_reason",
+          "data_type": "STRING",
+          "is_nullable": "YES",
+          "ordinal_position": 6
+        },
+        {
+          "column_name": "ff_anchor_date",
+          "data_type": "DATE",
+          "is_nullable": "YES",
+          "ordinal_position": 7
+        },
+        {
+          "column_name": "inventory_position_units",
+          "data_type": "INT64",
+          "is_nullable": "YES",
+          "ordinal_position": 8
+        },
+        {
+          "column_name": "warehouse_ff_units",
+          "data_type": "INT64",
+          "is_nullable": "YES",
+          "ordinal_position": 9
+        },
+        {
+          "column_name": "marketplace_available_units",
+          "data_type": "INT64",
+          "is_nullable": "YES",
+          "ordinal_position": 10
+        },
+        {
+          "column_name": "in_transit_units",
+          "data_type": "INT64",
+          "is_nullable": "YES",
+          "ordinal_position": 11
+        },
+        {
+          "column_name": "sales_as_of",
+          "data_type": "DATE",
+          "is_nullable": "YES",
+          "ordinal_position": 12
+        },
+        {
+          "column_name": "observed_units_per_day_30d",
+          "data_type": "FLOAT64",
+          "is_nullable": "YES",
+          "ordinal_position": 13
+        },
+        {
+          "column_name": "observed_velocity_quality_30d",
+          "data_type": "STRING",
+          "is_nullable": "YES",
+          "ordinal_position": 14
+        },
+        {
+          "column_name": "observed_units_per_day_90d",
+          "data_type": "FLOAT64",
+          "is_nullable": "YES",
+          "ordinal_position": 15
+        },
+        {
+          "column_name": "observed_velocity_quality_90d",
+          "data_type": "STRING",
+          "is_nullable": "YES",
+          "ordinal_position": 16
+        },
+        {
+          "column_name": "sell_by_date",
+          "data_type": "DATE",
+          "is_nullable": "YES",
+          "ordinal_position": 17
+        },
+        {
+          "column_name": "expiry_date",
+          "data_type": "DATE",
+          "is_nullable": "YES",
+          "ordinal_position": 18
+        },
+        {
+          "column_name": "required_units_per_day_to_sell_by",
+          "data_type": "FLOAT64",
+          "is_nullable": "YES",
+          "ordinal_position": 19
+        },
+        {
+          "column_name": "proposed_plan_version",
+          "data_type": "STRING",
+          "is_nullable": "YES",
+          "ordinal_position": 20
+        },
+        {
+          "column_name": "proposed_lifecycle_status",
+          "data_type": "STRING",
+          "is_nullable": "YES",
+          "ordinal_position": 21
+        },
+        {
+          "column_name": "proposed_trajectory_status",
+          "data_type": "STRING",
+          "is_nullable": "YES",
+          "ordinal_position": 22
+        },
+        {
+          "column_name": "proposed_units_current_month_remaining",
+          "data_type": "NUMERIC",
+          "is_nullable": "YES",
+          "ordinal_position": 23
+        },
+        {
+          "column_name": "proposed_units_horizon",
+          "data_type": "NUMERIC",
+          "is_nullable": "YES",
+          "ordinal_position": 24
+        },
+        {
+          "column_name": "proposed_horizon_last_month",
+          "data_type": "DATE",
+          "is_nullable": "YES",
+          "ordinal_position": 25
+        },
+        {
+          "column_name": "proposed_closing_units_at_horizon_end",
+          "data_type": "NUMERIC",
+          "is_nullable": "YES",
+          "ordinal_position": 26
+        },
+        {
+          "column_name": "proposed_first_shortfall_month",
+          "data_type": "DATE",
+          "is_nullable": "YES",
+          "ordinal_position": 27
+        },
+        {
+          "column_name": "proposed_max_shortfall_units",
+          "data_type": "NUMERIC",
+          "is_nullable": "YES",
+          "ordinal_position": 28
+        },
+        {
+          "column_name": "proposed_units_left_at_sell_by",
+          "data_type": "NUMERIC",
+          "is_nullable": "YES",
+          "ordinal_position": 29
+        },
+        {
+          "column_name": "approved_trajectory_status",
+          "data_type": "STRING",
+          "is_nullable": "YES",
+          "ordinal_position": 30
+        },
+        {
+          "column_name": "approved_units_horizon",
+          "data_type": "NUMERIC",
+          "is_nullable": "YES",
+          "ordinal_position": 31
+        },
+        {
+          "column_name": "approved_closing_units_at_horizon_end",
+          "data_type": "NUMERIC",
+          "is_nullable": "YES",
+          "ordinal_position": 32
+        },
+        {
+          "column_name": "approved_first_shortfall_month",
+          "data_type": "DATE",
+          "is_nullable": "YES",
+          "ordinal_position": 33
+        },
+        {
+          "column_name": "approved_max_shortfall_units",
+          "data_type": "NUMERIC",
+          "is_nullable": "YES",
+          "ordinal_position": 34
+        },
+        {
+          "column_name": "model_plan_version",
+          "data_type": "STRING",
+          "is_nullable": "YES",
+          "ordinal_position": 35
+        },
+        {
+          "column_name": "model_units_horizon",
+          "data_type": "NUMERIC",
+          "is_nullable": "YES",
+          "ordinal_position": 36
+        },
+        {
+          "column_name": "model_first_shortfall_month",
+          "data_type": "DATE",
+          "is_nullable": "YES",
+          "ordinal_position": 37
+        },
+        {
+          "column_name": "model_max_shortfall_units",
+          "data_type": "NUMERIC",
+          "is_nullable": "YES",
+          "ordinal_position": 38
+        },
+        {
+          "column_name": "inbound_in_trajectory_units",
+          "data_type": "INT64",
+          "is_nullable": "YES",
+          "ordinal_position": 39
+        },
+        {
+          "column_name": "inbound_committed_not_in_trajectory_units",
+          "data_type": "INT64",
+          "is_nullable": "YES",
+          "ordinal_position": 40
+        },
+        {
+          "column_name": "inbound_hypothetical_units",
+          "data_type": "INT64",
+          "is_nullable": "YES",
+          "ordinal_position": 41
+        },
+        {
+          "column_name": "inbound_lots",
+          "data_type": "STRING",
+          "is_nullable": "YES",
+          "ordinal_position": 42
+        },
+        {
+          "column_name": "ct_model_inbound_units",
+          "data_type": "INT64",
+          "is_nullable": "YES",
+          "ordinal_position": 43
+        },
+        {
+          "column_name": "ct_model_inbound_eta",
+          "data_type": "DATE",
+          "is_nullable": "YES",
+          "ordinal_position": 44
+        }
+      ],
       "canonical_body_sha256": "59221cf5b093163308520f89ecee81adb2388e71c80a79c20af67689ef6c8ed5",
       "canonical_description_sha256": "391cfd092c8db5f7f613b9f3ff524415868a07f5c9fd4c9809d08c9f0ba4cdda",
       "canonical_schema_sha256": "cd026d6e3485d5ec2f9d96226cf91886a734d9c6587a1d370410263efb62bb21",
-      "canonical_schema_verification": "unverified",
+      "canonical_schema_verification": "bigquery_verified",
       "canonical_column_count": 44,
       "canonical_schema": [
         {
@@ -10344,7 +11642,7 @@
       "object_name": "V_PLANNING_HEADER",
       "object_type": "VIEW",
       "canonical_path": "sql/current/evetis_mart/V_PLANNING_HEADER.sql",
-      "sync_state": "pending_deploy",
+      "sync_state": "captured_live",
       "dependencies": [
         "V_PLANNING_EXCEPTIONS",
         "V_PLAN_VERSION_STATUS"
@@ -10354,22 +11652,221 @@
         "evetis_ref.CT_INVENTORY_SNAPSHOT_DAILY"
       ],
       "dependency_level": 5,
-      "capture_main_sha": null,
-      "captured_at": null,
+      "capture_main_sha": "2a60a76724ac7197ff87de2f267cbf2f0202f0cb",
+      "captured_at": "2026-09-25T13:10:45Z",
       "provenance": {
-        "source": "PR-PLAN-1 Git-first sales plan & forward inventory trajectory (docs/plan/PR_PLAN_1_SALES_PLAN_TRAJECTORY_2026-09-25.md); canonical_schema from BigQuery dry-run of the Git body over live objects before deployment (PR-PLAN-1 tables rendered empty)",
+        "source": "production INFORMATION_SCHEMA read-only capture (R2C) after PR-PLAN-1 deploy 2026-09-25 from main 2a60a76",
         "historical_migration": null,
-        "preflight_parity": "NEW_OBJECT_FIXTURE_AND_PREDEPLOY_CHECKS",
+        "preflight_parity": "DEPLOYED_AND_READBACK_MATCH",
         "superseded_historical_definitions": []
       },
-      "live_body_sha256_at_capture": null,
-      "live_schema_sha256_at_capture": null,
-      "live_description_sha256_at_capture": null,
-      "live_schema_at_capture": null,
+      "live_body_sha256_at_capture": "a52b3ef8e7ca0dfe0dd18668f887164f7b42f5a423694fa01e459e8e00de5a04",
+      "live_schema_sha256_at_capture": "d546afba1dc0f0435c0418e6671424fcafce30ca41129edb1994822bbc2d7554",
+      "live_description_sha256_at_capture": "eddfc33ae5433e769c6b6610eb0d2eebfe9d0b7b0910c335d4db6a5454c95835",
+      "live_schema_at_capture": [
+        {
+          "column_name": "rendered_at",
+          "data_type": "TIMESTAMP",
+          "is_nullable": "YES",
+          "ordinal_position": 1
+        },
+        {
+          "column_name": "inventory_as_of_date",
+          "data_type": "DATE",
+          "is_nullable": "YES",
+          "ordinal_position": 2
+        },
+        {
+          "column_name": "sales_as_of",
+          "data_type": "DATE",
+          "is_nullable": "YES",
+          "ordinal_position": 3
+        },
+        {
+          "column_name": "inventory_freshness_status",
+          "data_type": "STRING",
+          "is_nullable": "YES",
+          "ordinal_position": 4
+        },
+        {
+          "column_name": "stale_skus",
+          "data_type": "INT64",
+          "is_nullable": "YES",
+          "ordinal_position": 5
+        },
+        {
+          "column_name": "inventory_freshness_reason",
+          "data_type": "STRING",
+          "is_nullable": "YES",
+          "ordinal_position": 6
+        },
+        {
+          "column_name": "approved_plan_status",
+          "data_type": "STRING",
+          "is_nullable": "YES",
+          "ordinal_position": 7
+        },
+        {
+          "column_name": "approved_plan_version",
+          "data_type": "STRING",
+          "is_nullable": "YES",
+          "ordinal_position": 8
+        },
+        {
+          "column_name": "approved_content_sha256",
+          "data_type": "STRING",
+          "is_nullable": "YES",
+          "ordinal_position": 9
+        },
+        {
+          "column_name": "approved_by",
+          "data_type": "STRING",
+          "is_nullable": "YES",
+          "ordinal_position": 10
+        },
+        {
+          "column_name": "approved_at",
+          "data_type": "TIMESTAMP",
+          "is_nullable": "YES",
+          "ordinal_position": 11
+        },
+        {
+          "column_name": "approval_reference",
+          "data_type": "STRING",
+          "is_nullable": "YES",
+          "ordinal_position": 12
+        },
+        {
+          "column_name": "approved_effective_from_month",
+          "data_type": "DATE",
+          "is_nullable": "YES",
+          "ordinal_position": 13
+        },
+        {
+          "column_name": "proposed_plan_version",
+          "data_type": "STRING",
+          "is_nullable": "YES",
+          "ordinal_position": 14
+        },
+        {
+          "column_name": "proposed_plan_name",
+          "data_type": "STRING",
+          "is_nullable": "YES",
+          "ordinal_position": 15
+        },
+        {
+          "column_name": "proposed_plan_kind",
+          "data_type": "STRING",
+          "is_nullable": "YES",
+          "ordinal_position": 16
+        },
+        {
+          "column_name": "proposed_lifecycle_status",
+          "data_type": "STRING",
+          "is_nullable": "YES",
+          "ordinal_position": 17
+        },
+        {
+          "column_name": "proposed_content_sha256",
+          "data_type": "STRING",
+          "is_nullable": "YES",
+          "ordinal_position": 18
+        },
+        {
+          "column_name": "proposed_approvable_now",
+          "data_type": "BOOL",
+          "is_nullable": "YES",
+          "ordinal_position": 19
+        },
+        {
+          "column_name": "proposed_horizon_from",
+          "data_type": "DATE",
+          "is_nullable": "YES",
+          "ordinal_position": 20
+        },
+        {
+          "column_name": "proposed_horizon_to",
+          "data_type": "DATE",
+          "is_nullable": "YES",
+          "ordinal_position": 21
+        },
+        {
+          "column_name": "proposed_lines",
+          "data_type": "INT64",
+          "is_nullable": "YES",
+          "ordinal_position": 22
+        },
+        {
+          "column_name": "proposed_cards_total",
+          "data_type": "NUMERIC",
+          "is_nullable": "YES",
+          "ordinal_position": 23
+        },
+        {
+          "column_name": "proposed_created_at",
+          "data_type": "TIMESTAMP",
+          "is_nullable": "YES",
+          "ordinal_position": 24
+        },
+        {
+          "column_name": "model_plan_version",
+          "data_type": "STRING",
+          "is_nullable": "YES",
+          "ordinal_position": 25
+        },
+        {
+          "column_name": "model_lifecycle_status",
+          "data_type": "STRING",
+          "is_nullable": "YES",
+          "ordinal_position": 26
+        },
+        {
+          "column_name": "model_content_sha256",
+          "data_type": "STRING",
+          "is_nullable": "YES",
+          "ordinal_position": 27
+        },
+        {
+          "column_name": "versions_total",
+          "data_type": "INT64",
+          "is_nullable": "YES",
+          "ordinal_position": 28
+        },
+        {
+          "column_name": "blockers",
+          "data_type": "INT64",
+          "is_nullable": "YES",
+          "ordinal_position": 29
+        },
+        {
+          "column_name": "warnings",
+          "data_type": "INT64",
+          "is_nullable": "YES",
+          "ordinal_position": 30
+        },
+        {
+          "column_name": "infos",
+          "data_type": "INT64",
+          "is_nullable": "YES",
+          "ordinal_position": 31
+        },
+        {
+          "column_name": "exception_codes",
+          "data_type": "STRING",
+          "is_nullable": "YES",
+          "ordinal_position": 32
+        },
+        {
+          "column_name": "approval_path",
+          "data_type": "STRING",
+          "is_nullable": "YES",
+          "ordinal_position": 33
+        }
+      ],
       "canonical_body_sha256": "a52b3ef8e7ca0dfe0dd18668f887164f7b42f5a423694fa01e459e8e00de5a04",
       "canonical_description_sha256": "eddfc33ae5433e769c6b6610eb0d2eebfe9d0b7b0910c335d4db6a5454c95835",
       "canonical_schema_sha256": "d546afba1dc0f0435c0418e6671424fcafce30ca41129edb1994822bbc2d7554",
-      "canonical_schema_verification": "unverified",
+      "canonical_schema_verification": "bigquery_verified",
       "canonical_column_count": 33,
       "canonical_schema": [
         {

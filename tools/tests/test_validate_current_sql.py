@@ -48,14 +48,14 @@ PROMO4 = {"ozon_mart": set(),
                           "V_SKU_INVENTORY_TRAJECTORY_MONTHLY_CURRENT", "V_BUNDLE_ASSEMBLY_CAPACITY_CURRENT",
                           "V_PROMO_INVENTORY_CONTEXT_CURRENT"}}
 PROMO4_PENDING = {"ozon_mart": set(),
-                  # PR-PLAN-1 переключил два представления на контракт утверждённых версий (Git-first).
-                  "evetis_mart": {"V_SALES_PLAN_MONTHLY_CURRENT", "V_SKU_INVENTORY_TRAJECTORY_MONTHLY_CURRENT"}}
+                  # PR-PLAN-1 переключил два представления; сняты R2C после развёртывания 2026-09-25.
+                  "evetis_mart": set()}
 # PR-PLAN-1 (2026-09-25): план продаж и траектория запаса, 9 новых канонических объектов Git-first.
 PLAN1 = {"ozon_mart": set(),
          "evetis_mart": {"V_PLAN_LINE_MONTHLY_ALL", "V_PLAN_VERSION_STATUS", "V_SALES_PLAN_APPROVED",
                          "V_PLAN_PHYSICAL_MONTHLY", "V_INBOUND_LOT_CURRENT", "V_PLAN_TRAJECTORY_MONTHLY",
                          "V_PLANNING_EXCEPTIONS", "V_PLANNING_SKU_OVERVIEW", "V_PLANNING_HEADER"}}
-PLAN1_PENDING = PLAN1
+PLAN1_PENDING = {"ozon_mart": set(), "evetis_mart": set()}  # сняты R2C после развёртывания 2026-09-25
 NON_R2A = {"ozon_mart": {"V_OZON_COMMISSION_RECOVERY", "V_OZON_CIS_BUYOUT", "FCT_OZON_SKU_PNL_DAILY",
                          "FCT_OZON_SKU_PNL_MONTHLY", "FCT_OZON_PNL_MONTHLY",
                          # Gate 8: провизорная экономика Ozon
