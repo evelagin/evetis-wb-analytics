@@ -1,5 +1,13 @@
 # CHANGELOG.md
 
+## 2026-09-25 — Tenancy T3.3: чтение реестра образов провижионером доказано вживую
+
+Первый apply `client_001` упал на `Jobs.CreateJob`: Cloud Run требует
+`artifactregistry.repositories.downloadArtifacts` у создающей идентичности (провижионера), а не
+только у сервис-агента. `roles/artifactregistry.reader` выдан провижионеру только на репозиторий
+`mpa-runtime` (действует: `downloadArtifacts`, `get`). `iam_proposals.py` и `TENANCY_DESIGN §4a`
+обновлены. Архитектура runtime не менялась, образ в проект арендатора не копируется.
+
 ## 2026-09-25 — PR-PLAN-1: версии плана продаж и помесячная траектория запаса
 
 Контракт: `docs/plan/PR_PLAN_1_SALES_PLAN_TRAJECTORY_2026-09-25.md`. Control Tower, C1, Юнитка и
