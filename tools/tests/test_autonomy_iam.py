@@ -76,3 +76,108 @@ def test_absent_sa_is_not_a_pass():
     s = fixed()
     s["sa_exists"] = False
     assert iam_check.evaluate(s)["status"] == "FAIL"
+
+
+# ------------------------------------------ анонимный датасет результатов (M6 Phase 1) ---
+ANON = "_04b400eee6d4a73c33dc1603988f749f3eef88d8"
+SA = iam_check.SA
+
+
+def with_anonymous(ds=ANON, **over):
+    """Точная форма живого датасета (API 2026-09-26) и задания, которое его создало."""
+    s = fixed()
+    s["dataset_roles"][ds] = "OWNER"
+    s["datasets_all"] = list(iam_check.READ_DATASETS) + [ds]
+    s["datasets_visible"] = list(iam_check.READ_DATASETS)
+    meta = {"kind": "bigquery#dataset", "etag": "e", "id": f"{iam_check.PROJECT}:{ds}", "selfLink": "x",
+            "datasetReference": {"datasetId": ds, "projectId": iam_check.PROJECT},
+            "defaultTableExpirationMs": "86400000", "defaultPartitionExpirationMs": "86400000",
+            "access": [{"role": "OWNER", "userByEmail": SA}], "creationTime": "1790358993328",
+            "lastModifiedTime": "1790358993328", "location": "EU", "maxTimeTravelHours": "168", "type": "DEFAULT"}
+    job = {"user_email": SA, "job_type": "QUERY", "statement_type": "SELECT",
+           "creation_time": "2026-09-25T17:56:33.151Z", "end_time": "2026-09-25T17:56:35.513Z"}
+    ev = {"meta": meta, "jobs": {"region": "region-eu", "linked": [job], "sa_jobs": [dict(job)]}}
+    for path, value in over.items():
+        target = ev
+        keys = path.split("__")
+        for k in keys[:-1]:
+            target = target[k]
+        target[keys[-1]] = value
+    s["anonymous_evidence"] = {ds: ev}
+    return s
+
+
+def test_proven_anonymous_result_dataset_is_not_a_write_grant():
+    r = iam_check.evaluate(with_anonymous())
+    assert r["status"] == "PASS", r
+    assert [e["dataset"] for e in r["anonymous_result_datasets"]] == [ANON]
+    ev = r["anonymous_result_datasets"][0]
+    assert ev["criteria_unmet"] == [] and ev["birth_job"]["creation_time"] == "2026-09-25T17:56:33.151Z"
+    assert not any("createSnapshot" in f for f in r["findings"])
+
+
+OTHER = "someone@example.iam.gserviceaccount.com"
+
+
+@pytest.mark.parametrize("criterion,snap", [
+    ("A1", lambda: with_anonymous(ds="_04B400EEE6D4A73C33DC1603988F749F3EEF88D8")),
+    ("A1", lambda: with_anonymous(ds="_04b400ee")),
+    ("A2", lambda: {**with_anonymous(), "datasets_visible": list(iam_check.READ_DATASETS) + [ANON]}),
+    ("A2", lambda: {k: v for k, v in with_anonymous().items() if k != "datasets_all"}),
+    ("A3", lambda: with_anonymous(meta__access=[{"role": "OWNER", "userByEmail": SA},
+                                               {"role": "READER", "userByEmail": OTHER}])),
+    ("A3", lambda: with_anonymous(meta__access=[{"role": "OWNER", "userByEmail": OTHER}])),
+    ("A3", lambda: with_anonymous(meta__access=[{"role": "OWNER", "groupByEmail": "g@example.com"}])),
+    ("A4", lambda: with_anonymous(meta__labels={"env": "prod"})),
+    ("A4", lambda: with_anonymous(meta__description="production data")),
+    ("A4", lambda: with_anonymous(meta__type="LINKED")),
+    ("A5", lambda: with_anonymous(meta__defaultTableExpirationMs=None)),
+    ("A5", lambda: with_anonymous(meta__defaultPartitionExpirationMs="3600000")),
+    ("A6", lambda: with_anonymous(jobs__linked=[])),
+    ("A6", lambda: with_anonymous(jobs__linked=[{"user_email": OTHER, "job_type": "QUERY", "statement_type": "SELECT",
+                                                 "creation_time": "2026-09-25T17:56:33.151Z",
+                                                 "end_time": "2026-09-25T17:56:35.513Z"}])),
+    ("A6", lambda: with_anonymous(jobs__linked=[{"user_email": SA, "job_type": "QUERY",
+                                                 "statement_type": "CREATE_TABLE_AS_SELECT",
+                                                 "creation_time": "2026-09-25T17:56:33.151Z",
+                                                 "end_time": "2026-09-25T17:56:35.513Z"}])),
+    ("A7", lambda: with_anonymous(meta__creationTime="1790000000000")),         # создан задолго до задания
+    ("A7", lambda: with_anonymous(meta__creationTime="1790359999999")),         # создан после задания
+    ("A8", lambda: with_anonymous(jobs__sa_jobs=[{"user_email": SA, "job_type": "QUERY", "statement_type": "INSERT"}])),
+    ("A8", lambda: with_anonymous(jobs__sa_jobs=[{"user_email": SA, "job_type": "LOAD", "statement_type": None}])),
+    ("A8", lambda: with_anonymous(jobs__sa_jobs=[])),
+    ("A9", lambda: with_anonymous(jobs__region="region-us")),
+    ("A9", lambda: with_anonymous(meta__location="US")),
+])
+def test_every_unproven_criterion_keeps_the_old_fail(criterion, snap):
+    r = iam_check.evaluate(snap())
+    assert r["status"] == "FAIL"
+    assert r["anonymous_result_datasets"] == []
+    assert any("допустим только READER" in f for f in r["findings"])
+    unmet = next(iter(r["anonymous_not_proven"].values()), [])
+    assert any(u.startswith(criterion) for u in unmet) or criterion == "A1", unmet
+
+
+def test_normal_dataset_owner_remains_fail():
+    s = fixed()
+    s["dataset_roles"]["wb_mart"] = "OWNER"
+    r = iam_check.evaluate(s)
+    assert r["status"] == "FAIL" and any("wb_mart: роль OWNER" in f for f in r["findings"])
+
+
+def test_script_dataset_is_not_auto_ignored():
+    ds = "_script0034f00" + "a" * 26
+    r = iam_check.evaluate(with_anonymous(ds=ds))
+    assert r["status"] == "FAIL" and r["anonymous_result_datasets"] == []
+
+
+def test_snapshot_without_evidence_is_fail_closed():
+    s = with_anonymous()
+    del s["anonymous_evidence"]
+    assert iam_check.evaluate(s)["status"] == "FAIL"
+
+
+def test_anonymous_writer_role_is_not_accepted():
+    s = with_anonymous()
+    s["dataset_roles"][ANON] = "WRITER"
+    assert iam_check.evaluate(s)["status"] == "FAIL"

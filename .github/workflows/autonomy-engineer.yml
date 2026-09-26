@@ -62,7 +62,7 @@ jobs:
         run: "pip install --only-binary=:all: --require-hashes -r tools/requirements-sql-ci.txt"
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
-          node-version: "20"
+          node-version: "22"   # @anthropic-ai/claude-code@2.1.251: engines node >=22
       - name: install Claude Code (pinned)
         run: npm install -g @anthropic-ai/claude-code@2.1.251
       - uses: google-github-actions/auth@c200f3691d83b41bf9bbd8638997a462592937ed # v2
@@ -83,23 +83,38 @@ jobs:
           if [ -n "${ANTHROPIC_API_KEY:-}${ANTHROPIC_AUTH_TOKEN:-}${ANTHROPIC_PROFILE:-}${CLAUDE_CODE_OAUTH_TOKEN:-}" ]; then
             echo "::error::статический ключ/токен/профиль Anthropic перекрыл бы федерацию"; exit 1; fi
           # Фактический scope и срок токена Claude — ДО агента (policy.json → anthropic_runtime).
-          python -m tools.autonomy.anthropic_scope check --role engineer
+          # Вывод сторожа (отредактированный JSON без токена) — ещё и в диагностику агента.
+          python -m tools.autonomy.anthropic_scope check --role engineer > "$RUNNER_TEMP/scope_guard.json" \
+            || { cat "$RUNNER_TEMP/scope_guard.json"; exit 1; }
+          cat "$RUNNER_TEMP/scope_guard.json"
           export ANTHROPIC_IDENTITY_TOKEN_FILE="$RUNNER_TEMP/anthropic-oidc.jwt"
           bash tools/autonomy/ci/refresh_anthropic_oidc.sh
           ( while sleep 240; do bash tools/autonomy/ci/refresh_anthropic_oidc.sh || true; done ) &
+          rc=0
           python -m tools.autonomy.cli agent-run --ci --engineer claude --reviewer none \
             --state-dir "$STATE_DIR" --run-id "$RUN_ID" --out "$RUNNER_TEMP/pending" \
-            --sandbox-root "$RUNNER_TEMP/sandboxes" \
+            --sandbox-root "$RUNNER_TEMP/sandboxes" --scope-guard-file "$RUNNER_TEMP/scope_guard.json" \
             --project "$GCP_PROJECT_ID" --token-command "gcloud auth print-access-token" \
-            --audit-identity "$AE_READER_SA" > "$RUNNER_TEMP/agent.json"
+            --audit-identity "$AE_READER_SA" > "$RUNNER_TEMP/agent.json" || rc=$?
+          # 0 — вывод есть; 3 — агент отказал, диагностика записана (документированная передача доверенному
+          # ingest, который переведёт прогон в BLOCKED/FAILED); иное — сбой обёртки: job падает.
+          case "$rc" in 0|3) ;; *) echo "::error::сбой обёртки агента (код $rc)"; exit "$rc" ;; esac
           python -c 'import json,sys; o=json.load(open(sys.argv[1]))["outputs"]; print("hashes=" + " ".join(f"{k}={v}" for k,v in o.items()))' \
             "$RUNNER_TEMP/agent.json" >> "$GITHUB_OUTPUT"
+          python -m tools.autonomy.cli diag-summary --file "$RUNNER_TEMP/pending/engineer_diagnostics.json" \
+            | tee -a "$GITHUB_STEP_SUMMARY"
+          if [ "$rc" = 3 ]; then
+            echo "::error::агент инженера отказал — диагностика передана доверенному ingest (см. итог job'а)"
+          fi
+      # При ЛЮБОМ исходе шага агента: диагностика переживает отказ до плана (инцидент M6 Phase 1).
+      # Доверенный ingest принимает только файлы с sha256 из outputs; прочее здесь — для человека.
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
-        if: steps.agent.outputs.hashes != ''
+        if: always()
         with:
           name: ae-${{ inputs.run_id }}-engineer-${{ github.run_attempt }}
           path: ${{ runner.temp }}/pending
           retention-days: 30
+          if-no-files-found: ignore
 
   # Фаза 0: только аутентификация Claude API инженера. Тот же файл → тот же job_workflow_ref, что у
   # прохода, поэтому совпадает правило федерации. Нет: Claude Code, модели, GCP (sa-ae-reader),

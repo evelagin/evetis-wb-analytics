@@ -9,6 +9,24 @@ def _load(p: Path):
     return json.loads(p.read_text(encoding="utf-8")) if p.exists() else None
 
 
+def _diagnostics_lines(run: dict) -> list[str]:
+    """Диагностика вызовов агента (только перечисления, числа и sha — без свободного текста)."""
+    rows = [(u.get("role"), u["diagnostics"]) for u in run.get("usage", []) if isinstance(u.get("diagnostics"), dict)]
+    if not rows:
+        return []
+    out = ["### Диагностика агента"]
+    for role, d in rows:
+        if "rejected" in d:
+            out.append(f"- `{role}`: диагностика недоверенного job'а **отвергнута**")
+            continue
+        api = f"{d.get('api_error_status') or '—'}/{d.get('api_error_type') or '—'}"
+        sha = (d.get("artifact_sha256") or d.get("sha256") or "")[:16]
+        out.append(f"- `{role}`: {d.get('outcome')} · стадия **{d.get('failure_stage')}** · класс "
+                   f"**{d.get('failure_class')}** · код выхода {d.get('exit_code')} · API {api} · "
+                   f"Messages API {d.get('messages_api_reached')} · sha256 `{sha}` · `{d.get('file')}`")
+    return out + [""]
+
+
 def render_report(run: dict, art_dir: Path) -> str:
     obj = _load(art_dir / "objective.json") or {}
     rep = _load(art_dir / "engineer_report.json") or {}
@@ -46,6 +64,7 @@ def render_report(run: dict, art_dir: Path) -> str:
         "### Остающаяся неопределённость",
         *(f"- {u}" for u in rep.get("uncertainty", [])), *(["_не заявлена_"] if not rep.get("uncertainty") else []),
         "",
+        *_diagnostics_lines(run),
         f"_Стоимость моделей по данным рантайма: ${cost:.2f}. Слияние — только владельцем._",
     ]
     return "\n".join(lines) + "\n"

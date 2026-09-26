@@ -144,6 +144,47 @@
 6. Draft PR по §6, CI зелёный на опубликованном SHA.
 7. Расход workspace за окно не выше лимита.
 
+## 9.1 Диагностика агента (remediation после M6 Phase 1, 2026-09-26)
+
+Попытка Phase 1 (run 36169466331) потеряла причину отказа Claude CLI: артефакт инженера грузился
+только при непустых хешах, а ошибка оставалась в черновом состоянии раннера. Теперь:
+
+- каждый вызов агента пишет запись (`tools/autonomy/diagnostics.py`, схема
+  `quality/autonomy/agent_diagnostics.schema.json`): стадия и класс отказа, код выхода, тип исключения,
+  время, формат вывода, `is_error`/`subtype`/`api_error_status`/тип ошибки API, `duration_api_ms`,
+  ходы, usage/стоимость, отредактированные хвосты stdout/stderr, версии Claude Code и Node,
+  `pre_invoke`, вывод сторожа scope, ожидаемые и созданные артефакты;
+- job инженера/ревьюера ВСЕГДА отдаёт `engineer_diagnostics.json` / `reviewer_diagnostics.json` в хешах
+  и выгружает артефакт `if: always()`; код 3 — документированная передача отказа (`::error::` в job'е);
+- доверенный ingest/gate: sha256 → размер → схема → роль job'а → run_id → повторный поиск секретов →
+  копия в `artifacts/<run>/diagnostics/` → BLOCKED (класс API/CLI/AGENT_OUTPUT/WRAPPER) или FAILED
+  (класс INFRA). Подмена — IntegrityError, состояние не меняется; плохая диагностика — отказ без записи;
+- отказ редакции — документ REDACTION_BLOCKED без свободного текста;
+- отчёт (issue) показывает стадию, класс, код выхода, статус/тип ошибки API и sha диагностики.
+
+Ограничения CLI 2.1.251 (фиксируются в каждом документе): нет request-id Messages API и нет сигнала
+об обмене токена самим CLI. «Дошёл ли запрос до Messages API» выводится из `api_error_status`,
+`duration_api_ms` и usage; обмен токена CLI — только история аутентификации Console.
+
+`iam_check`: анонимный датасет результатов `_<40 hex>` (OWNER у SA, создаётся BigQuery при первом
+SELECT) исключается из «записи» только при доказанных A1–A9 (скрыт, единственный OWNER — SA, нет
+настроек, истечение 24 ч, задания SA с назначением в датасет, датасет создан во время задания,
+все задания SA — SELECT, регион совпадает). Иначе — прежний FAIL. `_script*` не покрывается.
+
+## 9.2 План следующего M6 (только по отдельному ACK)
+
+Предусловия: этот PR слит; `iam_check --live` PASS с одним распознанным анонимным датасетом;
+`wif_check --live`, `wif_domains --live` PASS; Phase 0 preflight повторён (оба PASS_WITH_EXCEPTION).
+
+Ход и остановка — как §1–§8. Дополнительно обязательно сохранить и приложить к отчёту:
+1. `engineer_diagnostics.json` и `reviewer_diagnostics.json` каждого прохода (sha из outputs + доверенная
+   копия в `autonomy-state`), с версиями CLI/Node и выводом сторожа (request-id);
+2. для каждого вызова: стадию, класс, `api_error_status`/тип, `messages_api_reached`,
+   `model_response_began`, usage и стоимость;
+3. владелец: история аутентификации и логи запросов Console за окно прогона, сопоставленные с
+   request-id сторожа и временем вызовов; без этого M6 PASS не засчитывается;
+4. `JOBS_BY_PROJECT` за окно (только SELECT у `sa-ae-reader`), журнал IAM/WIF пуст, `iam_check --live` PASS.
+
 ## 10. Уборка и выключение
 
 - `gh variable delete AE_ENABLED` сразу после финального прохода.

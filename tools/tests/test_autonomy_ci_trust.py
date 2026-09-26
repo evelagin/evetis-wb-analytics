@@ -62,7 +62,8 @@ def run_until_testing(p: Pipeline) -> tuple[str, Path, dict]:
     eng_machine = p.machine("engineer")
     out = p.tmp / "pending-engineer"
     hashes = agent_run(lambda s: p.orch(s, engineer=engineer_script()), eng_machine, run_id, out)
-    assert set(hashes) == {"engineer_plan.json", "engineer_implement.json", "engineer_implement.patch"}
+    assert set(hashes) == {"engineer_plan.json", "engineer_implement.json", "engineer_implement.patch",
+                           "engineer_diagnostics.json"}
     assert eng_machine.load(run_id)["state"] == "PLANNING"          # машина инженера тоже не изменилась
     return run_id, out, hashes
 
@@ -81,11 +82,11 @@ def test_full_pipeline_across_isolated_runners(tmp_path):
     assert verify.advance(run_id, stop_before={"REVIEWING"})["state"] == "REVIEWING"
     # review (модель, чистая машина): только вердикт
     rv_dir = tmp_path / "pending-review"
-    rv_path = review_only(p.orch(p.machine("review"), reviewer=ScriptedAdapter({"reviewer": [{"respond": F.verdict()}]})),
-                          run_id, rv_dir)
-    from tools.autonomy.agents import sha256_file
+    rv_hashes = review_only(p.orch(p.machine("review"), reviewer=ScriptedAdapter({"reviewer": [{"respond": F.verdict()}]})),
+                            run_id, rv_dir)
+    assert set(rv_hashes) == {"reviewer.json", "reviewer_diagnostics.json"}
     # gate (доверенный): воспроизвести вердикт, решить
-    gate = p.orch(p.branch, reviewer=ReplayAdapter(rv_dir, {"reviewer.json": sha256_file(rv_path)}))
+    gate = p.orch(p.branch, reviewer=ReplayAdapter(rv_dir, rv_hashes))
     assert gate.advance(run_id)["state"] == "READY_FOR_PR"
     # publish (доверенный, запись только ae/*)
     pub = GitPublisher(p.repo, dry_run=True)
