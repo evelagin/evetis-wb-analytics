@@ -51,7 +51,7 @@ READ_LIKE = {"logging.queries.usePrivate"}
 ANON_KEYS = {"access", "creationTime", "datasetReference", "defaultPartitionExpirationMs", "defaultTableExpirationMs",
              "etag", "id", "kind", "lastModifiedTime", "location", "maxTimeTravelHours", "selfLink", "type"}
 ANON_EXPIRATION_MS = "86400000"
-CREATION_SKEW_MS = 5000
+CREATION_SKEW_MS = 0          # датасет обязан родиться ВНУТРИ окна успешного задания (review L6)
 JOBS_LOOKBACK_DAYS = 180
 
 
@@ -82,9 +82,9 @@ def recognize_anonymous(snap: dict, ds: str, sa: str = SA) -> tuple[bool, list[s
     need("A5 истечение таблиц и партиций 24 ч", meta.get("defaultTableExpirationMs") == ANON_EXPIRATION_MS
          and meta.get("defaultPartitionExpirationMs") == ANON_EXPIRATION_MS)
     linked = [j for j in (jobs or {}).get("linked", [])]
-    need("A6 есть задания с назначением в датасет, и все — SELECT этого SA", bool(linked) and all(
+    need("A6 есть задания с назначением в датасет, и все — успешные SELECT этого SA", bool(linked) and all(
         j.get("user_email") == sa and j.get("job_type") == "QUERY" and j.get("statement_type") == "SELECT"
-        for j in linked))
+        and j.get("state") == "DONE" and not j.get("error_result") for j in linked))
     created = int(meta["creationTime"]) if str(meta.get("creationTime", "")).isdigit() else None
     birth = [j for j in linked if created is not None and j.get("creation_time") and j.get("end_time")
              and _ms(j["creation_time"]) <= created <= _ms(j["end_time"]) + CREATION_SKEW_MS]
@@ -172,11 +172,18 @@ def capture_live() -> dict:
         r = json.load(urllib.request.urlopen(req))
         if not r.get("jobComplete"):
             raise RuntimeError("запрос JOBS не завершился — доказательства нет")
+        if r.get("pageToken") or int(r.get("totalRows") or 0) != len(r.get("rows", [])):
+            raise RuntimeError("ответ JOBS усечён (страницы) — частичное доказательство не принимается")
         names = [f["name"] for f in r["schema"]["fields"]]
         return [dict(zip(names, [c["v"] for c in row["f"]])) for row in r.get("rows", [])]
     dataset_roles, metas = {}, {}
-    all_ids = [d["datasetReference"]["datasetId"] for d in bq("datasets?all=true&maxResults=1000").get("datasets", [])]
-    visible = [d["datasetReference"]["datasetId"] for d in bq("datasets?maxResults=1000").get("datasets", [])]
+    def listing(path):
+        r = bq(path)
+        if r.get("nextPageToken"):
+            raise RuntimeError("список датасетов усечён (страницы) — частичный снимок не принимается")
+        return [d["datasetReference"]["datasetId"] for d in r.get("datasets", [])]
+    all_ids = listing("datasets?all=true&maxResults=1000")
+    visible = listing("datasets?maxResults=1000")
     for ds in all_ids:
         meta = bq(f"datasets/{ds}")
         for a in meta.get("access", []):
@@ -193,7 +200,8 @@ def capture_live() -> dict:
             continue
         base = (f"FROM `{PROJECT}.{region}.INFORMATION_SCHEMA.JOBS_BY_PROJECT` WHERE creation_time > "
                 f"TIMESTAMP_SUB(CURRENT_TIMESTAMP(), INTERVAL {JOBS_LOOKBACK_DAYS} DAY)")
-        cols = ("user_email, job_type, statement_type, FORMAT_TIMESTAMP('%FT%H:%M:%E3SZ', creation_time) AS creation_time, "
+        cols = ("user_email, job_type, statement_type, state, error_result.reason AS error_result, "
+                "FORMAT_TIMESTAMP('%FT%H:%M:%E3SZ', creation_time) AS creation_time, "
                 "FORMAT_TIMESTAMP('%FT%H:%M:%E3SZ', end_time) AS end_time")
         anonymous_evidence[ds] = {"meta": meta, "jobs": {
             "region": region,

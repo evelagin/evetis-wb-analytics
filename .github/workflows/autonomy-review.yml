@@ -89,7 +89,8 @@ jobs:
             --sandbox-root "$RUNNER_TEMP/sandboxes" --scope-guard-file "$RUNNER_TEMP/scope_guard.json" \
             > "$RUNNER_TEMP/review.json" || rc=$?
           # 0 — вердикт есть; 3 — ревьюер отказал, диагностика записана (документированная передача
-          # гейткиперу, который переведёт прогон в BLOCKED/FAILED); иное — сбой обёртки: job падает.
+          # гейткиперу, который запаркует прогон в BLOCKED с классом отказа в причине); исключения внутри агента/оркестратора тоже здесь (стадия WRAPPER_EXCEPTION в диагностике);
+          # иной код — сбой ДО записи диагностики (импорт, окружение): job падает.
           case "$rc" in 0|3) ;; *) echo "::error::сбой обёртки ревьюера (код $rc)"; exit "$rc" ;; esac
           python -c 'import json,sys; o=json.load(open(sys.argv[1]))["outputs"]; print("hashes=" + " ".join(f"{k}={v}" for k,v in o.items()))' \
             "$RUNNER_TEMP/review.json" >> "$GITHUB_OUTPUT"

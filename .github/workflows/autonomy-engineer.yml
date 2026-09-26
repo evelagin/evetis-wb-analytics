@@ -97,7 +97,8 @@ jobs:
             --project "$GCP_PROJECT_ID" --token-command "gcloud auth print-access-token" \
             --audit-identity "$AE_READER_SA" > "$RUNNER_TEMP/agent.json" || rc=$?
           # 0 — вывод есть; 3 — агент отказал, диагностика записана (документированная передача доверенному
-          # ingest, который переведёт прогон в BLOCKED/FAILED); иное — сбой обёртки: job падает.
+          # ingest, который запаркует прогон в BLOCKED с классом отказа в причине); исключения внутри агента/оркестратора тоже здесь (стадия WRAPPER_EXCEPTION в диагностике);
+          # иной код — сбой ДО записи диагностики (импорт, окружение): job падает.
           case "$rc" in 0|3) ;; *) echo "::error::сбой обёртки агента (код $rc)"; exit "$rc" ;; esac
           python -c 'import json,sys; o=json.load(open(sys.argv[1]))["outputs"]; print("hashes=" + " ".join(f"{k}={v}" for k,v in o.items()))' \
             "$RUNNER_TEMP/agent.json" >> "$GITHUB_OUTPUT"

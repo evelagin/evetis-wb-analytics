@@ -124,6 +124,8 @@ class Orchestrator:
         while True:
             if self._over_time(run):
                 return run, None
+            if isinstance(adapter, ReplayAdapter):
+                adapter.bind_run(run["run_id"])        # диагностика чужого прогона отвергается при проверке
             res = adapter.run(role, prompt, workdir, load_schema(SCHEMA_OF_ROLE[role]))
             run = self._record_agent(run, adapter, role, res)
             a = self.audit(run)
@@ -193,14 +195,16 @@ class Orchestrator:
 
     @staticmethod
     def _fail_state(res: AgentResult) -> str:
-        """INFRA (время, сеть, 5xx/429, токен) → FAILED; прочие отказы агента → BLOCKED."""
-        from tools.autonomy.diagnostics import failure_class_of
-        return "FAILED" if res.transient or failure_class_of(res.diagnostics) == "INFRA" else "BLOCKED"
+        """FAILED (терминальный) — только по transient-признаку ДОВЕРЕННОГО адаптера этого процесса.
+        Класс из диагностики недоверенного job'а на терминальность не влияет: прогон паркуется в
+        BLOCKED (владелец может возобновить), а класс INFRA_FAILURE записывается в причину."""
+        return "FAILED" if res.transient else "BLOCKED"
 
     @staticmethod
     def _why(res: AgentResult) -> str:
         d = res.diagnostics or {}
-        tag = f"[{d.get('failure_stage')}/{d.get('failure_class')}] " if d else ""
+        cls = d.get("failure_class")
+        tag = (f"[{d.get('failure_stage')}/{cls}{' · INFRA_FAILURE' if cls == 'INFRA' else ''}] " if d else "")
         return tag + redact_text(res.error or "")
 
     def _prompt(self, name: str, **kw) -> str:

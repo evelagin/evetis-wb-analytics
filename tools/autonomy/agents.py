@@ -312,6 +312,11 @@ class ReplayAdapter:
             raise IntegrityError("ReplayAdapter без --expect: вывод недоверенного job'а не с чем сверить")
         self.dir, self.expect = Path(pending_dir), dict(expect)
         self._diag: dict[str, tuple[dict | None, str | None]] = {}
+        self._run_id: str | None = None
+
+    def bind_run(self, run_id: str) -> None:
+        if self._run_id != run_id:
+            self._run_id, self._diag = run_id, {}
 
     def diagnostics(self, job: str) -> tuple[dict | None, str | None]:
         """(проверенная диагностика job'а | None, причина отказа | None). Объявлена, но подменена или
@@ -323,11 +328,17 @@ class ReplayAdapter:
                 self._diag[job] = (None, None)
             else:
                 path = self.dir / name
-                if not path.exists():
+                if not path.is_file():
                     raise IntegrityError(f"{name}: объявлен производителем, но отсутствует")
-                path = self._verified(name)
+                if path.stat().st_size > D.MAX_BYTES:          # до хеширования: без чтения гигабайтов в память
+                    self._diag[job] = (None, f"диагностика больше {D.MAX_BYTES} байт")
+                    return self._diag[job]
+                data = path.read_bytes()                       # одно чтение: хеш и разбор — одних и тех же байт
+                import hashlib
+                if hashlib.sha256(data).hexdigest() != self.expect.get(name):
+                    raise IntegrityError(f"{name}: sha256 не совпал с объявленным производителем")
                 try:
-                    self._diag[job] = (D.verify_untrusted(path.read_text(encoding="utf-8"), job), None)
+                    self._diag[job] = (D.verify_untrusted(data, job, run_id=self._run_id), None)
                 except D.DiagnosticsRejected as e:
                     self._diag[job] = (None, str(e))
         return self._diag[job]

@@ -268,12 +268,14 @@ def test_wrapper_exception_in_agent_run_still_emits_diagnostics(tmp_path):
     assert doc["expected_artifacts"] == ["engineer_plan.json"]
 
 
-@pytest.mark.parametrize("stdout,state,cls", [(API_400, "BLOCKED", "API"), (API_529, "FAILED", "INFRA")])
-def test_trusted_ingest_classifies_and_keeps_a_trusted_copy(tmp_path, stdout, state, cls):
+@pytest.mark.parametrize("stdout,cls,label", [(API_400, "API", "[CLI_REPORTED_ERROR/API]"),
+                                              (API_529, "INFRA", "[CLI_REPORTED_ERROR/INFRA · INFRA_FAILURE]")])
+def test_trusted_ingest_classifies_and_keeps_a_trusted_copy(tmp_path, stdout, cls, label):
+    """Класс виден в причине; недоверенный класс не делает прогон терминальным (review L1): всегда BLOCKED."""
     p, run_id = prepared(tmp_path)
     out, hashes = engineer_job(p, run_id, stdout)
     run = p.orch(p.branch, engineer=ReplayAdapter(out, hashes)).advance(run_id, stop_before={"TESTING"})
-    assert run["state"] == state and f"/{cls}]" in run["transitions"][-1]["reason"]
+    assert run["state"] == "BLOCKED" and label in run["transitions"][-1]["reason"]
     entry = run["usage"][-1]["diagnostics"]
     assert entry["artifact_sha256"] == hashes["engineer_diagnostics.json"] and entry["failure_class"] == cls
     copy = p.branch.root / "artifacts" / run_id / entry["file"]
@@ -339,7 +341,7 @@ def test_foreign_run_id_diagnostics_are_not_persisted(tmp_path):
     out, _ = engineer_job(p, run_id, API_400)
     hashes = _resign(out, "engineer_diagnostics.json", lambda d: d.__setitem__("run_id", "run-20260101T000000Z-deadbeef"))
     run = p.orch(p.branch, engineer=ReplayAdapter(out, hashes)).advance(run_id, stop_before={"TESTING"})
-    assert run["state"] == "BLOCKED" and "run_id чужого прогона" in run["transitions"][-1]["reason"]
+    assert run["state"] == "BLOCKED" and "чужого прогона" in run["transitions"][-1]["reason"]
     assert not (p.branch.root / "artifacts" / run_id / "diagnostics").exists()
 
 
@@ -459,3 +461,63 @@ def test_no_test_runs_the_real_claude_binary():
             if "binary=" in args:
                 continue
             assert method in (".command", ".cli_schema"), f"{f.name}: адаптер без binary= ({args}){method}"
+
+
+
+# ------------------------------------------------ замечания независимого review ---
+def test_success_does_not_keep_output_tails(tmp_path):
+    _, inv, _ = run_adapter(tmp_path, stdout=cli_json(structured_output=F.plan(), permission_denials=["x"]),
+                            stderr="noise")
+    assert inv["failure_stage"] == "NONE" and inv["stdout_tail"] == "" and inv["stderr_tail"] == ""
+
+
+def _good_doc(tmp_path) -> dict:
+    _, inv, _ = run_adapter(tmp_path, stdout=API_400, rc=1)
+    return D.finalize(D.bundle("engineer", "run-20260926T000000Z-0badc0de", [inv], expected=["engineer_plan.json"]))[1]
+
+
+def test_escaped_newline_does_not_hide_a_secret_from_the_rescan(tmp_path):
+    doc = _good_doc(tmp_path)
+    doc["invocations"][0]["stdout_tail"] = "x\n" + fake_tok("ya29")
+    with pytest.raises(D.DiagnosticsRejected, match="секрет"):
+        D.verify_untrusted(json.dumps(doc), "engineer")
+
+
+@pytest.mark.parametrize("payload", [b"\xff\xfe{bad", b'{"schema_version": NaN}', b'{"a": Infinity}'])
+def test_non_utf8_and_non_strict_json_are_rejected_not_crashing(payload):
+    with pytest.raises(D.DiagnosticsRejected):
+        D.verify_untrusted(payload, "engineer")
+
+
+def test_nan_in_numeric_field_is_rejected(tmp_path):
+    text = json.dumps(_good_doc(tmp_path)).replace('"total_cost_usd": 0.0', '"total_cost_usd": NaN', 1)
+    assert "NaN" in text
+    with pytest.raises(D.DiagnosticsRejected):
+        D.verify_untrusted(text, "engineer")
+
+
+def test_bound_run_id_rejects_foreign_diagnostics_before_any_use(tmp_path):
+    doc = _good_doc(tmp_path)
+    with pytest.raises(D.DiagnosticsRejected, match="чужого прогона"):
+        D.verify_untrusted(json.dumps(doc), "engineer", run_id="run-20260926T000000Z-feedbeef")
+
+
+def test_non_utf8_artifact_with_matching_hash_is_a_controlled_rejection(tmp_path):
+    p, run_id = prepared(tmp_path)
+    out, _ = engineer_job(p, run_id, API_400)
+    f = out / "engineer_diagnostics.json"
+    f.write_bytes(b"\xff\xfe" + f.read_bytes())
+    run = p.orch(p.branch, engineer=ReplayAdapter(out, {f.name: sha256_file(f)})).advance(run_id, stop_before={"TESTING"})
+    assert run["state"] == "BLOCKED" and "диагностика отвергнута" in run["transitions"][-1]["reason"]
+
+
+def test_oversized_artifact_is_rejected_by_size_before_hashing(tmp_path, monkeypatch):
+    p, run_id = prepared(tmp_path)
+    out, hashes = engineer_job(p, run_id, API_400)
+    monkeypatch.setattr(D, "MAX_BYTES", 10)
+    called = []
+    import hashlib as _h
+    real = _h.sha256
+    monkeypatch.setattr(_h, "sha256", lambda *a, **k: called.append(1) or real(*a, **k))
+    diag, rejected = ReplayAdapter(out, hashes).diagnostics("engineer")
+    assert diag is None and "больше 10 байт" in rejected and not called

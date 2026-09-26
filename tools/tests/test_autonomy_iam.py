@@ -94,7 +94,7 @@ def with_anonymous(ds=ANON, **over):
             "defaultTableExpirationMs": "86400000", "defaultPartitionExpirationMs": "86400000",
             "access": [{"role": "OWNER", "userByEmail": SA}], "creationTime": "1790358993328",
             "lastModifiedTime": "1790358993328", "location": "EU", "maxTimeTravelHours": "168", "type": "DEFAULT"}
-    job = {"user_email": SA, "job_type": "QUERY", "statement_type": "SELECT",
+    job = {"user_email": SA, "job_type": "QUERY", "statement_type": "SELECT", "state": "DONE", "error_result": None,
            "creation_time": "2026-09-25T17:56:33.151Z", "end_time": "2026-09-25T17:56:35.513Z"}
     ev = {"meta": meta, "jobs": {"region": "region-eu", "linked": [job], "sa_jobs": [dict(job)]}}
     for path, value in over.items():
@@ -141,6 +141,15 @@ OTHER = "someone@example.iam.gserviceaccount.com"
                                                  "statement_type": "CREATE_TABLE_AS_SELECT",
                                                  "creation_time": "2026-09-25T17:56:33.151Z",
                                                  "end_time": "2026-09-25T17:56:35.513Z"}])),
+    ("A6", lambda: with_anonymous(jobs__linked=[{"user_email": SA, "job_type": "QUERY", "statement_type": "SELECT",
+                                                 "state": "DONE", "error_result": "accessDenied",
+                                                 "creation_time": "2026-09-25T17:56:33.151Z",
+                                                 "end_time": "2026-09-25T17:56:35.513Z"}])),   # упавшее задание
+    ("A6", lambda: with_anonymous(jobs__linked=[{"user_email": SA, "job_type": "QUERY", "statement_type": "SELECT",
+                                                 "state": "RUNNING", "error_result": None,
+                                                 "creation_time": "2026-09-25T17:56:33.151Z",
+                                                 "end_time": "2026-09-25T17:56:35.513Z"}])),
+    ("A7", lambda: with_anonymous(meta__creationTime="1790358995514")),          # через 1 мс после конца задания
     ("A7", lambda: with_anonymous(meta__creationTime="1790000000000")),         # создан задолго до задания
     ("A7", lambda: with_anonymous(meta__creationTime="1790359999999")),         # создан после задания
     ("A8", lambda: with_anonymous(jobs__sa_jobs=[{"user_email": SA, "job_type": "QUERY", "statement_type": "INSERT"}])),

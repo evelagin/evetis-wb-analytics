@@ -98,6 +98,8 @@ def classify(inv: dict, transient_markers=()) -> None:
     infra = (inv["api_error_status"] in TRANSIENT_STATUSES) or any(m in tail for m in transient_markers)
     if stage == "NONE":
         cls = "NONE"
+        # Успех: хвосты вывода не хранятся (в JSON CLI бывают permission_denials — входы отклонённых инструментов).
+        inv["stdout_tail"] = inv["stderr_tail"] = ""
     elif stage in ("PRE_INVOKE", "TIMEOUT"):
         cls = "INFRA"
     elif stage in ("NO_STRUCTURED_OUTPUT", "SCHEMA_INVALID"):
@@ -201,25 +203,46 @@ def finalize(doc: dict) -> tuple[str, dict]:
         return json.dumps(blocked, ensure_ascii=False, indent=2), blocked
 
 
-def verify_untrusted(text: str, job_role: str) -> dict:
-    """Доверенная сторона: размер → JSON → схема → роль job'а → константы → повторный поиск секретов."""
-    if len(text.encode("utf-8")) > MAX_BYTES:
+def _reject_constant(name):
+    raise ValueError(f"недопустимая константа JSON {name}")
+
+
+def _strings(obj):
+    if isinstance(obj, str):
+        yield obj
+    elif isinstance(obj, dict):
+        for k, v in obj.items():
+            yield str(k)
+            yield from _strings(v)
+    elif isinstance(obj, list):
+        for v in obj:
+            yield from _strings(v)
+
+
+def verify_untrusted(data: bytes | str, job_role: str, run_id: str | None = None) -> dict:
+    """Доверенная сторона: размер → UTF-8 → строгий JSON → схема → роль job'а → run_id → константы →
+    повторный поиск секретов в сыром тексте И в каждой разобранной строке (экранирование JSON)."""
+    raw = data.encode("utf-8") if isinstance(data, str) else data
+    if len(raw) > MAX_BYTES:
         raise DiagnosticsRejected(f"диагностика больше {MAX_BYTES} байт")
     try:
-        doc = json.loads(text)
-    except ValueError:
-        raise DiagnosticsRejected("диагностика — не JSON") from None
+        text = raw.decode("utf-8")
+        doc = json.loads(text, parse_constant=_reject_constant)
+    except (UnicodeDecodeError, ValueError):
+        raise DiagnosticsRejected("диагностика — не строгий JSON в UTF-8") from None
     errs = validate(doc, load_schema("agent_diagnostics"))
     if errs:
         raise DiagnosticsRejected("диагностика нарушает схему: " + "; ".join(errs[:3]))
     if doc["job_role"] != job_role:
         raise DiagnosticsRejected(f"диагностика job'а {doc['job_role']} подана как {job_role}")
+    if run_id is not None and doc["run_id"] != run_id:
+        raise DiagnosticsRejected("диагностика чужого прогона (run_id)")
     if any(i["role"] != "reviewer" for i in doc["invocations"]) if job_role == "reviewer" else \
             any(i["role"] == "reviewer" for i in doc["invocations"]):
         raise DiagnosticsRejected("вызовы чужой роли в диагностике")
     if set(doc["limitations"]) - set(LIMITATIONS):
         raise DiagnosticsRejected("неизвестный текст в limitations")
-    if find_secrets(text) or find_secrets(json.dumps(doc, ensure_ascii=False)):
+    if find_secrets(text) or any(find_secrets(s) for s in _strings(doc)):
         raise DiagnosticsRejected("секретоподобное в диагностике — в состояние не попадает")
     return doc
 
