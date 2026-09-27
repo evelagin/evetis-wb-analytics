@@ -1,0 +1,39 @@
+{
+  "impact": {
+    "downstream_assets": [],
+    "affected_total": 0,
+    "risk_tier": "TIER2",
+    "required_contracts": {},
+    "assets_without_contract": [],
+    "flags": {
+      "touches_evidence_system": true,
+      "touches_canonical_sql": false,
+      "touches_infrastructure": false,
+      "touches_apps_script_production": false
+    }
+  },
+  "tests": [
+    {
+      "name": "pytest tools/tests",
+      "status": "PASS",
+      "exit_code": 0,
+      "tail": "[ 65%]\n........................................................................ [ 70%]\n........................................................................ [ 75%]\n........................................................................ [ 80%]\n........................................................................ [ 85%]\n........................................................................ [ 90%]\n........................................................................ [ 95%]\n.....................................................................    [100%]\n1437 passed in 228.18s (0:03:48)\n"
+    }
+  ],
+  "sql_validation": {
+    "status": "PASS",
+    "tail": "OK: sql/current contract holds — datasets ['evetis_mart', 'ozon_mart'], 50 objects, checks C1–C18; historical guard: 21 allowlisted definition(s) in 10 file(s).\nScope: repository-side integrity only. Production parity is NOT proven here (R2C).\n"
+  },
+  "runtime_access": {
+    "status": "NOT_APPLICABLE"
+  },
+  "parity": {
+    "status": "NOT_APPLICABLE"
+  },
+  "data_suites": {},
+  "objective_resolution": "NOT_APPLICABLE",
+  "changed_files": [
+    "tools/tests/test_ae_commissioning_canary.py"
+  ],
+  "gate_weakening": []
+}

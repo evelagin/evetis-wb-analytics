@@ -16,7 +16,7 @@
   "review_cycles": 0,
   "run_id": "run-20260927T121235Z-ab2e1c53",
   "schema_version": 1,
-  "state": "TESTING",
+  "state": "REVIEWING",
   "transitions": [
     {
       "at": "2026-09-27T12:12:35Z",
@@ -47,9 +47,15 @@
       "from": "IMPLEMENTING",
       "reason": "кандидат: 1 файл(ов), итерация 1",
       "to": "TESTING"
+    },
+    {
+      "at": "2026-09-27T12:37:52Z",
+      "from": "TESTING",
+      "reason": "детерминированные доказательства собраны",
+      "to": "REVIEWING"
     }
   ],
-  "updated_at": "2026-09-27T12:32:54Z",
+  "updated_at": "2026-09-27T12:37:52Z",
   "usage": [
     {
       "adapter": "replay",
