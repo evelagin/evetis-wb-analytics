@@ -358,22 +358,52 @@ def _wf():
     return WORKFLOW.read_text(encoding="utf-8")
 
 
-def test_workflow_is_dispatch_only_with_a_single_tenant_id_input():
+WORKFLOW_INPUTS = ["tenant_id", "operation", "source_run_id", "expected_source_commit", "expected_tfplan_sha256",
+                   "expected_contract_sha256", "expected_delta", "expected_manifest_sha256", "expected_package_sha256"]
+
+
+def _job(wf: str, name: str) -> str:
+    """Текст одного job'а (от `  <name>:` до следующего job'а верхнего уровня)."""
+    body = wf.split("\njobs:\n", 1)[1]
+    parts = re.split(r"(?m)^  ([a-z_]+):\n", body)
+    jobs = dict(zip(parts[1::2], parts[2::2]))
+    return jobs[name]
+
+
+def test_workflow_is_dispatch_only_with_the_declared_inputs():
     wf = _wf()
     on_block = wf.split("\non:\n", 1)[1].split("\npermissions:", 1)[0]
     assert re.findall(r"^  (\w+):", on_block, re.M) == ["workflow_dispatch"]
-    assert re.findall(r"^      (\w+):", on_block, re.M) == ["tenant_id"]
-    assert "github.ref == 'refs/heads/main'" in wf and "github.event_name == 'workflow_dispatch'" in wf
+    assert re.findall(r"^      (\w+):", on_block, re.M) == WORKFLOW_INPUTS
+    assert "options: [plan, apply, sql-preview, sql-deploy, sql-verify]" in on_block
+    for job in ("plan", "apply", "sql"):
+        j = _job(wf, job)
+        assert "github.ref == 'refs/heads/main'" in j and "github.event_name == 'workflow_dispatch'" in j, job
+        assert 'test "$GITHUB_REF" = "refs/heads/main"' in j, job
+
+
+def test_workflow_jobs_are_separated_by_operation_and_plan_job_cannot_apply():
+    wf = _wf()
+    runs = {job: "\n".join(re.findall(r"run: (.+)", _job(wf, job))) + "\n".join(
+            re.findall(r"run: \|\n((?:          .+\n)+)", _job(wf, job))) for job in ("plan", "apply", "sql")}
+    assert "inputs.operation == 'plan'" in _job(wf, "plan") and "inputs.operation == 'apply'" in _job(wf, "apply")
+    assert "apply" not in runs["plan"] and "tenant_infra.py plan" in runs["plan"]
+    assert "tenant_infra.py render" in runs["plan"] and "tenant_deploy.py package-plan" in runs["plan"]
+    assert "tenant_deploy.py fetch" in runs["apply"] and "tenant_deploy.py apply" in runs["apply"]
+    assert "tenant_infra.py plan" not in runs["apply"] and "package-plan" not in runs["apply"]
+    assert "tenant_deploy" not in runs["sql"] and "sql_deploy.py" in runs["sql"]
+    for job, r in runs.items():
+        assert "terraform " not in r, job                       # Terraform — только через помощники
 
 
 def test_workflow_cannot_apply_and_takes_no_command_prefix_or_image():
     wf = _wf()
     runs = "\n".join(re.findall(r"run: (.+)", wf))
-    assert "apply" not in runs and "terraform " not in runs
-    assert "tenant_infra.py plan" in runs and "tenant_infra.py render" in runs
+    assert "terraform " not in runs
     for bad in ("inputs.project", "inputs.prefix", "inputs.image", "inputs.command", "backend-config"):
         assert bad not in wf, bad
-    assert "${{ inputs.tenant_id }}" not in runs          # вход — только через env, не в шелл
+    assert "${{ inputs." not in runs and "${{ inputs." not in "\n".join(
+        re.findall(r"run: \|\n((?:          .+\n)+)", wf))           # входы — только через env, не в шелл
     assert re.search(r"permissions:\n  contents: read\n  id-token: write\n", wf)
 
 

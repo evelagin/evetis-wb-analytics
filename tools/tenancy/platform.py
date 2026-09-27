@@ -39,6 +39,7 @@ WIF_PROVIDER = (f"projects/{PLATFORM_PROJECT_NUMBER}/locations/global/workloadId
                 "tenant-infra-pool/providers/github-tenant-infra")
 TENANT_INFRA_WORKFLOW = ".github/workflows/tenant-infra.yml"
 GITHUB_REPOSITORY = "evelagin/evetis-wb-analytics"
+GITHUB_REPOSITORY_ID = "1260095567"                   # числовой id — в условии WIF и в проверках apply
 # Условие провайдера WIF — дословно как в живом mpa-platform (T3.1B, 2026-09-25).
 WIF_ATTRIBUTE_CONDITION = (
     "assertion.repository_id == '1260095567' && assertion.repository_owner_id == '286048501' && "
