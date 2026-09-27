@@ -16,9 +16,10 @@
   "contract_version": 1,
   "datasets": {
     "analytics_share": "analytics_share",
+    "customer_share": "customer_share",
     "ozon_mart": "ozon_mart",
     "ozon_raw": "ozon_raw",
-    "ref": "evetis_ref",
+    "ref": "ref",
     "tenant_ops": "tenant_ops"
   },
   "labels": {

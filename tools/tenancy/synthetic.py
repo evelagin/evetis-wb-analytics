@@ -108,7 +108,16 @@ def negative_cases() -> dict[str, dict]:
         "evetis_secret_name": _set(base, "marketplaces.ozon.secret_ids.seller_api_key", "EVETIS_OZON_API_KEY"),
         "evetis_ref_dataset": _set(base, "datasets.ref", "evetis_ref"),
         "unknown_contract_version": _set(base, "contract_version", 2),
+        # T4: состав датасетов фиксирован; клиентский датасет не заводится мимо naming.
+        "extra_customer_dataset": _set(base, "datasets.customer_share", "customer_share"),
+        "table_in_undeclared_dataset": _table_in(base, "customer_share"),
     }
+
+
+def _table_in(base: dict, dataset_key: str) -> dict:
+    doc = copy.deepcopy(base)
+    doc["tables"][0]["dataset_key"] = dataset_key
+    return doc
 
 
 if __name__ == "__main__":     # регенерация: python -m tools.tenancy.synthetic

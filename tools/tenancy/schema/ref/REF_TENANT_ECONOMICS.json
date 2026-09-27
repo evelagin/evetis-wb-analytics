@@ -1,0 +1,68 @@
+{
+  "clustering": [
+    "parameter"
+  ],
+  "schema": [
+    {
+      "description": "Параметр: TAX_REGIME, VAT_RATE, FULFILLMENT_COST_PER_UNIT, PACKAGING_COST_PER_UNIT, …",
+      "mode": "REQUIRED",
+      "name": "parameter",
+      "type": "STRING"
+    },
+    {
+      "description": "STORE или SKU",
+      "mode": "REQUIRED",
+      "name": "scope",
+      "type": "STRING"
+    },
+    {
+      "description": "Для scope=SKU",
+      "mode": "NULLABLE",
+      "name": "internal_sku",
+      "type": "STRING"
+    },
+    {
+      "description": "Числовое значение",
+      "mode": "NULLABLE",
+      "name": "value_num",
+      "type": "NUMERIC"
+    },
+    {
+      "description": "Текстовое значение",
+      "mode": "NULLABLE",
+      "name": "value_text",
+      "type": "STRING"
+    },
+    {
+      "description": "Единица",
+      "mode": "NULLABLE",
+      "name": "unit",
+      "type": "STRING"
+    },
+    {
+      "description": "Действует с",
+      "mode": "REQUIRED",
+      "name": "effective_from",
+      "type": "DATE"
+    },
+    {
+      "description": "Действует по",
+      "mode": "NULLABLE",
+      "name": "effective_to",
+      "type": "DATE"
+    },
+    {
+      "description": "OWNER_UPLOAD",
+      "mode": "REQUIRED",
+      "name": "source",
+      "type": "STRING"
+    },
+    {
+      "description": "Время загрузки",
+      "mode": "REQUIRED",
+      "name": "loaded_at",
+      "type": "TIMESTAMP"
+    }
+  ],
+  "table_id": "REF_TENANT_ECONOMICS"
+}

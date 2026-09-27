@@ -1,0 +1,108 @@
+{
+  "clustering": [
+    "entity"
+  ],
+  "schema": [
+    {
+      "description": "Идентификатор определения",
+      "mode": "REQUIRED",
+      "name": "boundary_id",
+      "type": "STRING"
+    },
+    {
+      "description": "Сущность runtime",
+      "mode": "REQUIRED",
+      "name": "entity",
+      "type": "STRING"
+    },
+    {
+      "description": "Запрошено политикой history_request",
+      "mode": "NULLABLE",
+      "name": "requested_from",
+      "type": "DATE"
+    },
+    {
+      "description": "Нижняя граница по документации Ozon",
+      "mode": "NULLABLE",
+      "name": "api_documented_from",
+      "type": "DATE"
+    },
+    {
+      "description": "Нижняя граница, подтверждённая ответом API (не по пустоте)",
+      "mode": "NULLABLE",
+      "name": "api_verified_from",
+      "type": "DATE"
+    },
+    {
+      "description": "Первая наблюдённая активность продавца",
+      "mode": "NULLABLE",
+      "name": "first_observed_activity",
+      "type": "DATE"
+    },
+    {
+      "description": "Первая загруженная дата",
+      "mode": "NULLABLE",
+      "name": "first_data_date",
+      "type": "DATE"
+    },
+    {
+      "description": "Верхняя граница доступности",
+      "mode": "NULLABLE",
+      "name": "available_to",
+      "type": "DATE"
+    },
+    {
+      "description": "Начало плана backfill",
+      "mode": "NULLABLE",
+      "name": "backfill_from",
+      "type": "DATE"
+    },
+    {
+      "description": "Конец плана backfill",
+      "mode": "NULLABLE",
+      "name": "backfill_to",
+      "type": "DATE"
+    },
+    {
+      "description": "SNAPSHOT_ONLY, LOOKBACK_LIMIT, SUBSCRIPTION_REQUIRED, …",
+      "mode": "NULLABLE",
+      "name": "limitation_reason",
+      "type": "STRING"
+    },
+    {
+      "description": "COMPLETE, PARTIAL, NOT_AVAILABLE, NOT_APPLICABLE, FAILED, UNKNOWN",
+      "mode": "REQUIRED",
+      "name": "completeness_status",
+      "type": "STRING"
+    },
+    {
+      "description": "DOCUMENTED, VERIFIED, INFERRED, UNKNOWN",
+      "mode": "REQUIRED",
+      "name": "confidence",
+      "type": "STRING"
+    },
+    {
+      "description": "Доказательства",
+      "mode": "NULLABLE",
+      "name": "evidence_json",
+      "type": "STRING"
+    },
+    {
+      "description": "Время определения",
+      "mode": "REQUIRED",
+      "name": "determined_at",
+      "type": "TIMESTAMP"
+    },
+    {
+      "description": "Прогон runtime",
+      "mode": "NULLABLE",
+      "name": "run_id",
+      "type": "STRING"
+    }
+  ],
+  "table_id": "HISTORY_BOUNDARIES",
+  "time_partitioning": {
+    "field": "determined_at",
+    "type": "DAY"
+  }
+}

@@ -27,8 +27,8 @@ run "client_001_renders" {
     error_message = "client_001: проект или префикс state не из реестра"
   }
   assert {
-    condition     = length(google_bigquery_table.this) == 15 && toset(keys(google_bigquery_dataset.this)) == toset(["ozon_raw", "ref"])
-    error_message = "client_001: ожидается 15 таблиц runtime и датасеты ozon_raw, ref"
+    condition     = length(google_bigquery_table.this) == 27 && toset(keys(google_bigquery_dataset.this)) == toset(["analytics_share", "ozon_mart", "ozon_raw", "ref", "tenant_ops"])
+    error_message = "client_001: ожидается 27 таблиц (15 ozon_raw, 5 ref, 7 tenant_ops) и пять датасетов T4"
   }
   assert {
     condition     = output.ozon.jobs == tolist(["ozon-runtime-daily", "ozon-runtime-fast", "ozon-runtime-weekly"])
@@ -70,6 +70,18 @@ run "client_001_renders" {
     condition     = alltrue([for k, j in module.ozon[0].scheduler_retry : length(j) == 0])
     error_message = "retry_config у Scheduler не задаётся: default retryCount = 0, явный блок даёт вечный дрейф (T3.3)"
   }
+  assert {
+    condition     = length([for k, t in google_bigquery_table.this : k if t.dataset_id == "ozon_raw"]) == 15 && length([for k, t in google_bigquery_table.this : k if t.dataset_id == "ref"]) == 5 && length([for k, t in google_bigquery_table.this : k if t.dataset_id == "tenant_ops"]) == 7
+    error_message = "T4: 15 таблиц ozon_raw, 5 справочников ref (включая SELLER_BINDING), 7 таблиц tenant_ops"
+  }
+  assert {
+    condition     = alltrue([for ds in ["ozon_mart", "tenant_ops", "analytics_share"] : toset([for a in output.dataset_access[ds] : "${a.role}|${a.special_group == null ? "" : a.special_group}|${a.user_by_email == null ? "" : a.user_by_email}"]) == toset(["OWNER|projectOwners|"])])
+    error_message = "T4: ozon_mart, tenant_ops и analytics_share — только projectOwners OWNER; ни runtime, ни клиента"
+  }
+  assert {
+    condition     = contains([for k, t in google_bigquery_table.this : k], "ref.SELLER_BINDING") && !contains([for k, t in google_bigquery_table.this : k], "tenant_ops.SELLER_BINDING")
+    error_message = "подтверждённая привязка к кабинету живёт в ref (runtime только читает), а не в tenant_ops"
+  }
 }
 
 run "client_002_same_code_different_tenant" {
@@ -86,7 +98,7 @@ run "client_002_same_code_different_tenant" {
     error_message = "client_002: проект или префикс state не из реестра"
   }
   assert {
-    condition     = length(google_bigquery_table.this) == 15 && output.ozon.jobs == tolist(["ozon-runtime-daily", "ozon-runtime-fast", "ozon-runtime-weekly"])
+    condition     = length(google_bigquery_table.this) == 27 && output.ozon.jobs == tolist(["ozon-runtime-daily", "ozon-runtime-fast", "ozon-runtime-weekly"])
     error_message = "client_002: форма графа ресурсов обязана совпадать с client_001"
   }
   assert {
@@ -444,6 +456,22 @@ run "contract_rejects_unknown_contract_version" {
   command = plan
   variables {
     contract = jsondecode(file("tests/fixtures/negative/unknown_contract_version.contract.json"))
+  }
+  expect_failures = [var.contract]
+}
+
+run "contract_rejects_extra_customer_dataset" {
+  command = plan
+  variables {
+    contract = jsondecode(file("tests/fixtures/negative/extra_customer_dataset.contract.json"))
+  }
+  expect_failures = [var.contract]
+}
+
+run "contract_rejects_table_in_undeclared_dataset" {
+  command = plan
+  variables {
+    contract = jsondecode(file("tests/fixtures/negative/table_in_undeclared_dataset.contract.json"))
   }
   expect_failures = [var.contract]
 }

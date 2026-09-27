@@ -190,7 +190,7 @@ FIELD_CASES = [
     ("data_boundary.gcp_project_id", "mpa-t-client-001"),
     ("data_boundary.datasets.ref", "ref"),
     ("marketplaces.ozon.secret_refs.seller_api_key", "ozon-seller-api-key"),
-    ("marketplaces.ozon.backfill_start_date", "2026-01-01"),
+    ("data_boundary.datasets.tenant_ops", "tenant_ops"),
 ]
 
 

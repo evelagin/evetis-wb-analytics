@@ -1,5 +1,24 @@
 # CHANGELOG.md
 
+## 2026-09-27 — Tenancy T4-a: контракт данных арендатора
+
+**Не развёрнуто.** Новые датасеты и таблицы появятся в проекте арендатора только после
+отдельного применения по ACK владельца. EVETIS не затрагивается.
+
+- Датасеты выделенного арендатора: `ozon_raw`, `ref` + **`ozon_mart`** (нормализованный слой и
+  внутренние витрины), **`tenant_ops`** (операционное состояние), **`analytics_share`**
+  (клиентский семантический слой; механизм доступа клиента — T6). ACL новых датасетов — только
+  `projectOwners`; runtime и клиентов в них нет (сканер плана, `terraform test`).
+- Таблицы платформы у каждого арендатора (`tools/tenancy/schema/`): `tenant_ops` —
+  TENANT_STATE_EVENTS, SELLER_IDENTITY_OBSERVATIONS, CAPABILITY_PROFILE, HISTORY_BOUNDARIES,
+  DATA_COVERAGE, BACKFILL_CHECKPOINTS, DQ_RESULTS; `ref` — REF_SKU_CHANNEL_MAP (теперь всегда),
+  SELLER_BINDING (подтверждённая привязка к кабинету: runtime только читает), REF_PRODUCT_MASTER,
+  REF_COGS, REF_TENANT_ECONOMICS.
+- `backfill_start_date` заменён на `history_request` (`EARLIEST_AVAILABLE` | `FROM_DATE`);
+  фактические границы по сущностям — в `tenant_ops.HISTORY_BOUNDARIES`, не в Git.
+- Identity кабинета продавца (Client-Id, ИНН, ОГРН, название) в дескрипторе не хранится и
+  схемой не допускается; `client_001` обезличен.
+
 ## 2026-09-25 — Tenancy T3.3: сходимость после apply (Scheduler retry_config, сканер F)
 
 Контрольный план после recovery apply `client_001` дал `0/3/0` и 12 находок сканера — ложный дрейф,
