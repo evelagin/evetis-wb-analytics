@@ -146,6 +146,11 @@
       "dataset": "analytics_share",
       "name": "data_coverage",
       "semantic_class": "GENERIC_DERIVED"
+    },
+    {
+      "dataset": "tenant_ops",
+      "name": "V_FINANCE_WINDOW_STATUS",
+      "semantic_class": "GENERIC_DERIVED"
     }
   ]
 }

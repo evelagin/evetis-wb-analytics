@@ -1,14 +1,13 @@
 """Tenancy T4-d — analytics_share: семантический контракт, «нет данных ≠ ноль», доступа нет.
 
-Офлайн. Поведение отдельных представлений проверяется исполнением транспилированного SQL в
-sqlite на синтетических строках (проект и датасет отбрасываются, таблицы — по имени объекта).
+Офлайн. Поведение представлений проверяется исполнением в sqlite на синтетических строках
+(tools/tests/tenancy_sql_harness.py). Привязка к кабинету проверяется в test_tenancy_t4c.
 Компиляция в BigQuery — `python tools/tenancy/sql_package.py dryrun <tenant_id>`.
 """
 from __future__ import annotations
 
 import json
 import re
-import sqlite3
 import sys
 from pathlib import Path
 
@@ -23,6 +22,7 @@ from tools.tenancy import plan_scan as PS  # noqa: E402
 from tools.tenancy import sql_package as SP  # noqa: E402
 from tools.tenancy import synthetic as SY  # noqa: E402
 from tools.tenancy import validation as V  # noqa: E402
+from tools.tests import tenancy_sql_harness as H  # noqa: E402
 
 C1 = SY.fixture_contract("client_001")
 SHARE = SP.PACKAGE_DIR / "analytics_share"
@@ -49,20 +49,8 @@ def _columns(name):
     return [e.alias_or_name for e in tree.expression.selects]
 
 
-def _run(ds, name, tables: dict[str, tuple[list[str], list[tuple]]]):
-    """Исполнить представление в sqlite: tables = {имя: (колонки, строки)}."""
-    q = sqlglot.parse_one(_sql(ds, name), read="bigquery").expression
-    for t in q.find_all(exp.Table):
-        t.set("catalog", None)
-        t.set("db", None)
-    db = sqlite3.connect(":memory:")
-    for tname, (cols, rows) in tables.items():
-        db.execute(f'CREATE TABLE "{tname}" ({", ".join(cols)})')
-        if rows:
-            db.executemany(f'INSERT INTO "{tname}" VALUES ({", ".join("?" * len(cols))})', rows)
-    cur = db.execute(q.sql(dialect="sqlite"))
-    names = [d[0] for d in cur.description]
-    return [dict(zip(names, r)) for r in cur.fetchall()]
+def _run(ds, name, tables):
+    return H.run(ds, name, tables)
 
 
 # ═══════════════════════════════════════ контракт ↔ SQL
@@ -122,7 +110,8 @@ def test_status_columns_default_to_unknown_and_use_declared_entities(name):
     entities = set(doc["marketplaces"]["ozon"]["entities"])
     for col, st in CONTRACT["objects"][name]["status_columns"].items():
         assert re.search(rf"COALESCE\([^()]*(?:\([^()]*\))?[^()]*, 'UNKNOWN'\) AS {col}", sql), (name, col)
-        assert f"'{st['entity']}'" in sql, (name, st["entity"])
+        upstream = [sql] + [_sql(d, n) for d, n in _objects()[("analytics_share", name)].refs if d == "tenant_ops"]
+        assert any(f"'{st['entity']}'" in s for s in upstream), (name, st["entity"])
         assert st["entity"] in entities, st["entity"]
 
 
@@ -185,34 +174,6 @@ def test_sku_daily_keeps_ad_spend_on_days_without_orders():
     assert lone["orders"] is None and lone["mapping_status"] == "UNMAPPED" and lone["ads_data_status"] == "UNKNOWN"
 
 
-# ═══════════════════════════════════════ привязка к кабинету: отзыв закрывает загрузку
-BIND = ["binding_id", "api", "identity_fingerprint", "status", "confirmed_at", "confirmed_by", "revoked_at"]
-OBS = ["observation_id", "api", "identity_fingerprint", "observed_at"]
-
-
-@pytest.mark.parametrize("bindings,observations,expected", [
-    ([], [("o1", "SELLER", "f1", "2026-03-01")], "UNBOUND"),
-    ([("b1", "SELLER", "f1", "CONFIRMED", "2026-01-01", "op", None)], [], "NOT_OBSERVED"),
-    ([("b1", "SELLER", "f1", "CONFIRMED", "2026-01-01", "op", None)], [("o1", "SELLER", "f1", "2026-03-01")], "BOUND"),
-    ([("b1", "SELLER", "f1", "CONFIRMED", "2026-01-01", "op", None)], [("o1", "SELLER", "f2", "2026-03-01")], "MISMATCH"),
-    ([("b1", "SELLER", "f1", "CONFIRMED", "2026-01-01", "op", None)],
-     [("o0", "SELLER", "f1", "2026-02-01"), ("o1", "SELLER", "f2", "2026-03-01")], "MISMATCH"),
-    # отзыв новой строкой перекрывает прежнее подтверждение
-    ([("b1", "SELLER", "f1", "CONFIRMED", "2026-01-01", "op", None),
-      ("b2", "SELLER", "f1", "REVOKED", "2026-01-01", "op", "2026-02-01")],
-     [("o1", "SELLER", "f1", "2026-03-01")], "UNBOUND"),
-    # повторное подтверждение после отзыва
-    ([("b1", "SELLER", "f1", "CONFIRMED", "2026-01-01", "op", None),
-      ("b2", "SELLER", "f1", "REVOKED", "2026-01-01", "op", "2026-02-01"),
-      ("b3", "SELLER", "f3", "CONFIRMED", "2026-02-15", "op", None)],
-     [("o1", "SELLER", "f3", "2026-03-01")], "BOUND"),
-])
-def test_seller_binding_status_fails_closed(bindings, observations, expected):
-    rows = _run("tenant_ops", "V_SELLER_BINDING_STATUS", {
-        "SELLER_BINDING": (BIND, bindings), "SELLER_IDENTITY_OBSERVATIONS": (OBS, observations)})
-    assert [r["binding_status"] for r in rows if r["api"] == "SELLER"] == [expected]
-
-
 # ═══════════════════════════════════════ доступ: никого, механизм — T6
 def test_contract_grants_nothing_and_defers_the_access_mechanism():
     assert CONTRACT["access"]["principals"] == []
@@ -258,3 +219,71 @@ def test_share_renders_identically_for_client_002(tmp_path, monkeypatch):
         tb = (tmp_path / "b" / "analytics_share" / f"{o['name']}.sql").read_text(encoding="utf-8")
         assert "mpa-t-client-001" in ta and "mpa-t-client-002" in tb
         assert ta.replace("mpa-t-client-001", "P") == tb.replace("mpa-t-client-002", "P")
+
+
+# ═══════════════════════════════════════ ревью T4: полнота начислений и результат
+FIN = "finance_accrual"
+
+
+@pytest.mark.parametrize("coverage,expected", [
+    ([("2026-01-01", "COMPLETE"), ("2026-01-02", "COMPLETE"), ("2026-01-03", "COMPLETE")],
+     {"2026-01-01": "COMPLETE", "2026-01-02": "COMPLETE", "2026-01-03": "COMPLETE"}),
+    ([("2026-01-01", "COMPLETE"), ("2026-01-02", "FAILED"), ("2026-01-03", "COMPLETE")],
+     {"2026-01-01": "PARTIAL", "2026-01-02": "PARTIAL", "2026-01-03": "COMPLETE"}),
+    ([("2026-01-01", "COMPLETE"), ("2026-01-03", "COMPLETE")],                    # пропуск суток 02
+     {"2026-01-01": "PARTIAL", "2026-01-03": "COMPLETE"}),
+    ([("2026-01-01", "NOT_APPLICABLE"), ("2026-01-02", "COMPLETE")],
+     {"2026-01-01": "COMPLETE", "2026-01-02": "COMPLETE"}),
+])
+def test_finance_window_requires_every_later_day_complete(coverage, expected):
+    rows = _run("tenant_ops", "V_FINANCE_WINDOW_STATUS", {
+        "V_COVERAGE_DAILY": (COV, [(FIN, d, s, None, "t") for d, s in coverage]
+                             + [("fbo_postings", "2026-01-02", "FAILED", None, "t")])})
+    assert {r["from_date"]: r["status"] for r in rows} == expected
+
+
+def test_coverage_tie_prefers_the_worse_status():
+    rows = _run("tenant_ops", "V_COVERAGE_DAILY", {"DATA_COVERAGE": (
+        ["entity", "coverage_date", "status", "reason", "rows_loaded", "source_run_id", "evaluated_at"],
+        [(FIN, "2026-01-01", "COMPLETE", None, 1, "a", "t"), (FIN, "2026-01-01", "FAILED", "x", 0, "b", "t")])})
+    assert [r["status"] for r in rows] == ["FAILED"]
+
+
+ECON = ["order_date_msk", "sku", "internal_sku", "delivered_units", "seller_revenue_rub", "commission_rub",
+        "logistics_rub", "acquiring_rub", "return_logistics_rub", "promotion_rub", "other_costs_rub",
+        "unclassified_rub", "unsettled_postings", "postings_with_return_costs", "contribution_pre_cogs_rub",
+        "product_cogs_rub", "contribution_after_cogs_rub", "revenue_basis", "taxonomy_status", "cogs_coverage"]
+ECON_ROW = ("2026-01-05", "S1", "A1", 1, 1000, -300, -100, -15, 0, 0, 0, 0, 0, 0, 585, 200, 385,
+            "SETTLED", "CLASSIFIED", "COMPLETE")
+
+
+@pytest.mark.parametrize("window,status,pre,after", [
+    ([("2026-01-05", "COMPLETE")], "COMPLETE", 585, 385),
+    ([("2026-01-05", "PARTIAL")], "PARTIAL", None, None),
+    ([], "UNKNOWN", None, None),
+])
+def test_profitability_publishes_a_result_only_with_complete_finance(window, status, pre, after):
+    rows = _run("analytics_share", "profitability_daily", {
+        "FACT_OZON_SKU_ECONOMICS_DAILY": (ECON, [ECON_ROW]),
+        "DIM_OZON_PRODUCT": (["sku", "product_name"], [("S1", "a")]),
+        "V_FINANCE_WINDOW_STATUS": (["from_date", "status"], window)})
+    (r,) = rows
+    assert (r["finance_data_status"], r["contribution_pre_cogs_rub"], r["contribution_after_cogs_rub"]) == \
+        (status, pre, after)
+    assert r["seller_revenue_rub"] == 1000 and r["commission_rub"] == -300     # факты видны всегда
+
+
+def test_store_costs_keep_the_scope_so_cancelled_postings_are_visible():
+    rows = _run("analytics_share", "store_costs_daily", {
+        "FACT_OZON_STORE_COSTS_DAILY": (["event_date", "accrual_class", "cost_scope", "sku", "amount_rub",
+                                         "commission_rub", "accruals", "unresolved_accruals"],
+                                        [("2026-01-10", "CANCELLATION_COST", "POSTING_NOT_DELIVERED", "S1", -80, None, 1, 0),
+                                         ("2026-01-10", "SUBSCRIPTION", "STORE", None, -1990, None, 1, 0)]),
+        "V_COVERAGE_DAILY": (COV, [(FIN, "2026-01-10", "COMPLETE", None, "t")])})
+    assert {(r["cost_scope"], r["amount_rub"], r["data_status"]) for r in rows} == {
+        ("POSTING_NOT_DELIVERED", -80, "COMPLETE"), ("STORE", -1990, "COMPLETE")}
+
+
+def test_contract_states_the_known_gaps():
+    lim = " ".join(CONTRACT["objects"]["profitability_daily"]["limitations"])
+    assert "Возвраты" in lim and "не прибыль" in lim and "Поздние начисления" in lim

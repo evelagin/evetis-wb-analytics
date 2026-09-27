@@ -105,7 +105,7 @@
         "product_name": "Название товара",
         "order_date": "Сутки заказа по Москве",
         "status": "Статус Ozon",
-        "is_cancelled": "Отменён",
+        "is_cancelled": "Отменён (любой статус Ozon cancelled*)",
         "is_delivered": "Доставлен",
         "warehouse_name": "Склад отгрузки",
         "city": "Город доставки"
@@ -234,7 +234,7 @@
         "sku": "SKU Ozon",
         "internal_sku": "Артикул продавца",
         "product_name": "Название товара",
-        "mapping_status": "MAPPED / UNMAPPED — есть ли соответствие артикулу"
+        "mapping_status": "MAPPED / UNMAPPED / AMBIGUOUS — соответствие артикулу продавца"
       },
       "metrics": {
         "orders": {
@@ -452,7 +452,7 @@
       }
     },
     "profitability_daily": {
-      "business_meaning": "Экономика доставленных заказов: выручка продавца, расходы Ozon, результат до и после себестоимости.",
+      "business_meaning": "Экономика доставленных заказов: выручка продавца, комиссия и расходы Ozon, результат до и после себестоимости.",
       "grain": [
         "sales_date",
         "sku"
@@ -462,8 +462,8 @@
         "sku": "SKU Ozon",
         "internal_sku": "Артикул продавца",
         "product_name": "Название товара",
-        "revenue_basis": "SETTLED / PARTIALLY_SETTLED / NOT_SETTLED — рассчитал ли Ozon отправления",
-        "taxonomy_status": "CLASSIFIED / UNCLASSIFIED_PRESENT — все ли начисления классифицированы",
+        "revenue_basis": "SETTLED / PARTIALLY_SETTLED / NOT_SETTLED — рассчитал ли Ozon отправления (ровно один полный экономический блок)",
+        "taxonomy_status": "CLASSIFIED / UNRESOLVED — есть ли начисления вне таксономии с ненулевой суммой или с пустой суммой",
         "cogs_coverage": "COMPLETE / PARTIAL / NOT_AVAILABLE — себестоимость продавца"
       },
       "metrics": {
@@ -474,68 +474,90 @@
         },
         "seller_revenue_rub": {
           "unit": "₽",
-          "meaning": "Выручка продавца по расчётам Ozon",
+          "meaning": "Выручка продавца по расчётам Ozon (> 0); NULL, если неизвестна",
           "additive": true
         },
         "commission_rub": {
           "unit": "₽",
-          "meaning": "Комиссия Ozon (расход < 0)",
+          "meaning": "Комиссия Ozon (со знаком Ozon, расход < 0)",
           "additive": true
         },
         "logistics_rub": {
           "unit": "₽",
-          "meaning": "Логистика и последняя миля",
+          "meaning": "Логистика и последняя миля (< 0)",
           "additive": true
         },
         "acquiring_rub": {
           "unit": "₽",
-          "meaning": "Эквайринг",
+          "meaning": "Эквайринг (< 0)",
           "additive": true
         },
         "return_logistics_rub": {
           "unit": "₽",
-          "meaning": "Обратная логистика",
+          "meaning": "Обратная логистика (< 0)",
+          "additive": true
+        },
+        "promotion_rub": {
+          "unit": "₽",
+          "meaning": "Продвижение, начисленное по отправлению (биллинг, < 0)",
           "additive": true
         },
         "other_costs_rub": {
           "unit": "₽",
-          "meaning": "Прочие расходы Ozon по отправлению",
+          "meaning": "Прочие начисления по отправлению, включая компенсации (со знаком Ozon)",
+          "additive": true
+        },
+        "unclassified_rub": {
+          "unit": "₽",
+          "meaning": "Начисления вне таксономии (со знаком Ozon)",
+          "additive": true
+        },
+        "unsettled_postings": {
+          "unit": "шт.",
+          "meaning": "Отправлений без расчёта Ozon",
+          "additive": true
+        },
+        "postings_with_return_costs": {
+          "unit": "шт.",
+          "meaning": "Доставленных отправлений с расходами обратной логистики (признак возврата)",
           "additive": true
         },
         "contribution_pre_cogs_rub": {
           "unit": "₽",
-          "meaning": "Результат до себестоимости; NULL при неклассифицированных начислениях",
+          "meaning": "Результат до себестоимости = выручка + комиссия + расходы; NULL, если данных недостаточно",
           "additive": true
         },
         "product_cogs_rub": {
           "unit": "₽",
-          "meaning": "Себестоимость продавца; NULL при неполном покрытии",
+          "meaning": "Себестоимость продавца (> 0); NULL при неполном или неоднозначном покрытии",
           "additive": true
         },
         "contribution_after_cogs_rub": {
           "unit": "₽",
-          "meaning": "Результат после себестоимости; только при COMPLETE",
+          "meaning": "Результат после себестоимости; только при COMPLETE себестоимости",
           "additive": true
         }
       },
       "status_columns": {
         "finance_data_status": {
           "entity": "finance_accrual",
-          "meaning": "Полнота сущности за сутки; нет оценки — UNKNOWN"
+          "meaning": "Полнота начислений от суток заказа до последних оценённых суток (tenant_ops.V_FINANCE_WINDOW_STATUS): COMPLETE / PARTIAL; нет оценки — UNKNOWN"
         }
       },
-      "freshness": "Как загрузка начислений (T5); расчёты Ozon приходят с задержкой",
-      "completeness": "NULL = не вычисляется (нет классификации или себестоимости), не ноль",
+      "freshness": "Как загрузка начислений (T5); начисления по заказу приходят позже заказа",
+      "completeness": "Результат публикуется только при SETTLED, CLASSIFIED, без признака возврата и при finance_data_status = COMPLETE; иначе NULL, не ноль",
       "limitations": [
         "Контракт вклада: налоги, OPEX, фулфилмент продавца не входят — это не прибыль",
-        "Начисления магазина (подписка, биллинг продвижения, хранение) не разнесены на SKU — см. store_costs_daily",
-        "Себестоимость — только из справочника продавца; умолчаний нет"
+        "Возвраты покупателей не моделируются: сторно возврата не загружается; доставленное отправление с расходами обратной логистики не получает результата",
+        "Поздние начисления Ozon меняют прошлые сутки заказа",
+        "Начисления вне доставленных заказов (магазин, отмены, отправления вне загруженной истории) — в store_costs_daily; на SKU не разносятся",
+        "Себестоимость — только из справочника продавца; умолчаний нет, пересечения интервалов — себестоимости нет"
       ],
       "lineage": {
         "direct": [
           "ozon_mart.DIM_OZON_PRODUCT",
           "ozon_mart.FACT_OZON_SKU_ECONOMICS_DAILY",
-          "tenant_ops.V_COVERAGE_DAILY"
+          "tenant_ops.V_FINANCE_WINDOW_STATUS"
         ],
         "sources": [
           "ozon_raw.RAW_OZON_CATALOG",
@@ -549,24 +571,36 @@
       }
     },
     "store_costs_daily": {
-      "business_meaning": "Начисления Ozon вне отправлений по суткам и классам.",
+      "business_meaning": "Начисления Ozon вне экономики доставленных заказов по суткам начисления, классам и уровню.",
       "grain": [
         "event_date",
-        "accrual_class"
+        "accrual_class",
+        "cost_scope"
       ],
       "dimensions": {
         "event_date": "Сутки начисления",
-        "accrual_class": "Класс таксономии платформы (вкл. UNCLASSIFIED)"
+        "accrual_class": "Класс таксономии платформы (вкл. UNCLASSIFIED)",
+        "cost_scope": "STORE / SKU / POSTING_NOT_DELIVERED / POSTING_NOT_LOADED / POSTING_SKU_UNMATCHED"
       },
       "metrics": {
         "amount_rub": {
           "unit": "₽",
-          "meaning": "Сумма (расход < 0)",
+          "meaning": "Сумма начислений (со знаком Ozon, расход < 0)",
+          "additive": true
+        },
+        "commission_rub": {
+          "unit": "₽",
+          "meaning": "Комиссия, начисленная по этим отправлениям (со знаком Ozon)",
           "additive": true
         },
         "accruals": {
           "unit": "шт.",
           "meaning": "Начислений",
+          "additive": true
+        },
+        "unresolved_accruals": {
+          "unit": "шт.",
+          "meaning": "Начислений вне таксономии с ненулевой или пустой суммой",
           "additive": true
         }
       },
@@ -577,9 +611,10 @@
         }
       },
       "freshness": "Как загрузка начислений (T5)",
-      "completeness": "data_status по сущности finance_accrual",
+      "completeness": "data_status по сущности finance_accrual; нет строк за COMPLETE сутки — начислений не было",
       "limitations": [
-        "UNCLASSIFIED — новый тип Ozon, ещё не классифицированный платформой"
+        "UNCLASSIFIED — тип Ozon, ещё не классифицированный платформой (tenant_ops.V_DQ_UNRESOLVED_ACCRUALS)",
+        "Вместе с profitability_daily покрывает все начисления без повторов"
       ],
       "lineage": {
         "direct": [
@@ -588,6 +623,7 @@
         ],
         "sources": [
           "ozon_raw.RAW_OZON_FINANCE_ACCRUAL",
+          "ozon_raw.RAW_OZON_POSTINGS_FBO",
           "tenant_ops.DATA_COVERAGE"
         ]
       }
