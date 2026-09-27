@@ -1,0 +1,87 @@
+{
+  "clustering": [
+    "api",
+    "status"
+  ],
+  "schema": [
+    {
+      "description": "Идентификатор привязки",
+      "mode": "REQUIRED",
+      "name": "binding_id",
+      "type": "STRING"
+    },
+    {
+      "description": "OZON",
+      "mode": "REQUIRED",
+      "name": "marketplace",
+      "type": "STRING"
+    },
+    {
+      "description": "SELLER или PERFORMANCE",
+      "mode": "REQUIRED",
+      "name": "api",
+      "type": "STRING"
+    },
+    {
+      "description": "sha256 подтверждённой identity",
+      "mode": "REQUIRED",
+      "name": "identity_fingerprint",
+      "type": "STRING"
+    },
+    {
+      "description": "Подтверждённый Client-Id (идентификатор)",
+      "mode": "NULLABLE",
+      "name": "seller_client_id",
+      "type": "STRING"
+    },
+    {
+      "description": "Подтверждённый client_id Performance (идентификатор)",
+      "mode": "NULLABLE",
+      "name": "performance_client_id",
+      "type": "STRING"
+    },
+    {
+      "description": "CONFIRMED или REVOKED",
+      "mode": "REQUIRED",
+      "name": "status",
+      "type": "STRING"
+    },
+    {
+      "description": "Оператор, подтвердивший привязку",
+      "mode": "REQUIRED",
+      "name": "confirmed_by",
+      "type": "STRING"
+    },
+    {
+      "description": "Время подтверждения",
+      "mode": "REQUIRED",
+      "name": "confirmed_at",
+      "type": "TIMESTAMP"
+    },
+    {
+      "description": "Наблюдение tenant_ops, на котором основано подтверждение",
+      "mode": "REQUIRED",
+      "name": "source_observation_id",
+      "type": "STRING"
+    },
+    {
+      "description": "Время отзыва",
+      "mode": "NULLABLE",
+      "name": "revoked_at",
+      "type": "TIMESTAMP"
+    },
+    {
+      "description": "Кто отозвал",
+      "mode": "NULLABLE",
+      "name": "revoked_by",
+      "type": "STRING"
+    },
+    {
+      "description": "Пояснение",
+      "mode": "NULLABLE",
+      "name": "notes",
+      "type": "STRING"
+    }
+  ],
+  "table_id": "SELLER_BINDING"
+}

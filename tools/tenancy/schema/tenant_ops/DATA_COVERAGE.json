@@ -1,0 +1,55 @@
+{
+  "clustering": [
+    "entity",
+    "status"
+  ],
+  "schema": [
+    {
+      "description": "Сущность",
+      "mode": "REQUIRED",
+      "name": "entity",
+      "type": "STRING"
+    },
+    {
+      "description": "День данных",
+      "mode": "REQUIRED",
+      "name": "coverage_date",
+      "type": "DATE"
+    },
+    {
+      "description": "COMPLETE, PARTIAL, NOT_AVAILABLE, NOT_APPLICABLE, FAILED, UNKNOWN",
+      "mode": "REQUIRED",
+      "name": "status",
+      "type": "STRING"
+    },
+    {
+      "description": "Почему не COMPLETE",
+      "mode": "NULLABLE",
+      "name": "reason",
+      "type": "STRING"
+    },
+    {
+      "description": "Строк за день",
+      "mode": "NULLABLE",
+      "name": "rows_loaded",
+      "type": "INTEGER"
+    },
+    {
+      "description": "Прогон, установивший статус",
+      "mode": "NULLABLE",
+      "name": "source_run_id",
+      "type": "STRING"
+    },
+    {
+      "description": "Время оценки",
+      "mode": "REQUIRED",
+      "name": "evaluated_at",
+      "type": "TIMESTAMP"
+    }
+  ],
+  "table_id": "DATA_COVERAGE",
+  "time_partitioning": {
+    "field": "coverage_date",
+    "type": "DAY"
+  }
+}

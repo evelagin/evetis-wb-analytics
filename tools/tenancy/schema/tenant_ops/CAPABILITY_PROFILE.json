@@ -1,0 +1,73 @@
+{
+  "clustering": [
+    "api",
+    "capability"
+  ],
+  "schema": [
+    {
+      "description": "Идентификатор прогона обнаружения",
+      "mode": "REQUIRED",
+      "name": "profile_id",
+      "type": "STRING"
+    },
+    {
+      "description": "Прогон runtime",
+      "mode": "NULLABLE",
+      "name": "run_id",
+      "type": "STRING"
+    },
+    {
+      "description": "Время обнаружения",
+      "mode": "REQUIRED",
+      "name": "discovered_at",
+      "type": "TIMESTAMP"
+    },
+    {
+      "description": "SELLER или PERFORMANCE",
+      "mode": "REQUIRED",
+      "name": "api",
+      "type": "STRING"
+    },
+    {
+      "description": "Возможность: метод или группа методов",
+      "mode": "REQUIRED",
+      "name": "capability",
+      "type": "STRING"
+    },
+    {
+      "description": "AVAILABLE, UNAVAILABLE, FORBIDDEN, UNKNOWN, NOT_APPLICABLE",
+      "mode": "REQUIRED",
+      "name": "status",
+      "type": "STRING"
+    },
+    {
+      "description": "DOCUMENTED, VERIFIED, INFERRED",
+      "mode": "NULLABLE",
+      "name": "evidence_kind",
+      "type": "STRING"
+    },
+    {
+      "description": "Код ответа проверочного вызова",
+      "mode": "NULLABLE",
+      "name": "http_status",
+      "type": "INTEGER"
+    },
+    {
+      "description": "Доказательства (без секретов)",
+      "mode": "NULLABLE",
+      "name": "evidence_json",
+      "type": "STRING"
+    },
+    {
+      "description": "Пояснение",
+      "mode": "NULLABLE",
+      "name": "notes",
+      "type": "STRING"
+    }
+  ],
+  "table_id": "CAPABILITY_PROFILE",
+  "time_partitioning": {
+    "field": "discovered_at",
+    "type": "DAY"
+  }
+}

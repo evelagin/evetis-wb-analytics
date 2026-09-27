@@ -311,7 +311,7 @@ def _legacy_evetis_invariants(doc, err) -> None:
         err("$.data_boundary.datasets", "evetis_protected", msg)
     if ozon.get("secret_refs", {}) != L["ozon_secret_refs"]:
         err("$.marketplaces.ozon.secret_refs", "evetis_protected", msg)
-    for k in ("entities", "backfill_start_date"):
+    for k in ("entities", "history_request"):
         if k in ozon:
             err(f"$.marketplaces.ozon.{k}", "evetis_protected",
                 "состав job'ов и история EVETIS заданы в Terraform, не в реестре")
@@ -388,6 +388,30 @@ def _dedicated_invariants(doc, err, ozon_entities: frozenset[str]) -> None:
         err("$.marketplaces.ozon.entities", "entities", "рекламные сущности без модуля ozon_ads")
     if entities & PROMO_ENTITIES and not mods["ozon_promo"]:
         err("$.marketplaces.ozon.entities", "entities", "сущность promo без модуля ozon_promo")
+
+    # T4: история запрашивается политикой, а не зашитой датой. Фактические границы по
+    # сущностям — результат обнаружения возможностей (tenant_ops.HISTORY_BOUNDARIES).
+    hr = ozon.get("history_request")
+    if ozon["enabled"] and hr is None:
+        err("$.marketplaces.ozon.history_request", "history",
+            "Ozon включён: history_request обязателен (EARLIEST_AVAILABLE или FROM_DATE)")
+    elif hr is not None:
+        if hr["mode"] == "FROM_DATE" and "from_date" not in hr:
+            err("$.marketplaces.ozon.history_request.from_date", "history",
+                "режим FROM_DATE требует from_date")
+        if hr["mode"] == "EARLIEST_AVAILABLE" and "from_date" in hr:
+            err("$.marketplaces.ozon.history_request.from_date", "history",
+                "EARLIEST_AVAILABLE не задаёт дату: границы определяет обнаружение возможностей")
+        if "from_date" in hr:
+            try:
+                requested = datetime.strptime(hr["from_date"], "%Y-%m-%d").date()
+            except ValueError:
+                err("$.marketplaces.ozon.history_request.from_date", "history",
+                    "from_date не является календарной датой")
+            else:
+                if requested > datetime.now().date():
+                    err("$.marketplaces.ozon.history_request.from_date", "history",
+                        "from_date в будущем: запрашивать можно только прошлое")
 
 
 # ───────────────────────────────────────────────────── инварианты реестра

@@ -1,8 +1,8 @@
 {
   "schema_version": 1,
   "tenant_id": "client_001",
-  "legal_name": "SYNTHETIC — не реальная компания",
-  "display_name": "Синтетический арендатор 001",
+  "legal_name": "Арендатор 001 (юрлицо в Git не хранится)",
+  "display_name": "Арендатор 001",
   "status": "NEW",
   "config_authority": "TENANT_REGISTRY",
   "data_boundary": {
@@ -11,7 +11,10 @@
     "bq_location": "EU",
     "datasets": {
       "ozon_raw": "ozon_raw",
-      "ref": "ref"
+      "ref": "ref",
+      "ozon_mart": "ozon_mart",
+      "tenant_ops": "tenant_ops",
+      "analytics_share": "analytics_share"
     }
   },
   "marketplaces": {
@@ -28,7 +31,7 @@
         "catalog", "prices", "seller_info", "stocks", "fbo_postings", "finance_accrual",
         "ads_campaigns", "ads_expense_daily", "ads_sku_daily", "clusters", "supplies"
       ],
-      "backfill_start_date": "2026-01-01"
+      "history_request": {"mode": "EARLIEST_AVAILABLE"}
     },
     "wb": {
       "enabled": false
@@ -55,5 +58,5 @@
   "lifecycle": {
     "created_at": "2026-09-24T00:00:00+03:00"
   },
-  "notes": "СИНТЕТИКА (Tenancy T1/T2). Доказывает только переносимость конфигурации: проект mpa-t-client-001 не создан, секретов нет, API не вызывается, реальных данных будущего клиента здесь нет. fulfillment_schemes=FBO — допущение синтетики, а не решение D3."
+  "notes": "Первый внешний арендатор (T3.3: проект mpa-t-client-001 создан, инфраструктура применена, ключей нет). Identity продавца (Client-Id, ИНН, название) в Git не хранится: она обнаруживается read-only проверкой ключей и подтверждается оператором в проекте арендатора (ref.SELLER_BINDING, T4). fulfillment_schemes=FBO — подтверждено владельцем; решение D3 по FBS/rFBS не принималось."
 }

@@ -84,6 +84,17 @@ variable "contract" {
     error_message = "Регион europe-west1 и BigQuery EU — единственная поддерживаемая география v1."
   }
   validation {
+    # T4: состав датасетов выделенного арендатора фиксирован (tools/tenancy/naming.py).
+    # Внутренние: ozon_raw, ref, ozon_mart, tenant_ops. Клиентский слой: analytics_share
+    # (доступ клиента — T6; в этом корне клиентских участников нет и сканер их отвергает).
+    condition     = toset(keys(var.contract.datasets)) == toset(["analytics_share", "ozon_mart", "ozon_raw", "ref", "tenant_ops"])
+    error_message = "Датасеты арендатора — ровно ozon_raw, ref, ozon_mart, tenant_ops, analytics_share (naming.DEDICATED_DATASETS)."
+  }
+  validation {
+    condition     = alltrue([for t in var.contract.tables : contains(keys(var.contract.datasets), t.dataset_key)])
+    error_message = "Каждая таблица контракта обязана принадлежать объявленному датасету."
+  }
+  validation {
     condition     = var.contract.scheduler_state == "PAUSED"
     error_message = "До ворот активации расписания арендатора обязаны быть PAUSED."
   }

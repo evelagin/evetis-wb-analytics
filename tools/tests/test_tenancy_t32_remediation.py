@@ -284,10 +284,11 @@ def test_dataset_acl_in_expected_plan_excludes_provisioner_and_scheduler(contrac
                       if r["type"] == "google_bigquery_dataset"])
     assert PL.PROVISIONER_SA not in acl and "sa-ozon-scheduler" not in acl
     want = PS.expected_dataset_access(contract)
-    assert want == {"ozon_raw": {("OWNER", "special_group", "projectOwners"),
-                                 ("WRITER", "user_by_email", f"sa-ozon-runtime@{P1}.iam.gserviceaccount.com")},
-                    "ref": {("OWNER", "special_group", "projectOwners"),
-                            ("READER", "user_by_email", f"sa-ozon-runtime@{P1}.iam.gserviceaccount.com")}}
+    owners = {("OWNER", "special_group", "projectOwners")}
+    assert want == {"ozon_raw": owners | {("WRITER", "user_by_email", f"sa-ozon-runtime@{P1}.iam.gserviceaccount.com")},
+                    "ref": owners | {("READER", "user_by_email", f"sa-ozon-runtime@{P1}.iam.gserviceaccount.com")},
+                    # T4: внутренние слои и клиентский слой — без runtime и без клиента.
+                    "ozon_mart": owners, "tenant_ops": owners, "analytics_share": owners}
 
 
 def test_reconciling_away_a_creator_owner_is_allowed(contract):
