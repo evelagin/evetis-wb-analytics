@@ -260,6 +260,9 @@ class GcpAuditSource:
     def project_created(self) -> str:
         return self.http("GET", f"{CRM}/projects/{self.project}")["createTime"]
 
+    def project_number(self) -> str:
+        return str(self.http("GET", f"{CRM}/projects/{self.project}")["projectNumber"])
+
     def datasets(self) -> dict[str, dict]:
         r = self.http("GET", f"{API}/bigquery/v2/projects/{self.project}/datasets?all=true&maxResults=1000")
         if r.get("nextPageToken") or r.get("unreachable"):
@@ -380,25 +383,32 @@ def policy_problems(state: dict, identities: list[str]) -> list[str]:
     return out
 
 
-def wif_from_logs(wip_events: list[dict], state: dict, uid_to_account: dict[str, str]) -> tuple[dict | None, list[str]]:
+def wif_from_logs(wip_events: list[dict], state: dict, uid_to_account: dict[str, str], project: str = "",
+                  number: str = "") -> tuple[dict | None, list[str]]:
     """Текущая конфигурация WIF (провайдер + привязки principalSet на SA), восстановленная по Admin Activity —
     вход того же оценщика, что и `wif_check --live`, но без прав на чтение политик SA."""
     provider: dict | None = None
     problems: list[str] = []
+    # Пул и провайдер — ПОЛНЫМ путём ресурса (по id и по номеру проекта): одноимённые в другом пуле/проекте не наши.
+    pools = {f"projects/{x}/locations/global/workloadIdentityPools/github-pool" for x in (project, number) if x}
+    member_prefix = f"://iam.googleapis.com/projects/{number}/locations/global/workloadIdentityPools/github-pool/"
     for e in sorted(wip_events, key=_order):
         pp = e.get("protoPayload") or {}
         method = str(pp.get("methodName", "")).rsplit(".", 1)[-1]
         req = pp.get("request") or {}
         if not req or (pp.get("status") or {}).get("code"):
             continue                                   # парная запись завершения операции / отказ
-        if method == "CreateWorkloadIdentityPool":
+        if method == "CreateWorkloadIdentityPool" and req.get("workloadIdentityPoolId") == "github-pool" and \
+                f"{req.get('parent')}/workloadIdentityPools/github-pool" in pools:
             continue
-        if method == "CreateWorkloadIdentityPoolProvider" and req.get("workloadIdentityPoolProviderId") == "github-provider":
+        if method == "CreateWorkloadIdentityPoolProvider" and req.get("workloadIdentityPoolProviderId") == "github-provider" \
+                and req.get("parent") in pools:
             provider = dict(req.get("workloadIdentityPoolProvider") or {})
             if set(provider) - PROVIDER_FIELDS:
                 problems.append(f"поля провайдера, которые аудит не моделирует: {sorted(set(provider) - PROVIDER_FIELDS)}")
         elif method == "UpdateWorkloadIdentityPoolProvider" and provider is not None and \
-                str((req.get("workloadIdentityPoolProvider") or {}).get("name", "")).endswith("/providers/github-provider"):
+                str((req.get("workloadIdentityPoolProvider") or {}).get("name", "")) in {f"{x}/providers/github-provider"
+                                                                                       for x in pools}:
             for f in str(req.get("updateMask", "")).split(","):
                 f = f.strip()
                 if f not in PROVIDER_FIELDS:
@@ -421,8 +431,7 @@ def wif_from_logs(wip_events: list[dict], state: dict, uid_to_account: dict[str,
             continue
         from tools.autonomy.wif_check import _parse_member
         for r, m in fed:
-            pool = re.search(r"/workloadIdentityPools/([^/]+)/", m)
-            if not pool or pool.group(1) != "github-pool":
+            if not number or member_prefix not in m or not m.startswith(FEDERATED):
                 problems.append(f"SA {uid}: федеративный принципал другого пула — не моделируется: {m[:90]}")
             elif _parse_member(m) is None:
                 problems.append(f"SA {uid}: федеративный участник вне модели S1 (напр. весь пул): {m[:90]}")
@@ -589,7 +598,7 @@ def run_audit(src: GcpAuditSource, since_iso: str, identities: list[str], waterm
     # восстановленной из Admin Activity (прав на чтение политик SA у AE нет и не нужно).
     wip = src.logs(f'{_logname(src.project, "activity")} AND timestamp>="{created}" AND '
                    f'protoPayload.serviceName="iam.googleapis.com" AND protoPayload.methodName:"WorkloadIdentityPool"')
-    wif_doc, wif_broken = wif_from_logs(wip, state, uid_to_account)
+    wif_doc, wif_broken = wif_from_logs(wip, state, uid_to_account, src.project, src.project_number())
     iam += wif_broken
     if wif_doc is not None and not wif_broken:
         from tools.autonomy import wif_check

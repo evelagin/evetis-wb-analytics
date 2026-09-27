@@ -48,7 +48,9 @@ def _wif_events():
     pool = "principalSet://iam.googleapis.com/projects/1/locations/global/workloadIdentityPools/github-pool/"
     wip = [{"timestamp": "2026-07-26T10:21:06Z", "protoPayload": {
         "methodName": "google.iam.admin.v1.WorkloadIdentityPools.CreateWorkloadIdentityPoolProvider",
-        "request": {"workloadIdentityPoolProviderId": "github-provider", "workloadIdentityPoolProvider": {
+        "request": {"workloadIdentityPoolProviderId": "github-provider",
+                    "parent": f"projects/{P}/locations/global/workloadIdentityPools/github-pool",
+                    "workloadIdentityPoolProvider": {
             "attributeCondition": cfg.condition, "attributeMapping": cfg.mapping,
             "oidc": {"issuerUri": "https://token.actions.githubusercontent.com"}}}}}]
     created, policies = [], []
@@ -140,6 +142,9 @@ class FakeSource:
 
     def project_created(self):
         return self._created
+
+    def project_number(self):
+        return "1"
 
     def grant_jobs(self, location, since_iso):
         self.grant_locations.append(location)
@@ -684,7 +689,7 @@ def test_wif_provider_update_mask_is_applied():
     upd = {"timestamp": "2026-09-26T00:00:00Z", "protoPayload": {
         "methodName": "google.iam.admin.v1.WorkloadIdentityPools.UpdateWorkloadIdentityPoolProvider",
         "request": {"updateMask": "attributeCondition", "workloadIdentityPoolProvider": {
-            "name": "projects/p/locations/global/workloadIdentityPools/github-pool/providers/github-provider",
+            "name": f"projects/{P}/locations/global/workloadIdentityPools/github-pool/providers/github-provider",
             "attributeCondition": "assertion.repository_owner == \"someone-else\""}}}}
     r = audit(FakeSource(wip=WIP + [upd]))
     assert r["status"] == "BLOCKED" and any("WIF" in x for x in r["iam_invariant"])
@@ -763,7 +768,7 @@ def test_wif_check_itself_no_longer_drops_unmodelled_bindings():
     ({"updateMask": "disabled", "workloadIdentityPoolProvider": {"disabled": True}}, "updateMask"),
 ])
 def test_unmodelled_provider_updates_are_blocked(upd, needle):
-    upd["workloadIdentityPoolProvider"]["name"] = ("projects/p/locations/global/workloadIdentityPools/github-pool/"
+    upd["workloadIdentityPoolProvider"]["name"] = (f"projects/{P}/locations/global/workloadIdentityPools/github-pool/"
                                                    "providers/github-provider")
     e = {"timestamp": "2026-09-26T00:00:00Z", "protoPayload": {
         "methodName": "google.iam.admin.v1.WorkloadIdentityPools.UpdateWorkloadIdentityPoolProvider", "request": upd}}
@@ -830,3 +835,24 @@ def test_iam_check_requires_readable_clean_org_policy():
     assert bad["status"] == "FAIL" and unread["status"] == "FAIL"
     assert any("организации" in f for f in bad["findings"]) and any("организации" in f for f in unread["findings"])
     assert not any("организации" in f for f in base["findings"])        # старые снимки без полей — без находки
+
+
+def test_wif_resources_are_matched_by_full_path_not_short_name():
+    """Одноимённые пул/провайдер в другом проекте или втором пуле — не наши: отказ, а не подмена модели."""
+    other = {"timestamp": "2026-09-26T00:00:00Z", "protoPayload": {
+        "methodName": "google.iam.admin.v1.WorkloadIdentityPools.CreateWorkloadIdentityPoolProvider",
+        "request": {"workloadIdentityPoolProviderId": "github-provider",
+                    "parent": "projects/other/locations/global/workloadIdentityPools/github-pool",
+                    "workloadIdentityPoolProvider": {"attributeCondition": "true", "attributeMapping": {},
+                                                     "oidc": {"issuerUri": A.GITHUB_ISSUER}}}}}
+    r = audit(FakeSource(wip=WIP + [other]))
+    assert r["status"] == "BLOCKED" and any("не моделирует: CreateWorkloadIdentityPoolProvider" in x for x in r["iam_invariant"])
+    assert not any(x.startswith("WIF: инвариант S1") for x in r["iam_invariant"])   # модель не подменена
+    pool2 = {"timestamp": "2026-09-26T00:00:00Z", "protoPayload": {
+        "methodName": "google.iam.admin.v1.WorkloadIdentityPools.CreateWorkloadIdentityPool",
+        "request": {"workloadIdentityPoolId": "github-pool-2", "parent": f"projects/{P}/locations/global"}}}
+    assert audit(FakeSource(wip=WIP + [pool2]))["status"] == "BLOCKED"
+    same_name_other_project = _deployer_policy_with([
+        "principalSet://iam.googleapis.com/projects/2/locations/global/workloadIdentityPools/github-pool/attribute.repository/x"])
+    r = audit(FakeSource(iam_events=same_name_other_project))
+    assert r["status"] == "BLOCKED" and any("другого пула" in x for x in r["iam_invariant"])
