@@ -49,7 +49,8 @@ def _wif_events():
     wip = [{"timestamp": "2026-07-26T10:21:06Z", "protoPayload": {
         "methodName": "google.iam.admin.v1.WorkloadIdentityPools.CreateWorkloadIdentityPoolProvider",
         "request": {"workloadIdentityPoolProviderId": "github-provider", "workloadIdentityPoolProvider": {
-            "attributeCondition": cfg.condition, "attributeMapping": cfg.mapping}}}}]
+            "attributeCondition": cfg.condition, "attributeMapping": cfg.mapping,
+            "oidc": {"issuerUri": "https://token.actions.githubusercontent.com"}}}}}]
     created, policies = [], []
     for i, (sa, members) in enumerate(sorted(cfg.bindings.items())):
         uid = str(100 + i)
@@ -716,3 +717,116 @@ def test_member_of_another_pool_is_not_modelled_as_github():
 def test_missing_provider_history_is_blocked():
     r = audit(FakeSource(wip=[]))
     assert r["status"] == "BLOCKED" and any("провайдер github-provider" in x for x in r["iam_invariant"])
+
+
+# ------------------------------------------------------------ финальное ревью: модель WIF и атрибуция ---
+def _deployer_policy_with(members_extra=(), role="roles/iam.workloadIdentityUser"):
+    uid = _deployer_uid()
+    base = next(e for e in SA_POLICIES if e["protoPayload"]["resourceName"].endswith(f"/{uid}"))
+    binds = [dict(b) for b in base["protoPayload"]["request"]["policy"]["bindings"]]
+    if role == "roles/iam.workloadIdentityUser":
+        binds[0] = {**binds[0], "members": binds[0]["members"] + list(members_extra)}
+    else:
+        binds.append({"role": role, "members": list(members_extra)})
+    return [e for e in SA_POLICIES if e is not base] + [pol("iam.googleapis.com", f"projects/-/serviceAccounts/{uid}",
+                                                           binds, ts="2026-09-26T00:00:00Z")]
+
+
+POOL = "principalSet://iam.googleapis.com/projects/1/locations/global/workloadIdentityPools/github-pool"
+
+
+@pytest.mark.parametrize("ev,needle", [
+    (_deployer_policy_with([f"{POOL}/*"]), "вне модели S1"),                       # весь пул
+    (_deployer_policy_with([f"{POOL}/attribute.repository/evelagin/evetis-wb-analytics"],
+                           role="projects/p/roles/tokenMinter"), "оценщик S1 её не учитывает"),
+])
+def test_federated_members_outside_the_s1_model_are_blocked(ev, needle):
+    r = audit(FakeSource(iam_events=ev))
+    assert r["status"] == "BLOCKED" and any(needle in x for x in r["iam_invariant"]), r["iam_invariant"]
+
+
+def test_wif_check_itself_no_longer_drops_unmodelled_bindings():
+    from tools.autonomy import wif_check
+    doc = {"provider": {"attributeCondition": "true", "attributeMapping": {}},
+           "service_account_bindings": {"sa-deployer": [{"role": "roles/iam.workloadIdentityUser",
+                                                         "members": [f"{POOL}/*"]}]}}
+    with pytest.raises(ValueError, match="вне модели"):
+        wif_check.from_snapshot(doc, "t")
+    doc["service_account_bindings"]["sa-deployer"] = [{"role": "roles/owner", "members": [f"{POOL}/attribute.x/y"]}]
+    with pytest.raises(ValueError, match="не моделирует"):
+        wif_check.from_snapshot(doc, "t")
+
+
+@pytest.mark.parametrize("upd,needle", [
+    ({"updateMask": "attribute_condition", "workloadIdentityPoolProvider": {"attribute_condition": "true"}}, "updateMask"),
+    ({"updateMask": "oidc", "workloadIdentityPoolProvider": {"oidc": {"issuerUri": "https://evil.example"}}}, "issuer"),
+    ({"updateMask": "disabled", "workloadIdentityPoolProvider": {"disabled": True}}, "updateMask"),
+])
+def test_unmodelled_provider_updates_are_blocked(upd, needle):
+    upd["workloadIdentityPoolProvider"]["name"] = ("projects/p/locations/global/workloadIdentityPools/github-pool/"
+                                                   "providers/github-provider")
+    e = {"timestamp": "2026-09-26T00:00:00Z", "protoPayload": {
+        "methodName": "google.iam.admin.v1.WorkloadIdentityPools.UpdateWorkloadIdentityPoolProvider", "request": upd}}
+    r = audit(FakeSource(wip=WIP + [e]))
+    assert r["status"] == "BLOCKED" and any(needle in x for x in r["iam_invariant"]), r["iam_invariant"]
+
+
+def test_federated_subject_logged_under_sa_name_is_not_dropped():
+    e = {"protoPayload": {"serviceName": "run.googleapis.com", "methodName": "x", "authenticationInfo": {
+        "principalEmail": f"sa-deployer@{P}.iam.gserviceaccount.com", "principalSubject": GH}}}
+    assert A.attribution(e, [SA]) == "federated_other"
+    r = audit(FakeSource(activity=[e]))
+    assert r["status"] == "BLOCKED" and any("атрибуция" in x for x in r["iam_invariant"])
+
+
+def test_matched_but_unattributed_entry_is_blocked_not_ignored():
+    e = {"protoPayload": {"serviceName": "bigquery.googleapis.com", "methodName": "x",
+                          "authenticationInfo": {"principalEmail": LOADER}}}
+    assert A.attribution(e, [SA]) is None
+    assert audit(FakeSource(access=[e]))["status"] == "BLOCKED"
+    assert audit(FakeSource(activity=[e]))["status"] == "BLOCKED"
+
+
+def test_custom_role_named_viewer_is_not_trusted_as_read():
+    ev = list(SA_POLICIES) + [pol("storage.googleapis.com", "projects/_/buckets/b", [
+        {"role": f"projects/{P}/roles/dataViewer", "members": ["allAuthenticatedUsers"]}])]
+    assert audit(FakeSource(iam_events=ev))["status"] == "BLOCKED"
+
+
+def test_event_order_uses_numeric_fractions():
+    early = pol("run.googleapis.com", RUN_SVC, [{"role": "roles/run.invoker", "members": ["allUsers"]}],
+                ts="2026-09-01T00:00:00Z")
+    late = pol("run.googleapis.com", RUN_SVC, [{"role": "roles/run.invoker", "members": [f"serviceAccount:{LOADER}"]}],
+               ts="2026-09-01T00:00:00.5Z")
+    # строкой "…00Z" > "…00.5Z" ('Z' > '.'), но по времени публичная политика раньше и уже заменена
+    assert audit(FakeSource(iam_events=list(SA_POLICIES) + [late, early]))["status"] == "PASS"
+    assert A._order({"timestamp": "2026-09-01T00:00:00.9Z"}) > A._order({"timestamp": "2026-09-01T00:00:00.123456789Z"})
+
+
+def test_wif_condition_binding_is_blocked():
+    ev = _deployer_policy_with()
+    ev[-1]["protoPayload"]["request"]["policy"]["bindings"][0]["condition"] = {"expression": "true"}
+    r = audit(FakeSource(iam_events=ev))
+    assert r["status"] == "BLOCKED" and any("IAM-условия" in x for x in r["iam_invariant"])
+
+
+def test_wif_evaluator_refusal_is_blocked_not_an_exception(monkeypatch):
+    """Страховка: если оценщик S1 откажется моделировать конфигурацию, аудит — BLOCKED, а не исключение."""
+    from tools.autonomy import wif_check
+
+    def refuse(doc, source):
+        raise ValueError("вне модели")
+    monkeypatch.setattr(wif_check, "from_snapshot", refuse)
+    r = audit(FakeSource())
+    assert r["status"] == "BLOCKED" and any(x.startswith("WIF: инвариант S1") for x in r["iam_invariant"])
+
+
+def test_iam_check_requires_readable_clean_org_policy():
+    from tools.tests.test_autonomy_iam import SNAP
+    from tools.autonomy import iam_check
+    base = iam_check.evaluate(SNAP)
+    bad = iam_check.evaluate({**SNAP, "org_risky_members": ["roles/iam.workloadIdentityUser principalSet://x"]})
+    unread = iam_check.evaluate({**SNAP, "org_policy_readable": False})
+    assert bad["status"] == "FAIL" and unread["status"] == "FAIL"
+    assert any("организации" in f for f in bad["findings"]) and any("организации" in f for f in unread["findings"])
+    assert not any("организации" in f for f in base["findings"])        # старые снимки без полей — без находки

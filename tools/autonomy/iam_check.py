@@ -127,6 +127,11 @@ def evaluate(snap: dict) -> dict:
             findings.append(f"право с побочным эффектом: {p}")
     if snap["referenced_by_other_sa"]:
         findings.append(f"SA упомянут в политиках других SA: {snap['referenced_by_other_sa']}")
+    # Уровень организации наследуется всеми SA проекта; доверенный аудит AE его не видит (review PR #202).
+    if not snap.get("org_policy_readable", True):
+        findings.append("политика организации не прочитана — наследуемые привязки не доказаны")
+    if snap.get("org_risky_members"):
+        findings.append(f"в политике организации федеративные/групповые/публичные участники: {snap['org_risky_members']}")
     missing = sorted(REQUIRED_PROJECT - proj_perm)
     for ds in READ_DATASETS:
         if ds not in snap["dataset_roles"]:
@@ -217,7 +222,17 @@ def capture_live() -> dict:
     role_permissions = {}
     for r in sorted(needed):
         role_permissions[r] = _describe_role(r)
+    org_risky, org_ok = [], True
+    parent = _j("projects", "describe", PROJECT, project=False).get("parent") or {}
+    if parent.get("type") == "organization":
+        try:
+            org = _j("organizations", "get-iam-policy", parent["id"], project=False)
+            org_risky = sorted({f"{b['role']} {m}" for b in org.get("bindings", []) for m in b["members"]
+                                if m.startswith(("principal", "group:", "domain:", "allUsers", "allAuthenticatedUsers"))})
+        except subprocess.CalledProcessError:
+            org_ok = False
     return {"sa_exists": exists, "project_roles": project_roles, "dataset_roles": dataset_roles,
+            "org_risky_members": org_risky, "org_policy_readable": org_ok,
             "referenced_by_other_sa": refs, "role_permissions": role_permissions,
             "datasets_all": all_ids, "datasets_visible": visible, "anonymous_evidence": anonymous_evidence}
 

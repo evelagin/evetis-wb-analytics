@@ -354,7 +354,10 @@ def from_snapshot(doc: dict, source: str) -> WifConfig:
     bindings: dict[str, list[tuple[str, str]]] = {}
     for sa, binds in doc["service_account_bindings"].items():
         for b in binds:
+            fed = [m for m in b["members"] if m.startswith(("principal://", "principalSet://"))]
             if b["role"] not in ("roles/iam.workloadIdentityUser", "roles/iam.serviceAccountTokenCreator"):
+                if fed:   # роль вне модели у федеративного принципала — не молчаливый пропуск (review PR #202)
+                    raise ValueError(f"{sa}: роль {b['role']} у федеративного принципала — проверка её не моделирует")
                 continue
             if b.get("condition"):
                 raise ValueError(f"{sa}: IAM-условие на привязке — проверка его не моделирует")
@@ -362,6 +365,8 @@ def from_snapshot(doc: dict, source: str) -> WifConfig:
                 parsed = _parse_member(member)
                 if parsed:
                     bindings.setdefault(sa, []).append(parsed)
+                elif member in fed:   # напр. весь пул `…/github-pool/*` — вне модели, а не «нет привязки»
+                    raise ValueError(f"{sa}: федеративный участник вне модели: {member[:100]}")
     return WifConfig(source, prov.get("attributeCondition") or "true", prov["attributeMapping"], bindings)
 
 

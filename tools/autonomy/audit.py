@@ -114,7 +114,10 @@ def acl_problems(ds: str, access: list[dict], identities: list[str]) -> list[str
 
 def _auth(entry: dict) -> tuple[str, list[dict]]:
     ai = (entry.get("protoPayload") or {}).get("authenticationInfo") or {}
-    return ai.get("principalEmail") or ai.get("principalSubject") or "", ai.get("serviceAccountDelegationInfo") or []
+    chain = list(ai.get("serviceAccountDelegationInfo") or [])
+    if ai.get("principalEmail") and str(ai.get("principalSubject", "")).startswith(FEDERATED):
+        chain.append({"principalSubject": ai["principalSubject"]})   # федеративный субъект под именем SA
+    return ai.get("principalEmail") or ai.get("principalSubject") or "", chain
 
 
 def _ae_principal(p: str, identities: list[str]) -> bool:
@@ -279,6 +282,14 @@ def _ts(s: str):
     return datetime.fromisoformat(s.replace("Z", "+00:00"))
 
 
+def _order(entry: dict) -> tuple:
+    """Порядок событий по времени: дробная часть секунд журнала бывает 0–9 знаков — сравниваем числами."""
+    m = re.fullmatch(r"(\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d)(?:\.(\d{1,9}))?Z?", str(entry.get("timestamp", "")))
+    if not m:
+        return ("", 0)
+    return (m.group(1), int((m.group(2) or "").ljust(9, "0")))
+
+
 def _logname(project: str, kind: str) -> str:
     return f'logName="projects/{project}/logs/cloudaudit.googleapis.com%2F{kind}"'
 
@@ -296,6 +307,9 @@ def _ae_filter(identities: list[str]) -> str:
 
 
 PUBLIC_MEMBERS = ("allUsers", "allAuthenticatedUsers")
+WIF_ROLES = {"roles/iam.workloadIdentityUser", "roles/iam.serviceAccountTokenCreator"}
+PROVIDER_FIELDS = {"attributeCondition", "attributeMapping", "displayName", "description", "oidc"}
+GITHUB_ISSUER = "https://token.actions.githubusercontent.com"
 UNPROVABLE_MEMBERS = ("group:", "domain:")
 READ_ROLE = re.compile(r"(?i)(viewer|reader|metadataViewer)$")
 
@@ -322,7 +336,7 @@ def iam_policy_state(events: list[dict]) -> tuple[dict[tuple[str, str], set[tupl
     (Admin Activity). Событие, из которого политику не восстановить, — отказ доказательства."""
     state: dict[tuple[str, str], set[tuple[str, str]]] = {}
     problems: list[str] = []
-    for e in sorted(events, key=lambda x: x.get("timestamp", "")):
+    for e in sorted(events, key=_order):
         pp = e.get("protoPayload") or {}
         if (pp.get("status") or {}).get("code"):
             continue                                   # отклонённое изменение ничего не поменяло
@@ -357,7 +371,7 @@ def policy_problems(state: dict, identities: list[str]) -> list[str]:
                 continue
             where = f"{svc.split('.')[0]}:{rn.rsplit('/', 1)[-1][:60]} {role} → {m[:70]}"
             if m in PUBLIC_MEMBERS or m.startswith(UNPROVABLE_MEMBERS):
-                if not READ_ROLE.search(role):
+                if not (role.startswith("roles/") and READ_ROLE.search(role)):   # имя своей роли не доказательство
                     out.append(f"публичный/групповой доступ, невидимый аудиту: {where}")
             elif m in mine and not project_policy:
                 out.append(f"AE на отдельном ресурсе: {where}")
@@ -371,7 +385,7 @@ def wif_from_logs(wip_events: list[dict], state: dict, uid_to_account: dict[str,
     вход того же оценщика, что и `wif_check --live`, но без прав на чтение политик SA."""
     provider: dict | None = None
     problems: list[str] = []
-    for e in sorted(wip_events, key=lambda x: x.get("timestamp", "")):
+    for e in sorted(wip_events, key=_order):
         pp = e.get("protoPayload") or {}
         method = str(pp.get("methodName", "")).rsplit(".", 1)[-1]
         req = pp.get("request") or {}
@@ -381,16 +395,22 @@ def wif_from_logs(wip_events: list[dict], state: dict, uid_to_account: dict[str,
             continue
         if method == "CreateWorkloadIdentityPoolProvider" and req.get("workloadIdentityPoolProviderId") == "github-provider":
             provider = dict(req.get("workloadIdentityPoolProvider") or {})
+            if set(provider) - PROVIDER_FIELDS:
+                problems.append(f"поля провайдера, которые аудит не моделирует: {sorted(set(provider) - PROVIDER_FIELDS)}")
         elif method == "UpdateWorkloadIdentityPoolProvider" and provider is not None and \
                 str((req.get("workloadIdentityPoolProvider") or {}).get("name", "")).endswith("/providers/github-provider"):
             for f in str(req.get("updateMask", "")).split(","):
                 f = f.strip()
-                if f:
-                    provider[f] = (req.get("workloadIdentityPoolProvider") or {}).get(f)
+                if f not in PROVIDER_FIELDS:
+                    problems.append(f"путь updateMask {f!r} не моделируется")
+                    continue
+                provider[f] = (req.get("workloadIdentityPoolProvider") or {}).get(f)
         else:
             problems.append(f"изменение WIF, которое аудит не моделирует: {method}")
     if provider is None:
         return None, problems + ["провайдер github-provider не восстановлен из Admin Activity"]
+    if (provider.get("oidc") or {}).get("issuerUri") != GITHUB_ISSUER or provider.get("disabled"):
+        problems.append("провайдер не OIDC GitHub (issuer) или выключен — оценщик S1 его не моделирует")
     sab: dict[str, list[dict]] = {}
     for (svc, rn), binds in state.items():
         if svc != "iam.googleapis.com":
@@ -399,9 +419,15 @@ def wif_from_logs(wip_events: list[dict], state: dict, uid_to_account: dict[str,
         fed = [(r, m) for r, m in binds if m.startswith(FEDERATED)]
         if not fed:
             continue
-        foreign = [m for _, m in fed if "/workloadIdentityPools/github-pool/" not in m]
-        if foreign:
-            problems.append(f"SA {uid}: федеративный принципал другого пула — не моделируется: {foreign[0][:90]}")
+        from tools.autonomy.wif_check import _parse_member
+        for r, m in fed:
+            pool = re.search(r"/workloadIdentityPools/([^/]+)/", m)
+            if not pool or pool.group(1) != "github-pool":
+                problems.append(f"SA {uid}: федеративный принципал другого пула — не моделируется: {m[:90]}")
+            elif _parse_member(m) is None:
+                problems.append(f"SA {uid}: федеративный участник вне модели S1 (напр. весь пул): {m[:90]}")
+            if r not in WIF_ROLES:
+                problems.append(f"SA {uid}: роль {r} у федеративного принципала — оценщик S1 её не учитывает")
         acc = uid_to_account.get(uid)
         if not acc:
             problems.append(f"SA {uid}: не сопоставлен с событием создания")
@@ -488,13 +514,13 @@ def run_audit(src: GcpAuditSource, since_iso: str, identities: list[str], waterm
     unattributed = 0
     for e in activity:
         who = attribution(e, identities)
-        if who == "federated_other":
+        if who in ("federated_other", None):          # совпало с фильтром AE, но не приписано — не игнорируем
             unattributed += 1
         elif who:
             add("ADMIN:" + str((e.get("protoPayload") or {}).get("methodName")))
     access = src.logs(f'{_logname(src.project, "data_access")} AND {window}')
     for e in access:
-        if attribution(e, identities) == "federated_other":
+        if attribution(e, identities) in ("federated_other", None):
             unattributed += 1
             continue
         v = data_access_violation(e, identities)
@@ -565,9 +591,12 @@ def run_audit(src: GcpAuditSource, since_iso: str, identities: list[str], waterm
                    f'protoPayload.serviceName="iam.googleapis.com" AND protoPayload.methodName:"WorkloadIdentityPool"')
     wif_doc, wif_broken = wif_from_logs(wip, state, uid_to_account)
     iam += wif_broken
-    if wif_doc is not None:
+    if wif_doc is not None and not wif_broken:
         from tools.autonomy import wif_check
-        rows = wif_check.verify(wif_check.from_snapshot(wif_doc, "admin-activity"))
+        try:
+            rows = wif_check.verify(wif_check.from_snapshot(wif_doc, "admin-activity"))
+        except ValueError as e:                        # конфигурация вне модели оценщика — не PASS
+            rows = [{"case": "model", "got": str(e)[:120], "status": "FAIL"}]
         bad = [f"{r['case']}→{r['got']}" for r in rows if r["status"] != "PASS"]
         if bad:
             iam.append(f"WIF: инвариант S1 нарушен ({', '.join(bad)[:200]})")
