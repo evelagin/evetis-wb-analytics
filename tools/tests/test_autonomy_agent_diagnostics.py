@@ -410,11 +410,33 @@ def test_scope_guard_parser_keeps_only_safe_fields(tmp_path):
 
 
 # ------------------------------------------------------------ воркфлоу и рантайм ---
+# Точная версия Claude Code для Engineer и Reviewer. 2.1.251 не знала модель claude-opus-5-5
+# (M6 Phase 1, run 36310863609: API 400 «version 2.1.280 or newer is required»).
+CLAUDE_CODE_PIN = "2.1.280"
+INSTALL_RX = r"npm install -g @anthropic-ai/claude-code@(\S+)"
+
+
 @pytest.mark.parametrize("name", ["autonomy-engineer.yml", "autonomy-review.yml"])
 def test_node_22_and_claude_code_pin(name):
     src = (WF / name).read_text()
     assert re.search(r'node-version: "22"', src) and 'node-version: "20"' not in src
-    assert "@anthropic-ai/claude-code@2.1.251" in src
+    assert re.findall(INSTALL_RX, src) == [CLAUDE_CODE_PIN]
+
+
+def test_claude_code_version_is_identical_exact_and_the_only_install_path():
+    """Обе роли — одна точная версия; ни @latest, ни диапазона, ни другого способа установки CLI."""
+    pins = {n: re.findall(INSTALL_RX, (WF / n).read_text()) for n in ("autonomy-engineer.yml", "autonomy-review.yml")}
+    assert pins == {"autonomy-engineer.yml": [CLAUDE_CODE_PIN], "autonomy-review.yml": [CLAUDE_CODE_PIN]}
+    for wf in sorted(WF.glob("*.yml")):
+        src = wf.read_text()
+        for m in re.finditer(r"claude-code(@[0-9A-Za-z.+~^<>=*-]+)?", src):
+            line = src[src.rfind("\n", 0, m.start()) + 1: src.find("\n", m.end())]
+            if line.lstrip().startswith("#"):
+                continue
+            assert m.group(0) == f"claude-code@{CLAUDE_CODE_PIN}", f"{wf.name}: {line.strip()}"
+            assert re.fullmatch(r"\s*(- )?run: npm install -g @anthropic-ai/claude-code@\d+\.\d+\.\d+", line) or \
+                "# @anthropic-ai/claude-code@" in line, f"{wf.name}: непредусмотренная установка CLI: {line.strip()}"
+        assert "@latest" not in src and "npx @anthropic-ai" not in src and "claude.ai/install" not in src, wf.name
 
 
 @pytest.mark.parametrize("name", ["autonomy-engineer.yml", "autonomy-review.yml"])
