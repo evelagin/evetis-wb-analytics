@@ -12,7 +12,8 @@
 Проверки (любое нарушение — отказ, запрет по умолчанию):
   P1. Файл = ровно один CREATE OR REPLACE VIEW с OPTIONS(description); без DML/скриптов, без
       `SELECT *` в выходе (контракт колонок явный) — разбор общий с validate_current_sql.
-  P2. Имя представления = путь файла; объект объявлен в PACKAGE.json, лишних файлов нет.
+  P2. Имя представления = путь файла; объект объявлен в PACKAGE.json, лишних файлов нет; объект
+      пакета не совпадает по имени с таблицей контракта (представление не подменяет таблицу).
   P3. Каждая ссылка — `__tenant__.<ключ>.<объект>`; другого проекта нет; ключ — датасет контракта.
   P4. Политика чтения слоёв: ozon_mart ← {ozon_raw, ref, ozon_mart}; tenant_ops ← {+tenant_ops};
       analytics_share ← {ozon_mart, tenant_ops, analytics_share} — клиентский слой не читает RAW.
@@ -24,6 +25,9 @@
   P8. Запрещённые литералы: идентификаторы EVETIS и платформы, tenant_id, проекты арендаторов,
       артикулы EVT-*, номера отправлений, ИНН/ОГРН-подобные строки, календарные даты 19xx/20xx
       (бизнес-даты — только через конфигурацию арендатора), известные калибровки EVETIS.
+      Дополнительно по дереву разбора (любые кавычки, любой регистр): числовой литерал — только
+      целое до трёх знаков (идентификаторы типов, версии, 0/1); строка-число — так же; строка-
+      дата — только граница открытого интервала '9999-12-31'. Калибровки и даты — конфигурация.
 """
 from __future__ import annotations
 
@@ -69,7 +73,7 @@ BANNED: tuple[tuple[str, re.Pattern], ...] = tuple(
         ("идентификатор платформы", re.compile(re.escape(PL.PLATFORM_PROJECT_ID) + "|" + PL.PLATFORM_PROJECT_NUMBER)),
         ("tenant_id в коде пакета", re.compile(r"\bclient_\d+", re.I)),
         ("проект арендатора в коде пакета", re.compile(r"mpa-t\d?-", re.I)),
-        ("артикул EVETIS", re.compile(r"\bEVT-")),
+        ("артикул EVETIS", re.compile(r"\bEVT-", re.I)),
         ("номер отправления", re.compile(r"'\d{5,}-\d{3,}-\d+'")),
         ("ИНН/ОГРН-подобная строка", re.compile(r"'(?:\d{10}|\d{12}|\d{13}|\d{15})'")),
         ("календарная дата в коде (бизнес-даты — только конфигурация)", re.compile(r"'(?:19|20)\d\d-\d\d-\d\d")),
@@ -155,6 +159,7 @@ def load_package(root: Path = PACKAGE_DIR, contract: dict | None = None) -> tupl
         for reason, rx in BANNED:
             if rx.search(sql):
                 findings.append(f"{subject}: запрещённый литерал — {reason} (P8)")
+        findings += _literal_findings(sql, subject)
         before = len(findings)
         vf: list = []
         facts = VC.analyze_sql(sql, subject, vf)
@@ -185,6 +190,32 @@ def load_package(root: Path = PACKAGE_DIR, contract: dict | None = None) -> tupl
     return order, findings
 
 
+SMALL_INT_RE = re.compile(r"[0-9]{1,3}")
+NUMBER_RE = re.compile(r"[+-]?(?:[0-9]+(?:\.[0-9]*)?|\.[0-9]+)(?:[eE][+-]?[0-9]+)?")
+DATE_LIKE_RE = re.compile(r"[0-9]{4}-[0-9]{1,2}-[0-9]{1,2}")
+OPEN_INTERVAL_END = "9999-12-31"
+
+
+def _literal_findings(sql: str, subject: str) -> list[str]:
+    """P8 по дереву разбора: литерал, который мог бы нести калибровку, бизнес-дату или
+    идентификатор, независимо от кавычек и регистра."""
+    try:
+        tree = sqlglot.parse_one(sql, read=DIALECT)
+    except SqlglotError:
+        return []                      # синтаксис разбирает P1
+    out = []
+    for lit in tree.find_all(exp.Literal):
+        v = str(lit.this).strip()
+        if not lit.is_string:
+            if not SMALL_INT_RE.fullmatch(v):
+                out.append(f"{subject}: числовой литерал {v!r} — допустимы только целые до трёх знаков (P8)")
+        elif NUMBER_RE.fullmatch(v) and not SMALL_INT_RE.fullmatch(v):
+            out.append(f"{subject}: число в строке {v!r} (P8)")
+        elif DATE_LIKE_RE.match(v) and v != OPEN_INTERVAL_END:
+            out.append(f"{subject}: дата в строке {v!r} — бизнес-даты только из конфигурации (P8)")
+    return out
+
+
 def _topological(objects: dict, findings: list) -> list[PackageObject]:
     deps = {k: {r for r in o.refs if r in objects} for k, o in objects.items()}
     done, order, visiting = set(), [], set()
@@ -212,6 +243,9 @@ def _check_references_and_columns(order: list[PackageObject], contract: dict, fi
     known: dict[tuple[str, str], dict[str, str]] = dict(tables)
     for o in order:
         subject = _rel(o.path)
+        if (o.dataset_key, o.name) in tables:
+            findings.append(f"{subject}: объект пакета совпадает по имени с таблицей контракта "
+                            f"{o.dataset_key}.{o.name} — представление не подменяет таблицу (P2)")
         missing = [r for r in sorted(o.refs) if r not in known]
         for r in missing:
             findings.append(f"{subject}: ссылка на {r[0]}.{r[1]} — нет ни в пакете выше по порядку, ни в "
