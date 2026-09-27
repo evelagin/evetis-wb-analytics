@@ -20,7 +20,7 @@ from pathlib import Path
 REPO = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(REPO))
 
-from tools.autonomy.schema import require_valid  # noqa: E402
+from tools.autonomy.schema import load_schema, require_valid  # noqa: E402
 from tools.autonomy.state import StateStore  # noqa: E402
 
 
@@ -94,12 +94,56 @@ def _orchestrator(a, store: StateStore):
                         trusted_base_ref=getattr(a, "trusted_base_ref", None))
 
 
+# Код выхода недоверенного job'а агента: 0 — вывод есть; 3 — агент отказал, но диагностика записана и
+# передаётся доверенному ingest (ДОКУМЕНТИРОВАННАЯ передача: workflow пишет ::error:: и не прячет отказ);
+# любой иной код — сбой обёртки, job падает.
+HANDOFF_EXIT = 3
+
+
+def _handoff_code(diag: Path) -> int:
+    try:
+        return 0 if json.loads(diag.read_text(encoding="utf-8"))["outcome"] == "SUCCESS" else HANDOFF_EXIT
+    except (OSError, ValueError, KeyError):
+        return HANDOFF_EXIT
+
+
+def _scope_guard(a) -> dict | None:
+    """Последняя JSON-строка вывода сторожа scope этого job'а. Ошибка чтения — None (не повод падать)."""
+    path = getattr(a, "scope_guard_file", None)
+    if not path:
+        return None
+    try:
+        lines = [ln for ln in Path(path).read_text(encoding="utf-8").splitlines() if ln.strip().startswith("{")]
+        return json.loads(lines[-1]) if lines else None
+    except (OSError, ValueError):
+        return None
+
+
+def _diag_summary(path: Path) -> int:
+    from tools.autonomy import diagnostics as D
+    from tools.autonomy.agents import sha256_file
+    from tools.autonomy.schema import validate as _validate
+    if not path.exists():
+        print("Диагностика агента: файл отсутствует")
+        return 0
+    try:
+        doc = json.loads(path.read_text(encoding="utf-8"))
+        errs = _validate(doc, load_schema("agent_diagnostics"))
+    except ValueError:
+        doc, errs = None, ["не JSON"]
+    if errs:
+        print("Диагностика агента: файл не соответствует схеме")
+        return 0
+    print(D.summary_line(doc, sha256_file(path)))
+    return 0
+
+
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     sub = ap.add_subparsers(dest="cmd", required=True)
     v = sub.add_parser("validate"); v.add_argument("--kind", required=True,
                                                    choices=["incident", "objective", "review_verdict",
-                                                            "engineer_report", "run_state"])
+                                                            "engineer_report", "run_state", "agent_diagnostics"])
     v.add_argument("file")
     w = sub.add_parser("watch"); w.add_argument("--state-dir", required=True); w.add_argument("--out", required=True)
     w.add_argument("--fixture"); w.add_argument("--live", action="store_true"); w.add_argument("--project")
@@ -121,18 +165,23 @@ def main(argv=None) -> int:
         p.add_argument("--sandbox-root", default=str(Path.home() / ".cache" / "evetis-ae" / "sandboxes"))
         p.add_argument("--stop-before", nargs="*", default=[]); p.add_argument("--dry-run", action="store_true")
         p.add_argument("--trusted-base-ref", help="repository_sha прогона обязан быть предком этого ref")
+        p.add_argument("--scope-guard-file", help="вывод anthropic_scope check этого job'а (в диагностику)")
         if name == "verify-ci":
             p.add_argument("--repo", dest="verify_repo", required=True, help="OWNER/NAME для API Actions")
             p.add_argument("--timeout-minutes", type=int); p.add_argument("--poll-seconds", type=int)
     st = sub.add_parser("status"); st.add_argument("--state-dir", required=True); st.add_argument("--run-id")
     r = sub.add_parser("report"); r.add_argument("--state-dir", required=True); r.add_argument("--run-id", required=True)
     n = sub.add_parser("next-pass"); n.add_argument("--state-dir", required=True); n.add_argument("--run-id", required=True)
+    ds = sub.add_parser("diag-summary", help="строка итога по файлу диагностики агента (job summary)")
+    ds.add_argument("--file", required=True)
     a = ap.parse_args(argv)
 
     if a.cmd == "validate":
         require_valid(json.loads(Path(a.file).read_text(encoding="utf-8")), a.kind)
         print(f"OK: {a.file} валиден по {a.kind}.schema.json")
         return 0
+    if a.cmd == "diag-summary":
+        return _diag_summary(Path(a.file))
     store = StateStore(Path(a.state_dir))
     if a.cmd == "watch":
         from tools.autonomy.watcher import fixture_source, live_source, watch
@@ -163,9 +212,10 @@ def main(argv=None) -> int:
     if a.cmd == "agent-run":
         # Недоверенный job инженера: авторитетное состояние не меняется.
         from tools.autonomy.orchestrator import agent_run
-        hashes = agent_run(lambda scratch: _orchestrator(a, scratch), store, a.run_id, Path(a.out))
+        hashes = agent_run(lambda scratch: _orchestrator(a, scratch), store, a.run_id, Path(a.out),
+                           scope_guard=_scope_guard(a))
         print(json.dumps({"run_id": a.run_id, "outputs": hashes}, ensure_ascii=False))
-        return 0
+        return _handoff_code(Path(a.out) / "engineer_diagnostics.json")
     if a.cmd == "collect":
         # Недоверенный job тестов: исполняет код кандидата, решений не принимает.
         from tools.autonomy.orchestrator import collect_candidate_evidence
@@ -177,10 +227,11 @@ def main(argv=None) -> int:
         # Только ревьюер, без перехода состояния: вердикт сохраняется для job'а гейткипера.
         from tools.autonomy.orchestrator import review_only
         a.project = a.project or None
-        from tools.autonomy.agents import sha256_file
-        path = review_only(_orchestrator(a, store), a.run_id, Path(a.out) if a.out else None)
-        print(json.dumps({"run_id": a.run_id, "reviewer.json": sha256_file(path)}, ensure_ascii=False))
-        return 0
+        out = Path(a.out) if a.out else None
+        hashes = review_only(_orchestrator(a, store), a.run_id, out, scope_guard=_scope_guard(a))
+        print(json.dumps({"run_id": a.run_id, "outputs": hashes}, ensure_ascii=False))
+        diag = (out or store.root / "artifacts" / a.run_id) / "reviewer_diagnostics.json"
+        return _handoff_code(diag)
     if a.cmd == "verify-ci":
         # Доверенный job ci-verify (actions: read): ждать обязательные workflows опубликованного SHA.
         import time
@@ -216,9 +267,10 @@ def main(argv=None) -> int:
         print(next_pass(store, a.run_id))
         return 0
     if a.cmd == "report":
+        from tools.autonomy.redact import safe_text
         from tools.autonomy.report import render_report
         run = store.load(a.run_id)
-        print(render_report(run, store.root / "artifacts" / run["run_id"]))
+        print(safe_text(render_report(run, store.root / "artifacts" / run["run_id"])))
         return 0
     return 2
 

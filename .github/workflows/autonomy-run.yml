@@ -139,7 +139,7 @@ jobs:
       step: gate
       run_id: ${{ needs.prepare.outputs.run_id }}
       pending_artifact: ae-${{ needs.prepare.outputs.run_id }}-review-${{ github.run_attempt }}
-      expect: ${{ needs.review.outputs.reviewer_sha != '' && format('reviewer.json={0}', needs.review.outputs.reviewer_sha) || '' }}
+      expect: ${{ needs.review.outputs.hashes }}
 
   publish:
     needs: [prepare, gate]

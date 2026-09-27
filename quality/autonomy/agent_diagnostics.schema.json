@@ -1,0 +1,96 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/evelagin/evetis-wb-analytics/quality/autonomy/agent_diagnostics.schema.json",
+  "title": "AE v1 agent diagnostics (schema_version 1)",
+  "description": "Диагностика job'а агента (инженер или ревьюер) при ЛЮБОМ исходе. Пишется недоверенным job'ом ПОСЛЕ редакции; доверенный job сверяет sha256, эту схему и повторно ищет секретоподобное — только потом кладёт копию в autonomy-state. Свободный текст — только summary, stdout_tail, stderr_tail, scratch_reason; остальные строки ограничены шаблонами. Версия схемы меняется только вместе с проверкой доверенной стороны: неизвестное поле или версия — отказ.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "kind", "job_role", "run_id", "outcome", "failure_stage", "failure_class",
+               "claude_code_version", "node_version", "scope_guard", "scratch_state", "scratch_reason",
+               "expected_artifacts", "actually_created_artifacts", "invocations", "limitations", "redaction"],
+  "properties": {
+    "schema_version": {"const": 1},
+    "kind": {"const": "agent_diagnostics"},
+    "job_role": {"enum": ["engineer", "reviewer"]},
+    "run_id": {"type": "string", "pattern": "^run-[0-9]{8}T[0-9]{6}Z-[0-9a-f]{8}$"},
+    "outcome": {"enum": ["SUCCESS", "FAILURE"]},
+    "failure_stage": {"enum": ["NONE", "NO_INVOCATION", "BINARY_MISSING", "PRE_INVOKE", "PROCESS_SPAWN", "TIMEOUT",
+                               "PROCESS_EXIT_NONZERO", "OUTPUT_NOT_JSON", "CLI_REPORTED_ERROR", "NO_STRUCTURED_OUTPUT",
+                               "SCHEMA_INVALID", "WRAPPER_EXCEPTION", "REDACTION_BLOCKED"]},
+    "failure_class": {"enum": ["NONE", "INFRA", "CLI", "API", "AGENT_OUTPUT", "WRAPPER", "REDACTION"]},
+    "claude_code_version": {"type": ["string", "null"], "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+([.+-][A-Za-z0-9.]{1,20})?$"},
+    "node_version": {"type": ["string", "null"], "pattern": "^v?[0-9]+\\.[0-9]+\\.[0-9]+$"},
+    "scope_guard": {
+      "type": ["object", "null"],
+      "additionalProperties": false,
+      "required": ["provenance", "decision", "scope", "expires_in", "request_id"],
+      "properties": {
+        "provenance": {"const": "untrusted_job_guard_stdout"},
+        "decision": {"enum": ["PASS", "PASS_WITH_EXCEPTION", "FAIL", "UNKNOWN"]},
+        "scope": {"type": ["string", "null"], "pattern": "^[a-z_:]{1,60}( [a-z_:]{1,60}){0,5}$"},
+        "expires_in": {"type": ["integer", "null"], "minimum": 0, "maximum": 86400},
+        "request_id": {"type": ["string", "null"], "pattern": "^req_[A-Za-z0-9]{8,64}$"}
+      }
+    },
+    "scratch_state": {"type": ["string", "null"], "pattern": "^[A-Z_]{3,30}$"},
+    "scratch_reason": {"type": "string", "maxLength": 500},
+    "expected_artifacts": {"type": "array", "maxItems": 4, "uniqueItems": true,
+                           "items": {"enum": ["engineer_plan.json", "engineer_implement.json",
+                                              "engineer_implement.patch", "reviewer.json"]}},
+    "actually_created_artifacts": {"type": "array", "maxItems": 4, "uniqueItems": true,
+                                   "items": {"enum": ["engineer_plan.json", "engineer_implement.json",
+                                                      "engineer_implement.patch", "reviewer.json"]}},
+    "invocations": {
+      "type": "array",
+      "maxItems": 12,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["role", "attempt", "failure_stage", "failure_class", "process_started", "pre_invoke_succeeded",
+                     "exit_code", "exception_type", "elapsed_ms", "output_format", "is_error", "subtype",
+                     "api_error_status", "api_error_type", "duration_ms", "duration_api_ms", "num_turns",
+                     "total_cost_usd", "usage", "messages_api_reached", "model_response_began", "summary",
+                     "stdout_tail", "stderr_tail"],
+        "properties": {
+          "role": {"enum": ["engineer_plan", "engineer_implement", "reviewer"]},
+          "attempt": {"type": "integer", "minimum": 1, "maximum": 12},
+          "failure_stage": {"enum": ["NONE", "BINARY_MISSING", "PRE_INVOKE", "PROCESS_SPAWN", "TIMEOUT",
+                                     "PROCESS_EXIT_NONZERO", "OUTPUT_NOT_JSON", "CLI_REPORTED_ERROR",
+                                     "NO_STRUCTURED_OUTPUT", "SCHEMA_INVALID", "WRAPPER_EXCEPTION"]},
+          "failure_class": {"enum": ["NONE", "INFRA", "CLI", "API", "AGENT_OUTPUT", "WRAPPER"]},
+          "process_started": {"type": "boolean"},
+          "pre_invoke_succeeded": {"type": ["boolean", "null"]},
+          "exit_code": {"type": ["integer", "null"], "minimum": -255, "maximum": 255},
+          "exception_type": {"type": ["string", "null"], "pattern": "^[A-Za-z_][A-Za-z0-9_.]{0,79}$"},
+          "elapsed_ms": {"type": ["integer", "null"], "minimum": 0},
+          "output_format": {"enum": ["json", "non_json", "empty", null]},
+          "is_error": {"type": ["boolean", "null"]},
+          "subtype": {"type": ["string", "null"], "pattern": "^[a-z_]{1,40}$"},
+          "api_error_status": {"type": ["integer", "null"], "minimum": 100, "maximum": 599},
+          "api_error_type": {"type": ["string", "null"], "pattern": "^[a-z_]{1,60}$"},
+          "duration_ms": {"type": ["integer", "null"], "minimum": 0},
+          "duration_api_ms": {"type": ["integer", "null"], "minimum": 0},
+          "num_turns": {"type": ["integer", "null"], "minimum": 0},
+          "total_cost_usd": {"type": ["number", "null"], "minimum": 0, "maximum": 1000},
+          "usage": {
+            "type": ["object", "null"],
+            "additionalProperties": false,
+            "properties": {
+              "input_tokens": {"type": "integer", "minimum": 0},
+              "output_tokens": {"type": "integer", "minimum": 0},
+              "cache_creation_input_tokens": {"type": "integer", "minimum": 0},
+              "cache_read_input_tokens": {"type": "integer", "minimum": 0}
+            }
+          },
+          "messages_api_reached": {"type": ["boolean", "null"]},
+          "model_response_began": {"type": ["boolean", "null"]},
+          "summary": {"type": "string", "maxLength": 300},
+          "stdout_tail": {"type": "string", "maxLength": 2000},
+          "stderr_tail": {"type": "string", "maxLength": 1000}
+        }
+      }
+    },
+    "limitations": {"type": "array", "maxItems": 8, "items": {"type": "string", "maxLength": 300}},
+    "redaction": {"enum": ["CLEAN", "REDACTION_BLOCKED"]}
+  }
+}

@@ -16,7 +16,7 @@ from pathlib import Path
 from typing import Callable
 
 from tools.autonomy import gatekeeper
-from tools.autonomy.agents import AgentAdapter, AgentResult, SCHEMA_OF_ROLE
+from tools.autonomy.agents import AgentAdapter, AgentResult, ReplayAdapter, SCHEMA_OF_ROLE
 from tools.autonomy.evidence import EvidenceRunner, Sandbox
 from tools.autonomy.redact import RedactionError, diff_added_secrets, ensure_clean, redact_obj, redact_text, safe_dumps, safe_text
 from tools.autonomy.policy import (detect_gate_weakening, forbidden_paths, load_policy, plan_requires_ack,
@@ -61,6 +61,8 @@ class Orchestrator:
         # Базовый коммит прогона исполняется доверенным job'ом (доказательства базы). Поэтому он
         # обязан лежать в истории доверенной ветки: цель с чужим sha — это чужой код.
         self.trusted_base_ref = trusted_base_ref
+        # Записи вызовов агента в ЭТОМ процессе (tools/autonomy/diagnostics.py) — для диагностики job'а.
+        self.diagnostics: list[dict] = []
 
     # ------------------------------------------------------------ артефакты ---
     def _art(self, run: dict) -> Path:
@@ -70,6 +72,7 @@ class Orchestrator:
 
     def _put(self, run: dict, name: str, doc) -> None:
         p = self._art(run) / name
+        p.parent.mkdir(parents=True, exist_ok=True)
         if name.endswith(".patch"):
             # Дифф кандидата не редактируется (это изменило бы код): секретоподобное в ДОБАВЛЕННЫХ
             # строках отсеивается раньше (_implement → UNSAFE); здесь — последний рубеж, fail closed.
@@ -121,8 +124,10 @@ class Orchestrator:
         while True:
             if self._over_time(run):
                 return run, None
+            if isinstance(adapter, ReplayAdapter):
+                adapter.bind_run(run["run_id"])        # диагностика чужого прогона отвергается при проверке
             res = adapter.run(role, prompt, workdir, load_schema(SCHEMA_OF_ROLE[role]))
-            run = {**run, "usage": run["usage"] + [{"role": role, "adapter": adapter.name, **res.usage}]}
+            run = self._record_agent(run, adapter, role, res)
             a = self.audit(run)
             a = {"status": "PASS" if a == 0 else "FAIL", "mutations": a} if isinstance(a, int) else a
             # BLOCKED — доказательства нет; это НЕ ноль мутаций, гейткипер даст INCONCLUSIVE.
@@ -136,6 +141,71 @@ class Orchestrator:
                 return run, res
             run = {**run, "infra_retries": run["infra_retries"] + 1}
             self.store.save(run)
+
+    def _record_agent(self, run: dict, adapter: AgentAdapter, role: str, res: AgentResult) -> dict:
+        """Запись вызова в usage и отредактированная диагностика в artifacts/<run>/diagnostics/.
+
+        Диагностика недоверенного job'а (ReplayAdapter) приходит уже проверенной (sha256, схема,
+        секреты); здесь дополнительно сверяется run_id. Своя запись вызова — оборачивается в документ."""
+        from tools.autonomy import diagnostics as D
+        entry = {"role": role, "adapter": adapter.name, **res.usage}
+        doc, d = None, res.diagnostics
+        job = D.JOB_OF_ROLE[role]
+        if d is None and not isinstance(adapter, ReplayAdapter):
+            # Адаптер без своей диагностики (сценарный, будущий): минимальная запись по результату.
+            d = D.new_invocation(role)
+            if res.structured is None:
+                d.update(failure_stage="OUTPUT_NOT_JSON" if res.transient else "NO_STRUCTURED_OUTPUT",
+                         exit_code=max(-255, min(255, res.exit_code)), summary=redact_text(res.error or "")[:D.SUMMARY])
+            D.classify(d, self.policy["retry"]["transient_error_markers"])
+            res.diagnostics = d
+        if d is not None and "invocations" in d:
+            if d["run_id"] != run["run_id"]:
+                res.diagnostics = None
+                res.error = f"{res.error or ''}; диагностика отвергнута: run_id чужого прогона".lstrip("; ")
+                entry["diagnostics"] = {"rejected": "run_id чужого прогона"}
+            else:
+                doc = d
+        elif d is not None:
+            inv = {**d, "attempt": min(1 + sum(1 for x in self.diagnostics if x["role"] == role), 12)}
+            self.diagnostics.append(inv)
+            env = adapter.environment() if hasattr(adapter, "environment") else {}
+            doc = D.bundle(job, run["run_id"], [inv], env=env, scratch_state=run["state"])
+        rejected = adapter.diagnostics(job)[1] if isinstance(adapter, ReplayAdapter) else None
+        if rejected:
+            entry["diagnostics"] = {"rejected": redact_text(rejected)[:200]}
+        if doc is not None:
+            text, doc = D.finalize(doc)
+            seq = 1 + sum(1 for u in run["usage"] if u.get("role") == role)
+            name = f"diagnostics/{role}-{seq:02d}.json"
+            path = self._art(run) / name
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(text, encoding="utf-8")
+            last = doc["invocations"][-1] if doc["invocations"] else {}
+            entry["diagnostics"] = {
+                "file": name, "sha256": hashlib.sha256(text.encode("utf-8")).hexdigest(),
+                "artifact_sha256": adapter.expect.get(f"{job}_diagnostics.json")
+                if isinstance(adapter, ReplayAdapter) else None,
+                "outcome": doc["outcome"], "failure_stage": doc["failure_stage"],
+                "failure_class": doc["failure_class"], "exit_code": last.get("exit_code"),
+                "api_error_status": last.get("api_error_status"), "api_error_type": last.get("api_error_type"),
+                "messages_api_reached": last.get("messages_api_reached"), "redaction": doc["redaction"]}
+            res.diagnostics = doc if "invocations" in (d or {}) else res.diagnostics
+        return {**run, "usage": run["usage"] + [entry]}
+
+    @staticmethod
+    def _fail_state(res: AgentResult) -> str:
+        """FAILED (терминальный) — только по transient-признаку ДОВЕРЕННОГО адаптера этого процесса.
+        Класс из диагностики недоверенного job'а на терминальность не влияет: прогон паркуется в
+        BLOCKED (владелец может возобновить), а класс INFRA_FAILURE записывается в причину."""
+        return "FAILED" if res.transient else "BLOCKED"
+
+    @staticmethod
+    def _why(res: AgentResult) -> str:
+        d = res.diagnostics or {}
+        cls = d.get("failure_class")
+        tag = (f"[{d.get('failure_stage')}/{cls}{' · INFRA_FAILURE' if cls == 'INFRA' else ''}] " if d else "")
+        return tag + redact_text(res.error or "")
 
     def _prompt(self, name: str, **kw) -> str:
         text = (PROMPTS / f"{name}.md").read_text(encoding="utf-8")
@@ -207,8 +277,7 @@ class Orchestrator:
         if res is None:
             return self.store.transition(run, "BLOCKED", "исчерпан бюджет времени до плана")
         if res.structured is None:
-            return self.store.transition(run, "FAILED" if res.transient else "BLOCKED",
-                                         f"план не получен: {redact_text(res.error or '')}")
+            return self.store.transition(run, self._fail_state(res), f"план не получен: {self._why(res)}")
         # Хеш плана (для ACK владельца) — по той же, отредактированной форме, что сохраняется на диск.
         plan = redact_obj(res.structured)
         self._put(run, "plan.json", plan)
@@ -253,8 +322,7 @@ class Orchestrator:
         if run["production_mutations"]:
             return self._unsafe(run, [], "зафиксированы production-мутации во время работы инженера")
         if res.structured is None:
-            return self.store.transition(run, "FAILED" if res.transient else "BLOCKED",
-                                         f"кандидат не получен: {redact_text(res.error or '')}")
+            return self.store.transition(run, self._fail_state(res), f"кандидат не получен: {self._why(res)}")
         report = res.structured
         leaked_secrets = diff_added_secrets(patch)
         if leaked_secrets:
@@ -386,6 +454,9 @@ class Orchestrator:
         run, res, review = self._perform_review(run)
         if res is None:
             return self.store.transition(run, "BLOCKED", "исчерпан бюджет времени на ревью")
+        if review is None and res.structured is None and res.diagnostics is not None:
+            # Отказ ревьюера с диагностикой — явная классификация, а не «ревью не проведено» у гейткипера.
+            return self.store.transition(run, self._fail_state(res), f"ревью не получено: {self._why(res)}")
         if review is not None:
             self._put(run, "review.json", review)
         weakening = ev.get("gate_weakening", [])
@@ -463,20 +534,36 @@ class Orchestrator:
         return run
 
 
-def review_only(orch: Orchestrator, run_id: str, out_dir: Path | None = None) -> Path:
+def review_only(orch: Orchestrator, run_id: str, out_dir: Path | None = None,
+                scope_guard: dict | None = None) -> dict[str, str]:
     """Для job'а ревьюера в CI: выполнить ревью и сохранить вердикт, НЕ меняя состояние.
-    Переход делает job гейткипера на другой машине, воспроизводя вердикт (ReplayAdapter)."""
+    Переход делает job гейткипера на другой машине, воспроизводя вердикт (ReplayAdapter).
+    При ЛЮБОМ исходе пишется reviewer_diagnostics.json; вердикт — только если он валиден."""
+    from tools.autonomy import diagnostics as D
+    from tools.autonomy.agents import sha256_file
     run = orch.store.load(run_id)
     if run["state"] != "REVIEWING":
         raise TransitionError(f"{run_id}: ревью возможно только в состоянии REVIEWING, а не {run['state']}")
-    run, res, review = orch._perform_review(run)
-    if review is None:
-        raise TransitionError(f"{run_id}: ревьюер не вернул валидный вердикт: {res.error if res else 'время'}")
     target = Path(out_dir) if out_dir else orch._art(run)
     target.mkdir(parents=True, exist_ok=True)
-    path = target / "reviewer.json"
-    path.write_text(safe_dumps(review, indent=2), encoding="utf-8")
-    return path
+    review, res, exc = None, None, None
+    try:
+        run, res, review = orch._perform_review(run)
+    except Exception as e:           # noqa: BLE001 — отказ фиксируется диагностикой, не теряется
+        exc = type(e).__name__
+    if review is not None:
+        (target / "reviewer.json").write_text(safe_dumps(review, indent=2), encoding="utf-8")
+    reason = "" if review is not None else (
+        f"ревьюер не вернул валидный вердикт: {res.error}" if res is not None and res.error else
+        ("исчерпан бюджет времени на ревью" if exc is None and res is None else ""))
+    env = orch.reviewer.environment() if hasattr(orch.reviewer, "environment") else {}
+    text, _ = D.finalize(D.bundle("reviewer", run_id, list(orch.diagnostics), scratch_state=run["state"],
+                                  scratch_reason=reason, scope_guard=scope_guard, expected=["reviewer.json"],
+                                  created=["reviewer.json"] if review is not None else [], env=env,
+                                  wrapper_exception=exc))
+    (target / "reviewer_diagnostics.json").write_text(text, encoding="utf-8")
+    return {n: sha256_file(target / n) for n in ("reviewer.json", "reviewer_diagnostics.json")
+            if (target / n).exists() and (n != "reviewer.json" or review is not None)}
 
 
 def next_pass(store: StateStore, run_id: str) -> str:
@@ -502,33 +589,55 @@ def next_pass(store: StateStore, run_id: str) -> str:
 
 
 def agent_run(make_orchestrator: Callable[[StateStore], Orchestrator], store: StateStore, run_id: str,
-              out_dir: Path) -> dict[str, str]:
+              out_dir: Path, scope_guard: dict | None = None) -> dict[str, str]:
     """Недоверенный job инженера: исполнить агента на ЧЕРНОВОЙ копии состояния.
 
     Авторитетное хранилище не меняется. Наружу выходят только ответы агента (`<role>.json`,
     для реализации — полный патч кандидата относительно базы) и их sha256. Доверенный job
-    воспроизводит их через ReplayAdapter, пересчитывая дифф и счётчики сам."""
+    воспроизводит их через ReplayAdapter, пересчитывая дифф и счётчики сам.
+
+    engineer_diagnostics.json пишется при ЛЮБОМ исходе (в т.ч. исключении) и всегда входит в хеши:
+    доверенный ingest классифицирует отказ, а не видит «пустой вывод» (инцидент M6 Phase 1)."""
     import shutil
     import tempfile
+    from tools.autonomy import diagnostics as D
     out_dir = Path(out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
-    with tempfile.TemporaryDirectory(prefix="ae-scratch-") as td:
-        scratch = StateStore(Path(td) / "state")
-        shutil.copytree(store.root, scratch.root, dirs_exist_ok=True)
-        orch = make_orchestrator(scratch)
-        before = len(scratch.load(run_id)["usage"])
-        run = orch.advance(run_id, stop_before={"TESTING", "REVIEWING"})
-        roles = [u["role"] for u in run["usage"][before:]]
-        art = orch._art(run)
-        if "engineer_plan" in roles and (art / "plan.json").exists():
-            shutil.copy(art / "plan.json", out_dir / "engineer_plan.json")
-        if "engineer_implement" in roles and (art / "engineer_report.json").exists():
-            shutil.copy(art / "engineer_report.json", out_dir / "engineer_implement.json")
-            (out_dir / "engineer_implement.patch").write_text(orch._get(run, "candidate.patch") or "",
-                                                              encoding="utf-8")
-        (out_dir / "usage.json").write_text(safe_dumps(run["usage"][before:]), encoding="utf-8")
-        (out_dir / "scratch_state.json").write_text(json.dumps({"state": run["state"], "roles": roles},
-                                                               ensure_ascii=False), encoding="utf-8")
+    invs, env, scratch_state, reason, exc, start_state = [], {}, None, "", None, None
+    try:
+        start_state = store.load(run_id)["state"]
+        with tempfile.TemporaryDirectory(prefix="ae-scratch-") as td:
+            scratch = StateStore(Path(td) / "state")
+            shutil.copytree(store.root, scratch.root, dirs_exist_ok=True)
+            orch = make_orchestrator(scratch)
+            try:
+                before = len(scratch.load(run_id)["usage"])
+                run = orch.advance(run_id, stop_before={"TESTING", "REVIEWING"})
+                roles = [u["role"] for u in run["usage"][before:]]
+                art = orch._art(run)
+                if "engineer_plan" in roles and (art / "plan.json").exists():
+                    shutil.copy(art / "plan.json", out_dir / "engineer_plan.json")
+                if "engineer_implement" in roles and (art / "engineer_report.json").exists():
+                    shutil.copy(art / "engineer_report.json", out_dir / "engineer_implement.json")
+                    (out_dir / "engineer_implement.patch").write_text(orch._get(run, "candidate.patch") or "",
+                                                                      encoding="utf-8")
+                (out_dir / "usage.json").write_text(safe_dumps(run["usage"][before:]), encoding="utf-8")
+                (out_dir / "scratch_state.json").write_text(json.dumps({"state": run["state"], "roles": roles},
+                                                                       ensure_ascii=False), encoding="utf-8")
+                scratch_state = run["state"]
+                reason = run["transitions"][-1]["reason"] if run.get("transitions") else ""
+            finally:
+                invs = list(orch.diagnostics)
+                env = orch.engineer.environment() if hasattr(orch.engineer, "environment") else {}
+    except Exception as e:           # noqa: BLE001 — отказ фиксируется диагностикой, не теряется
+        exc = type(e).__name__
+    produced = sorted(p.name for p in out_dir.iterdir()
+                      if p.name in ("engineer_plan.json", "engineer_implement.json", "engineer_implement.patch"))
+    expected = sorted({a for i in invs for a in D.ARTIFACTS[i["role"]]}) or D.expected_for_state(start_state)
+    text, _ = D.finalize(D.bundle("engineer", run_id, invs, scratch_state=scratch_state, scratch_reason=reason,
+                                  scope_guard=scope_guard, expected=expected, created=produced, env=env,
+                                  wrapper_exception=exc))
+    (out_dir / "engineer_diagnostics.json").write_text(text, encoding="utf-8")
     from tools.autonomy.agents import sha256_file
     return {p.name: sha256_file(p) for p in sorted(out_dir.iterdir())
             if p.name.startswith("engineer_") or p.name == "reviewer.json"}

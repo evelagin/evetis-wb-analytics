@@ -12,9 +12,11 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import shutil
 import subprocess
 import tempfile
+import time
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Callable, Protocol
@@ -49,6 +51,9 @@ class AgentResult:
     transient: bool = False
     usage: dict = field(default_factory=dict)
     raw_tail: str = ""
+    # Отредактированная диагностика вызова (tools/autonomy/diagnostics.py): у ClaudeCliAdapter — запись
+    # одного вызова, у ReplayAdapter — проверенный документ job'а. У сценарных адаптеров — None.
+    diagnostics: dict | None = None
 
 
 class AgentAdapter(Protocol):
@@ -136,27 +141,84 @@ class ClaudeCliAdapter:
                     "--max-budget-usd", str(b["engineer_max_budget_usd"])]
         return cmd
 
+    def environment(self) -> dict:
+        """Версии рантайма для диагностики (один раз на адаптер). Не вызов модели: только --version."""
+        if getattr(self, "_env", None) is None:
+            def probe(cmd, rx):
+                try:
+                    r = subprocess.run(cmd, capture_output=True, text=True, timeout=15, stdin=subprocess.DEVNULL)
+                    m = re.search(rx, r.stdout or "")
+                    return m.group(0) if m else None
+                except (OSError, subprocess.SubprocessError):
+                    return None
+            self._env = {"claude_code_version": probe([self.binary, "--version"], r"\b\d+\.\d+\.\d+\b")
+                         if shutil.which(self.binary) else None,
+                         "node_version": probe(["node", "--version"], r"v\d+\.\d+\.\d+") if shutil.which("node") else None}
+        return self._env
+
     def run(self, role: str, prompt: str, workdir: Path, schema: dict) -> AgentResult:
+        """Любой исход — AgentResult с диагностикой; исключение обёртки/подпроцесса не пробрасывается."""
+        from tools.autonomy import diagnostics as D
         assert role in ROLES, role
+        inv, t0 = D.new_invocation(role), time.monotonic()
+        markers = load_policy()["retry"]["transient_error_markers"]
+        try:
+            res = self._invoke(role, prompt, workdir, schema, inv, markers)
+        except Exception as e:           # noqa: BLE001 — сбой обёртки фиксируется, а не роняет job без следа
+            inv.update(failure_stage="PROCESS_SPAWN" if not inv["process_started"] and isinstance(e, OSError)
+                       else "WRAPPER_EXCEPTION", exception_type=type(e).__name__,
+                       summary=redact_text(str(e))[:D.SUMMARY])
+            res = AgentResult(role, None, 1, f"сбой обёртки агента: {type(e).__name__}", transient=False)
+        inv["elapsed_ms"] = int((time.monotonic() - t0) * 1000)
+        D.classify(inv, markers)
+        res.diagnostics = inv
+        return res
+
+    def _invoke(self, role, prompt, workdir, schema, inv, markers) -> AgentResult:
+        from tools.autonomy import diagnostics as D
         if not shutil.which(self.binary):
+            inv.update(failure_stage="BINARY_MISSING", summary=f"нет исполняемого файла {self.binary}"[:D.SUMMARY])
             return AgentResult(role, None, 127, f"нет исполняемого файла {self.binary}", transient=False)
         if self.pre_invoke:
             pre = subprocess.run(self.pre_invoke, capture_output=True, text=True)
+            inv["pre_invoke_succeeded"] = pre.returncode == 0
             if pre.returncode != 0:
+                inv.update(failure_stage="PRE_INVOKE", exit_code=pre.returncode,
+                           summary="не обновлён токен идентичности агента")
+                D.set_tails(inv, "", pre.stderr)
                 return AgentResult(role, None, pre.returncode, "не обновлён токен идентичности агента", transient=True)
         try:
+            inv["process_started"] = True
             r = subprocess.run(self.command(role, schema), input=prompt, cwd=workdir, capture_output=True,
                                text=True, timeout=self.timeout_s,
                                env=scrubbed_env(extra=self.env_extra, keep=self.keep_env))
-        except subprocess.TimeoutExpired:
+        except subprocess.TimeoutExpired as e:
+            out = e.stdout.decode(errors="replace") if isinstance(e.stdout, bytes) else (e.stdout or "")
+            err = e.stderr.decode(errors="replace") if isinstance(e.stderr, bytes) else (e.stderr or "")
+            D.set_tails(inv, out, err)
+            inv.update(failure_stage="TIMEOUT", summary=f"превышено время агента ({self.timeout_s} с)")
             return AgentResult(role, None, 124, "превышено время агента", transient=True)
+        except OSError:
+            inv["process_started"] = False
+            raise
+        inv["exit_code"] = max(-255, min(255, r.returncode))
+        D.set_tails(inv, r.stdout, r.stderr)
         tail = redact_tail(r.stdout or "", 2000) + redact_tail(r.stderr or "", 1000)
+        if not (r.stdout or "").strip():
+            inv.update(output_format="empty", failure_stage="PROCESS_EXIT_NONZERO" if r.returncode else "OUTPUT_NOT_JSON",
+                       summary="агент не вывел ничего")
+            return AgentResult(role, None, r.returncode, "вывод агента пуст",
+                               transient=any(m in tail for m in markers), raw_tail=tail)
         try:
             doc = json.loads(r.stdout)
+            if not isinstance(doc, dict):
+                raise json.JSONDecodeError("не объект", r.stdout, 0)
         except json.JSONDecodeError:
-            markers = load_policy()["retry"]["transient_error_markers"]
+            inv.update(output_format="non_json", failure_stage="OUTPUT_NOT_JSON", summary="вывод агента не JSON")
             return AgentResult(role, None, r.returncode, "вывод агента не JSON",
                                transient=any(m in tail for m in markers), raw_tail=tail)
+        inv["output_format"] = "json"
+        D.parse_cli_json(inv, doc)
         usage = {k: doc.get(k) for k in ("total_cost_usd", "num_turns", "duration_ms", "usage", "session_id")
                  if k in doc}
         structured = doc.get("structured_output")
@@ -166,8 +228,14 @@ class ClaudeCliAdapter:
             except json.JSONDecodeError:
                 structured = None
         # Текст ошибки рантайма — в причину: «не JSON» или «ошибка» без текста не диагностируемы.
-        err = (f"агент завершился с ошибкой: {redact_text(str(doc.get('result')))[:300]}" if doc.get("is_error")
-               else _check(role, structured, schema))
+        if doc.get("is_error"):
+            err = f"агент завершился с ошибкой: {redact_text(str(doc.get('result')))[:300]}"
+            inv["failure_stage"] = "CLI_REPORTED_ERROR"
+        else:
+            err = _check(role, structured, schema)
+            if err:
+                inv.update(failure_stage="NO_STRUCTURED_OUTPUT" if structured is None else "SCHEMA_INVALID",
+                           summary=redact_text(err)[:D.SUMMARY])
         return AgentResult(role, structured if err is None else None, r.returncode, err, usage=usage,
                            raw_tail=tail)
 
@@ -243,6 +311,37 @@ class ReplayAdapter:
         if expect is None:
             raise IntegrityError("ReplayAdapter без --expect: вывод недоверенного job'а не с чем сверить")
         self.dir, self.expect = Path(pending_dir), dict(expect)
+        self._diag: dict[str, tuple[dict | None, str | None]] = {}
+        self._run_id: str | None = None
+
+    def bind_run(self, run_id: str) -> None:
+        if self._run_id != run_id:
+            self._run_id, self._diag = run_id, {}
+
+    def diagnostics(self, job: str) -> tuple[dict | None, str | None]:
+        """(проверенная диагностика job'а | None, причина отказа | None). Объявлена, но подменена или
+        отсутствует — IntegrityError (как и любой вывод с объявленным хешем)."""
+        from tools.autonomy import diagnostics as D
+        if job not in self._diag:
+            name = f"{job}_diagnostics.json"
+            if name not in self.expect:
+                self._diag[job] = (None, None)
+            else:
+                path = self.dir / name
+                if not path.is_file():
+                    raise IntegrityError(f"{name}: объявлен производителем, но отсутствует")
+                if path.stat().st_size > D.MAX_BYTES:          # до хеширования: без чтения гигабайтов в память
+                    self._diag[job] = (None, f"диагностика больше {D.MAX_BYTES} байт")
+                    return self._diag[job]
+                data = path.read_bytes()                       # одно чтение: хеш и разбор — одних и тех же байт
+                import hashlib
+                if hashlib.sha256(data).hexdigest() != self.expect.get(name):
+                    raise IntegrityError(f"{name}: sha256 не совпал с объявленным производителем")
+                try:
+                    self._diag[job] = (D.verify_untrusted(data, job, run_id=self._run_id), None)
+                except D.DiagnosticsRejected as e:
+                    self._diag[job] = (None, str(e))
+        return self._diag[job]
 
     def _verified(self, name: str) -> Path:
         path = self.dir / name
@@ -254,12 +353,21 @@ class ReplayAdapter:
         return path
 
     def run(self, role, prompt, workdir, schema):
+        diag, rejected = self.diagnostics("reviewer" if role == "reviewer" else "engineer")
         try:
             structured = json.loads(self._verified(f"{role}.json").read_text(encoding="utf-8"))
             patch = self._verified(f"{role}.patch").read_text(encoding="utf-8") if role == "engineer_implement" else ""
         except AgentNotPermitted as e:
             # Недоверенный job не отдал вывод (например, сам отверг дифф с секретом): управляемый
-            # отказ → BLOCKED, а не падение доверенного шага. Подмена (IntegrityError) — по-прежнему исключение.
+            # отказ → BLOCKED/FAILED, а не падение доверенного шага. Подмена (IntegrityError) — исключение.
+            if diag is not None:
+                why = f"{diag['failure_stage']}/{diag['failure_class']}"
+                detail = diag["scratch_reason"] or next((i["summary"] for i in reversed(diag["invocations"])
+                                                         if i["role"] == role and i["summary"]), "")
+                return AgentResult(role, None, 1, f"недоверенный вывод отсутствует; диагностика {why}: {detail}"[:600],
+                                   diagnostics=diag)
+            if rejected:
+                return AgentResult(role, None, 1, f"недоверенный вывод отсутствует; диагностика отвергнута: {rejected}")
             return AgentResult(role, None, 1, f"недоверенный вывод отсутствует: {e}")
         if role == "engineer_implement":
             # Патч — ПОЛНЫЙ кандидат относительно базового коммита, поэтому песочница сначала
@@ -274,4 +382,4 @@ class ReplayAdapter:
                                        + redact_tail(r.stderr, 300))
         err = _check(role, structured, schema)
         return AgentResult(role, structured if err is None else None, 0 if err is None else 1, err,
-                           usage={"adapter": self.name})
+                           usage={"adapter": self.name}, diagnostics=diag)

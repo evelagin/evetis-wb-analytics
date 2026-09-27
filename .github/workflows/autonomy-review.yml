@@ -18,8 +18,9 @@ on:
         required: false
         default: run
     outputs:
-      reviewer_sha:
-        value: ${{ jobs.review.outputs.reviewer_sha }}
+      hashes:
+        description: "NAME=SHA256 через пробел (reviewer.json, reviewer_diagnostics.json) — для --expect гейткипера"
+        value: ${{ jobs.review.outputs.hashes }}
 
 permissions: {}
 
@@ -32,7 +33,7 @@ jobs:
       contents: read
       id-token: write    # только федерация Claude API
     outputs:
-      reviewer_sha: ${{ steps.review.outputs.reviewer_sha }}
+      hashes: ${{ steps.review.outputs.hashes }}
     env:
       STATE_DIR: ${{ github.workspace }}/.ae-state
       RUN_ID: ${{ inputs.run_id }}
@@ -59,7 +60,7 @@ jobs:
         run: "pip install --only-binary=:all: --require-hashes -r tools/requirements-sql-ci.txt"
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
-          node-version: "20"
+          node-version: "22"   # @anthropic-ai/claude-code@2.1.251: engines node >=22
       - name: install Claude Code (pinned)
         run: npm install -g @anthropic-ai/claude-code@2.1.251
       - name: clone state at pinned sha (read)
@@ -70,27 +71,41 @@ jobs:
         id: review
         run: |
           state=$(python -m tools.autonomy.cli status --state-dir "$STATE_DIR" --run-id "$RUN_ID" | awk '{print $2}')
-          [ "$state" = "REVIEWING" ] || { echo "состояние $state — ревью не нужно"; echo "reviewer_sha=" >> "$GITHUB_OUTPUT"; exit 0; }
+          [ "$state" = "REVIEWING" ] || { echo "состояние $state — ревью не нужно"; echo "hashes=" >> "$GITHUB_OUTPUT"; exit 0; }
           if [ -n "${ANTHROPIC_API_KEY:-}${ANTHROPIC_AUTH_TOKEN:-}${ANTHROPIC_PROFILE:-}${CLAUDE_CODE_OAUTH_TOKEN:-}" ]; then
             echo "::error::статический ключ/токен/профиль Anthropic перекрыл бы федерацию"; exit 1; fi
           [ -n "$ANTHROPIC_FEDERATION_RULE_ID" ] && [ "$ANTHROPIC_FEDERATION_RULE_ID" != "$ENGINEER_RULE_ID" ] \
             || { echo "::error::у ревьюера должно быть СВОЁ правило федерации"; exit 1; }
           # Фактический scope и срок токена Claude — ДО агента (policy.json → anthropic_runtime).
-          python -m tools.autonomy.anthropic_scope check --role reviewer
+          python -m tools.autonomy.anthropic_scope check --role reviewer > "$RUNNER_TEMP/scope_guard.json" \
+            || { cat "$RUNNER_TEMP/scope_guard.json"; exit 1; }
+          cat "$RUNNER_TEMP/scope_guard.json"
           export ANTHROPIC_IDENTITY_TOKEN_FILE="$RUNNER_TEMP/anthropic-oidc.jwt"
           bash tools/autonomy/ci/refresh_anthropic_oidc.sh
           ( while sleep 240; do bash tools/autonomy/ci/refresh_anthropic_oidc.sh || true; done ) &
+          rc=0
           python -m tools.autonomy.cli review --ci --engineer none --reviewer claude \
             --state-dir "$STATE_DIR" --run-id "$RUN_ID" --out "$RUNNER_TEMP/pending" \
-            --sandbox-root "$RUNNER_TEMP/sandboxes" > "$RUNNER_TEMP/review.json"
-          python -c 'import json,sys; print("reviewer_sha=" + json.load(open(sys.argv[1]))["reviewer.json"])' \
+            --sandbox-root "$RUNNER_TEMP/sandboxes" --scope-guard-file "$RUNNER_TEMP/scope_guard.json" \
+            > "$RUNNER_TEMP/review.json" || rc=$?
+          # 0 — вердикт есть; 3 — ревьюер отказал, диагностика записана (документированная передача
+          # гейткиперу, который запаркует прогон в BLOCKED с классом отказа в причине); исключения внутри агента/оркестратора тоже здесь (стадия WRAPPER_EXCEPTION в диагностике);
+          # иной код — сбой ДО записи диагностики (импорт, окружение): job падает.
+          case "$rc" in 0|3) ;; *) echo "::error::сбой обёртки ревьюера (код $rc)"; exit "$rc" ;; esac
+          python -c 'import json,sys; o=json.load(open(sys.argv[1]))["outputs"]; print("hashes=" + " ".join(f"{k}={v}" for k,v in o.items()))' \
             "$RUNNER_TEMP/review.json" >> "$GITHUB_OUTPUT"
+          python -m tools.autonomy.cli diag-summary --file "$RUNNER_TEMP/pending/reviewer_diagnostics.json" \
+            | tee -a "$GITHUB_STEP_SUMMARY"
+          if [ "$rc" = 3 ]; then
+            echo "::error::ревьюер отказал — диагностика передана доверенному гейткиперу (см. итог job'а)"
+          fi
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
-        if: steps.review.outputs.reviewer_sha != ''
+        if: always()
         with:
           name: ae-${{ inputs.run_id }}-review-${{ github.run_attempt }}
           path: ${{ runner.temp }}/pending
           retention-days: 30
+          if-no-files-found: ignore
 
   # Фаза 0: только аутентификация Claude API ревьюера. Тот же файл → тот же job_workflow_ref, что у
   # прохода, поэтому совпадает правило федерации. Нет: Claude Code, модели, GCP (sa-ae-reader),
