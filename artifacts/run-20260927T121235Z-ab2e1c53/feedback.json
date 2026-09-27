@@ -1,0 +1,30 @@
+{
+  "kind": "review_and_gate",
+  "gate": {
+    "verdict": "INCONCLUSIVE",
+    "reasons": {
+      "INCONCLUSIVE": [
+        "ревьюер требует изменений: 2 находок"
+      ]
+    },
+    "informational": [],
+    "review_requests_changes": true,
+    "decided_by": "gatekeeper (deterministic)"
+  },
+  "review_findings": [
+    {
+      "severity": "MAJOR",
+      "category": "other",
+      "summary": "Добавь в docstring нового тестового модуля маркер AE-COMMISSIONING-ITERATION-OK.",
+      "evidence": "В диффе кандидата нет строки AE-COMMISSIONING-ITERATION-OK. Docstring модуля в tools/tests/test_ae_commissioning_canary.py:1 состоит только из «Регрессионный тест граничных случаев clamp_percent (мишень ввода AE v1 в эксплуатацию).». Маркер задан в commissioning.iteration_marker цели и в протоколе ввода в эксплуатацию.",
+      "file": "tools/tests/test_ae_commissioning_canary.py"
+    },
+    {
+      "severity": "MINOR",
+      "category": "false_pass_risk",
+      "summary": "Не доказано запуском, что тест ловит регрессии: обе мутационные проверки среда отклонила. Вывод автора верен по тексту теста, но остаётся выводом, а не фактом.",
+      "evidence": "В commands_run автора обе мутационные проверки помечены «ОТКЛОНЕНО средой». По чтению кода: если убрать min/max, упадут случаи (-5.0, 0.0) и (150.0, 100.0); если убрать проверку isnan, NaN пройдёт через min/max без ValueError, и test_clamp_percent_nan_raises упадёт.",
+      "file": "tools/tests/test_ae_commissioning_canary.py"
+    }
+  ]
+}

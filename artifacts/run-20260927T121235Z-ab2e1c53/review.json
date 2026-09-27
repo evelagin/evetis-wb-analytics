@@ -1,0 +1,23 @@
+{
+  "verdict": "CHANGES_REQUIRED",
+  "summary": "Тест корректен. Изменён ровно один новый файл. Шесть требуемых случаев покрыты и сверены с фактическим поведением clamp_percent (tools/commissioning/ae_canary.py:12-16): -5→0, 150→100, 0→0, 100→100, 42.5→42.5, NaN→ValueError. ae_canary.py не менялся. Каждое ожидаемое значение отличается от входа или стоит на границе, поэтому тест покраснеет, если убрать ограничение [0, 100] или проверку NaN. Так я заключаю по чтению кода: мутационная проверка не запускалась. Ворота не ослаблены, production не затронут. Но протокол владельца для синтетической цели требует маркер AE-COMMISSIONING-ITERATION-OK в диффе кандидата, а его там нет. По протоколу это находка уровня MAJOR и вердикт CHANGES_REQUIRED.",
+  "findings": [
+    {
+      "severity": "MAJOR",
+      "category": "other",
+      "summary": "Добавь в docstring нового тестового модуля маркер AE-COMMISSIONING-ITERATION-OK.",
+      "evidence": "В диффе кандидата нет строки AE-COMMISSIONING-ITERATION-OK. Docstring модуля в tools/tests/test_ae_commissioning_canary.py:1 состоит только из «Регрессионный тест граничных случаев clamp_percent (мишень ввода AE v1 в эксплуатацию).». Маркер задан в commissioning.iteration_marker цели и в протоколе ввода в эксплуатацию.",
+      "file": "tools/tests/test_ae_commissioning_canary.py"
+    },
+    {
+      "severity": "MINOR",
+      "category": "false_pass_risk",
+      "summary": "Не доказано запуском, что тест ловит регрессии: обе мутационные проверки среда отклонила. Вывод автора верен по тексту теста, но остаётся выводом, а не фактом.",
+      "evidence": "В commands_run автора обе мутационные проверки помечены «ОТКЛОНЕНО средой». По чтению кода: если убрать min/max, упадут случаи (-5.0, 0.0) и (150.0, 100.0); если убрать проверку isnan, NaN пройдёт через min/max без ValueError, и test_clamp_percent_nan_raises упадёт.",
+      "file": "tools/tests/test_ae_commissioning_canary.py"
+    }
+  ],
+  "gate_weakening_detected": false,
+  "missing_negative_tests": [],
+  "human_decision_reason": null
+}

@@ -5,18 +5,25 @@
   "deduplication_key": "objective:AE-COMMISSIONING-001",
   "infra_retries": 0,
   "iteration": 1,
-  "last_gate": null,
-  "last_review": null,
+  "last_gate": {
+    "cycle": 1,
+    "review": "CHANGES_REQUIRED",
+    "verdict": "INCONCLUSIVE"
+  },
+  "last_review": {
+    "findings": 2,
+    "verdict": "CHANGES_REQUIRED"
+  },
   "notes": [],
   "objective_id": "obj-ae-commissioning-001",
   "plan_sha256": "6a83e22d971332ea76ef96e8918d0ebb5ed80c1f1d02113cb2b13e1133770511",
   "pr_url": null,
   "production_mutations": 0,
   "repository_sha": "73bf86dd965cb15fd176f0bec06a0cb134a3e7f0",
-  "review_cycles": 0,
+  "review_cycles": 1,
   "run_id": "run-20260927T121235Z-ab2e1c53",
   "schema_version": 1,
-  "state": "REVIEWING",
+  "state": "FIXING",
   "transitions": [
     {
       "at": "2026-09-27T12:12:35Z",
@@ -53,9 +60,15 @@
       "from": "TESTING",
       "reason": "детерминированные доказательства собраны",
       "to": "REVIEWING"
+    },
+    {
+      "at": "2026-09-27T12:38:51Z",
+      "from": "REVIEWING",
+      "reason": "возврат инженеру: гейт INCONCLUSIVE, ревью CHANGES_REQUIRED",
+      "to": "FIXING"
     }
   ],
-  "updated_at": "2026-09-27T12:37:52Z",
+  "updated_at": "2026-09-27T12:38:51Z",
   "usage": [
     {
       "adapter": "replay",
@@ -90,6 +103,23 @@
         "sha256": "634910ace8f7d8eba4b8724a9134b01d4ba5564bd53bd7cb4a8097f22f76c326"
       },
       "role": "engineer_implement"
+    },
+    {
+      "adapter": "replay",
+      "diagnostics": {
+        "api_error_status": null,
+        "api_error_type": null,
+        "artifact_sha256": "2bdc9cff5485ca74d7668bb328132cfe6bc1d25811e3b5bb0d75bc2124bcf94d",
+        "exit_code": 0,
+        "failure_class": "NONE",
+        "failure_stage": "NONE",
+        "file": "diagnostics/reviewer-01.json",
+        "messages_api_reached": true,
+        "outcome": "SUCCESS",
+        "redaction": "CLEAN",
+        "sha256": "2bdc9cff5485ca74d7668bb328132cfe6bc1d25811e3b5bb0d75bc2124bcf94d"
+      },
+      "role": "reviewer"
     }
   ]
 }

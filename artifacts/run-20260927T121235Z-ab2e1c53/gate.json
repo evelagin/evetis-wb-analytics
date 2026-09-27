@@ -1,0 +1,11 @@
+{
+  "verdict": "INCONCLUSIVE",
+  "reasons": {
+    "INCONCLUSIVE": [
+      "ревьюер требует изменений: 2 находок"
+    ]
+  },
+  "informational": [],
+  "review_requests_changes": true,
+  "decided_by": "gatekeeper (deterministic)"
+}
