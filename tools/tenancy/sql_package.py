@@ -3,6 +3,7 @@
 
   python tools/tenancy/sql_package.py validate                    # шаблоны пакета (офлайн)
   python tools/tenancy/sql_package.py render <tenant_id> <out_dir>
+  python tools/tenancy/sql_package.py dryrun <tenant_id>          # живой dry-run BigQuery (0 байт)
 
 Шаблоны живут в sql/tenant/ozon/<dataset_key>/<OBJECT>.sql и ссылаются на объекты ТОЛЬКО как
 `__tenant__.<dataset_key>.<OBJECT>` (один шаблонный проект, ключи датасетов контракта). Проект и
@@ -323,7 +324,98 @@ def render(tenant_id: str, out_dir: Path, root: Path = PACKAGE_DIR) -> dict:
     return manifest
 
 
+_BQ_TYPES = {"STRING": "STRING", "INTEGER": "INT64", "INT64": "INT64", "NUMERIC": "NUMERIC", "BIGNUMERIC": "BIGNUMERIC",
+             "BOOL": "BOOL", "BOOLEAN": "BOOL", "DATE": "DATE", "TIMESTAMP": "TIMESTAMP", "DATETIME": "DATETIME",
+             "FLOAT": "FLOAT64", "FLOAT64": "FLOAT64", "JSON": "JSON"}
+
+
+def compile_queries(contract: dict, live_tables: set[tuple[str, str]],
+                    root: Path = PACKAGE_DIR) -> list[tuple[str, str]]:
+    """[(dataset.object, SELECT)] для dry-run BigQuery: зависимости пакета — CTE, таблицы контракта,
+    которых ещё нет вживую, — пустые типизированные CTE. Ничего не создаёт и не читает данных."""
+    order, findings = load_package(root, contract)
+    if findings:
+        raise PackageError("пакет невалиден:\n  " + "\n  ".join(findings))
+    by_key = {(o.dataset_key, o.name): o for o in order}
+    bodies = {k: sqlglot.parse_one(o.sql, read=DIALECT).expression.sql(DIALECT) for k, o in by_key.items()}
+    schema = contract_schema(contract)
+    project = contract["project_id"]
+    alias = lambda ds, n: f"__{ds}__{n}"  # noqa: E731
+    out = []
+    for o in order:
+        need, seen = [], set()
+
+        def walk(k):
+            for r in sorted(by_key[k].refs):
+                if r in bodies and r not in seen:
+                    seen.add(r)
+                    walk(r)
+                    need.append(r)
+        walk((o.dataset_key, o.name))
+        stubs = {rr for k in [*need, (o.dataset_key, o.name)] for rr in by_key[k].refs
+                 if rr not in bodies and rr not in live_tables}
+        ctes = [f"{alias(*r)} AS (SELECT " + ", ".join(f"CAST(NULL AS {_BQ_TYPES[t]}) AS {c}"
+                                                      for c, t in schema[r].items()) + " LIMIT 0)"
+                for r in sorted(stubs)]
+        ctes += [f"{alias(*r)} AS ({bodies[r]})" for r in need]
+
+        def resolve(m):
+            ds, n = m.group(1), m.group(2)
+            if (ds, n) in bodies or (ds, n) in stubs:
+                return alias(ds, n)
+            return f"`{project}.{contract['datasets'][ds]}.{n}`"
+        q = (("WITH " + ",\n".join(ctes) + "\n") if ctes else "") + f"SELECT * FROM ({bodies[(o.dataset_key, o.name)]})"
+        q = re.sub(r"`__tenant__`\.`([a-z_]+)`\.`([A-Za-z0-9_]+)`", resolve, q)
+        q = TEMPLATE_REF_RE.sub(resolve, q)
+        if TEMPLATE_PROJECT in q:
+            raise PackageError(f"{o.name}: в запросе dry-run остался шаблонный проект")
+        out.append((f"{o.dataset_key}.{o.name}", q))
+    return out
+
+
+def dryrun(tenant_id: str) -> int:
+    """Dry-run BigQuery каждого объекта пакета в проекте арендатора (только компиляция, 0 байт).
+    Живая операция чтения метаданных: учётные данные — gcloud оператора. В CI не выполняется."""
+    import subprocess
+    import urllib.request
+    from tools.tenancy import registry as R
+    from tools.tenancy.validation import parse_tenant_json   # единый строгий разборщик JSON
+
+    def body_of(resp) -> dict:
+        return parse_tenant_json(resp.read().decode("utf-8"))
+
+    contract = R.terraform_inputs(tenant_id)
+    project = contract["project_id"]
+    tok = subprocess.run(["gcloud", "auth", "print-access-token"], capture_output=True, text=True,
+                         check=True).stdout.strip()
+    headers = {"Authorization": f"Bearer {tok}", "x-goog-user-project": project, "Content-Type": "application/json"}
+    live = set()
+    for ds_key, ds in contract["datasets"].items():
+        url = f"https://www.googleapis.com/bigquery/v2/projects/{project}/datasets/{ds}/tables?maxResults=1000"
+        try:
+            with urllib.request.urlopen(urllib.request.Request(url, headers=headers), timeout=60) as r:
+                live |= {(ds_key, t["tableReference"]["tableId"]) for t in body_of(r).get("tables", [])}
+        except urllib.error.HTTPError as e:
+            if e.code != 404:
+                raise
+    failures = 0
+    for name, q in compile_queries(contract, live):
+        body = json.dumps({"configuration": {"dryRun": True, "query": {"query": q, "useLegacySql": False}}}).encode()
+        req = urllib.request.Request(f"https://www.googleapis.com/bigquery/v2/projects/{project}/jobs",
+                                     data=body, method="POST", headers=headers)
+        try:
+            with urllib.request.urlopen(req, timeout=120) as r:
+                print(f"OK    {name}  bytes={body_of(r)['statistics'].get('totalBytesProcessed')}")
+        except urllib.error.HTTPError as e:
+            failures += 1
+            print(f"FAIL  {name}: {body_of(e).get('error', {}).get('message', '')[:300]}")
+    print(f"dry-run {project}: неудач {failures}")
+    return 1 if failures else 0
+
+
 def main(argv: list[str]) -> int:
+    if argv[:1] == ["dryrun"] and len(argv) == 2:
+        return dryrun(argv[1])
     if argv[:1] == ["validate"] and len(argv) == 1:
         from tools.tenancy import synthetic as SY
         _order, findings = load_package(PACKAGE_DIR, SY.fixture_contract("client_001"))
