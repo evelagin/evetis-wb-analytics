@@ -1,5 +1,22 @@
 # CHANGELOG.md
 
+## 2026-09-27 — Tenancy T4-d: analytics_share — семантический слой клиента
+
+**Не развёрнуто, доступа нет.** 9 представлений `sql/tenant/ozon/analytics_share/` и машиночитаемый
+контракт `CONTRACT.json` (смысл, строка, измерения, метрики, статусы полноты, lineage, свежесть,
+ограничения); тесты сверяют контракт с SQL колонка в колонку.
+
+- `sales_daily`, `orders`, `advertising_daily`, `sku_daily`, `inventory_current`, `price_history`,
+  `profitability_daily`, `store_costs_daily`, `data_coverage`; `tenant_ops.V_COVERAGE_DAILY`.
+- Нет данных ≠ ноль: статус полноты из `tenant_ops.DATA_COVERAGE`, без оценки — `UNKNOWN`; нули
+  за сутки без строк — только при `COMPLETE`; `COALESCE(метрика, 0)` запрещён тестом.
+- Слой читает только `ozon_mart`/`tenant_ops`. ACL — только владельцы проекта; принципалов нет,
+  механизм доступа отложен до T6 (authorized views не вводятся — `TENANCY_DESIGN.md` §4c).
+- Исправлено в `tenant_ops.V_SELLER_BINDING_STATUS` (T4-c): отзыв привязки новой строкой
+  `REVOKED` не перекрывал прежнюю `CONFIRMED` — статус оставался `BOUND`. Теперь действует
+  последняя запись по API; поведение проверено исполнением SQL на синтетических строках.
+- `TENANCY_DESIGN.md` §4c: датасеты T4, поток привязки к кабинету, модель истории и полноты.
+
 ## 2026-09-27 — Tenancy T4-c: пакет SQL арендатора Ozon
 
 **Не развёрнуто.** 17 представлений `sql/tenant/ozon/` (13 `ozon_mart`, 4 `tenant_ops`), собранных

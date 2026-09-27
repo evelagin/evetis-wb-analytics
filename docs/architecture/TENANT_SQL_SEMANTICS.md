@@ -1,4 +1,4 @@
-# Пакет SQL выделенного арендатора Ozon: семантика (T4-c)
+# Пакет SQL выделенного арендатора Ozon: семантика (T4-c, T4-d)
 
 Дата: 2026-09-27. Пакет: `sql/tenant/ozon/` (`PACKAGE.json`, версия 1). Рендер и правила
 P1–P8: `tools/tenancy/sql_package.py`.
@@ -43,6 +43,16 @@ P1–P8: `tools/tenancy/sql_package.py`.
 | `tenant_ops.V_SELLER_BINDING_STATUS` | GENERIC_DERIVED | API | BOUND / UNBOUND / MISMATCH / NOT_OBSERVED |
 | `tenant_ops.V_ENTITY_COVERAGE` | GENERIC_DERIVED | сущность | дни по статусам полноты |
 | `tenant_ops.V_DQ_UNCLASSIFIED_ACCRUALS` | GENERIC_DERIVED | сутки × type_id | начисления вне таксономии |
+| `tenant_ops.V_COVERAGE_DAILY` | GENERIC_DERIVED | сущность × сутки | последняя оценка полноты из `DATA_COVERAGE` |
+| `analytics_share.sales_daily` | GENERIC_DERIVED | сутки заказа | продажи магазина; нули только при `COMPLETE` |
+| `analytics_share.orders` | MARKETPLACE_FACT | отправление × SKU | заказы FBO, без данных покупателя, кроме города |
+| `analytics_share.advertising_daily` | MARKETPLACE_FACT | сутки × кампания | отчёт Performance (не биллинг) |
+| `analytics_share.sku_daily` | GENERIC_DERIVED | сутки × SKU | заказы + атрибуция рекламы, ДРР; реклама без заказов не теряется |
+| `analytics_share.inventory_current` | MARKETPLACE_FACT | SKU × склад | последний снимок остатков, возраст снимка |
+| `analytics_share.price_history` | MARKETPLACE_FACT | дата снимка × offer_id | цены продавца со дня первого снимка |
+| `analytics_share.profitability_daily` | GENERIC_DERIVED | сутки заказа × SKU | вклад до/после себестоимости со статусами |
+| `analytics_share.store_costs_daily` | GENERIC_DERIVED | сутки × класс | начисления магазина вне отправлений |
+| `analytics_share.data_coverage` | GENERIC_DERIVED | сущность × сутки | полнота: «ноль» против «нет данных» |
 
 ## 3. Экономика: что считается и чего не придумывается
 
@@ -92,3 +102,25 @@ P1–P8: `tools/tenancy/sql_package.py`.
 Поэтому неизвестный тип никогда не относится в «прочее»: он остаётся `UNCLASSIFIED`, виден в
 `tenant_ops.V_DQ_UNCLASSIFIED_ACCRUALS` и блокирует результат суток. Классификацию нового типа
 вносят в `DIM_OZON_ACCRUAL_TYPE` новой версией пакета (PR).
+
+## 6. `analytics_share` — семантический слой клиента (T4-d)
+
+Машиночитаемый контракт: `sql/tenant/ozon/analytics_share/CONTRACT.json` — смысл, строка
+(grain), измерения, метрики (единица, аддитивность), колонки статуса полноты, lineage (прямые
+объекты и исходные таблицы), свежесть, полнота, ограничения. Тесты сверяют контракт с SQL: каждая
+колонка представления описана ровно один раз, lineage совпадает с разбором SQL.
+
+Правила слоя:
+
+- читает только `ozon_mart` и `tenant_ops` (P4), RAW и `ref` — никогда напрямую;
+- **нет данных ≠ ноль**: статус полноты берётся из `tenant_ops.DATA_COVERAGE`, отсутствие оценки —
+  `UNKNOWN`; нулевые метрики за сутки без строк выдаются только при `COMPLETE`, иначе NULL;
+  `COALESCE(метрика, 0)` в слое запрещён тестом;
+- результат до/после себестоимости — вклад, а не прибыль: налоги, OPEX и фулфилмент продавца не
+  входят;
+- реклама в двух смыслах, не смешиваются: атрибуция отчёта (`advertising_daily`, `sku_daily`) и
+  биллинг (`store_costs_daily`, класс `PROMOTION_BILLING`);
+- снимки (остатки, цены) не восстанавливают прошлое: история начинается с первого снимка.
+
+Доступ: в T4 никому, кроме владельцев проекта (ACL `projectOwners`). Механизм доступа клиента —
+T6 (см. `TENANCY_DESIGN.md` §4c).
