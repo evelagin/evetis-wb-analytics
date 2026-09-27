@@ -196,6 +196,9 @@ def test_unsettled_postings_publish_no_result(accruals, basis):
     (r,), _, _ = _finance(accruals)
     assert r["revenue_basis"] == basis and r["unsettled_postings"] == 1
     assert r["contribution_pre_cogs_rub"] is None and r["contribution_after_cogs_rub"] is None
+    for col in ("commission_rub", "logistics_rub", "acquiring_rub", "return_logistics_rub", "promotion_rub",
+                "other_costs_rub"):
+        assert r[col] is None, col                                     # до расчёта — не ноль
 
 
 def test_duplicate_raw_rows_are_counted_once():
