@@ -1,0 +1,41 @@
+{
+  "branch": "ae/objective-ae-commissioning-001-60c6919b",
+  "created_at": "2026-09-27T09:55:27Z",
+  "deduplication_key": "objective:AE-COMMISSIONING-001",
+  "infra_retries": 0,
+  "iteration": 0,
+  "last_gate": null,
+  "last_review": null,
+  "notes": [],
+  "objective_id": "obj-ae-commissioning-001",
+  "plan_sha256": null,
+  "pr_url": null,
+  "production_mutations": 0,
+  "repository_sha": "77a398d2642ef1b0a614dea690cb7e2334f4de4c",
+  "review_cycles": 0,
+  "run_id": "run-20260927T095527Z-58542923",
+  "schema_version": 1,
+  "state": "PLANNING",
+  "transitions": [
+    {
+      "at": "2026-09-27T09:55:27Z",
+      "from": null,
+      "reason": "цель принята",
+      "to": "RECEIVED"
+    },
+    {
+      "at": "2026-09-27T09:55:27Z",
+      "from": "RECEIVED",
+      "reason": "цель валидна, открыт прогон",
+      "to": "DISCOVERING"
+    },
+    {
+      "at": "2026-09-27T10:01:29Z",
+      "from": "DISCOVERING",
+      "reason": "собраны доказательства базового коммита",
+      "to": "PLANNING"
+    }
+  ],
+  "updated_at": "2026-09-27T10:01:29Z",
+  "usage": []
+}

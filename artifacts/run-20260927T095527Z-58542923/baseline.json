@@ -1,0 +1,30 @@
+{
+  "impact": {
+    "risk_tier": null,
+    "affected_total": 0,
+    "required_contracts": {},
+    "assets_without_contract": null,
+    "flags": null,
+    "downstream_assets": null
+  },
+  "tests": [
+    {
+      "name": "pytest tools/tests",
+      "status": "PASS",
+      "exit_code": 0,
+      "tail": "[ 65%]\n........................................................................ [ 70%]\n........................................................................ [ 75%]\n........................................................................ [ 80%]\n........................................................................ [ 85%]\n........................................................................ [ 90%]\n........................................................................ [ 95%]\n...........................................................              [100%]\n1427 passed in 359.71s (0:05:59)\n"
+    }
+  ],
+  "sql_validation": {
+    "status": "PASS",
+    "tail": "OK: sql/current contract holds — datasets ['evetis_mart', 'ozon_mart'], 50 objects, checks C1–C18; historical guard: 21 allowlisted definition(s) in 10 file(s).\nScope: repository-side integrity only. Production parity is NOT proven here (R2C).\n"
+  },
+  "runtime_access": {
+    "status": "NOT_APPLICABLE"
+  },
+  "parity": {
+    "status": "NOT_APPLICABLE"
+  },
+  "data_suites": {},
+  "objective_resolution": "NOT_APPLICABLE"
+}
