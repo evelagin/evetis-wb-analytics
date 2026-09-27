@@ -342,6 +342,25 @@ def invocation_grants(plan: dict) -> list[str]:
     return out
 
 
+# ── T. Таблицы: определение объекта, который не является таблицей контракта ──────
+TABLE_NON_TABLE_BLOCKS = ("view", "materialized_view", "external_data_configuration",
+                          "table_replication_info")
+
+
+def table_findings(addr: str, after: dict, unknown: dict, contract_tables: set) -> list[str]:
+    """google_bigquery_table: пара (датасет, таблица) из контракта; блоков представления,
+    материализованного представления, внешнего источника и репликации нет и не может появиться
+    после apply (known after apply — тоже нарушение)."""
+    out = []
+    key = (after.get("dataset_id"), after.get("table_id"))
+    if key not in contract_tables:
+        out.append(f"{addr}: таблица {key[0]}.{key[1]} не входит в контракт")
+    for block in TABLE_NON_TABLE_BLOCKS:
+        if after.get(block) or (unknown or {}).get(block):
+            out.append(f"{addr}: блок {block} запрещён — пакет SQL, а не Terraform, создаёт представления")
+    return out
+
+
 def scan_plan(plan: dict, contract: dict) -> list[str]:
     findings: list[str] = []
     project = contract["project_id"]
@@ -354,6 +373,7 @@ def scan_plan(plan: dict, contract: dict) -> list[str]:
     iam_allowed = expected_iam(contract)
     dataset_acl = expected_dataset_access(contract)
     contract_sa_emails = {e for e in (runtime_email, scheduler_email) if e}
+    contract_tables = {(contract["datasets"][x["dataset_key"]], x["table_id"]) for x in contract.get("tables", [])}
 
     # M. EVETIS — нигде: configuration, prior_state, переменные, значения.
     for path, s in _strings(plan):
@@ -470,6 +490,10 @@ def scan_plan(plan: dict, contract: dict) -> list[str]:
         # D. ACL датасета — известен и ровно равен контракту.
         if rtype == "google_bigquery_dataset":
             findings += dataset_acl_findings(addr, after, unknown, dataset_acl, scheduler_email)
+
+        # T. Таблица — только таблица контракта и только таблица: не представление, не внешняя.
+        if rtype == "google_bigquery_table":
+            findings += table_findings(addr, after, unknown, contract_tables)
 
         if rtype == "google_cloud_run_v2_job":
             for path, s in _strings(after, addr):

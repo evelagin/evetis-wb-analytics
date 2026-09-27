@@ -404,10 +404,14 @@ def _dedicated_invariants(doc, err, ozon_entities: frozenset[str]) -> None:
                 "EARLIEST_AVAILABLE не задаёт дату: границы определяет обнаружение возможностей")
         if "from_date" in hr:
             try:
-                datetime.strptime(hr["from_date"], "%Y-%m-%d")
+                requested = datetime.strptime(hr["from_date"], "%Y-%m-%d").date()
             except ValueError:
                 err("$.marketplaces.ozon.history_request.from_date", "history",
                     "from_date не является календарной датой")
+            else:
+                if requested > datetime.now().date():
+                    err("$.marketplaces.ozon.history_request.from_date", "history",
+                        "from_date в будущем: запрашивать можно только прошлое")
 
 
 # ───────────────────────────────────────────────────── инварианты реестра

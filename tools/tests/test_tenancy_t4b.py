@@ -205,6 +205,14 @@ def test_banned_literal_rule_is_load_bearing(tmp_path, monkeypatch):
     root = _pkg(tmp_path, {("ozon_mart", "NORM_TEST_POSTING"): NEG["P8 evetis calibration"]})
     assert _findings(root)
     monkeypatch.setattr(SP, "BANNED", ())
+    monkeypatch.setattr(SP, "_literal_findings", lambda sql, subject: [])
+    assert _findings(root) == []
+
+
+def test_ast_literal_rule_is_load_bearing(tmp_path, monkeypatch):
+    root = _pkg(tmp_path, {("ozon_mart", "NORM_TEST_POSTING"): _with_expr("CAST('0.52' AS NUMERIC)")})
+    assert _findings(root)
+    monkeypatch.setattr(SP, "_literal_findings", lambda sql, subject: [])
     assert _findings(root) == []
 
 
@@ -214,3 +222,41 @@ def test_read_policy_rule_is_load_bearing(tmp_path, monkeypatch):
     assert any("P4" in f for f in _findings(root))
     monkeypatch.setattr(SP, "READ_POLICY", {k: v | {"ozon_raw"} for k, v in SP.READ_POLICY.items()})
     assert not any("P4" in f for f in _findings(root))
+
+
+# ═══════════════════════════════════════ ревью T4: обходы P8 и подмена таблицы контракта
+def _with_expr(expr: str) -> str:
+    return GOOD_VIEW.replace("SELECT p.posting_number, p.sku, p.quantity",
+                             f"SELECT p.posting_number, p.sku, p.quantity, {expr} AS x")
+
+
+@pytest.mark.parametrize("expr", [
+    'DATE "2026-09-01"',                     # дата в двойных кавычках
+    "DATE(2026, 9, 1)",                      # дата из частей
+    "'evt-001'",                             # артикул в нижнем регистре
+    '"7701234567"',                          # ИНН в двойных кавычках
+    "0.5580",                                # калибровка с лишним нулём
+    "CAST('0.52' AS NUMERIC)",               # калибровка строкой
+    "p.quantity * 1.2",                      # любой множитель — конфигурация, не код
+    "TIMESTAMP '2026-01-01 00:00:00'",
+])
+def test_p8_catches_literal_bypasses(tmp_path, expr):
+    root = _pkg(tmp_path, {("ozon_mart", "NORM_TEST_POSTING"): _with_expr(expr)})
+    assert any("(P8)" in f for f in _findings(root)), expr
+
+
+@pytest.mark.parametrize("expr", ["0", "1", "116", "'1'", "DATE '9999-12-31'", "'Europe/Moscow'", "'COMPLETE'"])
+def test_p8_allows_structural_literals(tmp_path, expr):
+    root = _pkg(tmp_path, {("ozon_mart", "NORM_TEST_POSTING"): _with_expr(expr)})
+    assert not [f for f in _findings(root) if "(P8)" in f], expr
+
+
+def test_package_view_cannot_shadow_a_contract_table(tmp_path):
+    fake = """CREATE OR REPLACE VIEW `__tenant__.tenant_ops.DATA_COVERAGE`
+OPTIONS(description = 'Подмена покрытия')
+AS
+SELECT p.sku AS entity, 'COMPLETE' AS status
+FROM `__tenant__.ozon_raw.RAW_OZON_POSTINGS_FBO` p;
+"""
+    root = _pkg(tmp_path, {("tenant_ops", "DATA_COVERAGE"): fake})
+    assert any("совпадает по имени с таблицей контракта" in f for f in _findings(root))

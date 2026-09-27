@@ -26,23 +26,25 @@ P1–P8: `tools/tenancy/sql_package.py`.
 
 | Объект | Класс | Строка (grain) | Основание |
 |---|---|---|---|
-| `ozon_mart.DIM_OZON_ACCRUAL_TYPE` | GENERIC_DERIVED | type_id | таксономия платформы v1: 33 типа начислений Ozon → класс и уровень атрибуции |
+| `ozon_mart.DIM_OZON_ACCRUAL_TYPE` | GENERIC_DERIVED | type_id | таксономия платформы v2: 33 типа Ozon → класс; официальное имя типа и основание (§5) |
 | `ozon_mart.NORM_OZON_POSTING_LINE` | MARKETPLACE_FACT | отправление × SKU | текущий статус; `order_date_msk` |
-| `ozon_mart.NORM_OZON_ACCRUAL` | MARKETPLACE_FACT | начисление × тип × SKU | знак как у Ozon (расход < 0); неизвестный тип → `UNCLASSIFIED` |
-| `ozon_mart.NORM_OZON_POSTING_SETTLEMENT` | GENERIC_DERIVED | отправление × SKU | цена продавца за единицу, комиссия, начисления по классам |
+| `ozon_mart.NORM_OZON_ACCRUAL` | MARKETPLACE_FACT | начисление × тип × SKU | ключ записи RAW, последняя выгрузка; знак как у Ozon (расход < 0); неизвестный тип → `UNCLASSIFIED`; `is_unresolved` |
+| `ozon_mart.NORM_OZON_POSTING_SETTLEMENT` | GENERIC_DERIVED | отправление × SKU | экономический блок (число, полнота), комиссия, начисления по классам (сумма классов = все начисления) |
 | `ozon_mart.NORM_OZON_ADS_SKU_DAILY` | MARKETPLACE_FACT | сутки × кампания × SKU | атрибуция отчёта Performance, не списанные деньги |
 | `ozon_mart.NORM_OZON_ADS_CAMPAIGN_DAILY` | MARKETPLACE_FACT | сутки × кампания | траты по отчёту Performance |
 | `ozon_mart.SNAP_OZON_STOCK` | MARKETPLACE_FACT | дата снимка × SKU × склад | история — только с первого снимка |
 | `ozon_mart.SNAP_OZON_PRICE` | MARKETPLACE_FACT | дата снимка × offer_id | история — только с первого снимка |
-| `ozon_mart.DIM_OZON_PRODUCT` | GENERIC_DERIVED | SKU | каталог + `ref.REF_SKU_CHANNEL_MAP` + `ref.REF_PRODUCT_MASTER`; нет соответствия — `UNMAPPED` |
-| `ozon_mart.ECON_TENANT_COGS` | TENANT_CONFIG | артикул × интервал | себестоимость продавца из `ref.REF_COGS` |
-| `ozon_mart.FACT_OZON_SALES_DAILY` | GENERIC_DERIVED | сутки заказа × SKU | заказы и их текущий исход |
-| `ozon_mart.FACT_OZON_SKU_ECONOMICS_DAILY` | GENERIC_DERIVED | сутки заказа × SKU (доставленные) | выручка продавца, комиссия, расходы по отправлениям, себестоимость с покрытием |
-| `ozon_mart.FACT_OZON_STORE_COSTS_DAILY` | GENERIC_DERIVED | сутки начисления × класс × SKU | начисления без отправления |
+| `ozon_mart.DIM_OZON_PRODUCT` | GENERIC_DERIVED | SKU | каталог + `ref.REF_SKU_CHANNEL_MAP` + `ref.REF_PRODUCT_MASTER`; нет соответствия — `UNMAPPED`, несколько — `AMBIGUOUS` |
+| `ozon_mart.ECON_TENANT_COGS` | TENANT_CONFIG | артикул × интервал | себестоимость продавца из `ref.REF_COGS`; открытый интервал — до следующего |
+| `ozon_mart.FACT_OZON_SALES_DAILY` | GENERIC_DERIVED | сутки заказа × SKU | заказы и их текущий исход; пустая цена или количество — сумма NULL |
+| `ozon_mart.FACT_OZON_SKU_ECONOMICS_DAILY` | GENERIC_DERIVED | сутки заказа × SKU (доставленные) | выручка продавца, комиссия и расходы со знаком Ozon, себестоимость с покрытием; результат только при полных данных |
+| `ozon_mart.FACT_OZON_STORE_COSTS_DAILY` | GENERIC_DERIVED | сутки начисления × класс × уровень × SKU | все начисления вне экономики доставленных: магазин, товар, недоставленные и незагруженные отправления |
 | `tenant_ops.V_TENANT_STATE_CURRENT` | GENERIC_DERIVED | арендатор | последнее событие автомата |
-| `tenant_ops.V_SELLER_BINDING_STATUS` | GENERIC_DERIVED | API | BOUND / UNBOUND / MISMATCH / NOT_OBSERVED |
+| `tenant_ops.V_SELLER_BINDING_STATUS` | GENERIC_DERIVED | API | BOUND / UNBOUND / MISMATCH / NOT_OBSERVED / INVALID_BINDING |
 | `tenant_ops.V_ENTITY_COVERAGE` | GENERIC_DERIVED | сущность | дни по статусам полноты |
-| `tenant_ops.V_DQ_UNCLASSIFIED_ACCRUALS` | GENERIC_DERIVED | сутки × type_id | начисления вне таксономии |
+| `tenant_ops.V_DQ_UNRESOLVED_ACCRUALS` | GENERIC_DERIVED | сутки × type_id | начисления вне таксономии или с пустой суммой; `blocking_accruals` |
+| `tenant_ops.V_DQ_SETTLEMENT_ANOMALIES` | GENERIC_DERIVED | отправление × SKU | несколько или неполные экономические блоки |
+| `tenant_ops.V_DQ_COGS_OVERLAPS` | GENERIC_DERIVED | пара интервалов | пересечения себестоимости продавца |
 | `tenant_ops.V_COVERAGE_DAILY` | GENERIC_DERIVED | сущность × сутки | последняя оценка полноты из `DATA_COVERAGE` |
 | `analytics_share.sales_daily` | GENERIC_DERIVED | сутки заказа | продажи магазина; нули только при `COMPLETE` |
 | `analytics_share.orders` | MARKETPLACE_FACT | отправление × SKU | заказы FBO, без данных покупателя, кроме города |
@@ -56,22 +58,34 @@ P1–P8: `tools/tenancy/sql_package.py`.
 
 ## 3. Экономика: что считается и чего не придумывается
 
-- **Выручка продавца** доставленного заказа = цена продавца за единицу из расчётов Ozon ×
-  количество. Если Ozon ещё не рассчитал отправление, используется цена отправления, а
-  `revenue_basis` = `NOT_SETTLED` / `PARTIALLY_SETTLED`.
-- **Комиссия** — из `commission_rub` (в `amount_rub` она не входит).
+Все суммы — **со знаком Ozon**: выручка > 0, комиссия и расходы < 0, результат — их сумма.
+(Комиссия в RAW отрицательна: витрины EVETIS меняют её знак, пакет — нет.)
+
+- **Выручка продавца** доставленного заказа = цена продавца за единицу из экономического блока
+  расчёта Ozon × количество. Отправление рассчитано, если у него ровно один полный блок (цена
+  продавца и комиссия). Иначе — цена из отправления, `revenue_basis` = `NOT_SETTLED` /
+  `PARTIALLY_SETTLED`, и результат строки не публикуется.
+- **Комиссия** — `commission_rub` блока (в `amount_rub` она не входит).
 - **Расходы Ozon по отправлению** — логистика и последняя миля, эквайринг, обратная логистика,
-  прочее, по классам таксономии, со знаком Ozon.
-- **Результат до себестоимости** публикуется, только если в строке нет неклассифицированных
-  начислений (`taxonomy_status`); иначе NULL. Правило таксономии: новый тип останавливает
-  публикацию до классификации.
-- **Себестоимость** — только из `ref.REF_COGS` продавца на дату заказа. `cogs_coverage`:
+  продвижение по отправлению, прочее; колонки классов покрывают все начисления отправления.
+- **Результат до себестоимости** публикуется, только если все отправления строки рассчитаны,
+  выручка известна, нет нераспознанных начислений (тип вне таксономии с ненулевой суммой или
+  пустая сумма — `taxonomy_status = UNRESOLVED`) и нет признака возврата (расходы обратной
+  логистики у доставленного отправления: сторно возврата платформа пока не загружает).
+  Иначе NULL.
+- **Поздние начисления** по отправлению относятся к суткам заказа и меняют прошлые сутки при
+  поступлении.
+- **Себестоимость** — только из `ref.REF_COGS` продавца на дату заказа, ровно один действующий
+  интервал. Нет или пересечение — себестоимости нет (`V_DQ_COGS_OVERLAPS`). `cogs_coverage`:
   `COMPLETE` / `PARTIAL` / `NOT_AVAILABLE`. Результат после себестоимости — только при
-  `COMPLETE`, иначе NULL. Умолчаний нет.
-- **Начисления без отправления** (подписка, биллинг продвижения, хранение, компенсации) — в
-  `FACT_OZON_STORE_COSTS_DAILY` по дате начисления. На SKU-сутки заказа они не разносятся.
-- **Реклама**: атрибуция отчёта (`NORM_OZON_ADS_*`) и биллинг (класс `PROMOTION_BILLING`)
-  хранятся раздельно и не смешиваются.
+  `COMPLETE`. Умолчаний нет.
+- **Начисления вне экономики доставленных** — в `FACT_OZON_STORE_COSTS_DAILY` по дате
+  начисления, с уровнем `cost_scope`: `STORE`, `SKU`, `POSTING_NOT_DELIVERED` (отмены,
+  невыкупы), `POSTING_NOT_LOADED` (отправление вне загруженной истории),
+  `POSTING_SKU_UNMATCHED`. Экономика + эти начисления = все начисления, без пропусков и
+  повторов (тест сохранения).
+- **Реклама**: атрибуция отчёта (`NORM_OZON_ADS_*`) и биллинг (классы `PROMOTION_*` в
+  начислениях) хранятся раздельно и не смешиваются.
 
 ## 4. Витрины EVETIS: что извлечено, что нет
 
@@ -95,13 +109,69 @@ P1–P8: `tools/tenancy/sql_package.py`.
 свежесть) в v1 пакета не включены: для первых — нужна история цен/комиссий арендатора (копится с
 запуска), свежесть заменена покрытием `tenant_ops` (T5 пишет `DATA_COVERAGE`).
 
-## 5. Таксономия начислений — оговорка
+## 5. Таксономия начислений: провенанс
 
-Классы 33 типов — смысл операций Ozon (логистика, эквайринг, продвижение), а не калибровка.
-Но набор типов собран по одному кабинету: у другого продавца могут встретиться новые типы.
-Поэтому неизвестный тип никогда не относится в «прочее»: он остаётся `UNCLASSIFIED`, виден в
-`tenant_ops.V_DQ_UNCLASSIFIED_ACCRUALS` и блокирует результат суток. Классификацию нового типа
-вносят в `DIM_OZON_ACCRUAL_TYPE` новой версией пакета (PR).
+**Официальное Ozon** — только `type_id`, имя и описание типа из справочника
+`POST /v1/finance/accrual/types` (124 типа; снимок 31.08.2026 в архиве аудита
+`ozon/audit_2026-08-30/raw/backfill_v1/finance/accrual_types.json`, sha256
+`1bf25e8b887ecf45e1c6cf0950723b9db4318ef3a94560d1c9a7cfb84c2313c2`, совпадает с
+`docs/ozon/audit_2026-08-30/raw/MANIFEST.csv`). **Класс — решение платформы**: Ozon классов не
+публикует. Основание класса у каждого типа:
+
+- `OZON_TYPE_NAME` — класс прямо следует из официального имени и описания (Logistic →
+  LOGISTICS, Acquiring → ACQUIRING, PremiumSubscription → SUBSCRIPTION…);
+- `PLATFORM_INTERPRETATION` — группировка платформы: платные программы продавца собраны в
+  PROMOTION_SERVICES, остаточные услуги — в OTHER_MARKETPLACE_COST, обработка возвратов
+  партнёрами и размещение возвратов — в RETURN_LOGISTICS.
+
+**Эмпирика EVETIS и что с ней сделано.** Набор из 33 типов — это типы, которые встретились в
+одном кабинете (EVETIS). Поэтому он не считается полным: 91 официальный тип не классифицирован
+и остаётся `UNCLASSIFIED`. Уровень атрибуции (прежний `attribution_scope` в таксономии v1)
+был наблюдением по тому же кабинету — в v2 он убран и берётся из самой строки начисления
+(есть отправление / есть SKU / магазин). Разнесение классов по статьям EVETIS (списки type_id в
+витринах EVETIS) в пакет не переносилось.
+
+**Неизвестный тип** никогда не относится в «прочее»: он остаётся `UNCLASSIFIED`, виден в
+`tenant_ops.V_DQ_UNRESOLVED_ACCRUALS`, а при ненулевой или пустой сумме блокирует результат
+затронутых строк. Новый тип классифицируется одной строкой в `DIM_OZON_ACCRUAL_TYPE` новой
+версией пакета (PR) — сразу для всех арендаторов; кода конкретного арендатора нет, и type_id
+нигде, кроме таксономии, не упоминается (тест).
+
+| type_id | Имя Ozon | Описание Ozon | Класс | Основание |
+|---|---|---|---|---|
+| 75 | Stencil | Трафареты | PROMOTION_BILLING | OZON_TYPE_NAME |
+| 41 | PayPerClick | Оплата за клик | PROMOTION_BILLING | OZON_TYPE_NAME |
+| 33 | Marketing | Рекламные услуги | PROMOTION_BILLING | OZON_TYPE_NAME |
+| 54 | Promotion | Продвижение товара | PROMOTION_BILLING | OZON_TYPE_NAME |
+| 47 | PointsForReviews | Баллы за отзывы | PROMOTION_SERVICES | PLATFORM_INTERPRETATION |
+| 96 | AcceleratedReviewCollection | Ускоренный сбор отзывов | PROMOTION_SERVICES | PLATFORM_INTERPRETATION |
+| 116 | FirstCustomerReview | Сбор первых отзывов | PROMOTION_SERVICES | PLATFORM_INTERPRETATION |
+| 74 | StarsMembership | Звёздные товары | PROMOTION_SERVICES | PLATFORM_INTERPRETATION |
+| 48 | PremiumCashbackIndividualPoints | Бонусы продавца | PROMOTION_SERVICES | PLATFORM_INTERPRETATION |
+| 52 | PremiumSubscription | Подписка Premium | SUBSCRIPTION | OZON_TYPE_NAME |
+| 32 | Logistic | Логистика | LOGISTICS | OZON_TYPE_NAME |
+| 12 | CrossDock | Кросс-докинг | LOGISTICS | OZON_TYPE_NAME |
+| 29 | LastMileCourier | Доставка до места выдачи | LAST_MILE | OZON_TYPE_NAME |
+| 28 | LastMile | Последняя миля | LAST_MILE | OZON_TYPE_NAME |
+| 98 | DeliveryToHandoverPlaceByOzon | Доставка до места выдачи силами Ozon | LAST_MILE | OZON_TYPE_NAME |
+| 30 | LastMilePickUpPoint | Выдача товара | LAST_MILE | OZON_TYPE_NAME |
+| 79 | TemporaryPlacementsAgent | Временное размещение товара партнерами | STORAGE | OZON_TYPE_NAME |
+| 46 | Placements | Размещение товаров на складах Ozon | STORAGE | OZON_TYPE_NAME |
+| 1 | Acquiring | Эквайринг | ACQUIRING | OZON_TYPE_NAME |
+| 59 | ReturnFlowLogistic | Обратная логистика | RETURN_LOGISTICS | OZON_TYPE_NAME |
+| 9 | ClientReturn | Обработка возвратов | RETURN_LOGISTICS | OZON_TYPE_NAME |
+| 45 | PickUpPointReturnAcceptance | Обработка возвратов, отмен и невыкупов партнёрами | RETURN_LOGISTICS | PLATFORM_INTERPRETATION |
+| 78 | TemporaryPlacement | Краткосрочное размещение возврата FBS | RETURN_LOGISTICS | PLATFORM_INTERPRETATION |
+| 6 | Cancellation | Обработка отменённых и невостребованных товаров | CANCELLATION_COST | OZON_TYPE_NAME |
+| 15 | Disposal | Утилизация | OTHER_MARKETPLACE_COST | PLATFORM_INTERPRETATION |
+| 71 | SellerReturns | Вывоз товара со склада силами Ozon | OTHER_MARKETPLACE_COST | PLATFORM_INTERPRETATION |
+| 39 | PackingFee | Упаковка товара партнёрами | OTHER_MARKETPLACE_COST | PLATFORM_INTERPRETATION |
+| 38 | PackageCost | Обеспечение материалами для упаковки товара | OTHER_MARKETPLACE_COST | PLATFORM_INTERPRETATION |
+| 77 | SupplyInbound | Обработка товара | OTHER_MARKETPLACE_COST | PLATFORM_INTERPRETATION |
+| 76 | StockInsurance | Страхование товара от массовых повреждений | OTHER_MARKETPLACE_COST | PLATFORM_INTERPRETATION |
+| 57 | RealizationReportCorrection | Корректировка стоимости услуг | OTHER_MARKETPLACE_COST | PLATFORM_INTERPRETATION |
+| 25 | ItemCompensation | Товарная компенсация | COMPENSATION | OZON_TYPE_NAME |
+| 10 | Compensation | Компенсация | COMPENSATION | OZON_TYPE_NAME |
 
 ## 6. `analytics_share` — семантический слой клиента (T4-d)
 
