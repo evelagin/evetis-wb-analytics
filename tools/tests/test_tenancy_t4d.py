@@ -225,28 +225,63 @@ def test_share_renders_identically_for_client_002(tmp_path, monkeypatch):
 FIN = "finance_accrual"
 
 
-@pytest.mark.parametrize("coverage,expected", [
-    ([("2026-01-01", "COMPLETE"), ("2026-01-02", "COMPLETE"), ("2026-01-03", "COMPLETE")],
-     {"2026-01-01": "COMPLETE", "2026-01-02": "COMPLETE", "2026-01-03": "COMPLETE"}),
-    ([("2026-01-01", "COMPLETE"), ("2026-01-02", "FAILED"), ("2026-01-03", "COMPLETE")],
-     {"2026-01-01": "PARTIAL", "2026-01-02": "PARTIAL", "2026-01-03": "COMPLETE"}),
-    ([("2026-01-01", "COMPLETE"), ("2026-01-03", "COMPLETE")],                    # пропуск суток 02
-     {"2026-01-01": "PARTIAL", "2026-01-03": "COMPLETE"}),
-    ([("2026-01-01", "NOT_APPLICABLE"), ("2026-01-02", "COMPLETE")],
-     {"2026-01-01": "COMPLETE", "2026-01-02": "COMPLETE"}),
-])
-def test_finance_window_requires_every_later_day_complete(coverage, expected):
+ECONCFG = ["parameter", "scope", "internal_sku", "value_num", "value_text", "unit", "effective_from",
+           "effective_to", "source", "loaded_at"]
+MATURITY = "FINANCE_SETTLEMENT_MATURITY_DAYS"
+
+
+def _window(coverage, maturity=((MATURITY, "STORE", None, 2, None, "d", "2026-01-01", None, "o", "t"),)):
     rows = _run("tenant_ops", "V_FINANCE_WINDOW_STATUS", {
         "V_COVERAGE_DAILY": (COV, [(FIN, d, s, None, "t") for d, s in coverage]
-                             + [("fbo_postings", "2026-01-02", "FAILED", None, "t")])})
-    assert {r["from_date"]: r["status"] for r in rows} == expected
+                             + [("fbo_postings", "2026-01-02", "FAILED", None, "t")]),
+        "REF_TENANT_ECONOMICS": (ECONCFG, list(maturity))})
+    return {r["from_date"]: (r["status"], r["reason"]) for r in rows}
 
 
-def test_coverage_tie_prefers_the_worse_status():
+C = "COMPLETE"
+
+
+@pytest.mark.parametrize("coverage,expected", [
+    ([("2026-01-01", C), ("2026-01-02", C), ("2026-01-03", C)],
+     {"2026-01-01": (C, None), "2026-01-02": ("PARTIAL", "NOT_MATURE"), "2026-01-03": ("PARTIAL", "NOT_MATURE")}),
+    ([("2026-01-01", C), ("2026-01-02", "FAILED"), ("2026-01-03", C), ("2026-01-04", C), ("2026-01-05", C)],
+     {"2026-01-01": ("PARTIAL", "TAIL_INCOMPLETE"), "2026-01-02": ("PARTIAL", "TAIL_INCOMPLETE"),
+      "2026-01-03": (C, None), "2026-01-04": ("PARTIAL", "NOT_MATURE"), "2026-01-05": ("PARTIAL", "NOT_MATURE")}),
+    ([("2026-01-01", C), ("2026-01-03", C), ("2026-01-04", C), ("2026-01-05", C)],        # пропуск суток 02
+     {"2026-01-01": ("PARTIAL", "TAIL_INCOMPLETE"), "2026-01-03": (C, None),
+      "2026-01-04": ("PARTIAL", "NOT_MATURE"), "2026-01-05": ("PARTIAL", "NOT_MATURE")}),
+    ([("2026-01-01", "NOT_APPLICABLE"), ("2026-01-02", C), ("2026-01-03", C)],
+     {"2026-01-01": (C, None), "2026-01-02": ("PARTIAL", "NOT_MATURE"), "2026-01-03": ("PARTIAL", "NOT_MATURE")}),
+])
+def test_finance_window_requires_a_complete_and_mature_tail(coverage, expected):
+    assert _window(coverage) == expected
+
+
+@pytest.mark.parametrize("maturity", [
+    (),                                                                                    # не задан
+    ((MATURITY, "STORE", None, 2, None, "d", "2026-01-01", None, "o", "t"),
+     (MATURITY, "STORE", None, 5, None, "d", "2026-01-01", None, "o", "t")),               # неоднозначно
+    ((MATURITY, "STORE", None, 2, None, "d", "2099-01-01", None, "o", "t"),),              # ещё не действует
+    ((MATURITY, "SKU", "A1", 2, None, "d", "2026-01-01", None, "o", "t"),),                # не уровень магазина
+])
+def test_finance_window_without_seller_maturity_is_unknown_never_complete(maturity):
+    got = _window([("2026-01-01", C), ("2026-01-02", C), ("2026-01-03", C), ("2026-01-04", C)], maturity)
+    assert {s for s, _ in got.values()} <= {"UNKNOWN", "PARTIAL"}
+    assert got["2026-01-01"] == ("UNKNOWN", "MATURITY_NOT_CONFIGURED")
+
+
+@pytest.mark.parametrize("statuses,winner", [
+    (["COMPLETE", "FAILED"], "FAILED"),
+    (["NOT_APPLICABLE", "PARTIAL"], "PARTIAL"),
+    (["NOT_APPLICABLE", "UNKNOWN"], "UNKNOWN"),
+    (["COMPLETE", "NOT_AVAILABLE"], "NOT_AVAILABLE"),
+    (["COMPLETE", "SOMETHING_NEW"], "SOMETHING_NEW"),
+])
+def test_coverage_tie_prefers_the_worse_status(statuses, winner):
     rows = _run("tenant_ops", "V_COVERAGE_DAILY", {"DATA_COVERAGE": (
         ["entity", "coverage_date", "status", "reason", "rows_loaded", "source_run_id", "evaluated_at"],
-        [(FIN, "2026-01-01", "COMPLETE", None, 1, "a", "t"), (FIN, "2026-01-01", "FAILED", "x", 0, "b", "t")])})
-    assert [r["status"] for r in rows] == ["FAILED"]
+        [(FIN, "2026-01-01", s, None, 1, str(i), "t") for i, s in enumerate(statuses)])})
+    assert [r["status"] for r in rows] == [winner]
 
 
 ECON = ["order_date_msk", "sku", "internal_sku", "delivered_units", "seller_revenue_rub", "commission_rub",
@@ -258,15 +293,16 @@ ECON_ROW = ("2026-01-05", "S1", "A1", 1, 1000, -300, -100, -15, 0, 0, 0, 0, 0, 0
 
 
 @pytest.mark.parametrize("window,status,pre,after", [
-    ([("2026-01-05", "COMPLETE")], "COMPLETE", 585, 385),
-    ([("2026-01-05", "PARTIAL")], "PARTIAL", None, None),
+    ([("2026-01-05", "COMPLETE", None)], "COMPLETE", 585, 385),
+    ([("2026-01-05", "PARTIAL", "NOT_MATURE")], "PARTIAL", None, None),
+    ([("2026-01-05", "UNKNOWN", "MATURITY_NOT_CONFIGURED")], "UNKNOWN", None, None),
     ([], "UNKNOWN", None, None),
 ])
 def test_profitability_publishes_a_result_only_with_complete_finance(window, status, pre, after):
     rows = _run("analytics_share", "profitability_daily", {
         "FACT_OZON_SKU_ECONOMICS_DAILY": (ECON, [ECON_ROW]),
         "DIM_OZON_PRODUCT": (["sku", "product_name"], [("S1", "a")]),
-        "V_FINANCE_WINDOW_STATUS": (["from_date", "status"], window)})
+        "V_FINANCE_WINDOW_STATUS": (["from_date", "status", "reason"], window)})
     (r,) = rows
     assert (r["finance_data_status"], r["contribution_pre_cogs_rub"], r["contribution_after_cogs_rub"]) == \
         (status, pre, after)

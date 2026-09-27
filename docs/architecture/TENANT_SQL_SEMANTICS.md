@@ -46,7 +46,7 @@ P1–P8: `tools/tenancy/sql_package.py`.
 | `tenant_ops.V_DQ_SETTLEMENT_ANOMALIES` | GENERIC_DERIVED | отправление × SKU | несколько или неполные экономические блоки |
 | `tenant_ops.V_DQ_COGS_OVERLAPS` | GENERIC_DERIVED | пара интервалов | пересечения себестоимости продавца |
 | `tenant_ops.V_COVERAGE_DAILY` | GENERIC_DERIVED | сущность × сутки | последняя оценка полноты из `DATA_COVERAGE`; при равенстве — худшая |
-| `tenant_ops.V_FINANCE_WINDOW_STATUS` | GENERIC_DERIVED | дата | полнота начислений от даты до последних оценённых суток |
+| `tenant_ops.V_FINANCE_WINDOW_STATUS` | GENERIC_DERIVED | дата | полнота начислений от даты до последних оценённых суток и срок созревания продавца |
 | `analytics_share.sales_daily` | GENERIC_DERIVED | сутки заказа | продажи магазина; нули только при `COMPLETE` |
 | `analytics_share.orders` | MARKETPLACE_FACT | отправление × SKU | заказы FBO, без данных покупателя, кроме города |
 | `analytics_share.advertising_daily` | MARKETPLACE_FACT | сутки × кампания | отчёт Performance (не биллинг) |
@@ -189,7 +189,8 @@ P1–P8: `tools/tenancy/sql_package.py`.
   `COALESCE(метрика, 0)` в слое запрещён тестом;
 - результат до/после себестоимости — вклад, а не прибыль: налоги, OPEX и фулфилмент продавца не
   входят; публикуется, только если начисления полны от суток заказа до последних оценённых
-  суток (`finance_data_status`), — начисления по заказу приходят позже заказа;
+  суток и прошёл срок созревания продавца (`finance_data_status`, причина —
+  `finance_status_reason`), — начисления по заказу приходят позже заказа;
 - `profitability_daily` + `store_costs_daily` = все начисления Ozon без пропусков и повторов;
 - реклама в двух смыслах, не смешиваются: атрибуция отчёта (`advertising_daily`, `sku_daily`) и
   биллинг (начисления классов `PROMOTION_*` в `profitability_daily` и `store_costs_daily`);

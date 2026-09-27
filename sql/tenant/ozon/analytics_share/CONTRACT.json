@@ -464,7 +464,8 @@
         "product_name": "Название товара",
         "revenue_basis": "SETTLED / PARTIALLY_SETTLED / NOT_SETTLED — рассчитал ли Ozon отправления (ровно один полный экономический блок)",
         "taxonomy_status": "CLASSIFIED / UNRESOLVED — есть ли начисления вне таксономии с ненулевой суммой или с пустой суммой",
-        "cogs_coverage": "COMPLETE / PARTIAL / NOT_AVAILABLE — себестоимость продавца"
+        "cogs_coverage": "COMPLETE / PARTIAL / NOT_AVAILABLE — себестоимость продавца",
+        "finance_status_reason": "Почему не COMPLETE: TAIL_INCOMPLETE / NOT_MATURE / MATURITY_NOT_CONFIGURED / NOT_EVALUATED; NULL при COMPLETE"
       },
       "metrics": {
         "delivered_units": {
@@ -541,17 +542,18 @@
       "status_columns": {
         "finance_data_status": {
           "entity": "finance_accrual",
-          "meaning": "Полнота начислений от суток заказа до последних оценённых суток (tenant_ops.V_FINANCE_WINDOW_STATUS): COMPLETE / PARTIAL; нет оценки — UNKNOWN"
+          "meaning": "Полнота начислений для суток заказа (tenant_ops.V_FINANCE_WINDOW_STATUS): COMPLETE — хвост до последних оценённых суток полон и прошёл срок созревания продавца; PARTIAL — пропуски или срок не прошёл; UNKNOWN — срок не задан или нет оценки"
         }
       },
       "freshness": "Как загрузка начислений (T5); начисления по заказу приходят позже заказа",
-      "completeness": "Результат публикуется только при SETTLED, CLASSIFIED, без признака возврата и при finance_data_status = COMPLETE; иначе NULL, не ноль",
+      "completeness": "Результат публикуется только при SETTLED, CLASSIFIED, без признака возврата и при finance_data_status = COMPLETE; иначе NULL, не ноль. Комиссия и расходы строки с нерассчитанным отправлением — NULL",
       "limitations": [
         "Контракт вклада: налоги, OPEX, фулфилмент продавца не входят — это не прибыль",
         "Возвраты покупателей не моделируются: сторно возврата не загружается; доставленное отправление с расходами обратной логистики не получает результата",
         "Поздние начисления Ozon меняют прошлые сутки заказа",
         "Начисления вне доставленных заказов (магазин, отмены, отправления вне загруженной истории) — в store_costs_daily; на SKU не разносятся",
-        "Себестоимость — только из справочника продавца; умолчаний нет, пересечения интервалов — себестоимости нет"
+        "Себестоимость — только из справочника продавца; умолчаний нет, пересечения интервалов — себестоимости нет",
+        "Срок созревания начислений задаёт продавец (FINANCE_SETTLEMENT_MATURITY_DAYS); пока он не задан, результат не публикуется"
       ],
       "lineage": {
         "direct": [
@@ -566,6 +568,7 @@
           "ref.REF_COGS",
           "ref.REF_PRODUCT_MASTER",
           "ref.REF_SKU_CHANNEL_MAP",
+          "ref.REF_TENANT_ECONOMICS",
           "tenant_ops.DATA_COVERAGE"
         ]
       }
