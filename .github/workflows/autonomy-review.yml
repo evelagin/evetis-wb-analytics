@@ -60,9 +60,9 @@ jobs:
         run: "pip install --only-binary=:all: --require-hashes -r tools/requirements-sql-ci.txt"
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
-          node-version: "22"   # @anthropic-ai/claude-code@2.1.251: engines node >=22
+          node-version: "22"   # @anthropic-ai/claude-code@2.1.280: engines node >=22
       - name: install Claude Code (pinned)
-        run: npm install -g @anthropic-ai/claude-code@2.1.251
+        run: npm install -g @anthropic-ai/claude-code@2.1.280
       - name: clone state at pinned sha (read)
         env:
           GH_TOKEN: ${{ github.token }}   # contents: read — только на этот шаг
