@@ -837,6 +837,73 @@
       "business_rule_reference": "Спецификация PR-PLAN-1 (владелец, 2026-09-25): MODEL_SCENARIO не утверждается, утверждение только по точному content_sha256, поступление в базовой траектории только с доказанными SKU, количеством, состоянием и датой; docs/ops/STAGE_C1_SHEET_2026-09-12.md (c1_expiry_margin_days)",
       "provenance": "PR-PLAN-1; пороги нулевые (NUMERIC точен), FLOAT64 1e-6, паритет legacy 0,01 карточки (FLOAT64 → NUMERIC). Регрессия §17 — tools/plan1_render.py run fixtures (PX10–PX22)",
       "pending_deploy_note": "До развёртывания таблиц PR-PLAN-1 блоки против живых объектов падают с «not found»; исполнять tools/plan1_render.py run predeploy (новые таблицы пустые)."
+    },
+    {
+      "suite": "ads_intel",
+      "title": "AIE V1: движок рекламных рекомендаций — доказательная база WB, экономический ограничитель, классы запросов, Ozon в режиме «закрыто», решение",
+      "gate": true,
+      "severity": "HIGH",
+      "domain": "advertising",
+      "marketplace": [
+        "WB",
+        "OZON"
+      ],
+      "pipelines": [
+        "ads_daily",
+        "ads_query_stats",
+        "ads_query_bids",
+        "ozon_ads_sku_daily",
+        "ozon_ads_expense_daily"
+      ],
+      "layer": "mart",
+      "adapter": "check_blocks",
+      "id_prefix": "AIE",
+      "status_column": "status",
+      "execution_mode": "read_only_select",
+      "expected_result": "all_checks_pass",
+      "owner": "evelagin",
+      "timeout_seconds": 300,
+      "files": [
+        "sql/ads_intel/aie_validation.sql"
+      ],
+      "scope": [
+        "wb_mart.V_AIE_WB_PAIR_EVIDENCE",
+        "wb_mart.V_AIE_WB_ECON_GUARD",
+        "wb_mart.V_AIE_WB_QUERY_CLASS",
+        "wb_mart.FACT_ADS_SKU_DAILY",
+        "wb_mart.V_ADS_SKU_ECONOMIC_LIMITS",
+        "wb_mart.V_WB_SKU_FORWARD_ECONOMICS_CURRENT",
+        "wb_mart.FACT_STOCKS_SNAPSHOT",
+        "evetis_ref.REF_SKU_CHANNEL_MAP",
+        "wb_mart.V_ADS_FUNNEL_QUERY_28D",
+        "ozon_mart.V_AIE_OZON_PAIR_EVIDENCE",
+        "ozon_mart.V_AIE_OZON_ECON_GUARD",
+        "ozon_mart.V_OZON_AGENT_DECISION_INPUT",
+        "ozon_raw.RAW_OZON_ADS_SKU_DAILY",
+        "ozon_raw.RAW_OZON_ADS_EXPENSE_DAILY",
+        "ozon_raw.RAW_OZON_ADS_CAMPAIGNS",
+        "evetis_mart.V_AIE_DECISION_CURRENT",
+        "evetis_mart.V_INVENTORY_POSITION_HISTORY",
+        "wb_mart.V_DATA_FRESHNESS"
+      ],
+      "dimensions": [
+        "grain",
+        "uniqueness",
+        "reconciliation",
+        "identities",
+        "null_contract",
+        "parity",
+        "no_billing",
+        "no_write",
+        "determinism",
+        "owner_policy_unset",
+        "fail_closed"
+      ],
+      "cadence": "перед слиянием изменения в области scope; до развёртывания — tools/aie_render.py run predeploy",
+      "source_contract": "docs/ads_intel/AIE_DESIGN_GATE_V1_2026-09-27.md",
+      "business_rule_reference": "docs/ADS4_FUNNEL_MART_DESIGN_2026-08-15.md §6.2 (пороги доказательности); sql/ads/ads4_sku_economic_limits.sql (экономический предел); docs/FIN_CONTRACT_V2_2026-09-16.md (атрибуция ≠ биллинг); решения владельца P7, P9, P10, P11, P12, P14 от 2026-09-27",
+      "provenance": "AIE V1 PR-1…PR-4; пороги нулевые, кроме чисел Ads-4 (40/10/1000) и допуска округления контракта WB_FE_V1 в AIE_E05. Политики P1–P6, P8, P13, P15 не заданы — UBR-013…UBR-021",
+      "pending_deploy_note": "Объекты не развёрнуты; до ACK на развёртывание набор исполняется только через tools/aie_render.py run predeploy (подстановка тел из Git)."
     }
   ],
   "backlog": {
