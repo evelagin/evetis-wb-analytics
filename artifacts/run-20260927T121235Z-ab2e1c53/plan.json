@@ -1,0 +1,25 @@
+{
+  "phase": "PLAN",
+  "status": "PLAN_READY",
+  "summary": "План: создать один новый файл tools/tests/test_ae_commissioning_canary.py с регрессионными тестами clamp_percent. Импорт `from tools.commissioning.ae_canary import clamp_percent`, как в tools/tests/test_autonomy_commissioning.py:22. Шесть случаев без skip/xfail: (1) ниже 0: clamp_percent(-5) == 0.0 и clamp_percent(-0.1) == 0.0; (2) выше 100: clamp_percent(150) == 100.0 и clamp_percent(100.1) == 100.0; (3) ровно 0: clamp_percent(0) == 0.0; (4) ровно 100: clamp_percent(100) == 100.0; (5) дробное внутри отрезка: clamp_percent(42.5) == 42.5; (6) NaN: pytest.raises(ValueError), вызов clamp_percent(math.nan). Файлы tools/commissioning/ae_canary.py, TCB, conftest и прочие не трогаю. Проверка после реализации: `python -m pytest tools/tests/test_ae_commissioning_canary.py -q`, затем `python -m pytest tools/tests -q`. Базовый прогон на 73bf86d: 1431 passed, код выхода 0.",
+  "root_cause": "Дефекта нет, это синтетическая цель ввода в эксплуатацию: нужен регрессионный тест для существующей функции. Что подтверждено командами: tools/commissioning/ae_canary.py определяет clamp_percent. Для float NaN функция бросает ValueError, иначе возвращает min(100.0, max(0.0, float(value))). Файла tools/tests/test_ae_commissioning_canary.py нет. Путь указан в ALLOWED_FILES (tools/autonomy/commissioning.py:22). Тест test_target_and_expected_change_are_outside_tcb проходит, значит путь вне TCB. Импорт `tools.commissioning.ae_canary` уже работает в наборе тестов. Базовый `pytest tools/tests`: 1431 passed.",
+  "root_cause_established": true,
+  "intended_files": [
+    "tools/tests/test_ae_commissioning_canary.py"
+  ],
+  "changed_files": [],
+  "business_semantics_change": false,
+  "commands_run": [
+    "cat tools/commissioning/ae_canary.py; ls tools/tests; ls tools/tests/test_ae_commissioning_canary.py (No such file); git rev-parse HEAD -> 73bf86dd",
+    "sed -n 1,45p tools/tests/test_autonomy_commissioning.py",
+    "python -m pytest tools/tests/test_autonomy_commissioning.py -q -> 16 passed",
+    "python -m pytest tools/tests -q -> 1431 passed in 350.68s, exit 0",
+    "Grep ALLOWED_FILES tools/autonomy/commissioning.py; Grep marker quality/autonomy/examples/objective.commissioning.json"
+  ],
+  "uncertainty": [
+    "Вердикт commissioning (tools/autonomy/commissioning.py:45) требует в патче маркер итерации 'AE-COMMISSIONING-ITERATION-OK'. В statement цели маркер не упомянут, поэтому по своей инициативе я его не добавляю: судя по докстрингу, он должен появиться на итерации REVIEWING→FIXING по находке ревьюера.",
+    "Проверка «тест краснеет без исправления» здесь неприменима: функция не меняется, тест фиксирует её текущий контракт.",
+    "Прямая проверка tcb_paths через python -c была отклонена правами. Принадлежность пути к TCB установлена косвенно: прошёл существующий тест, а путь не совпадает ни с одним шаблоном TCB."
+  ],
+  "questions_for_owner": []
+}

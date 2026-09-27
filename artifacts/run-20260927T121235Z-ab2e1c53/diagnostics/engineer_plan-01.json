@@ -1,0 +1,101 @@
+{
+  "schema_version": 1,
+  "kind": "agent_diagnostics",
+  "job_role": "engineer",
+  "run_id": "run-20260927T121235Z-ab2e1c53",
+  "outcome": "SUCCESS",
+  "failure_stage": "NONE",
+  "failure_class": "NONE",
+  "claude_code_version": "2.1.280",
+  "node_version": "v22.23.2",
+  "scope_guard": {
+    "provenance": "untrusted_job_guard_stdout",
+    "decision": "PASS_WITH_EXCEPTION",
+    "scope": "workspace:developer",
+    "expires_in": 597,
+    "request_id": "req_011CfTw3EviWDMvTsM1QtF9b"
+  },
+  "scratch_state": "TESTING",
+  "scratch_reason": "кандидат: 1 файл(ов), итерация 1",
+  "expected_artifacts": [
+    "engineer_implement.json",
+    "engineer_implement.patch",
+    "engineer_plan.json"
+  ],
+  "actually_created_artifacts": [
+    "engineer_implement.json",
+    "engineer_implement.patch",
+    "engineer_plan.json"
+  ],
+  "invocations": [
+    {
+      "role": "engineer_plan",
+      "attempt": 1,
+      "failure_stage": "NONE",
+      "failure_class": "NONE",
+      "process_started": true,
+      "pre_invoke_succeeded": true,
+      "exit_code": 0,
+      "exception_type": null,
+      "elapsed_ms": 375854,
+      "output_format": "json",
+      "is_error": false,
+      "subtype": "success",
+      "api_error_status": null,
+      "api_error_type": null,
+      "duration_ms": 17681,
+      "duration_api_ms": 62041,
+      "num_turns": 4,
+      "total_cost_usd": 0.26784,
+      "usage": {
+        "input_tokens": 10,
+        "output_tokens": 1898,
+        "cache_creation_input_tokens": 4428,
+        "cache_read_input_tokens": 64524
+      },
+      "messages_api_reached": true,
+      "model_response_began": true,
+      "summary": "",
+      "stdout_tail": "",
+      "stderr_tail": ""
+    },
+    {
+      "role": "engineer_implement",
+      "attempt": 2,
+      "failure_stage": "NONE",
+      "failure_class": "NONE",
+      "process_started": true,
+      "pre_invoke_succeeded": true,
+      "exit_code": 0,
+      "exception_type": null,
+      "elapsed_ms": 396134,
+      "output_format": "json",
+      "is_error": false,
+      "subtype": "success",
+      "api_error_status": null,
+      "api_error_type": null,
+      "duration_ms": 395609,
+      "duration_api_ms": 46789,
+      "num_turns": 10,
+      "total_cost_usd": 0.23207520000000004,
+      "usage": {
+        "input_tokens": 14,
+        "output_tokens": 3642,
+        "cache_creation_input_tokens": 29124,
+        "cache_read_input_tokens": 67796
+      },
+      "messages_api_reached": true,
+      "model_response_began": true,
+      "summary": "",
+      "stdout_tail": "",
+      "stderr_tail": ""
+    }
+  ],
+  "limitations": [
+    "Claude CLI не сообщает request-id запроса Messages API и факт обмена токена федерации.",
+    "messages_api_reached и model_response_began выводятся из api_error_status, duration_api_ms и usage CLI.",
+    "Обмен токена самим CLI виден только в истории аутентификации Claude Console.",
+    "scope_guard — вывод сторожа в том же недоверенном job'е, не доверенное доказательство."
+  ],
+  "redaction": "CLEAN"
+}
