@@ -41,21 +41,55 @@ def anon_dest():
     return {"projectId": P, "datasetId": ANON, "tableId": "anon1"}
 
 
+def _wif_events():
+    """Admin Activity, из которого восстанавливается ЖЕЛАЕМАЯ конфигурация WIF (Terraform = live, wif_check PASS)."""
+    from tools.autonomy import wif_check
+    cfg = wif_check.load_terraform()
+    pool = "principalSet://iam.googleapis.com/projects/1/locations/global/workloadIdentityPools/github-pool/"
+    wip = [{"timestamp": "2026-07-26T10:21:06Z", "protoPayload": {
+        "methodName": "google.iam.admin.v1.WorkloadIdentityPools.CreateWorkloadIdentityPoolProvider",
+        "request": {"workloadIdentityPoolProviderId": "github-provider", "workloadIdentityPoolProvider": {
+            "attributeCondition": cfg.condition, "attributeMapping": cfg.mapping}}}}]
+    created, policies = [], []
+    for i, (sa, members) in enumerate(sorted(cfg.bindings.items())):
+        uid = str(100 + i)
+        created.append({"protoPayload": {"response": {"email": f"{sa}@{P}.iam.gserviceaccount.com", "unique_id": uid}}})
+        ms = [(f"{pool}{a}/{v}" if a != "google.subject" else
+               f"principal://iam.googleapis.com/projects/1/locations/global/workloadIdentityPools/github-pool/subject/{v}")
+              for a, v in members]
+        policies.append({"timestamp": "2026-09-25T00:00:00Z", "protoPayload": {
+            "serviceName": "iam.googleapis.com", "resourceName": f"projects/-/serviceAccounts/{uid}",
+            "request": {"policy": {"bindings": [{"role": "roles/iam.workloadIdentityUser", "members": ms}]}}}})
+    return wip, created, policies
+
+
+WIP, SA_CREATED, SA_POLICIES = _wif_events()
+
+
+def table_policy(rn, members=(f"serviceAccount:sa-loaders-prod@{P}.iam.gserviceaccount.com",)):
+    return {"timestamp": "2026-08-01T00:00:00Z", "protoPayload": {
+        "serviceName": "bigquery.googleapis.com", "resourceName": rn, "metadata": {"tableChange": {"table": {
+            "policy": {"bindings": [{"role": "roles/bigquery.dataEditor", "members": list(members)}]}}}}}}
+
+
 class FakeSource:
     def __init__(self, jobs=(), activity=(), access=(), granted=(), datasets=None, table_policies=(), writable=(),
                  created="2026-07-10T10:26:24Z", watermark_after=0, log_watermark_after=0, sa_events=None,
-                 sa_granted=None, grants=None, routing=None):
+                 sa_granted=None, grants=None, routing=None, iam_events=None, wip=None):
         self.project = P
         self._jobs, self._activity, self._access, self._granted = list(jobs), list(activity), list(access), list(granted)
         self._datasets = datasets if datasets is not None else {
             "wb_raw": {"location": "EU", "access": [{"role": "READER", "userByEmail": SA}]},
             ANON: {"location": "EU", "access": [{"role": "OWNER", "userByEmail": SA}]}}
         self._policies, self._writable, self._created = list(table_policies), dict(writable), created
-        self._sa_events = sa_events if sa_events is not None else [
-            {"protoPayload": {"response": {"email": SA}}}, {"protoPayload": {"response": {"email": LOADER}}}]
+        self._sa_events = sa_events if sa_events is not None else SA_CREATED + [
+            {"protoPayload": {"response": {"email": LOADER, "unique_id": "900"}}}]
+        self._iam_events = (list(iam_events) if iam_events is not None else list(SA_POLICIES)) + [
+            table_policy(rn) for rn in table_policies]
+        self._wip = wip if wip is not None else WIP
         self._sa_granted, self._grants = dict(sa_granted or {}), dict(grants or {})
-        self._routing = routing or {"sink": {"filter": 'NOT LOG_ID("cloudaudit.googleapis.com/activity")'},
-                                    "exclusions": []}
+        self._routing = routing or {"sink": {"filter": A.DEFAULT_SINK_FILTER}, "exclusions": [],
+                                    "bucket": {"retentionDays": 30}}
         self.watermark_after, self.log_watermark_after = watermark_after, log_watermark_after
         self.list_calls, self.log_probe_calls, self.sleeps, self.label = 0, 0, [], None
         self.filters, self.sa_checked, self.grant_locations = [], [], []
@@ -78,8 +112,10 @@ class FakeSource:
             return [{"probe": 1}] if self.log_probe_calls > self.log_watermark_after else []
         if "CreateServiceAccount" in flt:
             return self._sa_events
-        if 'methodName:"SetIamPolicy"' in flt:
-            return [{"protoPayload": {"resourceName": rn}} for rn in self._policies]
+        if "setIamPermissions" in flt:
+            return self._iam_events
+        if "WorkloadIdentityPool" in flt:
+            return self._wip
         if "data_access" in flt:
             return self._access
         return self._activity
@@ -426,7 +462,7 @@ def entry(svc="bigquery.googleapis.com", method="google.cloud.bigquery.v2.JobSer
     (entry(svc="iamcredentials.googleapis.com", method="SignJwt", request={}), "IMPERSONATION:?"),
     (entry(eff=LOADER, chain=[{"firstPartyPrincipal": {"principalEmail": SA}}], meta={"tableDataChange": {}}),
      f"DELEGATED:bigquery.googleapis.com:{LOADER}"),
-    (entry(eff=LOADER, chain=[{"principalSubject": GH}]), f"DELEGATED:bigquery.googleapis.com:{LOADER}"),
+    (entry(eff=LOADER, chain=[{"principalSubject": GH}]), None),        # чужой WIF-workflow — не FAIL, см. ниже
     (entry(eff=LOADER, chain=[{"firstPartyPrincipal": {"principalEmail": "service-1@gcp-sa-cloudscheduler.iam.gserviceaccount.com"}}],
            meta={"tableDataChange": {}}), None),                                        # production, не AE
     (entry(eff=LOADER, meta={"tableDataChange": {}}), None),
@@ -462,30 +498,61 @@ def test_audit_log_filters_cover_delegation_and_federation():
     assert not delegated_from_ae(entry(chain=[{"principalSubject": GH}]), [SA])      # сам AE — не «чужой»
 
 
+OK_SINK = {"filter": A.DEFAULT_SINK_FILTER}
+
+
 @pytest.mark.parametrize("routing,bad", [
-    ({"sink": {"filter": "x"}, "exclusions": []}, False),
-    ({"sink": {"filter": "x", "exclusions": [{"name": "e", "disabled": True}]}, "exclusions": []}, False),
-    ({"sink": {"filter": "x", "disabled": True}, "exclusions": []}, True),
-    ({"sink": {"filter": 'NOT LOG_ID("cloudaudit.googleapis.com/data_access")'}, "exclusions": []}, True),
-    ({"sink": {"filter": "x", "exclusions": [{"name": "bq"}]}, "exclusions": []}, True),
-    ({"sink": {"filter": "x"}, "exclusions": [{"name": "legacy"}]}, True),
+    ({"sink": OK_SINK, "exclusions": [], "bucket": {"retentionDays": 30}}, False),
+    ({"sink": {**OK_SINK, "exclusions": [{"name": "e", "disabled": True}]}, "exclusions": [], "bucket": {"retentionDays": 30}}, False),
+    ({"sink": {**OK_SINK, "disabled": True}, "exclusions": [], "bucket": {"retentionDays": 30}}, True),
+    ({"sink": {"filter": A.DEFAULT_SINK_FILTER + ' AND NOT protoPayload.methodName:"InsertAll"'}, "exclusions": [],
+      "bucket": {"retentionDays": 30}}, True),                                     # сужение фильтра
+    ({"sink": {"filter": 'NOT LOG_ID("cloudaudit.googleapis.com/data_access")'}, "exclusions": [],
+      "bucket": {"retentionDays": 30}}, True),
+    ({"sink": {**OK_SINK, "exclusions": [{"name": "bq"}]}, "exclusions": [], "bucket": {"retentionDays": 30}}, True),
+    ({"sink": OK_SINK, "exclusions": [{"name": "legacy"}], "bucket": {"retentionDays": 30}}, True),
+    ({"sink": {**OK_SINK, "destination": "logging.googleapis.com/projects/p/locations/global/buckets/other"},
+      "exclusions": [], "bucket": {"retentionDays": 30}}, True),
+    ({"sink": OK_SINK, "exclusions": [], "bucket": {"retentionDays": 1}}, True),  # окно прогона ~48 мин + сутки
+    ({"sink": OK_SINK, "exclusions": [], "bucket": {}}, True),
 ])
 def test_log_routing_must_deliver_data_access(routing, bad):
-    assert bool(routing_problems(routing)) is bad
+    assert bool(routing_problems(routing, timedelta(minutes=48))) is bad
     assert audit(FakeSource(routing=routing))["status"] == ("BLOCKED" if bad else "PASS")
+
+
+def test_other_wif_workflow_in_window_is_blocked_not_a_sticky_fail():
+    deploy = entry(eff=f"sa-deployer@{P}.iam.gserviceaccount.com", chain=[{"principalSubject": GH}],
+                   svc="run.googleapis.com", method="google.cloud.run.v1.Jobs.ReplaceJob")
+    r = audit(FakeSource(activity=[deploy], access=[entry(eff=LOADER, chain=[{"principalSubject": GH}],
+                                                          meta={"tableDataChange": {}})]))
+    assert r["status"] == "BLOCKED" and r["mutations"] is None and any("атрибуция" in x for x in r["iam_invariant"])
+    assert _run(r)["production_mutations"] == 0
+    ae = entry(eff=LOADER, chain=[{"firstPartyPrincipal": {"principalEmail": SA}}], svc="run.googleapis.com",
+               method="google.cloud.run.v1.Jobs.RunJob")
+    assert audit(FakeSource(activity=[ae]))["status"] == "FAIL"                     # от AE — FAIL, как прежде
+
+
+def test_foreign_project_sa_with_roles_here_is_self_checked():
+    other = "robot@other-project.iam.gserviceaccount.com"
+    ev = list(SA_POLICIES) + [pol("run.googleapis.com", RUN_SVC, [{"role": "roles/run.invoker",
+                                                                  "members": [f"serviceAccount:{other}"]}])]
+    src = FakeSource(iam_events=ev, sa_granted={other: ["iam.serviceAccounts.getAccessToken"]})
+    r = audit(src)
+    assert other in src.sa_checked and r["status"] == "BLOCKED"
 
 
 def test_every_project_sa_is_self_checked_and_any_impersonation_right_blocks():
     src = FakeSource()
-    assert audit(src)["status"] == "PASS" and sorted(src.sa_checked) == sorted([SA, LOADER])
+    assert audit(src)["status"] == "PASS" and LOADER in src.sa_checked and SA in src.sa_checked
     r = audit(FakeSource(sa_granted={LOADER: ["iam.serviceAccounts.getAccessToken"]}))
     assert r["status"] == "BLOCKED" and any(LOADER in x for x in r["iam_invariant"])
 
 
 def test_sa_inventory_must_be_complete():
-    events = [{"protoPayload": {"response": {"email": SA}}}, {"protoPayload": {}}]
+    events = SA_CREATED + [{"protoPayload": {}}]
     assert audit(FakeSource(sa_events=events))["status"] == "BLOCKED"
-    failed = [{"protoPayload": {"response": {"email": SA}}}, {"protoPayload": {"status": {"code": 6}}}]
+    failed = SA_CREATED + [{"protoPayload": {"status": {"code": 6}}}]
     assert audit(FakeSource(sa_events=failed))["status"] == "PASS"            # неудачное создание — SA нет
 
 
@@ -547,3 +614,105 @@ def test_report_ignores_non_finite_cost(tmp_path):
     assert _usage_cost({"role": "reviewer", "diagnostics": {"file": "diagnostics/r.json"}}, tmp_path) == 0.1
     assert _usage_cost({"role": "reviewer", "total_cost_usd": float("nan"),
                         "diagnostics": {"file": "diagnostics/r.json"}}, tmp_path) == 0.1
+
+
+# ------------------------------------------------------------ v4: IAM всех ресурсов и WIF по истории ---
+def pol(svc, rn, bindings, ts="2026-09-01T00:00:00Z", **pp):
+    return {"timestamp": ts, "protoPayload": {"serviceName": svc, "resourceName": rn,
+                                              "request": {"policy": {"bindings": bindings}}, **pp}}
+
+
+def delta(rn, action, role, member, ts):
+    return {"timestamp": ts, "protoPayload": {"serviceName": "storage.googleapis.com", "resourceName": rn,
+                                              "methodName": "storage.setIamPermissions", "serviceData": {
+                                                  "policyDelta": {"bindingDeltas": [{"action": action, "role": role,
+                                                                                     "member": member}]}}}}
+
+
+RUN_SVC = f"projects/{P}/locations/europe-west1/services/evetis-wb-communications"
+
+
+@pytest.mark.parametrize("extra,blocked", [
+    ([pol("run.googleapis.com", RUN_SVC, [{"role": "roles/run.invoker", "members": ["allUsers"]}])], True),  # F-18
+    ([pol("storage.googleapis.com", "projects/_/buckets/b", [{"role": "roles/storage.objectViewer",
+                                                              "members": ["allUsers"]}])], False),        # чтение
+    ([delta("projects/_/buckets/b", "ADD", "roles/storage.objectAdmin", "group:team@x", "2026-09-01T00:00:00Z")], True),
+    ([delta("projects/_/buckets/b", "ADD", "roles/storage.objectAdmin", "group:team@x", "2026-09-01T00:00:00Z"),
+      delta("projects/_/buckets/b", "REMOVE", "roles/storage.objectAdmin", "group:team@x", "2026-09-02T00:00:00Z")], False),
+    ([pol("pubsub.googleapis.com", f"projects/{P}/topics/t", [{"role": "roles/pubsub.publisher",
+                                                               "members": [f"serviceAccount:{SA}"]}])], True),
+    ([pol("cloudresourcemanager.googleapis.com", f"projects/{P}", [{"role": "roles/logging.viewer",
+                                                                    "members": [f"serviceAccount:{SA}"]}])], False),
+    ([pol("run.googleapis.com", RUN_SVC, [{"role": "roles/run.invoker", "members": [
+        "principalSet://iam.googleapis.com/projects/1/locations/global/workloadIdentityPools/github-pool/attribute.repository/o/r"]}])], True),
+    ([{"timestamp": "2026-09-01T00:00:00Z", "protoPayload": {"serviceName": "pubsub.googleapis.com",
+                                                             "resourceName": "t", "methodName": "SetIamPolicy"}}], True),
+    ([{"timestamp": "2026-09-01T00:00:00Z", "protoPayload": {"serviceName": "pubsub.googleapis.com",
+                                                             "resourceName": "t", "status": {"code": 7}}}], False),
+    ([pol("secretmanager.googleapis.com", "s", [{"role": "roles/secretmanager.secretAccessor",
+                                                 "members": [LOADER], "condition": {"expression": "true"}}])], True),
+])
+def test_iam_state_of_every_resource(extra, blocked):
+    r = audit(FakeSource(iam_events=list(SA_POLICIES) + extra))
+    assert r["status"] == ("BLOCKED" if blocked else "PASS"), r["iam_invariant"]
+
+
+def test_latest_full_policy_wins():
+    grant = pol("run.googleapis.com", RUN_SVC, [{"role": "roles/run.invoker", "members": ["allUsers"]}], ts="2026-09-01T00:00:00Z")
+    revoke = pol("run.googleapis.com", RUN_SVC, [{"role": "roles/run.invoker", "members": [f"serviceAccount:{LOADER}"]}],
+                 ts="2026-09-02T00:00:00Z")
+    assert audit(FakeSource(iam_events=list(SA_POLICIES) + [revoke, grant]))["status"] == "PASS"
+
+
+def _deployer_uid():
+    return next(e["protoPayload"]["response"]["unique_id"] for e in SA_CREATED
+                if e["protoPayload"]["response"]["email"].startswith("sa-deployer@"))
+
+
+def test_wif_reconstruction_passes_the_s1_evaluator_and_detects_a_leak():
+    assert audit(FakeSource())["status"] == "PASS"
+    leak = pol("iam.googleapis.com", f"projects/-/serviceAccounts/{_deployer_uid()}", [{
+        "role": "roles/iam.workloadIdentityUser", "members": [
+            "principal://iam.googleapis.com/projects/1/locations/global/workloadIdentityPools/github-pool/subject/"
+            "repo:evelagin/evetis-wb-analytics:ref:refs/heads/main"]}], ts="2026-09-26T00:00:00Z")
+    r = audit(FakeSource(iam_events=list(SA_POLICIES) + [leak]))
+    assert r["status"] == "BLOCKED" and any(x.startswith("WIF: инвариант S1") for x in r["iam_invariant"])
+
+
+def test_wif_provider_update_mask_is_applied():
+    upd = {"timestamp": "2026-09-26T00:00:00Z", "protoPayload": {
+        "methodName": "google.iam.admin.v1.WorkloadIdentityPools.UpdateWorkloadIdentityPoolProvider",
+        "request": {"updateMask": "attributeCondition", "workloadIdentityPoolProvider": {
+            "name": "projects/p/locations/global/workloadIdentityPools/github-pool/providers/github-provider",
+            "attributeCondition": "assertion.repository_owner == \"someone-else\""}}}}
+    r = audit(FakeSource(wip=WIP + [upd]))
+    assert r["status"] == "BLOCKED" and any("WIF" in x for x in r["iam_invariant"])
+
+
+@pytest.mark.parametrize("wip_extra,iam_extra", [
+    ([{"timestamp": "2026-09-26T00:00:00Z", "protoPayload": {
+        "methodName": "google.iam.admin.v1.WorkloadIdentityPools.DeleteWorkloadIdentityPoolProvider", "request": {"name": "x"}}}], []),
+    ([], [pol("iam.googleapis.com", "projects/-/serviceAccounts/999999", [{"role": "roles/iam.workloadIdentityUser", "members": [
+        "principalSet://iam.googleapis.com/projects/1/locations/global/workloadIdentityPools/github-pool/attribute.repository/x"]}])]),
+])
+def test_unmodelled_wif_state_is_blocked(wip_extra, iam_extra):
+    r = audit(FakeSource(wip=WIP + wip_extra, iam_events=list(SA_POLICIES) + iam_extra))
+    assert r["status"] == "BLOCKED", r["iam_invariant"]
+
+
+def test_member_of_another_pool_is_not_modelled_as_github():
+    """principalSet другого пула оценщик GitHub-провайдера не моделирует — отказ, даже если S1 проходит."""
+    uid = _deployer_uid()
+    base = next(e for e in SA_POLICIES if e["protoPayload"]["resourceName"].endswith(f"/{uid}"))
+    members = base["protoPayload"]["request"]["policy"]["bindings"][0]["members"] + [
+        "principalSet://iam.googleapis.com/projects/2/locations/global/workloadIdentityPools/tenant-pool/attribute.repository/x"]
+    ev = [e for e in SA_POLICIES if e is not base] + [pol("iam.googleapis.com", f"projects/-/serviceAccounts/{uid}", [
+        {"role": "roles/iam.workloadIdentityUser", "members": members}], ts="2026-09-26T00:00:00Z")]
+    r = audit(FakeSource(iam_events=ev))
+    assert r["status"] == "BLOCKED" and any("другого пула" in x for x in r["iam_invariant"])
+    assert not any(x.startswith("WIF: инвариант S1") for x in r["iam_invariant"])
+
+
+def test_missing_provider_history_is_blocked():
+    r = audit(FakeSource(wip=[]))
+    assert r["status"] == "BLOCKED" and any("провайдер github-provider" in x for x in r["iam_invariant"])

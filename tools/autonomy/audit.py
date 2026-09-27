@@ -17,7 +17,7 @@ from lib.bq_readonly import ReadOnlyBigQuery, resolve_token  # noqa: E402
 
 # Версия источника доказательства. Доказательство другой версии (в т.ч. прежнего INFORMATION_SCHEMA по одному
 # региону EU, который не видел LOAD/COPY/EXTRACT, SELECT с записью в таблицу и задания вне EU) нулём не считается.
-AUDIT_SOURCE = "jobs_list+audit_logs+iam_selftest/v3"
+AUDIT_SOURCE = "jobs_list+audit_logs+iam_selftest+iam_history/v4"
 
 API = "https://www.googleapis.com"
 CRM = "https://cloudresourcemanager.googleapis.com/v1"
@@ -121,16 +121,23 @@ def _ae_principal(p: str, identities: list[str]) -> bool:
     return p in identities or p.startswith(FEDERATED)
 
 
-def delegated_from_ae(entry: dict, identities: list[str]) -> bool:
-    """Цепочка делегирования начинается у AE (SA AE или федеративный принципал), а действует ДРУГАЯ идентичность."""
+def attribution(entry: dict, identities: list[str]) -> str | None:
+    """Чья это запись: "ae" — действует AE (или прямой федеративный принципал); "delegated_ae" — SA AE в начале
+    цепочки, действует другая идентичность (AE получил чужой токен); "federated_other" — цепочка от федеративного
+    принципала к НЕ-AE SA: по WIF (проверено оценщиком S1) это доверенный workflow, но атрибуция по журналу
+    неоднозначна; None — к AE не относится."""
     eff, chain = _auth(entry)
     if _ae_principal(eff, identities):
-        return False
-    for d in chain:
-        first = (d.get("firstPartyPrincipal") or {}).get("principalEmail") or ""
-        if first in identities or (d.get("principalSubject") or "").startswith(FEDERATED):
-            return True
-    return False
+        return "ae"
+    if any(((d.get("firstPartyPrincipal") or {}).get("principalEmail") or "") in identities for d in chain):
+        return "delegated_ae"
+    if any((d.get("principalSubject") or "").startswith(FEDERATED) for d in chain):
+        return "federated_other"
+    return None
+
+
+def delegated_from_ae(entry: dict, identities: list[str]) -> bool:
+    return attribution(entry, identities) == "delegated_ae"
 
 
 def data_access_violation(entry: dict, identities: list[str]) -> str | None:
@@ -138,9 +145,10 @@ def data_access_violation(entry: dict, identities: list[str]) -> str | None:
     pp = entry.get("protoPayload") or {}
     svc, method = pp.get("serviceName", ""), str(pp.get("methodName"))
     eff, _ = _auth(entry)
-    if delegated_from_ae(entry, identities):
+    who = attribution(entry, identities)
+    if who == "delegated_ae":
         return f"DELEGATED:{svc}:{eff}"             # AE получил и использовал чужую идентичность
-    if not _ae_principal(eff, identities):
+    if who != "ae":
         return None
     if svc == "bigquery.googleapis.com":
         meta = set((pp.get("metadata") or {}).keys())
@@ -213,7 +221,8 @@ class GcpAuditSource:
     def routing(self) -> dict:
         """Маршрутизация журналов: sink _Default и исключения уровня проекта."""
         return {"sink": self.http("GET", f"{LOGGING}/projects/{self.project}/sinks/_Default"),
-                "exclusions": self.http("GET", f"{LOGGING}/projects/{self.project}/exclusions").get("exclusions", [])}
+                "exclusions": self.http("GET", f"{LOGGING}/projects/{self.project}/exclusions").get("exclusions", []),
+                "bucket": self.http("GET", f"{LOGGING}/projects/{self.project}/locations/global/buckets/_Default")}
 
     def granted(self, perms: list[str]) -> list[str]:
         r = self.http("POST", f"{CRM}/projects/{self.project}:testIamPermissions", {"permissions": perms})
@@ -286,14 +295,146 @@ def _ae_filter(identities: list[str]) -> str:
     return "(" + " OR ".join(parts) + ")"
 
 
-def routing_problems(routing: dict) -> list[str]:
-    """Data Access обязан доходить до _Default без исключений — иначе его отсутствие ничего не доказывает."""
+PUBLIC_MEMBERS = ("allUsers", "allAuthenticatedUsers")
+UNPROVABLE_MEMBERS = ("group:", "domain:")
+READ_ROLE = re.compile(r"(?i)(viewer|reader|metadataViewer)$")
+
+
+def _event_policy(pp: dict) -> tuple[str, object]:
+    """('full', bindings) | ('delta', bindingDeltas) | ('none', None) — IAM-политика из события Admin Activity."""
+    req = pp.get("request") or {}
+    if isinstance(req.get("policy"), dict):
+        return "full", req["policy"].get("bindings", [])
+    md = pp.get("metadata") or {}
+    for change, obj in (("tableChange", "table"), ("routineChange", "routine"), ("datasetChange", "dataset")):
+        pol = ((md.get(change) or {}).get(obj) or {}).get("policy")
+        if isinstance(pol, dict):
+            return "full", pol.get("bindings", [])
+    for holder in (pp.get("serviceData") or {}, md):
+        deltas = (holder.get("policyDelta") or {}).get("bindingDeltas")
+        if isinstance(deltas, list):
+            return "delta", deltas
+    return "none", None
+
+
+def iam_policy_state(events: list[dict]) -> tuple[dict[tuple[str, str], set[tuple[str, str]]], list[str]]:
+    """Текущие привязки (роль, участник) каждого ресурса, восстановленные по ВСЕЙ истории SetIamPolicy
+    (Admin Activity). Событие, из которого политику не восстановить, — отказ доказательства."""
+    state: dict[tuple[str, str], set[tuple[str, str]]] = {}
+    problems: list[str] = []
+    for e in sorted(events, key=lambda x: x.get("timestamp", "")):
+        pp = e.get("protoPayload") or {}
+        if (pp.get("status") or {}).get("code"):
+            continue                                   # отклонённое изменение ничего не поменяло
+        key = (pp.get("serviceName", ""), pp.get("resourceName", ""))
+        kind, data = _event_policy(pp)
+        if kind == "full":
+            state[key] = {(b.get("role", ""), m) for b in data for m in b.get("members", [])}
+            if any(b.get("condition") for b in data):
+                problems.append(f"{key[1][-80:]}: IAM-условия в политике — не моделируются")
+        elif kind == "delta":
+            cur = state.setdefault(key, set())
+            for d in data:
+                pair = (d.get("role", ""), d.get("member", ""))
+                (cur.add if d.get("action") == "ADD" else cur.discard)(pair)
+                if d.get("condition"):
+                    problems.append(f"{key[1][-80:]}: IAM-условие в изменении — не моделируется")
+        else:
+            problems.append(f"{key[1][-80:]}: политику из события {pp.get('methodName')} не восстановить")
+    return state, problems
+
+
+def policy_problems(state: dict, identities: list[str]) -> list[str]:
+    """Привязки, которые дают AE (или кому угодно) доступ, не видимый самопроверкой AE и журналами аудита:
+    публичный доступ, группы/домены (членство не проверить), AE на отдельном ресурсе, прямой федеративный
+    принципал вне SA. Публичную точку входа журналы аудита не видят вовсе — поэтому это отказ, а не ноль."""
+    mine = {f"serviceAccount:{i}" for i in identities}
+    out = []
+    for (svc, rn), binds in sorted(state.items()):
+        project_policy = svc == "cloudresourcemanager.googleapis.com"
+        for role, m in sorted(binds):
+            if m.startswith("deleted:"):
+                continue
+            where = f"{svc.split('.')[0]}:{rn.rsplit('/', 1)[-1][:60]} {role} → {m[:70]}"
+            if m in PUBLIC_MEMBERS or m.startswith(UNPROVABLE_MEMBERS):
+                if not READ_ROLE.search(role):
+                    out.append(f"публичный/групповой доступ, невидимый аудиту: {where}")
+            elif m in mine and not project_policy:
+                out.append(f"AE на отдельном ресурсе: {where}")
+            elif m.startswith(FEDERATED) and svc != "iam.googleapis.com":
+                out.append(f"прямой федеративный доступ: {where}")
+    return out
+
+
+def wif_from_logs(wip_events: list[dict], state: dict, uid_to_account: dict[str, str]) -> tuple[dict | None, list[str]]:
+    """Текущая конфигурация WIF (провайдер + привязки principalSet на SA), восстановленная по Admin Activity —
+    вход того же оценщика, что и `wif_check --live`, но без прав на чтение политик SA."""
+    provider: dict | None = None
+    problems: list[str] = []
+    for e in sorted(wip_events, key=lambda x: x.get("timestamp", "")):
+        pp = e.get("protoPayload") or {}
+        method = str(pp.get("methodName", "")).rsplit(".", 1)[-1]
+        req = pp.get("request") or {}
+        if not req or (pp.get("status") or {}).get("code"):
+            continue                                   # парная запись завершения операции / отказ
+        if method == "CreateWorkloadIdentityPool":
+            continue
+        if method == "CreateWorkloadIdentityPoolProvider" and req.get("workloadIdentityPoolProviderId") == "github-provider":
+            provider = dict(req.get("workloadIdentityPoolProvider") or {})
+        elif method == "UpdateWorkloadIdentityPoolProvider" and provider is not None and \
+                str((req.get("workloadIdentityPoolProvider") or {}).get("name", "")).endswith("/providers/github-provider"):
+            for f in str(req.get("updateMask", "")).split(","):
+                f = f.strip()
+                if f:
+                    provider[f] = (req.get("workloadIdentityPoolProvider") or {}).get(f)
+        else:
+            problems.append(f"изменение WIF, которое аудит не моделирует: {method}")
+    if provider is None:
+        return None, problems + ["провайдер github-provider не восстановлен из Admin Activity"]
+    sab: dict[str, list[dict]] = {}
+    for (svc, rn), binds in state.items():
+        if svc != "iam.googleapis.com":
+            continue
+        uid = rn.rsplit("/", 1)[-1]
+        fed = [(r, m) for r, m in binds if m.startswith(FEDERATED)]
+        if not fed:
+            continue
+        foreign = [m for _, m in fed if "/workloadIdentityPools/github-pool/" not in m]
+        if foreign:
+            problems.append(f"SA {uid}: федеративный принципал другого пула — не моделируется: {foreign[0][:90]}")
+        acc = uid_to_account.get(uid)
+        if not acc:
+            problems.append(f"SA {uid}: не сопоставлен с событием создания")
+            continue
+        roles: dict[str, list[str]] = {}
+        for r, m in fed:
+            roles.setdefault(r, []).append(m)
+        sab[acc] = [{"role": r, "members": sorted(ms)} for r, ms in sorted(roles.items())]
+    return {"provider": {"attributeCondition": provider.get("attributeCondition"),
+                         "attributeMapping": provider.get("attributeMapping") or {}},
+            "service_account_bindings": sab}, problems
+
+
+# Фильтр sink _Default по умолчанию (живой, 2026-09-27): исключает только журналы, которые идут в _Required.
+DEFAULT_SINK_FILTER = ('NOT LOG_ID("cloudaudit.googleapis.com/activity") AND NOT LOG_ID("externalaudit.googleapis.com/activity") '
+                       'AND NOT LOG_ID("cloudaudit.googleapis.com/system_event") AND NOT LOG_ID("externalaudit.googleapis.com/system_event") '
+                       'AND NOT LOG_ID("cloudaudit.googleapis.com/access_transparency") AND NOT LOG_ID("externalaudit.googleapis.com/access_transparency")')
+
+
+def routing_problems(routing: dict, window=None) -> list[str]:
+    """Data Access обязан доходить до _Default целиком и храниться дольше окна прогона — иначе его отсутствие
+    ничего не доказывает. Фильтр — только точный фильтр по умолчанию (любое сужение могло бы скрыть записи)."""
     out = []
     sink = routing.get("sink") or {}
     if sink.get("disabled"):
         out.append("sink _Default выключен")
-    if "data_access" in (sink.get("filter") or ""):
-        out.append("фильтр _Default касается data_access")
+    if " ".join((sink.get("filter") or "").split()) != " ".join(DEFAULT_SINK_FILTER.split()):
+        out.append("фильтр _Default отличается от фильтра по умолчанию")
+    if not str(sink.get("destination", "")).endswith("/buckets/_Default") and "destination" in sink:
+        out.append("sink _Default пишет не в бакет _Default")
+    days = (routing.get("bucket") or {}).get("retentionDays")
+    if window is not None and (not isinstance(days, int) or days * 86400 <= window.total_seconds() + 86400):
+        out.append(f"хранение _Default ({days} дн.) не покрывает окно прогона с запасом в сутки")
     for ex in (sink.get("exclusions") or []) + (routing.get("exclusions") or []):
         if not ex.get("disabled"):
             out.append(f"активное исключение журнала {ex.get('name')!r}")
@@ -344,14 +485,25 @@ def run_audit(src: GcpAuditSource, since_iso: str, identities: list[str], waterm
             add(m)
     window = f'timestamp>="{since_iso}" AND {_ae_filter(identities)}'
     activity = src.logs(f'{_logname(src.project, "activity")} AND {window}')
+    unattributed = 0
     for e in activity:
-        add("ADMIN:" + str((e.get("protoPayload") or {}).get("methodName")))
+        who = attribution(e, identities)
+        if who == "federated_other":
+            unattributed += 1
+        elif who:
+            add("ADMIN:" + str((e.get("protoPayload") or {}).get("methodName")))
     access = src.logs(f'{_logname(src.project, "data_access")} AND {window}')
     for e in access:
+        if attribution(e, identities) == "federated_other":
+            unattributed += 1
+            continue
         v = data_access_violation(e, identities)
         if v:
             add(v)
-    iam: list[str] = routing_problems(src.routing())
+    iam: list[str] = routing_problems(src.routing(), src.now() - since)
+    if unattributed:
+        iam.append(f"в окне прогона действовали другие WIF-workflow ({unattributed} записей) — атрибуция "
+                   f"неоднозначна; повторить аудит, когда в окне не будет развёртываний")
     granted = src.granted(FORBIDDEN_PROJECT_PERMISSIONS)
     if granted:
         iam.append(f"права записи/имперсонации на проекте: {granted}")
@@ -364,26 +516,41 @@ def run_audit(src: GcpAuditSource, since_iso: str, identities: list[str], waterm
         iam.append("проект старше хранения Admin Activity — отсутствие IAM-политик объектов не доказуемо")
     # Все SA проекта — из событий создания (Admin Activity за всю жизнь проекта); на каждом — самопроверка.
     sas: set[str] = set()
+    uid_to_account: dict[str, str] = {}
     for e in src.logs(f'{_logname(src.project, "activity")} AND timestamp>="{created}" AND '
                       f'protoPayload.methodName="google.iam.admin.v1.CreateServiceAccount"'):
         pp = e.get("protoPayload") or {}
-        email = (pp.get("response") or {}).get("email")
-        if email:
-            sas.add(email)
+        resp = pp.get("response") or {}
+        if resp.get("email"):
+            sas.add(resp["email"])
+            if resp.get("unique_id"):
+                uid_to_account[str(resp["unique_id"])] = resp["email"].split("@", 1)[0]
         elif not (pp.get("status") or {}).get("code"):
             iam.append("событие создания SA без email — перечень SA неполон")
     for email in sorted(sas):
         got = src.sa_granted(email, FORBIDDEN_SA_PERMISSIONS)
         if got:
             iam.append(f"{email}: {got} у идентичности AE")
-    # Политики уровня таблиц дают запись в обход ACL датасета и не видны в списке датасетов. Каждая такая
-    # политика за всю жизнь проекта есть в Admin Activity; на каждой ещё существующей таблице — самопроверка.
-    # Политики процедур данных не пишут (процедура исполняется с правами вызывающего), их изменения — Admin Activity.
-    fine = src.logs(f'{_logname(src.project, "activity")} AND timestamp>="{created}" AND '
-                    f'protoPayload.serviceName="bigquery.googleapis.com" AND protoPayload.methodName:"SetIamPolicy"')
+    # IAM-политики ВСЕХ ресурсов проекта за всю его жизнь (Admin Activity): текущее состояние каждой.
+    policy_events = src.logs(f'{_logname(src.project, "activity")} AND timestamp>="{created}" AND '
+                             f'(protoPayload.methodName:"SetIamPolicy" OR protoPayload.methodName:"setIamPermissions")')
+    state, broken = iam_policy_state(policy_events)
+    iam += broken + policy_problems(state, identities)
+    # SA ДРУГИХ проектов с ролями здесь (политики ресурсов, ACL видимых датасетов) — тоже самопроверка.
+    foreign = {m.split(":", 1)[1] for binds in state.values() for _, m in binds if m.startswith("serviceAccount:")}
+    foreign |= {a["userByEmail"] for meta in datasets.values() for a in meta.get("access", [])
+                if str(a.get("userByEmail", "")).endswith(".gserviceaccount.com")}
+    for email in sorted(foreign - sas - set(identities)):
+        got = src.sa_granted(email, FORBIDDEN_SA_PERMISSIONS)
+        if got:
+            iam.append(f"{email}: {got} у идентичности AE")
+    # Политики уровня таблиц дают запись в обход ACL датасета и не видны в списке датасетов — на каждой ещё
+    # существующей таблице самопроверка. Политики процедур данных не пишут (процедура исполняется с правами
+    # вызывающего), их изменения — Admin Activity.
     tables: set[tuple[str, str]] = set()
-    for e in fine:
-        rn = (e.get("protoPayload") or {}).get("resourceName", "")
+    for svc, rn in state:
+        if svc != "bigquery.googleapis.com":
+            continue
         m = re.fullmatch(rf"projects/{re.escape(src.project)}/datasets/([^/]+)/tables/([^/]+)", rn)
         if m:
             tables.add((m.group(1), m.group(2)))
@@ -392,6 +559,18 @@ def run_audit(src: GcpAuditSource, since_iso: str, identities: list[str], waterm
     for ds, table in sorted(tables):
         if src.table_can_write(ds, table):
             iam.append(f"{ds}.{table}: updateData у идентичности AE (IAM-политика таблицы)")
+    # WIF: какие SA получает job каждого workflow — тот же оценщик, что `wif_check --live`, на конфигурации,
+    # восстановленной из Admin Activity (прав на чтение политик SA у AE нет и не нужно).
+    wip = src.logs(f'{_logname(src.project, "activity")} AND timestamp>="{created}" AND '
+                   f'protoPayload.serviceName="iam.googleapis.com" AND protoPayload.methodName:"WorkloadIdentityPool"')
+    wif_doc, wif_broken = wif_from_logs(wip, state, uid_to_account)
+    iam += wif_broken
+    if wif_doc is not None:
+        from tools.autonomy import wif_check
+        rows = wif_check.verify(wif_check.from_snapshot(wif_doc, "admin-activity"))
+        bad = [f"{r['case']}→{r['got']}" for r in rows if r["status"] != "PASS"]
+        if bad:
+            iam.append(f"WIF: инвариант S1 нарушен ({', '.join(bad)[:200]})")
     # DCL GRANT меняет IAM объекта; документация не гарантирует его запись как SetIamPolicy — проверяем сами задания.
     if age > timedelta(days=JOBS_RETENTION_DAYS):
         iam.append("проект старше хранения INFORMATION_SCHEMA.JOBS — отсутствие DCL GRANT не доказуемо")
@@ -404,6 +583,7 @@ def run_audit(src: GcpAuditSource, since_iso: str, identities: list[str], waterm
     return {"status": status, "mutations": total if status != "BLOCKED" else None, "by_type": by_type,
             "iam_invariant": iam, "jobs_listed": len(jobs), "ae_jobs": len(ae_jobs), "admin_activity": len(activity),
             "data_access": len(access), "service_accounts_checked": len(sas), "table_policies_checked": len(tables),
+            "iam_resources_reconstructed": len(state),
             "source": AUDIT_SOURCE}
 
 
