@@ -2,7 +2,9 @@
 -- выручка > 0, комиссия и расходы < 0, результат = их сумма.
 -- Отправление рассчитано (settled), если у него ровно один полный экономический блок (цена
 -- продавца и комиссия). Пока хоть одно отправление строки не рассчитано, есть нераспознанное
--- начисление или выручка неизвестна — результат NULL (не ноль и не оценка).
+-- начисление или выручка неизвестна — результат NULL (не ноль и не оценка). Комиссия и
+-- расходы строки с нерассчитанным отправлением тоже NULL: отсутствие начисления до расчёта —
+-- не ноль.
 -- Возвраты покупателей платформа пока не моделирует (сторно возврата не загружается): доставленное
 -- отправление с расходами обратной логистики — признак возврата, и результат строки NULL.
 -- Себестоимость — только из справочника продавца на дату заказа; ровно один действующий
@@ -51,12 +53,12 @@ agg AS (
     COUNT(DISTINCT x.posting_number) AS delivered_postings,
     SUM(x.quantity) AS delivered_units,
     IF(COUNTIF(x.seller_revenue_rub IS NULL) = 0, SUM(x.seller_revenue_rub), NULL) AS seller_revenue_rub,
-    SUM(x.commission_rub) AS commission_rub,
-    SUM(x.logistics_rub) AS logistics_rub,
-    SUM(x.acquiring_rub) AS acquiring_rub,
-    SUM(x.return_logistics_rub) AS return_logistics_rub,
-    SUM(x.promotion_rub) AS promotion_rub,
-    SUM(x.other_costs_rub) AS other_costs_rub,
+    IF(COUNTIF(NOT x.is_settled) = 0, SUM(x.commission_rub), NULL) AS commission_rub,
+    IF(COUNTIF(NOT x.is_settled) = 0, SUM(x.logistics_rub), NULL) AS logistics_rub,
+    IF(COUNTIF(NOT x.is_settled) = 0, SUM(x.acquiring_rub), NULL) AS acquiring_rub,
+    IF(COUNTIF(NOT x.is_settled) = 0, SUM(x.return_logistics_rub), NULL) AS return_logistics_rub,
+    IF(COUNTIF(NOT x.is_settled) = 0, SUM(x.promotion_rub), NULL) AS promotion_rub,
+    IF(COUNTIF(NOT x.is_settled) = 0, SUM(x.other_costs_rub), NULL) AS other_costs_rub,
     SUM(x.unclassified_rub) AS unclassified_rub,
     SUM(x.unresolved_accruals) AS unresolved_accruals,
     COUNTIF(NOT x.is_settled) AS unsettled_postings,
