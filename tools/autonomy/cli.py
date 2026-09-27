@@ -24,6 +24,9 @@ from tools.autonomy.schema import load_schema, require_valid  # noqa: E402
 from tools.autonomy.state import StateStore  # noqa: E402
 
 
+
+AUDIT_NOT_PASS_PERSISTED = 3
+
 def _sha() -> str:
     return subprocess.run(["git", "rev-parse", "HEAD"], cwd=REPO, capture_output=True, text=True,
                           check=True).stdout.strip()
@@ -242,7 +245,9 @@ def main(argv=None) -> int:
         run = _orchestrator(a, store).trusted_audit(a.run_id)
         print(json.dumps({"run_id": run["run_id"], "audit_status": run["audit_status"],
                           "audit_evidence": run.get("audit_evidence")}, ensure_ascii=False))
-        return 0 if run["audit_status"] == "PASS" else 1
+        # 3 = «не PASS, но результат СОХРАНЁН в состоянии» — только этот код шаг гейта глотает ради persist;
+        # любое другое падение (исключение до сохранения) валит шаг, и публикация не запускается вовсе
+        return 0 if run["audit_status"] == "PASS" else AUDIT_NOT_PASS_PERSISTED
     if a.cmd == "verify-ci":
         # Доверенный job ci-verify (actions: read): ждать обязательные workflows опубликованного SHA.
         import time

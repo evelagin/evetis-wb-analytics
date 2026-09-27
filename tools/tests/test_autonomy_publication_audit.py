@@ -299,7 +299,28 @@ def test_audit_fail_is_persisted_not_lost_when_the_step_would_fail():
     persist, а job помечается ::error::."""
     gate = (WF / "autonomy-gate.yml").read_text()
     block = gate.split("            audit)", 1)[1].split(";;", 1)[0]
-    assert '|| audit_rc=$?' in block and '::error::доверенный аудит не PASS' in block
+    assert '|| audit_rc=$?' in block and '[ "$audit_rc" = 3 ]' in block
+    # падение аудита ДО сохранения (любой другой код) валит шаг: publish не запустится на старом PASS
+    assert 'elif [ "$audit_rc" != 0 ]' in block and 'exit "$audit_rc"' in block
+
+
+@pytest.mark.parametrize("result,rc", [(0, 0), ({"status": "FAIL", "mutations": 1}, 3),
+                                       ({"status": "BLOCKED", "mutations": None}, 3)])
+def test_cli_audit_exit_code_marks_persisted_non_pass(tmp_path, monkeypatch, result, rc):
+    """Код 3 означает «не PASS, результат уже в состоянии»; исключение до сохранения — не код 3."""
+    from tools.autonomy import cli
+    p = Pipeline(tmp_path)
+    run_id = p.orch(p.branch).submit(p.objective())[0]["run_id"]
+    monkeypatch.setattr(cli, "_orchestrator", lambda a, store: p.orch(p.branch, audit=lambda r: result))
+    args = ["audit", "--state-dir", str(p.branch.root), "--run-id", run_id, "--project", "p",
+            "--token-command", "true", "--audit-identity", "sa@x"]
+    assert cli.main(args) == rc
+    assert p.branch.load(run_id)["audit_evidence"]["status"] == ("PASS" if rc == 0 else result["status"])
+    def boom(r):
+        raise RuntimeError("socket timeout")
+    monkeypatch.setattr(cli, "_orchestrator", lambda a, store: p.orch(p.branch, audit=boom))
+    with pytest.raises(RuntimeError):
+        cli.main(args)
 
 
 def test_trusted_audit_fail_is_saved_with_evidence(tmp_path):
