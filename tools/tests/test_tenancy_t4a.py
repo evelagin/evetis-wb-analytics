@@ -221,3 +221,54 @@ def test_contract_json_is_deterministic_for_new_tables():
     a = json.dumps(R.terraform_inputs("client_001"), sort_keys=True)
     b = json.dumps(R.terraform_inputs("client_001"), sort_keys=True)
     assert a == b and copy.deepcopy(a) == b
+
+
+# ═══════════════════════════════════════ ревью T4: таблицы в плане и дата истории
+def _table_rc(plan, table_id):
+    return next(r for r in plan["resource_changes"]
+                if r["type"] == "google_bigquery_table" and r["change"]["after"]["table_id"] == table_id)
+
+
+def test_clean_synthetic_plan_has_no_table_findings():
+    from tools.tests.test_tenancy_t32_remediation import _plan_for
+    c = SY.fixture_contract("client_001")
+    assert not [f for f in PS.scan_plan(_plan_for(c), c) if "таблица" in f or "блок " in f]
+
+
+@pytest.mark.parametrize("block,value", [
+    ("view", [{"query": "SELECT 1", "use_legacy_sql": False}]),
+    ("materialized_view", [{"query": "SELECT 1"}]),
+    ("external_data_configuration", [{"source_uris": ["gs://x/y"]}]),
+    ("table_replication_info", [{"source_table_id": "x"}]),
+])
+def test_scanner_rejects_a_contract_table_turned_into_a_view_or_external(block, value):
+    from tools.tests.test_tenancy_t32_remediation import _plan_for
+    c = SY.fixture_contract("client_001")
+    plan = _plan_for(c)
+    _table_rc(plan, "SELLER_BINDING")["change"]["after"][block] = value
+    assert any(f"блок {block} запрещён" in f for f in PS.scan_plan(plan, c))
+
+
+def test_scanner_rejects_a_block_that_appears_only_after_apply():
+    from tools.tests.test_tenancy_t32_remediation import _plan_for
+    c = SY.fixture_contract("client_001")
+    plan = _plan_for(c)
+    rc = _table_rc(plan, "DATA_COVERAGE")
+    rc["change"].setdefault("after_unknown", {})["view"] = True
+    assert any("блок view запрещён" in f for f in PS.scan_plan(plan, c))
+
+
+@pytest.mark.parametrize("dataset_key,table_id", [("tenant_ops", "EXTRA_TABLE"), ("ref", "DATA_COVERAGE")])
+def test_scanner_rejects_tables_outside_the_contract(dataset_key, table_id):
+    from tools.tests.test_tenancy_t32_remediation import _plan_for
+    c = SY.fixture_contract("client_001")
+    plan = _plan_for(c)
+    after = _table_rc(plan, "DQ_RESULTS")["change"]["after"]
+    after["dataset_id"], after["table_id"] = c["datasets"][dataset_key], table_id
+    assert any("не входит в контракт" in f for f in PS.scan_plan(plan, c))
+
+
+def test_history_request_cannot_ask_for_the_future():
+    doc = _doc()
+    doc["marketplaces"]["ozon"]["history_request"] = {"mode": "FROM_DATE", "from_date": "2099-01-01"}
+    assert "history" in _rules(doc)
