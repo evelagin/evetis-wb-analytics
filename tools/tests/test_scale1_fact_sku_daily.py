@@ -43,8 +43,11 @@ NEUTRAL_SCHEMA = [
 ]
 import promo_economics_render as promo3_render  # noqa: E402
 import promo_inventory_render as promo4_render  # noqa: E402
+import aie_render  # noqa: E402
 # Объекты Git-first слоёв акций и плана (PR-PROMO-2/3/4, PR-PLAN-1): их предразвёртывание проверяют свои рендереры.
 PROMO2_OBJECTS = {name for _, name, _ in promo3_render.OBJECTS} | {name for _, name, _ in promo4_render.RENDER_OBJECTS}
+# AIE V1 (2026-09-27): предразвёртывание объектов движка рекламных рекомендаций проверяет tools/aie_render.py.
+AIE_OBJECTS = {name for _, name, folder in aie_render.OBJECTS if folder.startswith("sql/current")}
 TAX_WORDS = re.compile(r"tax|vat|usn|nalog|налог|ндс|усн", re.I)
 
 
@@ -406,7 +409,7 @@ def test_predeploy_render_inlines_every_pending_object_and_stays_a_select():
     # PR-PROMO-2 (2026-09-23) добавил 11 объектов Git-first; их предразвёртывание проверяет
     # tools/promo_canonical_render.py, объекты SCALE 1 по-прежнему не pending.
     pending = {k.split(".")[-1].rstrip("`") for k in render.pending_bodies()}
-    assert pending - PROMO2_OBJECTS == set()
+    assert pending - PROMO2_OBJECTS - AIE_OBJECTS == set()
     sample = next(iter(check_blocks().values()))
     assert render.render(sample, {}) == sample
     # ... and its inlining logic is still exercised on the same objects, as if they were pending.

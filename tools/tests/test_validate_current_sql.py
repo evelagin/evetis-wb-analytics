@@ -56,13 +56,19 @@ PLAN1 = {"ozon_mart": set(),
                          "V_PLAN_PHYSICAL_MONTHLY", "V_INBOUND_LOT_CURRENT", "V_PLAN_TRAJECTORY_MONTHLY",
                          "V_PLANNING_EXCEPTIONS", "V_PLANNING_SKU_OVERVIEW", "V_PLANNING_HEADER"}}
 PLAN1_PENDING = {"ozon_mart": set(), "evetis_mart": set()}  # сняты R2C после развёртывания 2026-09-25
+# AIE V1 (2026-09-27): движок рекламных рекомендаций, Git-first. Развёртывание — отдельный ACK владельца,
+# поэтому объекты pending_deploy; после развёртывания и снятия R2C имена уходят из AIE_PENDING.
+AIE = {"ozon_mart": {"V_AIE_OZON_PAIR_EVIDENCE", "V_AIE_OZON_ECON_GUARD"},
+       "evetis_mart": {"V_AIE_DECISION_CURRENT"}}
+AIE_PENDING = {"ozon_mart": set(AIE["ozon_mart"]), "evetis_mart": set(AIE["evetis_mart"])}
 NON_R2A = {"ozon_mart": {"V_OZON_COMMISSION_RECOVERY", "V_OZON_CIS_BUYOUT", "FCT_OZON_SKU_PNL_DAILY",
                          "FCT_OZON_SKU_PNL_MONTHLY", "FCT_OZON_PNL_MONTHLY",
                          # Gate 8: провизорная экономика Ozon
                          "V_OZON_COMMISSION_POLICY", "V_OZON_LOGISTICS_ESTIMATOR",
-                         "V_OZON_SKU_PNL_DAILY_OPERATIONAL"} | PROMO2["ozon_mart"] | PROMO3["ozon_mart"],
+                         "V_OZON_SKU_PNL_DAILY_OPERATIONAL"} | PROMO2["ozon_mart"] | PROMO3["ozon_mart"]
+                        | AIE["ozon_mart"],
            "evetis_mart": {"FACT_SKU_DAILY"} | PROMO2["evetis_mart"] | PROMO3["evetis_mart"] | PROMO4["evetis_mart"]
-                           | PLAN1["evetis_mart"]}
+                           | PLAN1["evetis_mart"] | AIE["evetis_mart"]}
 # Gate 5M deployed every object Gate 5K/5L rewrote and read them back, so nothing is pending.
 # Gate 8 добавил три объекта Git-first; до развёртывания они pending_deploy, после — captured_live.
 GATE8_OBJECTS = {"V_OZON_COMMISSION_POLICY", "V_OZON_LOGISTICS_ESTIMATOR",
@@ -74,9 +80,9 @@ GATE8_OBJECTS = {"V_OZON_COMMISSION_POLICY", "V_OZON_LOGISTICS_ESTIMATOR",
 # чтением production, и пустых множеств здесь ждать — правильно. Непустое множество
 # снова означает изменение, ожидающее развёртывания.
 GATE5K_PENDING = {"ozon_mart": set() | PROMO2_PENDING["ozon_mart"] | PROMO3_PENDING["ozon_mart"]
-                  | PROMO4_PENDING["ozon_mart"] | PLAN1_PENDING["ozon_mart"],
+                  | PROMO4_PENDING["ozon_mart"] | PLAN1_PENDING["ozon_mart"] | AIE_PENDING["ozon_mart"],
                   "evetis_mart": set() | PROMO2_PENDING["evetis_mart"] | PROMO3_PENDING["evetis_mart"]
-                  | PROMO4_PENDING["evetis_mart"] | PLAN1_PENDING["evetis_mart"]}
+                  | PROMO4_PENDING["evetis_mart"] | PLAN1_PENDING["evetis_mart"] | AIE_PENDING["evetis_mart"]}
 
 # canonical_hash_v1 body hashes proven equal to production in R2A (PR #140). Pinned literally.
 R2A_BODY_SHA256 = {

@@ -1,0 +1,432 @@
+{
+  "contract": "AIE_REASON_CODES_V1",
+  "version": "1.1.0",
+  "source_contract": "docs/ads_intel/AIE_DESIGN_GATE_V1_2026-09-27.md",
+  "comment": "Машиночитаемый контракт кодов причин Advertising Intelligence Engine V1. state = состояние, которое код определяет, если он основной (primary); null = контекстный код, состояния не определяет. rank = порядок уровней иерархии: меньший rank проверяется раньше и становится основной причиной. Тест tools/tests/test_aie.py сверяет этот файл с SQL: каждый код в SQL есть здесь, rank и state в SQL совпадают с файлом.",
+  "states": [
+    "INCREASE",
+    "DECREASE",
+    "HOLD",
+    "PAUSE_CANDIDATE",
+    "INSUFFICIENT_DATA",
+    "BLOCKED_BY_GUARDRAIL"
+  ],
+  "levels": {
+    "L0": "Состав и идентичность",
+    "L1": "Качество и свежесть данных",
+    "L2": "Управляемость",
+    "L3": "Физическая доступность (остаток)",
+    "L4": "Структурная экономика",
+    "L5": "Сопоставимость окна (смена режима)",
+    "L6": "Статистическая доказательность",
+    "L7": "Экономическая оптимизация",
+    "L8": "Мягкий ограничитель по остаткам",
+    "CTX": "Контекст без влияния на состояние"
+  },
+  "codes": [
+    {
+      "code": "ID_UNMAPPED_SKU",
+      "level": "L0",
+      "rank": 100,
+      "state": "BLOCKED_BY_GUARDRAIL",
+      "text_ru": "SKU площадки не сопоставлен с internal_sku в evetis_ref.REF_SKU_CHANNEL_MAP"
+    },
+    {
+      "code": "ID_AMBIGUOUS_SKU",
+      "level": "L0",
+      "rank": 101,
+      "state": "BLOCKED_BY_GUARDRAIL",
+      "text_ru": "SKU площадки сопоставлен более чем с одним internal_sku"
+    },
+    {
+      "code": "SCOPE_CAMPAIGN_TYPE_OUT_OF_SCOPE",
+      "level": "L0",
+      "rank": 102,
+      "state": "BLOCKED_BY_GUARDRAIL",
+      "text_ru": "Тип кампании вне V1 (WB: не type=9; Ozon: не SKU/CPC)"
+    },
+    {
+      "code": "SCOPE_CAMPAIGN_INACTIVE",
+      "level": "L0",
+      "rank": 103,
+      "state": "BLOCKED_BY_GUARDRAIL",
+      "text_ru": "Пара вне текущего набора рекомендаций: статус кампании не активен (WB — не 9/11; Ozon — не RUNNING: семантика INACTIVE в проекте не доказана, поэтому исключена, fail closed) или с последнего расхода прошло больше K суток (V_AIE_POLICY, K = 14). Строка остаётся в исторической базе доказательств (universe = HISTORICAL_EVIDENCE_ONLY); заменяет CTRL_CAMPAIGN_FINISHED"
+    },
+    {
+      "code": "DQ_FRESHNESS_LAYER_NOT_OK",
+      "level": "L1",
+      "rank": 200,
+      "state": "BLOCKED_BY_GUARDRAIL",
+      "text_ru": "Слой в wb_mart.V_DATA_FRESHNESS не в статусе OK (только режим CURRENT)"
+    },
+    {
+      "code": "DQ_ADS_DATA_BEHIND",
+      "level": "L1",
+      "rank": 201,
+      "state": "BLOCKED_BY_GUARDRAIL",
+      "text_ru": "Статистика рекламы не покрывает дату решения"
+    },
+    {
+      "code": "DQ_STOCK_SNAPSHOT_MISSING",
+      "level": "L1",
+      "rank": 202,
+      "state": "BLOCKED_BY_GUARDRAIL",
+      "text_ru": "Нет снимка остатка карточки на дату решения"
+    },
+    {
+      "code": "DQ_FINANCE_BEHIND_SLA",
+      "level": "L1",
+      "rank": 203,
+      "state": "BLOCKED_BY_GUARDRAIL",
+      "text_ru": "Финансы известны позже срока V_DATA_FRESHNESS.finance (3 суток)"
+    },
+    {
+      "code": "DQ_OZON_FRESHNESS_GATE_CLOSED",
+      "level": "L1",
+      "rank": 204,
+      "state": "BLOCKED_BY_GUARDRAIL",
+      "text_ru": "ozon_mart.V_OZON_MART_FRESHNESS.agent_decision_gate закрыт"
+    },
+    {
+      "code": "DQ_OZON_ADS_DATA_BEHIND",
+      "level": "L1",
+      "rank": 205,
+      "state": "BLOCKED_BY_GUARDRAIL",
+      "text_ru": "Статистика рекламы Ozon не покрывает дату решения"
+    },
+    {
+      "code": "DQ_OZON_P26_SUSPECTED",
+      "level": "L1",
+      "rank": 206,
+      "state": "BLOCKED_BY_GUARDRAIL",
+      "text_ru": "Сигнатура дефекта P2-6: у кампании есть расход за день, но нет ни одной строки по SKU"
+    },
+    {
+      "code": "CTRL_OZON_AUTOPILOT",
+      "level": "L2",
+      "rank": 301,
+      "state": "BLOCKED_BY_GUARDRAIL",
+      "text_ru": "Ставками кампании Ozon управляет автопилот Ozon (TARGET_BIDS / TARGET_CIR) — решение владельца P9"
+    },
+    {
+      "code": "INV_ZERO_STOCK",
+      "level": "L3",
+      "rank": 400,
+      "state": "PAUSE_CANDIDATE",
+      "text_ru": "Остаток карточки на площадке равен нулю: продажа невозможна"
+    },
+    {
+      "code": "ECON_MISSING_COGS",
+      "level": "L4",
+      "rank": 500,
+      "state": "BLOCKED_BY_GUARDRAIL",
+      "text_ru": "Себестоимость в окне покрыта не полностью: экономический предел не вычисляется (NULL, не 0)"
+    },
+    {
+      "code": "PRICE_BELOW_BREAKEVEN",
+      "level": "L4",
+      "rank": 501,
+      "state": "PAUSE_CANDIDATE",
+      "text_ru": "Структурный ценовой ограничитель (P4, P6): вклад до рекламы отрицателен в прогнозной base и в фактической базе, если она вычислена — текущая цена ниже безубыточной. Пауза рекламы — кандидат; разложение цены в колонках current_effective_price_rub … product_cogs_pct, маршрут PRICING_REVIEW. Цена не меняется, pricing write API не вызывается. Исключений по SKU нет"
+    },
+    {
+      "code": "EVID_NO_EFFECTIVE_WINDOW",
+      "level": "L6",
+      "rank": 700,
+      "state": "INSUFFICIENT_DATA",
+      "text_ru": "После обрезки окна по смене режима и дням без остатка не осталось дней"
+    },
+    {
+      "code": "EVID_INSUFFICIENT",
+      "level": "L6",
+      "rank": 701,
+      "state": "INSUFFICIENT_DATA",
+      "text_ru": "Ads-4 evidence_status = INSUFFICIENT (clicks < 10 и views < 1000)"
+    },
+    {
+      "code": "EVID_OBSERVATIONAL_ONLY",
+      "level": "L6",
+      "rank": 702,
+      "state": "INSUFFICIENT_DATA",
+      "text_ru": "Ads-4 evidence_status = OBSERVATIONAL (clicks < 40): выводы о конверсии запрещены"
+    },
+    {
+      "code": "WASTE_ZERO_ORDERS_ADS4",
+      "level": "L7",
+      "rank": 800,
+      "state": "PAUSE_CANDIDATE",
+      "text_ru": "Ads-4 POTENTIAL_WASTE: ACTIONABLE (clicks ≥ 40), расход есть, атрибутированных заказов 0"
+    },
+    {
+      "code": "OZON_NOT_PRODUCTION_GRADE",
+      "level": "L7",
+      "rank": 801,
+      "state": "BLOCKED_BY_GUARDRAIL",
+      "text_ru": "Ozon не production-grade до PR-8 (P2-5, P2-6, снимок ставок): направления ставок не выдаются"
+    },
+    {
+      "code": "POLICY_P3_NOT_SET",
+      "level": "L7",
+      "rank": 803,
+      "state": "BLOCKED_BY_GUARDRAIL",
+      "text_ru": "Не задан уровень доверия интервала (P3)"
+    },
+    {
+      "code": "POLICY_P3_UNSUPPORTED_VALUE",
+      "level": "L7",
+      "rank": 804,
+      "state": "BLOCKED_BY_GUARDRAIL",
+      "text_ru": "Значение P3 не входит в поддерживаемый набор уровней доверия"
+    },
+    {
+      "code": "ECON_BASIS_UNAVAILABLE",
+      "level": "L7",
+      "rank": 805,
+      "state": "BLOCKED_BY_GUARDRAIL",
+      "text_ru": "Фактическая граница ДРР (realized, P6) для строки не вычислена"
+    },
+    {
+      "code": "ECON_NO_BUYOUTS_IN_WINDOW",
+      "level": "L7",
+      "rank": 806,
+      "state": "INSUFFICIENT_DATA",
+      "text_ru": "В экономическом окне нет выкупов: интервал ДРР не определён"
+    },
+    {
+      "code": "EVID_INTERVAL_STRADDLES_BREAKEVEN",
+      "level": "L7",
+      "rank": 807,
+      "state": "INSUFFICIENT_DATA",
+      "text_ru": "Интервал ДРР пересекает безубыточность: противоположные действия равно допустимы"
+    },
+    {
+      "code": "ECON_DRR_ABOVE_BREAKEVEN_CONFIDENT",
+      "level": "L7",
+      "rank": 808,
+      "state": "DECREASE",
+      "text_ru": "Весь интервал ДРР выше экономического предела"
+    },
+    {
+      "code": "ALLOCATION_NOT_WORST_PAIR",
+      "level": "L7",
+      "rank": 809,
+      "state": "HOLD",
+      "text_ru": "У SKU несколько кампаний, понижать предлагается кампанию с худшим CPO"
+    },
+    {
+      "code": "POLICY_P1_NOT_SET",
+      "level": "L7",
+      "rank": 810,
+      "state": "HOLD",
+      "text_ru": "Интервал ДРР ниже безубыточности, но целевой ДРР (P1) не задан: повышения нет"
+    },
+    {
+      "code": "EVID_INTERVAL_STRADDLES_TARGET",
+      "level": "L7",
+      "rank": 811,
+      "state": "HOLD",
+      "text_ru": "Интервал ДРР пересекает цель: повышать не доказано, понижать не нужно"
+    },
+    {
+      "code": "ECON_DRR_WITHIN_TARGET_BAND",
+      "level": "L7",
+      "rank": 812,
+      "state": "HOLD",
+      "text_ru": "Интервал ДРР между целью и безубыточностью"
+    },
+    {
+      "code": "ECON_CONSERVATIVE_GUARD_BLOCKS_INCREASE",
+      "level": "L8",
+      "rank": 899,
+      "state": "HOLD",
+      "text_ru": "Кандидат на повышение, но осторожная прогнозная база (forward conservative, P6) не подтверждает: верхняя граница интервала ДРР не ниже лимита conservative, или база недоступна / не воспроизводима в replay"
+    },
+    {
+      "code": "POLICY_P2_NOT_SET",
+      "level": "L8",
+      "rank": 900,
+      "state": "BLOCKED_BY_GUARDRAIL",
+      "text_ru": "Кандидат на повышение, но полоса гистерезиса (P2) не задана"
+    },
+    {
+      "code": "POLICY_P5_NOT_SET",
+      "level": "L8",
+      "rank": 901,
+      "state": "BLOCKED_BY_GUARDRAIL",
+      "text_ru": "Кандидат на повышение, но границы покрытия запасом (P5, нижняя и верхняя) не заданы"
+    },
+    {
+      "code": "INV_COVER_UNAVAILABLE",
+      "level": "L8",
+      "rank": 902,
+      "state": "HOLD",
+      "text_ru": "Кандидат на повышение, но покрытие запасом не наблюдается (для наборов — всегда, до покрытия с учётом компонентов)"
+    },
+    {
+      "code": "INV_LOW_COVER",
+      "level": "L8",
+      "rank": 903,
+      "state": "HOLD",
+      "text_ru": "Кандидат на повышение, но покрытие ниже нижней границы P5"
+    },
+    {
+      "code": "ECON_DRR_BELOW_TARGET_CONFIDENT",
+      "level": "L8",
+      "rank": 904,
+      "state": "INCREASE",
+      "text_ru": "Весь интервал ДРР ниже цели минус полоса P2, осторожная прогнозная база подтверждает, покрытие не ниже P5. Недостижим, пока P1 не задан"
+    },
+    {
+      "code": "DQ_OZON_P25_WINDOW_BIAS",
+      "level": "CTX",
+      "rank": 1000,
+      "state": null,
+      "text_ru": "Дефект P2-5: статистика Ozon по SKU теряет 00:00–03:00 МСК каждого дня"
+    },
+    {
+      "code": "DQ_OZON_NOT_POINT_IN_TIME",
+      "level": "CTX",
+      "rank": 1001,
+      "state": null,
+      "text_ru": "RAW Ozon пишется MERGE: в replay значения — последние известные, а не на дату"
+    },
+    {
+      "code": "CTRL_OZON_NO_BID_OBSERVED",
+      "level": "CTX",
+      "rank": 1002,
+      "state": null,
+      "text_ru": "Текущая ставка Ozon не собирается (нет снимка v2/products)"
+    },
+    {
+      "code": "CTRL_NO_CONFIG_OBSERVED",
+      "level": "CTX",
+      "rank": 1003,
+      "state": null,
+      "text_ru": "Нет снимка настроек кампании для пары"
+    },
+    {
+      "code": "CTX_CONFIG_SNAPSHOT_BEHIND",
+      "level": "CTX",
+      "rank": 1004,
+      "state": null,
+      "text_ru": "Последний снимок настроек старше даты решения"
+    },
+    {
+      "code": "CTX_WB_STATUS_PAUSED_WITH_SPEND",
+      "level": "CTX",
+      "rank": 1005,
+      "state": null,
+      "text_ru": "Статус 11 в снимке, но в окне есть расход — день рекламно активен (решение владельца P10)"
+    },
+    {
+      "code": "CTX_INCLUDE_IN_ADS_ANALYSIS_FALSE",
+      "level": "CTX",
+      "rank": 1006,
+      "state": null,
+      "text_ru": "REF_SKU_MASTER.include_in_ads_analysis = FALSE; фильтром не является (решение владельца P14)"
+    },
+    {
+      "code": "ECON_FORWARD_SKIPPED_NOT_REPLAYABLE",
+      "level": "CTX",
+      "rank": 1007,
+      "state": null,
+      "text_ru": "Прогнозная экономика только текущая: в replay не используется"
+    },
+    {
+      "code": "ECON_FORWARD_UNAVAILABLE",
+      "level": "CTX",
+      "rank": 1008,
+      "state": null,
+      "text_ru": "Прогнозной экономики для SKU нет или она BLOCKED"
+    },
+    {
+      "code": "ECON_REALIZED_NEGATIVE_BEFORE_ADS",
+      "level": "CTX",
+      "rank": 1009,
+      "state": null,
+      "text_ru": "Фактический вклад до рекламы в окне отрицателен (без прогнозной базы паузу не определяет)"
+    },
+    {
+      "code": "PRICING_REVIEW",
+      "level": "CTX",
+      "rank": 1010,
+      "state": null,
+      "text_ru": "Прогнозная base-экономика отрицательна до рекламы: вопрос цены, а не ставки. Маршрут для ручного разбора цены; записи цены нет"
+    },
+    {
+      "code": "INCREASE_CANDIDATE",
+      "level": "CTX",
+      "rank": 1011,
+      "state": null,
+      "text_ru": "Диагностика: интервал ДРР ниже фактической границы с доверием P3 и (в текущем режиме) ниже осторожной прогнозной базы. Не рекомендация INCREASE: P1 не задан"
+    },
+    {
+      "code": "ECON_STRESS_RISK_FLAG",
+      "level": "CTX",
+      "rank": 1012,
+      "state": null,
+      "text_ru": "Флаг риска (P6): прогнозная stress-база отрицательна или точечный ДРР SKU выше её лимита. Направления не определяет"
+    },
+    {
+      "code": "INV_OVERSTOCK_CONTEXT",
+      "level": "CTX",
+      "rank": 1013,
+      "state": null,
+      "text_ru": "Покрытие выше верхней границы P5 — контекст для повышения, не причина. Пока верхняя граница P5 не задана, не срабатывает"
+    },
+    {
+      "code": "FIN_WINDOW_ENDS_AT_FINANCE",
+      "level": "CTX",
+      "rank": 1014,
+      "state": null,
+      "text_ru": "Экономическое окно заканчивается раньше даты решения — на последнем дне с известными финансами (FINANCIAL_DATA_MATURE); искусственного исключения N дней нет"
+    },
+    {
+      "code": "REGIME_BID_CHANGE",
+      "level": "L5",
+      "rank": 1100,
+      "state": null,
+      "text_ru": "Окно обрезано по смене ставки, размещения или типа оплаты"
+    },
+    {
+      "code": "REGIME_PRICE_CHANGE",
+      "level": "L5",
+      "rank": 1101,
+      "state": null,
+      "text_ru": "Окно обрезано по смене цены продавца не меньше порога P7 (V_AIE_POLICY, 3 %)"
+    },
+    {
+      "code": "REGIME_PRICE_UNOBSERVED_PART",
+      "level": "L5",
+      "rank": 1102,
+      "state": null,
+      "text_ru": "Часть окна до начала наблюдения цен: смена цены там не наблюдаема"
+    },
+    {
+      "code": "REGIME_PROMO_CHANGE",
+      "level": "L5",
+      "rank": 1103,
+      "state": null,
+      "text_ru": "Окно обрезано по смене состояния акции SKU"
+    },
+    {
+      "code": "REGIME_PROMO_UNOBSERVABLE_WB",
+      "level": "L5",
+      "rank": 1104,
+      "state": null,
+      "text_ru": "Состав авто-акций WB по SKU не наблюдается: влияние акции не исключено"
+    },
+    {
+      "code": "INV_STOCKOUT_DAYS_EXCLUDED",
+      "level": "L5",
+      "rank": 1105,
+      "state": null,
+      "text_ru": "Дни без остатка карточки исключены из выборки"
+    }
+  ],
+  "decisions": {
+    "date": "2026-09-27",
+    "policy_view": "evetis_ref.V_AIE_POLICY",
+    "summary": "P3 = 0.90, P7 = 3 %, K = 14; P4 без исключений SKU; роли баз P6; P1, P2, P5, P13 не заданы (NULL); P15 только диагностика"
+  }
+}

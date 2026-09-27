@@ -19,6 +19,7 @@
     "V_PROMO_SKU_EVIDENCE_HISTORY",
     "V_PROMO_SKU_STATE_HISTORY",
     "V_PROMO_STATE_HISTORY",
+    "V_AIE_DECISION_CURRENT",
     "V_PLAN_PHYSICAL_MONTHLY",
     "V_PLAN_VERSION_STATUS",
     "V_PROMO_ECONOMICS_SCENARIO_CURRENT",
@@ -12066,6 +12067,555 @@
           "data_type": "STRING",
           "is_nullable": "YES",
           "ordinal_position": 33
+        }
+      ]
+    },
+    {
+      "dataset": "evetis_mart",
+      "object_name": "V_AIE_DECISION_CURRENT",
+      "object_type": "VIEW",
+      "canonical_path": "sql/current/evetis_mart/V_AIE_DECISION_CURRENT.sql",
+      "sync_state": "pending_deploy",
+      "dependencies": [
+        "V_INVENTORY_POSITION_HISTORY"
+      ],
+      "external_dependencies": [
+        "evetis_ref.REF_PRODUCT_MASTER",
+        "evetis_ref.V_AIE_POLICY",
+        "ozon_mart.V_AIE_OZON_ECON_GUARD",
+        "ozon_mart.V_AIE_OZON_PAIR_EVIDENCE",
+        "wb_mart.V_AIE_WB_ECON_GUARD",
+        "wb_mart.V_AIE_WB_PAIR_EVIDENCE",
+        "wb_mart.V_DATA_FRESHNESS"
+      ],
+      "dependency_level": 1,
+      "capture_main_sha": null,
+      "captured_at": null,
+      "provenance": {
+        "source": "AIE V1 (docs/ads_intel/AIE_DESIGN_GATE_V1_2026-09-27.md): Git-first, не развёрнут; схема — dry-run тела до развёртывания",
+        "historical_migration": null,
+        "preflight_parity": null,
+        "superseded_historical_definitions": []
+      },
+      "live_body_sha256_at_capture": null,
+      "live_schema_sha256_at_capture": null,
+      "live_description_sha256_at_capture": null,
+      "live_schema_at_capture": null,
+      "canonical_body_sha256": "9b6b30bab0849aa08e1d775fb0c5ebc90e4107f48bb36541b9000904a79d59cd",
+      "canonical_description_sha256": "e2ba551406cf6ec1fbbdb47175a14ef6310d44d863bd8a3b0d69ba9ff028c450",
+      "canonical_schema_sha256": "2031abc017f9121ac88ec3600213fe0a0dd33d82db7283590c6f7bdc4c372066",
+      "canonical_schema_verification": "unverified",
+      "canonical_column_count": 85,
+      "canonical_schema": [
+        {
+          "column_name": "as_of_date",
+          "data_type": "DATE",
+          "is_nullable": "YES",
+          "ordinal_position": 1
+        },
+        {
+          "column_name": "knowledge_ts",
+          "data_type": "TIMESTAMP",
+          "is_nullable": "YES",
+          "ordinal_position": 2
+        },
+        {
+          "column_name": "run_mode",
+          "data_type": "STRING",
+          "is_nullable": "YES",
+          "ordinal_position": 3
+        },
+        {
+          "column_name": "policy_id",
+          "data_type": "STRING",
+          "is_nullable": "YES",
+          "ordinal_position": 4
+        },
+        {
+          "column_name": "marketplace",
+          "data_type": "STRING",
+          "is_nullable": "YES",
+          "ordinal_position": 5
+        },
+        {
+          "column_name": "internal_sku",
+          "data_type": "STRING",
+          "is_nullable": "YES",
+          "ordinal_position": 6
+        },
+        {
+          "column_name": "marketplace_sku",
+          "data_type": "STRING",
+          "is_nullable": "YES",
+          "ordinal_position": 7
+        },
+        {
+          "column_name": "campaign_id",
+          "data_type": "STRING",
+          "is_nullable": "YES",
+          "ordinal_position": 8
+        },
+        {
+          "column_name": "universe",
+          "data_type": "STRING",
+          "is_nullable": "YES",
+          "ordinal_position": 9
+        },
+        {
+          "column_name": "campaign_status",
+          "data_type": "STRING",
+          "is_nullable": "YES",
+          "ordinal_position": 10
+        },
+        {
+          "column_name": "campaign_type",
+          "data_type": "STRING",
+          "is_nullable": "YES",
+          "ordinal_position": 11
+        },
+        {
+          "column_name": "payment_type",
+          "data_type": "STRING",
+          "is_nullable": "YES",
+          "ordinal_position": 12
+        },
+        {
+          "column_name": "bid_type",
+          "data_type": "STRING",
+          "is_nullable": "YES",
+          "ordinal_position": 13
+        },
+        {
+          "column_name": "autopilot_strategy",
+          "data_type": "STRING",
+          "is_nullable": "YES",
+          "ordinal_position": 14
+        },
+        {
+          "column_name": "last_spend_date",
+          "data_type": "DATE",
+          "is_nullable": "YES",
+          "ordinal_position": 15
+        },
+        {
+          "column_name": "days_since_last_spend",
+          "data_type": "INT64",
+          "is_nullable": "YES",
+          "ordinal_position": 16
+        },
+        {
+          "column_name": "current_bid_search_rub",
+          "data_type": "FLOAT64",
+          "is_nullable": "YES",
+          "ordinal_position": 17
+        },
+        {
+          "column_name": "current_bid_recommendations_rub",
+          "data_type": "FLOAT64",
+          "is_nullable": "YES",
+          "ordinal_position": 18
+        },
+        {
+          "column_name": "bid_observed_at",
+          "data_type": "TIMESTAMP",
+          "is_nullable": "YES",
+          "ordinal_position": 19
+        },
+        {
+          "column_name": "recommendation",
+          "data_type": "STRING",
+          "is_nullable": "YES",
+          "ordinal_position": 20
+        },
+        {
+          "column_name": "primary_reason_code",
+          "data_type": "STRING",
+          "is_nullable": "YES",
+          "ordinal_position": 21
+        },
+        {
+          "column_name": "primary_reason_rank",
+          "data_type": "INT64",
+          "is_nullable": "YES",
+          "ordinal_position": 22
+        },
+        {
+          "column_name": "reason_codes",
+          "data_type": "ARRAY<STRING>",
+          "is_nullable": "YES",
+          "ordinal_position": 23
+        },
+        {
+          "column_name": "proposed_direction",
+          "data_type": "STRING",
+          "is_nullable": "YES",
+          "ordinal_position": 24
+        },
+        {
+          "column_name": "proposed_delta",
+          "data_type": "FLOAT64",
+          "is_nullable": "YES",
+          "ordinal_position": 25
+        },
+        {
+          "column_name": "delta_basis",
+          "data_type": "STRING",
+          "is_nullable": "YES",
+          "ordinal_position": 26
+        },
+        {
+          "column_name": "explanation_ru",
+          "data_type": "STRING",
+          "is_nullable": "YES",
+          "ordinal_position": 27
+        },
+        {
+          "column_name": "evidence_status",
+          "data_type": "STRING",
+          "is_nullable": "YES",
+          "ordinal_position": 28
+        },
+        {
+          "column_name": "evidence_window_start",
+          "data_type": "DATE",
+          "is_nullable": "YES",
+          "ordinal_position": 29
+        },
+        {
+          "column_name": "evidence_window_end",
+          "data_type": "DATE",
+          "is_nullable": "YES",
+          "ordinal_position": 30
+        },
+        {
+          "column_name": "effective_days",
+          "data_type": "INT64",
+          "is_nullable": "YES",
+          "ordinal_position": 31
+        },
+        {
+          "column_name": "eff_views",
+          "data_type": "INT64",
+          "is_nullable": "YES",
+          "ordinal_position": 32
+        },
+        {
+          "column_name": "eff_clicks",
+          "data_type": "INT64",
+          "is_nullable": "YES",
+          "ordinal_position": 33
+        },
+        {
+          "column_name": "eff_orders",
+          "data_type": "INT64",
+          "is_nullable": "YES",
+          "ordinal_position": 34
+        },
+        {
+          "column_name": "eff_spend_attributed_rub",
+          "data_type": "NUMERIC",
+          "is_nullable": "YES",
+          "ordinal_position": 35
+        },
+        {
+          "column_name": "eff_cpo_rub",
+          "data_type": "NUMERIC",
+          "is_nullable": "YES",
+          "ordinal_position": 36
+        },
+        {
+          "column_name": "spend_28d_attributed_rub",
+          "data_type": "NUMERIC",
+          "is_nullable": "YES",
+          "ordinal_position": 37
+        },
+        {
+          "column_name": "economic_state",
+          "data_type": "STRING",
+          "is_nullable": "YES",
+          "ordinal_position": 38
+        },
+        {
+          "column_name": "econ_as_of",
+          "data_type": "DATE",
+          "is_nullable": "YES",
+          "ordinal_position": 39
+        },
+        {
+          "column_name": "econ_window_start",
+          "data_type": "DATE",
+          "is_nullable": "YES",
+          "ordinal_position": 40
+        },
+        {
+          "column_name": "financial_data_mature",
+          "data_type": "BOOL",
+          "is_nullable": "YES",
+          "ordinal_position": 41
+        },
+        {
+          "column_name": "econ_window_end_lag_days",
+          "data_type": "INT64",
+          "is_nullable": "YES",
+          "ordinal_position": 42
+        },
+        {
+          "column_name": "sku_buyouts_qty",
+          "data_type": "INT64",
+          "is_nullable": "YES",
+          "ordinal_position": 43
+        },
+        {
+          "column_name": "sku_buyouts_rub",
+          "data_type": "NUMERIC",
+          "is_nullable": "YES",
+          "ordinal_position": 44
+        },
+        {
+          "column_name": "sku_ad_spend_attributed_rub",
+          "data_type": "NUMERIC",
+          "is_nullable": "YES",
+          "ordinal_position": 45
+        },
+        {
+          "column_name": "sku_drr_point",
+          "data_type": "NUMERIC",
+          "is_nullable": "YES",
+          "ordinal_position": 46
+        },
+        {
+          "column_name": "drr_low",
+          "data_type": "FLOAT64",
+          "is_nullable": "YES",
+          "ordinal_position": 47
+        },
+        {
+          "column_name": "drr_high",
+          "data_type": "FLOAT64",
+          "is_nullable": "YES",
+          "ordinal_position": 48
+        },
+        {
+          "column_name": "econ_limit_drr",
+          "data_type": "FLOAT64",
+          "is_nullable": "YES",
+          "ordinal_position": 49
+        },
+        {
+          "column_name": "target_drr",
+          "data_type": "FLOAT64",
+          "is_nullable": "YES",
+          "ordinal_position": 50
+        },
+        {
+          "column_name": "forward_availability",
+          "data_type": "STRING",
+          "is_nullable": "YES",
+          "ordinal_position": 51
+        },
+        {
+          "column_name": "limit_forward_conservative",
+          "data_type": "FLOAT64",
+          "is_nullable": "YES",
+          "ordinal_position": 52
+        },
+        {
+          "column_name": "limit_forward_stress",
+          "data_type": "FLOAT64",
+          "is_nullable": "YES",
+          "ordinal_position": 53
+        },
+        {
+          "column_name": "conservative_guard",
+          "data_type": "STRING",
+          "is_nullable": "YES",
+          "ordinal_position": 54
+        },
+        {
+          "column_name": "increase_candidate",
+          "data_type": "BOOL",
+          "is_nullable": "YES",
+          "ordinal_position": 55
+        },
+        {
+          "column_name": "increase_candidate_realized",
+          "data_type": "BOOL",
+          "is_nullable": "YES",
+          "ordinal_position": 56
+        },
+        {
+          "column_name": "current_effective_price_rub",
+          "data_type": "FLOAT64",
+          "is_nullable": "YES",
+          "ordinal_position": 57
+        },
+        {
+          "column_name": "breakeven_price_rub",
+          "data_type": "FLOAT64",
+          "is_nullable": "YES",
+          "ordinal_position": 58
+        },
+        {
+          "column_name": "contribution_before_ads_rub",
+          "data_type": "FLOAT64",
+          "is_nullable": "YES",
+          "ordinal_position": 59
+        },
+        {
+          "column_name": "commission_rub",
+          "data_type": "FLOAT64",
+          "is_nullable": "YES",
+          "ordinal_position": 60
+        },
+        {
+          "column_name": "commission_pct",
+          "data_type": "FLOAT64",
+          "is_nullable": "YES",
+          "ordinal_position": 61
+        },
+        {
+          "column_name": "acquiring_rub",
+          "data_type": "FLOAT64",
+          "is_nullable": "YES",
+          "ordinal_position": 62
+        },
+        {
+          "column_name": "acquiring_pct",
+          "data_type": "FLOAT64",
+          "is_nullable": "YES",
+          "ordinal_position": 63
+        },
+        {
+          "column_name": "logistics_rub",
+          "data_type": "FLOAT64",
+          "is_nullable": "YES",
+          "ordinal_position": 64
+        },
+        {
+          "column_name": "logistics_pct",
+          "data_type": "FLOAT64",
+          "is_nullable": "YES",
+          "ordinal_position": 65
+        },
+        {
+          "column_name": "product_cogs_rub",
+          "data_type": "FLOAT64",
+          "is_nullable": "YES",
+          "ordinal_position": 66
+        },
+        {
+          "column_name": "product_cogs_pct",
+          "data_type": "FLOAT64",
+          "is_nullable": "YES",
+          "ordinal_position": 67
+        },
+        {
+          "column_name": "routing",
+          "data_type": "STRING",
+          "is_nullable": "YES",
+          "ordinal_position": 68
+        },
+        {
+          "column_name": "stock_status",
+          "data_type": "STRING",
+          "is_nullable": "YES",
+          "ordinal_position": 69
+        },
+        {
+          "column_name": "stock_units",
+          "data_type": "INT64",
+          "is_nullable": "YES",
+          "ordinal_position": 70
+        },
+        {
+          "column_name": "stock_global_snapshot_date",
+          "data_type": "DATE",
+          "is_nullable": "YES",
+          "ordinal_position": 71
+        },
+        {
+          "column_name": "is_bundle",
+          "data_type": "BOOL",
+          "is_nullable": "YES",
+          "ordinal_position": 72
+        },
+        {
+          "column_name": "cover_days",
+          "data_type": "FLOAT64",
+          "is_nullable": "YES",
+          "ordinal_position": 73
+        },
+        {
+          "column_name": "cover_snapshot_date",
+          "data_type": "DATE",
+          "is_nullable": "YES",
+          "ordinal_position": 74
+        },
+        {
+          "column_name": "inventory_cover_state",
+          "data_type": "STRING",
+          "is_nullable": "YES",
+          "ordinal_position": 75
+        },
+        {
+          "column_name": "p1_reserve_share",
+          "data_type": "FLOAT64",
+          "is_nullable": "YES",
+          "ordinal_position": 76
+        },
+        {
+          "column_name": "p2_band_pp",
+          "data_type": "FLOAT64",
+          "is_nullable": "YES",
+          "ordinal_position": 77
+        },
+        {
+          "column_name": "p3_confidence",
+          "data_type": "FLOAT64",
+          "is_nullable": "YES",
+          "ordinal_position": 78
+        },
+        {
+          "column_name": "p5_low_cover_days",
+          "data_type": "FLOAT64",
+          "is_nullable": "YES",
+          "ordinal_position": 79
+        },
+        {
+          "column_name": "p5_overstock_cover_days",
+          "data_type": "FLOAT64",
+          "is_nullable": "YES",
+          "ordinal_position": 80
+        },
+        {
+          "column_name": "p7_price_change_pct",
+          "data_type": "FLOAT64",
+          "is_nullable": "YES",
+          "ordinal_position": 81
+        },
+        {
+          "column_name": "p13_cooldown_days",
+          "data_type": "INT64",
+          "is_nullable": "YES",
+          "ordinal_position": 82
+        },
+        {
+          "column_name": "k_inactive_days",
+          "data_type": "INT64",
+          "is_nullable": "YES",
+          "ordinal_position": 83
+        },
+        {
+          "column_name": "production_grade",
+          "data_type": "BOOL",
+          "is_nullable": "YES",
+          "ordinal_position": 84
+        },
+        {
+          "column_name": "input_manifest",
+          "data_type": "STRING",
+          "is_nullable": "YES",
+          "ordinal_position": 85
         }
       ]
     }
