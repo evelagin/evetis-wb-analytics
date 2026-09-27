@@ -16,6 +16,7 @@
   },
   "notes": [],
   "objective_id": "obj-ae-commissioning-001",
+  "passes": 1,
   "plan_sha256": "6a83e22d971332ea76ef96e8918d0ebb5ed80c1f1d02113cb2b13e1133770511",
   "pr_url": null,
   "production_mutations": 0,
