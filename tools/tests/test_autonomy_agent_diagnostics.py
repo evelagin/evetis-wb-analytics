@@ -449,6 +449,45 @@ def test_diagnostics_upload_survives_failure(name):
     assert "diag-summary" in src
 
 
+def _env_recording_cli(tmp: Path) -> tuple[str, Path]:
+    """Фейковый CLI: записывает значение переменной выключателя в файл на КАЖДЫЙ запуск (и --version)."""
+    rec = tmp / f"env-{uuid.uuid4().hex[:6]}.log"
+    body = (f"#!/bin/sh\nprintf '%s|%s\\n' \"$1\" \"${{CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC-<unset>}}\" >> '{rec}'\n"
+            "if [ \"$1\" = \"--version\" ]; then echo '2.1.280 (Claude Code)'; exit 0; fi\n"
+            "cat > /dev/null\n" + f"echo '{cli_json(is_error=True, result='x')}'\nexit 1\n")
+    script = tmp / f"claude-env-{uuid.uuid4().hex[:6]}"
+    script.write_text(body)
+    script.chmod(0o755)
+    return str(script), rec
+
+
+def test_claude_runtime_env_is_exactly_the_nonessential_traffic_switch():
+    """Одна штатная переменная, без «на всякий случай» (ACK 2026-09-27)."""
+    from tools.autonomy.agents import CLAUDE_RUNTIME_ENV
+    assert CLAUDE_RUNTIME_ENV == {"CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC": "1"}
+
+
+def test_nonessential_traffic_switch_reaches_every_claude_process_identically(tmp_path, monkeypatch):
+    from tools.autonomy.cli import CI_KEEP_ENV
+    # окружение job'а и вызывающий код пытаются снять выключатель — не должно получиться
+    monkeypatch.setenv("CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC", "")
+    cli, rec = _env_recording_cli(tmp_path)
+    for adapter in (ClaudeCliAdapter(binary=cli), ClaudeCliAdapter(binary=cli, keep_env=CI_KEEP_ENV,
+                                                                    env_extra={"CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC": ""})):
+        adapter.environment()                                           # проба --version — тоже процесс Claude Code
+        for role in ("engineer_plan", "engineer_implement", "reviewer"):
+            adapter.run(role, "p", tmp_path, PLAN_SCHEMA)
+    rows = [ln.split("|", 1) for ln in rec.read_text().splitlines()]
+    assert len(rows) == 8 and sum(1 for a, _ in rows if a == "--version") == 2
+    assert {v for _, v in rows} == {"1"}, rows                          # инженер = ревьюер = проба
+
+
+def test_workflows_do_not_carry_a_competing_copy_of_the_switch():
+    """Источник истины один — адаптер; workflow не может ни задать, ни «перезадать» выключатель."""
+    for name in ("autonomy-engineer.yml", "autonomy-review.yml", "autonomy-run.yml"):
+        assert "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC" not in (WF / name).read_text(), name
+
+
 def test_gate_receives_reviewer_hashes_including_diagnostics():
     run = (WF / "autonomy-run.yml").read_text()
     assert "expect: ${{ needs.review.outputs.hashes }}" in run and "reviewer_sha" not in run
