@@ -210,7 +210,7 @@ class Orchestrator:
         new = "FAIL" if status == "FAIL" or run.get("audit_status") == "FAIL" or run["production_mutations"] else status
         evidence = {"status": new, "mutations": a["mutations"] if isinstance(a.get("mutations"), int) else None,
                     "audited_at": self.now().strftime("%Y-%m-%dT%H:%M:%SZ"), "since": run["created_at"],
-                    "usage_count": len(run["usage"])}
+                    "usage_count": len(run["usage"]), "source": a.get("source")}
         return {**run, "audit_status": new, "audit_evidence": evidence}
 
     def trusted_audit(self, run_id: str) -> dict:
@@ -548,6 +548,14 @@ class Orchestrator:
         result = self.verifier(run)
         self._put(run, "verification.json", result)
         run = {**run, "verification": {**run["verification"], "result": result}}
+        binding = result.get("pr_binding") or {}
+        if result["status"] == "PASS" and (binding.get("status") != "PASS" or binding.get("problems")):
+            result = {**result, "status": "FAIL"}      # вердикт без доказанной привязки PR к SHA — не PASS
+        if binding.get("problems"):
+            return self.store.transition(run, "BLOCKED", f"PR не привязан к проверенному кандидату: "
+                                                         f"{binding['problems'][:3]}"[:500],
+                                         last_gate={"verdict": "UNSAFE",
+                                                    "reason": "required verification: PR binding FAIL"})
         if result["status"] == "PASS":
             return self.store.transition(run, "READY_FOR_HUMAN_REVIEW",
                                          "обязательные workflows прошли на опубликованном SHA: "

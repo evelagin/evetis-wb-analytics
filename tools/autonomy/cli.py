@@ -82,8 +82,13 @@ def _orchestrator(a, store: StateStore):
         from tools.autonomy.audit import count_mutations
         ids = [i for i in (a.audit_identity or []) if i]
 
+        # Выдержка согласованности журналов — только в доверенном шаге audit перед публикацией: там доказательство
+        # принимается; черновой аудит недоверенного job'а в состояние не попадает и ждать ему незачем.
+        settle = getattr(a, "cmd", None) == "audit"
+
         def audit(run):  # noqa: F811 — BLOCKED остаётся BLOCKED, а не нулём
-            return count_mutations(a.project, a.token_command, run["created_at"], ids)
+            return count_mutations(a.project, a.token_command, run["created_at"], ids,
+                                   settle_from=run.get("updated_at") if settle else None)
     publisher = GitPublisher(REPO, dry_run=a.dry_run) if getattr(a, "publish", False) else None
     verifier = None
     if getattr(a, "verify_repo", None):

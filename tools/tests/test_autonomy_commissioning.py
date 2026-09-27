@@ -69,7 +69,7 @@ GOOD_RUN = {"state": "READY_FOR_HUMAN_REVIEW", "production_mutations": 0, "audit
             "created_at": "2026-09-27T12:12:35Z",
             "usage": [{"role": "engineer_implement"}, {"role": "engineer_implement"}],
             # доверенный аудит всего окна, покрывающий оба вызова агента (tools/autonomy/audit.py)
-            "audit_evidence": {"status": "PASS", "mutations": 0, "audited_at": "2026-09-27T12:54:00Z",
+            "audit_evidence": {"status": "PASS", "mutations": 0, "source": "jobs_list+admin_activity+iam_selftest/v2", "audited_at": "2026-09-27T12:54:00Z",
                                "since": "2026-09-27T12:12:35Z", "usage_count": 2},
             "verification": {"result": {"status": "PASS"}},
             "transitions": [{"from": a, "to": b} for a, b in [

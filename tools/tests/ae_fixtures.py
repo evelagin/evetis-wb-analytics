@@ -177,9 +177,18 @@ def ci_verifier(**kw):
 
     def verifier(run: dict) -> dict:
         ver = run["verification"]
-        return evaluate(ver["workflows"], ci_runs(run, **kw), ver["head_sha"], run["branch"], ver["dispatched_at"])
+        pr = {"url": run.get("pr_url"), "state": "OPEN", "isDraft": True, "baseRefName": "main",
+              "headRefName": run["branch"], "headRefOid": ver["head_sha"], "isCrossRepository": False}
+        return evaluate(ver["workflows"], ci_runs(run, **kw), ver["head_sha"], run["branch"], ver["dispatched_at"],
+                        pr=pr, pr_url=run.get("pr_url"))
     return verifier
 
 
 def stamp() -> str:
     return now_iso()
+
+
+def clean_audit(run=None) -> dict:
+    """Доверенный аудит «0 мутаций» текущей версии источника — для тестов, где аудит не предмет проверки."""
+    from tools.autonomy.audit import AUDIT_SOURCE
+    return {"status": "PASS", "mutations": 0, "source": AUDIT_SOURCE}

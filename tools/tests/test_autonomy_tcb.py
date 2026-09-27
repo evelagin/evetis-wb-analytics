@@ -11,6 +11,8 @@ import subprocess
 
 import pytest
 
+from tools.tests.ae_fixtures import clean_audit  # noqa: E402
+
 from tools.autonomy import gatekeeper as G
 from tools.autonomy.agents import ScriptedAdapter
 from tools.autonomy.evidence import Sandbox
@@ -102,7 +104,7 @@ def test_gatekeeper_tcb_never_ready_whatever_else_holds():
 def _orch(env, eng, rev):
     pub = GitPublisher(env["repo"], dry_run=True)
     return Orchestrator(env["store"], env["repo"], eng, rev, F.SyntheticEvidenceRunner(), env["sandboxes"],
-                        audit=lambda run: 0, publisher=pub), pub
+                        audit=clean_audit, publisher=pub), pub
 
 
 def test_owner_ack_of_the_plan_does_not_make_tcb_self_approvable(env):

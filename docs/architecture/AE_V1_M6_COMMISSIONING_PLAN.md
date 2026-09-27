@@ -197,6 +197,17 @@ SELECT) исключается из «записи» только при док�
   окно (с `created_at`) и число покрытых вызовов агента. Новый доверенный шаг `audit` (autonomy-gate.yml,
   `sa-ae-reader`, только в `READY_FOR_PR`) между `gate` и `publish`. Публикатор и `commissioning.assess`
   требуют `zero_mutations_proven` (tools/autonomy/audit.py); нет доказательства — нет публикации.
+- **Покрытие аудита (источник v2).** Прежний `region-eu.INFORMATION_SCHEMA.JOBS_BY_PROJECT` с
+  `statement_type != 'SELECT'` не видел LOAD/COPY/EXTRACT, SELECT с записью в таблицу и задания вне EU, а его
+  задержка не ограничивалась. Теперь PASS — только если чисты все три источника: `jobs.list` без location
+  (все регионы и типы; полнота окна доказана зондом-отметкой, до 12 попыток), Admin Activity (не отключается)
+  по `sa-ae-reader` и прямым федеративным принципалам, самопроверка IAM в момент аудита (`testIamPermissions`
+  на проекте, ACL видимых датасетов, `updateData` на каждой таблице с собственной IAM-политикой по Admin
+  Activity). Выдержка 300 с от `READY_FOR_PR`. Нарушение инварианта IAM или сбой источника — BLOCKED;
+  доказательство иной версии источника нулём не считается.
+- **Привязка ci-verify.** `READY_FOR_HUMAN_REVIEW` — только если PR прогона открыт, draft, base `main`, не из
+  форка, ветка = ветка кандидата и head = опубликованный SHA (`gh pr view`, `pull-requests: read`); иначе
+  BLOCKED (UNSAFE).
 - **Публикация.** Идемпотентна: существующая ветка `ae/*` переиспользуется без push, только если её коммит —
   ровно проверенный кандидат (родитель = `repository_sha`, то же дерево); иначе отказ, force-push нет.
   Открытый PR переиспользуется только как draft в `main`. `gh` — только `pr list`, `pr create --draft`,

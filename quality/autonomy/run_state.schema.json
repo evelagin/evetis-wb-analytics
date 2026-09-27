@@ -222,7 +222,8 @@
         "mutations",
         "audited_at",
         "since",
-        "usage_count"
+        "usage_count",
+        "source"
       ],
       "properties": {
         "status": {
@@ -250,6 +251,14 @@
         "usage_count": {
           "type": "integer",
           "minimum": 0
+        },
+        "source": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "maxLength": 80,
+          "description": "Версия источника аудита (audit.AUDIT_SOURCE). Нулём считается только доказательство текущей версии."
         }
       }
     }

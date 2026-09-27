@@ -193,6 +193,7 @@ jobs:
     permissions:
       contents: write    # ТОЛЬКО refs/heads/autonomy-state
       actions: read      # прогоны обязательных workflows по опубликованному SHA
+      pull-requests: read  # привязка PR к проверенному SHA: draft, base, не форк, head
     env:
       STATE_DIR: ${{ github.workspace }}/.ae-state
       GH_TOKEN: ${{ github.token }}

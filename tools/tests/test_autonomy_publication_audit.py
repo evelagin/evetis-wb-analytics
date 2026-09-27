@@ -13,6 +13,8 @@ from pathlib import Path
 
 import pytest
 
+from tools.tests.ae_fixtures import clean_audit  # noqa: E402
+
 import ae_fixtures as F  # noqa: E402
 from tools.autonomy.agents import ReplayAdapter
 from tools.autonomy.audit import zero_mutations_proven
@@ -40,7 +42,7 @@ def orch(tmp_path):
 
 # ------------------------------------------------------------ семантика аудита ---
 def test_not_applicable_never_overwrites_real_evidence(orch):
-    run = orch._merge_audit(_run(), 0)
+    run = orch._merge_audit(_run(), clean_audit())
     assert run["audit_status"] == "PASS" and zero_mutations_proven(run)[0]
     again = orch._merge_audit(run, {"status": "NOT_APPLICABLE", "mutations": 0})
     assert again["audit_status"] == "PASS" and again["audit_evidence"] == run["audit_evidence"]
@@ -55,13 +57,13 @@ def test_not_applicable_alone_is_not_zero_mutations(orch):
 
 def test_fail_is_sticky_and_mutations_accumulate(orch):
     run = orch._merge_audit(_run(), {"status": "FAIL", "mutations": 2})
-    run = orch._merge_audit(run, 0)
+    run = orch._merge_audit(run, clean_audit())
     assert run["audit_status"] == "FAIL" and run["production_mutations"] == 2
     assert not zero_mutations_proven(run)[0]
 
 
 def test_blocked_audit_replaces_earlier_pass(orch):
-    run = orch._merge_audit(orch._merge_audit(_run(), 0), {"status": "BLOCKED", "mutations": None})
+    run = orch._merge_audit(orch._merge_audit(_run(), clean_audit()), {"status": "BLOCKED", "mutations": None})
     assert run["audit_status"] == "BLOCKED" and not zero_mutations_proven(run)[0]
 
 
@@ -73,7 +75,7 @@ def test_blocked_audit_replaces_earlier_pass(orch):
     (lambda r: r.__setitem__("audit_status", "NOT_APPLICABLE"), "а не PASS"),
 ])
 def test_stale_or_inconsistent_evidence_fails_closed(orch, mutate, needle):
-    run = orch._merge_audit(_run(), 0)
+    run = orch._merge_audit(_run(), clean_audit())
     run = json.loads(json.dumps(run))
     mutate(run)
     ok, why = zero_mutations_proven(run)
@@ -86,7 +88,7 @@ def test_trusted_audit_without_configured_audit_is_refused(tmp_path):
     with pytest.raises(TransitionError, match="не настроен"):
         p.orch(p.branch).trusted_audit(run_id)                     # аудит по умолчанию — NOT_APPLICABLE
     assert "audit_evidence" not in p.branch.load(run_id)
-    run = p.orch(p.branch, audit=lambda r: 0).trusted_audit(run_id)
+    run = p.orch(p.branch, audit=clean_audit).trusted_audit(run_id)
     assert run["audit_evidence"]["usage_count"] == len(run["usage"]) and zero_mutations_proven(run)[0]
 
 
@@ -144,7 +146,7 @@ def _ready_for_pr(p: Pipeline) -> str:
     rv = review_only(p.orch(p.machine("review"), reviewer=ScriptedAdapter({"reviewer": [{"respond": F.verdict()}]})),
                      run_id, rv_dir)
     assert p.orch(p.branch, reviewer=ReplayAdapter(rv_dir, rv)).advance(run_id)["state"] == "READY_FOR_PR"
-    p.orch(p.branch, audit=lambda r: 0).trusted_audit(run_id)
+    p.orch(p.branch, audit=clean_audit).trusted_audit(run_id)
     return run_id
 
 
