@@ -98,6 +98,15 @@ def _check(role: str, structured, schema: dict) -> str | None:
     return ("вывод агента нарушает схему: " + "; ".join(errs[:5])) if errs else None
 
 
+# Окружение КАЖДОГО процесса Claude Code (инженер и ревьюер — один адаптер, значит одно значение).
+# 2.1.280 без него шлёт телеметрию напрямую на api.anthropic.com в обход ANTHROPIC_BASE_URL и грузит
+# plugin telemetry@builtin; CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC — штатный и самый широкий
+# выключатель (телеметрия, отчёты об ошибках, автообновление, feature flags, bootstrap). Обмен токена
+# федерации, Messages API, инструменты и проверку домена WebFetch не трогает (офлайн-стенд, 2026-09-27).
+# Применяется ПОСЛЕ окружения job'а и env_extra: снять его входом workflow или вызывающим кодом нельзя.
+CLAUDE_RUNTIME_ENV = {"CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC": "1"}
+
+
 class ClaudeCliAdapter:
     """Claude Code в headless-режиме. Каждый вызов — новый процесс без сохранения сессии:
     независимость ревьюера обеспечена тем, что у процесса нет доступа к контексту автора."""
@@ -146,7 +155,8 @@ class ClaudeCliAdapter:
         if getattr(self, "_env", None) is None:
             def probe(cmd, rx):
                 try:
-                    r = subprocess.run(cmd, capture_output=True, text=True, timeout=15, stdin=subprocess.DEVNULL)
+                    r = subprocess.run(cmd, capture_output=True, text=True, timeout=15, stdin=subprocess.DEVNULL,
+                                       env={**os.environ, **CLAUDE_RUNTIME_ENV})
                     m = re.search(rx, r.stdout or "")
                     return m.group(0) if m else None
                 except (OSError, subprocess.SubprocessError):
@@ -191,7 +201,7 @@ class ClaudeCliAdapter:
             inv["process_started"] = True
             r = subprocess.run(self.command(role, schema), input=prompt, cwd=workdir, capture_output=True,
                                text=True, timeout=self.timeout_s,
-                               env=scrubbed_env(extra=self.env_extra, keep=self.keep_env))
+                               env=scrubbed_env(extra={**self.env_extra, **CLAUDE_RUNTIME_ENV}, keep=self.keep_env))
         except subprocess.TimeoutExpired as e:
             out = e.stdout.decode(errors="replace") if isinstance(e.stdout, bytes) else (e.stdout or "")
             err = e.stderr.decode(errors="replace") if isinstance(e.stderr, bytes) else (e.stderr or "")
