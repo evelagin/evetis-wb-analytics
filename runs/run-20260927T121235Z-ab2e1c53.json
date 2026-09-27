@@ -6,13 +6,13 @@
   "infra_retries": 0,
   "iteration": 2,
   "last_gate": {
-    "cycle": 1,
-    "review": "CHANGES_REQUIRED",
-    "verdict": "INCONCLUSIVE"
+    "cycle": 2,
+    "review": "PASS",
+    "verdict": "READY_FOR_PR"
   },
   "last_review": {
-    "findings": 2,
-    "verdict": "CHANGES_REQUIRED"
+    "findings": 1,
+    "verdict": "PASS"
   },
   "notes": [],
   "objective_id": "obj-ae-commissioning-001",
@@ -21,10 +21,10 @@
   "pr_url": null,
   "production_mutations": 0,
   "repository_sha": "73bf86dd965cb15fd176f0bec06a0cb134a3e7f0",
-  "review_cycles": 1,
+  "review_cycles": 2,
   "run_id": "run-20260927T121235Z-ab2e1c53",
   "schema_version": 1,
-  "state": "REVIEWING",
+  "state": "READY_FOR_PR",
   "transitions": [
     {
       "at": "2026-09-27T12:12:35Z",
@@ -79,9 +79,15 @@
       "from": "TESTING",
       "reason": "детерминированные доказательства собраны",
       "to": "REVIEWING"
+    },
+    {
+      "at": "2026-09-27T12:53:58Z",
+      "from": "REVIEWING",
+      "reason": "гейткипер: READY_FOR_PR",
+      "to": "READY_FOR_PR"
     }
   ],
-  "updated_at": "2026-09-27T12:53:00Z",
+  "updated_at": "2026-09-27T12:53:58Z",
   "usage": [
     {
       "adapter": "replay",
@@ -150,6 +156,23 @@
         "sha256": "9a41401860c46afa3c24ae709d3e86929544fddc5e4f99f371ce32525e3500c2"
       },
       "role": "engineer_implement"
+    },
+    {
+      "adapter": "replay",
+      "diagnostics": {
+        "api_error_status": null,
+        "api_error_type": null,
+        "artifact_sha256": "5a1ff73b13f6bfe708f8940c86148aec162555ab01b0349f7bb6a6059249abc3",
+        "exit_code": 0,
+        "failure_class": "NONE",
+        "failure_stage": "NONE",
+        "file": "diagnostics/reviewer-02.json",
+        "messages_api_reached": true,
+        "outcome": "SUCCESS",
+        "redaction": "CLEAN",
+        "sha256": "5a1ff73b13f6bfe708f8940c86148aec162555ab01b0349f7bb6a6059249abc3"
+      },
+      "role": "reviewer"
     }
   ]
 }

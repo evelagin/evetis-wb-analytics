@@ -1,0 +1,66 @@
+{
+  "schema_version": 1,
+  "kind": "agent_diagnostics",
+  "job_role": "reviewer",
+  "run_id": "run-20260927T121235Z-ab2e1c53",
+  "outcome": "SUCCESS",
+  "failure_stage": "NONE",
+  "failure_class": "NONE",
+  "claude_code_version": "2.1.280",
+  "node_version": "v22.23.2",
+  "scope_guard": {
+    "provenance": "untrusted_job_guard_stdout",
+    "decision": "PASS_WITH_EXCEPTION",
+    "scope": "workspace:developer",
+    "expires_in": 599,
+    "request_id": "req_011CfTycfy1XArs4WN38Lcqn"
+  },
+  "scratch_state": "REVIEWING",
+  "scratch_reason": "",
+  "expected_artifacts": [
+    "reviewer.json"
+  ],
+  "actually_created_artifacts": [
+    "reviewer.json"
+  ],
+  "invocations": [
+    {
+      "role": "reviewer",
+      "attempt": 1,
+      "failure_stage": "NONE",
+      "failure_class": "NONE",
+      "process_started": true,
+      "pre_invoke_succeeded": true,
+      "exit_code": 0,
+      "exception_type": null,
+      "elapsed_ms": 16015,
+      "output_format": "json",
+      "is_error": false,
+      "subtype": "success",
+      "api_error_status": null,
+      "api_error_type": null,
+      "duration_ms": 14923,
+      "duration_api_ms": 14809,
+      "num_turns": 4,
+      "total_cost_usd": 0.077432,
+      "usage": {
+        "input_tokens": 4,
+        "output_tokens": 1260,
+        "cache_creation_input_tokens": 10066,
+        "cache_read_input_tokens": 9430
+      },
+      "messages_api_reached": true,
+      "model_response_began": true,
+      "summary": "",
+      "stdout_tail": "",
+      "stderr_tail": ""
+    }
+  ],
+  "limitations": [
+    "Claude CLI не сообщает request-id запроса Messages API и факт обмена токена федерации.",
+    "messages_api_reached и model_response_began выводятся из api_error_status, duration_api_ms и usage CLI.",
+    "Обмен токена самим CLI виден только в истории аутентификации Claude Console.",
+    "scope_guard — вывод сторожа в том же недоверенном job'е, не доверенное доказательство."
+  ],
+  "redaction": "CLEAN"
+}
