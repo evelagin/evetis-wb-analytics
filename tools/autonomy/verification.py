@@ -26,6 +26,7 @@
 from __future__ import annotations
 
 import json
+import re
 import subprocess
 from datetime import datetime, timedelta, timezone
 
@@ -37,10 +38,13 @@ def _ts(s: str) -> datetime:
 PR_FIELDS = "url,state,isDraft,baseRefName,headRefName,headRefOid,isCrossRepository"
 
 
-def pr_binding(pr: dict | None, pr_url: str | None, head_sha: str, branch: str, base: str = "main") -> list[str]:
+def pr_binding(pr: dict | None, pr_url: str | None, head_sha: str, branch: str, base: str = "main",
+               repo: str | None = None) -> list[str]:
     """Нарушения привязки PR к проверенному кандидату. Пустой список — привязка доказана."""
     if not pr_url:
         return ["у прогона нет pr_url"]
+    if repo and not re.fullmatch(rf"https://github\.com/{re.escape(repo)}/pull/[0-9]+", pr_url):
+        return [f"pr_url {pr_url!r} не PR репозитория {repo}"]
     if not isinstance(pr, dict):
         return ["PR не прочитан"]
     checks = [(pr.get("url") == pr_url, f"url {pr.get('url')!r} ≠ {pr_url!r}"),
@@ -54,7 +58,8 @@ def pr_binding(pr: dict | None, pr_url: str | None, head_sha: str, branch: str, 
 
 
 def evaluate(required: list[str], runs: dict[str, list[dict]], head_sha: str, branch: str,
-             dispatched_at: str, skew_seconds: int = 120, *, pr: dict | None, pr_url: str | None) -> dict:
+             dispatched_at: str, skew_seconds: int = 120, *, pr: dict | None, pr_url: str | None,
+             repo: str | None = None) -> dict:
     """runs: workflow-файл → список объектов прогона API Actions (`GET …/runs`); pr — `gh pr view` PR прогона."""
     since = _ts(dispatched_at) - timedelta(seconds=skew_seconds)
     rows, statuses = [], []
@@ -79,7 +84,7 @@ def evaluate(required: list[str], runs: dict[str, list[dict]], head_sha: str, br
             row["status"] = "FAIL"
         rows.append(row)
         statuses.append(row["status"])
-    binding = pr_binding(pr, pr_url, head_sha, branch)
+    binding = pr_binding(pr, pr_url, head_sha, branch, repo=repo)
     status = "FAIL" if "FAIL" in statuses or binding else "PENDING" if "PENDING" in statuses else "PASS"
     return {"status": status, "head_sha": head_sha, "branch": branch, "required": list(required), "runs": rows,
             "pr_binding": {"status": "FAIL" if binding else "PASS", "problems": binding},
@@ -108,9 +113,11 @@ class GitHubVerifier:
     def __call__(self, run: dict) -> dict:
         v = run["verification"]
         runs = {wf: fetch_runs(self.repo, wf, run["branch"], v["head_sha"]) for wf in self.required}
-        pr = fetch_pr(self.repo, run["pr_url"]) if run.get("pr_url") else None
+        url = run.get("pr_url")
+        own = bool(url) and bool(re.fullmatch(rf"https://github\.com/{re.escape(self.repo)}/pull/[0-9]+", url))
+        pr = fetch_pr(self.repo, url) if own else None          # чужой URL не открываем вовсе
         return evaluate(self.required, runs, v["head_sha"], run["branch"], v["dispatched_at"],
-                        pr=pr, pr_url=run.get("pr_url"))
+                        pr=pr, pr_url=url, repo=self.repo)
 
 
 def timed_out(run: dict, timeout_minutes: int, now: datetime | None = None) -> bool:

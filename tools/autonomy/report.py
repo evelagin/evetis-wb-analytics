@@ -11,14 +11,15 @@ def _load(p: Path):
 
 def _usage_cost(u: dict, art_dir: Path) -> float:
     """Стоимость записи usage: своя, иначе — из доверенной копии диагностики (только вызовы ЭТОЙ роли)."""
-    if isinstance(u.get("total_cost_usd"), (int, float)):
-        return float(u["total_cost_usd"])
+    from tools.autonomy.audit import finite_cost
+    if finite_cost(u.get("total_cost_usd")) is not None:
+        return finite_cost(u["total_cost_usd"])
     f = (u.get("diagnostics") or {}).get("file")
     doc = _load(art_dir / f) if isinstance(f, str) and f.startswith("diagnostics/") and ".." not in f else None
     if not isinstance(doc, dict):
         return 0.0
-    return sum(float(i["total_cost_usd"]) for i in doc.get("invocations", [])
-               if i.get("role") == u.get("role") and isinstance(i.get("total_cost_usd"), (int, float)))
+    return sum(finite_cost(i.get("total_cost_usd")) or 0.0 for i in doc.get("invocations", [])
+               if i.get("role") == u.get("role"))
 
 
 def _diagnostics_lines(run: dict) -> list[str]:

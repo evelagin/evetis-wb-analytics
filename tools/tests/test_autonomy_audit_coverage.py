@@ -21,6 +21,7 @@ SA = f"sa-ae-reader@{P}.iam.gserviceaccount.com"
 ANON = "_" + "0" * 40
 NOW = datetime(2026, 9, 27, 13, 0, tzinfo=timezone.utc)
 SINCE = "2026-09-27T12:12:35Z"
+LOADER = f"sa-loaders-prod@{P}.iam.gserviceaccount.com"
 
 
 def job(jt="QUERY", st="SELECT", dest=None, email=SA, state="DONE", err=None, purpose=None, location="EU"):
@@ -41,14 +42,23 @@ def anon_dest():
 
 
 class FakeSource:
-    def __init__(self, jobs=(), activity=(), granted=(), datasets=None, table_policies=(), writable=(),
-                 created="2026-07-10T10:26:24Z", watermark_after=0):
+    def __init__(self, jobs=(), activity=(), access=(), granted=(), datasets=None, table_policies=(), writable=(),
+                 created="2026-07-10T10:26:24Z", watermark_after=0, log_watermark_after=0, sa_events=None,
+                 sa_granted=None, grants=None, routing=None):
         self.project = P
-        self._jobs, self._activity, self._granted = list(jobs), list(activity), list(granted)
-        self._datasets = datasets if datasets is not None else {"wb_raw": [{"role": "READER", "userByEmail": SA}],
-                                                                ANON: [{"role": "OWNER", "userByEmail": SA}]}
+        self._jobs, self._activity, self._access, self._granted = list(jobs), list(activity), list(access), list(granted)
+        self._datasets = datasets if datasets is not None else {
+            "wb_raw": {"location": "EU", "access": [{"role": "READER", "userByEmail": SA}]},
+            ANON: {"location": "EU", "access": [{"role": "OWNER", "userByEmail": SA}]}}
         self._policies, self._writable, self._created = list(table_policies), dict(writable), created
-        self.watermark_after, self.list_calls, self.sleeps, self.label = watermark_after, 0, [], None
+        self._sa_events = sa_events if sa_events is not None else [
+            {"protoPayload": {"response": {"email": SA}}}, {"protoPayload": {"response": {"email": LOADER}}}]
+        self._sa_granted, self._grants = dict(sa_granted or {}), dict(grants or {})
+        self._routing = routing or {"sink": {"filter": 'NOT LOG_ID("cloudaudit.googleapis.com/activity")'},
+                                    "exclusions": []}
+        self.watermark_after, self.log_watermark_after = watermark_after, log_watermark_after
+        self.list_calls, self.log_probe_calls, self.sleeps, self.label = 0, 0, [], None
+        self.filters, self.sa_checked, self.grant_locations = [], [], []
 
     def now(self):
         return NOW
@@ -61,14 +71,29 @@ class FakeSource:
         extra = [job(purpose=self.label)] if self.label and self.list_calls > self.watermark_after else []
         return self._jobs + extra
 
-    def activity(self, flt):
+    def logs(self, flt):
+        self.filters.append(flt)
+        if self.label and self.label in flt:
+            self.log_probe_calls += 1
+            return [{"probe": 1}] if self.log_probe_calls > self.log_watermark_after else []
+        if "CreateServiceAccount" in flt:
+            return self._sa_events
         if 'methodName:"SetIamPolicy"' in flt:
             return [{"protoPayload": {"resourceName": rn}} for rn in self._policies]
+        if "data_access" in flt:
+            return self._access
         return self._activity
+
+    def routing(self):
+        return self._routing
 
     def granted(self, perms):
         assert set(self._granted) <= set(perms)
         return self._granted
+
+    def sa_granted(self, email, perms):
+        self.sa_checked.append(email)
+        return self._sa_granted.get(email, [])
 
     def datasets(self):
         return self._datasets
@@ -78,6 +103,10 @@ class FakeSource:
 
     def project_created(self):
         return self._created
+
+    def grant_jobs(self, location, since_iso):
+        self.grant_locations.append(location)
+        return self._grants.get(location, 0)
 
 
 def audit(src, **kw):
@@ -137,7 +166,8 @@ def test_production_loaders_are_not_attributed_to_ae():
 
 
 def test_admin_activity_of_ae_is_fail():
-    r = audit(FakeSource(activity=[{"protoPayload": {"methodName": "google.cloud.bigquery.v2.TableService.DeleteTable"}}]))
+    r = audit(FakeSource(activity=[{"protoPayload": {"methodName": "google.cloud.bigquery.v2.TableService.DeleteTable",
+                                                     "authenticationInfo": {"principalEmail": SA}}}]))
     assert r["status"] == "FAIL" and r["by_type"] == {"ADMIN:google.cloud.bigquery.v2.TableService.DeleteTable": 1}
 
 
@@ -146,6 +176,8 @@ def test_watermark_never_seen_is_blocked_with_bounded_wait():
     r = audit(src)
     assert r["status"] == "BLOCKED" and r["mutations"] is None and "зонд" in r["error"]
     assert src.list_calls == A.WATERMARK_TRIES and sum(src.sleeps) == (A.WATERMARK_TRIES - 1) * A.WATERMARK_SLEEP
+    src = FakeSource(log_watermark_after=10 ** 6)          # задания видны, а Data Access не догнал — тоже BLOCKED
+    assert audit(src)["status"] == "BLOCKED" and src.log_probe_calls == A.WATERMARK_TRIES
 
 
 def test_watermark_late_but_seen_is_pass():
@@ -164,13 +196,13 @@ def test_settle_delay_is_deterministic_and_bounded():
 
 @pytest.mark.parametrize("src", [
     FakeSource(granted=["bigquery.tables.updateData"]),
-    FakeSource(datasets={"wb_raw": [{"role": "WRITER", "userByEmail": SA}]}),
-    FakeSource(datasets={"wb_raw": [{"role": "OWNER", "userByEmail": SA}]}),
-    FakeSource(datasets={"wb_raw": [{"role": "roles/bigquery.dataEditor", "iamMember": f"serviceAccount:{SA}"}]}),
-    FakeSource(datasets={"wb_raw": [{"role": "WRITER", "groupByEmail": "team@x"}]}),
-    FakeSource(datasets={"wb_raw": [{"role": "WRITER", "domain": "x.com"}]}),
-    FakeSource(datasets={"wb_raw": [{"role": "WRITER", "specialGroup": "allAuthenticatedUsers"}]}),
-    FakeSource(datasets={"wb_raw": [{"role": "WRITER", "iamMember": "principalSet://iam.googleapis.com/x"}]}),
+    FakeSource(datasets={"wb_raw": {"location": "EU", "access": [{"role": "WRITER", "userByEmail": SA}]}}),
+    FakeSource(datasets={"wb_raw": {"location": "EU", "access": [{"role": "OWNER", "userByEmail": SA}]}}),
+    FakeSource(datasets={"wb_raw": {"location": "EU", "access": [{"role": "roles/bigquery.dataEditor", "iamMember": f"serviceAccount:{SA}"}]}}),
+    FakeSource(datasets={"wb_raw": {"location": "EU", "access": [{"role": "WRITER", "groupByEmail": "team@x"}]}}),
+    FakeSource(datasets={"wb_raw": {"location": "EU", "access": [{"role": "WRITER", "domain": "x.com"}]}}),
+    FakeSource(datasets={"wb_raw": {"location": "EU", "access": [{"role": "WRITER", "specialGroup": "allAuthenticatedUsers"}]}}),
+    FakeSource(datasets={"wb_raw": {"location": "EU", "access": [{"role": "WRITER", "iamMember": "principalSet://iam.googleapis.com/x"}]}}),
     FakeSource(table_policies=[f"projects/{P}/datasets/wb_raw/tables/RAW_WB_PRICES"],
                writable={("wb_raw", "RAW_WB_PRICES"): True}),
     FakeSource(table_policies=[f"projects/{P}/datasets/wb_raw/connections/x"]),
@@ -186,8 +218,8 @@ def test_acl_entries_that_cannot_reach_ae_are_accepted():
     access = [{"role": "READER", "userByEmail": SA}, {"role": "WRITER", "specialGroup": "projectWriters"},
               {"role": "OWNER", "specialGroup": "projectOwners"}, {"role": "WRITER", "userByEmail": "loader@x"},
               {"role": "WRITER", "iamMember": "serviceAccount:other@x"}, {"view": {"tableId": "v"}}]
-    assert acl_problems("wb_raw", access, SA) == []
-    assert acl_problems(ANON, [{"role": "OWNER", "userByEmail": SA}], SA) == []
+    assert acl_problems("wb_raw", access, [SA]) == []
+    assert acl_problems(ANON, [{"role": "OWNER", "userByEmail": SA}], [SA]) == []
 
 
 def test_table_policies_only_on_other_principals_or_deleted_tables_pass():
@@ -353,3 +385,165 @@ def test_ci_verify_job_reads_prs_but_cannot_write_them():
     perms = block.split("permissions:", 1)[1].split("    env:", 1)[0]
     assert re.search(r"^\s+pull-requests: read\b", perms, re.M) and re.search(r"^\s+actions: read\b", perms, re.M)
     assert "write" not in perms.replace("contents: write", "")
+
+
+# ------------------------------------------------------------ v3: делегирование, Data Access, SA, DCL ---
+from tools.autonomy.audit import data_access_violation, delegated_from_ae, routing_problems  # noqa: E402
+
+GH = "principal://iam.googleapis.com/projects/1/locations/global/workloadIdentityPools/github-pool/subject/repo:o/r"
+
+
+def entry(svc="bigquery.googleapis.com", method="google.cloud.bigquery.v2.JobService.Query", eff=SA, chain=None,
+          meta=None, request=None, authz=None):
+    ai = {"principalEmail": eff} if "@" in eff else {"principalSubject": eff}
+    if chain:
+        ai["serviceAccountDelegationInfo"] = chain
+    pp = {"serviceName": svc, "methodName": method, "authenticationInfo": ai}
+    if meta is not None:
+        pp["metadata"] = {"@type": "x", **meta}
+    if request is not None:
+        pp["request"] = request
+    if authz is not None:
+        pp["authorizationInfo"] = authz
+    return {"protoPayload": pp}
+
+
+@pytest.mark.parametrize("e,expected", [
+    (entry(meta={"tableDataRead": {}}, chain=[{"principalSubject": GH}]), None),       # сам AE через WIF, чтение
+    (entry(method="jobservice.jobcompleted"), None),
+    (entry(method="google.cloud.bigquery.v2.JobService.InsertJob", meta={"jobInsertion": {}}), None),
+    (entry(method="google.cloud.bigquery.v2.JobService.InsertJob", meta={"tableDataChange": {}}),
+     "DATA:google.cloud.bigquery.v2.JobService.InsertJob:['tableDataChange']"),
+    (entry(method="tabledata.insertAll"), "DATA:tabledata.insertAll:[]"),
+    (entry(method="google.cloud.bigquery.v2.TableDataService.InsertAll"), "DATA:google.cloud.bigquery.v2.TableDataService.InsertAll:[]"),
+    (entry(method="google.cloud.bigquery.storage.v1.BigQueryWrite.AppendRows"),
+     "DATA:google.cloud.bigquery.storage.v1.BigQueryWrite.AppendRows:[]"),
+    (entry(method="google.cloud.bigquery.v2.TableService.TestIamPermissions"), None),
+    (entry(svc="iamcredentials.googleapis.com", method="GenerateAccessToken",
+           request={"name": f"projects/-/serviceAccounts/{SA}"}), None),
+    (entry(svc="iamcredentials.googleapis.com", method="GenerateAccessToken",
+           request={"name": f"projects/-/serviceAccounts/{LOADER}"}), f"IMPERSONATION:{LOADER}"),
+    (entry(svc="iamcredentials.googleapis.com", method="SignJwt", request={}), "IMPERSONATION:?"),
+    (entry(eff=LOADER, chain=[{"firstPartyPrincipal": {"principalEmail": SA}}], meta={"tableDataChange": {}}),
+     f"DELEGATED:bigquery.googleapis.com:{LOADER}"),
+    (entry(eff=LOADER, chain=[{"principalSubject": GH}]), f"DELEGATED:bigquery.googleapis.com:{LOADER}"),
+    (entry(eff=LOADER, chain=[{"firstPartyPrincipal": {"principalEmail": "service-1@gcp-sa-cloudscheduler.iam.gserviceaccount.com"}}],
+           meta={"tableDataChange": {}}), None),                                        # production, не AE
+    (entry(eff=LOADER, meta={"tableDataChange": {}}), None),
+    (entry(svc="storage.googleapis.com", method="storage.objects.create",
+           authz=[{"permission": "storage.objects.create", "permissionType": "DATA_WRITE", "granted": True}]),
+     "DATA:storage.googleapis.com:storage.objects.create"),
+    (entry(svc="logging.googleapis.com", method="ReadLogEntries",
+           authz=[{"permission": "logging.logEntries.list", "permissionType": "DATA_READ"}]), None),
+    (entry(svc="pubsub.googleapis.com", method="Publish"), "DATA:pubsub.googleapis.com:Publish"),   # без authz — не чтение
+])
+def test_data_access_classes(e, expected):
+    assert data_access_violation(e, [SA]) == expected
+
+
+def test_impersonated_loader_dml_is_fail_although_jobs_list_shows_the_loader():
+    """M1: AE имперсонирует загрузчик; jobs.list видит только загрузчик, но цепочка делегирования выдаёт AE."""
+    dml = job(email=LOADER, st="MERGE")
+    used = entry(eff=LOADER, chain=[{"firstPartyPrincipal": {"principalEmail": SA}}],
+                 method="google.cloud.bigquery.v2.JobService.InsertJob", meta={"tableDataChange": {}})
+    r = audit(FakeSource(jobs=[dml], access=[used]))
+    assert r["status"] == "FAIL" and r["by_type"] == {f"DELEGATED:bigquery.googleapis.com:{LOADER}": 1}
+
+
+def test_audit_log_filters_cover_delegation_and_federation():
+    src = FakeSource()
+    audit(src)
+    window = [f for f in src.filters if f'timestamp>="{SINCE}"' in f]
+    assert {("activity" in f, "data_access" in f) for f in window} >= {(True, False), (False, True)}
+    for f in window:
+        assert f'serviceAccountDelegationInfo.firstPartyPrincipal.principalEmail="{SA}"' in f
+        assert 'serviceAccountDelegationInfo.principalSubject:"principal"' in f
+        assert 'authenticationInfo.principalSubject:"principal"' in f
+    assert not delegated_from_ae(entry(chain=[{"principalSubject": GH}]), [SA])      # сам AE — не «чужой»
+
+
+@pytest.mark.parametrize("routing,bad", [
+    ({"sink": {"filter": "x"}, "exclusions": []}, False),
+    ({"sink": {"filter": "x", "exclusions": [{"name": "e", "disabled": True}]}, "exclusions": []}, False),
+    ({"sink": {"filter": "x", "disabled": True}, "exclusions": []}, True),
+    ({"sink": {"filter": 'NOT LOG_ID("cloudaudit.googleapis.com/data_access")'}, "exclusions": []}, True),
+    ({"sink": {"filter": "x", "exclusions": [{"name": "bq"}]}, "exclusions": []}, True),
+    ({"sink": {"filter": "x"}, "exclusions": [{"name": "legacy"}]}, True),
+])
+def test_log_routing_must_deliver_data_access(routing, bad):
+    assert bool(routing_problems(routing)) is bad
+    assert audit(FakeSource(routing=routing))["status"] == ("BLOCKED" if bad else "PASS")
+
+
+def test_every_project_sa_is_self_checked_and_any_impersonation_right_blocks():
+    src = FakeSource()
+    assert audit(src)["status"] == "PASS" and sorted(src.sa_checked) == sorted([SA, LOADER])
+    r = audit(FakeSource(sa_granted={LOADER: ["iam.serviceAccounts.getAccessToken"]}))
+    assert r["status"] == "BLOCKED" and any(LOADER in x for x in r["iam_invariant"])
+
+
+def test_sa_inventory_must_be_complete():
+    events = [{"protoPayload": {"response": {"email": SA}}}, {"protoPayload": {}}]
+    assert audit(FakeSource(sa_events=events))["status"] == "BLOCKED"
+    failed = [{"protoPayload": {"response": {"email": SA}}}, {"protoPayload": {"status": {"code": 6}}}]
+    assert audit(FakeSource(sa_events=failed))["status"] == "PASS"            # неудачное создание — SA нет
+
+
+def test_dcl_grant_history_blocks_and_all_dataset_locations_are_scanned():
+    src = FakeSource(datasets={"wb_raw": {"location": "EU", "access": []},
+                               "x": {"location": "europe-west1", "access": []}})
+    assert audit(src)["status"] == "PASS" and sorted(src.grant_locations) == ["EU", "europe-west1"]
+    r = audit(FakeSource(grants={"EU": 1}))
+    assert r["status"] == "BLOCKED" and any("DCL GRANT" in x for x in r["iam_invariant"])
+    old = audit(FakeSource(created=(NOW - timedelta(days=A.JOBS_RETENTION_DAYS + 1)).strftime("%Y-%m-%dT%H:%M:%SZ")))
+    assert old["status"] == "BLOCKED" and any("INFORMATION_SCHEMA" in x for x in old["iam_invariant"])
+
+
+def test_unreachable_regions_are_not_silently_skipped():
+    src = A.GcpAuditSource(P, "t", http=lambda *a, **k: {"jobs": [], "unreachable": ["asia-south2"]})
+    with pytest.raises(RuntimeError, match="недоступны регионы"):
+        src.jobs(1)
+    ds = A.GcpAuditSource(P, "t", http=lambda *a, **k: {"datasets": [], "unreachable": ["asia-south2"]})
+    with pytest.raises(RuntimeError, match="недоступны регионы"):
+        ds.datasets()
+
+
+def test_failed_parent_with_children_is_not_read_only():
+    j = job(st=None, state="DONE", err={"reason": "invalidQuery"})
+    j["statistics"]["numChildJobs"] = "3"
+    assert job_mutation(j, P) == "QUERY:None"
+
+
+def test_acl_checked_for_every_ae_identity():
+    other = f"sa-ae-second@{P}.iam.gserviceaccount.com"
+    assert acl_problems("wb_raw", [{"role": "WRITER", "userByEmail": other}], [SA, other])
+
+
+def test_foreign_repo_pr_url_is_refused_and_never_fetched(monkeypatch):
+    from tools.autonomy import verification as V
+    fetched = []
+    monkeypatch.setattr(V, "fetch_runs", lambda *a: [])
+    monkeypatch.setattr(V, "fetch_pr", lambda repo, url: fetched.append(url) or GOOD_PR)
+    run = {"branch": BR, "pr_url": "https://github.com/attacker/r/pull/9",
+           "verification": {"head_sha": SHA, "dispatched_at": "2026-09-27T13:00:00Z"}}
+    r = V.GitHubVerifier("o/r", ["ci.yml"])(run)
+    assert r["status"] == "FAIL" and fetched == [] and "не PR репозитория" in r["pr_binding"]["problems"][0]
+    assert pr_binding({**GOOD_PR, "url": "https://github.com/o/r/pull/9x"}, "https://github.com/o/r/pull/9x",
+                      SHA, BR, repo="o/r")
+
+
+@pytest.mark.parametrize("v,expected", [(0.25, 0.25), (1, 1.0), (float("nan"), None), (float("inf"), None),
+                                        (True, None), ("0.3", None), (None, None)])
+def test_cost_must_be_finite(v, expected):
+    assert A.finite_cost(v) == expected
+
+
+def test_report_ignores_non_finite_cost(tmp_path):
+    import json as _json
+    from tools.autonomy.report import _usage_cost
+    (tmp_path / "diagnostics").mkdir()
+    (tmp_path / "diagnostics" / "r.json").write_text(_json.dumps({"invocations": [
+        {"role": "reviewer", "total_cost_usd": float("nan")}, {"role": "reviewer", "total_cost_usd": 0.1}]}))
+    assert _usage_cost({"role": "reviewer", "diagnostics": {"file": "diagnostics/r.json"}}, tmp_path) == 0.1
+    assert _usage_cost({"role": "reviewer", "total_cost_usd": float("nan"),
+                        "diagnostics": {"file": "diagnostics/r.json"}}, tmp_path) == 0.1

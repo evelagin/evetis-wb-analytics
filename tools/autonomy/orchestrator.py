@@ -163,8 +163,9 @@ class Orchestrator:
                 doc = d
                 # Стоимость, которую сообщил CLI, есть только в диагностике недоверенного job'а: переносим
                 # в запись usage ЭТОЙ роли (сумма её вызовов), иначе отчёт показывал бы $0 (issue #201).
-                costs = [i["total_cost_usd"] for i in d["invocations"]
-                         if i["role"] == role and isinstance(i.get("total_cost_usd"), (int, float))]
+                from tools.autonomy.audit import finite_cost
+                costs = [finite_cost(i.get("total_cost_usd")) for i in d["invocations"] if i["role"] == role]
+                costs = [c for c in costs if c is not None]
                 if costs and "total_cost_usd" not in entry:
                     entry["total_cost_usd"] = round(sum(costs), 6)
                     entry["cost_source"] = "cli_reported_untrusted_job"

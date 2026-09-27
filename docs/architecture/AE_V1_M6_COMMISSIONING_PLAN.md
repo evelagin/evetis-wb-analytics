@@ -197,14 +197,19 @@ SELECT) исключается из «записи» только при док�
   окно (с `created_at`) и число покрытых вызовов агента. Новый доверенный шаг `audit` (autonomy-gate.yml,
   `sa-ae-reader`, только в `READY_FOR_PR`) между `gate` и `publish`. Публикатор и `commissioning.assess`
   требуют `zero_mutations_proven` (tools/autonomy/audit.py); нет доказательства — нет публикации.
-- **Покрытие аудита (источник v2).** Прежний `region-eu.INFORMATION_SCHEMA.JOBS_BY_PROJECT` с
+- **Покрытие аудита (источник v3).** Прежний `region-eu.INFORMATION_SCHEMA.JOBS_BY_PROJECT` с
   `statement_type != 'SELECT'` не видел LOAD/COPY/EXTRACT, SELECT с записью в таблицу и задания вне EU, а его
-  задержка не ограничивалась. Теперь PASS — только если чисты все три источника: `jobs.list` без location
-  (все регионы и типы; полнота окна доказана зондом-отметкой, до 12 попыток), Admin Activity (не отключается)
-  по `sa-ae-reader` и прямым федеративным принципалам, самопроверка IAM в момент аудита (`testIamPermissions`
-  на проекте, ACL видимых датасетов, `updateData` на каждой таблице с собственной IAM-политикой по Admin
-  Activity). Выдержка 300 с от `READY_FOR_PR`. Нарушение инварианта IAM или сбой источника — BLOCKED;
-  доказательство иной версии источника нулём не считается.
+  задержка не ограничивалась. Теперь PASS — только если чисты все источники: `jobs.list` без location
+  (все регионы и типы, `unreachable` — отказ); Admin Activity и Data Access, где AE действует сам ИЛИ стоит в
+  начале цепочки делегирования (имперсонация другого SA видна по `serviceAccountDelegationInfo`); маршрутизация
+  Data Access без исключений; самопроверка IAM в момент аудита (`testIamPermissions` на проекте и на каждом SA
+  проекта из событий CreateServiceAccount, ACL видимых датасетов, `updateData` на каждой таблице с собственной
+  IAM-политикой, отсутствие DCL GRANT в INFORMATION_SCHEMA). Полнота окна доказана зондом-отметкой в jobs.list
+  и в Data Access (до 12 попыток), выдержка 300 с от `READY_FOR_PR`. Нарушение инварианта или сбой источника —
+  BLOCKED; доказательство иной версии источника нулём не считается. Побочный эффект: развёртывание через
+  GitHub WIF (sa-deployer, sa-terraform-*) в окне прогона даёт FAIL (fail closed) — в окне M6 не деплоить.
+  Проверка DCL GRANT опирается на 180-дневное хранение INFORMATION_SCHEMA: после 2027-01-06 аудит станет
+  BLOCKED, пока запись GRANT как SetIamPolicy не будет доказана отдельным опытом владельца.
 - **Привязка ci-verify.** `READY_FOR_HUMAN_REVIEW` — только если PR прогона открыт, draft, base `main`, не из
   форка, ветка = ветка кандидата и head = опубликованный SHA (`gh pr view`, `pull-requests: read`); иначе
   BLOCKED (UNSAFE).
