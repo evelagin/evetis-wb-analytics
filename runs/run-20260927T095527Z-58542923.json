@@ -1,4 +1,5 @@
 {
+  "audit_status": "NOT_APPLICABLE",
   "branch": "ae/objective-ae-commissioning-001-60c6919b",
   "created_at": "2026-09-27T09:55:27Z",
   "deduplication_key": "objective:AE-COMMISSIONING-001",
@@ -15,7 +16,7 @@
   "review_cycles": 0,
   "run_id": "run-20260927T095527Z-58542923",
   "schema_version": 1,
-  "state": "PLANNING",
+  "state": "BLOCKED",
   "transitions": [
     {
       "at": "2026-09-27T09:55:27Z",
@@ -34,8 +35,32 @@
       "from": "DISCOVERING",
       "reason": "собраны доказательства базового коммита",
       "to": "PLANNING"
+    },
+    {
+      "at": "2026-09-27T10:02:44Z",
+      "from": "PLANNING",
+      "reason": "план не получен: [CLI_REPORTED_ERROR/API] недоверенный вывод отсутствует; диагностика CLI_REPORTED_ERROR/API: план не получен: [CLI_REPORTED_ERROR/API] агент завершился с ошибкой: API Error: 400 Claude Code 2.1.251 does not support this model; version 2.1.280 or newer is required. Run 'claude update', or update the Claude desktop app, then try again.",
+      "to": "BLOCKED"
     }
   ],
-  "updated_at": "2026-09-27T10:01:29Z",
-  "usage": []
+  "updated_at": "2026-09-27T10:02:44Z",
+  "usage": [
+    {
+      "adapter": "replay",
+      "diagnostics": {
+        "api_error_status": 400,
+        "api_error_type": null,
+        "artifact_sha256": "5fab5aaad0e3079eae9f97e136c3882ce792ed897859202c40bbf85d77188d0d",
+        "exit_code": 1,
+        "failure_class": "API",
+        "failure_stage": "CLI_REPORTED_ERROR",
+        "file": "diagnostics/engineer_plan-01.json",
+        "messages_api_reached": true,
+        "outcome": "FAILURE",
+        "redaction": "CLEAN",
+        "sha256": "5fab5aaad0e3079eae9f97e136c3882ce792ed897859202c40bbf85d77188d0d"
+      },
+      "role": "engineer_plan"
+    }
+  ]
 }

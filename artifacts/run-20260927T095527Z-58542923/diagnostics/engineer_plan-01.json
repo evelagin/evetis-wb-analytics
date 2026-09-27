@@ -1,0 +1,64 @@
+{
+  "schema_version": 1,
+  "kind": "agent_diagnostics",
+  "job_role": "engineer",
+  "run_id": "run-20260927T095527Z-58542923",
+  "outcome": "FAILURE",
+  "failure_stage": "CLI_REPORTED_ERROR",
+  "failure_class": "API",
+  "claude_code_version": "2.1.251",
+  "node_version": "v22.23.2",
+  "scope_guard": {
+    "provenance": "untrusted_job_guard_stdout",
+    "decision": "PASS_WITH_EXCEPTION",
+    "scope": "workspace:developer",
+    "expires_in": 597,
+    "request_id": "req_011CfTka85nuDF2NG12SGvp4"
+  },
+  "scratch_state": "BLOCKED",
+  "scratch_reason": "план не получен: [CLI_REPORTED_ERROR/API] агент завершился с ошибкой: API Error: 400 Claude Code 2.1.251 does not support this model; version 2.1.280 or newer is required. Run 'claude update', or update the Claude desktop app, then try again.",
+  "expected_artifacts": [
+    "engineer_plan.json"
+  ],
+  "actually_created_artifacts": [],
+  "invocations": [
+    {
+      "role": "engineer_plan",
+      "attempt": 1,
+      "failure_stage": "CLI_REPORTED_ERROR",
+      "failure_class": "API",
+      "process_started": true,
+      "pre_invoke_succeeded": true,
+      "exit_code": 1,
+      "exception_type": null,
+      "elapsed_ms": 1905,
+      "output_format": "json",
+      "is_error": true,
+      "subtype": "success",
+      "api_error_status": 400,
+      "api_error_type": null,
+      "duration_ms": 290,
+      "duration_api_ms": 0,
+      "num_turns": 1,
+      "total_cost_usd": 0.0,
+      "usage": {
+        "input_tokens": 0,
+        "output_tokens": 0,
+        "cache_creation_input_tokens": 0,
+        "cache_read_input_tokens": 0
+      },
+      "messages_api_reached": true,
+      "model_response_began": false,
+      "summary": "API Error: 400 Claude Code 2.1.251 does not support this model; version 2.1.280 or newer is required. Run 'claude update', or update the Claude desktop app, then try again.",
+      "stdout_tail": "{\"duration_api_ms\":0,\"stop_reason\":\"stop_sequence\",\"session_id\":\"fb9b6f2a-5aec-426e-b986-c328ac86d21a\",\"total_cost_usd\":0,\"usage\":{\"output_tokens_details\":{\"thinking_tokens\":0},\"input_tokens\":0,\"cache_creation_input_tokens\":0,\"cache_read_input_tokens\":0,\"output_tokens\":0,\"server_tool_use\":{\"web_search_requests\":0,\"web_fetch_requests\":0},\"service_tier\":\"standard\",\"cache_creation\":{\"ephemeral_1h_input_tokens\":0,\"ephemeral_5m_input_tokens\":0},\"inference_geo\":\"\",\"iterations\":[],\"speed\":\"standard\"},\"modelUsage\":{},\"permission_denials\":[],\"terminal_reason\":\"api_error\",\"fast_mode_state\":\"off\",\"fast_mode_disabled_reason\":\"sdk_opt_in_required\",\"subagent_stats\":{\"spawned\":0,\"requested\":{\"background\":0,\"foreground\":0,\"unset\":0},\"started_in_background\":0,\"max_depth\":0,\"spawned_by_subagents\":0,\"completed\":0,\"failed\":0,\"killed\":{\"parent\":0,\"user\":0,\"system\":0},\"refused\":{\"depth_limit\":0,\"concurrency_limit\":0,\"budget\":0},\"by_type\":{}},\"is_error\":true,\"num_turns\":1,\"subtype\":\"success\",\"api_error_status\":400,\"result\":\"API Error: 400 Claude Code 2.1.251 does not support this model; version 2.1.280 or newer is required. Run 'claude update', or update the Claude desktop app, then try again.\",\"type\":\"result\",\"duration_ms\":290,\"uuid\":\"0bea763d-5a55-44ef-9ba5-9e178c48cc81\",\"queued_turn_count\":0}\n",
+      "stderr_tail": "[claude-code:unrecognized_model] {\"model\":\"claude-opus-5-5\",\"query_source\":\"sdk\"}\n"
+    }
+  ],
+  "limitations": [
+    "Claude CLI не сообщает request-id запроса Messages API и факт обмена токена федерации.",
+    "messages_api_reached и model_response_began выводятся из api_error_status, duration_api_ms и usage CLI.",
+    "Обмен токена самим CLI виден только в истории аутентификации Claude Console.",
+    "scope_guard — вывод сторожа в том же недоверенном job'е, не доверенное доказательство."
+  ],
+  "redaction": "CLEAN"
+}
