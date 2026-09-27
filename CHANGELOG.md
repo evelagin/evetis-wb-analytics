@@ -22,6 +22,106 @@
   по job'ам, ровно 5 закреплённых action'ов, права по job'ам, токен GitHub — только шагу fetch.
 - `TENANCY_DESIGN.md` §4d: архитектура, проверки, честное описание одобрения, ранбук.
 
+## 2026-09-27 — AIE V1: финализация дизайна по решениям владельца и final replay
+
+Git-first, ничего не развёрнуто. Существующие FACT/MART/DASH не изменены; write-путей нет.
+
+- **Новый объект** `evetis_ref.V_AIE_POLICY` (`sql/ads_intel/evetis_ref/`) — единственный источник политики:
+  `policy_id = V1_SHADOW_2026-09-27`, P3 = 0.90, P7 = 3 %, K = 14; P1, P2, P5 (нижняя и верхняя границы),
+  P13 — `NULL`. CTE `aie_policy` из `V_AIE_DECISION_CURRENT` удалён; P6 больше не параметр.
+- **Структура колонок.** Во всех представлениях AIE добавлен `policy_id` (грань теперь включает политику).
+  `V_AIE_WB_PAIR_EVIDENCE`, `V_AIE_OZON_PAIR_EVIDENCE`: `last_spend_date`, `days_since_last_spend`; граница
+  режима цены — изменение не меньше P7. `V_AIE_WB_ECON_GUARD`: `financial_data_mature`,
+  `econ_window_end_lag_days`, разложение прогнозной цены `fwd_breakeven_price_rub`,
+  `fwd_{commission,acquiring,logistics,product_cogs}_{rub,pct}`. `V_AIE_OZON_ECON_GUARD`: `fwd_price_rub`,
+  `fwd_breakeven_price_rub` (NULL — контракт Ozon его не отдаёт) и то же разложение. `V_AIE_DECISION_CURRENT`:
+  `universe`, `campaign_status`, `last_spend_date`, `days_since_last_spend`, `financial_data_mature`,
+  `econ_window_end_lag_days`, `conservative_guard`, `increase_candidate`, `increase_candidate_realized`,
+  `current_effective_price_rub`, `breakeven_price_rub`, `contribution_before_ads_rub`,
+  `commission/acquiring/logistics/product_cogs_{rub,pct}`, `routing`, `is_bundle`, `inventory_cover_state`,
+  `p5_low_cover_days`, `p5_overstock_cover_days`, `p7_price_change_pct`, `p13_cooldown_days`,
+  `k_inactive_days`; удалены `p5_min_cover_days`, `p6_limit_basis`.
+- **Коды причин (контракт 1.1.0).** `SCOPE_CAMPAIGN_INACTIVE` (103) заменил `CTRL_CAMPAIGN_FINISHED`;
+  `PRICE_BELOW_BREAKEVEN` (501) заменил `ECON_NEGATIVE_ALL_AVAILABLE_BASES`; `INV_LOW_COVER` (903) заменил
+  `INV_COVER_BELOW_POLICY`; новые `ECON_CONSERVATIVE_GUARD_BLOCKS_INCREASE` (899), контексты
+  `PRICING_REVIEW`, `INCREASE_CANDIDATE`, `ECON_STRESS_RISK_FLAG`, `INV_OVERSTOCK_CONTEXT`,
+  `FIN_WINDOW_ENDS_AT_FINANCE`; удалены `POLICY_P6_NOT_SET`, `POLICY_P4_EXCEPTIONS_NOT_SET`.
+- UBR-015 (P3), UBR-016 (P4), UBR-018 (P6), UBR-021 (P15) — `answered`; UBR-013/014/017/019/020/022 — `open`.
+- Commit/PR Gate: текущий набор Ozon — только `RUNNING`. Доказательства, что `INACTIVE` — рабочее рекламное
+  состояние, в проекте нет (аудит 2026-08-30 относит такие кампании к «не работают»), поэтому `INACTIVE` исключён
+  (fail closed) с причиной `SCOPE_CAMPAIGN_INACTIVE` и пометкой в объяснении. Добавлены тесты fail-closed политики.
+- `docs/architecture/TECH_DEBT.md` P2-10 — утренняя сборка `V_ADS_SKU_ECONOMIC_LIMITS` до прихода финансов
+  (ADS_REVIEW); вне AIE, отдельный scope.
+- Проверки `ads_intel`: 36 → 43 (W08 порог P7, W09 последний расход, D12 набор, D13 ценовой ограничитель,
+  D14 зрелость финансов, D15 диагностика INCREASE_CANDIDATE, D16 состояния запаса; D08 — утверждённая политика).
+- `tools/aie_backtest.py`: `run --no-grid` и `final` — final replay на политике из Git; сетка нерешённых
+  параметров сохранена как анализ чувствительности. `tools/aie_render.py`: `git_policy()`, новая схема сетки.
+
+## 2026-09-27 — AIE V1 (PR-5): read-only replay и Owner Decision Pack
+
+- `tools/aie_backtest.py` — replay решений на истории EVETIS теми же телами из Git (`tools/aie_render.render_replay`):
+  часы D, `knowledge_ts = D+1 09:00 МСК`; реклама WB — сборка `FACT_ADS_SKU_DAILY` из RAW по `load_ts`
+  (паритет с production доказан командой `parity`: 6 112 ключей, 0 расхождений); прогнозная экономика,
+  `V_DATA_FRESHNESS` и вход агента Ozon — `SKIPPED_NOT_REPLAYABLE`. Политики — сетка кандидатов
+  (анализ чувствительности, не решение владельца; лучший вариант автоматически не выбирается).
+- `docs/ads_intel/AIE_OWNER_DECISION_PACK_V1_2026-09-27.md` — варианты P1/P2/P3/P5/P13/P15 и их последствия на истории.
+- Новых объектов BigQuery нет; сырые результаты — вне Git.
+
+## 2026-09-27 — AIE V1 (PR-4): решение по каждой паре
+
+- `evetis_mart.V_AIE_DECISION_CURRENT` — `sql/current/evetis_mart`, `pending_deploy` (не развёрнут). Грань
+  `as_of_date × policy_id × marketplace × campaign_id × marketplace_sku`: состояние
+  `INCREASE / DECREASE / HOLD / PAUSE_CANDIDATE / INSUFFICIENT_DATA / BLOCKED_BY_GUARDRAIL`,
+  `primary_reason_code`, все `reason_codes`, `explanation_ru`, `proposed_delta = NULL` (P11), `input_manifest`.
+- Политики — CTE `aie_policy`, все `NULL` (решения владельца нет): `INCREASE` недостижим без P1; без P3 и P6
+  доказательные строки — `BLOCKED_BY_GUARDRAIL` / `POLICY_P3_NOT_SET`, `POLICY_P6_NOT_SET`. Скрытых значений нет.
+- Отклонение от Design Gate: вместо таблицы `evetis_ref.AIE_POLICY` — CTE в представлении (runtime-таблиц в
+  PR-0…PR-5 нет; изменение политики — ревью SQL).
+- Проверки AIE_D01…D11, в том числе `COUNT(INCREASE) = 0` и детерминизм.
+
+## 2026-09-27 — AIE V1 (PR-3): Ozon в режиме «закрыто»
+
+- `ozon_mart.V_AIE_OZON_PAIR_EVIDENCE` и `ozon_mart.V_AIE_OZON_ECON_GUARD` — `sql/current/ozon_mart`,
+  `pending_deploy` (не развёрнуты). Все строки `production_grade = FALSE` до PR-8: P2-5 и P2-6 здесь **не
+  исправлены**, текущая ставка не собирается, RAW Ozon не «на дату». Автопилот TARGET_BIDS/TARGET_CIR
+  помечается как неуправляемый (P9). Сигнатура P2-6 (расход кампании за день без строк SKU) считается.
+- Проверки AIE_O01…O06.
+
+## 2026-09-27 — AIE V1 (PR-2): диагностика поисковых запросов WB
+
+- `wb_mart.V_AIE_WB_QUERY_CLASS` (Git, не развёрнут) — грань `nm_id × norm_query` поверх Ads-4
+  `V_ADS_FUNNEL_QUERY_28D` и экономики `V_AIE_WB_ECON_GUARD`: классы `Q_INSUFFICIENT`, `Q_ECON_CANNOT_RAISE`,
+  `Q_TRAFFIC_NO_CONVERSION`, `Q_HIGH_CPC`, `Q_CONVERTING`, `Q_POSSIBLY_UNDEREXPOSED` (гипотеза) и
+  экономические потолки CPO/CPC/CPM (`PROVISIONAL_C6`). Колонок рекомендации нет; источником направления
+  ставки не является. Множители 0,7/1,3 — проектное решение Ads-4 (P15 не решено).
+- Проверки AIE_Q01…Q05.
+
+## 2026-09-27 — AIE V1 (PR-1): доказательная база WB и экономический ограничитель
+
+Два новых представления `wb_mart` (Git, **не развёрнуты**; развёртывание — отдельный ACK). Существующие
+FACT/MART не изменены. Биллинг не читается.
+
+- `wb_mart.V_AIE_WB_PAIR_EVIDENCE` — грань `as_of_date × advert_id × nm_id`: эффективное окно 28 суток после
+  последней смены режима (ставка/размещение/оплата, цена продавца — P7), без дней с нулевым остатком;
+  атрибутированный расход, клики, корзины, заказы; доказательность — пороги Ads-4 без изменений.
+- `wb_mart.V_AIE_WB_ECON_GUARD` — грань `as_of_date × nm_id`: формулы `V_ADS_SKU_ECONOMIC_LIMITS` на окне,
+  которое заканчивается на последнем дне с известными финансами; блок `ref28_*` доказывает паритет с Ads-4;
+  прогнозная экономика WB_FE_V1 (base / conservative / stress) — только в текущем режиме.
+- `tools/aie_render.py` — подстановка тел до развёртывания и replay без заглядывания вперёд.
+- `sql/ads_intel/aie_validation.sql` — набор `ads_intel` (13 проверок), `sql/ads_intel/aie_rollback.sql`,
+  `tools/tests/test_aie.py`.
+
+## 2026-09-27 — AIE V1 (PR-0): Design Gate движка рекламных рекомендаций
+
+Только документы и реестры, runtime-объектов нет. Движок рекомендаций, не автопилот: рекламных
+write-путей нет, F-18 остаётся блокером, атрибуция ≠ биллинг (FIN CONTRACT V2).
+
+- `docs/ads_intel/AIE_DESIGN_GATE_V1_2026-09-27.md` — архитектура, иерархия L0–L8, модель доказательности,
+  replay без заглядывания вперёд, решения владельца P7, P9, P10, P11, P12, P14.
+- `sql/ads_intel/aie_reason_codes_v1.json` + `docs/ads_intel/AIE_REASON_CODES_V1.md` — контракт кодов причин.
+- `quality/unresolved_business_rules.json`: UBR-013…UBR-022 — политики P1, P2, P3, P4, P5, P6, P8, P13, P15
+  и семантика P14 до решения владельца. Пока P1 не задан — `INCREASE` не выдаётся.
+
 ## 2026-09-27 — Tenancy T4: исправления по итоговому ревью стека
 
 **Не развёрнуто.** Состязательное ревью стека T4 целиком нашло, что `profitability_daily` мог

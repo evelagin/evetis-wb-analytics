@@ -257,6 +257,192 @@
       },
       "why_not_automatable": "Это определение выручки — утверждённая финансовая методология. Выбор между подстановкой и первичным документом меняет выручку, маржу и ДРР во всех отчётах Control Tower.",
       "minimal_answer_required": "Закрыто 2026-09-22 после развёртывания, материализации и сверки."
+    },
+    {
+      "id": "UBR-013",
+      "title": "AIE P1: целевой ДРР — доля резерва от экономического предела",
+      "status": "open",
+      "severity": "HIGH",
+      "domain": "advertising",
+      "source_artifact": "docs/ads_intel/AIE_DESIGN_GATE_V1_2026-09-27.md; sql/ads_intel/evetis_ref/V_AIE_POLICY.sql (блок @aie:policy)",
+      "blocked_checks": [],
+      "what_is_unknown": "Какой резерв от безубыточного ДРР SKU считать целью, ниже которой допустимо повышение ставки (формула ADS-0: target = max × (1 − reserve_share)).",
+      "evidence": {
+        "measured_at": "2026-09-27",
+        "existing_contract": "docs/ADS_STAGE0_FORENSIC_AUDIT_2026-09-06.md L341: «target_ad_drr обязан оставлять резерв; конкретный процент резерва — решение владельца». sql/ads/ads4_sku_economic_limits.sql: «ЦЕЛЕВОГО DRR ЗДЕСЬ НЕТ».",
+        "measured_spread": "ADS-0: безубыточный ДРР по SKU разбегается от −19,6 % до +27,9 % — единый процент для ассортимента невалиден.",
+        "not_policy": "docs/analysis/season_2026_2027/control_tower/ADVERTISING_ACTIONS.csv (working_drr_target_pct 12/3/0/6–8) — аналитический артефакт, не утверждён.",
+        "owner_note_2026-09-27": "P1 остаётся NULL: окончательного INCREASE нет. Допускается диагностика INCREASE_CANDIDATE (флаг increase_candidate и контекстный код), она не является рекомендацией INCREASE."
+      },
+      "why_not_automatable": "Выбор резерва — это склонность к риску и стратегия продвижения; данные показывают только последствия вариантов (Owner Decision Pack, PR-5).",
+      "minimal_answer_required": "Значение reserve_share (или правило его выбора по классу SKU) либо явное «INCREASE в V1 не выдавать». Пока NULL: COUNT(INCREASE) = 0."
+    },
+    {
+      "id": "UBR-014",
+      "title": "AIE P2: полоса гистерезиса вокруг цели",
+      "status": "open",
+      "severity": "MEDIUM",
+      "domain": "advertising",
+      "source_artifact": "docs/ads_intel/AIE_DESIGN_GATE_V1_2026-09-27.md; sql/ads_intel/evetis_ref/V_AIE_POLICY.sql (блок @aie:policy)",
+      "blocked_checks": [],
+      "what_is_unknown": "На сколько интервал ДРР должен быть ниже цели, чтобы выйти из HOLD в INCREASE (защита от переключений).",
+      "evidence": {
+        "measured_at": "2026-09-27",
+        "existing_contract": "нет ни в одном документе",
+        "flip_context": "частота переключений INCREASE ↔ DECREASE на истории EVETIS — отчёт PR-5",
+        "owner_note_2026-09-27": "Production-политики нет. 0 п.п. допустимо только в исследовательском replay (сетка aie_backtest), не как скрытое значение по умолчанию: V_AIE_POLICY.p2_band_pp = NULL."
+      },
+      "why_not_automatable": "Ширина полосы — компромисс между скоростью реакции и числом переключений; причинного эксперимента нет.",
+      "minimal_answer_required": "Значение полосы в процентных пунктах ДРР (может быть 0)."
+    },
+    {
+      "id": "UBR-015",
+      "title": "AIE P3: уровень доверия интервала ДРР",
+      "status": "answered",
+      "severity": "HIGH",
+      "domain": "advertising",
+      "source_artifact": "docs/ads_intel/AIE_DESIGN_GATE_V1_2026-09-27.md; sql/ads_intel/evetis_ref/V_AIE_POLICY.sql (блок @aie:policy)",
+      "blocked_checks": [],
+      "what_is_unknown": "С какой уверенностью весь интервал ДРР должен лежать по одну сторону от лимита, чтобы выдать DECREASE / HOLD / INCREASE.",
+      "evidence": {
+        "measured_at": "2026-09-27",
+        "existing_contract": "гейты Ads-4 (40/60/1000/20) выведены на 2σ / 5 % (docs/ADS4_FUNNEL_MART_DESIGN_2026-08-15.md §6.2), но для ДРР отдельного уровня нет",
+        "sample_size": "пара WB, окно 28 суток (2026-08-30…09-26): медиана заказов 5, без заказов 19 % наблюдений; SKU WB — медиана 13"
+      },
+      "why_not_automatable": "Уровень доверия задаёт цену ошибки первого и второго рода; при малых объёмах EVETIS выбор сильно меняет число решений.",
+      "minimal_answer_required": "Одно значение из {0.80, 0.90, 0.95}. Пока NULL: DECREASE / HOLD не выдаются (POLICY_P3_NOT_SET).",
+      "answered_at": "2026-09-27",
+      "decision": "P3 = 0.90 для Shadow V1. Это не неизменяемая production-политика будущего автопилота: пересматривается перед любым write-путём.",
+      "implementation": "V_AIE_POLICY.p3_confidence = 0.90; z = 1.6448536269514722 (Вильсон–Хилферти). Проверка AIE_D08_POLICY_IS_THE_OWNER_DECISION, тест test_policy_in_git_is_exactly_the_owner_decision. Git-first, не развёрнуто."
+    },
+    {
+      "id": "UBR-016",
+      "title": "AIE P4: стратегические исключения из паузы по экономике",
+      "status": "answered",
+      "severity": "MEDIUM",
+      "domain": "advertising",
+      "source_artifact": "docs/ads_intel/AIE_DESIGN_GATE_V1_2026-09-27.md; sql/current/evetis_mart/V_AIE_DECISION_CURRENT.sql (CTE aie_policy)",
+      "blocked_checks": [],
+      "what_is_unknown": "Какие SKU/кампании остаются в рекламе при отрицательном вкладе до рекламы (запуск, ликвидация, ореол, наборы).",
+      "evidence": {
+        "measured_at": "2026-09-27",
+        "existing_contract": "классы ADVERTISING_ACTIONS.csv (SCALE ADS/KEEP/REDUCE/STOP/ORGANIC ONLY/LIQUIDATION ADS) не утверждены (CONTROL_TOWER_MODEL_REVIEW.md L27)"
+      },
+      "why_not_automatable": "Стратегическое решение владельца, из данных не выводится.",
+      "minimal_answer_required": "Список исключений (SKU × причина × срок) либо «исключений нет». Пока: пауза по экономике — кандидат для ручного разбора (POLICY_P4_EXCEPTIONS_NOT_SET).",
+      "answered_at": "2026-09-27",
+      "decision": "Жёстких исключений по SKU нет. Если прогнозная base-экономика отрицательна до рекламы и выполнены прочие условия структурного ограничителя, PAUSE_CANDIDATE сохраняется, основная причина — PRICE_BELOW_BREAKEVEN; добавляются разложение цены и маршрут PRICING_REVIEW. Цена не меняется, pricing write API не вызывается.",
+      "implementation": "Код PRICE_BELOW_BREAKEVEN (rank 501) заменил ECON_NEGATIVE_ALL_AVAILABLE_BASES; POLICY_P4_EXCEPTIONS_NOT_SET удалён; контекст PRICING_REVIEW (1010) и колонка routing; колонки current_effective_price_rub, breakeven_price_rub, contribution_before_ads_rub, commission/acquiring/logistics/product_cogs в ₽ и % цены. Проверка AIE_D13, тест test_price_below_breakeven_routes_to_pricing_review_without_sku_exceptions."
+    },
+    {
+      "id": "UBR-017",
+      "title": "AIE P5: нижняя и верхняя границы покрытия запасом",
+      "status": "open",
+      "severity": "MEDIUM",
+      "domain": "advertising",
+      "source_artifact": "docs/ads_intel/AIE_DESIGN_GATE_V1_2026-09-27.md; sql/ads_intel/evetis_ref/V_AIE_POLICY.sql (блок @aie:policy)",
+      "blocked_checks": [],
+      "what_is_unknown": "Ниже какого покрытия (дни) повышение ставки запрещено.",
+      "evidence": {
+        "measured_at": "2026-09-27",
+        "candidates_from_owner_conventions": "REF_CHANNEL_SHIPPING: страховой запас WB 7 / Ozon 10 суток (OWNER_CONVENTION C0 D6), срок поставки WB 7 (ASSUMPTION) / Ozon 10 (OBSERVED), целевое покрытие 45 (OWNER_CONVENTION C0 D4)",
+        "control_tower": "пороги V_CT_* (10/20 суток и др.) — проектные, не утверждены (ct_policy_status_provenance = CONTROL_TOWER_HARDCODED_NOT_OWNER_APPROVED)",
+        "history": "история покрытия (V_INVENTORY_POSITION_HISTORY) — с 2026-09-10; срез ФФ от 2026-09-09",
+        "owner_note_2026-09-27": "Владелец подтвердил OWNER_POLICY_REQUIRED для обеих границ; четыре состояния INV_COVER_UNAVAILABLE / INV_LOW_COVER / INV_NORMAL_COVER / INV_OVERSTOCK_CONTEXT реализованы, пороги не заданы."
+      },
+      "why_not_automatable": "Применимость конвенций поставок к рекламе — решение владельца.",
+      "minimal_answer_required": "Две границы в сутках покрытия (одна на площадку или общая) и источник покрытия: нижняя — ниже неё повышение удерживается (INV_LOW_COVER), верхняя — выше неё контекст INV_OVERSTOCK_CONTEXT. Верхнюю нельзя выводить из единственного наблюдения (487 суток, Calibration Addendum). Пока обе NULL: состояние INV_COVER_POLICY_NOT_SET, для наборов и при отсутствии покрытия — INV_COVER_UNAVAILABLE."
+    },
+    {
+      "id": "UBR-018",
+      "title": "AIE P6: база экономического лимита ДРР",
+      "status": "answered",
+      "severity": "HIGH",
+      "domain": "advertising",
+      "source_artifact": "docs/ads_intel/AIE_DESIGN_GATE_V1_2026-09-27.md; sql/ads_intel/evetis_ref/V_AIE_POLICY.sql (блок @aie:policy)",
+      "blocked_checks": [],
+      "what_is_unknown": "С каким пределом сравнивать ДРР: фактическим (V_ADS_SKU_ECONOMIC_LIMITS, без хранения — оптимистичный) или прогнозным WB_FE_V1 base / conservative / stress (Ozon best / expected / worst); включать ли хранение; применим ли к рекламе пол маржи 20 % (утверждён только для акций, до рекламы).",
+      "evidence": {
+        "measured_at": "2026-09-27",
+        "existing_contracts": "sql/ads/ads4_sku_economic_limits.sql (фактический, «ОПТИМИСТИЧНАЯ верхняя граница»); sql/pricing/pr2_wb_forward_economics.sql (прогнозный, только текущий); docs/promotions/PROMOTION_PHASE_0_5_DECISION_GATE_2026-09-22.md §3.1 (пол 20 % для акций)",
+        "replayability": "прогнозная база не восстанавливается на прошлые даты — бэктест возможен только на фактической"
+      },
+      "why_not_automatable": "Выбор базы — выбор между оптимизмом и осторожностью; обе базы валидны в своих контрактах.",
+      "minimal_answer_required": "Одна база (REALIZED / FORWARD_BASE / FORWARD_CONSERVATIVE / FORWARD_STRESS). Пока NULL: DECREASE / HOLD не выдаются (POLICY_P6_NOT_SET).",
+      "answered_at": "2026-09-27",
+      "decision": "Роли баз, а не одна база: realized — граница доказательности DECREASE (и HOLD); forward base — текущий структурный и ценовой ограничитель; forward conservative — ограничитель против INCREASE; forward stress — флаг риска, не направление. Прогнозная экономика в историческом replay не используется.",
+      "implementation": "P6 больше не параметр политики: limit_drr = realized; conservative_guard (PASS / FAIL / NO_INTERVAL / UNAVAILABLE / NOT_REPLAYABLE) и код ECON_CONSERVATIVE_GUARD_BLOCKS_INCREASE (899); ECON_STRESS_RISK_FLAG (1012); POLICY_P6_NOT_SET удалён. Тест test_decision_p6_roles."
+    },
+    {
+      "id": "UBR-019",
+      "title": "AIE P8: минимальный расход для показа рекомендации",
+      "status": "open",
+      "severity": "LOW",
+      "domain": "advertising",
+      "source_artifact": "docs/ads_intel/AIE_DESIGN_GATE_V1_2026-09-27.md; sql/current/evetis_mart/V_AIE_DECISION_CURRENT.sql (CTE aie_policy)",
+      "blocked_checks": [],
+      "what_is_unknown": "Ниже какого расхода в окне рекомендация не показывается владельцу.",
+      "evidence": {
+        "measured_at": "2026-09-27",
+        "existing": "Control Tower ADS_REVIEW использует 300 ₽ за 7 суток — проектное решение без обоснования (docs/control_tower/CT_PHASE1_IMPLEMENTATION_2026-09-10.md L85)"
+      },
+      "why_not_automatable": "Порог внимания владельца, а не статистики.",
+      "minimal_answer_required": "Сумма в рублях за окно либо «показывать все»."
+    },
+    {
+      "id": "UBR-020",
+      "title": "AIE P13: период ожидания и защита от переключений",
+      "status": "open",
+      "severity": "MEDIUM",
+      "domain": "advertising",
+      "source_artifact": "docs/ads_intel/AIE_DESIGN_GATE_V1_2026-09-27.md; sql/ads_intel/evetis_ref/V_AIE_POLICY.sql (блок @aie:policy)",
+      "blocked_checks": [],
+      "what_is_unknown": "Сколько суток после смены рекомендации или ставки не выдавать противоположную.",
+      "evidence": {
+        "measured_at": "2026-09-27",
+        "existing": "нет; обрезка окна по смене ставки (L5) уже заставляет копить новую выборку",
+        "bid_changes": "V_ADV_CAMPAIGN_CONFIG_DAILY: 73 смены кампанийной ставки за всю историю, 10 — за последние 28 суток",
+        "owner_note_2026-09-27": "OWNER_POLICY_REQUIRED, отложено. V_AIE_POLICY.p13_cooldown_days = NULL; моделирование — только post-processing в aie_backtest."
+      },
+      "why_not_automatable": "Без журнала (PR-6) применяется только в бэктесте; выбор — компромисс реакции и устойчивости.",
+      "minimal_answer_required": "Число суток (может быть 0)."
+    },
+    {
+      "id": "UBR-021",
+      "title": "AIE P15: множители отклонения Ads-4 (0,7 / 1,3)",
+      "status": "answered",
+      "severity": "LOW",
+      "domain": "advertising",
+      "source_artifact": "docs/ads_intel/AIE_DESIGN_GATE_V1_2026-09-27.md; sql/current/evetis_mart/V_AIE_DECISION_CURRENT.sql (CTE aie_policy)",
+      "blocked_checks": [],
+      "what_is_unknown": "Подтвердить или откалибровать множители сигналов воронки Ads-4.",
+      "evidence": {
+        "measured_at": "2026-09-27",
+        "provenance": "docs/ADS4_FUNNEL_MART_DESIGN_2026-08-15.md L508-509 — проектное решение без вывода; пороги объёма (1000/60/40/40/20) выведены отдельно",
+        "usage_in_v1": "только диагностические коды и классы запросов; состояния не определяют"
+      },
+      "why_not_automatable": "Калибровка требует связи сигнала с последствием; есть только наблюдательные данные.",
+      "minimal_answer_required": "Подтвердить 0,7 / 1,3 или задать другие значения.",
+      "answered_at": "2026-09-27",
+      "decision": "0,7 / 1,3 (Ads-4) используются только для диагностических кодов воронки запросов; направление рекомендации ими не определяется.",
+      "implementation": "V_AIE_WB_QUERY_CLASS: FALSE AS is_bid_direction_source, колонок рекомендации нет (проверка AIE_Q04, тест test_query_class_is_diagnostic_only). Множители в CTE aie_diag_params без изменений."
+    },
+    {
+      "id": "UBR-022",
+      "title": "AIE P14: семантика REF_SKU_MASTER.include_in_ads_analysis",
+      "status": "open",
+      "severity": "LOW",
+      "domain": "advertising",
+      "source_artifact": "docs/ads_intel/AIE_DESIGN_GATE_V1_2026-09-27.md; sql/current/evetis_mart/V_AIE_DECISION_CURRENT.sql (CTE aie_policy)",
+      "blocked_checks": [],
+      "what_is_unknown": "Что означает флаг include_in_ads_analysis и должен ли он когда-либо ограничивать состав рекомендаций.",
+      "evidence": {
+        "measured_at": "2026-09-27",
+        "current_usage": "ни один объект не фильтрует по флагу; он только передаётся в V_ADS_SCREEN_SKU (sql/mart/dashboard_layer_v1.sql:381)",
+        "owner_decision_2026_09_27": "P14: пока не использовать как блокирующий фильтр"
+      },
+      "why_not_automatable": "Флаг ведётся вручную в листе SKU_MASTER; смысл не задокументирован.",
+      "minimal_answer_required": "Определение флага и решение, фильтр это или атрибут."
     }
   ]
 }
