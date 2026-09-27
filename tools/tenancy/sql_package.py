@@ -345,6 +345,10 @@ def dryrun(tenant_id: str) -> int:
     import subprocess
     import urllib.request
     from tools.tenancy import registry as R
+    from tools.tenancy.validation import parse_tenant_json   # единый строгий разборщик JSON
+
+    def body_of(resp) -> dict:
+        return parse_tenant_json(resp.read().decode("utf-8"))
 
     contract = R.terraform_inputs(tenant_id)
     project = contract["project_id"]
@@ -356,7 +360,7 @@ def dryrun(tenant_id: str) -> int:
         url = f"https://www.googleapis.com/bigquery/v2/projects/{project}/datasets/{ds}/tables?maxResults=1000"
         try:
             with urllib.request.urlopen(urllib.request.Request(url, headers=headers), timeout=60) as r:
-                live |= {(ds_key, t["tableReference"]["tableId"]) for t in json.load(r).get("tables", [])}
+                live |= {(ds_key, t["tableReference"]["tableId"]) for t in body_of(r).get("tables", [])}
         except urllib.error.HTTPError as e:
             if e.code != 404:
                 raise
@@ -367,10 +371,10 @@ def dryrun(tenant_id: str) -> int:
                                      data=body, method="POST", headers=headers)
         try:
             with urllib.request.urlopen(req, timeout=120) as r:
-                print(f"OK    {name}  bytes={json.load(r)['statistics'].get('totalBytesProcessed')}")
+                print(f"OK    {name}  bytes={body_of(r)['statistics'].get('totalBytesProcessed')}")
         except urllib.error.HTTPError as e:
             failures += 1
-            print(f"FAIL  {name}: {json.loads(e.read()).get('error', {}).get('message', '')[:300]}")
+            print(f"FAIL  {name}: {body_of(e).get('error', {}).get('message', '')[:300]}")
     print(f"dry-run {project}: неудач {failures}")
     return 1 if failures else 0
 
