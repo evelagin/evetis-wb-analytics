@@ -1,0 +1,662 @@
+{
+  "contract_version": 1,
+  "package": "sql/tenant/ozon",
+  "dataset_key": "analytics_share",
+  "purpose": "Единственный интерфейс данных VTS для клиента (ADR-08 D2): BI и AI-ассистенты клиента, только чтение.",
+  "access": {
+    "principals": [],
+    "mechanism": "DEFERRED_T6",
+    "note": "В T4 доступа нет ни у кого, кроме владельцев проекта. Механизм доступа (прямой READER, authorized views/dataset, сервисный аккаунт AI) выбирается в T6."
+  },
+  "status_vocabulary": [
+    "COMPLETE",
+    "PARTIAL",
+    "NOT_AVAILABLE",
+    "NOT_APPLICABLE",
+    "FAILED",
+    "UNKNOWN"
+  ],
+  "conventions": {
+    "marketplace_day": "Сутки по Москве (Europe/Moscow)",
+    "currency": "RUB",
+    "sign": "Расходы Ozon отрицательные, как в данных Ozon",
+    "null_semantics": "NULL — не вычисляется или нет данных; ноль только при подтверждённой полноте",
+    "contribution_contract": "Результат до/после себестоимости — вклад, не прибыль"
+  },
+  "objects": {
+    "sales_daily": {
+      "business_meaning": "Продажи магазина FBO по суткам заказа: сколько заказали, отменили, доставили.",
+      "grain": [
+        "sales_date"
+      ],
+      "dimensions": {
+        "sales_date": "Сутки заказа по Москве"
+      },
+      "metrics": {
+        "orders": {
+          "unit": "шт.",
+          "meaning": "Отправлений за сутки",
+          "additive": true
+        },
+        "ordered_units": {
+          "unit": "шт.",
+          "meaning": "Заказано единиц",
+          "additive": true
+        },
+        "ordered_value_rub": {
+          "unit": "₽",
+          "meaning": "Стоимость заказанного по цене отправления",
+          "additive": true
+        },
+        "cancelled_units": {
+          "unit": "шт.",
+          "meaning": "Из заказанных — отменено (текущий статус)",
+          "additive": true
+        },
+        "delivered_units": {
+          "unit": "шт.",
+          "meaning": "Из заказанных — доставлено (текущий статус)",
+          "additive": true
+        },
+        "in_progress_units": {
+          "unit": "шт.",
+          "meaning": "Из заказанных — ещё в пути",
+          "additive": true
+        },
+        "delivered_value_rub": {
+          "unit": "₽",
+          "meaning": "Стоимость доставленного по цене отправления",
+          "additive": true
+        }
+      },
+      "status_columns": {
+        "data_status": {
+          "entity": "fbo_postings",
+          "meaning": "Полнота сущности за сутки; нет оценки — UNKNOWN"
+        }
+      },
+      "freshness": "Как загрузка отправлений FBO (T5): исход заказа меняется до доставки или отмены",
+      "completeness": "Сутки без заказов = 0 только при data_status = COMPLETE; иначе метрики NULL",
+      "limitations": [
+        "Исход — текущий статус отправления: недавние сутки дозревают",
+        "Цена отправления — не выручка продавца по расчётам Ozon (см. profitability_daily)"
+      ],
+      "lineage": {
+        "direct": [
+          "ozon_mart.FACT_OZON_SALES_DAILY",
+          "tenant_ops.V_COVERAGE_DAILY"
+        ],
+        "sources": [
+          "ozon_raw.RAW_OZON_POSTINGS_FBO",
+          "tenant_ops.DATA_COVERAGE"
+        ]
+      }
+    },
+    "orders": {
+      "business_meaning": "Заказы FBO построчно: отправление × товар, статус, цена и выплата Ozon.",
+      "grain": [
+        "posting_number",
+        "sku"
+      ],
+      "dimensions": {
+        "posting_number": "Номер отправления Ozon",
+        "sku": "SKU Ozon",
+        "internal_sku": "Артикул продавца (справочник)",
+        "product_name": "Название товара",
+        "order_date": "Сутки заказа по Москве",
+        "status": "Статус Ozon",
+        "is_cancelled": "Отменён (любой статус Ozon cancelled*)",
+        "is_delivered": "Доставлен",
+        "warehouse_name": "Склад отгрузки",
+        "city": "Город доставки"
+      },
+      "metrics": {
+        "quantity": {
+          "unit": "шт.",
+          "meaning": "Количество",
+          "additive": true
+        },
+        "price_rub": {
+          "unit": "₽",
+          "meaning": "Цена за единицу в отправлении",
+          "additive": false
+        },
+        "old_price_rub": {
+          "unit": "₽",
+          "meaning": "Цена до скидок",
+          "additive": false
+        },
+        "payout_rub": {
+          "unit": "₽",
+          "meaning": "Выплата Ozon по отправлению (как отдаёт Ozon)",
+          "additive": true
+        }
+      },
+      "status_columns": {},
+      "freshness": "Как загрузка отправлений FBO (T5)",
+      "completeness": "Полнота — analytics_share.data_coverage, entity = fbo_postings",
+      "limitations": [
+        "Нет персональных данных покупателя, кроме города доставки",
+        "payout_rub до расчёта может быть предварительным"
+      ],
+      "lineage": {
+        "direct": [
+          "ozon_mart.DIM_OZON_PRODUCT",
+          "ozon_mart.NORM_OZON_POSTING_LINE"
+        ],
+        "sources": [
+          "ozon_raw.RAW_OZON_CATALOG",
+          "ozon_raw.RAW_OZON_POSTINGS_FBO",
+          "ref.REF_PRODUCT_MASTER",
+          "ref.REF_SKU_CHANNEL_MAP"
+        ]
+      }
+    },
+    "advertising_daily": {
+      "business_meaning": "Реклама по кампаниям и суткам по отчёту Performance.",
+      "grain": [
+        "stat_date",
+        "campaign_id"
+      ],
+      "dimensions": {
+        "stat_date": "Сутки отчёта рекламы",
+        "campaign_id": "Кампания",
+        "campaign_title": "Название кампании"
+      },
+      "metrics": {
+        "expense_rub": {
+          "unit": "₽",
+          "meaning": "Траты по отчёту",
+          "additive": true
+        },
+        "bonus_expense_rub": {
+          "unit": "₽",
+          "meaning": "Траты бонусами",
+          "additive": true
+        },
+        "impressions": {
+          "unit": "шт.",
+          "meaning": "Показы",
+          "additive": true
+        },
+        "clicks": {
+          "unit": "шт.",
+          "meaning": "Клики",
+          "additive": true
+        },
+        "orders": {
+          "unit": "шт.",
+          "meaning": "Заказы по отчёту",
+          "additive": true
+        },
+        "revenue_rub": {
+          "unit": "₽",
+          "meaning": "Выручка по отчёту",
+          "additive": true
+        },
+        "acos_ratio": {
+          "unit": "доля",
+          "meaning": "Траты / выручка по отчёту",
+          "additive": false
+        }
+      },
+      "status_columns": {
+        "data_status": {
+          "entity": "ads_expense_daily",
+          "meaning": "Полнота сущности за сутки; нет оценки — UNKNOWN"
+        }
+      },
+      "freshness": "Как загрузка отчётов Performance (T5)",
+      "completeness": "data_status по сущности ads_expense_daily",
+      "limitations": [
+        "Отчётные траты кампаний, а не списания в финансах (биллинг — store_costs_daily, класс PROMOTION_BILLING)",
+        "Глубина истории ограничена API Performance; фактическая граница — в tenant_ops.HISTORY_BOUNDARIES"
+      ],
+      "lineage": {
+        "direct": [
+          "ozon_mart.NORM_OZON_ADS_CAMPAIGN_DAILY",
+          "tenant_ops.V_COVERAGE_DAILY"
+        ],
+        "sources": [
+          "ozon_raw.RAW_OZON_ADS_EXPENSE_DAILY",
+          "tenant_ops.DATA_COVERAGE"
+        ]
+      }
+    },
+    "sku_daily": {
+      "business_meaning": "Товар по суткам: заказы и атрибуция рекламы, ДРР.",
+      "grain": [
+        "sales_date",
+        "sku"
+      ],
+      "dimensions": {
+        "sales_date": "Сутки: заказа (Москва) для заказов, отчёта для рекламы",
+        "sku": "SKU Ozon",
+        "internal_sku": "Артикул продавца",
+        "product_name": "Название товара",
+        "mapping_status": "MAPPED / UNMAPPED / AMBIGUOUS — соответствие артикулу продавца"
+      },
+      "metrics": {
+        "orders": {
+          "unit": "шт.",
+          "meaning": "Отправлений",
+          "additive": true
+        },
+        "ordered_units": {
+          "unit": "шт.",
+          "meaning": "Заказано единиц",
+          "additive": true
+        },
+        "ordered_value_rub": {
+          "unit": "₽",
+          "meaning": "Стоимость заказанного",
+          "additive": true
+        },
+        "cancelled_units": {
+          "unit": "шт.",
+          "meaning": "Отменено",
+          "additive": true
+        },
+        "delivered_units": {
+          "unit": "шт.",
+          "meaning": "Доставлено",
+          "additive": true
+        },
+        "delivered_value_rub": {
+          "unit": "₽",
+          "meaning": "Стоимость доставленного",
+          "additive": true
+        },
+        "ad_spend_attributed_rub": {
+          "unit": "₽",
+          "meaning": "Атрибуция рекламы по SKU из отчёта",
+          "additive": true
+        },
+        "ad_orders": {
+          "unit": "шт.",
+          "meaning": "Заказы по отчёту рекламы",
+          "additive": true
+        },
+        "ad_revenue_rub": {
+          "unit": "₽",
+          "meaning": "Выручка по отчёту рекламы",
+          "additive": true
+        },
+        "ad_clicks": {
+          "unit": "шт.",
+          "meaning": "Клики",
+          "additive": true
+        },
+        "drr_ratio": {
+          "unit": "доля",
+          "meaning": "Атрибуция рекламы / стоимость заказанного",
+          "additive": false
+        }
+      },
+      "status_columns": {
+        "data_status": {
+          "entity": "fbo_postings",
+          "meaning": "Полнота сущности за сутки; нет оценки — UNKNOWN"
+        },
+        "ads_data_status": {
+          "entity": "ads_sku_daily",
+          "meaning": "Полнота сущности за сутки; нет оценки — UNKNOWN"
+        }
+      },
+      "freshness": "Как загрузка отправлений и отчётов Performance (T5)",
+      "completeness": "Два статуса: заказы и реклама оцениваются раздельно",
+      "limitations": [
+        "Реклама — атрибуция отчёта, а не списанные деньги; сумма по SKU не обязана совпадать с биллингом",
+        "Строка без заказов, но с рекламой имеет NULL в метриках заказов"
+      ],
+      "lineage": {
+        "direct": [
+          "ozon_mart.DIM_OZON_PRODUCT",
+          "ozon_mart.FACT_OZON_SALES_DAILY",
+          "ozon_mart.NORM_OZON_ADS_SKU_DAILY",
+          "tenant_ops.V_COVERAGE_DAILY"
+        ],
+        "sources": [
+          "ozon_raw.RAW_OZON_ADS_SKU_DAILY",
+          "ozon_raw.RAW_OZON_CATALOG",
+          "ozon_raw.RAW_OZON_POSTINGS_FBO",
+          "ref.REF_PRODUCT_MASTER",
+          "ref.REF_SKU_CHANNEL_MAP",
+          "tenant_ops.DATA_COVERAGE"
+        ]
+      }
+    },
+    "inventory_current": {
+      "business_meaning": "Остатки FBO по последнему снимку.",
+      "grain": [
+        "sku",
+        "warehouse_id"
+      ],
+      "dimensions": {
+        "snapshot_date": "Дата снимка",
+        "sku": "SKU Ozon",
+        "internal_sku": "Артикул продавца",
+        "product_name": "Название товара",
+        "warehouse_id": "Склад",
+        "warehouse_name": "Название склада",
+        "cluster_name": "Кластер",
+        "turnover_grade": "Оценка оборачиваемости Ozon"
+      },
+      "metrics": {
+        "available_stock_count": {
+          "unit": "шт.",
+          "meaning": "Доступно к продаже",
+          "additive": true
+        },
+        "valid_stock_count": {
+          "unit": "шт.",
+          "meaning": "Годный остаток",
+          "additive": true
+        },
+        "transit_stock_count": {
+          "unit": "шт.",
+          "meaning": "В пути",
+          "additive": true
+        },
+        "days_without_sales": {
+          "unit": "дн.",
+          "meaning": "Дней без продаж (Ozon)",
+          "additive": false
+        },
+        "snapshot_age_days": {
+          "unit": "дн.",
+          "meaning": "Возраст снимка",
+          "additive": false
+        }
+      },
+      "status_columns": {},
+      "freshness": "snapshot_age_days: возраст последнего снимка",
+      "completeness": "Снимок; прошлые остатки API не отдаёт",
+      "limitations": [
+        "История остатков — только с первого снимка после подключения"
+      ],
+      "lineage": {
+        "direct": [
+          "ozon_mart.DIM_OZON_PRODUCT",
+          "ozon_mart.SNAP_OZON_STOCK"
+        ],
+        "sources": [
+          "ozon_raw.RAW_OZON_CATALOG",
+          "ozon_raw.RAW_OZON_STOCKS",
+          "ref.REF_PRODUCT_MASTER",
+          "ref.REF_SKU_CHANNEL_MAP"
+        ]
+      }
+    },
+    "price_history": {
+      "business_meaning": "Цены продавца по датам снимков.",
+      "grain": [
+        "snapshot_date",
+        "offer_id"
+      ],
+      "dimensions": {
+        "snapshot_date": "Дата снимка",
+        "offer_id": "Артикул продавца в Ozon",
+        "product_id": "Товар Ozon"
+      },
+      "metrics": {
+        "price_rub": {
+          "unit": "₽",
+          "meaning": "Цена продавца",
+          "additive": false
+        },
+        "old_price_rub": {
+          "unit": "₽",
+          "meaning": "Цена до скидок",
+          "additive": false
+        },
+        "min_price_rub": {
+          "unit": "₽",
+          "meaning": "Минимальная цена",
+          "additive": false
+        },
+        "marketing_seller_price_rub": {
+          "unit": "₽",
+          "meaning": "Цена с учётом акций продавца",
+          "additive": false
+        },
+        "sales_percent_fbo": {
+          "unit": "%",
+          "meaning": "Комиссия FBO, % (как отдаёт Ozon)",
+          "additive": false
+        },
+        "acquiring_rub": {
+          "unit": "₽",
+          "meaning": "Эквайринг за единицу",
+          "additive": false
+        },
+        "price_change_rub": {
+          "unit": "₽",
+          "meaning": "Изменение цены к предыдущему снимку",
+          "additive": false
+        }
+      },
+      "status_columns": {},
+      "freshness": "Дата последнего снимка",
+      "completeness": "Снимок; прошлые цены API не отдаёт",
+      "limitations": [
+        "Начинается с первого снимка; пропуск суток — отсутствие снимка, а не неизменная цена"
+      ],
+      "lineage": {
+        "direct": [
+          "ozon_mart.SNAP_OZON_PRICE"
+        ],
+        "sources": [
+          "ozon_raw.RAW_OZON_PRICES"
+        ]
+      }
+    },
+    "profitability_daily": {
+      "business_meaning": "Экономика доставленных заказов: выручка продавца, комиссия и расходы Ozon, результат до и после себестоимости.",
+      "grain": [
+        "sales_date",
+        "sku"
+      ],
+      "dimensions": {
+        "sales_date": "Сутки заказа по Москве",
+        "sku": "SKU Ozon",
+        "internal_sku": "Артикул продавца",
+        "product_name": "Название товара",
+        "revenue_basis": "SETTLED / PARTIALLY_SETTLED / NOT_SETTLED — рассчитал ли Ozon отправления (ровно один полный экономический блок)",
+        "taxonomy_status": "CLASSIFIED / UNRESOLVED — есть ли начисления вне таксономии с ненулевой суммой или с пустой суммой",
+        "cogs_coverage": "COMPLETE / PARTIAL / NOT_AVAILABLE — себестоимость продавца",
+        "finance_status_reason": "Почему не COMPLETE: TAIL_INCOMPLETE / NOT_MATURE / MATURITY_NOT_CONFIGURED / NOT_EVALUATED; NULL при COMPLETE"
+      },
+      "metrics": {
+        "delivered_units": {
+          "unit": "шт.",
+          "meaning": "Доставлено",
+          "additive": true
+        },
+        "seller_revenue_rub": {
+          "unit": "₽",
+          "meaning": "Выручка продавца по расчётам Ozon (> 0); NULL, если неизвестна",
+          "additive": true
+        },
+        "commission_rub": {
+          "unit": "₽",
+          "meaning": "Комиссия Ozon (со знаком Ozon, расход < 0)",
+          "additive": true
+        },
+        "logistics_rub": {
+          "unit": "₽",
+          "meaning": "Логистика и последняя миля (< 0)",
+          "additive": true
+        },
+        "acquiring_rub": {
+          "unit": "₽",
+          "meaning": "Эквайринг (< 0)",
+          "additive": true
+        },
+        "return_logistics_rub": {
+          "unit": "₽",
+          "meaning": "Обратная логистика (< 0)",
+          "additive": true
+        },
+        "promotion_rub": {
+          "unit": "₽",
+          "meaning": "Продвижение, начисленное по отправлению (биллинг, < 0)",
+          "additive": true
+        },
+        "other_costs_rub": {
+          "unit": "₽",
+          "meaning": "Прочие начисления по отправлению, включая компенсации (со знаком Ozon)",
+          "additive": true
+        },
+        "unclassified_rub": {
+          "unit": "₽",
+          "meaning": "Начисления вне таксономии (со знаком Ozon)",
+          "additive": true
+        },
+        "unsettled_postings": {
+          "unit": "шт.",
+          "meaning": "Отправлений без расчёта Ozon",
+          "additive": true
+        },
+        "postings_with_return_costs": {
+          "unit": "шт.",
+          "meaning": "Доставленных отправлений с расходами обратной логистики (признак возврата)",
+          "additive": true
+        },
+        "contribution_pre_cogs_rub": {
+          "unit": "₽",
+          "meaning": "Результат до себестоимости = выручка + комиссия + расходы; NULL, если данных недостаточно",
+          "additive": true
+        },
+        "product_cogs_rub": {
+          "unit": "₽",
+          "meaning": "Себестоимость продавца (> 0); NULL при неполном или неоднозначном покрытии",
+          "additive": true
+        },
+        "contribution_after_cogs_rub": {
+          "unit": "₽",
+          "meaning": "Результат после себестоимости; только при COMPLETE себестоимости",
+          "additive": true
+        }
+      },
+      "status_columns": {
+        "finance_data_status": {
+          "entity": "finance_accrual",
+          "meaning": "Полнота начислений для суток заказа (tenant_ops.V_FINANCE_WINDOW_STATUS): COMPLETE — хвост до последних оценённых суток полон и прошёл срок созревания продавца; PARTIAL — пропуски или срок не прошёл; UNKNOWN — срок не задан или нет оценки"
+        }
+      },
+      "freshness": "Как загрузка начислений (T5); начисления по заказу приходят позже заказа",
+      "completeness": "Результат публикуется только при SETTLED, CLASSIFIED, без признака возврата и при finance_data_status = COMPLETE; иначе NULL, не ноль. Комиссия и расходы строки с нерассчитанным отправлением — NULL",
+      "limitations": [
+        "Контракт вклада: налоги, OPEX, фулфилмент продавца не входят — это не прибыль",
+        "Возвраты покупателей не моделируются: сторно возврата не загружается; доставленное отправление с расходами обратной логистики не получает результата",
+        "Поздние начисления Ozon меняют прошлые сутки заказа",
+        "Начисления вне доставленных заказов (магазин, отмены, отправления вне загруженной истории) — в store_costs_daily; на SKU не разносятся",
+        "Себестоимость — только из справочника продавца; умолчаний нет, пересечения интервалов — себестоимости нет",
+        "Срок созревания начислений задаёт продавец (FINANCE_SETTLEMENT_MATURITY_DAYS); пока он не задан, результат не публикуется"
+      ],
+      "lineage": {
+        "direct": [
+          "ozon_mart.DIM_OZON_PRODUCT",
+          "ozon_mart.FACT_OZON_SKU_ECONOMICS_DAILY",
+          "tenant_ops.V_FINANCE_WINDOW_STATUS"
+        ],
+        "sources": [
+          "ozon_raw.RAW_OZON_CATALOG",
+          "ozon_raw.RAW_OZON_FINANCE_ACCRUAL",
+          "ozon_raw.RAW_OZON_POSTINGS_FBO",
+          "ref.REF_COGS",
+          "ref.REF_PRODUCT_MASTER",
+          "ref.REF_SKU_CHANNEL_MAP",
+          "ref.REF_TENANT_ECONOMICS",
+          "tenant_ops.DATA_COVERAGE"
+        ]
+      }
+    },
+    "store_costs_daily": {
+      "business_meaning": "Начисления Ozon вне экономики доставленных заказов по суткам начисления, классам и уровню.",
+      "grain": [
+        "event_date",
+        "accrual_class",
+        "cost_scope"
+      ],
+      "dimensions": {
+        "event_date": "Сутки начисления",
+        "accrual_class": "Класс таксономии платформы (вкл. UNCLASSIFIED)",
+        "cost_scope": "STORE / SKU / POSTING_NOT_DELIVERED / POSTING_NOT_LOADED / POSTING_SKU_UNMATCHED"
+      },
+      "metrics": {
+        "amount_rub": {
+          "unit": "₽",
+          "meaning": "Сумма начислений (со знаком Ozon, расход < 0)",
+          "additive": true
+        },
+        "commission_rub": {
+          "unit": "₽",
+          "meaning": "Комиссия, начисленная по этим отправлениям (со знаком Ozon)",
+          "additive": true
+        },
+        "accruals": {
+          "unit": "шт.",
+          "meaning": "Начислений",
+          "additive": true
+        },
+        "unresolved_accruals": {
+          "unit": "шт.",
+          "meaning": "Начислений вне таксономии с ненулевой или пустой суммой",
+          "additive": true
+        }
+      },
+      "status_columns": {
+        "data_status": {
+          "entity": "finance_accrual",
+          "meaning": "Полнота сущности за сутки; нет оценки — UNKNOWN"
+        }
+      },
+      "freshness": "Как загрузка начислений (T5)",
+      "completeness": "data_status по сущности finance_accrual; нет строк за COMPLETE сутки — начислений не было",
+      "limitations": [
+        "UNCLASSIFIED — тип Ozon, ещё не классифицированный платформой (tenant_ops.V_DQ_UNRESOLVED_ACCRUALS)",
+        "Вместе с profitability_daily покрывает все начисления без повторов"
+      ],
+      "lineage": {
+        "direct": [
+          "ozon_mart.FACT_OZON_STORE_COSTS_DAILY",
+          "tenant_ops.V_COVERAGE_DAILY"
+        ],
+        "sources": [
+          "ozon_raw.RAW_OZON_FINANCE_ACCRUAL",
+          "ozon_raw.RAW_OZON_POSTINGS_FBO",
+          "tenant_ops.DATA_COVERAGE"
+        ]
+      }
+    },
+    "data_coverage": {
+      "business_meaning": "Полнота данных по сущностям и суткам: отличает «ноль» от «нет данных».",
+      "grain": [
+        "entity",
+        "coverage_date"
+      ],
+      "dimensions": {
+        "entity": "Сущность загрузки",
+        "coverage_date": "Сутки",
+        "status": "Статус полноты",
+        "reason": "Почему не COMPLETE",
+        "evaluated_at": "Время оценки"
+      },
+      "metrics": {},
+      "status_columns": {},
+      "freshness": "Оценивает T5 после каждой загрузки",
+      "completeness": "Нет строки — UNKNOWN",
+      "limitations": [],
+      "lineage": {
+        "direct": [
+          "tenant_ops.V_COVERAGE_DAILY"
+        ],
+        "sources": [
+          "tenant_ops.DATA_COVERAGE"
+        ]
+      }
+    }
+  }
+}

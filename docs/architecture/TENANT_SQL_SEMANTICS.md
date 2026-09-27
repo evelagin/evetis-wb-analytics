@@ -1,4 +1,4 @@
-# Пакет SQL выделенного арендатора Ozon: семантика (T4-c)
+# Пакет SQL выделенного арендатора Ozon: семантика (T4-c, T4-d)
 
 Дата: 2026-09-27. Пакет: `sql/tenant/ozon/` (`PACKAGE.json`, версия 1). Рендер и правила
 P1–P8: `tools/tenancy/sql_package.py`.
@@ -45,6 +45,17 @@ P1–P8: `tools/tenancy/sql_package.py`.
 | `tenant_ops.V_DQ_UNRESOLVED_ACCRUALS` | GENERIC_DERIVED | сутки × type_id | начисления вне таксономии или с пустой суммой; `blocking_accruals` |
 | `tenant_ops.V_DQ_SETTLEMENT_ANOMALIES` | GENERIC_DERIVED | отправление × SKU | несколько или неполные экономические блоки |
 | `tenant_ops.V_DQ_COGS_OVERLAPS` | GENERIC_DERIVED | пара интервалов | пересечения себестоимости продавца |
+| `tenant_ops.V_COVERAGE_DAILY` | GENERIC_DERIVED | сущность × сутки | последняя оценка полноты из `DATA_COVERAGE`; при равенстве — худшая |
+| `tenant_ops.V_FINANCE_WINDOW_STATUS` | GENERIC_DERIVED | дата | полнота начислений от даты до последних оценённых суток и срок созревания продавца |
+| `analytics_share.sales_daily` | GENERIC_DERIVED | сутки заказа | продажи магазина; нули только при `COMPLETE` |
+| `analytics_share.orders` | MARKETPLACE_FACT | отправление × SKU | заказы FBO, без данных покупателя, кроме города |
+| `analytics_share.advertising_daily` | MARKETPLACE_FACT | сутки × кампания | отчёт Performance (не биллинг) |
+| `analytics_share.sku_daily` | GENERIC_DERIVED | сутки × SKU | заказы + атрибуция рекламы, ДРР; реклама без заказов не теряется |
+| `analytics_share.inventory_current` | MARKETPLACE_FACT | SKU × склад | последний снимок остатков, возраст снимка |
+| `analytics_share.price_history` | MARKETPLACE_FACT | дата снимка × offer_id | цены продавца со дня первого снимка |
+| `analytics_share.profitability_daily` | GENERIC_DERIVED | сутки заказа × SKU | вклад до/после себестоимости; только при полных начислениях с суток заказа |
+| `analytics_share.store_costs_daily` | GENERIC_DERIVED | сутки × класс × уровень | начисления вне доставленных заказов (магазин, отмены, вне истории) |
+| `analytics_share.data_coverage` | GENERIC_DERIVED | сущность × сутки | полнота: «ноль» против «нет данных» |
 
 ## 3. Экономика: что считается и чего не придумывается
 
@@ -162,3 +173,28 @@ P1–P8: `tools/tenancy/sql_package.py`.
 | 57 | RealizationReportCorrection | Корректировка стоимости услуг | OTHER_MARKETPLACE_COST | PLATFORM_INTERPRETATION |
 | 25 | ItemCompensation | Товарная компенсация | COMPENSATION | OZON_TYPE_NAME |
 | 10 | Compensation | Компенсация | COMPENSATION | OZON_TYPE_NAME |
+
+## 6. `analytics_share` — семантический слой клиента (T4-d)
+
+Машиночитаемый контракт: `sql/tenant/ozon/analytics_share/CONTRACT.json` — смысл, строка
+(grain), измерения, метрики (единица, аддитивность), колонки статуса полноты, lineage (прямые
+объекты и исходные таблицы), свежесть, полнота, ограничения. Тесты сверяют контракт с SQL: каждая
+колонка представления описана ровно один раз, lineage совпадает с разбором SQL.
+
+Правила слоя:
+
+- читает только `ozon_mart` и `tenant_ops` (P4), RAW и `ref` — никогда напрямую;
+- **нет данных ≠ ноль**: статус полноты берётся из `tenant_ops.DATA_COVERAGE`, отсутствие оценки —
+  `UNKNOWN`; нулевые метрики за сутки без строк выдаются только при `COMPLETE`, иначе NULL;
+  `COALESCE(метрика, 0)` в слое запрещён тестом;
+- результат до/после себестоимости — вклад, а не прибыль: налоги, OPEX и фулфилмент продавца не
+  входят; публикуется, только если начисления полны от суток заказа до последних оценённых
+  суток и прошёл срок созревания продавца (`finance_data_status`, причина —
+  `finance_status_reason`), — начисления по заказу приходят позже заказа;
+- `profitability_daily` + `store_costs_daily` = все начисления Ozon без пропусков и повторов;
+- реклама в двух смыслах, не смешиваются: атрибуция отчёта (`advertising_daily`, `sku_daily`) и
+  биллинг (начисления классов `PROMOTION_*` в `profitability_daily` и `store_costs_daily`);
+- снимки (остатки, цены) не восстанавливают прошлое: история начинается с первого снимка.
+
+Доступ: в T4 никому, кроме владельцев проекта (ACL `projectOwners`). Механизм доступа клиента —
+T6 (см. `TENANCY_DESIGN.md` §4c).
