@@ -1,10 +1,13 @@
 diff --git a/tools/tests/test_ae_commissioning_canary.py b/tools/tests/test_ae_commissioning_canary.py
 new file mode 100644
-index 0000000..5c23d58
+index 0000000..2c75105
 --- /dev/null
 +++ b/tools/tests/test_ae_commissioning_canary.py
-@@ -0,0 +1,31 @@
-+"""Регрессионный тест граничных случаев clamp_percent (мишень ввода AE v1 в эксплуатацию)."""
+@@ -0,0 +1,34 @@
++"""Регрессионный тест граничных случаев clamp_percent (мишень ввода AE v1 в эксплуатацию).
++
++AE-COMMISSIONING-ITERATION-OK
++"""
 +from __future__ import annotations
 +
 +import sys
