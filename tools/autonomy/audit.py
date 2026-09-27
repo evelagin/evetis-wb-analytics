@@ -24,12 +24,12 @@ CRM = "https://cloudresourcemanager.googleapis.com/v1"
 LOGGING = "https://logging.googleapis.com/v2"
 IAM = "https://iam.googleapis.com/v1"
 ANON_DATASET = re.compile(r"^_[0-9a-f]{40}$")
+SCRIPT_DATASET = re.compile(r"^_script[0-9a-f]{40}$")   # временные таблицы скриптов (живут 24 ч), не production
 FEDERATED = ("principal://", "principalSet://")
 SETTLE_SECONDS = 300            # от READY_FOR_PR (после ревьюера, т.е. после всех job'ов с GCP) до чтения журналов
 WATERMARK_TRIES, WATERMARK_SLEEP = 12, 10
 MAX_PAGES = 500
 ADMIN_ACTIVITY_RETENTION_DAYS = 400   # бакет _Required: не отключается, не исключается, 400 дней
-JOBS_RETENTION_DAYS = 180             # INFORMATION_SCHEMA.JOBS: история DCL GRANT доказуема только в этом окне
 # Права, которых у идентичности AE не должно быть НИ НА ПРОЕКТЕ (вкл. наследование от организации/папок, группы,
 # пользовательские роли). Самопроверка testIamPermissions — живая, в момент аудита; комментарию не доверяем.
 FORBIDDEN_PROJECT_PERMISSIONS = [
@@ -172,23 +172,30 @@ def data_access_violation(entry: dict, identities: list[str]) -> str | None:
 class GcpAuditSource:
     """Только чтение: jobs.list (все регионы), журналы аудита, testIamPermissions/ACL. Любая ошибка — исключение."""
 
-    def __init__(self, project: str, token: str, http=None, sleep=None, now=None, bq=None):
+    def __init__(self, project: str, token: str, http=None, sleep=None, now=None, bq=None, refresh=None):
         import time
         from datetime import datetime, timezone
-        self.project, self.token = project, token
+        self.project, self.token, self.refresh = project, token, refresh
         self.http = http or self._http
         self.sleep = sleep or time.sleep
         self.now = now or (lambda: datetime.now(timezone.utc))
         self.bq = bq or (lambda sql, location: ReadOnlyBigQuery(project=project, token=token, location=location,
                                                                 label_purpose="autonomy-audit").query(sql))
 
-    def _http(self, method: str, url: str, body: dict | None = None) -> dict:
+    def _http(self, method: str, url: str, body: dict | None = None, _retry: bool = True) -> dict:
         import json
+        import urllib.error
         import urllib.request
         req = urllib.request.Request(url, data=json.dumps(body).encode() if body is not None else None, method=method,
                                      headers={"Authorization": f"Bearer {self.token}", "Content-Type": "application/json"})
-        with urllib.request.urlopen(req, timeout=120) as r:
-            return json.loads(r.read() or b"{}")
+        try:
+            with urllib.request.urlopen(req, timeout=120) as r:
+                return json.loads(r.read() or b"{}")
+        except urllib.error.HTTPError as e:
+            if e.code == 401 and _retry and self.refresh:      # токен истёк посреди долгого аудита — один раз обновить
+                self.token = self.refresh()
+                return self._http(method, url, body, _retry=False)
+            raise
 
     def jobs(self, since_ms: int) -> list[dict]:
         from urllib.parse import urlencode
@@ -269,15 +276,6 @@ class GcpAuditSource:
             raise RuntimeError("список датасетов усечён или недоступны регионы")
         ids = [d["datasetReference"]["datasetId"] for d in r.get("datasets", [])]
         return {i: self.http("GET", f"{API}/bigquery/v2/projects/{self.project}/datasets/{i}") for i in ids}
-
-    def grant_jobs(self, location: str, since_iso: str) -> int:
-        """Успешные DCL GRANT в регионе за окно (INFORMATION_SCHEMA; GRANT меняет IAM объекта)."""
-        if not re.fullmatch(r"[A-Za-z0-9-]{2,30}", location):
-            raise RuntimeError(f"неожиданная локация {location!r}")
-        sql = (f"SELECT COUNT(*) AS n FROM `{self.project}.region-{location.lower()}.INFORMATION_SCHEMA."
-               f"JOBS_BY_PROJECT` WHERE creation_time >= TIMESTAMP('{since_iso}') AND statement_type = 'GRANT' "
-               f"AND error_result IS NULL")
-        return int(self.bq(sql, location)[0]["n"])
 
 
 def _ts(s: str):
@@ -456,6 +454,26 @@ DEFAULT_SINK_FILTER = ('NOT LOG_ID("cloudaudit.googleapis.com/activity") AND NOT
                        'AND NOT LOG_ID("cloudaudit.googleapis.com/access_transparency") AND NOT LOG_ID("externalaudit.googleapis.com/access_transparency")')
 
 
+def table_inventory(events: list[dict], project: str) -> set[tuple[str, str]]:
+    """Существующие таблицы проекта по истории Admin Activity: последнее событие по имени — создание, а не удаление.
+    Анонимные датасеты результатов (`_<hex>`) — не production. Истёкшие без события таблицы дадут 404 (пропуск)."""
+    rx = re.compile(rf"projects/{re.escape(project)}/datasets/([^/]+)/tables/([^/@$]+)$")
+    alive: dict[tuple[str, str], bool] = {}
+    for e in sorted(events, key=_order):
+        pp = e.get("protoPayload") or {}
+        if (pp.get("status") or {}).get("code"):
+            continue
+        md = pp.get("metadata") or {}
+        gone = "tableDeletion" in md or str(pp.get("methodName", "")).endswith("DeleteTable")
+        names = [pp.get("resourceName", "")] + [((md.get(k) or {}).get("table") or {}).get("tableName", "")
+                                               for k in ("tableCreation", "tableDeletion")]
+        for n in names:
+            m = rx.match(n or "")
+            if m:
+                alive[(m.group(1), m.group(2))] = not gone
+    return {k for k, v in alive.items() if v and not ANON_DATASET.match(k[0]) and not SCRIPT_DATASET.match(k[0])}
+
+
 def routing_problems(routing: dict, window=None) -> list[str]:
     """Data Access обязан доходить до _Default целиком и храниться дольше окна прогона — иначе его отсутствие
     ничего не доказывает. Фильтр — только точный фильтр по умолчанию (любое сужение могло бы скрыть записи)."""
@@ -487,8 +505,8 @@ def run_audit(src: GcpAuditSource, since_iso: str, identities: list[str], waterm
          (insertAll, Storage Write), выпуск токенов ДРУГИХ SA, любое использование чужой идентичности из AE;
       4) самопроверка IAM: нет прав записи/имперсонации на проекте (вкл. организацию/группы), ни на одном SA
          проекта (все SA — из событий создания в Admin Activity), нет записи ACL выше чтения на видимых
-         датасетах, нет updateData ни на одной таблице с собственной IAM-политикой, и в окне хранения
-         INFORMATION_SCHEMA не было DCL GRANT.
+         датасетах, нет updateData ни на одной существующей таблице проекта (перечень по истории Admin Activity),
+         текущие IAM-политики всех ресурсов и конфигурация WIF (оценщик S1) восстановлены по той же истории.
     Нарушение инварианта IAM или маршрутизации — BLOCKED (ноль не доказан), найденное изменение — FAIL."""
     from datetime import timedelta
     if settle_from:
@@ -591,9 +609,21 @@ def run_audit(src: GcpAuditSource, since_iso: str, identities: list[str], waterm
             tables.add((m.group(1), m.group(2)))
         elif not re.fullmatch(rf"projects/{re.escape(src.project)}/datasets/[^/]+/routines/[^/]+", rn):
             iam.append(f"IAM-политика на незнакомом объекте BigQuery: {rn[:120]!r}")
-    for ds, table in sorted(tables):
-        if src.table_can_write(ds, table):
-            iam.append(f"{ds}.{table}: updateData у идентичности AE (IAM-политика таблицы)")
+    # Каждая существующая таблица проекта (перечень — по истории создания/удаления в Admin Activity за всю жизнь
+    # проекта): фактическое право updateData не зависит от способа выдачи (SetIamPolicy, DCL GRANT из любого
+    # проекта, наследование) — самопроверка на КАЖДОЙ, а не только на таблицах с известной политикой.
+    policy_tables = set(tables)
+    tables |= table_inventory(src.logs(
+        f'{_logname(src.project, "activity")} AND timestamp>="{created}" AND protoPayload.serviceName="bigquery.googleapis.com" '
+        f'AND (protoPayload.metadata.tableCreation:* OR protoPayload.metadata.tableDeletion:* OR '
+        f'protoPayload.methodName:"InsertTable" OR protoPayload.methodName:"DeleteTable")'), src.project)
+    from concurrent.futures import ThreadPoolExecutor
+    ordered = sorted(tables)
+    with ThreadPoolExecutor(max_workers=8) as pool:           # сотни независимых самопроверок; любой сбой — исключение
+        verdicts = list(pool.map(lambda t: src.table_can_write(*t), ordered))
+    for (ds, table), can in zip(ordered, verdicts):
+        if can:
+            iam.append(f"{ds}.{table}: updateData у идентичности AE")
     # WIF: какие SA получает job каждого workflow — тот же оценщик, что `wif_check --live`, на конфигурации,
     # восстановленной из Admin Activity (прав на чтение политик SA у AE нет и не нужно).
     wip = src.logs(f'{_logname(src.project, "activity")} AND timestamp>="{created}" AND '
@@ -609,18 +639,12 @@ def run_audit(src: GcpAuditSource, since_iso: str, identities: list[str], waterm
         bad = [f"{r['case']}→{r['got']}" for r in rows if r["status"] != "PASS"]
         if bad:
             iam.append(f"WIF: инвариант S1 нарушен ({', '.join(bad)[:200]})")
-    # DCL GRANT меняет IAM объекта; документация не гарантирует его запись как SetIamPolicy — проверяем сами задания.
-    if age > timedelta(days=JOBS_RETENTION_DAYS):
-        iam.append("проект старше хранения INFORMATION_SCHEMA.JOBS — отсутствие DCL GRANT не доказуемо")
-    for loc in sorted({"EU"} | {m.get("location") or "EU" for m in datasets.values()}):
-        n = src.grant_jobs(loc, created)
-        if n:
-            iam.append(f"в регионе {loc} выполнялись DCL GRANT ({n}) — права объектов не доказуемы")
     total = sum(by_type.values())
     status = "FAIL" if total else "BLOCKED" if iam else "PASS"
     return {"status": status, "mutations": total if status != "BLOCKED" else None, "by_type": by_type,
             "iam_invariant": iam, "jobs_listed": len(jobs), "ae_jobs": len(ae_jobs), "admin_activity": len(activity),
-            "data_access": len(access), "service_accounts_checked": len(sas), "table_policies_checked": len(tables),
+            "data_access": len(access), "service_accounts_checked": len(sas), "tables_checked": len(tables),
+            "table_policies": len(policy_tables),
             "iam_resources_reconstructed": len(state),
             "source": AUDIT_SOURCE}
 
@@ -657,7 +681,7 @@ def count_mutations(project: str, token_command: str, since_iso: str, identities
         if not identities:
             raise RuntimeError("не задана идентичность AE")
         token = resolve_token(None, token_command, {})
-        src = GcpAuditSource(project, token)
+        src = GcpAuditSource(project, token, refresh=lambda: resolve_token(None, token_command, {}))
 
         def watermark() -> str:
             label = f"autonomy-audit-wm-{secrets.token_hex(6)}"

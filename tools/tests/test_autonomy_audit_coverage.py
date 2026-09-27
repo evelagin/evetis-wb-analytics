@@ -78,7 +78,7 @@ def table_policy(rn, members=(f"serviceAccount:sa-loaders-prod@{P}.iam.gservicea
 class FakeSource:
     def __init__(self, jobs=(), activity=(), access=(), granted=(), datasets=None, table_policies=(), writable=(),
                  created="2026-07-10T10:26:24Z", watermark_after=0, log_watermark_after=0, sa_events=None,
-                 sa_granted=None, grants=None, routing=None, iam_events=None, wip=None):
+                 sa_granted=None, grants=None, routing=None, iam_events=None, wip=None, table_events=()):
         self.project = P
         self._jobs, self._activity, self._access, self._granted = list(jobs), list(activity), list(access), list(granted)
         self._datasets = datasets if datasets is not None else {
@@ -90,6 +90,8 @@ class FakeSource:
         self._iam_events = (list(iam_events) if iam_events is not None else list(SA_POLICIES)) + [
             table_policy(rn) for rn in table_policies]
         self._wip = wip if wip is not None else WIP
+        self._table_events = list(table_events)
+        self.tables_tested = []
         self._sa_granted, self._grants = dict(sa_granted or {}), dict(grants or {})
         self._routing = routing or {"sink": {"filter": A.DEFAULT_SINK_FILTER}, "exclusions": [],
                                     "bucket": {"retentionDays": 30}}
@@ -115,6 +117,8 @@ class FakeSource:
             return [{"probe": 1}] if self.log_probe_calls > self.log_watermark_after else []
         if "CreateServiceAccount" in flt:
             return self._sa_events
+        if "tableCreation" in flt:
+            return self._table_events
         if "setIamPermissions" in flt:
             return self._iam_events
         if "WorkloadIdentityPool" in flt:
@@ -138,6 +142,7 @@ class FakeSource:
         return self._datasets
 
     def table_can_write(self, ds, table):
+        self.tables_tested.append((ds, table))
         return self._writable.get((ds, table), False)
 
     def project_created(self):
@@ -270,7 +275,7 @@ def test_table_policies_only_on_other_principals_or_deleted_tables_pass():
                                      f"projects/{P}/datasets/wb_mart/routines/F"],
                      writable={("wb_raw", "GONE"): None})
     r = audit(src)
-    assert r["status"] == "PASS" and r["table_policies_checked"] == 2
+    assert r["status"] == "PASS" and r["table_policies"] == 2
 
 
 def test_found_mutation_beats_unproven_iam():
@@ -562,14 +567,27 @@ def test_sa_inventory_must_be_complete():
     assert audit(FakeSource(sa_events=failed))["status"] == "PASS"            # неудачное создание — SA нет
 
 
-def test_dcl_grant_history_blocks_and_all_dataset_locations_are_scanned():
-    src = FakeSource(datasets={"wb_raw": {"location": "EU", "access": []},
-                               "x": {"location": "europe-west1", "access": []}})
-    assert audit(src)["status"] == "PASS" and sorted(src.grant_locations) == ["EU", "europe-west1"]
-    r = audit(FakeSource(grants={"EU": 1}))
-    assert r["status"] == "BLOCKED" and any("DCL GRANT" in x for x in r["iam_invariant"])
-    old = audit(FakeSource(created=(NOW - timedelta(days=A.JOBS_RETENTION_DAYS + 1)).strftime("%Y-%m-%dT%H:%M:%SZ")))
-    assert old["status"] == "BLOCKED" and any("INFORMATION_SCHEMA" in x for x in old["iam_invariant"])
+def tbl(ds, name, kind, ts):
+    md = {"tableCreation": {"table": {"tableName": f"projects/{P}/datasets/{ds}/tables/{name}"}}} if kind == "create" else \
+        {"tableDeletion": {"table": {"tableName": f"projects/{P}/datasets/{ds}/tables/{name}"}}}
+    return {"timestamp": ts, "protoPayload": {"serviceName": "bigquery.googleapis.com",
+                                              "methodName": "google.cloud.bigquery.v2.JobService.InsertJob",
+                                              "resourceName": f"projects/{P}/datasets/{ds}/tables/{name}", "metadata": md}}
+
+
+def test_every_existing_table_is_self_checked_whatever_granted_the_right():
+    """Право updateData, выданное как угодно (DCL GRANT из чужого проекта, незаписанная политика), видно на
+    самопроверке каждой существующей таблицы — даже в датасете, невидимом AE."""
+    events = [tbl("evetis_communications", "REPLIES", "create", "2026-08-01T00:00:00Z"),
+              tbl("wb_mart", "TMP", "create", "2026-08-01T00:00:00Z"), tbl("wb_mart", "TMP", "delete", "2026-08-02T00:00:00Z"),
+              tbl("wb_mart", "BACK", "delete", "2026-08-01T00:00:00Z"), tbl("wb_mart", "BACK", "create", "2026-08-03T00:00:00Z"),
+              tbl(ANON, "anon", "create", "2026-08-01T00:00:00Z"),
+              tbl("_script" + "a" * 40, "_res", "create", "2026-08-01T00:00:00Z")]
+    src = FakeSource(table_events=list(reversed(events)))       # журнал не обязан отдавать по времени
+    assert audit(src)["status"] == "PASS"
+    assert set(src.tables_tested) == {("evetis_communications", "REPLIES"), ("wb_mart", "BACK")}
+    r = audit(FakeSource(table_events=events, writable={("evetis_communications", "REPLIES"): True}))
+    assert r["status"] == "BLOCKED" and any("REPLIES" in x for x in r["iam_invariant"])
 
 
 def test_unreachable_regions_are_not_silently_skipped():
@@ -863,3 +881,27 @@ def test_pool_prefix_must_lead_the_member_not_hide_inside_it():
                 "://iam.googleapis.com/projects/1/locations/global/workloadIdentityPools/github-pool/")
     r = audit(FakeSource(iam_events=_deployer_policy_with([smuggled])))
     assert r["status"] == "BLOCKED" and any("другого пула" in x for x in r["iam_invariant"])
+
+
+def test_expired_token_is_refreshed_once_then_fails_closed(monkeypatch):
+    import urllib.request
+    calls, tokens = [], iter(["t2", "t3"])
+
+    class Resp(io.BytesIO):
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *a):
+            return False
+
+    def fake_urlopen(req, timeout=None):
+        calls.append(req.get_header("Authorization"))
+        if req.get_header("Authorization") == "Bearer t1":
+            raise urllib.error.HTTPError(req.full_url, 401, "x", {}, io.BytesIO(b""))
+        return Resp(b'{"createTime": "2026-07-10T00:00:00Z"}')
+    monkeypatch.setattr(urllib.request, "urlopen", fake_urlopen)
+    src = A.GcpAuditSource(P, "t1", refresh=lambda: next(tokens))
+    assert src.project_created() == "2026-07-10T00:00:00Z" and calls == ["Bearer t1", "Bearer t2"]
+    stale = A.GcpAuditSource(P, "t1", refresh=lambda: "t1")            # обновление не помогло — исключение (BLOCKED)
+    with pytest.raises(urllib.error.HTTPError):
+        stale.project_created()
