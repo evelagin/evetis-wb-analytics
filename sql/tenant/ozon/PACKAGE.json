@@ -84,7 +84,17 @@
     },
     {
       "dataset": "tenant_ops",
-      "name": "V_DQ_UNCLASSIFIED_ACCRUALS",
+      "name": "V_DQ_UNRESOLVED_ACCRUALS",
+      "semantic_class": "GENERIC_DERIVED"
+    },
+    {
+      "dataset": "tenant_ops",
+      "name": "V_DQ_SETTLEMENT_ANOMALIES",
+      "semantic_class": "GENERIC_DERIVED"
+    },
+    {
+      "dataset": "tenant_ops",
+      "name": "V_DQ_COGS_OVERLAPS",
       "semantic_class": "GENERIC_DERIVED"
     }
   ]
