@@ -431,7 +431,7 @@ def wif_from_logs(wip_events: list[dict], state: dict, uid_to_account: dict[str,
             continue
         from tools.autonomy.wif_check import _parse_member
         for r, m in fed:
-            if not number or member_prefix not in m or not m.startswith(FEDERATED):
+            if not number or not m.startswith(("principal" + member_prefix, "principalSet" + member_prefix)):
                 problems.append(f"SA {uid}: федеративный принципал другого пула — не моделируется: {m[:90]}")
             elif _parse_member(m) is None:
                 problems.append(f"SA {uid}: федеративный участник вне модели S1 (напр. весь пул): {m[:90]}")

@@ -856,3 +856,10 @@ def test_wif_resources_are_matched_by_full_path_not_short_name():
         "principalSet://iam.googleapis.com/projects/2/locations/global/workloadIdentityPools/github-pool/attribute.repository/x"])
     r = audit(FakeSource(iam_events=same_name_other_project))
     assert r["status"] == "BLOCKED" and any("другого пула" in x for x in r["iam_invariant"])
+
+
+def test_pool_prefix_must_lead_the_member_not_hide_inside_it():
+    smuggled = ("principalSet://iam.googleapis.com/projects/2/locations/global/workloadIdentityPools/x/attribute.a/"
+                "://iam.googleapis.com/projects/1/locations/global/workloadIdentityPools/github-pool/")
+    r = audit(FakeSource(iam_events=_deployer_policy_with([smuggled])))
+    assert r["status"] == "BLOCKED" and any("другого пула" in x for x in r["iam_invariant"])
