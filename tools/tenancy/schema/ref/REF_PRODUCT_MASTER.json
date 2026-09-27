@@ -1,0 +1,62 @@
+{
+  "clustering": [
+    "internal_sku"
+  ],
+  "schema": [
+    {
+      "description": "Внутренний артикул арендатора",
+      "mode": "REQUIRED",
+      "name": "internal_sku",
+      "type": "STRING"
+    },
+    {
+      "description": "Название",
+      "mode": "NULLABLE",
+      "name": "product_name",
+      "type": "STRING"
+    },
+    {
+      "description": "Бренд",
+      "mode": "NULLABLE",
+      "name": "brand",
+      "type": "STRING"
+    },
+    {
+      "description": "Категория",
+      "mode": "NULLABLE",
+      "name": "category",
+      "type": "STRING"
+    },
+    {
+      "description": "Набор",
+      "mode": "NULLABLE",
+      "name": "is_bundle",
+      "type": "BOOL"
+    },
+    {
+      "description": "BOOTSTRAP_FROM_CATALOG или OWNER_UPLOAD",
+      "mode": "REQUIRED",
+      "name": "source",
+      "type": "STRING"
+    },
+    {
+      "description": "Действует с",
+      "mode": "REQUIRED",
+      "name": "valid_from",
+      "type": "DATE"
+    },
+    {
+      "description": "Действует по",
+      "mode": "NULLABLE",
+      "name": "valid_to",
+      "type": "DATE"
+    },
+    {
+      "description": "Время загрузки",
+      "mode": "REQUIRED",
+      "name": "loaded_at",
+      "type": "TIMESTAMP"
+    }
+  ],
+  "table_id": "REF_PRODUCT_MASTER"
+}

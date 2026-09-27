@@ -1,0 +1,97 @@
+{
+  "clustering": [
+    "api",
+    "identity_fingerprint"
+  ],
+  "schema": [
+    {
+      "description": "Идентификатор наблюдения",
+      "mode": "REQUIRED",
+      "name": "observation_id",
+      "type": "STRING"
+    },
+    {
+      "description": "Прогон runtime",
+      "mode": "NULLABLE",
+      "name": "run_id",
+      "type": "STRING"
+    },
+    {
+      "description": "SELLER или PERFORMANCE",
+      "mode": "REQUIRED",
+      "name": "api",
+      "type": "STRING"
+    },
+    {
+      "description": "Время наблюдения",
+      "mode": "REQUIRED",
+      "name": "observed_at",
+      "type": "TIMESTAMP"
+    },
+    {
+      "description": "sha256 канонической несекретной identity (hex)",
+      "mode": "REQUIRED",
+      "name": "identity_fingerprint",
+      "type": "STRING"
+    },
+    {
+      "description": "Client-Id Seller API (идентификатор, не секрет)",
+      "mode": "NULLABLE",
+      "name": "seller_client_id",
+      "type": "STRING"
+    },
+    {
+      "description": "client_id Performance API (идентификатор, не секрет)",
+      "mode": "NULLABLE",
+      "name": "performance_client_id",
+      "type": "STRING"
+    },
+    {
+      "description": "ИНН из /v1/seller/info",
+      "mode": "NULLABLE",
+      "name": "company_inn",
+      "type": "STRING"
+    },
+    {
+      "description": "ОГРН из /v1/seller/info",
+      "mode": "NULLABLE",
+      "name": "company_ogrn",
+      "type": "STRING"
+    },
+    {
+      "description": "Название из /v1/seller/info",
+      "mode": "NULLABLE",
+      "name": "company_name",
+      "type": "STRING"
+    },
+    {
+      "description": "Юрлицо из /v1/seller/info",
+      "mode": "NULLABLE",
+      "name": "legal_name",
+      "type": "STRING"
+    },
+    {
+      "description": "Тариф подписки из /v1/seller/info",
+      "mode": "NULLABLE",
+      "name": "subscription_type",
+      "type": "STRING"
+    },
+    {
+      "description": "Прочие несекретные поля ответа",
+      "mode": "NULLABLE",
+      "name": "evidence_json",
+      "type": "STRING"
+    },
+    {
+      "description": "OBSERVED, MATCHED (совпало с ref.SELLER_BINDING), MISMATCH",
+      "mode": "REQUIRED",
+      "name": "status",
+      "type": "STRING"
+    }
+  ],
+  "table_id": "SELLER_IDENTITY_OBSERVATIONS",
+  "time_partitioning": {
+    "field": "observed_at",
+    "type": "DAY"
+  }
+}

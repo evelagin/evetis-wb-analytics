@@ -1,0 +1,56 @@
+{
+  "clustering": [
+    "internal_sku"
+  ],
+  "schema": [
+    {
+      "description": "Внутренний артикул арендатора",
+      "mode": "REQUIRED",
+      "name": "internal_sku",
+      "type": "STRING"
+    },
+    {
+      "description": "Действует с",
+      "mode": "REQUIRED",
+      "name": "effective_from",
+      "type": "DATE"
+    },
+    {
+      "description": "Действует по (включительно); NULL — открыт",
+      "mode": "NULLABLE",
+      "name": "effective_to",
+      "type": "DATE"
+    },
+    {
+      "description": "Себестоимость единицы, ₽",
+      "mode": "REQUIRED",
+      "name": "product_cogs_rub",
+      "type": "NUMERIC"
+    },
+    {
+      "description": "Основа расчёта",
+      "mode": "NULLABLE",
+      "name": "cost_basis",
+      "type": "STRING"
+    },
+    {
+      "description": "OWNER_UPLOAD",
+      "mode": "REQUIRED",
+      "name": "source",
+      "type": "STRING"
+    },
+    {
+      "description": "Кто внёс",
+      "mode": "NULLABLE",
+      "name": "loaded_by",
+      "type": "STRING"
+    },
+    {
+      "description": "Время загрузки",
+      "mode": "REQUIRED",
+      "name": "loaded_at",
+      "type": "TIMESTAMP"
+    }
+  ],
+  "table_id": "REF_COGS"
+}

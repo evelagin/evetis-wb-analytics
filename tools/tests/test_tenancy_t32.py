@@ -52,7 +52,8 @@ def test_terraform_inputs_contract_shape_for_client_001():
     assert c["project_id_revision"] == 1
     assert c["parent_folder"] == PL.TENANTS_FOLDER
     assert c["state"] == {"bucket": PL.STATE_BUCKET, "prefix": "tenants/client_001"}
-    assert c["datasets"] == {"ozon_raw": "ozon_raw", "ref": "ref"}
+    assert c["datasets"] == {"ozon_raw": "ozon_raw", "ref": "ref", "ozon_mart": "ozon_mart",
+                             "tenant_ops": "tenant_ops", "analytics_share": "analytics_share"}
     assert c["scheduler_state"] == "PAUSED"
     assert c["labels"] == {"tenant": "client_001", "managed_by": "vts-tenant-infra"}
     ozon = c["marketplaces"]["ozon"]
@@ -153,7 +154,8 @@ def test_entity_table_contract_matches_runtime_source():
 
 def test_every_table_any_entity_needs_has_a_git_schema():
     tables = OC.tables_for(OC.ENTITY_TABLES)
-    assert len(tables["ozon_raw"]) == 21 and tables["ref"] == ["REF_SKU_CHANNEL_MAP"]
+    assert len(tables["ozon_raw"]) == 21 and len(tables["ref"]) == 5 and len(tables["tenant_ops"]) == 7
+    assert OC.tables_for(OC.ENTITY_TABLES, include_platform=False)["ref"] == ["REF_SKU_CHANNEL_MAP"]
     for ds, names in tables.items():
         for t in names:
             spec = OC.load_table_spec(ds, t)
@@ -175,7 +177,8 @@ def test_client_001_bootstrap_covers_every_table_its_entities_write():
     have = {t["table_id"] for t in c["tables"]}
     entities = R.load_tenant("client_001")["marketplaces"]["ozon"]["entities"]
     need = {"OZON_INGESTION_RUNS"} | {t for e in entities for t in OC.ENTITY_TABLES[e]}
-    assert have == need and len(have) == 15
+    need |= {t for names in OC.PLATFORM_TABLES.values() for t in names}          # T4: таблицы платформы
+    assert have == need and len(have) == 27
 
 
 def test_schema_snapshots_are_project_neutral():

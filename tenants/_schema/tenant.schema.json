@@ -51,7 +51,10 @@
           "required": ["ozon_raw", "ref"],
           "properties": {
             "ozon_raw": {"type": "string", "pattern": "^[A-Za-z_][A-Za-z0-9_]{0,1023}$"},
-            "ref": {"type": "string", "pattern": "^[A-Za-z_][A-Za-z0-9_]{0,1023}$"}
+            "ref": {"type": "string", "pattern": "^[A-Za-z_][A-Za-z0-9_]{0,1023}$"},
+            "ozon_mart": {"type": "string", "pattern": "^[A-Za-z_][A-Za-z0-9_]{0,1023}$"},
+            "tenant_ops": {"type": "string", "pattern": "^[A-Za-z_][A-Za-z0-9_]{0,1023}$"},
+            "analytics_share": {"type": "string", "pattern": "^[A-Za-z_][A-Za-z0-9_]{0,1023}$"}
           }
         }
       }
@@ -90,7 +93,16 @@
               "items": {"type": "string", "pattern": "^[a-z][a-z0-9_]{1,40}$"},
               "description": "Сущности Ozon runtime (REGISTRY в pipelines/ozon/runtime/entities.py). Для legacy-арендатора не задаются: состав job'ов описан в Terraform."
             },
-            "backfill_start_date": {"type": "string", "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$"}
+            "history_request": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["mode"],
+              "description": "Какую историю запросить при backfill (T4). EARLIEST_AVAILABLE — максимум, который подтвердит обнаружение возможностей; фактические границы по сущностям хранятся в tenant_ops.HISTORY_BOUNDARIES проекта арендатора, а не в Git. FROM_DATE — осознанное ограничение снизу.",
+              "properties": {
+                "mode": {"enum": ["EARLIEST_AVAILABLE", "FROM_DATE"]},
+                "from_date": {"type": "string", "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$"}
+              }
+            }
           }
         },
         "wb": {

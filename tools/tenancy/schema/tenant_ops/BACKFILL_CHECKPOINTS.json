@@ -1,0 +1,79 @@
+{
+  "clustering": [
+    "entity",
+    "status"
+  ],
+  "schema": [
+    {
+      "description": "Идентификатор backfill",
+      "mode": "REQUIRED",
+      "name": "backfill_id",
+      "type": "STRING"
+    },
+    {
+      "description": "Сущность",
+      "mode": "REQUIRED",
+      "name": "entity",
+      "type": "STRING"
+    },
+    {
+      "description": "Начало окна",
+      "mode": "REQUIRED",
+      "name": "window_from",
+      "type": "DATE"
+    },
+    {
+      "description": "Конец окна (включительно)",
+      "mode": "REQUIRED",
+      "name": "window_to",
+      "type": "DATE"
+    },
+    {
+      "description": "PLANNED, RUNNING, DONE, FAILED, SKIPPED",
+      "mode": "REQUIRED",
+      "name": "status",
+      "type": "STRING"
+    },
+    {
+      "description": "Число попыток",
+      "mode": "REQUIRED",
+      "name": "attempts",
+      "type": "INTEGER"
+    },
+    {
+      "description": "Записано строк",
+      "mode": "NULLABLE",
+      "name": "rows_written",
+      "type": "INTEGER"
+    },
+    {
+      "description": "Прогон runtime",
+      "mode": "NULLABLE",
+      "name": "run_id",
+      "type": "STRING"
+    },
+    {
+      "description": "Код ошибки",
+      "mode": "NULLABLE",
+      "name": "error_code",
+      "type": "STRING"
+    },
+    {
+      "description": "Описание без секретов",
+      "mode": "NULLABLE",
+      "name": "error_detail",
+      "type": "STRING"
+    },
+    {
+      "description": "Время обновления",
+      "mode": "REQUIRED",
+      "name": "updated_at",
+      "type": "TIMESTAMP"
+    }
+  ],
+  "table_id": "BACKFILL_CHECKPOINTS",
+  "time_partitioning": {
+    "field": "updated_at",
+    "type": "DAY"
+  }
+}

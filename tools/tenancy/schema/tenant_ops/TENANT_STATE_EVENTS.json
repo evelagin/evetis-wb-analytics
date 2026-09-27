@@ -1,0 +1,72 @@
+{
+  "clustering": [
+    "to_state"
+  ],
+  "schema": [
+    {
+      "description": "Идентификатор события",
+      "mode": "REQUIRED",
+      "name": "event_id",
+      "type": "STRING"
+    },
+    {
+      "description": "tenant_id реестра",
+      "mode": "REQUIRED",
+      "name": "tenant_id",
+      "type": "STRING"
+    },
+    {
+      "description": "Состояние до перехода",
+      "mode": "NULLABLE",
+      "name": "from_state",
+      "type": "STRING"
+    },
+    {
+      "description": "Состояние после перехода: CREDENTIALS_PENDING…READY, FAILED",
+      "mode": "REQUIRED",
+      "name": "to_state",
+      "type": "STRING"
+    },
+    {
+      "description": "Машиночитаемая причина (для FAILED — обязательна)",
+      "mode": "NULLABLE",
+      "name": "reason_code",
+      "type": "STRING"
+    },
+    {
+      "description": "Описание без секретов",
+      "mode": "NULLABLE",
+      "name": "reason_detail",
+      "type": "STRING"
+    },
+    {
+      "description": "Доказательства перехода (JSON, без секретов)",
+      "mode": "NULLABLE",
+      "name": "evidence_json",
+      "type": "STRING"
+    },
+    {
+      "description": "Кто перевёл: runtime/оператор",
+      "mode": "REQUIRED",
+      "name": "actor",
+      "type": "STRING"
+    },
+    {
+      "description": "Прогон runtime",
+      "mode": "NULLABLE",
+      "name": "run_id",
+      "type": "STRING"
+    },
+    {
+      "description": "Время перехода",
+      "mode": "REQUIRED",
+      "name": "occurred_at",
+      "type": "TIMESTAMP"
+    }
+  ],
+  "table_id": "TENANT_STATE_EVENTS",
+  "time_partitioning": {
+    "field": "occurred_at",
+    "type": "DAY"
+  }
+}

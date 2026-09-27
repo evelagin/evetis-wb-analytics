@@ -1,0 +1,115 @@
+{
+  "clustering": [
+    "check_id",
+    "status"
+  ],
+  "schema": [
+    {
+      "description": "Идентификатор результата",
+      "mode": "REQUIRED",
+      "name": "result_id",
+      "type": "STRING"
+    },
+    {
+      "description": "Проверка",
+      "mode": "REQUIRED",
+      "name": "check_id",
+      "type": "STRING"
+    },
+    {
+      "description": "Начало периода",
+      "mode": "NULLABLE",
+      "name": "period_from",
+      "type": "DATE"
+    },
+    {
+      "description": "Конец периода",
+      "mode": "NULLABLE",
+      "name": "period_to",
+      "type": "DATE"
+    },
+    {
+      "description": "Метрика",
+      "mode": "NULLABLE",
+      "name": "metric",
+      "type": "STRING"
+    },
+    {
+      "description": "Источник A",
+      "mode": "NULLABLE",
+      "name": "source_a",
+      "type": "STRING"
+    },
+    {
+      "description": "Источник B",
+      "mode": "NULLABLE",
+      "name": "source_b",
+      "type": "STRING"
+    },
+    {
+      "description": "Значение A",
+      "mode": "NULLABLE",
+      "name": "value_a",
+      "type": "NUMERIC"
+    },
+    {
+      "description": "Значение B",
+      "mode": "NULLABLE",
+      "name": "value_b",
+      "type": "NUMERIC"
+    },
+    {
+      "description": "A − B",
+      "mode": "NULLABLE",
+      "name": "difference",
+      "type": "NUMERIC"
+    },
+    {
+      "description": "Разница, %",
+      "mode": "NULLABLE",
+      "name": "difference_pct",
+      "type": "NUMERIC"
+    },
+    {
+      "description": "Допуск абсолютный",
+      "mode": "NULLABLE",
+      "name": "tolerance_abs",
+      "type": "NUMERIC"
+    },
+    {
+      "description": "Допуск, %",
+      "mode": "NULLABLE",
+      "name": "tolerance_pct",
+      "type": "NUMERIC"
+    },
+    {
+      "description": "PASS, FAIL, WARN, NOT_EVALUABLE",
+      "mode": "REQUIRED",
+      "name": "status",
+      "type": "STRING"
+    },
+    {
+      "description": "Пояснение",
+      "mode": "NULLABLE",
+      "name": "explanation",
+      "type": "STRING"
+    },
+    {
+      "description": "Время оценки",
+      "mode": "REQUIRED",
+      "name": "evaluated_at",
+      "type": "TIMESTAMP"
+    },
+    {
+      "description": "Прогон",
+      "mode": "NULLABLE",
+      "name": "run_id",
+      "type": "STRING"
+    }
+  ],
+  "table_id": "DQ_RESULTS",
+  "time_partitioning": {
+    "field": "evaluated_at",
+    "type": "DAY"
+  }
+}

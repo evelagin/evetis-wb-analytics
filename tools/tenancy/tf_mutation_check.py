@@ -61,6 +61,9 @@ MUTATIONS = [
      "\\1\n  access {\n    role          = \"OWNER\"\n    user_by_email = \"sa-tenant-provisioner@mpa-platform.iam.gserviceaccount.com\"\n  }\n"),
     ("runtime raw grant widened to OWNER", "main.tf",
      r'role = "WRITER", user_by_email', 'role = "OWNER", user_by_email'),
+    # T4: состав датасетов арендатора фиксирован — клиентский датасет мимо naming не заводится.
+    ("dataset key-set validation weakened", "variables.tf",
+     r'toset\(keys\(var\.contract\.datasets\)\) == toset\(\[', 'length(keys(var.contract.datasets)) > 0 || toset(['),
     # T3.3: явный retry_count = 0 API не хранит — вечный дрейф сходимости.
     ("scheduler redundant retry_config restored", "modules/ozon_runtime/main.tf",
      r"(\n  paused    = true\n)", "\\1\n  retry_config {\n    retry_count = 0\n  }\n"),

@@ -96,7 +96,11 @@ LABEL_VALUE_RE = re.compile(r"[a-z0-9_-]{0,63}")
 # ── Имена внутри проекта выделенного арендатора ───────────────────────────
 # Одинаковы у всех выделенных арендаторов: изоляция — проектом (ADR-08).
 # Имя справочного датасета `ref` утверждено владельцем 2026-09-24 (ADR-08, A3).
-DEDICATED_DATASETS = {"ozon_raw": "ozon_raw", "ref": "ref"}
+# T4 (2026-09-27): ozon_mart — нормализованный слой и внутренние витрины; tenant_ops —
+# операционное состояние арендатора (identity, возможности, границы истории, покрытие,
+# контрольные точки, DQ); analytics_share — клиентский семантический слой (доступ — T6).
+DEDICATED_DATASETS = {"ozon_raw": "ozon_raw", "ref": "ref", "ozon_mart": "ozon_mart",
+                      "tenant_ops": "tenant_ops", "analytics_share": "analytics_share"}
 DEDICATED_OZON_SECRET_IDS = {
     "seller_client_id": "ozon-seller-client-id",
     "seller_api_key": "ozon-seller-api-key",

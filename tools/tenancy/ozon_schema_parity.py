@@ -39,7 +39,7 @@ _CREATE = re.compile(r"CREATE TABLE IF NOT EXISTS `[^`]*\.(\w+)\.(\w+)`\s*\((.*?
 
 def all_tables() -> list[tuple[str, str]]:
     """Все таблицы, которые runtime может потребовать (все сущности контракта)."""
-    return sorted((ds, t) for ds, names in OC.tables_for(OC.ENTITY_TABLES).items() for t in names)
+    return sorted((ds, t) for ds, names in OC.tables_for(OC.ENTITY_TABLES, include_platform=False).items() for t in names)
 
 
 def _split_top(s: str) -> list[str]:

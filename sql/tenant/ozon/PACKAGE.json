@@ -1,0 +1,156 @@
+{
+  "package": "vts-ozon-tenant",
+  "version": 1,
+  "objects": [
+    {
+      "dataset": "ozon_mart",
+      "name": "DIM_OZON_ACCRUAL_TYPE",
+      "semantic_class": "GENERIC_DERIVED"
+    },
+    {
+      "dataset": "ozon_mart",
+      "name": "NORM_OZON_POSTING_LINE",
+      "semantic_class": "MARKETPLACE_FACT"
+    },
+    {
+      "dataset": "ozon_mart",
+      "name": "NORM_OZON_ACCRUAL",
+      "semantic_class": "MARKETPLACE_FACT"
+    },
+    {
+      "dataset": "ozon_mart",
+      "name": "NORM_OZON_POSTING_SETTLEMENT",
+      "semantic_class": "GENERIC_DERIVED"
+    },
+    {
+      "dataset": "ozon_mart",
+      "name": "NORM_OZON_ADS_SKU_DAILY",
+      "semantic_class": "MARKETPLACE_FACT"
+    },
+    {
+      "dataset": "ozon_mart",
+      "name": "NORM_OZON_ADS_CAMPAIGN_DAILY",
+      "semantic_class": "MARKETPLACE_FACT"
+    },
+    {
+      "dataset": "ozon_mart",
+      "name": "SNAP_OZON_STOCK",
+      "semantic_class": "MARKETPLACE_FACT"
+    },
+    {
+      "dataset": "ozon_mart",
+      "name": "SNAP_OZON_PRICE",
+      "semantic_class": "MARKETPLACE_FACT"
+    },
+    {
+      "dataset": "ozon_mart",
+      "name": "DIM_OZON_PRODUCT",
+      "semantic_class": "GENERIC_DERIVED"
+    },
+    {
+      "dataset": "ozon_mart",
+      "name": "ECON_TENANT_COGS",
+      "semantic_class": "TENANT_CONFIG"
+    },
+    {
+      "dataset": "ozon_mart",
+      "name": "FACT_OZON_SALES_DAILY",
+      "semantic_class": "GENERIC_DERIVED"
+    },
+    {
+      "dataset": "ozon_mart",
+      "name": "FACT_OZON_SKU_ECONOMICS_DAILY",
+      "semantic_class": "GENERIC_DERIVED"
+    },
+    {
+      "dataset": "ozon_mart",
+      "name": "FACT_OZON_STORE_COSTS_DAILY",
+      "semantic_class": "GENERIC_DERIVED"
+    },
+    {
+      "dataset": "tenant_ops",
+      "name": "V_TENANT_STATE_CURRENT",
+      "semantic_class": "GENERIC_DERIVED"
+    },
+    {
+      "dataset": "tenant_ops",
+      "name": "V_SELLER_BINDING_STATUS",
+      "semantic_class": "GENERIC_DERIVED"
+    },
+    {
+      "dataset": "tenant_ops",
+      "name": "V_ENTITY_COVERAGE",
+      "semantic_class": "GENERIC_DERIVED"
+    },
+    {
+      "dataset": "tenant_ops",
+      "name": "V_DQ_UNRESOLVED_ACCRUALS",
+      "semantic_class": "GENERIC_DERIVED"
+    },
+    {
+      "dataset": "tenant_ops",
+      "name": "V_DQ_SETTLEMENT_ANOMALIES",
+      "semantic_class": "GENERIC_DERIVED"
+    },
+    {
+      "dataset": "tenant_ops",
+      "name": "V_DQ_COGS_OVERLAPS",
+      "semantic_class": "GENERIC_DERIVED"
+    },
+    {
+      "dataset": "tenant_ops",
+      "name": "V_COVERAGE_DAILY",
+      "semantic_class": "GENERIC_DERIVED"
+    },
+    {
+      "dataset": "analytics_share",
+      "name": "sales_daily",
+      "semantic_class": "GENERIC_DERIVED"
+    },
+    {
+      "dataset": "analytics_share",
+      "name": "orders",
+      "semantic_class": "MARKETPLACE_FACT"
+    },
+    {
+      "dataset": "analytics_share",
+      "name": "advertising_daily",
+      "semantic_class": "MARKETPLACE_FACT"
+    },
+    {
+      "dataset": "analytics_share",
+      "name": "sku_daily",
+      "semantic_class": "GENERIC_DERIVED"
+    },
+    {
+      "dataset": "analytics_share",
+      "name": "inventory_current",
+      "semantic_class": "MARKETPLACE_FACT"
+    },
+    {
+      "dataset": "analytics_share",
+      "name": "price_history",
+      "semantic_class": "MARKETPLACE_FACT"
+    },
+    {
+      "dataset": "analytics_share",
+      "name": "profitability_daily",
+      "semantic_class": "GENERIC_DERIVED"
+    },
+    {
+      "dataset": "analytics_share",
+      "name": "store_costs_daily",
+      "semantic_class": "GENERIC_DERIVED"
+    },
+    {
+      "dataset": "analytics_share",
+      "name": "data_coverage",
+      "semantic_class": "GENERIC_DERIVED"
+    },
+    {
+      "dataset": "tenant_ops",
+      "name": "V_FINANCE_WINDOW_STATUS",
+      "semantic_class": "GENERIC_DERIVED"
+    }
+  ]
+}

@@ -15,8 +15,11 @@
   "bq_location": "EU",
   "contract_version": 1,
   "datasets": {
+    "analytics_share": "analytics_share",
+    "ozon_mart": "ozon_mart",
     "ozon_raw": "ozon_raw",
-    "ref": "evetis_ref"
+    "ref": "evetis_ref",
+    "tenant_ops": "tenant_ops"
   },
   "labels": {
     "managed_by": "vts-tenant-infra",
@@ -290,6 +293,145 @@
       "schema_json": "[{\"mode\":\"REQUIRED\",\"name\":\"order_id\",\"type\":\"INTEGER\"},{\"mode\":\"NULLABLE\",\"name\":\"order_number\",\"type\":\"STRING\"},{\"mode\":\"NULLABLE\",\"name\":\"state\",\"type\":\"STRING\"},{\"mode\":\"NULLABLE\",\"name\":\"created_at\",\"type\":\"TIMESTAMP\"},{\"mode\":\"NULLABLE\",\"name\":\"state_updated_at\",\"type\":\"TIMESTAMP\"},{\"mode\":\"NULLABLE\",\"name\":\"data_filling_deadline\",\"type\":\"TIMESTAMP\"},{\"mode\":\"NULLABLE\",\"name\":\"planned_arrival_from\",\"type\":\"TIMESTAMP\"},{\"mode\":\"NULLABLE\",\"name\":\"planned_arrival_to\",\"type\":\"TIMESTAMP\"},{\"mode\":\"NULLABLE\",\"name\":\"timeslot_timezone\",\"type\":\"STRING\"},{\"mode\":\"NULLABLE\",\"name\":\"dropoff_warehouse_id\",\"type\":\"STRING\"},{\"mode\":\"NULLABLE\",\"name\":\"dropoff_warehouse_name\",\"type\":\"STRING\"},{\"mode\":\"NULLABLE\",\"name\":\"dropoff_address\",\"type\":\"STRING\"},{\"mode\":\"NULLABLE\",\"name\":\"is_super_fbo\",\"type\":\"BOOLEAN\"},{\"mode\":\"NULLABLE\",\"name\":\"is_virtual\",\"type\":\"BOOLEAN\"},{\"mode\":\"NULLABLE\",\"name\":\"is_econom\",\"type\":\"BOOLEAN\"},{\"mode\":\"NULLABLE\",\"name\":\"is_pickup\",\"type\":\"BOOLEAN\"},{\"mode\":\"NULLABLE\",\"name\":\"supplies_count\",\"type\":\"INTEGER\"},{\"mode\":\"REQUIRED\",\"name\":\"extracted_at\",\"type\":\"TIMESTAMP\"},{\"mode\":\"REQUIRED\",\"name\":\"source_endpoint\",\"type\":\"STRING\"},{\"mode\":\"REQUIRED\",\"name\":\"ingestion_run_id\",\"type\":\"STRING\"},{\"mode\":\"NULLABLE\",\"name\":\"source_payload_hash\",\"type\":\"STRING\"}]",
       "table_id": "RAW_OZON_SUPPLY_ORDERS",
       "time_partitioning_field": "created_at",
+      "time_partitioning_type": "DAY"
+    },
+    {
+      "clustering": [
+        "internal_sku"
+      ],
+      "dataset_key": "ref",
+      "require_partition_filter": false,
+      "schema_json": "[{\"mode\":\"REQUIRED\",\"name\":\"internal_sku\",\"type\":\"STRING\"},{\"mode\":\"REQUIRED\",\"name\":\"effective_from\",\"type\":\"DATE\"},{\"mode\":\"NULLABLE\",\"name\":\"effective_to\",\"type\":\"DATE\"},{\"mode\":\"REQUIRED\",\"name\":\"product_cogs_rub\",\"type\":\"NUMERIC\"},{\"mode\":\"NULLABLE\",\"name\":\"cost_basis\",\"type\":\"STRING\"},{\"mode\":\"REQUIRED\",\"name\":\"source\",\"type\":\"STRING\"},{\"mode\":\"NULLABLE\",\"name\":\"loaded_by\",\"type\":\"STRING\"},{\"mode\":\"REQUIRED\",\"name\":\"loaded_at\",\"type\":\"TIMESTAMP\"}]",
+      "table_id": "REF_COGS",
+      "time_partitioning_field": null,
+      "time_partitioning_type": null
+    },
+    {
+      "clustering": [
+        "internal_sku"
+      ],
+      "dataset_key": "ref",
+      "require_partition_filter": false,
+      "schema_json": "[{\"mode\":\"REQUIRED\",\"name\":\"internal_sku\",\"type\":\"STRING\"},{\"mode\":\"NULLABLE\",\"name\":\"product_name\",\"type\":\"STRING\"},{\"mode\":\"NULLABLE\",\"name\":\"brand\",\"type\":\"STRING\"},{\"mode\":\"NULLABLE\",\"name\":\"category\",\"type\":\"STRING\"},{\"mode\":\"NULLABLE\",\"name\":\"is_bundle\",\"type\":\"BOOL\"},{\"mode\":\"REQUIRED\",\"name\":\"source\",\"type\":\"STRING\"},{\"mode\":\"REQUIRED\",\"name\":\"valid_from\",\"type\":\"DATE\"},{\"mode\":\"NULLABLE\",\"name\":\"valid_to\",\"type\":\"DATE\"},{\"mode\":\"REQUIRED\",\"name\":\"loaded_at\",\"type\":\"TIMESTAMP\"}]",
+      "table_id": "REF_PRODUCT_MASTER",
+      "time_partitioning_field": null,
+      "time_partitioning_type": null
+    },
+    {
+      "clustering": [
+        "marketplace",
+        "internal_sku"
+      ],
+      "dataset_key": "ref",
+      "require_partition_filter": false,
+      "schema_json": "[{\"mode\":\"REQUIRED\",\"name\":\"internal_sku\",\"type\":\"STRING\"},{\"mode\":\"REQUIRED\",\"name\":\"marketplace\",\"type\":\"STRING\"},{\"mode\":\"REQUIRED\",\"name\":\"marketplace_sku\",\"type\":\"STRING\"},{\"mode\":\"NULLABLE\",\"name\":\"marketplace_product_id\",\"type\":\"STRING\"},{\"mode\":\"NULLABLE\",\"name\":\"offer_id\",\"type\":\"STRING\"},{\"mode\":\"NULLABLE\",\"name\":\"vendor_code\",\"type\":\"STRING\"},{\"mode\":\"REQUIRED\",\"name\":\"valid_from\",\"type\":\"DATE\"},{\"mode\":\"NULLABLE\",\"name\":\"valid_to\",\"type\":\"DATE\"},{\"mode\":\"REQUIRED\",\"name\":\"is_current\",\"type\":\"BOOLEAN\"},{\"mode\":\"NULLABLE\",\"name\":\"mapping_source\",\"type\":\"STRING\"},{\"mode\":\"NULLABLE\",\"name\":\"mapping_status\",\"type\":\"STRING\"},{\"mode\":\"NULLABLE\",\"name\":\"verified_at\",\"type\":\"DATE\"},{\"mode\":\"NULLABLE\",\"name\":\"loaded_at\",\"type\":\"TIMESTAMP\"}]",
+      "table_id": "REF_SKU_CHANNEL_MAP",
+      "time_partitioning_field": null,
+      "time_partitioning_type": null
+    },
+    {
+      "clustering": [
+        "parameter"
+      ],
+      "dataset_key": "ref",
+      "require_partition_filter": false,
+      "schema_json": "[{\"mode\":\"REQUIRED\",\"name\":\"parameter\",\"type\":\"STRING\"},{\"mode\":\"REQUIRED\",\"name\":\"scope\",\"type\":\"STRING\"},{\"mode\":\"NULLABLE\",\"name\":\"internal_sku\",\"type\":\"STRING\"},{\"mode\":\"NULLABLE\",\"name\":\"value_num\",\"type\":\"NUMERIC\"},{\"mode\":\"NULLABLE\",\"name\":\"value_text\",\"type\":\"STRING\"},{\"mode\":\"NULLABLE\",\"name\":\"unit\",\"type\":\"STRING\"},{\"mode\":\"REQUIRED\",\"name\":\"effective_from\",\"type\":\"DATE\"},{\"mode\":\"NULLABLE\",\"name\":\"effective_to\",\"type\":\"DATE\"},{\"mode\":\"REQUIRED\",\"name\":\"source\",\"type\":\"STRING\"},{\"mode\":\"REQUIRED\",\"name\":\"loaded_at\",\"type\":\"TIMESTAMP\"}]",
+      "table_id": "REF_TENANT_ECONOMICS",
+      "time_partitioning_field": null,
+      "time_partitioning_type": null
+    },
+    {
+      "clustering": [
+        "api",
+        "status"
+      ],
+      "dataset_key": "ref",
+      "require_partition_filter": false,
+      "schema_json": "[{\"mode\":\"REQUIRED\",\"name\":\"binding_id\",\"type\":\"STRING\"},{\"mode\":\"REQUIRED\",\"name\":\"marketplace\",\"type\":\"STRING\"},{\"mode\":\"REQUIRED\",\"name\":\"api\",\"type\":\"STRING\"},{\"mode\":\"REQUIRED\",\"name\":\"identity_fingerprint\",\"type\":\"STRING\"},{\"mode\":\"NULLABLE\",\"name\":\"seller_client_id\",\"type\":\"STRING\"},{\"mode\":\"NULLABLE\",\"name\":\"performance_client_id\",\"type\":\"STRING\"},{\"mode\":\"REQUIRED\",\"name\":\"status\",\"type\":\"STRING\"},{\"mode\":\"REQUIRED\",\"name\":\"confirmed_by\",\"type\":\"STRING\"},{\"mode\":\"REQUIRED\",\"name\":\"confirmed_at\",\"type\":\"TIMESTAMP\"},{\"mode\":\"REQUIRED\",\"name\":\"source_observation_id\",\"type\":\"STRING\"},{\"mode\":\"NULLABLE\",\"name\":\"revoked_at\",\"type\":\"TIMESTAMP\"},{\"mode\":\"NULLABLE\",\"name\":\"revoked_by\",\"type\":\"STRING\"},{\"mode\":\"NULLABLE\",\"name\":\"notes\",\"type\":\"STRING\"}]",
+      "table_id": "SELLER_BINDING",
+      "time_partitioning_field": null,
+      "time_partitioning_type": null
+    },
+    {
+      "clustering": [
+        "entity",
+        "status"
+      ],
+      "dataset_key": "tenant_ops",
+      "require_partition_filter": false,
+      "schema_json": "[{\"mode\":\"REQUIRED\",\"name\":\"backfill_id\",\"type\":\"STRING\"},{\"mode\":\"REQUIRED\",\"name\":\"entity\",\"type\":\"STRING\"},{\"mode\":\"REQUIRED\",\"name\":\"window_from\",\"type\":\"DATE\"},{\"mode\":\"REQUIRED\",\"name\":\"window_to\",\"type\":\"DATE\"},{\"mode\":\"REQUIRED\",\"name\":\"status\",\"type\":\"STRING\"},{\"mode\":\"REQUIRED\",\"name\":\"attempts\",\"type\":\"INTEGER\"},{\"mode\":\"NULLABLE\",\"name\":\"rows_written\",\"type\":\"INTEGER\"},{\"mode\":\"NULLABLE\",\"name\":\"run_id\",\"type\":\"STRING\"},{\"mode\":\"NULLABLE\",\"name\":\"error_code\",\"type\":\"STRING\"},{\"mode\":\"NULLABLE\",\"name\":\"error_detail\",\"type\":\"STRING\"},{\"mode\":\"REQUIRED\",\"name\":\"updated_at\",\"type\":\"TIMESTAMP\"}]",
+      "table_id": "BACKFILL_CHECKPOINTS",
+      "time_partitioning_field": "updated_at",
+      "time_partitioning_type": "DAY"
+    },
+    {
+      "clustering": [
+        "api",
+        "capability"
+      ],
+      "dataset_key": "tenant_ops",
+      "require_partition_filter": false,
+      "schema_json": "[{\"mode\":\"REQUIRED\",\"name\":\"profile_id\",\"type\":\"STRING\"},{\"mode\":\"NULLABLE\",\"name\":\"run_id\",\"type\":\"STRING\"},{\"mode\":\"REQUIRED\",\"name\":\"discovered_at\",\"type\":\"TIMESTAMP\"},{\"mode\":\"REQUIRED\",\"name\":\"api\",\"type\":\"STRING\"},{\"mode\":\"REQUIRED\",\"name\":\"capability\",\"type\":\"STRING\"},{\"mode\":\"REQUIRED\",\"name\":\"status\",\"type\":\"STRING\"},{\"mode\":\"NULLABLE\",\"name\":\"evidence_kind\",\"type\":\"STRING\"},{\"mode\":\"NULLABLE\",\"name\":\"http_status\",\"type\":\"INTEGER\"},{\"mode\":\"NULLABLE\",\"name\":\"evidence_json\",\"type\":\"STRING\"},{\"mode\":\"NULLABLE\",\"name\":\"notes\",\"type\":\"STRING\"}]",
+      "table_id": "CAPABILITY_PROFILE",
+      "time_partitioning_field": "discovered_at",
+      "time_partitioning_type": "DAY"
+    },
+    {
+      "clustering": [
+        "entity",
+        "status"
+      ],
+      "dataset_key": "tenant_ops",
+      "require_partition_filter": false,
+      "schema_json": "[{\"mode\":\"REQUIRED\",\"name\":\"entity\",\"type\":\"STRING\"},{\"mode\":\"REQUIRED\",\"name\":\"coverage_date\",\"type\":\"DATE\"},{\"mode\":\"REQUIRED\",\"name\":\"status\",\"type\":\"STRING\"},{\"mode\":\"NULLABLE\",\"name\":\"reason\",\"type\":\"STRING\"},{\"mode\":\"NULLABLE\",\"name\":\"rows_loaded\",\"type\":\"INTEGER\"},{\"mode\":\"NULLABLE\",\"name\":\"source_run_id\",\"type\":\"STRING\"},{\"mode\":\"REQUIRED\",\"name\":\"evaluated_at\",\"type\":\"TIMESTAMP\"}]",
+      "table_id": "DATA_COVERAGE",
+      "time_partitioning_field": "coverage_date",
+      "time_partitioning_type": "DAY"
+    },
+    {
+      "clustering": [
+        "check_id",
+        "status"
+      ],
+      "dataset_key": "tenant_ops",
+      "require_partition_filter": false,
+      "schema_json": "[{\"mode\":\"REQUIRED\",\"name\":\"result_id\",\"type\":\"STRING\"},{\"mode\":\"REQUIRED\",\"name\":\"check_id\",\"type\":\"STRING\"},{\"mode\":\"NULLABLE\",\"name\":\"period_from\",\"type\":\"DATE\"},{\"mode\":\"NULLABLE\",\"name\":\"period_to\",\"type\":\"DATE\"},{\"mode\":\"NULLABLE\",\"name\":\"metric\",\"type\":\"STRING\"},{\"mode\":\"NULLABLE\",\"name\":\"source_a\",\"type\":\"STRING\"},{\"mode\":\"NULLABLE\",\"name\":\"source_b\",\"type\":\"STRING\"},{\"mode\":\"NULLABLE\",\"name\":\"value_a\",\"type\":\"NUMERIC\"},{\"mode\":\"NULLABLE\",\"name\":\"value_b\",\"type\":\"NUMERIC\"},{\"mode\":\"NULLABLE\",\"name\":\"difference\",\"type\":\"NUMERIC\"},{\"mode\":\"NULLABLE\",\"name\":\"difference_pct\",\"type\":\"NUMERIC\"},{\"mode\":\"NULLABLE\",\"name\":\"tolerance_abs\",\"type\":\"NUMERIC\"},{\"mode\":\"NULLABLE\",\"name\":\"tolerance_pct\",\"type\":\"NUMERIC\"},{\"mode\":\"REQUIRED\",\"name\":\"status\",\"type\":\"STRING\"},{\"mode\":\"NULLABLE\",\"name\":\"explanation\",\"type\":\"STRING\"},{\"mode\":\"REQUIRED\",\"name\":\"evaluated_at\",\"type\":\"TIMESTAMP\"},{\"mode\":\"NULLABLE\",\"name\":\"run_id\",\"type\":\"STRING\"}]",
+      "table_id": "DQ_RESULTS",
+      "time_partitioning_field": "evaluated_at",
+      "time_partitioning_type": "DAY"
+    },
+    {
+      "clustering": [
+        "entity"
+      ],
+      "dataset_key": "tenant_ops",
+      "require_partition_filter": false,
+      "schema_json": "[{\"mode\":\"REQUIRED\",\"name\":\"boundary_id\",\"type\":\"STRING\"},{\"mode\":\"REQUIRED\",\"name\":\"entity\",\"type\":\"STRING\"},{\"mode\":\"NULLABLE\",\"name\":\"requested_from\",\"type\":\"DATE\"},{\"mode\":\"NULLABLE\",\"name\":\"api_documented_from\",\"type\":\"DATE\"},{\"mode\":\"NULLABLE\",\"name\":\"api_verified_from\",\"type\":\"DATE\"},{\"mode\":\"NULLABLE\",\"name\":\"first_observed_activity\",\"type\":\"DATE\"},{\"mode\":\"NULLABLE\",\"name\":\"first_data_date\",\"type\":\"DATE\"},{\"mode\":\"NULLABLE\",\"name\":\"available_to\",\"type\":\"DATE\"},{\"mode\":\"NULLABLE\",\"name\":\"backfill_from\",\"type\":\"DATE\"},{\"mode\":\"NULLABLE\",\"name\":\"backfill_to\",\"type\":\"DATE\"},{\"mode\":\"NULLABLE\",\"name\":\"limitation_reason\",\"type\":\"STRING\"},{\"mode\":\"REQUIRED\",\"name\":\"completeness_status\",\"type\":\"STRING\"},{\"mode\":\"REQUIRED\",\"name\":\"confidence\",\"type\":\"STRING\"},{\"mode\":\"NULLABLE\",\"name\":\"evidence_json\",\"type\":\"STRING\"},{\"mode\":\"REQUIRED\",\"name\":\"determined_at\",\"type\":\"TIMESTAMP\"},{\"mode\":\"NULLABLE\",\"name\":\"run_id\",\"type\":\"STRING\"}]",
+      "table_id": "HISTORY_BOUNDARIES",
+      "time_partitioning_field": "determined_at",
+      "time_partitioning_type": "DAY"
+    },
+    {
+      "clustering": [
+        "api",
+        "identity_fingerprint"
+      ],
+      "dataset_key": "tenant_ops",
+      "require_partition_filter": false,
+      "schema_json": "[{\"mode\":\"REQUIRED\",\"name\":\"observation_id\",\"type\":\"STRING\"},{\"mode\":\"NULLABLE\",\"name\":\"run_id\",\"type\":\"STRING\"},{\"mode\":\"REQUIRED\",\"name\":\"api\",\"type\":\"STRING\"},{\"mode\":\"REQUIRED\",\"name\":\"observed_at\",\"type\":\"TIMESTAMP\"},{\"mode\":\"REQUIRED\",\"name\":\"identity_fingerprint\",\"type\":\"STRING\"},{\"mode\":\"NULLABLE\",\"name\":\"seller_client_id\",\"type\":\"STRING\"},{\"mode\":\"NULLABLE\",\"name\":\"performance_client_id\",\"type\":\"STRING\"},{\"mode\":\"NULLABLE\",\"name\":\"company_inn\",\"type\":\"STRING\"},{\"mode\":\"NULLABLE\",\"name\":\"company_ogrn\",\"type\":\"STRING\"},{\"mode\":\"NULLABLE\",\"name\":\"company_name\",\"type\":\"STRING\"},{\"mode\":\"NULLABLE\",\"name\":\"legal_name\",\"type\":\"STRING\"},{\"mode\":\"NULLABLE\",\"name\":\"subscription_type\",\"type\":\"STRING\"},{\"mode\":\"NULLABLE\",\"name\":\"evidence_json\",\"type\":\"STRING\"},{\"mode\":\"REQUIRED\",\"name\":\"status\",\"type\":\"STRING\"}]",
+      "table_id": "SELLER_IDENTITY_OBSERVATIONS",
+      "time_partitioning_field": "observed_at",
+      "time_partitioning_type": "DAY"
+    },
+    {
+      "clustering": [
+        "to_state"
+      ],
+      "dataset_key": "tenant_ops",
+      "require_partition_filter": false,
+      "schema_json": "[{\"mode\":\"REQUIRED\",\"name\":\"event_id\",\"type\":\"STRING\"},{\"mode\":\"REQUIRED\",\"name\":\"tenant_id\",\"type\":\"STRING\"},{\"mode\":\"NULLABLE\",\"name\":\"from_state\",\"type\":\"STRING\"},{\"mode\":\"REQUIRED\",\"name\":\"to_state\",\"type\":\"STRING\"},{\"mode\":\"NULLABLE\",\"name\":\"reason_code\",\"type\":\"STRING\"},{\"mode\":\"NULLABLE\",\"name\":\"reason_detail\",\"type\":\"STRING\"},{\"mode\":\"NULLABLE\",\"name\":\"evidence_json\",\"type\":\"STRING\"},{\"mode\":\"REQUIRED\",\"name\":\"actor\",\"type\":\"STRING\"},{\"mode\":\"NULLABLE\",\"name\":\"run_id\",\"type\":\"STRING\"},{\"mode\":\"REQUIRED\",\"name\":\"occurred_at\",\"type\":\"TIMESTAMP\"}]",
+      "table_id": "TENANT_STATE_EVENTS",
+      "time_partitioning_field": "occurred_at",
       "time_partitioning_type": "DAY"
     }
   ],

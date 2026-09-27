@@ -22,6 +22,8 @@ from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[2]
 SCHEMA_DIR = REPO / "pipelines" / "ozon" / "schema"
+# Таблицы платформы (T4): не пишутся Ozon runtime по сущностям, а есть у каждого арендатора.
+PLATFORM_SCHEMA_DIR = REPO / "tools" / "tenancy" / "schema"
 
 # Имена job'ов и расписания (Europe/Moscow) = EVETIS (infra/terraform/ozon_ingestion.tf).
 OZON_TIME_ZONE = "Europe/Moscow"
@@ -70,6 +72,17 @@ ENTITY_TABLES: dict[str, tuple[str, ...]] = {
 # Справочные таблицы (датасет ref), которые runtime читает.
 ENTITY_REF_TABLES: dict[str, tuple[str, ...]] = {"promo": ("REF_SKU_CHANNEL_MAP",)}
 
+# Таблицы, которые есть у КАЖДОГО выделенного арендатора независимо от набора сущностей (T4):
+#   ref        — справочники, которые вводит оператор или продавец; runtime их только читает
+#                (подтверждённая привязка к кабинету — здесь, чтобы runtime не мог подтвердить сам);
+#   tenant_ops — операционное состояние: автомат, наблюдения identity, возможности, границы
+#                истории, покрытие, контрольные точки backfill, DQ.
+PLATFORM_TABLES: dict[str, tuple[str, ...]] = {
+    "ref": ("REF_SKU_CHANNEL_MAP", "SELLER_BINDING", "REF_PRODUCT_MASTER", "REF_COGS", "REF_TENANT_ECONOMICS"),
+    "tenant_ops": ("TENANT_STATE_EVENTS", "SELLER_IDENTITY_OBSERVATIONS", "CAPABILITY_PROFILE",
+                   "HISTORY_BOUNDARIES", "DATA_COVERAGE", "BACKFILL_CHECKPOINTS", "DQ_RESULTS"),
+}
+
 # API, нужные Ozon runtime в проекте арендатора (сверх базовых платформенных).
 OZON_APIS = ("bigquery.googleapis.com", "cloudscheduler.googleapis.com", "run.googleapis.com",
              "secretmanager.googleapis.com")
@@ -103,19 +116,28 @@ def jobs_for(entities) -> dict[str, dict]:
     return out
 
 
-def tables_for(entities) -> dict[str, list[str]]:
-    """{ключ датасета: [таблицы]} — всё, что должно существовать до первого прогона."""
+def tables_for(entities, include_platform: bool = True) -> dict[str, list[str]]:
+    """{ключ датасета: [таблицы]} — всё, что должно существовать до первого прогона.
+
+    include_platform=False — только таблицы Ozon runtime (для сверки паритета с EVETIS:
+    таблиц платформы у EVETIS нет и быть не должно).
+    """
     raw, ref = {RUNS_TABLE}, set()
     for e in entities:
         if e not in ENTITY_TABLES:
             raise ContractError(f"для сущности {e!r} не определены таблицы")
         raw.update(ENTITY_TABLES[e])
         ref.update(ENTITY_REF_TABLES.get(e, ()))
-    return {"ozon_raw": sorted(raw), "ref": sorted(ref)}
+    out = {"ozon_raw": sorted(raw), "ref": sorted(ref)}
+    if include_platform:
+        for ds, names in PLATFORM_TABLES.items():
+            out[ds] = sorted(set(out.get(ds, [])) | set(names))
+    return out
 
 
 def schema_path(dataset_key: str, table: str) -> Path:
-    return SCHEMA_DIR / dataset_key / f"{table}.json"
+    ozon = SCHEMA_DIR / dataset_key / f"{table}.json"
+    return ozon if ozon.is_file() else PLATFORM_SCHEMA_DIR / dataset_key / f"{table}.json"
 
 
 def load_table_spec(dataset_key: str, table: str) -> dict:
