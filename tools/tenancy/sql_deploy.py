@@ -91,6 +91,27 @@ def _strip_header_comments(sql: str) -> str:
     return "\n".join(lines)
 
 
+def _check_references(query: str, project: str, datasets: set, subject: str) -> None:
+    """Каждая ссылка на таблицу — ровно `<проект арендатора>.<датасет контракта>.<объект>`, по дереву
+    разбора: кавычки, регистр и сегментированные идентификаторы не обходят проверку."""
+    import sqlglot
+    from sqlglot import exp
+    try:
+        tree = sqlglot.parse_one(query, read="bigquery")
+    except sqlglot.errors.SqlglotError:
+        _fail(f"{subject}: тело представления не разбирается")
+    ctes = {c.alias_or_name for c in tree.find_all(exp.CTE)}
+    for tb in tree.find_all(exp.Table):
+        if not tb.catalog and not tb.db and tb.name in ctes:
+            continue
+        if (tb.catalog, tb.db) == ("", "") and isinstance(tb.this, exp.Unnest):
+            continue
+        parts = [x.name for x in tb.parts]
+        if len(parts) != 3 or tb.catalog != project or tb.db not in datasets or not tb.name or \
+                any("information_schema" in (x or "").lower() for x in parts):
+            _fail(f"{subject}: ссылка {'.'.join(x for x in parts if x)} вне проекта и датасетов арендатора")
+
+
 def load_package(tenant_id: str, root: Path, contract: dict, env: dict) -> list[ViewSpec]:
     expected_manifest = env.get("EXPECTED_MANIFEST_SHA256", "")
     expected_package = env.get("EXPECTED_PACKAGE_SHA256", "")
@@ -136,9 +157,7 @@ def load_package(tenant_id: str, root: Path, contract: dict, env: dict) -> list[
         query = mt["query"]
         if re.search(r"(?i)\b(CREATE|DROP|ALTER|INSERT|UPDATE|DELETE|MERGE|TRUNCATE|GRANT|REVOKE|EXPORT|CALL|EXECUTE)\b\s", query):
             _fail(f"{o['dataset']}.{o['name']}: в теле представления есть не-SELECT оператор")
-        for p in set(re.findall(r"`([a-z][a-z0-9-]+)\.[a-z_]+\.[A-Za-z_0-9]+`", query)):
-            if p != project:
-                _fail(f"{o['dataset']}.{o['name']}: ссылка на чужой проект {p}")
+        _check_references(query, project, set(contract["datasets"].values()), f"{o['dataset']}.{o['name']}")
         desc = mt["description"].replace("\\'", "'").replace("\\\\", "\\")
         specs.append(ViewSpec(o["order"], mt["dataset"], o["name"], desc, query))
         seen.add(f"{o['dataset_key']}.{o['name']}")
@@ -171,11 +190,18 @@ class BigQueryTables:
         return self._call("GET", self._t(dataset, name))
 
     def list(self, dataset):
-        code, body = self._call("GET", self._t(dataset) + "?maxResults=1000")
-        if code != 200:
-            _fail(f"tables.list {dataset}: HTTP {code}")
-        return [t["tableReference"]["tableId"] for t in body.get("tables") or []], \
-               {t["tableReference"]["tableId"]: t.get("type") for t in body.get("tables") or []}
+        tables, token = [], ""
+        while True:
+            q = "?maxResults=1000" + (f"&pageToken={urllib.parse.quote(token)}" if token else "")
+            code, body = self._call("GET", self._t(dataset) + q)
+            if code != 200:
+                _fail(f"tables.list {dataset}: HTTP {code}")
+            tables += body.get("tables") or []
+            token = body.get("nextPageToken") or ""
+            if not token:
+                break
+        return [t["tableReference"]["tableId"] for t in tables], \
+               {t["tableReference"]["tableId"]: t.get("type") for t in tables}
 
     def insert(self, dataset, resource):
         return self._call("POST", self._t(dataset), resource)
@@ -244,6 +270,15 @@ def verify_live(specs: list[ViewSpec], bq) -> None:
     print(f"живые представления = пакет: {len(specs)}")
 
 
+def check_writer(env: dict) -> None:
+    """Запись представлений — только владелец репозитория и только первая попытка прогона."""
+    from tools.tenancy import platform as PL
+    if env.get("GITHUB_ACTOR_ID") != PL.GITHUB_OWNER_ID:
+        _fail("sql-deploy запускает только владелец репозитория")
+    if env.get("GITHUB_RUN_ATTEMPT") != "1":
+        _fail("sql-deploy только первой попыткой прогона")
+
+
 def main(argv: list[str]) -> int:
     if len(argv) != 3 or argv[0] not in ("verify-package", "plan-live", "deploy", "verify-live"):
         print(__doc__, file=sys.stderr)
@@ -264,6 +299,7 @@ def main(argv: list[str]) -> int:
             for op, s in plan_live(specs, bq):
                 print(f"{op:6} {s.order:2} {s.dataset}.{s.name}")
         elif cmd == "deploy":
+            check_writer(dict(os.environ))
             deploy(specs, bq, contract["project_id"])
             verify_live(specs, bq)
         else:

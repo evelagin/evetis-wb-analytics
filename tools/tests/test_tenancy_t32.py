@@ -376,7 +376,7 @@ def test_workflow_is_dispatch_only_with_the_declared_inputs():
     assert re.findall(r"^  (\w+):", on_block, re.M) == ["workflow_dispatch"]
     assert re.findall(r"^      (\w+):", on_block, re.M) == WORKFLOW_INPUTS
     assert "options: [plan, apply, sql-preview, sql-deploy, sql-verify]" in on_block
-    for job in ("plan", "apply", "sql"):
+    for job in ("plan", "verify", "apply", "sql"):
         j = _job(wf, job)
         assert "github.ref == 'refs/heads/main'" in j and "github.event_name == 'workflow_dispatch'" in j, job
         assert 'test "$GITHUB_REF" = "refs/heads/main"' in j, job
@@ -385,18 +385,19 @@ def test_workflow_is_dispatch_only_with_the_declared_inputs():
 def test_workflow_jobs_are_separated_by_operation_and_plan_job_cannot_apply():
     wf = _wf()
     runs = {job: "\n".join(re.findall(r"run: (.+)", _job(wf, job))) + "\n".join(
-            re.findall(r"run: \|\n((?:          .+\n)+)", _job(wf, job))) for job in ("plan", "apply", "sql")}
+            re.findall(r"run: \|\n((?:          .+\n)+)", _job(wf, job))) for job in ("plan", "verify", "apply", "sql")}
     assert "inputs.operation == 'plan'" in _job(wf, "plan") and "inputs.operation == 'apply'" in _job(wf, "apply")
     assert "apply" not in runs["plan"] and "tenant_infra.py plan" in runs["plan"]
     assert "tenant_infra.py render" in runs["plan"] and "tenant_deploy.py package-plan" in runs["plan"]
-    assert "tenant_deploy.py fetch" in runs["apply"] and "tenant_deploy.py apply" in runs["apply"]
-    assert "tenant_infra.py plan" not in runs["apply"] and "package-plan" not in runs["apply"]
+    assert "tenant_deploy.py fetch" in runs["verify"] and "tenant_deploy.py apply" not in runs["verify"]
+    assert "tenant_deploy.py apply" in runs["apply"] and "tenant_deploy.py fetch" not in runs["apply"]
+    assert "tenant_infra.py plan" not in runs["apply"] + runs["verify"] and "package-plan" not in runs["apply"]
     assert "tenant_deploy" not in runs["sql"] and "sql_deploy.py" in runs["sql"]
     for job, r in runs.items():
         assert "terraform " not in r, job                       # Terraform — только через помощники
 
 
-def test_workflow_cannot_apply_and_takes_no_command_prefix_or_image():
+def test_workflow_takes_no_command_prefix_or_image_and_never_calls_terraform_directly():
     wf = _wf()
     runs = "\n".join(re.findall(r"run: (.+)", wf))
     assert "terraform " not in runs

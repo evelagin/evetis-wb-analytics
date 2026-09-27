@@ -9,15 +9,16 @@
       пересчитывает сканер по plan.json, считает дельту, хеши файлов, пишет
       deploy-metadata.json. Артефакт выгружает закреплённый upload-artifact.
 
-  fetch <tenant_id> <out_dir>           — в job'е apply, ДО аутентификации в GCP:
+  fetch <tenant_id> <out_dir>           — в job'е verify, где id-token НЕТ (нечем получить WIF):
       провенанс прогона-источника через API GitHub (тот же репозиторий по числовому id,
       этот workflow-файл, workflow_dispatch, main, success, коммит = ожидаемый = текущий
       HEAD main), ровно один артефакт с ожидаемым именем, не истёк, не старше
       MAX_ARTIFACT_AGE, zip совпадает с дайджестом GitHub, в zip ровно четыре файла,
       метаданные сходятся с API, входами оператора, файлами, свежим контрактом реестра,
-      lock-файлом провайдеров и раннером; секретоподобного содержимого нет.
+      lock-файлом провайдеров и раннером; секретоподобного содержимого нет. Проверенные файлы
+      передаются job'у apply артефактом этого же прогона.
 
-  apply <tenant_id> <verified_dir>      — после аутентификации WIF:
+  apply <tenant_id> <verified_dir>      — в job'е apply (needs: verify), после аутентификации WIF:
       повторная сверка хешей, init того же backend (-lockfile=readonly), show -json из
       БИНАРНОГО плана = plan.json артефакта байт в байт, сканер 0, дельта = ожидаемая,
       хеш бинарного плана ещё раз — и `terraform apply <tenant.tfplan>`.
@@ -26,10 +27,11 @@
 устаревший план Terraform отвергает сам («Saved plan is stale»). Любая проверка → DeployError,
 код выхода 1; молчаливого восстановления нет.
 
-Одобрение — это сам workflow_dispatch владельцем с точными входами (tenant_id, прогон-источник,
-коммит, sha256 плана и контракта, дельта). Второго человека GitHub Free (приватный
-репозиторий) не обеспечивает: environments с обязательными ревьюерами недоступны, и мы этого
-не имитируем.
+Одобрение — это сам workflow_dispatch с точными входами (tenant_id, прогон-источник, коммит,
+sha256 плана и контракта, дельта), и запустить apply может только владелец репозитория
+(GITHUB_ACTOR_ID) и только первой попыткой прогона: «Re-run» чужого или прежнего одобрения
+отвергается. Второго человека GitHub Free (приватный репозиторий) не обеспечивает: environments
+с обязательными ревьюерами недоступны, main не защищённая ветка, и мы этого не имитируем.
 """
 from __future__ import annotations
 
@@ -59,6 +61,7 @@ ARTIFACT_FILES = (TFPLAN, PLAN_JSON, CONTRACT, METADATA)
 ARTIFACT_RETENTION_DAYS = 3
 MAX_ARTIFACT_AGE = timedelta(hours=72)
 MAX_FILE_BYTES = 32 * 1024 * 1024
+MAX_ZIP_BYTES = 64 * 1024 * 1024
 LOCK_FILE = REPO / "infra" / "tenant" / ".terraform.lock.hcl"
 TENANT_ROOT = REPO / "infra" / "tenant"
 SOURCE_WORKFLOW_REF = f"{PL.GITHUB_REPOSITORY}/{PL.TENANT_INFRA_WORKFLOW}@refs/heads/main"
@@ -148,6 +151,10 @@ def check_invocation(env: dict, inputs: ApplyInputs) -> None:
         _fail("apply только из tenant-infra.yml@refs/heads/main")
     if env.get("GITHUB_SHA") != inputs.expected_source_commit:
         _fail("коммит плана не равен текущему HEAD main: main ушёл вперёд — нужен новый план")
+    if env.get("GITHUB_RUN_ATTEMPT") != "1":
+        _fail("apply только первой попыткой прогона: повторный запуск не переносит одобрение")
+    if env.get("GITHUB_ACTOR_ID") != PL.GITHUB_OWNER_ID:
+        _fail("apply запускает только владелец репозитория")
 
 
 # ═══════════════════════════════════════ план → метаданные (сторона plan)
@@ -175,7 +182,35 @@ def plan_delta(plan: dict) -> dict:
     for rc in plan.get("resource_changes") or []:
         if rc.get("change", {}).get("importing") or rc.get("previous_address"):
             d["forbidden"].append(f"{rc.get('address')}: import/move")
+        ch = rc.get("change", {})
+        if _any_true(ch.get("before_sensitive")) or _any_true(ch.get("after_sensitive")):
+            d["forbidden"].append(f"{rc.get('address')}: чувствительные значения в плане")
+    for k in ("action_invocations", "deferred_changes", "deferred_action_invocations"):
+        if plan.get(k):
+            d["forbidden"].append(f"{k}: не пусто")
+    if plan.get("errored") is True or plan.get("complete") is False:
+        d["forbidden"].append("план с ошибкой или неполный")
+    for name, oc in (plan.get("output_changes") or {}).items():
+        if _any_true(oc.get("after_sensitive")) or _any_true(oc.get("before_sensitive")):
+            d["forbidden"].append(f"output {name}: чувствительный")
+    def walk(mod):
+        for r in mod.get("resources") or []:
+            if _any_true(r.get("sensitive_values")):
+                d["forbidden"].append(f"state {r.get('address')}: чувствительные значения")
+        for c in mod.get("child_modules") or []:
+            walk(c)
+    walk(((plan.get("prior_state") or {}).get("values") or {}).get("root_module") or {})
     return d
+
+
+def _any_true(x) -> bool:
+    if x is True:
+        return True
+    if isinstance(x, dict):
+        return any(_any_true(v) for v in x.values())
+    if isinstance(x, list):
+        return any(_any_true(v) for v in x)
+    return False
 
 
 def _git_tree(sha_ref: str = "HEAD") -> str:
@@ -303,6 +338,8 @@ def select_artifact(artifacts: list[dict], inputs: ApplyInputs, attempt: str, no
     created = datetime.strptime(a.get("created_at", ""), "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=timezone.utc)
     if now - created > MAX_ARTIFACT_AGE or created > now + timedelta(minutes=5):
         _fail(f"артефакт вне окна свежести {MAX_ARTIFACT_AGE}")
+    if not isinstance(a.get("size_in_bytes"), int) or a["size_in_bytes"] > MAX_ZIP_BYTES:
+        _fail("размер артефакта неизвестен или больше предела")
     digest = a.get("digest") or ""
     if not re.fullmatch(r"sha256:[0-9a-f]{64}", digest):
         _fail("у артефакта нет дайджеста sha256 от GitHub")
@@ -310,6 +347,8 @@ def select_artifact(artifacts: list[dict], inputs: ApplyInputs, attempt: str, no
 
 
 def unpack_artifact(zip_bytes: bytes, digest: str) -> dict[str, bytes]:
+    if len(zip_bytes) > MAX_ZIP_BYTES:
+        _fail("zip артефакта больше предела")
     if "sha256:" + sha256_bytes(zip_bytes) != digest:
         _fail("zip артефакта не совпадает с дайджестом GitHub")
     try:
@@ -393,6 +432,12 @@ class GitHubApi:
             _fail(f"API прогона: HTTP {code}")
         return _json(body)
 
+    def main_head(self) -> str:
+        code, body, _ = self._get(f"{self.api}/repos/{PL.GITHUB_REPOSITORY}/git/ref/heads/main")
+        if code != 200:
+            _fail(f"API ветки main: HTTP {code}")
+        return str((_json(body).get("object") or {}).get("sha", ""))
+
     def artifacts(self, run_id: str) -> list[dict]:
         code, body, _ = self._get(f"{self.api}/repos/{PL.GITHUB_REPOSITORY}/actions/runs/{run_id}/artifacts?per_page=100")
         if code != 200:
@@ -418,6 +463,8 @@ def fetch(tenant_id: str, out_dir: Path, env: dict | None = None, api=None, now:
     check_invocation(env, inputs)
     api = api or GitHubApi(env.get("GITHUB_TOKEN", ""), env.get("GITHUB_API_URL", "https://api.github.com"))
     now = now or datetime.now(timezone.utc)
+    if api.main_head() != inputs.expected_source_commit:
+        _fail("живой HEAD main не равен коммиту плана: main ушёл вперёд — нужен новый план")
     attempt = check_source_run(api.run(inputs.source_run_id), inputs)
     art = select_artifact(api.artifacts(inputs.source_run_id), inputs, attempt, now)
     files = unpack_artifact(api.artifact_zip(art["id"]), art["digest"])
@@ -447,7 +494,8 @@ def _tf(args: list[str], cwd: Path) -> subprocess.CompletedProcess:
         for bad in ("-target", "-replace", "-destroy", "-refresh-only", "-auto-approve", "-var", "-var-file"):
             if any(a == bad or a.startswith(bad + "=") for a in args):
                 _fail(f"terraform apply {bad} запрещён")
-    proc = subprocess.run(["terraform", *args], cwd=cwd, text=True, capture_output=True)
+    env = {k: v for k, v in os.environ.items() if not k.startswith("TF_")}   # TF_CLI_ARGS*, TF_CLI_CONFIG_FILE…
+    proc = subprocess.run(["terraform", *args], cwd=cwd, text=True, capture_output=True, env=env)
     if args[:1] != ["show"]:
         sys.stdout.write(proc.stdout)
     sys.stderr.write(proc.stderr)
@@ -464,6 +512,8 @@ def apply(tenant_id: str, verified_dir: Path, env: dict | None = None, tf=_tf) -
     if inputs.tenant_id != tenant_id:
         _fail("tenant_id аргумента и входа различаются")
     check_invocation(env, inputs)
+    if sorted(p.name for p in verified_dir.iterdir()) != sorted(ARTIFACT_FILES):
+        _fail("в каталоге проверенного плана не ровно четыре файла артефакта")
     meta = _json((verified_dir / METADATA).read_bytes())
     for f, k in ((TFPLAN, "tfplan_sha256"), (PLAN_JSON, "plan_json_sha256"), (CONTRACT, "contract_sha256")):
         if sha256_file(verified_dir / f) != meta.get(k):

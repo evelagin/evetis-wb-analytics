@@ -97,13 +97,14 @@ def _env(**over) -> dict:
            "GITHUB_REPOSITORY": PL.GITHUB_REPOSITORY, "GITHUB_REPOSITORY_ID": PL.GITHUB_REPOSITORY_ID,
            "GITHUB_REF": "refs/heads/main", "GITHUB_EVENT_NAME": "workflow_dispatch",
            "GITHUB_WORKFLOW_REF": D.SOURCE_WORKFLOW_REF, "GITHUB_SHA": COMMIT, "RUNNER_OS": "Linux",
-           "RUNNER_ARCH": "X64"}
+           "RUNNER_ARCH": "X64", "GITHUB_RUN_ATTEMPT": "1", "GITHUB_ACTOR_ID": PL.GITHUB_OWNER_ID}
     env.update(over)
     return env
 
 
 class FakeApi:
-    def __init__(self, files=None, run=None, artifacts=None, zip_bytes=None):
+    def __init__(self, files=None, run=None, artifacts=None, zip_bytes=None, head=COMMIT):
+        self.head = head
         self.files = files if files is not None else _files()
         self.zip = zip_bytes if zip_bytes is not None else _zip(self.files)
         self._run = {"id": int(RUN_ID), "repository": {"id": int(PL.GITHUB_REPOSITORY_ID)},
@@ -112,7 +113,11 @@ class FakeApi:
         self._run.update(run or {})
         self._arts = artifacts if artifacts is not None else [{
             "id": 77, "name": D.artifact_name(TENANT, RUN_ID, "1"), "expired": False,
-            "created_at": "2026-09-27T19:00:00Z", "digest": "sha256:" + D.sha256_bytes(self.zip)}]
+            "created_at": "2026-09-27T19:00:00Z", "digest": "sha256:" + D.sha256_bytes(self.zip),
+            "size_in_bytes": len(self.zip)}]
+
+    def main_head(self):
+        return self.head
 
     def run(self, run_id):
         return copy.deepcopy(self._run)
@@ -250,8 +255,8 @@ def test_15_no_terraform_plan_in_apply_path():
     fn = next(n for n in src.body if isinstance(n, ast.FunctionDef) and n.name == "apply")
     literals = [c.value for c in ast.walk(fn) if isinstance(c, ast.Constant) and isinstance(c.value, str)]
     assert "plan" not in literals and "apply" in literals and "show" in literals and "init" in literals
-    apply_job = WF.split("\n  apply:\n", 1)[1].split("\n  sql:\n", 1)[0]
-    assert "tenant_infra.py plan" not in apply_job and "terraform plan" not in apply_job
+    for job in ("verify", "apply"):
+        assert "tenant_infra.py plan" not in _wf_job(job) and "terraform plan" not in _wf_job(job)
 
 
 def test_16_unexpected_delete_change_replace_forget(tmp_path):
@@ -377,25 +382,37 @@ def test_download_never_forwards_the_github_token_to_the_redirect_target(monkeyp
 
 # ═══════════════════════════════════════ workflow: статические инварианты
 def test_workflow_uploads_exactly_the_four_files_with_short_explicit_retention():
-    plan_job = WF.split("\n  plan:\n", 1)[1].split("\n  apply:\n", 1)[0]
+    plan_job = _wf_job("plan")
     up = plan_job.split("actions/upload-artifact@", 1)[1]
     assert "retention-days: 3" in up and "if-no-files-found: error" in up
     assert sorted(re.findall(r"/tenant/([a-z.\-]+)\n", up)) == sorted(D.ARTIFACT_FILES)
     assert D.ARTIFACT_RETENTION_DAYS == 3 and D.MAX_ARTIFACT_AGE <= timedelta(days=3)
 
 
-def test_workflow_apply_job_fetches_before_credentials_and_uses_same_wif():
-    apply_job = WF.split("\n  apply:\n", 1)[1].split("\n  sql:\n", 1)[0]
-    assert apply_job.index("tenant_deploy.py fetch") < apply_job.index("google-github-actions/auth@")
+def _wf_job(name):
+    from tools.tests.test_tenancy_t32 import _job
+    return _job(WF, name)
+
+
+def test_workflow_verify_job_has_no_id_token_and_apply_job_has_no_github_token():
+    verify, apply_job = _wf_job("verify"), _wf_job("apply")
+    code = "\n".join(l for l in verify.splitlines() if not l.strip().startswith("#"))
+    assert not re.search(r"(?m)^\s+id-token:", code) and "google-github-actions/auth@" not in code
+    assert "    permissions:\n      contents: read\n      actions: read\n" in verify
+    assert "tenant_deploy.py fetch" in verify and "GITHUB_TOKEN: ${{ github.token }}" in verify
+    assert "tenant_deploy.py fetch" not in apply_job and "github.token" not in apply_job
+    assert "actions: read" not in apply_job and "needs: verify" in apply_job
+    assert "name: verified-plan-${{ github.run_id }}-${{ github.run_attempt }}" in verify
+    assert "name: verified-plan-${{ github.run_id }}-${{ github.run_attempt }}" in apply_job
+    assert "retention-days: 1" in verify
+    assert apply_job.index("actions/download-artifact@") < apply_job.index("google-github-actions/auth@")
     assert apply_job.index("google-github-actions/auth@") < apply_job.index("tenant_deploy.py apply")
     assert f"workload_identity_provider: {PL.WIF_PROVIDER}" in apply_job
     assert f"service_account: {PL.PROVISIONER_SA}" in apply_job
-    assert "GITHUB_TOKEN: ${{ github.token }}" in apply_job.split("tenant_deploy.py fetch")[0]
-    assert apply_job.count("github.token") == 1                          # токен GitHub — только шагу fetch
 
 
 def test_workflow_runners_are_pinned_for_plan_apply_portability():
-    assert WF.count("runs-on: ubuntu-24.04") == 3 and "ubuntu-latest" not in WF
+    assert WF.count("runs-on: ubuntu-24.04") == 4 and "ubuntu-latest" not in WF
 
 
 def test_repository_id_constant_matches_wif_condition():
@@ -527,3 +544,81 @@ def test_sql_helper_calls_no_query_jobs_or_acl_endpoints():
     for bad in ("/jobs", "/queries", "setIamPolicy", "datasets/{" + "}", "PATCH"):
         assert bad not in code, bad
     assert "tables.insert" in src and "bigquery.jobs.create" in src      # документировано, что jobs нет
+
+
+# ═══════════════════════════════════════ ревью пути: повторный запуск, владелец, живой main, план
+def test_rerun_attempt_cannot_reuse_approval(tmp_path):
+    _fails(_fetch, tmp_path, env=_env(GITHUB_RUN_ATTEMPT="2"), match="первой попыткой")
+
+
+def test_only_the_repository_owner_can_apply(tmp_path):
+    _fails(_fetch, tmp_path, env=_env(GITHUB_ACTOR_ID="12345"), match="владелец")
+
+
+def test_live_main_moved_after_dispatch(tmp_path):
+    _fails(_fetch, tmp_path, api=FakeApi(head="d" * 40), match="живой HEAD main")
+
+
+@pytest.mark.parametrize("edit,why", [
+    (lambda p: p.update(action_invocations=[{"address": "action.x"}]), "action_invocations"),
+    (lambda p: p.update(deferred_changes=[{"reason": "x"}]), "deferred_changes"),
+    (lambda p: p.update(errored=True), "ошибкой"),
+    (lambda p: p.update(complete=False), "неполный"),
+    (lambda p: p["resource_changes"][1]["change"].update(after_sensitive={"x": True}), "чувствительные"),
+    (lambda p: p.update(output_changes={"o": {"actions": ["create"], "after_sensitive": True}}), "чувствительный"),
+])
+def test_plan_side_effects_and_sensitive_values_are_forbidden(edit, why):
+    bad = copy.deepcopy(PLAN)
+    edit(bad)
+    assert any(why in f for f in D.plan_delta(bad)["forbidden"]), D.plan_delta(bad)["forbidden"]
+
+
+def test_terraform_subprocess_does_not_inherit_tf_environment(monkeypatch):
+    seen = {}
+
+    class R:
+        returncode, stdout, stderr = 0, "", ""
+
+    def fake_run(cmd, **kw):
+        seen.update(kw["env"])
+        return R()
+    monkeypatch.setenv("TF_CLI_ARGS_init", "-plugin-dir=/evil")
+    monkeypatch.setenv("TF_CLI_CONFIG_FILE", "/evil.tfrc")
+    monkeypatch.setattr(D.subprocess, "run", fake_run)
+    D._tf(["init", "-input=false"], REPO)
+    assert not [k for k in seen if k.startswith("TF_")] and "PATH" in seen
+
+
+def test_oversized_artifact_is_refused(tmp_path):
+    api = FakeApi()
+    api._arts[0]["size_in_bytes"] = D.MAX_ZIP_BYTES + 1
+    _fails(_fetch, tmp_path, api=api, match="размер")
+
+
+def test_apply_dir_must_hold_exactly_the_artifact_files(tmp_path):
+    _fetch(tmp_path)
+    (tmp_path / "frozen" / "extra.tf").write_text("x")
+    _fails(D.apply, TENANT, tmp_path / "frozen", env=_env(), tf=_fake_tf(), match="ровно четыре")
+
+
+@pytest.mark.parametrize("ref", ["`evetis-analytics`.wb_raw.T", "`mpa-t-client-001.wb_mart2.T`",
+                                 "`mpa-t-client-001`.`ozon_mart`.`X`.`Y`", "`mpa-t-client-001.region-eu.INFORMATION_SCHEMA.JOBS`",
+                                 "other_proj.ozon_mart.T", "`mpa-t-client-001.OZON_MART.T`"])
+def test_sql_references_are_checked_on_the_parse_tree(ref):
+    with pytest.raises(SD.SqlDeployError):
+        SD._check_references(f"SELECT a FROM {ref}", "mpa-t-client-001",
+                             {"ozon_mart", "ozon_raw", "ref", "tenant_ops", "analytics_share"}, "t")
+    SD._check_references("WITH c AS (SELECT 1 AS a) SELECT a FROM c JOIN `mpa-t-client-001.ozon_mart.X` x ON TRUE",
+                         "mpa-t-client-001", {"ozon_mart"}, "t")
+
+
+@pytest.mark.parametrize("env", [{"GITHUB_ACTOR_ID": "1", "GITHUB_RUN_ATTEMPT": "1"},
+                                 {"GITHUB_ACTOR_ID": PL.GITHUB_OWNER_ID, "GITHUB_RUN_ATTEMPT": "2"}, {}])
+def test_sql_deploy_requires_owner_and_first_attempt(env):
+    with pytest.raises(SD.SqlDeployError):
+        SD.check_writer(env)
+    SD.check_writer({"GITHUB_ACTOR_ID": PL.GITHUB_OWNER_ID, "GITHUB_RUN_ATTEMPT": "1"})
+
+
+def test_owner_id_constant_matches_wif_condition():
+    assert f"assertion.repository_owner_id == '{PL.GITHUB_OWNER_ID}'" in PL.WIF_ATTRIBUTE_CONDITION

@@ -14,7 +14,11 @@
   `terraform apply <файл>`).
 - `tools/tenancy/sql_deploy.py`: представления пакета через `tables.insert/update`, без query
   jobs, ACL и IAM; хеши манифеста и пакета — входы; чтение назад и сверка.
-- `platform.GITHUB_REPOSITORY_ID`. Тесты T3.2 «в workflow нет apply» заменены более строгими:
+- Ревью пути: проверка артефакта — в job'е `verify` без `id-token`; apply — только владелец
+  и первая попытка прогона, коммит = живой HEAD main; запрещены `action_invocations`,
+  `deferred_changes`, неполный план и чувствительные значения; Terraform без `TF_*` из
+  окружения; SQL-ссылки проверяются по дереву разбора.
+- `platform.GITHUB_REPOSITORY_ID`, `GITHUB_OWNER_ID`. Тесты T3.2 «в workflow нет apply» заменены более строгими:
   по job'ам, ровно 5 закреплённых action'ов, права по job'ам, токен GitHub — только шагу fetch.
 - `TENANCY_DESIGN.md` §4d: архитектура, проверки, честное описание одобрения, ранбук.
 

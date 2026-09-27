@@ -664,8 +664,9 @@ def _wf():
 def test_every_action_is_pinned_to_a_full_commit_sha_with_a_version_comment():
     uses = re.findall(r"uses:\s*(\S+)(.*)", _wf())
     assert {r.split("@")[0] for r, _ in uses} == {"actions/checkout", "actions/setup-python", "hashicorp/setup-terraform",
-                                                "google-github-actions/auth", "actions/upload-artifact"}
-    assert len({r for r, _ in uses}) == 5                      # одна закреплённая версия на action
+                                                "google-github-actions/auth", "actions/upload-artifact",
+                                                "actions/download-artifact"}
+    assert len({r for r, _ in uses}) == 6                      # одна закреплённая версия на action
     for ref, comment in uses:
         assert re.fullmatch(r"[\w.-]+/[\w.-]+@[0-9a-f]{40}", ref), ref
         assert re.search(r"#\s*v\d+\.\d+\.\d+", comment), ref
@@ -676,7 +677,8 @@ def test_workflow_permissions_are_minimal_per_job():
     wf = _wf()
     assert re.search(r"\npermissions:\n  contents: read\n  id-token: write\n\n", wf)      # верхний уровень не менялся
     assert "permissions:" not in _job(wf, "plan") and "permissions:" not in _job(wf, "sql")
-    assert "    permissions:\n      contents: read\n      id-token: write\n      actions: read\n" in _job(wf, "apply")
+    assert "    permissions:\n      contents: read\n      actions: read\n    env:" in _job(wf, "verify")
+    assert "    permissions:\n      contents: read\n      id-token: write\n    env:" in _job(wf, "apply")
     assert re.findall(r"(?m)^\s+([a-z-]+): write$", wf) == ["id-token", "id-token"]  # только id-token (верх и apply)
     runs = "\n".join(re.findall(r"run: (.+)", _job(wf, "plan")))
     assert "apply" not in runs and "tenant_infra.py plan" in runs

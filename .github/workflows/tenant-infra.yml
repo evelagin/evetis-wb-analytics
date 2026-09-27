@@ -7,15 +7,16 @@ name: tenant-infra
 #
 # operation:
 #   plan        — план → сканер → хеши и метаданные → неизменяемый артефакт (3 дня). Не применяет.
-#   apply       — только проверенный артефакт прогона plan: провенанс по API GitHub, хеши,
-#                 контракт, сканер, дельта; затем `terraform apply <tenant.tfplan>`. Плана нет.
+#   apply       — job verify (без id-token): провенанс артефакта прогона plan по API GitHub,
+#                 хеши, контракт, сканер, дельта; job apply (needs: verify): WIF и
+#                 `terraform apply <tenant.tfplan>` ровно проверенного файла. Плана нет.
 #   sql-preview — только чтение: что пакет SQL создаст/обновит (Tables API).
 #   sql-deploy  — представления пакета через tables.insert/update, чтение назад и сверка.
 #   sql-verify  — только чтение: живые представления = пакет.
 #
-# Одобрение — сам запуск владельцем с точными входами. Environments с обязательными ревьюерами
-# в приватном репозитории на GitHub Free недоступны; второго человека здесь нет, и мы этого не
-# изображаем.
+# Одобрение — сам запуск владельцем (GITHUB_ACTOR_ID, первая попытка прогона) с точными входами.
+# Environments с обязательными ревьюерами в приватном репозитории на GitHub Free недоступны, main
+# не защищённая ветка; второго человека здесь нет, и мы этого не изображаем.
 #
 # Входы идут в шаги только через env и сверяются по форме до всего остального. Проект, префикс
 # state, образ и команды Terraform выводятся из реестра (tools/tenancy/tenant_infra.py).
@@ -23,7 +24,7 @@ name: tenant-infra
 # Цепочка поставки (M5): все actions закреплены полным SHA коммита (тег — в комментарии);
 # провайдеры Terraform — только из закоммиченного .terraform.lock.hcl (-lockfile=readonly).
 # Токен получает любой шаг job'а с id-token: write, поэтому сторонний код здесь — только
-# закреплённые action'ы: checkout, setup-python, setup-terraform, auth, upload-artifact.
+# закреплённые action'ы: checkout, setup-python, setup-terraform, auth, upload-/download-artifact.
 on:
   workflow_dispatch:
     inputs:
@@ -136,13 +137,15 @@ jobs:
           retention-days: 3
           if-no-files-found: error
 
-  apply:
+  verify:
+    # Проверка замороженного плана — в job'е БЕЗ id-token: здесь нельзя получить WIF, а API GitHub
+    # и скачанный zip обрабатываются только тут. Проверенные файлы уходят job'у apply артефактом
+    # этого же прогона (1 день); apply снова сверяет их с sha256 оператора.
     runs-on: ubuntu-24.04
     if: github.ref == 'refs/heads/main' && github.event_name == 'workflow_dispatch' && inputs.operation == 'apply'
-    timeout-minutes: 30
+    timeout-minutes: 15
     permissions:
       contents: read
-      id-token: write
       actions: read
     env:
       TENANT_ID: ${{ inputs.tenant_id }}
@@ -177,10 +180,52 @@ jobs:
         run: "pip install --only-binary=:all: --require-hashes -r tools/requirements-sql-ci.txt"
       - name: validate tenant registry
         run: python tools/tenancy/registry.py validate
-      - name: fetch and verify frozen plan (before any GCP credential)
+      - name: fetch and verify frozen plan (no id-token in this job)
         env:
           GITHUB_TOKEN: ${{ github.token }}
         run: python tools/tenancy/tenant_deploy.py fetch "$TENANT_ID" "$RUNNER_TEMP/frozen"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: verified-plan-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            ${{ runner.temp }}/frozen/tenant.tfplan
+            ${{ runner.temp }}/frozen/plan.json
+            ${{ runner.temp }}/frozen/contract.auto.tfvars.json
+            ${{ runner.temp }}/frozen/deploy-metadata.json
+          retention-days: 1
+          if-no-files-found: error
+
+  apply:
+    runs-on: ubuntu-24.04
+    needs: verify
+    if: github.ref == 'refs/heads/main' && github.event_name == 'workflow_dispatch' && inputs.operation == 'apply'
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      id-token: write
+    env:
+      TENANT_ID: ${{ inputs.tenant_id }}
+      SOURCE_RUN_ID: ${{ inputs.source_run_id }}
+      EXPECTED_SOURCE_COMMIT: ${{ inputs.expected_source_commit }}
+      EXPECTED_TFPLAN_SHA256: ${{ inputs.expected_tfplan_sha256 }}
+      EXPECTED_CONTRACT_SHA256: ${{ inputs.expected_contract_sha256 }}
+      EXPECTED_DELTA: ${{ inputs.expected_delta }}
+    steps:
+      - name: only main
+        run: |
+          test "$GITHUB_REF" = "refs/heads/main" || { echo "только refs/heads/main"; exit 1; }
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+        with:
+          python-version: "3.12"
+      - name: install pinned dependencies (hash-checked)
+        run: "pip install --only-binary=:all: --require-hashes -r tools/requirements-sql-ci.txt"
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: verified-plan-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/frozen
       - uses: hashicorp/setup-terraform@b9cd54a3c349d3f38e8881555d616ced269862dd # v3.1.2
         with:
           terraform_version: "1.15.8"
@@ -189,7 +234,7 @@ jobs:
         with:
           workload_identity_provider: projects/777428383056/locations/global/workloadIdentityPools/tenant-infra-pool/providers/github-tenant-infra
           service_account: sa-tenant-provisioner@mpa-platform.iam.gserviceaccount.com
-      - name: apply exact frozen plan (init, re-verify, apply file; never plan)
+      - name: apply exact frozen plan (re-verify vs operator sha, init, show, apply file; never plan)
         run: python tools/tenancy/tenant_deploy.py apply "$TENANT_ID" "$RUNNER_TEMP/frozen"
 
   sql:
