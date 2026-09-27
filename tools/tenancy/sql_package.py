@@ -118,9 +118,10 @@ def load_manifest(root: Path) -> dict:
 
 def contract_schema(contract: dict) -> dict[tuple[str, str], dict[str, str]]:
     """{(ключ датасета, таблица): {колонка: тип}} — таблицы контракта (ozon_raw, ref, tenant_ops)."""
+    from tools.tenancy.validation import parse_tenant_json   # единый строгий разборщик JSON
     out = {}
     for t in contract["tables"]:
-        cols = {f["name"]: f["type"] for f in json.loads(t["schema_json"])}
+        cols = {f["name"]: f["type"] for f in parse_tenant_json(t["schema_json"])}
         out[(t["dataset_key"], t["table_id"])] = cols
     return out
 
