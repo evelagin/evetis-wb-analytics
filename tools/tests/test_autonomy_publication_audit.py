@@ -106,14 +106,26 @@ def test_commissioning_assess_needs_trusted_evidence():
 
 
 def test_engineer_cannot_declare_zero_mutations(tmp_path):
-    """Вывод недоверенного job'а (любые его файлы) не создаёт доверенного доказательства аудита."""
+    """Вывод недоверенного job'а не создаёт доверенного доказательства аудита: ни необъявленные файлы, ни
+    поля в ОБЪЯВЛЕННЫХ и подписанных артефактах (их схемы закрыты: additionalProperties=false)."""
+    from tools.autonomy.agents import sha256_file
+    fake = {"audit_status": "PASS", "audit_evidence": {"status": "PASS", "mutations": 0}}
     p = Pipeline(tmp_path)
     run_id, out, hashes = run_until_testing(p)
-    (out / "usage.json").write_text(json.dumps([{"audit_status": "PASS", "audit_evidence": {"status": "PASS"}}]))
-    (out / "scratch_state.json").write_text(json.dumps({"state": "READY_FOR_PR", "audit_status": "PASS"}))
+    (out / "usage.json").write_text(json.dumps([fake]))
+    (out / "scratch_state.json").write_text(json.dumps({"state": "READY_FOR_PR", **fake}))
     run = p.orch(p.branch, engineer=ReplayAdapter(out, hashes)).advance(run_id, stop_before={"TESTING"})
     assert run["state"] == "TESTING" and "audit_evidence" not in run
     assert run.get("audit_status") in (None, "NOT_APPLICABLE") and not zero_mutations_proven(run)[0]
+    # поле аудита в подписанном плане и в подписанной диагностике — отказ схемы, а не доказательство
+    p2 = Pipeline(tmp_path / "b")
+    run_id2, out2, _ = run_until_testing(p2)
+    for name in ("engineer_plan.json", "engineer_diagnostics.json"):
+        doc = json.loads((out2 / name).read_text()); doc.update(fake)
+        (out2 / name).write_text(json.dumps(doc, ensure_ascii=False))
+    signed = {f.name: sha256_file(f) for f in out2.iterdir() if f.name.startswith("engineer_")}
+    run2 = p2.orch(p2.branch, engineer=ReplayAdapter(out2, signed)).advance(run_id2, stop_before={"TESTING"})
+    assert run2["state"] == "BLOCKED" and "audit_evidence" not in run2 and not zero_mutations_proven(run2)[0]
 
 
 # ------------------------------------------------------------- публикация кандидата ---
@@ -148,7 +160,8 @@ class FakeGhPublisher(GitPublisher):
             if cmd[1:3] == ["pr", "list"]:
                 return json.dumps(self.prs)
             if cmd[1:3] == ["pr", "create"]:
-                self.prs = [{"url": "https://github.com/o/r/pull/1", "isDraft": True, "baseRefName": "main"}]
+                self.prs = [{"url": "https://github.com/o/r/pull/1", "isDraft": True, "baseRefName": "main",
+                             "isCrossRepository": False, "headRefOid": "created"}]
                 return "https://github.com/o/r/pull/1"
             return ""
         return super()._x(cmd, cwd, mutating)
@@ -201,13 +214,15 @@ def test_existing_different_candidate_branch_is_never_overwritten(tmp_path):
     assert F.git(bare, "rev-parse", f"refs/heads/{branch}") == before and pub.gh_calls == []
 
 
-@pytest.mark.parametrize("pr", [{"url": "u", "isDraft": False, "baseRefName": "main"},
-                                {"url": "u", "isDraft": True, "baseRefName": "release"}])
-def test_existing_non_draft_or_foreign_base_pr_is_refused(tmp_path, pr):
+@pytest.mark.parametrize("pr", [{"isDraft": False, "baseRefName": "main"},
+                                {"isDraft": True, "baseRefName": "release"},
+                                {"isDraft": True, "baseRefName": "main", "headRefOid": "0" * 40}])
+def test_existing_non_draft_foreign_base_or_other_head_pr_is_refused(tmp_path, pr):
     p = Pipeline(tmp_path)
     _with_remote(p)
     run_id = _ready_for_pr(p)
-    pub = FakeGhPublisher(p.repo, prs=[pr])
+    head = _publish(p, run_id, FakeGhPublisher(p.repo))["head_sha"]
+    pub = FakeGhPublisher(p.repo, prs=[{"url": "u", "isCrossRepository": False, "headRefOid": head, **pr}])
     with pytest.raises(PublishRefused, match="не draft"):
         _publish(p, run_id, pub)
     assert not any(c[:2] == ["pr", "create"] for c in pub.gh_calls)
@@ -217,9 +232,23 @@ def test_existing_draft_pr_is_reused_not_duplicated(tmp_path):
     p = Pipeline(tmp_path)
     _with_remote(p)
     run_id = _ready_for_pr(p)
-    pub = FakeGhPublisher(p.repo, prs=[{"url": "https://github.com/o/r/pull/7", "isDraft": True, "baseRefName": "main"}])
+    head = _publish(p, run_id, FakeGhPublisher(p.repo))["head_sha"]
+    pub = FakeGhPublisher(p.repo, prs=[{"url": "https://github.com/o/r/pull/7", "isDraft": True, "baseRefName": "main",
+                                         "isCrossRepository": False, "headRefOid": head}])
     assert _publish(p, run_id, pub)["url"] == "https://github.com/o/r/pull/7"
     assert not any(c[:2] == ["pr", "create"] for c in pub.gh_calls)
+
+
+def test_fork_pr_with_same_branch_name_is_ignored_not_adopted(tmp_path):
+    """gh pr list --head не различает форк: чужой draft PR с тем же именем ветки не становится PR прогона."""
+    p = Pipeline(tmp_path)
+    _with_remote(p)
+    run_id = _ready_for_pr(p)
+    fork = {"url": "https://github.com/attacker/r/pull/9", "isDraft": True, "baseRefName": "main",
+            "isCrossRepository": True, "headRefOid": "f" * 40}
+    pub = FakeGhPublisher(p.repo, prs=[fork])
+    out = _publish(p, run_id, pub)
+    assert out["url"] == "https://github.com/o/r/pull/1" and any(c[:2] == ["pr", "create"] for c in pub.gh_calls)
 
 
 def test_publication_refused_without_trusted_audit(tmp_path):
@@ -263,6 +292,25 @@ def test_only_the_publish_job_has_pull_requests_write():
     assert holders == [("autonomy-run.yml", "publish")]
     for wf in AE_WORKFLOWS:
         assert not re.search(r"gh pr (merge|review|ready)|pulls/\S+/(merge|reviews)", text(wf)), wf.name
+
+
+def test_audit_fail_is_persisted_not_lost_when_the_step_would_fail():
+    """FAIL аудита (найдены мутации) обязан попасть в autonomy-state: команда аудита не роняет шаг до
+    persist, а job помечается ::error::."""
+    gate = (WF / "autonomy-gate.yml").read_text()
+    block = gate.split("            audit)", 1)[1].split(";;", 1)[0]
+    assert '|| audit_rc=$?' in block and '::error::доверенный аудит не PASS' in block
+
+
+def test_trusted_audit_fail_is_saved_with_evidence(tmp_path):
+    p = Pipeline(tmp_path)
+    run_id = p.orch(p.branch).submit(p.objective())[0]["run_id"]
+    p.orch(p.branch, audit=lambda r: {"status": "FAIL", "mutations": 3, "by_type": {"INSERT": 3}}).trusted_audit(run_id)
+    run = p.branch.load(run_id)
+    assert run["audit_status"] == "FAIL" and run["production_mutations"] == 3
+    assert run["audit_evidence"]["status"] == "FAIL" and not zero_mutations_proven(run)[0]
+    from tools.autonomy.report import render_report
+    assert "доверенный аудит: **FAIL**" in render_report(run, p.branch.root / "artifacts" / run_id)
 
 
 def test_audit_step_sits_between_gate_and_publish_and_uses_real_audit():

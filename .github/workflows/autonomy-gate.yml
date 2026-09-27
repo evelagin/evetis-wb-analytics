@@ -124,10 +124,16 @@ jobs:
                   --pending-dir "$PENDING" --expect "${expect[@]}" --stop-before FIXING PLANNING IMPLEMENTING TESTING
               fi ;;
             audit)
+              # Результат (в т.ч. FAIL с найденными мутациями) ОБЯЗАН попасть в autonomy-state: шаг не
+              # падает до persist, а публикатор отвергнет публикацию по доказательству FAIL/отсутствию PASS.
               if [ "$state" = "READY_FOR_PR" ]; then
+                audit_rc=0
                 python -m tools.autonomy.cli audit "${common[@]}" --run-id "$RUN_ID" \
                   --project "$GCP_PROJECT_ID" --token-command "gcloud auth print-access-token" \
-                  --audit-identity "$AE_READER_SA"
+                  --audit-identity "$AE_READER_SA" || audit_rc=$?
+                if [ "$audit_rc" != 0 ]; then
+                  echo "::error::доверенный аудит не PASS (код $audit_rc) — публикация будет отвергнута"
+                fi
               else echo "audit: состояние $state — аудит перед публикацией не нужен"; fi ;;
           esac
           echo "state=$(python -m tools.autonomy.cli status --state-dir "$STATE_DIR" --run-id "$RUN_ID" | awk '{print $2}')" >> "$GITHUB_OUTPUT"

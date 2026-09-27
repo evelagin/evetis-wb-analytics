@@ -91,18 +91,24 @@ class GitPublisher:
         if self.dry_run:
             return None
         out = self._x(["git", "ls-remote", "--heads", self.remote, f"refs/heads/{branch}"], cwd)
-        return out.split()[0] if out.strip() else None
+        exact = [ln.split()[0] for ln in out.splitlines() if ln.split()[1:] == [f"refs/heads/{branch}"]]
+        return exact[0] if exact else None
 
-    def _existing_pr(self, branch: str, cwd: Path) -> str | None:
+    def _existing_pr(self, branch: str, head_sha: str, cwd: Path) -> str | None:
+        """Открытый PR ЭТОГО репозитория из ветки кандидата. PR из форков с тем же именем ветки не наши
+        и игнорируются (gh pr list --head не различает владельца). Свой PR переиспользуется только если он
+        draft, в base и его head — ровно проверенный head_sha; иначе отказ."""
         if self.dry_run:
             return None
-        prs = json.loads(self._gh(["pr", "list", "--head", branch, "--state", "open",
-                                   "--json", "url,isDraft,baseRefName"], cwd) or "[]")
-        if not prs:
+        prs = json.loads(self._gh(["pr", "list", "--head", branch, "--state", "open", "--json",
+                                   "url,isDraft,baseRefName,headRefOid,isCrossRepository"], cwd) or "[]")
+        own = [pr for pr in prs if pr.get("isCrossRepository") is False]
+        if not own:
             return None
-        pr = prs[0]
-        if not pr.get("isDraft") or pr.get("baseRefName") != self.base:
-            raise PublishRefused(f"открытый PR ветки {branch} не draft или не в {self.base} — не трогаю")
+        pr = own[0]
+        if not pr.get("isDraft") or pr.get("baseRefName") != self.base or pr.get("headRefOid") != head_sha:
+            raise PublishRefused(f"открытый PR ветки {branch} не draft, не в {self.base} или не на проверенном "
+                                 f"{head_sha[:12]} — не трогаю")
         return pr["url"]
 
     def publish(self, run: dict, patch: str, art_dir: Path, required_workflows: list[str]) -> dict:
@@ -148,7 +154,7 @@ class GitPublisher:
                                              f"кандидатом ({remote_sha[:12]}) — не перезаписываю")
                     head_sha = remote_sha
                 (Path(td) / "body.md").write_text(body, encoding="utf-8")
-                url = self._existing_pr(branch, ws) or self._gh(
+                url = self._existing_pr(branch, head_sha, ws) or self._gh(
                     ["pr", "create", "--draft", "--base", self.base, "--head", branch,
                      "--title", f"[AE draft] {run['objective_id']}", "--body-file", str(Path(td) / "body.md")],
                     ws, mutating=True)

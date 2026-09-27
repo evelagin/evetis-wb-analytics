@@ -52,7 +52,9 @@ def render_report(run: dict, art_dir: Path) -> str:
         f"**Прогон** `{run['run_id']}` · состояние **{run['state']}** · итераций {run['iteration']} · "
         f"циклов ревью {run['review_cycles']}",
         f"**Гейткипер:** {gate.get('verdict', '—')} · **Ревьюер:** {(rev or {}).get('verdict', '—')}",
-        f"**Production-мутаций:** {run['production_mutations']} (AE v1 обязан держать 0)",
+        f"**Production-мутаций:** {run['production_mutations']} (AE v1 обязан держать 0) · доверенный аудит: "
+        f"**{(run.get('audit_evidence') or {}).get('status', 'нет')}**"
+        f"{' (' + str((run.get('audit_evidence') or {}).get('audited_at')) + ')' if run.get('audit_evidence') else ''}",
         "",
         "### Первопричина",
         (rep.get("root_cause") or "не установлена") + ("" if rep.get("root_cause_established") else
