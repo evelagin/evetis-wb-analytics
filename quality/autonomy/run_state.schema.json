@@ -209,6 +209,49 @@
           ]
         }
       }
+    },
+    "audit_evidence": {
+      "description": "Доверенный аудит production-мутаций (tools/autonomy/audit.py → orchestrator._merge_audit). Пишется только доверенными job'ами; NOT_APPLICABLE сюда не попадает.",
+      "type": [
+        "object",
+        "null"
+      ],
+      "additionalProperties": false,
+      "required": [
+        "status",
+        "mutations",
+        "audited_at",
+        "since",
+        "usage_count"
+      ],
+      "properties": {
+        "status": {
+          "enum": [
+            "PASS",
+            "FAIL",
+            "BLOCKED"
+          ]
+        },
+        "mutations": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0
+        },
+        "audited_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "since": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "usage_count": {
+          "type": "integer",
+          "minimum": 0
+        }
+      }
     }
   }
 }

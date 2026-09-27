@@ -128,12 +128,7 @@ class Orchestrator:
                 adapter.bind_run(run["run_id"])        # диагностика чужого прогона отвергается при проверке
             res = adapter.run(role, prompt, workdir, load_schema(SCHEMA_OF_ROLE[role]))
             run = self._record_agent(run, adapter, role, res)
-            a = self.audit(run)
-            a = {"status": "PASS" if a == 0 else "FAIL", "mutations": a} if isinstance(a, int) else a
-            # BLOCKED — доказательства нет; это НЕ ноль мутаций, гейткипер даст INCONCLUSIVE.
-            run = {**run, "audit_status": a["status"]}
-            if a.get("mutations"):
-                run = {**run, "production_mutations": run["production_mutations"] + int(a["mutations"])}
+            run = self._merge_audit(run, self.audit(run))
             self.store.save(run)
             if res.structured is not None or not res.transient:
                 return run, res
@@ -166,6 +161,13 @@ class Orchestrator:
                 entry["diagnostics"] = {"rejected": "run_id чужого прогона"}
             else:
                 doc = d
+                # Стоимость, которую сообщил CLI, есть только в диагностике недоверенного job'а: переносим
+                # в запись usage ЭТОЙ роли (сумма её вызовов), иначе отчёт показывал бы $0 (issue #201).
+                costs = [i["total_cost_usd"] for i in d["invocations"]
+                         if i["role"] == role and isinstance(i.get("total_cost_usd"), (int, float))]
+                if costs and "total_cost_usd" not in entry:
+                    entry["total_cost_usd"] = round(sum(costs), 6)
+                    entry["cost_source"] = "cli_reported_untrusted_job"
         elif d is not None:
             inv = {**d, "attempt": min(1 + sum(1 for x in self.diagnostics if x["role"] == role), 12)}
             self.diagnostics.append(inv)
@@ -192,6 +194,36 @@ class Orchestrator:
                 "messages_api_reached": last.get("messages_api_reached"), "redaction": doc["redaction"]}
             res.diagnostics = doc if "invocations" in (d or {}) else res.diagnostics
         return {**run, "usage": run["usage"] + [entry]}
+
+    def _merge_audit(self, run: dict, a) -> dict:
+        """Результат аудита production-мутаций → состояние. NOT_APPLICABLE (аудит в этом процессе не
+        настроен — например, доверенный replay без доступа к BigQuery) НЕ является доказательством и НЕ
+        перезаписывает уже полученный результат. FAIL «липкий»; BLOCKED (аудит не удался) вытесняет PASS.
+        `audit_evidence` фиксирует, какие вызовы агента покрыты: доказательство для публикатора и приёмки."""
+        a = {"status": "PASS" if a == 0 else "FAIL", "mutations": a} if isinstance(a, int) else (a or {})
+        status = a.get("status")
+        if status not in ("PASS", "FAIL", "BLOCKED"):
+            return run
+        found = int(a["mutations"]) if isinstance(a.get("mutations"), int) and a["mutations"] > 0 else 0
+        if found:
+            run = {**run, "production_mutations": run["production_mutations"] + found}
+        new = "FAIL" if status == "FAIL" or run.get("audit_status") == "FAIL" or run["production_mutations"] else status
+        evidence = {"status": new, "mutations": a["mutations"] if isinstance(a.get("mutations"), int) else None,
+                    "audited_at": self.now().strftime("%Y-%m-%dT%H:%M:%SZ"), "since": run["created_at"],
+                    "usage_count": len(run["usage"])}
+        return {**run, "audit_status": new, "audit_evidence": evidence}
+
+    def trusted_audit(self, run_id: str) -> dict:
+        """Доверенный аудит всего окна прогона (с created_at) вне вызова агента — перед публикацией.
+        Без настроенного аудита — отказ (fail closed), а не NOT_APPLICABLE."""
+        run = self.store.load(run_id)
+        a = self.audit(run)
+        status = ("PASS" if a == 0 else "FAIL") if isinstance(a, int) else (a or {}).get("status")
+        if status not in ("PASS", "FAIL", "BLOCKED"):
+            raise TransitionError(f"{run_id}: доверенный аудит не настроен (статус {status}) — доказательства нет")
+        run = self._merge_audit(run, a)
+        self.store.save(run)
+        return run
 
     @staticmethod
     def _fail_state(res: AgentResult) -> str:

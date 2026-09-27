@@ -19,6 +19,8 @@ from __future__ import annotations
 
 import re
 
+from tools.autonomy.audit import zero_mutations_proven
+
 ALLOWED_FILES = {"tools/tests/test_ae_commissioning_canary.py"}
 
 
@@ -41,7 +43,7 @@ def assess(run: dict, gate: dict, patch: str, jobs: list[dict], marker: str) -> 
         "deterministic_gate": gate.get("decided_by", "").startswith("gatekeeper") and gate.get("verdict") == "READY_FOR_PR",
         "required_ci": ((run.get("verification") or {}).get("result") or {}).get("status") == "PASS",
         "final_state": run.get("state") == "READY_FOR_HUMAN_REVIEW",
-        "zero_mutations": run.get("production_mutations") == 0 and run.get("audit_status") == "PASS",
+        "zero_mutations": zero_mutations_proven(run)[0],
         "scope": bool(files) and set(files) <= ALLOWED_FILES and marker in patch,
     }
     return {"status": "PASS" if all(checks.values()) else "FAIL", "checks": checks,

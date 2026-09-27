@@ -23,6 +23,23 @@ GROUP BY 1
 """
 
 
+def zero_mutations_proven(run: dict) -> tuple[bool, str]:
+    """Машинно проверяемое «0 production-мутаций»: доверенный аудит PASS с начала прогона, покрывающий
+    ВСЕ записанные вызовы агента. Нет доказательства, NOT_APPLICABLE, BLOCKED, устаревшее — не ноль."""
+    ev = run.get("audit_evidence")
+    if not isinstance(ev, dict):
+        return False, "нет доверенного аудита production-мутаций"
+    if run.get("audit_status") != "PASS" or ev.get("status") != "PASS":
+        return False, f"аудит {run.get('audit_status')}, а не PASS"
+    if run.get("production_mutations") != 0 or ev.get("mutations") != 0:
+        return False, "зафиксированы production-мутации"
+    if ev.get("since") != run.get("created_at"):
+        return False, "окно аудита начинается не с создания прогона"
+    if ev.get("usage_count") != len(run.get("usage", [])):
+        return False, "аудит не покрывает последний вызов агента"
+    return True, "доверенный аудит: 0 production-мутаций за всё окно прогона"
+
+
 def count_mutations(project: str, token_command: str, since_iso: str, identities: list[str]) -> dict:
     """Вернуть {"status": PASS|FAIL|BLOCKED, "mutations": int, "by_type": {...}}."""
     try:

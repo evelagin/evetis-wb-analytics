@@ -9,6 +9,18 @@ def _load(p: Path):
     return json.loads(p.read_text(encoding="utf-8")) if p.exists() else None
 
 
+def _usage_cost(u: dict, art_dir: Path) -> float:
+    """Стоимость записи usage: своя, иначе — из доверенной копии диагностики (только вызовы ЭТОЙ роли)."""
+    if isinstance(u.get("total_cost_usd"), (int, float)):
+        return float(u["total_cost_usd"])
+    f = (u.get("diagnostics") or {}).get("file")
+    doc = _load(art_dir / f) if isinstance(f, str) and f.startswith("diagnostics/") and ".." not in f else None
+    if not isinstance(doc, dict):
+        return 0.0
+    return sum(float(i["total_cost_usd"]) for i in doc.get("invocations", [])
+               if i.get("role") == u.get("role") and isinstance(i.get("total_cost_usd"), (int, float)))
+
+
 def _diagnostics_lines(run: dict) -> list[str]:
     """Диагностика вызовов агента (только перечисления, числа и sha — без свободного текста)."""
     rows = [(u.get("role"), u["diagnostics"]) for u in run.get("usage", []) if isinstance(u.get("diagnostics"), dict)]
@@ -33,7 +45,7 @@ def render_report(run: dict, art_dir: Path) -> str:
     ev = _load(art_dir / "evidence.json") or {}
     rev = _load(art_dir / "review.json")
     gate = _load(art_dir / "gate.json") or {}
-    cost = sum(float(u.get("total_cost_usd") or 0) for u in run.get("usage", []))
+    cost = sum(_usage_cost(u, art_dir) for u in run.get("usage", []))
     lines = [
         f"## AE v1 · {obj.get('title', run['objective_id'])}",
         "",
@@ -65,6 +77,7 @@ def render_report(run: dict, art_dir: Path) -> str:
         *(f"- {u}" for u in rep.get("uncertainty", [])), *(["_не заявлена_"] if not rep.get("uncertainty") else []),
         "",
         *_diagnostics_lines(run),
-        f"_Стоимость моделей по данным рантайма: ${cost:.2f}. Слияние — только владельцем._",
+        f"_Стоимость моделей по данным CLI (для CI-вызовов — из проверенной диагностики недоверенного job'а): "
+        f"${cost:.2f}. Слияние — только владельцем._",
     ]
     return "\n".join(lines) + "\n"

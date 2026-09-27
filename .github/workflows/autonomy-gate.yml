@@ -8,6 +8,8 @@ name: autonomy-gate
 #   ingest  — воспроизвести план и реализацию инженера → TESTING / WAITING_FOR_HUMAN / BLOCKED
 #   verify  — воспроизвести доказательства кандидата → REVIEWING / FIXING / BLOCKED
 #   gate    — воспроизвести вердикт ревьюера, решить гейткипером → READY_FOR_PR / FIXING / …
+#   audit   — доверенный аудит production-мутаций всего окна прогона (только в READY_FOR_PR): без
+#             его PASS, покрывающего все вызовы агента, публикатор не публикует
 # Действия закреплены по SHA коммита: этот job держит токен записи.
 on:
   workflow_call:
@@ -50,7 +52,7 @@ jobs:
       - name: guard — только main, известный шаг, строгие входы
         run: |
           [ "$GITHUB_REF" = "refs/heads/main" ] || { echo "::error::только из main"; exit 1; }
-          case "$STEP" in prepare|ingest|verify|gate) ;; *) echo "::error::неизвестный шаг"; exit 1 ;; esac
+          case "$STEP" in prepare|ingest|verify|gate|audit) ;; *) echo "::error::неизвестный шаг"; exit 1 ;; esac
           [[ -z "$OBJECTIVE_PATH" || "$OBJECTIVE_PATH" =~ ^objectives/[A-Za-z0-9._-]+\.json$ ]] \
             || { echo "::error::цель только objectives/<имя>.json"; exit 1; }
           [[ -z "$RUN_ID_IN" || "$RUN_ID_IN" =~ ^run-[0-9]{8}T[0-9]{6}Z-[0-9a-f]{8}$ ]] \
@@ -67,12 +69,12 @@ jobs:
       - name: install pinned dependencies (hash-checked)
         run: "pip install --only-binary=:all: --require-hashes -r tools/requirements-sql-ci.txt"
       - uses: google-github-actions/auth@c200f3691d83b41bf9bbd8638997a462592937ed # v2
-        if: inputs.step == 'prepare'
+        if: inputs.step == 'prepare' || inputs.step == 'audit'
         with:
           workload_identity_provider: ${{ vars.WIF_PROVIDER }}
           service_account: ${{ vars.AE_READER_SA }}
       - uses: google-github-actions/setup-gcloud@e427ad8a34f8676edf47cf7d7925499adf3eb74f # v2
-        if: inputs.step == 'prepare'
+        if: inputs.step == 'prepare' || inputs.step == 'audit'
       - name: clone state (tip)
         env:
           GH_TOKEN: ${{ github.token }}
@@ -121,6 +123,12 @@ jobs:
                 python -m tools.autonomy.cli advance --engineer none --reviewer replay "${common[@]}" --run-id "$RUN_ID" \
                   --pending-dir "$PENDING" --expect "${expect[@]}" --stop-before FIXING PLANNING IMPLEMENTING TESTING
               fi ;;
+            audit)
+              if [ "$state" = "READY_FOR_PR" ]; then
+                python -m tools.autonomy.cli audit "${common[@]}" --run-id "$RUN_ID" \
+                  --project "$GCP_PROJECT_ID" --token-command "gcloud auth print-access-token" \
+                  --audit-identity "$AE_READER_SA"
+              else echo "audit: состояние $state — аудит перед публикацией не нужен"; fi ;;
           esac
           echo "state=$(python -m tools.autonomy.cli status --state-dir "$STATE_DIR" --run-id "$RUN_ID" | awk '{print $2}')" >> "$GITHUB_OUTPUT"
       - name: persist authoritative state

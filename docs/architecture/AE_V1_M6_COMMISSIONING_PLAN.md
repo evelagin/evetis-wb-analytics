@@ -187,6 +187,29 @@ SELECT) исключается из «записи» только при док�
    request-id сторожа и временем вызовов; без этого M6 PASS не засчитывается;
 4. `JOBS_BY_PROJECT` за окно (только SELECT у `sa-ae-reader`), журнал IAM/WIF пуст, `iam_check --live` PASS.
 
+## 9.3 Публикация и доверенный аудит (remediation после M6 Phase 1 #3, 2026-09-27)
+
+Прогон `run-20260927T121235Z-ab2e1c53` дошёл до `READY_FOR_PR`; публикация остановилась на
+`gh pr create` («GitHub Actions is not permitted to create or approve pull requests»), а приёмка не видела
+доказанного нуля мутаций (доверенные replay-шаги писали `audit_status=NOT_APPLICABLE`).
+
+- **Аудит.** `NOT_APPLICABLE` больше не перезаписывает результат; FAIL «липкий»; `audit_evidence` фиксирует
+  окно (с `created_at`) и число покрытых вызовов агента. Новый доверенный шаг `audit` (autonomy-gate.yml,
+  `sa-ae-reader`, только в `READY_FOR_PR`) между `gate` и `publish`. Публикатор и `commissioning.assess`
+  требуют `zero_mutations_proven` (tools/autonomy/audit.py); нет доказательства — нет публикации.
+- **Публикация.** Идемпотентна: существующая ветка `ae/*` переиспользуется без push, только если её коммит —
+  ровно проверенный кандидат (родитель = `repository_sha`, то же дерево); иначе отказ, force-push нет.
+  Открытый PR переиспользуется только как draft в `main`. `gh` — только `pr list`, `pr create --draft`,
+  `workflow run`.
+- **Право создавать PR** — решение владельца (вариант A: настройка репозитория; B: GitHub App).
+
+**Продолжение того же прогона без inference** (после слияния исправления и решения по праву на PR, по
+отдельному ACK): временно `AE_ENABLED=true`, затем
+`gh workflow run autonomy-run.yml --ref main -f run_id=run-20260927T121235Z-ab2e1c53`.
+`prepare` в `READY_FOR_PR` ничего не делает; job'ы инженера и ревьюера выходят на проверке состояния ДО
+сторожа и модели; `audit` пишет доверенное доказательство; `publish` переиспользует `d221e72` без изменения,
+создаёт draft PR и запускает обязательный CI; `ci-verify` → `READY_FOR_HUMAN_REVIEW`; `persist` → отчёт.
+
 ## 10. Уборка и выключение
 
 - `gh variable delete AE_ENABLED` сразу после финального прохода.

@@ -151,7 +151,7 @@ def main(argv=None) -> int:
     w.add_argument("--no-health", action="store_true"); w.add_argument("--report")
     s = sub.add_parser("submit"); s.add_argument("--state-dir", required=True); s.add_argument("--objective", required=True)
     s.add_argument("--trusted-base-ref", help="repository_sha цели обязан быть предком этого ref (CI: origin/main)")
-    for name in ("advance", "publish", "review", "agent-run", "collect", "verify-ci"):
+    for name in ("advance", "publish", "review", "agent-run", "collect", "verify-ci", "audit"):
         p = sub.add_parser(name)
         p.add_argument("--engineer", choices=["claude", "replay", "none"], default="claude")
         p.add_argument("--reviewer", choices=["claude", "replay", "none"], default="claude")
@@ -232,6 +232,17 @@ def main(argv=None) -> int:
         print(json.dumps({"run_id": a.run_id, "outputs": hashes}, ensure_ascii=False))
         diag = (out or store.root / "artifacts" / a.run_id) / "reviewer_diagnostics.json"
         return _handoff_code(diag)
+    if a.cmd == "audit":
+        # Доверенный job: аудит production-мутаций всего окна прогона перед публикацией (sa-ae-reader).
+        if not (a.project and a.token_command and [i for i in (a.audit_identity or []) if i]):
+            print("audit: нужны --project, --token-command и --audit-identity — без них доказательства нет",
+                  file=sys.stderr)
+            return 2
+        a.engineer = a.reviewer = "none"
+        run = _orchestrator(a, store).trusted_audit(a.run_id)
+        print(json.dumps({"run_id": run["run_id"], "audit_status": run["audit_status"],
+                          "audit_evidence": run.get("audit_evidence")}, ensure_ascii=False))
+        return 0 if run["audit_status"] == "PASS" else 1
     if a.cmd == "verify-ci":
         # Доверенный job ci-verify (actions: read): ждать обязательные workflows опубликованного SHA.
         import time

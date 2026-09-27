@@ -66,7 +66,11 @@ def test_protocol_reaches_reviewer_but_not_engineer(env):
 # ------------------------------------------------------------------------ вердикт S9 ---
 PATCH = f'diff --git a/tools/tests/test_ae_commissioning_canary.py b/tools/tests/test_ae_commissioning_canary.py\n+"""{MARKER}"""\n'
 GOOD_RUN = {"state": "READY_FOR_HUMAN_REVIEW", "production_mutations": 0, "audit_status": "PASS",
+            "created_at": "2026-09-27T12:12:35Z",
             "usage": [{"role": "engineer_implement"}, {"role": "engineer_implement"}],
+            # доверенный аудит всего окна, покрывающий оба вызова агента (tools/autonomy/audit.py)
+            "audit_evidence": {"status": "PASS", "mutations": 0, "audited_at": "2026-09-27T12:54:00Z",
+                               "since": "2026-09-27T12:12:35Z", "usage_count": 2},
             "verification": {"result": {"status": "PASS"}},
             "transitions": [{"from": a, "to": b} for a, b in [
                 (None, "RECEIVED"), ("RECEIVED", "DISCOVERING"), ("DISCOVERING", "PLANNING"),

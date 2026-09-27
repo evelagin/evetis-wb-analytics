@@ -2,7 +2,8 @@ name: autonomy-run
 # AE v1 · Один проход цикла. Каждая роль — отдельный job, то есть отдельная эфемерная машина.
 #
 #   prepare (Д) → engineer (Н, модель) → ingest (Д) → test (Н, код кандидата) → verify (Д)
-#   → review (Н, модель) → gate (Д) → publish (Д, запись ae/* + диспатч обязательных workflows)
+#   → review (Н, модель) → gate (Д) → audit (Д, 0 production-мутаций) → publish (Д, запись ae/* +
+#   диспатч обязательных workflows)
 #   → ci-verify (Д, решение по фактическим прогонам) → persist (Д)
 #
 # Д — доверенный: детерминированный код main, пишет ветку autonomy-state, чужого кода не исполняет.
@@ -141,8 +142,16 @@ jobs:
       pending_artifact: ae-${{ needs.prepare.outputs.run_id }}-review-${{ github.run_attempt }}
       expect: ${{ needs.review.outputs.hashes }}
 
-  publish:
+  audit:
     needs: [prepare, gate]
+    uses: ./.github/workflows/autonomy-gate.yml
+    permissions: {contents: write, id-token: write}
+    with:
+      step: audit
+      run_id: ${{ needs.prepare.outputs.run_id }}
+
+  publish:
+    needs: [prepare, audit]
     runs-on: ubuntu-latest
     timeout-minutes: 15
     permissions:
@@ -213,7 +222,7 @@ jobs:
           bash tools/autonomy/ci/state_push.sh "autonomy-run ci-verify: ${RUN_ID}"
 
   persist:
-    needs: [prepare, engineer, ingest, test, verify, review, gate, publish, ci-verify]
+    needs: [prepare, engineer, ingest, test, verify, review, gate, audit, publish, ci-verify]
     if: always() && needs.prepare.result == 'success'
     runs-on: ubuntu-latest
     timeout-minutes: 15
