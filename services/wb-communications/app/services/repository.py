@@ -39,7 +39,10 @@ from app.domain.models import Review, make_doc_id
 from app.domain.statuses import DRAFTABLE_FROM, Status, action_allowed
 
 RETRIABLE = {Status.ERROR.value}
-PUBLISHABLE_FROM = {Status.PENDING_APPROVAL.value, Status.PUBLISH_FAILED.value}
+# PUBLISH_UNKNOWN is re-publishable, but the pipeline reads WB state first and
+# only writes when the question is still unanswered (no blind duplicate).
+PUBLISHABLE_FROM = {Status.PENDING_APPROVAL.value, Status.PUBLISH_FAILED.value,
+                    Status.PUBLISH_UNKNOWN.value}
 UPDATE_MAX_ATTEMPTS = 5
 
 _FS_TRANSIENT_NAMES = {
@@ -356,6 +359,16 @@ class MemoryRepository:
         if doc:
             doc.update({"status": Status.ERROR.value, "last_error_message": (message or "")[:500],
                         "lock_expires_at": None, "updated_at": _now()})
+
+    def record_publication(self, doc_id: str, status: str, fields: dict, trace: dict) -> None:
+        """Set the publication outcome and append one attempt/verification trace."""
+        doc = self.docs[doc_id]
+        doc.update({**fields, "status": status, "lock_expires_at": None, "updated_at": _now()})
+        doc["publish_trace"] = (doc.get("publish_trace") or []) + [copy.deepcopy(trace)]
+
+    def list_by_status(self, status: str, limit: int = 50) -> list[tuple[str, dict]]:
+        out = [(k, copy.deepcopy(v)) for k, v in self.docs.items() if v.get("status") == status]
+        return out[:limit]
 
     # --- editing sessions ---
     def set_editing_session(self, user_id, doc_id, expires_at, prompt_message_id=None,
@@ -731,6 +744,21 @@ class FirestoreRepository:
                                       "lock_expires_at": None, "updated_at": _now()})
         except Exception:  # noqa: BLE001
             pass
+
+    @translate_fs_errors
+    def record_publication(self, doc_id: str, status: str, fields: dict, trace: dict) -> None:
+        """Set the publication outcome and append one attempt/verification trace."""
+        from google.cloud import firestore
+
+        self._doc(doc_id).update({**fields, "status": status, "lock_expires_at": None,
+                                  "updated_at": _now(),
+                                  "publish_trace": firestore.ArrayUnion([trace])})
+
+    @translate_fs_errors
+    def list_by_status(self, status: str, limit: int = 50) -> list[tuple[str, dict]]:
+        query = (self._lazy().collection(self._col_name)
+                 .where("status", "==", status).limit(limit))
+        return [(snap.id, snap.to_dict()) for snap in query.stream()]
 
     # --- editing sessions ---
     def _editing_ref(self, user_id):

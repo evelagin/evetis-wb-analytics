@@ -41,6 +41,14 @@ class WBRateLimitError(WBServerError):
     """HTTP 429 from Wildberries — transient, honour Retry-After."""
 
 
+class WBPublishOutcomeUnknown(WBApiError):
+    """A publish WRITE was (or may have been) delivered, but no definitive answer
+    came back (read timeout, dropped connection, 5xx after sending). WB may have
+    accepted it, so the write must NOT be retried blindly — the caller verifies
+    the real state by reading it back instead. Deliberately NOT transient: a
+    webhook 5xx would make Telegram redeliver the tap and re-enter publishing."""
+
+
 # --- OpenAI -----------------------------------------------------------------
 class OpenAIError(EvetisError):
     """OpenAI request failed permanently (e.g. 400/401/403)."""
