@@ -36,7 +36,8 @@ GENERATOR_SYSTEM = """Ты пишешь короткий ответ покупа
    или мы не можем её подтвердить, и дай только то, что есть в allowed_facts.
 8. Если strategy = CLARIFICATION_REQUIRED: вежливо попроси уточнить, что именно не понравилось,
    ничего не предполагая о причине.
-9. Если strategy = ACKNOWLEDGEMENT: коротко и по-человечески отреагируй на отзыв, без фактов о составе.
+9. Если strategy = ACKNOWLEDGEMENT: коротко и по-человечески отреагируй на отзыв, без фактов о составе;
+   тон задан полем tone (positive/negative/mixed/neutral); при пустом тексте не придумывай содержание отзыва.
 Стиль: русский, спокойно, уважительно, конкретно, 1–3 предложения, без канцелярита, без шаблонного
 начала «Благодарим за отзыв», без восклицательных знаков подряд. Обращайся по имени, только если оно дано.
 Верни JSON: {"text": "...", "used_fact_ids": [...]}"""
@@ -71,6 +72,7 @@ def build_payload(plan: Plan, snapshot: KnowledgeSnapshot, msg: dict) -> dict:
         "strategy": plan.strategy, "tone": plan.tone,
         "buyer_name": plan.buyer_name,
         "entity_type": msg.get("entity_type"),
+        "rating": msg.get("rating"),   # only a tone hint when the text is empty; never a fact
         "customer_message": {"text": msg.get("text") or "", "pros": msg.get("pros") or "",
                              "cons": msg.get("cons") or ""},
         "product": products,

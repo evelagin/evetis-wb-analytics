@@ -1,0 +1,78 @@
+{
+ "status": "PASS",
+ "checks": {
+  "unique_active_identifiers": "PASS",
+  "identifier_targets_known": "PASS",
+  "bundle_components_known": "PASS",
+  "singles_have_wb_identity": "PASS",
+  "facts_have_known_sources": "PASS",
+  "enums_known": "PASS",
+  "restricted_not_public": "PASS",
+  "conflicts_and_decisions_consistent": "PASS",
+  "content_mismatch_has_conflict": "PASS",
+  "claim_policy": "PASS",
+  "recipe_sum_100": "PASS",
+  "recipe_sum_flagged_documents": "WARN",
+  "policy_compiles": "PASS",
+  "no_secrets": "PASS",
+  "public_facts_low_confidence": "PASS"
+ },
+ "errors": [],
+ "warnings": [
+  "recipe_sum_flagged_documents: EVT-HC-HAND-300 recipe sums to 100.3"
+ ],
+ "table_manifest": {
+  "REF_KNOWLEDGE_SOURCE": {
+   "rows": 20,
+   "sha256": "b5572e8c310afe9e4394b3201f6dd66cbb8f29a17a7f5dcc5be39f5c5ce532d0"
+  },
+  "REF_PRODUCT_KNOWLEDGE_PROFILE": {
+   "rows": 11,
+   "sha256": "5001ca93e87833642819b4f6274b862153ee879753e562112942edfeb3438817"
+  },
+  "REF_PRODUCT_IDENTIFIER": {
+   "rows": 18,
+   "sha256": "6125595b97daba4a5688e558d6fce6d995cb4e1ce3e8c958785503a5e36f9b23"
+  },
+  "REF_PRODUCT_FACT": {
+   "rows": 105,
+   "sha256": "2abac2a2d773745829a3c48ada941cd87a8b217c841b7ec8007feae174c8d6e4"
+  },
+  "REF_USAGE": {
+   "rows": 27,
+   "sha256": "11fdcb0401d1312590ab13fdb676d96279b8cc7d51e3ce8fb564d38af487322d"
+  },
+  "REF_PRODUCT_INGREDIENT": {
+   "rows": 369,
+   "sha256": "7f47c996603a590e28909297bb6d369cd2c03b523c4e23a4072fa94ba75fb95c"
+  },
+  "REF_INGREDIENT": {
+   "rows": 139,
+   "sha256": "b3ad6b0766e0d3f6fe7c5efe45c3cddf0b4861031015daf07cb3ee19c847a4d8"
+  },
+  "REF_CLAIM": {
+   "rows": 39,
+   "sha256": "fca816d2387e8bbb76e11590d4aad7d748c1265bf50ea905a93d71f3a7defa6a"
+  },
+  "REF_KNOWLEDGE_CONFLICT": {
+   "rows": 27,
+   "sha256": "05f63975abc5d5568f3de0ac6d5ecc946dab0e75515dea345ace380c7566c264"
+  },
+  "REF_OWNER_DECISION": {
+   "rows": 20,
+   "sha256": "bf6aaf274984ac1493276c5ffc17e770f11f82a903db10507d056a8eb6cc3352"
+  },
+  "REF_SKU_CHANNEL_MAP": {
+   "rows": 25,
+   "sha256": "b67d6cc6fe3fc1e1f4ef269a30233bf52270a74437367bb9a96939604440444e"
+  },
+  "REF_PRODUCT_MASTER": {
+   "rows": 25,
+   "sha256": "5340dbec4a242cc8ec4188208035a11194344d36b4d752802a14b830c37be5aa"
+  },
+  "REF_BUNDLE_COMPONENTS": {
+   "rows": 33,
+   "sha256": "131f4b72049aca3eb414f8f591dff6293183d6bf39024b5c809df64efd8227e9"
+  }
+ }
+}

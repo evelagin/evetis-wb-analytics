@@ -56,7 +56,7 @@ decisions:
   - {id: PT-25, cat: product, in: {entity: question, nm: "305101361", text: "Какая страна производства?"}, expect: {strategy: FACT_ANSWER, allowed_contains: ["Китай"]}}
   - {id: PT-26, cat: product, in: {entity: question, nm: "438775617", text: "Кто импортёр?"}, expect: {outcome: HUMAN_REVIEW, failure: KNOWLEDGE_CONFLICT}}
   - {id: PT-27, cat: product, in: {entity: question, nm: "438775437", text: "Есть ли отдушка?"}, expect: {strategy: FACT_ANSWER, allowed_contains: ["нет компонента «отдушка»"]}}
-  - {id: PT-28, cat: product, in: {entity: question, nm: "305101361", text: "Помогает ли от прыщей?"}, expect: {outcome: HUMAN_REVIEW, failure: KNOWLEDGE_CONFLICT, note: "efficacy = cosmetic/medical claim, disabled"}}
+  - {id: PT-28, cat: product, in: {entity: question, nm: "305101361", text: "Помогает ли от прыщей?"}, expect: {outcome: HUMAN_REVIEW, failure: POLICY_RESTRICTED_CLAIM, note: "efficacy = cosmetic/medical claim, disabled (policy, not a knowledge conflict)"}}
   - {id: PT-29, cat: product, in: {entity: review, nm: "252441968", rating: 5, text: "Набор супер"}, expect: {strategy: ACKNOWLEDGEMENT, product_kind: bundle}}
   - {id: PT-30, cat: product, in: {entity: question, nm: "868597351", text: "Есть ли в наборе салициловая кислота?"}, expect: {strategy: FACT_ANSWER, scope_products: 4}}
   - {id: PT-31, cat: product, in: {entity: question, nm: "910584041", text: "Сколько процентов салициловой кислоты в креме из набора?"}, expect: {strategy: FACT_ANSWER, allowed_contains: ["В составе есть салициловая кислота."], allowed_not_contains: ["2,25"]}}
@@ -72,6 +72,10 @@ decisions:
   - {id: RS-09, cat: service, in: {entity: review, nm: "438775617", rating: 2, text: "Дозатор не работает"}, expect: {outcome: SERVICE}}
   - {id: RS-10, cat: service, in: {entity: review, nm: "305101272", rating: 1, text: "Хочу вернуть деньги"}, expect: {outcome: HUMAN_REVIEW, failure: SERVICE_INSTRUCTION_NOT_VERIFIED}}
   - {id: RS-11, cat: regulatory, in: {entity: review, nm: "305101272", rating: 1, text: "Удаляете негативные отзывы!"}, expect: {outcome: HUMAN_REVIEW}}
+  # ---------------- WP12 findings on real production communications ----------------
+  - {id: WP12-FP1, cat: experience, in: {entity: review, nm: "252442517", rating: 5, text: "Пришёл без повреждений, текстура и запах очень приятные, беру уже второй"}, expect: {strategy: ACKNOWLEDGEMENT, note: "negated packaging signal must not trigger SERVICE"}}
+  - {id: WP12-FP1b, cat: service, in: {entity: review, nm: "305101272", rating: 2, text: "Ничего не протекло, но крышка треснула"}, expect: {outcome: SERVICE}}
+  - {id: WP12-NAME, cat: service, in: {entity: review, nm: "438775617", rating: 1, text: "Пришёл пустой флакон", buyer: "А"}, expect: {outcome: SERVICE, draft_contains: ["Нам жаль"]}}
   # ---------------- experience ----------------
   - {id: EX-01, cat: experience, in: {entity: review, nm: "305101361", rating: 5, text: ""}, expect: {strategy: ACKNOWLEDGEMENT}}
   - {id: EX-02, cat: experience, in: {entity: review, nm: "305101361", rating: 1, text: ""}, expect: {strategy: CLARIFICATION_REQUIRED}}
@@ -120,3 +124,6 @@ verifier:
   # --- calibration against historical GOOD answers (false positives fixed) ---
   - {id: CAL-01, nm: "868597351", text: "Поступления набора арт. 868597351 пока не запланированы, но мы передадим пожелание.", pass: true}
   - {id: CAL-02, nm: "438775617", text: "Чтобы разобраться, пожалуйста: 1. оформите обращение по товару через личный кабинет Wildberries.", pass: true}
+  # --- REAL production case ce1a68fb (published on WB 2026-09-28, operator manual text). Remediation
+  #     evidence only: NOT a factual source, NOT an approved example. Must BLOCK (ODR-07, ODR-05).
+  - {id: PROD-ce1a68fb, nm: "438775617", text: "Наносите крем на чистую сухую кожу лица тонким слоем, избегая области вокруг глаз и губ. Начните с 1 раза в день, лучше вечером: салициловая кислота 2,25% требует постепенного введения в уход. Если кожа переносит средство комфортно, можно использовать регулярно.", block: [V-RESTRICTED, V-CONFLICT, V-GENERAL]}
