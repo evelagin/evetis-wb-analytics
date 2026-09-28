@@ -66,6 +66,17 @@ GCS source archive
 Terraform (`infra/terraform/wb_communications.tf`) по-прежнему указывает прежний digest: `template` в
 `ignore_changes`, поэтому apply ревизию не трогает; строка — документация исходного импорта.
 
+## 1b. Развёртывание 2026-09-28 — D-19b (аудируемый публичный вход, 1.6.0)
+
+| | |
+|---|---|
+| Исходник | ветка `feat/wb-comms-audit-events`, коммит `79bdfaeb7f99e5ab211a348078b70308c34b7a8f` (PR #218), поверх main `b4803cb` (сервис = 1.5.2 `f84f745`) |
+| Сборка | Cloud Build `78f3907e-07b0-4220-bff1-091b566995a9`: `pytest` на `python:3.12-slim` с закреплёнными версиями → `docker build` |
+| Образ | `…/cloud-run-source-deploy/evetis-wb-communications@sha256:aa55989cb0103ad51e8cb2079e8c10ef3d160298b4d8c8ad99a0b881a70ecd77` |
+| Ревизия | `evetis-wb-communications-00032-22j`; до неё `00030-67n` (1.5.2, `c6022b02…`), промежуточная `00031-qz6` (`99216cb6…`, без `request_end`) |
+| Способ | `gcloud run services update --image <digest>` — окружение, SA, ingress, `allUsers` не менялись |
+| Откат | `gcloud run services update-traffic evetis-wb-communications --region europe-west1 --to-revisions evetis-wb-communications-00030-67n=100` |
+
 ## 2. Код в Git ≠ конфигурация в production
 
 **Это главное, что нужно знать перед любым деплоем.**
