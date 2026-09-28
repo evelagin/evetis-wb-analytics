@@ -15,8 +15,11 @@
  *   Весь лист НЕ чистится. createAllSheets / reset НЕ вызываются. Схема НЕ меняется.
  *
  * ПОЛЯ (по факту gate T3): только колонки, которые есть в RAW_WB_ORDERS.
- *   last_change_date СОХРАНЯЕТСЯ (Фаза D1: ключ сортировки дедуп-вью). totalPrice /
- *   finishedPrice пока НЕ сохраняются (нет колонок) — см. долг D1.1 (raw_json + поля).
+ *   last_change_date СОХРАНЯЕТСЯ (Фаза D1: ключ сортировки дедуп-вью).
+ *   SPP-1 (28.09.2026): ценовые поля заказа сохраняются СЫРЫМИ значениями API — total_price,
+ *   discount_percent, spp, finished_price (живой пробой 28.09: заполнены в 1 897 из 1 897 строк;
+ *   finishedPrice ≈ priceWithDisc × (1 − spp/100) в пределах ±6 ₽). Отсутствующее поле → пустая
+ *   ячейка (NULL в BQ), а НЕ 0: «СПП нет» и «СПП = 0» — разные факты. raw_json по-прежнему нет.
  *   quantity = 1 на строку (orders API не отдаёт qty по строке).
  *   Отменённые заказы сохраняются: is_cancel=TRUE, cancel_dt=cancelDate.
  *
@@ -55,7 +58,9 @@ var ORDERS_RAW_HEADERS_ = [
   'category', 'subject', 'brand', 'tech_size', 'warehouse_name',
   'region_name', 'country_name', 'price_with_disc', 'quantity', 'sticker_id',
   'is_duplicate', 'processed_status', 'error_message',
-  'last_change_date'
+  'last_change_date',
+  // SPP-1: ценовые поля заказа (аддитивно, в конец; порядок предыдущих 29 не трогать)
+  'total_price', 'discount_percent', 'spp', 'finished_price'
 ];
 
 var WB_ORDERS_API_MAX_PAGES_    = 30;
@@ -424,6 +429,11 @@ function normalizeOrdersApiRows_(apiData, hMap, lastCol, loadId, loadedAt, dateF
     set('country_name', o.countryName || '');
 
     set('price_with_disc', Number(o.priceWithDisc) || 0);
+    // SPP-1: сырые значения API без преобразований; нет поля → '' (NULL в BQ), не 0.
+    set('total_price', ordersRawApiValue_(o.totalPrice));
+    set('discount_percent', ordersRawApiValue_(o.discountPercent));
+    set('spp', ordersRawApiValue_(o.spp));
+    set('finished_price', ordersRawApiValue_(o.finishedPrice));
     set('quantity', 1);                       // orders API: одна строка = один заказанный товар
     set('sticker_id', o.sticker || '');
 
@@ -451,6 +461,11 @@ function normalizeOrdersApiRows_(apiData, hMap, lastCol, loadId, loadedAt, dateF
     rows.push(newRow);
   }
   return rows;
+}
+
+/** SPP-1: сырое значение поля API; null/undefined/'' → '' (пустая ячейка, NULL в BQ). 0 остаётся 0. */
+function ordersRawApiValue_(v) {
+  return (v === null || v === undefined || v === '') ? '' : v;
 }
 
 function ordersMd5_(s) {

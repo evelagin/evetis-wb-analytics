@@ -1,5 +1,19 @@
 # CHANGELOG.md
 
+## 2026-09-28 — SPP-1: ценовые поля заказов WB в RAW_WB_ORDERS
+
+Задача — СПП WB в Юнитку (`AB`), этап 1. Экономика, витрины и Юнитка не менялись.
+
+- **`RAW_WB_ORDERS`: 29 → 33 колонки**, добавлены в конец (аддитивно, `STRING NULLABLE` в BQ):
+  `total_price`, `discount_percent`, `spp`, `finished_price` — сырые значения Statistics API
+  `supplier/orders` (`totalPrice`, `discountPercent`, `spp`, `finishedPrice`). Нет поля → NULL,
+  `0` → `0`. Порядок первых 29 колонок, `row_hash`, `V_WB_ORDERS`, `FACT_ORDERS` не тронуты.
+  Легаси-лист `RAW_WB_ORDERS` колонок не получает (sheet-режим — no-op, как у `last_change_date`).
+- Живой пробой API 28.09 (1 897 строк): поля заполнены везде, `finishedPrice ≈ priceWithDisc ×
+  (1 − spp/100)` в пределах ±6 ₽, глубина ≈ 90 дней. Отчёт и контрольные цифры выкладки —
+  `docs/UNITKA_SPP_1_ORDERS_PROBE_2026-09-28.md`.
+- Схема BQ расширяется при первом прогоне нового кода; бэкфилл с 25.06 — после одобрения.
+
 ## 2026-09-28 — Tenancy: WIF арендатора привязан к владельцу (actor_id) и первой попытке прогона
 
 **Синхронизация репозитория с изменением условия провайдера `github-tenant-infra` (mpa-platform).**
