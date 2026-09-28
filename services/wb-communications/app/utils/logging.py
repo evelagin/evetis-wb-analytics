@@ -107,9 +107,12 @@ async def trace_middleware(request, call_next):
         status = response.status_code
         return response
     finally:
-        counter = _mutation_attempts.get() or [0]
-        audit_event("request_end", route=str(request.url.path)[:200], http_status=int(status),
-                    mutation_attempts=int(counter[0]))
+        try:
+            counter = _mutation_attempts.get() or [0]
+            audit_event("request_end", route=str(request.url.path)[:200], http_status=int(status),
+                        mutation_attempts=int(counter[0]))
+        except Exception:  # noqa: BLE001 — instrumentation never changes the response; a gap reads as BLOCKED
+            pass
         reset_request_trace(tokens)
 
 
