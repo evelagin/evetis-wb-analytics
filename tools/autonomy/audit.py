@@ -56,6 +56,12 @@ FORBIDDEN_PROJECT_PERMISSIONS = [
     "run.jobs.run", "run.jobs.runWithOverrides", "run.routes.invoke", "pubsub.topics.publish",
     "cloudscheduler.jobs.run", "workflows.executions.create", "cloudfunctions.functions.call",
     "dataform.repositories.create", "dataform.workflowInvocations.create",
+    # F-18: the ingress proof trusts platform request logs and the service's stdout — the audited identity must not
+    # be able to write, delete or re-route log entries (forged security events, hidden requests).
+    "logging.logEntries.create", "logging.logs.delete", "logging.sinks.create", "logging.sinks.update",
+    "logging.sinks.delete", "logging.exclusions.create", "logging.exclusions.update", "logging.exclusions.delete",
+    "logging.buckets.create", "logging.buckets.update", "logging.buckets.delete", "logging.settings.update",
+    "logging.views.create", "logging.views.update", "logging.views.delete",
 ]
 # На каждом SA проекта: право стать им или подписать от его имени (самопроверка iam testIamPermissions).
 FORBIDDEN_SA_PERMISSIONS = ["iam.serviceAccounts.getAccessToken", "iam.serviceAccounts.signJwt",
@@ -618,9 +624,11 @@ def run_audit(src: GcpAuditSource, since_iso: str, identities: list[str], waterm
     # безопасности сервиса по той же трассе (ATTRIBUTED). Иначе привязка остаётся отказом (BLOCKED).
     until = _ts(settle_from) if settle_from else src.now()
     public = run_public_during(policy_events, since, until)
-    public.update(ingress_attribution.iam_disabled_services(
-        src.logs(ingress_attribution.spec_filter(src.project, created)), until))
+    disabled, disabled_problems = ingress_attribution.iam_disabled_services(
+        src.logs(ingress_attribution.spec_filter(src.project, created)), until)
+    public.update(disabled)
     ingress, ingress_problems = ingress_attribution.attribute(src, public, since, until, created)
+    ingress_problems = disabled_problems + ingress_problems
     proven = frozenset(rn for rn, v in ingress.items() if v["status"] == "PROVEN")
     iam += broken + policy_problems(state, identities, proven) + ingress_problems
     # SA ДРУГИХ проектов с ролями здесь (политики ресурсов, ACL видимых датасетов) — тоже самопроверка.
@@ -705,7 +713,7 @@ def run_window_end(run: dict) -> str | None:
 def run_public_during(policy_events: list[dict], since, until) -> dict:
     """Cloud Run services whose invoker was public at ANY moment of [since, until] (state at `since` and after each
     change inside the window), not only at audit time: a binding added and removed inside the window counts."""
-    evs = sorted(policy_events, key=_order)
+    evs = sorted(policy_events, key=lambda e: ingress_attribution._ts(e.get("timestamp", "")))
     prefix = [e for e in evs if ingress_attribution._ts(e.get("timestamp", "1970-01-01T00:00:00Z")) <= since]
     out = dict(ingress_attribution.public_run_services(iam_policy_state(prefix)[0]))
     for e in evs:

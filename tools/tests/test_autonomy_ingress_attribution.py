@@ -111,6 +111,14 @@ def verdict(requests=(), events=(), specs=GOOD_SPEC, now=LATER, since=SINCE, unt
                       None if routing is None else list(routing))
 
 
+def without(evs, event_type):
+    """Drop one event type and renumber seq 1..n (so only the targeted invariant breaks)."""
+    out = [copy.deepcopy(e) for e in evs if e["jsonPayload"]["event_type"] != event_type]
+    for i, e in enumerate(out, 1):
+        e["jsonPayload"]["seq"] = i
+    return out
+
+
 def _broken(problem_substring, requests=(), events=(), **kw):
     v = verdict(requests, events, **kw)
     assert v["status"] == "BLOCKED" and any(problem_substring in p for p in v["problems"]), v["problems"]
@@ -135,6 +143,10 @@ def test_window_must_be_settled_including_ingestion_margin():
     ([spec(), spec(ts=iso(SINCE + timedelta(minutes=5)), ann={"run.googleapis.com/cpu-throttling": "false"})], "cpu"),
     ([spec(v2={"template": {"containers": [{"resources": {"cpuIdle": False}}]}})], "cpuIdle"),
     ([spec(v2={"template": {"containers": [{"resources": {"limits": {"cpu": "1"}}}]}})], "cpuIdle"),   # M2
+    ([spec(v2={"template": {"containers": [{"resources": {"startupCpuBoost": True}}]}})], "cpuIdle"),  # M-d
+    ([spec(v2={"template": {"scaling": {"scalingMode": "MANUAL", "manualInstanceCount": 1}}})], "ручное"),
+    ([spec(v2={"scaling": {"scalingMode": "MANUAL"}, "template": {}})], "ручное"),
+    ([spec(svc_ann={"run.googleapis.com/scalingMode": "manual"})], "ручное"),
     ([spec(v2={"template": {"scaling": {"minInstanceCount": 1}}})], "минимум"),
     ([{"timestamp": "2026-07-29T15:08:58Z", "resource": {"labels": {"location": LOC}},
        "protoPayload": {"resourceName": f"namespaces/{P}/services/{SVC}", "request": {}}}], "не восстанавливается"),
@@ -155,13 +167,17 @@ def test_sibling_service_or_other_region_spec_does_not_prove_this_one():        
     _broken("cpu-throttling", specs=[bad_own, sibling_clean, other_region])
 
 
-def test_split_traffic_requires_every_historical_spec_to_be_clean():               # M2
+def test_every_historical_spec_must_be_clean():                                     # M2 / L-a
     old_bad = spec(ts="2026-07-01T00:00:00Z", ann={"run.googleapis.com/cpu-throttling": "false"})
-    split = spec(traffic=[{"revisionName": "r1", "percent": 50}, {"latestRevision": True, "percent": 50}])
-    _broken("cpu-throttling", specs=[old_bad, split])
-    assert verdict(specs=[old_bad, spec()])["status"] == "PROVEN"         # latest-only: old templates unreachable
-    tagged = spec(traffic=[{"latestRevision": True, "percent": 100, "tag": "canary"}])
-    _broken("cpu-throttling", specs=[old_bad, tagged])
+    _broken("cpu-throttling", specs=[old_bad, spec()])     # tags/splits or a failed rollout keep old revisions alive
+    assert verdict(specs=[spec(v2={"template": {"containers": [{"resources": {"cpuIdle": True,
+                                                                               "limits": {"cpu": "1"}}}]}})])[
+        "status"] == "PROVEN"
+
+
+def test_unknown_location_cannot_bind_a_spec():                                     # L-g
+    v = I.evaluate(SVC, [], [], GOOD_SPEC, SINCE, UNTIL, LATER, P, CONTROL, None, [])
+    assert v["status"] == "BLOCKED" and any("регион" in p for p in v["problems"])
 
 
 def test_rejected_or_validate_only_spec_is_not_in_force():                          # M2
@@ -230,8 +246,7 @@ def test_uninstrumented_request_is_blocked():
 
 
 def test_mutation_without_auth_ok_is_blocked():
-    _broken("без предшествующего auth_ok", [req(T0)],
-            [e for e in chain(T0) if e["jsonPayload"]["event_type"] != "auth_ok"])
+    _broken("без предшествующего auth_ok", [req(T0)], without(chain(T0), "auth_ok"))
 
 
 def test_mutation_pointing_to_foreign_auth_event_is_blocked():
@@ -284,11 +299,11 @@ def test_orphan_events_without_platform_request_are_blocked():
 def test_event_without_trace_inside_window_is_blocked():
     lone = ev(T0, "mutation_attempt", 1, trace=None, mutation_id="d" * 32, mutation_class="tg_send_message",
               target_system="telegram", target_ref="tg:bot", result="attempt")
-    _broken("без трассы", [], [lone])
+    _broken("вне атрибутированных", [], [lone])
 
 
 def test_duplicated_trace_with_mutation_is_ambiguous():
-    _broken("неоднозначна", [req(T0), req(T0 + timedelta(seconds=1))], chain(T0))
+    _broken("неоднозначн", [req(T0), req(T0 + timedelta(seconds=1))], chain(T0))
 
 
 def test_duplicated_trace_of_non_mutating_requests_is_tolerated():                  # wb-comms review M1
@@ -383,6 +398,7 @@ class IngressSource(FakeSource):
         return self._now
 
     def logs(self, flt):
+        self.filters.append(flt)
         if "run.googleapis.com%2Frequests" in flt:
             return self._control if CONTROL_START in flt else self._req
         if "run.googleapis.com%2Fstdout" in flt:
@@ -591,4 +607,115 @@ def test_duplicated_trace_with_hidden_mutation_events_is_ambiguous():
     b = chain(T0 + timedelta(seconds=1), cid="2" * 32, attempts=0)
     for e in b:
         e["jsonPayload"]["event_id"] = "9" + e["jsonPayload"]["event_id"][1:]
-    _broken("неоднозначна", [req(T0), req(T0 + timedelta(seconds=1))], a + b)
+    _broken("неоднозначн", [req(T0), req(T0 + timedelta(seconds=1))], a + b)
+
+
+
+# --------------------------------------------------------------- second review round (M-a..M-e, L-*) ---
+def test_event_with_attributed_cid_on_another_trace_is_blocked():                   # M-a
+    evs = chain(T0)
+    rogue = ev(T0 + timedelta(milliseconds=5), "mutation_attempt", 9, trace=T2, event_id="e" * 32,
+               mutation_id="f" * 32, mutation_class="wb_feedback_answer", target_system="wb", target_ref="wb:1",
+               result="attempt")
+    v = verdict([req(T0)], evs + [rogue])
+    assert v["status"] == "BLOCKED" and any("разных трассах" in p or "вне атрибутированных" in p
+                                            for p in v["problems"]), v["problems"]
+
+
+@pytest.mark.parametrize("mutate,needle", [
+    (lambda evs: evs[1]["jsonPayload"].pop("event_id"), "event_id"),                       # M-b: None never matches
+    (lambda evs: evs[1]["jsonPayload"].pop("auth_mechanism"), "механизм"),
+    (lambda evs: [e["jsonPayload"].pop("correlation_id") for e in evs], "correlation_id"),
+    (lambda evs: evs[1]["jsonPayload"].update(event_id=evs[0]["jsonPayload"]["event_id"]), "повтор event_id"),
+    (lambda evs: evs[-1]["jsonPayload"].update(seq=9), "1..n"),                            # gap in seq
+    (lambda evs: evs[0]["jsonPayload"].update(route="/brand-new"), "маршрут вне контракта"),
+    (lambda evs: evs[2]["jsonPayload"].update(target_system="s3"), "целевая система"),
+    (lambda evs: evs[-1]["jsonPayload"].update(status_code="200"), "request_done вне контракта"),
+])
+def test_required_fields_are_enforced(mutate, needle):
+    evs = chain(T0)
+    mutate(evs)
+    _broken(needle, [req(T0)], evs)
+
+
+def test_mutation_on_a_route_without_authentication_is_blocked():
+    _broken("аутентификации нет", [req(T0)], chain(T0, route="other"))
+
+
+def test_internal_state_writes_need_auth_but_not_a_known_outcome():                 # M-e
+    internal = (("firestore_begin_update", "firestore", "error"),)
+    assert verdict([req(T0)], chain(T0, mutations=internal))["status"] == "PROVEN"
+    no_auth = without(chain(T0, mutations=internal), "auth_ok")
+    _broken("без предшествующего auth_ok", [req(T0)], no_auth)
+    _broken("неизвестен", [req(T0)], chain(T0, mutations=(("tg_send_message", "telegram", "outcome_unknown"),)))
+
+
+def _traceless(t0, cid="7" * 32, mutating=False):
+    evs = chain(t0, trace=None, cid=cid, mutations=(("tg_send_message", "telegram", "success"),) if mutating else ())
+    for e in evs:
+        e["jsonPayload"]["event_id"] = "8" + e["jsonPayload"]["event_id"][1:]
+    if not mutating:                                            # an unauthenticated probe: no auth_ok, denied
+        evs = [e for e in evs if e["jsonPayload"]["event_type"] != "auth_ok"]
+        for i, e in enumerate(evs, 1):
+            e["jsonPayload"]["seq"] = i
+        evs[-1]["jsonPayload"]["result"] = "none"
+    return evs
+
+
+def test_traceless_non_mutating_request_pairs_with_its_platform_log():               # wb-comms M-A
+    v = verdict([req(T0, trace=T2)], _traceless(T0))
+    assert v["status"] == "PROVEN", v["problems"]
+
+
+def test_traceless_mutating_request_is_never_paired():
+    _broken("без событий", [req(T0, trace=T2)], _traceless(T0, mutating=True))
+
+
+def test_traceless_pairing_needs_equal_counts_revision_and_status():
+    _broken("без событий", [req(T0, trace=T2), req(T0 + timedelta(seconds=1), trace="c" * 32)], _traceless(T0))
+    _broken("без событий", [req(T0, trace=T2, status=404)], _traceless(T0))
+    _broken("без событий", [req(T0, trace=T2, rev=f"{SVC}-00025-rq8")], _traceless(T0))
+
+
+def test_audited_identity_must_not_be_able_to_forge_or_reroute_logs():               # M-c
+    need = {"logging.logEntries.create", "logging.logs.delete", "logging.sinks.update", "logging.exclusions.create",
+            "logging.buckets.update", "logging.settings.update"}
+    assert need <= set(A.FORBIDDEN_PROJECT_PERMISSIONS)
+    r = run(IngressSource(iam_events=list(SA_POLICIES) + [PUBLIC_RUN], granted=["logging.logEntries.create"]))
+    assert r["status"] == "BLOCKED"
+
+
+def test_unplaceable_spec_event_is_a_problem_not_a_skip():                            # L-b
+    bad = spec(svc_ann={"run.googleapis.com/invoker-iam-disabled": "true"})
+    bad["timestamp"] = "not-a-time"
+    services, problems = I.iam_disabled_services([bad], UNTIL)
+    assert services == {} and problems
+
+
+def test_routing_changes_are_read_up_to_now_and_include_log_deletion():               # L-c / L-d
+    flt = I.routing_change_filter(P, SINCE, LATER)
+    assert 'protoPayload.methodName:"DeleteLog"' in flt
+    src = IngressSource(iam_events=list(SA_POLICIES) + [PUBLIC_RUN])
+    run(src)
+    ev_flt = next(f for f in src.filters if "run.googleapis.com%2Fstdout" in f)
+    rt_flt = next(f for f in src.filters if 'serviceName="logging.googleapis.com"' in f)
+    assert f'timestamp<="{iso(LATER)}"' in ev_flt and f'timestamp<="{iso(LATER)}"' in rt_flt
+
+
+def test_only_a_sibling_service_spec_does_not_prove_this_one():
+    _broken("нет события", specs=[spec(service=f"{SVC}-canary"), spec(loc="us-central1")])
+
+
+def test_one_correlation_with_inconsistent_trace_pairs_is_blocked():
+    evs = chain(T0)
+    evs[2]["jsonPayload"]["alt_trace_id"] = T2
+    _broken("разных трассах", [req(T0)], evs)
+
+
+def test_traceless_group_that_passed_authentication_is_never_paired():
+    g = _traceless(T0)
+    auth = copy.deepcopy(g[0])
+    auth["jsonPayload"].update(event_type="auth_ok", event_id="8" * 31 + "e", auth_mechanism="scheduler_secret",
+                               principal_class="cloud_scheduler", result="ok", seq=2)
+    g[1]["jsonPayload"]["seq"] = 3
+    _broken("без событий", [req(T0, trace=T2)], [g[0], auth, g[1]])
