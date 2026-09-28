@@ -123,10 +123,15 @@ class FakeSource:
             return self._table_events
         if "instrumentation_ready" in flt:
             rev = flt.split('revision_name="', 1)[1].split('"', 1)[0]
-            return [{"marker": rev}] if rev in self._f18.get("ready", set()) else []
+            return [{"jsonPayload": {"audit_event": "instrumentation_ready", "audit_schema": "wbc-audit/1",
+                                     "revision": rev, "service": "evetis-wb-communications", "result": "ok",
+                                     "trace_id": "", "request_id": ""}}] if rev in self._f18.get("ready", set()) else []
+        if 'trace="projects/' in flt or 'audit_event="request_end" AND jsonPayload.trace_id=' in flt:
+            return [{"watermark": 1}] if self._f18.get("service_watermark", True) else []
         if "run.googleapis.com%2Frequests" in flt:
             return self._f18.get("requests", [])
         if "jsonPayload.audit_event:*" in flt:
+            assert 'jsonPayload.logger="app.audit"' in flt and "run.googleapis.com%2Fstdout" in flt
             return self._f18.get("events", [])
         if 'protoPayload.methodName:"Service"' in flt:
             return self._f18.get("svc_events", [])
@@ -158,6 +163,16 @@ class FakeSource:
 
     def project_created(self):
         return self._created
+
+    def project_number(self):
+        return "1"
+
+    def secret_granted(self, name):
+        return self._f18.get("secrets", {}).get(name, [])
+
+    def probe_service(self, url, trace):
+        self.probed = (url, trace)
+        return 200
 
     def project_number(self):
         return "1"
@@ -939,10 +954,11 @@ def f18_iam(extra_members=(), sa_extra=()):
     return list(SA_POLICIES) + ev
 
 
-def svc_event(sa=F18_SA, ingress="all", method="google.cloud.run.v1.Services.ReplaceService"):
-    return {"timestamp": "2026-09-28T08:30:00Z", "protoPayload": {"methodName": method, "request": {"service": {
+def svc_event(sa=F18_SA, ingress="all", method="google.cloud.run.v1.Services.ReplaceService", timeout=300,
+              ts="2026-09-28T08:30:00Z"):
+    return {"timestamp": ts, "protoPayload": {"methodName": method, "request": {"service": {
         "metadata": {"annotations": {"run.googleapis.com/ingress": ingress}},
-        "spec": {"template": {"spec": {"serviceAccountName": sa}}}}}}}
+        "spec": {"template": {"spec": {"serviceAccountName": sa, "timeoutSeconds": timeout}}}}}}}
 
 
 def req(route, status, trace, rev=REV, ts="2026-09-28T12:00:00Z"):
@@ -959,6 +975,10 @@ def ev(kind, trace, rev=REV, **fields):
             "resource": {"labels": {"revision_name": rev}}, "jsonPayload": jp}
 
 
+def end(trace, route, status, attempts, **kw):
+    return ev("request_end", trace, route=route, http_status=status, mutation_attempts=attempts, **kw)
+
+
 def good_chain():
     return {
         "requests": [req("/telegram-webhook", 200, TR1), req("/poll", 200, TR2), req("/health", 200, "c" * 32)],
@@ -972,6 +992,7 @@ def good_chain():
             ev("auth_ok", TR2, route="/poll", mechanism="scheduler_shared_secret"),
             ev("mutation_attempt", TR2, mutation_class="telegram:sendMessage", target_system="telegram"),
             ev("mutation_failure", TR2, mutation_class="telegram:sendMessage", target_system="telegram"),
+            end(TR1, "/telegram-webhook", 200, 2), end(TR2, "/poll", 200, 1), end("c" * 32, "/health", 200, 0),
         ],
         "ready": {REV}, "svc_events": [svc_event()]}
 
@@ -1088,12 +1109,13 @@ def test_f18_historical_uninstrumented_window_is_not_proven():
     c = good_chain()
     c["requests"] = c["requests"] + [req("/poll", 200, "f" * 32, rev="evetis-wb-communications-00025-rq8")]
     r = f18_audit(c)
-    assert r["status"] in ("BLOCKED", "FAIL") and any("00025-rq8" in x for x in r["iam_invariant"])
+    assert r["status"] == "BLOCKED" and r["mutations"] is None and any("00025-rq8" in x for x in r["iam_invariant"])
 
 
 def test_f18_denied_requests_are_fine():
     c = good_chain(); c["requests"] = c["requests"] + [req("/poll", 403, "9" * 32), req("/telegram-webhook", 403, "8" * 32)]
-    c["events"] = c["events"] + [ev("auth_denied", "9" * 32, route="/poll", mechanism="scheduler_shared_secret")]
+    c["events"] = c["events"] + [ev("auth_denied", "9" * 32, route="/poll", mechanism="scheduler_shared_secret"),
+                                 end("9" * 32, "/poll", 403, 0), end("8" * 32, "/telegram-webhook", 403, 0)]
     assert f18_audit(c)["status"] == "PASS"
 
 
@@ -1156,7 +1178,8 @@ def test_f18_non_allowlisted_callback_answer_is_fine_but_no_wb():
         ev("auth_ok", t3, route="/telegram-webhook", mechanism="telegram_secret_token"),
         ev("auth_denied", t3, route="/telegram-webhook", mechanism="telegram_allowlist", result="not_allowlisted"),
         ev("mutation_attempt", t3, mutation_class="telegram:answerCallbackQuery", target_system="telegram"),
-        ev("mutation_success", t3, mutation_class="telegram:answerCallbackQuery", target_system="telegram")]
+        ev("mutation_success", t3, mutation_class="telegram:answerCallbackQuery", target_system="telegram"),
+        end(t3, "/telegram-webhook", 200, 1)]
     assert f18_audit(c)["status"] == "PASS"
 
 
@@ -1225,3 +1248,98 @@ def test_f18_unmodelled_later_service_change_blocks():
     c["svc_events"] = [svc_event(), later]
     r = f18_audit(c)
     assert r["status"] == "BLOCKED" and any("не моделирует" in x for x in r["iam_invariant"])
+
+
+
+# ------------------------------------------------------------ ревью v5: HIGH-1, MEDIUM-2…5 ---
+def test_f18_ae_able_to_read_an_auth_secret_blocks():
+    c = good_chain(); c["secrets"] = {"EVETIS_TELEGRAM_WEBHOOK_SECRET": ["secretmanager.versions.access"]}
+    r = f18_audit(c)
+    assert r["status"] == "BLOCKED" and any("EVETIS_TELEGRAM_WEBHOOK_SECRET" in x for x in r["iam_invariant"])
+
+
+def test_secret_and_log_forging_permissions_are_forbidden_project_wide():
+    for p_ in ("secretmanager.versions.access", "cloudscheduler.jobs.get", "run.services.get", "logging.logEntries.create"):
+        assert p_ in A.FORBIDDEN_PROJECT_PERMISSIONS
+    assert f18_audit(mutate(good_chain()))["status"] == "PASS"
+    r = audit(FakeSource(iam_events=f18_iam(), f18=good_chain(), granted=["secretmanager.versions.access"]))
+    assert r["status"] == "BLOCKED"
+
+
+def test_ae_reading_a_secret_is_a_data_access_violation():
+    e = entry(svc="secretmanager.googleapis.com", method="google.cloud.secretmanager.v1.SecretManagerService.AccessSecretVersion",
+              authz=[{"permission": "secretmanager.versions.access", "permissionType": "DATA_READ"}])
+    e["protoPayload"]["resourceName"] = f"projects/1/secrets/EVETIS_SCHEDULER_SECRET/versions/latest"
+    assert data_access_violation(e, [SA]).startswith("SECRET_READ:EVETIS_SCHEDULER_SECRET")
+
+
+@pytest.mark.parametrize("drop", ["request_end_missing", "mutation_event_lost", "status_mismatch"])
+def test_f18_event_completeness_via_request_end(drop):
+    c = good_chain()
+    if drop == "request_end_missing":
+        c["events"] = [e for e in c["events"] if not (e["jsonPayload"]["audit_event"] == "request_end"
+                                                      and e["jsonPayload"]["trace_id"] == TR2)]
+    elif drop == "mutation_event_lost":        # attempt и результат потерялись вместе — счётчик request_end выдаёт
+        c["events"] = [e for e in c["events"] if not (e["jsonPayload"].get("mutation_class") == "telegram:sendMessage")]
+    else:
+        for e in c["events"]:
+            if e["jsonPayload"]["audit_event"] == "request_end" and e["jsonPayload"]["trace_id"] == TR2:
+                e["jsonPayload"]["http_status"] = 500
+    r = f18_audit(c)
+    assert r["status"] == "BLOCKED", r["iam_invariant"]
+
+
+def test_f18_failed_request_with_complete_evidence_passes():
+    c = good_chain(); t5 = "3" * 32
+    c["requests"] = c["requests"] + [req("/telegram-webhook", 500, t5)]
+    c["events"] = c["events"] + [ev("auth_ok", t5, route="/telegram-webhook", mechanism="telegram_secret_token"),
+                                 end(t5, "/telegram-webhook", 500, 0)]
+    assert f18_audit(c)["status"] == "PASS"
+
+
+def test_f18_service_log_watermark_required_even_for_empty_window():
+    empty = {"requests": [], "events": [], "ready": {REV}, "svc_events": [svc_event()]}
+    assert f18_audit(empty)["status"] == "PASS"
+    assert f18_audit({**empty, "service_watermark": False})["status"] == "BLOCKED"
+
+
+def test_f18_forged_or_foreign_marker_is_not_instrumentation():
+    class Src(FakeSource):
+        def logs(self, flt):
+            if "instrumentation_ready" in flt:
+                return [{"jsonPayload": {"audit_event": "instrumentation_ready", "audit_schema": "wbc-audit/1",
+                                         "revision": REV, "injected": "x"}}]
+            return super().logs(flt)
+    r = audit(Src(iam_events=f18_iam(), f18=good_chain()))
+    assert r["status"] == "BLOCKED"
+
+
+@pytest.mark.parametrize("path", ["/docs", "/openapi.json", "/redoc"])
+def test_f18_read_only_framework_routes_do_not_fail(path):
+    c = good_chain(); t6 = "2" * 32
+    c["requests"] = c["requests"] + [req(path, 200, t6)]
+    c["events"] = c["events"] + [end(t6, path, 200, 0)]
+    assert f18_audit(c)["status"] == "PASS"
+
+
+def test_f18_percent_encoded_route_is_routed_like_starlette():
+    c = good_chain(); t7 = "1" * 32
+    c["requests"] = c["requests"] + [req("/telegram%2Dwebhook", 200, t7)]
+    c["events"] = c["events"] + [end(t7, "/telegram-webhook", 200, 0)]
+    r = f18_audit(c)
+    assert r["status"] == "FAIL" and any("без auth_ok" in k for k in r["by_type"])   # это webhook без auth_ok
+
+
+def test_f18_success_without_trace_on_unknown_route_blocks():
+    c = good_chain(); c["requests"] = c["requests"] + [req("/weird", 200, "")]
+    assert f18_audit(c)["status"] == "BLOCKED"
+
+
+@pytest.mark.parametrize("svc_events", [
+    [svc_event(ts="2026-09-28T08:00:00Z"), svc_event(sa="other@x.iam.gserviceaccount.com", ts="2026-09-28T12:00:00Z"),
+     svc_event(ts="2026-09-28T12:05:00Z")],                                    # переключили SA в окне и вернули
+    [svc_event(timeout=900)],                                                  # запрос может пережить выдержку
+    [svc_event(timeout=None)],
+])
+def test_f18_spec_changes_inside_window_and_timeout(svc_events):
+    assert f18_audit(mutate(good_chain(), svc_events=svc_events))["status"] == "BLOCKED"

@@ -59,6 +59,8 @@ FORBIDDEN_PROJECT_PERMISSIONS = [
     "run.jobs.run", "run.jobs.runWithOverrides", "run.routes.invoke", "pubsub.topics.publish",
     "cloudscheduler.jobs.run", "workflows.executions.create", "cloudfunctions.functions.call",
     "dataform.repositories.create", "dataform.workflowInvocations.create",
+    # F-18: путь к секретам аутентификации публичного входа и к подделке журналов
+    "secretmanager.versions.access", "cloudscheduler.jobs.get", "run.services.get", "logging.logEntries.create",
 ]
 # На каждом SA проекта: право стать им или подписать от его имени (самопроверка iam testIamPermissions).
 FORBIDDEN_SA_PERMISSIONS = ["iam.serviceAccounts.getAccessToken", "iam.serviceAccounts.signJwt",
@@ -166,6 +168,8 @@ def data_access_violation(entry: dict, identities: list[str]) -> str | None:
         if BQ_READ_METHOD.search(method) and meta <= BQ_READ_META:
             return None
         return f"DATA:{method}:{sorted(meta - BQ_READ_META)}"
+    if svc == "secretmanager.googleapis.com" and "AccessSecretVersion" in method:
+        return f"SECRET_READ:{str(pp.get('resourceName', '?')).split('/secrets/')[-1][:60]}"
     if svc == "iamcredentials.googleapis.com":
         target = ((pp.get("request") or {}).get("name") or "").rsplit("/", 1)[-1]
         return None if target in identities else f"IMPERSONATION:{target or '?'}"
@@ -281,6 +285,25 @@ class GcpAuditSource:
 
     def project_created(self) -> str:
         return self.http("GET", f"{CRM}/projects/{self.project}")["createTime"]
+
+    def secret_granted(self, name: str) -> list[str] | None:
+        """Самопроверка на конкретном секрете: может ли вызывающий прочитать значение. None — секрета нет."""
+        import urllib.error
+        try:
+            r = self.http("POST", f"https://secretmanager.googleapis.com/v1/projects/{self.project}/secrets/{name}"
+                          ":testIamPermissions", {"permissions": ["secretmanager.versions.access"]})
+        except urllib.error.HTTPError as e:
+            if e.code == 404:
+                return None
+            raise
+        return sorted(r.get("permissions", []))
+
+    def probe_service(self, url: str, trace: str) -> int:
+        """Контрольная отметка журналов сервиса: GET /health (только чтение) со своим trace."""
+        import urllib.request
+        req = urllib.request.Request(url, headers={"traceparent": f"00-{trace}-{'1' * 16}-01"})
+        with urllib.request.urlopen(req, timeout=30) as r:
+            return r.status
 
     def project_number(self) -> str:
         return str(self.http("GET", f"{CRM}/projects/{self.project}")["projectNumber"])
@@ -408,7 +431,10 @@ F18_SCHEMA = "wbc-audit/1"
 # маршрут → механизм аутентификации приложения; изменения разрешены только на этих маршрутах
 F18_ROUTES = {"/poll": "scheduler_shared_secret", "/telegram-webhook": "telegram_secret_token",
               "/admin": "admin_token"}
-F18_UNAUTHENTICATED = {"/health"}
+F18_UNAUTHENTICATED = {"/health", "/docs", "/redoc", "/openapi.json", "/docs/oauth2-redirect"}  # только чтение
+F18_AUTH_SECRETS = ("EVETIS_TELEGRAM_WEBHOOK_SECRET", "EVETIS_SCHEDULER_SECRET", "EVETIS_ADMIN_TOKEN",
+                    "EVETIS_TELEGRAM_BOT_TOKEN", "EVETIS_WB_API_TOKEN")
+F18_MAX_TIMEOUT = 300  # запрос, начатый до READY_FOR_PR, заканчивается до чтения журналов (SETTLE_SECONDS)
 # изменение WB — только из webhook после секрета И allow-list; Telegram — из любого аутентифицированного маршрута
 F18_TARGET_RULES = {"wildberries": {"/telegram-webhook": {"telegram_secret_token", "telegram_allowlist"}},
                     "telegram": {r: {m} for r, m in F18_ROUTES.items()}}
@@ -420,13 +446,14 @@ F18_EXPECTED_SA_BINDINGS = {
         "EVETIS_TELEGRAM_WEBHOOK_SECRET", "EVETIS_WB_API_TOKEN")}}
 F18_EVENT_FIELDS = {"audit_event", "audit_schema", "service", "revision", "trace_id", "request_id", "route", "mechanism",
                     "principal_class", "result", "mutation_class", "target_system", "target_ref", "http_status",
+                    "mutation_attempts",
                     "error_class", "severity", "message", "logger", "correlation_id",
                     "logging.googleapis.com/trace", "logging.googleapis.com/spanId"}
 _SECRET_SHAPES = re.compile(r"\d{6,}(?::|%3[Aa])[A-Za-z0-9_-]{30,}|\beyJ[A-Za-z0-9._\-]{20,}|(?i:bearer\s+\S{8,})")
 
 
 def _route(path: str) -> str:
-    path = urllib.parse.urlparse(path or "").path or path
+    path = urllib.parse.unquote(urllib.parse.urlparse(path or "").path or path or "")   # как маршрутизирует Starlette
     return "/admin" if path.startswith("/admin") else path
 
 
@@ -446,9 +473,10 @@ def _latency(v) -> float:
         return -1.0
 
 
-def f18_service_spec(events: list[dict]) -> tuple[dict | None, list[str]]:
-    """Текущие SA и ingress сервиса по истории Create/ReplaceService (Admin Activity). Непонятное — отказ."""
-    spec, problems = None, []
+def f18_service_spec(events: list[dict], since: str = "") -> tuple[dict | None, list[str]]:
+    """Текущие SA/ingress/timeout сервиса по истории Create/ReplaceService (Admin Activity). Непонятное — отказ.
+    Каждое изменение ВНУТРИ окна тоже обязано быть в ожидаемом виде (переключить SA и вернуть — не пройдёт)."""
+    spec, problems, in_window = None, [], []
     for e in sorted(events, key=_order):
         pp = e.get("protoPayload") or {}
         if (pp.get("status") or {}).get("code"):
@@ -457,10 +485,14 @@ def f18_service_spec(events: list[dict]) -> tuple[dict | None, list[str]]:
         svc = (pp.get("request") or {}).get("service")
         if method in ("CreateService", "ReplaceService") and isinstance(svc, dict):
             tpl = ((svc.get("spec") or {}).get("template") or {}).get("spec") or {}
-            spec = {"sa": tpl.get("serviceAccountName"),
+            spec = {"sa": tpl.get("serviceAccountName"), "timeout": tpl.get("timeoutSeconds"),
                     "ingress": ((svc.get("metadata") or {}).get("annotations") or {}).get("run.googleapis.com/ingress")}
+            if since and _secs(e.get("timestamp")) >= _secs(since):
+                in_window.append(spec)
         elif method in ("DeleteService", "UpdateService", "CreateService", "ReplaceService"):
             problems.append(f"изменение сервиса {method} в форме, которую аудит не моделирует")
+    if spec is not None:
+        spec = {**spec, "in_window": in_window}
     return spec, problems
 
 
@@ -488,10 +520,12 @@ def f18_attribution(requests: list[dict], events: list[dict], ready_revisions: s
         route, status = _route(h.get("requestUrl", "")), int(h.get("status") or 0)
         rev = ((r.get("resource") or {}).get("labels") or {}).get("revision_name", "")
         if rev not in ready_revisions:
+            # окно без инструментирования не доказуемо — только BLOCKED, без выдуманных «мутаций»
             blocked.append(f"ревизия {rev or '?'} обслуживала запросы без доказанного инструментирования")
+            continue
         if not t:
-            if 200 <= status < 300 and route in F18_ROUTES:
-                blocked.append(f"успешный запрос {route} без trace — не привязать")
+            if 200 <= status < 300 and route not in F18_UNAUTHENTICATED:
+                blocked.append(f"успешный запрос {route[:40]} без trace — не привязать")
             continue
         by_trace.setdefault(t, []).append({"route": route, "status": status, "rev": rev, "ts": _secs(r.get("timestamp")),
                                            "latency": _latency(h.get("latency")),
@@ -521,6 +555,18 @@ def f18_attribution(requests: list[dict], events: list[dict], ready_revisions: s
         ev_by_trace.setdefault(t, []).append({**jp, "_ts": _secs(e.get("timestamp")),
                                               "_inst": (e.get("labels") or {}).get("instanceId", ""),
                                               "_rev": ((e.get("resource") or {}).get("labels") or {}).get("revision_name", "")})
+    # полнота: у каждого запроса ровно один request_end, и его счётчик попыток = числу mutation_attempt в trace
+    for t, rs in by_trace.items():
+        ends = [ev for ev in ev_by_trace.get(t, []) if ev.get("audit_event") == "request_end"]
+        if len(ends) != 1:
+            blocked.append(f"trace {t[:8]}…: {len(ends)} request_end — полнота событий не доказана")
+        else:
+            attempts = sum(1 for ev in ev_by_trace.get(t, []) if ev.get("audit_event") == "mutation_attempt")
+            if ends[0].get("mutation_attempts") != attempts:
+                blocked.append(f"trace {t[:8]}…: request_end сообщает {ends[0].get('mutation_attempts')} попыток, "
+                               f"в журнале {attempts} — события потеряны")
+            if ends[0].get("http_status") != rs[0]["status"]:
+                blocked.append(f"trace {t[:8]}…: статус request_end ≠ статусу журнала запроса")
     mutations = 0
     for t, evs in ev_by_trace.items():
         rs = by_trace.get(t)
@@ -705,24 +751,54 @@ def f18_check(src, state: dict, since_iso: str, by_type: dict, created: str) -> 
         blocked.append(f"F-18: на сервисе ещё публичные/групповые привязки {sorted(others)[:2]}")
     spec, sp = f18_service_spec(src.logs(
         f'{_logname(src.project, "activity")} AND timestamp>="{created}" AND protoPayload.serviceName="run.googleapis.com" '
-        f'AND protoPayload.resourceName:"services/{F18_SERVICE}" AND protoPayload.methodName:"Service"'))
+        f'AND protoPayload.resourceName:"services/{F18_SERVICE}" AND protoPayload.methodName:"Service"'), since_iso)
     sa = F18_SA.format(project=src.project)
     blocked += [f"F-18: {x}" for x in sp]
-    if not spec or spec.get("sa") != sa or spec.get("ingress") != F18_INGRESS:
-        blocked.append(f"F-18: SA/ingress сервиса не совпадают с ожидаемыми или не восстановлены ({spec})")
+
+    def expected(sp_: dict) -> bool:
+        t_ = sp_.get("timeout")
+        return (sp_.get("sa") == sa and sp_.get("ingress") == F18_INGRESS
+                and isinstance(t_, int) and 0 < t_ <= F18_MAX_TIMEOUT)
+    if not spec or not expected(spec) or not all(expected(x) for x in spec.get("in_window", [])):
+        blocked.append(f"F-18: SA/ingress/timeout сервиса не совпадают с ожидаемыми (в т.ч. внутри окна) или не восстановлены")
     blocked += [f"F-18: {x}" for x in f18_sa_problems(state, src.project, sa)]
+    # AE не должна уметь получить ни один секрет аутентификации публичного входа (иначе «аутентифицирован» ≠ «не AE»)
+    for name in F18_AUTH_SECRETS:
+        got = src.secret_granted(name)
+        if got:
+            blocked.append(f"F-18: идентичность AE может читать секрет {name}")
     base = f'resource.type="cloud_run_revision" AND resource.labels.service_name="{F18_SERVICE}"'
-    requests = src.logs(f'{base} AND logName="projects/{src.project}/logs/run.googleapis.com%2Frequests" '
-                        f'AND timestamp>="{since_iso}"')
-    events = src.logs(f'{base} AND jsonPayload.audit_event:* AND timestamp>="{since_iso}"')
+    stdout = (f'{base} AND logName="projects/{src.project}/logs/run.googleapis.com%2Fstdout" '
+              f'AND jsonPayload.logger="app.audit"')           # события пишет только логгер приложения в stdout
+    # контрольная отметка журналов сервиса: наш GET /health со своим trace должен появиться и в журнале запросов,
+    # и как request_end — только тогда окно журналов сервиса считается догнавшим
+    import secrets as _secrets
+    wm_trace = _secrets.token_hex(16)
+    url = f"https://{F18_SERVICE}-{src.project_number()}.{F18_REGION}.run.app/health"
+    src.probe_service(url, wm_trace)
+    for attempt in range(WATERMARK_TRIES):
+        seen_req = src.logs(f'{base} AND logName="projects/{src.project}/logs/run.googleapis.com%2Frequests" '
+                            f'AND trace="projects/{src.project}/traces/{wm_trace}"')
+        seen_end = src.logs(f'{stdout} AND jsonPayload.audit_event="request_end" AND jsonPayload.trace_id="{wm_trace}"')
+        if seen_req and seen_end:
+            break
+        if attempt == WATERMARK_TRIES - 1:
+            blocked.append("F-18: контрольная отметка журналов сервиса не появилась — полнота окна не доказана")
+        src.sleep(WATERMARK_SLEEP)
+    requests = [r for r in src.logs(f'{base} AND logName="projects/{src.project}/logs/run.googleapis.com%2Frequests" '
+                                    f'AND timestamp>="{since_iso}"')
+                if not str(r.get("trace", "")).endswith(wm_trace)]
+    events = [e for e in src.logs(f'{stdout} AND jsonPayload.audit_event:* AND timestamp>="{since_iso}"')
+              if (e.get("jsonPayload") or {}).get("trace_id") != wm_trace]
     revisions = {((r.get("resource") or {}).get("labels") or {}).get("revision_name", "") for r in requests}
     from datetime import timedelta
     marker_from = (src.now() - timedelta(days=30)).strftime("%Y-%m-%dT%H:%M:%SZ")   # хранение _Default
     ready = set()
     for rev in sorted(x for x in revisions if x):
-        marks = src.logs(f'{base} AND resource.labels.revision_name="{rev}" AND timestamp>="{marker_from}" AND '
+        marks = src.logs(f'{stdout} AND resource.labels.revision_name="{rev}" AND timestamp>="{marker_from}" AND '
                          f'jsonPayload.audit_event="instrumentation_ready" AND jsonPayload.audit_schema="{F18_SCHEMA}"')
-        if marks:
+        if any(set((m.get("jsonPayload") or {})) <= F18_EVENT_FIELDS
+               and (m.get("jsonPayload") or {}).get("revision") == rev for m in marks):
             ready.add(rev)
     b, f, stats = f18_attribution(requests, events, ready)
     blocked += [f"F-18: {x}" for x in b]
