@@ -20,7 +20,7 @@ ENV:
   STRICT_PAGE_CAPS   1 — упор в потолок страниц/окна API роняет сущность с
                      диагностикой (режим бэкфилла); 0 или не задана — как раньше
 """
-import os, sys, uuid
+import os, re, sys, uuid
 from datetime import date, timedelta
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -33,6 +33,55 @@ from entities import REGISTRY
 sys.excepthook = C.safe_excepthook
 
 
+def validate_window(since, until, today):
+    """Строгий режим: текст ошибки окна SINCE/UNTIL или None.
+
+    Даты — ровно YYYY-MM-DD; SINCE ≤ UNTIL; ни одна не позже сегодняшних суток МСК.
+    """
+    parsed = {}
+    for name, v in (("SINCE", since), ("UNTIL", until)):
+        if v is None:
+            continue
+        try:
+            if not re.fullmatch(r"\d{4}-\d{2}-\d{2}", v):   # не ISO-неделя «2026-W39-1»
+                raise ValueError
+            parsed[name] = date.fromisoformat(v)
+        except ValueError:
+            return f"{name} не дата YYYY-MM-DD"
+        if parsed[name] > today:
+            return f"{name} позже сегодняшних суток МСК"
+    if "SINCE" in parsed and "UNTIL" in parsed and parsed["SINCE"] > parsed["UNTIL"]:
+        return "SINCE позже UNTIL"
+    return None
+
+
+def entity_window(since, until, lb_over, lookback, today):
+    """Фактическое окно сущности — ровно так, как его строит main()."""
+    lb = int(lb_over) if lb_over else lookback
+    return (since or str(today - timedelta(days=lb))), (until or str(today))
+
+
+def validate_plan(want, since, until, lb_over, today):
+    """Строгий режим: ошибка фактического окна любой сущности (а не только сырых SINCE/UNTIL).
+
+    UNTIL без SINCE или отрицательный LOOKBACK_OVERRIDE давали окно «начало позже конца» —
+    пустой прогон со статусом OK.
+    """
+    err = validate_window(since, until, today)
+    if err:
+        return err
+    if lb_over and not re.fullmatch(r"\d{1,4}", lb_over):     # пустая строка = не задана, как в main()
+        return "LOOKBACK_OVERRIDE не целое неотрицательное число"
+    for name in want:
+        # Окно имеет смысл только у сущностей с ретроспективой (история); снимки его не читают.
+        if name not in REGISTRY or REGISTRY[name][1] == 0:
+            continue
+        frm, to = entity_window(since, until, lb_over, REGISTRY[name][1], today)
+        if date.fromisoformat(frm) > date.fromisoformat(to):
+            return f"{name}: начало окна {frm} позже конца {to}"
+    return None
+
+
 def main():
     run_id = os.environ.get("INGESTION_RUN_ID") or f"rt-{uuid.uuid4()}"
     want = [e for e in os.environ.get("ENTITIES", "").split(",") if e] or list(REGISTRY)
@@ -40,6 +89,13 @@ def main():
     lb_over = os.environ.get("LOOKBACK_OVERRIDE")
     today = C.now_msk().date()
     ts = C.now_msk().isoformat()
+    if C.STRICT_PAGE_CAPS:
+        # T5: окно проверяется до первого обращения к API. SINCE > UNTIL раньше давал
+        # пустой прогон со статусом OK; будущая дата — «полноту» ещё не наступивших суток.
+        window_error = validate_plan(want, since, until, lb_over, today)
+        if window_error:
+            C.log(event="run_rejected", ingestion_run_id=run_id, reason=window_error)
+            sys.exit(2)
     C.log(event="run_start", ingestion_run_id=run_id, marketplace="OZON",
           entities=want, since=since, until=until)
     ok = failed = 0
