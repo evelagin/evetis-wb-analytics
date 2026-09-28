@@ -780,11 +780,16 @@ def f18_check(src, state: dict, since_iso: str, by_type: dict, created: str) -> 
     # AE не должна уметь получить ни один секрет аутентификации публичного входа (иначе «аутентифицирован» ≠ «не AE»)
     for name in F18_AUTH_SECRETS:
         got = src.secret_granted(name)
-        if got:
+        if got is None:     # секрета нет под ожидаемым именем — куда делся, не доказать
+            blocked.append(f"F-18: секрет аутентификации {name} не найден — самопроверка невозможна")
+        elif got:
             blocked.append(f"F-18: идентичность AE может читать секрет {name}")
     # Terraform state хранит живые заголовки планировщика (X-Scheduler-Secret) — AE не должна читать бакет state
     tf_bucket = f"evetis-wb-tfstate-{src.project_number()}"
-    if src.bucket_granted(tf_bucket, ["storage.objects.get", "storage.objects.list"]):
+    got = src.bucket_granted(tf_bucket, ["storage.objects.get", "storage.objects.list"])
+    if got is None:         # бакет переименован/перенесён — новый может быть читаем, молча не проходим
+        blocked.append(f"F-18: бакет Terraform state {tf_bucket} не найден — самопроверка невозможна")
+    elif got:
         blocked.append(f"F-18: идентичность AE может читать Terraform state ({tf_bucket})")
     base = f'resource.type="cloud_run_revision" AND resource.labels.service_name="{F18_SERVICE}"'
     stdout = (f'{base} AND logName="projects/{src.project}/logs/run.googleapis.com%2Fstdout" '

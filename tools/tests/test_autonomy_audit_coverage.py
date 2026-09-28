@@ -168,6 +168,8 @@ class FakeSource:
         return "1"
 
     def secret_granted(self, name):
+        if name in self._f18.get("missing_secrets", set()):
+            return None
         return self._f18.get("secrets", {}).get(name, [])
 
     def probe_service(self, url, trace):
@@ -175,6 +177,8 @@ class FakeSource:
         return 200
 
     def bucket_granted(self, bucket, perms):
+        if self._f18.get("bucket_missing"):
+            return None
         return self._f18.get("buckets", {}).get(bucket, [])
 
     def project_number(self):
@@ -1356,3 +1360,11 @@ def test_f18_scheduler_secret_read_paths_are_closed():
     c = good_chain(); c["buckets"] = {"evetis-wb-tfstate-1": ["storage.objects.get"]}
     r = f18_audit(c)
     assert r["status"] == "BLOCKED" and any("Terraform state" in x for x in r["iam_invariant"])
+
+
+
+def test_f18_missing_state_bucket_or_auth_secret_blocks():
+    r = f18_audit(mutate(good_chain(), bucket_missing=True))
+    assert r["status"] == "BLOCKED" and any("не найден" in x for x in r["iam_invariant"])
+    r = f18_audit(mutate(good_chain(), missing_secrets={"EVETIS_SCHEDULER_SECRET"}))
+    assert r["status"] == "BLOCKED" and any("EVETIS_SCHEDULER_SECRET" in x for x in r["iam_invariant"])
