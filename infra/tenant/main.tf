@@ -55,6 +55,39 @@ resource "google_bigquery_dataset" "this" {
     }
   }
 
+  # T4.1: деплоер SQL — роли организации mpaSql* только здесь, в ACL датасетов арендатора.
+  # Email — литерал контракта (известен на плане, сканер сверяет ACL точно); SA создаётся раньше.
+  dynamic "access" {
+    for_each = [for g in var.contract.sql_deployer.grants : g if g.dataset_key == each.key]
+    content {
+      role          = access.value.role
+      user_by_email = var.contract.sql_deployer.email
+
+      dynamic "condition" {
+        for_each = access.value.condition == null ? [] : [access.value.condition]
+        content {
+          title       = condition.value.title
+          description = condition.value.description
+          expression  = condition.value.expression
+        }
+      }
+    }
+  }
+
+  depends_on = [google_project_service.this, google_service_account.sql_deployer]
+}
+
+# ── Деплоер SQL (T4.1) ─────────────────────────────────────────────────────
+# Отдельная идентичность пакета SQL: провижионер data-blind, а BigQuery требует у создателя VIEW
+# bigquery.tables.getData на источниках. Ролей на проекте у деплоера нет. Привязку
+# roles/iam.workloadIdentityUser на этот SA создаёт ВЛАДЕЛЕЦ (tools/tenancy/tenant_bootstrap.py
+# bind): у провижионера нет iam.serviceAccounts.setIamPolicy, и давать его не будем.
+resource "google_service_account" "sql_deployer" {
+  project      = var.contract.project_id
+  account_id   = var.contract.sql_deployer.account_id
+  display_name = "VTS SQL deployer"
+  description  = "Tenancy T4.1: views of the approved SQL package via Tables API; dataset ACL roles only"
+
   depends_on = [google_project_service.this]
 }
 

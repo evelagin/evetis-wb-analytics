@@ -117,6 +117,66 @@
   "project_id_revision": 1,
   "region": "europe-west1",
   "scheduler_state": "PAUSED",
+  "sql_deployer": {
+    "account_id": "sa-sql-deployer",
+    "email": "sa-sql-deployer@mpa-t-client-002.iam.gserviceaccount.com",
+    "grants": [
+      {
+        "condition": null,
+        "dataset_key": "analytics_share",
+        "role": "organizations/1043233412973/roles/mpaSqlViewCreate"
+      },
+      {
+        "condition": null,
+        "dataset_key": "analytics_share",
+        "role": "organizations/1043233412973/roles/mpaSqlViewUpdate"
+      },
+      {
+        "condition": null,
+        "dataset_key": "ozon_mart",
+        "role": "organizations/1043233412973/roles/mpaSqlSourceRead"
+      },
+      {
+        "condition": null,
+        "dataset_key": "ozon_mart",
+        "role": "organizations/1043233412973/roles/mpaSqlViewCreate"
+      },
+      {
+        "condition": null,
+        "dataset_key": "ozon_mart",
+        "role": "organizations/1043233412973/roles/mpaSqlViewUpdate"
+      },
+      {
+        "condition": null,
+        "dataset_key": "ozon_raw",
+        "role": "organizations/1043233412973/roles/mpaSqlSourceRead"
+      },
+      {
+        "condition": null,
+        "dataset_key": "ref",
+        "role": "organizations/1043233412973/roles/mpaSqlSourceRead"
+      },
+      {
+        "condition": null,
+        "dataset_key": "tenant_ops",
+        "role": "organizations/1043233412973/roles/mpaSqlSourceRead"
+      },
+      {
+        "condition": null,
+        "dataset_key": "tenant_ops",
+        "role": "organizations/1043233412973/roles/mpaSqlViewCreate"
+      },
+      {
+        "condition": {
+          "description": "Only package views V_*; platform tables of tenant_ops are excluded",
+          "expression": "resource.type == \"bigquery.googleapis.com/Table\" && resource.service == \"bigquery.googleapis.com\" && resource.name.startsWith(\"projects/mpa-t-client-002/datasets/tenant_ops/tables/V_\")",
+          "title": "sql-deployer-tenant-ops-views"
+        },
+        "dataset_key": "tenant_ops",
+        "role": "organizations/1043233412973/roles/mpaSqlViewUpdate"
+      }
+    ]
+  },
   "state": {
     "bucket": "mpa-platform-tfstate-777428383056",
     "prefix": "tenants/client_001"

@@ -10,9 +10,14 @@ name: tenant-infra
 #   apply       — job verify (без id-token): провенанс артефакта прогона plan по API GitHub,
 #                 хеши, контракт, сканер, дельта; job apply (needs: verify): WIF и
 #                 `terraform apply <tenant.tfplan>` ровно проверенного файла. Плана нет.
-#   sql-preview — только чтение: что пакет SQL создаст/обновит (Tables API).
+#   sql-preview — только чтение: что пакет SQL создаст/обновит (Tables API) + проба прав деплоера.
 #   sql-deploy  — представления пакета через tables.insert/update, чтение назад и сверка.
-#   sql-verify  — только чтение: живые представления = пакет.
+#   sql-verify  — только чтение: живые представления = пакет, таблицы = контракт.
+#
+# Идентичности (T4.1): plan/apply — sa-tenant-provisioner@mpa-platform (инфраструктура, без
+# чтения данных); sql — sa-sql-deployer@<проект арендатора> (только роли mpaSql* в ACL датасетов).
+# Условие провайдера WIF одно на оба SA: разделение — по job'ам этого файла и по правам в GCP.
+# Привязку workloadIdentityUser на деплоер создаёт владелец (tools/tenancy/tenant_bootstrap.py).
 #
 # Одобрение — сам запуск владельцем (GITHUB_ACTOR_ID, первая попытка прогона) с точными входами.
 # Environments с обязательными ревьюерами в приватном репозитории на GitHub Free недоступны, main
@@ -272,13 +277,20 @@ jobs:
         run: |
           python tools/tenancy/sql_package.py render "$TENANT_ID" "$RUNNER_TEMP/sql"
           python tools/tenancy/sql_deploy.py verify-package "$TENANT_ID" "$RUNNER_TEMP/sql"
+      - name: resolve SQL deployer identity (registry, not the provisioner)
+        # T4.1: пакет SQL пишет sa-sql-deployer@<проект арендатора> — SA выводится из реестра
+        # (tools/tenancy/sql_identity.py). Провижионер data-blind и сюда не допускается.
+        id: ident
+        run: python tools/tenancy/sql_identity.py deployer-email "$TENANT_ID" >> "$GITHUB_OUTPUT"
       - uses: google-github-actions/auth@c200f3691d83b41bf9bbd8638997a462592937ed # v2.1.13
         id: auth
         with:
           workload_identity_provider: projects/777428383056/locations/global/workloadIdentityPools/tenant-infra-pool/providers/github-tenant-infra
-          service_account: sa-tenant-provisioner@mpa-platform.iam.gserviceaccount.com
+          service_account: ${{ steps.ident.outputs.email }}
           token_format: access_token
           access_token_lifetime: 900s
+          # userinfo.email — чтобы sql_deploy сверил принципал токена через tokeninfo (закрытый отказ).
+          access_token_scopes: https://www.googleapis.com/auth/cloud-platform,https://www.googleapis.com/auth/userinfo.email
       - name: Tables API (no query jobs)
         env:
           GCP_ACCESS_TOKEN: ${{ steps.auth.outputs.access_token }}

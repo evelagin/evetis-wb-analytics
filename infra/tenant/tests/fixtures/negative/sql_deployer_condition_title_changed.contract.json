@@ -1,0 +1,499 @@
+{
+  "apis": [
+    "bigquery.googleapis.com",
+    "cloudscheduler.googleapis.com",
+    "iam.googleapis.com",
+    "logging.googleapis.com",
+    "run.googleapis.com",
+    "secretmanager.googleapis.com"
+  ],
+  "bootstrap_apis": [
+    "cloudbilling.googleapis.com",
+    "cloudresourcemanager.googleapis.com",
+    "serviceusage.googleapis.com"
+  ],
+  "bq_location": "EU",
+  "contract_version": 1,
+  "datasets": {
+    "analytics_share": "analytics_share",
+    "ozon_mart": "ozon_mart",
+    "ozon_raw": "ozon_raw",
+    "ref": "ref",
+    "tenant_ops": "tenant_ops"
+  },
+  "labels": {
+    "managed_by": "vts-tenant-infra",
+    "tenant": "client_001"
+  },
+  "marketplaces": {
+    "ozon": {
+      "jobs": {
+        "ozon-runtime-daily": {
+          "entities": [
+            "catalog",
+            "prices",
+            "seller_info",
+            "finance_accrual",
+            "ads_campaigns",
+            "ads_expense_daily",
+            "ads_sku_daily",
+            "supplies"
+          ],
+          "env": {
+            "BQ_LOCATION": "EU",
+            "BQ_RAW_DATASET": "ozon_raw",
+            "BQ_REF_DATASET": "ref",
+            "ENTITIES": "catalog,prices,seller_info,finance_accrual,ads_campaigns,ads_expense_daily,ads_sku_daily,supplies",
+            "GCP_PROJECT_ID": "mpa-t-client-001",
+            "OZON_SECRET_PERF_CLIENT_ID": "ozon-perf-client-id",
+            "OZON_SECRET_PERF_CLIENT_SECRET": "ozon-perf-client-secret",
+            "OZON_SECRET_SELLER_API_KEY": "ozon-seller-api-key",
+            "OZON_SECRET_SELLER_CLIENT_ID": "ozon-seller-client-id",
+            "STRICT_PAGE_CAPS": "1"
+          },
+          "schedule": "30 6 * * *",
+          "scheduler": "ozon-daily",
+          "time_zone": "Europe/Moscow"
+        },
+        "ozon-runtime-fast": {
+          "entities": [
+            "stocks",
+            "fbo_postings"
+          ],
+          "env": {
+            "BQ_LOCATION": "EU",
+            "BQ_RAW_DATASET": "ozon_raw",
+            "BQ_REF_DATASET": "ref",
+            "ENTITIES": "stocks,fbo_postings",
+            "GCP_PROJECT_ID": "mpa-t-client-001",
+            "OZON_SECRET_PERF_CLIENT_ID": "ozon-perf-client-id",
+            "OZON_SECRET_PERF_CLIENT_SECRET": "ozon-perf-client-secret",
+            "OZON_SECRET_SELLER_API_KEY": "ozon-seller-api-key",
+            "OZON_SECRET_SELLER_CLIENT_ID": "ozon-seller-client-id",
+            "STRICT_PAGE_CAPS": "1"
+          },
+          "schedule": "0 7,13,19 * * *",
+          "scheduler": "ozon-fast",
+          "time_zone": "Europe/Moscow"
+        },
+        "ozon-runtime-weekly": {
+          "entities": [
+            "clusters"
+          ],
+          "env": {
+            "BQ_LOCATION": "EU",
+            "BQ_RAW_DATASET": "ozon_raw",
+            "BQ_REF_DATASET": "ref",
+            "ENTITIES": "clusters",
+            "GCP_PROJECT_ID": "mpa-t-client-001",
+            "OZON_SECRET_PERF_CLIENT_ID": "ozon-perf-client-id",
+            "OZON_SECRET_PERF_CLIENT_SECRET": "ozon-perf-client-secret",
+            "OZON_SECRET_SELLER_API_KEY": "ozon-seller-api-key",
+            "OZON_SECRET_SELLER_CLIENT_ID": "ozon-seller-client-id",
+            "STRICT_PAGE_CAPS": "1"
+          },
+          "schedule": "0 5 * * 1",
+          "scheduler": "ozon-weekly",
+          "time_zone": "Europe/Moscow"
+        }
+      },
+      "raw_dataset_key": "ozon_raw",
+      "ref_dataset_key": "ref",
+      "runtime_image": "europe-west1-docker.pkg.dev/mpa-platform/mpa-runtime/ozon-runtime@sha256:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+      "secret_ids": {
+        "performance_client_id": "ozon-perf-client-id",
+        "performance_client_secret": "ozon-perf-client-secret",
+        "seller_api_key": "ozon-seller-api-key",
+        "seller_client_id": "ozon-seller-client-id"
+      },
+      "service_accounts": {
+        "runtime": "sa-ozon-runtime",
+        "scheduler": "sa-ozon-scheduler"
+      }
+    }
+  },
+  "parent_folder": "folders/881419274207",
+  "project_id": "mpa-t-client-001",
+  "project_id_revision": 1,
+  "region": "europe-west1",
+  "scheduler_state": "PAUSED",
+  "sql_deployer": {
+    "account_id": "sa-sql-deployer",
+    "email": "sa-sql-deployer@mpa-t-client-001.iam.gserviceaccount.com",
+    "grants": [
+      {
+        "condition": null,
+        "dataset_key": "analytics_share",
+        "role": "organizations/1043233412973/roles/mpaSqlViewCreate"
+      },
+      {
+        "condition": null,
+        "dataset_key": "analytics_share",
+        "role": "organizations/1043233412973/roles/mpaSqlViewUpdate"
+      },
+      {
+        "condition": null,
+        "dataset_key": "ozon_mart",
+        "role": "organizations/1043233412973/roles/mpaSqlSourceRead"
+      },
+      {
+        "condition": null,
+        "dataset_key": "ozon_mart",
+        "role": "organizations/1043233412973/roles/mpaSqlViewCreate"
+      },
+      {
+        "condition": null,
+        "dataset_key": "ozon_mart",
+        "role": "organizations/1043233412973/roles/mpaSqlViewUpdate"
+      },
+      {
+        "condition": null,
+        "dataset_key": "ozon_raw",
+        "role": "organizations/1043233412973/roles/mpaSqlSourceRead"
+      },
+      {
+        "condition": null,
+        "dataset_key": "ref",
+        "role": "organizations/1043233412973/roles/mpaSqlSourceRead"
+      },
+      {
+        "condition": null,
+        "dataset_key": "tenant_ops",
+        "role": "organizations/1043233412973/roles/mpaSqlSourceRead"
+      },
+      {
+        "condition": null,
+        "dataset_key": "tenant_ops",
+        "role": "organizations/1043233412973/roles/mpaSqlViewCreate"
+      },
+      {
+        "condition": {
+          "description": "Only package views V_*; platform tables of tenant_ops are excluded",
+          "expression": "resource.type == \"bigquery.googleapis.com/Table\" && resource.service == \"bigquery.googleapis.com\" && resource.name.startsWith(\"projects/mpa-t-client-001/datasets/tenant_ops/tables/V_\")",
+          "title": "anything"
+        },
+        "dataset_key": "tenant_ops",
+        "role": "organizations/1043233412973/roles/mpaSqlViewUpdate"
+      }
+    ]
+  },
+  "state": {
+    "bucket": "mpa-platform-tfstate-777428383056",
+    "prefix": "tenants/client_001"
+  },
+  "status": "NEW",
+  "tables": [
+    {
+      "clustering": [
+        "entity",
+        "status"
+      ],
+      "dataset_key": "ozon_raw",
+      "require_partition_filter": false,
+      "schema_json": "[{\"mode\":\"REQUIRED\",\"name\":\"ingestion_run_id\",\"type\":\"STRING\"},{\"mode\":\"REQUIRED\",\"name\":\"marketplace\",\"type\":\"STRING\"},{\"mode\":\"REQUIRED\",\"name\":\"entity\",\"type\":\"STRING\"},{\"mode\":\"REQUIRED\",\"name\":\"started_at\",\"type\":\"TIMESTAMP\"},{\"mode\":\"NULLABLE\",\"name\":\"completed_at\",\"type\":\"TIMESTAMP\"},{\"mode\":\"NULLABLE\",\"name\":\"source_from\",\"type\":\"STRING\"},{\"mode\":\"NULLABLE\",\"name\":\"source_to\",\"type\":\"STRING\"},{\"mode\":\"NULLABLE\",\"name\":\"requests\",\"type\":\"INTEGER\"},{\"mode\":\"NULLABLE\",\"name\":\"rows_received\",\"type\":\"INTEGER\"},{\"mode\":\"NULLABLE\",\"name\":\"rows_inserted\",\"type\":\"INTEGER\"},{\"mode\":\"NULLABLE\",\"name\":\"rows_updated\",\"type\":\"INTEGER\"},{\"mode\":\"NULLABLE\",\"name\":\"errors\",\"type\":\"INTEGER\"},{\"mode\":\"NULLABLE\",\"name\":\"retry_count\",\"type\":\"INTEGER\"},{\"mode\":\"REQUIRED\",\"name\":\"status\",\"type\":\"STRING\"},{\"mode\":\"NULLABLE\",\"name\":\"error_message\",\"type\":\"STRING\"},{\"mode\":\"NULLABLE\",\"name\":\"job_execution\",\"type\":\"STRING\"}]",
+      "table_id": "OZON_INGESTION_RUNS",
+      "time_partitioning_field": "started_at",
+      "time_partitioning_type": "DAY"
+    },
+    {
+      "clustering": [
+        "campaign_id"
+      ],
+      "dataset_key": "ozon_raw",
+      "require_partition_filter": false,
+      "schema_json": "[{\"mode\":\"REQUIRED\",\"name\":\"snapshot_date\",\"type\":\"DATE\"},{\"mode\":\"REQUIRED\",\"name\":\"campaign_id\",\"type\":\"STRING\"},{\"mode\":\"NULLABLE\",\"name\":\"title\",\"type\":\"STRING\"},{\"mode\":\"NULLABLE\",\"name\":\"state\",\"type\":\"STRING\"},{\"mode\":\"NULLABLE\",\"name\":\"adv_object_type\",\"type\":\"STRING\"},{\"mode\":\"NULLABLE\",\"name\":\"payment_type\",\"type\":\"STRING\"},{\"mode\":\"NULLABLE\",\"name\":\"expense_strategy\",\"type\":\"STRING\"},{\"mode\":\"NULLABLE\",\"name\":\"placement\",\"type\":\"STRING\"},{\"mode\":\"NULLABLE\",\"name\":\"weekly_budget_rub\",\"type\":\"NUMERIC\"},{\"mode\":\"NULLABLE\",\"name\":\"daily_budget_rub\",\"type\":\"NUMERIC\"},{\"mode\":\"NULLABLE\",\"name\":\"product_autopilot_strategy\",\"type\":\"STRING\"},{\"mode\":\"NULLABLE\",\"name\":\"autostop_status\",\"type\":\"STRING\"},{\"mode\":\"NULLABLE\",\"name\":\"campaign_created_at\",\"type\":\"TIMESTAMP\"},{\"mode\":\"NULLABLE\",\"name\":\"campaign_updated_at\",\"type\":\"TIMESTAMP\"},{\"mode\":\"REQUIRED\",\"name\":\"extracted_at\",\"type\":\"TIMESTAMP\"},{\"mode\":\"REQUIRED\",\"name\":\"source_endpoint\",\"type\":\"STRING\"},{\"mode\":\"REQUIRED\",\"name\":\"ingestion_run_id\",\"type\":\"STRING\"},{\"mode\":\"NULLABLE\",\"name\":\"source_payload_hash\",\"type\":\"STRING\"}]",
+      "table_id": "RAW_OZON_ADS_CAMPAIGNS",
+      "time_partitioning_field": "snapshot_date",
+      "time_partitioning_type": "DAY"
+    },
+    {
+      "clustering": [
+        "campaign_id"
+      ],
+      "dataset_key": "ozon_raw",
+      "require_partition_filter": false,
+      "schema_json": "[{\"mode\":\"REQUIRED\",\"name\":\"date\",\"type\":\"DATE\"},{\"mode\":\"REQUIRED\",\"name\":\"campaign_id\",\"type\":\"STRING\"},{\"mode\":\"NULLABLE\",\"name\":\"campaign_title\",\"type\":\"STRING\"},{\"mode\":\"NULLABLE\",\"name\":\"expense_rub\",\"type\":\"NUMERIC\"},{\"mode\":\"NULLABLE\",\"name\":\"bonus_expense_rub\",\"type\":\"NUMERIC\"},{\"mode\":\"NULLABLE\",\"name\":\"subscription_expense_rub\",\"type\":\"NUMERIC\"},{\"mode\":\"NULLABLE\",\"name\":\"impressions\",\"type\":\"INTEGER\"},{\"mode\":\"NULLABLE\",\"name\":\"clicks\",\"type\":\"INTEGER\"},{\"mode\":\"NULLABLE\",\"name\":\"orders\",\"type\":\"INTEGER\"},{\"mode\":\"NULLABLE\",\"name\":\"revenue_rub\",\"type\":\"NUMERIC\"},{\"mode\":\"REQUIRED\",\"name\":\"extracted_at\",\"type\":\"TIMESTAMP\"},{\"mode\":\"REQUIRED\",\"name\":\"source_endpoint\",\"type\":\"STRING\"},{\"mode\":\"REQUIRED\",\"name\":\"ingestion_run_id\",\"type\":\"STRING\"},{\"mode\":\"NULLABLE\",\"name\":\"source_payload_hash\",\"type\":\"STRING\"}]",
+      "table_id": "RAW_OZON_ADS_EXPENSE_DAILY",
+      "time_partitioning_field": "date",
+      "time_partitioning_type": "DAY"
+    },
+    {
+      "clustering": [
+        "campaign_id",
+        "sku"
+      ],
+      "dataset_key": "ozon_raw",
+      "require_partition_filter": false,
+      "schema_json": "[{\"mode\":\"REQUIRED\",\"name\":\"date\",\"type\":\"DATE\"},{\"mode\":\"REQUIRED\",\"name\":\"campaign_id\",\"type\":\"STRING\"},{\"mode\":\"REQUIRED\",\"name\":\"sku\",\"type\":\"STRING\"},{\"mode\":\"NULLABLE\",\"name\":\"attributed_spend_rub\",\"type\":\"NUMERIC\"},{\"mode\":\"NULLABLE\",\"name\":\"impressions\",\"type\":\"INTEGER\"},{\"mode\":\"NULLABLE\",\"name\":\"clicks\",\"type\":\"INTEGER\"},{\"mode\":\"NULLABLE\",\"name\":\"cart_adds\",\"type\":\"INTEGER\"},{\"mode\":\"NULLABLE\",\"name\":\"orders\",\"type\":\"INTEGER\"},{\"mode\":\"NULLABLE\",\"name\":\"revenue_promo_rub\",\"type\":\"NUMERIC\"},{\"mode\":\"NULLABLE\",\"name\":\"ordered_total_rub\",\"type\":\"NUMERIC\"},{\"mode\":\"NULLABLE\",\"name\":\"drr_promo_pct\",\"type\":\"NUMERIC\"},{\"mode\":\"NULLABLE\",\"name\":\"drr_total_pct\",\"type\":\"NUMERIC\"},{\"mode\":\"REQUIRED\",\"name\":\"attribution_status\",\"type\":\"STRING\"},{\"mode\":\"REQUIRED\",\"name\":\"extracted_at\",\"type\":\"TIMESTAMP\"},{\"mode\":\"REQUIRED\",\"name\":\"source_endpoint\",\"type\":\"STRING\"},{\"mode\":\"REQUIRED\",\"name\":\"ingestion_run_id\",\"type\":\"STRING\"},{\"mode\":\"NULLABLE\",\"name\":\"source_payload_hash\",\"type\":\"STRING\"}]",
+      "table_id": "RAW_OZON_ADS_SKU_DAILY",
+      "time_partitioning_field": "date",
+      "time_partitioning_type": "DAY"
+    },
+    {
+      "clustering": [
+        "sku"
+      ],
+      "dataset_key": "ozon_raw",
+      "require_partition_filter": false,
+      "schema_json": "[{\"mode\":\"REQUIRED\",\"name\":\"snapshot_date\",\"type\":\"DATE\"},{\"mode\":\"REQUIRED\",\"name\":\"sku\",\"type\":\"STRING\"},{\"mode\":\"NULLABLE\",\"name\":\"product_id\",\"type\":\"STRING\"},{\"mode\":\"NULLABLE\",\"name\":\"offer_id\",\"type\":\"STRING\"},{\"mode\":\"NULLABLE\",\"name\":\"name\",\"type\":\"STRING\"},{\"mode\":\"NULLABLE\",\"name\":\"is_archived\",\"type\":\"BOOLEAN\"},{\"mode\":\"NULLABLE\",\"name\":\"has_stock\",\"type\":\"BOOLEAN\"},{\"mode\":\"NULLABLE\",\"name\":\"stock_present\",\"type\":\"INTEGER\"},{\"mode\":\"NULLABLE\",\"name\":\"stock_reserved\",\"type\":\"INTEGER\"},{\"mode\":\"NULLABLE\",\"name\":\"visibility_has_price\",\"type\":\"BOOLEAN\"},{\"mode\":\"NULLABLE\",\"name\":\"visibility_has_stock\",\"type\":\"BOOLEAN\"},{\"mode\":\"NULLABLE\",\"name\":\"status_name\",\"type\":\"STRING\"},{\"mode\":\"NULLABLE\",\"name\":\"price_index_color\",\"type\":\"STRING\"},{\"mode\":\"NULLABLE\",\"name\":\"description_category_id\",\"type\":\"INTEGER\"},{\"mode\":\"NULLABLE\",\"name\":\"type_id\",\"type\":\"INTEGER\"},{\"mode\":\"NULLABLE\",\"name\":\"created_at\",\"type\":\"TIMESTAMP\"},{\"mode\":\"NULLABLE\",\"name\":\"updated_at\",\"type\":\"TIMESTAMP\"},{\"mode\":\"REQUIRED\",\"name\":\"extracted_at\",\"type\":\"TIMESTAMP\"},{\"mode\":\"NULLABLE\",\"name\":\"source_event_time\",\"type\":\"TIMESTAMP\"},{\"mode\":\"REQUIRED\",\"name\":\"source_endpoint\",\"type\":\"STRING\"},{\"mode\":\"REQUIRED\",\"name\":\"ingestion_run_id\",\"type\":\"STRING\"},{\"mode\":\"NULLABLE\",\"name\":\"source_payload_hash\",\"type\":\"STRING\"}]",
+      "table_id": "RAW_OZON_CATALOG",
+      "time_partitioning_field": "snapshot_date",
+      "time_partitioning_type": "DAY"
+    },
+    {
+      "clustering": [
+        "warehouse_id",
+        "cluster_id"
+      ],
+      "dataset_key": "ozon_raw",
+      "require_partition_filter": false,
+      "schema_json": "[{\"mode\":\"REQUIRED\",\"name\":\"snapshot_date\",\"type\":\"DATE\"},{\"mode\":\"REQUIRED\",\"name\":\"cluster_id\",\"type\":\"INTEGER\"},{\"mode\":\"NULLABLE\",\"name\":\"cluster_name\",\"type\":\"STRING\"},{\"mode\":\"NULLABLE\",\"name\":\"cluster_type\",\"type\":\"STRING\"},{\"mode\":\"NULLABLE\",\"name\":\"macrolocal_cluster_id\",\"type\":\"INTEGER\"},{\"mode\":\"REQUIRED\",\"name\":\"warehouse_id\",\"type\":\"STRING\"},{\"mode\":\"NULLABLE\",\"name\":\"warehouse_name\",\"type\":\"STRING\"},{\"mode\":\"NULLABLE\",\"name\":\"warehouse_type\",\"type\":\"STRING\"},{\"mode\":\"REQUIRED\",\"name\":\"extracted_at\",\"type\":\"TIMESTAMP\"},{\"mode\":\"REQUIRED\",\"name\":\"source_endpoint\",\"type\":\"STRING\"},{\"mode\":\"REQUIRED\",\"name\":\"ingestion_run_id\",\"type\":\"STRING\"},{\"mode\":\"NULLABLE\",\"name\":\"source_payload_hash\",\"type\":\"STRING\"}]",
+      "table_id": "RAW_OZON_CLUSTERS",
+      "time_partitioning_field": "snapshot_date",
+      "time_partitioning_type": "DAY"
+    },
+    {
+      "clustering": [
+        "type_id",
+        "sku"
+      ],
+      "dataset_key": "ozon_raw",
+      "require_partition_filter": false,
+      "schema_json": "[{\"mode\":\"REQUIRED\",\"name\":\"event_date\",\"type\":\"DATE\"},{\"mode\":\"REQUIRED\",\"name\":\"accrual_id\",\"type\":\"INTEGER\"},{\"mode\":\"REQUIRED\",\"name\":\"type_id\",\"type\":\"INTEGER\"},{\"mode\":\"NULLABLE\",\"name\":\"operation_name\",\"type\":\"STRING\"},{\"mode\":\"NULLABLE\",\"name\":\"accrued_category\",\"type\":\"STRING\"},{\"mode\":\"NULLABLE\",\"name\":\"unit_number\",\"type\":\"STRING\"},{\"mode\":\"NULLABLE\",\"name\":\"unit_number_meaning\",\"type\":\"STRING\"},{\"mode\":\"NULLABLE\",\"name\":\"posting_number\",\"type\":\"STRING\"},{\"mode\":\"NULLABLE\",\"name\":\"sku\",\"type\":\"STRING\"},{\"mode\":\"NULLABLE\",\"name\":\"amount_rub\",\"type\":\"NUMERIC\"},{\"mode\":\"NULLABLE\",\"name\":\"currency\",\"type\":\"STRING\"},{\"mode\":\"NULLABLE\",\"name\":\"seller_base_price_rub\",\"type\":\"NUMERIC\"},{\"mode\":\"NULLABLE\",\"name\":\"buyer_paid_price_rub\",\"type\":\"NUMERIC\"},{\"mode\":\"NULLABLE\",\"name\":\"ozon_bonus_rub\",\"type\":\"NUMERIC\"},{\"mode\":\"NULLABLE\",\"name\":\"ozon_coinvestment_rub\",\"type\":\"NUMERIC\"},{\"mode\":\"NULLABLE\",\"name\":\"commission_rub\",\"type\":\"NUMERIC\"},{\"mode\":\"NULLABLE\",\"name\":\"commission_ratio\",\"type\":\"NUMERIC\"},{\"mode\":\"NULLABLE\",\"name\":\"quantity\",\"type\":\"INTEGER\"},{\"mode\":\"REQUIRED\",\"name\":\"extracted_at\",\"type\":\"TIMESTAMP\"},{\"mode\":\"REQUIRED\",\"name\":\"source_endpoint\",\"type\":\"STRING\"},{\"mode\":\"REQUIRED\",\"name\":\"ingestion_run_id\",\"type\":\"STRING\"},{\"mode\":\"NULLABLE\",\"name\":\"source_payload_hash\",\"type\":\"STRING\"}]",
+      "table_id": "RAW_OZON_FINANCE_ACCRUAL",
+      "time_partitioning_field": "event_date",
+      "time_partitioning_type": "DAY"
+    },
+    {
+      "clustering": [
+        "posting_number",
+        "sku"
+      ],
+      "dataset_key": "ozon_raw",
+      "require_partition_filter": false,
+      "schema_json": "[{\"mode\":\"REQUIRED\",\"name\":\"posting_number\",\"type\":\"STRING\"},{\"mode\":\"REQUIRED\",\"name\":\"sku\",\"type\":\"STRING\"},{\"mode\":\"REQUIRED\",\"name\":\"order_date\",\"type\":\"DATE\"},{\"mode\":\"NULLABLE\",\"name\":\"order_id\",\"type\":\"INTEGER\"},{\"mode\":\"NULLABLE\",\"name\":\"order_number\",\"type\":\"STRING\"},{\"mode\":\"NULLABLE\",\"name\":\"status\",\"type\":\"STRING\"},{\"mode\":\"NULLABLE\",\"name\":\"substatus\",\"type\":\"STRING\"},{\"mode\":\"NULLABLE\",\"name\":\"created_at\",\"type\":\"TIMESTAMP\"},{\"mode\":\"NULLABLE\",\"name\":\"in_process_at\",\"type\":\"TIMESTAMP\"},{\"mode\":\"NULLABLE\",\"name\":\"cancel_reason_id\",\"type\":\"INTEGER\"},{\"mode\":\"NULLABLE\",\"name\":\"quantity\",\"type\":\"INTEGER\"},{\"mode\":\"NULLABLE\",\"name\":\"price_rub\",\"type\":\"NUMERIC\"},{\"mode\":\"NULLABLE\",\"name\":\"old_price_rub\",\"type\":\"NUMERIC\"},{\"mode\":\"NULLABLE\",\"name\":\"total_discount_value_rub\",\"type\":\"NUMERIC\"},{\"mode\":\"NULLABLE\",\"name\":\"commission_amount_rub\",\"type\":\"NUMERIC\"},{\"mode\":\"NULLABLE\",\"name\":\"payout_rub\",\"type\":\"NUMERIC\"},{\"mode\":\"REPEATED\",\"name\":\"actions\",\"type\":\"STRING\"},{\"mode\":\"NULLABLE\",\"name\":\"warehouse_name\",\"type\":\"STRING\"},{\"mode\":\"NULLABLE\",\"name\":\"city\",\"type\":\"STRING\"},{\"mode\":\"REQUIRED\",\"name\":\"extracted_at\",\"type\":\"TIMESTAMP\"},{\"mode\":\"NULLABLE\",\"name\":\"source_event_time\",\"type\":\"TIMESTAMP\"},{\"mode\":\"REQUIRED\",\"name\":\"source_endpoint\",\"type\":\"STRING\"},{\"mode\":\"REQUIRED\",\"name\":\"ingestion_run_id\",\"type\":\"STRING\"},{\"mode\":\"NULLABLE\",\"name\":\"source_payload_hash\",\"type\":\"STRING\"},{\"mode\":\"NULLABLE\",\"name\":\"warehouse_id\",\"type\":\"STRING\"}]",
+      "table_id": "RAW_OZON_POSTINGS_FBO",
+      "time_partitioning_field": "order_date",
+      "time_partitioning_type": "DAY"
+    },
+    {
+      "clustering": [
+        "offer_id"
+      ],
+      "dataset_key": "ozon_raw",
+      "require_partition_filter": false,
+      "schema_json": "[{\"mode\":\"REQUIRED\",\"name\":\"snapshot_ts\",\"type\":\"TIMESTAMP\"},{\"mode\":\"REQUIRED\",\"name\":\"snapshot_date\",\"type\":\"DATE\"},{\"mode\":\"REQUIRED\",\"name\":\"offer_id\",\"type\":\"STRING\"},{\"mode\":\"NULLABLE\",\"name\":\"product_id\",\"type\":\"STRING\"},{\"mode\":\"NULLABLE\",\"name\":\"price_rub\",\"type\":\"NUMERIC\"},{\"mode\":\"NULLABLE\",\"name\":\"old_price_rub\",\"type\":\"NUMERIC\"},{\"mode\":\"NULLABLE\",\"name\":\"min_price_rub\",\"type\":\"NUMERIC\"},{\"mode\":\"NULLABLE\",\"name\":\"marketing_seller_price_rub\",\"type\":\"NUMERIC\"},{\"mode\":\"NULLABLE\",\"name\":\"net_price_rub\",\"type\":\"NUMERIC\"},{\"mode\":\"NULLABLE\",\"name\":\"acquiring_rub\",\"type\":\"NUMERIC\"},{\"mode\":\"NULLABLE\",\"name\":\"sales_percent_fbo\",\"type\":\"NUMERIC\"},{\"mode\":\"NULLABLE\",\"name\":\"price_index_color\",\"type\":\"STRING\"},{\"mode\":\"NULLABLE\",\"name\":\"external_min_price_rub\",\"type\":\"NUMERIC\"},{\"mode\":\"NULLABLE\",\"name\":\"external_index_value\",\"type\":\"NUMERIC\"},{\"mode\":\"NULLABLE\",\"name\":\"ozon_actions_exist\",\"type\":\"BOOLEAN\"},{\"mode\":\"REQUIRED\",\"name\":\"extracted_at\",\"type\":\"TIMESTAMP\"},{\"mode\":\"REQUIRED\",\"name\":\"source_endpoint\",\"type\":\"STRING\"},{\"mode\":\"REQUIRED\",\"name\":\"ingestion_run_id\",\"type\":\"STRING\"},{\"mode\":\"NULLABLE\",\"name\":\"source_payload_hash\",\"type\":\"STRING\"},{\"mode\":\"NULLABLE\",\"name\":\"currency_code\",\"type\":\"STRING\"},{\"mode\":\"NULLABLE\",\"name\":\"retail_price_rub\",\"type\":\"NUMERIC\"},{\"mode\":\"NULLABLE\",\"name\":\"vat_rate\",\"type\":\"NUMERIC\"},{\"mode\":\"NULLABLE\",\"name\":\"auto_action_enabled\",\"type\":\"BOOLEAN\"},{\"mode\":\"NULLABLE\",\"name\":\"auto_add_to_ozon_actions_enabled\",\"type\":\"BOOLEAN\"},{\"mode\":\"NULLABLE\",\"name\":\"volume_weight_l\",\"type\":\"NUMERIC\"},{\"mode\":\"NULLABLE\",\"name\":\"sales_percent_fbs\",\"type\":\"NUMERIC\"},{\"mode\":\"NULLABLE\",\"name\":\"sales_percent_rfbs\",\"type\":\"NUMERIC\"},{\"mode\":\"NULLABLE\",\"name\":\"sales_percent_fbp\",\"type\":\"NUMERIC\"},{\"mode\":\"NULLABLE\",\"name\":\"fbo_direct_flow_trans_min_rub\",\"type\":\"NUMERIC\"},{\"mode\":\"NULLABLE\",\"name\":\"fbo_direct_flow_trans_max_rub\",\"type\":\"NUMERIC\"},{\"mode\":\"NULLABLE\",\"name\":\"fbo_deliv_to_customer_rub\",\"type\":\"NUMERIC\"},{\"mode\":\"NULLABLE\",\"name\":\"fbo_return_flow_rub\",\"type\":\"NUMERIC\"},{\"mode\":\"NULLABLE\",\"name\":\"fbs_first_mile_min_rub\",\"type\":\"NUMERIC\"},{\"mode\":\"NULLABLE\",\"name\":\"fbs_first_mile_max_rub\",\"type\":\"NUMERIC\"},{\"mode\":\"NULLABLE\",\"name\":\"fbs_direct_flow_trans_min_rub\",\"type\":\"NUMERIC\"},{\"mode\":\"NULLABLE\",\"name\":\"fbs_direct_flow_trans_max_rub\",\"type\":\"NUMERIC\"},{\"mode\":\"NULLABLE\",\"name\":\"fbs_deliv_to_customer_rub\",\"type\":\"NUMERIC\"},{\"mode\":\"NULLABLE\",\"name\":\"fbs_return_flow_rub\",\"type\":\"NUMERIC\"},{\"mode\":\"NULLABLE\",\"name\":\"ozon_index_min_price_rub\",\"type\":\"NUMERIC\"},{\"mode\":\"NULLABLE\",\"name\":\"ozon_index_value\",\"type\":\"NUMERIC\"},{\"mode\":\"NULLABLE\",\"name\":\"self_marketplaces_index_min_price_rub\",\"type\":\"NUMERIC\"},{\"mode\":\"NULLABLE\",\"name\":\"self_marketplaces_index_value\",\"type\":\"NUMERIC\"},{\"mode\":\"NULLABLE\",\"name\":\"commissions_json\",\"type\":\"STRING\"},{\"mode\":\"NULLABLE\",\"name\":\"commissions_field_count\",\"type\":\"INTEGER\"},{\"mode\":\"NULLABLE\",\"name\":\"commissions_unknown_fields\",\"type\":\"STRING\"}]",
+      "table_id": "RAW_OZON_PRICES",
+      "time_partitioning_field": "snapshot_date",
+      "time_partitioning_type": "DAY"
+    },
+    {
+      "clustering": [
+        "offer_id",
+        "sale_scheme"
+      ],
+      "dataset_key": "ozon_raw",
+      "require_partition_filter": false,
+      "schema_json": "[{\"mode\":\"REQUIRED\",\"name\":\"snapshot_ts\",\"type\":\"TIMESTAMP\"},{\"mode\":\"REQUIRED\",\"name\":\"snapshot_date\",\"type\":\"DATE\"},{\"mode\":\"REQUIRED\",\"name\":\"offer_id\",\"type\":\"STRING\"},{\"mode\":\"NULLABLE\",\"name\":\"product_id\",\"type\":\"STRING\"},{\"mode\":\"REQUIRED\",\"name\":\"sale_scheme\",\"type\":\"STRING\"},{\"mode\":\"REQUIRED\",\"name\":\"commission_component\",\"type\":\"STRING\"},{\"mode\":\"REQUIRED\",\"name\":\"api_field\",\"type\":\"STRING\"},{\"mode\":\"NULLABLE\",\"name\":\"value_num\",\"type\":\"NUMERIC\"},{\"mode\":\"NULLABLE\",\"name\":\"unit\",\"type\":\"STRING\"},{\"mode\":\"REQUIRED\",\"name\":\"is_known_component\",\"type\":\"BOOLEAN\"},{\"mode\":\"REQUIRED\",\"name\":\"extracted_at\",\"type\":\"TIMESTAMP\"},{\"mode\":\"REQUIRED\",\"name\":\"source_endpoint\",\"type\":\"STRING\"},{\"mode\":\"REQUIRED\",\"name\":\"ingestion_run_id\",\"type\":\"STRING\"},{\"mode\":\"NULLABLE\",\"name\":\"source_payload_hash\",\"type\":\"STRING\"}]",
+      "table_id": "RAW_OZON_PRICE_COMMISSIONS",
+      "time_partitioning_field": "snapshot_date",
+      "time_partitioning_type": "DAY"
+    },
+    {
+      "clustering": [],
+      "dataset_key": "ozon_raw",
+      "require_partition_filter": false,
+      "schema_json": "[{\"mode\":\"REQUIRED\",\"name\":\"snapshot_date\",\"type\":\"DATE\"},{\"mode\":\"REQUIRED\",\"name\":\"retrieved_at\",\"type\":\"TIMESTAMP\"},{\"mode\":\"NULLABLE\",\"name\":\"seller_id\",\"type\":\"STRING\"},{\"mode\":\"NULLABLE\",\"name\":\"is_premium\",\"type\":\"BOOLEAN\"},{\"mode\":\"NULLABLE\",\"name\":\"subscription_type\",\"type\":\"STRING\"},{\"mode\":\"NULLABLE\",\"name\":\"premium\",\"type\":\"BOOLEAN\"},{\"mode\":\"NULLABLE\",\"name\":\"premium_plus\",\"type\":\"BOOLEAN\"},{\"mode\":\"NULLABLE\",\"name\":\"penalty_score_exceeded\",\"type\":\"BOOLEAN\"},{\"mode\":\"NULLABLE\",\"name\":\"tax_system\",\"type\":\"STRING\"},{\"mode\":\"NULLABLE\",\"name\":\"country\",\"type\":\"STRING\"},{\"mode\":\"NULLABLE\",\"name\":\"currency\",\"type\":\"STRING\"},{\"mode\":\"NULLABLE\",\"name\":\"vat_rate\",\"type\":\"NUMERIC\"},{\"mode\":\"NULLABLE\",\"name\":\"localization_percentage\",\"type\":\"NUMERIC\"},{\"mode\":\"NULLABLE\",\"name\":\"localization_calculated_at\",\"type\":\"STRING\"},{\"mode\":\"NULLABLE\",\"name\":\"raw_json\",\"type\":\"STRING\"},{\"mode\":\"REQUIRED\",\"name\":\"extracted_at\",\"type\":\"TIMESTAMP\"},{\"mode\":\"REQUIRED\",\"name\":\"source_endpoint\",\"type\":\"STRING\"},{\"mode\":\"REQUIRED\",\"name\":\"ingestion_run_id\",\"type\":\"STRING\"},{\"mode\":\"NULLABLE\",\"name\":\"source_payload_hash\",\"type\":\"STRING\"}]",
+      "table_id": "RAW_OZON_SELLER_INFO",
+      "time_partitioning_field": "snapshot_date",
+      "time_partitioning_type": "DAY"
+    },
+    {
+      "clustering": [
+        "sku",
+        "warehouse_id"
+      ],
+      "dataset_key": "ozon_raw",
+      "require_partition_filter": false,
+      "schema_json": "[{\"mode\":\"REQUIRED\",\"name\":\"snapshot_date\",\"type\":\"DATE\"},{\"mode\":\"REQUIRED\",\"name\":\"sku\",\"type\":\"STRING\"},{\"mode\":\"REQUIRED\",\"name\":\"warehouse_id\",\"type\":\"STRING\"},{\"mode\":\"NULLABLE\",\"name\":\"warehouse_name\",\"type\":\"STRING\"},{\"mode\":\"NULLABLE\",\"name\":\"cluster_id\",\"type\":\"STRING\"},{\"mode\":\"NULLABLE\",\"name\":\"cluster_name\",\"type\":\"STRING\"},{\"mode\":\"NULLABLE\",\"name\":\"available_stock_count\",\"type\":\"INTEGER\"},{\"mode\":\"NULLABLE\",\"name\":\"valid_stock_count\",\"type\":\"INTEGER\"},{\"mode\":\"NULLABLE\",\"name\":\"transit_stock_count\",\"type\":\"INTEGER\"},{\"mode\":\"NULLABLE\",\"name\":\"excess_stock_count\",\"type\":\"INTEGER\"},{\"mode\":\"NULLABLE\",\"name\":\"days_without_sales\",\"type\":\"INTEGER\"},{\"mode\":\"NULLABLE\",\"name\":\"turnover_grade\",\"type\":\"STRING\"},{\"mode\":\"NULLABLE\",\"name\":\"idc\",\"type\":\"NUMERIC\"},{\"mode\":\"REQUIRED\",\"name\":\"extracted_at\",\"type\":\"TIMESTAMP\"},{\"mode\":\"REQUIRED\",\"name\":\"source_endpoint\",\"type\":\"STRING\"},{\"mode\":\"REQUIRED\",\"name\":\"ingestion_run_id\",\"type\":\"STRING\"},{\"mode\":\"NULLABLE\",\"name\":\"source_payload_hash\",\"type\":\"STRING\"}]",
+      "table_id": "RAW_OZON_STOCKS",
+      "time_partitioning_field": "snapshot_date",
+      "time_partitioning_type": "DAY"
+    },
+    {
+      "clustering": [
+        "supply_id",
+        "storage_warehouse_id"
+      ],
+      "dataset_key": "ozon_raw",
+      "require_partition_filter": false,
+      "schema_json": "[{\"mode\":\"REQUIRED\",\"name\":\"supply_id\",\"type\":\"INTEGER\"},{\"mode\":\"REQUIRED\",\"name\":\"order_id\",\"type\":\"INTEGER\"},{\"mode\":\"NULLABLE\",\"name\":\"bundle_id\",\"type\":\"STRING\"},{\"mode\":\"NULLABLE\",\"name\":\"state\",\"type\":\"STRING\"},{\"mode\":\"NULLABLE\",\"name\":\"is_crossdock\",\"type\":\"BOOLEAN\"},{\"mode\":\"NULLABLE\",\"name\":\"storage_warehouse_id\",\"type\":\"STRING\"},{\"mode\":\"NULLABLE\",\"name\":\"storage_warehouse_name\",\"type\":\"STRING\"},{\"mode\":\"NULLABLE\",\"name\":\"storage_address\",\"type\":\"STRING\"},{\"mode\":\"NULLABLE\",\"name\":\"arrival_date\",\"type\":\"TIMESTAMP\"},{\"mode\":\"NULLABLE\",\"name\":\"macrolocal_cluster_id\",\"type\":\"INTEGER\"},{\"mode\":\"NULLABLE\",\"name\":\"order_created_at\",\"type\":\"TIMESTAMP\"},{\"mode\":\"NULLABLE\",\"name\":\"order_state\",\"type\":\"STRING\"},{\"mode\":\"REQUIRED\",\"name\":\"extracted_at\",\"type\":\"TIMESTAMP\"},{\"mode\":\"REQUIRED\",\"name\":\"source_endpoint\",\"type\":\"STRING\"},{\"mode\":\"REQUIRED\",\"name\":\"ingestion_run_id\",\"type\":\"STRING\"},{\"mode\":\"NULLABLE\",\"name\":\"source_payload_hash\",\"type\":\"STRING\"}]",
+      "table_id": "RAW_OZON_SUPPLIES",
+      "time_partitioning_field": "order_created_at",
+      "time_partitioning_type": "DAY"
+    },
+    {
+      "clustering": [
+        "bundle_id",
+        "sku"
+      ],
+      "dataset_key": "ozon_raw",
+      "require_partition_filter": false,
+      "schema_json": "[{\"mode\":\"REQUIRED\",\"name\":\"bundle_id\",\"type\":\"STRING\"},{\"mode\":\"NULLABLE\",\"name\":\"supply_id\",\"type\":\"INTEGER\"},{\"mode\":\"NULLABLE\",\"name\":\"order_id\",\"type\":\"INTEGER\"},{\"mode\":\"REQUIRED\",\"name\":\"sku\",\"type\":\"STRING\"},{\"mode\":\"NULLABLE\",\"name\":\"offer_id\",\"type\":\"STRING\"},{\"mode\":\"NULLABLE\",\"name\":\"product_name\",\"type\":\"STRING\"},{\"mode\":\"NULLABLE\",\"name\":\"quantity_planned\",\"type\":\"INTEGER\"},{\"mode\":\"NULLABLE\",\"name\":\"quantity_accepted\",\"type\":\"INTEGER\"},{\"mode\":\"NULLABLE\",\"name\":\"volume_in_litres\",\"type\":\"NUMERIC\"},{\"mode\":\"NULLABLE\",\"name\":\"item_tags\",\"type\":\"STRING\"},{\"mode\":\"REQUIRED\",\"name\":\"extracted_at\",\"type\":\"TIMESTAMP\"},{\"mode\":\"REQUIRED\",\"name\":\"source_endpoint\",\"type\":\"STRING\"},{\"mode\":\"REQUIRED\",\"name\":\"ingestion_run_id\",\"type\":\"STRING\"},{\"mode\":\"NULLABLE\",\"name\":\"source_payload_hash\",\"type\":\"STRING\"}]",
+      "table_id": "RAW_OZON_SUPPLY_BUNDLES",
+      "time_partitioning_field": null,
+      "time_partitioning_type": null
+    },
+    {
+      "clustering": [
+        "order_id"
+      ],
+      "dataset_key": "ozon_raw",
+      "require_partition_filter": false,
+      "schema_json": "[{\"mode\":\"REQUIRED\",\"name\":\"order_id\",\"type\":\"INTEGER\"},{\"mode\":\"NULLABLE\",\"name\":\"order_number\",\"type\":\"STRING\"},{\"mode\":\"NULLABLE\",\"name\":\"state\",\"type\":\"STRING\"},{\"mode\":\"NULLABLE\",\"name\":\"created_at\",\"type\":\"TIMESTAMP\"},{\"mode\":\"NULLABLE\",\"name\":\"state_updated_at\",\"type\":\"TIMESTAMP\"},{\"mode\":\"NULLABLE\",\"name\":\"data_filling_deadline\",\"type\":\"TIMESTAMP\"},{\"mode\":\"NULLABLE\",\"name\":\"planned_arrival_from\",\"type\":\"TIMESTAMP\"},{\"mode\":\"NULLABLE\",\"name\":\"planned_arrival_to\",\"type\":\"TIMESTAMP\"},{\"mode\":\"NULLABLE\",\"name\":\"timeslot_timezone\",\"type\":\"STRING\"},{\"mode\":\"NULLABLE\",\"name\":\"dropoff_warehouse_id\",\"type\":\"STRING\"},{\"mode\":\"NULLABLE\",\"name\":\"dropoff_warehouse_name\",\"type\":\"STRING\"},{\"mode\":\"NULLABLE\",\"name\":\"dropoff_address\",\"type\":\"STRING\"},{\"mode\":\"NULLABLE\",\"name\":\"is_super_fbo\",\"type\":\"BOOLEAN\"},{\"mode\":\"NULLABLE\",\"name\":\"is_virtual\",\"type\":\"BOOLEAN\"},{\"mode\":\"NULLABLE\",\"name\":\"is_econom\",\"type\":\"BOOLEAN\"},{\"mode\":\"NULLABLE\",\"name\":\"is_pickup\",\"type\":\"BOOLEAN\"},{\"mode\":\"NULLABLE\",\"name\":\"supplies_count\",\"type\":\"INTEGER\"},{\"mode\":\"REQUIRED\",\"name\":\"extracted_at\",\"type\":\"TIMESTAMP\"},{\"mode\":\"REQUIRED\",\"name\":\"source_endpoint\",\"type\":\"STRING\"},{\"mode\":\"REQUIRED\",\"name\":\"ingestion_run_id\",\"type\":\"STRING\"},{\"mode\":\"NULLABLE\",\"name\":\"source_payload_hash\",\"type\":\"STRING\"}]",
+      "table_id": "RAW_OZON_SUPPLY_ORDERS",
+      "time_partitioning_field": "created_at",
+      "time_partitioning_type": "DAY"
+    },
+    {
+      "clustering": [
+        "internal_sku"
+      ],
+      "dataset_key": "ref",
+      "require_partition_filter": false,
+      "schema_json": "[{\"mode\":\"REQUIRED\",\"name\":\"internal_sku\",\"type\":\"STRING\"},{\"mode\":\"REQUIRED\",\"name\":\"effective_from\",\"type\":\"DATE\"},{\"mode\":\"NULLABLE\",\"name\":\"effective_to\",\"type\":\"DATE\"},{\"mode\":\"REQUIRED\",\"name\":\"product_cogs_rub\",\"type\":\"NUMERIC\"},{\"mode\":\"NULLABLE\",\"name\":\"cost_basis\",\"type\":\"STRING\"},{\"mode\":\"REQUIRED\",\"name\":\"source\",\"type\":\"STRING\"},{\"mode\":\"NULLABLE\",\"name\":\"loaded_by\",\"type\":\"STRING\"},{\"mode\":\"REQUIRED\",\"name\":\"loaded_at\",\"type\":\"TIMESTAMP\"}]",
+      "table_id": "REF_COGS",
+      "time_partitioning_field": null,
+      "time_partitioning_type": null
+    },
+    {
+      "clustering": [
+        "internal_sku"
+      ],
+      "dataset_key": "ref",
+      "require_partition_filter": false,
+      "schema_json": "[{\"mode\":\"REQUIRED\",\"name\":\"internal_sku\",\"type\":\"STRING\"},{\"mode\":\"NULLABLE\",\"name\":\"product_name\",\"type\":\"STRING\"},{\"mode\":\"NULLABLE\",\"name\":\"brand\",\"type\":\"STRING\"},{\"mode\":\"NULLABLE\",\"name\":\"category\",\"type\":\"STRING\"},{\"mode\":\"NULLABLE\",\"name\":\"is_bundle\",\"type\":\"BOOL\"},{\"mode\":\"REQUIRED\",\"name\":\"source\",\"type\":\"STRING\"},{\"mode\":\"REQUIRED\",\"name\":\"valid_from\",\"type\":\"DATE\"},{\"mode\":\"NULLABLE\",\"name\":\"valid_to\",\"type\":\"DATE\"},{\"mode\":\"REQUIRED\",\"name\":\"loaded_at\",\"type\":\"TIMESTAMP\"}]",
+      "table_id": "REF_PRODUCT_MASTER",
+      "time_partitioning_field": null,
+      "time_partitioning_type": null
+    },
+    {
+      "clustering": [
+        "marketplace",
+        "internal_sku"
+      ],
+      "dataset_key": "ref",
+      "require_partition_filter": false,
+      "schema_json": "[{\"mode\":\"REQUIRED\",\"name\":\"internal_sku\",\"type\":\"STRING\"},{\"mode\":\"REQUIRED\",\"name\":\"marketplace\",\"type\":\"STRING\"},{\"mode\":\"REQUIRED\",\"name\":\"marketplace_sku\",\"type\":\"STRING\"},{\"mode\":\"NULLABLE\",\"name\":\"marketplace_product_id\",\"type\":\"STRING\"},{\"mode\":\"NULLABLE\",\"name\":\"offer_id\",\"type\":\"STRING\"},{\"mode\":\"NULLABLE\",\"name\":\"vendor_code\",\"type\":\"STRING\"},{\"mode\":\"REQUIRED\",\"name\":\"valid_from\",\"type\":\"DATE\"},{\"mode\":\"NULLABLE\",\"name\":\"valid_to\",\"type\":\"DATE\"},{\"mode\":\"REQUIRED\",\"name\":\"is_current\",\"type\":\"BOOLEAN\"},{\"mode\":\"NULLABLE\",\"name\":\"mapping_source\",\"type\":\"STRING\"},{\"mode\":\"NULLABLE\",\"name\":\"mapping_status\",\"type\":\"STRING\"},{\"mode\":\"NULLABLE\",\"name\":\"verified_at\",\"type\":\"DATE\"},{\"mode\":\"NULLABLE\",\"name\":\"loaded_at\",\"type\":\"TIMESTAMP\"}]",
+      "table_id": "REF_SKU_CHANNEL_MAP",
+      "time_partitioning_field": null,
+      "time_partitioning_type": null
+    },
+    {
+      "clustering": [
+        "parameter"
+      ],
+      "dataset_key": "ref",
+      "require_partition_filter": false,
+      "schema_json": "[{\"mode\":\"REQUIRED\",\"name\":\"parameter\",\"type\":\"STRING\"},{\"mode\":\"REQUIRED\",\"name\":\"scope\",\"type\":\"STRING\"},{\"mode\":\"NULLABLE\",\"name\":\"internal_sku\",\"type\":\"STRING\"},{\"mode\":\"NULLABLE\",\"name\":\"value_num\",\"type\":\"NUMERIC\"},{\"mode\":\"NULLABLE\",\"name\":\"value_text\",\"type\":\"STRING\"},{\"mode\":\"NULLABLE\",\"name\":\"unit\",\"type\":\"STRING\"},{\"mode\":\"REQUIRED\",\"name\":\"effective_from\",\"type\":\"DATE\"},{\"mode\":\"NULLABLE\",\"name\":\"effective_to\",\"type\":\"DATE\"},{\"mode\":\"REQUIRED\",\"name\":\"source\",\"type\":\"STRING\"},{\"mode\":\"REQUIRED\",\"name\":\"loaded_at\",\"type\":\"TIMESTAMP\"}]",
+      "table_id": "REF_TENANT_ECONOMICS",
+      "time_partitioning_field": null,
+      "time_partitioning_type": null
+    },
+    {
+      "clustering": [
+        "api",
+        "status"
+      ],
+      "dataset_key": "ref",
+      "require_partition_filter": false,
+      "schema_json": "[{\"mode\":\"REQUIRED\",\"name\":\"binding_id\",\"type\":\"STRING\"},{\"mode\":\"REQUIRED\",\"name\":\"marketplace\",\"type\":\"STRING\"},{\"mode\":\"REQUIRED\",\"name\":\"api\",\"type\":\"STRING\"},{\"mode\":\"REQUIRED\",\"name\":\"identity_fingerprint\",\"type\":\"STRING\"},{\"mode\":\"NULLABLE\",\"name\":\"seller_client_id\",\"type\":\"STRING\"},{\"mode\":\"NULLABLE\",\"name\":\"performance_client_id\",\"type\":\"STRING\"},{\"mode\":\"REQUIRED\",\"name\":\"status\",\"type\":\"STRING\"},{\"mode\":\"REQUIRED\",\"name\":\"confirmed_by\",\"type\":\"STRING\"},{\"mode\":\"REQUIRED\",\"name\":\"confirmed_at\",\"type\":\"TIMESTAMP\"},{\"mode\":\"REQUIRED\",\"name\":\"source_observation_id\",\"type\":\"STRING\"},{\"mode\":\"NULLABLE\",\"name\":\"revoked_at\",\"type\":\"TIMESTAMP\"},{\"mode\":\"NULLABLE\",\"name\":\"revoked_by\",\"type\":\"STRING\"},{\"mode\":\"NULLABLE\",\"name\":\"notes\",\"type\":\"STRING\"}]",
+      "table_id": "SELLER_BINDING",
+      "time_partitioning_field": null,
+      "time_partitioning_type": null
+    },
+    {
+      "clustering": [
+        "entity",
+        "status"
+      ],
+      "dataset_key": "tenant_ops",
+      "require_partition_filter": false,
+      "schema_json": "[{\"mode\":\"REQUIRED\",\"name\":\"backfill_id\",\"type\":\"STRING\"},{\"mode\":\"REQUIRED\",\"name\":\"entity\",\"type\":\"STRING\"},{\"mode\":\"REQUIRED\",\"name\":\"window_from\",\"type\":\"DATE\"},{\"mode\":\"REQUIRED\",\"name\":\"window_to\",\"type\":\"DATE\"},{\"mode\":\"REQUIRED\",\"name\":\"status\",\"type\":\"STRING\"},{\"mode\":\"REQUIRED\",\"name\":\"attempts\",\"type\":\"INTEGER\"},{\"mode\":\"NULLABLE\",\"name\":\"rows_written\",\"type\":\"INTEGER\"},{\"mode\":\"NULLABLE\",\"name\":\"run_id\",\"type\":\"STRING\"},{\"mode\":\"NULLABLE\",\"name\":\"error_code\",\"type\":\"STRING\"},{\"mode\":\"NULLABLE\",\"name\":\"error_detail\",\"type\":\"STRING\"},{\"mode\":\"REQUIRED\",\"name\":\"updated_at\",\"type\":\"TIMESTAMP\"}]",
+      "table_id": "BACKFILL_CHECKPOINTS",
+      "time_partitioning_field": "updated_at",
+      "time_partitioning_type": "DAY"
+    },
+    {
+      "clustering": [
+        "api",
+        "capability"
+      ],
+      "dataset_key": "tenant_ops",
+      "require_partition_filter": false,
+      "schema_json": "[{\"mode\":\"REQUIRED\",\"name\":\"profile_id\",\"type\":\"STRING\"},{\"mode\":\"NULLABLE\",\"name\":\"run_id\",\"type\":\"STRING\"},{\"mode\":\"REQUIRED\",\"name\":\"discovered_at\",\"type\":\"TIMESTAMP\"},{\"mode\":\"REQUIRED\",\"name\":\"api\",\"type\":\"STRING\"},{\"mode\":\"REQUIRED\",\"name\":\"capability\",\"type\":\"STRING\"},{\"mode\":\"REQUIRED\",\"name\":\"status\",\"type\":\"STRING\"},{\"mode\":\"NULLABLE\",\"name\":\"evidence_kind\",\"type\":\"STRING\"},{\"mode\":\"NULLABLE\",\"name\":\"http_status\",\"type\":\"INTEGER\"},{\"mode\":\"NULLABLE\",\"name\":\"evidence_json\",\"type\":\"STRING\"},{\"mode\":\"NULLABLE\",\"name\":\"notes\",\"type\":\"STRING\"}]",
+      "table_id": "CAPABILITY_PROFILE",
+      "time_partitioning_field": "discovered_at",
+      "time_partitioning_type": "DAY"
+    },
+    {
+      "clustering": [
+        "entity",
+        "status"
+      ],
+      "dataset_key": "tenant_ops",
+      "require_partition_filter": false,
+      "schema_json": "[{\"mode\":\"REQUIRED\",\"name\":\"entity\",\"type\":\"STRING\"},{\"mode\":\"REQUIRED\",\"name\":\"coverage_date\",\"type\":\"DATE\"},{\"mode\":\"REQUIRED\",\"name\":\"status\",\"type\":\"STRING\"},{\"mode\":\"NULLABLE\",\"name\":\"reason\",\"type\":\"STRING\"},{\"mode\":\"NULLABLE\",\"name\":\"rows_loaded\",\"type\":\"INTEGER\"},{\"mode\":\"NULLABLE\",\"name\":\"source_run_id\",\"type\":\"STRING\"},{\"mode\":\"REQUIRED\",\"name\":\"evaluated_at\",\"type\":\"TIMESTAMP\"}]",
+      "table_id": "DATA_COVERAGE",
+      "time_partitioning_field": "coverage_date",
+      "time_partitioning_type": "DAY"
+    },
+    {
+      "clustering": [
+        "check_id",
+        "status"
+      ],
+      "dataset_key": "tenant_ops",
+      "require_partition_filter": false,
+      "schema_json": "[{\"mode\":\"REQUIRED\",\"name\":\"result_id\",\"type\":\"STRING\"},{\"mode\":\"REQUIRED\",\"name\":\"check_id\",\"type\":\"STRING\"},{\"mode\":\"NULLABLE\",\"name\":\"period_from\",\"type\":\"DATE\"},{\"mode\":\"NULLABLE\",\"name\":\"period_to\",\"type\":\"DATE\"},{\"mode\":\"NULLABLE\",\"name\":\"metric\",\"type\":\"STRING\"},{\"mode\":\"NULLABLE\",\"name\":\"source_a\",\"type\":\"STRING\"},{\"mode\":\"NULLABLE\",\"name\":\"source_b\",\"type\":\"STRING\"},{\"mode\":\"NULLABLE\",\"name\":\"value_a\",\"type\":\"NUMERIC\"},{\"mode\":\"NULLABLE\",\"name\":\"value_b\",\"type\":\"NUMERIC\"},{\"mode\":\"NULLABLE\",\"name\":\"difference\",\"type\":\"NUMERIC\"},{\"mode\":\"NULLABLE\",\"name\":\"difference_pct\",\"type\":\"NUMERIC\"},{\"mode\":\"NULLABLE\",\"name\":\"tolerance_abs\",\"type\":\"NUMERIC\"},{\"mode\":\"NULLABLE\",\"name\":\"tolerance_pct\",\"type\":\"NUMERIC\"},{\"mode\":\"REQUIRED\",\"name\":\"status\",\"type\":\"STRING\"},{\"mode\":\"NULLABLE\",\"name\":\"explanation\",\"type\":\"STRING\"},{\"mode\":\"REQUIRED\",\"name\":\"evaluated_at\",\"type\":\"TIMESTAMP\"},{\"mode\":\"NULLABLE\",\"name\":\"run_id\",\"type\":\"STRING\"}]",
+      "table_id": "DQ_RESULTS",
+      "time_partitioning_field": "evaluated_at",
+      "time_partitioning_type": "DAY"
+    },
+    {
+      "clustering": [
+        "entity"
+      ],
+      "dataset_key": "tenant_ops",
+      "require_partition_filter": false,
+      "schema_json": "[{\"mode\":\"REQUIRED\",\"name\":\"boundary_id\",\"type\":\"STRING\"},{\"mode\":\"REQUIRED\",\"name\":\"entity\",\"type\":\"STRING\"},{\"mode\":\"NULLABLE\",\"name\":\"requested_from\",\"type\":\"DATE\"},{\"mode\":\"NULLABLE\",\"name\":\"api_documented_from\",\"type\":\"DATE\"},{\"mode\":\"NULLABLE\",\"name\":\"api_verified_from\",\"type\":\"DATE\"},{\"mode\":\"NULLABLE\",\"name\":\"first_observed_activity\",\"type\":\"DATE\"},{\"mode\":\"NULLABLE\",\"name\":\"first_data_date\",\"type\":\"DATE\"},{\"mode\":\"NULLABLE\",\"name\":\"available_to\",\"type\":\"DATE\"},{\"mode\":\"NULLABLE\",\"name\":\"backfill_from\",\"type\":\"DATE\"},{\"mode\":\"NULLABLE\",\"name\":\"backfill_to\",\"type\":\"DATE\"},{\"mode\":\"NULLABLE\",\"name\":\"limitation_reason\",\"type\":\"STRING\"},{\"mode\":\"REQUIRED\",\"name\":\"completeness_status\",\"type\":\"STRING\"},{\"mode\":\"REQUIRED\",\"name\":\"confidence\",\"type\":\"STRING\"},{\"mode\":\"NULLABLE\",\"name\":\"evidence_json\",\"type\":\"STRING\"},{\"mode\":\"REQUIRED\",\"name\":\"determined_at\",\"type\":\"TIMESTAMP\"},{\"mode\":\"NULLABLE\",\"name\":\"run_id\",\"type\":\"STRING\"}]",
+      "table_id": "HISTORY_BOUNDARIES",
+      "time_partitioning_field": "determined_at",
+      "time_partitioning_type": "DAY"
+    },
+    {
+      "clustering": [
+        "api",
+        "identity_fingerprint"
+      ],
+      "dataset_key": "tenant_ops",
+      "require_partition_filter": false,
+      "schema_json": "[{\"mode\":\"REQUIRED\",\"name\":\"observation_id\",\"type\":\"STRING\"},{\"mode\":\"NULLABLE\",\"name\":\"run_id\",\"type\":\"STRING\"},{\"mode\":\"REQUIRED\",\"name\":\"api\",\"type\":\"STRING\"},{\"mode\":\"REQUIRED\",\"name\":\"observed_at\",\"type\":\"TIMESTAMP\"},{\"mode\":\"REQUIRED\",\"name\":\"identity_fingerprint\",\"type\":\"STRING\"},{\"mode\":\"NULLABLE\",\"name\":\"seller_client_id\",\"type\":\"STRING\"},{\"mode\":\"NULLABLE\",\"name\":\"performance_client_id\",\"type\":\"STRING\"},{\"mode\":\"NULLABLE\",\"name\":\"company_inn\",\"type\":\"STRING\"},{\"mode\":\"NULLABLE\",\"name\":\"company_ogrn\",\"type\":\"STRING\"},{\"mode\":\"NULLABLE\",\"name\":\"company_name\",\"type\":\"STRING\"},{\"mode\":\"NULLABLE\",\"name\":\"legal_name\",\"type\":\"STRING\"},{\"mode\":\"NULLABLE\",\"name\":\"subscription_type\",\"type\":\"STRING\"},{\"mode\":\"NULLABLE\",\"name\":\"evidence_json\",\"type\":\"STRING\"},{\"mode\":\"REQUIRED\",\"name\":\"status\",\"type\":\"STRING\"}]",
+      "table_id": "SELLER_IDENTITY_OBSERVATIONS",
+      "time_partitioning_field": "observed_at",
+      "time_partitioning_type": "DAY"
+    },
+    {
+      "clustering": [
+        "to_state"
+      ],
+      "dataset_key": "tenant_ops",
+      "require_partition_filter": false,
+      "schema_json": "[{\"mode\":\"REQUIRED\",\"name\":\"event_id\",\"type\":\"STRING\"},{\"mode\":\"REQUIRED\",\"name\":\"tenant_id\",\"type\":\"STRING\"},{\"mode\":\"NULLABLE\",\"name\":\"from_state\",\"type\":\"STRING\"},{\"mode\":\"REQUIRED\",\"name\":\"to_state\",\"type\":\"STRING\"},{\"mode\":\"NULLABLE\",\"name\":\"reason_code\",\"type\":\"STRING\"},{\"mode\":\"NULLABLE\",\"name\":\"reason_detail\",\"type\":\"STRING\"},{\"mode\":\"NULLABLE\",\"name\":\"evidence_json\",\"type\":\"STRING\"},{\"mode\":\"REQUIRED\",\"name\":\"actor\",\"type\":\"STRING\"},{\"mode\":\"NULLABLE\",\"name\":\"run_id\",\"type\":\"STRING\"},{\"mode\":\"REQUIRED\",\"name\":\"occurred_at\",\"type\":\"TIMESTAMP\"}]",
+      "table_id": "TENANT_STATE_EVENTS",
+      "time_partitioning_field": "occurred_at",
+      "time_partitioning_type": "DAY"
+    }
+  ],
+  "tenant_id": "client_001"
+}

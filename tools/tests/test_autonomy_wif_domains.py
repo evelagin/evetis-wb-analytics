@@ -29,7 +29,8 @@ def test_every_approved_domain_satisfies_its_invariant(dom):
 
 
 def test_legit_tenant_workflow_obtains_provisioner():
-    assert TENANT.obtainable(TC["T1"].claims) == {D.TENANT_SA}
+    # T4.1: и деплоер SQL каждого выделенного арендатора реестра (привязку создаёт владелец).
+    assert TENANT.obtainable(TC["T1"].claims) == {D.TENANT_SA, "sa-sql-deployer@mpa-t-client-001.iam.gserviceaccount.com"}
 
 
 @pytest.mark.parametrize("cid", ["A6", "A7", "B1", "B2", "C1"])

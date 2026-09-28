@@ -159,8 +159,8 @@ def test_confirmed_seller_binding_lives_where_the_runtime_can_only_read():
     c = SY.fixture_contract("client_001")
     acl = PS.expected_dataset_access(c)
     runtime = f"{c['marketplaces']['ozon']['service_accounts']['runtime']}@{c['project_id']}.iam.gserviceaccount.com"
-    assert ("READER", "user_by_email", runtime) in acl["ref"]
-    assert not any(who == runtime and role in ("WRITER", "OWNER") for role, _k, who in acl["ref"])
+    assert ("READER", "user_by_email", runtime, None) in acl["ref"]
+    assert not any(who == runtime and role in ("WRITER", "OWNER") for role, _k, who, _c in acl["ref"])
 
 
 def test_completeness_statuses_are_the_agreed_vocabulary():
@@ -203,8 +203,12 @@ def test_client_001_and_client_002_differ_only_in_tenant_identity():
 def test_new_datasets_grant_nothing_to_runtime_or_customer():
     c = SY.fixture_contract("client_001")
     acl = PS.expected_dataset_access(c)
+    runtime = f"{c['marketplaces']['ozon']['service_accounts']['runtime']}@{c['project_id']}.iam.gserviceaccount.com"
+    deployer = f"sa-sql-deployer@{c['project_id']}.iam.gserviceaccount.com"
     for ds in ("ozon_mart", "tenant_ops", "analytics_share"):
-        assert acl[c["datasets"][ds]] == {("OWNER", "special_group", "projectOwners")}, ds
+        # T4.1: кроме projectOwners — только деплоер SQL; ни runtime, ни клиента.
+        assert {who for _r, _k, who, _c in acl[c["datasets"][ds]]} == {"projectOwners", deployer}, ds
+        assert runtime not in {who for _r, _k, who, _c in acl[c["datasets"][ds]]}, ds
 
 
 def test_scanner_rejects_a_customer_principal_on_analytics_share():
