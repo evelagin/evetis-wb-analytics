@@ -319,3 +319,17 @@ def test_audit_events_survive_warning_log_level(events, monkeypatch):
     L.audit_event("auth_ok", route="/poll", mechanism="m", result="ok")
     lines = events()
     assert audit(lines, "auth_ok") and not any("must be filtered" in x.get("message", "") for x in lines)
+
+
+
+def test_partial_allowlist_is_not_a_full_pass(events):
+    from app.services import pipeline
+
+    class S:
+        allowed_chat_ids = {"-100"}
+        telegram_allowed_user_ids = set()
+
+    class D:
+        settings = S()
+    assert pipeline._allowed(D(), "-100", "999") is True        # поведение прежнее
+    assert audit(events())[0]["result"] == "ok_partial_allowlist"
