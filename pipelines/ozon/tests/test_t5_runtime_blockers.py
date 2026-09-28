@@ -231,29 +231,44 @@ def _zip(files):
 
 
 class FakePerf:
-    """Performance API: реестр кампаний, расход по окну, асинхронный отчёт по датам окна."""
+    """Performance API: реестр кампаний с типами, расход по суткам, отчёт по всем суткам окна."""
 
-    def __init__(self, campaigns, spend, *, report=None, registry=None):
+    def __init__(self, campaigns, spend, *, report=None, registry=None, types=None, days=None,
+                 expense_header="ID;Название;Расход"):
         self.campaigns, self.spend = [str(c) for c in campaigns], {str(k): v for k, v in spend.items()}
         self.registry = [str(c) for c in (registry or campaigns)]
-        self.report, self.submits, self.expense_windows, self.last = report, [], [], None
+        self.types = {str(k): v for k, v in (types or {}).items()}
+        self.days = days                     # None — расход каждые сутки, иначе множество дат
+        self.expense_header = expense_header
+        self.report, self.submits, self.expense_days, self.last = report, [], [], None
+
+    def _spend_on(self, day):
+        return {} if self.days is not None and day not in self.days else self.spend
 
     def get(self, path, raw_text=True):
         if path == "/api/client/campaign":
-            return 200, json.dumps({"list": [{"id": c} for c in self.registry], "total": str(len(self.registry))})
+            lst = [{"id": c, "advObjectType": self.types.get(c, "SKU")} for c in self.registry]
+            return 200, json.dumps({"list": lst, "total": str(len(lst))})
         if path.startswith("/api/client/statistics/expense"):
             q = dict(x.split("=") for x in path.split("?")[1].split("&"))
-            self.expense_windows.append((q["dateFrom"], q["dateTo"]))
-            body = "ID;Название;Расход\n" + "".join(f"{c};К;{v:.2f}\n".replace(".", ",")
-                                                     for c, v in self.spend.items())
+            assert q["dateFrom"] == q["dateTo"], "строгий путь спрашивает расход по суткам"
+            self.expense_days.append(q["dateFrom"])
+            body = self.expense_header + "\n" + "".join(
+                f"{c};К;{v:.2f}\n".replace(".", ",") for c, v in self._spend_on(q["dateFrom"]).items())
             return 200, body
         if path.startswith("/api/client/statistics/report"):
             if self.report:
                 return self.report(self.last)
-            batch, day = self.last["campaigns"], self.last["dateFrom"]
+            batch = self.last["campaigns"]
+            d0, d1 = date.fromisoformat(self.last["dateFrom"]), date.fromisoformat(self.last["dateTo"])
+            days = [str(d0 + timedelta(days=i)) for i in range((d1 - d0).days + 1)]
+            active_days = [d for d in days if self.days is None or d in self.days]
+            files = {c: "".join(_csv_for(c, d).split("\n", 2)[2] if i else _csv_for(c, d)
+                                for i, d in enumerate(active_days))
+                     for c in batch}
             if len(batch) == 1:
-                return 200, _csv_for(batch[0], day)
-            return 200, _zip({f"{c}.csv": _csv_for(c, day) for c in batch})
+                return 200, files[batch[0]]
+            return 200, _zip({f"{c}.csv": t for c, t in files.items()})
         if path.startswith("/api/client/statistics/"):
             return 200, {"state": "OK"}
         raise AssertionError(path)
@@ -277,7 +292,7 @@ def test_long_window_is_split_by_moscow_dates_not_moments(entities, captured_mer
     windows = [(b["dateFrom"], b["dateTo"]) for b in fake.submits]
     assert windows == [("2026-01-01", "2026-03-01"), ("2026-03-02", "2026-04-30"), ("2026-05-01", "2026-05-10")]
     assert all("from" not in b and "to" not in b for b in fake.submits), "моменты UTC не отправляются"
-    assert fake.expense_windows == windows, "периметр кампаний — по тем же датам"
+    assert len(fake.expense_days) == 130 and fake.expense_days[0] == "2026-01-01", "расход — по суткам окна"
     for a, b in windows:
         assert (date.fromisoformat(b) - date.fromisoformat(a)).days + 1 <= entities.ADS_SKU_STRICT_CHUNK_DAYS
 
@@ -294,14 +309,14 @@ def test_campaigns_are_reported_in_batches_of_at_most_10(entities, captured_merg
     _use(monkeypatch, entities, fake := FakePerf(ids, {i: 1.0 for i in ids}))
     entities.ads_sku_daily("rt", "ts", "2026-09-01", "2026-09-02")
     assert [len(b["campaigns"]) for b in fake.submits] == [10, 10, 5]
-    assert len(captured_merges[0][1]) == 25
+    assert len(captured_merges[0][1]) == 50, "25 кампаний × 2 суток"
 
 
 def test_campaign_with_spend_but_no_sku_rows_fails_closed(entities, captured_merges, monkeypatch, strict):
     """«Ноль строк при HTTP 200» (окно > 62 дней, иной формат) больше не проходит как OK."""
     empty = lambda body: (200, "; Кампания\nДень;sku;Расход, ₽, с НДС\n")
     _use(monkeypatch, entities, FakePerf([111], {111: 5.0}, report=empty))
-    with pytest.raises(entities.StrictLimitError, match="у 1 кампаний с расходом нет строк SKU"):
+    with pytest.raises(entities.StrictLimitError, match="2 пар «кампания × сутки» с расходом без строк SKU"):
         entities.ads_sku_daily("rt", "ts", "2026-09-01", "2026-09-02")
     assert captured_merges == []
 
@@ -338,7 +353,7 @@ def test_evetis_zip_names_with_suffix_still_map_to_campaign(entities, captured_m
     evetis_style = lambda body: (200, _zip({f"{c}_report.csv": _csv_for(c, body["dateFrom"])
                                             for c in body["campaigns"]}))
     _use(monkeypatch, entities, FakePerf([111, 222], {111: 1.0, 222: 1.0}, report=evetis_style))
-    entities.ads_sku_daily("rt", "ts", "2026-09-01", "2026-09-02")
+    entities.ads_sku_daily("rt", "ts", "2026-09-01", "2026-09-01")
     assert {r["campaign_id"] for r in captured_merges[0][1]} == {"111", "222"}
 
 
@@ -390,3 +405,97 @@ def test_strict_run_with_inverted_window_makes_no_request(monkeypatch, strict):
     with pytest.raises(SystemExit) as e:
         M.main()
     assert e.value.code == 2 and calls == []
+
+
+# ─────────────────────────────────────────── находки ревью PR #225
+def test_pay_per_order_campaigns_are_not_reported_and_not_failed(entities, captured_merges, monkeypatch, strict):
+    """Замер EVETIS: у SEARCH_PROMO/ALL_SKU_PROMO отчёт по SKU пуст всегда — их не заказываем."""
+    fake = FakePerf([111, 222], {111: 5.0, 222: 7.0}, types={222: "SEARCH_PROMO"})
+    _use(monkeypatch, entities, fake)
+    entities.ads_sku_daily("rt", "ts", "2026-09-01", "2026-09-02")
+    assert all(b["campaigns"] == ["111"] for b in fake.submits)
+
+
+def test_spend_on_campaign_of_unknown_type_fails_closed(entities, monkeypatch, strict):
+    _use(monkeypatch, entities, FakePerf([111], {111: 5.0}, types={111: "NEW_TYPE"}))
+    with pytest.raises(entities.StrictLimitError, match="неизвестного типа"):
+        entities.ads_sku_daily("rt", "ts", "2026-09-01", "2026-09-02")
+
+
+def test_missing_single_day_of_a_cpc_campaign_fails_closed(entities, captured_merges, monkeypatch, strict):
+    """Отчёт с одним днём при расходе за два — отказ (раньше хватало одной строки на отрезок)."""
+    one_day = lambda body: (200, _csv_for(body["campaigns"][0], body["dateFrom"]))
+    _use(monkeypatch, entities, FakePerf([111], {111: 5.0}, report=one_day))
+    with pytest.raises(entities.StrictLimitError, match="1 пар «кампания × сутки»"):
+        entities.ads_sku_daily("rt", "ts", "2026-09-01", "2026-09-02")
+    assert captured_merges == []
+
+
+def test_days_without_spend_need_no_rows(entities, captured_merges, monkeypatch, strict):
+    _use(monkeypatch, entities, FakePerf([111], {111: 5.0}, days={"2026-09-02"}))
+    entities.ads_sku_daily("rt", "ts", "2026-09-01", "2026-09-03")
+    assert {r["date"] for r in captured_merges[0][1]} == {"2026-09-02"}
+
+
+@pytest.mark.parametrize("header", ["ID;Название;Расход, ₽", "Кампания;Название;Расход", ""])
+def test_renamed_expense_columns_fail_closed(entities, monkeypatch, strict, header):
+    _use(monkeypatch, entities, FakePerf([111], {111: 5.0}, expense_header=header))
+    with pytest.raises(entities.StrictLimitError, match="нет колонок"):
+        entities.ads_sku_daily("rt", "ts", "2026-09-01", "2026-09-01")
+
+
+def test_non_numeric_spend_fails_closed(entities, monkeypatch, strict):
+    fake = FakePerf([111], {111: 5.0})
+    orig = fake.get
+    fake.get = lambda path, raw_text=True: ((200, "ID;Название;Расход\n111;К;-\n")
+                                            if "/expense" in path else orig(path, raw_text))
+    _use(monkeypatch, entities, fake)
+    with pytest.raises(entities.StrictLimitError, match="расход кампании не число"):
+        entities.ads_sku_daily("rt", "ts", "2026-09-01", "2026-09-01")
+
+
+def test_negative_correction_keeps_campaign_in_perimeter(entities, captured_merges, monkeypatch, strict):
+    fake = FakePerf([111], {111: -3.0})
+    _use(monkeypatch, entities, fake)
+    entities.ads_sku_daily("rt", "ts", "2026-09-01", "2026-09-01")
+    assert fake.submits and fake.submits[0]["campaigns"] == ["111"]
+
+
+@pytest.mark.parametrize("since,until,lb,expect", [
+    (None, "2026-01-01", None, "начало окна"),
+    (None, None, "-5", "LOOKBACK_OVERRIDE"),
+    ("2026-W39-1", None, None, "SINCE не дата"),
+    ("2026-09-20", None, None, None),
+])
+def test_validate_plan_checks_effective_windows(since, until, lb, expect):
+    import main as M
+    got = M.validate_plan(["fbo_postings", "finance_accrual"], since, until, lb, date(2026, 9, 28))
+    assert (got is None and expect is None) or (expect and expect in got)
+
+
+def test_duplicate_products_within_a_page_are_counted_once(entities, monkeypatch):
+    a, b = _products(0, 2)
+    pages = iter([{"items": [a, a, b], "total_items": 3, "last_id": "x"},
+                  {"items": [], "total_items": 3, "last_id": "y"}])
+    monkeypatch.setattr(entities, "seller_post", lambda p, body: (200, {"result": next(pages)}))
+    with pytest.raises(entities.PaginationError, match="2 из total=3"):
+        entities._product_list_items()
+
+
+def test_strict_card_check_compares_id_sets(entities, captured_merges, monkeypatch, strict):
+    def sp(path, body):
+        if path == "/v3/product/list":
+            return 200, {"result": {"items": _products(0, 2), "total_items": 2, "last_id": "x"}}
+        return 200, {"items": [{"id": 10_000, "sku": 1, "offer_id": "o"}, {"id": 99_999, "sku": 2, "offer_id": "p"}]}
+    monkeypatch.setattr(entities, "seller_post", sp)
+    with pytest.raises(entities.StrictLimitError, match="наборы id различаются"):
+        entities.catalog("rt", "ts", None, None)
+
+
+def test_total_vs_total_items(entities, monkeypatch):
+    monkeypatch.setattr(C, "STRICT_PAGE_CAPS", False)
+    assert entities._list_total({"total": 5, "total_items": 7}) == 5, "EVETIS: прежний приоритет total"
+    assert entities._list_total({"total_items": 7}) == 7
+    monkeypatch.setattr(C, "STRICT_PAGE_CAPS", True)
+    with pytest.raises(entities.StrictLimitError, match="различаются"):
+        entities._list_total({"total": 5, "total_items": 7})

@@ -92,11 +92,19 @@ def _num(v):
 
 # ------------------------------------------------ полнота списочных ответов
 def _list_total(result):
-    """Всего элементов: total_items (новое поле), иначе total (отключат 23.11.2026)."""
-    for k in ("total_items", "total"):
-        v = result.get(k)
-        if isinstance(v, int) and not isinstance(v, bool):
-            return v
+    """Всего элементов. total отключат 23.11.2026 в пользу total_items.
+
+    Без флага — прежний порядок (total, затем total_items): решение EVETIS о полноте не
+    меняется, пока total есть. Строгий режим: оба поля есть и различаются — отказ.
+    """
+    vals = {k: result.get(k) for k in ("total", "total_items")
+            if isinstance(result.get(k), int) and not isinstance(result.get(k), bool)}
+    if C.STRICT_PAGE_CAPS and len(set(vals.values())) > 1:
+        _strict_cap("catalog", f"total={vals['total']} и total_items={vals['total_items']} различаются",
+                    "проверить контракт метода")
+    for k in ("total", "total_items"):
+        if k in vals:
+            return vals[k]
     return None
 
 
@@ -120,8 +128,11 @@ def _product_list_items():
         if code != 200:
             raise RuntimeError(f"product/list {code}: {lst}")
         result = lst.get("result") or {}
-        fresh = [i for i in (result.get("items") or []) if i.get("product_id") not in seen]
-        seen.update(i.get("product_id") for i in fresh)
+        fresh = []
+        for i in (result.get("items") or []):
+            if i.get("product_id") not in seen:     # повтор внутри и между страницами — один товар
+                seen.add(i.get("product_id"))
+                fresh.append(i)
         items += fresh
         total = _list_total(result) if total is None else total
         if total is None:
@@ -175,8 +186,8 @@ def _product_info_items(ids):
         if code != 200:
             raise RuntimeError(f"product/info {code}: {info}")
         out += info.get("items") or []
-    if C.STRICT_PAGE_CAPS and len({i.get("id") for i in out}) != len(set(ids)):
-        _strict_cap("catalog", f"карточек {len(out)} на {len(set(ids))} товаров списка",
+    if C.STRICT_PAGE_CAPS and {i.get("id") for i in out} != set(ids):
+        _strict_cap("catalog", f"карточек {len(out)} на {len(set(ids))} товаров списка (наборы id различаются)",
                     "повторить прогон; часть карточек не вернулась", ids=len(set(ids)))
     return out
 
@@ -689,37 +700,84 @@ def _sku_rows_from_csv(cid, text, run_id, ts):
     return rows
 
 
+# Кампании, по которым асинхронный отчёт отдаёт строки SKU: «Оплата за клик» (advObjectType SKU).
+# Замер EVETIS 2026-09-28: у SKU/CPC 2191 из 2191 суток с расходом есть строки SKU; у SEARCH_PROMO и
+# ALL_SKU_PROMO (оплата за заказ) — 0 из 12 пар «кампания × месяц»: отчёт по SKU для них пуст всегда.
+SKU_REPORT_ADV_TYPES = frozenset({"SKU"})
+NO_SKU_REPORT_ADV_TYPES = frozenset({"SEARCH_PROMO", "ALL_SKU_PROMO", "BANNER", "VIDEO_BANNER"})
+EXPENSE_CSV_REQUIRED = ("ID", "Расход")
+
+
+def _expense_by_campaign(day):
+    """Расход кампаний за одни сутки МСК: {campaign_id: рубли}. Заголовок CSV проверяется."""
+    code, txt = perf_get(f"/api/client/statistics/expense?dateFrom={day}&dateTo={day}")
+    if code != 200:
+        _strict_cap("ads_sku_daily", "расход кампаний за сутки не получен", "повторить прогон",
+                    http=code, day=str(day))
+    rows = _csv_rows(txt)
+    header = list(rows[0].keys()) if rows else (txt.lstrip("\ufeff").splitlines() or [""])[0].split(";")
+    missing = [h for h in EXPENSE_CSV_REQUIRED if h not in header]
+    if missing:
+        _strict_cap("ads_sku_daily", f"в CSV расхода нет колонок {missing}", "проверить формат отчёта",
+                    day=str(day))
+    out = {}
+    for r in rows:
+        if r.get("ID"):
+            v = _rub(r.get("Расход"))
+            if v is None:
+                _strict_cap("ads_sku_daily", "расход кампании не число", "проверить формат отчёта",
+                            day=str(day))
+            out[r["ID"]] = out.get(r["ID"], 0.0) + v
+    return out
+
+
 def _ads_sku_rows_strict(run_id, ts, d0, d1):
-    """Строгий путь (T5): окна по датам МСК, CSV одной кампании, сверка с расходом.
+    """Строгий путь (T5): окна по датам МСК, CSV одной кампании, посуточная сверка с расходом.
 
     * Окно режется на отрезки ≤ ADS_SKU_STRICT_CHUNK_DAYS суток и запрашивается полями
       dateFrom/dateTo (ГГГГ-ММ-ДД). Даты отчётов Performance API группируются по Москве
       (Swagger, раздел «Статистика»), поэтому отрезки по датам стыкуются без разрыва и без
       двойного учёта суток — в отличие от моментов from/to (TECH_DEBT P2-5).
-    * Кампания с расходом > 0 в отрезке (/statistics/expense за те же даты) обязана дать
-      строки SKU: иначе отказ. Этим же ловится «ноль строк при HTTP 200» (окно > 62 дней,
-      неверный формат, потерянный CSV одной кампании).
+    * Периметр отчёта — кампании «Оплата за клик» (SKU_REPORT_ADV_TYPES) с ненулевым расходом.
+      Оплата за заказ и баннеры отчёта по SKU не дают — они не заказываются и помечаются в
+      журнале; кампания с расходом и неизвестным типом — отказ.
+    * Для каждой пары «кампания CPC × сутки» с ненулевым расходом (/statistics/expense по
+      суткам) обязаны быть строки SKU за эти сутки: иначе отказ. Этим ловится «ноль строк при
+      HTTP 200» (окно > 62 дней, иной формат, потерянный CSV одной кампании).
+    * Сумма SKU-расхода с расходом кампании не сверяется: у EVETIS она сходится в пределах 1 %
+      лишь в 95 из 148 пар — это предупреждение DQ, а не отказ загрузки.
     * Строка с датой вне отрезка или кампанией вне партии — отказ.
     """
     code, txt = perf_get("/api/client/campaign")
     if code != 200:
         _strict_cap("ads_sku_daily", "список кампаний не получен", "повторить прогон", http=code)
-    registry = [str(c["id"]) for c in _campaign_list(txt)]
+    types = {str(c["id"]): c.get("advObjectType") for c in _campaign_list(txt)}
     rows = []
     for c0, c1 in _date_chunks(d0, d1, ADS_SKU_STRICT_CHUNK_DAYS):
-        c2, t2 = perf_get(f"/api/client/statistics/expense?dateFrom={c0}&dateTo={c1}")
-        if c2 != 200:
-            _strict_cap("ads_sku_daily", "расход кампаний за окно не получен", "повторить прогон",
-                        http=c2, window=f"{c0}..{c1}")
-        spend = {}
-        for r in _csv_rows(t2):
-            if r.get("ID"):
-                spend[r["ID"]] = spend.get(r["ID"], 0.0) + (_rub(r.get("Расход")) or 0.0)
-        active = [i for i in registry if spend.get(i, 0.0) > 0]
-        outside = sorted(k for k, v in spend.items() if v > 0 and k not in registry)
-        if outside:
-            _strict_cap("ads_sku_daily", f"расход у {len(outside)} кампаний вне реестра кампаний",
-                        "проверить /api/client/campaign", window=f"{c0}..{c1}")
+        need = set()                         # (campaign_id, дата) с ненулевым расходом
+        skipped = set()
+        for k in range((c1 - c0).days + 1):
+            day = c0 + timedelta(days=k)
+            for cid, v in _expense_by_campaign(day).items():
+                if v == 0:
+                    continue
+                t = types.get(cid)
+                if cid not in types:
+                    _strict_cap("ads_sku_daily", "расход у кампании вне реестра кампаний",
+                                "проверить /api/client/campaign", window=f"{c0}..{c1}")
+                if t in SKU_REPORT_ADV_TYPES:
+                    need.add((cid, str(day)))
+                elif t in NO_SKU_REPORT_ADV_TYPES:
+                    skipped.add(cid)
+                else:
+                    _strict_cap("ads_sku_daily", f"кампания с расходом неизвестного типа {t!r}",
+                                "добавить тип в SKU_REPORT_ADV_TYPES или NO_SKU_REPORT_ADV_TYPES",
+                                window=f"{c0}..{c1}")
+            time.sleep(0.5)
+        if skipped:
+            log(event="ads_sku_not_applicable", window=f"{c0}..{c1}", campaigns=len(skipped),
+                reason="оплата за заказ / баннеры: отчёт по SKU не формируется")
+        active = sorted({cid for cid, _d in need})
         seen = set()
         for i in range(0, len(active), ADS_SKU_BATCH):
             batch = active[i:i + ADS_SKU_BATCH]
@@ -750,12 +808,12 @@ def _ads_sku_rows_strict(run_id, ts, d0, d1):
                 if bad:
                     _strict_cap("ads_sku_daily", f"{len(bad)} строк SKU с датой вне окна",
                                 "проверить границы dateFrom/dateTo", window=f"{c0}..{c1}")
-                seen.update(r["campaign_id"] for r in got)
+                seen.update((r["campaign_id"], r["date"]) for r in got)
                 rows += got
             time.sleep(3)
-        missing = [c for c in active if c not in seen]
+        missing = need - seen
         if missing:
-            _strict_cap("ads_sku_daily", f"у {len(missing)} кампаний с расходом нет строк SKU",
+            _strict_cap("ads_sku_daily", f"{len(missing)} пар «кампания × сутки» с расходом без строк SKU",
                         "сузить окно; проверить формат отчёта", window=f"{c0}..{c1}",
                         campaigns_with_spend=len(active))
     return rows
