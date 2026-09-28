@@ -161,7 +161,41 @@ class WBClient:
                 f"WB publish outcome unknown ({type(exc).__name__})"
             ) from exc
 
+    @staticmethod
+    def _audited_write(mutation_class: str, target_id: str, write):
+        """D-19b: every WB write is bracketed by mutation_attempt / mutation_success|failure security
+        events on the current request's trace. The outcome is classified conservatively: anything that
+        may have reached WB without a definite answer is `outcome_unknown` (the audit fails closed)."""
+        from app.utils import audit_events
+
+        tid = str(target_id)          # WB object ids are public; anything unexpected is hashed, not logged
+        ref = f"wb:{tid}" if audit_events.PLAIN_ID.fullmatch(tid) else audit_events.safe_ref("wb", tid)
+        m = audit_events.start_mutation(mutation_class, "wb", ref)
+        try:
+            result = write()
+        except WBPublishOutcomeUnknown as exc:
+            audit_events.finish_mutation(m, "outcome_unknown", type(exc).__name__)
+            raise
+        except WBRateLimitError as exc:          # 429 after retries: provably not processed
+            audit_events.finish_mutation(m, "error", type(exc).__name__)
+            raise
+        except WBServerError as exc:
+            audit_events.finish_mutation(m, "outcome_unknown", type(exc).__name__)
+            raise
+        except WBApiError as exc:                # 4xx / in-band error=true: WB rejected the write
+            audit_events.finish_mutation(m, "rejected", type(exc).__name__)
+            raise
+        except BaseException as exc:             # anything else after a possible send: unknown
+            audit_events.finish_mutation(m, "outcome_unknown", type(exc).__name__)
+            raise
+        audit_events.finish_mutation(m, "success")
+        return result
+
     def publish_answer(self, feedback_id: str, text: str) -> dict:
+        return self._audited_write("wb_feedback_answer", feedback_id,
+                                   lambda: self._publish_answer(feedback_id, text))
+
+    def _publish_answer(self, feedback_id: str, text: str) -> dict:
         body = {"id": feedback_id, "text": text}
         resp = self._write_once(self._s.wb_answer_method, self._s.wb_answer_path, body)
         if resp.status_code >= 400:
@@ -220,6 +254,11 @@ class WBClient:
         return {"id": question_id, "answer": {"text": text}, "state": state}
 
     def publish_question_answer(self, question_id: str, text: str, state: str | None = None) -> dict:
+        """PATCH the answer (audited write, see ``_publish_question_answer``)."""
+        return self._audited_write("wb_question_answer", question_id,
+                                   lambda: self._publish_question_answer(question_id, text, state))
+
+    def _publish_question_answer(self, question_id: str, text: str, state: str | None = None) -> dict:
         """PATCH the answer. Returns ``{"status_code", "response", "request_sha256"}``.
 
         Raises ``WBApiError`` for 4xx or for a 2xx whose body carries ``error: true``

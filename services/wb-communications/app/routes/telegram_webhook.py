@@ -19,6 +19,7 @@ from fastapi import APIRouter, Request, Response
 
 from app.dependencies import get_deps
 from app.services.pipeline import flush_events, handle_update
+from app.utils.audit_events import record_auth
 from app.utils.logging import get_logger, set_correlation_id
 from app.utils.security import verify_webhook_secret
 
@@ -33,11 +34,14 @@ async def telegram_webhook(request: Request) -> Response:
     set_correlation_id(f"tg-{uuid.uuid4().hex[:8]}")
     deps = get_deps()
 
-    if not verify_webhook_secret(
-        request.headers.get(_SECRET_HEADER), deps.settings.secrets.telegram_webhook_secret
-    ):
+    presented = request.headers.get(_SECRET_HEADER)
+    if not verify_webhook_secret(presented, deps.settings.secrets.telegram_webhook_secret):
         logger.warning("webhook secret check failed")
+        record_auth("telegram_webhook_secret", ok=False,
+                    reason="not_configured" if not deps.settings.secrets.telegram_webhook_secret
+                    else "missing" if not presented else "mismatch")
         return Response(status_code=403)
+    record_auth("telegram_webhook_secret", ok=True)
 
     try:
         update = await request.json()

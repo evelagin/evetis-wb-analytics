@@ -1,5 +1,22 @@
 # CHANGELOG
 
+## 1.6.0 — Security audit events for the public ingress (D-19b / F-18) (2026-09-28)
+
+Local verification: **300/300 pytest passed** (32 new) on FastAPI 0.115.6.
+No business logic, route contract, env var, secret, IAM or ingress change.
+
+- Every request emits `request_start` / `request_done`; `/poll`, `/telegram-webhook` and
+  `/admin/*` emit `auth_ok` / `auth_denied` for their existing authentication (scheduler
+  secret, Telegram secret header, admin token); the Telegram allow-list emits
+  `authz_ok` / `authz_denied` (`allowlist_configured` recorded; decision unchanged).
+- Every external write emits `mutation_attempt` and exactly one outcome
+  (`mutation_success` / `mutation_failure` with `rejected|error|outcome_unknown`):
+  WB feedback and question answers, and all Telegram Bot API calls.
+- Events carry the Cloud Run trace (`logging.googleapis.com/trace`), a per-request
+  `correlation_id`, revision and service; the contract is in `SECURITY_AUDIT_EVENTS.md`.
+  Only whitelisted fields with bounded values; ids of chats/callbacks are hashed; no
+  headers, secrets, tokens or text. Invalid values become `<invalid>` (audit fails closed).
+
 ## 1.5.2 — Recovery card must be actionable (2026-09-28)
 
 Local verification: **268/268 pytest passed** (10 new; 5 of them fail on 1.5.1).

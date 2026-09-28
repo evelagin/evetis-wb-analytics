@@ -9,6 +9,7 @@ from fastapi import APIRouter, Header, HTTPException
 
 from app.dependencies import get_deps
 from app.domain.models import Review
+from app.utils.audit_events import record_auth
 
 router = APIRouter(prefix="/admin")
 
@@ -19,12 +20,17 @@ def _check_admin(token: str | None) -> None:
     configured = deps.settings.admin_token
     if deps.settings.is_production and not configured:
         # should not happen (router isn't registered in prod without a token)
+        record_auth("admin_token", ok=False, reason="not_configured")
         raise HTTPException(status_code=403, detail="admin disabled")
     if configured:
         import hmac
 
         if not token or not hmac.compare_digest(str(token), str(configured)):
+            record_auth("admin_token", ok=False, reason="missing" if not token else "mismatch")
             raise HTTPException(status_code=403, detail="forbidden")
+        record_auth("admin_token", ok=True)
+    # Non-production without a token: no application authentication happened. No auth_ok is
+    # recorded, so any mutation below is unattributed and the trusted audit fails closed.
 
 
 @router.post("/test-openai")
