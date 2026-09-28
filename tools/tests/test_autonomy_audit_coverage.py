@@ -174,6 +174,9 @@ class FakeSource:
         self.probed = (url, trace)
         return 200
 
+    def bucket_granted(self, bucket, perms):
+        return self._f18.get("buckets", {}).get(bucket, [])
+
     def project_number(self):
         return "1"
 
@@ -1343,3 +1346,13 @@ def test_f18_success_without_trace_on_unknown_route_blocks():
 ])
 def test_f18_spec_changes_inside_window_and_timeout(svc_events):
     assert f18_audit(mutate(good_chain(), svc_events=svc_events))["status"] == "BLOCKED"
+
+
+
+def test_f18_scheduler_secret_read_paths_are_closed():
+    for p_ in ("cloudscheduler.jobs.list", "run.services.list", "run.revisions.get", "run.revisions.list",
+               "storage.objects.get", "storage.objects.list"):
+        assert p_ in A.FORBIDDEN_PROJECT_PERMISSIONS
+    c = good_chain(); c["buckets"] = {"evetis-wb-tfstate-1": ["storage.objects.get"]}
+    r = f18_audit(c)
+    assert r["status"] == "BLOCKED" and any("Terraform state" in x for x in r["iam_invariant"])

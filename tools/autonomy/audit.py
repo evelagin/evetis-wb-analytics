@@ -60,7 +60,9 @@ FORBIDDEN_PROJECT_PERMISSIONS = [
     "cloudscheduler.jobs.run", "workflows.executions.create", "cloudfunctions.functions.call",
     "dataform.repositories.create", "dataform.workflowInvocations.create",
     # F-18: путь к секретам аутентификации публичного входа и к подделке журналов
-    "secretmanager.versions.access", "cloudscheduler.jobs.get", "run.services.get", "logging.logEntries.create",
+    "secretmanager.versions.access", "cloudscheduler.jobs.get", "cloudscheduler.jobs.list", "run.services.get",
+    "run.services.list", "run.revisions.get", "run.revisions.list", "storage.objects.get", "storage.objects.list",
+    "logging.logEntries.create",
 ]
 # На каждом SA проекта: право стать им или подписать от его имени (самопроверка iam testIamPermissions).
 FORBIDDEN_SA_PERMISSIONS = ["iam.serviceAccounts.getAccessToken", "iam.serviceAccounts.signJwt",
@@ -292,6 +294,19 @@ class GcpAuditSource:
         try:
             r = self.http("POST", f"https://secretmanager.googleapis.com/v1/projects/{self.project}/secrets/{name}"
                           ":testIamPermissions", {"permissions": ["secretmanager.versions.access"]})
+        except urllib.error.HTTPError as e:
+            if e.code == 404:
+                return None
+            raise
+        return sorted(r.get("permissions", []))
+
+    def bucket_granted(self, bucket: str, perms: list[str]) -> list[str] | None:
+        """Самопроверка на конкретном бакете (IAM уровня бакета). None — бакета нет."""
+        import urllib.error
+        from urllib.parse import urlencode
+        q = urlencode([("permissions", x) for x in perms])
+        try:
+            r = self.http("GET", f"https://storage.googleapis.com/storage/v1/b/{bucket}/iam/testPermissions?{q}")
         except urllib.error.HTTPError as e:
             if e.code == 404:
                 return None
@@ -767,6 +782,10 @@ def f18_check(src, state: dict, since_iso: str, by_type: dict, created: str) -> 
         got = src.secret_granted(name)
         if got:
             blocked.append(f"F-18: идентичность AE может читать секрет {name}")
+    # Terraform state хранит живые заголовки планировщика (X-Scheduler-Secret) — AE не должна читать бакет state
+    tf_bucket = f"evetis-wb-tfstate-{src.project_number()}"
+    if src.bucket_granted(tf_bucket, ["storage.objects.get", "storage.objects.list"]):
+        blocked.append(f"F-18: идентичность AE может читать Terraform state ({tf_bucket})")
     base = f'resource.type="cloud_run_revision" AND resource.labels.service_name="{F18_SERVICE}"'
     stdout = (f'{base} AND logName="projects/{src.project}/logs/run.googleapis.com%2Fstdout" '
               f'AND jsonPayload.logger="app.audit"')           # события пишет только логгер приложения в stdout
