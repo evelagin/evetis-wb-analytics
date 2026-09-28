@@ -55,6 +55,7 @@ def logs(monkeypatch):
         lg.propagate = prop
     logging.getLogger("httpx").filters[:] = saved_filters
     logging.captureWarnings(False)
+    logging.raiseExceptions = True
 
 
 def assert_clean(text: str, *, allow_empty: bool = False) -> None:
@@ -128,7 +129,7 @@ def test_transport_error_becomes_token_free_telegram_error(logs):
     with pytest.raises(TelegramError) as ei:
         TelegramClient(FAKE).send_message(1, "hi")
     assert FAKE not in str(ei.value) and FAKE_TAIL not in str(ei.value) and "ConnectError" in str(ei.value)
-    assert ei.value.__cause__ is None and ei.value.__suppress_context__
+    assert ei.value.__cause__ is None and ei.value.__context__ is None       # исходная ошибка httpx не привязана
     logging.getLogger("app.x").exception("poll item failed: %s", ei.value, exc_info=ei.value)
     assert_clean(logs())
 
@@ -218,3 +219,57 @@ def test_secret_manager_value_is_registered(logs, monkeypatch):
     logging.getLogger("app.x").info("leak sm-synthetic-secret-55555555")
     text = logs()
     assert text and "sm-synthetic-secret-55555555" not in text
+
+
+
+def test_unformattable_record_on_any_logger_leaks_nothing(logs):
+    logging.getLogger("app.x").info("two args expected %s %s", FAKE)          # ошибка форматирования
+    text = logs()
+    assert "could not be formatted" in text
+    assert_clean(text)
+
+
+def test_unserialisable_extra_field_is_redacted_not_dumped_raw(logs):
+    import datetime
+
+    class Odd:
+        def __str__(self):
+            return f"odd {URL}"
+    logging.getLogger("app.x").info("x", extra={"extra_fields": {"when": datetime.datetime(2026, 9, 28), "o": Odd()}})
+    text = logs()
+    assert "2026-09-28" in text
+    assert_clean(text)
+
+
+def test_secrets_repr_hides_values():
+    from app.config import Secrets
+    s = Secrets(openai_api_key="sk-SYNTH-1111111111", wb_api_token="wb-SYNTH-2222222222",
+                telegram_bot_token=FAKE, telegram_webhook_secret="wh-SYNTH-3333333333",
+                scheduler_secret="sch-SYNTH-4444444444")
+    r = repr(s)
+    assert FAKE not in r and "SYNTH" not in r
+
+
+def test_admin_token_from_env_is_registered(logs, monkeypatch):
+    from app.config import Settings
+    monkeypatch.setenv("ADMIN_TOKEN", "admin-SYNTHETIC-token-12345")
+    s = Settings()
+    assert s.admin_token == "admin-SYNTHETIC-token-12345" and "admin-SYNTHETIC" not in repr(s)
+    logging.getLogger("app.x").info("admin %s", s.admin_token)
+    text = logs()
+    assert text and "admin-SYNTHETIC-token-12345" not in text
+
+
+def test_persisted_error_message_is_redacted():
+    from app.services import pipeline
+    L.register_secret(FAKE)
+    captured = []
+
+    class Repo:
+        def enqueue_event(self, payload):
+            captured.append(payload)
+
+    class Deps:
+        repo = Repo()
+    pipeline._emit_event(Deps(), {"source_id": "s"}, "d", pipeline.EventType.FAILED, error_message=f"boom {URL}")
+    assert captured and FAKE not in captured[0]["error_message"] and FAKE_TAIL not in captured[0]["error_message"]

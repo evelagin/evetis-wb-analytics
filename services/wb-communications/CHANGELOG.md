@@ -16,6 +16,10 @@ httpx писал INFO `HTTP Request: POST https://api.telegram.org/bot<TOKEN>/�
 - **uvicorn и Python warnings** идут через тот же редактирующий JSON-формат.
 - **`TelegramClient`**: ошибка транспорта httpx (может нести URL с токеном) заменяется
   `TelegramError` без URL — по-прежнему транзиентная (Telegram доставит повторно).
+- **Сбой форматирования** больше не уходит в обработчик ошибок logging (он печатал сырое сообщение в stderr):
+  резервная строка уже отредактирована; `json.dumps(default=redact(str))`; `logging.raiseExceptions = False`.
+- `Secrets`/`admin_token` не показываются в `repr`; `ADMIN_TOKEN` из окружения регистрируется для маскирования;
+  `error_message` событий редактируется перед сохранением; исходная ошибка httpx не привязывается к `TelegramError`.
 - Тесты `tests/test_log_redaction.py` — только на синтетическом токене.
 
 ## 1.4.0 — WB buyer questions (separate entity, own gates)

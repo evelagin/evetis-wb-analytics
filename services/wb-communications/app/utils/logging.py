@@ -69,6 +69,16 @@ def _redact_value(value):
 
 class _JsonFormatter(logging.Formatter):
     def format(self, record: logging.LogRecord) -> str:
+        # A failing format must not fall through to logging's error handler, which prints
+        # the RAW message and arguments to stderr (bypassing both redaction layers).
+        try:
+            return self._format(record)
+        except Exception as exc:  # noqa: BLE001
+            return json.dumps({"severity": "ERROR", "logger": getattr(record, "name", "?"),
+                               "message": redact(f"log record could not be formatted: {type(exc).__name__}; "
+                                                 f"template={getattr(record, 'msg', '')!s}")})
+
+    def _format(self, record: logging.LogRecord) -> str:
         payload = {
             "severity": record.levelname,
             "message": redact(record.getMessage()),
@@ -84,7 +94,7 @@ class _JsonFormatter(logging.Formatter):
         # attach structured extras
         for key, value in getattr(record, "extra_fields", {}).items():
             payload[key] = _redact_value(value)
-        return json.dumps(payload, ensure_ascii=False)
+        return json.dumps(payload, ensure_ascii=False, default=lambda v: redact(str(v)))
 
 
 # httpx logs every request URL at INFO. WB and OpenAI keep their credentials in headers, and
@@ -126,6 +136,7 @@ def configure_logging(level: str = "INFO") -> None:
         server.addHandler(handler)
         server.propagate = False
     logging.captureWarnings(True)  # Python warnings also pass through redaction
+    logging.raiseExceptions = False  # never print raw records to stderr on a handler error
 
 
 def get_logger(name: str) -> logging.Logger:
