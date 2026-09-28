@@ -82,6 +82,27 @@ MUTATIONS = [
     ("deployer email guard weakened", "variables.tf",
      r"condition = \(var\.contract\.sql_deployer\.account_id == local\.platform\.sql_deployer_account_id &&",
      "condition = true || (var.contract.sql_deployer.account_id == local.platform.sql_deployer_account_id &&"),
+    # T5 (D1): control plane — своя идентичность, ровно матрица, без расписания; runtime — с привязкой.
+    ("control presence guard removed", "variables.tf",
+     r"condition     = \(var\.contract\.marketplaces\.ozon == null\) == \(var\.contract\.control == null\)",
+     "condition     = var.contract != null"),       # условие обязано ссылаться на var.contract
+    ("control identity guard weakened", "variables.tf",
+     r"var\.contract\.control\.account_id == local\.platform\.control_account_id &&",
+     "true || var.contract.control.account_id == local.platform.control_account_id &&"),
+    ("control exact grant matrix unchecked", "variables.tf",
+     r"length\(var\.contract\.control\.grants\) == length\(local\.platform\.control_grant_matrix\) && toset",
+     "true || length(var.contract.control.grants) == length(local.platform.control_grant_matrix) && toset"),
+    ("control env guard weakened", "variables.tf",
+     r'!contains\(keys\(var\.contract\.control\.job\.env\), "TENANT_BINDING_REQUIRED"\) &&',
+     'true || !contains(keys(var.contract.control.job.env), "TENANT_BINDING_REQUIRED") &&'),
+    ("runtime binding flag unchecked", "variables.tf",
+     r'lookup\(j\.env, "TENANT_BINDING_REQUIRED", ""\) == "1"', 'lookup(j.env, "TENANT_BINDING_REQUIRED", "") != "x"'),
+    ("control ACL entries dropped", "main.tf",
+     r"\n  dynamic \"access\" \{\n    for_each = var\.contract\.control == null \? \[\].*?\n  \}\n", "\n"),
+    ("control job runs as runtime SA", "modules/ozon_runtime/main.tf",
+     r"service_account = var\.control\.email", "service_account = local.runtime_email"),
+    ("control job entrypoint changed", "modules/ozon_runtime/main.tf",
+     r'command = \["python", "lifecycle\.py"\]', 'command = ["python", "main.py"]'),
 ]
 
 

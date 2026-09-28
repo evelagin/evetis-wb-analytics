@@ -66,7 +66,7 @@ class Ctx:
         self.today_msk = C.now_msk().date()
         self.store = ControlStore(C.bq(), C.PROJECT, {
             "tenant_ops": env["TENANT_OPS_DATASET"], "tenant_locks": env["TENANT_LOCKS_DATASET"],
-            "ref": C.REF_DATASET, "ozon_raw": C.DATASET})
+            "ref": C.REF_DATASET, "ozon_raw": C.DATASET}, redact=C.redact_value)
         self.ads = any(e in L.ADS_DOMAINS for e in self.entities)
 
 
@@ -152,10 +152,35 @@ def observe_performance(ctx, skus):
 
 def live_binding(ctx, seller_fp, perf_fp):
     rows = list(ctx.store.rows("ref", "SELLER_BINDING"))
-    out = {"seller": I.live_status(I.effective_binding(rows, I.SELLER, ctx.now), seller_fp)[0]}
+    obs = list(ctx.store.rows("tenant_ops", "SELLER_IDENTITY_OBSERVATIONS"))
+    out = {"seller": I.live_status(I.effective_binding(rows, I.SELLER, ctx.now, obs), seller_fp)[0]}
     if ctx.ads:
-        out["performance"] = I.live_status(I.effective_binding(rows, I.PERFORMANCE, ctx.now), perf_fp)[0]
+        out["performance"] = I.live_status(I.effective_binding(rows, I.PERFORMANCE, ctx.now, obs), perf_fp)[0]
     return out
+
+
+# Команды, меняющие журналы, допустимы только в своих состояниях автомата: план строится до
+# подтверждения оператором и после него не меняется; отрезки берутся только в BACKFILLING.
+COMMAND_STATES = {"discover": (L.CAPABILITY_DISCOVERY,), "history": (L.CAPABILITY_DISCOVERY,),
+                  "plan": (L.CAPABILITY_DISCOVERY,), "claim-next": (L.BACKFILLING,),
+                  "verify-chunks": (L.BACKFILLING, L.RECONCILING), "dq": (L.RECONCILING, L.READY)}
+
+
+def require_state(ctx, command):
+    state = L.current_state(list(ctx.store.rows("tenant_ops", "TENANT_STATE_EVENTS")))
+    if state not in COMMAND_STATES[command]:
+        C.log(event="command_rejected", run_id=ctx.run_id, command=command, state=state,
+              allowed=list(COMMAND_STATES[command]))
+        raise SystemExit(4)
+    return state
+
+
+def approved_plan_hash(events):
+    """Хеш плана из последнего входа в BACKFILLING (подтверждение оператора или возврат control)."""
+    for e in reversed(L.ordered(events)):
+        if e.get("to_state") == L.BACKFILLING:
+            return json.loads(e.get("evidence_json") or "{}").get("plan_hash")
+    return None
 
 
 def _cap_row(ctx, api, cap, status, http=None, kind="LIVE_CALL", evidence=None, notes=None):
@@ -207,6 +232,7 @@ def _probe(api_call):
 
 
 def cmd_discover(ctx):
+    require_state(ctx, "discover")
     sv, _b = require_bound(ctx)
     y = ctx.today_msk - timedelta(days=1)
     d30 = ctx.today_msk - timedelta(days=30)
@@ -293,6 +319,7 @@ def _boundary_row(ctx, b: H.Boundary):
 
 
 def cmd_history(ctx):
+    require_state(ctx, "history")
     require_bound(ctx)
     out = {}
     if "fbo_postings" in ctx.entities:
@@ -327,6 +354,17 @@ def latest(rows, key, ts):
     return best
 
 
+def latest_caps(rows) -> dict:
+    """(api, capability) → последняя строка CAPABILITY_PROFILE (как V_CAPABILITY_CURRENT)."""
+    best = {}
+    for r in rows:
+        k = (r.get("api"), r.get("capability"))
+        key = (I.as_utc(r.get("discovered_at")) or L._EPOCH, str(r.get("profile_id")))
+        if k not in best or key >= best[k][0]:
+            best[k] = (key, r)
+    return {k: v[1] for k, v in best.items()}
+
+
 def build_plan(boundaries: dict, cutover: date):
     chunks = []
     for dom in L.HISTORICAL_DOMAINS:
@@ -352,6 +390,7 @@ def _cp_row(ctx, c: CK.Chunk, status, attempts=0, plan_hash=None, **extra):
 
 
 def cmd_plan(ctx):
+    require_state(ctx, "plan")
     require_bound(ctx)
     bounds = latest(ctx.store.rows("tenant_ops", "HISTORY_BOUNDARIES"), "entity", "determined_at")
     cutover = ctx.today_msk - timedelta(days=1)
@@ -369,17 +408,56 @@ def run_id_for(chunk: CK.Chunk, gen: int) -> str:
     return f"bf-{chunk.chunk_id}-{gen:04d}-{uuid.uuid4().hex[:8]}"
 
 
+def chunk_exports(c: CK.Chunk, caps) -> int | None:
+    """Выгрузки Performance на отрезок: только ads_sku_daily (асинхронный отчёт). Одна кампания в
+    запросе — одна выгрузка; берётся ВСЁ число CPC-кампаний кабинета (верхняя оценка), окно
+    отрезка ≤ 62 суток. None — число неизвестно (отрезок не берётся)."""
+    if c.domain != "ads_sku_daily":
+        return 0
+    ev = json.loads((caps.get(("performance", "async_report")) or {}).get("evidence_json") or "{}")
+    n = ev.get("cpc_campaigns")
+    if not isinstance(n, int) or n < 0:
+        return None
+    return n * -(-((c.end - c.start).days + 1) // 62)
+
+
+def quota_state(ledger, caps, now):
+    ev = json.loads((caps.get(("performance", "active_campaigns")) or {}).get("evidence_json") or "{}")
+    active = ev.get("running") if isinstance(ev.get("running"), int) else None
+    spent = []
+    for r in ledger:
+        if r.get("status") == "RUNNING" and r.get("entity") == "ads_sku_daily":
+            n = json.loads(r.get("evidence_json") or "{}").get("exports")
+            if isinstance(n, int):
+                spent.append((I.as_utc(r.get("started_at")), n))
+    return Q.budget(active, spent, now)
+
+
 def cmd_claim_next(ctx):
+    require_state(ctx, "claim-next")
     require_bound(ctx)
+    events = list(ctx.store.rows("tenant_ops", "TENANT_STATE_EVENTS"))
     ledger = list(ctx.store.rows("tenant_ops", "BACKFILL_CHECKPOINTS"))
     folded = CK.fold(ledger)
     plan_rows = latest(ledger, "backfill_id", "updated_at")
     chunks = sorted((CK.Chunk(r["entity"], date.fromisoformat(str(r["window_from"])), date.fromisoformat(str(r["window_to"])))
                      for r in plan_rows.values()), key=lambda c: (c.domain, c.start))
+    approved = approved_plan_hash(events)
+    if not chunks or CK.plan_hash(chunks) != approved:
+        C.log(event="plan_not_approved", run_id=ctx.run_id, approved=approved,
+              ledger=CK.plan_hash(chunks) if chunks else None)
+        return 4
+    caps = latest_caps(ctx.store.rows("tenant_ops", "CAPABILITY_PROFILE"))
+    budget = quota_state(ledger, caps, ctx.now)
     leases = ctx.store.leases()
     for c in chunks:
         if not CK.claimable(folded.get(c.chunk_id)):
             continue
+        exports = chunk_exports(c, caps)
+        if exports is None or not Q.can_run(exports, budget):
+            C.log(event="quota_deferred", run_id=ctx.run_id, chunk=c.chunk_id, domain=c.domain,
+                  exports=exports, remaining=budget["remaining"])
+            continue                               # продолжение — в следующем окне бюджета
         gen = CK.next_lease_generation(leases, c.chunk_id, ctx.now)
         if gen is None:
             continue                               # живая аренда у другого исполнителя
@@ -389,8 +467,9 @@ def cmd_claim_next(ctx):
         rid = run_id_for(c, gen)
         attempts = (folded.get(c.chunk_id) or {}).get("attempts", 0) + 1
         ctx.store.append("BACKFILL_CHECKPOINTS", [_cp_row(
-            ctx, c, "RUNNING", attempts, run_id=rid, lease_owner=ctx.run_id, lease_until=until.isoformat(),
-            lease_generation=gen, started_at=ctx.now.isoformat())])
+            ctx, c, "RUNNING", attempts, plan_hash=approved, run_id=rid, lease_owner=ctx.run_id,
+            lease_until=until.isoformat(), lease_generation=gen, started_at=ctx.now.isoformat(),
+            exports=exports)])
         C.log(event="chunk_claimed", run_id=ctx.run_id, chunk=c.chunk_id, domain=c.domain,
               executor_env={"ENTITIES": c.domain, "SINCE": str(c.start), "UNTIL": str(c.end),
                             "INGESTION_RUN_ID": rid, "STRICT_PAGE_CAPS": "1"})
@@ -409,6 +488,7 @@ def classify_error(msg: str | None) -> str:
 
 
 def cmd_verify_chunks(ctx):
+    require_state(ctx, "verify-chunks")
     ledger = list(ctx.store.rows("tenant_ops", "BACKFILL_CHECKPOINTS"))
     folded = CK.fold(ledger)
     runs = list(ctx.store.rows("ozon_raw", "OZON_INGESTION_RUNS"))
@@ -426,7 +506,9 @@ def cmd_verify_chunks(ctx):
             out.append(_cp_row(ctx, c, "DONE", st["attempts"], run_id=r["run_id"], rows_written=ok[0].get("rows_received"),
                                completed_at=ctx.now.isoformat()))
         elif mine:
-            err = classify_error(mine[-1].get("error_message"))
+            # Успех с другим окном — исполнитель запущен не с тем SINCE/UNTIL: отрезок не покрыт.
+            err = ("WINDOW_MISMATCH" if all(x.get("status") == "OK" for x in mine)
+                   else classify_error(mine[-1].get("error_message")))
             out.append(_cp_row(ctx, c, "FAILED", st["attempts"], run_id=r["run_id"], error_code=err))
         elif I.as_utc(r.get("lease_until")) and I.as_utc(r.get("lease_until")) < ctx.now:
             out.append(_cp_row(ctx, c, "FAILED", st["attempts"], run_id=r["run_id"], error_code="LEASE_EXPIRED"))
@@ -484,8 +566,8 @@ def gather_facts(ctx, binding):
         dups[table] = n
     unresolved = sum(1 for r in ctx.store.rows("ozon_raw", "RAW_OZON_FINANCE_ACCRUAL")
                      if (r.get("operation_name") or "UNKNOWN") == "UNKNOWN")
-    caps = latest(ctx.store.rows("tenant_ops", "CAPABILITY_PROFILE"), "capability", "discovered_at")
-    fbs = (caps.get("fbs_activity") or {}).get("status") == "AVAILABLE"
+    caps = latest_caps(ctx.store.rows("tenant_ops", "CAPABILITY_PROFILE"))
+    fbs = (caps.get(("seller", "fbs_activity")) or {}).get("status") == "AVAILABLE"
     return {"binding": binding, "ads_enabled": ctx.ads, "chunks": {c: s["status"] for c, s in folded.items()},
             "required_ranges": ranges, "done_windows": done, "truncated_runs": truncated,
             "raw_duplicate_keys": dups, "finance_unresolved_rows": unresolved, "maturity_days": maturity(ctx),
@@ -493,6 +575,7 @@ def gather_facts(ctx, binding):
 
 
 def cmd_dq(ctx):
+    require_state(ctx, "dq")
     _sv, b = require_bound(ctx)
     checks = DQ.evaluate(gather_facts(ctx, b))
     rows = [{"result_id": hashlib.sha256(f"{ctx.run_id}|{cid}".encode()).hexdigest()[:32], "check_id": cid,
@@ -510,7 +593,7 @@ def cmd_dq(ctx):
 
 def snapshot(ctx, binding, credentials):
     events = list(ctx.store.rows("tenant_ops", "TENANT_STATE_EVENTS"))
-    caps = latest(ctx.store.rows("tenant_ops", "CAPABILITY_PROFILE"), "capability", "discovered_at")
+    caps = latest_caps(ctx.store.rows("tenant_ops", "CAPABILITY_PROFILE"))
     ledger = list(ctx.store.rows("tenant_ops", "BACKFILL_CHECKPOINTS"))
     folded = CK.fold(ledger)
     by_chunk = latest(ledger, "backfill_id", "updated_at")
@@ -527,7 +610,7 @@ def snapshot(ctx, binding, credentials):
     return L.Snapshot(
         tenant_id=ctx.tenant, now=ctx.now, events=events, enabled_entities=ctx.entities,
         credentials=credentials, binding=binding,
-        capabilities={(r["api"], r["capability"]): r["status"] for r in caps.values()},
+        capabilities={k: r["status"] for k, r in caps.items()},
         required_capabilities=required,
         history=latest(ctx.store.rows("tenant_ops", "HISTORY_BOUNDARIES"), "entity", "determined_at"),
         plan_hash=CK.plan_hash(plan_chunks) if plan_chunks else None,
@@ -547,9 +630,7 @@ def cmd_advance(ctx):
     if ctx.ads:
         pfp = I.performance_fingerprint(C.perf_client_id())
         # Performance: последний вердикт проверки учётных данных (validate), а не допущение.
-        cap = latest([r for r in ctx.store.rows("tenant_ops", "CAPABILITY_PROFILE")
-                      if r.get("api") == "performance" and r.get("capability") == "credential"],
-                     "capability", "discovered_at").get("credential") or {}
+        cap = latest_caps(ctx.store.rows("tenant_ops", "CAPABILITY_PROFILE")).get(("performance", "credential")) or {}
         pv = {"status": "PASS" if cap.get("status") == "AVAILABLE" else "FAIL"}
     binding = live_binding(ctx, sfp if sv["status"] == "PASS" else None, pfp)
     s = snapshot(ctx, binding, {"seller": sv, **({"performance": pv} if pv else {})})

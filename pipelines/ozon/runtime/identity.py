@@ -13,7 +13,10 @@
     revoked_at, иначе confirmed_at;
   * действует последнее событие; при равном моменте побеждает REVOKED, затем больший binding_id;
   * в последний момент подтверждены разные отпечатки, или момент в будущем — INVALID_BINDING;
-  * последнее событие — отзыв или событий нет — UNBOUND.
+  * последнее событие — отзыв или событий нет — UNBOUND;
+  * если переданы наблюдения (control и владелец их читают; runtime — нет, у него нет доступа к
+    tenant_ops), подтверждение без наблюдения того же API с тем же отпечатком — INVALID_BINDING.
+    Runtime вместо этого сверяет отпечаток, снятый в своём прогоне (live_status).
 """
 from __future__ import annotations
 
@@ -90,7 +93,7 @@ class Binding:
     reason: str
 
 
-def effective_binding(rows, api: str, now: datetime) -> Binding:
+def effective_binding(rows, api: str, now: datetime, observations=None) -> Binding:
     """Действующее событие привязки по API — семантика V_SELLER_BINDING_STATUS."""
     events = []
     for r in rows:
@@ -114,6 +117,11 @@ def effective_binding(rows, api: str, now: datetime) -> Binding:
     if len({r.get("identity_fingerprint") for r in same if r["status"] == "CONFIRMED"}) > 1:
         return Binding(api, INVALID_BINDING, None, latest.get("binding_id"), None, None,
                        "в один момент подтверждены разные отпечатки")
+    if observations is not None and not any(
+            o.get("observation_id") == latest.get("source_observation_id") and o.get("api") == api
+            and o.get("identity_fingerprint") == latest.get("identity_fingerprint") for o in observations):
+        return Binding(api, INVALID_BINDING, None, latest.get("binding_id"), None, None,
+                       "подтверждение не ссылается на наблюдение того же API с тем же отпечатком")
     return Binding(api, "CONFIRMED", latest.get("identity_fingerprint"), latest.get("binding_id"),
                    latest.get("source_observation_id"), as_utc(latest.get("confirmed_at")), "подтверждено")
 

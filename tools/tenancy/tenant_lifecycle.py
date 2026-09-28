@@ -28,6 +28,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 from tools.tenancy import tenant_tables as TT  # noqa: E402
 
 import checkpoints as CK  # noqa: E402
+import identity as I  # noqa: E402
 import lifecycle_core as L  # noqa: E402
 
 OPERATOR_TARGETS = {"bootstrap": L.CREDENTIALS_PENDING, "credentials-inserted": L.VALIDATING,
@@ -45,6 +46,32 @@ def secret_versions(project: str, secret_ids) -> dict:
     return out
 
 
+def operator_binding(contract, tables, now, ents):
+    """Привязка глазами оператора: действующее подтверждение в ref, согласованное с наблюдением.
+
+    Живой отпечаток оператор не снимает (для этого нужен ключ Ozon). Его перепроверяют control
+    перед каждой арендой отрезка и runtime перед каждой загрузкой (TOCTOU). Вердикт ключа —
+    последняя проверка control (CAPABILITY_PROFILE), а не допущение.
+    """
+    ops, ref = contract["datasets"]["tenant_ops"], contract["datasets"]["ref"]
+    rows = list(tables.rows(ref, "SELLER_BINDING"))
+    obs = list(tables.rows(ops, "SELLER_IDENTITY_OBSERVATIONS"))
+    apis = [I.SELLER] + ([I.PERFORMANCE] if any(e in L.ADS_DOMAINS for e in ents) else [])
+    binding = {}
+    for api in apis:
+        st = I.effective_binding(rows, api, now, obs).status
+        binding[api] = "BOUND" if st == "CONFIRMED" else st
+    caps = {}
+    for r in tables.rows(ops, "CAPABILITY_PROFILE"):
+        k = (r.get("api"), r.get("capability"))
+        if k not in caps or (I.as_utc(r.get("discovered_at")) or L._EPOCH) >= (I.as_utc(caps[k].get("discovered_at")) or L._EPOCH):
+            caps[k] = r
+    cred = {"seller": {"status": "PASS" if (caps.get(("seller", "credential_read_only")) or {}).get("status") == "AVAILABLE" else "FAIL"}}
+    if I.PERFORMANCE in apis:
+        cred["performance"] = {"status": "PASS" if (caps.get(("performance", "credential")) or {}).get("status") == "AVAILABLE" else "FAIL"}
+    return binding, cred
+
+
 def build_snapshot(contract, tables, now, secret_counts=None, plan_hash=None):
     ops = contract["datasets"]["tenant_ops"]
     ledger = list(tables.rows(ops, "BACKFILL_CHECKPOINTS"))
@@ -54,8 +81,9 @@ def build_snapshot(contract, tables, now, secret_counts=None, plan_hash=None):
     chunks = [CK.Chunk(r["entity"], _d(r["window_from"]), _d(r["window_to"])) for r in last.values()]
     jobs = (contract["marketplaces"].get("ozon") or {}).get("jobs") or {}
     ents = tuple(sorted({e for j in jobs.values() for e in j["entities"]}))
+    binding, cred = operator_binding(contract, tables, now, ents) if plan_hash else ({}, {})
     return L.Snapshot(tenant_id=contract["tenant_id"], now=now, events=list(tables.rows(ops, "TENANT_STATE_EVENTS")),
-                      enabled_entities=ents, secret_versions=secret_counts or {},
+                      enabled_entities=ents, secret_versions=secret_counts or {}, binding=binding, credentials=cred,
                       plan_hash=CK.plan_hash(chunks) if chunks else None,
                       chunks={c: s["status"] for c, s in CK.fold(ledger).items()},
                       operator_plan_hash=plan_hash)

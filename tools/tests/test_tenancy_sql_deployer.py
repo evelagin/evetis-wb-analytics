@@ -246,7 +246,7 @@ def test_A02_deployer_rights_are_sufficient_for_the_whole_view_path(specs):
     bq = PermBQ(C1)
     SD.probe_permissions(specs, bq, C1)
     done = SD.deploy(specs, bq, P1)
-    assert [op for op, _ in done] == ["insert"] * 30
+    assert [op for op, _ in done] == ["insert"] * 32
     SD.verify_live(specs, bq, C1)
     SD.probe_permissions(specs, bq, C1)
     assert {op for op, _ in SD.deploy(specs, bq, P1)} == {"noop"}
@@ -396,7 +396,7 @@ def test_A18_partial_deploy_is_detected_and_recovers_idempotently(specs):
         SD.verify_live(specs, bq, C1)
     bq.fail_insert_at = None
     done = SD.deploy(specs, bq, P1)
-    assert [op for op, _ in done].count("noop") == 10 and [op for op, _ in done].count("insert") == 20
+    assert [op for op, _ in done].count("noop") == 10 and [op for op, _ in done].count("insert") == 22
     SD.verify_live(specs, bq, C1)
 
 

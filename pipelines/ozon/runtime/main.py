@@ -96,6 +96,12 @@ def binding_gate(want, now):
     """
     import identity as I
     rows = [dict(r.items()) for r in C.bq().list_rows(f"{C.PROJECT}.{C.REF_DATASET}.{BINDING_TABLE}")]
+    need = [I.SELLER] + ([I.PERFORMANCE] if any(e in ADS_ENTITIES for e in want) else [])
+    for api in need:
+        # Нет действующего подтверждения — отказ ДО секретов и до Ozon (новый арендатор, отзыв).
+        b = I.effective_binding(rows, api, now)
+        if b.status != "CONFIRMED":
+            return f"{api}:{b.status}", b.reason
     code, si = C.seller_post("/v1/seller/info", {})
     fp = None
     if code == 200:

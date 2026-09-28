@@ -6,7 +6,8 @@ UPDATE, ни DELETE у него нет — нет bigquery.jobs.create). Сос�
   * REOPENED — единственная процедура ремонта: пишет только оператор, с причиной; после неё
     отрезок снова PENDING, счётчик попыток сохраняется;
   * иначе — последняя версия по recorded_at (PENDING | RUNNING | FAILED);
-  * FAILED с attempts ≥ MAX_ATTEMPTS (кроме ошибки квоты) — FAILED_PERMANENT.
+  * FAILED, у которого неудач НЕ по квоте ≥ MAX_ATTEMPTS, — FAILED_PERMANENT. Ошибка квоты
+    (QUOTA_ERROR_CLASS) попыткой не штрафуется: отрезок ждёт следующего окна бюджета (§I).
 
 Аренда отрезка — атомарное «создать, если нет» в BigQuery: таблица
 tenant_locks.L_<chunk_id>_<generation> с expirationTime = lease_until. tables.insert возвращает
@@ -62,7 +63,7 @@ def plan_hash(chunks) -> str:
 
 
 def fold(rows) -> dict:
-    """chunk_id → {'status', 'attempts', 'done_at', 'last_error_class', 'run_id'}."""
+    """chunk_id → {'status', 'attempts', 'penalized', 'done_at', 'last_error_class', 'run_id'}."""
     by = {}
     for r in rows:
         by.setdefault(r["backfill_id"], []).append(r)
@@ -71,6 +72,9 @@ def fold(rows) -> dict:
         vs = sorted(versions, key=lambda r: (as_utc(r.get("updated_at")) or _EPOCH, str(r.get("status"))))
         attempts = max(int(r.get("attempts") or 0) for r in vs)
         state, done_at, err, run = "PENDING", None, None, None
+        # Неудачи, которые штрафуются: FAILED с классом не QUOTA, по одной на прогон исполнителя.
+        penalized = len({r.get("run_id") for r in vs
+                         if r.get("status") == "FAILED" and r.get("error_code") != QUOTA_ERROR_CLASS})
         for r in vs:
             st = r.get("status")
             if st == "REOPENED" and str(r.get("run_id") or "").startswith("operator:"):
@@ -82,9 +86,9 @@ def fold(rows) -> dict:
                 state, done_at, run = "DONE", as_utc(r.get("updated_at")), r.get("run_id")
             elif st in ("PENDING", "RUNNING", "FAILED"):
                 state, err, run = st, r.get("error_code"), r.get("run_id")
-        if state == "FAILED" and attempts >= MAX_ATTEMPTS and err != QUOTA_ERROR_CLASS:
+        if state == "FAILED" and penalized >= MAX_ATTEMPTS:
             state = "FAILED_PERMANENT"
-        out[cid] = {"status": state, "attempts": attempts, "done_at": done_at,
+        out[cid] = {"status": state, "attempts": attempts, "penalized": penalized, "done_at": done_at,
                     "last_error_class": err, "run_id": run}
     return out
 

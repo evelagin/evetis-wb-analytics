@@ -162,7 +162,10 @@ def _project(base: dict, project_id: str) -> dict:
     from tools.tenancy import sql_identity as SI
     doc = _set(base, "project_id", project_id)
     doc["sql_deployer"] = SI.contract_block(project_id, doc["datasets"])
+    # Согласованный блок control (email и проект в окружении job'а), иначе фикстуру отвергал бы guard
+    # control, а не проверяемое правило пространства имён (мутационная проверка это ловит).
     doc["control"] = dict(copy.deepcopy(doc["control"]), email=CI.control_email(project_id))
+    doc["control"]["job"]["env"]["GCP_PROJECT_ID"] = project_id
     return doc
 
 

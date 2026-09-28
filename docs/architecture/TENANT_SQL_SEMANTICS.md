@@ -47,6 +47,8 @@ P1–P8: `tools/tenancy/sql_package.py`.
 | `tenant_ops.V_DQ_COGS_OVERLAPS` | GENERIC_DERIVED | пара интервалов | пересечения себестоимости продавца |
 | `tenant_ops.V_COVERAGE_DAILY` | GENERIC_DERIVED | сущность × сутки | последняя оценка полноты из `DATA_COVERAGE`; при равенстве — худшая |
 | `tenant_ops.V_FINANCE_WINDOW_STATUS` | GENERIC_DERIVED | дата | полнота начислений от даты до последних оценённых суток и срок созревания продавца |
+| `tenant_ops.V_CAPABILITY_CURRENT` | GENERIC_DERIVED | api, capability | T5: последняя проверка возможности; `is_ok` = AVAILABLE или NOT_APPLICABLE (ровно `lifecycle_core.OK_CAPABILITY`) |
+| `tenant_ops.V_TENANT_STATE_AUDIT` | GENERIC_DERIVED | событие | T5: каждое событие автомата против рёбер и исполнителей `lifecycle_core.EDGES`; CHAIN / EDGE / ACTOR — VIOLATION |
 | `analytics_share.sales_daily` | GENERIC_DERIVED | сутки заказа | продажи магазина; нули только при `COMPLETE` |
 | `analytics_share.orders` | MARKETPLACE_FACT | отправление × SKU | заказы FBO, без данных покупателя, кроме города |
 | `analytics_share.advertising_daily` | MARKETPLACE_FACT | сутки × кампания | отчёт Performance (не биллинг) |

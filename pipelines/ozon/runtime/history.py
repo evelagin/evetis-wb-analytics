@@ -127,6 +127,8 @@ def windowed_first_activity(domain: str, probe, today: date, seed: date | None =
         b.first_observed_activity, b.confidence = a, "VERIFIED"
     if b.limitation_reason == "API_RETENTION" and b.first_observed_activity == b.api_verified_from:
         b.completeness_status = "PARTIAL"                     # активность упирается в предел хранения
+    else:
+        b.completeness_status = "COMPLETE"                    # до первой активности API окна принимал
     return b
 
 
@@ -167,6 +169,11 @@ def sampled_first_activity(domain: str, probe_day, today: date, anchor: date | N
             break
         d += timedelta(days=1)
     b.confidence = "SAMPLED"
-    if b.first_observed_activity == floor:
+    if b.first_observed_activity is None:
+        # В месяце выборки данные были, посуточно — нет: противоречие, граница не определена.
+        b.completeness_status = "UNKNOWN"
+    elif b.first_observed_activity == floor:
         b.completeness_status, b.limitation_reason = "PARTIAL", "API_DOCUMENTED_FLOOR"
+    else:
+        b.completeness_status = "COMPLETE"
     return b

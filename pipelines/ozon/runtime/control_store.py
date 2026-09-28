@@ -28,8 +28,11 @@ class StoreError(RuntimeError):
 
 
 class ControlStore:
-    def __init__(self, client, project: str, datasets: dict):
+    def __init__(self, client, project: str, datasets: dict, redact=None):
+        # redact — граница безопасности runtime (common.redact_value): строка журнала не может
+        # унести секрет, даже если API повторил его в ответе (например, в названии компании).
         self.client, self.project, self.ds = client, project, dict(datasets)
+        self.redact = redact or (lambda x: x)
 
     def _ref(self, key: str, table: str) -> str:
         return f"{self.project}.{self.ds[key]}.{table}"
@@ -48,6 +51,7 @@ class ControlStore:
             raise StoreError(f"запись в {table} не предусмотрена")
         if not rows:
             return 0
+        rows = [self.redact(r) for r in rows]
         ids = [hashlib.sha256(json.dumps(r, sort_keys=True, default=str).encode()).hexdigest()[:32] for r in rows]
         errors = self.client.insert_rows_json(self._ref("tenant_ops", table), rows, row_ids=ids)
         if errors:

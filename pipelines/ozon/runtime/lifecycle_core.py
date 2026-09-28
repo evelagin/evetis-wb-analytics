@@ -137,7 +137,10 @@ def ready_contract(s: Snapshot) -> list[str]:
     for d in HISTORICAL_DOMAINS:
         if d in s.enabled_entities:
             h = s.history.get(d) or {}
-            if h.get("completeness_status") != "COMPLETE":
+            # COMPLETE — граница найдена внутри принятых API окон; NOT_APPLICABLE — активности нет во
+            # всём принятом диапазоне. PARTIAL (предел хранения / документированная граница) и
+            # UNKNOWN — не READY: принять ограничение может только решение владельца (новая версия политики).
+            if h.get("completeness_status") not in ("COMPLETE", "NOT_APPLICABLE"):
                 out.append(f"история {d}: {h.get('completeness_status') or 'не определена'}")
     out += _v_to_reconciling(s)
     if s.maturity_days is None or s.maturity_days <= 0:

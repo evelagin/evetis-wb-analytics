@@ -26,7 +26,9 @@ import pytest
 import common as C
 
 RUNTIME = Path(__file__).resolve().parents[1] / "runtime"
-SOURCES = ["common.py", "entities.py", "main.py", "promo.py"]
+# T5: control plane — те же правила: журнал и исключения не получают значений секретов.
+SOURCES = ["common.py", "entities.py", "main.py", "promo.py", "lifecycle.py", "identity.py", "credentials.py",
+           "lifecycle_core.py", "checkpoints.py", "history.py", "quota.py", "dq.py", "control_store.py"]
 
 LOG_SINKS = {"log", "record_run", "_strict_cap", "safe_error_text", "print"}
 CREDENTIAL_SOURCES = {"secret", "seller_headers", "perf_token"}

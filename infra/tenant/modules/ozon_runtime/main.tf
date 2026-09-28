@@ -284,7 +284,7 @@ output "summary" {
     scheduler_sa = local.scheduler_email
     jobs         = sort(keys(google_cloud_run_v2_job.this))
     control_job  = google_cloud_run_v2_job.control.name
-    control_sa   = var.control.email
+    control_sa   = google_cloud_run_v2_job.control.template[0].template[0].service_account
     control_env  = { for e in google_cloud_run_v2_job.control.template[0].template[0].containers[0].env : e.name => e.value }
     control_cmd  = concat(google_cloud_run_v2_job.control.template[0].template[0].containers[0].command, google_cloud_run_v2_job.control.template[0].template[0].containers[0].args)
     schedulers   = sort([for s in google_cloud_scheduler_job.this : s.name])
