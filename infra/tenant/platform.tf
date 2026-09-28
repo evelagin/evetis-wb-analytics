@@ -16,6 +16,15 @@ locals {
     sql_roles               = ["mpaSqlSourceRead", "mpaSqlViewCreate", "mpaSqlViewUpdate"]
     sql_conditional_dataset = "tenant_ops"
     sql_view_prefix         = "V_"
+    sql_condition_title     = "sql-deployer-tenant-ops-views"
+    sql_condition_desc      = "Only package views V_*; platform tables of tenant_ops are excluded"
+    # Точная матрица «датасет|роль|условная» (sql_identity.GRANT_MATRIX; сверяет тест).
+    sql_grant_matrix = [
+      "analytics_share|mpaSqlViewCreate|false", "analytics_share|mpaSqlViewUpdate|false",
+      "ozon_mart|mpaSqlSourceRead|false", "ozon_mart|mpaSqlViewCreate|false", "ozon_mart|mpaSqlViewUpdate|false",
+      "ozon_raw|mpaSqlSourceRead|false", "ref|mpaSqlSourceRead|false",
+      "tenant_ops|mpaSqlSourceRead|false", "tenant_ops|mpaSqlViewCreate|false", "tenant_ops|mpaSqlViewUpdate|true",
+    ]
   }
 
   # Всё, что не может появиться в конфигурации выделенного арендатора.

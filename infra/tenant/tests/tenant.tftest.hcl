@@ -575,3 +575,27 @@ run "contract_rejects_sql_deployer_grant_in_undeclared_dataset" {
   }
   expect_failures = [var.contract]
 }
+
+run "contract_rejects_sql_deployer_extra_raw_update" {
+  command = plan
+  variables {
+    contract = jsondecode(file("tests/fixtures/negative/sql_deployer_extra_raw_update.contract.json"))
+  }
+  expect_failures = [var.contract]
+}
+
+run "contract_rejects_sql_deployer_client_layer_reads_rows" {
+  command = plan
+  variables {
+    contract = jsondecode(file("tests/fixtures/negative/sql_deployer_client_layer_reads_rows.contract.json"))
+  }
+  expect_failures = [var.contract]
+}
+
+run "contract_rejects_sql_deployer_condition_title_changed" {
+  command = plan
+  variables {
+    contract = jsondecode(file("tests/fixtures/negative/sql_deployer_condition_title_changed.contract.json"))
+  }
+  expect_failures = [var.contract]
+}

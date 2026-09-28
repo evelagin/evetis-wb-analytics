@@ -350,7 +350,9 @@ def verify_live(specs: list[ViewSpec], bq, contract: dict) -> None:
 # Проба прав (только чтение). Изменение/удаление/запись строк у деплоера не может быть нигде, кроме
 # представлений пакета; чтение строк — только в датасетах-источниках (не в analytics_share).
 FORBIDDEN_ON_TABLES = frozenset({"bigquery.tables.update", "bigquery.tables.delete",
-                                 "bigquery.tables.updateData", "bigquery.tables.export"})
+                                 "bigquery.tables.updateData", "bigquery.tables.export",
+                                 "bigquery.tables.setIamPolicy", "bigquery.tables.getIamPolicy",
+                                 "bigquery.tables.createSnapshot"})
 
 
 def probe_permissions(specs: list[ViewSpec], bq, contract: dict) -> int:
@@ -372,11 +374,10 @@ def probe_permissions(specs: list[ViewSpec], bq, contract: dict) -> int:
         code, _live = bq.get(s.dataset, s.name)
         if code != 200:
             continue                     # ещё не создано — проверит сама вставка
-        got = bq.test_permissions(s.dataset, s.name, {"bigquery.tables.update", "bigquery.tables.delete",
-                                                      "bigquery.tables.updateData"})
-        if got != {"bigquery.tables.update"}:
-            _fail(f"{s.dataset}.{s.name}: права деплоера на представлении {sorted(got)}, "
-                  "ожидается ровно bigquery.tables.update")
+        got = bq.test_permissions(s.dataset, s.name, FORBIDDEN_ON_TABLES | {"bigquery.tables.getData"})
+        want = {"bigquery.tables.update"} | ({"bigquery.tables.getData"} if s.dataset in source_ds else set())
+        if got != want:
+            _fail(f"{s.dataset}.{s.name}: права деплоера на представлении {sorted(got)}, ожидается {sorted(want)}")
         checked += 1
     print(f"проба прав деплоера: {checked} объектов, матрица соблюдена")
     return checked

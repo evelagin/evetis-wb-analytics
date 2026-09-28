@@ -24,8 +24,12 @@ verify — закрытый отказ (выход 1), если:
   * пул привязан к любому другому SA проекта арендатора;
   * записи деплоера в ACL датасетов арендатора ≠ матрице sql_identity (роль, условие), или в ACL
     есть провижионер;
-  * деплоер есть в ACL любого датасета EVETIS.
+  * члены пула tenant-infra-pool есть прямо в ACL датасетов арендатора;
+  * деплоер, пул или провижионер есть в IAM уровня таблицы/представления датасетов арендатора;
+  * деплоер есть в IAM проекта или ACL датасетов ДРУГОГО выделенного арендатора реестра;
+  * деплоер есть в ACL любого датасета EVETIS (все страницы списка).
 Любая ошибка чтения — тоже отказ: непроверенное не считается чистым.
+Не проверяется (задокументированный остаток): IAM уровня таблиц вне проекта арендатора.
 """
 from __future__ import annotations
 
@@ -34,6 +38,7 @@ import subprocess
 import sys
 import tempfile
 import urllib.error
+import urllib.parse
 import urllib.request
 from pathlib import Path
 
@@ -116,6 +121,8 @@ def check_tenant_acls(project: str, datasets: dict[str, str], acls: dict[str, li
         want[datasets[g["dataset_key"]]].add(
             (g["role"], deployer, None if not c else (c["title"], c["description"], c["expression"])))
     for ds, entries in sorted(acls.items()):
+        if any(POOL_NEEDLE in json.dumps(a) for a in entries):
+            out.append(f"{ds}: член пула {SI.WIF_POOL} прямо в ACL датасета")
         got = {_acl_key(a) for a in entries if deployer in (a.get("userByEmail") or a.get("iamMember") or "")}
         if got != want.get(ds, set()):
             out.append(f"{ds}: записи деплоера {sorted(got, key=repr)} ≠ матрице {sorted(want.get(ds, set()), key=repr)}")
@@ -126,9 +133,20 @@ def check_tenant_acls(project: str, datasets: dict[str, str], acls: dict[str, li
     return out
 
 
-def check_evetis_acls(acls: dict[str, list[dict]], deployer: str) -> list[str]:
-    return [f"EVETIS {ds}: деплоер SQL в ACL" for ds, entries in sorted(acls.items())
+def check_evetis_acls(acls: dict[str, list[dict]], deployer: str, owner: str = "EVETIS") -> list[str]:
+    return [f"{owner} {ds}: деплоер SQL в ACL" for ds, entries in sorted(acls.items())
             if any(deployer in json.dumps(a) for a in entries)]
+
+
+def check_table_policies(policies: dict[str, dict], deployer: str) -> list[str]:
+    """IAM уровня таблиц/представлений арендатора: ни деплоера, ни пула, ни провижионера."""
+    out = []
+    for obj, pol in sorted(policies.items()):
+        for b in pol.get("bindings") or []:
+            for m in b.get("members") or []:
+                if deployer in m or POOL_NEEDLE in m or PL.PROVISIONER_SA in m:
+                    out.append(f"{obj}: {m} получил {b.get('role')} на уровне таблицы")
+    return out
 
 
 # ── Живое чтение (владелец, gcloud + BigQuery REST) ─────────────────────────
@@ -144,14 +162,33 @@ def _gcloud(*args) -> dict | list:
     return _parse(p.stdout or "null")
 
 
-def _bq(path: str) -> dict:
+def _bq(path: str, body: dict | None = None) -> dict:
     token = subprocess.run(["gcloud", "auth", "print-access-token"], capture_output=True, text=True, check=True).stdout.strip()
-    req = urllib.request.Request(f"{BQ}/{path}", headers={"Authorization": f"Bearer {token}"})
+    req = urllib.request.Request(f"{BQ}/{path}", headers={"Authorization": f"Bearer {token}",
+                                                          "Content-Type": "application/json"},
+                                 data=None if body is None else json.dumps(body).encode(),
+                                 method="GET" if body is None else "POST")
     try:
         with urllib.request.urlopen(req, timeout=60) as r:
             return _parse(r.read())
     except urllib.error.HTTPError as e:
         raise BootstrapError(f"BigQuery {path.split('?')[0]}: HTTP {e.code}") from None
+
+
+def _pages(path: str, key: str) -> list[dict]:
+    items, token = [], ""
+    while True:
+        sep = "&" if "?" in path else "?"
+        page = _bq(path + (f"{sep}pageToken={urllib.parse.quote(token)}" if token else ""))
+        items += page.get(key) or []
+        token = page.get("nextPageToken") or ""
+        if not token:
+            return items
+
+
+def _dataset_acls(project: str, datasets) -> dict[str, list[dict]]:
+    return {ds: _bq(f"projects/{project}/datasets/{ds}?accessPolicyVersion=3").get("access") or []
+            for ds in datasets}
 
 
 def _sa_state(project: str, email: str) -> tuple[dict | None, list, dict | None]:
@@ -183,18 +220,32 @@ def verify_live(contract: dict) -> tuple[list[str], dict]:
     sa_policies = {a["email"]: _gcloud("iam", "service-accounts", "get-iam-policy", a["email"], f"--project={project}")
                    for a in _gcloud("iam", "service-accounts", "list", f"--project={project}") or []}
     findings += check_tenant_sa_policies(sa_policies, deployer)
-    acls = {ds: _bq(f"projects/{project}/datasets/{ds}?accessPolicyVersion=3").get("access") or []
-            for ds in datasets.values()}
+    acls = _dataset_acls(project, datasets.values())
     findings += check_tenant_acls(project, datasets, acls)
-    evetis = {}
-    for d in _bq(f"projects/{PL.EVETIS_PROJECT_ID}/datasets?all=true&maxResults=1000").get("datasets") or []:
-        ds = d["datasetReference"]["datasetId"]
-        evetis[ds] = _bq(f"projects/{PL.EVETIS_PROJECT_ID}/datasets/{ds}?accessPolicyVersion=3").get("access") or []
+    table_policies = {}
+    for ds in datasets.values():
+        for t in _pages(f"projects/{project}/datasets/{ds}/tables?maxResults=1000", "tables"):
+            name = t["tableReference"]["tableId"]
+            table_policies[f"{ds}.{name}"] = _bq(f"projects/{project}/datasets/{ds}/tables/{name}:getIamPolicy",
+                                                 {"options": {"requestedPolicyVersion": 3}})
+    findings += check_table_policies(table_policies, deployer)
+    from tools.tenancy import registry as R
+    others = sorted(d["data_boundary"]["gcp_project_id"] for d in R.valid_tenants().values()
+                    if d["data_boundary"].get("kind") == "dedicated_project"
+                    and d["data_boundary"]["gcp_project_id"] != project)
+    for other in others:
+        findings += check_foreign_policy(f"projects/{other}", _gcloud("projects", "get-iam-policy", other) or {}, deployer)
+        other_ds = [d["datasetReference"]["datasetId"] for d in _pages(f"projects/{other}/datasets?all=true", "datasets")]
+        findings += check_evetis_acls(_dataset_acls(other, other_ds), deployer, owner=other)
+    evetis_ds = [d["datasetReference"]["datasetId"]
+                 for d in _pages(f"projects/{PL.EVETIS_PROJECT_ID}/datasets?all=true&maxResults=1000", "datasets")]
+    evetis = _dataset_acls(PL.EVETIS_PROJECT_ID, evetis_ds)
     findings += check_evetis_acls(evetis, deployer)
     evidence = {"deployer": deployer, "sa_policy_etag": (policy or {}).get("etag"),
                 "sa_bindings": (policy or {}).get("bindings"), "user_managed_keys": len(
                     [k for k in keys if k.get("keyType") == "USER_MANAGED"]),
                 "tenant_datasets_checked": sorted(acls), "evetis_datasets_checked": len(evetis),
+                "tenant_table_policies_checked": len(table_policies), "other_tenants_checked": others,
                 "iam_policies_checked": sorted(policies), "tenant_sa_policies_checked": len(sa_policies)}
     return findings, evidence
 

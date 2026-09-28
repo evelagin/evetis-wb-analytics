@@ -177,6 +177,10 @@ def _j(*args) -> list | dict:
     return json.loads(out.stdout or "[]")
 
 
+def _api_disabled(err: str) -> bool:
+    return "SERVICE_DISABLED" in err or "has not been used" in err or "it is disabled" in err
+
+
 def _pool_bindings(projects: list[dict], pool_project: str, pool_number: str, pool_id: str) -> dict:
     """Привязки SA ВСЕХ доступных проектов, где член ссылается на этот пул (T4.1).
 
@@ -189,8 +193,10 @@ def _pool_bindings(projects: list[dict], pool_project: str, pool_number: str, po
         pid = proj["projectId"]
         try:
             accounts = _j("iam", "service-accounts", "list", f"--project={pid}")
-        except RuntimeError:
-            continue           # IAM API выключен — SA там нет
+        except RuntimeError as e:
+            if _api_disabled(str(e)):
+                continue       # IAM API выключен — SA там нет
+            raise              # нет прав/сеть: непросмотренный проект не считается чистым
         for sa in accounts:
             pol = _j("iam", "service-accounts", "get-iam-policy", sa["email"], f"--project={pid}")
             mine = [{**b, "members": [m for m in b["members"] if needle in m]} for b in pol.get("bindings", [])]

@@ -547,7 +547,8 @@ def test_sql_verify_live_rejects_unexpected_objects(rendered):
 def test_sql_helper_calls_no_query_jobs_or_acl_endpoints():
     src = (REPO / "tools" / "tenancy" / "sql_deploy.py").read_text(encoding="utf-8")
     code = "\n".join(l for l in src.splitlines() if not l.strip().startswith("#") and '"""' not in l)
-    for bad in ("/jobs", "/queries", "setIamPolicy", "datasets/{" + "}", "PATCH"):
+    # Эндпоинты IAM (":setIamPolicy"), а не имена прав: проба T4.1 спрашивает о правах IAM таблиц.
+    for bad in ("/jobs", "/queries", ":setIamPolicy", ":getIamPolicy", "datasets/{" + "}", "PATCH"):
         assert bad not in code, bad
     assert "tables.insert" in src and "bigquery.jobs.create" in src      # документировано, что jobs нет
 

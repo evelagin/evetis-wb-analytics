@@ -181,6 +181,17 @@ def test_terraform_platform_constants_match_trusted_base():
     assert f'sql_view_prefix         = "{SI.CONDITIONAL_VIEW_PREFIX}"' in tf
 
 
+def test_terraform_grant_matrix_and_condition_text_match_trusted_base():
+    tf = (REPO / "infra" / "tenant" / "platform.tf").read_text(encoding="utf-8")
+    block = tf[tf.index("sql_grant_matrix = ["):]
+    block = block[:block.index("]")]
+    tf_matrix = set(re.findall(r'"([a-z_]+\|mpaSql[A-Za-z]+\|(?:true|false))"', block))
+    py_matrix = {f"{k}|{r}|{str(c).lower()}" for k, roles in SI.GRANT_MATRIX.items() for r, c in roles}
+    assert tf_matrix == py_matrix and len(py_matrix) == 10
+    assert f'sql_condition_title     = "{SI.CONDITION_TITLE}"' in tf
+    assert f'sql_condition_desc      = "{SI.CONDITION_DESCRIPTION}"' in tf
+
+
 def test_contract_block_is_derived_not_configured():
     for c in (C1, C2):
         assert c["sql_deployer"] == SI.contract_block(c["project_id"], c["datasets"])
@@ -346,7 +357,7 @@ def test_A12_A13_writer_gate_in_the_helper(env):
 def test_A14_no_arbitrary_sql_or_ddl_path():
     src = (REPO / "tools" / "tenancy" / "sql_deploy.py").read_text(encoding="utf-8")
     code = "\n".join(l for l in src.splitlines() if not l.strip().startswith("#"))
-    for bad in ("/jobs", "/queries", "PATCH", "setIamPolicy", "getIamPolicy", "insertAll"):
+    for bad in ("/jobs", "/queries", "PATCH", ":setIamPolicy", ":getIamPolicy", "insertAll"):
         assert bad not in code, bad
     methods = set(re.findall(r'self\._call\("([A-Z]+)"', src))
     assert methods == {"GET", "POST", "PUT"}
@@ -419,6 +430,25 @@ def test_probe_fails_closed_when_source_read_is_missing(specs):
         SD.probe_permissions(specs, bq, C1)
 
 
+@pytest.mark.parametrize("extra", ["bigquery.tables.setIamPolicy", "bigquery.tables.getIamPolicy",
+                                   "bigquery.tables.export", "bigquery.tables.createSnapshot"])
+def test_probe_fails_closed_on_table_iam_or_export(specs, extra):
+    bq = PermBQ(C1)
+    SD.deploy(specs, bq, P1)
+    bq.test_permissions = lambda ds, n, p: set(p) & (deployer_permissions(C1, ds, n) | {extra})
+    with pytest.raises(SD.SqlDeployError):
+        SD.probe_permissions(specs, bq, C1)
+
+
+def test_probe_fails_closed_when_client_layer_views_are_readable(specs):
+    """Проектная dataViewer деплоеру дала бы getData на analytics_share — матрица это запрещает."""
+    bq = PermBQ(C1)
+    SD.deploy(specs, bq, P1)
+    bq.test_permissions = lambda ds, n, p: set(p) & (deployer_permissions(C1, ds, n) | {"bigquery.tables.getData"})
+    with pytest.raises(SD.SqlDeployError, match="analytics_share"):
+        SD.probe_permissions(specs, bq, C1)
+
+
 def test_probe_fails_closed_when_views_get_delete(specs):
     bq = PermBQ(C1)
     SD.deploy(specs, bq, P1)
@@ -427,16 +457,27 @@ def test_probe_fails_closed_when_views_get_delete(specs):
         SD.probe_permissions(specs, bq, C1)
 
 
-def test_no_quota_project_header_and_principal_is_checked():
-    src = (REPO / "tools" / "tenancy" / "sql_deploy.py").read_text(encoding="utf-8")
-    code = "\n".join(l for l in src.splitlines() if not l.strip().startswith("#") and "x-goog-user-project" not in l
-                     or l.strip().startswith("*"))
-    assert '"x-goog-user-project":' not in src
-    assert "check_principal(token" in src and "access_token" in src
+def test_no_quota_project_header_and_principal_is_checked(monkeypatch):
+    sent = []
+
+    class Resp:
+        status = 200
+
+        def read(self):
+            return b"{}"
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *a):
+            return False
+    monkeypatch.setattr(SD.urllib.request, "urlopen", lambda req, timeout: sent.append(req) or Resp())
+    SD.BigQueryTables("tok", P1).get("ozon_mart", "X")
+    assert sent and {k.lower() for k in sent[0].headers} == {"authorization", "content-type"}
     assert SD.check_principal("t", P1, lookup=lambda _t: DEP1) == DEP1
-    with pytest.raises(SD.SqlDeployError):
-        SD.check_principal("t", P1, lookup=lambda _t: "")
-    assert code
+    for bad in ("", DEP2, PL.PROVISIONER_SA):
+        with pytest.raises(SD.SqlDeployError):
+            SD.check_principal("t", P1, lookup=lambda _t, b=bad: b)
 
 
 def test_main_checks_writer_before_any_network(monkeypatch, rendered):
@@ -635,3 +676,41 @@ def test_bind_dry_run_writes_nothing(monkeypatch, capsys):
     monkeypatch.setattr(TB, "_gcloud", lambda *a: calls.append(a))
     assert TB.bind(C1, execute=False) == 0
     assert not calls and "только показ" in capsys.readouterr().out
+
+
+def test_bootstrap_verify_flags_pool_in_acl_table_iam_and_other_tenants():
+    acls = _live_acls()
+    acls["ozon_raw"].append({"role": "READER", "iamMember": SI.WIF_MEMBER})
+    assert any("прямо в ACL" in f for f in TB.check_tenant_acls(P1, C1["datasets"], acls))
+    pol = {"ozon_raw.RAW_OZON_SELLER_INFO": {"bindings": [
+        {"role": "roles/bigquery.dataOwner", "members": [f"serviceAccount:{DEP1}"]}]}}
+    assert TB.check_table_policies(pol, DEP1)
+    assert TB.check_table_policies({"ozon_raw.X": {"bindings": [{"role": "r", "members": [SI.WIF_MEMBER]}]}}, DEP1)
+    assert TB.check_table_policies({"ozon_raw.X": {}}, DEP1) == []
+    assert TB.check_evetis_acls({"ozon_raw": [{"role": "READER", "userByEmail": DEP1}]}, DEP1, owner=P2)
+
+
+# ═══════════════════════════════════════ wif_domains --live: непросмотренный проект — не чистый
+def test_live_pool_scan_fails_closed_when_a_project_cannot_be_listed(monkeypatch):
+    def j(*args):
+        if args[:3] == ("iam", "service-accounts", "list") and args[3] == "--project=p-denied":
+            raise RuntimeError("gcloud iam service-accounts list: PERMISSION_DENIED")
+        if args[:3] == ("iam", "service-accounts", "list"):
+            return []
+        raise AssertionError(args)
+    monkeypatch.setattr(WD, "_j", j)
+    with pytest.raises(RuntimeError, match="PERMISSION_DENIED"):
+        WD._pool_bindings([{"projectId": "p-ok"}, {"projectId": "p-denied"}], "p-ok", "1", "tenant-infra-pool")
+
+
+def test_live_pool_scan_skips_only_projects_with_disabled_iam_api(monkeypatch):
+    def j(*args):
+        if args[3] == "--project=p-off":
+            raise RuntimeError("gcloud iam: SERVICE_DISABLED iam.googleapis.com")
+        if args[:3] == ("iam", "service-accounts", "list"):
+            return [{"email": f"sa-sql-deployer@{P1}.iam.gserviceaccount.com"}]
+        return {"bindings": SI.expected_sa_bindings()}
+    monkeypatch.setattr(WD, "_j", j)
+    got = WD._pool_bindings([{"projectId": "p-off"}, {"projectId": P1}], "mpa-platform",
+                            PL.PLATFORM_PROJECT_NUMBER, "tenant-infra-pool")
+    assert got == {DEP1: SI.expected_sa_bindings()}

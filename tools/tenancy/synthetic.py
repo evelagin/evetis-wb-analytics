@@ -128,6 +128,14 @@ def negative_cases() -> dict[str, dict]:
         "sql_deployer_duplicate_grant": _grant(base, lambda s: s["grants"].append(copy.deepcopy(s["grants"][0]))),
         "sql_deployer_grant_in_undeclared_dataset": _grant(base, lambda s: s["grants"][0].update(
             dataset_key="customer_share")),
+        "sql_deployer_extra_raw_update": _grant(base, lambda s: s["grants"].append(
+            {"dataset_key": "ozon_raw", "role": s["grants"][-1]["role"].rsplit("/", 1)[0] + "/mpaSqlViewUpdate",
+             "condition": None})),
+        "sql_deployer_client_layer_reads_rows": _grant(base, lambda s: s["grants"].append(
+            {"dataset_key": "analytics_share", "role": s["grants"][-1]["role"].rsplit("/", 1)[0] + "/mpaSqlSourceRead",
+             "condition": None})),
+        "sql_deployer_condition_title_changed": _grant(base, lambda s: _tenant_ops_update(s)["condition"].update(
+            title="anything")),
     }
 
 

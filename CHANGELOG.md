@@ -23,7 +23,12 @@
 - **`tenant_bootstrap.py` expected|bind|verify** — привязка WIF на деплоер владельцем и её сверка;
   **`wif_domains.py --live`** — привязки пула во всех проектах, деплоеры из реестра.
 - Тесты: `tools/tests/test_tenancy_sql_deployer.py` (18 состязательных A01–A18, модель прав
-  BigQuery), 8 негативных фикстур и прогонов `terraform test`. Документация — TENANCY_DESIGN §4e.
+  BigQuery), 11 негативных фикстур и прогонов `terraform test`. Документация — TENANCY_DESIGN §4e.
+- По итогам состязательного ревью: guard Terraform сверяет гранты с точной матрицей
+  (`local.platform.sql_grant_matrix`) и текст условия целиком; проба прав спрашивает и об IAM
+  таблиц, экспорте и чтении строк представлений; `wif_domains --live` не пропускает молча проект,
+  где нельзя перечислить SA (только выключенный IAM API); `tenant_bootstrap verify` проверяет IAM
+  уровня таблиц, пул в ACL, IAM и ACL других арендаторов, все страницы датасетов EVETIS.
 ## 2026-09-28 — SPP-2: wb_mart.V_WB_SPP_DAILY — СПП WB по заказам, SKU × день
 
 Новый объект (Git-first, не развёрнут); Юнитка, колонка `AB`, writer и формулы не менялись.
