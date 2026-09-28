@@ -109,7 +109,9 @@ async def trace_middleware(request, call_next):
     finally:
         try:
             counter = _mutation_attempts.get() or [0]
-            audit_event("request_end", route=str(request.url.path)[:200], http_status=int(status),
+            # scope["path"] — ровно та строка, по которой маршрутизирует Starlette (раскодированная); request.url
+            # пересобирается из заголовка Host и режется на «?»/«#» (`/poll%3Fx=1` → `/poll`), а на кривом Host бросает.
+            audit_event("request_end", route=audit_route(request.scope.get("path")), http_status=int(status),
                         mutation_attempts=int(counter[0]))
         except Exception:  # noqa: BLE001 — instrumentation never changes the response; a gap reads as BLOCKED
             pass
@@ -241,6 +243,26 @@ AUDIT_EVENTS = frozenset({"instrumentation_ready", "auth_ok", "auth_denied", "re
 AUDIT_FIELDS = frozenset({"route", "mechanism", "principal_class", "result", "mutation_class",
                           "target_system", "target_ref", "http_status", "error_class", "mutation_attempts"})
 _audit_logger = logging.getLogger("app.audit")
+# Closed route vocabulary for security events. The request path is attacker-controlled (percent-decoded by
+# Starlette, may carry credential-shaped text, unicode, query-like fragments), so it is NEVER logged raw:
+# an exact known path, one "/admin" category for the admin router, or the sentinel UNKNOWN.
+AUDIT_ROUTES = frozenset({"/health", "/poll", "/telegram-webhook", "/docs", "/redoc", "/openapi.json",
+                          "/docs/oauth2-redirect"})
+ADMIN_ROUTE = "/admin"
+UNKNOWN_ROUTE = "UNKNOWN"
+
+
+def audit_route(path) -> str:
+    """Map a request path to the closed vocabulary; anything else -> UNKNOWN. Never returns input text."""
+    if not isinstance(path, str):
+        return UNKNOWN_ROUTE
+    if any(seg in (".", "..") for seg in path.split("/")):   # dot-сегменты: фронт мог нормализовать путь иначе
+        return UNKNOWN_ROUTE
+    if path in AUDIT_ROUTES:
+        return path
+    if path == ADMIN_ROUTE or path.startswith(ADMIN_ROUTE + "/"):
+        return ADMIN_ROUTE
+    return UNKNOWN_ROUTE
 
 
 def safe_ref(value) -> str:
@@ -259,6 +281,8 @@ def audit_event(event: str, **fields) -> None:
                 counter[0] += 1
         safe = {k: v for k, v in fields.items()
                 if k in AUDIT_FIELDS and isinstance(v, (str, int, bool)) and not isinstance(v, float)}
+        if "route" in fields:                       # every caller, not only request_end: closed vocabulary
+            safe["route"] = audit_route(fields["route"])
         payload = {"audit_event": event, "audit_schema": AUDIT_SCHEMA,
                    "service": os.environ.get("K_SERVICE", ""), "revision": os.environ.get("K_REVISION", ""),
                    "trace_id": _trace_id.get(), "request_id": _request_id.get(), **safe}

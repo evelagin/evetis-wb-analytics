@@ -366,3 +366,113 @@ def test_request_end_emitted_even_when_handler_raises(events, monkeypatch):
         c.post("/poll", headers={"X-Scheduler-Secret": FAKE_SCH})
     ends = audit(events(), "request_end")
     assert len(ends) == 1 and ends[0]["http_status"] == 500
+
+
+# ------------------------------------------------------------------ closed route vocabulary (1.6.1) ---
+ATTACKER_PATHS = [
+    "/bearer abcdefghijklmnop",                                   # decoded "%20": credential-shaped
+    f"/bot{FAKE_TG}/sendMessage",                                 # Telegram token shape in the path
+    "/" + "eyJ" + "hbGciOiJIUzI1NiJ9." + "eyJ" + "zdWIiOiIxMjM0NTY3ODkwIn0.sig",   # синтетическая форма JWT (собирается в рантайме)
+    "/ünïcødé/пути/‮",                                       # unicode incl. RTL override
+    "/poll/../admin",                                             # malformed / dot segments
+    "/%zz%%bad",                                                  # malformed percent encoding
+    "/poll?token=abcdef123456",                                   # query-like text inside a path
+    "/wp-admin/setup.php",                                        # unknown route
+    "",                                                           # empty
+    "/" + "a" * 5000,                                             # oversized
+]
+
+
+@pytest.mark.parametrize("path", ATTACKER_PATHS)
+def test_audit_route_never_returns_input_text(path):
+    r = L.audit_route(path)
+    assert r == L.UNKNOWN_ROUTE                        # none of these is a known route or under /admin/
+
+
+@pytest.mark.parametrize("path,expected", [
+    ("/health", "/health"), ("/poll", "/poll"), ("/telegram-webhook", "/telegram-webhook"),
+    ("/docs", "/docs"), ("/openapi.json", "/openapi.json"), ("/admin/test-wb", "/admin"), ("/admin", "/admin"),
+    ("/administrator", "UNKNOWN"), ("/Poll", "UNKNOWN"), ("/poll/", "UNKNOWN"), (None, "UNKNOWN"), (42, "UNKNOWN"),
+    ("/admin/../health", "UNKNOWN"), ("/admin/./test-wb", "UNKNOWN"), ("/admin/..", "UNKNOWN"),
+])
+def test_audit_route_vocabulary(path, expected):
+    assert L.audit_route(path) == expected
+
+
+def test_any_caller_passing_a_raw_route_is_normalised(events):
+    L.audit_event("auth_denied", route=f"/x/bearer {FAKE_WH}", mechanism="m")
+    e = audit(events())[0]
+    assert e["route"] == "UNKNOWN" and FAKE_WH not in json.dumps(e)
+
+
+def _app_client(monkeypatch):
+    from app.routes import poll
+    c = _client(monkeypatch)
+    monkeypatch.setattr(poll, "run_poll", lambda d: {"ok": 1})
+    return c
+
+
+@pytest.mark.parametrize("raw", [
+    "/bearer%20abcdefghijklmnopqrstuvwxyz",                     # percent-encoded credential shape
+    "/bot123456789%3AAAFAKE_fake-token-for-tests_0123456789abcdef/x",
+    "/%D1%82%D0%B5%D1%81%D1%82/%E2%80%AE",                      # unicode + RTL override
+    "/%zz%%bad",                                                # malformed escape
+    "/unknown?key=synthetic-scheduler-secret-abc-987654",      # query parameter
+    "/admin/../poll",
+])
+def test_request_end_route_is_closed_vocabulary_for_hostile_paths(events, monkeypatch, raw):
+    c = _app_client(monkeypatch)
+    c.get(raw, headers={"X-Cloud-Trace-Context": XCTC})
+    ends = audit(events(), "request_end")
+    assert len(ends) == 1
+    assert ends[0]["route"] in L.AUDIT_ROUTES | {L.ADMIN_ROUTE, L.UNKNOWN_ROUTE}
+    text = json.dumps(ends)
+    for bad in ("bearer", "AAFAKE", "тест", "‮", "%zz", "key=", "synthetic-scheduler", ".."):
+        assert bad not in text
+
+
+def test_known_routes_keep_their_name_in_request_end(events, monkeypatch):
+    c = _app_client(monkeypatch)
+    c.get("/health")
+    c.post("/poll?x=1", headers={"X-Scheduler-Secret": FAKE_SCH})
+    assert [e["route"] for e in audit(events(), "request_end")] == ["/health", "/poll"]
+
+
+@pytest.mark.parametrize("raw", ["/poll%3Fx=1", "/poll%23frag", "/health%3F", "/telegram-webhook%23x", "/admin%3Ftest-wb"])
+def test_encoded_query_or_fragment_does_not_borrow_a_known_route_label(events, monkeypatch, raw):
+    """Starlette маршрутизирует по раскодированному scope["path"] (`/poll?x=1` → 404); метка берётся оттуда же."""
+    c = _app_client(monkeypatch)
+    r = c.post(raw, headers={"X-Scheduler-Secret": FAKE_SCH})
+    ends = audit(events(), "request_end")
+    assert r.status_code == 404 and len(ends) == 1
+    assert ends[0]["route"] == "UNKNOWN"          # scope path `/poll?x=1`, `/admin?test-wb`… — не известный маршрут
+
+
+@pytest.mark.parametrize("host", [b"[", b"svc]:x", b"[::1", b"svc.run.app/admin"])
+def test_hostile_host_header_neither_suppresses_nor_relabels_request_end(events, monkeypatch, host):
+    import asyncio
+    from app.routes import poll
+    _client(monkeypatch)                                         # те же подмены deps, что у остальных тестов
+    monkeypatch.setattr(poll, "run_poll", lambda d: {"ok": 1})
+    app = FastAPI()
+    app.middleware("http")(L.trace_middleware)
+    app.include_router(poll.router)
+
+    async def call(path):
+        sent = []
+        scope = {"type": "http", "asgi": {"version": "3.0"}, "http_version": "1.1", "method": "POST", "scheme": "https",
+                 "path": path, "raw_path": path.encode(), "query_string": b"", "root_path": "",
+                 "headers": [(b"host", host), (b"x-scheduler-secret", FAKE_SCH.encode())], "client": ("1.2.3.4", 1),
+                 "server": ("svc", 443)}
+
+        async def receive():
+            return {"type": "http.request", "body": b"", "more_body": False}
+
+        async def send(m):
+            sent.append(m)
+        await app(scope, receive, send)
+        return sent
+    asyncio.run(call("/poll"))
+    asyncio.run(call("/test-wb"))
+    ends = audit(events(), "request_end")
+    assert [e["route"] for e in ends] == ["/poll", "UNKNOWN"]      # ровно один request_end на запрос, Host не влияет
