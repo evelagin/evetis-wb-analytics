@@ -29,9 +29,8 @@ WF = REPO / ".github" / "workflows"
 
 
 def _run(**over) -> dict:
-    base = {"run_id": "run-20260927T121235Z-ab2e1c53", "created_at": "2026-09-27T12:12:35Z", "state": "REVIEWING",
-            "production_mutations": 0, "usage": [{"role": "engineer_plan"}, {"role": "reviewer"}]}
-    return {**base, **over}
+    from tools.tests.ae_fixtures import closed_run
+    return closed_run(usage=[{"role": "engineer_plan"}, {"role": "reviewer"}], **over)
 
 
 @pytest.fixture()
@@ -42,7 +41,7 @@ def orch(tmp_path):
 
 # ------------------------------------------------------------ семантика аудита ---
 def test_not_applicable_never_overwrites_real_evidence(orch):
-    run = orch._merge_audit(_run(), clean_audit())
+    run = orch._merge_audit(_run(), clean_audit(_run()))
     assert run["audit_status"] == "PASS" and zero_mutations_proven(run)[0]
     again = orch._merge_audit(run, {"status": "NOT_APPLICABLE", "mutations": 0})
     assert again["audit_status"] == "PASS" and again["audit_evidence"] == run["audit_evidence"]
@@ -63,7 +62,7 @@ def test_fail_is_sticky_and_mutations_accumulate(orch):
 
 
 def test_blocked_audit_replaces_earlier_pass(orch):
-    run = orch._merge_audit(orch._merge_audit(_run(), clean_audit()), {"status": "BLOCKED", "mutations": None})
+    run = orch._merge_audit(orch._merge_audit(_run(), clean_audit(_run())), {"status": "BLOCKED", "mutations": None})
     assert run["audit_status"] == "BLOCKED" and not zero_mutations_proven(run)[0]
 
 
@@ -75,7 +74,7 @@ def test_blocked_audit_replaces_earlier_pass(orch):
     (lambda r: r.__setitem__("audit_status", "NOT_APPLICABLE"), "а не PASS"),
 ])
 def test_stale_or_inconsistent_evidence_fails_closed(orch, mutate, needle):
-    run = orch._merge_audit(_run(), clean_audit())
+    run = orch._merge_audit(_run(), clean_audit(_run()))
     run = json.loads(json.dumps(run))
     mutate(run)
     ok, why = zero_mutations_proven(run)
@@ -89,7 +88,9 @@ def test_trusted_audit_without_configured_audit_is_refused(tmp_path):
         p.orch(p.branch).trusted_audit(run_id)                     # аудит по умолчанию — NOT_APPLICABLE
     assert "audit_evidence" not in p.branch.load(run_id)
     run = p.orch(p.branch, audit=clean_audit).trusted_audit(run_id)
-    assert run["audit_evidence"]["usage_count"] == len(run["usage"]) and zero_mutations_proven(run)[0]
+    assert run["audit_evidence"]["usage_count"] == len(run["usage"])
+    ok, why = zero_mutations_proven(run)          # прогон ещё в работе агента: окно открыто — не доказательство
+    assert not ok and "закрытым окном" in why
 
 
 def test_cli_audit_requires_real_audit_configuration(tmp_path, capsys):

@@ -189,6 +189,34 @@ def stamp() -> str:
 
 
 def clean_audit(run=None) -> dict:
-    """Доверенный аудит «0 мутаций» текущей версии источника — для тестов, где аудит не предмет проверки."""
-    from tools.autonomy.audit import AUDIT_SOURCE
-    return {"status": "PASS", "mutations": 0, "source": AUDIT_SOURCE}
+    """Доверенный аудит «0 мутаций» текущей версии источника по окну, выведенному из состояния `run`
+    (самопроверка самой AE, F-18 PASS) — для тестов, где аудит не предмет проверки."""
+    from tools.autonomy.audit import AUDIT_SOURCE, CAPABILITY_LIVE, run_window
+    w = run_window(run) if isinstance(run, dict) else {}
+    return {"status": "PASS", "mutations": 0, "source": AUDIT_SOURCE, "window": w,
+            "capability_mode": CAPABILITY_LIVE, "f18": {"result": "PASS"}}
+
+
+CLOSED_STATES = [(None, "RECEIVED", "12:12:35"), ("RECEIVED", "DISCOVERING", "12:12:35"),
+                 ("DISCOVERING", "PLANNING", "12:18:46"), ("PLANNING", "IMPLEMENTING", "12:32:53"),
+                 ("IMPLEMENTING", "TESTING", "12:32:54"), ("TESTING", "REVIEWING", "12:37:52"),
+                 ("REVIEWING", "READY_FOR_PR", "12:53:58")]
+
+
+def closed_run(created="2026-09-27T12:12:35Z", tail=(), **over) -> dict:
+    """Состояние прогона с закрытым окном (как у run-20260927T121235Z-ab2e1c53) + переходы `tail`."""
+    day = created[:11]
+    tr = [{"from": a, "to": b, "at": f"{day}{t}Z", "reason": "t"} for a, b, t in CLOSED_STATES]
+    tr += [{"from": a, "to": b, "at": f"{day}{t}Z", "reason": "t"} for a, b, t in tail]
+    return {"run_id": "run-20260927T121235Z-ab2e1c53", "created_at": created, "state": tr[-1]["to"],
+            "transitions": tr, "production_mutations": 0, "usage": [], **over}
+
+
+def evidence_for(run: dict, **over) -> dict:
+    """audit_evidence, согласованный с закрытым окном прогона (как его пишет orchestrator._merge_audit)."""
+    from tools.autonomy.audit import AUDIT_SOURCE, CAPABILITY_LIVE, run_window
+    w = run_window(run)
+    return {"status": "PASS", "mutations": 0, "source": AUDIT_SOURCE, "audited_at": "2026-09-27T13:10:00Z",
+            "since": run["created_at"], "usage_count": len(run.get("usage", [])), "window_start": w["start"],
+            "window_end": w["end"], "capability_mode": CAPABILITY_LIVE, "f18_result": "PASS", "accepted_risks": [],
+            **over}

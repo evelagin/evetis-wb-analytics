@@ -259,6 +259,47 @@
           ],
           "maxLength": 80,
           "description": "Версия источника аудита (audit.AUDIT_SOURCE). Нулём считается только доказательство текущей версии."
+        },
+        "window_start": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "format": "date-time",
+          "description": "Начало окна аудита (run_window: created_at − буфер)."
+        },
+        "window_end": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "format": "date-time",
+          "description": "Конец ЗАКРЫТОГО окна (выход из работы агента + таймаут + буфер); null — окно открыто, не доказательство."
+        },
+        "capability_mode": {
+          "enum": [
+            "ae_live_selftest",
+            "static_from_history",
+            null
+          ],
+          "description": "Как проверены возможности AE: самопроверкой самой AE или раскрытием ролей из истории."
+        },
+        "f18_result": {
+          "enum": [
+            "PASS",
+            "FAIL",
+            "BLOCKED",
+            "NOT_PUBLIC",
+            null
+          ]
+        },
+        "accepted_risks": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "maxLength": 40
+          },
+          "description": "Принятые владельцем исторические риски — только отображение, на статус не влияют."
         }
       }
     }

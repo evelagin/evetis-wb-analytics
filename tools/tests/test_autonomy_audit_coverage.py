@@ -79,8 +79,18 @@ class FakeSource:
     def __init__(self, jobs=(), activity=(), access=(), granted=(), datasets=None, table_policies=(), writable=(),
                  created="2026-07-10T10:26:24Z", watermark_after=0, log_watermark_after=0, sa_events=None,
                  sa_granted=None, grants=None, routing=None, iam_events=None, wip=None, table_events=(),
-                 f18=None):
+                 f18=None, caller=SA, ancestors=(), ancestor_events=None, ancestor_policy=None, project_policy=None,
+                 role_perms=None, logging_events=(), role_events=(), ds_events=(), move_events=(), secret_events=(),
+                 now=None, ancestor_sinks=None):
         self.project = P
+        self._now = now or NOW
+        self._anc_sinks = dict(ancestor_sinks or {})
+        self._wm_req, self._wm_ev = [], []          # отметка аудита — видна во ВСЕХ подходящих запросах журнала
+        self._caller, self._ancestors = caller, list(ancestors)
+        self._anc_events, self._anc_policy = dict(ancestor_events or {}), dict(ancestor_policy or {})
+        self._project_policy, self._role_perms = project_policy, dict(role_perms or {})
+        self._logging_events, self._role_events, self._ds_events = list(logging_events), list(role_events), list(ds_events)
+        self._move_events, self._secret_events = list(move_events), list(secret_events)
         self._jobs, self._activity, self._access, self._granted = list(jobs), list(activity), list(access), list(granted)
         self._datasets = datasets if datasets is not None else {
             "wb_raw": {"location": "EU", "access": [{"role": "READER", "userByEmail": SA}]},
@@ -102,7 +112,7 @@ class FakeSource:
         self.filters, self.sa_checked, self.grant_locations = [], [], []
 
     def now(self):
-        return NOW
+        return self._now
 
     def sleep(self, s):
         self.sleeps.append(s)
@@ -114,6 +124,16 @@ class FakeSource:
 
     def logs(self, flt):
         self.filters.append(flt)
+        if 'protoPayload.serviceName="logging.googleapis.com"' in flt:
+            return self._logging_events
+        if 'protoPayload.methodName:"CreateRole"' in flt:
+            return self._role_events
+        if "protoPayload.metadata.datasetChange:*" in flt:
+            return self._ds_events
+        if 'protoPayload.methodName:"MoveProject"' in flt:
+            return self._move_events
+        if "/secrets/EVETIS_TELEGRAM_BOT_TOKEN/versions/" in flt:
+            return self._secret_events
         if self.label and self.label in flt:
             self.log_probe_calls += 1
             return [{"probe": 1}] if self.log_probe_calls > self.log_watermark_after else []
@@ -123,16 +143,25 @@ class FakeSource:
             return self._table_events
         if "instrumentation_ready" in flt:
             rev = flt.split('revision_name="', 1)[1].split('"', 1)[0]
-            return [{"jsonPayload": {"audit_event": "instrumentation_ready", "audit_schema": "wbc-audit/1",
+            return [{"resource": {"labels": _run_labels(rev)},
+                     "jsonPayload": {"audit_event": "instrumentation_ready", "audit_schema": "wbc-audit/1",
                                      "revision": rev, "service": "evetis-wb-communications", "result": "ok",
                                      "trace_id": "", "request_id": ""}}] if rev in self._f18.get("ready", set()) else []
-        if 'trace="projects/' in flt or 'audit_event="request_end" AND jsonPayload.trace_id=' in flt:
-            return [{"watermark": 1}] if self._f18.get("service_watermark", True) else []
+        reqs = self._f18.get("requests", []) + self._wm_req
+        evs = self._f18.get("events", []) + self._wm_ev
+        if 'trace="projects/' in flt:
+            t = flt.split('trace="projects/', 1)[1].split('"', 1)[0]
+            return [r for r in reqs if r.get("trace") == f"projects/{t}"]
+        if 'audit_event="request_end" AND jsonPayload.trace_id=' in flt:
+            t = flt.split('jsonPayload.trace_id="', 1)[1].split('"', 1)[0]
+            return [e for e in evs if e["jsonPayload"].get("trace_id") == t and e["jsonPayload"]["audit_event"] == "request_end"]
         if "run.googleapis.com%2Frequests" in flt:
-            return self._f18.get("requests", [])
+            return _ts_filter(reqs, flt)
         if "jsonPayload.audit_event:*" in flt:
             assert 'jsonPayload.logger="app.audit"' in flt and "run.googleapis.com%2Fstdout" in flt
-            return self._f18.get("events", [])
+            return _ts_filter(evs, flt)
+        if 'resource.type="cloud_run_revision"' in flt and "logName=" not in flt:
+            return _ts_filter(self._f18.get("service_entries", []) + reqs + evs, flt)
         if 'protoPayload.methodName:"Service"' in flt:
             return self._f18.get("svc_events", [])
         if "setIamPermissions" in flt:
@@ -174,6 +203,14 @@ class FakeSource:
 
     def probe_service(self, url, trace):
         self.probed = (url, trace)
+        ts = self._now.strftime("%Y-%m-%dT%H:%M:%SZ")
+        n_req = int(self._f18.get("service_watermark", 1))
+        n_end = int(self._f18.get("service_watermark_end", n_req))
+        self._wm_req += [req("/health", 200, trace, ts=ts) for _ in range(n_req)]
+        for _ in range(n_end):
+            e = end(trace, "/health", 200, 0)
+            e["timestamp"] = ts
+            self._wm_ev.append(e)
         return 200
 
     def bucket_granted(self, bucket, perms):
@@ -184,9 +221,45 @@ class FakeSource:
     def project_number(self):
         return "1"
 
+    def caller(self):
+        return self._caller
+
+    def ancestors(self):
+        return self._ancestors
+
+    def ancestor_logs(self, anc, flt):
+        v = self._anc_events.get(anc, [])
+        if isinstance(v, Exception):
+            raise v
+        return _ts_filter(v, flt)
+
+    def ancestor_policy(self, anc):
+        return self._anc_policy.get(anc)
+
+    def project_policy(self):
+        return self._project_policy
+
+    def ancestor_sinks(self, anc):
+        v = self._anc_sinks.get(anc, [])
+        return None if v is None else v
+
+    def role_permissions(self, role):
+        return self._role_perms.get(role)
+
     def grant_jobs(self, location, since_iso):
         self.grant_locations.append(location)
         return self._grants.get(location, 0)
+
+
+def _ts_filter(entries, flt):
+    """Границы времени фильтра Logging (>=, <=, >, <) — как на сервере; для записей F-18."""
+    import re as _re
+    out = entries
+    for op, val in _re.findall(r'timestamp(>=|<=|>|<)"([^"]+)"', flt):
+        v = A._secs(val)
+        cmp = {">=": lambda t: t >= v, "<=": lambda t: t <= v, ">": lambda t: t > v, "<": lambda t: t < v}[op]
+        out = [e for e in out if cmp(A._secs(e.get("timestamp")))]
+    return out
 
 
 def audit(src, **kw):
@@ -265,13 +338,18 @@ def test_watermark_late_but_seen_is_pass():
     assert audit(src)["status"] == "PASS" and src.list_calls == 3
 
 
-def test_settle_delay_is_deterministic_and_bounded():
+def test_trusted_audit_waits_until_the_closed_window_ends_and_is_bounded():
+    from tools.tests.ae_fixtures import closed_run
+    w = A.run_window(closed_run())                                  # конец окна 13:03:58, NOW = 13:00:00
     src = FakeSource()
-    audit(src, settle_from=(NOW - timedelta(seconds=60)).strftime("%Y-%m-%dT%H:%M:%SZ"))
-    assert src.sleeps[0] == A.SETTLE_SECONDS - 60
-    src = FakeSource()
-    audit(src, settle_from=(NOW - timedelta(hours=1)).strftime("%Y-%m-%dT%H:%M:%SZ"))
-    assert src.sleeps == []
+    run_audit(src, w, [SA], lambda: setattr(src, "label", "autonomy-audit-wm-abc") or src.label, settle=True)
+    assert src.sleeps[0] == 238                                     # до конца окна, детерминированно
+    src = FakeSource()                                              # черновой: не ждёт, окно считается открытым
+    r = run_audit(src, w, [SA], lambda: setattr(src, "label", "autonomy-audit-wm-abc") or src.label)
+    assert src.sleeps == [] and r["window"]["closed"] is False and r["window"]["end"] is None
+    far = {**w, "end": "2026-09-27T14:00:00Z"}                      # дальше допустимой выдержки — не спим часами
+    r = run_audit(FakeSource(), far, [SA], lambda: "x", settle=True)
+    assert r["status"] == "BLOCKED" and "выдержки" in r["error"]
 
 
 @pytest.mark.parametrize("src", [
@@ -318,17 +396,19 @@ def test_found_mutation_beats_unproven_iam():
 
 def _run(r):
     from tools.autonomy.orchestrator import Orchestrator
+    from tools.tests.ae_fixtures import closed_run
     o = Orchestrator.__new__(Orchestrator)
     o.now = lambda: NOW
-    base = {"run_id": "run-20260927T121235Z-ab2e1c53", "created_at": SINCE, "production_mutations": 0, "usage": []}
-    return o._merge_audit(base, r)
+    return o._merge_audit(closed_run(), r)
 
 
 # ------------------------------------------------------------ источник и сбои ---
 def test_legacy_or_unlabelled_evidence_is_not_zero():
-    run = _run({"status": "PASS", "mutations": 0, "source": AUDIT_SOURCE})
-    assert zero_mutations_proven(run)[0]
+    from tools.tests.ae_fixtures import clean_audit, closed_run
+    run = _run(clean_audit(closed_run()))
+    assert zero_mutations_proven(run)[0], zero_mutations_proven(run)
     for legacy in (_run(0), _run({"status": "PASS", "mutations": 0}),
+                   _run({**clean_audit(closed_run()), "source": "jobs_list+audit_logs+iam_selftest+iam_history+ingress_attribution/v5"}),
                    _run({"status": "PASS", "mutations": 0, "source": "information_schema_region_eu/v1"})):
         ok, why = zero_mutations_proven(legacy)
         assert not ok and "источник аудита" in why
@@ -376,18 +456,19 @@ def test_table_self_check_http_semantics():
     assert yes.table_can_write("d", "t") is True
 
 
-def test_settle_is_applied_only_in_the_trusted_audit_command(monkeypatch, tmp_path):
+def test_window_wait_is_applied_only_in_the_trusted_audit_command(monkeypatch, tmp_path):
     from types import SimpleNamespace
     from tools.autonomy import cli
+    from tools.tests.ae_fixtures import closed_run
     seen = []
-    monkeypatch.setattr(A, "count_mutations", lambda *a, **k: seen.append(k.get("settle_from")) or {"status": "PASS"})
-    run = {"created_at": SINCE, "updated_at": "2026-09-27T12:50:00Z"}
-    for cmd, expected in (("audit", "2026-09-27T12:50:00Z"), ("agent-run", None)):
+    monkeypatch.setattr(A, "count_mutations", lambda *a, **k: seen.append((a[2], k.get("settle"))) or {"status": "PASS"})
+    run = closed_run()
+    for cmd, expected in (("audit", True), ("agent-run", False)):
         a = SimpleNamespace(cmd=cmd, project=P, token_command="true", audit_identity=[SA], engineer="none",
                             reviewer="none", sandbox_root=str(tmp_path), dry_run=False, pending_dir=None)
         orch = cli._orchestrator(a, cli.StateStore(tmp_path / "s"))
         orch.audit(run)
-        assert seen[-1] == expected
+        assert seen[-1] == (run, expected)                          # окно выводится из состояния, не created→now
 
 
 # ------------------------------------------------------------ ci-verify: привязка PR ---
@@ -533,7 +614,7 @@ def test_impersonated_loader_dml_is_fail_although_jobs_list_shows_the_loader():
 def test_audit_log_filters_cover_delegation_and_federation():
     src = FakeSource()
     audit(src)
-    window = [f for f in src.filters if f'timestamp>="{SINCE}"' in f]
+    window = [f for f in src.filters if f'timestamp>="{SINCE}"' in f and "authenticationInfo" in f]
     assert {("activity" in f, "data_access" in f) for f in window} >= {(True, False), (False, True)}
     for f in window:
         assert f'serviceAccountDelegationInfo.firstPartyPrincipal.principalEmail="{SA}"' in f
@@ -692,7 +773,8 @@ RUN_SVC = f"projects/{P}/locations/europe-west1/services/evetis-wb-communication
 @pytest.mark.parametrize("extra,blocked", [
     ([pol("run.googleapis.com", RUN_SVC, [{"role": "roles/run.invoker", "members": ["allUsers"]}])], True),  # F-18
     ([pol("storage.googleapis.com", "projects/_/buckets/b", [{"role": "roles/storage.objectViewer",
-                                                              "members": ["allUsers"]}])], False),        # чтение
+                                                              "members": ["allUsers"]}])], True),         # чтение объектов:
+    # storage.objects.get/list запрещены AE с F-18 (путь к Terraform state) — «читающая» роль раскрывается до прав
     ([delta("projects/_/buckets/b", "ADD", "roles/storage.objectAdmin", "group:team@x", "2026-09-01T00:00:00Z")], True),
     ([delta("projects/_/buckets/b", "ADD", "roles/storage.objectAdmin", "group:team@x", "2026-09-01T00:00:00Z"),
       delta("projects/_/buckets/b", "REMOVE", "roles/storage.objectAdmin", "group:team@x", "2026-09-02T00:00:00Z")], False),
@@ -962,16 +1044,34 @@ def f18_iam(extra_members=(), sa_extra=()):
 
 
 def svc_event(sa=F18_SA, ingress="all", method="google.cloud.run.v1.Services.ReplaceService", timeout=300,
-              ts="2026-09-28T08:30:00Z"):
-    return {"timestamp": ts, "protoPayload": {"methodName": method, "request": {"service": {
-        "metadata": {"annotations": {"run.googleapis.com/ingress": ingress}},
-        "spec": {"template": {"spec": {"serviceAccountName": sa, "timeoutSeconds": timeout}}}}}}}
+              ts="2026-09-28T08:30:00Z", name="evetis-wb-communications", location="europe-west1", project=P,
+              generation=30, image="img@sha256:" + "a" * 64, invoker=None, dry_run=None, status=None, prev=None):
+    ann = {"run.googleapis.com/ingress": ingress}
+    if invoker is not None:
+        ann["run.googleapis.com/invoker-iam-disabled"] = invoker
+    request = {"service": {
+        "metadata": {"annotations": ann, "generation": generation},
+        "spec": {"template": {"spec": {"serviceAccountName": sa, "timeoutSeconds": timeout,
+                                        "containers": [{"image": image}]}}},
+        "status": {"latestCreatedRevisionName": prev} if prev else {}}}
+    if dry_run is not None:
+        request["dryRun"] = dry_run
+    pp = {"methodName": method, "resourceName": f"namespaces/{project}/services/{name}", "request": request}
+    if status:
+        pp["status"] = {"code": status}
+    return {"timestamp": ts, "resource": {"labels": {"location": location, "project_id": project, "service_name": name}},
+            "protoPayload": pp}
+
+
+def _run_labels(rev):
+    return {"revision_name": rev, "project_id": P, "location": "europe-west1", "service_name": "evetis-wb-communications"}
 
 
 def req(route, status, trace, rev=REV, ts="2026-09-28T12:00:00Z"):
     return {"timestamp": ts, "trace": f"projects/{P}/traces/{trace}" if trace else "",
-            "resource": {"labels": {"revision_name": rev}},
-            "httpRequest": {"requestUrl": f"https://svc.run.app{route}", "status": status, "latency": "1.2s"}}
+            "resource": {"labels": _run_labels(rev)},
+            "httpRequest": {"requestUrl": f"https://svc.run.app{route}", "status": status, "latency": "1.2s",
+                            "requestMethod": "GET" if route == "/health" else "POST"}}
 
 
 def ev(kind, trace, rev=REV, **fields):
@@ -979,7 +1079,7 @@ def ev(kind, trace, rev=REV, **fields):
     jp = {"audit_event": kind, "audit_schema": "wbc-audit/1", "service": "evetis-wb-communications",
           "revision": rev, "trace_id": trace, "request_id": fields.pop("request_id", "rid-" + (trace or "none")[:6]), **fields}
     return {"timestamp": "2026-09-28T12:00:00.5Z", "trace": f"projects/{P}/traces/{trace}" if trace else "",
-            "resource": {"labels": {"revision_name": rev}}, "jsonPayload": jp}
+            "resource": {"labels": _run_labels(rev)}, "jsonPayload": jp}
 
 
 def end(trace, route, status, attempts, **kw):
@@ -1049,6 +1149,9 @@ def test_other_public_cloud_run_service_is_not_exempt():
 def test_f18_successful_protected_request_without_auth_ok_is_never_pass(route):
     c = good_chain()
     c["requests"] = c["requests"] + [req(route, 200, "d" * 32)]            # IP Telegram не важен: нет auth_ok
+    r = f18_audit(c)                                   # без request_end приложения — доказательство неполно: BLOCKED
+    assert r["status"] == "BLOCKED" and r["mutations"] is None
+    c["events"] = c["events"] + [end("d" * 32, route, 200, 0)]            # приложение подтвердило маршрут — FAIL
     r = f18_audit(c)
     assert r["status"] == "FAIL" and any("без auth_ok" in k for k in r["by_type"])
 
@@ -1238,10 +1341,10 @@ def test_f18_unknown_event_schema_blocks():
     assert r["status"] in ("BLOCKED", "FAIL") and any("неизвестной схемы" in x for x in r["iam_invariant"])
 
 
-def test_f18_success_on_unknown_route_fails():
+def test_f18_success_on_unknown_route_blocks_not_sticky_fail():
     c = good_chain(); c["requests"] = c["requests"] + [req("/debug/run", 200, "4" * 32)]
     r = f18_audit(c)
-    assert r["status"] == "FAIL" and any("неизвестному маршруту" in k for k in r["by_type"])
+    assert r["status"] == "BLOCKED" and any("неизвестному маршруту" in x for x in r["iam_invariant"]) and not r["by_type"]
 
 
 def test_f18_other_public_members_message():

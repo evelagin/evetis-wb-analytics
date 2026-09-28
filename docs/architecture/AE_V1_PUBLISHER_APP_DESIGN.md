@@ -1,6 +1,8 @@
 # AE v1 — учётные данные публикатора: least-privilege дизайн (2026-09-28)
 
-Статус: **дизайн, ничего не создано**. App, ключи, секреты и настройки репозитория не менялись.
+Статус: **дизайн, ничего не создано**. App, ключи, секреты, KMS, IAM и настройки репозитория не менялись.
+Исправлено 2026-09-28 (ACK финальной доработки PR #202, только документация): убраны варианты хранения ключа,
+невозможные или небезопасные при текущем тарифе (приватный репозиторий на GitHub Free).
 
 ## Проблема
 
@@ -21,7 +23,7 @@
 | Область | весь репозиторий | только выбранный репозиторий; токен можно дополнительно сузить по правам | выбранный репозиторий |
 | Права для PR | `pull-requests: write` + настройка, которая включает **и создание, и approve** для ВСЕХ job'ов репозитория, объявивших `pull-requests: write` | `pull_requests: write`, `contents: read`, `metadata: read`; approve собственного PR невозможен (автор = App) | `pull_requests: write` и т.д. |
 | Merge | нет (если нет `contents: write` у job) | **нет** — `contents: write` не выдаётся | нет, если не выдан |
-| Секрет | не нужен | private key App (долгоживущий) | сам токен (долгоживущий) |
+| Секрет | не нужен | private key App — только в Cloud KMS, неэкспортируемый (см. ниже) | сам токен (долгоживущий) |
 | Отзыв | снять галочку | отозвать ключ / удалить установку, мгновенно | отозвать токен |
 | Аудит | события от `github-actions[bot]` — неотличимы от прочих workflow | все PR/комментарии от `<app>[bot]` — отдельная идентичность | действия неотличимы от владельца |
 | Широта изменения | репозиторная настройка на все workflow | только новый job-шаг, использующий токен | — |
@@ -43,46 +45,58 @@
 - Where can this app be installed: **Only on this account**.
 - Установка: Install → **Only select repositories** → `evelagin/evetis-wb-analytics`.
 
-**Ключ**: Generate a private key (PEM) → сохранить в **environment secret** `AE_PUBLISHER_APP_KEY` окружения
-`ae-publisher` с deployment branch policy «только `main`»; локальную копию ключа удалить.
-App ID → repository variable `AE_PUBLISHER_APP_ID`. (Если окружения с ограничением веток недоступны на тарифе —
-repository secret; тогда граница «только main» держится кодом job'а, как сейчас для `autonomy-run`.)
+## Хранение ключа App: только Cloud KMS (неэкспортируемый)
 
-**Получение токена в Actions** (будущий PR по отдельному ACK, только job `publish`):
+**Факт тарифа** (docs.github.com, *Managing environments for deployment*; проверено 2026-09-28): на GitHub Free
+environment secrets, deployment branch policies и required reviewers доступны **только публичным** репозиториям.
+Репозиторий приватный. Поэтому:
 
-```yaml
-- id: app-token
-  uses: actions/create-github-app-token@<pinned-sha>
-  with:
-    app-id: ${{ vars.AE_PUBLISHER_APP_ID }}
-    private-key: ${{ secrets.AE_PUBLISHER_APP_KEY }}
-    owner: evelagin
-    repositories: evetis-wb-analytics
-    permission-pull-requests: write
-    permission-contents: read
-```
+- **environment secret — невозможен** на текущем тарифе;
+- **repository secret — неприемлем** как production-дизайн: доступен любому workflow репозитория, граница
+  «только main / только job publish» держалась бы лишь кодом job'а. Этот вариант больше не рассматривается;
+- включение настройки «Allow GitHub Actions to create and approve pull requests» (вариант A) — не делается.
 
-Токен передаётся **только** в вызов `gh pr create --draft` / `gh pr list` (`GH_TOKEN` для одного шага); push ветки
-`ae/*` по-прежнему делает `GITHUB_TOKEN` с `contents: write` под контролем `publisher.py`. Недоверенные job'ы
-(engineer/test/review) ни ключа, ни токена не получают. Токен истекает через час; action отзывает его в post-step.
+**Каноническая схема (B + KMS/WIF):**
+
+- PEM, сгенерированный GitHub для App, один раз импортируется в Cloud KMS (`RSA_SIGN_PKCS1_2048_SHA256`,
+  import job; защита SOFTWARE или HSM) и уничтожается локально. Экспорт ключа из KMS невозможен.
+- Отдельный SA публикатора с `roles/cloudkms.signerVerifier` **только на эту версию ключа**; WIF-привязка
+  этого SA — только к `autonomy-run.yml@refs/heads/main`, job `publish` (как у остальных доверенных job'ов,
+  оценщик S1 `wif_check`). Недоверенные job'ы (engineer/test/review) ни SA, ни ключа, ни токена не получают.
+- Job `publish` строит JWT App (iss = App ID/Client ID, exp ≤ 10 мин), подписывает его через
+  `asymmetricSign` KMS, обменивает на **installation token** с правами только `pull_requests: write`,
+  `contents: read`, `metadata: read` и только на этот репозиторий; срок жизни — 1 час; токен отзывается
+  (`DELETE /installation/token`) в post-step. Перед выпуском — проверка прав установки
+  (`GET /repos/{repo}/installation`): шире перечисленных — отказ.
+- Токен передаётся только в `gh pr create --draft` / `gh pr list` (`GH_TOKEN` одного шага); push ветки `ae/*`
+  по-прежнему делает `GITHUB_TOKEN` под контролем `publisher.py`; у `GITHUB_TOKEN` публикатора снимается
+  `pull-requests: write`.
 
 Побочный эффект: PR от App-токена **запускает** `pull_request`-workflows (в отличие от `GITHUB_TOKEN`). ci-verify
 учитывает только прогоны `workflow_dispatch` по опубликованному SHA — поведение проверки не меняется.
 
-**Ротация/отзыв**: новый ключ → обновить секрет → удалить старый ключ в настройках App (раз в 90 дней или при
-подозрении). Аварийно: Suspend/Uninstall App — все токены недействительны сразу.
+**Ротация/отзыв**: новый ключ в App → импорт новой версии в KMS → выключение старой версии KMS → удаление
+старого ключа в настройках App (раз в 90 дней или при подозрении). Аварийно: Suspend/Uninstall App — все токены
+недействительны сразу; выключение версии ключа KMS — новых токенов нет.
 
-**Аудируемость**: каждый PR/комментарий от `evetis-ae-publisher[bot]`; выдачи токенов видны в журнале App;
-ci-verify уже проверяет `author`/draft/base/head PR.
+**Аудируемость**: каждый PR/комментарий от `evetis-ae-publisher[bot]`; каждая подпись — запись Data Access
+`AsymmetricSign` в Cloud Audit Logs (кто, какой job); выдачи токенов видны в журнале App; ci-verify уже
+проверяет `author`/draft/base/head PR.
 
-**Модель угроз**: утечка ключа даёт создание/изменение PR и комментариев, запрос ревью и **approve чужих PR**
+**Модель угроз**: утечка **токена** (≤ 1 ч) даёт создание/изменение PR и комментариев и approve чужих PR
 (branch protection на тарифе недоступна — одобрение ничего не гейтит); нельзя push, merge, менять настройки,
-секреты, workflows. Утёкший токен также может снять draft (`ready for review`) и сменить base PR — ci-verify и так проверяет draft/base/head перед `READY_FOR_HUMAN_REVIEW`. Смягчение: секрет окружения только для `main`, короткий токен, отдельная идентичность, отзыв.
+секреты, workflows. Может снять draft и сменить base PR — ci-verify проверяет draft/base/head перед
+`READY_FOR_HUMAN_REVIEW`. Утечки **ключа** нет по построению (неэкспортируемый); компрометация job'а `publish`
+даёт подписи только пока идёт job и только через WIF-привязку к `main`. `gh pr create` с App-токеном — без
+флагов `@me` (App не пользователь).
 
-**Если окружения с ограничением веток недоступны на тарифе** (вероятно — branch protection тоже недоступна): repository secret допустим только потому, что `GITHUB_TOKEN` не может менять файлы workflow, а `ci.yml`/`sql-current.yml` секретов не используют; публикатор обязан отвергать кандидата, затрагивающего `.github/` (политика `forbidden_paths` это уже запрещает — проверить при внедрении). `gh pr create` с App-токеном — без флагов `@me` (App не пользователь).
-
-## Ручные действия владельца (после ACK на дизайн)
+## Ручные действия владельца (каждое — по отдельному ACK; сейчас ничего не делается)
 
 1. Создать App по спецификации выше и установить только на `evetis-wb-analytics`.
-2. Сгенерировать private key, положить в секрет (`AE_PUBLISHER_APP_KEY`), App ID — в переменную.
-3. Дать ACK на PR, добавляющий шаг `create-github-app-token` в job `publish` (изменение TCB — отдельное ревью).
+2. ACK на Terraform: keyring/ключ KMS, SA публикатора, `cloudkms.signerVerifier` на версию ключа, WIF-привязка
+   к job `publish` на `main` (изменение IAM — отдельное ревью, `wif_check` S1 обязан пройти).
+3. Импортировать PEM в KMS, локальную копию уничтожить; App ID/Client ID — в repository variable.
+4. ACK на PR, который добавляет подпись через KMS и выпуск/отзыв installation token в job `publish`
+   (изменение TCB — отдельное ревью).
+
+До этого публикация остаётся BLOCKED (вариант: владелец сам открывает draft PR из опубликованной ветки `ae/*`).

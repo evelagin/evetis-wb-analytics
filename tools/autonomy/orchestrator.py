@@ -209,9 +209,13 @@ class Orchestrator:
         if found:
             run = {**run, "production_mutations": run["production_mutations"] + found}
         new = "FAIL" if status == "FAIL" or run.get("audit_status") == "FAIL" or run["production_mutations"] else status
+        w = a.get("window") or {}
         evidence = {"status": new, "mutations": a["mutations"] if isinstance(a.get("mutations"), int) else None,
                     "audited_at": self.now().strftime("%Y-%m-%dT%H:%M:%SZ"), "since": run["created_at"],
-                    "usage_count": len(run["usage"]), "source": a.get("source")}
+                    "usage_count": len(run["usage"]), "source": a.get("source"),
+                    "window_start": w.get("start"), "window_end": w.get("end") if w.get("closed") else None,
+                    "capability_mode": a.get("capability_mode"), "f18_result": (a.get("f18") or {}).get("result"),
+                    "accepted_risks": [r.get("id") for r in a.get("accepted_risks") or []]}
         return {**run, "audit_status": new, "audit_evidence": evidence}
 
     def trusted_audit(self, run_id: str) -> dict:
@@ -534,6 +538,10 @@ class Orchestrator:
         gate = self._get(run, "gate.json")
         if not gate or gate["verdict"] != "READY_FOR_PR":
             raise TransitionError("публикация без READY_FOR_PR невозможна")
+        # Доказательство «0 мутаций» — только аудит ЗАКРЫТОГО окна (прогон уже вне работы агента). Аудит,
+        # записанный во время работы агента, покрывал открытое окно. NOT_APPLICABLE ничего не перезаписывает.
+        run = self._merge_audit(run, self.audit(run))
+        self.store.save(run)
         pub = self.publisher.publish(run, self._get(run, "candidate.patch") or "", self._art(run),
                                      self.policy["required_verification"]["workflows"])
         return self.store.transition(

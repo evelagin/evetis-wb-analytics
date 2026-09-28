@@ -181,10 +181,9 @@ def test_dedup_slug_is_stable_valid_and_never_main():
 # ------------------------------------------------------------- публикатор ---
 def test_publisher_refuses_without_ready_gate_and_on_forbidden_content(tmp_path):
     art = tmp_path / "art"; art.mkdir()
-    run = {"branch": "ae/x-12345678", "run_id": "r", "objective_id": "o", "repository_sha": "a" * 40,
-           "production_mutations": 0, "created_at": "2026-09-27T12:00:00Z", "usage": [], "audit_status": "PASS",
-           "audit_evidence": {"status": "PASS", "mutations": 0, "source": "jobs_list+audit_logs+iam_selftest+iam_history+ingress_attribution/v5", "audited_at": "2026-09-27T12:30:00Z",
-                              "since": "2026-09-27T12:00:00Z", "usage_count": 0}}
+    from tools.tests.ae_fixtures import closed_run, evidence_for
+    run = closed_run(branch="ae/x-12345678", run_id="r", objective_id="o", repository_sha="a" * 40, audit_status="PASS")
+    run["audit_evidence"] = evidence_for(run)
     pub = GitPublisher(tmp_path, dry_run=True)
     patch = "diff --git a/synthetic/calc.py b/synthetic/calc.py\n"
     (art / "gate.json").write_text(json.dumps({"verdict": "HUMAN_DECISION_REQUIRED"}))
