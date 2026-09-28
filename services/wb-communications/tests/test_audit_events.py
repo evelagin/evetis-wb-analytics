@@ -333,3 +333,36 @@ def test_partial_allowlist_is_not_a_full_pass(events):
         settings = S()
     assert pipeline._allowed(D(), "-100", "999") is True        # поведение прежнее
     assert audit(events())[0]["result"] == "ok_partial_allowlist"
+
+
+
+def test_every_request_ends_with_request_end_and_mutation_count(events, monkeypatch):
+    from app.routes import poll
+    c = _client(monkeypatch)
+
+    def poll_with_mutations(d):
+        L.audit_event("mutation_attempt", mutation_class="telegram:sendMessage", target_system="telegram")
+        L.audit_event("mutation_success", mutation_class="telegram:sendMessage", target_system="telegram")
+        L.audit_event("mutation_attempt", mutation_class="telegram:sendMessage", target_system="telegram")
+        L.audit_event("mutation_failure", mutation_class="telegram:sendMessage", target_system="telegram")
+        return {"ok": 1}
+    monkeypatch.setattr(poll, "run_poll", poll_with_mutations)
+    c.post("/poll", headers={"X-Scheduler-Secret": FAKE_SCH, "X-Cloud-Trace-Context": XCTC})
+    c.post("/poll", headers={"X-Scheduler-Secret": "bad"})
+    lines = events()
+    ends = audit(lines, "request_end")
+    assert [(e["route"], e["http_status"], e["mutation_attempts"]) for e in ends] == [("/poll", 200, 2), ("/poll", 403, 0)]
+    assert ends[0]["trace_id"] == TRACE and ends[0]["request_id"] == audit(lines, "auth_ok")[0]["request_id"]
+
+
+def test_request_end_emitted_even_when_handler_raises(events, monkeypatch):
+    from app.routes import poll
+    c = _client(monkeypatch)
+
+    def boom(d):
+        raise RuntimeError("unexpected")
+    monkeypatch.setattr(poll, "run_poll", boom)
+    with pytest.raises(RuntimeError):
+        c.post("/poll", headers={"X-Scheduler-Secret": FAKE_SCH})
+    ends = audit(events(), "request_end")
+    assert len(ends) == 1 and ends[0]["http_status"] == 500

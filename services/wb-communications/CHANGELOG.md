@@ -15,6 +15,8 @@
 - Эмиссия событий никогда не бросает исключений.
 - Серверный `request_id` (uuid4) в каждом событии — trace клиентоуправляем; открытый allow-list (пустые списки)
   фиксируется как `result=open_no_allowlist`, не как проход; логгер `app.audit` всегда INFO.
+- **`request_end`** в конце КАЖДОГО запроса (и при исключении): статус и число `mutation_attempt` — аудит доказывает,
+  что ни одно событие изменения не потеряно; частичный allow-list — `result=ok_partial_allowlist`.
 
 ## 1.5.2 — Recovery card must be actionable (2026-09-28)
 

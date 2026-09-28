@@ -23,6 +23,9 @@ _span_id: ContextVar[str] = ContextVar("span_id", default="")
 # Server-generated per-request id: the trace header is client-controllable (Cloud Run propagates a valid
 # incoming traceparent / X-Cloud-Trace-Context), so events also carry an id the client cannot choose.
 _request_id: ContextVar[str] = ContextVar("request_id", default="")
+# Per-request count of mutation_attempt events, reported in request_end: lets the audit prove that no
+# mutation event of a request was lost (completeness), not just that the logged ones are authenticated.
+_mutation_attempts: ContextVar[list | None] = ContextVar("mutation_attempts", default=None)
 _TRACE_HEX = re.compile(r"^[0-9a-f]{32}$")
 _SPAN_HEX = re.compile(r"^[0-9a-f]{16}$")
 
@@ -79,13 +82,15 @@ def parse_trace(cloud_trace: str | None, traceparent: str | None) -> tuple[str, 
 def set_request_trace(cloud_trace: str | None, traceparent: str | None):
     import uuid
     trace, span = parse_trace(cloud_trace, traceparent)
-    return _trace_id.set(trace), _span_id.set(span), _request_id.set(uuid.uuid4().hex)
+    return (_trace_id.set(trace), _span_id.set(span), _request_id.set(uuid.uuid4().hex),
+            _mutation_attempts.set([0]))
 
 
 def reset_request_trace(tokens) -> None:
     _trace_id.reset(tokens[0])
     _span_id.reset(tokens[1])
     _request_id.reset(tokens[2])
+    _mutation_attempts.reset(tokens[3])
 
 
 def current_trace() -> str:
@@ -93,11 +98,18 @@ def current_trace() -> str:
 
 
 async def trace_middleware(request, call_next):
-    """Bind the platform request trace to everything logged while serving this request."""
+    """Bind the platform request trace to everything logged while serving this request, and close every
+    request with exactly one request_end (status + number of mutation attempts) — even on an exception."""
     tokens = set_request_trace(request.headers.get("x-cloud-trace-context"), request.headers.get("traceparent"))
+    status = 500
     try:
-        return await call_next(request)
+        response = await call_next(request)
+        status = response.status_code
+        return response
     finally:
+        counter = _mutation_attempts.get() or [0]
+        audit_event("request_end", route=str(request.url.path)[:200], http_status=int(status),
+                    mutation_attempts=int(counter[0]))
         reset_request_trace(tokens)
 
 
@@ -221,10 +233,10 @@ def log_event(logger: logging.Logger, level: str, message: str, **fields) -> Non
 #   Cloud Run request log -> auth_ok -> mutation_attempt -> mutation_success|failure
 # by trace. Emission never raises: instrumentation must not change behaviour.
 AUDIT_SCHEMA = "wbc-audit/1"
-AUDIT_EVENTS = frozenset({"instrumentation_ready", "auth_ok", "auth_denied",
+AUDIT_EVENTS = frozenset({"instrumentation_ready", "auth_ok", "auth_denied", "request_end",
                           "mutation_attempt", "mutation_success", "mutation_failure"})
 AUDIT_FIELDS = frozenset({"route", "mechanism", "principal_class", "result", "mutation_class",
-                          "target_system", "target_ref", "http_status", "error_class"})
+                          "target_system", "target_ref", "http_status", "error_class", "mutation_attempts"})
 _audit_logger = logging.getLogger("app.audit")
 
 
@@ -238,6 +250,10 @@ def audit_event(event: str, **fields) -> None:
     try:
         if event not in AUDIT_EVENTS:
             return
+        if event == "mutation_attempt":
+            counter = _mutation_attempts.get()
+            if counter is not None:
+                counter[0] += 1
         safe = {k: v for k, v in fields.items()
                 if k in AUDIT_FIELDS and isinstance(v, (str, int, bool)) and not isinstance(v, float)}
         payload = {"audit_event": event, "audit_schema": AUDIT_SCHEMA,
