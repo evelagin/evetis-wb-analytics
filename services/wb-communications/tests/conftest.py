@@ -102,6 +102,8 @@ class FakeTelegram:
         self.sent = []
         self.force_replies = []
         self.edits = []
+        self.edit_markups = []  # (message_id, reply_markup) parallel to `edits`
+        self.fail_edits = False  # simulate Telegram refusing editMessageText
         self.acks = []
         self._id = 1000
 
@@ -116,7 +118,11 @@ class FakeTelegram:
         return {"message_id": self._id}
 
     def edit_message_text(self, chat_id, message_id, text, reply_markup=None):
+        if self.fail_edits:
+            from app.domain.exceptions import TelegramError
+            raise TelegramError("Bad Request: message to edit not found")
         self.edits.append((message_id, text))
+        self.edit_markups.append((message_id, reply_markup))
         return {"message_id": message_id}
 
     def answer_callback_query(self, cq_id, text=""):

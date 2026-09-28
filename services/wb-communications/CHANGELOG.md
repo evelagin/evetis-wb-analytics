@@ -1,5 +1,29 @@
 # CHANGELOG
 
+## 1.5.2 — Recovery card must be actionable (2026-09-28)
+
+Local verification: **268/268 pytest passed** (10 new; 5 of them fail on 1.5.1).
+
+- **Root cause (question ce1a68fb):** after a manual edit `_handle_message` sent a NEW
+  card but ignored its `message_id`, so Firestore kept pointing at the superseded
+  card. «Опубликовать» was pressed on the new card (pre-1.5.0 → «✅ Опубликовано»).
+  1.5.1 reconciliation edited the OLD stored message to the warning; the card the
+  operator sees stayed «Опубликовано» without a button.
+- Manual edit now stores the new card id (`telegram_message_id`/`telegram_chat_id`)
+  and strips the buttons from the superseded card (best effort).
+- A background (poll) transition to `publish_unknown` no longer edits the stored card:
+  it sends a NEW «⚠️ Публикация не подтверждена на Wildberries» card with
+  «Опубликовать», stores its id and `recovery_card_sent_at`, retires the old card.
+- Each `/poll` gives questions already in `publish_unknown` without
+  `recovery_card_sent_at` one live card, after a read-only GET (answer meanwhile on WB
+  → resolved as `published`/`answered_externally`, no button). Never writes to WB.
+- An operator action records the pressed card as the doc's card. Background Telegram
+  updates are best effort (state is persisted first; a failed recovery card is
+  retried by the next poll).
+- New Firestore field `recovery_card_sent_at`; new summary key
+  `questions.reverified.recovery_cards`. Publication path unchanged (GET first,
+  at most one PATCH, bounded read-back).
+
 ## 1.5.1 — Reconciliation of pre-1.5.0 «published» questions (2026-09-28)
 
 Local verification: **258/258 pytest passed** (4 new).

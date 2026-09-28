@@ -410,10 +410,12 @@ def test_legacy_published_without_answer_becomes_actionable_then_publishes_once(
     doc = deps.repo.get(_qdoc())
     assert doc["status"] == "publish_unknown"
     assert doc["publish_trace"][-1]["phase"] == "legacy_reconcile"
-    assert "Опубликовано" not in _last_edit(deps) and "не подтверждена" in _last_edit(deps)
+    _, warning, markup = deps.telegram.sent[-1]   # a NEW card, not an edit (1.5.2)
+    assert "Опубликовано" not in warning and "не подтверждена" in warning
+    assert _has_publish_button(markup)
     assert deps.wb.published_questions == []    # reconciliation never writes
     # operator taps «Опубликовать» -> corrected path, exactly one write, read back
-    r = handle_update(deps, _cb(20, "pub", _qdoc()))
+    r = handle_update(deps, _cb_on(20, "pub", _qdoc(), int(doc["telegram_message_id"])))
     assert r["status"] == "published" and len(deps.wb.published_questions) == 1
     assert deps.repo.get(_qdoc())["verified_at"]
     # next poll: nothing legacy left, no further writes
@@ -454,3 +456,169 @@ def test_new_flow_published_and_reviews_are_not_reconciled():
     summary = run_poll(deps)
     assert summary["questions"]["reverified"]["legacy"]["checked"] == 0
     assert deps.wb.get_question_calls == calls
+
+
+# --- 1.5.2: recovery card must be actionable (incident ce1a68fb, 2026-09-28) ---
+# The operator edited the answer manually: _handle_message sent a NEW card but kept
+# the OLD message id in Firestore; «Опубликовать» was pressed on the new card, which
+# became «✅ Опубликовано». Legacy reconciliation later edited the OLD message, so the
+# visible card stayed «Опубликовано» without a button.
+def _cb_on(update_id, action, doc_id, message_id):
+    cb = _cb(update_id, action, doc_id)
+    cb["callback_query"]["message"]["message_id"] = message_id
+    return cb
+
+
+def _has_publish_button(markup, doc_id=None):
+    buttons = [b for row in (markup or {}).get("inline_keyboard", []) for b in row]
+    want = f"pub:{doc_id or _qdoc()}"
+    return any(b.get("callback_data") == want for b in buttons)
+
+
+def _manual_edit(deps, new_text="Концентрация 2 %. Подробнее — в описании товара."):
+    """Operator: «Изменить» on the stored card, then replies with the new text."""
+    card_id = int(deps.repo.get(_qdoc())["telegram_message_id"])
+    handle_update(deps, _cb_on(30, "edit", _qdoc(), card_id))
+    prompt_id = deps.telegram._id  # force-reply prompt message
+    handle_update(deps, {"update_id": 31, "message": {
+        "message_id": prompt_id + 1, "chat": {"id": TG_USER}, "from": {"id": TG_USER},
+        "text": new_text, "reply_to_message": {"message_id": prompt_id}}})
+    new_card = deps.telegram.sent[-1]
+    return card_id, deps.telegram._id, new_card
+
+
+def _legacy_after_manual_edit(deps):
+    """Reproduce ce1a68fb: manual edit -> pre-1.5.0 publish on the NEW card."""
+    old_id, new_id, _ = _manual_edit(deps)
+    _legacy_published(deps)
+    return old_id, new_id
+
+
+def test_manual_edit_persists_new_card_and_retires_old():
+    deps = _qdeps()
+    old_id, new_id, (_, _, markup) = _manual_edit(deps)
+    assert new_id != old_id and _has_publish_button(markup)
+    doc = deps.repo.get(_qdoc())
+    assert doc["telegram_message_id"] == str(new_id)            # root-cause fix
+    assert deps.telegram.edit_markups[-1] == (str(old_id), None)  # old card: no buttons
+
+
+# 1. legacy published + answer=null -> publish_unknown -> warning card WITH «Опубликовать»
+def test_recovery_legacy_null_answer_sends_actionable_warning_card():
+    deps = _qdeps()
+    _legacy_after_manual_edit(deps)
+    deps.telegram.fail_edits = True           # the stored card cannot even be edited
+    summary = run_poll(deps)
+    assert summary["questions"]["reverified"]["legacy"]["unknown"] == 1
+    doc = deps.repo.get(_qdoc())
+    assert doc["status"] == "publish_unknown" and doc["recovery_card_sent_at"]
+    _, text, markup = deps.telegram.sent[-1]
+    assert "Публикация не подтверждена на Wildberries" in text
+    assert "Опубликовано" not in text and _has_publish_button(markup)
+    assert doc["telegram_message_id"] == str(deps.telegram._id)
+    assert deps.wb.published_questions == []
+
+
+# 2. + 3. + 4. recovered card: callback accepted, GET first, exactly one PATCH
+def test_recovery_publish_is_accepted_reads_first_and_patches_once():
+    deps = _qdeps()
+    _legacy_after_manual_edit(deps)
+    run_poll(deps)
+    card = int(deps.repo.get(_qdoc())["telegram_message_id"])
+    gets = deps.wb.get_question_calls
+    r = handle_update(deps, _cb_on(40, "pub", _qdoc(), card))
+    assert r["status"] == "published" and r["write"] == "sent"      # state machine accepted
+    assert deps.wb.get_question_calls > gets
+    trace = deps.repo.get(_qdoc())["publish_trace"][-1]
+    assert trace["precheck"] == "unanswered"                        # GET before the PATCH
+    assert len(deps.wb.published_questions) == 1
+    assert deps.telegram.edit_markups[-1] == (card, None)
+    assert "Опубликовано" in _last_edit(deps)
+
+
+# 5. WB got an answer between reconciliation and the tap -> 0 PATCH, reconciled
+def test_recovery_answer_appeared_before_tap_no_patch():
+    deps = _qdeps()
+    _legacy_after_manual_edit(deps)
+    run_poll(deps)
+    doc = deps.repo.get(_qdoc())
+    deps.wb.question_answers["Q1"] = doc["final_answer"]
+    r = handle_update(deps, _cb_on(41, "pub", _qdoc(), int(doc["telegram_message_id"])))
+    assert r == {"status": "published", "write": "skipped"}
+    assert deps.wb.published_questions == []
+    assert deps.repo.get(_qdoc())["publish_trace"][-1]["precheck"] == "already_answered"
+
+
+# 6. double tap after recovery -> at most one PATCH
+def test_recovery_double_tap_single_patch():
+    deps = _qdeps()
+    _legacy_after_manual_edit(deps)
+    run_poll(deps)
+    card = int(deps.repo.get(_qdoc())["telegram_message_id"])
+    handle_update(deps, _cb_on(42, "pub", _qdoc(), card))
+    r2 = handle_update(deps, _cb_on(43, "pub", _qdoc(), card))
+    assert r2["status"] == "stale" and len(deps.wb.published_questions) == 1
+
+
+def test_recovery_double_tap_while_publishing_is_rejected():
+    deps = _qdeps()
+    _legacy_after_manual_edit(deps)
+    run_poll(deps)
+    deps.repo.begin_publish(_qdoc())         # first tap holds the lease
+    r = handle_update(deps, _cb(44, "pub", _qdoc()))
+    assert r["status"] == "stale" and deps.wb.published_questions == []
+
+
+# 7. legacy published + matching WB answer -> verified, no button
+def test_recovery_legacy_matching_answer_verified_no_button():
+    deps = _qdeps()
+    _legacy_after_manual_edit(deps)
+    deps.wb.question_answers["Q1"] = deps.repo.get(_qdoc())["final_answer"]
+    sent = len(deps.telegram.sent)
+    run_poll(deps)
+    doc = deps.repo.get(_qdoc())
+    assert doc["status"] == "published" and doc["verified_at"]
+    assert not any(_has_publish_button(m) for _, _, m in deps.telegram.sent[sent:])
+
+
+# 8. legacy published + different WB answer -> answered_externally, no button
+def test_recovery_legacy_other_answer_external_no_button():
+    deps = _qdeps()
+    _legacy_after_manual_edit(deps)
+    deps.wb.question_answers["Q1"] = "Ответ из кабинета"
+    sent = len(deps.telegram.sent)
+    run_poll(deps)
+    assert deps.repo.get(_qdoc())["status"] == "answered_externally"
+    assert not any(_has_publish_button(m) for _, _, m in deps.telegram.sent[sent:])
+    assert deps.telegram.edit_markups[-1][1] is None             # card corrected, no button
+    assert "другой ответ" in _last_edit(deps)
+    assert deps.wb.published_questions == []
+
+
+# Docs already in publish_unknown before 1.5.2 (ce1a68fb itself): the poll restores
+# a live card once, after a read-only GET; never writes to WB.
+def test_existing_publish_unknown_gets_card_once():
+    deps = _qdeps()
+    _legacy_after_manual_edit(deps)
+    d = deps.repo.docs[_qdoc()]
+    d.update(status="publish_unknown", publication_state="publish_unknown")  # 1.5.1 result
+    s1 = run_poll(deps)["questions"]["reverified"]["recovery_cards"]
+    assert s1["sent"] == 1
+    _, text, markup = deps.telegram.sent[-1]
+    assert _has_publish_button(markup) and "не подтверждена на Wildberries" in text
+    sent = len(deps.telegram.sent)
+    s2 = run_poll(deps)["questions"]["reverified"]["recovery_cards"]
+    assert s2["checked"] == 0 and len(deps.telegram.sent) == sent
+    assert deps.wb.published_questions == []
+
+
+def test_existing_publish_unknown_answered_meanwhile_is_resolved_without_card():
+    deps = _qdeps()
+    _legacy_after_manual_edit(deps)
+    d = deps.repo.docs[_qdoc()]
+    d.update(status="publish_unknown", publication_state="publish_unknown")
+    deps.wb.question_answers["Q1"] = d["final_answer"]
+    sent = len(deps.telegram.sent)
+    s = run_poll(deps)["questions"]["reverified"]["recovery_cards"]
+    assert s["resolved"] == 1 and deps.repo.get(_qdoc())["status"] == "published"
+    assert len(deps.telegram.sent) == sent and deps.wb.published_questions == []
