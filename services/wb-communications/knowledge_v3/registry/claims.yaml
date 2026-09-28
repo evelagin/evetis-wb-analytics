@@ -1,0 +1,45 @@
+# REF_CLAIM — claim review (Phase 2.1 §7.3) and the generation switch (ODR-06).
+# claim_class: FACT_CLAIM | COSMETIC_CLAIM_PENDING | APPROVED_CANDIDATE | MEDICAL_OR_HIGH_RISK | PROHIBITED
+# generation_enabled is derived by the snapshot builder from policy.claim_policy and MUST be
+# false for every non-FACT class (build gate). It is not authored here.
+schema: ref_claim.v1
+claims:
+  - {claim_id: CLM-001, claim_class: MEDICAL_OR_HIGH_RISK, text_ru: "Предотвращает появление комедонов и прыщей", source_id: SRC-TU-SP-TS-5, locator: p4}
+  - {claim_id: CLM-002, claim_class: MEDICAL_OR_HIGH_RISK, text_ru: "уменьшает выраженность постакне", source_id: SRC-TU-SP-TS-5, locator: p4}
+  - {claim_id: CLM-003, claim_class: PROHIBITED, text_ru: "убирает воспаления", source_id: SRC-TU-SP-TS-5, locator: p4}
+  - {claim_id: CLM-004, claim_class: COSMETIC_CLAIM_PENDING, text_ru: "растительные экстракты интенсивно питают и увлажняют кожу", source_id: SRC-TU-SP-TS-5, locator: p4}
+  - {claim_id: CLM-005, claim_class: COSMETIC_CLAIM_PENDING, text_ru: "эффективная формула для борьбы с несовершенствами", source_id: SRC-TU-SP-TS-5, locator: p4}
+  - {claim_id: CLM-006, claim_class: PROHIBITED, text_ru: "убирает воспаления и препятствует их повторному появлению", source_id: SRC-TU-SP-TS-6, locator: p3}
+  - {claim_id: CLM-007, claim_class: MEDICAL_OR_HIGH_RISK, text_ru: "экстракт шалфея успокаивает кожу, снимает раздражения", source_id: SRC-TU-SP-TS-6, locator: p3}
+  - {claim_id: CLM-008, claim_class: PROHIBITED, text_ru: "ниацинамид регулирует выработку себума", source_id: SRC-TU-SP-TS-6, locator: p3}
+  - {claim_id: CLM-009, claim_class: MEDICAL_OR_HIGH_RISK, text_ru: "устраняет постакне и пигментацию", source_id: SRC-TU-SP-TS-6, locator: p3}
+  - {claim_id: CLM-010, claim_class: APPROVED_CANDIDATE, text_ru: "интенсивно увлажняющая сыворотка питает кожу", source_id: SRC-TU-SP-TS-4, locator: p4}
+  - {claim_id: CLM-011, claim_class: MEDICAL_OR_HIGH_RISK, text_ru: "уменьшает количество и глубину морщин", source_id: SRC-TU-SP-TS-4, locator: p4}
+  - {claim_id: CLM-012, claim_class: COSMETIC_CLAIM_PENDING, text_ru: "предотвращает шелушения", source_id: SRC-TU-SP-TS-4, locator: p4}
+  - {claim_id: CLM-013, claim_class: MEDICAL_OR_HIGH_RISK, text_ru: "витамин С замедляет старение", source_id: SRC-TU-SP-TS-4, locator: p4}
+  - {claim_id: CLM-014, claim_class: PROHIBITED, text_ru: "обладает противовоспалительным действием", source_id: SRC-TU-SP-TS-4, locator: p4}
+  - {claim_id: CLM-015, claim_class: APPROVED_CANDIDATE, text_ru: "интенсивно увлажняющий крем с алоэ вера и маслом шиповника", source_id: SRC-TU-SP-TS-7, locator: p3}
+  - {claim_id: CLM-016, claim_class: COSMETIC_CLAIM_PENDING, text_ru: "магнолия глубоко питает, возвращает упругость и эластичность", source_id: SRC-TU-SP-TS-7, locator: p3}
+  - {claim_id: CLM-017, claim_class: MEDICAL_OR_HIGH_RISK, text_ru: "сок клюквы замедляет старение кожи", source_id: SRC-TU-SP-TS-7, locator: p3}
+  - {claim_id: CLM-018, claim_class: APPROVED_CANDIDATE, text_ru: "питает, защищает кожу от сухости и поддерживает водный баланс", source_id: SRC-TU-SP-TS-2, locator: p4}
+  - {claim_id: CLM-019, claim_class: COSMETIC_CLAIM_PENDING, text_ru: "препятствует появлению шелушений и стянутости, придаёт гладкость и эластичность", source_id: SRC-TU-SP-TS-2, locator: p4}
+  - {claim_id: CLM-020, claim_class: MEDICAL_OR_HIGH_RISK, text_ru: "ниацинамид восстанавливает защитные функции кожи и усиливает её регенерацию", source_id: SRC-TU-SP-TS-2, locator: p4}
+  - {claim_id: CLM-021, claim_class: APPROVED_CANDIDATE, text_ru: "быстро впитывается, без липкости и жирной плёнки", source_id: SRC-TU-SP-TS-2, locator: p4}
+  - {claim_id: CLM-022, claim_class: COSMETIC_CLAIM_PENDING, text_ru: "восстанавливает кожу, устраняет сухость и шелушение", source_id: SRC-TU-SP-TS-1, locator: p4}
+  - {claim_id: CLM-023, claim_class: PROHIBITED, text_ru: "антиоксиданты замедляют старение и оказывают противовоспалительный эффект", source_id: SRC-TU-SP-TS-1, locator: p4}
+  - {claim_id: CLM-024, claim_class: APPROVED_CANDIDATE, text_ru: "делает кожу мягкой и бархатистой", source_id: SRC-TU-SP-TS-1, locator: p4}
+  - {claim_id: CLM-025, claim_class: APPROVED_CANDIDATE, text_ru: "интенсивно увлажняет и питает кожу", source_id: SRC-TU-SP-TS-11, locator: p3}
+  - {claim_id: CLM-026, claim_class: COSMETIC_CLAIM_PENDING, text_ru: "алоэ способствует удержанию влаги, устраняет сухость, шелушение, стянутость", source_id: SRC-TU-SP-TS-11, locator: p3}
+  - {claim_id: CLM-027, claim_class: PROHIBITED, text_ru: "масло герани регулирует жирность кожи", source_id: SRC-TU-SP-TS-11, locator: p3}
+  - {claim_id: CLM-028, claim_class: COSMETIC_CLAIM_PENDING, text_ru: "церамиды восстанавливают защитный барьер, улучшают упругость", source_id: SRC-TU-SP-TS-11, locator: p3}
+  - {claim_id: CLM-029, claim_class: MEDICAL_OR_HIGH_RISK, text_ru: "масло розы стимулирует выработку коллагена", source_id: SRC-TU-SP-TS-11, locator: p3}
+  - {claim_id: CLM-030, claim_class: PROHIBITED, text_ru: "хризантема — противовоспалительные и антибактериальные свойства", source_id: SRC-TU-SP-TS-11, locator: p3}
+  - {claim_id: CLM-031, claim_class: APPROVED_CANDIDATE, text_ru: "мягкой, гладкой и сияющей", source_id: SRC-TU-SP-TS-11, locator: p3}
+  - {claim_id: CLM-032, claim_class: FACT_CLAIM, text_ru: "не требует смывания водой", source_id: SRC-TU-SP-TS-11, locator: p4, evidence_fact_type: rinse_off}
+  - {claim_id: CLM-040, claim_class: PROHIBITED, text_ru: "без кислот (пудра)", source_id: "old KB enzyme_powder.md", note: "False: Ascorbic Acid 0.2% (KC-17)."}
+  - {claim_id: CLM-042, claim_class: PROHIBITED, text_ru: "результат анти-акне от 3–4 недель, витамин С — от 4–6 недель", source_id: "old KB cases/no_effect.md"}
+  - {claim_id: CLM-043, claim_class: PROHIBITED, text_ru: "пощипывание — адаптация", source_id: "old KB cases/irritation.md"}
+  - {claim_id: CLM-044, claim_class: PROHIBITED, text_ru: "в первые 1–2 недели обострение — нормальная реакция", source_id: "v1 prompt"}
+  - {claim_id: CLM-045, claim_class: PROHIBITED, text_ru: "снимает воспаления, усмиряет бактерии", source_id: "WB card plan"}
+  - {claim_id: CLM-046, claim_class: MEDICAL_OR_HIGH_RISK, text_ru: "сужает поры", source_id: "WB card plan"}
+  - {claim_id: CLM-047, claim_class: PROHIBITED, text_ru: "LHA мягко отшелушивает без раздражения", source_id: "WB card plan"}

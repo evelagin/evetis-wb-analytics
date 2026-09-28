@@ -1,0 +1,83 @@
+# Anti-acne face cream 50 ml — WB nmId 438775617. Recipe checked visually on p1 (2026-09-28).
+schema: ref_product.v1
+product_id: EVT-FC-ACNE-50
+product_type: cream
+line: anti_acne
+primary_source: SRC-TU-SP-TS-6
+spec_association_status: VERIFIED
+customer_fact_generation: ALLOWED
+customer_name_ru: "крем для лица EVETIS Anti-Acne"
+internal_aliases: ["Крем Акне", "крем от прыщей и акне", "anti acne face cream"]
+identifiers:
+  - {id_type: tu_code, value: SP-TS-6, source_id: SRC-TU-SP-TS-6}
+  - {id_type: label_ean, value: "4631176224585", source_id: SRC-TU-SP-TS-6, locator: "p4 barcode"}
+facts:
+  - {fact_type: product_name_t1, value: "EVETIS ANTI ACNE FACE CREAM Крем для лица от прыщей и акне 50 ml", source_id: SRC-TU-SP-TS-6, locator: p1, disclosure_policy: INTERNAL_ONLY}
+  - {fact_type: volume, value: 50, unit: ml, customer_value_ru: "50 мл", source_id: SRC-TU-SP-TS-6, locator: p1}
+  - {fact_type: intended_use, value: [face], customer_value_ru: "для лица", source_id: SRC-TU-SP-TS-6, locator: "p1 product name"}
+  - {fact_type: directions, value: "нанесите крем на чистую кожу легкими массирующими движениями до полного впитывания", customer_value_ru: "Крем наносят на чистую кожу лёгкими массирующими движениями до полного впитывания", source_id: SRC-TU-SP-TS-6, locator: p3}
+  - {fact_type: precautions, value: ["только для наружного применения", "не использовать после истечения срока годности", "не рекомендуется при индивидуальной непереносимости компонентов в составе"], customer_value_ru: "Только для наружного применения; не использовать после истечения срока годности; не рекомендуется при индивидуальной непереносимости компонентов", source_id: SRC-TU-SP-TS-6, locator: p3}
+  - {fact_type: shelf_life, value: 24, unit: month, customer_value_ru: "2 года с даты изготовления", source_id: SRC-TU-SP-TS-6, locator: p3}
+  - {fact_type: pao, value: 6, unit: month, customer_value_ru: "6 месяцев после вскрытия", source_id: SRC-TU-SP-TS-6, locator: "p3 '6M'"}
+  - {fact_type: storage, value: "+5..+25 C, no direct sunlight", customer_value_ru: "хранить при температуре от +5 до +25 °C, не подвергать воздействию прямых солнечных лучей", source_id: SRC-TU-SP-TS-6, locator: p3}
+  - {fact_type: country_of_origin, value: CN, customer_value_ru: "Китай", source_id: SRC-TU-SP-TS-6, locator: p3}
+  - {fact_type: manufacturer, value: "Guangzhou Beauty Cosmetics Co., Ltd.", customer_value_ru: "Guangzhou Beauty Cosmetics Co., Ltd. (Китай)", source_id: SRC-TU-SP-TS-6, locator: p4}
+  - {fact_type: packaging, value: "airless bottle 50 ml", disclosure_policy: INTERNAL_ONLY, source_id: SRC-TU-SP-TS-6, locator: "p4 primary packaging"}
+  - {fact_type: importer, value: REDACTED_CONFLICT, fact_status: CONFLICT, disclosure_policy: DO_NOT_DISCLOSE, conflict_id: KC-21, source_id: SRC-TU-SP-TS-6, locator: "p4 importer"}
+  - {fact_type: ph, value: 6.94, fact_status: CONFLICT, quality_flags: [TEMPLATE_SUSPECT], disclosure_policy: DO_NOT_DISCLOSE, conflict_id: KC-01, owner_decision_id: ODR-19, source_id: SRC-TU-SP-TS-6, locator: p2}
+  - {fact_type: regulatory_declaration, value: NONE_CURRENT, fact_status: CONFLICT, quality_flags: [STALE], disclosure_policy: DO_NOT_DISCLOSE, conflict_id: KC-09, source_id: SRC-OWNER, locator: "owner notes 2026-09-14"}
+  - {fact_type: commercial_age_marker, value: "12+", fact_status: COMMERCIAL_VERIFIED, disclosure_policy: INTERNAL_ONLY, owner_decision_id: ODR-01, source_id: SRC-WB-CARD, locator: "WB card characteristic"}
+ingredients:
+  recipe_source: SRC-TU-SP-TS-6
+  recipe_locator: "p1-p2 recipe table (visual check p1)"
+  concentration_disclosure:
+    salicylic_acid: {disclosure_policy: DO_NOT_DISCLOSE_PENDING, owner_decision_id: ODR-07, conflict_id: KC-08, customer_abstraction_ru: "В составе есть салициловая кислота."}
+    phenoxyethanol: {disclosure_policy: DO_NOT_DISCLOSE_PENDING, owner_decision_id: ODR-20, customer_abstraction_ru: "В составе есть феноксиэтанол."}
+  recipe:
+    - [1, water, "Aqua (Water)", 61.00]
+    - [2, glycerin, "Glycerin", 7.50]
+    - [3, niacinamide, "Niacinamide", 6.00]
+    - [4, vitis_vinifera_seed_oil, "Vitis Vinifera (Grape) Seed Oil", 4.50]
+    - [5, butyrospermum_parkii_oil, "Butyrospermum Parkii (Shea) Oil", 4.50]
+    - [6, cetearyl_alcohol, "Cetearyl Alcohol", 3.00]
+    - [7, ethylhexyl_palmitate, "Ethylhexyl Palmitate", 3.00]
+    - [8, glyceryl_stearate, "Glyceryl Stearate", 2.25]
+    - [9, salicylic_acid, "Salicylic Acid", 2.25]
+    - [10, phenoxyethanol, "Phenoxyethanol", 1.50]
+    - [11, melaleuca_alternifolia_leaf_oil, "Melaleuca Alternifolia (Tea Tree) Leaf Oil", 0.75]
+    - [12, trehalose, "Trehalose", 0.75]
+    - [13, dipotassium_glycyrrhizate, "Dipotassium Glycyrrhizate", 0.45]
+    - [14, secale_cereale_seed_extract, "Secale Cereale (Rye) Seed Extract", 0.30]
+    - [15, salvia_miltiorrhiza_extract, "Salvia Miltiorrhiza Extract", 0.30]
+    - [16, portulaca_oleracea_extract, "Portulaca Oleracea Extract", 0.30]
+    - [17, chrysanthellum_indicum_extract, "Chrysanthellum Indicum Extract", 0.30]
+    - [18, mentha_arvensis_leaf_extract, "Mentha Arvensis Leaf Extract", 0.30]
+    - [19, scutellaria_baicalensis_extract, "Scutellaria Baicalensis Extract", 0.30]
+    - [20, xanthan_gum, "Xanthan Gum", 0.30]
+    - [21, lactic_acid, "Lactic Acid", 0.30]
+    - [22, carbomer, "Carbomer", 0.15]
+  label_source: SRC-TU-SP-TS-6
+  label_locator: "p3 'Ingredients:' (last item 'Lactic [Acid]' cut by OCR; same content as recipe, different order - KC-14)"
+  label:
+    - [1, water, "Aqua"]
+    - [2, vitis_vinifera_seed_oil, "Vitis Vinifera (Grape) Seed Oil"]
+    - [3, niacinamide, "Niacinamide"]
+    - [4, cetearyl_alcohol, "Cetearyl Alcohol"]
+    - [5, butyrospermum_parkii_oil, "Butyrospermum Parkii (Shea) Oil"]
+    - [6, secale_cereale_seed_extract, "Secale Cereale (Rye) Seed Extract"]
+    - [7, glycerin, "Glycerin"]
+    - [8, melaleuca_alternifolia_leaf_oil, "Melaleuca Alternifolia (Tea Tree) Leaf Oil"]
+    - [9, ethylhexyl_palmitate, "Ethylhexyl Palmitate"]
+    - [10, salicylic_acid, "Salicylic Acid"]
+    - [11, trehalose, "Trehalose"]
+    - [12, glyceryl_stearate, "Glyceryl Stearate"]
+    - [13, dipotassium_glycyrrhizate, "Dipotassium Glycyrrhizate"]
+    - [14, salvia_miltiorrhiza_extract, "Salvia Miltiorrhiza Extract"]
+    - [15, portulaca_oleracea_extract, "Portulaca Oleracea Extract"]
+    - [16, chrysanthellum_indicum_extract, "Chrysanthellum Indicum Extract"]
+    - [17, xanthan_gum, "Xanthan Gum"]
+    - [18, mentha_arvensis_leaf_extract, "Mentha Arvensis Leaf Extract"]
+    - [19, scutellaria_baicalensis_extract, "Scutellaria Baicalensis Extract"]
+    - [20, phenoxyethanol, "Phenoxyethanol"]
+    - [21, carbomer, "Carbomer"]
+    - [22, lactic_acid, "Lactic Acid"]

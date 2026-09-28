@@ -1,0 +1,78 @@
+# Anti-acne face serum 30 ml — WB nmId 305101361 (identity from REF_SKU_CHANNEL_MAP).
+# Recipe rows: [position, ingredient_id, INCI as written in the spec, % of ingredient/mixture]
+schema: ref_product.v1
+product_id: EVT-FS-ACNE-30
+product_type: serum
+line: anti_acne
+primary_source: SRC-TU-SP-TS-5
+spec_association_status: VERIFIED
+customer_fact_generation: ALLOWED
+customer_name_ru: "сыворотка для лица EVETIS Anti-Acne"
+internal_aliases: ["Сыворотка Акне", "сыворотка от прыщей и акне", "anti acne face serum"]
+identifiers:
+  - {id_type: tu_code, value: SP-TS-5, source_id: SRC-TU-SP-TS-5}
+  - {id_type: label_ean, value: "4631172318639", source_id: SRC-LBL-SP-TS-5, locator: "barcode field"}
+facts:
+  - {fact_type: product_name_t1, value: "EVETIS ANTI ACNE FACE SERUM Сыворотка для лица от прыщей и акне 30 ml", source_id: SRC-TU-SP-TS-5, locator: p1, disclosure_policy: INTERNAL_ONLY}
+  - {fact_type: volume, value: 30, unit: ml, customer_value_ru: "30 мл", source_id: SRC-TU-SP-TS-5, locator: p1}
+  - {fact_type: intended_use, value: [face], customer_value_ru: "для лица", source_id: SRC-TU-SP-TS-5, locator: "p1 product name"}
+  - {fact_type: directions, value: "нанесите сыворотку на чистую кожу лица легкими массирующими движениями до полного впитывания. Через 2-3 минуты нанесите крем или маску для лица", customer_value_ru: "Сыворотку наносят на чистую кожу лица лёгкими массирующими движениями до полного впитывания, через 2–3 минуты можно нанести крем или маску", source_id: SRC-TU-SP-TS-5, locator: "p4 label block"}
+  - {fact_type: precautions, value: ["только для наружного применения", "не использовать после истечения срока годности", "не рекомендуется при индивидуальной непереносимости компонентов в составе"], customer_value_ru: "Только для наружного применения; не использовать после истечения срока годности; не рекомендуется при индивидуальной непереносимости компонентов", source_id: SRC-TU-SP-TS-5, locator: p4}
+  - {fact_type: shelf_life, value: 24, unit: month, customer_value_ru: "2 года с даты изготовления", source_id: SRC-TU-SP-TS-5, locator: p4}
+  - {fact_type: pao, value: 6, unit: month, customer_value_ru: "6 месяцев после вскрытия", source_id: SRC-TU-SP-TS-5, locator: "p4 PAO field '6M'", notes: "KC-02: PAO field on SRC-LBL-SP-TS-5 is empty."}
+  - {fact_type: storage, value: "+5..+25 C, no direct sunlight", customer_value_ru: "хранить при температуре от +5 до +25 °C, не подвергать воздействию прямых солнечных лучей", source_id: SRC-TU-SP-TS-5, locator: p4}
+  - {fact_type: country_of_origin, value: CN, customer_value_ru: "Китай", source_id: SRC-TU-SP-TS-5, locator: "p4 'Made in China'"}
+  - {fact_type: manufacturer, value: "Guangzhou Mebamy Cosmetics Co., Ltd.", customer_value_ru: "Guangzhou Mebamy Cosmetics Co., Ltd. (Китай)", source_id: SRC-TU-SP-TS-5, locator: p4}
+  - {fact_type: importer, value: REDACTED_CONFLICT, fact_status: CONFLICT, disclosure_policy: DO_NOT_DISCLOSE, conflict_id: KC-21, source_id: SRC-LBL-SP-TS-5, locator: "importer field"}
+  - {fact_type: ph, value: 6.94, fact_status: CONFLICT, quality_flags: [TEMPLATE_SUSPECT], disclosure_policy: DO_NOT_DISCLOSE, conflict_id: KC-01, owner_decision_id: ODR-19, source_id: SRC-TU-SP-TS-5, locator: p3}
+  - {fact_type: commercial_age_marker, value: "12+", fact_status: COMMERCIAL_VERIFIED, disclosure_policy: INTERNAL_ONLY, owner_decision_id: ODR-01, source_id: SRC-WB-CARD, locator: "WB card characteristic"}
+ingredients:
+  recipe_source: SRC-TU-SP-TS-5
+  recipe_locator: "p1-p2 recipe table, column 6 (ingredient or mixture %)"
+  recipe_quality_flags: [ORDER_INCONSISTENT]   # KC-15: 'decreasing order' but tea tree oil 5% is last
+  recipe:
+    - [1, water, "WATER", 55.79]
+    - [2, hamamelis_virginiana_water, "HAMAMELIS VIRGINIANA (WITCH HAZEL) WATER", 5]
+    - [3, niacinamide, "NIACINAMIDE", 5]
+    - [4, glycolic_acid, "GLYCOLIC ACID", 2]
+    - [5, glycine_soja_protein, "GLYCINE SOJA (SOYBEAN) PROTEIN", 3]
+    - [6, glyceryl_caprylate, "GLYCERYL CAPRYLATE", 1]
+    - [7, lactobacillus_pear_juice_ferment_filtrate, "LACTOBACILLUS/PEAR JUICE FERMENT FILTRATE", 1]
+    - [8, salix_alba_bark_extract, "SALIX ALBA (WILLOW) BARK EXTRACT", 5]
+    - [9, rehmannia_chinensis_root_extract, "REHMANNIA CHINENSIS ROOT EXTRACT", 5]
+    - [10, scutellaria_baicalensis_root_extract, "SCUTELLARIA BAICALENSIS ROOT EXTRACT", 1]
+    - [11, houttuynia_cordata_extract, "HOUTTUYNIA CORDATA EXTRACT", 1]
+    - [12, camellia_sinensis_leaf_extract, "CAMELLIA SINENSIS LEAF EXTRACT", 5]
+    - [13, alpha_glucan_oligosaccharide, "ALPHA-GLUCAN OLIGOSACCHARIDE", 1]
+    - [14, candida_bombicola_ferment, "CANDIDA BOMBICOLA/GLUCOSE/METHYL RAPESEEDATE FERMENT", 1]
+    - [15, salicylic_acid, "SALICYLIC ACID", 1]
+    - [16, zinc_pca, "ZINC PCA", 0.2]
+    - [17, capryloyl_salicylic_acid, "CAPRYLOYL SALICYLIC ACID", 1]
+    - [18, melia_azadirachta_leaf_extract, "MELIA AZADIRACHTA LEAF EXTRACT", 0.9]
+    - [19, acrylates_c10_30_crosspolymer, "ACRYLATES/C10-30 ALKYL ACRYLATE CROSSPOLYMER", 0.1]
+    - [20, ethylhexylglycerin, "ETHYLHEXYLGLYCERIN", 0.01]
+    - [21, melaleuca_alternifolia_leaf_oil, "MELALEUCA ALTERNIFOLIA (TEA TREE) LEAF OIL", 5]
+  label_source: SRC-TU-SP-TS-5
+  label_locator: "p4 'Ingredients:' (identical text in SRC-LBL-SP-TS-5)"
+  label:
+    - [1, water, "deionized water"]
+    - [2, hamamelis_virginiana_water, "hamamelis virginiana (witch hazel) water"]
+    - [3, niacinamide, "niacinamide"]
+    - [4, glycolic_acid, "glycolic acid"]
+    - [5, glycine_soja_protein, "glycine soja (soybean) protein"]
+    - [6, glyceryl_caprylate, "glyceryl caprylate"]
+    - [7, lactobacillus_pear_juice_ferment_filtrate, "lactobacillus/pear juice ferment filtrate"]
+    - [8, salix_alba_bark_extract, "salix alba (willow) bark extract"]
+    - [9, rehmannia_chinensis_root_extract, "rehmannia chinensis root extract"]
+    - [10, scutellaria_baicalensis_root_extract, "scutellaria baicalensis root extract"]
+    - [11, houttuynia_cordata_extract, "houttuynia cordata extract"]
+    - [12, camellia_sinensis_leaf_extract, "camellia sinensis leaf extract"]
+    - [13, alpha_glucan_oligosaccharide, "alpha-glucan oligosaccharide"]
+    - [14, candida_bombicola_ferment, "candida bombicola/glucose/methyl rapeseedate ferment"]
+    - [15, salicylic_acid, "salicylic acid"]
+    - [16, zinc_pca, "zinc pca"]
+    - [17, capryloyl_salicylic_acid, "lipo hydroxy acid"]
+    - [18, melia_azadirachta_leaf_extract, "melia azadirachta leaf extract"]
+    - [19, acrylates_c10_30_crosspolymer, "acrylates/c10-30 alkyl acrylate crosspolymer"]
+    - [20, ethylhexylglycerin, "ethylhexylglycerin"]
+    - [21, melaleuca_alternifolia_leaf_oil, "melaleuca alternifolia (tea tree) leaf oil"]

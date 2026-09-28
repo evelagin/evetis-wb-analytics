@@ -1,0 +1,248 @@
+# REF_KNOWLEDGE_SOURCE — evidence documents behind every v3 fact.
+#
+# file_uri is relative to the owner's content root
+#   ~/Documents/02_Эветис_косметика_маркетплейсы/05_Контент_и_маркетинг/
+# file_sha256 was computed on 2026-09-28 from those exact files (WP1).
+# Internal document code (SP-TS-n) wins over the folder name (folders say SP-ST-n).
+#
+# reliability: A signed spec / regulatory doc · B label data / official extract ·
+#              C marketplace card / REF table · D internal notes / old KB · E historical answer
+schema: ref_knowledge_source.v1
+sources:
+  - source_id: SRC-TU-SP-TS-5
+    tier: T1a
+    source_type: technical_specification
+    document_code: SP-TS-5
+    document_name: "SP-TS-5 EVETIS Anti acne Face serum.pdf"
+    document_version: "contract RU02"
+    document_date: 2024-11-11
+    file_uri: "Спецификации ТУ и брифы по товарам/Сыворотка акне 305101361 (SP-TS-5)/SP-TS-5 EVETIS Anti acne Face serum.pdf"
+    file_sha256: 0ff7845343d32aa6b6120d22011b487bb9f0d683f6776dfb2d0499f739e86d88
+    extraction_method: ocr_pdfkit_vision
+    extraction_confidence: MEDIUM
+    reliability: A
+    quality_notes: "Scanned PDF. Recipe % = 100.00; cross-checked against SRC-DER-INCI. Label block on p4 (T1b)."
+  - source_id: SRC-LBL-SP-TS-5
+    tier: T1b
+    source_type: label_data
+    document_code: SP-TS-5-LABEL
+    document_name: "Данные для этикетки  anti acne.docx"
+    document_version: "n/a"
+    file_uri: "Спецификации ТУ и брифы по товарам/Крем лица акне 438775617 (SP-TS-6)/Данные для этикетки  anti acne.docx"
+    file_sha256: 4d93808a0a6ad54494d58b2f49cb065a5585773e282da9614b4694b1c4a8ca59
+    extraction_method: docx_native
+    extraction_confidence: HIGH
+    reliability: B
+    quality_notes: "Filed in the SP-TS-6 folder but the content is the ACNE SERUM label. Directions/precautions/PAO fields empty ('????')."
+  - source_id: SRC-TU-SP-TS-4
+    tier: T1a
+    source_type: technical_specification
+    document_code: SP-TS-4
+    document_name: "SP-ST-4 EVETIS Moisture Face Serum.pdf"
+    document_version: "contract RU02"
+    document_date: 2024-11-11
+    file_uri: "Спецификации ТУ и брифы по товарам/Сыворотка увлажняющая 305101272 (SP-ST-4)/SP-ST-4 EVETIS Moisture Face Serum.pdf"
+    file_sha256: d971f6ca435fb92e6cc14bb0f74709ef01fe82a9ae42f5555ecccb0c656cd64b
+    extraction_method: ocr_pdfkit_vision
+    extraction_confidence: MEDIUM
+    reliability: A
+    quality_notes: "Scanned PDF. Recipe % = 100.00. PAO icon checked visually (Phase 2). Label EAN not legible."
+  - source_id: SRC-TU-SP-TS-6
+    tier: T1a
+    source_type: technical_specification
+    document_code: SP-TS-6
+    document_name: "SP-TS-6 EVETIS ANTI ACNE FACE CREAM  50 ml.pdf"
+    document_version: "contract RU03"
+    document_date: 2024-12-27
+    file_uri: "Спецификации ТУ и брифы по товарам/Крем лица акне 438775617 (SP-TS-6)/SP-TS-6 EVETIS ANTI ACNE FACE CREAM  50 ml.pdf"
+    file_sha256: 3c4309a548029808d83c00489e8798ec911b34ba1ad190e6cd7255c4acd94a58
+    extraction_method: ocr_pdfkit_vision+visual_check_p1
+    extraction_confidence: HIGH
+    reliability: A
+    quality_notes: "Recipe % = 100.00; salicylic acid 2.25% confirmed visually (Phase 2). Label INCI p3 truncated by OCR at the last item."
+  - source_id: SRC-TU-SP-TS-7
+    tier: T1a
+    source_type: technical_specification
+    document_code: SP-TS-7
+    document_name: "SP-TS-7 EVETIS MOISTURE FACE CREAM  50 ml.pdf"
+    document_version: "contract RU03"
+    document_date: 2024-12-27
+    file_uri: "Спецификации ТУ и брифы по товарам/Крем лица увлажняющий 438775437 (SP-TS-7)/SP-TS-7 EVETIS MOISTURE FACE CREAM  50 ml.pdf"
+    file_sha256: 68df60fa273d5b9a5426af4c3b03c358577a738d6ab5a832ab20b7b9086bc8a9
+    extraction_method: ocr_pdfkit_vision
+    extraction_confidence: MEDIUM
+    reliability: A
+    quality_notes: "Recipe % = 100.00. No Parfum in INCI (rose flower distillate only)."
+  - source_id: SRC-TU-SP-TS-8
+    tier: T1a
+    source_type: technical_specification
+    document_code: SP-TS-8
+    document_name: "SP-TS-8 Powder.docx"
+    document_version: "contract RU04"
+    document_date: 2025-06-01
+    file_uri: "Спецификации ТУ и брифы по товарам/Энзимная пудра 535580776 (SP-TS-8)/SP-TS-8 Powder.docx"
+    file_sha256: 664d19d16924247d4f34047b48a01c727f6c81efff76d8dca7083bd35e9a0f10
+    extraction_method: docx_native+embedded_icon
+    extraction_confidence: HIGH
+    reliability: A
+    quality_notes: "Recipe % = 100.00. Label INCI, directions and precautions fields are EMPTY. PAO = embedded icon (word/media). Organoleptics 'Cream/White/Scent' is a template."
+  - source_id: SRC-TU-SP-TS-9
+    tier: T1a
+    source_type: technical_specification
+    document_code: SP-TS-9
+    document_name: "SP-TS-9 EVETIS MOISTURE FACE TONIC.docx"
+    document_version: "contract RU04"
+    document_date: 2025-06-01
+    file_uri: "Спецификации ТУ и брифы по товарам/Тоник увлажняющий 535581674 (SP-TS-9)/SP-TS-9 EVETIS MOISTURE FACE TONIC.docx"
+    file_sha256: b0f21d2a2e7a18fc002fca39d89306af4bc000fc3a32a629bfdd7d468e4bf2ff
+    extraction_method: docx_native+embedded_icon
+    extraction_confidence: HIGH
+    reliability: A
+    quality_notes: "Recipe % = 100.00. Label INCI, directions, precautions EMPTY. Organoleptics copied from a template."
+  - source_id: SRC-TU-SP-TS-10
+    tier: T1a
+    source_type: technical_specification
+    document_code: SP-TS-10
+    document_name: "SP-TS-10 EVETIS Anti-acne tonic.docx"
+    document_version: "contract RU04"
+    document_date: 2025-06-01
+    file_uri: "Спецификации ТУ и брифы по товарам/Тоник акне 535581675 (SP-TS-10)/SP-TS-10 EVETIS Anti-acne tonic.docx"
+    file_sha256: 51dbce913e986cacd81ada161ef73fc0c07d7bbfc788dfb589993e3122b2ed02
+    extraction_method: docx_native+embedded_icon
+    extraction_confidence: HIGH
+    reliability: A
+    quality_notes: "Recipe % = 100.00. Label INCI, directions, precautions EMPTY. Tea tree is LEAF EXTRACT (not oil)."
+  - source_id: SRC-TU-SP-TS-2
+    tier: T1a
+    source_type: technical_specification
+    document_code: SP-TS-2
+    document_name: "HAND CREAM EVETIS 300 ml SP-ST-2 подписан.pdf"
+    document_version: "contract RU01"
+    document_date: 2024-01-11
+    file_uri: "Спецификации ТУ и брифы по товарам/Крем для рук 252442517 (SP-ST-2)/HAND CREAM EVETIS 300 ml SP-ST-2 подписан.pdf"
+    file_sha256: f22cc3534355b97dc43b402a5c248d20f4041f729d93b1458e44d85c73f775dc
+    extraction_method: ocr_pdfkit_vision+visual_check_p1_p2_p3
+    extraction_confidence: HIGH
+    reliability: A
+    quality_notes: "All 27 recipe rows checked visually on 2026-09-28; the DOCUMENT itself sums to 100.3%. Label INCI (p4) differs in content from the recipe (KC-13)."
+  - source_id: SRC-TU-SP-TS-11
+    tier: T1a
+    source_type: technical_specification
+    document_code: SP-TS-11
+    document_name: "SP-ST-11.pdf"
+    document_version: "contract RU03"
+    document_date: 2024-12-27
+    file_uri: "Спецификации ТУ и брифы по товарам/Кремы тела Вишня и Амбра (SP-ST-11,12 и база SP-ST-1)/SP-ST-11.pdf"
+    file_sha256: d03d6aae84c182746bf25a741f14db1263e3984b6979d229cfeeb81fc8134294
+    extraction_method: ocr_pdfkit_vision
+    extraction_confidence: MEDIUM
+    reliability: A
+    quality_notes: "Recipe % = 100.02 (tolerance 0.05). Label INCI identical to recipe. PAO icon checked visually (Phase 2)."
+  - source_id: SRC-TU-SP-TS-12
+    tier: T1a
+    source_type: technical_specification
+    document_code: SP-TS-12
+    document_name: "SP-ST-12.pdf"
+    document_version: "contract RU03"
+    document_date: 2024-12-27
+    file_uri: "Спецификации ТУ и брифы по товарам/Кремы тела Вишня и Амбра (SP-ST-11,12 и база SP-ST-1)/SP-ST-12.pdf"
+    file_sha256: a7db0881118baa840c56e5ccdb25c9a24d72324310b65a86a6d9cb7b21b4f927
+    extraction_method: ocr_pdfkit_vision+visual_check_p4
+    extraction_confidence: MEDIUM
+    reliability: A
+    quality_notes: "Same recipe as SP-TS-11 (only the fragrance name differs). Recipe % = 100.02."
+  - source_id: SRC-TU-SP-TS-1
+    tier: T1a
+    source_type: technical_specification
+    document_code: SP-TS-1
+    document_name: "BODY CREAM EVETIS 300 ml SP-ST-1.pdf"
+    document_version: "contract RU01"
+    document_date: 2024-01-11
+    file_uri: "Спецификации ТУ и брифы по товарам/Кремы тела Вишня и Амбра (SP-ST-11,12 и база SP-ST-1)/BODY CREAM EVETIS 300 ml SP-ST-1.pdf"
+    file_sha256: 8c6ef7a6c4094b7ec6886190ccc03051478fe5b8c1db820c389d70e8e8482601
+    extraction_method: ocr_pdfkit_vision
+    extraction_confidence: MEDIUM
+    reliability: A
+    quality_notes: "Association with nmId 252442341 is DERIVED (via SP-TS-3 + BOM). ODR-14: not customer-facing truth until physical label verification."
+  - source_id: SRC-TU-SP-TS-3
+    tier: T1a
+    source_type: technical_specification
+    document_code: SP-TS-3
+    document_name: "SET_BODY_and_HAND_CREAM_EVETIS_SP_ST_3_подписанный.pdf"
+    document_version: "contract RU01"
+    document_date: 2024-01-11
+    file_uri: "Спецификации ТУ и брифы по товарам/Набор рук+тела (SP-ST-3)/SET_BODY_and_HAND_CREAM_EVETIS_SP_ST_3_подписанный.pdf"
+    file_sha256: 70cd9d925ed89a802a2b1318cd03c2310556f90769e29e269d7125f2b64fa91a
+    extraction_method: ocr_pdfkit_vision
+    extraction_confidence: MEDIUM
+    reliability: A
+    quality_notes: "Imported indivisible hand+body set (before 2025-05-01): body cream SP-TS-1 + hand cream SP-TS-2."
+  - source_id: SRC-DER-INCI
+    tier: T1-derived
+    source_type: derived_extract
+    document_code: EVETIS_SOSTAVY_INCI
+    document_name: "EVETIS_составы_INCI.md"
+    document_date: 2026-09-04
+    file_uri: "EVETIS_составы_INCI.md"
+    file_sha256: bacee5eacf178c01ab15f0ad1967a0fa3ef9847ab7575c437f8d600a5e50d3b9
+    extraction_method: markdown
+    extraction_confidence: MEDIUM
+    reliability: B
+    quality_notes: "Used only as an independent extraction cross-check (SP-TS-5/8/9). Never outranks the spec."
+  - source_id: SRC-SEO-SP-TS-8
+    tier: T2
+    source_type: commercial_brief
+    document_code: EVETIS_SEO_ENZYME_POWDER_V2
+    document_name: "EVETIS_SEO_Enzyme_Powder_v2.txt"
+    file_uri: "Спецификации ТУ и брифы по товарам/Энзимная пудра 535580776 (SP-TS-8)/EVETIS_SEO_Enzyme_Powder_v2.txt"
+    file_sha256: 1f4cac3560e5c1262a5d5cbd9e81c01e5e67e668f923b61c62e7d7e64349f33b
+    extraction_method: text
+    extraction_confidence: HIGH
+    reliability: C
+    quality_notes: "Commercial copy. Approval status unknown. Not a source for usage, intended use or effects (ODR-12)."
+  - source_id: SRC-REF-CHANNEL-MAP
+    tier: T2
+    source_type: ref_table
+    document_code: evetis_ref.REF_SKU_CHANNEL_MAP
+    document_name: "evetis_ref.REF_SKU_CHANNEL_MAP (WB rows, is_current)"
+    extraction_method: bigquery_select_at_snapshot_build
+    extraction_confidence: HIGH
+    reliability: C
+    quality_notes: "Authoritative marketplace identity (nmId -> internal SKU). Read by the snapshot builder, not copied into the seed."
+  - source_id: SRC-REF-BOM
+    tier: T2
+    source_type: ref_table
+    document_code: evetis_ref.REF_BUNDLE_COMPONENTS
+    document_name: "evetis_ref.REF_BUNDLE_COMPONENTS"
+    extraction_method: bigquery_select_at_snapshot_build
+    extraction_confidence: HIGH
+    reliability: C
+    quality_notes: "Authoritative BOM (dated). Read by the snapshot builder, not copied into the seed."
+  - source_id: SRC-REF-PRODUCT-MASTER
+    tier: T2
+    source_type: ref_table
+    document_code: evetis_ref.REF_PRODUCT_MASTER
+    document_name: "evetis_ref.REF_PRODUCT_MASTER"
+    extraction_method: bigquery_select_at_snapshot_build
+    extraction_confidence: HIGH
+    reliability: C
+    quality_notes: "Commercial product names and bundle flags."
+  - source_id: SRC-OWNER
+    tier: POLICY
+    source_type: owner_decision
+    document_code: ODR-2026-09-28
+    document_name: "Phase 2.1A owner approval patch (ODR-01..19)"
+    document_date: 2026-09-28
+    extraction_method: owner_statement
+    extraction_confidence: HIGH
+    reliability: A
+    quality_notes: "Policy, not product truth. Restricts disclosure; never changes a stored fact."
+  - source_id: SRC-WB-CARD
+    tier: T2
+    source_type: marketplace_card
+    document_code: WB_CARD_CHARACTERISTICS
+    document_name: "WB card characteristics as audited in Phase 2 (card.json, 2026-09)"
+    extraction_method: wb_cdn_card_json
+    extraction_confidence: HIGH
+    reliability: C
+    quality_notes: "Commercial marker only (e.g. age 12+). ODR-01/ODR-12: never customer-facing medical suitability."

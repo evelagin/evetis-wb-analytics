@@ -109,6 +109,34 @@ class OpenAIClient:
             request_id=request_id,
         )
 
+    def structured(self, system_prompt: str, user_prompt: str, name: str, schema: dict,
+                   *, max_output_tokens: int = 1500) -> tuple[dict, dict, int, str]:
+        """Strict JSON-schema output (v3 shadow classifier/generator). Additive: the v2
+        ``generate_answer`` path is untouched. Returns (parsed, usage, latency_ms, model)."""
+        import json as _json
+
+        client = self._ensure_client()
+        kwargs = dict(model=self._s.openai_model, instructions=system_prompt, input=user_prompt,
+                      max_output_tokens=max_output_tokens,
+                      text={"format": {"type": "json_schema", "name": name, "schema": schema, "strict": True}})
+        started = time.monotonic()
+        try:
+            response = retry_call(lambda: client.responses.create(**kwargs), retries=1,
+                                  retry_on=(Exception,), should_retry=_is_transient_openai)
+        except Exception as exc:  # noqa: BLE001
+            if _is_transient_openai(exc):
+                raise OpenAITransientError(f"OpenAI transient failure: {type(exc).__name__}") from exc
+            raise OpenAIError(f"OpenAI structured call failed: {type(exc).__name__}") from exc
+        latency_ms = int((time.monotonic() - started) * 1000)
+        text = _extract_text(response)
+        if not text:
+            raise OpenAIError("OpenAI returned an empty structured output")
+        try:
+            parsed = _json.loads(text)
+        except ValueError as exc:
+            raise OpenAIError("OpenAI structured output is not valid JSON") from exc
+        return parsed, _extract_usage(response), latency_ms, self._s.openai_model
+
 
 def _extract_text(response) -> str:
     # Responses API convenience accessor

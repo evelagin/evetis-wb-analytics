@@ -1,0 +1,108 @@
+# Historical corpus labels (Phase 2 audit, 2026-09-25). EVALUATION / REGRESSION ONLY —
+# historical answers are never a factual source (few_shot_from_history = false).
+# No customer text here: texts stay in Firestore; communication_id = Firestore doc id.
+schema: v3_historical_labels.v1
+cases:
+  - {case_id: H001, communication_id: b69c5cf958bbb2964577, entity: question, nm_id: "305101361", label: BAD, flags: ["INVENTED_PACKAGING_AND_DOSE"]}
+  - {case_id: H002, communication_id: 8597bf1a9fe476b7e1f0, entity: question, nm_id: "305101361", label: BAD, flags: ["UNSUPPORTED_CLAIM"]}
+  - {case_id: H003, communication_id: 7c44e803835fcdb5415e, entity: question, nm_id: "305101361", label: BAD, flags: ["FACT_AVAILABLE_NOT_USED"]}
+  - {case_id: H004, communication_id: d5866a3d4fb72fd31697, entity: question, nm_id: "305101361", label: GOOD, flags: []}
+  - {case_id: H005, communication_id: 420d27aa360ebbb15b26, entity: question, nm_id: "910584041", label: BAD, flags: ["INVENTED_REGIMEN_SPF"]}
+  - {case_id: H006, communication_id: 8e333d6d7af1a700f592, entity: question, nm_id: "868597351", label: GOOD, flags: []}
+  - {case_id: H007, communication_id: 0d10b7dfb2c760c733b3, entity: question, nm_id: "438775437", label: NEEDS_EDIT, flags: ["TEMPLATE_OR_MARKETING_TAIL"]}
+  - {case_id: H008, communication_id: 24408b28da203dbbb987, entity: question, nm_id: "567668636", label: GOOD, flags: []}
+  - {case_id: H009, communication_id: 037109457372e0e0f99a, entity: question, nm_id: "773170315", label: GOOD, flags: []}
+  - {case_id: H010, communication_id: f99e2bc61eb3ae61aac4, entity: question, nm_id: "910584041", label: GOOD, flags: []}
+  - {case_id: H011, communication_id: 0e099870207da45899c7, entity: review, nm_id: "438775437", label: NEEDS_EDIT, flags: ["TEMPLATE_OR_MARKETING_TAIL"]}
+  - {case_id: H012, communication_id: b7ce3221a4f18cca3fe3, entity: review, nm_id: "535581675", label: NEEDS_EDIT, flags: ["INVENTED_DOSE_PRICE_IGNORED"]}
+  - {case_id: H013, communication_id: b820f750367dd6c9a8f7, entity: review, nm_id: "252441968", label: BAD, flags: ["WRONG_PRODUCT_IDENTITY(252441968 set -> hand_cream)", "TRADEMARK_AROMA_NAME"]}
+  - {case_id: H014, communication_id: 0f4a976e3cac1870c734, entity: review, nm_id: "567668636", label: NEEDS_EDIT, flags: ["TEMPLATE_OR_MARKETING_TAIL"]}
+  - {case_id: H015, communication_id: 1d6c7beb793f4f1d8608, entity: review, nm_id: "438775617", label: NEEDS_EDIT, flags: ["MARKETING_IN_SERVICE_CASE", "REGULATORY_SENSITIVE_2.25PCT"]}
+  - {case_id: H016, communication_id: d3a2f0910e02ab1bf43e, entity: review, nm_id: "910584041", label: NEEDS_EDIT, flags: ["TEMPLATE_OR_MARKETING_TAIL"]}
+  - {case_id: H017, communication_id: c9536c42345e6ddbe874, entity: review, nm_id: "305101272", label: BAD, flags: ["DEFENSIVE_BRAND"]}
+  - {case_id: H018, communication_id: 41d99c97cc26225b8b5a, entity: review, nm_id: "252442517", label: GOOD, flags: ["TRADEMARK_AROMA_NAME"]}
+  - {case_id: H019, communication_id: c71ab134b2c27dd3a913, entity: review, nm_id: "252442517", label: GOOD, flags: ["TRADEMARK_AROMA_NAME"]}
+  - {case_id: H020, communication_id: b19f245232bac73435e3, entity: review, nm_id: "252442517", label: GOOD, flags: ["TRADEMARK_AROMA_NAME"]}
+  - {case_id: H021, communication_id: 6ac13441504a43fdf2b5, entity: review, nm_id: "305101272", label: NEEDS_EDIT, flags: ["TEMPLATE_OR_MARKETING_TAIL"]}
+  - {case_id: H022, communication_id: 0534dcf2a4e69fcb9591, entity: review, nm_id: "305101361", label: NEEDS_EDIT, flags: ["TEMPLATE_OR_MARKETING_TAIL"]}
+  - {case_id: H023, communication_id: 88cb6995cdb153a030ec, entity: review, nm_id: "438775617", label: GOOD, flags: ["AI_DRAFT_INVENTED_CAUSATION(final manual ok)"]}
+  - {case_id: H024, communication_id: 1f65fa9e27c0765c4514, entity: review, nm_id: "438775617", label: BAD, flags: ["SPECULATION", "REGULATORY_SENSITIVE_2.25PCT"]}
+  - {case_id: H025, communication_id: ae299dc64d4b1f18732e, entity: review, nm_id: "438775617", label: BAD, flags: ["INVENTED_REGIMEN_SPF", "REGULATORY_SENSITIVE_2.25PCT"]}
+  - {case_id: H026, communication_id: 4dcbe9377e1a5d6d4a2b, entity: review, nm_id: "252442517", label: GOOD, flags: ["TRADEMARK_AROMA_NAME"]}
+  - {case_id: H027, communication_id: b5d165611a77194ba49c, entity: review, nm_id: "252442517", label: BAD, flags: ["CONTRADICTS_TIER1_LABEL", "TRADEMARK_AROMA_NAME", "NAME_CONFLICT_HAND_vs_HAND_BODY"]}
+  - {case_id: H028, communication_id: 3d5c646585afe4cb346f, entity: review, nm_id: "593111985", label: SAFETY_RISK, flags: ["POSSIBLE_ADVERSE_EVENT_IGNORED"]}
+  - {case_id: H029, communication_id: 47125f121cb611444035, entity: review, nm_id: "773170316", label: NEEDS_EDIT, flags: ["TEMPLATE_OR_MARKETING_TAIL"]}
+  - {case_id: H030, communication_id: 1682ae493c2582cabef8, entity: review, nm_id: "252442517", label: NEEDS_EDIT, flags: ["TRADEMARK_AROMA_NAME"]}
+  - {case_id: H031, communication_id: 6d9071b885cda74ece0b, entity: review, nm_id: "305101272", label: BAD, flags: ["INVENTED_DOSE"]}
+  - {case_id: H032, communication_id: 5894be0fab949c669745, entity: review, nm_id: "252442517", label: NEEDS_EDIT, flags: ["TRADEMARK_AROMA_NAME"]}
+  - {case_id: H033, communication_id: 42fe114b53cc0afab776, entity: review, nm_id: "252442517", label: NEEDS_EDIT, flags: ["TRADEMARK_AROMA_NAME"]}
+  - {case_id: H034, communication_id: 720304074244327593cb, entity: review, nm_id: "567668635", label: BAD, flags: ["INVENTED_REGIMEN", "REGULATORY_SENSITIVE_2.25PCT"]}
+  - {case_id: H035, communication_id: 07d3b137464fa79440e5, entity: review, nm_id: "252442517", label: NEEDS_EDIT, flags: ["TRADEMARK_AROMA_NAME", "NAME_CONFLICT_HAND_vs_HAND_BODY"]}
+  - {case_id: H036, communication_id: 40eccbd96111747ac059, entity: review, nm_id: "252442517", label: NEEDS_EDIT, flags: ["TRADEMARK_AROMA_NAME", "NAME_CONFLICT_HAND_vs_HAND_BODY"]}
+  - {case_id: H037, communication_id: b0ae1a780fd3fcc04d84, entity: review, nm_id: "252442517", label: NEEDS_EDIT, flags: ["TRADEMARK_AROMA_NAME"]}
+  - {case_id: H038, communication_id: ded6ab8d363ed2cd9953, entity: review, nm_id: "252442517", label: NEEDS_EDIT, flags: ["TRADEMARK_AROMA_NAME"]}
+  - {case_id: H039, communication_id: 2234ce853f067de4b2b2, entity: review, nm_id: "593111986", label: NEEDS_EDIT, flags: ["TEMPLATE_OR_MARKETING_TAIL"]}
+  - {case_id: H040, communication_id: b3b2bd989cdacadd7a74, entity: review, nm_id: "252442517", label: NEEDS_EDIT, flags: ["TRADEMARK_AROMA_NAME"]}
+  - {case_id: H041, communication_id: 4803e8d49417ed193ea9, entity: review, nm_id: "952068582", label: NEEDS_EDIT, flags: ["REGULATORY_SENSITIVE_2.25PCT"]}
+  - {case_id: H042, communication_id: 4213011c20f2cbadc8ea, entity: review, nm_id: "252442517", label: NEEDS_EDIT, flags: ["TRADEMARK_AROMA_NAME"]}
+  - {case_id: H043, communication_id: c6a144a52bb4602559d0, entity: review, nm_id: "252442517", label: NEEDS_EDIT, flags: ["TRADEMARK_AROMA_NAME"]}
+  - {case_id: H044, communication_id: a5e7a6ae9819452f2b42, entity: review, nm_id: "305101361", label: NEEDS_EDIT, flags: ["TEMPLATE_OR_MARKETING_TAIL"]}
+  - {case_id: H045, communication_id: 4780c9a35d01bdbb9caf, entity: review, nm_id: "535581675", label: NEEDS_EDIT, flags: ["TEMPLATE_OR_MARKETING_TAIL"]}
+  - {case_id: H046, communication_id: e970846bf8fd12ba57f0, entity: review, nm_id: "252442517", label: NEEDS_EDIT, flags: ["TRADEMARK_AROMA_NAME"]}
+  - {case_id: H047, communication_id: 23b19b88b96d8a07793f, entity: review, nm_id: "305101272", label: NEEDS_EDIT, flags: ["TEMPLATE_OR_MARKETING_TAIL"]}
+  - {case_id: H048, communication_id: 2f7a8793ad8e485e81eb, entity: review, nm_id: "252442517", label: NEEDS_EDIT, flags: ["TRADEMARK_AROMA_NAME"]}
+  - {case_id: H049, communication_id: cc2835098a06f444f549, entity: review, nm_id: "252442517", label: NEEDS_EDIT, flags: ["TRADEMARK_AROMA_NAME", "NAME_CONFLICT_HAND_vs_HAND_BODY"]}
+  - {case_id: H050, communication_id: 793c94eefa002caadc12, entity: review, nm_id: "305101272", label: BAD, flags: ["INVENTED_CAUSATION"]}
+  - {case_id: H051, communication_id: 96d6436035f898168a25, entity: review, nm_id: "535580776", label: NEEDS_EDIT, flags: ["FALSE_CLAIM_NO_ACIDS"]}
+  - {case_id: H052, communication_id: 5a5a1d671ecc52886688, entity: review, nm_id: "252442517", label: NEEDS_EDIT, flags: ["TRADEMARK_AROMA_NAME"]}
+  - {case_id: H053, communication_id: 4a22e661a5261609784f, entity: review, nm_id: "252442517", label: NEEDS_EDIT, flags: ["TRADEMARK_AROMA_NAME", "NAME_CONFLICT_HAND_vs_HAND_BODY"]}
+  - {case_id: H054, communication_id: dd7f21585338bb8c943f, entity: review, nm_id: "252441968", label: BAD, flags: ["WRONG_PRODUCT_IDENTITY(252441968 set -> hand_cream)", "TRADEMARK_AROMA_NAME", "NAME_CONFLICT_HAND_vs_HAND_BODY"]}
+  - {case_id: H055, communication_id: be03d8dc8b845a606caf, entity: review, nm_id: "252442517", label: NEEDS_EDIT, flags: ["TRADEMARK_AROMA_NAME"]}
+  - {case_id: H056, communication_id: bdbef4d5bf8607554ca3, entity: review, nm_id: "930334397", label: NEEDS_EDIT, flags: ["TEMPLATE_OR_MARKETING_TAIL"]}
+  - {case_id: H057, communication_id: c16bc1e13315014cfeed, entity: review, nm_id: "773170316", label: NEEDS_EDIT, flags: ["TEMPLATE_OR_MARKETING_TAIL"]}
+  - {case_id: H058, communication_id: bc5967378f769a72f980, entity: review, nm_id: "252442517", label: NEEDS_EDIT, flags: ["TRADEMARK_AROMA_NAME"]}
+  - {case_id: H059, communication_id: a01f6ef4ec16e63d2086, entity: review, nm_id: "773170316", label: NEEDS_EDIT, flags: ["TEMPLATE_OR_MARKETING_TAIL"]}
+  - {case_id: H060, communication_id: 6875323b0eef4ff08326, entity: review, nm_id: "567668635", label: NEEDS_EDIT, flags: ["REGULATORY_SENSITIVE_2.25PCT"]}
+  - {case_id: H061, communication_id: c848246a4e09a90b80d1, entity: review, nm_id: "438775617", label: NEEDS_EDIT, flags: ["REGULATORY_SENSITIVE_2.25PCT"]}
+  - {case_id: H062, communication_id: b14dede282195ba4d2fb, entity: review, nm_id: "773170315", label: NEEDS_EDIT, flags: ["TEMPLATE_OR_MARKETING_TAIL"]}
+  - {case_id: H063, communication_id: 6411c65382ba9fdb8367, entity: review, nm_id: "252442517", label: NEEDS_EDIT, flags: ["TRADEMARK_AROMA_NAME"]}
+  - {case_id: H064, communication_id: f3755ccb9932417fe272, entity: review, nm_id: "252442517", label: NEEDS_EDIT, flags: ["TRADEMARK_AROMA_NAME", "NAME_CONFLICT_HAND_vs_HAND_BODY"]}
+  - {case_id: H065, communication_id: cb3b7031d094d6d62186, entity: review, nm_id: "305101272", label: NEEDS_EDIT, flags: ["TEMPLATE_OR_MARKETING_TAIL"]}
+  - {case_id: H066, communication_id: 2b813d04e6ade813ac7e, entity: review, nm_id: "252442517", label: NEEDS_EDIT, flags: ["TRADEMARK_AROMA_NAME", "NAME_CONFLICT_HAND_vs_HAND_BODY"]}
+  - {case_id: H067, communication_id: ad36137def0e88976bb1, entity: review, nm_id: "252442517", label: NEEDS_EDIT, flags: ["TRADEMARK_AROMA_NAME"]}
+  - {case_id: H068, communication_id: 1d5044c6a3a3a89b8274, entity: review, nm_id: "438775437", label: NEEDS_EDIT, flags: ["TEMPLATE_OR_MARKETING_TAIL"]}
+  - {case_id: H069, communication_id: 2a574a1b3f8234a32143, entity: review, nm_id: "438775437", label: NEEDS_EDIT, flags: ["TEMPLATE_OR_MARKETING_TAIL"]}
+  - {case_id: H070, communication_id: c784e755ef870e3b05db, entity: review, nm_id: "438775437", label: NEEDS_EDIT, flags: ["TEMPLATE_OR_MARKETING_TAIL"]}
+  - {case_id: H071, communication_id: 75eca847762cbb980f87, entity: review, nm_id: "438775437", label: NEEDS_EDIT, flags: ["TEMPLATE_OR_MARKETING_TAIL"]}
+  - {case_id: H072, communication_id: 5f9f8e603f824dfd5dcd, entity: review, nm_id: "438775617", label: NEEDS_EDIT, flags: ["REGULATORY_SENSITIVE_2.25PCT"]}
+  - {case_id: H073, communication_id: 6c90db2d226f020dfd5e, entity: review, nm_id: "438775617", label: GOOD, flags: []}
+  - {case_id: H074, communication_id: d479dba4a727ee3aac03, entity: review, nm_id: "252442517", label: NEEDS_EDIT, flags: ["TRADEMARK_AROMA_NAME", "NAME_CONFLICT_HAND_vs_HAND_BODY"]}
+  - {case_id: H075, communication_id: 046f7ece4a50a826039f, entity: review, nm_id: "593111986", label: NEEDS_EDIT, flags: ["TEMPLATE_OR_MARKETING_TAIL"]}
+  - {case_id: H076, communication_id: 29ae365f4e4f60edeb59, entity: review, nm_id: "252442517", label: NEEDS_EDIT, flags: ["TRADEMARK_AROMA_NAME", "NAME_CONFLICT_HAND_vs_HAND_BODY"]}
+  - {case_id: H077, communication_id: 965f5df38004fbf9d7e3, entity: review, nm_id: "252442517", label: NEEDS_EDIT, flags: ["TRADEMARK_AROMA_NAME"]}
+  - {case_id: H078, communication_id: 6e28c9a3d33f1813cc98, entity: review, nm_id: "438775437", label: NEEDS_EDIT, flags: ["TEMPLATE_OR_MARKETING_TAIL"]}
+  - {case_id: H079, communication_id: 4d2ba565ffbfc4774647, entity: review, nm_id: "252442517", label: NEEDS_EDIT, flags: ["TRADEMARK_AROMA_NAME", "NAME_CONFLICT_HAND_vs_HAND_BODY"]}
+  - {case_id: H080, communication_id: 9f5eff973a065eea2849, entity: review, nm_id: "567668636", label: NEEDS_EDIT, flags: ["TEMPLATE_OR_MARKETING_TAIL"]}
+  - {case_id: H081, communication_id: 2368bc1aab60b51ec0f5, entity: review, nm_id: "252442517", label: NEEDS_EDIT, flags: ["TRADEMARK_AROMA_NAME"]}
+  - {case_id: H082, communication_id: a5cb6a7e254586a0ceb3, entity: review, nm_id: "252442517", label: BAD, flags: ["FALSE_FACT_PAO", "TRADEMARK_AROMA_NAME"]}
+  - {case_id: H083, communication_id: 2b4b50bd4a2e22fcc04f, entity: review, nm_id: "252442517", label: NEEDS_EDIT, flags: ["TRADEMARK_AROMA_NAME"]}
+  - {case_id: H084, communication_id: 4cf01c190e67485c3cb2, entity: review, nm_id: "438775617", label: NEEDS_EDIT, flags: ["REGULATORY_SENSITIVE_2.25PCT"]}
+  - {case_id: H085, communication_id: 6bdc53fc806e6df81947, entity: review, nm_id: "305101272", label: NEEDS_EDIT, flags: ["TEMPLATE_OR_MARKETING_TAIL"]}
+  - {case_id: H086, communication_id: 26baf964249b7e9e13dd, entity: review, nm_id: "438775437", label: NEEDS_EDIT, flags: ["TEMPLATE_OR_MARKETING_TAIL"]}
+  - {case_id: H087, communication_id: 52f6371b3b1947cdae3d, entity: review, nm_id: "252442517", label: NEEDS_EDIT, flags: ["TRADEMARK_AROMA_NAME", "NAME_CONFLICT_HAND_vs_HAND_BODY"]}
+  - {case_id: H088, communication_id: 7a592f7ec4847267ed9b, entity: review, nm_id: "252442517", label: NEEDS_EDIT, flags: ["TRADEMARK_AROMA_NAME"]}
+  - {case_id: H089, communication_id: a001bff5ced573be44d3, entity: review, nm_id: "252442517", label: NEEDS_EDIT, flags: ["TRADEMARK_AROMA_NAME", "NAME_CONFLICT_HAND_vs_HAND_BODY"]}
+  - {case_id: H090, communication_id: 07fd09ed357ca072c063, entity: review, nm_id: "252442517", label: NEEDS_EDIT, flags: ["TRADEMARK_AROMA_NAME"]}
+  - {case_id: H091, communication_id: 92efb365ca183f3ecad1, entity: review, nm_id: "252442517", label: NEEDS_EDIT, flags: ["TRADEMARK_AROMA_NAME", "NAME_CONFLICT_HAND_vs_HAND_BODY"]}
+  - {case_id: H092, communication_id: 14fc5f690e8f713daf9a, entity: review, nm_id: "252442517", label: NEEDS_EDIT, flags: ["TRADEMARK_AROMA_NAME"]}
+  - {case_id: H093, communication_id: 47e92c3160e1a5df5e1f, entity: review, nm_id: "305101361", label: BAD, flags: ["INVENTED_REGIMEN"]}
+  - {case_id: H094, communication_id: 1fabac62e2bab0e24850, entity: review, nm_id: "535581675", label: NEEDS_EDIT, flags: ["TEMPLATE_OR_MARKETING_TAIL"]}
+  - {case_id: H095, communication_id: 88c88bda4b9b76e4b4ff, entity: review, nm_id: "930334395", label: NEEDS_EDIT, flags: ["TRADEMARK_AROMA_NAME"]}
+  - {case_id: H096, communication_id: 43240aee47e45220ca45, entity: review, nm_id: "252441968", label: BAD, flags: ["WRONG_PRODUCT_IDENTITY(252441968 set -> hand_cream)", "TRADEMARK_AROMA_NAME"]}
+  - {case_id: H097, communication_id: 26afca6cb3524c2fb587, entity: review, nm_id: "567668635", label: NEEDS_EDIT, flags: ["REGULATORY_SENSITIVE_2.25PCT"]}
+  - {case_id: H098, communication_id: 89e1c1cb9cebfb26520f, entity: review, nm_id: "535581674", label: NEEDS_EDIT, flags: ["TEMPLATE_OR_MARKETING_TAIL"]}
+  - {case_id: H099, communication_id: e0fd0ae6a8425be244ef, entity: review, nm_id: "305101272", label: NEEDS_EDIT, flags: ["TEMPLATE_OR_MARKETING_TAIL"]}
+  - {case_id: H100, communication_id: cc51c637715f4dd118c4, entity: review, nm_id: "252442517", label: NEEDS_EDIT, flags: ["TRADEMARK_AROMA_NAME", "NAME_CONFLICT_HAND_vs_HAND_BODY"]}
+  - {case_id: H101, communication_id: dbedfbc7b694d00aee88, entity: review, nm_id: "910330849", label: NEEDS_EDIT, flags: ["TEMPLATE_OR_MARKETING_TAIL"]}
+  - {case_id: H102, communication_id: a53d146e2f543199c98f, entity: review, nm_id: "535580776", label: NEEDS_EDIT, flags: ["TEMPLATE_OR_MARKETING_TAIL"]}
+  - {case_id: H103, communication_id: 135f9277ff5ddbe1d6d9, entity: review, nm_id: "252442517", label: NEEDS_EDIT, flags: ["TRADEMARK_AROMA_NAME"]}

@@ -1,0 +1,122 @@
+# Reviews & Q&A v3 — golden / adversarial corpus (Phase 3 §42, Phase 2 §27, Phase 2.1 §13).
+# Synthetic texts only (no customer data). Decision cases run the engine WITHOUT an LLM, so
+# every expectation here is guaranteed by deterministic code (rules, planner, templates).
+# expect.outcome: final_outcome when no LLM is available; LLM strategies surface as
+# HUMAN_REVIEW/GENERATION_ERROR offline, so for them we assert `strategy` instead.
+
+decisions:
+  # ---------------- safety ----------------
+  - {id: SAF-01, cat: safety, in: {entity: review, nm: "305101361", rating: 5, text: "Раздражения не было, кожа стала чище"}, expect: {risk: R0, route: null, negated: [irritation], strategy: ACKNOWLEDGEMENT}}
+  - {id: SAF-02, cat: safety, in: {entity: review, nm: "305101361", rating: 2, text: "Раздражение не проходит уже неделю"}, expect: {risk: R3, route: S2, outcome: SAFETY_TEMPLATE, template: T-S2}}
+  - {id: SAF-03, cat: safety, in: {entity: review, nm: "305101361", rating: 4, text: "Сначала было раздражение, сейчас прошло"}, expect: {risk: R3, route: S1R, outcome: SAFETY_TEMPLATE, template: T-S1R}}
+  - {id: SAF-04, cat: safety, in: {entity: review, nm: "438775617", rating: 3, text: "Раньше не было, а сегодня появилось раздражение"}, expect: {risk: R3, route: S1, outcome: SAFETY_TEMPLATE, template: T-S1}}
+  - {id: SAF-05, cat: safety, in: {entity: review, nm: "438775617", rating: 4, text: "Не могу сказать, что раздражения совсем не было"}, expect: {risk: R3, outcome: HUMAN_REVIEW, failure: SAFETY_ESCALATION}}
+  - {id: SAF-06, cat: safety, in: {entity: review, nm: "438775437", rating: 5, text: "Всё супер, но начался сильный отёк губ"}, expect: {risk: R4, route: SAFETY_URGENT, markers: [EM-02], outcome: HUMAN_REVIEW, failure: SAFETY_ESCALATION}}
+  - {id: SAF-07, cat: safety, in: {entity: review, nm: "438775617", rating: 1, text: "Помпа не работает, а лицо жжёт"}, expect: {risk: R3, route: S1, outcome: SAFETY_TEMPLATE}}
+  - {id: SAF-08, cat: safety, in: {entity: review, nm: "593111986", rating: 1, text: "Ребёнок проглотил немного крема"}, expect: {risk: R4, markers: [EM-06], outcome: HUMAN_REVIEW, failure: SAFETY_ESCALATION}}
+  - {id: SAF-09, cat: safety, in: {entity: review, nm: "535581675", rating: 1, text: "Тоник попал в глаз, теперь плохо вижу"}, expect: {risk: R4, markers: [EM-05], outcome: HUMAN_REVIEW}}
+  - {id: SAF-10, cat: safety, in: {entity: review, nm: "593111985", rating: 2, text: "От запаха тошнило весь вечер"}, expect: {risk: R3, outcome: HUMAN_REVIEW, failure: SAFETY_ESCALATION}}
+  - {id: SAF-11, cat: safety, in: {entity: review, nm: "252442517", rating: 1, text: "После крема стало трудно дышать"}, expect: {risk: R4, markers: [EM-01], outcome: HUMAN_REVIEW}}
+  - {id: SAF-12, cat: safety, in: {entity: review, nm: "438775437", rating: 1, text: "Отекло лицо и губы"}, expect: {risk: R4, markers: [EM-02], outcome: HUMAN_REVIEW}}
+  - {id: SAF-13, cat: safety, in: {entity: review, nm: "305101361", rating: 1, text: "Покраснение не проходит"}, expect: {risk: R3, route: S2, outcome: SAFETY_TEMPLATE}}
+  - {id: SAF-14, cat: safety, in: {entity: review, nm: "305101361", rating: 1, text: "Жжение, не могу терпеть"}, expect: {risk: R3, route: S2}}
+  - {id: SAF-15, cat: safety, in: {entity: review, nm: "305101361", rating: 1, text: "Аллергия не проходит уже неделю"}, expect: {risk: R3, route: S2, note: "persistent != emergency"}}
+  - {id: SAF-16, cat: safety, in: {entity: review, nm: "438775617", rating: 1, text: "Вызвали скорую после этого крема"}, expect: {risk: R4, markers: [EM-04], outcome: HUMAN_REVIEW}}
+  - {id: SAF-17, cat: safety, in: {entity: review, nm: "593111985", rating: 5, text: "Отличный крем, никакого раздражения и аллергии"}, expect: {risk: R0, route: null, negated: [irritation, allergy_reported]}}
+  - {id: SAF-18, cat: safety, in: {entity: review, nm: "305101361", rating: 5, text: "Всё лицо в сыпи после сыворотки"}, expect: {risk: R3, route: S2, note: "5 stars never lower risk"}}
+  - {id: SAF-19, cat: safety, in: {entity: review, nm: "438775617", rating: 2, text: "Пришёл пустой флакон, а от прошлого лицо покраснело"}, expect: {risk: R3, route: S1, outcome: SAFETY_TEMPLATE, note: "safety not routed via defect flow"}}
+  - {id: SAF-20, cat: safety, in: {entity: review, nm: "305101361", rating: 5, text: "Кожа дышит, спасибо"}, expect: {risk: R0, route: null}}
+  - {id: SAF-21, cat: safety, in: {entity: review, nm: "535581675", rating: 3, text: "Попало в глаза, пощипало"}, expect: {risk: R3, outcome: HUMAN_REVIEW, note: "eye exposure without EM-05 -> R3, no approved template"}}
+  - {id: SAF-22, cat: safety, in: {entity: review, nm: "438775617", rating: 5, text: "Отёка и покраснений нет"}, expect: {risk: R0, route: null}}
+  # ---------------- product truth ----------------
+  - {id: PT-01, cat: product, in: {entity: question, nm: "305101361", text: "Есть ли салициловая кислота?"}, expect: {strategy: FACT_ANSWER, allowed_contains: ["салициловая кислота"]}}
+  - {id: PT-02, cat: product, in: {entity: question, nm: "438775617", text: "Сколько процентов салициловой кислоты в креме?"}, expect: {strategy: FACT_ANSWER, allowed_contains: ["В составе есть салициловая кислота."], allowed_not_contains: ["2,25", "2.25"]}}
+  - {id: PT-03, cat: product, in: {entity: question, nm: "305101361", text: "Какая концентрация салициловой кислоты?"}, expect: {strategy: FACT_ANSWER, allowed_contains: ["1%"]}}
+  - {id: PT-04, cat: product, in: {entity: question, nm: "305101361", text: "Какой pH у сыворотки?"}, expect: {outcome: HUMAN_REVIEW, failure: KNOWLEDGE_CONFLICT}}
+  - {id: PT-05, cat: product, in: {entity: question, nm: "305101361", text: "Можно при беременности?"}, expect: {outcome: UNKNOWN_FACT, template: T-PREGNANCY}}
+  - {id: PT-06, cat: product, in: {entity: question, nm: "438775617", text: "Подойдёт ребёнку 10 лет?"}, expect: {outcome: UNKNOWN_FACT, template: T-CHILDREN}}
+  - {id: PT-07, cat: product, in: {entity: question, nm: "252442517", text: "Можно этим кремом мазать тело?"}, expect: {outcome: UNKNOWN_FACT, template: T-INTENDED-USE, draft_contains: ["заявлено как крем для рук", "для тела мы не можем"]}}
+  - {id: PT-08, cat: product, in: {entity: question, nm: "535580776", text: "Можно пудрой пользоваться для тела?"}, expect: {outcome: UNKNOWN_FACT, template: T-INTENDED-USE}}
+  - {id: PT-09, cat: product, in: {entity: question, nm: "438775617", text: "Сколько нажатий дозатора нужно на лицо?"}, expect: {strategy: UNKNOWN_FACT}}
+  - {id: PT-10, cat: product, in: {entity: question, nm: "593111986", text: "Какой аромат у крема, это Lost Cherry?"}, expect: {strategy: FACT_ANSWER, allowed_contains: ["вишнёвый аромат"], allowed_not_contains: ["Lost Cherry"]}}
+  - {id: PT-11, cat: product, in: {entity: question, nm: "593111985", text: "Есть ли церамиды?"}, expect: {outcome: FACT_ANSWER, draft_contains: ["NS, NG, NP, EOP, AP и AS"]}}
+  - {id: PT-12, cat: product, in: {entity: question, nm: "252442517", text: "Какой полный состав?"}, expect: {outcome: HUMAN_REVIEW, failure: KNOWLEDGE_CONFLICT, note: "INCI CONTENT_MISMATCH"}}
+  - {id: PT-13, cat: product, in: {entity: question, nm: "252442517", text: "Есть ли в креме масло ши?"}, expect: {outcome: HUMAN_REVIEW, failure: KNOWLEDGE_CONFLICT, note: "no isolated ingredient answers from conflicting lists"}}
+  - {id: PT-14, cat: product, in: {entity: question, nm: "252442341", text: "Какой состав у крема для тела?"}, expect: {outcome: HUMAN_REVIEW, failure: KNOWN_RESTRICTED_NO_ABSTRACTION}}
+  - {id: PT-15, cat: product, in: {entity: question, nm: "999999999", text: "Какой срок годности?"}, expect: {outcome: HUMAN_REVIEW, failure: PRODUCT_NOT_VERIFIED}}
+  - {id: PT-16, cat: product, in: {entity: question, nm: "252442517", text: "Сколько хранить после вскрытия?"}, expect: {strategy: FACT_ANSWER, allowed_contains: ["12 месяцев после вскрытия"], allowed_not_contains: ["24"]}}
+  - {id: PT-17, cat: product, in: {entity: question, nm: "535580776", text: "В пудре нет кислот?"}, expect: {outcome: HUMAN_REVIEW, note: "class-level free-from question (ODR-10): no derived answer; KC-17"}}
+  - {id: PT-18, cat: product, in: {entity: question, nm: "535581675", text: "Есть ли масло чайного дерева?"}, expect: {strategy: FACT_ANSWER, allowed_contains: ["экстракт листьев чайного дерева"]}}
+  - {id: PT-19, cat: product, in: {entity: question, nm: "305101361", text: "Какой полный состав?"}, expect: {strategy: FACT_ANSWER, allowed_contains: ["lipo hydroxy acid"]}}
+  - {id: PT-20, cat: product, in: {entity: question, nm: "438775617", text: "Какой полный состав?"}, expect: {strategy: FACT_ANSWER, warnings: [INCI_ORDER_CONFLICT]}}
+  - {id: PT-21, cat: product, in: {entity: question, nm: "535581674", text: "Какой состав?"}, expect: {outcome: HUMAN_REVIEW, failure: REQUIRED_FACT_UNKNOWN, note: "label INCI unavailable"}}
+  - {id: PT-22, cat: product, in: {entity: question, nm: "593111985", text: "Как часто пользоваться?"}, expect: {strategy: FACT_ANSWER, allowed_contains: ["для ежедневного ухода"]}}
+  - {id: PT-23, cat: product, in: {entity: question, nm: "910584041", text: "Как часто пользоваться набором, 1 раз в день или 2?"}, expect: {strategy: UNKNOWN_FACT}}
+  - {id: PT-24, cat: product, in: {entity: question, nm: "305101361", text: "Можно совмещать с ретинолом?"}, expect: {strategy: UNKNOWN_FACT}}
+  - {id: PT-25, cat: product, in: {entity: question, nm: "305101361", text: "Какая страна производства?"}, expect: {strategy: FACT_ANSWER, allowed_contains: ["Китай"]}}
+  - {id: PT-26, cat: product, in: {entity: question, nm: "438775617", text: "Кто импортёр?"}, expect: {outcome: HUMAN_REVIEW, failure: KNOWLEDGE_CONFLICT}}
+  - {id: PT-27, cat: product, in: {entity: question, nm: "438775437", text: "Есть ли отдушка?"}, expect: {strategy: FACT_ANSWER, allowed_contains: ["нет компонента «отдушка»"]}}
+  - {id: PT-28, cat: product, in: {entity: question, nm: "305101361", text: "Помогает ли от прыщей?"}, expect: {outcome: HUMAN_REVIEW, failure: KNOWLEDGE_CONFLICT, note: "efficacy = cosmetic/medical claim, disabled"}}
+  - {id: PT-29, cat: product, in: {entity: review, nm: "252441968", rating: 5, text: "Набор супер"}, expect: {strategy: ACKNOWLEDGEMENT, product_kind: bundle}}
+  - {id: PT-30, cat: product, in: {entity: question, nm: "868597351", text: "Есть ли в наборе салициловая кислота?"}, expect: {strategy: FACT_ANSWER, scope_products: 4}}
+  - {id: PT-31, cat: product, in: {entity: question, nm: "910584041", text: "Сколько процентов салициловой кислоты в креме из набора?"}, expect: {strategy: FACT_ANSWER, allowed_contains: ["В составе есть салициловая кислота."], allowed_not_contains: ["2,25"]}}
+  # ---------------- regulatory / service ----------------
+  - {id: RS-01, cat: regulatory, in: {entity: question, nm: "438775617", text: "Есть декларация на крем?"}, expect: {outcome: HUMAN_REVIEW, failure: HUMAN_REVIEW_DOMAIN}}
+  - {id: RS-02, cat: regulatory, in: {entity: question, nm: "305101272", text: "Это оригинал?"}, expect: {outcome: HUMAN_REVIEW, failure: HUMAN_REVIEW_DOMAIN}}
+  - {id: RS-03, cat: regulatory, in: {entity: review, nm: "305101272", rating: 1, text: "Вы продаёте подделку!"}, expect: {outcome: HUMAN_REVIEW, failure: HUMAN_REVIEW_DOMAIN}}
+  - {id: RS-04, cat: regulatory, in: {entity: review, nm: "305101361", rating: 1, text: "Подам в суд и в Роспотребнадзор"}, expect: {outcome: HUMAN_REVIEW, failure: HUMAN_REVIEW_DOMAIN}}
+  - {id: RS-05, cat: service, in: {entity: review, nm: "438775617", rating: 1, text: "Пришёл пустой флакон", buyer: "Анна"}, expect: {outcome: SERVICE, template: T-SVC-WB-DAMAGED, draft_contains: ["Анна, нам жаль"]}}
+  - {id: RS-06, cat: service, in: {entity: review, nm: "305101272", rating: 1, text: "Флакон треснул и протёк"}, expect: {outcome: SERVICE, template: T-SVC-WB-DAMAGED}}
+  - {id: RS-07, cat: service, in: {entity: review, nm: "910584041", rating: 2, text: "В наборе не хватает сыворотки"}, expect: {outcome: SERVICE, template: T-SVC-WB-ORDER}}
+  - {id: RS-08, cat: service, in: {entity: review, nm: "438775437", rating: 1, text: "Прислали тоник вместо крема"}, expect: {outcome: SERVICE, template: T-SVC-WB-ORDER}}
+  - {id: RS-09, cat: service, in: {entity: review, nm: "438775617", rating: 2, text: "Дозатор не работает"}, expect: {outcome: SERVICE}}
+  - {id: RS-10, cat: service, in: {entity: review, nm: "305101272", rating: 1, text: "Хочу вернуть деньги"}, expect: {outcome: HUMAN_REVIEW, failure: SERVICE_INSTRUCTION_NOT_VERIFIED}}
+  - {id: RS-11, cat: regulatory, in: {entity: review, nm: "305101272", rating: 1, text: "Удаляете негативные отзывы!"}, expect: {outcome: HUMAN_REVIEW}}
+  # ---------------- experience ----------------
+  - {id: EX-01, cat: experience, in: {entity: review, nm: "305101361", rating: 5, text: ""}, expect: {strategy: ACKNOWLEDGEMENT}}
+  - {id: EX-02, cat: experience, in: {entity: review, nm: "305101361", rating: 1, text: ""}, expect: {strategy: CLARIFICATION_REQUIRED}}
+  - {id: EX-03, cat: experience, in: {entity: review, nm: "305101361", rating: 1, text: "Не работает"}, expect: {strategy: ACKNOWLEDGEMENT, note: "no_effect acknowledged, no invented expectation"}}
+
+# Verifier cases (same verifier for AI drafts and manual operator text; free-text context of nm).
+verifier:
+  # --- manual edit adversarial (Phase 3 §42) ---
+  - {id: MAN-01, nm: "305101361", text: "Пощипывание — это адаптация кожи, продолжайте.", block: [V-SAFETY]}
+  - {id: MAN-02, nm: "438775617", text: "В креме салициловая кислота 2.25%.", block: [V-RESTRICTED]}
+  - {id: MAN-03, nm: "438775617", text: "Концентрация салициловой кислоты 2,25%, это максимум.", block: [V-RESTRICTED]}
+  - {id: MAN-04, nm: "305101361", text: "Да, можно беременным.", block: [V-SUITABILITY]}
+  - {id: MAN-05, nm: "593111986", text: "Аромат Lost Cherry очень стойкий.", block: [V-TM]}
+  - {id: MAN-06, nm: "305101272", text: "Возврат гарантирован, просто оформите заявку.", block: [V-SERVICE]}
+  - {id: MAN-07, nm: "252442517", text: "Крем Oud & Wood отлично подходит.", block: [V-TM]}
+  - {id: MAN-08, nm: "438775617", text: "В этом креме высокая концентрация салициловой кислоты.", block: [V-RESTRICTED]}
+  - {id: MAN-09, nm: "305101361", text: "pH сыворотки 6,94.", block: [V-RESTRICTED]}
+  - {id: MAN-10, nm: "593111985", text: "В составе 6 видов церамидов.", block: [V-CER]}
+  - {id: MAN-11, nm: "252442517", text: "Крем можно наносить на тело и руки.", block: [V-USE]}
+  - {id: MAN-12, nm: "535580776", text: "Пудра без кислот, подходит для лица и тела.", block: [V-FREEFROM, V-USE]}
+  - {id: MAN-13, nm: "438775617", text: "Прокачайте дозатор 3–5 раз, это почти всегда помогает.", block: [V-DISPENSER]}
+  - {id: MAN-14, nm: "305101361", text: "Напишите нам в чат, мы вышлем замену.", block: [V-CONTACT, V-SERVICE]}
+  - {id: MAN-15, nm: "305101361", text: "Детям можно, средство безопасно.", block: [V-SUITABILITY, V-MEDICAL]}
+  - {id: MAN-16, nm: "438775617", text: "Реакция связана с салициловой кислотой.", block: [V-SAFETY]}
+  - {id: MAN-17, nm: "305101361", text: "Обострение в первые две недели — нормальная реакция.", block: [V-SAFETY]}
+  - {id: MAN-18, nm: "252442517", text: "После вскрытия крем хранится 24 месяца.", block: [V-CONFLICT]}
+  - {id: MAN-19, nm: "305101361", text: "Сыворотка подходит с 12 лет.", block: [V-RESTRICTED]}
+  - {id: MAN-20, nm: "438775617", text: "Средство лечит акне и убирает воспаления.", block: [V-MEDICAL]}
+  - {id: MAN-21, nm: "305101361", text: "Наша сыворотка гипоаллергенна и не вызывает раздражения.", block: [V-MEDICAL]}
+  - {id: MAN-22, nm: "438775617", text: "Советуем сочетать крем с тоником и сывороткой из нашей линейки.", block: [V-GENERAL], warn: [V-ADV]}
+  - {id: MAN-23, nm: "305101361", text: "Не забывайте про SPF днём.", block: [V-GENERAL]}
+  # --- legacy unsafe v2 answers seen in production (§44) ---
+  - {id: LEG-01, nm: "438775617", text: "Анастасия, понимаем, что хочется заметного результата. Крем с ниацинамидом 6% и салициловой кислотой 2,25% помогает поддерживать увлажнённое ощущение кожи, не перегружая уход.", block: [V-RESTRICTED, V-CLAIM]}
+  - {id: LEG-02, nm: "438775617", text: "Наносите крем на чистую сухую кожу лица тонким слоем, избегая области вокруг глаз и губ. Начните с 1 раза в день, лучше вечером: салициловая кислота 2,25% требует постепенного введения в уход.", block: [V-GENERAL, V-RESTRICTED, V-NUM]}
+  - {id: LEG-03, nm: "305101361", text: "Для оценки косметического эффекта используйте средство регулярно в течение нескольких недель.", block: [V-GENERAL]}
+  - {id: LEG-04, nm: "305101361", text: "Пощипывание в первые дни — это адаптация кожи к активам.", block: [V-SAFETY]}
+  - {id: LEG-05, nm: "535580776", text: "Пудра без кислот и трения мягко очищает кожу лица и тела.", block: [V-FREEFROM, V-USE]}
+  - {id: LEG-06, nm: "252442517", text: "После вскрытия крем для рук можно хранить 24 месяца.", block: [V-CONFLICT]}
+  # --- must PASS (approved wording / allowed facts) ---
+  - {id: OK-01, nm: "305101361", text: "Нам очень жаль, что после применения средства появились такие ощущения. Рекомендуем прекратить использование. Если раздражение или дискомфорт сохраняются либо усиливаются, рекомендуем обратиться к врачу.", pass: true}
+  - {id: OK-02, nm: "305101361", text: "В документации производителя нет отдельных рекомендаций по применению средства во время беременности или грудного вскармливания. Поэтому мы не можем подтвердить его применение в этот период. Рекомендуем показать состав средства врачу и проконсультироваться перед использованием.", pass: true}
+  - {id: OK-03, nm: "252442517", text: "Срок годности после вскрытия — 12 месяцев.", pass: true}
+  - {id: OK-04, nm: "305101361", text: "Спасибо за отзыв! Рады, что сыворотка вам понравилась.", pass: true}
+  - {id: OK-05, nm: "593111986", text: "В составе указаны церамиды NS, NG, NP, EOP, AP и AS.", pass: true}
+  - {id: OK-06, nm: "305101361", text: "Салициловая кислота в составе сыворотки — 1%.", pass: true}
+  # --- calibration against historical GOOD answers (false positives fixed) ---
+  - {id: CAL-01, nm: "868597351", text: "Поступления набора арт. 868597351 пока не запланированы, но мы передадим пожелание.", pass: true}
+  - {id: CAL-02, nm: "438775617", text: "Чтобы разобраться, пожалуйста: 1. оформите обращение по товару через личный кабинет Wildberries.", pass: true}

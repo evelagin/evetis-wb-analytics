@@ -95,6 +95,9 @@ class Deps:
     engine: Any = None
     shadow_engine: Any = None
     shadow_repo: Any = None
+    # Reviews & Q&A v3 SHADOW runtime (app.v3.shadow.V3Runtime) — None unless
+    # V3_SHADOW_ENABLED. Observation only: no WB, no Telegram, no v2 doc writes.
+    v3: Any = None
 
 
 def _now() -> datetime:
@@ -483,6 +486,7 @@ def _draft_and_send(deps: Deps, subject, doc: dict, doc_id: str, communication_t
 
 
 def run_poll(deps: Deps) -> dict:
+    poll_started = time.monotonic()
     feedbacks = deps.wb.iter_unanswered_feedbacks()
     fetched = len(feedbacks)
     processed = skipped = errors = 0
@@ -514,6 +518,10 @@ def run_poll(deps: Deps) -> dict:
     # WB buyer questions — separate entity, after reviews, behind its own flag.
     if getattr(deps.settings, "wb_questions_enabled", False):
         summary["questions"] = _run_questions(deps)
+    # v3 SHADOW — strictly after all v2 work of this poll, time-boxed, never raises.
+    if getattr(deps.settings, "v3_shadow_enabled", False) and deps.v3 is not None:
+        from app.v3.shadow import run_shadow_isolated
+        summary["v3_shadow"] = run_shadow_isolated(deps.v3, poll_started=poll_started)
     logger.info("poll done %s", summary)
     return summary
 
@@ -798,6 +806,9 @@ def _publish(deps: Deps, doc_id, chat, message_id, user_id) -> dict:
     if not gate_open:
         deps.telegram.send_message(chat, disabled_msg)
         return {"status": "publish_disabled"}
+    blocked = _v3_publish_gate(deps, doc_id, peek, chat)
+    if blocked is not None:
+        return blocked
 
     try:
         doc = deps.repo.begin_publish(doc_id)  # atomic; recovers a crashed lease
@@ -1205,6 +1216,43 @@ def _show_full(deps: Deps, doc_id, chat, message_id) -> dict:
     return {"status": "shown"}
 
 
+def _v3_manual_shadow_check(deps: Deps, doc_id: str, doc: dict, text: str) -> None:
+    """Shadow-only: record the v3 verifier verdict for a manual edit. Never affects the card,
+    the state machine or publication (enforcement is a separate, owner-gated flag)."""
+    if deps.v3 is None:
+        return
+    try:
+        from app.v3.shadow import check_text
+        check_text(deps.v3, doc_id, doc, text, run_kind="manual_edit_shadow")
+    except Exception as exc:  # noqa: BLE001 — shadow must never break the edit flow
+        log_event(logger, "warning", "v3 manual-edit shadow check failed (isolated)", error=type(exc).__name__)
+
+
+def _v3_publish_gate(deps: Deps, doc_id: str, peek: dict | None, chat) -> Optional[dict]:
+    """OWNER-GATED (V3_ENFORCE_MANUAL_EDIT_VERIFIER, default false): refuse to publish a
+    MANUAL text that the v3 verifier BLOCKs. No state change; the card stays actionable."""
+    if not getattr(deps.settings, "v3_enforce_manual_edit_verifier", False) or deps.v3 is None or not peek:
+        return None
+    versions = peek.get("answer_versions") or []
+    last = versions[-1] if versions and isinstance(versions[-1], dict) else {}
+    if last.get("source") != "manual":
+        return None
+    try:
+        from app.v3.shadow import check_text
+        text = clean_answer(peek.get("final_answer") or peek.get("ai_answer"))
+        result = check_text(deps.v3, doc_id, peek, text, run_kind="manual_edit_gate")
+    except Exception as exc:  # noqa: BLE001 — fail-closed only when explicitly enforced
+        log_event(logger, "warning", "v3 publish gate error", error=type(exc).__name__)
+        deps.telegram.send_message(chat, "⛔ Проверка текста v3 недоступна — публикация ручного текста отложена.")
+        return {"status": "v3_gate_error"}
+    if result is not None and result.blocked:
+        rules = ", ".join(result.rule_ids("BLOCK"))
+        deps.telegram.send_message(chat, f"⛔ Ручной текст не прошёл проверку ({escape_html(rules)}). "
+                                         "Исправьте текст через «Изменить».")
+        return {"status": "v3_blocked", "rules": result.rule_ids("BLOCK")}
+    return None
+
+
 def _handle_message(deps: Deps, message: dict) -> dict:
     chat = (message.get("chat", {}) or {}).get("id")
     user_id = (message.get("from", {}) or {}).get("id")
@@ -1269,6 +1317,7 @@ def _handle_message(deps: Deps, message: dict) -> dict:
     card_text, truncated = _card_builder_for(doc)(doc, doc_id)
     card_text = _card_with_flags(card_text, {"flags": _manual_text_flags(deps, doc, new_text)})
     msg = deps.telegram.send_message(chat, card_text, build_keyboard(doc_id, show_full=truncated))
+    _v3_manual_shadow_check(deps, doc_id, doc, new_text)
     # The new card supersedes the stored one: without this, later background updates
     # (reconcile / re-verify) edit the OLD message and the operator never sees them.
     new_id = str((msg or {}).get("message_id", ""))

@@ -1,0 +1,71 @@
+# Moisturizing face cream 50 ml — WB nmId 438775437.
+schema: ref_product.v1
+product_id: EVT-FC-MOIST-50
+product_type: cream
+line: moisture
+primary_source: SRC-TU-SP-TS-7
+spec_association_status: VERIFIED
+customer_fact_generation: ALLOWED
+customer_name_ru: "увлажняющий крем для лица EVETIS"
+internal_aliases: ["Крем УВЛ", "moisture face cream"]
+identifiers:
+  - {id_type: tu_code, value: SP-TS-7, source_id: SRC-TU-SP-TS-7}
+  - {id_type: label_ean, value: "4631176184124", source_id: SRC-TU-SP-TS-7, locator: "p4 barcode"}
+facts:
+  - {fact_type: product_name_t1, value: "EVETIS MOISTURE FACE CREAM Увлажняющий крем для лица 50 ml", source_id: SRC-TU-SP-TS-7, locator: p1, disclosure_policy: INTERNAL_ONLY}
+  - {fact_type: volume, value: 50, unit: ml, customer_value_ru: "50 мл", source_id: SRC-TU-SP-TS-7, locator: p1}
+  - {fact_type: intended_use, value: [face], customer_value_ru: "для лица", source_id: SRC-TU-SP-TS-7, locator: "p1 product name"}
+  - {fact_type: precautions, value: ["только для наружного применения", "не использовать после истечения срока годности", "не рекомендуется при индивидуальной непереносимости компонентов в составе"], customer_value_ru: "Только для наружного применения; не использовать после истечения срока годности; не рекомендуется при индивидуальной непереносимости компонентов", source_id: SRC-TU-SP-TS-7, locator: p3}
+  - {fact_type: shelf_life, value: 24, unit: month, customer_value_ru: "2 года с даты изготовления", source_id: SRC-TU-SP-TS-7, locator: p3}
+  - {fact_type: pao, value: 6, unit: month, customer_value_ru: "6 месяцев после вскрытия", source_id: SRC-TU-SP-TS-7, locator: "p3 '6M'"}
+  - {fact_type: storage, value: "+5..+25 C, no direct sunlight", customer_value_ru: "хранить при температуре от +5 до +25 °C, не подвергать воздействию прямых солнечных лучей", source_id: SRC-TU-SP-TS-7, locator: p3}
+  - {fact_type: country_of_origin, value: CN, customer_value_ru: "Китай", source_id: SRC-TU-SP-TS-7, locator: p3}
+  - {fact_type: manufacturer, value: "Guangzhou Beauty Cosmetics Co., Ltd.", customer_value_ru: "Guangzhou Beauty Cosmetics Co., Ltd. (Китай)", source_id: SRC-TU-SP-TS-7, locator: p4}
+  - {fact_type: importer, value: REDACTED_CONFLICT, fact_status: CONFLICT, disclosure_policy: DO_NOT_DISCLOSE, conflict_id: KC-21, source_id: SRC-TU-SP-TS-7, locator: "p4 importer"}
+  - {fact_type: ph, value: 6.94, fact_status: CONFLICT, quality_flags: [TEMPLATE_SUSPECT], disclosure_policy: DO_NOT_DISCLOSE, conflict_id: KC-01, owner_decision_id: ODR-19, source_id: SRC-TU-SP-TS-7, locator: p2}
+  - {fact_type: commercial_age_marker, value: "12+", fact_status: COMMERCIAL_VERIFIED, disclosure_policy: INTERNAL_ONLY, owner_decision_id: ODR-01, source_id: SRC-WB-CARD, locator: "WB card characteristic"}
+ingredients:
+  recipe_source: SRC-TU-SP-TS-7
+  recipe_locator: "p1-p2 recipe table"
+  recipe:
+    - [1, aloe_barbadensis_leaf_juice, "Aloe Barbadensis Leaf Juice", 40.00]
+    - [2, water, "Aqua", 35.00]
+    - [3, glycerin, "Vegetable Glycerin", 5.00]
+    - [4, rosa_canina_fruit_oil, "Rosa Canina (Rosehip) Fruit Oil", 3.00]
+    - [5, ethylhexyl_palmitate, "Ethylhexyl Palmitate", 3.00]
+    - [6, cetyl_alcohol, "Cetyl Alcohol", 2.00]
+    - [7, olive_squalane, "Olive Squalane", 2.00]
+    - [8, punica_granatum_seed_oil, "Punica Granatum (Pomegranate) Seed Oil", 2.00]
+    - [9, glyceryl_stearate, "Glyceryl Stearate", 1.50]
+    - [10, stearic_acid, "Stearic Acid", 1.50]
+    - [11, panthenol, "Panthenol", 1.00]
+    - [12, rosa_damascena_flower_distillate, "Rosa Damascena (Rose) Flower Distillate", 1.00]
+    - [13, phenoxyethanol, "Phenoxyethanol", 1.00]
+    - [14, biosaccharide_gum_1, "Biosaccharide Gum-1", 0.50]
+    - [15, vaccinium_macrocarpon_juice, "Vaccinium Macrocarpon (Cranberry) Juice", 0.50]
+    - [16, magnolia_officinalis_bark_extract, "Magnolia Officinalis Bark Extract", 0.30]
+    - [17, boswellia_serrata_extract, "Boswellia Serrata (Boswellin) Extract", 0.30]
+    - [18, sodium_hyaluronate, "Sodium Hyaluronate", 0.20]
+    - [19, allantoin, "Allantoin", 0.20]
+  label_source: SRC-TU-SP-TS-7
+  label_locator: "p3 'Ingredients:' (same content as recipe, different order)"
+  label:
+    - [1, aloe_barbadensis_leaf_juice, "Aloe Barbadensis Leaf Juice"]
+    - [2, water, "Aqua"]
+    - [3, glycerin, "Vegetable Glycerin"]
+    - [4, cetyl_alcohol, "Cetyl Alcohol"]
+    - [5, rosa_canina_fruit_oil, "Rosa Canina (Rosehip) Fruit Oil"]
+    - [6, ethylhexyl_palmitate, "Ethylhexyl Palmitate"]
+    - [7, glyceryl_stearate, "Glyceryl Stearate"]
+    - [8, stearic_acid, "Stearic Acid"]
+    - [9, panthenol, "Panthenol"]
+    - [10, sodium_hyaluronate, "Sodium Hyaluronate"]
+    - [11, magnolia_officinalis_bark_extract, "Magnolia Officinalis Bark Extract"]
+    - [12, boswellia_serrata_extract, "Boswellia Serrata (Boswellin) Extract"]
+    - [13, biosaccharide_gum_1, "Biosaccharide Gum-1"]
+    - [14, olive_squalane, "Olive Squalane"]
+    - [15, punica_granatum_seed_oil, "Punica Granatum (Pomegranate) Seed Oil"]
+    - [16, rosa_damascena_flower_distillate, "Rosa Damascena (Rose) Flower Distillate"]
+    - [17, vaccinium_macrocarpon_juice, "Vaccinium Macrocarpon (Cranberry) Juice"]
+    - [18, phenoxyethanol, "Phenoxyethanol"]
+    - [19, allantoin, "Allantoin"]
