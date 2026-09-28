@@ -92,10 +92,12 @@ def decide_revoke(items, api, expect_current, reason, now, actor):
     if not reason:
         return "REJECT", ["отзыв без причины"], None
     _n, src = I.binding_head(items, api)
-    src = {k: v for k, v in (src or {}).items() if not k.startswith("_")} if src and not src.get("_invalid") \
-        else {"marketplace": "OZON", "identity_fingerprint": "", "seller_client_id": None,
-              "performance_client_id": None, "confirmed_by": actor, "confirmed_at": now.isoformat(),
-              "source_observation_id": ""}
+    defaults = {"marketplace": "OZON", "identity_fingerprint": "", "seller_client_id": None,
+                "performance_client_id": None, "confirmed_by": actor, "confirmed_at": now.isoformat(),
+                "source_observation_id": ""}
+    # Частично заполненная голова (ручная правка) не должна давать строку без REQUIRED-полей зеркала.
+    src = {**defaults, **{k: v for k, v in (src or {}).items() if not k.startswith("_") and v is not None}} \
+        if src and not src.get("_invalid") else defaults
     row = dict(src, api=api, binding_id="rev-" + hashlib.sha256(f"{cur_id}|{now.isoformat()}".encode()).hexdigest()[:24],
                status="REVOKED", revoked_at=now.isoformat(), revoked_by=actor, notes=reason[:500])
     return "WRITE", [], row

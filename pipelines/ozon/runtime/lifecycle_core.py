@@ -240,7 +240,8 @@ def audit_history(events, decisions=None) -> list[str]:
     """Независимая проверка журнала: каждое событие — разрешённое ребро разрешённым исполнителем;
     номера seq идут подряд; при переданных решениях — у рёбер оператора есть решение владельца."""
     out, prev = [], None
-    out += [f"маркер {e['invalid_marker']} не разбирается (номер вне формата)" for e in events if e.get("invalid_marker")]
+    out += [f"маркер {e['invalid_marker']} недействителен (номер вне формата или срок жизни)"
+            for e in events if e.get("invalid_marker")]
     events = [e for e in events if not e.get("invalid_marker")]
     seqs = [e.get("seq") for e in events if e.get("seq") is not None]
     if seqs and sorted(int(x) for x in seqs) != list(range(1, len(seqs) + 1)):

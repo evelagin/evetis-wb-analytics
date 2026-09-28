@@ -1769,3 +1769,39 @@ def test_retention_search_records_the_found_limit():
         return H.ProbeResult(H.REJECTED if s < ret else H.EMPTY, None, 200)
     b = H.windowed_first_activity("ads_expense_daily", probe, date(2026, 9, 28), max_calls=160)
     assert b.api_verified_from == ret
+
+
+# ═════════════════════════════════════════ ревью PR #226, 4-й проход (низкие)
+def test_orphan_retry_carries_the_orphans_decision_id_and_secret_versions():
+    """Н-1/Н-2: повтор несёт id знака-сироты; другие числа версий секретов — CONFLICT."""
+    sys.path.insert(0, str(RUNTIME.parents[2]))
+    from tools.tenancy import tenant_lifecycle as TL
+    t, ph = _owner_tables()
+    real = t.create_marker
+    t.create_marker = lambda ds, name, lb, d: False if name.startswith("S_") else real(ds, name, lb, d)
+    TL.transition(_owner_contract(), t, NOW, L.BACKFILLING, "OPERATOR:owner", "APPROVE", ph)
+    t.create_marker = real
+    assert TL.transition(_owner_contract(), t, NOW, L.BACKFILLING, "OPERATOR:owner", "APPROVE", ph)[0] == "WRITE"
+    opd = L.decision_from_marker(*t.refm[L.decision_marker_name(5)])
+    s_labels = t.markers[L.marker_name(5)][0]
+    assert s_labels["decision"] == L._label(opd["decision_id"])
+    assert t.t[("tenant_ops", "TENANT_STATE_EVENTS")][-1]["decision_id"] == opd["decision_id"]
+    evs = chain(L.CREDENTIALS_PENDING)
+    t3 = _OwnerTables({("tenant_ops", "BACKFILL_CHECKPOINTS"): []}, evs, owner_markers(evs))
+    t3.create_marker("ref", L.decision_marker_name(2), *L.decision_marker(
+        L.CREDENTIALS_PENDING, L.VALIDATING, secret_versions={"a": 1, "b": 1, "c": 1, "d": 1}))
+    st, _txt = TL.transition(_owner_contract(), t3, NOW, L.VALIDATING, "OPERATOR:owner", "CRED",
+                             secret_counts={"a": 3, "b": 1, "c": 1, "d": 2})
+    assert st == "CONFLICT"
+
+
+def test_revoke_of_partial_head_fills_required_mirror_fields():
+    """Н-3: голова без части полей — строка отзыва всё равно содержит все REQUIRED-поля зеркала."""
+    TB = _binding_tool()
+    partial = [("OPB_seller_0001", {"api": "seller"}, json.dumps({"api": "seller", "status": "CONFIRMED",
+                                                                  "binding_id": "bnd-x"}))]
+    st, _w, row = TB.decide_revoke(partial, I.SELLER, "OPB_seller_0001", "ручная правка", NOW, "OPERATOR:o")
+    assert st == "WRITE"
+    for f in ("binding_id", "marketplace", "api", "identity_fingerprint", "status", "confirmed_by", "confirmed_at",
+              "source_observation_id"):
+        assert row.get(f) is not None, f

@@ -3,8 +3,8 @@
 Журнал tenant_ops.BACKFILL_CHECKPOINTS только дописывается (Tables API insertAll у control; ни
 UPDATE, ни DELETE у него нет — нет bigquery.jobs.create). Состояние отрезка — свёртка его версий:
   * DONE неизменяем: первая версия DONE побеждает всё последующее;
-  * ремонт — только решение владельца REOPEN_CHUNK в ref.OPERATOR_DECISIONS со ссылкой на run_id
-    той версии DONE, которую оно отменяет (control писать в ref не может; часы не участвуют).
+  * ремонт — только знак владельца ref.OPR_<n> (REOPEN_CHUNK) со ссылкой на run_id той версии DONE,
+    которую он отменяет (control создавать таблицы в ref не может; часы не участвуют).
     Строки REOPENED в журнале tenant_ops (прежний формат) игнорируются;
   * иначе — последняя версия по recorded_at (PENDING | RUNNING | FAILED);
   * FAILED, у которого неудач НЕ по квоте ≥ MAX_ATTEMPTS, — FAILED_PERMANENT. Ошибка квоты

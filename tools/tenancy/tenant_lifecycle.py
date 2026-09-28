@@ -14,8 +14,9 @@
   * ref.OPD_<seq> — решение на ребро оператора с номером seq (метки to/from, описание — хеш плана и
     т. п.); привязано к номеру, повторно не предъявляется; затем маркер tenant_locks.S_<seq>;
   * ref.OPH_<n> — стоп-кран: suspend действует на control и runtime сразу, независимо от журнала;
-  * строки ref.OPERATOR_DECISIONS — зеркало решений и решения, которым задержка чтения не опасна:
-    REOPEN_CHUNK (ремонт DONE по run_id) и ACCEPT_LIMITATION (принять PARTIAL-границу истории).
+  * ref.OPR_<n> — ремонт отрезка (REOPEN_CHUNK по run_id версии DONE);
+  * строки ref.OPERATOR_DECISIONS — зеркало знаков и ACCEPT_LIMITATION (принять PARTIAL-границу
+    истории): её задержка чтения лишь откладывает ослабление отказа.
 Порядок переходов — по seq, а не по часам ноутбука.
 
 Только рёбра исполнителя OPERATOR и только через тот же валидатор, что у control
@@ -152,31 +153,38 @@ def new_decision(actor, now, **fields):
 
 
 def transition(contract, tables, now, target, actor, reason, plan_hash=None, secret_counts=None):
-    """(статус, текст). Знак-решение ref.OPD_<seq> (CAS), затем маркер S_<seq> (CAS), затем зеркала."""
+    """(статус, текст). Знак-решение ref.OPD_<seq> (CAS), затем маркер S_<seq> (CAS), затем зеркала.
+
+    Если знак на следующий номер уже есть («сирота»: прошлый запуск упал между знаком и маркером),
+    повтор идемпотентен только для того же ребра, плана и чисел версий секретов — и событие несёт id
+    именно этого знака; иначе CONFLICT (сироту владелец снимает по runbook).
+    """
     chain, _d, _l, _r, _h = read_state(contract, tables)
     seq = L.next_seq(chain)
-    dec = new_decision(actor, now, expect_state=L.current_state(chain), to_state=target, plan_hash=plan_hash,
+    ref, locks, ops = (contract["datasets"][k] for k in ("ref", "tenant_locks", "tenant_ops"))
+    frm = L.current_state(chain)
+    orphan = tables.get_table(ref, L.decision_marker_name(seq)) if target != L.SUSPENDED else None
+    dec = new_decision(actor, now, expect_state=frm, to_state=target, plan_hash=plan_hash,
                        reason=reason, expect_seq=seq,
                        secret_versions_json=json.dumps(secret_counts, sort_keys=True) if secret_counts else None)
+    if orphan:
+        prev = L.decision_from_marker(*orphan)
+        if (prev.get("to_state"), prev.get("expect_state"), prev.get("plan_hash"), prev.get("secret_versions")) != \
+                (target, frm, plan_hash, secret_counts):
+            return "CONFLICT", (f"на номер {seq} есть другое решение владельца ({L.decision_marker_name(seq)}) — "
+                                "снять сироту по runbook или повторить с теми же параметрами")
+        dec["decision_id"] = prev.get("decision_id") or dec["decision_id"]
     s = build_snapshot(contract, tables, now, secret_counts, plan_hash, extra_decision=dec)
     status, failures, event = L.decide(s, target, actor, reason or target, {
         "secret_versions": secret_counts, "plan_hash": plan_hash}, f"operator:{uuid.uuid4()}",
         decision_id=dec["decision_id"])
     if status != "WRITE":
         return status, "; ".join(failures) or "ok"
-    ref, locks, ops = (contract["datasets"][k] for k in ("ref", "tenant_locks", "tenant_ops"))
-    if target != L.SUSPENDED:
+    if target != L.SUSPENDED and not orphan:
         labels, desc = L.decision_marker(event["from_state"], target, decision_id=dec["decision_id"],
                                          plan_hash=plan_hash, secret_versions=secret_counts, actor=actor)
-        name = L.decision_marker_name(event["seq"])
-        if not tables.create_marker(ref, name, labels, desc):
-            # Знак на этот номер уже есть: прошлый запуск упал между знаком и маркером («сирота»).
-            # То же ребро и тот же план — повтор идемпотентен (достраиваем маркер); иначе — отказ.
-            prev = L.decision_from_marker(*(tables.get_table(ref, name) or ({}, None)))
-            if (prev.get("to_state"), prev.get("expect_state"), prev.get("plan_hash")) != \
-                    (target, event["from_state"], plan_hash):
-                return "CONFLICT", f"на номер {event['seq']} есть другое решение владельца — см. status"
-            dec["decision_id"] = prev.get("decision_id") or dec["decision_id"]
+        if not tables.create_marker(ref, L.decision_marker_name(event["seq"]), labels, desc):
+            return "CONFLICT", f"решение на номер {event['seq']} создано параллельным запуском — см. status"
     if not tables.create_marker(locks, L.marker_name(event["seq"]), L.marker_labels(event),
                                 json.dumps({"reason_code": event["reason_code"], "run_id": event["run_id"]})):
         # Решение ref.OPD_<seq> привязано к номеру: чужое событие с этим номером им не станет.
@@ -249,8 +257,16 @@ def main(argv=None):
         for ch in chunks:
             p0 = per.setdefault(ch.domain, [str(ch.start), str(ch.end), 0])
             p0[0], p0[1], p0[2] = min(p0[0], str(ch.start)), max(p0[1], str(ch.end)), p0[2] + 1
+        ref = c["datasets"]["ref"]
+        names = [n for n, _l, _c in t.list_tables(ref)]
+        gaps = {pre: L.series_gap([int(n.rsplit("_", 1)[1]) for n in names
+                                   if n.startswith(pre) and n.rsplit("_", 1)[1].isdigit()])
+                for pre in ("OPH_", "OPR_", "OPB_seller_", "OPB_performance_")}
+        orphan = L.decision_marker_name(L.next_seq(chain))
         print(json.dumps({"state": L.current_state(chain), "events": len(chain), "owner_hold": hold,
                           "plan": {"hash": ph, "domains": per},      # что именно одобряет approve-plan
+                          "orphan_decision": orphan if orphan in names else None,
+                          "owner_sign_gaps": [k for k, v in gaps.items() if v],
                           "audit": L.audit_history(chain, decisions)[:5]}, ensure_ascii=False))
         return 0
     actor = f"OPERATOR:{TT.owner_account()}"
