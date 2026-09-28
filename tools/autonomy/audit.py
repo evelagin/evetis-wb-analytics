@@ -7,8 +7,11 @@
 """
 from __future__ import annotations
 
+import collections
+import json
 import math
 import re
+import urllib.parse
 import sys
 from pathlib import Path
 
@@ -17,7 +20,7 @@ from lib.bq_readonly import ReadOnlyBigQuery, resolve_token  # noqa: E402
 
 # Версия источника доказательства. Доказательство другой версии (в т.ч. прежнего INFORMATION_SCHEMA по одному
 # региону EU, который не видел LOAD/COPY/EXTRACT, SELECT с записью в таблицу и задания вне EU) нулём не считается.
-AUDIT_SOURCE = "jobs_list+audit_logs+iam_selftest+iam_history/v4"
+AUDIT_SOURCE = "jobs_list+audit_logs+iam_selftest+iam_history+ingress_attribution/v5"
 
 API = "https://www.googleapis.com"
 CRM = "https://cloudresourcemanager.googleapis.com/v1"
@@ -29,6 +32,11 @@ FEDERATED = ("principal://", "principalSet://")
 SETTLE_SECONDS = 300            # от READY_FOR_PR (после ревьюера, т.е. после всех job'ов с GCP) до чтения журналов
 WATERMARK_TRIES, WATERMARK_SLEEP = 12, 10
 MAX_PAGES = 500
+# Повтор только временных ошибок источника (429/5xx/сеть): конечное число попыток, фиксированная пауза.
+# Исчерпание — исключение, т.е. BLOCKED; ошибка источника никогда не превращается в PASS.
+TRANSIENT_HTTP = frozenset({429, 500, 502, 503, 504})
+RETRY_ATTEMPTS = 4
+RETRY_BACKOFF = (2, 4, 8)
 ADMIN_ACTIVITY_RETENTION_DAYS = 400   # бакет _Required: не отключается, не исключается, 400 дней
 # Права, которых у идентичности AE не должно быть НИ НА ПРОЕКТЕ (вкл. наследование от организации/папок, группы,
 # пользовательские роли). Самопроверка testIamPermissions — живая, в момент аудита; комментарию не доверяем.
@@ -188,14 +196,21 @@ class GcpAuditSource:
         import urllib.request
         req = urllib.request.Request(url, data=json.dumps(body).encode() if body is not None else None, method=method,
                                      headers={"Authorization": f"Bearer {self.token}", "Content-Type": "application/json"})
-        try:
-            with urllib.request.urlopen(req, timeout=120) as r:
-                return json.loads(r.read() or b"{}")
-        except urllib.error.HTTPError as e:
-            if e.code == 401 and _retry and self.refresh:      # токен истёк посреди долгого аудита — один раз обновить
-                self.token = self.refresh()
-                return self._http(method, url, body, _retry=False)
-            raise
+        for attempt in range(RETRY_ATTEMPTS):
+            try:
+                with urllib.request.urlopen(req, timeout=120) as r:
+                    return json.loads(r.read() or b"{}")
+            except urllib.error.HTTPError as e:
+                if e.code == 401 and _retry and self.refresh:      # токен истёк посреди долгого аудита — один раз обновить
+                    self.token = self.refresh()
+                    return self._http(method, url, body, _retry=False)
+                if e.code not in TRANSIENT_HTTP or attempt == RETRY_ATTEMPTS - 1:
+                    raise
+            except (urllib.error.URLError, TimeoutError, ConnectionError):
+                if attempt == RETRY_ATTEMPTS - 1:
+                    raise
+            self.sleep(RETRY_BACKOFF[attempt])             # детерминированно; исчерпание — исключение → BLOCKED
+        raise RuntimeError("недостижимо")
 
     def jobs(self, since_ms: int) -> list[dict]:
         from urllib.parse import urlencode
@@ -359,7 +374,7 @@ def iam_policy_state(events: list[dict]) -> tuple[dict[tuple[str, str], set[tupl
     return state, problems
 
 
-def policy_problems(state: dict, identities: list[str]) -> list[str]:
+def policy_problems(state: dict, identities: list[str], exempt: frozenset = frozenset()) -> list[str]:
     """Привязки, которые дают AE (или кому угодно) доступ, не видимый самопроверкой AE и журналами аудита:
     публичный доступ, группы/домены (членство не проверить), AE на отдельном ресурсе, прямой федеративный
     принципал вне SA. Публичную точку входа журналы аудита не видят вовсе — поэтому это отказ, а не ноль."""
@@ -368,7 +383,7 @@ def policy_problems(state: dict, identities: list[str]) -> list[str]:
     for (svc, rn), binds in sorted(state.items()):
         project_policy = svc == "cloudresourcemanager.googleapis.com"
         for role, m in sorted(binds):
-            if m.startswith("deleted:"):
+            if m.startswith("deleted:") or (svc, rn, role, m) in exempt:
                 continue
             where = f"{svc.split('.')[0]}:{rn.rsplit('/', 1)[-1][:60]} {role} → {m[:70]}"
             if m in PUBLIC_MEMBERS or m.startswith(UNPROVABLE_MEMBERS):
@@ -379,6 +394,188 @@ def policy_problems(state: dict, identities: list[str]) -> list[str]:
             elif m.startswith(FEDERATED) and svc != "iam.googleapis.com":
                 out.append(f"прямой федеративный доступ: {where}")
     return out
+
+
+# ── F-18: публичный вход evetis-wb-communications (D-19b) ──────────────────────────────────────────
+# `allUsers → run.invoker` на ЭТОМ сервисе не считается отказом только если за окно аудита есть полная
+# машинная цепочка: журнал запроса Cloud Run (платформа) → auth_ok приложения → mutation_* — всё по ОДНОМУ
+# trace, на ревизиях, где инструментирование доказано. Ни IP, ни HTTP-код доказательством не считаются.
+F18_SERVICE = "evetis-wb-communications"
+F18_REGION = "europe-west1"
+F18_SA = "evetis-wb-comms@{project}.iam.gserviceaccount.com"
+F18_INGRESS = "all"
+F18_SCHEMA = "wbc-audit/1"
+# маршрут → механизм аутентификации приложения; изменения разрешены только на этих маршрутах
+F18_ROUTES = {"/poll": "scheduler_shared_secret", "/telegram-webhook": "telegram_secret_token",
+              "/admin": "admin_token"}
+F18_UNAUTHENTICATED = {"/health"}
+# изменение WB — только из webhook после секрета И allow-list; Telegram — из любого аутентифицированного маршрута
+F18_TARGET_RULES = {"wildberries": {"/telegram-webhook": {"telegram_secret_token", "telegram_allowlist"}},
+                    "telegram": {r: {m} for r, m in F18_ROUTES.items()}}
+F18_EXPECTED_SA_BINDINGS = {
+    ("cloudresourcemanager.googleapis.com", "project", "roles/bigquery.jobUser"),
+    ("cloudresourcemanager.googleapis.com", "project", "roles/datastore.user"),
+    *{("secretmanager.googleapis.com", n, "roles/secretmanager.secretAccessor") for n in (
+        "EVETIS_ADMIN_TOKEN", "EVETIS_OPENAI_API_KEY", "EVETIS_SCHEDULER_SECRET", "EVETIS_TELEGRAM_BOT_TOKEN",
+        "EVETIS_TELEGRAM_WEBHOOK_SECRET", "EVETIS_WB_API_TOKEN")}}
+F18_EVENT_FIELDS = {"audit_event", "audit_schema", "service", "revision", "trace_id", "request_id", "route", "mechanism",
+                    "principal_class", "result", "mutation_class", "target_system", "target_ref", "http_status",
+                    "error_class", "severity", "message", "logger", "correlation_id",
+                    "logging.googleapis.com/trace", "logging.googleapis.com/spanId"}
+_SECRET_SHAPES = re.compile(r"\d{6,}(?::|%3[Aa])[A-Za-z0-9_-]{30,}|\beyJ[A-Za-z0-9._\-]{20,}|(?i:bearer\s+\S{8,})")
+
+
+def _route(path: str) -> str:
+    path = urllib.parse.urlparse(path or "").path or path
+    return "/admin" if path.startswith("/admin") else path
+
+
+def _secs(ts: str) -> float:
+    m = re.fullmatch(r"(\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d)(?:\.(\d{1,9}))?Z?", str(ts or ""))
+    if not m:
+        return -1.0
+    from datetime import datetime, timezone
+    base = datetime.strptime(m.group(1), "%Y-%m-%dT%H:%M:%S").replace(tzinfo=timezone.utc).timestamp()
+    return base + (int((m.group(2) or "0").ljust(9, "0")) / 1e9)
+
+
+def _latency(v) -> float:
+    try:
+        return float(str(v or "0s").rstrip("s"))
+    except ValueError:
+        return -1.0
+
+
+def f18_service_spec(events: list[dict]) -> tuple[dict | None, list[str]]:
+    """Текущие SA и ingress сервиса по истории Create/ReplaceService (Admin Activity). Непонятное — отказ."""
+    spec, problems = None, []
+    for e in sorted(events, key=_order):
+        pp = e.get("protoPayload") or {}
+        if (pp.get("status") or {}).get("code"):
+            continue
+        method = str(pp.get("methodName", "")).rsplit(".", 1)[-1]
+        svc = (pp.get("request") or {}).get("service")
+        if method in ("CreateService", "ReplaceService") and isinstance(svc, dict):
+            tpl = ((svc.get("spec") or {}).get("template") or {}).get("spec") or {}
+            spec = {"sa": tpl.get("serviceAccountName"),
+                    "ingress": ((svc.get("metadata") or {}).get("annotations") or {}).get("run.googleapis.com/ingress")}
+        elif method in ("DeleteService", "UpdateService", "CreateService", "ReplaceService"):
+            problems.append(f"изменение сервиса {method} в форме, которую аудит не моделирует")
+    return spec, problems
+
+
+def f18_sa_problems(state: dict, project: str, sa: str) -> list[str]:
+    member = f"serviceAccount:{sa}"
+    got = set()
+    for (svc, rn), binds in state.items():
+        for role, m in binds:
+            if m == member:
+                name = "project" if svc == "cloudresourcemanager.googleapis.com" else rn.rsplit("/", 1)[-1]
+                got.add((svc, name, role))
+    extra, missing = got - F18_EXPECTED_SA_BINDINGS, F18_EXPECTED_SA_BINDINGS - got
+    return ([f"права runtime SA шире ожидаемых: {sorted(extra)[:3]}"] if extra else []) + \
+           ([f"привязки runtime SA не восстановлены: {len(missing)}"] if missing else [])
+
+
+def f18_attribution(requests: list[dict], events: list[dict], ready_revisions: set[str]) -> tuple[list[str], list[str], dict]:
+    """(blocked, failed, stats) по цепочке запрос → auth_ok → mutation_*. Любая неоднозначность — не PASS."""
+    blocked: list[str] = []
+    failed: list[str] = []
+    by_trace: dict[str, list[dict]] = {}
+    for r in requests:
+        t = (r.get("trace") or "").rsplit("/", 1)[-1]
+        h = r.get("httpRequest") or {}
+        route, status = _route(h.get("requestUrl", "")), int(h.get("status") or 0)
+        rev = ((r.get("resource") or {}).get("labels") or {}).get("revision_name", "")
+        if rev not in ready_revisions:
+            blocked.append(f"ревизия {rev or '?'} обслуживала запросы без доказанного инструментирования")
+        if not t:
+            if 200 <= status < 300 and route in F18_ROUTES:
+                blocked.append(f"успешный запрос {route} без trace — не привязать")
+            continue
+        by_trace.setdefault(t, []).append({"route": route, "status": status, "rev": rev, "ts": _secs(r.get("timestamp")),
+                                           "latency": _latency(h.get("latency")),
+                                           "inst": (r.get("labels") or {}).get("instanceId", "")})
+    for t, rs in by_trace.items():
+        if len(rs) > 1:
+            blocked.append(f"trace {t[:8]}… у {len(rs)} запросов — неоднозначно")
+    ev_by_trace: dict[str, list[dict]] = {}
+    for e in events:
+        jp = e.get("jsonPayload") or {}
+        kind = jp.get("audit_event")
+        if not kind:
+            continue
+        if set(jp) - F18_EVENT_FIELDS:
+            failed.append(f"событие {kind} с неожиданными полями {sorted(set(jp) - F18_EVENT_FIELDS)[:3]}")
+        if _SECRET_SHAPES.search(json.dumps(jp)):
+            failed.append(f"событие {kind} содержит форму секрета")
+        if jp.get("audit_schema") != F18_SCHEMA:
+            blocked.append(f"событие {kind} неизвестной схемы {jp.get('audit_schema')!r}")
+            continue
+        if kind == "instrumentation_ready":
+            continue
+        t = (e.get("trace") or "").rsplit("/", 1)[-1] or jp.get("trace_id") or ""
+        if not t:
+            (failed if kind.startswith("mutation_") else blocked).append(f"{kind} без trace — вне запроса")
+            continue
+        ev_by_trace.setdefault(t, []).append({**jp, "_ts": _secs(e.get("timestamp")),
+                                              "_inst": (e.get("labels") or {}).get("instanceId", ""),
+                                              "_rev": ((e.get("resource") or {}).get("labels") or {}).get("revision_name", "")})
+    mutations = 0
+    for t, evs in ev_by_trace.items():
+        rs = by_trace.get(t)
+        if not rs or len(rs) != 1:
+            blocked.append(f"события trace {t[:8]}… не сопоставлены ровно одному запросу")
+            continue
+        req = rs[0]
+        rids = {ev.get("request_id") for ev in evs}
+        if len(rids) != 1 or not next(iter(rids)):
+            blocked.append(f"trace {t[:8]}…: события без единого серверного request_id — несколько запросов под одним trace")
+        for ev in evs:
+            if ev["_rev"] != req["rev"] or ev.get("revision") != req["rev"]:
+                blocked.append(f"trace {t[:8]}…: ревизия события ≠ ревизии запроса")
+            if req["inst"] and ev["_inst"] and ev["_inst"] != req["inst"]:
+                blocked.append(f"trace {t[:8]}…: экземпляр события ≠ экземпляру запроса")
+            if req["ts"] < 0 or ev["_ts"] < 0 or req["latency"] < 0 or \
+                    not (req["ts"] - 2 <= ev["_ts"] <= req["ts"] + req["latency"] + 10):
+                blocked.append(f"trace {t[:8]}…: событие вне интервала своего запроса")
+        # «доступ разрешён» считается только по auth_ok с result=ok; открытый allow-list — не доступ
+        auth_at = {}
+        for ev in evs:
+            if ev.get("audit_event") == "auth_ok" and ev.get("result") == "ok":
+                auth_at[ev.get("mechanism")] = min(auth_at.get(ev.get("mechanism"), ev["_ts"]), ev["_ts"])
+        denied = {ev.get("mechanism") for ev in evs if ev.get("audit_event") == "auth_denied"}
+        muts = [ev for ev in evs if str(ev.get("audit_event", "")).startswith("mutation_")]
+        mutations += sum(1 for ev in muts if ev["audit_event"] == "mutation_attempt")
+        for ev in muts:
+            need = (F18_TARGET_RULES.get(ev.get("target_system")) or {}).get(req["route"])
+            if need is None:
+                failed.append(f"изменение {ev.get('mutation_class')} на маршруте {req['route']} вне политики")
+            elif not need <= set(auth_at):
+                failed.append(f"изменение {ev.get('mutation_class')} без аутентификации {sorted(need - set(auth_at))}")
+            elif ev.get("target_system") == "wildberries" and denied:
+                failed.append(f"изменение WB в trace с отказом аутентификации {sorted(denied)}")
+            elif any(ev["_ts"] < auth_at[m] for m in need):
+                failed.append(f"изменение {ev.get('mutation_class')} раньше аутентификации")
+            if ev.get("result") == "outcome_unknown":
+                blocked.append(f"trace {t[:8]}…: исход изменения {ev.get('mutation_class')} неизвестен — нужна сверка чтением")
+        att = collections.Counter((ev.get("mutation_class"), ev.get("target_ref")) for ev in muts
+                                  if ev["audit_event"] == "mutation_attempt")
+        done = collections.Counter((ev.get("mutation_class"), ev.get("target_ref")) for ev in muts
+                                   if ev["audit_event"] in ("mutation_success", "mutation_failure"))
+        if att != done:
+            blocked.append(f"trace {t[:8]}…: результат изменения неизвестен (attempt ≠ success/failure)")
+    for t, rs in by_trace.items():
+        if len(rs) == 1 and rs[0]["route"] in F18_ROUTES and 200 <= rs[0]["status"] < 300:
+            mech = F18_ROUTES[rs[0]["route"]]
+            if not any(ev.get("audit_event") == "auth_ok" and ev.get("mechanism") == mech for ev in ev_by_trace.get(t, [])):
+                failed.append(f"успешный {rs[0]['route']} без auth_ok {mech} в том же trace")
+        elif len(rs) == 1 and rs[0]["route"] not in F18_ROUTES and rs[0]["route"] not in F18_UNAUTHENTICATED \
+                and 200 <= rs[0]["status"] < 300:
+            failed.append(f"успешный запрос к неизвестному маршруту {rs[0]['route'][:40]}")
+    return sorted(set(blocked)), sorted(set(failed)), {"requests": len(requests), "traces": len(by_trace),
+                                                       "events": sum(len(v) for v in ev_by_trace.values()),
+                                                       "mutation_attempts": mutations}
 
 
 def wif_from_logs(wip_events: list[dict], state: dict, uid_to_account: dict[str, str], project: str = "",
@@ -494,6 +691,48 @@ def routing_problems(routing: dict, window=None) -> list[str]:
     return out
 
 
+def f18_check(src, state: dict, since_iso: str, by_type: dict, created: str) -> tuple[frozenset, list[str]]:
+    """Атрибуция публичного входа evetis-wb-communications за окно. PASS цепочки → исключение ровно одной
+    привязки (allUsers → run.invoker на этом сервисе); иначе BLOCKED/FAIL, и привязка остаётся отказом."""
+    rn = f"projects/{src.project}/locations/{F18_REGION}/services/{F18_SERVICE}"
+    key = ("run.googleapis.com", rn)
+    if ("roles/run.invoker", "allUsers") not in state.get(key, set()):
+        return frozenset(), []
+    blocked: list[str] = []
+    others = {b for b in state.get(key, set()) if b != ("roles/run.invoker", "allUsers")
+              and (b[1] in PUBLIC_MEMBERS or b[1].startswith(UNPROVABLE_MEMBERS))}
+    if others:
+        blocked.append(f"F-18: на сервисе ещё публичные/групповые привязки {sorted(others)[:2]}")
+    spec, sp = f18_service_spec(src.logs(
+        f'{_logname(src.project, "activity")} AND timestamp>="{created}" AND protoPayload.serviceName="run.googleapis.com" '
+        f'AND protoPayload.resourceName:"services/{F18_SERVICE}" AND protoPayload.methodName:"Service"'))
+    sa = F18_SA.format(project=src.project)
+    blocked += [f"F-18: {x}" for x in sp]
+    if not spec or spec.get("sa") != sa or spec.get("ingress") != F18_INGRESS:
+        blocked.append(f"F-18: SA/ingress сервиса не совпадают с ожидаемыми или не восстановлены ({spec})")
+    blocked += [f"F-18: {x}" for x in f18_sa_problems(state, src.project, sa)]
+    base = f'resource.type="cloud_run_revision" AND resource.labels.service_name="{F18_SERVICE}"'
+    requests = src.logs(f'{base} AND logName="projects/{src.project}/logs/run.googleapis.com%2Frequests" '
+                        f'AND timestamp>="{since_iso}"')
+    events = src.logs(f'{base} AND jsonPayload.audit_event:* AND timestamp>="{since_iso}"')
+    revisions = {((r.get("resource") or {}).get("labels") or {}).get("revision_name", "") for r in requests}
+    from datetime import timedelta
+    marker_from = (src.now() - timedelta(days=30)).strftime("%Y-%m-%dT%H:%M:%SZ")   # хранение _Default
+    ready = set()
+    for rev in sorted(x for x in revisions if x):
+        marks = src.logs(f'{base} AND resource.labels.revision_name="{rev}" AND timestamp>="{marker_from}" AND '
+                         f'jsonPayload.audit_event="instrumentation_ready" AND jsonPayload.audit_schema="{F18_SCHEMA}"')
+        if marks:
+            ready.add(rev)
+    b, f, stats = f18_attribution(requests, events, ready)
+    blocked += [f"F-18: {x}" for x in b]
+    for x in f:
+        by_type["F18:" + x[:200]] = by_type.get("F18:" + x[:200], 0) + 1
+    if blocked or f:
+        return frozenset(), blocked
+    return frozenset({("run.googleapis.com", rn, "roles/run.invoker", "allUsers")}), []
+
+
 def run_audit(src: GcpAuditSource, since_iso: str, identities: list[str], watermark, settle_from: str | None = None
               ) -> dict:
     """Решение аудита. PASS только если ВСЕ источники прочитаны полностью и чисты:
@@ -588,7 +827,8 @@ def run_audit(src: GcpAuditSource, since_iso: str, identities: list[str], waterm
     policy_events = src.logs(f'{_logname(src.project, "activity")} AND timestamp>="{created}" AND '
                              f'(protoPayload.methodName:"SetIamPolicy" OR protoPayload.methodName:"setIamPermissions")')
     state, broken = iam_policy_state(policy_events)
-    iam += broken + policy_problems(state, identities)
+    exempt, f18 = f18_check(src, state, since_iso, by_type, created)
+    iam += broken + f18 + policy_problems(state, identities, exempt)
     # SA ДРУГИХ проектов с ролями здесь (политики ресурсов, ACL видимых датасетов) — тоже самопроверка.
     foreign = {m.split(":", 1)[1] for binds in state.values() for _, m in binds if m.startswith("serviceAccount:")}
     foreign |= {a["userByEmail"] for meta in datasets.values() for a in meta.get("access", [])

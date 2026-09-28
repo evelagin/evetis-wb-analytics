@@ -78,7 +78,8 @@ def table_policy(rn, members=(f"serviceAccount:sa-loaders-prod@{P}.iam.gservicea
 class FakeSource:
     def __init__(self, jobs=(), activity=(), access=(), granted=(), datasets=None, table_policies=(), writable=(),
                  created="2026-07-10T10:26:24Z", watermark_after=0, log_watermark_after=0, sa_events=None,
-                 sa_granted=None, grants=None, routing=None, iam_events=None, wip=None, table_events=()):
+                 sa_granted=None, grants=None, routing=None, iam_events=None, wip=None, table_events=(),
+                 f18=None):
         self.project = P
         self._jobs, self._activity, self._access, self._granted = list(jobs), list(activity), list(access), list(granted)
         self._datasets = datasets if datasets is not None else {
@@ -91,6 +92,7 @@ class FakeSource:
             table_policy(rn) for rn in table_policies]
         self._wip = wip if wip is not None else WIP
         self._table_events = list(table_events)
+        self._f18 = f18 or {}
         self.tables_tested = []
         self._sa_granted, self._grants = dict(sa_granted or {}), dict(grants or {})
         self._routing = routing or {"sink": {"filter": A.DEFAULT_SINK_FILTER}, "exclusions": [],
@@ -119,6 +121,15 @@ class FakeSource:
             return self._sa_events
         if "tableCreation" in flt:
             return self._table_events
+        if "instrumentation_ready" in flt:
+            rev = flt.split('revision_name="', 1)[1].split('"', 1)[0]
+            return [{"marker": rev}] if rev in self._f18.get("ready", set()) else []
+        if "run.googleapis.com%2Frequests" in flt:
+            return self._f18.get("requests", [])
+        if "jsonPayload.audit_event:*" in flt:
+            return self._f18.get("events", [])
+        if 'protoPayload.methodName:"Service"' in flt:
+            return self._f18.get("svc_events", [])
         if "setIamPermissions" in flt:
             return self._iam_events
         if "WorkloadIdentityPool" in flt:
@@ -905,3 +916,312 @@ def test_expired_token_is_refreshed_once_then_fails_closed(monkeypatch):
     stale = A.GcpAuditSource(P, "t1", refresh=lambda: "t1")            # обновление не помогло — исключение (BLOCKED)
     with pytest.raises(urllib.error.HTTPError):
         stale.project_created()
+
+
+
+# ------------------------------------------------------------ F-18: атрибуция публичного входа (D-19b) ---
+F18_RN = f"projects/{P}/locations/europe-west1/services/evetis-wb-communications"
+F18_SA = f"evetis-wb-comms@{P}.iam.gserviceaccount.com"
+REV = "evetis-wb-communications-00031-abc"
+TR1, TR2 = "a" * 32, "b" * 32
+
+
+def f18_iam(extra_members=(), sa_extra=()):
+    ev = [pol("run.googleapis.com", F18_RN, [{"role": "roles/run.invoker", "members": ["allUsers", *extra_members]}]),
+          pol("cloudresourcemanager.googleapis.com", f"projects/{P}", [
+              {"role": "roles/bigquery.jobUser", "members": [f"serviceAccount:{F18_SA}"]},
+              {"role": "roles/datastore.user", "members": [f"serviceAccount:{F18_SA}"]},
+              *[{"role": r, "members": [f"serviceAccount:{F18_SA}"]} for r in sa_extra]])]
+    for n in ("EVETIS_ADMIN_TOKEN", "EVETIS_OPENAI_API_KEY", "EVETIS_SCHEDULER_SECRET", "EVETIS_TELEGRAM_BOT_TOKEN",
+              "EVETIS_TELEGRAM_WEBHOOK_SECRET", "EVETIS_WB_API_TOKEN"):
+        ev.append(pol("secretmanager.googleapis.com", f"projects/1/secrets/{n}",
+                      [{"role": "roles/secretmanager.secretAccessor", "members": [f"serviceAccount:{F18_SA}"]}]))
+    return list(SA_POLICIES) + ev
+
+
+def svc_event(sa=F18_SA, ingress="all", method="google.cloud.run.v1.Services.ReplaceService"):
+    return {"timestamp": "2026-09-28T08:30:00Z", "protoPayload": {"methodName": method, "request": {"service": {
+        "metadata": {"annotations": {"run.googleapis.com/ingress": ingress}},
+        "spec": {"template": {"spec": {"serviceAccountName": sa}}}}}}}
+
+
+def req(route, status, trace, rev=REV, ts="2026-09-28T12:00:00Z"):
+    return {"timestamp": ts, "trace": f"projects/{P}/traces/{trace}" if trace else "",
+            "resource": {"labels": {"revision_name": rev}},
+            "httpRequest": {"requestUrl": f"https://svc.run.app{route}", "status": status, "latency": "1.2s"}}
+
+
+def ev(kind, trace, rev=REV, **fields):
+    fields.setdefault("result", "ok")
+    jp = {"audit_event": kind, "audit_schema": "wbc-audit/1", "service": "evetis-wb-communications",
+          "revision": rev, "trace_id": trace, "request_id": fields.pop("request_id", "rid-" + (trace or "none")[:6]), **fields}
+    return {"timestamp": "2026-09-28T12:00:00.5Z", "trace": f"projects/{P}/traces/{trace}" if trace else "",
+            "resource": {"labels": {"revision_name": rev}}, "jsonPayload": jp}
+
+
+def good_chain():
+    return {
+        "requests": [req("/telegram-webhook", 200, TR1), req("/poll", 200, TR2), req("/health", 200, "c" * 32)],
+        "events": [
+            ev("auth_ok", TR1, route="/telegram-webhook", mechanism="telegram_secret_token"),
+            ev("auth_ok", TR1, route="/telegram-webhook", mechanism="telegram_allowlist"),
+            ev("mutation_attempt", TR1, mutation_class="wb_write:PATCH:/api/v1/questions", target_system="wildberries", target_ref="r1"),
+            ev("mutation_success", TR1, mutation_class="wb_write:PATCH:/api/v1/questions", target_system="wildberries", target_ref="r1"),
+            ev("mutation_attempt", TR1, mutation_class="telegram:editMessageText", target_system="telegram"),
+            ev("mutation_success", TR1, mutation_class="telegram:editMessageText", target_system="telegram"),
+            ev("auth_ok", TR2, route="/poll", mechanism="scheduler_shared_secret"),
+            ev("mutation_attempt", TR2, mutation_class="telegram:sendMessage", target_system="telegram"),
+            ev("mutation_failure", TR2, mutation_class="telegram:sendMessage", target_system="telegram"),
+        ],
+        "ready": {REV}, "svc_events": [svc_event()]}
+
+
+def f18_audit(chain=None, **iam_kw):
+    return audit(FakeSource(iam_events=f18_iam(**iam_kw), f18=chain if chain is not None else good_chain()))
+
+
+def test_f18_full_attribution_chain_exempts_only_this_binding():
+    r = f18_audit()
+    assert r["status"] == "PASS", r["iam_invariant"]
+
+
+def mutate(chain, **changes):
+    c = {k: (list(v) if isinstance(v, list) else v) for k, v in chain.items()}
+    c.update(changes)
+    return c
+
+
+@pytest.mark.parametrize("change,status", [
+    ({"ready": set()}, "BLOCKED"),                                            # инструментирования не было
+    ({"svc_events": [svc_event(sa="other@x.iam.gserviceaccount.com")]}, "BLOCKED"),   # сменён runtime SA
+    ({"svc_events": [svc_event(ingress="internal")]}, "BLOCKED"),
+    ({"svc_events": []}, "BLOCKED"),                                          # спецификация не восстановлена
+    ({"svc_events": [svc_event(method="google.cloud.run.v2.Services.UpdateService")]}, "BLOCKED"),
+])
+def test_f18_configuration_and_instrumentation_must_be_proven(change, status):
+    assert f18_audit(mutate(good_chain(), **change))["status"] == status
+
+
+def test_f18_expanded_sa_permissions_block():
+    assert f18_audit(sa_extra=["roles/bigquery.dataEditor"])["status"] == "BLOCKED"
+
+
+def test_f18_additional_public_member_on_service_blocks():
+    assert f18_audit(extra_members=["allAuthenticatedUsers"])["status"] == "BLOCKED"
+
+
+def test_other_public_cloud_run_service_is_not_exempt():
+    other = f"projects/{P}/locations/europe-west1/services/some-other-service"
+    ev_ = f18_iam() + [pol("run.googleapis.com", other, [{"role": "roles/run.invoker", "members": ["allUsers"]}])]
+    r = audit(FakeSource(iam_events=ev_, f18=good_chain()))
+    assert r["status"] == "BLOCKED" and any("some-other-service" in x for x in r["iam_invariant"])
+
+
+@pytest.mark.parametrize("route", ["/poll", "/telegram-webhook"])
+def test_f18_successful_protected_request_without_auth_ok_is_never_pass(route):
+    c = good_chain()
+    c["requests"] = c["requests"] + [req(route, 200, "d" * 32)]            # IP Telegram не важен: нет auth_ok
+    r = f18_audit(c)
+    assert r["status"] == "FAIL" and any("без auth_ok" in k for k in r["by_type"])
+
+
+def test_f18_telegram_ip_or_http_200_is_not_authentication():
+    c = good_chain()
+    c["events"] = [e for e in c["events"] if not (e["jsonPayload"]["audit_event"] == "auth_ok"
+                                                  and e["jsonPayload"]["mechanism"] == "telegram_secret_token")]
+    assert f18_audit(c)["status"] == "FAIL"
+
+
+@pytest.mark.parametrize("bad", [
+    ev("mutation_attempt", "", mutation_class="telegram:sendMessage", target_system="telegram"),        # вне запроса
+    ev("mutation_attempt", "c" * 32, mutation_class="telegram:sendMessage", target_system="telegram"),  # на /health
+    ev("mutation_attempt", "e" * 32, mutation_class="telegram:sendMessage", target_system="telegram"),  # нет запроса
+])
+def test_f18_unexplained_downstream_mutation_is_never_pass(bad):
+    c = good_chain()
+    c["events"] = c["events"] + [bad]
+    assert f18_audit(c)["status"] in ("FAIL", "BLOCKED")
+
+
+def test_f18_wb_mutation_requires_allowlist_as_well():
+    c = good_chain()
+    c["events"] = [e for e in c["events"] if e["jsonPayload"].get("mechanism") != "telegram_allowlist"]
+    r = f18_audit(c)
+    assert r["status"] == "FAIL" and any("telegram_allowlist" in k for k in r["by_type"])
+
+
+def test_f18_wb_mutation_from_poll_is_outside_policy():
+    c = good_chain()
+    c["events"] = c["events"] + [ev("mutation_attempt", TR2, mutation_class="wb_write:POST:/x", target_system="wildberries"),
+                                 ev("mutation_success", TR2, mutation_class="wb_write:POST:/x", target_system="wildberries")]
+    assert f18_audit(c)["status"] == "FAIL"
+
+
+def test_f18_unknown_result_duplicate_trace_revision_mismatch_block():
+    c = good_chain()
+    c["events"] = [e for e in c["events"] if not (e["jsonPayload"]["audit_event"] == "mutation_success"
+                                                  and e["jsonPayload"]["target_system"] == "wildberries")]
+    assert f18_audit(c)["status"] == "BLOCKED"
+    c = good_chain(); c["requests"] = c["requests"] + [req("/health", 200, TR1)]
+    assert f18_audit(c)["status"] == "BLOCKED"
+    c = good_chain(); c["events"] = c["events"] + [ev("auth_ok", TR2, rev="evetis-wb-communications-00001-old",
+                                                      route="/poll", mechanism="scheduler_shared_secret")]
+    assert f18_audit(c)["status"] == "BLOCKED"
+
+
+def test_f18_events_leaking_secrets_or_unknown_fields_fail():
+    c = good_chain()
+    c["events"] = c["events"] + [ev("auth_ok", TR2, route="/poll", mechanism="scheduler_shared_secret",
+                                    result="token 123456789:AAFAKE_fake-token-for-tests_0123456789abcdef")]
+    assert f18_audit(c)["status"] == "FAIL"
+    c = good_chain(); c["events"][0]["jsonPayload"]["telegram_user_id"] = "42"
+    assert f18_audit(c)["status"] == "FAIL"
+
+
+def test_f18_successful_protected_request_without_trace_blocks():
+    c = good_chain(); c["requests"] = c["requests"] + [req("/poll", 200, "")]
+    assert f18_audit(c)["status"] == "BLOCKED"
+
+
+def test_f18_historical_uninstrumented_window_is_not_proven():
+    """Окно 27.09: ревизии без instrumentation_ready — аудит не притворяется, что оно доказано."""
+    c = good_chain()
+    c["requests"] = c["requests"] + [req("/poll", 200, "f" * 32, rev="evetis-wb-communications-00025-rq8")]
+    r = f18_audit(c)
+    assert r["status"] in ("BLOCKED", "FAIL") and any("00025-rq8" in x for x in r["iam_invariant"])
+
+
+def test_f18_denied_requests_are_fine():
+    c = good_chain(); c["requests"] = c["requests"] + [req("/poll", 403, "9" * 32), req("/telegram-webhook", 403, "8" * 32)]
+    c["events"] = c["events"] + [ev("auth_denied", "9" * 32, route="/poll", mechanism="scheduler_shared_secret")]
+    assert f18_audit(c)["status"] == "PASS"
+
+
+# ------------------------------------------------------------ повтор временных ошибок источника ---
+def _flaky(codes):
+    import urllib.request
+    seq = list(codes)
+
+    class Resp(io.BytesIO):
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *a):
+            return False
+
+    def fake(req_, timeout=None):
+        c = seq.pop(0)
+        if c == "net":
+            raise urllib.error.URLError("reset")
+        if c != 200:
+            raise urllib.error.HTTPError(req_.full_url, c, "x", {}, io.BytesIO(b""))
+        return Resp(b'{"createTime": "2026-07-10T00:00:00Z"}')
+    return fake
+
+
+@pytest.mark.parametrize("codes,ok,sleeps", [([503, 500, 200], True, [2, 4]), (["net", 200], True, [2]),
+                                              ([429, 502, 504, 503], False, [2, 4, 8]), ([400], False, []),
+                                              ([403, 200], False, [])])
+def test_transient_errors_retried_bounded_then_fail_closed(monkeypatch, codes, ok, sleeps):
+    import urllib.request
+    monkeypatch.setattr(urllib.request, "urlopen", _flaky(codes))
+    slept = []
+    src = A.GcpAuditSource(P, "t", sleep=slept.append)
+    if ok:
+        assert src.project_created() == "2026-07-10T00:00:00Z"
+    else:
+        with pytest.raises((urllib.error.HTTPError, urllib.error.URLError)):
+            src.project_created()
+    assert slept == sleeps
+
+
+
+def test_f18_open_allowlist_or_denied_allowlist_does_not_authorise_wb():
+    c = good_chain()
+    for e in c["events"]:
+        if e["jsonPayload"].get("mechanism") == "telegram_allowlist":
+            e["jsonPayload"]["result"] = "open_no_allowlist"
+    assert f18_audit(c)["status"] == "FAIL"
+    c = good_chain()
+    c["events"] = c["events"] + [ev("auth_denied", TR1, route="/telegram-webhook", mechanism="telegram_allowlist",
+                                    result="not_allowlisted")]
+    assert f18_audit(c)["status"] == "FAIL"
+
+
+def test_f18_non_allowlisted_callback_answer_is_fine_but_no_wb():
+    c = good_chain()
+    t3 = "7" * 32
+    c["requests"] = c["requests"] + [req("/telegram-webhook", 200, t3)]
+    c["events"] = c["events"] + [
+        ev("auth_ok", t3, route="/telegram-webhook", mechanism="telegram_secret_token"),
+        ev("auth_denied", t3, route="/telegram-webhook", mechanism="telegram_allowlist", result="not_allowlisted"),
+        ev("mutation_attempt", t3, mutation_class="telegram:answerCallbackQuery", target_system="telegram"),
+        ev("mutation_success", t3, mutation_class="telegram:answerCallbackQuery", target_system="telegram")]
+    assert f18_audit(c)["status"] == "PASS"
+
+
+def test_f18_two_request_ids_under_one_trace_block():
+    c = good_chain()
+    c["events"] = c["events"] + [ev("auth_ok", TR2, route="/poll", mechanism="scheduler_shared_secret",
+                                    request_id="another-request")]
+    assert f18_audit(c)["status"] == "BLOCKED"
+
+
+def test_f18_mutation_before_auth_or_outside_request_window():
+    c = good_chain()
+    for e in c["events"]:
+        if e["jsonPayload"]["audit_event"] == "auth_ok" and e["jsonPayload"]["mechanism"] == "scheduler_shared_secret":
+            e["timestamp"] = "2026-09-28T12:00:01Z"             # позже изменения (12:00:00.5)
+    assert f18_audit(c)["status"] == "FAIL"
+    c = good_chain()
+    for e in c["events"]:     # терминальное событие Telegram через час после запроса — вне интервала, порядок цел
+        if e["jsonPayload"]["audit_event"] == "mutation_success" and e["jsonPayload"]["target_system"] == "telegram":
+            e["timestamp"] = "2026-09-28T13:00:00Z"
+    r = f18_audit(c)
+    assert r["status"] == "BLOCKED" and any("вне интервала" in x for x in r["iam_invariant"])
+
+
+def test_f18_instance_mismatch_blocks():
+    c = good_chain()
+    c["requests"][0]["labels"] = {"instanceId": "i-1"}
+    c["events"][0]["labels"] = {"instanceId": "i-2"}
+    assert f18_audit(c)["status"] == "BLOCKED"
+
+
+def test_f18_outcome_unknown_needs_read_back():
+    c = good_chain()
+    for e in c["events"]:
+        if e["jsonPayload"]["audit_event"] == "mutation_success" and e["jsonPayload"]["target_system"] == "wildberries":
+            e["jsonPayload"]["audit_event"] = "mutation_failure"; e["jsonPayload"]["result"] = "outcome_unknown"
+    assert f18_audit(c)["status"] == "BLOCKED"
+
+
+def test_f18_duplicate_trace_without_events_blocks():
+    c = good_chain(); c["requests"] = c["requests"] + [req("/health", 200, "5" * 32), req("/health", 200, "5" * 32)]
+    r = f18_audit(c)
+    assert r["status"] == "BLOCKED" and any("у 2 запросов" in x for x in r["iam_invariant"])
+
+
+def test_f18_unknown_event_schema_blocks():
+    c = good_chain(); c["events"][0]["jsonPayload"]["audit_schema"] = "wbc-audit/0"
+    r = f18_audit(c)
+    assert r["status"] in ("BLOCKED", "FAIL") and any("неизвестной схемы" in x for x in r["iam_invariant"])
+
+
+def test_f18_success_on_unknown_route_fails():
+    c = good_chain(); c["requests"] = c["requests"] + [req("/debug/run", 200, "4" * 32)]
+    r = f18_audit(c)
+    assert r["status"] == "FAIL" and any("неизвестному маршруту" in k for k in r["by_type"])
+
+
+def test_f18_other_public_members_message():
+    r = f18_audit(extra_members=["allAuthenticatedUsers"])
+    assert any("ещё публичные" in x for x in r["iam_invariant"])
+
+
+def test_f18_unmodelled_later_service_change_blocks():
+    c = good_chain()
+    later = svc_event(method="google.cloud.run.v2.Services.UpdateService"); later["timestamp"] = "2026-09-28T09:00:00Z"
+    c["svc_events"] = [svc_event(), later]
+    r = f18_audit(c)
+    assert r["status"] == "BLOCKED" and any("не моделирует" in x for x in r["iam_invariant"])
