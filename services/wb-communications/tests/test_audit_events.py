@@ -256,6 +256,12 @@ def test_wb_write_rejected_and_unknown_outcomes(events):
         wb.publish_answer("FB-3", "x")
     ev = audit(events())
     assert ev[-1]["audit_event"] == "mutation_failure" and ev[-1]["result"] == "outcome_unknown"
+    route.mock(return_value=httpx.Response(503, text="later"))   # 5xx после отправки (после повторов) — исход неизвестен
+    with pytest.raises(WBPublishOutcomeUnknown):
+        wb.publish_answer("FB-4", "x")
+    ev = audit(events())
+    assert [e["audit_event"] for e in ev] == ["mutation_attempt", "mutation_failure"]
+    assert ev[-1]["result"] == "outcome_unknown" and ev[-1]["error_class"] == "WBServerError"
 
 
 URL = f"https://api.telegram.org/bot{FAKE_TG}"
