@@ -1,5 +1,30 @@
 # CHANGELOG.md
 
+## 2026-09-28 — Tenancy T4.1: отдельный деплоер SQL арендатора (sa-sql-deployer)
+
+Экономика, витрины, EVETIS не менялись. Права `sa-tenant-provisioner` не расширялись.
+
+- **Роли организации** `mpaSqlSourceRead` (tables.get, getData), `mpaSqlViewCreate` (create,
+  get, list), `mpaSqlViewUpdate` (update, get) созданы владельцем 28.09 (временная
+  organizationRoleAdmin ≤ 2 ч снята; постоянно — organizationRoleViewer). Доверенная база —
+  `tools/tenancy/sql_identity.py`; сверка — `tools/tenancy/platform_roles.py verify`.
+- **Контракт арендатора: новый блок `sql_deployer`** (account_id, email, 10 грантов с
+  условием) — выводится из project_id и датасетов; Terraform-guard'ы в `infra/tenant/variables.tf`.
+- **Terraform `infra/tenant`:** `google_service_account.sql_deployer` и записи ACL в пяти
+  датасетах (tenant_ops — изменение только `V_*`); вывод `sql_deployer_email`, в
+  `dataset_access` — условие.
+- **Сканер плана:** правило D сравнивает четвёрки (роль, вид, принципал, условие), принимает
+  ровно одно условие; правило Q — только SA контракта; блок `sql_deployer` = выводу доверенной базы.
+- **Workflow `tenant-infra.yml`, job `sql`:** авторизация как деплоер из реестра, scope
+  userinfo.email. Job'ы plan/apply — как прежде (провижионер).
+- **`sql_deploy.py`:** без `x-goog-user-project`; проверка принципала токена; проба
+  `tables.testIamPermissions`; `sql-verify` учитывает таблицы контракта (раньше падал на 7
+  таблицах tenant_ops) и `expirationTime`; представления tenant_ops обязаны быть `V_*`.
+- **`tenant_bootstrap.py` expected|bind|verify** — привязка WIF на деплоер владельцем и её сверка;
+  **`wif_domains.py --live`** — привязки пула во всех проектах, деплоеры из реестра.
+- Тесты: `tools/tests/test_tenancy_sql_deployer.py` (18 состязательных A01–A18, модель прав
+  BigQuery), 8 негативных фикстур и прогонов `terraform test`. Документация — TENANCY_DESIGN §4e.
+
 ## 2026-09-28 — SPP-1: ценовые поля заказов WB в RAW_WB_ORDERS
 
 Задача — СПП WB в Юнитку (`AB`), этап 1. Экономика, витрины и Юнитка не менялись.

@@ -188,6 +188,7 @@ def _terraform_contract(doc: dict, repo: Path = REPO) -> dict:
     """
     from tools.tenancy import ozon_contract as OC
     from tools.tenancy import platform as PL
+    from tools.tenancy import sql_identity as SI
 
     tid, db = doc["tenant_id"], doc["data_boundary"]
     if db["kind"] != "dedicated_project" or doc["config_authority"] != "TENANT_REGISTRY":
@@ -243,6 +244,8 @@ def _terraform_contract(doc: dict, repo: Path = REPO) -> dict:
         "datasets": dict(sorted(db["datasets"].items())),
         "tables": sorted(tables, key=lambda t: (t["dataset_key"], t["table_id"])),
         "marketplaces": marketplaces,
+        # T4.1: идентичность развёртывания SQL (роли организации только в ACL датасетов арендатора).
+        "sql_deployer": SI.contract_block(project_id, dict(sorted(db["datasets"].items()))),
     }
 
 

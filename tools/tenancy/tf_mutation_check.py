@@ -67,6 +67,20 @@ MUTATIONS = [
     # T3.3: явный retry_count = 0 API не хранит — вечный дрейф сходимости.
     ("scheduler redundant retry_config restored", "modules/ozon_runtime/main.tf",
      r"(\n  paused    = true\n)", "\\1\n  retry_config {\n    retry_count = 0\n  }\n"),
+    # T4.1: деплоер SQL — роли mpaSql* только в ACL, изменение в tenant_ops — только V_*.
+    ("deployer ACL condition block dropped", "main.tf",
+     r"\n      dynamic \"condition\" \{.*?\n      \}\n", "\n"),
+    ("deployer ACL entries dropped", "main.tf",
+     r"\n  dynamic \"access\" \{\n    for_each = \[for g in var\.contract\.sql_deployer\.grants.*?\n  \}\n", "\n"),
+    ("deployer unconditional tenant_ops update allowed", "variables.tf",
+     r"      !\(g\.dataset_key == local\.platform\.sql_conditional_dataset &&", "      true || !(g.dataset_key == local.platform.sql_conditional_dataset &&"),
+    ("deployer condition expression unchecked", "variables.tf",
+     r"      g\.condition\.expression == format\(", "      g.condition.expression != \"\" || g.condition.expression == format("),
+    ("deployer role allow-list weakened", "variables.tf",
+     r"      contains\(\[for r in local\.platform\.sql_roles : ", "      true || contains([for r in local.platform.sql_roles : "),
+    ("deployer email guard weakened", "variables.tf",
+     r"condition = \(var\.contract\.sql_deployer\.account_id == local\.platform\.sql_deployer_account_id &&",
+     "condition = true || (var.contract.sql_deployer.account_id == local.platform.sql_deployer_account_id &&"),
 ]
 
 

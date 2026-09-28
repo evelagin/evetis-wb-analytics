@@ -471,9 +471,15 @@ def test_sql_package_rejects_non_view_or_foreign_identifier(rendered):
             SD.load_package(TENANT, out, CONTRACT_OBJ, env2)
 
 
+def _contract_tables():
+    """Таблицы контракта в живых датасетах (T4.1: verify_live ждёт их как TABLE)."""
+    return {(CONTRACT_OBJ["datasets"][t["dataset_key"]], t["table_id"]): {"type": "TABLE"}
+            for t in CONTRACT_OBJ["tables"] if t["dataset_key"] in ("tenant_ops", "ozon_mart", "analytics_share")}
+
+
 class FakeBQ:
     def __init__(self, existing=None, drift=False, table_type="VIEW"):
-        self.store = dict(existing or {})
+        self.store = {**_contract_tables(), **dict(existing or {})}
         self.calls = []
         self.drift, self.table_type = drift, table_type
 
@@ -505,7 +511,7 @@ def test_sql_deploy_inserts_views_reads_back_and_verifies(rendered):
     bq = FakeBQ()
     done = SD.deploy(specs, bq, CONTRACT_OBJ["project_id"])
     assert [op for op, _ in done] == ["insert"] * 30
-    SD.verify_live(specs, bq)
+    SD.verify_live(specs, bq, CONTRACT_OBJ)
     assert {c[0] for c in bq.calls} <= {"get", "insert", "update"}                 # никаких jobs/ACL/IAM
     again = SD.deploy(specs, bq, CONTRACT_OBJ["project_id"])
     assert {op for op, _ in again} == {"noop"}
@@ -535,7 +541,7 @@ def test_sql_verify_live_rejects_unexpected_objects(rendered):
     SD.deploy(specs, bq, CONTRACT_OBJ["project_id"])
     bq.store[("analytics_share", "rogue_view")] = {"type": "VIEW", "view": {"query": "SELECT 1"}}
     with pytest.raises(SD.SqlDeployError, match="расходятся"):
-        SD.verify_live(specs, bq)
+        SD.verify_live(specs, bq, CONTRACT_OBJ)
 
 
 def test_sql_helper_calls_no_query_jobs_or_acl_endpoints():

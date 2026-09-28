@@ -1,8 +1,18 @@
 """Tenancy T4 — развёртывание пакета SQL арендатора через BigQuery Tables API (без query jobs).
 
-Идентичность — sa-tenant-provisioner через WIF (tenant-infra.yml): у него есть
-bigquery.tables.create/update/get/list и НЕТ bigquery.jobs.create, поэтому DDL не исполняется;
+Идентичность (T4.1) — sa-sql-deployer@<проект арендатора> через WIF (tenant-infra.yml, job sql),
+НЕ провижионер: BigQuery требует у создателя VIEW bigquery.tables.getData на источниках, а
+провижионер data-blind. Права деплоера — только три роли организации в ACL датасетов арендатора
+(tools/tenancy/sql_identity.py); bigquery.jobs.create нет, поэтому DDL не исполняется —
 представление пишется ресурсом таблицы с блоком view.
+
+Закрытые отказы до первой записи:
+  * принципал токена (oauth2 tokeninfo, scope userinfo.email) ровно деплоер арендатора;
+  * квотный проект НЕ задаётся заголовком x-goog-user-project: для SA им становится проект
+    самого SA (= проект арендатора), а явный заголовок потребовал бы serviceusage.services.use;
+  * проба tables.testIamPermissions (только чтение): у деплоера нет изменения/удаления/записи
+    строк таблиц платформы и RAW, есть чтение источников — иначе роли или условие не те;
+  * 401/403 на любом вызове — остановка без обхода: новое право — только отдельным ACK.
 
   verify-package <tenant_id> <rendered_dir>   — только локально: хеши и форма объектов
   plan-live      <tenant_id> <rendered_dir>   — только чтение: что будет создано/обновлено
@@ -112,6 +122,23 @@ def _check_references(query: str, project: str, datasets: set, subject: str) -> 
             _fail(f"{subject}: ссылка {'.'.join(x for x in parts if x)} вне проекта и датасетов арендатора")
 
 
+def check_conditional_prefix(objs: list[dict], contract: dict) -> None:
+    """Условие гранта изменения в tenant_ops — префикс V_ (sql_identity): все представления пакета
+    там начинаются с V_, ни одна таблица контракта — нет. Иначе либо деплой упадёт с 403, либо
+    условие покроет таблицу платформы."""
+    from tools.tenancy import sql_identity as SI
+    for key, roles in SI.GRANT_MATRIX.items():
+        if not any(c for _r, c in roles):
+            continue
+        pre = SI.CONDITIONAL_VIEW_PREFIX
+        for o in objs:
+            if o.get("dataset_key") == key and not str(o.get("name", "")).startswith(pre):
+                _fail(f"{key}.{o.get('name')}: представление вне префикса {pre} условного гранта")
+        for t in contract.get("tables", []):
+            if t["dataset_key"] == key and t["table_id"].startswith(pre):
+                _fail(f"{key}.{t['table_id']}: таблица контракта попадает под условие {pre}* гранта изменения")
+
+
 def load_package(tenant_id: str, root: Path, contract: dict, env: dict) -> list[ViewSpec]:
     expected_manifest = env.get("EXPECTED_MANIFEST_SHA256", "")
     expected_package = env.get("EXPECTED_PACKAGE_SHA256", "")
@@ -137,6 +164,7 @@ def load_package(tenant_id: str, root: Path, contract: dict, env: dict) -> list[
     if [o.get("order") for o in objs] != list(range(len(objs))):
         _fail("порядок манифеста не сплошной")
     package_objects = {f"{o.get('dataset_key')}.{o.get('name')}" for o in objs}
+    check_conditional_prefix(objs, contract)
     seen: set = set()
     specs = []
     for o in objs:
@@ -171,10 +199,10 @@ class BigQueryTables:
         self.token, self.project = token, project
 
     def _call(self, method: str, url: str, body: dict | None = None) -> tuple[int, dict]:
+        # Без x-goog-user-project (T4.1): квота — проект SA деплоера, он же проект арендатора.
         data = json.dumps(body).encode() if body is not None else None
         req = urllib.request.Request(url, data=data, method=method, headers={
-            "Authorization": f"Bearer {self.token}", "Content-Type": "application/json",
-            "x-goog-user-project": self.project})
+            "Authorization": f"Bearer {self.token}", "Content-Type": "application/json"})
         try:
             with urllib.request.urlopen(req, timeout=60) as r:
                 return r.status, _json(r.read() or b"{}")
@@ -209,9 +237,44 @@ class BigQueryTables:
     def update(self, dataset, name, resource):
         return self._call("PUT", self._t(dataset, name), resource)
 
+    def test_permissions(self, dataset, name, permissions):
+        """tables.testIamPermissions — только чтение: какие из прав есть у вызывающего."""
+        code, body = self._call("POST", self._t(dataset, name) + ":testIamPermissions",
+                                {"permissions": sorted(permissions)})
+        if code != 200:
+            _fail(f"tables.testIamPermissions {dataset}.{name}: HTTP {code}")
+        return set(body.get("permissions") or [])
+
+
+TOKENINFO = "https://oauth2.googleapis.com/tokeninfo"
+
+
+def token_principal(token: str) -> str:
+    """Email принципала токена. Токен — в теле POST, не в URL (журналы прокси)."""
+    req = urllib.request.Request(TOKENINFO, data=urllib.parse.urlencode({"access_token": token}).encode(),
+                                 method="POST", headers={"Content-Type": "application/x-www-form-urlencoded"})
+    try:
+        with urllib.request.urlopen(req, timeout=30) as r:
+            info = _json(r.read())
+    except urllib.error.HTTPError as e:
+        _fail(f"tokeninfo: HTTP {e.code}")
+    if info.get("email_verified") not in ("true", True):
+        _fail("tokeninfo: нет подтверждённого email (нужен scope userinfo.email)")
+    return str(info.get("email") or "")
+
+
+def check_principal(token: str, project: str, lookup=token_principal) -> str:
+    """Токен выдан ровно деплоеру SQL этого арендатора — не провижионеру, не другому проекту."""
+    from tools.tenancy import sql_identity as SI
+    got, want = lookup(token), SI.deployer_email(project)
+    if got != want:
+        _fail(f"токен выдан {got!r}, ожидается деплоер SQL {want!r}")
+    return got
+
 
 def _matches(live: dict, spec: ViewSpec) -> bool:
-    return (live.get("type") == "VIEW"
+    # expirationTime — удаление по таймеру (tables.update); у представлений пакета его нет.
+    return (live.get("type") == "VIEW" and not live.get("expirationTime")
             and canonical_query((live.get("view") or {}).get("query", "")) == canonical_query(spec.query)
             and (live.get("view") or {}).get("useLegacySql") is False
             and (live.get("description") or "") == spec.description)
@@ -251,23 +314,72 @@ def deploy(specs: list[ViewSpec], bq, project: str) -> list[tuple[str, str]]:
     return done
 
 
-def verify_live(specs: list[ViewSpec], bq) -> None:
-    """Живые датасеты пакета содержат ровно объекты пакета, все — VIEW с тем же определением."""
+def contract_tables(contract: dict) -> dict[str, set]:
+    """Таблицы контракта по датасету (их создаёт Terraform, пакет их не трогает)."""
+    out: dict[str, set] = {}
+    for t in contract.get("tables", []):
+        out.setdefault(contract["datasets"][t["dataset_key"]], set()).add(t["table_id"])
+    return out
+
+
+def verify_live(specs: list[ViewSpec], bq, contract: dict) -> None:
+    """Живые датасеты пакета = объекты пакета (VIEW) ∪ таблицы контракта (TABLE), ничего сверх.
+
+    tenant_ops содержит 7 таблиц платформы: они ожидаемы, но только как TABLE. Любой лишний
+    объект (в т.ч. созданный правом tables.create мимо пакета) — отказ.
+    """
+    tables = contract_tables(contract)
     by_ds: dict[str, set] = {}
     for s in specs:
         by_ds.setdefault(s.dataset, set()).add(s.name)
     for ds, names in by_ds.items():
         live, types = bq.list(ds)
-        if set(live) != names:
-            _fail(f"{ds}: живые объекты {sorted(set(live) ^ names)} расходятся с пакетом")
-        bad = {n: t for n, t in types.items() if t != "VIEW"}
+        want = names | tables.get(ds, set())
+        if set(live) != want:
+            _fail(f"{ds}: живые объекты {sorted(set(live) ^ want)} расходятся с пакетом и контрактом")
+        bad = {n: t for n, t in types.items() if (t != "VIEW" if n in names else t != "TABLE")}
         if bad:
-            _fail(f"{ds}: не-VIEW объекты {bad}")
+            _fail(f"{ds}: неожиданный тип объектов {bad}")
     for s in specs:
         code, live = bq.get(s.dataset, s.name)
         if code != 200 or not _matches(live, s):
             _fail(f"{s.dataset}.{s.name}: живое определение расходится с пакетом")
     print(f"живые представления = пакет: {len(specs)}")
+
+
+# Проба прав (только чтение). Изменение/удаление/запись строк у деплоера не может быть нигде, кроме
+# представлений пакета; чтение строк — только в датасетах-источниках (не в analytics_share).
+FORBIDDEN_ON_TABLES = frozenset({"bigquery.tables.update", "bigquery.tables.delete",
+                                 "bigquery.tables.updateData", "bigquery.tables.export"})
+
+
+def probe_permissions(specs: list[ViewSpec], bq, contract: dict) -> int:
+    """Живое доказательство матрицы ролей: закрытый отказ при недостающем или лишнем праве."""
+    from tools.tenancy import sql_identity as SI
+    source_ds = {contract["datasets"][k] for k, roles in SI.GRANT_MATRIX.items()
+                 if any(r == SI.SOURCE_READ for r, _c in roles)}
+    checked = 0
+    for ds, names in sorted(contract_tables(contract).items()):
+        for name in sorted(names):
+            got = bq.test_permissions(ds, name, FORBIDDEN_ON_TABLES | {"bigquery.tables.getData"})
+            if got & FORBIDDEN_ON_TABLES:
+                _fail(f"{ds}.{name}: у деплоера есть {sorted(got & FORBIDDEN_ON_TABLES)} на таблице контракта")
+            if (ds in source_ds) != ("bigquery.tables.getData" in got):
+                _fail(f"{ds}.{name}: чтение строк деплоером {'нет' if ds in source_ds else 'есть'} "
+                      f"вопреки матрице sql_identity")
+            checked += 1
+    for s in specs:
+        code, _live = bq.get(s.dataset, s.name)
+        if code != 200:
+            continue                     # ещё не создано — проверит сама вставка
+        got = bq.test_permissions(s.dataset, s.name, {"bigquery.tables.update", "bigquery.tables.delete",
+                                                      "bigquery.tables.updateData"})
+        if got != {"bigquery.tables.update"}:
+            _fail(f"{s.dataset}.{s.name}: права деплоера на представлении {sorted(got)}, "
+                  "ожидается ровно bigquery.tables.update")
+        checked += 1
+    print(f"проба прав деплоера: {checked} объектов, матрица соблюдена")
+    return checked
 
 
 def check_writer(env: dict) -> None:
@@ -293,17 +405,23 @@ def main(argv: list[str]) -> int:
             return 0
         token = os.environ.get("GCP_ACCESS_TOKEN", "")
         if not token:
-            _fail("нет GCP_ACCESS_TOKEN (идентичность провижионера через WIF)")
+            _fail("нет GCP_ACCESS_TOKEN (идентичность деплоера SQL через WIF)")
+        if cmd == "deploy":
+            check_writer(dict(os.environ))
+        print(f"принципал: {check_principal(token, contract['project_id'])}")
         bq = BigQueryTables(token, contract["project_id"])
         if cmd == "plan-live":
             for op, s in plan_live(specs, bq):
                 print(f"{op:6} {s.order:2} {s.dataset}.{s.name}")
+            probe_permissions(specs, bq, contract)
         elif cmd == "deploy":
-            check_writer(dict(os.environ))
+            probe_permissions(specs, bq, contract)
             deploy(specs, bq, contract["project_id"])
-            verify_live(specs, bq)
+            verify_live(specs, bq, contract)
+            probe_permissions(specs, bq, contract)
         else:
-            verify_live(specs, bq)
+            verify_live(specs, bq, contract)
+            probe_permissions(specs, bq, contract)
         return 0
     except SqlDeployError as e:
         print(f"FAIL {e}", file=sys.stderr)

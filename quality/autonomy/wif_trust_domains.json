@@ -26,8 +26,9 @@
       "desired": {"source": "snapshot", "path": "quality/autonomy/wif_tenant_pool_snapshot_2026-09-28.json"},
       "expectations": "tenant_cases",
       "privileged": ["sa-tenant-provisioner"],
+      "sql_deployers": "registry",
       "read_only": [],
-      "invariant": "sa-tenant-provisioner получает ТОЛЬКО tenant-infra.yml@refs/heads/main, workflow_dispatch, github-hosted, repository_id 1260095567, repository_owner_id 286048501, actor_id 286048501 (владелец), run_attempt 1"
+      "invariant": "sa-tenant-provisioner и sa-sql-deployer@<проект каждого выделенного арендатора реестра> (T4.1) получает ТОЛЬКО tenant-infra.yml@refs/heads/main, workflow_dispatch, github-hosted, repository_id 1260095567, repository_owner_id 286048501, actor_id 286048501 (владелец), run_attempt 1"
     }
   ]
 }

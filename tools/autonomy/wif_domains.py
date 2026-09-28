@@ -11,6 +11,13 @@
   * `--live`: сканирует ВСЕ доступные проекты, все пулы и провайдеры с issuer GitHub. Провайдер,
     чьё условие пропускает хоть один токен этого репозитория (или не вычисляется подмножеством
     CEL), обязан быть в реестре — иначе FAIL. Домен из реестра, которого нет вживую, — тоже FAIL.
+    Привязки SA к пулу ищутся во ВСЕХ проектах, а не только в проекте пула (T4.1): SA деплоера
+    SQL живёт в проекте арендатора. Лишняя привязка на любом SA — утечка привилегии (FAIL);
+    отсутствующая привязка деплоера арендатора из реестра — тоже FAIL (T1 не получает его).
+
+Деплоеры SQL (T4.1, домен с "sql_deployers": "registry"): ожидаемый набор — по одному
+`sa-sql-deployer@<проект>` на каждого выделенного арендатора реестра, привязка — ровно
+sql_identity.expected_sa_bindings(). Для второго арендатора код не меняется.
 
 Только чтение. Код выхода 0 — все домены соответствуют инварианту и неучтённых нет.
 """
@@ -62,6 +69,21 @@ def tenant_cases() -> list[Case]:
     ]
 
 
+def sql_deployers(domain: dict) -> frozenset[str]:
+    """Email деплоеров SQL, которые домен обязан выдавать легитимному T1 (реестр арендаторов)."""
+    if domain.get("sql_deployers") != "registry":
+        return frozenset()
+    from tools.tenancy import registry as R
+    from tools.tenancy import sql_identity as SI
+    return frozenset(SI.deployer_email(doc["data_boundary"]["gcp_project_id"])
+                     for doc in R.valid_tenants().values()
+                     if doc["data_boundary"].get("kind") == "dedicated_project")
+
+
+def privileged(domain: dict) -> set[str]:
+    return set(domain.get("privileged", [])) | sql_deployers(domain)
+
+
 def expectations(domain: dict) -> list[Case]:
     """Полный набор случаев домена: свои ожидания + чужие случаи с ожиданием «ничего из привилегий домена»."""
     base, tenant = cases(), tenant_cases()
@@ -70,13 +92,16 @@ def expectations(domain: dict) -> list[Case]:
         return base + [Case(c.id, c.title, c.claims, frozenset()) for c in tenant]
     if domain["expectations"] == "tenant_cases":
         # В пуле арендатора НИ ОДИН базовый случай (AE, deploy, infra, кандидаты) ничего не получает.
+        # Легитимный T1 получает провижионера и деплоеров SQL всех арендаторов реестра (T4.1).
+        dep = sql_deployers(domain)
+        tenant = [Case(c.id, c.title, c.claims, c.expect | dep if c.expect else c.expect) for c in tenant]
         return tenant + [Case(c.id, c.title, c.claims, frozenset()) for c in base]
     raise ValueError(f"{domain['id']}: неизвестный набор ожиданий {domain['expectations']}")
 
 
 def verify_domain(cfg: WifConfig, domain: dict) -> list[dict]:
     rows = []
-    priv = set(domain.get("privileged", []))
+    priv = privileged(domain)
     for c in expectations(domain):
         got = cfg.obtainable(c.claims)
         rows.append({"domain": domain["id"], "case": c.id, "title": c.title, "expect": sorted(c.expect),
@@ -90,7 +115,13 @@ def desired_config(domain: dict) -> WifConfig:
     if d["source"] == "terraform":
         return load_terraform(REPO / d["path"])
     if d["source"] == "snapshot":
-        return from_snapshot(json.loads((REPO / d["path"]).read_text(encoding="utf-8")), d["path"])
+        snap = json.loads((REPO / d["path"]).read_text(encoding="utf-8"))
+        if domain.get("sql_deployers") == "registry":
+            # Желаемое состояние: снимок провайдера + привязки деплоеров из доверенной базы.
+            from tools.tenancy import sql_identity as SI
+            snap["service_account_bindings"] = dict(snap["service_account_bindings"],
+                                                    **{e: SI.expected_sa_bindings() for e in sql_deployers(domain)})
+        return from_snapshot(snap, d["path"])
     raise ValueError(f"{domain['id']}: неизвестный источник {d['source']}")
 
 
@@ -146,10 +177,35 @@ def _j(*args) -> list | dict:
     return json.loads(out.stdout or "[]")
 
 
+def _pool_bindings(projects: list[dict], pool_project: str, pool_number: str, pool_id: str) -> dict:
+    """Привязки SA ВСЕХ доступных проектов, где член ссылается на этот пул (T4.1).
+
+    Ключ — короткое имя SA в проекте пула (как в снимке) и полный email в любом другом проекте:
+    одинаковые account_id разных арендаторов не сливаются.
+    """
+    needle = f"projects/{pool_number}/locations/global/workloadIdentityPools/{pool_id}/"
+    bindings = {}
+    for proj in projects:
+        pid = proj["projectId"]
+        try:
+            accounts = _j("iam", "service-accounts", "list", f"--project={pid}")
+        except RuntimeError:
+            continue           # IAM API выключен — SA там нет
+        for sa in accounts:
+            pol = _j("iam", "service-accounts", "get-iam-policy", sa["email"], f"--project={pid}")
+            mine = [{**b, "members": [m for m in b["members"] if needle in m]} for b in pol.get("bindings", [])]
+            mine = [b for b in mine if b["members"]]
+            if mine:
+                bindings[sa["email"].split("@")[0] if pid == pool_project else sa["email"]] = mine
+    return bindings
+
+
 def discover_live() -> list[Discovered]:
-    """Только чтение: все проекты → пулы → провайдеры; для GitHub-провайдеров — привязки SA этого пула."""
+    """Только чтение: все проекты → пулы → провайдеры; для GitHub-провайдеров — привязки SA этого
+    пула во ВСЕХ проектах (T4.1: деплоер SQL живёт в проекте арендатора)."""
     found = []
-    for proj in _j("projects", "list"):
+    projects = _j("projects", "list")
+    for proj in projects:
         pid = proj["projectId"]
         try:
             pools = _j("iam", "workload-identity-pools", "list", "--location=global", f"--project={pid}")
@@ -168,14 +224,7 @@ def discover_live() -> list[Discovered]:
                 trusts, evaluable = trust_of(prov.get("attributeCondition") or "")
                 cfg = None
                 if issuer == "https://token.actions.githubusercontent.com":
-                    bindings = {}
-                    for sa in _j("iam", "service-accounts", "list", f"--project={pid}"):
-                        pol = _j("iam", "service-accounts", "get-iam-policy", sa["email"], f"--project={pid}")
-                        mine = [{**b, "members": [m for m in b["members"] if f"workloadIdentityPools/{pool_id}/" in m]}
-                                for b in pol.get("bindings", [])]
-                        mine = [b for b in mine if b["members"]]
-                        if mine:
-                            bindings[sa["email"].split("@")[0]] = mine
+                    bindings = _pool_bindings(projects, pid, proj["projectNumber"], pool_id)
                     cfg = from_snapshot({"provider": prov, "service_account_bindings": bindings}, f"live {pid}/{pool_id}")
                 found.append(Discovered(pid, pool_id, prov_id, issuer, cfg, trusts, evaluable))
     return found

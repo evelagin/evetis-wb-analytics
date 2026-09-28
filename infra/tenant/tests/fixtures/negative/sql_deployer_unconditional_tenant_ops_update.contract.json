@@ -167,18 +167,14 @@
         "role": "organizations/1043233412973/roles/mpaSqlViewCreate"
       },
       {
-        "condition": {
-          "description": "Only package views V_*; platform tables of tenant_ops are excluded",
-          "expression": "resource.type == \"bigquery.googleapis.com/Table\" && resource.service == \"bigquery.googleapis.com\" && resource.name.startsWith(\"projects/mpa-t-client-001/datasets/tenant_ops/tables/V_\")",
-          "title": "sql-deployer-tenant-ops-views"
-        },
+        "condition": null,
         "dataset_key": "tenant_ops",
         "role": "organizations/1043233412973/roles/mpaSqlViewUpdate"
       }
     ]
   },
   "state": {
-    "bucket": "evetis-wb-tfstate-37074083763",
+    "bucket": "mpa-platform-tfstate-777428383056",
     "prefix": "tenants/client_001"
   },
   "status": "NEW",

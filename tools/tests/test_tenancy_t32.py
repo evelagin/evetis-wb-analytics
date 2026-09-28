@@ -336,14 +336,22 @@ def test_rendered_artifacts_contain_secret_names_only(tmp_path):
             # Ключ OZON_SECRET_* детектор помечает по имени поля — допустимо, только если
             # значение — ИМЯ секрета из naming, а не что-то похожее на значение.
             value = doc
-            for part in re.findall(r"\.([^.]+)", finding.path):
-                value = value[part]
+            for part in re.findall(r"\.([^.\[]+)((?:\[\d+\])*)", finding.path):
+                value = value[part[0]]
+                for idx in re.findall(r"\[(\d+)\]", part[1]):
+                    value = value[int(idx)]
             values = set(value.values()) if isinstance(value, dict) else {value}
             if finding.rule == "suspicious_key":
                 assert values <= names, finding
             else:   # детектор длинных токенов: допустимы только точные факты платформы
                 # (бакет state и утверждённый digest образа из runtime_release.json, T3.2b)
-                assert values <= {PL.STATE_BUCKET, PL.load_runtime_release(REPO)["ozon"]}, finding
+                # T4.1: имена ролей организации mpaSql* и условие V_* — факты доверенной базы.
+                from tools.tenancy import sql_identity as SI
+                c = json.loads((tmp_path / TI.CONTRACT_FILE).read_text())["contract"]
+                facts = {PL.STATE_BUCKET, PL.load_runtime_release(REPO)["ozon"]}
+                facts |= {SI.role_name(r) for r in SI.SQL_ROLES}
+                facts.add(SI.view_prefix_condition(c["project_id"], c["datasets"]["tenant_ops"])["expression"])
+                assert values <= facts, finding
     contract = json.loads((tmp_path / TI.CONTRACT_FILE).read_text())["contract"]
     assert contract["marketplaces"]["ozon"]["secret_ids"] == N.DEDICATED_OZON_SECRET_IDS
     env = contract["marketplaces"]["ozon"]["jobs"]["ozon-runtime-daily"]["env"]

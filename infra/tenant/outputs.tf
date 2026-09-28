@@ -15,7 +15,7 @@ output "datasets" {
 }
 
 output "dataset_access" {
-  value = { for k, d in google_bigquery_dataset.this : k => [for a in d.access : { role = a.role, special_group = a.special_group, user_by_email = a.user_by_email }] }
+  value = { for k, d in google_bigquery_dataset.this : k => [for a in d.access : { role = a.role, special_group = a.special_group, user_by_email = a.user_by_email, condition = try(a.condition[0].expression, null) }] }
 }
 
 output "tables" {
@@ -24,4 +24,8 @@ output "tables" {
 
 output "ozon" {
   value = length(module.ozon) == 0 ? null : module.ozon[0].summary
+}
+
+output "sql_deployer_email" {
+  value = google_service_account.sql_deployer.email
 }
