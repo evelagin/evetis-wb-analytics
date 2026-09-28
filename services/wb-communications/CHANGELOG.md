@@ -1,5 +1,19 @@
 # CHANGELOG
 
+## 1.5.3 — v2 knowledge base aligned with closed owner decisions (Phase 3 WP11, 2026-09-28)
+
+Changes v2 draft wording (approved cleanup). Local verification: pytest green.
+
+- ODR-02: customer-facing «Oud & Wood» / «Lost Cherry» -> «древесно-удовый аромат» /
+  «вишнёвый аромат» (internal aliases kept for resolution).
+- ODR-09: removed «прокачать 3–5 раз… почти всегда решает»; no numeric pump instruction.
+- ODR-08: «направить в чат для замены» -> WB flow (обращение через личный кабинет Wildberries,
+  фото; решение принимает площадка); no promises, no invented contact channel.
+- KC-03: hand cream PAO «24 мес» -> 12 мес (T1 icon 12M).
+- ODR-15: «6 типов церамидов» -> «комплекс церамидов (NS, NG, NP, EOP, AP, AS)».
+- ODR-13: hand cream declared «для рук» (T1), «для тела» added to prohibited claims.
+- New test `tests/engine/test_kb_owner_decisions.py` guards the KB bodies.
+
 ## 1.5.2 — Recovery card must be actionable (2026-09-28)
 
 Local verification: **268/268 pytest passed** (10 new; 5 of them fail on 1.5.1).
