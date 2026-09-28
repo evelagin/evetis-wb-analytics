@@ -30,7 +30,7 @@ from app.domain.exceptions import (
 from app.communication_engine.constants import CommunicationType
 from app.domain.models import Question, Review
 from app.domain.statuses import EventType, Status
-from app.utils.logging import get_logger, log_event, redact
+from app.utils.logging import audit_event, get_logger, log_event, redact
 from app.utils.security import is_allowed
 from app.utils.text import (
     TELEGRAM_MSG_SOFT_LIMIT,
@@ -738,9 +738,12 @@ def handle_update(deps: Deps, update: dict) -> dict:
 
 
 def _allowed(deps: Deps, chat_id, user_id) -> bool:
-    return is_allowed(
+    ok = is_allowed(
         chat_id, user_id, deps.settings.allowed_chat_ids, deps.settings.telegram_allowed_user_ids
     )
+    audit_event("auth_ok" if ok else "auth_denied", route="/telegram-webhook", mechanism="telegram_allowlist",
+                principal_class="allowlisted_user" if ok else "unknown", result="ok" if ok else "not_allowlisted")
+    return ok
 
 
 def _handle_callback(deps: Deps, cq: dict) -> dict:

@@ -37,7 +37,7 @@ from app.domain.exceptions import (
     WBRateLimitError,
     WBServerError,
 )
-from app.utils.logging import get_logger
+from app.utils.logging import audit_event, get_logger, safe_ref
 from app.utils.retry import retry_call
 
 logger = get_logger(__name__)
@@ -148,18 +148,30 @@ class WBClient:
         def _do() -> httpx.Response:
             return self._request(method, path, json=body)
 
+        audit = {"mutation_class": f"wb_write:{method.upper()}:{path}", "target_system": "wildberries",
+                 "target_ref": safe_ref((body or {}).get("id"))}
+        audit_event("mutation_attempt", **audit)
         try:
-            return retry_call(_do, retries=2, retry_on=_WRITE_RETRY_ON)
-        except WBRateLimitError:
+            resp = retry_call(_do, retries=2, retry_on=_WRITE_RETRY_ON)
+        except WBRateLimitError as exc:
+            audit_event("mutation_failure", **audit, result="rate_limited", error_class=type(exc).__name__)
             raise  # 429 after retries: provably not processed -> ordinary failure
         except WBServerError as exc:
+            audit_event("mutation_failure", **audit, result="outcome_unknown", error_class=type(exc).__name__)
             raise WBPublishOutcomeUnknown(
                 "WB publish outcome unknown (server error after send)", status_code=exc.status_code
             ) from exc
         except httpx.TransportError as exc:
+            audit_event("mutation_failure", **audit, result="outcome_unknown", error_class=type(exc).__name__)
             raise WBPublishOutcomeUnknown(
                 f"WB publish outcome unknown ({type(exc).__name__})"
             ) from exc
+        except Exception as exc:
+            audit_event("mutation_failure", **audit, result="failed", error_class=type(exc).__name__)
+            raise
+        audit_event("mutation_success" if resp.status_code < 400 else "mutation_failure", **audit,
+                    result="accepted" if resp.status_code < 400 else "rejected", http_status=resp.status_code)
+        return resp
 
     def publish_answer(self, feedback_id: str, text: str) -> dict:
         body = {"id": feedback_id, "text": text}

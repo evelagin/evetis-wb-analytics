@@ -19,7 +19,7 @@ from fastapi import APIRouter, Request, Response
 
 from app.dependencies import get_deps
 from app.services.pipeline import flush_events, handle_update
-from app.utils.logging import get_logger, set_correlation_id
+from app.utils.logging import audit_event, get_logger, set_correlation_id
 from app.utils.security import verify_webhook_secret
 
 router = APIRouter()
@@ -37,7 +37,11 @@ async def telegram_webhook(request: Request) -> Response:
         request.headers.get(_SECRET_HEADER), deps.settings.secrets.telegram_webhook_secret
     ):
         logger.warning("webhook secret check failed")
+        audit_event("auth_denied", route="/telegram-webhook", mechanism="telegram_secret_token",
+                    principal_class="unknown", result="bad_secret")
         return Response(status_code=403)
+    audit_event("auth_ok", route="/telegram-webhook", mechanism="telegram_secret_token",
+                principal_class="telegram_platform", result="ok")
 
     try:
         update = await request.json()

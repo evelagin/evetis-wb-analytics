@@ -9,6 +9,7 @@ from fastapi import APIRouter, Header, HTTPException
 
 from app.dependencies import get_deps
 from app.domain.models import Review
+from app.utils.logging import audit_event
 
 router = APIRouter(prefix="/admin")
 
@@ -24,7 +25,13 @@ def _check_admin(token: str | None) -> None:
         import hmac
 
         if not token or not hmac.compare_digest(str(token), str(configured)):
+            audit_event("auth_denied", route="/admin", mechanism="admin_token", principal_class="unknown",
+                        result="bad_token")
             raise HTTPException(status_code=403, detail="forbidden")
+        audit_event("auth_ok", route="/admin", mechanism="admin_token", principal_class="operator", result="ok")
+    else:  # non-production without a token: no authentication — recorded as such, never as auth_ok
+        audit_event("auth_denied", route="/admin", mechanism="none", principal_class="unknown",
+                    result="unauthenticated_nonproduction")
 
 
 @router.post("/test-openai")

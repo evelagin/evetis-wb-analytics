@@ -8,13 +8,15 @@ from fastapi import FastAPI
 
 from app.config import get_settings
 from app.routes import admin, health, poll, telegram_webhook
-from app.utils.logging import configure_logging, get_logger
+from app.utils.logging import audit_event, configure_logging, get_logger, trace_middleware
 
 settings = get_settings()
 configure_logging(settings.log_level)
 logger = get_logger(__name__)
 
 app = FastAPI(title="EVETIS WB Communications", version="1.1.0")
+app.middleware("http")(trace_middleware)
+audit_event("instrumentation_ready", result="ok")  # per instance: this revision emits audit events
 app.include_router(health.router)
 app.include_router(poll.router)
 app.include_router(telegram_webhook.router)

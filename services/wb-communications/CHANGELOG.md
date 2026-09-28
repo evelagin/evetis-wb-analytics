@@ -1,5 +1,19 @@
 # CHANGELOG
 
+## 1.6.0 — Аудируемый публичный вход: события auth_ok / mutation_* с trace запроса (D-19b)
+
+Только инструментирование — поведение, маршруты, аутентификация и бизнес-логика не меняются.
+
+- **Trace запроса**: middleware берёт trace из `X-Cloud-Trace-Context` / `traceparent`; каждая строка журнала
+  получает `logging.googleapis.com/trace` = `projects/<GCP_PROJECT_ID>/traces/<id>` — тот же trace, что у
+  журнала запроса Cloud Run (машинная связь, не временная близость).
+- **События `audit_event`** (схема `wbc-audit/1`, закрытый набор полей, без свободного текста и секретов):
+  `instrumentation_ready` (при старте экземпляра), `auth_ok` / `auth_denied` (секрет Telegram, allow-list
+  Telegram, секрет Scheduler, admin-токен), `mutation_attempt` / `mutation_success` / `mutation_failure`
+  (каждая запись в WB через `_write_once`, каждый не-`get*` вызов Telegram Bot API). Цель — только хеш
+  (`target_ref`), `service`/`revision` — из `K_SERVICE`/`K_REVISION`.
+- Эмиссия событий никогда не бросает исключений.
+
 ## 1.5.2 — Recovery card must be actionable (2026-09-28)
 
 Local verification: **268/268 pytest passed** (10 new; 5 of them fail on 1.5.1).
