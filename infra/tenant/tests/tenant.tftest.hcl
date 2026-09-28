@@ -27,8 +27,8 @@ run "client_001_renders" {
     error_message = "client_001: проект или префикс state не из реестра"
   }
   assert {
-    condition     = length(google_bigquery_table.this) == 27 && toset(keys(google_bigquery_dataset.this)) == toset(["analytics_share", "ozon_mart", "ozon_raw", "ref", "tenant_locks", "tenant_ops"])
-    error_message = "client_001: ожидается 27 таблиц (15 ozon_raw, 5 ref, 7 tenant_ops) и шесть датасетов (T4 + tenant_locks T5)"
+    condition     = length(google_bigquery_table.this) == 28 && toset(keys(google_bigquery_dataset.this)) == toset(["analytics_share", "ozon_mart", "ozon_raw", "ref", "tenant_locks", "tenant_ops"])
+    error_message = "client_001: ожидается 28 таблиц (15 ozon_raw, 6 ref, 7 tenant_ops) и шесть датасетов (T4 + tenant_locks T5)"
   }
   assert {
     condition     = output.ozon.jobs == tolist(["ozon-runtime-daily", "ozon-runtime-fast", "ozon-runtime-weekly"])
@@ -71,8 +71,8 @@ run "client_001_renders" {
     error_message = "retry_config у Scheduler не задаётся: default retryCount = 0, явный блок даёт вечный дрейф (T3.3)"
   }
   assert {
-    condition     = length([for k, t in google_bigquery_table.this : k if t.dataset_id == "ozon_raw"]) == 15 && length([for k, t in google_bigquery_table.this : k if t.dataset_id == "ref"]) == 5 && length([for k, t in google_bigquery_table.this : k if t.dataset_id == "tenant_ops"]) == 7
-    error_message = "T4: 15 таблиц ozon_raw, 5 справочников ref (включая SELLER_BINDING), 7 таблиц tenant_ops"
+    condition     = length([for k, t in google_bigquery_table.this : k if t.dataset_id == "ozon_raw"]) == 15 && length([for k, t in google_bigquery_table.this : k if t.dataset_id == "ref"]) == 6 && length([for k, t in google_bigquery_table.this : k if t.dataset_id == "tenant_ops"]) == 7
+    error_message = "T4/T5: 15 таблиц ozon_raw, 6 таблиц ref (SELLER_BINDING и OPERATOR_DECISIONS — пишет только владелец), 7 таблиц tenant_ops"
   }
   assert {
     condition     = toset([for a in output.dataset_access["ozon_mart"] : "${a.role}|${a.user_by_email == null ? "" : a.user_by_email}|${a.condition == null ? "" : a.condition}"]) == toset(["OWNER||", "organizations/1043233412973/roles/mpaSqlSourceRead|sa-sql-deployer@mpa-t-client-001.iam.gserviceaccount.com|", "organizations/1043233412973/roles/mpaSqlViewCreate|sa-sql-deployer@mpa-t-client-001.iam.gserviceaccount.com|", "organizations/1043233412973/roles/mpaSqlViewUpdate|sa-sql-deployer@mpa-t-client-001.iam.gserviceaccount.com|"])
@@ -138,7 +138,7 @@ run "client_002_same_code_different_tenant" {
     error_message = "client_002: проект или префикс state не из реестра"
   }
   assert {
-    condition     = length(google_bigquery_table.this) == 27 && output.ozon.jobs == tolist(["ozon-runtime-daily", "ozon-runtime-fast", "ozon-runtime-weekly"])
+    condition     = length(google_bigquery_table.this) == 28 && output.ozon.jobs == tolist(["ozon-runtime-daily", "ozon-runtime-fast", "ozon-runtime-weekly"])
     error_message = "client_002: форма графа ресурсов обязана совпадать с client_001"
   }
   assert {

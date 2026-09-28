@@ -1,5 +1,15 @@
 """Автомат состояний арендатора (Tenancy T5, §L) — чистая логика переходов и валидаторов.
 
+Порядок и полномочия (ревью PR #226):
+  * событие получает номер seq; номер занимается атомарно — созданием таблицы-маркера
+    tenant_locks.S_<seq> (409 = параллельный переход, запись отменяется). Порядок — по seq, а не
+    по часам разных писателей; метаданные таблиц читаются консистентно, в отличие от
+    tabledata.list (строки потоковой вставки видны с задержкой до ~90 мин);
+  * рёбра оператора (кроме приостановки) действительны, только если ссылаются на решение владельца
+    в ref.OPERATOR_DECISIONS — туда у control нет права записи. Строка actor подделывается, решение —
+    нет;
+  * приостановка (→ SUSPENDED) допустима всегда, даже при испорченном журнале.
+
 Никакого «set-state»: переход записывается, только если
   * текущее состояние (последнее событие журнала) равно `from`;
   * ребро разрешено и исполнитель ребра — из допустимых (OPERATOR | CONTROL);
@@ -14,6 +24,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 
@@ -59,6 +70,7 @@ class Snapshot:
     maturity_days: float | None = None
     secret_versions: dict = field(default_factory=dict)    # имя секрета → число ENABLED-версий (оператор)
     operator_plan_hash: str | None = None                  # хеш плана, который подтверждает оператор
+    decisions: dict | None = None                          # decision_id → строка ref.OPERATOR_DECISIONS
 
 
 def _ads_enabled(s: Snapshot) -> bool:
@@ -196,7 +208,9 @@ _EPOCH = datetime(1970, 1, 1, tzinfo=timezone.utc)
 
 
 def ordered(events):
-    return sorted(events, key=lambda e: (as_utc(e.get("occurred_at")) or _EPOCH, str(e.get("event_id"))))
+    """По номеру seq (линеаризация через tenant_locks); время — только для строк без номера."""
+    return sorted(events, key=lambda e: (0 if e.get("seq") is not None else 1, int(e.get("seq") or 0),
+                                         as_utc(e.get("occurred_at")) or _EPOCH, str(e.get("event_id"))))
 
 
 def current_state(events):
@@ -204,9 +218,25 @@ def current_state(events):
     return ev[-1]["to_state"] if ev else None
 
 
-def audit_history(events) -> list[str]:
-    """Независимая проверка журнала: каждое событие — разрешённое ребро разрешённым исполнителем."""
+def decision_problem(e, decisions) -> str | None:
+    """Ребро оператора без решения владельца в ref (кроме приостановки) — недействительно."""
+    if (e.get("actor") or "").split(":")[0] != OPERATOR or e.get("to_state") == SUSPENDED:
+        return None
+    d = (decisions or {}).get(e.get("decision_id"))
+    if not d:
+        return "нет решения владельца (ref.OPERATOR_DECISIONS) — ещё не видно или подделка"
+    if d.get("to_state") != e.get("to_state") or (d.get("expect_state") or None) != (e.get("from_state") or None):
+        return "решение владельца не совпадает с ребром"
+    return None
+
+
+def audit_history(events, decisions=None) -> list[str]:
+    """Независимая проверка журнала: каждое событие — разрешённое ребро разрешённым исполнителем;
+    номера seq идут подряд; при переданных решениях — у рёбер оператора есть решение владельца."""
     out, prev = [], None
+    seqs = [e.get("seq") for e in events if e.get("seq") is not None]
+    if seqs and sorted(int(x) for x in seqs) != list(range(1, len(seqs) + 1)):
+        out.append(f"номера событий не подряд: {sorted(int(x) for x in seqs)[:10]}")
     for e in ordered(events):
         edge = (e.get("from_state"), e.get("to_state"))
         if e.get("from_state") != prev:
@@ -215,6 +245,8 @@ def audit_history(events) -> list[str]:
             out.append(f"{e.get('event_id')}: ребро {edge} не разрешено")
         elif (e.get("actor") or "").split(":")[0] not in EDGES[edge][0]:
             out.append(f"{e.get('event_id')}: исполнитель {e.get('actor')} не допустим для {edge}")
+        if decisions is not None and (why := decision_problem(e, decisions)):
+            out.append(f"{e.get('event_id')}: {why}")
         prev = e.get("to_state")
     return out
 
@@ -223,30 +255,39 @@ def evidence_hash(evidence: dict) -> str:
     return hashlib.sha256(json.dumps(evidence, sort_keys=True, ensure_ascii=False, default=str).encode()).hexdigest()
 
 
-def decide(s: Snapshot, to_state: str, actor: str, reason_code: str, evidence: dict, run_id: str):
-    """Решение о переходе. (статус, нарушения, событие | None); статус ∈ WRITE | NOOP | REJECT."""
+def decide(s: Snapshot, to_state: str, actor: str, reason_code: str, evidence: dict, run_id: str,
+           decision_id: str | None = None):
+    """Решение о переходе. (статус, нарушения, событие | None); статус ∈ WRITE | NOOP | REJECT.
+
+    Событие несёт seq = следующий номер; записать его можно, только заняв маркер S_<seq>.
+    """
     frm = current_state(s.events)
     actor_class = actor.split(":")[0]
-    problems = audit_history(s.events)
-    if problems:
+    problems = audit_history(s.events, s.decisions)
+    if problems and not (to_state == SUSPENDED and frm != SUSPENDED and reason_code):
         return "REJECT", ["журнал состояний некорректен: " + "; ".join(problems[:3])], None
     ev_hash = evidence_hash(evidence)
-    last = ordered(s.events)[-1] if s.events else None
-    if last and last.get("to_state") == to_state and frm == to_state:
-        prior = json.loads(last.get("evidence_json") or "{}").get("evidence_hash")
-        if prior == ev_hash:
-            return "NOOP", [], None
-    edge = (frm, to_state)
-    if edge not in EDGES:
+    if s.events and frm == to_state:
+        return "NOOP", [], None                      # уже в целевом состоянии: повтор ничего не пишет
+    if problems:                                     # приостановка испорченного журнала: без проверки ребра
+        edge = None
+    else:
+        edge = (frm, to_state)
+    if edge is not None and edge not in EDGES:
         return "REJECT", [f"ребро {frm} → {to_state} не разрешено (прыжок через состояние)"], None
-    actors, validator = EDGES[edge]
+    actors, validator = EDGES[edge] if edge else ({OPERATOR, CONTROL}, _v_suspend)
     if actor_class not in actors:
         return "REJECT", [f"исполнитель {actor_class} не может {frm} → {to_state}"], None
     if to_state == SUSPENDED and not reason_code:
         return "REJECT", ["приостановка без причины"], None
+    if actor_class == OPERATOR and to_state != SUSPENDED:
+        d = (s.decisions or {}).get(decision_id)
+        if not d or d.get("to_state") != to_state or (d.get("expect_state") or None) != frm:
+            return "REJECT", ["ребро оператора требует решения владельца в ref.OPERATOR_DECISIONS"], None
     failures = validator(s)
     if failures:
         return "REJECT", failures, None
+    seq = max([int(e["seq"]) for e in s.events if e.get("seq") is not None] or [0]) + 1
     event = {
         "event_id": hashlib.sha256(f"{s.tenant_id}|{frm}|{to_state}|{ev_hash}|{run_id}".encode()).hexdigest()[:32],
         "tenant_id": s.tenant_id, "from_state": frm, "to_state": to_state,
@@ -254,5 +295,41 @@ def decide(s: Snapshot, to_state: str, actor: str, reason_code: str, evidence: d
         "evidence_json": json.dumps(dict(evidence, evidence_hash=ev_hash), sort_keys=True, ensure_ascii=False,
                                     default=str),
         "actor": actor, "run_id": run_id, "occurred_at": s.now.isoformat(),
+        "seq": seq, "decision_id": decision_id,
     }
     return "WRITE", [], event
+
+
+# ───────────────────────────────────────────── маркеры переходов tenant_locks.S_<seq>
+STATE_MARKER_RE = re.compile(r"^S_(\d{6})$")
+
+
+def _label(v) -> str:
+    return re.sub(r"[^a-z0-9_-]", "_", str(v).lower())[:63] if v is not None else "none"
+
+
+def marker_name(seq: int) -> str:
+    return f"S_{int(seq):06d}"
+
+
+def marker_labels(event: dict) -> dict:
+    """Метки маркера — всё, что нужно для цепочки без чтения строк (tables.list консистентен)."""
+    return {k: _label(v) for k, v in {"to": event["to_state"], "from": event.get("from_state"),
+                                      "actor": event["actor"].split(":")[0], "decision": event.get("decision_id"),
+                                      "event": event["event_id"]}.items()}
+
+
+def chain_from_markers(items) -> list[dict]:
+    """items — [(имя таблицы, метки, момент создания сервером)] → события цепочки (без маркеров — нет)."""
+    out = []
+    for name, labels, created in items:
+        m = STATE_MARKER_RE.match(name or "")
+        if not m:
+            continue
+        lb = labels or {}
+        val = lambda k: None if lb.get(k) in (None, "none") else lb[k]
+        up = lambda k: val(k).upper() if val(k) else None
+        out.append({"seq": int(m.group(1)), "event_id": val("event"), "from_state": up("from"),
+                    "to_state": up("to"), "actor": up("actor") or "", "decision_id": val("decision"),
+                    "occurred_at": created})
+    return out

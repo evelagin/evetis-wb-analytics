@@ -414,6 +414,17 @@
     },
     {
       "clustering": [
+        "decision_type"
+      ],
+      "dataset_key": "ref",
+      "require_partition_filter": false,
+      "schema_json": "[{\"mode\":\"REQUIRED\",\"name\":\"decision_id\",\"type\":\"STRING\"},{\"mode\":\"REQUIRED\",\"name\":\"decision_type\",\"type\":\"STRING\"},{\"mode\":\"NULLABLE\",\"name\":\"expect_state\",\"type\":\"STRING\"},{\"mode\":\"NULLABLE\",\"name\":\"to_state\",\"type\":\"STRING\"},{\"mode\":\"NULLABLE\",\"name\":\"plan_hash\",\"type\":\"STRING\"},{\"mode\":\"NULLABLE\",\"name\":\"secret_versions_json\",\"type\":\"STRING\"},{\"mode\":\"NULLABLE\",\"name\":\"chunk_id\",\"type\":\"STRING\"},{\"mode\":\"NULLABLE\",\"name\":\"reopens_run_id\",\"type\":\"STRING\"},{\"mode\":\"NULLABLE\",\"name\":\"reason\",\"type\":\"STRING\"},{\"mode\":\"REQUIRED\",\"name\":\"actor\",\"type\":\"STRING\"},{\"mode\":\"REQUIRED\",\"name\":\"decided_at\",\"type\":\"TIMESTAMP\"}]",
+      "table_id": "OPERATOR_DECISIONS",
+      "time_partitioning_field": null,
+      "time_partitioning_type": null
+    },
+    {
+      "clustering": [
         "internal_sku"
       ],
       "dataset_key": "ref",
@@ -546,7 +557,7 @@
       ],
       "dataset_key": "tenant_ops",
       "require_partition_filter": false,
-      "schema_json": "[{\"mode\":\"REQUIRED\",\"name\":\"event_id\",\"type\":\"STRING\"},{\"mode\":\"REQUIRED\",\"name\":\"tenant_id\",\"type\":\"STRING\"},{\"mode\":\"NULLABLE\",\"name\":\"from_state\",\"type\":\"STRING\"},{\"mode\":\"REQUIRED\",\"name\":\"to_state\",\"type\":\"STRING\"},{\"mode\":\"NULLABLE\",\"name\":\"reason_code\",\"type\":\"STRING\"},{\"mode\":\"NULLABLE\",\"name\":\"reason_detail\",\"type\":\"STRING\"},{\"mode\":\"NULLABLE\",\"name\":\"evidence_json\",\"type\":\"STRING\"},{\"mode\":\"REQUIRED\",\"name\":\"actor\",\"type\":\"STRING\"},{\"mode\":\"NULLABLE\",\"name\":\"run_id\",\"type\":\"STRING\"},{\"mode\":\"REQUIRED\",\"name\":\"occurred_at\",\"type\":\"TIMESTAMP\"}]",
+      "schema_json": "[{\"mode\":\"REQUIRED\",\"name\":\"event_id\",\"type\":\"STRING\"},{\"mode\":\"REQUIRED\",\"name\":\"tenant_id\",\"type\":\"STRING\"},{\"mode\":\"NULLABLE\",\"name\":\"from_state\",\"type\":\"STRING\"},{\"mode\":\"REQUIRED\",\"name\":\"to_state\",\"type\":\"STRING\"},{\"mode\":\"NULLABLE\",\"name\":\"reason_code\",\"type\":\"STRING\"},{\"mode\":\"NULLABLE\",\"name\":\"reason_detail\",\"type\":\"STRING\"},{\"mode\":\"NULLABLE\",\"name\":\"evidence_json\",\"type\":\"STRING\"},{\"mode\":\"REQUIRED\",\"name\":\"actor\",\"type\":\"STRING\"},{\"mode\":\"NULLABLE\",\"name\":\"run_id\",\"type\":\"STRING\"},{\"mode\":\"REQUIRED\",\"name\":\"occurred_at\",\"type\":\"TIMESTAMP\"},{\"mode\":\"NULLABLE\",\"name\":\"seq\",\"type\":\"INTEGER\"},{\"mode\":\"NULLABLE\",\"name\":\"decision_id\",\"type\":\"STRING\"}]",
       "table_id": "TENANT_STATE_EVENTS",
       "time_partitioning_field": "occurred_at",
       "time_partitioning_type": "DAY"

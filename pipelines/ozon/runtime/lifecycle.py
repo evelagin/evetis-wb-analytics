@@ -7,6 +7,10 @@ bigquery.jobs.create (нет DML), НЕТ записи в ozon_raw и ref, НЕ�
 (ref.SELLER_BINDING пишет только владелец: tools/tenancy/tenant_binding.py), НЕТ права запускать
 Cloud Run (исполнитель бэкфилла запускается отдельными воротами).
 
+Переходы автомата занимают номер маркером tenant_locks.S_<seq> (409 — параллельный переход, выход 5);
+рёбра оператора действительны только с решением владельца в ref.OPERATOR_DECISIONS. Журнал с
+нарушением аудита — выход 4 для всех команд, кроме status.
+
   python lifecycle.py validate        учётные данные + наблюдение identity (Seller, Performance)
   python lifecycle.py discover        профиль возможностей (только при BOUND)
   python lifecycle.py history         границы истории (только при BOUND)
@@ -166,20 +170,46 @@ COMMAND_STATES = {"discover": (L.CAPABILITY_DISCOVERY,), "history": (L.CAPABILIT
                   "verify-chunks": (L.BACKFILLING, L.RECONCILING), "dq": (L.RECONCILING, L.READY)}
 
 
+def decisions_of(ctx) -> dict:
+    """Решения владельца (ref.OPERATOR_DECISIONS; писать туда control не может)."""
+    return {d["decision_id"]: d for d in ctx.store.rows("ref", "OPERATOR_DECISIONS") if d.get("decision_id")}
+
+
+def reopened_run_ids(decisions: dict) -> frozenset:
+    return frozenset(d.get("reopens_run_id") for d in decisions.values()
+                     if d.get("decision_type") == "REOPEN_CHUNK" and d.get("reopens_run_id"))
+
+
+def verified_state(ctx):
+    """(состояние, цепочка, решения, нарушения) — цепочка из маркеров S_<seq>, проверенная аудитом."""
+    chain = ctx.store.state_chain()
+    decisions = decisions_of(ctx)
+    return L.current_state(chain), chain, decisions, L.audit_history(chain, decisions)
+
+
 def require_state(ctx, command):
-    state = L.current_state(list(ctx.store.rows("tenant_ops", "TENANT_STATE_EVENTS")))
-    if state not in COMMAND_STATES[command]:
+    state, _chain, _d, problems = verified_state(ctx)
+    if problems or state not in COMMAND_STATES[command]:
         C.log(event="command_rejected", run_id=ctx.run_id, command=command, state=state,
-              allowed=list(COMMAND_STATES[command]))
+              allowed=list(COMMAND_STATES[command]), journal_problems=problems[:3])
         raise SystemExit(4)
     return state
 
 
-def approved_plan_hash(events):
-    """Хеш плана из последнего входа в BACKFILLING (подтверждение оператора или возврат control)."""
-    for e in reversed(L.ordered(events)):
-        if e.get("to_state") == L.BACKFILLING:
-            return json.loads(e.get("evidence_json") or "{}").get("plan_hash")
+def approved_plan_hash(chain, decisions):
+    """Хеш плана из решения владельца APPROVE (последний вход оператора в BACKFILLING)."""
+    for e in reversed(L.ordered(chain)):
+        if e.get("to_state") == L.BACKFILLING and (e.get("actor") or "").split(":")[0] == L.OPERATOR:
+            return (decisions.get(e.get("decision_id")) or {}).get("plan_hash")
+    return None
+
+
+def cycle_started_at(chain):
+    """Время сервера (создание маркера) последнего входа в VALIDATING: старше — доказательства
+    прошлого цикла (до приостановки или ротации ключа) и для переходов не годятся."""
+    for e in reversed(L.ordered(chain)):
+        if e.get("to_state") == L.VALIDATING:
+            return I.as_utc(e.get("occurred_at"))
     return None
 
 
@@ -203,9 +233,10 @@ def cmd_validate(ctx):
                              evidence={"blocking": pv["blocking"], "warnings": pv["warnings"]}))
     ctx.store.append("SELLER_IDENTITY_OBSERVATIONS", rows)
     ctx.store.append("CAPABILITY_PROFILE", caps)
+    # Отпечаток (даже префикс) в журнал не пишется: при публичных ИНН/ОГРН короткий Client-Id
+    # восстанавливается перебором (ревью PR #226). Отпечаток — только в tenant_ops арендатора.
     C.log(event="validate_done", run_id=ctx.run_id, seller_credential=sv["status"],
-          observations=[{"api": r["api"], "status": r["status"],
-                         "fingerprint_prefix": (r["identity_fingerprint"] or "")[:12]} for r in rows])
+          observations=[{"api": r["api"], "status": r["status"]} for r in rows])
     return 0 if sv["status"] == "PASS" else 1
 
 
@@ -365,13 +396,28 @@ def latest_caps(rows) -> dict:
     return {k: v[1] for k, v in best.items()}
 
 
+def domain_start(boundaries: dict, dom: str):
+    """Начало обязательного диапазона домена (для плана и для DQ COVERAGE — одно и то же).
+
+    Начисления выбираются выборкой (5/15/25) и могут начаться раньше найденной даты, если они
+    редкие; поэтому их диапазон начинается не позже самой ранней активности любого домена.
+    """
+    firsts = {d: date.fromisoformat(str(b["first_observed_activity"])) for d, b in boundaries.items()
+              if d in L.HISTORICAL_DOMAINS and b.get("first_observed_activity")}
+    if dom not in firsts:
+        return None
+    start = firsts[dom]
+    if dom == "finance_accrual":
+        start = max(min(firsts.values()), H.DOCUMENTED_FLOOR["finance_accrual"])
+    return start
+
+
 def build_plan(boundaries: dict, cutover: date):
     chunks = []
     for dom in L.HISTORICAL_DOMAINS:
-        b = boundaries.get(dom)
-        if not b or not b.get("first_observed_activity"):
+        start = domain_start(boundaries, dom)
+        if start is None:
             continue
-        start = date.fromisoformat(str(b["first_observed_activity"]))
         if dom == "fbo_postings":
             start -= timedelta(days=1)             # сутки МСК D требуют UTC-суток D−1 (§H)
         chunks += CK.plan(dom, start, cutover)
@@ -389,15 +435,20 @@ def _cp_row(ctx, c: CK.Chunk, status, attempts=0, plan_hash=None, **extra):
             "evidence_json": json.dumps(extra, ensure_ascii=False, default=str) if extra else None}
 
 
+plan_versions, latest_plan = CK.plan_versions, CK.latest_plan
+
+
 def cmd_plan(ctx):
+    """План — версия с собственным хешем; перестроение допустимо только до подтверждения
+    (CAPABILITY_DISCOVERY), в работу идёт ровно та версия, хеш которой подтвердил владелец."""
     require_state(ctx, "plan")
     require_bound(ctx)
     bounds = latest(ctx.store.rows("tenant_ops", "HISTORY_BOUNDARIES"), "entity", "determined_at")
     cutover = ctx.today_msk - timedelta(days=1)
     chunks = [c for c in build_plan(bounds, cutover) if c.domain in ctx.entities]
     ph = CK.plan_hash(chunks)
-    have = {r["backfill_id"] for r in ctx.store.rows("tenant_ops", "BACKFILL_CHECKPOINTS")}
-    new = [_cp_row(ctx, c, "PENDING", plan_hash=ph) for c in chunks if c.chunk_id not in have]
+    have = {(r["backfill_id"], r.get("plan_hash")) for r in ctx.store.rows("tenant_ops", "BACKFILL_CHECKPOINTS")}
+    new = [_cp_row(ctx, c, "PENDING", plan_hash=ph) for c in chunks if (c.chunk_id, ph) not in have]
     ctx.store.append("BACKFILL_CHECKPOINTS", new)
     C.log(event="plan_done", run_id=ctx.run_id, plan_hash=ph, chunks=len(chunks), new=len(new),
           cutover=str(cutover))
@@ -405,7 +456,13 @@ def cmd_plan(ctx):
 
 
 def run_id_for(chunk: CK.Chunk, gen: int) -> str:
-    return f"bf-{chunk.chunk_id}-{gen:04d}-{uuid.uuid4().hex[:8]}"
+    # Случайная часть — первой: runtime называет staging-таблицу по первым 10 символам run_id без
+    # дефисов (common.merge_rows); два исполнителя одного отрезка не делят одну staging-таблицу.
+    return f"bf-{uuid.uuid4().hex[:8]}-{chunk.chunk_id}-{gen:04d}"
+
+
+# Выгрузки Performance: одна одновременная на аккаунт (Swagger «Лимиты») — один слот на арендатора.
+PERF_SLOT = hashlib.sha256(b"performance-export-slot").hexdigest()[:16]
 
 
 def chunk_exports(c: CK.Chunk, caps) -> int | None:
@@ -433,20 +490,22 @@ def quota_state(ledger, caps, now):
     return Q.budget(active, spent, now)
 
 
+def ledger_generations(ledger, chunk_id):
+    return [r.get("lease_generation") for r in ledger if r.get("backfill_id") == chunk_id]
+
+
 def cmd_claim_next(ctx):
     require_state(ctx, "claim-next")
     require_bound(ctx)
-    events = list(ctx.store.rows("tenant_ops", "TENANT_STATE_EVENTS"))
+    _st, chain, decisions, _p = verified_state(ctx)
     ledger = list(ctx.store.rows("tenant_ops", "BACKFILL_CHECKPOINTS"))
-    folded = CK.fold(ledger)
-    plan_rows = latest(ledger, "backfill_id", "updated_at")
-    chunks = sorted((CK.Chunk(r["entity"], date.fromisoformat(str(r["window_from"])), date.fromisoformat(str(r["window_to"])))
-                     for r in plan_rows.values()), key=lambda c: (c.domain, c.start))
-    approved = approved_plan_hash(events)
-    if not chunks or CK.plan_hash(chunks) != approved:
-        C.log(event="plan_not_approved", run_id=ctx.run_id, approved=approved,
-              ledger=CK.plan_hash(chunks) if chunks else None)
+    folded = CK.fold(ledger, reopened_run_ids(decisions))
+    approved = approved_plan_hash(chain, decisions)
+    versions = plan_versions(ledger)
+    if approved not in versions:
+        C.log(event="plan_not_approved", run_id=ctx.run_id, approved=approved, visible=sorted(versions))
         return 4
+    chunks = versions[approved][0]
     caps = latest_caps(ctx.store.rows("tenant_ops", "CAPABILITY_PROFILE"))
     budget = quota_state(ledger, caps, ctx.now)
     leases = ctx.store.leases()
@@ -458,10 +517,16 @@ def cmd_claim_next(ctx):
             C.log(event="quota_deferred", run_id=ctx.run_id, chunk=c.chunk_id, domain=c.domain,
                   exports=exports, remaining=budget["remaining"])
             continue                               # продолжение — в следующем окне бюджета
-        gen = CK.next_lease_generation(leases, c.chunk_id, ctx.now)
+        gen = CK.next_lease_generation(leases, c.chunk_id, ctx.now, ledger_generations(ledger, c.chunk_id))
         if gen is None:
-            continue                               # живая аренда у другого исполнителя
+            continue                               # аренда держится у другого исполнителя
         until = ctx.now + CK.LEASE_TTL
+        if exports:
+            slot = CK.next_lease_generation(leases, PERF_SLOT, ctx.now)
+            if slot is None or not ctx.store.create_lease(CK.lease_name(PERF_SLOT, slot), until, ctx.run_id):
+                C.log(event="quota_deferred", run_id=ctx.run_id, chunk=c.chunk_id, domain=c.domain,
+                      reason="performance_slot_busy")
+                continue                           # одна выгрузка на аккаунт одновременно
         if not ctx.store.create_lease(CK.lease_name(c.chunk_id, gen), until, ctx.run_id):
             continue                               # проиграли гонку (409) — следующий отрезок
         rid = run_id_for(c, gen)
@@ -471,6 +536,7 @@ def cmd_claim_next(ctx):
             lease_until=until.isoformat(), lease_generation=gen, started_at=ctx.now.isoformat(),
             exports=exports)])
         C.log(event="chunk_claimed", run_id=ctx.run_id, chunk=c.chunk_id, domain=c.domain,
+              lease_until=until.isoformat(),
               executor_env={"ENTITIES": c.domain, "SINCE": str(c.start), "UNTIL": str(c.end),
                             "INGESTION_RUN_ID": rid, "STRICT_PAGE_CAPS": "1"})
         return 0
@@ -490,18 +556,22 @@ def classify_error(msg: str | None) -> str:
 def cmd_verify_chunks(ctx):
     require_state(ctx, "verify-chunks")
     ledger = list(ctx.store.rows("tenant_ops", "BACKFILL_CHECKPOINTS"))
-    folded = CK.fold(ledger)
+    folded = CK.fold(ledger, reopened_run_ids(decisions_of(ctx)))
     runs = list(ctx.store.rows("ozon_raw", "OZON_INGESTION_RUNS"))
-    running = {r["backfill_id"]: r for r in ledger if r.get("status") == "RUNNING"}
     out = []
-    for cid, r in running.items():
-        st = folded.get(cid) or {}
-        if st.get("status") != "RUNNING" or st.get("run_id") != r.get("run_id"):
+    for cid, st in folded.items():
+        if st["status"] != "RUNNING":
+            continue
+        # Версия RUNNING именно текущей попытки (run_id свёртки), а не последняя в порядке выдачи.
+        r = next((x for x in ledger if x["backfill_id"] == cid and x.get("status") == "RUNNING"
+                  and x.get("run_id") == st["run_id"]), None)
+        if r is None:
             continue
         c = CK.Chunk(r["entity"], date.fromisoformat(str(r["window_from"])), date.fromisoformat(str(r["window_to"])))
         mine = [x for x in runs if x.get("ingestion_run_id") == r["run_id"] and x.get("entity") == c.domain]
         ok = [x for x in mine if x.get("status") == "OK" and str(x.get("source_from")) == str(c.start)
               and str(x.get("source_to")) == str(c.end)]
+        until = I.as_utc(r.get("lease_until"))
         if ok:
             out.append(_cp_row(ctx, c, "DONE", st["attempts"], run_id=r["run_id"], rows_written=ok[0].get("rows_received"),
                                completed_at=ctx.now.isoformat()))
@@ -510,7 +580,8 @@ def cmd_verify_chunks(ctx):
             err = ("WINDOW_MISMATCH" if all(x.get("status") == "OK" for x in mine)
                    else classify_error(mine[-1].get("error_message")))
             out.append(_cp_row(ctx, c, "FAILED", st["attempts"], run_id=r["run_id"], error_code=err))
-        elif I.as_utc(r.get("lease_until")) and I.as_utc(r.get("lease_until")) < ctx.now:
+        elif until and until + CK.VISIBILITY_GRACE < ctx.now:
+            # Журнал прогонов пишется потоковой вставкой: «прогона нет» — только после допуска видимости.
             out.append(_cp_row(ctx, c, "FAILED", st["attempts"], run_id=r["run_id"], error_code="LEASE_EXPIRED"))
     ctx.store.append("BACKFILL_CHECKPOINTS", out)
     C.log(event="verify_chunks_done", run_id=ctx.run_id, updated=len(out))
@@ -532,20 +603,31 @@ def maturity(ctx):
     return float(next(iter(vals))) if len(vals) == 1 else None
 
 
-def gather_facts(ctx, binding):
+def active_plan(ledger, chain, decisions):
+    """(хеш, отрезки) плана в работе: подтверждённый владельцем, иначе последняя полная версия."""
+    approved = approved_plan_hash(chain, decisions)
+    versions = plan_versions(ledger)
+    if approved:
+        return approved, (versions.get(approved) or (None, None))[0]
+    ph, chunks = latest_plan(ledger)
+    return ph, chunks
+
+
+def gather_facts(ctx, binding, chain=None, decisions=None):
+    if chain is None:
+        _s, chain, decisions, _p = verified_state(ctx)
     ledger = list(ctx.store.rows("tenant_ops", "BACKFILL_CHECKPOINTS"))
-    folded = CK.fold(ledger)
-    by_chunk = latest(ledger, "backfill_id", "updated_at")
+    folded = CK.fold(ledger, reopened_run_ids(decisions))
+    _ph, chunks = active_plan(ledger, chain, decisions)
+    chunks = chunks or []
     done = {}
-    for cid, st in folded.items():
-        r = by_chunk[cid]
-        if st["status"] == "DONE":
-            done.setdefault(r["entity"], []).append((date.fromisoformat(str(r["window_from"])),
-                                                     date.fromisoformat(str(r["window_to"]))))
+    for c in chunks:
+        if (folded.get(c.chunk_id) or {}).get("status") == "DONE":
+            done.setdefault(c.domain, []).append((c.start, c.end))
     bounds = latest(ctx.store.rows("tenant_ops", "HISTORY_BOUNDARIES"), "entity", "determined_at")
-    cutover = max((date.fromisoformat(str(r["window_to"])) for r in by_chunk.values()), default=None)
-    ranges = {d: (date.fromisoformat(str(b["first_observed_activity"])), cutover)
-              for d, b in bounds.items() if d in ctx.entities and b.get("first_observed_activity") and cutover}
+    cutover = max((c.end for c in chunks), default=None)
+    ranges = {d: (domain_start(bounds, d), cutover)
+              for d in bounds if d in ctx.entities and domain_start(bounds, d) and cutover}
     runs = list(ctx.store.rows("ozon_raw", "OZON_INGESTION_RUNS"))
     bf_runs = [r for r in runs if str(r.get("ingestion_run_id", "")).startswith("bf-")]
     truncated = []
@@ -568,17 +650,15 @@ def gather_facts(ctx, binding):
                      if (r.get("operation_name") or "UNKNOWN") == "UNKNOWN")
     caps = latest_caps(ctx.store.rows("tenant_ops", "CAPABILITY_PROFILE"))
     fbs = (caps.get(("seller", "fbs_activity")) or {}).get("status") == "AVAILABLE"
-    return {"binding": binding, "ads_enabled": ctx.ads, "chunks": {c: s["status"] for c, s in folded.items()},
+    return {"binding": binding, "ads_enabled": ctx.ads,
+            "chunks": {c.chunk_id: (folded.get(c.chunk_id) or {}).get("status", "PENDING") for c in chunks},
             "required_ranges": ranges, "done_windows": done, "truncated_runs": truncated,
             "raw_duplicate_keys": dups, "finance_unresolved_rows": unresolved, "maturity_days": maturity(ctx),
             "fbs_activity": fbs, "ads_sum_worst_pct": None, "key_expires_soon": False}
 
 
-def cmd_dq(ctx):
-    require_state(ctx, "dq")
-    _sv, b = require_bound(ctx)
-    checks = DQ.evaluate(gather_facts(ctx, b))
-    rows = [{"result_id": hashlib.sha256(f"{ctx.run_id}|{cid}".encode()).hexdigest()[:32], "check_id": cid,
+def dq_rows(ctx, checks):
+    return [{"result_id": hashlib.sha256(f"{ctx.run_id}|{cid}".encode()).hexdigest()[:32], "check_id": cid,
              "period_from": None, "period_to": None, "metric": v.get("metric"), "source_a": None, "source_b": None,
              "value_a": v.get("value") if isinstance(v.get("value"), (int, float)) else None, "value_b": None,
              "difference": None, "difference_pct": None, "tolerance_abs": None, "tolerance_pct": None,
@@ -586,36 +666,41 @@ def cmd_dq(ctx):
              "explanation": json.dumps({k: x for k, x in v.items() if k not in ("status", "severity")},
                                        ensure_ascii=False, default=str)[:1500],
              "evaluated_at": ctx.now.isoformat(), "run_id": ctx.run_id} for cid, v in checks.items()]
-    ctx.store.append("DQ_RESULTS", rows)
+
+
+def cmd_dq(ctx):
+    require_state(ctx, "dq")
+    _sv, b = require_bound(ctx)
+    checks = DQ.evaluate(gather_facts(ctx, b))
+    ctx.store.append("DQ_RESULTS", dq_rows(ctx, checks))
     C.log(event="dq_done", run_id=ctx.run_id, blocking=DQ.blocking_failures(checks))
     return 0
 
 
-def snapshot(ctx, binding, credentials):
-    events = list(ctx.store.rows("tenant_ops", "TENANT_STATE_EVENTS"))
-    caps = latest_caps(ctx.store.rows("tenant_ops", "CAPABILITY_PROFILE"))
+def _fresh(rows, ts, since):
+    """Только доказательства текущего цикла (не старше последнего входа в VALIDATING)."""
+    return [r for r in rows if since is None or (I.as_utc(r.get(ts)) or L._EPOCH) >= since]
+
+
+def snapshot(ctx, binding, credentials, chain, decisions, dq=None):
+    since = cycle_started_at(chain)
+    caps = latest_caps(_fresh(ctx.store.rows("tenant_ops", "CAPABILITY_PROFILE"), "discovered_at", since))
     ledger = list(ctx.store.rows("tenant_ops", "BACKFILL_CHECKPOINTS"))
-    folded = CK.fold(ledger)
-    by_chunk = latest(ledger, "backfill_id", "updated_at")
-    plan_chunks = [CK.Chunk(r["entity"], date.fromisoformat(str(r["window_from"])), date.fromisoformat(str(r["window_to"])))
-                   for r in by_chunk.values()]
-    dq_rows = list(ctx.store.rows("tenant_ops", "DQ_RESULTS"))
-    dq = None
-    if dq_rows:
-        last_run = max(dq_rows, key=lambda r: I.as_utc(r.get("evaluated_at")) or L._EPOCH)["run_id"]
-        mine = [r for r in dq_rows if r["run_id"] == last_run]
-        dq = {"run_id": last_run, "evaluated_at": I.as_utc(mine[0]["evaluated_at"]),
-              "checks": {r["check_id"]: {"status": r["status"], "severity": r.get("severity")} for r in mine}}
+    folded = CK.fold(ledger, reopened_run_ids(decisions))
+    ph, chunks = active_plan(ledger, chain, decisions)
+    chunks = chunks or []
+    states = {c.chunk_id: (folded.get(c.chunk_id) or {}).get("status", "PENDING") for c in chunks}
     required = tuple(k for e in ctx.entities for k in ENTITY_CAPABILITIES.get(e, ()))
     return L.Snapshot(
-        tenant_id=ctx.tenant, now=ctx.now, events=events, enabled_entities=ctx.entities,
+        tenant_id=ctx.tenant, now=ctx.now, events=chain, decisions=decisions, enabled_entities=ctx.entities,
         credentials=credentials, binding=binding,
         capabilities={k: r["status"] for k, r in caps.items()},
         required_capabilities=required,
-        history=latest(ctx.store.rows("tenant_ops", "HISTORY_BOUNDARIES"), "entity", "determined_at"),
-        plan_hash=CK.plan_hash(plan_chunks) if plan_chunks else None,
-        chunks={c: s["status"] for c, s in folded.items()},
-        last_chunk_done_at=max((s["done_at"] for s in folded.values() if s["done_at"]), default=None),
+        history=latest(_fresh(ctx.store.rows("tenant_ops", "HISTORY_BOUNDARIES"), "determined_at", since),
+                       "entity", "determined_at"),
+        plan_hash=ph if chunks else None, chunks=states,
+        last_chunk_done_at=max(((folded.get(c.chunk_id) or {}).get("done_at") for c in chunks
+                                if (folded.get(c.chunk_id) or {}).get("done_at")), default=None),
         dq=dq, maturity_days=maturity(ctx))
 
 
@@ -623,24 +708,44 @@ CONTROL_NEXT = {L.VALIDATING: [L.CAPABILITY_DISCOVERY], L.CAPABILITY_DISCOVERY: 
                 L.BACKFILLING: [L.RECONCILING], L.RECONCILING: [L.READY, L.BACKFILLING]}
 
 
+def live_performance():
+    """Вердикт Performance этого прогона: токен и безвредное чтение (не строка прошлой проверки)."""
+    try:
+        C.perf_token()
+    except RuntimeError:
+        return CR.evaluate_performance(False, False)
+    code, _t = C.perf_get("/api/client/campaign")
+    return CR.evaluate_performance(True, code == 200, http_read=code)
+
+
 def cmd_advance(ctx):
+    cur, chain, decisions, problems = verified_state(ctx)
+    if problems:
+        C.log(event="journal_invalid", run_id=ctx.run_id, problems=problems[:5])
+        return 4
     sv, _row, sfp = observe_seller(ctx)
-    pv = None
-    pfp = None
+    pv, pfp = None, None
     if ctx.ads:
         pfp = I.performance_fingerprint(C.perf_client_id())
-        # Performance: последний вердикт проверки учётных данных (validate), а не допущение.
-        cap = latest_caps(ctx.store.rows("tenant_ops", "CAPABILITY_PROFILE")).get(("performance", "credential")) or {}
-        pv = {"status": "PASS" if cap.get("status") == "AVAILABLE" else "FAIL"}
+        pv = live_performance()
     binding = live_binding(ctx, sfp if sv["status"] == "PASS" else None, pfp)
-    s = snapshot(ctx, binding, {"seller": sv, **({"performance": pv} if pv else {})})
-    cur = L.current_state(s.events)
+    dq = None
+    if cur == L.RECONCILING:
+        # DQ считается в этом же прогоне: строки прошлых прогонов DQ могут быть не видны или старше
+        # данных. Результат дописывается в DQ_RESULTS как доказательство перехода.
+        checks = DQ.evaluate(gather_facts(ctx, binding, chain, decisions))
+        ctx.store.append("DQ_RESULTS", dq_rows(ctx, checks))
+        dq = {"run_id": ctx.run_id, "evaluated_at": ctx.now,
+              "checks": {c: {"status": v["status"], "severity": v["severity"]} for c, v in checks.items()}}
+    s = snapshot(ctx, binding, {"seller": sv, **({"performance": pv} if pv else {})}, chain, decisions, dq)
     for to in CONTROL_NEXT.get(cur, []):
         status, failures, event = L.decide(s, to, ctx.actor, f"AUTO_{to}", {
             "binding": binding, "plan_hash": s.plan_hash, "dq_run": (s.dq or {}).get("run_id")}, ctx.run_id)
         C.log(event="transition_decision", run_id=ctx.run_id, frm=cur, to=to, status=status, failures=failures[:10])
         if status == "WRITE":
-            ctx.store.append("TENANT_STATE_EVENTS", [event])
+            if not ctx.store.record_transition(event):
+                C.log(event="transition_conflict", run_id=ctx.run_id, seq=event["seq"])
+                return 5                           # параллельный переход занял номер — повторить позже
             return 0
         if status == "NOOP":
             return 0
@@ -648,8 +753,8 @@ def cmd_advance(ctx):
 
 
 def cmd_status(ctx):
-    events = list(ctx.store.rows("tenant_ops", "TENANT_STATE_EVENTS"))
-    C.log(event="status", state=L.current_state(events), history_problems=L.audit_history(events)[:5])
+    state, chain, _d, problems = verified_state(ctx)
+    C.log(event="status", state=state, events=len(chain), journal_problems=problems[:5])
     return 0
 
 

@@ -30,6 +30,10 @@ class TableError(RuntimeError):
     pass
 
 
+class Conflict(TableError):
+    """tables.insert: имя уже занято (HTTP 409) — параллельная запись."""
+
+
 def _token() -> str:
     return subprocess.run(["gcloud", "auth", "print-access-token"], capture_output=True, text=True,
                           check=True).stdout.strip()
@@ -47,7 +51,8 @@ def _req(method, url, body=None):
         with urllib.request.urlopen(req, timeout=60) as r:
             return _parse(r.read() or b"{}")
     except urllib.error.HTTPError as e:
-        raise TableError(f"{method} {url.split('?')[0].rsplit('/', 3)[-3:]}: HTTP {e.code}") from None
+        cls = Conflict if e.code == 409 else TableError
+        raise cls(f"{method} {url.split('?')[0].rsplit('/', 3)[-3:]}: HTTP {e.code}") from None
 
 
 def _parse(text):
@@ -90,3 +95,29 @@ class Tables:
         out = _req("POST", f"{BQ}/projects/{self.project}/datasets/{dataset}/tables/{table}/insertAll", body)
         if out.get("insertErrors"):
             raise TableError(f"{table}: insertAll отклонил {len(out['insertErrors'])} строк")
+
+    def list_tables(self, dataset: str):
+        """[(имя, метки, момент создания)] — tables.list (метаданные консистентны)."""
+        from datetime import datetime, timezone
+        base = f"{BQ}/projects/{self.project}/datasets/{dataset}/tables?maxResults=1000"
+        token, out = "", []
+        while True:
+            page = _req("GET", base + (f"&pageToken={urllib.parse.quote(token)}" if token else ""))
+            for t in page.get("tables") or []:
+                created = t.get("creationTime")
+                out.append((t["tableReference"]["tableId"], t.get("labels") or {},
+                            datetime.fromtimestamp(int(created) / 1000, tz=timezone.utc) if created else None))
+            token = page.get("nextPageToken") or ""
+            if not token:
+                return out
+
+    def create_marker(self, dataset: str, name: str, labels: dict, description: str) -> bool:
+        """Атомарно занять имя (tables.insert): True — наше, False — занято (409)."""
+        body = {"tableReference": {"projectId": self.project, "datasetId": dataset, "tableId": name},
+                "labels": labels, "description": description[:1000],
+                "schema": {"fields": [{"name": "marker", "type": "STRING"}]}}
+        try:
+            _req("POST", f"{BQ}/projects/{self.project}/datasets/{dataset}/tables", body)
+            return True
+        except Conflict:
+            return False

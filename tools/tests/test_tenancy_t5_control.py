@@ -165,7 +165,7 @@ def test_every_control_row_fits_its_schema():
     src = (REPO / "pipelines/ozon/runtime/lifecycle.py").read_text(encoding="utf-8")
     tree = ast.parse(src)
     expect = {"observe_seller": "SELLER_IDENTITY_OBSERVATIONS", "observe_performance": "SELLER_IDENTITY_OBSERVATIONS",
-              "_cap_row": "CAPABILITY_PROFILE", "_boundary_row": "HISTORY_BOUNDARIES", "cmd_dq": "DQ_RESULTS"}
+              "_cap_row": "CAPABILITY_PROFILE", "_boundary_row": "HISTORY_BOUNDARIES", "dq_rows": "DQ_RESULTS"}
     for fn in (n for n in ast.walk(tree) if isinstance(n, ast.FunctionDef) and n.name in expect):
         dicts = [d for d in ast.walk(fn) if isinstance(d, ast.Dict) and len(d.keys) > 6]
         assert dicts, fn.name
@@ -197,36 +197,66 @@ def test_audit_view_edges_equal_lifecycle_core():
     assert _edges_from_sql() == want
 
 
-def _events(*rows):
+DEC_COLS = ["decision_id", "decision_type", "expect_state", "to_state", "plan_hash", "secret_versions_json",
+            "chunk_id", "reopens_run_id", "reason", "actor", "decided_at"]
+
+
+def _events(*rows, decisions=()):
     cols = ["tenant_id", "event_id", "occurred_at", "from_state", "to_state", "actor", "run_id", "reason_code",
-            "reason_detail", "evidence_json"]
-    return {"TENANT_STATE_EVENTS": (cols, [("t", eid, at, f, to, actor, "r", "x", None, None)
-                                           for eid, at, f, to, actor in rows])}
+            "reason_detail", "evidence_json", "seq", "decision_id"]
+    return {"TENANT_STATE_EVENTS": (cols, [("t", eid, at, f, to, actor, "r", "x", None, None, seq, dec)
+                                           for seq, eid, at, f, to, actor, dec in rows]),
+            "OPERATOR_DECISIONS": (DEC_COLS, [(d, "TRANSITION", f, t, None, None, None, None, None, "OPERATOR:o", "2026-09-01")
+                                              for d, f, t in decisions])}
+
+
+GOOD = [(1, "e1", "2026-09-01 00:00:00", None, "CREDENTIALS_PENDING", "OPERATOR:o", "d1"),
+        (2, "e2", "2026-09-01 00:01:00", "CREDENTIALS_PENDING", "VALIDATING", "OPERATOR:o", "d2")]
+GOOD_DEC = [("d1", None, "CREDENTIALS_PENDING"), ("d2", "CREDENTIALS_PENDING", "VALIDATING")]
 
 
 def test_audit_view_accepts_valid_chain():
-    rows = HS.run("tenant_ops", "V_TENANT_STATE_AUDIT", _events(
-        ("e1", "2026-09-01 00:00:00", None, "CREDENTIALS_PENDING", "OPERATOR:o"),
-        ("e2", "2026-09-01 00:01:00", "CREDENTIALS_PENDING", "VALIDATING", "OPERATOR:o"),
-        ("e3", "2026-09-01 00:02:00", "VALIDATING", "CAPABILITY_DISCOVERY", "CONTROL:ctl-1"),
-        ("e4", "2026-09-01 00:03:00", "CAPABILITY_DISCOVERY", "SUSPENDED", "CONTROL:ctl-2")))
+    rows = HS.run("tenant_ops", "V_TENANT_STATE_AUDIT", _events(*GOOD,
+        (3, "e3", "2026-09-01 00:02:00", "VALIDATING", "CAPABILITY_DISCOVERY", "CONTROL:ctl-1", None),
+        (4, "e4", "2026-09-01 00:03:00", "CAPABILITY_DISCOVERY", "SUSPENDED", "OPERATOR:o", None),
+        decisions=GOOD_DEC))
     assert [r["audit_status"] for r in sorted(rows, key=lambda r: r["seq"])] == ["OK"] * 4
     assert all(r["first_violation_at"] is None for r in rows)
 
 
+def test_audit_view_orders_by_seq_not_clock():
+    """Часы ноутбука владельца отстают: время события 3 раньше события 2, но порядок — по seq."""
+    rows = HS.run("tenant_ops", "V_TENANT_STATE_AUDIT", _events(
+        GOOD[0], (2, "e2", "2026-09-01 00:05:00", "CREDENTIALS_PENDING", "VALIDATING", "OPERATOR:o", "d2"),
+        (3, "e3", "2026-09-01 00:02:00", "VALIDATING", "CAPABILITY_DISCOVERY", "CONTROL:c", None), decisions=GOOD_DEC))
+    assert all(r["audit_status"] == "OK" for r in rows)
+
+
 @pytest.mark.parametrize("bad,violation", [
-    (("e3", "2026-09-01 00:02:00", "VALIDATING", "READY", "CONTROL:c"), "EDGE"),
-    (("e3", "2026-09-01 00:02:00", "VALIDATING", "CAPABILITY_DISCOVERY", "OPERATOR:o"), "ACTOR"),
-    (("e3", "2026-09-01 00:02:00", "RECONCILING", "READY", "CONTROL:c"), "CHAIN"),
-    (("e3", "2026-09-01 00:02:00", "VALIDATING", "CAPABILITY_DISCOVERY", "RUNTIME:x"), "ACTOR"),
+    ((3, "e3", "2026-09-01 00:02:00", "VALIDATING", "READY", "CONTROL:c", None), "EDGE"),
+    ((3, "e3", "2026-09-01 00:02:00", "VALIDATING", "CAPABILITY_DISCOVERY", "OPERATOR:o", None), "ACTOR"),
+    ((3, "e3", "2026-09-01 00:02:00", "RECONCILING", "READY", "CONTROL:c", None), "CHAIN"),
+    ((3, "e3", "2026-09-01 00:02:00", "VALIDATING", "CAPABILITY_DISCOVERY", "RUNTIME:x", None), "ACTOR"),
+    ((5, "e3", "2026-09-01 00:02:00", "VALIDATING", "CAPABILITY_DISCOVERY", "CONTROL:c", None), "SEQ"),
+    ((3, "e3", "2026-09-01 00:02:00", "VALIDATING", "SUSPENDED", "CONTROL:c", None), None),
 ])
 def test_audit_view_flags_violations(bad, violation):
-    rows = HS.run("tenant_ops", "V_TENANT_STATE_AUDIT", _events(
-        ("e1", "2026-09-01 00:00:00", None, "CREDENTIALS_PENDING", "OPERATOR:o"),
-        ("e2", "2026-09-01 00:01:00", "CREDENTIALS_PENDING", "VALIDATING", "OPERATOR:o"), bad))
+    rows = HS.run("tenant_ops", "V_TENANT_STATE_AUDIT", _events(*GOOD, bad, decisions=GOOD_DEC))
     last = max(rows, key=lambda r: r["seq"])
-    assert last["audit_status"] == "VIOLATION" and last["violation"] == violation
-    assert all(r["first_violation_at"] == bad[1] for r in rows)
+    assert last["violation"] == violation and last["audit_status"] == ("OK" if violation is None else "VIOLATION")
+
+
+def test_audit_view_flags_operator_edge_without_owner_decision():
+    """control записал «OPERATOR» сам: решения владельца в ref нет — PROOF."""
+    forged = [(1, "e1", "2026-09-01 00:00:00", None, "CREDENTIALS_PENDING", "OPERATOR:forged", "d1"),
+              (2, "e2", "2026-09-01 00:01:00", "CREDENTIALS_PENDING", "VALIDATING", "OPERATOR:forged", "dx")]
+    rows = HS.run("tenant_ops", "V_TENANT_STATE_AUDIT", _events(*forged, decisions=[GOOD_DEC[0]]))
+    by = {r["seq"]: r for r in rows}
+    assert by[1]["audit_status"] == "OK" and by[2]["violation"] == "PROOF"
+    mism = [(1, "e1", "2026-09-01 00:00:00", None, "CREDENTIALS_PENDING", "OPERATOR:o", "d1"),
+            (2, "e2", "2026-09-01 00:01:00", "CREDENTIALS_PENDING", "VALIDATING", "OPERATOR:o", "d1")]
+    rows = HS.run("tenant_ops", "V_TENANT_STATE_AUDIT", _events(*mism, decisions=[GOOD_DEC[0]]))
+    assert max(rows, key=lambda r: r["seq"])["violation"] == "PROOF"       # решение от другого ребра
 
 
 def test_capability_view_takes_latest_per_pair():
@@ -256,4 +286,29 @@ def test_t5_views_are_tenant_ops_only_and_share_is_not_extended():
     for n in ("V_CAPABILITY_CURRENT", "V_TENANT_STATE_AUDIT"):
         sql = (HS.PACKAGE_DIR / "tenant_ops" / f"{n}.sql").read_text(encoding="utf-8")
         refs = set(re.findall(r"`__tenant__\.(\w+)\.(\w+)`", sql))
-        assert {ds for ds, _t in refs} == {"tenant_ops"}, n
+        # Аудит читает решения владельца (ref.OPERATOR_DECISIONS); клиентского слоя и витрины — нет.
+        assert refs - {("ref", "OPERATOR_DECISIONS"), ("tenant_ops", n)} <= \
+            {("tenant_ops", t) for t in OC.PLATFORM_TABLES["tenant_ops"]}, n
+
+
+# ═════════════════════════════════════════ политика методов Seller (ревью PR #226, находка 14)
+def test_policy_generator_takes_the_strictest_class_per_path(tmp_path):
+    from tools.tenancy import ozon_method_policy as P
+    spec = {"paths": {
+        "/v1/x/list": {"post": {"summary": "Получить список"}, "delete": {"summary": "Получить список"}},
+        "/v1/y/info": {"get": {"summary": "Получить информацию"}, "post": {"summary": "Удалить товар"}},
+        "/v1/z/info": {"get": {"summary": "Получить информацию"}},
+    }}
+    f = tmp_path / "spec.json"
+    f.write_text(json.dumps(spec), encoding="utf-8")
+    m = P.build(f, "2026-09-28")["methods"]
+    assert m["/v1/x/list"]["class"] == "MUTATION" and m["/v1/x/list"]["http"] == "DELETE"
+    assert m["/v1/y/info"]["class"] == "MUTATION"
+    assert m["/v1/z/info"]["class"] == "READ"
+
+
+def test_policy_file_has_one_method_per_path_and_no_approved_mutations():
+    from tools.tenancy import ozon_method_policy as P
+    pol = P.load_policy()
+    assert pol["approved_mutation_methods"] == [] and len(pol["methods"]) == 481
+    assert {v["http"] for v in pol["methods"].values()} <= {"GET", "POST"}

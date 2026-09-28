@@ -1,0 +1,74 @@
+{
+  "clustering": [
+    "decision_type"
+  ],
+  "schema": [
+    {
+      "description": "Идентификатор решения (dec-<24 hex>); на него ссылается маркер перехода S_<seq>",
+      "mode": "REQUIRED",
+      "name": "decision_id",
+      "type": "STRING"
+    },
+    {
+      "description": "TRANSITION или REOPEN_CHUNK",
+      "mode": "REQUIRED",
+      "name": "decision_type",
+      "type": "STRING"
+    },
+    {
+      "description": "TRANSITION: состояние, из которого владелец разрешает переход (NULL — начало журнала)",
+      "mode": "NULLABLE",
+      "name": "expect_state",
+      "type": "STRING"
+    },
+    {
+      "description": "TRANSITION: целевое состояние (ребро оператора автомата T5)",
+      "mode": "NULLABLE",
+      "name": "to_state",
+      "type": "STRING"
+    },
+    {
+      "description": "APPROVE (→ BACKFILLING): хеш плана бэкфилла, который владелец подтвердил",
+      "mode": "NULLABLE",
+      "name": "plan_hash",
+      "type": "STRING"
+    },
+    {
+      "description": "→ VALIDATING: число ENABLED-версий 4 секретов (значения — никогда)",
+      "mode": "NULLABLE",
+      "name": "secret_versions_json",
+      "type": "STRING"
+    },
+    {
+      "description": "REOPEN_CHUNK: отрезок бэкфилла",
+      "mode": "NULLABLE",
+      "name": "chunk_id",
+      "type": "STRING"
+    },
+    {
+      "description": "REOPEN_CHUNK: run_id версии DONE, которую владелец отменяет",
+      "mode": "NULLABLE",
+      "name": "reopens_run_id",
+      "type": "STRING"
+    },
+    {
+      "description": "Причина",
+      "mode": "NULLABLE",
+      "name": "reason",
+      "type": "STRING"
+    },
+    {
+      "description": "OPERATOR:<учётная запись владельца>",
+      "mode": "REQUIRED",
+      "name": "actor",
+      "type": "STRING"
+    },
+    {
+      "description": "Момент решения (часы владельца; порядок переходов задаёт seq маркера)",
+      "mode": "REQUIRED",
+      "name": "decided_at",
+      "type": "TIMESTAMP"
+    }
+  ],
+  "table_id": "OPERATOR_DECISIONS"
+}

@@ -155,7 +155,7 @@ def test_entity_table_contract_matches_runtime_source():
 
 def test_every_table_any_entity_needs_has_a_git_schema():
     tables = OC.tables_for(OC.ENTITY_TABLES)
-    assert len(tables["ozon_raw"]) == 21 and len(tables["ref"]) == 5 and len(tables["tenant_ops"]) == 7
+    assert len(tables["ozon_raw"]) == 21 and len(tables["ref"]) == 6 and len(tables["tenant_ops"]) == 7   # T5: + OPERATOR_DECISIONS
     assert OC.tables_for(OC.ENTITY_TABLES, include_platform=False)["ref"] == ["REF_SKU_CHANNEL_MAP"]
     for ds, names in tables.items():
         for t in names:
@@ -179,7 +179,7 @@ def test_client_001_bootstrap_covers_every_table_its_entities_write():
     entities = R.load_tenant("client_001")["marketplaces"]["ozon"]["entities"]
     need = {"OZON_INGESTION_RUNS"} | {t for e in entities for t in OC.ENTITY_TABLES[e]}
     need |= {t for names in OC.PLATFORM_TABLES.values() for t in names}          # T4: таблицы платформы
-    assert have == need and len(have) == 27
+    assert have == need and len(have) == 28           # T5: + ref.OPERATOR_DECISIONS
 
 
 def test_schema_snapshots_are_project_neutral():

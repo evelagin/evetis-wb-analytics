@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Операторские переходы автомата арендатора (Tenancy T5, §L).
+"""Операторские переходы автомата арендатора (Tenancy T5, §L) — только владелец.
 
   python tools/tenancy/tenant_lifecycle.py status <tenant_id>
   python tools/tenancy/tenant_lifecycle.py bootstrap <tenant_id>              ∅ → CREDENTIALS_PENDING
@@ -9,6 +9,12 @@
   python tools/tenancy/tenant_lifecycle.py resume <tenant_id>                 SUSPENDED|READY → VALIDATING
   python tools/tenancy/tenant_lifecycle.py reopen-chunk <tenant_id> --chunk ID --reason R   (ремонт DONE)
 
+Полномочия владельца — строка решения в ref.OPERATOR_DECISIONS: туда пишет только владелец (у control и
+runtime права записи в ref нет), и ребро оператора без решения аудит отвергает. Переход занимает номер
+seq созданием маркера tenant_locks.S_<seq> (409 — параллельный переход, запись отменена); порядок — по
+seq, а не по часам ноутбука. Ремонт отрезка — решение REOPEN_CHUNK со ссылкой на run_id отменяемой
+версии DONE (часы не участвуют).
+
 Только рёбра исполнителя OPERATOR и только через тот же валидатор, что у control
 (lifecycle_core.decide). Команды «установить состояние» нет: READY ставит только control, и только
 если выполнен весь контракт READY. Число версий секретов читается владельцем (gcloud), значения —
@@ -17,6 +23,7 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import subprocess
 import sys
@@ -46,6 +53,20 @@ def secret_versions(project: str, secret_ids) -> dict:
     return out
 
 
+def read_state(contract, tables):
+    """(цепочка из маркеров, решения владельца, журнал чекпойнтов)."""
+    ops, ref, locks = (contract["datasets"][k] for k in ("tenant_ops", "ref", "tenant_locks"))
+    chain = L.chain_from_markers(tables.list_tables(locks))
+    decisions = {d["decision_id"]: d for d in tables.rows(ref, "OPERATOR_DECISIONS") if d.get("decision_id")}
+    ledger = list(tables.rows(ops, "BACKFILL_CHECKPOINTS"))
+    return chain, decisions, ledger
+
+
+def reopened(decisions):
+    return frozenset(d.get("reopens_run_id") for d in decisions.values()
+                     if d.get("decision_type") == "REOPEN_CHUNK" and d.get("reopens_run_id"))
+
+
 def operator_binding(contract, tables, now, ents):
     """Привязка глазами оператора: действующее подтверждение в ref, согласованное с наблюдением.
 
@@ -72,26 +93,61 @@ def operator_binding(contract, tables, now, ents):
     return binding, cred
 
 
-def build_snapshot(contract, tables, now, secret_counts=None, plan_hash=None):
-    ops = contract["datasets"]["tenant_ops"]
-    ledger = list(tables.rows(ops, "BACKFILL_CHECKPOINTS"))
-    last = {}
-    for r in ledger:
-        last[r["backfill_id"]] = r
-    chunks = [CK.Chunk(r["entity"], _d(r["window_from"]), _d(r["window_to"])) for r in last.values()]
+def build_snapshot(contract, tables, now, secret_counts=None, plan_hash=None, extra_decision=None):
+    chain, decisions, ledger = read_state(contract, tables)
+    if extra_decision:
+        decisions = dict(decisions, **{extra_decision["decision_id"]: extra_decision})
     jobs = (contract["marketplaces"].get("ozon") or {}).get("jobs") or {}
     ents = tuple(sorted({e for j in jobs.values() for e in j["entities"]}))
+    ph, chunks = CK.latest_plan(ledger)
+    folded = CK.fold(ledger, reopened(decisions))
     binding, cred = operator_binding(contract, tables, now, ents) if plan_hash else ({}, {})
-    return L.Snapshot(tenant_id=contract["tenant_id"], now=now, events=list(tables.rows(ops, "TENANT_STATE_EVENTS")),
+    return L.Snapshot(tenant_id=contract["tenant_id"], now=now, events=chain, decisions=decisions,
                       enabled_entities=ents, secret_versions=secret_counts or {}, binding=binding, credentials=cred,
-                      plan_hash=CK.plan_hash(chunks) if chunks else None,
-                      chunks={c: s["status"] for c, s in CK.fold(ledger).items()},
+                      plan_hash=ph if chunks else None,
+                      chunks={c.chunk_id: (folded.get(c.chunk_id) or {}).get("status", "PENDING") for c in chunks},
                       operator_plan_hash=plan_hash)
 
 
-def _d(v):
-    from datetime import date
-    return date.fromisoformat(str(v))
+def new_decision(actor, now, **fields):
+    base = {"decision_type": "TRANSITION", "expect_state": None, "to_state": None, "plan_hash": None,
+            "secret_versions_json": None, "chunk_id": None, "reopens_run_id": None, "reason": None,
+            "actor": actor, "decided_at": now.isoformat()}
+    base.update(fields)
+    base["decision_id"] = "dec-" + hashlib.sha256(json.dumps(base, sort_keys=True).encode() + uuid.uuid4().bytes).hexdigest()[:24]
+    return base
+
+
+def transition(contract, tables, now, target, actor, reason, plan_hash=None, secret_counts=None):
+    """(статус, текст). Решение → ref, затем маркер S_<seq> (CAS), затем зеркало в tenant_ops."""
+    chain, _d, _l = read_state(contract, tables)
+    dec = new_decision(actor, now, expect_state=L.current_state(chain), to_state=target, plan_hash=plan_hash,
+                       reason=reason,
+                       secret_versions_json=json.dumps(secret_counts, sort_keys=True) if secret_counts else None)
+    s = build_snapshot(contract, tables, now, secret_counts, plan_hash, extra_decision=dec)
+    status, failures, event = L.decide(s, target, actor, reason or target, {
+        "secret_versions": secret_counts, "plan_hash": plan_hash}, f"operator:{uuid.uuid4()}",
+        decision_id=dec["decision_id"])
+    if status != "WRITE":
+        return status, "; ".join(failures) or "ok"
+    ref, locks, ops = (contract["datasets"][k] for k in ("ref", "tenant_locks", "tenant_ops"))
+    tables.append(ref, "OPERATOR_DECISIONS", [dec])
+    if not tables.create_marker(locks, L.marker_name(event["seq"]), L.marker_labels(event),
+                                json.dumps({"reason_code": event["reason_code"], "run_id": event["run_id"]})):
+        return "CONFLICT", f"номер {event['seq']} занят параллельным переходом — повторите после status"
+    tables.append(ops, "TENANT_STATE_EVENTS", [event])
+    return "WRITE", f"{event['from_state']} → {event['to_state']} (seq {event['seq']}, {dec['decision_id']})"
+
+
+def reopen_chunk(contract, tables, now, actor, chunk_id, reason):
+    _chain, decisions, ledger = read_state(contract, tables)
+    st = CK.fold(ledger, reopened(decisions)).get(chunk_id)
+    if not st or st["status"] != "DONE" or not st.get("run_id"):
+        return "REJECT", f"отрезок {chunk_id} не DONE — ремонт не нужен"
+    dec = new_decision(actor, now, decision_type="REOPEN_CHUNK", chunk_id=chunk_id, reopens_run_id=st["run_id"],
+                       reason=reason[:500])
+    tables.append(contract["datasets"]["ref"], "OPERATOR_DECISIONS", [dec])
+    return "WRITE", f"REOPEN {chunk_id}: отменена версия DONE {st['run_id']} ({dec['decision_id']})"
 
 
 def main(argv=None):
@@ -106,36 +162,26 @@ def main(argv=None):
     c = contract_for(a.tenant_id)
     t = TT.Tables(c["project_id"])
     now = datetime.now(timezone.utc)
-    ops = c["datasets"]["tenant_ops"]
     if a.cmd == "status":
-        events = list(t.rows(ops, "TENANT_STATE_EVENTS"))
-        print(json.dumps({"state": L.current_state(events), "events": len(events),
-                          "audit": L.audit_history(events)[:5]}, ensure_ascii=False))
+        chain, decisions, _l = read_state(c, t)
+        print(json.dumps({"state": L.current_state(chain), "events": len(chain),
+                          "audit": L.audit_history(chain, decisions)[:5]}, ensure_ascii=False))
         return 0
     actor = f"OPERATOR:{TT.owner_account()}"
-    run_id = f"operator:{uuid.uuid4()}"
     if a.cmd == "reopen-chunk":
         if not (a.chunk and a.reason):
             print("REJECT: --chunk и --reason обязательны")
             return 1
-        ledger = list(t.rows(ops, "BACKFILL_CHECKPOINTS"))
-        st = CK.fold(ledger).get(a.chunk)
-        if not st or st["status"] != "DONE":
-            print(f"REJECT: отрезок {a.chunk} не DONE — ремонт не нужен")
+        status, text = reopen_chunk(c, t, now, actor, a.chunk, a.reason)
+    else:
+        if a.cmd == "suspend" and not a.reason:
+            print("REJECT: приостановка без --reason")
             return 1
-        src = [r for r in ledger if r["backfill_id"] == a.chunk][-1]
-        t.append(ops, "BACKFILL_CHECKPOINTS", [dict(src, status="REOPENED", run_id=run_id, updated_at=now.isoformat(),
-                                                    error_code="OPERATOR_REPAIR", error_detail=a.reason[:500])])
-        print(f"REOPENED {a.chunk}")
-        return 0
-    counts = secret_versions(c["project_id"], (c["marketplaces"]["ozon"]["secret_ids"] or {}).values()) \
-        if a.cmd == "credentials-inserted" else None
-    s = build_snapshot(c, t, now, counts, a.plan_hash)
-    status, failures, event = L.decide(s, OPERATOR_TARGETS[a.cmd], actor, a.reason or a.cmd.upper(),
-                                       {"secret_versions": counts, "plan_hash": a.plan_hash}, run_id)
-    print(f"{status}: {'; '.join(failures) or 'ok'}")
-    if status == "WRITE":
-        t.append(ops, "TENANT_STATE_EVENTS", [event])
+        counts = secret_versions(c["project_id"], (c["marketplaces"]["ozon"]["secret_ids"] or {}).values()) \
+            if a.cmd == "credentials-inserted" else None
+        status, text = transition(c, t, now, OPERATOR_TARGETS[a.cmd], actor, a.reason or a.cmd.upper(),
+                                  a.plan_hash, counts)
+    print(f"{status}: {text}")
     return 0 if status in ("WRITE", "NOOP") else 1
 
 

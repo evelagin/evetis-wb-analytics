@@ -114,17 +114,27 @@ def classify(path: str, summary: str) -> tuple[str, str]:
     return "UNKNOWN", "нет однозначного признака"
 
 
+STRICTNESS = {"READ": 0, "REPORT": 1, "UNKNOWN": 2, "MUTATION": 3}
+
+
 def build(spec_path: Path, spec_date: str) -> dict:
     raw = spec_path.read_bytes()
     spec = _parse(raw)
     methods = {}
     for p, it in sorted(spec["paths"].items()):
+        # /v1/roles отдаёт пути, а не пары «метод + путь»: у пути с несколькими HTTP-методами класс —
+        # самый строгий из них (ревью PR #226: раньше последний метод перезаписывал предыдущие).
+        # DELETE/PUT/PATCH меняют состояние по определению HTTP.
         for m, op in sorted(it.items()):
             if m not in ("get", "post", "put", "delete", "patch"):
                 continue
             cls, why = classify(p, op.get("summary") or "")
-            methods[p] = {"class": cls, "reason": why, "http": m.upper(),
-                          "deprecated": bool(op.get("deprecated"))}
+            if m in ("delete", "put", "patch") and cls != "MUTATION":
+                cls, why = "MUTATION", f"HTTP {m.upper()}"
+            prev = methods.get(p)
+            if prev is None or STRICTNESS[cls] > STRICTNESS[prev["class"]]:
+                methods[p] = {"class": cls, "reason": why, "http": m.upper(),
+                              "deprecated": bool(op.get("deprecated")) or bool(prev and prev["deprecated"])}
     return {"schema_version": 1, "api": "ozon_seller",
             "spec_date": spec_date, "spec_sha256": hashlib.sha256(raw).hexdigest(),
             "approved_mutation_methods": [],
