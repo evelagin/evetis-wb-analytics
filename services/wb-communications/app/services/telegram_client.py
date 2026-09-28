@@ -24,7 +24,15 @@ class TelegramClient:
         def _do() -> httpx.Response:
             return self._client.post(f"{self._base}/{method}", json=payload)
 
-        resp = retry_call(_do, retries=2, retry_on=(httpx.TransportError,))
+        failure = None
+        try:
+            resp = retry_call(_do, retries=2, retry_on=(httpx.TransportError,))
+        except httpx.HTTPError as exc:
+            failure = type(exc).__name__
+        if failure is not None:
+            # httpx errors carry the request (and its URL with the bot token). Raise OUTSIDE the
+            # except block so the original is neither __cause__ nor __context__ of the new error.
+            raise TelegramError(f"telegram {method}: transport {failure}")
         try:
             data = resp.json()
         except ValueError:

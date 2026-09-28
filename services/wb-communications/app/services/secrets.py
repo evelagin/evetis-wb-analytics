@@ -14,7 +14,7 @@ import os
 from functools import lru_cache
 
 from app.domain.exceptions import ConfigError
-from app.utils.logging import get_logger
+from app.utils.logging import get_logger, register_secret
 
 logger = get_logger(__name__)
 
@@ -32,6 +32,7 @@ def get_secret(name: str, project_id: str, *, required: bool = True) -> str:
     """Return a secret value. Env var wins over Secret Manager for local dev."""
     env_value = os.environ.get(name)
     if env_value:
+        register_secret(env_value)
         logger.info("secret %s loaded from environment", name)
         return env_value
 
@@ -43,8 +44,10 @@ def get_secret(name: str, project_id: str, *, required: bool = True) -> str:
     resource = f"projects/{project_id}/secrets/{name}/versions/latest"
     try:
         response = _client().access_secret_version(request={"name": resource})
+        value = response.payload.data.decode("utf-8").strip()
+        register_secret(value)  # masked in every later log line, whatever its format
         logger.info("secret %s loaded from Secret Manager", name)
-        return response.payload.data.decode("utf-8").strip()
+        return value
     except Exception as exc:  # noqa: BLE001
         if required:
             # message intentionally excludes the resource payload

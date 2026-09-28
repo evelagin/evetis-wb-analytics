@@ -52,6 +52,20 @@ GCS source archive
 
 ---
 
+## 1a. Развёртывание 2026-09-28 — инцидент F-19 (только журналирование)
+
+| | |
+|---|---|
+| Исходник | ветка `sec/wb-comms-telegram-token-redaction`, коммит `c8124ca4ec2439a43e8403c1186c5128f49cf86f` (PR #209) |
+| Сборка | Cloud Build `b334eff2-7f1b-4226-b6ed-2776174c0efe` (europe-west1): шаг `pytest` на `python:3.12-slim` с закреплёнными версиями → `docker build` |
+| Образ | `europe-west1-docker.pkg.dev/project-fa311fc0-4d87-4781-986/cloud-run-source-deploy/evetis-wb-communications@sha256:21f5a80427c38fafc8c3d806e04b51dfc8dc36682cfdce5c838a4bbbc7227511` |
+| Ревизия | `evetis-wb-communications-00026-t9f` (100 % трафика); предыдущая `00025-rq8`, `sha256:0d33bb92…` |
+| Способ | `gcloud run services update --image <digest>` — окружение, SA, ingress, IAM не менялись (отпечаток env до/после одинаков) |
+| Откат | `gcloud run services update-traffic evetis-wb-communications --region europe-west1 --to-revisions evetis-wb-communications-00025-rq8=100` |
+
+Terraform (`infra/terraform/wb_communications.tf`) по-прежнему указывает прежний digest: `template` в
+`ignore_changes`, поэтому apply ревизию не трогает; строка — документация исходного импорта.
+
 ## 2. Код в Git ≠ конфигурация в production
 
 **Это главное, что нужно знать перед любым деплоем.**

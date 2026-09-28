@@ -268,7 +268,7 @@ def _emit_event(deps: Deps, doc: dict, doc_id: str, event_type: EventType,
         "answer_version": answer_version or None, "latency_ms": doc.get("openai_latency_ms"),
         "token_input": usage.get("input_tokens"), "token_output": usage.get("output_tokens"),
         "error_code": (str(extra["error_code"]) if extra.get("error_code") is not None else None),
-        "error_message": (extra.get("error_message") or "")[:500] or None,
+        "error_message": redact(extra.get("error_message") or "")[:500] or None,
         "payload_json": (json.dumps(extra["payload"], ensure_ascii=False, default=str)
                          if extra.get("payload") else None),
     }

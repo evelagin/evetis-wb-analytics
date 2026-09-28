@@ -340,9 +340,15 @@ def test_redact_masks_telegram_token_inside_bot_url():
     assert _FAKE_TG not in out and "A" * 35 not in out and "<telegram_token>" in out
 
 
-def test_configure_logging_silences_httpx_request_lines():
+def test_configure_logging_drops_telegram_request_lines(capsys):
+    # 1.4.1 design: httpx lines for api.telegram.org are dropped by host; WB lines stay
     configure_logging("INFO")
-    assert logging.getLogger("httpx").getEffectiveLevel() >= logging.WARNING
+    log = logging.getLogger("httpx")
+    log.info(f"HTTP Request: POST https://api.telegram.org/bot{_FAKE_TG}/sendMessage")
+    log.info("HTTP Request: PATCH https://feedbacks-api.wildberries.ru/api/v1/questions")
+    out = capsys.readouterr().out
+    assert "api.telegram.org" not in out and "A" * 35 not in out
+    assert "feedbacks-api.wildberries.ru/api/v1/questions" in out
     assert logging.getLogger("httpcore").getEffectiveLevel() >= logging.WARNING
 
 
