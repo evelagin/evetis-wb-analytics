@@ -134,6 +134,33 @@ RUNS_TABLE = "OZON_INGESTION_RUNS"
 
 SELLER = "https://api-seller.ozon.ru"
 PERF = "https://api-performance.ozon.ru"
+
+# ───────────────────── белые списки вызываемых методов (Tenancy T5, «только чтение»)
+# HTTP-метод не отличает чтение от записи: у Seller API почти всё POST, а у Performance API есть
+# GET, которые меняют кабинет (/api/client/campaign/all_sku_promo/activate). Поэтому runtime и
+# control вызывают ТОЛЬКО перечисленные пути; всё прочее — отказ до отправки запроса. Промо-
+# наблюдатель ходит через свой список (promo.ALLOWED_PATHS). Класс каждого метода Seller —
+# seller_method_policy.json; тест сверяет, что здесь только READ.
+SELLER_ALLOWED_PATHS = frozenset({
+    "/v3/product/list", "/v3/product/info/list", "/v5/product/info/prices", "/v1/seller/info",
+    "/v1/rating/summary", "/v1/analytics/stocks", "/v3/posting/fbo/list", "/v1/finance/accrual/types",
+    "/v1/finance/accrual/by-day", "/v1/cluster/list", "/v3/supply-order/list", "/v3/supply-order/get",
+    "/v1/supply-order/bundle",
+    # control (T5): инспекция ключа и проба FBS-активности
+    "/v1/roles", "/v3/posting/fbs/list",
+})
+PERF_ALLOWED_GET = (
+    re.compile(r"^/api/client/campaign$"),
+    re.compile(r"^/api/client/campaign/\d+/v2/products\?page=\d+&pageSize=\d+$"),
+    re.compile(r"^/api/client/statistics/(expense|daily)\?dateFrom=\d{4}-\d{2}-\d{2}&dateTo=\d{4}-\d{2}-\d{2}$"),
+    re.compile(r"^/api/client/statistics/[0-9A-Za-z-]{1,64}$"),
+    re.compile(r"^/api/client/statistics/report\?UUID=[0-9A-Za-z-]{1,64}$"),
+)
+PERF_ALLOWED_POST = frozenset({"/api/client/statistics"})
+
+
+class ApiPathDenied(RuntimeError):
+    """Путь не входит в белый список «только чтение»: запрос не отправляется."""
 BACKOFF = [3, 6, 12, 24, 48]
 
 _secrets = {}
@@ -322,6 +349,16 @@ def secret(name):
     return _secrets[name]
 
 
+def seller_client_id():
+    """Client-Id Seller API — ИДЕНТИФИКАТОР (не секрет, T2.2 L4): нужен для отпечатка кабинета."""
+    return secret(CONFIG.secret_seller_client_id)
+
+
+def perf_client_id():
+    """client_id Performance API — ИДЕНТИФИКАТОР (RFC 6749 §2.2): нужен для отпечатка аккаунта."""
+    return secret(CONFIG.secret_perf_client_id)
+
+
 def seller_headers():
     """Заголовки Seller API по ИМЕНАМ секретов из конфигурации процесса.
 
@@ -375,6 +412,8 @@ def _request(req, attempt=0, raw_text=False):
 
 
 def seller_post(path, body):
+    if path not in SELLER_ALLOWED_PATHS:
+        raise ApiPathDenied(f"Seller API: путь {path} вне белого списка «только чтение»")
     req = urllib.request.Request(
         SELLER + path, data=json.dumps(body).encode(), headers=seller_headers())
     return _request(req)
@@ -401,12 +440,16 @@ def perf_token():
 
 
 def perf_get(path, raw_text=True):
+    if not any(rx.match(path) for rx in PERF_ALLOWED_GET):
+        raise ApiPathDenied(f"Performance API: GET {path.split('?')[0]} вне белого списка")
     req = urllib.request.Request(PERF + path,
                                  headers={"Authorization": f"Bearer {perf_token()}"})
     return _request(req, raw_text=raw_text)
 
 
 def perf_post(path, body):
+    if path not in PERF_ALLOWED_POST:
+        raise ApiPathDenied(f"Performance API: POST {path} вне белого списка")
     req = urllib.request.Request(
         PERF + path, data=json.dumps(body).encode(),
         headers={"Authorization": f"Bearer {perf_token()}",

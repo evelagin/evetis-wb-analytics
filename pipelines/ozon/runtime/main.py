@@ -82,6 +82,40 @@ def validate_plan(want, since, until, lb_over, today):
     return None
 
 
+BINDING_TABLE = "SELLER_BINDING"
+ADS_ENTITIES = ("ads_campaigns", "ads_expense_daily", "ads_sku_daily")
+
+
+def binding_gate(want, now):
+    """TENANT_BINDING_REQUIRED=1 (арендатор, T5): загрузка только в подтверждённый кабинет.
+
+    Runtime сам снимает отпечаток кабинета в ЭТОМ прогоне (/v1/seller/info + Client-Id) и сверяет
+    его с действующим подтверждением владельца в ref.SELLER_BINDING (tabledata.list, READER). Нет
+    подтверждения, отзыв, несовпадение отпечатка — (статус, причина) с отказом до записи данных.
+    Для рекламных сущностей так же проверяется Performance. Писать привязку runtime не может.
+    """
+    import identity as I
+    rows = [dict(r.items()) for r in C.bq().list_rows(f"{C.PROJECT}.{C.REF_DATASET}.{BINDING_TABLE}")]
+    code, si = C.seller_post("/v1/seller/info", {})
+    fp = None
+    if code == 200:
+        company = (si or {}).get("company") or {}
+        try:
+            fp = I.seller_fingerprint(C.seller_client_id(),
+                                      company.get("inn"), company.get("ogrn"))
+        except I.IdentityError:
+            fp = None
+    status, reason = I.live_status(I.effective_binding(rows, I.SELLER, now), fp)
+    if status != I.BOUND:
+        return f"seller:{status}", reason
+    if any(e in ADS_ENTITIES for e in want):
+        pfp = I.performance_fingerprint(C.perf_client_id())
+        status, reason = I.live_status(I.effective_binding(rows, I.PERFORMANCE, now), pfp)
+        if status != I.BOUND:
+            return f"performance:{status}", reason
+    return None, "ok"
+
+
 def main():
     run_id = os.environ.get("INGESTION_RUN_ID") or f"rt-{uuid.uuid4()}"
     want = [e for e in os.environ.get("ENTITIES", "").split(",") if e] or list(REGISTRY)
@@ -96,6 +130,13 @@ def main():
         if window_error:
             C.log(event="run_rejected", ingestion_run_id=run_id, reason=window_error)
             sys.exit(2)
+    if os.environ.get("TENANT_BINDING_REQUIRED") == "1":
+        from datetime import datetime, timezone
+        denied, reason = binding_gate(want, datetime.now(timezone.utc))
+        if denied:
+            # Значения identity в журнал не попадают — только статус и причина.
+            C.log(event="run_rejected", ingestion_run_id=run_id, binding=denied, reason=reason)
+            sys.exit(3)
     C.log(event="run_start", ingestion_run_id=run_id, marketplace="OZON",
           entities=want, since=since, until=until)
     ok = failed = 0
