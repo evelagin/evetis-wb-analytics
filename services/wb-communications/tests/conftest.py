@@ -11,6 +11,15 @@ from app.services.repository import MemoryRepository
 
 
 class FakeWB:
+    """Offline WB double. Questions keep an authoritative answer state that
+    ``get_question`` reads back, so publication verification is testable:
+
+    * ``question_visible_after_publish`` — WB shows the answer right after an
+      accepted PATCH (False = accepted but hidden, e.g. pre-moderation);
+    * ``question_publish_timeout`` — the PATCH raises WBPublishOutcomeUnknown;
+      ``question_timeout_lands`` decides whether WB nevertheless stored it.
+    """
+
     def __init__(self, feedbacks=None, fail_publish=False, publish_error=None,
                  questions=None, question_publish_error=None):
         self._feedbacks = feedbacks or []
@@ -20,6 +29,12 @@ class FakeWB:
         self.fail_publish = fail_publish
         self.publish_error = publish_error  # exception instance to raise on review publish
         self.question_publish_error = question_publish_error
+        self.question_answers: dict = {}  # question_id -> answer text on WB
+        self.question_visible_after_publish = True
+        self.question_publish_timeout = False
+        self.question_timeout_lands = False
+        self.get_question_error = None
+        self.get_question_calls = 0
 
     def iter_unanswered_feedbacks(self):
         return list(self._feedbacks)
@@ -48,7 +63,25 @@ class FakeWB:
         if self.question_publish_error is not None:
             raise self.question_publish_error
         self.published_questions.append((question_id, text, state))
-        return {"ok": True}
+        if self.question_publish_timeout:
+            from app.domain.exceptions import WBPublishOutcomeUnknown
+
+            if self.question_timeout_lands:
+                self.question_answers[question_id] = text
+            exc = WBPublishOutcomeUnknown("WB publish outcome unknown (ReadTimeout)")
+            exc.request_sha256 = "sha-test"
+            raise exc
+        if self.question_visible_after_publish:
+            self.question_answers[question_id] = text
+        return {"status_code": 200, "request_sha256": "sha-test",
+                "response": {"data": None, "error": False, "errorText": "", "additionalErrors": None}}
+
+    def get_question(self, question_id):
+        self.get_question_calls += 1
+        if self.get_question_error is not None:
+            raise self.get_question_error
+        text = self.question_answers.get(question_id)
+        return {"id": question_id, "answer": ({"text": text, "editable": True} if text else None)}
 
 
 class FakeOpenAI:
@@ -171,6 +204,7 @@ def make_settings(**overrides) -> Settings:
         telegram_allowed_user_ids={"302044578"},
         wb_min_interval_seconds=0.0,
         wb_publish_enabled=True,  # tests exercise publishing; gate tested explicitly
+        wb_question_verify_delay_seconds=0.0,  # bounded read-back without real sleeps
     )
     base.update(overrides)
     return Settings(**base)

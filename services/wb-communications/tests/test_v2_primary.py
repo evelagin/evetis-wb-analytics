@@ -91,15 +91,18 @@ def test_primary_unresolved_product_flagged():
     assert "не распознан" in card
 
 
-# --- primary: a v2 fault falls back to reviews_v1 (never regress) -----------
-def test_primary_falls_back_to_reviews_v1_on_engine_error():
+# --- primary: a v2 fault is an item error, NOT a silent reviews_v1 draft ----
+# WP11 (owner-approved): reviews_v1 carries unsourced facts and «обострение —
+# нормальная реакция»; it stays only as the explicit config rollback path.
+def test_primary_engine_error_is_item_error_without_v1_fallback():
     deps = make_deps([_fb()], primary=True, engine=BrokenEngine())
     summary = run_poll(deps)
-    assert summary["processed"] == 1 and summary["errors"] == 0
-    assert len(deps.telegram.sent) == 1
-    row = deps.bq.current[-1]
-    assert row["prompt_version"] == "reviews_v1"          # fell back
-    assert "Проверка v2" in deps.telegram.sent[0][1]      # fallback noted
+    assert summary["processed"] == 0 and summary["errors"] == 1
+    assert deps.telegram.sent == []                        # no v1 draft reached Telegram
+    assert deps.openai.calls == 0                          # reviews_v1 was never called
+    doc = next(iter(deps.repo.docs.values()))
+    assert doc["status"] == "error"                       # retried on the next poll
+    assert doc.get("answer_versions") == []
 
 
 # --- wiring: build_primary_engine / build_shadow_components ------------------

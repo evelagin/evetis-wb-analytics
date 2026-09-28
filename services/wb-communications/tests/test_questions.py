@@ -80,7 +80,9 @@ def test_question_publish_patch_body():
     wb.publish_question_answer("Q1", "ответ")
     assert seen["method"] == "PATCH"
     assert seen["path"] == "/api/v1/questions"
-    assert seen["body"] == {"id": "Q1", "text": "ответ", "state": "wbRu"}
+    # Official contract (WB OpenAPI «AnswerQuestionOrEditAnswer"): text NESTED in
+    # `answer`. The old top-level {"id","text","state"} was silently ignored by WB.
+    assert seen["body"] == {"id": "Q1", "answer": {"text": "ответ"}, "state": "wbRu"}
 
 
 # --- pipeline: generation via engine ----------------------------------------

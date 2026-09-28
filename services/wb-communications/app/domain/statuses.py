@@ -21,8 +21,20 @@ class Status(str, Enum):
     REGENERATING = "regenerating"
     # human tapped "edit" — waiting for the reply, record locked with a token
     EDITING = "editing"
-    # WB accepted the answer
+    # Answer is confirmed on WB. Reviews: WB's documented 204. Questions: the
+    # answer was read back from WB and matches ours (verified).
     PUBLISHED = "published"
+    # Question: WB accepted the write (2xx, error=false) but the answer is not
+    # visible yet (WB pre-moderates answers). Re-verified on later polls; NEVER
+    # reported to the operator as "published".
+    PUBLISH_ACCEPTED = "publish_accepted"
+    # The write outcome is unknown (timeout / 5xx after send / accepted but still
+    # not visible after the verification window). No automatic re-send: the
+    # operator re-taps «Опубликовать», which reads WB state BEFORE writing.
+    PUBLISH_UNKNOWN = "publish_unknown"
+    # Question already carries an answer on WB with a DIFFERENT text (e.g. typed
+    # in the WB cabinet). Our text was not sent.
+    ANSWERED_EXTERNALLY = "answered_externally"
     # WB rejected / errored — safe to retry
     PUBLISH_FAILED = "publish_failed"
     # human tapped "skip"
@@ -38,6 +50,9 @@ HANDLED_STATUSES = frozenset(
         Status.PENDING_APPROVAL,
         Status.PUBLISHING,
         Status.PUBLISHED,
+        Status.PUBLISH_ACCEPTED,
+        Status.PUBLISH_UNKNOWN,
+        Status.ANSWERED_EXTERNALLY,
         Status.SKIPPED,
     }
 )
@@ -64,6 +79,10 @@ ALLOWED_ACTIONS: dict[str, frozenset[str]] = {
     Status.REGENERATING.value: frozenset({"show"}),
     Status.EDITING.value: frozenset({"show"}),
     Status.PUBLISHED.value: frozenset({"show"}),
+    Status.PUBLISH_ACCEPTED.value: frozenset({"show"}),
+    # publish = "check WB, and write only if still unanswered" (never a blind re-send)
+    Status.PUBLISH_UNKNOWN.value: frozenset({"publish", "skip", "show"}),
+    Status.ANSWERED_EXTERNALLY.value: frozenset({"show"}),
     Status.SKIPPED.value: frozenset({"show", "restore"}),
     Status.PROCESSING.value: frozenset({"show"}),
     Status.ERROR.value: frozenset({"show"}),
@@ -87,6 +106,9 @@ class EventType(str, Enum):
     REGENERATED = "regenerated"
     PUBLISH_REQUESTED = "publish_requested"
     PUBLISHED = "published"
+    PUBLISH_ACCEPTED = "publish_accepted"
+    PUBLISH_UNKNOWN = "publish_unknown"
+    ANSWERED_EXTERNALLY = "answered_externally"
     SKIPPED = "skipped"
     RESTORED = "restored"
     FAILED = "failed"
