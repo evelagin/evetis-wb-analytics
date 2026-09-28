@@ -20,6 +20,9 @@ _correlation_id: ContextVar[str] = ContextVar("correlation_id", default="")
 # line of a request carries the SAME trace as the platform request log -> machine correlation.
 _trace_id: ContextVar[str] = ContextVar("trace_id", default="")
 _span_id: ContextVar[str] = ContextVar("span_id", default="")
+# Server-generated per-request id: the trace header is client-controllable (Cloud Run propagates a valid
+# incoming traceparent / X-Cloud-Trace-Context), so events also carry an id the client cannot choose.
+_request_id: ContextVar[str] = ContextVar("request_id", default="")
 _TRACE_HEX = re.compile(r"^[0-9a-f]{32}$")
 _SPAN_HEX = re.compile(r"^[0-9a-f]{16}$")
 
@@ -74,13 +77,15 @@ def parse_trace(cloud_trace: str | None, traceparent: str | None) -> tuple[str, 
 
 
 def set_request_trace(cloud_trace: str | None, traceparent: str | None):
+    import uuid
     trace, span = parse_trace(cloud_trace, traceparent)
-    return _trace_id.set(trace), _span_id.set(span)
+    return _trace_id.set(trace), _span_id.set(span), _request_id.set(uuid.uuid4().hex)
 
 
 def reset_request_trace(tokens) -> None:
     _trace_id.reset(tokens[0])
     _span_id.reset(tokens[1])
+    _request_id.reset(tokens[2])
 
 
 def current_trace() -> str:
@@ -196,6 +201,7 @@ def configure_logging(level: str = "INFO") -> None:
         server.propagate = False
     logging.captureWarnings(True)  # Python warnings also pass through redaction
     logging.raiseExceptions = False  # never print raw records to stderr on a handler error
+    _audit_logger.setLevel(logging.INFO)  # audit events survive any LOG_LEVEL (their absence would read as a gap)
 
 
 def get_logger(name: str) -> logging.Logger:
@@ -223,7 +229,8 @@ _audit_logger = logging.getLogger("app.audit")
 
 
 def safe_ref(value) -> str:
-    """Non-reversible reference to a target id (review/question id): correlation without the raw id."""
+    """Stable short reference to a target id (review/question id) instead of the raw id. Not a secret:
+    WB ids are enumerable, so this only keeps raw ids out of the log, it is not anonymisation."""
     return hashlib.sha256(str(value).encode()).hexdigest()[:16] if value not in (None, "") else ""
 
 
@@ -235,7 +242,7 @@ def audit_event(event: str, **fields) -> None:
                 if k in AUDIT_FIELDS and isinstance(v, (str, int, bool)) and not isinstance(v, float)}
         payload = {"audit_event": event, "audit_schema": AUDIT_SCHEMA,
                    "service": os.environ.get("K_SERVICE", ""), "revision": os.environ.get("K_REVISION", ""),
-                   "trace_id": _trace_id.get(), **safe}
+                   "trace_id": _trace_id.get(), "request_id": _request_id.get(), **safe}
         _audit_logger.info("audit %s", event, extra={"extra_fields": _redact_value(payload)})
     except Exception:  # noqa: BLE001 — never let instrumentation break a request
         pass

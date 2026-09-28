@@ -741,8 +741,13 @@ def _allowed(deps: Deps, chat_id, user_id) -> bool:
     ok = is_allowed(
         chat_id, user_id, deps.settings.allowed_chat_ids, deps.settings.telegram_allowed_user_ids
     )
-    audit_event("auth_ok" if ok else "auth_denied", route="/telegram-webhook", mechanism="telegram_allowlist",
-                principal_class="allowlisted_user" if ok else "unknown", result="ok" if ok else "not_allowlisted")
+    if not deps.settings.allowed_chat_ids and not deps.settings.telegram_allowed_user_ids:
+        # is_allowed fails OPEN with no lists configured: record it as such, never as a real allow-list pass
+        audit_event("auth_ok", route="/telegram-webhook", mechanism="telegram_allowlist",
+                    principal_class="unrestricted", result="open_no_allowlist")
+    else:
+        audit_event("auth_ok" if ok else "auth_denied", route="/telegram-webhook", mechanism="telegram_allowlist",
+                    principal_class="allowlisted_user" if ok else "unknown", result="ok" if ok else "not_allowlisted")
     return ok
 
 

@@ -13,6 +13,8 @@
   (каждая запись в WB через `_write_once`, каждый не-`get*` вызов Telegram Bot API). Цель — только хеш
   (`target_ref`), `service`/`revision` — из `K_SERVICE`/`K_REVISION`.
 - Эмиссия событий никогда не бросает исключений.
+- Серверный `request_id` (uuid4) в каждом событии — trace клиентоуправляем; открытый allow-list (пустые списки)
+  фиксируется как `result=open_no_allowlist`, не как проход; логгер `app.audit` всегда INFO.
 
 ## 1.5.2 — Recovery card must be actionable (2026-09-28)
 

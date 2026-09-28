@@ -285,3 +285,37 @@ def test_instrumentation_ready_marker_on_app_import(events, monkeypatch):
     L.audit_event("instrumentation_ready", result="ok")
     e = audit(events(), "instrumentation_ready")[0]
     assert e["audit_schema"] == "wbc-audit/1" and e["revision"].endswith("00099-abc")
+
+
+
+def test_request_id_is_server_generated_and_per_request(events, monkeypatch):
+    c = _client(monkeypatch)
+    for _ in range(2):   # same client-chosen trace twice
+        c.post("/poll", headers={"X-Scheduler-Secret": FAKE_SCH, "X-Cloud-Trace-Context": XCTC})
+    ok = audit(events(), "auth_ok")
+    assert len(ok) == 2 and ok[0]["trace_id"] == ok[1]["trace_id"] == TRACE
+    assert ok[0]["request_id"] and ok[1]["request_id"] and ok[0]["request_id"] != ok[1]["request_id"]
+
+
+def test_open_allowlist_is_recorded_as_open_not_ok(events):
+    from app.services import pipeline
+
+    class S:
+        allowed_chat_ids = set()
+        telegram_allowed_user_ids = set()
+
+    class D:
+        settings = S()
+    assert pipeline._allowed(D(), "-1", "1") is True            # поведение не меняется (fail-open)
+    e = audit(events())[0]
+    assert e["result"] == "open_no_allowlist" and e["principal_class"] == "unrestricted"
+
+
+def test_audit_events_survive_warning_log_level(events, monkeypatch):
+    buf = logging.getLogger().handlers[0].stream        # буфер фикстуры (pytest подменяет sys.stdout в фазе теста)
+    L.configure_logging("WARNING")
+    logging.getLogger().handlers[0].setStream(buf)
+    logging.getLogger("app.x").info("info line must be filtered at WARNING")
+    L.audit_event("auth_ok", route="/poll", mechanism="m", result="ok")
+    lines = events()
+    assert audit(lines, "auth_ok") and not any("must be filtered" in x.get("message", "") for x in lines)
