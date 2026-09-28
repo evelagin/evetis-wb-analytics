@@ -1,5 +1,27 @@
 # CHANGELOG.md
 
+## 2026-09-27 — Tenancy: путь развёртывания арендатора — замороженный план и SQL через Tables API
+
+**Ничего не применено.** `tenant-infra.yml` получает операции `plan` (с артефактом замороженного
+плана), `apply` (только проверенный артефакт, без `terraform plan`), `sql-preview`, `sql-deploy`,
+`sql-verify` — в том же файле, потому что условие WIF выдаёт доверие только ему. Граница
+доверия прежняя: WIF → `sa-tenant-provisioner`; ключей, Token Creator и учётных данных владельца
+нет. Раннеры закреплены на `ubuntu-24.04`.
+
+- `tools/tenancy/tenant_deploy.py`: `package-plan` (сканер повторно, хеши, метаданные),
+  `fetch` (провенанс прогона по API GitHub, дайджест zip, состав, метаданные, контракт, lock
+  провайдеров, секреты), `apply` (init, `show -json` = проверенный `plan.json`, сканер, дельта,
+  `terraform apply <файл>`).
+- `tools/tenancy/sql_deploy.py`: представления пакета через `tables.insert/update`, без query
+  jobs, ACL и IAM; хеши манифеста и пакета — входы; чтение назад и сверка.
+- Ревью пути: проверка артефакта — в job'е `verify` без `id-token`; apply — только владелец
+  и первая попытка прогона, коммит = живой HEAD main; запрещены `action_invocations`,
+  `deferred_changes`, неполный план и чувствительные значения; Terraform без `TF_*` из
+  окружения; SQL-ссылки проверяются по дереву разбора.
+- `platform.GITHUB_REPOSITORY_ID`, `GITHUB_OWNER_ID`. Тесты T3.2 «в workflow нет apply» заменены более строгими:
+  по job'ам, ровно 5 закреплённых action'ов, права по job'ам, токен GitHub — только шагу fetch.
+- `TENANCY_DESIGN.md` §4d: архитектура, проверки, честное описание одобрения, ранбук.
+
 ## 2026-09-27 — AIE V1: финализация дизайна по решениям владельца и final replay
 
 Git-first, ничего не развёрнуто. Существующие FACT/MART/DASH не изменены; write-путей нет.
