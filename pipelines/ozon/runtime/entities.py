@@ -51,6 +51,18 @@ ADS_REPORT_POLL_ATTEMPTS = 60           # прежний литерал range(60
 # строк при HTTP 200 (замер EVETIS: 65 дней → 0 строк).
 PERFORMANCE_REPORT_MAX_DAYS = 62
 
+# ─────────────────────────────── T5: пределы источников (Swagger Seller/Performance 2026-09-28)
+PRODUCT_LIST_LIMIT = 1000               # /v3/product/list: limit 1..1000, пагинация last_id
+PRODUCT_LIST_MAX_PAGES = 100            # 100 000 товаров — защита от бесконечного цикла
+PRODUCT_INFO_BATCH = 1000               # /v3/product/info/list: ≤ 1000 идентификаторов за запрос
+STOCKS_SKU_BATCH = 100                  # /v1/analytics/stocks: skus maximum 100
+PRICES_MAX_PAGES = 2000                 # /v5/product/info/prices: 200 000 строк при limit 100
+FBO_MAX_PERIOD_DAYS = 365               # /v3/posting/fbo/list: период > года → PERIOD_IS_TOO_LONG
+# Строгий режим: окно отчёта по SKU режется на части по датам (МСК, dateFrom/dateTo), не
+# длиннее этого числа суток включительно — с запасом к лимиту 62 дня.
+ADS_SKU_STRICT_CHUNK_DAYS = 60
+ADS_SKU_BATCH = 10                      # Performance API: не больше 10 кампаний в отчёте
+
 
 class StrictLimitError(PaginationError):
     """STRICT_PAGE_CAPS=1: источник отдал бы неполные данные, а прогон — статус OK."""
@@ -79,31 +91,56 @@ def _num(v):
 
 
 # ------------------------------------------------ полнота списочных ответов
-def _product_list_items():
-    """Список товаров одним запросом, но с проверкой полноты.
+def _list_total(result):
+    """Всего элементов: total_items (новое поле), иначе total (отключат 23.11.2026)."""
+    for k in ("total_items", "total"):
+        v = result.get(k)
+        if isinstance(v, int) and not isinstance(v, bool):
+            return v
+    return None
 
-    Swagger /v3/product/list: пагинация через result.last_id, limit ≤ 1000,
-    result.total — «всего товаров». last_id на последней странице НЕ пуст
-    (ответ 2026-08-30: 20 товаров, total=20, last_id непустой), поэтому по
-    нему конец не определить. Определяем по total: если total больше, чем
-    пришло, ответ неполный — роняем сущность, а не грузим часть каталога.
-    Нет total — проверить нечем, поведение прежнее.
+
+def _product_list_items():
+    """Полный список товаров: страницы по last_id до total, с проверкой полноты.
+
+    Swagger /v3/product/list: limit ≤ 1000, пагинация через result.last_id, «всего» —
+    result.total_items (result.total отключат 23.11.2026). last_id на последней странице НЕ
+    пуст (ответ 2026-08-30: 20 товаров, total=20, last_id непустой), поэтому конец
+    определяется по total, а не по курсору.
+
+    Первый запрос прежний. Следующие страницы запрашиваются только когда total больше
+    полученного (раньше это был отказ). Страница без новых товаров, повтор курсора или
+    потолок страниц до достижения total — PaginationError: часть каталога не грузится.
+    Нет total: прежде — предупреждение в журнал; в строгом режиме (T5) — отказ.
     """
-    code, lst = seller_post("/v3/product/list",
-                            {"filter": {"visibility": "ALL"}, "last_id": "", "limit": 1000})
-    if code != 200:
-        raise RuntimeError(f"product/list {code}: {lst}")
-    result = lst.get("result") or {}
-    items = result.get("items") or []
-    total = result.get("total")
-    if isinstance(total, int) and total > len(items):
-        raise PaginationError(
-            f"product/list: получено {len(items)} из total={total}; "
-            "ответ неполный — нужна пагинация по last_id")
-    if not isinstance(total, int):
-        log(event="completeness_unverified", endpoint="/v3/product/list",
-            reason="в ответе нет целого total", items=len(items))
-    return items
+    body = {"filter": {"visibility": "ALL"}, "last_id": "", "limit": PRODUCT_LIST_LIMIT}
+    items, seen, cursors, total = [], set(), set(), None
+    for page in range(1, PRODUCT_LIST_MAX_PAGES + 1):
+        code, lst = seller_post("/v3/product/list", body)
+        if code != 200:
+            raise RuntimeError(f"product/list {code}: {lst}")
+        result = lst.get("result") or {}
+        fresh = [i for i in (result.get("items") or []) if i.get("product_id") not in seen]
+        seen.update(i.get("product_id") for i in fresh)
+        items += fresh
+        total = _list_total(result) if total is None else total
+        if total is None:
+            _strict_cap("catalog", "в ответе /v3/product/list нет total_items/total — полноту "
+                        "каталога проверить нечем", "проверить контракт метода", items=len(items))
+            log(event="completeness_unverified", endpoint="/v3/product/list",
+                reason="в ответе нет целого total", items=len(items))
+            return items
+        if len(items) >= total:
+            return items
+        nxt = result.get("last_id") or ""
+        if not fresh or not nxt or nxt in cursors:
+            break
+        cursors.add(nxt)
+        body = dict(body, last_id=nxt)
+        time.sleep(0.2)
+    raise PaginationError(
+        f"product/list: получено {len(items)} из total={total}; "
+        "ответ неполный — пагинация по last_id не дошла до total")
 
 
 def _campaign_list(txt):
@@ -129,15 +166,26 @@ def _campaign_list(txt):
 
 
 # --------------------------------------------------------------- каталог
+def _product_info_items(ids):
+    """Карточки по product_id партиями ≤ 1000 (лимит /v3/product/info/list)."""
+    out = []
+    for k in range(0, max(len(ids), 1), PRODUCT_INFO_BATCH):
+        code, info = seller_post("/v3/product/info/list",
+                                 {"product_id": ids[k:k + PRODUCT_INFO_BATCH], "offer_id": [], "sku": []})
+        if code != 200:
+            raise RuntimeError(f"product/info {code}: {info}")
+        out += info.get("items") or []
+    if C.STRICT_PAGE_CAPS and len({i.get("id") for i in out}) != len(set(ids)):
+        _strict_cap("catalog", f"карточек {len(out)} на {len(set(ids))} товаров списка",
+                    "повторить прогон; часть карточек не вернулась", ids=len(set(ids)))
+    return out
+
+
 def catalog(run_id, ts, _f, _t):
     ids = [i["product_id"] for i in _product_list_items()]
-    code, info = seller_post("/v3/product/info/list",
-                             {"product_id": ids, "offer_id": [], "sku": []})
-    if code != 200:
-        raise RuntimeError(f"product/info {code}: {info}")
     d = str(now_msk().date())
     rows = []
-    for i in (info.get("items") or []):
+    for i in _product_info_items(ids):
         st = i.get("stocks") or {}
         vd = i.get("visibility_details") or {}
         pi = i.get("price_indexes") or {}
@@ -184,7 +232,11 @@ COMMISSION_MAP = {
 def prices(run_id, ts, _f, _t):
     d = str(now_msk().date())
     rows, comm_rows, cursor = [], [], ""
+    cursors, page, total = set(), 0, None
     while True:
+        page += 1
+        if page > PRICES_MAX_PAGES:
+            raise PaginationError(f"prices: достигнут потолок {PRICES_MAX_PAGES} страниц")
         code, r = seller_post("/v5/product/info/prices",
                               {"cursor": cursor, "limit": 100,
                                "filter": {"offer_id": [], "product_id": [], "visibility": "ALL"}})
@@ -253,9 +305,18 @@ def prices(run_id, ts, _f, _t):
                 value_num=_num(i.get("acquiring")), unit="RUB", is_known_component=True,
                 source_payload_hash=h(d, offer, "acquiring"),
                 **_meta("POST /v5/product/info/prices", run_id, ts)))
+        total = _list_total(r) if total is None else total
         cursor = r.get("cursor") or ""
         if not cursor or not items:
             break
+        if cursor in cursors:
+            raise PaginationError(f"prices: cursor повторился на странице {page}")
+        cursors.add(cursor)
+    if C.STRICT_PAGE_CAPS:
+        offers = len({x["offer_id"] for x in rows})
+        if total is None or offers != total:
+            _strict_cap("prices", f"получено {offers} товаров из total={total}",
+                        "повторить прогон; снимок цен неполный", pages=page)
     # логический ключ снимка — дата, а не момент: повтор в тот же день не плодит строк
     r1 = merge_rows("RAW_OZON_PRICES", rows, ["snapshot_date", "offer_id"], run_id)
     r2 = merge_rows("RAW_OZON_PRICE_COMMISSIONS", comm_rows,
@@ -315,9 +376,13 @@ def stocks(run_id, ts, _f, _t):
     # Раньше код ответа product/list здесь не проверялся: при ошибке уходил пустой
     # фильтр skus. Теперь та же проверка кода и полноты, что в catalog().
     skus = [str(i["sku"]) for i in _product_list_items()]
-    code, r = seller_post("/v1/analytics/stocks", {"skus": skus})
-    if code != 200:
-        raise RuntimeError(f"stocks {code}: {r}")
+    items = []
+    # /v1/analytics/stocks: skus maximum 100 (Swagger 2026-09-28) — партиями по 100.
+    for k in range(0, max(len(skus), 1), STOCKS_SKU_BATCH):
+        code, r = seller_post("/v1/analytics/stocks", {"skus": skus[k:k + STOCKS_SKU_BATCH]})
+        if code != 200:
+            raise RuntimeError(f"stocks {code}: {r}")
+        items += r.get("items") or []
     d = str(now_msk().date())
     rows = [dict(snapshot_date=d, sku=str(i["sku"]), warehouse_id=str(i.get("warehouse_id")),
         warehouse_name=i.get("warehouse_name"), cluster_id=str(i.get("cluster_id")),
@@ -330,7 +395,7 @@ def stocks(run_id, ts, _f, _t):
         turnover_grade=i.get("turnover_grade"), idc=_num(i.get("idc")),
         source_payload_hash=h(d, i["sku"], i.get("warehouse_id")),
         **_meta("POST /v1/analytics/stocks", run_id, ts))
-        for i in (r.get("items") or [])]
+        for i in items]
     return merge_rows("RAW_OZON_STOCKS", rows,
                       ["snapshot_date", "sku", "warehouse_id"], run_id)
 
@@ -338,11 +403,19 @@ def stocks(run_id, ts, _f, _t):
 # ---------------------------------------------------------- заказы FBO
 def fbo_postings(run_id, ts, frm, to):
     rows, cursor, page = [], "", 0
+    # Строгий режим: конец суток включительно до миллисекунды — соседние окна бэкфилла
+    # не оставляют секундного разрыва; окно не длиннее года (иначе PERIOD_IS_TOO_LONG).
+    end = f"{to}T23:59:59.999Z" if C.STRICT_PAGE_CAPS else f"{to}T23:59:59.000Z"
+    if C.STRICT_PAGE_CAPS:
+        span = (date.fromisoformat(str(to)) - date.fromisoformat(str(frm))).days + 1
+        if span > FBO_MAX_PERIOD_DAYS:
+            _strict_cap("fbo_postings", f"окно {span} сут. длиннее {FBO_MAX_PERIOD_DAYS}",
+                        "бэкфилл режет окно на части", window=f"{frm}..{to}")
     while True:
         page += 1
         code, d = seller_post("/v3/posting/fbo/list", {
             "cursor": cursor,
-            "filter": {"since": f"{frm}T00:00:00.000Z", "to": f"{to}T23:59:59.000Z"},
+            "filter": {"since": f"{frm}T00:00:00.000Z", "to": end},
             "limit": 100, "with": {"analytics_data": True, "financial_data": True}})
         if code != 200:
             raise RuntimeError(f"posting/fbo/list {code}: {d}")
@@ -389,6 +462,9 @@ def finance_accrual(run_id, ts, frm, to):
     code, t = seller_post("/v1/finance/accrual/types", {})
     if code == 200:
         types = {x["id"]: x["description"] for x in (t.get("accrual_types") or [])}
+    else:
+        _strict_cap("finance_accrual", "справочник типов начислений не получен — все типы "
+                    "стали бы UNKNOWN", "повторить прогон", http=code)
     rows = []
     d0, d1 = date.fromisoformat(str(frm)), date.fromisoformat(str(to))
     cur = d0
@@ -528,6 +604,10 @@ def ads_expense_daily(run_id, ts, frm, to):
             for r in _csv_rows(t2):
                 if r.get("ID"):
                     stats[r["ID"]] = r
+        else:
+            # Раньше показы/клики/заказы молча становились NULL при статусе OK.
+            _strict_cap("ads_expense_daily", "суточная статистика не получена — показатели "
+                        "стали бы NULL", "повторить прогон", http=code2, day=ds)
         for r in _csv_rows(txt):
             if not r.get("ID"):
                 continue
@@ -547,12 +627,154 @@ def ads_expense_daily(run_id, ts, frm, to):
     return merge_rows("RAW_OZON_ADS_EXPENSE_DAILY", rows, ["date", "campaign_id"], run_id)
 
 
+def _date_chunks(d0, d1, days):
+    """Сплошное покрытие [d0, d1] отрезками по датам не длиннее `days` суток включительно."""
+    cur = d0
+    while cur <= d1:
+        end = min(cur + timedelta(days=days - 1), d1)
+        yield cur, end
+        cur = end + timedelta(days=1)
+
+
+_CAMPAIGN_FILE_RE = re.compile(r"^(\d+)")
+
+
+def _sku_report_files(blob, batch):
+    """(campaign_id, csv) из ответа отчёта: ZIP — по файлу на кампанию, CSV — одна кампания.
+
+    Документация /api/client/statistics/report: одна кампания в запросе — CSV, несколько —
+    ZIP-архив «<идентификатор кампании>.csv» (TECH_DEBT P2-6). Кампания файла обязана быть
+    из партии; всё остальное — StrictLimitError.
+    """
+    raw = blob.encode("utf-8", "surrogateescape")
+    if raw[:2] == b"PK":
+        z = zipfile.ZipFile(io.BytesIO(raw))
+        out = []
+        for name in z.namelist():
+            m = _CAMPAIGN_FILE_RE.match(name)
+            if not m or m.group(1) not in batch:
+                _strict_cap("ads_sku_daily", "файл отчёта не относится к кампании партии",
+                            "проверить формат отчёта", file_count=len(z.namelist()))
+            out.append((m.group(1), z.read(name).decode("utf-8-sig")))
+        return out
+    if len(batch) == 1:
+        return [(batch[0], raw.decode("utf-8-sig"))]
+    _strict_cap("ads_sku_daily", "отчёт по нескольким кампаниям пришёл не ZIP-архивом",
+                "проверить формат отчёта", batch_size=len(batch))
+    return []
+
+
+def _sku_rows_from_csv(cid, text, run_id, ts):
+    rows = []
+    lines = text.splitlines()
+    for r in _csv_rows("\n".join(lines[1:])):
+        sku = (r.get("sku") or "").strip()
+        if not sku:
+            continue
+        dd = r["День"]
+        iso = f"{dd[6:10]}-{dd[3:5]}-{dd[0:2]}"
+        rows.append(dict(date=iso, campaign_id=cid, sku=sku,
+            attributed_spend_rub=_rub(r.get("Расход, ₽, с НДС")),
+            impressions=int(_rub(r.get("Показы")) or 0),
+            clicks=int(_rub(r.get("Клики")) or 0),
+            cart_adds=int(_rub(r.get("Добавления в корзину")) or 0),
+            orders=int(_rub(r.get("Продано товаров")) or 0),
+            revenue_promo_rub=_rub(r.get("Продажи в продвижении, ₽")),
+            ordered_total_rub=_rub(r.get("Заказано на сумму, ₽")),
+            drr_promo_pct=_rub(r.get("ДРР в продвижении, %")),
+            drr_total_pct=_rub(r.get("ДРР (общий), %")),
+            attribution_status="ATTRIBUTED_ACTUAL",
+            source_payload_hash=h(iso, cid, sku),
+            **_meta("POST /api/client/statistics (async report)", run_id, ts)))
+    return rows
+
+
+def _ads_sku_rows_strict(run_id, ts, d0, d1):
+    """Строгий путь (T5): окна по датам МСК, CSV одной кампании, сверка с расходом.
+
+    * Окно режется на отрезки ≤ ADS_SKU_STRICT_CHUNK_DAYS суток и запрашивается полями
+      dateFrom/dateTo (ГГГГ-ММ-ДД). Даты отчётов Performance API группируются по Москве
+      (Swagger, раздел «Статистика»), поэтому отрезки по датам стыкуются без разрыва и без
+      двойного учёта суток — в отличие от моментов from/to (TECH_DEBT P2-5).
+    * Кампания с расходом > 0 в отрезке (/statistics/expense за те же даты) обязана дать
+      строки SKU: иначе отказ. Этим же ловится «ноль строк при HTTP 200» (окно > 62 дней,
+      неверный формат, потерянный CSV одной кампании).
+    * Строка с датой вне отрезка или кампанией вне партии — отказ.
+    """
+    code, txt = perf_get("/api/client/campaign")
+    if code != 200:
+        _strict_cap("ads_sku_daily", "список кампаний не получен", "повторить прогон", http=code)
+    registry = [str(c["id"]) for c in _campaign_list(txt)]
+    rows = []
+    for c0, c1 in _date_chunks(d0, d1, ADS_SKU_STRICT_CHUNK_DAYS):
+        c2, t2 = perf_get(f"/api/client/statistics/expense?dateFrom={c0}&dateTo={c1}")
+        if c2 != 200:
+            _strict_cap("ads_sku_daily", "расход кампаний за окно не получен", "повторить прогон",
+                        http=c2, window=f"{c0}..{c1}")
+        spend = {}
+        for r in _csv_rows(t2):
+            if r.get("ID"):
+                spend[r["ID"]] = spend.get(r["ID"], 0.0) + (_rub(r.get("Расход")) or 0.0)
+        active = [i for i in registry if spend.get(i, 0.0) > 0]
+        outside = sorted(k for k, v in spend.items() if v > 0 and k not in registry)
+        if outside:
+            _strict_cap("ads_sku_daily", f"расход у {len(outside)} кампаний вне реестра кампаний",
+                        "проверить /api/client/campaign", window=f"{c0}..{c1}")
+        seen = set()
+        for i in range(0, len(active), ADS_SKU_BATCH):
+            batch = active[i:i + ADS_SKU_BATCH]
+            code, sub = perf_post("/api/client/statistics",
+                                  {"campaigns": batch, "dateFrom": str(c0), "dateTo": str(c1),
+                                   "groupBy": "DATE"})
+            uuid = (sub or {}).get("UUID")
+            if not uuid:
+                _strict_cap("ads_sku_daily", "отчёт не заказан: в ответе нет UUID", "повторить прогон",
+                            http=code, batch_size=len(batch), window=f"{c0}..{c1}")
+            state = None
+            for _ in range(ADS_REPORT_POLL_ATTEMPTS):
+                time.sleep(10)
+                c3, st = perf_get(f"/api/client/statistics/{uuid}", raw_text=False)
+                state = st.get("state") if c3 == 200 else None
+                if state in ("OK", "ERROR"):
+                    break
+            if state != "OK":
+                _strict_cap("ads_sku_daily", "отчёт не готов или завершился ошибкой", "повторить прогон",
+                            state=state, batch_size=len(batch), window=f"{c0}..{c1}")
+            c4, blob = perf_get(f"/api/client/statistics/report?UUID={uuid}", raw_text=True)
+            if c4 != 200:
+                _strict_cap("ads_sku_daily", "отчёт не скачан", "повторить прогон",
+                            http=c4, batch_size=len(batch), window=f"{c0}..{c1}")
+            for cid, text in _sku_report_files(blob, batch):
+                got = _sku_rows_from_csv(cid, text, run_id, ts)
+                bad = [r for r in got if not (str(c0) <= r["date"] <= str(c1))]
+                if bad:
+                    _strict_cap("ads_sku_daily", f"{len(bad)} строк SKU с датой вне окна",
+                                "проверить границы dateFrom/dateTo", window=f"{c0}..{c1}")
+                seen.update(r["campaign_id"] for r in got)
+                rows += got
+            time.sleep(3)
+        missing = [c for c in active if c not in seen]
+        if missing:
+            _strict_cap("ads_sku_daily", f"у {len(missing)} кампаний с расходом нет строк SKU",
+                        "сузить окно; проверить формат отчёта", window=f"{c0}..{c1}",
+                        campaigns_with_spend=len(active))
+    return rows
+
+
 def ads_sku_daily(run_id, ts, frm, to):
     """Асинхронный отчёт — единственный доказанный источник расхода по SKU.
 
     Периметр берётся из ВСЕХ кампаний с активностью в окне, а не только RUNNING.
+    Строгий режим (арендатор, T5) — отдельный путь _ads_sku_daily_strict; ниже — прежний.
     """
     d0, d1 = date.fromisoformat(str(frm)), date.fromisoformat(str(to))
+    rows = (_ads_sku_rows_strict(run_id, ts, d0, d1) if C.STRICT_PAGE_CAPS
+            else _ads_sku_rows_legacy(run_id, ts, d0, d1))
+    return merge_rows("RAW_OZON_ADS_SKU_DAILY", rows, ["date", "campaign_id", "sku"], run_id)
+
+
+def _ads_sku_rows_legacy(run_id, ts, d0, d1):
+    """Прежний путь EVETIS — без изменений поведения (дифференциальный тест T2)."""
     # Окно отчёта — от d0T00:00Z до d1T00:00Z, то есть (d1 - d0) суток. Длиннее
     # PERFORMANCE_REPORT_MAX_DAYS Ozon молча отдаёт ноль строк. Окно здесь НЕ
     # дробится: границы — UTC-моменты, а сутки отчёта московские, и любое
@@ -648,7 +870,7 @@ def ads_sku_daily(run_id, ts, frm, to):
                     source_payload_hash=h(iso, cid, sku),
                     **_meta("POST /api/client/statistics (async report)", run_id, ts)))
         time.sleep(3)
-    return merge_rows("RAW_OZON_ADS_SKU_DAILY", rows, ["date", "campaign_id", "sku"], run_id)
+    return rows
 
 
 # -------------------------------------------------------------- поставки

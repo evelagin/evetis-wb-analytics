@@ -146,7 +146,6 @@ def test_ads_happy_path_is_unchanged_in_both_modes(entities, captured_merges, mo
     ("no_uuid", {"submit": (200, {})}, "нет UUID"),
     ("report_error", {"state": "ERROR"}, "отчёт не готов или завершился ошибкой"),
     ("report_http", {"report": (404, "")}, "отчёт не скачан"),
-    ("single_campaign_csv", {"report": (200, REPORT_CSV)}, "не разобран как ZIP"),
 ])
 def test_ads_silent_skips(entities, captured_merges, monkeypatch, scenario, kwargs, expect):
     # без флага — прежнее поведение: пропуск, запись пустой (или частичной) партии
@@ -167,18 +166,16 @@ def test_ads_silent_skips(entities, captured_merges, monkeypatch, scenario, kwar
     assert captured_merges == []
 
 
-def test_ads_window_over_62_days_fails_before_any_request(entities, captured_merges,
-                                                          monkeypatch, strict):
-    calls = _perf(monkeypatch, entities)
-    with pytest.raises(entities.StrictLimitError, match="63 сут. длиннее 62"):
-        entities.ads_sku_daily("rt-x", "ts", "2026-01-01", "2026-03-05")
-    assert calls == [], "окно отвергается до обращения к API"
+def test_single_campaign_csv_is_still_lost_without_flag(entities, captured_merges, monkeypatch,
+                                                        lenient):
+    """P2-6 без флага — прежнее поведение EVETIS: CSV одной кампании не разбирается (пусто)."""
+    _perf(monkeypatch, entities, report=(200, REPORT_CSV))
+    entities.ads_sku_daily("rt-x", "ts", "2026-09-01", "2026-09-02")
+    assert captured_merges[-1][1] == []
 
 
-def test_ads_window_of_exactly_62_days_is_allowed(entities, captured_merges, monkeypatch, strict):
-    _perf(monkeypatch, entities)
-    entities.ads_sku_daily("rt-x", "ts", "2026-01-01", "2026-03-04")     # 62 суток
-    assert captured_merges[0][0] == "RAW_OZON_ADS_SKU_DAILY"
+# Строгий режим T5 больше не отвергает длинное окно и CSV одной кампании, а исправляет их:
+# tests pipelines/ozon/tests/test_t5_runtime_blockers.py (окна по датам МСК, P2-5/P2-6).
 
 
 def test_ads_long_window_without_flag_keeps_old_single_request(entities, captured_merges,

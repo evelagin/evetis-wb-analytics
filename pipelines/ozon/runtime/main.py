@@ -33,6 +33,28 @@ from entities import REGISTRY
 sys.excepthook = C.safe_excepthook
 
 
+def validate_window(since, until, today):
+    """Строгий режим: текст ошибки окна SINCE/UNTIL или None.
+
+    Даты — ровно YYYY-MM-DD; SINCE ≤ UNTIL; ни одна не позже сегодняшних суток МСК.
+    """
+    parsed = {}
+    for name, v in (("SINCE", since), ("UNTIL", until)):
+        if v is None:
+            continue
+        try:
+            if len(v) != 10:
+                raise ValueError
+            parsed[name] = date.fromisoformat(v)
+        except ValueError:
+            return f"{name} не дата YYYY-MM-DD"
+        if parsed[name] > today:
+            return f"{name} позже сегодняшних суток МСК"
+    if "SINCE" in parsed and "UNTIL" in parsed and parsed["SINCE"] > parsed["UNTIL"]:
+        return "SINCE позже UNTIL"
+    return None
+
+
 def main():
     run_id = os.environ.get("INGESTION_RUN_ID") or f"rt-{uuid.uuid4()}"
     want = [e for e in os.environ.get("ENTITIES", "").split(",") if e] or list(REGISTRY)
@@ -40,6 +62,13 @@ def main():
     lb_over = os.environ.get("LOOKBACK_OVERRIDE")
     today = C.now_msk().date()
     ts = C.now_msk().isoformat()
+    if C.STRICT_PAGE_CAPS:
+        # T5: окно проверяется до первого обращения к API. SINCE > UNTIL раньше давал
+        # пустой прогон со статусом OK; будущая дата — «полноту» ещё не наступивших суток.
+        window_error = validate_window(since, until, today)
+        if window_error:
+            C.log(event="run_rejected", ingestion_run_id=run_id, reason=window_error)
+            sys.exit(2)
     C.log(event="run_start", ingestion_run_id=run_id, marketplace="OZON",
           entities=want, since=since, until=until)
     ok = failed = 0
