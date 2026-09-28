@@ -42,7 +42,28 @@ def main() -> int:
             hist[lab["label"]]["cases"] += 1
             hist[lab["label"]]["v2_ai_BLOCK"] += r["v2_ai_verdict"] == "BLOCK"
             hist[lab["label"]][f"v3_{r['final_outcome']}"] += 1
+    # manual operator answers: same verifier, verdicts + reasons (owner 28.09, item 2)
+    manual = rest.query(
+        f"SELECT communication_id, run_kind, v2_answer_source, v2_final_verdict, v2_final_block_rules, "
+        f"v2_ai_verdict, v2_checks_json FROM `{DS}.communication_v3_decisions` "
+        f"WHERE v2_answer_source = 'manual' OR run_kind IN ('manual_edit_shadow', 'v2_final_recheck')")
+    manual_verdicts = collections.Counter(m["v2_final_verdict"] or m["v2_ai_verdict"] for m in manual)
+    manual_rules = collections.Counter(r for m in manual for r in json.loads(m["v2_final_block_rules"] or "[]"))
+    # every BLOCK on a historical GOOD answer, with rule + evidence, for false-positive review (item 8)
+    good_blocks = []
+    for r in rows:
+        lab = labels.get(r["communication_id"])
+        if lab and lab["label"] == "GOOD" and r["v2_ai_verdict"] == "BLOCK":
+            det = rest.query(f"SELECT v2_checks_json FROM `{DS}.V_V3_SHADOW_LATEST` "
+                             f"WHERE communication_id = '{r['communication_id']}'")
+            viol = []
+            for chk in json.loads(det[0]["v2_checks_json"] or "{}").values():
+                viol += [(v["rule_id"], v["evidence_span"][:80]) for v in chk.get("violations", [])
+                         if v.get("severity") == "BLOCK"]
+            good_blocks.append({"case_id": lab["case_id"], "violations": viol})
     print(json.dumps({"metrics": metrics, "outcomes": outcome, "failure_codes": failure,
+                      "manual_answers": {"rows": len(manual), "verdicts": manual_verdicts, "block_rules": manual_rules},
+                      "historical_good_blocks": good_blocks,
                       "v2_vs_v3_failure_classes": [c for c in classes if any(
                           c[k] for k in ("v2_ai_drafts_with_violation", "v2_final_texts_with_violation",
                                          "v3_drafts_blocked_by_rule"))],
