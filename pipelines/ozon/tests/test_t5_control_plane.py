@@ -1083,3 +1083,12 @@ def _apply_mutant(monkeypatch):
         if module is L and attr == "ready_contract":           # EDGES держит ссылку на функцию
             monkeypatch.setitem(L.EDGES, (L.RECONCILING, L.READY), ({L.CONTROL}, repl))
     yield
+
+
+def test_control_entrypoint_fails_closed_without_project():
+    """Как шаг control-fail-closed-without-project сборки v2: без GCP_PROJECT_ID — отказ до сети."""
+    r = subprocess.run([sys.executable, "-c", _STUBS + f"sys.path.insert(0, {str(RUNTIME)!r})\n"
+                        "sys.argv = ['lifecycle.py', 'status']\nimport runpy\n"
+                        f"runpy.run_path({str(RUNTIME / 'lifecycle.py')!r}, run_name='__main__')\n"],
+                       capture_output=True, text=True, timeout=60, env={"PATH": os.environ["PATH"]})
+    assert r.returncode != 0 and "GCP_PROJECT_ID не задан" in r.stderr

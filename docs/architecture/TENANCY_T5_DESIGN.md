@@ -308,3 +308,105 @@ CREDENTIALS_PENDING → VALIDATING → CAPABILITY_DISCOVERY → READY_FOR_BACKFI
   (release gate T3.2b).
 - **D5 — промо EVETIS:** до 13.10.2026 перевести наблюдатель на `/v2/actions/*`. Это отдельные
   ворота EVETIS, задача заведена отдельно.
+
+**Решения приняты 2026-09-28:** D1 — ACCEPT; D2 — ACCEPT WITH REFINEMENT (проверка по фактическому
+набору методов, машиночитаемая политика); D3 — ACCEPT (срок созревания обязателен только для
+RECONCILING → READY); D4 — CONDITIONAL ACCEPT (выполнено, PR #225); D5 — отдельный трек EVETIS.
+Реализация D1 отличается от рекомендации выше: у control **нет** `jobUser` и WRITER — см. ниже.
+
+## Реализация control plane (T5 CONTROL PLANE, 2026-09-28)
+
+### Разделение обязанностей
+
+| | control (`sa-tenant-control`, job `tenant-control`) | runtime (`sa-ozon-runtime`, job'ы `ozon-runtime-*`) | владелец |
+|---|---|---|---|
+| проверка ключей, наблюдения identity | пишет `SELLER_IDENTITY_OBSERVATIONS` | — | читает (`tenant_binding.py show`) |
+| привязка кабинета `ref.SELLER_BINDING` | читает | читает, сверяет живой отпечаток, иначе выход 3 | **единственный писатель** (`confirm` / `revoke`) |
+| возможности, границы истории, план, DQ | пишет журналы `tenant_ops` | — | — |
+| переходы автомата | рёбра CONTROL через валидатор | — | рёбра OPERATOR через тот же валидатор |
+| READY | только `advance` при полном контракте READY | — | нет команды |
+| загрузка RAW | — | пишет `ozon_raw` | — |
+
+### IAM (точно, только ресурсные записи)
+
+- `sa-tenant-control`: ролей проекта нет. ACL датасетов — матрица `tools/tenancy/control_identity.py`:
+  `ozon_raw` и `ref` — `mpaSqlSourceRead` (`tables.get`, `tables.getData`); `tenant_ops` —
+  `mpaSqlSourceRead` + `mpaTenantControlAppend` (`tables.get`, `tables.updateData`);
+  `tenant_locks` — `mpaTenantControlLease` (`tables.create`, `tables.get`, `tables.list`);
+  `ozon_mart`, `analytics_share` — ничего. Плюс `secretAccessor` на 4 секрета.
+- Нет `bigquery.jobs.create` → нет DML: журналы `tenant_ops` только дописываются (`insertAll`).
+  Чтение — `tabledata.list`. Этот путь через Tables API заменяет запросы.
+- Runtime: без изменений T3/T4 (WRITER `ozon_raw`, READER `ref`, `jobUser`, 4 секрета). Доступа к
+  `tenant_ops` нет вовсе, записи в `ref` нет.
+- Роли `mpaTenantControl*` — роли организации. Создаёт **владелец** той же процедурой, что `mpaSql*`
+  (временная `organizationRoleAdmin` ≤ 2 ч). Точные команды:
+  `python tools/tenancy/platform_roles.py create-commands control`. Сверка —
+  `platform_roles.py verify`. Без ролей apply упадёт на ACL датасетов.
+- Запуск `tenant-control` — только владелец (`run.jobs.runWithOverrides`): расписания нет,
+  invoker ни у кого. Аргумент по умолчанию — `status` (только чтение).
+
+### Протокол привязки
+
+`lifecycle.py validate` (control) → `tenant_binding.py show` (маски; `--reveal` — только терминал
+владельца) → владелец сверяет кабинет вне системы → `tenant_binding.py confirm --observation ID
+--fingerprint FP --expect-current <binding_id|NONE>`.
+
+Confirm отказывает:
+- если последнее наблюдение API не одно, старше 24 ч, не `OBSERVED` или без отпечатка;
+- если отпечаток или наблюдение не совпали;
+- если действующее событие не равно `--expect-current` (оптимистичная конкуренция);
+- если текущая привязка некорректна.
+
+Тот же отпечаток и то же наблюдение дают NOOP. После записи привязка перечитывается.
+
+Control дополнительно требует, чтобы подтверждение ссылалось на наблюдение того же API с тем же
+отпечатком (как `V_SELLER_BINDING_STATUS`).
+
+### Автомат и контракт READY
+
+`lifecycle_core.decide` — единственный путь записи события. Прыжки, чужой исполнитель и
+испорченный журнал дают REJECT. `V_TENANT_STATE_AUDIT` независимо сверяет журнал с `EDGES`
+(CHAIN / EDGE / ACTOR); рёбра SQL и кода сверяет тест.
+
+READY требует одновременно:
+- ключ Seller PASS, `BOUND` по каждому нужному API;
+- все обязательные возможности `AVAILABLE` или `NOT_APPLICABLE`;
+- история каждого домена `COMPLETE` или `NOT_APPLICABLE`. PARTIAL (предел хранения, граница
+  2022-01-01) не пропускается: принять ограничение — решение владельца;
+- все отрезки DONE;
+- срок созревания задан (D3);
+- последний прогон DQ новее последнего DONE, без BLOCKING-провалов и с PASS по
+  `CHECKPOINTS_COMPLETE`, `COVERAGE`, `TRUNCATION`, `RAW_UNIQUENESS`, `FIN_CLASSIFICATION`,
+  `FIN_MATURITY`, `BINDING`.
+
+Команды control привязаны к состояниям (`COMMAND_STATES`): план строится только в
+CAPABILITY_DISCOVERY, отрезки берутся только в BACKFILLING и только из плана, хеш которого
+подтвердил оператор. RECONCILING → BACKFILLING — только для отрезков, возвращённых оператором
+(`reopen-chunk`); новых отрезков после подтверждения плана нет.
+
+### Аренда, квота, история
+
+- Аренда: `tables.insert` таблицы `tenant_locks.L_<chunk>_<поколение>` с `expirationTime`; 409 —
+  проигрыш. Истёкшая аренда перехватывается следующим поколением. DONE неизменяем до `REOPENED`
+  оператора.
+- Ошибка квоты не штрафует попыткой. FAILED_PERMANENT наступает после 5 неудач не по квоте.
+- Квота Performance: `min(активные × 240, 2000)` × 0,5 минус резерв; неизвестно — пол 60.
+  Выгрузки отрезка `ads_sku_daily` = все CPC-кампании кабинета (верхняя оценка). Их пишут в
+  `evidence_json`, расход считают за скользящие 24 ч. Нет бюджета — отрезок откладывается
+  (`quota_deferred`).
+- История: отказ API окну (REJECTED) — предел хранения, а не пустота
+  (`EMPTY_AFTER_RETENTION`, PARTIAL). Подсказка владельца — только стартовая точка поиска.
+
+### Схемы и SQL
+
+- `BACKFILL_CHECKPOINTS` + `plan_hash`, `lease_owner`, `lease_until`, `lease_generation`,
+  `started_at`, `completed_at`, `evidence_json`; `DQ_RESULTS` + `severity`. Добавлены только
+  NULLABLE-колонки в конце: изменение таблицы на месте.
+- Пакет SQL 30 → 32 VIEW: `tenant_ops.V_CAPABILITY_CURRENT`, `tenant_ops.V_TENANT_STATE_AUDIT`.
+  `analytics_share` не расширяется.
+
+### Образ
+
+Образ runtime содержит модули control и `seller_method_policy.json` (Dockerfile). Сборка —
+`infra/tenant/releases/ozon-runtime.v2.cloudbuild.yaml`: новый состав `/app`, плюс отказ
+`lifecycle.py` без проекта. v1 остаётся провенансом выпуска 08f9438 и не меняется.

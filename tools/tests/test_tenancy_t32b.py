@@ -25,7 +25,9 @@ from tools.tenancy import synthetic as SY  # noqa: E402
 from tools.tenancy import tenant_infra as TI  # noqa: E402
 
 RELEASES = REPO / PL.RUNTIME_RELEASES_DIR
-CONFIG = RELEASES / "ozon-runtime.cloudbuild.yaml"
+# Конфиги сборки неизменяемы по версиям (T5): запись выпуска называет свой файл (build.config).
+CONFIG_V1 = RELEASES / "ozon-runtime.cloudbuild.yaml"
+NEXT_CONFIG = RELEASES / "ozon-runtime.v2.cloudbuild.yaml"
 EVETIS_PROD_DIGEST = "sha256:24e3c6d6715fa7b73d30b4270f9863d2b8680b4b02d4874ff1ea12b4fd90fa1b"
 HEX40, HEX64 = re.compile(r"[0-9a-f]{40}"), re.compile(r"[0-9a-f]{64}")
 
@@ -36,6 +38,11 @@ def _approved():
 
 def _records():
     return {p: json.loads(p.read_text(encoding="utf-8")) for p in sorted((RELEASES / "ozon").glob("*.json"))}
+
+
+def _config():
+    """Конфиг, по которому собран ТЕКУЩИЙ утверждённый образ (из его записи выпуска)."""
+    return REPO / _current_record()["build"]["config"]
 
 
 def _current_record():
@@ -81,7 +88,7 @@ def test_current_release_is_bound_to_source_build_and_identity():
     assert "@cloudbuild.gserviceaccount.com" not in json.dumps(b)  # не устаревший SA Cloud Build
     assert b["source_object"].startswith(f"gs://{PL.RUNTIME_BUILD_BUCKET}/source/")
     assert b["build_args"] == [] and b["secrets"] == []
-    assert b["config"] == str(CONFIG.relative_to(REPO))
+    assert b["config"] == str(CONFIG_V1.relative_to(REPO))
     assert r["image_facts"]["labels"]["org.opencontainers.image.revision"] == r["source"]["commit"]
     assert r["image_facts"]["entrypoint"] == ["python", "main.py"]
 
@@ -110,7 +117,8 @@ def test_release_source_matches_git_when_history_is_available():
 
 
 def test_release_record_and_config_carry_no_credentials():
-    text = "\n".join(p.read_text(encoding="utf-8") for p in [*_records(), CONFIG, REPO / PL.RUNTIME_RELEASE_FILE])
+    configs = sorted(RELEASES.glob("*.cloudbuild.yaml"))
+    text = "\n".join(p.read_text(encoding="utf-8") for p in [*_records(), *configs, REPO / PL.RUNTIME_RELEASE_FILE])
     for pat in (r"BEGIN [A-Z ]*PRIVATE KEY", r'"private_key', r"ya29\.", r"gh[pousr]_[A-Za-z0-9]{20}",
                 r"AIza[0-9A-Za-z_-]{30}", r"EVETIS_OZON_[A-Z_]+=", r"(?i)client_secret\s*[:=]"):
         assert not re.search(pat, text), pat
@@ -118,7 +126,7 @@ def test_release_record_and_config_carry_no_credentials():
 
 # ═══════════════════════════════════════ конфиг сборки
 def test_build_config_pins_builder_gates_identity_and_takes_no_secrets():
-    text = CONFIG.read_text(encoding="utf-8")
+    text = _config().read_text(encoding="utf-8")
     r = _current_record()
     assert r["build"]["builder_image"] in text
     assert re.findall(r"name: (\S+)", text) and all("@sha256:" in n for n in re.findall(r"name: (\S+)", text))
@@ -127,7 +135,10 @@ def test_build_config_pins_builder_gates_identity_and_takes_no_secrets():
     assert ids == ["identity", "build", "record", "contents", "fail-closed-without-project"]
     assert 'test "$$who" = "${_BUILDER}"' in text                     # гейт идентичности — до сборки
     # Конфиг — часть провенанса текущего выпуска: менять его можно только вместе с новым выпуском.
-    assert hashlib.sha256(CONFIG.read_bytes()).hexdigest() == r["build"]["config_sha256"]
+    assert hashlib.sha256(_config().read_bytes()).hexdigest() == r["build"]["config_sha256"]
+    # v1 — провенанс выпуска 08f9438: байты не меняются никогда.
+    assert hashlib.sha256(CONFIG_V1.read_bytes()).hexdigest() == \
+        "ba89d1fd17047df51a1d8ec6981ae8096fce44be1e7cf9dbda200ada379a9905"
     for bad in ("secretEnv", "availableSecrets", "--build-arg", "latest"):
         assert bad not in text, bad
     assert f"{PL.RUNTIME_REGISTRY}/ozon-runtime" in text and "logging: CLOUD_LOGGING_ONLY" in text
@@ -193,3 +204,32 @@ def test_builder_identity_is_separate_from_tenant_provisioning():
     assert PL.RUNTIME_BUILD_BUCKET != PL.STATE_BUCKET
     wf = (REPO / PL.TENANT_INFRA_WORKFLOW).read_text(encoding="utf-8")
     assert PL.RUNTIME_BUILDER_SA not in wf                                # WIF провижионера его не получает
+
+
+# ═══════════════════════════════════════ следующий конфиг (T5): совпадает с Dockerfile
+def test_next_build_config_expects_exactly_the_dockerfile_contents():
+    """Шаг contents v2 ждёт ровно файлы из COPY Dockerfile (+ requirements.txt): иначе сборка
+    кандидата T5 упала бы на собственной проверке состава (или пропустила лишнее)."""
+    text = NEXT_CONFIG.read_text(encoding="utf-8")
+    docker = (REPO / "pipelines/ozon/runtime/Dockerfile").read_text(encoding="utf-8")
+    copied = set()
+    for line in docker.splitlines():
+        if line.startswith("COPY "):
+            copied |= set(line.split()[1:-1])
+    want = " ".join(sorted(copied)) + " "
+    got = re.search(r'test "\$\$got" = "([^"]*)"', text).group(1)
+    assert got == want, (got, want)
+    assert {"lifecycle.py", "seller_method_policy.json", "requirements.txt"} <= copied
+
+
+def test_next_build_config_keeps_every_v1_gate():
+    text = NEXT_CONFIG.read_text(encoding="utf-8")
+    ids = re.findall(r"^  - id: (\S+)$", text, flags=re.M)
+    assert ids == ["identity", "build", "record", "contents", "fail-closed-without-project",
+                   "control-fail-closed-without-project"]
+    assert all("@sha256:" in n for n in re.findall(r"name: (\S+)", text))
+    assert f"_BUILDER: {PL.RUNTIME_BUILDER_SA}" in text and 'test "$$who" = "${_BUILDER}"' in text
+    for bad in ("secretEnv", "availableSecrets", "--build-arg", "latest"):
+        assert bad not in text, bad
+    assert "substitutionOption: MUST_MATCH" in text and "logging: CLOUD_LOGGING_ONLY" in text
+    assert "--entrypoint=python ${_IMAGE}:${_SOURCE_SHA} lifecycle.py status" in text
