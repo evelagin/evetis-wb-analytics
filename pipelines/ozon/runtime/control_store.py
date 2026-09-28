@@ -115,21 +115,27 @@ class ControlStore:
             raise
         return (getattr(t, "labels", None) or {}, getattr(t, "description", None))
 
+    GAP_LOOKAHEAD = 5
+
     def ref_series(self, name_of, limit: int = 9999) -> list:
         """[(имя, метки, описание)] серии name_of(1), name_of(2)… до первой отсутствующей (номера подряд:
-        владелец занимает следующий номер tables.insert-ом)."""
+        владелец занимает max+1). У control нет tables.list в ref, поэтому после пропуска проверяются
+        ещё GAP_LOOKAHEAD номеров: знак за пропуском (ручное удаление) — отказ, а не «серия кончилась»."""
         out = []
         for n in range(1, limit + 1):
             m = self.ref_marker(name_of(n))
             if m is None:
+                for k in range(n + 1, n + 1 + self.GAP_LOOKAHEAD):
+                    if self.ref_marker(name_of(k)) is not None:
+                        raise StoreError(f"серия знаков владельца с пропуском: нет {name_of(n)}, есть {name_of(k)}")
                 return out
             out.append((name_of(n), m[0], m[1]))
         return out
 
     def state_chain(self) -> list[dict]:
         """Цепочка переходов из маркеров S_<seq> (метки; created — время сервера)."""
-        return LCORE.chain_from_markers((t.table_id, getattr(t, "labels", None), getattr(t, "created", None))
-                                        for t in self._locks())
+        return LCORE.chain_from_markers((t.table_id, getattr(t, "labels", None), getattr(t, "created", None),
+                                         getattr(t, "expires", None)) for t in self._locks())
 
     def record_transition(self, event: dict) -> bool:
         """Занять номер seq (маркер S_<seq>; 409 — параллельный переход, False) и дописать зеркало."""

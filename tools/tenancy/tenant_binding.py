@@ -3,8 +3,8 @@
 
   python tools/tenancy/tenant_binding.py show <tenant_id> [--api seller|performance] [--reveal]
   python tools/tenancy/tenant_binding.py confirm <tenant_id> --api A --observation ID --fingerprint FP \
-                                          --expect-current <binding_id|NONE>
-  python tools/tenancy/tenant_binding.py revoke <tenant_id> --api A --expect-current <binding_id> --reason TEXT
+                                          --expect-current <OPB_<api>_<n>|NONE>
+  python tools/tenancy/tenant_binding.py revoke <tenant_id> --api A --expect-current <OPB_<api>_<n>> --reason TEXT
 
 observe (control: lifecycle.py validate) → show → владелец сверяет кабинет вне системы → confirm →
 ref.OPB_<api>_<n> (таблица-знак владельца; описание — строка события) + зеркало ref.SELLER_BINDING.
@@ -39,9 +39,12 @@ NONE = "NONE"
 
 
 def current_event_id(items, api, now):
-    """(binding_id последнего знака API или NONE, действующая привязка) — по знакам ref.OPB_*."""
-    n, row = I.binding_head(items, api)
-    return ((row or {}).get("binding_id") or NONE) if n else NONE, I.binding_from_markers(items, api, now)
+    """(имя последнего знака API или NONE, действующая привязка) — по знакам ref.OPB_*.
+
+    Сверка --expect-current — по имени знака, а не по binding_id: испорченное описание знака
+    (INVALID_BINDING) тоже можно назвать и отозвать."""
+    n, _row = I.binding_head(items, api)
+    return (I.binding_marker_name(api, n) if n else NONE), I.binding_from_markers(items, api, now)
 
 
 def decide_confirm(observations, items, api, observation_id, fingerprint, expect_current, now, actor):
@@ -60,6 +63,15 @@ def decide_confirm(observations, items, api, observation_id, fingerprint, expect
         return "REJECT", ["--observation не последнее наблюдение этого API"], None
     if obs.get("identity_fingerprint") != fingerprint:
         return "REJECT", ["--fingerprint не совпадает с наблюдением"], None
+    # Отпечаток пересчитывается из тех значений, которые видит владелец (show): строку наблюдения пишет
+    # control, и подменить «лицо» при чужом отпечатке он не должен суметь.
+    try:
+        recomputed = (I.seller_fingerprint(obs.get("seller_client_id"), obs.get("company_inn"), obs.get("company_ogrn"))
+                      if api == I.SELLER else I.performance_fingerprint(obs.get("performance_client_id")))
+    except I.IdentityError:
+        recomputed = None
+    if recomputed != fingerprint:
+        return "REJECT", ["отпечаток не пересчитывается из показанных значений identity — наблюдение подделано"], None
     row = {"binding_id": "bnd-" + hashlib.sha256(f"{api}|{observation_id}|{fingerprint}|{now.isoformat()}".encode()).hexdigest()[:24],
            "marketplace": "OZON", "api": api, "identity_fingerprint": fingerprint,
            "seller_client_id": obs.get("seller_client_id") if api == I.SELLER else None,
@@ -71,6 +83,7 @@ def decide_confirm(observations, items, api, observation_id, fingerprint, expect
 
 
 def decide_revoke(items, api, expect_current, reason, now, actor):
+    """Отзыв действующей или испорченной (INVALID_BINDING) головы; повторный отзыв — NOOP."""
     cur_id, cur = current_event_id(items, api, now)
     if cur_id == NONE or cur.status == I.UNBOUND:
         return "NOOP", ["действующей привязки нет"], None
@@ -79,7 +92,11 @@ def decide_revoke(items, api, expect_current, reason, now, actor):
     if not reason:
         return "REJECT", ["отзыв без причины"], None
     _n, src = I.binding_head(items, api)
-    row = dict(src, binding_id="rev-" + hashlib.sha256(f"{cur_id}|{now.isoformat()}".encode()).hexdigest()[:24],
+    src = {k: v for k, v in (src or {}).items() if not k.startswith("_")} if src and not src.get("_invalid") \
+        else {"marketplace": "OZON", "identity_fingerprint": "", "seller_client_id": None,
+              "performance_client_id": None, "confirmed_by": actor, "confirmed_at": now.isoformat(),
+              "source_observation_id": ""}
+    row = dict(src, api=api, binding_id="rev-" + hashlib.sha256(f"{cur_id}|{now.isoformat()}".encode()).hexdigest()[:24],
                status="REVOKED", revoked_at=now.isoformat(), revoked_by=actor, notes=reason[:500])
     return "WRITE", [], row
 

@@ -96,8 +96,8 @@ class Tables:
         if out.get("insertErrors"):
             raise TableError(f"{table}: insertAll отклонил {len(out['insertErrors'])} строк")
 
-    def list_tables(self, dataset: str):
-        """[(имя, метки, момент создания)] — tables.list (метаданные консистентны)."""
+    def list_tables(self, dataset: str, with_expiry: bool = False):
+        """[(имя, метки, момент создания[, срок жизни])] — tables.list (метаданные консистентны)."""
         from datetime import datetime, timezone
         base = f"{BQ}/projects/{self.project}/datasets/{dataset}/tables?maxResults=1000"
         token, out = "", []
@@ -105,8 +105,9 @@ class Tables:
             page = _req("GET", base + (f"&pageToken={urllib.parse.quote(token)}" if token else ""))
             for t in page.get("tables") or []:
                 created = t.get("creationTime")
-                out.append((t["tableReference"]["tableId"], t.get("labels") or {},
-                            datetime.fromtimestamp(int(created) / 1000, tz=timezone.utc) if created else None))
+                row = (t["tableReference"]["tableId"], t.get("labels") or {},
+                       datetime.fromtimestamp(int(created) / 1000, tz=timezone.utc) if created else None)
+                out.append(row + (t.get("expirationTime"),) if with_expiry else row)
             token = page.get("nextPageToken") or ""
             if not token:
                 return out
@@ -114,7 +115,7 @@ class Tables:
     def create_marker(self, dataset: str, name: str, labels: dict, description: str) -> bool:
         """Атомарно занять имя (tables.insert): True — наше, False — занято (409)."""
         body = {"tableReference": {"projectId": self.project, "datasetId": dataset, "tableId": name},
-                "labels": labels, "description": description[:1000],
+                "labels": labels, "description": description,          # лимит BigQuery 16384 — без обрезки
                 "schema": {"fields": [{"name": "marker", "type": "STRING"}]}}
         try:
             _req("POST", f"{BQ}/projects/{self.project}/datasets/{dataset}/tables", body)

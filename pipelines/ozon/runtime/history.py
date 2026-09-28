@@ -155,7 +155,7 @@ def windowed_first_activity(domain: str, probe, today: date, seed: date | None =
                 best, z = mid, mid - timedelta(days=1)
         if best is None:
             raise HistoryProbeError(f"{domain}: API отверг все окна — граница не определена")
-        lo = best
+        lo = b.api_verified_from = best                    # найденный предел хранения, а не первая проба
     hit = None
     for s, e in _windows(lo, today, n):
         r = q.call(s, e)

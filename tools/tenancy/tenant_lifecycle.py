@@ -59,16 +59,33 @@ def secret_versions(project: str, secret_ids) -> dict:
 def read_state(contract, tables):
     """(цепочка из маркеров, решения владельца по seq, журнал чекпойнтов, строки решений, стоп-кран)."""
     ops, ref, locks = (contract["datasets"][k] for k in ("tenant_ops", "ref", "tenant_locks"))
-    chain = L.chain_from_markers(tables.list_tables(locks))
+    chain = L.chain_from_markers(tables.list_tables(locks, with_expiry=True))
     decisions = {}
     for name, labels, desc in tables.series(ref, "OPD_"):
         m = L.DECISION_MARKER_RE.match(name)
         if m:
             decisions[int(m.group(1))] = L.decision_from_marker(labels, desc)
     rows = [d for d in tables.rows(ref, "OPERATOR_DECISIONS") if d.get("decision_id")]
+    # Ремонт отрезков — знаки ref.OPR_<n> (консистентно); строки REOPEN_CHUNK — зеркало.
+    rows += [{"decision_type": "REOPEN_CHUNK", "reopens_run_id": rid}
+             for rid in reopened_from_signs(tables.series(ref, "OPR_"))]
     hold = L.hold_active([(n, lb) for n, lb, _d in tables.series(ref, "OPH_")])
     ledger = list(tables.rows(ops, "BACKFILL_CHECKPOINTS"))
     return chain, decisions, ledger, rows, hold
+
+
+def reopened_from_signs(items):
+    """run_id из знаков ref.OPR_<n> (строгий разбор описания; испорченный знак — пропуск)."""
+    from tools.tenancy.validation import TenantDocumentError, parse_tenant_json
+    out = []
+    for _n, _lb, desc in items:
+        try:
+            doc = parse_tenant_json(desc or "{}")
+        except TenantDocumentError:
+            continue
+        if isinstance(doc, dict) and doc.get("reopens_run_id"):
+            out.append(doc["reopens_run_id"])
+    return out
 
 
 def reopened(rows):
@@ -151,8 +168,15 @@ def transition(contract, tables, now, target, actor, reason, plan_hash=None, sec
     if target != L.SUSPENDED:
         labels, desc = L.decision_marker(event["from_state"], target, decision_id=dec["decision_id"],
                                          plan_hash=plan_hash, secret_versions=secret_counts, actor=actor)
-        if not tables.create_marker(ref, L.decision_marker_name(event["seq"]), labels, desc):
-            return "CONFLICT", f"решение на номер {event['seq']} уже есть (параллельный запуск владельца)"
+        name = L.decision_marker_name(event["seq"])
+        if not tables.create_marker(ref, name, labels, desc):
+            # Знак на этот номер уже есть: прошлый запуск упал между знаком и маркером («сирота»).
+            # То же ребро и тот же план — повтор идемпотентен (достраиваем маркер); иначе — отказ.
+            prev = L.decision_from_marker(*(tables.get_table(ref, name) or ({}, None)))
+            if (prev.get("to_state"), prev.get("expect_state"), prev.get("plan_hash")) != \
+                    (target, event["from_state"], plan_hash):
+                return "CONFLICT", f"на номер {event['seq']} есть другое решение владельца — см. status"
+            dec["decision_id"] = prev.get("decision_id") or dec["decision_id"]
     if not tables.create_marker(locks, L.marker_name(event["seq"]), L.marker_labels(event),
                                 json.dumps({"reason_code": event["reason_code"], "run_id": event["run_id"]})):
         # Решение ref.OPD_<seq> привязано к номеру: чужое событие с этим номером им не станет.
@@ -192,8 +216,16 @@ def reopen_chunk(contract, tables, now, actor, chunk_id, reason):
         return "REJECT", f"отрезок {chunk_id} не DONE — ремонт не нужен"
     dec = new_decision(actor, now, decision_type="REOPEN_CHUNK", chunk_id=chunk_id, reopens_run_id=st["run_id"],
                        reason=reason[:500])
-    tables.append(contract["datasets"]["ref"], "OPERATOR_DECISIONS", [dec])
-    return "WRITE", f"REOPEN {chunk_id}: отменена версия DONE {st['run_id']} ({dec['decision_id']})"
+    ref = contract["datasets"]["ref"]
+    n = max([int(nm[4:]) for nm, _l, _c in tables.list_tables(ref) if nm.startswith("OPR_") and nm[4:].isdigit()]
+            or [0]) + 1
+    # Знак ref.OPR_<n> — консистентно для control (ремонт отказ УСИЛИВАЕТ, задержка строк недопустима).
+    if not tables.create_marker(ref, f"OPR_{n:04d}", {"chunk": chunk_id[:63]},
+                                json.dumps({"chunk_id": chunk_id, "reopens_run_id": st["run_id"],
+                                            "decision_id": dec["decision_id"]}, ensure_ascii=False)):
+        return "CONFLICT", "параллельный ремонт — повторите после status"
+    tables.append(ref, "OPERATOR_DECISIONS", [dec])
+    return "WRITE", f"REOPEN {chunk_id}: отменена версия DONE {st['run_id']} (OPR_{n:04d})"
 
 
 def main(argv=None):
@@ -211,8 +243,14 @@ def main(argv=None):
     t = TT.Tables(c["project_id"])
     now = datetime.now(timezone.utc)
     if a.cmd == "status":
-        chain, decisions, _l, _r, hold = read_state(c, t)
+        chain, decisions, ledger, _r, hold = read_state(c, t)
+        ph, chunks = CK.latest_plan(ledger, since=cycle_start(chain))
+        per = {}
+        for ch in chunks:
+            p0 = per.setdefault(ch.domain, [str(ch.start), str(ch.end), 0])
+            p0[0], p0[1], p0[2] = min(p0[0], str(ch.start)), max(p0[1], str(ch.end)), p0[2] + 1
         print(json.dumps({"state": L.current_state(chain), "events": len(chain), "owner_hold": hold,
+                          "plan": {"hash": ph, "domains": per},      # что именно одобряет approve-plan
                           "audit": L.audit_history(chain, decisions)[:5]}, ensure_ascii=False))
         return 0
     actor = f"OPERATOR:{TT.owner_account()}"

@@ -74,7 +74,7 @@ class Snapshot:
     operator_plan_hash: str | None = None                  # хеш плана, который подтверждает оператор
     decisions: dict | None = None                          # seq → решение владельца ref.OPD_<seq>
     hold: bool = False                                     # стоп-кран владельца ref.OPH_* действует
-    accepted_limitations: dict = field(default_factory=dict)   # домен → boundary_id, принятый владельцем
+    accepted_limitations: set = field(default_factory=set)     # {(домен, boundary_id)}, принятые владельцем
 
 
 def _ads_enabled(s: Snapshot) -> bool:
@@ -157,7 +157,7 @@ def ready_contract(s: Snapshot) -> list[str]:
             # всём принятом диапазоне. PARTIAL (предел хранения / документированная граница) и
             # UNKNOWN — не READY: принять ограничение может только решение владельца (новая версия политики).
             accepted = h.get("completeness_status") == "PARTIAL" and h.get("boundary_id") and \
-                s.accepted_limitations.get(d) == h.get("boundary_id")
+                (d, h.get("boundary_id")) in s.accepted_limitations
             if h.get("completeness_status") not in ("COMPLETE", "NOT_APPLICABLE") and not accepted:
                 out.append(f"история {d}: {h.get('completeness_status') or 'не определена'}")
     out += _v_to_reconciling(s)
@@ -345,9 +345,12 @@ def marker_labels(event: dict) -> dict:
 def chain_from_markers(items) -> list[dict]:
     """items — [(имя таблицы, метки, момент создания сервером)] → события цепочки (без маркеров — нет)."""
     out = []
-    for name, labels, created in items:
+    for item in items:
+        name, labels, created = item[:3]
+        expires = item[3] if len(item) > 3 else None
         m = STATE_MARKER_RE.match(name or "")
-        if not m:
+        if not m or expires:
+            # Вне формата или со сроком жизни (маркер, который «сотрётся» сам, — подлог истории).
             if (name or "").startswith("S_"):
                 out.append({"invalid_marker": name, "occurred_at": created})
             continue
@@ -367,8 +370,9 @@ def decision_marker_name(seq: int) -> str:
 
 def decision_marker(event_from, event_to, **payload) -> tuple[dict, str]:
     """(метки, описание) таблицы-решения ref.OPD_<seq> для ребра оператора."""
+    # Описание не обрезается (лимит BigQuery 16384): обрезанный JSON потерял бы plan_hash.
     return ({"to": _label(event_to), "from": _label(event_from)},
-            json.dumps(payload, ensure_ascii=False, sort_keys=True, default=str)[:1000])
+            json.dumps(payload, ensure_ascii=False, sort_keys=True, default=str))
 
 
 def decision_from_marker(labels, description) -> dict:
@@ -382,10 +386,18 @@ def decision_from_marker(labels, description) -> dict:
 
 
 def hold_active(items) -> bool:
-    """items — [(имя, метки)] стоп-крана ref.OPH_<n>: действует, если последний — suspend."""
+    """items — [(имя, метки)] стоп-крана ref.OPH_<n>: действует, если последний знак — НЕ явный resume
+    (метки нет или она иная — тоже остановка: fail-closed)."""
     best = (0, None)
     for name, labels in items:
         m = HOLD_MARKER_RE.match(name or "")
         if m and int(m.group(1)) > best[0]:
             best = (int(m.group(1)), (labels or {}).get("action"))
-    return best[1] == "suspend"
+    return best[0] > 0 and best[1] != "resume"
+
+
+def series_gap(numbers) -> bool:
+    """Номера знаков владельца обязаны идти подряд с 1 (владелец занимает max+1); пропуск — подлог
+    или ручное удаление, и решения по такой серии не принимаются."""
+    ns = sorted(numbers)
+    return ns != list(range(1, len(ns) + 1))

@@ -209,8 +209,10 @@ def binding_row(api=I.SELLER, fp=SELLER_FP, obs_id="obs-1", at=NOW - timedelta(h
 
 
 def obs_row(api=I.SELLER, fp=SELLER_FP, obs_id="obs-1", at=NOW - timedelta(hours=3), status="OBSERVED"):
+    ident = ({"seller_client_id": CLIENT_ID, "company_inn": INN, "company_ogrn": OGRN} if api == I.SELLER
+             else {"performance_client_id": PERF_ID})
     return {"observation_id": obs_id, "api": api, "observed_at": at.isoformat(), "identity_fingerprint": fp,
-            "status": status}
+            "status": status, **ident}
 
 
 def ready_snapshot(**over):
@@ -421,11 +423,12 @@ class _OwnerTables:
     def append(self, dataset, table, rows):
         self.t.setdefault((dataset, table), []).extend(copy.deepcopy(rows))
 
-    def list_tables(self, dataset):
+    def list_tables(self, dataset, with_expiry=False):
+        tail = (None,) if with_expiry else ()
         if dataset == "ref":
-            return [(n, lb, NOW) for n, (lb, _d) in self.refm.items()]
+            return [(n, lb, NOW) + tail for n, (lb, _d) in self.refm.items()]
         assert dataset == "tenant_locks"
-        return [(n, lb, c) for n, (lb, c) in self.markers.items()]
+        return [(n, lb, c) + tail for n, (lb, c) in self.markers.items()]
 
     def get_table(self, dataset, name):
         assert dataset == "ref"
@@ -717,8 +720,8 @@ def test_owner_revoke_requires_current_event_and_reason():
     b = binding_row()
     items = opb_items([b])
     assert TB.decide_revoke(items, I.SELLER, "bnd-x", "r", NOW, "OPERATOR:o")[0] == "REJECT"
-    assert TB.decide_revoke(items, I.SELLER, "bnd-1", "", NOW, "OPERATOR:o")[0] == "REJECT"
-    st, _w, row = TB.decide_revoke(items, I.SELLER, "bnd-1", "ротация", NOW, "OPERATOR:o")
+    assert TB.decide_revoke(items, I.SELLER, "OPB_seller_0001", "", NOW, "OPERATOR:o")[0] == "REJECT"
+    st, _w, row = TB.decide_revoke(items, I.SELLER, "OPB_seller_0001", "ротация", NOW, "OPERATOR:o")
     assert st == "WRITE" and row["status"] == "REVOKED"
     assert I.binding_from_markers(opb_items([b, row]), I.SELLER, NOW).status == I.UNBOUND
 
@@ -881,9 +884,13 @@ def test_control_process_never_leaks_seller_key(echo):
             return 401, {{"_error": body, "company": {{"name": body}}}}
         C._request = fake
         rows = []
+        class NotFound(Exception):
+            code = 404
         class BQ:
             def list_rows(self, ref):
                 return []
+            def get_table(self, ref):
+                raise NotFound(ref)
             def insert_rows_json(self, ref, r, row_ids=None):
                 rows.extend(r); print("WROTE " + json.dumps(r, ensure_ascii=False)); return []
         C._bq = BQ()
@@ -1621,12 +1628,15 @@ def test_owner_can_accept_a_partial_history_limitation():
     h = {d: {"completeness_status": "COMPLETE"} for d in L.HISTORICAL_DOMAINS}
     h["finance_accrual"] = {"completeness_status": "PARTIAL", "boundary_id": "b-fin-1"}
     assert L.decide(ready_snapshot(history=h), L.READY, "CONTROL:r", "A", {}, "r")[0] == "REJECT"
-    assert L.decide(ready_snapshot(history=h, accepted_limitations={"finance_accrual": "b-other"}),
+    assert L.decide(ready_snapshot(history=h, accepted_limitations={("finance_accrual", "b-other")}),
                     L.READY, "CONTROL:r", "A", {}, "r")[0] == "REJECT"
-    assert L.decide(ready_snapshot(history=h, accepted_limitations={"finance_accrual": "b-fin-1"}),
+    assert L.decide(ready_snapshot(history=h, accepted_limitations={("finance_accrual", "b-fin-1")}),
                     L.READY, "CONTROL:r", "A", {}, "r")[0] == "WRITE"
-    assert LC.accepted_limitations([{"decision_id": "d", "decision_type": "ACCEPT_LIMITATION",
-                                     "domain": "finance_accrual", "boundary_id": "b-fin-1"}]) == {"finance_accrual": "b-fin-1"}
+    rows = [{"decision_id": "d1", "decision_type": "ACCEPT_LIMITATION", "domain": "finance_accrual", "boundary_id": "b-fin-1"},
+            {"decision_id": "d2", "decision_type": "ACCEPT_LIMITATION", "domain": "finance_accrual", "boundary_id": "b-fin-0"}]
+    # Порядок чтения строк не гарантирован: принятия — множество, а не «последнее».
+    assert LC.accepted_limitations(rows) == LC.accepted_limitations(rows[::-1]) == {
+        ("finance_accrual", "b-fin-1"), ("finance_accrual", "b-fin-0")}
 
 
 def test_control_sees_revocation_from_owner_markers(monkeypatch):
@@ -1660,3 +1670,102 @@ def test_owner_transition_conflict_leaves_only_a_seq_bound_orphan():
     squat = evs + [dict(ev(L.READY_FOR_BACKFILL, L.SUSPENDED, "CONTROL:c", NOW), seq=5),
                    dict(ev(L.SUSPENDED, L.VALIDATING, "OPERATOR:forged", NOW), seq=6)]
     assert any("OPD_000006" in p for p in L.audit_history(squat, {**decisions_for(evs), 5: orphan}))
+
+
+
+# ═════════════════════════════════════════ ревью PR #226, 3-й проход
+def test_owner_retry_completes_an_orphan_decision_idempotently():
+    """M1: знак OPD_5 создан, маркер S_5 — нет (сбой). Повтор с тем же ребром и планом достраивает маркер."""
+    sys.path.insert(0, str(RUNTIME.parents[2]))
+    from tools.tenancy import tenant_lifecycle as TL
+    t, ph = _owner_tables()
+    real = t.create_marker
+    t.create_marker = lambda ds, name, lb, d: False if name.startswith("S_") else real(ds, name, lb, d)
+    assert TL.transition(_owner_contract(), t, NOW, L.BACKFILLING, "OPERATOR:owner", "APPROVE", ph)[0] == "CONFLICT"
+    t.create_marker = real
+    status, text = TL.transition(_owner_contract(), t, NOW, L.BACKFILLING, "OPERATOR:owner", "APPROVE", ph)
+    assert status == "WRITE", text
+    assert L.current_state(L.chain_from_markers(t.list_tables("tenant_locks"))) == L.BACKFILLING
+    t2, ph2 = _owner_tables()
+    t2.create_marker("ref", L.decision_marker_name(5), *L.decision_marker(L.READY_FOR_BACKFILL, L.BACKFILLING,
+                                                                            plan_hash="0" * 64))
+    assert TL.transition(_owner_contract(), t2, NOW, L.BACKFILLING, "OPERATOR:owner", "APPROVE", ph2)[0] == "CONFLICT"
+
+
+def test_expiring_state_marker_is_a_violation():
+    """M1: маркер S_* со сроком жизни (самоудаляемая история) — нарушение."""
+    ch = L.chain_from_markers([("S_000001", {"to": "credentials_pending", "from": "none", "actor": "operator",
+                                             "decision": "none", "event": "e"}, NOW, NOW + timedelta(days=1))])
+    assert ch[0].get("invalid_marker") == "S_000001"
+
+
+def test_reopen_is_an_owner_sign_seen_without_lag():
+    """M2: ремонт — знак ref.OPR_<n>; control видит его сразу (tables.get), строки не нужны."""
+    rows = [_chunk_row(C1, "DONE", NOW - timedelta(hours=1), run_id="bf-a")]
+    store = _backfilling_store([C1], extra_ledger=rows)
+    assert LC.owner_reopens(make_ctx(store)) == frozenset()
+    store.refm["OPR_0001"] = ({"chunk": C1.chunk_id}, json.dumps({"chunk_id": C1.chunk_id, "reopens_run_id": "bf-a"}))
+    assert LC.owner_reopens(make_ctx(store)) == frozenset({"bf-a"})
+    assert CK.fold(store.t[("tenant_ops", "BACKFILL_CHECKPOINTS")], LC.owner_reopens(make_ctx(store)))[C1.chunk_id]["status"] != "DONE"
+
+
+def test_long_binding_event_is_not_truncated_and_invalid_head_is_revocable():
+    """M3: длинная причина отзыва не обрезает описание знака; испорченную голову можно отозвать."""
+    TB = _binding_tool()
+    b = binding_row()
+    rev = dict(b, binding_id="rev-1", status="REVOKED", revoked_at=NOW.isoformat(), notes="«x»\n" * 500)
+    lb, desc = I.binding_marker(rev)
+    assert len(desc) > 1000 and json.loads(desc)["notes"] == rev["notes"]
+    broken = [("OPB_seller_0001", {"api": "seller"}, '{"api": "seller", "status": "CONF')]           # обрезанный JSON
+    assert I.binding_from_markers(broken, I.SELLER, NOW).status == I.INVALID_BINDING
+    st, _w, row = TB.decide_revoke(broken, I.SELLER, "OPB_seller_0001", "испорченный знак", NOW, "OPERATOR:o")
+    assert st == "WRITE" and row["status"] == "REVOKED" and row["api"] == "seller"
+    items = broken + [("OPB_seller_0002",) + I.binding_marker(row)]
+    assert I.binding_from_markers(items, I.SELLER, NOW).status == I.UNBOUND
+
+
+def test_confirm_recomputes_fingerprint_from_shown_identity():
+    """M4: control показал «правильное» лицо, а отпечаток — другого кабинета: подтверждения нет."""
+    TB = _binding_tool()
+    other_fp = I.seller_fingerprint("5550200", INN, OGRN)
+    forged = dict(obs_row(fp=other_fp, at=NOW - timedelta(hours=1)))            # лицо наше, отпечаток чужой
+    st, why, _row = TB.decide_confirm([forged], opb_items([]), I.SELLER, "obs-1", other_fp, "NONE", NOW, "OPERATOR:o")
+    assert st == "REJECT" and "пересчитывается" in why[0]
+
+
+def test_validate_respects_owner_hold(monkeypatch):
+    """L1: под стоп-краном validate не читает ключи и не ходит в Ozon."""
+    calls = fake_api(monkeypatch)
+    store = FakeStore(ref_markers={"OPH_0001": ({"action": "suspend"}, "{}")})
+    assert LC.cmd_validate(make_ctx(store)) == 4 and calls == [] and not store.appended
+
+
+def test_owner_sign_series_gaps_and_unlabelled_hold_fail_closed(monkeypatch):
+    """L2: стоп-кран без метки — остановка; пропуск в серии знаков — отказ и у control, и у runtime."""
+    assert L.hold_active([("OPH_0001", {})]) and L.hold_active([("OPH_0001", {"action": "weird"})])
+    assert not L.hold_active([("OPH_0001", {"action": "suspend"}), ("OPH_0002", {"action": "resume"})])
+    store = FakeStore()
+    real = ControlStore(types.SimpleNamespace(get_table=lambda ref: (_ for _ in ()).throw(
+        type("NotFound", (Exception,), {"code": 404})(ref)) if not ref.endswith("OPH_0003") else
+        types.SimpleNamespace(labels={"action": "suspend"}, description="{}")), "p",
+        {"tenant_ops": "o", "tenant_locks": "l", "ref": "ref", "ozon_raw": "w"})
+    from control_store import StoreError
+    with pytest.raises(StoreError):
+        real.ref_series(lambda n: f"OPH_{n:04d}")                                   # 1 и 2 удалены, 3 — suspend
+    (denied, _), calls = _gate(monkeypatch, [binding_row()], holds=("suspend", "resume"))
+    assert denied is None
+    import main as M
+    bq = _RefBQ({**owner_markers(bindings=[binding_row()]), "OPB_seller_0003": I.binding_marker(binding_row())})
+    monkeypatch.setattr(C, "bq", lambda: bq)
+    denied, _r = M.binding_gate(["fbo_postings"], NOW)
+    assert denied == "tenant:INVALID_OWNER_SIGNS"
+
+
+def test_retention_search_records_the_found_limit():
+    """L4: api_verified_from — найденный предел хранения, а не первая принятая проба поиска."""
+    ret = date(2024, 9, 29)
+
+    def probe(s, e):
+        return H.ProbeResult(H.REJECTED if s < ret else H.EMPTY, None, 200)
+    b = H.windowed_first_activity("ads_expense_daily", probe, date(2026, 9, 28), max_calls=160)
+    assert b.api_verified_from == ret

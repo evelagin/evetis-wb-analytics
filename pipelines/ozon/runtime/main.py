@@ -102,6 +102,11 @@ def binding_gate(want, now):
     ref = f"{C.PROJECT}.{C.REF_DATASET}"
     names = [t.table_id for t in client.list_tables(ref)]
     holds = [n for n in names if LCORE.HOLD_MARKER_RE.match(n)]
+    series = {"OPH": [int(LCORE.HOLD_MARKER_RE.match(n).group(1)) for n in holds]}
+    for api in (I.SELLER, I.PERFORMANCE):
+        series[api] = [int(m.group(2)) for n in names if (m := I.BINDING_MARKER_RE.match(n)) and m.group(1) == api]
+    if any(LCORE.series_gap(v) for v in series.values()):
+        return "tenant:INVALID_OWNER_SIGNS", "серия знаков владельца в ref с пропуском — отказ"
     if holds:
         last = max(holds)
         if LCORE.hold_active([(last, getattr(client.get_table(f"{ref}.{last}"), "labels", None))]):

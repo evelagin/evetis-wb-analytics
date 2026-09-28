@@ -176,20 +176,34 @@ COMMAND_STATES = {"discover": (L.CAPABILITY_DISCOVERY,), "history": (L.CAPABILIT
 
 
 def owner_rows(ctx) -> list:
-    """Строки решений владельца ref.OPERATOR_DECISIONS (REOPEN_CHUNK, ACCEPT_LIMITATION).
+    """Строки решений владельца ref.OPERATOR_DECISIONS: ACCEPT_LIMITATION (и зеркала знаков).
 
     Писать туда control не может; строка может быть не видна до ~90 мин — это только задерживает
-    ремонт или принятие ограничения (оба лишь ослабляют отказ), подделать их нельзя."""
+    принятие ограничения (оно лишь ослабляет отказ). REOPEN_CHUNK отказ УСИЛИВАЕТ, поэтому он — знак
+    ref.OPR_<n> (tables.get, без задержки), см. owner_reopens."""
     return [d for d in ctx.store.rows("ref", "OPERATOR_DECISIONS") if d.get("decision_id")]
 
 
-def reopened_run_ids(rows) -> frozenset:
-    return frozenset(d.get("reopens_run_id") for d in rows
-                     if d.get("decision_type") == "REOPEN_CHUNK" and d.get("reopens_run_id"))
+def reopened_from_signs(items) -> frozenset:
+    """run_id версий DONE, отменённых знаками владельца ref.OPR_<n> (описание — JSON с reopens_run_id)."""
+    out = set()
+    for _name, _labels, desc in items:
+        try:
+            rid = json.loads(desc or "{}").get("reopens_run_id")
+        except (ValueError, AttributeError):
+            rid = None
+        if rid:
+            out.add(rid)
+    return frozenset(out)
 
 
-def accepted_limitations(rows) -> dict:
-    return {d.get("domain"): d.get("boundary_id") for d in rows
+def owner_reopens(ctx) -> frozenset:
+    return reopened_from_signs(ctx.store.ref_series(lambda n: f"OPR_{n:04d}"))
+
+
+def accepted_limitations(rows) -> set:
+    """{(домен, boundary_id)} — все принятия владельца (не «последнее по порядку чтения»)."""
+    return {(d.get("domain"), d.get("boundary_id")) for d in rows
             if d.get("decision_type") == "ACCEPT_LIMITATION" and d.get("domain") and d.get("boundary_id")}
 
 
@@ -258,6 +272,9 @@ def _cap_row(ctx, api, cap, status, http=None, kind="LIVE_CALL", evidence=None, 
 
 
 def cmd_validate(ctx):
+    if hold_on(ctx):                               # стоп-кран: ни ключей, ни вызовов Ozon
+        C.log(event="command_rejected", run_id=ctx.run_id, command="validate", owner_hold=True)
+        return 4
     sv, srow, sfp = observe_seller(ctx)
     rows = [srow]
     caps = [_cap_row(ctx, "seller", "credential_read_only", "AVAILABLE" if sv["status"] == "PASS" else "DENIED",
@@ -538,7 +555,7 @@ def cmd_claim_next(ctx):
     require_bound(ctx)
     _st, chain, decisions, _p = verified_state(ctx)
     ledger = list(ctx.store.rows("tenant_ops", "BACKFILL_CHECKPOINTS"))
-    folded = CK.fold(ledger, reopened_run_ids(owner_rows(ctx)))
+    folded = CK.fold(ledger, owner_reopens(ctx))
     approved = approved_plan_hash(chain, decisions)
     versions = plan_versions(ledger)
     if approved not in versions:
@@ -597,7 +614,7 @@ def classify_error(msg: str | None) -> str:
 def cmd_verify_chunks(ctx):
     require_state(ctx, "verify-chunks")
     ledger = list(ctx.store.rows("tenant_ops", "BACKFILL_CHECKPOINTS"))
-    folded = CK.fold(ledger, reopened_run_ids(owner_rows(ctx)))
+    folded = CK.fold(ledger, owner_reopens(ctx))
     runs = list(ctx.store.rows("ozon_raw", "OZON_INGESTION_RUNS"))
     out = []
     for cid, st in folded.items():
@@ -658,7 +675,7 @@ def gather_facts(ctx, binding, chain=None, decisions=None):
     if chain is None:
         _s, chain, decisions, _p = verified_state(ctx)
     ledger = list(ctx.store.rows("tenant_ops", "BACKFILL_CHECKPOINTS"))
-    folded = CK.fold(ledger, reopened_run_ids(owner_rows(ctx)))
+    folded = CK.fold(ledger, owner_reopens(ctx))
     _ph, chunks = active_plan(ledger, chain, decisions)
     chunks = chunks or []
     done = {}
@@ -727,7 +744,7 @@ def snapshot(ctx, binding, credentials, chain, decisions, dq=None):
     since = cycle_started_at(chain)
     caps = latest_caps(_fresh(ctx.store.rows("tenant_ops", "CAPABILITY_PROFILE"), "discovered_at", since))
     ledger = list(ctx.store.rows("tenant_ops", "BACKFILL_CHECKPOINTS"))
-    folded = CK.fold(ledger, reopened_run_ids(owner_rows(ctx)))
+    folded = CK.fold(ledger, owner_reopens(ctx))
     ph, chunks = active_plan(ledger, chain, decisions)
     chunks = chunks or []
     states = {c.chunk_id: (folded.get(c.chunk_id) or {}).get("status", "PENDING") for c in chunks}
