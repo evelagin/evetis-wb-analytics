@@ -23,11 +23,11 @@
       "project_number": "777428383056",
       "pool": "tenant-infra-pool",
       "provider": "github-tenant-infra",
-      "desired": {"source": "snapshot", "path": "quality/autonomy/wif_tenant_pool_snapshot_2026-09-25.json"},
+      "desired": {"source": "snapshot", "path": "quality/autonomy/wif_tenant_pool_snapshot_2026-09-28.json"},
       "expectations": "tenant_cases",
       "privileged": ["sa-tenant-provisioner"],
       "read_only": [],
-      "invariant": "sa-tenant-provisioner получает ТОЛЬКО tenant-infra.yml@refs/heads/main, workflow_dispatch, github-hosted, repository_id 1260095567, repository_owner_id 286048501"
+      "invariant": "sa-tenant-provisioner получает ТОЛЬКО tenant-infra.yml@refs/heads/main, workflow_dispatch, github-hosted, repository_id 1260095567, repository_owner_id 286048501, actor_id 286048501 (владелец), run_attempt 1"
     }
   ]
 }

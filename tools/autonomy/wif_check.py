@@ -386,12 +386,15 @@ def capture_live(project: str) -> dict:
 def claims(workflow: str, ref: str, event: str = "workflow_dispatch", job_workflow: str | None = None,
            repo: str = GITHUB_REPO, environment: str | None = None, job_ref: str | None = None,
            repository_id: str | None = None, repository_owner_id: str | None = None,
-           runner_environment: str = "github-hosted") -> dict:
+           runner_environment: str = "github-hosted", actor_id: str = GITHUB_REPOSITORY_OWNER_ID,
+           run_attempt: str = "1") -> dict:
     """OIDC-токен GitHub так, как его выпускает token.actions.githubusercontent.com.
 
     workflow — файл верхнего уровня; job_workflow — файл, где объявлен job (переиспользуемый),
     по умолчанию тот же. Для локального `uses: ./.github/workflows/x.yml` ref вызываемого
-    файла равен ref вызывающего."""
+    файла равен ref вызывающего. actor_id — кто запустил прогон (при повторном запуске —
+    по-прежнему исходный: claim triggering_actor GitHub не выдаёт); run_attempt — номер попытки.
+    Оба — строки, как в живом токене (проба 2026-09-28)."""
     wf_ref = f"{repo}/.github/workflows/{workflow}@{ref}"
     job_wf_ref = f"{repo}/.github/workflows/{job_workflow or workflow}@{job_ref or ref}"
     if environment:
@@ -405,6 +408,7 @@ def claims(workflow: str, ref: str, event: str = "workflow_dispatch", job_workfl
          "ref_type": "tag" if ref.startswith("refs/tags/") else "branch", "event_name": event,
          "workflow_ref": wf_ref, "job_workflow_ref": job_wf_ref, "sha": "0" * 40,
          "workflow_sha": "0" * 40, "job_workflow_sha": "0" * 40, "runner_environment": runner_environment,
+         "actor_id": actor_id, "run_attempt": run_attempt,
          # Чужой репозиторий (или пересозданный с тем же именем) — другие ID.
          "repository_id": repository_id or (GITHUB_REPOSITORY_ID if repo == GITHUB_REPO else "999999999"),
          "repository_owner_id": repository_owner_id or (GITHUB_REPOSITORY_OWNER_ID

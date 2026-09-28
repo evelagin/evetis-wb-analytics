@@ -118,3 +118,45 @@ def test_widened_tenant_binding_would_be_caught():
 
 def test_cli_desired_state_passes():
     assert D.main([]) == 0
+
+
+# ═══════════════════════════════════════ T4 WIF identity hardening (2026-09-28)
+OLD_SNAPSHOT = "quality/autonomy/wif_tenant_pool_snapshot_2026-09-25.json"
+NEW_SNAPSHOT = "quality/autonomy/wif_tenant_pool_snapshot_2026-09-28.json"
+
+
+def _snap(path):
+    return json.loads((D.REPO / path).read_text(encoding="utf-8"))
+
+
+@pytest.mark.parametrize("cid", ["T11", "T12", "T13"])
+def test_bot_rerun_and_other_actor_cannot_obtain_provisioner(cid):
+    assert TENANT.obtainable(TC[cid].claims) == set()
+
+
+@pytest.mark.parametrize("cid", ["T11", "T12", "T13"])
+def test_the_gap_was_real_before_hardening(cid):
+    old = from_snapshot(_snap(OLD_SNAPSHOT), OLD_SNAPSHOT)
+    assert old.obtainable(TC[cid].claims) == {D.TENANT_SA}          # прежнее живое условие пропускало
+
+
+def test_new_condition_is_the_old_one_plus_owner_and_first_attempt_only():
+    old = _snap(OLD_SNAPSHOT)["provider"]
+    new = _snap(NEW_SNAPSHOT)["provider"]
+    assert new["attributeCondition"] == (old["attributeCondition"]
+                                         + " && assertion.actor_id == '286048501' && assertion.run_attempt == '1'")
+    assert {k: v for k, v in new.items() if k != "attributeCondition"} == \
+        {k: v for k, v in old.items() if k != "attributeCondition"}                   # маппинг, issuer, имя — те же
+    assert _snap(NEW_SNAPSHOT)["service_account_bindings"] == _snap(OLD_SNAPSHOT)["service_account_bindings"]
+
+
+def test_platform_constant_matches_the_desired_snapshot():
+    from tools.tenancy import platform as PL
+    assert _snap(NEW_SNAPSHOT)["provider"]["attributeCondition"] == PL.WIF_ATTRIBUTE_CONDITION
+    assert DOM["mpa-tenant-infra"]["desired"]["path"] == NEW_SNAPSHOT
+
+
+def test_claims_model_uses_string_actor_id_and_run_attempt_like_live_tokens():
+    c = claims("tenant-infra.yml", "refs/heads/main")
+    assert c["actor_id"] == "286048501" and c["run_attempt"] == "1"
+    assert isinstance(c["actor_id"], str) and isinstance(c["run_attempt"], str)
