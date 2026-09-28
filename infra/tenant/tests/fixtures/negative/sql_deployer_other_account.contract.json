@@ -118,7 +118,7 @@
   "region": "europe-west1",
   "scheduler_state": "PAUSED",
   "sql_deployer": {
-    "account_id": "sa-sql-deployer",
+    "account_id": "sa-tenant-provisioner",
     "email": "sa-sql-deployer@mpa-t-client-001.iam.gserviceaccount.com",
     "grants": [
       {
@@ -178,7 +178,7 @@
     ]
   },
   "state": {
-    "bucket": "evetis-wb-tfstate-37074083763",
+    "bucket": "mpa-platform-tfstate-777428383056",
     "prefix": "tenants/client_001"
   },
   "status": "NEW",

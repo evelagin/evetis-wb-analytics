@@ -50,6 +50,19 @@ variable "contract" {
         runtime_image = optional(string)
       }))
     })
+    sql_deployer = object({
+      account_id = string
+      email      = string
+      grants = list(object({
+        dataset_key = string
+        role        = string
+        condition = optional(object({
+          title       = string
+          description = string
+          expression  = string
+        }))
+      }))
+    })
   })
 
   validation {
@@ -97,6 +110,34 @@ variable "contract" {
   validation {
     condition     = var.contract.scheduler_state == "PAUSED"
     error_message = "До ворот активации расписания арендатора обязаны быть PAUSED."
+  }
+  validation {
+    # T4.1: SA деплоера SQL — только в проекте арендатора, имя фиксировано платформой.
+    condition = (var.contract.sql_deployer.account_id == local.platform.sql_deployer_account_id &&
+    var.contract.sql_deployer.email == "${local.platform.sql_deployer_account_id}@${var.contract.project_id}.iam.gserviceaccount.com")
+    error_message = "SQL-деплоер: только sa-sql-deployer@<проект арендатора>."
+  }
+  validation {
+    # Ровно утверждённая матрица: только роли mpaSql* организации, только датасеты матрицы, без
+    # повторов; изменение в tenant_ops — только условное (без условия дало бы менять/«истекать»
+    # 7 таблиц платформы), лишнего гранта (например, изменение в ozon_raw) нет.
+    condition = length(var.contract.sql_deployer.grants) == length(local.platform.sql_grant_matrix) && toset([
+      for g in var.contract.sql_deployer.grants :
+      "${g.dataset_key}|${trimprefix(g.role, "organizations/${local.platform.organization_id}/roles/")}|${g.condition != null}"
+    ]) == toset(local.platform.sql_grant_matrix)
+    error_message = "SQL-деплоер: гранты не равны утверждённой матрице (local.platform.sql_grant_matrix)."
+  }
+  validation {
+    # Условная запись — только изменение в tenant_ops и только положительное условие на V_*.
+    condition = alltrue([for g in var.contract.sql_deployer.grants : g.condition == null ? true : (
+      g.dataset_key == local.platform.sql_conditional_dataset &&
+      g.role == "organizations/${local.platform.organization_id}/roles/mpaSqlViewUpdate" &&
+      g.condition.title == local.platform.sql_condition_title &&
+      g.condition.description == local.platform.sql_condition_desc &&
+      g.condition.expression == format(
+        "resource.type == \"bigquery.googleapis.com/Table\" && resource.service == \"bigquery.googleapis.com\" && resource.name.startsWith(\"projects/%s/datasets/%s/tables/%s\")",
+    var.contract.project_id, var.contract.datasets[local.platform.sql_conditional_dataset], local.platform.sql_view_prefix))])
+    error_message = "SQL-деплоер: условие допустимо только на mpaSqlViewUpdate в tenant_ops и только V_*."
   }
   validation {
     # Образ: только неизменяемый digest в реестре платформы. Нет образа — нет плана.

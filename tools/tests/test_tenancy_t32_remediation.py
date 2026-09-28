@@ -56,12 +56,21 @@ def _plan_for(contract, number=NUMBER):
     rcs += [_rc(f'google_project_service.this["{a}"]', "google_project_service",
                 {"project": p, "service": a, "disable_on_destroy": False}, {"id": True}) for a in contract["apis"]]
     grants = {o["raw_dataset_key"]: "WRITER", o["ref_dataset_key"]: "READER"}
+    dep = contract["sql_deployer"]
     rcs += [_rc(f'google_bigquery_dataset.this["{k}"]', "google_bigquery_dataset",
                 {"project": p, "dataset_id": ds, "location": "EU",
                  "access": [_acl("OWNER", special_group="projectOwners")]
-                           + ([_acl(grants[k], user_by_email=rt)] if k in grants else [])},
+                           + ([_acl(grants[k], user_by_email=rt)] if k in grants else [])
+                           + [_acl(g["role"], user_by_email=dep["email"],
+                                   condition=[dict(g["condition"], location="")] if g["condition"] else [])
+                              for g in dep["grants"] if g["dataset_key"] == k]},
                 {"etag": True, "id": True, "access": [{}, {}]})
             for k, ds in contract["datasets"].items()]
+    # T4.1: SA деплоера SQL в корне (не в модуле площадки).
+    rcs.append(_rc("google_service_account.sql_deployer", "google_service_account",
+                   {"project": p, "account_id": dep["account_id"], "email": dep["email"],
+                    "member": f"serviceAccount:{dep['email']}"},
+                   {"id": True, "name": True, "unique_id": True}))
     rcs += [_rc(f'google_bigquery_table.this["{t["dataset_key"]}.{t["table_id"]}"]', "google_bigquery_table",
                 {"project": p, "dataset_id": contract["datasets"][t["dataset_key"]], "table_id": t["table_id"],
                  "schema": t["schema_json"], "deletion_protection": True}, {"etag": True})
@@ -105,6 +114,8 @@ def _plan_for(contract, number=NUMBER):
                  "provider_config_key": "google"}]
     root_cfg += [{"address": f"{t}.this", "mode": "managed", "type": t, "provider_config_key": "google"}
                  for t in ("google_project_service", "google_bigquery_dataset", "google_bigquery_table")]
+    root_cfg.append({"address": "google_service_account.sql_deployer", "mode": "managed",
+                     "type": "google_service_account", "provider_config_key": "google"})
     # Адреса — как в конфигурации корня infra/tenant (terraform show -json).
     mod_cfg = [{"address": a, "mode": "managed", "type": a.split(".")[0], "provider_config_key": "module.ozon:google",
                 "expressions": {"project": {"references": ["var.project_id"]}}}
@@ -284,11 +295,20 @@ def test_dataset_acl_in_expected_plan_excludes_provisioner_and_scheduler(contrac
                       if r["type"] == "google_bigquery_dataset"])
     assert PL.PROVISIONER_SA not in acl and "sa-ozon-scheduler" not in acl
     want = PS.expected_dataset_access(contract)
-    owners = {("OWNER", "special_group", "projectOwners")}
-    assert want == {"ozon_raw": owners | {("WRITER", "user_by_email", f"sa-ozon-runtime@{P1}.iam.gserviceaccount.com")},
-                    "ref": owners | {("READER", "user_by_email", f"sa-ozon-runtime@{P1}.iam.gserviceaccount.com")},
+    owners = {("OWNER", "special_group", "projectOwners", None)}
+    dep, r = f"sa-sql-deployer@{P1}.iam.gserviceaccount.com", f"organizations/{PL.ORGANIZATION_ID}/roles/"
+    src, create, upd = (f"{r}mpaSqlSourceRead", "user_by_email", dep, None), \
+        (f"{r}mpaSqlViewCreate", "user_by_email", dep, None), (f"{r}mpaSqlViewUpdate", "user_by_email", dep, None)
+    cond = ("sql-deployer-tenant-ops-views", "Only package views V_*; platform tables of tenant_ops are excluded",
+            'resource.type == "bigquery.googleapis.com/Table" && resource.service == "bigquery.googleapis.com" && '
+            f'resource.name.startsWith("projects/{P1}/datasets/tenant_ops/tables/V_")')
+    assert want == {"ozon_raw": owners | {("WRITER", "user_by_email", f"sa-ozon-runtime@{P1}.iam.gserviceaccount.com", None), src},
+                    "ref": owners | {("READER", "user_by_email", f"sa-ozon-runtime@{P1}.iam.gserviceaccount.com", None), src},
                     # T4: внутренние слои и клиентский слой — без runtime и без клиента.
-                    "ozon_mart": owners, "tenant_ops": owners, "analytics_share": owners}
+                    # T4.1: только деплоер SQL; в analytics_share без чтения строк, в tenant_ops изменение — V_*.
+                    "ozon_mart": owners | {src, create, upd},
+                    "tenant_ops": owners | {src, create, upd[:3] + (cond,)},
+                    "analytics_share": owners | {create, upd}}
 
 
 def test_reconciling_away_a_creator_owner_is_allowed(contract):

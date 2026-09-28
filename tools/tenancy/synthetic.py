@@ -91,9 +91,11 @@ def negative_cases() -> dict[str, dict]:
     base = fixture_contract("client_001")
     reg = PL.RUNTIME_REGISTRY
     return {
-        "evetis_project": _set(base, "project_id", PL.EVETIS_PROJECT_ID),
-        "arbitrary_project": _set(base, "project_id", "some-other-project-1"),
-        "foreign_tenant_project": _set(base, "project_id", N.derive_project_id("client_002")),
+        # Подмена проекта — вместе с согласованным блоком деплоера SQL (T4.1): иначе фикстуру
+        # отвергал бы guard email деплоера, а не проверяемое правило пространства имён.
+        "evetis_project": _project(base, PL.EVETIS_PROJECT_ID),
+        "arbitrary_project": _project(base, "some-other-project-1"),
+        "foreign_tenant_project": _project(base, N.derive_project_id("client_002")),
         "foreign_state_prefix": _set(base, "state.prefix", "tenants/client_002"),
         "platform_state_prefix": _set(base, "state.prefix", "platform/client_001"),
         "evetis_state_bucket": _set(base, "state.bucket", f"evetis-wb-tfstate-{PL.EVETIS_PROJECT_NUMBER}"),
@@ -111,7 +113,47 @@ def negative_cases() -> dict[str, dict]:
         # T4: состав датасетов фиксирован; клиентский датасет не заводится мимо naming.
         "extra_customer_dataset": _set(base, "datasets.customer_share", "customer_share"),
         "table_in_undeclared_dataset": _table_in(base, "customer_share"),
+        # T4.1: деплоер SQL — только свой SA, только роли mpaSql*, условие ровно одно и ровно V_*.
+        "sql_deployer_foreign_project_sa": _set(base, "sql_deployer.email",
+                                                "sa-sql-deployer@" + N.derive_project_id("client_002")
+                                                + ".iam.gserviceaccount.com"),
+        "sql_deployer_other_account": _grant(base, lambda s: s.update(account_id="sa-tenant-provisioner")),
+        "sql_deployer_predefined_role": _grant(base, lambda s: s["grants"][0].update(role="roles/bigquery.dataEditor")),
+        "sql_deployer_unconditional_tenant_ops_update": _grant(base, lambda s: _tenant_ops_update(s).update(
+            condition=None)),
+        "sql_deployer_broad_condition": _grant(base, lambda s: _tenant_ops_update(s)["condition"].update(
+            expression=_tenant_ops_update(s)["condition"]["expression"].replace("/tables/V_", "/tables/"))),
+        "sql_deployer_condition_on_source_read": _grant(base, lambda s: s["grants"][0].update(
+            condition=_tenant_ops_update(s)["condition"])),
+        "sql_deployer_duplicate_grant": _grant(base, lambda s: s["grants"].append(copy.deepcopy(s["grants"][0]))),
+        "sql_deployer_grant_in_undeclared_dataset": _grant(base, lambda s: s["grants"][0].update(
+            dataset_key="customer_share")),
+        "sql_deployer_extra_raw_update": _grant(base, lambda s: s["grants"].append(
+            {"dataset_key": "ozon_raw", "role": s["grants"][-1]["role"].rsplit("/", 1)[0] + "/mpaSqlViewUpdate",
+             "condition": None})),
+        "sql_deployer_client_layer_reads_rows": _grant(base, lambda s: s["grants"].append(
+            {"dataset_key": "analytics_share", "role": s["grants"][-1]["role"].rsplit("/", 1)[0] + "/mpaSqlSourceRead",
+             "condition": None})),
+        "sql_deployer_condition_title_changed": _grant(base, lambda s: _tenant_ops_update(s)["condition"].update(
+            title="anything")),
     }
+
+
+def _project(base: dict, project_id: str) -> dict:
+    from tools.tenancy import sql_identity as SI
+    doc = _set(base, "project_id", project_id)
+    doc["sql_deployer"] = SI.contract_block(project_id, doc["datasets"])
+    return doc
+
+
+def _grant(base: dict, mutate) -> dict:
+    doc = copy.deepcopy(base)
+    mutate(doc["sql_deployer"])
+    return doc
+
+
+def _tenant_ops_update(block: dict) -> dict:
+    return next(g for g in block["grants"] if g["dataset_key"] == "tenant_ops" and g["role"].endswith("/mpaSqlViewUpdate"))
 
 
 def _table_in(base: dict, dataset_key: str) -> dict:

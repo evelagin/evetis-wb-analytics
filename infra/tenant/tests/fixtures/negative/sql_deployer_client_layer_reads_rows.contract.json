@@ -174,11 +174,16 @@
         },
         "dataset_key": "tenant_ops",
         "role": "organizations/1043233412973/roles/mpaSqlViewUpdate"
+      },
+      {
+        "condition": null,
+        "dataset_key": "analytics_share",
+        "role": "organizations/1043233412973/roles/mpaSqlSourceRead"
       }
     ]
   },
   "state": {
-    "bucket": "evetis-wb-tfstate-37074083763",
+    "bucket": "mpa-platform-tfstate-777428383056",
     "prefix": "tenants/client_001"
   },
   "status": "NEW",

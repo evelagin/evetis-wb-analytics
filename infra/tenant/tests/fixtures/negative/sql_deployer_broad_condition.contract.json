@@ -169,7 +169,7 @@
       {
         "condition": {
           "description": "Only package views V_*; platform tables of tenant_ops are excluded",
-          "expression": "resource.type == \"bigquery.googleapis.com/Table\" && resource.service == \"bigquery.googleapis.com\" && resource.name.startsWith(\"projects/mpa-t-client-001/datasets/tenant_ops/tables/V_\")",
+          "expression": "resource.type == \"bigquery.googleapis.com/Table\" && resource.service == \"bigquery.googleapis.com\" && resource.name.startsWith(\"projects/mpa-t-client-001/datasets/tenant_ops/tables/\")",
           "title": "sql-deployer-tenant-ops-views"
         },
         "dataset_key": "tenant_ops",
@@ -178,7 +178,7 @@
     ]
   },
   "state": {
-    "bucket": "evetis-wb-tfstate-37074083763",
+    "bucket": "mpa-platform-tfstate-777428383056",
     "prefix": "tenants/client_001"
   },
   "status": "NEW",

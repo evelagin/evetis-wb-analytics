@@ -1,5 +1,34 @@
 # CHANGELOG.md
 
+## 2026-09-28 — Tenancy T4.1: отдельный деплоер SQL арендатора (sa-sql-deployer)
+
+Экономика, витрины, EVETIS не менялись. Права `sa-tenant-provisioner` не расширялись.
+
+- **Роли организации** `mpaSqlSourceRead` (tables.get, getData), `mpaSqlViewCreate` (create,
+  get, list), `mpaSqlViewUpdate` (update, get) созданы владельцем 28.09 (временная
+  organizationRoleAdmin ≤ 2 ч снята; постоянно — organizationRoleViewer). Доверенная база —
+  `tools/tenancy/sql_identity.py`; сверка — `tools/tenancy/platform_roles.py verify`.
+- **Контракт арендатора: новый блок `sql_deployer`** (account_id, email, 10 грантов с
+  условием) — выводится из project_id и датасетов; Terraform-guard'ы в `infra/tenant/variables.tf`.
+- **Terraform `infra/tenant`:** `google_service_account.sql_deployer` и записи ACL в пяти
+  датасетах (tenant_ops — изменение только `V_*`); вывод `sql_deployer_email`, в
+  `dataset_access` — условие.
+- **Сканер плана:** правило D сравнивает четвёрки (роль, вид, принципал, условие), принимает
+  ровно одно условие; правило Q — только SA контракта; блок `sql_deployer` = выводу доверенной базы.
+- **Workflow `tenant-infra.yml`, job `sql`:** авторизация как деплоер из реестра, scope
+  userinfo.email. Job'ы plan/apply — как прежде (провижионер).
+- **`sql_deploy.py`:** без `x-goog-user-project`; проверка принципала токена; проба
+  `tables.testIamPermissions`; `sql-verify` учитывает таблицы контракта (раньше падал на 7
+  таблицах tenant_ops) и `expirationTime`; представления tenant_ops обязаны быть `V_*`.
+- **`tenant_bootstrap.py` expected|bind|verify** — привязка WIF на деплоер владельцем и её сверка;
+  **`wif_domains.py --live`** — привязки пула во всех проектах, деплоеры из реестра.
+- Тесты: `tools/tests/test_tenancy_sql_deployer.py` (18 состязательных A01–A18, модель прав
+  BigQuery), 11 негативных фикстур и прогонов `terraform test`. Документация — TENANCY_DESIGN §4e.
+- По итогам состязательного ревью: guard Terraform сверяет гранты с точной матрицей
+  (`local.platform.sql_grant_matrix`) и текст условия целиком; проба прав спрашивает и об IAM
+  таблиц, экспорте и чтении строк представлений; `wif_domains --live` не пропускает молча проект,
+  где нельзя перечислить SA (только выключенный IAM API); `tenant_bootstrap verify` проверяет IAM
+  уровня таблиц, пул в ACL, IAM и ACL других арендаторов, все страницы датасетов EVETIS.
 ## 2026-09-28 — SPP-3: колонка `AB` Юнитки WB из `V_WB_SPP_DAILY` (Engine 2.2.0, режим по умолчанию off)
 
 Структура листа, формулы (`AC`, `Z`, `K`, `AH`), `AA`, `Q`, LCD, Ozon не менялись.

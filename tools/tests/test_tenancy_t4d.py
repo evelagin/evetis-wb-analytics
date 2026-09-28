@@ -183,8 +183,11 @@ def test_contract_grants_nothing_and_defers_the_access_mechanism():
 def test_share_acl_is_project_owners_only_for_every_tenant():
     for tid in ("client_001", *SY.SYNTHETIC_TENANTS):
         c = SY.fixture_contract(tid)
-        assert PS.expected_dataset_access(c)[c["datasets"]["analytics_share"]] == \
-            {("OWNER", "special_group", "projectOwners")}, tid
+        acl = PS.expected_dataset_access(c)[c["datasets"]["analytics_share"]]
+        # T4.1: в клиентском слое — projectOwners и деплоер SQL (создание/изменение, без getData).
+        dep = f"sa-sql-deployer@{c['project_id']}.iam.gserviceaccount.com"
+        assert {(r.rsplit("/", 1)[-1], who) for r, _k, who, _c in acl} == \
+            {("OWNER", "projectOwners"), ("mpaSqlViewCreate", dep), ("mpaSqlViewUpdate", dep)}, tid
 
 
 def test_package_creates_no_grants_or_authorized_views():

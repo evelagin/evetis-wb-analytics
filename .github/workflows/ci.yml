@@ -97,7 +97,7 @@ jobs:
       - name: validate tenant registry
         run: python tools/tenancy/registry.py validate
       - name: tenancy tests
-        run: python -m pytest -q tools/tests/test_tenancy.py tools/tests/test_tenancy_hardening.py tools/tests/test_tenancy_t32.py tools/tests/test_tenancy_t32_remediation.py
+        run: python -m pytest -q tools/tests/test_tenancy.py tools/tests/test_tenancy_hardening.py tools/tests/test_tenancy_t32.py tools/tests/test_tenancy_t32_remediation.py tools/tests/test_tenancy_sql_deployer.py
       - name: ozon schema parity (offline)
         run: python tools/tenancy/ozon_schema_parity.py
 
