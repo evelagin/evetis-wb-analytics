@@ -42,7 +42,7 @@ XCTC = {"X-Cloud-Trace-Context": f"{TRACE}/123;o=1"}
 
 ALLOWED_KEYS = {"severity", "message", "logging.googleapis.com/trace", "logging.googleapis.com/spanId",
                 *audit_events._STR_FIELDS, *audit_events._INT_FIELDS, *audit_events._BOOL_FIELDS}
-SAFE_VALUE = re.compile(r"^[A-Za-z0-9_.:/@+=-]{0,160}$")
+SAFE_VALUE = re.compile(r"[A-Za-z0-9_.:/@+=-]{0,160}")
 
 
 class _Captured:
@@ -111,7 +111,7 @@ def assert_no_leak(buf):
         assert set(e) <= ALLOWED_KEYS, set(e) - ALLOWED_KEYS
         for k, v in e.items():
             if isinstance(v, str) and k not in ("message", "logging.googleapis.com/trace"):
-                assert SAFE_VALUE.match(v), (k, v)
+                assert SAFE_VALUE.fullmatch(v), (k, v)
 
 
 def chain_ok(evs: list[dict]) -> None:
@@ -220,7 +220,7 @@ def test_webhook_stranger_is_authenticated_but_not_authorized(out, monkeypatch):
     assert denied["allowlist_configured"] is True
     chain_ok(evs)
     assert all(v not in ("999", 999) for e in evs for v in e.values())   # raw ids are never logged
-    assert all(a["target_ref"].startswith("tg_callback:") for a in att)
+    assert all(a["target_ref"] == "tg_callback" for a in att)
     assert_no_leak(out)
 
 
@@ -544,3 +544,111 @@ def test_concurrent_requests_do_not_share_context(out, monkeypatch):
     for evs in by_cid.values():
         chain_ok(evs)
         assert evs[-1]["mutation_attempts"] == 1
+
+
+# --- second review round ------------------------------------------------------------------------
+
+def test_wb_connect_error_then_204_is_a_success(out):
+    calls = {"n": 0}
+
+    def handler(request):
+        calls["n"] += 1
+        if calls["n"] == 1:
+            raise httpx.ConnectError("down", request=request)
+        return httpx.Response(204)
+    ctx, tok = _in_request()
+    _wb(handler).publish_answer("FB7", "t")
+    audit_events.end_request(ctx, tok, 200)
+    assert _outcome(out)[1]["result"] == "success" and calls["n"] == 2
+
+
+def test_wb_rate_limited_on_every_retry_is_error(out):
+    ctx, tok = _in_request()
+    with pytest.raises(WBRateLimitError):
+        _wb(lambda r: httpx.Response(429)).publish_answer("FB8", "t")
+    audit_events.end_request(ctx, tok, 200)
+    assert _outcome(out)[1]["result"] == "error"
+
+
+def test_unaudited_wb_write_is_recorded_as_unknown(out):
+    ctx, tok = _in_request()
+    client = _wb(lambda r: httpx.Response(204))
+    client._request("PATCH", "/api/v1/somewhere-new", json={"id": "x"})    # a future write bypassing publish_*
+    client._request("GET", "/api/v1/feedbacks")                               # reads are not mutations
+    audit_events.end_request(ctx, tok, 200)
+    att, res = _outcome(out)
+    assert att["mutation_class"] == "wb_unaudited" and res["result"] == "outcome_unknown"
+
+
+def test_audited_write_does_not_trip_the_unaudited_wire(out):
+    ctx, tok = _in_request()
+    _wb(lambda r: httpx.Response(204)).publish_answer("FB10", "t")
+    audit_events.end_request(ctx, tok, 200)
+    assert {e["mutation_class"] for e in events(out) if e["event_type"] == "mutation_attempt"} == {"wb_feedback_answer"}
+
+
+def test_broken_middleware_setup_never_breaks_the_request(out, monkeypatch):
+    monkeypatch.setattr(audit_events, "begin_request", lambda *a, **k: (_ for _ in ()).throw(RuntimeError("x")))
+    app = FastAPI()
+    app.add_middleware(SecurityAuditMiddleware)
+
+    @app.get("/health")
+    def ok():
+        return {"ok": True}
+    assert TestClient(app).get("/health").status_code == 200
+
+
+def test_trailing_newline_is_not_a_safe_value(out):
+    audit_events.emit("auth_ok", None, auth_mechanism="scheduler_secret\n")
+    assert events(out)[0]["auth_mechanism"] == "<invalid>"
+
+
+def test_chat_ref_default_matches_the_config_default(out, monkeypatch):
+    monkeypatch.delenv("TELEGRAM_CHAT_ID", raising=False)
+    assert audit_events.chat_ref(302044578) == "tg_chat:configured"
+
+
+# --- internal state writes (second review round, M-e) -------------------------------------------
+
+def test_state_store_writes_are_attributed_and_reads_are_not(out):
+    @audit_events.audited_store("firestore", read_only=frozenset({"get"}))
+    class Store:
+        def get(self, k):
+            return {"k": k}
+
+        def put(self, k):
+            return None
+
+        def dup(self, k):
+            return False
+
+        def boom(self, k):
+            raise ValueError("x")
+
+        def _private(self):
+            return 1
+    ctx, tok = _in_request()
+    audit_events.record_auth("telegram_webhook_secret", ok=True)
+    s = Store()
+    assert s.get(1) == {"k": 1} and s.put(1) is None and s.dup(1) is False and s._private() == 1
+    with pytest.raises(ValueError):
+        s.boom(1)
+    audit_events.end_request(ctx, tok, 200)
+    evs = events(out)
+    att = [e for e in evs if e["event_type"] == "mutation_attempt"]
+    assert [a["mutation_class"] for a in att] == ["firestore_put", "firestore_dup", "firestore_boom"]
+    res = {e["mutation_class"]: e["result"] for e in evs if e["event_type"] in ("mutation_success", "mutation_failure")}
+    assert res == {"firestore_put": "success", "firestore_dup": "error", "firestore_boom": "error"}
+    assert all(a["auth_event_id"] for a in att) and evs[-1]["mutation_attempts"] == 3
+
+
+def test_real_repositories_are_audited_except_reads():
+    from app.services.bigquery_repository import BigQueryRepository
+    from app.services.repository import FirestoreRepository
+    reads = {"get", "list_by_status", "get_editing_session", "list_pending_events"}
+    for name, fn in vars(FirestoreRepository).items():
+        if not name.startswith("_") and callable(fn):
+            assert getattr(fn, "__security_audited__", False) is (name not in reads), name
+    for name, fn in vars(BigQueryRepository).items():
+        if not name.startswith("_") and callable(fn):
+            assert getattr(fn, "__security_audited__", False) is True, name

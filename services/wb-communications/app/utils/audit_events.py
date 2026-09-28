@@ -137,7 +137,7 @@ def _clean(key: str, value):
     if value is None:
         return None
     text = redact(str(value))
-    return text if _SAFE.match(text) else "<invalid>"
+    return text if _SAFE.fullmatch(text) else "<invalid>"
 
 
 def emit(event_type: str, ctx: RequestAudit | None = None, **fields) -> str:
@@ -211,13 +211,19 @@ class SecurityAuditMiddleware:
     async def __call__(self, scope, receive, send):
         if scope.get("type") != "http":
             return await self.app(scope, receive, send)
-        headers = [(k.decode("latin-1").lower(), v.decode("latin-1")) for k, v in scope.get("headers") or []]
-        ctx, token = begin_request(scope.get("method", ""), scope.get("path", ""), headers)
+        try:
+            headers = [(k.decode("latin-1").lower(), v.decode("latin-1")) for k, v in scope.get("headers") or []]
+            ctx, token = begin_request(scope.get("method", ""), scope.get("path", ""), headers)
+        except Exception:  # noqa: BLE001 — auditing never breaks a request; missing events fail the audit closed
+            return await self.app(scope, receive, send)
         status = {"code": 500}
 
         async def _send(message):
             if message.get("type") == "http.response.start":
-                status["code"] = int(message.get("status", 500))
+                try:
+                    status["code"] = int(message.get("status", 500))
+                except (TypeError, ValueError):
+                    status["code"] = 500
             await send(message)
 
         try:
@@ -272,7 +278,7 @@ def chat_ref(chat_id) -> str:
     """Telegram chat/user ids are ~10 digits: a hash of them is brute-forceable, so only the class is recorded —
     the configured operator chat (TELEGRAM_CHAT_ID) or any other chat."""
     try:
-        configured = os.environ.get("TELEGRAM_CHAT_ID", "")
+        configured = os.environ.get("TELEGRAM_CHAT_ID", "302044578")      # same default as app.config
         return "tg_chat:configured" if configured and str(chat_id) == configured else "tg_chat:other"
     except Exception:  # noqa: BLE001
         return "<invalid>"
@@ -298,6 +304,38 @@ def start_mutation(mutation_class: str, target_system: str, target_ref: str) -> 
          auth_event_id=ctx.auth_event_id if ctx else None,
          authz_event_id=ctx.authz_event_id if ctx else None)
     return m
+
+
+def audited_store(target_system: str, read_only: frozenset = frozenset()):
+    """Class decorator for the service's own state stores (Firestore, BigQuery): EVERY public method that is not
+    listed as read-only is recorded as an internal mutation of the current request (new methods are audited by
+    default). Behaviour is unchanged: the result and any exception pass through untouched. Internal outcomes are
+    `success` or `error` (a False return or an exception) — informational; what the audit requires for them is the
+    same authentication link as for external writes."""
+    import functools
+
+    def wrap(fn, name):
+        @functools.wraps(fn)
+        def wrapper(*args, **kwargs):
+            m = start_mutation(f"{target_system}_{name}", target_system, f"{target_system}:state")
+            try:
+                result = fn(*args, **kwargs)
+            except BaseException as exc:
+                finish_mutation(m, "error", type(exc).__name__)
+                raise
+            finish_mutation(m, "error" if result is False else "success")
+            return result
+        wrapper.__security_audited__ = True
+        return wrapper
+
+    def deco(cls):
+        for name, fn in list(vars(cls).items()):
+            if name.startswith("_") or name in read_only or not callable(fn) \
+                    or isinstance(fn, (staticmethod, classmethod)):
+                continue
+            setattr(cls, name, wrap(fn, name))
+        return cls
+    return deco
 
 
 def finish_mutation(m: Mutation, result: str, error_class: str | None = None) -> None:

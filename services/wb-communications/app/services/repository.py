@@ -37,6 +37,7 @@ from app.domain.exceptions import (
 )
 from app.domain.models import Review, make_doc_id
 from app.domain.statuses import DRAFTABLE_FROM, Status, action_allowed
+from app.utils.audit_events import audited_store
 
 RETRIABLE = {Status.ERROR.value}
 # PUBLISH_UNKNOWN is re-publishable, but the pipeline reads WB state first and
@@ -459,6 +460,8 @@ class MemoryRepository:
 # --------------------------------------------------------------------------- #
 # Firestore repository
 # --------------------------------------------------------------------------- #
+@audited_store("firestore", read_only=frozenset({"get", "list_by_status", "get_editing_session",
+                                                  "list_pending_events"}))   # D-19b: internal writes are attributed
 class FirestoreRepository:
     def __init__(self, settings, client=None):
         self._s = settings

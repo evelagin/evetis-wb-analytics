@@ -34,7 +34,7 @@ class TelegramClient:
         if "chat_id" in payload:
             ref = audit_events.chat_ref(payload["chat_id"])
         elif "callback_query_id" in payload:
-            ref = audit_events.safe_ref("tg_callback", payload["callback_query_id"])
+            ref = "tg_callback"      # class only: callback ids may be low-entropy (derived from user ids)
         else:
             ref = "tg:bot"
         m = audit_events.start_mutation(_MUTATION_CLASS.get(method, "tg_other"), "telegram", ref)

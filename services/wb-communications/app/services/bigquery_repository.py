@@ -14,6 +14,7 @@ it never blocks Telegram or a WB publish.
 """
 from __future__ import annotations
 
+from app.utils.audit_events import audited_store
 from app.utils.logging import get_logger
 
 logger = get_logger(__name__)
@@ -112,6 +113,7 @@ EVENTS_SCHEMA = [
 ]
 
 
+@audited_store("bigquery")   # D-19b: every public method writes (inserts, upserts, schema) — attributed
 class BigQueryRepository:
     def __init__(self, settings, client=None):
         self._s = settings

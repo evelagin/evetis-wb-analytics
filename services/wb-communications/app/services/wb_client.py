@@ -49,6 +49,9 @@ _WRITE_RETRY_ON = (WBRateLimitError, httpx.ConnectError, httpx.ConnectTimeout)
 # D-19b: HTTP status of the last write attempt of the CURRENT call (contextvar: the client is shared across
 # concurrent requests). Read only by _audited_write to classify the outcome; never changes behaviour.
 _LAST_WRITE_STATUS: ContextVar[int | None] = ContextVar("wb_last_write_status", default=None)
+# D-19b tripwire: a WB write that does not go through _audited_write (a future method) must not be invisible
+# to the audit — _request then records it as an unaudited mutation with unknown outcome (the audit blocks).
+_IN_AUDITED_WRITE: ContextVar[bool] = ContextVar("wb_in_audited_write", default=False)
 
 
 def _body_sha256(body: dict) -> str:
@@ -77,6 +80,10 @@ class WBClient:
         return {"Authorization": self._token, "Content-Type": "application/json"}
 
     def _request(self, method: str, url: str, **kwargs) -> httpx.Response:
+        if method.upper() != "GET" and not _IN_AUDITED_WRITE.get():
+            from app.utils import audit_events
+            audit_events.finish_mutation(audit_events.start_mutation("wb_unaudited", "wb", "wb:unaudited"),
+                                         "outcome_unknown", "UnauditedWrite")
         self._throttle()
         resp = self._client.request(method, url, headers=self._headers, **kwargs)
         if resp.status_code == 429:
@@ -178,6 +185,7 @@ class WBClient:
         ref = f"wb:{tid}" if audit_events.PLAIN_ID.fullmatch(tid) else audit_events.safe_ref("wb", tid)
         m = audit_events.start_mutation(mutation_class, "wb", ref)
         token = _LAST_WRITE_STATUS.set(None)
+        guard = _IN_AUDITED_WRITE.set(True)
         try:
             result = write()
         except WBPublishOutcomeUnknown as exc:
@@ -198,6 +206,7 @@ class WBClient:
         finally:
             status = _LAST_WRITE_STATUS.get()
             _LAST_WRITE_STATUS.reset(token)
+            _IN_AUDITED_WRITE.reset(guard)
         # The business logic treats any status < 400 as accepted (unchanged); the AUDIT only calls a 2xx a known
         # success — e.g. an unfollowed 3xx means WB did not process the write, so it is not "success".
         if status is not None and 200 <= status < 300:
