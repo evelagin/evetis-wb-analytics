@@ -30,7 +30,7 @@ from app.domain.exceptions import (
 from app.communication_engine.constants import CommunicationType
 from app.domain.models import Question, Review
 from app.domain.statuses import EventType, Status
-from app.utils.logging import get_logger, log_event, redact
+from app.utils.logging import audit_event, get_logger, log_event, redact
 from app.utils.security import is_allowed
 from app.utils.text import (
     TELEGRAM_MSG_SOFT_LIMIT,
@@ -746,9 +746,20 @@ def handle_update(deps: Deps, update: dict) -> dict:
 
 
 def _allowed(deps: Deps, chat_id, user_id) -> bool:
-    return is_allowed(
+    ok = is_allowed(
         chat_id, user_id, deps.settings.allowed_chat_ids, deps.settings.telegram_allowed_user_ids
     )
+    if not deps.settings.allowed_chat_ids and not deps.settings.telegram_allowed_user_ids:
+        # is_allowed fails OPEN with no lists configured: record it as such, never as a real allow-list pass
+        audit_event("auth_ok", route="/telegram-webhook", mechanism="telegram_allowlist",
+                    principal_class="unrestricted", result="open_no_allowlist")
+    else:
+        full = bool(deps.settings.allowed_chat_ids) and bool(deps.settings.telegram_allowed_user_ids)
+        audit_event("auth_ok" if ok else "auth_denied", route="/telegram-webhook", mechanism="telegram_allowlist",
+                    principal_class="allowlisted_user" if ok else "unknown",
+                    # only chat AND user lists make a full allow-list pass; one list is recorded as partial
+                    result=("ok" if full else "ok_partial_allowlist") if ok else "not_allowlisted")
+    return ok
 
 
 def _handle_callback(deps: Deps, cq: dict) -> dict:

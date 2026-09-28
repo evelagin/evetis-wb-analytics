@@ -1,5 +1,39 @@
 # CHANGELOG
 
+## 1.6.1 — Аудируемый публичный вход: события auth_ok / mutation_* с trace запроса (D-19b)
+
+Номер 1.6.1: 1.6.0 в `main` занят Reviews & Q&A v3 SHADOW (PR #219). При интеграции с `main` эта запись
+встаёт над 1.6.0 v3, запись 1.5.3 сохраняется.
+
+Развёртывание 1.6.1 — только образ (`gcloud run services update --image <digest>`), окружение не меняется.
+`deploy/env.production.live.yaml` приведён к живому сервису: `V3_SHADOW_ENABLED` в production отсутствует
+(v3 SHADOW выключен, код по умолчанию `false`); включение v3 — отдельное решение владельца.
+
+Только инструментирование — поведение, маршруты, аутентификация и бизнес-логика не меняются.
+
+- **Trace запроса**: middleware берёт trace из `X-Cloud-Trace-Context` / `traceparent`; каждая строка журнала
+  получает `logging.googleapis.com/trace` = `projects/<GCP_PROJECT_ID>/traces/<id>` — тот же trace, что у
+  журнала запроса Cloud Run (машинная связь, не временная близость).
+- **События `audit_event`** (схема `wbc-audit/1`, закрытый набор полей, без свободного текста и секретов):
+  `instrumentation_ready` (при старте экземпляра), `auth_ok` / `auth_denied` (секрет Telegram, allow-list
+  Telegram, секрет Scheduler, admin-токен), `mutation_attempt` / `mutation_success` / `mutation_failure`
+  (каждая запись в WB через `_write_once`, каждый не-`get*` вызов Telegram Bot API). Цель — только хеш
+  (`target_ref`), `service`/`revision` — из `K_SERVICE`/`K_REVISION`.
+- Эмиссия событий никогда не бросает исключений.
+- Серверный `request_id` (uuid4) в каждом событии — trace клиентоуправляем; открытый allow-list (пустые списки)
+  фиксируется как `result=open_no_allowlist`, не как проход; логгер `app.audit` всегда INFO.
+- **`request_end`** в конце КАЖДОГО запроса (и при исключении): статус и число `mutation_attempt` — аудит доказывает,
+  что ни одно событие изменения не потеряно; частичный allow-list — `result=ok_partial_allowlist`.
+- **Закрытый словарь маршрутов** в событиях безопасности (`audit_route`): путь запроса клиентоуправляем
+  (Starlette раскодирует `%xx`, в нём бывают формы секретов, unicode, «query» внутри пути), поэтому в
+  `request_end.route` и в поле `route` любого события пишется только точный известный маршрут
+  (`/health`, `/poll`, `/telegram-webhook`, `/docs`, `/redoc`, `/openapi.json`, `/docs/oauth2-redirect`),
+  категория `/admin` для admin-роутера или `UNKNOWN`. Сырой путь в события не попадает; маршрутизация,
+  аутентификация и поведение WB/Telegram не меняются. Метка берётся из `scope["path"]` — той же строки, по
+  которой маршрутизирует Starlette: `request.url.path` пересобирается из заголовка Host, режется на
+  закодированных `?`/`#` (`/poll%3Fx=1` получил бы метку `/poll`) и на кривом Host бросает, подавляя `request_end`
+  (Starlette 0.41.3 из закреплённых версий).
+
 ## 1.6.0 — Reviews & Q&A v3 in SHADOW mode (Phase 3, 2026-09-28)
 
 Production behaviour unchanged: v2 still generates every card; v3 is observation only
