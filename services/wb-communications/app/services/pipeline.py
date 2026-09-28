@@ -528,6 +528,7 @@ def _run_questions(deps: Deps) -> dict:
     legacy = _reconcile_legacy_published_questions(deps)
     reverified = _reverify_accepted_questions(deps)
     reverified["legacy"] = legacy
+    reverified["recovery_cards"] = _restore_recovery_cards(deps)
     questions = deps.wb.iter_unanswered_questions()
     fetched = len(questions)
     processed = skipped = errors = 0
@@ -649,6 +650,80 @@ def _reverify_accepted_questions(deps: Deps, limit: int = 20) -> dict:
             log_event(logger, "warning", "question re-verification failed",
                       doc_id=doc_id, error=type(exc).__name__)
     return counts
+
+
+def _restore_recovery_cards(deps: Deps, limit: int = 20) -> dict:
+    """Give every question in ``publish_unknown`` a live «Опубликовать» card.
+
+    A doc that reached ``publish_unknown`` before 1.5.2 (or whose card could not be
+    sent) has no ``recovery_card_sent_at``: its stored Telegram message may be a
+    superseded card, so the operator sees no button. One read-only GET each:
+    answer now on WB -> resolved as usual (no button); no answer -> a NEW actionable
+    card. Never writes to WB."""
+    counts = {"checked": 0, "sent": 0, "resolved": 0, "errors": 0}
+    for doc_id, doc in deps.repo.list_by_status(Status.PUBLISH_UNKNOWN.value, limit,
+                                                entity_type="question"):
+        if doc.get("entity_type") != "question" or doc.get("recovery_card_sent_at"):
+            continue
+        counts["checked"] += 1
+        text = clean_answer(doc.get("final_answer") or doc.get("ai_answer"))
+        trace = _new_trace(doc_id, doc, phase="recovery_card",
+                           state_before=Status.PUBLISH_UNKNOWN.value)
+        try:
+            outcome = _verify_question(deps, doc["source_id"], text, trace, attempts=1)
+            if outcome == "verify_error":
+                counts["errors"] += 1
+                continue  # WB unreadable now: retry next poll
+            if outcome in ("verified", "answered_externally"):
+                _finish_question(deps, doc_id, doc, text, outcome, trace,
+                                 chat=doc.get("telegram_chat_id"),
+                                 message_id=doc.get("telegram_message_id"),
+                                 user_id=None, accepted=False)
+                counts["resolved"] += 1
+                continue
+            _send_recovery_card(deps, doc_id)
+            counts["sent"] += 1
+        except Exception as exc:  # noqa: BLE001 — one item must not break the poll
+            counts["errors"] += 1
+            log_event(logger, "warning", "question recovery card failed",
+                      doc_id=doc_id, error=type(exc).__name__)
+    return counts
+
+
+_Q_RECOVERY_HEAD = ("⚠️ <b>Публикация не подтверждена на Wildberries</b>\n\n"
+                    "Ответа на вопросе на WB нет, повторная отправка не выполнялась. Нажмите "
+                    "«Опубликовать»: сервис сначала проверит вопрос на WB и отправит ответ, "
+                    "только если его там нет.\n\n")
+_CARD_SUPERSEDED = "ℹ️ Карточка устарела — актуальная отправлена ниже."
+
+
+def _retire_card(deps: Deps, chat, old_message_id, new_message_id) -> None:
+    """Strip the buttons from a superseded card (best effort: the old message may
+    be gone or already identical — the new card is what matters)."""
+    if not chat or not old_message_id or str(old_message_id) == str(new_message_id):
+        return
+    try:
+        deps.telegram.edit_message_text(chat, old_message_id, _CARD_SUPERSEDED, None)
+    except Exception as exc:  # noqa: BLE001
+        log_event(logger, "info", "superseded card not retired", error=type(exc).__name__)
+
+
+def _send_recovery_card(deps: Deps, doc_id: str) -> str:
+    """Send a NEW «Опубликовать» card for a question in ``publish_unknown`` and make it
+    the doc's card. A background transition cannot trust the stored message id: it
+    may point to a card that was superseded (manual edit) or no longer editable."""
+    doc = deps.repo.get(doc_id) or {}
+    chat = doc.get("telegram_chat_id") or deps.settings.telegram_chat_id
+    card_text, truncated = _card_builder_for(doc)(doc, doc_id)
+    msg = deps.telegram.send_message(chat, _Q_RECOVERY_HEAD + card_text,
+                                     build_keyboard(doc_id, show_full=truncated, retry=True))
+    new_id = str((msg or {}).get("message_id", ""))
+    deps.repo.update(doc_id, {"telegram_chat_id": str(chat), "telegram_message_id": new_id,
+                              "recovery_card_sent_at": _now_iso()})
+    _retire_card(deps, chat, doc.get("telegram_message_id"), new_id)
+    log_event(logger, "info", "question recovery card sent", doc_id=doc_id,
+              telegram_message_id=new_id)
+    return new_id
 
 
 # --------------------------------------------------------------------------- #
@@ -929,16 +1004,38 @@ def _finish_question(deps: Deps, doc_id: str, doc: dict, text: str, outcome: str
         fields["publish_accepted_at"] = doc.get("publish_accepted_at") or now
         if user_id is not None:
             fields["published_by_telegram_user_id"] = str(user_id)
+    interactive = user_id is not None and chat and message_id
+    if interactive:
+        # the card the operator pressed is the live one: keep Firestore pointing at it
+        fields.update(telegram_chat_id=str(chat), telegram_message_id=str(message_id))
+        if status == Status.PUBLISH_UNKNOWN.value:
+            fields["recovery_card_sent_at"] = now  # this very card gets the button
     trace.update(final_publication_state=status, local_state_after=status, finished_at=now)
     deps.repo.record_publication(doc_id, status, fields, trace)
     after = _sync_current(deps, doc_id, doc)
     _emit_event(deps, after, doc_id, _Q_EVENT[status], best_effort=False,
                 status_before=trace.get("local_state_before", ""), status_after=status,
                 telegram_user_id=user_id, attempt=trace["publication_attempt_id"], payload=trace)
-    keyboard = build_keyboard(doc_id, retry=True) if status == Status.PUBLISH_UNKNOWN.value else None
-    if chat and message_id:
+    if interactive:
+        keyboard = build_keyboard(doc_id, retry=True) if status == Status.PUBLISH_UNKNOWN.value else None
         deps.telegram.edit_message_text(chat, message_id,
                                         _Q_MSG[status].format(text=escape_html(text)), keyboard)
+    elif status == Status.PUBLISH_UNKNOWN.value:
+        # Background (poll) transition: the stored card may be superseded, so editing
+        # it can leave the operator without a button. Send a fresh actionable card;
+        # if Telegram fails, the next poll's _restore_recovery_cards retries.
+        try:
+            _send_recovery_card(deps, doc_id)
+        except Exception as exc:  # noqa: BLE001 — state is already persisted
+            log_event(logger, "warning", "question recovery card failed",
+                      doc_id=doc_id, error=type(exc).__name__)
+    elif chat and message_id:
+        try:
+            deps.telegram.edit_message_text(chat, message_id,
+                                            _Q_MSG[status].format(text=escape_html(text)), None)
+        except Exception as exc:  # noqa: BLE001 — state is already persisted
+            log_event(logger, "info", "question card not updated", doc_id=doc_id,
+                      error=type(exc).__name__)
     log_event(logger, "info", "question publication outcome", doc_id=doc_id, status=status,
               attempt=trace["publication_attempt_id"], verification=trace.get("verification_result"),
               http_status=trace.get("http_status"))
@@ -1171,5 +1268,11 @@ def _handle_message(deps: Deps, message: dict) -> dict:
                 telegram_user_id=user_id, answer_version=doc.get("generation_number"))
     card_text, truncated = _card_builder_for(doc)(doc, doc_id)
     card_text = _card_with_flags(card_text, {"flags": _manual_text_flags(deps, doc, new_text)})
-    deps.telegram.send_message(chat, card_text, build_keyboard(doc_id, show_full=truncated))
+    msg = deps.telegram.send_message(chat, card_text, build_keyboard(doc_id, show_full=truncated))
+    # The new card supersedes the stored one: without this, later background updates
+    # (reconcile / re-verify) edit the OLD message and the operator never sees them.
+    new_id = str((msg or {}).get("message_id", ""))
+    if new_id:
+        deps.repo.update(doc_id, {"telegram_chat_id": str(chat), "telegram_message_id": new_id})
+        _retire_card(deps, chat, doc.get("telegram_message_id"), new_id)
     return {"status": "edited"}
