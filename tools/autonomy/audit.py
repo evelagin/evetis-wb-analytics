@@ -14,10 +14,11 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from lib.bq_readonly import ReadOnlyBigQuery, resolve_token  # noqa: E402
+from tools.autonomy import ingress_attribution  # noqa: E402
 
 # Версия источника доказательства. Доказательство другой версии (в т.ч. прежнего INFORMATION_SCHEMA по одному
 # региону EU, который не видел LOAD/COPY/EXTRACT, SELECT с записью в таблицу и задания вне EU) нулём не считается.
-AUDIT_SOURCE = "jobs_list+audit_logs+iam_selftest+iam_history/v4"
+AUDIT_SOURCE = "jobs_list+audit_logs+iam_selftest+iam_history+ingress_attribution/v5"
 
 API = "https://www.googleapis.com"
 CRM = "https://cloudresourcemanager.googleapis.com/v1"
@@ -29,6 +30,10 @@ FEDERATED = ("principal://", "principalSet://")
 SETTLE_SECONDS = 300            # от READY_FOR_PR (после ревьюера, т.е. после всех job'ов с GCP) до чтения журналов
 WATERMARK_TRIES, WATERMARK_SLEEP = 12, 10
 MAX_PAGES = 500
+# Повтор ТОЛЬКО временных ошибок чтения (429, 5xx, сеть): конечное число попыток, детерминированная пауза.
+# Исчерпание — исключение, то есть BLOCKED; ни один повтор не превращает отказ источника в PASS.
+HTTP_RETRY_STATUSES = frozenset({429, 500, 502, 503, 504})
+HTTP_RETRY_DELAYS = (2, 4, 8)          # 4 попытки всего, 14 с ожидания максимум
 ADMIN_ACTIVITY_RETENTION_DAYS = 400   # бакет _Required: не отключается, не исключается, 400 дней
 # Права, которых у идентичности AE не должно быть НИ НА ПРОЕКТЕ (вкл. наследование от организации/папок, группы,
 # пользовательские роли). Самопроверка testIamPermissions — живая, в момент аудита; комментарию не доверяем.
@@ -183,19 +188,29 @@ class GcpAuditSource:
                                                                 label_purpose="autonomy-audit").query(sql))
 
     def _http(self, method: str, url: str, body: dict | None = None, _retry: bool = True) -> dict:
+        """Все вызовы аудита — чтение (GET, entries:list, testIamPermissions), поэтому повтор безопасен. Повторяются
+        только 429/5xx/сетевые ошибки, не более len(HTTP_RETRY_DELAYS) раз; последняя ошибка поднимается."""
         import json
         import urllib.error
         import urllib.request
-        req = urllib.request.Request(url, data=json.dumps(body).encode() if body is not None else None, method=method,
-                                     headers={"Authorization": f"Bearer {self.token}", "Content-Type": "application/json"})
-        try:
-            with urllib.request.urlopen(req, timeout=120) as r:
-                return json.loads(r.read() or b"{}")
-        except urllib.error.HTTPError as e:
-            if e.code == 401 and _retry and self.refresh:      # токен истёк посреди долгого аудита — один раз обновить
-                self.token = self.refresh()
-                return self._http(method, url, body, _retry=False)
-            raise
+        for attempt in range(len(HTTP_RETRY_DELAYS) + 1):
+            req = urllib.request.Request(url, data=json.dumps(body).encode() if body is not None else None,
+                                         method=method, headers={"Authorization": f"Bearer {self.token}",
+                                                                 "Content-Type": "application/json"})
+            try:
+                with urllib.request.urlopen(req, timeout=120) as r:
+                    return json.loads(r.read() or b"{}")
+            except urllib.error.HTTPError as e:
+                if e.code == 401 and _retry and self.refresh:      # токен истёк посреди долгого аудита — один раз обновить
+                    self.token = self.refresh()
+                    return self._http(method, url, body, _retry=False)
+                if e.code not in HTTP_RETRY_STATUSES or attempt == len(HTTP_RETRY_DELAYS):
+                    raise
+            except (urllib.error.URLError, TimeoutError, ConnectionError):
+                if attempt == len(HTTP_RETRY_DELAYS):
+                    raise
+            self.sleep(HTTP_RETRY_DELAYS[attempt])
+        raise RuntimeError("недостижимо")                        # pragma: no cover
 
     def jobs(self, since_ms: int) -> list[dict]:
         from urllib.parse import urlencode
@@ -227,6 +242,13 @@ class GcpAuditSource:
         raise RuntimeError("журнал аудита: превышен лимит страниц")
 
     activity = logs          # прежнее имя
+
+    def logs_page(self, flt: str, page_size: int = 100) -> list[dict]:
+        """Одна страница (позитивный контроль фильтра): достаточно ОДНОЙ корректной записи; флуд публичного входа
+        не заставляет читать 500×1000 записей."""
+        body = {"resourceNames": [f"projects/{self.project}"], "filter": flt, "pageSize": page_size,
+                "orderBy": "timestamp desc"}
+        return self.http("POST", f"{LOGGING}/entries:list", body).get("entries", [])
 
     def routing(self) -> dict:
         """Маршрутизация журналов: sink _Default и исключения уровня проекта."""
@@ -359,7 +381,7 @@ def iam_policy_state(events: list[dict]) -> tuple[dict[tuple[str, str], set[tupl
     return state, problems
 
 
-def policy_problems(state: dict, identities: list[str]) -> list[str]:
+def policy_problems(state: dict, identities: list[str], proven_public_run: frozenset = frozenset()) -> list[str]:
     """Привязки, которые дают AE (или кому угодно) доступ, не видимый самопроверкой AE и журналами аудита:
     публичный доступ, группы/домены (членство не проверить), AE на отдельном ресурсе, прямой федеративный
     принципал вне SA. Публичную точку входа журналы аудита не видят вовсе — поэтому это отказ, а не ноль."""
@@ -371,6 +393,9 @@ def policy_problems(state: dict, identities: list[str]) -> list[str]:
             if m.startswith("deleted:"):
                 continue
             where = f"{svc.split('.')[0]}:{rn.rsplit('/', 1)[-1][:60]} {role} → {m[:70]}"
+            if (svc == "run.googleapis.com" and rn in proven_public_run and role == "roles/run.invoker"
+                    and m in PUBLIC_MEMBERS):
+                continue          # F-18: публичный вход этого сервиса атрибутирован за всё окно (ingress_attribution)
             if m in PUBLIC_MEMBERS or m.startswith(UNPROVABLE_MEMBERS):
                 if not (role.startswith("roles/") and READ_ROLE.search(role)):   # имя своей роли не доказательство
                     out.append(f"публичный/групповой доступ, невидимый аудиту: {where}")
@@ -588,7 +613,16 @@ def run_audit(src: GcpAuditSource, since_iso: str, identities: list[str], waterm
     policy_events = src.logs(f'{_logname(src.project, "activity")} AND timestamp>="{created}" AND '
                              f'(protoPayload.methodName:"SetIamPolicy" OR protoPayload.methodName:"setIamPermissions")')
     state, broken = iam_policy_state(policy_events)
-    iam += broken + policy_problems(state, identities)
+    # F-18: публичный вход Cloud Run — не отказ сам по себе и не безвредный факт: за окно прогона нужно ДОКАЗАТЬ
+    # по неизменяемым источникам, что трафика не было (NO_TRAFFIC) или каждый запрос атрибутирован событиями
+    # безопасности сервиса по той же трассе (ATTRIBUTED). Иначе привязка остаётся отказом (BLOCKED).
+    until = _ts(settle_from) if settle_from else src.now()
+    public = run_public_during(policy_events, since, until)
+    public.update(ingress_attribution.iam_disabled_services(
+        src.logs(ingress_attribution.spec_filter(src.project, created)), until))
+    ingress, ingress_problems = ingress_attribution.attribute(src, public, since, until, created)
+    proven = frozenset(rn for rn, v in ingress.items() if v["status"] == "PROVEN")
+    iam += broken + policy_problems(state, identities, proven) + ingress_problems
     # SA ДРУГИХ проектов с ролями здесь (политики ресурсов, ACL видимых датасетов) — тоже самопроверка.
     foreign = {m.split(":", 1)[1] for binds in state.values() for _, m in binds if m.startswith("serviceAccount:")}
     foreign |= {a["userByEmail"] for meta in datasets.values() for a in meta.get("access", [])
@@ -646,7 +680,40 @@ def run_audit(src: GcpAuditSource, since_iso: str, identities: list[str], waterm
             "data_access": len(access), "service_accounts_checked": len(sas), "tables_checked": len(tables),
             "table_policies": len(policy_tables),
             "iam_resources_reconstructed": len(state),
+            "ingress_attribution": {rn.rsplit("/", 1)[-1]: v for rn, v in ingress.items()},
             "source": AUDIT_SOURCE}
+
+
+AGENT_WORK_STATES = {"RECEIVED", "DISCOVERING", "PLANNING", "IMPLEMENTING", "TESTING", "REVIEWING", "FIXING"}
+
+
+def run_window_end(run: dict) -> str | None:
+    """Конец окна агента: последний переход в READY_FOR_PR (после него недоверенные job'ы прогона не исполняются).
+    Не `updated_at`: возобновление прогона и запись результатов аудита двигают его, и окно публичного входа (F-18)
+    растянулось бы на трафик, не имеющий отношения к прогону. Если ПОСЛЕ последнего READY_FOR_PR прогон снова
+    вернулся к работе агента — None (окно до «сейчас»). Нет такого перехода — `updated_at` (как прежде)."""
+    tr = [t for t in run.get("transitions") or [] if t.get("at")]
+    tr.sort(key=lambda t: _order({"timestamp": t["at"]}))
+    idx = [i for i, t in enumerate(tr) if t.get("to") == "READY_FOR_PR"]
+    if not idx:
+        return run.get("updated_at")
+    if any(t.get("to") in AGENT_WORK_STATES for t in tr[idx[-1] + 1:]):
+        return None
+    return tr[idx[-1]]["at"]
+
+
+def run_public_during(policy_events: list[dict], since, until) -> dict:
+    """Cloud Run services whose invoker was public at ANY moment of [since, until] (state at `since` and after each
+    change inside the window), not only at audit time: a binding added and removed inside the window counts."""
+    evs = sorted(policy_events, key=_order)
+    prefix = [e for e in evs if ingress_attribution._ts(e.get("timestamp", "1970-01-01T00:00:00Z")) <= since]
+    out = dict(ingress_attribution.public_run_services(iam_policy_state(prefix)[0]))
+    for e in evs:
+        t = ingress_attribution._ts(e.get("timestamp", "1970-01-01T00:00:00Z"))
+        if since < t <= until:
+            prefix.append(e)
+            out.update(ingress_attribution.public_run_services(iam_policy_state(prefix)[0]))
+    return out
 
 
 def zero_mutations_proven(run: dict) -> tuple[bool, str]:

@@ -79,7 +79,7 @@ def _orchestrator(a, store: StateStore):
     from tools.autonomy.publisher import GitPublisher
     audit = lambda run: {"status": "NOT_APPLICABLE", "mutations": 0}  # noqa: E731
     if a.project and a.token_command:
-        from tools.autonomy.audit import count_mutations
+        from tools.autonomy.audit import count_mutations, run_window_end
         ids = [i for i in (a.audit_identity or []) if i]
 
         # Выдержка согласованности журналов — только в доверенном шаге audit перед публикацией: там доказательство
@@ -88,7 +88,7 @@ def _orchestrator(a, store: StateStore):
 
         def audit(run):  # noqa: F811 — BLOCKED остаётся BLOCKED, а не нулём
             return count_mutations(a.project, a.token_command, run["created_at"], ids,
-                                   settle_from=run.get("updated_at") if settle else None)
+                                   settle_from=run_window_end(run) if settle else None)
     publisher = GitPublisher(REPO, dry_run=a.dry_run) if getattr(a, "publish", False) else None
     verifier = None
     if getattr(a, "verify_repo", None):
