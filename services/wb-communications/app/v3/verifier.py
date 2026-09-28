@@ -82,6 +82,7 @@ class VerifierContext:
     unknown_fact_types: set = field(default_factory=set)
     strategy: Optional[str] = None
     inci_order_warning: bool = False
+    own_identifiers: set = field(default_factory=set)
 
 
 # --------------------------------------------------------------------------------------------
@@ -128,6 +129,9 @@ def _base_context(snapshot: KnowledgeSnapshot, mode: str, product_ids: list[str]
             for bv in (snapshot.conflicts.get(cid) or {}).get("blocked_values") or []:
                 ctx.restricted_texts[re.escape(normalize(bv))] = cid
     ctx.templates = [normalize(t["text"]) for t in policy["templates"].values() if "{" not in t["text"]]
+    # the product's own marketplace identifiers (e.g. «арт. 868597351») are not factual claims
+    ctx.own_identifiers = {i["value"] for i in snapshot.data["identifiers"]
+                           if i["product_id"] in scope and i["id_type"] in ("wb_nm_id", "label_ean")}
     return ctx
 
 
@@ -188,6 +192,13 @@ def context_for_free_text(snapshot: KnowledgeSnapshot, product_ids: list[str]) -
 # --------------------------------------------------------------------------------------------
 # rules
 # --------------------------------------------------------------------------------------------
+def _is_list_marker(text: str, tok) -> bool:
+    """'1. плотно…' / '2) …' — enumeration, not a quantity."""
+    before = text[max(0, tok.start - 2): tok.start]
+    after = text[tok.end: tok.end + 2]
+    return len(tok.raw) <= 2 and re.match(r"[.)]\s", after) is not None and (tok.start == 0 or before[-1:] in (" ", ":", "\n"))
+
+
 def _in_corpus(ctx: VerifierContext, phrase: str) -> bool:
     p = phrase.strip()
     return bool(p) and p in ctx.allowed_corpus
@@ -224,7 +235,10 @@ def verify(text: Optional[str], ctx: VerifierContext, snapshot: KnowledgeSnapsho
         add("V-CER", "BLOCK", m.group(), "ceramide count wording (ODR-15)")
 
     # --- restricted / conflicting values
-    toks = [t for t in numbers(free) if not DIGIT_NAME_RX.search(free[max(0, t.start - 12): t.end + 3])]
+    toks = [t for t in numbers(free)
+            if not DIGIT_NAME_RX.search(free[max(0, t.start - 12): t.end + 3])
+            and t.raw not in ctx.own_identifiers
+            and not _is_list_marker(free, t)]
     for t in toks:
         if t.value in ctx.restricted_numbers and t.value not in ctx.allowed_numbers:
             add("V-RESTRICTED", "BLOCK", free[max(0, t.start - 25): t.end + 5],

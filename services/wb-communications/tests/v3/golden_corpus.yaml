@@ -117,3 +117,6 @@ verifier:
   - {id: OK-04, nm: "305101361", text: "Спасибо за отзыв! Рады, что сыворотка вам понравилась.", pass: true}
   - {id: OK-05, nm: "593111986", text: "В составе указаны церамиды NS, NG, NP, EOP, AP и AS.", pass: true}
   - {id: OK-06, nm: "305101361", text: "Салициловая кислота в составе сыворотки — 1%.", pass: true}
+  # --- calibration against historical GOOD answers (false positives fixed) ---
+  - {id: CAL-01, nm: "868597351", text: "Поступления набора арт. 868597351 пока не запланированы, но мы передадим пожелание.", pass: true}
+  - {id: CAL-02, nm: "438775617", text: "Чтобы разобраться, пожалуйста: 1. оформите обращение по товару через личный кабинет Wildberries.", pass: true}
