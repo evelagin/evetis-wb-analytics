@@ -1,0 +1,539 @@
+{
+ "REF_SKU_CHANNEL_MAP": [
+  {
+   "internal_sku": "EVT-EP-ENZYME-75",
+   "marketplace": "WB",
+   "marketplace_sku": "535580776",
+   "vendor_code": "Пудра-1",
+   "is_current": "true"
+  },
+  {
+   "internal_sku": "EVT-FC-ACNE-50",
+   "marketplace": "WB",
+   "marketplace_sku": "438775617",
+   "vendor_code": "Крем Акне",
+   "is_current": "true"
+  },
+  {
+   "internal_sku": "EVT-FC-MOIST-50",
+   "marketplace": "WB",
+   "marketplace_sku": "438775437",
+   "vendor_code": "Крем УВЛ",
+   "is_current": "true"
+  },
+  {
+   "internal_sku": "EVT-FS-ACNE-30",
+   "marketplace": "WB",
+   "marketplace_sku": "305101361",
+   "vendor_code": "Сыворотка Акне",
+   "is_current": "true"
+  },
+  {
+   "internal_sku": "EVT-FS-MOIST-30",
+   "marketplace": "WB",
+   "marketplace_sku": "305101272",
+   "vendor_code": "Сыворотка УВЛ",
+   "is_current": "true"
+  },
+  {
+   "internal_sku": "EVT-FT-ACNE-150",
+   "marketplace": "WB",
+   "marketplace_sku": "535581675",
+   "vendor_code": "Тоник Акне",
+   "is_current": "true"
+  },
+  {
+   "internal_sku": "EVT-FT-MOIST-150",
+   "marketplace": "WB",
+   "marketplace_sku": "535581674",
+   "vendor_code": "Тоник УВЛ",
+   "is_current": "true"
+  },
+  {
+   "internal_sku": "EVT-HC-AMBER-300",
+   "marketplace": "WB",
+   "marketplace_sku": "593111985",
+   "vendor_code": "Крем Амбра",
+   "is_current": "true"
+  },
+  {
+   "internal_sku": "EVT-HC-BODY-300",
+   "marketplace": "WB",
+   "marketplace_sku": "252442341",
+   "vendor_code": "Крем Тело",
+   "is_current": "true"
+  },
+  {
+   "internal_sku": "EVT-HC-CHERRY-300",
+   "marketplace": "WB",
+   "marketplace_sku": "593111986",
+   "vendor_code": "Крем Вишня",
+   "is_current": "true"
+  },
+  {
+   "internal_sku": "EVT-HC-HAND-300",
+   "marketplace": "WB",
+   "marketplace_sku": "252442517",
+   "vendor_code": "Крем Руки",
+   "is_current": "true"
+  },
+  {
+   "internal_sku": "EVT-SET-4PC-ACNE",
+   "marketplace": "WB",
+   "marketplace_sku": "868597351",
+   "vendor_code": "Набор_4единицы_прыщ",
+   "is_current": "true"
+  },
+  {
+   "internal_sku": "EVT-SET-ACNE-POWDER-SERUM-CREAM",
+   "marketplace": "WB",
+   "marketplace_sku": "909951444",
+   "vendor_code": "Набор пудра+сыворотка+крем АКНЕ",
+   "is_current": "true"
+  },
+  {
+   "internal_sku": "EVT-SET-ACNE-TONIC-SERUM",
+   "marketplace": "WB",
+   "marketplace_sku": "1083392113",
+   "vendor_code": "Набор тоник+сыворотка АКНЕ",
+   "is_current": "true"
+  },
+  {
+   "internal_sku": "EVT-SET-CHERRY-AMBER",
+   "marketplace": "WB",
+   "marketplace_sku": "930334397",
+   "vendor_code": "Набор вишня+амбра",
+   "is_current": "true"
+  },
+  {
+   "internal_sku": "EVT-SET-HAND-AMBER",
+   "marketplace": "WB",
+   "marketplace_sku": "930334396",
+   "vendor_code": "Набор руки+амбра",
+   "is_current": "true"
+  },
+  {
+   "internal_sku": "EVT-SET-HAND-BODY",
+   "marketplace": "WB",
+   "marketplace_sku": "252441968",
+   "vendor_code": "Набор руки+тело",
+   "is_current": "true"
+  },
+  {
+   "internal_sku": "EVT-SET-HAND-CHERRY",
+   "marketplace": "WB",
+   "marketplace_sku": "930334395",
+   "vendor_code": "Набор руки+вишня",
+   "is_current": "true"
+  },
+  {
+   "internal_sku": "EVT-SET-MOIST-TONIC-SERUM",
+   "marketplace": "WB",
+   "marketplace_sku": "910330849",
+   "vendor_code": "Набор тоник+сыворотка УВЛ",
+   "is_current": "true"
+  },
+  {
+   "internal_sku": "EVT-SET-SER-CREAM-ACNE",
+   "marketplace": "WB",
+   "marketplace_sku": "567668635",
+   "vendor_code": "Набор сыворотка+крем АКНЕ",
+   "is_current": "true"
+  },
+  {
+   "internal_sku": "EVT-SET-SER-CREAM-MOIST",
+   "marketplace": "WB",
+   "marketplace_sku": "567668636",
+   "vendor_code": "Набор сыворотка+крем УВЛ",
+   "is_current": "true"
+  },
+  {
+   "internal_sku": "EVT-SET-TON-CREAM-ACNE",
+   "marketplace": "WB",
+   "marketplace_sku": "952068582",
+   "vendor_code": "Набор тоник+крем Акне",
+   "is_current": "true"
+  },
+  {
+   "internal_sku": "EVT-SET-TON-CREAM-MOIST",
+   "marketplace": "WB",
+   "marketplace_sku": "773170315",
+   "vendor_code": "Набор тоник+крем УВЛ",
+   "is_current": "true"
+  },
+  {
+   "internal_sku": "EVT-SET-TON-SER-CREAM-ACNE",
+   "marketplace": "WB",
+   "marketplace_sku": "910584041",
+   "vendor_code": "Нобор тоник+сыворотка+крем АКНЕ",
+   "is_current": "true"
+  },
+  {
+   "internal_sku": "EVT-SET-TON-SER-CREAM-MOIST",
+   "marketplace": "WB",
+   "marketplace_sku": "773170316",
+   "vendor_code": "Набор тоник+сыворотка+крем УВЛ",
+   "is_current": "true"
+  }
+ ],
+ "REF_PRODUCT_MASTER": [
+  {
+   "internal_sku": "EVT-EP-ENZYME-75",
+   "canonical_product_name": "EVETIS Enzyme Cleansing Powder 75 g",
+   "is_bundle": "false"
+  },
+  {
+   "internal_sku": "EVT-FC-ACNE-50",
+   "canonical_product_name": "EVETIS Anti-Acne Face Cream 50 ml",
+   "is_bundle": "false"
+  },
+  {
+   "internal_sku": "EVT-FC-MOIST-50",
+   "canonical_product_name": "EVETIS Moisture Face Cream 50 ml",
+   "is_bundle": "false"
+  },
+  {
+   "internal_sku": "EVT-FS-ACNE-30",
+   "canonical_product_name": "EVETIS Anti-Acne Face Serum 30 ml",
+   "is_bundle": "false"
+  },
+  {
+   "internal_sku": "EVT-FS-MOIST-30",
+   "canonical_product_name": "EVETIS Deep Moisture Face Serum 30 ml",
+   "is_bundle": "false"
+  },
+  {
+   "internal_sku": "EVT-FT-ACNE-150",
+   "canonical_product_name": "EVETIS Anti-Acne Face Tonic 150 ml",
+   "is_bundle": "false"
+  },
+  {
+   "internal_sku": "EVT-FT-MOIST-150",
+   "canonical_product_name": "EVETIS Moisture Face Tonic 150 ml",
+   "is_bundle": "false"
+  },
+  {
+   "internal_sku": "EVT-HC-AMBER-300",
+   "canonical_product_name": "EVETIS Body Cream Amber Vanilla 300 ml",
+   "is_bundle": "false"
+  },
+  {
+   "internal_sku": "EVT-HC-BODY-300",
+   "canonical_product_name": "EVETIS Body Cream Oud Wood 300 ml",
+   "is_bundle": "false"
+  },
+  {
+   "internal_sku": "EVT-HC-CHERRY-300",
+   "canonical_product_name": "EVETIS Body Cream Lost Cherry 300 ml",
+   "is_bundle": "false"
+  },
+  {
+   "internal_sku": "EVT-HC-HAND-300",
+   "canonical_product_name": "EVETIS Advanced Repair Hand Cream Oud Wood 300 ml",
+   "is_bundle": "false"
+  },
+  {
+   "internal_sku": "EVT-SET-4PC-ACNE",
+   "canonical_product_name": "EVETIS Набор anti-acne полный комплекс (4 средства)",
+   "is_bundle": "true"
+  },
+  {
+   "internal_sku": "EVT-SET-ACNE-POWDER-SERUM-CREAM",
+   "canonical_product_name": "Набор для лица от прыщей и акне",
+   "is_bundle": "true"
+  },
+  {
+   "internal_sku": "EVT-SET-ACNE-TONIC-SERUM",
+   "canonical_product_name": "Набор для лица сыворотка и тоник против АКНЕ",
+   "is_bundle": "true"
+  },
+  {
+   "internal_sku": "EVT-SET-CHERRY-AMBER",
+   "canonical_product_name": "EVETIS Набор крем Lost Cherry + крем Amber Vanilla",
+   "is_bundle": "true"
+  },
+  {
+   "internal_sku": "EVT-SET-HAND-AMBER",
+   "canonical_product_name": "EVETIS Набор крем для рук + крем Amber Vanilla",
+   "is_bundle": "true"
+  },
+  {
+   "internal_sku": "EVT-SET-HAND-BODY",
+   "canonical_product_name": "EVETIS Набор крем для рук + крем для тела",
+   "is_bundle": "true"
+  },
+  {
+   "internal_sku": "EVT-SET-HAND-CHERRY",
+   "canonical_product_name": "EVETIS Набор крем для рук + крем Lost Cherry",
+   "is_bundle": "true"
+  },
+  {
+   "internal_sku": "EVT-SET-MOIST-TONIC-SERUM",
+   "canonical_product_name": "Набор для лица увлажняющий сыворотка и тоник",
+   "is_bundle": "true"
+  },
+  {
+   "internal_sku": "EVT-SET-SER-CREAM-ACNE",
+   "canonical_product_name": "EVETIS Набор anti-acne сыворотка + крем для лица",
+   "is_bundle": "true"
+  },
+  {
+   "internal_sku": "EVT-SET-SER-CREAM-MOIST",
+   "canonical_product_name": "EVETIS Набор увлажняющая сыворотка + крем для лица",
+   "is_bundle": "true"
+  },
+  {
+   "internal_sku": "EVT-SET-TON-CREAM-ACNE",
+   "canonical_product_name": "EVETIS Набор anti-acne тоник + крем для лица",
+   "is_bundle": "true"
+  },
+  {
+   "internal_sku": "EVT-SET-TON-CREAM-MOIST",
+   "canonical_product_name": "EVETIS Набор увлажняющий тоник + крем для лица",
+   "is_bundle": "true"
+  },
+  {
+   "internal_sku": "EVT-SET-TON-SER-CREAM-ACNE",
+   "canonical_product_name": "EVETIS Набор anti-acne тоник + сыворотка + крем",
+   "is_bundle": "true"
+  },
+  {
+   "internal_sku": "EVT-SET-TON-SER-CREAM-MOIST",
+   "canonical_product_name": "EVETIS Набор увлажняющий тоник + сыворотка + крем",
+   "is_bundle": "true"
+  }
+ ],
+ "REF_BUNDLE_COMPONENTS": [
+  {
+   "bundle_internal_sku": "EVT-SET-HAND-BODY",
+   "component_internal_sku": "EVT-HC-HAND-300",
+   "component_qty": "1",
+   "effective_from": "2025-05-01",
+   "effective_to": null
+  },
+  {
+   "bundle_internal_sku": "EVT-SET-HAND-BODY",
+   "component_internal_sku": "EVT-HC-BODY-300",
+   "component_qty": "1",
+   "effective_from": "2025-05-01",
+   "effective_to": null
+  },
+  {
+   "bundle_internal_sku": "EVT-SET-SER-CREAM-MOIST",
+   "component_internal_sku": "EVT-FS-MOIST-30",
+   "component_qty": "1",
+   "effective_from": "2025-10-31",
+   "effective_to": null
+  },
+  {
+   "bundle_internal_sku": "EVT-SET-SER-CREAM-MOIST",
+   "component_internal_sku": "EVT-FC-MOIST-50",
+   "component_qty": "1",
+   "effective_from": "2025-10-31",
+   "effective_to": null
+  },
+  {
+   "bundle_internal_sku": "EVT-SET-SER-CREAM-ACNE",
+   "component_internal_sku": "EVT-FS-ACNE-30",
+   "component_qty": "1",
+   "effective_from": "2025-11-01",
+   "effective_to": null
+  },
+  {
+   "bundle_internal_sku": "EVT-SET-SER-CREAM-ACNE",
+   "component_internal_sku": "EVT-FC-ACNE-50",
+   "component_qty": "1",
+   "effective_from": "2025-11-01",
+   "effective_to": null
+  },
+  {
+   "bundle_internal_sku": "EVT-SET-ACNE-POWDER-SERUM-CREAM",
+   "component_internal_sku": "EVT-EP-ENZYME-75",
+   "component_qty": "1",
+   "effective_from": "2026-01-15",
+   "effective_to": null
+  },
+  {
+   "bundle_internal_sku": "EVT-SET-ACNE-POWDER-SERUM-CREAM",
+   "component_internal_sku": "EVT-FS-ACNE-30",
+   "component_qty": "1",
+   "effective_from": "2026-01-15",
+   "effective_to": null
+  },
+  {
+   "bundle_internal_sku": "EVT-SET-ACNE-POWDER-SERUM-CREAM",
+   "component_internal_sku": "EVT-FC-ACNE-50",
+   "component_qty": "1",
+   "effective_from": "2026-01-15",
+   "effective_to": null
+  },
+  {
+   "bundle_internal_sku": "EVT-SET-TON-CREAM-MOIST",
+   "component_internal_sku": "EVT-FT-MOIST-150",
+   "component_qty": "1",
+   "effective_from": "2026-03-19",
+   "effective_to": null
+  },
+  {
+   "bundle_internal_sku": "EVT-SET-TON-CREAM-MOIST",
+   "component_internal_sku": "EVT-FC-MOIST-50",
+   "component_qty": "1",
+   "effective_from": "2026-03-19",
+   "effective_to": null
+  },
+  {
+   "bundle_internal_sku": "EVT-SET-TON-SER-CREAM-MOIST",
+   "component_internal_sku": "EVT-FT-MOIST-150",
+   "component_qty": "1",
+   "effective_from": "2026-03-20",
+   "effective_to": null
+  },
+  {
+   "bundle_internal_sku": "EVT-SET-TON-SER-CREAM-MOIST",
+   "component_internal_sku": "EVT-FS-MOIST-30",
+   "component_qty": "1",
+   "effective_from": "2026-03-20",
+   "effective_to": null
+  },
+  {
+   "bundle_internal_sku": "EVT-SET-TON-SER-CREAM-MOIST",
+   "component_internal_sku": "EVT-FC-MOIST-50",
+   "component_qty": "1",
+   "effective_from": "2026-03-20",
+   "effective_to": null
+  },
+  {
+   "bundle_internal_sku": "EVT-SET-4PC-ACNE",
+   "component_internal_sku": "EVT-EP-ENZYME-75",
+   "component_qty": "1",
+   "effective_from": "2026-03-24",
+   "effective_to": null
+  },
+  {
+   "bundle_internal_sku": "EVT-SET-4PC-ACNE",
+   "component_internal_sku": "EVT-FT-ACNE-150",
+   "component_qty": "1",
+   "effective_from": "2026-03-24",
+   "effective_to": null
+  },
+  {
+   "bundle_internal_sku": "EVT-SET-4PC-ACNE",
+   "component_internal_sku": "EVT-FS-ACNE-30",
+   "component_qty": "1",
+   "effective_from": "2026-03-24",
+   "effective_to": null
+  },
+  {
+   "bundle_internal_sku": "EVT-SET-4PC-ACNE",
+   "component_internal_sku": "EVT-FC-ACNE-50",
+   "component_qty": "1",
+   "effective_from": "2026-03-24",
+   "effective_to": null
+  },
+  {
+   "bundle_internal_sku": "EVT-SET-CHERRY-AMBER",
+   "component_internal_sku": "EVT-HC-CHERRY-300",
+   "component_qty": "1",
+   "effective_from": "2026-04-10",
+   "effective_to": null
+  },
+  {
+   "bundle_internal_sku": "EVT-SET-CHERRY-AMBER",
+   "component_internal_sku": "EVT-HC-AMBER-300",
+   "component_qty": "1",
+   "effective_from": "2026-04-10",
+   "effective_to": null
+  },
+  {
+   "bundle_internal_sku": "EVT-SET-TON-SER-CREAM-ACNE",
+   "component_internal_sku": "EVT-FT-ACNE-150",
+   "component_qty": "1",
+   "effective_from": "2026-03-24",
+   "effective_to": null
+  },
+  {
+   "bundle_internal_sku": "EVT-SET-TON-SER-CREAM-ACNE",
+   "component_internal_sku": "EVT-FS-ACNE-30",
+   "component_qty": "1",
+   "effective_from": "2026-03-24",
+   "effective_to": null
+  },
+  {
+   "bundle_internal_sku": "EVT-SET-TON-SER-CREAM-ACNE",
+   "component_internal_sku": "EVT-FC-ACNE-50",
+   "component_qty": "1",
+   "effective_from": "2026-03-24",
+   "effective_to": null
+  },
+  {
+   "bundle_internal_sku": "EVT-SET-HAND-AMBER",
+   "component_internal_sku": "EVT-HC-HAND-300",
+   "component_qty": "1",
+   "effective_from": "2026-04-26",
+   "effective_to": null
+  },
+  {
+   "bundle_internal_sku": "EVT-SET-HAND-AMBER",
+   "component_internal_sku": "EVT-HC-AMBER-300",
+   "component_qty": "1",
+   "effective_from": "2026-04-26",
+   "effective_to": null
+  },
+  {
+   "bundle_internal_sku": "EVT-SET-HAND-CHERRY",
+   "component_internal_sku": "EVT-HC-HAND-300",
+   "component_qty": "1",
+   "effective_from": "2026-04-27",
+   "effective_to": null
+  },
+  {
+   "bundle_internal_sku": "EVT-SET-HAND-CHERRY",
+   "component_internal_sku": "EVT-HC-CHERRY-300",
+   "component_qty": "1",
+   "effective_from": "2026-04-27",
+   "effective_to": null
+  },
+  {
+   "bundle_internal_sku": "EVT-SET-TON-CREAM-ACNE",
+   "component_internal_sku": "EVT-FT-ACNE-150",
+   "component_qty": "1",
+   "effective_from": "2026-05-03",
+   "effective_to": null
+  },
+  {
+   "bundle_internal_sku": "EVT-SET-TON-CREAM-ACNE",
+   "component_internal_sku": "EVT-FC-ACNE-50",
+   "component_qty": "1",
+   "effective_from": "2026-05-03",
+   "effective_to": null
+  },
+  {
+   "bundle_internal_sku": "EVT-SET-ACNE-TONIC-SERUM",
+   "component_internal_sku": "EVT-FT-ACNE-150",
+   "component_qty": "1",
+   "effective_from": "2026-07-09",
+   "effective_to": null
+  },
+  {
+   "bundle_internal_sku": "EVT-SET-ACNE-TONIC-SERUM",
+   "component_internal_sku": "EVT-FS-ACNE-30",
+   "component_qty": "1",
+   "effective_from": "2026-07-09",
+   "effective_to": null
+  },
+  {
+   "bundle_internal_sku": "EVT-SET-MOIST-TONIC-SERUM",
+   "component_internal_sku": "EVT-FT-MOIST-150",
+   "component_qty": "1",
+   "effective_from": "2026-03-24",
+   "effective_to": null
+  },
+  {
+   "bundle_internal_sku": "EVT-SET-MOIST-TONIC-SERUM",
+   "component_internal_sku": "EVT-FS-MOIST-30",
+   "component_qty": "1",
+   "effective_from": "2026-03-24",
+   "effective_to": null
+  }
+ ]
+}

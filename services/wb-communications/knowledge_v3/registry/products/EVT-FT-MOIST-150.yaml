@@ -1,0 +1,39 @@
+# Moisturizing face tonic 150 ml — WB nmId 535581674. DOCX spec: label INCI, directions, precautions EMPTY.
+schema: ref_product.v1
+product_id: EVT-FT-MOIST-150
+product_type: tonic
+line: moisture
+primary_source: SRC-TU-SP-TS-9
+spec_association_status: VERIFIED
+customer_fact_generation: ALLOWED
+customer_name_ru: "увлажняющий тоник для лица EVETIS"
+internal_aliases: ["Тоник УВЛ", "moisture face tonic"]
+identifiers:
+  - {id_type: tu_code, value: SP-TS-9, source_id: SRC-TU-SP-TS-9}
+facts:
+  - {fact_type: product_name_t1, value: "EVETIS MOISTURE FACE TONIC Увлажняющий тоник для лица 150 мл.", source_id: SRC-TU-SP-TS-9, locator: header, disclosure_policy: INTERNAL_ONLY}
+  - {fact_type: volume, value: 150, unit: ml, customer_value_ru: "150 мл", source_id: SRC-TU-SP-TS-9, locator: "Volume"}
+  - {fact_type: intended_use, value: [face], customer_value_ru: "для лица", source_id: SRC-TU-SP-TS-9, locator: "product name"}
+  - {fact_type: shelf_life, value: 24, unit: month, customer_value_ru: "2 года с даты изготовления", source_id: SRC-TU-SP-TS-9, locator: "Shelf life"}
+  - {fact_type: pao, value: 6, unit: month, customer_value_ru: "6 месяцев после вскрытия", source_id: SRC-TU-SP-TS-9, locator: "embedded PAO icon (word/media)"}
+  - {fact_type: storage, value: "+5..+25 C, no direct sunlight", customer_value_ru: "хранить при температуре от +5 до +25 °C, не подвергать воздействию прямых солнечных лучей", source_id: SRC-TU-SP-TS-9, locator: "Conditions Storage"}
+  - {fact_type: country_of_origin, value: CN, customer_value_ru: "Китай", source_id: SRC-TU-SP-TS-9, locator: "Made in China"}
+  - {fact_type: manufacturer, value: "Guangzhou Yin Ji Biotechnology Co., Ltd.", customer_value_ru: "Guangzhou Yin Ji Biotechnology Co., Ltd. (Китай)", source_id: SRC-TU-SP-TS-9, locator: "manufacturer"}
+  - {fact_type: ph, value: "5.0-5.5", customer_value_ru: "pH 5,0–5,5", source_id: SRC-TU-SP-TS-9, locator: "Hydrogen index, pH"}
+  - {fact_type: organoleptics, value: "Cream / White / Scent", fact_status: CONFLICT, quality_flags: [TEMPLATE_SUSPECT], disclosure_policy: DO_NOT_DISCLOSE, conflict_id: KC-20, source_id: SRC-TU-SP-TS-9, locator: "Organoleptic indicators"}
+  - {fact_type: commercial_age_marker, value: "12+", fact_status: COMMERCIAL_VERIFIED, disclosure_policy: INTERNAL_ONLY, owner_decision_id: ODR-01, source_id: SRC-WB-CARD, locator: "WB card characteristic"}
+ingredients:
+  recipe_source: SRC-TU-SP-TS-9
+  recipe_locator: "RECIPE table"
+  recipe:
+    - [1, water, "Water", 72.28]
+    - [2, camellia_sinensis_leaf_water, "Camellia Sinensis Leaf Water", 10]
+    - [3, bifida_ferment_lysate, "Bifida Ferment Lysate", 10]
+    - [4, propylene_glycol, "Propylene Glycol", 5]
+    - [5, inulin, "Inulin", 2]
+    - [6, hyaluronic_acid, "Hyaluronic Acid", 0.2]
+    - [7, hydroxypropyl_methylcellulose, "Hydroxypropyl Methylcellulose", 0.2]
+    - [8, magnolia_officinalis_bark_extract, "Magnolia Officinalis Bark Extract", 0.2]
+    - [9, sorbitan_caprylate_propanediol_benzoic_acid, "Sorbitan Caprylate (and) Propanediol (and) Benzoic Acid", 0.12]
+  label_status: UNAVAILABLE
+  label_note: "'Ingredients:' field on the packaging block is empty in SP-TS-9."

@@ -1,5 +1,27 @@
 # CHANGELOG
 
+## 1.6.0 — Reviews & Q&A v3 in SHADOW mode (Phase 3, 2026-09-28)
+
+Production behaviour unchanged: v2 still generates every card; v3 is observation only
+(no WB write, no Telegram message, no v2 Firestore write). Enabled by `V3_SHADOW_ENABLED`.
+
+- **Knowledge registry** (`knowledge_v3/registry/*.yaml` -> BigQuery `evetis_ref`, 10 new
+  tables, additive; DDL/rollback in `sql/ref/v3_knowledge_registry*.sql`). T1 digitized for all
+  11 singles (recipes checked to 100 %, label INCI, usage, PAO, provenance with file sha256);
+  bundles and WB identity are READ from `REF_BUNDLE_COMPONENTS` / `REF_SKU_CHANNEL_MAP`.
+- **Immutable snapshot** `app/v3/snapshots/<id>.json` built from BigQuery by
+  `scripts/v3_registry.py build-snapshot` behind a knowledge build gate; selected by
+  `snapshots/ACTIVE` or `V3_KNOWLEDGE_SNAPSHOT_ID`; hash-checked on load.
+- **Engine** `app/v3`: deterministic product resolver; classifier (rules + optional LLM that can
+  only add/raise); safety extractor (negation, temporal state, EM-01..06, R4 needs a marker);
+  required-fact planner (KNOWN_ALLOWED / KNOWN_RESTRICTED / CONFLICT / UNKNOWN); controlled
+  generator (structured evidence only, templates rendered without LLM); deterministic verifier
+  (same code for AI drafts, v2 drafts and manual edits).
+- **Shadow runner** at the end of `/poll` (time-boxed, fully isolated) + decision journal
+  `evetis_communications.communication_v3_decisions`; ledger `v3_shadow_runs` (Firestore).
+- Admin: `POST /admin/v3/shadow-run`, `GET /admin/v3/decision/{id}` (inspection, no actions).
+- `V3_ENFORCE_MANUAL_EDIT_VERIFIER` (default **false**): owner-gated publish gate for manual text.
+- `OpenAIClient.structured()` added (JSON schema); `generate_answer` untouched.
 ## 1.5.3 — v2 knowledge base aligned with closed owner decisions (Phase 3 WP11, 2026-09-28)
 
 Changes v2 draft wording (approved cleanup). Local verification: pytest green.

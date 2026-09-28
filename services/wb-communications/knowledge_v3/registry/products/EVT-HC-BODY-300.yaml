@@ -1,0 +1,25 @@
+# Body cream 300 ml — WB nmId 252442341 (not shipped on WB, reviews still arrive).
+# ODR-14: identity VERIFIED (REF_SKU_CHANNEL_MAP); association with SP-TS-1 is DERIVED
+# (via SP-TS-3 + BOM). customer_fact_generation RESTRICTED until the physical label is verified.
+# Fragrance CONFLICT (KC-05): spec 'VANILLA WOOD', REF 'Oud Wood', site 'Дымный уд'.
+# Deliberately NO recipe/label rows: SP-TS-1 must not become customer-facing truth.
+schema: ref_product.v1
+product_id: EVT-HC-BODY-300
+product_type: body_cream
+line: hand_body
+primary_source: SRC-TU-SP-TS-1
+spec_association_status: DERIVED
+customer_fact_generation: RESTRICTED
+customer_name_ru: "крем для тела EVETIS"
+internal_aliases: ["Крем Тело", "Body Cream Oud Wood", "Vanilla Wood", "INTENSIVE MOISTURE BODY CREAM"]
+identifiers:
+  - {id_type: tu_code, value: SP-TS-1, source_id: SRC-TU-SP-TS-1, status: DERIVED}
+  - {id_type: label_ean, value: "4631171927016", source_id: SRC-TU-SP-TS-1, status: DERIVED, locator: "SP-TS-1 label block", notes: "Candidate only (ODR-14): not confirmed until the physical package is checked."}
+facts:
+  - {fact_type: product_name_t1, value: "Интенсивно увлажняющий крем для тела EVETIS 300 мл INTENSIVE MOISTURE BODY CREAM EVETIS", fact_status: DERIVED, disclosure_policy: INTERNAL_ONLY, source_id: SRC-TU-SP-TS-1, locator: p1}
+  - {fact_type: fragrance_profile, value: "VANILLA WOOD | Oud Wood | Дымный уд", fact_status: CONFLICT, disclosure_policy: DO_NOT_DISCLOSE, conflict_id: KC-05, owner_decision_id: ODR-14, source_id: SRC-TU-SP-TS-1, locator: "p1 header vs REF_PRODUCT_MASTER vs site"}
+  - {fact_type: ph, value: 6.94, fact_status: CONFLICT, quality_flags: [TEMPLATE_SUSPECT], disclosure_policy: DO_NOT_DISCLOSE, conflict_id: KC-01, owner_decision_id: ODR-19, source_id: SRC-TU-SP-TS-1, locator: p3}
+ingredients:
+  recipe_status: RESTRICTED
+  label_status: RESTRICTED
+  label_note: "ODR-14: SP-TS-1 composition is DERIVED; not stored as customer-facing rows."

@@ -1,0 +1,61 @@
+# Anti-acne face tonic 150 ml — WB nmId 535581675. Tea tree = LEAF EXTRACT (KC-18), never 'oil'.
+schema: ref_product.v1
+product_id: EVT-FT-ACNE-150
+product_type: tonic
+line: anti_acne
+primary_source: SRC-TU-SP-TS-10
+spec_association_status: VERIFIED
+customer_fact_generation: ALLOWED
+customer_name_ru: "тоник для лица EVETIS Anti-Acne"
+internal_aliases: ["Тоник Акне", "anti acne face tonic"]
+identifiers:
+  - {id_type: tu_code, value: SP-TS-10, source_id: SRC-TU-SP-TS-10}
+facts:
+  - {fact_type: product_name_t1, value: "EVETIS ANTI ACNE FACE TONIC Анти акне тоник для лица 150 мл.", source_id: SRC-TU-SP-TS-10, locator: header, disclosure_policy: INTERNAL_ONLY}
+  - {fact_type: volume, value: 150, unit: ml, customer_value_ru: "150 мл", source_id: SRC-TU-SP-TS-10, locator: "Volume"}
+  - {fact_type: intended_use, value: [face], customer_value_ru: "для лица", source_id: SRC-TU-SP-TS-10, locator: "product name"}
+  - {fact_type: shelf_life, value: 24, unit: month, customer_value_ru: "2 года с даты изготовления", source_id: SRC-TU-SP-TS-10, locator: "Shelf life"}
+  - {fact_type: pao, value: 6, unit: month, customer_value_ru: "6 месяцев после вскрытия", source_id: SRC-TU-SP-TS-10, locator: "embedded PAO icon (word/media)"}
+  - {fact_type: storage, value: "+5..+25 C, no direct sunlight", customer_value_ru: "хранить при температуре от +5 до +25 °C, не подвергать воздействию прямых солнечных лучей", source_id: SRC-TU-SP-TS-10, locator: "Conditions Storage"}
+  - {fact_type: country_of_origin, value: CN, customer_value_ru: "Китай", source_id: SRC-TU-SP-TS-10, locator: "Made in China"}
+  - {fact_type: manufacturer, value: "Guangzhou Yin Ji Biotechnology Co., Ltd.", customer_value_ru: "Guangzhou Yin Ji Biotechnology Co., Ltd. (Китай)", source_id: SRC-TU-SP-TS-10, locator: "manufacturer"}
+  - {fact_type: ph, value: "5.5-6.5", customer_value_ru: "pH 5,5–6,5", source_id: SRC-TU-SP-TS-10, locator: "Hydrogen index, pH"}
+  - {fact_type: organoleptics, value: "template", fact_status: CONFLICT, quality_flags: [TEMPLATE_SUSPECT], disclosure_policy: DO_NOT_DISCLOSE, conflict_id: KC-20, source_id: SRC-TU-SP-TS-10, locator: "Organoleptic indicators"}
+  - {fact_type: commercial_age_marker, value: "12+", fact_status: COMMERCIAL_VERIFIED, disclosure_policy: INTERNAL_ONLY, owner_decision_id: ODR-01, source_id: SRC-WB-CARD, locator: "WB card characteristic"}
+ingredients:
+  recipe_source: SRC-TU-SP-TS-10
+  recipe_locator: "RECIPE table"
+  recipe:
+    - [1, water, "WATER", 64.1]
+    - [2, butylene_glycol, "BUTYLENE GLYCOL", 5]
+    - [3, dipropylene_glycol, "DIPROPYLENE GLYCOL", 5]
+    - [4, glycerin, "GLYCERIN", 5]
+    - [5, niacinamide, "NIACINAMIDE", 2]
+    - [6, melaleuca_alternifolia_leaf_extract, "MELALEUCA ALTERNIFOLIA (TEA TREE) LEAF EXTRACT", 2]
+    - [7, polyglyceryl_4_caprate, "POLYGLYCERYL-4 CAPRATE", 2]
+    - [8, carica_papaya_fruit_extract, "CARICA PAPAYA (PAPAYA) FRUIT EXTRACT", 2]
+    - [9, lens_esculenta_seed_extract, "Lens Esculenta Seed Extract", 2]
+    - [10, hamamelis_virginiana_extract, "HAMAMELIS VIRGINIANA (WITCH HAZEL) EXTRACT", 1]
+    - [11, nelumbo_nucifera_flower_extract, "NELUMBO NUCIFERA FLOWER EXTRACT", 1]
+    - [12, swiftlet_nest_extract, "SWIFTLET NEST EXTRACT", 1]
+    - [13, sodium_hyaluronate, "SODIUM HYALURONATE", 1]
+    - [14, fructan, "FRUCTAN", 1]
+    - [15, allantoin, "ALLANTOIN", 1]
+    - [16, adenosine, "ADENOSINE", 1]
+    - [17, hydroxyethyl_urea, "HYDROXYETHYL UREA", 1]
+    - [18, xylitol, "XYLITOL", 1]
+    - [19, salicylic_acid, "SALICYLIC ACID", 0.2]
+    - [20, lactobionic_acid, "LACTOBIONIC ACID", 0.2]
+    - [21, citric_acid, "CITRIC ACID", 0.2]
+    - [22, sodium_citrate, "SODIUM CITRATE", 0.2]
+    - [23, hexanediol_1_2, "1,2-HEXANEDIOL", 0.2]
+    - [24, pentylene_glycol, "PENTYLENE GLYCOL", 0.15]
+    - [25, caprylyl_glycol, "CAPRYLYL GLYCOL", 0.15]
+    - [26, benzyl_glycol, "BENZYL GLYCOL", 0.1]
+    - [27, ethylhexylglycerin, "ETHYLHEXYLGLYCERIN", 0.1]
+    - [28, ethyl_hexanediol, "ETHYL HEXANEDIOL", 0.1]
+    - [29, raspberry_ketone, "RASPBERRY KETONE", 0.1]
+    - [30, phenoxyethanol, "PHENOXYETHANOL", 0.1]
+    - [31, mentha_piperita_oil, "MENTHA PIPERITA (PEPPERMINT) OIL", 0.1]
+  label_status: UNAVAILABLE
+  label_note: "'Ingredients:' field on the packaging block is empty in SP-TS-10."
