@@ -70,10 +70,11 @@ def validate_plan(want, since, until, lb_over, today):
     err = validate_window(since, until, today)
     if err:
         return err
-    if lb_over is not None and not re.fullmatch(r"\d{1,4}", lb_over):
+    if lb_over and not re.fullmatch(r"\d{1,4}", lb_over):     # пустая строка = не задана, как в main()
         return "LOOKBACK_OVERRIDE не целое неотрицательное число"
     for name in want:
-        if name not in REGISTRY:
+        # Окно имеет смысл только у сущностей с ретроспективой (история); снимки его не читают.
+        if name not in REGISTRY or REGISTRY[name][1] == 0:
             continue
         frm, to = entity_window(since, until, lb_over, REGISTRY[name][1], today)
         if date.fromisoformat(frm) > date.fromisoformat(to):

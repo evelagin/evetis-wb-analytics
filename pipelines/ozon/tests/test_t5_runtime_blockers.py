@@ -464,6 +464,7 @@ def test_negative_correction_keeps_campaign_in_perimeter(entities, captured_merg
 @pytest.mark.parametrize("since,until,lb,expect", [
     (None, "2026-01-01", None, "начало окна"),
     (None, None, "-5", "LOOKBACK_OVERRIDE"),
+    (None, None, "", None),
     ("2026-W39-1", None, None, "SINCE не дата"),
     ("2026-09-20", None, None, None),
 ])
@@ -473,7 +474,16 @@ def test_validate_plan_checks_effective_windows(since, until, lb, expect):
     assert (got is None and expect is None) or (expect and expect in got)
 
 
-def test_duplicate_products_within_a_page_are_counted_once(entities, monkeypatch):
+def test_duplicate_products_within_a_page_keep_old_count_without_flag(entities, monkeypatch, lenient):
+    """EVETIS: первая страница считается как раньше (сырой счёт) — один запрос, 3 элемента."""
+    a, b = _products(0, 2)
+    calls = []
+    monkeypatch.setattr(entities, "seller_post", lambda p, body: calls.append(1) or (
+        200, {"result": {"items": [a, a, b], "total": 3, "last_id": "x"}}))
+    assert len(entities._product_list_items()) == 3 and len(calls) == 1
+
+
+def test_duplicate_products_within_a_page_are_counted_once(entities, monkeypatch, strict):
     a, b = _products(0, 2)
     pages = iter([{"items": [a, a, b], "total_items": 3, "last_id": "x"},
                   {"items": [], "total_items": 3, "last_id": "y"}])
@@ -499,3 +509,17 @@ def test_total_vs_total_items(entities, monkeypatch):
     monkeypatch.setattr(C, "STRICT_PAGE_CAPS", True)
     with pytest.raises(entities.StrictLimitError, match="различаются"):
         entities._list_total({"total": 5, "total_items": 7})
+
+
+def test_validate_plan_ignores_snapshot_entities():
+    import main as M
+    assert M.validate_plan(["catalog", "prices"], None, "2026-09-01", None, date(2026, 9, 28)) is None
+
+
+def test_skipped_pay_per_order_spend_is_logged(entities, captured_merges, monkeypatch, strict):
+    logs = []
+    monkeypatch.setattr(entities, "log", lambda **kw: logs.append(kw))
+    _use(monkeypatch, entities, FakePerf([111, 222], {111: 5.0, 222: 7.0}, types={222: "SEARCH_PROMO"}))
+    entities.ads_sku_daily("rt", "ts", "2026-09-01", "2026-09-01")
+    line = [x for x in logs if x.get("event") == "ads_sku_not_applicable"][0]
+    assert line["campaigns"] == ["222"] and line["spend_rub"] == 7.0

@@ -130,7 +130,9 @@ def _product_list_items():
         result = lst.get("result") or {}
         fresh = []
         for i in (result.get("items") or []):
-            if i.get("product_id") not in seen:     # повтор внутри и между страницами — один товар
+            # Повтор товара считается один раз. Исключение — первая страница без флага: она
+            # учитывается как раньше (сырой счёт), это поведение EVETIS.
+            if (not C.STRICT_PAGE_CAPS and page == 1) or i.get("product_id") not in seen:
                 seen.add(i.get("product_id"))
                 fresh.append(i)
         items += fresh
@@ -755,7 +757,7 @@ def _ads_sku_rows_strict(run_id, ts, d0, d1):
     rows = []
     for c0, c1 in _date_chunks(d0, d1, ADS_SKU_STRICT_CHUNK_DAYS):
         need = set()                         # (campaign_id, дата) с ненулевым расходом
-        skipped = set()
+        skipped = {}                         # campaign_id → расход, ₽
         for k in range((c1 - c0).days + 1):
             day = c0 + timedelta(days=k)
             for cid, v in _expense_by_campaign(day).items():
@@ -768,14 +770,17 @@ def _ads_sku_rows_strict(run_id, ts, d0, d1):
                 if t in SKU_REPORT_ADV_TYPES:
                     need.add((cid, str(day)))
                 elif t in NO_SKU_REPORT_ADV_TYPES:
-                    skipped.add(cid)
+                    skipped[cid] = skipped.get(cid, 0.0) + v
                 else:
                     _strict_cap("ads_sku_daily", f"кампания с расходом неизвестного типа {t!r}",
                                 "добавить тип в SKU_REPORT_ADV_TYPES или NO_SKU_REPORT_ADV_TYPES",
                                 window=f"{c0}..{c1}")
             time.sleep(0.5)
         if skipped:
-            log(event="ads_sku_not_applicable", window=f"{c0}..{c1}", campaigns=len(skipped),
+            # Расход таких кампаний остаётся в ads_expense_daily на уровне кампании; SUM по SKU
+            # не равна всему расходу на рекламу — это видно в каждом прогоне.
+            log(event="ads_sku_not_applicable", window=f"{c0}..{c1}", campaigns=sorted(skipped),
+                spend_rub=round(sum(skipped.values()), 2),
                 reason="оплата за заказ / баннеры: отчёт по SKU не формируется")
         active = sorted({cid for cid, _d in need})
         seen = set()
