@@ -26,7 +26,7 @@ from app.domain.exceptions import (
 from app.communication_engine.constants import CommunicationType
 from app.domain.models import Question, Review
 from app.domain.statuses import EventType, Status
-from app.utils.logging import get_logger, log_event
+from app.utils.logging import get_logger, log_event, redact
 from app.utils.security import is_allowed
 from app.utils.text import (
     TELEGRAM_MSG_SOFT_LIMIT,
@@ -264,7 +264,7 @@ def _emit_event(deps: Deps, doc: dict, doc_id: str, event_type: EventType,
         "answer_version": answer_version or None, "latency_ms": doc.get("openai_latency_ms"),
         "token_input": usage.get("input_tokens"), "token_output": usage.get("output_tokens"),
         "error_code": (str(extra["error_code"]) if extra.get("error_code") is not None else None),
-        "error_message": (extra.get("error_message") or "")[:500] or None, "payload_json": None,
+        "error_message": redact(extra.get("error_message") or "")[:500] or None, "payload_json": None,
     }
     # Persist to the Firestore outbox; delivery to BigQuery happens in flush_events.
     try:

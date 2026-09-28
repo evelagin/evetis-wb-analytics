@@ -25,13 +25,20 @@ SECRET_TELEGRAM_WEBHOOK = "EVETIS_TELEGRAM_WEBHOOK_SECRET"
 SECRET_SCHEDULER = "EVETIS_SCHEDULER_SECRET"
 
 
+def _registered(value: str) -> str:
+    """Secret read straight from the environment: mask it in logs like get_secret does."""
+    from app.utils.logging import register_secret
+    register_secret(value)
+    return value
+
+
 @dataclass(frozen=True)
 class Secrets:
-    openai_api_key: str
-    wb_api_token: str
-    telegram_bot_token: str
-    telegram_webhook_secret: str
-    scheduler_secret: str
+    openai_api_key: str = field(repr=False)
+    wb_api_token: str = field(repr=False)
+    telegram_bot_token: str = field(repr=False)
+    telegram_webhook_secret: str = field(repr=False)
+    scheduler_secret: str = field(repr=False)
 
 
 @dataclass
@@ -211,7 +218,7 @@ class Settings:
     admin_token_secret_enabled: bool = field(
         default_factory=lambda: os.environ.get("ADMIN_TOKEN", "") != ""
     )
-    admin_token: str = field(default_factory=lambda: os.environ.get("ADMIN_TOKEN", ""))
+    admin_token: str = field(default_factory=lambda: _registered(os.environ.get("ADMIN_TOKEN", "")), repr=False)
     # Optional: keep the legacy Google Sheet as an external journal (off by default)
     sheets_journal_enabled: bool = field(
         default_factory=lambda: os.environ.get("SHEETS_JOURNAL_ENABLED", "false").lower() == "true"

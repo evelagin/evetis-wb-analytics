@@ -1,5 +1,27 @@
 # CHANGELOG
 
+## 1.4.1 — SECURITY: токен Telegram-бота больше не попадает в журналы (инцидент 2026-09-27)
+
+httpx писал INFO `HTTP Request: POST https://api.telegram.org/bot<TOKEN>/…`, а шаблон
+редакции `\b\d{6,}:` не срабатывал (между `bot` и цифрами нет границы слова): за 30 дней
+245 записей stdout с полным токеном. Поведение сервиса не меняется.
+
+- **Строки httpx с хостом `api.telegram.org` отбрасываются фильтром по хосту** (не regex).
+  Строки WB/OpenAI остаются: их ключи в заголовках, а строка `POST feedbacks-api…` —
+  единственное доказательство фактической публикации в WB. httpcore — не ниже WARNING.
+- **Редакция по значению**: каждый секрет, прочитанный `get_secret` (env или Secret Manager),
+  регистрируется и маскируется дословно, в URL-кодировке и половиной после `:` — в любом формате.
+- **Шаблон Telegram-токена без `\b`** (ловит `/bot<TOKEN>` и `%3A`); редакция покрывает
+  сообщение, исключение, стек, вложенные structured-поля.
+- **uvicorn и Python warnings** идут через тот же редактирующий JSON-формат.
+- **`TelegramClient`**: ошибка транспорта httpx (может нести URL с токеном) заменяется
+  `TelegramError` без URL — по-прежнему транзиентная (Telegram доставит повторно).
+- **Сбой форматирования** больше не уходит в обработчик ошибок logging (он печатал сырое сообщение в stderr):
+  резервная строка уже отредактирована; `json.dumps(default=redact(str))`; `logging.raiseExceptions = False`.
+- `Secrets`/`admin_token` не показываются в `repr`; `ADMIN_TOKEN` из окружения регистрируется для маскирования;
+  `error_message` событий редактируется перед сохранением; исходная ошибка httpx не привязывается к `TelegramError`.
+- Тесты `tests/test_log_redaction.py` — только на синтетическом токене.
+
 ## 1.4.0 — WB buyer questions (separate entity, own gates)
 
 Local verification: **195/195 pytest passed**. Reviews contour unchanged; questions
