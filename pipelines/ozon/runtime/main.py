@@ -20,7 +20,7 @@ ENV:
   STRICT_PAGE_CAPS   1 — упор в потолок страниц/окна API роняет сущность с
                      диагностикой (режим бэкфилла); 0 или не задана — как раньше
 """
-import os, sys, uuid
+import os, re, sys, uuid
 from datetime import date, timedelta
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -43,7 +43,7 @@ def validate_window(since, until, today):
         if v is None:
             continue
         try:
-            if len(v) != 10:
+            if not re.fullmatch(r"\d{4}-\d{2}-\d{2}", v):   # не ISO-неделя «2026-W39-1»
                 raise ValueError
             parsed[name] = date.fromisoformat(v)
         except ValueError:
@@ -52,6 +52,32 @@ def validate_window(since, until, today):
             return f"{name} позже сегодняшних суток МСК"
     if "SINCE" in parsed and "UNTIL" in parsed and parsed["SINCE"] > parsed["UNTIL"]:
         return "SINCE позже UNTIL"
+    return None
+
+
+def entity_window(since, until, lb_over, lookback, today):
+    """Фактическое окно сущности — ровно так, как его строит main()."""
+    lb = int(lb_over) if lb_over else lookback
+    return (since or str(today - timedelta(days=lb))), (until or str(today))
+
+
+def validate_plan(want, since, until, lb_over, today):
+    """Строгий режим: ошибка фактического окна любой сущности (а не только сырых SINCE/UNTIL).
+
+    UNTIL без SINCE или отрицательный LOOKBACK_OVERRIDE давали окно «начало позже конца» —
+    пустой прогон со статусом OK.
+    """
+    err = validate_window(since, until, today)
+    if err:
+        return err
+    if lb_over is not None and not re.fullmatch(r"\d{1,4}", lb_over):
+        return "LOOKBACK_OVERRIDE не целое неотрицательное число"
+    for name in want:
+        if name not in REGISTRY:
+            continue
+        frm, to = entity_window(since, until, lb_over, REGISTRY[name][1], today)
+        if date.fromisoformat(frm) > date.fromisoformat(to):
+            return f"{name}: начало окна {frm} позже конца {to}"
     return None
 
 
@@ -65,7 +91,7 @@ def main():
     if C.STRICT_PAGE_CAPS:
         # T5: окно проверяется до первого обращения к API. SINCE > UNTIL раньше давал
         # пустой прогон со статусом OK; будущая дата — «полноту» ещё не наступивших суток.
-        window_error = validate_window(since, until, today)
+        window_error = validate_plan(want, since, until, lb_over, today)
         if window_error:
             C.log(event="run_rejected", ingestion_run_id=run_id, reason=window_error)
             sys.exit(2)

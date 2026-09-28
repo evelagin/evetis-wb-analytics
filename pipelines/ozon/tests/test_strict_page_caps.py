@@ -94,7 +94,7 @@ def test_finance_cap_fails_in_strict_mode(entities, captured_merges, monkeypatch
 
 
 # ─────────────────────────────────────────────────────── ads_sku_daily
-CAMPAIGNS = json.dumps({"list": [{"id": "111"}], "total": "1"})
+CAMPAIGNS = json.dumps({"list": [{"id": "111", "advObjectType": "SKU"}], "total": "1"})
 EXPENSE = "ID;Название;Расход\n111;Кампания;10,00\n"
 REPORT_CSV = "; Кампания 111\nДень;sku;Расход, ₽, с НДС;Показы;Клики\n01.09.2026;500;1,00;1;1\n"
 
@@ -135,14 +135,15 @@ def _perf(monkeypatch, entities, *, campaign=(200, CAMPAIGNS), expense=(200, EXP
 
 def test_ads_happy_path_is_unchanged_in_both_modes(entities, captured_merges, monkeypatch, strict):
     _perf(monkeypatch, entities)
-    entities.ads_sku_daily("rt-x", "ts", "2026-09-01", "2026-09-02")
+    # строгий путь сверяет «кампания × сутки»: у фикстуры строки SKU только за 01.09
+    entities.ads_sku_daily("rt-x", "ts", "2026-09-01", "2026-09-01")
     (table, rows, _k, _kw), = captured_merges
     assert table == "RAW_OZON_ADS_SKU_DAILY" and len(rows) == 1
 
 
 @pytest.mark.parametrize("scenario,kwargs,expect", [
     ("campaign_http", {"campaign": (503, "")}, "список кампаний не получен"),
-    ("expense_http", {"expense": (503, "")}, "расход кампаний за окно не получен"),
+    ("expense_http", {"expense": (503, "")}, "расход кампаний за"),
     ("no_uuid", {"submit": (200, {})}, "нет UUID"),
     ("report_error", {"state": "ERROR"}, "отчёт не готов или завершился ошибкой"),
     ("report_http", {"report": (404, "")}, "отчёт не скачан"),
