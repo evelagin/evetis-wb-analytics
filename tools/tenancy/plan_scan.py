@@ -37,11 +37,17 @@
      Ожидаемое выводится из tools/tenancy/sql_identity.py, а блок sql_deployer контракта обязан
      ему равняться. Провижионер, SA планировщика, публичные, внешние и чужие принципалы —
      отказ. Отдельных google_bigquery_dataset_iam_* быть не может.
-  Q. Сервисные аккаунты (T4.1) — только SA контракта (runtime, планировщик, деплоер SQL) в
+  Q. Сервисные аккаунты (T4.1) — только SA контракта (runtime, планировщик, деплоер SQL, control) в
      проекте арендатора. Деплоер не получает ни одной привязки уровня проекта (правило P).
   E. Исключение для google_service_account.member (вычисляемое поле провайдера 7.x,
      «serviceAccount:<свой email>»): допустимо ТОЛЬКО это поле, ровно свой email, и только
      для SA из контракта. Это не выдача прав и не список разрешённых привязок.
+  C. Control plane (T5, D1): sa-tenant-control — только записи ACL матрицы control_identity
+     (роли организации, без условий) и secretAccessor на 4 секрета; ролей проекта нет. Job
+     tenant-control исполняется ТОЛЬКО от control SA, точка входа ровно lifecycle.py, окружение
+     ровно контракт; расписания у него нет. Job'ы runtime исполняются ТОЛЬКО от runtime SA, без
+     переопределения точки входа, окружение ровно контракт и обязательно TENANT_BINDING_REQUIRED=1.
+     Блок control контракта обязан ровно равняться выводу tools/tenancy/control_identity.py.
   F. Вычисляемые метаданные job'а Cloud Run после refresh (T3.3): creator и last_modifier
      (в схеме провайдера только computed) равны email провижионера, выполнявшего apply. Это
      не ссылка на платформу, если одновременно: тип ровно google_cloud_run_v2_job, поле ровно
@@ -61,6 +67,7 @@ REPO = Path(__file__).resolve().parents[2]
 if str(REPO) not in sys.path:
     sys.path.insert(0, str(REPO))
 
+from tools.tenancy import control_identity as CI  # noqa: E402
 from tools.tenancy import platform as PL  # noqa: E402
 from tools.tenancy import sql_identity as SI  # noqa: E402
 
@@ -244,6 +251,8 @@ def expected_iam(contract: dict) -> set[tuple[str, str, str, str]]:
         for sid in ozon["secret_ids"].values():
             allowed.add(("google_secret_manager_secret_iam_member", sid, "roles/secretmanager.secretAccessor",
                          runtime))
+            allowed.add(("google_secret_manager_secret_iam_member", sid, "roles/secretmanager.secretAccessor",
+                         f"serviceAccount:{CI.control_email(p)}"))
     return allowed
 
 
@@ -270,7 +279,86 @@ def expected_dataset_access(contract: dict) -> dict[str, set[AclEntry]]:
     for g in SI.dataset_grants(p, contract["datasets"]):
         acl[contract["datasets"][g["dataset_key"]]].add(
             (g["role"], "user_by_email", deployer, _condition_key(g["condition"])))
+    if ozon:
+        for g in CI.dataset_grants(contract["datasets"]):
+            acl[contract["datasets"][g["dataset_key"]]].add((g["role"], "user_by_email", CI.control_email(p), None))
     return acl
+
+
+def expected_control(contract: dict) -> dict | None:
+    """Блок control, выведенный доверенной базой из остального контракта (T5)."""
+    ozon = contract["marketplaces"].get("ozon")
+    if not ozon:
+        return None
+    jobs = ozon.get("jobs") or {}
+    envs = [j["env"] for j in jobs.values()]
+    base = {k: v for k, v in (envs[0] if envs else {}).items() if k not in ("ENTITIES", "TENANT_BINDING_REQUIRED")}
+    entities = sorted({e for j in jobs.values() for e in j["entities"]})
+    return CI.contract_block(contract["project_id"], contract["datasets"], base, contract["tenant_id"], entities)
+
+
+def control_findings(contract: dict) -> list[str]:
+    ozon = contract["marketplaces"].get("ozon") or {}
+    out = []
+    if contract.get("control") != expected_control(contract):
+        out.append("контракт: блок control не равен выводу tools/tenancy/control_identity.py")
+    if CI.CONTROL_JOB_NAME in (ozon.get("jobs") or {}):
+        out.append(f"контракт: имя job'а runtime совпадает с control ({CI.CONTROL_JOB_NAME})")
+    for name, j in (ozon.get("jobs") or {}).items():
+        if (j.get("env") or {}).get("TENANT_BINDING_REQUIRED") != "1":
+            out.append(f"контракт: job {name} без TENANT_BINDING_REQUIRED=1")
+    return out
+
+
+def _job_container(after: dict) -> tuple[dict | None, str | None]:
+    try:
+        tpl = after["template"]
+        inner = tpl[0]["template"] if len(tpl) == 1 else None
+        conts = inner[0]["containers"] if inner and len(inner) == 1 else None
+        if not conts or len(conts) != 1:
+            return None, "ровно один контейнер в одном шаблоне"
+        return conts[0], None
+    except (KeyError, IndexError, TypeError):
+        return None, "структура шаблона не читается"
+
+
+def job_findings(addr: str, after: dict, contract: dict) -> list[str]:
+    """Правило C: чей job, от чьего SA, с какой точкой входа и каким окружением."""
+    p, ozon = contract["project_id"], contract["marketplaces"].get("ozon") or {}
+    name = after.get("name")
+    cont, why = _job_container(after)
+    if cont is None:
+        return [f"{addr}: {why}"]
+    env = {}
+    for e in cont.get("env") or []:
+        if not isinstance(e, dict) or e.get("value_source"):
+            return [f"{addr}: переменная окружения не литерал ({e!r:.80})"]
+        env[e.get("name")] = e.get("value")
+    sa = after["template"][0]["template"][0].get("service_account")
+    cmd, args = list(cont.get("command") or []), list(cont.get("args") or [])
+    out = []
+    if name == CI.CONTROL_JOB_NAME:
+        want = (contract.get("control") or {}).get("job") or {}
+        if sa != CI.control_email(p):
+            out.append(f"{addr}: tenant-control исполняется не от sa-tenant-control ({sa!r})")
+        if cmd != list(CI.CONTROL_COMMAND):
+            out.append(f"{addr}: точка входа tenant-control {cmd!r} ≠ {list(CI.CONTROL_COMMAND)!r}")
+        if args != list(CI.CONTROL_DEFAULT_ARGS):
+            out.append(f"{addr}: аргументы tenant-control по умолчанию {args!r} ≠ {list(CI.CONTROL_DEFAULT_ARGS)!r}")
+        if env != want.get("env"):
+            out.append(f"{addr}: окружение tenant-control ≠ контракту control")
+    elif name in (ozon.get("jobs") or {}):
+        if sa != f"{ozon['service_accounts']['runtime']}@{p}.iam.gserviceaccount.com":
+            out.append(f"{addr}: job исполняется не от runtime SA арендатора ({sa!r})")
+        if cmd or args:
+            out.append(f"{addr}: job runtime переопределяет точку входа ({cmd + args!r})")
+        if env != ozon["jobs"][name]["env"]:
+            out.append(f"{addr}: окружение job'а ≠ контракту")
+        if env.get("TENANT_BINDING_REQUIRED") != "1":
+            out.append(f"{addr}: job runtime без TENANT_BINDING_REQUIRED=1")
+    else:
+        out.append(f"{addr}: job {name!r} не входит в контракт")
+    return out
 
 
 def sql_deployer_findings(contract: dict) -> list[str]:
@@ -415,9 +503,11 @@ def scan_plan(plan: dict, contract: dict) -> list[str]:
     iam_allowed = expected_iam(contract)
     dataset_acl = expected_dataset_access(contract)
     deployer_email = SI.deployer_email(project)
-    contract_sa_emails = {e for e in (runtime_email, scheduler_email, deployer_email) if e}
+    control_email = CI.control_email(project) if ozon else None
+    contract_sa_emails = {e for e in (runtime_email, scheduler_email, deployer_email, control_email) if e}
     contract_sa_ids = {e.split("@", 1)[0] for e in contract_sa_emails}
     findings += sql_deployer_findings(contract)
+    findings += control_findings(contract)
     contract_tables = {(contract["datasets"][x["dataset_key"]], x["table_id"]) for x in contract.get("tables", [])}
 
     # M. EVETIS — нигде: configuration, prior_state, переменные, значения.
@@ -548,8 +638,7 @@ def scan_plan(plan: dict, contract: dict) -> list[str]:
             for path, s in _strings(after, addr):
                 if path.endswith(".image") and s != approved_image:
                     findings.append(f"{path}: образ {s!r} не равен утверждённому digest")
-                if path.endswith(".service_account") and s != runtime_email:
-                    findings.append(f"{path}: job исполняется не от runtime SA арендатора ({s!r})")
+            findings += job_findings(addr, after, contract)
         if rtype == "google_cloud_scheduler_job":
             if after.get("paused") is not True:
                 findings.append(f"{addr}: расписание не на паузе")

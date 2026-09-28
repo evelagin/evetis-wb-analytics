@@ -14,11 +14,61 @@
   ],
   "bq_location": "EU",
   "contract_version": 1,
+  "control": {
+    "account_id": "sa-tenant-control",
+    "email": "sa-tenant-control@mpa-t-client-002.iam.gserviceaccount.com",
+    "grants": [
+      {
+        "condition": null,
+        "dataset_key": "ozon_raw",
+        "role": "organizations/1043233412973/roles/mpaSqlSourceRead"
+      },
+      {
+        "condition": null,
+        "dataset_key": "ref",
+        "role": "organizations/1043233412973/roles/mpaSqlSourceRead"
+      },
+      {
+        "condition": null,
+        "dataset_key": "tenant_locks",
+        "role": "organizations/1043233412973/roles/mpaTenantControlLease"
+      },
+      {
+        "condition": null,
+        "dataset_key": "tenant_ops",
+        "role": "organizations/1043233412973/roles/mpaSqlSourceRead"
+      },
+      {
+        "condition": null,
+        "dataset_key": "tenant_ops",
+        "role": "organizations/1043233412973/roles/mpaTenantControlAppend"
+      }
+    ],
+    "job": {
+      "env": {
+        "BQ_LOCATION": "EU",
+        "BQ_RAW_DATASET": "ozon_raw",
+        "BQ_REF_DATASET": "ref",
+        "ENABLED_ENTITIES": "ads_campaigns,ads_expense_daily,ads_sku_daily,catalog,clusters,fbo_postings,finance_accrual,prices,seller_info,stocks,supplies",
+        "GCP_PROJECT_ID": "mpa-t-client-001",
+        "OZON_SECRET_PERF_CLIENT_ID": "ozon-perf-client-id",
+        "OZON_SECRET_PERF_CLIENT_SECRET": "ozon-perf-client-secret",
+        "OZON_SECRET_SELLER_API_KEY": "ozon-seller-api-key",
+        "OZON_SECRET_SELLER_CLIENT_ID": "ozon-seller-client-id",
+        "STRICT_PAGE_CAPS": "1",
+        "TENANT_ID": "client_001",
+        "TENANT_LOCKS_DATASET": "tenant_locks",
+        "TENANT_OPS_DATASET": "tenant_ops"
+      },
+      "name": "tenant-control"
+    }
+  },
   "datasets": {
     "analytics_share": "analytics_share",
     "ozon_mart": "ozon_mart",
     "ozon_raw": "ozon_raw",
     "ref": "ref",
+    "tenant_locks": "tenant_locks",
     "tenant_ops": "tenant_ops"
   },
   "labels": {
@@ -49,7 +99,8 @@
             "OZON_SECRET_PERF_CLIENT_SECRET": "ozon-perf-client-secret",
             "OZON_SECRET_SELLER_API_KEY": "ozon-seller-api-key",
             "OZON_SECRET_SELLER_CLIENT_ID": "ozon-seller-client-id",
-            "STRICT_PAGE_CAPS": "1"
+            "STRICT_PAGE_CAPS": "1",
+            "TENANT_BINDING_REQUIRED": "1"
           },
           "schedule": "30 6 * * *",
           "scheduler": "ozon-daily",
@@ -70,7 +121,8 @@
             "OZON_SECRET_PERF_CLIENT_SECRET": "ozon-perf-client-secret",
             "OZON_SECRET_SELLER_API_KEY": "ozon-seller-api-key",
             "OZON_SECRET_SELLER_CLIENT_ID": "ozon-seller-client-id",
-            "STRICT_PAGE_CAPS": "1"
+            "STRICT_PAGE_CAPS": "1",
+            "TENANT_BINDING_REQUIRED": "1"
           },
           "schedule": "0 7,13,19 * * *",
           "scheduler": "ozon-fast",
@@ -90,7 +142,8 @@
             "OZON_SECRET_PERF_CLIENT_SECRET": "ozon-perf-client-secret",
             "OZON_SECRET_SELLER_API_KEY": "ozon-seller-api-key",
             "OZON_SECRET_SELLER_CLIENT_ID": "ozon-seller-client-id",
-            "STRICT_PAGE_CAPS": "1"
+            "STRICT_PAGE_CAPS": "1",
+            "TENANT_BINDING_REQUIRED": "1"
           },
           "schedule": "0 5 * * 1",
           "scheduler": "ozon-weekly",

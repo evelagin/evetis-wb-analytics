@@ -74,7 +74,16 @@ resource "google_bigquery_dataset" "this" {
     }
   }
 
-  depends_on = [google_project_service.this, google_service_account.sql_deployer]
+  # T5 (D1): control plane — роли организации только здесь, без условий (матрица control_identity).
+  dynamic "access" {
+    for_each = var.contract.control == null ? [] : [for g in var.contract.control.grants : g if g.dataset_key == each.key]
+    content {
+      role          = access.value.role
+      user_by_email = var.contract.control.email
+    }
+  }
+
+  depends_on = [google_project_service.this, google_service_account.sql_deployer, google_service_account.control]
 }
 
 # ── Деплоер SQL (T4.1) ─────────────────────────────────────────────────────
@@ -87,6 +96,22 @@ resource "google_service_account" "sql_deployer" {
   account_id   = var.contract.sql_deployer.account_id
   display_name = "VTS SQL deployer"
   description  = "Tenancy T4.1: views of the approved SQL package via Tables API; dataset ACL roles only"
+
+  depends_on = [google_project_service.this]
+}
+
+# ── Control plane арендатора (T5, D1) ────────────────────────────────────────
+# Проверка учётных данных, наблюдения identity, возможности, история, план и чекпойнты,
+# DQ, переходы автомата. Ролей на проекте нет (в т.ч. bigquery.jobUser: без jobs.create
+# журналы tenant_ops append-only на уровне IAM). Доступ — ACL датасетов выше и чтение 4
+# секретов (module.ozon). Записи в ref нет: привязку подтверждает только владелец.
+resource "google_service_account" "control" {
+  count = var.contract.control == null ? 0 : 1
+
+  project      = var.contract.project_id
+  account_id   = var.contract.control.account_id
+  display_name = "VTS tenant control plane"
+  description  = "Tenancy T5: credential validation, identity observations, lifecycle; dataset ACL roles only"
 
   depends_on = [google_project_service.this]
 }
@@ -122,7 +147,9 @@ module "ozon" {
   region     = var.contract.region
   tenant_id  = var.contract.tenant_id
   ozon       = var.contract.marketplaces.ozon
+  control    = var.contract.control
 
   # Датасеты ждут runtime SA (он в их ACL), поэтому модуль от датасетов и таблиц не зависит.
-  depends_on = [google_project_service.this]
+  # SA control создаётся в корне (он и в ACL датасетов); секреты модуля выдают ему accessor.
+  depends_on = [google_project_service.this, google_service_account.control]
 }

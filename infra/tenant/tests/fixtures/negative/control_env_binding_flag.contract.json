@@ -56,6 +56,7 @@
         "OZON_SECRET_SELLER_API_KEY": "ozon-seller-api-key",
         "OZON_SECRET_SELLER_CLIENT_ID": "ozon-seller-client-id",
         "STRICT_PAGE_CAPS": "1",
+        "TENANT_BINDING_REQUIRED": "1",
         "TENANT_ID": "client_001",
         "TENANT_LOCKS_DATASET": "tenant_locks",
         "TENANT_OPS_DATASET": "tenant_ops"
@@ -152,7 +153,7 @@
       },
       "raw_dataset_key": "ozon_raw",
       "ref_dataset_key": "ref",
-      "runtime_image": "europe-west1-docker.pkg.dev/mpa-platform/mpa-runtime/ozon-runtime:v1",
+      "runtime_image": "europe-west1-docker.pkg.dev/mpa-platform/mpa-runtime/ozon-runtime@sha256:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
       "secret_ids": {
         "performance_client_id": "ozon-perf-client-id",
         "performance_client_secret": "ozon-perf-client-secret",

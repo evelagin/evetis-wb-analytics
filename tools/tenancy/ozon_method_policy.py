@@ -29,6 +29,8 @@ import sys
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[2]
+if str(REPO) not in sys.path:
+    sys.path.insert(0, str(REPO))
 POLICY_FILE = REPO / "pipelines" / "ozon" / "runtime" / "seller_method_policy.json"
 
 # Глагол описания, меняющий состояние, — сильнейший признак.
@@ -114,7 +116,7 @@ def classify(path: str, summary: str) -> tuple[str, str]:
 
 def build(spec_path: Path, spec_date: str) -> dict:
     raw = spec_path.read_bytes()
-    spec = json.loads(raw)
+    spec = _parse(raw)
     methods = {}
     for p, it in sorted(spec["paths"].items()):
         for m, op in sorted(it.items()):
@@ -129,8 +131,14 @@ def build(spec_path: Path, spec_date: str) -> dict:
             "methods": methods}
 
 
+def _parse(text):
+    # Единый строгий разборщик: повтор ключа в политике мог бы спрятать метод изменения.
+    from tools.tenancy.validation import parse_tenant_json
+    return parse_tenant_json(text.decode("utf-8") if isinstance(text, bytes) else text)
+
+
 def load_policy(path: Path = POLICY_FILE) -> dict:
-    return json.loads(path.read_text(encoding="utf-8"))
+    return _parse(path.read_text(encoding="utf-8"))
 
 
 def check(policy: dict) -> list[str]:

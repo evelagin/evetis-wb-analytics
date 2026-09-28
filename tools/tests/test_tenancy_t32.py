@@ -53,7 +53,8 @@ def test_terraform_inputs_contract_shape_for_client_001():
     assert c["parent_folder"] == PL.TENANTS_FOLDER
     assert c["state"] == {"bucket": PL.STATE_BUCKET, "prefix": "tenants/client_001"}
     assert c["datasets"] == {"ozon_raw": "ozon_raw", "ref": "ref", "ozon_mart": "ozon_mart",
-                             "tenant_ops": "tenant_ops", "analytics_share": "analytics_share"}
+                             "tenant_ops": "tenant_ops", "analytics_share": "analytics_share",
+                                                  "tenant_locks": "tenant_locks"}
     assert c["scheduler_state"] == "PAUSED"
     assert c["labels"] == {"tenant": "client_001", "managed_by": "vts-tenant-infra"}
     ozon = c["marketplaces"]["ozon"]
@@ -350,6 +351,8 @@ def test_rendered_artifacts_contain_secret_names_only(tmp_path):
                 c = json.loads((tmp_path / TI.CONTRACT_FILE).read_text())["contract"]
                 facts = {PL.STATE_BUCKET, PL.load_runtime_release(REPO)["ozon"]}
                 facts |= {SI.role_name(r) for r in SI.SQL_ROLES}
+                from tools.tenancy import control_identity as CI     # T5: роли control plane
+                facts |= {SI.role_name(r) for r in CI.CONTROL_ROLES}
                 facts.add(SI.view_prefix_condition(c["project_id"], c["datasets"]["tenant_ops"])["expression"])
                 assert values <= facts, finding
     contract = json.loads((tmp_path / TI.CONTRACT_FILE).read_text())["contract"]

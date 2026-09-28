@@ -136,13 +136,49 @@ def negative_cases() -> dict[str, dict]:
              "condition": None})),
         "sql_deployer_condition_title_changed": _grant(base, lambda s: _tenant_ops_update(s)["condition"].update(
             title="anything")),
+        # T5 (D1): control plane — только свой SA, ровно матрица control_identity, без записи в ozon_raw и
+        # ref (привязку подтверждает только владелец), без условий; runtime — только с проверкой привязки.
+        "control_missing": _set(base, "control", None),
+        "control_other_account": _control(base, lambda c: c.update(account_id="sa-tenant-provisioner")),
+        "control_foreign_project_sa": _control(base, lambda c: c.update(
+            email="sa-tenant-control@" + N.derive_project_id("client_002") + ".iam.gserviceaccount.com")),
+        "control_writes_ref": _control(base, lambda c: c["grants"].append(
+            {"dataset_key": "ref", "role": _org_role(c, "mpaTenantControlAppend"), "condition": None})),
+        "control_writes_raw": _control(base, lambda c: c["grants"].append(
+            {"dataset_key": "ozon_raw", "role": _org_role(c, "mpaTenantControlAppend"), "condition": None})),
+        "control_reads_client_layer": _control(base, lambda c: c["grants"].append(
+            {"dataset_key": "analytics_share", "role": _org_role(c, "mpaSqlSourceRead"), "condition": None})),
+        "control_predefined_role": _control(base, lambda c: c["grants"][0].update(role="roles/bigquery.dataEditor")),
+        "control_conditional_grant": _control(base, lambda c: c["grants"][0].update(condition={
+            "title": "t", "description": "d", "expression": "true"})),
+        "control_job_renamed": _control(base, lambda c: c["job"].update(name="ozon-daily")),
+        "control_env_binding_flag": _control(base, lambda c: c["job"]["env"].update(TENANT_BINDING_REQUIRED="1")),
+        "runtime_job_without_binding_flag": _runtime_env(base, lambda e: e.pop("TENANT_BINDING_REQUIRED")),
     }
 
 
 def _project(base: dict, project_id: str) -> dict:
+    from tools.tenancy import control_identity as CI
     from tools.tenancy import sql_identity as SI
     doc = _set(base, "project_id", project_id)
     doc["sql_deployer"] = SI.contract_block(project_id, doc["datasets"])
+    doc["control"] = dict(copy.deepcopy(doc["control"]), email=CI.control_email(project_id))
+    return doc
+
+
+def _control(base: dict, mutate) -> dict:
+    doc = copy.deepcopy(base)
+    mutate(doc["control"])
+    return doc
+
+
+def _org_role(block: dict, role_id: str) -> str:
+    return block["grants"][0]["role"].rsplit("/", 1)[0] + "/" + role_id
+
+
+def _runtime_env(base: dict, mutate) -> dict:
+    doc = copy.deepcopy(base)
+    mutate(next(iter(doc["marketplaces"]["ozon"]["jobs"].values()))["env"])
     return doc
 
 

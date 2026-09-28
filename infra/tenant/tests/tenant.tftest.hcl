@@ -27,8 +27,8 @@ run "client_001_renders" {
     error_message = "client_001: проект или префикс state не из реестра"
   }
   assert {
-    condition     = length(google_bigquery_table.this) == 27 && toset(keys(google_bigquery_dataset.this)) == toset(["analytics_share", "ozon_mart", "ozon_raw", "ref", "tenant_ops"])
-    error_message = "client_001: ожидается 27 таблиц (15 ozon_raw, 5 ref, 7 tenant_ops) и пять датасетов T4"
+    condition     = length(google_bigquery_table.this) == 27 && toset(keys(google_bigquery_dataset.this)) == toset(["analytics_share", "ozon_mart", "ozon_raw", "ref", "tenant_locks", "tenant_ops"])
+    error_message = "client_001: ожидается 27 таблиц (15 ozon_raw, 5 ref, 7 tenant_ops) и шесть датасетов (T4 + tenant_locks T5)"
   }
   assert {
     condition     = output.ozon.jobs == tolist(["ozon-runtime-daily", "ozon-runtime-fast", "ozon-runtime-weekly"])
@@ -55,12 +55,12 @@ run "client_001_renders" {
     error_message = "идентичности выводятся детерминированно и известны на плане"
   }
   assert {
-    condition     = toset([for a in output.dataset_access["ozon_raw"] : "${a.role}|${a.special_group == null ? "" : a.special_group}|${a.user_by_email == null ? "" : a.user_by_email}"]) == toset(["OWNER|projectOwners|", "WRITER||sa-ozon-runtime@mpa-t-client-001.iam.gserviceaccount.com", "organizations/1043233412973/roles/mpaSqlSourceRead||sa-sql-deployer@mpa-t-client-001.iam.gserviceaccount.com"])
-    error_message = "ACL ozon_raw: ровно projectOwners OWNER, runtime SA WRITER и чтение деплоера SQL (T3.3: без создателя-провижионера)"
+    condition     = toset([for a in output.dataset_access["ozon_raw"] : "${a.role}|${a.special_group == null ? "" : a.special_group}|${a.user_by_email == null ? "" : a.user_by_email}"]) == toset(["OWNER|projectOwners|", "WRITER||sa-ozon-runtime@mpa-t-client-001.iam.gserviceaccount.com", "organizations/1043233412973/roles/mpaSqlSourceRead||sa-sql-deployer@mpa-t-client-001.iam.gserviceaccount.com", "organizations/1043233412973/roles/mpaSqlSourceRead||sa-tenant-control@mpa-t-client-001.iam.gserviceaccount.com"])
+    error_message = "ACL ozon_raw: ровно projectOwners OWNER, runtime SA WRITER, чтение деплоера SQL и control (T3.3: без создателя-провижионера)"
   }
   assert {
-    condition     = toset([for a in output.dataset_access["ref"] : "${a.role}|${a.special_group == null ? "" : a.special_group}|${a.user_by_email == null ? "" : a.user_by_email}"]) == toset(["OWNER|projectOwners|", "READER||sa-ozon-runtime@mpa-t-client-001.iam.gserviceaccount.com", "organizations/1043233412973/roles/mpaSqlSourceRead||sa-sql-deployer@mpa-t-client-001.iam.gserviceaccount.com"])
-    error_message = "ACL ref: ровно projectOwners OWNER, runtime SA READER и чтение деплоера SQL"
+    condition     = toset([for a in output.dataset_access["ref"] : "${a.role}|${a.special_group == null ? "" : a.special_group}|${a.user_by_email == null ? "" : a.user_by_email}"]) == toset(["OWNER|projectOwners|", "READER||sa-ozon-runtime@mpa-t-client-001.iam.gserviceaccount.com", "organizations/1043233412973/roles/mpaSqlSourceRead||sa-sql-deployer@mpa-t-client-001.iam.gserviceaccount.com", "organizations/1043233412973/roles/mpaSqlSourceRead||sa-tenant-control@mpa-t-client-001.iam.gserviceaccount.com"])
+    error_message = "ACL ref: ровно projectOwners OWNER, runtime SA READER, чтение деплоера SQL и control (записи control в ref нет)"
   }
   assert {
     condition     = !strcontains(jsonencode(output.dataset_access), "sa-tenant-provisioner") && !strcontains(jsonencode(output.dataset_access), "sa-ozon-scheduler")
@@ -83,8 +83,8 @@ run "client_001_renders" {
     error_message = "T4.1: analytics_share — деплоер создаёт и меняет, но НЕ читает строки; клиента нет"
   }
   assert {
-    condition     = toset([for a in output.dataset_access["tenant_ops"] : "${a.role}|${a.user_by_email == null ? "" : a.user_by_email}|${a.condition == null ? "" : a.condition}"]) == toset(["OWNER||", "organizations/1043233412973/roles/mpaSqlSourceRead|sa-sql-deployer@mpa-t-client-001.iam.gserviceaccount.com|", "organizations/1043233412973/roles/mpaSqlViewCreate|sa-sql-deployer@mpa-t-client-001.iam.gserviceaccount.com|", "organizations/1043233412973/roles/mpaSqlViewUpdate|sa-sql-deployer@mpa-t-client-001.iam.gserviceaccount.com|resource.type == \"bigquery.googleapis.com/Table\" && resource.service == \"bigquery.googleapis.com\" && resource.name.startsWith(\"projects/mpa-t-client-001/datasets/tenant_ops/tables/V_\")"])
-    error_message = "T4.1: tenant_ops — изменение деплоером только с условием V_* (7 таблиц платформы вне гранта)"
+    condition     = toset([for a in output.dataset_access["tenant_ops"] : "${a.role}|${a.user_by_email == null ? "" : a.user_by_email}|${a.condition == null ? "" : a.condition}"]) == toset(["OWNER||", "organizations/1043233412973/roles/mpaSqlSourceRead|sa-sql-deployer@mpa-t-client-001.iam.gserviceaccount.com|", "organizations/1043233412973/roles/mpaSqlViewCreate|sa-sql-deployer@mpa-t-client-001.iam.gserviceaccount.com|", "organizations/1043233412973/roles/mpaSqlViewUpdate|sa-sql-deployer@mpa-t-client-001.iam.gserviceaccount.com|resource.type == \"bigquery.googleapis.com/Table\" && resource.service == \"bigquery.googleapis.com\" && resource.name.startsWith(\"projects/mpa-t-client-001/datasets/tenant_ops/tables/V_\")", "organizations/1043233412973/roles/mpaSqlSourceRead|sa-tenant-control@mpa-t-client-001.iam.gserviceaccount.com|", "organizations/1043233412973/roles/mpaTenantControlAppend|sa-tenant-control@mpa-t-client-001.iam.gserviceaccount.com|"])
+    error_message = "T4.1/T5: tenant_ops — изменение деплоером только V_*; control читает и дописывает (без DML)"
   }
   assert {
     condition     = alltrue([for ds in ["ozon_raw", "ref"] : length([for a in output.dataset_access[ds] : a if a.user_by_email == "sa-sql-deployer@mpa-t-client-001.iam.gserviceaccount.com"]) == 1 && anytrue([for a in output.dataset_access[ds] : a.role == "organizations/1043233412973/roles/mpaSqlSourceRead" && a.user_by_email == "sa-sql-deployer@mpa-t-client-001.iam.gserviceaccount.com" && a.condition == null])])
@@ -97,6 +97,30 @@ run "client_001_renders" {
   assert {
     condition     = contains([for k, t in google_bigquery_table.this : k], "ref.SELLER_BINDING") && !contains([for k, t in google_bigquery_table.this : k], "tenant_ops.SELLER_BINDING")
     error_message = "подтверждённая привязка к кабинету живёт в ref (runtime только читает), а не в tenant_ops"
+  }
+  assert {
+    condition     = toset([for a in output.dataset_access["tenant_locks"] : "${a.role}|${a.user_by_email == null ? "" : a.user_by_email}|${a.condition == null ? "" : a.condition}"]) == toset(["OWNER||", "organizations/1043233412973/roles/mpaTenantControlLease|sa-tenant-control@mpa-t-client-001.iam.gserviceaccount.com|"])
+    error_message = "T5: tenant_locks — только аренда control (create/get/list), больше никого"
+  }
+  assert {
+    condition     = google_service_account.control[0].account_id == "sa-tenant-control" && google_service_account.control[0].project == "mpa-t-client-001" && output.ozon.control_sa == "sa-tenant-control@mpa-t-client-001.iam.gserviceaccount.com" && output.ozon.control_job == "tenant-control"
+    error_message = "T5: control — свой SA в проекте арендатора и job tenant-control"
+  }
+  assert {
+    condition     = output.ozon.control_cmd == tolist(["python", "lifecycle.py", "status"]) && output.ozon.control_env["GCP_PROJECT_ID"] == "mpa-t-client-001" && !contains(keys(output.ozon.control_env), "TENANT_BINDING_REQUIRED")
+    error_message = "T5: tenant-control — точка входа lifecycle.py status, окружение арендатора"
+  }
+  assert {
+    condition     = alltrue([for k, e in output.ozon.env : e["TENANT_BINDING_REQUIRED"] == "1"])
+    error_message = "T5: каждый job runtime проверяет привязку кабинета (TENANT_BINDING_REQUIRED=1)"
+  }
+  assert {
+    condition     = !anytrue([for ds in ["ozon_mart", "analytics_share"] : strcontains(jsonencode(output.dataset_access[ds]), "sa-tenant-control")]) && !strcontains(jsonencode(output.dataset_access["ref"]), "mpaTenantControlAppend")
+    error_message = "T5: control не видит витрину и клиентский слой и не пишет в ref (привязку подтверждает только владелец)"
+  }
+  assert {
+    condition     = length(module.ozon[0].scheduler_retry) == 3 && !contains(keys(module.ozon[0].scheduler_retry), "tenant-control")
+    error_message = "T5: у tenant-control нет расписания"
   }
 }
 
@@ -122,12 +146,12 @@ run "client_002_same_code_different_tenant" {
     error_message = "client_002: job'ы обязаны смотреть в свой проект"
   }
   assert {
-    condition     = toset([for a in output.dataset_access["ozon_raw"] : "${a.role}|${a.special_group == null ? "" : a.special_group}|${a.user_by_email == null ? "" : a.user_by_email}"]) == toset(["OWNER|projectOwners|", "WRITER||sa-ozon-runtime@mpa-t-client-002.iam.gserviceaccount.com", "organizations/1043233412973/roles/mpaSqlSourceRead||sa-sql-deployer@mpa-t-client-002.iam.gserviceaccount.com"])
-    error_message = "ACL ozon_raw: ровно projectOwners OWNER, runtime SA WRITER и чтение деплоера SQL (T3.3: без создателя-провижионера)"
+    condition     = toset([for a in output.dataset_access["ozon_raw"] : "${a.role}|${a.special_group == null ? "" : a.special_group}|${a.user_by_email == null ? "" : a.user_by_email}"]) == toset(["OWNER|projectOwners|", "WRITER||sa-ozon-runtime@mpa-t-client-002.iam.gserviceaccount.com", "organizations/1043233412973/roles/mpaSqlSourceRead||sa-sql-deployer@mpa-t-client-002.iam.gserviceaccount.com", "organizations/1043233412973/roles/mpaSqlSourceRead||sa-tenant-control@mpa-t-client-002.iam.gserviceaccount.com"])
+    error_message = "ACL ozon_raw: ровно projectOwners OWNER, runtime SA WRITER, чтение деплоера SQL и control (T3.3: без создателя-провижионера)"
   }
   assert {
-    condition     = toset([for a in output.dataset_access["ref"] : "${a.role}|${a.special_group == null ? "" : a.special_group}|${a.user_by_email == null ? "" : a.user_by_email}"]) == toset(["OWNER|projectOwners|", "READER||sa-ozon-runtime@mpa-t-client-002.iam.gserviceaccount.com", "organizations/1043233412973/roles/mpaSqlSourceRead||sa-sql-deployer@mpa-t-client-002.iam.gserviceaccount.com"])
-    error_message = "ACL ref: ровно projectOwners OWNER, runtime SA READER и чтение деплоера SQL"
+    condition     = toset([for a in output.dataset_access["ref"] : "${a.role}|${a.special_group == null ? "" : a.special_group}|${a.user_by_email == null ? "" : a.user_by_email}"]) == toset(["OWNER|projectOwners|", "READER||sa-ozon-runtime@mpa-t-client-002.iam.gserviceaccount.com", "organizations/1043233412973/roles/mpaSqlSourceRead||sa-sql-deployer@mpa-t-client-002.iam.gserviceaccount.com", "organizations/1043233412973/roles/mpaSqlSourceRead||sa-tenant-control@mpa-t-client-002.iam.gserviceaccount.com"])
+    error_message = "ACL ref: ровно projectOwners OWNER, runtime SA READER, чтение деплоера SQL и control (записи control в ref нет)"
   }
   assert {
     condition     = !strcontains(jsonencode(output.dataset_access), "sa-tenant-provisioner") && !strcontains(jsonencode(output.dataset_access), "sa-ozon-scheduler")
@@ -142,8 +166,8 @@ run "client_002_same_code_different_tenant" {
     error_message = "T4.1: analytics_share — деплоер создаёт и меняет, но НЕ читает строки; клиента нет"
   }
   assert {
-    condition     = toset([for a in output.dataset_access["tenant_ops"] : "${a.role}|${a.user_by_email == null ? "" : a.user_by_email}|${a.condition == null ? "" : a.condition}"]) == toset(["OWNER||", "organizations/1043233412973/roles/mpaSqlSourceRead|sa-sql-deployer@mpa-t-client-002.iam.gserviceaccount.com|", "organizations/1043233412973/roles/mpaSqlViewCreate|sa-sql-deployer@mpa-t-client-002.iam.gserviceaccount.com|", "organizations/1043233412973/roles/mpaSqlViewUpdate|sa-sql-deployer@mpa-t-client-002.iam.gserviceaccount.com|resource.type == \"bigquery.googleapis.com/Table\" && resource.service == \"bigquery.googleapis.com\" && resource.name.startsWith(\"projects/mpa-t-client-002/datasets/tenant_ops/tables/V_\")"])
-    error_message = "T4.1: tenant_ops — изменение деплоером только с условием V_* (7 таблиц платформы вне гранта)"
+    condition     = toset([for a in output.dataset_access["tenant_ops"] : "${a.role}|${a.user_by_email == null ? "" : a.user_by_email}|${a.condition == null ? "" : a.condition}"]) == toset(["OWNER||", "organizations/1043233412973/roles/mpaSqlSourceRead|sa-sql-deployer@mpa-t-client-002.iam.gserviceaccount.com|", "organizations/1043233412973/roles/mpaSqlViewCreate|sa-sql-deployer@mpa-t-client-002.iam.gserviceaccount.com|", "organizations/1043233412973/roles/mpaSqlViewUpdate|sa-sql-deployer@mpa-t-client-002.iam.gserviceaccount.com|resource.type == \"bigquery.googleapis.com/Table\" && resource.service == \"bigquery.googleapis.com\" && resource.name.startsWith(\"projects/mpa-t-client-002/datasets/tenant_ops/tables/V_\")", "organizations/1043233412973/roles/mpaSqlSourceRead|sa-tenant-control@mpa-t-client-002.iam.gserviceaccount.com|", "organizations/1043233412973/roles/mpaTenantControlAppend|sa-tenant-control@mpa-t-client-002.iam.gserviceaccount.com|"])
+    error_message = "T4.1/T5: tenant_ops — изменение деплоером только V_*; control читает и дописывает (без DML)"
   }
   assert {
     condition     = alltrue([for ds in ["ozon_raw", "ref"] : length([for a in output.dataset_access[ds] : a if a.user_by_email == "sa-sql-deployer@mpa-t-client-002.iam.gserviceaccount.com"]) == 1 && anytrue([for a in output.dataset_access[ds] : a.role == "organizations/1043233412973/roles/mpaSqlSourceRead" && a.user_by_email == "sa-sql-deployer@mpa-t-client-002.iam.gserviceaccount.com" && a.condition == null])])
@@ -152,6 +176,30 @@ run "client_002_same_code_different_tenant" {
   assert {
     condition     = google_service_account.sql_deployer.account_id == "sa-sql-deployer" && google_service_account.sql_deployer.project == "mpa-t-client-002"
     error_message = "T4.1: SA деплоера — в проекте арендатора"
+  }
+  assert {
+    condition     = toset([for a in output.dataset_access["tenant_locks"] : "${a.role}|${a.user_by_email == null ? "" : a.user_by_email}|${a.condition == null ? "" : a.condition}"]) == toset(["OWNER||", "organizations/1043233412973/roles/mpaTenantControlLease|sa-tenant-control@mpa-t-client-002.iam.gserviceaccount.com|"])
+    error_message = "T5: tenant_locks — только аренда control (create/get/list), больше никого"
+  }
+  assert {
+    condition     = google_service_account.control[0].account_id == "sa-tenant-control" && google_service_account.control[0].project == "mpa-t-client-002" && output.ozon.control_sa == "sa-tenant-control@mpa-t-client-002.iam.gserviceaccount.com" && output.ozon.control_job == "tenant-control"
+    error_message = "T5: control — свой SA в проекте арендатора и job tenant-control"
+  }
+  assert {
+    condition     = output.ozon.control_cmd == tolist(["python", "lifecycle.py", "status"]) && output.ozon.control_env["GCP_PROJECT_ID"] == "mpa-t-client-002" && !contains(keys(output.ozon.control_env), "TENANT_BINDING_REQUIRED")
+    error_message = "T5: tenant-control — точка входа lifecycle.py status, окружение арендатора"
+  }
+  assert {
+    condition     = alltrue([for k, e in output.ozon.env : e["TENANT_BINDING_REQUIRED"] == "1"])
+    error_message = "T5: каждый job runtime проверяет привязку кабинета (TENANT_BINDING_REQUIRED=1)"
+  }
+  assert {
+    condition     = !anytrue([for ds in ["ozon_mart", "analytics_share"] : strcontains(jsonencode(output.dataset_access[ds]), "sa-tenant-control")]) && !strcontains(jsonencode(output.dataset_access["ref"]), "mpaTenantControlAppend")
+    error_message = "T5: control не видит витрину и клиентский слой и не пишет в ref (привязку подтверждает только владелец)"
+  }
+  assert {
+    condition     = length(module.ozon[0].scheduler_retry) == 3 && !contains(keys(module.ozon[0].scheduler_retry), "tenant-control")
+    error_message = "T5: у tenant-control нет расписания"
   }
 }
 
@@ -596,6 +644,94 @@ run "contract_rejects_sql_deployer_condition_title_changed" {
   command = plan
   variables {
     contract = jsondecode(file("tests/fixtures/negative/sql_deployer_condition_title_changed.contract.json"))
+  }
+  expect_failures = [var.contract]
+}
+
+run "contract_rejects_control_missing" {
+  command = plan
+  variables {
+    contract = jsondecode(file("tests/fixtures/negative/control_missing.contract.json"))
+  }
+  expect_failures = [var.contract]
+}
+
+run "contract_rejects_control_other_account" {
+  command = plan
+  variables {
+    contract = jsondecode(file("tests/fixtures/negative/control_other_account.contract.json"))
+  }
+  expect_failures = [var.contract]
+}
+
+run "contract_rejects_control_foreign_project_sa" {
+  command = plan
+  variables {
+    contract = jsondecode(file("tests/fixtures/negative/control_foreign_project_sa.contract.json"))
+  }
+  expect_failures = [var.contract]
+}
+
+run "contract_rejects_control_writes_ref" {
+  command = plan
+  variables {
+    contract = jsondecode(file("tests/fixtures/negative/control_writes_ref.contract.json"))
+  }
+  expect_failures = [var.contract]
+}
+
+run "contract_rejects_control_writes_raw" {
+  command = plan
+  variables {
+    contract = jsondecode(file("tests/fixtures/negative/control_writes_raw.contract.json"))
+  }
+  expect_failures = [var.contract]
+}
+
+run "contract_rejects_control_reads_client_layer" {
+  command = plan
+  variables {
+    contract = jsondecode(file("tests/fixtures/negative/control_reads_client_layer.contract.json"))
+  }
+  expect_failures = [var.contract]
+}
+
+run "contract_rejects_control_predefined_role" {
+  command = plan
+  variables {
+    contract = jsondecode(file("tests/fixtures/negative/control_predefined_role.contract.json"))
+  }
+  expect_failures = [var.contract]
+}
+
+run "contract_rejects_control_conditional_grant" {
+  command = plan
+  variables {
+    contract = jsondecode(file("tests/fixtures/negative/control_conditional_grant.contract.json"))
+  }
+  expect_failures = [var.contract]
+}
+
+run "contract_rejects_control_job_renamed" {
+  command = plan
+  variables {
+    contract = jsondecode(file("tests/fixtures/negative/control_job_renamed.contract.json"))
+  }
+  expect_failures = [var.contract]
+}
+
+run "contract_rejects_control_env_binding_flag" {
+  command = plan
+  variables {
+    contract = jsondecode(file("tests/fixtures/negative/control_env_binding_flag.contract.json"))
+  }
+  expect_failures = [var.contract]
+}
+
+run "contract_rejects_runtime_job_without_binding_flag" {
+  command = plan
+  variables {
+    contract = jsondecode(file("tests/fixtures/negative/runtime_job_without_binding_flag.contract.json"))
   }
   expect_failures = [var.contract]
 }
