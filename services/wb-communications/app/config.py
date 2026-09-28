@@ -170,6 +170,22 @@ class Settings:
     wb_questions_first_run_max: int = field(
         default_factory=lambda: int(os.environ.get("WB_QUESTIONS_FIRST_RUN_MAX", "20"))
     )
+    # Single-question read used to VERIFY a publish (GET /api/v1/question?id=).
+    wb_question_path: str = field(
+        default_factory=lambda: os.environ.get("WB_QUESTION_PATH", "/api/v1/question")
+    )
+    # Bounded read-back right after a question write (inside the webhook call).
+    wb_question_verify_attempts: int = field(
+        default_factory=lambda: int(os.environ.get("WB_QUESTION_VERIFY_ATTEMPTS", "3"))
+    )
+    wb_question_verify_delay_seconds: float = field(
+        default_factory=lambda: float(os.environ.get("WB_QUESTION_VERIFY_DELAY_SECONDS", "2.0"))
+    )
+    # How long an ACCEPTED-but-not-visible answer is re-verified on /poll (WB
+    # pre-moderates answers) before it is escalated as PUBLISH_UNKNOWN.
+    wb_question_verify_window_hours: float = field(
+        default_factory=lambda: float(os.environ.get("WB_QUESTION_VERIFY_WINDOW_HOURS", "48"))
+    )
     wb_min_interval_seconds: float = field(
         default_factory=lambda: float(os.environ.get("WB_MIN_INTERVAL_SECONDS", "0.6"))
     )

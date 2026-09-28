@@ -12,6 +12,9 @@ dict and are final (HTTP 200).
 from __future__ import annotations
 
 import hashlib
+import json
+import time
+import uuid
 from dataclasses import dataclass, replace
 from datetime import datetime, timedelta, timezone
 from typing import Any, Optional
@@ -21,12 +24,13 @@ from app.domain.exceptions import (
     InvalidTransition,
     NotFound,
     WBApiError,
+    WBPublishOutcomeUnknown,
     is_transient,
 )
 from app.communication_engine.constants import CommunicationType
 from app.domain.models import Question, Review
 from app.domain.statuses import EventType, Status
-from app.utils.logging import get_logger, log_event
+from app.utils.logging import get_logger, log_event, redact
 from app.utils.security import is_allowed
 from app.utils.text import (
     TELEGRAM_MSG_SOFT_LIMIT,
@@ -264,7 +268,9 @@ def _emit_event(deps: Deps, doc: dict, doc_id: str, event_type: EventType,
         "answer_version": answer_version or None, "latency_ms": doc.get("openai_latency_ms"),
         "token_input": usage.get("input_tokens"), "token_output": usage.get("output_tokens"),
         "error_code": (str(extra["error_code"]) if extra.get("error_code") is not None else None),
-        "error_message": (extra.get("error_message") or "")[:500] or None, "payload_json": None,
+        "error_message": (extra.get("error_message") or "")[:500] or None,
+        "payload_json": (json.dumps(extra["payload"], ensure_ascii=False, default=str)
+                         if extra.get("payload") else None),
     }
     # Persist to the Firestore outbox; delivery to BigQuery happens in flush_events.
     try:
@@ -361,10 +367,12 @@ def _generate_answer(deps: Deps, subject, communication_type=CommunicationType.R
     """Return ``(gen, v2_meta)``. ``v2_meta`` is None for reviews_v1, else a dict
     with the flags to surface on the card.
 
-    Reviews use v2 only when it is primary (else reviews_v1); questions ALWAYS use
-    v2 (reviews_v1 has no question template). For reviews, a NON-transient v2
-    prompt-build failure falls back to reviews_v1 so a v2 bug can never do worse
-    than production. OpenAI errors propagate as before.
+    Reviews use v2 only when it is primary (else reviews_v1 — the explicit
+    config rollback path); questions ALWAYS use v2 (reviews_v1 has no question
+    template). A v2 prompt-build failure is an item error retried on the next
+    poll — there is NO silent fallback to reviews_v1 (WP11: its prompt carries
+    unsourced product facts and the «обострение — нормальная реакция» advice).
+    OpenAI errors propagate as before.
     """
     is_question = communication_type == CommunicationType.QUESTION
     use_v2 = deps.engine is not None and (
@@ -375,18 +383,28 @@ def _generate_answer(deps: Deps, subject, communication_type=CommunicationType.R
             raise RuntimeError("questions require the v2 engine (COMMUNICATION_ENGINE_V2_ENABLED)")
         return _generate_reviews_v1(deps, subject), None
 
-    try:
-        bundle = deps.engine.build_prompt(subject, communication_type)
-    except Exception as exc:  # noqa: BLE001
-        if is_question:
-            raise  # no reviews_v1 fallback for questions -> item error, retried next poll
-        log_event(logger, "warning", "v2 primary build_prompt failed; falling back to reviews_v1",
-                  error=type(exc).__name__)
-        return _generate_reviews_v1(deps, subject), {"flags": [f"v2 недоступен ({type(exc).__name__}), ответ от reviews_v1"]}
-
+    bundle = deps.engine.build_prompt(subject, communication_type)  # failure -> item error
     gen = deps.openai.generate_answer(bundle.system, bundle.user)  # OpenAI errors propagate
     gen = replace(gen, prompt_version=bundle.prompt_version)  # record the ENGINE version
     return gen, {"flags": _v2_flags(deps, subject, communication_type, bundle, gen)}
+
+
+def _manual_text_flags(deps: Deps, doc: dict, text: str) -> list[str]:
+    """Run the SAME validators the AI draft gets over operator-typed text (WP11).
+    Advisory for now (surfaced on the card), exactly like the AI draft flags."""
+    if deps.engine is None:
+        return []
+    try:
+        subject, communication_type = _subject_from_doc(doc)
+        context = deps.engine.build_context(subject, communication_type)
+        result = deps.engine.validate(text, context)
+        if not result.ok:
+            details = "; ".join(sorted({(i.detail or i.message) for i in result.errors}))
+            return [f"валидатор (ручной текст): {details}"]
+    except Exception as exc:  # noqa: BLE001 — a validator fault must not block the edit
+        log_event(logger, "warning", "manual-text validation error (non-blocking)",
+                  error=type(exc).__name__)
+    return []
 
 
 def _card_with_flags(card_text: str, v2_meta: Optional[dict]) -> str:
@@ -507,6 +525,7 @@ def _run_questions(deps: Deps) -> dict:
     ``wb_questions_first_run_max`` so the first run does not flood Telegram with
     the historical backlog — unprocessed questions stay unanswered on WB and are
     picked up on later polls (newest first)."""
+    reverified = _reverify_accepted_questions(deps)
     questions = deps.wb.iter_unanswered_questions()
     fetched = len(questions)
     processed = skipped = errors = 0
@@ -540,9 +559,45 @@ def _run_questions(deps: Deps) -> dict:
                   cap=cap, fetched=fetched)
     flush_events(deps)
     summary = {"fetched": fetched, "processed": processed, "skipped": skipped,
-               "errors": errors, "capped": capped}
+               "errors": errors, "capped": capped, "reverified": reverified}
     logger.info("poll questions done %s", summary)
     return summary
+
+
+def _reverify_accepted_questions(deps: Deps, limit: int = 20) -> dict:
+    """Re-read questions whose answer WB ACCEPTED but did not yet show (WB
+    pre-moderates answers). Read-only towards WB — never re-sends. Resolves each
+    to PUBLISHED (answer visible and ours), ANSWERED_EXTERNALLY (a different
+    answer is there) or, after the verification window, PUBLISH_UNKNOWN."""
+    counts = {"checked": 0, "verified": 0, "external": 0, "unknown": 0, "pending": 0, "errors": 0}
+    window = timedelta(hours=float(getattr(deps.settings, "wb_question_verify_window_hours", 48)))
+    for doc_id, doc in deps.repo.list_by_status(Status.PUBLISH_ACCEPTED.value, limit):
+        if doc.get("entity_type") != "question":
+            continue
+        counts["checked"] += 1
+        text = clean_answer(doc.get("final_answer") or doc.get("ai_answer"))
+        trace = _new_trace(doc_id, doc, phase="reverify", state_before=Status.PUBLISH_ACCEPTED.value)
+        try:
+            outcome = _verify_question(deps, doc["source_id"], text, trace, attempts=1)
+            if outcome == "not_visible":
+                # Older / recovered docs may lack publish_accepted_at: fall back to
+                # the last known publish/update time; none at all = window expired.
+                accepted_at = _parse_ts(doc.get("publish_accepted_at")
+                                        or doc.get("published_at") or doc.get("updated_at"))
+                if accepted_at is not None and _now() - accepted_at < window:
+                    counts["pending"] += 1
+                    continue
+                outcome = "window_expired"
+            status = _finish_question(deps, doc_id, doc, text, outcome, trace,
+                                      chat=doc.get("telegram_chat_id"),
+                                      message_id=doc.get("telegram_message_id"), user_id=None,
+                                      accepted=True)
+            counts[{"published": "verified", "answered_externally": "external"}.get(status, "unknown")] += 1
+        except Exception as exc:  # noqa: BLE001 — one item must not break the poll
+            counts["errors"] += 1
+            log_event(logger, "warning", "question re-verification failed",
+                      doc_id=doc_id, error=type(exc).__name__)
+    return counts
 
 
 # --------------------------------------------------------------------------- #
@@ -627,10 +682,11 @@ def _publish(deps: Deps, doc_id, chat, message_id, user_id) -> dict:
         return {"status": "not_found"}
 
     # Crash recovery: a previous publish held the lease and the process died
-    # BEFORE mark_published. Because the WB PATCH idempotency is NOT yet confirmed
-    # against the live Swagger, we must NOT blindly re-publish (risk of a second
-    # public answer). Require explicit verification instead of guessing.
-    if doc.get("recovered_from_publishing") and deps.settings.wb_verify_before_publish:
+    # BEFORE mark_published. For reviews there is no read-back here, so we must
+    # NOT blindly re-publish (risk of a second public answer) — ask the operator.
+    # Questions are safe: _publish_question reads WB state before any write.
+    if (doc.get("recovered_from_publishing") and deps.settings.wb_verify_before_publish
+            and not is_question):
         deps.repo.mark_publish_failed(doc_id, "recovered_lease",
                                       "publishing lease recovered — verify WB state before re-publish")
         _sync_current(deps, doc_id, doc)
@@ -653,11 +709,32 @@ def _publish(deps: Deps, doc_id, chat, message_id, user_id) -> dict:
         )
         return {"status": "invalid_length"}
 
+    if is_question:
+        return _publish_question(deps, doc_id, doc, text, chat, message_id, user_id)
+
     try:
-        if is_question:
-            wb_resp = deps.wb.publish_question_answer(doc["source_id"], text)
-        else:
-            wb_resp = deps.wb.publish_answer(doc["source_id"], text)
+        wb_resp = deps.wb.publish_answer(doc["source_id"], text)
+    except WBPublishOutcomeUnknown as exc:
+        # The POST may have landed: never re-send blindly (duplicate public answer).
+        trace = _new_trace(doc_id, doc, phase="publish", state_before=Status.PUBLISHING.value)
+        trace.update(http_status=exc.status_code, error_class=type(exc).__name__,
+                     final_publication_state=Status.PUBLISH_UNKNOWN.value)
+        deps.repo.record_publication(doc_id, Status.PUBLISH_UNKNOWN.value,
+                                     {"last_error_code": exc.status_code,
+                                      "last_error_message": str(exc)[:500]}, trace)
+        after = _sync_current(deps, doc_id, doc)
+        _emit_event(deps, after, doc_id, EventType.PUBLISH_UNKNOWN, best_effort=False,
+                    status_before=Status.PUBLISHING.value, status_after=Status.PUBLISH_UNKNOWN.value,
+                    telegram_user_id=user_id, error_code=exc.status_code, error_message=str(exc),
+                    attempt=trace["publication_attempt_id"], payload=trace)
+        deps.telegram.edit_message_text(
+            chat, message_id,
+            "⚠️ <b>Результат публикации неизвестен</b>\n\nWB не подтвердил приём ответа, "
+            "повторная отправка не выполнялась. Проверьте отзыв в кабинете WB; если ответа нет — "
+            "нажмите «Опубликовать» снова.",
+            build_keyboard(doc_id, retry=True),
+        )
+        return {"status": "publish_unknown", "code": exc.status_code}
     except WBApiError as exc:
         deps.repo.mark_publish_failed(doc_id, exc.status_code, str(exc))
         after = _sync_current(deps, doc_id, doc)
@@ -678,6 +755,222 @@ def _publish(deps: Deps, doc_id, chat, message_id, user_id) -> dict:
                 telegram_user_id=user_id)
     deps.telegram.edit_message_text(chat, message_id, f"✅ <b>Опубликовано</b>\n\n{escape_html(text)}", None)
     return {"status": "published"}
+
+
+# --------------------------------------------------------------------------- #
+# Question publication: read-before-write, write, bounded read-back
+# --------------------------------------------------------------------------- #
+def _now_iso() -> str:
+    return _now().isoformat()
+
+
+def _parse_ts(value) -> Optional[datetime]:
+    if not value:
+        return None
+    try:
+        ts = datetime.fromisoformat(str(value))
+    except ValueError:
+        return None
+    return ts if ts.tzinfo else ts.replace(tzinfo=timezone.utc)
+
+
+def _norm(text) -> str:
+    return " ".join(str(text or "").split())
+
+
+def _wb_answer_text(question: dict) -> Optional[str]:
+    """The answer text currently on WB, or None when the question is unanswered."""
+    answer = (question or {}).get("answer")
+    if isinstance(answer, dict) and _norm(answer.get("text")):
+        return answer.get("text")
+    return None
+
+
+def _new_trace(doc_id: str, doc: dict, *, phase: str, state_before: str) -> dict:
+    """One publication/verification record. Holds hashes and safe excerpts only:
+    never the auth header, never a token (redacted), never the full answer text."""
+    return {
+        "publication_attempt_id": uuid.uuid4().hex,
+        "phase": phase,
+        "communication_id": doc_id,
+        "entity_type": doc.get("entity_type", "review"),
+        "wb_source_id": doc.get("source_id", ""),
+        "local_state_before": state_before,
+        "started_at": _now_iso(),
+        "verification_attempts": 0,
+        "verification_result": None,
+        "final_publication_state": None,
+        "error_class": None,
+    }
+
+
+def _verify_question(deps: Deps, question_id: str, text: str, trace: dict,
+                     attempts: Optional[int] = None) -> str:
+    """Read the question back from WB (bounded; reads only, never writes).
+
+    Returns ``verified`` (our answer is on WB), ``answered_externally`` (another
+    answer is there), ``not_visible`` (no answer yet — e.g. WB pre-moderation) or
+    ``verify_error`` (WB could not be read)."""
+    if attempts is None:
+        attempts = max(1, int(getattr(deps.settings, "wb_question_verify_attempts", 3)))
+    delay = float(getattr(deps.settings, "wb_question_verify_delay_seconds", 2.0))
+    result = "not_visible"
+    for i in range(attempts):
+        if i and delay > 0:
+            time.sleep(delay)
+        trace["verification_attempts"] += 1
+        try:
+            current = deps.wb.get_question(question_id)
+        except WBApiError as exc:
+            result = "verify_error"
+            trace["verify_error_code"] = exc.status_code
+            continue
+        on_wb = _wb_answer_text(current)
+        if on_wb is None:
+            result = "not_visible"
+            continue
+        result = "verified" if _norm(on_wb) == _norm(text) else "answered_externally"
+        break
+    trace["verification_result"] = result
+    return result
+
+
+# Operator-facing texts. Only VERIFIED may say «Опубликовано».
+_Q_MSG = {
+    "published": "✅ <b>Опубликовано</b> — ответ подтверждён на Wildberries\n\n{text}",
+    "publish_accepted": ("⏳ <b>Отправлено в WB, публикация ещё не подтверждена</b>\n\n"
+                         "WB принял ответ, но на вопросе его пока нет (ответы продавцов проходят "
+                         "модерацию WB). Статус проверяется автоматически при каждом опросе.\n\n{text}"),
+    "publish_unknown": ("⚠️ <b>Публикация не подтверждена</b>\n\nОтвет на WB не найден, повторная "
+                        "отправка не выполнялась. Нажмите «Опубликовать»: сервис сначала проверит "
+                        "вопрос на WB и отправит ответ, только если его там нет.\n\n{text}"),
+    "answered_externally": ("ℹ️ <b>На вопрос уже есть другой ответ на WB</b> (например, из кабинета). "
+                            "Наш текст не отправлялся.\n\n{text}"),
+}
+_Q_EVENT = {
+    "published": EventType.PUBLISHED,
+    "publish_accepted": EventType.PUBLISH_ACCEPTED,
+    "publish_unknown": EventType.PUBLISH_UNKNOWN,
+    "answered_externally": EventType.ANSWERED_EXTERNALLY,
+}
+
+
+def _finish_question(deps: Deps, doc_id: str, doc: dict, text: str, outcome: str, trace: dict,
+                     *, chat, message_id, user_id, accepted: bool) -> str:
+    """Map a verification outcome to the final state, persist it with the trace,
+    emit the event and tell the operator. Returns the new status."""
+    if outcome == "verified":
+        status = Status.PUBLISHED.value
+    elif outcome == "answered_externally":
+        status = Status.ANSWERED_EXTERNALLY.value
+    elif accepted and outcome in ("not_visible", "verify_error"):
+        status = Status.PUBLISH_ACCEPTED.value
+    else:  # write outcome unknown and not visible, or accepted window expired
+        status = Status.PUBLISH_UNKNOWN.value
+
+    now = _now_iso()
+    fields: dict = {"publication_state": status}
+    if status == Status.PUBLISHED.value:
+        fields.update(published_at=now, verified_at=now)
+        if user_id is not None:
+            fields["published_by_telegram_user_id"] = str(user_id)
+    elif status == Status.PUBLISH_ACCEPTED.value:
+        fields["publish_accepted_at"] = doc.get("publish_accepted_at") or now
+        if user_id is not None:
+            fields["published_by_telegram_user_id"] = str(user_id)
+    trace.update(final_publication_state=status, local_state_after=status, finished_at=now)
+    deps.repo.record_publication(doc_id, status, fields, trace)
+    after = _sync_current(deps, doc_id, doc)
+    _emit_event(deps, after, doc_id, _Q_EVENT[status], best_effort=False,
+                status_before=trace.get("local_state_before", ""), status_after=status,
+                telegram_user_id=user_id, attempt=trace["publication_attempt_id"], payload=trace)
+    keyboard = build_keyboard(doc_id, retry=True) if status == Status.PUBLISH_UNKNOWN.value else None
+    if chat and message_id:
+        deps.telegram.edit_message_text(chat, message_id,
+                                        _Q_MSG[status].format(text=escape_html(text)), keyboard)
+    log_event(logger, "info", "question publication outcome", doc_id=doc_id, status=status,
+              attempt=trace["publication_attempt_id"], verification=trace.get("verification_result"),
+              http_status=trace.get("http_status"))
+    return status
+
+
+def _publish_question(deps: Deps, doc_id: str, doc: dict, text: str, chat, message_id, user_id) -> dict:
+    """Publish a WB question answer without false success and without duplicates.
+
+    1. read WB first — already answered? then no write (idempotent re-tap,
+       crashed-lease recovery, answers typed in the WB cabinet);
+    2. PATCH with the official body (``answer.text``); 2xx = ACCEPTED only;
+    3. bounded read-back — only a visible, matching answer is PUBLISHED.
+    A write whose outcome is unknown is never repeated automatically.
+    """
+    qid = doc["source_id"]
+    trace = _new_trace(doc_id, doc, phase="publish", state_before=Status.PUBLISHING.value)
+    trace.update(endpoint=deps.settings.wb_questions_path,
+                 method=deps.settings.wb_question_answer_method)
+    try:
+        current = deps.wb.get_question(qid)
+    except WBApiError as exc:
+        # Cannot see WB -> do not write blind. Stays actionable.
+        trace.update(precheck="error", error_class=type(exc).__name__, http_status=exc.status_code,
+                     final_publication_state=Status.PUBLISH_FAILED.value)
+        deps.repo.record_publication(doc_id, Status.PUBLISH_FAILED.value,
+                                     {"last_error_code": exc.status_code,
+                                      "last_error_message": f"precheck failed: {exc}"[:500]}, trace)
+        after = _sync_current(deps, doc_id, doc)
+        _emit_event(deps, after, doc_id, EventType.FAILED, best_effort=False,
+                    status_before=Status.PUBLISHING.value, status_after=Status.PUBLISH_FAILED.value,
+                    telegram_user_id=user_id, error_code=exc.status_code, error_message=str(exc),
+                    attempt=trace["publication_attempt_id"], payload=trace)
+        deps.telegram.edit_message_text(chat, message_id,
+                                        _wb_publish_error_message(exc, is_question=True),
+                                        build_keyboard(doc_id, retry=True))
+        return {"status": "publish_failed", "code": exc.status_code}
+
+    on_wb = _wb_answer_text(current)
+    if on_wb is not None:
+        trace.update(precheck="already_answered", write="skipped")
+        outcome = "verified" if _norm(on_wb) == _norm(text) else "answered_externally"
+        trace["verification_result"] = outcome
+        status = _finish_question(deps, doc_id, doc, text, outcome, trace,
+                                  chat=chat, message_id=message_id, user_id=user_id, accepted=False)
+        return {"status": status, "write": "skipped"}
+
+    trace.update(precheck="unanswered", request_started_at=_now_iso())
+    accepted = False
+    try:
+        res = deps.wb.publish_question_answer(qid, text)
+        res = res if isinstance(res, dict) else {}
+        body_excerpt = redact(json.dumps(res.get("response"), ensure_ascii=False))[:200]
+        trace.update(write="sent", http_status=res.get("status_code"),
+                     request_payload_sha256=res.get("request_sha256"),
+                     response_excerpt=body_excerpt,
+                     response_sha256=hashlib.sha256(body_excerpt.encode()).hexdigest())
+        accepted = True
+    except WBPublishOutcomeUnknown as exc:
+        trace.update(write="outcome_unknown", http_status=exc.status_code,
+                     error_class=type(exc).__name__,
+                     request_payload_sha256=getattr(exc, "request_sha256", None))
+    except WBApiError as exc:
+        trace.update(write="rejected", http_status=exc.status_code, error_class=type(exc).__name__,
+                     response_excerpt=redact(str(exc.body or ""))[:200],
+                     final_publication_state=Status.PUBLISH_FAILED.value)
+        deps.repo.record_publication(doc_id, Status.PUBLISH_FAILED.value,
+                                     {"last_error_code": exc.status_code,
+                                      "last_error_message": str(exc)[:500]}, trace)
+        after = _sync_current(deps, doc_id, doc)
+        _emit_event(deps, after, doc_id, EventType.FAILED, best_effort=False,
+                    status_before=Status.PUBLISHING.value, status_after=Status.PUBLISH_FAILED.value,
+                    telegram_user_id=user_id, error_code=exc.status_code, error_message=str(exc),
+                    attempt=trace["publication_attempt_id"], payload=trace)
+        deps.telegram.edit_message_text(chat, message_id,
+                                        _wb_publish_error_message(exc, is_question=True),
+                                        build_keyboard(doc_id, retry=True))
+        return {"status": "publish_failed", "code": exc.status_code}
+
+    outcome = _verify_question(deps, qid, text, trace)
+    status = _finish_question(deps, doc_id, doc, text, outcome, trace,
+                              chat=chat, message_id=message_id, user_id=user_id, accepted=accepted)
+    return {"status": status, "write": trace.get("write")}
 
 
 def _skip(deps: Deps, doc_id, chat, message_id) -> dict:
@@ -826,5 +1119,6 @@ def _handle_message(deps: Deps, message: dict) -> dict:
     _emit_event(deps, doc, doc_id, EventType.MANUALLY_EDITED, best_effort=False,
                 telegram_user_id=user_id, answer_version=doc.get("generation_number"))
     card_text, truncated = _card_builder_for(doc)(doc, doc_id)
+    card_text = _card_with_flags(card_text, {"flags": _manual_text_flags(deps, doc, new_text)})
     deps.telegram.send_message(chat, card_text, build_keyboard(doc_id, show_full=truncated))
     return {"status": "edited"}

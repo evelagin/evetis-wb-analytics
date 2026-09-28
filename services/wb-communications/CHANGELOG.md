@@ -1,5 +1,41 @@
 # CHANGELOG
 
+## 1.5.0 — Question publication fix + verified publication (2026-09-28)
+
+Local verification: **229/229 pytest passed** (26 new in `test_question_publication.py`).
+
+- **Root cause of «опубликовано, но на WB нет ответа»:** `PATCH /api/v1/questions`
+  was sent as `{"id","text","state"}` (1.4.0). The official contract (WB OpenAPI
+  09-communications, example «AnswerQuestionOrEditAnswer») is
+  `{"id","answer":{"text"},"state":"wbRu"}`. WB replied `200 {"error": false}` to the
+  wrong body but created no answer; the service treated any 2xx as published.
+- **Read-before-write** (`GET /api/v1/question?id=`, new `WB_QUESTION_PATH`): an
+  already-answered question is never written again (re-tap, crashed lease,
+  answer typed in the WB cabinet → new status `answered_externally`).
+- **No false success:** a question is `published` only when the answer is read back
+  from WB and matches. WB-accepted-but-not-visible (pre-moderation) →
+  `publish_accepted` (re-verified on every `/poll`, read-only); outcome unknown →
+  `publish_unknown` (operator re-tap = check first, then write). Telegram says
+  «Опубликовано» only for `published`. `error: true` inside a 2xx body = failure.
+- **No blind duplicate writes (reviews and questions):** publish writes retry only
+  429 and connect-phase errors; read timeout / 5xx after send raise
+  `WBPublishOutcomeUnknown` and are verified instead of re-sent.
+- **Traceability:** each attempt appends a `publish_trace` entry on the Firestore
+  document (attempt id, endpoint, method, payload sha256, http status, safe
+  response excerpt, verification attempts/result, final state) and the same record
+  goes to `communication_events.payload_json`. No BigQuery column changes.
+- **Secret leak fixed:** the Telegram-token redaction regex could not match inside
+  `.../bot<token>/...` and httpx logged every request URL at INFO; the regex is
+  fixed and `httpx`/`httpcore` are logged at WARNING only.
+- **WP11 (owner-approved):** no silent fallback to `reviews_v1` when v2 is primary
+  (item error, retried next poll); operator-typed answers go through the same
+  validators as AI drafts (advisory flags); `cases/irritation.md` and
+  `cases/allergy.md` rewritten to the approved S1 meaning (no «адаптация», no
+  causality, no invented contact channels).
+- New settings (defaults, no env change needed): `WB_QUESTION_PATH`,
+  `WB_QUESTION_VERIFY_ATTEMPTS` (3), `WB_QUESTION_VERIFY_DELAY_SECONDS` (2.0),
+  `WB_QUESTION_VERIFY_WINDOW_HOURS` (48).
+
 ## 1.4.0 — WB buyer questions (separate entity, own gates)
 
 Local verification: **195/195 pytest passed**. Reviews contour unchanged; questions

@@ -15,7 +15,12 @@ from contextvars import ContextVar
 _correlation_id: ContextVar[str] = ContextVar("correlation_id", default="")
 
 # Patterns that must never reach logs even if a caller passes them by mistake.
-_TELEGRAM_TOKEN_RE = re.compile(r"\b\d{6,}:[A-Za-z0-9_-]{30,}\b")
+# No leading \b: inside ".../bot<id>:<secret>/..." there is NO word boundary
+# between "bot" and the digits, so the old r"\b\d{6,}:..." never matched and
+# httpx's "HTTP Request: POST https://api.telegram.org/bot<token>/..." lines
+# leaked the bot token to Cloud Logging (found 2026-09-28: 245 entries / 30 d).
+_TELEGRAM_TOKEN_RE = re.compile(r"(?<!\d)\d{6,}:[A-Za-z0-9_-]{30,}")
+_TELEGRAM_URL_RE = re.compile(r"(api\.telegram\.org/(?:file/)?bot)[^/\s\"']+")
 _BEARER_RE = re.compile(r"(?i)(bearer\s+)[A-Za-z0-9._\-]+")
 _JWT_RE = re.compile(r"\beyJ[A-Za-z0-9._\-]{20,}\b")
 
@@ -27,6 +32,7 @@ def set_correlation_id(value: str) -> None:
 def redact(text: str) -> str:
     if not text:
         return text
+    text = _TELEGRAM_URL_RE.sub(r"\1<telegram_token>", text)
     text = _TELEGRAM_TOKEN_RE.sub("<telegram_token>", text)
     text = _JWT_RE.sub("<jwt>", text)
     text = _BEARER_RE.sub(r"\1<redacted>", text)
@@ -58,6 +64,10 @@ def configure_logging(level: str = "INFO") -> None:
     root.handlers.clear()
     root.addHandler(handler)
     root.setLevel(level.upper())
+    # httpx/httpcore log every request URL at INFO — for Telegram the URL itself
+    # carries the bot token. Keep only their warnings/errors (still redacted).
+    for noisy in ("httpx", "httpcore"):
+        logging.getLogger(noisy).setLevel(logging.WARNING)
 
 
 def get_logger(name: str) -> logging.Logger:
