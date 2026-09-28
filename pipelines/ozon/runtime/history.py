@@ -141,8 +141,23 @@ def windowed_first_activity(domain: str, probe, today: date, seed: date | None =
     lo = floor or DOCUMENTED_FLOOR.get(domain) or SEARCH_FLOOR
     if seed:
         b.evidence.append({"operator_seed": str(seed), "note": "подсказка не сокращает поиск"})
+    n = WINDOW_DAYS[domain]
+    first = q.call(lo, min(lo + timedelta(days=n - 1), today))
+    if first.status == REJECTED:
+        # Предел хранения — двоичным поиском по всему диапазону (≈12 проб), а не месяц за месяцем:
+        # иначе бюджет проб рекламы (окно 31 сутки) исчерпывался на отвергнутых месяцах.
+        a, z, best = lo + timedelta(days=1), today, None
+        while a <= z:
+            mid = a + timedelta(days=(z - a).days // 2)
+            if q.call(mid, min(mid + timedelta(days=n - 1), today)).status == REJECTED:
+                a = mid + timedelta(days=1)
+            else:
+                best, z = mid, mid - timedelta(days=1)
+        if best is None:
+            raise HistoryProbeError(f"{domain}: API отверг все окна — граница не определена")
+        lo = best
     hit = None
-    for s, e in _windows(lo, today, WINDOW_DAYS[domain]):
+    for s, e in _windows(lo, today, n):
         r = q.call(s, e)
         if r.status == REJECTED:
             part = q.earliest_accepted(s, e)

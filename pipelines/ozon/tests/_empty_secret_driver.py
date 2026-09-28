@@ -39,9 +39,9 @@ def main():
             return []
 
     class FakeBQ:
-        def list_rows(self, ref):
-            # ref.SELLER_BINDING нового арендатора пуст: привязку ещё никто не подтверждал.
-            seen["bq"].append(("list_rows", ref))
+        def list_tables(self, ref):
+            # В ref нового арендатора нет знаков владельца: привязку ещё никто не подтверждал.
+            seen["bq"].append(("list_tables", ref))
             return []
 
         def get_table(self, ref):

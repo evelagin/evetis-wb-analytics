@@ -167,3 +167,61 @@ def observation_status(observations, api: str, now: datetime, max_age_hours: flo
     if (now - top).total_seconds() > max_age_hours * 3600:
         return None, f"последнему наблюдению больше {max_age_hours:g} ч"
     return o, "ok"
+
+
+# ───────────────────────────────────────────── маркеры привязки владельца ref.OPB_<api>_<n>
+# Истина о привязке — таблицы-маркеры владельца в ref (tables.insert, у control нет права создавать
+# таблицы в ref). Описание маркера — строка события привязки целиком; метаданные читаются
+# консистентно (tables.get / tables.list), тогда как строки ref.SELLER_BINDING видны tabledata.list
+# с задержкой до ~90 мин (ревью PR #226). Строки SELLER_BINDING — зеркало для SQL.
+import re as _re
+
+BINDING_MARKER_RE = _re.compile(r"^OPB_(seller|performance)_(\d{4})$")
+
+
+def binding_marker_name(api: str, n: int) -> str:
+    return f"OPB_{api}_{int(n):04d}"
+
+
+def binding_marker(row: dict) -> tuple[dict, str]:
+    lab = lambda v: _re.sub(r"[^a-z0-9_-]", "_", str(v).lower())[:63]
+    return ({"api": lab(row["api"]), "status": lab(row["status"]), "binding": lab(row["binding_id"])},
+            json.dumps(row, ensure_ascii=False, sort_keys=True, default=str))
+
+
+def binding_head(items, api):
+    """(номер последнего маркера API, его строка | None) по [(имя, метки, описание)]."""
+    best = (0, None)
+    for name, _labels, description in items:
+        m = BINDING_MARKER_RE.match(name or "")
+        if m and m.group(1) == api and int(m.group(2)) > best[0]:
+            try:
+                row = json.loads(description or "")
+            except ValueError:
+                row = {"_invalid": True}
+            best = (int(m.group(2)), row if isinstance(row, dict) else {"_invalid": True})
+    return best
+
+
+def binding_from_markers(items, api: str, now: datetime, observations=None) -> Binding:
+    """Действующая привязка — последний маркер владельца по API (порядок — номер, не часы)."""
+    n, row = binding_head(items, api)
+    if not n:
+        return Binding(api, UNBOUND, None, None, None, None, "подтверждений нет")
+    if row.get("_invalid") or row.get("api") != api:
+        return Binding(api, INVALID_BINDING, None, None, None, None, "маркер привязки не разбирается")
+    if row.get("status") == "REVOKED":
+        return Binding(api, UNBOUND, None, row.get("binding_id"), None, None, "последнее событие — отзыв")
+    if row.get("status") != "CONFIRMED" or not row.get("identity_fingerprint"):
+        return Binding(api, INVALID_BINDING, None, row.get("binding_id"), None, None, "маркер без подтверждения")
+    at = as_utc(row.get("confirmed_at"))
+    if at is None or at > now:
+        return Binding(api, INVALID_BINDING, None, row.get("binding_id"), None, None,
+                       "подтверждение без даты или датировано будущим")
+    if observations is not None and not any(
+            o.get("observation_id") == row.get("source_observation_id") and o.get("api") == api
+            and o.get("identity_fingerprint") == row.get("identity_fingerprint") for o in observations):
+        return Binding(api, INVALID_BINDING, None, row.get("binding_id"), None, None,
+                       "подтверждение не ссылается на наблюдение того же API с тем же отпечатком")
+    return Binding(api, "CONFIRMED", row.get("identity_fingerprint"), row.get("binding_id"),
+                   row.get("source_observation_id"), at, "подтверждено")

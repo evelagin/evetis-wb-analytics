@@ -20,7 +20,8 @@ EVETIS не меняется: его Terraform, образ `24e3c6d6` и дан�
   - `tenant_ops.DQ_RESULTS` + `severity`.
   - `tenant_ops.TENANT_STATE_EVENTS` + `seq`, `decision_id` (порядок переходов — номер маркера
     `tenant_locks.S_<seq>`, не часы).
-- **Новая таблица `ref.OPERATOR_DECISIONS`:** решения владельца (переходы оператора, REOPEN_CHUNK).
+- **Новая таблица `ref.OPERATOR_DECISIONS`:** зеркало знаков `ref.OPD_<seq>` (`expect_seq`), а также
+  решения REOPEN_CHUNK и ACCEPT_LIMITATION (`domain`, `boundary_id`).
   Пишет только владелец; control и runtime только читают.
 - **Пакет SQL 30 → 32:** `tenant_ops.V_CAPABILITY_CURRENT`, `tenant_ops.V_TENANT_STATE_AUDIT`
   (CHAIN / EDGE / ACTOR / SEQ / PROOF).
@@ -38,6 +39,13 @@ EVETIS не меняется: его Terraform, образ `24e3c6d6` и дан�
   - блок `control` контракта равен выводу `control_identity.py`.
 - **Сборка образа v2** `infra/tenant/releases/ozon-runtime.v2.cloudbuild.yaml`: новый состав
   `/app` и отказ control без проекта. v1 не меняется.
+- **По ревью PR #226, 2-й проход:**
+  - полномочия владельца — таблицы-знаки в `ref` (`OPD_<seq>` — решение на номер перехода, `OPH_<n>` —
+    стоп-кран, `OPB_<api>_<n>` — привязка). Их видят control и runtime, а у control нет права
+    создавать таблицы в `ref`;
+  - одобренный план — только в текущем цикле;
+  - решение ACCEPT_LIMITATION;
+  - поиск предела хранения — двоичный.
 - **По ревью PR #226:**
   - переходы и привязки линеаризуются маркерами `tenant_locks`, так как `tabledata.list` не видит
     потоковую вставку;

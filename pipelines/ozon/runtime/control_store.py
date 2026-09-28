@@ -47,7 +47,7 @@ class ControlStore:
         return f"{self.project}.{self.ds[key]}.{table}"
 
     def rows(self, key: str, table: str):
-        """Все строки таблицы (включая буфер потоковой вставки) — tabledata.list."""
+        """Строки таблицы — tabledata.list (без строк, ещё лежащих в буфере потоковой вставки)."""
         if key not in READ_DATASETS:
             raise StoreError(f"чтение {key} не предусмотрено")
         for r in self.client.list_rows(self._ref(key, table)):
@@ -101,6 +101,30 @@ class ControlStore:
         from checkpoints import LEASE_TABLE_KEEP
         return self._create(name, {"until": int(until.timestamp()), "owner": owner}, f"lease {owner}",
                             expires=until + LEASE_TABLE_KEEP)
+
+    def ref_marker(self, name: str):
+        """(метки, описание) таблицы-знака владельца в ref или None — tables.get (консистентно).
+
+        У control в ref только mpaSqlSourceRead (get, getData): читать знаки владельца он может,
+        создать или изменить — нет."""
+        try:
+            t = self.client.get_table(f"{self.project}.{self.ds['ref']}.{name}")
+        except Exception as e:                                    # noqa: BLE001
+            if getattr(e, "code", None) == 404 or type(e).__name__ == "NotFound":
+                return None
+            raise
+        return (getattr(t, "labels", None) or {}, getattr(t, "description", None))
+
+    def ref_series(self, name_of, limit: int = 9999) -> list:
+        """[(имя, метки, описание)] серии name_of(1), name_of(2)… до первой отсутствующей (номера подряд:
+        владелец занимает следующий номер tables.insert-ом)."""
+        out = []
+        for n in range(1, limit + 1):
+            m = self.ref_marker(name_of(n))
+            if m is None:
+                return out
+            out.append((name_of(n), m[0], m[1]))
+        return out
 
     def state_chain(self) -> list[dict]:
         """Цепочка переходов из маркеров S_<seq> (метки; created — время сервера)."""

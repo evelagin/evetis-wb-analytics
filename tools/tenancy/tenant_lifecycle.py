@@ -8,12 +8,15 @@
   python tools/tenancy/tenant_lifecycle.py suspend <tenant_id> --reason R
   python tools/tenancy/tenant_lifecycle.py resume <tenant_id>                 SUSPENDED|READY → VALIDATING
   python tools/tenancy/tenant_lifecycle.py reopen-chunk <tenant_id> --chunk ID --reason R   (ремонт DONE)
+  python tools/tenancy/tenant_lifecycle.py accept-limitation <tenant_id> --domain D --boundary ID --reason R
 
-Полномочия владельца — строка решения в ref.OPERATOR_DECISIONS: туда пишет только владелец (у control и
-runtime права записи в ref нет), и ребро оператора без решения аудит отвергает. Переход занимает номер
-seq созданием маркера tenant_locks.S_<seq> (409 — параллельный переход, запись отменена); порядок — по
-seq, а не по часам ноутбука. Ремонт отрезка — решение REOPEN_CHUNK со ссылкой на run_id отменяемой
-версии DONE (часы не участвуют).
+Полномочия владельца — таблицы-знаки в ref, куда у control и runtime нет права создавать таблицы:
+  * ref.OPD_<seq> — решение на ребро оператора с номером seq (метки to/from, описание — хеш плана и
+    т. п.); привязано к номеру, повторно не предъявляется; затем маркер tenant_locks.S_<seq>;
+  * ref.OPH_<n> — стоп-кран: suspend действует на control и runtime сразу, независимо от журнала;
+  * строки ref.OPERATOR_DECISIONS — зеркало решений и решения, которым задержка чтения не опасна:
+    REOPEN_CHUNK (ремонт DONE по run_id) и ACCEPT_LIMITATION (принять PARTIAL-границу истории).
+Порядок переходов — по seq, а не по часам ноутбука.
 
 Только рёбра исполнителя OPERATOR и только через тот же валидатор, что у control
 (lifecycle_core.decide). Команды «установить состояние» нет: READY ставит только control, и только
@@ -54,16 +57,22 @@ def secret_versions(project: str, secret_ids) -> dict:
 
 
 def read_state(contract, tables):
-    """(цепочка из маркеров, решения владельца, журнал чекпойнтов)."""
+    """(цепочка из маркеров, решения владельца по seq, журнал чекпойнтов, строки решений, стоп-кран)."""
     ops, ref, locks = (contract["datasets"][k] for k in ("tenant_ops", "ref", "tenant_locks"))
     chain = L.chain_from_markers(tables.list_tables(locks))
-    decisions = {d["decision_id"]: d for d in tables.rows(ref, "OPERATOR_DECISIONS") if d.get("decision_id")}
+    decisions = {}
+    for name, labels, desc in tables.series(ref, "OPD_"):
+        m = L.DECISION_MARKER_RE.match(name)
+        if m:
+            decisions[int(m.group(1))] = L.decision_from_marker(labels, desc)
+    rows = [d for d in tables.rows(ref, "OPERATOR_DECISIONS") if d.get("decision_id")]
+    hold = L.hold_active([(n, lb) for n, lb, _d in tables.series(ref, "OPH_")])
     ledger = list(tables.rows(ops, "BACKFILL_CHECKPOINTS"))
-    return chain, decisions, ledger
+    return chain, decisions, ledger, rows, hold
 
 
-def reopened(decisions):
-    return frozenset(d.get("reopens_run_id") for d in decisions.values()
+def reopened(rows):
+    return frozenset(d.get("reopens_run_id") for d in rows
                      if d.get("decision_type") == "REOPEN_CHUNK" and d.get("reopens_run_id"))
 
 
@@ -75,12 +84,12 @@ def operator_binding(contract, tables, now, ents):
     последняя проверка control (CAPABILITY_PROFILE), а не допущение.
     """
     ops, ref = contract["datasets"]["tenant_ops"], contract["datasets"]["ref"]
-    rows = list(tables.rows(ref, "SELLER_BINDING"))
+    items = tables.series(ref, "OPB_")                  # знаки привязки владельца — консистентно
     obs = list(tables.rows(ops, "SELLER_IDENTITY_OBSERVATIONS"))
     apis = [I.SELLER] + ([I.PERFORMANCE] if any(e in L.ADS_DOMAINS for e in ents) else [])
     binding = {}
     for api in apis:
-        st = I.effective_binding(rows, api, now, obs).status
+        st = I.binding_from_markers(items, api, now, obs).status
         binding[api] = "BOUND" if st == "CONFIRMED" else st
     caps = {}
     for r in tables.rows(ops, "CAPABILITY_PROFILE"):
@@ -93,16 +102,23 @@ def operator_binding(contract, tables, now, ents):
     return binding, cred
 
 
+def cycle_start(chain):
+    for e in reversed(L.ordered([e for e in chain if not e.get("invalid_marker")])):
+        if e.get("to_state") == L.VALIDATING:
+            return I.as_utc(e.get("occurred_at"))
+    return None
+
+
 def build_snapshot(contract, tables, now, secret_counts=None, plan_hash=None, extra_decision=None):
-    chain, decisions, ledger = read_state(contract, tables)
+    chain, decisions, ledger, rows, hold = read_state(contract, tables)
     if extra_decision:
-        decisions = dict(decisions, **{extra_decision["decision_id"]: extra_decision})
+        decisions = {**decisions, L.next_seq(chain): extra_decision}
     jobs = (contract["marketplaces"].get("ozon") or {}).get("jobs") or {}
     ents = tuple(sorted({e for j in jobs.values() for e in j["entities"]}))
-    ph, chunks = CK.latest_plan(ledger)
-    folded = CK.fold(ledger, reopened(decisions))
+    ph, chunks = CK.latest_plan(ledger, since=cycle_start(chain))
+    folded = CK.fold(ledger, reopened(rows))
     binding, cred = operator_binding(contract, tables, now, ents) if plan_hash else ({}, {})
-    return L.Snapshot(tenant_id=contract["tenant_id"], now=now, events=chain, decisions=decisions,
+    return L.Snapshot(tenant_id=contract["tenant_id"], now=now, events=chain, decisions=decisions, hold=hold,
                       enabled_entities=ents, secret_versions=secret_counts or {}, binding=binding, credentials=cred,
                       plan_hash=ph if chunks else None,
                       chunks={c.chunk_id: (folded.get(c.chunk_id) or {}).get("status", "PENDING") for c in chunks},
@@ -110,19 +126,20 @@ def build_snapshot(contract, tables, now, secret_counts=None, plan_hash=None, ex
 
 
 def new_decision(actor, now, **fields):
-    base = {"decision_type": "TRANSITION", "expect_state": None, "to_state": None, "plan_hash": None,
-            "secret_versions_json": None, "chunk_id": None, "reopens_run_id": None, "reason": None,
-            "actor": actor, "decided_at": now.isoformat()}
+    base = {"decision_type": "TRANSITION", "expect_state": None, "to_state": None, "expect_seq": None,
+            "plan_hash": None, "secret_versions_json": None, "chunk_id": None, "reopens_run_id": None,
+            "domain": None, "boundary_id": None, "reason": None, "actor": actor, "decided_at": now.isoformat()}
     base.update(fields)
     base["decision_id"] = "dec-" + hashlib.sha256(json.dumps(base, sort_keys=True).encode() + uuid.uuid4().bytes).hexdigest()[:24]
     return base
 
 
 def transition(contract, tables, now, target, actor, reason, plan_hash=None, secret_counts=None):
-    """(статус, текст). Решение → ref, затем маркер S_<seq> (CAS), затем зеркало в tenant_ops."""
-    chain, _d, _l = read_state(contract, tables)
+    """(статус, текст). Знак-решение ref.OPD_<seq> (CAS), затем маркер S_<seq> (CAS), затем зеркала."""
+    chain, _d, _l, _r, _h = read_state(contract, tables)
+    seq = L.next_seq(chain)
     dec = new_decision(actor, now, expect_state=L.current_state(chain), to_state=target, plan_hash=plan_hash,
-                       reason=reason,
+                       reason=reason, expect_seq=seq,
                        secret_versions_json=json.dumps(secret_counts, sort_keys=True) if secret_counts else None)
     s = build_snapshot(contract, tables, now, secret_counts, plan_hash, extra_decision=dec)
     status, failures, event = L.decide(s, target, actor, reason or target, {
@@ -131,17 +148,46 @@ def transition(contract, tables, now, target, actor, reason, plan_hash=None, sec
     if status != "WRITE":
         return status, "; ".join(failures) or "ok"
     ref, locks, ops = (contract["datasets"][k] for k in ("ref", "tenant_locks", "tenant_ops"))
-    tables.append(ref, "OPERATOR_DECISIONS", [dec])
+    if target != L.SUSPENDED:
+        labels, desc = L.decision_marker(event["from_state"], target, decision_id=dec["decision_id"],
+                                         plan_hash=plan_hash, secret_versions=secret_counts, actor=actor)
+        if not tables.create_marker(ref, L.decision_marker_name(event["seq"]), labels, desc):
+            return "CONFLICT", f"решение на номер {event['seq']} уже есть (параллельный запуск владельца)"
     if not tables.create_marker(locks, L.marker_name(event["seq"]), L.marker_labels(event),
                                 json.dumps({"reason_code": event["reason_code"], "run_id": event["run_id"]})):
+        # Решение ref.OPD_<seq> привязано к номеру: чужое событие с этим номером им не станет.
         return "CONFLICT", f"номер {event['seq']} занят параллельным переходом — повторите после status"
+    tables.append(ref, "OPERATOR_DECISIONS", [dec])
     tables.append(ops, "TENANT_STATE_EVENTS", [event])
     return "WRITE", f"{event['from_state']} → {event['to_state']} (seq {event['seq']}, {dec['decision_id']})"
 
 
+def set_hold(contract, tables, actor, action, reason):
+    """Стоп-кран владельца ref.OPH_<n>: suspend | resume. Действует на control и runtime сразу."""
+    ref = contract["datasets"]["ref"]
+    n = max([int(L.HOLD_MARKER_RE.match(nm).group(1)) for nm, _l, _c in tables.list_tables(ref)
+             if L.HOLD_MARKER_RE.match(nm)] or [0]) + 1
+    if not tables.create_marker(ref, f"OPH_{n:04d}", {"action": action},
+                                json.dumps({"actor": actor, "reason": reason}, ensure_ascii=False)):
+        return "CONFLICT", "параллельный стоп-кран — повторите после status"
+    return "WRITE", f"стоп-кран {action} (OPH_{n:04d})"
+
+
+def accept_limitation(contract, tables, now, actor, domain, boundary_id, reason):
+    """ACCEPT_LIMITATION: владелец принимает PARTIAL-границу истории домена (конкретную строку)."""
+    ops = contract["datasets"]["tenant_ops"]
+    rows = [r for r in tables.rows(ops, "HISTORY_BOUNDARIES") if r.get("boundary_id") == boundary_id]
+    if not rows or rows[0].get("entity") != domain or rows[0].get("completeness_status") != "PARTIAL":
+        return "REJECT", "граница не найдена, другого домена или не PARTIAL"
+    dec = new_decision(actor, now, decision_type="ACCEPT_LIMITATION", domain=domain, boundary_id=boundary_id,
+                       reason=reason[:500])
+    tables.append(contract["datasets"]["ref"], "OPERATOR_DECISIONS", [dec])
+    return "WRITE", f"ограничение {domain} принято ({boundary_id}, {dec['decision_id']})"
+
+
 def reopen_chunk(contract, tables, now, actor, chunk_id, reason):
-    _chain, decisions, ledger = read_state(contract, tables)
-    st = CK.fold(ledger, reopened(decisions)).get(chunk_id)
+    _chain, _d, ledger, rows, _h = read_state(contract, tables)
+    st = CK.fold(ledger, reopened(rows)).get(chunk_id)
     if not st or st["status"] != "DONE" or not st.get("run_id"):
         return "REJECT", f"отрезок {chunk_id} не DONE — ремонт не нужен"
     dec = new_decision(actor, now, decision_type="REOPEN_CHUNK", chunk_id=chunk_id, reopens_run_id=st["run_id"],
@@ -152,19 +198,21 @@ def reopen_chunk(contract, tables, now, actor, chunk_id, reason):
 
 def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
-    ap.add_argument("cmd", choices=["status", "reopen-chunk", *OPERATOR_TARGETS])
+    ap.add_argument("cmd", choices=["status", "reopen-chunk", "accept-limitation", *OPERATOR_TARGETS])
     ap.add_argument("tenant_id")
     ap.add_argument("--plan-hash")
     ap.add_argument("--reason")
     ap.add_argument("--chunk")
+    ap.add_argument("--domain")
+    ap.add_argument("--boundary")
     a = ap.parse_args(argv)
     from tools.tenancy.tenant_infra import contract_for
     c = contract_for(a.tenant_id)
     t = TT.Tables(c["project_id"])
     now = datetime.now(timezone.utc)
     if a.cmd == "status":
-        chain, decisions, _l = read_state(c, t)
-        print(json.dumps({"state": L.current_state(chain), "events": len(chain),
+        chain, decisions, _l, _r, hold = read_state(c, t)
+        print(json.dumps({"state": L.current_state(chain), "events": len(chain), "owner_hold": hold,
                           "audit": L.audit_history(chain, decisions)[:5]}, ensure_ascii=False))
         return 0
     actor = f"OPERATOR:{TT.owner_account()}"
@@ -173,10 +221,30 @@ def main(argv=None):
             print("REJECT: --chunk и --reason обязательны")
             return 1
         status, text = reopen_chunk(c, t, now, actor, a.chunk, a.reason)
-    else:
-        if a.cmd == "suspend" and not a.reason:
+    elif a.cmd == "accept-limitation":
+        if not (a.domain and a.boundary and a.reason):
+            print("REJECT: --domain, --boundary и --reason обязательны")
+            return 1
+        status, text = accept_limitation(c, t, now, actor, a.domain, a.boundary, a.reason)
+    elif a.cmd == "suspend":
+        if not a.reason:
             print("REJECT: приостановка без --reason")
             return 1
+        status, text = set_hold(c, t, actor, "suspend", a.reason)       # действует сразу и безусловно
+        st2, text2 = transition(c, t, now, L.SUSPENDED, actor, a.reason)  # журнал — по возможности
+        text += f"; журнал: {st2} {text2}"
+    else:
+        if a.cmd == "resume":
+            _c, _d, _l, _r, hold = read_state(c, t)
+            if hold:
+                status, text = set_hold(c, t, actor, "resume", a.reason or "RESUME")
+                if status != "WRITE":
+                    print(f"{status}: {text}")
+                    return 1
+            state = L.current_state(read_state(c, t)[0])
+            if state not in (L.SUSPENDED, L.READY):
+                print(f"WRITE: стоп-кран снят; журнал в состоянии {state} — перехода возобновления не требуется")
+                return 0
         counts = secret_versions(c["project_id"], (c["marketplaces"]["ozon"]["secret_ids"] or {}).values()) \
             if a.cmd == "credentials-inserted" else None
         status, text = transition(c, t, now, OPERATOR_TARGETS[a.cmd], actor, a.reason or a.cmd.upper(),

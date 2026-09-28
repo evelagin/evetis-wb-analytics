@@ -7,14 +7,14 @@
   python tools/tenancy/tenant_binding.py revoke <tenant_id> --api A --expect-current <binding_id> --reason TEXT
 
 observe (control: lifecycle.py validate) → show → владелец сверяет кабинет вне системы → confirm →
-ref.SELLER_BINDING (CONFIRMED). Пишет ТОЛЬКО владелец: у control и runtime права записи в ref нет.
+ref.OPB_<api>_<n> (таблица-знак владельца; описание — строка события) + зеркало ref.SELLER_BINDING.
+Пишет ТОЛЬКО владелец: у control и runtime права создавать таблицы или писать строки в ref нет.
 
 confirm:
   * оптимистичная конкуренция: --expect-current должен совпасть с действующим событием привязки
-    (или NONE, если подтверждений нет). Событие занимает номер маркером tenant_locks.B_<api>_<n>
-    (tables.insert, 409 — параллельное подтверждение, запись отменена). Текущее событие берётся из
-    последнего маркера (метаданные консистентны), а не из строк ref: tabledata.list не видит строки
-    потоковой вставки до ~90 мин, и «перечитать после записи» ложно сообщало о конфликте;
+    (или NONE, если подтверждений нет). Событие — знак ref.OPB_<api>_<n+1> (tables.insert, 409 —
+    параллельная запись, ничего не записано). Истина — знаки (метаданные консистентны; control и runtime
+    читают их же, отзыв виден сразу), строки SELLER_BINDING — зеркало для SQL;
   * последнее наблюдение API — ровно одно, свежее (≤ 24 ч), статус OBSERVED, отпечаток совпадает с
     --fingerprint и --observation — иначе отказ;
   * идемпотентно: действующая привязка с тем же отпечатком и наблюдением — ничего не пишется;
@@ -26,7 +26,6 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
-import re
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
@@ -37,31 +36,17 @@ from tools.tenancy import tenant_tables as TT  # noqa: E402
 import identity as I  # noqa: E402  (pipelines/ozon/runtime через tenant_tables)
 
 NONE = "NONE"
-MARKER_RE = re.compile(r"^B_(seller|performance)_(\d{4})$")
 
 
-def marker_head(markers, api):
-    """(номер последнего маркера, binding_id его события) по API; (0, None), если маркеров нет."""
-    best = (0, None)
-    for name, labels, _created in markers:
-        m = MARKER_RE.match(name or "")
-        if m and m.group(1) == api and int(m.group(2)) > best[0]:
-            best = (int(m.group(2)), (labels or {}).get("binding"))
-    return best
+def current_event_id(items, api, now):
+    """(binding_id последнего знака API или NONE, действующая привязка) — по знакам ref.OPB_*."""
+    n, row = I.binding_head(items, api)
+    return ((row or {}).get("binding_id") or NONE) if n else NONE, I.binding_from_markers(items, api, now)
 
 
-def binding_label(binding_id: str) -> str:
-    return re.sub(r"[^a-z0-9_-]", "_", binding_id.lower())[:63]
-
-
-def current_event_id(bindings, api, now):
-    b = I.effective_binding(bindings, api, now)
-    return (b.binding_id or NONE) if b.status != I.UNBOUND or b.binding_id else NONE, b
-
-
-def decide_confirm(observations, bindings, api, observation_id, fingerprint, expect_current, now, actor):
-    """(WRITE | NOOP | REJECT, причины, строка SELLER_BINDING | None) — без облака."""
-    cur_id, cur = current_event_id(bindings, api, now)
+def decide_confirm(observations, items, api, observation_id, fingerprint, expect_current, now, actor):
+    """(WRITE | NOOP | REJECT, причины, строка события | None) — без облака."""
+    cur_id, cur = current_event_id(items, api, now)
     if cur.status == "CONFIRMED" and cur.fingerprint == fingerprint and cur.source_observation_id == observation_id:
         return "NOOP", ["привязка уже действует с этим отпечатком и наблюдением"], None
     if expect_current != cur_id:
@@ -85,15 +70,15 @@ def decide_confirm(observations, bindings, api, observation_id, fingerprint, exp
     return "WRITE", [], row
 
 
-def decide_revoke(bindings, api, expect_current, reason, now, actor):
-    cur_id, cur = current_event_id(bindings, api, now)
+def decide_revoke(items, api, expect_current, reason, now, actor):
+    cur_id, cur = current_event_id(items, api, now)
     if cur_id == NONE or cur.status == I.UNBOUND:
         return "NOOP", ["действующей привязки нет"], None
     if expect_current != cur_id:
         return "REJECT", [f"ожидалось {expect_current}, фактически {cur_id}"], None
     if not reason:
         return "REJECT", ["отзыв без причины"], None
-    src = next(b for b in bindings if b.get("binding_id") == cur_id)
+    _n, src = I.binding_head(items, api)
     row = dict(src, binding_id="rev-" + hashlib.sha256(f"{cur_id}|{now.isoformat()}".encode()).hexdigest()[:24],
                status="REVOKED", revoked_at=now.isoformat(), revoked_by=actor, notes=reason[:500])
     return "WRITE", [], row
@@ -104,24 +89,17 @@ def _load(tenant_id):
     c = contract_for(tenant_id)
     t = TT.Tables(c["project_id"])
     return c, t, list(t.rows(c["datasets"]["tenant_ops"], "SELLER_IDENTITY_OBSERVATIONS")), \
-        list(t.rows(c["datasets"]["ref"], "SELLER_BINDING"))
+        t.series(c["datasets"]["ref"], "OPB_")
 
 
-def head_consistent(markers, bindings, api, now):
-    """Строки ref догнали маркеры? Иначе решение по строкам принимать нельзя (отставание чтения)."""
-    n, head = marker_head(markers, api)
-    cur_id, _cur = current_event_id(bindings, api, now)
-    return n == 0 or binding_label(cur_id) == head, n
-
-
-def write_event(c, t, api, row, n):
-    """Занять номер маркером, затем дописать строку. False — номер занят (параллельная запись)."""
-    ok = t.create_marker(c["datasets"]["tenant_locks"], f"B_{api}_{n:04d}",
-                         {"api": api, "binding": binding_label(row["binding_id"]),
-                          "status": row["status"].lower()}, f"binding event {row['status']}")
-    if ok:
-        t.append(c["datasets"]["ref"], "SELLER_BINDING", [row])
-    return ok
+def write_event(c, t, items, api, row):
+    """Знак ref.OPB_<api>_<n+1> (409 — параллельная запись: False), затем зеркало-строка."""
+    n, _row = I.binding_head(items, api)
+    labels, desc = I.binding_marker(row)
+    if not t.create_marker(c["datasets"]["ref"], I.binding_marker_name(api, n + 1), labels, desc):
+        return False
+    t.append(c["datasets"]["ref"], "SELLER_BINDING", [row])
+    return True
 
 
 def cmd_show(a):
@@ -143,36 +121,31 @@ def cmd_show(a):
     return 0
 
 
-def _write(c, t, binds, api, now, decide):
-    markers = t.list_tables(c["datasets"]["tenant_locks"])
-    fresh, n = head_consistent(markers, binds, api, now)
-    if not fresh:
-        print("REJECT: строки ref.SELLER_BINDING ещё не видны (запись моложе ~90 мин) — повторите позже")
-        return 1
+def _write(c, t, items, api, decide):
     status, why, row = decide()
     print(f"{status}: {'; '.join(why) or 'ok'}")
     if status != "WRITE":
         return 0 if status == "NOOP" else 1
-    if not write_event(c, t, api, row, n + 1):
+    if not write_event(c, t, items, api, row):
         print("CONFLICT: параллельная запись привязки заняла номер — ничего не записано")
         return 1
-    print(f"записано: {row['binding_id']} (маркер B_{api}_{n + 1:04d}); строка видна чтению через ≤ 90 мин")
+    print(f"записано: {row['binding_id']} (знак ref.{I.binding_marker_name(api, I.binding_head(items, api)[0] + 1)})")
     return 0
 
 
 def cmd_confirm(a):
-    c, t, obs, binds = _load(a.tenant_id)
+    c, t, obs, items = _load(a.tenant_id)
     now = datetime.now(timezone.utc)
     actor = f"OPERATOR:{TT.owner_account()}"
-    return _write(c, t, binds, a.api, now, lambda: decide_confirm(
-        obs, binds, a.api, a.observation, a.fingerprint, a.expect_current, now, actor))
+    return _write(c, t, items, a.api, lambda: decide_confirm(
+        obs, items, a.api, a.observation, a.fingerprint, a.expect_current, now, actor))
 
 
 def cmd_revoke(a):
-    c, t, _obs, binds = _load(a.tenant_id)
+    c, t, _obs, items = _load(a.tenant_id)
     now = datetime.now(timezone.utc)
-    return _write(c, t, binds, a.api, now, lambda: decide_revoke(
-        binds, a.api, a.expect_current, a.reason, now, f"OPERATOR:{TT.owner_account()}"))
+    return _write(c, t, items, a.api, lambda: decide_revoke(
+        items, a.api, a.expect_current, a.reason, now, f"OPERATOR:{TT.owner_account()}"))
 
 
 def main(argv=None):

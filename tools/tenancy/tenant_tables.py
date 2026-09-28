@@ -121,3 +121,23 @@ class Tables:
             return True
         except Conflict:
             return False
+
+    def get_table(self, dataset: str, name: str):
+        """(метки, описание) таблицы или None — tables.get (консистентно)."""
+        try:
+            t = _req("GET", f"{BQ}/projects/{self.project}/datasets/{dataset}/tables/{name}")
+        except TableError as e:
+            if "HTTP 404" in str(e):
+                return None
+            raise
+        return t.get("labels") or {}, t.get("description")
+
+    def series(self, dataset: str, prefix: str):
+        """[(имя, метки, описание)] всех таблиц-знаков с префиксом (tables.list + tables.get)."""
+        out = []
+        for name, _labels, _created in self.list_tables(dataset):
+            if name.startswith(prefix):
+                got = self.get_table(dataset, name)
+                if got:
+                    out.append((name, got[0], got[1]))
+        return sorted(out)

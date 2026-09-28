@@ -105,7 +105,8 @@ def lease_name(chunk_id: str, generation: int) -> str:
     return f"L_{chunk_id}_{generation:04d}"
 
 
-def next_lease_generation(lease_tables, chunk_id: str, now: datetime, ledger_generations=()):
+def next_lease_generation(lease_tables, chunk_id: str, now: datetime, ledger_generations=(),
+                          grace: timedelta = VISIBILITY_GRACE):
     """Поколение для новой аренды или None, если аренда ещё держится.
 
     lease_tables — [(имя таблицы, until datetime|None)] из tenant_locks (until — метка аренды).
@@ -118,7 +119,7 @@ def next_lease_generation(lease_tables, chunk_id: str, now: datetime, ledger_gen
             continue
         gens.append(int(m.group(2)))
         until = as_utc(until)
-        if until is None or until + VISIBILITY_GRACE > now:
+        if until is None or until + grace > now:
             return None
     return (max(gens) + 1) if gens else 1
 
@@ -157,8 +158,9 @@ def plan_versions(ledger) -> dict:
     return out
 
 
-def latest_plan(ledger):
-    vs = plan_versions(ledger)
+def latest_plan(ledger, since=None):
+    """Последняя полная версия плана; since — только версии, построенные не раньше (текущий цикл)."""
+    vs = {h: v for h, v in plan_versions(ledger).items() if since is None or v[1] >= since}
     if not vs:
         return None, []
     ph = max(vs, key=lambda h: (vs[h][1], h))

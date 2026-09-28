@@ -10,7 +10,7 @@
       "type": "STRING"
     },
     {
-      "description": "TRANSITION или REOPEN_CHUNK",
+      "description": "TRANSITION (зеркало знака ref.OPD_<seq>), REOPEN_CHUNK или ACCEPT_LIMITATION",
       "mode": "REQUIRED",
       "name": "decision_type",
       "type": "STRING"
@@ -26,6 +26,12 @@
       "mode": "NULLABLE",
       "name": "to_state",
       "type": "STRING"
+    },
+    {
+      "description": "TRANSITION: номер перехода; решение действует только для него (знак ref.OPD_<seq>)",
+      "mode": "NULLABLE",
+      "name": "expect_seq",
+      "type": "INTEGER"
     },
     {
       "description": "APPROVE (→ BACKFILLING): хеш плана бэкфилла, который владелец подтвердил",
@@ -49,6 +55,18 @@
       "description": "REOPEN_CHUNK: run_id версии DONE, которую владелец отменяет",
       "mode": "NULLABLE",
       "name": "reopens_run_id",
+      "type": "STRING"
+    },
+    {
+      "description": "ACCEPT_LIMITATION: домен истории",
+      "mode": "NULLABLE",
+      "name": "domain",
+      "type": "STRING"
+    },
+    {
+      "description": "ACCEPT_LIMITATION: принятая строка HISTORY_BOUNDARIES (PARTIAL)",
+      "mode": "NULLABLE",
+      "name": "boundary_id",
       "type": "STRING"
     },
     {

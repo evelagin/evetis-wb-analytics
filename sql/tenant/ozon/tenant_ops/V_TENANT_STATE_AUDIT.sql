@@ -5,9 +5,10 @@
 --   EDGE  — такого ребра в автомате нет (например, VALIDATING → READY);
 --   ACTOR — ребро есть, но исполнитель не допустим (например, READY от OPERATOR);
 --   SEQ   — номера переходов не идут подряд 1, 2, 3… (номер занимает маркер tenant_locks.S_<seq>);
---   PROOF — ребро оператора (кроме приостановки) без решения владельца в ref.OPERATOR_DECISIONS
---           (строку actor control подделать может, решение — нет: писать в ref ему нельзя).
--- Порядок событий — как lifecycle_core.ordered: seq, затем occurred_at и event_id.
+--   PROOF — ребро оператора (кроме приостановки) без решения владельца на ЭТОТ номер (expect_seq) в
+--           ref.OPERATOR_DECISIONS — зеркале знаков ref.OPD_<seq> (писать в ref control не может,
+--           а решение на другой номер повторно не предъявить). Зеркало может отставать до ~90 мин.
+-- Порядок событий — как lifecycle_core.ordered: сначала строки с seq по номеру, затем без номера.
 -- first_violation_at — момент первой ошибки журнала: всё после неё недостоверно.
 CREATE OR REPLACE VIEW `__tenant__.tenant_ops.V_TENANT_STATE_AUDIT`
 OPTIONS(description = 'Аудит журнала состояний: каждое событие против автомата T5 (CHAIN, EDGE, ACTOR, SEQ, PROOF); OK или VIOLATION.')
@@ -42,8 +43,8 @@ ev AS (
   SELECT e.tenant_id, e.event_id, e.occurred_at, e.from_state, e.to_state, e.actor, e.run_id, e.reason_code,
     IF(STRPOS(e.actor, ':') > 0, SUBSTR(e.actor, 1, STRPOS(e.actor, ':') - 1), e.actor) AS actor_class,
     e.seq AS event_seq, e.decision_id,
-    LAG(e.to_state) OVER (PARTITION BY e.tenant_id ORDER BY e.seq, e.occurred_at, e.event_id) AS previous_state,
-    ROW_NUMBER() OVER (PARTITION BY e.tenant_id ORDER BY e.seq, e.occurred_at, e.event_id) AS seq
+    LAG(e.to_state) OVER (PARTITION BY e.tenant_id ORDER BY IF(e.seq IS NULL, 1, 0), e.seq, e.occurred_at, e.event_id) AS previous_state,
+    ROW_NUMBER() OVER (PARTITION BY e.tenant_id ORDER BY IF(e.seq IS NULL, 1, 0), e.seq, e.occurred_at, e.event_id) AS seq
   FROM `__tenant__.tenant_ops.TENANT_STATE_EVENTS` e
 ),
 checked AS (
@@ -57,7 +58,7 @@ checked AS (
     v.event_seq IS NOT NULL AND v.event_seq = v.seq AS seq_ok,
     v.actor_class <> 'OPERATOR' OR v.to_state = 'SUSPENDED' OR EXISTS (
       SELECT 1 FROM `__tenant__.ref.OPERATOR_DECISIONS` d
-      WHERE d.decision_id = v.decision_id AND d.to_state = v.to_state
+      WHERE d.decision_type = 'TRANSITION' AND d.expect_seq = v.event_seq AND d.to_state = v.to_state
         AND COALESCE(d.expect_state, '-') = COALESCE(v.from_state, '-')) AS proof_ok
   FROM ev v
 ),

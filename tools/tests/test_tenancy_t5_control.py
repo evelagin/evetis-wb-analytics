@@ -197,8 +197,9 @@ def test_audit_view_edges_equal_lifecycle_core():
     assert _edges_from_sql() == want
 
 
-DEC_COLS = ["decision_id", "decision_type", "expect_state", "to_state", "plan_hash", "secret_versions_json",
-            "chunk_id", "reopens_run_id", "reason", "actor", "decided_at"]
+DEC_COLS = ["decision_id", "decision_type", "expect_state", "to_state", "expect_seq", "plan_hash",
+            "secret_versions_json", "chunk_id", "reopens_run_id", "domain", "boundary_id", "reason", "actor",
+            "decided_at"]
 
 
 def _events(*rows, decisions=()):
@@ -206,13 +207,13 @@ def _events(*rows, decisions=()):
             "reason_detail", "evidence_json", "seq", "decision_id"]
     return {"TENANT_STATE_EVENTS": (cols, [("t", eid, at, f, to, actor, "r", "x", None, None, seq, dec)
                                            for seq, eid, at, f, to, actor, dec in rows]),
-            "OPERATOR_DECISIONS": (DEC_COLS, [(d, "TRANSITION", f, t, None, None, None, None, None, "OPERATOR:o", "2026-09-01")
-                                              for d, f, t in decisions])}
+            "OPERATOR_DECISIONS": (DEC_COLS, [(d, "TRANSITION", f, t, seq, None, None, None, None, None, None, None,
+                                               "OPERATOR:o", "2026-09-01") for d, f, t, seq in decisions])}
 
 
 GOOD = [(1, "e1", "2026-09-01 00:00:00", None, "CREDENTIALS_PENDING", "OPERATOR:o", "d1"),
         (2, "e2", "2026-09-01 00:01:00", "CREDENTIALS_PENDING", "VALIDATING", "OPERATOR:o", "d2")]
-GOOD_DEC = [("d1", None, "CREDENTIALS_PENDING"), ("d2", "CREDENTIALS_PENDING", "VALIDATING")]
+GOOD_DEC = [("d1", None, "CREDENTIALS_PENDING", 1), ("d2", "CREDENTIALS_PENDING", "VALIDATING", 2)]
 
 
 def test_audit_view_accepts_valid_chain():
@@ -247,7 +248,8 @@ def test_audit_view_flags_violations(bad, violation):
 
 
 def test_audit_view_flags_operator_edge_without_owner_decision():
-    """control записал «OPERATOR» сам: решения владельца в ref нет — PROOF."""
+    """control записал «OPERATOR» сам: решения владельца на этот номер в ref нет — PROOF; решение на
+    другой номер (повтор) не подходит."""
     forged = [(1, "e1", "2026-09-01 00:00:00", None, "CREDENTIALS_PENDING", "OPERATOR:forged", "d1"),
               (2, "e2", "2026-09-01 00:01:00", "CREDENTIALS_PENDING", "VALIDATING", "OPERATOR:forged", "dx")]
     rows = HS.run("tenant_ops", "V_TENANT_STATE_AUDIT", _events(*forged, decisions=[GOOD_DEC[0]]))
@@ -257,6 +259,11 @@ def test_audit_view_flags_operator_edge_without_owner_decision():
             (2, "e2", "2026-09-01 00:01:00", "CREDENTIALS_PENDING", "VALIDATING", "OPERATOR:o", "d1")]
     rows = HS.run("tenant_ops", "V_TENANT_STATE_AUDIT", _events(*mism, decisions=[GOOD_DEC[0]]))
     assert max(rows, key=lambda r: r["seq"])["violation"] == "PROOF"       # решение от другого ребра
+    replay = [(1, "e1", "2026-09-01 00:00:00", None, "CREDENTIALS_PENDING", "OPERATOR:o", "d1"),
+              (2, "e2", "2026-09-01 00:01:00", "CREDENTIALS_PENDING", "VALIDATING", "OPERATOR:o", "d2")]
+    rows = HS.run("tenant_ops", "V_TENANT_STATE_AUDIT", _events(*replay, decisions=[
+        GOOD_DEC[0], ("d2", "CREDENTIALS_PENDING", "VALIDATING", 7)]))                # решение на номер 7
+    assert max(rows, key=lambda r: r["seq"])["violation"] == "PROOF"
 
 
 def test_capability_view_takes_latest_per_pair():

@@ -5,9 +5,11 @@
     tenant_locks.S_<seq> (409 = параллельный переход, запись отменяется). Порядок — по seq, а не
     по часам разных писателей; метаданные таблиц читаются консистентно, в отличие от
     tabledata.list (строки потоковой вставки видны с задержкой до ~90 мин);
-  * рёбра оператора (кроме приостановки) действительны, только если ссылаются на решение владельца
-    в ref.OPERATOR_DECISIONS — туда у control нет права записи. Строка actor подделывается, решение —
-    нет;
+  * ребро оператора (кроме приостановки) с номером N действительно, только если владелец создал
+    таблицу-решение ref.OPD_<N> с тем же ребром в метках. В ref у control нет tables.create, решение
+    привязано к номеру и повторно не предъявляется; tables.get консистентен (ревью PR #226, 2-й проход);
+  * стоп-кран владельца — ref.OPH_<n> (suspend/resume): пока последний — suspend, действует только
+    приостановка; control и runtime его видят и подделать не могут;
   * приостановка (→ SUSPENDED) допустима всегда, даже при испорченном журнале.
 
 Никакого «set-state»: переход записывается, только если
@@ -70,7 +72,9 @@ class Snapshot:
     maturity_days: float | None = None
     secret_versions: dict = field(default_factory=dict)    # имя секрета → число ENABLED-версий (оператор)
     operator_plan_hash: str | None = None                  # хеш плана, который подтверждает оператор
-    decisions: dict | None = None                          # decision_id → строка ref.OPERATOR_DECISIONS
+    decisions: dict | None = None                          # seq → решение владельца ref.OPD_<seq>
+    hold: bool = False                                     # стоп-кран владельца ref.OPH_* действует
+    accepted_limitations: dict = field(default_factory=dict)   # домен → boundary_id, принятый владельцем
 
 
 def _ads_enabled(s: Snapshot) -> bool:
@@ -152,7 +156,9 @@ def ready_contract(s: Snapshot) -> list[str]:
             # COMPLETE — граница найдена внутри принятых API окон; NOT_APPLICABLE — активности нет во
             # всём принятом диапазоне. PARTIAL (предел хранения / документированная граница) и
             # UNKNOWN — не READY: принять ограничение может только решение владельца (новая версия политики).
-            if h.get("completeness_status") not in ("COMPLETE", "NOT_APPLICABLE"):
+            accepted = h.get("completeness_status") == "PARTIAL" and h.get("boundary_id") and \
+                s.accepted_limitations.get(d) == h.get("boundary_id")
+            if h.get("completeness_status") not in ("COMPLETE", "NOT_APPLICABLE") and not accepted:
                 out.append(f"история {d}: {h.get('completeness_status') or 'не определена'}")
     out += _v_to_reconciling(s)
     if s.maturity_days is None or s.maturity_days <= 0:
@@ -219,12 +225,12 @@ def current_state(events):
 
 
 def decision_problem(e, decisions) -> str | None:
-    """Ребро оператора без решения владельца в ref (кроме приостановки) — недействительно."""
+    """Ребро оператора без решения владельца ref.OPD_<seq> (кроме приостановки) — недействительно."""
     if (e.get("actor") or "").split(":")[0] != OPERATOR or e.get("to_state") == SUSPENDED:
         return None
-    d = (decisions or {}).get(e.get("decision_id"))
+    d = (decisions or {}).get(int(e.get("seq") or 0))
     if not d:
-        return "нет решения владельца (ref.OPERATOR_DECISIONS) — ещё не видно или подделка"
+        return f"нет решения владельца ref.OPD_{int(e.get('seq') or 0):06d} — подделка"
     if d.get("to_state") != e.get("to_state") or (d.get("expect_state") or None) != (e.get("from_state") or None):
         return "решение владельца не совпадает с ребром"
     return None
@@ -234,6 +240,8 @@ def audit_history(events, decisions=None) -> list[str]:
     """Независимая проверка журнала: каждое событие — разрешённое ребро разрешённым исполнителем;
     номера seq идут подряд; при переданных решениях — у рёбер оператора есть решение владельца."""
     out, prev = [], None
+    out += [f"маркер {e['invalid_marker']} не разбирается (номер вне формата)" for e in events if e.get("invalid_marker")]
+    events = [e for e in events if not e.get("invalid_marker")]
     seqs = [e.get("seq") for e in events if e.get("seq") is not None]
     if seqs and sorted(int(x) for x in seqs) != list(range(1, len(seqs) + 1)):
         out.append(f"номера событий не подряд: {sorted(int(x) for x in seqs)[:10]}")
@@ -257,6 +265,16 @@ def evidence_hash(evidence: dict) -> str:
 
 def decide(s: Snapshot, to_state: str, actor: str, reason_code: str, evidence: dict, run_id: str,
            decision_id: str | None = None):
+    if s.hold and to_state != SUSPENDED:
+        return "REJECT", ["стоп-кран владельца (ref.OPH_*): допустима только приостановка"], None
+    return _decide(s, to_state, actor, reason_code, evidence, run_id, decision_id)
+
+
+def next_seq(events) -> int:
+    return max([int(e["seq"]) for e in events if e.get("seq") is not None and not e.get("invalid_marker")] or [0]) + 1
+
+
+def _decide(s, to_state, actor, reason_code, evidence, run_id, decision_id):
     """Решение о переходе. (статус, нарушения, событие | None); статус ∈ WRITE | NOOP | REJECT.
 
     Событие несёт seq = следующий номер; записать его можно, только заняв маркер S_<seq>.
@@ -280,14 +298,16 @@ def decide(s: Snapshot, to_state: str, actor: str, reason_code: str, evidence: d
         return "REJECT", [f"исполнитель {actor_class} не может {frm} → {to_state}"], None
     if to_state == SUSPENDED and not reason_code:
         return "REJECT", ["приостановка без причины"], None
+    seq = next_seq(s.events)
+    if seq > MAX_SEQ:
+        return "REJECT", [f"номер перехода {seq} вне формата S_<6 цифр> — журнал испорчен (стоп-кран — ref.OPH_*)"], None
     if actor_class == OPERATOR and to_state != SUSPENDED:
-        d = (s.decisions or {}).get(decision_id)
+        d = (s.decisions or {}).get(seq)
         if not d or d.get("to_state") != to_state or (d.get("expect_state") or None) != frm:
-            return "REJECT", ["ребро оператора требует решения владельца в ref.OPERATOR_DECISIONS"], None
+            return "REJECT", [f"ребро оператора требует решения владельца ref.OPD_{seq:06d}"], None
     failures = validator(s)
     if failures:
         return "REJECT", failures, None
-    seq = max([int(e["seq"]) for e in s.events if e.get("seq") is not None] or [0]) + 1
     event = {
         "event_id": hashlib.sha256(f"{s.tenant_id}|{frm}|{to_state}|{ev_hash}|{run_id}".encode()).hexdigest()[:32],
         "tenant_id": s.tenant_id, "from_state": frm, "to_state": to_state,
@@ -302,6 +322,9 @@ def decide(s: Snapshot, to_state: str, actor: str, reason_code: str, evidence: d
 
 # ───────────────────────────────────────────── маркеры переходов tenant_locks.S_<seq>
 STATE_MARKER_RE = re.compile(r"^S_(\d{6})$")
+MAX_SEQ = 999_999
+DECISION_MARKER_RE = re.compile(r"^OPD_(\d{6})$")
+HOLD_MARKER_RE = re.compile(r"^OPH_(\d{4})$")
 
 
 def _label(v) -> str:
@@ -325,6 +348,8 @@ def chain_from_markers(items) -> list[dict]:
     for name, labels, created in items:
         m = STATE_MARKER_RE.match(name or "")
         if not m:
+            if (name or "").startswith("S_"):
+                out.append({"invalid_marker": name, "occurred_at": created})
             continue
         lb = labels or {}
         val = lambda k: None if lb.get(k) in (None, "none") else lb[k]
@@ -333,3 +358,34 @@ def chain_from_markers(items) -> list[dict]:
                     "to_state": up("to"), "actor": up("actor") or "", "decision_id": val("decision"),
                     "occurred_at": created})
     return out
+
+
+# ───────────────────────────────────────────── знаки владельца в ref (у control нет tables.create)
+def decision_marker_name(seq: int) -> str:
+    return f"OPD_{int(seq):06d}"
+
+
+def decision_marker(event_from, event_to, **payload) -> tuple[dict, str]:
+    """(метки, описание) таблицы-решения ref.OPD_<seq> для ребра оператора."""
+    return ({"to": _label(event_to), "from": _label(event_from)},
+            json.dumps(payload, ensure_ascii=False, sort_keys=True, default=str)[:1000])
+
+
+def decision_from_marker(labels, description) -> dict:
+    lb = labels or {}
+    val = lambda k: None if lb.get(k) in (None, "none") else lb[k].upper()
+    try:
+        extra = json.loads(description or "{}")
+    except ValueError:
+        extra = {}
+    return dict(extra if isinstance(extra, dict) else {}, to_state=val("to"), expect_state=val("from"))
+
+
+def hold_active(items) -> bool:
+    """items — [(имя, метки)] стоп-крана ref.OPH_<n>: действует, если последний — suspend."""
+    best = (0, None)
+    for name, labels in items:
+        m = HOLD_MARKER_RE.match(name or "")
+        if m and int(m.group(1)) > best[0]:
+            best = (int(m.group(1)), (labels or {}).get("action"))
+    return best[1] == "suspend"

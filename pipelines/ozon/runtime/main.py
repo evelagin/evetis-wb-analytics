@@ -82,41 +82,56 @@ def validate_plan(want, since, until, lb_over, today):
     return None
 
 
-BINDING_TABLE = "SELLER_BINDING"
 ADS_ENTITIES = ("ads_campaigns", "ads_expense_daily", "ads_sku_daily")
 
 
 def binding_gate(want, now):
     """TENANT_BINDING_REQUIRED=1 (арендатор, T5): загрузка только в подтверждённый кабинет.
 
-    Runtime сам снимает отпечаток кабинета в ЭТОМ прогоне (/v1/seller/info + Client-Id) и сверяет
-    его с действующим подтверждением владельца в ref.SELLER_BINDING (tabledata.list, READER). Нет
-    подтверждения, отзыв, несовпадение отпечатка — (статус, причина) с отказом до записи данных.
-    Для рекламных сущностей так же проверяется Performance. Писать привязку runtime не может.
+    Истина — таблицы-маркеры владельца в ref (tables.list/tables.get консистентны; у runtime READER
+    на ref, писать туда он не может):
+      * ref.OPH_<n> — стоп-кран владельца: последний suspend — отказ;
+      * ref.OPB_<api>_<n> — события привязки; действует последнее (номер, не часы). Отзыв виден сразу.
+    Затем runtime сам снимает отпечаток кабинета в ЭТОМ прогоне (/v1/seller/info + Client-Id) и
+    сверяет его с подтверждённым. Нет подтверждения, отзыв, несовпадение отпечатка — (статус, причина)
+    с отказом до записи данных. Для рекламных сущностей так же проверяется Performance.
     """
     import identity as I
-    rows = [dict(r.items()) for r in C.bq().list_rows(f"{C.PROJECT}.{C.REF_DATASET}.{BINDING_TABLE}")]
+    import lifecycle_core as LCORE
+    client = C.bq()
+    ref = f"{C.PROJECT}.{C.REF_DATASET}"
+    names = [t.table_id for t in client.list_tables(ref)]
+    holds = [n for n in names if LCORE.HOLD_MARKER_RE.match(n)]
+    if holds:
+        last = max(holds)
+        if LCORE.hold_active([(last, getattr(client.get_table(f"{ref}.{last}"), "labels", None))]):
+            return "tenant:SUSPENDED", "стоп-кран владельца (ref.OPH_*)"
     need = [I.SELLER] + ([I.PERFORMANCE] if any(e in ADS_ENTITIES for e in want) else [])
+    items = []
+    for api in need:
+        mine = [n for n in names if (m := I.BINDING_MARKER_RE.match(n)) and m.group(1) == api]
+        if mine:
+            t = client.get_table(f"{ref}.{max(mine)}")
+            items.append((max(mine), getattr(t, "labels", None), getattr(t, "description", None)))
+    bindings = {api: I.binding_from_markers(items, api, now) for api in need}
     for api in need:
         # Нет действующего подтверждения — отказ ДО секретов и до Ozon (новый арендатор, отзыв).
-        b = I.effective_binding(rows, api, now)
-        if b.status != "CONFIRMED":
-            return f"{api}:{b.status}", b.reason
+        if bindings[api].status != "CONFIRMED":
+            return f"{api}:{bindings[api].status}", bindings[api].reason
     code, si = C.seller_post("/v1/seller/info", {})
     fp = None
     if code == 200:
         company = (si or {}).get("company") or {}
         try:
-            fp = I.seller_fingerprint(C.seller_client_id(),
-                                      company.get("inn"), company.get("ogrn"))
+            fp = I.seller_fingerprint(C.seller_client_id(), company.get("inn"), company.get("ogrn"))
         except I.IdentityError:
             fp = None
-    status, reason = I.live_status(I.effective_binding(rows, I.SELLER, now), fp)
+    status, reason = I.live_status(bindings[I.SELLER], fp)
     if status != I.BOUND:
         return f"seller:{status}", reason
-    if any(e in ADS_ENTITIES for e in want):
+    if I.PERFORMANCE in need:
         pfp = I.performance_fingerprint(C.perf_client_id())
-        status, reason = I.live_status(I.effective_binding(rows, I.PERFORMANCE, now), pfp)
+        status, reason = I.live_status(bindings[I.PERFORMANCE], pfp)
         if status != I.BOUND:
             return f"performance:{status}", reason
     return None, "ok"
