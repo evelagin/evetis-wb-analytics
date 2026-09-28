@@ -12,6 +12,8 @@ Changes v2 draft wording (approved cleanup). Local verification: pytest green.
 - KC-03: hand cream PAO «24 мес» -> 12 мес (T1 icon 12M).
 - ODR-15: «6 типов церамидов» -> «комплекс церамидов (NS, NG, NP, EOP, AP, AS)».
 - ODR-13: hand cream declared «для рук» (T1), «для тела» added to prohibited claims.
+- Owner 28.09 / ODR-12: enzyme powder frequency «2–3 раза в неделю» removed (not in T1 SP-TS-8);
+  powder «для лица и тела» -> «для лица» (ODR-13); «без кислот» removed (KC-17, Ascorbic Acid 0,2 %).
 - New test `tests/engine/test_kb_owner_decisions.py` guards the KB bodies.
 
 ## 1.5.2 — Recovery card must be actionable (2026-09-28)

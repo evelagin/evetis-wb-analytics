@@ -17,6 +17,8 @@ FORBIDDEN = {
     "ODR-08 invented contact": r"направить в чат|напишите нам|свяжитесь с нами",
     "ODR-15 ceramide count": r"\b[56]\s+(тип|вид)\w*\s+церамид|церамид\w*\s+именно\s+6",
     "KC-03 hand PAO": r"после вскрытия\s*[—-]\s*24",
+    "ODR-12 powder frequency": r"применять\s+2\s*[–-]\s*3\s*раза",
+    "KC-17 powder acids": r"без кислот и трения",
 }
 
 
