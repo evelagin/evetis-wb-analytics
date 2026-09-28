@@ -76,7 +76,7 @@ def test_budget_and_max_items(snap):
     rt = _rt(snap, _docs())
     s = run_shadow(rt, max_items=1, deadline=1e18)
     assert s.decided == 1
-    s2 = run_shadow(rt, max_items=10, deadline=0)   # deadline already passed
+    s2 = run_shadow(rt, max_items=10, deadline=10, clock=lambda: 0.0)   # < MIN_ITEM_SECONDS left
     assert s2.decided == 0 and s2.skipped_budget == 1
 
 

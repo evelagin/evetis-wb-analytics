@@ -13,7 +13,6 @@ import datetime as _dt
 import hashlib
 import json
 import re
-from typing import Any
 
 from app.v3 import ENGINE_VERSION
 from app.v3.registry import (CONFIDENCE, DISCLOSURE, FACT_STATUSES, QUALITY_FLAGS, RELIABILITY, TIERS,

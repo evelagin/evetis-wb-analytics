@@ -10,7 +10,7 @@ import json
 import re
 from functools import cached_property
 from pathlib import Path
-from typing import Any, Optional
+from typing import Optional
 
 from app.v3.snapshot_builder import SCHEMA_VERSION, content_hash
 from app.v3.text import normalize

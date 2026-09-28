@@ -127,8 +127,11 @@ class ShadowSummary:
         return dict(self.__dict__)
 
 
+MIN_ITEM_SECONDS = 25.0   # one item = up to 2 LLM calls; never START one that cannot finish in time
+
+
 def run_shadow(rt: V3Runtime, *, max_items: int, deadline: float, scan_limit: int = 150,
-               clock=time.monotonic) -> ShadowSummary:
+               clock=time.monotonic, min_item_seconds: float = MIN_ITEM_SECONDS) -> ShadowSummary:
     s = ShadowSummary()
     snap_id = rt.engine.snapshot.snapshot_id
     cands = rt.store.candidates(scan_limit)
@@ -138,7 +141,7 @@ def run_shadow(rt: V3Runtime, *, max_items: int, deadline: float, scan_limit: in
     for doc_id, doc in cands:
         if s.decided + s.rechecked >= max_items:
             break
-        if clock() >= deadline:
+        if clock() >= deadline - min_item_seconds:
             s.skipped_budget += 1
             break
         key = keys[doc_id]

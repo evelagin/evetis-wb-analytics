@@ -18,7 +18,6 @@ import datetime as _dt
 import hashlib
 import json
 from pathlib import Path
-from typing import Any
 
 import yaml
 
