@@ -175,6 +175,18 @@ export interface Config {
    */
   unitkaReconcileMode: 'off' | 'observe' | 'write';
   unitkaReconcileModeInvalid: string | null;
+  /**
+   * SPP-3: колонка AB (СПП) из wb_mart.V_WB_SPP_DAILY. off — не читается; observe — план и манифест отката
+   * в журнал, запись 0; write — AB входит в запись цикла. Мягкий разбор: опечатка = off + предупреждение.
+   */
+  unitkaSppMode: 'off' | 'observe' | 'write';
+  unitkaSppModeInvalid: string | null;
+  /** unitka-spp-rollback: манифест (журнал unitka_spp_rollback_manifest) — UNITKA_SPP_ROLLBACK_MANIFEST. */
+  unitkaSppRollbackManifest: string;
+  /** unitka-spp-rollback: явное подтверждение отпечатка манифеста — UNITKA_SPP_ROLLBACK_DIGEST. */
+  unitkaSppRollbackDigest: string;
+  /** unitka-spp-rollback: исполнение. ТОЛЬКО prod И UNITKA_SPP_ROLLBACK_WRITE=1 И без DRY_RUN; иначе — план. */
+  unitkaSppRollbackWrite: boolean;
   // ── UNITKA CALENDAR V2 (Phase 2B) — мягкий разбор, как у Guard. ──
   /** Окно предпроверки: за сколько дней до конца месяца LCD предупреждать NEXT_MONTH_SECTION_MISSING (0–15, по умолчанию 5). */
   unitkaMonthPrepWindowDays: number;
@@ -226,7 +238,9 @@ function intOpt(env: Env, name: string, fallback: number): number {
 }
 
 /** Integrity Guard: мягкий разбор. Никогда не бросает ConfigError. */
-function integrityConfig(env: Env): Pick<Config, 'unitkaIntegrityMode' | 'unitkaIntegrityModeInvalid' | 'unitkaStorageDueMsk' | 'unitkaIntegrityBudgetMs' | 'unitkaReconcileMode' | 'unitkaReconcileModeInvalid'> {
+function integrityConfig(env: Env): Pick<Config, 'unitkaIntegrityMode' | 'unitkaIntegrityModeInvalid' | 'unitkaStorageDueMsk' | 'unitkaIntegrityBudgetMs' | 'unitkaReconcileMode' | 'unitkaReconcileModeInvalid' | 'unitkaSppMode' | 'unitkaSppModeInvalid' | 'unitkaSppRollbackManifest' | 'unitkaSppRollbackDigest' | 'unitkaSppRollbackWrite'> {
+  const sppRaw = (env.UNITKA_SPP_MODE ?? '').trim().toLowerCase();
+  const sppKnown = sppRaw === 'off' || sppRaw === 'observe' || sppRaw === 'write';
   const recRaw = (env.UNITKA_RECONCILE_MODE ?? '').trim().toLowerCase();
   const recKnown = recRaw === 'off' || recRaw === 'observe' || recRaw === 'write';
   const raw = (env.UNITKA_INTEGRITY_MODE ?? '').trim().toLowerCase();
@@ -241,6 +255,11 @@ function integrityConfig(env: Env): Pick<Config, 'unitkaIntegrityMode' | 'unitka
     unitkaIntegrityBudgetMs: budget,
     unitkaReconcileMode: recKnown ? (recRaw as 'off' | 'observe' | 'write') : 'off',
     unitkaReconcileModeInvalid: recRaw === '' || recKnown ? null : recRaw,
+    unitkaSppMode: sppKnown ? (sppRaw as 'off' | 'observe' | 'write') : 'off',
+    unitkaSppRollbackManifest: (env.UNITKA_SPP_ROLLBACK_MANIFEST ?? '').trim(),
+    unitkaSppRollbackDigest: (env.UNITKA_SPP_ROLLBACK_DIGEST ?? '').trim().toLowerCase(),
+    unitkaSppRollbackWrite: (env.UNITKA_SPP_ROLLBACK_WRITE ?? '').trim() === '1',
+    unitkaSppModeInvalid: sppRaw === '' || sppKnown ? null : sppRaw,
   };
 }
 

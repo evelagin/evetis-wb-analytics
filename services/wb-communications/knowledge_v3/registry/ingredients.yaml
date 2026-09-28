@@ -1,0 +1,158 @@
+# REF_INGREDIENT — ingredient IDENTITY only (no product facts, no effects).
+#
+# inci:      canonical INCI (display form)
+# ru_name:   neutral Russian name for customer text; empty = use INCI as written
+# patterns:  regexes (normalized text: lowercase, ё->е) used to detect a mention in a
+#            customer message or a draft. Omitted = not detectable (generic ingredients).
+# classes:   identity classes from the approved dictionary only (ODR-10). Currently only
+#            'fragrance' and 'ceramide' (needed for ODR-10 / ODR-15 wording). A class
+#            never licenses a derived "free-from" claim.
+schema: ref_ingredient.v1
+ingredients:
+  # --- solvents / bases (not detectable: too generic in everyday text) ---
+  - {ingredient_id: water, inci: Water, ru_name: вода}
+  - {ingredient_id: glycerin, inci: Glycerin, ru_name: глицерин, patterns: ['глицерин']}
+  - {ingredient_id: propylene_glycol, inci: Propylene Glycol, ru_name: пропиленгликоль, patterns: ['пропиленгликол']}
+  - {ingredient_id: butylene_glycol, inci: Butylene Glycol, ru_name: бутиленгликоль, patterns: ['бутиленгликол']}
+  - {ingredient_id: dipropylene_glycol, inci: Dipropylene Glycol, ru_name: дипропиленгликоль}
+  - {ingredient_id: pentylene_glycol, inci: Pentylene Glycol, ru_name: пентиленгликоль}
+  - {ingredient_id: caprylyl_glycol, inci: Caprylyl Glycol, ru_name: каприлилгликоль}
+  - {ingredient_id: hexanediol_1_2, inci: "1,2-Hexanediol", ru_name: "1,2-гександиол"}
+  - {ingredient_id: ethyl_hexanediol, inci: Ethyl Hexanediol, ru_name: ""}
+  - {ingredient_id: benzyl_glycol, inci: Benzyl Glycol, ru_name: ""}
+  # --- acids ---
+  - {ingredient_id: salicylic_acid, inci: Salicylic Acid, ru_name: салициловая кислота, patterns: ['салицил(?!оил)', '\bbha\b', '\bбха\b']}
+  - {ingredient_id: capryloyl_salicylic_acid, inci: Capryloyl Salicylic Acid, ru_name: "LHA (каприлоил салициловая кислота)", patterns: ['\blha\b', 'каприлоил', 'липогидрокс', 'lipo.?hydroxy']}
+  - {ingredient_id: glycolic_acid, inci: Glycolic Acid, ru_name: гликолевая кислота, patterns: ['гликолев', 'glycolic']}
+  - {ingredient_id: lactic_acid, inci: Lactic Acid, ru_name: молочная кислота, patterns: ['молочн\w* кислот', 'lactic acid']}
+  - {ingredient_id: lactobionic_acid, inci: Lactobionic Acid, ru_name: лактобионовая кислота, patterns: ['лактобион']}
+  - {ingredient_id: citric_acid, inci: Citric Acid, ru_name: лимонная кислота, patterns: ['лимонн\w* кислот']}
+  - {ingredient_id: ascorbic_acid, inci: Ascorbic Acid, ru_name: "аскорбиновая кислота (витамин C)", patterns: ['аскорбин', 'витамин\w* (c|с)\b', 'vitamin c']}
+  - {ingredient_id: hyaluronic_acid, inci: Hyaluronic Acid, ru_name: гиалуроновая кислота, patterns: ['гиалурон', 'hyaluronic'], family: hyaluronic}
+  - {ingredient_id: sodium_hyaluronate, inci: Sodium Hyaluronate, ru_name: гиалуронат натрия, patterns: ['гиалурон', 'hyaluronate'], family: hyaluronic}
+  - {ingredient_id: stearic_acid, inci: Stearic Acid, ru_name: стеариновая кислота, patterns: ['стеаринов']}
+  - {ingredient_id: sorbitan_caprylate_propanediol_benzoic_acid, inci: "Sorbitan Caprylate (and) Propanediol (and) Benzoic Acid", ru_name: ""}
+  # --- actives / vitamins ---
+  - {ingredient_id: niacinamide, inci: Niacinamide, ru_name: ниацинамид, patterns: ['ниацинамид', 'никотинамид', 'niacinamide', 'витамин\w* (b|в)3']}
+  - {ingredient_id: tocopherol, inci: Tocopherol, ru_name: "токоферол (витамин E)", patterns: ['токоферол(?! ?ацетат)', 'витамин\w* (e|е)\b', 'vitamin e'], family: vitamin_e}
+  - {ingredient_id: tocopheryl_acetate, inci: Tocopheryl Acetate, ru_name: токоферилацетат, patterns: ['токоферил\w*ацетат', 'токоферол ацетат', 'витамин\w* (e|е)\b'], family: vitamin_e}
+  - {ingredient_id: panthenol, inci: Panthenol, ru_name: пантенол, patterns: ['пантенол']}
+  - {ingredient_id: cyanocobalamin, inci: Cyanocobalamin, ru_name: "цианокобаламин (витамин B12)", patterns: ['цианокобаламин', 'витамин\w* (b|в)12']}
+  - {ingredient_id: allantoin, inci: Allantoin, ru_name: аллантоин, patterns: ['аллантоин']}
+  - {ingredient_id: urea, inci: Urea, ru_name: мочевина, patterns: ['мочевин']}
+  - {ingredient_id: hydroxyethyl_urea, inci: Hydroxyethyl Urea, ru_name: гидроксиэтилмочевина}
+  - {ingredient_id: adenosine, inci: Adenosine, ru_name: аденозин, patterns: ['аденозин']}
+  - {ingredient_id: betaine, inci: Betaine, ru_name: бетаин, patterns: ['бетаин']}
+  - {ingredient_id: zinc_pca, inci: Zinc PCA, ru_name: цинк PCA, patterns: ['цинк', 'zinc']}
+  - {ingredient_id: arginine, inci: Arginine, ru_name: аргинин, patterns: ['аргинин']}
+  - {ingredient_id: dimethyl_sulfone, inci: Dimethyl Sulfone, ru_name: "метилсульфонилметан (МСМ)", patterns: ['\bмсм\b', '\bmsm\b', 'метилсульфонил', 'диметилсульфон']}
+  - {ingredient_id: trehalose, inci: Trehalose, ru_name: трегалоза, patterns: ['трегалоз']}
+  - {ingredient_id: dipotassium_glycyrrhizate, inci: Dipotassium Glycyrrhizate, ru_name: глицирризинат дикалия, patterns: ['глицирризин']}
+  - {ingredient_id: papain, inci: Papain, ru_name: папаин, patterns: ['папаин']}
+  - {ingredient_id: inulin, inci: Inulin, ru_name: инулин, patterns: ['инулин']}
+  - {ingredient_id: fructan, inci: Fructan, ru_name: фруктан}
+  - {ingredient_id: xylitol, inci: Xylitol, ru_name: ксилит, patterns: ['ксилит']}
+  - {ingredient_id: glucose, inci: Glucose, ru_name: глюкоза, patterns: ['глюкоз']}
+  - {ingredient_id: raspberry_ketone, inci: Raspberry Ketone, ru_name: малиновый кетон, patterns: ['малинов\w* кетон']}
+  - {ingredient_id: alpha_glucan_oligosaccharide, inci: Alpha-Glucan Oligosaccharide, ru_name: ""}
+  - {ingredient_id: biosaccharide_gum_1, inci: Biosaccharide Gum-1, ru_name: ""}
+  - {ingredient_id: sodium_polygamma_glutamate, inci: Sodium Polygamma-Glutamate, ru_name: ""}
+  - {ingredient_id: hydroxyacetophenone, inci: Hydroxyacetophenone, ru_name: ""}
+  - {ingredient_id: glycine_soja_protein, inci: Glycine Soja (Soybean) Protein, ru_name: соевый белок, patterns: ['\bсо(я|и|ю|ей|ев\w*)\b', 'glycine soja', 'soybean']}
+  # --- ceramides (ODR-15: never '5/6 видов'; wording fixed by policy) ---
+  - {ingredient_id: ceramide_ns_ng, inci: "Ceramide NS/Ceramide NG", ru_name: "церамиды NS, NG", classes: [ceramide], patterns: ['церамид', 'керамид', 'ceramide']}
+  - {ingredient_id: ceramide_np, inci: Ceramide NP, ru_name: церамид NP, classes: [ceramide]}
+  - {ingredient_id: ceramide_eop, inci: Ceramide EOP, ru_name: церамид EOP, classes: [ceramide]}
+  - {ingredient_id: ceramide_ap, inci: Ceramide AP, ru_name: церамид AP, classes: [ceramide]}
+  - {ingredient_id: ceramide_as, inci: Ceramide AS, ru_name: церамид AS, classes: [ceramide]}
+  # --- oils / butters ---
+  - {ingredient_id: melaleuca_alternifolia_leaf_oil, inci: Melaleuca Alternifolia (Tea Tree) Leaf Oil, ru_name: масло чайного дерева, patterns: ['масл\w* чайн\w* дерев', 'tea tree (leaf )?oil', 'чайн\w* дерев'], family: tea_tree}
+  - {ingredient_id: melaleuca_alternifolia_leaf_extract, inci: Melaleuca Alternifolia (Tea Tree) Leaf Extract, ru_name: экстракт листьев чайного дерева, patterns: ['экстракт\w* (листьев |листа )?чайн\w* дерев', 'tea tree (leaf )?extract', 'чайн\w* дерев'], family: tea_tree}
+  - {ingredient_id: vitis_vinifera_seed_oil, inci: Vitis Vinifera (Grape) Seed Oil, ru_name: масло виноградной косточки, patterns: ['виноградн']}
+  - {ingredient_id: butyrospermum_parkii_oil, inci: Butyrospermum Parkii (Shea) Oil, ru_name: масло ши, patterns: ['масл\w* ши\b', '\bши\b', 'shea'], family: shea}
+  - {ingredient_id: butyrospermum_parkii_butter, inci: Butyrospermum Parkii (Shea) Butter, ru_name: масло ши (баттер), patterns: ['масл\w* ши\b', '\bши\b', 'shea'], family: shea}
+  - {ingredient_id: rosa_canina_fruit_oil, inci: Rosa Canina (Rosehip) Fruit Oil, ru_name: масло шиповника, patterns: ['шиповник']}
+  - {ingredient_id: punica_granatum_seed_oil, inci: Punica Granatum (Pomegranate) Seed Oil, ru_name: масло косточек граната, patterns: ['гранат']}
+  - {ingredient_id: olive_squalane, inci: Olive Squalane, ru_name: сквалан из оливы, patterns: ['сквалан', 'squalane']}
+  - {ingredient_id: simmondsia_chinensis_seed_oil, inci: Simmondsia Chinensis (Jojoba) Seed Oil, ru_name: масло жожоба, patterns: ['жожоба', 'jojoba']}
+  - {ingredient_id: macadamia_ternifolia_seed_oil, inci: Macadamia Ternifolia Seed Oil, ru_name: масло макадамии, patterns: ['макадами']}
+  - {ingredient_id: ricinus_communis_seed_oil, inci: Ricinus Communis (Castor) Seed Oil, ru_name: касторовое масло, patterns: ['касторов', 'castor'], family: castor}
+  - {ingredient_id: hydrogenated_castor_oil, inci: Hydrogenated Castor Oil, ru_name: гидрогенизированное касторовое масло, patterns: ['касторов', 'castor'], family: castor}
+  - {ingredient_id: hydrogenated_castor_sesame_oil, inci: Hydrogenated Castor Sesame Oil, ru_name: "", note: "Label-only name on SP-TS-2 p4 (KC-13)."}
+  - {ingredient_id: prunus_amygdalus_dulcis_oil, inci: Prunus Amygdalus Dulcis (Sweet Almond) Oil, ru_name: масло сладкого миндаля, patterns: ['миндал', 'almond']}
+  - {ingredient_id: rosa_damascena_flower_oil, inci: Rosa Damascena Flower Oil, ru_name: масло дамасской розы, patterns: ['масл\w* (дамасской )?роз', '\bроз(а|ы|ой)\b'], family: rose}
+  - {ingredient_id: rosa_rugosa_flower_oil, inci: Rosa Rugosa Flower Oil, ru_name: масло цветков розы морщинистой, patterns: ['масл\w* роз', '\bроз(а|ы|ой)\b'], family: rose}
+  - {ingredient_id: geranium_maculatum_oil, inci: Geranium Maculatum Oil, ru_name: масло герани, patterns: ['масл\w* герани', 'геран'], family: geranium}
+  - {ingredient_id: mentha_piperita_oil, inci: Mentha Piperita (Peppermint) Oil, ru_name: масло мяты перечной, patterns: ['\bмят', 'peppermint', 'mentha piperita'], family: mint}
+  - {ingredient_id: copernicia_cerifera_wax_extract, inci: Copernicia Cerifera (Carnauba) Wax Extract, ru_name: карнаубский воск, patterns: ['карнауб']}
+  # --- plant extracts / waters / juices ---
+  - {ingredient_id: aloe_barbadensis_leaf_juice, inci: Aloe Barbadensis Leaf Juice, ru_name: сок листьев алоэ, patterns: ['алоэ', '\baloe\b'], family: aloe}
+  - {ingredient_id: aloe_barbadensis_extract, inci: Aloe Barbadensis Extract, ru_name: экстракт алоэ, patterns: ['алоэ', '\baloe\b'], family: aloe}
+  - {ingredient_id: aloe_barbadensis_leaf_powder, inci: Aloe Barbadensis Leaf Powder, ru_name: порошок листьев алоэ, patterns: ['алоэ', '\baloe\b'], family: aloe}
+  - {ingredient_id: hamamelis_virginiana_water, inci: Hamamelis Virginiana (Witch Hazel) Water, ru_name: вода гамамелиса, patterns: ['гамамелис', 'witch hazel'], family: witch_hazel}
+  - {ingredient_id: hamamelis_virginiana_bark_leaf_extract, inci: Hamamelis Virginiana (Witch Hazel) Bark/Leaf Extract, ru_name: экстракт гамамелиса, patterns: ['гамамелис', 'witch hazel'], family: witch_hazel}
+  - {ingredient_id: hamamelis_virginiana_extract, inci: Hamamelis Virginiana (Witch Hazel) Extract, ru_name: экстракт гамамелиса, patterns: ['гамамелис', 'witch hazel'], family: witch_hazel}
+  - {ingredient_id: salix_alba_bark_extract, inci: Salix Alba (Willow) Bark Extract, ru_name: экстракт коры белой ивы, patterns: ['\bив(ы|а)\b', 'willow']}
+  - {ingredient_id: camellia_sinensis_leaf_extract, inci: Camellia Sinensis Leaf Extract, ru_name: экстракт листьев зелёного чая, patterns: ['зелен\w* ча', 'camellia'], family: green_tea}
+  - {ingredient_id: camellia_sinensis_leaf_water, inci: Camellia Sinensis Leaf Water, ru_name: вода листьев зелёного чая, patterns: ['зелен\w* ча', 'camellia'], family: green_tea}
+  - {ingredient_id: rehmannia_chinensis_root_extract, inci: Rehmannia Chinensis Root Extract, ru_name: экстракт корня ремании}
+  - {ingredient_id: scutellaria_baicalensis_root_extract, inci: Scutellaria Baicalensis Root Extract, ru_name: экстракт корня шлемника байкальского, patterns: ['шлемник'], family: scutellaria}
+  - {ingredient_id: scutellaria_baicalensis_extract, inci: Scutellaria Baicalensis Extract, ru_name: экстракт шлемника байкальского, patterns: ['шлемник'], family: scutellaria}
+  - {ingredient_id: houttuynia_cordata_extract, inci: Houttuynia Cordata Extract, ru_name: экстракт хауттюйнии}
+  - {ingredient_id: melia_azadirachta_leaf_extract, inci: Melia Azadirachta Leaf Extract, ru_name: экстракт листьев нима, patterns: ['\bneem\b']}
+  - {ingredient_id: lactobacillus_pear_juice_ferment_filtrate, inci: Lactobacillus/Pear Juice Ferment Filtrate, ru_name: ""}
+  - {ingredient_id: candida_bombicola_ferment, inci: Candida Bombicola/Glucose/Methyl Rapeseedate Ferment, ru_name: ""}
+  - {ingredient_id: bifida_ferment_lysate, inci: Bifida Ferment Lysate, ru_name: лизат ферментов бифидобактерий, patterns: ['бифид', 'bifida']}
+  - {ingredient_id: centella_asiatica_leaf_extract, inci: Centella Asiatica Leaf Extract, ru_name: экстракт центеллы азиатской, patterns: ['центелл', 'centella', '\bcica\b']}
+  - {ingredient_id: equisetum_arvense_leaf_extract, inci: Equisetum Arvense Leaf Extract, ru_name: экстракт хвоща полевого, patterns: ['хвощ']}
+  - {ingredient_id: geranium_maculatum_extract, inci: Geranium Maculatum Extract, ru_name: экстракт герани пятнистой, patterns: ['геран'], family: geranium}
+  - {ingredient_id: pelargonium_graveolens_extract, inci: Pelargonium Graveolens Flower/Leaf/Stem Extract, ru_name: экстракт пеларгонии, patterns: ['пеларгон', 'гераниев', 'герань'], family: geranium}
+  - {ingredient_id: taraxacum_officinale_root_extract, inci: Taraxacum Officinale (Dandelion) Rhizome/Root Extract, ru_name: экстракт корня одуванчика, patterns: ['одуванч']}
+  - {ingredient_id: secale_cereale_seed_extract, inci: Secale Cereale (Rye) Seed Extract, ru_name: экстракт семян ржи, patterns: ['\bрж(и|аной|аного|аные)\b']}
+  - {ingredient_id: salvia_miltiorrhiza_extract, inci: Salvia Miltiorrhiza Extract, ru_name: экстракт шалфея краснокорневого, patterns: ['шалфе']}
+  - {ingredient_id: portulaca_oleracea_extract, inci: Portulaca Oleracea Extract, ru_name: экстракт портулака, patterns: ['портулак']}
+  - {ingredient_id: chrysanthellum_indicum_extract, inci: Chrysanthellum Indicum Extract, ru_name: экстракт хризантеллума, patterns: ['хризантел'], family: chrysanthemum}
+  - {ingredient_id: chrysanthemum_indicum_extract, inci: Chrysanthemum Indicum Extract, ru_name: экстракт хризантемы, patterns: ['хризантем'], family: chrysanthemum}
+  - {ingredient_id: mentha_arvensis_leaf_extract, inci: Mentha Arvensis Leaf Extract, ru_name: экстракт листьев мяты полевой, patterns: ['\bмят', 'mentha arvensis'], family: mint}
+  - {ingredient_id: vaccinium_macrocarpon_juice, inci: Vaccinium Macrocarpon (Cranberry) Juice, ru_name: сок клюквы, patterns: ['клюкв']}
+  - {ingredient_id: magnolia_officinalis_bark_extract, inci: Magnolia Officinalis Bark Extract, ru_name: экстракт коры магнолии, patterns: ['магноли']}
+  - {ingredient_id: boswellia_serrata_extract, inci: Boswellia Serrata (Boswellin) Extract, ru_name: экстракт босвеллии, patterns: ['босвелл']}
+  - {ingredient_id: rosa_damascena_flower_distillate, inci: Rosa Damascena (Rose) Flower Distillate, ru_name: дистиллят цветков дамасской розы, patterns: ['розов\w* вод', 'дистиллят', '\bроз(а|ы|ой)\b'], family: rose}
+  - {ingredient_id: carica_papaya_fruit_extract, inci: Carica Papaya (Papaya) Fruit Extract, ru_name: экстракт папайи, patterns: ['папай']}
+  - {ingredient_id: lens_esculenta_seed_extract, inci: Lens Esculenta Seed Extract, ru_name: экстракт семян чечевицы, patterns: ['чечевиц']}
+  - {ingredient_id: nelumbo_nucifera_flower_extract, inci: Nelumbo Nucifera Flower Extract, ru_name: экстракт цветков лотоса, patterns: ['лотос'], family: lotus}
+  - {ingredient_id: lotus_corniculatus_flower_extract, inci: Lotus Corniculatus Flower Extract, ru_name: экстракт цветков лядвенца}
+  - {ingredient_id: lotus_seed_flower_extract, inci: Lotus Seed Flower Extract, ru_name: "", note: "Label-only name on SP-TS-2 p4 (KC-13)."}
+  - {ingredient_id: swiftlet_nest_extract, inci: Swiftlet Nest Extract, ru_name: экстракт ласточкиного гнезда, patterns: ['гнезд', 'салаган', 'swiftlet']}
+  - {ingredient_id: oryza_sativa_extract, inci: Oryza Sativa (Rice) Extract, ru_name: экстракт риса, patterns: ['\bрис(а|овый|овой|ового)?\b']}
+  - {ingredient_id: sophora_angustifolia_root_extract, inci: Sophora Angustifolia Root Extract, ru_name: экстракт корня софоры, patterns: ['софор']}
+  - {ingredient_id: zea_mays_starch, inci: Zea Mays (Corn) Starch, ru_name: кукурузный крахмал, patterns: ['крахмал']}
+  # --- surfactants / emulsifiers / thickeners / preservatives ---
+  - {ingredient_id: sodium_cocoyl_isethionate, inci: Sodium Cocoyl Isethionate, ru_name: кокоилизетионат натрия}
+  - {ingredient_id: sodium_lauroyl_glutamate, inci: Sodium Lauroyl Glutamate, ru_name: лауроилглутамат натрия}
+  - {ingredient_id: sodium_cocoyl_glycinate, inci: Sodium Cocoyl Glycinate, ru_name: кокоилглицинат натрия}
+  - {ingredient_id: polyglyceryl_4_caprate, inci: Polyglyceryl-4 Caprate, ru_name: ""}
+  - {ingredient_id: glyceryl_caprylate, inci: Glyceryl Caprylate, ru_name: ""}
+  - {ingredient_id: glyceryl_stearate, inci: Glyceryl Stearate, ru_name: глицерилстеарат}
+  - {ingredient_id: cetearyl_alcohol, inci: Cetearyl Alcohol, ru_name: цетеариловый спирт, patterns: ['цетеарил']}
+  - {ingredient_id: cetyl_alcohol, inci: Cetyl Alcohol, ru_name: цетиловый спирт, patterns: ['цетилов']}
+  - {ingredient_id: ceteareth_20, inci: Ceteareth-20, ru_name: ""}
+  - {ingredient_id: ethylhexyl_palmitate, inci: Ethylhexyl Palmitate, ru_name: этилгексилпальмитат}
+  - {ingredient_id: ethylhexyl_cocoate, inci: Ethylhexyl Cocoate, ru_name: этилгексилкокоат, note: "KC-28: coconut-derived; 'кокос' wording is an owner decision, not a derivation."}
+  - {ingredient_id: aluminum_starch_octenylsuccinate, inci: Aluminum Starch Octenylsuccinate, ru_name: ""}
+  - {ingredient_id: acrylates_c10_30_crosspolymer, inci: Acrylates/C10-30 Alkyl Acrylate Crosspolymer, ru_name: ""}
+  - {ingredient_id: carbomer, inci: Carbomer, ru_name: карбомер}
+  - {ingredient_id: xanthan_gum, inci: Xanthan Gum, ru_name: ксантановая камедь}
+  - {ingredient_id: hydroxyethylcellulose, inci: Hydroxyethylcellulose, ru_name: гидроксиэтилцеллюлоза}
+  - {ingredient_id: hydroxypropyl_methylcellulose, inci: Hydroxypropyl Methylcellulose, ru_name: гидроксипропилметилцеллюлоза}
+  - {ingredient_id: calcium_carrageenan, inci: Calcium Carrageenan, ru_name: каррагинан кальция}
+  - {ingredient_id: sodium_hydroxide, inci: Sodium Hydroxide, ru_name: гидроксид натрия}
+  - {ingredient_id: sodium_citrate, inci: Sodium Citrate, ru_name: цитрат натрия}
+  - {ingredient_id: triethanolamine, inci: Triethanolamine, ru_name: триэтаноламин, note: "Label-only on SP-TS-2 p4 (KC-13)."}
+  - {ingredient_id: disodium_edta, inci: Disodium EDTA, ru_name: динатриевая соль ЭДТА}
+  - {ingredient_id: phenoxyethanol, inci: Phenoxyethanol, ru_name: феноксиэтанол, patterns: ['феноксиэтанол', 'phenoxyethanol']}
+  - {ingredient_id: ethylhexylglycerin, inci: Ethylhexylglycerin, ru_name: этилгексилглицерин}
+  - {ingredient_id: potassium_sorbate, inci: Potassium Sorbate, ru_name: сорбат калия}
+  - {ingredient_id: sodium_benzoate, inci: Sodium Benzoate, ru_name: бензоат натрия}
+  # --- fragrance (ODR-10: 'В составе указана отдушка (Parfum)' is a direct INCI fact) ---
+  - {ingredient_id: parfum, inci: Parfum, ru_name: отдушка, classes: [fragrance], patterns: ['отдушк', 'парфюм\w* (композиц|отдушк)', '\bparfum\b', '\bfragrance\b']}

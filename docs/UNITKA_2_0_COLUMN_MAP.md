@@ -22,7 +22,7 @@
 | 12 | `Y` | Внешняя реклама (блогеры) | CALCULATED | — | — | `=−($R$45 + AA*(1−AD) + 10 − (AA*(1−AD) − AF)) * N` | = 0 при `N = 0` |
 | 13 | `Z` | ДРР | CALCULATED | — | — | `=IFERROR(X/((Q−N)*AC);0)` | требует `AA` |
 | 14 | `AA` | цена | MANUAL | — | — | — | 🔴 прайс владельца. Из BQ выводится только **реализованная** цена `orders_rub/orders_qty` = 499 ₽ — это другая величина, подменять нельзя |
-| 15 | `AB` | СПП % | MANUAL | — | — | — | 0–100 |
+| 15 | `AB` | СПП % | MANUAL → **AUTO** (SPP-3) | `wb_mart.V_WB_SPP_DAILY` | `ROUND(MAX(effective_spp_pct, 0), 1)` | п.п., с 01.09.2026 | AUTO (`UNITKA_SPP_MODE=write` с 28.09.2026). `docs/UNITKA_SPP_3_AB_AUTO_2026-09-28.md` |
 | 16 | `AC` | цена с СПП | CALCULATED | — | — | `=AA − AA*AB%` | — |
 | 17 | `AD` | комиссия | REFERENCE | — | — | константа `0,438` | сохранена при копировании блока намеренно |
 | 18 | `AE` | цена минус комиссия WB | CALCULATED | — | — | `=AA − AA*AD` | — |

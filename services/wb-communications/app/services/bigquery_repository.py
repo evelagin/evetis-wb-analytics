@@ -166,6 +166,53 @@ class BigQueryRepository:
             logger.warning("bigquery insert_shadow failed: %s", type(exc).__name__)
             return False
 
+    def insert_v3_decision(self, row: dict) -> bool:
+        """Append one Reviews & Q&A v3 SHADOW decision (own table, never mixed with the
+        production history). BEST-EFFORT: returns False on any failure."""
+        try:
+            client = self._lazy()
+            table = self._table(self._s.bigquery_v3_decisions_table)
+            row_id = row.get("decision_id")
+            errors = client.insert_rows_json(table, [row], row_ids=[row_id] if row_id else None)
+            if errors:
+                logger.warning("bigquery insert_v3_decision errors: %s", str(errors)[:300])
+                return False
+            return True
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("bigquery insert_v3_decision failed: %s", type(exc).__name__)
+            return False
+
+    def ensure_v3_decisions_schema(self) -> dict:
+        """Idempotent pre-deploy migration of ``communication_v3_decisions`` (create table or
+        ADD COLUMN IF NOT EXISTS), then fail-fast schema check. Never run on /poll."""
+        from google.api_core.exceptions import NotFound
+        from google.cloud import bigquery
+
+        from app.v3.journal import SCHEMA as V3_SCHEMA
+
+        self._ensure_dataset()
+        client = self._lazy()
+        table_id = self._table(self._s.bigquery_v3_decisions_table)
+        try:
+            live = {f.name: f.field_type for f in client.get_table(table_id).schema}
+        except NotFound:
+            table = bigquery.Table(table_id, schema=[bigquery.SchemaField(c, t) for c, t in V3_SCHEMA])
+            table.time_partitioning = bigquery.TimePartitioning(field="created_at")
+            client.create_table(table)
+            live = None
+        added = []
+        if live is not None:
+            missing = [(c, t) for c, t in V3_SCHEMA if c not in live]
+            if missing:
+                adds = ", ".join(f"ADD COLUMN IF NOT EXISTS {c} {t}" for c, t in missing)
+                client.query(f"ALTER TABLE `{table_id}` {adds}", location=self._s.bigquery_location).result()
+                added = [c for c, _ in missing]
+        final = {f.name: f.field_type for f in client.get_table(table_id).schema}
+        problems = [c for c, t in V3_SCHEMA if c not in final or _norm_bq_type(final[c]) != _norm_bq_type(t)]
+        if problems:
+            raise ShadowSchemaError("v3 decisions table schema invalid: " + ", ".join(problems))
+        return {"table_created": live is None, "columns_added": added}
+
     def upsert_current(self, row: dict) -> bool:
         try:
             from google.cloud import bigquery

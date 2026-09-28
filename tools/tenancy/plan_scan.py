@@ -31,8 +31,14 @@
      планировщик. Образ job'а — ровно утверждённый digest контракта.
   D. ACL датасетов (T3.3) — авторитетный google_bigquery_dataset.access: известен на плане
      и ровно равен контракту (projectOwners OWNER + runtime SA WRITER/READER на свои
-     датасеты). Провижионер, SA планировщика, публичные, внешние и чужие принципалы —
+     датасеты + T4.1: 10 записей деплоера SQL с ролями mpaSql* организации). Запись — четвёрка
+     (роль, вид принципала, принципал, условие); условие сравнивается побайтно (title,
+     description, expression), и допустимо ровно одно — mpaSqlViewUpdate в tenant_ops на V_*.
+     Ожидаемое выводится из tools/tenancy/sql_identity.py, а блок sql_deployer контракта обязан
+     ему равняться. Провижионер, SA планировщика, публичные, внешние и чужие принципалы —
      отказ. Отдельных google_bigquery_dataset_iam_* быть не может.
+  Q. Сервисные аккаунты (T4.1) — только SA контракта (runtime, планировщик, деплоер SQL) в
+     проекте арендатора. Деплоер не получает ни одной привязки уровня проекта (правило P).
   E. Исключение для google_service_account.member (вычисляемое поле провайдера 7.x,
      «serviceAccount:<свой email>»): допустимо ТОЛЬКО это поле, ровно свой email, и только
      для SA из контракта. Это не выдача прав и не список разрешённых привязок.
@@ -56,6 +62,7 @@ if str(REPO) not in sys.path:
     sys.path.insert(0, str(REPO))
 
 from tools.tenancy import platform as PL  # noqa: E402
+from tools.tenancy import sql_identity as SI  # noqa: E402
 
 # ── S. Структура ─────────────────────────────────────────────────────────────
 ALLOWED_MANAGED_TYPES = frozenset({
@@ -240,23 +247,51 @@ def expected_iam(contract: dict) -> set[tuple[str, str, str, str]]:
     return allowed
 
 
-def expected_dataset_access(contract: dict) -> dict[str, set[tuple[str, str, str]]]:
-    """ACL каждого датасета — ровно (роль, вид принципала, принципал) из контракта (правило D)."""
+AclEntry = tuple  # (роль, вид принципала, принципал, условие | None); условие — (title, description, expression)
+
+
+def _condition_key(cond) -> tuple | None:
+    return None if not cond else (cond.get("title") or "", cond.get("description") or "", cond.get("expression") or "")
+
+
+def expected_dataset_access(contract: dict) -> dict[str, set[AclEntry]]:
+    """ACL каждого датасета — ровно четвёрки (роль, вид, принципал, условие) (правило D).
+
+    Записи деплоера SQL выводятся из sql_identity по project_id и датасетам контракта, а НЕ
+    берутся из блока sql_deployer контракта: его равенство выводу проверяет sql_deployer_findings.
+    """
     p, ozon = contract["project_id"], contract["marketplaces"].get("ozon")
-    acl = {ds: {("OWNER", "special_group", "projectOwners")} for ds in contract["datasets"].values()}
+    acl = {ds: {("OWNER", "special_group", "projectOwners", None)} for ds in contract["datasets"].values()}
     if ozon:
         runtime = f"{ozon['service_accounts']['runtime']}@{p}.iam.gserviceaccount.com"
-        acl[contract["datasets"][ozon["raw_dataset_key"]]].add(("WRITER", "user_by_email", runtime))
-        acl[contract["datasets"][ozon["ref_dataset_key"]]].add(("READER", "user_by_email", runtime))
+        acl[contract["datasets"][ozon["raw_dataset_key"]]].add(("WRITER", "user_by_email", runtime, None))
+        acl[contract["datasets"][ozon["ref_dataset_key"]]].add(("READER", "user_by_email", runtime, None))
+    deployer = SI.deployer_email(p)
+    for g in SI.dataset_grants(p, contract["datasets"]):
+        acl[contract["datasets"][g["dataset_key"]]].add(
+            (g["role"], "user_by_email", deployer, _condition_key(g["condition"])))
     return acl
 
 
+def sql_deployer_findings(contract: dict) -> list[str]:
+    """Блок sql_deployer контракта ровно равен выводу доверенной базы (sql_identity)."""
+    want = SI.contract_block(contract["project_id"], contract["datasets"])
+    if contract.get("sql_deployer") != want:
+        return ["контракт: блок sql_deployer не равен выводу tools/tenancy/sql_identity.py"]
+    return []
+
+
 _ACCESS_PRINCIPAL_KEYS = ("user_by_email", "group_by_email", "domain", "special_group", "iam_member")
-_ACCESS_NESTED_KEYS = ("view", "dataset", "routine", "condition")
+_ACCESS_NESTED_KEYS = ("view", "dataset", "routine")      # authorized view/dataset/routine — запрещены
+_CONDITION_KEYS = frozenset({"title", "description", "expression", "location"})
 
 
-def _access_entries(access) -> tuple[set[tuple[str, str, str]], list[str]]:
-    """Нормализованные записи ACL датасета и описания записей, которые нормализовать нельзя."""
+def _access_entries(access) -> tuple[set[AclEntry], list[str]]:
+    """Нормализованные записи ACL датасета и описания записей, которые нормализовать нельзя.
+
+    Условие (T4.1) — вложенный блок condition из одного элемента; location не задаём (пусто),
+    иначе запись не нормализуется. Совпадение самого условия проверяет сравнение с контрактом.
+    """
     entries, bad = set(), []
     for i, a in enumerate(access if isinstance(access, list) else []):
         if not isinstance(a, dict):
@@ -264,10 +299,16 @@ def _access_entries(access) -> tuple[set[tuple[str, str, str]], list[str]]:
             continue
         who = [(k, a.get(k)) for k in _ACCESS_PRINCIPAL_KEYS if a.get(k)]
         nested = [k for k in _ACCESS_NESTED_KEYS if a.get(k)]
+        cond = a.get("condition") or []
+        if not isinstance(cond, list) or len(cond) > 1 or any(
+                not isinstance(c, dict) or set(k for k, v in c.items() if v) - _CONDITION_KEYS or c.get("location")
+                for c in cond):
+            bad.append(f"access[{i}] condition не нормализуется")
+            continue
         if nested or len(who) != 1:
             bad.append(f"access[{i}] {sorted(k for k, _v in who) + nested}")
             continue
-        entries.add((str(a.get("role")), who[0][0], str(who[0][1])))
+        entries.add((str(a.get("role")), who[0][0], str(who[0][1]), _condition_key(cond[0] if cond else None)))
     return entries, bad
 
 
@@ -299,10 +340,11 @@ def dataset_acl_findings(addr, after, unknown, dataset_acl, scheduler_email) -> 
     if want is None:
         out.append(f"{addr}: датасет {after.get('dataset_id')!r} вне контракта")
     elif not _unknown_at(unknown, ("access",)):
-        for role, kind, who in sorted(got - want):
-            out.append(f"{addr}: ACL датасета — лишняя запись {role} {kind}={who!r}{_acl_hint(who, scheduler_email)}")
-        for role, kind, who in sorted(want - got):
-            out.append(f"{addr}: ACL датасета — нет обязательной записи {role} {kind}={who!r}")
+        for role, kind, who, cond in sorted(got - want, key=repr):
+            out.append(f"{addr}: ACL датасета — лишняя запись {role} {kind}={who!r} условие={cond!r}"
+                       f"{_acl_hint(who, scheduler_email)}")
+        for role, kind, who, cond in sorted(want - got, key=repr):
+            out.append(f"{addr}: ACL датасета — нет обязательной записи {role} {kind}={who!r} условие={cond!r}")
     return out
 
 
@@ -372,7 +414,10 @@ def scan_plan(plan: dict, contract: dict) -> list[str]:
     platform_markers = (PL.PLATFORM_PROJECT_ID, PL.PLATFORM_PROJECT_NUMBER, PL.STATE_BUCKET)
     iam_allowed = expected_iam(contract)
     dataset_acl = expected_dataset_access(contract)
-    contract_sa_emails = {e for e in (runtime_email, scheduler_email) if e}
+    deployer_email = SI.deployer_email(project)
+    contract_sa_emails = {e for e in (runtime_email, scheduler_email, deployer_email) if e}
+    contract_sa_ids = {e.split("@", 1)[0] for e in contract_sa_emails}
+    findings += sql_deployer_findings(contract)
     contract_tables = {(contract["datasets"][x["dataset_key"]], x["table_id"]) for x in contract.get("tables", [])}
 
     # M. EVETIS — нигде: configuration, prior_state, переменные, значения.
@@ -486,6 +531,10 @@ def scan_plan(plan: dict, contract: dict) -> list[str]:
                                                                           contract_sa_emails):
                     continue
                 findings.append(f"{path}: принципал {s!r} вне IAM-ресурса контракта")
+
+        # Q. Сервисный аккаунт — только из контракта (runtime, планировщик, деплоер SQL).
+        if rtype == "google_service_account" and after.get("account_id") not in contract_sa_ids:
+            findings.append(f"{addr}: сервисный аккаунт {after.get('account_id')!r} не входит в контракт")
 
         # D. ACL датасета — известен и ровно равен контракту.
         if rtype == "google_bigquery_dataset":

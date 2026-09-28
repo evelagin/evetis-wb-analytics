@@ -1,5 +1,66 @@
 # CHANGELOG.md
 
+## 2026-09-28 — SPP-3: production WRITE — `AB` Юнитки WB автоматическая с 01.09.2026
+
+Код и структура листа не менялись; изменены данные колонки `AB` и режим Job'а.
+
+- `unitka-engine-prod`: `UNITKA_SPP_MODE=write` (штатный режим). Первая запись (execution `5jxmf`): 328 ячеек
+  AB сентября — 168 записано (REPLACE 84, FILL 83, NEG→0 1), 160 очищено (Q=0 158, воронка без заказа 2);
+  `SPP_READBACK` PASS, повтор — 0 изменений.
+- Независимая сверка книги: 0 расхождений значений/форматов/формул, вне манифеста изменений нет, Ozon и
+  ZZ_CONFIG не тронуты. ДРР сентября MTD 16,83 % → 21,29 % (пустая СПП считалась 0 %), прибыль без изменений.
+- Ручной ввод `AB` с 01.09.2026 больше не источник истины. Выкатка, эффект, откат и архив доказательств —
+  `docs/UNITKA_SPP_3_PRODUCTION_WRITE_2026-09-28.md`.
+
+## 2026-09-28 — Tenancy T4.1: отдельный деплоер SQL арендатора (sa-sql-deployer)
+
+Экономика, витрины, EVETIS не менялись. Права `sa-tenant-provisioner` не расширялись.
+
+- **Роли организации** `mpaSqlSourceRead` (tables.get, getData), `mpaSqlViewCreate` (create,
+  get, list), `mpaSqlViewUpdate` (update, get) созданы владельцем 28.09 (временная
+  organizationRoleAdmin ≤ 2 ч снята; постоянно — organizationRoleViewer). Доверенная база —
+  `tools/tenancy/sql_identity.py`; сверка — `tools/tenancy/platform_roles.py verify`.
+- **Контракт арендатора: новый блок `sql_deployer`** (account_id, email, 10 грантов с
+  условием) — выводится из project_id и датасетов; Terraform-guard'ы в `infra/tenant/variables.tf`.
+- **Terraform `infra/tenant`:** `google_service_account.sql_deployer` и записи ACL в пяти
+  датасетах (tenant_ops — изменение только `V_*`); вывод `sql_deployer_email`, в
+  `dataset_access` — условие.
+- **Сканер плана:** правило D сравнивает четвёрки (роль, вид, принципал, условие), принимает
+  ровно одно условие; правило Q — только SA контракта; блок `sql_deployer` = выводу доверенной базы.
+- **Workflow `tenant-infra.yml`, job `sql`:** авторизация как деплоер из реестра, scope
+  userinfo.email. Job'ы plan/apply — как прежде (провижионер).
+- **`sql_deploy.py`:** без `x-goog-user-project`; проверка принципала токена; проба
+  `tables.testIamPermissions`; `sql-verify` учитывает таблицы контракта (раньше падал на 7
+  таблицах tenant_ops) и `expirationTime`; представления tenant_ops обязаны быть `V_*`.
+- **`tenant_bootstrap.py` expected|bind|verify** — привязка WIF на деплоер владельцем и её сверка;
+  **`wif_domains.py --live`** — привязки пула во всех проектах, деплоеры из реестра.
+- Тесты: `tools/tests/test_tenancy_sql_deployer.py` (18 состязательных A01–A18, модель прав
+  BigQuery), 11 негативных фикстур и прогонов `terraform test`. Документация — TENANCY_DESIGN §4e.
+- По итогам состязательного ревью: guard Terraform сверяет гранты с точной матрицей
+  (`local.platform.sql_grant_matrix`) и текст условия целиком; проба прав спрашивает и об IAM
+  таблиц, экспорте и чтении строк представлений; `wif_domains --live` не пропускает молча проект,
+  где нельзя перечислить SA (только выключенный IAM API); `tenant_bootstrap verify` проверяет IAM
+  уровня таблиц, пул в ACL, IAM и ACL других арендаторов, все страницы датасетов EVETIS.
+## 2026-09-28 — SPP-3: колонка `AB` Юнитки WB из `V_WB_SPP_DAILY` (Engine 2.2.0, режим по умолчанию off)
+
+Структура листа, формулы (`AC`, `Z`, `K`, `AH`), `AA`, `Q`, LCD, Ozon не менялись.
+
+- **`UNITKA_SPP_MODE = off | observe | write`** в суточном цикле Gate 10. Окно — 35 дней сверки, не
+  раньше 01.09.2026, не позже кандидата LCD. Есть строка вью → `AB = ROUND(MAX(effective_spp_pct, 0), 1)`
+  (п.п.), нет → пусто; до 01.09 и будущие дни не трогаются. Каждая изменяемая ячейка классифицирована
+  (`ACTUAL_FILL / ACTUAL_REPLACE / NEGATIVE_MARKUP_TO_ZERO / MANUAL_CLEAR_NO_ORDER /
+  MANUAL_CLEAR_FUNNEL_ONLY / PRICE_DATA_MISSING_CLEAR`).
+- `write`: числа AB — в той же единственной записи, что факты; очистка — `values.batchClear` (запись `''`
+  стирает формат числа); проверка `SPP_READBACK` до коммита LCD, провал → `SPP_READBACK_FAILED`,
+  LCD не двигается. `observe`: план + снимок отката в журнал, AB не пишется, сбой плана не меняет исход
+  прогона фактов.
+- Снимок отката `unitka_spp_undo_manifest` (SHA-256) до любой записи; загрузчик **`unitka-spp-rollback`**
+  (план по умолчанию; исполнение — prod + флаг + подтверждённый отпечаток) возвращает значения, формулы
+  и форматы только ячеек манифеста.
+- `SheetsGateway.batchClear` (новый метод). Ни workflow, ни Terraform режим не задают.
+- Дизайн, репетиция на тестовой книге (откат 260/260, идемпотентность) и runbook —
+  `docs/UNITKA_SPP_3_AB_AUTO_2026-09-28.md`; `docs/UNITKA_2_0_COLUMN_MAP.md` — строка `AB`.
+
 ## 2026-09-28 — SPP-2: wb_mart.V_WB_SPP_DAILY — СПП WB по заказам, SKU × день
 
 Новый объект (Git-first, не развёрнут); Юнитка, колонка `AB`, writer и формулы не менялись.

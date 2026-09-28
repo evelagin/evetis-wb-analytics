@@ -78,6 +78,38 @@ def build_engine(settings):
 build_primary_engine = build_engine
 
 
+def build_v3(settings, openai, bq, repo):
+    """Reviews & Q&A v3 SHADOW runtime, or None.
+
+    * flag off -> None (v3 is never imported by /poll);
+    * snapshot missing / tampered / gate not passed -> CRITICAL log + None
+      (KNOWLEDGE_SNAPSHOT_ERROR); v2 production continues unaffected.
+    """
+    if not getattr(settings, "v3_shadow_enabled", False):
+        return None
+    try:
+        from app.v3.engine import V3Engine
+        from app.v3.llm import V3LLM
+        from app.v3.shadow import FirestoreShadowStore, V3Runtime
+        from app.v3.snapshot import load_snapshot
+
+        snapshot = load_snapshot(settings.v3_knowledge_snapshot_id or None)
+        llm_cfg = snapshot.policy.get("llm", {})
+        engine = V3Engine(snapshot, llm_factory=lambda: V3LLM(openai),
+                          use_llm_classifier=settings.v3_llm_classifier_enabled)
+        logger.info("v3 shadow runtime built (snapshot=%s)", snapshot.snapshot_id)
+        return V3Runtime(engine=engine, store=FirestoreShadowStore(repo, settings), writer=bq,
+                         settings=settings,
+                         cost_in=float(llm_cfg.get("cost_usd_per_1k_input_tokens", 0) or 0),
+                         cost_out=float(llm_cfg.get("cost_usd_per_1k_output_tokens", 0) or 0),
+                         classifier_prompt_version=llm_cfg.get("classifier_prompt_version", ""),
+                         generator_prompt_version=llm_cfg.get("generator_prompt_version", ""))
+    except Exception as exc:  # noqa: BLE001 — v3 must never take v2 down
+        logger.critical("v3 shadow runtime NOT built (KNOWLEDGE_SNAPSHOT_ERROR or setup): %s",
+                        type(exc).__name__)
+        return None
+
+
 @lru_cache(maxsize=1)
 def get_deps() -> Deps:
     settings = get_settings()
@@ -87,10 +119,11 @@ def get_deps() -> Deps:
 
     shadow_engine, shadow_repo = build_shadow_components(settings, openai, bq)
     engine = build_engine(settings)
+    repo = FirestoreRepository(settings)
 
     return Deps(
         settings=settings,
-        repo=FirestoreRepository(settings),
+        repo=repo,
         wb=WBClient(settings, secrets.wb_api_token),
         openai=openai,
         telegram=TelegramClient(secrets.telegram_bot_token),
@@ -99,4 +132,5 @@ def get_deps() -> Deps:
         engine=engine,
         shadow_engine=shadow_engine,
         shadow_repo=shadow_repo,
+        v3=build_v3(settings, openai, bq, repo),
     )

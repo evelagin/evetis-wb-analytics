@@ -24,6 +24,16 @@ export interface LcdRow {
   d1Msk: string;          // YYYY-MM-DD
 }
 
+/** SPP-3: строка wb_mart.V_WB_SPP_DAILY. */
+export interface SppDayRow {
+  nmId: number;
+  date: string;
+  /** NULL — PRICE_DATA_MISSING; < 0 — рассрочка с наценкой (NEGATIVE_MARKUP). */
+  effectiveSppPct: number | null;
+  status: string;
+  ordersQty: number;
+}
+
 export interface FactRow {
   nmId: number;
   date: string; // YYYY-MM-DD
@@ -281,6 +291,29 @@ export class UnitkaBq {
     const epoch = r ? date(r.reconciliation_epoch) : null;
     if (!lcd || !from || !to || !epoch) throw new LoaderError('V_UNITKA_RECON_WINDOW не вернула окно сверки', 'RECON_WINDOW_UNAVAILABLE');
     return { lastClosedDate: lcd, from, to, days: numReq(r!.window_days, 'window_days'), epoch };
+  }
+
+  /**
+   * SPP-3: wb_mart.V_WB_SPP_DAILY — эффективная СПП заказов SKU × день (контракт — docs/UNITKA_SPP_2_DAILY_VIEW_2026-09-28.md).
+   * Строка есть только при заказах Orders API. effective_spp_pct может быть < 0 (рассрочка) или NULL (PRICE_DATA_MISSING).
+   */
+  async sppDaily(fromIso: string, toIso: string): Promise<SppDayRow[]> {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(fromIso) || !/^\d{4}-\d{2}-\d{2}$/.test(toIso)) throw new LoaderError(`sppDaily: окно ${fromIso}..${toIso}`, 'SPP_WINDOW_INVALID');
+    const rows = await this.runner.query(
+      `SELECT nm_id, date_msk, effective_spp_pct, spp_status, orders_qty
+       FROM ${this.fqn(this.martDataset, 'V_WB_SPP_DAILY')}
+       WHERE date_msk BETWEEN DATE(@from) AND DATE(@to) ORDER BY date_msk, nm_id`,
+      // Даты — строками, как во всех запросах проекта: DATE-тип параметра со строкой молча даёт 0 строк
+      // (пойман репетицией на тестовой книге 28.09).
+      { from: fromIso, to: toIso },
+    );
+    return rows.map((r) => ({
+      nmId: numReq(r.nm_id, 'nm_id'),
+      date: date(r.date_msk) ?? '',
+      effectiveSppPct: num(r.effective_spp_pct),
+      status: str(r.spp_status) ?? '',
+      ordersQty: num(r.orders_qty) ?? 0,
+    }));
   }
 
   /** wb_mart.V_UNITKA_RECON_FACT — факты SKU × день за окно сверки с происхождением цены. NULL сохраняются. */

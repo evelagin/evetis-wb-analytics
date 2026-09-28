@@ -132,6 +132,12 @@ export interface SheetsGateway {
   readFormats(range: string): Promise<FormatGrid>;
   /** Один values.batchUpdate; возвращает totalUpdatedCells по ответу API. */
   batchWrite(data: WriteRange[], inputOption?: ValueInputOption): Promise<number>;
+  /**
+   * SPP-3: values.batchClear — очищает ТОЛЬКО значения, формат ячейки сохраняется. Запись '' через batchUpdate
+   * стирает numberFormat (замер на тестовой книге 28.09), поэтому очистка идёт только этим методом.
+   * Необязательный: шлюзы, которым очистка не нужна, его не реализуют.
+   */
+  batchClear?(ranges: string[]): Promise<number>;
   /** Один spreadsheets.batchUpdate из repeatCell; возвращает число применённых запросов. */
   formatWrite(sheetId: number, writes: FormatWrite[]): Promise<number>;
   /**
@@ -315,6 +321,14 @@ export class SheetsRest implements SheetsGateway {
     }));
     const res = await this.request<SpreadsheetBatchUpdateResp>('POST', url, { requests });
     return (res.replies ?? requests).length;
+  }
+
+  async batchClear(ranges: string[]): Promise<number> {
+    if (ranges.length === 0) return 0;
+    if (this.readonly) throw new LoaderError('очистка на readonly-шлюзе запрещена', 'SHEETS_API');
+    const url = `${API}/${this.spreadsheetId}/values:batchClear`;
+    const res = await this.request<{ clearedRanges?: string[] }>('POST', url, { ranges });
+    return (res.clearedRanges ?? []).length;
   }
 
   async batchWrite(data: WriteRange[], inputOption: ValueInputOption = 'RAW'): Promise<number> {

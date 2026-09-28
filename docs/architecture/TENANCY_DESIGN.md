@@ -421,8 +421,8 @@ dispatch. Остаётся: владелец аккаунта GitHub (его к�
 `tenant-infra.yml` в `main` и затем сам владелец его запустит. Attestations артефактов на Free/Pro/Team доступны только публичным репозиториям —
 не используются.
 
-**SQL.** У провижионера есть `bigquery.tables.create/update/get/list` и нет
-`bigquery.jobs.create`: DDL не исполняется, представление пишется ресурсом таблицы с блоком
+**SQL.** Пишет не провижионер, а деплоер SQL арендатора (§4e): у него нет
+`bigquery.jobs.create` — DDL не исполняется, представление пишется ресурсом таблицы с блоком
 `view` (`tools/tenancy/sql_deploy.py`). Ожидаемые хеши манифеста и пакета — входы; порядок —
 манифест; каждый файл сверяется с `sql_sha256`; идентификатор (проект, датасет, имя) — с
 манифестом и контрактом; только канонический `CREATE OR REPLACE VIEW`; существующий не-VIEW не
@@ -438,9 +438,91 @@ dispatch. Остаётся: владелец аккаунта GitHub (его к�
    `contract_sha256`, `plan_json_sha256`, `metadata_sha256`, дельту.
 2. `operation=apply` с `source_run_id`, `expected_source_commit`, `expected_tfplan_sha256`,
    `expected_contract_sha256`, `expected_delta` — до истечения артефакта и пока main не ушёл.
-3. `operation=sql-preview` → `sql-deploy` → `sql-verify` с `expected_manifest_sha256`,
+3. Только для нового SA деплоера (§4e): владелец `tenant_bootstrap.py bind <tenant_id> --execute`,
+   затем `tenant_bootstrap.py verify <tenant_id>` и `platform_roles.py verify` — оба PASS.
+4. `operation=sql-preview` → `sql-deploy` → `sql-verify` с `expected_manifest_sha256`,
    `expected_package_sha256`.
-4. `operation=plan` снова — сходимость 0/0/0.
+5. `operation=plan` снова — сходимость 0/0/0.
+
+## 4e. Деплоер SQL арендатора (T4.1, 2026-09-28)
+
+**Почему.** Первый `sql-deploy` (run 36394395025) получил 403: BigQuery требует у создателя VIEW
+`bigquery.tables.getData` на каждом источнике запроса, а провижионер намеренно data-blind.
+Решение владельца 28.09 — отдельная идентичность в проекте арендатора, права провижионера НЕ
+расширяются (ни `iam.roles.*`, ни `iam.serviceAccounts.setIamPolicy`, ни Token Creator, ни прав
+на данные).
+
+**Роли организации** (созданы владельцем 28.09 через временную `organizationRoleAdmin` со
+сроком ≤ 2 ч, снята; постоянно у владельца только `organizationRoleViewer`). Точные наборы —
+`tools/tenancy/sql_identity.SQL_ROLES`; сверка — `tools/tenancy/platform_roles.py verify`
+(нет/удалена/не GA/лишнее/недостающее право — отказ).
+
+| Роль | Права |
+|---|---|
+| `mpaSqlSourceRead` | `bigquery.tables.get`, `bigquery.tables.getData` |
+| `mpaSqlViewCreate` | `bigquery.tables.create`, `bigquery.tables.get`, `bigquery.tables.list` |
+| `mpaSqlViewUpdate` | `bigquery.tables.update`, `bigquery.tables.get` |
+
+**Гранты** — только записи ACL датасетов проекта арендатора, принципал
+`sa-sql-deployer@<проект>`; ролей на проекте, папке, организации нет:
+
+| Датасет | Роли |
+|---|---|
+| `ozon_raw`, `ref` | SourceRead |
+| `ozon_mart` | SourceRead, ViewCreate, ViewUpdate |
+| `tenant_ops` | SourceRead, ViewCreate, ViewUpdate **с условием** |
+| `analytics_share` | ViewCreate, ViewUpdate (строк не читает) |
+
+Условие (единственное): `resource.type == "bigquery.googleapis.com/Table" && resource.service ==
+"bigquery.googleapis.com" && resource.name.startsWith("projects/<проект>/datasets/tenant_ops/tables/V_")`.
+Оно действует на права уровня таблицы, поэтому 7 таблиц платформы в `tenant_ops` (ни одна не
+`V_*`) нельзя изменить или «истечь». Создание (`tables.create`) проверяется на датасете и
+условием не ограничивается. Инварианты: все представления пакета в `tenant_ops` — `V_*`,
+ни одна таблица контракта — не `V_*`, в `ozon_mart` и `analytics_share` таблиц контракта нет,
+пакет не читает `analytics_share` (тесты `test_tenancy_sql_deployer.py`).
+
+**Жизненный цикл.**
+
+| Уровень | Что | Кто |
+|---|---|---|
+| Платформа, один раз | 3 роли организации | владелец (сделано 28.09) |
+| Арендатор, Terraform | `sa-sql-deployer`, 10 записей ACL | провижионер, замороженный план |
+| Арендатор, bootstrap | `roles/iam.workloadIdentityUser` на SA деплоера для principalSet `tenant-infra.yml@refs/heads/main` | владелец: `tenant_bootstrap.py bind` |
+
+Для нового арендатора код не меняется: SA, гранты, условие и привязка выводятся из
+`project_id` и ключей датасетов контракта.
+
+**Привязка WIF не становится невидимым дрейфом.** Ожидаемая политика SA — ровно одна привязка
+(`sql_identity.expected_sa_bindings()`, тот же principalSet, что у провижионера; условие
+провайдера `github-tenant-infra` не менялось). `tenant_bootstrap.py verify` (только чтение)
+падает, если SA нет, он выключен, у него ключи, политика ≠ ожидаемой, деплоер или члены пула
+есть в IAM организации/папки/проектов, пул привязан к другому SA арендатора, ACL ≠ матрице,
+провижионер в ACL, деплоер в ACL EVETIS. `wif_domains.py --live` ищет привязки пула во ВСЕХ
+проектах: лишняя — утечка, отсутствующая у арендатора реестра — FAIL. CI отсутствие лишних
+привязок проверить не может (ни у кого из двух SA нет `getIamPolicy` на SA) — это делают
+`verify` и `--live` перед каждым `sql-deploy`; наличие привязки CI доказывает сам (без неё
+`auth` в job'е `sql` падает).
+
+**Job `sql`.** Email деплоера — из реестра (`sql_identity.py deployer-email`), не константа
+workflow. `sql_deploy` без `x-goog-user-project` (квота — проект SA = проект арендатора; явный
+заголовок потребовал бы `serviceusage.services.use`), сверяет принципал токена через tokeninfo
+(scope `userinfo.email`) и до записи делает пробу `tables.testIamPermissions` (только чтение):
+изменение/удаление/запись строк на таблицах контракта — отказ, чтение источников вопреки
+матрице — отказ, на представлениях — ровно `tables.update`. `sql-verify` ждёт в датасетах пакета
+ровно представления пакета и таблицы контракта (как TABLE), без `expirationTime`.
+
+**Правило канарейки.** 403 после apply и bind не лечится расширением ролей: новое право (в
+т.ч. `bigquery.datasets.get`, `serviceusage.services.use`, `bigquery.jobs.create`,
+`bigquery.tables.updateData`, `bigquery.tables.delete`) — STOP, доказательство, отдельный ACK и
+отдельное изменение контракта ролей.
+
+**Остаточные возможности.** `tables.create` без условия — деплоер технически может создать
+посторонний объект в `ozon_mart`/`tenant_ops`/`analytics_share` (в т.ч. VIEW в клиентском слое
+поверх источников); сдерживают помощник (только пакет, только Tables API), `sql-verify` (лишний
+объект — отказ) и отсутствие `updateData`/`delete`. `getData` на уровне датасета — деплоер читает
+строки всех таблиц источников, включая не упомянутые пакетом (`RAW_OZON_SELLER_INFO`). Любой job
+`tenant-infra.yml` может получить обе идентичности: разделение — код workflow в `main` и права в
+GCP.
 
 ---
 

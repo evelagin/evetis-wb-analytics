@@ -1,0 +1,75 @@
+# Moisturizing face serum 30 ml — WB nmId 305101272. Document code SP-TS-4 (folder SP-ST-4).
+schema: ref_product.v1
+product_id: EVT-FS-MOIST-30
+product_type: serum
+line: moisture
+primary_source: SRC-TU-SP-TS-4
+spec_association_status: VERIFIED
+customer_fact_generation: ALLOWED
+customer_name_ru: "увлажняющая сыворотка для лица EVETIS"
+internal_aliases: ["Сыворотка УВЛ", "Deep Moisture", "сыворотка с витамином С"]
+identifiers:
+  - {id_type: tu_code, value: SP-TS-4, source_id: SRC-TU-SP-TS-4}
+facts:
+  - {fact_type: product_name_t1, value: "EVETIS DEEP MOISTURE FACE SERUM Увлажняющая сыворотка для лица 30 мл", source_id: SRC-TU-SP-TS-4, locator: p1, disclosure_policy: INTERNAL_ONLY}
+  - {fact_type: volume, value: 30, unit: ml, customer_value_ru: "30 мл", source_id: SRC-TU-SP-TS-4, locator: p1}
+  - {fact_type: intended_use, value: [face], customer_value_ru: "для лица", source_id: SRC-TU-SP-TS-4, locator: "p1 product name"}
+  - {fact_type: directions, value: "нанесите сыворотку на чистую кожу лица легкими массирующими движениями до полного впитывания. Через 2-3 минуты нанесите крем или маску для лица", customer_value_ru: "Сыворотку наносят на чистую кожу лица лёгкими массирующими движениями до полного впитывания, через 2–3 минуты можно нанести крем или маску", source_id: SRC-TU-SP-TS-4, locator: p4}
+  - {fact_type: precautions, value: ["только для наружного применения", "не использовать после истечения срока годности", "не рекомендуется при индивидуальной непереносимости компонентов в составе"], customer_value_ru: "Только для наружного применения; не использовать после истечения срока годности; не рекомендуется при индивидуальной непереносимости компонентов", source_id: SRC-TU-SP-TS-4, locator: p4}
+  - {fact_type: shelf_life, value: 24, unit: month, customer_value_ru: "2 года с даты изготовления", source_id: SRC-TU-SP-TS-4, locator: p4}
+  - {fact_type: pao, value: 6, unit: month, customer_value_ru: "6 месяцев после вскрытия", source_id: SRC-TU-SP-TS-4, locator: "p4 PAO icon (visual check, Phase 2)"}
+  - {fact_type: storage, value: "+5..+25 C, no direct sunlight", customer_value_ru: "хранить при температуре от +5 до +25 °C, не подвергать воздействию прямых солнечных лучей", source_id: SRC-TU-SP-TS-4, locator: p4}
+  - {fact_type: country_of_origin, value: CN, customer_value_ru: "Китай", source_id: SRC-TU-SP-TS-4, locator: p4}
+  - {fact_type: manufacturer, value: "Guangzhou Mebamy Cosmetics Co., Ltd.", customer_value_ru: "Guangzhou Mebamy Cosmetics Co., Ltd. (Китай)", source_id: SRC-TU-SP-TS-4, locator: p4}
+  - {fact_type: importer, value: REDACTED_CONFLICT, fact_status: CONFLICT, disclosure_policy: DO_NOT_DISCLOSE, conflict_id: KC-21, source_id: SRC-TU-SP-TS-4, locator: "p5 importer"}
+  - {fact_type: ph, value: 6.94, fact_status: CONFLICT, quality_flags: [TEMPLATE_SUSPECT], disclosure_policy: DO_NOT_DISCLOSE, conflict_id: KC-01, owner_decision_id: ODR-19, source_id: SRC-TU-SP-TS-4, locator: p3}
+  - {fact_type: commercial_age_marker, value: "12+", fact_status: COMMERCIAL_VERIFIED, disclosure_policy: INTERNAL_ONLY, owner_decision_id: ODR-01, source_id: SRC-WB-CARD, locator: "WB card characteristic"}
+ingredients:
+  recipe_source: SRC-TU-SP-TS-4
+  recipe_locator: "p1-p2 recipe table, column 6"
+  recipe:
+    - [1, water, "WATER", 56.57]
+    - [2, aloe_barbadensis_leaf_juice, "ALOE BARBADENSIS LEAF JUICE", 5]
+    - [3, glycerin, "GLYCERIN", 5]
+    - [4, camellia_sinensis_leaf_extract, "CAMELLIA SINENSIS LEAF EXTRACT", 0.03]
+    - [5, betaine, "BETAINE", 0.5]
+    - [6, hamamelis_virginiana_bark_leaf_extract, "HAMAMELIS VIRGINIANA (WITCH HAZEL) BARK/LEAF EXTRACT", 2]
+    - [7, ascorbic_acid, "ASCORBIC ACID", 8]
+    - [8, tocopherol, "TOCOPHEROL", 5]
+    - [9, centella_asiatica_leaf_extract, "CENTELLA ASIATICA LEAF EXTRACT", 2]
+    - [10, equisetum_arvense_leaf_extract, "EQUISETUM ARVENSE LEAF EXTRACT", 3]
+    - [11, geranium_maculatum_extract, "GERANIUM MACULATUM EXTRACT", 2]
+    - [12, taraxacum_officinale_root_extract, "TARAXACUM OFFICINALE (DANDELION) RHIZOME/ROOT EXTRACT", 2]
+    - [13, hyaluronic_acid, "HYALURONIC ACID", 1.3]
+    - [14, simmondsia_chinensis_seed_oil, "SIMMONDSIA CHINENSIS (JOJOBA) SEED OIL", 5]
+    - [15, geranium_maculatum_oil, "GERANIUM MACULATUM OIL", 0.5]
+    - [16, dimethyl_sulfone, "DIMETHYL SULFONE", 1]
+    - [17, hydroxyethylcellulose, "HYDROXYETHYLCELLULOSE", 0.1]
+    - [18, sodium_benzoate, "SODIUM BENZOATE", 0.5]
+    - [19, potassium_sorbate, "POTASSIUM SORBATE", 0.1]
+    - [20, ethylhexylglycerin, "ETHYLHEXYLGLYCERIN", 0.3]
+    - [21, calcium_carrageenan, "CALCIUM CARRAGEENAN", 0.1]
+  label_source: SRC-TU-SP-TS-4
+  label_locator: "p4 'Ingredients:'"
+  label:
+    - [1, water, "deionized water"]
+    - [2, aloe_barbadensis_leaf_juice, "aloe barbadensis leaf juice"]
+    - [3, glycerin, "glycerin"]
+    - [4, camellia_sinensis_leaf_extract, "camellia sinensis leaf extract"]
+    - [5, betaine, "betaine"]
+    - [6, hamamelis_virginiana_bark_leaf_extract, "hamamelis virginiana (witch hazel) bark/leaf extract"]
+    - [7, ascorbic_acid, "ascorbic acid"]
+    - [8, tocopherol, "tocopherol"]
+    - [9, centella_asiatica_leaf_extract, "centella asiatica leaf extract"]
+    - [10, equisetum_arvense_leaf_extract, "equisetum arvense leaf extract"]
+    - [11, geranium_maculatum_extract, "geranium maculatum extract"]
+    - [12, taraxacum_officinale_root_extract, "taraxacum officinale (dandelion) rhizome/root extract"]
+    - [13, hyaluronic_acid, "hyaluronic acid"]
+    - [14, simmondsia_chinensis_seed_oil, "simmondsia chinensis (jojoba) seed oil"]
+    - [15, geranium_maculatum_oil, "geranium maculatum oil"]
+    - [16, dimethyl_sulfone, "msm"]
+    - [17, hydroxyethylcellulose, "hydroxyethylcellulose"]
+    - [18, sodium_benzoate, "sodium benzoate"]
+    - [19, potassium_sorbate, "potassium sorbate"]
+    - [20, ethylhexylglycerin, "ethylhexylglycerin"]
+    - [21, calcium_carrageenan, "calcium carrageenan"]

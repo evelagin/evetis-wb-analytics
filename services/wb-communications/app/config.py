@@ -112,6 +112,37 @@ class Settings:
         )
     )
 
+    # --- Reviews & Q&A v3 (Phase 3) — SHADOW ONLY ---
+    # v3 never produces customer-facing text, never publishes, never touches Telegram cards.
+    # Off by default: with the flag off /poll does not build or run v3 at all.
+    v3_shadow_enabled: bool = field(
+        default_factory=lambda: os.environ.get("V3_SHADOW_ENABLED", "false").lower() == "true"
+    )
+    v3_knowledge_snapshot_id: str = field(
+        default_factory=lambda: os.environ.get("V3_KNOWLEDGE_SNAPSHOT_ID", "")  # "" = snapshots/ACTIVE
+    )
+    v3_llm_classifier_enabled: bool = field(
+        default_factory=lambda: os.environ.get("V3_LLM_CLASSIFIER_ENABLED", "true").lower() == "true"
+    )
+    v3_shadow_max_items_per_poll: int = field(
+        default_factory=lambda: int(os.environ.get("V3_SHADOW_MAX_ITEMS_PER_POLL", "6"))
+    )
+    v3_shadow_budget_seconds: float = field(
+        default_factory=lambda: float(os.environ.get("V3_SHADOW_BUDGET_SECONDS", "60"))
+    )
+    # hard stop measured from the START of /poll (Cloud Scheduler attempt deadline is 180 s)
+    v3_shadow_poll_deadline_seconds: float = field(
+        default_factory=lambda: float(os.environ.get("V3_SHADOW_POLL_DEADLINE_SECONDS", "150"))
+    )
+    bigquery_v3_decisions_table: str = field(
+        default_factory=lambda: os.environ.get("BIGQUERY_V3_DECISIONS_TABLE", "communication_v3_decisions")
+    )
+    # Manual-edit publish gate by the v3 verifier. It changes operator publication behaviour,
+    # therefore stays OFF until an explicit owner decision (Phase 3 §35 / §58).
+    v3_enforce_manual_edit_verifier: bool = field(
+        default_factory=lambda: os.environ.get("V3_ENFORCE_MANUAL_EDIT_VERIFIER", "false").lower() == "true"
+    )
+
     # --- Wildberries ---
     wb_api_base_url: str = field(
         default_factory=lambda: os.environ.get(

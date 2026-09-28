@@ -1,0 +1,89 @@
+# Advanced repair hand cream 300 ml — WB nmId 252442517. Document code SP-TS-2 (folder SP-ST-2).
+# T1 intended use = hands (ODR-13; card 'hands and body' is KC-04 and does not expand it).
+# PAO 12M (icon) — the old KB '24 months' is wrong (KC-03).
+# Label INCI differs in CONTENT from the recipe (KC-13) -> composition answers go to HUMAN_REVIEW (ODR-11).
+schema: ref_product.v1
+product_id: EVT-HC-HAND-300
+product_type: hand_cream
+line: hand_body
+primary_source: SRC-TU-SP-TS-2
+spec_association_status: VERIFIED
+customer_fact_generation: ALLOWED
+customer_name_ru: "крем для рук EVETIS"
+internal_aliases: ["Крем Руки", "Advanced Repair Hand Cream", "Oud Wood", "Oud&Wood", "OUD&WOOD"]
+identifiers:
+  - {id_type: tu_code, value: SP-TS-2, source_id: SRC-TU-SP-TS-2}
+  - {id_type: label_ean, value: "4631171927023", source_id: SRC-TU-SP-TS-2, locator: "p5 barcode"}
+facts:
+  - {fact_type: product_name_t1, value: "Крем для рук Интенсивное Восстановление EVETIS ADVANCED REPAIR HAND CREAM EVETIS 300 ml", source_id: SRC-TU-SP-TS-2, locator: p1, disclosure_policy: INTERNAL_ONLY}
+  - {fact_type: volume, value: 300, unit: ml, customer_value_ru: "300 мл", source_id: SRC-TU-SP-TS-2, locator: p1}
+  - {fact_type: intended_use, value: [hands], customer_value_ru: "для рук", source_id: SRC-TU-SP-TS-2, locator: "p1 product name 'Крем для рук'", owner_decision_id: ODR-13}
+  - {fact_type: directions, value: "Нанесите крем на чистую кожу легкими массирующими движениями до полного впитывания. При необходимости повторно используйте в течение дня.", customer_value_ru: "Крем наносят на чистую кожу лёгкими массирующими движениями до полного впитывания; при необходимости — повторно в течение дня", source_id: SRC-TU-SP-TS-2, locator: p4}
+  - {fact_type: precautions, value: ["только для наружного применения", "не использовать после истечения срока годности", "не рекомендуется при индивидуальной непереносимости компонентов в составе"], customer_value_ru: "Только для наружного применения; не использовать после истечения срока годности; не рекомендуется при индивидуальной непереносимости компонентов", source_id: SRC-TU-SP-TS-2, locator: p4}
+  - {fact_type: shelf_life, value: 24, unit: month, customer_value_ru: "2 года с даты изготовления", source_id: SRC-TU-SP-TS-2, locator: p4}
+  - {fact_type: pao, value: 12, unit: month, customer_value_ru: "12 месяцев после вскрытия", source_id: SRC-TU-SP-TS-2, locator: "p4 PAO icon 12M (visual)", conflict_id: KC-03}
+  - {fact_type: storage, value: "+5..+25 C, no direct sunlight", customer_value_ru: "хранить при температуре от +5 до +25 °C, не подвергать воздействию прямых солнечных лучей", source_id: SRC-TU-SP-TS-2, locator: p4}
+  - {fact_type: country_of_origin, value: CN, customer_value_ru: "Китай", source_id: SRC-TU-SP-TS-2, locator: p5}
+  - {fact_type: manufacturer, value: "Guangzhou Xiran Cosmetics Co., Ltd.", customer_value_ru: "Guangzhou Xiran Cosmetics Co., Ltd. (Китай)", source_id: SRC-TU-SP-TS-2, locator: p5}
+  - {fact_type: fragrance_profile, value: "OUD&WOOD", disclosure_policy: PUBLIC_WITH_APPROVED_WORDING, customer_value_ru: "древесно-удовый аромат", owner_decision_id: ODR-02, source_id: SRC-TU-SP-TS-2, locator: "p1 header"}
+  - {fact_type: importer, value: REDACTED_CONFLICT, fact_status: CONFLICT, disclosure_policy: DO_NOT_DISCLOSE, conflict_id: KC-21, source_id: SRC-TU-SP-TS-2, locator: "p5 importer"}
+ingredients:
+  recipe_source: SRC-TU-SP-TS-2
+  recipe_locator: "p1-p3 recipe table, column 6 (visual check of all 27 rows 2026-09-28)"
+  recipe_quality_flags: [RECIPE_SUM_MISMATCH]   # the document sums to 100.3%
+  recipe:
+    - [1, water, "WATER", 66.4]
+    - [2, urea, "UREA", 0.1]
+    - [3, cetearyl_alcohol, "CETEARYL ALCOHOL", 4]
+    - [4, glycerin, "GLYCERIN", 3]
+    - [5, ricinus_communis_seed_oil, "RICINUS COMMUNIS (CASTOR) SEED OIL", 3]
+    - [6, ethylhexyl_cocoate, "ETHYLHEXYL COCOATE", 2]
+    - [7, butyrospermum_parkii_butter, "BUTYROSPERMUM PARKII (SHEA) BUTTER", 5]
+    - [8, arginine, "ARGININE", 0.1]
+    - [9, prunus_amygdalus_dulcis_oil, "PRUNUS AMYGDALUS DULCIS (SWEET ALMOND) OIL", 3]
+    - [10, aluminum_starch_octenylsuccinate, "ALUMINUM STARCH OCTENYLSUCCINATE", 0.1]
+    - [11, ceteareth_20, "CETEARETH-20", 1]
+    - [12, hydrogenated_castor_oil, "HYDROGENATED CASTOR OIL", 1]
+    - [13, lactic_acid, "LACTIC ACID", 0.5]
+    - [14, carbomer, "CARBOMER", 0.2]
+    - [15, allantoin, "ALLANTOIN", 0.5]
+    - [16, copernicia_cerifera_wax_extract, "COPERNICIA CERIFERA (CARNAUBA) WAX EXTRACT", 0.5]
+    - [17, sodium_hydroxide, "SODIUM HYDROXIDE", 0.1]
+    - [18, tocopheryl_acetate, "TOCOPHERYL ACETATE", 0.3]
+    - [19, oryza_sativa_extract, "ORYZA SATIVA (RICE) EXTRACT", 2]
+    - [20, lotus_corniculatus_flower_extract, "LOTUS CORNICULATUS FLOWER EXTRACT", 1]
+    - [21, tocopherol, "TOCOPHEROL", 0.5]
+    - [22, niacinamide, "NIACINAMIDE", 1]
+    - [23, rosa_damascena_flower_oil, "ROSA DAMASCENA FLOWER OIL", 0.1]
+    - [24, xanthan_gum, "XANTHAN GUM", 0.5]
+    - [25, parfum, "FRAGRANCE", 0.4]
+    - [26, hexanediol_1_2, "1,2-HEXANEDIOL", 2]
+    - [27, pentylene_glycol, "PENTYLENE GLYCOL", 2]
+  label_source: SRC-TU-SP-TS-2
+  label_locator: "p4 composition block"
+  label:
+    - [1, water, "Water"]
+    - [2, urea, "Urea"]
+    - [3, cetearyl_alcohol, "Cetearyl Alcohol"]
+    - [4, glycerin, "Glycerin"]
+    - [5, ricinus_communis_seed_oil, "Castor Oil"]
+    - [6, ethylhexyl_cocoate, "Ethylhexyl Cocoate"]
+    - [7, butyrospermum_parkii_butter, "Shea Butter"]
+    - [8, triethanolamine, "Triethanolamine"]
+    - [9, prunus_amygdalus_dulcis_oil, "Sweet Almond Oil"]
+    - [10, aluminum_starch_octenylsuccinate, "Aluminum Octenyl Succinate Starch"]
+    - [11, ceteareth_20, "Ceteareth-20"]
+    - [12, hydrogenated_castor_sesame_oil, "Hydrogenated Castor Sesame Oil"]
+    - [13, lactic_acid, "Lactic Acid"]
+    - [14, carbomer, "Carbomer"]
+    - [15, allantoin, "Allantoin"]
+    - [16, copernicia_cerifera_wax_extract, "Copernicia Cerifera"]
+    - [17, sodium_hydroxide, "Sodium Hydroxide"]
+    - [18, tocopheryl_acetate, "Tocopherol Acetate"]
+    - [19, oryza_sativa_extract, "Rice Extract"]
+    - [20, lotus_seed_flower_extract, "Lotus Seed Flower Extract"]
+    - [21, tocopherol, "Tocopherol"]
+    - [22, niacinamide, "Nicotinamide"]
+    - [23, rosa_damascena_flower_oil, "Rosa Damascena Flower Oil"]
+    - [24, hexanediol_1_2, "1,2-Hexanedi Alcohol"]
+    - [25, pentylene_glycol, "Pentylene Glycol"]

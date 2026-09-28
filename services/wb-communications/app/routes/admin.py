@@ -5,6 +5,8 @@ set they additionally require an `X-Admin-Token` header. They never publish to W
 """
 from __future__ import annotations
 
+import time
+
 from fastapi import APIRouter, Header, HTTPException
 
 from app.dependencies import get_deps
@@ -69,3 +71,41 @@ def test_telegram(x_admin_token: str | None = Header(default=None)) -> dict:
         deps.settings.telegram_chat_id, "🔧 EVETIS WB Communications — тестовое сообщение."
     )
     return {"ok": True}
+
+
+# --- Reviews & Q&A v3 SHADOW (inspection / backfill only; never publishes, never messages) ---
+@router.post("/v3/shadow-run")
+def v3_shadow_run(max_items: int = 20, budget_seconds: float = 240,
+                  x_admin_token: str | None = Header(default=None)) -> dict:
+    """Process up to `max_items` real communications that have no v3 decision yet
+    (newest first). Same code path as /poll; bounded by the Cloud Run request timeout."""
+    _check_admin(x_admin_token)
+    deps = get_deps()
+    if deps.v3 is None:
+        raise HTTPException(status_code=409, detail="v3 shadow disabled")
+    from app.v3.shadow import run_shadow
+    s = run_shadow(deps.v3, max_items=max(1, min(int(max_items), 50)),
+                   deadline=time.monotonic() + max(5.0, min(float(budget_seconds), 270.0)), scan_limit=400)
+    return {"ok": True, **s.to_dict()}
+
+
+@router.get("/v3/decision/{communication_id}")
+def v3_decision(communication_id: str, x_admin_token: str | None = Header(default=None)) -> dict:
+    """Latest v3 shadow decision for one communication, rendered for an operator."""
+    _check_admin(x_admin_token)
+    deps = get_deps()
+    from google.cloud import bigquery
+
+    from app.v3.operator_view import render
+    table = f"{deps.settings.gcp_project_id}.{deps.settings.bigquery_dataset}.{deps.settings.bigquery_v3_decisions_table}"
+    job = deps.bq._lazy().query(
+        f"SELECT * FROM `{table}` WHERE communication_id = @cid AND run_kind = 'shadow' "
+        "ORDER BY created_at DESC LIMIT 1",
+        job_config=bigquery.QueryJobConfig(query_parameters=[
+            bigquery.ScalarQueryParameter("cid", "STRING", communication_id)]),
+        location=deps.settings.bigquery_location)
+    rows = [dict(r) for r in job.result()]
+    if not rows:
+        raise HTTPException(status_code=404, detail="no v3 decision")
+    row = {k: (v.isoformat() if hasattr(v, "isoformat") else v) for k, v in rows[0].items()}
+    return {"ok": True, "text": render(row), "decision": row}

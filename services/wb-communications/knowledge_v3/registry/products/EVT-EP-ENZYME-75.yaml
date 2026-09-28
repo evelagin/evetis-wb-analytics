@@ -1,0 +1,48 @@
+# Enzyme face powder — WB nmId 535580776. Net mass 75 g; container 120 ml (never conflate).
+# T1 intended use = face (KC-16: marketplace 'face and body' does not expand it).
+# 'без кислот' is FALSE (Ascorbic Acid 0.2%, KC-17).
+schema: ref_product.v1
+product_id: EVT-EP-ENZYME-75
+product_type: powder
+line: face_care
+primary_source: SRC-TU-SP-TS-8
+spec_association_status: VERIFIED
+customer_fact_generation: ALLOWED
+customer_name_ru: "энзимная пудра для лица EVETIS"
+internal_aliases: ["Пудра", "Энзимная пудра", "enzyme powder"]
+identifiers:
+  - {id_type: tu_code, value: SP-TS-8, source_id: SRC-TU-SP-TS-8}
+facts:
+  - {fact_type: product_name_t1, value: "EVETIS ENZYME FACE POWDER Энзимная пудра для лица 75 gr", source_id: SRC-TU-SP-TS-8, locator: header, disclosure_policy: INTERNAL_ONLY}
+  - {fact_type: net_mass, value: 75, unit: g, customer_value_ru: "75 г", source_id: SRC-TU-SP-TS-8, locator: "volume of package contents: 75g"}
+  - {fact_type: container_volume, value: 120, unit: ml, customer_value_ru: "флакон 120 мл", disclosure_policy: PUBLIC, source_id: SRC-TU-SP-TS-8, locator: "Volume 120 ml; Bottle 120 ml with cap", notes: "Package reference, not the amount of product."}
+  - {fact_type: intended_use, value: [face], customer_value_ru: "для лица", source_id: SRC-TU-SP-TS-8, locator: "product name 'для лица'", owner_decision_id: ODR-13}
+  - {fact_type: shelf_life, value: 24, unit: month, customer_value_ru: "2 года с даты изготовления", source_id: SRC-TU-SP-TS-8, locator: "Shelf life"}
+  - {fact_type: pao, value: 6, unit: month, customer_value_ru: "6 месяцев после вскрытия", source_id: SRC-TU-SP-TS-8, locator: "embedded PAO icon (word/media)"}
+  - {fact_type: storage, value: "+5..+25 C, no direct sunlight", customer_value_ru: "хранить при температуре от +5 до +25 °C, не подвергать воздействию прямых солнечных лучей", source_id: SRC-TU-SP-TS-8, locator: "Conditions Storage"}
+  - {fact_type: country_of_origin, value: CN, customer_value_ru: "Китай", source_id: SRC-TU-SP-TS-8, locator: "Made in China"}
+  - {fact_type: manufacturer, value: "Guangzhou Yin Ji Biotechnology Co., Ltd.", customer_value_ru: "Guangzhou Yin Ji Biotechnology Co., Ltd. (Китай)", source_id: SRC-TU-SP-TS-8, locator: "manufacturer"}
+  - {fact_type: ph, value: "8.0-8.5", customer_value_ru: "pH 8,0–8,5", source_id: SRC-TU-SP-TS-8, locator: "Hydrogen index, pH"}
+  - {fact_type: packaging, value: "PP bottle 120 ml with cap", disclosure_policy: INTERNAL_ONLY, source_id: SRC-TU-SP-TS-8, locator: "primary packaging"}
+  - {fact_type: commercial_age_marker, value: "12+", fact_status: COMMERCIAL_VERIFIED, disclosure_policy: INTERNAL_ONLY, owner_decision_id: ODR-01, source_id: SRC-WB-CARD, locator: "WB card characteristic"}
+ingredients:
+  recipe_source: SRC-TU-SP-TS-8
+  recipe_locator: "RECIPE table"
+  recipe:
+    - [1, sodium_cocoyl_isethionate, "Sodium Cocoyl Isethionate", 33.35]
+    - [2, zea_mays_starch, "ZEA MAYS (CORN) STARCH", 30]
+    - [3, glucose, "GLUCOSE", 20]
+    - [4, sodium_lauroyl_glutamate, "SODIUM LAUROYL GLUTAMATE", 10]
+    - [5, sodium_cocoyl_glycinate, "SODIUM COCOYL GLYCINATE", 5]
+    - [6, potassium_sorbate, "POTASSIUM SORBATE", 0.5]
+    - [7, allantoin, "ALLANTOIN", 0.2]
+    - [8, aloe_barbadensis_leaf_powder, "ALOE BARBADENSIS LEAF POWDER", 0.2]
+    - [9, ascorbic_acid, "ASCORBIC ACID", 0.2]
+    - [10, papain, "PAPAIN", 0.2]
+    - [11, sodium_hyaluronate, "SODIUM HYALURONATE", 0.1]
+    - [12, sodium_polygamma_glutamate, "SODIUM POLYGAMMA-GLUTAMATE", 0.1]
+    - [13, cyanocobalamin, "CYANOCOBALAMIN", 0.05]
+    - [14, macadamia_ternifolia_seed_oil, "MACADAMIA TERNIFOLIA SEED OIL", 0.05]
+    - [15, parfum, "PARFUM", 0.05]
+  label_status: UNAVAILABLE
+  label_note: "'Ingredients:' field on the packaging block is empty in SP-TS-8."
