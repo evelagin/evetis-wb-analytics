@@ -525,7 +525,9 @@ def _run_questions(deps: Deps) -> dict:
     ``wb_questions_first_run_max`` so the first run does not flood Telegram with
     the historical backlog — unprocessed questions stay unanswered on WB and are
     picked up on later polls (newest first)."""
+    legacy = _reconcile_legacy_published_questions(deps)
     reverified = _reverify_accepted_questions(deps)
+    reverified["legacy"] = legacy
     questions = deps.wb.iter_unanswered_questions()
     fetched = len(questions)
     processed = skipped = errors = 0
@@ -562,6 +564,55 @@ def _run_questions(deps: Deps) -> dict:
                "errors": errors, "capped": capped, "reverified": reverified}
     logger.info("poll questions done %s", summary)
     return summary
+
+
+def _reconcile_legacy_published_questions(deps: Deps, limit: int = 20) -> dict:
+    """Reconcile questions marked ``published`` BEFORE 1.5.0 against WB.
+
+    Until 1.5.0 a question became ``published`` on any 2xx, and the request body
+    was wrong, so such a status is not evidence of an answer on WB. A legacy doc
+    is a question in ``published`` with no ``publication_state`` (set by every
+    1.5.0 outcome). One read-only GET each; never writes to WB:
+
+    * our text on WB    -> stays ``published``, gains ``verified_at`` (silent);
+    * another text      -> ``answered_externally`` (Telegram card corrected);
+    * no answer on WB   -> ``publish_unknown`` + «Опубликовать» button, so the
+      operator publishes through the corrected path (which reads WB first).
+    """
+    counts = {"checked": 0, "verified": 0, "external": 0, "unknown": 0, "errors": 0}
+    for doc_id, doc in deps.repo.list_by_status(Status.PUBLISHED.value, limit,
+                                                entity_type="question"):
+        if doc.get("entity_type") != "question" or doc.get("publication_state"):
+            continue
+        counts["checked"] += 1
+        text = clean_answer(doc.get("final_answer") or doc.get("ai_answer"))
+        trace = _new_trace(doc_id, doc, phase="legacy_reconcile",
+                           state_before=Status.PUBLISHED.value)
+        try:
+            outcome = _verify_question(deps, doc["source_id"], text, trace, attempts=1)
+            if outcome == "verify_error":
+                counts["errors"] += 1
+                continue  # WB unreadable now: leave as is, retry next poll
+            if outcome == "verified":
+                now = _now_iso()
+                trace.update(final_publication_state=Status.PUBLISHED.value,
+                             local_state_after=Status.PUBLISHED.value, finished_at=now)
+                deps.repo.record_publication(
+                    doc_id, Status.PUBLISHED.value,
+                    {"publication_state": Status.PUBLISHED.value, "verified_at": now,
+                     "legacy_reconciled_at": now}, trace)
+                counts["verified"] += 1
+                continue
+            status = _finish_question(deps, doc_id, doc, text, outcome, trace,
+                                      chat=doc.get("telegram_chat_id"),
+                                      message_id=doc.get("telegram_message_id"),
+                                      user_id=None, accepted=False)
+            counts["external" if status == Status.ANSWERED_EXTERNALLY.value else "unknown"] += 1
+        except Exception as exc:  # noqa: BLE001 — one item must not break the poll
+            counts["errors"] += 1
+            log_event(logger, "warning", "legacy question reconciliation failed",
+                      doc_id=doc_id, error=type(exc).__name__)
+    return counts
 
 
 def _reverify_accepted_questions(deps: Deps, limit: int = 20) -> dict:

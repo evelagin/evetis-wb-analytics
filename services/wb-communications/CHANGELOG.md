@@ -1,5 +1,18 @@
 # CHANGELOG
 
+## 1.5.1 — Reconciliation of pre-1.5.0 «published» questions (2026-09-28)
+
+Local verification: **258/258 pytest passed** (4 new).
+
+- Before 1.5.0 a question became `published` on any 2xx with a wrong body, so that
+  status is not evidence of an answer on WB. Each `/poll` now reconciles such legacy
+  docs (question, `published`, no `publication_state`) with one read-only
+  `GET /api/v1/question`: our text on WB → stays `published` + `verified_at`
+  (silent); another text → `answered_externally`; no answer → `publish_unknown`
+  with the «Опубликовать» button (the corrected path reads WB before writing).
+  Never writes to WB; reviews untouched. `list_by_status` gains an optional
+  `entity_type` equality filter (single-field indexes, no composite index).
+
 ## 1.5.0 — Question publication fix + verified publication (2026-09-28)
 
 Local verification: **229/229 pytest passed** (26 new in `test_question_publication.py`).
