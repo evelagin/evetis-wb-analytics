@@ -366,8 +366,11 @@ class MemoryRepository:
         doc.update({**fields, "status": status, "lock_expires_at": None, "updated_at": _now()})
         doc["publish_trace"] = (doc.get("publish_trace") or []) + [copy.deepcopy(trace)]
 
-    def list_by_status(self, status: str, limit: int = 50) -> list[tuple[str, dict]]:
-        out = [(k, copy.deepcopy(v)) for k, v in self.docs.items() if v.get("status") == status]
+    def list_by_status(self, status: str, limit: int = 50,
+                       entity_type: Optional[str] = None) -> list[tuple[str, dict]]:
+        out = [(k, copy.deepcopy(v)) for k, v in self.docs.items()
+               if v.get("status") == status
+               and (entity_type is None or v.get("entity_type") == entity_type)]
         return out[:limit]
 
     # --- editing sessions ---
@@ -755,10 +758,14 @@ class FirestoreRepository:
                                   "publish_trace": firestore.ArrayUnion([trace])})
 
     @translate_fs_errors
-    def list_by_status(self, status: str, limit: int = 50) -> list[tuple[str, dict]]:
-        query = (self._lazy().collection(self._col_name)
-                 .where("status", "==", status).limit(limit))
-        return [(snap.id, snap.to_dict()) for snap in query.stream()]
+    def list_by_status(self, status: str, limit: int = 50,
+                       entity_type: Optional[str] = None) -> list[tuple[str, dict]]:
+        # Equality-only filters: served by Firestore single-field indexes (no
+        # composite index needed).
+        query = self._lazy().collection(self._col_name).where("status", "==", status)
+        if entity_type is not None:
+            query = query.where("entity_type", "==", entity_type)
+        return [(snap.id, snap.to_dict()) for snap in query.limit(limit).stream()]
 
     # --- editing sessions ---
     def _editing_ref(self, user_id):

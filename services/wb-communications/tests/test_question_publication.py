@@ -389,3 +389,68 @@ def test_accepted_doc_without_timestamp_falls_back_and_expires():
     summary = run_poll(deps)
     assert summary["questions"]["reverified"]["unknown"] == 1
     assert deps.repo.get(_qdoc())["status"] == "publish_unknown"
+
+
+# --- legacy (pre-1.5.0) «published» questions are reconciled against WB --------
+def _legacy_published(deps, qid="Q1"):
+    """Simulate a pre-1.5.0 doc: marked published on a 2xx, never read back."""
+    d = deps.repo.docs[_qdoc(qid)]
+    d.update(status="published", published_at="2026-09-27T19:25:08+00:00",
+             wb_response={"data": None, "error": False})
+    d.pop("publication_state", None)
+    d.pop("verified_at", None)
+    return d
+
+
+def test_legacy_published_without_answer_becomes_actionable_then_publishes_once():
+    deps = _qdeps()
+    _legacy_published(deps)                     # WB: no answer (question_answers empty)
+    summary = run_poll(deps)
+    assert summary["questions"]["reverified"]["legacy"]["unknown"] == 1
+    doc = deps.repo.get(_qdoc())
+    assert doc["status"] == "publish_unknown"
+    assert doc["publish_trace"][-1]["phase"] == "legacy_reconcile"
+    assert "Опубликовано" not in _last_edit(deps) and "не подтверждена" in _last_edit(deps)
+    assert deps.wb.published_questions == []    # reconciliation never writes
+    # operator taps «Опубликовать» -> corrected path, exactly one write, read back
+    r = handle_update(deps, _cb(20, "pub", _qdoc()))
+    assert r["status"] == "published" and len(deps.wb.published_questions) == 1
+    assert deps.repo.get(_qdoc())["verified_at"]
+    # next poll: nothing legacy left, no further writes
+    summary = run_poll(deps)
+    assert summary["questions"]["reverified"]["legacy"]["checked"] == 0
+    assert len(deps.wb.published_questions) == 1
+
+
+def test_legacy_published_with_our_answer_is_verified_silently():
+    deps = _qdeps()
+    d = _legacy_published(deps)
+    deps.wb.question_answers["Q1"] = d["final_answer"]
+    edits_before = len(deps.telegram.edits)
+    summary = run_poll(deps)
+    assert summary["questions"]["reverified"]["legacy"]["verified"] == 1
+    doc = deps.repo.get(_qdoc())
+    assert doc["status"] == "published" and doc["verified_at"] and doc["legacy_reconciled_at"]
+    assert doc["published_at"] == "2026-09-27T19:25:08+00:00"   # original kept
+    assert len(deps.telegram.edits) == edits_before and deps.wb.published_questions == []
+
+
+def test_legacy_published_with_other_answer_is_answered_externally():
+    deps = _qdeps()
+    _legacy_published(deps)
+    deps.wb.question_answers["Q1"] = "Ответ из кабинета"
+    run_poll(deps)
+    assert deps.repo.get(_qdoc())["status"] == "answered_externally"
+    assert deps.wb.published_questions == []
+
+
+def test_new_flow_published_and_reviews_are_not_reconciled():
+    deps = make_deps([dict(SAMPLE_FEEDBACK)], questions=[_q()], wb_questions_enabled=True,
+                     wb_question_publish_enabled=True)
+    run_poll(deps)
+    handle_update(deps, _cb(10, "pub", _qdoc()))                          # 1.5.0 verified
+    handle_update(deps, _cb(11, "pub", make_doc_id("wb", "review", "REVIEW_1")))
+    calls = deps.wb.get_question_calls
+    summary = run_poll(deps)
+    assert summary["questions"]["reverified"]["legacy"]["checked"] == 0
+    assert deps.wb.get_question_calls == calls
