@@ -69,7 +69,7 @@ async function seeded(over: (f: FactRow) => Partial<FactRow> | null = () => null
 
 describe('окно сверки: 35 календарных дней через границы месяцев, нижняя граница — первый месяц под Engine', () => {
   it('константы решения владельца', () => {
-    expect([RECONCILE_WINDOW_DAYS, RECONCILIATION_EPOCH, ENGINE_VERSION]).toEqual([35, '2026-09-01', 'unitka-engine/2.1.0']);
+    expect([RECONCILE_WINDOW_DAYS, RECONCILIATION_EPOCH, ENGINE_VERSION]).toEqual([35, '2026-09-01', 'unitka-engine/2.2.0']);
   });
   it('LCD 18.09 → окно с 01.09 (не с 15.08: август вела не Engine — сверка стёрла бы чужие значения)', () => {
     expect(reconcileWindow('2026-09-18')).toEqual({ from: '2026-09-01', to: '2026-09-18', days: 35, epoch: '2026-09-01', rollingFrom: '2026-08-15' });
@@ -219,7 +219,7 @@ describe('сверка через границу месяца: сентябрь-
     expect(book.get(septRow(book, '2026-09-17'), blockCol(5, OFFSET.opens))).toBe(27);
     expect(book.get(octRow(book, '2026-10-02'), blockCol(24, OFFSET.opens))).toBe(12);          // блок 25 (909951444) — только в октябре
     expect(book.get(septRow(book, '2026-09-17'), blockCol(24, OFFSET.opens))).toBe('');         // в сентябре блока нет — не пишем
-    expect(runner.journal[0]).toMatchObject({ qaStatus: 'PASS', engineVersion: 'unitka-engine/2.1.0' });
+    expect(runner.journal[0]).toMatchObject({ qaStatus: 'PASS', engineVersion: 'unitka-engine/2.2.0' });
   });
   it('LCD в октябре: источник пересмотрел 17.09 → поправка в сентябрьской секции, одна ячейка, одна запись журнала', async () => {
     const { book, runner } = await seeded();

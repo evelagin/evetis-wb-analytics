@@ -43,6 +43,10 @@ class FakeRunner implements QueryRunner {
   /** Gate 10: журнал прогонов гейтящих загрузчиков. По умолчанию каждые сутки до D-1 покрыты. */
   coverage: Array<{ loader_name: string; logical_period: string }> | null = null;
   coverageQueries = 0;
+  /** SPP-3: строки wb_mart.V_WB_SPP_DAILY (nm_id, date_msk, effective_spp_pct, spp_status, orders_qty). */
+  spp: Array<{ nm_id: number; date_msk: string; effective_spp_pct: number | null; spp_status: string }> = [];
+  sppQueries = 0;
+  sppThrows = false;
   constructor(private readonly o: { lcd?: string; d1?: string; logisticsSales?: number } = {}) {}
   async query<T = Record<string, unknown>>(sql: string, params?: Record<string, unknown>, _types?: Record<string, string>, options?: { jobTimeoutMs?: number }): Promise<T[]> {
     if (sql.includes('V_UNITKA_COGS_CANONICAL')) {
@@ -74,6 +78,12 @@ class FakeRunner implements QueryRunner {
         out.push({ loader_name: 'funnel', logical_period: iso }, { loader_name: 'mart', logical_period: iso });
       }
       return out as T[];
+    }
+    if (sql.includes('V_WB_SPP_DAILY')) {
+      this.sppQueries++;
+      if (this.sppThrows) throw new Error('Access Denied: Table evetis_ref.REF_SKU_CHANNEL_MAP');
+      return this.spp.filter((r) => r.date_msk >= String(params?.from) && r.date_msk <= String(params?.to))
+        .map((r) => ({ ...r, date_msk: { value: r.date_msk }, orders_qty: 1 })) as T[];
     }
     if (sql.includes('V_UNITKA_SOURCE_FRESHNESS')) {
       return [{ source: 'funnel', max_closed_date: { value: this.o.lcd ?? LCD }, gating: true, observed_at: { value: '2026-09-11T06:50:00Z' } }] as T[];
@@ -149,6 +159,20 @@ class FakeSheets implements SheetsGateway {
   }
   /** Gate 10: сбой следующей записи ДАННЫХ (модель: Job не отработал / Sheets отказал). */
   failNextDataWrite = false;
+  /** SPP-3: лист «принял» запись, но ячейки колонки СПП не легли (потерянная запись). */
+  dropSppWrites = false;
+  clears: string[][] = [];
+  async batchClear(ranges: string[]): Promise<number> {
+    if (this.readonlyScope) throw new LoaderError('403 insufficient scope', 'SHEETS_API');
+    this.clears.push(ranges);
+    for (const r of ranges) {
+      const m = r.match(/!([A-Z]+)(\d+):/)!;
+      const col = colFromA1(m[1]!), row = Number(m[2]);
+      if (this.dropSppWrites && (col - GRID.B0) % GRID.BW === OFFSET.spp) continue;
+      this.snap.grid[row - GRID.TOP]![col - 1] = '';
+    }
+    return ranges.length;
+  }
   async batchWrite(data: WriteRange[]): Promise<number> {
     if (this.readonlyScope) throw new LoaderError('403 insufficient scope', 'SHEETS_API');
     const isLcdCommit = data.some((d) => d.range === 'LAST_CLOSED_DATE');
@@ -164,6 +188,7 @@ class FakeSheets implements SheetsGateway {
       const r1 = Number(m[2]);
       d.values.forEach((row, i) => {
         const r = r1 + i;
+        if (this.dropSppWrites && (col - GRID.B0) % GRID.BW === OFFSET.spp) { n++; return; }
         if (col === GRID.MIR && r === GRID.HDR) this.snap.mirrorLcd = row[0]!;
         else if (col === GRID.MIR && r === GRID.RROW) this.snap.mirrorRev = row[0]!;
         else this.snap.grid[r - GRID.TOP]![col - 1] = row[0]!;
@@ -773,5 +798,123 @@ describe('Gate 10 · WB: долгое удержание — видимый ин
     await unitkaLoader({ ...ctx(mkConfig('prod', true)), logger: recLogger(lines) }, deps(runner, sheets));
     expect(lines.some((l) => l.fields.code === 'LCD_HELD_BY_COVERAGE_GAP')).toBe(false);
     expect(lines.filter((l) => l.level === 'error')).toEqual([]);
+  });
+});
+
+
+/* ───────────────────────── SPP-3: колонка AB в цикле Gate 10 ───────────────────────── */
+
+describe('SPP-3 · AB (СПП) в суточном цикле: observe / write, атомарность с LCD, идемпотентность', () => {
+  const ABcol = (b: number): number => GRID.B0 + b * GRID.BW + OFFSET.spp;
+  const sppRows = () => NM_IDS.flatMap((nm, b) => Array.from({ length: 10 }, (_, i) => ({
+    nm_id: nm, date_msk: `2026-09-${String(i + 1).padStart(2, '0')}`,
+    effective_spp_pct: b === 1 && i === 4 ? -7.65 : 30 + b + i / 10, spp_status: b === 1 && i === 4 ? 'NEGATIVE_MARKUP' : 'OK',
+  })));
+  const withSpp = (mode: 'observe' | 'write'): Config => ({ ...mkConfig('prod', true), unitkaSppMode: mode } as Config);
+  const abWrites = (s: FakeSheets) => s.writes.flat().filter((d) => /![A-Z]+\d+:/.test(d.range) && (colFromA1(d.range.match(/!([A-Z]+)/)![1]!) - GRID.B0) % GRID.BW === OFFSET.spp);
+  const qaOf = (r: FakeRunner, i = -1) => JSON.parse(String(r.journal.at(i)!.qaJson));
+
+  it('observe: план и манифест есть, ни одной записи в AB; факты и LCD — как обычно', async () => {
+    const runner = new FakeRunner(); runner.spp = sppRows(); const sheets = freshBook();
+    await unitkaLoader(ctx(withSpp('observe')), deps(runner, sheets));
+    expect(runner.sppQueries).toBe(1);
+    expect(abWrites(sheets)).toEqual([]);
+    const spp = qaOf(runner).spp;
+    expect(spp).toMatchObject({ mode: 'observe', written: 0, cells_to_write: 240, cells_to_clear: 0, negative_markup_to_zero: 1,
+      dates_before_start_touched: 0, future_dates_touched: 0, dates_after_candidate_touched: 0 });
+    expect(spp.manifest_digest).toMatch(/^[0-9a-f]{64}$/);
+    expect(sheets.snap.namedLcd).toBe(serial(LCD));
+  });
+
+  it('observe: сбой чтения вью СПП не меняет исход прогона фактов; write — отказ ДО любой записи', async () => {
+    const runner = new FakeRunner(); runner.spp = sppRows(); runner.sppThrows = true; const sheets = freshBook();
+    await unitkaLoader(ctx(withSpp('observe')), deps(runner, sheets));
+    expect(qaOf(runner).spp).toBeUndefined();
+    expect(sheets.snap.namedLcd).toBe(serial(LCD));
+    const r2 = new FakeRunner(); r2.spp = sppRows(); r2.sppThrows = true; const s2 = freshBook();
+    await expect(unitkaLoader(ctx(withSpp('write')), deps(r2, s2))).rejects.toBeDefined();
+    expect(dataWrites(s2)).toHaveLength(0);
+    expect(s2.snap.namedLcd).toBe(serial(COMMITTED));
+  });
+
+  it('off (по умолчанию): вью СПП не читается', async () => {
+    const runner = new FakeRunner(); runner.spp = sppRows(); const sheets = freshBook();
+    await unitkaLoader(ctx(mkConfig('prod', true)), deps(runner, sheets));
+    expect(runner.sppQueries).toBe(0);
+    expect(qaOf(runner).spp).toBeUndefined();
+  });
+
+  it('write: AB — в той же единственной записи, что факты, ДО коммита LCD; значения п.п., рассрочка → 0', async () => {
+    const runner = new FakeRunner(); runner.spp = sppRows(); const sheets = freshBook();
+    await unitkaLoader(ctx(withSpp('write')), deps(runner, sheets));
+    expect(dataWrites(sheets)).toHaveLength(1);
+    expect(abWrites(sheets)).toHaveLength(240);
+    expect(sheets.writes.indexOf(lcdCommits(sheets)[0]!)).toBeGreaterThan(sheets.writes.indexOf(dataWrites(sheets)[0]!));
+    expect(sheets.snap.grid[dayRow(0) - GRID.TOP]![ABcol(0) - 1]).toBe(30);
+    expect(sheets.snap.grid[dayRow(4) - GRID.TOP]![ABcol(1) - 1]).toBe(0);
+    expect(sheets.snap.grid[dayRow(9) - GRID.TOP]![ABcol(2) - 1]).toBe(32.9);
+    expect(sheets.snap.grid[dayRow(10) - GRID.TOP]![ABcol(0) - 1] ?? '').toBe('');     // 11.09 > кандидата
+    expect(sheets.snap.namedLcd).toBe(serial(LCD));
+    const qa = qaOf(runner);
+    expect(qa.spp).toMatchObject({ mode: 'write', written: 240 });
+    expect(qa.checks.find((c: { name: string }) => c.name === 'SPP_READBACK')).toMatchObject({ pass: true });
+  });
+
+  it('повтор при неизменном источнике: SPP_VALUE_MUTATIONS = 0, ни одной записи', async () => {
+    const runner = new FakeRunner(); runner.spp = sppRows(); const sheets = freshBook();
+    await unitkaLoader(ctx(withSpp('write')), deps(runner, sheets));
+    const n = sheets.writes.length;
+    await unitkaLoader(ctx(withSpp('write')), deps(runner, sheets));
+    expect(sheets.writes).toHaveLength(n);
+    expect(qaOf(runner).spp).toMatchObject({ cells_to_write: 0, cells_to_clear: 0, already_correct: 240, written: 0 });
+  });
+
+  it('LCD-атомарность: записанная AB не легла → SPP_READBACK FAIL, LCD прежний, коммит не начат', async () => {
+    const runner = new FakeRunner(); runner.spp = sppRows(); const sheets = freshBook();
+    sheets.dropSppWrites = true;
+    await expect(unitkaLoader(ctx(withSpp('write')), deps(runner, sheets))).rejects.toBeDefined();
+    expect(lcdCommits(sheets)).toHaveLength(0);
+    expect(sheets.snap.namedLcd).toBe(serial(COMMITTED));
+    expect(qaOf(runner).checks.find((c: { name: string }) => c.name === 'SPP_READBACK')).toMatchObject({ pass: false });
+    // сбой устранён — тот же кандидат коммитится
+    sheets.dropSppWrites = false;
+    await unitkaLoader(ctx(withSpp('write')), deps(runner, sheets));
+    expect(sheets.snap.namedLcd).toBe(serial(LCD));
+  });
+
+  it('поздние заказы: WB пересчитал прошлый закрытый день → меняется ровно эта ячейка, LCD не двигается', async () => {
+    const runner = new FakeRunner(); runner.spp = sppRows(); const sheets = freshBook();
+    await unitkaLoader(ctx(withSpp('write')), deps(runner, sheets));
+    runner.spp = runner.spp.map((r) => (r.nm_id === NM_IDS[3] && r.date_msk === '2026-09-03' ? { ...r, effective_spp_pct: 12.34 } : r));
+    const n = sheets.writes.length;
+    await unitkaLoader(ctx(withSpp('write')), deps(runner, sheets));
+    const w = sheets.writes.slice(n).flat();
+    expect(w).toEqual([{ range: `'WB_Юнит_2025'!${colA1(ABcol(3))}${dayRow(2)}:${colA1(ABcol(3))}${dayRow(2)}`, values: [[12.3]] }]);
+    expect(sheets.snap.namedLcd).toBe(serial(LCD));
+  });
+});
+
+describe('SPP-3 · очистка ручных AB — values.batchClear, не запись пустой строки', () => {
+  const ABc = (b: number): number => GRID.B0 + b * GRID.BW + OFFSET.spp;
+  const withWrite = (): Config => ({ ...mkConfig('prod', true), unitkaSppMode: 'write' } as Config);
+  it('ручное значение без строки вью очищается batchClear; числа — в общей записи', async () => {
+    const runner = new FakeRunner();
+    runner.spp = [{ nm_id: NM_IDS[0]!, date_msk: '2026-09-02', effective_spp_pct: 35, spp_status: 'OK' }];
+    const sheets = freshBook();
+    sheets.snap.grid[dayRow(0) - GRID.TOP]![ABc(0) - 1] = 20;             // 01.09: ручное, строки вью нет
+    await unitkaLoader(ctx(withWrite()), deps(runner, sheets));
+    expect(sheets.clears.flat()).toEqual([`'WB_Юнит_2025'!${colA1(ABc(0))}${dayRow(0)}:${colA1(ABc(0))}${dayRow(0)}`]);
+    expect(sheets.writes.flat().some((d) => d.values[0]![0] === '' && d.range.includes(colA1(ABc(0))))).toBe(false);
+    expect(sheets.snap.grid[dayRow(0) - GRID.TOP]![ABc(0) - 1]).toBe('');
+    expect(sheets.snap.grid[dayRow(1) - GRID.TOP]![ABc(0) - 1]).toBe(35);
+    expect(sheets.snap.namedLcd).toBe(serial(LCD));
+  });
+  it('шлюз без batchClear и есть что очищать → SPP_CLEAR_UNSUPPORTED до любой записи', async () => {
+    const runner = new FakeRunner(); runner.spp = [];
+    const sheets = freshBook();
+    sheets.snap.grid[dayRow(0) - GRID.TOP]![ABc(0) - 1] = 20;
+    (sheets as unknown as { batchClear?: unknown }).batchClear = undefined;
+    await expect(unitkaLoader(ctx(withWrite()), deps(runner, sheets))).rejects.toMatchObject({ code: 'SPP_CLEAR_UNSUPPORTED' });
+    expect(sheets.writes).toEqual([]);
   });
 });
