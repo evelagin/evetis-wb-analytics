@@ -126,9 +126,14 @@ def chain_ok(evs: list[dict]) -> None:
     outcomes = [e for e in evs if e["event_type"] in ("mutation_success", "mutation_failure")]
     assert dones[0]["mutation_attempts"] == len(attempts)
     assert sorted(a["mutation_id"] for a in attempts) == sorted(o["mutation_id"] for o in outcomes)
+    authz = {e["event_id"]: e for e in evs if e["event_type"] == "authz_ok" and e["allowlist_configured"] is True}
+    assert [e["seq"] for e in evs] == list(range(1, len(evs) + 1))      # provable per-request order
     for a in attempts:
         assert auth and a["auth_event_id"] == auth[-1]["event_id"]
-        assert evs.index(auth[-1]) < evs.index(a)
+        assert auth[-1]["seq"] < a["seq"]
+        if a["target_system"] == "wb" and a["route"] == "/telegram-webhook":
+            z = authz.get(a["authz_event_id"])
+            assert z is not None and z["seq"] < a["seq"], "WB write from Telegram without allow-list authorization"
 
 
 # --- /poll -------------------------------------------------------------------------------------
@@ -314,7 +319,7 @@ def test_telegram_failure_classes(out, handler, result, err):
         real_telegram(handler).send_message(302044578, "hi")
     audit_events.end_request(ctx, tok, 200)
     att, res = _outcome(out)
-    assert att["mutation_class"] == "tg_send_message" and att["target_ref"].startswith("tg_chat:")
+    assert att["mutation_class"] == "tg_send_message" and att["target_ref"] in ("tg_chat:configured", "tg_chat:other")
     assert res["result"] == result and res["error_class"] == err
     assert_no_leak(out)
 
@@ -327,13 +332,29 @@ def test_mutation_outside_request_is_unattributed(out):
 
 # --- trace parsing, sanitation, allow-list -----------------------------------------------------
 
+OTHER = "5" * 32
+THIRD = "6" * 32
+
+
 @pytest.mark.parametrize("headers,expected", [
-    ({"x-cloud-trace-context": f"{TRACE}/123;o=1"}, (TRACE, format(123, "016x"))),
-    ({"x-cloud-trace-context": f"{TRACE.upper()}/9"}, (TRACE, format(9, "016x"))),
-    ({"traceparent": f"00-{TRACE}-00f067aa0ba902b7-01"}, (TRACE, "00f067aa0ba902b7")),
-    ({"x-cloud-trace-context": "not-a-trace/1"}, (None, None)),
-    ({"traceparent": "garbage"}, (None, None)),
-    ({}, (None, None)),
+    ({"x-cloud-trace-context": f"{TRACE}/123;o=1"}, (TRACE, format(123, "016x"), None)),
+    ({"x-cloud-trace-context": f"{TRACE.upper()}/9"}, (TRACE, format(9, "016x"), None)),
+    ({"traceparent": f"00-{TRACE}-00f067aa0ba902b7-01"}, (TRACE, "00f067aa0ba902b7", None)),
+    ({"x-cloud-trace-context": "not-a-trace/1"}, (None, None, None)),
+    ({"traceparent": "garbage"}, (None, None, None)),
+    ({}, (None, None, None)),
+    # same trace in both headers: one trace
+    ([("x-cloud-trace-context", f"{TRACE}/1"), ("traceparent", f"00-{TRACE}-00f067aa0ba902b7-01")],
+     (TRACE, format(1, "016x"), None)),
+    # conflicting headers: never guess — primary + alt
+    ([("x-cloud-trace-context", f"{TRACE}/1"), ("traceparent", f"00-{OTHER}-00f067aa0ba902b7-01")],
+     (TRACE, format(1, "016x"), OTHER)),
+    # repeated header with different values
+    ([("x-cloud-trace-context", f"{TRACE}/1"), ("x-cloud-trace-context", f"{OTHER}/2")],
+     (TRACE, format(1, "016x"), OTHER)),
+    # more than two distinct traces: ambiguous → no trace (audit fails closed)
+    ([("x-cloud-trace-context", f"{TRACE}/1"), ("x-cloud-trace-context", f"{OTHER}/2"),
+      ("traceparent", f"00-{THIRD}-00f067aa0ba902b7-01")], (None, None, None)),
 ])
 def test_parse_trace(headers, expected):
     assert audit_events.parse_trace(headers) == expected
@@ -382,3 +403,144 @@ def test_is_allowed_unchanged_and_recorded(out, chats, users, chat, user, ok, co
     assert e["event_type"] == ("authz_ok" if ok else "authz_denied")
     assert e["allowlist_configured"] is configured
     assert set(e) <= ALLOWED_KEYS                                   # ids are not payload fields
+
+
+# --- review fixes (H1, M1, M2, L1, L2) ---------------------------------------------------------
+
+def _webhook_publish(out, allowed_chats, allowed_users, chat, user):
+    ctx, tok = audit_events.begin_request("POST", "/telegram-webhook", {"x-cloud-trace-context": f"{TRACE}/1"})
+    audit_events.record_auth("telegram_webhook_secret", ok=True)
+    is_allowed(chat, user, allowed_chats, allowed_users)
+    _wb(lambda r: httpx.Response(204)).publish_answer("FB9", "t")
+    audit_events.end_request(ctx, tok, 200)
+    return events(out)
+
+
+def test_wb_write_after_allowlist_ok_is_authorized(out):
+    evs = _webhook_publish(out, {"1"}, {"2"}, 1, 2)
+    chain_ok(evs)
+    att = next(e for e in evs if e["event_type"] == "mutation_attempt")
+    assert att["authz_event_id"] == next(e for e in evs if e["event_type"] == "authz_ok")["event_id"]
+
+
+@pytest.mark.parametrize("chats,users,chat,user", [({"1"}, {"2"}, 9, 2), (set(), set(), 9, 9)])
+def test_wb_write_after_denied_or_unconfigured_allowlist_fails_the_chain(out, chats, users, chat, user):
+    evs = _webhook_publish(out, chats, users, chat, user)
+    att = next(e for e in evs if e["event_type"] == "mutation_attempt")
+    assert att["authz_event_id"] is None
+    with pytest.raises(AssertionError, match="allow-list"):
+        chain_ok(evs)
+
+
+def test_later_denial_revokes_authorization(out):
+    ctx, tok = audit_events.begin_request("POST", "/telegram-webhook", {})
+    audit_events.record_authz("telegram_allowlist", ok=True, allowlist_configured=True)
+    audit_events.record_authz("telegram_allowlist", ok=False, allowlist_configured=True)
+    assert ctx.authz_event_id is None
+    audit_events.end_request(ctx, tok, 200)
+
+
+def test_conflicting_trace_headers_are_carried_as_alt(out, monkeypatch):
+    app = FastAPI()
+    app.add_middleware(SecurityAuditMiddleware)
+    client = TestClient(app, raise_server_exceptions=False)
+    client.get("/health", headers=[("X-Cloud-Trace-Context", f"{TRACE}/1"),
+                                   ("traceparent", f"00-{OTHER}-00f067aa0ba902b7-01")])
+    evs = events(out)
+    assert all(e["trace_id"] == TRACE and e["alt_trace_id"] == OTHER for e in evs)
+
+
+@pytest.mark.parametrize("sequence,result,err", [
+    (["ReadTimeout", "ConnectError", "ConnectError"], "outcome_unknown", "ConnectError"),   # 1st may have landed
+    (["ConnectError", "ConnectError", "ConnectError"], "error", "ConnectError"),            # provably never sent
+    (["ReadTimeout", "ok"], "success", None),
+])
+def test_telegram_retry_sequences(out, sequence, result, err):
+    calls = {"n": 0}
+
+    def handler(request):
+        kind = sequence[min(calls["n"], len(sequence) - 1)]
+        calls["n"] += 1
+        if kind == "ok":
+            return httpx.Response(200, json={"ok": True, "result": {}})
+        raise getattr(httpx, kind)("x", request=request)
+    ctx, tok = _in_request()
+    if result == "success":
+        real_telegram(handler).send_message(1, "x")
+    else:
+        with pytest.raises(TelegramError):
+            real_telegram(handler).send_message(1, "x")
+    audit_events.end_request(ctx, tok, 200)
+    _, res = _outcome(out)
+    assert res["result"] == result and res.get("error_class") == err
+
+
+def test_wb_non_2xx_accepted_write_is_not_a_known_success(out):
+    ctx, tok = _in_request()
+    got = _wb(lambda r: httpx.Response(302, headers={"location": "https://x"})).publish_answer("FB5", "t")
+    audit_events.end_request(ctx, tok, 200)
+    assert got == {"status_code": 302}                                  # business behaviour unchanged
+    _, res = _outcome(out)
+    assert res["event_type"] == "mutation_failure" and res["result"] == "outcome_unknown"
+    assert res["error_class"] == "HTTP302"
+
+
+def test_chat_ref_reveals_only_the_class(out, monkeypatch):
+    monkeypatch.setenv("TELEGRAM_CHAT_ID", "-5578869057")
+    assert audit_events.chat_ref(-5578869057) == "tg_chat:configured"
+    assert audit_events.chat_ref(302044578) == "tg_chat:other"
+    assert audit_events.safe_ref("wb", "\udcff") .startswith("wb:")     # lone surrogate never raises
+
+
+def test_stdout_failure_does_not_change_the_response(monkeypatch):
+    class Broken:
+        def write(self, *_):
+            raise OSError("stdout closed")
+
+        def flush(self):
+            raise OSError("stdout closed")
+    monkeypatch.setattr(audit_events.sys, "stdout", Broken())
+    deps = with_secrets(make_deps([]))
+    client = client_for(poll_route, deps, monkeypatch)
+    assert client.post("/poll", headers={"X-Scheduler-Secret": "wrong-value-123"}).status_code == 403
+
+
+def test_lifespan_passes_through(out):
+    started = []
+    app = FastAPI()
+    app.add_middleware(SecurityAuditMiddleware)
+
+    @app.on_event("startup")
+    def _s():
+        started.append(True)
+    with TestClient(app) as client:
+        assert client.get("/nope").status_code == 404
+    assert started == [True]
+    assert {e["event_type"] for e in events(out)} == {"request_start", "request_done"}
+
+
+def test_concurrent_requests_do_not_share_context(out, monkeypatch):
+    from concurrent.futures import ThreadPoolExecutor
+
+    deps = with_secrets(make_deps([]))
+    deps.telegram = real_telegram()
+    app = FastAPI()
+    app.add_middleware(SecurityAuditMiddleware)
+
+    @app.post("/poll")
+    def one_mutation():
+        audit_events.record_auth("scheduler_secret", ok=True)
+        deps.telegram.send_message(1, "x")
+        return {"ok": True}
+    client = TestClient(app)
+    with ThreadPoolExecutor(8) as pool:
+        codes = list(pool.map(lambda i: client.post("/poll", headers={
+            "X-Cloud-Trace-Context": f"{i:032x}/1"}).status_code, range(16)))
+    assert codes == [200] * 16
+    by_cid: dict[str, list] = {}
+    for e in events(out):
+        by_cid.setdefault(e["correlation_id"], []).append(e)
+    assert len(by_cid) == 16
+    for evs in by_cid.values():
+        chain_ok(evs)
+        assert evs[-1]["mutation_attempts"] == 1

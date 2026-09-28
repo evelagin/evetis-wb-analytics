@@ -26,6 +26,7 @@ import hashlib
 import json
 import threading
 import time
+from contextvars import ContextVar
 
 import httpx
 
@@ -45,6 +46,9 @@ logger = get_logger(__name__)
 _RETRY_ON = (WBServerError, httpx.TransportError)  # WBRateLimitError ⊂ WBServerError
 # Writes are retried ONLY when WB provably did not process them.
 _WRITE_RETRY_ON = (WBRateLimitError, httpx.ConnectError, httpx.ConnectTimeout)
+# D-19b: HTTP status of the last write attempt of the CURRENT call (contextvar: the client is shared across
+# concurrent requests). Read only by _audited_write to classify the outcome; never changes behaviour.
+_LAST_WRITE_STATUS: ContextVar[int | None] = ContextVar("wb_last_write_status", default=None)
 
 
 def _body_sha256(body: dict) -> str:
@@ -146,7 +150,9 @@ class WBClient:
         by reading state back instead of re-sending (duplicate-answer guard).
         """
         def _do() -> httpx.Response:
-            return self._request(method, path, json=body)
+            resp = self._request(method, path, json=body)
+            _LAST_WRITE_STATUS.set(resp.status_code)      # audit only (D-19b); behaviour unchanged
+            return resp
 
         try:
             return retry_call(_do, retries=2, retry_on=_WRITE_RETRY_ON)
@@ -171,6 +177,7 @@ class WBClient:
         tid = str(target_id)          # WB object ids are public; anything unexpected is hashed, not logged
         ref = f"wb:{tid}" if audit_events.PLAIN_ID.fullmatch(tid) else audit_events.safe_ref("wb", tid)
         m = audit_events.start_mutation(mutation_class, "wb", ref)
+        token = _LAST_WRITE_STATUS.set(None)
         try:
             result = write()
         except WBPublishOutcomeUnknown as exc:
@@ -188,7 +195,15 @@ class WBClient:
         except BaseException as exc:             # anything else after a possible send: unknown
             audit_events.finish_mutation(m, "outcome_unknown", type(exc).__name__)
             raise
-        audit_events.finish_mutation(m, "success")
+        finally:
+            status = _LAST_WRITE_STATUS.get()
+            _LAST_WRITE_STATUS.reset(token)
+        # The business logic treats any status < 400 as accepted (unchanged); the AUDIT only calls a 2xx a known
+        # success — e.g. an unfollowed 3xx means WB did not process the write, so it is not "success".
+        if status is not None and 200 <= status < 300:
+            audit_events.finish_mutation(m, "success")
+        else:
+            audit_events.finish_mutation(m, "outcome_unknown", f"HTTP{status}" if status is not None else "NoStatus")
         return result
 
     def publish_answer(self, feedback_id: str, text: str) -> dict:

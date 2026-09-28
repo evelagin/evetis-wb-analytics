@@ -32,7 +32,7 @@ class TelegramClient:
         from app.utils import audit_events
 
         if "chat_id" in payload:
-            ref = audit_events.safe_ref("tg_chat", payload["chat_id"])
+            ref = audit_events.chat_ref(payload["chat_id"])
         elif "callback_query_id" in payload:
             ref = audit_events.safe_ref("tg_callback", payload["callback_query_id"])
         else:
@@ -51,8 +51,15 @@ class TelegramClient:
         return result
 
     def _call_once(self, method: str, payload: dict) -> dict:
+        maybe_sent = {"any": False}      # did ANY retried attempt possibly reach Telegram?
+
         def _do() -> httpx.Response:
-            return self._client.post(f"{self._base}/{method}", json=payload)
+            try:
+                return self._client.post(f"{self._base}/{method}", json=payload)
+            except httpx.TransportError as exc:
+                if type(exc).__name__ not in _NOT_SENT:
+                    maybe_sent["any"] = True
+                raise
 
         failure = None
         try:
@@ -63,7 +70,10 @@ class TelegramClient:
             # httpx errors carry the request (and its URL with the bot token). Raise OUTSIDE the
             # except block so the original is neither __cause__ nor __context__ of the new error.
             err = TelegramError(f"telegram {method}: transport {failure}")
-            err.audit_outcome = "error" if failure in _NOT_SENT else "outcome_unknown"
+            # "error" (provably not sent) only if NO attempt could have been sent: ReadTimeout → ConnectError
+            # is outcome_unknown, because the first attempt may have been delivered.
+            not_sent = failure in _NOT_SENT and not maybe_sent["any"]
+            err.audit_outcome = "error" if not_sent else "outcome_unknown"
             err.audit_error_class = failure
             raise err
         try:
