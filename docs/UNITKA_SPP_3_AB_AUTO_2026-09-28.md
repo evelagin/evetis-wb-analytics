@@ -3,8 +3,8 @@
 Этап 3 задачи «СПП WB в Юнитку». Этап 1 — ценовые поля заказов (`docs/UNITKA_SPP_1_ORDERS_PROBE_2026-09-28.md`),
 этап 2 — вью `wb_mart.V_WB_SPP_DAILY` (`docs/UNITKA_SPP_2_DAILY_VIEW_2026-09-28.md`, развёрнута 28.09).
 
-Статус: код в Engine 2.2.0, по умолчанию `off`. Production — `observe` (план и манифест отката в журнал,
-**AB не пишется**). `write` включает только владелец, отдельным решением.
+Статус: код в Engine 2.2.0, по умолчанию `off`. Production — **`write` с 28.09.2026** (решение владельца),
+выкатка и доказательства — `docs/UNITKA_SPP_3_PRODUCTION_WRITE_2026-09-28.md`.
 
 ## 1. Что меняется
 
@@ -136,4 +136,4 @@ gcloud run jobs execute unitka-engine-prod --region europe-west1 --wait \
 gcloud run jobs update unitka-engine-prod --region europe-west1 --update-env-vars UNITKA_SPP_MODE=observe
 ```
 
-`write` — только отдельным решением владельца, по плану из отчёта observe.
+`write` включён 28.09.2026 (`docs/UNITKA_SPP_3_PRODUCTION_WRITE_2026-09-28.md`).

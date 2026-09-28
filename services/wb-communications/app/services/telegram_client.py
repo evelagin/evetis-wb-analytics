@@ -9,7 +9,7 @@ from __future__ import annotations
 import httpx
 
 from app.domain.exceptions import TelegramError
-from app.utils.logging import get_logger
+from app.utils.logging import audit_event, get_logger
 from app.utils.retry import retry_call
 
 logger = get_logger(__name__)
@@ -21,6 +21,19 @@ class TelegramClient:
         self._client = client or httpx.Client(timeout=30.0)
 
     def _call(self, method: str, payload: dict) -> dict:
+        if method.startswith("get"):          # reads (getMe, getWebhookInfo…): not a mutation
+            return self._call_api(method, payload)
+        audit = {"mutation_class": f"telegram:{method}", "target_system": "telegram"}
+        audit_event("mutation_attempt", **audit)
+        try:
+            result = self._call_api(method, payload)
+        except Exception as exc:
+            audit_event("mutation_failure", **audit, result="failed", error_class=type(exc).__name__)
+            raise
+        audit_event("mutation_success", **audit, result="ok")
+        return result
+
+    def _call_api(self, method: str, payload: dict) -> dict:
         def _do() -> httpx.Response:
             return self._client.post(f"{self._base}/{method}", json=payload)
 

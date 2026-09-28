@@ -6,14 +6,28 @@ be attached per request so a whole /poll or webhook flow is traceable.
 """
 from __future__ import annotations
 
+import hashlib
 import json
 import logging
+import os
 import re
 import sys
 import urllib.parse
 from contextvars import ContextVar
 
 _correlation_id: ContextVar[str] = ContextVar("correlation_id", default="")
+# Request trace (D-19b): taken from Cloud Run's X-Cloud-Trace-Context / traceparent so every log
+# line of a request carries the SAME trace as the platform request log -> machine correlation.
+_trace_id: ContextVar[str] = ContextVar("trace_id", default="")
+_span_id: ContextVar[str] = ContextVar("span_id", default="")
+# Server-generated per-request id: the trace header is client-controllable (Cloud Run propagates a valid
+# incoming traceparent / X-Cloud-Trace-Context), so events also carry an id the client cannot choose.
+_request_id: ContextVar[str] = ContextVar("request_id", default="")
+# Per-request count of mutation_attempt events, reported in request_end: lets the audit prove that no
+# mutation event of a request was lost (completeness), not just that the logged ones are authenticated.
+_mutation_attempts: ContextVar[list | None] = ContextVar("mutation_attempts", default=None)
+_TRACE_HEX = re.compile(r"^[0-9a-f]{32}$")
+_SPAN_HEX = re.compile(r"^[0-9a-f]{16}$")
 
 # Two independent layers, so one miss is not a leak (incident 2026-09-27: httpx logged
 # `https://api.telegram.org/bot<TOKEN>/...` and the old `\b\d{6,}:` pattern never
@@ -43,6 +57,65 @@ def register_secret(value: str | None) -> None:
 
 def set_correlation_id(value: str) -> None:
     _correlation_id.set(value or "")
+
+
+def parse_trace(cloud_trace: str | None, traceparent: str | None) -> tuple[str, str]:
+    """(trace_id, span_id_hex) from `X-Cloud-Trace-Context: TRACE/SPAN;o=1` or W3C `traceparent`.
+    Anything malformed yields empty strings — never an exception."""
+    try:
+        if cloud_trace:
+            head = cloud_trace.split(";", 1)[0]
+            trace, _, span = head.partition("/")
+            trace = trace.strip().lower()
+            if _TRACE_HEX.match(trace):
+                span_hex = format(int(span), "016x") if span.strip().isdigit() and int(span) < 2 ** 64 else ""
+                return trace, span_hex
+        if traceparent:
+            parts = traceparent.strip().lower().split("-")
+            if len(parts) >= 4 and _TRACE_HEX.match(parts[1]) and set(parts[1]) != {"0"}:
+                return parts[1], parts[2] if _SPAN_HEX.match(parts[2]) else ""
+    except Exception:  # noqa: BLE001
+        pass
+    return "", ""
+
+
+def set_request_trace(cloud_trace: str | None, traceparent: str | None):
+    import uuid
+    trace, span = parse_trace(cloud_trace, traceparent)
+    return (_trace_id.set(trace), _span_id.set(span), _request_id.set(uuid.uuid4().hex),
+            _mutation_attempts.set([0]))
+
+
+def reset_request_trace(tokens) -> None:
+    _trace_id.reset(tokens[0])
+    _span_id.reset(tokens[1])
+    _request_id.reset(tokens[2])
+    _mutation_attempts.reset(tokens[3])
+
+
+def current_trace() -> str:
+    return _trace_id.get()
+
+
+async def trace_middleware(request, call_next):
+    """Bind the platform request trace to everything logged while serving this request, and close every
+    request with exactly one request_end (status + number of mutation attempts) — even on an exception."""
+    tokens = set_request_trace(request.headers.get("x-cloud-trace-context"), request.headers.get("traceparent"))
+    status = 500
+    try:
+        response = await call_next(request)
+        status = response.status_code
+        return response
+    finally:
+        try:
+            counter = _mutation_attempts.get() or [0]
+            # scope["path"] — ровно та строка, по которой маршрутизирует Starlette (раскодированная); request.url
+            # пересобирается из заголовка Host и режется на «?»/«#» (`/poll%3Fx=1` → `/poll`), а на кривом Host бросает.
+            audit_event("request_end", route=audit_route(request.scope.get("path")), http_status=int(status),
+                        mutation_attempts=int(counter[0]))
+        except Exception:  # noqa: BLE001 — instrumentation never changes the response; a gap reads as BLOCKED
+            pass
+        reset_request_trace(tokens)
 
 
 def redact(text: str) -> str:
@@ -87,6 +160,14 @@ class _JsonFormatter(logging.Formatter):
         cid = _correlation_id.get()
         if cid:
             payload["correlation_id"] = cid
+        trace = _trace_id.get()
+        if trace:
+            payload["trace_id"] = trace
+            project = os.environ.get("GCP_PROJECT_ID", "")
+            if project:  # Cloud Logging promotes this to LogEntry.trace (same format as request logs)
+                payload["logging.googleapis.com/trace"] = f"projects/{project}/traces/{trace}"
+            if _span_id.get():
+                payload["logging.googleapis.com/spanId"] = _span_id.get()
         if record.exc_info:
             payload["exception"] = redact(self.formatException(record.exc_info))
         if record.stack_info:
@@ -137,6 +218,7 @@ def configure_logging(level: str = "INFO") -> None:
         server.propagate = False
     logging.captureWarnings(True)  # Python warnings also pass through redaction
     logging.raiseExceptions = False  # never print raw records to stderr on a handler error
+    _audit_logger.setLevel(logging.INFO)  # audit events survive any LOG_LEVEL (their absence would read as a gap)
 
 
 def get_logger(name: str) -> logging.Logger:
@@ -147,3 +229,63 @@ def log_event(logger: logging.Logger, level: str, message: str, **fields) -> Non
     """Emit a log line with structured extra fields (redacted)."""
     safe = {k: _redact_value(v) for k, v in fields.items()}
     logger.log(getattr(logging, level.upper()), message, extra={"extra_fields": safe})
+
+
+
+# ── Security/audit events (D-19b) ──────────────────────────────────────────────
+# One schema, a closed set of fields, no free text: auth decisions and external mutations,
+# each bound to the platform request trace. The trusted AE audit correlates
+#   Cloud Run request log -> auth_ok -> mutation_attempt -> mutation_success|failure
+# by trace. Emission never raises: instrumentation must not change behaviour.
+AUDIT_SCHEMA = "wbc-audit/1"
+AUDIT_EVENTS = frozenset({"instrumentation_ready", "auth_ok", "auth_denied", "request_end",
+                          "mutation_attempt", "mutation_success", "mutation_failure"})
+AUDIT_FIELDS = frozenset({"route", "mechanism", "principal_class", "result", "mutation_class",
+                          "target_system", "target_ref", "http_status", "error_class", "mutation_attempts"})
+_audit_logger = logging.getLogger("app.audit")
+# Closed route vocabulary for security events. The request path is attacker-controlled (percent-decoded by
+# Starlette, may carry credential-shaped text, unicode, query-like fragments), so it is NEVER logged raw:
+# an exact known path, one "/admin" category for the admin router, or the sentinel UNKNOWN.
+AUDIT_ROUTES = frozenset({"/health", "/poll", "/telegram-webhook", "/docs", "/redoc", "/openapi.json",
+                          "/docs/oauth2-redirect"})
+ADMIN_ROUTE = "/admin"
+UNKNOWN_ROUTE = "UNKNOWN"
+
+
+def audit_route(path) -> str:
+    """Map a request path to the closed vocabulary; anything else -> UNKNOWN. Never returns input text."""
+    if not isinstance(path, str):
+        return UNKNOWN_ROUTE
+    if any(seg in (".", "..") for seg in path.split("/")):   # dot-сегменты: фронт мог нормализовать путь иначе
+        return UNKNOWN_ROUTE
+    if path in AUDIT_ROUTES:
+        return path
+    if path == ADMIN_ROUTE or path.startswith(ADMIN_ROUTE + "/"):
+        return ADMIN_ROUTE
+    return UNKNOWN_ROUTE
+
+
+def safe_ref(value) -> str:
+    """Stable short reference to a target id (review/question id) instead of the raw id. Not a secret:
+    WB ids are enumerable, so this only keeps raw ids out of the log, it is not anonymisation."""
+    return hashlib.sha256(str(value).encode()).hexdigest()[:16] if value not in (None, "") else ""
+
+
+def audit_event(event: str, **fields) -> None:
+    try:
+        if event not in AUDIT_EVENTS:
+            return
+        if event == "mutation_attempt":
+            counter = _mutation_attempts.get()
+            if counter is not None:
+                counter[0] += 1
+        safe = {k: v for k, v in fields.items()
+                if k in AUDIT_FIELDS and isinstance(v, (str, int, bool)) and not isinstance(v, float)}
+        if "route" in fields:                       # every caller, not only request_end: closed vocabulary
+            safe["route"] = audit_route(fields["route"])
+        payload = {"audit_event": event, "audit_schema": AUDIT_SCHEMA,
+                   "service": os.environ.get("K_SERVICE", ""), "revision": os.environ.get("K_REVISION", ""),
+                   "trace_id": _trace_id.get(), "request_id": _request_id.get(), **safe}
+        _audit_logger.info("audit %s", event, extra={"extra_fields": _redact_value(payload)})
+    except Exception:  # noqa: BLE001 — never let instrumentation break a request
+        pass
