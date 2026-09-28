@@ -24,6 +24,22 @@
   **`wif_domains.py --live`** — привязки пула во всех проектах, деплоеры из реестра.
 - Тесты: `tools/tests/test_tenancy_sql_deployer.py` (18 состязательных A01–A18, модель прав
   BigQuery), 8 негативных фикстур и прогонов `terraform test`. Документация — TENANCY_DESIGN §4e.
+## 2026-09-28 — SPP-2: wb_mart.V_WB_SPP_DAILY — СПП WB по заказам, SKU × день
+
+Новый объект (Git-first, не развёрнут); Юнитка, колонка `AB`, writer и формулы не менялись.
+
+- **`wb_mart.V_WB_SPP_DAILY`** (VIEW), грейн `date_msk × nm_id`, только дни со строками Orders API.
+  Сырая СПП WB (`raw_spp_*`) и эффективная СПП дня (`effective_spp_pct = 100 × (1 − Σ finished_price /
+  Σ price_with_disc)`) разделены; эффективная соответствует `AB` Юнитки. Популяция = популяция `AA`
+  Юнитки (все заказы дня, включая отменённые) — совпадение в 183 из 183 пар SKU × день.
+  `spp_source = ORDER_SPP_ACTUAL` (без fallback), `spp_status`: OK / ZERO_SPP / NEGATIVE_MARKUP /
+  PRICE_DATA_MISSING; отрицательное значение (рассрочка с наценкой) не обрезается.
+- Файл `sql/unitka/spp2/wb_mart/V_WB_SPP_DAILY.sql`, развёртывание `tools/spp_daily_view_deploy.py`
+  (закрытый список, dry-run по умолчанию, `--apply` только из слитого `main`), DQ после развёртывания
+  `sql/unitka/spp2/v_wb_spp_daily_dq.sql`, тесты `tools/tests/test_spp_daily_view.py`.
+  Вне `sql/current`: `wb_mart` не канонизирован (`docs/architecture/CANONICAL_COVERAGE.md` §3).
+- Контракт, DQ, shadow против ручного `AB`, разбор 160 ручных значений и 6 дней «воронка без Orders
+  API» — `docs/UNITKA_SPP_2_DAILY_VIEW_2026-09-28.md`.
 
 ## 2026-09-28 — SPP-1: ценовые поля заказов WB в RAW_WB_ORDERS
 
