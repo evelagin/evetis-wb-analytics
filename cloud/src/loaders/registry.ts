@@ -18,6 +18,7 @@ import { unitkaLoader } from './unitka/index.js';
 import { unitkaSlot } from './unitka/slot.js';
 import { unitkaMonthPrepLoader } from './unitka/prep.js';
 import { unitkaMonthRollbackLoader } from './unitka/rollback.js';
+import { unitkaSppRollbackLoader } from './unitka/spp_rollback.js';
 import { ozonUnitkaLoader } from './unitka/ozon/loader.js';
 import { ozonLcdMigrationLoader } from './unitka/ozon/lcd_migration_loader.js';
 
@@ -48,6 +49,9 @@ export const LOADERS: Record<string, LoaderSpec> = {
   // Calendar V2: откат СОЗДАНИЯ месяца по манифесту. По умолчанию ТОЛЬКО план; исполнение — prod +
   // UNITKA_MONTH_ROLLBACK_WRITE=1 + манифест + явный месяц. Нет расписания, нет шага деплоя.
   'unitka-month-rollback': { handler: unitkaMonthRollbackLoader, logicalPeriod: (now) => unitkaSlot(now) },
+  // SPP-3: откат миграции колонки AB по манифесту. По умолчанию ТОЛЬКО план; исполнение — prod +
+  // UNITKA_SPP_ROLLBACK_WRITE=1 + манифест + подтверждённый отпечаток. Нет расписания.
+  'unitka-spp-rollback': { handler: (ctx) => unitkaSppRollbackLoader(ctx), logicalPeriod: (now) => unitkaSlot(now) },
   // Gate 8: суточный прогон Ozon-Юнитки. Окно перезаписи 45 суток (раз в месяц 120),
   // провизорная экономика (факт > оценка). Запись — prod + OZON_UNITKA_WRITE_ENABLED=1;
   // по умолчанию прогон только считает план. Расписание НЕ создано: см. runbook Gate 8.

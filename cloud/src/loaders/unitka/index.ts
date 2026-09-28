@@ -47,12 +47,15 @@ import type { Config } from '../../config.js';
 import { commitLcd, revertLcd, type CommitOutcome } from './lcd.js';
 import { resolveWbCandidate, ensureWbMonthSection, WbLcdCell, lifecycleLog, type WbCandidate, type MonthEnsureResult } from './wb_lifecycle.js';
 import { asNumber, isoToSerial } from './model.js';
+import { planSpp, sppWindow, sppWriteRanges, sppClearRanges, buildSppManifest, encodeSppManifest, verifySppReadback, sppSummary, type SppPlan, type SppMode } from './spp.js';
+import { monthKeyOf, nextMonth } from './calendar.js';
 
 // 1.2.0 — Integrity Guard V1 (Phase 1C1). При UNITKA_INTEGRITY_MODE=off (по умолчанию) поведение = 1.1.0.
 // 2.0.0 — Calendar V2 (Phase 2B): секция месяца по заголовку, любые 28–31 день, слоты блоков (24 — резерв).
 // 2.1.0 — Financial Integrity V1: сверка окна 35 дней через границы месяцев, цена с происхождением, журнал ремонта.
+// 2.2.0 — SPP-3: колонка AB из wb_mart.V_WB_SPP_DAILY (UNITKA_SPP_MODE=off|observe|write, по умолчанию off).
 //         При UNITKA_RECONCILE_MODE=off (по умолчанию) поведение = 2.0.0.
-export const ENGINE_VERSION = 'unitka-engine/2.1.0';
+export const ENGINE_VERSION = 'unitka-engine/2.2.0';
 
 export interface UnitkaDeps {
   makeRunner: (ctx: LoaderContext) => QueryRunner;
@@ -307,6 +310,10 @@ export async function unitkaLoader(ctx: LoaderContext, deps: UnitkaDeps = defaul
     log.warn('unitka_integrity_mode_invalid', { value: config.unitkaIntegrityModeInvalid, effective: 'off' });
   }
   const reconcileMode: ReconcileMode = config.unitkaReconcileMode ?? 'off';
+  // SPP-3: AB (СПП) из wb_mart.V_WB_SPP_DAILY. off — не читается; observe — план и манифест отката в журнал;
+  // write — AB входит в ту же единственную запись цикла, проверяется перечитыванием ДО коммита LCD.
+  const sppMode: SppMode = config.unitkaSppMode ?? 'off';
+  if (config.unitkaSppModeInvalid) log.warn('unitka_spp_mode_invalid', { value: config.unitkaSppModeInvalid, effective: 'off' });
   if (config.unitkaReconcileModeInvalid) {
     log.warn('unitka_reconcile_mode_invalid', { value: config.unitkaReconcileModeInvalid, effective: 'off' });
   }
@@ -326,6 +333,10 @@ export async function unitkaLoader(ctx: LoaderContext, deps: UnitkaDeps = defaul
   let monthEnsure: MonthEnsureResult | null = null;
   let commit: CommitOutcome | null = null;
   let reverted: string | null = null;
+  let spp: SppPlan | null = null;
+  let sppManifestDigest: string | null = null;
+  const sppSnaps = new Map<string, Snapshot>();
+  const sppJson = (written: number): Record<string, unknown> => (spp ? { spp: { mode: sppMode, window: spp.window, manifest_digest: sppManifestDigest, written, ...spp.counts } } : {});
   const lifecycleSummary = (): Record<string, unknown> => ({
     mode: life?.mode ?? null, committed_before: life?.committed ?? null, candidate: life?.candidate ?? null,
     canonical_ceiling: life?.ceiling ?? null, gap_at: life?.decision.gapAt ?? null, clamped_from: life?.clampedToMonth ?? null,
@@ -463,6 +474,35 @@ export async function unitkaLoader(ctx: LoaderContext, deps: UnitkaDeps = defaul
         repairs_sample: repairs.slice(0, 40).map((r) => `${r.businessDate} ${r.nmId} ${r.field} ${r.cellA1} ${r.oldValue ?? ''}→${r.newValue ?? ''} ${r.reason} [${r.source}]`),
       }));
     }
+    // 3''. SPP-3: план AB по секциям окна (35 дней от кандидата, не раньше 01.09.2026). Снимки секций — до записи.
+    // observe не меняет исход прогона фактов: сбой плана AB — предупреждение, факты и LCD идут как без SPP.
+    // write — fail-closed: без плана AB прогон падает ДО любой записи (факты без AB не пишутся).
+    if (sppMode !== 'off') {
+      const sw = sppWindow(lcd.lastClosedDate);
+      if (sw) {
+        try {
+          sppSnaps.set(snap.geometry.monthKey, snap);
+          for (let k = monthKeyOf(sw.from); formatMonthKey(k) <= formatMonthKey(monthKeyOf(sw.to)); k = nextMonth(k)) {
+            const key = formatMonthKey(k);
+            if (sppSnaps.has(key)) continue;
+            const sec = await discoverSection(sheets, config.unitkaSheetName, `${key}-01`);
+            sppSnaps.set(key, await readSnapshot(sheets, config.unitkaSheetName, sec.geometry, sec.meta.columnCount, sec.meta.anchorCol));
+          }
+          spp = planSpp({ sections: [...sppSnaps.values()], rows: await bq.sppDaily(sw.from, sw.to), candidate: lcd.lastClosedDate });
+          const manifest = buildSppManifest(spp, { spreadsheetId: config.unitkaSpreadsheetId, sheetId: snap.sheetId, sheetName: config.unitkaSheetName });
+          sppManifestDigest = manifest.digest;
+          log.info('unitka_spp_plan', sppSummary(spp, sppMode, { manifest_digest: manifest.digest }));
+          // Снимок отката — ДО любой записи, в каждом прогоне с изменениями (как манифест подготовки месяца).
+          if (spp.cells.length) log.info('unitka_spp_undo_manifest', { digest: manifest.digest, cells: manifest.cells.length, manifest_b64: encodeSppManifest(manifest) });
+        } catch (e) {
+          if (sppMode === 'write') throw e;
+          spp = null;
+          log.warn('unitka_spp_plan_failed', { mode: sppMode, code: (e as { code?: string }).code ?? null, error: (e as Error).message });
+        }
+      }
+    }
+    const sppWrite = sppMode === 'write' && writeMode && spp !== null && spp.cells.length > 0;
+
     // Плановое накопление (какие ячейки входят в контракт записи) — writeHistory;
     // фактическое ИСПОЛНЕНИЕ ремонта (проба журнала, записи REPAIRED) — REPAIR_EXECUTION:
     // оно требует ещё и права записи в книгу, поэтому в контролируемом observe невозможно.
@@ -520,7 +560,7 @@ export async function unitkaLoader(ctx: LoaderContext, deps: UnitkaDeps = defaul
       const SHADOW_DIFF = new Set(['BQ_SHEETS_MISMATCH', 'LCD_CONSISTENT', 'CLOSED_FORMAT_CONTRACT']);
       const expectedFail = qa.checks.filter((c) => !c.pass && !SHADOW_DIFF.has(c.name));
       rec.qaStatus = expectedFail.length ? 'SHADOW_FAIL' : (allCells.length || allFormatCells.length ? 'SHADOW_DIFF' : 'SHADOW_MATCH');
-      rec.qaJson = qaJson(qa, { plan: planSummary(plan), calendar, ...(reconcile ? { reconcile: reconcileSummary(reconcile, { repairs_planned: repairs.length, repairs_recorded: 0, issue_snapshot: issueSnapshot }) } : {}), ...(integrity ? { integrity: integrity.summary } : {}) });
+      rec.qaJson = qaJson(qa, { plan: planSummary(plan), calendar, ...sppJson(0), ...(reconcile ? { reconcile: reconcileSummary(reconcile, { repairs_planned: repairs.length, repairs_recorded: 0, issue_snapshot: issueSnapshot }) } : {}), ...(integrity ? { integrity: integrity.summary } : {}) });
       log.info('unitka_shadow', { qa_status: rec.qaStatus, cells_planned: plan.cells.length, checks: qa.checks.map((c) => `${c.name}:${c.pass ? 'PASS' : 'FAIL(' + c.count + ')'}`) });
       if (expectedFail.length) {
         rec.errorCode = failureCode({ pass: false, checks: expectedFail });
@@ -538,21 +578,27 @@ export async function unitkaLoader(ctx: LoaderContext, deps: UnitkaDeps = defaul
     // 4'. PROD: одна запись. В режиме write в неё входят и исторические поправки прошлых месяцев окна.
     // Ремонт без происхождения не выполняется: журнал ремонта обязан быть доступен ДО записи (fail-closed).
     if (repairExecutionAllowed) await bq.ledgerProbe();
-    if (allCells.length === 0) {
+    const sppCells = sppWrite ? spp!.cells : [];
+    const sppClears = sppClearRanges(sppCells, config.unitkaSheetName);
+    if (sppClears.length > 0 && !sheets.batchClear) throw new LoaderError('шлюз Sheets не умеет values.batchClear — очистка AB невозможна без потери формата', 'SPP_CLEAR_UNSUPPORTED');
+    if (allCells.length === 0 && sppCells.length === 0) {
       log.info('unitka_nothing_to_write', { lcd: plan.lcd });
     } else {
-      const ranges = toWriteRanges(allCells, config.unitkaSheetName);
+      // Факты и AB — ОДНОЙ записью (values.batchUpdate, RAW): AB не может лечь без фактов и наоборот.
+      const ranges = [...toWriteRanges(allCells, config.unitkaSheetName), ...sppWriteRanges(sppCells, config.unitkaSheetName)];
       // План ремонта — в лог ДО мутации листа: происхождение не теряется при любом исходе записи.
       if (repairExecutionAllowed && repairs.length > 0) log.info('unitka_repairs_planned', { count: repairs.length, records: repairs.slice(0, 200) });
       writeStage = 'ATTEMPTED';
       const updated = await sheets.batchWrite(ranges);
       writeStage = 'ACKNOWLEDGED';
-      rec.cellsWritten = updated;
-      log.info('unitka_written', { ranges: ranges.length, cells_planned: allCells.length, cells_lcd_month: plan.cells.length, cells_history: allCells.length - plan.cells.length, cells_updated: updated });
-      if (updated !== allCells.length) {
+      // Очистка AB — отдельным values.batchClear (формат сохраняется); перечитывание ниже проверяет обе операции.
+      const cleared = sppClears.length ? await sheets.batchClear!(sppClears) : 0;
+      rec.cellsWritten = updated + cleared;
+      log.info('unitka_written', { ranges: ranges.length, cells_planned: allCells.length, cells_lcd_month: plan.cells.length, cells_history: allCells.length - plan.cells.length, cells_spp: sppCells.length, cells_spp_cleared: cleared, cells_updated: updated });
+      if (updated !== allCells.length + sppCells.length - sppClears.length) {
         // Один batchUpdate либо применяется целиком, либо отвергается; расхождение счётчика —
         // сигнал, что контракт API нарушен. Фиксируем и всё равно идём на reconciliation.
-        log.warn('unitka_updated_count_mismatch', { planned: allCells.length, updated });
+        log.warn('unitka_updated_count_mismatch', { planned: allCells.length + sppCells.length - sppClears.length, updated });
       }
     }
 
@@ -579,7 +625,18 @@ export async function unitkaLoader(ctx: LoaderContext, deps: UnitkaDeps = defaul
         reconChecks.push(...evaluateRepairedSection(again, sec.plan, { summaryUpTo: cycle.committed }));
       }
     }
-    const qa = { pass: qaLcd.pass && reconChecks.every((c) => c.pass), checks: [...qaLcd.checks, ...reconChecks] };
+    // SPP-3: каждая записанная ячейка AB — значение = плану, формат числа прежний. Провал → коммит LCD не начинается.
+    const sppChecks: QaCheck[] = [];
+    if (sppCells.length > 0) {
+      const reread = new Map<string, Snapshot>([[after.geometry.monthKey, after]]);
+      for (const m of new Set(sppCells.map((c) => c.month))) {
+        if (reread.has(m)) continue;
+        const s0 = sppSnaps.get(m)!;
+        reread.set(m, await readSnapshot(sheets, config.unitkaSheetName, s0.geometry, s0.width, s0.anchorCol));
+      }
+      sppChecks.push(verifySppReadback(sppCells, (m) => reread.get(m)));
+    }
+    const qa = { pass: qaLcd.pass && reconChecks.every((c) => c.pass) && sppChecks.every((c) => c.pass), checks: [...qaLcd.checks, ...reconChecks, ...sppChecks] };
     rec.qaStatus = qa.pass ? 'PASS' : 'FAIL';
     // Integrity — ПОСЛЕ записи и reconciliation, на перечитанном листе, ДО коммита LCD. Guard читает
     // значения фактов и ТЕКСТ формул, а не результаты формул под отсечкой LCD, поэтому незакоммиченный
@@ -607,7 +664,7 @@ export async function unitkaLoader(ctx: LoaderContext, deps: UnitkaDeps = defaul
     await persistIssueSnapshot();
     const setQaJson = (checks: QaCheck[] = qa.checks, pass: boolean = qa.pass): void => {
       rec.qaJson = qaJson({ pass, checks }, {
-        plan: planSummary(plan), calendar, format_cells_written: allFormatCells.length,
+        plan: planSummary(plan), calendar, format_cells_written: allFormatCells.length, ...sppJson(sppCells.length),
         ...(reconcile ? { reconcile: reconcileSummary(reconcile, { repairs_planned: repairs.length, repairs_recorded: repairsRecorded, issue_snapshot: issueSnapshot }) } : {}),
         ...(integrity ? { integrity: integrity.summary } : {}),
         lifecycle: lifecycleSummary(),
@@ -624,7 +681,8 @@ export async function unitkaLoader(ctx: LoaderContext, deps: UnitkaDeps = defaul
       await recordUnconfirmed('проверка перечитыванием не пройдена');
       const barrier = qaLcd.checks.find((c) => c.name === 'LCD_CONSISTENT' && !c.pass);
       const code = barrier ? 'LCD_COMMIT_CONFLICT'
-        : rec.cellsWritten > 0 && rec.cellsWritten !== allCells.length ? 'PARTIAL_WRITE' : failureCode(qa);
+        : sppChecks.some((c) => !c.pass) ? 'SPP_READBACK_FAILED'
+          : rec.cellsWritten > 0 && rec.cellsWritten !== allCells.length + sppCells.length ? 'PARTIAL_WRITE' : failureCode(qa);
       rec.errorCode = code;
       rec.errorMessage = qa.checks.filter((c) => !c.pass).map((c) => `${c.name}: ${c.sample.slice(0, 3).join('; ')}`).join(' | ');
       if (barrier) lifecycleLog(log, 'LCD_COMMIT_CONFLICT', { stage: 'PRE_COMMIT_QA', committed: cycle.committed, candidate: cycle.candidate, sample: barrier.sample }, 'error');

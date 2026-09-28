@@ -29,6 +29,26 @@
   таблиц, экспорте и чтении строк представлений; `wif_domains --live` не пропускает молча проект,
   где нельзя перечислить SA (только выключенный IAM API); `tenant_bootstrap verify` проверяет IAM
   уровня таблиц, пул в ACL, IAM и ACL других арендаторов, все страницы датасетов EVETIS.
+## 2026-09-28 — SPP-3: колонка `AB` Юнитки WB из `V_WB_SPP_DAILY` (Engine 2.2.0, режим по умолчанию off)
+
+Структура листа, формулы (`AC`, `Z`, `K`, `AH`), `AA`, `Q`, LCD, Ozon не менялись.
+
+- **`UNITKA_SPP_MODE = off | observe | write`** в суточном цикле Gate 10. Окно — 35 дней сверки, не
+  раньше 01.09.2026, не позже кандидата LCD. Есть строка вью → `AB = ROUND(MAX(effective_spp_pct, 0), 1)`
+  (п.п.), нет → пусто; до 01.09 и будущие дни не трогаются. Каждая изменяемая ячейка классифицирована
+  (`ACTUAL_FILL / ACTUAL_REPLACE / NEGATIVE_MARKUP_TO_ZERO / MANUAL_CLEAR_NO_ORDER /
+  MANUAL_CLEAR_FUNNEL_ONLY / PRICE_DATA_MISSING_CLEAR`).
+- `write`: числа AB — в той же единственной записи, что факты; очистка — `values.batchClear` (запись `''`
+  стирает формат числа); проверка `SPP_READBACK` до коммита LCD, провал → `SPP_READBACK_FAILED`,
+  LCD не двигается. `observe`: план + снимок отката в журнал, AB не пишется, сбой плана не меняет исход
+  прогона фактов.
+- Снимок отката `unitka_spp_undo_manifest` (SHA-256) до любой записи; загрузчик **`unitka-spp-rollback`**
+  (план по умолчанию; исполнение — prod + флаг + подтверждённый отпечаток) возвращает значения, формулы
+  и форматы только ячеек манифеста.
+- `SheetsGateway.batchClear` (новый метод). Ни workflow, ни Terraform режим не задают.
+- Дизайн, репетиция на тестовой книге (откат 260/260, идемпотентность) и runbook —
+  `docs/UNITKA_SPP_3_AB_AUTO_2026-09-28.md`; `docs/UNITKA_2_0_COLUMN_MAP.md` — строка `AB`.
+
 ## 2026-09-28 — SPP-2: wb_mart.V_WB_SPP_DAILY — СПП WB по заказам, SKU × день
 
 Новый объект (Git-first, не развёрнут); Юнитка, колонка `AB`, writer и формулы не менялись.
