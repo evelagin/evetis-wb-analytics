@@ -144,7 +144,9 @@ Job инженера, тестов и даже ревьюера AE исполн�
 
 **Все домены доверия GCP (с 2026-09-25).** У репозитория два домена WIF: пул EVETIS и
 `mpa-platform / tenant-infra-pool` (T3.1A, вне Terraform этого репозитория; `sa-tenant-provisioner`
-получает только `tenant-infra.yml@main`, dispatch, github-hosted, `repository_id`/`repository_owner_id`).
+получает только `tenant-infra.yml@main`, dispatch, github-hosted, `repository_id`/`repository_owner_id`,
+с 2026-09-28 — ещё `actor_id` владельца и `run_attempt == '1'`: dispatch через `GITHUB_TOKEN` и повторный
+запуск токен не получают).
 Реестр — `quality/autonomy/wif_trust_domains.json`. `python -m tools.autonomy.wif_domains --live`
 проверяет оба домена на точных claims (35 случаев каждый) и сканирует все доступные проекты: провайдер
 GitHub, доверяющий репозиторию и не внесённый в реестр, или невычислимое условие — FAIL.

@@ -7,7 +7,7 @@
 
 Что делает:
   * каждый домен из `quality/autonomy/wif_trust_domains.json` проверяется на точных claims
-    GitHub: базовые случаи A–E (`wif_check.cases`) и случаи арендатора T1–T10;
+    GitHub: базовые случаи A–E (`wif_check.cases`) и случаи арендатора T1–T13;
   * `--live`: сканирует ВСЕ доступные проекты, все пулы и провайдеры с issuer GitHub. Провайдер,
     чьё условие пропускает хоть один токен этого репозитория (или не вычисляется подмножеством
     CEL), обязан быть в реестре — иначе FAIL. Домен из реестра, которого нет вживую, — тоже FAIL.
@@ -29,6 +29,7 @@ from tools.autonomy.wif_check import (MAIN, Case, CelError, WifConfig, cases, ce
 REPO = Path(__file__).resolve().parent.parent.parent
 INVENTORY = REPO / "quality" / "autonomy" / "wif_trust_domains.json"
 TENANT_SA = "sa-tenant-provisioner"
+GITHUB_ACTIONS_BOT_ID = "41898282"         # github-actions[bot]: actor прогонов, запущенных через GITHUB_TOKEN
 
 
 def load_inventory(path: Path = INVENTORY) -> dict:
@@ -53,6 +54,11 @@ def tenant_cases() -> list[Case]:
         Case("T9", "AE-workflow вызывает tenant-infra.yml как переиспользуемый",
              claims("autonomy-run.yml", MAIN, job_workflow="tenant-infra.yml"), E()),
         Case("T10", "tenant-infra.yml по расписанию", claims("tenant-infra.yml", MAIN, event="schedule"), E()),
+        Case("T11", "dispatch через GITHUB_TOKEN (github-actions[bot])",
+             claims("tenant-infra.yml", MAIN, actor_id=GITHUB_ACTIONS_BOT_ID), E()),
+        Case("T12", "повторный запуск прогона владельца (actor наследуется, run_attempt 2)",
+             claims("tenant-infra.yml", MAIN, run_attempt="2"), E()),
+        Case("T13", "другой пользователь с правом записи", claims("tenant-infra.yml", MAIN, actor_id="12345678"), E()),
     ]
 
 

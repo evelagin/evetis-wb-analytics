@@ -41,18 +41,23 @@ TENANT_INFRA_WORKFLOW = ".github/workflows/tenant-infra.yml"
 GITHUB_REPOSITORY = "evelagin/evetis-wb-analytics"
 GITHUB_REPOSITORY_ID = "1260095567"                   # числовой id — в условии WIF и в проверках apply
 GITHUB_OWNER_ID = "286048501"                        # владелец репозитория (repository_owner_id в WIF) — единственный, кто запускает apply/sql-deploy
-# Условие провайдера WIF — дословно как в живом mpa-platform (T3.1B, 2026-09-25).
+# Условие провайдера WIF — дословно как в живом mpa-platform (T3.1B 2026-09-25; T4 identity
+# hardening 2026-09-28: + actor_id владельца и первая попытка прогона). Claims GitHub OIDC —
+# строки (проба 2026-09-28: actor_id "286048501", run_attempt "1"). Claim triggering_actor в токене
+# нет: при повторном запуске actor остаётся исходным, поэтому без run_attempt чужой re-run
+# прогона владельца унаследовал бы его actor_id. github-actions[bot] (dispatch через GITHUB_TOKEN)
+# — actor_id 41898282, отказ.
 WIF_ATTRIBUTE_CONDITION = (
     "assertion.repository_id == '1260095567' && assertion.repository_owner_id == '286048501' && "
     "assertion.repository == 'evelagin/evetis-wb-analytics' && assertion.ref == 'refs/heads/main' && "
     "assertion.ref_type == 'branch' && assertion.workflow_ref == "
     "'evelagin/evetis-wb-analytics/.github/workflows/tenant-infra.yml@refs/heads/main' && "
-    "assertion.event_name == 'workflow_dispatch' && assertion.runner_environment == 'github-hosted'")
+    "assertion.event_name == 'workflow_dispatch' && assertion.runner_environment == 'github-hosted' && "
+    "assertion.actor_id == '286048501' && assertion.run_attempt == '1'")
 # ПРЕДЛОЖЕНИЕ к T3.3 (НЕ применено в GCP): дополнительно закрепить job_workflow_ref,
 # чтобы токен не получал reusable workflow, вызванный из tenant-infra.yml (M5).
-# NEEDS_LIVE_PROOF: GitHub документирует job_workflow_ref как ref reusable-workflow;
-# присутствует ли claim у обычного job'а, проверяется пробным токеном до замены
-# условия — если claim отсутствует, условие станет ложным (fail-closed, но сломает план).
+# Проба 2026-09-28: у обычного job'а claim job_workflow_ref присутствует и равен workflow_ref.
+# Предложение по-прежнему НЕ применено — отдельное решение.
 PROPOSED_WIF_ATTRIBUTE_CONDITION = (
     WIF_ATTRIBUTE_CONDITION + " && assertion.job_workflow_ref == assertion.workflow_ref")
 PLATFORM_MARKERS = (PLATFORM_PROJECT_ID, PLATFORM_PROJECT_NUMBER, STATE_BUCKET)

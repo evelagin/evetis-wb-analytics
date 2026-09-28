@@ -1,0 +1,31 @@
+{
+  "captured_at": "2026-09-28",
+  "captured_by": "желаемое состояние после T4 WIF identity hardening; живое до изменения совпадало со снимком 2026-09-25",
+  "note": "Живой провайдер tenant-infra-pool (mpa-platform, создан вне Terraform этого репозитория — T3.1A) и привязки sa-tenant-provisioner.",
+  "provider": {
+    "name": "projects/777428383056/locations/global/workloadIdentityPools/tenant-infra-pool/providers/github-tenant-infra",
+    "attributeCondition": "assertion.repository_id == '1260095567' && assertion.repository_owner_id == '286048501' && assertion.repository == 'evelagin/evetis-wb-analytics' && assertion.ref == 'refs/heads/main' && assertion.ref_type == 'branch' && assertion.workflow_ref == 'evelagin/evetis-wb-analytics/.github/workflows/tenant-infra.yml@refs/heads/main' && assertion.event_name == 'workflow_dispatch' && assertion.runner_environment == 'github-hosted' && assertion.actor_id == '286048501' && assertion.run_attempt == '1'",
+    "attributeMapping": {
+      "attribute.event_name": "assertion.event_name",
+      "attribute.ref": "assertion.ref",
+      "attribute.repository_id": "assertion.repository_id",
+      "attribute.repository_owner_id": "assertion.repository_owner_id",
+      "attribute.workflow_ref": "assertion.workflow_ref",
+      "google.subject": "assertion.sub"
+    },
+    "state": "ACTIVE",
+    "oidc": {
+      "issuerUri": "https://token.actions.githubusercontent.com"
+    }
+  },
+  "service_account_bindings": {
+    "sa-tenant-provisioner": [
+      {
+        "role": "roles/iam.workloadIdentityUser",
+        "members": [
+          "principalSet://iam.googleapis.com/projects/777428383056/locations/global/workloadIdentityPools/tenant-infra-pool/attribute.workflow_ref/evelagin/evetis-wb-analytics/.github/workflows/tenant-infra.yml@refs/heads/main"
+        ]
+      }
+    ]
+  }
+}
