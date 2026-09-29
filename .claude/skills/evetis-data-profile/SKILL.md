@@ -1,6 +1,6 @@
 ---
 name: evetis-data-profile
-description: Профилирует новые или изменившиеся таблицы EVETIS перед аналитикой и моделированием: schema, grain, keys, freshness, NULL, duplicates, distributions, gaps, referential integrity и schema drift. Использовать перед подключением нового WB endpoint/table или при подозрении на изменение данных.
+description: Профилирует новые или изменившиеся источники и таблицы EVETIS перед аналитикой и моделированием: schema, grain, keys, freshness, NULL, duplicates, distributions, gaps, referential integrity и schema drift. Использовать перед подключением нового marketplace/API source, изменением data contract или при подозрении на изменение данных.
 ---
 
 # EVETIS Data Profile
@@ -32,7 +32,9 @@ description: Профилирует новые или изменившиеся �
 - новые enum/status значения;
 - type/format consistency.
 
-Особое внимание: `nmId`/`nm_id`, barcode, vendorCode/internal_sku, srid/rrdId/report_id, advert/campaign ids, warehouse keys и даты.
+Особое внимание уделяй business identifiers, marketplace product/SKU keys, transaction/event ids, campaign/promotion ids, warehouse keys и датам.
+
+Не предполагай одинаковую семантику идентификаторов WB и Ozon. Конкретные ключи определяй по действующему marketplace/data contract.
 
 ## 3. Grain proof
 
@@ -67,10 +69,12 @@ description: Профилирует новые или изменившиеся �
 
 ## 6. EVETIS-specific checks
 
-- Финансовые источники: не смешивать DAILY/PROVISIONAL и WEEKLY/FINAL вне утвержденного canonical слоя.
-- Stocks: учитывать эволюцию warehouse identifier contract; не предполагать, что старый ключ остаётся non-null.
-- Ads: не объявлять campaign-level расход точным SKU-level фактом без доказанной связи.
-- Bundles/cost: проверять effective date и соответствие составу набора.
+- Finance: перед трактовкой revenue, deductions, advertising, costs или profit найди действующий financial/data contract; не смешивай факты с разной recognition semantics.
+- Marketplace: профилируй WB и Ozon в их собственной семантике до cross-marketplace normalization.
+- Stocks: устанавливай фактическую семантику warehouse и inventory identifiers; не предполагай стабильность ключа между источниками или версиями producer.
+- Ads: не объявляй campaign-level расход точным SKU-level фактом без доказанной связи.
+- Promotions/prices: различай observed state, eligibility/candidate state и proposed/modelled action.
+- Bundles/cost: проверяй effective date и соответствие состава набора действующему контракту.
 
 ## Output
 
@@ -82,7 +86,8 @@ description: Профилирует новые или изменившиеся �
 5. data quality findings с severity High/Medium/Low;
 6. join risks;
 7. schema drift;
-8. пригодность: RAW only / FACT-ready / MART-ready / BI-ready;
-9. следующие проверки перед изменением кода.
+8. пригодность источника для конкретного предполагаемого consumer/use case;
+9. unresolved assumptions и ограничения;
+10. следующие проверки перед изменением кода.
 
 Не исправляй найденную проблему в том же шаге без отдельного анализа impact.
