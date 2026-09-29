@@ -25,6 +25,9 @@ EVETIS не меняется: его Terraform, образ `24e3c6d6` и дан�
   Пишет только владелец; control и runtime только читают.
 - **Пакет SQL 30 → 32:** `tenant_ops.V_CAPABILITY_CURRENT`, `tenant_ops.V_TENANT_STATE_AUDIT`
   (CHAIN / EDGE / ACTOR / SEQ / PROOF).
+- **`tenant_ops.V_TENANT_STATE_CURRENT` (изменение колонок):** текущее — событие с наибольшим `seq`, а не
+  последнее по `occurred_at` (часы владельца и control различаются). Колонки `seq` и `journal_status`
+  (OK / GAP / DUPLICATE / NO_SEQ) добавлены в конец; прежние колонки и их порядок не менялись.
 - **Политика методов Seller** `seller_method_policy.json` — 481 метод: READ 276, MUTATION 197,
   REPORT 8; одобренных изменяющих методов нет. Ключ с изменяющим или неизвестным методом, истёкший
   или без обязательного метода — FAIL.

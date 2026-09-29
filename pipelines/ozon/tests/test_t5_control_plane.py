@@ -1805,3 +1805,15 @@ def test_revoke_of_partial_head_fills_required_mirror_fields():
     for f in ("binding_id", "marketplace", "api", "identity_fingerprint", "status", "confirmed_by", "confirmed_at",
               "source_observation_id"):
         assert row.get(f) is not None, f
+
+
+def test_current_state_uses_highest_seq_and_ignores_invalid_markers():
+    """Текущее — наибольший seq (как V_TENANT_STATE_CURRENT); маркер вне формата не роняет current_state."""
+    evs = [dict(ev(None, L.BACKFILLING, "CONTROL:c", NOW), seq=10),
+           dict(ev(L.BACKFILLING, L.RECONCILING, "CONTROL:c", NOW - timedelta(hours=3)), seq=11)]
+    assert L.current_state(evs) == L.RECONCILING
+    poisoned = chain(L.CREDENTIALS_PENDING, L.VALIDATING) + [{"invalid_marker": "S_1000000", "occurred_at": NOW}]
+    assert L.current_state(poisoned) == L.VALIDATING
+    assert L.audit_history(poisoned, decisions_for(poisoned[:2]))              # но журнал недействителен
+    legacy = [dict(ev(None, L.VALIDATING, "CONTROL:c", NOW), seq=None), dict(ev(None, L.READY, "CONTROL:c", NOW - timedelta(days=1)), seq=None)]
+    assert L.current_state(legacy) == L.VALIDATING                              # без номеров — по времени

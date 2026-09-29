@@ -39,7 +39,7 @@ P1–P8: `tools/tenancy/sql_package.py`.
 | `ozon_mart.FACT_OZON_SALES_DAILY` | GENERIC_DERIVED | сутки заказа × SKU | заказы и их текущий исход; пустая цена или количество — сумма NULL |
 | `ozon_mart.FACT_OZON_SKU_ECONOMICS_DAILY` | GENERIC_DERIVED | сутки заказа × SKU (доставленные) | выручка продавца, комиссия и расходы со знаком Ozon, себестоимость с покрытием; результат только при полных данных |
 | `ozon_mart.FACT_OZON_STORE_COSTS_DAILY` | GENERIC_DERIVED | сутки начисления × класс × уровень × SKU | все начисления вне экономики доставленных: магазин, товар, недоставленные и незагруженные отправления |
-| `tenant_ops.V_TENANT_STATE_CURRENT` | GENERIC_DERIVED | арендатор | последнее событие автомата |
+| `tenant_ops.V_TENANT_STATE_CURRENT` | GENERIC_DERIVED | арендатор | событие автомата с наибольшим `seq` (не последнее по времени, T5); `journal_status` OK / GAP / DUPLICATE / NO_SEQ |
 | `tenant_ops.V_SELLER_BINDING_STATUS` | GENERIC_DERIVED | API | BOUND / UNBOUND / MISMATCH / NOT_OBSERVED / INVALID_BINDING |
 | `tenant_ops.V_ENTITY_COVERAGE` | GENERIC_DERIVED | сущность | дни по статусам полноты |
 | `tenant_ops.V_DQ_UNRESOLVED_ACCRUALS` | GENERIC_DERIVED | сутки × type_id | начисления вне таксономии или с пустой суммой; `blocking_accruals` |

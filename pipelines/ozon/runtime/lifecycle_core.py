@@ -220,7 +220,15 @@ def ordered(events):
 
 
 def current_state(events):
-    ev = ordered(events)
+    """Состояние — событие с наибольшим seq (как V_TENANT_STATE_CURRENT). Строки без номера — формат до
+    T5: учитываются, только если нумерованных нет. Недействительные маркеры (invalid_marker) состоянием
+    не бывают — их ловит audit_history."""
+    ev = [e for e in events if not e.get("invalid_marker")]
+    numbered = [e for e in ev if e.get("seq") is not None]
+    if numbered:
+        return max(numbered, key=lambda e: (int(e["seq"]), as_utc(e.get("occurred_at")) or _EPOCH,
+                                            str(e.get("event_id"))))["to_state"]
+    ev = ordered(ev)
     return ev[-1]["to_state"] if ev else None
 
 

@@ -319,3 +319,84 @@ def test_policy_file_has_one_method_per_path_and_no_approved_mutations():
     pol = P.load_policy()
     assert pol["approved_mutation_methods"] == [] and len(pol["methods"]) == 481
     assert {v["http"] for v in pol["methods"].values()} <= {"GET", "POST"}
+
+
+# ═════════════════════════════════════════ V_TENANT_STATE_CURRENT: текущее — по seq, не по часам (T5)
+CUR_COLS = ["tenant_id", "event_id", "occurred_at", "from_state", "to_state", "actor", "run_id", "reason_code",
+            "reason_detail", "evidence_json", "seq", "decision_id"]
+STATES = ["CREDENTIALS_PENDING", "VALIDATING", "CAPABILITY_DISCOVERY", "READY_FOR_BACKFILL", "BACKFILLING",
+          "RECONCILING", "READY", "SUSPENDED"]
+
+
+def _cur(rows, package_dir=None):
+    """rows: [(event_id, occurred_at, to_state, seq)] → строки представления по арендатору."""
+    tables = {"TENANT_STATE_EVENTS": (CUR_COLS, [("t", eid, at, None, to, "CONTROL:c", "r", "x", None, None, seq, None)
+                                                 for eid, at, to, seq in rows])}
+    if package_dir is None:
+        return HS.run("tenant_ops", "V_TENANT_STATE_CURRENT", tables)
+    old = HS.PACKAGE_DIR
+    HS.PACKAGE_DIR = package_dir
+    try:
+        return HS.run("tenant_ops", "V_TENANT_STATE_CURRENT", tables)
+    finally:
+        HS.PACKAGE_DIR = old
+
+
+def test_current_state_is_highest_seq_not_latest_clock():
+    """Регрессия: seq=10 с более поздним occurred_at и seq=11 с более ранним — текущее обязано быть seq=11."""
+    rows = _cur([("e10", "2026-09-29 12:00:00", "BACKFILLING", 10), ("e11", "2026-09-29 09:00:00", "RECONCILING", 11)])
+    assert len(rows) == 1 and rows[0]["seq"] == 11 and rows[0]["state"] == "RECONCILING"
+    assert rows[0]["journal_status"] == "GAP"                     # номера 1..9 отсутствуют
+    full = [(f"e{i:02d}", f"2026-09-29 {23 - i:02d}:00:00", STATES[i % len(STATES)], i) for i in range(1, 12)]
+    rows = _cur(full)                                             # часы идут назад, номера — вперёд
+    assert rows[0]["seq"] == 11 and rows[0]["journal_status"] == "OK"
+
+
+@pytest.mark.parametrize("rows,status,seq", [
+    ([("a", "2026-09-29 01:00:00", "VALIDATING", 1), ("b", "2026-09-29 02:00:00", "CAPABILITY_DISCOVERY", 2),
+      ("b", "2026-09-29 02:00:00", "CAPABILITY_DISCOVERY", 2)], "OK", 2),          # повтор insertAll — схлопнут
+    ([("a", "2026-09-29 01:00:00", "VALIDATING", 1), ("b", "2026-09-29 02:00:00", "CAPABILITY_DISCOVERY", 2),
+      ("c", "2026-09-29 03:00:00", "SUSPENDED", 2)], "DUPLICATE", 2),              # разные события на номер 2
+    ([("a", "2026-09-29 01:00:00", "VALIDATING", 1), ("c", "2026-09-29 03:00:00", "SUSPENDED", 3)], "GAP", 3),
+    ([("b", "2026-09-29 02:00:00", "VALIDATING", 2), ("c", "2026-09-29 03:00:00", "SUSPENDED", 3)], "GAP", 3),
+    ([("x", "2026-09-29 05:00:00", "VALIDATING", None), ("a", "2026-09-29 01:00:00", "CREDENTIALS_PENDING", 1)],
+     "NO_SEQ", 1),                                                                  # нумерованное важнее
+    ([("x", "2026-09-29 05:00:00", "VALIDATING", None), ("y", "2026-09-29 04:00:00", "CREDENTIALS_PENDING", None)],
+     "NO_SEQ", None),                                                               # только формат до T5
+])
+def test_current_state_duplicate_gap_and_legacy_semantics(rows, status, seq):
+    got = _cur(rows)
+    assert len(got) == 1 and got[0]["journal_status"] == status and got[0]["seq"] == seq
+    if seq is None:
+        assert got[0]["state"] == "VALIDATING"                    # без номеров — последнее по времени
+
+
+def test_current_state_view_matches_lifecycle_core_on_random_chains():
+    """Паритет SQL и кода: на перемешанных часах текущее по представлению = lifecycle_core.current_state."""
+    import random
+    rnd = random.Random(20260929)
+    for _ in range(150):
+        n = rnd.randint(1, 12)
+        rows = []
+        for i in range(1, n + 1):
+            seq = i if rnd.random() > 0.1 else None
+            rows.append((f"e{i:02d}", f"2026-09-{rnd.randint(1, 28):02d} {rnd.randint(0, 23):02d}:00:00",
+                         rnd.choice(STATES), seq))
+        want = L.current_state([{"event_id": eid, "occurred_at": at.replace(" ", "T") + "+00:00", "to_state": to,
+                                 "seq": seq} for eid, at, to, seq in rows])
+        assert _cur(rows)[0]["state"] == want, rows
+
+
+def test_current_state_ordering_mutation_is_killed(tmp_path):
+    """Мутация: вернуть «последнее по occurred_at» — регрессионный тест обязан её поймать."""
+    import shutil
+    pkg = tmp_path / "ozon"
+    shutil.copytree(HS.PACKAGE_DIR, pkg)
+    view = pkg / "tenant_ops" / "V_TENANT_STATE_CURRENT.sql"
+    sql = view.read_text(encoding="utf-8")
+    good = "ORDER BY IF(v.seq IS NULL, 0, 1) DESC, v.seq DESC, v.occurred_at DESC, v.event_id DESC"
+    assert good in sql
+    view.write_text(sql.replace(good, "ORDER BY v.occurred_at DESC, v.event_id DESC"), encoding="utf-8")
+    rows = [("e10", "2026-09-29 12:00:00", "BACKFILLING", 10), ("e11", "2026-09-29 09:00:00", "RECONCILING", 11)]
+    assert _cur(rows, pkg)[0]["seq"] == 10                        # мутант выбирает не то событие
+    assert _cur(rows)[0]["seq"] == 11                             # настоящее представление — верное
