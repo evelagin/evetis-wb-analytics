@@ -79,7 +79,8 @@ def _with_name(text: str, name: Optional[str]) -> str:
 
 def _clean_name(name) -> Optional[str]:
     n = (name or "").strip()
-    if not n or len(n) > 30 or any(ch.isdigit() for ch in n) or n.lower() in ("покупатель", "пользователь", "аноним"):
+    if not n or len(n.split()[0]) < 2 or len(n) > 30 or any(ch.isdigit() for ch in n) \
+            or n.lower() in ("покупатель", "пользователь", "аноним"):
         return None
     return n.split()[0]
 
@@ -394,7 +395,9 @@ def _decide(p: Plan, snapshot: KnowledgeSnapshot, res: ProductResolution, c: Cla
     states = [r.state for r in p.resolved]
     if any(r.state == "CONFLICT" for r in p.resolved):
         why = sorted({r.reason or "" for r in p.resolved if r.state == "CONFLICT"})
-        return _human(p, "KNOWLEDGE_CONFLICT", "; ".join(why))
+        policy_only = all((r.reason or "").startswith("COSMETIC_CLAIMS_DISABLED")
+                          for r in p.resolved if r.state == "CONFLICT")
+        return _human(p, "POLICY_RESTRICTED_CLAIM" if policy_only else "KNOWLEDGE_CONFLICT", "; ".join(why))
     if any(r.state == "KNOWN_RESTRICTED" and not r.customer_value_ru for r in p.resolved):
         why = sorted({r.reason or "" for r in p.resolved if r.state == "KNOWN_RESTRICTED"})
         return _human(p, "KNOWN_RESTRICTED_NO_ABSTRACTION", "; ".join(why))

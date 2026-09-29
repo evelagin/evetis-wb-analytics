@@ -297,7 +297,7 @@ product_type_words:        # V-ID: other product types mentioned
   body_cream: ['\bкрем']
 
 llm:
-  classifier_prompt_version: "v3.classifier.2026-09-28.1"
-  generator_prompt_version: "v3.generator.2026-09-28.1"
+  classifier_prompt_version: "v3.classifier.2026-09-28.2"
+  generator_prompt_version: "v3.generator.2026-09-28.2"
   cost_usd_per_1k_input_tokens: 0.00125     # estimate for reporting only
   cost_usd_per_1k_output_tokens: 0.01
