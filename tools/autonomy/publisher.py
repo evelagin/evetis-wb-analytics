@@ -4,6 +4,12 @@
 агента, с токеном contents/pull-requests: write. Он повторно проверяет всё сам, не
 доверяя предыдущим шагам: вердикт гейткипера, имя ветки, запрещённые пути, признаки
 ослабления ворот. Пушит только явным refspec в refs/heads/ae/*, открывает только draft PR.
+
+Публикация идемпотентна и привязана к проверенному кандидату: если ветка ae/* уже есть, её коммит
+обязан быть ровно тем кандидатом (единственный родитель = repository_sha, то же дерево, что даёт
+проверенный candidate.patch) — тогда он переиспользуется БЕЗ push; иначе отказ (force-push нет).
+Открытый PR этой ветки переиспользуется, только если он draft и нацелен на base. Approve/merge/ready
+публикатор не вызывает никогда. Без доверенного аудита «0 production-мутаций» публикации нет.
 """
 from __future__ import annotations
 
@@ -13,6 +19,7 @@ import subprocess
 import tempfile
 from pathlib import Path
 
+from tools.autonomy.audit import zero_mutations_proven
 from tools.autonomy.policy import branch_allowed, detect_gate_weakening, forbidden_paths, tcb_paths
 from tools.autonomy.redact import diff_added_secrets, redact_text, safe_text
 from tools.autonomy.report import render_report
@@ -66,7 +73,43 @@ class GitPublisher:
             raise PublishRefused(f"признаки ослабления ворот: {weak[0]}")
         if run.get("production_mutations"):
             raise PublishRefused("у прогона есть production-мутации")
+        proven, why = zero_mutations_proven(run)
+        if not proven:
+            raise PublishRefused(f"нет доказательства 0 production-мутаций: {why}")
         return files
+
+    def _gh(self, args: list[str], cwd: Path, mutating: bool = False) -> str:
+        """Единственная точка вызова gh: только pr list/create (draft) и workflow run."""
+        allowed = (["pr", "list"], ["pr", "create"], ["workflow", "run"])
+        if args[:2] not in [list(a) for a in allowed]:
+            raise PublishRefused(f"gh {' '.join(args[:2])}: публикатору не разрешено")
+        if args[:2] == ["pr", "create"] and "--draft" not in args:
+            raise PublishRefused("gh pr create без --draft запрещён")
+        return self._x(["gh", *args], cwd, mutating=mutating)
+
+    def _remote_sha(self, branch: str, cwd: Path) -> str | None:
+        if self.dry_run:
+            return None
+        out = self._x(["git", "ls-remote", "--heads", self.remote, f"refs/heads/{branch}"], cwd)
+        exact = [ln.split()[0] for ln in out.splitlines() if ln.split()[1:] == [f"refs/heads/{branch}"]]
+        return exact[0] if exact else None
+
+    def _existing_pr(self, branch: str, head_sha: str, cwd: Path) -> str | None:
+        """Открытый PR ЭТОГО репозитория из ветки кандидата. PR из форков с тем же именем ветки не наши
+        и игнорируются (gh pr list --head не различает владельца). Свой PR переиспользуется только если он
+        draft, в base и его head — ровно проверенный head_sha; иначе отказ."""
+        if self.dry_run:
+            return None
+        prs = json.loads(self._gh(["pr", "list", "--head", branch, "--state", "open", "--json",
+                                   "url,isDraft,baseRefName,headRefOid,isCrossRepository"], cwd) or "[]")
+        own = [pr for pr in prs if pr.get("isCrossRepository") is False]
+        if not own:
+            return None
+        pr = own[0]
+        if not pr.get("isDraft") or pr.get("baseRefName") != self.base or pr.get("headRefOid") != head_sha:
+            raise PublishRefused(f"открытый PR ветки {branch} не draft, не в {self.base} или не на проверенном "
+                                 f"{head_sha[:12]} — не трогаю")
+        return pr["url"]
 
     def publish(self, run: dict, patch: str, art_dir: Path, required_workflows: list[str]) -> dict:
         """Опубликовать draft PR и запустить обязательные workflows на опубликованном SHA (S8).
@@ -83,7 +126,7 @@ class GitPublisher:
             ws = Path(td) / "ws"
             self._x(["git", "worktree", "add", "--detach", str(ws), run["repository_sha"]], self.repo)
             try:
-                self._x(["git", "checkout", "-b", branch], ws)
+                # Без локальной ветки: коммит на detached HEAD, публикация только явным refspec ниже.
                 subprocess.run(["git", "apply", "--whitespace=nowarn", "-"], cwd=ws, input=patch, text=True,
                                check=True, capture_output=True)
                 self._x(["git", "add", "-A"], ws)
@@ -96,18 +139,32 @@ class GitPublisher:
                          f"Кандидат автономного контура. Вердикт гейткипера: READY_FOR_PR.\n"
                          f"Прогон: {run['run_id']}. Production-мутаций: 0."], ws)
                 head_sha = self._x(["git", "rev-parse", "HEAD"], ws)
-                self._x(["git", "push", self.remote, refspec], ws, mutating=True)
+                remote_sha = self._remote_sha(branch, ws)
+                if remote_sha is None:
+                    self._x(["git", "push", self.remote, refspec], ws, mutating=True)
+                else:
+                    # Ветка уже опубликована (например, прошлый проход упал на создании PR): переиспользовать
+                    # только если это ровно проверенный кандидат. Перезаписи нет.
+                    self._x(["git", "fetch", "-q", self.remote, f"refs/heads/{branch}"], ws)
+                    parents = self._x(["git", "rev-list", "--parents", "-n", "1", remote_sha], ws).split()[1:]
+                    same_tree = (self._x(["git", "rev-parse", f"{remote_sha}^{{tree}}"], ws)
+                                 == self._x(["git", "rev-parse", "HEAD^{tree}"], ws))
+                    if parents != [run["repository_sha"]] or not same_tree:
+                        raise PublishRefused(f"ветка {branch} уже существует и не совпадает с проверенным "
+                                             f"кандидатом ({remote_sha[:12]}) — не перезаписываю")
+                    head_sha = remote_sha
                 (Path(td) / "body.md").write_text(body, encoding="utf-8")
-                url = self._x(["gh", "pr", "create", "--draft", "--base", self.base, "--head", branch,
-                               "--title", f"[AE draft] {run['objective_id']}", "--body-file",
-                               str(Path(td) / "body.md")], ws, mutating=True)
+                url = self._existing_pr(branch, head_sha, ws) or self._gh(
+                    ["pr", "create", "--draft", "--base", self.base, "--head", branch,
+                     "--title", f"[AE draft] {run['objective_id']}", "--body-file", str(Path(td) / "body.md")],
+                    ws, mutating=True)
                 dispatched_at = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
                 for wf in required_workflows:
                     # Только файлы из политики и только на ветке кандидата. Параметров нет:
                     # прогон — ровно тот CI, что запускался бы на pull_request.
                     if not re.fullmatch(r"[a-z0-9-]+\.ya?ml", wf):
                         raise PublishRefused(f"недопустимое имя обязательного workflow: {wf!r}")
-                    self._x(["gh", "workflow", "run", wf, "--ref", branch], ws, mutating=True)
+                    self._gh(["workflow", "run", wf, "--ref", branch], ws, mutating=True)
             finally:
                 subprocess.run(["git", "worktree", "remove", "--force", str(ws)], cwd=self.repo,
                                capture_output=True)

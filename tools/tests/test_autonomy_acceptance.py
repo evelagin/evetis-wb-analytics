@@ -12,6 +12,8 @@ from pathlib import Path
 
 import pytest
 
+from tools.tests.ae_fixtures import clean_audit  # noqa: E402
+
 import ae_fixtures as F  # noqa: E402 — добавляет корень репозитория в sys.path
 from tools.autonomy.agents import AgentResult, ScriptedAdapter
 from tools.autonomy.envelope import known_checks
@@ -44,7 +46,7 @@ def dispatch_synthetic(env) -> dict:
     return objective
 
 
-def orchestrator(env, engineer, reviewer, audit=lambda run: 0, publish=True, verifier=None):
+def orchestrator(env, engineer, reviewer, audit=clean_audit, publish=True, verifier=None):
     pub = GitPublisher(env["repo"], dry_run=True) if publish else None
     orch = Orchestrator(env["store"], env["repo"], engineer, reviewer, F.SyntheticEvidenceRunner(),
                         env["sandboxes"], audit=audit, publisher=pub, verifier=verifier or F.ci_verifier(),

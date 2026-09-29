@@ -65,15 +65,23 @@ def test_protocol_reaches_reviewer_but_not_engineer(env):
 
 # ------------------------------------------------------------------------ вердикт S9 ---
 PATCH = f'diff --git a/tools/tests/test_ae_commissioning_canary.py b/tools/tests/test_ae_commissioning_canary.py\n+"""{MARKER}"""\n'
-GOOD_RUN = {"state": "READY_FOR_HUMAN_REVIEW", "production_mutations": 0, "audit_status": "PASS",
-            "usage": [{"role": "engineer_implement"}, {"role": "engineer_implement"}],
-            "verification": {"result": {"status": "PASS"}},
-            "transitions": [{"from": a, "to": b} for a, b in [
-                (None, "RECEIVED"), ("RECEIVED", "DISCOVERING"), ("DISCOVERING", "PLANNING"),
-                ("PLANNING", "IMPLEMENTING"), ("IMPLEMENTING", "TESTING"), ("TESTING", "REVIEWING"),
-                ("REVIEWING", "FIXING"), ("FIXING", "TESTING"), ("TESTING", "REVIEWING"),
-                ("REVIEWING", "READY_FOR_PR"), ("READY_FOR_PR", "AWAITING_VERIFICATION"),
-                ("AWAITING_VERIFICATION", "READY_FOR_HUMAN_REVIEW")]]}
+def _good_run() -> dict:
+    from tools.tests.ae_fixtures import CLOSED_STATES, closed_run, evidence_for
+    run = closed_run(tail=[("READY_FOR_PR", "AWAITING_VERIFICATION", "12:54:30"),
+                           ("AWAITING_VERIFICATION", "READY_FOR_HUMAN_REVIEW", "12:59:00")],
+                     audit_status="PASS", usage=[{"role": "engineer_implement"}, {"role": "engineer_implement"}],
+                     verification={"result": {"status": "PASS"}})
+    # полная цепочка с возвратом на доработку (REVIEWING → FIXING → TESTING → REVIEWING)
+    day = run["created_at"][:11]
+    extra = [("REVIEWING", "FIXING", "12:38:51"), ("FIXING", "TESTING", "12:46:23"), ("TESTING", "REVIEWING", "12:53:00")]
+    tr = run["transitions"]
+    tr[6:6] = [{"from": a, "to": b, "at": f"{day}{t}Z", "reason": "t"} for a, b, t in extra]
+    assert len(CLOSED_STATES) == 7
+    run["audit_evidence"] = evidence_for(run)       # доверенный аудит закрытого окна, покрывающий оба вызова агента
+    return run
+
+
+GOOD_RUN = _good_run()
 GATE = {"verdict": "READY_FOR_PR", "decided_by": "gatekeeper (deterministic)"}
 JOBS = [{"name": "engineer / engineer", "conclusion": "success", "runner_name": "GitHub Actions 1"},
         {"name": "engineer / engineer", "conclusion": "success", "runner_name": "GitHub Actions 5"},

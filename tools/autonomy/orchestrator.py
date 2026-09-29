@@ -128,12 +128,7 @@ class Orchestrator:
                 adapter.bind_run(run["run_id"])        # диагностика чужого прогона отвергается при проверке
             res = adapter.run(role, prompt, workdir, load_schema(SCHEMA_OF_ROLE[role]))
             run = self._record_agent(run, adapter, role, res)
-            a = self.audit(run)
-            a = {"status": "PASS" if a == 0 else "FAIL", "mutations": a} if isinstance(a, int) else a
-            # BLOCKED — доказательства нет; это НЕ ноль мутаций, гейткипер даст INCONCLUSIVE.
-            run = {**run, "audit_status": a["status"]}
-            if a.get("mutations"):
-                run = {**run, "production_mutations": run["production_mutations"] + int(a["mutations"])}
+            run = self._merge_audit(run, self.audit(run))
             self.store.save(run)
             if res.structured is not None or not res.transient:
                 return run, res
@@ -166,6 +161,14 @@ class Orchestrator:
                 entry["diagnostics"] = {"rejected": "run_id чужого прогона"}
             else:
                 doc = d
+                # Стоимость, которую сообщил CLI, есть только в диагностике недоверенного job'а: переносим
+                # в запись usage ЭТОЙ роли (сумма её вызовов), иначе отчёт показывал бы $0 (issue #201).
+                from tools.autonomy.audit import finite_cost
+                costs = [finite_cost(i.get("total_cost_usd")) for i in d["invocations"] if i["role"] == role]
+                costs = [c for c in costs if c is not None]
+                if costs and "total_cost_usd" not in entry:
+                    entry["total_cost_usd"] = round(sum(costs), 6)
+                    entry["cost_source"] = "cli_reported_untrusted_job"
         elif d is not None:
             inv = {**d, "attempt": min(1 + sum(1 for x in self.diagnostics if x["role"] == role), 12)}
             self.diagnostics.append(inv)
@@ -192,6 +195,40 @@ class Orchestrator:
                 "messages_api_reached": last.get("messages_api_reached"), "redaction": doc["redaction"]}
             res.diagnostics = doc if "invocations" in (d or {}) else res.diagnostics
         return {**run, "usage": run["usage"] + [entry]}
+
+    def _merge_audit(self, run: dict, a) -> dict:
+        """Результат аудита production-мутаций → состояние. NOT_APPLICABLE (аудит в этом процессе не
+        настроен — например, доверенный replay без доступа к BigQuery) НЕ является доказательством и НЕ
+        перезаписывает уже полученный результат. FAIL «липкий»; BLOCKED (аудит не удался) вытесняет PASS.
+        `audit_evidence` фиксирует, какие вызовы агента покрыты: доказательство для публикатора и приёмки."""
+        a = {"status": "PASS" if a == 0 else "FAIL", "mutations": a} if isinstance(a, int) else (a or {})
+        status = a.get("status")
+        if status not in ("PASS", "FAIL", "BLOCKED"):
+            return run
+        found = int(a["mutations"]) if isinstance(a.get("mutations"), int) and a["mutations"] > 0 else 0
+        if found:
+            run = {**run, "production_mutations": run["production_mutations"] + found}
+        new = "FAIL" if status == "FAIL" or run.get("audit_status") == "FAIL" or run["production_mutations"] else status
+        w = a.get("window") or {}
+        evidence = {"status": new, "mutations": a["mutations"] if isinstance(a.get("mutations"), int) else None,
+                    "audited_at": self.now().strftime("%Y-%m-%dT%H:%M:%SZ"), "since": run["created_at"],
+                    "usage_count": len(run["usage"]), "source": a.get("source"),
+                    "window_start": w.get("start"), "window_end": w.get("end") if w.get("closed") else None,
+                    "capability_mode": a.get("capability_mode"), "f18_result": (a.get("f18") or {}).get("result"),
+                    "accepted_risks": [r.get("id") for r in a.get("accepted_risks") or []]}
+        return {**run, "audit_status": new, "audit_evidence": evidence}
+
+    def trusted_audit(self, run_id: str) -> dict:
+        """Доверенный аудит всего окна прогона (с created_at) вне вызова агента — перед публикацией.
+        Без настроенного аудита — отказ (fail closed), а не NOT_APPLICABLE."""
+        run = self.store.load(run_id)
+        a = self.audit(run)
+        status = ("PASS" if a == 0 else "FAIL") if isinstance(a, int) else (a or {}).get("status")
+        if status not in ("PASS", "FAIL", "BLOCKED"):
+            raise TransitionError(f"{run_id}: доверенный аудит не настроен (статус {status}) — доказательства нет")
+        run = self._merge_audit(run, a)
+        self.store.save(run)
+        return run
 
     @staticmethod
     def _fail_state(res: AgentResult) -> str:
@@ -501,6 +538,10 @@ class Orchestrator:
         gate = self._get(run, "gate.json")
         if not gate or gate["verdict"] != "READY_FOR_PR":
             raise TransitionError("публикация без READY_FOR_PR невозможна")
+        # Доказательство «0 мутаций» — только аудит ЗАКРЫТОГО окна (прогон уже вне работы агента). Аудит,
+        # записанный во время работы агента, покрывал открытое окно. NOT_APPLICABLE ничего не перезаписывает.
+        run = self._merge_audit(run, self.audit(run))
+        self.store.save(run)
         pub = self.publisher.publish(run, self._get(run, "candidate.patch") or "", self._art(run),
                                      self.policy["required_verification"]["workflows"])
         return self.store.transition(
@@ -516,6 +557,14 @@ class Orchestrator:
         result = self.verifier(run)
         self._put(run, "verification.json", result)
         run = {**run, "verification": {**run["verification"], "result": result}}
+        binding = result.get("pr_binding") or {}
+        if result["status"] == "PASS" and (binding.get("status") != "PASS" or binding.get("problems")):
+            result = {**result, "status": "FAIL"}      # вердикт без доказанной привязки PR к SHA — не PASS
+        if binding.get("problems"):
+            return self.store.transition(run, "BLOCKED", f"PR не привязан к проверенному кандидату: "
+                                                         f"{binding['problems'][:3]}"[:500],
+                                         last_gate={"verdict": "UNSAFE",
+                                                    "reason": "required verification: PR binding FAIL"})
         if result["status"] == "PASS":
             return self.store.transition(run, "READY_FOR_HUMAN_REVIEW",
                                          "обязательные workflows прошли на опубликованном SHA: "

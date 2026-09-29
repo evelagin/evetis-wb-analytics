@@ -24,6 +24,9 @@ from tools.autonomy.schema import load_schema, require_valid  # noqa: E402
 from tools.autonomy.state import StateStore  # noqa: E402
 
 
+
+AUDIT_NOT_PASS_PERSISTED = 3
+
 def _sha() -> str:
     return subprocess.run(["git", "rev-parse", "HEAD"], cwd=REPO, capture_output=True, text=True,
                           check=True).stdout.strip()
@@ -79,8 +82,12 @@ def _orchestrator(a, store: StateStore):
         from tools.autonomy.audit import count_mutations
         ids = [i for i in (a.audit_identity or []) if i]
 
+        # Ожидание конца окна прогона (run_window) — только в доверенном шаге audit перед публикацией: там
+        # доказательство принимается; черновой аудит недоверенного job'а в состояние не попадает и ждать ему незачем.
+        settle = getattr(a, "cmd", None) == "audit"
+
         def audit(run):  # noqa: F811 — BLOCKED остаётся BLOCKED, а не нулём
-            return count_mutations(a.project, a.token_command, run["created_at"], ids)
+            return count_mutations(a.project, a.token_command, run, ids, settle=settle)
     publisher = GitPublisher(REPO, dry_run=a.dry_run) if getattr(a, "publish", False) else None
     verifier = None
     if getattr(a, "verify_repo", None):
@@ -151,7 +158,7 @@ def main(argv=None) -> int:
     w.add_argument("--no-health", action="store_true"); w.add_argument("--report")
     s = sub.add_parser("submit"); s.add_argument("--state-dir", required=True); s.add_argument("--objective", required=True)
     s.add_argument("--trusted-base-ref", help="repository_sha цели обязан быть предком этого ref (CI: origin/main)")
-    for name in ("advance", "publish", "review", "agent-run", "collect", "verify-ci"):
+    for name in ("advance", "publish", "review", "agent-run", "collect", "verify-ci", "audit"):
         p = sub.add_parser(name)
         p.add_argument("--engineer", choices=["claude", "replay", "none"], default="claude")
         p.add_argument("--reviewer", choices=["claude", "replay", "none"], default="claude")
@@ -232,6 +239,19 @@ def main(argv=None) -> int:
         print(json.dumps({"run_id": a.run_id, "outputs": hashes}, ensure_ascii=False))
         diag = (out or store.root / "artifacts" / a.run_id) / "reviewer_diagnostics.json"
         return _handoff_code(diag)
+    if a.cmd == "audit":
+        # Доверенный job: аудит production-мутаций всего окна прогона перед публикацией (sa-ae-reader).
+        if not (a.project and a.token_command and [i for i in (a.audit_identity or []) if i]):
+            print("audit: нужны --project, --token-command и --audit-identity — без них доказательства нет",
+                  file=sys.stderr)
+            return 2
+        a.engineer = a.reviewer = "none"
+        run = _orchestrator(a, store).trusted_audit(a.run_id)
+        print(json.dumps({"run_id": run["run_id"], "audit_status": run["audit_status"],
+                          "audit_evidence": run.get("audit_evidence")}, ensure_ascii=False))
+        # 3 = «не PASS, но результат СОХРАНЁН в состоянии» — только этот код шаг гейта глотает ради persist;
+        # любое другое падение (исключение до сохранения) валит шаг, и публикация не запускается вовсе
+        return 0 if run["audit_status"] == "PASS" else AUDIT_NOT_PASS_PERSISTED
     if a.cmd == "verify-ci":
         # Доверенный job ci-verify (actions: read): ждать обязательные workflows опубликованного SHA.
         import time
