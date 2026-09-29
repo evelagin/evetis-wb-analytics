@@ -1,0 +1,143 @@
+{
+  "release_contract": "vts.runtime-release.v1",
+  "marketplace": "ozon",
+  "image": "europe-west1-docker.pkg.dev/mpa-platform/mpa-runtime/ozon-runtime@sha256:38196a8644ba0cd9d26215acb6239b3e46439bc7cb4bff2c7610467c55a2a0cc",
+  "digest": "sha256:38196a8644ba0cd9d26215acb6239b3e46439bc7cb4bff2c7610467c55a2a0cc",
+  "operator_tag": "e52432e7cd4052db76772f1501e3f315bc994645",
+  "released_at": "2026-09-29T07:50:34Z",
+  "source": {
+    "repository": "evelagin/evetis-wb-analytics",
+    "commit": "e52432e7cd4052db76772f1501e3f315bc994645",
+    "note": "Источник выпуска — коммит слияния PR #226 (T5 control plane) = main на момент сборки; дерево совпадает с головой bf0561e, прошедшей CI 11/11.",
+    "main_at_build": "e52432e7cd4052db76772f1501e3f315bc994645",
+    "context": "pipelines/ozon/runtime",
+    "dockerfile": "pipelines/ozon/runtime/Dockerfile",
+    "context_tree": "2c5125475ee6de301db63950b46e2a928eaf130f",
+    "context_files_sha256": {
+      ".gcloudignore": "862263fa1f46c20f0d1e4dac5ffcc75abd55c08211b2c3864c5f8764b9d87793",
+      "Dockerfile": "adc64f8b3d32b8e536b2e884e5dde6d53ff572eb834bde7d7171d10df2d49626",
+      "checkpoints.py": "544a2c85680cbebf696103229167f14f479cdb64dcbb2c03d3d03ae500787370",
+      "common.py": "f1b176fa54550aff250d8815a94fbe0b97a026cae41a592b9f624c0e0f976123",
+      "control_store.py": "a9b5153a483f26622b647c0e80fcef41fc68a7e28c878c786f33f9459163fccb",
+      "credentials.py": "a256372558e0b19e8d870dc39dd1cb9247ee3a4258308d479afc00e263d876c7",
+      "dq.py": "a30886a4b7c894a1eb5bf09843530784c2c9ed383ebd3a9cfbe8fc260a871804",
+      "entities.py": "4b561274b4c4b5ae4da02579a359e1639bf968f2b0bce1d5d0a476b1604ecadc",
+      "history.py": "7509341ce95ddf60cc907b09613c869e38909795873ee1701bdae843d8660235",
+      "identity.py": "4ba1d91137ebfe4d4b818023e6f9d25dbf9956088f0f0ca3236dc5d9c67752ef",
+      "lifecycle.py": "48a5bfc93c98a86334520b4b75d43707271e0200abe3aaa3fd55060deb2a8b57",
+      "lifecycle_core.py": "76e71ff44e328c9cf10206454a1a4b03fcdfb06d64122220529b80886711afa1",
+      "main.py": "c89e7eb6bc7c11559744724fec92c8a17c1bdbd1e2d9875078fa30a8ea091958",
+      "promo.py": "e565830d075bcc4e9297c3672c4c5e1fb9740a29cd1632712c43bc7fdc442617",
+      "quota.py": "a41475abf7ae5dd3d0616909ae8cc4de478123b8af1e9dab6df7d4a87a911e08",
+      "requirements.txt": "a3d267286f37716ab961e495443a56a6538de7c1ac3c5c4435b49778f288fcd0",
+      "seller_method_policy.json": "244ef3f1496ae205e0077f99832a937b3e9088900d97a972619a24e71b7cc521"
+    },
+    "archive": {
+      "command": "git archive --format=tar.gz e52432e7cd4052db76772f1501e3f315bc994645 pipelines/ozon/runtime",
+      "sha256": "2713bed686b0c418d31867067ef72ac8349b231c53850017ab816f2bcb87a51a",
+      "tar_commit_id": "e52432e7cd4052db76772f1501e3f315bc994645"
+    }
+  },
+  "build": {
+    "mechanism": "Cloud Build",
+    "project": "mpa-platform",
+    "region": "europe-west1",
+    "build_id": "de08a64f-1635-45b3-9cab-4b14db2c0877",
+    "status": "SUCCESS",
+    "create_time": "2026-09-29T07:49:42Z",
+    "finish_time": "2026-09-29T07:50:34Z",
+    "config": "infra/tenant/releases/ozon-runtime.v2.cloudbuild.yaml",
+    "config_sha256": "3b6d037a0bceeeca322775ab17d3cc65becda367d3c5d06c906003b94e0fa723",
+    "service_account": "sa-runtime-builder@mpa-platform.iam.gserviceaccount.com",
+    "identity_gate": "шаг identity: metadata server сборки вернул sa-runtime-builder@mpa-platform.iam.gserviceaccount.com",
+    "builder_image": "gcr.io/cloud-builders/docker@sha256:bbb3d633c5c2813b2ce5245852979e1d637768f4acfc504d8ece288f91e9b60f",
+    "source_object": "gs://mpa-platform-runtime-build-777428383056/source/1790668181.291379-63adc9ad5e9d42eab02ef4f8f96a079a.tgz#1790668181966901",
+    "source_object_sha256": "2713bed686b0c418d31867067ef72ac8349b231c53850017ab816f2bcb87a51a",
+    "build_args": [],
+    "secrets": [],
+    "logging": "CLOUD_LOGGING_ONLY"
+  },
+  "image_facts": {
+    "platform": "linux/amd64",
+    "base": "python:3.12-slim@sha256:f77ac9e44ae96ef2c90b8053ea08c31f8be030f824196b0ae4db6d462c84e51f",
+    "python": "3.12.14",
+    "entrypoint": [
+      "python",
+      "main.py"
+    ],
+    "workdir": "/app",
+    "user": "root (Dockerfile как у EVETIS не задаёт USER)",
+    "control_entrypoint": [
+      "python",
+      "lifecycle.py",
+      "status"
+    ],
+    "app_files": [
+      "checkpoints.py",
+      "common.py",
+      "control_store.py",
+      "credentials.py",
+      "dq.py",
+      "entities.py",
+      "history.py",
+      "identity.py",
+      "lifecycle.py",
+      "lifecycle_core.py",
+      "main.py",
+      "promo.py",
+      "quota.py",
+      "requirements.txt",
+      "seller_method_policy.json"
+    ],
+    "labels": {
+      "org.opencontainers.image.revision": "e52432e7cd4052db76772f1501e3f315bc994645",
+      "org.opencontainers.image.source": "https://github.com/evelagin/evetis-wb-analytics",
+      "org.opencontainers.image.title": "ozon-runtime"
+    },
+    "packages": [
+      "certifi==2026.7.22",
+      "cffi==2.1.1",
+      "charset-normalizer==3.5.1",
+      "cryptography==50.0.1",
+      "google-api-core==2.33.0",
+      "google-auth==2.59.0",
+      "google-cloud-bigquery==3.25.0",
+      "google-cloud-core==2.7.0",
+      "google-cloud-secret-manager==2.20.2",
+      "google-crc32c==1.9.0",
+      "google-resumable-media==2.10.2",
+      "googleapis-common-protos==1.75.0",
+      "grpc-google-iam-v1==0.14.4",
+      "grpcio-status==1.71.2",
+      "grpcio==1.84.0",
+      "idna==3.20",
+      "packaging==26.3",
+      "proto-plus==1.28.2",
+      "protobuf==5.29.6",
+      "pyasn1==0.6.4",
+      "pyasn1_modules==0.4.2",
+      "pycparser==3.0",
+      "python-dateutil==2.9.0.post0",
+      "requests==2.34.2",
+      "six==1.17.0",
+      "typing_extensions==4.16.0",
+      "urllib3==2.8.0"
+    ]
+  },
+  "verification": {
+    "qualification_before_build": "CI 11/11 SUCCESS на голове bf0561e (дерево = e52432e); локально pipelines/ozon/tests 530 passed, tools/tests 2328 passed, terraform test 56/56, мутации TF 32/32",
+    "cloud_build_gates": [
+      "identity",
+      "contents",
+      "fail-closed-without-project",
+      "control-fail-closed-without-project"
+    ],
+    "runtime_image_check": "tools/tenancy/runtime_image_check.py (контракт T5) — PASS по опубликованному digest: client_001 и эфемерный client_002, 3 job'а, без сети; без привязки отказ первым шагом (выход 3, без секретов и HTTP); точка входа control отказывает; отрицательный контроль — образ 884ee5dd: 7 отказов",
+    "secret_scan": "журнал сборки и запись сборки: 0 совпадений; /app — только ИМЕНА секретов EVETIS по умолчанию в common.py (как в 884ee5dd), значений нет; build args и secretEnv отсутствуют",
+    "forbidden_contents": "нет .git, Terraform, state/tfvars/tfplan, реестра арендаторов (tenant.json), .env, ключей; *.pem — только публичные корневые CA"
+  },
+  "deployment": {
+    "evetis": "NOT_DEPLOYED: Ozon job'ы EVETIS остаются на sha256:24e3c6d6715fa7b73d30b4270f9863d2b8680b4b02d4874ff1ea12b4fd90fa1b",
+    "tenants": "INERT: client_001 на 884ee5dd до замороженного плана и apply T5 по отдельному ACK"
+  }
+}

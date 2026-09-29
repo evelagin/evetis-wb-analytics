@@ -10,11 +10,15 @@ client_001 (реестр) и эфемерного client_002 (tools/tenancy/synt
 
   1. конфигурация образа: точка входа, рабочий каталог, метка исходного коммита;
   2. нет GCP_PROJECT_ID → отказ при старте;
-  3. контейнеры секретов без версий → отказ до любого HTTP к Ozon, секреты только
-     своего проекта и по именам реестра (tests/_empty_secret_driver.py);
+  3. T5: job арендатора (TENANT_BINDING_REQUIRED=1) без подтверждённой привязки → отказ (выход 3)
+     первым шагом: без секретов и HTTP, только листинг знаков владельца в ref своего проекта;
+     без флага (слой T3.2) контейнеры секретов без версий → отказ до любого HTTP к Ozon, секреты
+     только своего проекта и по именам реестра (tests/_empty_secret_driver.py);
   4. переносимость: проект, датасеты и секреты — арендатора, не EVETIS
      (tests/_portability_driver.py);
-  5. настоящая точка входа с конфигурацией арендатора и без сети → отказ, EVETIS не упомянут.
+  5. настоящая точка входа с конфигурацией арендатора и без сети → отказ, EVETIS не упомянут;
+  6. T5: точка входа control (python lifecycle.py status) — без проекта отказ при старте, с
+     конфигурацией арендатора и без сети — отказ, EVETIS не упомянут.
 
 Требует Docker и права на чтение mpa-runtime. В CI не входит: CI не читает реестр платформы.
 """
@@ -54,6 +58,14 @@ def _run(image: str, env: dict[str, str], driver: str | None = None) -> subproce
     return _docker(cmd)
 
 
+def _run_control(image: str, env: dict[str, str]) -> subprocess.CompletedProcess:
+    """Точка входа job'а tenant-control: python lifecycle.py status (аргумент по умолчанию)."""
+    cmd = ["run", "--rm", "--platform=linux/amd64", "--network=none"]
+    for k, v in sorted(env.items()):
+        cmd += ["-e", f"{k}={v}"]
+    return _docker(cmd + ["--entrypoint=python", image, "lifecycle.py", "status"])
+
+
 def tenant_envs() -> dict[str, dict[str, dict[str, str]]]:
     """Окружение каждого job'а двух арендаторов — тем же путём, что и контракт Terraform."""
     from tools.tenancy import synthetic as SY
@@ -61,7 +73,8 @@ def tenant_envs() -> dict[str, dict[str, dict[str, str]]]:
     out = {"client_001": R.terraform_inputs("client_001"), "client_002": SY.release_contract("client_002")}
     return {tid: {"project": c["project_id"],
                   "secret_ids": sorted(c["marketplaces"]["ozon"]["secret_ids"].values()),
-                  "jobs": {j: s["env"] for j, s in c["marketplaces"]["ozon"]["jobs"].items()}}
+                  "jobs": {j: s["env"] for j, s in c["marketplaces"]["ozon"]["jobs"].items()},
+                  "control_env": c["control"]["job"]["env"]}
             for tid, c in out.items()}
 
 
@@ -84,6 +97,21 @@ def check(image: str, source_sha: str) -> list[str]:
     for tid, t in tenant_envs().items():
         allowed = {f"projects/{t['project']}/secrets/{s}/versions/latest" for s in t["secret_ids"]}
         for job, env in sorted(t["jobs"].items()):
+            # T5: с проверкой привязки — отказ первым шагом, без секретов и без HTTP.
+            if env.get("TENANT_BINDING_REQUIRED") != "1":
+                fails.append(f"{tid}/{job}: в контракте нет TENANT_BINDING_REQUIRED=1")
+            r = _run(image, env, "_empty_secret_driver.py")
+            if r.returncode != 0:
+                fails.append(f"{tid}/{job}: драйвер (привязка) упал: {r.stderr[-300:]}")
+            else:
+                seen = parse_tenant_json(r.stdout.strip().splitlines()[-1])
+                if seen["exit"] != 3 or seen["http"] or seen["secret_paths"] or \
+                        seen["bq"] != [["list_tables", f"{t['project']}.ref"]]:
+                    fails.append(f"{tid}/{job}: без привязки нет отказа первым шагом "
+                                 f"({seen['exit']}, {seen['http']}, {len(seen['secret_paths'])}, {seen['bq']})")
+                fails += [f"{tid}/{job}: упомянут EVETIS ({m})" for m in EVETIS_MARKERS if m in r.stdout + r.stderr]
+            # Слой T3.2 под проверкой привязки: пустые секреты — отказ до HTTP, только свои секреты.
+            env = {k: v for k, v in env.items() if k != "TENANT_BINDING_REQUIRED"}
             r = _run(image, env, "_empty_secret_driver.py")
             if r.returncode != 0:
                 fails.append(f"{tid}/{job}: драйвер пустых секретов упал: {r.stderr[-300:]}")
@@ -116,6 +144,14 @@ def check(image: str, source_sha: str) -> list[str]:
             fails.append(f"{tid}: настоящая точка входа без учётных данных и сети завершилась успешно")
         fails += [f"{tid}: точка входа упомянула EVETIS ({m})" for m in EVETIS_MARKERS
                   if m in r.stdout + r.stderr]
+        r = _run_control(image, t["control_env"])
+        if r.returncode == 0:
+            fails.append(f"{tid}: точка входа control без учётных данных и сети завершилась успешно")
+        fails += [f"{tid}: точка входа control упомянула EVETIS ({m})" for m in EVETIS_MARKERS
+                  if m in r.stdout + r.stderr]
+    r = _run_control(image, {})
+    if r.returncode == 0 or "GCP_PROJECT_ID не задан" not in r.stderr:
+        fails.append("без GCP_PROJECT_ID точка входа control не отказала при старте")
     return fails
 
 
