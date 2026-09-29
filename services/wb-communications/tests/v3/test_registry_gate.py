@@ -171,3 +171,9 @@ def test_committed_active_snapshot_is_valid_and_matches_seed():
     for name in OWNED_TABLES:
         assert s.data["source_manifest"]["tables"][name]["sha256"] == rows_sha256(seed[name]), name
     assert s.data["source_manifest"]["origin"].startswith("bigquery:")
+
+
+def test_committed_snapshot_policy_matches_repo_policy():
+    """The runtime uses the policy EMBEDDED in the snapshot: an edited policy_v3.yaml without a
+    rebuilt snapshot would silently not take effect."""
+    assert load_snapshot().policy == load_policy()

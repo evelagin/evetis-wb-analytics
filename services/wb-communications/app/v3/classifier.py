@@ -134,6 +134,17 @@ def _domains(codes: set, safety_route) -> list:
     return d
 
 
+NEGATABLE_PREFIXES = ("PACKAGING.", "ORDER.wrong_product", "ORDER.incomplete_bundle")
+
+
+def _negated_situation(clause: str, start: int, policy: dict) -> bool:
+    """Explicit negation right before a packaging/order signal ('без повреждений',
+    'ничего не протекло', 'нет вмятин') — same closed cue list as the safety extractor."""
+    before = clause[max(0, start - 30): start]
+    cfg = policy["safety"]
+    return bool(search_any(cfg["negation_cues_before"] + [r"\bне\s*$", r"\bне\s+\w+\s*$"], before))
+
+
 def classify_rules(msg: dict, snapshot: KnowledgeSnapshot) -> Classification:
     policy = snapshot.policy
     raw = _text_of(msg)
@@ -145,10 +156,11 @@ def classify_rules(msg: dict, snapshot: KnowledgeSnapshot) -> Classification:
             continue
         for clause in clauses(raw):
             m = search_any(pats, clause)
+            if m and code.startswith(NEGATABLE_PREFIXES) and _negated_situation(clause, m.start(), policy):
+                continue  # «пришёл без повреждений», «не протёк» — not a defect (WP12 FP-1)
             if m:
                 c.situations.append({"code": code, "evidence_span": clause[:160], "source": "rules"})
                 break
-    # 'пустой' about a review that praises -> still a packaging signal; not our job to guess
     c.text_sentiment = _sentiment(norm, policy)
     if c.text_sentiment in ("positive", "mixed"):
         c.situations.append({"code": "SOCIAL.praise", "evidence_span": "", "source": "rules"})
