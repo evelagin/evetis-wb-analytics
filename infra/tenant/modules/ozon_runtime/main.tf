@@ -42,6 +42,19 @@ variable "ozon" {
   })
 }
 
+variable "control" {
+  description = "T5: control plane арендатора (sa-tenant-control, job tenant-control)."
+  type = object({
+    account_id = string
+    email      = string
+    grants     = list(any)
+    job = object({
+      name = string
+      env  = map(string)
+    })
+  })
+}
+
 locals {
   run_v2_base = "https://${var.region}-run.googleapis.com/v2/projects/${var.project_id}/locations/${var.region}/jobs"
   # Идентичности выводятся детерминированно, а не из атрибутов создаваемых ресурсов:
@@ -50,6 +63,7 @@ locals {
   runtime_email   = "${var.ozon.service_accounts.runtime}@${var.project_id}.iam.gserviceaccount.com"
   scheduler_email = "${var.ozon.service_accounts.scheduler}@${var.project_id}.iam.gserviceaccount.com"
   runtime_member  = "serviceAccount:${local.runtime_email}"
+  control_member  = "serviceAccount:${var.control.email}"
 }
 
 # ── Идентичности ──────────────────────────────────────────────────────────────
@@ -112,6 +126,19 @@ resource "google_secret_manager_secret_iam_member" "runtime_access" {
   depends_on = [google_secret_manager_secret.ozon, google_service_account.runtime]
 }
 
+# T5: control проверяет учётные данные (роли ключа Seller, безвредное чтение Performance) —
+# читает те же 4 секрета. Добавлять версии и менять IAM секретов не может (только accessor).
+resource "google_secret_manager_secret_iam_member" "control_access" {
+  for_each = var.ozon.secret_ids
+
+  project   = var.project_id
+  secret_id = each.value
+  role      = "roles/secretmanager.secretAccessor"
+  member    = local.control_member
+
+  depends_on = [google_secret_manager_secret.ozon]
+}
+
 # ── Cloud Run jobs ───────────────────────────────────────────────────────────
 # Окружение целиком из контракта (GCP_PROJECT_ID, датасеты, ИМЕНА секретов, ENTITIES,
 # STRICT_PAGE_CAPS=1). Runtime T2+ без GCP_PROJECT_ID отказывает (fail-closed), так
@@ -155,6 +182,48 @@ resource "google_cloud_run_v2_job" "this" {
     google_project_iam_member.runtime_job_user,
     google_secret_manager_secret_iam_member.runtime_access,
   ]
+}
+
+# ── Control plane: job tenant-control (T5, D1) ───────────────────────────────
+# Тот же неизменяемый образ, точка входа lifecycle.py; аргументы по умолчанию — status
+# (только чтение журналов). Команды validate/discover/… владелец передаёт при запуске
+# (run.jobs.runWithOverrides есть только у него). Расписания нет и не будет: control
+# запускается как ворота, а не по таймеру. Права вызова нет ни у кого, кроме владельца.
+resource "google_cloud_run_v2_job" "control" {
+  project             = var.project_id
+  name                = var.control.job.name
+  location            = var.region
+  deletion_protection = true
+  labels              = { marketplace = "ozon", tenant = var.tenant_id, plane = "control" }
+
+  template {
+    labels = { marketplace = "ozon", tenant = var.tenant_id, plane = "control" }
+    template {
+      service_account = var.control.email
+      max_retries     = 0
+      timeout         = "3600s"
+      containers {
+        image   = var.ozon.runtime_image
+        command = ["python", "lifecycle.py"]
+        args    = ["status"]
+        dynamic "env" {
+          for_each = var.control.job.env
+          content {
+            name  = env.key
+            value = env.value
+          }
+        }
+        resources {
+          limits = {
+            cpu    = "1000m"
+            memory = "1Gi"
+          }
+        }
+      }
+    }
+  }
+
+  depends_on = [google_secret_manager_secret_iam_member.control_access]
 }
 
 # ── Cloud Scheduler: существует, но ВЫЗВАТЬ job не может (модель H2) ─────────
@@ -214,6 +283,10 @@ output "summary" {
     runtime_sa   = local.runtime_email
     scheduler_sa = local.scheduler_email
     jobs         = sort(keys(google_cloud_run_v2_job.this))
+    control_job  = google_cloud_run_v2_job.control.name
+    control_sa   = google_cloud_run_v2_job.control.template[0].template[0].service_account
+    control_env  = { for e in google_cloud_run_v2_job.control.template[0].template[0].containers[0].env : e.name => e.value }
+    control_cmd  = concat(google_cloud_run_v2_job.control.template[0].template[0].containers[0].command, google_cloud_run_v2_job.control.template[0].template[0].containers[0].args)
     schedulers   = sort([for s in google_cloud_scheduler_job.this : s.name])
     secrets      = sort(keys(google_secret_manager_secret.ozon))
     paused       = { for k, s in google_cloud_scheduler_job.this : k => s.paused }

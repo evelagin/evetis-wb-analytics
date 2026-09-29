@@ -25,7 +25,8 @@ from tools.tenancy import synthetic as SY  # noqa: E402
 from tools.tenancy import validation as V  # noqa: E402
 
 CLIENT = REPO / "tenants" / "client_001" / "tenant.json"
-T4_DATASETS = {"ozon_raw", "ref", "ozon_mart", "tenant_ops", "analytics_share"}
+# T5: + tenant_locks (аренда отрезков бэкфилла control plane; таблиц контракта в нём нет).
+T4_DATASETS = {"ozon_raw", "ref", "ozon_mart", "tenant_ops", "analytics_share", "tenant_locks"}
 
 
 def _doc():
@@ -205,9 +206,12 @@ def test_new_datasets_grant_nothing_to_runtime_or_customer():
     acl = PS.expected_dataset_access(c)
     runtime = f"{c['marketplaces']['ozon']['service_accounts']['runtime']}@{c['project_id']}.iam.gserviceaccount.com"
     deployer = f"sa-sql-deployer@{c['project_id']}.iam.gserviceaccount.com"
+    control = f"sa-tenant-control@{c['project_id']}.iam.gserviceaccount.com"
     for ds in ("ozon_mart", "tenant_ops", "analytics_share"):
         # T4.1: кроме projectOwners — только деплоер SQL; ни runtime, ни клиента.
-        assert {who for _r, _k, who, _c in acl[c["datasets"][ds]]} == {"projectOwners", deployer}, ds
+        # T5: control plane читает и дописывает только tenant_ops; витрину и клиентский слой не видит.
+        want = {"projectOwners", deployer} | ({control} if ds == "tenant_ops" else set())
+        assert {who for _r, _k, who, _c in acl[c["datasets"][ds]]} == want, ds
         assert runtime not in {who for _r, _k, who, _c in acl[c["datasets"][ds]]}, ds
 
 

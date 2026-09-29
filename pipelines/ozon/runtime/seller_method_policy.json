@@ -1,0 +1,2895 @@
+{
+ "api": "ozon_seller",
+ "approved_mutation_methods": [],
+ "methods": {
+  "/v1/actions": {
+   "class": "READ",
+   "deprecated": false,
+   "http": "GET",
+   "reason": "глагол чтения в описании"
+  },
+  "/v1/actions/auto-add/products/candidates": {
+   "class": "READ",
+   "deprecated": true,
+   "http": "POST",
+   "reason": "глагол чтения в описании"
+  },
+  "/v1/actions/auto-add/products/delete": {
+   "class": "MUTATION",
+   "deprecated": true,
+   "http": "POST",
+   "reason": "глагол изменения в описании"
+  },
+  "/v1/actions/auto-add/products/list": {
+   "class": "READ",
+   "deprecated": true,
+   "http": "POST",
+   "reason": "геттер с глаголом чтения"
+  },
+  "/v1/actions/auto-add/products/update": {
+   "class": "MUTATION",
+   "deprecated": true,
+   "http": "POST",
+   "reason": "глагол изменения в описании"
+  },
+  "/v1/actions/candidates": {
+   "class": "READ",
+   "deprecated": true,
+   "http": "POST",
+   "reason": "глагол чтения в описании"
+  },
+  "/v1/actions/discounts-task/approve": {
+   "class": "MUTATION",
+   "deprecated": false,
+   "http": "POST",
+   "reason": "глагол изменения в описании"
+  },
+  "/v1/actions/discounts-task/decline": {
+   "class": "MUTATION",
+   "deprecated": false,
+   "http": "POST",
+   "reason": "глагол изменения в описании"
+  },
+  "/v1/actions/discounts-task/list": {
+   "class": "READ",
+   "deprecated": false,
+   "http": "POST",
+   "reason": "геттер с глаголом чтения"
+  },
+  "/v1/actions/products": {
+   "class": "READ",
+   "deprecated": true,
+   "http": "POST",
+   "reason": "глагол чтения в описании"
+  },
+  "/v1/actions/products/activate": {
+   "class": "MUTATION",
+   "deprecated": true,
+   "http": "POST",
+   "reason": "глагол изменения в описании"
+  },
+  "/v1/actions/products/deactivate": {
+   "class": "MUTATION",
+   "deprecated": true,
+   "http": "POST",
+   "reason": "глагол изменения в описании"
+  },
+  "/v1/actions/products/update": {
+   "class": "MUTATION",
+   "deprecated": false,
+   "http": "POST",
+   "reason": "глагол изменения в описании"
+  },
+  "/v1/analytics/category/comparison": {
+   "class": "READ",
+   "deprecated": false,
+   "http": "POST",
+   "reason": "глагол чтения в описании"
+  },
+  "/v1/analytics/data": {
+   "class": "READ",
+   "deprecated": false,
+   "http": "POST",
+   "reason": "глагол чтения в описании"
+  },
+  "/v1/analytics/decommissioned-goods": {
+   "class": "READ",
+   "deprecated": false,
+   "http": "POST",
+   "reason": "глагол чтения в описании"
+  },
+  "/v1/analytics/local-sale/clusters-items/info": {
+   "class": "READ",
+   "deprecated": false,
+   "http": "POST",
+   "reason": "геттер с глаголом чтения"
+  },
+  "/v1/analytics/local-sale/items-clusters/info": {
+   "class": "READ",
+   "deprecated": false,
+   "http": "POST",
+   "reason": "геттер с глаголом чтения"
+  },
+  "/v1/analytics/local-sale/total": {
+   "class": "READ",
+   "deprecated": false,
+   "http": "POST",
+   "reason": "глагол чтения в описании"
+  },
+  "/v1/analytics/manage/stocks": {
+   "class": "READ",
+   "deprecated": false,
+   "http": "POST",
+   "reason": "глагол чтения в описании"
+  },
+  "/v1/analytics/product-queries": {
+   "class": "READ",
+   "deprecated": false,
+   "http": "POST",
+   "reason": "глагол чтения в описании"
+  },
+  "/v1/analytics/product-queries/details": {
+   "class": "READ",
+   "deprecated": false,
+   "http": "POST",
+   "reason": "глагол чтения в описании"
+  },
+  "/v1/analytics/stocks": {
+   "class": "READ",
+   "deprecated": false,
+   "http": "POST",
+   "reason": "глагол чтения в описании"
+  },
+  "/v1/analytics/turnover/stocks": {
+   "class": "READ",
+   "deprecated": false,
+   "http": "POST",
+   "reason": "глагол чтения в описании"
+  },
+  "/v1/assembly/carriage/posting/list": {
+   "class": "READ",
+   "deprecated": false,
+   "http": "POST",
+   "reason": "геттер с глаголом чтения"
+  },
+  "/v1/assembly/carriage/product/list": {
+   "class": "READ",
+   "deprecated": false,
+   "http": "POST",
+   "reason": "геттер с глаголом чтения"
+  },
+  "/v1/assembly/fbs/posting/list": {
+   "class": "READ",
+   "deprecated": false,
+   "http": "POST",
+   "reason": "геттер с глаголом чтения"
+  },
+  "/v1/assembly/fbs/product/list": {
+   "class": "READ",
+   "deprecated": false,
+   "http": "POST",
+   "reason": "геттер с глаголом чтения"
+  },
+  "/v1/barcode/add": {
+   "class": "MUTATION",
+   "deprecated": false,
+   "http": "POST",
+   "reason": "глагол изменения в описании"
+  },
+  "/v1/barcode/generate": {
+   "class": "MUTATION",
+   "deprecated": false,
+   "http": "POST",
+   "reason": "создаёт штрихкоды"
+  },
+  "/v1/brand/company-certification/list": {
+   "class": "READ",
+   "deprecated": false,
+   "http": "POST",
+   "reason": "геттер с глаголом чтения"
+  },
+  "/v1/cancel-reason/list": {
+   "class": "READ",
+   "deprecated": false,
+   "http": "POST",
+   "reason": "справочник причин отмены"
+  },
+  "/v1/cancel-reason/list-by-order": {
+   "class": "MUTATION",
+   "deprecated": false,
+   "http": "POST",
+   "reason": "признак изменения в пути"
+  },
+  "/v1/cancel-reason/list-by-posting": {
+   "class": "MUTATION",
+   "deprecated": false,
+   "http": "POST",
+   "reason": "признак изменения в пути"
+  },
+  "/v1/cargoes-label/create": {
+   "class": "MUTATION",
+   "deprecated": false,
+   "http": "POST",
+   "reason": "признак изменения в пути"
+  },
+  "/v1/cargoes-label/file/{file_guid}": {
+   "class": "READ",
+   "deprecated": false,
+   "http": "GET",
+   "reason": "геттер с глаголом чтения"
+  },
+  "/v1/cargoes-label/get": {
+   "class": "READ",
+   "deprecated": false,
+   "http": "POST",
+   "reason": "геттер с глаголом чтения"
+  },
+  "/v1/cargoes/create": {
+   "class": "MUTATION",
+   "deprecated": false,
+   "http": "POST",
+   "reason": "признак изменения в пути"
+  },
+  "/v1/cargoes/delete": {
+   "class": "MUTATION",
+   "deprecated": false,
+   "http": "POST",
+   "reason": "глагол изменения в описании"
+  },
+  "/v1/cargoes/delete/status": {
+   "class": "READ",
+   "deprecated": false,
+   "http": "POST",
+   "reason": "геттер с глаголом чтения"
+  },
+  "/v1/cargoes/get": {
+   "class": "READ",
+   "deprecated": false,
+   "http": "POST",
+   "reason": "геттер с глаголом чтения"
+  },
+  "/v1/cargoes/label/transport-by-order/create": {
+   "class": "MUTATION",
+   "deprecated": false,
+   "http": "POST",
+   "reason": "признак изменения в пути"
+  },
+  "/v1/cargoes/label/transport-by-order/status": {
+   "class": "READ",
+   "deprecated": false,
+   "http": "POST",
+   "reason": "геттер с глаголом чтения"
+  },
+  "/v1/cargoes/label/transport/create": {
+   "class": "MUTATION",
+   "deprecated": false,
+   "http": "POST",
+   "reason": "признак изменения в пути"
+  },
+  "/v1/cargoes/label/transport/status": {
+   "class": "READ",
+   "deprecated": false,
+   "http": "POST",
+   "reason": "геттер с глаголом чтения"
+  },
+  "/v1/cargoes/rules/get": {
+   "class": "READ",
+   "deprecated": false,
+   "http": "POST",
+   "reason": "геттер с глаголом чтения"
+  },
+  "/v1/cargoes/supplies/get": {
+   "class": "READ",
+   "deprecated": false,
+   "http": "POST",
+   "reason": "геттер с глаголом чтения"
+  },
+  "/v1/cargoes/transport/activate": {
+   "class": "MUTATION",
+   "deprecated": false,
+   "http": "POST",
+   "reason": "глагол изменения в описании"
+  },
+  "/v1/cargoes/transport/activate/status": {
+   "class": "READ",
+   "deprecated": false,
+   "http": "POST",
+   "reason": "геттер с глаголом чтения"
+  },
+  "/v1/cargoes/transport/bind": {
+   "class": "MUTATION",
+   "deprecated": false,
+   "http": "POST",
+   "reason": "признак изменения в пути"
+  },
+  "/v1/cargoes/transport/bind/status": {
+   "class": "READ",
+   "deprecated": false,
+   "http": "POST",
+   "reason": "геттер с глаголом чтения"
+  },
+  "/v1/cargoes/transport/create": {
+   "class": "MUTATION",
+   "deprecated": false,
+   "http": "POST",
+   "reason": "глагол изменения в описании"
+  },
+  "/v1/cargoes/transport/create/status": {
+   "class": "READ",
+   "deprecated": false,
+   "http": "POST",
+   "reason": "геттер с глаголом чтения"
+  },
+  "/v1/carriage/act-discrepancy/pdf": {
+   "class": "READ",
+   "deprecated": false,
+   "http": "POST",
+   "reason": "глагол чтения в описании"
+  },
+  "/v1/carriage/approve": {
+   "class": "MUTATION",
+   "deprecated": false,
+   "http": "POST",
+   "reason": "глагол изменения в описании"
+  },
+  "/v1/carriage/cancel": {
+   "class": "MUTATION",
+   "deprecated": false,
+   "http": "POST",
+   "reason": "глагол изменения в описании"
+  },
+  "/v1/carriage/container/approve": {
+   "class": "MUTATION",
+   "deprecated": false,
+   "http": "POST",
+   "reason": "глагол изменения в описании"
+  },
+  "/v1/carriage/container/cancel": {
+   "class": "MUTATION",
+   "deprecated": false,
+   "http": "POST",
+   "reason": "глагол изменения в описании"
+  },
+  "/v1/carriage/container/create": {
+   "class": "MUTATION",
+   "deprecated": false,
+   "http": "POST",
+   "reason": "глагол изменения в описании"
+  },
+  "/v1/carriage/container/document/get": {
+   "class": "READ",
+   "deprecated": false,
+   "http": "POST",
+   "reason": "геттер с глаголом чтения"
+  },
+  "/v1/carriage/container/fill": {
+   "class": "MUTATION",
+   "deprecated": false,
+   "http": "POST",
+   "reason": "заполняет грузоместо"
+  },
+  "/v1/carriage/container/get": {
+   "class": "READ",
+   "deprecated": false,
+   "http": "POST",
+   "reason": "геттер с глаголом чтения"
+  },
+  "/v1/carriage/container/label/get": {
+   "class": "READ",
+   "deprecated": false,
+   "http": "POST",
+   "reason": "геттер с глаголом чтения"
+  },
+  "/v1/carriage/container/list": {
+   "class": "READ",
+   "deprecated": false,
+   "http": "POST",
+   "reason": "геттер с глаголом чтения"
+  },
+  "/v1/carriage/container/place-into": {
+   "class": "MUTATION",
+   "deprecated": false,
+   "http": "POST",
+   "reason": "кладёт в грузоместо"
+  },
+  "/v1/carriage/container/remove-from": {
+   "class": "MUTATION",
+   "deprecated": false,
+   "http": "POST",
+   "reason": "признак изменения в пути"
+  },
+  "/v1/carriage/container/remove-postings": {
+   "class": "MUTATION",
+   "deprecated": false,
+   "http": "POST",
+   "reason": "признак изменения в пути"
+  },
+  "/v1/carriage/container/status/get": {
+   "class": "READ",
+   "deprecated": false,
+   "http": "POST",
+   "reason": "геттер с глаголом чтения"
+  },
+  "/v1/carriage/container/task/info": {
+   "class": "READ",
+   "deprecated": false,
+   "http": "POST",
+   "reason": "геттер с глаголом чтения"
+  },
+  "/v1/carriage/courier-contact/get": {
+   "class": "READ",
+   "deprecated": false,
+   "http": "POST",
+   "reason": "геттер с глаголом чтения"
+  },
+  "/v1/carriage/courier-contact/set": {
+   "class": "MUTATION",
+   "deprecated": false,
+   "http": "POST",
+   "reason": "глагол изменения в описании"
+  },
+  "/v1/carriage/create": {
+   "class": "MUTATION",
+   "deprecated": false,
+   "http": "POST",
+   "reason": "глагол изменения в описании"
+  },
+  "/v1/carriage/delivery/list": {
+   "class": "READ",
+   "deprecated": false,
+   "http": "POST",
+   "reason": "геттер с глаголом чтения"
+  },
+  "/v1/carriage/ettn/status": {
+   "class": "READ",
+   "deprecated": false,
+   "http": "POST",
+   "reason": "геттер с глаголом чтения"
+  },
+  "/v1/carriage/get": {
+   "class": "READ",
+   "deprecated": false,
+   "http": "POST",
+   "reason": "геттер с глаголом чтения"
+  },
+  "/v1/carriage/pass/create": {
+   "class": "MUTATION",
+   "deprecated": false,
+   "http": "POST",
+   "reason": "глагол изменения в описании"
+  },
+  "/v1/carriage/pass/delete": {
+   "class": "MUTATION",
+   "deprecated": false,
+   "http": "POST",
+   "reason": "глагол изменения в описании"
+  },
+  "/v1/carriage/pass/update": {
+   "class": "MUTATION",
+   "deprecated": false,
+   "http": "POST",
+   "reason": "глагол изменения в описании"
+  },
+  "/v1/carriage/set-postings": {
+   "class": "MUTATION",
+   "deprecated": false,
+   "http": "POST",
+   "reason": "глагол изменения в описании"
+  },
+  "/v1/chat/send/file": {
+   "class": "MUTATION",
+   "deprecated": false,
+   "http": "POST",
+   "reason": "глагол изменения в описании"
+  },
+  "/v1/chat/send/message": {
+   "class": "MUTATION",
+   "deprecated": false,
+   "http": "POST",
+   "reason": "глагол изменения в описании"
+  },
+  "/v1/chat/start": {
+   "class": "MUTATION",
+   "deprecated": false,
+   "http": "POST",
+   "reason": "глагол изменения в описании"
+  },
+  "/v1/cluster/list": {
+   "class": "READ",
+   "deprecated": false,
+   "http": "POST",
+   "reason": "геттер с глаголом чтения"
+  },
+  "/v1/delivery-method/list": {
+   "class": "READ",
+   "deprecated": false,
+   "http": "POST",
+   "reason": "геттер с глаголом чтения"
+  },
+  "/v1/delivery-method/return/settings/get": {
+   "class": "READ",
+   "deprecated": false,
+   "http": "POST",
+   "reason": "геттер с глаголом чтения"
+  },
+  "/v1/delivery/check": {
+   "class": "READ",
+   "deprecated": false,
+   "http": "POST",
+   "reason": "проверка доступности доставки — без изменения кабинета"
+  },
+  "/v1/delivery/map": {
+   "class": "READ",
+   "deprecated": false,
+   "http": "POST",
+   "reason": "отрисовка точек на карте — только чтение справочника"
+  },
+  "/v1/delivery/point/info": {
+   "class": "READ",
+   "deprecated": false,
+   "http": "POST",
+   "reason": "геттер с глаголом чтения"
+  },
+  "/v1/delivery/point/list": {
+   "class": "READ",
+   "deprecated": false,
+   "http": "POST",
+   "reason": "геттер с глаголом чтения"
+  },
+  "/v1/description-category/attribute": {
+   "class": "READ",
+   "deprecated": false,
+   "http": "POST",
+   "reason": "глагол чтения в описании"
+  },
+  "/v1/description-category/attribute/values": {
+   "class": "READ",
+   "deprecated": false,
+   "http": "POST",
+   "reason": "геттер с глаголом чтения"
+  },
+  "/v1/description-category/attribute/values/search": {
+   "class": "READ",
+   "deprecated": false,
+   "http": "POST",
+   "reason": "геттер с глаголом чтения"
+  },
+  "/v1/description-category/dependent-attributes": {
+   "class": "READ",
+   "deprecated": false,
+   "http": "POST",
+   "reason": "глагол чтения в описании"
+  },
+  "/v1/description-category/dependent-attributes/values": {
+   "class": "READ",
+   "deprecated": false,
+   "http": "POST",
+   "reason": "геттер с глаголом чтения"
+  },
+  "/v1/description-category/tree": {
+   "class": "READ",
+   "deprecated": false,
+   "http": "POST",
+   "reason": "геттер с глаголом чтения"
+  },
+  "/v1/draft/crossdock/create": {
+   "class": "MUTATION",
+   "deprecated": false,
+   "http": "POST",
+   "reason": "глагол изменения в описании"
+  },
+  "/v1/draft/direct/create": {
+   "class": "MUTATION",
+   "deprecated": false,
+   "http": "POST",
+   "reason": "глагол изменения в описании"
+  },
+  "/v1/draft/multi-cluster/create": {
+   "class": "MUTATION",
+   "deprecated": false,
+   "http": "POST",
+   "reason": "глагол изменения в описании"
+  },
+  "/v1/fbp/act-from/create": {
+   "class": "MUTATION",
+   "deprecated": false,
+   "http": "POST",
+   "reason": "признак изменения в пути"
+  },
+  "/v1/fbp/act-from/get": {
+   "class": "READ",
+   "deprecated": false,
+   "http": "POST",
+   "reason": "геттер с глаголом чтения"
+  },
+  "/v1/fbp/act-to/create": {
+   "class": "MUTATION",
+   "deprecated": false,
+   "http": "POST",
+   "reason": "признак изменения в пути"
+  },
+  "/v1/fbp/act-to/get": {
+   "class": "READ",
+   "deprecated": false,
+   "http": "POST",
+   "reason": "геттер с глаголом чтения"
+  },
+  "/v1/fbp/archive/get": {
+   "class": "READ",
+   "deprecated": false,
+   "http": "POST",
+   "reason": "геттер с глаголом чтения"
+  },
+  "/v1/fbp/archive/list": {
+   "class": "READ",
+   "deprecated": false,
+   "http": "POST",
+   "reason": "геттер с глаголом чтения"
+  },
+  "/v1/fbp/draft/direct/create": {
+   "class": "MUTATION",
+   "deprecated": false,
+   "http": "POST",
+   "reason": "глагол изменения в описании"
+  },
+  "/v1/fbp/draft/direct/delete": {
+   "class": "MUTATION",
+   "deprecated": false,
+   "http": "POST",
+   "reason": "глагол изменения в описании"
+  },
+  "/v1/fbp/draft/direct/product/validate": {
+   "class": "READ",
+   "deprecated": false,
+   "http": "POST",
+   "reason": "проверка товаров черновика без записи"
+  },
+  "/v1/fbp/draft/direct/registrate": {
+   "class": "MUTATION",
+   "deprecated": false,
+   "http": "POST",
+   "reason": "глагол изменения в описании"
+  },
+  "/v1/fbp/draft/direct/seller-dlv/create": {
+   "class": "MUTATION",
+   "deprecated": false,
+   "http": "POST",
+   "reason": "глагол изменения в описании"
+  },
+  "/v1/fbp/draft/direct/seller-dlv/edit": {
+   "class": "MUTATION",
+   "deprecated": false,
+   "http": "POST",
+   "reason": "глагол изменения в описании"
+  },
+  "/v1/fbp/draft/direct/timeslot/edit": {
+   "class": "MUTATION",
+   "deprecated": false,
+   "http": "POST",
+   "reason": "признак изменения в пути"
+  },
+  "/v1/fbp/draft/direct/timeslot/get": {
+   "class": "READ",
+   "deprecated": false,
+   "http": "POST",
+   "reason": "геттер с глаголом чтения"
+  },
+  "/v1/fbp/draft/direct/tpl-dlv/create": {
+   "class": "MUTATION",
+   "deprecated": false,
+   "http": "POST",
+   "reason": "глагол изменения в описании"
+  },
+  "/v1/fbp/draft/direct/tpl-dlv/edit": {
+   "class": "MUTATION",
+   "deprecated": false,
+   "http": "POST",
+   "reason": "глагол изменения в описании"
+  },
+  "/v1/fbp/draft/drop-off/create": {
+   "class": "MUTATION",
+   "deprecated": false,
+   "http": "POST",
+   "reason": "глагол изменения в описании"
+  },
+  "/v1/fbp/draft/drop-off/delete": {
+   "class": "MUTATION",
+   "deprecated": false,
+   "http": "POST",
+   "reason": "глагол изменения в описании"
+  },
+  "/v1/fbp/draft/drop-off/dlv/edit": {
+   "class": "MUTATION",
+   "deprecated": false,
+   "http": "POST",
+   "reason": "признак изменения в пути"
+  },
+  "/v1/fbp/draft/drop-off/point/list": {
+   "class": "READ",
+   "deprecated": false,
+   "http": "POST",
+   "reason": "геттер с глаголом чтения"
+  },
+  "/v1/fbp/draft/drop-off/point/timetable": {
+   "class": "READ",
+   "deprecated": false,
+   "http": "POST",
+   "reason": "геттер с глаголом чтения"
+  },
+  "/v1/fbp/draft/drop-off/product/validate": {
+   "class": "READ",
+   "deprecated": false,
+   "http": "POST",
+   "reason": "проверка товаров черновика без записи"
+  },
+  "/v1/fbp/draft/drop-off/province/list": {
+   "class": "READ",
+   "deprecated": false,
+   "http": "POST",
+   "reason": "геттер с глаголом чтения"
+  },
+  "/v1/fbp/draft/drop-off/registrate": {
+   "class": "MUTATION",
+   "deprecated": false,
+   "http": "POST",
+   "reason": "глагол изменения в описании"
+  },
+  "/v1/fbp/draft/get": {
+   "class": "READ",
+   "deprecated": false,
+   "http": "POST",
+   "reason": "геттер с глаголом чтения"
+  },
+  "/v1/fbp/draft/list": {
+   "class": "READ",
+   "deprecated": false,
+   "http": "POST",
+   "reason": "геттер с глаголом чтения"
+  },
+  "/v1/fbp/draft/pick-up/create": {
+   "class": "MUTATION",
+   "deprecated": false,
+   "http": "POST",
+   "reason": "глагол изменения в описании"
+  },
+  "/v1/fbp/draft/pick-up/delete": {
+   "class": "MUTATION",
+   "deprecated": false,
+   "http": "POST",
+   "reason": "глагол изменения в описании"
+  },
+  "/v1/fbp/draft/pick-up/dlv/edit": {
+   "class": "MUTATION",
+   "deprecated": false,
+   "http": "POST",
+   "reason": "глагол изменения в описании"
+  },
+  "/v1/fbp/draft/pick-up/product/validate": {
+   "class": "READ",
+   "deprecated": false,
+   "http": "POST",
+   "reason": "проверка товаров черновика без записи"
+  },
+  "/v1/fbp/draft/pick-up/registrate": {
+   "class": "MUTATION",
+   "deprecated": false,
+   "http": "POST",
+   "reason": "глагол изменения в описании"
+  },
+  "/v1/fbp/label/create": {
+   "class": "MUTATION",
+   "deprecated": false,
+   "http": "POST",
+   "reason": "признак изменения в пути"
+  },
+  "/v1/fbp/label/get": {
+   "class": "READ",
+   "deprecated": false,
+   "http": "POST",
+   "reason": "геттер с глаголом чтения"
+  },
+  "/v1/fbp/order/direct/cancel": {
+   "class": "MUTATION",
+   "deprecated": false,
+   "http": "POST",
+   "reason": "глагол изменения в описании"
+  },
+  "/v1/fbp/order/direct/seller-dlv/edit": {
+   "class": "MUTATION",
+   "deprecated": false,
+   "http": "POST",
+   "reason": "глагол изменения в описании"
+  },
+  "/v1/fbp/order/direct/timeslot/edit": {
+   "class": "MUTATION",
+   "deprecated": false,
+   "http": "POST",
+   "reason": "признак изменения в пути"
+  },
+  "/v1/fbp/order/direct/timeslot/list": {
+   "class": "READ",
+   "deprecated": false,
+   "http": "POST",
+   "reason": "геттер с глаголом чтения"
+  },
+  "/v1/fbp/order/direct/tpl-dlv/edit": {
+   "class": "MUTATION",
+   "deprecated": false,
+   "http": "POST",
+   "reason": "глагол изменения в описании"
+  },
+  "/v1/fbp/order/drop-off/cancel": {
+   "class": "MUTATION",
+   "deprecated": false,
+   "http": "POST",
+   "reason": "глагол изменения в описании"
+  },
+  "/v1/fbp/order/drop-off/dlv/edit": {
+   "class": "MUTATION",
+   "deprecated": false,
+   "http": "POST",
+   "reason": "признак изменения в пути"
+  },
+  "/v1/fbp/order/drop-off/timetable": {
+   "class": "READ",
+   "deprecated": false,
+   "http": "POST",
+   "reason": "геттер с глаголом чтения"
+  },
+  "/v1/fbp/order/get": {
+   "class": "READ",
+   "deprecated": false,
+   "http": "POST",
+   "reason": "геттер с глаголом чтения"
+  },
+  "/v1/fbp/order/list": {
+   "class": "READ",
+   "deprecated": false,
+   "http": "POST",
+   "reason": "геттер с глаголом чтения"
+  },
+  "/v1/fbp/order/pick-up/cancel": {
+   "class": "MUTATION",
+   "deprecated": false,
+   "http": "POST",
+   "reason": "глагол изменения в описании"
+  },
+  "/v1/fbp/order/pick-up/dlv/edit": {
+   "class": "MUTATION",
+   "deprecated": false,
+   "http": "POST",
+   "reason": "глагол изменения в описании"
+  },
+  "/v1/fbp/warehouse/list": {
+   "class": "READ",
+   "deprecated": false,
+   "http": "POST",
+   "reason": "геттер с глаголом чтения"
+  },
+  "/v1/fbs/posting/product/exemplar/update": {
+   "class": "MUTATION",
+   "deprecated": false,
+   "http": "POST",
+   "reason": "глагол изменения в описании"
+  },
+  "/v1/finance/accrual/by-day": {
+   "class": "READ",
+   "deprecated": false,
+   "http": "POST",
+   "reason": "геттер с глаголом чтения"
+  },
+  "/v1/finance/accrual/postings": {
+   "class": "READ",
+   "deprecated": false,
+   "http": "POST",
+   "reason": "глагол чтения в описании"
+  },
+  "/v1/finance/accrual/types": {
+   "class": "READ",
+   "deprecated": false,
+   "http": "POST",
+   "reason": "геттер с глаголом чтения"
+  },
+  "/v1/finance/balance": {
+   "class": "READ",
+   "deprecated": false,
+   "http": "POST",
+   "reason": "глагол чтения в описании"
+  },
+  "/v1/finance/cash-flow-statement/list": {
+   "class": "READ",
+   "deprecated": false,
+   "http": "POST",
+   "reason": "геттер с глаголом чтения"
+  },
+  "/v1/finance/compensation": {
+   "class": "READ",
+   "deprecated": false,
+   "http": "POST",
+   "reason": "глагол чтения в описании"
+  },
+  "/v1/finance/decompensation": {
+   "class": "READ",
+   "deprecated": false,
+   "http": "POST",
+   "reason": "глагол чтения в описании"
+  },
+  "/v1/finance/document-b2b-sales": {
+   "class": "READ",
+   "deprecated": false,
+   "http": "POST",
+   "reason": "глагол чтения в описании"
+  },
+  "/v1/finance/document-b2b-sales/json": {
+   "class": "READ",
+   "deprecated": false,
+   "http": "POST",
+   "reason": "геттер с глаголом чтения"
+  },
+  "/v1/finance/mutual-settlement": {
+   "class": "READ",
+   "deprecated": false,
+   "http": "POST",
+   "reason": "глагол чтения в описании"
+  },
+  "/v1/finance/products/buyout": {
+   "class": "READ",
+   "deprecated": false,
+   "http": "POST",
+   "reason": "глагол чтения в описании"
+  },
+  "/v1/finance/realization/by-day": {
+   "class": "READ",
+   "deprecated": false,
+   "http": "POST",
+   "reason": "геттер с глаголом чтения"
+  },
+  "/v1/finance/realization/posting": {
+   "class": "READ",
+   "deprecated": false,
+   "http": "POST",
+   "reason": "глагол чтения в описании"
+  },
+  "/v1/invoice/delete": {
+   "class": "MUTATION",
+   "deprecated": false,
+   "http": "POST",
+   "reason": "глагол изменения в описании"
+  },
+  "/v1/invoice/file/upload": {
+   "class": "MUTATION",
+   "deprecated": false,
+   "http": "POST",
+   "reason": "глагол изменения в описании"
+  },
+  "/v1/notification/check": {
+   "class": "MUTATION",
+   "deprecated": false,
+   "http": "POST",
+   "reason": "отправляет тестовое уведомление на внешний URL"
+  },
+  "/v1/notification/delete": {
+   "class": "MUTATION",
+   "deprecated": false,
+   "http": "POST",
+   "reason": "глагол изменения в описании"
+  },
+  "/v1/notification/enable": {
+   "class": "MUTATION",
+   "deprecated": false,
+   "http": "POST",
+   "reason": "глагол изменения в описании"
+  },
+  "/v1/notification/list": {
+   "class": "READ",
+   "deprecated": false,
+   "http": "POST",
+   "reason": "геттер с глаголом чтения"
+  },
+  "/v1/notification/push-type/list": {
+   "class": "READ",
+   "deprecated": false,
+   "http": "POST",
+   "reason": "геттер с глаголом чтения"
+  },
+  "/v1/notification/set": {
+   "class": "MUTATION",
+   "deprecated": false,
+   "http": "POST",
+   "reason": "признак изменения в пути"
+  },
+  "/v1/notification/update": {
+   "class": "MUTATION",
+   "deprecated": false,
+   "http": "POST",
+   "reason": "глагол изменения в описании"
+  },
+  "/v1/order/cancel": {
+   "class": "MUTATION",
+   "deprecated": false,
+   "http": "POST",
+   "reason": "глагол изменения в описании"
+  },
+  "/v1/order/cancel/check": {
+   "class": "MUTATION",
+   "deprecated": false,
+   "http": "POST",
+   "reason": "признак изменения в пути"
+  },
+  "/v1/order/cancel/status": {
+   "class": "READ",
+   "deprecated": false,
+   "http": "POST",
+   "reason": "геттер с глаголом чтения"
+  },
+  "/v1/pass/list": {
+   "class": "READ",
+   "deprecated": false,
+   "http": "POST",
+   "reason": "геттер с глаголом чтения"
+  },
+  "/v1/polygon/bind": {
+   "class": "MUTATION",
+   "deprecated": false,
+   "http": "POST",
+   "reason": "признак изменения в пути"
+  },
+  "/v1/polygon/create": {
+   "class": "MUTATION",
+   "deprecated": false,
+   "http": "POST",
+   "reason": "признак изменения в пути"
+  },
+  "/v1/polygon/delete": {
+   "class": "MUTATION",
+   "deprecated": false,
+   "http": "POST",
+   "reason": "глагол изменения в описании"
+  },
+  "/v1/polygon/list": {
+   "class": "READ",
+   "deprecated": false,
+   "http": "POST",
+   "reason": "геттер с глаголом чтения"
+  },
+  "/v1/polygon/time/coordinates/update": {
+   "class": "MUTATION",
+   "deprecated": false,
+   "http": "POST",
+   "reason": "глагол изменения в описании"
+  },
+  "/v1/polygon/time/set": {
+   "class": "MUTATION",
+   "deprecated": false,
+   "http": "POST",
+   "reason": "глагол изменения в описании"
+  },
+  "/v1/posting/cancel": {
+   "class": "MUTATION",
+   "deprecated": false,
+   "http": "POST",
+   "reason": "глагол изменения в описании"
+  },
+  "/v1/posting/cancel/status": {
+   "class": "READ",
+   "deprecated": false,
+   "http": "POST",
+   "reason": "статус отмены — чтение"
+  },
+  "/v1/posting/carriage-available/list": {
+   "class": "READ",
+   "deprecated": false,
+   "http": "POST",
+   "reason": "геттер с глаголом чтения"
+  },
+  "/v1/posting/cutoff/set": {
+   "class": "MUTATION",
+   "deprecated": false,
+   "http": "POST",
+   "reason": "признак изменения в пути"
+  },
+  "/v1/posting/digital/codes/upload": {
+   "class": "MUTATION",
+   "deprecated": false,
+   "http": "POST",
+   "reason": "глагол изменения в описании"
+  },
+  "/v1/posting/digital/list": {
+   "class": "READ",
+   "deprecated": true,
+   "http": "POST",
+   "reason": "геттер с глаголом чтения"
+  },
+  "/v1/posting/fbo/cancel-reason/list": {
+   "class": "READ",
+   "deprecated": false,
+   "http": "POST",
+   "reason": "справочник причин отмены FBO"
+  },
+  "/v1/posting/fbp/get": {
+   "class": "READ",
+   "deprecated": false,
+   "http": "POST",
+   "reason": "геттер с глаголом чтения"
+  },
+  "/v1/posting/fbp/list": {
+   "class": "READ",
+   "deprecated": false,
+   "http": "POST",
+   "reason": "геттер с глаголом чтения"
+  },
+  "/v1/posting/fbs/cancel-reason": {
+   "class": "MUTATION",
+   "deprecated": false,
+   "http": "POST",
+   "reason": "признак изменения в пути"
+  },
+  "/v1/posting/fbs/package-label/create": {
+   "class": "MUTATION",
+   "deprecated": false,
+   "http": "POST",
+   "reason": "глагол изменения в описании"
+  },
+  "/v1/posting/fbs/package-label/get": {
+   "class": "READ",
+   "deprecated": false,
+   "http": "POST",
+   "reason": "геттер с глаголом чтения"
+  },
+  "/v1/posting/fbs/pick-up-code/verify": {
+   "class": "MUTATION",
+   "deprecated": false,
+   "http": "POST",
+   "reason": "подтверждение кода курьера — консервативно"
+  },
+  "/v1/posting/fbs/product/traceable/attribute": {
+   "class": "READ",
+   "deprecated": false,
+   "http": "POST",
+   "reason": "глагол чтения в описании"
+  },
+  "/v1/posting/fbs/restrictions": {
+   "class": "READ",
+   "deprecated": false,
+   "http": "POST",
+   "reason": "глагол чтения в описании"
+  },
+  "/v1/posting/fbs/split": {
+   "class": "MUTATION",
+   "deprecated": false,
+   "http": "POST",
+   "reason": "глагол изменения в описании"
+  },
+  "/v1/posting/fbs/timeslot/change-restrictions": {
+   "class": "MUTATION",
+   "deprecated": false,
+   "http": "POST",
+   "reason": "признак изменения в пути"
+  },
+  "/v1/posting/fbs/timeslot/set": {
+   "class": "MUTATION",
+   "deprecated": false,
+   "http": "POST",
+   "reason": "глагол изменения в описании"
+  },
+  "/v1/posting/fbs/traceable/split": {
+   "class": "MUTATION",
+   "deprecated": false,
+   "http": "POST",
+   "reason": "глагол изменения в описании"
+  },
+  "/v1/posting/global/etgb": {
+   "class": "READ",
+   "deprecated": false,
+   "http": "POST",
+   "reason": "глагол чтения в описании"
+  },
+  "/v1/posting/marks": {
+   "class": "READ",
+   "deprecated": false,
+   "http": "POST",
+   "reason": "глагол чтения в описании"
+  },
+  "/v1/posting/unpaid-legal/product/list": {
+   "class": "READ",
+   "deprecated": false,
+   "http": "POST",
+   "reason": "геттер с глаголом чтения"
+  },
+  "/v1/pricing-strategy/competitors/list": {
+   "class": "READ",
+   "deprecated": false,
+   "http": "POST",
+   "reason": "геттер с глаголом чтения"
+  },
+  "/v1/pricing-strategy/create": {
+   "class": "MUTATION",
+   "deprecated": false,
+   "http": "POST",
+   "reason": "глагол изменения в описании"
+  },
+  "/v1/pricing-strategy/delete": {
+   "class": "MUTATION",
+   "deprecated": false,
+   "http": "POST",
+   "reason": "глагол изменения в описании"
+  },
+  "/v1/pricing-strategy/info": {
+   "class": "READ",
+   "deprecated": false,
+   "http": "POST",
+   "reason": "геттер с глаголом чтения"
+  },
+  "/v1/pricing-strategy/list": {
+   "class": "READ",
+   "deprecated": false,
+   "http": "POST",
+   "reason": "геттер с глаголом чтения"
+  },
+  "/v1/pricing-strategy/product/info": {
+   "class": "READ",
+   "deprecated": false,
+   "http": "POST",
+   "reason": "геттер с глаголом чтения"
+  },
+  "/v1/pricing-strategy/products/add": {
+   "class": "MUTATION",
+   "deprecated": false,
+   "http": "POST",
+   "reason": "глагол изменения в описании"
+  },
+  "/v1/pricing-strategy/products/delete": {
+   "class": "MUTATION",
+   "deprecated": false,
+   "http": "POST",
+   "reason": "глагол изменения в описании"
+  },
+  "/v1/pricing-strategy/products/list": {
+   "class": "READ",
+   "deprecated": false,
+   "http": "POST",
+   "reason": "геттер с глаголом чтения"
+  },
+  "/v1/pricing-strategy/status": {
+   "class": "MUTATION",
+   "deprecated": false,
+   "http": "POST",
+   "reason": "«Изменить статус стратегии»"
+  },
+  "/v1/pricing-strategy/strategy-ids-by-product-ids": {
+   "class": "READ",
+   "deprecated": false,
+   "http": "POST",
+   "reason": "глагол чтения в описании"
+  },
+  "/v1/pricing-strategy/update": {
+   "class": "MUTATION",
+   "deprecated": false,
+   "http": "POST",
+   "reason": "глагол изменения в описании"
+  },
+  "/v1/product/action/timer/status": {
+   "class": "READ",
+   "deprecated": false,
+   "http": "POST",
+   "reason": "геттер с глаголом чтения"
+  },
+  "/v1/product/action/timer/update": {
+   "class": "MUTATION",
+   "deprecated": false,
+   "http": "POST",
+   "reason": "глагол изменения в описании"
+  },
+  "/v1/product/archive": {
+   "class": "MUTATION",
+   "deprecated": false,
+   "http": "POST",
+   "reason": "глагол изменения в описании"
+  },
+  "/v1/product/attributes/update": {
+   "class": "MUTATION",
+   "deprecated": false,
+   "http": "POST",
+   "reason": "глагол изменения в описании"
+  },
+  "/v1/product/certificate/accordance-types": {
+   "class": "READ",
+   "deprecated": false,
+   "http": "GET",
+   "reason": "глагол чтения в описании"
+  },
+  "/v1/product/certificate/bind": {
+   "class": "MUTATION",
+   "deprecated": false,
+   "http": "POST",
+   "reason": "глагол изменения в описании"
+  },
+  "/v1/product/certificate/create": {
+   "class": "MUTATION",
+   "deprecated": true,
+   "http": "POST",
+   "reason": "глагол изменения в описании"
+  },
+  "/v1/product/certificate/delete": {
+   "class": "MUTATION",
+   "deprecated": false,
+   "http": "POST",
+   "reason": "глагол изменения в описании"
+  },
+  "/v1/product/certificate/info": {
+   "class": "READ",
+   "deprecated": false,
+   "http": "POST",
+   "reason": "геттер с глаголом чтения"
+  },
+  "/v1/product/certificate/list": {
+   "class": "READ",
+   "deprecated": false,
+   "http": "POST",
+   "reason": "геттер с глаголом чтения"
+  },
+  "/v1/product/certificate/product_status/list": {
+   "class": "READ",
+   "deprecated": false,
+   "http": "POST",
+   "reason": "геттер с глаголом чтения"
+  },
+  "/v1/product/certificate/products/list": {
+   "class": "READ",
+   "deprecated": false,
+   "http": "POST",
+   "reason": "геттер с глаголом чтения"
+  },
+  "/v1/product/certificate/rejection_reasons/list": {
+   "class": "READ",
+   "deprecated": false,
+   "http": "POST",
+   "reason": "геттер с глаголом чтения"
+  },
+  "/v1/product/certificate/status/list": {
+   "class": "READ",
+   "deprecated": false,
+   "http": "POST",
+   "reason": "геттер с глаголом чтения"
+  },
+  "/v1/product/certificate/types": {
+   "class": "READ",
+   "deprecated": false,
+   "http": "GET",
+   "reason": "геттер с глаголом чтения"
+  },
+  "/v1/product/certificate/unbind": {
+   "class": "MUTATION",
+   "deprecated": false,
+   "http": "POST",
+   "reason": "глагол изменения в описании"
+  },
+  "/v1/product/certification/list": {
+   "class": "READ",
+   "deprecated": false,
+   "http": "POST",
+   "reason": "геттер с глаголом чтения"
+  },
+  "/v1/product/digital/stocks/import": {
+   "class": "MUTATION",
+   "deprecated": false,
+   "http": "POST",
+   "reason": "глагол изменения в описании"
+  },
+  "/v1/product/import-by-sku": {
+   "class": "MUTATION",
+   "deprecated": false,
+   "http": "POST",
+   "reason": "глагол изменения в описании"
+  },
+  "/v1/product/import/info": {
+   "class": "READ",
+   "deprecated": false,
+   "http": "POST",
+   "reason": "геттер с глаголом чтения"
+  },
+  "/v1/product/import/prices": {
+   "class": "MUTATION",
+   "deprecated": false,
+   "http": "POST",
+   "reason": "глагол изменения в описании"
+  },
+  "/v1/product/info/description": {
+   "class": "READ",
+   "deprecated": false,
+   "http": "POST",
+   "reason": "глагол чтения в описании"
+  },
+  "/v1/product/info/discounted": {
+   "class": "READ",
+   "deprecated": false,
+   "http": "POST",
+   "reason": "глагол чтения в описании"
+  },
+  "/v1/product/info/stocks-by-warehouse/fbo": {
+   "class": "READ",
+   "deprecated": false,
+   "http": "POST",
+   "reason": "глагол чтения в описании"
+  },
+  "/v1/product/info/stocks-by-warehouse/fbs": {
+   "class": "READ",
+   "deprecated": false,
+   "http": "POST",
+   "reason": "глагол чтения в описании"
+  },
+  "/v1/product/info/subscription": {
+   "class": "READ",
+   "deprecated": false,
+   "http": "POST",
+   "reason": "глагол чтения в описании"
+  },
+  "/v1/product/info/warehouse/stocks": {
+   "class": "READ",
+   "deprecated": false,
+   "http": "POST",
+   "reason": "глагол чтения в описании"
+  },
+  "/v1/product/info/wrong-volume": {
+   "class": "READ",
+   "deprecated": false,
+   "http": "POST",
+   "reason": "глагол чтения в описании"
+  },
+  "/v1/product/pictures/import": {
+   "class": "MUTATION",
+   "deprecated": true,
+   "http": "POST",
+   "reason": "глагол изменения в описании"
+  },
+  "/v1/product/placement-zone/info": {
+   "class": "READ",
+   "deprecated": false,
+   "http": "POST",
+   "reason": "геттер с глаголом чтения"
+  },
+  "/v1/product/prices/details": {
+   "class": "READ",
+   "deprecated": false,
+   "http": "POST",
+   "reason": "глагол чтения в описании"
+  },
+  "/v1/product/rating-by-sku": {
+   "class": "READ",
+   "deprecated": false,
+   "http": "POST",
+   "reason": "глагол чтения в описании"
+  },
+  "/v1/product/related-sku/get": {
+   "class": "READ",
+   "deprecated": false,
+   "http": "POST",
+   "reason": "геттер с глаголом чтения"
+  },
+  "/v1/product/stairway-discount/by-quantity/get": {
+   "class": "READ",
+   "deprecated": false,
+   "http": "POST",
+   "reason": "геттер с глаголом чтения"
+  },
+  "/v1/product/stairway-discount/by-quantity/set": {
+   "class": "MUTATION",
+   "deprecated": false,
+   "http": "POST",
+   "reason": "признак изменения в пути"
+  },
+  "/v1/product/unarchive": {
+   "class": "MUTATION",
+   "deprecated": false,
+   "http": "POST",
+   "reason": "глагол изменения в описании"
+  },
+  "/v1/product/update/discount": {
+   "class": "MUTATION",
+   "deprecated": false,
+   "http": "POST",
+   "reason": "глагол изменения в описании"
+  },
+  "/v1/product/update/offer-id": {
+   "class": "MUTATION",
+   "deprecated": false,
+   "http": "POST",
+   "reason": "глагол изменения в описании"
+  },
+  "/v1/product/visibility/info": {
+   "class": "READ",
+   "deprecated": false,
+   "http": "POST",
+   "reason": "геттер с глаголом чтения"
+  },
+  "/v1/product/visibility/set": {
+   "class": "MUTATION",
+   "deprecated": false,
+   "http": "POST",
+   "reason": "признак изменения в пути"
+  },
+  "/v1/question/answer/create": {
+   "class": "MUTATION",
+   "deprecated": false,
+   "http": "POST",
+   "reason": "глагол изменения в описании"
+  },
+  "/v1/question/answer/delete": {
+   "class": "MUTATION",
+   "deprecated": false,
+   "http": "POST",
+   "reason": "глагол изменения в описании"
+  },
+  "/v1/question/answer/list": {
+   "class": "READ",
+   "deprecated": false,
+   "http": "POST",
+   "reason": "геттер с глаголом чтения"
+  },
+  "/v1/question/change-status": {
+   "class": "MUTATION",
+   "deprecated": false,
+   "http": "POST",
+   "reason": "глагол изменения в описании"
+  },
+  "/v1/question/count": {
+   "class": "READ",
+   "deprecated": false,
+   "http": "POST",
+   "reason": "геттер с глаголом чтения"
+  },
+  "/v1/question/info": {
+   "class": "READ",
+   "deprecated": false,
+   "http": "POST",
+   "reason": "геттер с глаголом чтения"
+  },
+  "/v1/question/list": {
+   "class": "READ",
+   "deprecated": false,
+   "http": "POST",
+   "reason": "геттер с глаголом чтения"
+  },
+  "/v1/question/top-sku": {
+   "class": "READ",
+   "deprecated": false,
+   "http": "POST",
+   "reason": "геттер с глаголом чтения"
+  },
+  "/v1/rating/history": {
+   "class": "READ",
+   "deprecated": false,
+   "http": "POST",
+   "reason": "геттер с глаголом чтения"
+  },
+  "/v1/rating/index/fbs/info": {
+   "class": "READ",
+   "deprecated": false,
+   "http": "POST",
+   "reason": "геттер с глаголом чтения"
+  },
+  "/v1/rating/index/fbs/posting/list": {
+   "class": "READ",
+   "deprecated": false,
+   "http": "POST",
+   "reason": "геттер с глаголом чтения"
+  },
+  "/v1/rating/summary": {
+   "class": "READ",
+   "deprecated": false,
+   "http": "POST",
+   "reason": "геттер с глаголом чтения"
+  },
+  "/v1/receipts/get": {
+   "class": "READ",
+   "deprecated": false,
+   "http": "POST",
+   "reason": "геттер с глаголом чтения"
+  },
+  "/v1/receipts/seller/list": {
+   "class": "READ",
+   "deprecated": false,
+   "http": "POST",
+   "reason": "геттер с глаголом чтения"
+  },
+  "/v1/receipts/upload": {
+   "class": "MUTATION",
+   "deprecated": false,
+   "http": "POST",
+   "reason": "глагол изменения в описании"
+  },
+  "/v1/removal/from-stock/list": {
+   "class": "READ",
+   "deprecated": false,
+   "http": "POST",
+   "reason": "геттер с глаголом чтения"
+  },
+  "/v1/removal/from-supply/list": {
+   "class": "READ",
+   "deprecated": false,
+   "http": "POST",
+   "reason": "геттер с глаголом чтения"
+  },
+  "/v1/report/discounted/create": {
+   "class": "REPORT",
+   "deprecated": false,
+   "http": "POST",
+   "reason": "заказ отчёта"
+  },
+  "/v1/report/info": {
+   "class": "READ",
+   "deprecated": false,
+   "http": "POST",
+   "reason": "геттер с глаголом чтения"
+  },
+  "/v1/report/list": {
+   "class": "READ",
+   "deprecated": false,
+   "http": "POST",
+   "reason": "геттер с глаголом чтения"
+  },
+  "/v1/report/marked-products-sales/create": {
+   "class": "REPORT",
+   "deprecated": false,
+   "http": "POST",
+   "reason": "заказ отчёта"
+  },
+  "/v1/report/placement/by-products/create": {
+   "class": "REPORT",
+   "deprecated": false,
+   "http": "POST",
+   "reason": "заказ отчёта"
+  },
+  "/v1/report/placement/by-supplies/create": {
+   "class": "REPORT",
+   "deprecated": false,
+   "http": "POST",
+   "reason": "заказ отчёта"
+  },
+  "/v1/report/postings/create": {
+   "class": "REPORT",
+   "deprecated": false,
+   "http": "POST",
+   "reason": "заказ отчёта"
+  },
+  "/v1/report/products/create": {
+   "class": "REPORT",
+   "deprecated": false,
+   "http": "POST",
+   "reason": "заказ отчёта"
+  },
+  "/v1/report/realization/posting/create": {
+   "class": "REPORT",
+   "deprecated": false,
+   "http": "POST",
+   "reason": "заказ отчёта"
+  },
+  "/v1/report/warehouse/stock": {
+   "class": "READ",
+   "deprecated": false,
+   "http": "POST",
+   "reason": "глагол чтения в описании"
+  },
+  "/v1/return/giveout/barcode": {
+   "class": "READ",
+   "deprecated": false,
+   "http": "POST",
+   "reason": "получение штрихкода возвратной отгрузки"
+  },
+  "/v1/return/giveout/barcode-reset": {
+   "class": "MUTATION",
+   "deprecated": false,
+   "http": "POST",
+   "reason": "сбрасывает штрихкод"
+  },
+  "/v1/return/giveout/get-pdf": {
+   "class": "READ",
+   "deprecated": false,
+   "http": "POST",
+   "reason": "файл возвратной отгрузки"
+  },
+  "/v1/return/giveout/get-png": {
+   "class": "READ",
+   "deprecated": false,
+   "http": "POST",
+   "reason": "файл возвратной отгрузки"
+  },
+  "/v1/return/giveout/info": {
+   "class": "READ",
+   "deprecated": false,
+   "http": "POST",
+   "reason": "геттер с глаголом чтения"
+  },
+  "/v1/return/giveout/is-enabled": {
+   "class": "READ",
+   "deprecated": false,
+   "http": "POST",
+   "reason": "признак включения"
+  },
+  "/v1/return/giveout/list": {
+   "class": "READ",
+   "deprecated": false,
+   "http": "POST",
+   "reason": "геттер с глаголом чтения"
+  },
+  "/v1/return/pass/create": {
+   "class": "MUTATION",
+   "deprecated": false,
+   "http": "POST",
+   "reason": "глагол изменения в описании"
+  },
+  "/v1/return/pass/delete": {
+   "class": "MUTATION",
+   "deprecated": false,
+   "http": "POST",
+   "reason": "глагол изменения в описании"
+  },
+  "/v1/return/pass/update": {
+   "class": "MUTATION",
+   "deprecated": false,
+   "http": "POST",
+   "reason": "глагол изменения в описании"
+  },
+  "/v1/returns/company/fbs/info": {
+   "class": "READ",
+   "deprecated": false,
+   "http": "POST",
+   "reason": "геттер с глаголом чтения"
+  },
+  "/v1/returns/list": {
+   "class": "READ",
+   "deprecated": false,
+   "http": "POST",
+   "reason": "геттер с глаголом чтения"
+  },
+  "/v1/returns/rfbs/action/set": {
+   "class": "MUTATION",
+   "deprecated": false,
+   "http": "POST",
+   "reason": "глагол изменения в описании"
+  },
+  "/v1/returns/settings/utilization/history": {
+   "class": "READ",
+   "deprecated": false,
+   "http": "POST",
+   "reason": "геттер с глаголом чтения"
+  },
+  "/v1/returns/settings/utilization/info": {
+   "class": "READ",
+   "deprecated": false,
+   "http": "POST",
+   "reason": "геттер с глаголом чтения"
+  },
+  "/v1/returns/settings/utilization/update": {
+   "class": "MUTATION",
+   "deprecated": false,
+   "http": "POST",
+   "reason": "глагол изменения в описании"
+  },
+  "/v1/review/change-status": {
+   "class": "MUTATION",
+   "deprecated": true,
+   "http": "POST",
+   "reason": "глагол изменения в описании"
+  },
+  "/v1/review/comment/create": {
+   "class": "MUTATION",
+   "deprecated": false,
+   "http": "POST",
+   "reason": "признак изменения в пути"
+  },
+  "/v1/review/comment/delete": {
+   "class": "MUTATION",
+   "deprecated": true,
+   "http": "POST",
+   "reason": "глагол изменения в описании"
+  },
+  "/v1/review/comment/list": {
+   "class": "READ",
+   "deprecated": false,
+   "http": "POST",
+   "reason": "геттер с глаголом чтения"
+  },
+  "/v1/review/count": {
+   "class": "READ",
+   "deprecated": true,
+   "http": "POST",
+   "reason": "геттер с глаголом чтения"
+  },
+  "/v1/review/info": {
+   "class": "READ",
+   "deprecated": true,
+   "http": "POST",
+   "reason": "геттер с глаголом чтения"
+  },
+  "/v1/review/list": {
+   "class": "READ",
+   "deprecated": true,
+   "http": "POST",
+   "reason": "геттер с глаголом чтения"
+  },
+  "/v1/roles": {
+   "class": "READ",
+   "deprecated": false,
+   "http": "POST",
+   "reason": "инспекция самого ключа"
+  },
+  "/v1/search-queries/text": {
+   "class": "READ",
+   "deprecated": false,
+   "http": "POST",
+   "reason": "глагол чтения в описании"
+  },
+  "/v1/search-queries/top": {
+   "class": "READ",
+   "deprecated": false,
+   "http": "POST",
+   "reason": "глагол чтения в описании"
+  },
+  "/v1/seller-actions/archive": {
+   "class": "MUTATION",
+   "deprecated": false,
+   "http": "POST",
+   "reason": "глагол изменения в описании"
+  },
+  "/v1/seller-actions/change-activity": {
+   "class": "MUTATION",
+   "deprecated": false,
+   "http": "POST",
+   "reason": "глагол изменения в описании"
+  },
+  "/v1/seller-actions/create/discount": {
+   "class": "MUTATION",
+   "deprecated": false,
+   "http": "POST",
+   "reason": "глагол изменения в описании"
+  },
+  "/v1/seller-actions/create/discount-with-condition": {
+   "class": "MUTATION",
+   "deprecated": false,
+   "http": "POST",
+   "reason": "глагол изменения в описании"
+  },
+  "/v1/seller-actions/create/installment": {
+   "class": "MUTATION",
+   "deprecated": false,
+   "http": "POST",
+   "reason": "глагол изменения в описании"
+  },
+  "/v1/seller-actions/create/multi-level-discount": {
+   "class": "MUTATION",
+   "deprecated": false,
+   "http": "POST",
+   "reason": "глагол изменения в описании"
+  },
+  "/v1/seller-actions/create/voucher": {
+   "class": "MUTATION",
+   "deprecated": false,
+   "http": "POST",
+   "reason": "глагол изменения в описании"
+  },
+  "/v1/seller-actions/list": {
+   "class": "READ",
+   "deprecated": false,
+   "http": "POST",
+   "reason": "геттер с глаголом чтения"
+  },
+  "/v1/seller-actions/products/add": {
+   "class": "MUTATION",
+   "deprecated": false,
+   "http": "POST",
+   "reason": "глагол изменения в описании"
+  },
+  "/v1/seller-actions/products/candidates": {
+   "class": "READ",
+   "deprecated": false,
+   "http": "POST",
+   "reason": "глагол чтения в описании"
+  },
+  "/v1/seller-actions/products/delete": {
+   "class": "MUTATION",
+   "deprecated": false,
+   "http": "POST",
+   "reason": "глагол изменения в описании"
+  },
+  "/v1/seller-actions/products/list": {
+   "class": "READ",
+   "deprecated": false,
+   "http": "POST",
+   "reason": "геттер с глаголом чтения"
+  },
+  "/v1/seller-actions/update/discount": {
+   "class": "MUTATION",
+   "deprecated": false,
+   "http": "POST",
+   "reason": "глагол изменения в описании"
+  },
+  "/v1/seller-actions/update/discount-with-condition": {
+   "class": "MUTATION",
+   "deprecated": false,
+   "http": "POST",
+   "reason": "глагол изменения в описании"
+  },
+  "/v1/seller-actions/update/installment": {
+   "class": "MUTATION",
+   "deprecated": false,
+   "http": "POST",
+   "reason": "глагол изменения в описании"
+  },
+  "/v1/seller-actions/update/multi-level-discount": {
+   "class": "MUTATION",
+   "deprecated": false,
+   "http": "POST",
+   "reason": "глагол изменения в описании"
+  },
+  "/v1/seller-actions/update/voucher": {
+   "class": "MUTATION",
+   "deprecated": false,
+   "http": "POST",
+   "reason": "глагол изменения в описании"
+  },
+  "/v1/seller-actions/voucher/get": {
+   "class": "READ",
+   "deprecated": false,
+   "http": "POST",
+   "reason": "геттер с глаголом чтения"
+  },
+  "/v1/seller/info": {
+   "class": "READ",
+   "deprecated": false,
+   "http": "POST",
+   "reason": "геттер с глаголом чтения"
+  },
+  "/v1/seller/ozon-logistics/info": {
+   "class": "READ",
+   "deprecated": false,
+   "http": "POST",
+   "reason": "геттер с глаголом чтения"
+  },
+  "/v1/supplier/available_warehouses": {
+   "class": "READ",
+   "deprecated": false,
+   "http": "GET",
+   "reason": "глагол чтения в описании"
+  },
+  "/v1/supply-order/act/accept": {
+   "class": "MUTATION",
+   "deprecated": false,
+   "http": "POST",
+   "reason": "глагол изменения в описании"
+  },
+  "/v1/supply-order/act/accept/status": {
+   "class": "READ",
+   "deprecated": false,
+   "http": "POST",
+   "reason": "геттер с глаголом чтения"
+  },
+  "/v1/supply-order/act/product/get": {
+   "class": "READ",
+   "deprecated": false,
+   "http": "POST",
+   "reason": "геттер с глаголом чтения"
+  },
+  "/v1/supply-order/act/summary/get": {
+   "class": "READ",
+   "deprecated": false,
+   "http": "POST",
+   "reason": "геттер с глаголом чтения"
+  },
+  "/v1/supply-order/bundle": {
+   "class": "READ",
+   "deprecated": false,
+   "http": "POST",
+   "reason": "глагол чтения в описании"
+  },
+  "/v1/supply-order/cancel": {
+   "class": "MUTATION",
+   "deprecated": false,
+   "http": "POST",
+   "reason": "глагол изменения в описании"
+  },
+  "/v1/supply-order/cancel/status": {
+   "class": "READ",
+   "deprecated": false,
+   "http": "POST",
+   "reason": "геттер с глаголом чтения"
+  },
+  "/v1/supply-order/content/update": {
+   "class": "MUTATION",
+   "deprecated": false,
+   "http": "POST",
+   "reason": "признак изменения в пути"
+  },
+  "/v1/supply-order/content/update/status": {
+   "class": "READ",
+   "deprecated": false,
+   "http": "POST",
+   "reason": "геттер с глаголом чтения"
+  },
+  "/v1/supply-order/content/update/validation": {
+   "class": "MUTATION",
+   "deprecated": false,
+   "http": "POST",
+   "reason": "признак изменения в пути"
+  },
+  "/v1/supply-order/details": {
+   "class": "READ",
+   "deprecated": false,
+   "http": "POST",
+   "reason": "глагол чтения в описании"
+  },
+  "/v1/supply-order/pass/create": {
+   "class": "MUTATION",
+   "deprecated": false,
+   "http": "POST",
+   "reason": "глагол изменения в описании"
+  },
+  "/v1/supply-order/pass/status": {
+   "class": "READ",
+   "deprecated": false,
+   "http": "POST",
+   "reason": "геттер с глаголом чтения"
+  },
+  "/v1/supply-order/status/counter": {
+   "class": "READ",
+   "deprecated": false,
+   "http": "POST",
+   "reason": "геттер с глаголом чтения"
+  },
+  "/v1/supply-order/timeslot/get": {
+   "class": "READ",
+   "deprecated": false,
+   "http": "POST",
+   "reason": "геттер с глаголом чтения"
+  },
+  "/v1/supply-order/timeslot/status": {
+   "class": "READ",
+   "deprecated": false,
+   "http": "POST",
+   "reason": "геттер с глаголом чтения"
+  },
+  "/v1/supply-order/timeslot/update": {
+   "class": "MUTATION",
+   "deprecated": false,
+   "http": "POST",
+   "reason": "глагол изменения в описании"
+  },
+  "/v1/warehouse/archive": {
+   "class": "MUTATION",
+   "deprecated": false,
+   "http": "POST",
+   "reason": "глагол изменения в описании"
+  },
+  "/v1/warehouse/erfbs/aggregator/create": {
+   "class": "MUTATION",
+   "deprecated": false,
+   "http": "POST",
+   "reason": "глагол изменения в описании"
+  },
+  "/v1/warehouse/erfbs/aggregator/delivery-method/update": {
+   "class": "MUTATION",
+   "deprecated": false,
+   "http": "POST",
+   "reason": "глагол изменения в описании"
+  },
+  "/v1/warehouse/erfbs/non-integrated/create": {
+   "class": "MUTATION",
+   "deprecated": false,
+   "http": "POST",
+   "reason": "глагол изменения в описании"
+  },
+  "/v1/warehouse/erfbs/non-integrated/delivery-method/update": {
+   "class": "MUTATION",
+   "deprecated": false,
+   "http": "POST",
+   "reason": "глагол изменения в описании"
+  },
+  "/v1/warehouse/erfbs/update": {
+   "class": "MUTATION",
+   "deprecated": false,
+   "http": "POST",
+   "reason": "глагол изменения в описании"
+  },
+  "/v1/warehouse/fbo/list": {
+   "class": "READ",
+   "deprecated": false,
+   "http": "POST",
+   "reason": "геттер с глаголом чтения"
+  },
+  "/v1/warehouse/fbo/seller/list": {
+   "class": "READ",
+   "deprecated": false,
+   "http": "POST",
+   "reason": "геттер с глаголом чтения"
+  },
+  "/v1/warehouse/fbs/create": {
+   "class": "MUTATION",
+   "deprecated": false,
+   "http": "POST",
+   "reason": "глагол изменения в описании"
+  },
+  "/v1/warehouse/fbs/create/drop-off/list": {
+   "class": "READ",
+   "deprecated": false,
+   "http": "POST",
+   "reason": "геттер с глаголом чтения"
+  },
+  "/v1/warehouse/fbs/create/drop-off/timeslot/list": {
+   "class": "READ",
+   "deprecated": false,
+   "http": "POST",
+   "reason": "геттер с глаголом чтения"
+  },
+  "/v1/warehouse/fbs/create/pick-up/timeslot/list": {
+   "class": "READ",
+   "deprecated": false,
+   "http": "POST",
+   "reason": "геттер с глаголом чтения"
+  },
+  "/v1/warehouse/fbs/create/return-point/list": {
+   "class": "READ",
+   "deprecated": false,
+   "http": "POST",
+   "reason": "геттер с глаголом чтения"
+  },
+  "/v1/warehouse/fbs/first-mile/update": {
+   "class": "MUTATION",
+   "deprecated": false,
+   "http": "POST",
+   "reason": "глагол изменения в описании"
+  },
+  "/v1/warehouse/fbs/pickup/courier/cancel": {
+   "class": "MUTATION",
+   "deprecated": false,
+   "http": "POST",
+   "reason": "глагол изменения в описании"
+  },
+  "/v1/warehouse/fbs/pickup/courier/create": {
+   "class": "MUTATION",
+   "deprecated": false,
+   "http": "POST",
+   "reason": "глагол изменения в описании"
+  },
+  "/v1/warehouse/fbs/pickup/history/list": {
+   "class": "READ",
+   "deprecated": false,
+   "http": "POST",
+   "reason": "геттер с глаголом чтения"
+  },
+  "/v1/warehouse/fbs/pickup/planning/list": {
+   "class": "READ",
+   "deprecated": false,
+   "http": "POST",
+   "reason": "геттер с глаголом чтения"
+  },
+  "/v1/warehouse/fbs/return-mile/check": {
+   "class": "READ",
+   "deprecated": false,
+   "http": "POST",
+   "reason": "проверка возвратной мили без записи"
+  },
+  "/v1/warehouse/fbs/return-mile/info": {
+   "class": "READ",
+   "deprecated": false,
+   "http": "POST",
+   "reason": "геттер с глаголом чтения"
+  },
+  "/v1/warehouse/fbs/update": {
+   "class": "MUTATION",
+   "deprecated": false,
+   "http": "POST",
+   "reason": "глагол изменения в описании"
+  },
+  "/v1/warehouse/fbs/update/drop-off/list": {
+   "class": "READ",
+   "deprecated": false,
+   "http": "POST",
+   "reason": "геттер с глаголом чтения"
+  },
+  "/v1/warehouse/fbs/update/drop-off/timeslot/list": {
+   "class": "READ",
+   "deprecated": false,
+   "http": "POST",
+   "reason": "геттер с глаголом чтения"
+  },
+  "/v1/warehouse/fbs/update/pick-up/timeslot/list": {
+   "class": "READ",
+   "deprecated": false,
+   "http": "POST",
+   "reason": "геттер с глаголом чтения"
+  },
+  "/v1/warehouse/fbs/update/return-point/list": {
+   "class": "READ",
+   "deprecated": false,
+   "http": "POST",
+   "reason": "геттер с глаголом чтения"
+  },
+  "/v1/warehouse/invalid-products/get": {
+   "class": "READ",
+   "deprecated": false,
+   "http": "POST",
+   "reason": "геттер с глаголом чтения"
+  },
+  "/v1/warehouse/list": {
+   "class": "READ",
+   "deprecated": false,
+   "http": "POST",
+   "reason": "геттер с глаголом чтения"
+  },
+  "/v1/warehouse/operation/status": {
+   "class": "READ",
+   "deprecated": false,
+   "http": "POST",
+   "reason": "геттер с глаголом чтения"
+  },
+  "/v1/warehouse/ozon/list": {
+   "class": "READ",
+   "deprecated": false,
+   "http": "POST",
+   "reason": "геттер с глаголом чтения"
+  },
+  "/v1/warehouse/rfbs/pause": {
+   "class": "MUTATION",
+   "deprecated": false,
+   "http": "POST",
+   "reason": "ставит склад на паузу"
+  },
+  "/v1/warehouse/rfbs/return-point/list": {
+   "class": "READ",
+   "deprecated": false,
+   "http": "POST",
+   "reason": "геттер с глаголом чтения"
+  },
+  "/v1/warehouse/rfbs/unpause": {
+   "class": "MUTATION",
+   "deprecated": false,
+   "http": "POST",
+   "reason": "снимает склад с паузы"
+  },
+  "/v1/warehouse/unarchive": {
+   "class": "MUTATION",
+   "deprecated": false,
+   "http": "POST",
+   "reason": "глагол изменения в описании"
+  },
+  "/v1/warehouse/warehouses-with-invalid-products": {
+   "class": "READ",
+   "deprecated": false,
+   "http": "POST",
+   "reason": "глагол чтения в описании"
+  },
+  "/v2/actions/auto-add/products/candidates": {
+   "class": "READ",
+   "deprecated": false,
+   "http": "POST",
+   "reason": "глагол чтения в описании"
+  },
+  "/v2/actions/auto-add/products/delete": {
+   "class": "MUTATION",
+   "deprecated": false,
+   "http": "POST",
+   "reason": "глагол изменения в описании"
+  },
+  "/v2/actions/auto-add/products/list": {
+   "class": "READ",
+   "deprecated": false,
+   "http": "POST",
+   "reason": "геттер с глаголом чтения"
+  },
+  "/v2/actions/auto-add/products/update": {
+   "class": "MUTATION",
+   "deprecated": false,
+   "http": "POST",
+   "reason": "глагол изменения в описании"
+  },
+  "/v2/actions/candidates": {
+   "class": "READ",
+   "deprecated": false,
+   "http": "POST",
+   "reason": "глагол чтения в описании"
+  },
+  "/v2/actions/discounts-task/list": {
+   "class": "READ",
+   "deprecated": false,
+   "http": "POST",
+   "reason": "геттер с глаголом чтения"
+  },
+  "/v2/actions/products": {
+   "class": "READ",
+   "deprecated": false,
+   "http": "POST",
+   "reason": "глагол чтения в описании"
+  },
+  "/v2/actions/products/deactivate": {
+   "class": "MUTATION",
+   "deprecated": false,
+   "http": "POST",
+   "reason": "глагол изменения в описании"
+  },
+  "/v2/analytics/stock_on_warehouses": {
+   "class": "READ",
+   "deprecated": false,
+   "http": "POST",
+   "reason": "глагол чтения в описании"
+  },
+  "/v2/cargoes/create/info": {
+   "class": "READ",
+   "deprecated": false,
+   "http": "POST",
+   "reason": "геттер с глаголом чтения"
+  },
+  "/v2/cargoes/delete": {
+   "class": "MUTATION",
+   "deprecated": false,
+   "http": "POST",
+   "reason": "глагол изменения в описании"
+  },
+  "/v2/cargoes/delete/status": {
+   "class": "READ",
+   "deprecated": false,
+   "http": "POST",
+   "reason": "геттер с глаголом чтения"
+  },
+  "/v2/cargoes/get": {
+   "class": "READ",
+   "deprecated": false,
+   "http": "POST",
+   "reason": "геттер с глаголом чтения"
+  },
+  "/v2/carriage/delivery/list": {
+   "class": "READ",
+   "deprecated": false,
+   "http": "POST",
+   "reason": "геттер с глаголом чтения"
+  },
+  "/v2/chat/read": {
+   "class": "MUTATION",
+   "deprecated": false,
+   "http": "POST",
+   "reason": "отмечает сообщения прочитанными"
+  },
+  "/v2/cluster/list": {
+   "class": "READ",
+   "deprecated": false,
+   "http": "POST",
+   "reason": "геттер с глаголом чтения"
+  },
+  "/v2/conditional-cancellation/approve": {
+   "class": "MUTATION",
+   "deprecated": false,
+   "http": "POST",
+   "reason": "глагол изменения в описании"
+  },
+  "/v2/conditional-cancellation/list": {
+   "class": "READ",
+   "deprecated": false,
+   "http": "POST",
+   "reason": "геттер с глаголом чтения"
+  },
+  "/v2/conditional-cancellation/reject": {
+   "class": "MUTATION",
+   "deprecated": false,
+   "http": "POST",
+   "reason": "глагол изменения в описании"
+  },
+  "/v2/delivery-method/list": {
+   "class": "READ",
+   "deprecated": false,
+   "http": "POST",
+   "reason": "геттер с глаголом чтения"
+  },
+  "/v2/delivery/checkout": {
+   "class": "READ",
+   "deprecated": false,
+   "http": "POST",
+   "reason": "глагол чтения в описании"
+  },
+  "/v2/draft/create/info": {
+   "class": "READ",
+   "deprecated": false,
+   "http": "POST",
+   "reason": "геттер с глаголом чтения"
+  },
+  "/v2/draft/supply/create": {
+   "class": "MUTATION",
+   "deprecated": false,
+   "http": "POST",
+   "reason": "глагол изменения в описании"
+  },
+  "/v2/draft/supply/create/status": {
+   "class": "READ",
+   "deprecated": false,
+   "http": "POST",
+   "reason": "геттер с глаголом чтения"
+  },
+  "/v2/draft/timeslot/info": {
+   "class": "READ",
+   "deprecated": false,
+   "http": "POST",
+   "reason": "геттер с глаголом чтения"
+  },
+  "/v2/fbs/posting/delivered": {
+   "class": "MUTATION",
+   "deprecated": false,
+   "http": "POST",
+   "reason": "глагол изменения в описании"
+  },
+  "/v2/fbs/posting/delivering": {
+   "class": "MUTATION",
+   "deprecated": false,
+   "http": "POST",
+   "reason": "глагол изменения в описании"
+  },
+  "/v2/fbs/posting/last-mile": {
+   "class": "MUTATION",
+   "deprecated": false,
+   "http": "POST",
+   "reason": "глагол изменения в описании"
+  },
+  "/v2/fbs/posting/tracking-number/set": {
+   "class": "MUTATION",
+   "deprecated": false,
+   "http": "POST",
+   "reason": "глагол изменения в описании"
+  },
+  "/v2/finance/realization": {
+   "class": "READ",
+   "deprecated": false,
+   "http": "POST",
+   "reason": "глагол чтения в описании"
+  },
+  "/v2/invoice/create-or-update": {
+   "class": "MUTATION",
+   "deprecated": false,
+   "http": "POST",
+   "reason": "глагол изменения в описании"
+  },
+  "/v2/invoice/get": {
+   "class": "READ",
+   "deprecated": false,
+   "http": "POST",
+   "reason": "геттер с глаголом чтения"
+  },
+  "/v2/order/create": {
+   "class": "MUTATION",
+   "deprecated": false,
+   "http": "POST",
+   "reason": "глагол изменения в описании"
+  },
+  "/v2/polygon/bind": {
+   "class": "MUTATION",
+   "deprecated": false,
+   "http": "POST",
+   "reason": "признак изменения в пути"
+  },
+  "/v2/posting/digital/list": {
+   "class": "READ",
+   "deprecated": false,
+   "http": "POST",
+   "reason": "геттер с глаголом чтения"
+  },
+  "/v2/posting/fbo/get": {
+   "class": "READ",
+   "deprecated": false,
+   "http": "POST",
+   "reason": "геттер с глаголом чтения"
+  },
+  "/v2/posting/fbo/list": {
+   "class": "READ",
+   "deprecated": true,
+   "http": "POST",
+   "reason": "геттер с глаголом чтения"
+  },
+  "/v2/posting/fbs/act/check-status": {
+   "class": "READ",
+   "deprecated": false,
+   "http": "POST",
+   "reason": "геттер с глаголом чтения"
+  },
+  "/v2/posting/fbs/act/create": {
+   "class": "MUTATION",
+   "deprecated": false,
+   "http": "POST",
+   "reason": "глагол изменения в описании"
+  },
+  "/v2/posting/fbs/act/get-barcode": {
+   "class": "READ",
+   "deprecated": false,
+   "http": "POST",
+   "reason": "штрихкод акта"
+  },
+  "/v2/posting/fbs/act/get-barcode/text": {
+   "class": "READ",
+   "deprecated": false,
+   "http": "POST",
+   "reason": "штрихкод акта текстом"
+  },
+  "/v2/posting/fbs/act/get-container-labels": {
+   "class": "READ",
+   "deprecated": false,
+   "http": "POST",
+   "reason": "этикетки грузомест"
+  },
+  "/v2/posting/fbs/act/get-pdf": {
+   "class": "READ",
+   "deprecated": false,
+   "http": "POST",
+   "reason": "глагол чтения в описании"
+  },
+  "/v2/posting/fbs/act/get-postings": {
+   "class": "READ",
+   "deprecated": false,
+   "http": "POST",
+   "reason": "глагол чтения в описании"
+  },
+  "/v2/posting/fbs/act/list": {
+   "class": "READ",
+   "deprecated": false,
+   "http": "POST",
+   "reason": "геттер с глаголом чтения"
+  },
+  "/v2/posting/fbs/arbitration": {
+   "class": "MUTATION",
+   "deprecated": false,
+   "http": "POST",
+   "reason": "глагол изменения в описании"
+  },
+  "/v2/posting/fbs/awaiting-delivery": {
+   "class": "MUTATION",
+   "deprecated": false,
+   "http": "POST",
+   "reason": "глагол изменения в описании"
+  },
+  "/v2/posting/fbs/cancel": {
+   "class": "MUTATION",
+   "deprecated": false,
+   "http": "POST",
+   "reason": "глагол изменения в описании"
+  },
+  "/v2/posting/fbs/cancel-reason/list": {
+   "class": "READ",
+   "deprecated": false,
+   "http": "POST",
+   "reason": "справочник причин отмены FBS"
+  },
+  "/v2/posting/fbs/digital/act/check-status": {
+   "class": "READ",
+   "deprecated": true,
+   "http": "POST",
+   "reason": "геттер с глаголом чтения"
+  },
+  "/v2/posting/fbs/digital/act/get-pdf": {
+   "class": "READ",
+   "deprecated": true,
+   "http": "POST",
+   "reason": "глагол чтения в описании"
+  },
+  "/v2/posting/fbs/get-by-barcode": {
+   "class": "READ",
+   "deprecated": false,
+   "http": "POST",
+   "reason": "глагол чтения в описании"
+  },
+  "/v2/posting/fbs/package-label": {
+   "class": "MUTATION",
+   "deprecated": false,
+   "http": "POST",
+   "reason": "признак изменения в пути"
+  },
+  "/v2/posting/fbs/package-label/create": {
+   "class": "MUTATION",
+   "deprecated": false,
+   "http": "POST",
+   "reason": "глагол изменения в описании"
+  },
+  "/v2/posting/fbs/package-label/get": {
+   "class": "READ",
+   "deprecated": false,
+   "http": "POST",
+   "reason": "геттер с глаголом чтения"
+  },
+  "/v2/posting/fbs/product/cancel": {
+   "class": "MUTATION",
+   "deprecated": false,
+   "http": "POST",
+   "reason": "глагол изменения в описании"
+  },
+  "/v2/posting/fbs/product/country/list": {
+   "class": "READ",
+   "deprecated": false,
+   "http": "POST",
+   "reason": "геттер с глаголом чтения"
+  },
+  "/v2/posting/fbs/product/country/set": {
+   "class": "MUTATION",
+   "deprecated": false,
+   "http": "POST",
+   "reason": "глагол изменения в описании"
+  },
+  "/v2/product/certificate/accordance-types/list": {
+   "class": "READ",
+   "deprecated": false,
+   "http": "GET",
+   "reason": "геттер с глаголом чтения"
+  },
+  "/v2/product/certificate/create": {
+   "class": "MUTATION",
+   "deprecated": false,
+   "http": "POST",
+   "reason": "глагол изменения в описании"
+  },
+  "/v2/product/certification/list": {
+   "class": "READ",
+   "deprecated": false,
+   "http": "POST",
+   "reason": "геттер с глаголом чтения"
+  },
+  "/v2/product/certification/options": {
+   "class": "READ",
+   "deprecated": false,
+   "http": "POST",
+   "reason": "глагол чтения в описании"
+  },
+  "/v2/product/certification/params": {
+   "class": "READ",
+   "deprecated": false,
+   "http": "POST",
+   "reason": "глагол чтения в описании"
+  },
+  "/v2/product/info/stocks-by-warehouse/fbs": {
+   "class": "READ",
+   "deprecated": false,
+   "http": "POST",
+   "reason": "глагол чтения в описании"
+  },
+  "/v2/product/pictures/import": {
+   "class": "MUTATION",
+   "deprecated": false,
+   "http": "POST",
+   "reason": "глагол изменения в описании"
+  },
+  "/v2/product/pictures/info": {
+   "class": "READ",
+   "deprecated": false,
+   "http": "POST",
+   "reason": "геттер с глаголом чтения"
+  },
+  "/v2/products/delete": {
+   "class": "MUTATION",
+   "deprecated": false,
+   "http": "POST",
+   "reason": "глагол изменения в описании"
+  },
+  "/v2/products/stocks": {
+   "class": "MUTATION",
+   "deprecated": false,
+   "http": "POST",
+   "reason": "«Обновить количество товаров на складах»"
+  },
+  "/v2/report/returns/create": {
+   "class": "REPORT",
+   "deprecated": false,
+   "http": "POST",
+   "reason": "заказ отчёта"
+  },
+  "/v2/returns/rfbs/get": {
+   "class": "READ",
+   "deprecated": false,
+   "http": "POST",
+   "reason": "геттер с глаголом чтения"
+  },
+  "/v2/returns/rfbs/list": {
+   "class": "READ",
+   "deprecated": false,
+   "http": "POST",
+   "reason": "геттер с глаголом чтения"
+  },
+  "/v2/review/change-status": {
+   "class": "MUTATION",
+   "deprecated": false,
+   "http": "POST",
+   "reason": "глагол изменения в описании"
+  },
+  "/v2/review/comment/delete": {
+   "class": "MUTATION",
+   "deprecated": false,
+   "http": "POST",
+   "reason": "глагол изменения в описании"
+  },
+  "/v2/review/count": {
+   "class": "READ",
+   "deprecated": false,
+   "http": "POST",
+   "reason": "геттер с глаголом чтения"
+  },
+  "/v2/review/info": {
+   "class": "READ",
+   "deprecated": false,
+   "http": "POST",
+   "reason": "геттер с глаголом чтения"
+  },
+  "/v2/review/list": {
+   "class": "READ",
+   "deprecated": false,
+   "http": "POST",
+   "reason": "геттер с глаголом чтения"
+  },
+  "/v2/supply-order/timeslot/list": {
+   "class": "READ",
+   "deprecated": false,
+   "http": "POST",
+   "reason": "геттер с глаголом чтения"
+  },
+  "/v2/warehouse/list": {
+   "class": "READ",
+   "deprecated": false,
+   "http": "POST",
+   "reason": "геттер с глаголом чтения"
+  },
+  "/v3/chat/history": {
+   "class": "READ",
+   "deprecated": false,
+   "http": "POST",
+   "reason": "геттер с глаголом чтения"
+  },
+  "/v3/chat/list": {
+   "class": "READ",
+   "deprecated": false,
+   "http": "POST",
+   "reason": "геттер с глаголом чтения"
+  },
+  "/v3/finance/transaction/list": {
+   "class": "READ",
+   "deprecated": false,
+   "http": "POST",
+   "reason": "геттер с глаголом чтения"
+  },
+  "/v3/finance/transaction/totals": {
+   "class": "READ",
+   "deprecated": false,
+   "http": "POST",
+   "reason": "итоги транзакций"
+  },
+  "/v3/posting/fbo/list": {
+   "class": "READ",
+   "deprecated": false,
+   "http": "POST",
+   "reason": "геттер с глаголом чтения"
+  },
+  "/v3/posting/fbs/get": {
+   "class": "READ",
+   "deprecated": false,
+   "http": "POST",
+   "reason": "геттер с глаголом чтения"
+  },
+  "/v3/posting/fbs/list": {
+   "class": "READ",
+   "deprecated": true,
+   "http": "POST",
+   "reason": "геттер с глаголом чтения"
+  },
+  "/v3/posting/fbs/package-label/create": {
+   "class": "MUTATION",
+   "deprecated": false,
+   "http": "POST",
+   "reason": "глагол изменения в описании"
+  },
+  "/v3/posting/fbs/unfulfilled/list": {
+   "class": "READ",
+   "deprecated": true,
+   "http": "POST",
+   "reason": "геттер с глаголом чтения"
+  },
+  "/v3/posting/multiboxqty/set": {
+   "class": "MUTATION",
+   "deprecated": false,
+   "http": "POST",
+   "reason": "глагол изменения в описании"
+  },
+  "/v3/product/import": {
+   "class": "MUTATION",
+   "deprecated": false,
+   "http": "POST",
+   "reason": "глагол изменения в описании"
+  },
+  "/v3/product/info/list": {
+   "class": "READ",
+   "deprecated": false,
+   "http": "POST",
+   "reason": "геттер с глаголом чтения"
+  },
+  "/v3/product/list": {
+   "class": "READ",
+   "deprecated": false,
+   "http": "POST",
+   "reason": "геттер с глаголом чтения"
+  },
+  "/v3/supply-order/get": {
+   "class": "READ",
+   "deprecated": false,
+   "http": "POST",
+   "reason": "геттер с глаголом чтения"
+  },
+  "/v3/supply-order/list": {
+   "class": "READ",
+   "deprecated": false,
+   "http": "POST",
+   "reason": "геттер с глаголом чтения"
+  },
+  "/v4/posting/fbs/list": {
+   "class": "READ",
+   "deprecated": false,
+   "http": "POST",
+   "reason": "геттер с глаголом чтения"
+  },
+  "/v4/posting/fbs/ship": {
+   "class": "MUTATION",
+   "deprecated": false,
+   "http": "POST",
+   "reason": "глагол изменения в описании"
+  },
+  "/v4/posting/fbs/ship/package": {
+   "class": "MUTATION",
+   "deprecated": false,
+   "http": "POST",
+   "reason": "признак изменения в пути"
+  },
+  "/v4/posting/fbs/unfulfilled/list": {
+   "class": "READ",
+   "deprecated": false,
+   "http": "POST",
+   "reason": "геттер с глаголом чтения"
+  },
+  "/v4/product/info/attributes": {
+   "class": "READ",
+   "deprecated": false,
+   "http": "POST",
+   "reason": "глагол чтения в описании"
+  },
+  "/v4/product/info/limit": {
+   "class": "READ",
+   "deprecated": false,
+   "http": "POST",
+   "reason": "глагол чтения в описании"
+  },
+  "/v4/product/info/stocks": {
+   "class": "READ",
+   "deprecated": false,
+   "http": "POST",
+   "reason": "глагол чтения в описании"
+  },
+  "/v5/fbs/posting/product/exemplar/status": {
+   "class": "READ",
+   "deprecated": false,
+   "http": "POST",
+   "reason": "геттер с глаголом чтения"
+  },
+  "/v5/fbs/posting/product/exemplar/validate": {
+   "class": "READ",
+   "deprecated": false,
+   "http": "POST",
+   "reason": "проверка кодов маркировки без записи"
+  },
+  "/v5/product/info/prices": {
+   "class": "READ",
+   "deprecated": false,
+   "http": "POST",
+   "reason": "глагол чтения в описании"
+  },
+  "/v6/fbs/posting/product/exemplar/create-or-get": {
+   "class": "MUTATION",
+   "deprecated": false,
+   "http": "POST",
+   "reason": "создаёт экземпляры, если их нет"
+  },
+  "/v6/fbs/posting/product/exemplar/set": {
+   "class": "MUTATION",
+   "deprecated": false,
+   "http": "POST",
+   "reason": "признак изменения в пути"
+  }
+ },
+ "schema_version": 1,
+ "spec_date": "2026-09-28",
+ "spec_sha256": "bded1920fb322a1a6d192eb1edef20a913c9c0c85a5cca3b618b1739918127de"
+}

@@ -57,19 +57,27 @@ def _plan_for(contract, number=NUMBER):
                 {"project": p, "service": a, "disable_on_destroy": False}, {"id": True}) for a in contract["apis"]]
     grants = {o["raw_dataset_key"]: "WRITER", o["ref_dataset_key"]: "READER"}
     dep = contract["sql_deployer"]
+    ctl = contract["control"]
     rcs += [_rc(f'google_bigquery_dataset.this["{k}"]', "google_bigquery_dataset",
                 {"project": p, "dataset_id": ds, "location": "EU",
                  "access": [_acl("OWNER", special_group="projectOwners")]
                            + ([_acl(grants[k], user_by_email=rt)] if k in grants else [])
                            + [_acl(g["role"], user_by_email=dep["email"],
                                    condition=[dict(g["condition"], location="")] if g["condition"] else [])
-                              for g in dep["grants"] if g["dataset_key"] == k]},
+                              for g in dep["grants"] if g["dataset_key"] == k]
+                           + [_acl(g["role"], user_by_email=ctl["email"])
+                              for g in ctl["grants"] if g["dataset_key"] == k]},
                 {"etag": True, "id": True, "access": [{}, {}]})
             for k, ds in contract["datasets"].items()]
     # T4.1: SA деплоера SQL в корне (не в модуле площадки).
     rcs.append(_rc("google_service_account.sql_deployer", "google_service_account",
                    {"project": p, "account_id": dep["account_id"], "email": dep["email"],
                     "member": f"serviceAccount:{dep['email']}"},
+                   {"id": True, "name": True, "unique_id": True}))
+    # T5: SA control plane в корне.
+    rcs.append(_rc("google_service_account.control[0]", "google_service_account",
+                   {"project": p, "account_id": ctl["account_id"], "email": ctl["email"],
+                    "member": f"serviceAccount:{ctl['email']}"},
                    {"id": True, "name": True, "unique_id": True}))
     rcs += [_rc(f'google_bigquery_table.this["{t["dataset_key"]}.{t["table_id"]}"]', "google_bigquery_table",
                 {"project": p, "dataset_id": contract["datasets"][t["dataset_key"]], "table_id": t["table_id"],
@@ -92,6 +100,16 @@ def _plan_for(contract, number=NUMBER):
                        "google_secret_manager_secret_iam_member",
                        {"project": p, "secret_id": sid, "role": "roles/secretmanager.secretAccessor",
                         "member": member}, {"etag": True}, module=m))
+        rcs.append(_rc(f'{m}.google_secret_manager_secret_iam_member.control_access["{role}"]',
+                       "google_secret_manager_secret_iam_member",
+                       {"project": p, "secret_id": sid, "role": "roles/secretmanager.secretAccessor",
+                        "member": f"serviceAccount:{ctl['email']}"}, {"etag": True}, module=m))
+    rcs.append(_rc(f"{m}.google_cloud_run_v2_job.control", "google_cloud_run_v2_job",
+                   {"project": p, "name": ctl["job"]["name"], "location": region, "deletion_protection": True,
+                    "template": [{"template": [{"service_account": ctl["email"], "containers": [{
+                        "image": o["runtime_image"], "command": ["python", "lifecycle.py"], "args": ["status"],
+                        "env": [{"name": k, "value": v} for k, v in ctl["job"]["env"].items()]}]}]}]},
+                   {"uid": True, "etag": True}, module=m))
     for job, spec in o["jobs"].items():
         rcs.append(_rc(f'{m}.google_cloud_run_v2_job.this["{job}"]', "google_cloud_run_v2_job",
                        {"project": p, "name": job, "location": region, "deletion_protection": True,
@@ -116,13 +134,17 @@ def _plan_for(contract, number=NUMBER):
                  for t in ("google_project_service", "google_bigquery_dataset", "google_bigquery_table")]
     root_cfg.append({"address": "google_service_account.sql_deployer", "mode": "managed",
                      "type": "google_service_account", "provider_config_key": "google"})
+    root_cfg.append({"address": "google_service_account.control", "mode": "managed",
+                     "type": "google_service_account", "provider_config_key": "google"})
     # Адреса — как в конфигурации корня infra/tenant (terraform show -json).
     mod_cfg = [{"address": a, "mode": "managed", "type": a.split(".")[0], "provider_config_key": "module.ozon:google",
                 "expressions": {"project": {"references": ["var.project_id"]}}}
                for a in ("google_service_account.runtime", "google_service_account.scheduler",
                          "google_project_iam_member.runtime_job_user", "google_secret_manager_secret.ozon",
                          "google_secret_manager_secret_iam_member.runtime_access",
-                         "google_cloud_run_v2_job.this", "google_cloud_scheduler_job.this")]
+                         "google_secret_manager_secret_iam_member.control_access",
+                         "google_cloud_run_v2_job.this", "google_cloud_run_v2_job.control",
+                         "google_cloud_scheduler_job.this")]
     return {
         "format_version": "1.2", "terraform_version": "1.15.8",
         "variables": {"contract": {"value": contract}},
@@ -147,6 +169,15 @@ def _plan_for(contract, number=NUMBER):
 @pytest.fixture
 def contract():
     return SY.fixture_contract("client_001")
+
+
+def _rcjob(plan, name):
+    return next(r for r in plan["resource_changes"]
+                if r["type"] == "google_cloud_run_v2_job" and r["change"]["after"]["name"] == name)
+
+
+def _jobn(plan, name):
+    return _rcjob(plan, name)["change"]["after"]
 
 
 def _mutated(contract, fn):
@@ -210,6 +241,42 @@ NEGATIVE = {
     "M1 double-encoded platform number": lambda p, c: _first(p, "google_cloud_run_v2_job")["change"]["after"]["template"][0]["template"][0]["containers"][0]["env"].append({"name": "X", "value": "projects%252F777428383056"}),
     "M1 gs:// platform state bucket": lambda p, c: _first(p, "google_cloud_run_v2_job")["change"]["after"]["template"][0]["template"][0]["containers"][0]["env"].append({"name": "S", "value": "gs://mpa-platform-tfstate-777428383056/platform/default.tfstate"}),
     "M1 storage URL platform bucket": lambda p, c: _first(p, "google_cloud_scheduler_job")["change"]["after"]["http_target"][0].update({"uri": "https://storage.googleapis.com/storage/v1/b/mpa-platform-tfstate-777428383056/o/platform%2Fx"}),
+    # Та же ссылка в метке job'а: окружение job'а T5 сверяется с контрактом точно (правило C), и
+    # доказательство нагрузки правил R/M требует поля, которое не видит больше ни одно правило.
+    "M1 label projects/<other tenant number>": lambda p, c: _first(p, "google_cloud_run_v2_job")["change"]["after"].update({"labels": {"x": "projects/210987654321/secrets/ozon-seller-api-key"}}),
+    "M1 label URL-encoded foreign project": lambda p, c: _first(p, "google_cloud_run_v2_job")["change"]["after"].update({"labels": {"x": "projects%2Fmpa-t-client-002%2Fsecrets%2Fx"}}),
+    "M1 label any gs:// bucket": lambda p, c: _first(p, "google_cloud_run_v2_job")["change"]["after"].update({"labels": {"x": "gs://some-bucket/x"}}),
+    # T5 (правило C): control plane и проверка привязки в runtime.
+    "C runtime job without binding flag": lambda p, c: _jobn(p, "ozon-runtime-daily")["template"][0]["template"][0]["containers"][0].update(
+        env=[e for e in _jobn(p, "ozon-runtime-daily")["template"][0]["template"][0]["containers"][0]["env"] if e["name"] != "TENANT_BINDING_REQUIRED"]),
+    "C runtime job runs lifecycle": lambda p, c: _jobn(p, "ozon-runtime-daily")["template"][0]["template"][0]["containers"][0].update(
+        command=["python", "lifecycle.py"]),
+    "C control job as runtime SA": lambda p, c: _jobn(p, "tenant-control")["template"][0]["template"][0].update(
+        service_account=f"sa-ozon-runtime@{c['project_id']}.iam.gserviceaccount.com"),
+    "C runtime job as control SA": lambda p, c: _jobn(p, "ozon-runtime-daily")["template"][0]["template"][0].update(
+        service_account=f"sa-tenant-control@{c['project_id']}.iam.gserviceaccount.com"),
+    "C control job other entrypoint": lambda p, c: _jobn(p, "tenant-control")["template"][0]["template"][0]["containers"][0].update(
+        command=["python", "main.py"]),
+    "C control job binding flag": lambda p, c: _jobn(p, "tenant-control")["template"][0]["template"][0]["containers"][0]["env"].append(
+        {"name": "TENANT_BINDING_REQUIRED", "value": "1"}),
+    "C control job env from secret": lambda p, c: _jobn(p, "tenant-control")["template"][0]["template"][0]["containers"][0]["env"].append(
+        {"name": "K", "value": None, "value_source": [{"secret_key_ref": [{"secret": "ozon-seller-api-key"}]}]}),
+    "C job outside contract": lambda p, c: p["resource_changes"].append(dict(copy.deepcopy(_rcjob(p, "tenant-control")),
+        address='module.ozon[0].google_cloud_run_v2_job.extra', change=dict(copy.deepcopy(_rcjob(p, "tenant-control")["change"]),
+        after=dict(copy.deepcopy(_jobn(p, "tenant-control")), name="tenant-control-2")))),
+    "C control writes ref": lambda p, c: _ds(p, "ref")["change"]["after"]["access"].append(
+        _acl(f"organizations/{PL.ORGANIZATION_ID}/roles/mpaTenantControlAppend", user_by_email=c["control"]["email"])),
+    "C control reads client layer": lambda p, c: _ds(p, "analytics_share")["change"]["after"]["access"].append(
+        _acl(f"organizations/{PL.ORGANIZATION_ID}/roles/mpaSqlSourceRead", user_by_email=c["control"]["email"])),
+    "C control project role jobUser": lambda p, c: p["resource_changes"].append(_rc(
+        "google_project_iam_member.control_job_user", "google_project_iam_member",
+        {"project": c["project_id"], "role": "roles/bigquery.jobUser", "member": f"serviceAccount:{c['control']['email']}"},
+        {"etag": True})),
+    "C control adds secret versions role": lambda p, c: p["resource_changes"].append(_rc(
+        'module.ozon[0].google_secret_manager_secret_iam_member.control_admin["seller_api_key"]',
+        "google_secret_manager_secret_iam_member",
+        {"project": c["project_id"], "secret_id": "ozon-seller-api-key", "role": "roles/secretmanager.secretVersionAdder",
+         "member": f"serviceAccount:{c['control']['email']}"}, {"etag": True}, module="module.ozon[0]")),
     "M1 any gs:// bucket": lambda p, c: _first(p, "google_cloud_run_v2_job")["change"]["after"]["template"][0]["template"][0]["containers"][0]["env"].append({"name": "S", "value": "gs://some-bucket/x"}),
     "M1 gcr.io platform path": lambda p, c: _first(p, "google_cloud_run_v2_job")["change"]["after"]["template"][0]["template"][0]["containers"][0]["env"].append({"name": "I", "value": "eu.gcr.io/mpa-platform/x"}),
     "M1 pkg.dev other project": lambda p, c: _first(p, "google_cloud_run_v2_job")["change"]["after"]["template"][0]["template"][0]["containers"][0].update({"image": "europe-west1-docker.pkg.dev/mpa-t-client-002/r/i@sha256:" + "a" * 64}),
@@ -302,12 +369,17 @@ def test_dataset_acl_in_expected_plan_excludes_provisioner_and_scheduler(contrac
     cond = ("sql-deployer-tenant-ops-views", "Only package views V_*; platform tables of tenant_ops are excluded",
             'resource.type == "bigquery.googleapis.com/Table" && resource.service == "bigquery.googleapis.com" && '
             f'resource.name.startsWith("projects/{P1}/datasets/tenant_ops/tables/V_")')
-    assert want == {"ozon_raw": owners | {("WRITER", "user_by_email", f"sa-ozon-runtime@{P1}.iam.gserviceaccount.com", None), src},
-                    "ref": owners | {("READER", "user_by_email", f"sa-ozon-runtime@{P1}.iam.gserviceaccount.com", None), src},
+    ctl = f"sa-tenant-control@{P1}.iam.gserviceaccount.com"
+    c_src, c_app, c_lease = (f"{r}mpaSqlSourceRead", "user_by_email", ctl, None), \
+        (f"{r}mpaTenantControlAppend", "user_by_email", ctl, None), (f"{r}mpaTenantControlLease", "user_by_email", ctl, None)
+    assert want == {"ozon_raw": owners | {("WRITER", "user_by_email", f"sa-ozon-runtime@{P1}.iam.gserviceaccount.com", None), src, c_src},
+                    "ref": owners | {("READER", "user_by_email", f"sa-ozon-runtime@{P1}.iam.gserviceaccount.com", None), src, c_src},
                     # T4: внутренние слои и клиентский слой — без runtime и без клиента.
                     # T4.1: только деплоер SQL; в analytics_share без чтения строк, в tenant_ops изменение — V_*.
+                    # T5: control читает RAW и ref (без записи), читает и дописывает tenant_ops, арендует в tenant_locks.
                     "ozon_mart": owners | {src, create, upd},
-                    "tenant_ops": owners | {src, create, upd[:3] + (cond,)},
+                    "tenant_ops": owners | {src, create, upd[:3] + (cond,), c_src, c_app},
+                    "tenant_locks": owners | {c_lease},
                     "analytics_share": owners | {create, upd}}
 
 
@@ -339,7 +411,7 @@ def test_refreshed_secret_iam_without_normalization_would_fail(contract, monkeyp
     """Нормализация несёт нагрузку: без неё живой план восстановления T3.3 падал (4 ложные находки)."""
     monkeypatch.setattr(PS, "_iam_target", lambda rtype, after, project: after.get("secret_id") or after.get("project"))
     findings = PS.scan_plan(_refreshed(_plan_for(contract), P1), contract)
-    assert len(findings) == 4 and all("secretAccessor" in f for f in findings)
+    assert len(findings) == 8 and all("secretAccessor" in f for f in findings)     # 4 runtime + 4 control (T5)
 
 
 REFRESHED_SECRET_NEGATIVE = {
@@ -454,9 +526,16 @@ SCANNER_MUTATIONS = {
     "principal allow-list": (lambda mp: (mp.setattr(PS, "expected_iam", lambda c: _Everything()),
                                          mp.setattr(PS, "_PRINCIPAL_PREFIX", re.compile(r"(?!x)x"))),
                              "H1 secret -> allUsers"),
-    "reference parser": (lambda mp: mp.setattr(PS, "_REF_PATTERNS", ()), "M1 projects/<other tenant number>"),
-    "bucket rule": (lambda mp: mp.setattr(PS, "_BUCKET_REF", re.compile(r"(?!x)x")), "M1 any gs:// bucket"),
-    "URL decoding": (lambda mp: mp.setattr(PS, "_decoded_forms", lambda s: [s]), "M1 URL-encoded foreign project"),
+    "reference parser": (lambda mp: mp.setattr(PS, "_REF_PATTERNS", ()), "M1 label projects/<other tenant number>"),
+    "bucket rule": (lambda mp: mp.setattr(PS, "_BUCKET_REF", re.compile(r"(?!x)x")), "M1 label any gs:// bucket"),
+    "URL decoding": (lambda mp: mp.setattr(PS, "_decoded_forms", lambda s: [s]), "M1 label URL-encoded foreign project"),
+    # T5: правило C несёт нагрузку — без него runtime без проверки привязки и control от чужого SA проходят.
+    "job rule C (binding flag)": (lambda mp: mp.setattr(PS, "job_findings", lambda *a: []),
+                                  "C runtime job without binding flag"),
+    "job rule C (control SA)": (lambda mp: mp.setattr(PS, "job_findings", lambda *a: []),
+                                "C control job as runtime SA"),
+    "job rule C (entrypoint)": (lambda mp: mp.setattr(PS, "job_findings", lambda *a: []),
+                                "C control job other entrypoint"),
     "provider allow-list": (lambda mp: mp.setattr(PS, "ALLOWED_PROVIDERS", _Everything()), "M2 unexpected provider"),
     "unknown-value rule": (lambda mp: mp.setattr(PS, "CRITICAL_FIELDS", {}), "M2 unknown image"),
     "invocation rule": (lambda mp: (mp.setattr(PS, "invocation_grants", lambda plan: []),
@@ -496,7 +575,8 @@ def test_base_provisioning_grants_nobody_the_right_to_invoke_cloud_run():
     assert "google_cloud_run_v2_job_iam" not in code
     assert "roles/run." not in code
     members = re.findall(r"(?m)^\s+member\s*=\s*(.+)$", code)
-    assert members and all(m.strip() == "local.runtime_member" for m in members), members
+    # T5: control получает только secretAccessor (правило P сверяет роль); планировщик — ничего.
+    assert members and all(m.strip() in ("local.runtime_member", "local.control_member") for m in members), members
     assert "scheduler_email" not in "".join(members)
 
 

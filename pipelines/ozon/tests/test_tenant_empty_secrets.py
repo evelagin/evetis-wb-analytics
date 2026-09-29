@@ -43,8 +43,27 @@ def _run(env_job):
 
 
 @pytest.mark.parametrize("job", sorted(JOBS))
-def test_job_without_secret_versions_fails_closed_inside_its_own_project(job):
+def test_new_tenant_job_is_rejected_by_binding_before_secrets_and_api(job):
+    """T5: job арендатора (TENANT_BINDING_REQUIRED=1) без подтверждённой владельцем привязки
+    отказывает первым шагом — листает только знаки владельца в ref своего проекта; секретов, HTTP и
+    записи нет."""
+    assert JOBS[job]["env"]["TENANT_BINDING_REQUIRED"] == "1"
     seen, stderr = _run(JOBS[job]["env"])
+    project = CONTRACT["project_id"]
+    assert seen["exit"] == 3
+    assert seen["http"] == [] and seen["secret_paths"] == []
+    assert seen["bq"] == [["list_tables", f"{project}.ref"]]
+    rejected = [l for l in seen["log"] if l.get("event") == "run_rejected"]
+    assert rejected and rejected[0]["binding"] == "seller:UNBOUND"
+    blob = json.dumps(seen) + stderr
+    for m in EVETIS:
+        assert m not in blob, m
+
+
+@pytest.mark.parametrize("job", sorted(JOBS))
+def test_job_without_secret_versions_fails_closed_inside_its_own_project(job):
+    # Слой T3.2 под проверкой привязки: даже без неё пустые секреты не дают ни одного вызова Ozon.
+    seen, stderr = _run({k: v for k, v in JOBS[job]["env"].items() if k != "TENANT_BINDING_REQUIRED"})
     project = CONTRACT["project_id"]
     assert seen["exit"] == 1                                   # прогон упал
     assert seen["http"] == []                                  # к Ozon без ключей не ходили

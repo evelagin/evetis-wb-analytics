@@ -7,4 +7,6 @@ RUN pip install --no-cache-dir -r requirements.txt
 # promo, PR-PROMO-1). Без этой строки образ собирается, но падает при старте
 # с ImportError — то есть отказ проявился бы только в production.
 COPY common.py entities.py main.py promo.py ./
+# T5: identity/привязка (runtime и control), control plane арендатора и политика методов Seller.
+COPY identity.py credentials.py lifecycle.py lifecycle_core.py checkpoints.py history.py quota.py dq.py control_store.py seller_method_policy.json ./
 ENTRYPOINT ["python", "main.py"]

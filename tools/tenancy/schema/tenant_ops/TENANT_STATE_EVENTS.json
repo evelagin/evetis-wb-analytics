@@ -62,6 +62,18 @@
       "mode": "REQUIRED",
       "name": "occurred_at",
       "type": "TIMESTAMP"
+    },
+    {
+      "description": "T5: номер перехода; занят маркером tenant_locks.S_<seq> (порядок — по нему, не по часам)",
+      "mode": "NULLABLE",
+      "name": "seq",
+      "type": "INTEGER"
+    },
+    {
+      "description": "T5: решение владельца ref.OPERATOR_DECISIONS (для рёбер оператора)",
+      "mode": "NULLABLE",
+      "name": "decision_id",
+      "type": "STRING"
     }
   ],
   "table_id": "TENANT_STATE_EVENTS",

@@ -1,5 +1,68 @@
 # CHANGELOG.md
 
+## 2026-09-28 — Tenancy T5: control plane арендатора (`sa-tenant-control`, привязка, автомат, бэкфилл)
+
+EVETIS не меняется: его Terraform, образ `24e3c6d6` и данные не затронуты. Выделенный арендатор
+получает control plane; ничего не применено (STOP BEFORE APPLY).
+
+- **Идентичность `sa-tenant-control`** и job `tenant-control` (тот же образ, `python lifecycle.py`,
+  по умолчанию `status`, расписания нет).
+  - Права — только ACL датасетов (роли организации `mpaSqlSourceRead`, `mpaTenantControlAppend`,
+    `mpaTenantControlLease`) и чтение 4 секретов.
+  - Ни `jobs.create`, ни DML: журналы `tenant_ops` только дописываются.
+- **Runtime** арендатора получает `TENANT_BINDING_REQUIRED=1`: без подтверждённой владельцем
+  привязки он отказывает (выход 3) до секретов и Ozon. При несовпадении отпечатка кабинета — тоже
+  отказ.
+- **Новый датасет `tenant_locks`** — аренда отрезков бэкфилла; таблиц контракта в нём нет.
+- **Изменение колонок** (только NULLABLE в конце, обновление на месте):
+  - `tenant_ops.BACKFILL_CHECKPOINTS` + `plan_hash`, `lease_owner`, `lease_until`,
+    `lease_generation`, `started_at`, `completed_at`, `evidence_json`;
+  - `tenant_ops.DQ_RESULTS` + `severity`.
+  - `tenant_ops.TENANT_STATE_EVENTS` + `seq`, `decision_id` (порядок переходов — номер маркера
+    `tenant_locks.S_<seq>`, не часы).
+- **Новая таблица `ref.OPERATOR_DECISIONS`:** зеркало знаков `ref.OPD_<seq>` (`expect_seq`), а также
+  решения REOPEN_CHUNK и ACCEPT_LIMITATION (`domain`, `boundary_id`).
+  Пишет только владелец; control и runtime только читают.
+- **Пакет SQL 30 → 32:** `tenant_ops.V_CAPABILITY_CURRENT`, `tenant_ops.V_TENANT_STATE_AUDIT`
+  (CHAIN / EDGE / ACTOR / SEQ / PROOF).
+- **`tenant_ops.V_TENANT_STATE_CURRENT` (изменение колонок):** текущее — событие с наибольшим `seq`, а не
+  последнее по `occurred_at` (часы владельца и control различаются). Колонки `seq` и `journal_status`
+  (OK / GAP / DUPLICATE / NO_SEQ) добавлены в конец; прежние колонки и их порядок не менялись.
+- **Политика методов Seller** `seller_method_policy.json` — 481 метод: READ 276, MUTATION 197,
+  REPORT 8; одобренных изменяющих методов нет. Ключ с изменяющим или неизвестным методом, истёкший
+  или без обязательного метода — FAIL.
+- **Инструменты владельца:** `tenant_binding.py` (show / confirm / revoke), `tenant_lifecycle.py`
+  (bootstrap, credentials-inserted, approve-plan, suspend, resume, reopen-chunk). Команды
+  «установить состояние» нет.
+- **Сканер плана, правило C:**
+  - job `tenant-control` исполняется только от control SA, точка входа `lifecycle.py`;
+  - job'ы runtime — только от runtime SA, без переопределения точки входа, с
+    `TENANT_BINDING_REQUIRED=1`;
+  - окружение равно контракту;
+  - блок `control` контракта равен выводу `control_identity.py`.
+- **Сборка образа v2** `infra/tenant/releases/ozon-runtime.v2.cloudbuild.yaml`: новый состав
+  `/app` и отказ control без проекта. v1 не меняется.
+- **По ревью PR #226, 2-й проход:**
+  - полномочия владельца — таблицы-знаки в `ref` (`OPD_<seq>` — решение на номер перехода, `OPH_<n>` —
+    стоп-кран, `OPB_<api>_<n>` — привязка). Их видят control и runtime, а у control нет права
+    создавать таблицы в `ref`;
+  - одобренный план — только в текущем цикле;
+  - решение ACCEPT_LIMITATION;
+  - поиск предела хранения — двоичный.
+- **По ревью PR #226:**
+  - переходы и привязки линеаризуются маркерами `tenant_locks`, так как `tabledata.list` не видит
+    потоковую вставку;
+  - полномочия оператора — только через `ref.OPERATOR_DECISIONS`;
+  - история: REJECTED даёт PARTIAL, начисления ищутся до сегодняшнего дня;
+  - аренды без переиспользования поколений; слот выгрузок Performance;
+  - DQ и Performance проверяются в том же прогоне при переходе в READY.
+- **Предпосылка apply:** роли `mpaTenantControlAppend` и `mpaTenantControlLease` создаёт владелец
+  (`platform_roles.py create-commands control`).
+- **Тесты:**
+  - `pipelines/ozon/tests/test_t5_control_plane.py`, мутации валидаторов 12/12;
+  - `tools/tests/test_tenancy_t5_control.py`;
+  - Terraform: 56 прогонов, мутации 32/32.
+
 ## 2026-09-28 — Tenancy T5-G: блокеры Ozon runtime до ворот учётных данных (строгий режим арендатора)
 
 EVETIS не меняется: его образ 24e3c6d6 заморожен, а новые отказы включаются только флагом

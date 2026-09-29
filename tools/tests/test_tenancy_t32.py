@@ -53,7 +53,8 @@ def test_terraform_inputs_contract_shape_for_client_001():
     assert c["parent_folder"] == PL.TENANTS_FOLDER
     assert c["state"] == {"bucket": PL.STATE_BUCKET, "prefix": "tenants/client_001"}
     assert c["datasets"] == {"ozon_raw": "ozon_raw", "ref": "ref", "ozon_mart": "ozon_mart",
-                             "tenant_ops": "tenant_ops", "analytics_share": "analytics_share"}
+                             "tenant_ops": "tenant_ops", "analytics_share": "analytics_share",
+                                                  "tenant_locks": "tenant_locks"}
     assert c["scheduler_state"] == "PAUSED"
     assert c["labels"] == {"tenant": "client_001", "managed_by": "vts-tenant-infra"}
     ozon = c["marketplaces"]["ozon"]
@@ -154,7 +155,7 @@ def test_entity_table_contract_matches_runtime_source():
 
 def test_every_table_any_entity_needs_has_a_git_schema():
     tables = OC.tables_for(OC.ENTITY_TABLES)
-    assert len(tables["ozon_raw"]) == 21 and len(tables["ref"]) == 5 and len(tables["tenant_ops"]) == 7
+    assert len(tables["ozon_raw"]) == 21 and len(tables["ref"]) == 6 and len(tables["tenant_ops"]) == 7   # T5: + OPERATOR_DECISIONS
     assert OC.tables_for(OC.ENTITY_TABLES, include_platform=False)["ref"] == ["REF_SKU_CHANNEL_MAP"]
     for ds, names in tables.items():
         for t in names:
@@ -178,7 +179,7 @@ def test_client_001_bootstrap_covers_every_table_its_entities_write():
     entities = R.load_tenant("client_001")["marketplaces"]["ozon"]["entities"]
     need = {"OZON_INGESTION_RUNS"} | {t for e in entities for t in OC.ENTITY_TABLES[e]}
     need |= {t for names in OC.PLATFORM_TABLES.values() for t in names}          # T4: таблицы платформы
-    assert have == need and len(have) == 27
+    assert have == need and len(have) == 28           # T5: + ref.OPERATOR_DECISIONS
 
 
 def test_schema_snapshots_are_project_neutral():
@@ -350,6 +351,8 @@ def test_rendered_artifacts_contain_secret_names_only(tmp_path):
                 c = json.loads((tmp_path / TI.CONTRACT_FILE).read_text())["contract"]
                 facts = {PL.STATE_BUCKET, PL.load_runtime_release(REPO)["ozon"]}
                 facts |= {SI.role_name(r) for r in SI.SQL_ROLES}
+                from tools.tenancy import control_identity as CI     # T5: роли control plane
+                facts |= {SI.role_name(r) for r in CI.CONTROL_ROLES}
                 facts.add(SI.view_prefix_condition(c["project_id"], c["datasets"]["tenant_ops"])["expression"])
                 assert values <= facts, finding
     contract = json.loads((tmp_path / TI.CONTRACT_FILE).read_text())["contract"]

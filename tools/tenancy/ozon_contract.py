@@ -78,7 +78,8 @@ ENTITY_REF_TABLES: dict[str, tuple[str, ...]] = {"promo": ("REF_SKU_CHANNEL_MAP"
 #   tenant_ops — операционное состояние: автомат, наблюдения identity, возможности, границы
 #                истории, покрытие, контрольные точки backfill, DQ.
 PLATFORM_TABLES: dict[str, tuple[str, ...]] = {
-    "ref": ("REF_SKU_CHANNEL_MAP", "SELLER_BINDING", "REF_PRODUCT_MASTER", "REF_COGS", "REF_TENANT_ECONOMICS"),
+    "ref": ("REF_SKU_CHANNEL_MAP", "SELLER_BINDING", "REF_PRODUCT_MASTER", "REF_COGS", "REF_TENANT_ECONOMICS",
+            "OPERATOR_DECISIONS"),
     "tenant_ops": ("TENANT_STATE_EVENTS", "SELLER_IDENTITY_OBSERVATIONS", "CAPABILITY_PROFILE",
                    "HISTORY_BOUNDARIES", "DATA_COVERAGE", "BACKFILL_CHECKPOINTS", "DQ_RESULTS"),
 }

@@ -29,7 +29,7 @@
       "type": "DATE"
     },
     {
-      "description": "PLANNED, RUNNING, DONE, FAILED, SKIPPED",
+      "description": "PENDING, RUNNING, DONE, FAILED, REOPENED (только оператор); FAILED_PERMANENT — вывод свёртки, не пишется",
       "mode": "REQUIRED",
       "name": "status",
       "type": "STRING"
@@ -69,6 +69,48 @@
       "mode": "REQUIRED",
       "name": "updated_at",
       "type": "TIMESTAMP"
+    },
+    {
+      "description": "T5: хеш плана бэкфилла (checkpoints.plan_hash), подтверждённого оператором",
+      "mode": "NULLABLE",
+      "name": "plan_hash",
+      "type": "STRING"
+    },
+    {
+      "description": "T5: прогон control, взявший аренду отрезка",
+      "mode": "NULLABLE",
+      "name": "lease_owner",
+      "type": "STRING"
+    },
+    {
+      "description": "T5: срок аренды (таблица tenant_locks.L_<chunk>_<поколение> истекает тогда же)",
+      "mode": "NULLABLE",
+      "name": "lease_until",
+      "type": "TIMESTAMP"
+    },
+    {
+      "description": "T5: поколение аренды; перехват истёкшей — следующее поколение",
+      "mode": "NULLABLE",
+      "name": "lease_generation",
+      "type": "INTEGER"
+    },
+    {
+      "description": "T5: начало попытки (аренда взята)",
+      "mode": "NULLABLE",
+      "name": "started_at",
+      "type": "TIMESTAMP"
+    },
+    {
+      "description": "T5: подтверждение DONE по журналу прогонов runtime",
+      "mode": "NULLABLE",
+      "name": "completed_at",
+      "type": "TIMESTAMP"
+    },
+    {
+      "description": "T5: доказательства версии (выгрузки Performance на отрезок и т. п.), без identity и секретов",
+      "mode": "NULLABLE",
+      "name": "evidence_json",
+      "type": "STRING"
     }
   ],
   "table_id": "BACKFILL_CHECKPOINTS",

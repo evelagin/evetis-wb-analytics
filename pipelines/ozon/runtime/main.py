@@ -82,6 +82,66 @@ def validate_plan(want, since, until, lb_over, today):
     return None
 
 
+ADS_ENTITIES = ("ads_campaigns", "ads_expense_daily", "ads_sku_daily")
+
+
+def binding_gate(want, now):
+    """TENANT_BINDING_REQUIRED=1 (арендатор, T5): загрузка только в подтверждённый кабинет.
+
+    Истина — таблицы-маркеры владельца в ref (tables.list/tables.get консистентны; у runtime READER
+    на ref, писать туда он не может):
+      * ref.OPH_<n> — стоп-кран владельца: последний suspend — отказ;
+      * ref.OPB_<api>_<n> — события привязки; действует последнее (номер, не часы). Отзыв виден сразу.
+    Затем runtime сам снимает отпечаток кабинета в ЭТОМ прогоне (/v1/seller/info + Client-Id) и
+    сверяет его с подтверждённым. Нет подтверждения, отзыв, несовпадение отпечатка — (статус, причина)
+    с отказом до записи данных. Для рекламных сущностей так же проверяется Performance.
+    """
+    import identity as I
+    import lifecycle_core as LCORE
+    client = C.bq()
+    ref = f"{C.PROJECT}.{C.REF_DATASET}"
+    names = [t.table_id for t in client.list_tables(ref)]
+    holds = [n for n in names if LCORE.HOLD_MARKER_RE.match(n)]
+    series = {"OPH": [int(LCORE.HOLD_MARKER_RE.match(n).group(1)) for n in holds]}
+    for api in (I.SELLER, I.PERFORMANCE):
+        series[api] = [int(m.group(2)) for n in names if (m := I.BINDING_MARKER_RE.match(n)) and m.group(1) == api]
+    if any(LCORE.series_gap(v) for v in series.values()):
+        return "tenant:INVALID_OWNER_SIGNS", "серия знаков владельца в ref с пропуском — отказ"
+    if holds:
+        last = max(holds)
+        if LCORE.hold_active([(last, getattr(client.get_table(f"{ref}.{last}"), "labels", None))]):
+            return "tenant:SUSPENDED", "стоп-кран владельца (ref.OPH_*)"
+    need = [I.SELLER] + ([I.PERFORMANCE] if any(e in ADS_ENTITIES for e in want) else [])
+    items = []
+    for api in need:
+        mine = [n for n in names if (m := I.BINDING_MARKER_RE.match(n)) and m.group(1) == api]
+        if mine:
+            t = client.get_table(f"{ref}.{max(mine)}")
+            items.append((max(mine), getattr(t, "labels", None), getattr(t, "description", None)))
+    bindings = {api: I.binding_from_markers(items, api, now) for api in need}
+    for api in need:
+        # Нет действующего подтверждения — отказ ДО секретов и до Ozon (новый арендатор, отзыв).
+        if bindings[api].status != "CONFIRMED":
+            return f"{api}:{bindings[api].status}", bindings[api].reason
+    code, si = C.seller_post("/v1/seller/info", {})
+    fp = None
+    if code == 200:
+        company = (si or {}).get("company") or {}
+        try:
+            fp = I.seller_fingerprint(C.seller_client_id(), company.get("inn"), company.get("ogrn"))
+        except I.IdentityError:
+            fp = None
+    status, reason = I.live_status(bindings[I.SELLER], fp)
+    if status != I.BOUND:
+        return f"seller:{status}", reason
+    if I.PERFORMANCE in need:
+        pfp = I.performance_fingerprint(C.perf_client_id())
+        status, reason = I.live_status(bindings[I.PERFORMANCE], pfp)
+        if status != I.BOUND:
+            return f"performance:{status}", reason
+    return None, "ok"
+
+
 def main():
     run_id = os.environ.get("INGESTION_RUN_ID") or f"rt-{uuid.uuid4()}"
     want = [e for e in os.environ.get("ENTITIES", "").split(",") if e] or list(REGISTRY)
@@ -96,6 +156,13 @@ def main():
         if window_error:
             C.log(event="run_rejected", ingestion_run_id=run_id, reason=window_error)
             sys.exit(2)
+    if os.environ.get("TENANT_BINDING_REQUIRED") == "1":
+        from datetime import datetime, timezone
+        denied, reason = binding_gate(want, datetime.now(timezone.utc))
+        if denied:
+            # Значения identity в журнал не попадают — только статус и причина.
+            C.log(event="run_rejected", ingestion_run_id=run_id, binding=denied, reason=reason)
+            sys.exit(3)
     C.log(event="run_start", ingestion_run_id=run_id, marketplace="OZON",
           entities=want, since=since, until=until)
     ok = failed = 0

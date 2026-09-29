@@ -99,8 +99,10 @@ LABEL_VALUE_RE = re.compile(r"[a-z0-9_-]{0,63}")
 # T4 (2026-09-27): ozon_mart — нормализованный слой и внутренние витрины; tenant_ops —
 # операционное состояние арендатора (identity, возможности, границы истории, покрытие,
 # контрольные точки, DQ); analytics_share — клиентский семантический слой (доступ — T6).
+# T5 (2026-09-28): tenant_locks — таблицы-замки аренды отрезков бэкфилла (control plane, D1).
 DEDICATED_DATASETS = {"ozon_raw": "ozon_raw", "ref": "ref", "ozon_mart": "ozon_mart",
-                      "tenant_ops": "tenant_ops", "analytics_share": "analytics_share"}
+                      "tenant_ops": "tenant_ops", "analytics_share": "analytics_share",
+                      "tenant_locks": "tenant_locks"}
 DEDICATED_OZON_SECRET_IDS = {
     "seller_client_id": "ozon-seller-client-id",
     "seller_api_key": "ozon-seller-api-key",

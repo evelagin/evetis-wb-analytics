@@ -63,6 +63,24 @@ variable "contract" {
         }))
       }))
     })
+    # T5 (D1): control plane арендатора. null — площадок нет (control обслуживает runtime Ozon).
+    control = optional(object({
+      account_id = string
+      email      = string
+      grants = list(object({
+        dataset_key = string
+        role        = string
+        condition = optional(object({
+          title       = string
+          description = string
+          expression  = string
+        }))
+      }))
+      job = object({
+        name = string
+        env  = map(string)
+      })
+    }))
   })
 
   validation {
@@ -100,8 +118,8 @@ variable "contract" {
     # T4: состав датасетов выделенного арендатора фиксирован (tools/tenancy/naming.py).
     # Внутренние: ozon_raw, ref, ozon_mart, tenant_ops. Клиентский слой: analytics_share
     # (доступ клиента — T6; в этом корне клиентских участников нет и сканер их отвергает).
-    condition     = toset(keys(var.contract.datasets)) == toset(["analytics_share", "ozon_mart", "ozon_raw", "ref", "tenant_ops"])
-    error_message = "Датасеты арендатора — ровно ozon_raw, ref, ozon_mart, tenant_ops, analytics_share (naming.DEDICATED_DATASETS)."
+    condition     = toset(keys(var.contract.datasets)) == toset(["analytics_share", "ozon_mart", "ozon_raw", "ref", "tenant_locks", "tenant_ops"])
+    error_message = "Датасеты арендатора — ровно ozon_raw, ref, ozon_mart, tenant_ops, analytics_share, tenant_locks (naming.DEDICATED_DATASETS)."
   }
   validation {
     condition     = alltrue([for t in var.contract.tables : contains(keys(var.contract.datasets), t.dataset_key)])
@@ -138,6 +156,46 @@ variable "contract" {
         "resource.type == \"bigquery.googleapis.com/Table\" && resource.service == \"bigquery.googleapis.com\" && resource.name.startsWith(\"projects/%s/datasets/%s/tables/%s\")",
     var.contract.project_id, var.contract.datasets[local.platform.sql_conditional_dataset], local.platform.sql_view_prefix))])
     error_message = "SQL-деплоер: условие допустимо только на mpaSqlViewUpdate в tenant_ops и только V_*."
+  }
+  validation {
+    # T5 (D1): control plane есть ровно тогда, когда есть runtime Ozon.
+    condition     = (var.contract.marketplaces.ozon == null) == (var.contract.control == null)
+    error_message = "Control plane (sa-tenant-control) обязателен при включённом Ozon и запрещён без него."
+  }
+  validation {
+    condition = var.contract.control == null ? true : (
+      var.contract.control.account_id == local.platform.control_account_id &&
+      var.contract.control.email == "${local.platform.control_account_id}@${var.contract.project_id}.iam.gserviceaccount.com" &&
+    var.contract.control.job.name == local.platform.control_job_name)
+    error_message = "Control: только sa-tenant-control@<проект арендатора> и job tenant-control."
+  }
+  validation {
+    # Ровно утверждённая матрица control: без условий, без повторов, без ozon_mart/analytics_share,
+    # без записи в ozon_raw и ref (привязку подтверждает только владелец).
+    condition = var.contract.control == null ? true : (
+      length(var.contract.control.grants) == length(local.platform.control_grant_matrix) && toset([
+        for g in var.contract.control.grants :
+        "${g.dataset_key}|${trimprefix(g.role, "organizations/${local.platform.organization_id}/roles/")}|${g.condition != null}"
+    ]) == toset(local.platform.control_grant_matrix))
+    error_message = "Control: гранты не равны утверждённой матрице (local.platform.control_grant_matrix)."
+  }
+  validation {
+    # Control сам данные не грузит и привязку не проверяет как runtime; его окружение — только
+    # проект, датасеты, ИМЕНА секретов и сущности.
+    condition = var.contract.control == null ? true : (
+      !contains(keys(var.contract.control.job.env), "TENANT_BINDING_REQUIRED") &&
+      !contains(keys(var.contract.control.job.env), "ENTITIES") &&
+      lookup(var.contract.control.job.env, "GCP_PROJECT_ID", "") == var.contract.project_id &&
+      lookup(var.contract.control.job.env, "TENANT_OPS_DATASET", "") == var.contract.datasets["tenant_ops"] &&
+      lookup(var.contract.control.job.env, "TENANT_LOCKS_DATASET", "") == var.contract.datasets["tenant_locks"] &&
+    lookup(var.contract.control.job.env, "STRICT_PAGE_CAPS", "") == "1")
+    error_message = "Control: окружение tenant-control не соответствует контракту control_identity.job_env."
+  }
+  validation {
+    # T5 (п.3): каждый job runtime грузит только в подтверждённый владельцем кабинет.
+    condition = var.contract.marketplaces.ozon == null ? true : alltrue([
+    for j in values(var.contract.marketplaces.ozon.jobs) : lookup(j.env, "TENANT_BINDING_REQUIRED", "") == "1"])
+    error_message = "Runtime: каждый job Ozon обязан иметь TENANT_BINDING_REQUIRED=1 (проверка привязки кабинета)."
   }
   validation {
     # Образ: только неизменяемый digest в реестре платформы. Нет образа — нет плана.

@@ -188,6 +188,7 @@ def _terraform_contract(doc: dict, repo: Path = REPO) -> dict:
     """
     from tools.tenancy import ozon_contract as OC
     from tools.tenancy import platform as PL
+    from tools.tenancy import control_identity as CI
     from tools.tenancy import sql_identity as SI
 
     tid, db = doc["tenant_id"], doc["data_boundary"]
@@ -206,7 +207,9 @@ def _terraform_contract(doc: dict, repo: Path = REPO) -> dict:
     ozon = doc["marketplaces"]["ozon"]
     entities = list(ozon.get("entities", [])) if ozon["enabled"] else []
     if ozon["enabled"]:
-        base_env = ozon_runtime_env(doc)
+        # T5: выделенный арендатор грузит только в подтверждённый владельцем кабинет
+        # (runtime main.binding_gate). У EVETIS (свой Terraform) переменной нет.
+        base_env = dict(ozon_runtime_env(doc), TENANT_BINDING_REQUIRED="1")
         jobs = {}
         for job, spec in OC.jobs_for(entities).items():
             env = dict(base_env, ENTITIES=",".join(spec["entities"]),
@@ -246,6 +249,9 @@ def _terraform_contract(doc: dict, repo: Path = REPO) -> dict:
         "marketplaces": marketplaces,
         # T4.1: идентичность развёртывания SQL (роли организации только в ACL датасетов арендатора).
         "sql_deployer": SI.contract_block(project_id, dict(sorted(db["datasets"].items()))),
+        # T5 (D1): control plane арендатора — sa-tenant-control и job tenant-control.
+        "control": CI.contract_block(project_id, dict(sorted(db["datasets"].items())),
+                                     ozon_runtime_env(doc), tid, entities) if ozon["enabled"] else None,
     }
 
 

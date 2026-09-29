@@ -438,7 +438,7 @@ def rendered(tmp_path, monkeypatch):
 def test_sql_package_loads_all_views_in_manifest_order(rendered):
     out, env = rendered
     specs = SD.load_package(TENANT, out, CONTRACT_OBJ, env)
-    assert len(specs) == 30 and [s.order for s in specs] == list(range(30))
+    assert len(specs) == 32 and [s.order for s in specs] == list(range(32))     # T5: + 2 VIEW tenant_ops
     assert {s.dataset for s in specs} == {"ozon_mart", "tenant_ops", "analytics_share"}
 
 
@@ -510,7 +510,7 @@ def test_sql_deploy_inserts_views_reads_back_and_verifies(rendered):
     specs = SD.load_package(TENANT, out, CONTRACT_OBJ, env)
     bq = FakeBQ()
     done = SD.deploy(specs, bq, CONTRACT_OBJ["project_id"])
-    assert [op for op, _ in done] == ["insert"] * 30
+    assert [op for op, _ in done] == ["insert"] * 32
     SD.verify_live(specs, bq, CONTRACT_OBJ)
     assert {c[0] for c in bq.calls} <= {"get", "insert", "update"}                 # никаких jobs/ACL/IAM
     again = SD.deploy(specs, bq, CONTRACT_OBJ["project_id"])

@@ -39,6 +39,11 @@ def main():
             return []
 
     class FakeBQ:
+        def list_tables(self, ref):
+            # В ref нового арендатора нет знаков владельца: привязку ещё никто не подтверждал.
+            seen["bq"].append(("list_tables", ref))
+            return []
+
         def get_table(self, ref):
             seen["bq"].append(("get_table", ref))
             return types.SimpleNamespace(schema=[field_cls("ingestion_run_id")])

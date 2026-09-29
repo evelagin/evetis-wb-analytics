@@ -109,7 +109,11 @@ def test_same_code_path_different_configuration(evetis_production, client_001):
 
 
 def test_runtime_has_no_tenant_specific_branches():
-    """Никаких `if tenant == ...`: имя арендатора, его проект и его секреты в коде не встречаются."""
-    forbidden = re.compile(r"client_001|CLIENT_001|mpa-t-|tenant_id|\btenant\s*==")
+    """Никаких `if tenant == ...`: имя арендатора, его проект и его секреты в коде не встречаются.
+
+    T5: control пишет колонку журнала `tenant_id` (TENANT_STATE_EVENTS) — это поле записи, а не
+    ветвление. Запрещены сравнения с идентификатором арендатора и сами идентификаторы.
+    """
+    forbidden = re.compile(r"client_001|CLIENT_001|mpa-t-|\btenant(_id)?\s*[!=]=|[!=]=\s*[\w.\[\]\"']*tenant(_id)?\b")
     for f in RUNTIME.glob("*.py"):
         assert not forbidden.search(f.read_text(encoding="utf-8")), f.name

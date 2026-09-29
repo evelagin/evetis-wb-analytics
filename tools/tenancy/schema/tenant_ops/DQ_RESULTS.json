@@ -105,6 +105,12 @@
       "mode": "NULLABLE",
       "name": "run_id",
       "type": "STRING"
+    },
+    {
+      "description": "T5: INFO, WARNING, BLOCKING; READY невозможен при BLOCKING не PASS",
+      "mode": "NULLABLE",
+      "name": "severity",
+      "type": "STRING"
     }
   ],
   "table_id": "DQ_RESULTS",

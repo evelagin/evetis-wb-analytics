@@ -26,6 +26,10 @@ output "ozon" {
   value = length(module.ozon) == 0 ? null : module.ozon[0].summary
 }
 
+output "control_email" {
+  value = length(google_service_account.control) == 0 ? null : google_service_account.control[0].email
+}
+
 output "sql_deployer_email" {
   value = google_service_account.sql_deployer.email
 }

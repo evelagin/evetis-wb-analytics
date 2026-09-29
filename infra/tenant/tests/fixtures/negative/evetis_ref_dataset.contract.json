@@ -14,11 +14,61 @@
   ],
   "bq_location": "EU",
   "contract_version": 1,
+  "control": {
+    "account_id": "sa-tenant-control",
+    "email": "sa-tenant-control@mpa-t-client-001.iam.gserviceaccount.com",
+    "grants": [
+      {
+        "condition": null,
+        "dataset_key": "ozon_raw",
+        "role": "organizations/1043233412973/roles/mpaSqlSourceRead"
+      },
+      {
+        "condition": null,
+        "dataset_key": "ref",
+        "role": "organizations/1043233412973/roles/mpaSqlSourceRead"
+      },
+      {
+        "condition": null,
+        "dataset_key": "tenant_locks",
+        "role": "organizations/1043233412973/roles/mpaTenantControlLease"
+      },
+      {
+        "condition": null,
+        "dataset_key": "tenant_ops",
+        "role": "organizations/1043233412973/roles/mpaSqlSourceRead"
+      },
+      {
+        "condition": null,
+        "dataset_key": "tenant_ops",
+        "role": "organizations/1043233412973/roles/mpaTenantControlAppend"
+      }
+    ],
+    "job": {
+      "env": {
+        "BQ_LOCATION": "EU",
+        "BQ_RAW_DATASET": "ozon_raw",
+        "BQ_REF_DATASET": "ref",
+        "ENABLED_ENTITIES": "ads_campaigns,ads_expense_daily,ads_sku_daily,catalog,clusters,fbo_postings,finance_accrual,prices,seller_info,stocks,supplies",
+        "GCP_PROJECT_ID": "mpa-t-client-001",
+        "OZON_SECRET_PERF_CLIENT_ID": "ozon-perf-client-id",
+        "OZON_SECRET_PERF_CLIENT_SECRET": "ozon-perf-client-secret",
+        "OZON_SECRET_SELLER_API_KEY": "ozon-seller-api-key",
+        "OZON_SECRET_SELLER_CLIENT_ID": "ozon-seller-client-id",
+        "STRICT_PAGE_CAPS": "1",
+        "TENANT_ID": "client_001",
+        "TENANT_LOCKS_DATASET": "tenant_locks",
+        "TENANT_OPS_DATASET": "tenant_ops"
+      },
+      "name": "tenant-control"
+    }
+  },
   "datasets": {
     "analytics_share": "analytics_share",
     "ozon_mart": "ozon_mart",
     "ozon_raw": "ozon_raw",
     "ref": "evetis_ref",
+    "tenant_locks": "tenant_locks",
     "tenant_ops": "tenant_ops"
   },
   "labels": {
@@ -49,7 +99,8 @@
             "OZON_SECRET_PERF_CLIENT_SECRET": "ozon-perf-client-secret",
             "OZON_SECRET_SELLER_API_KEY": "ozon-seller-api-key",
             "OZON_SECRET_SELLER_CLIENT_ID": "ozon-seller-client-id",
-            "STRICT_PAGE_CAPS": "1"
+            "STRICT_PAGE_CAPS": "1",
+            "TENANT_BINDING_REQUIRED": "1"
           },
           "schedule": "30 6 * * *",
           "scheduler": "ozon-daily",
@@ -70,7 +121,8 @@
             "OZON_SECRET_PERF_CLIENT_SECRET": "ozon-perf-client-secret",
             "OZON_SECRET_SELLER_API_KEY": "ozon-seller-api-key",
             "OZON_SECRET_SELLER_CLIENT_ID": "ozon-seller-client-id",
-            "STRICT_PAGE_CAPS": "1"
+            "STRICT_PAGE_CAPS": "1",
+            "TENANT_BINDING_REQUIRED": "1"
           },
           "schedule": "0 7,13,19 * * *",
           "scheduler": "ozon-fast",
@@ -90,7 +142,8 @@
             "OZON_SECRET_PERF_CLIENT_SECRET": "ozon-perf-client-secret",
             "OZON_SECRET_SELLER_API_KEY": "ozon-seller-api-key",
             "OZON_SECRET_SELLER_CLIENT_ID": "ozon-seller-client-id",
-            "STRICT_PAGE_CAPS": "1"
+            "STRICT_PAGE_CAPS": "1",
+            "TENANT_BINDING_REQUIRED": "1"
           },
           "schedule": "0 5 * * 1",
           "scheduler": "ozon-weekly",
@@ -357,6 +410,17 @@
     },
     {
       "clustering": [
+        "decision_type"
+      ],
+      "dataset_key": "ref",
+      "require_partition_filter": false,
+      "schema_json": "[{\"mode\":\"REQUIRED\",\"name\":\"decision_id\",\"type\":\"STRING\"},{\"mode\":\"REQUIRED\",\"name\":\"decision_type\",\"type\":\"STRING\"},{\"mode\":\"NULLABLE\",\"name\":\"expect_state\",\"type\":\"STRING\"},{\"mode\":\"NULLABLE\",\"name\":\"to_state\",\"type\":\"STRING\"},{\"mode\":\"NULLABLE\",\"name\":\"expect_seq\",\"type\":\"INTEGER\"},{\"mode\":\"NULLABLE\",\"name\":\"plan_hash\",\"type\":\"STRING\"},{\"mode\":\"NULLABLE\",\"name\":\"secret_versions_json\",\"type\":\"STRING\"},{\"mode\":\"NULLABLE\",\"name\":\"chunk_id\",\"type\":\"STRING\"},{\"mode\":\"NULLABLE\",\"name\":\"reopens_run_id\",\"type\":\"STRING\"},{\"mode\":\"NULLABLE\",\"name\":\"domain\",\"type\":\"STRING\"},{\"mode\":\"NULLABLE\",\"name\":\"boundary_id\",\"type\":\"STRING\"},{\"mode\":\"NULLABLE\",\"name\":\"reason\",\"type\":\"STRING\"},{\"mode\":\"REQUIRED\",\"name\":\"actor\",\"type\":\"STRING\"},{\"mode\":\"REQUIRED\",\"name\":\"decided_at\",\"type\":\"TIMESTAMP\"}]",
+      "table_id": "OPERATOR_DECISIONS",
+      "time_partitioning_field": null,
+      "time_partitioning_type": null
+    },
+    {
+      "clustering": [
         "internal_sku"
       ],
       "dataset_key": "ref",
@@ -419,7 +483,7 @@
       ],
       "dataset_key": "tenant_ops",
       "require_partition_filter": false,
-      "schema_json": "[{\"mode\":\"REQUIRED\",\"name\":\"backfill_id\",\"type\":\"STRING\"},{\"mode\":\"REQUIRED\",\"name\":\"entity\",\"type\":\"STRING\"},{\"mode\":\"REQUIRED\",\"name\":\"window_from\",\"type\":\"DATE\"},{\"mode\":\"REQUIRED\",\"name\":\"window_to\",\"type\":\"DATE\"},{\"mode\":\"REQUIRED\",\"name\":\"status\",\"type\":\"STRING\"},{\"mode\":\"REQUIRED\",\"name\":\"attempts\",\"type\":\"INTEGER\"},{\"mode\":\"NULLABLE\",\"name\":\"rows_written\",\"type\":\"INTEGER\"},{\"mode\":\"NULLABLE\",\"name\":\"run_id\",\"type\":\"STRING\"},{\"mode\":\"NULLABLE\",\"name\":\"error_code\",\"type\":\"STRING\"},{\"mode\":\"NULLABLE\",\"name\":\"error_detail\",\"type\":\"STRING\"},{\"mode\":\"REQUIRED\",\"name\":\"updated_at\",\"type\":\"TIMESTAMP\"}]",
+      "schema_json": "[{\"mode\":\"REQUIRED\",\"name\":\"backfill_id\",\"type\":\"STRING\"},{\"mode\":\"REQUIRED\",\"name\":\"entity\",\"type\":\"STRING\"},{\"mode\":\"REQUIRED\",\"name\":\"window_from\",\"type\":\"DATE\"},{\"mode\":\"REQUIRED\",\"name\":\"window_to\",\"type\":\"DATE\"},{\"mode\":\"REQUIRED\",\"name\":\"status\",\"type\":\"STRING\"},{\"mode\":\"REQUIRED\",\"name\":\"attempts\",\"type\":\"INTEGER\"},{\"mode\":\"NULLABLE\",\"name\":\"rows_written\",\"type\":\"INTEGER\"},{\"mode\":\"NULLABLE\",\"name\":\"run_id\",\"type\":\"STRING\"},{\"mode\":\"NULLABLE\",\"name\":\"error_code\",\"type\":\"STRING\"},{\"mode\":\"NULLABLE\",\"name\":\"error_detail\",\"type\":\"STRING\"},{\"mode\":\"REQUIRED\",\"name\":\"updated_at\",\"type\":\"TIMESTAMP\"},{\"mode\":\"NULLABLE\",\"name\":\"plan_hash\",\"type\":\"STRING\"},{\"mode\":\"NULLABLE\",\"name\":\"lease_owner\",\"type\":\"STRING\"},{\"mode\":\"NULLABLE\",\"name\":\"lease_until\",\"type\":\"TIMESTAMP\"},{\"mode\":\"NULLABLE\",\"name\":\"lease_generation\",\"type\":\"INTEGER\"},{\"mode\":\"NULLABLE\",\"name\":\"started_at\",\"type\":\"TIMESTAMP\"},{\"mode\":\"NULLABLE\",\"name\":\"completed_at\",\"type\":\"TIMESTAMP\"},{\"mode\":\"NULLABLE\",\"name\":\"evidence_json\",\"type\":\"STRING\"}]",
       "table_id": "BACKFILL_CHECKPOINTS",
       "time_partitioning_field": "updated_at",
       "time_partitioning_type": "DAY"
@@ -455,7 +519,7 @@
       ],
       "dataset_key": "tenant_ops",
       "require_partition_filter": false,
-      "schema_json": "[{\"mode\":\"REQUIRED\",\"name\":\"result_id\",\"type\":\"STRING\"},{\"mode\":\"REQUIRED\",\"name\":\"check_id\",\"type\":\"STRING\"},{\"mode\":\"NULLABLE\",\"name\":\"period_from\",\"type\":\"DATE\"},{\"mode\":\"NULLABLE\",\"name\":\"period_to\",\"type\":\"DATE\"},{\"mode\":\"NULLABLE\",\"name\":\"metric\",\"type\":\"STRING\"},{\"mode\":\"NULLABLE\",\"name\":\"source_a\",\"type\":\"STRING\"},{\"mode\":\"NULLABLE\",\"name\":\"source_b\",\"type\":\"STRING\"},{\"mode\":\"NULLABLE\",\"name\":\"value_a\",\"type\":\"NUMERIC\"},{\"mode\":\"NULLABLE\",\"name\":\"value_b\",\"type\":\"NUMERIC\"},{\"mode\":\"NULLABLE\",\"name\":\"difference\",\"type\":\"NUMERIC\"},{\"mode\":\"NULLABLE\",\"name\":\"difference_pct\",\"type\":\"NUMERIC\"},{\"mode\":\"NULLABLE\",\"name\":\"tolerance_abs\",\"type\":\"NUMERIC\"},{\"mode\":\"NULLABLE\",\"name\":\"tolerance_pct\",\"type\":\"NUMERIC\"},{\"mode\":\"REQUIRED\",\"name\":\"status\",\"type\":\"STRING\"},{\"mode\":\"NULLABLE\",\"name\":\"explanation\",\"type\":\"STRING\"},{\"mode\":\"REQUIRED\",\"name\":\"evaluated_at\",\"type\":\"TIMESTAMP\"},{\"mode\":\"NULLABLE\",\"name\":\"run_id\",\"type\":\"STRING\"}]",
+      "schema_json": "[{\"mode\":\"REQUIRED\",\"name\":\"result_id\",\"type\":\"STRING\"},{\"mode\":\"REQUIRED\",\"name\":\"check_id\",\"type\":\"STRING\"},{\"mode\":\"NULLABLE\",\"name\":\"period_from\",\"type\":\"DATE\"},{\"mode\":\"NULLABLE\",\"name\":\"period_to\",\"type\":\"DATE\"},{\"mode\":\"NULLABLE\",\"name\":\"metric\",\"type\":\"STRING\"},{\"mode\":\"NULLABLE\",\"name\":\"source_a\",\"type\":\"STRING\"},{\"mode\":\"NULLABLE\",\"name\":\"source_b\",\"type\":\"STRING\"},{\"mode\":\"NULLABLE\",\"name\":\"value_a\",\"type\":\"NUMERIC\"},{\"mode\":\"NULLABLE\",\"name\":\"value_b\",\"type\":\"NUMERIC\"},{\"mode\":\"NULLABLE\",\"name\":\"difference\",\"type\":\"NUMERIC\"},{\"mode\":\"NULLABLE\",\"name\":\"difference_pct\",\"type\":\"NUMERIC\"},{\"mode\":\"NULLABLE\",\"name\":\"tolerance_abs\",\"type\":\"NUMERIC\"},{\"mode\":\"NULLABLE\",\"name\":\"tolerance_pct\",\"type\":\"NUMERIC\"},{\"mode\":\"REQUIRED\",\"name\":\"status\",\"type\":\"STRING\"},{\"mode\":\"NULLABLE\",\"name\":\"explanation\",\"type\":\"STRING\"},{\"mode\":\"REQUIRED\",\"name\":\"evaluated_at\",\"type\":\"TIMESTAMP\"},{\"mode\":\"NULLABLE\",\"name\":\"run_id\",\"type\":\"STRING\"},{\"mode\":\"NULLABLE\",\"name\":\"severity\",\"type\":\"STRING\"}]",
       "table_id": "DQ_RESULTS",
       "time_partitioning_field": "evaluated_at",
       "time_partitioning_type": "DAY"
@@ -489,7 +553,7 @@
       ],
       "dataset_key": "tenant_ops",
       "require_partition_filter": false,
-      "schema_json": "[{\"mode\":\"REQUIRED\",\"name\":\"event_id\",\"type\":\"STRING\"},{\"mode\":\"REQUIRED\",\"name\":\"tenant_id\",\"type\":\"STRING\"},{\"mode\":\"NULLABLE\",\"name\":\"from_state\",\"type\":\"STRING\"},{\"mode\":\"REQUIRED\",\"name\":\"to_state\",\"type\":\"STRING\"},{\"mode\":\"NULLABLE\",\"name\":\"reason_code\",\"type\":\"STRING\"},{\"mode\":\"NULLABLE\",\"name\":\"reason_detail\",\"type\":\"STRING\"},{\"mode\":\"NULLABLE\",\"name\":\"evidence_json\",\"type\":\"STRING\"},{\"mode\":\"REQUIRED\",\"name\":\"actor\",\"type\":\"STRING\"},{\"mode\":\"NULLABLE\",\"name\":\"run_id\",\"type\":\"STRING\"},{\"mode\":\"REQUIRED\",\"name\":\"occurred_at\",\"type\":\"TIMESTAMP\"}]",
+      "schema_json": "[{\"mode\":\"REQUIRED\",\"name\":\"event_id\",\"type\":\"STRING\"},{\"mode\":\"REQUIRED\",\"name\":\"tenant_id\",\"type\":\"STRING\"},{\"mode\":\"NULLABLE\",\"name\":\"from_state\",\"type\":\"STRING\"},{\"mode\":\"REQUIRED\",\"name\":\"to_state\",\"type\":\"STRING\"},{\"mode\":\"NULLABLE\",\"name\":\"reason_code\",\"type\":\"STRING\"},{\"mode\":\"NULLABLE\",\"name\":\"reason_detail\",\"type\":\"STRING\"},{\"mode\":\"NULLABLE\",\"name\":\"evidence_json\",\"type\":\"STRING\"},{\"mode\":\"REQUIRED\",\"name\":\"actor\",\"type\":\"STRING\"},{\"mode\":\"NULLABLE\",\"name\":\"run_id\",\"type\":\"STRING\"},{\"mode\":\"REQUIRED\",\"name\":\"occurred_at\",\"type\":\"TIMESTAMP\"},{\"mode\":\"NULLABLE\",\"name\":\"seq\",\"type\":\"INTEGER\"},{\"mode\":\"NULLABLE\",\"name\":\"decision_id\",\"type\":\"STRING\"}]",
       "table_id": "TENANT_STATE_EVENTS",
       "time_partitioning_field": "occurred_at",
       "time_partitioning_type": "DAY"

@@ -151,6 +151,16 @@
       "dataset": "tenant_ops",
       "name": "V_FINANCE_WINDOW_STATUS",
       "semantic_class": "GENERIC_DERIVED"
+    },
+    {
+      "dataset": "tenant_ops",
+      "name": "V_CAPABILITY_CURRENT",
+      "semantic_class": "GENERIC_DERIVED"
+    },
+    {
+      "dataset": "tenant_ops",
+      "name": "V_TENANT_STATE_AUDIT",
+      "semantic_class": "GENERIC_DERIVED"
     }
   ]
 }

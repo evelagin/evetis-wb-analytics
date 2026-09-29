@@ -54,7 +54,8 @@
             "ref": {"type": "string", "pattern": "^[A-Za-z_][A-Za-z0-9_]{0,1023}$"},
             "ozon_mart": {"type": "string", "pattern": "^[A-Za-z_][A-Za-z0-9_]{0,1023}$"},
             "tenant_ops": {"type": "string", "pattern": "^[A-Za-z_][A-Za-z0-9_]{0,1023}$"},
-            "analytics_share": {"type": "string", "pattern": "^[A-Za-z_][A-Za-z0-9_]{0,1023}$"}
+            "analytics_share": {"type": "string", "pattern": "^[A-Za-z_][A-Za-z0-9_]{0,1023}$"},
+            "tenant_locks": {"type": "string", "pattern": "^[A-Za-z_][A-Za-z0-9_]{0,1023}$"}
           }
         }
       }

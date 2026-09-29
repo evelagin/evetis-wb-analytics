@@ -93,7 +93,8 @@ def test_derivation_is_deterministic_and_normalized():
     assert N.resource_labels("client_001") == {"tenant": "client_001"}
     assert N.expected_ozon_secret_ids("client_001") == N.DEDICATED_OZON_SECRET_IDS
     assert N.expected_datasets("client_001") == {"ozon_raw": "ozon_raw", "ref": "ref", "ozon_mart": "ozon_mart",
-                                                  "tenant_ops": "tenant_ops", "analytics_share": "analytics_share"}
+                                                  "tenant_ops": "tenant_ops", "analytics_share": "analytics_share",
+                                                  "tenant_locks": "tenant_locks"}
 
 
 def test_slug_is_injective_so_distinct_ids_never_share_a_project():

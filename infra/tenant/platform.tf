@@ -25,6 +25,16 @@ locals {
       "ozon_raw|mpaSqlSourceRead|false", "ref|mpaSqlSourceRead|false",
       "tenant_ops|mpaSqlSourceRead|false", "tenant_ops|mpaSqlViewCreate|false", "tenant_ops|mpaSqlViewUpdate|true",
     ]
+    # T5 (D1): control plane арендатора. Роли mpaTenantControl* создаёт владелец (bootstrap
+    # ролей организации); сверяет tools/tests/test_tenancy_control.py с control_identity.py.
+    control_account_id = "sa-tenant-control"
+    control_job_name   = "tenant-control"
+    control_roles      = ["mpaTenantControlAppend", "mpaTenantControlLease"]
+    control_grant_matrix = [
+      "ozon_raw|mpaSqlSourceRead|false", "ref|mpaSqlSourceRead|false",
+      "tenant_locks|mpaTenantControlLease|false",
+      "tenant_ops|mpaSqlSourceRead|false", "tenant_ops|mpaTenantControlAppend|false",
+    ]
   }
 
   # Всё, что не может появиться в конфигурации выделенного арендатора.

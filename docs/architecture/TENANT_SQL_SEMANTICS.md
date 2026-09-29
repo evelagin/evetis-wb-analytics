@@ -39,7 +39,7 @@ P1–P8: `tools/tenancy/sql_package.py`.
 | `ozon_mart.FACT_OZON_SALES_DAILY` | GENERIC_DERIVED | сутки заказа × SKU | заказы и их текущий исход; пустая цена или количество — сумма NULL |
 | `ozon_mart.FACT_OZON_SKU_ECONOMICS_DAILY` | GENERIC_DERIVED | сутки заказа × SKU (доставленные) | выручка продавца, комиссия и расходы со знаком Ozon, себестоимость с покрытием; результат только при полных данных |
 | `ozon_mart.FACT_OZON_STORE_COSTS_DAILY` | GENERIC_DERIVED | сутки начисления × класс × уровень × SKU | все начисления вне экономики доставленных: магазин, товар, недоставленные и незагруженные отправления |
-| `tenant_ops.V_TENANT_STATE_CURRENT` | GENERIC_DERIVED | арендатор | последнее событие автомата |
+| `tenant_ops.V_TENANT_STATE_CURRENT` | GENERIC_DERIVED | арендатор | событие автомата с наибольшим `seq` (не последнее по времени, T5); `journal_status` OK / GAP / DUPLICATE / NO_SEQ |
 | `tenant_ops.V_SELLER_BINDING_STATUS` | GENERIC_DERIVED | API | BOUND / UNBOUND / MISMATCH / NOT_OBSERVED / INVALID_BINDING |
 | `tenant_ops.V_ENTITY_COVERAGE` | GENERIC_DERIVED | сущность | дни по статусам полноты |
 | `tenant_ops.V_DQ_UNRESOLVED_ACCRUALS` | GENERIC_DERIVED | сутки × type_id | начисления вне таксономии или с пустой суммой; `blocking_accruals` |
@@ -47,6 +47,8 @@ P1–P8: `tools/tenancy/sql_package.py`.
 | `tenant_ops.V_DQ_COGS_OVERLAPS` | GENERIC_DERIVED | пара интервалов | пересечения себестоимости продавца |
 | `tenant_ops.V_COVERAGE_DAILY` | GENERIC_DERIVED | сущность × сутки | последняя оценка полноты из `DATA_COVERAGE`; при равенстве — худшая |
 | `tenant_ops.V_FINANCE_WINDOW_STATUS` | GENERIC_DERIVED | дата | полнота начислений от даты до последних оценённых суток и срок созревания продавца |
+| `tenant_ops.V_CAPABILITY_CURRENT` | GENERIC_DERIVED | api, capability | T5: последняя проверка возможности; `is_ok` = AVAILABLE или NOT_APPLICABLE (ровно `lifecycle_core.OK_CAPABILITY`) |
+| `tenant_ops.V_TENANT_STATE_AUDIT` | GENERIC_DERIVED | событие | T5: каждое событие автомата против рёбер и исполнителей `lifecycle_core.EDGES`; CHAIN / EDGE / ACTOR — VIOLATION |
 | `analytics_share.sales_daily` | GENERIC_DERIVED | сутки заказа | продажи магазина; нули только при `COMPLETE` |
 | `analytics_share.orders` | MARKETPLACE_FACT | отправление × SKU | заказы FBO, без данных покупателя, кроме города |
 | `analytics_share.advertising_daily` | MARKETPLACE_FACT | сутки × кампания | отчёт Performance (не биллинг) |

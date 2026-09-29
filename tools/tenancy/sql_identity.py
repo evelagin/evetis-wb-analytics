@@ -89,6 +89,7 @@ GRANT_MATRIX: dict[str, tuple[tuple[str, bool], ...]] = {
     "ozon_mart": ((SOURCE_READ, False), (VIEW_CREATE, False), (VIEW_UPDATE, False)),
     "tenant_ops": ((SOURCE_READ, False), (VIEW_CREATE, False), (VIEW_UPDATE, True)),
     "analytics_share": ((VIEW_CREATE, False), (VIEW_UPDATE, False)),
+    "tenant_locks": (),                     # T5: замки аренды control — деплоеру не нужны
 }
 CONDITIONAL_VIEW_PREFIX = "V_"
 CONDITION_TITLE = "sql-deployer-tenant-ops-views"

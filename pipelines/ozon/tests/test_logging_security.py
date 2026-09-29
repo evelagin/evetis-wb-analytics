@@ -26,7 +26,9 @@ import pytest
 import common as C
 
 RUNTIME = Path(__file__).resolve().parents[1] / "runtime"
-SOURCES = ["common.py", "entities.py", "main.py", "promo.py"]
+# T5: control plane — те же правила: журнал и исключения не получают значений секретов.
+SOURCES = ["common.py", "entities.py", "main.py", "promo.py", "lifecycle.py", "identity.py", "credentials.py",
+           "lifecycle_core.py", "checkpoints.py", "history.py", "quota.py", "dq.py", "control_store.py"]
 
 LOG_SINKS = {"log", "record_run", "_strict_cap", "safe_error_text", "print"}
 CREDENTIAL_SOURCES = {"secret", "seller_headers", "perf_token"}
@@ -80,8 +82,10 @@ def test_the_only_credential_readers_are_known():
     for fn in (n for n in ast.walk(tree) if isinstance(n, ast.FunctionDef)):
         if any(isinstance(c, ast.Call) and _callee(c) == "secret" for c in ast.walk(fn)):
             readers.add(fn.name)
-    assert readers == {"seller_headers", "perf_token"}
-    for name in ("entities.py", "main.py", "promo.py"):
+    # T5: seller_client_id / perf_client_id читают ИДЕНТИФИКАТОРЫ (не секреты) для отпечатка кабинета.
+    assert readers == {"seller_headers", "perf_token", "seller_client_id", "perf_client_id"}
+    for name in ("entities.py", "main.py", "promo.py", "lifecycle.py", "identity.py", "credentials.py",
+                 "lifecycle_core.py", "checkpoints.py", "history.py", "quota.py", "dq.py", "control_store.py"):
         tree = ast.parse((RUNTIME / name).read_text(encoding="utf-8"))
         assert not any(isinstance(c, ast.Call) and _callee(c) == "secret" for c in ast.walk(tree)), name
 

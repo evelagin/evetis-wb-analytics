@@ -14,6 +14,7 @@
       "ref": "ref",
       "ozon_mart": "ozon_mart",
       "tenant_ops": "tenant_ops",
+      "tenant_locks": "tenant_locks",
       "analytics_share": "analytics_share"
     }
   },
