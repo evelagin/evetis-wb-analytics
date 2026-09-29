@@ -77,6 +77,20 @@ Terraform (`infra/terraform/wb_communications.tf`) по-прежнему ука�
 | Способ | `gcloud run services update --image <digest>` — окружение, SA, ingress, `allUsers` не менялись |
 | Откат | `gcloud run services update-traffic evetis-wb-communications --region europe-west1 --to-revisions evetis-wb-communications-00030-67n=100` |
 
+## 1c. Развёртывание 2026-09-28 — main 1.6.1 (D-19b канон + v3 SHADOW выключен + 1.5.3)
+
+Запись добавлена задним числом 2026-09-29 по результатам сверки; сама выкатка выполнена 2026-09-28 17:46 UTC.
+
+| | |
+|---|---|
+| Исходник | `main`, merge-коммит `1e4b912875bbb79e3c2a8ee4c76bde955656cde1` (PR #218 = D-19b 1.6.1 поверх 1.6.0 v3 SHADOW #219 и 1.5.3 WP11 #220) |
+| Сборка | Cloud Build `851d81f6-04de-404a-9ebb-5fdb9e35d987`: `pytest` на `python:3.12-slim` → `docker build`, тег `d19b-1.6.1-1e4b912` |
+| Доказательство | архив исходников сборки: `SOURCE_SHA` = `1e4b912…`; `diff -r services/wb-communications` архив ↔ `git archive 1e4b912` — различий нет |
+| Образ | `…/cloud-run-source-deploy/evetis-wb-communications@sha256:3a8c6c8f2ae3a3baace7e3de83c4c1ae834c357740013d52a1aede5527d22b57` |
+| Ревизия | `evetis-wb-communications-00033-x6m` (100 % трафика); до неё `00032-22j` (`aa55989c…`) |
+| Способ | только образ: env (47 записей, отпечаток одинаков у 00032 и 00033), SA, ресурсы, maxScale, ingress не менялись. `V3_SHADOW_ENABLED` в окружении нет → v3 выключен (`build_v3` → `None`) |
+| Откат | `gcloud run services update-traffic evetis-wb-communications --region europe-west1 --to-revisions evetis-wb-communications-00032-22j=100` |
+
 ## 2. Код в Git ≠ конфигурация в production
 
 **Это главное, что нужно знать перед любым деплоем.**
