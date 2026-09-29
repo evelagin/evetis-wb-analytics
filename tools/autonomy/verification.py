@@ -15,6 +15,10 @@
   * PASS — у КАЖДОГО обязательного workflow последний такой прогон завершён с `success`;
   * FAIL — хоть один завершён иначе; PENDING — какой-то ещё не завершён или не появился.
 
+Привязка PR (до READY_FOR_HUMAN_REVIEW): PR прогона существует, открыт, draft, base = main, не из форка,
+его ветка — ветка кандидата и head — РОВНО опубликованный SHA. Иначе FAIL: зелёный CI другого SHA или
+чужой/подменённый PR не делает кандидата «готовым к ревью».
+
 Подделать это недоверенный job не может: создать прогон workflow нужно `actions: write`,
 а у job'ов, исполняющих модель или код кандидата, его нет. Статусы коммита (`statuses`,
 `checks`) не читаются вообще — их выставить проще, чем запуск.
@@ -22,6 +26,7 @@
 from __future__ import annotations
 
 import json
+import re
 import subprocess
 from datetime import datetime, timedelta, timezone
 
@@ -30,9 +35,32 @@ def _ts(s: str) -> datetime:
     return datetime.fromisoformat(s.replace("Z", "+00:00"))
 
 
+PR_FIELDS = "url,state,isDraft,baseRefName,headRefName,headRefOid,isCrossRepository"
+
+
+def pr_binding(pr: dict | None, pr_url: str | None, head_sha: str, branch: str, base: str = "main",
+               repo: str | None = None) -> list[str]:
+    """Нарушения привязки PR к проверенному кандидату. Пустой список — привязка доказана."""
+    if not pr_url:
+        return ["у прогона нет pr_url"]
+    if repo and not re.fullmatch(rf"https://github\.com/{re.escape(repo)}/pull/[0-9]+", pr_url):
+        return [f"pr_url {pr_url!r} не PR репозитория {repo}"]
+    if not isinstance(pr, dict):
+        return ["PR не прочитан"]
+    checks = [(pr.get("url") == pr_url, f"url {pr.get('url')!r} ≠ {pr_url!r}"),
+              (pr.get("state") == "OPEN", f"состояние {pr.get('state')!r}, нужен OPEN"),
+              (pr.get("isDraft") is True, "PR не draft"),
+              (pr.get("baseRefName") == base, f"base {pr.get('baseRefName')!r} ≠ {base!r}"),
+              (pr.get("isCrossRepository") is False, "PR из форка или признак не получен"),
+              (pr.get("headRefName") == branch, f"ветка {pr.get('headRefName')!r} ≠ {branch!r}"),
+              (pr.get("headRefOid") == head_sha, f"head {str(pr.get('headRefOid'))[:12]} ≠ проверенный {head_sha[:12]}")]
+    return [msg for ok, msg in checks if not ok]
+
+
 def evaluate(required: list[str], runs: dict[str, list[dict]], head_sha: str, branch: str,
-             dispatched_at: str, skew_seconds: int = 120) -> dict:
-    """runs: workflow-файл → список объектов прогона API Actions (`GET …/runs`)."""
+             dispatched_at: str, skew_seconds: int = 120, *, pr: dict | None, pr_url: str | None,
+             repo: str | None = None) -> dict:
+    """runs: workflow-файл → список объектов прогона API Actions (`GET …/runs`); pr — `gh pr view` PR прогона."""
     since = _ts(dispatched_at) - timedelta(seconds=skew_seconds)
     rows, statuses = [], []
     for wf in required:
@@ -56,8 +84,10 @@ def evaluate(required: list[str], runs: dict[str, list[dict]], head_sha: str, br
             row["status"] = "FAIL"
         rows.append(row)
         statuses.append(row["status"])
-    status = "FAIL" if "FAIL" in statuses else "PENDING" if "PENDING" in statuses else "PASS"
+    binding = pr_binding(pr, pr_url, head_sha, branch, repo=repo)
+    status = "FAIL" if "FAIL" in statuses or binding else "PENDING" if "PENDING" in statuses else "PASS"
     return {"status": status, "head_sha": head_sha, "branch": branch, "required": list(required), "runs": rows,
+            "pr_binding": {"status": "FAIL" if binding else "PASS", "problems": binding},
             "decided_by": "verification (deterministic, Actions API)"}
 
 
@@ -69,6 +99,13 @@ def fetch_runs(repo: str, workflow: str, branch: str, head_sha: str) -> list[dic
     return json.loads(out).get("workflow_runs", [])
 
 
+def fetch_pr(repo: str, pr_url: str) -> dict:
+    """Только чтение (`pull-requests: read`)."""
+    out = subprocess.run(["gh", "pr", "view", pr_url, "--repo", repo, "--json", PR_FIELDS],
+                         capture_output=True, text=True, check=True).stdout
+    return json.loads(out)
+
+
 class GitHubVerifier:
     def __init__(self, repo: str, required: list[str]):
         self.repo, self.required = repo, required
@@ -76,7 +113,11 @@ class GitHubVerifier:
     def __call__(self, run: dict) -> dict:
         v = run["verification"]
         runs = {wf: fetch_runs(self.repo, wf, run["branch"], v["head_sha"]) for wf in self.required}
-        return evaluate(self.required, runs, v["head_sha"], run["branch"], v["dispatched_at"])
+        url = run.get("pr_url")
+        own = bool(url) and bool(re.fullmatch(rf"https://github\.com/{re.escape(self.repo)}/pull/[0-9]+", url))
+        pr = fetch_pr(self.repo, url) if own else None          # чужой URL не открываем вовсе
+        return evaluate(self.required, runs, v["head_sha"], run["branch"], v["dispatched_at"],
+                        pr=pr, pr_url=url, repo=self.repo)
 
 
 def timed_out(run: dict, timeout_minutes: int, now: datetime | None = None) -> bool:

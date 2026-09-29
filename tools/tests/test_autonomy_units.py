@@ -181,8 +181,9 @@ def test_dedup_slug_is_stable_valid_and_never_main():
 # ------------------------------------------------------------- публикатор ---
 def test_publisher_refuses_without_ready_gate_and_on_forbidden_content(tmp_path):
     art = tmp_path / "art"; art.mkdir()
-    run = {"branch": "ae/x-12345678", "run_id": "r", "objective_id": "o", "repository_sha": "a" * 40,
-           "production_mutations": 0}
+    from tools.tests.ae_fixtures import closed_run, evidence_for
+    run = closed_run(branch="ae/x-12345678", run_id="r", objective_id="o", repository_sha="a" * 40, audit_status="PASS")
+    run["audit_evidence"] = evidence_for(run)
     pub = GitPublisher(tmp_path, dry_run=True)
     patch = "diff --git a/synthetic/calc.py b/synthetic/calc.py\n"
     (art / "gate.json").write_text(json.dumps({"verdict": "HUMAN_DECISION_REQUIRED"}))
@@ -195,6 +196,8 @@ def test_publisher_refuses_without_ready_gate_and_on_forbidden_content(tmp_path)
         pub.preflight(run, "diff --git a/.github/workflows/x.yml b/.github/workflows/x.yml\n", art)
     with pytest.raises(PublishRefused, match="production"):
         pub.preflight({**run, "production_mutations": 1}, patch, art)
+    with pytest.raises(PublishRefused, match="0 production-мутаций"):
+        pub.preflight({k: v for k, v in run.items() if k != "audit_evidence"}, patch, art)
     assert pub.preflight(run, patch, art) == ["synthetic/calc.py"]
 
 

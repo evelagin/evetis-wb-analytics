@@ -13,6 +13,8 @@ from pathlib import Path
 
 import pytest
 
+from tools.tests.ae_fixtures import clean_audit  # noqa: E402
+
 import ae_fixtures as F  # noqa: E402
 from tools.autonomy.agents import AgentNotPermitted, IntegrityError, NoAgentAdapter, ReplayAdapter, ScriptedAdapter
 from tools.autonomy.evidence import ReplayEvidenceRunner
@@ -36,10 +38,11 @@ class Pipeline:
         shutil.copytree(self.branch.root, root)
         return StateStore(root)
 
-    def orch(self, store, engineer=None, reviewer=None, evidence=None, publisher=None, verifier=None):
+    def orch(self, store, engineer=None, reviewer=None, evidence=None, publisher=None, verifier=None, audit=None):
+        extra = {"audit": audit} if audit is not None else {}
         return Orchestrator(store, self.repo, engineer or NoAgentAdapter(), reviewer or NoAgentAdapter(),
                             evidence or F.SyntheticEvidenceRunner(), self.tmp / "sandboxes", publisher=publisher,
-                            verifier=verifier, trusted_base_ref="main")
+                            verifier=verifier, trusted_base_ref="main", **extra)
 
     def objective(self) -> dict:
         out = self.tmp / "objectives"
@@ -88,6 +91,8 @@ def test_full_pipeline_across_isolated_runners(tmp_path):
     # gate (доверенный): воспроизвести вердикт, решить
     gate = p.orch(p.branch, reviewer=ReplayAdapter(rv_dir, rv_hashes))
     assert gate.advance(run_id)["state"] == "READY_FOR_PR"
+    # audit (доверенный, sa-ae-reader): 0 production-мутаций за всё окно — без него публикации нет
+    assert p.orch(p.branch, audit=clean_audit).trusted_audit(run_id)["audit_status"] == "PASS"
     # publish (доверенный, запись только ae/*)
     pub = GitPublisher(p.repo, dry_run=True)
     run = p.orch(p.branch, publisher=pub).advance(run_id)

@@ -31,6 +31,10 @@ REQUIRED = load_policy()["required_verification"]["workflows"]
 SHA = "a" * 40
 BR = "ae/fix-x-1234abcd"
 T0 = "2026-09-24T10:00:00Z"
+URL = "https://github.com/o/r/pull/7"
+PR = {"url": URL, "state": "OPEN", "isDraft": True, "baseRefName": "main", "headRefName": BR, "headRefOid": SHA,
+      "isCrossRepository": False}
+B = {"pr": PR, "pr_url": URL}
 
 
 def _run_obj(wf, **kw):
@@ -42,26 +46,26 @@ def _run_obj(wf, **kw):
 
 # ------------------------------------------------------------------- решение по прогонам ---
 def test_all_required_success_is_pass():
-    r = evaluate(REQUIRED, {wf: [_run_obj(wf)] for wf in REQUIRED}, SHA, BR, T0)
+    r = evaluate(REQUIRED, {wf: [_run_obj(wf)] for wf in REQUIRED}, SHA, BR, T0, **B)
     assert r["status"] == "PASS" and [x["status"] for x in r["runs"]] == ["PASS"] * len(REQUIRED)
 
 
 def test_one_failure_is_fail():
     runs = {wf: [_run_obj(wf)] for wf in REQUIRED}
     runs[REQUIRED[-1]] = [_run_obj(REQUIRED[-1], conclusion="failure")]
-    assert evaluate(REQUIRED, runs, SHA, BR, T0)["status"] == "FAIL"
+    assert evaluate(REQUIRED, runs, SHA, BR, T0, **B)["status"] == "FAIL"
 
 
 @pytest.mark.parametrize("conclusion", ["cancelled", "timed_out", "skipped", "neutral", "action_required", None])
 def test_anything_but_success_is_not_pass(conclusion):
     runs = {wf: [_run_obj(wf, conclusion=conclusion)] for wf in REQUIRED}
-    assert evaluate(REQUIRED, runs, SHA, BR, T0)["status"] == "FAIL"
+    assert evaluate(REQUIRED, runs, SHA, BR, T0, **B)["status"] == "FAIL"
 
 
 def test_in_progress_or_missing_is_pending():
     runs = {REQUIRED[0]: [_run_obj(REQUIRED[0], status="in_progress", conclusion=None)]}
-    assert evaluate(REQUIRED, runs, SHA, BR, T0)["status"] == "PENDING"
-    assert evaluate(REQUIRED, {}, SHA, BR, T0)["status"] == "PENDING"
+    assert evaluate(REQUIRED, runs, SHA, BR, T0, **B)["status"] == "PENDING"
+    assert evaluate(REQUIRED, {}, SHA, BR, T0, **B)["status"] == "PENDING"
 
 
 @pytest.mark.parametrize("field,value", [
@@ -73,7 +77,7 @@ def test_in_progress_or_missing_is_pending():
 ])
 def test_foreign_green_runs_do_not_count(field, value):
     runs = {wf: [_run_obj(wf, **{field: value})] for wf in REQUIRED}
-    assert evaluate(REQUIRED, runs, SHA, BR, T0)["status"] == "PENDING"
+    assert evaluate(REQUIRED, runs, SHA, BR, T0, **B)["status"] == "PENDING"
 
 
 def test_latest_attempt_decides():
@@ -81,7 +85,7 @@ def test_latest_attempt_decides():
     runs = {w: [_run_obj(w)] for w in REQUIRED}
     runs[wf] = [_run_obj(wf, id=1, conclusion="success", created_at="2026-09-24T10:00:05Z"),
                 _run_obj(wf, id=2, conclusion="failure", created_at="2026-09-24T10:05:00Z")]
-    assert evaluate(REQUIRED, runs, SHA, BR, T0)["status"] == "FAIL"
+    assert evaluate(REQUIRED, runs, SHA, BR, T0, **B)["status"] == "FAIL"
 
 
 # ------------------------------------------------------------------- машина состояний ---
