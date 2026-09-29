@@ -77,6 +77,22 @@ Terraform (`infra/terraform/wb_communications.tf`) по-прежнему ука�
 | Способ | `gcloud run services update --image <digest>` — окружение, SA, ingress, `allUsers` не менялись |
 | Откат | `gcloud run services update-traffic evetis-wb-communications --region europe-west1 --to-revisions evetis-wb-communications-00030-67n=100` |
 
+## 1c. Развёртывание 2026-09-28 — D-19b 1.6.1 из main (текущий production)
+
+| | |
+|---|---|
+| Исходник | `main` = `1e4b912875bbb79e3c2a8ee4c76bde955656cde1` (слияние PR #218; дерево = проверенный `775de12`), точная копия через `git archive` |
+| Версия | 1.6.1: D-19b + закрытый словарь маршрутов поверх 1.6.0 (v3 SHADOW, выключен: `V3_SHADOW_ENABLED` в production нет) и 1.5.3 |
+| Сборка | Cloud Build `851d81f6-04de-404a-9ebb-5fdb9e35d987` (europe-west1): шаг `pytest` на `python:3.12-slim` с закреплёнными версиями — SUCCESS → `docker build` |
+| Образ | `europe-west1-docker.pkg.dev/project-fa311fc0-4d87-4781-986/cloud-run-source-deploy/evetis-wb-communications@sha256:3a8c6c8f2ae3a3baace7e3de83c4c1ae834c357740013d52a1aede5527d22b57` |
+| Ревизия | `evetis-wb-communications-00033-x6m` (100 % трафика); предыдущая `00032-22j` (`sha256:aa55989c…`) |
+| Способ | `gcloud run services update --image <digest>` — окружение (отпечаток до/после одинаков, 47 переменных), SA, ingress, `allUsers`, Scheduler, вебхук Telegram не менялись; `deploy/preflight_env.py --file deploy/env.production.live.yaml` → 0 |
+| Проверка | `instrumentation_ready` (`wbc-audit/1`) на `00033-x6m`; естественный `/poll` 2026-09-29 05:00Z: запрос → `auth_ok` → `mutation_*` → `request_end` по одному trace; потребитель PR #202 — без BLOCKED/FAILED |
+| Откат | `gcloud run services update-traffic evetis-wb-communications --region europe-west1 --to-revisions evetis-wb-communications-00032-22j=100` |
+
+Заголовок §1b называет D-19b «1.6.0» — так было в ветке на момент того развёртывания; в `main` номер 1.6.0 занят
+v3 SHADOW, D-19b выпущен как 1.6.1.
+
 ## 2. Код в Git ≠ конфигурация в production
 
 **Это главное, что нужно знать перед любым деплоем.**
