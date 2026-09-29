@@ -1,5 +1,20 @@
 # CHANGELOG.md
 
+## 2026-09-29 — Tenancy T5: выпуск образа runtime арендатора v2 (control plane)
+
+- `infra/tenant/runtime_release.json` → `…/mpa-runtime/ozon-runtime@sha256:38196a86…`.
+  - Источник — `e52432e` (слияние PR #226).
+  - Сборка Cloud Build `de08a64f` по `ozon-runtime.v2.cloudbuild.yaml` от `sa-runtime-builder`.
+  - Запись провенанса — `infra/tenant/releases/ozon/e52432e.json`.
+- `tools/tenancy/runtime_image_check.py` приведён к контракту T5:
+  - job арендатора без привязки отказывает первым шагом (выход 3, без секретов и HTTP);
+  - слой T3.2 (пустые секреты) проверяется без флага;
+  - добавлена точка входа control.
+
+  Прежний образ `884ee5dd` проверку не проходит (7 отказов) — это отрицательный контроль.
+- Тесты T3.2b: факты выпусков по коммиту-источнику, конфиг сборки и ворота каждого выпуска.
+- Ничего не развёрнуто: client_001 на `884ee5dd`, EVETIS Ozon на `24e3c6d6`.
+
 ## 2026-09-28 — Tenancy T5: control plane арендатора (`sa-tenant-control`, привязка, автомат, бэкфилл)
 
 EVETIS не меняется: его Terraform, образ `24e3c6d6` и данные не затронуты. Выделенный арендатор

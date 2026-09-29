@@ -76,11 +76,28 @@ def test_every_release_record_is_well_formed():
         assert r["build"]["source_object_sha256"] == r["source"]["archive"]["sha256"]
 
 
+# Факты каждого выпуска: коммит-источник, конфиг сборки (неизменяемый по версиям) и шаги-ворота.
+V1_GATES = ["identity", "build", "record", "contents", "fail-closed-without-project"]
+RELEASES_FACTS = {
+    "08f9438": {"commit": "08f9438fd7a49c02d5ee1786ce820d5384a5c944", "config": CONFIG_V1, "gates": V1_GATES},
+    # T5: коммит слияния PR #226 = main на момент сборки; v2 добавляет модули control и их отказ.
+    "e52432e": {"commit": "e52432e7cd4052db76772f1501e3f315bc994645", "config": NEXT_CONFIG,
+                "gates": V1_GATES + ["control-fail-closed-without-project"]},
+}
+
+
+def test_every_release_has_known_facts_and_its_own_config():
+    for path, r in _records().items():
+        f = RELEASES_FACTS[path.stem]
+        assert r["source"]["commit"] == f["commit"], path
+        assert r["build"]["config"] == str(f["config"].relative_to(REPO)), path
+        assert r["build"]["config_sha256"] == hashlib.sha256(f["config"].read_bytes()).hexdigest(), path
+
+
 def test_current_release_is_bound_to_source_build_and_identity():
     r = _current_record()
     assert r["digest"] == _approved().split("@")[1]
-    assert r["source"]["commit"] == "08f9438fd7a49c02d5ee1786ce820d5384a5c944"
-    assert "НЕ текущий main" in r["source"]["note"]                # выпуск — 08f9438, не cea7e2b
+    assert r["source"]["commit"] == RELEASES_FACTS[r["source"]["commit"][:7]]["commit"]
     b = r["build"]
     assert b["mechanism"] == "Cloud Build" and b["project"] == PL.PLATFORM_PROJECT_ID
     assert b["region"] == PL.RUNTIME_REGION and b["status"] == "SUCCESS"
@@ -88,7 +105,7 @@ def test_current_release_is_bound_to_source_build_and_identity():
     assert "@cloudbuild.gserviceaccount.com" not in json.dumps(b)  # не устаревший SA Cloud Build
     assert b["source_object"].startswith(f"gs://{PL.RUNTIME_BUILD_BUCKET}/source/")
     assert b["build_args"] == [] and b["secrets"] == []
-    assert b["config"] == str(CONFIG_V1.relative_to(REPO))
+    assert b["config"] == str(RELEASES_FACTS[r["source"]["commit"][:7]]["config"].relative_to(REPO))
     assert r["image_facts"]["labels"]["org.opencontainers.image.revision"] == r["source"]["commit"]
     assert r["image_facts"]["entrypoint"] == ["python", "main.py"]
 
@@ -132,7 +149,7 @@ def test_build_config_pins_builder_gates_identity_and_takes_no_secrets():
     assert re.findall(r"name: (\S+)", text) and all("@sha256:" in n for n in re.findall(r"name: (\S+)", text))
     assert f"_BUILDER: {PL.RUNTIME_BUILDER_SA}" in text
     ids = re.findall(r"^  - id: (\S+)$", text, flags=re.M)
-    assert ids == ["identity", "build", "record", "contents", "fail-closed-without-project"]
+    assert ids == RELEASES_FACTS[r["source"]["commit"][:7]]["gates"]
     assert 'test "$$who" = "${_BUILDER}"' in text                     # гейт идентичности — до сборки
     # Конфиг — часть провенанса текущего выпуска: менять его можно только вместе с новым выпуском.
     assert hashlib.sha256(_config().read_bytes()).hexdigest() == r["build"]["config_sha256"]
