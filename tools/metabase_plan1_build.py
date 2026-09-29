@@ -58,14 +58,18 @@ def fmt_text(col, pairs):
             for val, color in pairs]
 
 
-def table(key, name, sql, titles, description, formatting=None, pivot=None, decimals=None):
+def table(key, name, sql, titles, description, formatting=None, pivot=None, decimals=None, wrap=(), widths=None):
     cs = {}
     for a, t in titles.items():
         s = {"column_title": t}
         if decimals and a in decimals:
             s["decimals"] = decimals[a]
+        if a in wrap:
+            s["text_wrapping"] = True
         cs[json.dumps(["name", a], ensure_ascii=False)] = s
     viz = {"column_settings": cs, "table.column_formatting": formatting or []}
+    if widths:
+        viz["table.column_widths"] = widths
     if pivot:
         viz.update({"table.pivot": True, "table.pivot_column": pivot[0], "table.cell_column": pivot[1]})
     else:
@@ -113,7 +117,7 @@ s AS (
   FROM e WHERE exception_code = 'INBOUND_HYPOTHETICAL' HAVING COUNT(*) > 0
 )
 SELECT tone, sig, what FROM s ORDER BY o""",
-      {"tone": " ", "sig": "Сигнал", "what": "Что это значит"},
+      {"tone": " ", "sig": "Сигнал", "what": "Что это значит"}, wrap=("what",), description=
       "Главные сигналы для решения: несвежий остаток ФФ, нет утверждённого плана, нехватка товара, поставки без даты, давление срока.")
 
 table("sku_chain", "По каждому товару", f"""SELECT
@@ -126,44 +130,37 @@ table("sku_chain", "По каждому товару", f"""SELECT
     WHEN o.required_units_per_day_to_sell_by IS NOT NULL THEN CAST(CAST(ROUND(o.required_units_per_day_to_sell_by * 30) AS INT64) AS STRING)
     WHEN o.sell_by_date > o.inventory_as_of_date AND o.inventory_position_units > 0
       -- та же формула, что V_SKU_INVENTORY_TARGET_CURRENT (остаток ÷ дни до «продать до»), но на устаревшем остатке — с пометкой
-      THEN CONCAT('≈', CAST(CAST(ROUND(o.inventory_position_units / DATE_DIFF(o.sell_by_date, o.inventory_as_of_date, DAY) * 30) AS INT64) AS STRING),
-                  ' (по устаревшему остатку)')
+      THEN CONCAT('≈', CAST(CAST(ROUND(o.inventory_position_units / DATE_DIFF(o.sell_by_date, o.inventory_as_of_date, DAY) * 30) AS INT64) AS STRING))
     ELSE '—' END AS r_month,
   ROUND(o.proposed_units_horizon) AS p_total,
   ROUND(o.proposed_closing_units_at_horizon_end) AS p_end,
   IF(o.proposed_first_shortfall_month IS NULL, '—', CONCAT('🔴 с ', {MONTH_RU.format(x='o.proposed_first_shortfall_month')})) AS p_short,
-  IF(o.proposed_units_left_at_sell_by > 0, ROUND(o.proposed_units_left_at_sell_by), NULL) AS p_left,
-  CASE o.approved_trajectory_status WHEN 'COMPUTED' THEN 'утверждено' ELSE 'не утверждено' END AS a_status,
-  CONCAT(
-    IF(o.inventory_freshness_status != 'FRESH', '🔴 остаток ФФ устарел  ', ''),
-    IF(o.proposed_first_shortfall_month IS NOT NULL, '🔴 нехватка  ', ''),
-    IF(o.inbound_committed_not_in_trajectory_units > 0, '🟡 поставка без даты  ', ''),
-    IF(o.proposed_units_left_at_sell_by > 0, '🟡 срок годности  ', ''),
-    IF(o.inbound_hypothetical_units > 0, '⚪ возможное производство', '')) AS flags
+  CASE o.approved_trajectory_status WHEN 'COMPUTED' THEN 'да' ELSE 'нет' END AS a_status
 FROM {v('V_PLANNING_SKU_OVERVIEW')} o LEFT JOIN {NAMES} n USING (internal_sku)
 ORDER BY (o.proposed_first_shortfall_month IS NULL), o.proposed_first_shortfall_month, n.nm""",
-      {"name": "Товар", "f_now": "ФАКТ · есть сейчас, шт.", "f_month": "ФАКТ · продаём, шт./мес.",
-       "r_by": "НУЖНО · продать до", "r_month": "НУЖНО · шт./мес.", "p_total": "ПРЕДЛОЖЕНО · продать до 31.03, шт.",
-       "p_end": "ПРЕДЛОЖЕНО · останется на 31.03, шт.", "p_short": "ПРЕДЛОЖЕНО · нехватка",
-       "p_left": "ПРЕДЛОЖЕНО · останется к «продать до», шт.", "a_status": "УТВЕРЖДЕНО", "flags": "Сигналы"},
+      {"name": "Товар", "f_now": "ФАКТ шт.", "f_month": "ФАКТ/мес",
+       "r_by": "НУЖНО до", "r_month": "НУЖНО/мес", "p_total": "ПРЕДЛ. продажи",
+       "p_end": "ПРЕДЛ. остаток", "p_short": "ПРЕДЛ. нехватка",
+       "a_status": "УТВЕРЖДЕНО"},
+      widths=[140, 112, 118, 118, 124, 150, 150, 160, 130], description=
       "Одна строка — один физический товар (наборы разложены на составляющие). Слева направо: сколько есть → как продаём → "
       "сколько нужно → что предлагает система → утверждено ли → что останется. Продаём/нужно — в пересчёте на 30 дней.",
-      formatting=fmt_neg(["p_end"]) + fmt_text("a_status", [("не утверждено", GREY), ("утверждено", GREEN)]))
+      formatting=fmt_neg(["p_end"]))
 
-table("closing_grid", "Остаток на конец месяца · по предложенному плану", f"""SELECT n.nm AS name,
-  FORMAT_DATE('%Y-%m', t.month) AS m, ROUND(t.closing_units) AS val
+table("closing_grid", "Остаток на конец месяца · по предложенному плану", f"""SELECT n.nm AS `Товар`,
+  CONCAT(FORMAT_DATE('%Y-%m', t.month), ' ', ['янв','фев','мар','апр','май','июн','июл','авг','сен','окт','ноя','дек'][OFFSET(EXTRACT(MONTH FROM t.month) - 1)]) AS m, ROUND(t.closing_units) AS val
 FROM {v('V_PLAN_TRAJECTORY_MONTHLY')} t LEFT JOIN {NAMES} n USING (internal_sku)
 WHERE t.trajectory_basis = 'VERSION_SCENARIO' AND t.plan_version = {PROPOSAL}
-ORDER BY name, m""", {"name": "Товар", "m": "Месяц", "val": "Остаток, шт."},
+ORDER BY 1, m""", {"m": "Месяц", "val": "Остаток, шт."},
       "Сколько штук останется на конец каждого месяца, если продавать по предложенному плану. Минус — нехватка "
       "(план не урезается). Подтверждённых поставок сейчас нет, поэтому остаток только убывает. Остаток ФФ устарел — это расчёт, не факт.",
       formatting=fmt_neg(["val"]), pivot=("m", "val"))
 
-table("sales_grid", "Продажи по месяцам · предложено, физ. шт.", f"""SELECT n.nm AS name,
-  FORMAT_DATE('%Y-%m', t.month) AS m, ROUND(t.planned_physical_units) AS val
+table("sales_grid", "Продажи по месяцам · предложено, физ. шт.", f"""SELECT n.nm AS `Товар`,
+  CONCAT(FORMAT_DATE('%Y-%m', t.month), ' ', ['янв','фев','мар','апр','май','июн','июл','авг','сен','окт','ноя','дек'][OFFSET(EXTRACT(MONTH FROM t.month) - 1)]) AS m, ROUND(t.planned_physical_units) AS val
 FROM {v('V_PLAN_TRAJECTORY_MONTHLY')} t LEFT JOIN {NAMES} n USING (internal_sku)
 WHERE t.trajectory_basis = 'VERSION_SCENARIO' AND t.plan_version = {PROPOSAL}
-ORDER BY name, m""", {"name": "Товар", "m": "Месяц", "val": "Продать, шт."},
+ORDER BY 1, m""", {"m": "Месяц", "val": "Продать, шт."},
       "Сколько штук каждого товара предлагается продать в месяц (одиночные + в составе наборов). Текущий месяц — "
       "только остаток до конца месяца за вычетом уже заказанного.", pivot=("m", "val"))
 
@@ -171,7 +168,7 @@ table("approved_grid", "Утверждено · продажи по месяца
   FORMAT_DATE('%Y-%m', a.month) AS m, a.planned_cards AS val
 FROM {v('V_SALES_PLAN_APPROVED')} a LEFT JOIN {NAMES} n USING (internal_sku)
 UNION ALL
-SELECT '— утверждённого плана пока нет —', '', FORMAT_DATE('%Y-%m', CURRENT_DATE()), CAST(NULL AS NUMERIC)
+SELECT '— утверждённого плана пока нет —', '', '', CAST(NULL AS NUMERIC)
 FROM (SELECT 1) WHERE NOT EXISTS (SELECT 1 FROM {v('V_SALES_PLAN_APPROVED')})
 ORDER BY name, mp, m""", {"name": "Товар", "mp": "Площадка", "m": "Месяц", "val": "Карточек"},
       "Только то, что утвердил владелец. Пусто, пока план не утверждён.")
@@ -188,21 +185,23 @@ SELECT k, val FROM h, UNNEST([
   STRUCT(7, 'Статус', CASE h.lifecycle_status WHEN 'PROPOSED' THEN 'предложено, ждёт вашего решения' WHEN 'APPROVED' THEN 'утверждено' ELSE h.lifecycle_status END),
   STRUCT(8, 'Номер версии', h.plan_version),
   STRUCT(9, 'Контрольная сумма для утверждения', h.content_sha256)
-]) ORDER BY o""", {"k": " ", "val": " "}, "Метод, период, итог и что сознательно не заложено.")
+]) ORDER BY o""", {"k": "Параметр", "val": "Значение"}, "Метод, период, итог и что сознательно не заложено.", wrap=("val",))
 
 table("assumptions", "Допущения предложения", f"""SELECT a.assumption_id AS id,
   CASE a.evidence_class WHEN 'FACT' THEN 'факт' WHEN 'ASSUMPTION' THEN 'допущение' WHEN 'INFERENCE' THEN 'вывод' ELSE a.evidence_class END AS cls,
-  a.value_text AS txt
+  REPLACE(REPLACE(REPLACE(a.value_text, '; ROUND до 0,1 карточки', ', с округлением до 0,1 карточки'),
+                  ': STALE.', ': остаток ФФ устарел.'), ': FRESH.', ': остаток свежий.') AS txt
 FROM {v('PLAN_ASSUMPTION', 'evetis_ref')} a
 WHERE a.plan_version = {PROPOSAL} AND a.assumption_type != 'OBSERVED_RATE'
 ORDER BY a.assumption_id""", {"id": "№", "cls": "Тип", "txt": "Содержание"},
-      "Допущения, на которых построено предложение (темп по каждой карточке — во вкладке «Детали»).")
+      "Допущения, на которых построено предложение (темп по каждой карточке — во вкладке «Детали»).", wrap=("txt",))
 
-table("proposal_cards", "Предложено · карточки по SKU × WB/Ozon × месяц", f"""SELECT CONCAT(n.nm, IF(l.sales_mode = 'BUNDLE', ' (набор)', '')) AS name,
-  IF(l.marketplace = 'OZON', 'Ozon', 'WB') AS mp, FORMAT_DATE('%Y-%m', l.month) AS m, l.planned_cards AS val
+table("proposal_cards", "Предложено · карточки по SKU × WB/Ozon × месяц", f"""SELECT
+  CONCAT(n.nm, ' · ', IF(l.marketplace = 'OZON', 'Ozon', 'WB')) AS `Карточка и площадка`,
+  CONCAT(FORMAT_DATE('%Y-%m', l.month), ' ', ['янв','фев','мар','апр','май','июн','июл','авг','сен','окт','ноя','дек'][OFFSET(EXTRACT(MONTH FROM l.month) - 1)]) AS m, l.planned_cards AS val
 FROM {v('V_PLAN_LINE_MONTHLY_ALL')} l LEFT JOIN {NAMES} n USING (internal_sku)
 WHERE l.plan_version = {PROPOSAL}
-ORDER BY l.sales_mode DESC, name, mp, m""", {"name": "Карточка", "mp": "Площадка", "m": "Месяц", "val": "Карточек"},
+ORDER BY 1, m""", {"m": "Месяц", "val": "Карточек"},
       "Предложенный план в карточках продаж (как их видит покупатель: одиночный товар или набор), по площадкам и месяцам. "
       "Текущий месяц — целиком; уже проданное вычитается при расчёте остатков.", pivot=("m", "val"), decimals={"val": 1})
 
@@ -210,9 +209,9 @@ table("proposal_phys", "Предложено · физические шт. по�
   SELECT x.*, n.nm FROM {v('V_PLAN_PHYSICAL_MONTHLY')} x LEFT JOIN {NAMES} n ON n.internal_sku = x.component_sku
   WHERE x.plan_version = {PROPOSAL}
 )
-SELECT nm AS name, 'всего' AS part, FORMAT_DATE('%Y-%m', month) AS m, ROUND(planned_units_full_month) AS val FROM p
-UNION ALL SELECT nm, '  в т.ч. в наборах', FORMAT_DATE('%Y-%m', month), ROUND(via_bundle_units_full_month) FROM p
-ORDER BY name, part DESC, m""", {"name": "Товар", "part": " ", "m": "Месяц", "val": "Шт."},
+SELECT CONCAT(nm, ' · всего') AS `Товар`, CONCAT(FORMAT_DATE('%Y-%m', month), ' ', ['янв','фев','мар','апр','май','июн','июл','авг','сен','окт','ноя','дек'][OFFSET(EXTRACT(MONTH FROM month) - 1)]) AS m, ROUND(planned_units_full_month) AS val FROM p
+UNION ALL SELECT CONCAT(nm, ' · из них в наборах'), CONCAT(FORMAT_DATE('%Y-%m', month), ' ', ['янв','фев','мар','апр','май','июн','июл','авг','сен','окт','ноя','дек'][OFFSET(EXTRACT(MONTH FROM month) - 1)]), ROUND(via_bundle_units_full_month) FROM p
+ORDER BY 1, m""", {"m": "Месяц", "val": "Шт."},
       "Сколько физических единиц товара уйдёт за месяц: одиночные карточки + составляющие наборов по составу, "
       "зафиксированному вместе с версией плана.", pivot=("m", "val"))
 
@@ -243,16 +242,17 @@ SELECT nm AS name,
   IF(prop_day > 0 AND end_units > 0, ROUND(end_units / prop_day / 30, 1), NULL) AS cover_m,
   CASE
     WHEN short_m IS NOT NULL THEN CONCAT('🔴 дефицит с ', {MONTH_RU.format(x='short_m')})
-    WHEN left_sb > 0 THEN CONCAT('🟡 к ', FORMAT_DATE('%d.%m.%Y', sell_by), ' останется ≈', CAST(CAST(ROUND(left_sb) AS INT64) AS STRING), ' шт.')
-    WHEN prop_day > 0 AND end_units / prop_day / 30 > 12 THEN '🟡 запаса больше чем на год'
+    WHEN left_sb > 0 THEN CONCAT('🟡 к ', FORMAT_DATE('%d.%m', sell_by), ' останется ≈', CAST(CAST(ROUND(left_sb) AS INT64) AS STRING))
+    WHEN prop_day > 0 AND end_units / prop_day / 30 > 12 THEN '🟡 запас больше чем на год'
     ELSE '—' END AS verdict,
-  CASE q WHEN 'NORMAL' THEN 'надёжный' WHEN 'STOCKOUT_CONSTRAINED' THEN 'занижен: были дни без товара'
-    WHEN 'AVAILABILITY_NOT_FULLY_OBSERVED' THEN 'наличие видно не за все дни' WHEN 'INSUFFICIENT_HISTORY' THEN 'мало истории'
+  CASE q WHEN 'NORMAL' THEN 'надёжный' WHEN 'STOCKOUT_CONSTRAINED' THEN 'занижен: был дефицит'
+    WHEN 'AVAILABILITY_NOT_FULLY_OBSERVED' THEN 'наличие видно частично' WHEN 'INSUFFICIENT_HISTORY' THEN 'мало истории'
     WHEN 'NO_SALES_WITH_STOCK' THEN 'продаж нет' ELSE IFNULL(q, '—') END AS quality
 FROM a ORDER BY (short_m IS NULL), short_m, name""",
-      {"name": "Товар", "fact_m": "ФАКТ · продаём, шт./мес.", "prop_m": "ПРЕДЛОЖЕНО · шт./мес.", "diff_pct": "Разница с фактом, %",
-       "model_m": "Модель CT · шт./мес.", "end_units": "ПРЕДЛОЖЕНО · останется на 31.03", "cover_m": "Хватит ещё на, мес.",
-       "verdict": "Дефицит / избыток", "quality": "Насколько верен факт"},
+      {"name": "Товар", "fact_m": "ФАКТ/мес", "prop_m": "ПРЕДЛ./мес", "diff_pct": "Разница %",
+       "model_m": "Модель CT/мес", "end_units": "ПРЕДЛ. остаток", "cover_m": "Хватит, мес.",
+       "verdict": "Дефицит / избыток", "quality": "Надёжность факта"}, wrap=("verdict", "quality"),
+      widths=[140, 105, 115, 110, 135, 140, 118, 190, 170], description=
       "Где предложение расходится с фактическим темпом и к чему приводит: дефицит, остаток к дате «продать до», "
       "избыток. Темп — в пересчёте на 30 дней, по полным месяцам плана. Модель CT — для сравнения, не план.",
       formatting=fmt_neg(["end_units"]))
@@ -270,17 +270,17 @@ SELECT {MONTH_RU.format(x='month')} AS m,
   ROUND(MAX(IF(plan_version = {PROPOSAL}, planned_via_bundle_units, NULL))) AS p_bundle,
   ROUND(MAX(IF(plan_version = {PROPOSAL}, closing_units, NULL))) AS p_end,
   ROUND(MAX(observed_run_rate_units)) AS f_sales,
-  ROUND(MAX(required_units_to_sell_by)) AS r_sales,
   ROUND(MAX(IF(plan_version = {MODEL}, planned_physical_units, NULL))) AS m_sales,
   ROUND(MAX(IF(plan_version = {MODEL}, closing_units, NULL))) AS m_end,
   IF(MAX(projected_units_at_sell_by) IS NULL, '',
      CONCAT('к «продать до» ', FORMAT_DATE('%d.%m', ANY_VALUE(sell_by_date)), ': ≈',
             CAST(CAST(ROUND(MAX(IF(plan_version = {PROPOSAL}, projected_units_at_sell_by, NULL))) AS INT64) AS STRING), ' шт. по предложению')) AS note
 FROM t GROUP BY month ORDER BY month""",
-          {"m": "Месяц", "op": "Начало, шт.", "inb": "+ Подтв. поставки", "p_sales": "− ПРЕДЛОЖЕНО продать",
-           "p_bundle": "  в т.ч. в наборах", "p_end": "= Останется", "f_sales": "ФАКТ-темп за период",
-           "r_sales": "НУЖНО к «продать до»", "m_sales": "Модель CT · продать", "m_end": "Модель CT · останется", "note": " "},
-          note, formatting=fmt_neg(["p_end", "m_end"]))
+          {"m": "Месяц", "op": "Начало", "inb": "+ Поставки", "p_sales": "− Продать",
+           "p_bundle": "в наборах", "p_end": "= Остаток", "f_sales": "ФАКТ-темп", "m_sales": "CT продать",
+           "m_end": "CT остаток", "note": "Примечание"},
+          note, formatting=fmt_neg(["p_end", "m_end"]), wrap=("note",),
+          widths=[85, 95, 120, 110, 110, 110, 115, 120, 120, 230])
 
 
 focus("hand", "EVT-HC-HAND-300", "Крем для рук · по месяцам",
@@ -394,39 +394,52 @@ def heading(text):
 
 
 LEGEND = ("**ФАКТ** — что есть и как продаётся сейчас · **НУЖНО** — сколько продавать, чтобы успеть до «срок годности − 30 дн.» · "
-          "**ПРЕДЛОЖЕНО** — план, который предлагает система (ещё не план) · **УТВЕРЖДЕНО** — план после вашего решения")
+          "**ПРЕДЛОЖЕНО** — план, который предлагает система (ещё не план) · **УТВЕРЖДЕНО** — план после вашего решения.  \n"
+          "Продажи и потребность — в штуках за месяц. «≈» — оценка по устаревшему остатку ФФ. Красным — нехватка товара.")
+HAND_NOTE = ("**Крем для рук.** Срок годности партии — 31.12.2026, продать нужно до 01.12.2026. При нынешнем темпе к этой дате "
+             "останется большая часть запаса. Модель Control Tower закладывала распродажу к декабрю — в предложение это не "
+             "перенесено: решение о распродаже за вами.")
+MOIST_NOTE = ("**Крем увлажняющий (УВЛ).** Сейчас 2 шт. Партия 5 000 шт. произведена, находится в Китае и ждёт оплаты; "
+              "подтверждённой даты нет — поэтому в расчёт она **не входит** ни в октябре, ни позже. Нехватка по предложению — "
+              "из-за наборов с этим кремом. Колонки CT — продажи модели Control Tower при тех же правилах поставок: модель "
+              "рассчитывала на эту партию к 20.10.2026 и без неё уходит в минус с ноября.")
+ACNE_NOTE = ("**Крем АКНЕ.** 3 000 шт. — только возможное производство (упаковка у фабрики есть, крем не заказан), "
+             "в расчёт **не входит**.")
 TABS = [
     ("Главное", [
-        ("text", LEGEND, 1),
-        ("signals", "Сигналы", 5),
+        ("text", LEGEND, 2),
+        ("signals", "Сигналы", 7),
         ("#", "По каждому товару: есть → продаём → нужно → предложено → утверждено → останется"),
-        ("sku_chain", "По каждому товару", 7),
+        ("sku_chain", "По каждому товару · шт. · ПРЕДЛОЖЕНО — продажи и остаток на период до 31.03.2027", 10),
         ("#", "По месяцам"),
-        ("closing_grid", "ПРЕДЛОЖЕНО · сколько останется на конец месяца, шт.", 7),
-        ("sales_grid", "ПРЕДЛОЖЕНО · сколько продать за месяц, шт.", 7),
+        ("closing_grid", "ПРЕДЛОЖЕНО · сколько останется на конец месяца, шт.", 10),
+        ("sales_grid", "ПРЕДЛОЖЕНО · сколько продать за месяц, шт.", 10),
         ("approved_grid", "УТВЕРЖДЕНО · продажи по месяцам", 3),
     ]),
     ("Предложенный план", [
         ("text", "Это предложение системы. Оно **не утверждено** и ничего не меняет, пока вы его не утвердите. "
                  "Ниже — как оно посчитано, что в нём по товарам, площадкам и месяцам и где оно расходится с фактом.", 1),
-        ("proposal_about", "Что предложено и как", 6),
-        ("assumptions", "Допущения", 4),
-        ("proposal_vs_fact", "Предложено против факта: где дефицит, где избыток", 7),
-        ("proposal_cards", "Карточки продаж · SKU × площадка × месяц", 12),
-        ("proposal_phys", "Физические шт. после разложения наборов", 9),
+        ("proposal_about", "Что предложено и как", 10),
+        ("assumptions", "Допущения", 7),
+        ("proposal_vs_fact", "Предложено против факта: где дефицит, где избыток · шт. в месяц, остаток на 31.03.2027", 11),
+        ("proposal_cards", "Карточки продаж · товар × площадка × месяц", 16),
+        ("proposal_phys", "Физические шт. после разложения наборов", 16),
     ]),
     ("Крем для рук · УВЛ · АКНЕ", [
-        ("hand", "Крем для рук", 5),
-        ("moist", "Крем увлажняющий (УВЛ)", 5),
-        ("acne", "Крем АКНЕ", 5),
-        ("focus_lots", "Поставки по трём кремам", 3),
+        ("text", HAND_NOTE, 2),
+        ("hand", "Крем для рук · ПРЕДЛОЖЕНО: начало + поставки − продать = остаток · CT — модель Control Tower для сравнения", 8),
+        ("text", MOIST_NOTE, 2),
+        ("moist", "Крем УВЛ · ПРЕДЛОЖЕНО: начало + поставки − продать = остаток · CT — модель Control Tower для сравнения", 8),
+        ("text", ACNE_NOTE, 1),
+        ("acne", "Крем АКНЕ · ПРЕДЛОЖЕНО: начало + поставки − продать = остаток · CT — модель Control Tower для сравнения", 8),
+        ("focus_lots", "Поставки по трём кремам", 4),
     ]),
     ("Детали", [
         ("text", "Служебные таблицы: происхождение чисел, версии и контрольные суммы, правила включения поставок.", 1),
         ("exceptions", "Все исключения", 7),
         ("versions", "Версии плана", 4),
         ("rates", "Темп по каждой карточке", 8),
-        ("inbound_all", "Все партии поступления", 3),
+        ("inbound_all", "Все партии поступления", 4),
     ]),
 ]
 
