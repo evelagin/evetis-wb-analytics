@@ -91,6 +91,18 @@ Terraform (`infra/terraform/wb_communications.tf`) по-прежнему ука�
 | Способ | только образ: env (47 записей, отпечаток одинаков у 00032 и 00033), SA, ресурсы, maxScale, ingress не менялись. `V3_SHADOW_ENABLED` в окружении нет → v3 выключен (`build_v3` → `None`) |
 | Откат | `gcloud run services update-traffic evetis-wb-communications --region europe-west1 --to-revisions evetis-wb-communications-00032-22j=100` |
 
+## 1d. Развёртывание 2026-09-29 — 1.6.2, v3 SHADOW включён (Phase 3 live shadow)
+
+| | |
+|---|---|
+| Исходник | `main` `3e0466f597a362fd4972df9c8e58be24c2cb8c4d` (PR #223); вне `app/v3`, `knowledge_v3`, `tests/v3` код = 00033 (`1e4b912`) |
+| Сборка | Cloud Build `56f5a275-2807-4807-b1b6-28ef877fdf85`: `pytest` на `python:3.12-slim` → `docker build`, тег `v3shadow-3e0466f`; архив исходников: `SOURCE_SHA` = `3e0466f…`, `diff -r` с коммитом пустой |
+| Образ | `…/cloud-run-source-deploy/evetis-wb-communications@sha256:dcc5ca5f53c666bb5d220d985c5f93337a4f309530108fbaf27e0f7b3c45a7ef` |
+| Ревизия | `evetis-wb-communications-00034-7v4` (100 % трафика, 2026-09-29 06:36 UTC); до неё `00033-x6m` |
+| Способ | `gcloud run services update --image <digest> --update-env-vars V3_SHADOW_ENABLED=true`: env 47 → 48 (добавлена только эта переменная), SA, ресурсы, timeout, concurrency, maxScale, ingress, IAM не менялись |
+| Smoke | первый плановый `/poll` 2026-09-29 08:00 UTC: 200, 42 с; `v3_shadow` decided 6 / errors 0, строки `run_kind='shadow'` со снимком `ks_v3_20260928T120346_4f4121d4`; событий `mutation_*` от ревизии нет; 106 строк `LOCAL_HISTORICAL_BACKFILL` не изменились |
+| Откат | `gcloud run services update-traffic evetis-wb-communications --region europe-west1 --to-revisions evetis-wb-communications-00033-x6m=100` |
+
 ## 2. Код в Git ≠ конфигурация в production
 
 **Это главное, что нужно знать перед любым деплоем.**
