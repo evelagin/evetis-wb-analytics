@@ -230,6 +230,8 @@ def test_qpub06_review_publication_regression():
     assert handle_update(deps, _cb(10, "pub", doc_id))["status"] == "published"
     assert deps.wb.published == [("REVIEW_1", deps.repo.get(doc_id)["final_answer"])]
     assert deps.wb.get_question_calls == 0 and deps.wb.published_questions == []
+    assert deps.wb.get_feedback_calls == 2
+    assert deps.repo.get(doc_id)["verified_at"]
     assert "Опубликовано" in _last_edit(deps)
 
 
@@ -446,7 +448,7 @@ def test_legacy_published_with_other_answer_is_answered_externally():
     assert deps.wb.published_questions == []
 
 
-def test_new_flow_published_and_reviews_are_not_reconciled():
+def test_question_reconciler_excludes_reviews_feedback_reconciles_separately():
     deps = make_deps([dict(SAMPLE_FEEDBACK)], questions=[_q()], wb_questions_enabled=True,
                      wb_question_publish_enabled=True)
     run_poll(deps)
@@ -622,3 +624,17 @@ def test_existing_publish_unknown_answered_meanwhile_is_resolved_without_card():
     s = run_poll(deps)["questions"]["reverified"]["recovery_cards"]
     assert s["resolved"] == 1 and deps.repo.get(_qdoc())["status"] == "published"
     assert len(deps.telegram.sent) == sent and deps.wb.published_questions == []
+
+
+@pytest.mark.parametrize("text,status,writes", [
+    ("В составе 2,25% салициловой кислоты.", "policy_blocked", 0),
+    ("Спасибо за вопрос.", "published", 1),
+])
+def test_question_uses_real_current_policy_gate(text, status, writes):
+    deps = _qdeps()
+    deps.publication_validator = None
+    deps.repo.docs[_qdoc()].update(nm_id="438775617", supplier_article="", final_answer=text)
+    result = handle_update(deps, _cb(101, "pub", _qdoc()))
+    assert result["status"] == status
+    assert len(deps.wb.published_questions) == writes
+    assert deps.repo.get(_qdoc())["publish_trace"][-1]["policy"]["snapshot"]

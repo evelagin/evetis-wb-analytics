@@ -21,8 +21,7 @@ class Status(str, Enum):
     REGENERATING = "regenerating"
     # human tapped "edit" — waiting for the reply, record locked with a token
     EDITING = "editing"
-    # Answer is confirmed on WB. Reviews: WB's documented 204. Questions: the
-    # answer was read back from WB and matches ours (verified).
+    # Both entities: a matching answer has been read back from WB.
     PUBLISHED = "published"
     # Question: WB accepted the write (2xx, error=false) but the answer is not
     # visible yet (WB pre-moderates answers). Re-verified on later polls; NEVER
@@ -35,6 +34,8 @@ class Status(str, Enum):
     # Question already carries an answer on WB with a DIFFERENT text (e.g. typed
     # in the WB cabinet). Our text was not sent.
     ANSWERED_EXTERNALLY = "answered_externally"
+    POLICY_BLOCKED = "policy_blocked"
+    POLICY_CHECK_FAILED = "policy_check_failed"
     # WB rejected / errored — safe to retry
     PUBLISH_FAILED = "publish_failed"
     # human tapped "skip"
@@ -66,13 +67,16 @@ LEASED_STATUSES = frozenset(
 )
 
 # Source statuses from which a fresh draft action (edit/regenerate) may START.
-DRAFTABLE_FROM = frozenset({Status.PENDING_APPROVAL.value, Status.PUBLISH_FAILED.value})
+DRAFTABLE_FROM = frozenset({Status.PENDING_APPROVAL.value, Status.PUBLISH_FAILED.value,
+                          Status.POLICY_BLOCKED.value, Status.POLICY_CHECK_FAILED.value})
 
 
 # --- Telegram action state machine -----------------------------------------
 # Which callback actions are valid from each status. Anything not listed is a
 # stale/no-op tap and is rejected transactionally.
 ALLOWED_ACTIONS: dict[str, frozenset[str]] = {
+    Status.POLICY_BLOCKED.value: frozenset({"publish", "edit", "regenerate", "skip", "show"}),
+    Status.POLICY_CHECK_FAILED.value: frozenset({"publish", "edit", "regenerate", "skip", "show"}),
     Status.PENDING_APPROVAL.value: frozenset({"publish", "edit", "regenerate", "skip", "show"}),
     Status.PUBLISH_FAILED.value: frozenset({"publish", "edit", "regenerate", "skip", "show"}),
     Status.PUBLISHING.value: frozenset({"show"}),

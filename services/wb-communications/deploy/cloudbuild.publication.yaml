@@ -1,0 +1,16 @@
+# Build/test only. No Cloud Run deploy or runtime calls.
+steps:
+  - name: python:3.12-slim
+    entrypoint: sh
+    args:
+      - -ceu
+      - |
+        pip install --no-cache-dir -r requirements-dev.txt
+        python -m compileall -q app scripts
+        python -m pytest -q
+        python scripts/v3_registry.py validate
+        python scripts/v3_registry.py verify-snapshot
+  - name: gcr.io/cloud-builders/docker
+    args: ['build', '--label', 'org.opencontainers.image.revision=${_SOURCE_SHA}', '-t', '${_IMAGE}', '.']
+images: ['${_IMAGE}']
+timeout: 1200s

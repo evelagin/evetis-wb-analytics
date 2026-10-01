@@ -98,6 +98,7 @@ class Deps:
     # Reviews & Q&A v3 SHADOW runtime (app.v3.shadow.V3Runtime) — None unless
     # V3_SHADOW_ENABLED. Observation only: no WB, no Telegram, no v2 doc writes.
     v3: Any = None
+    publication_validator: Any = None  # None => mandatory production policy adapter
 
 
 def _now() -> datetime:
@@ -490,6 +491,7 @@ def run_poll(deps: Deps) -> dict:
     feedbacks = deps.wb.iter_unanswered_feedbacks()
     fetched = len(feedbacks)
     processed = skipped = errors = 0
+    legacy_feedback_ids = []
 
     for fb in feedbacks:
         review = Review.from_wb_feedback(fb)
@@ -497,6 +499,8 @@ def run_poll(deps: Deps) -> dict:
             continue
         should_process, doc_id, doc = deps.repo.claim_review(review)
         if not should_process:
+            if doc.get("status") == "published" and not doc.get("verified_at"):
+                legacy_feedback_ids.append(doc_id)
             skipped += 1
             continue
         try:
@@ -515,6 +519,8 @@ def run_poll(deps: Deps) -> dict:
 
     flush_events(deps)
     summary = {"fetched": fetched, "processed": processed, "skipped": skipped, "errors": errors}
+    from app.services.feedback_publication import reconcile
+    summary["feedback_verification"] = reconcile(deps, legacy_feedback_ids)
     # WB buyer questions — separate entity, after reviews, behind its own flag.
     if getattr(deps.settings, "wb_questions_enabled", False):
         summary["questions"] = _run_questions(deps)
@@ -817,10 +823,6 @@ def _publish(deps: Deps, doc_id, chat, message_id, user_id) -> dict:
     if not gate_open:
         deps.telegram.send_message(chat, disabled_msg)
         return {"status": "publish_disabled"}
-    blocked = _v3_publish_gate(deps, doc_id, peek, chat)
-    if blocked is not None:
-        return blocked
-
     try:
         doc = deps.repo.begin_publish(doc_id)  # atomic; recovers a crashed lease
     except InvalidTransition:
@@ -828,23 +830,6 @@ def _publish(deps: Deps, doc_id, chat, message_id, user_id) -> dict:
     except NotFound:
         deps.telegram.send_message(chat, "⚠️ Запись не найдена.")
         return {"status": "not_found"}
-
-    # Crash recovery: a previous publish held the lease and the process died
-    # BEFORE mark_published. For reviews there is no read-back here, so we must
-    # NOT blindly re-publish (risk of a second public answer) — ask the operator.
-    # Questions are safe: _publish_question reads WB state before any write.
-    if (doc.get("recovered_from_publishing") and deps.settings.wb_verify_before_publish
-            and not is_question):
-        deps.repo.mark_publish_failed(doc_id, "recovered_lease",
-                                      "publishing lease recovered — verify WB state before re-publish")
-        _sync_current(deps, doc_id, doc)
-        deps.telegram.edit_message_text(
-            chat, message_id,
-            "⚠️ Предыдущая публикация прервалась на полуслове. Проверьте в кабинете WB, "
-            "не опубликован ли ответ уже, затем нажмите «Опубликовать» снова.",
-            build_keyboard(doc_id, retry=True),
-        )
-        return {"status": "publish_recovery_needs_verification"}
 
     text = clean_answer(doc.get("final_answer") or doc.get("ai_answer"))
     if not is_within_wb_limit(text):
@@ -857,52 +842,40 @@ def _publish(deps: Deps, doc_id, chat, message_id, user_id) -> dict:
         )
         return {"status": "invalid_length"}
 
-    if is_question:
-        return _publish_question(deps, doc_id, doc, text, chat, message_id, user_id)
-
+    trace = _new_trace(doc_id, doc, phase="publish", state_before=Status.PUBLISHING.value)
+    trace.update(write_attempted=False, write="not_attempted")
+    from app.services.publication_policy import validate_for_publication
     try:
-        wb_resp = deps.wb.publish_answer(doc["source_id"], text)
-    except WBPublishOutcomeUnknown as exc:
-        # The POST may have landed: never re-send blindly (duplicate public answer).
-        trace = _new_trace(doc_id, doc, phase="publish", state_before=Status.PUBLISHING.value)
-        trace.update(http_status=exc.status_code, error_class=type(exc).__name__,
-                     final_publication_state=Status.PUBLISH_UNKNOWN.value)
-        deps.repo.record_publication(doc_id, Status.PUBLISH_UNKNOWN.value,
-                                     {"last_error_code": exc.status_code,
-                                      "last_error_message": str(exc)[:500]}, trace)
-        after = _sync_current(deps, doc_id, doc)
-        _emit_event(deps, after, doc_id, EventType.PUBLISH_UNKNOWN, best_effort=False,
-                    status_before=Status.PUBLISHING.value, status_after=Status.PUBLISH_UNKNOWN.value,
-                    telegram_user_id=user_id, error_code=exc.status_code, error_message=str(exc),
-                    attempt=trace["publication_attempt_id"], payload=trace)
-        deps.telegram.edit_message_text(
-            chat, message_id,
-            "⚠️ <b>Результат публикации неизвестен</b>\n\nWB не подтвердил приём ответа, "
-            "повторная отправка не выполнялась. Проверьте отзыв в кабинете WB; если ответа нет — "
-            "нажмите «Опубликовать» снова.",
-            build_keyboard(doc_id, retry=True),
-        )
-        return {"status": "publish_unknown", "code": exc.status_code}
-    except WBApiError as exc:
-        deps.repo.mark_publish_failed(doc_id, exc.status_code, str(exc))
+        validator = deps.publication_validator or validate_for_publication
+        policy = validator(text, doc, deps.settings)
+        if not isinstance(policy, dict) or policy.get("verdict") not in ("PASS", "INFO", "WARNING", "BLOCK"):
+            raise ValueError("invalid policy verdict")
+        trace["policy"] = policy
+        status = "policy_blocked" if policy["verdict"] == "BLOCK" else None
+    except Exception as exc:
+        trace["policy"] = {"verdict": "ERROR", "error_class": type(exc).__name__}
+        status = "policy_check_failed"
+    if status:
+        trace.update(final_publication_state=status, local_state_after=status,
+                     telegram_state=status, finished_at=_now_iso())
+        deps.repo.publication_update(doc_id, doc["lock_token"],
+            {"status": status, "publication_state": status}, trace, release=True)
         after = _sync_current(deps, doc_id, doc)
         _emit_event(deps, after, doc_id, EventType.FAILED, best_effort=False,
-                    status_before=Status.PUBLISHING.value, status_after=Status.PUBLISH_FAILED.value,
-                    telegram_user_id=user_id, error_code=exc.status_code, error_message=str(exc),
-                    attempt=after.get("publish_attempts"))
-        deps.telegram.edit_message_text(
-            chat, message_id, _wb_publish_error_message(exc, is_question=is_question),
-            build_keyboard(doc_id, retry=True),
-        )
-        return {"status": "publish_failed", "code": exc.status_code}
-
-    deps.repo.mark_published(doc_id, wb_resp if isinstance(wb_resp, dict) else {}, user_id)
-    after = _sync_current(deps, doc_id, doc)
-    _emit_event(deps, after, doc_id, EventType.PUBLISHED, best_effort=False,
-                status_before=Status.PUBLISHING.value, status_after=Status.PUBLISHED.value,
-                telegram_user_id=user_id)
-    deps.telegram.edit_message_text(chat, message_id, f"✅ <b>Опубликовано</b>\n\n{escape_html(text)}", None)
-    return {"status": "published"}
+                    status_after=status, attempt=trace["publication_attempt_id"], payload=trace)
+        message = ("⛔ Ответ нельзя опубликовать.\nОтвет создан по устаревшей политике и требует обновления."
+                   if status == "policy_blocked" else
+                   "⛔ Проверка ответа временно недоступна. Публикация не выполнялась.")
+        keyboard = build_keyboard(doc_id)
+        keyboard["inline_keyboard"][0] = [keyboard["inline_keyboard"][0][1]]
+        deps.telegram.edit_message_text(chat, message_id, message, keyboard)
+        return {"status": status}
+    deps.repo.publication_update(doc_id, doc["lock_token"], {"publication_policy": policy})
+    # The locked document is exactly the text checked above; shadow is never consulted.
+    if is_question:
+        return _publish_question(deps, doc_id, doc, text, chat, message_id, user_id, trace=trace)
+    from app.services.feedback_publication import publish
+    return publish(deps, doc_id, doc, text, trace, chat, message_id, user_id)
 
 
 # --------------------------------------------------------------------------- #
@@ -1064,7 +1037,7 @@ def _finish_question(deps: Deps, doc_id: str, doc: dict, text: str, outcome: str
     return status
 
 
-def _publish_question(deps: Deps, doc_id: str, doc: dict, text: str, chat, message_id, user_id) -> dict:
+def _publish_question(deps: Deps, doc_id: str, doc: dict, text: str, chat, message_id, user_id, trace=None) -> dict:
     """Publish a WB question answer without false success and without duplicates.
 
     1. read WB first — already answered? then no write (idempotent re-tap,
@@ -1074,7 +1047,7 @@ def _publish_question(deps: Deps, doc_id: str, doc: dict, text: str, chat, messa
     A write whose outcome is unknown is never repeated automatically.
     """
     qid = doc["source_id"]
-    trace = _new_trace(doc_id, doc, phase="publish", state_before=Status.PUBLISHING.value)
+    trace = trace or _new_trace(doc_id, doc, phase="publish", state_before=Status.PUBLISHING.value)
     trace.update(endpoint=deps.settings.wb_questions_path,
                  method=deps.settings.wb_question_answer_method)
     try:
@@ -1105,7 +1078,8 @@ def _publish_question(deps: Deps, doc_id: str, doc: dict, text: str, chat, messa
                                   chat=chat, message_id=message_id, user_id=user_id, accepted=False)
         return {"status": status, "write": "skipped"}
 
-    trace.update(precheck="unanswered", request_started_at=_now_iso())
+    deps.repo.publication_update(doc_id, doc["lock_token"], {})
+    trace.update(precheck="unanswered", request_started_at=_now_iso(), write_attempted=True)
     accepted = False
     try:
         res = deps.wb.publish_question_answer(qid, text)
@@ -1237,31 +1211,6 @@ def _v3_manual_shadow_check(deps: Deps, doc_id: str, doc: dict, text: str) -> No
         check_text(deps.v3, doc_id, doc, text, run_kind="manual_edit_shadow")
     except Exception as exc:  # noqa: BLE001 — shadow must never break the edit flow
         log_event(logger, "warning", "v3 manual-edit shadow check failed (isolated)", error=type(exc).__name__)
-
-
-def _v3_publish_gate(deps: Deps, doc_id: str, peek: dict | None, chat) -> Optional[dict]:
-    """OWNER-GATED (V3_ENFORCE_MANUAL_EDIT_VERIFIER, default false): refuse to publish a
-    MANUAL text that the v3 verifier BLOCKs. No state change; the card stays actionable."""
-    if not getattr(deps.settings, "v3_enforce_manual_edit_verifier", False) or deps.v3 is None or not peek:
-        return None
-    versions = peek.get("answer_versions") or []
-    last = versions[-1] if versions and isinstance(versions[-1], dict) else {}
-    if last.get("source") != "manual":
-        return None
-    try:
-        from app.v3.shadow import check_text
-        text = clean_answer(peek.get("final_answer") or peek.get("ai_answer"))
-        result = check_text(deps.v3, doc_id, peek, text, run_kind="manual_edit_gate")
-    except Exception as exc:  # noqa: BLE001 — fail-closed only when explicitly enforced
-        log_event(logger, "warning", "v3 publish gate error", error=type(exc).__name__)
-        deps.telegram.send_message(chat, "⛔ Проверка текста v3 недоступна — публикация ручного текста отложена.")
-        return {"status": "v3_gate_error"}
-    if result is not None and result.blocked:
-        rules = ", ".join(result.rule_ids("BLOCK"))
-        deps.telegram.send_message(chat, f"⛔ Ручной текст не прошёл проверку ({escape_html(rules)}). "
-                                         "Исправьте текст через «Изменить».")
-        return {"status": "v3_blocked", "rules": result.rule_ids("BLOCK")}
-    return None
 
 
 def _handle_message(deps: Deps, message: dict) -> dict:

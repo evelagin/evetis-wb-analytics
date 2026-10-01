@@ -69,7 +69,9 @@ def test_publish_sends_id_and_text():
     assert seen["method"] == "POST"
     assert seen["path"] == "/api/v1/feedbacks/answer"
     assert seen["body"] == {"id": "REV1", "text": "ответ"}
-    assert resp == {"result": "ok"}
+    assert resp["response"] == {"result": "ok"}
+    assert resp["status_code"] == 200
+    assert len(resp["request_sha256"]) == 64
 
 
 def test_publish_endpoint_is_configurable():

@@ -42,7 +42,8 @@ RETRIABLE = {Status.ERROR.value}
 # PUBLISH_UNKNOWN is re-publishable, but the pipeline reads WB state first and
 # only writes when the question is still unanswered (no blind duplicate).
 PUBLISHABLE_FROM = {Status.PENDING_APPROVAL.value, Status.PUBLISH_FAILED.value,
-                    Status.PUBLISH_UNKNOWN.value}
+                    Status.PUBLISH_UNKNOWN.value, Status.POLICY_BLOCKED.value,
+                    Status.POLICY_CHECK_FAILED.value}
 UPDATE_MAX_ATTEMPTS = 5
 
 _FS_TRANSIENT_NAMES = {
@@ -203,6 +204,25 @@ def _apply_generation(doc: dict, gen, source: str) -> None:
     })
 
 
+def _publication_patch(doc, token, fields, trace=None, release=False, claim=False):
+    if doc is None:
+        raise NotFound("record not found")
+    if claim:
+        if doc.get("entity_type") != "review" or doc.get("status") not in (
+                Status.PUBLISH_ACCEPTED.value, Status.PUBLISH_UNKNOWN.value, Status.PUBLISHED.value, Status.PUBLISHING.value):
+            raise InvalidTransition("not a feedback verification candidate")
+        if doc.get("status") == Status.PUBLISHING.value and not _lease_expired(doc):
+            raise InvalidTransition("not a feedback verification candidate")
+    elif doc.get("status") != Status.PUBLISHING.value or doc.get("lock_token") != token or _lease_expired(doc):
+        raise InvalidTransition("publication lease superseded or expired")
+    patch = {**fields, "updated_at": _now()}
+    if release:
+        patch.update(lock_token=None, lock_expires_at=None)
+    if trace is not None:
+        patch["publish_trace"] = (doc.get("publish_trace") or []) + [copy.deepcopy(trace)]
+    return patch
+
+
 # --------------------------------------------------------------------------- #
 # In-memory repository
 # --------------------------------------------------------------------------- #
@@ -337,7 +357,7 @@ class MemoryRepository:
     # --- publish ---
     def begin_publish(self, doc_id: str) -> dict:
         doc, recovered = _check_publishable(self.docs.get(doc_id))
-        doc.update({"status": Status.PUBLISHING.value, "publishing_started_at": _now(),
+        doc.update({"status": Status.PUBLISHING.value, "lock_token": _token(), "publishing_started_at": _now(),
                     "lock_expires_at": _expiry(self._lease),
                     "publish_attempts": doc.get("publish_attempts", 0) + 1, "updated_at": _now()})
         out = copy.deepcopy(doc)
@@ -372,6 +392,23 @@ class MemoryRepository:
                if v.get("status") == status
                and (entity_type is None or v.get("entity_type") == entity_type)]
         return out[:limit]
+
+    def _publication_mutate(self, doc_id, token, fields, trace=None, release=False, claim=False):
+        doc = self.docs.get(doc_id)
+        old = copy.deepcopy(doc)
+        patch = _publication_patch(doc, token, fields, trace, release, claim)
+        doc.update(patch)
+        if claim:
+            old["lock_token"] = patch["lock_token"]
+            return old
+        return copy.deepcopy(doc)
+
+    def claim_feedback_verification(self, doc_id: str):
+        return self._publication_mutate(doc_id, None, {"status": Status.PUBLISHING.value,
+            "lock_token": _token(), "lock_expires_at": _expiry(self._lease)}, claim=True)
+
+    def publication_update(self, doc_id, token, fields, trace=None, release=False):
+        return self._publication_mutate(doc_id, token, fields, trace=trace, release=release)
 
     # --- editing sessions ---
     def set_editing_session(self, user_id, doc_id, expires_at, prompt_message_id=None,
@@ -719,7 +756,8 @@ class FirestoreRepository:
         def txn(transaction):
             snap = ref.get(transaction=transaction)
             doc, recovered = _check_publishable(snap.to_dict() if snap.exists else None)
-            transaction.update(ref, {"status": Status.PUBLISHING.value, "publishing_started_at": _now(),
+            doc["lock_token"] = _token()
+            transaction.update(ref, {"status": Status.PUBLISHING.value, "lock_token": doc["lock_token"], "publishing_started_at": _now(),
                                      "lock_expires_at": _expiry(self._lease),
                                      "publish_attempts": doc.get("publish_attempts", 0) + 1,
                                      "updated_at": _now()})
@@ -766,6 +804,28 @@ class FirestoreRepository:
         if entity_type is not None:
             query = query.where("entity_type", "==", entity_type)
         return [(snap.id, snap.to_dict()) for snap in query.limit(limit).stream()]
+
+    @translate_fs_errors
+    def _publication_mutate(self, doc_id, token, fields, trace=None, release=False, claim=False):
+        from google.cloud import firestore
+        client, ref = self._lazy(), self._doc(doc_id)
+        @firestore.transactional
+        def txn(transaction):
+            snap = ref.get(transaction=transaction)
+            doc = snap.to_dict() if snap.exists else None
+            patch = _publication_patch(doc, token, fields, trace, release, claim)
+            transaction.update(ref, patch)
+            if claim:
+                return {**doc, "lock_token": patch["lock_token"]}
+            return {**doc, **patch}
+        return txn(client.transaction())
+
+    def claim_feedback_verification(self, doc_id: str):
+        return self._publication_mutate(doc_id, None, {"status": Status.PUBLISHING.value,
+            "lock_token": _token(), "lock_expires_at": _expiry(self._lease)}, claim=True)
+
+    def publication_update(self, doc_id, token, fields, trace=None, release=False):
+        return self._publication_mutate(doc_id, token, fields, trace=trace, release=release)
 
     # --- editing sessions ---
     def _editing_ref(self, user_id):

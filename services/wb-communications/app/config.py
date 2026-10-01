@@ -137,8 +137,8 @@ class Settings:
     bigquery_v3_decisions_table: str = field(
         default_factory=lambda: os.environ.get("BIGQUERY_V3_DECISIONS_TABLE", "communication_v3_decisions")
     )
-    # Manual-edit publish gate by the v3 verifier. It changes operator publication behaviour,
-    # therefore stays OFF until an explicit owner decision (Phase 3 §35 / §58).
+    # Legacy compatibility setting; the mandatory publication policy gate now covers
+    # every text source regardless of this value or the shadow runtime flag.
     v3_enforce_manual_edit_verifier: bool = field(
         default_factory=lambda: os.environ.get("V3_ENFORCE_MANUAL_EDIT_VERIFIER", "false").lower() == "true"
     )
@@ -227,6 +227,12 @@ class Settings:
     wb_min_interval_seconds: float = field(
         default_factory=lambda: float(os.environ.get("WB_MIN_INTERVAL_SECONDS", "0.6"))
     )
+
+    # Feedback verification budgets; no claim about WB moderation duration.
+    wb_feedback_verify_attempts: int = 3
+    wb_feedback_verify_delay_seconds: float = 2.0
+    wb_feedback_reconcile_limit: int = 5
+    wb_feedback_reconcile_budget_seconds: float = 10.0
 
     # --- Telegram ---
     telegram_chat_id: str = field(
