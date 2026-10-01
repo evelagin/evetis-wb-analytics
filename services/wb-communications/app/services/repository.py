@@ -204,6 +204,15 @@ def _apply_generation(doc: dict, gen, source: str) -> None:
     })
 
 
+def _feedback_uncertainty_patch(doc):
+    # Preserve legacy/crash uncertainty before policy can change the status.
+    # No proof that a previous write did not leave the process => never resend.
+    if doc.get("entity_type") == "review" and doc.get("status") in (
+            Status.PUBLISH_UNKNOWN.value, Status.PUBLISHING.value):
+        return {"feedback_write_intent": True}
+    return {}
+
+
 def _publication_patch(doc, token, fields, trace=None, release=False, claim=False):
     if doc is None:
         raise NotFound("record not found")
@@ -357,6 +366,7 @@ class MemoryRepository:
     # --- publish ---
     def begin_publish(self, doc_id: str) -> dict:
         doc, recovered = _check_publishable(self.docs.get(doc_id))
+        doc.update(_feedback_uncertainty_patch(doc))
         doc.update({"status": Status.PUBLISHING.value, "lock_token": _token(), "publishing_started_at": _now(),
                     "lock_expires_at": _expiry(self._lease),
                     "publish_attempts": doc.get("publish_attempts", 0) + 1, "updated_at": _now()})
@@ -756,8 +766,10 @@ class FirestoreRepository:
         def txn(transaction):
             snap = ref.get(transaction=transaction)
             doc, recovered = _check_publishable(snap.to_dict() if snap.exists else None)
+            guard = _feedback_uncertainty_patch(doc)
+            doc.update(guard)
             doc["lock_token"] = _token()
-            transaction.update(ref, {"status": Status.PUBLISHING.value, "lock_token": doc["lock_token"], "publishing_started_at": _now(),
+            transaction.update(ref, {**guard, "status": Status.PUBLISHING.value, "lock_token": doc["lock_token"], "publishing_started_at": _now(),
                                      "lock_expires_at": _expiry(self._lease),
                                      "publish_attempts": doc.get("publish_attempts", 0) + 1,
                                      "updated_at": _now()})

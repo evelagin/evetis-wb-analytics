@@ -207,3 +207,20 @@ def test_missing_answer_field_cannot_authorize_write():
     d.wb.get_feedback=lambda fid,**kwargs:{'id':fid}
     assert tap(d,c)['status']=='publish_unknown'
     assert 'POST' not in d.wb.calls
+
+
+def test_legacy_unknown_without_intent_cannot_resend():
+    d,c=setup()
+    d.repo.docs[c].update(status='publish_unknown')
+    assert tap(d,c)['status']=='publish_unknown'
+    assert 'POST' not in d.wb.calls
+
+
+def test_recovered_uncertainty_survives_policy_block_and_edit():
+    d,c=setup(STALE)
+    d.repo.docs[c].update(status='publishing',lock_expires_at='2000-01-01')
+    assert tap(d,c)['status']=='policy_blocked'
+    _,token,generation=d.repo.begin_edit(c)
+    d.repo.commit_manual_answer(c,SAFE,token,generation)
+    assert tap(d,c)['status']=='publish_unknown'
+    assert 'POST' not in d.wb.calls

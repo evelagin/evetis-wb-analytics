@@ -75,7 +75,9 @@ or WB publications were exercised during implementation.
 
 Seven initial tests failed before implementation: FPUB-01, FPUB-02, three stale
 sources (FPUB-14/16/17), verifier exception (FPUB-18), unknown identity (FPUB-19).
-They then all passed. Full suite includes FPUB-01–23, question and v3 regression,
+They then all passed. Two additional legacy/crash recovery tests failed on the
+first candidate and passed after persisting uncertainty before the policy gate.
+Full suite includes FPUB-01–23, question and v3 regression,
 logging/security, real HTTP transport faults, expired leases, duplicate callbacks,
 malformed GET, absent answer state, exact stale document IDs as offline fixtures,
 manual/regeneration lifecycle and real mandatory gate on questions.
@@ -90,7 +92,7 @@ Intentional old → new expectations:
 - WBClient raw response return: now acceptance metadata (HTTP code/hash/response)
   is returned without interpreting it as publication proof.
 
-Local suite: 639 passed (Python 3.14; pinned Python 3.12 validation required in CI).
+Local suite: 641 passed (Python 3.14; pinned Python 3.12 validation required in CI).
 Compileall, offline registry validation and verify-snapshot pass. Snapshot
 `ks_v3_20260928T120346_4f4121d4`, policy `v3.policy.2026-09-28.1`, content hash
 `66eec390a5af76b80a1ace26bd97b58b41d4ce621117c53540a82447c071215a` unchanged.
