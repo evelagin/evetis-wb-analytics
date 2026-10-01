@@ -1,4 +1,4 @@
-"""Manual-edit publish gate: OFF by default (no behaviour change); ON only by owner decision."""
+"""Explicit publication policy is mandatory; shadow flags cannot bypass it."""
 from __future__ import annotations
 
 from app.services.pipeline import handle_update
@@ -14,6 +14,8 @@ def _deps_with_manual(snap, enforce: bool, text: str):
     run_poll(deps)
     doc_id = next(iter(deps.repo.docs))
     d = deps.repo.docs[doc_id]
+    deps.publication_validator = None
+    d.update(nm_id="438775617", supplier_article="")
     d["final_answer"] = text
     d.setdefault("answer_versions", []).append({"source": "manual", "text": text})
     deps.settings.wb_publish_enabled = True
@@ -32,17 +34,17 @@ BAD = "Это адаптация кожи, продолжайте пользов
 
 def test_flag_off_publication_unchanged(snap):
     deps, doc_id = _deps_with_manual(snap, False, BAD)
-    handle_update(deps, _cb(doc_id))
-    assert deps.wb.published and deps.wb.published[-1][1] == BAD   # v2 behaviour exactly as before
+    result = handle_update(deps, _cb(doc_id))
+    assert result["status"] == "policy_blocked"
+    assert not deps.wb.published
 
 
 def test_flag_on_blocks_manual_text_without_state_change(snap):
     deps, doc_id = _deps_with_manual(snap, True, BAD)
-    status_before = deps.repo.docs[doc_id]["status"]
     r = handle_update(deps, _cb(doc_id))
-    assert r["status"] == "v3_blocked" and not deps.wb.published
-    assert deps.repo.docs[doc_id]["status"] == status_before
-    assert "не прошёл проверку" in deps.telegram.sent[-1][1]
+    assert r["status"] == "policy_blocked" and not deps.wb.published
+    assert deps.repo.docs[doc_id]["status"] == "policy_blocked"
+    assert "требует обновления" in deps.telegram.edits[-1][1]
 
 
 def test_flag_on_allows_clean_manual_text(snap):

@@ -35,6 +35,8 @@ class FakeWB:
         self.question_timeout_lands = False
         self.get_question_error = None
         self.get_question_calls = 0
+        self.feedback_answers = {}
+        self.get_feedback_calls = 0
 
     def iter_unanswered_feedbacks(self):
         return list(self._feedbacks)
@@ -50,7 +52,13 @@ class FakeWB:
 
             raise WBServerError("boom", status_code=500)
         self.published.append((feedback_id, text))
-        return {"ok": True}
+        self.feedback_answers[feedback_id] = text
+        return {"status_code": 204}
+
+    def get_feedback(self, feedback_id, **kwargs):
+        self.get_feedback_calls += 1
+        text = self.feedback_answers.get(feedback_id)
+        return {"id": feedback_id, "answer": {"text": text, "state": "wbRu"} if text else None}
 
     # --- questions ---
     def iter_unanswered_questions(self):
@@ -210,6 +218,7 @@ def make_settings(**overrides) -> Settings:
         telegram_allowed_user_ids={"302044578"},
         wb_min_interval_seconds=0.0,
         wb_publish_enabled=True,  # tests exercise publishing; gate tested explicitly
+        wb_feedback_verify_delay_seconds=0.0,
         wb_question_verify_delay_seconds=0.0,  # bounded read-back without real sleeps
     )
     base.update(overrides)
@@ -257,6 +266,7 @@ def make_deps(
         engine = make_engine_service()
 
     return Deps(
+        publication_validator=lambda *args: {"verdict": "PASS", "snapshot": "unit-fake", "version": "unit-fake"},
         settings=settings,
         repo=MemoryRepository(),
         wb=FakeWB(feedbacks, fail_publish=fail_publish, publish_error=publish_error,

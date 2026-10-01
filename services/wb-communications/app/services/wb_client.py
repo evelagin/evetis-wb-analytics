@@ -181,9 +181,29 @@ class WBClient:
                 "WB publish rejected", status_code=resp.status_code, body=(resp.text or "")[:300]
             )
         try:
-            return resp.json() if resp.content else {"status_code": resp.status_code}
+            parsed = resp.json() if resp.content else None
         except ValueError:
-            return {"status_code": resp.status_code}
+            parsed = None
+        if isinstance(parsed, dict) and parsed.get("error") is True:
+            raise WBApiError("WB feedback rejected (error=true)", status_code=resp.status_code)
+        return {"status_code": resp.status_code, "response": parsed,
+                "request_sha256": _body_sha256(body)}
+
+    def get_feedback(self, feedback_id: str, *, retries: int = 3, timeout_seconds: float = 5.0) -> dict:
+        """Single authoritative GET; reject malformed/error/mismatched responses."""
+        resp = retry_call(lambda: self._request("GET", "/api/v1/feedback", params={"id": feedback_id}, timeout=timeout_seconds),
+                          retries=retries, retry_on=_RETRY_ON)
+        if resp.status_code >= 400:
+            raise WBApiError("WB feedback fetch failed", status_code=resp.status_code)
+        try:
+            body = resp.json()
+            data = body.get("data")
+            if (body.get("error") is True or not isinstance(data, dict)
+                    or str(data.get("id")) != str(feedback_id) or "answer" not in data):
+                raise ValueError("invalid feedback")
+        except (ValueError, AttributeError) as exc:
+            raise WBApiError("WB feedback read cannot be verified", status_code=resp.status_code) from exc
+        return data
 
     # --- questions (separate WB entity/endpoint) ---
     def get_unanswered_questions(self, take: int | None = None, skip: int = 0) -> list[dict]:
