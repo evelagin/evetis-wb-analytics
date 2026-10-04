@@ -4,7 +4,7 @@ from __future__ import annotations
 import ast
 from pathlib import Path
 
-HTTP_IMPORTS = ("urllib.request", "requests", "httpx", "aiohttp", "http.client", "socket")
+HTTP_IMPORTS = ("urllib.request", "requests", "httpx", "aiohttp", "http.client", "socket", "google.auth.transport", "googleapiclient", "grpc", "subprocess", "runpy", "importlib", "ctypes")
 PUBLIC = {
     "ApiPathDenied", "ConfigError", "JournalWriteError", "DATASET", "PROJECT", "REF_DATASET",
     "LOCATION", "STATS", "STRICT_PAGE_CAPS", "LEGACY_INGESTION_PROJECT", "CONFIG",
@@ -13,7 +13,7 @@ PUBLIC = {
     "merge_rows", "append_rows", "record_run", "safe_error_text", "safe_excepthook", "redact_value",
     "promo_slot", "promo_observation_id", "promo_load_job_id", "PROMO_SLOT_HOURS_UTC",
 }
-PRIVATE = {"secret", "_seller_headers", "seller_headers", "_request", "_seller_open", "_NoSellerRedirect", "_secrets", "_sm", "urllib", "secretmanager", "_validate_seller_route", "__globals__", "__closure__", "__dict__", "_getframe"}
+PRIVATE = {"secret", "_seller_headers", "seller_headers", "_request", "_seller_open", "_NoSellerRedirect", "_secrets", "_sm", "urllib", "secretmanager", "_validate_seller_route", "__globals__", "__closure__", "__dict__", "_getframe", "_http", "_connection", "_credentials", "api_request", "transport", "_transport", "_session"}
 
 
 def violations(source: str, filename: str) -> list[str]:
@@ -47,7 +47,7 @@ def violations(source: str, filename: str) -> list[str]:
                     errors.append(f"{filename}:{node.lineno}: direct HTTP import")
         elif isinstance(node, ast.ImportFrom):
             for item in node.names:
-                if (any((node.module or "").startswith(p) for p in HTTP_IMPORTS)
+                if (any((node.module or "").startswith(p) or ((node.module or "") + "." + item.name).startswith(p) for p in HTTP_IMPORTS)
                         or (node.module or "").startswith(credential_sdk)
                         or (node.module == "common" and item.name not in PUBLIC)
                         or (item.name in PRIVATE and not (transport and node.module == "google.cloud" and item.name == "secretmanager"))):
@@ -68,6 +68,12 @@ def violations(source: str, filename: str) -> list[str]:
                     and isinstance(node.args[0], ast.Name) and node.args[0].id in common_aliases) or (
                     f == "getattr" and len(node.args) > 1 and isinstance(node.args[1], ast.Constant) and node.args[1].value in PRIVATE):
                 errors.append(f"{filename}:{node.lineno}: indirect private sink")
+            if isinstance(node.func, ast.Attribute) and node.func.attr in {
+                    "request", "api_request", "urlopen", "urlretrieve", "execute", "send", "system", "popen", "execv", "execl", "spawnv"}:
+                if not (transport and f == "urllib.request.urlopen" and scope(node) == "_request"):
+                    errors.append(f"{filename}:{node.lineno}: raw SDK/HTTP dispatch")
+            if f == "getattr" and (len(node.args) < 2 or not isinstance(node.args[1], ast.Constant)):
+                errors.append(f"{filename}:{node.lineno}: dynamic attribute dispatch")
             if transport and f.startswith("urllib.request."):
                 allowed = {"urllib.request.urlopen": {"_request"},
                            "urllib.request.build_opener": {"_seller_open"},

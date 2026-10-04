@@ -229,3 +229,15 @@ against hostile introspection, monkeypatching or changing the transport itself. 
 be qualified/published as normal runtime. Public identifier getters remain identity interfaces,
 not API-key access. No execution profile or semantic record was broadened. Seller blocker logic
 remains unchanged in this security repair. No tenant validation or cloud deployment is implied.
+
+
+### Raw Google SDK dispatch audit follow-up
+
+A further synthetic AST negative control showed that `bq()._http.request(...)` was not
+rejected by the first repair. No such call exists in deployed normal modules and no live
+request was attempted. The gate also rejects raw SDK HTTP dispatch, private SDK credential/
+connection/session access, generic Google discovery/gRPC transports and dynamic attribute
+dispatch. Trusted Google SDK methods used by BigQuery operations remain unchanged. The
+security-only runtime image retains the same 17 source hashes; qualification with the revised
+scanner is required before credential verdict relaxation. This is a static-gate-only follow-up,
+not an additional runtime authority or a tenant resource change.
