@@ -1,0 +1,221 @@
+{
+  "release_contract": "vts.runtime-release.v1",
+  "marketplace": "ozon",
+  "image": "europe-west1-docker.pkg.dev/mpa-platform/mpa-runtime/ozon-runtime@sha256:a9917169e40c367fa17c3e54babde245fd0998cb1fbf090af6bb8c63f9ffe170",
+  "digest": "sha256:a9917169e40c367fa17c3e54babde245fd0998cb1fbf090af6bb8c63f9ffe170",
+  "operator_tag": "fe60d6b4685609769f4dad320564e906475d24db",
+  "released_at": "2026-10-04T18:40:41.139965Z",
+  "source": {
+    "repository": "evelagin/evetis-wb-analytics",
+    "commit": "fe60d6b4685609769f4dad320564e906475d24db",
+    "main_at_build": "fe60d6b4685609769f4dad320564e906475d24db",
+    "merged_main": "fe60d6b4685609769f4dad320564e906475d24db",
+    "source_tree": "43cf659497b69c39b58935d8ff3ac7df6150c34d",
+    "merged_tree": "43cf659497b69c39b58935d8ff3ac7df6150c34d",
+    "context": "pipelines/ozon/runtime",
+    "dockerfile": "pipelines/ozon/runtime/Dockerfile",
+    "context_tree": "49d8500e0d379816ba116e89115292a2e2c08c7d",
+    "context_files_sha256": {
+      ".gcloudignore": "862263fa1f46c20f0d1e4dac5ffcc75abd55c08211b2c3864c5f8764b9d87793",
+      "Dockerfile": "67d54daa0471f6a321a2ac7ae217d3e7e53095c467b917ce2611ef5428bf096c",
+      "backfill.py": "817078a81313a0b30156cfabd431530e82194fb2b8b36d2fe39a6f8ba10fd0f2",
+      "backfill_core.py": "8df2f1d8defc9408c3e5ba5568c44420d560ad0a8ca638aeefbb4434e286cd2c",
+      "checkpoints.py": "544a2c85680cbebf696103229167f14f479cdb64dcbb2c03d3d03ae500787370",
+      "common.py": "2288a4eeb3ca7855b6c37ff4d1716b39c890cc1a27d13ec3e67fdda8df6cdb68",
+      "control_store.py": "a9b5153a483f26622b647c0e80fcef41fc68a7e28c878c786f33f9459163fccb",
+      "credentials.py": "db396b2277e89a257d9bd4734bc29f471ebc1307271382d18dd16ed656b5f870",
+      "dq.py": "fd11055bc006900053b04a3cc02f4ebb5ae27aa03113c6801990008f495ff8cc",
+      "entities.py": "77d5dc4dd5c26a3334a02b5c613867e2f1b90c5cabd065b2d78c594b8d795424",
+      "history.py": "7509341ce95ddf60cc907b09613c869e38909795873ee1701bdae843d8660235",
+      "identity.py": "5fac4031d21ac6152a2ca321d307ab0592e2dcd229e088eac7485de8f9e4f1c4",
+      "lifecycle.py": "ce8f3c8b9f3a48a82d0644b6a934523d8b484389083355c9e3db2f3f32163f3d",
+      "lifecycle_core.py": "76e71ff44e328c9cf10206454a1a4b03fcdfb06d64122220529b80886711afa1",
+      "main.py": "24a0c742fb64419f12ad9aaf30087697edfc53a30841dc97a5b34101660c4b55",
+      "promo.py": "8806b5c6a23402efbad77d05f2470a4f8940b95ce12134b93242bdf2ca385f24",
+      "quota.py": "a41475abf7ae5dd3d0616909ae8cc4de478123b8af1e9dab6df7d4a87a911e08",
+      "requirements.txt": "a3d267286f37716ab961e495443a56a6538de7c1ac3c5c4435b49778f288fcd0",
+      "runtime_execution_contract.json": "d7e3028c979c25cb7e569f85861bb8e94214e8847f9c6012ec5a787fe9782ccc",
+      "seller_method_policy.json": "b0750ac78983e3ac735fd844e0e29a1bfb19a5214126a063ad5bb00bbee2958f",
+      "seller_policy.py": "6988af54191dac0c87b414bf92a7eea2a93599de621f169344791f3a79e95be3",
+      "seller_policy_reviews.json": "ca7a7407d856c87a3f25e70bb0b9a3f0286ffb82383621aea15d80c34759670c"
+    },
+    "archive": {
+      "command": "git archive --format=tar.gz fe60d6b4685609769f4dad320564e906475d24db pipelines/ozon/runtime",
+      "sha256": "d241b7cc43d2e97e9fa0d753e32ed7bb617a27996f6e1c35dd9c9908ea16a827",
+      "tar_commit_id": "fe60d6b4685609769f4dad320564e906475d24db"
+    }
+  },
+  "build": {
+    "mechanism": "Cloud Build",
+    "project": "mpa-platform",
+    "region": "europe-west1",
+    "build_id": "2c0fb3ce-1389-4cb8-83ef-3fa59806ecf9",
+    "status": "SUCCESS",
+    "create_time": "2026-10-04T18:39:33.910895042Z",
+    "finish_time": "2026-10-04T18:40:41.139965Z",
+    "config": "infra/tenant/releases/ozon-runtime.v6.cloudbuild.yaml",
+    "config_sha256": "2e300a55d2b89da793c530fb50489492d928affcfdca946f24ac4af630f0983c",
+    "service_account": "sa-runtime-builder@mpa-platform.iam.gserviceaccount.com",
+    "builder_image": "gcr.io/cloud-builders/docker@sha256:bbb3d633c5c2813b2ce5245852979e1d637768f4acfc504d8ece288f91e9b60f",
+    "source_object": {
+      "bucket": "mpa-platform-runtime-build-777428383056",
+      "generation": "1791139173504796",
+      "object": "source/1791139172.66686-5dee40d221e4455fa75104ea04d4c5b6.tgz"
+    },
+    "source_object_sha256": "d241b7cc43d2e97e9fa0d753e32ed7bb617a27996f6e1c35dd9c9908ea16a827",
+    "build_args": [],
+    "secrets": [],
+    "logging": "CLOUD_LOGGING_ONLY"
+  },
+  "image_facts": {
+    "platform": "linux/amd64",
+    "base": "python@sha256:02108f5d322dd89f1c9e552442c25acb0543dfdbc455693a5599624f20d9155d",
+    "python": "3.12.15",
+    "entrypoint": [
+      "python",
+      "main.py"
+    ],
+    "workdir": "/app",
+    "user": "root (existing Dockerfile contract)",
+    "control_entrypoint": [
+      "python",
+      "lifecycle.py",
+      "status"
+    ],
+    "app_files": [
+      "backfill.py",
+      "backfill_core.py",
+      "checkpoints.py",
+      "common.py",
+      "control_store.py",
+      "credentials.py",
+      "dq.py",
+      "entities.py",
+      "history.py",
+      "identity.py",
+      "lifecycle.py",
+      "lifecycle_core.py",
+      "main.py",
+      "promo.py",
+      "quota.py",
+      "requirements.txt",
+      "runtime_execution_contract.json",
+      "seller_method_policy.json",
+      "seller_policy.py"
+    ],
+    "labels": {
+      "org.opencontainers.image.revision": "fe60d6b4685609769f4dad320564e906475d24db",
+      "org.opencontainers.image.source": "https://github.com/evelagin/evetis-wb-analytics",
+      "org.opencontainers.image.title": "ozon-runtime"
+    },
+    "packages": [
+      "certifi==2026.7.22",
+      "cffi==2.1.1",
+      "charset-normalizer==3.5.2",
+      "cryptography==50.0.2",
+      "google-api-core==2.33.0",
+      "google-auth==2.59.1",
+      "google-cloud-bigquery==3.25.0",
+      "google-cloud-core==2.8.0",
+      "google-cloud-secret-manager==2.20.2",
+      "google-crc32c==1.9.0",
+      "google-resumable-media==2.11.0",
+      "googleapis-common-protos==1.75.0",
+      "grpc-google-iam-v1==0.14.4",
+      "grpcio==1.84.0",
+      "grpcio-status==1.71.2",
+      "idna==3.20",
+      "packaging==26.3",
+      "proto-plus==1.28.2",
+      "protobuf==5.29.6",
+      "pyasn1==0.6.4",
+      "pyasn1_modules==0.4.2",
+      "pycparser==3.0",
+      "python-dateutil==2.9.0.post0",
+      "requests==2.34.2",
+      "six==1.17.0",
+      "typing_extensions==4.16.0",
+      "urllib3==2.8.0"
+    ]
+  },
+  "verification": {
+    "candidate_pr": 244,
+    "candidate_head": "f7610d587db5435b66ff8098e7e0f07895acdc8e",
+    "ci_runs": {
+      "37224741968": "SUCCESS",
+      "37224741815": "SUCCESS",
+      "37224739467": "SUCCESS"
+    },
+    "Python3.12_tests": "893 passed / 1 external legacy audit archive skipped",
+    "tenant_sql_package": "32 objects / 0 violations",
+    "image_qualification_build": "f854c64f-7e46-48b6-a2ac-088402b76bcf",
+    "runtime_image_check": "PASS; network=none; no tenant credentials",
+    "built_artifact": {
+      "execution_contract": "PASS",
+      "identity_vectors": "PASS",
+      "platform": "Linux-5.10.0-32-cloud-amd64-x86_64-with-glibc2.41",
+      "policy_records": 532,
+      "policy_schema": 2,
+      "python": "3.12.15",
+      "seller_transport_ast": "PASS",
+      "source_hashes_verified": 19,
+      "verdict": "PASS",
+      "backfill_implementation_hash": "9aa8cfafa0352cdc446e03733ceec967370066c50ea4a3ac4184d3f51d0dbab0",
+      "backfill_window_v1": "PASS",
+      "credential_reads": 0,
+      "fbo_split_resume_replay": "PASS",
+      "finance_unknown84": "PASS",
+      "network": "NONE",
+      "supply_bundle_resume": "PASS",
+      "state_pre_merge_size_guard": "PASS",
+      "domains": 3
+    },
+    "adversarial_results": [
+      {
+        "security_adversarial": "PASS",
+        "denied_before_credentials_network": 33,
+        "dangerous_paths_tested": 8,
+        "direct_credentials_cache": "DENIED"
+      },
+      {
+        "raw_sdk_static_negative_controls": "PASS",
+        "cases": 10
+      },
+      {
+        "parent_import_external_dispatch": "PASS",
+        "cases": 12
+      },
+      {
+        "broad_inventory_model": "PASS_WITH_WARNINGS",
+        "hard_blockers": "PASS",
+        "inventory_provenance": "PASS",
+        "legacy_strict": "PASS",
+        "release_source_integrity": "PASS"
+      }
+    ],
+    "cloud_build_gates": [
+      "identity",
+      "build",
+      "record",
+      "contents",
+      "fail-closed-without-project",
+      "control-fail-closed-without-project",
+      "external-binding-omission-denied",
+      "backfill-invalid-scope-denied"
+    ],
+    "registry_intoto_slsa": {
+      "status": "UNPROVEN",
+      "api_enabled_by_task": false,
+      "reason": "Signed registry SLSA not checked; no API enabled."
+    },
+    "global_machine_dod": "Original global report remains BLOCKED; not renamed PASS. Foreign legacy EVETIS/WB suites NOT_APPLICABLE_TO_CLIENT_001_TENANT_BACKFILL_SCOPE under owner applicability decision 2026-10-04. Mandatory tenant image/deploy/data gates retained.",
+    "continuation_limit_bytes": 900000,
+    "pre_merge_scalar_reserve_bytes": 128,
+    "secret_scan": "19 source-hashed /app files; no credentials, .env, Terraform/state or build secret args"
+  },
+  "deployment": {
+    "evetis": "NOT_DEPLOYED; no legacy runtime/resource changes",
+    "tenants": "NOT_DEPLOYED at qualification; client_001 requires reviewed tenant-only 0/5/0 plan and bounded sequential pilots. Schedulers stay PAUSED; no full-history or READY approval.",
+    "rollback": "Previous qualified 0016d1cf50ed5b4721da8d162bb9133ab8c6e77c7204c3b312aca6fa103a555c retained. Canonical pointer PR plus exact reviewed image-only frozen plan; retain nullable journal schema/clustering and all pilot/trial data. No automatic lifecycle/binding/Scheduler rewrite."
+  }
+}
