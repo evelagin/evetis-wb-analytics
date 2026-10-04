@@ -517,3 +517,15 @@ CAPABILITY_DISCOVERY, отрезки берутся только в BACKFILLING 
 - Исполнитель, запущенный владельцем позже срока аренды плюс 3 ч, может пересечься с повторной
   арендой. MERGE идемпотентен — это лишняя работа, а не дубли.
 - Базовый образ `python:3.12-slim` берётся по тегу, как у EVETIS.
+
+## Owner-approved policy / identity v2 (2026-10-04; LOCAL ONLY)
+
+The relevant D2 heuristic capability classification and mandatory Seller OGRN rule above are
+superseded prospectively by [TENANCY_SELLER_POLICY_IDENTITY_V2.md](TENANCY_SELLER_POLICY_IDENTITY_V2.md).
+This is a local contract/implementation, not deployment or a reinterpretation of historical evidence.
+Capability inventory, reviewed semantics, callable routes, machine identity, owner confirmation,
+Seller/Performance linkage and lifecycle are independent evidence boundaries. Business mutations,
+external effects and unresolved semantics remain blocking; no role-name or blanket exception exists.
+V2 Seller core is client_id + inn with explicit versioned fingerprint and optional legal OGRN evidence.
+External ingestion must enforce binding even when TENANT_BINDING_REQUIRED was accidentally omitted.
+No client_001 marker, lifecycle, credential, trial data or production resource was changed.

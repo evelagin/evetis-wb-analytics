@@ -76,6 +76,9 @@ class Ctx:
 
 # ───────────────────────────────────────────── наблюдение identity и учётных данных
 def observe_seller(ctx):
+    version = os.environ.get("SELLER_IDENTITY_VERSION", I.SELLER_V1)
+    if version not in (I.SELLER_V1, I.SELLER_V2):
+        raise I.IdentityError("unsupported identity observation version")
     code, roles = C.seller_post("/v1/roles", {})
     verdict = CR.evaluate_seller_roles(roles if code == 200 else {}, ctx.entities, ctx.now)
     if code != 200:
@@ -85,7 +88,7 @@ def observe_seller(ctx):
     company = (si or {}).get("company") or {} if code == 200 else {}
     client_id = C.seller_client_id()
     try:
-        fp = I.seller_fingerprint(client_id, company.get("inn"), company.get("ogrn"))
+        fp = I.seller_fingerprint(client_id, company.get("inn"), company.get("ogrn"), version=version)
         status = "OBSERVED" if verdict["status"] == "PASS" else "CREDENTIAL_REJECTED"
     except I.IdentityError:
         fp, status = None, "INCOMPLETE"
@@ -96,7 +99,10 @@ def observe_seller(ctx):
            "company_inn": company.get("inn"), "company_ogrn": company.get("ogrn"),
            "company_name": company.get("name"), "legal_name": company.get("legal_name"),
            "subscription_type": sub.get("type"),
-           "evidence_json": json.dumps({"credential": verdict, "seller_info_http": code}, ensure_ascii=False),
+           "evidence_json": json.dumps({"credential": verdict, "seller_info_http": code, "identity_version": version,
+                                 "authentication": "HTTP_ACCEPTED" if code == 200 else "UNPROVEN",
+                                 "owner_confirmation": False, "machine_identity": "OBSERVED" if fp else "INCOMPLETE",
+                                 "ogrn_present": "ogrn" in company, "ogrn_nonempty": bool(str(company.get("ogrn") or "").strip())}, ensure_ascii=False),
            "status": status}
     return verdict, row, fp
 
@@ -115,7 +121,7 @@ def catalog_skus():
     return skus
 
 
-def observe_performance(ctx, skus):
+def observe_performance(ctx, skus, seller_fp=None):
     """Токен + безвредное чтение; доказательство — SKU кампаний CPC ⊆ каталог Seller."""
     token_ok, read_ok, http_read = True, False, None
     try:
@@ -149,7 +155,8 @@ def observe_performance(ctx, skus):
            "seller_client_id": None, "performance_client_id": perf_id, "company_inn": None,
            "company_ogrn": None, "company_name": None, "legal_name": None, "subscription_type": None,
            "evidence_json": json.dumps({"credential": verdict, "advertised_skus": len(advertised),
-                                        "in_seller_catalog": inside}, ensure_ascii=False),
+                                        "in_seller_catalog": inside, "seller_binding_fingerprint": seller_fp,
+                                        "sku_evidence_coverage": "SAMPLED", "owner_confirmation": False}, ensure_ascii=False),
            "status": status}
     return verdict, row, fp
 
@@ -160,11 +167,14 @@ def owner_binding(ctx, api, observations=None):
     return I.binding_from_markers(items, api, ctx.now, observations)
 
 
-def live_binding(ctx, seller_fp, perf_fp):
+def live_binding(ctx, seller_fp, perf_fp, legal_ogrn=None):
     obs = list(ctx.store.rows("tenant_ops", "SELLER_IDENTITY_OBSERVATIONS"))
-    out = {"seller": I.live_status(owner_binding(ctx, I.SELLER, obs), seller_fp)[0]}
+    out = {"seller": I.live_status(owner_binding(ctx, I.SELLER, obs), seller_fp, legal_ogrn)[0]}
     if ctx.ads:
-        out["performance"] = I.live_status(owner_binding(ctx, I.PERFORMANCE, obs), perf_fp)[0]
+        pb = owner_binding(ctx, I.PERFORMANCE, obs)
+        out["performance"] = I.live_status(pb, perf_fp)[0]
+        if seller_fp and I.fingerprint_version(seller_fp) == I.SELLER_V2 and pb.seller_binding_fingerprint != seller_fp:
+            out["performance"] = I.INVALID_BINDING
     return out
 
 
@@ -281,7 +291,7 @@ def cmd_validate(ctx):
                      kind="ROLE_LIST", evidence={k: sv[k] for k in ("blocking", "warnings", "method_count",
                                                                     "role_names", "expires_at")})]
     if ctx.ads:
-        pv, prow, _pfp = observe_performance(ctx, catalog_skus() if sv["status"] == "PASS" else None)
+        pv, prow, _pfp = observe_performance(ctx, catalog_skus() if sv["status"] == "PASS" else None, sfp)
         rows.append(prow)
         caps.append(_cap_row(ctx, "performance", "credential", "AVAILABLE" if pv["status"] == "PASS" else "DENIED",
                              evidence={"blocking": pv["blocking"], "warnings": pv["warnings"]}))
@@ -300,7 +310,7 @@ def require_bound(ctx):
     pfp = None
     if ctx.ads:
         pfp = I.performance_fingerprint(C.perf_client_id())
-    b = live_binding(ctx, sfp if sv["status"] == "PASS" else None, pfp)
+    b = live_binding(ctx, sfp if sv["status"] == "PASS" else None, pfp, _row.get("company_ogrn"))
     if any(v != I.BOUND for v in b.values()):
         C.log(event="binding_not_bound", run_id=ctx.run_id, binding=b)
         raise SystemExit(3)
@@ -797,7 +807,7 @@ def cmd_advance(ctx):
     if ctx.ads:
         pfp = I.performance_fingerprint(C.perf_client_id())
         pv = live_performance()
-    binding = live_binding(ctx, sfp if sv["status"] == "PASS" else None, pfp)
+    binding = live_binding(ctx, sfp if sv["status"] == "PASS" else None, pfp, _row.get("company_ogrn"))
     dq = None
     if cur == L.RECONCILING:
         # DQ считается в этом же прогоне: строки прошлых прогонов DQ могут быть не видны или старше
@@ -836,6 +846,7 @@ def main(argv):
     if len(argv) != 1 or argv[0] not in COMMANDS:
         print(__doc__, file=sys.stderr)
         return 2
+    C._seller_execution_scope = frozenset({"control"})
     return COMMANDS[argv[0]](Ctx())
 
 

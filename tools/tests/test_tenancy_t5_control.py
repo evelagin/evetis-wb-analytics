@@ -312,12 +312,13 @@ def test_policy_generator_takes_the_strictest_class_per_path(tmp_path):
     assert m["/v1/x/list"]["class"] == "MUTATION" and m["/v1/x/list"]["http"] == "DELETE"
     assert m["/v1/y/info"]["class"] == "MUTATION"
     assert m["/v1/z/info"]["class"] == "READ"
+    assert all(r["lifecycle"] == "UNRESOLVED" and r["semantics"] == "UNPROVEN" for r in m.values())
 
 
 def test_policy_file_has_one_method_per_path_and_no_approved_mutations():
     from tools.tenancy import ozon_method_policy as P
     pol = P.load_policy()
-    assert pol["approved_mutation_methods"] == [] and len(pol["methods"]) == 481
+    assert pol["approved_mutation_methods"] == [] and len(pol["methods"]) == 532
     assert {v["http"] for v in pol["methods"].values()} <= {"GET", "POST"}
 
 

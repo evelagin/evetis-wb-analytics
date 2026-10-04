@@ -66,19 +66,33 @@ def decide_confirm(observations, items, api, observation_id, fingerprint, expect
     # Отпечаток пересчитывается из тех значений, которые видит владелец (show): строку наблюдения пишет
     # control, и подменить «лицо» при чужом отпечатке он не должен суметь.
     try:
-        recomputed = (I.seller_fingerprint(obs.get("seller_client_id"), obs.get("company_inn"), obs.get("company_ogrn"))
+        recomputed = (I.seller_fingerprint(obs.get("seller_client_id"), obs.get("company_inn"), obs.get("company_ogrn"),
+                                           version=I.fingerprint_version(fingerprint))
                       if api == I.SELLER else I.performance_fingerprint(obs.get("performance_client_id")))
     except I.IdentityError:
         recomputed = None
     if recomputed != fingerprint:
         return "REJECT", ["отпечаток не пересчитывается из показанных значений identity — наблюдение подделано"], None
+    notes = "confirmed via tools/tenancy/tenant_binding.py"
+    if api == I.SELLER and I.fingerprint_version(fingerprint) == I.SELLER_V2:
+        notes = json.dumps({"identity_version": I.SELLER_V2, "owner_confirmation": True,
+                            "legal_evidence": {"ogrn": I.optional_ogrn(obs.get("company_ogrn"))}}, sort_keys=True)
+    if api == I.PERFORMANCE:
+        seller = I.binding_from_markers(items, I.SELLER, now)
+        if seller.status == "CONFIRMED" and I.fingerprint_version(seller.fingerprint) == I.SELLER_V2:
+            evidence = I.performance_observation_evidence(obs)
+            if evidence.get("seller_binding_fingerprint") != seller.fingerprint or evidence.get("sku_evidence_coverage") != "SAMPLED":
+                return "REJECT", ["cross-API machine evidence does not reference confirmed Seller"], None
+            notes = json.dumps({"binding_protocol": I.SELLER_V2, "owner_confirmation": True,
+                                "seller_binding_fingerprint": seller.fingerprint,
+                                "sku_evidence_coverage": "SAMPLED"}, sort_keys=True)
     row = {"binding_id": "bnd-" + hashlib.sha256(f"{api}|{observation_id}|{fingerprint}|{now.isoformat()}".encode()).hexdigest()[:24],
            "marketplace": "OZON", "api": api, "identity_fingerprint": fingerprint,
            "seller_client_id": obs.get("seller_client_id") if api == I.SELLER else None,
            "performance_client_id": obs.get("performance_client_id") if api == I.PERFORMANCE else None,
            "status": "CONFIRMED", "confirmed_by": actor, "confirmed_at": now.isoformat(),
            "source_observation_id": observation_id, "revoked_at": None, "revoked_by": None,
-           "notes": "confirmed via tools/tenancy/tenant_binding.py"}
+           "notes": notes}
     return "WRITE", [], row
 
 

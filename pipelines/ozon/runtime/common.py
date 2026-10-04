@@ -24,6 +24,8 @@ import urllib.error
 import urllib.parse
 import urllib.request
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
+from types import MappingProxyType
 
 from google.cloud import bigquery, secretmanager
 
@@ -268,7 +270,23 @@ def safe_error_text(err, limit=400):
     Сначала вырезание по ПОЛНОМУ тексту, потом обрезка: так на границе `limit`
     не остаётся фрагмента секрета, а остальная диагностика сохраняется.
     """
-    return redact_text(str(err))[:limit]
+    return _hide_v2_fingerprint(redact_text(str(err)))[:limit]
+
+
+def _hide_v2_fingerprint(text):
+    return re.sub(r"ozon-seller-core-v2:sha256:[0-9a-f]{64}", "<identity:suppressed>", text)
+
+
+def _log_identity_boundary(value):
+    # Log-only boundary: stored observations/marker material must remain intact.
+    if isinstance(value, dict):
+        return {k: ("<identity:suppressed>" if k in {
+            "identity_fingerprint", "seller_binding_fingerprint", "fingerprint_material",
+            "company_inn", "company_ogrn", "legal_evidence"} else _log_identity_boundary(v))
+                for k, v in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [_log_identity_boundary(v) for v in value]
+    return _hide_v2_fingerprint(value) if isinstance(value, str) else value
 
 
 class JournalWriteError(RuntimeError):
@@ -319,7 +337,7 @@ def safe_excepthook(exc_type, exc, tb):
 
 def log(**kw):
     """Структурный лог. Секреты вырезаются из значений до сериализации."""
-    line = json.dumps(redact_value(kw), ensure_ascii=False, default=str)
+    line = json.dumps(_log_identity_boundary(redact_value(kw)), ensure_ascii=False, default=str)
     if _redaction_re is not None and _redaction_re.search(line):
         # Страховка: сюда нельзя попасть, если вырезание значений отработало.
         # Печатать строку с секретом нельзя ни при каких условиях.
@@ -359,11 +377,11 @@ def perf_client_id():
     return secret(CONFIG.secret_perf_client_id)
 
 
-def seller_headers():
+def _seller_headers():
     """Заголовки Seller API по ИМЕНАМ секретов из конфигурации процесса.
 
     Единственное место, где собираются учётные данные Seller API: им пользуются
-    и seller_post, и наблюдатель акций (promo.promo_call).
+    только controlled seller_call; normal runtime modules не получают этот интерфейс.
     """
     return {"Client-Id": secret(CONFIG.secret_seller_client_id),
             "Api-Key": secret(CONFIG.secret_seller_api_key),
@@ -387,15 +405,22 @@ def h(*parts):
 
 # ------------------------------------------------------------------ HTTP
 def _request(req, attempt=0, raw_text=False):
+    credentialed = (hasattr(req, "_seller_profile") or urllib.parse.urlsplit(req.full_url).hostname == "api-seller.ozon.ru"
+                    or any(k.lower() in ("api-key", "client-id") for k, _ in req.header_items()))
+    if credentialed:
+        _validate_seller_route(req.full_url, req.get_method(), getattr(req, "_seller_profile", None))
     STATS["requests"] += 1
     try:
-        with urllib.request.urlopen(req, timeout=180) as r:
+        opener = _seller_open if credentialed else urllib.request.urlopen
+        with opener(req, timeout=180) as r:
             body = r.read()
             # surrogateescape: отчёты Performance API приходят ZIP-архивом, строгий
             # utf-8 на них падает. Round-trip .encode("utf-8","surrogateescape")
             # в entities.py восстанавливает байты один в один.
             return r.status, (body.decode("utf-8", "surrogateescape")
                               if raw_text else json.loads(body))
+    except ApiPathDenied:
+        raise
     except urllib.error.HTTPError as e:
         payload = e.read().decode("utf-8", "replace")
         if e.code in (429, 500, 502, 503, 504) and attempt < len(BACKOFF):
@@ -411,12 +436,73 @@ def _request(req, attempt=0, raw_text=False):
         return "NET_ERROR", {"_error": safe_error_text(repr(e), 300)}
 
 
+PROMO_ALLOWED_ROUTES = frozenset({
+    ("GET", "/v1/actions"), ("POST", "/v1/actions/products"),
+    ("POST", "/v1/actions/candidates"), ("POST", "/v1/actions/auto-add/products/list"),
+    ("POST", "/v1/actions/auto-add/products/candidates"), ("POST", "/v5/product/info/prices"),
+})
+SELLER_PROFILES = MappingProxyType({
+    "runtime": frozenset(("POST", p) for p in SELLER_ALLOWED_PATHS),
+    "control": frozenset(("POST", p) for p in SELLER_ALLOWED_PATHS),
+    "promo": PROMO_ALLOWED_ROUTES,
+})
+# A profile argument cannot enable a profile denied by the actual entrypoint.
+_seller_execution_scope = None
+_execution_contract = json.loads(Path(__file__).with_name("runtime_execution_contract.json").read_text())
+if (type(_execution_contract.get("schema_version")) is not int or _execution_contract["schema_version"] != 1
+        or _execution_contract.get("external_binding_required") is not True
+        or _execution_contract.get("external_promo_enabled") is not False
+        or not isinstance(_execution_contract.get("legacy_ingestion_project"), str)):
+    raise ConfigError("unsupported runtime execution contract")
+LEGACY_INGESTION_PROJECT = _execution_contract["legacy_ingestion_project"]
+
+
+def _validate_seller_route(url, method, profile):
+    if profile not in SELLER_PROFILES:
+        raise ApiPathDenied("Seller execution profile denied")
+    if _seller_execution_scope is not None and profile not in _seller_execution_scope:
+        raise ApiPathDenied("Seller profile outside entrypoint scope")
+    # Dedicated-tenant namespace is protected even for direct entity entrypoints.
+    if CONFIG.project.startswith("mpa-t") and profile == "promo":
+        raise ApiPathDenied("Promo not in dedicated-tenant callable contract")
+    if not isinstance(url, str) or any(c in url for c in "%?#\\") or any(ord(c) <= 32 or ord(c) >= 127 for c in url):
+        raise ApiPathDenied("Seller URL syntax denied")
+    try:
+        parsed = urllib.parse.urlsplit(url)
+    except ValueError:
+        raise ApiPathDenied("Seller URL syntax denied") from None
+    if parsed.scheme != "https" or parsed.netloc != "api-seller.ozon.ru":
+        raise ApiPathDenied("Seller origin denied")
+    if not re.fullmatch(r"/[A-Za-z0-9/_-]+", parsed.path) or url != SELLER + parsed.path:
+        raise ApiPathDenied("Seller path syntax denied")
+    if (method, parsed.path) not in SELLER_PROFILES[profile]:
+        raise ApiPathDenied("Seller callable route denied")
+
+
+class _NoSellerRedirect(urllib.request.HTTPRedirectHandler):
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        raise ApiPathDenied("Seller redirect denied")
+
+
+def _seller_open(req, timeout):
+    return urllib.request.build_opener(_NoSellerRedirect()).open(req, timeout=timeout)
+
+
+def seller_call(path, body, *, method="POST", profile="runtime"):
+    """Only credentialed Seller transport. No query/template/prefix authorization."""
+    if not isinstance(path, str):
+        raise ApiPathDenied("Seller path type denied")
+    url = SELLER + path
+    _validate_seller_route(url, method, profile)  # before credentials
+    req = urllib.request.Request(url, data=json.dumps(body).encode() if body is not None else None,
+                                 headers=_seller_headers(), method=method)
+    req._seller_profile = profile
+    return _request(req)  # revalidates final URL/method/profile immediately before dispatch
+
+
 def seller_post(path, body):
-    if path not in SELLER_ALLOWED_PATHS:
-        raise ApiPathDenied(f"Seller API: путь {path} вне белого списка «только чтение»")
-    req = urllib.request.Request(
-        SELLER + path, data=json.dumps(body).encode(), headers=seller_headers())
-    return _request(req)
+    profile = "control" if _seller_execution_scope == frozenset({"control"}) else "runtime"
+    return seller_call(path, body, profile=profile)
 
 
 def perf_token():

@@ -123,7 +123,7 @@ def test_no_secret_value_in_source(src):
     common.seller_headers() по конфигурации процесса. Литерал имени секрета
     EVETIS здесь означал бы, что наблюдатель привязан к одному продавцу.
     """
-    assert "seller_headers()" in src             # единственный путь к учётным данным
+    assert "C.seller_call(" in src and "seller_headers()" not in src             # единственный путь к учётным данным
     assert "EVETIS_OZON_" not in src             # имя секрета конкретного продавца — нельзя
     for marker in ("Api-Key: ", "client_secret=", "-----BEGIN"):
         assert marker not in src                 # значение — нельзя

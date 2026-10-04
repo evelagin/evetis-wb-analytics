@@ -224,15 +224,19 @@ def test_builder_identity_is_separate_from_tenant_provisioning():
 
 
 # ═══════════════════════════════════════ следующий конфиг (T5): совпадает с Dockerfile
-def test_next_build_config_expects_exactly_the_dockerfile_contents():
+@pytest.mark.parametrize("candidate", [False, True])
+def test_next_build_config_expects_exactly_the_dockerfile_contents(candidate):
     """Шаг contents v2 ждёт ровно файлы из COPY Dockerfile (+ requirements.txt): иначе сборка
     кандидата T5 упала бы на собственной проверке состава (или пропустила лишнее)."""
-    text = NEXT_CONFIG.read_text(encoding="utf-8")
+    text = (RELEASES / "ozon-runtime.v3.cloudbuild.yaml" if candidate else NEXT_CONFIG).read_text(encoding="utf-8")
     docker = (REPO / "pipelines/ozon/runtime/Dockerfile").read_text(encoding="utf-8")
     copied = set()
     for line in docker.splitlines():
         if line.startswith("COPY "):
             copied |= set(line.split()[1:-1])
+    if not candidate:
+        # V2 is immutable historical release evidence, not the candidate Dockerfile.
+        copied = set(json.loads((RELEASES / "ozon/e52432e.json").read_text())["image_facts"]["app_files"])
     want = " ".join(sorted(copied)) + " "
     got = re.search(r'test "\$\$got" = "([^"]*)"', text).group(1)
     assert got == want, (got, want)
@@ -250,3 +254,44 @@ def test_next_build_config_keeps_every_v1_gate():
         assert bad not in text, bad
     assert "substitutionOption: MUST_MATCH" in text and "logging: CLOUD_LOGGING_ONLY" in text
     assert "--entrypoint=python ${_IMAGE}:${_SOURCE_SHA} lifecycle.py status" in text
+
+
+def test_policy_identity_candidate_build_preserves_gates_without_deployment():
+    text=(RELEASES/"ozon-runtime.v3.cloudbuild.yaml").read_text()
+    ids=re.findall(r"^  - id: (\S+)$",text,flags=re.M)
+    assert ids==["identity","build","record","contents","fail-closed-without-project",
+                 "control-fail-closed-without-project","external-binding-omission-denied"]
+    assert all("@sha256:" in n for n in re.findall(r"name: (\S+)",text))
+    assert "--network=none -e GCP_PROJECT_ID=mpa-t-client-001" in text
+    assert 'test "$$rc" -eq 2' in text
+    assert "TENANT_BINDING_REQUIRED=" not in text
+    for bad in ("secretEnv","availableSecrets","--build-arg","latest"):
+        assert bad not in text
+
+
+@pytest.mark.parametrize('omission_exit,expected_pass', [(2,True),(1,False),(0,False),(3,False)])
+def test_image_verifier_checks_omitted_binding_contract_without_docker(monkeypatch,omission_exit,expected_pass):
+    from types import SimpleNamespace
+    from tools.tenancy import runtime_image_check as V
+    project='mpa-t-synthetic';sha='a'*40
+    env={'GCP_PROJECT_ID':project,'TENANT_BINDING_REQUIRED':'1','ENTITIES':'catalog'}
+    monkeypatch.setattr(V,'tenant_envs',lambda:{'synthetic':{'project':project,'secret_ids':[],
+        'jobs':{'ozon-runtime-daily':env},'control_env':env}})
+    cfg={'Entrypoint':['python','main.py'],'WorkingDir':'/app',
+         'Labels':{'org.opencontainers.image.revision':sha},'Env':[]}
+    monkeypatch.setattr(V,'_docker',lambda *a,**k:SimpleNamespace(stdout=json.dumps(cfg)))
+    def run(image,environment,driver=None):
+        if driver=='_portability_driver.py':
+            return SimpleNamespace(returncode=0,stdout=json.dumps({'config':{'project':project},'secret_paths':[],'bq_objects':[]}),stderr='')
+        if driver:
+            flagged=environment.get('TENANT_BINDING_REQUIRED')=='1'
+            seen={'exit':3 if flagged else omission_exit,'http':[],'secret_paths':[],
+                  'bq':[['list_tables',project+'.ref']] if flagged else [],
+                  'config':{'project':project,'ref_dataset':'ref'}}
+            return SimpleNamespace(returncode=0,stdout=json.dumps(seen),stderr='')
+        return SimpleNamespace(returncode=3,stdout='',stderr='' if environment else 'GCP_PROJECT_ID не задан')
+    monkeypatch.setattr(V,'_run',run)
+    monkeypatch.setattr(V,'_run_control',lambda image,e:SimpleNamespace(returncode=2,stdout='',stderr='' if e else 'GCP_PROJECT_ID не задан'))
+    fails=V.check(PL.RUNTIME_REGISTRY+'/synthetic@sha256:'+('b'*64),sha)
+    assert (not fails)==expected_pass, fails
+    if not expected_pass:assert any('omitted binding contract' in f for f in fails)

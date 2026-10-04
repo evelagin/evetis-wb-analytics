@@ -23,7 +23,7 @@
       "type": "STRING"
     },
     {
-      "description": "sha256 подтверждённой identity",
+      "description": "V1: sha256 hex; Seller V2: ozon-seller-core-v2:sha256:<digest>. No cross-version fallback.",
       "mode": "REQUIRED",
       "name": "identity_fingerprint",
       "type": "STRING"
@@ -77,7 +77,7 @@
       "type": "STRING"
     },
     {
-      "description": "Пояснение",
+      "description": "V1 legacy text; V2 structured JSON: identity_version/owner_confirmation/legal_evidence. Performance V2 binding_protocol/seller_binding_fingerprint.",
       "mode": "NULLABLE",
       "name": "notes",
       "type": "STRING"

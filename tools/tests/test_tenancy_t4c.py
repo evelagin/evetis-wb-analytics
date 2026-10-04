@@ -305,8 +305,8 @@ def test_open_cogs_intervals_run_until_the_next_one_and_overlaps_surface_in_dq()
 
 # ═══════════════════════════════════════ привязка к кабинету
 BIND = ["binding_id", "api", "identity_fingerprint", "status", "confirmed_at", "confirmed_by", "revoked_at",
-        "source_observation_id"]
-OBS = ["observation_id", "api", "identity_fingerprint", "observed_at"]
+        "source_observation_id", "notes"]
+OBS = ["observation_id", "api", "identity_fingerprint", "observed_at", "company_ogrn"]
 SRC = ("o0", "SELLER", "f1", "2026-01-01")
 
 
@@ -316,6 +316,21 @@ def conf(bid, fp="f1", at="2026-01-02", src="o0"):
 
 def revk(bid, at="2026-02-01", fp="f1", confirmed="2026-01-02"):
     return (bid, "SELLER", fp, "REVOKED", confirmed, "op", at, "o0")
+
+
+def binding_sql(tables):
+    normalized = {}
+    for table, (cols, rows) in tables.items():
+        fixed = []
+        for row in rows:
+            row = list(row) + [None] * (len(cols) - len(row))
+            # Existing test labels are synthetic v1 fingerprints, not malformed markers.
+            fp = row[2]
+            if isinstance(fp, str) and fp.startswith('f') and fp[1:].isdigit():
+                row[2] = fp[1:] * 64
+            fixed.append(tuple(row))
+        normalized[table] = (cols, fixed)
+    return H.run("tenant_ops", "V_SELLER_BINDING_STATUS", normalized)
 
 
 @pytest.mark.parametrize("bindings,observations,expected", [
@@ -340,7 +355,7 @@ def revk(bid, at="2026-02-01", fp="f1", confirmed="2026-01-02"):
      [SRC, ("o1", "SELLER", "f1", "2026-03-01")], "BOUND"),                   # недопустимый статус не событие
 ])
 def test_seller_binding_status_fails_closed(bindings, observations, expected):
-    rows = H.run("tenant_ops", "V_SELLER_BINDING_STATUS", {
+    rows = binding_sql({
         "SELLER_BINDING": (BIND, bindings), "SELLER_IDENTITY_OBSERVATIONS": (OBS, observations)})
     assert [r["binding_status"] for r in rows if r["api"] == "SELLER"] == [expected]
 
@@ -349,7 +364,7 @@ def test_seller_binding_is_order_independent():
     bindings = [conf("b1"), ("b2", "SELLER", "f1", "REVOKED", "2026-01-02", "op", None, "o0")]
     obs = [SRC, ("o1", "SELLER", "f1", "2026-03-01")]
     for b in (bindings, bindings[::-1]):
-        rows = H.run("tenant_ops", "V_SELLER_BINDING_STATUS", {
+        rows = binding_sql({
             "SELLER_BINDING": (BIND, b), "SELLER_IDENTITY_OBSERVATIONS": (OBS, obs)})
         assert [r["binding_status"] for r in rows] == ["UNBOUND"]
 
@@ -377,3 +392,46 @@ def test_classification_happens_only_in_the_taxonomy_view():
     for p in SP.PACKAGE_DIR.glob("*/*.sql"):
         if p.stem != "DIM_OZON_ACCRUAL_TYPE":
             assert not re.search(r"type_id\s*(=|IN)\s*\(?\s*\d", p.read_text(encoding="utf-8")), p.name
+
+
+@pytest.mark.parametrize('notes,observed_ogrn,expected', [
+    ({'identity_version':'ozon-seller-core-v2','owner_confirmation':True,'legal_evidence':{'ogrn':''}}, '', 'BOUND'),
+    ({'identity_version':'ozon-seller-core-v2','owner_confirmation':True,'legal_evidence':{'ogrn':'synthetic-legal'}}, 'synthetic-legal', 'BOUND'),
+    ({'identity_version':'ozon-seller-core-v2','owner_confirmation':True,'legal_evidence':{'ogrn':'synthetic-legal'}}, '', 'MISMATCH'),
+    ({'identity_version':'ozon-seller-core-v2','owner_confirmation':True,'legal_evidence':{'ogrn':'synthetic-legal'}}, 'changed', 'MISMATCH'),
+    ({'identity_version':'ozon-seller-core-v2','owner_confirmation':'true','legal_evidence':{'ogrn':''}}, '', 'INVALID_BINDING'),
+    ({'identity_version':'future','owner_confirmation':True,'legal_evidence':{'ogrn':''}}, '', 'INVALID_BINDING'),
+    ({}, '', 'INVALID_BINDING'),
+])
+def test_binding_sql_v2_owner_and_legal_evidence(notes,observed_ogrn,expected):
+    import json
+    fp='ozon-seller-core-v2:sha256:'+('a'*64)
+    binding=('b','SELLER',fp,'CONFIRMED','2026-01-02','OPERATOR:synthetic',None,'o0',json.dumps(notes))
+    obs=[('o0','SELLER',fp,'2026-01-01',''),('o1','SELLER',fp,'2026-03-01',observed_ogrn)]
+    result=binding_sql({'SELLER_BINDING':(BIND,[binding]),'SELLER_IDENTITY_OBSERVATIONS':(OBS,obs)})
+    assert result[0]['binding_status']==expected
+
+
+def test_binding_sql_unknown_and_cross_version_never_bound():
+    for bound_fp,live_fp,expected in [
+        ('future:sha256:'+('a'*64),'future:sha256:'+('a'*64),'INVALID_BINDING'),
+        ('a'*64,'ozon-seller-core-v2:sha256:'+('a'*64),'MISMATCH'),
+    ]:
+        row=('b','SELLER',bound_fp,'CONFIRMED','2026-01-02','OPERATOR:synthetic',None,'o0',None)
+        obs=[('o0','SELLER',bound_fp,'2026-01-01',''),('o1','SELLER',live_fp,'2026-03-01','')]
+        result=binding_sql({'SELLER_BINDING':(BIND,[row]),'SELLER_IDENTITY_OBSERVATIONS':(OBS,obs)})
+        assert result[0]['binding_status']==expected
+
+
+@pytest.mark.parametrize('linked', [True,False])
+def test_binding_sql_performance_requires_v2_seller_link(linked):
+    import json
+    sfp='ozon-seller-core-v2:sha256:'+('a'*64);pfp='b'*64
+    notes={'identity_version':'ozon-seller-core-v2','owner_confirmation':True,'legal_evidence':{'ogrn':''}}
+    pn={'binding_protocol':'ozon-seller-core-v2','owner_confirmation':True,'seller_binding_fingerprint':sfp}
+    rows=[('bs','SELLER',sfp,'CONFIRMED','2026-01-02','OPERATOR:synthetic',None,'os',json.dumps(notes)),
+          ('bp','PERFORMANCE',pfp,'CONFIRMED','2026-01-02','OPERATOR:synthetic',None,'op',json.dumps(pn) if linked else None)]
+    obs=[('os','SELLER',sfp,'2026-01-01',''),('op','PERFORMANCE',pfp,'2026-01-01',None),
+         ('ss','SELLER',sfp,'2026-03-01',''),('sp','PERFORMANCE',pfp,'2026-03-01',None)]
+    result=binding_sql({'SELLER_BINDING':(BIND,rows),'SELLER_IDENTITY_OBSERVATIONS':(OBS,obs)})
+    assert {r['api']:r['binding_status'] for r in result}=={'SELLER':'BOUND','PERFORMANCE':'BOUND' if linked else 'INVALID_BINDING'}

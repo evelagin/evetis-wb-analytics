@@ -49,7 +49,8 @@ def _tfplan(lock: bytes = LOCK, extra: dict | None = None) -> bytes:
     members.update(extra or {})
     with zipfile.ZipFile(buf, "w") as z:
         for k, v in members.items():
-            z.writestr(k, v)
+            # ZIP timestamps participate in artifact hashes; fixtures must not depend on wall clock.
+            z.writestr(zipfile.ZipInfo(k, date_time=NOW.timetuple()[:6]), v)
     return buf.getvalue()
 
 
@@ -85,7 +86,8 @@ def _zip(files: dict[str, bytes]) -> bytes:
     buf = io.BytesIO()
     with zipfile.ZipFile(buf, "w") as z:
         for k, v in files.items():
-            z.writestr(k, v)
+            # ZIP timestamps participate in artifact hashes; fixtures must not depend on wall clock.
+            z.writestr(zipfile.ZipInfo(k, date_time=NOW.timetuple()[:6]), v)
     return buf.getvalue()
 
 
@@ -149,6 +151,14 @@ def _fails(fn, *a, match: str = "", **k):
         fn(*a, **k)
     assert match in str(e.value), str(e.value)
     return str(e.value)
+
+
+def test_frozen_artifact_fixture_hashes_ignore_wall_clock(monkeypatch):
+    first_plan, first_archive, first_inputs = _tfplan(), _zip(_files()), _env()
+    monkeypatch.setattr(zipfile.time, "localtime", lambda *args: (2030, 1, 1, 0, 0, 2, 1, 1, 0))
+    assert _tfplan() == first_plan
+    assert _zip(_files()) == first_archive
+    assert _env() == first_inputs
 
 
 # ═══════════════════════════════════════ счастливый путь

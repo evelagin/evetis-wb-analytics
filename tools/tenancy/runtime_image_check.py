@@ -12,8 +12,8 @@ client_001 (реестр) и эфемерного client_002 (tools/tenancy/synt
   2. нет GCP_PROJECT_ID → отказ при старте;
   3. T5: job арендатора (TENANT_BINDING_REQUIRED=1) без подтверждённой привязки → отказ (выход 3)
      первым шагом: без секретов и HTTP, только листинг знаков владельца в ref своего проекта;
-     без флага (слой T3.2) контейнеры секретов без версий → отказ до любого HTTP к Ozon, секреты
-     только своего проекта и по именам реестра (tests/_empty_secret_driver.py);
+     без флага → отказ execution contract (выход 2) до чтения секретов/BigQuery/HTTP;
+     включённый binding gate проверяется tests/_empty_secret_driver.py;
   4. переносимость: проект, датасеты и секреты — арендатора, не EVETIS
      (tests/_portability_driver.py);
   5. настоящая точка входа с конфигурацией арендатора и без сети → отказ, EVETIS не упомянут;
@@ -110,15 +110,15 @@ def check(image: str, source_sha: str) -> list[str]:
                     fails.append(f"{tid}/{job}: без привязки нет отказа первым шагом "
                                  f"({seen['exit']}, {seen['http']}, {len(seen['secret_paths'])}, {seen['bq']})")
                 fails += [f"{tid}/{job}: упомянут EVETIS ({m})" for m in EVETIS_MARKERS if m in r.stdout + r.stderr]
-            # Слой T3.2 под проверкой привязки: пустые секреты — отказ до HTTP, только свои секреты.
+            # V2 execution contract: omitted flag must not bypass binding, even on a new job.
             env = {k: v for k, v in env.items() if k != "TENANT_BINDING_REQUIRED"}
             r = _run(image, env, "_empty_secret_driver.py")
             if r.returncode != 0:
                 fails.append(f"{tid}/{job}: драйвер пустых секретов упал: {r.stderr[-300:]}")
                 continue
             seen = parse_tenant_json(r.stdout.strip().splitlines()[-1])
-            if seen["exit"] != 1 or seen["http"] or not seen["secret_paths"]:
-                fails.append(f"{tid}/{job}: без версий секретов нет отказа до HTTP ({seen['exit']}, {seen['http']})")
+            if seen["exit"] != 2 or seen["http"] or seen["secret_paths"] or seen["bq"]:
+                fails.append(f"{tid}/{job}: omitted binding contract not denied before cloud/HTTP ({seen['exit']})")
             if not set(seen["secret_paths"]) <= allowed:
                 fails.append(f"{tid}/{job}: запрошены секреты вне проекта арендатора")
             if seen["config"]["project"] != t["project"] or seen["config"]["ref_dataset"] != "ref":

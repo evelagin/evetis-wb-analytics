@@ -767,16 +767,17 @@ def test_read_only_key_passes():
 
 
 def test_mutation_capable_key_is_rejected_and_not_modified():
-    v = CR.evaluate_seller_roles(roles_ok(extra=("/v1/product/import/prices",)), ALL_ENTITIES, NOW)
+    v = CR.evaluate_seller_roles(roles_ok(extra=("/v1/cargoes/create",)), ALL_ENTITIES, NOW)
     assert v["status"] == "FAIL" and any(b.startswith("KEY_MUTATION_CAPABLE") for b in v["blocking"])
-    assert v["mutation_methods"] == ["/v1/product/import/prices"]
+    assert v["mutation_methods"] == ["/v1/cargoes/create"]
 
 
 def test_approved_mutation_list_is_empty_and_explicit():
     assert CR.load_policy()["approved_mutation_methods"] == []
     pol = copy.deepcopy(CR.load_policy())
-    pol["approved_mutation_methods"] = ["/v1/product/import/prices"]
-    assert CR.evaluate_seller_roles(roles_ok(extra=("/v1/product/import/prices",)), ALL_ENTITIES, NOW, pol)["status"] == "PASS"
+    pol["approved_mutation_methods"] = ["/v1/cargoes/create"]
+    with pytest.raises(ValueError):
+        CR.evaluate_seller_roles(roles_ok(extra=("/v1/cargoes/create",)), ALL_ENTITIES, NOW, pol)
 
 
 def test_unknown_method_is_blocking_not_guessed():
@@ -809,7 +810,7 @@ def test_missing_required_method_and_empty_roles():
 
 
 def test_rejected_key_yields_credential_rejected_observation(monkeypatch):
-    fake_api(monkeypatch, roles=roles_ok(extra=("/v1/product/import/prices",)))
+    fake_api(monkeypatch, roles=roles_ok(extra=("/v1/cargoes/create",)))
     store = FakeStore()
     assert LC.cmd_validate(make_ctx(store, entities=("catalog",))) == 1
     o = store.t[("tenant_ops", "SELLER_IDENTITY_OBSERVATIONS")][0]

@@ -22,12 +22,15 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 from dataclasses import dataclass
 from datetime import datetime, timezone
 
 SELLER = "seller"
 PERFORMANCE = "performance"
 APIS = (SELLER, PERFORMANCE)
+SELLER_V1 = "ozon-seller-v1"
+SELLER_V2 = "ozon-seller-core-v2"
 
 BOUND, UNBOUND, MISMATCH, INVALID_BINDING, NOT_OBSERVED = (
     "BOUND", "UNBOUND", "MISMATCH", "INVALID_BINDING", "NOT_OBSERVED")
@@ -48,10 +51,85 @@ def _norm(v, what: str) -> str:
     return s
 
 
-def seller_fingerprint(client_id, inn, ogrn) -> str:
-    """Отпечаток кабинета Seller API: Client-Id + ИНН + ОГРН (все обязательны)."""
+def seller_fingerprint(client_id, inn, ogrn=None, *, version=SELLER_V1) -> str:
+    """V1: Client-Id + ИНН + ОГРН. V2: version + Client-Id + ИНН; ОГРН — legal evidence."""
+    if version == SELLER_V2:
+        optional_ogrn(ogrn)  # malformed optional evidence is never silently discarded
+        core = {"api": SELLER, "version": SELLER_V2,
+                "client_id": _core_norm(client_id), "inn": _core_norm(inn)}
+        return SELLER_V2 + ":sha256:" + hashlib.sha256(_canon(core).encode()).hexdigest()
+    if version != SELLER_V1:
+        raise IdentityError("unsupported identity version")
     return hashlib.sha256(_canon({"api": SELLER, "client_id": _norm(client_id, "client_id"),
                                   "inn": _norm(inn, "inn"), "ogrn": _norm(ogrn, "ogrn")}).encode()).hexdigest()
+
+
+def _core_norm(value):
+    if not isinstance(value, str) or any(ord(c) < 32 or ord(c) == 127 for c in value):
+        raise IdentityError("invalid identity core")
+    value = value.strip()
+    if not value or any(c.isspace() for c in value):
+        raise IdentityError("empty/ambiguous identity core")
+    return value
+
+
+def optional_ogrn(value):
+    if value is None:
+        return ""
+    if not isinstance(value, str) or any(ord(c) < 32 or ord(c) == 127 for c in value):
+        raise IdentityError("malformed legal evidence")
+    value = value.strip()
+    if any(c.isspace() for c in value):
+        raise IdentityError("ambiguous legal evidence")
+    return value
+
+
+def fingerprint_version(fp):
+    if isinstance(fp, str) and re.fullmatch(r"[0-9a-f]{64}", fp):
+        return SELLER_V1
+    if isinstance(fp, str) and re.fullmatch(SELLER_V2 + r":sha256:[0-9a-f]{64}", fp):
+        return SELLER_V2
+    raise IdentityError("unsupported fingerprint representation")
+
+
+def binding_evidence(row):
+    """Versioned evidence in existing notes STRING; no implicit owner/machine equivalence."""
+    version = fingerprint_version(row.get("identity_fingerprint"))
+    if row.get("api") == PERFORMANCE:
+        if version != SELLER_V1:
+            raise IdentityError("invalid Performance identity version")
+        try:
+            meta = json.loads(row.get("notes") or "")
+        except (ValueError, TypeError):
+            return None, None  # historical Performance protocol
+        if isinstance(meta, dict) and "binding_protocol" in meta:
+            if meta["binding_protocol"] != SELLER_V2:
+                raise IdentityError("unsupported binding protocol")
+            link = meta.get("seller_binding_fingerprint")
+            if meta.get("owner_confirmation") is not True or fingerprint_version(link) != SELLER_V2:
+                raise IdentityError("invalid cross-API binding evidence")
+            return None, link
+        return None, None
+    if version != SELLER_V2:
+        return None, None
+    try:
+        meta = json.loads(row.get("notes") or "")
+        if meta.get("identity_version") != SELLER_V2 or meta.get("owner_confirmation") is not True:
+            raise ValueError
+        if not isinstance(meta.get("legal_evidence", {}).get("ogrn"), str):
+            raise ValueError
+        return optional_ogrn(meta["legal_evidence"]["ogrn"]), meta.get("seller_binding_fingerprint")
+    except (ValueError, TypeError, AttributeError, KeyError):
+        raise IdentityError("invalid binding evidence") from None
+
+
+def performance_observation_evidence(row):
+    """Parse observation diagnostics only; never a tenant registry or credentials document."""
+    try:
+        evidence = json.loads(row.get("evidence_json") or "")
+    except (ValueError, TypeError):
+        return {}
+    return evidence if isinstance(evidence, dict) else {}
 
 
 def performance_fingerprint(perf_client_id) -> str:
@@ -91,6 +169,8 @@ class Binding:
     source_observation_id: str | None
     confirmed_at: datetime | None
     reason: str
+    legal_ogrn: str | None = None
+    seller_binding_fingerprint: str | None = None
 
 
 def effective_binding(rows, api: str, now: datetime, observations=None) -> Binding:
@@ -122,8 +202,12 @@ def effective_binding(rows, api: str, now: datetime, observations=None) -> Bindi
             and o.get("identity_fingerprint") == latest.get("identity_fingerprint") for o in observations):
         return Binding(api, INVALID_BINDING, None, latest.get("binding_id"), None, None,
                        "подтверждение не ссылается на наблюдение того же API с тем же отпечатком")
+    try:
+        legal, seller_link = binding_evidence(latest)
+    except IdentityError:
+        return Binding(api, INVALID_BINDING, None, latest.get("binding_id"), None, None, "unsupported binding evidence")
     return Binding(api, "CONFIRMED", latest.get("identity_fingerprint"), latest.get("binding_id"),
-                   latest.get("source_observation_id"), as_utc(latest.get("confirmed_at")), "подтверждено")
+                   latest.get("source_observation_id"), as_utc(latest.get("confirmed_at")), "подтверждено", legal, seller_link)
 
 
 class _neg(str):
@@ -133,7 +217,7 @@ class _neg(str):
         return str.__gt__(self, other)
 
 
-def live_status(binding: Binding, live_fingerprint: str | None) -> tuple[str, str]:
+def live_status(binding: Binding, live_fingerprint: str | None, legal_ogrn=None) -> tuple[str, str]:
     """Сверка действующей привязки с отпечатком, снятым в ЭТОМ прогоне (TOCTOU-защита).
 
     Возвращает (статус, причина); загрузка допустима только при BOUND.
@@ -142,6 +226,13 @@ def live_status(binding: Binding, live_fingerprint: str | None) -> tuple[str, st
         return binding.status, binding.reason
     if not live_fingerprint:
         return NOT_OBSERVED, "в этом прогоне identity не наблюдалась"
+    try:
+        if fingerprint_version(live_fingerprint) != fingerprint_version(binding.fingerprint):
+            return MISMATCH, "identity version mismatch"
+        if binding.legal_ogrn and optional_ogrn(legal_ogrn) != binding.legal_ogrn:
+            return MISMATCH, "LEGAL_EVIDENCE_CHANGED"
+    except IdentityError:
+        return INVALID_BINDING, "unsupported identity evidence"
     if live_fingerprint != binding.fingerprint:
         return MISMATCH, "отпечаток кабинета изменился после подтверждения"
     return BOUND, "отпечаток совпадает с подтверждённым"
@@ -223,5 +314,10 @@ def binding_from_markers(items, api: str, now: datetime, observations=None) -> B
             and o.get("identity_fingerprint") == row.get("identity_fingerprint") for o in observations):
         return Binding(api, INVALID_BINDING, None, row.get("binding_id"), None, None,
                        "подтверждение не ссылается на наблюдение того же API с тем же отпечатком")
+    try:
+        legal, seller_link = binding_evidence(row)
+    except IdentityError:
+        return Binding(api, INVALID_BINDING, None, row.get("binding_id"), None, None,
+                       "unsupported identity/binding evidence")
     return Binding(api, "CONFIRMED", row.get("identity_fingerprint"), row.get("binding_id"),
-                   row.get("source_observation_id"), at, "подтверждено")
+                   row.get("source_observation_id"), at, "подтверждено", legal, seller_link)

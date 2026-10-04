@@ -12,7 +12,7 @@ OPTIONS(description = 'Статус привязки к кабинету про�
 AS
 WITH events AS (
   SELECT b.api, b.binding_id, b.identity_fingerprint, b.status, b.confirmed_at, b.confirmed_by,
-    b.revoked_at, b.source_observation_id, COALESCE(b.revoked_at, b.confirmed_at) AS event_at
+    b.revoked_at, b.source_observation_id, b.notes, COALESCE(b.revoked_at, b.confirmed_at) AS event_at
   FROM `__tenant__.ref.SELLER_BINDING` b
   WHERE b.status IN ('CONFIRMED', 'REVOKED')
 ),
@@ -31,6 +31,23 @@ same_moment AS (
 ),
 bound AS (
   SELECT l.api, l.binding_id, l.identity_fingerprint, l.confirmed_at, l.confirmed_by,
+    JSON_VALUE(l.notes, '$.legal_evidence.ogrn') AS legal_ogrn,
+    JSON_VALUE(l.notes, '$.seller_binding_fingerprint') AS seller_link,
+    CASE
+      WHEN REGEXP_CONTAINS(l.identity_fingerprint, r'^ozon-seller-core-v2:sha256:[0-9a-f]{64}$') THEN
+        LOWER(l.api) = 'seller'
+        AND JSON_VALUE(l.notes, '$.identity_version') = 'ozon-seller-core-v2'
+        AND JSON_QUERY(l.notes, '$.owner_confirmation') = 'true'
+        AND REGEXP_CONTAINS(JSON_QUERY(l.notes, '$.legal_evidence.ogrn'), r'^".*"$')
+      WHEN REGEXP_CONTAINS(l.identity_fingerprint, r'^[0-9a-f]{64}$') THEN
+        JSON_VALUE(l.notes, '$.binding_protocol') IS NULL
+        OR (LOWER(l.api) = 'performance'
+            AND JSON_VALUE(l.notes, '$.binding_protocol') = 'ozon-seller-core-v2'
+            AND JSON_QUERY(l.notes, '$.owner_confirmation') = 'true'
+            AND REGEXP_CONTAINS(JSON_VALUE(l.notes, '$.seller_binding_fingerprint'),
+                                r'^ozon-seller-core-v2:sha256:[0-9a-f]{64}$'))
+      ELSE FALSE
+    END AS valid_identity_evidence,
     l.event_at > CURRENT_TIMESTAMP() AS is_future,
     IFNULL(sm.confirmed_fingerprints, 0) > 1 AS is_conflicting,
     EXISTS (
@@ -51,7 +68,9 @@ observed AS (
   SELECT o.api, o.observed_at, MAX(o.observation_id) AS observation_id,
     COUNT(DISTINCT o.identity_fingerprint) AS fingerprints,
     COUNTIF(o.identity_fingerprint IS NULL) AS empty_fingerprints,
-    MAX(o.identity_fingerprint) AS identity_fingerprint
+    MAX(o.identity_fingerprint) AS identity_fingerprint,
+    COUNT(DISTINCT TRIM(COALESCE(o.company_ogrn, ''))) AS legal_variants,
+    MAX(TRIM(COALESCE(o.company_ogrn, ''))) AS legal_ogrn
   FROM `__tenant__.tenant_ops.SELLER_IDENTITY_OBSERVATIONS` o
   JOIN last_seen s ON s.api = o.api AND s.observed_at = o.observed_at
   GROUP BY o.api, o.observed_at
@@ -60,11 +79,18 @@ apis AS (SELECT api FROM events UNION DISTINCT SELECT api FROM observed)
 SELECT a.api, b.binding_id, b.confirmed_at, b.confirmed_by, o.observation_id, o.observed_at,
   CASE
     WHEN b.binding_id IS NULL THEN 'UNBOUND'
-    WHEN b.is_future OR b.is_conflicting OR NOT b.has_source_observation THEN 'INVALID_BINDING'
+    WHEN b.is_future OR b.is_conflicting OR NOT b.has_source_observation
+      OR NOT COALESCE(b.valid_identity_evidence, FALSE) THEN 'INVALID_BINDING'
     WHEN o.observed_at IS NULL OR o.observed_at < b.confirmed_at THEN 'NOT_OBSERVED'
+    WHEN LOWER(a.api) = 'seller' AND COALESCE(b.legal_ogrn, '') != ''
+      AND (o.legal_variants != 1 OR o.legal_ogrn != b.legal_ogrn) THEN 'MISMATCH'
+    WHEN LOWER(a.api) = 'performance'
+      AND REGEXP_CONTAINS(sb.identity_fingerprint, r'^ozon-seller-core-v2:sha256:[0-9a-f]{64}$')
+      AND (b.seller_link IS NULL OR b.seller_link != sb.identity_fingerprint) THEN 'INVALID_BINDING'
     WHEN o.fingerprints = 1 AND o.empty_fingerprints = 0 AND o.identity_fingerprint = b.identity_fingerprint THEN 'BOUND'
     ELSE 'MISMATCH'
   END AS binding_status
 FROM apis a
 LEFT JOIN bound b ON b.api = a.api
+LEFT JOIN bound sb ON LOWER(sb.api) = 'seller'
 LEFT JOIN observed o ON o.api = a.api;
