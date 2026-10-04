@@ -406,3 +406,28 @@ def test_merge_keys_of_every_entity_are_frozen():
             assert table not in found, f"{table} пишется из двух мест"
             found[table] = (keys, mode)
     assert found == EXPECTED_MERGES
+
+
+def test_backfill_uses_real_dml_accounting_without_whole_raw_counts(fake_bq):
+    client=fake_bq();original=client.query
+    def query(sql,location=None):
+        assert sql.startswith("MERGE"), "backfill scanned all history for COUNT"
+        job=original(sql,location=location)
+        job.dml_stats=SimpleNamespace(inserted_row_count=1,updated_row_count=0,deleted_row_count=0)
+        return job
+    client.query=query
+    out=C.merge_rows(TABLE,[row()],KEYS,RUN_ID,use_dml_stats=True)
+    assert out=={"received":1,"inserted":1,"updated":0}
+    assert not any(event[0]=="count" for event in client.events)
+
+
+@pytest.mark.parametrize("stats",[None,SimpleNamespace(inserted_row_count=0,updated_row_count=0,deleted_row_count=0),
+    SimpleNamespace(inserted_row_count=1,updated_row_count=0,deleted_row_count=1)])
+def test_unproven_dml_never_becomes_successful_checkpoint(fake_bq,stats):
+    client=fake_bq();original=client.query
+    def query(sql,location=None):
+        job=original(sql,location=location);job.dml_stats=stats;return job
+    client.query=query
+    with pytest.raises(RuntimeError,match="DML statistics"):
+        C.merge_rows(TABLE,[row()],KEYS,RUN_ID,use_dml_stats=True)
+    assert sum(event[0]=="delete" for event in client.events)==2

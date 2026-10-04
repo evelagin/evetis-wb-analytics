@@ -1,5 +1,16 @@
 # CHANGELOG.md
 
+## 2026-10-04 — Tenant Ozon bounded backfill candidate (not deployed)
+
+- WINDOW_V1: resumable Moscow-day FBO splitting, finance day windows, retained supply/bundle batches,
+  ALL + ARCHIVED catalog and bounded Performance reports, with proof-gated T5 completion.
+- Additive nullable fields on tenant OZON_INGESTION_RUNS: evidence_json, backfill_plan_id,
+  backfill_sequence, backfill_detail_json; clustering entity/plan/sequence/status. Legacy deployment untouched.
+- Existing BACKFILL_CHECKPOINTS / DATA_COVERAGE retain canonical semantics; pilot cannot approve full
+  history, publish a false earliest boundary, activate Scheduler or move tenant to READY.
+- Image v6 recipe and offline image qualification driver prepared. Production capability requires
+  exact-image build/qualification, release record, reviewed tenant plan and bounded pilot evidence.
+
 ## 2026-10-04 — DRO-1: обнаружение сбоев данных и email-оповещения (НЕ РАЗВЁРНУТО)
 
 Документ: `docs/ops/DRO1_DETECTION_ALERTING_2026-10-04.md`. Экономика витрин не меняется; `wb_ops`,

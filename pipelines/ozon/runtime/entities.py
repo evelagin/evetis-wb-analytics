@@ -108,7 +108,7 @@ def _list_total(result):
     return None
 
 
-def _product_list_items():
+def _product_list_items(visibility="ALL"):
     """Полный список товаров: страницы по last_id до total, с проверкой полноты.
 
     Swagger /v3/product/list: limit ≤ 1000, пагинация через result.last_id, «всего» —
@@ -121,7 +121,9 @@ def _product_list_items():
     потолок страниц до достижения total — PaginationError: часть каталога не грузится.
     Нет total: прежде — предупреждение в журнал; в строгом режиме (T5) — отказ.
     """
-    body = {"filter": {"visibility": "ALL"}, "last_id": "", "limit": PRODUCT_LIST_LIMIT}
+    if visibility not in {"ALL", "ARCHIVED"}:
+        raise ValueError("unreviewed catalog visibility")
+    body = {"filter": {"visibility": visibility}, "last_id": "", "limit": PRODUCT_LIST_LIMIT}
     items, seen, cursors, total = [], set(), set(), None
     for page in range(1, PRODUCT_LIST_MAX_PAGES + 1):
         code, lst = seller_post("/v3/product/list", body)
@@ -194,11 +196,10 @@ def _product_info_items(ids):
     return out
 
 
-def catalog(run_id, ts, _f, _t):
-    ids = [i["product_id"] for i in _product_list_items()]
+def _catalog_rows(items, run_id, ts):
     d = str(now_msk().date())
     rows = []
-    for i in _product_info_items(ids):
+    for i in items:
         st = i.get("stocks") or {}
         vd = i.get("visibility_details") or {}
         pi = i.get("price_indexes") or {}
@@ -214,6 +215,12 @@ def catalog(run_id, ts, _f, _t):
             created_at=i.get("created_at"), updated_at=i.get("updated_at"),
             source_event_time=i.get("updated_at"), source_payload_hash=h(d, i["sku"]),
             **_meta("POST /v3/product/list + /v3/product/info/list", run_id, ts)))
+    return rows
+
+
+def catalog(run_id, ts, _f, _t):
+    ids = [i["product_id"] for i in _product_list_items()]
+    rows = _catalog_rows(_product_info_items(ids), run_id, ts)
     return merge_rows("RAW_OZON_CATALOG", rows, ["snapshot_date", "sku"], run_id)
 
 
@@ -414,6 +421,34 @@ def stocks(run_id, ts, _f, _t):
 
 
 # ---------------------------------------------------------- заказы FBO
+def _fbo_rows(postings, run_id, ts):
+    rows = []
+    for p in postings:
+        ad = p.get("analytics_data") or {}
+        fin = {str(x.get("product_id")): x
+               for x in ((p.get("financial_data") or {}).get("products") or [])}
+        for pr in (p.get("products") or []):
+            sku = str(pr.get("sku"))
+            fd = fin.get(sku, {})
+            rows.append(dict(posting_number=p["posting_number"], sku=sku,
+                order_date=p["created_at"][:10], order_id=p.get("order_id"),
+                order_number=p.get("order_number"), status=p.get("status"),
+                substatus=p.get("substatus"), created_at=p.get("created_at"),
+                in_process_at=p.get("in_process_at"),
+                cancel_reason_id=p.get("cancel_reason_id"), quantity=pr.get("quantity"),
+                price_rub=_num(fd.get("price") if fd.get("price") is not None else pr.get("price")),
+                old_price_rub=_num(fd.get("old_price")),
+                total_discount_value_rub=_num(fd.get("total_discount_value")),
+                commission_amount_rub=_num(fd.get("commission_amount")),
+                payout_rub=_num(fd.get("payout")), actions=fd.get("actions") or [],
+                warehouse_name=ad.get("warehouse_name"),
+                warehouse_id=str(ad["warehouse_id"]) if ad.get("warehouse_id") else None,
+                city=ad.get("city"), source_event_time=p.get("created_at"),
+                source_payload_hash=h(p["posting_number"], sku),
+                **_meta("POST /v3/posting/fbo/list", run_id, ts)))
+    return rows
+
+
 def fbo_postings(run_id, ts, frm, to):
     rows, cursor, page = [], "", 0
     # Строгий режим: конец суток включительно до миллисекунды — соседние окна бэкфилла
@@ -432,29 +467,7 @@ def fbo_postings(run_id, ts, frm, to):
             "limit": 100, "with": {"analytics_data": True, "financial_data": True}})
         if code != 200:
             raise RuntimeError(f"posting/fbo/list {code}: {d}")
-        for p in (d.get("postings") or []):
-            ad = p.get("analytics_data") or {}
-            fin = {str(x.get("product_id")): x
-                   for x in ((p.get("financial_data") or {}).get("products") or [])}
-            for pr in (p.get("products") or []):
-                sku = str(pr.get("sku"))
-                fd = fin.get(sku, {})
-                rows.append(dict(posting_number=p["posting_number"], sku=sku,
-                    order_date=p["created_at"][:10], order_id=p.get("order_id"),
-                    order_number=p.get("order_number"), status=p.get("status"),
-                    substatus=p.get("substatus"), created_at=p.get("created_at"),
-                    in_process_at=p.get("in_process_at"),
-                    cancel_reason_id=p.get("cancel_reason_id"), quantity=pr.get("quantity"),
-                    price_rub=_num(fd.get("price") if fd.get("price") is not None else pr.get("price")),
-                    old_price_rub=_num(fd.get("old_price")),
-                    total_discount_value_rub=_num(fd.get("total_discount_value")),
-                    commission_amount_rub=_num(fd.get("commission_amount")),
-                    payout_rub=_num(fd.get("payout")), actions=fd.get("actions") or [],
-                    warehouse_name=ad.get("warehouse_name"),
-                    warehouse_id=str(ad["warehouse_id"]) if ad.get("warehouse_id") else None,
-                    city=ad.get("city"), source_event_time=p.get("created_at"),
-                    source_payload_hash=h(p["posting_number"], sku),
-                    **_meta("POST /v3/posting/fbo/list", run_id, ts)))
+        rows.extend(_fbo_rows(d.get("postings") or [], run_id, ts))
         cursor = d.get("cursor") or ""
         if not d.get("has_next") or not cursor:
             break
@@ -470,6 +483,60 @@ def fbo_postings(run_id, ts, frm, to):
 
 
 # ------------------------------------------------------------- финансы
+def _finance_rows(chunk, types, ds, run_id, ts):
+    rows = []
+    for a in chunk:
+        base = dict(event_date=ds, accrual_id=a["accrual_id"],
+                    accrued_category=a["accrued_category"],
+                    unit_number=str(a.get("unit_number")),
+                    currency=(a.get("total_amount") or {}).get("currency", "RUB"),
+                    **_meta("POST /v1/finance/accrual/by-day", run_id, ts))
+
+        def emit(tid, amt, sku=None, posting=None, econ=None):
+            e = econ or {}
+            rows.append(dict(base, type_id=tid,
+                operation_name=types.get(tid, "UNKNOWN"),
+                unit_number_meaning=("campaign_id" if tid in (41, 54) else
+                                     ("posting_number" if a["accrued_category"] == "POSTING"
+                                      else "order_or_item_ref")),
+                posting_number=posting, sku=sku, amount_rub=_num(amt),
+                seller_base_price_rub=e.get("sp"), buyer_paid_price_rub=e.get("bp"),
+                ozon_bonus_rub=e.get("bn"), ozon_coinvestment_rub=e.get("co"),
+                commission_rub=e.get("cm"), commission_ratio=e.get("cr"),
+                quantity=None,
+                source_payload_hash=h(a["accrual_id"], tid, sku, amt)))
+
+        nf = a.get("non_item_fee")
+        if nf:
+            emit(nf["type_id"], nf["accrued"]["amount"])
+        for fee in ((a.get("item_fees") or {}).get("fees") or []):
+            for x in (fee.get("fees") or []):
+                emit(x["type_id"], x["accrued"]["amount"], sku=str(fee.get("sku")))
+        p = a.get("posting") or {}
+        pn = p.get("posting_number") or (a.get("unit_number")
+                                         if a["accrued_category"] == "POSTING" else None)
+        for pr in (p.get("products") or []):
+            sku = str(pr.get("sku"))
+            c = pr.get("commission") or {}
+            econ = None
+            if c:
+                g = lambda k: _num((c.get(k) or {}).get("amount"))
+                m = re.search(r"([\d.]+)", str(c.get("commission_ratio") or ""))
+                econ = {"sp": g("seller_price"), "bp": g("sale_price"),
+                        "bn": g("bonus"), "co": g("coinvestment"),
+                        "cm": g("commission"),
+                        "cr": float(m.group(1)) if m else None}
+            first = True
+            for _k, blk in pr.items():
+                if isinstance(blk, dict) and blk.get("services"):
+                    for s in blk["services"]:
+                        # экономический блок продукта несётся ровно один раз
+                        emit(s["type_id"], s["accrued"]["amount"], sku=sku,
+                             posting=pn, econ=econ if first else None)
+                        first = False
+    return rows
+
+
 def finance_accrual(run_id, ts, frm, to):
     types = {}
     code, t = seller_post("/v1/finance/accrual/types", {})
@@ -489,55 +556,7 @@ def finance_accrual(run_id, ts, frm, to):
             if code != 200:
                 raise RuntimeError(f"accrual/by-day {ds} {code}: {r}")
             chunk = r.get("accruals") or []
-            for a in chunk:
-                base = dict(event_date=ds, accrual_id=a["accrual_id"],
-                            accrued_category=a["accrued_category"],
-                            unit_number=str(a.get("unit_number")),
-                            currency=(a.get("total_amount") or {}).get("currency", "RUB"),
-                            **_meta("POST /v1/finance/accrual/by-day", run_id, ts))
-
-                def emit(tid, amt, sku=None, posting=None, econ=None):
-                    e = econ or {}
-                    rows.append(dict(base, type_id=tid,
-                        operation_name=types.get(tid, "UNKNOWN"),
-                        unit_number_meaning=("campaign_id" if tid in (41, 54) else
-                                             ("posting_number" if a["accrued_category"] == "POSTING"
-                                              else "order_or_item_ref")),
-                        posting_number=posting, sku=sku, amount_rub=_num(amt),
-                        seller_base_price_rub=e.get("sp"), buyer_paid_price_rub=e.get("bp"),
-                        ozon_bonus_rub=e.get("bn"), ozon_coinvestment_rub=e.get("co"),
-                        commission_rub=e.get("cm"), commission_ratio=e.get("cr"),
-                        quantity=None,
-                        source_payload_hash=h(a["accrual_id"], tid, sku, amt)))
-
-                nf = a.get("non_item_fee")
-                if nf:
-                    emit(nf["type_id"], nf["accrued"]["amount"])
-                for fee in ((a.get("item_fees") or {}).get("fees") or []):
-                    for x in (fee.get("fees") or []):
-                        emit(x["type_id"], x["accrued"]["amount"], sku=str(fee.get("sku")))
-                p = a.get("posting") or {}
-                pn = p.get("posting_number") or (a.get("unit_number")
-                                                 if a["accrued_category"] == "POSTING" else None)
-                for pr in (p.get("products") or []):
-                    sku = str(pr.get("sku"))
-                    c = pr.get("commission") or {}
-                    econ = None
-                    if c:
-                        g = lambda k: _num((c.get(k) or {}).get("amount"))
-                        m = re.search(r"([\d.]+)", str(c.get("commission_ratio") or ""))
-                        econ = {"sp": g("seller_price"), "bp": g("sale_price"),
-                                "bn": g("bonus"), "co": g("coinvestment"),
-                                "cm": g("commission"),
-                                "cr": float(m.group(1)) if m else None}
-                    first = True
-                    for _k, blk in pr.items():
-                        if isinstance(blk, dict) and blk.get("services"):
-                            for s in blk["services"]:
-                                # экономический блок продукта несётся ровно один раз
-                                emit(s["type_id"], s["accrued"]["amount"], sku=sku,
-                                     posting=pn, econ=econ if first else None)
-                                first = False
+            rows.extend(_finance_rows(chunk, types, ds, run_id, ts))
             last = r.get("last_id") or ""
             if not last or not chunk:
                 break
@@ -561,13 +580,10 @@ def finance_accrual(run_id, ts, frm, to):
 
 
 # ------------------------------------------------------- реклама: кампании
-def ads_campaigns(run_id, ts, _f, _t):
-    code, txt = perf_get("/api/client/campaign")
-    if code != 200:
-        raise RuntimeError(f"campaign {code}")
+def _campaign_rows(items, run_id, ts):
     d = str(now_msk().date())
     rows = []
-    for c in _campaign_list(txt):
+    for c in items:
         rows.append(dict(snapshot_date=d, campaign_id=c["id"], title=c.get("title") or None,
             state=c.get("state", "").replace("CAMPAIGN_STATE_", ""),
             adv_object_type=c.get("advObjectType"),
@@ -581,6 +597,14 @@ def ads_campaigns(run_id, ts, _f, _t):
             campaign_created_at=c.get("createdAt"), campaign_updated_at=c.get("updatedAt"),
             source_payload_hash=h(d, c["id"]),
             **_meta("GET /api/client/campaign", run_id, ts)))
+    return rows
+
+
+def ads_campaigns(run_id, ts, _f, _t):
+    code, txt = perf_get("/api/client/campaign")
+    if code != 200:
+        raise RuntimeError(f"campaign {code}")
+    rows = _campaign_rows(_campaign_list(txt), run_id, ts)
     return merge_rows("RAW_OZON_ADS_CAMPAIGNS", rows,
                       ["snapshot_date", "campaign_id"], run_id)
 
@@ -1039,16 +1063,7 @@ def _supply_bundle_items(bundle_id):
     raise PaginationError(f"supply-order/bundle: достигнут потолок {BUNDLE_MAX_PAGES} страниц")
 
 
-def supplies(run_id, ts, _f, _t):
-    ids = _supply_order_ids()
-    orders = []
-    for i in range(0, len(ids), 25):
-        c, d = seller_post("/v3/supply-order/get", {"order_ids": ids[i:i + 25]})
-        if c != 200:
-            # раньше код не проверялся: заявки партии молча выпадали
-            raise RuntimeError(f"supply-order/get {c}")
-        orders += (d or {}).get("orders") or []
-        time.sleep(1)
+def _supply_rows(orders, run_id, ts):
     o_rows, s_rows = [], []
     for o in orders:
         t = o.get("timeslot") or {}
@@ -1080,6 +1095,34 @@ def supplies(run_id, ts, _f, _t):
                 order_created_at=o.get("created_date"), order_state=o.get("state"),
                 source_payload_hash=h(o["order_id"], s["supply_id"]),
                 **_meta("POST /v3/supply-order/get", run_id, ts)))
+    return o_rows, s_rows
+
+
+def _bundle_rows(bundle_items, bid, oid, sid, run_id, ts):
+    rows = []
+    for i in bundle_items:
+        rows.append(dict(bundle_id=bid, supply_id=sid, order_id=oid,
+            sku=str(i["sku"]), offer_id=str(i.get("offer_id") or ""),
+            product_name=i.get("name"), quantity_planned=i.get("quantity"),
+            quantity_accepted=None,     # ACTUAL_RECEIPT_QUANTITY = NOT_PROVEN
+            volume_in_litres=_num(i.get("volume_in_litres")),
+            item_tags=json.dumps(i.get("tags"), ensure_ascii=False) if i.get("tags") else None,
+            source_payload_hash=h(bid, i["sku"]),
+            **_meta("POST /v1/supply-order/bundle", run_id, ts)))
+    return rows
+
+
+def supplies(run_id, ts, _f, _t):
+    ids = _supply_order_ids()
+    orders = []
+    for i in range(0, len(ids), 25):
+        c, d = seller_post("/v3/supply-order/get", {"order_ids": ids[i:i + 25]})
+        if c != 200:
+            # раньше код не проверялся: заявки партии молча выпадали
+            raise RuntimeError(f"supply-order/get {c}")
+        orders += (d or {}).get("orders") or []
+        time.sleep(1)
+    o_rows, s_rows = _supply_rows(orders, run_id, ts)
     r1 = merge_rows("RAW_OZON_SUPPLY_ORDERS", o_rows, ["order_id"], run_id)
     r2 = merge_rows("RAW_OZON_SUPPLIES", s_rows, ["order_id", "supply_id"], run_id)
     # составы
@@ -1095,15 +1138,7 @@ def supplies(run_id, ts, _f, _t):
         except RuntimeError as e:
             b_failed.append((bid, C.safe_error_text(e, 120)))
             continue
-        for i in bundle_items:
-            b_rows.append(dict(bundle_id=bid, supply_id=sid, order_id=oid,
-                sku=str(i["sku"]), offer_id=str(i.get("offer_id") or ""),
-                product_name=i.get("name"), quantity_planned=i.get("quantity"),
-                quantity_accepted=None,     # ACTUAL_RECEIPT_QUANTITY = NOT_PROVEN
-                volume_in_litres=_num(i.get("volume_in_litres")),
-                item_tags=json.dumps(i.get("tags"), ensure_ascii=False) if i.get("tags") else None,
-                source_payload_hash=h(bid, i["sku"]),
-                **_meta("POST /v1/supply-order/bundle", run_id, ts)))
+        b_rows.extend(_bundle_rows(bundle_items, bid, oid, sid, run_id, ts))
         time.sleep(1)
     r3 = merge_rows("RAW_OZON_SUPPLY_BUNDLES", b_rows, ["bundle_id", "sku"], run_id)
     if b_failed:

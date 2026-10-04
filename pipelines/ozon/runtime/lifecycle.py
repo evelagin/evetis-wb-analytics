@@ -42,6 +42,7 @@ import history as H  # noqa: E402
 import identity as I  # noqa: E402
 import lifecycle_core as L  # noqa: E402
 import quota as Q  # noqa: E402
+import backfill_core as BF  # noqa: E402
 from control_store import ControlStore  # noqa: E402
 
 sys.excepthook = C.safe_excepthook
@@ -602,6 +603,18 @@ def cmd_claim_next(ctx):
         if gen is None:
             continue                               # аренда держится у другого исполнителя
         until = ctx.now + CK.LEASE_TTL
+        rid = run_id_for(c, gen)
+        attempts = (folded.get(c.chunk_id) or {}).get("attempts", 0) + 1
+        executor_env = {"ENTITIES": c.domain, "SINCE": str(c.start), "UNTIL": str(c.end),
+                        "INGESTION_RUN_ID": rid, "STRICT_PAGE_CAPS": "1"}
+        continuation = None
+        if C.PROJECT != C.LEGACY_INGESTION_PROJECT:
+            executor_env.update(BACKFILL_MODE=BF.VERSION, TENANT_BINDING_REQUIRED="1",
+                                BACKFILL_TARGET_PROJECT=C.PROJECT,
+                                BACKFILL_GENERATION=approved,
+                                BACKFILL_ORIGIN=versions[approved][1].isoformat())
+            continuation = BF.plan(executor_env, c.domain, C.PROJECT, C.DATASET, C.REF_DATASET,
+                                   ctx.today_msk, ctx.now)
         if exports:
             # Слот ограждает одновременность выгрузок, а не видимость журнала: без допуска (таймаут
             # исполнителя 1 ч < срока аренды 2 ч), иначе пропускная способность падала бы вдвое.
@@ -612,16 +625,12 @@ def cmd_claim_next(ctx):
                 continue                           # одна выгрузка на аккаунт одновременно
         if not ctx.store.create_lease(CK.lease_name(c.chunk_id, gen), until, ctx.run_id):
             continue                               # проиграли гонку (409) — следующий отрезок
-        rid = run_id_for(c, gen)
-        attempts = (folded.get(c.chunk_id) or {}).get("attempts", 0) + 1
         ctx.store.append("BACKFILL_CHECKPOINTS", [_cp_row(
             ctx, c, "RUNNING", attempts, plan_hash=approved, run_id=rid, lease_owner=ctx.run_id,
             lease_until=until.isoformat(), lease_generation=gen, started_at=ctx.now.isoformat(),
-            exports=exports)])
+            exports=exports, runtime_plan=continuation)])
         C.log(event="chunk_claimed", run_id=ctx.run_id, chunk=c.chunk_id, domain=c.domain,
-              lease_until=until.isoformat(),
-              executor_env={"ENTITIES": c.domain, "SINCE": str(c.start), "UNTIL": str(c.end),
-                            "INGESTION_RUN_ID": rid, "STRICT_PAGE_CAPS": "1"})
+              lease_until=until.isoformat(), executor_env=executor_env)
         return 0
     C.log(event="nothing_to_claim", run_id=ctx.run_id)
     return 0
@@ -655,6 +664,40 @@ def cmd_verify_chunks(ctx):
         ok = [x for x in mine if x.get("status") == "OK" and str(x.get("source_from")) == str(c.start)
               and str(x.get("source_to")) == str(c.end)]
         until = I.as_utc(r.get("lease_until"))
+        expected = json.loads(r.get("evidence_json") or "{}").get("runtime_plan")
+        if expected:
+            if any(run.get("status") == "FAILED" for run in mine):
+                failure = next(run for run in mine if run.get("status") == "FAILED")
+                out.append(_cp_row(ctx, c, "FAILED", st["attempts"], run_id=r["run_id"],
+                                   error_code=classify_error(failure.get("error_message"))))
+                continue
+            valid = []
+            for run in mine:
+                try:
+                    proof = json.loads(run.get("evidence_json") or "{}")
+                    if proof.get("plan") != expected or str(run.get("source_from")) != str(c.start) or str(run.get("source_to")) != str(c.end):
+                        raise BF.EvidenceError("scope mismatch")
+                    BF.validate(expected, proof["state"])
+                    if (run.get("status") == "OK") != proof["state"]["complete"] or run.get("status") not in {"OK", "IN_PROGRESS"}:
+                        raise BF.EvidenceError("status mismatch")
+                    valid.append(proof)
+                except (KeyError, ValueError, BF.EvidenceError):
+                    valid = []; break
+            if mine and not valid:
+                out.append(_cp_row(ctx, c, "FAILED", st["attempts"], run_id=r["run_id"], error_code="BACKFILL_PROOF_INVALID"))
+            elif valid and len({BF.digest(p) for p in valid}) != 1:
+                out.append(_cp_row(ctx, c, "FAILED", st["attempts"], run_id=r["run_id"], error_code="BACKFILL_PROOF_CONFLICT"))
+            elif valid and valid[0]["state"]["complete"]:
+                out.append(_cp_row(ctx, c, "DONE", st["attempts"], run_id=r["run_id"],
+                    rows_written=valid[0]["state"]["rows"], completed_at=ctx.now.isoformat(),
+                    runtime_plan=expected, timezone="Europe/Moscow", proof=valid[0]))
+            elif valid:
+                # Successful bounded progress is resumable, not a penalized failure. Keep the
+                # existing lease/visibility grace; no active execution can be replaced early.
+                C.log(event="chunk_progress", chunk=cid, sequence=valid[0]["state"]["sequence"])
+            elif until and until + CK.VISIBILITY_GRACE < ctx.now:
+                out.append(_cp_row(ctx, c, "FAILED", st["attempts"], run_id=r["run_id"], error_code="LEASE_EXPIRED"))
+            continue
         if ok:
             out.append(_cp_row(ctx, c, "DONE", st["attempts"], run_id=r["run_id"], rows_written=ok[0].get("rows_received"),
                                completed_at=ctx.now.isoformat()))
@@ -703,10 +746,17 @@ def gather_facts(ctx, binding, chain=None, decisions=None):
     folded = CK.fold(ledger, owner_reopens(ctx))
     _ph, chunks = active_plan(ledger, chain, decisions)
     chunks = chunks or []
-    done = {}
+    done, done_msk = {}, {}
     for c in chunks:
         if (folded.get(c.chunk_id) or {}).get("status") == "DONE":
-            done.setdefault(c.domain, []).append((c.start, c.end))
+            done_row = next((r for r in ledger if r.get("backfill_id") == c.chunk_id
+                             and r.get("status") == "DONE" and r.get("run_id") == folded[c.chunk_id]["run_id"]), {})
+            evidence = json.loads(done_row.get("evidence_json") or "{}")
+            if evidence.get("runtime_plan") and evidence.get("timezone") == "Europe/Moscow":
+                BF.validate(evidence["runtime_plan"], evidence["proof"]["state"])
+                done_msk.setdefault(c.domain, []).append((c.start, c.end))
+            else:
+                done.setdefault(c.domain, []).append((c.start, c.end))
     bounds = latest(ctx.store.rows("tenant_ops", "HISTORY_BOUNDARIES"), "entity", "determined_at")
     cutover = max((c.end for c in chunks), default=None)
     ranges = {d: (domain_start(bounds, d), cutover)
@@ -735,7 +785,7 @@ def gather_facts(ctx, binding, chain=None, decisions=None):
     fbs = (caps.get(("seller", "fbs_activity")) or {}).get("status") == "AVAILABLE"
     return {"binding": binding, "ads_enabled": ctx.ads,
             "chunks": {c.chunk_id: (folded.get(c.chunk_id) or {}).get("status", "PENDING") for c in chunks},
-            "required_ranges": ranges, "done_windows": done, "truncated_runs": truncated,
+            "required_ranges": ranges, "done_windows": done, "done_windows_msk": done_msk, "truncated_runs": truncated,
             "raw_duplicate_keys": dups, "finance_unresolved_rows": unresolved, "maturity_days": maturity(ctx),
             "fbs_activity": fbs, "ads_sum_worst_pct": None, "key_expires_soon": False}
 

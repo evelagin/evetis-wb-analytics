@@ -40,6 +40,13 @@ SELLER_FP = I.seller_fingerprint(CLIENT_ID, INN, OGRN)
 PERF_FP = I.performance_fingerprint(PERF_ID)
 
 
+@pytest.fixture(autouse=True)
+def canonical_external_backfill_ref(monkeypatch):
+    # The T5 fixture models an external tenant; the module-wide legacy default
+    # evetis_ref is not its dataset. Never relax the runtime gate for synthetic tests.
+    monkeypatch.setattr(C, "REF_DATASET", "ref")
+
+
 # ═════════════════════════════════════════ стенд
 class FakeStore:
     """ControlStore без облака: те же методы и те же запреты (append только в журналы tenant_ops)."""
@@ -1818,3 +1825,61 @@ def test_current_state_uses_highest_seq_and_ignores_invalid_markers():
     assert L.audit_history(poisoned, decisions_for(poisoned[:2]))              # но журнал недействителен
     legacy = [dict(ev(None, L.VALIDATING, "CONTROL:c", NOW), seq=None), dict(ev(None, L.READY, "CONTROL:c", NOW - timedelta(days=1)), seq=None)]
     assert L.current_state(legacy) == L.VALIDATING                              # без номеров — по времени
+
+
+def test_window_claim_emits_pinned_resumable_execution_contract(monkeypatch,capsys):
+    fake_api(monkeypatch)
+    store=_backfilling_store([C1])
+    LC.cmd_claim_next(make_ctx(store,entities=("fbo_postings",)))
+    event=next(json.loads(x) for x in capsys.readouterr().out.splitlines() if '"chunk_claimed"' in x)
+    env=event["executor_env"]
+    assert env["BACKFILL_MODE"]=="WINDOW_V1" and env["TENANT_BINDING_REQUIRED"]=="1"
+    first=json.loads(_claimed(store)[0]["evidence_json"])["runtime_plan"]
+    assert first["generation"]==CK.plan_hash([C1]) and first["origin"]==env["BACKFILL_ORIGIN"]
+
+
+def window_running_store(complete=False,status=None):
+    import backfill_core as B
+    env={"BACKFILL_MODE":B.VERSION,"TENANT_BINDING_REQUIRED":"1","STRICT_PAGE_CAPS":"1",
+         "BACKFILL_TARGET_PROJECT":C.PROJECT,"SINCE":str(C1.start),"UNTIL":str(C1.end),
+         "BACKFILL_GENERATION":CK.plan_hash([C1]),"BACKFILL_ORIGIN":(NOW-timedelta(days=1)).isoformat()}
+    p=B.plan(env,C1.domain,C.PROJECT,"ozon_raw","ref",NOW.date(),NOW)
+    state=B.initial(p)
+    if complete:
+        state["progress"]={"pending":[],"completed_to":B.utc_ms(str(C1.end+timedelta(days=1)))}
+        state["complete"]=True
+    proof={"version":B.VERSION,"plan":p,"state":state}
+    running=dict(_chunk_row(C1,"RUNNING",NOW-timedelta(hours=1),run_id="bf-synthetic"),
+                 lease_until=(NOW+timedelta(hours=1)).isoformat(),evidence_json=json.dumps({"runtime_plan":p}))
+    store=_backfilling_store([C1],extra_ledger=[running])
+    store.t[("ozon_raw","OZON_INGESTION_RUNS")]=[{"ingestion_run_id":"bf-synthetic","entity":C1.domain,
+        "status":status or ("OK" if complete else "IN_PROGRESS"),"source_from":str(C1.start),"source_to":str(C1.end),
+        "evidence_json":json.dumps(proof)}]
+    return store
+
+
+def test_window_progress_is_not_failed_and_does_not_bypass_lease():
+    store=window_running_store();LC.cmd_verify_chunks(make_ctx(store,entities=(C1.domain,)))
+    assert CK.fold(store.t[("tenant_ops","BACKFILL_CHECKPOINTS")])[C1.chunk_id]["status"]=="RUNNING"
+    store.lease_tables[CK.lease_name(C1.chunk_id,1)] = NOW+CK.LEASE_TTL
+    assert CK.next_lease_generation(store.leases(),C1.chunk_id,NOW,[1]) is None
+
+
+@pytest.mark.parametrize("fault",["missing","false-ok","wrong-scope"])
+def test_window_done_cannot_be_forged_from_legacy_or_partial_success(fault):
+    store=window_running_store(status="OK")
+    run=store.t[("ozon_raw","OZON_INGESTION_RUNS")][0]
+    if fault=="missing":run["evidence_json"]=None
+    elif fault=="wrong-scope":run["source_to"]="2026-01-01"
+    LC.cmd_verify_chunks(make_ctx(store,entities=(C1.domain,)))
+    assert CK.fold(store.t[("tenant_ops","BACKFILL_CHECKPOINTS")])[C1.chunk_id]["status"]=="FAILED"
+
+
+def test_valid_window_complete_proof_preserves_moscow_coverage_semantics():
+    store=window_running_store(complete=True)
+    LC.cmd_verify_chunks(make_ctx(store,entities=(C1.domain,)))
+    row=next(r for r in store.t[("tenant_ops","BACKFILL_CHECKPOINTS")] if r["status"]=="DONE")
+    assert json.loads(row["evidence_json"])["timezone"]=="Europe/Moscow"
+    f={"required_ranges":{C1.domain:(C1.start,C1.end)},"done_windows_msk":{C1.domain:[(C1.start,C1.end)]}}
+    assert DQ.evaluate(f)["COVERAGE"]["status"]=="PASS"
+    assert DQ.evaluate({"required_ranges":f["required_ranges"],"done_windows":f["done_windows_msk"]})["COVERAGE"]["status"]=="FAIL"
