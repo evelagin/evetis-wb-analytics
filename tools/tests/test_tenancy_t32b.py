@@ -83,6 +83,8 @@ RELEASES_FACTS = {
     # T5: коммит слияния PR #226 = main на момент сборки; v2 добавляет модули control и их отказ.
     "e52432e": {"commit": "e52432e7cd4052db76772f1501e3f315bc994645", "config": NEXT_CONFIG,
                 "gates": V1_GATES + ["control-fail-closed-without-project"]},
+    "b28517b": {"commit": "b28517b72b5d7ae0d866f4d643f4982db269210c", "config": RELEASES / "ozon-runtime.v3.cloudbuild.yaml",
+                "gates": V1_GATES + ["control-fail-closed-without-project", "external-binding-omission-denied"]},
 }
 
 
