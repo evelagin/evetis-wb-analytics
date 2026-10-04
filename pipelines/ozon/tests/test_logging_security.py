@@ -123,8 +123,21 @@ def boundary(monkeypatch):
                  "perf_client_id": C.CONFIG.secret_perf_client_id,
                  "perf_client_secret": C.CONFIG.secret_perf_client_secret}
         monkeypatch.setattr(C, "_sm", _FakeSM({names[r]: v for r, v in by_role.items()}))
-        for role in by_role:
-            C.secret(names[role])
+        # Registration through real approved call sites; no direct credential getter.
+        defaults = {n: "SYNTH-unused-identity" for n in names.values()}
+        defaults.update({names[r]: v for r, v in by_role.items()})
+        monkeypatch.setattr(C, "_sm", _FakeSM(defaults))
+        with monkeypatch.context() as transport:
+            transport.setattr(C, "_request", lambda *a, **k: (200, {"access_token": "SYNTH-unused-token"}))
+            if "seller_api_key" in by_role:
+                C.seller_call("/v1/roles", {})
+            if "seller_client_id" in by_role:
+                C.seller_client_id()
+            if "perf_client_secret" in by_role:
+                C.perf_token()
+            if "perf_client_id" in by_role:
+                C.perf_client_id()
+        C._perf_token.update(value=None, at=0)
     return load
 
 
@@ -437,7 +450,7 @@ def test_main_installs_the_safe_hook_for_any_uncaught_exception():
         import types
         sys.path.insert(0, {str(RUNTIME)!r})
         import common as C
-        vals = {{C.CONFIG.secret_seller_api_key: {HOOK_KEY!r}}}
+        vals = {{C.CONFIG.secret_seller_client_id: {CLIENT_ID!r}, C.CONFIG.secret_seller_api_key: {HOOK_KEY!r}}}
         class SM:
             def access_secret_version(self, request):
                 n = request["name"].split("/secrets/")[1].split("/")[0]
@@ -445,7 +458,9 @@ def test_main_installs_the_safe_hook_for_any_uncaught_exception():
         C._sm = SM()
         import main
         assert sys.excepthook is C.safe_excepthook, "main.py не поставил безопасный хук"
-        key = C.secret(C.CONFIG.secret_seller_api_key)
+        C._request = lambda *a, **k: (200, {{}})
+        C.seller_call("/v1/roles", {{}})
+        key = {HOOK_KEY!r}
         def programming_error():
             raise TypeError("unexpected payload " + repr({{"api_key": key}}))
         programming_error()

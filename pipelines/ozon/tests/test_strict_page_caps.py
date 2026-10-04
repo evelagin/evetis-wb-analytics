@@ -188,7 +188,7 @@ def test_ads_long_window_without_flag_keeps_old_single_request(entities, capture
 
 
 def test_strict_messages_carry_no_credentials(entities, monkeypatch, strict):
-    monkeypatch.setitem(C._secrets, "EVETIS_OZON_API_KEY", "sentinel-api-key-value-0001")
+    monkeypatch.setattr(C, "_secrets", {"EVETIS_OZON_API_KEY": "sentinel-api-key-value-0001"})
     _perf(monkeypatch, entities, campaign=(503, ""))
     with pytest.raises(entities.StrictLimitError) as e:
         entities.ads_sku_daily("rt-x", "ts", "2026-09-01", "2026-09-02")
