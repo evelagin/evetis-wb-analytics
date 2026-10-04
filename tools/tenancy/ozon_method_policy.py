@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Политика «только чтение» для ключа Seller API Ozon (Tenancy T5, решение D2).
+"""Генератор suggestions и reviewed policy v2 (supersedes historical D2).
 
   python tools/tenancy/ozon_method_policy.py build <seller_swagger.json> <spec_date>
   python tools/tenancy/ozon_method_policy.py check
@@ -16,7 +16,9 @@
 вне явно одобренного набора (сейчас пуст) или UNKNOWN (в т. ч. метод, которого нет в политике)
 — ОТКАЗ проверки учётных данных. Ключ не меняется и не ограничивается автоматически.
 
-Классификация детерминирована правилами ниже + явными поправками OVERRIDES (каждая с причиной).
+Legacy классы ниже — только suggestions/provenance, НЕ разрешение. V2 lifecycle/semantics
+становятся reviewed только через hash-matched seller_policy_reviews.json; иначе UNRESOLVED.
+Историческое описание D2 выше сохранено для контекста, текущий treatment — seller_policy.py.
 HTTP-метод признаком не является: у Ozon почти всё POST, а у Performance API есть GET, которые
 меняют кабинет (/api/client/campaign/all_sku_promo/activate).
 """
@@ -117,7 +119,7 @@ def classify(path: str, summary: str) -> tuple[str, str]:
 STRICTNESS = {"READ": 0, "REPORT": 1, "UNKNOWN": 2, "MUTATION": 3}
 
 
-def build(spec_path: Path, spec_date: str) -> dict:
+def build_suggestions(spec_path: Path, spec_date: str) -> dict:
     raw = spec_path.read_bytes()
     spec = _parse(raw)
     methods = {}
@@ -141,6 +143,36 @@ def build(spec_path: Path, spec_date: str) -> dict:
             "methods": methods}
 
 
+def build(spec_path: Path, spec_date: str) -> dict:
+    """Heuristics are suggestions. Only hash-matched, retained owner reviews set semantics."""
+    import copy
+    suggestions = build_suggestions(spec_path, spec_date)
+    out = dict(suggestions, schema_version=2)
+    review_file = POLICY_FILE.with_name("seller_policy_reviews.json")
+    manifest = _parse(review_file.read_text()) if review_file.exists() else {}
+    reviews = manifest.get("reviews", {}) if manifest.get("spec_sha256") == out["spec_sha256"] else {}
+    for path in sorted(set(out["methods"]) | set(reviews)):
+        legacy = copy.deepcopy(out["methods"].get(path, {"class": "UNKNOWN", "http": "POST",
+                               "deprecated": False, "reason": "retained inventory not in specification"}))
+        row = dict(legacy, legacy_record=copy.deepcopy(legacy), lifecycle="UNRESOLVED",
+                   semantics="UNPROVEN", side_effects="UNPROVEN", confidence="SUGGESTION",
+                   review={"source": "Swagger sha256 " + out["spec_sha256"], "authority": "HEURISTIC_ONLY",
+                           "date": spec_date, "reason": "generator suggestion never grants authorization"})
+        row.update(reviews.get(path, {}))
+        out["methods"][path] = row
+    _policy_module().validate(out)
+    return out
+
+
+def _policy_module():
+    import importlib.util
+    path = POLICY_FILE.with_name("seller_policy.py")
+    spec = importlib.util.spec_from_file_location("seller_policy", path)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
 def _parse(text):
     # Единый строгий разборщик: повтор ключа в политике мог бы спрятать метод изменения.
     from tools.tenancy.validation import parse_tenant_json
@@ -148,11 +180,12 @@ def _parse(text):
 
 
 def load_policy(path: Path = POLICY_FILE) -> dict:
-    return _parse(path.read_text(encoding="utf-8"))
+    return _policy_module().parse(path.read_text(encoding="utf-8"))
 
 
 def check(policy: dict) -> list[str]:
     """Инварианты политики: всё классифицировано, опасные известные методы — MUTATION."""
+    _policy_module().validate(policy)
     out = []
     m = policy["methods"]
     for p, v in m.items():
@@ -170,7 +203,7 @@ def check(policy: dict) -> list[str]:
 def main(argv: list[str]) -> int:
     if len(argv) == 3 and argv[0] == "build":
         policy = build(Path(argv[1]), argv[2])
-        POLICY_FILE.write_text(json.dumps(policy, ensure_ascii=False, indent=1, sort_keys=True) + "\n",
+        POLICY_FILE.write_text(_policy_module().dumps(policy),
                                encoding="utf-8")
         counts = {}
         for v in policy["methods"].values():

@@ -134,3 +134,15 @@ class FakeTransport:
 @pytest.fixture
 def transport():
     return FakeTransport
+
+
+@pytest.fixture(autouse=True)
+def _offline_only(monkeypatch):
+    import socket
+    def denied(*args, **kwargs):
+        raise RuntimeError("offline suite forbids network")
+    monkeypatch.setattr(socket.socket, "connect", denied)
+    monkeypatch.setattr(socket.socket, "connect_ex", denied)
+    monkeypatch.setattr(socket, "create_connection", denied)
+    import common as C
+    monkeypatch.setattr(C, "_seller_execution_scope", None)

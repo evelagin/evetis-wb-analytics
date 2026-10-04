@@ -31,7 +31,7 @@ SOURCES = ["common.py", "entities.py", "main.py", "promo.py", "lifecycle.py", "i
            "lifecycle_core.py", "checkpoints.py", "history.py", "quota.py", "dq.py", "control_store.py"]
 
 LOG_SINKS = {"log", "record_run", "_strict_cap", "safe_error_text", "print"}
-CREDENTIAL_SOURCES = {"secret", "seller_headers", "perf_token"}
+CREDENTIAL_SOURCES = {"secret", "_seller_headers", "perf_token"}
 CREDENTIAL_NAMES = {"_secrets", "headers", "_perf_token"}
 
 
@@ -83,7 +83,7 @@ def test_the_only_credential_readers_are_known():
         if any(isinstance(c, ast.Call) and _callee(c) == "secret" for c in ast.walk(fn)):
             readers.add(fn.name)
     # T5: seller_client_id / perf_client_id читают ИДЕНТИФИКАТОРЫ (не секреты) для отпечатка кабинета.
-    assert readers == {"seller_headers", "perf_token", "seller_client_id", "perf_client_id"}
+    assert readers == {"_seller_headers", "perf_token", "seller_client_id", "perf_client_id"}
     for name in ("entities.py", "main.py", "promo.py", "lifecycle.py", "identity.py", "credentials.py",
                  "lifecycle_core.py", "checkpoints.py", "history.py", "quota.py", "dq.py", "control_store.py"):
         tree = ast.parse((RUNTIME / name).read_text(encoding="utf-8"))
@@ -177,8 +177,10 @@ def test_http_error_payload_is_redacted_before_it_is_truncated(boundary, monkeyp
     def raising_urlopen(req, timeout):
         raise urllib.error.HTTPError(req.full_url, 401, "Unauthorized", {}, io.BytesIO(body))
 
-    monkeypatch.setattr(C.urllib.request, "urlopen", raising_urlopen)
-    code, d = C._request(C.urllib.request.Request("https://api-seller.ozon.ru/x"))
+    monkeypatch.setattr(C, "_seller_open", raising_urlopen)
+    req = C.urllib.request.Request(C.SELLER + "/v1/roles", method="POST")
+    req._seller_profile = "runtime"
+    code, d = C._request(req)
     assert code == 401 and SELLER_KEY[:5] not in d["_error"]
 
 
@@ -251,7 +253,7 @@ def _run_main(journal_fails, key=SELLER_KEY):
         C.bq = lambda: BQ()
         M.main()
     """)
-    env = {"PATH": os.environ["PATH"], "GCP_PROJECT_ID": "offline-test-project",
+    env = {"PATH": os.environ["PATH"], "GCP_PROJECT_ID": C.LEGACY_INGESTION_PROJECT,
            "ENTITIES": "seller_info", "INGESTION_RUN_ID": "rt-l3"}
     return subprocess.run([sys.executable, "-c", code], env=env, capture_output=True,
                           text=True, timeout=60)
@@ -299,7 +301,7 @@ def _run_hooked(body: str, install_hook: bool = True):
             + ("sys.excepthook = C.safe_excepthook\n" if install_hook else "")
             + textwrap.dedent(body))
     return subprocess.run([sys.executable, "-c", code], capture_output=True, text=True, timeout=60,
-                          env={"PATH": os.environ["PATH"], "GCP_PROJECT_ID": "offline-test-project"})
+                          env={"PATH": os.environ["PATH"], "GCP_PROJECT_ID": C.LEGACY_INGESTION_PROJECT})
 
 
 def test_hook_output_equals_standard_traceback_without_secrets():
@@ -388,7 +390,7 @@ def test_keyboard_interrupt_is_not_an_application_failure():
         M.main()
     """)
     r = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True, timeout=60,
-                       env={"PATH": os.environ["PATH"], "GCP_PROJECT_ID": "offline-test-project",
+                       env={"PATH": os.environ["PATH"], "GCP_PROJECT_ID": C.LEGACY_INGESTION_PROJECT,
                             "ENTITIES": "catalog"})
     assert r.returncode in (-2, 130)                         # SIGINT, как у стандартного хука
     assert "JOURNAL_ROW" not in r.stdout and "JournalWriteError" not in r.stderr
@@ -449,7 +451,7 @@ def test_main_installs_the_safe_hook_for_any_uncaught_exception():
         programming_error()
     """)
     r = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True, timeout=60,
-                       env={"PATH": os.environ["PATH"], "GCP_PROJECT_ID": "offline-test-project"})
+                       env={"PATH": os.environ["PATH"], "GCP_PROJECT_ID": C.LEGACY_INGESTION_PROJECT})
     assert r.returncode == 1
     assert HOOK_KEY not in r.stderr
     assert r.stderr.strip().split("\n")[-1] == \

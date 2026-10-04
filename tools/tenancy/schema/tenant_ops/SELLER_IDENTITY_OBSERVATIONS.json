@@ -29,7 +29,7 @@
       "type": "TIMESTAMP"
     },
     {
-      "description": "sha256 канонической несекретной identity (hex)",
+      "description": "V1 SHA256 hex; Seller V2 version-prefixed core fingerprint. Empty if machine identity incomplete.",
       "mode": "REQUIRED",
       "name": "identity_fingerprint",
       "type": "STRING"
@@ -77,13 +77,13 @@
       "type": "STRING"
     },
     {
-      "description": "Прочие несекретные поля ответа",
+      "description": "Separate capability/authentication, machine identity/version, legal structure and sampled Seller/Performance linkage evidence; not owner confirmation.",
       "mode": "NULLABLE",
       "name": "evidence_json",
       "type": "STRING"
     },
     {
-      "description": "OBSERVED, MATCHED (совпало с ref.SELLER_BINDING), MISMATCH",
+      "description": "OBSERVED, INCOMPLETE, CREDENTIAL_REJECTED, NO_EVIDENCE, FOREIGN_SKUS; historical statuses retained.",
       "mode": "REQUIRED",
       "name": "status",
       "type": "STRING"

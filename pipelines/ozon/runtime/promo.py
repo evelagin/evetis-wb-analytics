@@ -25,11 +25,10 @@ DEFERRED_PRIVACY_SENSITIVE_SOURCE — в V1 он не вызывается и н
 """
 import json
 import os
-import urllib.request
 
 import common as C
 from common import (DATASET, PROJECT, REF_DATASET, append_rows, bq, h, log, now_msk,
-                    promo_load_job_id, promo_observation_id, promo_slot, seller_headers)
+                    promo_load_job_id, promo_observation_id, promo_slot)
 
 # ── Разрешённые пути. Закрытый список. ──────────────────────────────────────
 P_ACTIONS = "/v1/actions"
@@ -87,12 +86,7 @@ def promo_call(path, body=None):
     """
     if path not in ALLOWED_PATHS:
         raise PromoPathDenied(f"путь {path} не входит в разрешённый список наблюдателя акций")
-    data = json.dumps(body).encode() if body is not None else None
-    # Учётные данные — по ИМЕНАМ секретов из конфигурации процесса (Tenancy T2).
-    req = urllib.request.Request(
-        C.SELLER + path, data=data, headers=seller_headers(),
-        method="POST" if data is not None else "GET")
-    return C._request(req)
+    return C.seller_call(path, body, method="POST" if body is not None else "GET", profile="promo")
 
 
 # ────────────────────────────────────────────────────────────── утилиты

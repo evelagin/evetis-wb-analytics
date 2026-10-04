@@ -245,7 +245,7 @@ def test_baseline_is_isolated_from_production_code_and_image():
     assert copies == [["requirements.txt"], ["common.py", "entities.py", "main.py", "promo.py"],
                       # T5: identity/привязка, control plane и политика методов Seller — тоже поимённо
                       ["identity.py", "credentials.py", "lifecycle.py", "lifecycle_core.py", "checkpoints.py",
-                       "history.py", "quota.py", "dq.py", "control_store.py", "seller_method_policy.json"]], \
+                       "history.py", "quota.py", "dq.py", "control_store.py", "seller_policy.py", "seller_method_policy.json", "runtime_execution_contract.json"]], \
         "образ копирует файлы поимённо из контекста runtime; иное — пересмотреть изоляцию эталона"
 
 

@@ -30,3 +30,16 @@ def _no_anthropic_network():
             os.environ.pop(k, None)
         else:
             os.environ[k] = v
+
+
+@pytest.fixture(autouse=True)
+def _tenancy_offline_network_boundary(request, monkeypatch):
+    """Tenancy regressions may use synthetic clients only, never cloud/API connections."""
+    if not request.node.path.name.startswith('test_tenancy'):
+        return
+    import socket
+    def denied(*args, **kwargs):
+        raise RuntimeError('offline Tenancy suite forbids network')
+    monkeypatch.setattr(socket.socket, 'connect', denied)
+    monkeypatch.setattr(socket.socket, 'connect_ex', denied)
+    monkeypatch.setattr(socket, 'create_connection', denied)

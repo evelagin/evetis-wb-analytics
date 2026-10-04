@@ -62,22 +62,12 @@ def test_new_tenant_job_is_rejected_by_binding_before_secrets_and_api(job):
 
 @pytest.mark.parametrize("job", sorted(JOBS))
 def test_job_without_secret_versions_fails_closed_inside_its_own_project(job):
-    # Слой T3.2 под проверкой привязки: даже без неё пустые секреты не дают ни одного вызова Ozon.
+    # Historical dev-trial omission now rejects before secrets, HTTP or BigQuery.
     seen, stderr = _run({k: v for k, v in JOBS[job]["env"].items() if k != "TENANT_BINDING_REQUIRED"})
-    project = CONTRACT["project_id"]
-    assert seen["exit"] == 1                                   # прогон упал
-    assert seen["http"] == []                                  # к Ozon без ключей не ходили
-    assert seen["secret_paths"], "секреты должны запрашиваться"
-    allowed = {f"projects/{project}/secrets/{s}/versions/latest"
-               for s in CONTRACT["marketplaces"]["ozon"]["secret_ids"].values()}
-    assert set(seen["secret_paths"]) <= allowed
-    inserts = [b for b in seen["bq"] if b[0] == "insert"]
-    assert inserts and all(b[1] == f"{project}.ozon_raw.OZON_INGESTION_RUNS" for b in inserts)
-    assert all(s == ["FAILED"] for _, _, s in inserts)
-    assert seen["config"]["project"] == project and seen["config"]["ref_dataset"] == "ref"
-    blob = json.dumps(seen) + stderr
-    for m in EVETIS:
-        assert m not in blob, m
+    assert seen["exit"] == 2
+    assert seen["http"] == seen["secret_paths"] == seen["bq"] == []
+    assert seen["config"]["project"] == CONTRACT["project_id"]
+    assert any(l.get("event") == "run_rejected" for l in seen["log"])
 
 
 def test_missing_project_env_still_refuses_to_start():

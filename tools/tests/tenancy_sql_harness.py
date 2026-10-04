@@ -10,6 +10,8 @@
 from __future__ import annotations
 
 import sqlite3
+import re
+import json
 from datetime import date, timedelta
 from pathlib import Path
 
@@ -29,6 +31,10 @@ def view_query(ds: str, name: str) -> str:
     for d in list(q.find_all(exp.DateSub)):
         assert (d.unit.name if d.unit else "DAY").upper() == "DAY", d.sql()
         d.replace(exp.Anonymous(this="DATE_SUB_DAYS", expressions=[d.this, d.expression]))
+    for j in list(q.find_all(exp.JSONExtract)):
+        j.replace(exp.Anonymous(this="BQ_JSON_QUERY", expressions=[j.this, exp.Literal.string(j.expression.sql(dialect='bigquery').strip("'"))]))
+    for j in list(q.find_all(exp.JSONExtractScalar)):
+        j.replace(exp.Anonymous(this="BQ_JSON_VALUE", expressions=[j.this, exp.Literal.string(j.expression.sql(dialect='bigquery').strip("'"))]))
     return q.sql(dialect="sqlite")
 
 
@@ -39,6 +45,26 @@ def _date_sub_days(d, n):
 def database(tables: dict[str, tuple[list[str], list[tuple]]]) -> sqlite3.Connection:
     db = sqlite3.connect(":memory:")
     db.create_function("DATE_SUB_DAYS", 2, _date_sub_days)
+    db.create_function("regexp", 2, lambda pattern, value: value is not None and re.search(pattern, value) is not None)
+    # Preserve BigQuery JSON_QUERY's distinction between boolean true and string "true".
+    def json_query(value, path):
+        try:
+            obj = json.loads(value)
+            for key in path.removeprefix('$.').split('.'):
+                obj = obj[key]
+            return json.dumps(obj, separators=(',', ':')) if obj is not None else None
+        except (ValueError, TypeError, KeyError):
+            return None
+    db.create_function("BQ_JSON_QUERY", 2, json_query)
+    def json_value(value, path):
+        text = json_query(value, path)
+        if text is None:
+            return None
+        obj = json.loads(text)
+        if isinstance(obj, (dict, list)):
+            return None
+        return obj if isinstance(obj, str) else text
+    db.create_function("BQ_JSON_VALUE", 2, json_value)
     for tname, (cols, rows) in tables.items():
         db.execute(f'CREATE TABLE "{tname}" ({", ".join(cols)})')
         if rows:

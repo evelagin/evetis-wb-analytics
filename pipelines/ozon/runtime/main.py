@@ -128,18 +128,34 @@ def binding_gate(want, now):
     if code == 200:
         company = (si or {}).get("company") or {}
         try:
-            fp = I.seller_fingerprint(C.seller_client_id(), company.get("inn"), company.get("ogrn"))
+            fp = I.seller_fingerprint(C.seller_client_id(), company.get("inn"), company.get("ogrn"),
+                                      version=I.fingerprint_version(bindings[I.SELLER].fingerprint))
         except I.IdentityError:
             fp = None
-    status, reason = I.live_status(bindings[I.SELLER], fp)
+    status, reason = I.live_status(bindings[I.SELLER], fp, company.get("ogrn") if code == 200 else None)
     if status != I.BOUND:
         return f"seller:{status}", reason
     if I.PERFORMANCE in need:
+        if I.fingerprint_version(fp) == I.SELLER_V2 and bindings[I.PERFORMANCE].seller_binding_fingerprint != fp:
+            return "performance:INVALID_BINDING", "cross-API Seller linkage unproven"
         pfp = I.performance_fingerprint(C.perf_client_id())
         status, reason = I.live_status(bindings[I.PERFORMANCE], pfp)
         if status != I.BOUND:
             return f"performance:{status}", reason
     return None, "ok"
+
+
+def ingestion_execution_contract(want, env):
+    """No environment omission may turn an external-tenant execution into legacy mode."""
+    if not want or len(set(want)) != len(want) or any(e not in REGISTRY for e in want):
+        raise C.ConfigError("unknown/empty ingestion entity contract")
+    external = C.PROJECT != C.LEGACY_INGESTION_PROJECT
+    if external and env.get("TENANT_BINDING_REQUIRED") != "1":
+        raise C.ConfigError("external ingestion requires binding contract")
+    if external and "promo" in want:
+        raise C.ConfigError("promo outside external-tenant ingestion contract")
+    C._seller_execution_scope = frozenset({"runtime"} if external or "promo" not in want else {"runtime", "promo"})
+    return external or env.get("TENANT_BINDING_REQUIRED") == "1"
 
 
 def main():
@@ -156,7 +172,12 @@ def main():
         if window_error:
             C.log(event="run_rejected", ingestion_run_id=run_id, reason=window_error)
             sys.exit(2)
-    if os.environ.get("TENANT_BINDING_REQUIRED") == "1":
+    try:
+        binding_required = ingestion_execution_contract(want, os.environ)
+    except C.ConfigError:
+        C.log(event="run_rejected", ingestion_run_id=run_id, reason="ingestion execution contract denied")
+        sys.exit(2)
+    if binding_required:
         from datetime import datetime, timezone
         denied, reason = binding_gate(want, datetime.now(timezone.utc))
         if denied:

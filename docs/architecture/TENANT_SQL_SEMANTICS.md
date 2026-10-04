@@ -200,3 +200,14 @@ P1–P8: `tools/tenancy/sql_package.py`.
 
 Доступ: в T4 никому, кроме владельцев проекта (ACL `projectOwners`). Механизм доступа клиента —
 T6 (см. `TENANCY_DESIGN.md` §4c).
+
+## Local Seller identity v2 binding-status extension (2026-10-04)
+
+The local source of V_SELLER_BINDING_STATUS now validates supported fingerprint representations,
+V2 owner/legal evidence in existing notes STRING, nonempty legal OGRN change/disappearance and
+Performance linkage to the V2 Seller. Unknown/mixed versions never acquire BOUND by fallback.
+V1 fingerprints and historical owner notes remain compatible. Grain remains one row per API;
+ref.SELLER_BINDING remains the SQL mirror of consistent owner OPB marker authorization.
+Physical columns/types are unchanged. Description changes are local metadata documentation only.
+See TENANCY_SELLER_POLICY_IDENTITY_V2.md for migration/authority boundaries. This SQL source has
+NOT been deployed; offline sqlite/transpilation tests do not prove BigQuery live parity.

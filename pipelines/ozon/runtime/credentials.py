@@ -1,4 +1,4 @@
-"""Проверка учётных данных Ozon (Tenancy T5, решение D2): политика «только чтение».
+"""Проверка capability inventory Ozon (Tenancy policy v2; supersedes historical D2).
 
 Чистый модуль. Источник истины о возможностях ключа Seller API — фактический набор методов из
 POST /v1/roles, а не название роли. Классы методов — seller_method_policy.json (генерирует
@@ -7,13 +7,15 @@ tools/tenancy/ozon_method_policy.py из Swagger; хеш спецификаци�
 Решение по ключу Seller:
   FAIL (BLOCKING), если
     * методов нет вовсе или ответ /v1/roles не разобран;
-    * хоть один метод класса MUTATION вне approved_mutation_methods (сейчас пусто);
+    * активная business mutation, external side effect или unresolved semantics;
     * хоть один метод НЕ известен политике (UNKNOWN) — новый метод классифицируется только
-      изменением политики, а не по догадке;
+      reviewed изменением политики, а не по regex или названию роли;
     * нет метода, обязательного для включённой сущности (или для самой проверки);
     * срок ключа истёк;
   WARNING — срок истекает меньше чем через EXPIRY_WARNING_DAYS или не указан.
 Ключ никогда не меняется и не ограничивается автоматически.
+RETIRED и reviewed ARTIFACT_GENERATION дают WARN, но не runtime permission.
+Legacy class — provenance/suggestion; runtime routes — отдельный exact allowlist.
 
 Performance API: API инспекции прав нет. Проверка — токен и безвредное чтение; способность к
 изменениям не наблюдаема (UNKNOWN), а сам runtime вызывает только пути из белого списка
@@ -44,10 +46,8 @@ VALIDATION_SELLER_METHODS = ("/v1/roles", "/v1/seller/info")
 
 
 def load_policy(path: Path = POLICY_FILE) -> dict:
-    policy = json.loads(path.read_text(encoding="utf-8"))
-    if policy.get("schema_version") != 1 or not isinstance(policy.get("methods"), dict):
-        raise ValueError("политика методов Seller API повреждена")
-    return policy
+    import seller_policy
+    return seller_policy.load(path)
 
 
 def required_seller_methods(entities) -> set[str]:
@@ -65,29 +65,49 @@ def _parse_ts(v):
 
 def evaluate_seller_roles(roles_response, entities, now: datetime, policy: dict | None = None) -> dict:
     """Вердикт по ключу Seller. Только имена ролей и методов — значения ключа сюда не попадают."""
-    policy = policy or load_policy()
+    import seller_policy as SP
+    policy = SP.validate(load_policy() if policy is None else policy)
     classes = policy["methods"]
-    approved = set(policy.get("approved_mutation_methods") or [])
     blocking, warnings = [], []
-    roles = (roles_response or {}).get("roles")
+    roles = roles_response.get("roles") if isinstance(roles_response, dict) else None
     if not isinstance(roles, list) or not roles:
-        blocking.append("KEY_NO_ROLES: /v1/roles не вернул ни одной роли")
+        blocking.append("KEY_NO_ROLES: inspection has no valid roles")
         roles = []
-    methods = sorted({m for r in roles if isinstance(r, dict) for m in (r.get("methods") or [])
-                      if isinstance(m, str)})
-    unknown = [m for m in methods if m not in classes]
-    mutation = [m for m in methods if classes.get(m, {}).get("class") == "MUTATION" and m not in approved]
-    missing = sorted(required_seller_methods(entities) - set(methods))
+    if any(not isinstance(r, dict) or not isinstance(r.get("name"), str)
+           or not isinstance(r.get("methods"), list)
+           or any(not isinstance(m, str) or not m.startswith("/") for m in r.get("methods", []))
+           for r in roles):
+        blocking.append("KEY_ROLES_MALFORMED: inspection matrix invalid")
+        roles = []
+    methods = sorted({m for r in roles for m in r["methods"]})
+    matrix = {name: sorted({m for r in roles if r["name"] == name for m in r["methods"]})
+              for name in {r["name"] for r in roles}}
+    outcomes = {m: SP.treatment(classes.get(m), policy["schema_version"]) for m in methods}
+    unknown = [m for m in methods if m not in classes or
+               (policy["schema_version"] == 2 and classes[m]["lifecycle"] == "UNRESOLVED") or
+               (policy["schema_version"] == 1 and classes[m]["class"] == "UNKNOWN")]
+    mutation = [m for m in methods if outcomes[m] == "FAIL" and
+                (classes.get(m, {}).get("semantics") in ("BUSINESS_STATE_MUTATION", "EXTERNAL_SIDE_EFFECT") or
+                 (policy["schema_version"] == 1 and classes.get(m, {}).get("class") == "MUTATION"))]
+    denied = [m for m in methods if outcomes[m] == "FAIL"]
+    missing = sorted(required_seller_methods(entities) - {m for m in methods if outcomes[m] != "FAIL"
+                    and classes.get(m, {}).get("lifecycle") not in ("RETIRED", "ALIAS")})
+    known_entities = set(ENTITY_SELLER_METHODS) | {"ads_campaigns", "ads_expense_daily", "ads_sku_daily"}
+    if set(entities) - known_entities:
+        blocking.append("KEY_UNKNOWN_ENTITY: unreviewed execution entity")
     if unknown:
-        blocking.append(f"KEY_UNKNOWN_METHODS: {len(unknown)} методов вне политики")
+        blocking.append(f"KEY_UNKNOWN_METHODS: {len(unknown)} unresolved methods")
     if mutation:
-        blocking.append(f"KEY_MUTATION_CAPABLE: {len(mutation)} методов изменения кабинета")
+        blocking.append(f"KEY_MUTATION_CAPABLE: {len(mutation)} dangerous reported capabilities")
+    if set(denied) - set(unknown) - set(mutation):
+        blocking.append("KEY_SEMANTICS_UNPROVEN: capability side effects unresolved")
     if missing:
-        blocking.append(f"KEY_MISSING_REQUIRED: нет {len(missing)} обязательных методов")
+        blocking.append(f"KEY_MISSING_REQUIRED: {len(missing)} required methods unavailable")
+    warnings.extend(f"KEY_CAPABILITY_WARNING: {m}" for m in methods if outcomes[m] == "WARN")
     exp = None
     try:
         exp = _parse_ts((roles_response or {}).get("expires_at"))
-    except ValueError:
+    except (ValueError, TypeError, AttributeError):
         blocking.append("KEY_EXPIRY_UNPARSEABLE: expires_at не разобран")
     if exp is not None and exp <= now:
         blocking.append("KEY_EXPIRED: срок ключа истёк")
@@ -104,6 +124,8 @@ def evaluate_seller_roles(roles_response, entities, now: datetime, policy: dict 
         "mutation_methods": mutation, "unknown_methods": unknown, "missing_methods": missing,
         "expires_at": exp.isoformat() if exp else None,
         "policy_spec_sha256": policy.get("spec_sha256"),
+        "policy_version": policy["schema_version"], "role_methods": matrix,
+        "capability_outcomes": outcomes, "permission_execution": "UNPROVEN",
     }
 
 
