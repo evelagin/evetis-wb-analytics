@@ -411,3 +411,27 @@ def test_real_entrypoint_denies_unbound_or_foreign_backfill_before_resume(harnes
     with pytest.raises(SystemExit) as result:M.main()
     assert result.value.code==(2 if foreign_target else 3)
     assert not harness[0]
+
+
+
+@pytest.mark.parametrize("changed",[False,True])
+def test_trial_natural_key_convergence_preserves_unrelated_business_rows(harness,monkeypatch,changed):
+    import entities as E
+    trial_id="trial-c001-20261001-01" # fixture evidence, never a runtime tenant branch
+    original=E._finance_rows(finance_fixture(amount="12")["accruals"],{},"2026-09-17",trial_id,"2026-10-01T00:00:00Z")[0]
+    untouched=dict(original,accrual_id=999,event_date="2026-09-18")
+    keys=["accrual_id","type_id","sku"]
+    db=harness[0].setdefault("RAW_OZON_FINANCE_ACCRUAL",{})
+    db[C.merge_key(original,keys)]=copy.deepcopy(original)
+    db[C.merge_key(untouched,keys)]=copy.deepcopy(untouched)
+    source=finance_fixture(amount="14" if changed else "12")
+    monkeypatch.setattr(C,"seller_post",lambda path,body:(200,{"accrual_types":[]} if path.endswith("/types") else source))
+    out=engine(plan("finance_accrual")).run(harness[3])
+    assert out["inserted"]==0 and out["updated"]==1 and len(db)==2
+    assert db[C.merge_key(untouched,keys)]==untouched
+    observed=db[C.merge_key(original,keys)]
+    assert observed["sku"] is None and observed["amount_rub"]==(14.0 if changed else 12.0)
+    ignored=set(E._meta("","",""))|{"source_payload_hash"}
+    delta={key for key in original if key not in ignored and original[key]!=observed[key]}
+    assert delta==({"amount_rub"} if changed else set())
+    assert observed["ingestion_run_id"]!=trial_id # allowed upsert provenance, no broad cleanup

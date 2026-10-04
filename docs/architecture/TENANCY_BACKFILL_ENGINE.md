@@ -57,7 +57,9 @@ and no arbitrary new delay makes tenant READY.
 ## Reusable execution and state design
 
 WINDOW_V1 is explicit opt-in for external tenants, strict paging and binding required.
-Normal legacy execution is unchanged. One entity per bounded execution. Pilot metadata requires VALIDATING or
+Existing legacy collectors/lookbacks retain their source and key semantics. Journal insert
+rejection now fails visibly for every caller; legacy deployment is not authorized by this
+candidate. One entity per bounded execution. Pilot metadata requires VALIDATING or
 CAPABILITY_DISCOVERY and a tenant-wide atomic lease; it cannot overlap full T5
 BACKFILLING, READY or an active control execution. A terminal execution completion
 marker permits the next CAS lease generation; a lost/ambiguous run remains locked. Inputs carry
