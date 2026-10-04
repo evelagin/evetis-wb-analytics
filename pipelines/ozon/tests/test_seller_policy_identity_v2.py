@@ -325,3 +325,54 @@ def test_policy_roundtrip_preserves_all_provenance_and_is_stable():
     assert SP.parse(rendered)==policy
     assert SP.dumps(SP.parse(rendered))==rendered
     assert CR.POLICY_FILE.read_text()==rendered
+
+
+DANGEROUS_REPORTED_PATHS = (
+    '/v1/cargoes/create', '/v1/cargoes/delete', '/v1/cargoes/transport/activate',
+    '/v1/cargoes/transport/bind', '/v1/cargoes/transport/create', '/v2/cargoes/delete',
+    '/v1/pricing-strategy/status', '/v1/notification/check',
+)
+
+@pytest.mark.parametrize('path', DANGEROUS_REPORTED_PATHS + (
+    '/v1/analytics/item_turnover', '/v1/supply-order/content/update/validation',
+    '/v1/cargoes-label/file/*', '/v99/new/list',
+))
+@pytest.mark.parametrize('profile', ('runtime', 'control', 'promo'))
+def test_owner_required_denials_before_credentials_or_network(path, profile, monkeypatch):
+    monkeypatch.setattr(C, '_seller_headers', lambda: pytest.fail('credential construction reached'))
+    monkeypatch.setattr(C, '_request', lambda *a, **k: pytest.fail('network dispatch reached'))
+    with pytest.raises(C.ApiPathDenied):
+        C.seller_call(path, {}, profile=profile)
+
+@pytest.mark.parametrize('source', (
+    'import common as C\nkey=C._secrets[C.CONFIG.secret_seller_api_key]',
+    'import common as C\nC.urllib.request.urlopen(req)',
+    'from common import urllib as u\nu.request.urlopen(req)',
+    'import common as C\nC._sm.access_secret_version(request={})',
+    'from google.cloud import secretmanager\nsecretmanager.SecretManagerServiceClient()',
+    'import google.cloud.secretmanager as sm\nsm.SecretManagerServiceClient()',
+    'import common as C\nname="_secrets"\ngetattr(C,name)',
+    'import common as C\nC.__dict__["_secrets"]',
+    'import common as C\nvars(C)',
+    'import common as C\nC.SELLER_PROFILES={"runtime":{("POST","/v1/cargoes/create")}}',
+    'import common as C\nC.PROJECT=C.LEGACY_INGESTION_PROJECT',
+    'import common as C\nC.seller_call=lambda *a: 0',
+    'import common as C\nC.seller_call.__globals__["_secrets"]',
+    'import common as C\nC.sys.modules["urllib.request"].urlopen(req)',
+))
+def test_ast_closes_exported_cache_sdk_and_http_aliases(source):
+    assert violations(source, 'new_entity.py')
+
+
+def test_direct_credential_api_and_cache_reads_denied(monkeypatch):
+    monkeypatch.setattr(C, '_sm', None)
+    cache = C._CredentialCache()
+    cache[C.CONFIG.secret_seller_api_key] = 'SYNTHETIC_ONLY'
+    monkeypatch.setattr(C, '_secrets', cache)
+    with pytest.raises(C.ApiPathDenied): C.secret(C.CONFIG.secret_seller_api_key)
+    with pytest.raises(C.ApiPathDenied): C._seller_headers()
+    for read in (lambda: cache[C.CONFIG.secret_seller_api_key], cache.get, cache.items,
+                 cache.values, cache.keys, cache.copy, lambda: iter(cache)):
+        with pytest.raises(C.ApiPathDenied): read()
+    assert C._sm is None
+    assert 'SYNTHETIC_ONLY' not in repr(cache)

@@ -209,3 +209,23 @@ retained; final qualification must reference the successful rerun, not hide the 
 
 After the fixture correction, all 69 adversarial deployment tests passed (exit 0) under
 Python 3.12.15. The complete offline DoD is rerun on the resulting clean commit.
+
+
+## Security re-audit before broad inventory acceptance — 2026-10-04
+
+Owner decision requires security repair/CI/immutable-image qualification BEFORE any credential
+verdict relaxation. Deployed V2 has no observed bypass usage, but its previous AST gate failed
+to reject common._secrets / common.urllib / exported SDK references in a new normal module.
+This is a source-enforcement gap, not evidence of a live forbidden request.
+
+The repair limits normal module access to an explicit common public interface; cache, raw HTTP,
+Secret Manager SDK and reflective common access are rejected. Credential loader/header getter
+also enforce approved caller code identities before Secret Manager access; ordinary cache reads
+are denied. Tests inject only synthetic state. All eight reported dangerous paths and selected
+unresolved paths are denied before credential construction/dispatch in every profile.
+
+Trust boundary remains reviewed immutable source plus AST/CI gates. CPython is not a sandbox
+against hostile introspection, monkeypatching or changing the transport itself. No such code may
+be qualified/published as normal runtime. Public identifier getters remain identity interfaces,
+not API-key access. No execution profile or semantic record was broadened. Seller blocker logic
+remains unchanged in this security repair. No tenant validation or cloud deployment is implied.

@@ -165,7 +165,57 @@ class ApiPathDenied(RuntimeError):
     """Путь не входит в белый список «только чтение»: запрос не отправляется."""
 BACKOFF = [3, 6, 12, 24, 48]
 
-_secrets = {}
+class _CredentialCache:
+    """No ordinary cache read outside the controlled loader (not a Python sandbox)."""
+    def __init__(self):
+        self._values = {}
+
+    def __setitem__(self, key, value):
+        self._values[key] = value
+
+    def _check(self):
+        if sys._getframe(2).f_code is not secret.__code__:
+            raise ApiPathDenied("credential cache outside transport")
+
+    def __getitem__(self, key):
+        self._check()
+        return self._values.__getitem__(key)
+
+    def __contains__(self, key):
+        self._check()
+        return self._values.__contains__(key)
+
+    def get(self, *args):
+        self._check()
+        return self._values.get(*args)
+
+    def items(self):
+        self._check()
+        return self._values.items()
+
+    def values(self):
+        self._check()
+        return self._values.values()
+
+    def keys(self):
+        self._check()
+        return self._values.keys()
+
+    def __iter__(self):
+        self._check()
+        return self._values.__iter__()
+
+    def copy(self):
+        self._check()
+        return self._values.copy()
+
+    def __repr__(self):
+        return "<protected credential cache>"
+
+    __str__ = __repr__
+
+
+_secrets = _CredentialCache()
 _bq = None
 _perf_token = {"value": None, "at": 0}
 STATS = {"requests": 0, "retries": 0}
@@ -356,6 +406,15 @@ _SECRET_ROLE_BY_NAME = {CONFIG.secret_seller_api_key: "seller_api_key",
 def secret(name):
     """Значение секрета из Secret Manager. В логи и на диск не попадает."""
     global _sm
+    caller = sys._getframe(1).f_code
+    readers = {
+        CONFIG.secret_seller_api_key: (_seller_headers,),
+        CONFIG.secret_seller_client_id: (_seller_headers, seller_client_id),
+        CONFIG.secret_perf_client_id: (perf_token, perf_client_id),
+        CONFIG.secret_perf_client_secret: (perf_token,),
+    }
+    if caller not in tuple(f.__code__ for f in readers.get(name, ())):
+        raise ApiPathDenied("credential read outside controlled transport")
     if name not in _secrets:
         if _sm is None:
             _sm = secretmanager.SecretManagerServiceClient()
@@ -383,6 +442,8 @@ def _seller_headers():
     Единственное место, где собираются учётные данные Seller API: им пользуются
     только controlled seller_call; normal runtime modules не получают этот интерфейс.
     """
+    if sys._getframe(1).f_code is not seller_call.__code__:
+        raise ApiPathDenied("Seller headers outside controlled transport")
     return {"Client-Id": secret(CONFIG.secret_seller_client_id),
             "Api-Key": secret(CONFIG.secret_seller_api_key),
             "Content-Type": "application/json"}
