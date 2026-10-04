@@ -105,5 +105,5 @@ def test_shadow_evaluator_checks_previous_candidate_repetition():
     msg=CASES[0]['message']|{'v2_final_answer':CASES[0]['v2']}
     first=_quality_shadow(rt,msg)
     next_result=_quality_shadow(rt,msg,previous_answers=[first['candidate_text']])
-    assert next_result['quality']['dimensions']['repetition']=='NEEDS_IMPROVEMENT'
+    assert next_result['quality']['dimensions']['repetition_penalty']=='NEEDS_IMPROVEMENT'
     assert next_result['status']=='READY'

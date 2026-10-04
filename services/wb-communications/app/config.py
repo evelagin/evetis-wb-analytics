@@ -152,6 +152,11 @@ class Settings:
         default_factory=lambda: os.environ.get("V31_OPERATOR_RECOVERY_ENABLED", "false").lower() == "true"
     )
 
+    # Separate activation gate: implementation never changes production config.
+    v31_owner_override_enabled: bool = field(
+        default_factory=lambda: os.environ.get("V31_OWNER_OVERRIDE_ENABLED", "false").lower() == "true"
+    )
+
     # --- Wildberries ---
     wb_api_base_url: str = field(
         default_factory=lambda: os.environ.get(

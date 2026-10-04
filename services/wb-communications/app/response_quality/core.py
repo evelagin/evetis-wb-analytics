@@ -35,6 +35,7 @@ class VoicePlan:
     facts: list[dict] = field(default_factory=list)
     direct_answer: str | None = None
     human_reason: str | None = None
+    explanations: list[dict] = field(default_factory=list)
 
 
 @dataclass
@@ -56,8 +57,14 @@ class PreparedResponse:
     reasons: list[str]
 
     def metadata(self):
-        # No customer text or raw candidate in diagnostics/logs.
-        return {"version": VERSION, "status": self.status, "repaired": self.repaired,
+        # Private operator metadata; original_block spans must never be logged/outboxed.
+        return {"version": VERSION, "status": self.status,
+                "operator_state": ("HUMAN_REVIEW" if self.plan.human_reason else
+                                   "BLOCK" if self.status!='READY' else
+                                   "WARNING" if self.quality.verdict!='GOOD' or self.final_policy.get("verdict")=="WARNING" else "READY"),
+                "approved_explanation_ids": [r['explanation_id'] for r in self.plan.explanations],
+                "original_block": {'violations':self.original_policy.get('violations',[]),
+                                   'violation_spans':self.original_policy.get('violation_spans',[])}, "repaired": self.repaired,
                 "original_text_sha256": self.original_policy.get("text_sha256"),
                 "final_text_sha256": sha(self.text), "reasons": self.reasons,
                 "quality": asdict(self.quality), "information_budget": self.plan.information_budget,
@@ -83,15 +90,15 @@ _ASPECTS = [
     ("product_liked", r"отлич|понрав|хорош|супер|довольн", "Рады, что покупка Вам понравилась.", (r"рад|приятн", r"понрав|впечатлен|оценк|покупк|мягк|текстур|липк")),
     ("softness", r"мягк", "Очень приятно, что Вы отметили мягкость средства.", (r"мягк",)),
     ("non_sticky", r"не\s+лип|нелипк", "Рады, что средство не показалось Вам липким.", (r"липк|липким",)),
-    ("texture", r"приятн\w*\s+текстур|текстур\w*[^.!?]{0,20}приятн", "Рады, что текстура Вам понравилась.", (r"текстур",)),
+    ("texture", r"(?:приятн|нежн|легк|лёгк)\w*\s+текстур|текстур\w*[^.!?]{0,20}(?:приятн|нежн|легк|лёгк)", "Рады, что текстура Вам понравилась.", (r"текстур",)),
     ("fragrance_harsh", r"резк\w*[^.!?]{0,20}(запах|аромат)|(запах|аромат)[^.!?]{0,20}резк", "Понимаем, что аромат показался Вам резким.", (r"аромат|запах", r"резк")),
-    ("fragrance_liked", r"приятн\w*\s+(запах|аромат)|(запах|аромат)[^.!?]{0,20}понрав", "Рады, что аромат Вам понравился.", (r"аромат|запах", r"понрав|приятн")),
+    ("fragrance_liked", r"(?:приятн|хорош)\w*\s+(запах|аромат)|(запах|аромат)[^.!?]{0,20}понрав|приятно\s+пах", "Рады, что аромат Вам понравился.", (r"аромат|запах", r"понрав|приятн")),
     ("recommendation", r"рекомендую|советую", "Спасибо за рекомендацию.", (r"рекомендац",)),
     ("delivery", r"быстр\w*[^.!?]{0,20}достав|достав\w*[^.!?]{0,20}быстр", "Спасибо, что отметили быструю доставку.", (r"достав", r"быстр|оператив")),
-    ("repeat_purchase", r"(беру|покупаю|заказываю)[^.!?]{0,30}(снова|повтор|не\s+перв|втор|трет)|не\s+перв\w*\s+раз", "Спасибо, что снова выбрали EVETIS.", (r"снова|повтор|не\s+перв",)),
+    ("repeat_purchase", r"(беру|покупаю|заказываю)[^.!?]{0,30}(снова|повтор|не\s+перв|втор|трет)|не\s+перв\w*\s+раз|постоянно\s+(беру|покупаю|заказываю)", "Спасибо, что снова выбрали EVETIS.", (r"снова|повтор|не\s+перв",)),
     ("no_effect", r"не\s+увидел\w*[^.!?]{0,20}(эффект|результат)|нет\s+(эффект|результат)|без\s+результат|не\s+работает", "Жаль, что результат не совпал с Вашими ожиданиями.", (r"результат|ожидан",)),
     ("product_disliked", r"не\s+понрав|разочар|ужас|плох", "Жаль, что покупка Вас разочаровала.", (r"жаль|разочар|ожидан",)),
-    ("price", r"дорог|цен[ауы]\s+(высок|завыш)|дороговат", "Понимаем Ваше замечание о цене.", (r"цен",)),
+    ("price", r"дорог|цен[ауы]\s+(высок|завыш)|дороговат|подешевел", "Понимаем Ваше замечание о цене.", (r"цен",)),
 ]
 
 
@@ -101,13 +108,31 @@ def aspects_of(msg):
     for key, pattern, response, coverage in _ASPECTS:
         if not re.search(pattern, t):
             continue
-        if key == "product_liked" and re.search(r"не\s+понрав|не\s+довольн|не\s+хорош", t):
+        if key == "product_liked" and not any(re.search(pattern,c) and not re.search(r"не\s+понрав|не\s+довольн|не\s+хорош",c)
+                                                   for c in re.split(r'[,;.!?]|\bно\b',t)):
+            continue
+        if key == 'fragrance_liked' and re.search(r'(?:аромат|запах)[^.!?]{0,20}не\s+понрав',t):
             continue
         if key == "softness" and re.search(r"не\s+мягк", t):
             continue
         if key == "recommendation" and re.search(r"не\s+рекомендую|не\s+советую", t):
             continue
         out.append(Aspect(key, "MUST_ADDRESS", response, coverage))
+    extra = [
+        ('sticky', r'(?<!не )липк', 'Жаль, что после нанесения Вы ощущаете липкость.', (r'липк',)),
+        ('drying', r'сушит|сухость|стягива', 'Жаль, что после применения Вы ощущаете сухость.', (r'сух|стяг',)),
+        ('fragrance_disliked', r'не\s+понрав[^.!?]{0,35}(аромат|запах)|(?:аромат|запах)[^.!?]{0,35}не\s+понрав', 'Жаль, что аромат Вам не понравился.', (r'аромат|запах',r'жаль|не\s+понрав')),
+        ('packaging_inconvenient', r'неудобн[^.!?]{0,20}упаков|упаков[^.!?]{0,20}неудоб', 'Жаль, что упаковка оказалась для Вас неудобной.', (r'упаков',r'неудоб')),
+        ('dispenser_inconvenient', r'неудобн[^.!?]{0,20}дозатор|дозатор[^.!?]{0,20}неудоб', 'Жаль, что дозатор оказался неудобным в использовании.', (r'дозатор',r'неудоб')),
+        ('result_liked', r'эффект[^.!?]{0,15}(есть|хорош)|хорош[^.!?]{0,15}(эффект|результат)', 'Рады, что Вы довольны результатом применения.', (r'результат|эффект',)),
+        ('future_purchase',r'буду\s+(брать|покупать|заказыв)|куплю\s+ещ[её]', 'Будем рады видеть Вас снова.', (r'снова|ещ[её]',)),
+    ]
+    for key,rx,response,coverage in extra:
+        if re.search(rx,t):out.append(Aspect(key,'MUST_ADDRESS',response,coverage))
+    if re.search(r'эффекта?\s+(никакого\s+)?нет|ни\s+эффект',t) and not any(a.key=='no_effect' for a in out):
+        out.append(Aspect('no_effect','MUST_ADDRESS','Жаль, что Вы не увидели ожидаемого результата.',(r'результат|ожидан',)))
+    # A positive mention embedded in negation is never praise.
+    if re.search(r'не\s+оставля[^.!?]{0,30}липк|без\s+липк|не\s+лип',t):out=[a for a in out if a.key!='sticky']
     return out
 
 
@@ -196,6 +221,9 @@ def make_plan(msg, snap, *, hard_plan=None):
                                 "source_ids": [row["source_id"]]}]
                     p.level = "P2"
                     break
+    from app.response_quality.expertise import approved
+    if res.product_id and res.status=='VERIFIED' and not res.restricted_components:
+        p.explanations = [r for r in approved(snap,res.product_id) if keys & set(r['signals'])][:1]
     return p
 
 
@@ -219,38 +247,21 @@ def human_voice(msg, p, *, safe_v3_draft=None):
 
 
 def evaluate(text, msg, p, hard_policy, *, previous_answers=()):
-    n = normalize(text or "")
-    missing = [a.key for a in p.aspects if a.priority == "MUST_ADDRESS" and a.coverage_patterns and
-               not all(re.search(pattern, n) for pattern in a.coverage_patterns)]
-    ordinary = p.route not in {"SAFETY_TEMPLATE", "HUMAN_REVIEW"}
-    direct = p.level != "DIRECT" or bool(text and not re.match(r"(здравствуйте|спасибо|благодарим)", n))
-    checks = {
-        "relevance": bool(text) and not p.human_reason,
-        "aspect_coverage": not missing,
-        "helpfulness": direct and bool(text),
-        "warmth": p.level == "DIRECT" or bool(re.search(r"спасибо|жаль|рады|приятно|понимаем", n)),
-        "naturalness": not bool(re.search(r"благодарим за обратную связь|данная продукция|к сведению", n)),
-        "specificity": bool(p.aspects or p.direct_answer) or not _raw(msg),
-        "factual_discipline": hard_policy.get("verdict") in {"PASS", "INFO", "WARNING"},
-        "over_caution": not (ordinary and bool(re.search(r"врач|медицин|дерматолог", n))),
-        "over_marketing": len(p.facts) <= p.information_budget and not bool(re.search(r"купите|советуем приобрести", n)),
-        "repetition": n not in {normalize(t) for t in previous_answers if t},
-    }
-    reasons = ["missing_aspect:" + k for k in missing]
-    reasons.extend(k for k, good in checks.items() if not good and k != "aspect_coverage")
-    return QualityReport("GOOD" if all(checks.values()) else "NEEDS_IMPROVEMENT",
-                         {k: "GOOD" if v else "NEEDS_IMPROVEMENT" for k, v in checks.items()}, reasons)
+    from app.response_quality.brand_voice import assess
+    return assess(text,msg,p,hard_policy,previous_answers=previous_answers)
 
 
-def prepare(msg, original, snap, *, safe_v3_draft=None, hard_plan=None, render=human_voice):
+def prepare(msg, original, snap, *, safe_v3_draft=None, hard_plan=None, render=None):
     """At most one corrected candidate. Final policy is checked independently again.
 
     A serious-safety/legal/identity hard route can never be repaired into an ordinary answer.
     Quality failure remains NEEDS_IMPROVEMENT; it never becomes a hard BLOCK.
     """
+    from app.response_quality.brand_voice import render as default_render
+    render = render or default_render
     p = make_plan(msg, snap, hard_plan=hard_plan)
     st = SimpleNamespace(v3_knowledge_snapshot_id=snap.snapshot_id)
-    first = validate_for_publication(original or "", msg, st)
+    first = validate_for_publication(original or "", msg, st, include_spans=True)
     q = evaluate(original, msg, p, first)
     reasons = sorted({v["rule_id"] for v in first.get("violations", [])} | set(q.reasons))
     if p.human_reason:

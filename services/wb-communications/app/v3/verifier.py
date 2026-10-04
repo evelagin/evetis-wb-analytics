@@ -83,6 +83,8 @@ class VerifierContext:
     strategy: Optional[str] = None
     inci_order_warning: bool = False
     own_identifiers: set = field(default_factory=set)
+    approved_explanation_texts: list = field(default_factory=list)
+    approved_guidance_texts: list = field(default_factory=list)
 
 
 # --------------------------------------------------------------------------------------------
@@ -269,27 +271,43 @@ def verify(text: Optional[str], ctx: VerifierContext, snapshot: KnowledgeSnapsho
         if not _in_corpus(ctx, m.group()):
             add("V-NUM", "BLOCK", m.group(), "spelled-out quantity not in allowed facts")
 
+    # Exact reviewed variants are exempt ONLY from their claim family. Every other
+    # rule still inspects the original text (medical/numeric/restricted/identity).
+    claim_free = strip_spans(free_no_names, [s for t in ctx.approved_explanation_texts
+                            for s in find_literal_spans(free_no_names, normalize(t))])
+    guidance_free = strip_spans(free, [s for t in ctx.approved_guidance_texts
+                               for s in find_literal_spans(free, normalize(t))])
+
     # --- general advice (library empty -> any advice not literally in allowed facts is BLOCK)
     for family, pats in vp["general_advice"].items():
-        for m in find_all(pats, free):
+        for m in find_all(pats, guidance_free):
             if not _in_corpus(ctx, m.group()):
                 add("V-GENERAL", "BLOCK", m.group(), f"general advice ({family}) without approved guidance_id")
     for m in find_all(vp["medical"], free):
         if not _in_corpus(ctx, m.group()):
             add("V-MEDICAL", "BLOCK", m.group(), "medical / high-risk claim")
-    for m in find_all(vp["cosmetic_claims"], free_no_names):
+    for m in find_all(vp["cosmetic_claims"], claim_free):
         if not _in_corpus(ctx, m.group()):
             add("V-CLAIM", "BLOCK", m.group(), "cosmetic claim while cosmetic_claim_generation is disabled (ODR-06)")
     # Presence is not causal efficacy. The shared ingredient alias fix must not make
     # "ingredient provides softness" publishable merely because presence is known.
-    for clause in re.split(r"[.!?;]", free_no_names):
+    for clause in re.split(r"[.!?;]", claim_free):
         if snapshot.ingredient_mentions(clause) and re.search(
                 r"(обеспечива\w*|прида[её]т|делает)[^.!?]{0,70}(мягк|нежн)", clause):
             if not _in_corpus(ctx, clause):
                 add("V-CLAIM", "BLOCK", clause, "ingredient presence does not authorize a causal softness claim")
+    for clause in re.split(r"[.!?;]", claim_free):
+        if snapshot.ingredient_mentions(clause) and re.search(r'помога|способству|поддержива|увлажня|пита[её]|защища|смягча|лечит|восстанавлива',clause):
+            if not _in_corpus(ctx,clause):
+                add('V-CLAIM','BLOCK',clause,'ingredient benefit requires explicit scoped expertise approval')
     for m in find_all(vp["free_from_claims"], free):
         if not _in_corpus(ctx, m.group()):
             add("V-FREEFROM", "BLOCK", m.group(), "derived free-from claim (ODR-10)")
+
+    for clause in re.split(r"[.!?;]", free_no_names):
+        for m in re.finditer(r"\b[а-яё-]+(?:ый|ий|ой|ая|ое|ые|ую|ым)\s+(?:аромат|запах)\w*|(?:аромат|запах)\w*\s+[а-яё-]+(?:ый|ий|ой|ая|ое|ые|ую|ым)\b", clause):
+            if not _in_corpus(ctx, m.group()):
+                add("V-FACT", "BLOCK", m.group(), "fragrance descriptor not approved for this product")
 
     # --- intended use
     for area, pats in vp["body_areas"].items():

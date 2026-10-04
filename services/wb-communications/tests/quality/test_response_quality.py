@@ -28,7 +28,9 @@ def test_golden_policy_and_quality(case):
     assert len(r.plan.facts) <= r.plan.information_budget
     if r.status == 'READY':
         assert validate_for_publication(r.text,case['message'],SETTINGS)['verdict'] != 'BLOCK'
-        assert r.quality.verdict == 'GOOD', r.quality.reasons
+        # Phase 3.1B: hard PASS can be weak; absent approved expertise remains a quality gap.
+        assert r.quality.verdict in {'GOOD','NEEDS_IMPROVEMENT'}
+        assert len(r.quality.dimensions)==15
         assert len(r.text) <= 1000
         if r.plan.route == 'SERVICE':
             assert r.plan.information_budget == 0 and not r.plan.facts
@@ -87,10 +89,10 @@ def test_mixed_sentiment_covers_both_and_quality_is_separate():
     policy=validate_for_publication(safe,m,SETTINGS)
     assert policy['verdict']!='BLOCK'
     q=evaluate(safe,m,p,policy)
-    assert q.verdict=='NEEDS_IMPROVEMENT' and q.dimensions['aspect_coverage']=='NEEDS_IMPROVEMENT'
+    assert q.verdict=='NEEDS_IMPROVEMENT' and q.dimensions['missed_customer_signal_penalty']=='NEEDS_IMPROVEMENT'
     r=prepare(m,safe,SNAP)
     assert 'понрав' in r.text and 'резк' in r.text
-    assert evaluate(r.text,m,r.plan,r.final_policy,previous_answers=[r.text]).dimensions['repetition']=='NEEDS_IMPROVEMENT'
+    assert evaluate(r.text,m,r.plan,r.final_policy,previous_answers=[r.text]).dimensions['repetition_penalty']=='NEEDS_IMPROVEMENT'
 
 @pytest.mark.parametrize('text', ['Жжение прошло','Кожа немного щиплет','Раздражение не проходит'])
 def test_existing_mild_safety_template_is_unchanged(text):

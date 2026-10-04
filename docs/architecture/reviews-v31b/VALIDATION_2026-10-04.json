@@ -1,0 +1,31 @@
+{
+  "schema": "evetis-v31b-local-validation/1",
+  "date": "2026-10-04",
+  "base_commit": "536cd67c6153e58c1d6ff46d7b3156d2c7cf9f34",
+  "validated_service_tree": "6b774951da9a892d64998913a4fb4f081fe89c88",
+  "compile": {
+    "command": "python -m compileall -q app scripts",
+    "exit_code": 0
+  },
+  "pytest": {
+    "command": "python -m pytest -q --disable-warnings --maxfail=3",
+    "exit_code": 0,
+    "passed": 888,
+    "warnings": 1
+  },
+  "diff_check": {
+    "command": "git diff --check",
+    "exit_code": 0
+  },
+  "scope": "Offline only; fake WB/Telegram/Firestore transactions; no live publication or deploy.",
+  "operator_states": {
+    "READY": 69,
+    "WARNING": 18,
+    "BLOCK": 1,
+    "HUMAN_REVIEW": 12
+  },
+  "knowledge_snapshot_sha256": "66eec390a5af76b80a1ace26bd97b58b41d4ce621117c53540a82447c071215a",
+  "live_feedback_publication_e2e": "UNPROVEN",
+  "production_activation": "NOT_APPLIED",
+  "hourly_scheduler_activation": "BLOCKED"
+}

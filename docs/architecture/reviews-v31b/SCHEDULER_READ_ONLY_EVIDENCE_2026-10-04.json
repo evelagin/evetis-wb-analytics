@@ -1,0 +1,102 @@
+{
+  "at": "2026-10-04T07:15:46.339736+00:00",
+  "scheduler": {
+    "name": "projects/project-fa311fc0-4d87-4781-986/locations/europe-west1/jobs/evetis-wb-poll",
+    "schedule": "0 8,11,14,17,20 * * *",
+    "timeZone": "Europe/Moscow",
+    "state": "ENABLED",
+    "attemptDeadline": "180s",
+    "retryConfig": {
+      "maxBackoffDuration": "3600s",
+      "maxDoublings": 5,
+      "maxRetryDuration": "0s",
+      "minBackoffDuration": "5s"
+    },
+    "lastAttemptTime": "2026-10-04T05:00:27.107367Z"
+  },
+  "scheduler_auth": {
+    "oidc": false,
+    "scheduler_secret_header_present": true
+  },
+  "runtime": {
+    "revision": "evetis-wb-communications-fpub-f1eb89d",
+    "digest": "sha256:354be62bad4c7d9229fe02d9326767c63b2d4576e136d6c995b41006291a4b8c",
+    "env_fingerprint": "facb6ead9bcc0d625463a635ce966b7e90ce2be9d01403caf75863a1ce1b382b",
+    "timeout": 300,
+    "concurrency": 80,
+    "bounds": {
+      "V3_SHADOW_POLL_DEADLINE_SECONDS": "DEFAULT",
+      "V3_SHADOW_BUDGET_SECONDS": "DEFAULT",
+      "WB_MIN_INTERVAL_SECONDS": "0.6"
+    }
+  },
+  "poll_requests": [
+    {
+      "at": "2026-10-04T05:00:27.130273Z",
+      "status": 200,
+      "latency_seconds": 21.212620924,
+      "revision": "evetis-wb-communications-fpub-f1eb89d"
+    },
+    {
+      "at": "2026-10-03T17:00:04.155862Z",
+      "status": 200,
+      "latency_seconds": 13.578324871,
+      "revision": "evetis-wb-communications-fpub-f1eb89d"
+    },
+    {
+      "at": "2026-10-03T14:00:04.128687Z",
+      "status": 200,
+      "latency_seconds": 34.289532212,
+      "revision": "evetis-wb-communications-fpub-f1eb89d"
+    },
+    {
+      "at": "2026-10-03T11:00:04.382423Z",
+      "status": 200,
+      "latency_seconds": 14.896625836,
+      "revision": "evetis-wb-communications-fpub-f1eb89d"
+    },
+    {
+      "at": "2026-10-03T08:00:04.087842Z",
+      "status": 200,
+      "latency_seconds": 40.136635014,
+      "revision": "evetis-wb-communications-fpub-f1eb89d"
+    },
+    {
+      "at": "2026-10-03T05:00:15.301874Z",
+      "status": 200,
+      "latency_seconds": 52.248773518,
+      "revision": "evetis-wb-communications-fpub-f1eb89d"
+    },
+    {
+      "at": "2026-10-02T17:00:04.082747Z",
+      "status": 200,
+      "latency_seconds": 49.537501742,
+      "revision": "evetis-wb-communications-fpub-f1eb89d"
+    },
+    {
+      "at": "2026-10-02T14:00:04.168922Z",
+      "status": 200,
+      "latency_seconds": 44.278586195,
+      "revision": "evetis-wb-communications-fpub-f1eb89d"
+    },
+    {
+      "at": "2026-10-02T11:00:52.441760Z",
+      "status": 200,
+      "latency_seconds": 32.389805391,
+      "revision": "evetis-wb-communications-fpub-f1eb89d"
+    },
+    {
+      "at": "2026-10-02T08:00:06.047110Z",
+      "status": 200,
+      "latency_seconds": 41.1767424,
+      "revision": "evetis-wb-communications-fpub-f1eb89d"
+    },
+    {
+      "at": "2026-10-02T05:00:24.584536Z",
+      "status": 200,
+      "latency_seconds": 39.707704454,
+      "revision": "evetis-wb-communications-fpub-f1eb89d"
+    }
+  ],
+  "observed_max_latency_seconds": 52.248773518
+}

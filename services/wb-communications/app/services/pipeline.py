@@ -43,7 +43,7 @@ from app.utils.text import (
 
 logger = get_logger(__name__)
 
-ACTIONS = {"pub", "edit", "regen", "skip", "show"}
+ACTIONS = {"pub", "edit", "regen", "skip", "show", "ov", "oc"}
 # callback token -> state-machine action name
 _ACTION_MAP = {"pub": "publish", "edit": "edit", "regen": "regenerate", "skip": "skip", "show": "show"}
 _REVIEW_TEXT_CARD_LIMIT = 700
@@ -171,15 +171,27 @@ def _operator_keyboard(deps, doc_id, doc, *, show_full=False, retry=False):
                        generation=doc.get("generation_number", 0) if _recovery_enabled(deps) else None)
     if _recovery_enabled(deps) and doc.get("response_review_required"):
         k["inline_keyboard"][0] = [k["inline_keyboard"][0][1]]
+    if getattr(deps.settings,'v31_owner_override_enabled',False):
+        from app.services.owner_override import offer
+        button=offer(doc,deps.settings)
+        if button:
+            k['inline_keyboard'].append([{'text':'⚠️ Опубликовать исходный всё равно',
+                'callback_data':f"ov:{doc_id}:{doc.get('generation_number',0)}:{button['source_version']}"}])
+            if (doc.get('response_recovery') or {}).get('repaired'):
+                k['inline_keyboard'][0][0]['text']='✅ Опубликовать исправленный'
     return k
 
 
 def _recovery_note(text, doc):
     meta = doc.get("response_recovery") or {}
-    if meta.get("status") == "HUMAN_REVIEW":
+    if meta.get("operator_state") == "BLOCK":
+        note = "⛔ Ответ нарушает правила. Исправленный вариант недоступен: нужна редактура оператора."
+    elif meta.get("status") == "HUMAN_REVIEW":
         note = "⛔ Нужна проверка оператора. Публикация не выполнялась."
     elif meta.get("repaired"):
         note = "Черновик автоматически скорректирован перед публикацией."
+    elif meta.get('operator_state')=='WARNING':
+        note = "⚠️ Ответ безопасен по правилам, но требует редакторского внимания."
     else:
         return text
     reasons = meta.get("reasons") or []
@@ -188,6 +200,9 @@ def _recovery_note(text, doc):
                  "V-RESTRICTED": "закрытые сведения", "V-GENERAL": "неутверждённый совет"}
         summary = "; ".join(dict.fromkeys(names.get(r, r) for r in reasons))
         note += " Причина: " + summary[:220]
+    block = meta.get('original_block') or {}
+    if block.get('violation_spans'):
+        note += " Исходный текст: " + "; ".join(v['rule_id']+": «"+v['span']+"»" for v in block['violation_spans'])[:600]
     # Keep the ready answer/customer context as the main card; never replace it with a generic error.
     return truncate(text + "\n\n<i>" + escape_html(note) + "</i>", TELEGRAM_MSG_SOFT_LIMIT)
 
@@ -851,6 +866,9 @@ def _handle_callback(deps: Deps, cq: dict) -> dict:
     if cq_id:
         deps.telegram.answer_callback_query(cq_id)  # stop the spinner
 
+    if action in {'ov','oc'}:
+        from app.services.owner_override import handle
+        return handle(deps,action,doc_id,chat,message_id,user_id)
     if action == "pub":
         expected_generation = None
         if ":" in doc_id:
@@ -875,11 +893,11 @@ def _stale(deps: Deps, chat, message: str = "⚠️ Действие недос�
     return {"status": "stale"}
 
 
-def _publish(deps: Deps, doc_id, chat, message_id, user_id, *, expected_generation=None) -> dict:
+def _publish(deps: Deps, doc_id, chat, message_id, user_id, *, expected_generation=None, override_confirmation=None) -> dict:
     # Entity-aware, independent fail-closed publish gates. Questions and reviews
     # each have their own WB_*_PUBLISH_ENABLED flag and their own WB endpoint.
     peek = deps.repo.get(doc_id)
-    if _recovery_enabled(deps) and (peek or {}).get("response_recovery"):
+    if not override_confirmation and _recovery_enabled(deps) and (peek or {}).get("response_recovery"):
         if (peek or {}).get("response_review_required") or expected_generation is None:
             return _stale(deps, chat, "⚠️ Прочитайте обновлённую карточку. Нужен Publish именно этого варианта.")
     if _recovery_enabled(deps) and expected_generation is None and peek:
@@ -898,7 +916,14 @@ def _publish(deps: Deps, doc_id, chat, message_id, user_id, *, expected_generati
         deps.telegram.send_message(chat, disabled_msg)
         return {"status": "publish_disabled"}
     try:
-        doc = (deps.repo.begin_publish(doc_id, expected_generation=expected_generation)
+        if override_confirmation:
+            from app.services.owner_override import allowed, safety_fixed
+            if not allowed(deps,chat,user_id) or safety_fixed(peek,deps.settings):
+                return {'status':'unauthorized'}
+            doc = deps.repo.begin_publish(doc_id, expected_generation=expected_generation,
+                                         override_confirmation=override_confirmation)
+        else:
+            doc = (deps.repo.begin_publish(doc_id, expected_generation=expected_generation)
                if expected_generation is not None else deps.repo.begin_publish(doc_id))  # atomic lease + generation
     except InvalidTransition:
         return _stale(deps, chat, "⚠️ Этот отзыв уже обрабатывается или опубликован.")
@@ -927,16 +952,26 @@ def _publish(deps: Deps, doc_id, chat, message_id, user_id, *, expected_generati
             raise ValueError("invalid policy verdict")
         trace["policy"] = policy
         status = "policy_blocked" if policy["verdict"] == "BLOCK" else None
+        if override_confirmation:
+            from app.services.owner_override import fingerprint
+            if fingerprint(policy)!=override_confirmation['policy_fingerprint'] or policy['text_sha256']!=override_confirmation['answer_hash']:
+                status='policy_check_failed'
+            else:
+                status=None
+                trace['owner_override']={k:override_confirmation[k] for k in ('override_by','override_at',
+                    'answer_hash','source_version','policy_version','knowledge_snapshot')}
+                trace['owner_override']['override']=True
+                trace['owner_override']['override_confirmed_at']=_now_iso()
     except Exception as exc:
         trace["policy"] = {"verdict": "ERROR", "error_class": type(exc).__name__}
         status = "policy_check_failed"
-    if _recovery_enabled(deps) and status is None:
+    if not override_confirmation and _recovery_enabled(deps) and status is None:
         _, route_check = _prepare_response(deps, doc, text)
         if route_check and route_check["status"] == "HUMAN_REVIEW":
             status = "policy_blocked"
             trace["hard_route"] = route_check["reasons"]
     if status:
-        if status == "policy_blocked" and _recovery_enabled(deps):
+        if not override_confirmation and status == "policy_blocked" and _recovery_enabled(deps):
             prepared_gen, recovery = _prepare_response(deps, doc, text)
             if prepared_gen is not None and recovery["status"] == "READY":
                 version = doc.get("generation_number", 0) + 1
