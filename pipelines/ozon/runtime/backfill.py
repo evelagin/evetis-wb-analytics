@@ -205,7 +205,6 @@ class Engine:
                 raise B.EvidenceError("catalog SKU repeated across pages/visibilities; source changed")
             sku_owner[sku] = item["id"]
         pr["sku_owner"] = sku_owner
-        out = self.merge("RAW_OZON_CATALOG", E._catalog_rows(info, self.run_id, self.ts), ["snapshot_date", "sku"])
         terminal = count == total
         evidence = {"action": "CATALOG_PAGE", "visibility": visibility, "products": len(ids),
                     "source_total": total, "source_terminal": terminal, "historical_status": "UNPROVEN"}
@@ -226,6 +225,9 @@ class Engine:
                 raise B.EvidenceError("catalog page cap")
             seen.add(nxt)
             pr.update(cursor=nxt, cursors=sorted(seen), seen=previous + ids, total=total)
+        # Reject oversized continuation before this source unit can write RAW.
+        B.validate(self.p, s)
+        out = self.merge("RAW_OZON_CATALOG", E._catalog_rows(info, self.run_id, self.ts), ["snapshot_date", "sku"])
         return out, evidence
 
     def supplies(self, s):
@@ -261,7 +263,6 @@ class Engine:
                 raise B.EvidenceError("bundle terminal/count contradiction")
             if not terminal and b["pages"] + 1 >= self.p["bundle_page_cap"]:
                 raise B.EvidenceError("bundle page cap; partial batch remains incomplete")
-            out = self.merge("RAW_OZON_SUPPLY_BUNDLES", brows, ["bundle_id", "sku"])
             if terminal:
                 pr["bundle"] = None
                 s["bundles"] += 1
@@ -269,6 +270,8 @@ class Engine:
                 b.update(cursor=nxt, cursors=b["cursors"] + [nxt], seen=seen,
                          count=count, pages=b["pages"] + 1, total=total)
             s["complete"] = pr["list_done"] and not pr["pending"] and pr["bundle"] is None
+            B.validate(self.p, s)
+            out = self.merge("RAW_OZON_SUPPLY_BUNDLES", brows, ["bundle_id", "sku"])
             return out, {"action": "BUNDLE_PAGE", "bundle_complete": terminal,
                          "source_total": total, "source_items": count}
         if pr["pending"]:
@@ -306,13 +309,14 @@ class Engine:
                     pr["bundle_links"][str(bid)] = link
         missing = sum(not row.get("bundle_id") for row in s_rows)
         pr["missing_bundle_links"] = pr.get("missing_bundle_links", 0) + missing
-        r1 = self.merge("RAW_OZON_SUPPLY_ORDERS", o_rows, ["order_id"])
-        r2 = self.merge("RAW_OZON_SUPPLIES", s_rows, ["order_id", "supply_id"])
-        out = {k: r1.get(k, 0) + r2.get(k, 0) for k in ("received", "inserted", "updated")}
         pr.update(cursor=nxt, list_done=terminal, seen_orders=pr["seen_orders"] + ids,
                   cursors=pr["cursors"] + ([nxt] if not terminal else []))
         s["orders"] += len(o_rows); s["supplies"] += len(s_rows)
         s["complete"] = terminal and not pr["pending"]
+        B.validate(self.p, s)
+        r1 = self.merge("RAW_OZON_SUPPLY_ORDERS", o_rows, ["order_id"])
+        r2 = self.merge("RAW_OZON_SUPPLIES", s_rows, ["order_id", "supply_id"])
+        out = {k: r1.get(k, 0) + r2.get(k, 0) for k in ("received", "inserted", "updated")}
         return out, {"action": "ORDER_BATCH", "orders": len(o_rows), "supplies": len(s_rows),
                      "bundles_pending": len(pr["pending"]), "source_terminal": terminal,
                      "content_unavailable_supplies": missing}

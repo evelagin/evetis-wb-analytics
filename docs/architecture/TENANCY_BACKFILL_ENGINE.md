@@ -151,7 +151,7 @@ catalog totals/SKU ownership and checkpoint growth beyond900KB fail visibly, wit
 premature COMPLETE. That bound is a safety limit, not evidence of unlimited tenant size.
 
 
-## DoD target applicability — unresolved process gate
+## Original global DoD target applicability — historical machine gate
 
 The current impact graph is scoped to legacy EVETIS, not deployed tenant targets. For
 these runtime/schema changes it resolves49 objects and eight mandatory suites:
@@ -175,7 +175,8 @@ per-domain source terminal/window proofs; exact persisted natural-key counts and
 retained SKU linkage; run/checkpoint/coverage readback; bounded trial before/after business
 column reconciliation; no foreign-project write, Scheduler/IAM/secret/binding mutation;
 full-history/financial-finality/READY remain UNPROVEN until their own contracts pass.
-This proposal is not an approved exception and creates no production authorization.
+Original proposal was unapproved; the later owner applicability decision below supersedes
+that process hold for the bounded client_001 scope, without waiving tenant gates.
 
 
 D3 refresh: normal incremental finance preserves its existing30-day lookback; older
@@ -183,3 +184,22 @@ corrections require an explicit refresh generation or canonical owner REOPEN_CHU
 The latter changes only that chunk's WINDOW_V1 plan identity, so a prior complete proof
 cannot incorrectly suppress a requested source re-observation. Ordinary retries retain
 one stable generation. No new monetary finality delay/automatic repair is invented.
+
+
+## Owner-approved bounded tenant DoD (2026-10-04)
+
+Owner decision accepts PR244 for continued qualification and establishes scoped
+applicability, not a waiver of tenant safety/data gates. Preserve the original global
+BLOCKED machine report. Mark only demonstrably foreign assets/contracts
+NOT_APPLICABLE_TO_CLIENT_001_TENANT_BACKFILL_SCOPE. Tenant runtime, RAW schema, source
+proof, security, exact-image qualification, reviewed deployment and pilot reconciliation
+remain APPLICABLE; missing evidence remains APPLICABLE_BUT_BLOCKED until obtained.
+No global DoD/suite registry/threshold changes.
+
+Continuation bound is900000 serialized state bytes. Catalog, supply enumeration and
+bundle traversal now validate the full next continuation before their RAW MERGE.
+Oversized source units fail visibly before RAW write or checkpoint advancement; no
+truncation. Production pilots record actual peak state/envelope sizes after every
+execution and stop on a bound violation. Full-history sharding/qualification remains
+separate. Fixed-day FBO/finance state does not accumulate business payloads; catalog
+SKU ownership and supply/bundle uniqueness dictionaries grow with retained universe.

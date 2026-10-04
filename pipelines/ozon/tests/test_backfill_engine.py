@@ -435,3 +435,27 @@ def test_trial_natural_key_convergence_preserves_unrelated_business_rows(harness
     delta={key for key in original if key not in ignored and original[key]!=observed[key]}
     assert delta==({"amount_rub"} if changed else set())
     assert observed["ingestion_run_id"]!=trial_id # allowed upsert provenance, no broad cleanup
+
+
+@pytest.mark.parametrize("domain", ["catalog", "supplies", "bundle"])
+def test_oversized_source_continuation_denied_before_any_raw_write(harness,monkeypatch,domain):
+    huge="x"*900001
+    p=plan("supplies" if domain=="bundle" else domain)
+    state=B.initial(p)
+    if domain=="catalog":
+        def source(path,body):
+            if path=="/v3/product/list":
+                return 200,{"result":{"total_items":2,"items":[{"product_id":1}],"last_id":huge}}
+            return 200,{"items":[{"id":1,"sku":"1"}]}
+    elif domain=="supplies":
+        def source(path,body):
+            if path.endswith("/list"):return 200,{"order_ids":[1],"last_id":""}
+            return 200,{"orders":[{"order_id":1,"supplies":[{"supply_id":2,"bundle_id":huge}]}]}
+    else:
+        state["progress"]["bundle"]={"link":[1,2,3],"cursor":"","cursors":[],"seen":{},"count":0,"pages":0}
+        def source(path,body):
+            return 200,{"items":[{"sku":huge,"quantity":1}],"total_count":2,"has_next":True,"last_id":"next"}
+    monkeypatch.setattr(C,"seller_post",source)
+    with pytest.raises(B.EvidenceError,match="continuation exceeds"):
+        engine(p,state).run(harness[3])
+    assert not harness[1] and not harness[2]  # No RAW MERGE and no checkpoint ACK.
