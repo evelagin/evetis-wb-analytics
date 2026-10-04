@@ -311,7 +311,7 @@ def _legacy_evetis_invariants(doc, err) -> None:
         err("$.data_boundary.datasets", "evetis_protected", msg)
     if ozon.get("secret_refs", {}) != L["ozon_secret_refs"]:
         err("$.marketplaces.ozon.secret_refs", "evetis_protected", msg)
-    for k in ("entities", "history_request"):
+    for k in ("entities", "history_request", "seller_inventory_model"):
         if k in ozon:
             err(f"$.marketplaces.ozon.{k}", "evetis_protected",
                 "состав job'ов и история EVETIS заданы в Terraform, не в реестре")

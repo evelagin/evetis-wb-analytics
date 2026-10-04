@@ -111,6 +111,7 @@
         "seller_api_key": "ozon-seller-api-key",
         "seller_client_id": "ozon-seller-client-id"
       },
+      "seller_inventory_model": "BROAD_READ_INVENTORY_V1",
       "service_accounts": {
         "runtime": "sa-ozon-runtime",
         "scheduler": "sa-ozon-scheduler"

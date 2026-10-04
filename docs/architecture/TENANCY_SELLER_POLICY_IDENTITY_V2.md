@@ -241,3 +241,10 @@ dispatch. Trusted Google SDK methods used by BigQuery operations remain unchange
 security-only runtime image retains the same 17 source hashes; qualification with the revised
 scanner is required before credential verdict relaxation. This is a static-gate-only follow-up,
 not an additional runtime authority or a tenant resource change.
+
+## 2026-10-04 owner inventory decision
+
+For explicitly opted-in client_001, inventory-only blockers are superseded by
+[TENANCY_SELLER_CAPABILITY_INVENTORY.md](TENANCY_SELLER_CAPABILITY_INVENTORY.md).
+Transport/identity/binding rules and dangerous method classifications remain unchanged.
+This does not broaden the default strict or legacy EVETIS model.

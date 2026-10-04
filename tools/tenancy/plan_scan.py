@@ -294,7 +294,8 @@ def expected_control(contract: dict) -> dict | None:
     envs = [j["env"] for j in jobs.values()]
     base = {k: v for k, v in (envs[0] if envs else {}).items() if k not in ("ENTITIES", "TENANT_BINDING_REQUIRED")}
     entities = sorted({e for j in jobs.values() for e in j["entities"]})
-    return CI.contract_block(contract["project_id"], contract["datasets"], base, contract["tenant_id"], entities)
+    return CI.contract_block(contract["project_id"], contract["datasets"], base, contract["tenant_id"], entities,
+                             ozon.get("seller_inventory_model", "STRICT_CAPABILITY_V2"))
 
 
 def control_findings(contract: dict) -> list[str]:

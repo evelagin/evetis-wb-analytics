@@ -94,6 +94,7 @@
               "items": {"type": "string", "pattern": "^[a-z][a-z0-9_]{1,40}$"},
               "description": "Сущности Ozon runtime (REGISTRY в pipelines/ozon/runtime/entities.py). Для legacy-арендатора не задаются: состав job'ов описан в Terraform."
             },
+            "seller_inventory_model": {"enum": ["STRICT_CAPABILITY_V2", "BROAD_READ_INVENTORY_V1"], "description": "Control-only inspection model; inventory never grants HTTP authority. Default strict."},
             "history_request": {
               "type": "object",
               "additionalProperties": false,

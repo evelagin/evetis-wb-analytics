@@ -79,19 +79,32 @@ def observe_seller(ctx):
     version = os.environ.get("SELLER_IDENTITY_VERSION", I.SELLER_V1)
     if version not in (I.SELLER_V1, I.SELLER_V2):
         raise I.IdentityError("unsupported identity observation version")
-    code, roles = C.seller_post("/v1/roles", {})
-    verdict = CR.evaluate_seller_roles(roles if code == 200 else {}, ctx.entities, ctx.now)
-    if code != 200:
-        verdict["blocking"].append(f"KEY_INSPECTION_FAILED: /v1/roles HTTP {code}")
-        verdict["status"] = "FAIL"
+    model = os.environ.get("SELLER_INVENTORY_MODEL", CR.STRICT_MODEL)
+    if model not in CR.CREDENTIAL_MODELS:
+        raise C.ConfigError("unsupported Seller credential model")
+    policy = CR.load_policy()
+    proof = CR.runtime_authorization_evidence(policy, C.SELLER_PROFILES)
+    if model == CR.BROAD_MODEL and (version != I.SELLER_V2 or C.PROJECT == C.LEGACY_INGESTION_PROJECT or proof["status"] != "PASS"):
+        raise C.ConfigError("broad Seller model requires external V2 and qualified runtime consistency")
+    roles_http, roles = C.seller_post("/v1/roles", {})
     code, si = C.seller_post("/v1/seller/info", {})
-    company = (si or {}).get("company") or {} if code == 200 else {}
+    si = si if isinstance(si, dict) else {}
+    company = si.get("company") or {} if code == 200 else {}
+    if not isinstance(company, dict): company = {}
     client_id = C.seller_client_id()
     try:
         fp = I.seller_fingerprint(client_id, company.get("inn"), company.get("ogrn"), version=version)
-        status = "OBSERVED" if verdict["status"] == "PASS" else "CREDENTIAL_REJECTED"
     except I.IdentityError:
-        fp, status = None, "INCOMPLETE"
+        fp = None
+    verdict = CR.evaluate_seller_roles(roles if roles_http == 200 else {}, ctx.entities, ctx.now, policy,
+                                      model=model, authentication_ok=code == 200, identity_valid=bool(fp),
+                                      runtime_integrity=proof, profiles=C.SELLER_PROFILES)
+    if roles_http != 200:
+        verdict["blocking"].append(f"KEY_INSPECTION_FAILED: /v1/roles HTTP {roles_http}")
+        verdict["dimensions"]["inspection_integrity"] = "FAIL"
+        verdict["status"] = "FAIL"
+    verdict["http_roles"], verdict["http_seller_info"] = roles_http, code
+    status = "INCOMPLETE" if not fp else "OBSERVED" if verdict["status"] == "PASS" else "CREDENTIAL_REJECTED"
     sub = ((si or {}).get("subscription") or {}) if code == 200 else {}
     row = {"observation_id": f"obs-{uuid.uuid4()}", "run_id": ctx.run_id, "api": I.SELLER,
            "observed_at": ctx.now.isoformat(), "identity_fingerprint": fp or "",
@@ -289,8 +302,9 @@ def cmd_validate(ctx):
     rows = [srow]
     caps = [_cap_row(ctx, "seller", "credential_read_only", "AVAILABLE" if sv["status"] == "PASS" else "DENIED",
                      kind="ROLE_LIST", evidence={k: sv[k] for k in ("blocking", "warnings", "method_count",
-                                                                    "role_names", "expires_at")})]
-    if ctx.ads:
+                                                                    "role_names", "expires_at", "credential_model", "dimensions",
+                                                                    "policy_spec_sha256", "policy_version")})]
+    if ctx.ads and (sv["status"] == "PASS" or sv["credential_model"] == CR.STRICT_MODEL):
         pv, prow, _pfp = observe_performance(ctx, catalog_skus() if sv["status"] == "PASS" else None, sfp)
         rows.append(prow)
         caps.append(_cap_row(ctx, "performance", "credential", "AVAILABLE" if pv["status"] == "PASS" else "DENIED",
@@ -300,6 +314,7 @@ def cmd_validate(ctx):
     # Отпечаток (даже префикс) в журнал не пишется: при публичных ИНН/ОГРН короткий Client-Id
     # восстанавливается перебором (ревью PR #226). Отпечаток — только в tenant_ops арендатора.
     C.log(event="validate_done", run_id=ctx.run_id, seller_credential=sv["status"],
+          seller_dimensions=sv["dimensions"], credential_model=sv["credential_model"],
           observations=[{"api": r["api"], "status": r["status"]} for r in rows])
     return 0 if sv["status"] == "PASS" else 1
 
