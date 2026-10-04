@@ -44,6 +44,18 @@ locals {
     "roles/resourcemanager.projectIamAdmin",
     "roles/serviceusage.serviceUsageAdmin",
     "roles/bigquery.admin",
+    # DRO-1 Gate B (2026-10-04): мониторинг, объявленный в Terraform, применяется только
+    # через infra.yml. Без этих трёх ролей targeted apply политик DRO-1 упал на refresh
+    # существующего канала: 403 на notificationChannels.get (run 37222797246); канал и три
+    # прежние политики создавал владелец локально 23.09, а не этот SA.
+    #   alertPolicyEditor          — monitoring.alertPolicies.* (создание и изменение политик);
+    #   notificationChannelViewer  — get/list канала, на который ссылаются политики (refresh).
+    #                                Только чтение: изменение канала остаётся за владельцем;
+    #   logging.configWriter       — logging.logMetrics.* (лог-метрика пульса детектора).
+    # Monitoring/Logging Admin, Editor и notificationChannelEditor сознательно не выдаются.
+    "roles/monitoring.alertPolicyEditor",
+    "roles/monitoring.notificationChannelViewer",
+    "roles/logging.configWriter",
   ]
   # SA, которыми Terraform привязывает Job/Scheduler → нужен serviceAccountUser (actAs).
   terraform_actas_targets = {

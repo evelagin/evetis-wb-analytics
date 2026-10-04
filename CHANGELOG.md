@@ -1,5 +1,17 @@
 # CHANGELOG.md
 
+## 2026-10-04 — `sa-terraform-apply`: роли для мониторинга из Terraform (НЕ ПРИМЕНЕНО)
+
+- `infra/terraform/iam.tf` → `local.terraform_apply_roles` получает 3 роли:
+  - `roles/monitoring.alertPolicyEditor`;
+  - `roles/monitoring.notificationChannelViewer`;
+  - `roles/logging.configWriter`.
+- Причина: DRO-1 Gate B. Targeted apply политик через `infra.yml` упал с 403 на чтении существующего
+  канала (run 37222797246); ничего не создано.
+- Тест `tools/tests/test_terraform_apply_roles.py` фиксирует точный состав ролей и запрещает
+  Owner / Editor / Monitoring Admin / Logging Admin / notificationChannelEditor.
+- `docs/architecture/TECH_DEBT.md` P2-11 фиксирует `INFRA_ENVIRONMENT_APPROVAL_GAP`; не исправляется.
+
 ## 2026-10-04 — DRO-1: обнаружение сбоев данных и email-оповещения (НЕ РАЗВЁРНУТО)
 
 Документ: `docs/ops/DRO1_DETECTION_ALERTING_2026-10-04.md`. Экономика витрин не меняется; `wb_ops`,
