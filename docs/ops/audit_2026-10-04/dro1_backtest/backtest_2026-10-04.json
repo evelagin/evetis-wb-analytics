@@ -1,0 +1,1055 @@
+{
+ "cases": [
+  {
+   "case": "ads_30_09_open",
+   "as_of_msk": "2026-10-01 07:00:00",
+   "pipeline": "ads_daily",
+   "expected": {
+    "reason_code": "SLOT_MISSED"
+   },
+   "got": {
+    "reason_code": "SLOT_MISSED"
+   },
+   "result": "PASS",
+   "evidence": {
+    "serving_status": "STALE",
+    "data_status": "MISSING",
+    "reason_code": "SLOT_MISSED",
+    "severity": "HIGH",
+    "latest_business_date": "2026-09-29",
+    "target_business_date": "2026-09-30",
+    "slot_late_minutes": "105",
+    "minutes_to_loss": "8535",
+    "run_status": "PARTIAL"
+   }
+  },
+  {
+   "case": "bids_01_10_warn",
+   "as_of_msk": "2026-10-01 07:00:00",
+   "pipeline": "ads_query_bids",
+   "expected": {
+    "reason_code": "SLOT_LATE"
+   },
+   "got": {
+    "reason_code": "SLOT_LATE"
+   },
+   "result": "PASS",
+   "evidence": {
+    "serving_status": "DEGRADED",
+    "data_status": "MISSING",
+    "reason_code": "SLOT_LATE",
+    "severity": "HIGH",
+    "latest_business_date": "2026-09-30",
+    "target_business_date": "2026-10-01",
+    "slot_late_minutes": "105",
+    "minutes_to_loss": "1020",
+    "run_status": "FAILED"
+   }
+  },
+  {
+   "case": "mart_01_10_warn",
+   "as_of_msk": "2026-10-01 08:00:00",
+   "pipeline": "mart",
+   "expected": {
+    "reason_code": "SLOT_LATE"
+   },
+   "got": {
+    "reason_code": "SLOT_LATE"
+   },
+   "result": "PASS",
+   "evidence": {
+    "serving_status": "DEGRADED",
+    "data_status": "MISSING",
+    "reason_code": "SLOT_LATE",
+    "severity": "MEDIUM",
+    "latest_business_date": "2026-09-29",
+    "target_business_date": "2026-09-30",
+    "slot_late_minutes": "30",
+    "minutes_to_loss": null,
+    "run_status": "FAILED"
+   }
+  },
+  {
+   "case": "mart_01_10_fail",
+   "as_of_msk": "2026-10-01 10:00:00",
+   "pipeline": "mart",
+   "expected": {
+    "reason_code": "SLOT_MISSED",
+    "severity": "CRITICAL"
+   },
+   "got": {
+    "reason_code": "SLOT_MISSED",
+    "severity": "CRITICAL"
+   },
+   "result": "PASS",
+   "evidence": {
+    "serving_status": "STALE",
+    "data_status": "MISSING",
+    "reason_code": "SLOT_MISSED",
+    "severity": "CRITICAL",
+    "latest_business_date": "2026-09-29",
+    "target_business_date": "2026-09-30",
+    "slot_late_minutes": "150",
+    "minutes_to_loss": null,
+    "run_status": "FAILED"
+   }
+  },
+  {
+   "case": "ads_30_09_now",
+   "as_of_msk": "NOW",
+   "pipeline": "ads_daily",
+   "expected": {
+    "serving_status": "HEALTHY"
+   },
+   "got": {
+    "serving_status": "HEALTHY"
+   },
+   "result": "PASS",
+   "evidence": {
+    "serving_status": "HEALTHY",
+    "data_status": "COMPLETE",
+    "reason_code": "OK",
+    "severity": "INFO",
+    "latest_business_date": "2026-10-03",
+    "target_business_date": "2026-10-03",
+    "slot_late_minutes": "0",
+    "minutes_to_loss": null,
+    "run_status": "SUCCESS"
+   }
+  },
+  {
+   "case": "bids_13_09_warn",
+   "as_of_msk": "2026-09-13 07:00:00",
+   "pipeline": "ads_query_bids",
+   "expected": {
+    "reason_code": "SLOT_LATE"
+   },
+   "got": {
+    "reason_code": "SLOT_LATE"
+   },
+   "result": "PASS",
+   "evidence": {
+    "serving_status": "DEGRADED",
+    "data_status": "MISSING",
+    "reason_code": "SLOT_LATE",
+    "severity": "HIGH",
+    "latest_business_date": "2026-09-12",
+    "target_business_date": "2026-09-13",
+    "slot_late_minutes": "105",
+    "minutes_to_loss": "1020",
+    "run_status": "SUCCESS"
+   }
+  },
+  {
+   "case": "bids_13_09_imminent",
+   "as_of_msk": "2026-09-13 16:30:00",
+   "pipeline": "ads_query_bids",
+   "expected": {
+    "reason_code": "DATA_LOSS_IMMINENT"
+   },
+   "got": {
+    "reason_code": "DATA_LOSS_IMMINENT"
+   },
+   "result": "PASS",
+   "evidence": {
+    "serving_status": "BLOCKED",
+    "data_status": "MISSING",
+    "reason_code": "DATA_LOSS_IMMINENT",
+    "severity": "CRITICAL",
+    "latest_business_date": "2026-09-12",
+    "target_business_date": "2026-09-13",
+    "slot_late_minutes": "675",
+    "minutes_to_loss": "450",
+    "run_status": "SUCCESS"
+   }
+  },
+  {
+   "case": "bids_13_09_lost",
+   "as_of_msk": "2026-09-14 00:30:00",
+   "pipeline": "ads_query_bids",
+   "expected": {
+    "reason_code": "DATA_LOSS_CONFIRMED"
+   },
+   "got": {
+    "reason_code": "DATA_LOSS_CONFIRMED"
+   },
+   "result": "PASS",
+   "evidence": {
+    "serving_status": "BLOCKED",
+    "data_status": "MISSING_UNRECOVERABLE",
+    "reason_code": "DATA_LOSS_CONFIRMED",
+    "severity": "CRITICAL",
+    "latest_business_date": "2026-09-12",
+    "target_business_date": "2026-09-13",
+    "slot_late_minutes": "1155",
+    "minutes_to_loss": "-30",
+    "run_status": "SUCCESS"
+   }
+  },
+  {
+   "case": "bids_20_09_warn",
+   "as_of_msk": "2026-09-20 07:00:00",
+   "pipeline": "ads_query_bids",
+   "expected": {
+    "reason_code": "SLOT_LATE"
+   },
+   "got": {
+    "reason_code": "SLOT_LATE"
+   },
+   "result": "PASS",
+   "evidence": {
+    "serving_status": "DEGRADED",
+    "data_status": "MISSING",
+    "reason_code": "SLOT_LATE",
+    "severity": "HIGH",
+    "latest_business_date": "2026-09-19",
+    "target_business_date": "2026-09-20",
+    "slot_late_minutes": "105",
+    "minutes_to_loss": "1020",
+    "run_status": "FAILED"
+   }
+  },
+  {
+   "case": "bids_20_09_imminent",
+   "as_of_msk": "2026-09-20 16:30:00",
+   "pipeline": "ads_query_bids",
+   "expected": {
+    "reason_code": "DATA_LOSS_IMMINENT"
+   },
+   "got": {
+    "reason_code": "DATA_LOSS_IMMINENT"
+   },
+   "result": "PASS",
+   "evidence": {
+    "serving_status": "BLOCKED",
+    "data_status": "MISSING",
+    "reason_code": "DATA_LOSS_IMMINENT",
+    "severity": "CRITICAL",
+    "latest_business_date": "2026-09-19",
+    "target_business_date": "2026-09-20",
+    "slot_late_minutes": "675",
+    "minutes_to_loss": "450",
+    "run_status": "FAILED"
+   }
+  },
+  {
+   "case": "bids_01_10_imminent",
+   "as_of_msk": "2026-10-01 16:30:00",
+   "pipeline": "ads_query_bids",
+   "expected": {
+    "reason_code": "DATA_LOSS_IMMINENT"
+   },
+   "got": {
+    "reason_code": "DATA_LOSS_IMMINENT"
+   },
+   "result": "PASS",
+   "evidence": {
+    "serving_status": "BLOCKED",
+    "data_status": "MISSING",
+    "reason_code": "DATA_LOSS_IMMINENT",
+    "severity": "CRITICAL",
+    "latest_business_date": "2026-09-30",
+    "target_business_date": "2026-10-01",
+    "slot_late_minutes": "675",
+    "minutes_to_loss": "450",
+    "run_status": "FAILED"
+   }
+  },
+  {
+   "case": "stocks_03_09_warn",
+   "as_of_msk": "2026-09-03 08:00:00",
+   "pipeline": "stocks_snapshot",
+   "expected": {
+    "reason_code": "SLOT_LATE"
+   },
+   "got": {
+    "reason_code": "SLOT_LATE"
+   },
+   "result": "PASS",
+   "evidence": {
+    "serving_status": "DEGRADED",
+    "data_status": "MISSING",
+    "reason_code": "SLOT_LATE",
+    "severity": "HIGH",
+    "latest_business_date": "2026-09-02",
+    "target_business_date": "2026-09-03",
+    "slot_late_minutes": "90",
+    "minutes_to_loss": "960",
+    "run_status": "FAILED"
+   }
+  },
+  {
+   "case": "stocks_03_09_imminent",
+   "as_of_msk": "2026-09-03 16:30:00",
+   "pipeline": "stocks_snapshot",
+   "expected": {
+    "reason_code": "DATA_LOSS_IMMINENT"
+   },
+   "got": {
+    "reason_code": "DATA_LOSS_IMMINENT"
+   },
+   "result": "PASS",
+   "evidence": {
+    "serving_status": "BLOCKED",
+    "data_status": "MISSING",
+    "reason_code": "DATA_LOSS_IMMINENT",
+    "severity": "CRITICAL",
+    "latest_business_date": "2026-09-02",
+    "target_business_date": "2026-09-03",
+    "slot_late_minutes": "600",
+    "minutes_to_loss": "450",
+    "run_status": "FAILED"
+   }
+  },
+  {
+   "case": "stocks_03_09_lost",
+   "as_of_msk": "2026-09-04 00:30:00",
+   "pipeline": "stocks_snapshot",
+   "expected": {
+    "reason_code": "DATA_LOSS_CONFIRMED"
+   },
+   "got": {
+    "reason_code": "DATA_LOSS_CONFIRMED"
+   },
+   "result": "PASS",
+   "evidence": {
+    "serving_status": "BLOCKED",
+    "data_status": "MISSING_UNRECOVERABLE",
+    "reason_code": "DATA_LOSS_CONFIRMED",
+    "severity": "CRITICAL",
+    "latest_business_date": "2026-09-02",
+    "target_business_date": "2026-09-03",
+    "slot_late_minutes": "1080",
+    "minutes_to_loss": "-30",
+    "run_status": "FAILED"
+   }
+  },
+  {
+   "case": "ads_30_09_period",
+   "as_of_msk": "NOW",
+   "pipeline": "ads_daily",
+   "period": "2026-09-30",
+   "expected": {
+    "data_status": "RECOVERED"
+   },
+   "got": {
+    "data_status": "RECOVERED"
+   },
+   "result": "PASS"
+  },
+  {
+   "case": "mart_30_09_period",
+   "as_of_msk": "NOW",
+   "pipeline": "mart",
+   "period": "2026-09-30",
+   "expected": {
+    "data_status": "RECOVERED"
+   },
+   "got": {
+    "data_status": "RECOVERED"
+   },
+   "result": "PASS"
+  },
+  {
+   "case": "bids_01_10_period",
+   "as_of_msk": "NOW",
+   "pipeline": "ads_query_bids",
+   "period": "2026-10-01",
+   "expected": {
+    "data_status": "MISSING_UNRECOVERABLE"
+   },
+   "got": {
+    "data_status": "MISSING_UNRECOVERABLE"
+   },
+   "result": "PASS"
+  },
+  {
+   "case": "bids_20_09_period",
+   "as_of_msk": "NOW",
+   "pipeline": "ads_query_bids",
+   "period": "2026-09-20",
+   "expected": {
+    "data_status": "MISSING_UNRECOVERABLE"
+   },
+   "got": {
+    "data_status": "MISSING_UNRECOVERABLE"
+   },
+   "result": "PASS"
+  },
+  {
+   "case": "bids_13_09_period",
+   "as_of_msk": "NOW",
+   "pipeline": "ads_query_bids",
+   "period": "2026-09-13",
+   "expected": {
+    "data_status": "MISSING_UNRECOVERABLE"
+   },
+   "got": {
+    "data_status": "MISSING_UNRECOVERABLE"
+   },
+   "result": "PASS"
+  },
+  {
+   "case": "stocks_03_09_period",
+   "as_of_msk": "NOW",
+   "pipeline": "stocks_snapshot",
+   "period": "2026-09-03",
+   "expected": {
+    "data_status": "MISSING_UNRECOVERABLE"
+   },
+   "got": {
+    "data_status": "MISSING_UNRECOVERABLE"
+   },
+   "result": "PASS"
+  },
+  {
+   "case": "read_model_fresh_snapshot",
+   "as_of_sql": "CURRENT_TIMESTAMP()",
+   "got": [
+    [
+     "HEALTHY",
+     "OK"
+    ]
+   ],
+   "result": "PASS"
+  },
+  {
+   "case": "read_model_detector_stale",
+   "as_of_sql": "TIMESTAMP_SUB(CURRENT_TIMESTAMP(), INTERVAL 2 HOUR)",
+   "got": [
+    [
+     "UNKNOWN",
+     "DETECTOR_STALE"
+    ]
+   ],
+   "result": "PASS"
+  },
+  {
+   "case": "health_ext_12d_not_healthy",
+   "as_of_sql": "CURRENT_TIMESTAMP()",
+   "got": [
+    {
+     "detector": "HEALTH_EXT",
+     "effective_status": "UNKNOWN",
+     "staleness_reason": "DETECTOR_STALE",
+     "n": "24",
+     "min_age": "17708"
+    },
+    {
+     "detector": "ADS1B",
+     "effective_status": "HEALTHY",
+     "staleness_reason": null,
+     "n": "7",
+     "min_age": "160"
+    }
+   ],
+   "result": "PASS"
+  }
+ ],
+ "failures": 0,
+ "now": [
+  {
+   "pipeline_id": "orders",
+   "evaluation_mode": "EVALUATED",
+   "serving_status": "HEALTHY",
+   "data_status": "COMPLETE",
+   "run_status": "SUCCESS",
+   "reason_code": "OK",
+   "severity": "INFO",
+   "latest_business_date": "2026-10-04",
+   "age_minutes": "8",
+   "slot_late_minutes": null,
+   "caveats": [
+    "COMPLETENESS_NOT_MEASURED"
+   ]
+  },
+  {
+   "pipeline_id": "sales",
+   "evaluation_mode": "EVALUATED",
+   "serving_status": "HEALTHY",
+   "data_status": "COMPLETE",
+   "run_status": "SUCCESS",
+   "reason_code": "OK",
+   "severity": "INFO",
+   "latest_business_date": "2026-10-04",
+   "age_minutes": "17",
+   "slot_late_minutes": null,
+   "caveats": [
+    "COMPLETENESS_NOT_MEASURED"
+   ]
+  },
+  {
+   "pipeline_id": "finance",
+   "evaluation_mode": "EVALUATED",
+   "serving_status": "HEALTHY",
+   "data_status": "PROVISIONAL",
+   "run_status": "SUCCESS",
+   "reason_code": "OK",
+   "severity": "INFO",
+   "latest_business_date": "2026-10-03",
+   "age_minutes": "136",
+   "slot_late_minutes": null,
+   "caveats": [
+    "COMPLETENESS_NOT_MEASURED"
+   ]
+  },
+  {
+   "pipeline_id": "ads_daily",
+   "evaluation_mode": "EVALUATED",
+   "serving_status": "HEALTHY",
+   "data_status": "COMPLETE",
+   "run_status": "SUCCESS",
+   "reason_code": "OK",
+   "severity": "INFO",
+   "latest_business_date": "2026-10-03",
+   "age_minutes": "569",
+   "slot_late_minutes": "0",
+   "caveats": [
+    "RECOVERED_PERIODS",
+    "COMPLETENESS_NOT_MEASURED"
+   ]
+  },
+  {
+   "pipeline_id": "ads_costs",
+   "evaluation_mode": "EVALUATED",
+   "serving_status": "HEALTHY",
+   "data_status": "PROVISIONAL",
+   "run_status": "SUCCESS",
+   "reason_code": "OK",
+   "severity": "INFO",
+   "latest_business_date": "2026-10-03",
+   "age_minutes": "572",
+   "slot_late_minutes": null,
+   "caveats": [
+    "PROVISIONAL_STUCK",
+    "COMPLETENESS_NOT_MEASURED"
+   ]
+  },
+  {
+   "pipeline_id": "ads_query_bids",
+   "evaluation_mode": "EVALUATED",
+   "serving_status": "HEALTHY",
+   "data_status": "COMPLETE",
+   "run_status": "SUCCESS",
+   "reason_code": "OK",
+   "severity": "INFO",
+   "latest_business_date": "2026-10-04",
+   "age_minutes": "569",
+   "slot_late_minutes": "0",
+   "caveats": [
+    "KNOWN_DATA_LOSS",
+    "COMPLETENESS_NOT_MEASURED"
+   ]
+  },
+  {
+   "pipeline_id": "ads_query_stats",
+   "evaluation_mode": "EVALUATED",
+   "serving_status": "HEALTHY",
+   "data_status": "COMPLETE",
+   "run_status": "SUCCESS",
+   "reason_code": "OK",
+   "severity": "INFO",
+   "latest_business_date": "2026-10-03",
+   "age_minutes": "568",
+   "slot_late_minutes": "0",
+   "caveats": [
+    "RECOVERED_PERIODS",
+    "COMPLETENESS_NOT_MEASURED"
+   ]
+  },
+  {
+   "pipeline_id": "ads_search_clusters",
+   "evaluation_mode": "NOT_EVALUATED",
+   "serving_status": "UNKNOWN",
+   "data_status": "UNKNOWN",
+   "run_status": "UNKNOWN",
+   "reason_code": "CHECK_NOT_IMPLEMENTED",
+   "severity": "INFO",
+   "latest_business_date": null,
+   "age_minutes": null,
+   "slot_late_minutes": null,
+   "caveats": []
+  },
+  {
+   "pipeline_id": "finance_backfill",
+   "evaluation_mode": "NOT_EVALUATED",
+   "serving_status": "UNKNOWN",
+   "data_status": "UNKNOWN",
+   "run_status": "UNKNOWN",
+   "reason_code": "CHECK_NOT_IMPLEMENTED",
+   "severity": "INFO",
+   "latest_business_date": null,
+   "age_minutes": null,
+   "slot_late_minutes": null,
+   "caveats": []
+  },
+  {
+   "pipeline_id": "sales_reconcile",
+   "evaluation_mode": "NOT_EVALUATED",
+   "serving_status": "UNKNOWN",
+   "data_status": "UNKNOWN",
+   "run_status": "UNKNOWN",
+   "reason_code": "CHECK_NOT_IMPLEMENTED",
+   "severity": "INFO",
+   "latest_business_date": null,
+   "age_minutes": null,
+   "slot_late_minutes": null,
+   "caveats": []
+  },
+  {
+   "pipeline_id": "stocks_cloudrun",
+   "evaluation_mode": "NOT_EVALUATED",
+   "serving_status": "UNKNOWN",
+   "data_status": "UNKNOWN",
+   "run_status": "UNKNOWN",
+   "reason_code": "CHECK_NOT_IMPLEMENTED",
+   "severity": "INFO",
+   "latest_business_date": null,
+   "age_minutes": null,
+   "slot_late_minutes": null,
+   "caveats": []
+  },
+  {
+   "pipeline_id": "stocks_snapshot",
+   "evaluation_mode": "EVALUATED",
+   "serving_status": "HEALTHY",
+   "data_status": "COMPLETE",
+   "run_status": "SUCCESS",
+   "reason_code": "OK",
+   "severity": "INFO",
+   "latest_business_date": "2026-10-04",
+   "age_minutes": "497",
+   "slot_late_minutes": "0",
+   "caveats": [
+    "KNOWN_DATA_LOSS"
+   ]
+  },
+  {
+   "pipeline_id": "wb_prices_observer",
+   "evaluation_mode": "EVALUATED",
+   "serving_status": "HEALTHY",
+   "data_status": "COMPLETE",
+   "run_status": "SUCCESS",
+   "reason_code": "OK",
+   "severity": "INFO",
+   "latest_business_date": "2026-10-04",
+   "age_minutes": "0",
+   "slot_late_minutes": null,
+   "caveats": []
+  },
+  {
+   "pipeline_id": "wb_tariffs_loader",
+   "evaluation_mode": "EVALUATED",
+   "serving_status": "HEALTHY",
+   "data_status": "COMPLETE",
+   "run_status": "SUCCESS",
+   "reason_code": "OK",
+   "severity": "INFO",
+   "latest_business_date": "2026-10-04",
+   "age_minutes": "385",
+   "slot_late_minutes": "0",
+   "caveats": [
+    "COMPLETENESS_NOT_MEASURED"
+   ]
+  },
+  {
+   "pipeline_id": "ref_sync",
+   "evaluation_mode": "EVALUATED",
+   "serving_status": "HEALTHY",
+   "data_status": "COMPLETE",
+   "run_status": "SUCCESS",
+   "reason_code": "OK",
+   "severity": "INFO",
+   "latest_business_date": "2026-10-04",
+   "age_minutes": "378",
+   "slot_late_minutes": null,
+   "caveats": [
+    "COMPLETENESS_NOT_MEASURED"
+   ]
+  },
+  {
+   "pipeline_id": "mart",
+   "evaluation_mode": "EVALUATED",
+   "serving_status": "HEALTHY",
+   "data_status": "COMPLETE",
+   "run_status": "SUCCESS",
+   "reason_code": "OK",
+   "severity": "INFO",
+   "latest_business_date": "2026-10-03",
+   "age_minutes": "456",
+   "slot_late_minutes": "0",
+   "caveats": [
+    "RECOVERED_PERIODS",
+    "COMPLETENESS_NOT_MEASURED"
+   ]
+  },
+  {
+   "pipeline_id": "ozon_fbo_postings",
+   "evaluation_mode": "EVALUATED",
+   "serving_status": "HEALTHY",
+   "data_status": "COMPLETE",
+   "run_status": "SUCCESS",
+   "reason_code": "OK",
+   "severity": "INFO",
+   "latest_business_date": "2026-10-04",
+   "age_minutes": "99",
+   "slot_late_minutes": null,
+   "caveats": [
+    "SOURCE_LIMITATION",
+    "COMPLETENESS_NOT_MEASURED"
+   ]
+  },
+  {
+   "pipeline_id": "ozon_finance_accrual",
+   "evaluation_mode": "EVALUATED",
+   "serving_status": "HEALTHY",
+   "data_status": "COMPLETE",
+   "run_status": "SUCCESS",
+   "reason_code": "OK",
+   "severity": "INFO",
+   "latest_business_date": "2026-10-04",
+   "age_minutes": "489",
+   "slot_late_minutes": null,
+   "caveats": [
+    "COMPLETENESS_NOT_MEASURED"
+   ]
+  },
+  {
+   "pipeline_id": "ozon_ads_expense_daily",
+   "evaluation_mode": "EVALUATED",
+   "serving_status": "HEALTHY",
+   "data_status": "COMPLETE",
+   "run_status": "SUCCESS",
+   "reason_code": "OK",
+   "severity": "INFO",
+   "latest_business_date": "2026-10-03",
+   "age_minutes": "488",
+   "slot_late_minutes": "0",
+   "caveats": [
+    "COMPLETENESS_NOT_MEASURED"
+   ]
+  },
+  {
+   "pipeline_id": "ozon_ads_sku_daily",
+   "evaluation_mode": "EVALUATED",
+   "serving_status": "HEALTHY",
+   "data_status": "COMPLETE",
+   "run_status": "SUCCESS",
+   "reason_code": "OK",
+   "severity": "INFO",
+   "latest_business_date": "2026-10-04",
+   "age_minutes": "487",
+   "slot_late_minutes": "0",
+   "caveats": [
+    "SOURCE_LIMITATION",
+    "COMPLETENESS_NOT_MEASURED"
+   ]
+  },
+  {
+   "pipeline_id": "ozon_ads_campaigns",
+   "evaluation_mode": "EVALUATED",
+   "serving_status": "HEALTHY",
+   "data_status": "COMPLETE",
+   "run_status": "SUCCESS",
+   "reason_code": "OK",
+   "severity": "INFO",
+   "latest_business_date": "2026-10-04",
+   "age_minutes": "489",
+   "slot_late_minutes": "0",
+   "caveats": [
+    "COMPLETENESS_NOT_MEASURED"
+   ]
+  },
+  {
+   "pipeline_id": "ozon_catalog",
+   "evaluation_mode": "EVALUATED",
+   "serving_status": "HEALTHY",
+   "data_status": "COMPLETE",
+   "run_status": "SUCCESS",
+   "reason_code": "OK",
+   "severity": "INFO",
+   "latest_business_date": "2026-10-04",
+   "age_minutes": "490",
+   "slot_late_minutes": "0",
+   "caveats": [
+    "KNOWN_DATA_LOSS",
+    "COMPLETENESS_NOT_MEASURED"
+   ]
+  },
+  {
+   "pipeline_id": "ozon_prices",
+   "evaluation_mode": "EVALUATED",
+   "serving_status": "HEALTHY",
+   "data_status": "COMPLETE",
+   "run_status": "SUCCESS",
+   "reason_code": "OK",
+   "severity": "INFO",
+   "latest_business_date": "2026-10-04",
+   "age_minutes": "490",
+   "slot_late_minutes": "0",
+   "caveats": [
+    "KNOWN_DATA_LOSS",
+    "COMPLETENESS_NOT_MEASURED"
+   ]
+  },
+  {
+   "pipeline_id": "ozon_stocks",
+   "evaluation_mode": "EVALUATED",
+   "serving_status": "HEALTHY",
+   "data_status": "COMPLETE",
+   "run_status": "SUCCESS",
+   "reason_code": "OK",
+   "severity": "INFO",
+   "latest_business_date": "2026-10-04",
+   "age_minutes": "99",
+   "slot_late_minutes": "0",
+   "caveats": [
+    "KNOWN_DATA_LOSS",
+    "COMPLETENESS_NOT_MEASURED"
+   ]
+  },
+  {
+   "pipeline_id": "ozon_seller_info",
+   "evaluation_mode": "EVALUATED",
+   "serving_status": "HEALTHY",
+   "data_status": "COMPLETE",
+   "run_status": "SUCCESS",
+   "reason_code": "OK",
+   "severity": "INFO",
+   "latest_business_date": "2026-10-04",
+   "age_minutes": "489",
+   "slot_late_minutes": null,
+   "caveats": [
+    "COMPLETENESS_NOT_MEASURED"
+   ]
+  },
+  {
+   "pipeline_id": "ozon_supplies",
+   "evaluation_mode": "EVALUATED",
+   "serving_status": "HEALTHY",
+   "data_status": "COMPLETE",
+   "run_status": "SUCCESS",
+   "reason_code": "OK",
+   "severity": "INFO",
+   "latest_business_date": "2026-10-04",
+   "age_minutes": "483",
+   "slot_late_minutes": null,
+   "caveats": [
+    "COMPLETENESS_NOT_MEASURED"
+   ]
+  },
+  {
+   "pipeline_id": "ozon_clusters",
+   "evaluation_mode": "EVALUATED",
+   "serving_status": "HEALTHY",
+   "data_status": "COMPLETE",
+   "run_status": "SUCCESS",
+   "reason_code": "OK",
+   "severity": "INFO",
+   "latest_business_date": "2026-09-28",
+   "age_minutes": "9219",
+   "slot_late_minutes": null,
+   "caveats": [
+    "COMPLETENESS_NOT_MEASURED"
+   ]
+  },
+  {
+   "pipeline_id": "wb_funnel",
+   "evaluation_mode": "EVALUATED",
+   "serving_status": "HEALTHY",
+   "data_status": "COMPLETE",
+   "run_status": "SUCCESS",
+   "reason_code": "OK",
+   "severity": "INFO",
+   "latest_business_date": "2026-10-03",
+   "age_minutes": "309",
+   "slot_late_minutes": "0",
+   "caveats": [
+    "COMPLETENESS_NOT_MEASURED"
+   ]
+  },
+  {
+   "pipeline_id": "wb_paid_storage",
+   "evaluation_mode": "EVALUATED",
+   "serving_status": "HEALTHY",
+   "data_status": "COMPLETE",
+   "run_status": "SUCCESS",
+   "reason_code": "OK",
+   "severity": "INFO",
+   "latest_business_date": "2026-10-03",
+   "age_minutes": "175",
+   "slot_late_minutes": "0",
+   "caveats": [
+    "COMPLETENESS_NOT_MEASURED"
+   ]
+  },
+  {
+   "pipeline_id": "wb_promo",
+   "evaluation_mode": "EVALUATED",
+   "serving_status": "HEALTHY",
+   "data_status": "COMPLETE",
+   "run_status": "SUCCESS",
+   "reason_code": "OK",
+   "severity": "INFO",
+   "latest_business_date": "2026-10-04",
+   "age_minutes": "160",
+   "slot_late_minutes": null,
+   "caveats": [
+    "SOURCE_LIMITATION",
+    "COMPLETENESS_NOT_MEASURED"
+   ]
+  },
+  {
+   "pipeline_id": "promo_basis_wb",
+   "evaluation_mode": "EVALUATED",
+   "serving_status": "HEALTHY",
+   "data_status": "COMPLETE",
+   "run_status": "UNKNOWN",
+   "reason_code": "OK",
+   "severity": "INFO",
+   "latest_business_date": "2026-10-04",
+   "age_minutes": "150",
+   "slot_late_minutes": null,
+   "caveats": [
+    "COMPLETENESS_NOT_MEASURED"
+   ]
+  },
+  {
+   "pipeline_id": "executive_v2",
+   "evaluation_mode": "EVALUATED",
+   "serving_status": "HEALTHY",
+   "data_status": "COMPLETE",
+   "run_status": "SUCCESS",
+   "reason_code": "OK",
+   "severity": "INFO",
+   "latest_business_date": "2026-10-02",
+   "age_minutes": "29",
+   "slot_late_minutes": null,
+   "caveats": [
+    "SOURCE_LIMITATION",
+    "COMPLETENESS_NOT_MEASURED"
+   ]
+  },
+  {
+   "pipeline_id": "sku_performance_v2",
+   "evaluation_mode": "EVALUATED",
+   "serving_status": "HEALTHY",
+   "data_status": "COMPLETE",
+   "run_status": "SUCCESS",
+   "reason_code": "OK",
+   "severity": "INFO",
+   "latest_business_date": "2026-10-02",
+   "age_minutes": "20",
+   "slot_late_minutes": null,
+   "caveats": [
+    "SOURCE_LIMITATION",
+    "COMPLETENESS_NOT_MEASURED"
+   ]
+  },
+  {
+   "pipeline_id": "unitka_wb",
+   "evaluation_mode": "EVALUATED",
+   "serving_status": "HEALTHY",
+   "data_status": "COMPLETE",
+   "run_status": "SUCCESS",
+   "reason_code": "OK",
+   "severity": "INFO",
+   "latest_business_date": "2026-10-03",
+   "age_minutes": "129",
+   "slot_late_minutes": "0",
+   "caveats": [
+    "COMPLETENESS_NOT_MEASURED"
+   ]
+  },
+  {
+   "pipeline_id": "ct_refresh",
+   "evaluation_mode": "EVALUATED",
+   "serving_status": "HEALTHY",
+   "data_status": "COMPLETE",
+   "run_status": "SKIPPED",
+   "reason_code": "OK",
+   "severity": "INFO",
+   "latest_business_date": "2026-10-04",
+   "age_minutes": "419",
+   "slot_late_minutes": null,
+   "caveats": [
+    "SOURCE_LIMITATION",
+    "COMPLETENESS_NOT_MEASURED"
+   ]
+  },
+  {
+   "pipeline_id": "ff_stock",
+   "evaluation_mode": "NOT_EVALUATED",
+   "serving_status": "UNKNOWN",
+   "data_status": "UNKNOWN",
+   "run_status": "UNKNOWN",
+   "reason_code": "CHECK_NOT_IMPLEMENTED",
+   "severity": "INFO",
+   "latest_business_date": null,
+   "age_minutes": null,
+   "slot_late_minutes": null,
+   "caveats": []
+  },
+  {
+   "pipeline_id": "sales_plan",
+   "evaluation_mode": "NOT_EVALUATED",
+   "serving_status": "UNKNOWN",
+   "data_status": "UNKNOWN",
+   "run_status": "UNKNOWN",
+   "reason_code": "CHECK_NOT_IMPLEMENTED",
+   "severity": "INFO",
+   "latest_business_date": null,
+   "age_minutes": null,
+   "slot_late_minutes": null,
+   "caveats": []
+  },
+  {
+   "pipeline_id": "ozon_promo",
+   "evaluation_mode": "EVALUATED",
+   "serving_status": "HEALTHY",
+   "data_status": "COMPLETE",
+   "run_status": "SUCCESS",
+   "reason_code": "OK",
+   "severity": "INFO",
+   "latest_business_date": "2026-10-04",
+   "age_minutes": "159",
+   "slot_late_minutes": null,
+   "caveats": [
+    "COMPLETENESS_NOT_MEASURED"
+   ]
+  },
+  {
+   "pipeline_id": "promo_basis_ozon",
+   "evaluation_mode": "EVALUATED",
+   "serving_status": "HEALTHY",
+   "data_status": "COMPLETE",
+   "run_status": "UNKNOWN",
+   "reason_code": "OK",
+   "severity": "INFO",
+   "latest_business_date": "2026-10-04",
+   "age_minutes": "150",
+   "slot_late_minutes": null,
+   "caveats": [
+    "COMPLETENESS_NOT_MEASURED"
+   ]
+  },
+  {
+   "pipeline_id": "unitka_ozon",
+   "evaluation_mode": "EVALUATED",
+   "serving_status": "HEALTHY",
+   "data_status": "COMPLETE",
+   "run_status": "SUCCESS",
+   "reason_code": "OK",
+   "severity": "INFO",
+   "latest_business_date": "2026-10-04",
+   "age_minutes": "278",
+   "slot_late_minutes": null,
+   "caveats": [
+    "SOURCE_LIMITATION",
+    "COMPLETENESS_NOT_MEASURED"
+   ]
+  }
+ ],
+ "bytes_processed": 56050045,
+ "queries": 18
+}
