@@ -197,7 +197,7 @@
     "secret_scan": "No tenant credentials, secretEnv, build args, .env, .git, Terraform or state in image; 17 /app files hashed."
   },
   "deployment": {
-    "evetis": "NOT_DEPLOYED; no legacy EVETIS resource change authorized.",
+    "evetis": "NOT_DEPLOYED; historical reference only: sha256:24e3c6d6715fa7b73d30b4270f9863d2b8680b4b02d4874ff1ea12b4fd90fa1b. Live legacy EVETIS not checked or changed by this task.",
     "tenants": "INERT at image qualification. Exact client_001 deployment under current owner ACK requires frozen 0/4/0 plan; Schedulers PAUSED; no ingestion/backfill.",
     "rollback": "Do not automatically restore d9b8 image with weaker credential boundary. Security-only strict fallback 21ef4d68a51edb7d2ada737554e5d54135b74db1065c36fe47b0db1f3c59f265 qualified in build 78afbf46-9163-4af0-91e9-8206a7e18cfc; any rollback needs owner-approved canonical release/plan, no binding/data rewrites."
   }
