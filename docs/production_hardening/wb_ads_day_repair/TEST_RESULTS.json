@@ -1,0 +1,214 @@
+{
+  "focused": {
+    "tests": 788,
+    "pass": 788,
+    "fail": 0,
+    "skipped": 0,
+    "cancelled": 0,
+    "todo": 0
+  },
+  "existing_resume": {
+    "tests": 51,
+    "pass": 51,
+    "fail": 0,
+    "skipped": 0
+  },
+  "Step5A": {
+    "pass": 17,
+    "fail": 0,
+    "skipped": 0
+  },
+  "cloud_full": {
+    "pass": 1413,
+    "fail": 0,
+    "skipped": 19,
+    "files_passed": 65
+  },
+  "mart_included_in_cloud": {
+    "pass": 43,
+    "fail": 0,
+    "skipped": 0,
+    "files": 4
+  },
+  "tools_full": {
+    "pass": 2328,
+    "fail": 0,
+    "skipped": 0,
+    "deselected": 1,
+    "excluded": "test_gcloud_is_unauthenticated_inside_agent_env (executes print-access-token; forbidden in this scope)"
+  },
+  "sql_current": {
+    "verdict": "PASS",
+    "objects": 53,
+    "checks": "C1\u2013C18",
+    "production_parity": "UNPROVEN"
+  },
+  "syntax": {
+    "pass": 4,
+    "fail": 0,
+    "test_file_check": "PASS"
+  },
+  "diff_check": "PASS",
+  "booster_regression_added": {
+    "pass": 12,
+    "fail": 0,
+    "skipped": 0,
+    "included_in_focused": true
+  },
+  "review_counterexample": {
+    "key": [
+      "2026-09-30",
+      "37563883",
+      "909000001"
+    ],
+    "avg_positions": [
+      5,
+      99
+    ],
+    "prepared_stat_rows": 431,
+    "prepared_booster_rows": 432,
+    "raw_writer_calls": 0,
+    "status": "ERROR",
+    "error": "BOOSTER_GRAIN_DUPLICATE",
+    "complete_calls": 0,
+    "services": "offline fixtures only"
+  },
+  "production_calls": 0,
+  "booster_source_regression_added": {
+    "pass": 26,
+    "fail": 0,
+    "skipped": 0,
+    "included_in_focused": true
+  },
+  "malformed_booster_review_counterexample": {
+    "counterexample": {
+      "advertId": 37563883,
+      "boosterStats": false,
+      "stats": "valid original fixture"
+    },
+    "result_status": "PARTIAL",
+    "error": "ADS_PARTIAL",
+    "failures": [
+      {
+        "code": "HTTP_BOOSTER_SCHEMA"
+      }
+    ],
+    "stat_writer_calls": 0,
+    "booster_writer_calls": 0,
+    "complete_calls": 0,
+    "new_journal_error": true,
+    "old_parent_unchanged": true,
+    "services": "offline fixtures only"
+  },
+  "source_structure_regression_added": {
+    "pass": 131,
+    "fail": 0,
+    "skipped": 0,
+    "included_in_focused": true
+  },
+  "malformed_nm_review_counterexample": {
+    "counterexample": {
+      "advertId": 37563883,
+      "nm": false,
+      "nms": [],
+      "another_valid_app": true
+    },
+    "result_status": "PARTIAL",
+    "error": "ADS_PARTIAL",
+    "failures": [
+      {
+        "code": "HTTP_NM_ALIASES"
+      }
+    ],
+    "stat_writer_calls": 0,
+    "booster_writer_calls": 0,
+    "complete_calls": 0,
+    "new_journal_error": true,
+    "old_parent_unchanged": true,
+    "services": "offline fixtures only"
+  },
+  "scalar_regression_added": {
+    "tests": 557,
+    "pass": 557,
+    "fail": 0,
+    "skipped": 0,
+    "included_in_focused": true
+  },
+  "scalar_contract_sweep": {
+    "stat_fields": 24,
+    "booster_fields": 11,
+    "all_headers_covered": true,
+    "prepared_invalid_cases": 316,
+    "valid_representation_cases": 150,
+    "original_scalar_type_cases": 57,
+    "original_numeric_text_cases": 15,
+    "each_invalid_case_stat_writer_calls": 0,
+    "each_invalid_case_booster_writer_calls": 0,
+    "each_invalid_case_complete_calls": 0,
+    "valid_payload_bytes_preserved": true,
+    "all_services_offline_fixtures": true
+  },
+  "scalar_and_historical_counterexamples": {
+    "sum_false": {
+      "status": "PARTIAL",
+      "error": "ADS_PARTIAL",
+      "failures": [
+        {
+          "code": "HTTP_NM_VALUE_SCHEMA"
+        }
+      ],
+      "stat_writer_calls": 0,
+      "booster_writer_calls": 0,
+      "complete_calls": 0,
+      "new_error_recorded": true,
+      "old_parent_unchanged": true
+    },
+    "duplicate_booster_5_99": {
+      "status": "ERROR",
+      "error": "BOOSTER_GRAIN_DUPLICATE",
+      "failures": [],
+      "stat_writer_calls": 0,
+      "booster_writer_calls": 0,
+      "complete_calls": 0,
+      "new_error_recorded": true,
+      "old_parent_unchanged": true
+    },
+    "booster_false": {
+      "status": "PARTIAL",
+      "error": "ADS_PARTIAL",
+      "failures": [
+        {
+          "code": "HTTP_BOOSTER_SCHEMA"
+        }
+      ],
+      "stat_writer_calls": 0,
+      "booster_writer_calls": 0,
+      "complete_calls": 0,
+      "new_error_recorded": true,
+      "old_parent_unchanged": true
+    },
+    "nm_false_nms_empty": {
+      "status": "PARTIAL",
+      "error": "ADS_PARTIAL",
+      "failures": [
+        {
+          "code": "HTTP_NM_ALIASES"
+        }
+      ],
+      "stat_writer_calls": 0,
+      "booster_writer_calls": 0,
+      "complete_calls": 0,
+      "new_error_recorded": true,
+      "old_parent_unchanged": true
+    },
+    "prepared_sum_false": {
+      "status": "ERROR",
+      "error": "RAW_STAT_SCALAR_SUM",
+      "stat_writer_calls": 0,
+      "booster_writer_calls": 0,
+      "complete_calls": 0
+    }
+  },
+  "current_candidate_validation_date": "2026-10-02",
+  "prior_regression_sections_are_historical": true
+}

@@ -810,12 +810,11 @@ function loadWbAdsSearchClustersRaw(periodFrom, periodTo, runId) {
  * Собирает fullstats по всем ids с дроблением при ошибках.
  * @return {Object} ctx { collected[], noStats{}, failures[], skipped[], stopped, httpCalls, lastCode, deadline }
  */
-function wbAdsFullstatsCollect_(token, allIds, from, to, runId, deadline, repairIO) {
+function wbAdsFullstatsCollect_(token, allIds, from, to, runId, deadline) {
   var ctx = {
     collected: [], noStats: {}, failures: [], skipped: [],
-    stopped: false, httpCalls: 0, lastCode: '', deadline: deadline, repairIO: repairIO || null
+    stopped: false, httpCalls: 0, lastCode: '', deadline: deadline
   };
-  if (ctx.repairIO && ctx.repairIO.capture) ctx.repairIO.capture(ctx);
   var batches = wbAdsChunk_(allIds, WB_ADS_IDS_BATCH_); // по 50
   for (var b = 0; b < batches.length; b++) {
     wbAdsFullstatsTryLevel_(token, batches[b], from, to, runId, ctx);
@@ -841,7 +840,7 @@ function wbAdsFullstatsTryLevel_(token, ids, from, to, runId, ctx) {
 
   var url = WB_ADS_API_HOST_ + '/adv/v3/fullstats?ids=' + ids.join(',') +
     '&beginDate=' + from + '&endDate=' + to;
-  var resp = ctx.repairIO ? ctx.repairIO.fetch(ids, url, token) : wbAdsHttp_('get', url, token, null);
+  var resp = wbAdsHttp_('get', url, token, null);
   ctx.lastCode = resp.code;
 
   if (resp.ok) {
@@ -870,7 +869,6 @@ function wbAdsFullstatsTryLevel_(token, ids, from, to, runId, ctx) {
   } else {
     // single advertId упал → фиксируем ошибку, продолжаем
     ctx.failures.push({ advertId: ids[0], code: resp.code });
-    if (ctx.repairIO) return; // Incident adapter journals the complete result; no implicit Sheet sink.
     wbAdsRawWriteStatus_(runId, 'raw_fullstats', from, to, {
       campaigns_sampled: 1, http_status: resp.code, status: 'FAILED',
       error_message: 'advertId=' + ids[0] + ' HTTP ' + resp.code + ': ' + wbAdsClip_(resp.body),

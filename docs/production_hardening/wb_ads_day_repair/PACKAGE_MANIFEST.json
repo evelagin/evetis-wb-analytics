@@ -1,0 +1,202 @@
+{
+  "scope": "incident-only 2026-09-30; not the pre-existing generalized resume implementation",
+  "head": "b94ca335b98ce8146f925295f45d8789db5ed46c",
+  "branch": "recovery/chz-automation-2026-10-01",
+  "diff_base": "startup dirty loader bytes, separately pinned before-image; new files against absent baseline",
+  "implementation_files": 4,
+  "patched_files": 9,
+  "context_files": 9,
+  "implementation_scope_complete": true,
+  "all_patch_content_verified_in_memory": true,
+  "unrelated_preexisting_changes_in_incident_delta": false,
+  "independent_review": "NOT_RUN for updated complete-scalar-contract candidate; separate independent review ACK required",
+  "patch_sha256": "9d1325fd94fd0b8e5ec5a1904efed10b3098d6ce9b01566c2478609485822003",
+  "files": [
+    {
+      "relative_path": "apps-script/ingestion/WbAdsRawLoader.gs",
+      "role": "implementation: optional collector hook",
+      "size": 68044,
+      "sha256": "1cbc980541abe169c5c1dba26fa91e728327f349f6678b5e2886520eb7d288db",
+      "git_state": "tracked-modified",
+      "included_in_patch": true,
+      "byte_content_verified": true,
+      "baseline_sha256": "a30624bbcc077b077aa5c596f4343a0431092f5c71e962def6ae4b3ca7ea7919"
+    },
+    {
+      "relative_path": "apps-script/ingestion/WbAdsDayRepair.gs",
+      "role": "implementation: pinned incident state/guards",
+      "size": 17652,
+      "sha256": "d208d50e6dca70993d3de8ba143394a28748f8025bd7a90c002e20d912ac7c71",
+      "git_state": "untracked",
+      "included_in_patch": true,
+      "byte_content_verified": true
+    },
+    {
+      "relative_path": "apps-script/ingestion/WbAdsDayRepairRuntime.gs",
+      "role": "implementation: bounded runtime adapter",
+      "size": 19452,
+      "sha256": "e596f9c7102fd119e6338dd7a35ef1e040d503f3fa54c5d63472f3b9401bfada",
+      "git_state": "untracked",
+      "included_in_patch": true,
+      "byte_content_verified": true
+    },
+    {
+      "relative_path": "tools/step5a_appsscript_tests/day-repair.test.js",
+      "role": "offline tests",
+      "size": 55799,
+      "sha256": "30b7ba9d0b48080058e8c5b7e13992ce56c59d3313b444e2c54f931fbf926fa9",
+      "git_state": "untracked",
+      "included_in_patch": true,
+      "byte_content_verified": true
+    },
+    {
+      "relative_path": "docs/production_hardening/wb_ads_day_repair/CONTRACT.md",
+      "role": "documentation/evidence",
+      "size": 23430,
+      "sha256": "c8552a06d8722a95db13387fde378a4dec863e0281ad674f98b82e07faeb9551",
+      "git_state": "untracked",
+      "included_in_patch": true,
+      "byte_content_verified": true
+    },
+    {
+      "relative_path": "docs/production_hardening/wb_ads_day_repair/VALIDATION.md",
+      "role": "documentation/evidence",
+      "size": 13632,
+      "sha256": "837c646e1f39406e34c26ef941c92533b04b2f3b83f7500c98081778a9fb822e",
+      "git_state": "untracked",
+      "included_in_patch": true,
+      "byte_content_verified": true
+    },
+    {
+      "relative_path": "docs/production_hardening/wb_ads_day_repair/TEST_RESULTS.json",
+      "role": "documentation/evidence",
+      "size": 4969,
+      "sha256": "87e54fb6f0d49846c4c27d4d6bcba23049b10d1f30b9811fc892ff18bbb61ee3",
+      "git_state": "untracked",
+      "included_in_patch": true,
+      "byte_content_verified": true
+    },
+    {
+      "relative_path": "docs/production_hardening/wb_ads_day_repair/PRESERVATION.json",
+      "role": "documentation/evidence",
+      "size": 78692,
+      "sha256": "006c464bbd3a62c03004b8cba76daf6b8651b84e565e1fc03efe2b61259ee898",
+      "git_state": "untracked",
+      "included_in_patch": true,
+      "byte_content_verified": true
+    },
+    {
+      "relative_path": "docs/production_hardening/wb_ads_day_repair/IMPACT.json",
+      "role": "documentation/evidence",
+      "size": 16589,
+      "sha256": "5b2e2549fdcde51ef2c509b27f2308c4a0687211ded146ee10ecd417d0db34b3",
+      "git_state": "untracked",
+      "included_in_patch": true,
+      "byte_content_verified": true
+    },
+    {
+      "relative_path": "docs/production_hardening/wb_ads_day_repair/READ_ONLY_CONTEXT/apps-script/ingestion/IngestRunLog.gs",
+      "role": "unchanged runtime dependency evidence",
+      "source_relative_path": "apps-script/ingestion/IngestRunLog.gs",
+      "size": 29656,
+      "sha256": "74964c24fca224e3c6e1d9b795805ec7d0e8692ad58e05faaa80aebf22751170",
+      "git_state": "untracked evidence copy; original tracked",
+      "included_in_patch": false,
+      "included_in_package": true,
+      "byte_content_verified": true
+    },
+    {
+      "relative_path": "docs/production_hardening/wb_ads_day_repair/READ_ONLY_CONTEXT/apps-script/ingestion/WbAdsProbe.gs",
+      "role": "unchanged runtime dependency evidence",
+      "source_relative_path": "apps-script/ingestion/WbAdsProbe.gs",
+      "size": 34372,
+      "sha256": "ed13e31d3ffde39f402a4a1d1dc4803d87e17e81a506d2ce2de54fe6673524b6",
+      "git_state": "untracked evidence copy; original tracked",
+      "included_in_patch": false,
+      "included_in_package": true,
+      "byte_content_verified": true
+    },
+    {
+      "relative_path": "docs/production_hardening/wb_ads_day_repair/READ_ONLY_CONTEXT/apps-script/ingestion/WbAdsRawLoader.before.gs",
+      "role": "startup before-image",
+      "source_relative_path": "apps-script/ingestion/WbAdsRawLoader.gs",
+      "size": 67778,
+      "sha256": "a30624bbcc077b077aa5c596f4343a0431092f5c71e962def6ae4b3ca7ea7919",
+      "git_state": "untracked evidence copy; original tracked",
+      "included_in_patch": false,
+      "included_in_package": true,
+      "byte_content_verified": true
+    },
+    {
+      "relative_path": "docs/production_hardening/wb_ads_day_repair/READ_ONLY_CONTEXT/apps-script/ingestion/WbBigQuery.gs",
+      "role": "unchanged runtime dependency evidence",
+      "source_relative_path": "apps-script/ingestion/WbBigQuery.gs",
+      "size": 13681,
+      "sha256": "2a74d7dcf049a604fbf13785ffc86200c9db9fe169814deec2b11bc7db8b7ddd",
+      "git_state": "untracked evidence copy; original tracked",
+      "included_in_patch": false,
+      "included_in_package": true,
+      "byte_content_verified": true
+    },
+    {
+      "relative_path": "docs/production_hardening/wb_ads_day_repair/READ_ONLY_CONTEXT/apps-script/ingestion/Wbadsbigquery.gs",
+      "role": "unchanged runtime dependency evidence",
+      "source_relative_path": "apps-script/ingestion/Wbadsbigquery.gs",
+      "size": 34809,
+      "sha256": "ca11b8a9dba59e0425f0a8d7634023feddee1d79fc7b6cb1e21cd27cbd2ecc40",
+      "git_state": "untracked evidence copy; original tracked",
+      "included_in_patch": false,
+      "included_in_package": true,
+      "byte_content_verified": true
+    },
+    {
+      "relative_path": "docs/production_hardening/wb_ads_day_repair/READ_ONLY_CONTEXT/sql/mart/pr_mart1_facts.sql",
+      "role": "unchanged scalar contract evidence",
+      "source_relative_path": "sql/mart/pr_mart1_facts.sql",
+      "git_state": "untracked evidence copy; original tracked",
+      "included_in_patch": false,
+      "included_in_package": true,
+      "size": 57836,
+      "sha256": "e312f36394058d87159181d346184d3292758aa4af6b08afddf7622de4c75bf2",
+      "byte_content_verified": true
+    },
+    {
+      "relative_path": "docs/production_hardening/wb_ads_day_repair/READ_ONLY_CONTEXT/sql/mart/pr_mart1_validation.sql",
+      "role": "unchanged scalar contract evidence",
+      "source_relative_path": "sql/mart/pr_mart1_validation.sql",
+      "git_state": "untracked evidence copy; original tracked",
+      "included_in_patch": false,
+      "included_in_package": true,
+      "size": 13502,
+      "sha256": "d790e00b34056d46420044e7f1933f08f573bda86a1e8907163015cb782b3c42",
+      "byte_content_verified": true
+    },
+    {
+      "relative_path": "docs/production_hardening/wb_ads_day_repair/READ_ONLY_CONTEXT/sql/ads/ads3_campaign_performance.sql",
+      "role": "unchanged scalar contract evidence",
+      "source_relative_path": "sql/ads/ads3_campaign_performance.sql",
+      "git_state": "untracked evidence copy; original tracked",
+      "included_in_patch": false,
+      "included_in_package": true,
+      "size": 10818,
+      "sha256": "8ffe9a0cc7416f215b44636f9c00d169ac6ffefa716968f9f8465346da779ff7",
+      "byte_content_verified": true
+    },
+    {
+      "relative_path": "docs/production_hardening/wb_ads_day_repair/READ_ONLY_CONTEXT/docs/ADS3_CAMPAIGN_PERFORMANCE_2026-09-06.md",
+      "role": "unchanged scalar contract evidence",
+      "source_relative_path": "docs/ADS3_CAMPAIGN_PERFORMANCE_2026-09-06.md",
+      "git_state": "untracked evidence copy; original tracked",
+      "included_in_patch": false,
+      "included_in_package": true,
+      "size": 16168,
+      "sha256": "e57e618490603099fcbdbfa1545af0e94c8884711b176370024ff4a5b4f799e6",
+      "byte_content_verified": true
+    }
+  ],
+  "prior_candidate_patch_sha256": "49140997d5c12668022ce8ef06b2bc78eb41ec53a02580c565d7bdc6d77ceb18",
+  "booster_fix_scope": "one canonical date/advertId/nmId validator + call before either RAW writer; 12 additional offline tests; documentation/artifacts only",
+  "booster_source_shape_fix_scope": "original booster source presence/type before fallback; reject both aliases; adapter only + 26 offline tests + documentation/artifacts",
+  "source_structure_fix_scope": "bounded consumed hierarchy/leaf aliases validated before source fallback, collector acceptance and flatten; adapter only + 131 offline tests + documentation/artifacts",
+  "scalar_contract_fix_scope": "complete 24 stat / 11 booster scalar contracts; original source leaves and both prepared payloads; 557 added offline tests; documentation/artifacts only"
+}

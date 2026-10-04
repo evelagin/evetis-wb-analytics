@@ -1,0 +1,453 @@
+{
+ "schema_version": 1,
+ "inventory_snapshot": "2026-09-22T04:35:09Z",
+ "files": [
+  "apps-script/ingestion/WbAdsDayRepair.gs",
+  "apps-script/ingestion/WbAdsDayRepairRuntime.gs",
+  "tools/step5a_appsscript_tests/day-repair.test.js"
+ ],
+ "file_notes": {
+  "apps-script/ingestion/WbAdsDayRepair.gs": [
+   "по карте кода: apps_script_ingestion"
+  ],
+  "apps-script/ingestion/WbAdsDayRepairRuntime.gs": [
+   "по карте кода: apps_script_ingestion"
+  ],
+  "tools/step5a_appsscript_tests/day-repair.test.js": [
+   "по карте кода: evidence_system (объектов не производит)"
+  ]
+ },
+ "directly_affected_assets": {
+  "wb_raw.INGEST_RUNS": [
+   "apps-script/ingestion/WbAdsDayRepair.gs",
+   "apps-script/ingestion/WbAdsDayRepairRuntime.gs"
+  ],
+  "wb_raw.RAW_WB_ADV_CAMPAIGNS": [
+   "apps-script/ingestion/WbAdsDayRepair.gs",
+   "apps-script/ingestion/WbAdsDayRepairRuntime.gs"
+  ],
+  "wb_raw.RAW_WB_ADV_CAMPAIGN_STATS": [
+   "apps-script/ingestion/WbAdsDayRepair.gs",
+   "apps-script/ingestion/WbAdsDayRepairRuntime.gs"
+  ],
+  "wb_raw.RAW_WB_ADV_COSTS": [
+   "apps-script/ingestion/WbAdsDayRepair.gs",
+   "apps-script/ingestion/WbAdsDayRepairRuntime.gs"
+  ],
+  "wb_raw.RAW_WB_ADV_QUERY_BIDS": [
+   "apps-script/ingestion/WbAdsDayRepair.gs",
+   "apps-script/ingestion/WbAdsDayRepairRuntime.gs"
+  ],
+  "wb_raw.RAW_WB_ADV_QUERY_STATS": [
+   "apps-script/ingestion/WbAdsDayRepair.gs",
+   "apps-script/ingestion/WbAdsDayRepairRuntime.gs"
+  ],
+  "wb_raw.RAW_WB_FINANCE": [
+   "apps-script/ingestion/WbAdsDayRepair.gs",
+   "apps-script/ingestion/WbAdsDayRepairRuntime.gs"
+  ],
+  "wb_raw.RAW_WB_ORDERS": [
+   "apps-script/ingestion/WbAdsDayRepair.gs",
+   "apps-script/ingestion/WbAdsDayRepairRuntime.gs"
+  ],
+  "wb_raw.RAW_WB_SALES_RETURNS": [
+   "apps-script/ingestion/WbAdsDayRepair.gs",
+   "apps-script/ingestion/WbAdsDayRepairRuntime.gs"
+  ],
+  "wb_raw.RAW_WB_STOCKS": [
+   "apps-script/ingestion/WbAdsDayRepair.gs",
+   "apps-script/ingestion/WbAdsDayRepairRuntime.gs"
+  ],
+  "wb_raw.RAW_WB_STOCKS_T5": [
+   "apps-script/ingestion/WbAdsDayRepair.gs",
+   "apps-script/ingestion/WbAdsDayRepairRuntime.gs"
+  ],
+  "wb_raw.REF_SKU_MASTER_DATA": [
+   "apps-script/ingestion/WbAdsDayRepair.gs",
+   "apps-script/ingestion/WbAdsDayRepairRuntime.gs"
+  ]
+ },
+ "downstream_assets": [
+  "evetis_ops.V_OPS_BUNDLE_BOM_EXPANSION",
+  "evetis_ops.V_OPS_BUNDLE_PRODUCTION",
+  "evetis_ops.V_OPS_FF_TASK",
+  "evetis_ops.V_OPS_PICK_FROM_STORAGE",
+  "evetis_ops.V_OPS_SHEET_BOM",
+  "evetis_ops.V_OPS_SHEET_BUNDLES",
+  "evetis_ops.V_OPS_SHEET_FF_TASK",
+  "evetis_ops.V_OPS_SHEET_META",
+  "evetis_ops.V_OPS_SHEET_PICK",
+  "evetis_ops.V_OPS_SHEET_PLAN",
+  "evetis_ops.V_OPS_SUPPLY_PLAN",
+  "wb_mart.V_ADS_CAMPAIGN_DAILY",
+  "wb_mart.V_ADS_FUNNEL_QUERY_28D",
+  "wb_mart.V_ADS_FUNNEL_QUERY_90D",
+  "wb_mart.V_ADS_FUNNEL_QUERY_DAILY",
+  "wb_mart.V_ADS_FUNNEL_SIGNALS",
+  "wb_mart.V_ADS_FUNNEL_SKU_28D",
+  "wb_mart.V_ADS_SCREEN_QUERY",
+  "wb_mart.V_ADS_SCREEN_SKU",
+  "wb_mart.V_ADS_SKU_ECONOMIC_LIMITS",
+  "wb_mart.V_ADVERTISING_RECONCILIATION_DAILY",
+  "wb_mart.V_CT_ACTION_CANDIDATES",
+  "wb_mart.V_CT_ACTUAL_DAILY_LIVE",
+  "wb_mart.V_CT_ATTENTION",
+  "wb_mart.V_CT_BUNDLE_STATUS",
+  "wb_mart.V_CT_DAILY_BRIEF",
+  "wb_mart.V_CT_DAILY_BRIEF_LINES",
+  "wb_mart.V_CT_FRESHNESS",
+  "wb_mart.V_CT_INVENTORY_TRUTH_LIVE",
+  "wb_mart.V_CT_OWNER_HOME",
+  "wb_mart.V_CT_PLAN_VS_ACTUAL_DAILY",
+  "wb_mart.V_CT_SKU_CONTROL",
+  "wb_mart.V_DASH_BUYOUT_COHORT_DAILY",
+  "wb_mart.V_DASH_EXECUTIVE_BREAKDOWN_DAILY",
+  "wb_mart.V_DASH_EXECUTIVE_ECONOMICS_DAILY",
+  "wb_mart.V_DASH_FINANCE_CORRECTED_DAILY",
+  "wb_mart.V_DASH_FRESHNESS_BY_CONTRACT",
+  "wb_mart.V_DASH_FRESHNESS_HEADER",
+  "wb_mart.V_DASH_KPI_DAILY",
+  "wb_mart.V_DASH_SETTLEMENT_DAILY",
+  "wb_mart.V_DASH_SKU_DAILY",
+  "wb_mart.V_DATA_FRESHNESS",
+  "wb_mart.V_FACT_FINANCE_COGS",
+  "wb_mart.V_MART_SKU_DAILY_COGS",
+  "wb_mart.V_UNITKA_COGS_CANONICAL",
+  "wb_mart.V_UNITKA_COMMISSION_RATES",
+  "wb_mart.V_UNITKA_DAILY_FACT",
+  "wb_mart.V_UNITKA_INTEGRITY",
+  "wb_mart.V_UNITKA_LAST_CLOSED_DATE",
+  "wb_mart.V_UNITKA_LOGISTICS_RATES",
+  "wb_mart.V_UNITKA_RECON_COGS_CANONICAL",
+  "wb_mart.V_UNITKA_RECON_FACT",
+  "wb_mart.V_UNITKA_RECON_INTEGRITY",
+  "wb_mart.V_UNITKA_RECON_WINDOW",
+  "wb_mart.V_UNITKA_SOURCE_FRESHNESS",
+  "wb_mart.V_WB_DEDUCTIONS_CLASSIFIED",
+  "wb_mart.V_WB_FINANCE_PRICE_COMPONENTS",
+  "wb_mart.V_WB_PRICING_ECONOMICS_HEALTH",
+  "wb_mart.V_WB_SKU_COST_INPUTS",
+  "wb_mart.V_WB_SKU_FORWARD_ECONOMICS_CURRENT",
+  "wb_raw.REF_SKU_MASTER",
+  "wb_raw.V_ADV_CAMPAIGNS",
+  "wb_raw.V_ADV_CAMPAIGN_CONFIG_DAILY",
+  "wb_raw.V_ADV_CAMPAIGN_CONFIG_SNAPSHOT",
+  "wb_raw.V_ADV_CAMPAIGN_STATS",
+  "wb_raw.V_ADV_COSTS",
+  "wb_raw.V_ADV_COSTS_DAY_COVERAGE",
+  "wb_raw.V_ADV_COSTS_SNAPSHOT",
+  "wb_raw.V_ADV_COSTS_UNION_LEGACY",
+  "wb_raw.V_ADV_COSTS_UNION_PREBOOTSTRAP",
+  "wb_raw.V_ADV_QUERY_BIDS",
+  "wb_raw.V_ADV_QUERY_STATS",
+  "wb_raw.V_ADV_QUERY_STATS_COVERAGE",
+  "wb_raw.V_INGEST_HEARTBEAT",
+  "wb_raw.V_WB_FINANCE",
+  "wb_raw.V_WB_FINANCE_CANONICAL",
+  "wb_raw.V_WB_FINANCE_COMPLETE",
+  "wb_raw.V_WB_FINANCE_SEMANTIC",
+  "wb_raw.V_WB_ORDERS",
+  "wb_raw.V_WB_SALES_RETURNS",
+  "wb_raw.V_WB_STOCKS_CURRENT",
+  "wb_raw.V_WB_STOCKS_T5_CURRENT",
+  "wb_raw.V_WB_STORAGE_RECONCILIATION"
+ ],
+ "affected_total": 95,
+ "asset_tiers": {
+  "evetis_ops.V_OPS_BUNDLE_BOM_EXPANSION": "TIER3",
+  "evetis_ops.V_OPS_BUNDLE_PRODUCTION": "TIER3",
+  "evetis_ops.V_OPS_FF_TASK": "TIER3",
+  "evetis_ops.V_OPS_PICK_FROM_STORAGE": "TIER3",
+  "evetis_ops.V_OPS_SHEET_BOM": "TIER3",
+  "evetis_ops.V_OPS_SHEET_BUNDLES": "TIER3",
+  "evetis_ops.V_OPS_SHEET_FF_TASK": "TIER3",
+  "evetis_ops.V_OPS_SHEET_META": "TIER3",
+  "evetis_ops.V_OPS_SHEET_PICK": "TIER3",
+  "evetis_ops.V_OPS_SHEET_PLAN": "TIER3",
+  "evetis_ops.V_OPS_SUPPLY_PLAN": "TIER3",
+  "wb_mart.V_ADS_CAMPAIGN_DAILY": "TIER2",
+  "wb_mart.V_ADS_FUNNEL_QUERY_28D": "TIER2",
+  "wb_mart.V_ADS_FUNNEL_QUERY_90D": "TIER2",
+  "wb_mart.V_ADS_FUNNEL_QUERY_DAILY": "TIER2",
+  "wb_mart.V_ADS_FUNNEL_SIGNALS": "TIER2",
+  "wb_mart.V_ADS_FUNNEL_SKU_28D": "TIER2",
+  "wb_mart.V_ADS_SCREEN_QUERY": "TIER2",
+  "wb_mart.V_ADS_SCREEN_SKU": "TIER2",
+  "wb_mart.V_ADS_SKU_ECONOMIC_LIMITS": "TIER2",
+  "wb_mart.V_ADVERTISING_RECONCILIATION_DAILY": "TIER1",
+  "wb_mart.V_CT_ACTION_CANDIDATES": "TIER2",
+  "wb_mart.V_CT_ACTUAL_DAILY_LIVE": "TIER0",
+  "wb_mart.V_CT_ATTENTION": "TIER2",
+  "wb_mart.V_CT_BUNDLE_STATUS": "TIER2",
+  "wb_mart.V_CT_DAILY_BRIEF": "TIER2",
+  "wb_mart.V_CT_DAILY_BRIEF_LINES": "TIER2",
+  "wb_mart.V_CT_FRESHNESS": "TIER2",
+  "wb_mart.V_CT_INVENTORY_TRUTH_LIVE": "TIER2",
+  "wb_mart.V_CT_OWNER_HOME": "TIER2",
+  "wb_mart.V_CT_PLAN_VS_ACTUAL_DAILY": "TIER2",
+  "wb_mart.V_CT_SKU_CONTROL": "TIER2",
+  "wb_mart.V_DASH_BUYOUT_COHORT_DAILY": "TIER0",
+  "wb_mart.V_DASH_EXECUTIVE_BREAKDOWN_DAILY": "TIER0",
+  "wb_mart.V_DASH_EXECUTIVE_ECONOMICS_DAILY": "TIER0",
+  "wb_mart.V_DASH_FINANCE_CORRECTED_DAILY": "TIER0",
+  "wb_mart.V_DASH_FRESHNESS_BY_CONTRACT": "TIER0",
+  "wb_mart.V_DASH_FRESHNESS_HEADER": "TIER0",
+  "wb_mart.V_DASH_KPI_DAILY": "TIER0",
+  "wb_mart.V_DASH_SETTLEMENT_DAILY": "TIER0",
+  "wb_mart.V_DASH_SKU_DAILY": "TIER0",
+  "wb_mart.V_DATA_FRESHNESS": "TIER1",
+  "wb_mart.V_FACT_FINANCE_COGS": "TIER2",
+  "wb_mart.V_MART_SKU_DAILY_COGS": "TIER1",
+  "wb_mart.V_UNITKA_COGS_CANONICAL": "TIER2",
+  "wb_mart.V_UNITKA_COMMISSION_RATES": "TIER2",
+  "wb_mart.V_UNITKA_DAILY_FACT": "TIER2",
+  "wb_mart.V_UNITKA_INTEGRITY": "TIER2",
+  "wb_mart.V_UNITKA_LAST_CLOSED_DATE": "TIER2",
+  "wb_mart.V_UNITKA_LOGISTICS_RATES": "TIER2",
+  "wb_mart.V_UNITKA_RECON_COGS_CANONICAL": "TIER2",
+  "wb_mart.V_UNITKA_RECON_FACT": "TIER2",
+  "wb_mart.V_UNITKA_RECON_INTEGRITY": "TIER2",
+  "wb_mart.V_UNITKA_RECON_WINDOW": "TIER2",
+  "wb_mart.V_UNITKA_SOURCE_FRESHNESS": "TIER2",
+  "wb_mart.V_WB_DEDUCTIONS_CLASSIFIED": "TIER0",
+  "wb_mart.V_WB_FINANCE_PRICE_COMPONENTS": "TIER1",
+  "wb_mart.V_WB_PRICING_ECONOMICS_HEALTH": "TIER2",
+  "wb_mart.V_WB_SKU_COST_INPUTS": "TIER2",
+  "wb_mart.V_WB_SKU_FORWARD_ECONOMICS_CURRENT": "TIER2",
+  "wb_raw.INGEST_RUNS": "TIER3",
+  "wb_raw.RAW_WB_ADV_CAMPAIGNS": "TIER3",
+  "wb_raw.RAW_WB_ADV_CAMPAIGN_STATS": "TIER3",
+  "wb_raw.RAW_WB_ADV_COSTS": "TIER3",
+  "wb_raw.RAW_WB_ADV_QUERY_BIDS": "TIER3",
+  "wb_raw.RAW_WB_ADV_QUERY_STATS": "TIER3",
+  "wb_raw.RAW_WB_FINANCE": "TIER1",
+  "wb_raw.RAW_WB_ORDERS": "TIER3",
+  "wb_raw.RAW_WB_SALES_RETURNS": "TIER3",
+  "wb_raw.RAW_WB_STOCKS": "TIER3",
+  "wb_raw.RAW_WB_STOCKS_T5": "TIER3",
+  "wb_raw.REF_SKU_MASTER": "TIER1",
+  "wb_raw.REF_SKU_MASTER_DATA": "TIER3",
+  "wb_raw.V_ADV_CAMPAIGNS": "TIER3",
+  "wb_raw.V_ADV_CAMPAIGN_CONFIG_DAILY": "TIER3",
+  "wb_raw.V_ADV_CAMPAIGN_CONFIG_SNAPSHOT": "TIER3",
+  "wb_raw.V_ADV_CAMPAIGN_STATS": "TIER3",
+  "wb_raw.V_ADV_COSTS": "TIER3",
+  "wb_raw.V_ADV_COSTS_DAY_COVERAGE": "TIER1",
+  "wb_raw.V_ADV_COSTS_SNAPSHOT": "TIER3",
+  "wb_raw.V_ADV_COSTS_UNION_LEGACY": "TIER3",
+  "wb_raw.V_ADV_COSTS_UNION_PREBOOTSTRAP": "TIER3",
+  "wb_raw.V_ADV_QUERY_BIDS": "TIER3",
+  "wb_raw.V_ADV_QUERY_STATS": "TIER3",
+  "wb_raw.V_ADV_QUERY_STATS_COVERAGE": "TIER3",
+  "wb_raw.V_INGEST_HEARTBEAT": "TIER3",
+  "wb_raw.V_WB_FINANCE": "TIER3",
+  "wb_raw.V_WB_FINANCE_CANONICAL": "TIER3",
+  "wb_raw.V_WB_FINANCE_COMPLETE": "TIER3",
+  "wb_raw.V_WB_FINANCE_SEMANTIC": "TIER1",
+  "wb_raw.V_WB_ORDERS": "TIER3",
+  "wb_raw.V_WB_SALES_RETURNS": "TIER1",
+  "wb_raw.V_WB_STOCKS_CURRENT": "TIER3",
+  "wb_raw.V_WB_STOCKS_T5_CURRENT": "TIER3",
+  "wb_raw.V_WB_STORAGE_RECONCILIATION": "TIER3"
+ },
+ "risk_tier": "TIER0",
+ "risk_tier_rule": "объект входит в scope набора с severity=CRITICAL, либо это витринный/дашбордный объект, который читает Metabase",
+ "required_contracts": {
+  "wb_fin_contract_v2": {
+   "severity": "CRITICAL",
+   "gate": true,
+   "matched_assets": [
+    "wb_mart.V_DASH_EXECUTIVE_ECONOMICS_DAILY",
+    "wb_mart.V_DASH_FINANCE_CORRECTED_DAILY",
+    "wb_mart.V_DASH_KPI_DAILY",
+    "wb_mart.V_DASH_SETTLEMENT_DAILY"
+   ],
+   "command": "python tools/run_data_checks.py --suite wb_fin_contract_v2 --project <PROJECT> --token-command \"gcloud auth print-access-token\""
+  },
+  "wb_executive_economics": {
+   "severity": "HIGH",
+   "gate": true,
+   "matched_assets": [
+    "wb_mart.V_DASH_EXECUTIVE_BREAKDOWN_DAILY",
+    "wb_mart.V_DASH_EXECUTIVE_ECONOMICS_DAILY"
+   ],
+   "command": "python tools/run_data_checks.py --suite wb_executive_economics --project <PROJECT> --token-command \"gcloud auth print-access-token\""
+  },
+  "wb_finance_corrected": {
+   "severity": "CRITICAL",
+   "gate": true,
+   "matched_assets": [
+    "wb_mart.V_DASH_FINANCE_CORRECTED_DAILY",
+    "wb_mart.V_WB_DEDUCTIONS_CLASSIFIED"
+   ],
+   "command": "python tools/run_data_checks.py --suite wb_finance_corrected --project <PROJECT> --token-command \"gcloud auth print-access-token\""
+  },
+  "wb_settlement": {
+   "severity": "HIGH",
+   "gate": true,
+   "matched_assets": [
+    "wb_mart.V_DASH_SETTLEMENT_DAILY",
+    "wb_mart.V_WB_FINANCE_PRICE_COMPONENTS"
+   ],
+   "command": "python tools/run_data_checks.py --suite wb_settlement --project <PROJECT> --token-command \"gcloud auth print-access-token\""
+  },
+  "wb_deductions_direct_labels": {
+   "severity": "HIGH",
+   "gate": true,
+   "matched_assets": [
+    "wb_mart.V_DASH_FINANCE_CORRECTED_DAILY",
+    "wb_mart.V_WB_DEDUCTIONS_CLASSIFIED"
+   ],
+   "command": "python tools/run_data_checks.py --suite wb_deductions_direct_labels --project <PROJECT> --token-command \"gcloud auth print-access-token\""
+  },
+  "wb_mart_ingestion_integrity": {
+   "severity": "HIGH",
+   "gate": true,
+   "matched_assets": [
+    "wb_raw.RAW_WB_STOCKS",
+    "wb_raw.V_WB_FINANCE_CANONICAL"
+   ],
+   "command": "python tools/run_data_checks.py --suite wb_mart_ingestion_integrity --project <PROJECT> --token-command \"gcloud auth print-access-token\""
+  },
+  "control_tower_phase1": {
+   "severity": "MEDIUM",
+   "gate": true,
+   "matched_assets": [
+    "wb_mart.V_CT_PLAN_VS_ACTUAL_DAILY"
+   ],
+   "command": "python tools/run_data_checks.py --suite control_tower_phase1 --project <PROJECT> --token-command \"gcloud auth print-access-token\""
+  },
+  "control_tower_owner_screens": {
+   "severity": "MEDIUM",
+   "gate": true,
+   "matched_assets": [
+    "wb_mart.V_CT_DAILY_BRIEF",
+    "wb_mart.V_CT_DAILY_BRIEF_LINES",
+    "wb_mart.V_CT_OWNER_HOME",
+    "wb_mart.V_CT_SKU_CONTROL"
+   ],
+   "command": "python tools/run_data_checks.py --suite control_tower_owner_screens --project <PROJECT> --token-command \"gcloud auth print-access-token\""
+  },
+  "ubr012_revenue_source": {
+   "severity": "CRITICAL",
+   "gate": true,
+   "matched_assets": [
+    "wb_mart.V_CT_ACTUAL_DAILY_LIVE"
+   ],
+   "command": "python tools/run_data_checks.py --suite ubr012_revenue_source --project <PROJECT> --token-command \"gcloud auth print-access-token\""
+  },
+  "promo_economics": {
+   "severity": "HIGH",
+   "gate": true,
+   "matched_assets": [
+    "wb_mart.V_WB_SKU_FORWARD_ECONOMICS_CURRENT"
+   ],
+   "command": "python tools/run_data_checks.py --suite promo_economics --project <PROJECT> --token-command \"gcloud auth print-access-token\""
+  },
+  "inventory_context": {
+   "severity": "HIGH",
+   "gate": true,
+   "matched_assets": [
+    "wb_mart.V_CT_BUNDLE_STATUS",
+    "wb_mart.V_CT_FRESHNESS"
+   ],
+   "command": "python tools/run_data_checks.py --suite inventory_context --project <PROJECT> --token-command \"gcloud auth print-access-token\""
+  },
+  "ads_intel": {
+   "severity": "HIGH",
+   "gate": true,
+   "matched_assets": [
+    "wb_mart.V_ADS_FUNNEL_QUERY_28D",
+    "wb_mart.V_ADS_SKU_ECONOMIC_LIMITS",
+    "wb_mart.V_DATA_FRESHNESS",
+    "wb_mart.V_WB_SKU_FORWARD_ECONOMICS_CURRENT"
+   ],
+   "command": "python tools/run_data_checks.py --suite ads_intel --project <PROJECT> --token-command \"gcloud auth print-access-token\""
+  }
+ },
+ "required_commands": [
+  "python -m pytest -q tools/tests"
+ ],
+ "assets_without_contract": [
+  "evetis_ops.V_OPS_BUNDLE_BOM_EXPANSION",
+  "evetis_ops.V_OPS_BUNDLE_PRODUCTION",
+  "evetis_ops.V_OPS_FF_TASK",
+  "evetis_ops.V_OPS_PICK_FROM_STORAGE",
+  "evetis_ops.V_OPS_SHEET_BOM",
+  "evetis_ops.V_OPS_SHEET_BUNDLES",
+  "evetis_ops.V_OPS_SHEET_FF_TASK",
+  "evetis_ops.V_OPS_SHEET_META",
+  "evetis_ops.V_OPS_SHEET_PICK",
+  "evetis_ops.V_OPS_SHEET_PLAN",
+  "evetis_ops.V_OPS_SUPPLY_PLAN",
+  "wb_mart.V_ADS_CAMPAIGN_DAILY",
+  "wb_mart.V_ADS_FUNNEL_QUERY_90D",
+  "wb_mart.V_ADS_FUNNEL_QUERY_DAILY",
+  "wb_mart.V_ADS_FUNNEL_SIGNALS",
+  "wb_mart.V_ADS_FUNNEL_SKU_28D",
+  "wb_mart.V_ADS_SCREEN_QUERY",
+  "wb_mart.V_ADS_SCREEN_SKU",
+  "wb_mart.V_ADVERTISING_RECONCILIATION_DAILY",
+  "wb_mart.V_CT_ACTION_CANDIDATES",
+  "wb_mart.V_CT_ATTENTION",
+  "wb_mart.V_CT_INVENTORY_TRUTH_LIVE",
+  "wb_mart.V_DASH_BUYOUT_COHORT_DAILY",
+  "wb_mart.V_DASH_FRESHNESS_BY_CONTRACT",
+  "wb_mart.V_DASH_FRESHNESS_HEADER",
+  "wb_mart.V_DASH_SKU_DAILY",
+  "wb_mart.V_FACT_FINANCE_COGS",
+  "wb_mart.V_MART_SKU_DAILY_COGS",
+  "wb_mart.V_UNITKA_COGS_CANONICAL",
+  "wb_mart.V_UNITKA_COMMISSION_RATES",
+  "wb_mart.V_UNITKA_DAILY_FACT",
+  "wb_mart.V_UNITKA_INTEGRITY",
+  "wb_mart.V_UNITKA_LAST_CLOSED_DATE",
+  "wb_mart.V_UNITKA_LOGISTICS_RATES",
+  "wb_mart.V_UNITKA_RECON_COGS_CANONICAL",
+  "wb_mart.V_UNITKA_RECON_FACT",
+  "wb_mart.V_UNITKA_RECON_INTEGRITY",
+  "wb_mart.V_UNITKA_RECON_WINDOW",
+  "wb_mart.V_UNITKA_SOURCE_FRESHNESS",
+  "wb_mart.V_WB_PRICING_ECONOMICS_HEALTH",
+  "wb_mart.V_WB_SKU_COST_INPUTS",
+  "wb_raw.INGEST_RUNS",
+  "wb_raw.RAW_WB_ADV_CAMPAIGNS",
+  "wb_raw.RAW_WB_ADV_CAMPAIGN_STATS",
+  "wb_raw.RAW_WB_ADV_COSTS",
+  "wb_raw.RAW_WB_ADV_QUERY_BIDS",
+  "wb_raw.RAW_WB_ADV_QUERY_STATS",
+  "wb_raw.RAW_WB_FINANCE",
+  "wb_raw.RAW_WB_ORDERS",
+  "wb_raw.RAW_WB_SALES_RETURNS",
+  "wb_raw.RAW_WB_STOCKS_T5",
+  "wb_raw.REF_SKU_MASTER",
+  "wb_raw.REF_SKU_MASTER_DATA",
+  "wb_raw.V_ADV_CAMPAIGNS",
+  "wb_raw.V_ADV_CAMPAIGN_CONFIG_DAILY",
+  "wb_raw.V_ADV_CAMPAIGN_CONFIG_SNAPSHOT",
+  "wb_raw.V_ADV_CAMPAIGN_STATS",
+  "wb_raw.V_ADV_COSTS",
+  "wb_raw.V_ADV_COSTS_DAY_COVERAGE",
+  "wb_raw.V_ADV_COSTS_SNAPSHOT",
+  "wb_raw.V_ADV_COSTS_UNION_LEGACY",
+  "wb_raw.V_ADV_COSTS_UNION_PREBOOTSTRAP",
+  "wb_raw.V_ADV_QUERY_BIDS",
+  "wb_raw.V_ADV_QUERY_STATS",
+  "wb_raw.V_ADV_QUERY_STATS_COVERAGE",
+  "wb_raw.V_INGEST_HEARTBEAT",
+  "wb_raw.V_WB_FINANCE",
+  "wb_raw.V_WB_FINANCE_COMPLETE",
+  "wb_raw.V_WB_FINANCE_SEMANTIC",
+  "wb_raw.V_WB_ORDERS",
+  "wb_raw.V_WB_SALES_RETURNS",
+  "wb_raw.V_WB_STOCKS_CURRENT",
+  "wb_raw.V_WB_STOCKS_T5_CURRENT",
+  "wb_raw.V_WB_STORAGE_RECONCILIATION"
+ ],
+ "flags": {
+  "touches_evidence_system": true,
+  "touches_canonical_sql": false,
+  "touches_infrastructure": false,
+  "touches_apps_script_production": true
+ }
+}
