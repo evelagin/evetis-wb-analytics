@@ -390,3 +390,15 @@ def test_direct_credential_api_and_cache_reads_denied(monkeypatch):
 @pytest.mark.parametrize('filename', ('new_entity.py', 'common.py'))
 def test_raw_sdk_dispatch_is_never_an_alternate_seller_transport(source, filename):
     assert violations(source, filename)
+
+
+@pytest.mark.parametrize('source', (
+    'from urllib import request as r\nr.urlopen(req)',
+    'from google.auth import transport as t\nt.requests.AuthorizedSession(creds).get(url)',
+    'import google.auth as a\na.transport.requests.AuthorizedSession(creds).get(url)',
+    'import subprocess\nsubprocess.run(["curl",url])',
+    'import os\nos.system(command)',
+    'import runpy\nrunpy.run_path(path)',
+))
+def test_parent_imports_and_external_dispatch_cannot_evade_gate(source):
+    assert violations(source, 'new_entity.py')
