@@ -148,7 +148,7 @@ All 34 candidate paths are identical between the old candidate base and selected
 No overlapping source conflict exists. New Communications commits on main are retained.
 Other Tenancy implementations on separate branches are not silently merged.
 
-Integration-specific functional scope is unchanged. Policy and review-manifest nested JSON
+Integration-specific runtime/security scope is unchanged. Policy and review-manifest nested JSON
 is serialized more compactly; parsed JSON equals the accepted candidate exactly. All 532
 records, legacy_record and review/retirement/alias provenance remain. The generator uses
 this stable serializer; a roundtrip/stability test covers it.
@@ -165,8 +165,8 @@ Observed offline checks (exit 0 unless explicitly marked):
 |---|---|
 | C5 Python compile | runtime, bootstrap, Ozon tests and tools compile under 3.12 |
 | Ozon suite | 701 passed, 1 skipped (external finance audit archive unavailable) |
-| C7 full tools suite | 2345 passed |
-| Tenancy subset | 884 passed; subset of C7, not additional distinct tests |
+| Initial C7 full tools suite | 2345 passed before fixture correction; see rerun evidence below |
+| Initial Tenancy subset | 884 passed; subset of C7, not additional distinct tests |
 | Seller transport AST | PASS on integrated runtime |
 | Policy check | strict v2 parsing/check PASS; generator and v1/v2 vectors covered by suites |
 | Registry | 2 documents, 0 violations |
@@ -193,3 +193,19 @@ SQL definition deployment/readback and runtime promotion. Preserve prior config/
 and PAUSED schedules. A rollback that restores binding bypass is prohibited; STOP instead.
 Fresh v2 observation, owner confirmation, lifecycle transitions and ingestion each require
 separate scope. No client_001 readiness or historical trial-data repair is implied.
+
+
+### DoD fixture stability correction
+
+The first post-commit `verify_task --offline` reported FAIL: 2344 tools tests passed and
+`test_16_unexpected_delete_change_replace_forget` failed. The prior complete run passed.
+An offline controlled reproduction showed that `_tfplan()` embedded current ZIP timestamps;
+identical contents changed hash across the two-second ZIP clock grain. The test therefore
+failed at expected-plan-hash comparison before its intended `show -json` rejection.
+`tools/tests/test_tenancy_deploy.py` now uses its existing fixed NOW for both synthetic ZIP
+builders, with a wall-clock-change regression. Production hash/provenance/apply guards are
+unchanged. This adds one test file to the 34-path candidate. Earlier failed evidence is
+retained; final qualification must reference the successful rerun, not hide the first FAIL.
+
+After the fixture correction, all 69 adversarial deployment tests passed (exit 0) under
+Python 3.12.15. The complete offline DoD is rerun on the resulting clean commit.
