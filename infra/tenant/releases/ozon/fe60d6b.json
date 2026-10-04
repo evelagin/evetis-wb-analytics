@@ -57,11 +57,7 @@
     "config_sha256": "2e300a55d2b89da793c530fb50489492d928affcfdca946f24ac4af630f0983c",
     "service_account": "sa-runtime-builder@mpa-platform.iam.gserviceaccount.com",
     "builder_image": "gcr.io/cloud-builders/docker@sha256:bbb3d633c5c2813b2ce5245852979e1d637768f4acfc504d8ece288f91e9b60f",
-    "source_object": {
-      "bucket": "mpa-platform-runtime-build-777428383056",
-      "generation": "1791139173504796",
-      "object": "source/1791139172.66686-5dee40d221e4455fa75104ea04d4c5b6.tgz"
-    },
+    "source_object": "gs://mpa-platform-runtime-build-777428383056/source/1791139172.66686-5dee40d221e4455fa75104ea04d4c5b6.tgz#1791139173504796",
     "source_object_sha256": "d241b7cc43d2e97e9fa0d753e32ed7bb617a27996f6e1c35dd9c9908ea16a827",
     "build_args": [],
     "secrets": [],
@@ -214,8 +210,8 @@
     "secret_scan": "19 source-hashed /app files; no credentials, .env, Terraform/state or build secret args"
   },
   "deployment": {
-    "evetis": "NOT_DEPLOYED; no legacy runtime/resource changes",
-    "tenants": "NOT_DEPLOYED at qualification; client_001 requires reviewed tenant-only 0/5/0 plan and bounded sequential pilots. Schedulers stay PAUSED; no full-history or READY approval.",
+    "evetis": "NOT_DEPLOYED; historical reference only: sha256:24e3c6d6715fa7b73d30b4270f9863d2b8680b4b02d4874ff1ea12b4fd90fa1b. Legacy EVETIS live state not checked or changed.",
+    "tenants": "INERT at image qualification; client_001 requires reviewed tenant-only 0/5/0 plan and bounded sequential pilots. Schedulers remain PAUSED; no full-history or READY approval.",
     "rollback": "Previous qualified 0016d1cf50ed5b4721da8d162bb9133ab8c6e77c7204c3b312aca6fa103a555c retained. Canonical pointer PR plus exact reviewed image-only frozen plan; retain nullable journal schema/clustering and all pilot/trial data. No automatic lifecycle/binding/Scheduler rewrite."
   }
 }

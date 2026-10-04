@@ -92,6 +92,13 @@ RELEASES_FACTS = {
                 "build_id": "e0b503bf-a4d6-471b-921c-34f1909c392e",
                 "qualification_build": "5120d181-4768-4b44-93bb-08e8a29366cc",
                 "archive_sha256": "2a928040603aa5eba9e87b5c39a227af753b91b558ccf5eb5192b7e91615bd1f"},
+    # Independently observed immutable v6 build/qualification, not derived from release JSON.
+    "fe60d6b": {"commit": "fe60d6b4685609769f4dad320564e906475d24db", "config": RELEASES / "ozon-runtime.v6.cloudbuild.yaml",
+                "gates": V1_GATES + ["control-fail-closed-without-project", "external-binding-omission-denied", "backfill-invalid-scope-denied"],
+                "digest": "sha256:a9917169e40c367fa17c3e54babde245fd0998cb1fbf090af6bb8c63f9ffe170",
+                "build_id": "2c0fb3ce-1389-4cb8-83ef-3fa59806ecf9",
+                "qualification_build": "f854c64f-7e46-48b6-a2ac-088402b76bcf",
+                "archive_sha256": "d241b7cc43d2e97e9fa0d753e32ed7bb617a27996f6e1c35dd9c9908ea16a827"},
 }
 
 
