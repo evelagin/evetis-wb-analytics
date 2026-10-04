@@ -1152,6 +1152,9 @@ function wbAdvCollectNmIds_(obj) {
 
 /** Создаёт RAW-лист при отсутствии; иначе аддитивно дописывает недостающие колонки справа. */
 function wbAdvRawEnsureSheet_(ss, name, headers) {
+  if (typeof WB_ADS_RESUME_IO_ !== 'undefined' && WB_ADS_RESUME_IO_) {
+    adsResumeAssert_(wbAdsBqSinkOn_(), 'RESUME_SINK_DISABLED');
+  }
   // BQ-приёмник (Фаза C): вместо листа создаём таблицу в BigQuery и
   // возвращаем лёгкую заглушку с getName() — её ждёт wbAdvRawAppendRows_.
   if (typeof wbAdsBqSinkOn_ === 'function' && wbAdsBqSinkOn_()) {
@@ -1190,6 +1193,7 @@ function wbAdvRawEnsureSheet_(ss, name, headers) {
 /** Пакетно дописывает строки по ИМЕНАМ колонок текущего заголовка. @return число строк. */
 function wbAdvRawAppendRows_(sheet, rowObjs) {
   if (!rowObjs || !rowObjs.length) return 0;
+  if (typeof WB_ADS_RESUME_IO_ !== 'undefined' && WB_ADS_RESUME_IO_) adsResumeAssert_(sheet && sheet._bqSink, 'RESUME_NO_SHEET_WRITES');
   // BQ-приёмник (Фаза C): пишем в BigQuery-таблицу с именем листа.
   if (sheet && sheet._bqSink) return wbAdvBqAppendRows_(sheet.getName(), rowObjs);
   var lastCol = sheet.getLastColumn();
@@ -1215,6 +1219,11 @@ function wbAdvRawAppendRows_(sheet, rowObjs) {
 
 /** Пишет строку в WB_ADS_STATUS (ошибка/итог loader'а). probe_name = sourceMethod. */
 function wbAdsRawWriteStatus_(runId, sourceMethod, from, to, fields) {
+  if (typeof WB_ADS_RESUME_IO_ !== 'undefined' && WB_ADS_RESUME_IO_) {
+    WB_ADS_RESUME_IO_.log({ origin_run: runId, phase: sourceMethod, from: from, to: to,
+      status: fields.status, http_status: fields.http_status || null });
+    return;
+  }
   var ss = SpreadsheetApp.getActiveSpreadsheet();
   var r = wbAdsMakeResult_(runId, sourceMethod);
   r.period_from = from || '';

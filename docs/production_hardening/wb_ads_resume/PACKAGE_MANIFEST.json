@@ -1,0 +1,141 @@
+{
+  "base_head": "b94ca335b98ce8146f925295f45d8789db5ed46c",
+  "files": [
+    {
+      "path": "apps-script/ingestion/WbAdsResume.gs",
+      "role": "state machine",
+      "size_bytes": 11662,
+      "sha256": "b805303547e048452176c24ca86aadd3dc00d768c25dca04a98d9d8fb41c23f1",
+      "git_status": "untracked",
+      "included_in_patch": true,
+      "byte_content_verified": true
+    },
+    {
+      "path": "apps-script/ingestion/WbAdsResumeRuntime.gs",
+      "role": "runtime adapter",
+      "size_bytes": 27720,
+      "sha256": "e681b371458f7a6375bd0c787e53a262d12050f1f7d2186096415cfaae282df5",
+      "git_status": "untracked",
+      "included_in_patch": true,
+      "byte_content_verified": true
+    },
+    {
+      "path": "apps-script/ingestion/WbAdsProbe.gs",
+      "role": "HTTP hook",
+      "size_bytes": 34372,
+      "sha256": "ed13e31d3ffde39f402a4a1d1dc4803d87e17e81a506d2ce2de54fe6673524b6",
+      "git_status": "tracked modified",
+      "included_in_patch": true,
+      "byte_content_verified": true
+    },
+    {
+      "path": "apps-script/ingestion/WbAdsRawLoader.gs",
+      "role": "sink/status hooks",
+      "size_bytes": 67778,
+      "sha256": "a30624bbcc077b077aa5c596f4343a0431092f5c71e962def6ae4b3ca7ea7919",
+      "git_status": "tracked modified",
+      "included_in_patch": true,
+      "byte_content_verified": true
+    },
+    {
+      "path": "apps-script/ingestion/Wbadsbigquery.gs",
+      "role": "BigQuery hooks",
+      "size_bytes": 34809,
+      "sha256": "ca11b8a9dba59e0425f0a8d7634023feddee1d79fc7b6cb1e21cd27cbd2ecc40",
+      "git_status": "tracked modified",
+      "included_in_patch": true,
+      "byte_content_verified": true
+    },
+    {
+      "path": "apps-script/ingestion/Wbadsdaily.gs",
+      "role": "dispatch hooks",
+      "size_bytes": 28837,
+      "sha256": "bcd484d096ed57040c8cef463580ce6e2e83533f292134d80c06919e9052a2b1",
+      "git_status": "tracked modified",
+      "included_in_patch": true,
+      "byte_content_verified": true
+    },
+    {
+      "path": "tools/step5a_appsscript_tests/resume.test.js",
+      "role": "offline tests",
+      "size_bytes": 30038,
+      "sha256": "56089f965ec05d176dafc6bcbd561e77eda2b53b834bb406043798bcca4a8761",
+      "git_status": "untracked",
+      "included_in_patch": true,
+      "byte_content_verified": true
+    },
+    {
+      "path": "docs/production_hardening/wb_ads_resume/schema.sql",
+      "role": "proposed schema",
+      "size_bytes": 764,
+      "sha256": "349625ed1cef89add76f54807d10f85073745bdbb496432d19bedafee5b60016",
+      "git_status": "untracked",
+      "included_in_patch": true,
+      "byte_content_verified": true
+    },
+    {
+      "path": "docs/production_hardening/wb_ads_resume/CONTRACT.md",
+      "role": "runtime contract",
+      "size_bytes": 14787,
+      "sha256": "b59c227f69f05ce4c425d450a89582b207dccc2fac1202a073c6aa4101f9096a",
+      "git_status": "untracked",
+      "included_in_patch": true,
+      "byte_content_verified": true
+    },
+    {
+      "path": "docs/production_hardening/wb_ads_resume/REVIEW.md",
+      "role": "historical implementation report; package evidence/documentation",
+      "size_bytes": 21910,
+      "sha256": "bd51cc069bca98bd638c4cc5c351a88a793621fb28a2b79df0f01cca2bead61e",
+      "git_status": "untracked",
+      "included_in_patch": true,
+      "byte_content_verified": true
+    }
+  ],
+  "patch": {
+    "path": "docs/production_hardening/wb_ads_resume/OWN_CODE_DIFF.patch",
+    "size_bytes": 114722,
+    "sha256": "e9b29af2db8e6ac0880b6271c6876eee22876c7d14f8f06b8182d8f6bb0e1cbf"
+  },
+  "verification": {
+    "reconstructed_from_base_byte_exact": true,
+    "changed_source_and_test_inventory_covered": true,
+    "implementation_unchanged_during_package_rebuild": true,
+    "preceding_package_sha256": "69e3630dbddf888f53b3b16cfd12ccfd61f85ebff5a2deca9ddbcda6e654ac88",
+    "authorized_changes_since_preceding_package": [
+      "apps-script/ingestion/WbAdsResume.gs",
+      "apps-script/ingestion/WbAdsResumeRuntime.gs",
+      "tools/step5a_appsscript_tests/resume.test.js",
+      "docs/production_hardening/wb_ads_resume/CONTRACT.md",
+      "docs/production_hardening/wb_ads_resume/REVIEW.md"
+    ],
+    "schema_and_existing_hooks_unchanged": true
+  },
+  "validation": {
+    "focused_resume": {
+      "passed": 51,
+      "failed": 0,
+      "added": 9
+    },
+    "step5a": {
+      "passed": 17
+    },
+    "cloud_vitest": {
+      "files_passed": 65,
+      "tests_passed": 1413,
+      "tests_skipped": 19,
+      "mart_tests_passed": 43
+    },
+    "tools_pytest": {
+      "passed": 2328,
+      "deselected": 1,
+      "excluded_test": "test_gcloud_is_unauthenticated_inside_agent_env",
+      "reason": "forbidden token command"
+    },
+    "sql_validator": "PASS 53 objects C1-C18",
+    "syntax": "6 .gs PASS",
+    "independent_final_review": "PENDING_OWNER_ACK",
+    "production_calls": false
+  },
+  "manifest_self_hash": "Excluded to avoid recursive hash; manifest is package index, not implementation."
+}

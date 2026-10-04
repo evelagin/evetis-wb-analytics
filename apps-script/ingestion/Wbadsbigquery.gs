@@ -95,6 +95,7 @@ function wbAdsBqDisable() {
  */
 function wbAdvBqEnsureTable_(tableId, headers) {
   wbAdsBqAssertTable_(tableId);
+  if (typeof WB_ADS_RESUME_IO_ !== 'undefined' && WB_ADS_RESUME_IO_) return WB_ADS_RESUME_IO_.checkTable(tableId, headers);
   var c = getBqConfig_();
   bqEnsureDataset_();
 
@@ -174,6 +175,7 @@ function wbAdvBqAuditAndExtendSchema_(tableId, table, headers) {
 function wbAdvBqAppendRows_(tableId, rowObjs) {
   wbAdsBqAssertTable_(tableId);
   if (!rowObjs || !rowObjs.length) return 0;
+  if (typeof WB_ADS_RESUME_IO_ !== 'undefined' && WB_ADS_RESUME_IO_) return WB_ADS_RESUME_IO_.appendPhase(tableId, rowObjs);
   var norm = [];
   for (var i = 0; i < rowObjs.length; i++) {
     var o = rowObjs[i], out = {};

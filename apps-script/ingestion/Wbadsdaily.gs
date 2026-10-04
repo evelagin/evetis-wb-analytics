@@ -117,6 +117,7 @@ function wbAdsSelfTestOverallStatus() {
  * @param {Object=} e event-объект time-driven триггера (у ручного запуска отсутствует)
  */
 function runWbAdsDaily(e) {
+  if (typeof adsResumeEnabled_ === 'function' && adsResumeEnabled_()) return adsResumeDaily_((e && e.triggerUid) ? 'SCHEDULED' : 'MANUAL');
   return runWbAdsDailyCore_((e && e.triggerUid) ? 'SCHEDULED' : 'MANUAL');
 }
 
@@ -310,6 +311,8 @@ function wbAdsCatchUpDecision_(latest, staleThresholdMin) {
 }
 
 function runWbAdsDailyCatchUp(e) {
+  // Pending recovery keeps its logical date across midnight; never replace it with D-1.
+  if (typeof adsResumeEnabled_ === 'function' && adsResumeEnabled_()) return adsResumeDaily_('CATCHUP');
   var lp = wbAdsLast7Range_().to;
   var latest = null;
   try { latest = ingestLatestAttempt_('ads', lp); }

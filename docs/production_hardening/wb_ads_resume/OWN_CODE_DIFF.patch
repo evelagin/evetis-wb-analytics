@@ -1,0 +1,1611 @@
+diff --git a/apps-script/ingestion/WbAdsResume.gs b/apps-script/ingestion/WbAdsResume.gs
+new file mode 100644
+--- /dev/null
++++ b/apps-script/ingestion/WbAdsResume.gs
+@@ -0,0 +1,205 @@
++/** WB fullstats resume v1. Чистая state machine; I/O только через adapter.
++ * Никаких действий при загрузке файла. Активация отдельно от deploy.
++ */
++var WB_ADS_RESUME_VERSION_ = 1;
++
++function adsResumeAssert_(ok, code) { if (!ok) { var e = new Error(code); e.code = code; throw e; } }
++function adsResumeCanonical_(v) {
++  if (Array.isArray(v)) return '[' + v.map(adsResumeCanonical_).join(',') + ']';
++  if (v && typeof v === 'object') return '{' + Object.keys(v).sort().map(function (k) {
++    return JSON.stringify(k) + ':' + adsResumeCanonical_(v[k]);
++  }).join(',') + '}';
++  return JSON.stringify(v);
++}
++function adsResumeIds_(ids) {
++  adsResumeAssert_(Array.isArray(ids) && ids.length > 0 && ids.length <= 2000, 'CAMPAIGN_COUNT');
++  var a = ids.map(function (id) {
++    var s = String(id);
++    adsResumeAssert_(/^[1-9][0-9]{0,14}$/.test(s) && Number.isSafeInteger(Number(s)), 'CAMPAIGN_ID');
++    return s;
++  }).sort();
++  adsResumeAssert_(a.every(function (id, i) { return !i || id !== a[i - 1]; }), 'DUPLICATE_ID');
++  return a;
++}
++function adsResumeDate_(s) {
++  return typeof s === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(s) &&
++    Number.isFinite(Date.parse(s)) && new Date(s).toISOString().slice(0, 10) === s;
++}
++function adsResumeScope_(input, hash) {
++  adsResumeAssert_(input && adsResumeDate_(input.logicalDate) && adsResumeDate_(input.from) &&
++    adsResumeDate_(input.to) && input.to === input.logicalDate && input.from <= input.to &&
++    Date.parse(input.to) - Date.parse(input.from) <= 30 * 86400000, 'DATE_SCOPE');
++  adsResumeAssert_(/^[A-Za-z0-9_-]{1,160}$/.test(input.originRunId || '') &&
++    /^[A-Za-z0-9_-]{1,160}$/.test(input.parentRunId || ''), 'ORIGIN_REQUIRED');
++  var ids = adsResumeIds_(input.campaignIds);
++  var allowed = adsResumeIds_(input.allowlist || ids);
++  adsResumeAssert_(allowed.every(function (id) { return ids.indexOf(id) >= 0; }), 'ALLOWLIST_SCOPE');
++  var campaignHash = hash(adsResumeCanonical_(ids));
++  adsResumeAssert_(!input.campaignHash || input.campaignHash === campaignHash, 'CAMPAIGN_HASH');
++  var originKind = input.originKind || 'RECOVERY';
++  adsResumeAssert_(['RECOVERY', 'DAILY'].indexOf(originKind) >= 0, 'ORIGIN_KIND');
++  return { logicalDate: input.logicalDate, from: input.from, to: input.to,
++    originRunId: input.originRunId, parentRunId: input.parentRunId,
++    campaignIds: ids, campaignHash: campaignHash, allowlist: allowed, originKind: originKind };
++}
++
++/** Exact V_ADV_CAMPAIGN_STATS grain (Wbadsbigquery.gs makeView).
++ * Validate the WHOLE flattened destination before any RAW publication, including replay.
++ * No winner/aggregation/dedupe: identical duplicates are not authorized by the contract.
++ * Match existing RAW normalization: omitted/null/empty values load as SQL NULL;
++ * all other RAW columns are STRING. Do not truncate dates or coerce numeric keys.
++ */
++function adsResumeValidateRawGrain_(prepared) {
++  adsResumeAssert_(prepared && Array.isArray(prepared.stats), 'RAW_GRAIN_PAYLOAD');
++  var fields = ['date', 'advertId', 'nmId', 'appType', 'source_level'];
++  var seen = Object.create(null);
++  prepared.stats.forEach(function (row) {
++    if (row.processed_status !== 'raw') return; // Same predicate as the effective view.
++    var key = JSON.stringify(fields.map(function (field) {
++      var value = row[field];
++      return value === null || value === undefined || value === '' ? null : String(value);
++    }));
++    adsResumeAssert_(!Object.prototype.hasOwnProperty.call(seen, key), 'RAW_GRAIN_DUPLICATE');
++    seen[key] = true;
++  });
++}
++
++/** Evidence извлекает adapter, а не аргументы публичного entrypoint. */
++function adsResumeCreate_(input, evidence, io) {
++  var scope = adsResumeScope_(input, io.hash);
++  adsResumeAssert_(evidence.campaigns === true && evidence.costs === true && evidence.receipt, 'REQUIRED_PHASES');
++  var prior = evidence.covered || {};
++  Object.keys(prior).forEach(function (id) {
++    adsResumeAssert_(scope.campaignIds.indexOf(id) >= 0 &&
++      ['PROCESSED', 'NO_STATS'].indexOf(prior[id]) >= 0, 'PRIOR_COVERAGE');
++  });
++  var pending = scope.campaignIds.filter(function (id) { return !prior[id]; });
++  adsResumeAssert_(pending.every(function (id) { return scope.allowlist.indexOf(id) >= 0; }), 'UNCOVERED_OUTSIDE_ALLOWLIST');
++  var key = 'adsr_' + io.hash(adsResumeCanonical_(scope));
++  var batches = [];
++  for (var i = 0; i < pending.length; i += 50) batches.push({
++    id: key + '_b' + batches.length, ids: pending.slice(i, i + 50), state: 'PENDING',
++    classifications: {}, receipt: null, attempts: 0, error: null
++  });
++  return { version: WB_ADS_RESUME_VERSION_, key: key, scope: scope,
++    scopeHash: io.hash(adsResumeCanonical_(scope)), revision: 0, phases: evidence,
++    batches: batches, state: 'PENDING', createdAt: io.now(), updatedAt: io.now(),
++    attempts: 0, noProgress: 0, continuation: { reason: 'INITIAL', needed: true },
++    completion: null };
++}
++function adsResumeValidate_(m, io) {
++  adsResumeAssert_(m.version === WB_ADS_RESUME_VERSION_, 'MANIFEST_VERSION');
++  adsResumeAssert_(['PENDING', 'READY', 'BLOCKED', 'COMPLETE'].indexOf(m.state) >= 0, 'MANIFEST_STATE');
++  var checked = adsResumeScope_(m.scope, io.hash);
++  adsResumeAssert_(adsResumeCanonical_(checked) === adsResumeCanonical_(m.scope) &&
++    io.hash(adsResumeCanonical_(m.scope)) === m.scopeHash && m.key === 'adsr_' + m.scopeHash, 'SCOPE_HASH');
++  var seen = Object.keys(m.phases.covered || {});
++  adsResumeAssert_(seen.every(function (id) { return ['PROCESSED', 'NO_STATS'].indexOf(m.phases.covered[id]) >= 0; }), 'PRIOR_COVERAGE');
++  m.batches.forEach(function (b, i) {
++    adsResumeAssert_(b.id === m.key + '_b' + i && b.ids.length <= 50 &&
++      adsResumeCanonical_(adsResumeIds_(b.ids)) === adsResumeCanonical_(b.ids), 'BATCH_ID');
++    b.ids.forEach(function (id) {
++      adsResumeAssert_(m.scope.allowlist.indexOf(id) >= 0 && seen.indexOf(id) < 0, 'BATCH_SCOPE'); seen.push(id);
++    });
++    adsResumeAssert_(['PENDING', 'PREPARED', 'DONE', 'FAILED'].indexOf(b.state) >= 0, 'BATCH_STATE');
++  });
++  adsResumeAssert_(adsResumeCanonical_(seen.sort()) === adsResumeCanonical_(m.scope.campaignIds), 'COVERAGE_SET');
++  if (m.state === 'COMPLETE') adsResumeAssert_(adsResumeCoverage_(m).complete && m.completion && m.completion.confirmed === true, 'FALSE_COMPLETE');
++}
++function adsResumeCoverage_(m) {
++  var c = { processed: 0, no_stats: 0, pending: 0, failed: 0, skipped: 0, confirmed: true };
++  var all = Object.assign({}, m.phases.covered || {});
++  m.batches.forEach(function (b) {
++    if (b.state !== 'DONE' || !b.receipt || b.receipt.confirmed !== true || b.receipt.batchId !== b.id) {
++      c.confirmed = false; c[b.state === 'FAILED' ? 'failed' : 'pending'] += b.ids.length; return;
++    }
++    if (Object.keys(b.classifications).length !== b.ids.length) c.confirmed = false;
++    b.ids.forEach(function (id) {
++      var v = b.classifications[id];
++      if (v !== 'PROCESSED' && v !== 'NO_STATS') { c.pending++; c.confirmed = false; }
++      else all[id] = v;
++    });
++  });
++  Object.keys(all).forEach(function (id) {
++    if (all[id] === 'PROCESSED') c.processed++;
++    else if (all[id] === 'NO_STATS') c.no_stats++;
++    else c.confirmed = false;
++  });
++  c.complete = m.phases.campaigns === true && m.phases.costs === true && !!m.phases.receipt &&
++    c.confirmed && c.pending === 0 && c.failed === 0 && c.skipped === 0 &&
++    c.processed + c.no_stats === m.scope.campaignIds.length;
++  return c;
++}
++function adsResumeSave_(m, io) {
++  m.updatedAt = io.now(); m.revision++; m.counts = adsResumeCoverage_(m); io.save(m);
++}
++
++/** Одна bounded попытка. PREPARED никогда не получает новый source response. */
++function adsResumeStep_(m, io, options) {
++  adsResumeValidate_(m, io);
++  options = options || {};
++  var maxBatches = options.maxBatches === undefined ? 2 : options.maxBatches;
++  adsResumeAssert_(Number.isInteger(maxBatches) && maxBatches > 0 && maxBatches <= 4, 'EXECUTION_BOUND');
++  if (m.state === 'COMPLETE' || m.state === 'BLOCKED') return m;
++  var start = io.now(), before = adsResumeCoverage_(m), progress = 0, done = 0;
++  m.continuation.reason = 'PENDING';
++  m.attempts++;
++  // Persist attempt before I/O: hard kill is observable and cannot reset retry counters.
++  adsResumeSave_(m, io);
++  for (var i = 0; i < m.batches.length && done < maxBatches; i++) {
++    var b = m.batches[i];
++    if (b.state === 'DONE') continue;
++    if (!io.hasBudget()) { m.continuation.reason = 'DEADLINE'; break; }
++    b.attempts++;
++    if (b.attempts > 5) { m.state = 'BLOCKED'; b.error = 'ATTEMPT_LIMIT'; break; }
++    adsResumeSave_(m, io);
++    try {
++      // stage() first resolves deterministic landing job, even if no checkpoint survived.
++      var prepared = io.stage(m, b);
++      adsResumeAssert_(prepared && prepared.batchId === b.id && prepared.scopeHash === m.scopeHash, 'PREPARED_SCOPE');
++      adsResumeAssert_(Object.keys(prepared.classifications).sort().join(',') === b.ids.join(',') &&
++        b.ids.every(function (id) { return ['PROCESSED', 'NO_STATS'].indexOf(prepared.classifications[id]) >= 0; }), 'PREPARED_COVERAGE');
++      adsResumeValidateRawGrain_(prepared);
++      if (b.state !== 'PREPARED') progress++;
++      b.state = 'PREPARED'; b.error = null; adsResumeSave_(m, io);
++      var receipt = io.publish(m, b, prepared);
++      adsResumeAssert_(receipt && receipt.confirmed === true && receipt.batchId === b.id, 'SINK_UNCONFIRMED');
++      b.classifications = prepared.classifications; b.receipt = receipt; b.state = 'DONE'; progress++; done++;
++      adsResumeSave_(m, io);
++      io.log({ recovery_id: m.key, logical_date: m.scope.logicalDate, batch_id: b.id,
++        campaign_hash: m.scope.campaignHash, state: b.state, counts: adsResumeCoverage_(m),
++        budget_remaining_ms: io.remaining() });
++    } catch (e) {
++      // No WB body / exception message in persisted diagnostics.
++      b.error = e && /^[A-Z0-9_]{1,64}$/.test(e.code || '') ? e.code : 'BATCH_IO_ERROR';
++      if (b.error === 'RAW_GRAIN_DUPLICATE' || b.error === 'RAW_GRAIN_PAYLOAD') {
++        b.state = 'FAILED'; m.state = 'BLOCKED'; // Immutable invalid payload cannot be retried into success.
++      } else if (b.state !== 'PREPARED') b.state = 'FAILED';
++      m.continuation.reason = b.error;
++      adsResumeSave_(m, io); break;
++    }
++  }
++  var coverage = adsResumeCoverage_(m);
++  m.noProgress = progress ? 0 : m.noProgress + 1;
++  if (coverage.complete) {
++    // Final heartbeat is its own replayable step, never mutate origin ERROR.
++    m.state = 'READY'; m.continuation.reason = 'FINALIZATION';
++    adsResumeSave_(m, io);
++    try {
++      m.completion = io.finalize(m, coverage);
++      adsResumeAssert_(m.completion && m.completion.confirmed === true, 'HEARTBEAT_UNCONFIRMED');
++      m.state = 'COMPLETE';
++    } catch (e) { m.continuation.reason = e && /^[A-Z0-9_]{1,64}$/.test(e.code || '') ? e.code : 'FINALIZATION_PENDING'; }
++  }
++  if (m.state !== 'COMPLETE' && m.noProgress >= 3) m.state = 'BLOCKED';
++  m.continuation.needed = m.state !== 'COMPLETE' && m.state !== 'BLOCKED';
++  if (m.continuation.needed && !m.continuation.reason) m.continuation.reason = 'PENDING';
++  adsResumeSave_(m, io);
++  io.log({ recovery_id: m.key, origin_run: m.scope.originRunId, parent_run: m.scope.parentRunId,
++    logical_date: m.scope.logicalDate, campaign_count: m.scope.campaignIds.length,
++    campaign_hash: m.scope.campaignHash, counts: coverage, state: m.state,
++    progress: progress, no_progress: m.noProgress, elapsed_ms: io.now() - start,
++    budget_remaining_ms: io.remaining(), continuation: m.continuation,
++    previous_pending: before.pending + before.failed });
++  return m;
++}
+diff --git a/apps-script/ingestion/WbAdsResumeRuntime.gs b/apps-script/ingestion/WbAdsResumeRuntime.gs
+new file mode 100644
+--- /dev/null
++++ b/apps-script/ingestion/WbAdsResumeRuntime.gs
+@@ -0,0 +1,415 @@
++/** Apps Script / BigQuery adapter. По умолчанию выключен.
++ * Два независимых разрешения: WB_ADS_RESUME_ENABLED, WB_ADS_RESUME_CONTINUATION_ENABLED.
++ * Runtime НЕ создаёт таблицы/листы и НЕ меняет схемы. См. schema.sql перед deploy.
++ */
++var WB_ADS_RESUME_TABLE_ = 'ADS_FULLSTATS_RECOVERY';
++var WB_ADS_RESUME_ACTIVE_ = 'WB_ADS_RESUME_ACTIVE_V1';
++var WB_ADS_RESUME_HANDLER_ = 'runWbAdsFullstatsContinuation';
++var WB_ADS_RESUME_HTTP_DEADLINE_ = null;
++var WB_ADS_RESUME_IO_ = null;
++
++function adsResumeHash_(s) {
++  return Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256, s, Utilities.Charset.UTF_8)
++    .map(function (x) { return ('0' + ((x + 256) % 256).toString(16)).slice(-2); }).join('');
++}
++function adsResumeEnabled_() {
++  return PropertiesService.getScriptProperties().getProperty('WB_ADS_RESUME_ENABLED') === '1';
++}
++function adsResumeError_(code) { var e = new Error(code); e.code = code; return e; }
++
++/** Deadline относится и к sleep, и к каждой новой HTTP попытке. Не логирует URL/token/body. */
++function adsResumeHttp_(method, url, token, payload, deadline) {
++  var opt = { method: method, headers: { Authorization: token }, muteHttpExceptions: true };
++  if (payload != null) { opt.contentType = 'application/json'; opt.payload = JSON.stringify(payload); }
++  var response;
++  for (var attempt = 0; attempt < 3; attempt++) {
++    if (Date.now() + 30000 >= deadline) throw adsResumeError_('DEADLINE');
++    try { response = UrlFetchApp.fetch(url, opt); }
++    catch (e) { throw adsResumeError_('HTTP_NETWORK'); }
++    var code = response.getResponseCode();
++    if (code !== 429 && code < 500) break;
++    if (attempt === 2) break;
++    var headers = response.getAllHeaders ? response.getAllHeaders() : {};
++    var retry = headers['Retry-After'] || headers['retry-after'];
++    var delay = Math.max(21000 * (attempt + 1), /^[0-9]+$/.test(String(retry)) ? Number(retry) * 1000 :
++      (Number.isFinite(Date.parse(retry)) ? Math.max(0, Date.parse(retry) - Date.now()) : 0));
++    if (Date.now() + delay + 30000 >= deadline) throw adsResumeError_('DEADLINE');
++    Utilities.sleep(delay);
++  }
++  var body = response.getContentText(), json;
++  try { json = JSON.parse(body); } catch (e) { json = null; }
++  return { code: response.getResponseCode(), ok: response.getResponseCode() >= 200 && response.getResponseCode() < 300,
++    json: json, body: '', attempts: attempt + 1 };
++}
++
++function adsResumeRuntime_(started) {
++  var c = getBqConfig_();
++  adsResumeAssert_(c.projectId === 'project-fa311fc0-4d87-4781-986' && c.datasetId === 'wb_raw' &&
++    c.location === 'EU' && wbAdsBqSinkOn_(), 'RUNTIME_CONTEXT');
++  var ledgerSchema = BigQuery.Tables.get(c.projectId, c.datasetId, WB_ADS_RESUME_TABLE_).schema;
++  var required = { recovery_id: 'STRING', kind: 'STRING', record_key: 'STRING', revision: 'INTEGER',
++    logical_date: 'DATE', payload: 'STRING', digest: 'STRING' }, actualFields = {};
++  ((ledgerSchema || {}).fields || []).forEach(function (f) { actualFields[f.name] = f.type; });
++  adsResumeAssert_(Object.keys(required).every(function (name) { return required[name] === actualFields[name]; }), 'LEDGER_SCHEMA');
++  var finishBy = started + 330000; // 30 s до hard wall; полный source stop ещё на 90 s раньше.
++  var properties = PropertiesService.getScriptProperties();
++  var lastHttp = Number(properties.getProperty('WB_ADS_RESUME_LAST_HTTP_AT') || 0);
++  adsResumeAssert_(Number.isFinite(lastHttp) && lastHttp >= 0, 'HTTP_CLOCK_STATE');
++  function room(ms) { if (Date.now() + ms >= finishBy) throw adsResumeError_('DEADLINE'); }
++  function fqn(table) { return '`' + c.projectId + '.wb_raw.' + table + '`'; }
++  function param(name, value) { return ingestParam_(name, 'STRING', value); }
++  function jobGet(id) {
++    room(10000);
++    try { return BigQuery.Jobs.get(c.projectId, id, { location: c.location }); }
++    catch (e) {
++      if (/not found|notFound|\b404\b/i.test(String(e.message))) return null;
++      throw adsResumeError_('BQ_LOOKUP_UNKNOWN');
++    }
++  }
++  function wait(j) {
++    while (j.status.state !== 'DONE') {
++      room(10000); Utilities.sleep(1000); j = jobGet(j.jobReference.jobId);
++      adsResumeAssert_(j, 'BQ_JOB_DISAPPEARED');
++    }
++    adsResumeAssert_(!j.status.errorResult, 'BQ_JOB_FAILED'); return j;
++  }
++  function query(sql, params, id) {
++    room(30000);
++    var jobId = id || 'adsr_q_' + Utilities.getUuid().replace(/-/g, '');
++    var cfg = { query: { query: sql, useLegacySql: false, parameterMode: 'NAMED', queryParameters: params || [],
++      maximumBytesBilled: '100000000', useQueryCache: false } };
++    var j = jobGet(jobId);
++    if (!j) {
++      try { j = BigQuery.Jobs.insert({ jobReference: { projectId: c.projectId, location: c.location, jobId: jobId }, configuration: cfg }, c.projectId); }
++      catch (e) { j = jobGet(jobId); if (!j) throw adsResumeError_('BQ_SUBMISSION_UNKNOWN'); }
++    }
++    adsResumeAssert_(j.configuration.query.query === sql &&
++      adsResumeCanonical_(j.configuration.query.queryParameters || []) === adsResumeCanonical_(params || []), 'QUERY_JOB_COLLISION');
++    wait(j); room(10000);
++    var res = BigQuery.Jobs.getQueryResults(c.projectId, jobId, { location: c.location, maxResults: 10000, timeoutMs: 1000 });
++    adsResumeAssert_(res.jobComplete && !res.pageToken && !res.errors, 'QUERY_INCOMPLETE');
++    return (res.rows || []).map(function (r) { return JSON.parse(r.f[0].v); });
++  }
++  function normalize(rows) {
++    return rows.map(function (o) { var out = {}; Object.keys(o).forEach(function (k) {
++      if (o[k] !== null && o[k] !== undefined && o[k] !== '') out[k] = String(o[k]);
++    }); return out; });
++  }
++  function load(table, rows, id) {
++    if (!rows.length) return;
++    room(30000);
++    var digest = adsResumeHash_(adsResumeCanonical_(rows)).slice(0, 63);
++    var j = jobGet(id);
++    if (!j) {
++      var cfg = { labels: { ads_resume_hash: digest }, load: {
++        destinationTable: { projectId: c.projectId, datasetId: c.datasetId, tableId: table },
++        sourceFormat: 'NEWLINE_DELIMITED_JSON', createDisposition: 'CREATE_NEVER', writeDisposition: 'WRITE_APPEND',
++        ignoreUnknownValues: false, maxBadRecords: 0 } };
++      var blob = Utilities.newBlob(rows.map(function (r) { return JSON.stringify(r); }).join('\n'), 'application/octet-stream');
++      try { j = BigQuery.Jobs.insert({ jobReference: { projectId: c.projectId, location: c.location, jobId: id }, configuration: cfg }, c.projectId, blob); }
++      catch (e) { j = jobGet(id); if (!j) throw adsResumeError_('BQ_SUBMISSION_UNKNOWN'); }
++    }
++    adsResumeAssert_(j.configuration.labels && j.configuration.labels.ads_resume_hash === digest &&
++      j.configuration.load.destinationTable.tableId === table &&
++      j.configuration.load.destinationTable.projectId === c.projectId &&
++      j.configuration.load.destinationTable.datasetId === c.datasetId, 'LOAD_JOB_COLLISION');
++    j = wait(j);
++    adsResumeAssert_(Number(j.statistics.load.outputRows) === rows.length, 'LOAD_ROW_COUNT');
++  }
++  function records(key, kind, recordKey) {
++    return query('SELECT TO_JSON_STRING(t) FROM ' + fqn(WB_ADS_RESUME_TABLE_) +
++      ' t WHERE recovery_id=@key AND kind=@kind AND record_key=@record ORDER BY revision DESC LIMIT 2',
++      [param('key', key), param('kind', kind), param('record', recordKey)]);
++  }
++  function record(key, kind, recordKey, revision, logicalDate, value) {
++    var payload = adsResumeCanonical_(value);
++    adsResumeAssert_(Utilities.newBlob(payload).getBytes().length <= 5000000, 'PAYLOAD_BOUND');
++    return { recovery_id: key, kind: kind, record_key: recordKey, revision: revision, logical_date: logicalDate,
++      payload: payload, digest: adsResumeHash_(payload) };
++  }
++  function decode(r) {
++    adsResumeAssert_(adsResumeHash_(r.payload) === r.digest, 'JOURNAL_HASH'); return JSON.parse(r.payload);
++  }
++  function loadManifest(key) {
++    var rows = records(key, 'MANIFEST', key);
++    if (!rows.length) {
++      var initial = jobGet(key + '_m1');
++      if (initial) { wait(initial); rows = records(key, 'MANIFEST', key); adsResumeAssert_(rows.length, 'MANIFEST_READBACK'); }
++    }
++    if (!rows.length) return null;
++    adsResumeAssert_(rows.length < 2 || rows[0].revision !== rows[1].revision, 'MANIFEST_DUPLICATE');
++    return decode(rows[0]);
++  }
++  function evidence(scope) {
++    var p = [param('origin', scope.originRunId), param('parent', scope.parentRunId),
++      param('from', scope.from), param('to', scope.to)];
++    var heart = query('SELECT TO_JSON_STRING(STRUCT(run_id,logical_period,status,error_code,error_message,started_at,completed_at)) FROM ' + fqn('INGEST_RUNS') +
++      ' WHERE run_id=@parent AND loader_name="ads" AND source="apps_script" AND logical_period=CAST(@to AS DATE) LIMIT 2', p);
++    adsResumeAssert_(heart.length === 1 && heart[0].status === 'ERROR' && heart[0].error_code === 'ADS_PARTIAL', 'ORIGIN_HEARTBEAT');
++    // Original loader summary is evidence only together with RAW readback below.
++    var note = String(heart[0].error_message || '');
++    var match = /raw_campaigns=OK\((\d+)\)/.exec(note);
++    adsResumeAssert_(match && /raw_costs=OK\(/.test(note), 'PHASE_PROVENANCE');
++    var camps = query('SELECT TO_JSON_STRING(STRUCT(advertId,status,load_ts)) FROM ' + fqn('RAW_WB_ADV_CAMPAIGNS') +
++      ' WHERE run_id=@origin LIMIT 2001', p);
++    adsResumeAssert_(camps.length === Number(match[1]), 'CAMPAIGNS_READBACK');
++    // Legacy heartbeat has no origin column: require all RAW campaign timestamps inside its execution.
++    adsResumeAssert_(camps.every(function (r) {
++      var t = /^\d{4}-\d\d-\d\d \d\d:\d\d:\d\d$/.test(r.load_ts) ? Date.parse(r.load_ts.replace(' ', 'T') + '+03:00') : NaN;
++      return t >= Date.parse(heart[0].started_at) - 1000 && t <= Date.parse(heart[0].completed_at);
++    }), 'ORIGIN_TIME_PROVENANCE');
++    var ids = adsResumeIds_(camps.filter(function (r) { return ['7', '9', '11'].indexOf(r.status) >= 0; }).map(function (r) { return r.advertId; }));
++    adsResumeAssert_(adsResumeCanonical_(ids) === adsResumeCanonical_(scope.campaignIds), 'CAMPAIGN_SNAPSHOT_MISMATCH');
++    var costs = query('SELECT TO_JSON_STRING(STRUCT(run_id,window_index,period_from,period_to,status,http_success,returned_rows,rows_out_of_window)) FROM ' +
++      fqn('RAW_WB_ADV_COSTS_RUNS') + ' WHERE run_id=@origin AND period_from<=@to AND period_to>=@to LIMIT 2', p);
++    adsResumeAssert_(costs.length === 1 && costs[0].status === 'OK' && costs[0].http_success === 'true' &&
++      Number(costs[0].rows_out_of_window) === 0, 'COSTS_MARKER');
++    var costCount = query('SELECT TO_JSON_STRING(STRUCT(COUNT(*) AS n)) FROM ' + fqn('RAW_WB_ADV_COSTS') +
++      ' WHERE run_id=@origin AND window_index=@window AND period_from=@cf AND period_to=@ct',
++      p.concat([param('window', costs[0].window_index), param('cf', costs[0].period_from), param('ct', costs[0].period_to)]));
++    adsResumeAssert_(Number(costCount[0].n) === Number(costs[0].returned_rows), 'COSTS_READBACK');
++    var markers = query('SELECT TO_JSON_STRING(STRUCT(advertId,COUNT(*) AS n)) FROM ' + fqn('RAW_WB_ADV_CAMPAIGN_STATS') +
++      ' WHERE run_id=@origin AND period_from=@from AND period_to=@to AND processed_status="no_stats" GROUP BY advertId', p);
++    var covered = {};
++    markers.forEach(function (r) { adsResumeAssert_(ids.indexOf(r.advertId) >= 0 && Number(r.n) === 1, 'PRIOR_MARKER'); covered[r.advertId] = 'NO_STATS'; });
++    return { campaigns: true, costs: true, covered: covered,
++      rowsLoaded: camps.length + Number(costs[0].returned_rows),
++      receipt: adsResumeHash_(adsResumeCanonical_({ heart: heart, camps: camps, costs: costs, markers: markers })) };
++  }
++  function stage(m, b) {
++    var existing = records(m.key, 'BATCH', b.id);
++    if (existing.length) { adsResumeAssert_(existing.length === 1, 'BATCH_DUPLICATE'); return decode(existing[0]); }
++    var landingId = b.id + '_landing';
++    var pendingJob = jobGet(landingId);
++    if (pendingJob) { wait(pendingJob); existing = records(m.key, 'BATCH', b.id); adsResumeAssert_(existing.length === 1, 'LANDING_READBACK'); return decode(existing[0]); }
++    adsResumeAssert_(b.state !== 'PREPARED', 'PREPARED_LOST');
++    var pause = Math.max(0, lastHttp + 21000 - Date.now());
++    if (Date.now() + pause + 30000 >= finishBy - 90000) throw adsResumeError_('DEADLINE');
++    if (pause) Utilities.sleep(pause);
++    var token = getWbAdsToken_(); adsResumeAssert_(token && token.token, 'TOKEN_UNAVAILABLE');
++    properties.setProperty('WB_ADS_RESUME_LAST_HTTP_AT', String(Date.now()));
++    var result = adsResumeHttp_('get', WB_ADS_API_HOST_ + '/adv/v3/fullstats?ids=' + b.ids.join(',') +
++      '&beginDate=' + m.scope.from + '&endDate=' + m.scope.to, token.token, null, finishBy - 90000);
++    lastHttp = Date.now();
++    properties.setProperty('WB_ADS_RESUME_LAST_HTTP_AT', String(lastHttp));
++    adsResumeAssert_(result.ok, 'HTTP_FAILED');
++    var camps = Array.isArray(result.json) ? result.json : result.json && result.json.data;
++    adsResumeAssert_(Array.isArray(camps), 'HTTP_INVALID_JSON');
++    var classes = {}, seen = {};
++    camps.forEach(function (camp) {
++      var id = String(camp.advertId !== undefined ? camp.advertId : camp.advertID);
++      adsResumeAssert_(b.ids.indexOf(id) >= 0 && !seen[id], 'HTTP_CAMPAIGN_SCOPE'); seen[id] = true;
++      adsResumeAssert_(Array.isArray(camp.days), 'HTTP_DAYS_SCHEMA');
++      camp.days.forEach(function (day) {
++        var rawDate = String(day.date || day.dt || ''), date = rawDate.slice(0, 10);
++        adsResumeAssert_(adsResumeDate_(date) && date >= m.scope.from && date <= m.scope.to && Array.isArray(day.apps), 'HTTP_DATE_SCOPE');
++        adsResumeAssert_(rawDate === date || (rawDate.charAt(10) === 'T' && Number.isFinite(Date.parse(rawDate))), 'HTTP_DATE_SCHEMA');
++        day.apps.forEach(function (app) { adsResumeAssert_(Array.isArray(app.nm || app.nms), 'HTTP_NM_SCHEMA'); });
++      });
++      (camp.boosterStats || camp.booster_stats || []).forEach(function (r) {
++        var raw = String(r.date || ''), d = raw.slice(0, 10);
++        adsResumeAssert_(adsResumeDate_(d) && d >= m.scope.from && d <= m.scope.to &&
++          (raw === d || (raw.charAt(10) === 'T' && Number.isFinite(Date.parse(raw)))), 'BOOSTER_DATE_SCOPE');
++      });
++    });
++    b.ids.forEach(function (id) { classes[id] = seen[id] ? 'PROCESSED' : 'NO_STATS'; });
++    var flat = wbAdvFlattenFullstats_(camps, b.id, m.scope.from, m.scope.to);
++    b.ids.forEach(function (id) { if (!seen[id]) flat.statRows.push(wbAdvCampaignStatNoStatsRow_(b.id, Number(id), m.scope.from, m.scope.to)); });
++    var prepared = { batchId: b.id, scopeHash: m.scopeHash, classifications: classes,
++      stats: normalize(flat.statRows), boosters: normalize(flat.boosterRows), preparedAt: Date.now() };
++    var row = record(m.key, 'BATCH', b.id, 0, m.scope.logicalDate, prepared);
++    load(WB_ADS_RESUME_TABLE_, [row], landingId);
++    existing = records(m.key, 'BATCH', b.id);
++    adsResumeAssert_(existing.length === 1 && existing[0].digest === row.digest, 'LANDING_READBACK');
++    return decode(existing[0]);
++  }
++  function publish(m, b, prepared) {
++    adsResumeValidateRawGrain_(prepared); // Also guard direct adapter/replay calls before either RAW destination.
++    var targets = [['RAW_WB_ADV_CAMPAIGN_STATS', prepared.stats], ['RAW_WB_ADV_BOOSTER_STATS', prepared.boosters]];
++    targets.forEach(function (target, i) {
++      var table = target[0], rows = target[1];
++      // Durable RAW readback also protects against expired BigQuery job metadata.
++      var actual = query('SELECT TO_JSON_STRING(t) FROM ' + fqn(table) +
++        ' t WHERE run_id=@run AND period_from=@from AND period_to=@to LIMIT 10000',
++        [param('run', b.id), param('from', m.scope.from), param('to', m.scope.to)]);
++      if (!actual.length && rows.length) {
++        load(table, rows, b.id + '_raw' + i);
++        actual = query('SELECT TO_JSON_STRING(t) FROM ' + fqn(table) +
++          ' t WHERE run_id=@run AND period_from=@from AND period_to=@to LIMIT 10000',
++          [param('run', b.id), param('from', m.scope.from), param('to', m.scope.to)]);
++      }
++      function fingerprint(a) { return adsResumeCanonical_(normalize(a).map(adsResumeCanonical_).sort()); }
++      adsResumeAssert_(rows.length < 10000 && fingerprint(actual) === fingerprint(rows), 'RAW_READBACK');
++    });
++    return { confirmed: true, batchId: b.id,
++      rowsLoaded: prepared.stats.filter(function (r) { return r.processed_status === 'raw'; }).length,
++      digest: adsResumeHash_(adsResumeCanonical_(prepared)), confirmedAt: Date.now() };
++  }
++  function finalize(m, coverage) {
++    adsResumeValidate_(m, io); adsResumeAssert_(coverage.complete && adsResumeCoverage_(m).complete, 'INCOMPLETE');
++    var rid = 'INS_ADS_RESUME_' + m.scopeHash;
++    var latest = query('SELECT TO_JSON_STRING(STRUCT(run_id,status)) FROM ' + fqn('INGEST_RUNS') +
++      ' WHERE loader_name="ads" AND source="apps_script" AND logical_period=CAST(@date AS DATE)' +
++      ' ORDER BY started_at DESC,run_id DESC LIMIT 1', [param('date', m.scope.logicalDate)]);
++    adsResumeAssert_(latest.length === 1 && [m.scope.parentRunId, rid].indexOf(latest[0].run_id) >= 0, 'LATEST_ATTEMPT_CONFLICT');
++    var lineage = 'ads_resume/v1 origin=' + m.scope.originRunId + ';parent=' + m.scope.parentRunId +
++      ';manifest=' + m.key + ';campaign_hash=' + m.scope.campaignHash + ';coverage=' + m.scope.campaignIds.length;
++    var loaded = m.phases.rowsLoaded + m.batches.reduce(function (n, b) { return n + b.receipt.rowsLoaded; }, 0);
++    adsResumeAssert_(Number.isFinite(loaded) && loaded >= 0, 'ROW_COUNTS');
++    var params = [param('run', rid), param('date', m.scope.logicalDate), param('count', String(loaded))];
++    query('INSERT INTO ' + fqn('INGEST_RUNS') +
++      ' (run_id,loader_name,logical_period,status,source,trigger_type,started_at,completed_at,rows_fetched,rows_loaded)' +
++      ' SELECT @run,"ads",CAST(@date AS DATE),"COMPLETE","apps_script","CATCHUP",CURRENT_TIMESTAMP(),CURRENT_TIMESTAMP(),CAST(@count AS INT64),CAST(@count AS INT64)' +
++      ' WHERE NOT EXISTS (SELECT 1 FROM ' + fqn('INGEST_RUNS') + ' WHERE run_id=@run)', params, m.key + '_complete');
++    var rows = query('SELECT TO_JSON_STRING(STRUCT(status,logical_period,error_message,completed_at)) FROM ' + fqn('INGEST_RUNS') +
++      ' WHERE run_id=@run LIMIT 2', params);
++    adsResumeAssert_(rows.length === 1 && rows[0].status === 'COMPLETE' && rows[0].logical_period === m.scope.logicalDate &&
++      rows[0].error_message == null && rows[0].completed_at, 'HEARTBEAT_READBACK');
++    return { confirmed: true, runId: rid, lineage: lineage };
++  }
++  var io = { hash: adsResumeHash_, now: Date.now, remaining: function () { return finishBy - Date.now(); },
++    hasBudget: function () { return Date.now() + 120000 < finishBy; },
++    load: loadManifest, evidence: evidence, stage: stage, publish: publish, finalize: finalize,
++    save: function (m) { load(WB_ADS_RESUME_TABLE_, [record(m.key, 'MANIFEST', m.key, m.revision, m.scope.logicalDate, m)], m.key + '_m' + m.revision); },
++    log: function (event) { console.log('WB_ADS_RESUME ' + JSON.stringify(event)); },
++    query: query, fqn: fqn, param: param,
++    checkTable: function (table, headers) {
++      room(10000);
++      var metadata = BigQuery.Tables.get(c.projectId, c.datasetId, table), fields = {};
++      ((metadata.schema || {}).fields || []).forEach(function (f) { fields[f.name] = f.type; });
++      adsResumeAssert_(headers.every(function (h) { return fields[h] === 'STRING'; }), 'SCHEMA_MISMATCH');
++      return false;
++    },
++    appendPhase: function (table, rows) {
++      var normalized = normalize(rows);
++      load(table, normalized, 'adsr_phase_' + adsResumeHash_(table + adsResumeCanonical_(normalized)));
++      return rows.length;
++    },
++    startParent: function (origin, date, triggerType) {
++      var rid = 'INS_ADS_RESUME_ORIGIN_' + origin;
++      query('INSERT INTO ' + fqn('INGEST_RUNS') +
++        ' (run_id,loader_name,logical_period,status,source,trigger_type,started_at)' +
++        ' SELECT @run,"ads",CAST(@date AS DATE),"STARTED","apps_script",@trigger,CURRENT_TIMESTAMP()' +
++        ' WHERE NOT EXISTS (SELECT 1 FROM ' + fqn('INGEST_RUNS') + ' WHERE run_id=@run)',
++        [param('run', rid), param('date', date), param('trigger', triggerType)], 'adsr_origin_' + adsResumeHash_(origin));
++      return rid;
++    },
++    finishParent: function (rid, note) {
++      query('UPDATE ' + fqn('INGEST_RUNS') + ' SET status="ERROR",completed_at=CURRENT_TIMESTAMP(),error_code="ADS_PARTIAL",error_message=@note' +
++        ' WHERE run_id=@run AND status="STARTED"', [param('run', rid), param('note', note)], 'adsr_origin_end_' + adsResumeHash_(rid));
++    } };
++  return io;
++}
++
++function adsResumeContinueSchedule_(m) {
++  var props = PropertiesService.getScriptProperties();
++  var enabled = props.getProperty('WB_ADS_RESUME_CONTINUATION_ENABLED') === '1';
++  var triggers = ScriptApp.getProjectTriggers().filter(function (t) { return t.getHandlerFunction() === WB_ADS_RESUME_HANDLER_; });
++  // Under ScriptLock. Remove consumed/stale/duplicate own triggers only.
++  triggers.forEach(function (t) { ScriptApp.deleteTrigger(t); });
++  if (enabled && m.continuation.needed && m.state !== 'BLOCKED' && m.state !== 'COMPLETE') {
++    ScriptApp.newTrigger(WB_ADS_RESUME_HANDLER_).timeBased().after(60000).create();
++  }
++}
++
++/** Общий ScriptLock также сериализует legacy daily writer. */
++function adsResumeWithLock_(fn) {
++  adsResumeAssert_(adsResumeEnabled_(), 'RESUME_DISABLED');
++  var lock = LockService.getScriptLock(), started = Date.now();
++  if (!lock.tryLock(1000)) return { status: 'SKIPPED_LOCKED' };
++  try { WB_ADS_RESUME_IO_ = adsResumeRuntime_(started); return fn(WB_ADS_RESUME_IO_); }
++  finally { WB_ADS_RESUME_HTTP_DEADLINE_ = null; WB_ADS_RESUME_IO_ = null; lock.releaseLock(); }
++}
++function adsResumeActive_(io) {
++  var raw = PropertiesService.getScriptProperties().getProperty(WB_ADS_RESUME_ACTIVE_);
++  if (!raw) return null;
++  var spec = JSON.parse(raw), m = io.load(spec.key);
++  if (!m) { m = adsResumeCreate_(spec.scope, io.evidence(spec.scope), io); adsResumeSave_(m, io); }
++  adsResumeValidate_(m, io);
++  adsResumeAssert_(m.key === spec.key && m.scopeHash === io.hash(adsResumeCanonical_(adsResumeScope_(spec.scope, io.hash))), 'ACTIVE_SCOPE_MISMATCH');
++  return m;
++}
++function adsResumeRegister_(input, io) {
++  var scope = adsResumeScope_(input, io.hash), key = 'adsr_' + io.hash(adsResumeCanonical_(scope));
++  adsResumeAssert_(scope.logicalDate < new Date(io.now() + 3 * 3600000).toISOString().slice(0, 10), 'UNCLOSED_DATE');
++  var active = adsResumeActive_(io);
++  adsResumeAssert_(!active || active.key === key || active.state === 'COMPLETE', 'ACTIVE_RECOVERY_CONFLICT');
++  var existing = io.load(key);
++  if (existing) { adsResumeValidate_(existing, io); adsResumeAssert_(existing.key === key, 'EXISTING_SCOPE_MISMATCH'); return existing; }
++  var m = adsResumeCreate_(scope, io.evidence(scope), io);
++  var compact = Object.assign({}, scope);
++  if (adsResumeCanonical_(scope.campaignIds) === adsResumeCanonical_(scope.allowlist)) delete compact.allowlist;
++  var pointer = JSON.stringify({ key: key, scope: compact });
++  adsResumeAssert_(Utilities.newBlob(pointer).getBytes().length <= 8000, 'POINTER_BOUND');
++  PropertiesService.getScriptProperties().setProperty(WB_ADS_RESUME_ACTIVE_, pointer);
++  adsResumeSave_(m, io); return m;
++}
++
++/** Исторический recovery. Caller передаёт scope, но не может передать COMPLETE/evidence. */
++function resumeWbAdsFullstatsRecovery(input) {
++  adsResumeAssert_(input && (!input.originKind || input.originKind === 'RECOVERY'), 'RECOVERY_ONLY');
++  return adsResumeWithLock_(function (io) {
++    var m = adsResumeRegister_(input, io); m = adsResumeStep_(m, io);
++    adsResumeContinueSchedule_(m); return { status: m.state, recoveryId: m.key, counts: m.counts };
++  });
++}
++function runWbAdsFullstatsContinuation() {
++  return adsResumeWithLock_(function (io) {
++    var m = adsResumeActive_(io);
++    if (!m) return { status: 'NO_PENDING_RECOVERY' };
++    m = adsResumeStep_(m, io); adsResumeContinueSchedule_(m); adsResumeOptional_(m, io);
++    return { status: m.state, recoveryId: m.key, counts: m.counts };
++  });
++}
++
++/** Необязательные источники только ПОСЛЕ durable COMPLETE, только для daily D-1. */
++function adsResumeOptional_(m, io) {
++  if (m.scope.originKind !== 'DAILY' || m.state !== 'COMPLETE' || m.optional) return;
++  var current = wbAdsLast7Range_().to === m.scope.logicalDate;
++  m.optional = { state: current && io.hasBudget() ? 'ATTEMPTED' : 'SKIPPED_BUDGET_OR_DATE', at: io.now() };
++  adsResumeSave_(m, io); // at-most-once admission; optional ambiguity never retries critical path
++  if (m.optional.state === 'ATTEMPTED') {
++    WB_ADS_RESUME_HTTP_DEADLINE_ = io.now() + Math.max(0, io.remaining() - 60000);
++    try {
++      if (typeof loadWbAdsQueryBidsRaw === 'function') loadWbAdsQueryBidsRaw(m.scope.originRunId);
++      if (io.hasBudget() && typeof loadWbAdsQueryStatsRaw === 'function') loadWbAdsQueryStatsRaw(m.scope.originRunId);
++    } catch (e) { io.log({ recovery_id: m.key, optional: 'ERROR_AFTER_COMPLETE' }); }
++    finally { WB_ADS_RESUME_HTTP_DEADLINE_ = null; }
++  }
++  io.log({ recovery_id: m.key, optional: m.optional.state });
++}
++
++/** Daily first resumes the pinned logical period. */
++function adsResumeDaily_(triggerType) {
++  return adsResumeWithLock_(function (io) {
++    var active = adsResumeActive_(io), rng = wbAdsLast7Range_();
++    if (active && (active.state !== 'COMPLETE' || active.scope.logicalDate === rng.to)) {
++      var resumed = adsResumeStep_(active, io); adsResumeContinueSchedule_(resumed);
++      adsResumeOptional_(resumed, io);
++      return { status: resumed.state, recoveryId: resumed.key };
++    }
++    if (triggerType === 'CATCHUP') {
++      var latest = io.query('SELECT TO_JSON_STRING(STRUCT(run_id,status,started_at)) FROM ' + io.fqn('INGEST_RUNS') +
++        ' WHERE loader_name="ads" AND source="apps_script" AND logical_period=CAST(@date AS DATE)' +
++        ' ORDER BY started_at DESC,run_id DESC LIMIT 1', [io.param('date', rng.to)]);
++      if (latest.length && latest[0].status === 'COMPLETE') return { status: 'SKIP_COMPLETE' };
++      if (latest.length && latest[0].status === 'STARTED' && io.now() - Date.parse(latest[0].started_at) < INGEST_STALE_THRESHOLD_MIN_ * 60000) {
++        return { status: 'SKIP_RUNNING' };
++      }
++    }
++    var origin = wbAdsRawNewRunId_(), parent = io.startParent(origin, rng.to, triggerType || 'SCHEDULED');
++    WB_ADS_RESUME_HTTP_DEADLINE_ = Date.now() + Math.max(0, io.remaining() - 90000);
++    var campaigns = loadWbAdsCampaignsRaw(origin), cr = wbAdsCostsRangeBack_(WB_ADS_COSTS_OPERATIONAL_DAYS_, 1);
++    var costs = loadWbAdsCostsRaw(cr.from, cr.to, origin);
++    var note = 'origin=' + origin + ' | raw_campaigns=' + campaigns.status + '(' + campaigns.rows + ')' +
++      ' | raw_costs=' + costs.status + '(' + costs.rows + ') | raw_fullstats=PARTIAL(0)';
++    io.finishParent(parent, note);
++    adsResumeAssert_(campaigns.status === 'OK' && costs.status === 'OK', 'PHASES_FAILED');
++    var rows = io.query('SELECT TO_JSON_STRING(STRUCT(advertId)) FROM ' + io.fqn('RAW_WB_ADV_CAMPAIGNS') +
++      ' WHERE run_id=@run AND status IN ("7","9","11") LIMIT 2001', [io.param('run', origin)]);
++    var m = adsResumeRegister_({ originRunId: origin, parentRunId: parent, logicalDate: rng.to,
++      from: rng.from, to: rng.to, originKind: 'DAILY', campaignIds: rows.map(function (r) { return r.advertId; }) }, io);
++    m = adsResumeStep_(m, io); adsResumeContinueSchedule_(m); adsResumeOptional_(m, io);
++    return { status: m.state, recoveryId: m.key };
++  });
++}
+diff --git a/apps-script/ingestion/WbAdsProbe.gs b/apps-script/ingestion/WbAdsProbe.gs
+index 1c28827..498dfa3 100644
+--- a/apps-script/ingestion/WbAdsProbe.gs
++++ b/apps-script/ingestion/WbAdsProbe.gs
+@@ -551,6 +551,9 @@ function wbAdsExtractPairs_(json, maxPairs) {
+  * @return {Object} { code, ok, body, json, attempts }
+  */
+ function wbAdsHttp_(method, url, token, payload) {
++  if (typeof WB_ADS_RESUME_HTTP_DEADLINE_ !== 'undefined' && WB_ADS_RESUME_HTTP_DEADLINE_ !== null) {
++    return adsResumeHttp_(method, url, token, payload, WB_ADS_RESUME_HTTP_DEADLINE_);
++  }
+   var opt = { method: method, headers: { 'Authorization': token }, muteHttpExceptions: true };
+   if (payload != null) { opt.contentType = 'application/json'; opt.payload = JSON.stringify(payload); }
+ 
+diff --git a/apps-script/ingestion/WbAdsRawLoader.gs b/apps-script/ingestion/WbAdsRawLoader.gs
+index 7d77601..a7bc5c2 100644
+--- a/apps-script/ingestion/WbAdsRawLoader.gs
++++ b/apps-script/ingestion/WbAdsRawLoader.gs
+@@ -1152,6 +1152,9 @@ function wbAdvCollectNmIds_(obj) {
+ 
+ /** Создаёт RAW-лист при отсутствии; иначе аддитивно дописывает недостающие колонки справа. */
+ function wbAdvRawEnsureSheet_(ss, name, headers) {
++  if (typeof WB_ADS_RESUME_IO_ !== 'undefined' && WB_ADS_RESUME_IO_) {
++    adsResumeAssert_(wbAdsBqSinkOn_(), 'RESUME_SINK_DISABLED');
++  }
+   // BQ-приёмник (Фаза C): вместо листа создаём таблицу в BigQuery и
+   // возвращаем лёгкую заглушку с getName() — её ждёт wbAdvRawAppendRows_.
+   if (typeof wbAdsBqSinkOn_ === 'function' && wbAdsBqSinkOn_()) {
+@@ -1190,6 +1193,7 @@ function wbAdvRawEnsureSheet_(ss, name, headers) {
+ /** Пакетно дописывает строки по ИМЕНАМ колонок текущего заголовка. @return число строк. */
+ function wbAdvRawAppendRows_(sheet, rowObjs) {
+   if (!rowObjs || !rowObjs.length) return 0;
++  if (typeof WB_ADS_RESUME_IO_ !== 'undefined' && WB_ADS_RESUME_IO_) adsResumeAssert_(sheet && sheet._bqSink, 'RESUME_NO_SHEET_WRITES');
+   // BQ-приёмник (Фаза C): пишем в BigQuery-таблицу с именем листа.
+   if (sheet && sheet._bqSink) return wbAdvBqAppendRows_(sheet.getName(), rowObjs);
+   var lastCol = sheet.getLastColumn();
+@@ -1215,6 +1219,11 @@ function wbAdvRawAppendRows_(sheet, rowObjs) {
+ 
+ /** Пишет строку в WB_ADS_STATUS (ошибка/итог loader'а). probe_name = sourceMethod. */
+ function wbAdsRawWriteStatus_(runId, sourceMethod, from, to, fields) {
++  if (typeof WB_ADS_RESUME_IO_ !== 'undefined' && WB_ADS_RESUME_IO_) {
++    WB_ADS_RESUME_IO_.log({ origin_run: runId, phase: sourceMethod, from: from, to: to,
++      status: fields.status, http_status: fields.http_status || null });
++    return;
++  }
+   var ss = SpreadsheetApp.getActiveSpreadsheet();
+   var r = wbAdsMakeResult_(runId, sourceMethod);
+   r.period_from = from || '';
+diff --git a/apps-script/ingestion/Wbadsbigquery.gs b/apps-script/ingestion/Wbadsbigquery.gs
+index 278817e..b974154 100644
+--- a/apps-script/ingestion/Wbadsbigquery.gs
++++ b/apps-script/ingestion/Wbadsbigquery.gs
+@@ -95,6 +95,7 @@ function wbAdsBqDisable() {
+  */
+ function wbAdvBqEnsureTable_(tableId, headers) {
+   wbAdsBqAssertTable_(tableId);
++  if (typeof WB_ADS_RESUME_IO_ !== 'undefined' && WB_ADS_RESUME_IO_) return WB_ADS_RESUME_IO_.checkTable(tableId, headers);
+   var c = getBqConfig_();
+   bqEnsureDataset_();
+ 
+@@ -174,6 +175,7 @@ function wbAdvBqAuditAndExtendSchema_(tableId, table, headers) {
+ function wbAdvBqAppendRows_(tableId, rowObjs) {
+   wbAdsBqAssertTable_(tableId);
+   if (!rowObjs || !rowObjs.length) return 0;
++  if (typeof WB_ADS_RESUME_IO_ !== 'undefined' && WB_ADS_RESUME_IO_) return WB_ADS_RESUME_IO_.appendPhase(tableId, rowObjs);
+   var norm = [];
+   for (var i = 0; i < rowObjs.length; i++) {
+     var o = rowObjs[i], out = {};
+diff --git a/apps-script/ingestion/Wbadsdaily.gs b/apps-script/ingestion/Wbadsdaily.gs
+index e313c37..e545424 100644
+--- a/apps-script/ingestion/Wbadsdaily.gs
++++ b/apps-script/ingestion/Wbadsdaily.gs
+@@ -117,6 +117,7 @@ function wbAdsSelfTestOverallStatus() {
+  * @param {Object=} e event-объект time-driven триггера (у ручного запуска отсутствует)
+  */
+ function runWbAdsDaily(e) {
++  if (typeof adsResumeEnabled_ === 'function' && adsResumeEnabled_()) return adsResumeDaily_((e && e.triggerUid) ? 'SCHEDULED' : 'MANUAL');
+   return runWbAdsDailyCore_((e && e.triggerUid) ? 'SCHEDULED' : 'MANUAL');
+ }
+ 
+@@ -310,6 +311,8 @@ function wbAdsCatchUpDecision_(latest, staleThresholdMin) {
+ }
+ 
+ function runWbAdsDailyCatchUp(e) {
++  // Pending recovery keeps its logical date across midnight; never replace it with D-1.
++  if (typeof adsResumeEnabled_ === 'function' && adsResumeEnabled_()) return adsResumeDaily_('CATCHUP');
+   var lp = wbAdsLast7Range_().to;
+   var latest = null;
+   try { latest = ingestLatestAttempt_('ads', lp); }
+diff --git a/tools/step5a_appsscript_tests/resume.test.js b/tools/step5a_appsscript_tests/resume.test.js
+new file mode 100644
+--- /dev/null
++++ b/tools/step5a_appsscript_tests/resume.test.js
+@@ -0,0 +1,395 @@
++// Offline only: real .gs in vm; no Google clients, credentials, network or production writes.
++const { test } = require('node:test');
++const assert = require('node:assert/strict');
++const fs = require('node:fs');
++const path = require('node:path');
++const vm = require('node:vm');
++const crypto = require('node:crypto');
++const root = path.resolve(__dirname, '../..');
++const clone = x => JSON.parse(JSON.stringify(x));
++const hash = x => crypto.createHash('sha256').update(x).digest('hex');
++const incidentIds = [36047250,37563883,37649856,37669244,37727817,37727876,37727911,37727969,
++  37727999,37736048,37738107,37741306,37742306,37751908,37755293,37755348,37756543,37759444,
++  37762360,37792295,37845005,37845016,37931352,37932547,37932669,38085124,38581331,39035441,
++  39053649,39120213,40042162];
++function context(extra = {}) {
++  const c = vm.createContext({ console: { log() {} }, ...extra });
++  for (const file of ['WbAdsResume.gs', 'WbAdsResumeRuntime.gs']) {
++    vm.runInContext(fs.readFileSync(path.join(root, 'apps-script/ingestion', file), 'utf8'), c, { filename: file });
++  }
++  return c;
++}
++function core(n = 121, input = {}) {
++  const c = context(); let time = Date.parse('2026-10-01T20:59:00Z'), budget = true, saved;
++  const landing = new Map(), published = new Map(), heartbeats = new Set(), events = [];
++  const io = { hash, now: () => time, remaining: () => 200000, hasBudget: () => budget,
++    save: m => { saved = clone(m); }, log: e => events.push(clone(e)),
++    stage: (m, b) => {
++      if (!landing.has(b.id)) landing.set(b.id, { batchId: b.id, scopeHash: m.scopeHash,
++        classifications: Object.fromEntries(b.ids.map(id => [id, 'PROCESSED'])), stats: [] });
++      return clone(landing.get(b.id));
++    },
++    publish: (m, b) => { published.set(b.id, b.ids); return { confirmed: true, batchId: b.id, rowsLoaded: b.ids.length }; },
++    finalize: (m, cov) => { assert.equal(cov.complete, true); heartbeats.add(m.key); return { confirmed: true }; }
++  };
++  const spec = { originRunId: 'ADSRAW_origin', parentRunId: 'INS_ADS_parent', logicalDate: '2026-09-30',
++    from: '2026-09-24', to: '2026-09-30', campaignIds: Array.from({ length: n }, (_, i) => i + 1), ...input };
++  let m = c.adsResumeCreate_(spec, { campaigns: true, costs: true, receipt: 'verified', rowsLoaded: 0, covered: {} }, io);
++  io.save(m);
++  return { c, io, landing, published, heartbeats, events, spec,
++    step: options => { m = c.adsResumeStep_(m, io, options); return m; },
++    get: () => m, restore: () => { m = clone(saved); }, saved: () => clone(saved),
++    time: t => { time = Date.parse(t); }, budget: b => { budget = b; } };
++}
++test('01 normal bounded multi-batch completion', () => {
++  const e = core(); assert.equal(e.step().state, 'PENDING'); assert.equal(e.published.size, 2);
++  assert.equal(e.step().state, 'COMPLETE'); assert.equal(e.published.size, 3); assert.equal(e.heartbeats.size, 1);
++});
++test('02 budget exhaustion before next batch preserves pending', () => {
++  const e = core(); e.budget(false); e.step(); assert.equal(e.landing.size, 0);
++  assert.equal(e.get().counts.pending, 121); assert.equal(e.get().continuation.reason, 'DEADLINE');
++});
++test('03 interruption after sink write before checkpoint reuses durable batch', () => {
++  const e = core(10), publish = e.io.publish, save = e.io.save;
++  e.io.publish = (m,b,p) => { publish(m,b,p); e.io.save = () => { throw Error('process killed'); }; throw Error('process killed'); };
++  assert.throws(() => e.step()); assert.equal(e.saved().batches[0].state, 'PREPARED');
++  e.io.save = save; e.io.publish = publish; e.restore(); assert.equal(e.step().state, 'COMPLETE');
++  assert.equal(e.published.size, 1); assert.equal(e.landing.size, 1);
++});
++test('04 retry completed batch does not refetch or republish', () => {
++  const e = core(51); e.step({ maxBatches: 1 });
++  const id = e.get().batches[0].id; e.io.stage = (m,b) => { assert.notEqual(b.id, id);
++    return { batchId: b.id, scopeHash: m.scopeHash, classifications: { [b.ids[0]]: 'NO_STATS' }, stats: [] }; };
++  assert.equal(e.step().state, 'COMPLETE');
++});
++test('05 duplicate invocation after completion has no side effects', () => {
++  const e = core(1); e.step(); const count = e.events.length;
++  e.io.save = e.io.stage = e.io.publish = e.io.finalize = () => { throw Error('unexpected I/O'); };
++  assert.equal(e.step().state, 'COMPLETE'); assert.equal(e.events.length, count);
++});
++test('06 ScriptLock contention never constructs runtime', () => {
++  const c = context({ PropertiesService: { getScriptProperties: () => ({ getProperty: () => '1' }) },
++    LockService: { getScriptLock: () => ({ tryLock: () => false }) } });
++  assert.equal(c.runWbAdsFullstatsContinuation().status, 'SKIPPED_LOCKED');
++});
++test('07 HTTP 429 backoff near deadline stops before sleeping', () => {
++  let now = 0, calls = 0, sleeps = 0;
++  const c = context({ Date: { now: () => now, parse: Date.parse }, Utilities: { sleep: ms => { now += ms; sleeps++; } },
++    UrlFetchApp: { fetch: () => { calls++; return { getResponseCode: () => 429, getAllHeaders: () => ({ 'Retry-After': '120' }) }; } } });
++  assert.throws(() => c.adsResumeHttp_('get','fixture','not-a-credential',null,100000), /DEADLINE/);
++  assert.equal(calls, 1); assert.equal(sleeps, 0);
++});
++test('08 network failures cannot become no_stats or COMPLETE', () => {
++  const e = core(1); e.io.stage = () => { throw Error('network payload must not leak'); }; e.step();
++  assert.equal(e.get().counts.failed, 1); assert.equal(e.get().counts.no_stats, 0); assert.equal(e.heartbeats.size, 0);
++  assert.ok(!JSON.stringify(e.saved()).includes('payload must not leak'));
++});
++test('09 legitimate no_stats is covered only with confirmed writes', () => {
++  const e = core(1); e.io.stage = (m,b) => ({ batchId:b.id,scopeHash:m.scopeHash,classifications:{1:'NO_STATS'},stats:[] });
++  assert.equal(e.step().counts.no_stats, 1); assert.equal(e.get().state, 'COMPLETE');
++});
++test('10 omitted/unprocessed ID never becomes no_stats', () => {
++  const e = core(2); e.io.stage = (m,b) => ({ batchId:b.id,scopeHash:m.scopeHash,classifications:{1:'NO_STATS'},stats:[] });
++  e.step(); assert.equal(e.get().counts.complete, false); assert.equal(e.published.size, 0);
++});
++test('11 midnight rollover preserves original dates', () => {
++  const e = core(51); e.step({ maxBatches:1 }); e.time('2026-10-03T02:00:00Z'); e.restore(); e.step();
++  assert.equal(e.get().scope.logicalDate,'2026-09-30'); assert.equal(e.get().scope.from,'2026-09-24');
++});
++test('12 campaign/hash mutation is rejected before I/O', () => {
++  const e = core(2); e.get().scope.campaignIds[0]='999'; assert.throws(() => e.step(), /SCOPE_HASH|CAMPAIGN_HASH|ALLOWLIST_SCOPE/);
++  const changedHash = core(2); changedHash.get().scope.campaignHash='bad'; assert.throws(()=>changedHash.step(),/CAMPAIGN_HASH/);
++  assert.equal(e.landing.size,0);
++});
++test('13 no progress reaches terminal BLOCKED without trigger loop', () => {
++  const e = core(1); e.io.stage=()=>{throw Error('HTTP');}; e.step(); e.step(); e.step();
++  assert.equal(e.get().state,'BLOCKED'); assert.equal(e.get().continuation.needed,false);
++  const attempts=e.get().attempts; e.step(); assert.equal(e.get().attempts,attempts);
++});
++test('14 COMPLETE prevents continuation scheduling', () => {
++  const e = core(1); e.step(); let creates=0, deletes=0;
++  e.c.PropertiesService={getScriptProperties:()=>({getProperty:()=> '1'})};
++  e.c.ScriptApp={getProjectTriggers:()=>[{getHandlerFunction:()=> 'runWbAdsFullstatsContinuation'}],
++    deleteTrigger:()=>deletes++,newTrigger:()=>{creates++;throw Error('must not create');}};
++  e.c.adsResumeContinueSchedule_(e.get()); assert.equal(creates,0); assert.equal(deletes,1);
++});
++test('15 every incomplete coverage combination fails closed', () => {
++  for (const state of ['PENDING','PREPARED','FAILED','DONE']) {
++    const e=core(2), b=e.get().batches[0]; b.state=state;b.classifications={1:'PROCESSED'};b.receipt={confirmed:true};
++    assert.equal(e.c.adsResumeCoverage_(e.get()).complete,false);
++  }
++  const e=core(1);e.get().phases.costs=false;assert.equal(e.c.adsResumeCoverage_(e.get()).complete,false);
++});
++test('16 latest-wins effective view key preserved (not SUM of appends)', () => {
++  // Read definition only: wbAdsBqCreateViews must NEVER execute, even as a deploy shortcut.
++  const sql=fs.readFileSync(path.join(root,'apps-script/ingestion/Wbadsbigquery.gs'),'utf8');
++  assert.match(sql,/ROW_NUMBER\(\) OVER/i); assert.match(sql,/PARTITION BY[\s\S]*advertId[\s\S]*nmId[\s\S]*appType[\s\S]*source_level/i);
++  assert.match(sql,/load_ts[\s\S]*DESC[\s\S]*run_id DESC/i);
++});
++test('17 original PARTIAL remains rejected by real heartbeat classifier', () => {
++  const c=context();vm.runInContext(fs.readFileSync(path.join(root,'apps-script/ingestion/IngestRunLog.gs'),'utf8'),c);
++  assert.equal(c.INGEST_SUCCESS_STATUSES_.ads.includes('PARTIAL'),false);
++  const sql=fs.readFileSync(path.join(root,'cloud/src/loaders/mart/bq.ts'),'utf8');
++  assert.match(sql,/ORDER BY started_at DESC, run_id DESC/);assert.match(sql,/l.status = 'COMPLETE' AND l.completed_at IS NOT NULL/);
++});
++test('18 supplied dates/allowlist cannot escape immutable scope', () => {
++  assert.throws(()=>core(2,{to:'2026-10-01'}),/DATE_SCOPE/);
++  assert.throws(()=>core(2,{allowlist:[1]}),/UNCOVERED_OUTSIDE_ALLOWLIST/);
++  assert.throws(()=>core(2,{allowlist:[999]}),/ALLOWLIST_SCOPE/);
++  const e=core(1);e.get().batches[0].ids=['999'];assert.throws(()=>e.step(),/BATCH_SCOPE/);
++});
++test('incident fixture 400 proven no_stats + 31 pending, no production calls', () => {
++  const e=core(1), prior=Object.fromEntries(Array.from({length:400},(_,i)=>[String(100000+i),'NO_STATS']));
++  const m=e.c.adsResumeCreate_({...e.spec,campaignIds:Object.keys(prior).concat(incidentIds.map(String)),allowlist:incidentIds},
++    {campaigns:true,costs:true,receipt:'fixture',covered:prior},e.io);
++  assert.equal(m.batches.length,1);assert.equal(m.batches[0].ids.length,31);
++  assert.equal(e.c.adsResumeCoverage_(m).no_stats,400);assert.equal(e.c.adsResumeCoverage_(m).complete,false);
++});
++test('source retries obey absolute deadline and do not log request secrets', () => {
++  let now=0,calls=0; const logs=[];
++  const c=context({Date:{now:()=>now,parse:Date.parse},console:{log:s=>logs.push(s)},Utilities:{sleep:ms=>now+=ms},
++    UrlFetchApp:{fetch:()=>{calls++;return {getResponseCode:()=>503,getAllHeaders:()=>({}),getContentText:()=>'{"private":"payload"}'};}}});
++  const r=c.adsResumeHttp_('get','fixture','not-a-credential',null,200000);
++  assert.equal(calls,3);assert.equal(r.ok,false);assert.equal(logs.length,0);
++});
++test('finalization ambiguity retries without source replay', () => {
++  const e=core(1), final=e.io.finalize; e.io.finalize=()=>{throw Error('uncertain');};e.step();
++  assert.equal(e.get().state,'READY');e.io.stage=()=>{throw Error('must not fetch');};e.io.finalize=final;
++  assert.equal(e.step().state,'COMPLETE');
++});
++
++// Integration fake for real adapter (BQ jobs + persistent journal + RAW readback).
++function runtime() {
++  let now=Date.parse('2026-10-01T06:00:00Z'),seq=0,fetches=0,locked=false,killOn=null,dead=false;
++  const props={WB_ADS_RESUME_ENABLED:'1'}, jobs=new Map(), tables={ADS_FULLSTATS_RECOVERY:[],RAW_WB_ADV_CAMPAIGN_STATS:[],RAW_WB_ADV_BOOSTER_STATS:[],INGEST_RUNS:[],RAW_WB_ADV_CAMPAIGNS:[],RAW_WB_ADV_COSTS:[],RAW_WB_ADV_COSTS_RUNS:[]};
++  const pp=ps=>Object.fromEntries((ps||[]).map(p=>[p.name,p.parameterValue.value]));
++  const properties={getProperty:k=>props[k]||null,setProperty:(k,v)=>{props[k]=v;}};
++  function execute(sql,ps){
++    const p=pp(ps);
++    if(sql.startsWith('INSERT INTO')){
++      if(!tables.INGEST_RUNS.some(r=>r.run_id===p.run))tables.INGEST_RUNS.push({run_id:p.run,status:'COMPLETE',logical_period:p.date,error_message:p.lineage,completed_at:new Date(now).toISOString(),started_at:now});return [];
++    }
++    if(sql.includes('ADS_FULLSTATS_RECOVERY'))return tables.ADS_FULLSTATS_RECOVERY.filter(r=>r.recovery_id===p.key&&r.kind===p.kind&&r.record_key===p.record).sort((a,b)=>b.revision-a.revision).slice(0,2);
++    if(sql.includes('INGEST_RUNS'))return tables.INGEST_RUNS.filter(r=>p.run?r.run_id===p.run:p.parent?r.run_id===p.parent:r.logical_period===p.date).sort((a,b)=>Date.parse(b.started_at)-Date.parse(a.started_at)).slice(0,p.run||p.parent?2:1);
++    if(sql.includes('RAW_WB_ADV_CAMPAIGNS'))return tables.RAW_WB_ADV_CAMPAIGNS.filter(r=>r.run_id===p.origin);
++    if(sql.includes('RAW_WB_ADV_COSTS_RUNS'))return tables.RAW_WB_ADV_COSTS_RUNS.filter(r=>r.run_id===p.origin&&r.period_from<=p.to&&r.period_to>=p.to);
++    if(sql.includes('RAW_WB_ADV_COSTS'))return [{n:tables.RAW_WB_ADV_COSTS.filter(r=>r.run_id===p.origin&&r.window_index===p.window).length}];
++    if(sql.includes('GROUP BY advertId'))return tables.RAW_WB_ADV_CAMPAIGN_STATS.filter(r=>r.run_id===p.origin&&r.processed_status==='no_stats').map(r=>({advertId:r.advertId,n:1}));
++    for(const table of ['RAW_WB_ADV_CAMPAIGN_STATS','RAW_WB_ADV_BOOSTER_STATS'])if(sql.includes(table))return tables[table].filter(r=>r.run_id===p.run&&r.period_from===p.from&&r.period_to===p.to);
++    throw Error('unexpected query '+sql);
++  }
++  const c=context({Date:class extends Date{constructor(...a){super(...(a.length?a:[now]));}static now(){return now;}},
++    PropertiesService:{getScriptProperties:()=>properties},LockService:{getScriptLock:()=>({tryLock:()=>{if(locked)return false;locked=true;return true;},releaseLock:()=>{locked=false;}})},
++    getBqConfig_:()=>({projectId:'project-fa311fc0-4d87-4781-986',datasetId:'wb_raw',location:'EU'}),wbAdsBqSinkOn_:()=>true,
++    Utilities:{DigestAlgorithm:{SHA_256:1},Charset:{UTF_8:1},computeDigest:(_,s)=>[...crypto.createHash('sha256').update(s).digest()],
++      newBlob:s=>({text:s,getBytes:()=>[...Buffer.from(s)]}),getUuid:()=>String(++seq),sleep:ms=>now+=ms},
++    ingestParam_:(name,type,value)=>({name,parameterType:{type},parameterValue:{value:String(value)}}),
++    WB_ADS_API_HOST_:'fixture',getWbAdsToken_:()=>({token:'fixture-not-secret'}),
++    wbAdsNow_:()=> '2026-10-01 09:00:00',
++    UrlFetchApp:{fetch:url=>{fetches++;const ids=/ids=([^&]+)/.exec(url)[1].split(',');return {getResponseCode:()=>200,getContentText:()=>JSON.stringify(ids.map(id=>({advertId:Number(id),days:[{date:'2026-09-30',apps:[{appType:1,nm:[{nmId:2,sum:3,views:1}]}]}]})))};}},
++    BigQuery:{Tables:{get:()=>({schema:{fields:Object.entries({recovery_id:'STRING',kind:'STRING',record_key:'STRING',revision:'INTEGER',logical_date:'DATE',payload:'STRING',digest:'STRING'}).map(([name,type])=>({name,type}))}})},
++      Jobs:{get:(project,id)=>{if(dead)throw Error('process dead');if(!jobs.has(id))throw Error('404 not found');return clone(jobs.get(id));},
++      insert:(j,project,blob)=>{if(dead)throw Error('process dead');const id=j.jobReference.jobId;if(jobs.has(id))throw Error('409');
++        const job=clone(j);job.status={state:'DONE'};
++        if(j.configuration.load){assert.equal(j.configuration.load.createDisposition,'CREATE_NEVER');const rows=blob.text.split('\n').map(JSON.parse);
++          const table=j.configuration.load.destinationTable.tableId;tables[table].push(...rows);job.statistics={load:{outputRows:String(rows.length)}};
++        }else{assert.equal(j.configuration.query.useLegacySql,false);job.result=execute(j.configuration.query.query,j.configuration.query.queryParameters);}
++        jobs.set(id,job);if(killOn&&id.endsWith(killOn)){dead=true;throw Error('process dead');}return clone(job);},
++      getQueryResults:(p,id)=>({jobComplete:true,rows:jobs.get(id).result.map(r=>({f:[{v:JSON.stringify(r)}]}))})}},
++    ScriptApp:{getProjectTriggers:()=>[],deleteTrigger:()=>{throw Error('no trigger expected');}}
++  });
++  vm.runInContext(fs.readFileSync(path.join(root,'apps-script/ingestion/WbAdsRawLoader.gs'),'utf8'),c);
++  const spec={originRunId:'origin',parentRunId:'parent',logicalDate:'2026-09-30',from:'2026-09-24',to:'2026-09-30',campaignIds:[11,12]};
++  tables.INGEST_RUNS.push({run_id:'parent',status:'ERROR',logical_period:spec.logicalDate,started_at:new Date(now-10000).toISOString(),completed_at:new Date(now+1000).toISOString(),error_code:'ADS_PARTIAL',error_message:'raw_campaigns=OK(2) | raw_costs=OK(1) | raw_fullstats=PARTIAL(0)'});
++  tables.RAW_WB_ADV_CAMPAIGNS.push(...[11,12].map(advertId=>({run_id:'origin',advertId:String(advertId),status:'11',load_ts:'2026-10-01 09:00:00'})));
++  tables.RAW_WB_ADV_COSTS_RUNS.push({run_id:'origin',window_index:'0',period_from:'2026-09-17',period_to:'2026-09-30',status:'OK',http_success:'true',returned_rows:'1',rows_out_of_window:'0'});
++  tables.RAW_WB_ADV_COSTS.push({run_id:'origin',window_index:'0'});
++  const io=()=>c.adsResumeRuntime_(now);
++  const initial=c.adsResumeCreate_(spec,{campaigns:true,costs:true,rowsLoaded:2,receipt:'verified',covered:{}},io());
++  c.adsResumeSave_(initial,io());
++  props.WB_ADS_RESUME_ACTIVE_V1=JSON.stringify({key:initial.key,scope:initial.scope});
++  return {c,tables,jobs,props,io,spec,key:initial.key,fetches:()=>fetches,
++    kill:s=>{killOn=s;},revive:()=>{killOn=null;dead=false;now+=60000;},advance:ms=>{now+=ms;},
++    step:()=>c.runWbAdsFullstatsContinuation()};
++}
++test('adapter normal completion confirms RAW and new heartbeat, preserves origin ERROR',()=>{
++  const e=runtime();assert.equal(e.step().status,'COMPLETE');assert.equal(e.tables.RAW_WB_ADV_CAMPAIGN_STATS.length,2);
++  assert.equal(e.tables.INGEST_RUNS[0].status,'ERROR');assert.equal(e.tables.INGEST_RUNS.length,2);
++  assert.equal(e.step().status,'COMPLETE');assert.equal(e.fetches(),1);
++});
++test('adapter hard kill after RAW append resumes without duplicate rows/source fetch',()=>{
++  const e=runtime();e.kill('_raw0');assert.throws(()=>e.step());assert.equal(e.tables.RAW_WB_ADV_CAMPAIGN_STATS.length,2);
++  e.revive();assert.equal(e.step().status,'COMPLETE');assert.equal(e.fetches(),1);assert.equal(e.tables.RAW_WB_ADV_CAMPAIGN_STATS.length,2);
++});
++test('adapter hard kill after landing before checkpoint uses saved response',()=>{
++  const e=runtime();e.kill('_landing');assert.throws(()=>e.step());e.revive();assert.equal(e.step().status,'COMPLETE');assert.equal(e.fetches(),1);
++});
++test('adapter expired job metadata still uses durable RAW readback',()=>{
++  const e=runtime();e.kill('_raw0');assert.throws(()=>e.step());e.revive();e.jobs.delete(e.key+'_b0_raw0');
++  assert.equal(e.step().status,'COMPLETE');assert.equal(e.tables.RAW_WB_ADV_CAMPAIGN_STATS.length,2);
++});
++test('adapter corrupted RAW readback never publishes COMPLETE',()=>{
++  const e=runtime();e.kill('_raw0');assert.throws(()=>e.step());e.revive();e.tables.RAW_WB_ADV_CAMPAIGN_STATS[0].sum='999';
++  assert.notEqual(e.step().status,'COMPLETE');assert.equal(e.tables.INGEST_RUNS.length,1);
++});
++test('adapter newer same-period attempt blocks stale composite completion',()=>{
++  const e=runtime();e.tables.INGEST_RUNS.push({run_id:'newer',status:'ERROR',logical_period:'2026-09-30',started_at:'2026-10-01T07:00:00Z'});
++  assert.equal(e.step().status,'READY');assert.equal(e.tables.INGEST_RUNS.length,2);
++});
++test('adapter historical phases verified against RAW, costs commit marker and parent time interval',()=>{
++  const e=runtime();const proof=e.io().evidence(e.c.adsResumeScope_(e.spec,hash));assert.equal(proof.campaigns,true);assert.equal(proof.costs,true);assert.equal(proof.rowsLoaded,3);
++  assert.equal(e.fetches(),0);
++});
++test('adapter historical evidence rejects unconfirmed costs and wrong parent association',()=>{
++  const e=runtime();e.tables.RAW_WB_ADV_COSTS=[];assert.throws(()=>e.io().evidence(e.c.adsResumeScope_(e.spec,hash)),/COSTS_READBACK/);
++  const f=runtime();f.tables.RAW_WB_ADV_CAMPAIGNS[0].load_ts='2026-09-30 09:00:00';assert.throws(()=>f.io().evidence(f.c.adsResumeScope_(f.spec,hash)),/ORIGIN_TIME_PROVENANCE/);
++});
++test('adapter malformed JSON, foreign campaign and out-of-window source data are fail closed',()=>{
++  for(const body of ['{}','null','[{"advertId":999,"days":[]}]','[{"advertId":11,"days":[{"date":"2026-10-01","apps":[]}]}]']){
++    const e=runtime();e.c.UrlFetchApp.fetch=()=>({getResponseCode:()=>200,getContentText:()=>body});
++    assert.notEqual(e.step().status,'COMPLETE');assert.equal(e.tables.RAW_WB_ADV_CAMPAIGN_STATS.length,0);assert.equal(e.tables.INGEST_RUNS.length,1);
++  }
++});
++test('continuation reconciles duplicate own triggers; does not touch unrelated handlers',()=>{
++  const e=core(51);e.step({maxBatches:1});let made=0;const deleted=[];
++  e.c.PropertiesService={getScriptProperties:()=>({getProperty:()=> '1'})};
++  const triggers=['runWbAdsFullstatsContinuation','other','runWbAdsFullstatsContinuation'].map((handler,i)=>({i,getHandlerFunction:()=>handler}));
++  e.c.ScriptApp={getProjectTriggers:()=>triggers,deleteTrigger:t=>deleted.push(t.i),newTrigger:()=>({timeBased:()=>({after:()=>({create:()=>made++})})})};
++  e.c.adsResumeContinueSchedule_(e.get());assert.deepEqual(deleted,[0,2]);assert.equal(made,1);
++});
++test('daily and catch-up dispatch to resume only with opt-in and preserve provenance',()=>{
++  const c=context();vm.runInContext(fs.readFileSync(path.join(root,'apps-script/ingestion/Wbadsdaily.gs'),'utf8'),c);
++  c.adsResumeEnabled_=()=>true;c.adsResumeDaily_=type=>type;
++  assert.equal(c.runWbAdsDaily(),'MANUAL');assert.equal(c.runWbAdsDaily({triggerUid:'x'}),'SCHEDULED');assert.equal(c.runWbAdsDailyCatchUp(),'CATCHUP');
++});
++test('optional stages cannot run before COMPLETE or for historical recovery',()=>{
++  const e=core(1);let calls=0;e.c.wbAdsLast7Range_=()=>({to:'2026-09-30'});e.c.loadWbAdsQueryBidsRaw=()=>calls++;
++  e.c.adsResumeOptional_(e.get(),e.io);e.step();e.c.adsResumeOptional_(e.get(),e.io);assert.equal(calls,0);
++});
++test('scope/schema/feature preflight fails before any mutation',()=>{
++  const e=runtime();e.props.WB_ADS_RESUME_ENABLED='0';assert.throws(()=>e.step(),/RESUME_DISABLED/);
++  e.props.WB_ADS_RESUME_ENABLED='1';e.c.BigQuery.Tables.get=()=>({schema:{fields:[]}});
++  assert.throws(()=>e.step(),/LEDGER_SCHEMA/);assert.equal(e.tables.RAW_WB_ADV_CAMPAIGN_STATS.length,0);
++});
++test('enabled catch-up without manifest skips newer COMPLETE/fresh STARTED under lock',()=>{
++  for(const [state,expected] of [['COMPLETE','SKIP_COMPLETE'],['STARTED','SKIP_RUNNING']]) {
++    const e=runtime();delete e.props.WB_ADS_RESUME_ACTIVE_V1;
++    e.tables.INGEST_RUNS[0].status=state;e.c.wbAdsLast7Range_=()=>({from:'2026-09-24',to:'2026-09-30'});e.c.INGEST_STALE_THRESHOLD_MIN_=15;
++    assert.equal(e.c.adsResumeDaily_('CATCHUP').status,expected);assert.equal(e.fetches(),0);assert.equal(e.tables.INGEST_RUNS.length,1);
++  }
++});
++test('native adapters route schema/load/status only while resume context is active',()=>{
++  const c=context();let checked=0,loaded=0,logged=0;
++  vm.runInContext(fs.readFileSync(path.join(root,'apps-script/ingestion/Wbadsbigquery.gs'),'utf8'),c);
++  vm.runInContext(fs.readFileSync(path.join(root,'apps-script/ingestion/WbAdsRawLoader.gs'),'utf8'),c);
++  c.WB_ADS_RESUME_IO_={checkTable:()=>{checked++;return false;},appendPhase:(t,r)=>{loaded++;return r.length;},log:()=>logged++};
++  c.wbAdvBqEnsureTable_('RAW_WB_ADV_CAMPAIGN_STATS',[]);assert.equal(c.wbAdvBqAppendRows_('RAW_WB_ADV_CAMPAIGN_STATS',[{advertId:1}]),1);
++  c.wbAdsRawWriteStatus_('r','raw_fullstats','2026-09-24','2026-09-30',{status:'PARTIAL',error_message:'payload should not be sent'});
++  assert.deepEqual([checked,loaded,logged],[1,1,1]);
++});
++test('DONE/COMPLETE labels without verified coverage are rejected',()=>{
++  const e=core(1);e.get().state='COMPLETE';e.get().completion={confirmed:true};assert.throws(()=>e.step(),/FALSE_COMPLETE/);
++  const f=core(1);f.get().batches[0].state='DONE';f.get().batches[0].classifications={1:'PROCESSED'};f.get().batches[0].receipt={confirmed:false,batchId:f.get().batches[0].id};
++  assert.equal(f.c.adsResumeCoverage_(f.get()).complete,false);
++});
++test('second RAW destination ambiguity confirms both tables before COMPLETE',()=>{
++  const e=runtime();e.c.UrlFetchApp.fetch=()=>({getResponseCode:()=>200,getContentText:()=>JSON.stringify([11,12].map(advertId=>({advertId,
++    days:[{date:'2026-09-30',apps:[{appType:1,nm:[{nmId:2,sum:3}]}]}],boosterStats:[{date:'2026-09-30',nm:2,avg_position:1}]})))});
++  e.kill('_raw1');assert.throws(()=>e.step());assert.equal(e.tables.INGEST_RUNS.length,1);
++  e.revive();assert.equal(e.step().status,'COMPLETE');assert.equal(e.tables.RAW_WB_ADV_CAMPAIGN_STATS.length,2);assert.equal(e.tables.RAW_WB_ADV_BOOSTER_STATS.length,2);
++});
++test('real adapter empty HTTP 200 produces durable no_stats rows',()=>{
++  const e=runtime();e.c.UrlFetchApp.fetch=()=>({getResponseCode:()=>200,getContentText:()=> '[]'});
++  const result=e.step();assert.equal(result.status,'COMPLETE');assert.equal(result.counts.no_stats,2);
++  assert.ok(e.tables.RAW_WB_ADV_CAMPAIGN_STATS.every(r=>r.processed_status==='no_stats'));
++});
++test('real HTTP network failure is sanitized',()=>{
++  const c=context({UrlFetchApp:{fetch:()=>{throw Error('sensitive request body');}}});
++  assert.throws(()=>c.adsResumeHttp_('get','fixture','fixture',null,Date.now()+100000),/^Error: HTTP_NETWORK$/);
++});
++test('cross-execution fullstats cooldown is respected',()=>{
++  const e=runtime();e.props.WB_ADS_RESUME_LAST_HTTP_AT=String(Date.parse('2026-10-01T06:00:00Z'));
++  const before=e.io().now();assert.equal(e.step().status,'COMPLETE');assert.ok(e.io().now()-before>=21000);
++});
++test('sink flag changing during execution cannot fall back to Sheet writes',()=>{
++  const c=context();vm.runInContext(fs.readFileSync(path.join(root,'apps-script/ingestion/WbAdsRawLoader.gs'),'utf8'),c);
++  c.WB_ADS_RESUME_IO_={};c.wbAdsBqSinkOn_=()=>false;
++  assert.throws(()=>c.wbAdvRawEnsureSheet_({},'RAW_WB_ADV_CAMPAIGN_STATS',[]),/RESUME_SINK_DISABLED/);
++  assert.throws(()=>c.wbAdvRawAppendRows_({},[{}]),/RESUME_NO_SHEET_WRITES/);
++});
++
++// Grain regression: real flattening + adapter; no API calls or production clients.
++function grainResponse(parts) {
++  return [{advertId:11,days:parts.map(nm=>({date:'2026-09-30',apps:[{appType:1,nm}]}))}];
++}
++function assertGrainRejected(e) {
++  let rawLoads=0;
++  const insert=e.c.BigQuery.Jobs.insert;
++  e.c.BigQuery.Jobs.insert=(j,...args)=>{
++    if(j.configuration.load && /^RAW_/.test(j.configuration.load.destinationTable.tableId)) rawLoads++;
++    return insert(j,...args);
++  };
++  const result=e.step();
++  assert.equal(result.status,'BLOCKED');
++  const m=e.io().load(e.key);
++  assert.equal(m.batches[0].state,'FAILED');
++  assert.equal(m.batches[0].error,'RAW_GRAIN_DUPLICATE');
++  assert.equal(m.continuation.reason,'RAW_GRAIN_DUPLICATE');
++  assert.equal(m.continuation.needed,false);
++  assert.equal(m.counts.complete,false);
++  assert.equal(rawLoads,0);
++  assert.equal(e.tables.RAW_WB_ADV_CAMPAIGN_STATS.length,0);
++  assert.equal(e.tables.RAW_WB_ADV_BOOSTER_STATS.length,0);
++  assert.equal(e.tables.INGEST_RUNS.length,1);
++  assert.equal(e.tables.INGEST_RUNS[0].status,'ERROR');
++  assert.equal(e.step().status,'BLOCKED');
++  assert.equal(rawLoads,0);
++}
++for(const [name,parts] of [
++  ['conflicting metric',[[{nmId:2,sum:3},{nmId:2,sum:9}]]],
++  ['different nested days',[[{nmId:2,sum:3}],[{nmId:2,sum:9}]]],
++  ['exact duplicate',[[{nmId:2,sum:3},{nmId:2,sum:3}]]],
++  ['semantic duplicate numeric/string',[[{nmId:2,sum:3},{nmId:'2',sum:'3'}]]]
++]) test('grain rejects '+name+' before either RAW destination and terminal heartbeat',()=>{
++  const e=runtime(),body=grainResponse(parts);
++  body[0].boosterStats=[{date:'2026-09-30',nm:2,avg_position:1}];
++  e.c.UrlFetchApp.fetch=()=>({getResponseCode:()=>200,getContentText:()=>JSON.stringify(body)});
++  assertGrainRejected(e);
++});
++test('grain unique nm/app/date keys are accepted without aggregation',()=>{
++  const e=runtime(),body=grainResponse([[{nmId:2,sum:3},{nmId:3,sum:9}]]);
++  body[0].days[0].apps.push({appType:2,nm:[{nmId:2,sum:4}]});
++  body[0].days.push({date:'2026-09-29',apps:[{appType:1,nm:[{nmId:2,sum:5}]}]});
++  e.c.UrlFetchApp.fetch=()=>({getResponseCode:()=>200,getContentText:()=>JSON.stringify(body)});
++  assert.equal(e.step().status,'COMPLETE');
++  assert.equal(e.tables.RAW_WB_ADV_CAMPAIGN_STATS.length,5); // Four data rows + missing campaign marker.
++});
++test('grain validates full durable payload on replay, including distant array boundaries',()=>{
++  const e=runtime();e.kill('_landing');assert.throws(()=>e.step());e.revive();
++  const row=e.tables.ADS_FULLSTATS_RECOVERY.find(r=>r.kind==='BATCH'),prepared=JSON.parse(row.payload);
++  // Simulate an old prepared payload; duplicate at opposite ends, valid journal digest.
++  prepared.stats.push({...prepared.stats[0],sum:'999'});
++  row.payload=e.c.adsResumeCanonical_(prepared);row.digest=hash(row.payload);
++  e.c.UrlFetchApp.fetch=()=>{throw Error('prepared replay must not refetch');};
++  assertGrainRejected(e);
++});
++test('grain core rejects before invoking RAW publisher or finalizer',()=>{
++  const e=core(1),stage=e.io.stage;let calls=0;
++  const row={processed_status:'raw',date:'2026-09-30',advertId:'1',nmId:'2',appType:'1',source_level:'nm',sum:'3'};
++  e.io.stage=(m,b)=>({...stage(m,b),stats:[row,{...row,sum:'4'}]});
++  e.io.publish=e.io.finalize=()=>{calls++;throw Error('must not invoke');};
++  assert.equal(e.step().state,'BLOCKED');assert.equal(calls,0);
++  assert.equal(e.get().batches[0].state,'FAILED');assert.equal(e.get().counts.complete,false);
++});
++test('grain adapter direct-call guard precedes every RAW I/O',()=>{
++  const e=runtime(),io=e.io();
++  const row={processed_status:'raw',date:'2026-09-30',advertId:'11',nmId:'2',appType:'1',source_level:'nm'};
++  const count=e.jobs.size;
++  assert.throws(()=>io.publish({}, {}, {stats:[row,{...row}],boosters:[]}),/RAW_GRAIN_DUPLICATE/);
++  assert.equal(e.jobs.size,count);assert.equal(e.tables.RAW_WB_ADV_CAMPAIGN_STATS.length,0);
++});
++test('grain matches effective-view STRING/NULL keys without broadening dates or source_level',()=>{
++  const c=context(),row={processed_status:'raw',date:'2026-09-30',advertId:'1',nmId:'2',appType:null,source_level:'nm'};
++  assert.throws(()=>c.adsResumeValidateRawGrain_({stats:[row,{...row,appType:''}]}),/RAW_GRAIN_DUPLICATE/);
++  assert.doesNotThrow(()=>c.adsResumeValidateRawGrain_({stats:[row,{...row,date:'2026-09-30T00:00:00Z'},{...row,source_level:'other'}]}));
++});
+diff --git a/docs/production_hardening/wb_ads_resume/schema.sql b/docs/production_hardening/wb_ads_resume/schema.sql
+new file mode 100644
+--- /dev/null
++++ b/docs/production_hardening/wb_ads_resume/schema.sql
+@@ -0,0 +1,15 @@
++-- PROPOSED / NOT DEPLOYED. Owner ACK required before execution.
++-- New append-only operational journal; existing RAW/INGEST_RUNS schemas unchanged.
++-- Contains bounded prepared RAW payloads: same access boundary as wb_raw, no credentials.
++-- No expiry: deleting a prepared batch breaks resumability. Retention is a separate decision.
++CREATE TABLE `project-fa311fc0-4d87-4781-986.wb_raw.ADS_FULLSTATS_RECOVERY` (
++  recovery_id STRING NOT NULL,
++  kind STRING NOT NULL,
++  record_key STRING NOT NULL,
++  revision INT64 NOT NULL,
++  logical_date DATE NOT NULL,
++  payload STRING NOT NULL,
++  digest STRING NOT NULL
++)
++CLUSTER BY recovery_id, kind, record_key
++OPTIONS(description='WB ads resume v1: immutable manifest revisions and prepared fullstats batches; no secrets');
+diff --git a/docs/production_hardening/wb_ads_resume/CONTRACT.md b/docs/production_hardening/wb_ads_resume/CONTRACT.md
+new file mode 100644
+--- /dev/null
++++ b/docs/production_hardening/wb_ads_resume/CONTRACT.md
+@@ -0,0 +1,204 @@
++# WB Ads bounded resume v1 — local implementation contract
++
++Status: LOCAL IMPLEMENTATION, NOT DEPLOYED. Owner ACK 2026-10-01 permits local source/tests/artifacts only.
++Base HEAD: b94ca335b98ce8146f925295f45d8789db5ed46c. No live correctness claim.
++
++## Boundary and activation
++
++Runtime: existing ingestion Apps Script, Google Advanced BigQuery service and existing WB token helper.
++Project is fail-closed to `project-fa311fc0-4d87-4781-986`, dataset `wb_raw`, location `EU`, BQ ads sink on.
++No migration, new service account, credential handling, marketplace mutation, mart/Unitka/LCD change.
++
++Default is OFF: Script Property `WB_ADS_RESUME_ENABLED` must equal `1`.
++`WB_ADS_RESUME_CONTINUATION_ENABLED=1` separately permits creation of a single one-shot continuation.
++Neither property nor any trigger was set by local implementation. Legacy dispatch is unchanged with flag OFF.
++Daily/catch-up with flag ON first resumes the pinned period. A BLOCKED period blocks new daily recovery;
++it is not silently replaced by D−1. One active recovery globally is stricter than one chain per logical date.
++
++## Manifest
++
++`wb_raw.ADS_FULLSTATS_RECOVERY` is a new operational table (DDL proposal in schema.sql).
++Rows are append-only. `kind=MANIFEST` holds immutable revisions, `kind=BATCH` a single durable prepared response.
++Record key is recovery ID for manifests and deterministic batch ID for batches. SHA-256 validates payloads.
++BigQuery job IDs are deterministic for manifest revision, landing batch, each RAW publication and final heartbeat.
++Runtime uses CREATE_NEVER and does not deploy schema. Missing/mismatched ledger stops before writes.
++
++Manifest payload:
++
++* version, recovery key, revision, creation/update timestamps, state, attempts;
++* immutable scope: logical date, from/to, parent INGEST_RUNS ID, origin RAW run ID, DAILY/RECOVERY;
++* sorted unique campaign snapshot, campaign hash, immutable allowlist, scope hash;
++* campaigns/costs evidence receipt and imported, proven per-ID coverage;
++* batches of up to 50 IDs: deterministic ID, attempts, state, classifications, sink receipt, safe error code;
++* counts: processed/no_stats/pending/failed/skipped; completion predicate;
++* continuation needed/reason, consecutive no-progress count;
++* final heartbeat ID and lineage; optional-stage admission marker for DAILY only.
++
++Script Property `WB_ADS_RESUME_ACTIVE_V1` stores only active key and scope (at most 8 KB; identical
++allowlist is omitted). It is written before initial manifest submission. If interrupted, resume resolves
++the deterministic initial manifest job or reconstructs from verified origin evidence. BQ is the durable
++progress store. ScriptLock serializes pointer, manifest, publication and trigger reconciliation.
++Manifest initialization retries do not silently override conflicting initial job contents.
++
++Input limits: nonempty snapshot, at most 2,000 safe integer campaign IDs, maximum 31 inclusive dates,
++`to == logicalDate`, closed logical date only. The 8 KB active-pointer limit can be stricter than 2,000 IDs;
++oversized input stops before registering the pointer. Prepared payload maximum 5 MB, RAW batch fewer than
++10,000 rows per destination. These are safety bounds, not economic thresholds.
++
++## Historical entrypoint
++
++`resumeWbAdsFullstatsRecovery(input)` accepts originRunId, parentRunId, logicalDate, from, to,
++campaignIds, optional campaignHash and allowlist. It rejects DAILY impersonation. Subsequent invocations
++may use `runWbAdsFullstatsContinuation()` to derive pending work from the manifest without resupplying IDs.
++The caller cannot supply phase success, pre-covered IDs, sink receipts or COMPLETE.
++
++Historical bootstrap verifies:
++
++1. Exact parent heartbeat is ERROR/ADS_PARTIAL for the supplied ads logical period/source.
++2. Existing parent summary has campaigns=OK and costs=OK. No ERROR row is modified.
++3. Origin campaign row count matches the summary; all campaign load timestamps are within that parent
++   execution (RAW timestamp resolution has 1-second tolerance); status 7/9/11 snapshot matches the input.
++4. Exactly one successful costs window covers the logical date, has zero out-of-window rows, and its
++   returned_rows matches RAW readback for that origin/window.
++5. Prior fullstats no_stats markers for the exact origin/window are unique and inside the snapshot.
++   Other legacy raw IDs are NOT imported as complete: absent a batch receipt, a few rows cannot prove
++   complete per-ID coverage. They must be in the allowlist and fetched anew.
++6. Every uncovered ID is inside the allowlist. Omitted IDs cannot become no_stats.
++
++Legacy parent/origin linking is temporal plus summary/RAW evidence, since legacy heartbeat has no
++origin column. Exact IDs, times and absence of ambiguous overlapping legacy runs must be reviewed
++before production bootstrap. This is not an instruction to edit the old heartbeat.
++
++## Batch state and ambiguity
++
++PENDING/FAILED → durable prepared BATCH → PREPARED → RAW readback → DONE.
++
++Before requesting WB, stage looks for an existing prepared record and/or landing job. No re-fetch is
++allowed for PREPARED. Responses must be a valid array (or data array); campaign IDs/dates/nested shape
++are checked. Missing IDs become legitimate no_stats only after a valid successful response for that
++requested batch. A network error, invalid JSON or budget stop never produces no_stats.
++
++Prepared payload contains normalized rows from the existing fullstats flattening code, explicit
++classifications and frozen load timestamps. No credentials are stored. Publication writes only those
++rows to RAW_WB_ADV_CAMPAIGN_STATS / RAW_WB_ADV_BOOSTER_STATS. There is no pre-delete, UPDATE, MERGE,
++campaigns refresh or costs refresh in the historical recovery path.
++
++Before each append, RAW is checked by deterministic batch run_id and dates. After append, normalized
++full-row content is compared with the prepared payload, including raw_json. Successful load job status
++and outputRows are additionally checked. Receipt is not granted for partial or conflicting content.
++Crash after RAW load but before checkpoint: use same prepared payload; discover existing RAW/job;
++confirm instead of appending again. This also works after job metadata expiry while durable RAW exists.
++An indeterminate submission is not replaced by a random new job ID. Collision/error is fail-closed.
++
++Business dedupe remains `(date, advertId, nmId, appType, source_level)` with latest load_ts/run_id and
++processed_status=raw. No new view definitions and no invocation of wbAdsBqCreateViews.
++Recovery may revise effective values in its approved historical window; no_stats is not a tombstone.
++
++## Pre-publication RAW grain guard — local safety fix, 2026-10-01
++
++The exact existing `V_ADV_CAMPAIGN_STATS` partition key is
++`date, advertId, nmId, appType, source_level`, for `processed_status = 'raw'`.
++Evidence: `Wbadsbigquery.gs` makeView / V_ADV_CAMPAIGN_STATS definition, and
++`WbAdsRawLoader.gs` wbAdvFlattenFullstats_ destination mapping. This fix does not change either.
++Keys use the existing RAW STRING representation; omitted/null/empty fields become SQL NULL
++under the existing adapter normalization. Dates are not truncated or reinterpreted.
++
++Every complete `prepared.stats` array is checked before the core calls `io.publish`, and again
++at the adapter's publish entry before either RAW destination is accessed. This includes durable
++prepared payloads recovered from a previous execution. The array combines all campaigns/days/apps/nm
++portions of the source response, so validation is not reset at nested boundaries or row chunks.
++A recovery batch is one prepared publication unit: at most one stats array and one separate booster
++array. The stats business key must not be applied across different destination tables. Different
++batches have disjoint advertIds (manifest validator), a component of this key.
++
++Any duplicate key is rejected, including exact and semantically identical duplicate business rows.
++The repository defines latest-wins across RAW history, but does not authorize duplicate keys within
++one prepared publication. Identical duplicates might leave the same selected business value, yet
++this does not prove a valid producer payload or safe row-count/idempotency semantics. Therefore
++there is no deduplication, aggregation, winner selection or source-response rewrite.
++The existing no_stats marker rows are excluded, matching the view predicate exactly.
++
++Rejection code: `RAW_GRAIN_DUPLICATE` (invalid/missing stats array: `RAW_GRAIN_PAYLOAD`).
++The batch becomes FAILED, the manifest becomes BLOCKED, continuation.needed=false; batch.error and
++continuation.reason retain the safe code. The durable BATCH record remains available for inspection.
++No RAW writer/finalizer is invoked for the rejected payload, no DONE or COMPLETE is issued.
++This is fail-closed terminal handling of an immutable invalid payload, not an automatic cleanup or
++unblock. Previously written valid batches are retained; this fix does not roll them back.
++If checkpoint persistence itself fails, no RAW publication has happened and the same durable payload
++is revalidated on retry. No production deployment or recovery is implied by this contract update.
++
++## Completion and consumers
++
++COMPLETE requires successful verified campaigns/costs, every snapshot ID processed or legitimate
++no_stats, pending=failed=skipped=0, and confirmed receipts for all new batches. A DONE label alone
++is insufficient. Before finalizing, latest same-date Apps Script ads attempt must still be the parent
++or this recovery's deterministic final heartbeat. A newer unrelated attempt blocks completion.
++
++A NEW terminal INGEST_RUNS row is inserted idempotently, then read back:
++`INS_ADS_RESUME_<scope hash>`, loader ads, source apps_script, trigger_type CATCHUP, same logical date,
++status COMPLETE, non-null completed_at. started_at is the final validation execution time, so the
++latest-attempt consumer observes the newly proven attempt. Existing parent ERROR/PARTIAL is immutable.
++rows_fetched/rows_loaded use campaigns + costs + fullstats data row counts (no no_stats markers or
++booster duplication), consistent with daily summary accounting. Completion lineage lives in the
++new manifest, not an error_message on a successful heartbeat. Existing INGEST_RUNS schema is unchanged.
++
++This is an explicit producer-contract extension: a successful attempt can be a validated composite of
++origin phases and durable fullstats batches. Unlike existing logger STARTED→terminal transitions, this
++final row is inserted terminal only AFTER all evidence exists. The original failed attempt stays failed.
++
++Consumer compatibility:
++
++| Consumer | Behavior |
++|---|---|
++| INGEST_RUNS / V_INGEST_HEARTBEAT | Existing columns/enums; a new attempt, never rewriting ERROR |
++| mart checkFreshness | Latest started_at/run_id for exact date; still requires COMPLETE + completed_at |
++| ads status whitelist | Unchanged; PARTIAL remains ERROR; no force-complete branch |
++| WB_ADS_STATUS | Legacy OFF path unchanged. ON path uses structured logs + durable journal, no Sheet append |
++| effective fullstats view | Same RAW fields, grain, status filtering and latest-wins semantics |
++
++WB_ADS_STATUS alone is therefore not a complete monitor after activation. Observers must include
++WB_ADS_RESUME events / journal; this monitoring change requires review before activation.
++
++## Deadline and continuation
++
++Execution finish target = start + 330 s (30 s before platform hard wall). Source requests stop another
++90 s earlier. A batch starts only with >120 s remaining. Default at most 2 completed batches/execution;
++core validates any supplied bound in 1..4. HTTP attempts max 3, 30 s admission allowance, Retry-After
++and backoff checked against absolute deadline before sleeping/retrying. BQ polls also check deadline;
++query jobs use EU, Standard SQL and a 100 MB billing cap. No unbounded polling.
++The last fullstats request time is persisted in `WB_ADS_RESUME_LAST_HTTP_AT` so a manual/duplicate
++execution also respects the 21-second cooldown across execution boundaries.
++
++The native Apps Script HTTP/Advanced Service calls cannot be interrupted mid-call by JavaScript.
++Reserves reduce risk; durable deterministic jobs handle an actual platform kill. No claim of an absolute
++wall-clock guarantee is made for a stalled native call. Campaigns/costs keep their semantics, but enabled
++path uses bounded BQ load and metadata-only schema checks rather than automatic schema extension.
++
++At most one own one-shot continuation is kept, under ScriptLock, only for pending/READY work. Terminal
++COMPLETE/BLOCKED deletes only own continuation triggers. Other handlers are untouched. Three consecutive
++no-progress attempts or more than five admissions for one batch stop the chain at BLOCKED. Progress
++includes a newly durable prepared response, not merely a retry. Hard-kill attempts are persisted before I/O.
++No automatic unblock/reset is provided. Diagnosed corrections/new approval are required for BLOCKED.
++
++Optional query bids/stats are admitted only after durable COMPLETE, only for DAILY/current D−1, at most
++once and with spare budget. Historical recovery never runs them. The admission marker is saved before
++execution; crash after admission is reported as ambiguous, not automatically replayed. Optional errors
++cannot alter the successful mandatory heartbeat. A late completion may miss the nonhistorical bids
++snapshot: this existing data limitation is visible and not disguised as reconstructed history.
++
++## Observability and limitations
++
++Events carry origin/parent/recovery IDs, campaign count/hash, logical date, batch ID, safe error code,
++coverage, state, elapsed/remaining time, continuation reason and no-progress count. No source payload,
++request URL/header, token or raw exception is logged by resume. Alert routing is not activated here.
++Monitor BLOCKED, no progress, missing next execution and aging pinned dates. Evidence table contains
++prepared business payloads and must retain the same access controls as wb_raw.
++
++No production IAM/schema/Apps Script source parity or live round-trip was tested in this local task.
++No guarantee of delivery of Google time triggers; existing daily/catch-up handlers also pick up pending
++work. Origin phases interrupted before manifest initialization still need normal loader retry/reaper;
++this change persists fullstats progress, not a new general-purpose campaigns/costs workflow.
++All supplied caps fail closed; changing them requires reviewed implementation/config changes.
++There is no general multi-date backlog queue: the active fullstats period is pinned, and new daily
++initialization waits until it is complete. Missed periods that never had a manifest require separate
++bounded recovery assessment. This implementation does not invent successful coverage for them.
+diff --git a/docs/production_hardening/wb_ads_resume/REVIEW.md b/docs/production_hardening/wb_ads_resume/REVIEW.md
+new file mode 100644
+--- /dev/null
++++ b/docs/production_hardening/wb_ads_resume/REVIEW.md
+@@ -0,0 +1,258 @@
++# WB ADS RESUMABLE RECOVERY — OWNER REVIEW
++
++## LOCAL GRAIN SAFETY FIX — 2026-10-01 (awaiting independent review)
++
++Owner ACK: local implementation only. This section supersedes the original implementation claims
++only for RAW grain validation. No independent final review or deployment approval is claimed.
++
++Root defect: prepared payload/readback equality did not enforce effective-view business-key
++uniqueness. Conflicting rows could pass readback and permit terminal COMPLETE.
++
++Changed code: `WbAdsResume.gs` adds `adsResumeValidateRawGrain_`, invoked before `io.publish`;
++its duplicate/payload errors cause FAILED batch + BLOCKED manifest. `WbAdsResumeRuntime.gs`
++adds the same guard at publish entry before any RAW destination access, including durable replay.
++Exact key: date / advertId / nmId / appType / source_level; only processed_status=raw, matching
++Wbadsbigquery.gs V_ADV_CAMPAIGN_STATS. The complete flattened stats array is checked at once.
++No date truncation, extra grain fields, response normalization, aggregation or winner selection.
++
++Exact duplicates are rejected too. Existing latest-wins view documents historical selection,
++not permission for duplicate keys in one prepared publication. See CONTRACT.md pre-publication
++section for STRING/NULL semantics, batch boundaries and evidence. Separate booster destination
++is not assigned the stats key. The guard runs before either RAW destination is published.
++
++Inspectable result: RAW_GRAIN_DUPLICATE in batch.error and continuation.reason; batch FAILED,
++manifest BLOCKED, continuation.needed=false, no RAW publisher/finalizer invocation, no COMPLETE.
++Durable prepared evidence is retained. No cleanup/unblock/rollback is attempted.
++
++Nine added focused tests cover conflicting metrics, nested response portions, exact and semantic
++duplicates, unique keys, durable payload replay/distant array boundaries, core publisher exclusion,
++direct-adapter guard and exact STRING/NULL/date/source_level grain. Existing normal/crash/resume,
++activation, scope, lock and continuation tests still run. Test fixtures now include prepared.stats.
++
++Current local validation:
++* Focused resume: 51 passed (42 existing + 9 new).
++* Step5A: 17/17 passed.
++* Full cloud Vitest: 65 files passed; 1413 tests passed, 19 skipped (1432 total).
++  Includes mart_loader 25, martWiring 6, mart_manualGuard 9, mart_targetDate 3 = 43 passed.
++* Python tools/tests: 2328 passed, 1 deselected, exit 0 (345.40 s).
++* SQL validator using the existing temporary venv: PASS, 53 objects, C1–C18.
++  Initial system Python lacked sqlglot; rerun with existing dependencies succeeded; no install.
++* Six affected .gs syntax parses and git diff --check: PASS.
++* impact_analysis: TIER0, 95 objects from broad ingestion mapping; required tools/tests run.
++
++The credential-boundary test test_gcloud_is_unauthenticated_inside_agent_env remains excluded:
++it invokes gcloud auth print-access-token, forbidden by the owner. No token command executed.
++Full production verification/remote freshness is not claimed; prohibited live/Git operations were
++not used. This task keeps the already-authorized dirty-tree scope and preserves unrelated files.
++
++Schema, four pre-existing hook diffs and all other source remain unchanged versus the preceding
++review package. Contract and this report are updated; patch/manifest are rebuilt from exact bytes.
++Production, feature flags, triggers, credentials, mart 30.09, Unitka, Sheet/LCD and Tenancy/client_001
++were not changed. Full cloud regression uses offline fixtures, not production executions.
++
++---
++
++## HISTORICAL IMPLEMENTATION REPORT (before grain safety fix)
++
++Дата: 2026-10-01. Scope: LOCAL IMPLEMENTATION ONLY.
++Base: `recovery/chz-automation-2026-10-01`, HEAD `b94ca335b98ce8146f925295f45d8789db5ed46c`.
++Production, Sheet, LCD, Scheduler, triggers, credentials и Git refs/index не изменялись.
++Нет deploy, Apps Script push/run, Cloud Run execution, production SQL или recovery по реальным ID.
++
++## FILES CHANGED
++
++Новые source:
++
++* `apps-script/ingestion/WbAdsResume.gs` — state machine, scope/coverage validators.
++* `apps-script/ingestion/WbAdsResumeRuntime.gs` — Apps Script/BQ adapter, recovery/daily/continuation entrypoints.
++
++Минимальные opt-in hooks в существующих source:
++
++* `apps-script/ingestion/Wbadsdaily.gs` — daily/catch-up dispatch с сохранением provenance.
++* `apps-script/ingestion/WbAdsProbe.gs` — deadline-aware HTTP только при активном resume context.
++* `apps-script/ingestion/Wbadsbigquery.gs` — bounded sink и metadata-only schema check в этом context.
++* `apps-script/ingestion/WbAdsRawLoader.gs` — безопасный log вместо WB_ADS_STATUS Sheet в этом context.
++
++Тесты: `tools/step5a_appsscript_tests/resume.test.js`.
++Artifacts: `CONTRACT.md`, `schema.sql`, `REVIEW.md`, `OWN_CODE_DIFF.patch` в этом каталоге.
++Другие файлы, включая ранее существовавшие untracked материалы, не редактировались.
++
++## IMPLEMENTED ARCHITECTURE
++
++Новый путь выключен по умолчанию. Existing daily/catch-up → opt-in dispatch → ScriptLock →
++immutable scope → verified origin phases → durable prepared batch → RAW publication/readback →
++checkpoint → completion validator → NEW terminal heartbeat → terminal manifest.
++
++Исторический recovery не вызывает campaigns/costs, query bids/stats, mart, Unitka и не пишет в Sheet.
++Daily режим сохраняет campaigns/costs semantics, но использует ограниченный по времени sink без DDL.
++Optional query stages допустимы только после durable COMPLETE для текущего DAILY периода.
++
++## RECOVERY MANIFEST CONTRACT
++
++Полный контракт — CONTRACT.md. Новый объект: `wb_raw.ADS_FULLSTATS_RECOVERY`, только проект
++`project-fa311fc0-4d87-4781-986`, EU. schema.sql — предложение, не выполненный DDL.
++Таблица хранит immutable MANIFEST revisions и prepared BATCH payloads с SHA-256.
++Никаких secrets; подготовленные business rows имеют тот же access boundary, что RAW.
++
++Scope включает logical date, from/to, parent heartbeat, origin RAW run, полный snapshot/hash campaign set,
++allowlist. Batches содержат состояние/attempts/классификацию каждого ID/receipts. Manifest содержит
++processed/pending/failed/no_stats/skipped, timestamps, continuation state, no-progress, completion lineage.
++Активный scope хранится в Script Property; logical date не вычисляется заново после полуночи.
++
++## BATCH/RESUME SEMANTICS
++
++До 50 IDs/batch, штатно до 2 завершённых batches/execution. Source stop оставляет 90 секунд перед
++внутренним finish target; finish target на 30 секунд раньше Apps Script hard wall.
++HTTP retry/backoff и BQ polling проверяют deadline. Cooldown между fullstats сохраняется между executions.
++
++Prepared response сохраняется до RAW. Если процесс оборвался после принятой RAW записи, следующий
++execution проверяет deterministic job и полный RAW readback, не повторяет source fetch и не удваивает строки.
++После expiry job metadata сохранённые RAW + prepared payload остаются основанием для readback.
++Конфликт payload/job или неполный readback блокирует завершение.
++
++ScriptLock защищает active pointer, manifests, RAW publication и продолжение. Reconcile оставляет не более
++одного собственного one-shot trigger. COMPLETE/BLOCKED его прекращают. Три попытки без прогресса или
++более пяти admissions одного batch переводят recovery в BLOCKED. Автоматического force-unblock нет.
++
++## COMPLETION SEMANTICS
++
++Все campaigns/costs evidence и все IDs обязательны. `no_stats` допустим только из валидного успешного
++ответа либо проверенного legacy marker. Незапрошенный ID, HTTP failure и budget stop не являются no_stats.
++Нужны pending=failed=skipped=0 и подтверждённый sink каждого batch.
++
++Исходный `ADS_PARTIAL` остаётся ERROR. Новый `INS_ADS_RESUME_<hash>` вставляется COMPLETE только после
++всех проверок, имеет исходный logical date и читается обратно. Новая конкурирующая попытка того же дня
++останавливает composite finalization. Existing mart latest-attempt/COMPLETE gate не менялся.
++
++Изменение producer contract показано явно: новый успешный attempt может объединять origin phases и
++несколько fullstats executions; lineage находится в новом manifest, схема INGEST_RUNS прежняя.
++Успешный heartbeat не использует error_message как поле lineage. WB_ADS_STATUS не является полным
++источником наблюдения после activation: новый путь публикует structured logs + durable journal.
++
++## TEST RESULTS
++
++`node --test tools/step5a_appsscript_tests/resume.test.js` — **42/42 PASS**, exit 0.
++Реальные .gs загружаются в Node vm; Google/WB транспорт, часы и persistent state подменены.
++В интеграционных тестах используется существующий production flattening код, а не его копия.
++
++Покрыты все 18 требуемых категорий: multi-batch, deadline, write-before-checkpoint, repeat batch,
++duplicate invocation, ScriptLock, 429/backoff, network/HTTP failure, legitimate no_stats, unprocessed ID,
++midnight, snapshot/hash mismatch, no progress, terminal continuation, incomplete coverage,
++effective-view key/dedupe, строгий downstream gate, date/ID scope.
++
++Дополнительно: kill после landing; kill после второго RAW destination; expired job metadata;
++corrupt RAW readback; latest-attempt conflict; historical phase readback/provenance; malformed JSON;
++foreign IDs/dates; duplicate own triggers; feature/schema guards; optional work isolation;
++catch-up skip COMPLETE/STARTED; ложные DONE/COMPLETE labels; cross-execution cooldown.
++Incident allowlist 31 ID находится только в fixture. Остальные 400 IDs fixture синтетические:
++это offline proof алгоритма, не копия полного production snapshot.
++
++## REGRESSION RESULTS
++
++| Проверка | Результат |
++|---|---|
++| `node tools/step5a_appsscript_tests/run.js` | 17/17 PASS, exit 0 |
++| 4 существующих mart Vitest files: loader/Wiring/targetDate/manualGuard | 43/43 PASS, exit 0 |
++| `python -m pytest -q tools/tests -k 'not test_gcloud_is_unauthenticated_inside_agent_env'` | 2328 PASS, 1 deselected, exit 0 |
++| `python tools/validate_current_sql.py` | PASS, 53 objects, C1–C18, exit 0 |
++| Syntax parse всех 6 затронутых .gs | PASS |
++| ESLint новых .gs и test file: syntax/control-flow/unused-local checks | PASS |
++| `git diff --check` | PASS |
++| Duplicate resume function declarations | 23 функции, дублей нет |
++
++Один unrelated credential-boundary test намеренно исключён: он запускает команду извлечения access token,
++запрещённую owner ACK. Сама команда не запускалась. Это не скрытый PASS этого теста.
++Системный Python не имел pytest. Hash-pinned dependencies из tools/requirements-sql-ci.txt установлены
++в отдельный временный venv `/private/tmp/evetis-ads-resume-tests-jb6_w4xj`; глобальные packages не менялись.
++
++## OWN DIFF REVIEW
++
++OWN_CODE_DIFF.patch теперь включает весь implementation scope: шесть source files, тест,
++schema.sql и CONTRACT.md, а также этот REVIEW.md как сопровождающее evidence/documentation.
++REVIEW.md содержит исторический отчёт реализации, а не результат нового независимого review.
++PACKAGE_MANIFEST.json находится рядом: hashes всех включённых файлов и самого patch;
++manifest не включён в patch во избежание циклического hash. Patch применяется к указанному base HEAD.
++Существующие hooks: 17 добавленных строк. Посторонние pre-existing файлы исключены.
++Package rebuild не изменяет source/tests/schema/contract.
++
++Review проверил: default OFF; fixed project/EU/BQ sink; no runtime DDL/Sheet status writes; no RAW pre-delete;
++immutable dates/IDs; durable prepare-before-publish; full readback; conservative legacy no_stats import;
++strict completion; original ERROR immutable; latest-attempt conflict; no optional work before COMPLETE;
++scope of trigger cleanup; no credential/payload logging; recovery ID list only in tests.
++
++Framework impact_analysis выполнен read-only. Результат TIER0, 95 affected objects вследствие широкой
++карты всего ingestion каталога. Это не означает изменения 95 объектов: financial SQL, mart, Unitka,
++Ozon и их schemas не редактировались. Local regressions не доказывают production data contracts.
++Полный verify_task/live parity/data-suite запуск не выполнялся: этот этап local-only, его token/Git/live
++операции не разрешены. Deployment/merge readiness и freshness относительно remote HEAD не объявляются.
++Dirty-tree exception задан текущим owner ACK; исходные untracked файлы сохранены.
++
++## KNOWN LIMITATIONS
++
++* Нужны future schema deployment, actual Apps Script parity и runtime access checks; сейчас UNPROVEN.
++* Native Apps Script HTTP/Advanced Service call нельзя прервать JavaScript deadline. Есть reserves и
++  crash recovery, но абсолютной гарантии времени отдельного зависшего native call нет.
++* Legacy parent/origin связываются summary + RAW timestamps/counts. Перед импортом 30.09 нужно подтвердить
++  однозначность этого соответствия и полный snapshot; код не доверяет ручному COMPLETE.
++* Один active recovery. BLOCKED требует разбора; периоды без исходного manifest не получают автоматический
++  multi-date backlog. Завершение старого периода не доказывает готовность промежуточных пропущенных дней.
++* Safety caps: pointer 8 KB, payload 5 MB, <10,000 rows/destination/batch, query cap 100 MB, nonempty snapshot.
++  Превышение останавливается fail-closed; автоматического увеличения лимитов нет.
++* Optional bids snapshot не восстанавливается за прошлую дату; поздний mandatory completion может его
++  пропустить. Admission до optional вызова даёт at-most-once, а не ложную exactly-once гарантию.
++* Alert routing не активирован. WB_ADS_STATUS alone после opt-in недостаточен.
++* Повтор fullstats может изменить effective historical values внутри approved window; no_stats не удаляет
++  старые значения. Physical RAW rollback не предусмотрен автоматическим DELETE.
++
++## PROPOSED DEPLOY/ACTIVATION PLAN
++
++Всё ниже — будущие действия, не выполнены:
++
++1. Owner reviews exact source diff, schema/producer contract, flags, operational caps и monitoring change.
++2. Отдельный ACK на deployment: установить actual Apps Script project/container/source parity, существующие
++   permissions и отсутствие второго fullstats writer; сохранить before-image source/config/triggers.
++3. Создать только новую recovery table по reviewed schema.sql, проверить schema/location/access реальной
++   runtime identity. Не запускать wbAdsBqCreateViews, не менять существующие RAW/heartbeat schemas.
++4. Deploy шести reviewed source files с flags OFF; подтвердить отсутствие activation и старые entrypoints.
++5. Отдельный bounded recovery ACK: разрешить flag, точный historical spec, journal/RAW/heartbeat/property
++   writes, before-image, abort conditions. Continuation activation — отдельная явная часть ACK.
++6. Проверить approved bounded recovery, затем owner решает permanent daily routing/continuation activation.
++   Контроль: pending снижается, batches подтверждены, один chain, budget сохраняется, false COMPLETE нет.
++7. Подключить alerting на ADS_PARTIAL/BLOCKED, отсутствие прогресса/следующего execution и aging logical date.
++   Расписание mart/Unitka сейчас не менять; их запуск требует собственного readiness/owner gate.
++
++Abort: schema/access/parity mismatch, conflicting writer/latest attempt, scope/hash mismatch, unknown sink
++outcome, bad readback, no progress/limits. Остановить dependent actions, сохранить evidence.
++Rollback activation: по заранее одобренному scope выключить оба flags и удалить только own continuation;
++не удалять durable journal/RAW. Возврат source — только reviewed before-image. Legacy daily не является
++rollback данных. Исправляющий recovery разрешается отдельно, без ручного COMPLETE или LCD advancement.
++
++## PROPOSED 30.09 RECOVERY PLAN
++
++1. Read-only preflight повторно проверяет effective account/project/EU, текущий live state и отсутствие
++   уже успешного superseding recovery. Сохранить before-images approved RAW keys/effective values,
++   INGEST_RUNS, relevant phases и source/config. Сейчас recovery specification против production не применялся.
++2. Из origin `ADSRAW_20261001_050732_749` и parent `INS_ADS_20261001050734_5253f5ba` получить полный 431-ID snapshot,
++   вычислить hash и подтвердить 400 unique legitimate no_stats + exact 31 pending IDs из incident evidence.
++   Проверить phase summary/time association, costs commit marker и RAW count. Любое расхождение — STOP.
++3. После deployment и recovery ACK вызвать `resumeWbAdsFullstatsRecovery` с logicalDate/to=2026-09-30,
++   from=2026-09-24, exact parent/origin, full snapshot/hash и allowlist из 31 ID. Не refresh campaigns/costs.
++4. Expected writes: новая journal/pointer/cooldown state; только fullstats/booster для allowlist/окна;
++   новый COMPLETE heartbeat исключительно после verified composite coverage. Никаких других logical dates.
++   Число rows определяется WB response и ограничено safety caps, заранее выдуманный row count не задаётся.
++5. Validation: 431/431 coverage, pending/failed/skipped=0, подтверждённые batches и RAW readback,
++   исходный parent ERROR неизменён, новый latest COMPLETE того же logical date, отсутствие вне-scope writes.
++6. STOP. Mart 30.09 и Unitka/Sheet/LCD остаются отдельными owner-gated этапами ранее подготовленного плана.
++
++Rollback/recovery: сначала выяснить фактически подтверждённые jobs/rows; повторить только pending,
++используя durable payload. Не удалять RAW для «очистки», не переписывать origin heartbeat. Если опубликованные
++effective values неверны, подготовить bounded corrective plan с отдельным ACK и before/after diff.
++
++## NEXT OWNER ACK REQUIRED
++
++Сначала owner review этого локального patch и producer/schema contract. Ни review approval сам по себе,
++ни зелёные тесты не являются ACK на deploy/trigger activation/production recovery. Следующее разрешение
++должно назвать exact reviewed artifact/version, Apps Script target, новую таблицу, flags, recovery dates/IDs,
++before-image/abort/rollback и допустимые validation reads. Mart/Unitka/LCD в него автоматически не входят.
++
++WB ADS RESUMABLE RECOVERY IMPLEMENTATION COMPLETE — WAITING FOR OWNER REVIEW

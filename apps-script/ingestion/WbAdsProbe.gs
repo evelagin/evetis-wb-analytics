@@ -551,6 +551,9 @@ function wbAdsExtractPairs_(json, maxPairs) {
  * @return {Object} { code, ok, body, json, attempts }
  */
 function wbAdsHttp_(method, url, token, payload) {
+  if (typeof WB_ADS_RESUME_HTTP_DEADLINE_ !== 'undefined' && WB_ADS_RESUME_HTTP_DEADLINE_ !== null) {
+    return adsResumeHttp_(method, url, token, payload, WB_ADS_RESUME_HTTP_DEADLINE_);
+  }
   var opt = { method: method, headers: { 'Authorization': token }, muteHttpExceptions: true };
   if (payload != null) { opt.contentType = 'application/json'; opt.payload = JSON.stringify(payload); }
 
