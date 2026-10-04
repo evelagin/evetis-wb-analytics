@@ -376,3 +376,17 @@ def test_direct_credential_api_and_cache_reads_denied(monkeypatch):
         with pytest.raises(C.ApiPathDenied): read()
     assert C._sm is None
     assert 'SYNTHETIC_ONLY' not in repr(cache)
+
+
+@pytest.mark.parametrize('source', (
+    'import common as C\nC.bq()._http.request("https://api-seller.ozon.ru/v1/cargoes/create", method="POST", headers=h)',
+    'import common as C\nC.bq()._connection.api_request(method="GET",path="/secrets/key/versions/latest:access")',
+    'client.request(url, method="POST", headers=h)',
+    'from google.auth.transport.requests import AuthorizedSession\nAuthorizedSession(creds).request("POST", url)',
+    'from googleapiclient.discovery import build\nbuild("secretmanager","v1").projects().secrets().versions().access(name=n).execute()',
+    'import grpc\ngrpc.insecure_channel("x")',
+    'getattr(client, dynamic_method)(url)',
+))
+@pytest.mark.parametrize('filename', ('new_entity.py', 'common.py'))
+def test_raw_sdk_dispatch_is_never_an_alternate_seller_transport(source, filename):
+    assert violations(source, filename)
