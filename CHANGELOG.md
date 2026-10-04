@@ -1,5 +1,34 @@
 # CHANGELOG.md
 
+## 2026-10-04 — DRO-1: обнаружение сбоев данных и email-оповещения (НЕ РАЗВЁРНУТО)
+
+Документ: `docs/ops/DRO1_DETECTION_ALERTING_2026-10-04.md`. Экономика витрин не меняется; `wb_ops`,
+загрузчики, Юнитка и образ Ozon не затронуты.
+
+- **Новый датасет `evetis_health`** (Terraform) — общий read model здоровья конвейеров WB, Ozon и
+  производных слоёв. Читает журналы и метаданные свежести, бизнес-фактов не производит.
+- **Новые объекты** (`sql/health/dro1_*.sql`):
+  - `V_PIPELINE_CONTRACT`: 40 конвейеров, все 27 из `wb_ops.OPS_PIPELINE_REGISTRY`; пороги WARN/FAIL,
+    слоты, сроки невосстановимой потери;
+  - `TVF_PIPELINE_PROBE`, `TVF_DATA_PERIOD_STATE`, `TVF_DATA_HEALTH`;
+  - таблицы `DATA_HEALTH_SNAPSHOT` и `ALERT_DISPATCH_LOG`;
+  - процедуры `sp_evaluate_data_health` и `sp_dispatch_alerts`;
+  - вью `V_DATA_HEALTH_CURRENT`, `V_HEALTH_CHECK_CURRENT`, `V_DATA_PERIOD_STATE`.
+- **Новые значения в существующих таблицах `wb_ops`** (колонки не меняются):
+  - `scope = 'DRO_PIPELINE'` в `OPS_HEALTH_STATE` / `OPS_INCIDENT` / `OPS_ALERT_EVENT`;
+  - в `OPS_ALERT_EVENT.alert_type` добавляется `REMINDER`;
+  - в `state` — `HANDED_OFF`;
+  - в `channel` — `EMAIL_CLOUD_MONITORING` и `EMAIL_DIGEST`.
+- **Terraform:**
+  - Scheduler `dro-health-eval` каждые 30 мин;
+  - лог-метрика `dro_detector_heartbeat`;
+  - 4 политики в существующий email-канал;
+  - права `sa-ops-health` на уровне датасетов (`evetis_health`, `ozon_raw`, `evetis_ref`).
+- **Backtest на production-данных (read-only): 23 / 23 PASS.**
+  - Каждая известная потеря ставок и остатков обнаруживается за 16–17 ч до срока.
+  - 30.09: RECOVERED и HEALTHY.
+  - Расширенная проверка 12-дневной давности → UNKNOWN.
+
 ## 2026-09-29 — Tenancy T5: выпуск образа runtime арендатора v2 (control plane)
 
 - `infra/tenant/runtime_release.json` → `…/mpa-runtime/ozon-runtime@sha256:38196a86…`.
