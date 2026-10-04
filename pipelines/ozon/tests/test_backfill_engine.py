@@ -459,3 +459,12 @@ def test_oversized_source_continuation_denied_before_any_raw_write(harness,monke
     with pytest.raises(B.EvidenceError,match="continuation exceeds"):
         engine(p,state).run(harness[3])
     assert not harness[1] and not harness[2]  # No RAW MERGE and no checkpoint ACK.
+
+
+def test_pre_merge_reserves_scalar_accounting_growth():
+    p=plan();s=B.initial(p);s['padding']=''
+    s['padding']='x'*(899900-len(json.dumps(s).encode()))
+    assert len(json.dumps(s).encode())==899900
+    assert B.validate(p,s) is s
+    with pytest.raises(B.EvidenceError,match='continuation exceeds'):
+        B.validate(p,s,reserve=128)

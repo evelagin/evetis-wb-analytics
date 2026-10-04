@@ -226,7 +226,7 @@ class Engine:
             seen.add(nxt)
             pr.update(cursor=nxt, cursors=sorted(seen), seen=previous + ids, total=total)
         # Reject oversized continuation before this source unit can write RAW.
-        B.validate(self.p, s)
+        B.validate(self.p, s, reserve=128)
         out = self.merge("RAW_OZON_CATALOG", E._catalog_rows(info, self.run_id, self.ts), ["snapshot_date", "sku"])
         return out, evidence
 
@@ -270,7 +270,7 @@ class Engine:
                 b.update(cursor=nxt, cursors=b["cursors"] + [nxt], seen=seen,
                          count=count, pages=b["pages"] + 1, total=total)
             s["complete"] = pr["list_done"] and not pr["pending"] and pr["bundle"] is None
-            B.validate(self.p, s)
+            B.validate(self.p, s, reserve=128)
             out = self.merge("RAW_OZON_SUPPLY_BUNDLES", brows, ["bundle_id", "sku"])
             return out, {"action": "BUNDLE_PAGE", "bundle_complete": terminal,
                          "source_total": total, "source_items": count}
@@ -313,7 +313,7 @@ class Engine:
                   cursors=pr["cursors"] + ([nxt] if not terminal else []))
         s["orders"] += len(o_rows); s["supplies"] += len(s_rows)
         s["complete"] = terminal and not pr["pending"]
-        B.validate(self.p, s)
+        B.validate(self.p, s, reserve=128)
         r1 = self.merge("RAW_OZON_SUPPLY_ORDERS", o_rows, ["order_id"])
         r2 = self.merge("RAW_OZON_SUPPLIES", s_rows, ["order_id", "supply_id"])
         out = {k: r1.get(k, 0) + r2.get(k, 0) for k in ("received", "inserted", "updated")}

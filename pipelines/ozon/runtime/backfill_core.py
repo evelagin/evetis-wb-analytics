@@ -121,7 +121,7 @@ def split(window, minimum_ms):
     return [a, mid], [mid, b]
 
 
-def validate(p, state):
+def validate(p, state, *, reserve=0):
     if state.get("plan_id") != p["plan_id"] or type(state.get("sequence")) is not int or state["sequence"] < 0:
         raise EvidenceError("checkpoint plan/sequence mismatch")
     if type(state.get("complete")) is not bool:
@@ -151,7 +151,7 @@ def validate(p, state):
             raise EvidenceError("unfinished supplies claimed complete")
     elif state["complete"] != progress["done"]:
         raise EvidenceError("unfinished snapshot claimed complete")
-    if len(json.dumps(state).encode()) > 900000:
+    if len(json.dumps(state).encode()) > 900000 - reserve:
         raise EvidenceError("durable continuation exceeds bounded proof size; scope must be partitioned")
     return state
 

@@ -197,7 +197,7 @@ remain APPLICABLE; missing evidence remains APPLICABLE_BUT_BLOCKED until obtaine
 No global DoD/suite registry/threshold changes.
 
 Continuation bound is900000 serialized state bytes. Catalog, supply enumeration and
-bundle traversal now validate the full next continuation before their RAW MERGE.
+bundle traversal now validate the full next continuation before their RAW MERGE, reserving128 bytes for subsequent scalar accounting/sequence growth.
 Oversized source units fail visibly before RAW write or checkpoint advancement; no
 truncation. Production pilots record actual peak state/envelope sizes after every
 execution and stop on a bound violation. Full-history sharding/qualification remains
