@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "images": {
-    "ozon": "europe-west1-docker.pkg.dev/mpa-platform/mpa-runtime/ozon-runtime@sha256:0016d1cf50ed5b4721da8d162bb9133ab8c6e77c7204c3b312aca6fa103a555c"
+    "ozon": "europe-west1-docker.pkg.dev/mpa-platform/mpa-runtime/ozon-runtime@sha256:a9917169e40c367fa17c3e54babde245fd0998cb1fbf090af6bb8c63f9ffe170"
   },
   "notes": "Утверждённые образы runtime выделенных арендаторов. Только europe-west1-docker.pkg.dev/mpa-platform/mpa-runtime/<image>@sha256:<64 hex>. Меняется только через PR в main после ворот выпуска образа (T3.2b); у каждого digest — запись провенанса в infra/tenant/releases/<marketplace>/. Откат — PR с прежним digest. null = образ не утверждён: план арендатора отказывает."
 }
