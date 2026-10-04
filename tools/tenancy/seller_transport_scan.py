@@ -7,7 +7,7 @@ from pathlib import Path
 HTTP_IMPORTS = ("urllib.request", "requests", "httpx", "aiohttp", "http.client", "socket", "google.auth.transport", "googleapiclient", "grpc", "subprocess", "runpy", "importlib", "ctypes")
 PUBLIC = {
     "ApiPathDenied", "ConfigError", "JournalWriteError", "DATASET", "PROJECT", "REF_DATASET",
-    "LOCATION", "STATS", "STRICT_PAGE_CAPS", "LEGACY_INGESTION_PROJECT", "CONFIG",
+    "LOCATION", "RUNS_TABLE", "STATS", "STRICT_PAGE_CAPS", "LEGACY_INGESTION_PROJECT", "CONFIG",
     "SELLER_ALLOWED_PATHS", "SELLER_PROFILES", "seller_call", "seller_post", "seller_client_id",
     "perf_client_id", "perf_token", "perf_get", "perf_post", "bq", "h", "log", "now_msk",
     "merge_rows", "append_rows", "record_run", "safe_error_text", "safe_excepthook", "redact_value",

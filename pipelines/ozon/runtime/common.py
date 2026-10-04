@@ -153,6 +153,8 @@ SELLER_ALLOWED_PATHS = frozenset({
 })
 PERF_ALLOWED_GET = (
     re.compile(r"^/api/client/campaign$"),
+    # Reviewed read-only pagination of the existing campaign resource (T5 Swagger).
+    re.compile(r"^/api/client/campaign\?page=[1-9][0-9]{0,4}&pageSize=100$"),
     re.compile(r"^/api/client/campaign/\d+/v2/products\?page=\d+&pageSize=\d+$"),
     re.compile(r"^/api/client/statistics/(expense|daily)\?dateFrom=\d{4}-\d{2}-\d{2}&dateTo=\d{4}-\d{2}-\d{2}$"),
     re.compile(r"^/api/client/statistics/[0-9A-Za-z-]{1,64}$"),
@@ -713,7 +715,7 @@ def _drop_staging(client, staging_id):
             ttl_hours=STAGING_TTL.total_seconds() / 3600)
 
 
-def merge_rows(table, rows, keys, run_id, on_duplicate_key="collapse_identical"):
+def merge_rows(table, rows, keys, run_id, on_duplicate_key="collapse_identical", *, use_dml_stats=False):
     """Идемпотентная запись: проверка партии → staging → MERGE по ключу → удаление staging.
 
     Повторный прогон на том же окне не создаёт дублей и не удваивает суммы.
@@ -769,16 +771,27 @@ def merge_rows(table, rows, keys, run_id, on_duplicate_key="collapse_identical")
         if job.errors:
             raise RuntimeError(f"load job {job.job_id}: {job.errors}")
 
-        before = list(client.query(f"SELECT COUNT(*) c FROM `{PROJECT}.{DATASET}.{table}`",
-                                   location=LOCATION).result())[0]["c"]
+        if not use_dml_stats:
+            before = list(client.query(f"SELECT COUNT(*) c FROM `{PROJECT}.{DATASET}.{table}`",
+                                       location=LOCATION).result())[0]["c"]
         m = client.query(q, location=LOCATION)
         m.result()
-        after = list(client.query(f"SELECT COUNT(*) c FROM `{PROJECT}.{DATASET}.{table}`",
-                                  location=LOCATION).result())[0]["c"]
+        if use_dml_stats:
+            # Pinned bigquery3.25 public QueryJob.dml_stats; no whole-history COUNT scans.
+            stats = m.dml_stats
+            if stats is None or any(type(n) is not int or n < 0 for n in
+                                    (stats.inserted_row_count, stats.updated_row_count, stats.deleted_row_count)):
+                raise RuntimeError("MERGE DML statistics unproven")
+            if stats.deleted_row_count or stats.inserted_row_count + stats.updated_row_count != len(rows) - collapsed:
+                raise RuntimeError("MERGE DML statistics contradict accepted natural keys")
+            inserted, updated = stats.inserted_row_count, stats.updated_row_count
+        else:
+            after = list(client.query(f"SELECT COUNT(*) c FROM `{PROJECT}.{DATASET}.{table}`",
+                                      location=LOCATION).result())[0]["c"]
+            inserted, updated = after - before, len(rows) - (after - before)
     finally:
         _drop_staging(client, staging_id)
-    return {"received": len(rows), "inserted": after - before,
-            "updated": len(rows) - (after - before)}
+    return {"received": len(rows), "inserted": inserted, "updated": updated}
 
 
 # ─────────────────────────── append-only наблюдения (PR-PROMO-1)
@@ -865,10 +878,20 @@ def record_run(run_id, entity, started, src_from, src_to, res, status,
            "source_from": str(src_from), "source_to": str(src_to),
            "requests": requests_n, "rows_received": res.get("received", 0),
            "rows_inserted": res.get("inserted", 0), "rows_updated": res.get("updated", 0),
-           "errors": 0 if status == "OK" else 1, "retry_count": retries,
+           "errors": 0 if status in ("OK", "IN_PROGRESS") else 1, "retry_count": retries,
            "status": status, "error_message": error_message,
            "job_execution": os.environ.get("CLOUD_RUN_EXECUTION")}
-    bq().insert_rows_json(f"{PROJECT}.{DATASET}.{RUNS_TABLE}", [row])
+    # Optional additive tenant-only proof: legacy schema is not changed implicitly.
+    if "evidence" in res:
+        proof = res["evidence"]
+        row["evidence_json"] = json.dumps(proof, sort_keys=True, separators=(",", ":"))
+        row["backfill_plan_id"] = proof["plan"]["plan_id"]
+        if "detail" in proof:
+            row["backfill_sequence"] = proof["state"]["sequence"]
+            row["backfill_detail_json"] = json.dumps(proof["detail"], sort_keys=True, separators=(",", ":"))
+    rejected = bq().insert_rows_json(f"{PROJECT}.{DATASET}.{RUNS_TABLE}", [row])
+    if rejected:
+        raise RuntimeError("ingestion journal rejected rows")
     log(event="entity_done", **{k: row[k] for k in
         ("entity", "status", "rows_received", "rows_inserted", "rows_updated",
          "source_from", "source_to", "requests", "retry_count")})

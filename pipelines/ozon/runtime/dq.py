@@ -54,6 +54,8 @@ def evaluate(f: dict) -> dict:
     for dom, (need_from, need_to) in (f.get("required_ranges") or {}).items():
         need = days(need_from, need_to) if need_from and need_to and need_from <= need_to else set()
         have = covered_days(dom, (f.get("done_windows") or {}).get(dom, []))
+        for start, end in (f.get("done_windows_msk") or {}).get(dom, []):
+            have |= days(start, end) # validated WINDOW_V1 whole Moscow days; legacy UTC unchanged.
         missing = sorted(need - have)
         if missing:
             gaps[dom] = {"days": len(missing), "first": str(missing[0])}
