@@ -1,0 +1,204 @@
+{
+  "release_contract": "vts.runtime-release.v1",
+  "marketplace": "ozon",
+  "image": "europe-west1-docker.pkg.dev/mpa-platform/mpa-runtime/ozon-runtime@sha256:0016d1cf50ed5b4721da8d162bb9133ab8c6e77c7204c3b312aca6fa103a555c",
+  "digest": "sha256:0016d1cf50ed5b4721da8d162bb9133ab8c6e77c7204c3b312aca6fa103a555c",
+  "operator_tag": "4d1297c774e8f594cb4ad1d55ef21347b4059ca8",
+  "released_at": "2026-10-04T12:42:45.972680Z",
+  "source": {
+    "repository": "evelagin/evetis-wb-analytics",
+    "commit": "4d1297c774e8f594cb4ad1d55ef21347b4059ca8",
+    "main_at_build": "4d1297c774e8f594cb4ad1d55ef21347b4059ca8",
+    "merged_main": "4d1297c774e8f594cb4ad1d55ef21347b4059ca8",
+    "source_tree": "9d73ef8d62ef35eefc32c814e5e272e76b8f31ed",
+    "merged_tree": "9d73ef8d62ef35eefc32c814e5e272e76b8f31ed",
+    "context": "pipelines/ozon/runtime",
+    "dockerfile": "pipelines/ozon/runtime/Dockerfile",
+    "context_tree": "a116cb7eecf5d2a2d42e3bef42925a6cc2c7659f",
+    "context_files_sha256": {
+      ".gcloudignore": "862263fa1f46c20f0d1e4dac5ffcc75abd55c08211b2c3864c5f8764b9d87793",
+      "Dockerfile": "f31678cd5940110be4fb3b230c21ae67bf43f90c8b06cf2e48320e90a4209ccc",
+      "checkpoints.py": "544a2c85680cbebf696103229167f14f479cdb64dcbb2c03d3d03ae500787370",
+      "common.py": "e6856494c46b9029444989504e17aa2b2a497eed475e4dfe5491ad6d078c50d5",
+      "control_store.py": "a9b5153a483f26622b647c0e80fcef41fc68a7e28c878c786f33f9459163fccb",
+      "credentials.py": "db396b2277e89a257d9bd4734bc29f471ebc1307271382d18dd16ed656b5f870",
+      "dq.py": "a30886a4b7c894a1eb5bf09843530784c2c9ed383ebd3a9cfbe8fc260a871804",
+      "entities.py": "4b561274b4c4b5ae4da02579a359e1639bf968f2b0bce1d5d0a476b1604ecadc",
+      "history.py": "7509341ce95ddf60cc907b09613c869e38909795873ee1701bdae843d8660235",
+      "identity.py": "5fac4031d21ac6152a2ca321d307ab0592e2dcd229e088eac7485de8f9e4f1c4",
+      "lifecycle.py": "0b49c04fdf108c08a8b62e63ce5b4f1d980d4bc707029768692baf12cd1fa40f",
+      "lifecycle_core.py": "76e71ff44e328c9cf10206454a1a4b03fcdfb06d64122220529b80886711afa1",
+      "main.py": "f9bf6dce77b7089f24e417deecaa02b3e9dae3cc6bf3e24a046b0a2956fc920c",
+      "promo.py": "8806b5c6a23402efbad77d05f2470a4f8940b95ce12134b93242bdf2ca385f24",
+      "quota.py": "a41475abf7ae5dd3d0616909ae8cc4de478123b8af1e9dab6df7d4a87a911e08",
+      "requirements.txt": "a3d267286f37716ab961e495443a56a6538de7c1ac3c5c4435b49778f288fcd0",
+      "runtime_execution_contract.json": "d7e3028c979c25cb7e569f85861bb8e94214e8847f9c6012ec5a787fe9782ccc",
+      "seller_method_policy.json": "b0750ac78983e3ac735fd844e0e29a1bfb19a5214126a063ad5bb00bbee2958f",
+      "seller_policy.py": "6988af54191dac0c87b414bf92a7eea2a93599de621f169344791f3a79e95be3",
+      "seller_policy_reviews.json": "ca7a7407d856c87a3f25e70bb0b9a3f0286ffb82383621aea15d80c34759670c"
+    },
+    "archive": {
+      "command": "git archive --format=tar.gz 4d1297c774e8f594cb4ad1d55ef21347b4059ca8 pipelines/ozon/runtime",
+      "sha256": "2a928040603aa5eba9e87b5c39a227af753b91b558ccf5eb5192b7e91615bd1f",
+      "tar_commit_id": "4d1297c774e8f594cb4ad1d55ef21347b4059ca8"
+    }
+  },
+  "build": {
+    "mechanism": "Cloud Build",
+    "project": "mpa-platform",
+    "region": "europe-west1",
+    "build_id": "e0b503bf-a4d6-471b-921c-34f1909c392e",
+    "status": "SUCCESS",
+    "create_time": "2026-10-04T12:41:54.196946452Z",
+    "finish_time": "2026-10-04T12:42:45.972680Z",
+    "config": "infra/tenant/releases/ozon-runtime.v5.cloudbuild.yaml",
+    "config_sha256": "73d92bf332ba99e94669e146598078b5e9aaf4296c0370fc3203a4d1dd8e7807",
+    "service_account": "sa-runtime-builder@mpa-platform.iam.gserviceaccount.com",
+    "identity_gate": "metadata identity checked before build; exact source SHA immutable tag",
+    "builder_image": "gcr.io/cloud-builders/docker@sha256:bbb3d633c5c2813b2ce5245852979e1d637768f4acfc504d8ece288f91e9b60f",
+    "source_object": "gs://mpa-platform-runtime-build-777428383056/source/1791117713.167919-dcf5d1ee5f02482bb1bb86ecf2e343cc.tgz#1791117713828183",
+    "source_object_sha256": "2a928040603aa5eba9e87b5c39a227af753b91b558ccf5eb5192b7e91615bd1f",
+    "build_args": [],
+    "secrets": [],
+    "logging": "CLOUD_LOGGING_ONLY"
+  },
+  "image_facts": {
+    "platform": "linux/amd64",
+    "base": "python@sha256:dddfd7e07f9d15aeeca61529320492139d21cac7f0070c00609243e51e4e0016",
+    "python": "3.12.15",
+    "entrypoint": [
+      "python",
+      "main.py"
+    ],
+    "workdir": "/app",
+    "user": "root (Dockerfile как у EVETIS не задаёт USER)",
+    "control_entrypoint": [
+      "python",
+      "lifecycle.py",
+      "status"
+    ],
+    "app_files": [
+      "checkpoints.py",
+      "common.py",
+      "control_store.py",
+      "credentials.py",
+      "dq.py",
+      "entities.py",
+      "history.py",
+      "identity.py",
+      "lifecycle.py",
+      "lifecycle_core.py",
+      "main.py",
+      "promo.py",
+      "quota.py",
+      "requirements.txt",
+      "runtime_execution_contract.json",
+      "seller_method_policy.json",
+      "seller_policy.py"
+    ],
+    "labels": {
+      "org.opencontainers.image.revision": "4d1297c774e8f594cb4ad1d55ef21347b4059ca8",
+      "org.opencontainers.image.source": "https://github.com/evelagin/evetis-wb-analytics",
+      "org.opencontainers.image.title": "ozon-runtime"
+    },
+    "packages": [
+      "certifi==2026.7.22",
+      "cffi==2.1.1",
+      "charset-normalizer==3.5.2",
+      "cryptography==50.0.2",
+      "google-api-core==2.33.0",
+      "google-auth==2.59.1",
+      "google-cloud-bigquery==3.25.0",
+      "google-cloud-core==2.8.0",
+      "google-cloud-secret-manager==2.20.2",
+      "google-crc32c==1.9.0",
+      "google-resumable-media==2.11.0",
+      "googleapis-common-protos==1.75.0",
+      "grpc-google-iam-v1==0.14.4",
+      "grpcio==1.84.0",
+      "grpcio-status==1.71.2",
+      "idna==3.20",
+      "packaging==26.3",
+      "proto-plus==1.28.2",
+      "protobuf==5.29.6",
+      "pyasn1==0.6.4",
+      "pyasn1_modules==0.4.2",
+      "pycparser==3.0",
+      "python-dateutil==2.9.0.post0",
+      "requests==2.34.2",
+      "six==1.17.0",
+      "typing_extensions==4.16.0",
+      "urllib3==2.8.0"
+    ]
+  },
+  "verification": {
+    "ci_runs": {
+      "37202462162": "SUCCESS",
+      "37202462101": "SUCCESS",
+      "37202430177": "SUCCESS"
+    },
+    "model_pr": 242,
+    "security_prs": [
+      239,
+      240
+    ],
+    "image_qualification_build": "5120d181-4768-4b44-93bb-08e8a29366cc",
+    "runtime_image_check": "PASS; network=none; no tenant credentials",
+    "built_artifact": {
+      "execution_contract": "PASS",
+      "identity_vectors": "PASS",
+      "platform": "Linux-5.10.0-32-cloud-amd64-x86_64-with-glibc2.41",
+      "policy_records": 532,
+      "policy_schema": 2,
+      "python": "3.12.15",
+      "seller_transport_ast": "PASS",
+      "source_hashes_verified": 17,
+      "verdict": "PASS"
+    },
+    "adversarial_results": [
+      {
+        "security_adversarial": "PASS",
+        "denied_before_credentials_network": 33,
+        "dangerous_paths_tested": 8,
+        "direct_credentials_cache": "DENIED"
+      },
+      {
+        "raw_sdk_static_negative_controls": "PASS",
+        "cases": 10
+      },
+      {
+        "parent_import_external_dispatch": "PASS",
+        "cases": 12
+      },
+      {
+        "broad_inventory_model": "PASS_WITH_WARNINGS",
+        "hard_blockers": "PASS",
+        "inventory_provenance": "PASS",
+        "legacy_strict": "PASS",
+        "release_source_integrity": "PASS"
+      }
+    ],
+    "cloud_build_gates": [
+      "identity",
+      "build",
+      "record",
+      "contents",
+      "fail-closed-without-project",
+      "control-fail-closed-without-project",
+      "external-binding-omission-denied"
+    ],
+    "registry_intoto_slsa": {
+      "status": "UNPROVEN",
+      "reason": "Signed registry SLSA not checked by this release; previous task observed disabled Container Analysis. No API enabled.",
+      "api_enabled_by_task": false,
+      "slsa_level": "UNPROVEN"
+    },
+    "full_production_dod": "BLOCKED (offline verify_task): REPOSITORY/SQL PASS; legacy production parity/data/health/regression not authorized. client_001 deployment and binding require separate live evidence.",
+    "secret_scan": "No tenant credentials, secretEnv, build args, .env, .git, Terraform or state in image; 17 /app files hashed."
+  },
+  "deployment": {
+    "evetis": "NOT_DEPLOYED; historical reference only: sha256:24e3c6d6715fa7b73d30b4270f9863d2b8680b4b02d4874ff1ea12b4fd90fa1b. Live legacy EVETIS not checked or changed by this task.",
+    "tenants": "INERT at image qualification. Exact client_001 deployment under current owner ACK requires frozen 0/4/0 plan; Schedulers PAUSED; no ingestion/backfill.",
+    "rollback": "Do not automatically restore d9b8 image with weaker credential boundary. Security-only strict fallback 21ef4d68a51edb7d2ada737554e5d54135b74db1065c36fe47b0db1f3c59f265 qualified in build 78afbf46-9163-4af0-91e9-8206a7e18cfc; any rollback needs owner-approved canonical release/plan, no binding/data rewrites."
+  }
+}

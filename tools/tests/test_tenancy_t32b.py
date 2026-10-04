@@ -85,6 +85,13 @@ RELEASES_FACTS = {
                 "gates": V1_GATES + ["control-fail-closed-without-project"]},
     "b28517b": {"commit": "b28517b72b5d7ae0d866f4d643f4982db269210c", "config": RELEASES / "ozon-runtime.v3.cloudbuild.yaml",
                 "gates": V1_GATES + ["control-fail-closed-without-project", "external-binding-omission-denied"]},
+    # Exact live build/qualification evidence for reviewed #242, registered independently of record JSON.
+    "4d1297c": {"commit": "4d1297c774e8f594cb4ad1d55ef21347b4059ca8", "config": RELEASES / "ozon-runtime.v5.cloudbuild.yaml",
+                "gates": V1_GATES + ["control-fail-closed-without-project", "external-binding-omission-denied"],
+                "digest": "sha256:0016d1cf50ed5b4721da8d162bb9133ab8c6e77c7204c3b312aca6fa103a555c",
+                "build_id": "e0b503bf-a4d6-471b-921c-34f1909c392e",
+                "qualification_build": "5120d181-4768-4b44-93bb-08e8a29366cc",
+                "archive_sha256": "2a928040603aa5eba9e87b5c39a227af753b91b558ccf5eb5192b7e91615bd1f"},
 }
 
 
@@ -94,6 +101,11 @@ def test_every_release_has_known_facts_and_its_own_config():
         assert r["source"]["commit"] == f["commit"], path
         assert r["build"]["config"] == str(f["config"].relative_to(REPO)), path
         assert r["build"]["config_sha256"] == hashlib.sha256(f["config"].read_bytes()).hexdigest(), path
+        if "digest" in f:
+            assert r["digest"] == f["digest"], path
+            assert r["build"]["build_id"] == f["build_id"], path
+            assert r["verification"]["image_qualification_build"] == f["qualification_build"], path
+            assert r["source"]["archive"]["sha256"] == f["archive_sha256"], path
 
 
 def test_current_release_is_bound_to_source_build_and_identity():
@@ -297,3 +309,16 @@ def test_image_verifier_checks_omitted_binding_contract_without_docker(monkeypat
     fails=V.check(PL.RUNTIME_REGISTRY+'/synthetic@sha256:'+('b'*64),sha)
     assert (not fails)==expected_pass, fails
     if not expected_pass:assert any('omitted binding contract' in f for f in fails)
+
+
+def test_broad_inventory_release_retains_independent_security_qualification():
+    record = next(r for path, r in _records().items() if path.stem == '4d1297c')
+    qualification = record['verification']
+    assert qualification['security_prs'] == [239, 240] and qualification['model_pr'] == 242
+    assert qualification['built_artifact']['seller_transport_ast'] == 'PASS'
+    assert qualification['built_artifact']['source_hashes_verified'] == len(record['image_facts']['app_files']) == 17
+    results = qualification['adversarial_results']
+    assert any(r.get('dangerous_paths_tested') == 8 and r.get('denied_before_credentials_network') == 33 for r in results)
+    assert any(r.get('raw_sdk_static_negative_controls') == 'PASS' for r in results)
+    assert any(r.get('parent_import_external_dispatch') == 'PASS' for r in results)
+    assert any(r.get('broad_inventory_model') == 'PASS_WITH_WARNINGS' and r.get('hard_blockers') == 'PASS' and r.get('legacy_strict') == 'PASS' for r in results)
