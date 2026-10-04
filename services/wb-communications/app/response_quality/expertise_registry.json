@@ -1,0 +1,97 @@
+{
+  "schema": "evetis-approved-expertise/1",
+  "snapshot_sha256": "66eec390a5af76b80a1ace26bd97b58b41d4ce621117c53540a82447c071215a",
+  "explanations": [
+    {
+      "explanation_id": "EX-F-EVT-HC-AMBER-300.fragrance_profile",
+      "kind": "fact",
+      "status": "APPROVED",
+      "product_ids": [
+        "EVT-HC-AMBER-300"
+      ],
+      "fact_ids": [
+        "EVT-HC-AMBER-300.fragrance_profile"
+      ],
+      "source_ids": [
+        "SRC-TU-SP-TS-12"
+      ],
+      "owner_decision_id": "ODR-02",
+      "variants_ru": [
+        "аромат Amber Vanilla"
+      ],
+      "signals": [
+        "fragrance_harsh",
+        "fragrance_liked",
+        "fragrance_disliked"
+      ]
+    },
+    {
+      "explanation_id": "EX-F-EVT-HC-CHERRY-300.fragrance_profile",
+      "kind": "fact",
+      "status": "APPROVED",
+      "product_ids": [
+        "EVT-HC-CHERRY-300"
+      ],
+      "fact_ids": [
+        "EVT-HC-CHERRY-300.fragrance_profile"
+      ],
+      "source_ids": [
+        "SRC-TU-SP-TS-11"
+      ],
+      "owner_decision_id": "ODR-02",
+      "variants_ru": [
+        "вишнёвый аромат"
+      ],
+      "signals": [
+        "fragrance_harsh",
+        "fragrance_liked",
+        "fragrance_disliked"
+      ]
+    },
+    {
+      "explanation_id": "EX-F-EVT-HC-HAND-300.fragrance_profile",
+      "kind": "fact",
+      "status": "APPROVED",
+      "product_ids": [
+        "EVT-HC-HAND-300"
+      ],
+      "fact_ids": [
+        "EVT-HC-HAND-300.fragrance_profile"
+      ],
+      "source_ids": [
+        "SRC-TU-SP-TS-2"
+      ],
+      "owner_decision_id": "ODR-02",
+      "variants_ru": [
+        "древесно-удовый аромат"
+      ],
+      "signals": [
+        "fragrance_harsh",
+        "fragrance_liked",
+        "fragrance_disliked"
+      ]
+    },
+    {
+      "explanation_id": "EX-C-HA-HYDRATION",
+      "kind": "ingredient_benefit",
+      "status": "OWNER_APPROVAL_CANDIDATE",
+      "ingredient_id": "hyaluronic_acid",
+      "product_ids": [
+        "EVT-FT-MOIST-150"
+      ],
+      "source_ids": [
+        "SRC-TU-SP-TS-11"
+      ],
+      "owner_decision_id": null,
+      "variants_ru": [
+        "Гиалуроновая кислота помогает поддерживать увлажнённость кожи.",
+        "Гиалуроновая кислота способствует поддержанию увлажнённости кожи."
+      ],
+      "signals": [
+        "softness",
+        "texture"
+      ],
+      "approval": null
+    }
+  ]
+}
