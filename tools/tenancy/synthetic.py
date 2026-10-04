@@ -30,6 +30,7 @@ def _with_ephemeral_client_002(src: Path, dst: Path) -> Path:
     shutil.copytree(src, dst)
     doc = copy.deepcopy(load_tenant_document(src / "client_001" / "tenant.json"))
     doc["tenant_id"] = "client_002"
+    doc["marketplaces"]["ozon"].pop("seller_inventory_model", None)  # unrelated tenant remains strict
     doc["display_name"] = "Синтетический арендатор 002 (эфемерная фикстура T3.2)"
     doc["data_boundary"]["gcp_project_id"] = N.derive_project_id("client_002")
     (dst / "client_002").mkdir()

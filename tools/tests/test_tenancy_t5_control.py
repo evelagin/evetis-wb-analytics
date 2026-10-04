@@ -108,10 +108,16 @@ def test_contract_control_block_is_derived_for_every_tenant():
         assert PS.scan_plan(_plan_for(c), c) == []
 
 
-def test_client_002_differs_from_client_001_only_in_identity():
+def test_client_002_keeps_strict_model_while_client_001_opts_into_broad_inventory():
     a, b = SY.fixture_contract("client_001"), SY.fixture_contract("client_002")
     norm = lambda c: json.loads(json.dumps(c["control"]).replace(c["project_id"], "P").replace(c["tenant_id"], "T"))
-    assert norm(a) == norm(b)
+    for c in (a, b):
+        env = c["control"]["job"]["env"]
+        assert (env.get("SELLER_INVENTORY_MODEL") == "BROAD_READ_INVENTORY_V1") == (c["tenant_id"] == "client_001")
+    normalized_a = norm(a)
+    normalized_a["job"]["env"].pop("SELLER_INVENTORY_MODEL")
+    normalized_a["job"]["env"].pop("SELLER_IDENTITY_VERSION")
+    assert normalized_a == norm(b)
 
 
 CONTRACT_TAMPER = {

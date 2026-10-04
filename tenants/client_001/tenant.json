@@ -32,6 +32,7 @@
         "catalog", "prices", "seller_info", "stocks", "fbo_postings", "finance_accrual",
         "ads_campaigns", "ads_expense_daily", "ads_sku_daily", "clusters", "supplies"
       ],
+      "seller_inventory_model": "BROAD_READ_INVENTORY_V1",
       "history_request": {"mode": "EARLIEST_AVAILABLE"}
     },
     "wb": {

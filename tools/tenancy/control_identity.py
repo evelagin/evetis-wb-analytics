@@ -78,17 +78,21 @@ def dataset_grants(datasets: dict[str, str]) -> list[dict]:
             for k in sorted(GRANT_MATRIX) for r in GRANT_MATRIX[k]]
 
 
-def job_env(runtime_env: dict[str, str], datasets: dict[str, str], tenant_id: str, entities) -> dict[str, str]:
+def job_env(runtime_env: dict[str, str], datasets: dict[str, str], tenant_id: str, entities, seller_inventory_model="STRICT_CAPABILITY_V2") -> dict[str, str]:
     """Окружение tenant-control: то же, что у runtime, плюс датасеты control и сущности арендатора."""
-    env = {k: v for k, v in runtime_env.items() if k not in ("TENANT_BINDING_REQUIRED", "ENTITIES")}
+    env = {k: v for k, v in runtime_env.items() if k not in ("TENANT_BINDING_REQUIRED", "ENTITIES", "SELLER_INVENTORY_MODEL", "SELLER_IDENTITY_VERSION")}
     env.update({"TENANT_ID": tenant_id, "TENANT_OPS_DATASET": datasets["tenant_ops"],
                 "TENANT_LOCKS_DATASET": datasets["tenant_locks"], "ENABLED_ENTITIES": ",".join(sorted(entities)),
                 "STRICT_PAGE_CAPS": "1"})
+    if seller_inventory_model not in ("STRICT_CAPABILITY_V2", "BROAD_READ_INVENTORY_V1"):
+        raise ValueError("unsupported Seller credential model")
+    if seller_inventory_model == "BROAD_READ_INVENTORY_V1":
+        env.update(SELLER_INVENTORY_MODEL=seller_inventory_model, SELLER_IDENTITY_VERSION="ozon-seller-core-v2")
     return dict(sorted(env.items()))
 
 
 def contract_block(project_id: str, datasets: dict[str, str], runtime_env: dict[str, str], tenant_id: str,
-                   entities) -> dict:
+                   entities, seller_inventory_model="STRICT_CAPABILITY_V2") -> dict:
     return {"account_id": CONTROL_ACCOUNT_ID, "email": control_email(project_id),
             "grants": dataset_grants(datasets),
-            "job": {"name": CONTROL_JOB_NAME, "env": job_env(runtime_env, datasets, tenant_id, entities)}}
+            "job": {"name": CONTROL_JOB_NAME, "env": job_env(runtime_env, datasets, tenant_id, entities, seller_inventory_model)}}

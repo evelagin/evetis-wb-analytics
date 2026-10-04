@@ -55,6 +55,8 @@
         "OZON_SECRET_PERF_CLIENT_SECRET": "ozon-perf-client-secret",
         "OZON_SECRET_SELLER_API_KEY": "ozon-seller-api-key",
         "OZON_SECRET_SELLER_CLIENT_ID": "ozon-seller-client-id",
+        "SELLER_IDENTITY_VERSION": "ozon-seller-core-v2",
+        "SELLER_INVENTORY_MODEL": "BROAD_READ_INVENTORY_V1",
         "STRICT_PAGE_CAPS": "1",
         "TENANT_ID": "client_001",
         "TENANT_LOCKS_DATASET": "tenant_locks",
@@ -159,6 +161,7 @@
         "seller_api_key": "ozon-seller-api-key",
         "seller_client_id": "ozon-seller-client-id"
       },
+      "seller_inventory_model": "BROAD_READ_INVENTORY_V1",
       "service_accounts": {
         "runtime": "sa-ozon-runtime",
         "scheduler": "sa-ozon-scheduler"

@@ -224,6 +224,8 @@ def _terraform_contract(doc: dict, repo: Path = REPO) -> dict:
             "jobs": jobs,
             "runtime_image": releases.get("ozon"),
         }
+        if ozon.get("seller_inventory_model", "STRICT_CAPABILITY_V2") != "STRICT_CAPABILITY_V2":
+            marketplaces["ozon"]["seller_inventory_model"] = ozon["seller_inventory_model"]
         apis.update(OC.OZON_APIS)
 
     tables = []
@@ -251,7 +253,8 @@ def _terraform_contract(doc: dict, repo: Path = REPO) -> dict:
         "sql_deployer": SI.contract_block(project_id, dict(sorted(db["datasets"].items()))),
         # T5 (D1): control plane арендатора — sa-tenant-control и job tenant-control.
         "control": CI.contract_block(project_id, dict(sorted(db["datasets"].items())),
-                                     ozon_runtime_env(doc), tid, entities) if ozon["enabled"] else None,
+                                     ozon_runtime_env(doc), tid, entities,
+                                     ozon.get("seller_inventory_model", "STRICT_CAPABILITY_V2")) if ozon["enabled"] else None,
     }
 
 
