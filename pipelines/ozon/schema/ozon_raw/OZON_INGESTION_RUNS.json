@@ -1,6 +1,8 @@
 {
   "clustering": [
     "entity",
+    "backfill_plan_id",
+    "backfill_sequence",
     "status"
   ],
   "schema": [
@@ -82,6 +84,26 @@
     {
       "mode": "NULLABLE",
       "name": "job_execution",
+      "type": "STRING"
+    },
+    {
+      "mode": "NULLABLE",
+      "name": "evidence_json",
+      "type": "STRING"
+    },
+    {
+      "mode": "NULLABLE",
+      "name": "backfill_plan_id",
+      "type": "STRING"
+    },
+    {
+      "mode": "NULLABLE",
+      "name": "backfill_sequence",
+      "type": "INTEGER"
+    },
+    {
+      "mode": "NULLABLE",
+      "name": "backfill_detail_json",
       "type": "STRING"
     }
   ],

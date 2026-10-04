@@ -241,11 +241,13 @@
     {
       "clustering": [
         "entity",
+        "backfill_plan_id",
+        "backfill_sequence",
         "status"
       ],
       "dataset_key": "ozon_raw",
       "require_partition_filter": false,
-      "schema_json": "[{\"mode\":\"REQUIRED\",\"name\":\"ingestion_run_id\",\"type\":\"STRING\"},{\"mode\":\"REQUIRED\",\"name\":\"marketplace\",\"type\":\"STRING\"},{\"mode\":\"REQUIRED\",\"name\":\"entity\",\"type\":\"STRING\"},{\"mode\":\"REQUIRED\",\"name\":\"started_at\",\"type\":\"TIMESTAMP\"},{\"mode\":\"NULLABLE\",\"name\":\"completed_at\",\"type\":\"TIMESTAMP\"},{\"mode\":\"NULLABLE\",\"name\":\"source_from\",\"type\":\"STRING\"},{\"mode\":\"NULLABLE\",\"name\":\"source_to\",\"type\":\"STRING\"},{\"mode\":\"NULLABLE\",\"name\":\"requests\",\"type\":\"INTEGER\"},{\"mode\":\"NULLABLE\",\"name\":\"rows_received\",\"type\":\"INTEGER\"},{\"mode\":\"NULLABLE\",\"name\":\"rows_inserted\",\"type\":\"INTEGER\"},{\"mode\":\"NULLABLE\",\"name\":\"rows_updated\",\"type\":\"INTEGER\"},{\"mode\":\"NULLABLE\",\"name\":\"errors\",\"type\":\"INTEGER\"},{\"mode\":\"NULLABLE\",\"name\":\"retry_count\",\"type\":\"INTEGER\"},{\"mode\":\"REQUIRED\",\"name\":\"status\",\"type\":\"STRING\"},{\"mode\":\"NULLABLE\",\"name\":\"error_message\",\"type\":\"STRING\"},{\"mode\":\"NULLABLE\",\"name\":\"job_execution\",\"type\":\"STRING\"}]",
+      "schema_json": "[{\"mode\":\"REQUIRED\",\"name\":\"ingestion_run_id\",\"type\":\"STRING\"},{\"mode\":\"REQUIRED\",\"name\":\"marketplace\",\"type\":\"STRING\"},{\"mode\":\"REQUIRED\",\"name\":\"entity\",\"type\":\"STRING\"},{\"mode\":\"REQUIRED\",\"name\":\"started_at\",\"type\":\"TIMESTAMP\"},{\"mode\":\"NULLABLE\",\"name\":\"completed_at\",\"type\":\"TIMESTAMP\"},{\"mode\":\"NULLABLE\",\"name\":\"source_from\",\"type\":\"STRING\"},{\"mode\":\"NULLABLE\",\"name\":\"source_to\",\"type\":\"STRING\"},{\"mode\":\"NULLABLE\",\"name\":\"requests\",\"type\":\"INTEGER\"},{\"mode\":\"NULLABLE\",\"name\":\"rows_received\",\"type\":\"INTEGER\"},{\"mode\":\"NULLABLE\",\"name\":\"rows_inserted\",\"type\":\"INTEGER\"},{\"mode\":\"NULLABLE\",\"name\":\"rows_updated\",\"type\":\"INTEGER\"},{\"mode\":\"NULLABLE\",\"name\":\"errors\",\"type\":\"INTEGER\"},{\"mode\":\"NULLABLE\",\"name\":\"retry_count\",\"type\":\"INTEGER\"},{\"mode\":\"REQUIRED\",\"name\":\"status\",\"type\":\"STRING\"},{\"mode\":\"NULLABLE\",\"name\":\"error_message\",\"type\":\"STRING\"},{\"mode\":\"NULLABLE\",\"name\":\"job_execution\",\"type\":\"STRING\"},{\"mode\":\"NULLABLE\",\"name\":\"evidence_json\",\"type\":\"STRING\"},{\"mode\":\"NULLABLE\",\"name\":\"backfill_plan_id\",\"type\":\"STRING\"},{\"mode\":\"NULLABLE\",\"name\":\"backfill_sequence\",\"type\":\"INTEGER\"},{\"mode\":\"NULLABLE\",\"name\":\"backfill_detail_json\",\"type\":\"STRING\"}]",
       "table_id": "OZON_INGESTION_RUNS",
       "time_partitioning_field": "started_at",
       "time_partitioning_type": "DAY"

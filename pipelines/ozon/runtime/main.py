@@ -177,6 +177,16 @@ def main():
     except C.ConfigError:
         C.log(event="run_rejected", ingestion_run_id=run_id, reason="ingestion execution contract denied")
         sys.exit(2)
+    backfill_plan = None
+    if "BACKFILL_MODE" in os.environ:
+        import backfill_core as B
+        try:
+            if len(want) != 1 or not binding_required or C.PROJECT == C.LEGACY_INGESTION_PROJECT:
+                raise B.EvidenceError("backfill requires isolated tenant and one entity")
+            backfill_plan = B.plan(os.environ, want[0], C.PROJECT, C.DATASET, C.REF_DATASET, today)
+        except B.EvidenceError as error:
+            C.log(event="run_rejected", reason=C.safe_error_text(error))
+            sys.exit(2)
     if binding_required:
         from datetime import datetime, timezone
         denied, reason = binding_gate(want, datetime.now(timezone.utc))
@@ -199,8 +209,13 @@ def main():
         started = C.now_msk()
         r0, t0 = C.STATS["requests"], C.STATS["retries"]
         try:
-            res = fn(run_id, ts, frm, to)
-            C.record_run(run_id, name, started, frm, to, res, "OK",
+            if backfill_plan is not None:
+                import backfill
+                res = backfill.run_backfill(backfill_plan, run_id, ts)
+            else:
+                res = fn(run_id, ts, frm, to)
+            entity_status = "IN_PROGRESS" if backfill_plan and not res["evidence"]["complete"] else "OK"
+            C.record_run(run_id, name, started, frm, to, res, entity_status,
                          requests_n=C.STATS["requests"] - r0,
                          retries=C.STATS["retries"] - t0)
             ok += 1
