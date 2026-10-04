@@ -1,0 +1,2366 @@
+{
+ "generated": "2026-09-14",
+ "params": {
+  "PER_L_OBS": 23.42,
+  "WB_STORAGE_DAYS": 25,
+  "TRANSFER_L": 5.0,
+  "ACQ": 0.0358
+ },
+ "rows": [
+  {
+   "sku": "FS-MOIST-30",
+   "price": 699.2,
+   "cogs": 130.81,
+   "cls": "MINI",
+   "b": 0.934,
+   "OBS": {
+    "usend_fbw": 10.4,
+    "wb_fbw": 371.7,
+    "net_rev_fbw": 327.5,
+    "cm_fbw": 186.3,
+    "cm_fbw_pct": 26.6,
+    "usend_fbs": 46.6,
+    "wb_fbs": 366.0,
+    "net_rev_fbs": 333.2,
+    "cm_fbs": 155.8,
+    "cm_fbs_pct": 22.3,
+    "cm_fbs_no_discount": 120.8,
+    "premium": 30.5,
+    "premium_pct_price": 4.4,
+    "parts_fbw": {
+     "pack": 4.5,
+     "shelf": 0.08,
+     "box_supply_alloc": 5.86
+    },
+    "parts_fbs": {
+     "fbs_fee": 37.47,
+     "returns_to_ff": 8.83,
+     "shelf": 0.26
+    }
+   },
+   "CONS": {
+    "usend_fbw": 44.4,
+    "wb_fbw": 371.7,
+    "net_rev_fbw": 327.5,
+    "cm_fbw": 152.3,
+    "cm_fbw_pct": 21.8,
+    "usend_fbs": 70.9,
+    "wb_fbs": 376.7,
+    "net_rev_fbs": 322.5,
+    "cm_fbs": 120.8,
+    "cm_fbs_pct": 17.3,
+    "cm_fbs_no_discount": 85.8,
+    "premium": 31.5,
+    "premium_pct_price": 4.5,
+    "parts_fbw": {
+     "pack": 4.5,
+     "kiz_csv": 6.5,
+     "wb_packaging": 27.5,
+     "shelf": 0.08,
+     "box_supply_alloc": 5.86
+    },
+    "parts_fbs": {
+     "fbs_fee": 37.47,
+     "returns_to_ff": 8.83,
+     "shelf": 0.26,
+     "packaging": 24.3
+    }
+   }
+  },
+  {
+   "sku": "FS-ACNE-30",
+   "price": 805.6,
+   "cogs": 135.78,
+   "cls": "MINI",
+   "b": 0.85,
+   "OBS": {
+    "usend_fbw": 8.3,
+    "wb_fbw": 420.6,
+    "net_rev_fbw": 385.0,
+    "cm_fbw": 240.9,
+    "cm_fbw_pct": 29.9,
+    "usend_fbs": 63.5,
+    "wb_fbs": 415.6,
+    "net_rev_fbs": 390.0,
+    "cm_fbs": 190.7,
+    "cm_fbs_pct": 23.7,
+    "cm_fbs_no_discount": 150.5,
+    "premium": 50.2,
+    "premium_pct_price": 6.2,
+    "parts_fbw": {
+     "pack": 4.5,
+     "shelf": 0.08,
+     "box_supply_alloc": 3.75
+    },
+    "parts_fbs": {
+     "fbs_fee": 41.18,
+     "returns_to_ff": 22.06,
+     "shelf": 0.26
+    }
+   },
+   "CONS": {
+    "usend_fbw": 42.3,
+    "wb_fbw": 420.6,
+    "net_rev_fbw": 385.0,
+    "cm_fbw": 206.9,
+    "cm_fbw_pct": 25.7,
+    "usend_fbs": 90.2,
+    "wb_fbs": 427.4,
+    "net_rev_fbs": 378.2,
+    "cm_fbs": 152.3,
+    "cm_fbs_pct": 18.9,
+    "cm_fbs_no_discount": 112.0,
+    "premium": 54.6,
+    "premium_pct_price": 6.8,
+    "parts_fbw": {
+     "pack": 4.5,
+     "kiz_csv": 6.5,
+     "wb_packaging": 27.5,
+     "shelf": 0.08,
+     "box_supply_alloc": 3.75
+    },
+    "parts_fbs": {
+     "fbs_fee": 41.18,
+     "returns_to_ff": 22.06,
+     "shelf": 0.26,
+     "packaging": 26.71
+    }
+   }
+  },
+  {
+   "sku": "FC-ACNE-50",
+   "price": 799.6,
+   "cogs": 131.66,
+   "cls": "MINI",
+   "b": 0.807,
+   "OBS": {
+    "usend_fbw": 11.0,
+    "wb_fbw": 429.7,
+    "net_rev_fbw": 369.9,
+    "cm_fbw": 227.3,
+    "cm_fbw_pct": 28.4,
+    "usend_fbs": 73.5,
+    "wb_fbs": 423.2,
+    "net_rev_fbs": 376.4,
+    "cm_fbs": 171.2,
+    "cm_fbs_pct": 21.4,
+    "cm_fbs_no_discount": 131.2,
+    "premium": 56.1,
+    "premium_pct_price": 7.0,
+    "parts_fbw": {
+     "pack": 4.5,
+     "shelf": 0.08,
+     "box_supply_alloc": 6.37
+    },
+    "parts_fbs": {
+     "fbs_fee": 43.37,
+     "returns_to_ff": 29.89,
+     "shelf": 0.28
+    }
+   },
+   "CONS": {
+    "usend_fbw": 45.0,
+    "wb_fbw": 429.7,
+    "net_rev_fbw": 369.9,
+    "cm_fbw": 193.3,
+    "cm_fbw_pct": 24.2,
+    "usend_fbs": 101.7,
+    "wb_fbs": 435.6,
+    "net_rev_fbs": 364.0,
+    "cm_fbs": 130.7,
+    "cm_fbs_pct": 16.3,
+    "cm_fbs_no_discount": 90.7,
+    "premium": 62.6,
+    "premium_pct_price": 7.8,
+    "parts_fbw": {
+     "pack": 4.5,
+     "kiz_csv": 6.5,
+     "wb_packaging": 27.5,
+     "shelf": 0.08,
+     "box_supply_alloc": 6.37
+    },
+    "parts_fbs": {
+     "fbs_fee": 43.37,
+     "returns_to_ff": 29.89,
+     "shelf": 0.28,
+     "packaging": 28.13
+    }
+   }
+  },
+  {
+   "sku": "FC-MOIST-50",
+   "price": 925.6,
+   "cogs": 130.78,
+   "cls": "MINI",
+   "b": 0.929,
+   "OBS": {
+    "usend_fbw": 12.4,
+    "wb_fbw": 476.6,
+    "net_rev_fbw": 449.0,
+    "cm_fbw": 305.9,
+    "cm_fbw_pct": 33.0,
+    "usend_fbs": 47.5,
+    "wb_fbs": 469.1,
+    "net_rev_fbs": 456.5,
+    "cm_fbs": 278.3,
+    "cm_fbs_pct": 30.1,
+    "cm_fbs_no_discount": 232.0,
+    "premium": 27.7,
+    "premium_pct_price": 3.0,
+    "parts_fbw": {
+     "pack": 4.5,
+     "shelf": 0.08,
+     "box_supply_alloc": 7.78
+    },
+    "parts_fbs": {
+     "fbs_fee": 37.67,
+     "returns_to_ff": 9.55,
+     "shelf": 0.28
+    }
+   },
+   "CONS": {
+    "usend_fbw": 46.4,
+    "wb_fbw": 476.6,
+    "net_rev_fbw": 449.0,
+    "cm_fbw": 271.9,
+    "cm_fbw_pct": 29.4,
+    "usend_fbs": 71.9,
+    "wb_fbs": 479.8,
+    "net_rev_fbs": 445.8,
+    "cm_fbs": 243.1,
+    "cm_fbs_pct": 26.3,
+    "cm_fbs_no_discount": 196.8,
+    "premium": 28.9,
+    "premium_pct_price": 3.1,
+    "parts_fbw": {
+     "pack": 4.5,
+     "kiz_csv": 6.5,
+     "wb_packaging": 27.5,
+     "shelf": 0.08,
+     "box_supply_alloc": 7.78
+    },
+    "parts_fbs": {
+     "fbs_fee": 37.67,
+     "returns_to_ff": 9.55,
+     "shelf": 0.28,
+     "packaging": 24.43
+    }
+   }
+  },
+  {
+   "sku": "FT-ACNE-150",
+   "price": 740.0,
+   "cogs": 182.79,
+   "cls": "MINI",
+   "b": 0.928,
+   "OBS": {
+    "usend_fbw": 14.0,
+    "wb_fbw": 392.1,
+    "net_rev_fbw": 347.9,
+    "cm_fbw": 151.1,
+    "cm_fbw_pct": 20.4,
+    "usend_fbs": 47.7,
+    "wb_fbs": 385.0,
+    "net_rev_fbs": 355.0,
+    "cm_fbs": 124.5,
+    "cm_fbs_pct": 16.8,
+    "cm_fbs_no_discount": 87.5,
+    "premium": 26.6,
+    "premium_pct_price": 3.6,
+    "parts_fbw": {
+     "pack": 4.5,
+     "shelf": 0.09,
+     "box_supply_alloc": 9.37
+    },
+    "parts_fbs": {
+     "fbs_fee": 37.72,
+     "returns_to_ff": 9.7,
+     "shelf": 0.3
+    }
+   },
+   "CONS": {
+    "usend_fbw": 48.0,
+    "wb_fbw": 392.1,
+    "net_rev_fbw": 347.9,
+    "cm_fbw": 117.1,
+    "cm_fbw_pct": 15.8,
+    "usend_fbs": 72.2,
+    "wb_fbs": 395.8,
+    "net_rev_fbs": 344.2,
+    "cm_fbs": 89.2,
+    "cm_fbs_pct": 12.1,
+    "cm_fbs_no_discount": 52.2,
+    "premium": 27.9,
+    "premium_pct_price": 3.8,
+    "parts_fbw": {
+     "pack": 4.5,
+     "kiz_csv": 6.5,
+     "wb_packaging": 27.5,
+     "shelf": 0.09,
+     "box_supply_alloc": 9.37
+    },
+    "parts_fbs": {
+     "fbs_fee": 37.72,
+     "returns_to_ff": 9.7,
+     "shelf": 0.3,
+     "packaging": 24.46
+    }
+   }
+  },
+  {
+   "sku": "FT-MOIST-150",
+   "price": 740.0,
+   "cogs": 182.79,
+   "cls": "MINI",
+   "b": 0.923,
+   "OBS": {
+    "usend_fbw": 14.0,
+    "wb_fbw": 392.6,
+    "net_rev_fbw": 347.4,
+    "cm_fbw": 150.7,
+    "cm_fbw_pct": 20.4,
+    "usend_fbs": 48.6,
+    "wb_fbs": 385.4,
+    "net_rev_fbs": 354.6,
+    "cm_fbs": 123.1,
+    "cm_fbs_pct": 16.6,
+    "cm_fbs_no_discount": 86.1,
+    "premium": 27.5,
+    "premium_pct_price": 3.7,
+    "parts_fbw": {
+     "pack": 4.5,
+     "shelf": 0.09,
+     "box_supply_alloc": 9.37
+    },
+    "parts_fbs": {
+     "fbs_fee": 37.92,
+     "returns_to_ff": 10.43,
+     "shelf": 0.3
+    }
+   },
+   "CONS": {
+    "usend_fbw": 48.0,
+    "wb_fbw": 392.6,
+    "net_rev_fbw": 347.4,
+    "cm_fbw": 116.7,
+    "cm_fbw_pct": 15.8,
+    "usend_fbs": 73.2,
+    "wb_fbs": 396.2,
+    "net_rev_fbs": 343.8,
+    "cm_fbs": 87.7,
+    "cm_fbs_pct": 11.9,
+    "cm_fbs_no_discount": 50.7,
+    "premium": 29.0,
+    "premium_pct_price": 3.9,
+    "parts_fbw": {
+     "pack": 4.5,
+     "kiz_csv": 6.5,
+     "wb_packaging": 27.5,
+     "shelf": 0.09,
+     "box_supply_alloc": 9.37
+    },
+    "parts_fbs": {
+     "fbs_fee": 37.92,
+     "returns_to_ff": 10.43,
+     "shelf": 0.3,
+     "packaging": 24.59
+    }
+   }
+  },
+  {
+   "sku": "EP-ENZYME-75",
+   "price": 666.0,
+   "cogs": 159.3,
+   "cls": "MINI",
+   "b": 0.864,
+   "OBS": {
+    "usend_fbw": 12.8,
+    "wb_fbw": 363.4,
+    "net_rev_fbw": 302.6,
+    "cm_fbw": 130.5,
+    "cm_fbw_pct": 19.6,
+    "usend_fbs": 60.4,
+    "wb_fbs": 357.0,
+    "net_rev_fbs": 309.0,
+    "cm_fbs": 89.3,
+    "cm_fbs_pct": 13.4,
+    "cm_fbs_no_discount": 56.0,
+    "premium": 41.2,
+    "premium_pct_price": 6.2,
+    "parts_fbw": {
+     "pack": 4.5,
+     "shelf": 0.08,
+     "box_supply_alloc": 8.2
+    },
+    "parts_fbs": {
+     "fbs_fee": 40.51,
+     "returns_to_ff": 19.68,
+     "shelf": 0.26
+    }
+   },
+   "CONS": {
+    "usend_fbw": 46.8,
+    "wb_fbw": 363.4,
+    "net_rev_fbw": 302.6,
+    "cm_fbw": 96.5,
+    "cm_fbw_pct": 14.5,
+    "usend_fbs": 86.7,
+    "wb_fbs": 368.6,
+    "net_rev_fbs": 297.4,
+    "cm_fbs": 51.4,
+    "cm_fbs_pct": 7.7,
+    "cm_fbs_no_discount": 18.1,
+    "premium": 45.1,
+    "premium_pct_price": 6.8,
+    "parts_fbw": {
+     "pack": 4.5,
+     "kiz_csv": 6.5,
+     "wb_packaging": 27.5,
+     "shelf": 0.08,
+     "box_supply_alloc": 8.2
+    },
+    "parts_fbs": {
+     "fbs_fee": 40.51,
+     "returns_to_ff": 19.68,
+     "shelf": 0.26,
+     "packaging": 26.27
+    }
+   }
+  },
+  {
+   "sku": "HC-CHERRY-300",
+   "price": 640.0,
+   "cogs": 175.27,
+   "cls": "STANDARD",
+   "b": 0.875,
+   "OBS": {
+    "usend_fbw": 30.7,
+    "wb_fbw": 367.1,
+    "net_rev_fbw": 272.9,
+    "cm_fbw": 66.9,
+    "cm_fbw_pct": 10.5,
+    "usend_fbs": 88.9,
+    "wb_fbs": 355.9,
+    "net_rev_fbs": 284.1,
+    "cm_fbs": 19.9,
+    "cm_fbs_pct": 3.1,
+    "cm_fbs_no_discount": -12.1,
+    "premium": 47.0,
+    "premium_pct_price": 7.3,
+    "parts_fbw": {
+     "pack": 4.5,
+     "kiz_relabel": 6.5,
+     "shelf": 0.24,
+     "box_supply_alloc": 19.51
+    },
+    "parts_fbs": {
+     "fbs_fee": 62.86,
+     "kiz_relabel": 7.43,
+     "returns_to_ff": 17.86,
+     "shelf": 0.79
+    }
+   },
+   "CONS": {
+    "usend_fbw": 81.5,
+    "wb_fbw": 367.1,
+    "net_rev_fbw": 272.9,
+    "cm_fbw": 16.1,
+    "cm_fbw_pct": 2.5,
+    "usend_fbs": 126.0,
+    "wb_fbs": 367.3,
+    "net_rev_fbs": 272.7,
+    "cm_fbs": -28.5,
+    "cm_fbs_pct": -4.5,
+    "cm_fbs_no_discount": -60.5,
+    "premium": 44.6,
+    "premium_pct_price": 7.0,
+    "parts_fbw": {
+     "pack": 8.5,
+     "kiz_relabel": 6.5,
+     "kiz_csv": 6.5,
+     "wb_packaging": 40.3,
+     "shelf": 0.24,
+     "box_supply_alloc": 19.51
+    },
+    "parts_fbs": {
+     "fbs_fee": 62.86,
+     "kiz_relabel": 7.43,
+     "returns_to_ff": 17.86,
+     "shelf": 0.79,
+     "packaging": 37.03
+    }
+   }
+  },
+  {
+   "sku": "HC-AMBER-300",
+   "price": 640.0,
+   "cogs": 175.27,
+   "cls": "STANDARD",
+   "b": 0.738,
+   "OBS": {
+    "usend_fbw": 30.7,
+    "wb_fbw": 385.4,
+    "net_rev_fbw": 254.6,
+    "cm_fbw": 48.6,
+    "cm_fbw_pct": 7.6,
+    "usend_fbs": 128.5,
+    "wb_fbs": 372.7,
+    "net_rev_fbs": 267.3,
+    "cm_fbs": -36.5,
+    "cm_fbs_pct": -5.7,
+    "cm_fbs_no_discount": -68.5,
+    "premium": 85.1,
+    "premium_pct_price": 13.3,
+    "parts_fbw": {
+     "pack": 4.5,
+     "kiz_relabel": 6.5,
+     "shelf": 0.24,
+     "box_supply_alloc": 19.51
+    },
+    "parts_fbs": {
+     "fbs_fee": 74.53,
+     "kiz_relabel": 8.81,
+     "returns_to_ff": 44.38,
+     "shelf": 0.79
+    }
+   },
+   "CONS": {
+    "usend_fbw": 81.5,
+    "wb_fbw": 385.4,
+    "net_rev_fbw": 254.6,
+    "cm_fbw": -2.2,
+    "cm_fbw_pct": -0.3,
+    "usend_fbs": 172.4,
+    "wb_fbs": 386.3,
+    "net_rev_fbs": 253.7,
+    "cm_fbs": -93.9,
+    "cm_fbs_pct": -14.7,
+    "cm_fbs_no_discount": -125.9,
+    "premium": 91.7,
+    "premium_pct_price": 14.3,
+    "parts_fbw": {
+     "pack": 8.5,
+     "kiz_relabel": 6.5,
+     "kiz_csv": 6.5,
+     "wb_packaging": 40.3,
+     "shelf": 0.24,
+     "box_supply_alloc": 19.51
+    },
+    "parts_fbs": {
+     "fbs_fee": 74.53,
+     "kiz_relabel": 8.81,
+     "returns_to_ff": 44.38,
+     "shelf": 0.79,
+     "packaging": 43.9
+    }
+   }
+  },
+  {
+   "sku": "HC-HAND-300",
+   "price": 640.0,
+   "cogs": 231.38,
+   "cls": "STANDARD",
+   "b": 0.918,
+   "OBS": {
+    "usend_fbw": 24.3,
+    "wb_fbw": 362.4,
+    "net_rev_fbw": 277.6,
+    "cm_fbw": 21.9,
+    "cm_fbw_pct": 3.4,
+    "usend_fbs": 71.9,
+    "wb_fbs": 351.6,
+    "net_rev_fbs": 288.4,
+    "cm_fbs": -14.9,
+    "cm_fbs_pct": -2.3,
+    "cm_fbs_no_discount": -46.9,
+    "premium": 36.9,
+    "premium_pct_price": 5.8,
+    "parts_fbw": {
+     "pack": 4.5,
+     "shelf": 0.26,
+     "box_supply_alloc": 19.51
+    },
+    "parts_fbs": {
+     "fbs_fee": 59.91,
+     "returns_to_ff": 11.17,
+     "shelf": 0.87
+    }
+   },
+   "CONS": {
+    "usend_fbw": 75.1,
+    "wb_fbw": 362.4,
+    "net_rev_fbw": 277.6,
+    "cm_fbw": -28.9,
+    "cm_fbw_pct": -4.5,
+    "usend_fbs": 107.2,
+    "wb_fbs": 362.5,
+    "net_rev_fbs": 277.5,
+    "cm_fbs": -61.1,
+    "cm_fbs_pct": -9.6,
+    "cm_fbs_no_discount": -93.1,
+    "premium": 32.2,
+    "premium_pct_price": 5.0,
+    "parts_fbw": {
+     "pack": 8.5,
+     "kiz_csv": 6.5,
+     "wb_packaging": 40.3,
+     "shelf": 0.26,
+     "box_supply_alloc": 19.51
+    },
+    "parts_fbs": {
+     "fbs_fee": 59.91,
+     "returns_to_ff": 11.17,
+     "shelf": 0.87,
+     "packaging": 35.29
+    }
+   }
+  },
+  {
+   "sku": "SET-SER-CREAM-ACNE",
+   "price": 1294.0,
+   "cogs": 267.44,
+   "cls": "STANDARD",
+   "b": 0.824,
+   "OBS": {
+    "usend_fbw": 35.8,
+    "wb_fbw": 663.6,
+    "net_rev_fbw": 630.4,
+    "cm_fbw": 327.1,
+    "cm_fbw_pct": 25.3,
+    "usend_fbs": 112.5,
+    "wb_fbs": 651.7,
+    "net_rev_fbs": 642.3,
+    "cm_fbs": 262.4,
+    "cm_fbs_pct": 20.3,
+    "cm_fbs_no_discount": 197.7,
+    "premium": 64.7,
+    "premium_pct_price": 5.0,
+    "parts_fbw": {
+     "set_assembly": 22.9,
+     "shelf": 0.18,
+     "box_supply_alloc": 12.74
+    },
+    "parts_fbs": {
+     "fbs_fee": 66.75,
+     "set_assembly": 18.4,
+     "returns_to_ff": 26.7,
+     "shelf": 0.61
+    }
+   },
+   "CONS": {
+    "usend_fbw": 63.5,
+    "wb_fbw": 663.6,
+    "net_rev_fbw": 630.4,
+    "cm_fbw": 299.4,
+    "cm_fbw_pct": 23.1,
+    "usend_fbs": 156.0,
+    "wb_fbs": 663.9,
+    "net_rev_fbs": 630.1,
+    "cm_fbs": 206.7,
+    "cm_fbs_pct": 16.0,
+    "cm_fbs_no_discount": 142.0,
+    "premium": 92.7,
+    "premium_pct_price": 7.2,
+    "parts_fbw": {
+     "set_assembly": 22.9,
+     "kiz_csv": 6.5,
+     "wb_packaging": 21.2,
+     "shelf": 0.18,
+     "box_supply_alloc": 12.74
+    },
+    "parts_fbs": {
+     "fbs_fee": 66.75,
+     "set_assembly": 18.4,
+     "returns_to_ff": 26.7,
+     "shelf": 0.61,
+     "packaging": 43.57
+    }
+   }
+  },
+  {
+   "sku": "SET-TON-CREAM-ACNE",
+   "price": 1274.0,
+   "cogs": 314.45,
+   "cls": "STANDARD",
+   "b": 0.833,
+   "OBS": {
+    "usend_fbw": 41.0,
+    "wb_fbw": 657.5,
+    "net_rev_fbw": 616.5,
+    "cm_fbw": 261.0,
+    "cm_fbw_pct": 20.5,
+    "usend_fbs": 110.1,
+    "wb_fbs": 643.7,
+    "net_rev_fbs": 630.3,
+    "cm_fbs": 205.7,
+    "cm_fbs_pct": 16.1,
+    "cm_fbs_no_discount": 142.0,
+    "premium": 55.3,
+    "premium_pct_price": 4.3,
+    "parts_fbw": {
+     "set_assembly": 22.9,
+     "shelf": 0.18,
+     "box_supply_alloc": 17.92
+    },
+    "parts_fbs": {
+     "fbs_fee": 66.03,
+     "set_assembly": 18.4,
+     "returns_to_ff": 25.06,
+     "shelf": 0.61
+    }
+   },
+   "CONS": {
+    "usend_fbw": 68.7,
+    "wb_fbw": 657.5,
+    "net_rev_fbw": 616.5,
+    "cm_fbw": 233.3,
+    "cm_fbw_pct": 18.3,
+    "usend_fbs": 153.2,
+    "wb_fbs": 655.7,
+    "net_rev_fbs": 618.3,
+    "cm_fbs": 150.6,
+    "cm_fbs_pct": 11.8,
+    "cm_fbs_no_discount": 86.9,
+    "premium": 82.7,
+    "premium_pct_price": 6.5,
+    "parts_fbw": {
+     "set_assembly": 22.9,
+     "kiz_csv": 6.5,
+     "wb_packaging": 21.2,
+     "shelf": 0.18,
+     "box_supply_alloc": 17.92
+    },
+    "parts_fbs": {
+     "fbs_fee": 66.03,
+     "set_assembly": 18.4,
+     "returns_to_ff": 25.06,
+     "shelf": 0.61,
+     "packaging": 43.1
+    }
+   }
+  },
+  {
+   "sku": "SET-TON-SER-CREAM-ACNE",
+   "price": 1343.2,
+   "cogs": 450.23,
+   "cls": "STANDARD",
+   "b": 0.744,
+   "OBS": {
+    "usend_fbw": 49.0,
+    "wb_fbw": 749.7,
+    "net_rev_fbw": 593.5,
+    "cm_fbw": 94.3,
+    "cm_fbw_pct": 7.0,
+    "usend_fbs": 135.9,
+    "wb_fbs": 727.3,
+    "net_rev_fbs": 615.9,
+    "cm_fbs": 29.7,
+    "cm_fbs_pct": 2.2,
+    "cm_fbs_no_discount": -37.5,
+    "premium": 64.6,
+    "premium_pct_price": 4.8,
+    "parts_fbw": {
+     "set_assembly": 22.9,
+     "shelf": 0.18,
+     "box_supply_alloc": 25.88
+    },
+    "parts_fbs": {
+     "fbs_fee": 73.92,
+     "set_assembly": 18.4,
+     "returns_to_ff": 43.01,
+     "shelf": 0.61
+    }
+   },
+   "CONS": {
+    "usend_fbw": 79.9,
+    "wb_fbw": 749.7,
+    "net_rev_fbw": 593.5,
+    "cm_fbw": 63.4,
+    "cm_fbw_pct": 4.7,
+    "usend_fbs": 184.2,
+    "wb_fbs": 740.8,
+    "net_rev_fbs": 602.4,
+    "cm_fbs": -32.0,
+    "cm_fbs_pct": -2.4,
+    "cm_fbs_no_discount": -99.1,
+    "premium": 95.4,
+    "premium_pct_price": 7.1,
+    "parts_fbw": {
+     "set_assembly": 26.1,
+     "kiz_csv": 6.5,
+     "wb_packaging": 21.2,
+     "shelf": 0.18,
+     "box_supply_alloc": 25.88
+    },
+    "parts_fbs": {
+     "fbs_fee": 73.92,
+     "set_assembly": 18.4,
+     "returns_to_ff": 43.01,
+     "shelf": 0.61,
+     "packaging": 48.25
+    }
+   }
+  },
+  {
+   "sku": "SET-4PC-ACNE",
+   "price": 1900.0,
+   "cogs": 609.52,
+   "cls": "STANDARD",
+   "b": 0.731,
+   "OBS": {
+    "usend_fbw": 53.4,
+    "wb_fbw": 1016.6,
+    "net_rev_fbw": 883.4,
+    "cm_fbw": 220.5,
+    "cm_fbw_pct": 11.6,
+    "usend_fbs": 140.2,
+    "wb_fbs": 988.5,
+    "net_rev_fbs": 911.5,
+    "cm_fbs": 161.7,
+    "cm_fbs_pct": 8.5,
+    "cm_fbs_no_discount": 66.7,
+    "premium": 58.7,
+    "premium_pct_price": 3.1,
+    "parts_fbw": {
+     "set_assembly": 22.9,
+     "shelf": 0.18,
+     "box_supply_alloc": 30.31
+    },
+    "parts_fbs": {
+     "fbs_fee": 75.24,
+     "set_assembly": 18.4,
+     "returns_to_ff": 46.0,
+     "shelf": 0.61
+    }
+   },
+   "CONS": {
+    "usend_fbw": 87.6,
+    "wb_fbw": 1016.6,
+    "net_rev_fbw": 883.4,
+    "cm_fbw": 186.3,
+    "cm_fbw_pct": 9.8,
+    "usend_fbs": 189.4,
+    "wb_fbs": 1002.2,
+    "net_rev_fbs": 897.8,
+    "cm_fbs": 99.0,
+    "cm_fbs_pct": 5.2,
+    "cm_fbs_no_discount": 4.0,
+    "premium": 87.3,
+    "premium_pct_price": 4.6,
+    "parts_fbw": {
+     "set_assembly": 29.4,
+     "kiz_csv": 6.5,
+     "wb_packaging": 21.2,
+     "shelf": 0.18,
+     "box_supply_alloc": 30.31
+    },
+    "parts_fbs": {
+     "fbs_fee": 75.24,
+     "set_assembly": 18.4,
+     "returns_to_ff": 46.0,
+     "shelf": 0.61,
+     "packaging": 49.11
+    }
+   }
+  },
+  {
+   "sku": "SET-ACNE-TONIC-SERUM",
+   "price": 1280.0,
+   "cogs": 318.57,
+   "cls": "STANDARD",
+   "b": 0.9,
+   "OBS": {
+    "usend_fbw": 39.9,
+    "wb_fbw": 652.7,
+    "net_rev_fbw": 627.3,
+    "cm_fbw": 268.8,
+    "cm_fbw_pct": 21.0,
+    "usend_fbs": 94.0,
+    "wb_fbs": 639.7,
+    "net_rev_fbs": 640.3,
+    "cm_fbs": 227.8,
+    "cm_fbs_pct": 17.8,
+    "cm_fbs_no_discount": 163.8,
+    "premium": 41.1,
+    "premium_pct_price": 3.2,
+    "parts_fbw": {
+     "set_assembly": 22.9,
+     "shelf": 0.18,
+     "box_supply_alloc": 16.86
+    },
+    "parts_fbs": {
+     "fbs_fee": 61.11,
+     "set_assembly": 18.4,
+     "returns_to_ff": 13.89,
+     "shelf": 0.61
+    }
+   },
+   "CONS": {
+    "usend_fbw": 67.6,
+    "wb_fbw": 652.7,
+    "net_rev_fbw": 627.3,
+    "cm_fbw": 241.1,
+    "cm_fbw_pct": 18.8,
+    "usend_fbs": 133.9,
+    "wb_fbs": 650.8,
+    "net_rev_fbs": 629.2,
+    "cm_fbs": 176.8,
+    "cm_fbs_pct": 13.8,
+    "cm_fbs_no_discount": 112.8,
+    "premium": 64.4,
+    "premium_pct_price": 5.0,
+    "parts_fbw": {
+     "set_assembly": 22.9,
+     "kiz_csv": 6.5,
+     "wb_packaging": 21.2,
+     "shelf": 0.18,
+     "box_supply_alloc": 16.86
+    },
+    "parts_fbs": {
+     "fbs_fee": 61.11,
+     "set_assembly": 18.4,
+     "returns_to_ff": 13.89,
+     "shelf": 0.61,
+     "packaging": 39.89
+    }
+   }
+  },
+  {
+   "sku": "SET-MOIST-TONIC-SERUM",
+   "price": 1248.0,
+   "cogs": 313.6,
+   "cls": "STANDARD",
+   "b": 0.9,
+   "OBS": {
+    "usend_fbw": 39.9,
+    "wb_fbw": 638.0,
+    "net_rev_fbw": 610.0,
+    "cm_fbw": 256.4,
+    "cm_fbw_pct": 20.5,
+    "usend_fbs": 94.0,
+    "wb_fbs": 625.2,
+    "net_rev_fbs": 622.8,
+    "cm_fbs": 215.2,
+    "cm_fbs_pct": 17.2,
+    "cm_fbs_no_discount": 152.8,
+    "premium": 41.2,
+    "premium_pct_price": 3.3,
+    "parts_fbw": {
+     "set_assembly": 22.9,
+     "shelf": 0.18,
+     "box_supply_alloc": 16.86
+    },
+    "parts_fbs": {
+     "fbs_fee": 61.11,
+     "set_assembly": 18.4,
+     "returns_to_ff": 13.89,
+     "shelf": 0.61
+    }
+   },
+   "CONS": {
+    "usend_fbw": 67.6,
+    "wb_fbw": 638.0,
+    "net_rev_fbw": 610.0,
+    "cm_fbw": 228.7,
+    "cm_fbw_pct": 18.3,
+    "usend_fbs": 133.9,
+    "wb_fbs": 636.3,
+    "net_rev_fbs": 611.7,
+    "cm_fbs": 164.2,
+    "cm_fbs_pct": 13.2,
+    "cm_fbs_no_discount": 101.8,
+    "premium": 64.5,
+    "premium_pct_price": 5.2,
+    "parts_fbw": {
+     "set_assembly": 22.9,
+     "kiz_csv": 6.5,
+     "wb_packaging": 21.2,
+     "shelf": 0.18,
+     "box_supply_alloc": 16.86
+    },
+    "parts_fbs": {
+     "fbs_fee": 61.11,
+     "set_assembly": 18.4,
+     "returns_to_ff": 13.89,
+     "shelf": 0.61,
+     "packaging": 39.89
+    }
+   }
+  },
+  {
+   "sku": "SET-SER-CREAM-MOIST",
+   "price": 1320.0,
+   "cogs": 261.59,
+   "cls": "STANDARD",
+   "b": 0.826,
+   "OBS": {
+    "usend_fbw": 35.8,
+    "wb_fbw": 675.3,
+    "net_rev_fbw": 644.7,
+    "cm_fbw": 347.3,
+    "cm_fbw_pct": 26.3,
+    "usend_fbs": 111.9,
+    "wb_fbs": 663.3,
+    "net_rev_fbs": 656.7,
+    "cm_fbs": 283.2,
+    "cm_fbs_pct": 21.5,
+    "cm_fbs_no_discount": 217.2,
+    "premium": 64.1,
+    "premium_pct_price": 4.9,
+    "parts_fbw": {
+     "set_assembly": 22.9,
+     "shelf": 0.18,
+     "box_supply_alloc": 12.74
+    },
+    "parts_fbs": {
+     "fbs_fee": 66.59,
+     "set_assembly": 18.4,
+     "returns_to_ff": 26.33,
+     "shelf": 0.61
+    }
+   },
+   "CONS": {
+    "usend_fbw": 63.5,
+    "wb_fbw": 675.3,
+    "net_rev_fbw": 644.7,
+    "cm_fbw": 319.6,
+    "cm_fbw_pct": 24.2,
+    "usend_fbs": 155.4,
+    "wb_fbs": 675.4,
+    "net_rev_fbs": 644.6,
+    "cm_fbs": 227.6,
+    "cm_fbs_pct": 17.2,
+    "cm_fbs_no_discount": 161.6,
+    "premium": 92.0,
+    "premium_pct_price": 7.0,
+    "parts_fbw": {
+     "set_assembly": 22.9,
+     "kiz_csv": 6.5,
+     "wb_packaging": 21.2,
+     "shelf": 0.18,
+     "box_supply_alloc": 12.74
+    },
+    "parts_fbs": {
+     "fbs_fee": 66.59,
+     "set_assembly": 18.4,
+     "returns_to_ff": 26.33,
+     "shelf": 0.61,
+     "packaging": 43.46
+    }
+   }
+  },
+  {
+   "sku": "SET-TON-CREAM-MOIST",
+   "price": 1267.2,
+   "cogs": 313.57,
+   "cls": "STANDARD",
+   "b": 0.885,
+   "OBS": {
+    "usend_fbw": 41.0,
+    "wb_fbw": 648.7,
+    "net_rev_fbw": 618.5,
+    "cm_fbw": 263.9,
+    "cm_fbw_pct": 20.8,
+    "usend_fbs": 97.4,
+    "wb_fbs": 635.3,
+    "net_rev_fbs": 631.9,
+    "cm_fbs": 220.9,
+    "cm_fbs_pct": 17.4,
+    "cm_fbs_no_discount": 157.6,
+    "premium": 43.0,
+    "premium_pct_price": 3.4,
+    "parts_fbw": {
+     "set_assembly": 22.9,
+     "shelf": 0.18,
+     "box_supply_alloc": 17.92
+    },
+    "parts_fbs": {
+     "fbs_fee": 62.15,
+     "set_assembly": 18.4,
+     "returns_to_ff": 16.24,
+     "shelf": 0.61
+    }
+   },
+   "CONS": {
+    "usend_fbw": 68.7,
+    "wb_fbw": 648.7,
+    "net_rev_fbw": 618.5,
+    "cm_fbw": 236.2,
+    "cm_fbw_pct": 18.6,
+    "usend_fbs": 138.0,
+    "wb_fbs": 646.6,
+    "net_rev_fbs": 620.6,
+    "cm_fbs": 169.1,
+    "cm_fbs_pct": 13.3,
+    "cm_fbs_no_discount": 105.7,
+    "premium": 67.2,
+    "premium_pct_price": 5.3,
+    "parts_fbw": {
+     "set_assembly": 22.9,
+     "kiz_csv": 6.5,
+     "wb_packaging": 21.2,
+     "shelf": 0.18,
+     "box_supply_alloc": 17.92
+    },
+    "parts_fbs": {
+     "fbs_fee": 62.15,
+     "set_assembly": 18.4,
+     "returns_to_ff": 16.24,
+     "shelf": 0.61,
+     "packaging": 40.56
+    }
+   }
+  },
+  {
+   "sku": "SET-TON-SER-CREAM-MOIST",
+   "price": 1370.0,
+   "cogs": 444.38,
+   "cls": "STANDARD",
+   "b": 0.768,
+   "OBS": {
+    "usend_fbw": 49.0,
+    "wb_fbw": 756.6,
+    "net_rev_fbw": 613.4,
+    "cm_fbw": 120.1,
+    "cm_fbw_pct": 8.8,
+    "usend_fbs": 128.4,
+    "wb_fbs": 734.9,
+    "net_rev_fbs": 635.1,
+    "cm_fbs": 62.4,
+    "cm_fbs_pct": 4.6,
+    "cm_fbs_no_discount": -6.1,
+    "premium": 57.7,
+    "premium_pct_price": 4.2,
+    "parts_fbw": {
+     "set_assembly": 22.9,
+     "shelf": 0.18,
+     "box_supply_alloc": 25.88
+    },
+    "parts_fbs": {
+     "fbs_fee": 71.61,
+     "set_assembly": 18.4,
+     "returns_to_ff": 37.76,
+     "shelf": 0.61
+    }
+   },
+   "CONS": {
+    "usend_fbw": 79.9,
+    "wb_fbw": 756.6,
+    "net_rev_fbw": 613.4,
+    "cm_fbw": 89.2,
+    "cm_fbw_pct": 6.5,
+    "usend_fbs": 175.1,
+    "wb_fbs": 747.9,
+    "net_rev_fbs": 622.1,
+    "cm_fbs": 2.6,
+    "cm_fbs_pct": 0.2,
+    "cm_fbs_no_discount": -65.9,
+    "premium": 86.6,
+    "premium_pct_price": 6.3,
+    "parts_fbw": {
+     "set_assembly": 26.1,
+     "kiz_csv": 6.5,
+     "wb_packaging": 21.2,
+     "shelf": 0.18,
+     "box_supply_alloc": 25.88
+    },
+    "parts_fbs": {
+     "fbs_fee": 71.61,
+     "set_assembly": 18.4,
+     "returns_to_ff": 37.76,
+     "shelf": 0.61,
+     "packaging": 46.74
+    }
+   }
+  },
+  {
+   "sku": "SET-CHERRY-AMBER",
+   "price": 1120.0,
+   "cogs": 350.54,
+   "cls": "STANDARD",
+   "b": 0.952,
+   "OBS": {
+    "usend_fbw": 59.6,
+    "wb_fbw": 625.2,
+    "net_rev_fbw": 494.8,
+    "cm_fbw": 84.7,
+    "cm_fbw_pct": 7.6,
+    "usend_fbs": 83.1,
+    "wb_fbs": 605.3,
+    "net_rev_fbs": 514.7,
+    "cm_fbs": 81.1,
+    "cm_fbs_pct": 7.2,
+    "cm_fbs_no_discount": 25.1,
+    "premium": 3.6,
+    "premium_pct_price": 0.3,
+    "parts_fbw": {
+     "set_assembly": 22.9,
+     "shelf": 0.18,
+     "box_supply_alloc": 36.49
+    },
+    "parts_fbs": {
+     "fbs_fee": 57.77,
+     "set_assembly": 18.4,
+     "returns_to_ff": 6.3,
+     "shelf": 0.61
+    }
+   },
+   "CONS": {
+    "usend_fbw": 87.3,
+    "wb_fbw": 625.2,
+    "net_rev_fbw": 494.8,
+    "cm_fbw": 57.0,
+    "cm_fbw_pct": 5.1,
+    "usend_fbs": 120.8,
+    "wb_fbs": 615.8,
+    "net_rev_fbs": 504.2,
+    "cm_fbs": 32.9,
+    "cm_fbs_pct": 2.9,
+    "cm_fbs_no_discount": -23.1,
+    "premium": 24.1,
+    "premium_pct_price": 2.2,
+    "parts_fbw": {
+     "set_assembly": 22.9,
+     "kiz_csv": 6.5,
+     "wb_packaging": 21.2,
+     "shelf": 0.18,
+     "box_supply_alloc": 36.49
+    },
+    "parts_fbs": {
+     "fbs_fee": 57.77,
+     "set_assembly": 18.4,
+     "returns_to_ff": 6.3,
+     "shelf": 0.61,
+     "packaging": 37.71
+    }
+   }
+  },
+  {
+   "sku": "SET-HAND-CHERRY",
+   "price": 1120.0,
+   "cogs": 406.65,
+   "cls": "STANDARD",
+   "b": 0.778,
+   "OBS": {
+    "usend_fbw": 59.7,
+    "wb_fbw": 659.5,
+    "net_rev_fbw": 460.5,
+    "cm_fbw": -5.9,
+    "cm_fbw_pct": -0.5,
+    "usend_fbs": 125.4,
+    "wb_fbs": 633.7,
+    "net_rev_fbs": 486.3,
+    "cm_fbs": -45.7,
+    "cm_fbs_pct": -4.1,
+    "cm_fbs_no_discount": -101.7,
+    "premium": 39.9,
+    "premium_pct_price": 3.6,
+    "parts_fbw": {
+     "set_assembly": 22.9,
+     "shelf": 0.18,
+     "box_supply_alloc": 36.61
+    },
+    "parts_fbs": {
+     "fbs_fee": 70.69,
+     "set_assembly": 18.4,
+     "returns_to_ff": 35.67,
+     "shelf": 0.61
+    }
+   },
+   "CONS": {
+    "usend_fbw": 87.4,
+    "wb_fbw": 659.5,
+    "net_rev_fbw": 460.5,
+    "cm_fbw": -33.6,
+    "cm_fbw_pct": -3.0,
+    "usend_fbs": 171.5,
+    "wb_fbs": 646.6,
+    "net_rev_fbs": 473.4,
+    "cm_fbs": -104.7,
+    "cm_fbs_pct": -9.4,
+    "cm_fbs_no_discount": -160.7,
+    "premium": 71.1,
+    "premium_pct_price": 6.4,
+    "parts_fbw": {
+     "set_assembly": 22.9,
+     "kiz_csv": 6.5,
+     "wb_packaging": 21.2,
+     "shelf": 0.18,
+     "box_supply_alloc": 36.61
+    },
+    "parts_fbs": {
+     "fbs_fee": 70.69,
+     "set_assembly": 18.4,
+     "returns_to_ff": 35.67,
+     "shelf": 0.61,
+     "packaging": 46.14
+    }
+   }
+  },
+  {
+   "sku": "SET-HAND-AMBER",
+   "price": 1120.0,
+   "cogs": 406.65,
+   "cls": "STANDARD",
+   "b": 0.8,
+   "OBS": {
+    "usend_fbw": 57.7,
+    "wb_fbw": 650.8,
+    "net_rev_fbw": 469.2,
+    "cm_fbw": 4.9,
+    "cm_fbw_pct": 0.4,
+    "usend_fbs": 119.0,
+    "wb_fbs": 626.9,
+    "net_rev_fbs": 493.1,
+    "cm_fbs": -32.5,
+    "cm_fbs_pct": -2.9,
+    "cm_fbs_no_discount": -88.5,
+    "premium": 37.4,
+    "premium_pct_price": 3.3,
+    "parts_fbw": {
+     "set_assembly": 22.9,
+     "shelf": 0.18,
+     "box_supply_alloc": 34.57
+    },
+    "parts_fbs": {
+     "fbs_fee": 68.75,
+     "set_assembly": 18.4,
+     "returns_to_ff": 31.25,
+     "shelf": 0.61
+    }
+   },
+   "CONS": {
+    "usend_fbw": 85.4,
+    "wb_fbw": 650.8,
+    "net_rev_fbw": 469.2,
+    "cm_fbw": -22.8,
+    "cm_fbw_pct": -2.0,
+    "usend_fbs": 163.9,
+    "wb_fbs": 639.4,
+    "net_rev_fbs": 480.6,
+    "cm_fbs": -89.9,
+    "cm_fbs_pct": -8.0,
+    "cm_fbs_no_discount": -145.9,
+    "premium": 67.1,
+    "premium_pct_price": 6.0,
+    "parts_fbw": {
+     "set_assembly": 22.9,
+     "kiz_csv": 6.5,
+     "wb_packaging": 21.2,
+     "shelf": 0.18,
+     "box_supply_alloc": 34.57
+    },
+    "parts_fbs": {
+     "fbs_fee": 68.75,
+     "set_assembly": 18.4,
+     "returns_to_ff": 31.25,
+     "shelf": 0.61,
+     "packaging": 44.87
+    }
+   }
+  }
+ ],
+ "set_scenarios": [
+  {
+   "set": "SET-SER-CREAM-ACNE",
+   "k": 2,
+   "A_obs": 35.6,
+   "A_special": 35.6,
+   "A_contract": 49.1,
+   "B": 73.4,
+   "C_low": 60.4,
+   "C_base": 73.4,
+   "C_high": 97.8
+  },
+  {
+   "set": "SET-TON-CREAM-ACNE",
+   "k": 2,
+   "A_obs": 40.8,
+   "A_special": 40.8,
+   "A_contract": 54.3,
+   "B": 73.4,
+   "C_low": 60.4,
+   "C_base": 73.4,
+   "C_high": 97.8
+  },
+  {
+   "set": "SET-TON-SER-CREAM-ACNE",
+   "k": 3,
+   "A_obs": 48.8,
+   "A_special": 52.0,
+   "A_contract": 67.6,
+   "B": 73.4,
+   "C_low": 67.4,
+   "C_base": 73.4,
+   "C_high": 118.2
+  },
+  {
+   "set": "SET-4PC-ACNE",
+   "k": 4,
+   "A_obs": 53.2,
+   "A_special": 59.7,
+   "A_contract": 77.5,
+   "B": 73.4,
+   "C_low": 74.4,
+   "C_base": 73.4,
+   "C_high": 138.7
+  },
+  {
+   "set": "SET-ACNE-TONIC-SERUM",
+   "k": 2,
+   "A_obs": 39.8,
+   "A_special": 39.8,
+   "A_contract": 53.2,
+   "B": 73.4,
+   "C_low": 60.4,
+   "C_base": 73.4,
+   "C_high": 97.8
+  },
+  {
+   "set": "SET-MOIST-TONIC-SERUM",
+   "k": 2,
+   "A_obs": 39.8,
+   "A_special": 39.8,
+   "A_contract": 53.2,
+   "B": 73.4,
+   "C_low": 60.4,
+   "C_base": 73.4,
+   "C_high": 97.8
+  },
+  {
+   "set": "SET-SER-CREAM-MOIST",
+   "k": 2,
+   "A_obs": 35.6,
+   "A_special": 35.6,
+   "A_contract": 49.1,
+   "B": 73.4,
+   "C_low": 60.4,
+   "C_base": 73.4,
+   "C_high": 97.8
+  },
+  {
+   "set": "SET-TON-CREAM-MOIST",
+   "k": 2,
+   "A_obs": 40.8,
+   "A_special": 40.8,
+   "A_contract": 54.3,
+   "B": 73.4,
+   "C_low": 60.4,
+   "C_base": 73.4,
+   "C_high": 97.8
+  },
+  {
+   "set": "SET-TON-SER-CREAM-MOIST",
+   "k": 3,
+   "A_obs": 48.8,
+   "A_special": 52.0,
+   "A_contract": 67.6,
+   "B": 73.4,
+   "C_low": 67.4,
+   "C_base": 73.4,
+   "C_high": 118.2
+  },
+  {
+   "set": "SET-CHERRY-AMBER",
+   "k": 2,
+   "A_obs": 59.4,
+   "A_special": 59.4,
+   "A_contract": 72.8,
+   "B": 73.4,
+   "C_low": 60.4,
+   "C_base": 73.4,
+   "C_high": 97.8
+  },
+  {
+   "set": "SET-HAND-CHERRY",
+   "k": 2,
+   "A_obs": 59.5,
+   "A_special": 59.5,
+   "A_contract": 73.0,
+   "B": 73.4,
+   "C_low": 60.4,
+   "C_base": 73.4,
+   "C_high": 97.8
+  },
+  {
+   "set": "SET-HAND-AMBER",
+   "k": 2,
+   "A_obs": 57.5,
+   "A_special": 57.5,
+   "A_contract": 70.9,
+   "B": 73.4,
+   "C_low": 60.4,
+   "C_base": 73.4,
+   "C_high": 97.8
+  }
+ ],
+ "emergency": [
+  {
+   "sku": "FS-MOIST-30",
+   "mu_day": 1.36,
+   "premium": 30.5,
+   "premium_pct": 4.4,
+   "cm_fbs": 155.8,
+   "lost_cm_7d_no_fbs": 1768.0,
+   "recovery_loss": {
+    "0": 0.0,
+    "7": 884.0,
+    "14": 1768.0
+   },
+   "fbs_gain_7d": {
+    "0.5": 739.0,
+    "0.7": 1035.0,
+    "0.9": 1331.0
+   },
+   "breakeven_leakage_pct": {
+    "0.1": 11.9,
+    "0.25": 29.8,
+    "0.5": 59.5
+   }
+  },
+  {
+   "sku": "FS-ACNE-30",
+   "mu_day": 1.41,
+   "premium": 50.2,
+   "premium_pct": 6.2,
+   "cm_fbs": 190.7,
+   "lost_cm_7d_no_fbs": 2380.0,
+   "recovery_loss": {
+    "0": 0.0,
+    "7": 1190.0,
+    "14": 2380.0
+   },
+   "fbs_gain_7d": {
+    "0.5": 942.0,
+    "0.7": 1319.0,
+    "0.9": 1695.0
+   },
+   "breakeven_leakage_pct": {
+    "0.1": 9.0,
+    "0.25": 22.5,
+    "0.5": 45.0
+   }
+  },
+  {
+   "sku": "FC-ACNE-50",
+   "mu_day": 1.32,
+   "premium": 56.1,
+   "premium_pct": 7.0,
+   "cm_fbs": 171.2,
+   "lost_cm_7d_no_fbs": 2104.0,
+   "recovery_loss": {
+    "0": 0.0,
+    "7": 1052.0,
+    "14": 2104.0
+   },
+   "fbs_gain_7d": {
+    "0.5": 792.0,
+    "0.7": 1109.0,
+    "0.9": 1426.0
+   },
+   "breakeven_leakage_pct": {
+    "0.1": 7.3,
+    "0.25": 18.4,
+    "0.5": 36.7
+   }
+  },
+  {
+   "sku": "FC-MOIST-50",
+   "mu_day": 1.41,
+   "premium": 27.7,
+   "premium_pct": 3.0,
+   "cm_fbs": 278.3,
+   "lost_cm_7d_no_fbs": 3022.0,
+   "recovery_loss": {
+    "0": 0.0,
+    "7": 1511.0,
+    "14": 3022.0
+   },
+   "fbs_gain_7d": {
+    "0.5": 1374.0,
+    "0.7": 1924.0,
+    "0.9": 2474.0
+   },
+   "breakeven_leakage_pct": {
+    "0.1": 22.9,
+    "0.25": 57.1,
+    "0.5": 114.3
+   }
+  },
+  {
+   "sku": "FT-ACNE-150",
+   "mu_day": 1.08,
+   "premium": 26.6,
+   "premium_pct": 3.6,
+   "cm_fbs": 124.5,
+   "lost_cm_7d_no_fbs": 1140.0,
+   "recovery_loss": {
+    "0": 0.0,
+    "7": 570.0,
+    "14": 1140.0
+   },
+   "fbs_gain_7d": {
+    "0.5": 470.0,
+    "0.7": 657.0,
+    "0.9": 845.0
+   },
+   "breakeven_leakage_pct": {
+    "0.1": 11.0,
+    "0.25": 27.4,
+    "0.5": 54.8
+   }
+  },
+  {
+   "sku": "FT-MOIST-150",
+   "mu_day": 0.58,
+   "premium": 27.5,
+   "premium_pct": 3.7,
+   "cm_fbs": 123.1,
+   "lost_cm_7d_no_fbs": 609.0,
+   "recovery_loss": {
+    "0": 0.0,
+    "7": 305.0,
+    "14": 609.0
+   },
+   "fbs_gain_7d": {
+    "0.5": 249.0,
+    "0.7": 349.0,
+    "0.9": 448.0
+   },
+   "breakeven_leakage_pct": {
+    "0.1": 10.5,
+    "0.25": 26.3,
+    "0.5": 52.5
+   }
+  },
+  {
+   "sku": "EP-ENZYME-75",
+   "mu_day": 0.73,
+   "premium": 41.2,
+   "premium_pct": 6.2,
+   "cm_fbs": 89.3,
+   "lost_cm_7d_no_fbs": 670.0,
+   "recovery_loss": {
+    "0": 0.0,
+    "7": 335.0,
+    "14": 670.0
+   },
+   "fbs_gain_7d": {
+    "0.5": 229.0,
+    "0.7": 321.0,
+    "0.9": 413.0
+   },
+   "breakeven_leakage_pct": {
+    "0.1": 5.4,
+    "0.25": 13.5,
+    "0.5": 26.9
+   }
+  },
+  {
+   "sku": "HC-CHERRY-300",
+   "mu_day": 0.53,
+   "premium": 47.0,
+   "premium_pct": 7.3,
+   "cm_fbs": 19.9,
+   "lost_cm_7d_no_fbs": 250.0,
+   "recovery_loss": {
+    "0": 0.0,
+    "7": 125.0,
+    "14": 250.0
+   },
+   "fbs_gain_7d": {
+    "0.5": 37.0,
+    "0.7": 52.0,
+    "0.9": 67.0
+   },
+   "breakeven_leakage_pct": {
+    "0.1": 1.5,
+    "0.25": 3.8,
+    "0.5": 7.6
+   }
+  },
+  {
+   "sku": "HC-AMBER-300",
+   "mu_day": 0.47,
+   "premium": 85.1,
+   "premium_pct": 13.3,
+   "cm_fbs": -36.5,
+   "lost_cm_7d_no_fbs": 159.0,
+   "recovery_loss": {
+    "0": 0.0,
+    "7": 79.0,
+    "14": 159.0
+   },
+   "fbs_gain_7d": {
+    "0.5": -60.0,
+    "0.7": -83.0,
+    "0.9": -107.0
+   },
+   "breakeven_leakage_pct": {
+    "0.1": -0.4,
+    "0.25": -0.9,
+    "0.5": -1.8
+   }
+  },
+  {
+   "sku": "HC-HAND-300",
+   "mu_day": 6.66,
+   "premium": 36.9,
+   "premium_pct": 5.8,
+   "cm_fbs": -14.9,
+   "lost_cm_7d_no_fbs": 1020.0,
+   "recovery_loss": {
+    "0": 0.0,
+    "7": 510.0,
+    "14": 1020.0
+   },
+   "fbs_gain_7d": {
+    "0.5": -347.0,
+    "0.7": -486.0,
+    "0.9": -625.0
+   },
+   "breakeven_leakage_pct": {
+    "0.1": -0.3,
+    "0.25": -0.8,
+    "0.5": -1.6
+   }
+  },
+  {
+   "sku": "SET-SER-CREAM-ACNE",
+   "mu_day": 0.57,
+   "premium": 64.7,
+   "premium_pct": 5.0,
+   "cm_fbs": 262.4,
+   "lost_cm_7d_no_fbs": 1297.0,
+   "recovery_loss": {
+    "0": 0.0,
+    "7": 649.0,
+    "14": 1297.0
+   },
+   "fbs_gain_7d": {
+    "0.5": 520.0,
+    "0.7": 729.0,
+    "0.9": 937.0
+   },
+   "breakeven_leakage_pct": {
+    "0.1": 9.6,
+    "0.25": 23.9,
+    "0.5": 47.9
+   }
+  },
+  {
+   "sku": "SET-TON-CREAM-ACNE",
+   "mu_day": 0.2,
+   "premium": 55.3,
+   "premium_pct": 4.3,
+   "cm_fbs": 205.7,
+   "lost_cm_7d_no_fbs": 365.0,
+   "recovery_loss": {
+    "0": 0.0,
+    "7": 183.0,
+    "14": 365.0
+   },
+   "fbs_gain_7d": {
+    "0.5": 144.0,
+    "0.7": 202.0,
+    "0.9": 259.0
+   },
+   "breakeven_leakage_pct": {
+    "0.1": 8.8,
+    "0.25": 22.1,
+    "0.5": 44.1
+   }
+  },
+  {
+   "sku": "SET-TON-SER-CREAM-ACNE",
+   "mu_day": 0.48,
+   "premium": 64.6,
+   "premium_pct": 4.8,
+   "cm_fbs": 29.7,
+   "lost_cm_7d_no_fbs": 315.0,
+   "recovery_loss": {
+    "0": 0.0,
+    "7": 158.0,
+    "14": 315.0
+   },
+   "fbs_gain_7d": {
+    "0.5": 50.0,
+    "0.7": 70.0,
+    "0.9": 89.0
+   },
+   "breakeven_leakage_pct": {
+    "0.1": 1.6,
+    "0.25": 4.0,
+    "0.5": 8.0
+   }
+  },
+  {
+   "sku": "SET-4PC-ACNE",
+   "mu_day": 0.58,
+   "premium": 58.7,
+   "premium_pct": 3.1,
+   "cm_fbs": 161.7,
+   "lost_cm_7d_no_fbs": 892.0,
+   "recovery_loss": {
+    "0": 0.0,
+    "7": 446.0,
+    "14": 892.0
+   },
+   "fbs_gain_7d": {
+    "0.5": 327.0,
+    "0.7": 458.0,
+    "0.9": 589.0
+   },
+   "breakeven_leakage_pct": {
+    "0.1": 6.7,
+    "0.25": 16.7,
+    "0.5": 33.5
+   }
+  },
+  {
+   "sku": "SET-ACNE-TONIC-SERUM",
+   "mu_day": 0.12,
+   "premium": 41.1,
+   "premium_pct": 3.2,
+   "cm_fbs": 227.8,
+   "lost_cm_7d_no_fbs": 230.0,
+   "recovery_loss": {
+    "0": 0.0,
+    "7": 115.0,
+    "14": 230.0
+   },
+   "fbs_gain_7d": {
+    "0.5": 97.0,
+    "0.7": 136.0,
+    "0.9": 175.0
+   },
+   "breakeven_leakage_pct": {
+    "0.1": 12.9,
+    "0.25": 32.2,
+    "0.5": 64.3
+   }
+  },
+  {
+   "sku": "SET-MOIST-TONIC-SERUM",
+   "mu_day": 0.07,
+   "premium": 41.2,
+   "premium_pct": 3.3,
+   "cm_fbs": 215.2,
+   "lost_cm_7d_no_fbs": 120.0,
+   "recovery_loss": {
+    "0": 0.0,
+    "7": 60.0,
+    "14": 120.0
+   },
+   "fbs_gain_7d": {
+    "0.5": 50.0,
+    "0.7": 70.0,
+    "0.9": 90.0
+   },
+   "breakeven_leakage_pct": {
+    "0.1": 12.2,
+    "0.25": 30.4,
+    "0.5": 60.8
+   }
+  },
+  {
+   "sku": "SET-SER-CREAM-MOIST",
+   "mu_day": 0.26,
+   "premium": 64.1,
+   "premium_pct": 4.9,
+   "cm_fbs": 283.2,
+   "lost_cm_7d_no_fbs": 621.0,
+   "recovery_loss": {
+    "0": 0.0,
+    "7": 311.0,
+    "14": 621.0
+   },
+   "fbs_gain_7d": {
+    "0.5": 253.0,
+    "0.7": 355.0,
+    "0.9": 456.0
+   },
+   "breakeven_leakage_pct": {
+    "0.1": 10.4,
+    "0.25": 25.9,
+    "0.5": 51.9
+   }
+  },
+  {
+   "sku": "SET-TON-CREAM-MOIST",
+   "mu_day": 0.29,
+   "premium": 43.0,
+   "premium_pct": 3.4,
+   "cm_fbs": 220.9,
+   "lost_cm_7d_no_fbs": 534.0,
+   "recovery_loss": {
+    "0": 0.0,
+    "7": 267.0,
+    "14": 534.0
+   },
+   "fbs_gain_7d": {
+    "0.5": 223.0,
+    "0.7": 313.0,
+    "0.9": 402.0
+   },
+   "breakeven_leakage_pct": {
+    "0.1": 12.0,
+    "0.25": 29.9,
+    "0.5": 59.9
+   }
+  },
+  {
+   "sku": "SET-TON-SER-CREAM-MOIST",
+   "mu_day": 0.62,
+   "premium": 57.7,
+   "premium_pct": 4.2,
+   "cm_fbs": 62.4,
+   "lost_cm_7d_no_fbs": 523.0,
+   "recovery_loss": {
+    "0": 0.0,
+    "7": 262.0,
+    "14": 523.0
+   },
+   "fbs_gain_7d": {
+    "0.5": 136.0,
+    "0.7": 190.0,
+    "0.9": 245.0
+   },
+   "breakeven_leakage_pct": {
+    "0.1": 3.0,
+    "0.25": 7.5,
+    "0.5": 14.9
+   }
+  },
+  {
+   "sku": "SET-CHERRY-AMBER",
+   "mu_day": 0.23,
+   "premium": 3.6,
+   "premium_pct": 0.3,
+   "cm_fbs": 81.1,
+   "lost_cm_7d_no_fbs": 138.0,
+   "recovery_loss": {
+    "0": 0.0,
+    "7": 69.0,
+    "14": 138.0
+   },
+   "fbs_gain_7d": {
+    "0.5": 66.0,
+    "0.7": 93.0,
+    "0.9": 119.0
+   },
+   "breakeven_leakage_pct": {
+    "0.1": 50.5,
+    "0.25": 126.3,
+    "0.5": 252.6
+   }
+  },
+  {
+   "sku": "SET-HAND-CHERRY",
+   "mu_day": 0.2,
+   "premium": 39.9,
+   "premium_pct": 3.6,
+   "cm_fbs": -45.7,
+   "lost_cm_7d_no_fbs": -8.0,
+   "recovery_loss": {
+    "0": -0.0,
+    "7": -4.0,
+    "14": -8.0
+   },
+   "fbs_gain_7d": {
+    "0.5": -32.0,
+    "0.7": -45.0,
+    "0.9": -58.0
+   },
+   "breakeven_leakage_pct": {
+    "0.1": -2.0,
+    "0.25": -4.9,
+    "0.5": -9.8
+   }
+  },
+  {
+   "sku": "SET-HAND-AMBER",
+   "mu_day": 0.22,
+   "premium": 37.4,
+   "premium_pct": 3.3,
+   "cm_fbs": -32.5,
+   "lost_cm_7d_no_fbs": 8.0,
+   "recovery_loss": {
+    "0": 0.0,
+    "7": 4.0,
+    "14": 8.0
+   },
+   "fbs_gain_7d": {
+    "0.5": -25.0,
+    "0.7": -35.0,
+    "0.9": -46.0
+   },
+   "breakeven_leakage_pct": {
+    "0.1": -1.3,
+    "0.25": -3.4,
+    "0.5": -6.7
+   }
+  }
+ ],
+ "pooling": [
+  {
+   "component": "FS-MOIST-30",
+   "sets": 3,
+   "ss_separate": 14.5,
+   "ss_pooled": 8.1,
+   "units_freed": 6.4,
+   "wc_freed_rub": 837,
+   "slow_sets_days_cover_of_lot5": [
+    [
+     "SET-MOIST-TONIC-SERUM",
+     75
+    ]
+   ]
+  },
+  {
+   "component": "FS-ACNE-30",
+   "sets": 4,
+   "ss_separate": 19.9,
+   "ss_pooled": 9.5,
+   "units_freed": 10.5,
+   "wc_freed_rub": 1422,
+   "slow_sets_days_cover_of_lot5": [
+    [
+     "SET-ACNE-TONIC-SERUM",
+     41
+    ]
+   ]
+  },
+  {
+   "component": "FC-ACNE-50",
+   "sets": 4,
+   "ss_separate": 20.3,
+   "ss_pooled": 9.5,
+   "units_freed": 10.8,
+   "wc_freed_rub": 1423,
+   "slow_sets_days_cover_of_lot5": [
+    [
+     "SET-TON-CREAM-ACNE",
+     25
+    ]
+   ]
+  },
+  {
+   "component": "FC-MOIST-50",
+   "sets": 3,
+   "ss_separate": 16.1,
+   "ss_pooled": 8.6,
+   "units_freed": 7.5,
+   "wc_freed_rub": 986,
+   "slow_sets_days_cover_of_lot5": []
+  },
+  {
+   "component": "FT-ACNE-150",
+   "sets": 4,
+   "ss_separate": 17.5,
+   "ss_pooled": 8.4,
+   "units_freed": 9.2,
+   "wc_freed_rub": 1675,
+   "slow_sets_days_cover_of_lot5": [
+    [
+     "SET-TON-CREAM-ACNE",
+     25
+    ],
+    [
+     "SET-ACNE-TONIC-SERUM",
+     41
+    ]
+   ]
+  },
+  {
+   "component": "FT-MOIST-150",
+   "sets": 3,
+   "ss_separate": 12.5,
+   "ss_pooled": 6.6,
+   "units_freed": 5.8,
+   "wc_freed_rub": 1069,
+   "slow_sets_days_cover_of_lot5": [
+    [
+     "SET-MOIST-TONIC-SERUM",
+     75
+    ]
+   ]
+  },
+  {
+   "component": "EP-ENZYME-75",
+   "sets": 1,
+   "ss_separate": 8.6,
+   "ss_pooled": 6.1,
+   "units_freed": 2.5,
+   "wc_freed_rub": 400,
+   "slow_sets_days_cover_of_lot5": []
+  },
+  {
+   "component": "HC-CHERRY-300",
+   "sets": 2,
+   "ss_separate": 8.9,
+   "ss_pooled": 5.2,
+   "units_freed": 3.6,
+   "wc_freed_rub": 633,
+   "slow_sets_days_cover_of_lot5": [
+    [
+     "SET-CHERRY-AMBER",
+     21
+    ],
+    [
+     "SET-HAND-CHERRY",
+     25
+    ]
+   ]
+  },
+  {
+   "component": "HC-AMBER-300",
+   "sets": 2,
+   "ss_separate": 8.7,
+   "ss_pooled": 5.1,
+   "units_freed": 3.6,
+   "wc_freed_rub": 633,
+   "slow_sets_days_cover_of_lot5": [
+    [
+     "SET-CHERRY-AMBER",
+     21
+    ],
+    [
+     "SET-HAND-AMBER",
+     22
+    ]
+   ]
+  },
+  {
+   "component": "HC-HAND-300",
+   "sets": 2,
+   "ss_separate": 18.6,
+   "ss_pooled": 14.2,
+   "units_freed": 4.5,
+   "wc_freed_rub": 1034,
+   "slow_sets_days_cover_of_lot5": [
+    [
+     "SET-HAND-CHERRY",
+     25
+    ],
+    [
+     "SET-HAND-AMBER",
+     22
+    ]
+   ]
+  }
+ ],
+ "matrix": [
+  {
+   "sku": "FS-MOIST-30",
+   "batch": "BATCH-06",
+   "ff": 3892,
+   "wb_live": 20,
+   "fbw": "COND",
+   "fbs": "YES",
+   "ozon": "YES",
+   "ozon_last_delivery": "2027-08-12",
+   "wb_fbs_last_order": "2027-10-08",
+   "cm_fbw": 186.3,
+   "cm_fbs": 155.8,
+   "premium": 30.5,
+   "note": "ниже целевого запаса"
+  },
+  {
+   "sku": "FS-ACNE-30",
+   "batch": "BATCH-06",
+   "ff": 5223,
+   "wb_live": 197,
+   "fbw": "COND",
+   "fbs": "YES",
+   "ozon": "YES",
+   "ozon_last_delivery": "2027-08-12",
+   "wb_fbs_last_order": "2027-10-08",
+   "cm_fbw": 240.9,
+   "cm_fbs": 190.7,
+   "premium": 50.2,
+   "note": "выше целевого запаса"
+  },
+  {
+   "sku": "FS-ACNE-30",
+   "batch": "BATCH-03?",
+   "ff": null,
+   "wb_live": 0,
+   "fbw": "NO",
+   "fbs": "YES",
+   "ozon": "UNKNOWN",
+   "ozon_last_delivery": "2026-09-18",
+   "wb_fbs_last_order": "2026-11-14",
+   "cm_fbw": 240.9,
+   "cm_fbs": 190.7,
+   "premium": 50.2,
+   "note": "наличие не подтверждено"
+  },
+  {
+   "sku": "FC-ACNE-50",
+   "batch": "BATCH-04",
+   "ff": 1077,
+   "wb_live": 289,
+   "fbw": "NO",
+   "fbs": "YES",
+   "ozon": "YES",
+   "ozon_last_delivery": "2027-03-21",
+   "wb_fbs_last_order": "2027-05-17",
+   "cm_fbw": 227.3,
+   "cm_fbs": 171.2,
+   "premium": 56.1,
+   "note": ""
+  },
+  {
+   "sku": "FC-MOIST-50",
+   "batch": "BATCH-04",
+   "ff": 2,
+   "wb_live": 0,
+   "fbw": "NO",
+   "fbs": "YES",
+   "ozon": "YES",
+   "ozon_last_delivery": "2027-03-21",
+   "wb_fbs_last_order": "2027-05-17",
+   "cm_fbw": 305.9,
+   "cm_fbs": 278.3,
+   "premium": 27.7,
+   "note": "2 шт."
+  },
+  {
+   "sku": "FC-MOIST-50",
+   "batch": "BATCH-08",
+   "ff": 0,
+   "wb_live": 0,
+   "fbw": "UNKNOWN",
+   "fbs": "UNKNOWN",
+   "ozon": "UNKNOWN",
+   "ozon_last_delivery": null,
+   "wb_fbs_last_order": null,
+   "cm_fbw": 305.9,
+   "cm_fbs": 278.3,
+   "premium": 27.7,
+   "note": "в пути, ≈20.10; срок 24 или 36 мес"
+  },
+  {
+   "sku": "FT-ACNE-150",
+   "batch": "BATCH-05",
+   "ff": 3676,
+   "wb_live": 47,
+   "fbw": "COND",
+   "fbs": "YES",
+   "ozon": "YES",
+   "ozon_last_delivery": "2027-07-24",
+   "wb_fbs_last_order": "2027-09-19",
+   "cm_fbw": 151.1,
+   "cm_fbs": 124.5,
+   "premium": 26.6,
+   "note": "немного ниже целевого"
+  },
+  {
+   "sku": "FT-MOIST-150",
+   "batch": "BATCH-05",
+   "ff": 3667,
+   "wb_live": 57,
+   "fbw": "COND",
+   "fbs": "YES",
+   "ozon": "YES",
+   "ozon_last_delivery": "2027-07-24",
+   "wb_fbs_last_order": "2027-09-19",
+   "cm_fbw": 150.7,
+   "cm_fbs": 123.1,
+   "premium": 27.5,
+   "note": "выше целевого"
+  },
+  {
+   "sku": "EP-ENZYME-75",
+   "batch": "BATCH-05",
+   "ff": 3737,
+   "wb_live": 101,
+   "fbw": "COND",
+   "fbs": "YES",
+   "ozon": "YES",
+   "ozon_last_delivery": "2027-07-24",
+   "wb_fbs_last_order": "2027-09-19",
+   "cm_fbw": 130.5,
+   "cm_fbs": 89.3,
+   "premium": 41.2,
+   "note": "выше целевого"
+  },
+  {
+   "sku": "HC-CHERRY-300",
+   "batch": "BATCH-07",
+   "ff": 4429,
+   "wb_live": 0,
+   "fbw": "COND",
+   "fbs": "YES",
+   "ozon": "YES",
+   "ozon_last_delivery": "2027-10-17",
+   "wb_fbs_last_order": "2027-12-13",
+   "cm_fbw": 66.9,
+   "cm_fbs": 19.9,
+   "premium": 47.0,
+   "note": "на WB 0"
+  },
+  {
+   "sku": "HC-AMBER-300",
+   "batch": "BATCH-07",
+   "ff": 4509,
+   "wb_live": 0,
+   "fbw": "COND",
+   "fbs": "YES",
+   "ozon": "YES",
+   "ozon_last_delivery": "2027-10-17",
+   "wb_fbs_last_order": "2027-12-13",
+   "cm_fbw": 48.6,
+   "cm_fbs": -36.5,
+   "premium": 85.1,
+   "note": "на WB 0"
+  },
+  {
+   "sku": "HC-HAND-300",
+   "batch": "BATCH-02",
+   "ff": 2736,
+   "wb_live": 138,
+   "fbw": "NO",
+   "fbs": "YES",
+   "ozon": "YES",
+   "ozon_last_delivery": "2026-10-02",
+   "wb_fbs_last_order": "2026-11-28",
+   "cm_fbw": 21.9,
+   "cm_fbs": -14.9,
+   "premium": 36.9,
+   "note": "факт владельца"
+  }
+ ],
+ "first_shipment": {
+  "units": {
+   "FS-MOIST-30": 140,
+   "FT-ACNE-150": 60
+  },
+  "boxes": 2,
+  "obs_parts": {
+   "pack": 900.0,
+   "docs": 350.0,
+   "order": 27.0,
+   "box_material": 153.4,
+   "loading": 110.0,
+   "delivery": 970.0,
+   "downtime_expected": 400.0
+  },
+  "obs_total": 2910,
+  "obs_per_unit": 14.6,
+  "cons_extra": {
+   "kiz_csv": 1300.0,
+   "wb_packaging": 5500.0
+  },
+  "cons_total": 9710,
+  "cons_per_unit": 48.6,
+  "downtime_range": [
+   0,
+   900
+  ],
+  "cogs_at_risk": 29281,
+  "kg": 31.0,
+  "wb_litres": 59.0
+ }
+}
