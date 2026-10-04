@@ -52,16 +52,17 @@ def metadata(c,p):
     jobs=[]
     for name,cfg in expected.items():
         jobs.append({"name":base+"/jobs/"+name,"template":{"template":{
+          "timeout":"3600s","maxRetries":0,
           "serviceAccount":f"{c['marketplaces']['ozon']['service_accounts']['runtime']}@{c['project_id']}.iam.gserviceaccount.com",
           "containers":[{"image":p["image"],"env":[{"name":k,"value":v} for k,v in cfg["env"].items()]}]}}})
     jobs.append({"name":base+"/jobs/tenant-control","template":{"template":{
-        "serviceAccount":c["control"]["email"],"containers":[{"image":p["image"],
+        "timeout":"3600s","maxRetries":0,"serviceAccount":c["control"]["email"],"containers":[{"image":p["image"],"command":["python","lifecycle.py"],"args":["status"],
         "env":[{"name":k,"value":v} for k,v in c["control"]["job"]["env"].items()]}]}}})
     sched=[{"name":base+"/jobs/"+cfg["scheduler"],"state":"PAUSED"} for cfg in expected.values()]
     return jobs,sched
 
 
-@pytest.mark.parametrize("fault",["active","wrong-image","no-binding","foreign-sa","scheduler-enabled","extra-job","continuation-token"])
+@pytest.mark.parametrize("fault",["active","wrong-image","no-binding","foreign-sa","scheduler-enabled","extra-job","continuation-token","extra-env","entrypoint","parallel","timeout","retry"])
 def test_metadata_mutation_or_security_drift_stops_before_any_write(monkeypatch,fault):
     p=doc();c=R.terraform_inputs("client_001");jobs,sched=metadata(c,p)
     if fault=="wrong-image":jobs[0]["template"]["template"]["containers"][0]["image"]="bad"
@@ -69,6 +70,11 @@ def test_metadata_mutation_or_security_drift_stops_before_any_write(monkeypatch,
     if fault=="foreign-sa":jobs[0]["template"]["template"]["serviceAccount"]="other@foreign"
     if fault=="scheduler-enabled":sched[0]["state"]="ENABLED"
     if fault=="extra-job":jobs.append({"name":jobs[0]["name"].rsplit("/",1)[0]+"/orphan"})
+    if fault=="extra-env":jobs[0]["template"]["template"]["containers"][0]["env"].append({"name":"BACKFILL_WINDOW_DAYS","value":"30"})
+    if fault=="entrypoint":jobs[0]["template"]["template"]["containers"][0]["command"]=["python","other.py"]
+    if fault=="parallel":jobs[0]["template"]["taskCount"]=2
+    if fault=="timeout":jobs[0]["template"]["template"]["timeout"]="7200s"
+    if fault=="retry":jobs[0]["template"]["template"]["maxRetries"]=1
     monkeypatch.setattr(T.TL,"read_state",lambda *a:([],{},[],[],False))
     import lifecycle_core as L
     monkeypatch.setattr(L,"current_state",lambda _:L.VALIDATING)
@@ -131,3 +137,22 @@ def test_lost_journal_ack_does_not_confuse_retry_telemetry_with_source_conflict(
     retry=dict(detail,transport_requests=3,transport_retries=2)
     assert T.source_detail(detail)==T.source_detail(retry)
     assert T.source_detail(detail)!=T.source_detail(dict(retry,expected_unique_rows=4))
+
+
+
+def test_pilot_lease_generation_survives_expired_tables_and_ignores_old_release_marker():
+    now=datetime(2026,10,4,tzinfo=timezone.utc);cid="0"*16
+    ledger=[{"lease_generation":22,"evidence_json":json.dumps({"mode":"BOUNDED_PILOT"})}]
+    assert T.pilot_lease_generation(ledger,[],cid,now,lambda name:({"owner":"old"},"{}"))==23
+    labels={"until":str(int(now.timestamp()+3600)),"owner":"new-owner"}
+    with pytest.raises(T.B.EvidenceError,match="held"):
+        T.pilot_lease_generation(ledger,[(T.CK.lease_name(cid,23),labels)],cid,now,
+                                lambda name:({"owner":"old-owner"},"{}"))
+    assert T.pilot_lease_generation(ledger,[(T.CK.lease_name(cid,23),labels)],cid,now,
+                                  lambda name:({"owner":"new-owner"},"{}"))==24
+
+
+def test_pilot_namespace_exhaustion_never_reuses_a_generation():
+    ledger=[{"lease_generation":9999,"evidence_json":json.dumps({"mode":"BOUNDED_PILOT"})}]
+    with pytest.raises(T.B.EvidenceError,match="namespace exhausted"):
+        T.pilot_lease_generation(ledger,[],"0"*16,datetime(2026,10,4,tzinfo=timezone.utc),lambda _:None)

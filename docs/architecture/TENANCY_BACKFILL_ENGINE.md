@@ -61,8 +61,9 @@ Existing legacy collectors/lookbacks retain their source and key semantics. Jour
 rejection now fails visibly for every caller; legacy deployment is not authorized by this
 candidate. One entity per bounded execution. Pilot metadata requires VALIDATING or
 CAPABILITY_DISCOVERY and a tenant-wide atomic lease; it cannot overlap full T5
-BACKFILLING, READY or an active control execution. A terminal execution completion
-marker permits the next CAS lease generation; a lost/ambiguous run remains locked. Inputs carry
+BACKFILLING, READY or an active control execution. Pilot generations derive from both persistent checkpoint ledger and lease metadata,
+so expiration never reuses a generation. A terminal completion marker must match the
+current lease owner before it permits the next CAS generation; a lost/ambiguous run remains locked. Inputs carry
 exact scope, generation and checkpoint origin; tenant identifiers are never runtime branches.
 FBO uses half-open millisecond UTC intervals derived from whole Moscow days. RAW order_date
 remains source UTC date; coverage is Moscow-day coverage only when every leaf covers that day.

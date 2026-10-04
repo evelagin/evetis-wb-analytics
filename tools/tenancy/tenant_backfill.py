@@ -81,6 +81,23 @@ def resources(c):
     return base, c["marketplaces"]["ozon"]["jobs"]
 
 
+def canonical_template(job, expected_env, image, account, control=False):
+    # Fixed deployment contract: infra/tenant/modules/ozon_runtime/main.tf.
+    outer=job["template"];template=outer["template"];containers=template["containers"]
+    if outer.get("taskCount",1)!=1 or outer.get("parallelism",0) not in (0,1):
+        raise B.EvidenceError("canonical single-task concurrency differs")
+    if template.get("timeout")!="3600s" or template.get("maxRetries",0)!=0:
+        raise B.EvidenceError("canonical timeout/retry contract differs")
+    if len(containers)!=1 or containers[0]["image"]!=image or template.get("serviceAccount")!=account:
+        raise B.EvidenceError("canonical image/identity parity failed")
+    container=containers[0]
+    if (container.get("command") or [])!=(['python','lifecycle.py'] if control else []) or (container.get("args") or [])!=(['status'] if control else []):
+        raise B.EvidenceError("canonical entrypoint/args drift")
+    env=container.get("env",[]);actual={e["name"]:e.get("value") for e in env}
+    if len(actual)!=len(env) or actual!=expected_env:
+        raise B.EvidenceError("canonical env differs (unknown/duplicate/changed settings)")
+
+
 def preflight(c, doc, now):
     tables = TT.Tables(c["project_id"])
     chain, decisions, ledger, rows, hold = TL.read_state(c, tables)
@@ -99,29 +116,15 @@ def preflight(c, doc, now):
         raise B.EvidenceError("unexpected tenant job inventory")
     for name, cfg in expected.items():
         job = jobs[name]
-        template = job["template"]["template"]
-        containers = template["containers"]
-        if len(containers) != 1 or containers[0]["image"] != doc["image"]:
-            raise B.EvidenceError("pilot exact-image parity failed")
-        actual = {e["name"]: e.get("value") for e in containers[0].get("env", [])}
-        if any(actual.get(k) != v for k,v in cfg["env"].items()):
-            raise B.EvidenceError("canonical runtime env parity failed")
-        if template.get("serviceAccount") != f"{c['marketplaces']['ozon']['service_accounts']['runtime']}@{c['project_id']}.iam.gserviceaccount.com":
-            raise B.EvidenceError("runtime identity mismatch")
+        canonical_template(job,cfg["env"],doc["image"],
+                           f"{c['marketplaces']['ozon']['service_accounts']['runtime']}@{c['project_id']}.iam.gserviceaccount.com")
         if job.get("runningCount", 0):
             raise B.EvidenceError("tenant ingestion execution already active")
         executions = TT._req("GET", f"{RUN_API}/{job['name']}/executions?pageSize=1000")
         if executions.get("nextPageToken") or any(not e.get("completionTime") for e in executions.get("executions", [])):
             raise B.EvidenceError("active/unproven tenant execution")
     control = jobs["tenant-control"]
-    template = control["template"]["template"]
-    containers = template["containers"]
-    expected_control = c["control"]["job"]
-    if len(containers) != 1 or containers[0]["image"] != doc["image"] or template.get("serviceAccount") != c["control"]["email"]:
-        raise B.EvidenceError("control image/identity parity failed")
-    actual = {e["name"]: e.get("value") for e in containers[0].get("env", [])}
-    if any(actual.get(k) != v for k,v in expected_control["env"].items()):
-        raise B.EvidenceError("control env parity failed")
+    canonical_template(control,c["control"]["job"]["env"],doc["image"],c["control"]["email"],control=True)
     executions = TT._req("GET", f"{RUN_API}/{control['name']}/executions?pageSize=1000")
     if executions.get("nextPageToken") or any(not e.get("completionTime") for e in executions.get("executions", [])):
         raise B.EvidenceError("control execution active/unproven")
@@ -166,19 +169,40 @@ def checkpoint(doc, run_id, status, generation, now, evidence=None):
             "evidence_json": json.dumps({"mode":"BOUNDED_PILOT", "proof":evidence},sort_keys=True)}
 
 
+def pilot_lease_generation(ledger, leases, cid, now, done_reader):
+    """Monotonic CAS generation survives lease-table expiry; old LD never releases a new owner."""
+    recorded=[]
+    for row in ledger:
+        if parse_tenant_json(row.get("evidence_json") or "{}").get("mode") != "BOUNDED_PILOT":
+            continue
+        generation=row.get("lease_generation")
+        if type(generation) is not int or not 1 <= generation <= 9999:
+            raise B.EvidenceError("pilot lease ledger generation invalid")
+        recorded.append(generation)
+    generation=max(recorded,default=0)+1
+    relevant=[(name,labels) for name,labels in leases if CK.LEASE_RE.match(name) and CK.LEASE_RE.match(name).group(1)==cid]
+    if relevant:
+        name,labels=max(relevant,key=lambda pair:int(CK.LEASE_RE.match(pair[0]).group(2)))
+        last=int(CK.LEASE_RE.match(name).group(2))
+        generation=max(generation,last+1)
+        done=done_reader(f"LD_{cid}_{last:04d}")
+        released=done is not None and bool(labels.get("owner")) and done[0].get("owner")==labels["owner"]
+        until=labels.get("until")
+        expired=until and until.isdigit() and datetime.fromtimestamp(int(until),timezone.utc)+CK.VISIBILITY_GRACE<=now
+        if not released and not expired:
+            raise B.EvidenceError("pilot lease held; reconcile terminal execution before continuation")
+    if generation>9999:
+        raise B.EvidenceError("pilot lease generation namespace exhausted; explicit migration required")
+    return generation
+
+
 def start(doc, ack_hash):
     now = datetime.now(timezone.utc); c=validate_plan(doc, ack_hash)
     tables, ledger = preflight(c,doc,now)
     p=doc["runtime_plan"]; cid=B.digest(["BOUNDED_PILOT_EXCLUSIVE",c["project_id"]])[:16]
-    leases=[(n,lb) for n,lb,created in tables.list_tables(c["datasets"]["tenant_locks"]) if CK.LEASE_RE.match(n) and CK.LEASE_RE.match(n).group(1)==cid]
-    generation=1
-    if leases:
-        n,lb=max(leases,key=lambda pair:pair[0]); generation=int(CK.LEASE_RE.match(n).group(2))+1
-        done=tables.get_table(c["datasets"]["tenant_locks"],f"LD_{cid}_{generation-1:04d}")
-        until=lb.get("until")
-        expired=until and until.isdigit() and datetime.fromtimestamp(int(until),timezone.utc)+CK.VISIBILITY_GRACE<=now
-        if done is None and not expired:
-            raise B.EvidenceError("pilot lease held; reconcile terminal execution before continuation")
+    leases=[(n,lb) for n,lb,created in tables.list_tables(c["datasets"]["tenant_locks"])]
+    generation=pilot_lease_generation(ledger,leases,cid,now,
+                lambda name:tables.get_table(c["datasets"]["tenant_locks"],name))
     run_id=f"bf-{uuid.uuid4()}"
     lease=CK.lease_name(cid,generation)
     body={"tableReference":{"projectId":c["project_id"],"datasetId":c["datasets"]["tenant_locks"],"tableId":lease},
@@ -224,7 +248,7 @@ def reconcile(doc,ack_hash,receipt):
     if not operation.get("done") or operation.get("error"):
         raise B.EvidenceError("execution active or failed; operator review required")
     execution=operation.get("response") or {}
-    if not execution.get("completionTime") or execution.get("failedCount",0) or execution.get("succeededCount")!=1:
+    if not execution.get("completionTime") or execution.get("failedCount",0) or execution.get("cancelledCount",0) or execution.get("succeededCount")!=1 or execution.get("taskCount",1)!=1:
         raise B.EvidenceError("execution not proven successfully terminal")
     p=doc["runtime_plan"]
     job=next(n for n,cfg in jobs.items() if p["entity"] in cfg["entities"])
@@ -251,8 +275,13 @@ def reconcile(doc,ack_hash,receipt):
                   [checkpoint(doc,receipt["run_id"],status,receipt["lease_generation"],now,proof)])
     cid=B.digest(["BOUNDED_PILOT_EXCLUSIVE",c["project_id"]])[:16]
     # Terminal completion sign permits only the next CAS generation in this pilot namespace.
-    tables.create_marker(c["datasets"]["tenant_locks"],f"LD_{cid}_{receipt['lease_generation']:04d}",
+    marker=f"LD_{cid}_{receipt['lease_generation']:04d}"
+    created=tables.create_marker(c["datasets"]["tenant_locks"],marker,
                          {"owner":receipt["run_id"]},json.dumps({"operation":receipt["operation"],"ack_hash":ack_hash}))
+    if not created:
+        existing=tables.get_table(c["datasets"]["tenant_locks"],marker)
+        if not existing or existing[0].get("owner")!=receipt["run_id"] or parse_tenant_json(existing[1] or "{}").get("ack_hash")!=ack_hash:
+            raise B.EvidenceError("pilot release marker belongs to a different lease owner")
     return {"checkpoint":status,"sequence":proof["state"]["sequence"],"rows_observed":proof["state"]["rows"],
             "orders":proof["state"]["orders"],"supplies":proof["state"]["supplies"],"bundles":proof["state"]["bundles"],
             "coverage":"UNPROVEN_PENDING_DQ", "lifecycle_changed":False,"scheduler_changed":False}
