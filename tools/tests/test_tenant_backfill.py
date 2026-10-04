@@ -122,3 +122,12 @@ def test_current_pre_engine_image_cannot_start_even_with_valid_owner_hash(monkey
         T.validate_plan(p,p["ack_hash"])
     except T.B.EvidenceError as error:
         assert "qualified WINDOW_V1" in str(error)
+
+
+
+def test_lost_journal_ack_does_not_confuse_retry_telemetry_with_source_conflict():
+    detail={"action":"DAY_COMPLETE","day":"2026-09-17","expected_unique_rows":5,
+            "source_terminal":True,"transport_requests":1,"transport_retries":0}
+    retry=dict(detail,transport_requests=3,transport_retries=2)
+    assert T.source_detail(detail)==T.source_detail(retry)
+    assert T.source_detail(detail)!=T.source_detail(dict(retry,expected_unique_rows=4))

@@ -1883,3 +1883,16 @@ def test_valid_window_complete_proof_preserves_moscow_coverage_semantics():
     f={"required_ranges":{C1.domain:(C1.start,C1.end)},"done_windows_msk":{C1.domain:[(C1.start,C1.end)]}}
     assert DQ.evaluate(f)["COVERAGE"]["status"]=="PASS"
     assert DQ.evaluate({"required_ranges":f["required_ranges"],"done_windows":f["done_windows_msk"]})["COVERAGE"]["status"]=="FAIL"
+
+
+
+def test_authorized_finance_reopen_creates_new_generation_but_retry_does_not():
+    finance=CK.Chunk("finance_accrual",date(2026,1,1),date(2026,1,1))
+    approved=CK.plan_hash([finance])
+    ledger=[dict(_chunk_row(finance,"DONE",NOW,run_id="bf-original"))]
+    assert LC.window_generation(approved,finance.chunk_id,ledger,frozenset())==approved
+    refresh=LC.window_generation(approved,finance.chunk_id,ledger,frozenset({"bf-original"}))
+    assert refresh!=approved
+    retry=ledger+[dict(_chunk_row(finance,"RUNNING",NOW+timedelta(hours=1),run_id="bf-retry"))]
+    assert LC.window_generation(approved,finance.chunk_id,retry,frozenset({"bf-original"}))==refresh
+    assert LC.window_generation(approved,C1.chunk_id,ledger,frozenset({"bf-original"}))==approved

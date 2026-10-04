@@ -14,7 +14,7 @@ History classifications describe available source shape, not verified tenant cov
 | Domain | Exact endpoints | Grain / RAW destination / MERGE key | Source filter / pagination | History class and limit | Existing checkpoint / coverage |
 |---|---|---|---|---|---|
 | Catalog ALL | POST /v3/product/list; /v3/product/info/list | snapshot_date × sku; RAW_OZON_CATALOG; snapshot_date,sku | visibility=ALL excludes archived; last_id/total_items; info batches <=1000 | CURRENT_SNAPSHOT_ONLY; current product identity, not past status | Journal only; no dated historical coverage |
-| Catalog ARCHIVED | Same | Same | visibility=ARCHIVED; union by product_id before info | CURRENT_SNAPSHOT_ONLY; retained archived identities, retention unproven | Same |
+| Catalog ARCHIVED | Same | Same | visibility=ARCHIVED; separate traversal with stable product/SKU universe across both | CURRENT_SNAPSHOT_ONLY; retained archived identities, retention unproven | Same |
 | FBO postings | POST /v3/posting/fbo/list | posting × SKU; RAW_OZON_POSTINGS_FBO; posting_number,sku | RFC3339 millisecond since/to, <=year; has_next/cursor; limit100 | HISTORICAL_BACKFILLABLE; earliest tenant date UNPROVEN | T5 date chunks/append-only checkpoint; no runtime leaf proof yet |
 | Finance | POST /v1/finance/accrual/types; /v1/finance/accrual/by-day | accrual × type × nullable SKU; RAW_OZON_FINANCE_ACCRUAL; accrual_id,type_id,sku | date >=2022-01-01; last_id expires after15min | HISTORICAL_BACKFILLABLE; earliest activity UNPROVEN, late changes possible | T5 chunks; no per-day runtime proof yet |
 | Prices | POST /v5/product/info/prices | snapshot_date × offer; RAW_OZON_PRICES; snapshot_date,offer_id | current snapshot; cursor/total | CURRENT_SNAPSHOT_ONLY; FORWARD_HISTORY_ONLY accumulation | No historical API coverage |
@@ -118,7 +118,8 @@ Full-history approval and D3 maturity decisions remain separate.
 ## T5 integration and qualification gate
 
 New external-tenant `claim-next` emits WINDOW_V1, exact project, binding/strict flags,
-canonical approved plan hash as refresh generation, and the stable plan creation time
+canonical approved plan hash as initial generation (an authorized REOPEN_CHUNK creates
+an isolated deterministic refresh generation for that chunk), and the stable plan creation time
 as journal origin. It stores the expected runtime plan with the existing RUNNING row.
 `verify-chunks` requires matching scope and validated complete runtime proof for new
 claims. IN_PROGRESS is neither DONE nor penalized failure; existing leases/visibility
@@ -172,3 +173,10 @@ retained SKU linkage; run/checkpoint/coverage readback; bounded trial before/aft
 column reconciliation; no foreign-project write, Scheduler/IAM/secret/binding mutation;
 full-history/financial-finality/READY remain UNPROVEN until their own contracts pass.
 This proposal is not an approved exception and creates no production authorization.
+
+
+D3 refresh: normal incremental finance preserves its existing30-day lookback; older
+corrections require an explicit refresh generation or canonical owner REOPEN_CHUNK.
+The latter changes only that chunk's WINDOW_V1 plan identity, so a prior complete proof
+cannot incorrectly suppress a requested source re-observation. Ordinary retries retain
+one stable generation. No new monetary finality delay/automatic repair is invented.

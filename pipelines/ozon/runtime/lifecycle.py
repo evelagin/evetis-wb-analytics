@@ -576,12 +576,24 @@ def ledger_generations(ledger, chunk_id):
     return [r.get("lease_generation") for r in ledger if r.get("backfill_id") == chunk_id]
 
 
+def window_generation(approved, chunk_id, ledger, reopened):
+    """Only an authorized chunk reopen creates a refresh; retries share continuation.
+
+    Immutable DONE cannot suppress an explicitly approved later source observation.
+    A reopen for another chunk never invalidates this chunk's completed proof.
+    """
+    revisions = sorted({r.get("run_id") for r in ledger if r.get("backfill_id") == chunk_id
+                        and r.get("status") == "DONE" and r.get("run_id") in reopened})
+    return BF.digest([approved, chunk_id, revisions]) if revisions else approved
+
+
 def cmd_claim_next(ctx):
     require_state(ctx, "claim-next")
     require_bound(ctx)
     _st, chain, decisions, _p = verified_state(ctx)
     ledger = list(ctx.store.rows("tenant_ops", "BACKFILL_CHECKPOINTS"))
-    folded = CK.fold(ledger, owner_reopens(ctx))
+    reopen_ids = owner_reopens(ctx)
+    folded = CK.fold(ledger, reopen_ids)
     approved = approved_plan_hash(chain, decisions)
     versions = plan_versions(ledger)
     if approved not in versions:
@@ -611,7 +623,7 @@ def cmd_claim_next(ctx):
         if C.PROJECT != C.LEGACY_INGESTION_PROJECT:
             executor_env.update(BACKFILL_MODE=BF.VERSION, TENANT_BINDING_REQUIRED="1",
                                 BACKFILL_TARGET_PROJECT=C.PROJECT,
-                                BACKFILL_GENERATION=approved,
+                                BACKFILL_GENERATION=window_generation(approved, c.chunk_id, ledger, reopen_ids),
                                 BACKFILL_ORIGIN=versions[approved][1].isoformat())
             continuation = BF.plan(executor_env, c.domain, C.PROJECT, C.DATASET, C.REF_DATASET,
                                    ctx.today_msk, ctx.now)

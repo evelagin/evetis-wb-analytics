@@ -393,3 +393,21 @@ def test_exact_image_qualification_driver_exercises_installed_engine():
     from pathlib import Path
     facts=runpy.run_path(str(Path(__file__).with_name('_backfill_image_driver.py')))['qualify']()
     assert facts['backfill_window_v1']=='PASS' and facts['backfill_implementation_hash']==B.implementation_hash()
+
+
+@pytest.mark.parametrize('foreign_target',[False,True])
+def test_real_entrypoint_denies_unbound_or_foreign_backfill_before_resume(harness,monkeypatch,foreign_target):
+    import main as M
+    values=env();values['ENTITIES']='fbo_postings'
+    values['BACKFILL_TARGET_PROJECT']='foreign' if foreign_target else C.PROJECT
+    for key,value in values.items():monkeypatch.setenv(key,value)
+    monkeypatch.setattr(C,'REF_DATASET','ref')
+    monkeypatch.setattr(C,'_seller_execution_scope',C._seller_execution_scope) # restore after main's mutation
+    monkeypatch.setattr(F,'resume',lambda *a:pytest.fail('unbound/foreign source progress read'))
+    def binding(*a):
+        assert not foreign_target, 'foreign config reached binding/cloud gate'
+        return {'seller':'UNBOUND'},'no owner binding'
+    monkeypatch.setattr(M,'binding_gate',binding)
+    with pytest.raises(SystemExit) as result:M.main()
+    assert result.value.code==(2 if foreign_target else 3)
+    assert not harness[0]

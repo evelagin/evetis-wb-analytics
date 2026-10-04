@@ -259,6 +259,12 @@ def reconcile(doc,ack_hash,receipt):
 
 
 
+def source_detail(detail):
+    # A lost insert acknowledgement may repeat a durable sequence after transport
+    # retries. Source/window/business proof must agree; attempt telemetry may differ.
+    return {k:v for k,v in detail.items() if k not in {"transport_requests","transport_retries"}}
+
+
 def verify_coverage(doc,ack_hash):
     """Read-back business grain plus source accounting; then append existing scoped evidence.
 
@@ -272,7 +278,7 @@ def verify_coverage(doc,ack_hash):
     units=select(c,f"SELECT DISTINCT backfill_sequence, backfill_detail_json FROM `{journal}` WHERE started_at >= @origin AND backfill_plan_id = @pid AND entity = @entity AND status = 'OK' AND backfill_sequence IS NOT NULL ORDER BY backfill_sequence",params)
     expected={};details={};unknown=set();limits=set()
     for u in units:
-        seq=u["backfill_sequence"];d=parse_tenant_json(u["backfill_detail_json"] or "{}")
+        seq=u["backfill_sequence"];d=source_detail(parse_tenant_json(u["backfill_detail_json"] or "{}"))
         if seq in details and details[seq]!=d:raise B.EvidenceError("historical checkpoint sequence conflict")
         details[seq]=d
     if not details or sorted(details)!=list(range(1,max(details)+1)):
