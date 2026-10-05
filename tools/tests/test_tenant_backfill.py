@@ -156,3 +156,92 @@ def test_pilot_namespace_exhaustion_never_reuses_a_generation():
     ledger=[{"lease_generation":9999,"evidence_json":json.dumps({"mode":"BOUNDED_PILOT"})}]
     with pytest.raises(T.B.EvidenceError,match="namespace exhausted"):
         T.pilot_lease_generation(ledger,[],"0"*16,datetime(2026,10,4,tzinfo=timezone.utc),lambda _:None)
+
+
+@pytest.mark.parametrize("project", ["mpa-t-synthetic-a", "mpa-t-synthetic-b"])
+def test_terminal_zero_effect_failure_expires_to_independent_retry_preserving_predecessor(monkeypatch, project):
+    """No failed reconcile/false DONE; reclaim uses the existing grace and CAS generation."""
+    from datetime import timedelta
+    p = doc()
+    c = copy.deepcopy(R.terraform_inputs("client_001"))
+    c["project_id"] = project
+    p["runtime_plan"]["project"] = project
+    now = datetime(2026, 10, 5, 12, tzinfo=timezone.utc)
+    old_run = "bf-synthetic-failed"
+    cid = T.B.digest(["BOUNDED_PILOT_EXCLUSIVE", project])[:16]
+    until = now - T.CK.VISIBILITY_GRACE
+    labels = {"owner": old_run, "until": str(int(until.timestamp()))}
+    old_checkpoint = T.checkpoint(p, old_run, "RUNNING", 1, now - timedelta(hours=5))
+    old_journal = {"ingestion_run_id": old_run, "status": "FAILED", "rows_inserted": 0,
+                   "rows_updated": 0, "evidence_json": None}
+    ledger = [copy.deepcopy(old_checkpoint)]
+    leases = {T.CK.lease_name(cid, 1): (labels, json.dumps({"ack_hash": p["ack_hash"]}))}
+    before = copy.deepcopy((ledger, old_journal, leases))
+    monkeypatch.setattr(T, "validate_plan", lambda *a: c)
+    base, jobs = T.resources(c)
+    failed_receipt = {"operation": base + "/operations/failed", "ack_hash": p["ack_hash"],
+                      "run_id": old_run, "lease_generation": 1}
+    monkeypatch.setattr(T.TT, "_req", lambda *a: {"done": True, "error": {"code": 10}})
+    with pytest.raises(T.B.EvidenceError, match="active or failed"):
+        T.reconcile(p, p["ack_hash"], failed_receipt)
+    assert (ledger, old_journal, leases) == before
+    with pytest.raises(T.B.EvidenceError, match="held"):
+        T.pilot_lease_generation(ledger, list((n, v[0]) for n, v in leases.items()), cid,
+                                now - timedelta(microseconds=1), lambda n: leases.get(n))
+    assert T.pilot_lease_generation(ledger, list((n, v[0]) for n, v in leases.items()), cid,
+                                    now, lambda n: leases.get(n)) == 2
+    # The new source/image attempt has its own immutable plan/receipt, not a reused failure.
+    retry = copy.deepcopy(p)
+    retry["runtime_plan"]["generation"] = "synthetic-independent-retry"
+    retry["runtime_plan"]["plan_id"] = T.B.digest([project, "new-qualified-source"])
+    retry["image"] = "synthetic-fixed-image@sha256:" + "1" * 64
+    retry["ack_hash"] = T.B.digest({k:v for k,v in retry.items() if k != "ack_hash"})
+    class Clock(datetime):
+        @staticmethod
+        def now(tz): return now
+    monkeypatch.setattr(T, "datetime", Clock)
+    writes = []
+    class Tables:
+        def list_tables(self, dataset): return [(n, v[0], None) for n,v in leases.items()]
+        def get_table(self, dataset, name): return leases.get(name)
+        def append(self, dataset, table, rows):
+            assert table == "BACKFILL_CHECKPOINTS"
+            writes.extend(copy.deepcopy(rows)); ledger.extend(copy.deepcopy(rows))
+        def create_marker(self, dataset, name, labels, description):
+            assert name.endswith("_0002")
+            leases[name] = (labels, description); return True
+    tables = Tables()
+    monkeypatch.setattr(T, "preflight", lambda *a: (tables, ledger))
+    def start_api(method, url, body):
+        assert method == "POST"
+        if url.endswith("/tables"):
+            name = body["tableReference"]["tableId"]
+            assert name == T.CK.lease_name(cid, 2) and name not in leases
+            leases[name] = (body["labels"], body["description"])
+            return body
+        assert url.endswith(":run")
+        return {"name": base + "/operations/retry"}
+    monkeypatch.setattr(T.TT, "_req", start_api)
+    receipt = T.start(retry, retry["ack_hash"])
+    assert receipt["run_id"] != old_run and receipt["lease_generation"] == 2
+    assert writes[-1]["status"] == "RUNNING"
+    entity = retry["runtime_plan"]["entity"]
+    job = next(n for n, cfg in jobs.items() if entity in cfg["entities"])
+    env = dict(jobs[job]["env"], INGESTION_RUN_ID=receipt["run_id"], ENTITIES=entity,
+               BACKFILL_TARGET_PROJECT=project, BACKFILL_MODE=T.B.VERSION,
+               SINCE=retry["runtime_plan"]["from"], UNTIL=retry["runtime_plan"]["to"],
+               BACKFILL_GENERATION=retry["runtime_plan"]["generation"],
+               BACKFILL_ORIGIN=retry["runtime_plan"]["origin"])
+    execution = {"name":base + "/jobs/" + job + "/executions/retry", "completionTime":now.isoformat(),
+                 "succeededCount":1, "template":{"serviceAccount":
+                 c['marketplaces']['ozon']['service_accounts']['runtime'] + "@" + project + ".iam.gserviceaccount.com",
+                 "containers":[{"image":retry["image"], "env":[{"name":k,"value":v} for k,v in env.items()]}]}}
+    monkeypatch.setattr(T.TT, "_req", lambda *a:{"done":True, "response":execution})
+    state = T.B.initial(retry["runtime_plan"])
+    state["complete"] = True
+    monkeypatch.setattr(T, "read_proof", lambda *a:{"plan":retry["runtime_plan"], "state":state})
+    assert T.reconcile(retry, retry["ack_hash"], receipt)["checkpoint"] == "DONE"
+    assert ledger[0] == old_checkpoint and old_journal == before[1]
+    assert leases[T.CK.lease_name(cid, 1)] == before[2][T.CK.lease_name(cid, 1)]
+    assert all(r["run_id"] != old_run for r in writes)
+    assert T.CK.fold(ledger)[old_checkpoint["backfill_id"]]["status"] == "RUNNING"

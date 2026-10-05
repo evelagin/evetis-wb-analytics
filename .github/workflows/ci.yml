@@ -6,12 +6,12 @@ on:
   pull_request:
     paths: ["cloud/**", "services/**", "pipelines/**", "infra/**", ".github/workflows/**",
             "tenants/**", "tools/tenancy/**", "tools/autonomy/schema.py",
-            "tools/tests/test_tenancy*.py"]
+            "tools/tests/test_tenancy*.py", "tools/tests/test_tenant_backfill.py"]
   push:
     branches-ignore: ["main"]
     paths: ["cloud/**", "services/**", "pipelines/**", "infra/**",
             "tenants/**", "tools/tenancy/**", "tools/autonomy/schema.py",
-            "tools/tests/test_tenancy*.py"]
+            "tools/tests/test_tenancy*.py", "tools/tests/test_tenant_backfill.py"]
   # AE v1 (S8): обязательная проверка ветки кандидата ae/* (диспатч публикатора, без фильтра путей).
   workflow_dispatch:
 
@@ -98,6 +98,8 @@ jobs:
         run: python tools/tenancy/registry.py validate
       - name: tenancy tests
         run: python -m pytest -q tools/tests/test_tenancy.py tools/tests/test_tenancy_hardening.py tools/tests/test_tenancy_t32.py tools/tests/test_tenancy_t32_remediation.py tools/tests/test_tenancy_sql_deployer.py
+      - name: bounded pilot coordinator and failed-attempt recovery (offline)
+        run: python -m pytest -q tools/tests/test_tenant_backfill.py
       - name: ozon schema parity (offline)
         run: python tools/tenancy/ozon_schema_parity.py
 

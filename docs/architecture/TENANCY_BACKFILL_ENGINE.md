@@ -226,3 +226,18 @@ The failed attempt remains FAILED in the ingestion journal, with no completion
 proof; it must never become DONE/COMPLETE merely to release its pilot lease.
 Failed-attempt recovery remains subject to the canonical terminal-execution,
 lease/provenance and data-effect evidence gates.
+
+## Terminal zero-effect pilot failure recovery
+
+Use existing lease expiry plus VISIBILITY_GRACE and monotonic CAS reclaim. A failed
+execution cannot enter successful reconcile or create DONE/COMPLETE evidence.
+Before retry, verify terminal execution, zero source/RAW/unit effects, intact FAILED
+journal, non-complete checkpoint, fresh binding, no active jobs and paused Schedulers.
+A retry on a fixed qualified image has a new immutable plan, run and receipt. Preserve
+the original checkpoint and FAILED journal; successful retry appends only its own
+checkpoint/proofs. Do not create a completion marker for the failed predecessor.
+The historical RUNNING checkpoint describes an unreconciled failed attempt, not an
+active Cloud Run execution; the expired lease ceases to block the next CAS generation.
+The generic two-project regression covers grace boundary, failed reconcile refusal,
+independent retry and unchanged predecessor. Incident provenance is retained at
+`docs/tenancy/evidence/client001-catalog-failed-20261005.json`.
