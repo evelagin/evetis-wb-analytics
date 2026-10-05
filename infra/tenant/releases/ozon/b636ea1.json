@@ -55,13 +55,11 @@
     "config": "infra/tenant/releases/ozon-runtime.v6.cloudbuild.yaml",
     "config_sha256": "2e300a55d2b89da793c530fb50489492d928affcfdca946f24ac4af630f0983c",
     "service_account": "sa-runtime-builder@mpa-platform.iam.gserviceaccount.com",
-    "source_object": {
-      "bucket": "mpa-platform-runtime-build-777428383056",
-      "generation": "1791199942241000",
-      "object": "source/1791199941.702473-1b1abe11e62f4cd5a7c114fa067c23f5.gz"
-    },
+    "source_object": "gs://mpa-platform-runtime-build-777428383056/source/1791199941.702473-1b1abe11e62f4cd5a7c114fa067c23f5.gz#1791199942241000",
     "build_args": [],
-    "secrets": []
+    "secrets": [],
+    "source_object_sha256": "32c98f2cf99ef2e89a0b478b31baa78850859b7e34009320a2b91ae73f3c86fa",
+    "builder_image": "gcr.io/cloud-builders/docker@sha256:bbb3d633c5c2813b2ce5245852979e1d637768f4acfc504d8ece288f91e9b60f"
   },
   "image_facts": {
     "platform": "linux/amd64",
@@ -112,6 +110,11 @@
       "seller_policy.py": "6988af54191dac0c87b414bf92a7eea2a93599de621f169344791f3a79e95be3",
       "backfill.py": "c99638c347006a05843b098971c0946737248aae7985243355123c45d3722dbb",
       "backfill_core.py": "8df2f1d8defc9408c3e5ba5568c44420d560ad0a8ca638aeefbb4434e286cd2c"
+    },
+    "labels": {
+      "org.opencontainers.image.revision": "b636ea151fe5e852ea5c45f192e7d2681f13eb9a",
+      "org.opencontainers.image.source": "https://github.com/evelagin/evetis-wb-analytics",
+      "org.opencontainers.image.title": "ozon-runtime"
     }
   },
   "verification": {
@@ -161,8 +164,8 @@
     "global_machine_dod": "Original global report remains BLOCKED; bounded tenant applicability owner-approved; exact-image/deployment/pilot gates retained"
   },
   "deployment": {
-    "tenants": "NOT_YET_DEPLOYED at qualification; reviewed client_001 image-only frozen plan required",
-    "evetis": "NOT_DEPLOYED_OR_CHECKED_BY_THIS_RELEASE",
+    "tenants": "INERT at new-image qualification; client_001 requires a reviewed image-only frozen plan and bounded pilots.",
+    "evetis": "NOT_DEPLOYED; historical reference only: sha256:24e3c6d6715fa7b73d30b4270f9863d2b8680b4b02d4874ff1ea12b4fd90fa1b. EVETIS live state was not checked or changed.",
     "rollback": "Retain previous release a991 and all journal schema/trial/pilot evidence; rollback only via reviewed pointer PR and frozen plan. a991 has known resume defect and must not be rerun."
   }
 }
