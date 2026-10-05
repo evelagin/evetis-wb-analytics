@@ -1,0 +1,111 @@
+{
+  "classification": "CURRENT_VERIFIED_FAILURE_2026_10_05",
+  "tenant_id": "client_001",
+  "project": "mpa-t-client-001",
+  "execution": "ozon-runtime-daily-gh69f",
+  "original_plan": {
+    "mode": "BOUNDED_PILOT",
+    "tenant_id": "client_001",
+    "image": "europe-west1-docker.pkg.dev/mpa-platform/mpa-runtime/ozon-runtime@sha256:a9917169e40c367fa17c3e54babde245fd0998cb1fbf090af6bb8c63f9ffe170",
+    "runtime_plan": {
+      "version": "WINDOW_V1",
+      "project": "mpa-t-client-001",
+      "raw": "ozon_raw",
+      "ref": "ref",
+      "entity": "catalog",
+      "from": "2026-09-17",
+      "to": "2026-09-17",
+      "generation": "pilot-20261005-catalog",
+      "origin": "2026-10-05T06:32:47.029046+00:00",
+      "window_days": 1,
+      "minimum_ms": 60000,
+      "fbo_page_cap": 200,
+      "order_batch": 5,
+      "bundle_page_cap": 500,
+      "implementation_hash": "9aa8cfafa0352cdc446e03733ceec967370066c50ea4a3ac4184d3f51d0dbab0",
+      "observation_date": "2026-10-05",
+      "plan_id": "3ee33a9fab5a1888cc23e45a0cbee375bacfdb0986e8efe9e44d879e35a2bc02"
+    },
+    "max_requests": 400,
+    "max_units": 20,
+    "max_order_batches": 1,
+    "ack_hash": "134a4a81bc9ae2b502eb98c1c095473db96be1dd98c06eafd385a9d982882c18"
+  },
+  "original_receipt": {
+    "operation": "projects/mpa-t-client-001/locations/europe-west1/operations/ae1b9c97-c950-4281-9e66-b64ef377bc55",
+    "run_id": "bf-f63ba71e-972f-4d41-826e-ae9912c14598",
+    "lease_generation": 1,
+    "ack_hash": "134a4a81bc9ae2b502eb98c1c095473db96be1dd98c06eafd385a9d982882c18"
+  },
+  "original_runtime_source": "fe60d6b4685609769f4dad320564e906475d24db",
+  "original_image": "sha256:a9917169e40c367fa17c3e54babde245fd0998cb1fbf090af6bb8c63f9ffe170",
+  "root_cause": "Query parameter entity not serialized through SDK setter",
+  "failed_query_job": "899713d1-f905-4f1a-b5bb-e125ea8de79b",
+  "failed_attempt_diagnosis": {
+    "journal": [
+      {
+        "ingestion_run_id": "bf-f63ba71e-972f-4d41-826e-ae9912c14598",
+        "entity": "catalog",
+        "status": "FAILED",
+        "requests": 0,
+        "retry_count": 0,
+        "rows_received": 0,
+        "rows_inserted": 0,
+        "rows_updated": 0,
+        "errors": 1,
+        "backfill_plan_id": null,
+        "backfill_sequence": null,
+        "safe_diagnostic": {
+          "error_class": [
+            "BadRequest"
+          ],
+          "known_diagnostic_tokens": [
+            "query parameter",
+            "Not found",
+            "parameter",
+            "Location",
+            "Invalid"
+          ],
+          "http_codes": [],
+          "parameter_not_found": [
+            "entity"
+          ],
+          "error_nonempty": true,
+          "error_length": 152,
+          "public_timestamp_literals": [],
+          "invalid_type_literals": [],
+          "exact_source_literal_matches": [],
+          "known_error_keys": []
+        },
+        "evidence_present": false,
+        "detail_present": false
+      }
+    ],
+    "tasks": [
+      {
+        "name": "projects/mpa-t-client-001/locations/europe-west1/jobs/ozon-runtime-daily/executions/ozon-runtime-daily-gh69f/tasks/ozon-runtime-daily-gh69f-task0",
+        "retried": null,
+        "exit_code": 1,
+        "term_signal": null,
+        "start": "2026-10-05T06:34:35.780632Z",
+        "end": "2026-10-05T06:34:42.189710Z"
+      }
+    ],
+    "unit_proofs": [
+      {
+        "row_count": 0,
+        "ok": 0,
+        "in_progress": 0
+      }
+    ],
+    "catalog_rows_for_run": [
+      {
+        "row_count": 0,
+        "keys": 0
+      }
+    ]
+  },
+  "safe_recovery": "existing lease expiry plus VISIBILITY_GRACE, next CAS generation, independent plan/run/receipt; no predecessor rewrite",
+  "lease_reclaim_at_UTC": "2026-10-05T11:33:50Z",
+  "schema_migration": "20 fields verified; unrelated to runtime failure"
+}

@@ -79,6 +79,13 @@ def test_every_release_record_is_well_formed():
 # Факты каждого выпуска: коммит-источник, конфиг сборки (неизменяемый по версиям) и шаги-ворота.
 V1_GATES = ["identity", "build", "record", "contents", "fail-closed-without-project"]
 RELEASES_FACTS = {
+    # Independently observed #247 SDK-fix image and actual-SDK qualification.
+    "b636ea1": {"commit": "b636ea151fe5e852ea5c45f192e7d2681f13eb9a", "config": RELEASES / "ozon-runtime.v6.cloudbuild.yaml",
+                "gates": V1_GATES + ["control-fail-closed-without-project", "external-binding-omission-denied", "backfill-invalid-scope-denied"],
+                "digest": "sha256:b905134a350651c43801c5c07e9cfb2e796b572b751b2236d400b414d51e2a74",
+                "build_id": "7c5f6064-d00a-4405-a1c5-a35df338b3cf",
+                "qualification_build": "295ba64c-3e07-412c-998a-eeb49b092bbd",
+                "archive_sha256": "32c98f2cf99ef2e89a0b478b31baa78850859b7e34009320a2b91ae73f3c86fa"},
     "08f9438": {"commit": "08f9438fd7a49c02d5ee1786ce820d5384a5c944", "config": CONFIG_V1, "gates": V1_GATES},
     # T5: коммит слияния PR #226 = main на момент сборки; v2 добавляет модули control и их отказ.
     "e52432e": {"commit": "e52432e7cd4052db76772f1501e3f315bc994645", "config": NEXT_CONFIG,
