@@ -62,12 +62,18 @@ resource "google_bigquery_dataset_iam_member" "ops_health_read_evetis_ref" {
 # этого запаса. Ночью детектор тоже работает: подтверждённая потеря в 00:00 и сторож.
 # Стоимость прогона по backtest 2026-10-04: ≈ 3 МБ на пробу, ≈ 7 МБ на прогон
 # (≈ 10 ГБ в месяц).
+#
+# 🔴 Создаётся НА ПАУЗЕ (DRO-1 Gate B, 2026-10-05). Первый доверенный прогон должен идти
+# от sa-ops-health: политики и метрика фильтруют маркеры по principalEmail, а ручной CALL
+# владельца их не задевает (Gate B: 4 события HANDED_OFF без доставки, пульса нет).
+# Job существует с личностью sa-ops-health, но расписание не исполняется. Регулярная
+# оценка включается отдельным PR (paused = false) — Gate C, по owner ACK.
 resource "google_cloud_scheduler_job" "dro_health_eval" {
   name      = "dro-health-eval"
   region    = var.region
   schedule  = "*/30 * * * *"
   time_zone = "Europe/Moscow"
-  paused    = false
+  paused    = true
 
   attempt_deadline = "320s"
 
