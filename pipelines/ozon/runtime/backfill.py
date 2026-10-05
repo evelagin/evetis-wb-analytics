@@ -5,6 +5,7 @@ A progress execution may exit normally without claiming full plan completion.
 """
 from __future__ import annotations
 
+import catalog_identity as CI
 import copy
 import json
 import os
@@ -184,34 +185,42 @@ class Engine:
             raise B.EvidenceError("catalog completeness missing total/items")
         if "total" in pr and total != pr["total"]:
             raise B.EvidenceError("catalog source changed during traversal; fresh generation required")
-        ids = [i["product_id"] for i in items]
+        try:
+            ids = [CI.product_id(i.get("product_id")) for i in items]
+        except CI.CatalogIdentityError as exc:
+            raise B.EvidenceError(str(exc)) from None
         previous = pr.get("seen", [])
-        if len(set(ids)) != len(ids) or set(ids) & set(previous):
+        retained = pr.get("product_ids", [])
+        if len(set(ids)) != len(ids) or set(ids) & set(previous) or set(ids) & set(retained):
             raise B.EvidenceError("catalog repeated product IDs")
         count = len(previous) + len(ids)
         if count > total:
             raise B.EvidenceError("catalog count exceeds source total")
         info = []
         if ids:
-            info = self.call("/v3/product/info/list", {"product_id": ids, "offer_id": [], "sku": []}).get("items") or []
-            if len(info) != len(ids) or {i.get("id") for i in info} != set(ids):
+            info = self.call("/v3/product/info/list", {"product_id": [i["product_id"] for i in items], "offer_id": [], "sku": []}).get("items") or []
+            if len(info) != len(ids) or {CI.product_id(i.get("id")) for i in info} != set(ids):
                 raise B.EvidenceError("catalog detail IDs incomplete")
-            if any(i.get("sku") in (None, "", 0, "0") for i in info):
-                raise B.EvidenceError("catalog product lacks stable SKU; identity universe incomplete")
         sku_owner = dict(pr.get("sku_owner", {}))
         for item in info:
-            sku = str(item["sku"])
+            sku = CI.optional_sku(item.get("sku"))
+            if sku is None:
+                continue
             if sku in sku_owner:
                 raise B.EvidenceError("catalog SKU repeated across pages/visibilities; source changed")
-            sku_owner[sku] = item["id"]
+            sku_owner[sku] = CI.product_id(item.get("id"))
         pr["sku_owner"] = sku_owner
+        pr["product_ids"] = retained + ids
         terminal = count == total
         evidence = {"action": "CATALOG_PAGE", "visibility": visibility, "products": len(ids),
-                    "source_total": total, "source_terminal": terminal, "historical_status": "UNPROVEN"}
+                    "source_total": total, "source_terminal": terminal, "historical_status": "UNPROVEN",
+                    "sku_present": sum(CI.optional_sku(i.get("sku")) is not None for i in info),
+                    "sku_absent": sum(CI.optional_sku(i.get("sku")) is None for i in info)}
         if terminal:
             if visibility == "ALL":
                 pr.clear(); pr.update({"visibility": "ARCHIVED", "done": False, "all_count": count,
-                                      "snapshot_date": snapshot_date, "sku_owner": sku_owner})
+                                      "snapshot_date": snapshot_date, "sku_owner": sku_owner,
+                                      "product_ids": retained + ids})
             else:
                 pr["done"] = s["complete"] = True
                 evidence["all_count"] = pr.get("all_count", 0)
@@ -227,7 +236,7 @@ class Engine:
             pr.update(cursor=nxt, cursors=sorted(seen), seen=previous + ids, total=total)
         # Reject oversized continuation before this source unit can write RAW.
         B.validate(self.p, s, reserve=128)
-        out = self.merge("RAW_OZON_CATALOG", E._catalog_rows(info, self.run_id, self.ts), ["snapshot_date", "sku"])
+        out = self.merge("RAW_OZON_CATALOG", E._catalog_rows(info, self.run_id, self.ts, product_identity=True), ["snapshot_date", "product_id"])
         return out, evidence
 
     def supplies(self, s):

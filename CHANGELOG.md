@@ -3428,3 +3428,11 @@ R7.5: сентябрьский UX листа `WB_Юнит_2025` — **PASS, од
 QA: VALUE REGRESSION 0, UNAPPROVED FORMULA REGRESSION 0, WEEKDAY ERRORS 0, CF REGRESSION 0.
 Август и другие периоды не изменялись. FREEZE `A:B` = DEFERRED (21 объединение через `B|C`).
 Документы: `docs/UNITKA_2_0_R75_UX_POLISH.md`, `docs/UNITKA_2_0_CHANGELOG.md`.
+
+## 2026-10-05 — Tenant Catalog product identity
+
+Dedicated tenant Catalog uses snapshot_date × product_id; legitimate SKU-less archived products
+remain represented with nullable SKU. Product dimension retains product identity and exposes
+sku_joinable; SKU fact consumers require direct unambiguous SKU linkage. RAW schema evolution
+relaxes only sku mode and preserves snapshots. Legacy EVETIS collector, other fact grains,
+credentials, binding, lifecycle and paused Schedulers are outside this change.

@@ -508,3 +508,109 @@ def test_pre_merge_reserves_scalar_accounting_growth():
     assert B.validate(p,s) is s
     with pytest.raises(B.EvidenceError,match='continuation exceeds'):
         B.validate(p,s,reserve=128)
+
+
+@pytest.mark.parametrize('shape', ['missing', 'null', 'empty', 'zero_int', 'zero_string', 'valid'])
+def test_archived_product_identity_retained_without_sku_fallback(harness, monkeypatch, shape):
+    def source(path, body):
+        if path == '/v3/product/list':
+            pid = 1 if body['filter']['visibility'] == 'ALL' else 2
+            return 200, {'result': {'total': 1, 'items': [{'product_id': pid}]}}
+        pid = body['product_id'][0]
+        row = {'id': pid, 'offer_id': 'independent-offer', 'is_archived': pid == 2}
+        if pid == 1: row['sku'] = 11
+        elif shape != 'missing': row['sku'] = {'null': None, 'empty': '', 'zero_int': 0, 'zero_string': '0', 'valid': 22}[shape]
+        return 200, {'items': [row]}
+    monkeypatch.setattr(C, 'seller_post', source)
+    p = plan('catalog'); out = engine(p).run(harness[3])
+    assert out['evidence']['complete'] and len(harness[0]['RAW_OZON_CATALOG']) == 2
+    archived = next(r for r in harness[0]['RAW_OZON_CATALOG'].values() if r['product_id'] == '2')
+    assert archived['sku'] == ('22' if shape == 'valid' else None)
+    assert archived['offer_id'] == 'independent-offer'
+    assert archived['sku'] != archived['product_id']
+    assert out['evidence']['state']['progress']['product_ids'] == ['1', '2']
+    assert set(out['evidence']['state']['progress']['sku_owner']) == ({'11', '22'} if shape == 'valid' else {'11'})
+
+
+@pytest.mark.parametrize('pid', [None, '', 0, '0', -1, True, 'not-an-id'])
+def test_invalid_catalog_product_identity_rejected_before_merge(harness, monkeypatch, pid):
+    monkeypatch.setattr(C, 'seller_post', lambda path, body: (200, {'result': {'total': 1, 'items': [{'product_id': pid}]}}))
+    with pytest.raises(B.EvidenceError, match='stable product_id'):
+        engine(plan('catalog')).run(harness[3])
+    assert not harness[1] and not harness[2]
+
+
+@pytest.mark.parametrize('collision', ['product_id', 'sku'])
+def test_catalog_ambiguous_identity_rejected_before_unit_merge(harness, monkeypatch, collision):
+    def source(path, body):
+        if path == '/v3/product/list':
+            ids = [1, 1] if collision == 'product_id' else [1, 2]
+            return 200, {'result': {'total': 2, 'items': [{'product_id': x} for x in ids]}}
+        return 200, {'items': [{'id': x, 'sku': 11} for x in body['product_id']]}
+    monkeypatch.setattr(C, 'seller_post', source)
+    with pytest.raises(B.EvidenceError, match='repeated'):
+        engine(plan('catalog')).run(harness[3])
+    assert not harness[1] and not harness[2]
+
+
+def test_product_key_replay_sku_disappearance_and_prior_snapshot_preserved(harness, entities, monkeypatch):
+    from datetime import datetime, timezone
+    prior = {'snapshot_date': '2026-09-30', 'product_id': '7', 'sku': '77', 'is_archived': False,
+             'ingestion_run_id': 'trial-synthetic', 'name': 'historical'}
+    keys = ['snapshot_date', 'product_id']; db = harness[0].setdefault('RAW_OZON_CATALOG', {})
+    db[C.merge_key(prior, keys)] = copy.deepcopy(prior)
+    monkeypatch.setattr(entities, 'now_msk', lambda: datetime(2026, 10, 4, tzinfo=timezone.utc))
+    for sku in [77, None, None]:
+        row = entities._catalog_rows([{'id': 7, 'sku': sku, 'is_archived': sku is None}], 'retry-synthetic', '2026-10-04T00:00:00Z', product_identity=True)
+        C.merge_rows('RAW_OZON_CATALOG', row, keys, 'retry-synthetic')
+    assert len(db) == 2 and db[C.merge_key(prior, keys)] == prior
+    current = next(r for r in db.values() if r['snapshot_date'] == '2026-10-04')
+    assert current['product_id'] == '7' and current['sku'] is None and current['is_archived']
+    assert current['offer_id'] is None
+    # Direct SKU equality does not link a SKU-less product to unrelated facts.
+    assert not [r for r in [current] if r['sku'] is not None and r['sku'] in {'7', '77', 'unrelated'}]
+
+
+def test_catalog_resume_keeps_both_visibility_identity_sets(harness, monkeypatch):
+    def source(path, body):
+        pid = (1 if body.get('filter', {}).get('visibility') == 'ALL' else 2) if path == '/v3/product/list' else body['product_id'][0]
+        if path == '/v3/product/list': return 200, {'result': {'total': 1, 'items': [{'product_id': pid}]}}
+        return 200, {'items': [{'id': pid, 'sku': 11 if pid == 1 else 0}]}
+    monkeypatch.setattr(C, 'seller_post', source); p = plan('catalog')
+    first = engine(p, unit_budget=1).run(harness[3])
+    assert not first['evidence']['complete'] and first['evidence']['state']['progress']['visibility'] == 'ARCHIVED'
+    second = engine(p, copy.deepcopy(first['evidence']['state'])).run(harness[3])
+    assert second['evidence']['complete'] and second['evidence']['state']['sequence'] == 2
+    assert len(harness[0]['RAW_OZON_CATALOG']) == 2
+
+
+def test_performance_association_excludes_absent_and_zero_catalog_skus(harness, monkeypatch):
+    import lifecycle as LC
+    def source(path, body):
+        if path == '/v3/product/list': return 200, {'result': {'items': [{'product_id': 1}, {'product_id': 2}]}}
+        return 200, {'items': [{'id': 1, 'sku': 11}, {'id': 2, 'sku': 0}, {'id': 3}, {'id': 4, 'sku': None}]}
+    monkeypatch.setattr(C, 'seller_post', source)
+    assert LC.catalog_skus() == {'11'}
+
+
+def test_regular_binding_required_tenant_catalog_uses_product_key(harness, entities, monkeypatch):
+    monkeypatch.setenv('TENANT_BINDING_REQUIRED', '1')
+    monkeypatch.setattr(entities, '_product_list_items', lambda visibility='ALL', **kwargs: [{'product_id': 1 if visibility == 'ALL' else 2}])
+    monkeypatch.setattr(entities, '_product_info_items', lambda ids: [{'id': ids[0], 'sku': 11 if ids[0] == 1 else 0}])
+    result = entities.catalog('tenant-synthetic', '2026-10-04T00:00:00Z', None, None)
+    assert result['received'] == 2
+    assert len(harness[0]['RAW_OZON_CATALOG']) == 2
+    assert any(r['sku'] is None and r['product_id'] == '2' for r in harness[0]['RAW_OZON_CATALOG'].values())
+
+
+@pytest.mark.parametrize('pid', [None, 0, '', False])
+def test_regular_product_collection_rejects_invalid_raw_list_identity(entities, monkeypatch, pid):
+    import catalog_identity as CI
+    monkeypatch.setattr(entities, 'seller_post', lambda path, body: (200, {'result': {'total': 1, 'items': [{'product_id': pid}]}}))
+    with pytest.raises(CI.CatalogIdentityError): entities._product_list_items(product_identity=True)
+
+
+def test_regular_product_collection_rejects_duplicate_source_ids(entities, monkeypatch):
+    import catalog_identity as CI
+    monkeypatch.setattr(entities, 'seller_post', lambda path, body: (200, {'result': {'total': 2, 'items': [{'product_id': 1}, {'product_id': 1}]}}))
+    with pytest.raises(CI.CatalogIdentityError, match='repeated'): entities._product_list_items(product_identity=True)

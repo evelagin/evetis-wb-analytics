@@ -34,7 +34,9 @@ def target(tenant_id):
     return c
 
 
-def make_plan(tenant_id, entity, frm, to, generation, origin, today=None):
+def make_plan(tenant_id, entity, frm, to, generation, origin, today=None, *, max_units=20):
+    if type(max_units) is not int or not 1 <= max_units <= 20:
+        raise B.EvidenceError("bounded unit budget must be integer 1..20")
     c = target(tenant_id)
     env = {"BACKFILL_MODE": B.VERSION, "TENANT_BINDING_REQUIRED": "1", "STRICT_PAGE_CAPS": "1",
            "BACKFILL_TARGET_PROJECT": c["project_id"], "SINCE": frm, "UNTIL": to,
@@ -49,7 +51,7 @@ def make_plan(tenant_id, entity, frm, to, generation, origin, today=None):
         raise B.EvidenceError("entity not enabled in canonical registry")
     out = {"mode": "BOUNDED_PILOT", "tenant_id": tenant_id,
            "image": c["marketplaces"]["ozon"]["runtime_image"], "runtime_plan": p,
-           "max_requests": 400, "max_units": 20, "max_order_batches": 1}
+           "max_requests": 400, "max_units": max_units, "max_order_batches": 1}
     out["ack_hash"] = B.digest(out)
     return out
 
@@ -61,7 +63,7 @@ def validate_plan(doc, ack_hash):
     if B.digest(unsigned) != ack_hash or doc.get("mode") != "BOUNDED_PILOT":
         raise B.EvidenceError("modified or unsupported pilot plan")
     p = doc["runtime_plan"]
-    expected = make_plan(doc["tenant_id"], p["entity"], p["from"], p["to"], p["generation"], p["origin"])
+    expected = make_plan(doc["tenant_id"], p["entity"], p["from"], p["to"], p["generation"], p["origin"], max_units=doc["max_units"])
     if expected != doc:
         raise B.EvidenceError("pilot plan/config/image differs from current reviewed contract")
     c = target(doc["tenant_id"])
@@ -260,7 +262,8 @@ def reconcile(doc,ack_hash,receipt):
     expected={"INGESTION_RUN_ID":receipt["run_id"],"BACKFILL_TARGET_PROJECT":c["project_id"],
         "ENTITIES":p["entity"],"SINCE":p["from"],"UNTIL":p["to"],"BACKFILL_MODE":B.VERSION,
         "BACKFILL_GENERATION":p["generation"],"BACKFILL_ORIGIN":p["origin"],
-        "TENANT_BINDING_REQUIRED":"1","STRICT_PAGE_CAPS":"1"}
+        "TENANT_BINDING_REQUIRED":"1","STRICT_PAGE_CAPS":"1",
+        "BACKFILL_MAX_REQUESTS":str(doc["max_requests"]),"BACKFILL_MAX_UNITS":str(doc["max_units"])}
     if any(env.get(k)!=v for k,v in expected.items()):
         raise B.EvidenceError("execution provenance mismatch")
     now=datetime.now(timezone.utc);tables,ledger=preflight(c,doc,now)
@@ -349,6 +352,8 @@ def verify_coverage(doc,ack_hash):
                     # Current retained ALL+ARCHIVED identity only, never fabricate historic status.
                     link=select(c,f"SELECT COUNTIF(r.sku IS NOT NULL) AS sku_rows, COUNTIF(r.sku IS NOT NULL AND NOT EXISTS (SELECT 1 FROM `{c['project_id']}.ozon_raw.RAW_OZON_CATALOG` c WHERE c.snapshot_date = @snapshot AND c.sku = r.sku)) AS unresolved_sku_rows FROM `{c['project_id']}.ozon_raw.{table}` r WHERE {predicate}",
                                 {"day":("DATE",day),"snapshot":("DATE",str(now.astimezone(B.MSK).date()))})[0]
+                    ambiguous=select(c,f"SELECT COUNT(*) AS n FROM (SELECT sku FROM `{c['project_id']}.ozon_raw.RAW_OZON_CATALOG` WHERE snapshot_date = @snapshot AND sku IS NOT NULL GROUP BY sku HAVING COUNT(DISTINCT product_id) > 1)", {"snapshot":("DATE",str(now.astimezone(B.MSK).date()))})[0]["n"]
+                    if ambiguous:raise B.EvidenceError("PILOT_CATALOG_SKU_JOIN_AMBIGUOUS")
                     item["sku_linkage"]=link
                     if link["unresolved_sku_rows"]:
                         raise B.EvidenceError("PILOT_SKU_LINKAGE_UNPROVEN: retained catalog does not resolve every source SKU")
@@ -381,7 +386,7 @@ def verify_coverage(doc,ack_hash):
     elif p["entity"] in {"catalog","ads_campaigns"}:
         if not state["complete"]:raise B.EvidenceError("snapshot traversal incomplete")
         if p["entity"]=="catalog":
-            table,keys="RAW_OZON_CATALOG","snapshot_date,sku"
+            table,keys="RAW_OZON_CATALOG","snapshot_date,product_id"
             final=next(d for d in reversed(list(details.values())) if "archived_count" in d)
             expected_count=final["all_count"]+final["archived_count"]
         else:
@@ -390,6 +395,11 @@ def verify_coverage(doc,ack_hash):
         counts=select(c,f"SELECT COUNT(*) AS rows_n, COUNT(DISTINCT TO_JSON_STRING(STRUCT({keys}))) AS keys_n FROM `{c['project_id']}.ozon_raw.{table}` WHERE snapshot_date = @day",{"day":("DATE",p["observation_date"])})[0]
         if counts["rows_n"]!=counts["keys_n"] or counts["rows_n"]!=expected_count:
             raise B.EvidenceError("PILOT_SNAPSHOT_KEY_ACCOUNTING_FAILED")
+        if p["entity"]=="catalog":
+            identity=select(c,f"SELECT COUNTIF(product_id IS NULL OR SAFE_CAST(product_id AS INT64) IS NULL OR SAFE_CAST(product_id AS INT64) <= 0) AS invalid_products,COUNTIF(sku IS NOT NULL AND (SAFE_CAST(sku AS INT64) IS NULL OR SAFE_CAST(sku AS INT64) <= 0)) AS invalid_skus,COUNTIF(sku IS NULL) AS sku_absent,COUNT(DISTINCT sku) AS valid_skus,COUNTIF(sku IS NOT NULL) AS sku_rows FROM `{c['project_id']}.ozon_raw.{table}` WHERE snapshot_date = @day", {"day":("DATE",p["observation_date"])})[0]
+            if identity["invalid_products"] or identity["invalid_skus"] or identity["valid_skus"]!=identity["sku_rows"]:
+                raise B.EvidenceError("PILOT_CATALOG_IDENTITY_AMBIGUOUS")
+            readback.append({"product_identity":identity})
         readback.append({"table":table,"rows":counts["rows_n"],"keys":counts["keys_n"],"historical_status":"UNPROVEN"})
         coverage.append({"entity":p["entity"],"coverage_date":p["observation_date"],"status":"COMPLETE",
             "reason":"CURRENT_SNAPSHOT_ONLY_NOT_HISTORICAL_STATUS", "rows_loaded":counts["rows_n"],
@@ -419,12 +429,13 @@ def main(argv=None):
     sub=parser.add_subparsers(dest="command",required=True)
     p=sub.add_parser("plan")
     for key in ("tenant","entity","since","until","generation","origin"):p.add_argument("--"+key,required=True)
+    p.add_argument("--max-units",type=int,default=20)
     for cmd in ("start","reconcile","verify"):
         p=sub.add_parser(cmd);p.add_argument("--plan",type=Path,required=True);p.add_argument("--ack-hash",required=True)
         if cmd=="reconcile":p.add_argument("--receipt",type=Path,required=True)
     args=parser.parse_args(argv)
     try:
-        if args.command=="plan":out=make_plan(args.tenant,args.entity,args.since,args.until,args.generation,args.origin)
+        if args.command=="plan":out=make_plan(args.tenant,args.entity,args.since,args.until,args.generation,args.origin,max_units=args.max_units)
         else:
             doc=parse_tenant_json(args.plan.read_text())
             out=start(doc,args.ack_hash) if args.command=="start" else (verify_coverage(doc,args.ack_hash) if args.command=="verify" else reconcile(doc,args.ack_hash,parse_tenant_json(args.receipt.read_text())))

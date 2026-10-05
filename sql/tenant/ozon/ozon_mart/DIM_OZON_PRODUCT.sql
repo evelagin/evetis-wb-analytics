@@ -7,7 +7,12 @@ AS
 WITH latest AS (
   SELECT c.sku, c.product_id, c.offer_id, c.name, c.is_archived, c.status_name, c.snapshot_date
   FROM `__tenant__.ozon_raw.RAW_OZON_CATALOG` c
-  QUALIFY ROW_NUMBER() OVER (PARTITION BY c.sku ORDER BY c.snapshot_date DESC, c.extracted_at DESC, c.product_id DESC) = 1
+  QUALIFY ROW_NUMBER() OVER (PARTITION BY c.product_id ORDER BY c.snapshot_date DESC, c.extracted_at DESC, c.product_id DESC) = 1
+),
+sku_owners AS (
+  SELECT sku, COUNT(DISTINCT product_id) AS products
+  FROM latest WHERE sku IS NOT NULL AND SAFE_CAST(sku AS INT64) > 0
+  GROUP BY sku
 ),
 mapping_latest AS (
   SELECT m.marketplace_sku, m.internal_sku
@@ -28,9 +33,11 @@ master AS (
   QUALIFY ROW_NUMBER() OVER (PARTITION BY pm.internal_sku ORDER BY pm.valid_from DESC) = 1
 )
 SELECT l.sku, l.product_id, l.offer_id, l.name AS ozon_name, l.is_archived, l.status_name,
-  l.snapshot_date AS catalog_snapshot_date, m.internal_sku,
-  CASE WHEN m.candidates > 1 THEN 'AMBIGUOUS' WHEN m.internal_sku IS NULL THEN 'UNMAPPED' ELSE 'MAPPED' END AS mapping_status,
+  l.snapshot_date AS catalog_snapshot_date,
+  COALESCE(o.products = 1, FALSE) AS sku_joinable, m.internal_sku,
+  CASE WHEN o.products > 1 OR m.candidates > 1 THEN 'AMBIGUOUS' WHEN m.internal_sku IS NULL THEN 'UNMAPPED' ELSE 'MAPPED' END AS mapping_status,
   pm.product_name, pm.brand, pm.category, pm.is_bundle
 FROM latest l
-LEFT JOIN mapping m ON m.marketplace_sku = l.sku
+LEFT JOIN sku_owners o ON o.sku = l.sku
+LEFT JOIN mapping m ON m.marketplace_sku = l.sku AND o.products = 1
 LEFT JOIN master pm ON pm.internal_sku = m.internal_sku;

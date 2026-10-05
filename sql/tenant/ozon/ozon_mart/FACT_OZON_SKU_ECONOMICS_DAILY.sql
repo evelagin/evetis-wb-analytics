@@ -33,7 +33,7 @@ line_cogs AS (
   SELECT l.posting_number, l.sku, ANY_VALUE(d.internal_sku) AS internal_sku,
     COUNT(c.internal_sku) AS cogs_intervals, MAX(c.product_cogs_rub) AS unit_cogs_rub
   FROM lines l
-  LEFT JOIN `__tenant__.ozon_mart.DIM_OZON_PRODUCT` d ON d.sku = l.sku
+  LEFT JOIN `__tenant__.ozon_mart.DIM_OZON_PRODUCT` d ON d.sku_joinable AND d.sku = l.sku
   LEFT JOIN `__tenant__.ozon_mart.ECON_TENANT_COGS` c
     ON c.internal_sku = d.internal_sku AND l.order_date_msk BETWEEN c.effective_from AND c.effective_to
   GROUP BY l.posting_number, l.sku

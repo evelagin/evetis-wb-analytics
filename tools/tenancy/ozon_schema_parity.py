@@ -92,7 +92,7 @@ def offline_findings() -> list[str]:
     findings, ddl = [], ddl_tables()
     for ds, t in all_tables():
         try:
-            spec = OC.load_table_spec(ds, t)
+            spec = OC.load_table_spec(ds, t, baseline=True)
         except OC.ContractError as e:
             findings.append(str(e))
             continue
@@ -126,7 +126,7 @@ def live_findings() -> list[str]:
                f"{LIVE_DATASET[ds]}/tables/{t}?fields=schema,timePartitioning,clustering")
         live = parse_tenant_json(urllib.request.urlopen(urllib.request.Request(
             url, headers={"Authorization": f"Bearer {token}"})).read().decode("utf-8"))
-        spec = OC.load_table_spec(ds, t)
+        spec = OC.load_table_spec(ds, t, baseline=True)
         if OC.normalized_fields(live["schema"]["fields"]) != OC.normalized_fields(spec["schema"]):
             a, b = _flat(live["schema"]["fields"]), _flat(spec["schema"])
             findings.append(f"{ds}.{t}: схема расходится с live: только live {sorted(set(a) - set(b))}, "
