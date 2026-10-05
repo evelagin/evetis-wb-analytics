@@ -309,6 +309,19 @@ AIE запрещено решением владельца 2026-09-27 — нуж
 Контрольные цифры до и после — паритет AIE `ref28_*` против `V_ADS_SKU_ECONOMIC_LIMITS`
 (проверка `AIE_E02`) и распределение завышения из Addendum.
 
+## P2-11. `INFRA_ENVIRONMENT_APPROVAL_GAP`: apply в `infra.yml` идёт без ручного одобрения
+
+`.github/workflows/infra.yml` объявляет у job `apply` `environment: infra # ручной approval`,
+а `iam.tf` называет apply-SA «main-only + approval». На деле у environment `infra` нет правил
+защиты: `gh api repos/evelagin/evetis-wb-analytics/environments/infra` → `protection_rules: []`
+(проверено 2026-10-04, DRO-1 Gate A). `workflow_dispatch` с `action=apply` применяет изменения
+сразу, без паузы на ревьюера. Сейчас единственный барьер — owner ACK вне GitHub.
+
+Исправление — отдельная governance-задача по ACK: required reviewers на environment `infra`
+(или явное решение владельца, что ручной барьер не нужен, с правкой комментариев). Связано:
+до 2026-10-04 у `sa-terraform-apply` не было ролей Monitoring/Logging, и мониторинг из
+Terraform применялся владельцем локально (политики 23.09) — роли добавлены в `iam.tf` (DRO-1).
+
 ## P3-1. Каталог `_to_delete/` (82 записи) в рабочем дереве
 
 Ничего не ломает, но при поиске по репозиторию выдаёт устаревшие ответы — в том числе агенту.
