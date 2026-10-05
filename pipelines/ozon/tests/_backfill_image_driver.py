@@ -18,7 +18,7 @@ import common as C
 
 
 def qualify():
-    original=(C.seller_post,C.merge_rows)
+    original=(C.seller_post,C.merge_rows,C.bq)
     db={};proofs=[]
     def merge(table,rows,keys,run,**kwargs):
         assert kwargs['use_dml_stats'] is True
@@ -38,6 +38,29 @@ def qualify():
         return F.Engine(p,'synthetic-image-run',C.now_msk().isoformat(),state or B.initial(p),unit_budget=units).run(
             lambda result,proof:proofs.append(copy.deepcopy(proof)))
     try:
+        # Use the installed SDK serialization, with no real client or cloud auth.
+        # Both a fresh traversal and continuation must submit every named parameter.
+        from types import SimpleNamespace
+        p = plan('fbo_postings')
+        state = B.initial(p)
+        state['sequence'] = 1
+        source_doc = {'plan':p, 'state':state}
+        for sequence in (None, 1):
+            calls = []
+            class Client:
+                def query(self, sql, **kw):
+                    params = {v['name']:v for v in kw['job_config'].to_api_repr()['query']['queryParameters']}
+                    assert set(params) == ({'pid','origin','entity'} if not calls else {'pid','origin','entity','seq'})
+                    assert params['entity']['parameterValue']['value'] == p['entity']
+                    if calls:
+                        assert params['seq']['parameterValue']['value'] == '1'
+                    calls.append(sql)
+                    rows = [{'sequence':sequence}] if len(calls) == 1 else [{'evidence_json':json.dumps(source_doc)}]
+                    return SimpleNamespace(result=lambda:rows)
+            C.bq = lambda:Client()
+            assert F.resume(p) == (B.initial(p) if sequence is None else state)
+            assert len(calls) == (1 if sequence is None else 2)
+        C.bq = original[2]
         C.merge_rows=merge
         def postings(path,body):
             assert path=='/v3/posting/fbo/list'
@@ -78,9 +101,9 @@ def qualify():
         assert done['evidence']['complete'] and len(db['RAW_OZON_SUPPLY_BUNDLES'])==3
         return {'backfill_window_v1':'PASS','backfill_implementation_hash':B.implementation_hash(),
                 'fbo_split_resume_replay':'PASS','finance_unknown84':'PASS','supply_bundle_resume':'PASS',
-                'network':'NONE','credential_reads':0}
+                'sdk_resume_parameters':'PASS','network':'NONE','credential_reads':0}
     finally:
-        C.seller_post,C.merge_rows=original
+        C.seller_post,C.merge_rows,C.bq=original
 
 
 if __name__=='__main__':print(json.dumps(qualify(),sort_keys=True))
