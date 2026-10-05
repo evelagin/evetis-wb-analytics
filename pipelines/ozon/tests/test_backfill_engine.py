@@ -334,13 +334,30 @@ def test_journal_write_rejection_is_fatal(monkeypatch):
 def test_resume_uses_typed_plan_sequence_then_exact_clustered_proof(monkeypatch):
     from types import SimpleNamespace
     monkeypatch.setattr(F.bigquery,"ScalarQueryParameter",lambda n,t,v:(n,t,v),raising=False)
-    monkeypatch.setattr(F.bigquery,"QueryJobConfig",lambda **kw:SimpleNamespace(**kw),raising=False)
+    class Config:
+        # QueryJobConfig deserializes a new list on every property read.
+        # SimpleNamespace incorrectly made append() mutate the submitted config.
+        def __init__(self, **kw):
+            self.__dict__.update({k:v for k,v in kw.items() if k != "query_parameters"})
+            self.query_parameters = kw.get("query_parameters", [])
+        @property
+        def query_parameters(self):
+            return copy.deepcopy(self._parameters)
+        @query_parameters.setter
+        def query_parameters(self, values):
+            self._parameters = copy.deepcopy(values)
+    monkeypatch.setattr(F.bigquery,"QueryJobConfig",Config,raising=False)
     p=plan();state=B.initial(p);state["sequence"]=1
     state["progress"]["pending"]=[B.split(state["progress"]["pending"][0],60000)[0],B.split(state["progress"]["pending"][0],60000)[1]]
     doc={"plan":p,"state":state,"detail":{"action":"SPLIT_PAGE_CAP"}}
     calls=[]
     class Client:
         def query(self,sql,**kw):
+            submitted = {v[0]:v for v in kw["job_config"].query_parameters}
+            assert set(submitted) == ({"pid","origin","entity"} if not calls else {"pid","origin","entity","seq"})
+            assert submitted["entity"] == ("entity","STRING",p["entity"])
+            if calls:
+                assert submitted["seq"] == ("seq","INT64",1)
             calls.append((sql,kw))
             values=[{"sequence":1}] if len(calls)==1 else [{"evidence_json":json.dumps(doc)}]
             return SimpleNamespace(result=lambda:values)

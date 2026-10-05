@@ -203,3 +203,26 @@ truncation. Production pilots record actual peak state/envelope sizes after ever
 execution and stop on a bound violation. Full-history sharding/qualification remains
 separate. Fixed-day FBO/finance state does not accumulate business payloads; catalog
 SKU ownership and supply/bundle uniqueness dictionaries grow with retained universe.
+
+## SDK resume-query parameters (2026-10-05 incident)
+
+The first canonical Catalog pilot failed before source traversal or RAW writes:
+`ozon-runtime-daily-gh69f`, run
+`bf-f63ba71e-972f-4d41-826e-ae9912c14598`. The persisted failure diagnostic was
+`Query parameter 'entity' not found`. Journal schema convergence had already
+passed; this was a runtime request-serialization defect, not an IAM or Seller
+credential failure.
+
+`google.cloud.bigquery.QueryJobConfig.query_parameters` returns a newly decoded
+list. Mutating that returned list does not update the serialized configuration.
+Both `entity` and continuation `seq` must therefore be assigned through the
+property setter. The offline regression adapter reproduces copy-on-read behavior;
+the image qualification driver additionally inspects real installed-SDK
+`to_api_repr()` for fresh and continuing resume queries, without credentials,
+cloud clients or network calls.
+
+A source fix or passing offline test does not prove a corrected image is deployed.
+The failed attempt remains FAILED in the ingestion journal, with no completion
+proof; it must never become DONE/COMPLETE merely to release its pilot lease.
+Failed-attempt recovery remains subject to the canonical terminal-execution,
+lease/provenance and data-effect evidence gates.

@@ -505,7 +505,8 @@ def resume(p):
     config = bigquery.QueryJobConfig(use_legacy_sql=False, maximum_bytes_billed=1073741824,
         query_parameters=[bigquery.ScalarQueryParameter("pid", "STRING", p["plan_id"]),
                           bigquery.ScalarQueryParameter("origin", "TIMESTAMP", p["origin"])])
-    config.query_parameters.append(bigquery.ScalarQueryParameter("entity", "STRING", p["entity"]))
+    # The SDK getter returns a new list; append() would not update the request.
+    config.query_parameters = config.query_parameters + [bigquery.ScalarQueryParameter("entity", "STRING", p["entity"])]
     # Read cheap typed columns first; do not repeatedly scan every large continuation JSON.
     latest = list(C.bq().query(f"""SELECT MAX(backfill_sequence) AS sequence FROM `{table}`
         WHERE started_at >= @origin AND entity = @entity AND status = 'OK'
@@ -513,7 +514,7 @@ def resume(p):
     seq = latest[0]["sequence"] if latest else None
     if seq is None:
         return B.initial(p)
-    config.query_parameters.append(bigquery.ScalarQueryParameter("seq", "INT64", seq))
+    config.query_parameters = config.query_parameters + [bigquery.ScalarQueryParameter("seq", "INT64", seq)]
     rows = list(C.bq().query(f"""SELECT DISTINCT evidence_json FROM `{table}`
         WHERE started_at >= @origin AND entity = @entity AND status = 'OK'
           AND backfill_plan_id = @pid AND backfill_sequence = @seq LIMIT 2""",
