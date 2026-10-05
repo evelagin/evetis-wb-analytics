@@ -79,6 +79,11 @@ def test_every_release_record_is_well_formed():
 # Факты каждого выпуска: коммит-источник, конфиг сборки (неизменяемый по версиям) и шаги-ворота.
 V1_GATES = ["identity", "build", "record", "contents", "fail-closed-without-project"]
 RELEASES_FACTS = {
+    # Independently observed product-identity v7 build and exact-image qualification.
+    'f360e5a': {"commit": 'f360e5a5e9f0173d6378764144317a7111430a8b', "config": RELEASES / "ozon-runtime.v7.cloudbuild.yaml",
+        "gates": V1_GATES + ["control-fail-closed-without-project", "external-binding-omission-denied", "backfill-invalid-scope-denied"],
+        "digest": 'sha256:ea71acd9860d1d29d225451d56ac98aac2c0f69fa323b5d03c3d4de08abade21', "build_id": '039ea6b6-a909-4401-baa7-54fd98cf03be',
+        "qualification_build": '9f173010-9ac8-46a0-b9bb-924727b012aa', "archive_sha256": 'baaa35e19fbfb8d075b9ad4e690ea19e51593948fe38a93978e231005cbe662a'},
     # Independently observed #247 SDK-fix image and actual-SDK qualification.
     "b636ea1": {"commit": "b636ea151fe5e852ea5c45f192e7d2681f13eb9a", "config": RELEASES / "ozon-runtime.v6.cloudbuild.yaml",
                 "gates": V1_GATES + ["control-fail-closed-without-project", "external-binding-omission-denied", "backfill-invalid-scope-denied"],
