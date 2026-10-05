@@ -202,8 +202,8 @@ def test_schema_parity_offline_holds():
 def test_schema_parity_catches_a_drifted_snapshot(monkeypatch):
     real = OC.load_table_spec
 
-    def drifted(ds, t):
-        spec = copy.deepcopy(real(ds, t))
+    def drifted(ds, t, **kwargs):
+        spec = copy.deepcopy(real(ds, t, **kwargs))
         if t == "RAW_OZON_STOCKS":
             spec["schema"] = [dict(f, type="STRING") if f["name"] == "idc" else f for f in spec["schema"]]
         return spec
@@ -453,3 +453,12 @@ def test_artifact_registry_plan_has_no_evetis_principal_and_no_writer():
     for m in PL.EVETIS_FORBIDDEN_MARKERS:
         assert m not in blob
     assert {b["role"] for b in I.ARTIFACT_REGISTRY_BINDINGS["bindings"]} == {"roles/artifactregistry.reader"}
+
+
+def test_catalog_evolution_relaxes_only_tenant_sku_and_keeps_evetis_capture():
+    baseline = OC.load_table_spec('ozon_raw', 'RAW_OZON_CATALOG', baseline=True)
+    tenant = OC.load_table_spec('ozon_raw', 'RAW_OZON_CATALOG')
+    expected = copy.deepcopy(baseline)
+    next(f for f in expected['schema'] if f['name'] == 'sku')['mode'] = 'NULLABLE'
+    assert tenant == expected
+    assert next(f for f in baseline['schema'] if f['name'] == 'sku')['mode'] == 'REQUIRED'

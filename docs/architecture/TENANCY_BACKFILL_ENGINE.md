@@ -13,7 +13,7 @@ History classifications describe available source shape, not verified tenant cov
 
 | Domain | Exact endpoints | Grain / RAW destination / MERGE key | Source filter / pagination | History class and limit | Existing checkpoint / coverage |
 |---|---|---|---|---|---|
-| Catalog ALL | POST /v3/product/list; /v3/product/info/list | snapshot_date × sku; RAW_OZON_CATALOG; snapshot_date,sku | visibility=ALL excludes archived; last_id/total_items; info batches <=1000 | CURRENT_SNAPSHOT_ONLY; current product identity, not past status | Journal only; no dated historical coverage |
+| Catalog ALL | POST /v3/product/list; /v3/product/info/list | snapshot_date × product_id; RAW_OZON_CATALOG; snapshot_date,product_id (SKU optional) | visibility=ALL excludes archived; last_id/total_items; info batches <=1000 | CURRENT_SNAPSHOT_ONLY; current product identity, not past status | Journal only; no dated historical coverage |
 | Catalog ARCHIVED | Same | Same | visibility=ARCHIVED; separate traversal with stable product/SKU universe across both | CURRENT_SNAPSHOT_ONLY; retained archived identities, retention unproven | Same |
 | FBO postings | POST /v3/posting/fbo/list | posting × SKU; RAW_OZON_POSTINGS_FBO; posting_number,sku | RFC3339 millisecond since/to, <=year; has_next/cursor; limit100 | HISTORICAL_BACKFILLABLE; earliest tenant date UNPROVEN | T5 date chunks/append-only checkpoint; no runtime leaf proof yet |
 | Finance | POST /v1/finance/accrual/types; /v1/finance/accrual/by-day | accrual × type × nullable SKU; RAW_OZON_FINANCE_ACCRUAL; accrual_id,type_id,sku | date >=2022-01-01; last_id expires after15min | HISTORICAL_BACKFILLABLE; earliest activity UNPROVEN, late changes possible | T5 chunks; no per-day runtime proof yet |
@@ -241,3 +241,46 @@ active Cloud Run execution; the expired lease ceases to block the next CAS gener
 The generic two-project regression covers grace boundary, failed reconcile refusal,
 independent retry and unchanged predecessor. Incident provenance is retained at
 `docs/tenancy/evidence/client001-catalog-failed-20261005.json`.
+
+## Catalog product identity — owner decision 2026-10-05
+
+CURRENT source diagnostic for the isolated onboarding tenant found 25 ARCHIVED products:
+25 valid unique product IDs and offer IDs, 22 valid SKUs, and 3 source SKUs equal to zero.
+Both `/v3/product/list` and `/v3/product/info/list` returned that structure. Identifiers and
+payloads are not published. This evidence establishes source shape, not deployed capability.
+
+Dedicated tenant Catalog (both WINDOW_V1 and regular binding-required collection) uses
+`(snapshot_date, product_id)`. `product_id` is logically required, validated positive source
+identity. Physical `product_id` stays NULLABLE for nondestructive compatibility; runtime and
+coverage reject invalid identity. `sku` is NULLABLE: absent/null/empty/zero source values become
+NULL, never product_id/offer_id/synthetic SKU. `offer_id` remains an independent optional
+attribute. Invalid nonempty SKU, repeated product identity or ambiguous valid SKU ownership
+fails closed. ALL and ARCHIVED must each traverse to their source total before plan completion.
+
+The only physical RAW migration is REQUIRED → NULLABLE for `sku`; columns, clustering,
+partitions, historical business rows and retention remain unchanged. Review the actual provider
+plan; do not replace/recreate the table. BigQuery Tables API supports mode relaxation without
+row rewriting (official managing-table-schemas documentation). Tightening `product_id` mode
+is not required and must not trigger destructive migration. No deployment is authorized to
+legacy EVETIS; its collector behavior remains byte-compatible with the frozen baseline.
+
+`DIM_OZON_PRODUCT` retains the latest row per product_id, including distinct SKU-less products.
+It never restores an old SKU when a newer archived observation lacks it. `sku_joinable` is true
+only for a valid SKU with one current product owner. All tenant SKU fact consumers require that
+flag plus direct SKU equality. Missing/ambiguous identity never uses offer_id/product_id fallback;
+ambiguous mapping remains explicit. FBO/finance/stocks/ads business keys do not change. Prices
+remain offer-grain facts. The Seller/Performance sampled association excludes absent/zero SKUs;
+this change does not create a new binding or weaken the existing owner confirmation protocol.
+
+Historical snapshots are retained; current snapshot completeness does not imply historical
+status or deleted-product discoverability. Pilot verification reconciles product keys/source
+counts and valid-SKU uniqueness separately. A unit OK is not a successful aggregate run;
+partial/error runs must remain non-complete with preserved unit proof and predecessor receipts.
+
+Tenant Catalog schema evolution is stored in tools/tenancy/schema/ozon_raw/RAW_OZON_CATALOG.json.
+The original EVETIS capture in pipelines/ozon/schema remains unchanged; legacy parity
+explicitly checks the baseline, while tenant Terraform/render/parity use the evolved contract.
+
+Bounded pilot unit budget may be reduced to 1..20 (default 20); the exact value is hashed into the reviewed plan and checked against execution metadata during reconcile. This permits a real ALL → ARCHIVED continuation test without enlarging request, date, or continuation-size limits.
+
+The subsequent Catalog failure after a committed ALL unit is preserved independently. Its unit proof and RAW effects must be measured, not described as zero-effect. A fresh product-identity generation may replay those keys after canonical lease expiry/reclaim; it does not consume or reinterpret predecessor plan/receipt proof, release a failed lease as success, or delete historical snapshots.

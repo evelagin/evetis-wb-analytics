@@ -1,0 +1,122 @@
+{
+  "clustering": [
+    "sku"
+  ],
+  "schema": [
+    {
+      "mode": "REQUIRED",
+      "name": "snapshot_date",
+      "type": "DATE"
+    },
+    {
+      "mode": "NULLABLE",
+      "name": "sku",
+      "type": "STRING"
+    },
+    {
+      "mode": "NULLABLE",
+      "name": "product_id",
+      "type": "STRING"
+    },
+    {
+      "mode": "NULLABLE",
+      "name": "offer_id",
+      "type": "STRING"
+    },
+    {
+      "mode": "NULLABLE",
+      "name": "name",
+      "type": "STRING"
+    },
+    {
+      "mode": "NULLABLE",
+      "name": "is_archived",
+      "type": "BOOLEAN"
+    },
+    {
+      "mode": "NULLABLE",
+      "name": "has_stock",
+      "type": "BOOLEAN"
+    },
+    {
+      "mode": "NULLABLE",
+      "name": "stock_present",
+      "type": "INTEGER"
+    },
+    {
+      "mode": "NULLABLE",
+      "name": "stock_reserved",
+      "type": "INTEGER"
+    },
+    {
+      "mode": "NULLABLE",
+      "name": "visibility_has_price",
+      "type": "BOOLEAN"
+    },
+    {
+      "mode": "NULLABLE",
+      "name": "visibility_has_stock",
+      "type": "BOOLEAN"
+    },
+    {
+      "mode": "NULLABLE",
+      "name": "status_name",
+      "type": "STRING"
+    },
+    {
+      "mode": "NULLABLE",
+      "name": "price_index_color",
+      "type": "STRING"
+    },
+    {
+      "mode": "NULLABLE",
+      "name": "description_category_id",
+      "type": "INTEGER"
+    },
+    {
+      "mode": "NULLABLE",
+      "name": "type_id",
+      "type": "INTEGER"
+    },
+    {
+      "mode": "NULLABLE",
+      "name": "created_at",
+      "type": "TIMESTAMP"
+    },
+    {
+      "mode": "NULLABLE",
+      "name": "updated_at",
+      "type": "TIMESTAMP"
+    },
+    {
+      "mode": "REQUIRED",
+      "name": "extracted_at",
+      "type": "TIMESTAMP"
+    },
+    {
+      "mode": "NULLABLE",
+      "name": "source_event_time",
+      "type": "TIMESTAMP"
+    },
+    {
+      "mode": "REQUIRED",
+      "name": "source_endpoint",
+      "type": "STRING"
+    },
+    {
+      "mode": "REQUIRED",
+      "name": "ingestion_run_id",
+      "type": "STRING"
+    },
+    {
+      "mode": "NULLABLE",
+      "name": "source_payload_hash",
+      "type": "STRING"
+    }
+  ],
+  "table_id": "RAW_OZON_CATALOG",
+  "time_partitioning": {
+    "field": "snapshot_date",
+    "type": "DAY"
+  }
+}

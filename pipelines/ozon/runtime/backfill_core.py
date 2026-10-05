@@ -34,7 +34,7 @@ def digest(value):
 def implementation_hash():
     # Qualified app code only. No credentials/configuration stores are inspected.
     root = Path(__file__).resolve().parent
-    names = ("backfill_core.py", "backfill.py", "main.py", "entities.py", "common.py",
+    names = ("backfill_core.py", "catalog_identity.py", "backfill.py", "main.py", "entities.py", "common.py",
              "identity.py", "seller_policy.py", "seller_method_policy.json", "runtime_execution_contract.json",
              "checkpoints.py", "control_store.py", "credentials.py", "dq.py", "history.py", "lifecycle.py",
              "lifecycle_core.py", "promo.py", "quota.py", "requirements.txt")

@@ -6,4 +6,4 @@ SELECT p.posting_number, p.sku, d.internal_sku, d.product_name, p.order_date_msk
   p.is_cancelled, p.is_delivered, p.quantity, p.price_rub, p.old_price_rub, p.payout_rub,
   p.warehouse_name, p.city
 FROM `__tenant__.ozon_mart.NORM_OZON_POSTING_LINE` p
-LEFT JOIN `__tenant__.ozon_mart.DIM_OZON_PRODUCT` d ON d.sku = p.sku;
+LEFT JOIN `__tenant__.ozon_mart.DIM_OZON_PRODUCT` d ON d.sku_joinable AND d.sku = p.sku;

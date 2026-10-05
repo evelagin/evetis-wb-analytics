@@ -25,6 +25,6 @@ SELECT k.sales_date, k.sku, d.internal_sku, d.product_name, COALESCE(d.mapping_s
   COALESCE(cp.status, 'UNKNOWN') AS data_status,
   COALESCE(ca.status, 'UNKNOWN') AS ads_data_status
 FROM keyed k
-LEFT JOIN `__tenant__.ozon_mart.DIM_OZON_PRODUCT` d ON d.sku = k.sku
+LEFT JOIN `__tenant__.ozon_mart.DIM_OZON_PRODUCT` d ON d.sku_joinable AND d.sku = k.sku
 LEFT JOIN `__tenant__.tenant_ops.V_COVERAGE_DAILY` cp ON cp.entity = 'fbo_postings' AND cp.coverage_date = k.sales_date
 LEFT JOIN `__tenant__.tenant_ops.V_COVERAGE_DAILY` ca ON ca.entity = 'ads_sku_daily' AND ca.coverage_date = k.sales_date;

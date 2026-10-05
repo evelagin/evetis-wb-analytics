@@ -6,12 +6,14 @@
 """
 import csv
 import io
+import os
 import json
 import re
 import time
 import zipfile
 from datetime import date, timedelta
 
+import catalog_identity as CI
 import common as C
 from common import (h, log, merge_rows, now_msk, perf_get, perf_post, seller_post)
 from promo import promo
@@ -108,7 +110,7 @@ def _list_total(result):
     return None
 
 
-def _product_list_items(visibility="ALL"):
+def _product_list_items(visibility="ALL", *, product_identity=False):
     """Полный список товаров: страницы по last_id до total, с проверкой полноты.
 
     Swagger /v3/product/list: limit ≤ 1000, пагинация через result.last_id, «всего» —
@@ -130,6 +132,16 @@ def _product_list_items(visibility="ALL"):
         if code != 200:
             raise RuntimeError(f"product/list {code}: {lst}")
         result = lst.get("result") or {}
+        if product_identity:
+            chunk = result.get("items")
+            if not isinstance(chunk, list) or _list_total(result) is None:
+                raise CI.CatalogIdentityError("catalog source shape incomplete")
+            if total is not None and _list_total(result) != total:
+                raise CI.CatalogIdentityError("catalog source total changed")
+            page_ids = [CI.product_id(i.get("product_id")) for i in chunk]
+            known_ids = {CI.product_id(v) for v in seen}
+            if len(set(page_ids)) != len(page_ids) or set(page_ids) & known_ids:
+                raise CI.CatalogIdentityError("catalog repeated product IDs")
         fresh = []
         for i in (result.get("items") or []):
             # Повтор товара считается один раз. Исключение — первая страница без флага: она
@@ -196,15 +208,18 @@ def _product_info_items(ids):
     return out
 
 
-def _catalog_rows(items, run_id, ts):
+def _catalog_rows(items, run_id, ts, *, product_identity=False):
     d = str(now_msk().date())
     rows = []
     for i in items:
         st = i.get("stocks") or {}
         vd = i.get("visibility_details") or {}
         pi = i.get("price_indexes") or {}
-        rows.append(dict(snapshot_date=d, sku=str(i["sku"]), product_id=str(i["id"]),
-            offer_id=str(i["offer_id"]), name=i.get("name"),
+        pid = CI.product_id(i.get("id")) if product_identity else str(i["id"])
+        sku = CI.optional_sku(i.get("sku")) if product_identity else str(i["sku"])
+        offer = CI.optional_offer_id(i.get("offer_id")) if product_identity else str(i["offer_id"])
+        rows.append(dict(snapshot_date=d, sku=sku, product_id=pid,
+            offer_id=offer, name=i.get("name"),
             is_archived=bool(i.get("is_archived")), has_stock=bool(st.get("has_stock")),
             stock_present=sum(x.get("present", 0) for x in (st.get("stocks") or [])),
             stock_reserved=sum(x.get("reserved", 0) for x in (st.get("stocks") or [])),
@@ -213,12 +228,31 @@ def _catalog_rows(items, run_id, ts):
             price_index_color=(pi.get("color_index") or "").replace("COLOR_INDEX_", "") or None,
             description_category_id=i.get("description_category_id"), type_id=i.get("type_id"),
             created_at=i.get("created_at"), updated_at=i.get("updated_at"),
-            source_event_time=i.get("updated_at"), source_payload_hash=h(d, i["sku"]),
+            source_event_time=i.get("updated_at"), source_payload_hash=h(d, pid if product_identity else i["sku"]),
             **_meta("POST /v3/product/list + /v3/product/info/list", run_id, ts)))
     return rows
 
 
+def retained_catalog(run_id, ts):
+    """Dedicated tenant product universe; legacy EVETIS collector remains unchanged."""
+    info = []
+    for visibility in ("ALL", "ARCHIVED"):
+        items = _product_list_items(visibility, product_identity=True)
+        ids = [CI.product_id(i.get("product_id")) for i in items]
+        cards = _product_info_items([i["product_id"] for i in items])
+        if len(cards) != len(ids) or {CI.product_id(i.get("id")) for i in cards} != set(ids):
+            raise CI.CatalogIdentityError("catalog detail identity incomplete")
+        info.extend(cards)
+    rows = _catalog_rows(info, run_id, ts, product_identity=True)
+    pids = [r["product_id"] for r in rows]; skus = [r["sku"] for r in rows if r["sku"] is not None]
+    if len(set(pids)) != len(pids) or len(set(skus)) != len(skus):
+        raise CI.CatalogIdentityError("catalog product/SKU identity ambiguous")
+    return C.merge_rows("RAW_OZON_CATALOG", rows, ["snapshot_date", "product_id"], run_id)
+
+
 def catalog(run_id, ts, _f, _t):
+    if os.environ.get("TENANT_BINDING_REQUIRED") == "1":
+        return retained_catalog(run_id, ts)
     ids = [i["product_id"] for i in _product_list_items()]
     rows = _catalog_rows(_product_info_items(ids), run_id, ts)
     return merge_rows("RAW_OZON_CATALOG", rows, ["snapshot_date", "sku"], run_id)

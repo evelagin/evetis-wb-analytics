@@ -10,4 +10,4 @@ SELECT s.snapshot_date, s.sku, d.internal_sku, d.product_name, s.warehouse_id, s
   DATE_DIFF(CURRENT_DATE('Europe/Moscow'), s.snapshot_date, DAY) AS snapshot_age_days
 FROM `__tenant__.ozon_mart.SNAP_OZON_STOCK` s
 JOIN last_day l ON s.snapshot_date = l.d
-LEFT JOIN `__tenant__.ozon_mart.DIM_OZON_PRODUCT` d ON d.sku = s.sku;
+LEFT JOIN `__tenant__.ozon_mart.DIM_OZON_PRODUCT` d ON d.sku_joinable AND d.sku = s.sku;

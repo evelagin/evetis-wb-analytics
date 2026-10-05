@@ -231,7 +231,8 @@ def test_terminal_zero_effect_failure_expires_to_independent_retry_preserving_pr
                BACKFILL_TARGET_PROJECT=project, BACKFILL_MODE=T.B.VERSION,
                SINCE=retry["runtime_plan"]["from"], UNTIL=retry["runtime_plan"]["to"],
                BACKFILL_GENERATION=retry["runtime_plan"]["generation"],
-               BACKFILL_ORIGIN=retry["runtime_plan"]["origin"])
+               BACKFILL_ORIGIN=retry["runtime_plan"]["origin"],
+               BACKFILL_MAX_REQUESTS=str(retry["max_requests"]), BACKFILL_MAX_UNITS=str(retry["max_units"]))
     execution = {"name":base + "/jobs/" + job + "/executions/retry", "completionTime":now.isoformat(),
                  "succeededCount":1, "template":{"serviceAccount":
                  c['marketplaces']['ozon']['service_accounts']['runtime'] + "@" + project + ".iam.gserviceaccount.com",
@@ -245,3 +246,19 @@ def test_terminal_zero_effect_failure_expires_to_independent_retry_preserving_pr
     assert leases[T.CK.lease_name(cid, 1)] == before[2][T.CK.lease_name(cid, 1)]
     assert all(r["run_id"] != old_run for r in writes)
     assert T.CK.fold(ledger)[old_checkpoint["backfill_id"]]["status"] == "RUNNING"
+
+
+@pytest.mark.parametrize("budget", [0, 21, 1000, True, "1", None])
+def test_bounded_unit_budget_cannot_expand_or_change_type(budget):
+    with pytest.raises(T.B.EvidenceError, match="unit budget"):
+        T.make_plan("client_001", "catalog", "2026-09-17", "2026-09-17", "offline",
+                    "2026-10-04T00:00:00Z", date(2026,10,4), max_units=budget)
+
+def test_smaller_unit_budget_is_frozen_in_reviewed_plan(monkeypatch):
+    p = T.make_plan("client_001", "catalog", "2026-09-17", "2026-09-17", "offline",
+                    "2026-10-04T00:00:00Z", date(2026,10,4), max_units=1)
+    assert p["max_units"] == 1 and p["ack_hash"] == T.B.digest({k:v for k,v in p.items() if k != "ack_hash"})
+    p["max_units"] = 20
+    monkeypatch.setattr(T.TT, "_req", lambda *a: pytest.fail("modified budget touched cloud"))
+    with pytest.raises(T.B.EvidenceError, match="modified"):
+        T.validate_plan(p,p["ack_hash"])

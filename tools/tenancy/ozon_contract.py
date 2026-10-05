@@ -141,10 +141,14 @@ def schema_path(dataset_key: str, table: str) -> Path:
     return ozon if ozon.is_file() else PLATFORM_SCHEMA_DIR / dataset_key / f"{table}.json"
 
 
-def load_table_spec(dataset_key: str, table: str) -> dict:
+def load_table_spec(dataset_key: str, table: str, *, baseline: bool = False) -> dict:
     """Снимок таблицы из Git. Строгий JSON: повторяющиеся ключи — ошибка."""
     from tools.tenancy.validation import parse_tenant_json   # тот же строгий разборщик
     p = schema_path(dataset_key, table)
+    # Dedicated tenant evolution is separate from immutable EVETIS schema captures.
+    override = PLATFORM_SCHEMA_DIR / dataset_key / f"{table}.json"
+    if not baseline and dataset_key == "ozon_raw" and override.is_file():
+        p = override
     if not p.is_file():
         raise ContractError(f"нет схемы в Git: {p.relative_to(REPO)}")
     spec = parse_tenant_json(p.read_text(encoding="utf-8"))

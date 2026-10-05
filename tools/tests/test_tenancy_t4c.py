@@ -146,7 +146,7 @@ def _finance(accruals, lines=None, cogs=None):
                                   [(i, v["ozon_type_name"], v["accrual_class"], v["classification_basis"])
                                    for i, v in tax.items()]),
         "NORM_OZON_POSTING_LINE": (LINE_COLS, lines if lines is not None else [line()]),
-        "DIM_OZON_PRODUCT": (["sku", "internal_sku"], [("S1", "A1"), ("S2", "A2")]),
+        "DIM_OZON_PRODUCT": (["sku", "internal_sku", "sku_joinable"], [("S1", "A1", 1), ("S2", "A2", 1)]),
         "ECON_TENANT_COGS": (COGS_COLS, cogs if cogs is not None else [("A1", "2026-01-01", "9999-12-31", 200)]),
     })
     for name in ("NORM_OZON_ACCRUAL", "NORM_OZON_POSTING_SETTLEMENT"):
@@ -277,13 +277,13 @@ MASTER = ["internal_sku", "product_name", "brand", "category", "is_bundle", "val
 
 @pytest.mark.parametrize("mapping,status,internal", [
     ([], "UNMAPPED", None),
-    ([("A1", "OZON", "S1", "2026-01-01", None, 1)], "MAPPED", "A1"),
-    ([("A1", "OZON", "S1", "2026-01-01", None, 1), ("A2", "OZON", "S1", "2026-01-01", None, 1)], "AMBIGUOUS", None),
-    ([("A1", "OZON", "S1", "2026-01-01", None, 1), ("A2", "OZON", "S1", "2026-03-01", None, 1)], "MAPPED", "A2"),
+    ([("A1", "OZON", "11", "2026-01-01", None, 1)], "MAPPED", "A1"),
+    ([("A1", "OZON", "11", "2026-01-01", None, 1), ("A2", "OZON", "11", "2026-01-01", None, 1)], "AMBIGUOUS", None),
+    ([("A1", "OZON", "11", "2026-01-01", None, 1), ("A2", "OZON", "11", "2026-03-01", None, 1)], "MAPPED", "A2"),
 ])
 def test_product_mapping_is_never_guessed(mapping, status, internal):
     rows = H.run("ozon_mart", "DIM_OZON_PRODUCT", {
-        "RAW_OZON_CATALOG": (CAT, [("S1", 1, "o1", "n", 0, "ok", "2026-01-01", "t")]),
+        "RAW_OZON_CATALOG": (CAT, [("11", 1, "o1", "n", 0, "ok", "2026-01-01", "t")]),
         "REF_SKU_CHANNEL_MAP": (MAP, mapping), "REF_PRODUCT_MASTER": (MASTER, [])})
     assert [(r["mapping_status"], r["internal_sku"]) for r in rows] == [(status, internal)]
 
@@ -435,3 +435,30 @@ def test_binding_sql_performance_requires_v2_seller_link(linked):
          ('ss','SELLER',sfp,'2026-03-01',''),('sp','PERFORMANCE',pfp,'2026-03-01',None)]
     result=binding_sql({'SELLER_BINDING':(BIND,rows),'SELLER_IDENTITY_OBSERVATIONS':(OBS,obs)})
     assert {r['api']:r['binding_status'] for r in result}=={'SELLER':'BOUND','PERFORMANCE':'BOUND' if linked else 'INVALID_BINDING'}
+
+
+def test_product_dimension_retains_skuless_products_and_never_resurrects_old_sku():
+    rows = H.run('ozon_mart', 'DIM_OZON_PRODUCT', {
+        'RAW_OZON_CATALOG': (CAT, [
+            ('11', '1', 'offer-one', 'old', 0, 'ok', '2026-09-30', 'a'),
+            (None, '1', 'offer-one', 'archived', 1, 'archived', '2026-10-01', 'b'),
+            (None, '2', 'offer-two', 'archived', 1, 'archived', '2026-10-01', 'b'),
+            ('33', '3', 'offer-three', 'active', 0, 'ok', '2026-10-01', 'b')]),
+        'REF_SKU_CHANNEL_MAP': (MAP, [('A1', 'OZON', '11', '2026-01-01', None, 1)]),
+        'REF_PRODUCT_MASTER': (MASTER, [])})
+    assert len(rows) == 3
+    by_id = {r['product_id']: r for r in rows}
+    assert by_id['1']['sku'] is None and by_id['2']['sku'] is None
+    assert not by_id['1']['sku_joinable'] and by_id['1']['internal_sku'] is None
+    assert by_id['3']['sku_joinable']
+    assert not [r for r in rows if r['sku_joinable'] and r['sku'] == '11']
+
+
+def test_ambiguous_catalog_sku_never_multiplies_product_fact_join():
+    rows = H.run('ozon_mart', 'DIM_OZON_PRODUCT', {
+        'RAW_OZON_CATALOG': (CAT, [('11', '1', 'a', 'a', 0, 'ok', '2026-10-01', 'a'),
+                                 ('11', '2', 'b', 'b', 1, 'archived', '2026-10-01', 'a')]),
+        'REF_SKU_CHANNEL_MAP': (MAP, [('A1', 'OZON', '11', '2026-01-01', None, 1)]),
+        'REF_PRODUCT_MASTER': (MASTER, [])})
+    assert len(rows) == 2
+    assert all(not r['sku_joinable'] and r['internal_sku'] is None and r['mapping_status'] == 'AMBIGUOUS' for r in rows)

@@ -17,5 +17,5 @@ SELECT e.order_date_msk AS sales_date, e.sku, e.internal_sku, d.product_name, e.
   COALESCE(w.status, 'UNKNOWN') AS finance_data_status,
   IF(w.status IS NULL, 'NOT_EVALUATED', w.reason) AS finance_status_reason
 FROM `__tenant__.ozon_mart.FACT_OZON_SKU_ECONOMICS_DAILY` e
-LEFT JOIN `__tenant__.ozon_mart.DIM_OZON_PRODUCT` d ON d.sku = e.sku
+LEFT JOIN `__tenant__.ozon_mart.DIM_OZON_PRODUCT` d ON d.sku_joinable AND d.sku = e.sku
 LEFT JOIN `__tenant__.tenant_ops.V_FINANCE_WINDOW_STATUS` w ON w.from_date = e.order_date_msk;

@@ -26,6 +26,7 @@ ENABLED_ENTITIES (через запятую), HISTORY_SEED (необязател
 """
 from __future__ import annotations
 
+import catalog_identity as CI
 import hashlib
 import json
 import os
@@ -131,7 +132,8 @@ def catalog_skus():
         c, info = C.seller_post("/v3/product/info/list", {"product_id": ids[k:k + 1000], "offer_id": [], "sku": []})
         if c != 200:
             return None
-        skus |= {str(i.get("sku")) for i in (info.get("items") or [])}
+        skus |= {sku for i in (info.get("items") or [])
+                 if (sku := CI.optional_sku(i.get("sku"))) is not None}
     return skus
 
 
