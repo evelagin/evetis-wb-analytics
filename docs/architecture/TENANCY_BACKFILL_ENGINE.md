@@ -283,4 +283,22 @@ explicitly checks the baseline, while tenant Terraform/render/parity use the evo
 
 Bounded pilot unit budget may be reduced to 1..20 (default 20); the exact value is hashed into the reviewed plan and checked against execution metadata during reconcile. This permits a real ALL → ARCHIVED continuation test without enlarging request, date, or continuation-size limits.
 
+## Multiday FBO scale qualification
+
+The bounded coordinator accepts `--window-days` (integer 1..30, default 1), only
+for FBO when different from the default. The value is part of the runtime plan ID
+and owner execution hash; start passes it as a per-execution override and reconcile
+verifies the actual value. Existing default plans and receipts remain compatible.
+The qualified runtime already supports this setting; no image, template, IAM,
+schema or Scheduler change is needed. The strict page cap remains 200 and request
+budget remains 400. A natural source window reaching the cap must discard its parent
+rows before RAW MERGE and persist deterministic half-open children. A configured
+window split alone is not evidence of a live page-cap split.
+
+An expanded Supplies execution budget may use a separately frozen coordinator
+document with the same source scope/generation/origin and runtime plan ID. Preserve
+the earlier document and receipts; link the new execution hash to its predecessor.
+This does not raise the single-order-batch, request, state-size or timeout guards.
+Only exact runtime-plan equality permits consuming the existing continuation.
+
 The subsequent Catalog failure after a committed ALL unit is preserved independently. Its unit proof and RAW effects must be measured, not described as zero-effect. A fresh product-identity generation may replay those keys after canonical lease expiry/reclaim; it does not consume or reinterpret predecessor plan/receipt proof, release a failed lease as success, or delete historical snapshots.
