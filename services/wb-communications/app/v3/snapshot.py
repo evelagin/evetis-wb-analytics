@@ -102,12 +102,24 @@ class KnowledgeSnapshot:
         for iid, rx in self._ingredient_patterns:
             for m in rx.finditer(normalized_text):
                 hits.append((iid, m.span()))
+        # Canonical identities outrank shared stems. A generic family alias remains ambiguous;
+        # it is NEVER silently converted to whichever relative happens to be in this product.
+        canonical = {
+            "hyaluronic_acid": (r"гиалуронов\w*\s+кислот\w*", r"\bhyaluronic acid\b"),
+            "sodium_hyaluronate": (r"гиалуронат\w*\s+натри\w*", r"\bsodium hyaluronate\b"),
+            "salicylic_acid": (r"\bsalicylic acid\b",),
+        }
+        for iid, patterns in canonical.items():
+            if iid in self.ingredients:
+                for pattern in patterns:
+                    hits.extend((iid, m.span()) for m in re.finditer(pattern, normalized_text))
         keep = []
         for iid, (a, b) in hits:
             inside = any((a2 <= a and b <= b2) and (b2 - a2) > (b - a) and iid2 != iid
                          for iid2, (a2, b2) in hits)
             if not inside:
-                keep.append((iid, (a, b)))
+                if (iid, (a, b)) not in keep:
+                    keep.append((iid, (a, b)))
         return keep
 
     def family_members(self, ingredient_id: str) -> list[str]:

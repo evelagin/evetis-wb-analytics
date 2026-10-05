@@ -280,6 +280,13 @@ def verify(text: Optional[str], ctx: VerifierContext, snapshot: KnowledgeSnapsho
     for m in find_all(vp["cosmetic_claims"], free_no_names):
         if not _in_corpus(ctx, m.group()):
             add("V-CLAIM", "BLOCK", m.group(), "cosmetic claim while cosmetic_claim_generation is disabled (ODR-06)")
+    # Presence is not causal efficacy. The shared ingredient alias fix must not make
+    # "ingredient provides softness" publishable merely because presence is known.
+    for clause in re.split(r"[.!?;]", free_no_names):
+        if snapshot.ingredient_mentions(clause) and re.search(
+                r"(обеспечива\w*|прида[её]т|делает)[^.!?]{0,70}(мягк|нежн)", clause):
+            if not _in_corpus(ctx, clause):
+                add("V-CLAIM", "BLOCK", clause, "ingredient presence does not authorize a causal softness claim")
     for m in find_all(vp["free_from_claims"], free):
         if not _in_corpus(ctx, m.group()):
             add("V-FREEFROM", "BLOCK", m.group(), "derived free-from claim (ODR-10)")

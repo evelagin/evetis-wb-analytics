@@ -121,6 +121,7 @@ class ShadowSummary:
     persist_failed: int = 0
     errors: int = 0
     skipped_budget: int = 0
+    v31_evaluated: int = 0
     outcomes: dict = field(default_factory=dict)
 
     def to_dict(self) -> dict:
@@ -138,8 +139,11 @@ def run_shadow(rt: V3Runtime, *, max_items: int, deadline: float, scan_limit: in
     s.scanned = len(cands)
     keys = {doc_id: ledger_key(doc_id, snap_id) for doc_id, _ in cands}
     done = rt.store.get_many(list(keys.values()))
+    quality_backfilled = 0
+    prior_answers = [q["candidate_text"] for v in done.values()
+                     if (q := v.get("response_quality_v31")) and q.get("candidate_text")]
     for doc_id, doc in cands:
-        if s.decided + s.rechecked >= max_items:
+        if s.decided + s.rechecked + quality_backfilled >= max_items:
             break
         if clock() >= deadline - min_item_seconds:
             s.skipped_budget += 1
@@ -150,14 +154,30 @@ def run_shadow(rt: V3Runtime, *, max_items: int, deadline: float, scan_limit: in
         msg.update(_classifier_prompt_version=rt.classifier_prompt_version,
                    _generator_prompt_version=rt.generator_prompt_version, _cost_in=rt.cost_in, _cost_out=rt.cost_out)
         final_sha = _sha(msg.get("v2_final_answer"))
+        hard_plan = None
         try:
             if prev and prev.get("v2_final_sha256") == final_sha:
+                from app.response_quality import VERSION
+                if (getattr(rt.settings, "v31_quality_shadow_enabled", False) and
+                    (prev.get("response_quality_v31") or {}).get("version") != VERSION):
+                    quality = _quality_shadow(rt, msg, previous_answers=prior_answers)
+                    quality_backfilled += 1
+                    if quality:
+                        s.v31_evaluated += 1
+                        try:
+                            rt.store.mark(key, {**prev, "response_quality_v31": quality})
+                        except Exception as exc:
+                            log_event(logger, "warning", "v3.1 quality ledger write failed (isolated)",
+                                      error_class=type(exc).__name__)
+                        if quality.get("candidate_text"):
+                            prior_answers.append(quality["candidate_text"])
                 continue
             if prev:
                 row = _recheck_row(rt, msg, snap_id)
                 s.rechecked += 1
             else:
                 decision, stats = rt.engine.decide(msg)
+                hard_plan = decision.plan
                 row = journal_mod.build_row(decision, msg, stats)
                 s.decided += 1
                 s.outcomes[decision.final_outcome] = s.outcomes.get(decision.final_outcome, 0) + 1
@@ -167,6 +187,12 @@ def run_shadow(rt: V3Runtime, *, max_items: int, deadline: float, scan_limit: in
                                           error_class=type(exc).__name__, failure_code="ENGINE_ERROR")
             log_event(logger, "warning", "v3 shadow decision failed", communication_id=doc_id,
                       error=type(exc).__name__)
+        quality = _quality_shadow(rt, msg, safe_v3_draft=row.get("draft_text"),
+                                  hard_plan=hard_plan, previous_answers=prior_answers)
+        if quality:
+            s.v31_evaluated += 1
+            if quality.get("candidate_text"):
+                prior_answers.append(quality["candidate_text"])
         ok = False
         try:
             ok = bool(rt.writer.insert_v3_decision(row))
@@ -179,7 +205,8 @@ def run_shadow(rt: V3Runtime, *, max_items: int, deadline: float, scan_limit: in
                                     "snapshot_id": snap_id, "decision_id": row.get("decision_id"),
                                     "final_outcome": row.get("final_outcome"),
                                     "v2_final_sha256": final_sha,
-                                    "updated_at": datetime.now(timezone.utc).isoformat()})
+                                    "updated_at": datetime.now(timezone.utc).isoformat(),
+                                    **({"response_quality_v31": quality} if quality else {})})
             except Exception as exc:  # noqa: BLE001
                 log_event(logger, "warning", "v3 ledger write failed", error=type(exc).__name__)
         else:
@@ -190,6 +217,36 @@ def run_shadow(rt: V3Runtime, *, max_items: int, deadline: float, scan_limit: in
                   verifier_verdict=row.get("verifier_verdict"), latency_ms=row.get("latency_ms_total"),
                   error_class=row.get("error_class"), run_kind=row.get("run_kind"))
     return s
+
+
+
+def _quality_shadow(rt, msg, *, safe_v3_draft=None, hard_plan=None, previous_answers=()):
+    """Local-only comparison. Writes are confined to the existing v3 ledger by the caller.
+    Baseline v3 is UNPROVEN when only a historical hash is available (no synthetic live claim).
+    """
+    if not getattr(rt.settings, "v31_quality_shadow_enabled", False):
+        return None
+    try:
+        from app.response_quality.core import prepare, evaluate
+        from app.services.publication_policy import validate_for_publication
+        r = prepare(msg, msg.get("v2_final_answer") or msg.get("v2_ai_answer") or "",
+                    rt.engine.snapshot, safe_v3_draft=safe_v3_draft, hard_plan=hard_plan)
+        r.quality = evaluate(r.text, msg, r.plan, r.final_policy, previous_answers=previous_answers)
+        meta = r.metadata()
+        original = msg.get("v2_final_answer") or msg.get("v2_ai_answer") or ""
+        meta["v2_quality"] = evaluate(original, msg, r.plan, r.original_policy).__dict__
+        meta["v3_quality"] = (evaluate(safe_v3_draft, msg, r.plan,
+            validate_for_publication(safe_v3_draft, msg, rt.settings)).__dict__
+            if safe_v3_draft else {"verdict": "UNPROVEN"})
+        meta["candidate_text"] = r.text  # own shadow ledger only, never an operator-card input
+        log_event(logger, "info", "v3.1 quality shadow", communication_id=msg["communication_id"],
+                  snapshot_id=rt.engine.snapshot.snapshot_id, quality_verdict=r.quality.verdict,
+                  hard_verdict=r.final_policy.get("verdict"), candidate_sha256=meta["final_text_sha256"],
+                  information_budget=r.plan.information_budget, run_kind="quality_shadow")
+        return meta
+    except Exception as exc:
+        log_event(logger, "warning", "v3.1 quality shadow failed (isolated)", error_class=type(exc).__name__)
+        return None
 
 
 def _recheck_row(rt: V3Runtime, msg: dict, snap_id: str) -> dict:
