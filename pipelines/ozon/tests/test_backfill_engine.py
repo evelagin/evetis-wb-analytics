@@ -405,11 +405,34 @@ def test_sku_quota_deferred_without_report_intent_or_submission(harness,monkeypa
     assert out["evidence"]["state"]["progress"]["report"] is None
 
 
-def test_exact_image_qualification_driver_exercises_installed_engine():
+def test_exact_image_qualification_driver_exercises_installed_engine(monkeypatch):
     import runpy
     from pathlib import Path
+    # CI deliberately omits cloud libraries. Model SDK wire serialization here;
+    # qualification inside the real image still requires its installed SDK.
+    if not hasattr(F.bigquery, "QueryJobConfig"):
+        class Parameter:
+            def __init__(self, name, kind, value):
+                self.name, self.kind, self.value = name, kind, value
+            def to_api_repr(self):
+                return {"name":self.name, "parameterType":{"type":self.kind},
+                        "parameterValue":{"value":str(self.value)}}
+        class Config:
+            def __init__(self, **kw):
+                self.query_parameters = kw.get("query_parameters", [])
+            @property
+            def query_parameters(self):
+                return copy.deepcopy(self._parameters)
+            @query_parameters.setter
+            def query_parameters(self, values):
+                self._parameters = copy.deepcopy(values)
+            def to_api_repr(self):
+                return {"query":{"queryParameters":[p.to_api_repr() for p in self._parameters]}}
+        monkeypatch.setattr(F.bigquery, "QueryJobConfig", Config, raising=False)
+        monkeypatch.setattr(F.bigquery, "ScalarQueryParameter", Parameter, raising=False)
     facts=runpy.run_path(str(Path(__file__).with_name('_backfill_image_driver.py')))['qualify']()
     assert facts['backfill_window_v1']=='PASS' and facts['backfill_implementation_hash']==B.implementation_hash()
+    assert facts['sdk_resume_parameters']=='PASS'
 
 
 @pytest.mark.parametrize('foreign_target',[False,True])
