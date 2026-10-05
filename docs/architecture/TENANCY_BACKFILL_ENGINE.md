@@ -5,6 +5,43 @@ code existence, tests and source captures do not prove deployed capability or fu
 Owner ACK authorizes engineering, exact-image client_001 deployment and bounded pilot only.
 No Scheduler activation, destructive trial cleanup or automatic READY transition.
 
+## Capability probe inputs and full-history gates (owner ACK 2026-10-05)
+
+Stocks discovery reads only snapshot_date/sku through the existing control Tables
+API permissions, at most the reviewed product-page bound (1000 rows). It uses
+one positive SKU from the current Moscow-day retained Catalog after fresh BOUND
+verification, with the runtime request `{"skus":[sku]}`. Identifiers are never
+included in capability evidence. No usable current SKU in the bounded prefix
+means UNKNOWN with no HTTP result, not API UNAVAILABLE. This prefix is not a
+claim to have enumerated the tenant's entire Catalog. Supplies discovery makes
+one list read, limit1, runtime CPC_STATES, ORDER_CREATION DESC and initial last_id;
+it never traverses the inventory. Regression tests compare both probe bodies
+with actual runtime request construction. No callable paths or IAM are added.
+
+The owner now authorizes full-history execution only after all source, scale,
+binding, frozen-plan and unattended orchestration gates pass. The existing SKU
+qualification generation must retain completed work. Its plan includes the
+exact application implementation hash and immutable image, so a probe release
+must not silently invalidate or replace that generation. A release may be built
+and qualified independently; deployment waits for compatible continuation or
+completion of the pinned generation. Compatibility is not assumed merely
+because ingestion handlers did not change.
+
+Finance source COMPLETE means traversal complete as-of observation. Economic
+finality is PROVISIONAL; keep the existing30-day refresh and explicit older
+REOPEN/refresh. This owner-approved distinction permits RAW backfill without
+inventing a financial maturity threshold. Type84 is retained with its source
+label, but economic/P&L mapping remains UNKNOWN until separately reviewed.
+
+A local/Codex heartbeat may continue bounded qualification but is not production
+full-history orchestration. Existing control/runtime identities cannot invoke
+Jobs, the paused scheduler identity has no invoker, and platform WIF denies bot
+dispatch. No new IAM capability is authorized by this ACK. Before full GO,
+prove a compatible already-authorized durable cloud executor or report the
+missing narrow executor boundary; never reuse a broad provisioner as a runtime
+controller merely to avoid explicit permission design. Regular schedules stay
+PAUSED. A candidate manifest or passing CI is not a canonical approved full plan.
+
 ## Source contract matrix (before implementation)
 
 All destinations below are in the configured tenant ozon_raw dataset. Keys preserve

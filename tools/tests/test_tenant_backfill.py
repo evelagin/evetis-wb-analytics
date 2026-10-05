@@ -271,7 +271,24 @@ def test_multiday_fbo_window_is_bounded_and_typed(window):
                     "split-live", "2026-10-04T00:00:00Z", window_days=window)
 
 
-def test_multiday_window_is_fbo_only_and_keeps_strict_cap(monkeypatch):
+@pytest.fixture
+def offline_qualified_release(monkeypatch, tmp_path):
+    """Synthetic image evidence; never treat the deployed image as new source.
+
+    These tests exercise coordinator serialization, not production qualification.
+    Keep the real validate_plan check and supply an isolated release fixture.
+    """
+    from tools.tenancy import platform as PL
+    folder = tmp_path / PL.RUNTIME_RELEASES_DIR / "ozon"
+    folder.mkdir(parents=True)
+    fixture = folder / "synthetic.json"
+    fixture.write_text(json.dumps({"image": doc()["image"], "verification": {"built_artifact": {
+        "backfill_window_v1": "PASS", "backfill_implementation_hash": T.B.implementation_hash()}}}))
+    monkeypatch.setattr(T, "REPO", tmp_path)
+    return fixture
+
+
+def test_multiday_window_is_fbo_only_and_keeps_strict_cap(monkeypatch, offline_qualified_release):
     monkeypatch.setattr(T.TT, "_req", lambda *a: pytest.fail("offline plan touched cloud"))
     p = T.make_plan("client_001", "fbo_postings", "2026-09-17", "2026-09-30",
                     "split-live", "2026-10-04T00:00:00Z", window_days=14)
@@ -296,7 +313,7 @@ def test_default_plan_and_existing_supplies_continuation_identity_unchanged():
     assert small["ack_hash"] != drain["ack_hash"]
 
 
-def test_multiday_override_is_sent_and_wrong_readback_rejected(monkeypatch):
+def test_multiday_override_is_sent_and_wrong_readback_rejected(monkeypatch, offline_qualified_release):
     p = T.make_plan("client_001", "fbo_postings", "2026-09-17", "2026-09-30",
                     "split-live", "2026-10-04T00:00:00Z", window_days=14)
     c = T.target("client_001")
@@ -327,3 +344,14 @@ def test_multiday_override_is_sent_and_wrong_readback_rejected(monkeypatch):
     with pytest.raises(T.B.EvidenceError, match="provenance mismatch"):
         T.reconcile(p, p["ack_hash"], receipt)
     assert writes == before
+
+
+def test_multiday_stale_image_qualification_is_rejected_before_cloud(monkeypatch, offline_qualified_release):
+    record = json.loads(offline_qualified_release.read_text())
+    record["verification"]["built_artifact"]["backfill_implementation_hash"] = "0" * 64
+    offline_qualified_release.write_text(json.dumps(record))
+    monkeypatch.setattr(T.TT, "_req", lambda *a: pytest.fail("unqualified image touched cloud"))
+    p = T.make_plan("client_001", "fbo_postings", "2026-09-17", "2026-09-30",
+                    "split-live", "2026-10-04T00:00:00Z", window_days=14)
+    with pytest.raises(T.B.EvidenceError, match="no matching qualified"):
+        T.start(p, p["ack_hash"])
