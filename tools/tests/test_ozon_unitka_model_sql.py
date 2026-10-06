@@ -479,3 +479,21 @@ def test_no_conflict_rows_keep_their_previous_commission():
     assert transit["lifecycle_conflict_qty"] == 0
     assert transit["commission_effective_rub"] == pytest.approx(1287 * .52)
     assert transit["commission_state"] == "ESTIMATED"
+
+
+def test_conflict_with_null_finance_commission_is_unknown_not_zero():
+    db = operational_db(status="delivering", price=1131, payout=0)
+    db.execute("INSERT INTO RAW_OZON_FINANCE_ACCRUAL VALUES"
+               "('92767357-0024-1', '1991772098', '2026-10-03', 32, -84, 1131, NULL)")
+    row = operational_row(db)
+    assert row["lifecycle_conflict_qty"] == 1 and row["commission_unaccounted_qty"] == 1
+    assert row["commission_state"] == "UNKNOWN"
+    assert row["economics_completeness"] == "PROVISIONAL_PARTIAL"
+
+
+def test_null_status_posting_is_unaccounted_not_silently_dropped():
+    db = operational_db(status=None, price=1287, payout=0)
+    row = operational_row(db)
+    assert row["commission_unaccounted_qty"] == 1
+    assert row["commission_state"] == "UNKNOWN"
+    assert row["economics_completeness"] != "ACTUAL"

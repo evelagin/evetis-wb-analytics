@@ -76,8 +76,9 @@
 -- Правило: недоставленная, неотменённая MARKETPLACE_SALE с seller-base начислением — это
 -- КОНФЛИКТ ЖИЗНЕННОГО ЦИКЛА. Её комиссия берётся из начисления (как в факте, -commission),
 -- в оценку она не входит, строка остаётся провизорной, пока статус не догонит финансы.
--- Разбиение единиц по комиссии полное по построению: факт | конфликт | оценка | выкуп;
--- остаток (commission_unaccounted_qty) делает состояние UNKNOWN, а не нулём.
+-- Разбиение единиц по комиссии полное по построению: факт | конфликт | оценка | выкуп.
+-- commission_unaccounted_qty считает реальные дыры (конфликт с NULL-комиссией, статус NULL) и
+-- делает состояние UNKNOWN, а строку — не ACTUAL и не PROVISIONAL_COMPLETE, а не нулём.
 --
 -- ФАКТ НЕ ТРОНУТ: `seller_base_revenue_rub` и `realized_qty` остаются выручкой и
 -- количеством ДОСТАВЛЕННЫХ единиц. Провизорная часть лежит в своих колонках.
@@ -135,10 +136,13 @@ gap AS (
            c.quantity, 0)) lifecycle_conflict_qty,
     SUM(IF(c.status <> 'delivered' AND c.op_type = 'MARKETPLACE_SALE' AND c.n_base > 0,
            IFNULL(-c.fin_comm, NUMERIC '0'), NUMERIC '0')) lifecycle_conflict_commission_rub,
-    -- страж полноты: каждая ожидаемая единица — ровно в одной части комиссии
-    SUM(IF(NOT ((c.op_type = 'MARKETPLACE_SALE' AND c.n_base > 0)
-                OR (c.op_type IN ('MARKETPLACE_SALE', 'CIS_BUYOUT_CANDIDATE') AND c.n_base = 0)
-                OR c.op_type = 'CIS_BUYOUT'), c.quantity, 0)) commission_unaccounted_qty,
+    -- страж «UNKNOWN не становится нулём» — реальные дыры, а не тавтология разбиения:
+    -- (1) конфликт цикла, у которого seller-base есть, а комиссия в начислении NULL;
+    -- (2) отправление с неизвестным статусом (NULL): факт считает его в gross_qty, а ни одна
+    --     ветка комиссии его не покрывает.
+    SUM(IF(c.status IS NULL
+           OR (c.status <> 'delivered' AND c.op_type = 'MARKETPLACE_SALE' AND c.n_base > 0 AND c.fin_comm IS NULL),
+           c.quantity, 0)) commission_unaccounted_qty,
     SUM(IF(c.op_type IN ('MARKETPLACE_SALE', 'CIS_BUYOUT_CANDIDATE') AND c.n_base = 0, c.quantity, 0)) commission_gap_qty,
     -- «цена − выплата» применима ТОЛЬКО там, где выплата уже известна, то есть у доставленных
     SUM(IF(c.op_type = 'MARKETPLACE_SALE' AND c.n_base = 0 AND IFNULL(c.payout_rub, NUMERIC '0') > 0,
@@ -155,7 +159,7 @@ gap AS (
     SUM(IF(c.status <> 'delivered' AND k.u IS NULL, c.quantity, 0)) in_transit_cogs_missing_qty
   FROM cls c
   LEFT JOIN cogs k ON k.internal_sku = c.internal_sku AND c.order_date BETWEEN k.effective_from AND k.et
-  WHERE c.status <> 'cancelled'
+  WHERE c.status IS NULL OR c.status <> 'cancelled'
   GROUP BY 1, 2),
 pol AS (
   SELECT internal_sku, effective_from, effective_to, commission_rate
@@ -230,7 +234,7 @@ SELECT
   CASE WHEN r.gross_qty - r.cancelled_qty = 0 THEN 'NOT_APPLICABLE'
        WHEN r.commission_unaccounted_qty > 0 THEN 'UNKNOWN'
        WHEN r.commission_not_applicable_qty = r.realized_qty AND r.realized_qty > 0
-            AND r.commission_gap_qty = 0 THEN 'NOT_APPLICABLE'
+            AND r.commission_gap_qty = 0 AND r.lifecycle_conflict_qty = 0 THEN 'NOT_APPLICABLE'
        WHEN r.commission_gap_qty = 0 THEN 'ACTUAL'
        WHEN r.commission_estimate_method IS NOT NULL THEN 'ESTIMATED'
        ELSE 'UNKNOWN' END commission_state,

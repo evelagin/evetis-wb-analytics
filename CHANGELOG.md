@@ -1,5 +1,21 @@
 # CHANGELOG.md
 
+## 2026-10-06 — Ozon Unitka: финансы старше застрявшего статуса отправления (НЕ РАЗВЁРНУТО)
+
+- `ozon_mart.V_OZON_SKU_PNL_DAILY_OPERATIONAL`: добавлены колонки 51–53 (в конец схемы, без сдвига прежних):
+  - `lifecycle_conflict_qty` (INT64) — недоставленные неотменённые продажи с seller-base начислением;
+  - `lifecycle_conflict_commission_rub` (NUMERIC) — их фактическая комиссия из начисления;
+  - `commission_unaccounted_qty` (INT64) — единицы без комиссии ни в одной части (конфликт с NULL-комиссией,
+    статус NULL); > 0 делает `commission_state = UNKNOWN`, а строку — не ACTUAL / не PROVISIONAL_COMPLETE.
+- Смысл изменён: `commission_effective_rub` и `operational_contribution_*` включают комиссию конфликта цикла.
+  Живая симуляция (3953 строки): меняется ровно одна — 2026-08-20 / EVT-SET-HAND-AMBER, комиссия 0 → 655,81,
+  вклад +615,35 → −40,46 (лист DF −63,08). `FCT_OZON_SKU_PNL_DAILY` не менялся («реализация = delivered»).
+- Загрузчик Юнитки и `model_qa`: seller-base у недоставленной единицы (не выкуп по документу) = ACTUAL_FINANCE;
+  независимая проверка конфликта по первичным единицам.
+- Порядок развёртывания: СНАЧАЛА вью (`CREATE OR REPLACE` этого файла), ПОТОМ образ. Новый загрузчик читает
+  новые колонки — образ раньше вью падает «Unrecognized name»; старый загрузчик на новой вью работает.
+- `sync_state = pending_deploy`.
+
 ## 2026-10-04 — `sa-terraform-apply`: роли для мониторинга из Terraform (НЕ ПРИМЕНЕНО)
 
 - `infra/terraform/iam.tf` → `local.terraform_apply_roles` получает 3 роли:
