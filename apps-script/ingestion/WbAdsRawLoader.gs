@@ -563,7 +563,10 @@ function loadWbAdsFullstatsRaw(periodFrom, periodTo, runId) {
 
   try {
     var c = wbAdsFetchCampaigns_(tok.token);
-    var statsIds = c.statsAdvertIds.slice(0); // статусы 7/9/11
+    // Порядок обработки: активные (9) → на паузе (11) → завершённые (7). Набор id тот же (7/9/11),
+    // завершённые НЕ исключаются — только идут последними. Инцидент 01.10.2026: в порядке WB первые
+    // ~400 id — завершённые без статистики, бюджет кончился до активного/паузного хвоста.
+    var statsIds = wbAdsOrderFullstatsIds_(c.statsAdvertIds, c.statusById);
     if (!statsIds.length) {
       wbAdsRawWriteStatus_(rid, srcLabel, rng.from, rng.to, {
         campaigns_found: c.advertIds.length, campaigns_sampled: 0,
@@ -579,6 +582,7 @@ function loadWbAdsFullstatsRaw(periodFrom, periodTo, runId) {
     var deadline = wbAdsRawDeadline_();
     var windows = wbAdsSplitPeriod_(rng.from, rng.to, WB_ADV_RAW_MAX_DAYS_);
     var totalStat = 0, totalBoost = 0, totalNoStats = 0, totalSkipped = 0, totalFail = 0, lastCode = '';
+    var lastSkipped = 0, windowsDone = 0;
 
     for (var w = 0; w < windows.length; w++) {
       var ctx = wbAdsFullstatsCollect_(tok.token, statsIds, windows[w].from, windows[w].to, rid, deadline);
@@ -598,6 +602,8 @@ function loadWbAdsFullstatsRaw(periodFrom, periodTo, runId) {
 
       totalFail += ctx.failures.length;
       totalSkipped += ctx.skipped.length;
+      lastSkipped = ctx.skipped.length;
+      windowsDone++;
 
       if (ctx.stopped) {
         wbAdsRawWriteStatus_(rid, srcLabel, windows[w].from, windows[w].to, {
@@ -611,12 +617,15 @@ function loadWbAdsFullstatsRaw(periodFrom, periodTo, runId) {
     }
 
     var st = (totalFail > 0 || totalSkipped > 0) ? 'PARTIAL' : 'OK';
+    // campaigns_sampled = id, реально отправленные в fullstats в последнем обработанном окне
+    // (раньше здесь стояло statsIds.length — PARTIAL выглядел как полный охват).
     wbAdsRawWriteStatus_(rid, srcLabel, rng.from, rng.to, {
-      campaigns_found: statsIds.length, campaigns_sampled: statsIds.length,
+      campaigns_found: statsIds.length, campaigns_sampled: statsIds.length - lastSkipped,
       rows_or_items_found: totalStat,
       http_status: String(lastCode), status: st,
       response_keys_sample: 'stat_rows=' + totalStat + '; booster_rows=' + totalBoost +
-        '; no_stats=' + totalNoStats + '; failed_single=' + totalFail + '; skipped=' + totalSkipped
+        '; no_stats=' + totalNoStats + '; failed_single=' + totalFail + '; skipped=' + totalSkipped +
+        '; windows=' + windowsDone + '/' + windows.length + '; order=9,11,7'
     });
     return { source: srcLabel, status: st, rows: totalStat };
   } catch (e) {
@@ -801,6 +810,29 @@ function loadWbAdsSearchClustersRaw(periodFrom, periodTo, runId) {
   }
 }
 
+
+// ═══════════════════════════════════════
+// FULLSTATS: порядок кампаний
+// ═══════════════════════════════════════
+
+/** Приоритет статуса WB: 9 активна, 11 на паузе, 7 завершена; прочее (не должно встречаться) — после. */
+var WB_ADS_FULLSTATS_STATUS_ORDER_ = [9, 11, 7];
+
+/**
+ * Чистая функция. Возвращает НОВЫЙ массив тех же id (тот же набор и та же кратность) в порядке
+ * 9 → 11 → 7, внутри группы — по возрастанию advertId (детерминированно, не зависит от порядка WB).
+ * id без известного статуса идут последними, тоже по возрастанию. Ничего не отбрасывает.
+ */
+function wbAdsOrderFullstatsIds_(ids, statusById) {
+  var map = statusById || {};
+  var rank = function (id) {
+    var r = WB_ADS_FULLSTATS_STATUS_ORDER_.indexOf(Number(map[id]));
+    return r === -1 ? WB_ADS_FULLSTATS_STATUS_ORDER_.length : r;
+  };
+  return ids.slice(0).sort(function (a, b) {
+    return (rank(a) - rank(b)) || (Number(a) - Number(b));
+  });
+}
 
 // ═══════════════════════════════════════
 // FULLSTATS: resilient collect (batch≤50 → 10 → single)
