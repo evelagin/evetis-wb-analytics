@@ -309,6 +309,30 @@ def _in_corpus(ctx: VerifierContext, phrase: str) -> bool:
     return bool(p) and p in ctx.allowed_corpus
 
 
+# Fragrance descriptor: the existing adjective endings, now as a whole run
+# («насыщенным вишнёвым ароматом» is one descriptor, not just its last word).
+DESCRIPTOR_END = r"(?:ый|ий|ой|ая|ое|ые|ую|ым)"
+FRAGRANCE_DESCRIPTOR = (r"\b(?:[а-яё-]+" + DESCRIPTOR_END + r"\s+)+(?:аромат|запах)\w*|(?:аромат|запах)\w*\s+[а-яё-]+"
+                        + DESCRIPTOR_END + r"\b")
+
+
+def _descriptor_roots(text):
+    from app.v3.provenance import adjective_root
+    return {adjective_root(w) for w in re.findall(r"[а-я-]+", normalize(text)) if not re.match(r"(?:аромат|запах)", w)}
+
+
+def _verified_fragrance_form(ctx: VerifierContext, phrase: str) -> bool:
+    """A case form of verified fragrance wording («с вишнёвым ароматом» of «вишнёвый аромат»).
+
+    Exactly the same descriptor roots as one verified scoped text: inflection only,
+    never a new, shortened or extended descriptor.
+    """
+    roots = _descriptor_roots
+    wanted = roots(phrase)
+    return bool(wanted) and any(re.search(r"аромат|запах", normalize(t)) and roots(t) == wanted
+                                for t in ctx.verified_product_fact_texts)
+
+
 def _clause_at(text, match):
     start=max(text.rfind(c,0,match.start()) for c in '.!?;')+1
     ends=[text.find(c,match.end()) for c in '.!?;']
@@ -480,8 +504,8 @@ def verify(text: Optional[str], ctx: VerifierContext, snapshot: KnowledgeSnapsho
         if re.search(r'аромат|запах|парфюмерн',clause) and re.search(
                 r'индивидуальн|воспринима\w*[^.!?]{0,30}(?:по-разному|по-своему)|каждый[^.!?]{0,35}воспринима',clause):
             add('V-GENERAL','BLOCK',clause.strip(),'fragrance perception meaning requires scoped approval')
-        for m in re.finditer(r"\b[а-яё-]+(?:ый|ий|ой|ая|ое|ые|ую|ым)\s+(?:аромат|запах)\w*|(?:аромат|запах)\w*\s+[а-яё-]+(?:ый|ий|ой|ая|ое|ые|ую|ым)\b", clause):
-            if not _in_corpus(ctx, m.group()) and not (attributed_match(clause,m,ctx.customer_experience,fragrance=True) or reported_fragrance(clause,m,ctx.customer_experience)):
+        for m in re.finditer(FRAGRANCE_DESCRIPTOR, clause):
+            if not _in_corpus(ctx, m.group()) and not _verified_fragrance_form(ctx, m.group()) and not (attributed_match(clause,m,ctx.customer_experience,fragrance=True) or reported_fragrance(clause,m,ctx.customer_experience)):
                 add("V-FACT", "BLOCK", m.group(), "fragrance descriptor not approved for this product")
 
     # Meaning recognition is not approval. Only scoped approved spans have
