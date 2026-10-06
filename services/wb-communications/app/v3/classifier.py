@@ -80,6 +80,7 @@ class Classification:
     unresolved_ingredient_terms: list = field(default_factory=list)
     asked_component: str = ""
     asked_areas: list = field(default_factory=list)
+    question_intent: Any = None
     classification_confidence: float = 1.0
     llm_used: bool = False
     llm_error: Optional[str] = None
@@ -161,6 +162,9 @@ def classify_rules(msg: dict, snapshot: KnowledgeSnapshot) -> Classification:
             if m:
                 c.situations.append({"code": code, "evidence_span": clause[:160], "source": "rules"})
                 break
+    from app.v3.service_premise import SERVICE_CODES, premises
+    c.situations=[s for s in c.situations if s['code'] not in SERVICE_CODES]
+    c.situations.extend(premises(raw,policy))
     c.text_sentiment = _sentiment(norm, policy)
     if c.text_sentiment in ("positive", "mixed"):
         c.situations.append({"code": "SOCIAL.praise", "evidence_span": "", "source": "rules"})
@@ -177,6 +181,10 @@ def classify_rules(msg: dict, snapshot: KnowledgeSnapshot) -> Classification:
             continue
         if search_any(pats, norm):
             c.asked_component = c.asked_component or comp
+    from app.v3.direct_questions import parse_intent
+    c.question_intent = parse_intent(raw, is_question=c.is_question)
+    if 'intended_use' in c.question_intent.fact_types:
+        c.asked_areas = c.question_intent.application_areas
     c.intents = _intents(c)
     c.escalation_domains = _domains(c.codes, c.safety.route)
     return c

@@ -143,6 +143,42 @@ class Settings:
         default_factory=lambda: os.environ.get("V3_ENFORCE_MANUAL_EDIT_VERIFIER", "false").lower() == "true"
     )
 
+    # Phase 3.1E quality shadow (R1 pilot) — a layer inside the existing v3 shadow runner
+    # (V3_SHADOW_ENABLED controls the v3 baseline; these control only the 3.1E layer).
+    # Explicit opt-in: no variable = no 3.1E evaluation and no 3.1E LLM call. Even when on,
+    # it runs only inside a valid activation (app.v3.pilot): id, UTC window, global cap.
+    v31_quality_shadow_enabled: bool = field(
+        default_factory=lambda: os.environ.get("V31_QUALITY_SHADOW_ENABLED", "false").lower() == "true"
+    )
+    v31_shadow_activation_id: str = field(
+        default_factory=lambda: os.environ.get("V31_SHADOW_ACTIVATION_ID", "")
+    )
+    # ISO-8601 with an explicit offset; start inclusive, end exclusive.
+    v31_shadow_start_at: str = field(
+        default_factory=lambda: os.environ.get("V31_SHADOW_START_AT", "")
+    )
+    v31_shadow_end_at: str = field(
+        default_factory=lambda: os.environ.get("V31_SHADOW_END_AT", "")
+    )
+    # Live v2 publication gate: false = production-compatible contract (R1 requirement);
+    # true = v3.1E policy for operator publication, an R2 owner decision. R1 refuses to start
+    # while it is true.
+    v31_enforce_live_publication_policy: bool = field(
+        default_factory=lambda: os.environ.get("V31_ENFORCE_LIVE_PUBLICATION_POLICY", "false").lower() == "true"
+    )
+    # Kept as text: a malformed value disables the pilot (app.v3.pilot), never v2 startup.
+    v31_shadow_pilot_max_communications: str = field(
+        default_factory=lambda: os.environ.get("V31_SHADOW_PILOT_MAX_COMMUNICATIONS", "20")
+    )
+    v31_operator_recovery_enabled: bool = field(
+        default_factory=lambda: os.environ.get("V31_OPERATOR_RECOVERY_ENABLED", "false").lower() == "true"
+    )
+
+    # Separate activation gate: implementation never changes production config.
+    v31_owner_override_enabled: bool = field(
+        default_factory=lambda: os.environ.get("V31_OWNER_OVERRIDE_ENABLED", "false").lower() == "true"
+    )
+
     # --- Wildberries ---
     wb_api_base_url: str = field(
         default_factory=lambda: os.environ.get(

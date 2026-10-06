@@ -542,6 +542,26 @@ export class UnitkaBq {
   }
 
   /** Журнал прогона — одна строка на прогон, append-only INSERT. */
+  /**
+   * Остаток сверки ПРЕДЫДУЩЕГО завершённого production-прогона (алерт RECON_RESIDUAL_PERSISTENT). Только чтение.
+   * Последняя строка журнала прогонов environment = 'prod' с completed_at, кроме текущего прогона. Остаток —
+   * qa_json.reconcile.repairs_residual (пишется с Engine 2.3.0: в controlled это поправки, которые прогон НЕ записал);
+   * у прежних прогонов его нет — тогда repairs_planned (в observe это одно и то же). Нет сверки в строке — null.
+   */
+  async previousReconResidual(excludeRunId: string): Promise<number | null> {
+    const t = this.fqn(this.opsDataset, this.runsTable);
+    const rows = await this.runner.query(
+      `SELECT COALESCE(SAFE_CAST(JSON_VALUE(qa_json, '$.reconcile.repairs_residual') AS INT64),
+                       SAFE_CAST(JSON_VALUE(qa_json, '$.reconcile.repairs_planned') AS INT64)) AS residual
+       FROM ${t}
+       WHERE environment = 'prod' AND completed_at IS NOT NULL AND run_id != @runId
+       ORDER BY completed_at DESC
+       LIMIT 1`,
+      { runId: excludeRunId },
+    );
+    return rows.length ? num(rows[0]!.residual) : null;
+  }
+
   async insertRun(rec: EngineRunRecord): Promise<void> {
     const t = this.fqn(this.opsDataset, this.runsTable);
     await this.runner.query(
