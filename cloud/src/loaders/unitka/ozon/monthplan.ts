@@ -9,8 +9,9 @@ import { OZON_SUMMARY_ROLES } from './presentation.js';
 import {
   composeMonth, buildGrid, buildHeaderRows, ozonMonthSpec,
   type OzonMonthSpec, type OzonFactRow, type CellValue,
-  type OzonSheetInputs,
+  type OzonSheetInputs, type OzonMonthComposition, type OzonDayCell,
 } from './month.js';
+import { OZON_OFFSET } from './offsets.js';
 import {
   rowHeightRequests, mtdBandRequests, cfAllRequests, futureDayRequests, columnName,
   layoutOf, type SheetsRequest, type SectionLayout,
@@ -22,8 +23,46 @@ import {
   provenanceNoteText, type GridGrowth, type ProvenanceNote,
 } from './structure.js';
 
+/** Наблюдение СПП дня в листе (для покрытия СПП месяца по дням вне окна перезаписи). */
+export interface SppDayEvidence { readonly units: number; readonly priced: boolean; readonly spp: boolean }
+
+/**
+ * Покрытие СПП месяца по блоку: единицы закрытых суток с ценой продавца, из них — с доказанной ценой
+ * покупателя. Дни окна — из собранного месяца (comp), дни до окна — из того, что движок уже записал в лист.
+ */
+export function sppMonthCoverage(spec: OzonMonthSpec, comp: OzonMonthComposition, lcd: string, from: number,
+  offerId: string, live: Readonly<Record<string, SppDayEvidence>> = {}): { units: number; covered: number } {
+  let units = 0, covered = 0;
+  for (let i = 0; i < spec.days; i++) {
+    const iso = `${spec.key}-${String(i + 1).padStart(2, '0')}`;
+    if (iso > lcd) break;
+    let u: number, priced: boolean, has: boolean;
+    if (i + 1 >= from) {
+      const c = comp.cells[`${offerId}|${spec.firstRow + i}`] as Partial<OzonDayCell> | undefined;
+      u = (c?.orders ?? 0) - (c?.cancel ?? 0); priced = (c?.price ?? 0) > 0; has = c?.spp !== undefined;
+    } else {
+      const e = live[`${iso}|${offerId}`];
+      u = e?.units ?? 0; priced = e?.priced ?? false; has = e?.spp ?? false;
+    }
+    if (u <= 0 || !priced) continue;
+    units += u;
+    if (has) covered += u;
+  }
+  return { units, covered };
+}
+
+/** Текст заметки на ячейке СПП месяца; пустая строка — заметку снять (полное покрытие или нет единиц). */
+export function sppCoverageNote(cov: { units: number; covered: number }): string {
+  if (cov.units <= 0 || cov.covered === cov.units) return '';
+  if (cov.covered === 0) return `СПП месяца не рассчитана: ни у одной из ${cov.units} ед. нет доказанной цены покупателя (финансовой пары). Цена продавца её не заменяет.`;
+  const pct = Math.round(cov.covered / cov.units * 1000) / 10;
+  return `ЧАСТИЧНО: СПП месяца рассчитана по ${cov.covered} из ${cov.units} ед. (${pct} %). У остальных ${cov.units - cov.covered} ед. цена покупателя ещё не доказана — значение не описывает весь месяц.`;
+}
+
 export interface OzonSectionInput {
   readonly spec: OzonMonthSpec;
+  /** Покрытие СПП дней до окна перезаписи, ключ `iso|offer_id` (из живого листа). */
+  readonly sppEvidence?: Readonly<Record<string, SppDayEvidence>>;
   readonly facts: readonly OzonFactRow[];
   /** Доказанные снимки остатка, ключ `iso|offer_id`. */
   readonly stock: Readonly<Record<string, number>>;
@@ -141,6 +180,13 @@ export function buildOzonPlan(input: OzonPlanInput): OzonWritePlan {
       cell: { note: 'PROVISIONAL_PARTIAL: расчёт калькулятора по известным компонентам, не окончательная прибыль. '
         + 'Признанная выручка/часть экономики не доказана. Цена заказа не подставляется в финансовую выручку.' }, fields: 'note' },
     });
+    // СПП месяца: явное состояние покрытия (заметка ставится заменой — снимается при полном покрытии)
+    for (const o of spec.blocks) {
+      const text = sppCoverageNote(sppMonthCoverage(spec, comp, input.lcd ?? "", from, o, sec.sppEvidence));
+      notesForEconomics.push({ repeatCell: { range: { sheetId: input.sheetId, startRowIndex: spec.mtdRow - 1, endRowIndex: spec.mtdRow,
+        startColumnIndex: spec.anchor[o]! + OZON_OFFSET.spp - 1, endColumnIndex: spec.anchor[o]! + OZON_OFFSET.spp },
+      cell: { note: text }, fields: 'note' } });
+    }
     for (const o of new Set(comp.partialEconomics.map((p) => p.offerId))) for (const off of [9, 10, 23]) notesForEconomics.push({
       repeatCell: { range: { sheetId: input.sheetId, startRowIndex: spec.mtdRow - 1, endRowIndex: spec.mtdRow,
         startColumnIndex: spec.anchor[o]! + off - 1, endColumnIndex: spec.anchor[o]! + off },

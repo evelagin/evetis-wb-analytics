@@ -198,9 +198,14 @@ export function ozonBlockMtdFormulas(start: number, g: OzonMonthGeometry, lcdNam
   const revenue = `SUMPRODUCT(${closed}*${units}*${rng(OFFSET.price)})`;
   m.set(OFFSET.commission,
     `=IFERROR(SUMPRODUCT(${closed}*${units}*${rng(OFFSET.price)}*${rng(OFFSET.commission)})/${revenue},"")`);
-  // СПП периода = 1 − цена покупателя периода / цена продавца периода, в процентах
+  // СПП периода = 1 − цена покупателя / цена продавца — ТОЛЬКО по единицам, у которых цена покупателя
+  // доказана (дневная «цена с СПП» не пуста). Прежняя форма делила на выручку ВСЕХ единиц: сутки без
+  // финансовой пары давали цену в знаменатель и ноль в числитель — СПП месяца завышалась, вплоть до
+  // ложных 100 % (аудит 2026-10-06: 26 ячеек). Нет ни одной покрытой единицы — деление на 0 → пусто.
+  // Частичное покрытие помечается заметкой на ячейке (monthplan.ts), значение — по покрытой части.
+  const sppCovered = `SUMPRODUCT(${closed}*${units}*${rng(OFFSET.price)}*(${rng(OFFSET.priceSpp)}<>""))`;
   m.set(OFFSET.spp,
-    `=IFERROR((1-SUMPRODUCT(${closed}*${units}*${rng(OFFSET.priceSpp)})/${revenue})*100,"")`);
+    `=IFERROR((1-SUMPRODUCT(${closed}*${units}*${rng(OFFSET.priceSpp)})/${sppCovered})*100,"")`);
   // доходность на 1 шт — принятая форма, не трогается
   m.set(OFFSET.profit1, `=IFERROR(${at(OFFSET.profitAll)}/(${at(OFFSET.orders)}-${at(OFFSET.cancels)}),"")`);
   m.set(OFFSET.drr, `=IFERROR(${at(OFFSET.adsIn)}/SUMPRODUCT(${closed}*(${rng(OFFSET.orders)}-${rng(OFFSET.bloggers)})*${rng(OFFSET.priceSpp)}),"")`);
