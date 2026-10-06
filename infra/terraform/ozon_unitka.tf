@@ -182,13 +182,18 @@ resource "google_monitoring_alert_policy" "ozon_unitka_failed" {
   combiner     = "OR"
 
   conditions {
-    display_name = "loader_failed в логах ozon-unitka-prod"
+    display_name = "отказ прогона ozon-unitka-prod (код приложения или системное событие)"
     condition_matched_log {
+      # Два сигнала в ОДНОМ фильтре (log-match политика допускает одно условие):
+      #  1) запись приложения с кодом (loader_failed / fatal — код есть всегда, cloud/src/failure.ts);
+      #  2) системное событие Cloud Run «execution has failed to complete» — ловит отказ, даже если
+      #     процесс не успел написать ни строки (OOM, таймаут, падение до логгера). Инцидент
+      #     2026-10-06 zbfk7: fatal без code, алерт молчал, а событие (2) было.
       filter = <<-EOT
         resource.type="cloud_run_job"
         resource.labels.job_name="ozon-unitka-prod"
         severity>=ERROR
-        jsonPayload.code!=""
+        (jsonPayload.code!="" OR (logName:"cloudaudit.googleapis.com%2Fsystem_event" AND protoPayload.methodName="/Jobs.RunJob"))
       EOT
       label_extractors = {
         error_code = "EXTRACT(jsonPayload.code)"

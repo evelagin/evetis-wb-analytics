@@ -14,18 +14,25 @@
 import { pathToFileURL } from 'node:url';
 import { loadConfig, type Config } from './config.js';
 import { Logger, parseLevel } from './logging.js';
-import { EXIT_OK, EXIT_ERROR, LoaderError } from './errors.js';
+import { EXIT_OK, EXIT_ERROR } from './errors.js';
 import { resolveLoader, availableLoaderNames, type LoaderSpec } from './loaders/registry.js';
 import { BqClient } from './bq/client.js';
 import { BqManifestStore, DEFAULT_STALE_STARTED_MS } from './bq/runManifest.js';
 import type { ManifestKey, AcquireParams, ManifestStore } from './bq/runManifest.js';
 import type { LoaderContext, LoaderResult } from './loaders/types.js';
+import { classifyFailure, fatalRecord, type FailureClass } from './failure.js';
+
+/** Пауза перед повтором захвата lease (до lease ничего не исполнялось — повтор безопасен всегда). */
+export const PRE_LOCK_RETRY_DELAY_MS = 30_000;
+/** Пауза перед повтором идемпотентного писателя после транзиентного отказа (тот же часовой слот). */
+export const POST_LOCK_RETRY_DELAY_MS = 60_000;
 
 /** Инъектируемые зависимости — реальные в проде, поддельные в тестах. */
 export interface CliDeps {
   makeStore: (config: Config) => ManifestStore;
   runHandler: (spec: LoaderSpec, ctx: LoaderContext) => Promise<LoaderResult>;
   nowMs: () => number;
+  sleep?: (ms: number) => Promise<void>;
 }
 
 const defaultDeps: CliDeps = {
@@ -86,38 +93,99 @@ export async function runCli(
     return EXIT_OK;
   }
 
-  const store = deps.makeStore(config);
-  const params: AcquireParams = {
-    ...key,
-    runId,
-    executionId: config.executionId,
-    imageDigest: config.imageDigest,
-    gitSha: config.gitSha,
-    nowMs: deps.nowMs(),
-    staleMs: DEFAULT_STALE_STARTED_MS,
+  const sleep = deps.sleep ?? ((ms: number) => new Promise<void>((res) => setTimeout(res, ms)));
+  const failed = (stage: string, c: FailureClass, message: string): number => {
+    // `code` непустой всегда — по нему срабатывает алерт (jsonPayload.code!="").
+    logger.error('loader_failed', { code: c.code, category: c.category, stage, message });
+    return EXIT_ERROR;
   };
 
-  const lock = await store.acquire(params);
+  let store: ManifestStore;
+  try {
+    store = deps.makeStore(config);
+  } catch (e) {
+    return failed('make_store', classifyFailure(e), e instanceof Error ? e.message : String(e));
+  }
+
+  // Захват lease. До lease ничего не исполнялось, поэтому транзиентный отказ повторяем один раз
+  // для ЛЮБОГО загрузчика. Инцидент 2026-10-06 (zbfk7): BigQuery упал именно здесь.
+  const acquire = async (runIdForAttempt: string) => {
+    const params: AcquireParams = {
+      ...key,
+      runId: runIdForAttempt,
+      executionId: config.executionId,
+      imageDigest: config.imageDigest,
+      gitSha: config.gitSha,
+      nowMs: deps.nowMs(),
+      staleMs: DEFAULT_STALE_STARTED_MS,
+    };
+    try {
+      return await store.acquire(params);
+    } catch (e) {
+      const c = classifyFailure(e);
+      if (c.category !== 'TRANSIENT') throw e;
+      logger.warn('transient_retry', { stage: 'acquire', code: c.code, delayMs: PRE_LOCK_RETRY_DELAY_MS, error: e instanceof Error ? e.message : String(e) });
+      await sleep(PRE_LOCK_RETRY_DELAY_MS);
+      return await store.acquire({ ...params, nowMs: deps.nowMs() });
+    }
+  };
+
+  let lock: Awaited<ReturnType<ManifestStore['acquire']>>;
+  try {
+    lock = await acquire(runId);
+  } catch (e) {
+    return failed('acquire', classifyFailure(e), e instanceof Error ? e.message : String(e));
+  }
   if (!lock.acquired) {
     logger.info('guard_skip', { reason: lock.reason });
     return EXIT_OK; // OK_NO_NEW / ALREADY_RUNNING — не запускаем loader, штатный выход
   }
   logger.info('guard_acquired', { runId: lock.runId, recovered: lock.recovered });
 
-  try {
-    const res = await deps.runHandler(spec, { ...ctxBase, runId: lock.runId, targetDate: logicalPeriod });
-    await store.finalize(key, lock.runId, {
-      status: 'COMPLETE',
-      rowsFetched: res.rowsFetched,
-      rowsLoaded: res.rowsLoaded,
-    });
-    logger.info('loader_complete', { rowsFetched: res.rowsFetched, rowsLoaded: res.rowsLoaded });
+  // Повтор после lease — только транзиентный отказ и только идемпотентный писатель (retryTransient).
+  // Повтор получает СВОЙ run_id (executionId-r2): строка ERROR первой попытки остаётся в журнале,
+  // а не перезаписывается COMPLETE второй попытки.
+  const postLockRetries = spec.retryTransient ? 1 : 0;
+  for (let attempt = 1; ; attempt++) {
+    let res: LoaderResult;
+    try {
+      res = await deps.runHandler(spec, { ...ctxBase, runId: lock.runId, targetDate: logicalPeriod });
+    } catch (e) {
+      const c = classifyFailure(e);
+      const message = e instanceof Error ? e.message : String(e);
+      try {
+        await store.finalize(key, lock.runId, { status: 'ERROR', errorCode: c.code, errorMessage: message });
+      } catch (fe) {
+        logger.warn('finalize_failed', { status: 'ERROR', code: classifyFailure(fe).code, error: fe instanceof Error ? fe.message : String(fe) });
+      }
+      if (c.category === 'TRANSIENT' && attempt <= postLockRetries) {
+        logger.warn('transient_retry', { stage: 'handler', code: c.code, attempt, delayMs: POST_LOCK_RETRY_DELAY_MS, error: message });
+        await sleep(POST_LOCK_RETRY_DELAY_MS);
+        const retryRunId = `${config.environment}:${loaderName}:${logicalPeriod}:${config.gitSha}:${config.executionId || 'na'}-r${attempt + 1}`;
+        let again: Awaited<ReturnType<ManifestStore['acquire']>>;
+        try {
+          again = await acquire(retryRunId);
+        } catch (ae) {
+          return failed('retry_acquire', classifyFailure(ae), ae instanceof Error ? ae.message : String(ae));
+        }
+        if (!again.acquired) {
+          // Слот занят другим исполнением (или уже COMPLETE) — сами не пишем; отказ первой попытки виден.
+          return failed('retry_acquire', { code: 'RETRY_LOCK_UNAVAILABLE', category: 'DETERMINISTIC' }, `${c.code}: ${again.reason}`);
+        }
+        logger.info('guard_acquired', { runId: again.runId, recovered: again.recovered, retryOf: lock.runId });
+        lock = again;
+        continue;
+      }
+      return failed('handler', c, message);
+    }
+    try {
+      await store.finalize(key, lock.runId, { status: 'COMPLETE', rowsFetched: res.rowsFetched, rowsLoaded: res.rowsLoaded });
+    } catch (e) {
+      // Работа выполнена; журнал не закрыт. Не перезапускаем handler — только сообщаем с кодом.
+      return failed('finalize', classifyFailure(e), e instanceof Error ? e.message : String(e));
+    }
+    logger.info('loader_complete', { rowsFetched: res.rowsFetched, rowsLoaded: res.rowsLoaded, attempt });
     return EXIT_OK;
-  } catch (e) {
-    const err = e instanceof LoaderError ? e : new LoaderError(e instanceof Error ? e.message : String(e));
-    await store.finalize(key, lock.runId, { status: 'ERROR', errorCode: err.code, errorMessage: err.message });
-    logger.error('loader_failed', { code: err.code, message: err.message });
-    return EXIT_ERROR;
   }
 }
 
@@ -130,7 +198,8 @@ if (isMain) {
     .then((code) => process.exit(code))
     .catch((e) => {
       // eslint-disable-next-line no-console
-      console.error(JSON.stringify({ severity: 'ERROR', message: 'fatal', error: e instanceof Error ? e.message : String(e) }));
+      // Код есть всегда (fatalRecord) — иначе алерт `jsonPayload.code!=""` отказ не видит (инцидент zbfk7).
+      console.error(JSON.stringify(fatalRecord(e)));
       process.exit(EXIT_ERROR);
     });
 }
