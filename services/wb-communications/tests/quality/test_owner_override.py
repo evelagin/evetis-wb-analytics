@@ -9,7 +9,8 @@ from tests.quality.test_response_quality import _pending,_cb
 
 
 def setup():
-    d,c=_pending();d.settings.v31_owner_override_enabled=True
+    # Override is an R2 feature: it requires live publication on the v3.1E policy.
+    d,c=_pending();d.settings.v31_owner_override_enabled=True;d.settings.v31_enforce_live_publication_policy=True
     d.repo.docs[c]['text']='Отличный продукт'
     return d,c
 
@@ -182,7 +183,7 @@ def test_locked_policy_drift_after_confirmation_zero_wb():
 
 
 def test_question_override_uses_existing_verified_question_transport():
-    d,c=_pending('pH 9,0.',question=True);d.settings.v31_owner_override_enabled=True
+    d,c=_pending('pH 9,0.',question=True);d.settings.v31_owner_override_enabled=True;d.settings.v31_enforce_live_publication_policy=True
     assert first(d,c)['status']=='override_confirmation_required';no_wb(d)
     assert second(d,c)['status']=='published'
     assert not d.wb.published and len(d.wb.published_questions)==1 and d.wb.get_question_calls==2

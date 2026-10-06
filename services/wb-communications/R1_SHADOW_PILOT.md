@@ -15,7 +15,11 @@
 | 3.1E quality shadow (R1) | `V31_QUALITY_SHADOW_ENABLED` + активация | нет переменной = выключен |
 | Восстановление оператора | `V31_OPERATOR_RECOVERY_ENABLED` | нет = `false` |
 | Owner override | `V31_OWNER_OVERRIDE_ENABLED` | нет = `false` |
+| Политика v3.1E для живой публикации v2 | `V31_ENFORCE_LIVE_PUBLICATION_POLICY` | нет = `false` (production-гейт) |
 | Автопубликация | `knowledge_v3/policy` `runtime.auto_publish` | `false` (не флаг окружения) |
+
+Живая публикация v2 при R1 проверяется **production-совместимым** гейтом (`validate_live_publication`,
+побайтная копия верификатора из main 3632bae). Включение R1 не меняет, какой черновик v2 можно опубликовать.
 
 ## Контракт активации (`app/v3/pilot.py`)
 
@@ -23,7 +27,8 @@
 - `V31_SHADOW_ACTIVATION_ID` — уникальный, `[A-Za-z0-9._-]{1,64}`, например `r1-20261007`
 - `V31_SHADOW_START_AT` / `V31_SHADOW_END_AT` — ISO-8601 со смещением, `START` включительно, `END` исключительно
 - `V31_SHADOW_PILOT_MAX_COMMUNICATIONS=20` (допустимо 1…20; больше — изменение кода по новому ACK)
-- восстановление оператора и owner override обязаны быть выключены, иначе пилот не стартует
+- восстановление оператора, owner override и `V31_ENFORCE_LIVE_PUBLICATION_POLICY` обязаны быть выключены,
+  иначе пилот не стартует
 
 Любое нарушение — слой 3.1E выключен (`SHADOW_ACTIVATION_INVALID` в сводке `/poll`), v2 не затронут.
 Коммуникация оценивается, только если и дата WB, и первое наблюдение сервиса попадают в окно;

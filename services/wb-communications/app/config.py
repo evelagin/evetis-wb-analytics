@@ -160,6 +160,12 @@ class Settings:
     v31_shadow_end_at: str = field(
         default_factory=lambda: os.environ.get("V31_SHADOW_END_AT", "")
     )
+    # Live v2 publication gate: false = production-compatible contract (R1 requirement);
+    # true = v3.1E policy for operator publication, an R2 owner decision. R1 refuses to start
+    # while it is true.
+    v31_enforce_live_publication_policy: bool = field(
+        default_factory=lambda: os.environ.get("V31_ENFORCE_LIVE_PUBLICATION_POLICY", "false").lower() == "true"
+    )
     # Kept as text: a malformed value disables the pilot (app.v3.pilot), never v2 startup.
     v31_shadow_pilot_max_communications: str = field(
         default_factory=lambda: os.environ.get("V31_SHADOW_PILOT_MAX_COMMUNICATIONS", "20")

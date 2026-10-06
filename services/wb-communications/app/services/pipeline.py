@@ -176,7 +176,8 @@ def _operator_keyboard(deps, doc_id, doc, *, show_full=False, retry=False):
                        generation=doc.get("generation_number", 0) if _recovery_enabled(deps) else None)
     if _recovery_enabled(deps) and doc.get("response_review_required"):
         k["inline_keyboard"][0] = [k["inline_keyboard"][0][1]]
-    if getattr(deps.settings,'v31_owner_override_enabled',False):
+    from app.services.owner_override import enabled as override_enabled
+    if override_enabled(deps.settings):
         from app.services.owner_override import offer
         button=offer(doc,deps.settings)
         if button:
@@ -949,9 +950,10 @@ def _publish(deps: Deps, doc_id, chat, message_id, user_id, *, expected_generati
 
     trace = _new_trace(doc_id, doc, phase="publish", state_before=Status.PUBLISHING.value)
     trace.update(write_attempted=False, write="not_attempted")
-    from app.services.publication_policy import validate_for_publication
+    from app.services.publication_policy import live_publication_validator
     try:
-        validator = deps.publication_validator or validate_for_publication
+        # Live v2 publication: production-compatible gate; v3.1E policy stays shadow-only (R1).
+        validator = deps.publication_validator or live_publication_validator(deps.settings)
         policy = validator(text, doc, deps.settings)
         if not isinstance(policy, dict) or policy.get("verdict") not in ("PASS", "INFO", "WARNING", "BLOCK"):
             raise ValueError("invalid policy verdict")

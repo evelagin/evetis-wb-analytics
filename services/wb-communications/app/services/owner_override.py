@@ -31,10 +31,17 @@ def fingerprint(policy):
         sort_keys=True,separators=(',',':')).encode()).hexdigest()
 
 
+def enabled(settings):
+    """Override publishes past the v3.1E policy, so it exists only where live publication
+    enforces that policy (R2). With the production-compatible live gate (R1) it is off."""
+    return bool(getattr(settings,'v31_owner_override_enabled',False)
+                and getattr(settings,'v31_enforce_live_publication_policy',False))
+
+
 def allowed(deps,chat,user):
     from app.utils.security import is_allowed
     users=getattr(deps.settings,'telegram_allowed_user_ids',set())
-    return (getattr(deps.settings,'v31_owner_override_enabled',False) and bool(users)
+    return (enabled(deps.settings) and bool(users)
             and str(user) in {str(u) for u in users}
             and is_allowed(chat,user,deps.settings.allowed_chat_ids,users))
 
@@ -65,6 +72,8 @@ def validate_binding(doc,pending):
 
 
 def offer(doc,settings):
+    if not enabled(settings):
+        return None
     if not doc or doc.get('status') not in {'pending_approval','policy_blocked','publish_failed'}:
         return None
     if safety_fixed(doc,settings): return None
