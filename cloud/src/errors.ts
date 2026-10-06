@@ -12,8 +12,11 @@ export class LoaderError extends Error {
   constructor(
     message: string,
     public readonly code: string = 'LOADER_ERROR',
+    options?: { cause?: unknown },
   ) {
-    super(message);
+    // cause сохраняет исходную ошибку обёртки (ENGINE_ERROR): по ней classifyFailure отличает
+    // транзиентный отказ BigQuery от детерминированного.
+    super(message, options);
     this.name = 'LoaderError';
   }
 }

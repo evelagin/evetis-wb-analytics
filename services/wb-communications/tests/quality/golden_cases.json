@@ -1,0 +1,1008 @@
+{
+  "schema": "evetis-response-quality-goldens/1",
+  "baseline_note": "Four observed production pairs; other V2/V3 texts are authored synthetic reference counterexamples, NOT live model outputs.",
+  "cases": [
+    {
+      "id": "A_positive_toner",
+      "baseline_source": "observed_production",
+      "message": {
+        "communication_id": "A_positive_toner",
+        "entity_type": "review",
+        "marketplace": "WB",
+        "nm_id": "535581674",
+        "buyer_name": "Наталия",
+        "text": "Тоник отличный, очень мягкий",
+        "pros": "",
+        "rating": 5
+      },
+      "v2": "Наталия, благодарим за выбор EVETIS. Мягкость тоника обеспечивает слабокислый pH 5,0–5,5, который бережно завершает очищение, а гиалуроновая кислота 0,2% помогает поддерживать ощущение увлажнённости кожи.",
+      "v3": "Наталия, спасибо за тёплый отзыв. Очень рады, что тоник вам понравился.",
+      "expected_status": "READY",
+      "must_address": [
+        "softness"
+      ]
+    },
+    {
+      "id": "B_positive_powder",
+      "baseline_source": "observed_production",
+      "message": {
+        "communication_id": "B_positive_powder",
+        "entity_type": "review",
+        "marketplace": "WB",
+        "nm_id": "535580776",
+        "buyer_name": "Ольга",
+        "text": "",
+        "pros": "Здравствуйте.Отличный товар. Спасибо продавцу.Доставка быстрая!Рекомендую.",
+        "rating": 5
+      },
+      "v2": "Ольга, благодарим за рекомендацию и высокую оценку. Рады, что энзимная пудра Вам понравилась: папаин в составе мягко очищает кожу от ороговевших клеток, а гиалуронат натрия и полиглутамат помогают сохранить ощущение увлажнённости после умывания. Спасибо, что отметили быструю доставку WB.",
+      "v3": "Ольга, спасибо за тёплые слова и рекомендацию. Рады, что товар и быстрая доставка оставили приятное впечатление.",
+      "expected_status": "READY",
+      "must_address": [
+        "product_liked",
+        "recommendation",
+        "delivery"
+      ]
+    },
+    {
+      "id": "C_package_damage",
+      "baseline_source": "observed_production",
+      "message": {
+        "communication_id": "C_package_damage",
+        "entity_type": "review",
+        "marketplace": "WB",
+        "nm_id": "930334396",
+        "buyer_name": "Ирина",
+        "text": "Крышка на тюбике лопнутая, упаковка как будто пинали всю доставку до пункта.",
+        "pros": "",
+        "rating": 3
+      },
+      "v2": "Ирина, понимаем Ваше недовольство: лопнувшая крышка и повреждённая упаковка действительно портят впечатление от покупки. Доставку осуществляет Wildberries, но по повреждению упаковки рекомендуем оформить обращение по товару в личном кабинете и приложить фотографии кремов и упаковки — решение по нему принимает площадка. В наборе крем для рук с древесно-удовым ароматом и крем для тела с комплексом церамидов; оба средства оснащены дозаторами для комфортного использования.",
+      "v3": "Ирина, нам жаль, что товар пришёл в таком состоянии. Пожалуйста, оформите обращение по товару через личный кабинет Wildberries и приложите фотографии товара и упаковки. Решение по обращению принимает площадка.",
+      "expected_status": "READY",
+      "must_address": []
+    },
+    {
+      "id": "D_age_question",
+      "baseline_source": "observed_production",
+      "message": {
+        "communication_id": "D_age_question",
+        "entity_type": "question",
+        "marketplace": "WB",
+        "nm_id": "535581674",
+        "buyer_name": "Анна",
+        "text": "Здравствуйте! Со скольки лет модно использовать данную продукцию ?",
+        "pros": "",
+        "rating": 5
+      },
+      "v2": "Здравствуйте! Тоник имеет мягкую формулу со слабокислым pH 5,0–5,5, гиалуроновой кислотой 0,2%, лизатом бифидобактерий и успокаивающими компонентами. Обычно такие средства вводят в уход с подросткового возраста при необходимости увлажнения, но рекомендуем ориентироваться на индивидуальную чувствительность кожи и перед первым применением сделать тест на небольшом участке.",
+      "v3": "В документации производителя нет отдельных данных о применении средства у детей, поэтому мы не можем подтвердить его применение для ребёнка. Рекомендуем проконсультироваться с врачом.",
+      "expected_status": "READY",
+      "must_address": []
+    },
+    {
+      "id": "mixed_fragrance",
+      "baseline_source": "synthetic_reference",
+      "message": {
+        "communication_id": "mixed_fragrance",
+        "entity_type": "review",
+        "marketplace": "WB",
+        "nm_id": "535581674",
+        "buyer_name": "Анна",
+        "text": "Крем отличный, запах резковатый",
+        "pros": "",
+        "rating": 4
+      },
+      "v2": "Благодарим за обратную связь. Средство помогает поддерживать увлажнение кожи.",
+      "v3": "Спасибо за отзыв. Рады, что покупка Вам понравилась.",
+      "expected_status": "READY",
+      "must_address": [
+        "product_liked",
+        "fragrance_harsh"
+      ]
+    },
+    {
+      "id": "simple_praise",
+      "baseline_source": "synthetic_reference",
+      "message": {
+        "communication_id": "simple_praise",
+        "entity_type": "review",
+        "marketplace": "WB",
+        "nm_id": "535581674",
+        "buyer_name": "Анна",
+        "text": "Отличный крем",
+        "pros": "",
+        "rating": 5
+      },
+      "v2": "Благодарим за обратную связь. Средство помогает поддерживать увлажнение кожи.",
+      "v3": "Спасибо за отзыв. Рады, что покупка Вам понравилась.",
+      "expected_status": "READY",
+      "must_address": [
+        "product_liked"
+      ]
+    },
+    {
+      "id": "empty_five_stars",
+      "baseline_source": "synthetic_reference",
+      "message": {
+        "communication_id": "empty_five_stars",
+        "entity_type": "review",
+        "marketplace": "WB",
+        "nm_id": "535581674",
+        "buyer_name": "Анна",
+        "text": "",
+        "pros": "",
+        "rating": 5
+      },
+      "v2": "Благодарим за обратную связь. Средство помогает поддерживать увлажнение кожи.",
+      "v3": "Спасибо за отзыв. Рады, что покупка Вам понравилась.",
+      "expected_status": "READY",
+      "must_address": []
+    },
+    {
+      "id": "repeat_purchase",
+      "baseline_source": "synthetic_reference",
+      "message": {
+        "communication_id": "repeat_purchase",
+        "entity_type": "review",
+        "marketplace": "WB",
+        "nm_id": "535581674",
+        "buyer_name": "Анна",
+        "text": "Беру не первый раз. Отличный тоник",
+        "pros": "",
+        "rating": 5
+      },
+      "v2": "Благодарим за обратную связь. Средство помогает поддерживать увлажнение кожи.",
+      "v3": "Спасибо за отзыв. Рады, что покупка Вам понравилась.",
+      "expected_status": "READY",
+      "must_address": [
+        "repeat_purchase",
+        "product_liked"
+      ]
+    },
+    {
+      "id": "soft_texture",
+      "baseline_source": "synthetic_reference",
+      "message": {
+        "communication_id": "soft_texture",
+        "entity_type": "review",
+        "marketplace": "WB",
+        "nm_id": "535581674",
+        "buyer_name": "Анна",
+        "text": "Очень мягкий, текстура приятная",
+        "pros": "",
+        "rating": 5
+      },
+      "v2": "Благодарим за обратную связь. Средство помогает поддерживать увлажнение кожи.",
+      "v3": "Спасибо за отзыв. Рады, что покупка Вам понравилась.",
+      "expected_status": "READY",
+      "must_address": [
+        "softness",
+        "texture"
+      ]
+    },
+    {
+      "id": "non_sticky",
+      "baseline_source": "synthetic_reference",
+      "message": {
+        "communication_id": "non_sticky",
+        "entity_type": "review",
+        "marketplace": "WB",
+        "nm_id": "535581674",
+        "buyer_name": "Анна",
+        "text": "Понравился, не липкий",
+        "pros": "",
+        "rating": 5
+      },
+      "v2": "Благодарим за обратную связь. Средство помогает поддерживать увлажнение кожи.",
+      "v3": "Спасибо за отзыв. Рады, что покупка Вам понравилась.",
+      "expected_status": "READY",
+      "must_address": [
+        "product_liked",
+        "non_sticky"
+      ]
+    },
+    {
+      "id": "delivery_recommendation",
+      "baseline_source": "synthetic_reference",
+      "message": {
+        "communication_id": "delivery_recommendation",
+        "entity_type": "review",
+        "marketplace": "WB",
+        "nm_id": "535581674",
+        "buyer_name": "Анна",
+        "text": "Доставка быстрая, рекомендую",
+        "pros": "",
+        "rating": 5
+      },
+      "v2": "Благодарим за обратную связь. Средство помогает поддерживать увлажнение кожи.",
+      "v3": "Спасибо за отзыв. Рады, что покупка Вам понравилась.",
+      "expected_status": "READY",
+      "must_address": [
+        "delivery",
+        "recommendation"
+      ]
+    },
+    {
+      "id": "fragrance_positive",
+      "baseline_source": "synthetic_reference",
+      "message": {
+        "communication_id": "fragrance_positive",
+        "entity_type": "review",
+        "marketplace": "WB",
+        "nm_id": "535581674",
+        "buyer_name": "Анна",
+        "text": "Очень приятный запах, хороший крем",
+        "pros": "",
+        "rating": 5
+      },
+      "v2": "Благодарим за обратную связь. Средство помогает поддерживать увлажнение кожи.",
+      "v3": "Спасибо за отзыв. Рады, что покупка Вам понравилась.",
+      "expected_status": "READY",
+      "must_address": [
+        "fragrance_liked",
+        "product_liked"
+      ]
+    },
+    {
+      "id": "no_effect",
+      "baseline_source": "synthetic_reference",
+      "message": {
+        "communication_id": "no_effect",
+        "entity_type": "review",
+        "marketplace": "WB",
+        "nm_id": "535581674",
+        "buyer_name": "Анна",
+        "text": "Не увидела результата",
+        "pros": "",
+        "rating": 2
+      },
+      "v2": "Благодарим за обратную связь. Средство помогает поддерживать увлажнение кожи.",
+      "v3": "Спасибо за отзыв. Рады, что покупка Вам понравилась.",
+      "expected_status": "READY",
+      "must_address": [
+        "no_effect"
+      ]
+    },
+    {
+      "id": "no_effect_praise",
+      "baseline_source": "synthetic_reference",
+      "message": {
+        "communication_id": "no_effect_praise",
+        "entity_type": "review",
+        "marketplace": "WB",
+        "nm_id": "535581674",
+        "buyer_name": "Анна",
+        "text": "Текстура приятная, но нет эффекта",
+        "pros": "",
+        "rating": 3
+      },
+      "v2": "Благодарим за обратную связь. Средство помогает поддерживать увлажнение кожи.",
+      "v3": "Спасибо за отзыв. Рады, что покупка Вам понравилась.",
+      "expected_status": "READY",
+      "must_address": [
+        "texture",
+        "no_effect"
+      ]
+    },
+    {
+      "id": "harsh_fragrance",
+      "baseline_source": "synthetic_reference",
+      "message": {
+        "communication_id": "harsh_fragrance",
+        "entity_type": "review",
+        "marketplace": "WB",
+        "nm_id": "535581674",
+        "buyer_name": "Анна",
+        "text": "Запах резковатый",
+        "pros": "",
+        "rating": 3
+      },
+      "v2": "Благодарим за обратную связь. Средство помогает поддерживать увлажнение кожи.",
+      "v3": "Спасибо за отзыв. Рады, что покупка Вам понравилась.",
+      "expected_status": "READY",
+      "must_address": [
+        "fragrance_harsh"
+      ]
+    },
+    {
+      "id": "price",
+      "baseline_source": "synthetic_reference",
+      "message": {
+        "communication_id": "price",
+        "entity_type": "review",
+        "marketplace": "WB",
+        "nm_id": "535581674",
+        "buyer_name": "Анна",
+        "text": "Хороший, но дороговат",
+        "pros": "",
+        "rating": 4
+      },
+      "v2": "Благодарим за обратную связь. Средство помогает поддерживать увлажнение кожи.",
+      "v3": "Спасибо за отзыв. Рады, что покупка Вам понравилась.",
+      "expected_status": "READY",
+      "must_address": [
+        "product_liked",
+        "price"
+      ]
+    },
+    {
+      "id": "negative",
+      "baseline_source": "synthetic_reference",
+      "message": {
+        "communication_id": "negative",
+        "entity_type": "review",
+        "marketplace": "WB",
+        "nm_id": "535581674",
+        "buyer_name": "Анна",
+        "text": "Не понравился",
+        "pros": "",
+        "rating": 1
+      },
+      "v2": "Благодарим за обратную связь. Средство помогает поддерживать увлажнение кожи.",
+      "v3": "Спасибо за отзыв. Рады, что покупка Вам понравилась.",
+      "expected_status": "READY",
+      "must_address": [
+        "product_disliked"
+      ]
+    },
+    {
+      "id": "repeat_again",
+      "baseline_source": "synthetic_reference",
+      "message": {
+        "communication_id": "repeat_again",
+        "entity_type": "review",
+        "marketplace": "WB",
+        "nm_id": "535581674",
+        "buyer_name": "Анна",
+        "text": "Покупаю снова, рекомендую",
+        "pros": "",
+        "rating": 5
+      },
+      "v2": "Благодарим за обратную связь. Средство помогает поддерживать увлажнение кожи.",
+      "v3": "Спасибо за отзыв. Рады, что покупка Вам понравилась.",
+      "expected_status": "READY",
+      "must_address": [
+        "repeat_purchase",
+        "recommendation"
+      ]
+    },
+    {
+      "id": "texture_praise",
+      "baseline_source": "synthetic_reference",
+      "message": {
+        "communication_id": "texture_praise",
+        "entity_type": "review",
+        "marketplace": "WB",
+        "nm_id": "535581674",
+        "buyer_name": "Анна",
+        "text": "Отличный, приятная текстура",
+        "pros": "",
+        "rating": 5
+      },
+      "v2": "Благодарим за обратную связь. Средство помогает поддерживать увлажнение кожи.",
+      "v3": "Спасибо за отзыв. Рады, что покупка Вам понравилась.",
+      "expected_status": "READY",
+      "must_address": [
+        "product_liked",
+        "texture"
+      ]
+    },
+    {
+      "id": "powder_praise",
+      "baseline_source": "synthetic_reference",
+      "message": {
+        "communication_id": "powder_praise",
+        "entity_type": "review",
+        "marketplace": "WB",
+        "nm_id": "535580776",
+        "buyer_name": "Анна",
+        "text": "Отличная пудра",
+        "pros": "",
+        "rating": 5
+      },
+      "v2": "Благодарим за обратную связь. Средство помогает поддерживать увлажнение кожи.",
+      "v3": "Спасибо за отзыв. Рады, что покупка Вам понравилась.",
+      "expected_status": "READY",
+      "must_address": [
+        "product_liked"
+      ]
+    },
+    {
+      "id": "powder_delivery",
+      "baseline_source": "synthetic_reference",
+      "message": {
+        "communication_id": "powder_delivery",
+        "entity_type": "review",
+        "marketplace": "WB",
+        "nm_id": "535580776",
+        "buyer_name": "Анна",
+        "text": "Доставка быстрая. Пудра понравилась",
+        "pros": "",
+        "rating": 5
+      },
+      "v2": "Благодарим за обратную связь. Средство помогает поддерживать увлажнение кожи.",
+      "v3": "Спасибо за отзыв. Рады, что покупка Вам понравилась.",
+      "expected_status": "READY",
+      "must_address": [
+        "delivery",
+        "product_liked"
+      ]
+    },
+    {
+      "id": "cream_soft",
+      "baseline_source": "synthetic_reference",
+      "message": {
+        "communication_id": "cream_soft",
+        "entity_type": "review",
+        "marketplace": "WB",
+        "nm_id": "438775617",
+        "buyer_name": "Анна",
+        "text": "Крем очень мягкий",
+        "pros": "",
+        "rating": 5
+      },
+      "v2": "Благодарим за обратную связь. Средство помогает поддерживать увлажнение кожи.",
+      "v3": "Спасибо за отзыв. Рады, что покупка Вам понравилась.",
+      "expected_status": "READY",
+      "must_address": [
+        "softness"
+      ]
+    },
+    {
+      "id": "cream_mixed",
+      "baseline_source": "synthetic_reference",
+      "message": {
+        "communication_id": "cream_mixed",
+        "entity_type": "review",
+        "marketplace": "WB",
+        "nm_id": "438775617",
+        "buyer_name": "Анна",
+        "text": "Крем понравился, аромат резковатый",
+        "pros": "",
+        "rating": 3
+      },
+      "v2": "Благодарим за обратную связь. Средство помогает поддерживать увлажнение кожи.",
+      "v3": "Спасибо за отзыв. Рады, что покупка Вам понравилась.",
+      "expected_status": "READY",
+      "must_address": [
+        "product_liked",
+        "fragrance_harsh"
+      ]
+    },
+    {
+      "id": "toner_again",
+      "baseline_source": "synthetic_reference",
+      "message": {
+        "communication_id": "toner_again",
+        "entity_type": "review",
+        "marketplace": "WB",
+        "nm_id": "535581674",
+        "buyer_name": "Анна",
+        "text": "Заказываю повторно, очень мягкий",
+        "pros": "",
+        "rating": 5
+      },
+      "v2": "Благодарим за обратную связь. Средство помогает поддерживать увлажнение кожи.",
+      "v3": "Спасибо за отзыв. Рады, что покупка Вам понравилась.",
+      "expected_status": "READY",
+      "must_address": [
+        "repeat_purchase",
+        "softness"
+      ]
+    },
+    {
+      "id": "review_percent",
+      "baseline_source": "synthetic_reference",
+      "message": {
+        "communication_id": "review_percent",
+        "entity_type": "review",
+        "marketplace": "WB",
+        "nm_id": "438775617",
+        "buyer_name": "Анна",
+        "text": "Отличный крем, покупатель написал 2,25%",
+        "pros": "",
+        "rating": 5
+      },
+      "v2": "Благодарим за обратную связь. Средство помогает поддерживать увлажнение кожи.",
+      "v3": "Спасибо за отзыв. Рады, что покупка Вам понравилась.",
+      "expected_status": "READY",
+      "must_address": [
+        "product_liked"
+      ]
+    },
+    {
+      "id": "anonymous",
+      "baseline_source": "synthetic_reference",
+      "message": {
+        "communication_id": "anonymous",
+        "entity_type": "review",
+        "marketplace": "WB",
+        "nm_id": "535581674",
+        "buyer_name": "",
+        "text": "Очень хороший товар",
+        "pros": "",
+        "rating": 5
+      },
+      "v2": "Благодарим за обратную связь. Средство помогает поддерживать увлажнение кожи.",
+      "v3": "Спасибо за отзыв. Рады, что покупка Вам понравилась.",
+      "expected_status": "READY",
+      "must_address": [
+        "product_liked"
+      ]
+    },
+    {
+      "id": "pros_only",
+      "baseline_source": "synthetic_reference",
+      "message": {
+        "communication_id": "pros_only",
+        "entity_type": "review",
+        "marketplace": "WB",
+        "nm_id": "535581674",
+        "buyer_name": "Анна",
+        "text": "",
+        "pros": "Хороший товар, рекомендую",
+        "rating": 5
+      },
+      "v2": "Благодарим за обратную связь. Средство помогает поддерживать увлажнение кожи.",
+      "v3": "Спасибо за отзыв. Рады, что покупка Вам понравилась.",
+      "expected_status": "READY",
+      "must_address": [
+        "product_liked",
+        "recommendation"
+      ]
+    },
+    {
+      "id": "rating_not_sentiment",
+      "baseline_source": "synthetic_reference",
+      "message": {
+        "communication_id": "rating_not_sentiment",
+        "entity_type": "review",
+        "marketplace": "WB",
+        "nm_id": "535581674",
+        "buyer_name": "Анна",
+        "text": "Запах резковатый",
+        "pros": "",
+        "rating": 5
+      },
+      "v2": "Благодарим за обратную связь. Средство помогает поддерживать увлажнение кожи.",
+      "v3": "Спасибо за отзыв. Рады, что покупка Вам понравилась.",
+      "expected_status": "READY",
+      "must_address": [
+        "fragrance_harsh"
+      ]
+    },
+    {
+      "id": "broken_cap",
+      "baseline_source": "synthetic_reference",
+      "message": {
+        "communication_id": "broken_cap",
+        "entity_type": "review",
+        "marketplace": "WB",
+        "nm_id": "930334396",
+        "buyer_name": "Анна",
+        "text": "Крышка лопнула",
+        "pros": "",
+        "rating": 2
+      },
+      "v2": "Благодарим за обратную связь. Средство помогает поддерживать увлажнение кожи.",
+      "v3": "Спасибо за отзыв. Рады, что покупка Вам понравилась.",
+      "expected_status": "READY",
+      "must_address": []
+    },
+    {
+      "id": "damaged_box",
+      "baseline_source": "synthetic_reference",
+      "message": {
+        "communication_id": "damaged_box",
+        "entity_type": "review",
+        "marketplace": "WB",
+        "nm_id": "930334396",
+        "buyer_name": "Анна",
+        "text": "Упаковка повреждена",
+        "pros": "",
+        "rating": 2
+      },
+      "v2": "Благодарим за обратную связь. Средство помогает поддерживать увлажнение кожи.",
+      "v3": "Спасибо за отзыв. Рады, что покупка Вам понравилась.",
+      "expected_status": "READY",
+      "must_address": []
+    },
+    {
+      "id": "leaking",
+      "baseline_source": "synthetic_reference",
+      "message": {
+        "communication_id": "leaking",
+        "entity_type": "review",
+        "marketplace": "WB",
+        "nm_id": "930334396",
+        "buyer_name": "Анна",
+        "text": "Товар протёк",
+        "pros": "",
+        "rating": 2
+      },
+      "v2": "Благодарим за обратную связь. Средство помогает поддерживать увлажнение кожи.",
+      "v3": "Спасибо за отзыв. Рады, что покупка Вам понравилась.",
+      "expected_status": "READY",
+      "must_address": []
+    },
+    {
+      "id": "wrong_product",
+      "baseline_source": "synthetic_reference",
+      "message": {
+        "communication_id": "wrong_product",
+        "entity_type": "review",
+        "marketplace": "WB",
+        "nm_id": "930334396",
+        "buyer_name": "Анна",
+        "text": "Прислали другой товар",
+        "pros": "",
+        "rating": 2
+      },
+      "v2": "Благодарим за обратную связь. Средство помогает поддерживать увлажнение кожи.",
+      "v3": "Спасибо за отзыв. Рады, что покупка Вам понравилась.",
+      "expected_status": "READY",
+      "must_address": []
+    },
+    {
+      "id": "incomplete_bundle",
+      "baseline_source": "synthetic_reference",
+      "message": {
+        "communication_id": "incomplete_bundle",
+        "entity_type": "review",
+        "marketplace": "WB",
+        "nm_id": "930334396",
+        "buyer_name": "Анна",
+        "text": "В наборе не хватает крема",
+        "pros": "",
+        "rating": 2
+      },
+      "v2": "Благодарим за обратную связь. Средство помогает поддерживать увлажнение кожи.",
+      "v3": "Спасибо за отзыв. Рады, что покупка Вам понравилась.",
+      "expected_status": "READY",
+      "must_address": []
+    },
+    {
+      "id": "damage_and_praise",
+      "baseline_source": "synthetic_reference",
+      "message": {
+        "communication_id": "damage_and_praise",
+        "entity_type": "review",
+        "marketplace": "WB",
+        "nm_id": "930334396",
+        "buyer_name": "Анна",
+        "text": "Крем отличный, но упаковка повреждена",
+        "pros": "",
+        "rating": 2
+      },
+      "v2": "Благодарим за обратную связь. Средство помогает поддерживать увлажнение кожи.",
+      "v3": "Спасибо за отзыв. Рады, что покупка Вам понравилась.",
+      "expected_status": "READY",
+      "must_address": []
+    },
+    {
+      "id": "ph_known",
+      "baseline_source": "synthetic_reference",
+      "message": {
+        "communication_id": "ph_known",
+        "entity_type": "question",
+        "marketplace": "WB",
+        "nm_id": "535581674",
+        "buyer_name": "Анна",
+        "text": "Какой pH у тоника?",
+        "pros": "",
+        "rating": 5
+      },
+      "v2": "Благодарим за обратную связь. Средство помогает поддерживать увлажнение кожи.",
+      "v3": "Эту информацию подтвердить не можем. Рекомендуем обратиться к врачу.",
+      "expected_status": "READY",
+      "must_address": []
+    },
+    {
+      "id": "volume_known",
+      "baseline_source": "synthetic_reference",
+      "message": {
+        "communication_id": "volume_known",
+        "entity_type": "question",
+        "marketplace": "WB",
+        "nm_id": "535581674",
+        "buyer_name": "Анна",
+        "text": "Какой объём тоника?",
+        "pros": "",
+        "rating": 5
+      },
+      "v2": "Благодарим за обратную связь. Средство помогает поддерживать увлажнение кожи.",
+      "v3": "Эту информацию подтвердить не можем. Рекомендуем обратиться к врачу.",
+      "expected_status": "READY",
+      "must_address": []
+    },
+    {
+      "id": "shelf_life",
+      "baseline_source": "synthetic_reference",
+      "message": {
+        "communication_id": "shelf_life",
+        "entity_type": "question",
+        "marketplace": "WB",
+        "nm_id": "535581674",
+        "buyer_name": "Анна",
+        "text": "Какой срок годности?",
+        "pros": "",
+        "rating": 5
+      },
+      "v2": "Благодарим за обратную связь. Средство помогает поддерживать увлажнение кожи.",
+      "v3": "Эту информацию подтвердить не можем. Рекомендуем обратиться к врачу.",
+      "expected_status": "READY",
+      "must_address": []
+    },
+    {
+      "id": "pao_known",
+      "baseline_source": "synthetic_reference",
+      "message": {
+        "communication_id": "pao_known",
+        "entity_type": "question",
+        "marketplace": "WB",
+        "nm_id": "535581674",
+        "buyer_name": "Анна",
+        "text": "Какой срок после вскрытия?",
+        "pros": "",
+        "rating": 5
+      },
+      "v2": "Благодарим за обратную связь. Средство помогает поддерживать увлажнение кожи.",
+      "v3": "Эту информацию подтвердить не можем. Рекомендуем обратиться к врачу.",
+      "expected_status": "READY",
+      "must_address": []
+    },
+    {
+      "id": "hyaluronic_presence",
+      "baseline_source": "synthetic_reference",
+      "message": {
+        "communication_id": "hyaluronic_presence",
+        "entity_type": "question",
+        "marketplace": "WB",
+        "nm_id": "535581674",
+        "buyer_name": "Анна",
+        "text": "Есть ли гиалуроновая кислота?",
+        "pros": "",
+        "rating": 5
+      },
+      "v2": "Благодарим за обратную связь. Средство помогает поддерживать увлажнение кожи.",
+      "v3": "Эту информацию подтвердить не можем. Рекомендуем обратиться к врачу.",
+      "expected_status": "READY",
+      "must_address": []
+    },
+    {
+      "id": "hyaluronate_presence",
+      "baseline_source": "synthetic_reference",
+      "message": {
+        "communication_id": "hyaluronate_presence",
+        "entity_type": "question",
+        "marketplace": "WB",
+        "nm_id": "535580776",
+        "buyer_name": "Анна",
+        "text": "Есть ли гиалуронат натрия?",
+        "pros": "",
+        "rating": 5
+      },
+      "v2": "Благодарим за обратную связь. Средство помогает поддерживать увлажнение кожи.",
+      "v3": "Эту информацию подтвердить не можем. Рекомендуем обратиться к врачу.",
+      "expected_status": "READY",
+      "must_address": []
+    },
+    {
+      "id": "restricted_salicylic",
+      "baseline_source": "synthetic_reference",
+      "message": {
+        "communication_id": "restricted_salicylic",
+        "entity_type": "question",
+        "marketplace": "WB",
+        "nm_id": "438775617",
+        "buyer_name": "Анна",
+        "text": "Какая концентрация салициловой кислоты?",
+        "pros": "",
+        "rating": 5
+      },
+      "v2": "Благодарим за обратную связь. Средство помогает поддерживать увлажнение кожи.",
+      "v3": "Эту информацию подтвердить не можем. Рекомендуем обратиться к врачу.",
+      "expected_status": "READY",
+      "must_address": []
+    },
+    {
+      "id": "age_ordinary",
+      "baseline_source": "synthetic_reference",
+      "message": {
+        "communication_id": "age_ordinary",
+        "entity_type": "question",
+        "marketplace": "WB",
+        "nm_id": "535581674",
+        "buyer_name": "Анна",
+        "text": "С какого возраста можно пользоваться тоником?",
+        "pros": "",
+        "rating": 5
+      },
+      "v2": "Благодарим за обратную связь. Средство помогает поддерживать увлажнение кожи.",
+      "v3": "Эту информацию подтвердить не можем. Рекомендуем обратиться к врачу.",
+      "expected_status": "READY",
+      "must_address": []
+    },
+    {
+      "id": "unknown_frequency",
+      "baseline_source": "synthetic_reference",
+      "message": {
+        "communication_id": "unknown_frequency",
+        "entity_type": "question",
+        "marketplace": "WB",
+        "nm_id": "535581674",
+        "buyer_name": "Анна",
+        "text": "Как часто использовать тоник?",
+        "pros": "",
+        "rating": 5
+      },
+      "v2": "Благодарим за обратную связь. Средство помогает поддерживать увлажнение кожи.",
+      "v3": "Эту информацию подтвердить не можем. Рекомендуем обратиться к врачу.",
+      "expected_status": "READY",
+      "must_address": []
+    },
+    {
+      "id": "unknown_amount",
+      "baseline_source": "synthetic_reference",
+      "message": {
+        "communication_id": "unknown_amount",
+        "entity_type": "question",
+        "marketplace": "WB",
+        "nm_id": "535581674",
+        "buyer_name": "Анна",
+        "text": "Сколько капель тоника использовать?",
+        "pros": "",
+        "rating": 5
+      },
+      "v2": "Благодарим за обратную связь. Средство помогает поддерживать увлажнение кожи.",
+      "v3": "Эту информацию подтвердить не можем. Рекомендуем обратиться к врачу.",
+      "expected_status": "READY",
+      "must_address": []
+    },
+    {
+      "id": "serious_breathing",
+      "baseline_source": "synthetic_reference",
+      "message": {
+        "communication_id": "serious_breathing",
+        "entity_type": "review",
+        "marketplace": "WB",
+        "nm_id": "438775617",
+        "buyer_name": "Анна",
+        "text": "После крема мне трудно дышать",
+        "pros": "",
+        "rating": 5
+      },
+      "v2": "Благодарим за обратную связь. Средство помогает поддерживать увлажнение кожи.",
+      "v3": "Спасибо за отзыв. Рады, что покупка Вам понравилась.",
+      "expected_status": "HUMAN_REVIEW",
+      "must_address": []
+    },
+    {
+      "id": "serious_swelling",
+      "baseline_source": "synthetic_reference",
+      "message": {
+        "communication_id": "serious_swelling",
+        "entity_type": "review",
+        "marketplace": "WB",
+        "nm_id": "438775617",
+        "buyer_name": "Анна",
+        "text": "После крема отёк горла, язык распух",
+        "pros": "",
+        "rating": 5
+      },
+      "v2": "Благодарим за обратную связь. Средство помогает поддерживать увлажнение кожи.",
+      "v3": "Спасибо за отзыв. Рады, что покупка Вам понравилась.",
+      "expected_status": "HUMAN_REVIEW",
+      "must_address": []
+    },
+    {
+      "id": "serious_fainting",
+      "baseline_source": "synthetic_reference",
+      "message": {
+        "communication_id": "serious_fainting",
+        "entity_type": "review",
+        "marketplace": "WB",
+        "nm_id": "438775617",
+        "buyer_name": "Анна",
+        "text": "После крема потеряла сознание",
+        "pros": "",
+        "rating": 5
+      },
+      "v2": "Благодарим за обратную связь. Средство помогает поддерживать увлажнение кожи.",
+      "v3": "Спасибо за отзыв. Рады, что покупка Вам понравилась.",
+      "expected_status": "HUMAN_REVIEW",
+      "must_address": []
+    },
+    {
+      "id": "serious_emergency",
+      "baseline_source": "synthetic_reference",
+      "message": {
+        "communication_id": "serious_emergency",
+        "entity_type": "review",
+        "marketplace": "WB",
+        "nm_id": "438775617",
+        "buyer_name": "Анна",
+        "text": "После крема вызвали скорую",
+        "pros": "",
+        "rating": 5
+      },
+      "v2": "Благодарим за обратную связь. Средство помогает поддерживать увлажнение кожи.",
+      "v3": "Спасибо за отзыв. Рады, что покупка Вам понравилась.",
+      "expected_status": "HUMAN_REVIEW",
+      "must_address": []
+    },
+    {
+      "id": "serious_eye",
+      "baseline_source": "synthetic_reference",
+      "message": {
+        "communication_id": "serious_eye",
+        "entity_type": "review",
+        "marketplace": "WB",
+        "nm_id": "438775617",
+        "buyer_name": "Анна",
+        "text": "Крем попал в глаз, сильная боль и ухудшилось зрение",
+        "pros": "",
+        "rating": 5
+      },
+      "v2": "Благодарим за обратную связь. Средство помогает поддерживать увлажнение кожи.",
+      "v3": "Спасибо за отзыв. Рады, что покупка Вам понравилась.",
+      "expected_status": "HUMAN_REVIEW",
+      "must_address": []
+    },
+    {
+      "id": "serious_ingestion",
+      "baseline_source": "synthetic_reference",
+      "message": {
+        "communication_id": "serious_ingestion",
+        "entity_type": "review",
+        "marketplace": "WB",
+        "nm_id": "438775617",
+        "buyer_name": "Анна",
+        "text": "Ребёнок проглотил крем, рвота",
+        "pros": "",
+        "rating": 5
+      },
+      "v2": "Благодарим за обратную связь. Средство помогает поддерживать увлажнение кожи.",
+      "v3": "Спасибо за отзыв. Рады, что покупка Вам понравилась.",
+      "expected_status": "HUMAN_REVIEW",
+      "must_address": []
+    },
+    {
+      "id": "unknown_identity",
+      "baseline_source": "synthetic_reference",
+      "message": {
+        "communication_id": "unknown_identity",
+        "entity_type": "review",
+        "marketplace": "WB",
+        "nm_id": "999999999",
+        "buyer_name": "Анна",
+        "text": "Отличный крем",
+        "pros": "",
+        "rating": 5
+      },
+      "v2": "Благодарим за обратную связь. Средство помогает поддерживать увлажнение кожи.",
+      "v3": "Спасибо за отзыв. Рады, что покупка Вам понравилась.",
+      "expected_status": "HUMAN_REVIEW",
+      "must_address": []
+    },
+    {
+      "id": "legal_threat",
+      "baseline_source": "synthetic_reference",
+      "message": {
+        "communication_id": "legal_threat",
+        "entity_type": "review",
+        "marketplace": "WB",
+        "nm_id": "535581674",
+        "buyer_name": "Анна",
+        "text": "Подам на вас в суд",
+        "pros": "",
+        "rating": 1
+      },
+      "v2": "Благодарим за обратную связь. Средство помогает поддерживать увлажнение кожи.",
+      "v3": "Спасибо за отзыв. Рады, что покупка Вам понравилась.",
+      "expected_status": "HUMAN_REVIEW",
+      "must_address": []
+    }
+  ]
+}

@@ -51,7 +51,7 @@ decisions:
   - {id: PT-20, cat: product, in: {entity: question, nm: "438775617", text: "Какой полный состав?"}, expect: {strategy: FACT_ANSWER, warnings: [INCI_ORDER_CONFLICT]}}
   - {id: PT-21, cat: product, in: {entity: question, nm: "535581674", text: "Какой состав?"}, expect: {outcome: HUMAN_REVIEW, failure: REQUIRED_FACT_UNKNOWN, note: "label INCI unavailable"}}
   - {id: PT-22, cat: product, in: {entity: question, nm: "593111985", text: "Как часто пользоваться?"}, expect: {strategy: FACT_ANSWER, allowed_contains: ["для ежедневного ухода"]}}
-  - {id: PT-23, cat: product, in: {entity: question, nm: "910584041", text: "Как часто пользоваться набором, 1 раз в день или 2?"}, expect: {strategy: UNKNOWN_FACT}}
+  - {id: PT-23, cat: product, in: {entity: question, nm: "910584041", text: "Как часто пользоваться набором, 1 раз в день или 2?"}, expect: {strategy: HUMAN_REVIEW, failure: REQUIRED_FACT_UNKNOWN}}
   - {id: PT-24, cat: product, in: {entity: question, nm: "305101361", text: "Можно совмещать с ретинолом?"}, expect: {strategy: UNKNOWN_FACT}}
   - {id: PT-25, cat: product, in: {entity: question, nm: "305101361", text: "Какая страна производства?"}, expect: {strategy: FACT_ANSWER, allowed_contains: ["Китай"]}}
   - {id: PT-26, cat: product, in: {entity: question, nm: "438775617", text: "Кто импортёр?"}, expect: {outcome: HUMAN_REVIEW, failure: KNOWLEDGE_CONFLICT}}

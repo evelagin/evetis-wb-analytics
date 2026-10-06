@@ -101,6 +101,8 @@ export class BqManifestStore implements ManifestStore {
 BEGIN
   DECLARE active INT64 DEFAULT 0;
   DECLARE cur_status STRING DEFAULT NULL;
+  DECLARE cur_run_id STRING DEFAULT NULL;
+  DECLARE cur_execution_id STRING DEFAULT NULL;
   BEGIN TRANSACTION;
   SET active = (
     SELECT COUNT(*) FROM ${t}
@@ -109,6 +111,16 @@ BEGIN
   );
   SET cur_status = (
     SELECT status FROM ${t}
+    WHERE environment=@environment AND loader_name=@loaderName AND logical_period=@logicalPeriod
+    ORDER BY started_at DESC LIMIT 1
+  );
+  SET cur_run_id = (
+    SELECT run_id FROM ${t}
+    WHERE environment=@environment AND loader_name=@loaderName AND logical_period=@logicalPeriod
+    ORDER BY started_at DESC LIMIT 1
+  );
+  SET cur_execution_id = (
+    SELECT execution_id FROM ${t}
     WHERE environment=@environment AND loader_name=@loaderName AND logical_period=@logicalPeriod
     ORDER BY started_at DESC LIMIT 1
   );
@@ -121,9 +133,9 @@ BEGIN
        @gitSha, 'STARTED', 1, CURRENT_TIMESTAMP());
   END IF;
   COMMIT TRANSACTION;
-  SELECT active AS active, cur_status AS cur_status;
+  SELECT active AS active, cur_status AS cur_status, cur_run_id AS cur_run_id, cur_execution_id AS cur_execution_id;
 END`;
-    let rows: Array<{ active?: unknown; cur_status?: unknown }>;
+    let rows: Array<{ active?: unknown; cur_status?: unknown; cur_run_id?: unknown; cur_execution_id?: unknown }>;
     try {
       rows = await this.bq.query(sql, {
         environment: p.environment,
@@ -137,8 +149,10 @@ END`;
       });
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
-      // Конфликт транзакции = кто-то другой захватил параллельно.
-      if (/conflict|abort|serializ|concurrent/i.test(msg)) {
+      // Конфликт транзакции = кто-то другой захватил параллельно. ТОЛЬКО точный текст BigQuery:
+      // широкий шаблон (abort|concurrent) превращал сетевой ECONNABORTED или «too many concurrent
+      // queries» в ALREADY_RUNNING → guard_skip → exit 0 без прогона и без алерта.
+      if (/Transaction is aborted due to concurrent update|Could not serialize access/i.test(msg)) {
         return { acquired: false, reason: 'ALREADY_RUNNING' };
       }
       throw e;
@@ -148,6 +162,19 @@ END`;
     const curStatus = r.cur_status == null ? null : String(r.cur_status);
     if (active === 0) {
       return { acquired: true, runId: p.runId, recovered: curStatus !== null };
+    }
+    // Повтор того же исполнения после потерянного ответа: транзакция уже закоммитила НАШУ строку
+    // STARTED (run_id содержит executionId — чужой прогон совпасть не может). Это наш lease, а не
+    // «уже идёт»: иначе повтор молча вышел бы guard_skip и сутки остались бы незаписанными.
+    if (curStatus === 'STARTED' && r.cur_run_id != null && String(r.cur_run_id) === p.runId) {
+      return { acquired: true, runId: p.runId, recovered: true };
+    }
+    // То же исполнение, повтор после отказа, чей finalize(ERROR) не дошёл: строка первой попытки
+    // осталась STARTED. Lease продолжаем ПОД ЕЁ run_id (finalize закроет именно её). Только при
+    // непустом execution_id: без него «своё» не доказуемо.
+    if (curStatus === 'STARTED' && p.executionId !== '' && r.cur_execution_id != null
+        && String(r.cur_execution_id) === p.executionId && r.cur_run_id != null) {
+      return { acquired: true, runId: String(r.cur_run_id), recovered: true };
     }
     return { acquired: false, reason: curStatus === 'COMPLETE' ? 'COMPLETE' : 'ALREADY_RUNNING' };
   }

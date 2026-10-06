@@ -13,6 +13,7 @@ from __future__ import annotations
 
 from dataclasses import asdict, dataclass, field
 from typing import Optional
+import re
 
 from app.v3.classifier import Classification
 from app.v3.resolver import ProductResolution
@@ -40,6 +41,7 @@ class ResolvedFact:
     reason: Optional[str] = None
     numbers: list = field(default_factory=list)  # canonical numbers the text may carry
     ingredient_ids: list = field(default_factory=list)
+    absent_ingredient_ids: list = field(default_factory=list)
 
 
 @dataclass
@@ -59,6 +61,8 @@ class Plan:
     tone: str = "neutral"
     product_ids: list = field(default_factory=list)
     buyer_name: Optional[str] = None
+    service_premises: list = field(default_factory=list)
+    question_intent: object = None
 
     @property
     def allowed(self) -> list:
@@ -92,6 +96,10 @@ def plan(snapshot: KnowledgeSnapshot, res: ProductResolution, c: Classification,
     p = Plan(strategy="HUMAN_REVIEW", escalation_domains=list(c.escalation_domains),
              risk_level=c.safety.risk_level if c.safety else "R0", buyer_name=name,
              product_ids=[res.product_id] if res.product_id else [])
+    from app.v3.direct_questions import parse_intent
+    source = ' '.join(str(msg.get(k) or '') for k in ('text', 'pros', 'cons'))
+    p.question_intent = c.question_intent or parse_intent(source, is_question=c.is_question)
+    p.question_intent.product_id = res.product_id
     s = c.safety
 
     # 0. product identity gate
@@ -124,8 +132,12 @@ def plan(snapshot: KnowledgeSnapshot, res: ProductResolution, c: Classification,
         return p
 
     # 4. service / marketplace order (ODR-08)
-    packaging = sorted(x for x in codes if x.startswith("PACKAGING."))
-    order = sorted(x for x in codes if x in ("ORDER.wrong_product", "ORDER.incomplete_bundle"))
+    from app.v3.service_premise import premises
+    source=' '.join(str(msg.get(k) or '') for k in ('text','pros','cons'))
+    p.service_premises=premises(source,policy)
+    proven={s['code'] for s in p.service_premises}
+    packaging = sorted(x for x in proven if x.startswith("PACKAGING."))
+    order = sorted(x for x in proven if x in ("ORDER.wrong_product", "ORDER.incomplete_bundle"))
     if packaging or order:
         tid = "T-SVC-WB-ORDER" if order else "T-SVC-WB-DAMAGED"
         p.strategy, p.risk_level = "SERVICE", "R2"
@@ -141,6 +153,23 @@ def plan(snapshot: KnowledgeSnapshot, res: ProductResolution, c: Classification,
 
     # 5. factual questions
     required = _required_facts(c, policy) if c.is_question else []
+    if c.is_question:
+        requested = p.question_intent.fact_types
+        exact = [{'fact_type': ft, 'subject': subject}
+                 for ft in requested if ft != 'ingredient_concentration'
+                 for subject in (p.question_intent.application_areas if ft == 'intended_use' else [None])]
+        if c.ingredient_mentions:
+            exact = [r for r in exact if r['fact_type'] != 'composition']
+        if requested:
+            required=[r for r in required if r['fact_type'] not in {'fragrance_profile','intended_use','amount','frequency','composition'}]+exact
+        if 'fragrance_perception_causes' in requested:
+            required=[r for r in required if r['fact_type']!='skin_type']
+        if 'ingredient_concentration' in requested:
+            required=[r for r in required if r['fact_type']!='ingredient_presence']
+            required.extend({'fact_type':'ingredient_concentration','subject':iid} for iid in c.ingredient_mentions or [None])
+        if 'intended_use' not in requested:
+            required = [r for r in required if r['fact_type'] != 'intended_use']
+        required=list({tuple(r.items()):r for r in required}.values())
     p.required_facts = required
     if c.is_question and not required:
         if c.unresolved_ingredient_terms:
@@ -149,16 +178,25 @@ def plan(snapshot: KnowledgeSnapshot, res: ProductResolution, c: Classification,
             return _ack(p, c, snapshot, res)
         return _human(p, "UNCLASSIFIED_QUESTION", "no required fact identified")
     if required:
-        scope = _scope(snapshot, res, c)
+        from app.v3.direct_questions import UNKNOWN_WORDING
+        scope = _scope(snapshot, res, c, source=source,
+                       require_component=any(r['fact_type'] in UNKNOWN_WORDING for r in required))
         if scope is None:
+            p.question_intent.resolution = 'AMBIGUOUS'
             p.resolved = [ResolvedFact(r["fact_type"], None, "UNKNOWN", r.get("subject"),
                                        reason="BUNDLE_COMPONENT_AMBIGUOUS") for r in required]
             return _decide(p, snapshot, res, c)
+        if len(scope) == 1:
+            p.question_intent.component_id = scope[0] if res.kind == 'bundle' else None
         for r in required:
             for pid in scope:
                 p.resolved.append(resolve_fact(snapshot, pid, r["fact_type"], r.get("subject"), c))
         for t in c.unresolved_ingredient_terms:
             p.resolved.append(ResolvedFact("ingredient_presence", None, "UNKNOWN", t, reason="UNRESOLVED_INGREDIENT"))
+        states = {r.state for r in p.resolved}
+        p.question_intent.resolution = ('AMBIGUOUS' if 'CONFLICT' in states else
+            'RESTRICTED' if 'KNOWN_RESTRICTED' in states else
+            'UNKNOWN' if 'UNKNOWN' in states else 'VERIFIED')
         return _decide(p, snapshot, res, c)
 
     # 6. experience reviews (no question)
@@ -219,19 +257,36 @@ def _required_facts(c: Classification, policy: dict) -> list[dict]:
     return out
 
 
-def _scope(snapshot: KnowledgeSnapshot, res: ProductResolution, c: Classification) -> Optional[list[str]]:
+def _scope(snapshot: KnowledgeSnapshot, res: ProductResolution, c: Classification, *,
+           source: str = '', require_component: bool = False) -> Optional[list[str]]:
     if res.kind != "bundle":
         return [res.product_id]
     comps = res.components
+    if require_component:
+        from app.v3.text import normalize
+        n=normalize(source)
+        named=[]
+        for pid in comps:
+            product=snapshot.product(pid) or {}
+            labels=[product.get('customer_name_ru') or '']
+            # Use only public identity/fragrance labels from the immutable
+            # source, never a customer-invented alias or inferred similarity.
+            for f in snapshot.facts(pid,'fragrance_profile'):
+                if f.get('fact_status')=='VERIFIED' and f.get('disclosure_policy') in CUSTOMER_DISCLOSURE:
+                    labels.append(re.sub(r'^аромат\s+','',normalize(f.get('customer_value_ru'))))
+            if any(label and re.search(r'(?<!\w)'+re.escape(normalize(label))+r'(?!\w)',n) for label in labels):
+                named.append(pid)
+        if named:
+            return named if len(named)==1 else None
     if c.asked_component:
         chosen = [x for x in comps if (snapshot.product(x) or {}).get("product_type") == c.asked_component or
                   (c.asked_component == "cream" and (snapshot.product(x) or {}).get("product_type") in
                    ("cream", "hand_cream", "body_cream"))]
         if len(chosen) == 1:
             return chosen
-        if chosen:
+        if chosen and not require_component:
             return chosen
-    return comps
+    return None if require_component else comps
 
 
 def _fact_value(f: dict) -> str:
@@ -247,6 +302,11 @@ def resolve_fact(snapshot: KnowledgeSnapshot, pid: str, fact_type: str, subject,
     policy = snapshot.policy
     prod = snapshot.product(pid) or {}
     pname = prod.get("customer_name_ru") or pid
+    if fact_type=='product_identity':
+        if prod.get('identity_status')=='VERIFIED' and prod.get('primary_source') and prod.get('customer_name_ru'):
+            return ResolvedFact(fact_type,pid,'KNOWN_ALLOWED',customer_value_ru=pname+'.',
+                fact_ids=[pid+'.customer_name'],source_ids=[prod['primary_source']])
+        return ResolvedFact(fact_type,pid,'UNKNOWN',reason='NO_VERIFIED_IDENTITY')
     unknown_policy = policy.get("policy_unknown_facts", {}).get(fact_type)
     if unknown_policy:
         st = unknown_policy["state"]
@@ -368,10 +428,11 @@ def _resolve_ingredient(snapshot: KnowledgeSnapshot, pid: str, fact_type: str, i
             return ResolvedFact(fact_type, pid, "KNOWN_ALLOWED", iid,
                                 customer_value_ru=f"В составе, указанном производителем, нет компонента «{display}»; указан компонент «{other}» ({fam[0]['inci_as_written']}).",
                                 fact_ids=[f"{pid}.ingredient.recipe.{fam[0]['ingredient_id']}"], source_ids=src,
-                                ingredient_ids=[iid, fam[0]["ingredient_id"]])
+                                ingredient_ids=[fam[0]["ingredient_id"]], absent_ingredient_ids=[iid])
         return ResolvedFact(fact_type, pid, "KNOWN_ALLOWED", iid,
                             customer_value_ru=f"В составе, указанном производителем, нет компонента «{display}».",
-                            fact_ids=[f"{pid}.ingredient.recipe.absent.{iid}"], source_ids=src, ingredient_ids=[iid])
+                            fact_ids=[f"{pid}.ingredient.recipe.absent.{iid}"], source_ids=src,
+                            absent_ingredient_ids=[iid])
     fid = f"{pid}.ingredient.recipe.{iid}"
     presence = f"В составе есть {display} ({row['inci_as_written']})."
     if fact_type == "ingredient_presence":

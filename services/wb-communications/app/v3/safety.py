@@ -13,6 +13,7 @@ from __future__ import annotations
 
 from dataclasses import asdict, dataclass, field
 from typing import Optional
+import re
 
 from app.v3.text import clauses, normalize, search_any
 
@@ -35,6 +36,7 @@ class SafetyEvent:
     emergency_markers: list = field(default_factory=list)
     confidence: float = 0.9
     source: str = "rules"                # rules | llm
+    cutaneous_injury: bool = False       # structural injury, not mild stinging
 
     @property
     def active(self) -> bool:
@@ -124,7 +126,31 @@ def extract_events(text: str, policy: dict) -> list[SafetyEvent]:
             elif search_any(cfg["mild_cues"], clause):
                 ev.severity = "mild"
             events.append(ev)
+    events.extend(_cutaneous_events(text, cfg))
     return _dedupe(events)
+
+
+def _cutaneous_events(text, cfg):
+    """Compose cutaneous context with lesion/injury or marked pain.
+
+    No change to the closed emergency marker list. Ordinary burning remains
+    the existing S1/S2 assessment; structural injury defaults to a human.
+    """
+    result=[]
+    whole=normalize(text)
+    context=bool(re.search(r'кож\w*|лиц\w*|рук\w*|тел\w*|после\s+(?:нанес\w*|сыворот\w*|крем\w*|тоник\w*)',whole))
+    for clause in clauses(text):
+        lesion=re.search(r'\b(?:пузыр(?:и|ь|ей|ями|ях|я)|волдыр\w*|blister(?:-like)?\s+lesions?)\b',clause)
+        burn=re.search(r'\bожог\w*|\bобожж\w*|мокнущ\w*\s+(?:поврежден\w*|ран\w*)',clause)
+        pain=re.search(r'(?:сильн\w*|резк\w*|выраженн\w*)\s+бол\w*|очень\s+бол\w*',clause)
+        if not context or not (lesion or burn or pain):continue
+        hit=lesion or burn or pain
+        negated,temporal,certainty=_clause_state(clause,hit.start(),cfg)
+        if burn and re.search(r'словно|как\s+(?:после|будто)',clause):certainty='uncertain'
+        result.append(SafetyEvent('other_adverse_event',clause,negated=negated,
+            temporal_state=temporal,certainty=certainty,severity='severe',
+            body_location=_location(clause,cfg),cutaneous_injury=bool(lesion or burn)))
+    return result
 
 
 def _dedupe(events: list[SafetyEvent]) -> list[SafetyEvent]:
@@ -183,6 +209,10 @@ def route(events: list[SafetyEvent], markers: list[str], policy: dict) -> Safety
         return a
     if active:
         a.risk_level = "R3"
+        if any(e.cutaneous_injury for e in active):
+            a.route='HUMAN_REVIEW'
+            a.reasons.append('SERIOUS_CUTANEOUS_INJURY')
+            return a
         types = {e.type for e in active}
         if types & {"eye_exposure", "ingestion", "nausea", "breathing_problem", "swelling"}:
             # no approved customer wording for these (S3-S6 pending) -> human
