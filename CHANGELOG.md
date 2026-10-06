@@ -1,5 +1,18 @@
 # CHANGELOG.md
 
+## 2026-10-06 — Алерты Юнитки: отдельная политика отказа платформы (выключена), условия прежних — как в живых
+
+`infra/terraform/unitka_engine.tf`, `infra/terraform/ozon_unitka.tf`. Листы не затрагиваются.
+
+- Изменение условия `unitka_engine_failed` / `ozon_unitka_failed` (OR с системным событием, PR #255) в облако не
+  легло: UpdateAlertPolicy (updateMask=conditions) вернул успех, оставил старый фильтр и выключил обе политики;
+  `enabled` восстановлен вручную, состояние Terraform сверено refresh-only. Конфиг возвращён к живым условиям —
+  план по ним «без изменений».
+- Новая политика `unitka_platform_failed`: системное событие аудита Cloud Run `/Jobs.RunJob` с severity ERROR
+  («execution failed to complete») для `unitka-engine-*` и `ozon-unitka-prod`, метки job и execution, тот же
+  email-канал, не чаще раза в час. Создаётся `enabled = false`; включение — отдельное решение владельца.
+  Фильтр на журнале за 90 суток: 2 из 2 известных отказов, 0 из 106 успешных исполнений.
+
 ## 2026-10-06 — Ozon Юнитка: ДРР с провенансом и ДРР магазина в колонке K (НЕ РАЗВЁРНУТО)
 
 Лист `OZON_Юнит_2025`, писатель `cloud/src/loaders/unitka/ozon/*`. Прибыль и комиссия не меняются; СПП месяца —

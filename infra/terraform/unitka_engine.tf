@@ -379,23 +379,20 @@ resource "google_monitoring_alert_policy" "unitka_engine_failed" {
   combiner     = "OR"
 
   conditions {
-    display_name = "отказ прогона unitka-engine-* (код приложения или системное событие)"
+    display_name = "loader_failed в логах unitka-engine-*"
     condition_matched_log {
-      # Два сигнала в ОДНОМ фильтре (log-match политика допускает одно условие):
-      #  1) запись приложения с кодом (loader_failed / fatal — код есть всегда, cloud/src/failure.ts);
-      #  2) системное событие Cloud Run «execution has failed to complete» — ловит отказ, даже если
-      #     процесс не успел написать ни строки (OOM, таймаут, падение до логгера). Инцидент
-      #     2026-10-06 zbfk7: fatal без code, алерт молчал, а событие (2) было.
+      # Условие = ЖИВОЕ состояние политики. Менять его на месте НЕЛЬЗЯ: 06.10.2026 UpdateAlertPolicy
+      # (updateMask=conditions) вернул успех, оставил старый фильтр и ВЫКЛЮЧИЛ политику. Отказ платформы
+      # (процесс упал, не написав ни строки) ловит отдельная политика unitka_platform_failed.
       filter = <<-EOT
         resource.type="cloud_run_job"
         resource.labels.job_name=~"^unitka-engine-"
         severity>=ERROR
-        (jsonPayload.code!="" OR (logName:"cloudaudit.googleapis.com%2Fsystem_event" AND protoPayload.methodName="/Jobs.RunJob"))
+        jsonPayload.code!=""
       EOT
       label_extractors = {
         error_code = "EXTRACT(jsonPayload.code)"
         job        = "EXTRACT(resource.labels.job_name)"
-        execution  = "EXTRACT(labels.\"run.googleapis.com/execution_name\")"
       }
     }
   }
@@ -410,6 +407,52 @@ resource "google_monitoring_alert_policy" "unitka_engine_failed" {
   notification_channels = [google_monitoring_notification_channel.unitka_email[0].id]
   documentation {
     content   = "UNITKA Engine упал. Код ошибки — в label error_code; детали — в wb_ops.UNITKA_ENGINE_RUNS (error_code, error_message, qa_json). Runbook: docs/UNITKA_ENGINE_V1_RUNBOOK.md"
+    mime_type = "text/markdown"
+  }
+  depends_on = [google_project_service.enabled]
+}
+
+# ── Отказ ПЛАТФОРМЫ: исполнение Cloud Run Job не завершилось (WB Engine и Ozon-Юнитка) ──────────
+# Инцидент 2026-10-06 unitka-engine-prod-zbfk7: процесс упал до логгера с кодом, политики выше
+# (jsonPayload.code!="") его не видят. Сигнал — системное событие аудита Cloud Run «Execution … has
+# failed to complete» (severity ERROR); успешное исполнение пишет то же событие с severity INFO.
+# Проверка фильтра по журналу за 90 суток (06.10): совпали ровно 2 отказа (unitka-engine-prod-zbfk7
+# 06.10, ozon-unitka-prod-tf7r2 22.09), из 106 успешных — ни одного.
+# Отдельная политика, а не OR в существующих: их условие на месте не меняется (см. выше).
+# Создаётся ВЫКЛЮЧЕННОЙ: включение — отдельное решение владельца после перечитывания из API.
+resource "google_monitoring_alert_policy" "unitka_platform_failed" {
+  count        = var.unitka_alert_email == "" ? 0 : 1
+  display_name = "UNITKA: исполнение Cloud Run Job не завершилось (платформа)"
+  combiner     = "OR"
+  enabled      = false
+
+  conditions {
+    display_name = "системное событие Cloud Run: execution failed (unitka-engine-*, ozon-unitka-prod)"
+    condition_matched_log {
+      filter = <<-EOT
+        resource.type="cloud_run_job"
+        (resource.labels.job_name=~"^unitka-engine-" OR resource.labels.job_name="ozon-unitka-prod")
+        logName="projects/${var.project_id}/logs/cloudaudit.googleapis.com%2Fsystem_event"
+        protoPayload.methodName="/Jobs.RunJob"
+        severity>=ERROR
+      EOT
+      label_extractors = {
+        job       = "EXTRACT(resource.labels.job_name)"
+        execution = "EXTRACT(labels.\"run.googleapis.com/execution_name\")"
+      }
+    }
+  }
+
+  alert_strategy {
+    notification_rate_limit {
+      period = "3600s"
+    }
+    auto_close = "86400s"
+  }
+
+  notification_channels = [google_monitoring_notification_channel.unitka_email[0].id]
+  documentation {
+    content   = "Исполнение Cloud Run Job Юнитки не завершилось (метки job и execution). Процесс мог упасть до записи кода ошибки: смотреть журнал исполнения и wb_ops.UNITKA_ENGINE_RUNS / LOADER_RUNS. WB: резервный прогон 09:30 UTC; Ozon: повтор — ручной запуск job. Runbook: docs/UNITKA_ENGINE_V1_RUNBOOK.md, docs/ops/OZON_UNITKA_OPERATIONS.md"
     mime_type = "text/markdown"
   }
   depends_on = [google_project_service.enabled]

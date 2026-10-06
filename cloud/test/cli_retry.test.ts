@@ -221,15 +221,30 @@ describe('BqManifestStore.acquire: потерянный ответ после CO
 
 describe('Terraform: алерты Юнитки видят отказ без кода приложения', () => {
   const tf = (f: string) => readFileSync(new URL(`../../infra/terraform/${f}`, import.meta.url), 'utf8');
-  for (const [file, job] of [['unitka_engine.tf', 'unitka-engine-'], ['ozon_unitka.tf', 'ozon-unitka-prod']] as const) {
-    it(`${file}: условие по коду И условие по системному событию «execution failed»`, () => {
-      const s = tf(file);
-      expect(s).toContain('jsonPayload.code!=""');
-      expect(s).toMatch(/cloudaudit\.googleapis\.com%2Fsystem_event/);
-      expect(s).toContain('protoPayload.methodName="/Jobs.RunJob"');
-      expect(s).toContain(job);
+  const block = (s: string, name: string): string => {
+    const i = s.indexOf(`resource "google_monitoring_alert_policy" "${name}"`);
+    expect(i).toBeGreaterThanOrEqual(0);
+    return s.slice(i, s.indexOf('\n}\n', i));
+  };
+  // Условие существующих политик на месте не меняется (06.10.2026: UpdateAlertPolicy выключил их, оставив старый фильтр).
+  for (const [file, name, job] of [['unitka_engine.tf', 'unitka_engine_failed', 'unitka-engine-'], ['ozon_unitka.tf', 'ozon_unitka_failed', 'ozon-unitka-prod']] as const) {
+    it(`${file}: ${name} — только код приложения, как в живой политике`, () => {
+      const b = block(tf(file), name);
+      expect(b).toContain('jsonPayload.code!=""');
+      expect(b).toContain(job);
+      expect(b).not.toMatch(/system_event|Jobs\.RunJob/);
     });
   }
+  it('unitka_platform_failed: отдельная политика по системному событию «execution failed», создаётся выключенной', () => {
+    const b = block(tf('unitka_engine.tf'), 'unitka_platform_failed');
+    expect(b).toMatch(/enabled\s+=\s+false/);
+    expect(b).toContain('cloudaudit.googleapis.com%2Fsystem_event');
+    expect(b).toContain('protoPayload.methodName="/Jobs.RunJob"');
+    expect(b).toContain('severity>=ERROR');
+    expect(b).toContain('resource.labels.job_name=~"^unitka-engine-"');
+    expect(b).toContain('resource.labels.job_name="ozon-unitka-prod"');
+    expect(b).toContain('run.googleapis.com/execution_name');
+  });
 });
 
 
