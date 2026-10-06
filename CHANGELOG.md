@@ -1,5 +1,10 @@
 # CHANGELOG.md
 
+## 2026-10-06 — Алерты Юнитки: политика отказа платформы включена
+
+`infra/terraform/unitka_engine.tf`: `unitka_platform_failed.enabled` false → true (ACK владельца). Фильтр, метки,
+канал и частота не меняются; существующие политики не затрагиваются.
+
 ## 2026-10-06 — Алерты Юнитки: отдельная политика отказа платформы (выключена), условия прежних — как в живых
 
 `infra/terraform/unitka_engine.tf`, `infra/terraform/ozon_unitka.tf`. Листы не затрагиваются.

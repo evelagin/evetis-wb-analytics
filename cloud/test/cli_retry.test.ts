@@ -235,9 +235,9 @@ describe('Terraform: алерты Юнитки видят отказ без ко
       expect(b).not.toMatch(/system_event|Jobs\.RunJob/);
     });
   }
-  it('unitka_platform_failed: отдельная политика по системному событию «execution failed», создаётся выключенной', () => {
+  it('unitka_platform_failed: отдельная политика по системному событию «execution failed», включена', () => {
     const b = block(tf('unitka_engine.tf'), 'unitka_platform_failed');
-    expect(b).toMatch(/enabled\s+=\s+false/);
+    expect(b).toMatch(/enabled\s+=\s+true/);
     expect(b).toContain('cloudaudit.googleapis.com%2Fsystem_event');
     expect(b).toContain('protoPayload.methodName="/Jobs.RunJob"');
     expect(b).toContain('severity>=ERROR');
