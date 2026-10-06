@@ -79,7 +79,8 @@ GATE8_OBJECTS = {"V_OZON_COMMISSION_POLICY", "V_OZON_LOGISTICS_ESTIMATOR",
 # После слияния PR #160 Git-first цикл закрыт: всё развёрнуто, провенанс подтверждён
 # чтением production, и пустых множеств здесь ждать — правильно. Непустое множество
 # снова означает изменение, ожидающее развёртывания.
-GATE5K_PENDING = {"ozon_mart": set() | PROMO2_PENDING["ozon_mart"] | PROMO3_PENDING["ozon_mart"]
+# Local Ozon Unitka completeness fix: production capture is preserved; no deploy authorized.
+GATE5K_PENDING = {"ozon_mart": {"V_OZON_SKU_PNL_DAILY_OPERATIONAL"} | PROMO2_PENDING["ozon_mart"] | PROMO3_PENDING["ozon_mart"]
                   | PROMO4_PENDING["ozon_mart"] | PLAN1_PENDING["ozon_mart"] | AIE_PENDING["ozon_mart"],
                   "evetis_mart": set() | PROMO2_PENDING["evetis_mart"] | PROMO3_PENDING["evetis_mart"]
                   | PROMO4_PENDING["evetis_mart"] | PLAN1_PENDING["evetis_mart"] | AIE_PENDING["evetis_mart"]}

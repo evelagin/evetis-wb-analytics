@@ -45,7 +45,7 @@ export const OZON_ROLE_CLASS: Readonly<Record<FieldRole, VisualClass>> = {
   STOCK: 'CALC', TURNOVER: 'CALC',  // истории нет до 31.08 — не обещаем импорт
   UNIT_PROFIT: 'CALC', TOTAL_PROFIT: 'CALC',
   INTERNAL_ADS: 'FACT',
-  EXTERNAL_ADS: 'MANUAL',           // у Ozon это ручное поле (у WB — формула)
+  EXTERNAL_ADS: 'CALC',             // расчётный output; точная legacy-формула пока не доказана
   DRR: 'CALC',
   SELLER_PRICE: 'FACT',             // у Ozon цена приходит из финотчёта (у WB вводится руками)
   DISCOUNT: 'FACT',                 // выводится из buyer/seller (у WB вводится руками)
@@ -64,7 +64,6 @@ export const OZON_VISUAL_DIVERGENCES: ReadonlyArray<{ role: FieldRole; wb: Visua
   { role: 'DISCOUNT', wb: 'MANUAL', ozon: 'FACT', why: 'СПП у Ozon выводится из buyer_paid/seller_base, а не задаётся' },
   { role: 'COMMISSION', wb: 'TARIFF', ozon: 'FACT', why: 'у Ozon это фактическая ставка сделки (+эквайринг), а не тарифная константа' },
   { role: 'LOGISTICS', wb: 'TARIFF', ozon: 'FACT', why: 'у Ozon это фактическая логистика начисления, а не тариф' },
-  { role: 'EXTERNAL_ADS', wb: 'CALC', ozon: 'MANUAL', why: 'у Ozon блогеры не моделируются формулой — поле ручное' },
   { role: 'CART', wb: 'FACT', ozon: 'CALC', why: 'провенанс метрики не доказан; зелёный «ожидаемый факт» создал бы впечатление наблюдаемого нуля' },
   { role: 'STOCK', wb: 'FACT', ozon: 'CALC', why: 'истории остатков до 31.08.2026 не существует — импорт не обещаем' },
 ];

@@ -28,6 +28,12 @@ export interface LoaderSpec {
   logicalPeriod: (now?: Date) => string;
   /** true → загрузчик публикует production-данные и запрещён вне ENVIRONMENT=prod. */
   prodOnly?: boolean;
+  /**
+   * true → после захвата lease транзиентный отказ (BigQuery/сеть/Sheets 429·5xx) повторяется ОДИН
+   * раз в том же слоте. Только для идемпотентных писателей: план строится как разница с листом,
+   * поэтому повтор после частичной записи дописывает недостающее и не дублирует уже записанное.
+   */
+  retryTransient?: boolean;
 }
 
 export const LOADERS: Record<string, LoaderSpec> = {
@@ -42,7 +48,7 @@ export const LOADERS: Record<string, LoaderSpec> = {
   funnel: { handler: funnelLoader, logicalPeriod: (now) => d1Moscow(now) },
   // E4: платное хранение — только закрытые сутки, RAW production, overlap внутри loader.
   storage: { handler: storageLoader, logicalPeriod: (now) => d1Moscow(now), prodOnly: true },
-  unitka: { handler: unitkaLoader, logicalPeriod: (now) => unitkaSlot(now) },
+  unitka: { handler: unitkaLoader, logicalPeriod: (now) => unitkaSlot(now), retryTransient: true },
   // Calendar V2 (Phase 2B): подготовка секции месяца. По умолчанию ТОЛЬКО план; запись — prod +
   // UNITKA_MONTH_PREP_WRITE=1. Не активирован нигде: нет расписания, нет шага деплоя.
   'unitka-month-prep': { handler: unitkaMonthPrepLoader, logicalPeriod: (now) => unitkaSlot(now) },
@@ -55,7 +61,7 @@ export const LOADERS: Record<string, LoaderSpec> = {
   // Gate 8: суточный прогон Ozon-Юнитки. Окно перезаписи 45 суток (раз в месяц 120),
   // провизорная экономика (факт > оценка). Запись — prod + OZON_UNITKA_WRITE_ENABLED=1;
   // по умолчанию прогон только считает план. Расписание НЕ создано: см. runbook Gate 8.
-  'ozon-unitka': { handler: ozonUnitkaLoader, logicalPeriod: (now) => unitkaSlot(now) },
+  'ozon-unitka': { handler: ozonUnitkaLoader, logicalPeriod: (now) => unitkaSlot(now), retryTransient: true },
   // Gate 10, этап 5: одноразовый перевод формул Ozon на OZON_LAST_CLOSED_DATE. По умолчанию ТОЛЬКО план;
   // запись — prod + OZON_LCD_MIGRATION_WRITE=1 + ожидания из плана. Нет расписания, запуск — одно
   // исполнение ozon-unitka-prod с --args=ozon-unitka-lcd-migration.

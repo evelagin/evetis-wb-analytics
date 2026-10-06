@@ -14,7 +14,7 @@
  */
 import { LoaderError } from '../../errors.js';
 import type { FactRow, RepairRecord, IssueRecord } from './bq.js';
-import { colA1, addDaysIso, isEmpty, asNumber, isFormulaError, SUMMARY_TO_OFFSET, type CellValue } from './model.js';
+import { colA1, addDaysIso, monthStartIso, isEmpty, asNumber, isFormulaError, SUMMARY_TO_OFFSET, FACT_KEYS, type CellValue } from './model.js';
 import { daysInMonth, formatMonthKey, monthKeyOf, dayRowOf, type MonthKey, type MonthGeometry } from './calendar.js';
 import {
   validateSection, expectedFactCells, diffExpected, formatContract, currentValue, cellAt,
@@ -36,7 +36,13 @@ export const RECONCILE_WINDOW_DAYS = 35;
  */
 export const RECONCILIATION_EPOCH = '2026-09-01';
 
-export type ReconcileMode = 'off' | 'observe' | 'write';
+/**
+ * off — сверки нет (поведение 2.0.0); observe — план и журнал, прошлые месяцы не пишутся; write — сверка окна пишется
+ * целиком; controlled — как observe для месяца LCD, а прошлые месяцы окна пишутся ТОЛЬКО через политику
+ * controlledWritePolicy (первое заполнение — да, отзыв источника — никогда, поправки — под потолком). controlled
+ * реализован, но нигде не включён: включение — отдельное решение владельца (env Job'а, не код).
+ */
+export type ReconcileMode = 'off' | 'observe' | 'write' | 'controlled';
 
 export interface ReconcileWindow { from: string; to: string; days: number; epoch: string; rollingFrom: string }
 
@@ -175,27 +181,217 @@ export function evaluateRepairedSection(after: Snapshot, plan: SectionRepairPlan
     const got: CellValue = currentValue(after, e);
     if (!factEqual(got, e.want)) mism.push(`${colA1(e.col)}${e.row} ${e.key ?? ''} лист[${String(got)}] BQ[${e.want === null ? '' : e.want}]`);
   }
+  const rows: number[] = [];
+  for (let r = g.topRow; r <= g.mtdRow; r++) rows.push(r);
+  const errs = rowFormulaErrors(after, plan.blocks, rows);
+  const summaryTo = opts.summaryUpTo !== undefined && opts.summaryUpTo < plan.toDay ? opts.summaryUpTo : plan.toDay;
+  const days: string[] = [];
+  for (let day = plan.fromDay; day <= summaryTo; day = addDaysIso(day, 1)) days.push(day);
+  const rec = summaryMismatches(after, g, plan.blocks, days);
+  const mk = (name: string, bad: string[]): QaCheck => ({ name: `RECON_${g.monthKey}_${name}`, pass: bad.length === 0, count: bad.length, sample: bad.slice(0, 10) });
+  return [mk('BQ_SHEETS_MISMATCH', mism), mk('FORMULA_ERRORS', errs), mk('SUMMARY_RECONCILIATION', rec)];
+}
+
+/** Ошибки формул в заданных строках секции: колонки сводки и всех блоков (хвост книги за последним блоком — не секции). */
+function rowFormulaErrors(after: Snapshot, blocks: readonly Block[], rows: Iterable<number>): string[] {
   const errs: string[] = [];
-  const lastCol = plan.blocks.reduce((m, b) => Math.max(m, b.start + 22), 12);
-  for (let r = g.topRow; r <= g.mtdRow; r++) for (let c = 1; c <= lastCol; c++) {
+  const lastCol = blocks.reduce((m, b) => Math.max(m, b.start + 22), 12);
+  for (const r of rows) for (let c = 1; c <= lastCol; c++) {
     const v = cellAt(after, r, c);
     if (isFormulaError(v)) errs.push(`${colA1(c)}${r} ${String(v)}`);
   }
+  return errs;
+}
+
+/** Сводка дня = Σ блоков секции (|Δ| ≤ 0,01) по заданным дням. */
+function summaryMismatches(after: Snapshot, g: MonthGeometry, blocks: readonly Block[], days: Iterable<string>): string[] {
   const rec: string[] = [];
   const ms = `${g.monthKey}-01`;
-  const summaryTo = opts.summaryUpTo !== undefined && opts.summaryUpTo < plan.toDay ? opts.summaryUpTo : plan.toDay;
-  for (let day = plan.fromDay; day <= summaryTo; day = addDaysIso(day, 1)) {
+  for (const day of days) {
     const row = dayRowOf(g, daysBetween(ms, day));
     for (const [sumCol, off, name] of SUMMARY_TO_OFFSET) {
       let total = 0;
-      for (const b of plan.blocks) { const v = asNumber(cellAt(after, row, b.start + off)); if (Number.isFinite(v)) total += v; }
+      for (const b of blocks) { const v = asNumber(cellAt(after, row, b.start + off)); if (Number.isFinite(v)) total += v; }
       const s = asNumber(cellAt(after, row, sumCol));
       const sv = Number.isFinite(s) ? s : 0;
       if (Math.abs(sv - total) > 0.01) rec.push(`${name} ${colA1(sumCol)}${row} сводка[${sv}] Σблоков[${Math.round(total * 100) / 100}]`);
     }
   }
-  const mk = (name: string, bad: string[]): QaCheck => ({ name: `RECON_${g.monthKey}_${name}`, pass: bad.length === 0, count: bad.length, sample: bad.slice(0, 10) });
-  return [mk('BQ_SHEETS_MISMATCH', mism), mk('FORMULA_ERRORS', errs), mk('SUMMARY_RECONCILIATION', rec)];
+  return rec;
+}
+
+/**
+ * Перечитывание ТОЧЕЧНОЙ записи в прошлые секции (закрытие конца месяца, режим controlled): каждая ячейка контракта ==
+ * источнику, в строках этих дней нет ошибок формул; с `summary` — ещё и сводка дней `summaryDays` = Σ блоков.
+ * В отличие от evaluateRepairedSection, остальная часть секции НЕ проверяется: в observe/controlled поправки, которые
+ * прогон сознательно не пишет, законно расходятся с источником — и не должны блокировать коммит LCD.
+ */
+export function sectionCellsReadback(
+  name: string,
+  parts: ReadonlyArray<{ after: Snapshot; plan: SectionRepairPlan; cells: readonly ExpectedCell[]; summaryDays?: readonly string[] }>,
+  opts: { summary?: boolean } = {},
+): QaCheck[] {
+  const bad: string[] = [];
+  const sum: string[] = [];
+  for (const p of parts) {
+    for (const e of p.cells) {
+      const got: CellValue = currentValue(p.after, e);
+      if (!factEqual(got, e.want)) bad.push(`${colA1(e.col)}${e.row} ${e.date ?? ''} ${e.key ?? ''} лист[${String(got)}] BQ[${e.want === null ? '' : e.want}]`);
+    }
+    bad.push(...rowFormulaErrors(p.after, p.plan.blocks, new Set(p.cells.map((c) => c.row))));
+    if (opts.summary) sum.push(...summaryMismatches(p.after, p.plan.geometry, p.plan.blocks, p.summaryDays ?? []));
+  }
+  const mk = (n: string, list: string[]): QaCheck => ({ name: n, pass: list.length === 0, count: list.length, sample: list.slice(0, 10) });
+  return opts.summary ? [mk(`${name}_READBACK`, bad), mk(`${name}_SUMMARY`, sum)] : [mk(`${name}_READBACK`, bad)];
+}
+
+/* ───────────────────────── закрытие конца месяца ───────────────────────── */
+
+/**
+ * Дни ПРОШЛЫХ месяцев, которые книга ещё не закрыла, а кандидат LCD уже перешагнул: bookLcd < d < 1-е число месяца кандидата.
+ *
+ * Инцидент 02.10.2026 (прогон kf6rr): книга закрыта по 29.09, кандидат 01.10. buildPlan пишет только месяц кандидата,
+ * прошлую секцию достаёт только сверка, а в observe она ничего не пишет — LCD закоммитился 29.09 → 01.10, а вся
+ * строка 30.09 сентября осталась пустой (в плане сверки было 208 ячеек FACT_CHANGE за 30.09). Зажать кандидата по
+ * месяцу нельзя: V_UNITKA_DAILY_FACT отдаёт только месяц КАНОНИЧЕСКОГО LCD (LCD_CANDIDATE_FACTS_UNAVAILABLE).
+ * Пусто — обычный суточный прогон, поведение прежнее.
+ */
+export function unclosedPreviousMonthDays(bookLcd: string, lcd: string): string[] {
+  const ms = monthStartIso(lcd);
+  const out: string[] = [];
+  for (let d = addDaysIso(bookLcd, 1); d < ms; d = addDaysIso(d, 1)) out.push(d);
+  return out;
+}
+
+export interface MonthEndClosePlan {
+  /** Незакрытые дни прошлых месяцев (пусто — закрывать нечего). */
+  days: string[];
+  /** Ячейки плана сверки за эти дни (FACT_CHANGE: первое заполнение никогда не закрытых дней). */
+  cells: PlannedCell[];
+  formatCells: FormatCell[];
+  /** По секциям: полный контракт этих дней — для перечитывания (каждая ячейка, а не только записанные). */
+  parts: Array<{ plan: SectionRepairPlan; days: string[]; expected: ExpectedCell[] }>;
+}
+
+/**
+ * План закрытия конца месяца. Дни D (unclosedPreviousMonthDays) пишутся из плана сверки прошлой секции В ЛЮБОМ режиме
+ * сверки, кроме off, — и в observe тоже: это не исторический ремонт, а первое заполнение дней, которые книга ни разу не
+ * закрывала; без них коммит LCD перешагнул бы дыру (дефект A). Ячейки — те же FACT_CHANGE плана сверки, уже прошедшие
+ * assertFactCellsOnly (только автоматические факт-колонки).
+ *
+ * Fail-closed (MONTH_END_UNCLOSED, ДО любой записи данных, LCD стоит): покрытие D обязано быть ПОЛНЫМ — секция месяца
+ * сверялась (нет отказа), ни один блок не пропущен (skippedBlocks пуст), и на каждый день D у каждого блока есть все
+ * FACT_KEYS контракта. Частичное закрытие дня хуже незакрытого: формулы сводки после коммита посчитали бы день
+ * «закрытым» на половине блоков. Режим off закрыть D не может в принципе (слоя сверки нет) — тоже отказ, а не тихий
+ * перескок. Повтор после устранения причины идемпотентен.
+ */
+export function planMonthEndClose(a: {
+  bookLcd: string; lcd: string; mode: ReconcileMode;
+  sections: ReadonlyArray<{ plan: SectionRepairPlan }>;
+  refused?: ReadonlyArray<{ month: string; code: string; message: string }>;
+}): MonthEndClosePlan {
+  const days = unclosedPreviousMonthDays(a.bookLcd, a.lcd);
+  if (!days.length) return { days, cells: [], formatCells: [], parts: [] };
+  const fail = (why: string): LoaderError => new LoaderError(
+    `кандидат LCD ${a.lcd} перешагивает незакрытые дни прошлого месяца ${days[0]}..${days[days.length - 1]} (книга закрыта по ${a.bookLcd}): ${why} — LCD не двигается, пока эти дни не записаны`,
+    'MONTH_END_UNCLOSED',
+  );
+  if (a.mode === 'off') throw fail('UNITKA_RECONCILE_MODE=off — слоя сверки нет, прошлую секцию писать нечем');
+  const byMonth = new Map<string, string[]>();
+  for (const d of days) (byMonth.get(d.slice(0, 7)) ?? byMonth.set(d.slice(0, 7), []).get(d.slice(0, 7))!).push(d);
+  const problems: string[] = [];
+  const parts: MonthEndClosePlan['parts'] = [];
+  for (const [mk, ds] of byMonth) {
+    const sec = a.sections.find((s) => s.plan.monthKey === mk);
+    if (!sec) {
+      const r = a.refused?.find((x) => x.month === mk);
+      problems.push(`секция ${mk} не сверялась${r ? ` (${r.code}: ${r.message.slice(0, 160)})` : ''}`);
+      continue;
+    }
+    const p = sec.plan;
+    if (p.skippedBlocks.length) {
+      problems.push(`секция ${mk}: блоки без полного покрытия слоя сверки — ${p.skippedBlocks.slice(0, 5).map((b) => `${b.nmId} (${b.reason})`).join(', ')}`);
+      continue;
+    }
+    const set = new Set(ds);
+    const expected = p.expected.filter((e) => e.date !== undefined && set.has(e.date));
+    const perDay = p.blocks.length * FACT_KEYS.length;
+    const count = new Map<string, number>();
+    for (const e of expected) count.set(e.date!, (count.get(e.date!) ?? 0) + 1);
+    const short = ds.filter((d) => (count.get(d) ?? 0) !== perDay);
+    if (short.length) {
+      problems.push(`секция ${mk}: контракт сверки (окно ${p.fromDay}..${p.toDay}) не покрывает ${short.slice(0, 5).join(', ')}${short.length > 5 ? ` и ещё ${short.length - 5}` : ''}`);
+      continue;
+    }
+    parts.push({ plan: p, days: ds, expected });
+  }
+  if (problems.length) throw fail(problems.join(' | '));
+  const all = new Set(days);
+  return {
+    days,
+    cells: a.sections.flatMap((s) => s.plan.cells).filter((c) => c.date !== undefined && all.has(c.date)),
+    formatCells: a.sections.flatMap((s) => s.plan.formatCells).filter((c) => all.has(c.date)),
+    parts,
+  };
+}
+
+/* ───────────────────────── режим controlled: политика записи прошлых месяцев ───────────────────────── */
+
+/** Потолок поправок за прогон в режиме controlled: не больше 50 ячеек И не больше 2 % контракта секций окна. */
+export const CONTROLLED_MAX_CORRECTIONS = 50;
+export const CONTROLLED_MAX_CORRECTION_SHARE = 0.02;
+
+export type ControlledRefusalCode = 'RECON_WITHDRAWAL_REQUIRES_ACK' | 'RECON_CORRECTION_CAP_EXCEEDED' | 'RECON_OUT_OF_SCOPE';
+
+export interface ControlledPolicyResult {
+  apply: PlannedCell[];
+  refused: Array<{ code: ControlledRefusalCode; cell: PlannedCell }>;
+  counts: {
+    candidates: number; first_fills: number; corrections: number; withdrawals: number; out_of_scope: number;
+    applied: number; refused: number; contract_cells: number; correction_cap: number; cap_exceeded: boolean;
+  };
+}
+
+/**
+ * Политика режима controlled — что из плана сверки ПРОШЛЫХ месяцев окна можно записать без владельца. Чистая функция.
+ *   • в рамках — только факт-ячейки прошлых месяцев (дата < 1-го числа месяца LCD); автоматические смещения уже
+ *     гарантирует assertFactCellsOnly; всё прочее — RECON_OUT_OF_SCOPE (не пишется);
+ *   • первое заполнение (в листе пусто, источник даёт значение) — пишется всегда: стереть нечего, ошибиться не в чем;
+ *   • отзыв источника (в листе значение, источник — пусто, SOURCE_WITHDRAWN) — НЕ пишется НИКОГДА:
+ *     RECON_WITHDRAWAL_REQUIRES_ACK. Стирание закрытой цифры — решение человека; подтверждение владельца — отдельный
+ *     ручной прогон в режиме write;
+ *   • поправка (в листе значение, источник — другое значение; формула-наследие тоже) — пишутся ВСЕ, только если их
+ *     ≤ 50 и ≤ 2 % контракта секций окна; иначе не пишется НИ ОДНА (RECON_CORRECTION_CAP_EXCEEDED): массовый пересмотр
+ *     источника — сигнал сбоя слоя, а не повод тихо переписать месяц. Первые заполнения при этом всё равно пишутся.
+ */
+export function controlledWritePolicy(
+  cells: readonly PlannedCell[],
+  ctx: { lcdMonthStart: string; contractCells: number; maxCorrections?: number; maxShare?: number },
+): ControlledPolicyResult {
+  const maxN = ctx.maxCorrections ?? CONTROLLED_MAX_CORRECTIONS;
+  const share = ctx.maxShare ?? CONTROLLED_MAX_CORRECTION_SHARE;
+  const apply: PlannedCell[] = [];
+  const refused: ControlledPolicyResult['refused'] = [];
+  const corrections: PlannedCell[] = [];
+  let firstFills = 0, withdrawals = 0, outOfScope = 0;
+  for (const c of cells) {
+    if (c.kind !== 'fact' || c.date === undefined || c.date >= ctx.lcdMonthStart) { outOfScope++; refused.push({ code: 'RECON_OUT_OF_SCOPE', cell: c }); continue; }
+    const wasEmpty = isEmpty(c.before);
+    if (wasEmpty && c.want !== null) { firstFills++; apply.push(c); continue; }
+    if (!wasEmpty && c.want === null) { withdrawals++; refused.push({ code: 'RECON_WITHDRAWAL_REQUIRES_ACK', cell: c }); continue; }
+    corrections.push(c);
+  }
+  const cap = Math.min(maxN, Math.floor(share * ctx.contractCells));
+  const capExceeded = corrections.length > cap;
+  if (capExceeded) for (const c of corrections) refused.push({ code: 'RECON_CORRECTION_CAP_EXCEEDED', cell: c });
+  else apply.push(...corrections);
+  return {
+    apply, refused,
+    counts: {
+      candidates: cells.length, first_fills: firstFills, corrections: corrections.length, withdrawals, out_of_scope: outOfScope,
+      applied: apply.length, refused: refused.length, contract_cells: ctx.contractCells, correction_cap: cap, cap_exceeded: capExceeded,
+    },
+  };
 }
 
 /* ───────────────────────── журнал ремонта ───────────────────────── */
@@ -229,10 +425,17 @@ function asOfOf(c: PlannedCell, f: FactRow | undefined): string | null {
 export function repairRecords(cells: readonly PlannedCell[], ctx: {
   runId: string; environment: string; engineVersion: string; gitSha: string; detectedAt: string; repairedAt: string | null;
   status: RepairRecord['status']; factOf: (nmId: number, date: string) => FactRow | undefined;
+  /**
+   * Режим controlled: в журнал идут и ПЕРВЫЕ ЗАПОЛНЕНИЯ прошлых секций (FACT_CHANGE, в листе было пусто) — reason
+   * LATE_FIRST_FILL: прошлый месяц под controlled меняется только с происхождением. Режим write этот флаг не ставит —
+   * его журнал прежний (только LATE_SOURCE_CORRECTION).
+   */
+  includeFirstFills?: boolean;
 }): RepairRecord[] {
   const out: RepairRecord[] = [];
   for (const c of cells) {
-    if (c.kind !== 'fact' || c.changeType !== 'LATE_SOURCE_CORRECTION' || c.nmId === undefined || !c.date) continue;
+    const firstFill = ctx.includeFirstFills === true && c.changeType === 'FACT_CHANGE' && isEmpty(c.before) && c.want !== null;
+    if (c.kind !== 'fact' || (c.changeType !== 'LATE_SOURCE_CORRECTION' && !firstFill) || c.nmId === undefined || !c.date) continue;
     const f = ctx.factOf(c.nmId, c.date);
     const cell = `${colA1(c.col)}${c.row}`;
     out.push({

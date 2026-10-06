@@ -85,6 +85,20 @@ export interface OzonFactRow {
   promo?: number | null; cogs_amt?: number | null;
   ads_spend?: number | null; impr?: number | null; clicks?: number | null;
   buyer_amt?: number | null; seller_amt?: number | null;
+  /** Независимая цена заказа: допустима только при полном покрытии ожидаемых единиц. */
+  order_reference_price?: number | null;
+  order_reference_qty?: number | null;
+  order_reference_covered_qty?: number | null;
+  /** Взаимоисключающие posting/SKU-популяции базы калькулятора, не accounting revenue. */
+  operational_basis_version?: number | null;
+  operational_expected_qty?: number | null;
+  operational_actual_qty?: number | null;
+  operational_provisional_qty?: number | null;
+  operational_reference_covered_qty?: number | null;
+  operational_actual_basis_rub?: number | null;
+  operational_reference_basis_rub?: number | null;
+  operational_basis_rub?: number | null;
+  operational_basis_units_json?: string | null;
   // Полнота источника. Комиссия имеет три состояния, а не два: отсутствующая комиссия обычной
   // продажи (commission_missing_qty) и неприменимая комиссия выкупа
   // (commission_not_applicable_qty) — разные факты, и смешивать их нельзя.
@@ -137,6 +151,8 @@ export type OzonCommissionState = 'PRESENT' | 'MISSING' | 'NOT_APPLICABLE';
  * агентского вознаграждения не существует, поэтому такую строку нельзя считать неполной.
  */
 export function ozonCommissionState(row: OzonFactRow): OzonCommissionState {
+  // Структурная сигнатура без первичного документа не доказывает неприменимость.
+  if ((row.buyout_revenue_unproven_qty ?? 0) > 0) return 'MISSING';
   if ((row.commission_missing_qty ?? 0) > 0) return 'MISSING';
   if ((row.commission_not_applicable_qty ?? 0) > 0) return 'NOT_APPLICABLE';
   return 'PRESENT';
@@ -147,12 +163,15 @@ export interface OzonDayCell {
   shows?: number; clicks?: number; adin?: number;
   price?: number; spp?: number; comm?: number; log?: number; stock?: number; stor?: number;
   od?: number; cart?: number;
+  bloggers?: number; externalAds?: CellValue;
 }
 export interface OzonMonthTotals {
   orders: number; cancel: number; realized: number; revenue: number; cogs: number;
   comm: number; acq: number; acqComm: number; acqOther: number;
   logRepr: number; logUnrepr: number; otherFees: number; promo: number; other: number;
   ads: number; tax: number; storage: number; canonical: number;
+  /** База калькулятора; revenue выше не подменяется ценой заказа. */
+  calculatorRevenue: number;
 }
 export interface OzonMonthComposition {
   cells: Record<string, OzonDayCell | Record<string, never>>;
@@ -162,11 +181,48 @@ export interface OzonMonthComposition {
                  acquiringWithoutRevenue: number; skuPromotion: number; total: number }>;
   /** Ячейки, в которых стоит ОЦЕНКА, а не факт. Основание для пометки в листе. */
   provenance: CellProvenance[];
+  partialEconomics: Array<{ row: number; offerId: string; date: string }>;
   totals: OzonMonthTotals;
 }
 
 const r6 = (x: number) => Math.round(x * 1e6) / 1e6;
 const r8 = (x: number) => Math.round(x * 1e8) / 1e8;
+
+export function provenOrderReferencePrice(row: OzonFactRow | undefined, units: number): number | undefined {
+  const p = row?.order_reference_price;
+  return units > 0 && typeof p === 'number' && Number.isFinite(p) && p > 0
+    && row?.order_reference_qty === units && row.order_reference_covered_qty === units ? p : undefined;
+}
+
+/** В production query всегда version=1. Старые whole-day fixtures допустимы только
+ * при полной базе; частично признанная выручка структурного кандидата не делится на все qty.
+ */
+export function operationalPriceBasis(row: OzonFactRow | undefined, units: number): number | undefined {
+  if (!row || units <= 0) return undefined;
+  if (row.operational_basis_version !== undefined) {
+    const a = row.operational_actual_qty, p = row.operational_provisional_qty;
+    const actual = row.operational_actual_basis_rub, reference = row.operational_reference_basis_rub;
+    const total = row.operational_basis_rub;
+    return row.operational_basis_version === 1 && row.operational_expected_qty === units
+      && typeof a === 'number' && Number.isInteger(a) && a >= 0
+      && typeof p === 'number' && Number.isInteger(p) && p >= 0 && a + p === units
+      && row.operational_reference_covered_qty === p
+      && typeof actual === 'number' && Number.isFinite(actual) && actual >= 0
+      && typeof reference === 'number' && Number.isFinite(reference) && reference >= 0
+      && typeof total === 'number' && Number.isFinite(total) && total >= 0
+      && (p === 0 || reference > 0) && Math.abs(actual + reference - total) <= 1e-6 ? total : undefined;
+  }
+  const revenue = row.provisional_revenue_rub ?? row.revenue ?? 0;
+  if (revenue > 0) return (row.buyout_revenue_unproven_qty ?? 0) > 0 ? undefined : revenue;
+  const price = provenOrderReferencePrice(row, units);
+  return price !== undefined ? price * units : undefined;
+}
+
+/** Уже наблюдённые поля листа. Внешняя реклама сохраняется, её формула пока не восстановлена. */
+export interface OzonSheetInputs {
+  bloggers?: Readonly<Record<string, number>>;
+  externalAds?: Readonly<Record<string, CellValue>>;
+}
 
 /**
  * Раскладка месяца. `stockBy` — только ДОКАЗАННЫЕ снимки остатка (ключ `iso|offer_id`).
@@ -184,15 +240,17 @@ export function composeMonth(
   spec: OzonMonthSpec, facts: readonly OzonFactRow[],
   stockBy: Readonly<Record<string, number>> = {}, lcd: string | null = null,
   fromDay = 1, cartBy: Readonly<Record<string, number>> = {},
+  sheetInputs: OzonSheetInputs = {},
 ): OzonMonthComposition {
   const by = new Map(facts.map((r) => [`${r.d}|${r.offer_id}`, r]));
   const cells: OzonMonthComposition['cells'] = {};
   const cogs: Record<string, number> = {}; const other: Record<string, number> = {};
   const audit: OzonMonthComposition['audit'] = [];
   const provenance: CellProvenance[] = [];
+  const partialEconomics: OzonMonthComposition['partialEconomics'] = [];
   const T: OzonMonthTotals = { orders: 0, cancel: 0, realized: 0, revenue: 0, cogs: 0, comm: 0, acq: 0,
     acqComm: 0, acqOther: 0, logRepr: 0, logUnrepr: 0, otherFees: 0, other: 0, ads: 0, tax: 0,
-    storage: 0, promo: 0, canonical: 0 };
+    storage: 0, promo: 0, canonical: 0, calculatorRevenue: 0 };
   for (const ds of monthDates(spec)) {
     const day = Number(ds.slice(8, 10));
     const row = spec.firstRow + day - 1;
@@ -211,13 +269,14 @@ export function composeMonth(
       // же прогоне окна перезаписи, поэтому двойного счёта не возникает.
       const eq = rec?.expected_realized_qty ?? Math.max(0, orders - cancel);
       const rev = rec?.provisional_revenue_rub ?? n(rec?.revenue);
+      const basis = operationalPriceBasis(rec, eq);
       const acq = n(rec?.acquiring), log = n(rec?.logistics), oth = n(rec?.other_direct);
       const cg = rec?.provisional_cogs_rub ?? n(rec?.cogs_amt);
       const stor = n(rec?.storage), promo = n(rec?.promo);
       const hasAds = !!rec && rec.impr !== null && rec.impr !== undefined;
       const ads = hasAds ? n(rec?.ads_spend) : 0;
-      const acqC = rev ? acq : 0;          // эквайринг в комиссию только при выручке
-      const acqO = rev ? 0 : acq;          // иначе — в прочие прямые, ровно один раз
+      const acqC = basis !== undefined && basis > 0 ? acq : 0;
+      const acqO = acq - acqC;            // ровно один раз, на полной базе того же населения
       const logR = eq > 0 ? log : 0;
       const logU = eq > 0 ? 0 : log;
       // Продвижение с привязкой к SKU (отзывы, звёздные товары, бонусы) — прямой расход
@@ -226,10 +285,26 @@ export function composeMonth(
       const c: OzonDayCell = { orders, cancel };
       if (stor) c.stor = r6(stor);
       if (hasAds) { c.shows = n(rec?.impr); c.clicks = n(rec?.clicks); c.adin = r6(ads); }
+      if (eq > 0) {
+        const price = basis !== undefined ? basis / eq : undefined;
+        if (price !== undefined) {
+          c.price = r6(price);
+          T.calculatorRevenue += price * eq;
+          T.tax += MANAGEMENT_TAX_RESERVE_RATE * price * eq;
+          // Комиссия и эквайринг имеют ту же полную популяцию, что Price.
+          const commissionKnown = rec?.commission_state === 'ACTUAL' || rec?.commission_state === 'ESTIMATED'
+            || (rec?.commission_state === undefined && rev > 0)
+            || (ozonCommissionState(rec!) === 'NOT_APPLICABLE' && comm === 0);
+          if (basis !== undefined && basis > 0 && commissionKnown) c.comm = r8((comm + acqC) / basis);
+        }
+        // Расходы независимы от доказанности выручки.
+        if (rev > 0 || (rec?.logistics !== null && rec?.logistics !== undefined)) c.log = r6(logR / eq);
+        if (rev > 0 || ((rec?.provisional_cogs_rub ?? rec?.cogs_amt) !== null
+            && (rec?.provisional_cogs_rub ?? rec?.cogs_amt) !== undefined)) cogs[key] = r6(cg / eq);
+        if (ozonCommissionState(rec ?? { d: ds, offer_id: o, gross_qty: orders,
+          cancelled_qty: cancel, realized_qty: eq }) === 'NOT_APPLICABLE' && comm === 0) c.comm = 0;
+      }
       if (eq > 0 && rev) {
-        c.price = r6(rev / eq);
-        c.comm = r8((comm + acqC) / rev);
-        c.log = r6(logR / eq);
         // СПП и цена покупателя существуют ТОЛЬКО в финансовом начислении, то есть после
         // доставки (2003 строки из 2003). Для единицы в пути их не существует, и выводить
         // их нечем. Пустая ячейка честнее выдуманной скидки; известную цену продавца
@@ -237,18 +312,22 @@ export function composeMonth(
         if (rec?.buyer_amt !== null && rec?.buyer_amt !== undefined && rec?.seller_amt) {
           c.spp = r6((1 - rec.buyer_amt / rec.seller_amt) * 100);
         }
-        cogs[key] = r6(cg / eq);
-        T.tax += MANAGEMENT_TAX_RESERVE_RATE * rev;   // база — цена продавца
+      }
+      if ((rec?.buyout_revenue_unproven_qty ?? 0) > 0 || rec?.economics_completeness === 'PROVISIONAL_PARTIAL') {
+        partialEconomics.push({ row, offerId: o, date: ds });
       }
       // Gate 9: единицы в пути НЕ исключаются из экономики — терм `в пути` больше не нужен
       const st = stockBy[`${ds}|${o}`];
       if (st !== undefined) c.stock = st;             // только доказанный снимок
       const ct = cartBy[`${ds}|${o}`];
       if (ct !== undefined) c.cart = ct;              // наблюдение листа, а не выдуманный ноль
+      const inputKey = `${ds}|${o}`;
+      if (sheetInputs.bloggers?.[inputKey] !== undefined) c.bloggers = sheetInputs.bloggers[inputKey];
+      if (sheetInputs.externalAds?.[inputKey] !== undefined) c.externalAds = sheetInputs.externalAds[inputKey];
       if (od) c.od = r6(od);                          // прочие прямые — теперь видимая колонка
       // Gate 8: где в ячейке стоит ОЦЕНКА, там об этом остаётся запись. Молча подменить
       // факт оценкой нельзя — провенанс переезжает в лист пометкой на ячейке.
-      if (eq > 0 && rev) {
+      if (eq > 0) {
         const cEst = n(rec?.commission_estimated_rub), lEst = n(rec?.logistics_estimated_rub);
         if (cEst) provenance.push({ date: ds, offerId: o, row, component: 'COMMISSION',
           state: 'ESTIMATED', method: rec?.commission_estimate_method ?? null,
@@ -269,9 +348,9 @@ export function composeMonth(
       T.ads += ads; T.storage += stor;
     }
   }
-  T.canonical = T.revenue - T.cogs - (T.comm + T.acqComm) - T.logRepr - T.storage - T.other - T.ads - T.tax;
+  T.canonical = T.calculatorRevenue - T.cogs - (T.comm + T.acqComm) - T.logRepr - T.storage - T.other - T.ads - T.tax;
   if (Math.abs(T.acqComm + T.acqOther - T.acq) > 1e-6) throw new Error('эквайринг посчитан не один раз');
-  return { cells, cogs, other, audit, provenance, totals: T };
+  return { cells, cogs, other, audit, provenance, partialEconomics, totals: T };
 }
 
 export type CellValue = string | number | null;
@@ -282,13 +361,14 @@ export function buildGrid(
   formulas: { day: Record<string, string>; mtd: Record<string, string>; mtdBlank: readonly string[] },
 ): CellValue[][] {
   const g: CellValue[][] = Array.from({ length: spec.days + 1 }, () => Array(spec.ncols).fill(''));
-  const KEYS = ['orders', 'cancel', 'shows', 'clicks', 'adin', 'price', 'spp', 'comm', 'log', 'stock', 'stor', 'od', 'cart'] as const;
+  const KEYS = ['orders', 'cancel', 'shows', 'clicks', 'adin', 'price', 'spp', 'comm', 'log', 'stock', 'stor', 'od', 'cart', 'bloggers', 'externalAds'] as const;
   const OFF: Record<(typeof KEYS)[number], number> = {
     orders: ROLE_OFFSET.ORDERS, cancel: ROLE_OFFSET.CANCELLATIONS, shows: ROLE_OFFSET.IMPRESSIONS,
     clicks: ROLE_OFFSET.CLICKS, adin: ROLE_OFFSET.INTERNAL_ADS, price: ROLE_OFFSET.SELLER_PRICE,
     spp: ROLE_OFFSET.DISCOUNT, comm: ROLE_OFFSET.COMMISSION, log: ROLE_OFFSET.LOGISTICS,
     stock: ROLE_OFFSET.STOCK, stor: ROLE_OFFSET.STORAGE,
     od: ROLE_OFFSET.OTHER_DIRECT, cart: ROLE_OFFSET.CART,
+    bloggers: ROLE_OFFSET.MANUAL_EXTERNAL, externalAds: ROLE_OFFSET.EXTERNAL_ADS,
   };
   for (const ds of monthDates(spec)) {
     const day = Number(ds.slice(8, 10)); const i = day - 1; const row = spec.firstRow + i;
@@ -298,7 +378,7 @@ export function buildGrid(
       const b = spec.anchor[o] as number; const c = cells[`${o}|${row}`] as OzonDayCell;
       gi[b - 1 + ROLE_OFFSET.DATE] = serialOf(ds);
       gi[b - 1 + ROLE_OFFSET.WEEKDAY] = weekdayRu(ds);
-      for (const k of KEYS) { const v = (c as unknown as Record<string, number>)[k]; if (v !== undefined) gi[b - 1 + OFF[k]] = v; }
+      for (const k of KEYS) { const v = (c as unknown as Record<string, CellValue>)[k]; if (v !== undefined) gi[b - 1 + OFF[k]] = v; }
     }
   }
   for (const [k, v] of Object.entries(formulas.day)) {

@@ -397,7 +397,7 @@ describe('OZON adapter — Gate 5V: контракт представления'
   });
   it('поля ручного ввода отличимы от расчётных и от фактов', () => {
     expect(OZON_ROLE_CLASS.MANUAL_EXTERNAL).toBe('MANUAL');
-    expect(OZON_ROLE_CLASS.EXTERNAL_ADS).toBe('MANUAL');
+    expect(OZON_ROLE_CLASS.EXTERNAL_ADS).toBe('CALC');
     expect(OZON_ROLE_CLASS.ORDERS).toBe('FACT');
     expect(OZON_ROLE_CLASS.TOTAL_PROFIT).toBe('CALC');
   });
@@ -1105,12 +1105,14 @@ describe('контракт полноты Ozon (Gate 5K)', () => {
   });
 
   it('Юнитка не знает про Беларусь: никакой географии в контракте фактов', () => {
-    // Тип операции — свойство витрины, а не листа. Если география просочится в загрузчик,
-    // выкуп перестанет быть обычной строкой суток x SKU (Gate 5K, §10 и §14).
+    // География/payout не определяют модель листа (Gate 5K, §10 и §14).
+    // Первичный документ выкупа нужен только для исключающей posting-базы цены.
     const sql = ozonMonthFactsSql({ project: 'p', from: '2026-08-01', to: '2026-08-31' });
-    for (const w of ['city', 'Беларус', 'Belarus', 'CIS_BUYOUT', 'payout_rub']) {
+    for (const w of ['city', 'Беларус', 'Belarus', 'payout_rub']) {
       expect(sql).not.toContain(w);
     }
+    expect(sql).toContain('ozon_mart.V_OZON_CIS_BUYOUT');
+    expect(sql).toContain("p.status='delivered' AND b.posting_number IS NOT NULL");
   });
 });
 

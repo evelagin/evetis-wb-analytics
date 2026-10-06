@@ -32,6 +32,7 @@ import { ozonMonthFactsSql, ozonProvenStockSql, normalizeBqRow } from './bq.js';
 import { ozonMonthSpec, composeMonth, type OzonFactRow, type CellValue } from './month.js';
 import type { CellValue as SheetCell } from '../model.js';
 import { buildOzonPlan, sectionFormulas, OZON_WRITE_PHASES } from './monthplan.js';
+import { ozonSourceCompletenessIssues, ozonWrittenReader, verifyOzonModel } from './model_qa.js';
 import { layoutOf, columnName, type SectionLayout } from './requests.js';
 import {
   ozonRewriteWindow, ozonDeepWindow, ozonWindowMonths, ozonFromDayFor, isDeepReconciliationDay,
@@ -80,12 +81,14 @@ const isoOfSerial = (n: number): string =>
 export function parseLiveLayout(
   grid: readonly (readonly SheetCell[])[], tailFirstColumn: number,
   canonicalOffer: (token: string) => string | null,
-): { sections: LiveSection[]; cart: Record<string, number> } {
+): { sections: LiveSection[]; cart: Record<string, number>;
+     bloggers: Record<string, number>; externalAds: Record<string, CellValue> } {
   const { BLOCK_FIRST_COLUMN: BF, BLOCK_WIDTH: W } = OZON_GEOMETRY;
   const at = (r: number, c: number): SheetCell => {
     const row = grid[r - 1] ?? []; return (row[c - 1] ?? '') as SheetCell;
   };
   const sections: LiveSection[] = []; const cart: Record<string, number> = {};
+  const bloggers: Record<string, number> = {}; const externalAds: Record<string, CellValue> = {};
   for (let r = 1; r <= grid.length; r++) {
     if (String(at(r, BF)).trim() !== 'Дата') continue;
     const titleRow = r - 1; const slots: Array<string | null> = [];
@@ -112,10 +115,14 @@ export function parseLiveLayout(
         if (!off) return;
         const v = at(row, BF + W * b + 5);
         if (typeof v === 'number') cart[`${iso}|${off}`] = v;
+        const bq = at(row, BF + W * b + 1);
+        if (typeof bq === 'number' && Number.isFinite(bq) && bq >= 0 && Number.isInteger(bq)) bloggers[`${iso}|${off}`] = bq;
+        const ext = at(row, BF + W * b + 12);
+        if (typeof ext === 'number' || (typeof ext === 'string' && ext !== '')) externalAds[`${iso}|${off}`] = ext;
       });
     }
   }
-  return { sections, cart };
+  return { sections, cart, bloggers, externalAds };
 }
 
 /**
@@ -243,7 +250,7 @@ export async function ozonUnitkaLoader(
   const alias = ctx.config.ozonUnitkaOfferAliases;
   const canonicalOffer = (t: string): string | null =>
     canonSet.has(t) ? t : (alias[t] ?? null);
-  let { sections: live, cart } = parseLiveLayout(grid as SheetCell[][], geo.tailFirst, canonicalOffer);
+  let { sections: live, cart, bloggers, externalAds } = parseLiveLayout(grid as SheetCell[][], geo.tailFirst, canonicalOffer);
   if (!live.length) throw new LoaderError('секций месяца в листе не найдено', 'OZON_UNITKA_LAYOUT');
 
   // ── барьер готовности: источники обязаны быть свежими ДО любой записи ────────────────
@@ -261,6 +268,8 @@ export async function ozonUnitkaLoader(
 
   const facts = await bq.query<OzonFactRow>(
     ozonMonthFactsSql({ project: ctx.config.projectId, from: w.from, to: w.to }));
+  const sourceIssues = ozonSourceCompletenessIssues(facts);
+  if (sourceIssues.length) throw new LoaderError(JSON.stringify(sourceIssues.slice(0, 5)), 'OZON_MODEL_QA_FAILED');
   const stockRows = await bq.query<{ d: string; offer_id: string; units: number }>(
     ozonProvenStockSql({ project: ctx.config.projectId, from: w.from, to: w.to }));
   const stock: Record<string, number> = {};
@@ -286,7 +295,7 @@ export async function ozonUnitkaLoader(
     }
     const ex = await expandOzonCapacity({ sheets, sheetName: name, meta, geometry: geo, blocksNeeded: e.needed, log, envTailFirst: ctx.config.ozonUnitkaTailFirstColumn });
     meta = ex.meta; grid = ex.grid; geo = ex.geometry;                 // дальше — ТОЛЬКО новая геометрия
-    ({ sections: live, cart } = parseLiveLayout(grid as SheetCell[][], geo.tailFirst, canonicalOffer));
+    ({ sections: live, cart, bloggers, externalAds } = parseLiveLayout(grid as SheetCell[][], geo.tailFirst, canonicalOffer));
     plans = planSections(geo.physicalSlots);
   }
   const created = plans.filter((p) => p.isNew);
@@ -323,8 +332,9 @@ export async function ozonUnitkaLoader(
     const first = `${p.monthKey}-01`;
     const last = `${p.monthKey}-${String(monthDays(p.monthKey)).padStart(2, '0')}`;
     const inSection = facts.filter((f) => f.d >= first && f.d <= last);
-    const comp = composeMonth(spec, inSection, stock, lcd, from, cart);
-    return { spec, facts: inSection, stock, formulas: sectionFormulas(spec, comp, 'SEMICOLON', authority.lcdName),
+    const sheetInputs = { bloggers, externalAds };
+    const comp = composeMonth(spec, inSection, stock, lcd, from, cart, sheetInputs);
+    return { spec, facts: inSection, stock, cart, sheetInputs, formulas: sectionFormulas(spec, comp, 'SEMICOLON', authority.lcdName),
              refTitle, refHeader, refAnchor, fromDay: from,
              estimated: comp.provenance.length };
   });
@@ -369,6 +379,8 @@ export async function ozonUnitkaLoader(
   });
 
   const cells = plan.values.reduce((n, v) => n + v.values.reduce((m, r) => m + r.length, 0), 0);
+  const modelIssues = verifyOzonModel({ sections: built, lcd, read: ozonWrittenReader(plan.values), mode: 'PLAN' });
+  if (modelIssues.length) throw new LoaderError(JSON.stringify(modelIssues.slice(0, 5)), 'OZON_MODEL_QA_FAILED');
   const requests = plan.structure.length + plan.presentation.length + plan.conditional.length;
   const estimatedRows = built.reduce((n, b) => n + b.estimated, 0);
   ctx.logger.info('ozon-unitka: план собран', {
@@ -416,7 +428,8 @@ export async function ozonUnitkaLoader(
       throw new LoaderError(`OZON_LAST_CLOSED_DATE в книге ${now ?? '(пусто)'} ≠ ожидаемому ${cycle.committed}: изменён во время записи — не перетираем`, 'LCD_COMMIT_CONFLICT');
     }
   }
-  const pre = await readbackAndVerify({ sheets, sheetName: name, written, sections: verifySections, tailFirst: geo.tailFirst, summaryUpTo: committedLcd });
+  const pre = await readbackAndVerify({ sheets, sheetName: name, written, sections: verifySections, tailFirst: geo.tailFirst, summaryUpTo: committedLcd,
+    model: { sections: built, lcd } });
   ctx.logger.info('ozon-unitka: проверка', { phase: 'PRE_COMMIT', checks: pre.map((c) => `${c.name}:${c.pass ? 'PASS' : `FAIL(${c.count})`}`) });
   const preFailed = pre.filter((c) => !c.pass);
   if (preFailed.length) {
@@ -433,7 +446,8 @@ export async function ozonUnitkaLoader(
       throw new LoaderError(commit.message, commit.code);
     }
     if (commit.code === 'LCD_COMMITTED') {
-      const post = await readbackAndVerify({ sheets, sheetName: name, written, sections: verifySections, tailFirst: geo.tailFirst, summaryUpTo: cycle.candidate });
+      const post = await readbackAndVerify({ sheets, sheetName: name, written, sections: verifySections, tailFirst: geo.tailFirst, summaryUpTo: cycle.candidate,
+        model: { sections: built, lcd } });
       const mirror = meta.namedRanges?.OZON_LCD_MIRROR;
       if (mirror) {
         const [mv] = await sheets.readValues([`${q}!${columnName(mirror.col)}${mirror.row}`]);

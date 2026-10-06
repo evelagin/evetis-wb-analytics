@@ -8674,7 +8674,7 @@
       "object_name": "V_OZON_SKU_PNL_DAILY_OPERATIONAL",
       "object_type": "VIEW",
       "canonical_path": "sql/current/ozon_mart/V_OZON_SKU_PNL_DAILY_OPERATIONAL.sql",
-      "sync_state": "captured_live",
+      "sync_state": "pending_deploy",
       "dependencies": [
         "FCT_OZON_SKU_PNL_DAILY",
         "V_OZON_CIS_BUYOUT",
@@ -9001,10 +9001,10 @@
           "ordinal_position": 50
         }
       ],
-      "canonical_body_sha256": "4f91e13074915b28933c8d7867c2d7a5373f7f54100774d2ffecd7d8f5d3f38f",
-      "canonical_description_sha256": "1f54d14655eb39a85b18a92487d68c2a97e9e8768de0cbabb7a9b813653d3191",
+      "canonical_body_sha256": "bd10f0253a489c95516f9a4b36049298fc7555418af4ae0f2f46d0d662abbe41",
+      "canonical_description_sha256": "2e1587bd4cf33a20fe3728bba8a8df7f6bfde6be546d5bb2feb16bb9dea65706",
       "canonical_schema_sha256": "6033f5ddf010233b77506cae51bc410134f5f90609fa8d9745d7c9ce36087323",
-      "canonical_schema_verification": "bigquery_verified",
+      "canonical_schema_verification": "unverified",
       "canonical_column_count": 50,
       "canonical_schema": [
         {
