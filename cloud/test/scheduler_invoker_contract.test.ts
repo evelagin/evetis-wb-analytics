@@ -130,13 +130,22 @@ describe('провал ВЫЗОВА по расписанию наблюдаем
    * только по коду LoaderError.
    */
   it('падение loader’а не ловится по jsonPayload.message — это поле затирается ctx', () => {
-    const loaderPolicies = policies.filter((x) => /resource\.type="cloud_run_job"/.test(x.text));
+    const jobPolicies = policies.filter((x) => /resource\.type="cloud_run_job"/.test(x.text));
+    // Политика отказа платформы слушает системное событие аудита Cloud Run, а не журнал приложения.
+    const isSystemEvent = (t: string) => /cloudaudit\.googleapis\.com%2Fsystem_event/.test(t);
+    const loaderPolicies = jobPolicies.filter((x) => !isSystemEvent(x.text));
     expect(loaderPolicies.length).toBeGreaterThanOrEqual(2);
-    for (const p of loaderPolicies) {
+    for (const p of jobPolicies) {
       expect(p.text, `${p.file}: ${p.label} снова ловит по message — фильтр не совпадёт никогда`)
         .not.toMatch(/jsonPayload\.message\s*=\s*"loader_failed"/);
+    }
+    for (const p of loaderPolicies) {
       expect(p.text, `${p.file}: ${p.label} должен ловить по коду LoaderError`)
         .toMatch(/jsonPayload\.code!=""/);
+    }
+    for (const p of jobPolicies.filter((x) => isSystemEvent(x.text))) {
+      expect(p.text, `${p.file}: ${p.label} — только неуспешное исполнение`).toMatch(/protoPayload\.methodName="\/Jobs\.RunJob"/);
+      expect(p.text).toMatch(/severity>=ERROR/);
     }
   });
 
