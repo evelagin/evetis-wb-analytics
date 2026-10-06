@@ -53,3 +53,11 @@ def test_terraform_permissions_file_is_generated_canonical_projection():
     from tools.tenancy import registry as R
     got=json.loads((R.REPO/'infra/tenant/backfill-permissions.json').read_text())
     assert got=={k:list(v) for k,v in I.ROLE_PERMISSIONS.items()}
+
+
+def test_identity_matrix_is_stable_after_sorted_json_serialization():
+    import json
+    from tools.tenancy import registry as R
+    c=R.terraform_inputs('client_001')
+    reordered=json.loads(json.dumps(c,sort_keys=True))
+    assert I.matrix_for_contract(c)==I.matrix_for_contract(reordered)

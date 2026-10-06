@@ -43,7 +43,7 @@ def matrix_for_contract(c):
         add(principal,role(r),f"projects/{p}/datasets/{c['datasets']['tenant_locks']}",ROLE_PERMISSIONS[r])
     for r in ('backfillQuery','backfillInventoryRead'):
         add(controller,role(r),f'projects/{p}',ROLE_PERMISSIONS[r])
-    for name in c['marketplaces']['ozon']['jobs']:
+    for name in sorted(c['marketplaces']['ozon']['jobs']):
         add(controller,role('backfillRuntimeExecute'),base+'/jobs/'+name,ROLE_PERMISSIONS['backfillRuntimeExecute'])
     for table in ('BACKFILL_CHECKPOINTS','DATA_COVERAGE','DQ_RESULTS'):
         add(writer,role('backfillAppend'),f"projects/{p}/datasets/{c['datasets']['tenant_ops']}/tables/{table}",ROLE_PERMISSIONS['backfillAppend'])

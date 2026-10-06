@@ -170,3 +170,31 @@ label is «Дополнительная упаковка на складе Ozon�
 this alone does not block RAW traversal. Snapshot-only domains must not acquire
 fictional historic coverage. Historical trial data is preserved; this task is
 not trial cleanup, Seller policy redesign or identity/binding migration.
+
+## Release evidence and opt-in hardening (2026-10-06)
+
+Source 7738385b84f6ebf81069a93e2dd0db6d1cbae449 passed ci 37450422629 and
+sql-current 37450422785 (2630 passed, 1 skipped; C1-C18). Cloud Build
+77a4d32b-d380-47f1-a3e4-45702e209e52 used the existing dedicated builder and
+published controller digest 55cdffd503f9a2a8e962445cc9b8af029355f40cc71ff7ddee43a4916e27902f.
+Packaged network-disabled checks passed on Python 3.12.15. This artifact is not
+a deployed controller or proof of effective IAM/unattended continuation.
+
+Preparing an actual PAUSED opt-in exposed a deterministic serialization defect:
+Job-map insertion order changed the exact IAM matrix list after sorted JSON
+rendering. Runtime invocation rows now use sorted Job names. A qualified
+contract and full plan JSON round-trip regression retains all strict scanner
+guards. Permission/resource membership is unchanged. Because this changes the
+controller implementation hash, the above image must not be used for this
+updated implementation without a new exact-image build/qualification. The
+existing 7738385 release record describes its actual historical artifact; its
+hash and verification must never be rewritten to pretend it contains this fix.
+
+Generic H2 synthetic fixtures omit individual frozen orchestration rollout
+roots. In particular client_001's root is never cloned into client_002. Dedicated
+opt-in fixtures still exercise the complete closed IAM/Job/Scheduler contract.
+Credential scanning exempts only public facts of the independently verified
+closed orchestration projection; API keys/tokens/payloads remain forbidden.
+Missing-runtime qualification still fails before Terraform through the sole
+canonical registry exporter. No actual tenant opt-in is registered by this
+hardening candidate; deployment remains gated by reviewed qualification.

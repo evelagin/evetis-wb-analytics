@@ -72,3 +72,11 @@ def test_backfill_expansion_or_bypass_stops_plan(qualified,fault):
     if fault=='delete':next(r for r in p['resource_changes'] if r['type']=='google_service_account_iam_member')['change']['actions']=['delete','create']
     if fault=='forged_contract':c['orchestration']['roles']['backfillRead'].append('bigquery.tables.delete')
     assert P.scan_plan(p,c)
+
+
+def test_qualified_plan_survives_canonical_json_roundtrip(qualified):
+    c,plan=qualified
+    restored=json.loads(json.dumps(c,sort_keys=True))
+    shown=json.loads(json.dumps(plan,sort_keys=True))
+    assert P.BP.verified(restored)==c['orchestration']
+    assert P.scan_plan(shown,restored)==[]
