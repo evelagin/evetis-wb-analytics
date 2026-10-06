@@ -68,13 +68,25 @@
 -- (45 суток) длиннее максимального наблюдённого срока пребывания в пути (32 суток).
 -- Провизорный вклад отменённой единицы исчезает при следующем же прогоне.
 --
+-- ФИНАНСЫ СТАРШЕ ЗАСТРЯВШЕГО СТАТУСА (2026-10-06, дефект 20.08 / 930334396 / 77152971-0050-1).
+-- Отчёт по отправлениям перечитывается только 30 суток, и статус единицы может навсегда
+-- застрять на «delivering», хотя финансовое начисление (seller_base + комиссия) уже пришло.
+-- Факт считает реализацией только delivered, а оценка выключается при n_base > 0 — единица
+-- выпадала из обеих частей, и комиссия молча становилась нулём (+655,81 ₽ к прибыли).
+-- Правило: недоставленная, неотменённая MARKETPLACE_SALE с seller-base начислением — это
+-- КОНФЛИКТ ЖИЗНЕННОГО ЦИКЛА. Её комиссия берётся из начисления (как в факте, -commission),
+-- в оценку она не входит, строка остаётся провизорной, пока статус не догонит финансы.
+-- Разбиение единиц по комиссии полное по построению: факт | конфликт | оценка | выкуп.
+-- commission_unaccounted_qty считает реальные дыры (конфликт с NULL-комиссией, статус NULL) и
+-- делает состояние UNKNOWN, а строку — не ACTUAL и не PROVISIONAL_COMPLETE, а не нулём.
+--
 -- ФАКТ НЕ ТРОНУТ: `seller_base_revenue_rub` и `realized_qty` остаются выручкой и
 -- количеством ДОСТАВЛЕННЫХ единиц. Провизорная часть лежит в своих колонках.
 -- Internal dependencies: FCT_OZON_SKU_PNL_DAILY, V_OZON_CIS_BUYOUT, V_OZON_COMMISSION_POLICY,
 -- V_OZON_LOGISTICS_ESTIMATOR. External: evetis_ref.V_PRODUCT_COGS_EFFECTIVE.
 -- ============================================================================
 CREATE OR REPLACE VIEW `project-fa311fc0-4d87-4781-986.ozon_mart.V_OZON_SKU_PNL_DAILY_OPERATIONAL`
-OPTIONS (description = "Операционная (провизорная) экономика Ozon, зерно = сутки x internal_sku. Надстройка над FCT_OZON_SKU_PNL_DAILY: денежные поля факта проходят насквозь неизменными, полнота комиссии уточняется по первичному buyout evidence, оценки лежат в отдельных колонках, факт и оценка раздельно аудируемы. Покомпонентное старшинство: ACTUAL > ESTIMATED > NOT_APPLICABLE > UNKNOWN; ноль не ставится только потому, что Ozon ещё не прислал расход. Комиссия оценивается как (price_rub - payout_rub) x quantity из отчёта по отправлениям - тождество проверено на 600 отправлениях из 600 с расхождением 0,00 руб.; резерв - тариф из V_OZON_COMMISSION_POLICY; у документированных выкупов СНГ комиссия NOT_APPLICABLE; структурные кандидаты без документа используют датированный тариф и остаются PROVISIONAL_PARTIAL. Логистика оценивается V_OZON_LOGISTICS_ESTIMATOR (SKU_P70_120D, выбран бэктестом). Хранение, прочие прямые, продвижение и реклама - только факт, оценщика не имеют. Период считается созревшим через 36 суток - максимальный наблюдённый срок видимости начисления. Gate 9: операционная экономика считается на ОЖИДАЕМО реализованных единицах (заказано - отменено), а не только на доставленных: единица в пути приносит свою провизорную экономику (цена продавца из отправления, комиссия по тарифу, логистика по оценщику). Цена покупателя и СПП до доставки не выводятся - они существуют только в финансовом начислении. Факт не тронут: seller_base_revenue_rub и realized_qty остаются величинами доставленных единиц.")
+OPTIONS (description = "Операционная (провизорная) экономика Ozon, зерно = сутки x internal_sku. Надстройка над FCT_OZON_SKU_PNL_DAILY: денежные поля факта проходят насквозь неизменными, полнота комиссии уточняется по первичному buyout evidence, оценки лежат в отдельных колонках, факт и оценка раздельно аудируемы. Покомпонентное старшинство: ACTUAL > ESTIMATED > NOT_APPLICABLE > UNKNOWN; ноль не ставится только потому, что Ozon ещё не прислал расход. Комиссия оценивается как (price_rub - payout_rub) x quantity из отчёта по отправлениям - тождество проверено на 600 отправлениях из 600 с расхождением 0,00 руб.; резерв - тариф из V_OZON_COMMISSION_POLICY; у документированных выкупов СНГ комиссия NOT_APPLICABLE; структурные кандидаты без документа используют датированный тариф и остаются PROVISIONAL_PARTIAL. Логистика оценивается V_OZON_LOGISTICS_ESTIMATOR (SKU_P70_120D, выбран бэктестом). Хранение, прочие прямые, продвижение и реклама - только факт, оценщика не имеют. Период считается созревшим через 36 суток - максимальный наблюдённый срок видимости начисления. Gate 9: операционная экономика считается на ОЖИДАЕМО реализованных единицах (заказано - отменено), а не только на доставленных: единица в пути приносит свою провизорную экономику (цена продавца из отправления, комиссия по тарифу, логистика по оценщику). Цена покупателя и СПП до доставки не выводятся - они существуют только в финансовом начислении. Факт не тронут: seller_base_revenue_rub и realized_qty остаются величинами доставленных единиц. Финансы старше застрявшего статуса: недоставленная неотменённая продажа с seller-base начислением - конфликт жизненного цикла, её комиссия берётся из начисления (lifecycle_conflict_commission_rub), строка остаётся провизорной; неучтённая единица (commission_unaccounted_qty > 0) делает комиссию UNKNOWN, а не нулём.")
 AS
 WITH map AS (
   SELECT DISTINCT internal_sku, marketplace_sku
@@ -88,7 +100,10 @@ post AS (
 acc AS (
   SELECT posting_number, sku,
          COUNTIF(seller_base_price_rub IS NOT NULL) n_base,
-         COUNTIF(type_id IN (32, 29, 28, 98, 30, 59, 45, 78, 9)) n_log
+         COUNTIF(type_id IN (32, 29, 28, 98, 30, 59, 45, 78, 9)) n_log,
+         -- та же агрегация, что fin_econ в FCT: только строки с seller_base
+         SUM(IF(seller_base_price_rub IS NOT NULL, seller_base_price_rub, NULL)) fin_sp,
+         SUM(IF(seller_base_price_rub IS NOT NULL, commission_rub, NULL)) fin_comm
   FROM `project-fa311fc0-4d87-4781-986.ozon_raw.RAW_OZON_FINANCE_ACCRUAL`
   GROUP BY 1, 2),
 -- Уточнение для операционной комиссии: документированный выкуп и структурный кандидат
@@ -97,7 +112,7 @@ cogs AS (
   SELECT internal_sku, effective_from, COALESCE(effective_to, DATE '9999-12-31') et, product_cogs_rub u
   FROM `project-fa311fc0-4d87-4781-986.evetis_ref.V_PRODUCT_COGS_EFFECTIVE`),
 cls AS (
-  SELECT p.*, IFNULL(a.n_base, 0) n_base, IFNULL(a.n_log, 0) n_log,
+  SELECT p.*, IFNULL(a.n_base, 0) n_base, IFNULL(a.n_log, 0) n_log, a.fin_sp, a.fin_comm,
     CASE WHEN b.posting_number IS NOT NULL THEN 'CIS_BUYOUT'
          WHEN p.status = 'delivered' AND IFNULL(a.n_base, 0) = 0
               AND IFNULL(p.payout_rub, NUMERIC '0') = 0 THEN 'CIS_BUYOUT_CANDIDATE'
@@ -113,7 +128,21 @@ gap AS (
     SUM(IF(c.status <> 'delivered', c.quantity, 0)) in_transit_qty_src,
     -- выручка единиц в пути по цене отправления: seller_base_price появится только
     -- в начислении, но price_rub ей тождественно равен (2002 строки из 2003)
-    SUM(IF(c.status <> 'delivered', c.price_rub * c.quantity, NUMERIC '0')) in_transit_revenue_rub,
+    -- конфликт цикла: seller_base из начисления, как в факте (IFNULL(sp, price_rub))
+    SUM(IF(c.status <> 'delivered',
+           IF(c.op_type = 'MARKETPLACE_SALE' AND c.n_base > 0, IFNULL(c.fin_sp, c.price_rub), c.price_rub)
+             * c.quantity, NUMERIC '0')) in_transit_revenue_rub,
+    SUM(IF(c.status <> 'delivered' AND c.op_type = 'MARKETPLACE_SALE' AND c.n_base > 0,
+           c.quantity, 0)) lifecycle_conflict_qty,
+    SUM(IF(c.status <> 'delivered' AND c.op_type = 'MARKETPLACE_SALE' AND c.n_base > 0,
+           IFNULL(-c.fin_comm, NUMERIC '0'), NUMERIC '0')) lifecycle_conflict_commission_rub,
+    -- страж «UNKNOWN не становится нулём» — реальные дыры, а не тавтология разбиения:
+    -- (1) конфликт цикла, у которого seller-base есть, а комиссия в начислении NULL;
+    -- (2) отправление с неизвестным статусом (NULL): факт считает его в gross_qty, а ни одна
+    --     ветка комиссии его не покрывает.
+    SUM(IF(c.status IS NULL
+           OR (c.status <> 'delivered' AND c.op_type = 'MARKETPLACE_SALE' AND c.n_base > 0 AND c.fin_comm IS NULL),
+           c.quantity, 0)) commission_unaccounted_qty,
     SUM(IF(c.op_type IN ('MARKETPLACE_SALE', 'CIS_BUYOUT_CANDIDATE') AND c.n_base = 0, c.quantity, 0)) commission_gap_qty,
     -- «цена − выплата» применима ТОЛЬКО там, где выплата уже известна, то есть у доставленных
     SUM(IF(c.op_type = 'MARKETPLACE_SALE' AND c.n_base = 0 AND IFNULL(c.payout_rub, NUMERIC '0') > 0,
@@ -130,7 +159,7 @@ gap AS (
     SUM(IF(c.status <> 'delivered' AND k.u IS NULL, c.quantity, 0)) in_transit_cogs_missing_qty
   FROM cls c
   LEFT JOIN cogs k ON k.internal_sku = c.internal_sku AND c.order_date BETWEEN k.effective_from AND k.et
-  WHERE c.status <> 'cancelled'
+  WHERE c.status IS NULL OR c.status <> 'cancelled'
   GROUP BY 1, 2),
 pol AS (
   SELECT internal_sku, effective_from, effective_to, commission_rate
@@ -142,6 +171,9 @@ j AS (
   SELECT f.*,
     IFNULL(g.commission_gap_qty, 0) commission_gap_qty,
     IFNULL(g.logistics_gap_qty, 0) logistics_gap_qty,
+    IFNULL(g.lifecycle_conflict_qty, 0) lifecycle_conflict_qty,
+    IFNULL(g.lifecycle_conflict_commission_rub, NUMERIC '0') lifecycle_conflict_commission_rub,
+    IFNULL(g.commission_unaccounted_qty, 0) commission_unaccounted_qty,
     -- выплата известна в момент отправления: комиссия = цена - выплата, точно
     IFNULL(g.commission_gap_payout_rub, NUMERIC '0') gap_payout_rub,
     IFNULL(g.commission_gap_payout_qty, 0) gap_payout_qty,
@@ -196,12 +228,13 @@ SELECT
   r.log_per_unit logistics_estimated_per_unit_rub,
   r.policy_rate commission_policy_rate,
   -- ── ЭФФЕКТИВНАЯ ВЕЛИЧИНА И СОСТОЯНИЕ ──────────────────────────────────────────────────
-  r.commission_rub + r.commission_estimated_rub commission_effective_rub,
+  r.commission_rub + r.commission_estimated_rub + r.lifecycle_conflict_commission_rub commission_effective_rub,
   -- база состояния — ОЖИДАЕМАЯ реализация: у единицы в пути комиссия не «неприменима»,
   -- она просто ещё не начислена, и оценка для неё существует
   CASE WHEN r.gross_qty - r.cancelled_qty = 0 THEN 'NOT_APPLICABLE'
+       WHEN r.commission_unaccounted_qty > 0 THEN 'UNKNOWN'
        WHEN r.commission_not_applicable_qty = r.realized_qty AND r.realized_qty > 0
-            AND r.commission_gap_qty = 0 THEN 'NOT_APPLICABLE'
+            AND r.commission_gap_qty = 0 AND r.lifecycle_conflict_qty = 0 THEN 'NOT_APPLICABLE'
        WHEN r.commission_gap_qty = 0 THEN 'ACTUAL'
        WHEN r.commission_estimate_method IS NOT NULL THEN 'ESTIMATED'
        ELSE 'UNKNOWN' END commission_state,
@@ -225,8 +258,10 @@ SELECT
     WHEN r.buyout_revenue_unproven_qty > 0
          OR r.cogs_missing_qty + r.in_transit_cogs_missing_qty > 0 THEN 'PROVISIONAL_PARTIAL'
     -- Документированный buyout не делает оставшиеся in-transit единицы фактическими.
-    WHEN r.in_transit_qty = 0 AND r.commission_gap_qty = 0 AND r.logistics_gap_qty = 0 THEN 'ACTUAL'
+    WHEN r.in_transit_qty = 0 AND r.lifecycle_conflict_qty = 0 AND r.commission_unaccounted_qty = 0
+         AND r.commission_gap_qty = 0 AND r.logistics_gap_qty = 0 THEN 'ACTUAL'
     WHEN (r.seller_base_revenue_rub + r.in_transit_revenue_rub) > 0
+         AND r.commission_unaccounted_qty = 0
          AND (r.commission_gap_qty = 0 OR r.commission_estimate_method IS NOT NULL)
          AND (r.logistics_gap_qty = 0 OR r.log_per_unit > 0)
          AND r.cogs_missing_qty + r.in_transit_cogs_missing_qty = 0
@@ -236,17 +271,19 @@ SELECT
   -- ── ОПЕРАЦИОННЫЙ РЕЗУЛЬТАТ: тот же состав, что у факта, но на ОЖИДАЕМОЙ реализации ─────
   r.seller_base_revenue_rub + r.in_transit_revenue_rub
     - (r.product_cogs_rub + r.in_transit_cogs_rub)
-    - (r.commission_rub + r.commission_estimated_rub)
+    - (r.commission_rub + r.commission_estimated_rub + r.lifecycle_conflict_commission_rub)
     - (r.direct_variable_marketplace_costs_rub + r.logistics_estimated_rub)
     - r.other_direct_marketplace_costs_rub
       operational_contribution_before_ads_rub,
   r.seller_base_revenue_rub + r.in_transit_revenue_rub
     - (r.product_cogs_rub + r.in_transit_cogs_rub)
-    - (r.commission_rub + r.commission_estimated_rub)
+    - (r.commission_rub + r.commission_estimated_rub + r.lifecycle_conflict_commission_rub)
     - (r.direct_variable_marketplace_costs_rub + r.logistics_estimated_rub)
     - r.other_direct_marketplace_costs_rub - r.sku_promotion_rub
     - r.ad_spend_attributed_rub operational_contribution_after_ads_rub,
   r.age_days,
   r.age_days >= 36 period_matured,
-  36 maturity_days
+  36 maturity_days,
+  -- ── КОНФЛИКТ ЖИЗНЕННОГО ЦИКЛА (2026-10-06): финансы пришли, статус ещё не delivered ──
+  r.lifecycle_conflict_qty, r.lifecycle_conflict_commission_rub, r.commission_unaccounted_qty
 FROM r

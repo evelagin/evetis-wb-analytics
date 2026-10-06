@@ -9001,11 +9001,11 @@
           "ordinal_position": 50
         }
       ],
-      "canonical_body_sha256": "bd10f0253a489c95516f9a4b36049298fc7555418af4ae0f2f46d0d662abbe41",
-      "canonical_description_sha256": "2e1587bd4cf33a20fe3728bba8a8df7f6bfde6be546d5bb2feb16bb9dea65706",
-      "canonical_schema_sha256": "6033f5ddf010233b77506cae51bc410134f5f90609fa8d9745d7c9ce36087323",
+      "canonical_body_sha256": "44f97ecc0c457090fb50b7bfee2cf3337a407d1a072b5ab8ece69acd4e419d0c",
+      "canonical_description_sha256": "04a045f5aa7ba9fb12a7b3053e5c07d5e578757d0effa3484a319a42a7be4137",
+      "canonical_schema_sha256": "c83e689856030bddef30eb54e55d839e744430577a2e87a11c0f058fcdf3cf1a",
       "canonical_schema_verification": "unverified",
-      "canonical_column_count": 50,
+      "canonical_column_count": 53,
       "canonical_schema": [
         {
           "ordinal_position": 1,
@@ -9304,6 +9304,24 @@
         {
           "ordinal_position": 50,
           "column_name": "maturity_days",
+          "data_type": "INT64",
+          "is_nullable": "YES"
+        },
+        {
+          "ordinal_position": 51,
+          "column_name": "lifecycle_conflict_qty",
+          "data_type": "INT64",
+          "is_nullable": "YES"
+        },
+        {
+          "ordinal_position": 52,
+          "column_name": "lifecycle_conflict_commission_rub",
+          "data_type": "NUMERIC",
+          "is_nullable": "YES"
+        },
+        {
+          "ordinal_position": 53,
+          "column_name": "commission_unaccounted_qty",
           "data_type": "INT64",
           "is_nullable": "YES"
         }

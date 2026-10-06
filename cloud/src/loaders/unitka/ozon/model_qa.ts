@@ -38,7 +38,7 @@ function sourceOperationalBasis(f: OzonFactRow): { basis?: number; issues: OzonM
   if (!Array.isArray(units)) {
     issue('OPERATIONAL_POPULATION_EVIDENCE_MISSING', 'posting/SKU evidence array', units); return { issues };
   }
-  let actualQty = 0, provisionalQty = 0, referenceCovered = 0, actualBasis = 0, referenceBasis = 0;
+  let actualQty = 0, provisionalQty = 0, referenceCovered = 0, actualBasis = 0, referenceBasis = 0, conflictQty = 0;
   const seen = new Set<string>();
   // TO_JSON_STRING кодирует дробный BigQuery NUMERIC десятичной строкой.
   // Принимаем только явное числовое представление, не boolean/null/пустоту.
@@ -62,7 +62,10 @@ function sourceOperationalBasis(f: OzonFactRow): { basis?: number; issues: OzonM
     if (seen.has(key)) issue('OPERATIONAL_POPULATION_OVERLAP', 'one unit population per posting/SKU', key);
     seen.add(key);
     const documented = u.status === 'delivered' && u.documented_buyout_present;
-    const finance = !documented && u.status === 'delivered' && u.finance_unit_rub !== null;
+    // Финансы старше статуса: seller-base у недоставленной единицы — тоже факт (не выкуп по документу).
+    const finance = !documented && u.finance_unit_rub !== null
+      && (u.status === 'delivered' || !u.documented_buyout_present);
+    if (finance && u.status !== 'delivered') conflictQty += q;
     const source = documented ? 'DOCUMENTED_BUYOUT' : finance ? 'ACTUAL_FINANCE' : 'REFERENCE';
     if (u.basis_source !== source) issue('OPERATIONAL_EVIDENCE_PRECEDENCE', source, u.basis_source);
     if (documented || finance) {
@@ -92,6 +95,20 @@ function sourceOperationalBasis(f: OzonFactRow): { basis?: number; issues: OzonM
   match('OPERATIONAL_ACTUAL_BASIS_MISMATCH', actualBasis, f.operational_actual_basis_rub);
   match('OPERATIONAL_REFERENCE_BASIS_MISMATCH', referenceBasis, f.operational_reference_basis_rub);
   match('OPERATIONAL_ECONOMIC_BASIS_MISMATCH', actualBasis + referenceBasis, f.operational_basis_rub);
+  // Независимая проверка конфликта цикла по первичным единицам (не по состоянию вью):
+  // недоставленная единица с seller-base начислением обязана принести ФАКТИЧЕСКУЮ комиссию.
+  // Ноль здесь — ровно сигнатура дефекта 20.08 / 930334396 (+655,81 ₽ к прибыли).
+  if (conflictQty > 0) {
+    match('LIFECYCLE_CONFLICT_QTY_MISMATCH', conflictQty, f.lifecycle_conflict_qty);
+    const cc = f.lifecycle_conflict_commission_rub;
+    if (typeof cc !== 'number' || !Number.isFinite(cc) || cc <= 0) {
+      issue('LIFECYCLE_CONFLICT_COMMISSION_MISSING', 'positive finance commission for non-delivered unit with seller base', cc ?? null);
+    }
+    if (f.economics_completeness === 'ACTUAL') issue('LIFECYCLE_CONFLICT_MARKED_ACTUAL', 'PROVISIONAL', f.economics_completeness);
+  }
+  if ((f.commission_unaccounted_qty ?? 0) !== 0 && f.commission_state !== 'UNKNOWN') {
+    issue('COMMISSION_UNACCOUNTED_NOT_UNKNOWN', 'UNKNOWN', f.commission_state);
+  }
   return { basis: issues.length === 0 ? actualBasis + referenceBasis : undefined, issues };
 }
 
