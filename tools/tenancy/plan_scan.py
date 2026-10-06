@@ -70,6 +70,7 @@ if str(REPO) not in sys.path:
 from tools.tenancy import control_identity as CI  # noqa: E402
 from tools.tenancy import platform as PL  # noqa: E402
 from tools.tenancy import sql_identity as SI  # noqa: E402
+from tools.tenancy import orchestration_plan as BP  # noqa: E402
 
 # ── S. Структура ─────────────────────────────────────────────────────────────
 ALLOWED_MANAGED_TYPES = frozenset({
@@ -253,6 +254,7 @@ def expected_iam(contract: dict) -> set[tuple[str, str, str, str]]:
                          runtime))
             allowed.add(("google_secret_manager_secret_iam_member", sid, "roles/secretmanager.secretAccessor",
                          f"serviceAccount:{CI.control_email(p)}"))
+    allowed |= BP.iam(BP.verified(contract),contract)
     return allowed
 
 
@@ -282,6 +284,10 @@ def expected_dataset_access(contract: dict) -> dict[str, set[AclEntry]]:
     if ozon:
         for g in CI.dataset_grants(contract["datasets"]):
             acl[contract["datasets"][g["dataset_key"]]].add((g["role"], "user_by_email", CI.control_email(p), None))
+    block=BP.verified(contract)
+    if block:
+        for g in block['dataset_grants']:
+            acl[contract['datasets'][g['dataset_key']]].add((g['role'],'user_by_email',g['email'],None))
     return acl
 
 
@@ -416,7 +422,7 @@ def _iam_target(rtype: str, after: dict, project: str) -> str | None:
             if m and m.group(1) == project:
                 return m.group(2)
         return sid
-    return {"google_project_iam_member": after.get("project")}.get(rtype)
+    return BP.target(rtype,after,project) or {"google_project_iam_member": after.get("project")}.get(rtype)
 
 
 def dataset_acl_findings(addr, after, unknown, dataset_acl, scheduler_email) -> list[str]:
@@ -501,11 +507,21 @@ def scan_plan(plan: dict, contract: dict) -> list[str]:
     runtime_email = f"{ozon['service_accounts']['runtime']}@{project}.iam.gserviceaccount.com" if ozon else None
     scheduler_email = f"{ozon['service_accounts']['scheduler']}@{project}.iam.gserviceaccount.com" if ozon else None
     platform_markers = (PL.PLATFORM_PROJECT_ID, PL.PLATFORM_PROJECT_NUMBER, PL.STATE_BUCKET)
+    block=None
+    try:
+        block=BP.verified(contract)
+    except (ValueError,KeyError,OSError):
+        findings.append('orchestration: qualified canonical contract verification failed')
+        contract=dict(contract);contract.pop('orchestration',None)
+    allowed_types=ALLOWED_MANAGED_TYPES | (BP.TYPES if block else frozenset())
+    critical=dict(CRITICAL_FIELDS,**(BP.CRITICAL if block else {}))
     iam_allowed = expected_iam(contract)
     dataset_acl = expected_dataset_access(contract)
     deployer_email = SI.deployer_email(project)
     control_email = CI.control_email(project) if ozon else None
     contract_sa_emails = {e for e in (runtime_email, scheduler_email, deployer_email, control_email) if e}
+    if block:
+        contract_sa_emails |= {v['email'] for v in block['accounts'].values()}
     contract_sa_ids = {e.split("@", 1)[0] for e in contract_sa_emails}
     findings += sql_deployer_findings(contract)
     findings += control_findings(contract)
@@ -534,7 +550,7 @@ def scan_plan(plan: dict, contract: dict) -> list[str]:
             if r.get("mode") == "data":
                 if addr not in ALLOWED_DATA_SOURCES or ALLOWED_DATA_SOURCES[addr] != r.get("type"):
                     findings.append(f"configuration {addr}: источник данных вне контракта")
-            elif r.get("type") not in ALLOWED_MANAGED_TYPES:
+            elif r.get("type") not in allowed_types:
                 findings.append(f"configuration {addr}: тип {r.get('type')} вне контракта")
             pk = r.get("provider_config_key", "")
             if pk and pk.split(":")[-1] not in ("google", "terraform"):
@@ -571,13 +587,13 @@ def scan_plan(plan: dict, contract: dict) -> list[str]:
             continue
         if module_prefix not in ALLOWED_MODULE_PREFIXES:
             findings.append(f"{addr}: адрес вне корня и module.ozon[0]")
-        if rtype not in ALLOWED_MANAGED_TYPES:
+        if rtype not in allowed_types:
             findings.append(f"{addr}: тип {rtype} не входит в разрешённые для арендатора")
         if actions not in ALLOWED_ACTIONS:
             findings.append(f"{addr}: действие {sorted(actions)} запрещено (delete/replace/forget — отдельные ворота)")
 
         # U. Критичные значения известны.
-        for fpath in CRITICAL_FIELDS.get(rtype, []):
+        for fpath in critical.get(rtype, []):
             if _unknown_at(unknown, fpath):
                 findings.append(f"{addr}: {'.'.join(fpath)} неизвестно на плане — проверить нельзя")
 
@@ -587,6 +603,9 @@ def scan_plan(plan: dict, contract: dict) -> list[str]:
         for path, s in _strings(after, addr):
             if approved_image and s == approved_image and rtype == "google_cloud_run_v2_job" \
                     and path.endswith(".image"):
+                continue
+            if block and rtype=='google_cloud_run_v2_job' and after.get('name')==block['job']['name'] and s==block['job']['image'] and (path==f'{addr}.template[0].template[0].containers[0].image' or any(path==f'{addr}.template[0].template[0].containers[0].env[{i}].value' and e.get('name')=='CONTROLLER_IMAGE' and e.get('value')==s for i,e in enumerate((_job_container(after)[0] or {}).get('env',[])))):
+                # Only the qualified image and its exact self-provenance env.
                 continue
             if _computed_applier_identity(rtype, addr, path, s, configured):
                 continue
@@ -614,6 +633,8 @@ def scan_plan(plan: dict, contract: dict) -> list[str]:
                 findings.append(f"{addr}: привязка {triple[1:]!r} не входит в разрешённые контрактом")
             if after.get("role") in RUN_INVOKING_ROLES:
                 findings.append(f"{addr}: роль {after.get('role')} даёт вызов Cloud Run — запрещено до активации")
+            if after.get('condition'):
+                findings.append(f'{addr}: IAM conditions outside exact backfill matrix')
             if scheduler_email and scheduler_email in str(after.get("member", "")):
                 findings.append(f"{addr}: SA планировщика не получает ролей до ворот активации")
         else:
@@ -627,6 +648,11 @@ def scan_plan(plan: dict, contract: dict) -> list[str]:
         if rtype == "google_service_account" and after.get("account_id") not in contract_sa_ids:
             findings.append(f"{addr}: сервисный аккаунт {after.get('account_id')!r} не входит в контракт")
 
+        if rtype=='google_project_iam_custom_role':
+            want=(block or {}).get('roles',{}).get(after.get('role_id'))
+            if want is None or sorted(after.get('permissions') or [])!=sorted(want) or after.get('stage')!='GA' or after.get('deleted'):
+                findings.append(f'{addr}: custom role permission/stage drift')
+
         # D. ACL датасета — известен и ровно равен контракту.
         if rtype == "google_bigquery_dataset":
             findings += dataset_acl_findings(addr, after, unknown, dataset_acl, scheduler_email)
@@ -636,24 +662,31 @@ def scan_plan(plan: dict, contract: dict) -> list[str]:
             findings += table_findings(addr, after, unknown, contract_tables)
 
         if rtype == "google_cloud_run_v2_job":
+            controller=block and after.get('name')==block['job']['name']
+            image=block['job']['image'] if controller else approved_image
             for path, s in _strings(after, addr):
-                if path.endswith(".image") and s != approved_image:
-                    findings.append(f"{path}: образ {s!r} не равен утверждённому digest")
-            findings += job_findings(addr, after, contract)
+                if path.endswith('.image') and s!=image:
+                    findings.append(f'{path}: image differs from exact qualified digest')
+            findings += [f'{addr}: {x}' for x in BP.job_findings(after,block)] if controller else job_findings(addr,after,contract)
         if rtype == "google_cloud_scheduler_job":
-            if after.get("paused") is not True:
-                findings.append(f"{addr}: расписание не на паузе")
-            jobs = ozon.get("jobs", {})
-            allowed_uris = {f"https://{region}-run.googleapis.com/v2/projects/{project}/locations/{region}/jobs/{j}:run"
-                            for j in jobs}
-            for path, s in _strings(after, addr):
-                if path.endswith(".uri") and s not in allowed_uris:
-                    findings.append(f"{path}: цель расписания {s!r} — не run-вызов job'а арендатора")
-                if path.endswith(".service_account_email") and s != scheduler_email:
-                    findings.append(f"{path}: расписание подписывается не SA планировщика ({s!r})")
+            if block and after.get('name')==block['scheduler']['name']:
+                findings += [f'{addr}: {x}' for x in BP.scheduler_findings(after,block)]
+            else:
+                if after.get('paused') is not True:
+                    findings.append(f'{addr}: расписание не на паузе')
+                allowed_uris={f'https://{region}-run.googleapis.com/v2/projects/{project}/locations/{region}/jobs/{j}:run' for j in ozon.get('jobs',{})}
+                for path,s in _strings(after,addr):
+                    if path.endswith('.uri') and s not in allowed_uris:
+                        findings.append(f'{path}: цель расписания — не run-вызов job арендатора')
+                    if path.endswith('.service_account_email') and s!=scheduler_email:
+                        findings.append(f'{path}: расписание подписывается не SA планировщика')
 
     for addr in invocation_grants(plan):
-        findings.append(f"{addr}: право вызова Cloud Run до ворот активации запрещено (ADR-08 И2)")
+        rc=next(r for r in plan.get('resource_changes',[]) if r.get('address')==addr)
+        a=(rc.get('change') or {}).get('after') or {}
+        triple=(rc.get('type'),_iam_target(rc.get('type'),a,project),a.get('role'),a.get('member'))
+        if not block or triple not in BP.iam(block,contract):
+            findings.append(f'{addr}: право вызова Cloud Run до ворот активации запрещено (ADR-08 И2)')
 
     for oc_name, oc in (plan.get("output_changes") or {}).items():
         for path, s in _strings(oc.get("after"), f"output.{oc_name}"):

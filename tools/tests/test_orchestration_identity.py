@@ -46,3 +46,10 @@ def test_generic_tenant_identity_derivation_not_hardcoded_client001(monkeypatch)
     monkeypatch.setattr(R,'terraform_inputs',lambda tenant:c)
     rows=I.validate_matrix(I.matrix('client_002'),'client_002')
     assert all('mpa-t-client-001' not in str(r) for r in rows)
+
+
+def test_terraform_permissions_file_is_generated_canonical_projection():
+    import json
+    from tools.tenancy import registry as R
+    got=json.loads((R.REPO/'infra/tenant/backfill-permissions.json').read_text())
+    assert got=={k:list(v) for k,v in I.ROLE_PERMISSIONS.items()}

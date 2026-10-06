@@ -256,7 +256,7 @@ def test_tenant_root_never_manages_the_project_billing_folder_or_keys():
                       r'"google_organization', r'"google_project_iam_(policy|binding)"',
                       r'"google_service_account_key"', r'"google_secret_manager_secret_version"',
                       r'"google_storage_', r'"google_artifact_registry_', r'"google_iam_workload_identity',
-                      r'"google_cloud_run_v2_job_iam_'):
+                      r'"google_cloud_run_v2_job_iam_(policy|binding)"'):
         assert not re.search(forbidden, text), forbidden
 
 

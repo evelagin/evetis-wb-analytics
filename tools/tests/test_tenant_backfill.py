@@ -262,3 +262,17 @@ def test_smaller_unit_budget_is_frozen_in_reviewed_plan(monkeypatch):
     monkeypatch.setattr(T.TT, "_req", lambda *a: pytest.fail("modified budget touched cloud"))
     with pytest.raises(T.B.EvidenceError, match="modified"):
         T.validate_plan(p,p["ack_hash"])
+
+
+def test_cloud_read_proof_uses_reader_only_and_validates_actual_plan(monkeypatch):
+    p=doc();c=R.terraform_inputs("client_001");state=T.B.initial(p["runtime_plan"])
+    proof={"plan":p["runtime_plan"],"state":state}
+    calls=[]
+    def reader(method,url,body=None):
+        calls.append((method,url,body))
+        return {"jobReference":{"jobId":"synthetic"},"jobComplete":True,
+                "schema":{"fields":[{"name":"status","type":"STRING"},{"name":"evidence_json","type":"STRING"}]},
+                "rows":[{"f":[{"v":"IN_PROGRESS"},{"v":json.dumps(proof)}]}]}
+    monkeypatch.setattr(T.TT,"_req",lambda *a:pytest.fail("cloud reader fell back to owner credentials"))
+    assert T.read_proof(c,p,"synthetic-run",request=reader)==proof
+    assert len(calls)==1 and calls[0][0]=="POST" and calls[0][2]["useLegacySql"] is False

@@ -9,21 +9,26 @@ reviewed tenant-only Terraform plan; this matrix is not deployed-state evidence.
 from tools.tenancy import registry as R
 
 ROLE_PERMISSIONS = {
-    'backfillRead': ('bigquery.tables.get','bigquery.tables.getData'),
+    'backfillRead': ('bigquery.datasets.get','bigquery.tables.get','bigquery.tables.getData'),
     'backfillReadRef': ('bigquery.tables.get','bigquery.tables.getData','bigquery.tables.list'),
-    'backfillLockRead': ('bigquery.tables.get','bigquery.tables.list'),
+    'backfillLockRead': ('bigquery.datasets.get','bigquery.tables.get','bigquery.tables.list'),
     'backfillLockCreate': ('bigquery.tables.create',),
     'backfillQuery': ('bigquery.jobs.create',),
     'backfillAppend': ('bigquery.tables.updateData',),
     'backfillDelegateAppend': ('iam.serviceAccounts.getAccessToken',),
     'backfillRuntimeExecute': ('run.jobs.get','run.jobs.run','run.jobs.runWithOverrides','run.executions.get','run.executions.list'),
     'backfillInventoryRead': ('run.jobs.list','run.operations.get','cloudscheduler.jobs.list'),
+    'backfillControllerRead': ('run.jobs.get','run.executions.get','run.executions.list'),
     'backfillWake': ('run.jobs.run',),
 }
 
 
 def matrix(tenant):
-    c=R.terraform_inputs(tenant);p=c['project_id'];base=f"projects/{p}/locations/{c['region']}"
+    return matrix_for_contract(R.terraform_inputs(tenant))
+
+
+def matrix_for_contract(c):
+    p=c['project_id'];base=f"projects/{p}/locations/{c['region']}"
     controller=f'sa-backfill-controller@{p}.iam.gserviceaccount.com'
     writer=f'sa-backfill-append@{p}.iam.gserviceaccount.com'
     wake=f'sa-backfill-wake@{p}.iam.gserviceaccount.com'
@@ -43,6 +48,8 @@ def matrix(tenant):
     for table in ('BACKFILL_CHECKPOINTS','DATA_COVERAGE','DQ_RESULTS'):
         add(writer,role('backfillAppend'),f"projects/{p}/datasets/{c['datasets']['tenant_ops']}/tables/{table}",ROLE_PERMISSIONS['backfillAppend'])
     add(controller,role('backfillDelegateAppend'),f'projects/{p}/serviceAccounts/{writer}',ROLE_PERMISSIONS['backfillDelegateAppend'])
+    add(controller,role('backfillControllerRead'),base+'/jobs/tenant-backfill-controller',ROLE_PERMISSIONS['backfillControllerRead'])
+    add(controller,role('backfillControllerRead'),base+'/jobs/tenant-control',ROLE_PERMISSIONS['backfillControllerRead'])
     add(wake,role('backfillWake'),base+'/jobs/tenant-backfill-controller',ROLE_PERMISSIONS['backfillWake'])
     return rows
 

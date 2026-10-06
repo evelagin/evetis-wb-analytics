@@ -113,7 +113,7 @@ def test_cloud_records_survive_restart_without_owner_gcloud_or_local_receipt(c,m
         path=url.split('?')[0]
         if path.endswith('/queries'):
             params={p['name']:p['parameterValue']['value'] for p in body['queryParameters']}
-            values={r['evidence_json'] for r in rows if r['plan_hash']==params['root'] and r['backfill_id']==params['record']}
+            values={r['evidence_json'] for r in rows if r['plan_hash']==params['root'] and ('record' not in params or r['backfill_id']==params['record'])}
             return {'jobReference':{'jobId':'synthetic'},'jobComplete':True,'schema':{'fields':[{'name':'evidence_json','type':'STRING'}]},'rows':[{'f':[{'v':v}]} for v in values]}
         if path.endswith('/insertAll'):
             rows.extend(copy.deepcopy(r['json']) for r in body['rows']);return {}

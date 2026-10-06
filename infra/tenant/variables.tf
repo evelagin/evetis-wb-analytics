@@ -31,6 +31,14 @@ variable "contract" {
       clustering               = list(string)
       require_partition_filter = bool
     }))
+    orchestration = optional(object({
+      accounts       = map(object({ id = string, email = string }))
+      roles          = map(list(string))
+      dataset_grants = list(object({ dataset_key = string, role = string, email = string }))
+      matrix         = list(object({ principal = string, role = string, resource = string, permissions = list(string) }))
+      job            = object({ name = string, image = string, env = map(string), timeout = string })
+      scheduler      = object({ name = string, schedule = string, time_zone = string, state = string, uri = string })
+    }))
     marketplaces = object({
       ozon = optional(object({
         service_accounts = object({
@@ -204,4 +212,5 @@ variable "contract" {
     coalesce(var.contract.marketplaces.ozon.runtime_image, "<нет утверждённого образа>")))
     error_message = "Образ runtime: только europe-west1-docker.pkg.dev/mpa-platform/mpa-runtime/<image>@sha256:<64 hex> из infra/tenant/runtime_release.json. Теги (в т.ч. latest), пустая ссылка и реестр EVETIS запрещены."
   }
+
 }

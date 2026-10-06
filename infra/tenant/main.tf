@@ -83,7 +83,16 @@ resource "google_bigquery_dataset" "this" {
     }
   }
 
-  depends_on = [google_project_service.this, google_service_account.sql_deployer, google_service_account.control]
+  dynamic "access" {
+    for_each = var.contract.orchestration == null ? [] : [for g in var.contract.orchestration.dataset_grants : g if g.dataset_key == each.key]
+    content {
+      role          = access.value.role
+      user_by_email = access.value.email
+    }
+  }
+
+  depends_on = [google_project_service.this, google_service_account.sql_deployer, google_service_account.control,
+  google_service_account.backfill, google_project_iam_custom_role.backfill]
 }
 
 # ── Деплоер SQL (T4.1) ─────────────────────────────────────────────────────

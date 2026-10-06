@@ -14,7 +14,7 @@ from tools.tenancy.validation import parse_tenant_json
 
 VERSION = "CLOUD_BACKFILL_V1"
 HASH = re.compile(r"^[0-9a-f]{64}$")
-KINDS = frozenset({"MANIFEST", "DISPATCH_INTENT", "DISPATCH_RECEIPT", "RECONCILED", "WAITING", "STOPPED"})
+KINDS = frozenset({"MANIFEST", "DISPATCH_INTENT", "DISPATCH_RECEIPT", "RECONCILED", "WAITING", "STOPPED", "COMPLETE", "DEPENDENCY_PLAN", "SNAPSHOT_CERT"})
 MAX_RECORD_BYTES = 900000
 
 
@@ -162,7 +162,7 @@ class DurableRecords:
         check_hash(root_hash)
         if type(max_records) is not int or not 1 <= max_records <= 10000:
             raise BF.B.EvidenceError("bounded history inventory required")
-        rows = []
+        markers = {}
         for name, labels, created in self.metadata.list_tables(self.c["datasets"]["tenant_locks"]):
             if not name.startswith("BFR_") or labels.get("root") != root_hash[:16]:
                 continue
@@ -174,10 +174,30 @@ class DurableRecords:
                 continue
             if name != self._marker(description.get("record_hash")):
                 raise BF.B.EvidenceError("durable marker identity mismatch")
-            if len(rows) >= max_records:
+            if len(markers) >= max_records:
                 raise BF.B.EvidenceError("durable history exceeds bounded inventory; shard before continuation")
-            rows.append(self.read(root_hash, description["record_hash"]))
-        return sorted(rows, key=lambda r: (r["sequence"], r["kind"], digest(r)))
+            markers[description['record_hash']] = marker
+        if not markers:
+            return []
+        # One bounded SELECT rather than one query job per committed record.
+        # Metadata is the commit authority; uncommitted streaming rows remain
+        # excluded even when visible in this query.
+        values=self.select(self.c, f"SELECT DISTINCT evidence_json FROM `{self.c['project_id']}.{self.c['datasets']['tenant_ops']}.BACKFILL_CHECKPOINTS` WHERE plan_hash = @root LIMIT {max_records+1}", {'root':('STRING',root_hash)})
+        if len(values)>max_records:
+            raise BF.B.EvidenceError('durable history query guard; shard before continuation')
+        rows={}
+        for value in values:
+            record=parse_tenant_json(value['evidence_json']);h=digest(record)
+            if h not in markers:continue
+            if record.get('version')!=VERSION or record.get('root_hash')!=root_hash:
+                raise BF.B.EvidenceError('durable record corruption/scope mismatch')
+            expected=({'root':root_hash[:16],'kind':record['kind'].lower()},encoded({'root_hash':root_hash,'record_hash':h,'kind':record['kind'],'sequence':record['sequence']}))
+            if markers[h]!=expected:
+                raise BF.B.EvidenceError('commit marker/record mismatch')
+            rows[h]=record
+        if set(rows)!=set(markers):
+            raise BF.B.EvidenceError('committed durable record missing/corrupt; never reset')
+        return sorted(rows.values(), key=lambda r: (r["sequence"], r["kind"], digest(r)))
 
     def _read_rows(self, root_hash, record_hash):
         check_hash(root_hash); check_hash(record_hash)

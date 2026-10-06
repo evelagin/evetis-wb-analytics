@@ -109,7 +109,7 @@ class Backend:
         assert sql.startswith('SELECT DISTINCT ')
         assert c['project_id']=='mpa-t-client-001' and ';' not in sql
         if self.query_failure:raise D.BF.B.EvidenceError('streaming read unavailable')
-        unique={r['evidence_json'] for r in self.rows if r['backfill_id']==params['record'][1] and r['plan_hash']==params['root'][1]}
+        unique={r['evidence_json'] for r in self.rows if ('record' not in params or r['backfill_id']==params['record'][1]) and r['plan_hash']==params['root'][1]}
         return [{'evidence_json':v} for v in unique]
     def append(self,row):
         if self.rejected:raise D.BF.B.EvidenceError('writer insertAll rejected')

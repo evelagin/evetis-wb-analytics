@@ -23,6 +23,10 @@ BQ_SCOPE = "https://www.googleapis.com/auth/bigquery"
 OPS_TABLES = frozenset({"BACKFILL_CHECKPOINTS", "DATA_COVERAGE", "DQ_RESULTS"})
 
 
+class TransientReadError(TT.TableError):
+    """Read/credential-cache transport retry on a later bounded wake, no source retry."""
+
+
 class NoRedirect(urllib.request.HTTPRedirectHandler):
     def redirect_request(self, req, fp, code, msg, headers, newurl):
         raise TT.TableError("cloud transport redirect denied")
@@ -41,10 +45,14 @@ def wire(method, url, body=None, headers=None):
                 return raw.decode().strip()
             return parse_tenant_json(raw.decode() or "{}")
     except urllib.error.HTTPError as e:
-        cls = TT.Conflict if e.code == 409 else TT.TableError
+        readonly_retry = method=='GET' or url.endswith('/queries') or url.endswith(':generateAccessToken')
+        cls = TT.Conflict if e.code == 409 else (TransientReadError if readonly_retry and e.code in (429,500,502,503,504) else TT.TableError)
         raise cls(f"cloud transport HTTP {e.code}") from None
-    except (OSError, ValueError):
-        raise TT.TableError("cloud transport unavailable or invalid response") from None
+    except OSError:
+        cls=TransientReadError if method=='GET' or url.endswith('/queries') or url.endswith(':generateAccessToken') else TT.TableError
+        raise cls('cloud transport unavailable') from None
+    except ValueError:
+        raise TT.TableError('invalid cloud response') from None
 
 
 class CloudTokens:
@@ -142,7 +150,7 @@ class CloudAccess:
             suffix = parsed.path[len(base):]
             match = re.fullmatch(r"/datasets/([A-Za-z0-9_]+)/tables(?:/([A-Za-z0-9_]+)(/data|/insertAll)?)?", suffix)
             if authority == "reader" and method == "GET" and body is None:
-                permitted = bool(match and match[1] in {c["datasets"][k] for k in ("ozon_raw", "tenant_ops", "ref", "tenant_locks")} and match[3] != "/insertAll") or bool(re.fullmatch(r"/queries/[A-Za-z0-9_-]+", suffix))
+                permitted = bool(match and match[1] in {c["datasets"][k] for k in ("ozon_raw", "tenant_ops", "ref", "tenant_locks")} and match[3] != "/insertAll") or bool(re.fullmatch(r"/queries/[A-Za-z0-9_-]+", suffix)) or bool(re.fullmatch(r"/datasets/(?:"+"|".join(re.escape(c["datasets"][k]) for k in ("tenant_locks","tenant_ops"))+r")",suffix))
             elif authority == "reader" and method == "POST" and suffix == "/queries" and not parsed.query:
                 select_body(c, body); permitted = True
             elif authority == "append" and method == "POST" and match and not parsed.query:
@@ -170,6 +178,40 @@ class CloudAccess:
         result = self.append_request("POST", f"{TT.BQ}/projects/{self.c['project_id']}/datasets/{self.c['datasets']['tenant_ops']}/tables/BACKFILL_CHECKPOINTS/insertAll", body)
         if result.get("insertErrors"):
             raise TT.TableError("durable checkpoint append rejected")
+
+    @property
+    def tables(self):
+        return TT.Tables(self.c["project_id"], request=self.request, write_request=self.append_request)
+
+    def dispatch(self, doc, job, body):
+        from tools.tenancy import tenant_backfill as BF
+        c=BF.validate_plan(doc,doc.get("ack_hash"))
+        if {k:v for k,v in c.items() if k!='orchestration'} != {k:v for k,v in self.c.items() if k!='orchestration'}:
+            raise TT.TableError("dispatch canonical tenant contract drift")
+        p=doc["runtime_plan"]
+        base,jobs=BF.resources(c)
+        expected_job=next(n for n,v in jobs.items() if p["entity"] in v["entities"])
+        if job != expected_job:
+            raise TT.TableError("dispatch job/entity mismatch")
+        envs=(body.get("overrides",{}).get("containerOverrides") or []) if isinstance(body,dict) else []
+        if len(envs)!=1 or set(body)!={"overrides"} or set(body["overrides"])!={"containerOverrides"} or set(envs[0])!={"env"}:
+            raise TT.TableError("unreviewed Run overrides")
+        entries=envs[0]["env"]
+        if not isinstance(entries,list) or any(not isinstance(v,dict) or set(v)!={"name","value"} for v in entries):
+            raise TT.TableError("unreviewed Run environment")
+        values={v["name"]:v["value"] for v in entries}
+        run_id=values.get("INGESTION_RUN_ID","")
+        if len(values)!=len(entries) or not isinstance(run_id,str) or not re.fullmatch(r"bf-[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}",run_id):
+            raise TT.TableError("ambiguous Run identity/overrides")
+        expected={"ENTITIES":p["entity"],"SINCE":p["from"],"UNTIL":p["to"],"INGESTION_RUN_ID":run_id,
+                  "BACKFILL_MODE":BF.B.VERSION,"BACKFILL_TARGET_PROJECT":c["project_id"],
+                  "BACKFILL_GENERATION":p["generation"],"BACKFILL_ORIGIN":p["origin"],
+                  "BACKFILL_MAX_REQUESTS":str(doc["max_requests"]),"BACKFILL_MAX_UNITS":str(doc["max_units"])}
+        if p["window_days"]!=1:expected["BACKFILL_WINDOW_DAYS"]=str(p["window_days"])
+        if values != expected:
+            raise TT.TableError("Run overrides differ from frozen canonical plan")
+        url=f"https://run.googleapis.com/v2/{base}/jobs/{job}:run"
+        return self.send("POST",url,body,{"Authorization":"Bearer "+self.tokens.token("reader"),"Content-Type":"application/json"})
 
     def durable_records(self):
         from tools.tenancy import durable_plan as D, tenant_backfill as BF

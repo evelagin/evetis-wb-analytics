@@ -232,7 +232,7 @@ def _terraform_contract(doc: dict, repo: Path = REPO) -> dict:
     for ds_key, names in OC.tables_for(entities).items():
         tables += [OC.terraform_table(ds_key, t) for t in names]
 
-    return {
+    contract = {
         "contract_version": TERRAFORM_CONTRACT_VERSION,
         "tenant_id": tid,
         "status": doc["status"],
@@ -256,6 +256,12 @@ def _terraform_contract(doc: dict, repo: Path = REPO) -> dict:
                                      ozon_runtime_env(doc), tid, entities,
                                      ozon.get("seller_inventory_model", "STRICT_CAPABILITY_V2")) if ozon["enabled"] else None,
     }
+
+    if "historical_orchestration" in doc:
+        from tools.tenancy import orchestration_contract as BC
+        contract["orchestration"] = BC.block(contract, doc["historical_orchestration"], repo)
+        contract["apis"] = sorted(set(contract["apis"]) | {"iamcredentials.googleapis.com"})
+    return contract
 
 
 def tenant_summary(doc: dict) -> dict:
