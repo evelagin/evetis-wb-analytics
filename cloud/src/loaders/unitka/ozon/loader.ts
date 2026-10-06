@@ -98,7 +98,13 @@ export function parseLiveLayout(
     for (let b = 0; b < 64; b++) {
       const c = BF + W * b; if (c >= tailFirstColumn) break;
       const txt = String(at(titleRow, c) ?? '').trim();
-      slots.push(txt ? canonicalOffer(txt.split(/\s+/)[0] as string) : null);
+      const offer = txt ? canonicalOffer(txt.split(/\s+/)[0] as string) : null;
+      // Непустая подпись, не дающая offer_id, — отказ, а не тихое «сжатие» слотов: иначе все блоки
+      // правее сдвинулись бы на 25 колонок, и запись (вместе с защищёнными колонками) легла бы в чужие блоки.
+      if (txt && offer === null) {
+        throw new LoaderError(`подпись блока «${txt.slice(0, 60)}» (строка ${titleRow}, слот ${b + 1}) не начинается с известного offer_id`, 'OZON_UNITKA_LABEL_UNRESOLVED');
+      }
+      slots.push(offer);
     }
     const days: Array<{ row: number; iso: string }> = [];
     for (let i = r + 1; i <= grid.length; i++) {
@@ -134,6 +140,24 @@ export function parseLiveLayout(
     }
   }
   return { sections, cart, bloggers, externalAds, sppEvidence };
+}
+
+/**
+ * Хвосты подписей блоков из справочника — ТОЛЬКО для «голых» подписей (в эталонной секции стоит один
+ * offer_id) и для новых блоков. Подпись, в которой владелец уже написал название, не трогается никогда:
+ * она переносится дословно (buildHeaderRows). offer_id остаётся первым словом — по нему парсер находит блок.
+ */
+export function bareLabelTitles(blocks: readonly string[], refTitle: readonly CellValue[],
+  refAnchor: Readonly<Record<string, number>>, shortNames: Readonly<Record<string, string>>): Record<string, string> {
+  const out: Record<string, string> = {};
+  for (const o of blocks) {
+    const name = shortNames[o];
+    if (!name) continue;
+    const src = refAnchor[o];
+    const label = src === undefined ? '' : String(refTitle[src - 1] ?? '').trim();
+    if (src === undefined || label === '' || label === o) out[o] = ` ${name}`;
+  }
+  return out;
 }
 
 /**
@@ -239,15 +263,20 @@ export async function ozonUnitkaLoader(
   // Подпись — это текст, который владелец может опечатать (и опечатал: слот 14 подписан
   // «9099514444» при каноническом «909951444»). Единственная известная опечатка объявлена
   // явно в OZON_UNITKA_OFFER_ALIASES — остальное движок не угадывает.
-  const skuRef = await bq.query<{ offer_id: string; first_month: string | null }>(
+  // Короткое название — из общего справочника продукта (evetis_ref, единственный общий слой WB/Ozon),
+  // а не из маркетингового заголовка Ozon: тот длинный и меняется площадкой.
+  const skuRef = await bq.query<{ offer_id: string; first_month: string | null; short_name: string | null }>(
     `WITH m AS (SELECT DISTINCT offer_id, internal_sku
                 FROM \`${ctx.config.projectId}.evetis_ref.REF_SKU_CHANNEL_MAP\`
                 WHERE marketplace = 'OZON'),
           a AS (SELECT internal_sku, MIN(fact_date) d
                 FROM \`${ctx.config.projectId}.ozon_mart.V_OZON_SKU_PNL_DAILY_OPERATIONAL\`
                 WHERE gross_qty > 0 GROUP BY 1)
-     SELECT m.offer_id, CAST(DATE_TRUNC(a.d, MONTH) AS STRING) first_month
-     FROM m LEFT JOIN a USING (internal_sku)`);
+     SELECT m.offer_id, CAST(DATE_TRUNC(a.d, MONTH) AS STRING) first_month, p.product_name_short short_name
+     FROM m LEFT JOIN a USING (internal_sku)
+     LEFT JOIN \`${ctx.config.projectId}.evetis_ref.REF_PRODUCT_MASTER\` p USING (internal_sku)`);
+  const shortNames: Record<string, string> = {};
+  for (const r of skuRef) if (r.short_name && r.short_name.trim()) shortNames[r.offer_id] = r.short_name.trim();
   const canonSet = new Set(skuRef.map((r) => r.offer_id));
   if (!canonSet.size) throw new LoaderError('справочник каналов Ozon пуст', 'OZON_UNITKA_REF');
   const firstActivity: Record<string, string> = {};
@@ -365,7 +394,7 @@ export async function ozonUnitkaLoader(
     const drr = { lcd, from, estimate: sppEstimate, evidence: sppEvidence, bloggers };
     return { spec, facts: inSection, stock, cart, sheetInputs, sppEvidence, sppEstimate,
              formulas: sectionFormulas(spec, comp, 'SEMICOLON', authority.lcdName, drr),
-             refTitle, refHeader, refAnchor, fromDay: from,
+             refTitle, refHeader, refAnchor, fromDay: from, skuTitles: bareLabelTitles(spec.blocks, refTitle, refAnchor, shortNames),
              estimated: comp.provenance.length };
   });
 
