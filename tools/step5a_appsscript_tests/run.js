@@ -247,6 +247,43 @@ t('16 PARTIAL остаётся PARTIAL; campaigns_sampled = реально от�
   assert(partialRow && partialRow.campaigns_sampled === last.campaigns_sampled, 'строки PARTIAL расходятся');
 });
 
+t('16b загрузчик реально применяет порядок: первый запрос — активная + паузные, пропущены только завершённые', () => {
+  const c = makeClock(T0), e = load(dir, ['WbAdsRawLoader.gs'], c), p = incidentPopulation(), sent = [], statuses = [];
+  // WB отдаёт список в «своём» порядке — завершённые первыми, как 01.10
+  const wbOrder = p.ids.slice();
+  e.ctx.WB_ADS_RAW_RUN_T0_ = c.now();
+  Object.assign(e.ctx, {
+    SpreadsheetApp: { getActiveSpreadsheet: () => ({}) },
+    wbAdsResolveRunId_: (r) => r, wbAdsRawNormalizeRange_: (f, t2) => ({ from: f, to: t2 }),
+    wbAdsSplitPeriod_: (f, t2) => [{ from: f, to: t2 }],
+    getWbAdsToken_: () => ({ token: 't' }),
+    wbAdsFetchCampaigns_: () => ({ advertIds: wbOrder, statsAdvertIds: wbOrder.slice(), statusById: p.st, countHttp: 200 }),
+    wbAdvRawEnsureSheet_: () => ({}), wbAdvRawAppendRows_: (sh, rows) => rows.length,
+    wbAdvFlattenFullstats_: (col) => ({ statRows: col.map(() => [1]), boosterRows: [] }),
+    wbAdvCampaignStatNoStatsRow_: () => [0],
+    wbAdsRawWriteStatus_: (rid, src, f, t2, o) => statuses.push(o),
+    wbAdsHttp_: (m, url) => { c.advance(2600); sent.push(url.split('ids=')[1].split('&')[0].split(',').map(Number)); return { ok: true, code: 200, json: [] }; },
+  });
+  c.advance(100000);
+  e.ctx.loadWbAdsFullstatsRaw('2026-09-24', '2026-09-30', 'RID');
+  const first = sent[0];
+  assert(first && p.st[first[0]] === 9 && first.slice(1, 20).every(id => p.st[id] === 11), 'первый запрос не начинается с 9→11: ' + JSON.stringify(first && first.slice(0, 3)));
+  const flat = [].concat(...sent), sentSet = new Set(flat);
+  const skipped = p.ids.filter(id => !sentSet.has(id));
+  assert(skipped.length > 0 && skipped.every(id => p.st[id] === 7), 'пропущены не только завершённые');
+  assert(statuses[statuses.length - 1].campaigns_sampled === flat.length, 'campaigns_sampled ≠ отправлено: ' + statuses[statuses.length - 1].campaigns_sampled + ' vs ' + flat.length);
+});
+t('16c id в двух группах статусов: остаётся более приоритетный статус', () => {
+  const c = makeClock(T0), fs = require('fs'), path2 = require('path');
+  if (!fs.existsSync(path2.join(dir, 'WbAdsProbe.gs'))) throw new Error('нет WbAdsProbe.gs в каталоге');
+  const e2 = load(dir, ['WbAdsProbe.gs'], c);
+  e2.ctx.wbAdsHttp_ = (m, url) => /promotion\/count/.test(url)
+    ? { ok: true, code: 200, json: { adverts: [ { status: 7, advert_list: [{ advertId: 5 }] }, { status: 9, advert_list: [{ advertId: 5 }, { advertId: 6 }] } ] } }
+    : { ok: true, code: 200, json: [] };
+  const r = e2.ctx.wbAdsFetchCampaigns_('tok');
+  assert(r.statusById[5] === 9 && r.statusById[6] === 9, JSON.stringify(r.statusById));
+});
+
 results.forEach(r => console.log(r.join('  ')));
 const f = results.filter(r => r[0] === 'FAIL').length;
 console.log(`\n${variant}: ${results.length - f}/${results.length} PASS`);

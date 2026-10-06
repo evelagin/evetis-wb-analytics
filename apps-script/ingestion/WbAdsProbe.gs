@@ -461,8 +461,13 @@ function wbAdsFetchCampaigns_(token) {
       var idNum = Number(id);
       out.advertIds.push(idNum);
       out.statusBreakdown[st] = (out.statusBreakdown[st] || 0) + 1;
-      out.statusById[idNum] = Number(st);   // для порядка fullstats (wbAdsOrderFullstatsIds_)
-      if (WB_ADS_STATS_STATUSES_.indexOf(Number(st)) !== -1) out.statsAdvertIds.push(idNum);
+      if (WB_ADS_STATS_STATUSES_.indexOf(Number(st)) !== -1) {
+        out.statsAdvertIds.push(idNum);
+        // Для порядка fullstats (wbAdsOrderFullstatsIds_). Если WB вернул id в двух группах,
+        // остаётся более приоритетный статус (9 активна раньше 11 пауза раньше 7 завершена).
+        var prev = out.statusById[idNum];
+        if (prev === undefined || [9, 11, 7].indexOf(Number(st)) < [9, 11, 7].indexOf(prev)) out.statusById[idNum] = Number(st);
+      }
     }
   }
 
