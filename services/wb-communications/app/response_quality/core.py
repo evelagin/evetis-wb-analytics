@@ -209,8 +209,10 @@ def make_plan(msg, snap, *, hard_plan=None):
         if exact_unknown or restricted:
             boundary=[unknown_wording(r.fact_type, hard.question_intent) for r in exact_unknown]
             if restricted:boundary.insert(0,RESTRICTED_BOUNDARY)
-            adjacent=[r.customer_value_ru for r in hard.allowed if r.customer_value_ru and r not in exact_unknown and r not in restricted]
-            if restricted:adjacent.extend(r.customer_value_ru for r in restricted if r.customer_value_ru)
+            from app.response_quality.fact_response import compose
+            # An adjacent verified fact may follow the boundary, never replace it.
+            adjacent=[compose(r,snap) for r in hard.allowed if r.customer_value_ru and r not in exact_unknown and r not in restricted]
+            if restricted:adjacent.extend(compose(r,snap) for r in restricted if r.customer_value_ru)
             p.direct_answer=' '.join(dict.fromkeys(boundary+adjacent[:1]))
             return p
         # Owner-approved Phase 3.1 age-information wording. This asserts UNKNOWN, not suitability.
@@ -232,7 +234,9 @@ def make_plan(msg, snap, *, hard_plan=None):
             p.information_budget = min(2, len(allowed))
             p.facts = [{"fact_id": ",".join(r.fact_ids), "text": r.customer_value_ru,
                         "source_ids": r.source_ids} for r in allowed[:2]]
-            p.direct_answer = " ".join(f["text"].rstrip(".") + "." for f in p.facts)
+            # The fact value stays data in p.facts; the answer is a composed sentence.
+            from app.response_quality.fact_response import compose
+            p.direct_answer = " ".join(compose(r, snap) for r in allowed[:2])
             # Never silently drop an unanswered part of a multi-part question.
             if len(allowed) > 2:
                 p.human_reason = "QUESTION_EXCEEDS_INFORMATION_BUDGET"

@@ -7,7 +7,7 @@ No rule here waives medical/numeric/safety/use checks or grants new knowledge.
 from dataclasses import dataclass,asdict
 import re
 from app.v3.text import normalize,find_literal_spans
-from app.v3.contextual_language import FEATURES,PRODUCT,FEEDBACK,reported_features,clause_at,proposition_at
+from app.v3.contextual_language import FEATURES,EVIDENCE_FEATURES,PRODUCT,FEEDBACK,reported_features,clause_at,proposition_at,negated,brand_lead
 
 CUSTOMER_REPORTED='CUSTOMER_REPORTED'
 VERIFIED_PRODUCT_FACT='VERIFIED_PRODUCT_FACT'
@@ -19,8 +19,13 @@ UNSUPPORTED_BRAND_ASSERTION='UNSUPPORTED_BRAND_ASSERTION'
 FEATURE_CONTRACT={k:{'dimension': 'absorption_speed' if k=='fast_absorption' else 'absorption_quality' if k=='good_absorption' else k,
                      'requires_customer_evidence':k} for k in FEATURES}
 SECOND_PERSON=r'\b(?:вы|вам|вас|ваш\w*)\b'
-SPEECH=r'вы\s+(?:отмет\w*|рассказ\w*|оцен\w*|почувств\w*)|по\s+ваш\w*\s+(?:ощущен\w*|опыт\w*)'
-REACTION=r'рад\w*|приятн\w*|жаль|понима\w*'
+SPEECH=r'вы\s+(?:отмет\w*|рассказ\w*|оцен\w*|почувств\w*|описа\w*|написа\w*|подели\w*|упомяну\w*)|по\s+ваш\w*\s+(?:ощущен\w*|опыт\w*|слов\w*)'
+REACTION=r'рад\w*|приятн\w*|жаль|понима\w*|здорово|замечательн\w*|чудесн\w*|прекрасн\w*|отличн\w*|сожале\w*'
+# Experiencer predicates: the recipient's past/present perception, not a product
+# property. Bounded stems; the feature itself still needs customer evidence.
+PERCEPTION=(r'показал\w*|оказал\w*|понрав\w*|\bнрав(?:ит|ил|ят)\w*|ощущ\w*|почувствова\w*|'
+            r'по\s+вкусу|по\s+душе|\bзаш(?:ел|ла|ло|ли)\b|'
+            r'остав\w*[^.!?;]{0,45}(?:впечатлен\w*|ощущен\w*)')
 UNIVERSAL=r'\bвсем\b|\bвсегда\b|гарант\w*|у\s+каждого\s+покупател\w*'
 PRODUCT_RESET=r'(?:,\s*|\b(?:а|но|при этом)\s+)(?:'+PRODUCT+r')\b(?!\s+(?:у\s+вас|вам|ваш\w*))'
 EQUIVALENCE=r'(?:это|оно|так\w*|описан\w*|именно\s+так)[^.!?;]{0,55}(?:совпал\w*|соответств\w*|ощу\w*|почувств\w*|отмет\w*)|(?:совпал\w*|соответств\w*)[^.!?;]{0,45}(?:опыт\w*|ощущен\w*)'
@@ -43,23 +48,31 @@ def customer_frame(clause):
     if re.search(UNIVERSAL,clause):return False
     if re.search(SPEECH,clause):return True
     reaction=bool(re.search(r'(?:'+REACTION+r')[^.!?;]{0,30}\bчто\b',clause))
-    perception=bool(re.search(r'показал\w*|оказал\w*|понрав\w*|ощущ\w*|остав\w*[^.!?;]{0,45}(?:впечатлен\w*|ощущен\w*)',clause))
+    perception=bool(re.search(PERCEPTION,clause))
     return bool((re.search(SECOND_PERSON,clause) and (reaction or perception))
                 or (reaction and perception))
 
 
+def attributed_at(clause,offset):
+    """Customer frame that governs this position, not a trailing pleasantry."""
+    return customer_frame(clause) and not re.search(PRODUCT_RESET,clause) and not brand_lead(clause,offset)
+
 
 def feature_polarity(text,match,key):
-    if key in {'non_sticky','no_greasy_film'}:return 'positive'
-    return 'negative' if re.search(r'\bне\s*$',text[max(0,match.start()-8):match.start()]) else 'positive'
+    return 'negative' if negated(text,match,key) else 'positive'
+
+
+def high_degree(text,match):
+    return bool(re.search(HIGH_DEGREE,text[max(0,match.start()-14):match.end()]))
 
 
 def evidence_features(source):
     n=normalize(source);evidence=set()
-    for key,rx in FEATURES.items():
+    for key,rx in EVIDENCE_FEATURES.items():
         if key=='pleasant':continue
         for m in re.finditer(rx,n):
             evidence.add((key,feature_polarity(n,m,key)))
+            if high_degree(n,m):evidence.add((key,feature_polarity(n,m,key),'high'))
     return evidence
 
 
@@ -75,7 +88,7 @@ def feature_observations(text,source):
             # Product assertion after a separate conjunction is not rescued by
             # an earlier acknowledgment. A complement "... что крем у Вас ..."
             # stays attributed. Object identity/ingredient checks remain outside.
-            attributed=customer_frame(clause) and not re.search(PRODUCT_RESET,clause)
+            attributed=attributed_at(clause,clause.find(m.group()))
             # An anaphoric equivalence inherits the adjacent assertion's actual
             # feature, not the customer's weaker adjective. This includes an
             # approved manufacturer proposition immediately before the link.
@@ -87,7 +100,8 @@ def feature_observations(text,source):
             if re.search(EQUIVALENCE,tail) and re.search(SECOND_PERSON,tail):attributed=True
             if attributed:
                 polarity=feature_polarity(n,m,key)
-                supported=(key,polarity) in known
+                # Testimony may keep, never raise, the customer's own degree.
+                supported=(key,polarity) in known and (not high_degree(n,m) or (key,polarity,'high') in known)
                 rows.append(Proposition(m.group(),CUSTOMER_REPORTED,key,'customer experience',supported,'same feature/polarity in customer source' if supported else 'missing customer evidence for this dimension/strength',polarity,m.start(),m.end()))
     return rows
 
@@ -187,11 +201,13 @@ def strength_findings(text, source):
         if not source_words:continue
         clause, _ = clause_at(n, m)
         # Bind degree locally to the shared property, not an unrelated warm opener.
-        before = n[max(0, m.start()-24):m.start()]
-        high = bool(re.search(HIGH_DEGREE+r'\s*$', before))
-        supported_high = any(re.search(HIGH_DEGREE+r'\s*$', src[max(0,x.start()-24):x.start()]) for x in source_words)
-        hedged = any(re.search(r'(?:оват|еват|еньк)', x.group()) or re.search(LOW_DEGREE+r'\s*$', src[max(0,x.start()-24):x.start()]) for x in source_words)
-        still_hedged = bool(re.search(r'(?:оват|еват|еньк)',m.group()) or re.search(LOW_DEGREE+r'\s*$',before))
+        # Russian degree words may precede or follow the adjective («липкий немного»).
+        def degree(rx, s, x):
+            return bool(re.search(rx+r'\s*$', s[max(0, x.start()-24):x.start()]) or re.match(r'\s+'+rx, s[x.end():x.end()+16]))
+        high = degree(HIGH_DEGREE, n, m)
+        supported_high = any(degree(HIGH_DEGREE, src, x) for x in source_words)
+        hedged = any(re.search(r'(?:оват|еват|еньк)', x.group()) or degree(LOW_DEGREE, src, x) for x in source_words)
+        still_hedged = bool(re.search(r'(?:оват|еват|еньк)',m.group()) or degree(LOW_DEGREE, n, m))
         if high and not supported_high:
             rows.append(dict(severity='BLOCK',span=m.group(),basis='explicit degree exceeds customer evidence'))
         elif hedged and not still_hedged and customer_frame(clause):
@@ -218,7 +234,7 @@ def free_brand_voice(clause):
 def reported_fragrance(text, match, source):
     """Customer recipient can own a past perceptual outcome as well as speech."""
     clause, _ = proposition_at(text, match)
-    if not customer_frame(clause) or re.search(PRODUCT_RESET, clause):
+    if not attributed_at(clause, clause.find(match.group())):
         return False
     rows = feature_observations(text, source)
     if any(r.grounded and r.feature in {'pleasant','fresh','harsh','airy'}

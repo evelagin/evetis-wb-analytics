@@ -132,6 +132,10 @@ def assess(text,msg,p,hard_policy,*,previous_answers=()):
     if needs_context and not explanation and not action and not hard: reasons.append('approved_explanation_missing')
     reasons += ['selected_expertise_omitted:'+k for k in missing_expertise]
     if not answered: reasons.append('direct_answer_missing')
+    from app.response_quality.fact_response import fact_fragment_only
+    if direct and fact_fragment_only(text,[f['text'] for f in p.facts]):
+        checks['naturalness']=False  # a bare data fragment is not a natural answer
+        reasons.append('FACT_FRAGMENT_ONLY')
     reasons.extend(relevance)
     return QualityReport('GOOD' if all(checks.values()) else 'NEEDS_IMPROVEMENT',
                          {k:'GOOD' if v else 'NEEDS_IMPROVEMENT' for k,v in checks.items()},reasons)

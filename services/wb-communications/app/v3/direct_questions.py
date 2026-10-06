@@ -8,12 +8,42 @@ from dataclasses import dataclass, field
 from app.v3.text import normalize
 
 UNKNOWN_WORDING = {
- 'fragrance_longevity':'Подтверждённых данных о стойкости аромата на указанный срок у нас нет.',
+ 'fragrance_longevity':'Подтверждённых данных о стойкости аромата у нас нет.',
  'fragrance_perception_causes':'Подтверждённых данных о причинах различий в восприятии этого аромата у нас нет.',
  'fragrance_popularity':'Подтверждённых данных о том, какой доле покупателей нравится этот аромат, у нас нет.',
  'amount':'Подтверждённое количество средства или нажатий на одно применение в документации не указано.',
  'frequency':'Подтверждённая частота применения в документации не указана.',
 }
+SCENT = r'аромат\w*|запах\w*|пахн\w*|парфюмер\w*'
+# Duration/persistence of the scent itself. «держу» is the customer's action.
+LONGEVITY = (r'\bдерж(?!у\b|ите\b)\w*|\bстойк\w*|\bостает\w*|\bостанет\w*|\bсохраня\w*|\bнадолго\b|'
+             r'\bдолго\b|сколько\s+времени|\bдо\s+(?:[а-я]+\s+)?(?:утра|вечера|ночи)\b|\bсутк\w*|\bсутки\b|'
+             r'\bчас(?:а|ов)?\b|\bхватит\b|\bвыветр\w*|\bисчеза\w*|\bпропада\w*|\bвесь\s+день\b')
+# «долго» bound to another verb is not scent duration («долго впитывается», «долго пользуюсь»).
+OTHER_DURATION = (r'\b(?:впит|пользу|использ|сохн|нанос|жд|ищ|выбира|хран|доставл|ехал|шел|шла)\w*\s+долго\b|'
+                  r'\bдолго\s+(?:впит|пользу|использ|сохн|нанос|жд|ищ|выбира|хран|доставл|ехал|шел|шла)\w*')
+DURATIONS = ((r'\bдо\s+(?:[а-я]+\s+)?утра\b', 'до утра'), (r'\bдо\s+(?:[а-я]+\s+)?вечера\b', 'до вечера'),
+             (r'\bдо\s+(?:[а-я]+\s+)?ночи\b', 'до ночи'), (r'\bсутк\w*|\bсутки\b', 'в течение суток'),
+             (r'\bвесь\s+день\b|\bцелый\s+день\b', 'в течение дня'))
+
+
+def scent_longevity(n):
+    """Scent target and persistence marker in one clause; a pronoun clause
+    («держится ли он») may refer back to a scent named in the same sentence."""
+    for sentence in re.split(r'[.!?]', n):
+        if not re.search(SCENT, sentence):
+            continue
+        for clause in re.split(r'[,;]|\b(?:а|но)\b', sentence):
+            marker = re.search(LONGEVITY, re.sub(OTHER_DURATION, ' ', clause))
+            if marker and (re.search(SCENT, clause) or re.search(r'\b(?:он|она|оно|его|ее)\b', clause)):
+                return True
+    return False
+
+
+def requested_duration(n):
+    return next((ru for rx, ru in DURATIONS if re.search(rx, n)), None)
+
+
 RESTRICTED_BOUNDARY = 'Точную концентрацию или её диапазон в подтверждённых данных для ответа покупателям не раскрываем.'
 
 @dataclass
@@ -24,6 +54,7 @@ class QuestionIntent:
     component_id: str | None = None
     application_areas: list = field(default_factory=list)
     unit_kind: str | None = None
+    duration_ru: str | None = None
     resolution: str = 'UNKNOWN'
 
 
@@ -39,8 +70,9 @@ def parse_intent(source, *, is_question=True):
         return q
     scent = bool(re.search(r'аромат|запах|пахн|парфюмер', n))
     if scent:
-        if re.search(r'держ\w*|стойк\w*|до\s+(?:утра|вечера)|сутк|час', n):
+        if scent_longevity(n):
             q.fact_types.append('fragrance_longevity')
+            q.duration_ru = requested_duration(n)
         if re.search(r'от\s+чего|завис\w*|температур|тип\w*\s+кож', n):
             q.fact_types.append('fragrance_perception_causes')
         if re.search(r'(?:почти\s+)?всем|большинств|покупател\w*\s+(?:нрав|люб)|дол\w*\s+покупател', n):
@@ -87,6 +119,8 @@ def unknown_wording(fact_type, intent):
     if fact_type == 'amount':
         unit = {'DROPS': 'капель', 'PUMPS': 'нажатий'}.get(intent.unit_kind, 'средства')
         return f'Подтверждённое количество {unit} в доступной документации не указано.'
+    if fact_type == 'fragrance_longevity' and getattr(intent, 'duration_ru', None):
+        return f'Подтверждённых данных о стойкости аромата {intent.duration_ru} у нас нет.'
     return UNKNOWN_WORDING[fact_type]
 
 

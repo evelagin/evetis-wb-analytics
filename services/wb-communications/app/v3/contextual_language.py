@@ -64,25 +64,60 @@ def wish_frequency(text, match):
         r'использ|нанос|нанес|примен|рекоменд|совету|нужно|следует|долж|увлажня|леч|защища|обеспеч|помога', clause))
 
 
+def related(modifier, head, gap=2):
+    """Order-insensitive local relation of a property word and its head word.
+
+    Both orders, at most `gap` words apart, never across punctuation: Russian
+    «впитывается хорошо» and «хорошо впитывается» are the same observation.
+    """
+    between = r'\s+(?:[а-яё-]+\s+){0,%d}' % gap
+    return (r'\b(?:' + modifier + r')' + between + r'(?:' + head + r')|\b(?:' + head + r')'
+            + between + r'(?:' + modifier + r')')
+
+
+ABSORPTION = r'впит\w*'
+TEXTURE = r'текстур\w*|консистенц\w*'
 FEATURES = {
     'pleasant': r'приятн\w*|нрав\w*|понрав\w*',
     'fresh': r'свеж\w*',
     'harsh': r'резк\w*',
     'airy': r'воздушн\w*',
-    'fast_absorption': r'быстр\w*\s+впиты\w*',
-    'good_absorption': r'хорошо\s+впиты\w*',
+    'fast_absorption': related(r'быстр\w*', ABSORPTION),
+    'good_absorption': related(r'хорошо\b', ABSORPTION),
+    'pleasant_texture': related(r'приятн\w*', TEXTURE),
     'non_sticky': r'без\s+липк\w*|не\s+лип\w*|не\s+оставля\w*[^.!?]{0,35}липк\w*',
     'no_greasy_film': r'(?:без|не\s+оставля\w*)[^.!?]{0,35}жирн\w*\s+пленк\w*',
 }
+# Customer evidence may be worded as liking; a brand assertion is only «приятн».
+EVIDENCE_FEATURES = dict(FEATURES, pleasant_texture=related(r'приятн\w*|понрав\w*|нрав\w*|хорош\w*', TEXTURE))
+SELF_NEGATING = {'non_sticky', 'no_greasy_film'}
+
+
+def negated(text, match, key):
+    """«не» before or inside the related span («впитывается не очень хорошо»)."""
+    if key in SELF_NEGATING:
+        return False
+    return bool(re.search(r'\bне\s*$', text[max(0, match.start()-8):match.start()])
+                or re.search(r'\bне\b', match.group()))
+
+
+def brand_lead(clause, offset):
+    """A product subject asserted before any attribution is a brand claim.
+
+    A trailing pleasantry («…, рады, что Вам понравилось») cannot adopt it.
+    """
+    prefix = clause[:max(0, offset)]
+    marker = (r'\b(?:вы|вам|вас|ваш\w*)\b|(?:рад\w*|приятн\w*|жаль|понима\w*|здорово|замечательн\w*|'
+              r'чудесн\w*|прекрасн\w*|отличн\w*)[^.!?;]{0,30}\bчто\b')
+    return bool(re.search(r'\b(?:' + PRODUCT + r')', prefix)) and not re.search(marker, prefix)
 
 
 def reported_features(source):
     n = normalize(source)
     result = []
-    for key, pattern in FEATURES.items():
+    for key, pattern in EVIDENCE_FEATURES.items():
         for m in re.finditer(pattern, n):
-            before = n[max(0,m.start()-8):m.start()]
-            if key not in {'non_sticky','no_greasy_film'} and re.search(r'\bне\s*$',before):
+            if negated(n, m, key):
                 continue
             clause, _ = clause_at(n,m)
             if key in {'pleasant','fresh','harsh','airy'} and not re.search(r'аромат|запах|пах',clause):
@@ -102,6 +137,8 @@ def attributed_match(text, match, source, *, fragrance=False):
         # "Рады, что Вам понравилось, крем ..." is not customer provenance.
         if 'что' not in local and not local.lstrip().startswith('крем у вас'):
             return False
+    if brand_lead(clause, clause.find(match.group())):
+        return False
     grounded = set(reported_features(source))
     content = match.group()
     if fragrance:
@@ -115,7 +152,7 @@ def attributed_match(text, match, source, *, fragrance=False):
 def false_fast_attribution(text, source):
     if 'fast_absorption' in reported_features(source):
         return False
-    for m in re.finditer(r'быстр\w*\s+впиты\w*',text):
+    for m in re.finditer(FEATURES['fast_absorption'],text):
         clause,_ = clause_at(text,m)
         parts=re.split(r'[,;]|\b(?:а|при этом)\b',clause)
         local=parts[-1]
