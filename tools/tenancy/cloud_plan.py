@@ -27,6 +27,33 @@ def freeze(tenant,plans,created_at):
     return D.root_manifest(tenant,matches[0]['source']['commit'],matches[0]['image'],created_at,'QUALIFICATION',plans)
 
 
+def verify_retained_plan(c,doc,read=None):
+    """Read-only latest source/checkpoint/ACK join, before publication writes."""
+    read=read or BF.select
+    p=doc['runtime_plan'];params={'pid':('STRING',p['plan_id']),'origin':('TIMESTAMP',p['origin']),'entity':('STRING',p['entity'])}
+    journal=f"{c['project_id']}.ozon_raw.OZON_INGESTION_RUNS"
+    rows=read(c,f"SELECT MAX(backfill_sequence) AS seq FROM `{journal}` WHERE started_at>=@origin AND backfill_plan_id=@pid AND entity=@entity AND status='OK'",params)
+    if len(rows)!=1 or rows[0]['seq'] is None:
+        raise BF.B.EvidenceError('retained qualification progress unproven')
+    params['seq']=('INT64',rows[0]['seq'])
+    rows=read(c,f"SELECT DISTINCT evidence_json FROM `{journal}` WHERE started_at>=@origin AND backfill_plan_id=@pid AND entity=@entity AND status='OK' AND backfill_sequence=@seq LIMIT 2",params)
+    if len(rows)!=1:raise BF.B.EvidenceError('retained qualification checkpoint ambiguous')
+    proof=parse_tenant_json(rows[0]['evidence_json'])
+    if proof.get('plan')!=p:raise BF.B.EvidenceError('retained plan differs from frozen qualification')
+    BF.B.validate(p,proof['state'])
+    if proof['state']['sequence']!=params['seq'][1]:
+        raise BF.B.EvidenceError('retained source sequence/proof differs')
+    # Earlier owner-authorized execution budgets can have different ACK hashes
+    # while preserving the same immutable runtime plan. Bind publication to the
+    # latest source sequence and its reconciled proof; never erase that history.
+    saved=read(c,f"SELECT DISTINCT plan_hash,evidence_json FROM `{c['project_id']}.tenant_ops.BACKFILL_CHECKPOINTS` WHERE entity=@entity AND JSON_VALUE(evidence_json,'$.proof.plan.plan_id')=@pid AND SAFE_CAST(JSON_VALUE(evidence_json,'$.proof.state.sequence') AS INT64)=@seq LIMIT 2",{'entity':params['entity'],'pid':params['pid'],'seq':params['seq']})
+    if len(saved)!=1 or saved[0]['plan_hash']!=doc['ack_hash']:
+        raise BF.B.EvidenceError('retained owner ACK/plan reconstruction differs')
+    checkpoint=parse_tenant_json(saved[0]['evidence_json']).get('proof')
+    if not isinstance(checkpoint,dict) or checkpoint.get('plan')!=p or checkpoint.get('state')!=proof['state']:
+        raise BF.B.EvidenceError('retained latest checkpoint/source proof differs')
+
+
 def publish(manifest):
     c=D.validate_manifest(manifest);profile=BF.R.load_tenant(manifest['tenant']).get('historical_orchestration')
     if not profile or profile['root_hash']!=manifest['hash']:
@@ -34,23 +61,9 @@ def publish(manifest):
     from tools.tenancy import orchestration_plan as P
     block=P.verified(c)
     if block is None:raise BF.B.EvidenceError('qualified controller release unavailable')
-    # Read real durable source progress before publishing a resume plan. An
-    # existing source plan cannot be replaced/rebased from remembered inputs.
+    # Prove every retained scope before creating any deployment/commit marker.
     for doc in manifest['plans']:
-        p=doc['runtime_plan'];params={'pid':('STRING',p['plan_id']),'origin':('TIMESTAMP',p['origin']),'entity':('STRING',p['entity'])}
-        journal=f"{c['project_id']}.ozon_raw.OZON_INGESTION_RUNS"
-        rows=BF.select(c,f"SELECT MAX(backfill_sequence) AS seq FROM `{journal}` WHERE started_at>=@origin AND backfill_plan_id=@pid AND entity=@entity AND status='OK'",params)
-        if len(rows)!=1 or rows[0]['seq'] is None:
-            raise BF.B.EvidenceError('retained qualification progress unproven')
-        params['seq']=('INT64',rows[0]['seq'])
-        rows=BF.select(c,f"SELECT DISTINCT evidence_json FROM `{journal}` WHERE started_at>=@origin AND backfill_plan_id=@pid AND entity=@entity AND status='OK' AND backfill_sequence=@seq LIMIT 2",params)
-        if len(rows)!=1:raise BF.B.EvidenceError('retained qualification checkpoint ambiguous')
-        proof=parse_tenant_json(rows[0]['evidence_json'])
-        if proof.get('plan')!=p:raise BF.B.EvidenceError('retained plan differs from frozen qualification')
-        BF.B.validate(p,proof['state'])
-        saved=BF.select(c,f"SELECT DISTINCT plan_hash FROM `{c['project_id']}.tenant_ops.BACKFILL_CHECKPOINTS` WHERE entity=@entity AND JSON_VALUE(evidence_json,'$.proof.plan.plan_id')=@pid LIMIT 2",{'entity':params['entity'],'pid':params['pid']})
-        if len(saved)!=1 or saved[0]['plan_hash']!=doc['ack_hash']:
-            raise BF.B.EvidenceError('retained owner ACK/plan reconstruction differs')
+        verify_retained_plan(c,doc)
     release=parse_tenant_json((BF.REPO/'infra/tenant/releases/backfill'/f"{profile['release']}.json").read_text())
     descriptor={'settings':profile,'release':release}
     name=C.descriptor_name(profile['release'],profile['root_hash'],profile['scheduler_state'])
