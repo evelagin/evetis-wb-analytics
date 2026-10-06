@@ -124,6 +124,10 @@ export interface OzonFactRow {
   provisional_cogs_rub?: number | null;
   provisional_cogs_missing_qty?: number | null;
   economics_completeness?: string | null;
+  // Конфликт жизненного цикла (2026-10-06): финансы пришли, статус ещё не delivered.
+  lifecycle_conflict_qty?: number | null;
+  lifecycle_conflict_commission_rub?: number | null;
+  commission_unaccounted_qty?: number | null;
 }
 
 /** Полнота экономики строки суток × SKU (Gate 9 §7F). */

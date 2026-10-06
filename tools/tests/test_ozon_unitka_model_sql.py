@@ -76,7 +76,8 @@ def test_actual_completeness_case_executes_with_cis_signature(unproven, expected
                             "1 gross_qty, 0 cancelled_qty, 1 commission_not_applicable_qty, 1 realized_qty, "
                             "0 commission_gap_qty, 0 logistics_gap_qty, 0 seller_base_revenue_rub, "
                             "0 in_transit_revenue_rub, NULL commission_estimate_method, 0 log_per_unit, "
-                            "0 cogs_missing_qty, 0 in_transit_cogs_missing_qty, 0 in_transit_qty) r", (unproven,)).fetchone()[0]
+                            "0 cogs_missing_qty, 0 in_transit_cogs_missing_qty, 0 in_transit_qty, "
+                            "0 lifecycle_conflict_qty, 0 commission_unaccounted_qty) r", (unproven,)).fetchone()[0]
         assert result == expected
 
 
@@ -440,3 +441,41 @@ def test_historical_refresh_removes_last_provisional_unit_then_becomes_actual():
         assert later["in_transit_qty"] == later["commission_estimated_rub"] == later["logistics_estimated_rub"] == 0
         assert later["seller_base_revenue_rub"] == pytest.approx(1845.88)
         assert later["commission_rub"] == pytest.approx(669.24)
+
+
+def test_lifecycle_conflict_finance_commission_outranks_stale_delivering_status():
+    """2026-08-20 / 930334396 / 77152971-0050-1, executed through the REAL view bodies.
+
+    The posting is stuck at 'delivering' (status refresh window 30 days) while finance
+    already carries seller base 1131 and commission 655.81. Before the fix FCT dropped the
+    actual (delivered only) and OP disabled the estimate (n_base > 0): commission fell to 0.
+    """
+    db = operational_db(status="delivering", price=1131, payout=0)
+    db.execute("INSERT INTO RAW_OZON_FINANCE_ACCRUAL VALUES"
+               "('92767357-0024-1', '1991772098', '2026-10-03', 32, -84, 1131, -655.81)")
+    row = operational_row(db)
+    assert row["lifecycle_conflict_qty"] == 1
+    assert row["lifecycle_conflict_commission_rub"] == pytest.approx(655.81)
+    assert row["commission_effective_rub"] == pytest.approx(655.81)   # was 0
+    assert row["commission_estimated_rub"] == 0                        # not double counted
+    assert row["commission_unaccounted_qty"] == 0
+    assert row["commission_state"] == "ACTUAL"
+    assert row["economics_completeness"] == "PROVISIONAL_COMPLETE"     # status not caught up
+    assert row["provisional_revenue_rub"] == pytest.approx(1131)
+    # FCT itself is unchanged: realisation is still delivered-only
+    fct = dict(db.execute("SELECT * FROM FCT_OZON_SKU_PNL_DAILY WHERE fact_date='2026-09-20'").fetchone())
+    assert fct["commission_rub"] == 0 and fct["realized_qty"] == 0
+
+
+def test_no_conflict_rows_keep_their_previous_commission():
+    """Delivered with finance (actual) and in-transit without finance (estimate) are unchanged."""
+    db = operational_db(status="delivered", price=1287, payout=0)
+    db.execute("INSERT INTO RAW_OZON_FINANCE_ACCRUAL VALUES"
+               "('92767357-0024-1', '1991772098', '2026-09-25', 32, -80, 1287, -600)")
+    row = operational_row(db)
+    assert row["lifecycle_conflict_qty"] == 0 and row["lifecycle_conflict_commission_rub"] == 0
+    assert row["commission_effective_rub"] == pytest.approx(600)
+    transit = operational_row(operational_db(status="delivering", price=1287, payout=0))
+    assert transit["lifecycle_conflict_qty"] == 0
+    assert transit["commission_effective_rub"] == pytest.approx(1287 * .52)
+    assert transit["commission_state"] == "ESTIMATED"
