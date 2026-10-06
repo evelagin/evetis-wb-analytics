@@ -265,18 +265,23 @@ export async function ozonUnitkaLoader(
   // явно в OZON_UNITKA_OFFER_ALIASES — остальное движок не угадывает.
   // Короткое название — из общего справочника продукта (evetis_ref, единственный общий слой WB/Ozon),
   // а не из маркетингового заголовка Ozon: тот длинный и меняется площадкой.
-  const skuRef = await bq.query<{ offer_id: string; first_month: string | null; short_name: string | null }>(
+  const skuRef = await bq.query<{ offer_id: string; first_month: string | null; short_name: string | null; short_names: number | null }>(
     `WITH m AS (SELECT DISTINCT offer_id, internal_sku
                 FROM \`${ctx.config.projectId}.evetis_ref.REF_SKU_CHANNEL_MAP\`
                 WHERE marketplace = 'OZON'),
           a AS (SELECT internal_sku, MIN(fact_date) d
                 FROM \`${ctx.config.projectId}.ozon_mart.V_OZON_SKU_PNL_DAILY_OPERATIONAL\`
                 WHERE gross_qty > 0 GROUP BY 1)
-     SELECT m.offer_id, CAST(DATE_TRUNC(a.d, MONTH) AS STRING) first_month, p.product_name_short short_name
+     SELECT m.offer_id, CAST(DATE_TRUNC(a.d, MONTH) AS STRING) first_month, p.short_name, p.short_names
      FROM m LEFT JOIN a USING (internal_sku)
-     LEFT JOIN \`${ctx.config.projectId}.evetis_ref.REF_PRODUCT_MASTER\` p USING (internal_sku)`);
+     LEFT JOIN (SELECT internal_sku, MIN(product_name_short) short_name, COUNT(DISTINCT product_name_short) short_names
+                FROM \`${ctx.config.projectId}.evetis_ref.REF_PRODUCT_MASTER\` GROUP BY 1) p USING (internal_sku)`);
   const shortNames: Record<string, string> = {};
-  for (const r of skuRef) if (r.short_name && r.short_name.trim()) shortNames[r.offer_id] = r.short_name.trim();
+  for (const r of skuRef) {
+    // неоднозначное название (дубль internal_sku с разными именами) не выбирается порядком строк — подпись остаётся голой
+    if (Number(r.short_names ?? 0) > 1) { log.warn('ozon_unitka_short_name_ambiguous', { offer_id: r.offer_id, names: r.short_names }); continue; }
+    if (r.short_name && r.short_name.trim()) shortNames[r.offer_id] = r.short_name.trim();
+  }
   const canonSet = new Set(skuRef.map((r) => r.offer_id));
   if (!canonSet.size) throw new LoaderError('справочник каналов Ozon пуст', 'OZON_UNITKA_REF');
   const firstActivity: Record<string, string> = {};
