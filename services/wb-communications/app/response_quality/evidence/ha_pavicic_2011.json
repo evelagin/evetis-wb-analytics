@@ -1,0 +1,31 @@
+{
+  "source_id": "SRC-HA-PAVICIC-2011",
+  "type": "primary_randomized_vehicle_controlled_study",
+  "url": "https://pubmed.ncbi.nlm.nih.gov/22052267/",
+  "pmid": "22052267",
+  "citation": "Pavicic et al. J Drugs Dermatol. 2011;10(9):990–1000.",
+  "retrieved_on": "2026-10-04",
+  "ingredient_form": "EVETIS product presence: Hyaluronic Acid (SP-TS-9). The study abstract discusses HA/hyaluronan; it does not establish the precise commercial INCI salt or equivalence to this toner.",
+  "support_summary": "A randomized vehicle-controlled topical study in 76 women tested HA formulations at several molecular weights and found improved skin hydration versus vehicle. This supports the modest general ingredient hydration meaning.",
+  "limitations": [
+    "Cream formulations tested, not EVETIS toner.",
+    "No verified molecular-weight equivalence to EVETIS; no claim of clinically proven product efficacy.",
+    "No transfer of anti-wrinkle, elasticity, dosing, timing, numerical outcomes or safety claims.",
+    "Does not establish that HA causes the buyer’s perceived softness."
+  ],
+  "owner_authority": "Owner Decisions — Phase 3.1B Expertise Approval, У1 conditional approval, 2026-10-04",
+  "presence_source": "SRC-TU-SP-TS-9",
+  "verified_product_ids": [
+    "EVT-FT-MOIST-150"
+  ],
+  "authoritative_form_specific_support": {
+    "publisher": "European Commission Joint Research Centre",
+    "document": "Revision of European Ecolabel Criteria for Cosmetic Products — preliminary report",
+    "url": "https://susproc.jrc.ec.europa.eu/product-bureau/sites/default/files/contentype/product_group_documents/1581684261/Preliminary_Report_EUEcolabel_Cosmetics.pdf",
+    "pdf_page": 131,
+    "table": 41,
+    "pdf_sha256": "91098a04971753e70fdcbda9349618f301729d8d441a38c09bacbe82e2e7406a",
+    "retrieved_on": "2026-10-04",
+    "support_summary": "Table 41 lists Hyaluronic Acid separately from Sodium Hyaluronate among ingredients with humectant function in skin-care formulations. Ingredient function support, not an approval or efficacy trial of EVETIS."
+  }
+}

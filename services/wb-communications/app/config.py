@@ -143,6 +143,20 @@ class Settings:
         default_factory=lambda: os.environ.get("V3_ENFORCE_MANUAL_EDIT_VERIFIER", "false").lower() == "true"
     )
 
+    # Phase 3.1 comparison is confined to the existing v3 shadow runner. Customer-facing
+    # repair requires a SEPARATE owner activation ACK; promotion defaults to shadow-only.
+    v31_quality_shadow_enabled: bool = field(
+        default_factory=lambda: os.environ.get("V31_QUALITY_SHADOW_ENABLED", "true").lower() == "true"
+    )
+    v31_operator_recovery_enabled: bool = field(
+        default_factory=lambda: os.environ.get("V31_OPERATOR_RECOVERY_ENABLED", "false").lower() == "true"
+    )
+
+    # Separate activation gate: implementation never changes production config.
+    v31_owner_override_enabled: bool = field(
+        default_factory=lambda: os.environ.get("V31_OWNER_OVERRIDE_ENABLED", "false").lower() == "true"
+    )
+
     # --- Wildberries ---
     wb_api_base_url: str = field(
         default_factory=lambda: os.environ.get(
