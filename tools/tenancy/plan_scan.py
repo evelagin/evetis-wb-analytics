@@ -422,6 +422,22 @@ def _iam_target(rtype: str, after: dict, project: str) -> str | None:
             if m and m.group(1) == project:
                 return m.group(2)
         return sid
+    # Refreshed Google provider fields may contain full canonical resource names.
+    # Normalize only exact own-project/own-parent names; malformed/foreign paths
+    # remain unmatched against the closed qualified matrix.
+    if rtype in {"google_bigquery_table_iam_member", "google_cloud_run_v2_job_iam_member"}:
+        field = "table_id" if rtype == "google_bigquery_table_iam_member" else "name"
+        value = after.get(field)
+        if isinstance(value, str) and "/" in value:
+            if rtype == "google_bigquery_table_iam_member":
+                prefix = f"projects/{project}/datasets/{after.get('dataset_id')}/tables/"
+            else:
+                prefix = f"projects/{project}/locations/{after.get('location')}/jobs/"
+            suffix = value[len(prefix):] if value.startswith(prefix) else ""
+            if suffix and "/" not in suffix:
+                normalized = dict(after, **{field: suffix})
+                return BP.target(rtype, normalized, project)
+            return None
     return BP.target(rtype,after,project) or {"google_project_iam_member": after.get("project")}.get(rtype)
 
 

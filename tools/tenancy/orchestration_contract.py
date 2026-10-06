@@ -44,6 +44,7 @@ def block(c, settings, repo, release=None):
         name='backfillReadRef' if key=='ref' else ('backfillLockRead' if key=='tenant_locks' else 'backfillRead')
         grants.append({'dataset_key':key,'role':role(name),'email':accounts['controller']['email']})
     grants.append({'dataset_key':'tenant_locks','role':role('backfillLockCreate'),'email':accounts['append']['email']})
+    grants.append({'dataset_key':'tenant_ops','role':role('backfillAppendDatasetMetadata'),'email':accounts['append']['email']})
     env={'TENANT_ID':c['tenant_id'],'GCP_PROJECT_ID':p,'BQ_RAW_DATASET':c['datasets']['ozon_raw'],
          'BQ_REF_DATASET':c['datasets']['ref'],'BQ_LOCATION':'EU','TENANT_BINDING_REQUIRED':'1','STRICT_PAGE_CAPS':'1',
          'BACKFILL_ROOT_HASH':settings['root_hash'],'CONTROLLER_IMAGE':release['image'],

@@ -141,8 +141,9 @@ class Backend:
         if len(phases)>1:raise BF.B.EvidenceError('multiple active async report scopes')
         phase=phases[0] if phases else None
         params={'since':('TIMESTAMP',(now-timedelta(hours=24)).isoformat())}
-        rows=self.select(f"SELECT backfill_plan_id AS plan_id,backfill_sequence AS sequence,MAX(SAFE_CAST(JSON_VALUE(backfill_detail_json,'$.exports_reserved') AS INT64)) AS exports,MAX(started_at) AS at FROM `{self.journal}` WHERE started_at >= @since AND entity = 'ads_sku_daily' AND status = 'OK' AND backfill_sequence IS NOT NULL AND SAFE_CAST(JSON_VALUE(backfill_detail_json,'$.exports_reserved') AS INT64) > 0 GROUP BY backfill_plan_id,backfill_sequence",params)
-        reservations=[dict(r,at=timestamp(r['at']).isoformat()) for r in rows]
+        rows=self.select(f"SELECT backfill_plan_id AS plan_id,backfill_sequence AS sequence,MAX(SAFE_CAST(JSON_VALUE(backfill_detail_json,'$.exports_reserved') AS INT64)) AS exports,MAX(started_at) AS reserved_at FROM `{self.journal}` WHERE started_at >= @since AND entity = 'ads_sku_daily' AND status = 'OK' AND backfill_sequence IS NOT NULL AND SAFE_CAST(JSON_VALUE(backfill_detail_json,'$.exports_reserved') AS INT64) > 0 GROUP BY backfill_plan_id,backfill_sequence",params)
+        reservations=[{'plan_id':r['plan_id'],'sequence':r['sequence'],'exports':r['exports'],
+                       'at':timestamp(r['reserved_at']).isoformat()} for r in rows]
         unknown=self.select(f"SELECT COUNT(*) AS n FROM `{self.journal}` WHERE started_at >= @since AND entity = 'ads_sku_daily' AND backfill_plan_id IS NULL",params)
         if len(unknown)!=1:raise BF.B.EvidenceError('ordinary export accounting missing')
         return D.quota_decision(reservations,unknown[0]['n'],now,phase)
