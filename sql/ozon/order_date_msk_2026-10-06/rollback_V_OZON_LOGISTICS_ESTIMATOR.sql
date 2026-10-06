@@ -1,3 +1,4 @@
+-- Откат 2026-10-06: определение из main 30f2de9 (= production 2026-10-06 по canonical_body_sha256).
 -- ============================================================================
 -- CANONICAL CURRENT DEFINITION — ozon_mart.V_OZON_LOGISTICS_ESTIMATOR (VIEW)
 -- Git-first object (Gate 8, 2026-09-21): not in production until deployed. Rules:
@@ -47,9 +48,6 @@
 -- (отменённым) отправлениям живёт в «Прочих прямых» и здесь не моделируется.
 -- Internal dependencies: none.
 -- ============================================================================
--- Дата заказа отправления (order_date в CTE) — бизнес-дата МСК: DATE(created_at, 'Europe/Moscow'),
--- как в Ozon Seller Analytics. RAW order_date — UTC-дата created_at, остаётся в RAW для происхождения
--- (2026-10-06: с UTC заказ 00:00–02:59 МСК уезжал в предыдущие сутки).
 CREATE OR REPLACE VIEW `project-fa311fc0-4d87-4781-986.ozon_mart.V_OZON_LOGISTICS_ESTIMATOR`
 OPTIONS (description = "Оценщик логистики на реализованную единицу, зерно = internal_sku. Метод SKU_P70_120D: 70-й перцентиль логистики на единицу по своему SKU за скользящие 120 суток, при числе наблюдений < 8 - общерыночный p70 того же окна. Выбран бэктестом out-of-sample по окнам 60/90/120/180/270/вся история на пяти перцентилях: лучший RMSE среди оценщиков без систематического занижения и на переходе режима (смещение +1,26 руб., MAE 14,08, RMSE 23,63), и на установившемся режиме (смещение +0,42 руб., MAE 9,54, RMSE 14,61). Окно обязательно: ставка логистики сменила режим (около 50 руб. на единицу по февраль 2026, 78-89 руб. с марта-апреля), и оценщик на полной истории переоценивает. Оценивает логистику РЕАЛИЗОВАННЫХ единиц; логистика отменённых отправлений в оценщик не входит.")
 AS
@@ -58,7 +56,7 @@ WITH map AS (
   FROM `project-fa311fc0-4d87-4781-986.evetis_ref.REF_SKU_CHANNEL_MAP`
   WHERE marketplace = 'OZON'),
 post AS (
-  SELECT DISTINCT posting_number, sku, DATE(created_at, 'Europe/Moscow') order_date, quantity
+  SELECT DISTINCT posting_number, sku, order_date, quantity
   FROM `project-fa311fc0-4d87-4781-986.ozon_raw.RAW_OZON_POSTINGS_FBO`
   WHERE status = 'delivered'),
 lg AS (

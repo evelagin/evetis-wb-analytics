@@ -52,6 +52,12 @@ AIE_OBJECTS = {name for _, name, folder in aie_render.OBJECTS if folder.startswi
 # контракту Git-first до захвата `captured_live` (захват требует HEAD в origin/main). Объект — не
 # SCALE 1 и в его проверочный SQL не подставляется; сверка с live — verify_current_sql_live.py.
 OZON_UNITKA_OBJECTS = {"V_OZON_SKU_PNL_DAILY_OPERATIONAL"}
+# Бизнес-дата заказа Ozon = сутки МСК (2026-10-06): Git-first, развёртывание — отдельный ACK владельца.
+# FCT_OZON_SKU_PNL_DAILY — объект SCALE 1: его новое тело подставляется в проверочный SQL, это и есть
+# предразвёртывание. После развёртывания и снятия R2C множество опустеет.
+ORDER_DATE_MSK_OBJECTS = {"FCT_OZON_SKU_PNL_DAILY", "FCT_OZON_SKU_PNL_MONTHLY", "FCT_OZON_PNL_MONTHLY",
+                          "V_OZON_COMMISSION_POLICY", "V_OZON_LOGISTICS_ESTIMATOR",
+                          "V_OZON_SKU_PNL_DAILY_OPERATIONAL", "V_OZON_SKU_FORWARD_ECONOMICS_CURRENT"}
 TAX_WORDS = re.compile(r"tax|vat|usn|nalog|налог|ндс|усн", re.I)
 
 
@@ -141,10 +147,17 @@ def test_buyout_repair_objects_are_deployed_and_read_back():
     # PR #160 слит: все объекты развёрнуты, провенанс подтверждён чтением production,
     # ожидающих развёртывания нет. Каждый из перечисленных ниже обязан быть captured_live.
     ubr010_pending = set()
+    # 2026-10-06: Git-first смена даты заказа на сутки МСК — тело опережает production, снимок не переписан.
+    order_date_msk_pending = ORDER_DATE_MSK_OBJECTS
     for dataset, name in (("ozon_mart", "V_OZON_CIS_BUYOUT"), ("ozon_mart", "FCT_OZON_SKU_PNL_DAILY"),
                           ("ozon_mart", "FCT_OZON_SKU_PNL_MONTHLY"), ("ozon_mart", "FCT_OZON_PNL_MONTHLY"),
                           ("evetis_mart", "FACT_SKU_DAILY")):
         _, o = manifest_entry(dataset, name)
+        if name in order_date_msk_pending:
+            assert o["sync_state"] == "pending_deploy", name
+            assert o["canonical_schema_verification"] == "unverified", name
+            assert o["canonical_body_sha256"] != o["live_body_sha256_at_capture"], name
+            continue
         if name in ubr010_pending:
             assert o["sync_state"] == "pending_deploy", name
             assert o["canonical_body_sha256"] != o["live_body_sha256_at_capture"], name
@@ -413,7 +426,7 @@ def test_predeploy_render_inlines_every_pending_object_and_stays_a_select():
     # PR-PROMO-2 (2026-09-23) добавил 11 объектов Git-first; их предразвёртывание проверяет
     # tools/promo_canonical_render.py, объекты SCALE 1 по-прежнему не pending.
     pending = {k.split(".")[-1].rstrip("`") for k in render.pending_bodies()}
-    assert pending - PROMO2_OBJECTS - AIE_OBJECTS - OZON_UNITKA_OBJECTS == set()
+    assert pending - PROMO2_OBJECTS - AIE_OBJECTS - OZON_UNITKA_OBJECTS - ORDER_DATE_MSK_OBJECTS == set()
     sample = next(iter(check_blocks().values()))
     assert render.render(sample, {}) == sample
     # ... and its inlining logic is still exercised on the same objects, as if they were pending.

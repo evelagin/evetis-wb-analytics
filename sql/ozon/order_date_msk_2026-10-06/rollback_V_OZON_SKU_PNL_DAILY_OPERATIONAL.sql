@@ -1,3 +1,4 @@
+-- Откат 2026-10-06: определение из main 30f2de9 (= production 2026-10-06 по canonical_body_sha256).
 -- ============================================================================
 -- CANONICAL CURRENT DEFINITION — ozon_mart.V_OZON_SKU_PNL_DAILY_OPERATIONAL (VIEW)
 -- Git-first object (Gate 8, 2026-09-21): not in production until deployed. Rules:
@@ -85,9 +86,6 @@
 -- Internal dependencies: FCT_OZON_SKU_PNL_DAILY, V_OZON_CIS_BUYOUT, V_OZON_COMMISSION_POLICY,
 -- V_OZON_LOGISTICS_ESTIMATOR. External: evetis_ref.V_PRODUCT_COGS_EFFECTIVE.
 -- ============================================================================
--- Дата заказа отправления (order_date в CTE) — бизнес-дата МСК: DATE(created_at, 'Europe/Moscow'),
--- как в Ozon Seller Analytics. RAW order_date — UTC-дата created_at, остаётся в RAW для происхождения
--- (2026-10-06: с UTC заказ 00:00–02:59 МСК уезжал в предыдущие сутки).
 CREATE OR REPLACE VIEW `project-fa311fc0-4d87-4781-986.ozon_mart.V_OZON_SKU_PNL_DAILY_OPERATIONAL`
 OPTIONS (description = "Операционная (провизорная) экономика Ozon, зерно = сутки x internal_sku. Надстройка над FCT_OZON_SKU_PNL_DAILY: денежные поля факта проходят насквозь неизменными, полнота комиссии уточняется по первичному buyout evidence, оценки лежат в отдельных колонках, факт и оценка раздельно аудируемы. Покомпонентное старшинство: ACTUAL > ESTIMATED > NOT_APPLICABLE > UNKNOWN; ноль не ставится только потому, что Ozon ещё не прислал расход. Комиссия оценивается как (price_rub - payout_rub) x quantity из отчёта по отправлениям - тождество проверено на 600 отправлениях из 600 с расхождением 0,00 руб.; резерв - тариф из V_OZON_COMMISSION_POLICY; у документированных выкупов СНГ комиссия NOT_APPLICABLE; структурные кандидаты без документа используют датированный тариф и остаются PROVISIONAL_PARTIAL. Логистика оценивается V_OZON_LOGISTICS_ESTIMATOR (SKU_P70_120D, выбран бэктестом). Хранение, прочие прямые, продвижение и реклама - только факт, оценщика не имеют. Период считается созревшим через 36 суток - максимальный наблюдённый срок видимости начисления. Gate 9: операционная экономика считается на ОЖИДАЕМО реализованных единицах (заказано - отменено), а не только на доставленных: единица в пути приносит свою провизорную экономику (цена продавца из отправления, комиссия по тарифу, логистика по оценщику). Цена покупателя и СПП до доставки не выводятся - они существуют только в финансовом начислении. Факт не тронут: seller_base_revenue_rub и realized_qty остаются величинами доставленных единиц. Финансы старше застрявшего статуса: недоставленная неотменённая продажа с seller-base начислением - конфликт жизненного цикла, её комиссия берётся из начисления (lifecycle_conflict_commission_rub), строка остаётся провизорной; неучтённая единица (commission_unaccounted_qty > 0) делает комиссию UNKNOWN, а не нулём.")
 AS
@@ -96,7 +94,7 @@ WITH map AS (
   FROM `project-fa311fc0-4d87-4781-986.evetis_ref.REF_SKU_CHANNEL_MAP`
   WHERE marketplace = 'OZON'),
 post AS (
-  SELECT DISTINCT p.posting_number, p.sku, p.status, DATE(p.created_at, 'Europe/Moscow') order_date, p.quantity,
+  SELECT DISTINCT p.posting_number, p.sku, p.status, p.order_date, p.quantity,
          p.price_rub, p.payout_rub, m.internal_sku
   FROM `project-fa311fc0-4d87-4781-986.ozon_raw.RAW_OZON_POSTINGS_FBO` p
   JOIN map m ON m.marketplace_sku = p.sku),

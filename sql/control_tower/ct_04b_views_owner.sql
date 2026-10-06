@@ -185,11 +185,13 @@ FROM n
 -- in_plan  — строка покрыта планом; is_past — дата закрыта данными канала (data_as_of).
 -- Оконные метрики: план и факт месяца, MTD, требуемый темп на остаток, прогноз EOM
 -- по среднему за 7 дней. Отмены исключены (cards_ordered), выкупы отдельным полем.
-CREATE OR REPLACE VIEW `project-fa311fc0-4d87-4781-986.wb_mart.V_CT_PLAN_VS_ACTUAL_DAILY` AS
+CREATE OR REPLACE VIEW `project-fa311fc0-4d87-4781-986.wb_mart.V_CT_PLAN_VS_ACTUAL_DAILY`
+OPTIONS (description = "Control Tower: план (ACTIVE-версия, date × target) против факта (V_CT_ACTUAL_DAILY). Grain: d × marketplace × internal_sku × sales_mode. Заказы ≠ продажи: actual_cards = заказы без отмен (leading), actual_cards_sold = выкупы/delivered (money basis). MTD/attainment считаются только по дням внутри горизонта плана (in_plan); forecast_month_end = MTD + средний темп 7 дн × оставшиеся дни. Вклад = НЕ прибыль (до OPEX).")
+AS
 WITH asof AS (
   SELECT 'WB' AS marketplace, MAX(day) AS data_as_of FROM `project-fa311fc0-4d87-4781-986.wb_mart.V_DASH_SKU_DAILY`
   UNION ALL
-  SELECT 'OZON', MAX(order_date) FROM `project-fa311fc0-4d87-4781-986.ozon_raw.RAW_OZON_POSTINGS_FBO`
+  SELECT 'OZON', MAX(DATE(created_at, 'Europe/Moscow')) FROM `project-fa311fc0-4d87-4781-986.ozon_raw.RAW_OZON_POSTINGS_FBO`
 ),
 p AS (SELECT * FROM `project-fa311fc0-4d87-4781-986.wb_mart.V_CT_PLAN_ACTIVE`),
 a AS (SELECT * FROM `project-fa311fc0-4d87-4781-986.wb_mart.V_CT_ACTUAL_DAILY` WHERE d >= DATE '2026-09-01'),

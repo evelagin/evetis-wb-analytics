@@ -1,5 +1,19 @@
 # CHANGELOG.md
 
+## 2026-10-06 — Ozon: бизнес-дата заказа = сутки МСК (НЕ РАЗВЁРНУТО)
+
+`sql/current/ozon_mart/*` (7 представлений), `sql/control_tower/*` (2), `cloud/src/loaders/unitka/ozon/bq.ts`. Лист `OZON_Юнит_2025`
+меняется только после развёртывания (см. `docs/ops/OZON_ORDER_DATE_MSK_2026-10-06.md`).
+
+- RAW `order_date` — UTC-дата `created_at`; Ozon Seller Analytics считает сутки по Москве. Дата заказа во всех
+  объектах, читающих RAW-отправления, теперь `DATE(created_at, 'Europe/Moscow')`; RAW и загрузчик Ozon не меняются.
+- Отправление переезжает целиком: заказ, отмена, цена/выручка, выкуп, комиссия, логистика и прочие прямые по
+  posting_number, COGS, пара buyer/seller (СПП). Реклама и начисления только со sku — без изменений.
+- Итоги за всю историю сохранены (Δ = 0); месяцы: июнь→июль 2 ед. (2 979 ₽ выручки), сентябрь→октябрь 1 ед.
+  (3 088 ₽). 30.09–05.10 совпадают с Ozon Analytics (7, 26, 18, 10, 23, 10).
+- Control Tower (`wb_mart.V_CT_ACTUAL_DAILY_LIVE`, `V_CT_PLAN_VS_ACTUAL_DAILY`) — та же бизнес-дата: иначе выручка
+  граничных отправлений выпадала бы из CT (−2 258 ₽, U03 FAIL). `V_CT_FRESHNESS` (свежесть загрузки) — UTC, без изменений.
+
 ## 2026-10-06 — Алерты Юнитки: политика отказа платформы включена
 
 `infra/terraform/unitka_engine.tf`: `unitka_platform_failed.enabled` false → true (ACK владельца). Фильтр, метки,

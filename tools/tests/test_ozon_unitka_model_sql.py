@@ -3,7 +3,9 @@
 Only project/date placeholders and table identifiers are replaced. BigQuery IF,
 COUNTIF and SAFE_DIVIDE are supplied as local functions, not production calls.
 """
+from datetime import datetime
 from pathlib import Path
+from zoneinfo import ZoneInfo
 import re
 import sqlite3
 import json
@@ -12,6 +14,25 @@ import sqlglot
 from sqlglot import exp
 
 ROOT = Path(__file__).resolve().parents[2]
+# Фикстура: created_at в UTC; 09:00Z = 12:00 МСК тех же суток, поэтому прежние сценарии не двигаются.
+NOON = "T09:00:00Z"
+
+
+def bq_date_tz(ts, tz):
+    """BigQuery DATE(timestamp, time_zone): календарная дата момента в указанном поясе."""
+    if ts is None:
+        return None
+    t = datetime.fromisoformat(str(ts).replace("Z", "+00:00"))
+    t = t if t.tzinfo else t.replace(tzinfo=ZoneInfo("UTC"))  # BigQuery TIMESTAMP без пояса — UTC
+    return t.astimezone(ZoneInfo(tz)).date().isoformat()
+
+
+def business_date_sql(text):
+    """Бизнес-дата заказа Ozon в тексте SQL → локальная функция с семантикой BigQuery (только диалект)."""
+    const = re.search(r'OZON_ORDER_BUSINESS_DATE_SQL = "([^"]+)"',
+                      (ROOT / "cloud/src/loaders/unitka/ozon/bq.ts").read_text())[1]
+    text = text.replace("${OZON_ORDER_BUSINESS_DATE_SQL}", const)
+    return re.sub(r"\bDATE\((\w+\.)?created_at, 'Europe/Moscow'\)", r"BQ_DATE_TZ(\1created_at, 'Europe/Moscow')", text)
 
 
 class CountIf:
@@ -29,14 +50,15 @@ def order_price(rows, expected_units):
     text = (ROOT / "cloud/src/loaders/unitka/ozon/bq.ts").read_text()
     cte = text.split("order_prices AS (", 1)[1].split("),\nprice_finance AS (", 1)[0]
     cte = cte.replace("\\`", "`").replace("${project}.ozon_raw.RAW_OZON_POSTINGS_FBO", "postings")
-    cte = cte.replace("${from}", "2026-09-20").replace("${to}", "2026-09-20")
+    cte = business_date_sql(cte.replace("${from}", "2026-09-20").replace("${to}", "2026-09-20"))
     final = re.search(r"CASE WHEN op.units = f.expected_realized_qty.*?END order_reference_price", text, re.S)[0]
     with sqlite3.connect(":memory:") as db:
         db.create_function("IF", 3, lambda c, yes, no: yes if c else no)
         db.create_function("SAFE_DIVIDE", 2, lambda x, y: x / y if x is not None and y else None)
+        db.create_function("BQ_DATE_TZ", 2, bq_date_tz)
         db.create_aggregate("COUNTIF", 1, CountIf)
-        db.execute("CREATE TABLE postings(order_date TEXT, sku TEXT, quantity INT, price_rub REAL, status TEXT)")
-        db.executemany("INSERT INTO postings VALUES('2026-09-20', '1991772098', ?, ?, ?)", rows)
+        db.execute("CREATE TABLE postings(order_date TEXT, sku TEXT, quantity INT, price_rub REAL, status TEXT, created_at TEXT)")
+        db.executemany(f"INSERT INTO postings VALUES('2026-09-20', '1991772098', ?, ?, ?, '2026-09-20{NOON}')", rows)
         return db.execute("WITH m AS (SELECT '1991772098' marketplace_sku, '305101272' offer_id), "
                           f"op AS ({cte}), f AS (SELECT ? expected_realized_qty) "
                           f"SELECT {final} FROM op CROSS JOIN f", (expected_units,)).fetchone()[0]
@@ -93,7 +115,7 @@ def operational_db(*, payout=0, status="delivered", price=1287, tariff=.52):
       CREATE TABLE REF_SKU_CHANNEL_MAP(marketplace TEXT, internal_sku TEXT, marketplace_sku TEXT);
       INSERT INTO REF_SKU_CHANNEL_MAP VALUES('OZON', 'EVT-FS-MOIST-30', '1991772098');
       CREATE TABLE RAW_OZON_POSTINGS_FBO(posting_number TEXT, sku TEXT, status TEXT,
-        order_date TEXT, quantity INT, price_rub REAL, payout_rub REAL);
+        order_date TEXT, quantity INT, price_rub REAL, payout_rub REAL, created_at TEXT);
       CREATE TABLE RAW_OZON_FINANCE_ACCRUAL(posting_number TEXT, sku TEXT, event_date TEXT,
         type_id INT, amount_rub REAL, seller_base_price_rub REAL, commission_rub REAL);
       INSERT INTO RAW_OZON_FINANCE_ACCRUAL VALUES
@@ -111,7 +133,8 @@ def operational_db(*, payout=0, status="delivered", price=1287, tariff=.52):
       CREATE TABLE V_OZON_LOGISTICS_ESTIMATOR(internal_sku TEXT, logistics_per_unit_rub REAL, estimator_method TEXT);
       INSERT INTO V_OZON_LOGISTICS_ESTIMATOR VALUES('EVT-FS-MOIST-30', 99, 'SKU_P70_120D');
     """)
-    db.execute("INSERT INTO RAW_OZON_POSTINGS_FBO VALUES(?, '1991772098', ?, '2026-09-20', 1, ?, ?)",
+    db.create_function("BQ_DATE_TZ", 2, bq_date_tz)
+    db.execute(f"INSERT INTO RAW_OZON_POSTINGS_FBO VALUES(?, '1991772098', ?, '2026-09-20', 1, ?, ?, '2026-09-20{NOON}')",
                ("92767357-0024-1", status, price, payout))
     if tariff is not None:
         db.execute("INSERT INTO V_OZON_COMMISSION_POLICY VALUES('EVT-FS-MOIST-30', '2026-08-28', '9999-12-31', ?)",
@@ -119,7 +142,7 @@ def operational_db(*, payout=0, status="delivered", price=1287, tariff=.52):
     for view in ["FCT_OZON_SKU_PNL_DAILY", "V_OZON_SKU_PNL_DAILY_OPERATIONAL"]:
         text = (ROOT / f"sql/current/ozon_mart/{view}.sql").read_text().split("\nAS\n", 1)[1]
         text = re.sub(r"`project-fa311fc0-4d87-4781-986\.[^.]+\.([^`]+)`", r"\1", text)
-        text = text.replace("CURRENT_DATE('Europe/Moscow')", "DATE '2026-10-04'")
+        text = business_date_sql(text.replace("CURRENT_DATE('Europe/Moscow')", "DATE '2026-10-04'"))
         query = sqlglot.transpile(text, read="bigquery", write="sqlite")[0]
         db.execute(f"CREATE VIEW {view} AS {query}")
     return db
@@ -187,7 +210,7 @@ def test_historical_refresh_replaces_estimate_with_stronger_persisted_evidence(s
 def test_mixed_actual_and_candidate_commission_counts_each_posting_once():
     with operational_db() as db:
         db.execute("INSERT INTO RAW_OZON_POSTINGS_FBO VALUES"
-                   "('ordinary', '1991772098', 'delivered', '2026-09-20', 1, 1287, 707.85)")
+                   f"('ordinary', '1991772098', 'delivered', '2026-09-20', 1, 1287, 707.85, '2026-09-20{NOON}')")
         db.execute("INSERT INTO RAW_OZON_FINANCE_ACCRUAL VALUES"
                    "('ordinary', '1991772098', '2026-09-24', 1000, 0, 1287, -579.15)")
         row = operational_row(db)
@@ -233,7 +256,7 @@ def adapter_row(db):
     db.execute("ALTER TABLE RAW_OZON_FINANCE_ACCRUAL ADD COLUMN buyer_paid_price_rub REAL")
     text = (ROOT / "cloud/src/loaders/unitka/ozon/bq.ts").read_text().split("return `", 1)[1].split("`.trim();", 1)[0]
     text = text.replace("\\`", "`").replace("${project}", "project-fa311fc0-4d87-4781-986")
-    text = text.replace("${from}", "2026-09-20").replace("${to}", "2026-09-20")
+    text = business_date_sql(text.replace("${from}", "2026-09-20").replace("${to}", "2026-09-20"))
     text = re.sub(r"`project-fa311fc0-4d87-4781-986\.[^.]+\.([^`]+)`", r"\1", text)
     tree = sqlglot.parse_one(text, read="bigquery")
     for node in list(tree.find_all(exp.JSONFormat)):
@@ -252,7 +275,7 @@ def adapter_row(db):
 
 
 def add_posting(db, posting, quantity=1, price=1287, actual=None, status="delivered", proceeds=None):
-    db.execute("INSERT INTO RAW_OZON_POSTINGS_FBO VALUES(?, '1991772098', ?, '2026-09-20', ?, ?, ?)",
+    db.execute(f"INSERT INTO RAW_OZON_POSTINGS_FBO VALUES(?, '1991772098', ?, '2026-09-20', ?, ?, ?, '2026-09-20{NOON}')",
                (posting, status, quantity, price, None if actual is None else actual * .48))
     if actual is not None:
         db.execute("INSERT INTO RAW_OZON_FINANCE_ACCRUAL VALUES(?, '1991772098', '2026-09-24', 1000, 0, ?, ?)",
@@ -497,3 +520,93 @@ def test_null_status_posting_is_unaccounted_not_silently_dropped():
     assert row["commission_unaccounted_qty"] == 1
     assert row["commission_state"] == "UNKNOWN"
     assert row["economics_completeness"] != "ACTUAL"
+
+
+# ── Бизнес-дата заказа Ozon = календарные сутки МСК (2026-10-06) ────────────────────────────────
+# RAW order_date — UTC-дата created_at. Ozon Seller Analytics группирует по Москве: 05.10.2026
+# Ozon = 10, Юнитка = 11 из-за отправления, созданного в 01:37 МСК 06.10. В фикстурах ниже RAW
+# order_date намеренно равен UTC-дате: если SQL читает его, а не created_at, тест падает.
+
+def add_raw_posting(db, posting, created_at, utc_day, status="delivered", quantity=1, price=1000):
+    db.execute("INSERT INTO RAW_OZON_POSTINGS_FBO VALUES(?, '1991772098', ?, ?, ?, ?, NULL, ?)",
+               (posting, status, utc_day, quantity, price, created_at))
+
+
+def day_rows(db, view="FCT_OZON_SKU_PNL_DAILY"):
+    """Строки, кроме базовой фикстуры 20.09 (её posting создан в 12:00 МСК и не двигается)."""
+    return {r["fact_date"]: dict(r) for r in db.execute(f"SELECT * FROM {view} WHERE fact_date <> '2026-09-20'")}
+
+
+@pytest.mark.parametrize("created_at,utc_day,msk_day", [
+    ("2026-10-05T20:59:59Z", "2026-10-05", "2026-10-05"),  # 23:59:59 МСК — ещё 05.10
+    ("2026-10-05T21:00:00Z", "2026-10-05", "2026-10-06"),  # 00:00 МСК — уже 06.10
+    ("2026-10-05T23:59:59Z", "2026-10-05", "2026-10-06"),  # 02:59:59 МСК — последняя секунда сдвига
+    ("2026-10-06T00:00:00Z", "2026-10-06", "2026-10-06"),  # 03:00 МСК — UTC и МСК совпадают
+    ("2026-12-31T21:30:00Z", "2026-12-31", "2027-01-01"),  # граница года
+    ("2026-09-30T21:30:00Z", "2026-09-30", "2026-10-01"),  # граница месяца
+])
+def test_order_business_date_is_moscow_calendar_day(created_at, utc_day, msk_day):
+    assert bq_date_tz(created_at, "Europe/Moscow") == msk_day
+    with operational_db() as db:
+        add_raw_posting(db, "boundary-1", created_at, utc_day)
+        for view in ("FCT_OZON_SKU_PNL_DAILY", "V_OZON_SKU_PNL_DAILY_OPERATIONAL"):
+            rows = day_rows(db, view)
+            assert set(rows) == {msk_day}, view
+            assert rows[msk_day]["gross_qty"] == rows[msk_day]["realized_qty"] == 1
+
+
+def test_cancellation_after_order_stays_on_the_order_business_day():
+    with operational_db() as db:
+        add_raw_posting(db, "cancel-1", "2026-09-30T23:30:00Z", "2026-09-30", status="cancelled")
+        rows = day_rows(db)
+        assert set(rows) == {"2026-10-01"}
+        assert rows["2026-10-01"]["gross_qty"] == rows["2026-10-01"]["cancelled_qty"] == 1
+
+
+def test_mixed_sku_day_splits_exactly_at_moscow_midnight():
+    with operational_db() as db:
+        # в пути: база — цена заказа, комиссия — оценка по тарифу; всё едет вместе со своим заказом
+        add_raw_posting(db, "before-midnight", "2026-10-05T20:00:00Z", "2026-10-05", status="delivering", price=1000)  # 23:00 МСК
+        add_raw_posting(db, "after-midnight", "2026-10-05T22:00:00Z", "2026-10-05", status="delivering", price=1300)   # 01:00 МСК
+        rows = day_rows(db, "V_OZON_SKU_PNL_DAILY_OPERATIONAL")
+        assert {d: r["gross_qty"] for d, r in rows.items()} == {"2026-10-05": 1, "2026-10-06": 1}
+        assert rows["2026-10-05"]["provisional_revenue_rub"] == 1000
+        assert rows["2026-10-06"]["provisional_revenue_rub"] == 1300
+        assert rows["2026-10-05"]["commission_effective_rub"] == pytest.approx(520)
+        assert rows["2026-10-06"]["commission_effective_rub"] == pytest.approx(676)
+
+
+def test_late_finance_moves_with_its_posting_as_one_economic_unit():
+    with operational_db() as db:
+        add_raw_posting(db, "late-fin", "2026-10-05T22:00:00Z", "2026-10-05", price=1000)
+        db.execute("INSERT INTO RAW_OZON_FINANCE_ACCRUAL VALUES"
+                   "('late-fin', '1991772098', '2026-10-12', 1000, 0, 1000, -520),"
+                   "('late-fin', '1991772098', '2026-10-12', 32, -80, NULL, NULL)")
+        rows = day_rows(db)
+        assert set(rows) == {"2026-10-06"}  # ни 05.10 (UTC), ни 12.10 (дата начисления)
+        r = rows["2026-10-06"]
+        assert r["seller_base_revenue_rub"] == 1000
+        assert r["commission_rub"] == 520
+        assert r["logistics_rub"] == 80
+
+
+def test_documented_buyout_revenue_uses_the_business_day():
+    with operational_db() as db:
+        add_raw_posting(db, "doc-buyout", "2026-10-05T21:30:00Z", "2026-10-05", price=998)
+        db.execute("INSERT INTO V_OZON_CIS_BUYOUT VALUES('doc-buyout', 558.88)")
+        rows = day_rows(db)
+        assert set(rows) == {"2026-10-06"}
+        assert rows["2026-10-06"]["seller_base_revenue_rub"] == pytest.approx(558.88)
+        assert rows["2026-10-06"]["commission_not_applicable_qty"] == 1
+
+
+def test_adapter_price_population_uses_the_business_day():
+    """Адаптер Юнитки (bq.ts): заказ 01:00 МСК 20.09 (UTC 19.09) входит в популяцию цены 20.09."""
+    with operational_db() as db:
+        add_raw_posting(db, "early-msk", "2026-09-19T22:00:00Z", "2026-09-19", price=1287)
+        row = adapter_row(db)
+        assert row["d"] == "2026-09-20"
+        assert row["gross_qty"] == 2
+        assert row["operational_expected_qty"] == 2
+        witness = {u["posting_number"] for u in json.loads(row["operational_basis_units_json"])}
+        assert witness == {"92767357-0024-1", "early-msk"}

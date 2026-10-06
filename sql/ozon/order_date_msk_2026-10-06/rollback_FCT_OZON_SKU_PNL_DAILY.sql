@@ -1,3 +1,4 @@
+-- Откат 2026-10-06: определение из main 30f2de9 (= production 2026-10-06 по canonical_body_sha256).
 -- ============================================================================
 -- CANONICAL CURRENT DEFINITION — ozon_mart.FCT_OZON_SKU_PNL_DAILY (VIEW)
 -- Git-first object (SCALE 1, 2026-09-20): not in production until deployed. Rules:
@@ -11,8 +12,8 @@
 -- проверка — sql/scale1/fact_sku_daily_validation.sql.
 --
 -- Базис даты (fact_date) — как в месячном P&L, он СМЕШАННЫЙ и это не скрывается:
---   • заказы, реализация, выручка, комиссия, COGS          → бизнес-дата заказа (МСК);
---   • расходы финансов с posting_number                     → бизнес-дата заказа этого отправления;
+--   • заказы, реализация, выручка, комиссия, COGS          → order_date отправления;
+--   • расходы финансов с posting_number                     → order_date этого отправления;
 --   • расходы финансов только со sku (без posting_number)   → event_date начисления;
 --   • реклама                                               → дата рекламной статистики.
 -- Реализация = status 'delivered'. Поздняя доставка меняет ПРОШЛЫЕ сутки (дату заказа).
@@ -60,14 +61,11 @@
 -- магазина на SKU не разносятся (слоя L4 нет), налог не моделируется.
 -- Internal dependencies: V_OZON_CIS_BUYOUT.
 -- ============================================================================
--- Дата заказа отправления (order_date в CTE) — бизнес-дата МСК: DATE(created_at, 'Europe/Moscow'),
--- как в Ozon Seller Analytics. RAW order_date — UTC-дата created_at, остаётся в RAW для происхождения
--- (2026-10-06: с UTC заказ 00:00–02:59 МСК уезжал в предыдущие сутки).
 CREATE OR REPLACE VIEW `project-fa311fc0-4d87-4781-986.ozon_mart.FCT_OZON_SKU_PNL_DAILY`
 OPTIONS (description = "Фактическая экономика Ozon, зерно = сутки x internal_sku. VIEW. Суточное выражение семантики FCT_OZON_SKU_PNL_MONTHLY: агрегат до месяца сходится с месячным P&L (деньги <= 0,01 руб., штуки точно). Суммы без ROUND, полная точность NUMERIC. Базис даты смешанный, как в месячном P&L: продажи, комиссия, COGS и расходы с posting_number - по order_date; расходы только со sku - по дате начисления; реклама - по дате статистики. Реализация = delivered. Тип операции: MARKETPLACE_SALE (агентская реализация) и CIS_BUYOUT (выкуп товара Ozon у продавца, Беларусь). У выкупа комиссии не существует как факта: commission_not_applicable_qty, а не commission_missing_qty; выручка выкупа - сумма по первичному документу. Выкуп без документа виден в buyout_revenue_unproven_qty/_rub. Возвраты и FBS не загружаются; налог и расходы уровня магазина не входят.")
 AS
 WITH post AS (
-  SELECT p.posting_number, p.sku, p.status, DATE(p.created_at, 'Europe/Moscow') order_date, p.quantity, p.price_rub,
+  SELECT p.posting_number, p.sku, p.status, p.order_date, p.quantity, p.price_rub,
          p.payout_rub, m.internal_sku
   FROM `project-fa311fc0-4d87-4781-986.ozon_raw.RAW_OZON_POSTINGS_FBO` p
   JOIN `project-fa311fc0-4d87-4781-986.evetis_ref.REF_SKU_CHANNEL_MAP` m

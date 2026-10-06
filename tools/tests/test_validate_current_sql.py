@@ -61,12 +61,19 @@ PLAN1_PENDING = {"ozon_mart": set(), "evetis_mart": set()}  # сняты R2C п�
 AIE = {"ozon_mart": {"V_AIE_OZON_PAIR_EVIDENCE", "V_AIE_OZON_ECON_GUARD"},
        "evetis_mart": {"V_AIE_DECISION_CURRENT"}}
 AIE_PENDING = {"ozon_mart": set(AIE["ozon_mart"]), "evetis_mart": set(AIE["evetis_mart"])}
+# Бизнес-дата заказа Ozon = сутки МСК (2026-10-06): каждый объект, читающий RAW-отправления по дате
+# заказа, берёт DATE(created_at, 'Europe/Moscow') вместо UTC order_date. Git-first: до развёртывания
+# pending_deploy; после развёртывания и снятия R2C имена уходят из ORDER_DATE_MSK_PENDING.
+ORDER_DATE_MSK = {"FCT_OZON_SKU_PNL_DAILY", "FCT_OZON_SKU_PNL_MONTHLY", "FCT_OZON_PNL_MONTHLY",
+                  "V_OZON_COMMISSION_POLICY", "V_OZON_LOGISTICS_ESTIMATOR",
+                  "V_OZON_SKU_PNL_DAILY_OPERATIONAL", "V_OZON_SKU_FORWARD_ECONOMICS_CURRENT"}
+ORDER_DATE_MSK_PENDING = set(ORDER_DATE_MSK)
 NON_R2A = {"ozon_mart": {"V_OZON_COMMISSION_RECOVERY", "V_OZON_CIS_BUYOUT", "FCT_OZON_SKU_PNL_DAILY",
                          "FCT_OZON_SKU_PNL_MONTHLY", "FCT_OZON_PNL_MONTHLY",
                          # Gate 8: провизорная экономика Ozon
                          "V_OZON_COMMISSION_POLICY", "V_OZON_LOGISTICS_ESTIMATOR",
                          "V_OZON_SKU_PNL_DAILY_OPERATIONAL"} | PROMO2["ozon_mart"] | PROMO3["ozon_mart"]
-                        | AIE["ozon_mart"],
+                        | AIE["ozon_mart"] | ORDER_DATE_MSK,
            "evetis_mart": {"FACT_SKU_DAILY"} | PROMO2["evetis_mart"] | PROMO3["evetis_mart"] | PROMO4["evetis_mart"]
                            | PLAN1["evetis_mart"] | AIE["evetis_mart"]}
 # Gate 5M deployed every object Gate 5K/5L rewrote and read them back, so nothing is pending.
@@ -81,7 +88,8 @@ GATE8_OBJECTS = {"V_OZON_COMMISSION_POLICY", "V_OZON_LOGISTICS_ESTIMATOR",
 # снова означает изменение, ожидающее развёртывания.
 # Local Ozon Unitka completeness fix: production capture is preserved; no deploy authorized.
 GATE5K_PENDING = {"ozon_mart": {"V_OZON_SKU_PNL_DAILY_OPERATIONAL"} | PROMO2_PENDING["ozon_mart"] | PROMO3_PENDING["ozon_mart"]
-                  | PROMO4_PENDING["ozon_mart"] | PLAN1_PENDING["ozon_mart"] | AIE_PENDING["ozon_mart"],
+                  | PROMO4_PENDING["ozon_mart"] | PLAN1_PENDING["ozon_mart"] | AIE_PENDING["ozon_mart"]
+                  | ORDER_DATE_MSK_PENDING,
                   "evetis_mart": set() | PROMO2_PENDING["evetis_mart"] | PROMO3_PENDING["evetis_mart"]
                   | PROMO4_PENDING["evetis_mart"] | PLAN1_PENDING["evetis_mart"] | AIE_PENDING["evetis_mart"]}
 
@@ -93,7 +101,7 @@ R2A_BODY_SHA256 = {
     "V_OZON_LIFETIME_PNL": "7f415533dc84ae5435e6eb2e25e7077e90b4870c55efe7afd87bf790740e9ee3",
     "V_OZON_SKU_UNIT_ECONOMICS_CURRENT": "d24a4bffae4044a94a236cc874854bb3ccd7c216511e5665833ad8d7111e8309",
     "V_OZON_TARIFF_SOURCE_HEALTH": "5260fc22e1ac82931960c5ebe770d5de7ba0814e23c0e19e2adf1dd7b2e9f384",
-    "V_OZON_SKU_FORWARD_ECONOMICS_CURRENT": "21bbf65669b3dda8aba6307ebb7a5a01df157c17b3565fe26f89f52676db7483",
+    # V_OZON_SKU_FORWARD_ECONOMICS_CURRENT (R2A 21bbf656…) переписан 2026-10-06 (ORDER_DATE_MSK) — вне R2A.
     "V_OZON_AGENT_DECISION_INPUT": "50f364fcd72b24cdec5c4d1e81afac6fd5858df89db52e7e59f1781652ed8ea9",
     "V_OZON_SKU_FBO_FBS_COMPARISON_CURRENT": "51bd07535bc040458c78fa54af5b72c1b604142255b4e096bb545be43c6267cf",
 }
@@ -199,7 +207,8 @@ def test_real_repository_passes():
     assert summary["objects"] == len(R2A_BODY_SHA256) + sum(map(len, NON_R2A.values()))
     # 14 исторических + 4 файла отката UBR-010 (sql/ozon/promotion_l3_2026-09-22/)
     # + 3 файла отката UBR-012 (sql/ozon/ubr012_revenue_2026-09-22/)
-    assert summary["historical_sites"] == 21
+    # + 7 файлов отката даты заказа МСК (sql/ozon/order_date_msk_2026-10-06/)
+    assert summary["historical_sites"] == 28
 
 
 def test_canonical_hash_v1_reproduces_r2a_hashes_byte_for_byte():

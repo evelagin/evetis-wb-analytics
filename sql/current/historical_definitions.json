@@ -72,6 +72,48 @@
       "definitions": {
         "ozon_mart.FCT_OZON_SKU_PNL_MONTHLY": 1
       }
+    },
+    {
+      "path": "sql/ozon/order_date_msk_2026-10-06/rollback_V_OZON_COMMISSION_POLICY.sql",
+      "definitions": {
+        "ozon_mart.V_OZON_COMMISSION_POLICY": 1
+      }
+    },
+    {
+      "path": "sql/ozon/order_date_msk_2026-10-06/rollback_V_OZON_LOGISTICS_ESTIMATOR.sql",
+      "definitions": {
+        "ozon_mart.V_OZON_LOGISTICS_ESTIMATOR": 1
+      }
+    },
+    {
+      "path": "sql/ozon/order_date_msk_2026-10-06/rollback_FCT_OZON_SKU_PNL_DAILY.sql",
+      "definitions": {
+        "ozon_mart.FCT_OZON_SKU_PNL_DAILY": 1
+      }
+    },
+    {
+      "path": "sql/ozon/order_date_msk_2026-10-06/rollback_FCT_OZON_SKU_PNL_MONTHLY.sql",
+      "definitions": {
+        "ozon_mart.FCT_OZON_SKU_PNL_MONTHLY": 1
+      }
+    },
+    {
+      "path": "sql/ozon/order_date_msk_2026-10-06/rollback_FCT_OZON_PNL_MONTHLY.sql",
+      "definitions": {
+        "ozon_mart.FCT_OZON_PNL_MONTHLY": 1
+      }
+    },
+    {
+      "path": "sql/ozon/order_date_msk_2026-10-06/rollback_V_OZON_SKU_PNL_DAILY_OPERATIONAL.sql",
+      "definitions": {
+        "ozon_mart.V_OZON_SKU_PNL_DAILY_OPERATIONAL": 1
+      }
+    },
+    {
+      "path": "sql/ozon/order_date_msk_2026-10-06/rollback_V_OZON_SKU_FORWARD_ECONOMICS_CURRENT.sql",
+      "definitions": {
+        "ozon_mart.V_OZON_SKU_FORWARD_ECONOMICS_CURRENT": 1
+      }
     }
   ]
 }

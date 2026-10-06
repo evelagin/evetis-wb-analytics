@@ -51,6 +51,15 @@ export function normalizeBqRow<T>(raw: Record<string, unknown>): T {
 
 export interface OzonFactsQuery { project: string; from: string; to: string }
 
+/**
+ * Бизнес-дата заказа Ozon — календарные сутки МОСКВЫ, в которые создано отправление.
+ * Так группирует Ozon Seller Analytics («Заказано товаров»). Колонка RAW `order_date` — это
+ * UTC-дата `created_at` (загрузчик берёт `created_at[:10]`), и с ней заказ 00:00–02:59 МСК уезжал
+ * в предыдущие сутки: 05.10.2026 Юнитка показывала 11 при 10 в Ozon. Сырой `created_at` (UTC)
+ * остаётся в RAW для происхождения. То же выражение — в каноническом слое `sql/current/ozon_mart`.
+ */
+export const OZON_ORDER_BUSINESS_DATE_SQL = "DATE(p.created_at, 'Europe/Moscow')";
+
 const ISO = /^\d{4}-\d{2}-\d{2}$/;
 
 /** SQL фактов месяца. Даты валидируются: в текст запроса попадает только ISO-дата. */
@@ -71,14 +80,14 @@ ads AS (
   WHERE date BETWEEN '${from}' AND '${to}' GROUP BY 1,2),
 order_prices AS (
   -- Цена калькулятора, НЕ признанная выручка и НЕ цена покупателя.
-  SELECT p.order_date d, m.offer_id, SUM(p.quantity) units,
+  SELECT ${OZON_ORDER_BUSINESS_DATE_SQL} d, m.offer_id, SUM(p.quantity) units,
     SUM(IF(p.quantity > 0 AND p.price_rub > 0, p.quantity, 0)) covered_units,
     CASE WHEN COUNTIF(p.quantity IS NULL OR p.quantity <= 0
                        OR p.price_rub IS NULL OR p.price_rub <= 0) = 0
          THEN SAFE_DIVIDE(SUM(p.price_rub * p.quantity), SUM(p.quantity)) END price
   FROM \`${project}.ozon_raw.RAW_OZON_POSTINGS_FBO\` p
   JOIN m ON m.marketplace_sku = p.sku
-  WHERE p.order_date BETWEEN '${from}' AND '${to}'
+  WHERE ${OZON_ORDER_BUSINESS_DATE_SQL} BETWEEN '${from}' AND '${to}'
     AND p.status IN ('delivered', 'delivering', 'awaiting_deliver', 'awaiting_packaging')
   GROUP BY 1,2),
 price_finance AS (
@@ -88,7 +97,7 @@ price_finance AS (
 price_units AS (
   -- Один posting/SKU принадлежит ровно одной популяции. Сильное evidence не дополняется
   -- reference ценой той же единицы. Денежные поля канонического факта не изменяются.
-  SELECT DISTINCT p.order_date d, mm.offer_id, p.posting_number, p.sku marketplace_sku,
+  SELECT DISTINCT ${OZON_ORDER_BUSINESS_DATE_SQL} d, mm.offer_id, p.posting_number, p.sku marketplace_sku,
     p.status, p.quantity, p.price_rub reference_unit_rub, pf.finance_unit_rub,
     b.posting_number IS NOT NULL documented_buyout_present,
     b.buyout_proceeds_rub documented_buyout_unit_rub,
@@ -104,7 +113,7 @@ price_units AS (
   JOIN m mm ON mm.marketplace_sku=p.sku
   LEFT JOIN price_finance pf USING (posting_number, sku)
   LEFT JOIN \`${project}.ozon_mart.V_OZON_CIS_BUYOUT\` b ON b.posting_number=p.posting_number
-  WHERE p.order_date BETWEEN '${from}' AND '${to}'
+  WHERE ${OZON_ORDER_BUSINESS_DATE_SQL} BETWEEN '${from}' AND '${to}'
     AND p.status IN ('delivered', 'delivering', 'awaiting_deliver', 'awaiting_packaging')),
 operational_prices AS (
   SELECT d, offer_id, SUM(quantity) operational_expected_qty,
@@ -125,12 +134,12 @@ unitp AS (
   FROM \`${project}.ozon_raw.RAW_OZON_FINANCE_ACCRUAL\`
   WHERE buyer_paid_price_rub IS NOT NULL GROUP BY 1,2),
 buy AS (
-  SELECT p.order_date d, mm.internal_sku,
+  SELECT ${OZON_ORDER_BUSINESS_DATE_SQL} d, mm.internal_sku,
          SUM(u.bp*p.quantity) buyer_amt, SUM(u.sp*p.quantity) seller_amt
   FROM \`${project}.ozon_raw.RAW_OZON_POSTINGS_FBO\` p
   JOIN unitp u USING (posting_number, sku)
   JOIN m mm ON mm.marketplace_sku=p.sku
-  WHERE p.status='delivered' AND p.order_date BETWEEN '${from}' AND '${to}' GROUP BY 1,2)
+  WHERE p.status='delivered' AND ${OZON_ORDER_BUSINESS_DATE_SQL} BETWEEN '${from}' AND '${to}' GROUP BY 1,2)
 SELECT CAST(f.fact_date AS STRING) d, m.offer_id,
   f.gross_qty, f.cancelled_qty, f.realized_qty, f.in_transit_qty,
   f.seller_base_revenue_rub revenue,
@@ -200,12 +209,12 @@ unitp AS (
   FROM \`${project}.ozon_raw.RAW_OZON_FINANCE_ACCRUAL\`
   WHERE buyer_paid_price_rub IS NOT NULL GROUP BY 1,2),
 obs AS (
-  SELECT p.order_date od, mm.offer_id, u.known, p.quantity q, u.bp * p.quantity b, u.sp * p.quantity s
+  SELECT ${OZON_ORDER_BUSINESS_DATE_SQL} od, mm.offer_id, u.known, p.quantity q, u.bp * p.quantity b, u.sp * p.quantity s
   FROM \`${project}.ozon_raw.RAW_OZON_POSTINGS_FBO\` p
   JOIN unitp u USING (posting_number, sku)
   JOIN m mm ON mm.marketplace_sku = p.sku
   WHERE p.status = 'delivered' AND u.sp IS NOT NULL AND u.sp <> 0
-    AND p.order_date BETWEEN DATE_SUB(DATE '${from}', INTERVAL 30 DAY) AND DATE_SUB(DATE '${to}', INTERVAL 1 DAY)),
+    AND ${OZON_ORDER_BUSINESS_DATE_SQL} BETWEEN DATE_SUB(DATE '${from}', INTERVAL 30 DAY) AND DATE_SUB(DATE '${to}', INTERVAL 1 DAY)),
 days AS (SELECT d FROM UNNEST(GENERATE_DATE_ARRAY(DATE '${from}', DATE '${to}')) d),
 -- окно суток d: заказ в [d−30, d−1] и финансовая пара известна к d−1
 win AS (
