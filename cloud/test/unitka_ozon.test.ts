@@ -33,8 +33,7 @@ import {
 } from '../src/loaders/unitka/ozon/window.js';
 import { RECONCILE_WINDOW_DAYS } from '../src/loaders/unitka/reconcile.js';
 import {
-  parseLiveLayout, assessFreshness, StaleSourceError, OZON_UNITKA_REQUIRED_SOURCES, isoFromSheetValue,
-} from '../src/loaders/unitka/ozon/loader.js';
+  parseLiveLayout, assessFreshness, StaleSourceError, OZON_UNITKA_REQUIRED_SOURCES, isoFromSheetValue, bareLabelTitles } from '../src/loaders/unitka/ozon/loader.js';
 import {
   resolveSections, activateNewSkus, rowsNeeded, NoFreeSkuSlotError,
 } from '../src/loaders/unitka/ozon/lifecycle.js';
@@ -1564,11 +1563,24 @@ describe('OZON adapter — Gate 8: суточный загрузчик', () => {
     expect(sections[0]!.blocks).toHaveLength(2);
   });
 
-  it('подпись блока не авторитетна: нераспознанный токен блоком не становится', () => {
+  it('подпись блока не авторитетна, но нераспознанная непустая подпись — отказ, а не тихий сдвиг слотов', () => {
+    // Прежде токен молча выпадал, и все блоки правее «сжимались» на 25 колонок: запись и защищённые
+    // колонки (блогеры, внешняя реклама) легли бы в чужие блоки (аудит 2026-10-06, P1).
     const g = mkGrid();
     (g[0] as (string | number)[])[61] = 'Апрель 2026';      // колонка 62 = слот 2
-    const { sections } = parseLiveLayout(g, 562, canon);
-    expect(sections[0]!.blocks).toEqual(['909951444', '438775437']);
+    expect(() => parseLiveLayout(g, 562, canon)).toThrow(/не начинается с известного offer_id/);
+    try { parseLiveLayout(g, 562, canon); } catch (e) { expect((e as { code?: string }).code).toBe('OZON_UNITKA_LABEL_UNRESOLVED'); }
+  });
+
+  it('короткие названия: только «голые» подписи и новые блоки; текст владельца не трогается', () => {
+    const refTitle: (string | number)[] = []; const anchor: Record<string, number> = { '593111985': 12, '252442517': 37, '930334396': 62 };
+    refTitle[11] = 593111985; refTitle[36] = '252442517  Крем для рук'; refTitle[61] = '930334396';
+    const tails = bareLabelTitles(['593111985', '252442517', '930334396', '1083392113', '000'], refTitle, anchor,
+      { '593111985': 'Крем Амбра', '252442517': 'Крем Руки', '930334396': 'Набор руки+амбра', '1083392113': 'Набор тоник+сыворотка АКНЕ' });
+    expect(tails).toEqual({ '593111985': ' Крем Амбра', '930334396': ' Набор руки+амбра', '1083392113': ' Набор тоник+сыворотка АКНЕ' });
+    // подпись = offer_id + хвост, offer_id — первое слово: парсер находит блок по-прежнему
+    const g = mkGrid(); (g[0] as (string | number)[])[11] = `909951444${' Набор'}`;
+    expect(parseLiveLayout(g, 562, canon).sections[0]!.blocks[0]).toBe('909951444');
   });
 
   it('загрузчик зарегистрирован и по умолчанию не пишет', () => {
