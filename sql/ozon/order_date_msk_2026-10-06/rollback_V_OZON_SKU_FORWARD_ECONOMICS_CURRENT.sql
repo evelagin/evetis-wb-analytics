@@ -1,3 +1,4 @@
+-- Откат 2026-10-06: определение из main 30f2de9 (= production 2026-10-06 по canonical_body_sha256).
 -- ============================================================================
 -- CANONICAL CURRENT DEFINITION — ozon_mart.V_OZON_SKU_FORWARD_ECONOMICS_CURRENT (VIEW)
 -- Authoritative Git definition of the CURRENT production object. Not a migration,
@@ -9,9 +10,6 @@
 -- and must not be applied (it would break dependants; proven in R2 forensic preflight).
 -- The view body below is byte-for-byte the production body: do not reformat it.
 -- ============================================================================
--- Дата заказа отправления (order_date в CTE) — бизнес-дата МСК: DATE(created_at, 'Europe/Moscow'),
--- как в Ozon Seller Analytics. RAW order_date — UTC-дата created_at, остаётся в RAW для происхождения
--- (2026-10-06: с UTC заказ 00:00–02:59 МСК уезжал в предыдущие сутки).
 CREATE OR REPLACE VIEW `project-fa311fc0-4d87-4781-986.ozon_mart.V_OZON_SKU_FORWARD_ECONOMICS_CURRENT`
 OPTIONS (description = "FORWARD_MODELLED юнит-экономика одного нового заказа Ozon по ДЕЙСТВУЮЩЕМУ тарифу. Три сценария логистики: best (API min) / expected (MODELLED, не тариф) / worst (API max). Классификация безопасности - по worst case. Premium в формулу вклада SKU не входит. НЕ путать с V_OZON_SKU_UNIT_ECONOMICS_CURRENT (TRAILING_OBSERVED, 180 дней). ТОЛЬКО АНАЛИТИКА.")
 AS
@@ -24,7 +22,7 @@ canc AS (
   FROM `project-fa311fc0-4d87-4781-986.ozon_raw.RAW_OZON_POSTINGS_FBO` po
   JOIN `project-fa311fc0-4d87-4781-986.evetis_ref.REF_SKU_CHANNEL_MAP` mp
     ON mp.marketplace='OZON' AND mp.marketplace_sku = po.sku AND mp.is_current
-  WHERE DATE(po.created_at, 'Europe/Moscow') BETWEEN DATE '2026-06-01' AND DATE_SUB(CURRENT_DATE(), INTERVAL 12 DAY)
+  WHERE po.order_date BETWEEN DATE '2026-06-01' AND DATE_SUB(CURRENT_DATE(), INTERVAL 12 DAY)
   GROUP BY 1),
 b AS (
   SELECT t.*, SAFE_DIVIDE(t.commission_fbo_pct, 100) AS c_frac,

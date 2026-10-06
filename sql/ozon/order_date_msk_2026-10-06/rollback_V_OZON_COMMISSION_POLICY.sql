@@ -1,3 +1,4 @@
+-- Откат 2026-10-06: определение из main 30f2de9 (= production 2026-10-06 по canonical_body_sha256).
 -- ============================================================================
 -- CANONICAL CURRENT DEFINITION — ozon_mart.V_OZON_COMMISSION_POLICY (VIEW)
 -- Git-first object (Gate 8, 2026-09-21): not in production until deployed. Rules:
@@ -34,9 +35,6 @@
 -- факта, и применять к нему тариф запрещено (см. FCT_OZON_SKU_PNL_DAILY, Gate 5K).
 -- Internal dependencies: none.
 -- ============================================================================
--- Дата заказа отправления (order_date в CTE) — бизнес-дата МСК: DATE(created_at, 'Europe/Moscow'),
--- как в Ozon Seller Analytics. RAW order_date — UTC-дата created_at, остаётся в RAW для происхождения
--- (2026-10-06: с UTC заказ 00:00–02:59 МСК уезжал в предыдущие сутки).
 CREATE OR REPLACE VIEW `project-fa311fc0-4d87-4781-986.ozon_mart.V_OZON_COMMISSION_POLICY`
 OPTIONS (description = "Действующий тариф комиссии Ozon, датированный интервалами (effective_from/effective_to) по internal_sku. Детерминированный тариф площадки, НЕ статистика. Источники: PRICE_API_SNAPSHOT (sales_percent_fbo из ежедневного снимка тарифов, смотрит вперёд) имеет приоритет над ACCRUAL_OBSERVED (commission_ratio фактических начислений по дате заказа, отстаёт на срок публикации). База ставки - цена продавца seller_base_price_rub (доказано на 2002 строках из 2003). Нужен для провизорной оценки комиссии там, где начисление ещё не опубликовано: Ozon публикует операцию через 14 суток после её даты, операция возникает через 4-25 суток после заказа. К выкупам СНГ тариф НЕ применяется: агентского вознаграждения у выкупа не существует.")
 AS
@@ -52,7 +50,7 @@ snap AS (
     AND c.unit = 'PERCENT' AND c.value_num IS NOT NULL
   GROUP BY 1, 2, 3),
 posting AS (
-  SELECT DISTINCT posting_number, sku, DATE(created_at, 'Europe/Moscow') order_date
+  SELECT DISTINCT posting_number, sku, order_date
   FROM `project-fa311fc0-4d87-4781-986.ozon_raw.RAW_OZON_POSTINGS_FBO`),
 acc_raw AS (
   SELECT p.order_date d, m.internal_sku, f.commission_ratio rate, COUNT(*) n

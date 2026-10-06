@@ -1,3 +1,4 @@
+-- Откат 2026-10-06: определение из main 30f2de9 (= production 2026-10-06 по canonical_body_sha256).
 -- ============================================================================
 -- CANONICAL CURRENT DEFINITION — ozon_mart.FCT_OZON_PNL_MONTHLY (VIEW)
 -- Authoritative Git definition of the CURRENT production object. Not a migration,
@@ -16,15 +17,12 @@
 -- Internal dependencies: V_OZON_CIS_BUYOUT.
 -- The view body below is byte-for-byte the production body: do not reformat it.
 -- ============================================================================
--- Дата заказа отправления (order_date в CTE) — бизнес-дата МСК: DATE(created_at, 'Europe/Moscow'),
--- как в Ozon Seller Analytics. RAW order_date — UTC-дата created_at, остаётся в RAW для происхождения
--- (2026-10-06: с UTC заказ 00:00–02:59 МСК уезжал в предыдущие сутки).
 CREATE OR REPLACE VIEW `project-fa311fc0-4d87-4781-986.ozon_mart.FCT_OZON_PNL_MONTHLY`
 OPTIONS (description = "Канонический P&L Ozon, зерно = календарный месяц. VIEW, не таблица: пересчитывается при каждом чтении, устареть относительно ozon_raw не может. Мост L1-L4 по OZON_PNL_POLICY_V1. Продажи и себестоимость привязаны к order_date, расходы уровня магазина - к дате начисления. Отсутствующая комиссия НЕ ноль: см. commission_missing_qty и поля uncertainty. Тип операции: MARKETPLACE_SALE и CIS_BUYOUT (выкуп товара Ozon у продавца); у выкупа комиссия неприменима, а выручка равна сумме по первичному документу.")
 AS
 WITH
 post AS (
-  SELECT p.posting_number, p.sku, p.status, DATE(p.created_at, 'Europe/Moscow') order_date, p.quantity, p.price_rub,
+  SELECT p.posting_number, p.sku, p.status, p.order_date, p.quantity, p.price_rub,
          p.payout_rub, m.internal_sku
   FROM `project-fa311fc0-4d87-4781-986.ozon_raw.RAW_OZON_POSTINGS_FBO` p
   JOIN `project-fa311fc0-4d87-4781-986.evetis_ref.REF_SKU_CHANNEL_MAP` m

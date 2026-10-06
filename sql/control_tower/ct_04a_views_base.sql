@@ -71,7 +71,7 @@ wb AS (
 ),
 oz_map AS (SELECT marketplace_sku, internal_sku FROM `project-fa311fc0-4d87-4781-986.evetis_ref.REF_SKU_CHANNEL_MAP` WHERE marketplace = 'OZON'),
 post AS (
-  SELECT p.posting_number, p.sku, m.internal_sku, p.status, p.order_date, p.quantity, p.price_rub
+  SELECT p.posting_number, p.sku, m.internal_sku, p.status, DATE(p.created_at, 'Europe/Moscow') AS order_date, p.quantity, p.price_rub
   FROM `project-fa311fc0-4d87-4781-986.ozon_raw.RAW_OZON_POSTINGS_FBO` p
   JOIN oz_map m ON m.marketplace_sku = p.sku
 ),
