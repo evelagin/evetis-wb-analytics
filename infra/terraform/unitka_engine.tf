@@ -419,12 +419,12 @@ resource "google_monitoring_alert_policy" "unitka_engine_failed" {
 # Проверка фильтра по журналу за 90 суток (06.10): совпали ровно 2 отказа (unitka-engine-prod-zbfk7
 # 06.10, ozon-unitka-prod-tf7r2 22.09), из 106 успешных — ни одного.
 # Отдельная политика, а не OR в существующих: их условие на месте не меняется (см. выше).
-# Создаётся ВЫКЛЮЧЕННОЙ: включение — отдельное решение владельца после перечитывания из API.
+# Создана выключенной, перечитана из API; включена по ACK владельца 06.10.2026 (только enabled).
 resource "google_monitoring_alert_policy" "unitka_platform_failed" {
   count        = var.unitka_alert_email == "" ? 0 : 1
   display_name = "UNITKA: исполнение Cloud Run Job не завершилось (платформа)"
   combiner     = "OR"
-  enabled      = false
+  enabled      = true
 
   conditions {
     display_name = "системное событие Cloud Run: execution failed (unitka-engine-*, ozon-unitka-prod)"
