@@ -564,3 +564,67 @@ describe('Ozon mixed SKU-day: disjoint stronger and provisional populations', ()
       .toContain('OPERATIONAL_POPULATION_OVERLAP');
   });
 });
+
+describe('Ozon lifecycle conflict: finance actual outranks stale posting status (20.08 / 930334396)', () => {
+  // Точная копия дефектной строки: отправление 77152971-0050-1 застряло в «delivering»,
+  // а начисление уже принесло seller_base 1131 и комиссию 655,81 ₽.
+  const conflictUnit = { posting_number: '77152971-0050-1', marketplace_sku: '1991772098', status: 'delivering',
+    quantity: 1, reference_unit_rub: 1131, finance_unit_rub: 1131, documented_buyout_present: false,
+    documented_buyout_unit_rub: null, basis_source: 'ACTUAL_FINANCE' };
+  const fixed: OzonFactRow = { ...TARGET, gross_qty: 1, cancelled_qty: 0, realized_qty: 0, in_transit_qty: 1,
+    expected_realized_qty: 1, revenue: 0, provisional_revenue_rub: 1131,
+    order_reference_price: 1131, order_reference_qty: 1, order_reference_covered_qty: 1,
+    operational_basis_version: 1, operational_expected_qty: 1, operational_actual_qty: 1, operational_provisional_qty: 0,
+    operational_reference_covered_qty: 0, operational_actual_basis_rub: 1131, operational_reference_basis_rub: 0,
+    operational_basis_rub: 1131, operational_basis_units_json: JSON.stringify([conflictUnit]),
+    commission: 655.81, commission_actual: 0, commission_estimated_rub: 0, commission_state: 'ACTUAL',
+    commission_estimate_method: null, commission_missing_qty: 0, commission_not_applicable_qty: 0,
+    buyout_revenue_unproven_qty: 0, economics_completeness: 'PROVISIONAL_COMPLETE',
+    logistics: 109, logistics_actual: 109, cogs_amt: 0, provisional_cogs_rub: 406.651629,
+    ads_spend: 0, impr: 0, clicks: 0,
+    lifecycle_conflict_qty: 1, lifecycle_conflict_commission_rub: 655.81, commission_unaccounted_qty: 0 };
+
+  it('fixed row: commission 57.98 %, unit profit −63.081629 (was +592.728371), all QA passes', () => {
+    const r = prepared([fixed]);
+    expect(r.read(626, 101)).toBe(1131);
+    expect(r.read(626, 104)).toBe(Math.round(655.81 / 1131 * 1e8) / 1e8);
+    expect(evaluate(r.read, r.lcd, 'DF626')).toBeCloseTo(1131 - 1131 * r.read(626, 104) - 109 - 406.651629 - 22.62, 6);
+    expect(evaluate(r.read, r.lcd, 'DF626')).toBeCloseTo(-63.081629, 2);
+    expect(ozonSourceCompletenessIssues([fixed])).toEqual([]);
+    expect(verifyOzonModel({ sections: [r.sec], lcd: r.lcd, read: r.read, mode: 'PLAN' })).toEqual([]);
+  });
+
+  it('old defect signature (conflict unit, commission 0) is rejected by independent source QA', () => {
+    const old: OzonFactRow = { ...fixed, commission: 0, lifecycle_conflict_commission_rub: 0 };
+    expect(ozonSourceCompletenessIssues([old]).map((i) => i.code)).toContain('LIFECYCLE_CONFLICT_COMMISSION_MISSING');
+  });
+
+  it('a view that does not expose the conflict at all is rejected (qty mismatch)', () => {
+    const noCol: OzonFactRow = { ...fixed, lifecycle_conflict_qty: 0, lifecycle_conflict_commission_rub: 0, commission: 0 };
+    expect(ozonSourceCompletenessIssues([noCol]).map((i) => i.code)).toEqual(
+      expect.arrayContaining(['LIFECYCLE_CONFLICT_QTY_MISMATCH', 'LIFECYCLE_CONFLICT_COMMISSION_MISSING']));
+  });
+
+  it('lifecycle conflict can never be ACTUAL', () => {
+    const asActual: OzonFactRow = { ...fixed, economics_completeness: 'ACTUAL' };
+    expect(ozonSourceCompletenessIssues([asActual]).map((i) => i.code)).toContain('LIFECYCLE_CONFLICT_MARKED_ACTUAL');
+  });
+
+  it('old loader precedence (REFERENCE for a non-delivered unit with finance) is rejected', () => {
+    const stale: OzonFactRow = { ...fixed,
+      operational_basis_units_json: JSON.stringify([{ ...conflictUnit, basis_source: 'REFERENCE' }]) };
+    expect(ozonSourceCompletenessIssues([stale]).map((i) => i.code)).toContain('OPERATIONAL_EVIDENCE_PRECEDENCE');
+  });
+
+  it('unaccounted commission population must surface as UNKNOWN, never a silent zero', () => {
+    const silent: OzonFactRow = { ...fixed, commission_unaccounted_qty: 1, commission_state: 'ACTUAL' };
+    expect(ozonSourceCompletenessIssues([silent]).map((i) => i.code)).toContain('COMMISSION_UNACCOUNTED_NOT_UNKNOWN');
+  });
+
+  it('loader SQL: finance outranks status (non-documented) and selects the conflict columns', () => {
+    const sql = ozonMonthFactsSql({ project: 'p', from: '2026-08-01', to: '2026-08-31' });
+    expect(sql).toContain("WHEN pf.finance_unit_rub IS NOT NULL AND (p.status='delivered' OR b.posting_number IS NULL) THEN 'ACTUAL_FINANCE'");
+    expect(sql).not.toContain("WHEN p.status='delivered' AND pf.finance_unit_rub IS NOT NULL THEN 'ACTUAL_FINANCE'");
+    for (const c of ['lifecycle_conflict_qty', 'lifecycle_conflict_commission_rub', 'commission_unaccounted_qty']) expect(sql).toContain(`f.${c}`);
+  });
+});

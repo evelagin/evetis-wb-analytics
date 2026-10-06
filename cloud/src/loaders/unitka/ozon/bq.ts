@@ -92,11 +92,13 @@ price_units AS (
     p.status, p.quantity, p.price_rub reference_unit_rub, pf.finance_unit_rub,
     b.posting_number IS NOT NULL documented_buyout_present,
     b.buyout_proceeds_rub documented_buyout_unit_rub,
+    -- Финансы старше застрявшего статуса: seller-base начисление делает единицу ACTUAL_FINANCE
+    -- и у недоставленной (конфликт цикла), если это не выкуп по документу.
     CASE WHEN p.status='delivered' AND b.posting_number IS NOT NULL THEN 'DOCUMENTED_BUYOUT'
-         WHEN p.status='delivered' AND pf.finance_unit_rub IS NOT NULL THEN 'ACTUAL_FINANCE'
+         WHEN pf.finance_unit_rub IS NOT NULL AND (p.status='delivered' OR b.posting_number IS NULL) THEN 'ACTUAL_FINANCE'
          ELSE 'REFERENCE' END basis_source,
     CASE WHEN p.status='delivered' AND b.posting_number IS NOT NULL THEN b.buyout_proceeds_rub
-         WHEN p.status='delivered' AND pf.finance_unit_rub IS NOT NULL THEN pf.finance_unit_rub
+         WHEN pf.finance_unit_rub IS NOT NULL AND (p.status='delivered' OR b.posting_number IS NULL) THEN pf.finance_unit_rub
          ELSE p.price_rub END basis_unit_rub
   FROM \`${project}.ozon_raw.RAW_OZON_POSTINGS_FBO\` p
   JOIN m mm ON mm.marketplace_sku=p.sku
@@ -143,6 +145,7 @@ SELECT CAST(f.fact_date AS STRING) d, m.offer_id,
   f.commission_estimated_rub, f.logistics_estimated_rub,
   f.commission_state, f.logistics_state, f.storage_state, f.other_direct_state,
   f.commission_estimate_method, f.logistics_estimate_method, f.period_matured,
+  f.lifecycle_conflict_qty, f.lifecycle_conflict_commission_rub, f.commission_unaccounted_qty,
   f.acquiring_rub acquiring, f.storage_rub storage,
   f.other_direct_marketplace_costs_rub other_direct, f.sku_promotion_rub promo,
   f.product_cogs_rub cogs_amt,
