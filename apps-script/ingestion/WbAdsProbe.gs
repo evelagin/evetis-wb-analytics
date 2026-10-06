@@ -433,12 +433,12 @@ function runWbAdsProbeAll() {
  * Тянет список кампаний (count) и детали (adverts v2, ids ≤ 50).
  * Defensive-парсинг: структура может отличаться — фиксируем как есть.
  * @return {Object} { countHttp, advertsHttp, advertIds, statsAdvertIds,
- *                     statusBreakdown, pairs, countKeys, advertsKeys, error }
+ *                     statusBreakdown, statusById, pairs, countKeys, advertsKeys, error }
  */
 function wbAdsFetchCampaigns_(token) {
   var out = {
     countHttp: '', advertsHttp: '',
-    advertIds: [], statsAdvertIds: [], statusBreakdown: {},
+    advertIds: [], statsAdvertIds: [], statusBreakdown: {}, statusById: {},
     pairs: [], countKeys: '', advertsKeys: '', error: ''
   };
 
@@ -461,6 +461,7 @@ function wbAdsFetchCampaigns_(token) {
       var idNum = Number(id);
       out.advertIds.push(idNum);
       out.statusBreakdown[st] = (out.statusBreakdown[st] || 0) + 1;
+      out.statusById[idNum] = Number(st);   // для порядка fullstats (wbAdsOrderFullstatsIds_)
       if (WB_ADS_STATS_STATUSES_.indexOf(Number(st)) !== -1) out.statsAdvertIds.push(idNum);
     }
   }
