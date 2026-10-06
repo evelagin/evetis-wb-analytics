@@ -54,6 +54,11 @@
     "wb": false
   },
   "scheduler_state": "PAUSED",
+  "historical_orchestration": {
+    "release": "66fa4f05681b0e7066f0e83f9bf9ca21d4ac7518",
+    "root_hash": "4f4387b2bdaa39c8942735a3b9b386e665b20c61006c8e8a467832a7542b1779",
+    "scheduler_state": "PAUSED"
+  },
   "bi_access": {
     "mode": "NONE"
   },

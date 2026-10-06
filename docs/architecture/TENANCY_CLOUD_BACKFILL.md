@@ -2,8 +2,8 @@
 
 ## Status and authority (2026-10-06)
 
-LOCAL CANDIDATE. This is not a deployed controller, approved full-history plan,
-qualified controller image or evidence of unattended execution. PR252 is an
+QUALIFIED RELEASE CANDIDATE. This is not a deployed controller, approved
+full-history plan or evidence of unattended execution. PR252 is an
 unmerged dependency. No cloud resource or tenant data was changed to install
 this foundation. Full-history publication deliberately fails closed until a
 qualified gate adapter exists.
@@ -144,8 +144,8 @@ remaining-cohort plan merely for convenience is permitted.
 
 ## Remaining release / live / full-history gates
 
-- Candidate CI and actual immutable built-image qualification. A local Git archive
-  test is not evidence of a built or deployed image.
+- Current source CI and actual immutable image qualification passed as documented
+  below; those facts do not substitute for deployment/effective-IAM evidence.
 - Reviewed tenant-only Terraform plan, minimum IAM apply/readback, runtime-access
   proof, deployment and independent bounded wake/restart proof.
 - Successful PR252 CI, probe image qualification/deployment and corrected discovery.
@@ -196,5 +196,38 @@ opt-in fixtures still exercise the complete closed IAM/Job/Scheduler contract.
 Credential scanning exempts only public facts of the independently verified
 closed orchestration projection; API keys/tokens/payloads remain forbidden.
 Missing-runtime qualification still fails before Terraform through the sole
-canonical registry exporter. No actual tenant opt-in is registered by this
-hardening candidate; deployment remains gated by reviewed qualification.
+canonical registry exporter. That hardening source did not register an actual tenant opt-in; the qualified
+release proposal below adds it. Deployment remains gated by review.
+
+## Qualified release and PAUSED opt-in (2026-10-06)
+
+Source 66fa4f05681b0e7066f0e83f9bf9ca21d4ac7518 passed ci 37453877124 and
+sql-current 37453877213 (2635 passed, 1 skipped; C1-C18). Cloud Build
+c3e4cdb1-2257-4dfb-8e03-43ee14996d77 succeeded and published immutable
+controller digest 842072862ec564f27f058633d6965d819b619b819be485a8b51db1470f85486c.
+The clean source archive SHA256 is
+47b66f9c1ac8ed4cd955e562aa917132723b6d10227b40b0b483dc03af9d172b;
+build source generation is 1791285221614161. Packaged offline checks verified
+Python 3.12.15, controller implementation
+9746818d19c49f89b6244b281b439ead85dda724099d11ecbc73b408f3a50596 and
+unchanged frozen SKU runtime implementation
+d1f381374ef3fa9ad625b4784c8707c8c6b8fd0008faf02a6ffd76997d815c43.
+
+The client_001 registry now proposes that qualified release with a separate
+PAUSED historical Scheduler and qualification root
+4f4387b2bdaa39c8942735a3b9b386e665b20c61006c8e8a467832a7542b1779.
+This is a deployment proposal. The root was deterministically recovered from
+durable accepted SKU/Supplies checkpoints; its frozen publication input is
+not yet cloud-authoritative. Publication requires cloud MANIFEST/BF_SPEC and
+commit-marker readback after canonical release review. No effective IAM,
+controller Job, historical Scheduler, plan publication, full-history GO or
+unattended source execution is claimed by this repository configuration.
+All three ordinary Schedulers remain PAUSED in the intended contract.
+
+Rollback/containment for a future deployment must preserve the frozen root,
+source receipts and completed tenant data. Keep or pause only the dedicated
+historical Scheduler, monitor any active execution to terminal state, and do
+not reclaim an uncertain lease or repeat a submitted report. Reverting Git
+configuration does not undo IAM or data. Any infrastructure rollback needs its
+own reviewed canonical tenant-only Terraform plan; no broad IAM removal,
+RAW deletion, ordinary-schedule activation or trial cleanup is implied.
