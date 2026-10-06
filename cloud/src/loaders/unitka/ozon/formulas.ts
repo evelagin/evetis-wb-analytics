@@ -52,6 +52,12 @@ export interface OzonBlockParams {
    * если канон на эту дату отсутствует. Легаси-константы строки 50 НЕ используются.
    */
   cogsTerm: string;
+  /**
+   * Phase 6: ОЦЕНКА СПП суток × SKU в en-форме («61.419650»), если фактической СПП у суток нет.
+   * Тогда знаменатель ДРР берёт цену покупателя по оценке: `IF(AB<>"",AB,Z-Z*оценка%)`.
+   * Без оценки формула ДРР побайтно прежняя.
+   */
+  sppEstimateTerm?: string;
 }
 
 /** Расчётные колонки строки дня: смещение → каноническая формула. */
@@ -92,7 +98,11 @@ export function ozonBlockDayFormulas(p: OzonBlockParams, row: number, lcdName: s
   // и расход этого заказа. Для созревших суток в пути ничего нет — формула там побайтно прежняя.
   m.set(OFFSET.profitAll,       g(`(${P}-${R})*N(${AH})-N(${W})-N(${AF})+N(${X})-N(${OD})`));
   m.set(OFFSET.profit1,         g(`IFERROR(${V}/(${P}-${R}),"")`));
-  m.set(OFFSET.drr,             g(`IFERROR(${W}/((${P}-N(${N_}))*${AB}),"")`));
+  // Phase 6: нет фактической СПП → знаменатель по ОЦЕНЁННОЙ цене покупателя (не по цене продавца:
+  // СПП Ozon 55–65 %, и ДРР от цены продавца занижалась бы втрое). Факт старше оценки: как только
+  // у суток появится «цена с СПП», формула берёт её, а следующий прогон снимает литерал вовсе.
+  const buyer = p.sppEstimateTerm === undefined ? AB : `IF(${AB}<>"",${AB},${Z}-${Z}*${p.sppEstimateTerm}%)`;
+  m.set(OFFSET.drr,             g(`IFERROR(${W}/((${P}-N(${N_}))*${buyer}),"")`));
   // Оборачиваемость (дн) = остаток / заказы этих суток — принятая форма WB
   // (`IF(Q=0,"",T/Q)`). Дополнительная защита: без доказанного остатка ячейка ПУСТАЯ,
   // иначе пустой остаток дал бы 0 и «неизвестно» превратилось бы в «ноль дней запаса».
@@ -120,6 +130,40 @@ export function ozonSummaryDayFormulas(row: number, blockCount: number, lcdName:
     m.set(col, `=IF($B${row}>${LCD},"",IF(COUNT(${flt})=0,"",SUM(${flt})))`);
   }
   return m;
+}
+
+/**
+ * Phase 6: ДРР МАГАЗИНА (колонка K) — отношение агрегатов, а не среднее процентов SKU:
+ * Σ реклама блоков (J) / Σ по блокам (заказы − блогеры) × цена с СПП [+ оценённая база].
+ * Форма — живая WB (`WB_Юнит_2025!K740`, `summaryDayFormulas`): FILTER по шагу блока и IFERROR(…,0)
+ * внутри SUMPRODUCT, чтобы пустая «цена с СПП» одного блока не роняла сумму.
+ * `estTerm` — en-литерал оценённой базы суток (Σ блоков без фактической СПП); '0'/нет — без слагаемого.
+ */
+function ozonDrrCore(r1: number, r2: number, blockCount: number, ads: string, estTerm?: string): string {
+  if (!Number.isInteger(blockCount) || blockCount < 1) throw new RangeError(`блоков ${blockCount}`);
+  const lastStart = ozonSlotStart(blockCount - 1);
+  const flt = (off: number): string => {
+    const a = `$${colA1(OZON_GEOMETRY.BLOCK_FIRST_COLUMN + off)}$${r1}`;
+    const rng = `${a}:$${colA1(lastStart + off)}$${r2}`;
+    return `FILTER(${rng},MOD(COLUMN(${rng})-COLUMN(${a}),${OZON_GEOMETRY.BLOCK_WIDTH})=0)`;
+  };
+  const basis = `SUMPRODUCT(IFERROR((${flt(OFFSET.orders)}-${flt(OFFSET.bloggers)})*${flt(OFFSET.priceSpp)},0))`;
+  const est = estTerm === undefined || estTerm === '0' ? '' : `+${estTerm}`;
+  return `IFERROR(${ads}/(${basis}${est}),"")`;
+}
+
+/** ДРР магазина строки дня (K). Сутки после LCD пусты, как вся сводка. */
+export function ozonSummaryDrrDayFormula(row: number, blockCount: number, lcdName: string = OZON_LEGACY_LCD_NAME, estTerm?: string): string {
+  const LCD = lcdOf(lcdName);
+  return `=IF($B${row}>${LCD},"",${ozonDrrCore(row, row, blockCount, `J${row}`, estTerm)})`;
+}
+
+/**
+ * ДРР магазина строки MTD (K): реклама месяца (J итога) / база всех суток секции (2D-диапазон, как
+ * WB K767). Сутки после LCD в базу не входят сами: их «цена с СПП» пуста под защитой LCD.
+ */
+export function ozonSummaryDrrMtdFormula(g: OzonMonthGeometry, blockCount: number, estTerm?: string): string {
+  return `=${ozonDrrCore(g.firstDailyRow, g.lastDailyRow, blockCount, `J${g.mtdRow}`, estTerm)}`;
 }
 
 /** Геометрия месяца, необходимая строке MTD. Совместима с MonthGeometry общего слоя. */
@@ -157,7 +201,9 @@ export function ozonSummaryMtdFormulas(g: OzonMonthGeometry): Map<number, string
  * Все агрегаты отсечены по `дата <= LAST_CLOSED_DATE` — как принятые SUMIF-итоги. Формулы
  * ссылаются на дневные ячейки, поэтому смена оценки на факт пересчитывает итог сама.
  */
-export function ozonBlockMtdFormulas(start: number, g: OzonMonthGeometry, lcdName: string = OZON_LEGACY_LCD_NAME): Map<number, string> {
+export function ozonBlockMtdFormulas(start: number, g: OzonMonthGeometry, lcdName: string = OZON_LEGACY_LCD_NAME,
+  /** Phase 6: en-литерал оценённой базы ДРР закрытых суток без фактической СПП; нет/'0' — формула прежняя. */
+  drrEstTerm?: string): Map<number, string> {
   const LCD = lcdOf(lcdName);
   const f = g.firstDailyRow, l = g.lastDailyRow, mt = g.mtdRow;
   const dc = colA1(start + OFFSET.date);
@@ -208,7 +254,13 @@ export function ozonBlockMtdFormulas(start: number, g: OzonMonthGeometry, lcdNam
     `=IFERROR((1-SUMPRODUCT(${closed}*${units}*${rng(OFFSET.priceSpp)})/${sppCovered})*100,"")`);
   // доходность на 1 шт — принятая форма, не трогается
   m.set(OFFSET.profit1, `=IFERROR(${at(OFFSET.profitAll)}/(${at(OFFSET.orders)}-${at(OFFSET.cancels)}),"")`);
-  m.set(OFFSET.drr, `=IFERROR(${at(OFFSET.adsIn)}/SUMPRODUCT(${closed}*(${rng(OFFSET.orders)}-${rng(OFFSET.bloggers)})*${rng(OFFSET.priceSpp)}),"")`);
+  // Phase 6: сутки без фактической СПП дают в SUMPRODUCT ноль, их ОЦЕНЁННАЯ база приходит литералом
+  // (Σ (заказы − блогеры) × цена × (1 − оценка СПП), только закрытые сутки). Факт вытесняет оценку
+  // при следующем прогоне. Без оценки — побайтно прежняя формула.
+  const drrBasis = `SUMPRODUCT(${closed}*(${rng(OFFSET.orders)}-${rng(OFFSET.bloggers)})*${rng(OFFSET.priceSpp)})`;
+  m.set(OFFSET.drr, drrEstTerm === undefined || drrEstTerm === '0'
+    ? `=IFERROR(${at(OFFSET.adsIn)}/${drrBasis},"")`
+    : `=IFERROR(${at(OFFSET.adsIn)}/(${drrBasis}+${drrEstTerm}),"")`);
   // ── остаток: запас, а не поток ──────────────────────────────────────────────────────
   //
   // Берётся ПОСЛЕДНИЙ ДОКАЗАННЫЙ снимок. Два ограничения, и оба содержательные:

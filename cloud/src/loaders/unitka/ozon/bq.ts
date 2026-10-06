@@ -169,6 +169,65 @@ LEFT JOIN operational_prices ob ON ob.d=f.fact_date AND ob.offer_id=m.offer_id
 ORDER BY d, offer_id`.trim();
 }
 
+/** Оценка СПП суток × SKU для ДРР до прихода финансовой пары (Phase 6, оценщик E1m5). */
+export interface OzonSppEstimateRow { d: string; offer_id: string; spp_estimate_pct: number; spp_estimate_level: 'SKU' | 'SHOP' }
+
+/**
+ * ОЦЕНКА СПП для знаменателя ДРР там, где цены покупателя ещё нет (заказ не доставлен).
+ *
+ * Цена продавца знаменателем ДРР быть НЕ может: СПП Ozon в среднем 54–65 %, и ДРР от цены продавца
+ * занижается втрое (бэктест: смещение −62 п.п.). Оценщик выбран бэктестом на production-данных
+ * (E1m5: MAE 6,6 п.п., смещение −0,1 п.п.):
+ *   • для суток d берутся ДОСТАВЛЕННЫЕ отправления с финансовой парой buyer/seller (то же зерно,
+ *     что у фактической СПП — CTE `unitp` запроса фактов), заказанные в [d−30, d−1] и УЖЕ
+ *     известные к d−1 (MIN(event_date) ≤ d−1): оценка суток не видит будущего;
+ *   • свой SKU, если в окне ≥ 5 ед.; иначе весь магазин в том же окне (≥ 1 ед.); иначе оценки нет.
+ * Оценка привязана к дате строки и стабильна между прогонами; факт заменяет её сам, как только
+ * у суток появится своя пара (тогда формула ДРР возвращается к фактической «цене с СПП»).
+ */
+export function ozonSppEstimateSql({ project, from, to }: OzonFactsQuery): string {
+  if (!ISO.test(from) || !ISO.test(to)) throw new Error('границы периода: ожидается YYYY-MM-DD');
+  if (from > to) throw new Error('границы периода: начало позже конца');
+  if (!/^[A-Za-z0-9-]+$/.test(project)) throw new Error('идентификатор проекта');
+  return `
+WITH m AS (
+  SELECT DISTINCT marketplace_sku, offer_id
+  FROM \`${project}.evetis_ref.REF_SKU_CHANNEL_MAP\` WHERE marketplace='OZON'),
+unitp AS (
+  SELECT posting_number, sku, SUM(buyer_paid_price_rub) bp, SUM(seller_base_price_rub) sp,
+         MIN(event_date) known
+  FROM \`${project}.ozon_raw.RAW_OZON_FINANCE_ACCRUAL\`
+  WHERE buyer_paid_price_rub IS NOT NULL GROUP BY 1,2),
+obs AS (
+  SELECT p.order_date od, mm.offer_id, u.known, p.quantity q, u.bp * p.quantity b, u.sp * p.quantity s
+  FROM \`${project}.ozon_raw.RAW_OZON_POSTINGS_FBO\` p
+  JOIN unitp u USING (posting_number, sku)
+  JOIN m mm ON mm.marketplace_sku = p.sku
+  WHERE p.status = 'delivered' AND u.sp IS NOT NULL AND u.sp <> 0
+    AND p.order_date BETWEEN DATE_SUB(DATE '${from}', INTERVAL 30 DAY) AND DATE_SUB(DATE '${to}', INTERVAL 1 DAY)),
+days AS (SELECT d FROM UNNEST(GENERATE_DATE_ARRAY(DATE '${from}', DATE '${to}')) d),
+-- окно суток d: заказ в [d−30, d−1] и финансовая пара известна к d−1
+win AS (
+  SELECT days.d, o.offer_id, o.q, o.b, o.s
+  FROM days JOIN obs o
+    ON o.od BETWEEN DATE_SUB(days.d, INTERVAL 30 DAY) AND DATE_SUB(days.d, INTERVAL 1 DAY)
+   AND o.known <= DATE_SUB(days.d, INTERVAL 1 DAY)),
+sku_w AS (SELECT d, offer_id, SUM(q) units, SUM(b) b, SUM(s) s FROM win GROUP BY 1,2),
+shop_w AS (SELECT d, SUM(q) units, SUM(b) b, SUM(s) s FROM win GROUP BY 1),
+k AS (SELECT DISTINCT offer_id FROM m)
+SELECT CAST(days.d AS STRING) d, k.offer_id,
+  -- правило уровня: свой SKU при ≥ 5 ед. в окне, иначе магазин при ≥ 1 ед.
+  -- та же величина, что у фактической СПП: (1 − Σ buyer / Σ seller) × 100, взвешено единицами;
+  -- округление r6 — в сборщике, тем же правилом, что у факта
+  CAST(IF(sw.units >= 5, 1 - sw.b / sw.s, 1 - sh.b / sh.s) * 100 AS FLOAT64) spp_estimate_pct,
+  IF(sw.units >= 5, 'SKU', 'SHOP') spp_estimate_level
+FROM days CROSS JOIN k
+LEFT JOIN sku_w sw ON sw.d = days.d AND sw.offer_id = k.offer_id
+LEFT JOIN shop_w sh ON sh.d = days.d
+WHERE (sw.units >= 5 AND sw.s <> 0) OR (sh.units >= 1 AND sh.s <> 0)
+ORDER BY 1,2`.trim();
+}
+
 /**
  * Снимки остатков. В лист попадает только ДОКАЗАННЫЙ снимок — тот, чья дата извлечения
  * совпадает с датой снимка (Gate 5C). Интерполяция и восстановление из продаж запрещены.

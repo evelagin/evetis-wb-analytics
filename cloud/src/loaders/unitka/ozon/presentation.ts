@@ -68,13 +68,23 @@ export const OZON_VISUAL_DIVERGENCES: ReadonlyArray<{ role: FieldRole; wb: Visua
   { role: 'STOCK', wb: 'FACT', ozon: 'CALC', why: 'истории остатков до 31.08.2026 не существует — импорт не обещаем' },
 ];
 
-/** Роли левой сводки магазина. У Ozon нет колонки ДРР (у WB — K). */
+/** Роли левой сводки магазина. С Phase 6 ДРР магазина в K — как у WB (у WB K тоже ДРР). */
 export const OZON_SUMMARY_ROLES: ReadonlyArray<{ col: number; role: FieldRole }> = [
   { col: 1, role: 'WEEKDAY' }, { col: 2, role: 'DATE' }, { col: 3, role: 'MANUAL_EXTERNAL' },
   { col: 4, role: 'IMPRESSIONS' }, { col: 5, role: 'CLICKS' }, { col: 6, role: 'ORDERS' },
   { col: 7, role: 'CART' }, { col: 8, role: 'CANCELLATIONS' }, { col: 9, role: 'TOTAL_PROFIT' },
-  { col: 10, role: 'INTERNAL_ADS' },
+  { col: 10, role: 'INTERNAL_ADS' }, { col: 11, role: 'DRR' },
 ];
+
+/**
+ * Роль сводки без снятой спецификации WB (контракт снимался с колонок A..J сводки Ozon-ролей).
+ * ДРР магазина берёт оформление РАСЧЁТНОЙ колонки сводки «Доходность» (белый CALC, те же рамки и
+ * кегль), а числовой формат и выравнивание — у ДРР блока («0.0%»): иначе процент лёг бы рублями.
+ * Ширина — ширина ДРР блока.
+ */
+export const OZON_SUMMARY_STYLE_TEMPLATE: Readonly<Partial<Record<FieldRole, FieldRole>>> = {
+  DRR: 'TOTAL_PROFIT',
+};
 
 /** Сколько колонок блока накрывает объединённая ячейка заголовка SKU (контракт WB). */
 export const SKU_TITLE_MERGE_WIDTH = 7;
@@ -159,8 +169,8 @@ export const OZON_CF_FAMILIES: readonly CfFamily[] = [
     fg: '#cc0000', why: 'то же для убытка' },
   { id: 'profit.final.positive', role: 'FINAL_UNIT_PROFIT', scope: 'block', perSection: false,
     fg: '#38761d', why: 'у Ozon уже было правило «<0 красным», зелёного не хватало' },
-  { id: 'drr.above20', role: 'DRR', scope: 'block', perSection: false,
-    fg: '#cc0000', why: 'ДРР выше 20 % — красным (в сводке Ozon колонки ДРР нет)' },
+  { id: 'drr.above20', role: 'DRR', scope: 'both', perSection: false,
+    fg: '#cc0000', why: 'ДРР выше 20 % — красным, в блоках и в ДРР магазина (K, Phase 6)' },
   { id: 'date.weekend', role: 'DATE', scope: 'summary', perSection: false,
     bg: '#fcefe3', why: 'выходной день в колонке даты сводки' },
   { id: 'cancellations.alert', role: 'CANCELLATIONS', scope: 'both', perSection: false,

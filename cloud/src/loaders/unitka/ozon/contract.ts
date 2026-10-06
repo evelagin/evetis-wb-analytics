@@ -3,7 +3,7 @@
  *
  * Общий слой (календарь, локаль формул, colA1, карта смещений OFFSET) переиспользуется из WB без
  * изменений. Здесь — ТОЛЬКО то, чем Ozon отличается от WB:
- *   • сводка магазина A..J (10 колонок, БЕЗ ДРР) против A..K у WB;
+ *   • сводка магазина A..K: с Phase 6 (2026-10-06) в K — ДРР магазина, как у WB; до того A..J без ДРР;
  *   • первый SKU-блок в колонке L (12) против M (13) у WB;
  *   • источники фактов и правила доступности — ozon_raw / ozon_mart;
  *   • отмены НЕ штрафуются (решение владельца D-3), в отличие от WB.
@@ -28,13 +28,17 @@ export function ozonSlotStart(slot: number): number {
   return OZON_GEOMETRY.BLOCK_FIRST_COLUMN + slot * OZON_GEOMETRY.BLOCK_WIDTH;
 }
 
-/** Левая сводка магазина: A..J. ДРР в сводке Ozon НЕТ (у WB — колонка K). */
+/**
+ * Левая сводка магазина: A..K. ДРР магазина (K, Phase 6) — ОТНОШЕНИЕ агрегатов (Σ реклама / Σ база
+ * блоков), а не сумма и не среднее процентов SKU, поэтому в OZON_SUMMARY_TO_OFFSET её нет: тот
+ * перечень питает формулы SUM и сверку SUMMARY_RECONCILIATION «сводка = Σ блоков».
+ */
 export const OZON_SUMMARY = {
   weekday: 1, date: 2, bloggers: 3, views: 4, opens: 5,
-  orders: 6, carts: 7, cancels: 8, profit: 9, ads: 10,
+  orders: 6, carts: 7, cancels: 8, profit: 9, ads: 10, drr: 11,
 } as const;
 
-/** Колонка сводки ↔ смещение в блоке. Сумма блоков секции обязана сходиться с колонкой сводки. */
+/** Колонка сводки ↔ смещение в блоке. Сумма блоков секции обязана сходиться с колонкой сводки. ДРР (K) — не сумма. */
 export const OZON_SUMMARY_TO_OFFSET: ReadonlyArray<readonly [number, number, string]> = [
   [OZON_SUMMARY.bloggers, 1, 'bloggers'],
   [OZON_SUMMARY.views, 2, 'views'],
@@ -84,7 +88,7 @@ export const OZON_FIELD_SOURCE_MAP: ReadonlyArray<{
   { offset: 10, field: 'Доходность (общая)', availability: 'FORMULA',             source: '= реализовано × доходность 1 шт − реклама' },
   { offset: 11, field: 'Реклама внутренняя', availability: 'FACT',                source: 'FCT_OZON_SKU_PNL_DAILY.ad_spend_attributed_rub (АТРИБУЦИЯ, не биллинг)' },
   { offset: 12, field: 'Внешняя реклама',    availability: 'BLANK_SOURCE_ABSENT', source: 'расчётный output; legacy-формула UNPROVEN, существующие ячейки сохраняются' },
-  { offset: 13, field: 'ДРР',                availability: 'FORMULA',             source: '= реклама / (заказы × цена с СПП)' },
+  { offset: 13, field: 'ДРР',                availability: 'FORMULA',             source: '= реклама / ((заказы − блогеры) × цена с СПП); без факта СПП — цена покупателя по ОЦЕНКЕ СПП E1m5 (заметка ESTIMATED), цена продавца знаменателем не бывает' },
   { offset: 14, field: 'цена',               availability: 'FACT',                source: 'полная взаимоисключающая posting/SKU-база: документальные proceeds/actual finance покрытых единиц + доказанная reference-цена остальных; / expected_realized_qty, с полным покрытием, не признанная выручка' },
   { offset: 15, field: 'СПП %',              availability: 'FACT',                source: '1 − buyer_paid/seller_base (баллы Ozon + софинансирование)' },
   { offset: 16, field: 'цена с СПП',         availability: 'FORMULA',             source: '= цена × (1 − СПП%)' },
