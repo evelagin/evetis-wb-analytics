@@ -418,6 +418,7 @@ export function buildHeaderRows(
   for (let c = 2; c <= 10; c++) header[c - 1] = refHeader[c - 1] ?? '';
   header[5] = `Заказы ${spec.blocks.length} SKU`;
   header[6] = `Положили в корзину ${spec.blocks.length} SKU`;
+  header[10] = 'ДРР';                                // Phase 6: ДРР магазина (K), подпись движка
   const lastRef = Math.max(...Object.values(refAnchor));
   for (const o of spec.blocks) {
     const b = spec.anchor[o] as number; const src = refAnchor[o];

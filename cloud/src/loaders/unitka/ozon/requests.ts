@@ -133,8 +133,11 @@ export function cfFamilyRequests(
     out.push(rule(sheetId, role === 'TOTAL_PROFIT'
       ? `=AND(${ref}<>"";${ref}<0)` : `=AND(ISNUMBER(${ref});${ref}<0)`, fmt(undefined, '#cc0000'), rs));
   }
-  const drr = columnsFor(sections, 'DRR', 'block');
-  if (drr.length) { const ref = at(drr); out.push(rule(sheetId, `=AND(${ref}<>"";${ref}>0,2)`, fmt(undefined, '#cc0000'), drr)); }
+  // Phase 6: то же правило накрывает и ДРР магазина (K) — одно правило, число правил движка не меняется
+  const drr = columnsFor(sections, 'DRR', 'both');
+  // ISNUMBER, а не <>"": в K легаси-секций лежит текст дня недели, а текст в Sheets «больше» любого числа —
+  // правило покрасило бы 351 ячейку (ревью #257, R2).
+  if (drr.length) { const ref = at(drr); out.push(rule(sheetId, `=AND(ISNUMBER(${ref});${ref}>0,2)`, fmt(undefined, '#cc0000'), drr)); }
   const dateSum = sections.map((s) => [s.firstRow, s.lastRow, summaryColumn('DATE') as number] as [number, number, number]);
   if (dateSum.length) { const ref = at(dateSum); out.push(rule(sheetId, `=WEEKDAY(${ref};2)>5`, fmt('#fcefe3'), dateSum)); }
   // смещения ролей одинаковы в сводке и в блоке: дата −6, заказы −2 от «отменили»

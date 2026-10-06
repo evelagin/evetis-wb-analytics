@@ -8,7 +8,7 @@
 import { OZON_GEOMETRY } from './contract.js';
 import {
   OZON_FIELD_ROLES, OZON_SUMMARY_ROLES, ROLE_OFFSET, OZON_ROLE_CLASS, SKU_TITLE_MERGE_WIDTH,
-  OZON_STYLE_TEMPLATE, OZON_BORDER_OVERRIDES, SECTION_ROW_ROLES,
+  OZON_STYLE_TEMPLATE, OZON_BORDER_OVERRIDES, SECTION_ROW_ROLES, OZON_SUMMARY_STYLE_TEMPLATE,
   type FieldRole, type VisualClass, type SectionRowRole,
 } from './presentation.js';
 import { CANONICAL_CURRENT_WB_PRESENTATION_CONTRACT as C, type CellFormatSpec } from './wbcontract.js';
@@ -93,6 +93,27 @@ export function blockWidthFor(role: FieldRole): number {
 }
 
 /**
+ * Спецификация роли СВОДКИ: своя из контракта WB, либо (Phase 6, ДРР магазина) роль-образец сводки
+ * с числовым форматом и выравниванием ДРР блока в строках дня и итога. Нет ни того, ни другого —
+ * undefined (прежнее поведение: колонка без спецификации не оформляется).
+ */
+export function summarySpecFor(kind: RowRoleName, role: FieldRole): CellFormatSpec | undefined {
+  const own = C.rows[kind].summary[role];
+  if (own) return own;
+  const tpl = OZON_SUMMARY_STYLE_TEMPLATE[role];
+  const base = tpl ? C.rows[kind].summary[tpl] : undefined;
+  if (!base) return undefined;
+  if (kind !== 'day' && kind !== 'mtd') return base;
+  const blk = C.rows[kind].block[role];
+  return { ...base, ...(blk?.ha ? { ha: blk.ha } : {}), ...(blk?.numberFormat ? { numberFormat: blk.numberFormat } : {}) };
+}
+
+/** Ширина колонки роли сводки: своя, либо (Phase 6) ширина той же роли в блоке. */
+export function summaryWidthFor(role: FieldRole): number | undefined {
+  return C.widths.summary[role] ?? (OZON_SUMMARY_STYLE_TEMPLATE[role] ? C.widths.block[role] : undefined);
+}
+
+/**
  * Каждая роль блока обязана иметь оформление во всех четырёх ролях строк и ширину.
  * Вызывается регрессией: добавление 26-й колонки без образца обязано падать на тесте,
  * а не проявляться серой полосой в боевом листе.
@@ -126,7 +147,7 @@ export function staticFormatRequests(sheetId: number, sections: readonly Section
   for (const s of sections) {
     for (const [kind, r0, r1] of rowsOf(s)) {
       for (const { col, role } of OZON_SUMMARY_ROLES) {
-        const spec = C.rows[kind].summary[role]; if (!spec) continue;
+        const spec = summarySpecFor(kind, role); if (!spec) continue;
         const bg = kind === 'day' ? dayBackgroundFor(role) : undefined;
         const { format, fields } = toUserEnteredFormat(spec, bg);
         out.push({ repeatCell: { range: { sheetId, startRowIndex: r0 - 1, endRowIndex: r1,
@@ -168,7 +189,7 @@ export function observedStockFormatRequests(
 export function columnWidthRequests(sheetId: number, blocks: number): SheetsRequest[] {
   const out: SheetsRequest[] = [];
   for (const { col, role } of OZON_SUMMARY_ROLES) {
-    const w = C.widths.summary[role]; if (w === undefined) continue;
+    const w = summaryWidthFor(role); if (w === undefined) continue;
     out.push({ updateDimensionProperties: { range: { sheetId, dimension: 'COLUMNS',
       startIndex: col - 1, endIndex: col }, properties: { pixelSize: w }, fields: 'pixelSize' } });
   }

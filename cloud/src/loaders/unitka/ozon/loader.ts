@@ -28,10 +28,11 @@ import { LoaderError } from '../../../errors.js';
 import { SheetsRest, type SheetsGateway } from '../sheets.js';
 import { BqClient } from '../../../bq/client.js';
 import { OZON_GEOMETRY } from './contract.js';
-import { ozonMonthFactsSql, ozonProvenStockSql, normalizeBqRow } from './bq.js';
+import { ozonMonthFactsSql, ozonProvenStockSql, ozonSppEstimateSql, normalizeBqRow, type OzonSppEstimateRow } from './bq.js';
 import { ozonMonthSpec, composeMonth, type OzonFactRow, type CellValue } from './month.js';
 import type { CellValue as SheetCell } from '../model.js';
-import { buildOzonPlan, sectionFormulas, OZON_WRITE_PHASES } from './monthplan.js';
+import { buildOzonPlan, sectionFormulas, OZON_WRITE_PHASES, type SppDayEvidence, type SppEstimate } from './monthplan.js';
+import { OZON_OFFSET } from './offsets.js';
 import { ozonSourceCompletenessIssues, ozonWrittenReader, verifyOzonModel } from './model_qa.js';
 import { layoutOf, columnName, type SectionLayout } from './requests.js';
 import {
@@ -82,13 +83,15 @@ export function parseLiveLayout(
   grid: readonly (readonly SheetCell[])[], tailFirstColumn: number,
   canonicalOffer: (token: string) => string | null,
 ): { sections: LiveSection[]; cart: Record<string, number>;
-     bloggers: Record<string, number>; externalAds: Record<string, CellValue> } {
+     bloggers: Record<string, number>; externalAds: Record<string, CellValue>;
+     sppEvidence: Record<string, SppDayEvidence> } {
   const { BLOCK_FIRST_COLUMN: BF, BLOCK_WIDTH: W } = OZON_GEOMETRY;
   const at = (r: number, c: number): SheetCell => {
     const row = grid[r - 1] ?? []; return (row[c - 1] ?? '') as SheetCell;
   };
   const sections: LiveSection[] = []; const cart: Record<string, number> = {};
   const bloggers: Record<string, number> = {}; const externalAds: Record<string, CellValue> = {};
+  const sppEvidence: Record<string, SppDayEvidence> = {};
   for (let r = 1; r <= grid.length; r++) {
     if (String(at(r, BF)).trim() !== 'Дата') continue;
     const titleRow = r - 1; const slots: Array<string | null> = [];
@@ -119,10 +122,18 @@ export function parseLiveLayout(
         if (typeof bq === 'number' && Number.isFinite(bq) && bq >= 0 && Number.isInteger(bq)) bloggers[`${iso}|${off}`] = bq;
         const ext = at(row, BF + W * b + 12);
         if (typeof ext === 'number' || (typeof ext === 'string' && ext !== '')) externalAds[`${iso}|${off}`] = ext;
+        // Покрытие СПП месяца для дней ВНЕ окна перезаписи: значения, которые движок уже записал в лист.
+        const n = (o: number): number => { const x = at(row, BF + W * b + o); return typeof x === 'number' && Number.isFinite(x) ? x : 0; };
+        const price = at(row, BF + W * b + OZON_OFFSET.price), spp = at(row, BF + W * b + OZON_OFFSET.spp);
+        const buyer = at(row, BF + W * b + OZON_OFFSET.priceSpp);
+        // Phase 6: заказы, цена и «цена с СПП» — база ДРР месяца по суткам до окна перезаписи
+        sppEvidence[`${iso}|${off}`] = { units: n(OZON_OFFSET.orders) - n(OZON_OFFSET.cancels), priced: typeof price === 'number' && price > 0,
+          spp: typeof spp === 'number' && Number.isFinite(spp), orders: n(OZON_OFFSET.orders), price: n(OZON_OFFSET.price),
+          ...(typeof buyer === 'number' && Number.isFinite(buyer) ? { buyer } : {}) };
       });
     }
   }
-  return { sections, cart, bloggers, externalAds };
+  return { sections, cart, bloggers, externalAds, sppEvidence };
 }
 
 /**
@@ -250,7 +261,7 @@ export async function ozonUnitkaLoader(
   const alias = ctx.config.ozonUnitkaOfferAliases;
   const canonicalOffer = (t: string): string | null =>
     canonSet.has(t) ? t : (alias[t] ?? null);
-  let { sections: live, cart, bloggers, externalAds } = parseLiveLayout(grid as SheetCell[][], geo.tailFirst, canonicalOffer);
+  let { sections: live, cart, bloggers, externalAds, sppEvidence } = parseLiveLayout(grid as SheetCell[][], geo.tailFirst, canonicalOffer);
   if (!live.length) throw new LoaderError('секций месяца в листе не найдено', 'OZON_UNITKA_LAYOUT');
 
   // ── барьер готовности: источники обязаны быть свежими ДО любой записи ────────────────
@@ -274,6 +285,23 @@ export async function ozonUnitkaLoader(
     ozonProvenStockSql({ project: ctx.config.projectId, from: w.from, to: w.to }));
   const stock: Record<string, number> = {};
   for (const s of stockRows) stock[`${s.d}|${s.offer_id}`] = s.units;
+  // Phase 6: оценка СПП для ДРР — с первого дня месяца начала окна: сутки секции до окна входят в итог
+  // ДРР месяца и в ДРР магазина, и их оценка обязана быть той же, что у суток окна (привязка к дате).
+  // Оценка — улучшение ДРР, а не условие публикации: её сбой не останавливает прогон (ДРР остаётся фактической).
+  let estRows: OzonSppEstimateRow[] = [];
+  try {
+    estRows = await bq.query<OzonSppEstimateRow>(
+      ozonSppEstimateSql({ project: ctx.config.projectId, from: `${w.from.slice(0, 7)}-01`, to: w.to }));
+  } catch (e) {
+    log.warn('ozon_unitka_spp_estimate_unavailable', { reason: e instanceof Error ? e.message : String(e) });
+  }
+  const sppEstimate: Record<string, SppEstimate> = {};
+  for (const e of estRows) {
+    const pct = Number(e.spp_estimate_pct);
+    if (Number.isFinite(pct) && (e.spp_estimate_level === 'SKU' || e.spp_estimate_level === 'SHOP')) {
+      sppEstimate[`${e.d}|${e.offer_id}`] = { pct: Math.round(pct * 1e6) / 1e6, level: e.spp_estimate_level };
+    }
+  }
 
   // секции окна: существующие + недостающие, достроенные из геометрии последней.
   // Новый месяц и новый SKU появляются сами — ручной правки листа не требуется.
@@ -295,7 +323,7 @@ export async function ozonUnitkaLoader(
     }
     const ex = await expandOzonCapacity({ sheets, sheetName: name, meta, geometry: geo, blocksNeeded: e.needed, log, envTailFirst: ctx.config.ozonUnitkaTailFirstColumn });
     meta = ex.meta; grid = ex.grid; geo = ex.geometry;                 // дальше — ТОЛЬКО новая геометрия
-    ({ sections: live, cart, bloggers, externalAds } = parseLiveLayout(grid as SheetCell[][], geo.tailFirst, canonicalOffer));
+    ({ sections: live, cart, bloggers, externalAds, sppEvidence } = parseLiveLayout(grid as SheetCell[][], geo.tailFirst, canonicalOffer));
     plans = planSections(geo.physicalSlots);
   }
   const created = plans.filter((p) => p.isNew);
@@ -334,7 +362,9 @@ export async function ozonUnitkaLoader(
     const inSection = facts.filter((f) => f.d >= first && f.d <= last);
     const sheetInputs = { bloggers, externalAds };
     const comp = composeMonth(spec, inSection, stock, lcd, from, cart, sheetInputs);
-    return { spec, facts: inSection, stock, cart, sheetInputs, formulas: sectionFormulas(spec, comp, 'SEMICOLON', authority.lcdName),
+    const drr = { lcd, from, estimate: sppEstimate, evidence: sppEvidence, bloggers };
+    return { spec, facts: inSection, stock, cart, sheetInputs, sppEvidence, sppEstimate,
+             formulas: sectionFormulas(spec, comp, 'SEMICOLON', authority.lcdName, drr),
              refTitle, refHeader, refAnchor, fromDay: from,
              estimated: comp.provenance.length };
   });
@@ -385,7 +415,7 @@ export async function ozonUnitkaLoader(
   const estimatedRows = built.reduce((n, b) => n + b.estimated, 0);
   ctx.logger.info('ozon-unitka: план собран', {
     window: `${w.from}..${w.to}`, days: w.days, deep: w.deep,
-    sections: built.map((b) => b.spec.key).join(','), createdSections: created.length,
+    sections: built.map((b) => b.spec.key).join(','), createdSections: created.length, sppEstimates: estRows.length,
     activatedSkus: activated.length, appendRowCount, cells, requests, estimatedRows, write,
     lcd_authority: authority.kind, committed_lcd: cycle?.committed ?? lcd, candidate_lcd: lcd,
     slots: geo.physicalSlots, tail_first: geo.tailFirst, cf_rules_existing: existingCfRules });

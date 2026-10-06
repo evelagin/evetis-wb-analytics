@@ -9,7 +9,7 @@ import {
   OZON_LCD, COMMISSION_INCLUDES_ACQUIRING, otherDirectCostRub, canonicalUnitkaResult,
   APRIL_2026_IS_HYBRID_MIGRATION_MONTH, FIRST_FULLY_CANONICAL_MONTH,
   ozonSectionGeometry, resolveMonthBlocks, storageIsAttributable,
-  classifyStockSnapshot, stockIsWritable, isClosedDay,
+  classifyStockSnapshot, stockIsWritable, isClosedDay, OZON_SUMMARY_TO_OFFSET,
 } from '../src/loaders/unitka/ozon/contract.js';
 import {
   OZON_FIELD_ROLES, ROLE_OFFSET, OZON_ROLE_CLASS, OZON_SUMMARY_ROLES,
@@ -81,9 +81,11 @@ describe('OZON adapter — геометрия', () => {
     const cart = OZON_FIELD_SOURCE_MAP.find((f) => f.offset === OFFSET.carts)!;
     expect(cart.field).toBe('Положили в корзину');
   });
-  it('в сводке Ozon нет ДРР (10 колонок против 11 у WB)', () => {
-    expect(Object.keys(OZON_SUMMARY)).toHaveLength(10);
-    expect((OZON_SUMMARY as Record<string, number>).drr).toBeUndefined();
+  it('Phase 6: в сводке Ozon ДРР магазина в K (11 колонок, как у WB), но НЕ в перечне сумм', () => {
+    expect(Object.keys(OZON_SUMMARY)).toHaveLength(11);
+    expect(OZON_SUMMARY.drr).toBe(11);
+    // ДРР — отношение агрегатов: в SUM-формулы и сверку «сводка = Σ блоков» она не входит
+    expect(OZON_SUMMARY_TO_OFFSET.map(([c]) => c)).not.toContain(OZON_SUMMARY.drr);
   });
 });
 
@@ -419,9 +421,9 @@ describe('OZON adapter — Gate 5V: контракт представления'
       expect(OZON_ROLE_CLASS[r]).toBe('FACT');
     }
   });
-  it('в сводке Ozon 10 ролей и нет ДРР (у WB — 11 с ДРР)', () => {
-    expect(OZON_SUMMARY_ROLES).toHaveLength(10);
-    expect(OZON_SUMMARY_ROLES.map((s) => s.role)).not.toContain('DRR');
+  it('Phase 6: в сводке Ozon 11 ролей, ДРР магазина в K', () => {
+    expect(OZON_SUMMARY_ROLES).toHaveLength(11);
+    expect(OZON_SUMMARY_ROLES.find((s) => s.role === 'DRR')?.col).toBe(11);
   });
   it('объединение заголовка SKU — 7 колонок, как в WB', () => {
     expect(SKU_TITLE_MERGE_WIDTH).toBe(7);
@@ -671,10 +673,10 @@ describe('GATE 5D — геометрия строк и язык цвета', () 
     expect(pos?.bg).toBeUndefined();            // фон остаётся за градиентом
   });
 
-  it('ДРР выше 20 % — только в блоках: в сводке Ozon колонки ДРР нет', () => {
+  it('Phase 6: ДРР выше 20 % — и в блоках, и в ДРР магазина (K)', () => {
     const drr = OZON_CF_FAMILIES.find((f) => f.id === 'drr.above20');
-    expect(drr?.scope).toBe('block');
-    expect(OZON_SUMMARY_ROLES.some((r) => r.role === 'DRR')).toBe(false);
+    expect(drr?.scope).toBe('both');
+    expect(OZON_SUMMARY_ROLES.some((r) => r.role === 'DRR')).toBe(true);
   });
 
   it('шкалы от MAX секции заводятся на секцию, а пороговые правила — нет', () => {
@@ -880,7 +882,7 @@ describe('GATE 5E — запросы представления и структ�
   it('имя колонки и адрес роли', () => {
     expect(columnName(12)).toBe('L'); expect(columnName(551)).toBe('UE');
     expect(blockColumn(0, 'DATE')).toBe(12);
-    expect(summaryColumn('DRR')).toBeNull();        // у Ozon нет ДРР в сводке
+    expect(summaryColumn('DRR')).toBe(11);          // Phase 6: ДРР магазина в K
   });
 
   it('порог ступени читается из формулы в локали ru_RU', () => {
@@ -926,17 +928,17 @@ describe('GATE 5E — контракт оформления и идемпоте�
   // «Прочие прямые» молча выпадали из оформления, и тест это фиксировал как норму.
   it('статический формат ставится на все четыре роли строк и на ВСЕ колонки блока', () => {
     const r = staticFormatRequests(1, [layout(SEP)]);
-    expect(r.length).toBe(4 * (10 + 2 * OZON_BLOCK_WIDTH));
+    expect(r.length).toBe(4 * (11 + 2 * OZON_BLOCK_WIDTH));
   });
 
   it('ширины колонок берутся из контракта для каждой колонки блока', () => {
-    expect(columnWidthRequests(1, 1).length).toBe(10 + OZON_BLOCK_WIDTH);
+    expect(columnWidthRequests(1, 1).length).toBe(11 + OZON_BLOCK_WIDTH);
   });
 
-  it('объединения заголовков: сводка на 10 колонок, SKU — на 7, на КАЖДЫЙ слот блока', () => {
+  it('объединения заголовков: сводка на 11 колонок (A..K, Phase 6), SKU — на 7, на КАЖДЫЙ слот блока', () => {
     const r = titleMergeRequests(1, [layout(SEP)], 22) as Array<{ mergeCells: { range: { startColumnIndex: number; endColumnIndex: number } } }>;
     expect(r.length).toBe(1 + 22);            // разметка одинакова во всех секциях
-    expect(r[0]!.mergeCells.range.endColumnIndex - r[0]!.mergeCells.range.startColumnIndex).toBe(10);
+    expect(r[0]!.mergeCells.range.endColumnIndex - r[0]!.mergeCells.range.startColumnIndex).toBe(11);
     expect(r[1]!.mergeCells.range.endColumnIndex - r[1]!.mergeCells.range.startColumnIndex).toBe(7);
   });
 
