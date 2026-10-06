@@ -1,6 +1,6 @@
 # CHANGELOG.md
 
-## 2026-10-06 — Ozon: бизнес-дата заказа = сутки МСК (НЕ РАЗВЁРНУТО)
+## 2026-10-06 — Ozon: бизнес-дата заказа = сутки МСК (развёрнуто 06.10.2026, main 6428919, образ a5b79c39)
 
 `sql/current/ozon_mart/*` (7 представлений), `sql/control_tower/*` (2), `cloud/src/loaders/unitka/ozon/bq.ts`. Лист `OZON_Юнит_2025`
 меняется только после развёртывания (см. `docs/ops/OZON_ORDER_DATE_MSK_2026-10-06.md`).

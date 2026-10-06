@@ -67,7 +67,7 @@ AIE_PENDING = {"ozon_mart": set(AIE["ozon_mart"]), "evetis_mart": set(AIE["eveti
 ORDER_DATE_MSK = {"FCT_OZON_SKU_PNL_DAILY", "FCT_OZON_SKU_PNL_MONTHLY", "FCT_OZON_PNL_MONTHLY",
                   "V_OZON_COMMISSION_POLICY", "V_OZON_LOGISTICS_ESTIMATOR",
                   "V_OZON_SKU_PNL_DAILY_OPERATIONAL", "V_OZON_SKU_FORWARD_ECONOMICS_CURRENT"}
-ORDER_DATE_MSK_PENDING = set(ORDER_DATE_MSK)
+ORDER_DATE_MSK_PENDING = set()  # развёрнуто 2026-10-06 из main 6428919, сняты R2C
 NON_R2A = {"ozon_mart": {"V_OZON_COMMISSION_RECOVERY", "V_OZON_CIS_BUYOUT", "FCT_OZON_SKU_PNL_DAILY",
                          "FCT_OZON_SKU_PNL_MONTHLY", "FCT_OZON_PNL_MONTHLY",
                          # Gate 8: провизорная экономика Ozon
@@ -87,7 +87,7 @@ GATE8_OBJECTS = {"V_OZON_COMMISSION_POLICY", "V_OZON_LOGISTICS_ESTIMATOR",
 # чтением production, и пустых множеств здесь ждать — правильно. Непустое множество
 # снова означает изменение, ожидающее развёртывания.
 # Local Ozon Unitka completeness fix: production capture is preserved; no deploy authorized.
-GATE5K_PENDING = {"ozon_mart": {"V_OZON_SKU_PNL_DAILY_OPERATIONAL"} | PROMO2_PENDING["ozon_mart"] | PROMO3_PENDING["ozon_mart"]
+GATE5K_PENDING = {"ozon_mart": set() | PROMO2_PENDING["ozon_mart"] | PROMO3_PENDING["ozon_mart"]
                   | PROMO4_PENDING["ozon_mart"] | PLAN1_PENDING["ozon_mart"] | AIE_PENDING["ozon_mart"]
                   | ORDER_DATE_MSK_PENDING,
                   "evetis_mart": set() | PROMO2_PENDING["evetis_mart"] | PROMO3_PENDING["evetis_mart"]
