@@ -205,7 +205,8 @@ def detect_credential_material(doc, source: str) -> list[Finding]:
                 out.append(Finding(source, path, f"credential:{rule}",
                                    "значение похоже на учётные данные; в Git хранится только "
                                    "ИМЯ секрета Secret Manager"))
-        for m in _LONG_TOKEN.finditer(value):
+        immutable_ref = (path in {"$.historical_orchestration.release","$.historical_orchestration.root_hash"} and re.fullmatch(r"[0-9a-f]{40}|[0-9a-f]{64}",value))
+        for m in ([] if immutable_ref else _LONG_TOKEN.finditer(value)):
             tok = m.group(0)
             if re.search(r"\d", tok) and re.search(r"[A-Za-z]", tok):
                 out.append(Finding(source, path, "credential:long_random_token",
@@ -257,6 +258,9 @@ def validate_tenant(doc, source: str, schema: dict | None = None,
         _legacy_evetis_invariants(doc, err)
     else:
         _dedicated_invariants(doc, err, ozon_entities or load_ozon_entities())
+
+    if "historical_orchestration" in doc and (legacy or not ozon["enabled"] or doc["config_authority"] != "TENANT_REGISTRY" or doc["scheduler_state"] != "PAUSED"):
+        err("$.historical_orchestration", "orchestration_boundary", "Cloud backfill is dedicated Ozon only; ordinary schedules remain PAUSED")
 
     # ── общие: секреты Ozon ──────────────────────────────────────────────
     refs = ozon.get("secret_refs", {})

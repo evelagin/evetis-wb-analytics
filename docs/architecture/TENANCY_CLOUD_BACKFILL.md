@@ -1,0 +1,233 @@
+# Durable tenant backfill: bounded cloud qualification candidate
+
+## Status and authority (2026-10-06)
+
+QUALIFIED RELEASE CANDIDATE. This is not a deployed controller, approved
+full-history plan or evidence of unattended execution. PR252 is an
+unmerged dependency. No cloud resource or tenant data was changed to install
+this foundation. Full-history publication deliberately fails closed until a
+qualified gate adapter exists.
+
+The owner ACK of 2026-10-06 authorizes engineering and minimum dedicated,
+tenant-scoped orchestration IAM, superseding the no-new-IAM restriction in the
+2026-10-05 scope. It does not authorize broadening existing provisioner,
+runtime, control, GitHub or legacy EVETIS identities. Ordinary tenant Schedulers
+remain PAUSED. Existing source and binding contracts remain authoritative.
+
+## Implemented local storage and authority
+
+`tools/tenancy/durable_plan.py` uses existing BACKFILL_CHECKPOINTS rows to retain
+bounded canonical JSON records: MANIFEST, DISPATCH_INTENT, DISPATCH_RECEIPT,
+RECONCILED, WAITING, STOPPED, COMPLETE, DEPENDENCY_PLAN and SNAPSHOT_CERT. Root identity includes source SHA, immutable
+runtime image, canonical child plans, purpose and UTC creation timestamp.
+Every record is addressed and verified by its full SHA256, not by a local path.
+
+`tenant_locks.BFQ_<root>_<sequence>_<kind>` is a consistent create-if-absent
+fence. It elects one exact dispatch intent before append or any eventual
+Cloud Run POST. A conflicting run ID cannot win the same sequence. A crash
+between fence and append permits only identical publication recovery; it must
+never produce a replacement run or repeat an uncertain POST.
+
+`tenant_locks.BFR_<record>` commits a record only after SELECT readback verifies
+its full JSON digest. Streaming visibility delay is not absence of evidence.
+Identical duplicate inserts collapse; contradictory evidence stops the tick.
+Marker descriptions retain full hashes; labels contain short lookup prefixes
+only, respecting the BigQuery label length limit. Marker/table/partition
+retention must be checked explicitly before activation; default expiry is not
+assumed safe. No evidence is truncated to meet the 900000-byte guard.
+
+`history(root)` reconstructs committed records from cloud metadata and scoped
+SELECT. No local receipt, gcloud process or Mac state is needed by the storage
+adapter. The pure tick verdict handles active execution, missing receipt,
+reconciliation-before-next-dispatch, quota waiting and sticky security stop.
+It does not itself call a marketplace or start a job.
+
+## Cloud authentication and isolation
+
+`tools/tenancy/cloud_access.py` uses the Cloud Run metadata email/token endpoints
+and verifies the exact dedicated controller service identity before obtaining
+its token. It does not read local OAuth, credential files, environment API
+keys or Secret Manager payloads. Cloud Run documents these endpoints at
+https://docs.cloud.google.com/run/docs/container-contract#metadata-server.
+
+Reader requests are restricted to tenant BigQuery metadata/data, EU Standard
+SQL SELECT, exact tenant Run metadata and Scheduler inventory. SQL is parsed
+using the repository-pinned sqlglot dependency. Multiple statements, DDL/DML,
+foreign or wildcard tables, indirect sources, unreviewed UDFs and destination
+materialization are denied before obtaining a token. One verification query
+has a 1GiB maximumBytesBilled ceiling. This is an execution safety ceiling,
+not a business threshold.
+
+A separate dedicated append identity receives a delegated 600-second token
+scoped to BigQuery. Only insertAll to the three existing orchestration evidence
+tables and bounded canonical marker creation can use that token. The append
+identity has no jobs.create, RAW/ref writes, schema updates, job invocation or
+secret access. The reader cannot append or create tables. HTTP redirects and
+automatic mutation retries are forbidden. Error messages contain no credential
+or server response payload.
+
+`tenant_tables.Tables` accepts separate reader/write request adapters.
+`tenant_backfill.select` accepts a reader request adapter. Existing owner tools
+retain their previous defaults; cloud code need not replace module-global
+credentials or invoke gcloud. Offline integration tests deny owner fallback and
+prove record recovery after constructing a fresh cloud client.
+
+## Proposed exact permission boundary
+
+The machine-readable principal/permission/resource matrix is produced by
+`tools.tenancy.orchestration_identity.matrix(tenant)` and checked for exact
+equality by `validate_matrix`. It is a proposal, not an effective-IAM readback.
+Account names below are dedicated and all resources belong to the registry
+project for that tenant.
+
+| Dedicated principal | Permission | Resource |
+|---|---|---|
+| sa-backfill-controller | bigquery.datasets.get; bigquery.tables.get/getData | tenant ozon_raw, tenant_ops datasets |
+| sa-backfill-controller | bigquery.tables.get/getData/list | tenant ref dataset |
+| sa-backfill-controller | bigquery.datasets.get; bigquery.tables.get/list | tenant_locks dataset |
+| sa-backfill-controller | bigquery.jobs.create | tenant project |
+| sa-backfill-controller | run.jobs.get/run/runWithOverrides; run.executions.get/list | exact three canonical runtime jobs |
+| sa-backfill-controller | run.jobs.list; run.operations.get; cloudscheduler.jobs.list | tenant project |
+| sa-backfill-controller | run.jobs.get; run.executions.get/list | own controller and tenant-control jobs, read only |
+| sa-backfill-controller | iam.serviceAccounts.getAccessToken | dedicated sa-backfill-append only |
+| sa-backfill-append | bigquery.tables.updateData | BACKFILL_CHECKPOINTS, DATA_COVERAGE, DQ_RESULTS individually |
+| sa-backfill-append | bigquery.tables.create | tenant_locks dataset only |
+| sa-backfill-wake | run.jobs.run | dedicated tenant-backfill-controller job only |
+
+No standard broad TokenCreator role is used. No signJwt, signBlob or implicit
+delegation, no invocation of tenant-control, no existing-SA delegation and no
+Secret Manager permission is proposed. The query reader cannot create tables;
+this prevents pairing jobs.create with table creation to evade append-only
+storage. Dataset grants must join the canonical authoritative Terraform ACL,
+not out-of-band IAM members that a later apply would remove. No IAM change may
+be applied without the exact generated resource matrix, effective-binding
+readback, CI, image qualification and reviewed tenant-only plan.
+
+## Quota and recovered-generation invariants
+
+The conservative budget is 15 exports per rolling24hours. Reservations are
+durable report intents, deduplicated by plan ID/sequence; conflicting counts or
+unknown ordinary exports stop work. Repeat acknowledgements conservatively
+extend expiry. WAITING is not an Ozon quota rejection or permanent PARTIAL.
+A known POLL/download may finish with zero new-export allowance. Ambiguous
+REPORT_INTENT cannot become a second POST.
+
+The accepted client_001 SKU generation retains 15 completed and 75 pending
+campaigns. Its immutable runtime plan/image and ACK were reconstructed from
+cloud journal/checkpoint/execution evidence. This proves recoverability, not
+permission to run it using different application code. Its implementation hash
+differs from current PR252 because the qualified application changed. No
+silent hash substitution, generation reset, completed-result discard or new
+remaining-cohort plan merely for convenience is permitted.
+
+## Implemented candidate adapters (not deployed)
+
+- Canonical opt-in registry/release contract, authoritative dataset ACL integration,
+  17 exact IAM bindings, Terraform preconditions and adversarial plan scanning.
+- Metadata-authenticated bounded entrypoint, canonical preflight/start/reconcile,
+  one dispatch per wake, immutable publication before/after the Run POST.
+- Every preflight checks the global v1 Job metadata projection used by gcloud.
+  Unknown/duplicate jobs, foreign regions, unreachable locations and pagination
+  stop work before regional template/execution inspection or any dispatch.
+  Only names/region labels are requested for unknown resources; IAM is unchanged.
+- Exact old SKU runtime compatibility: the 20 runtime-file hash is unchanged.
+  The pending PR252 probe implementation is deliberately a separate release.
+- Terminal receipt reconciliation, source/persisted DQ, fresh dated Catalog
+  dependencies, conservative rolling quota and safe retry of transient reads.
+- An uncertain Run operation response stops automatically. The controller never
+  invents a receipt or repeats POST; evidence review is required to recover it.
+- Cloud log projection exposes root, qualification scope counts/windows, last
+  successful unit/checkpoint age, failed attempts, bindings and modeled WAIT.
+  These counts are not full-history chunks and do not imply economic finality.
+- Owner publisher, pinned controller dependencies, offline packaged checks,
+  CI build and Cloud Build definition. No image release verification is fabricated.
+
+## Remaining release / live / full-history gates
+
+- Current source CI and actual immutable image qualification passed as documented
+  below; those facts do not substitute for deployment/effective-IAM evidence.
+- Reviewed tenant-only Terraform plan, minimum IAM apply/readback, runtime-access
+  proof, deployment and independent bounded wake/restart proof.
+- Successful PR252 CI, probe image qualification/deployment and corrected discovery.
+  Do not change the old frozen SKU implementation/image silently to use that release.
+- Remaining SKU90 cohort, Supplies live scale/state-growth proof and progressive DQ.
+- Safe snapshot-only adapters, canonical durable 11-domain full plan, full-history
+  GO adapter and canonical lifecycle approval. FULL_HISTORY is still rejected.
+
+Local tests cannot substitute for any of these live/release gates. A Python
+module or valid Terraform source is not a deployed/current production fact.
+
+## Data semantics preserved
+
+FBO first confirmed source activity is2023-03-23. Finance2023-03-23 is a sampled
+lower bound, not proof of absolute earliest activity. Performance expense first
+confirmed activity is2023-03-24; tested2023-03-10..23 was empty. Freeze conservative
+queryable boundaries from durable evidence without inventing earlier EMPTY.
+
+Finance COMPLETE means traversal complete as-of observation; economic status
+remains PROVISIONAL. Keep30-day refresh and explicit older REOPEN. Type84 source
+label is «Дополнительная упаковка на складе Ozon». Its P&L mapping remains UNKNOWN;
+this alone does not block RAW traversal. Snapshot-only domains must not acquire
+fictional historic coverage. Historical trial data is preserved; this task is
+not trial cleanup, Seller policy redesign or identity/binding migration.
+
+## Release evidence and opt-in hardening (2026-10-06)
+
+Source 7738385b84f6ebf81069a93e2dd0db6d1cbae449 passed ci 37450422629 and
+sql-current 37450422785 (2630 passed, 1 skipped; C1-C18). Cloud Build
+77a4d32b-d380-47f1-a3e4-45702e209e52 used the existing dedicated builder and
+published controller digest 55cdffd503f9a2a8e962445cc9b8af029355f40cc71ff7ddee43a4916e27902f.
+Packaged network-disabled checks passed on Python 3.12.15. This artifact is not
+a deployed controller or proof of effective IAM/unattended continuation.
+
+Preparing an actual PAUSED opt-in exposed a deterministic serialization defect:
+Job-map insertion order changed the exact IAM matrix list after sorted JSON
+rendering. Runtime invocation rows now use sorted Job names. A qualified
+contract and full plan JSON round-trip regression retains all strict scanner
+guards. Permission/resource membership is unchanged. Because this changes the
+controller implementation hash, the above image must not be used for this
+updated implementation without a new exact-image build/qualification. The
+existing 7738385 release record describes its actual historical artifact; its
+hash and verification must never be rewritten to pretend it contains this fix.
+
+Generic H2 synthetic fixtures omit individual frozen orchestration rollout
+roots. In particular client_001's root is never cloned into client_002. Dedicated
+opt-in fixtures still exercise the complete closed IAM/Job/Scheduler contract.
+Credential scanning exempts only public facts of the independently verified
+closed orchestration projection; API keys/tokens/payloads remain forbidden.
+Missing-runtime qualification still fails before Terraform through the sole
+canonical registry exporter. That hardening source did not register an actual tenant opt-in; the qualified
+release proposal below adds it. Deployment remains gated by review.
+
+## Qualified release and PAUSED opt-in (2026-10-06)
+
+Source 66fa4f05681b0e7066f0e83f9bf9ca21d4ac7518 passed ci 37453877124 and
+sql-current 37453877213 (2635 passed, 1 skipped; C1-C18). Cloud Build
+c3e4cdb1-2257-4dfb-8e03-43ee14996d77 succeeded and published immutable
+controller digest 842072862ec564f27f058633d6965d819b619b819be485a8b51db1470f85486c.
+The clean source archive SHA256 is
+47b66f9c1ac8ed4cd955e562aa917132723b6d10227b40b0b483dc03af9d172b;
+build source generation is 1791285221614161. Packaged offline checks verified
+Python 3.12.15, controller implementation
+9746818d19c49f89b6244b281b439ead85dda724099d11ecbc73b408f3a50596 and
+unchanged frozen SKU runtime implementation
+d1f381374ef3fa9ad625b4784c8707c8c6b8fd0008faf02a6ffd76997d815c43.
+
+The client_001 registry now proposes that qualified release with a separate
+PAUSED historical Scheduler and qualification root
+4f4387b2bdaa39c8942735a3b9b386e665b20c61006c8e8a467832a7542b1779.
+This is a deployment proposal. The root was deterministically recovered from
+durable accepted SKU/Supplies checkpoints; its frozen publication input is
+not yet cloud-authoritative. Publication requires cloud MANIFEST/BF_SPEC and
+commit-marker readback after canonical release review. No effective IAM,
+controller Job, historical Scheduler, plan publication, full-history GO or
+unattended source execution is claimed by this repository configuration.
+All three ordinary Schedulers remain PAUSED in the intended contract.
+
+Rollback/containment for a future deployment must preserve the frozen root,
+source receipts and completed tenant data. Keep or pause only the dedicated
+historical Scheduler, monitor any active execution to terminal state, and do
+not reclaim an uncertain lease or repeat a submitted report. Reverting Git
+configuration does not undo IAM or data. Any infrastructure rollback needs its
+own reviewed canonical tenant-only Terraform plan; no broad IAM removal,
+RAW deletion, ordinary-schedule activation or trial cleanup is implied.

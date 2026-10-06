@@ -1,0 +1,43 @@
+# Exact clean Git archive, source SHA in pax provenance; no untracked/config/credential files.
+# Builder and source bucket reuse the existing scoped runtime-build boundary.
+# Push occurs only after packaged-image offline checks. This does not deploy.
+steps:
+  - id: identity
+    name: gcr.io/cloud-builders/docker@sha256:bbb3d633c5c2813b2ce5245852979e1d637768f4acfc504d8ece288f91e9b60f
+    entrypoint: bash
+    args:
+      - -euc
+      - |
+        who=$$(curl -sf -H 'Metadata-Flavor: Google' http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/default/email)
+        test "$$who" = "${_BUILDER}"
+  - id: build
+    name: gcr.io/cloud-builders/docker@sha256:bbb3d633c5c2813b2ce5245852979e1d637768f4acfc504d8ece288f91e9b60f
+    args: [build, --pull, --no-cache, --build-arg, 'CONTROLLER_SOURCE_SHA=${_SOURCE_SHA}', -f, tools/tenancy/controller.Dockerfile, --tag, '${_IMAGE}:${_SOURCE_SHA}', .]
+  - id: image-properties
+    name: gcr.io/cloud-builders/docker@sha256:bbb3d633c5c2813b2ce5245852979e1d637768f4acfc504d8ece288f91e9b60f
+    entrypoint: bash
+    args:
+      - -euc
+      - |
+        revision=$$(docker inspect ${_IMAGE}:${_SOURCE_SHA} --format '{{ index .Config.Labels "org.opencontainers.image.revision" }}')
+        test "$$revision" = "${_SOURCE_SHA}"
+        docker run --rm --network=none --entrypoint=python ${_IMAGE}:${_SOURCE_SHA} -m tools.tenancy.controller_image_check
+  - id: fail-closed-no-configuration
+    name: gcr.io/cloud-builders/docker@sha256:bbb3d633c5c2813b2ce5245852979e1d637768f4acfc504d8ece288f91e9b60f
+    entrypoint: bash
+    args:
+      - -uc
+      - |
+        out=$$(docker run --rm --network=none ${_IMAGE}:${_SOURCE_SHA} 2>&1); rc=$$?
+        test "$$rc" -eq 2
+        echo "$$out" | grep -q 'CONTROLLER_GATE_OR_EVIDENCE_FAILURE'
+substitutions:
+  _IMAGE: europe-west1-docker.pkg.dev/mpa-platform/mpa-runtime/tenant-backfill-controller
+  _BUILDER: sa-runtime-builder@mpa-platform.iam.gserviceaccount.com
+  _SOURCE_SHA: ''
+images: ['${_IMAGE}:${_SOURCE_SHA}']
+options:
+  logging: CLOUD_LOGGING_ONLY
+  sourceProvenanceHash: [SHA256]
+  substitutionOption: MUST_MATCH
+timeout: 1200s

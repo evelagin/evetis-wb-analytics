@@ -256,7 +256,7 @@ def test_tenant_root_never_manages_the_project_billing_folder_or_keys():
                       r'"google_organization', r'"google_project_iam_(policy|binding)"',
                       r'"google_service_account_key"', r'"google_secret_manager_secret_version"',
                       r'"google_storage_', r'"google_artifact_registry_', r'"google_iam_workload_identity',
-                      r'"google_cloud_run_v2_job_iam_'):
+                      r'"google_cloud_run_v2_job_iam_(policy|binding)"'):
         assert not re.search(forbidden, text), forbidden
 
 
@@ -354,6 +354,14 @@ def test_rendered_artifacts_contain_secret_names_only(tmp_path):
                 from tools.tenancy import control_identity as CI     # T5: роли control plane
                 facts |= {SI.role_name(r) for r in CI.CONTROL_ROLES}
                 facts.add(SI.view_prefix_condition(c["project_id"], c["datasets"]["tenant_ops"])["expression"])
+                if c.get("orchestration"):
+                    # Only the exact closed/qualified projection is trusted. Do
+                    # not exempt arbitrary envs, keys, credentials or payloads.
+                    from tools.tenancy import orchestration_plan as OP
+                    block = OP.verified(c)
+                    facts |= {g["role"] for g in block["matrix"]} | {g["resource"] for g in block["matrix"]}
+                    facts |= {block["job"]["image"], block["scheduler"]["uri"],
+                              block["job"]["env"]["BACKFILL_ROOT_HASH"], block["job"]["env"]["CONTROLLER_SOURCE_SHA"]}
                 assert values <= facts, finding
     contract = json.loads((tmp_path / TI.CONTRACT_FILE).read_text())["contract"]
     assert contract["marketplaces"]["ozon"]["secret_ids"] == N.DEDICATED_OZON_SECRET_IDS
@@ -462,3 +470,24 @@ def test_catalog_evolution_relaxes_only_tenant_sku_and_keeps_evetis_capture():
     next(f for f in expected['schema'] if f['name'] == 'sku')['mode'] = 'NULLABLE'
     assert tenant == expected
     assert next(f for f in baseline['schema'] if f['name'] == 'sku')['mode'] == 'REQUIRED'
+
+
+def test_synthetic_baseline_does_not_clone_tenant_frozen_orchestration_root(tmp_path):
+    import shutil
+    src=tmp_path/'source';shutil.copytree(R.TENANTS_DIR,src)
+    doc=R.load_tenant('client_001')
+    doc['historical_orchestration']={'release':'1'*40,'root_hash':'2'*64,'scheduler_state':'PAUSED'}
+    (src/'client_001'/'tenant.json').write_text(json.dumps(doc))
+    dst=SY._with_ephemeral_client_002(src,tmp_path/'baseline')
+    for tenant in ('client_001','client_002'):
+        assert 'historical_orchestration' not in R.load_tenant(tenant,dst)
+    assert json.loads((src/'client_001'/'tenant.json').read_text())==doc
+
+
+@pytest.mark.parametrize('missing',[True,False])
+def test_plan_preserves_missing_image_gate_without_masking_other_qualification_errors(tmp_path,monkeypatch,missing):
+    monkeypatch.setattr(TI,'render',lambda *a:(_ for _ in ()).throw(ValueError('qualification mismatch')))
+    monkeypatch.setattr(PL,'load_runtime_release',lambda r:{'ozon':None if missing else 'qualified-image'})
+    monkeypatch.setattr(TI,'_tf',lambda *a:pytest.fail('failed qualification reached Terraform'))
+    with pytest.raises(TI.TenantInfraError if missing else ValueError,match='нет утверждённого образа' if missing else 'qualification mismatch'):
+        TI.plan('client_001',tmp_path)

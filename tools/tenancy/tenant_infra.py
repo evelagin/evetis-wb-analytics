@@ -111,7 +111,15 @@ def _tf(args: list[str], cwd: Path) -> subprocess.CompletedProcess:
 def plan(tenant_id: str, work_dir: Path) -> int:
     from tools.tenancy.plan_scan import scan_plan
 
-    contract = render(tenant_id, work_dir)
+    try:
+        contract = render(tenant_id, work_dir)
+    except ValueError:
+        # Optional controller qualification fails closed while the canonical
+        # runtime descriptor is absent. Keep the missing-image verdict without
+        # introducing a second tenant/contract derivation path.
+        if not PL.load_runtime_release(REPO).get("ozon"):
+            raise TenantInfraError("в infra/tenant/runtime_release.json нет утверждённого образа Ozon") from None
+        raise
     if contract["marketplaces"].get("ozon") and not contract["marketplaces"]["ozon"]["runtime_image"]:
         raise TenantInfraError("в infra/tenant/runtime_release.json нет утверждённого образа Ozon "
                                "(выпуск — ворота T3.2b): план арендатора невозможен")

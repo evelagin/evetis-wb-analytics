@@ -3,6 +3,8 @@
 Не данные арендатора: фикстуры строятся ТЕМ ЖЕ путём, что и боевой контракт —
 через valid_tenants()/load_tenant() и registry.terraform_inputs. Отличаются только
   * образом — заведомо синтетический digest (реальный выпуск — T3.2b);
+  * индивидуальный historical_orchestration rollout исключён из базовых H2-фикстур;
+    полный opt-in отдельно проверяется orchestration fixtures/tests;
   * client_002 — эфемерный дескриптор во временной копии tenants/, в Git как
     арендатор не добавляется.
 Файлы infra/tenant/tests/fixtures/*.contract.json обязаны совпадать с выводом
@@ -29,6 +31,10 @@ SYNTHETIC_TENANTS = ("client_001", "client_002")
 def _with_ephemeral_client_002(src: Path, dst: Path) -> Path:
     shutil.copytree(src, dst)
     doc = copy.deepcopy(load_tenant_document(src / "client_001" / "tenant.json"))
+    # A frozen root is tenant-specific, not a generic template. Never clone
+    # client_001's live rollout/root to another tenant or baseline H2 fixture.
+    doc.pop("historical_orchestration", None)
+    (dst / "client_001" / "tenant.json").write_text(json.dumps(doc, ensure_ascii=False, indent=2), encoding="utf-8")
     doc["tenant_id"] = "client_002"
     doc["marketplaces"]["ozon"].pop("seller_inventory_model", None)  # unrelated tenant remains strict
     doc["display_name"] = "Синтетический арендатор 002 (эфемерная фикстура T3.2)"

@@ -161,6 +161,32 @@
         "offboarded_at": {"type": "string", "format": "date-time"}
       }
     },
+    "historical_orchestration": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "release",
+        "root_hash",
+        "scheduler_state"
+      ],
+      "description": "Opt-in dedicated cloud continuation only; qualified immutable controller release and frozen durable root. Ordinary ingestion schedules remain PAUSED.",
+      "properties": {
+        "release": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{40}$"
+        },
+        "root_hash": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "scheduler_state": {
+          "enum": [
+            "PAUSED",
+            "ENABLED"
+          ]
+        }
+      }
+    },
     "notes": {"type": "string", "maxLength": 2000}
   }
 }

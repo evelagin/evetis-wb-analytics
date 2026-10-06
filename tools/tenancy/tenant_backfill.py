@@ -11,11 +11,15 @@ import argparse
 import hashlib
 import json
 import sys
-import uuid
 from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[2]
+# A directly invoked tenancy CLI exposes tools/tenancy/platform.py on sys.path.
+# Keep project facts qualified; otherwise uuid can import that file as stdlib
+# platform on Linux. This changes only this process's module search boundary.
+sys.path[:] = [p for p in sys.path if Path(p or '.').resolve() != Path(__file__).resolve().parent]
+import uuid  # noqa: E402
 if str(REPO) not in sys.path:
     sys.path.insert(0, str(REPO))
 from tools.tenancy import registry as R, tenant_tables as TT, tenant_lifecycle as TL
@@ -25,6 +29,31 @@ import checkpoints as CK
 
 RUN_API = "https://run.googleapis.com/v2"
 SCHED_API = "https://cloudscheduler.googleapis.com/v1"
+GLOBAL_JOB_FIELDS = "items(metadata(name,namespace,labels)),metadata(continue),unreachable"
+
+
+def global_job_url(project):
+    # Documented v1 global endpoint used by gcloud run jobs list. Projected
+    # metadata only: unknown Job environments/secret values are never read.
+    return (f"https://run.googleapis.com/apis/run.googleapis.com/v1/namespaces/{project}/jobs"
+            f"?limit=1000&fields={GLOBAL_JOB_FIELDS}")
+
+
+def verify_global_jobs(response, names, region):
+    if not isinstance(response, dict) or response.get("unreachable") or (response.get("metadata") or {}).get("continue"):
+        raise B.EvidenceError("all-region tenant inventory incomplete")
+    items=response.get("items", [])
+    if not isinstance(items,list):
+        raise B.EvidenceError("all-region tenant inventory malformed")
+    found=[]
+    for item in items:
+        meta=item.get("metadata",{}) if isinstance(item,dict) else {}
+        name=meta.get("name");location=(meta.get("labels") or {}).get("cloud.googleapis.com/location")
+        if not isinstance(name,str) or location!=region:
+            raise B.EvidenceError("unexpected tenant job in all-region inventory")
+        found.append(name)
+    if len(found)!=len(set(found)) or set(found)!=set(names):
+        raise B.EvidenceError("unexpected tenant job in all-region inventory")
 
 
 def target(tenant_id):
@@ -63,7 +92,8 @@ def validate_plan(doc, ack_hash):
     if B.digest(unsigned) != ack_hash or doc.get("mode") != "BOUNDED_PILOT":
         raise B.EvidenceError("modified or unsupported pilot plan")
     p = doc["runtime_plan"]
-    expected = make_plan(doc["tenant_id"], p["entity"], p["from"], p["to"], p["generation"], p["origin"], max_units=doc["max_units"])
+    observation = date.fromisoformat(p["observation_date"]) if "observation_date" in p else None
+    expected = make_plan(doc["tenant_id"], p["entity"], p["from"], p["to"], p["generation"], p["origin"], today=observation, max_units=doc["max_units"])
     if expected != doc:
         raise B.EvidenceError("pilot plan/config/image differs from current reviewed contract")
     c = target(doc["tenant_id"])
@@ -100,8 +130,14 @@ def canonical_template(job, expected_env, image, account, control=False):
         raise B.EvidenceError("canonical env differs (unknown/duplicate/changed settings)")
 
 
-def preflight(c, doc, now):
-    tables = TT.Tables(c["project_id"])
+def preflight(c, doc, now, backend=None, *, allow_active=False):
+    if backend is not None:
+        base_contract={k:v for k,v in backend.c.items() if k!='orchestration'}
+        if base_contract!={k:v for k,v in c.items() if k!='orchestration'}:
+            raise B.EvidenceError("cloud controller base registry contract drift")
+        c=backend.c
+    tables = backend.tables if backend is not None else TT.Tables(c["project_id"])
+    request = backend.request if backend is not None else TT._req
     chain, decisions, ledger, rows, hold = TL.read_state(c, tables)
     import lifecycle_core as L
     state = L.current_state(chain)
@@ -111,47 +147,89 @@ def preflight(c, doc, now):
     if any(v != "BOUND" for v in binding.values()) or any(v["status"] != "PASS" for v in creds.values()):
         raise B.EvidenceError("pilot requires verified binding/credential evidence")
     base, expected = resources(c)
-    live = TT._req("GET", f"{RUN_API}/{base}/jobs")
-    jobs = {j["name"].rsplit("/",1)[-1]: j for j in live.get("jobs", [])}
+    orchestration = c.get("orchestration")
     expected_names = set(expected) | {"tenant-control"}
-    if set(jobs) != expected_names or live.get("nextPageToken"):
+    if orchestration:
+        expected_names.add(orchestration["job"]["name"])
+    verify_global_jobs(request("GET",global_job_url(c["project_id"])),expected_names,c["region"])
+    live = request("GET", f"{RUN_API}/{base}/jobs")
+    items=live.get("jobs",[])
+    jobs = {j["name"].rsplit("/",1)[-1]: j for j in items}
+    if set(jobs) != expected_names or len(items)!=len(jobs) or live.get("nextPageToken") or any(j['name']!=base+'/jobs/'+n for n,j in jobs.items()):
         raise B.EvidenceError("unexpected tenant job inventory")
     for name, cfg in expected.items():
         job = jobs[name]
         canonical_template(job,cfg["env"],doc["image"],
                            f"{c['marketplaces']['ozon']['service_accounts']['runtime']}@{c['project_id']}.iam.gserviceaccount.com")
-        if job.get("runningCount", 0):
+        if job.get("runningCount", 0) and not allow_active:
             raise B.EvidenceError("tenant ingestion execution already active")
-        executions = TT._req("GET", f"{RUN_API}/{job['name']}/executions?pageSize=1000")
-        if executions.get("nextPageToken") or any(not e.get("completionTime") for e in executions.get("executions", [])):
-            raise B.EvidenceError("active/unproven tenant execution")
+        executions = request("GET", f"{RUN_API}/{job['name']}/executions?pageSize=1000")
+        active=[e for e in executions.get('executions',[]) if not e.get('completionTime')]
+        if executions.get('nextPageToken') or (active and not allow_active) or job.get('runningCount',0)>len(active):
+            raise B.EvidenceError('active/unproven tenant execution')
+        for execution in active:
+            t=execution.get('template') or {};containers=t.get('containers') or []
+            envs=containers[0].get('env',[]) if len(containers)==1 else []
+            env={v['name']:v.get('value') for v in envs}
+            if len(containers)!=1 or containers[0].get('image')!=doc['image'] or t.get('serviceAccount')!=f"{c['marketplaces']['ozon']['service_accounts']['runtime']}@{c['project_id']}.iam.gserviceaccount.com" or len(env)!=len(envs) or env.get('TENANT_BINDING_REQUIRED')!='1' or env.get('STRICT_PAGE_CAPS')!='1':
+                raise B.EvidenceError('active runtime execution security provenance drift')
+        if backend is not None and active:
+            backend.active=True
     control = jobs["tenant-control"]
     canonical_template(control,c["control"]["job"]["env"],doc["image"],c["control"]["email"],control=True)
-    executions = TT._req("GET", f"{RUN_API}/{control['name']}/executions?pageSize=1000")
-    if executions.get("nextPageToken") or any(not e.get("completionTime") for e in executions.get("executions", [])):
-        raise B.EvidenceError("control execution active/unproven")
-    schedules = TT._req("GET", f"{SCHED_API}/{base}/jobs?pageSize=500")
+    executions = request("GET", f"{RUN_API}/{control['name']}/executions?pageSize=1000")
+    active_control=[e for e in executions.get('executions',[]) if not e.get('completionTime')]
+    if executions.get('nextPageToken') or (active_control and not allow_active) or control.get('runningCount',0)>len(active_control):
+        raise B.EvidenceError('control execution active/unproven')
+    for execution in active_control:
+        task=execution.get('template') or {}; containers=task.get('containers') or []
+        if len(containers)!=1 or containers[0].get('image')!=doc['image'] or task.get('serviceAccount')!=c['control']['email']:
+            raise B.EvidenceError('active control execution security provenance drift')
+    if backend is not None and active_control:
+        backend.active=True
+    if orchestration:
+        from tools.tenancy import orchestration_contract as OC
+        controller=jobs[orchestration['job']['name']]
+        OC.verify_job(controller,orchestration)
+        executions=request("GET",f"{RUN_API}/{controller['name']}/executions?pageSize=1000")
+        own=getattr(backend,'current_execution',None) if backend is not None else None
+        if not isinstance(own,str) or not own.startswith(controller['name']+'/executions/'):
+            raise B.EvidenceError('own registered controller execution identity missing')
+        if executions.get('nextPageToken') or any(not e.get('completionTime') and e.get('name')!=own for e in executions.get('executions',[])):
+            raise B.EvidenceError('another controller execution active/unproven')
+        if not any(e.get('name')==own for e in executions.get('executions',[])):
+            raise B.EvidenceError('own controller execution not visible')
+    schedules = request("GET", f"{SCHED_API}/{base}/jobs?pageSize=500")
     names = {j["name"].rsplit("/",1)[-1]: j for j in schedules.get("jobs", [])}
-    if set(names) != {x["scheduler"] for x in expected.values()} or schedules.get("nextPageToken"):
+    ordinary_names={x["scheduler"] for x in expected.values()}
+    scheduler_names=ordinary_names|({orchestration["scheduler"]["name"]} if orchestration else set())
+    if set(names) != scheduler_names or schedules.get("nextPageToken"):
         raise B.EvidenceError("Scheduler inventory differs")
-    if any(j.get("state") != "PAUSED" for j in names.values()):
+    if any(names[n].get("state") != "PAUSED" for n in ordinary_names):
         raise B.EvidenceError("pilot requires every Scheduler PAUSED")
+    if orchestration:
+        schedule=names[orchestration['scheduler']['name']]
+        target=schedule.get('httpTarget') or {}
+        token=target.get('oauthToken') or {}
+        if schedule.get('schedule')!=orchestration['scheduler']['schedule'] or schedule.get('timeZone')!=orchestration['scheduler']['time_zone'] or target.get('body') not in (None,'','e30=') or schedule.get('state')!=orchestration['scheduler']['state'] or target.get('uri')!=orchestration['scheduler']['uri'] or target.get('httpMethod')!='POST' or token.get('serviceAccountEmail')!=orchestration['accounts']['wake']['email'] or token.get('scope')!='https://www.googleapis.com/auth/cloud-platform':
+            raise B.EvidenceError('historical Scheduler target/identity/state drift')
     return tables, ledger
 
 
-def select(c, sql, parameters):
+def select(c, sql, parameters, request=None):
+    request = request or TT._req
     if not sql.lstrip().startswith("SELECT ") or ";" in sql:
         raise B.EvidenceError("coordinator SQL must be a single SELECT")
     body = {"query": sql, "useLegacySql": False, "location": "EU", "timeoutMs": 10000,
             "maximumBytesBilled": "1073741824", "parameterMode": "NAMED",
             "queryParameters": [{"name":k,"parameterType":{"type":t},"parameterValue":{"value":str(v)}}
                                 for k,(t,v) in parameters.items()]}
-    result = TT._req("POST", f"{TT.BQ}/projects/{c['project_id']}/queries", body)
+    result = request("POST", f"{TT.BQ}/projects/{c['project_id']}/queries", body)
     ref = result["jobReference"]
     for _ in range(30):
         if result.get("jobComplete"):
             break
-        result = TT._req("GET", f"{TT.BQ}/projects/{c['project_id']}/queries/{ref['jobId']}?location=EU&timeoutMs=10000")
+        result = request("GET", f"{TT.BQ}/projects/{c['project_id']}/queries/{ref['jobId']}?location=EU&timeoutMs=10000")
     if not result.get("jobComplete") or result.get("errors") or result.get("pageToken"):
         raise B.EvidenceError("bounded verification query incomplete/failed")
     fields = result.get("schema",{}).get("fields",[])
@@ -198,9 +276,13 @@ def pilot_lease_generation(ledger, leases, cid, now, done_reader):
     return generation
 
 
-def start(doc, ack_hash):
+def start(doc, ack_hash, *, backend=None, on_prepared=None, on_receipt=None):
     now = datetime.now(timezone.utc); c=validate_plan(doc, ack_hash)
-    tables, ledger = preflight(c,doc,now)
+    observation=doc['runtime_plan'].get('observation_date')
+    if observation and observation!=str(now.astimezone(B.MSK).date()):
+        raise B.EvidenceError('snapshot observation day stale; freeze a fresh dated plan')
+    tables, ledger = preflight(c,doc,now,backend=backend) if backend is not None else preflight(c,doc,now)
+    request = backend.append_request if backend is not None else TT._req
     p=doc["runtime_plan"]; cid=B.digest(["BOUNDED_PILOT_EXCLUSIVE",c["project_id"]])[:16]
     leases=[(n,lb) for n,lb,created in tables.list_tables(c["datasets"]["tenant_locks"])]
     generation=pilot_lease_generation(ledger,leases,cid,now,
@@ -212,7 +294,7 @@ def start(doc, ack_hash):
           "labels":{"until":str(int((now+CK.LEASE_TTL).timestamp())),"owner":run_id},
           "description":json.dumps({"mode":"BOUNDED_PILOT","ack_hash":ack_hash}),
           "expirationTime":str(int((now+CK.LEASE_TTL+CK.LEASE_TABLE_KEEP).timestamp()*1000))}
-    TT._req("POST",f"{TT.BQ}/projects/{c['project_id']}/datasets/{c['datasets']['tenant_locks']}/tables",body)
+    request("POST",f"{TT.BQ}/projects/{c['project_id']}/datasets/{c['datasets']['tenant_locks']}/tables",body)
     tables.append(c["datasets"]["tenant_ops"],"BACKFILL_CHECKPOINTS",[checkpoint(doc,run_id,"RUNNING",generation,now)])
     base,jobs=resources(c)
     name=next(n for n,cfg in jobs.items() if p["entity"] in cfg["entities"])
@@ -220,13 +302,29 @@ def start(doc, ack_hash):
                "BACKFILL_MODE":B.VERSION,"BACKFILL_TARGET_PROJECT":c["project_id"],
                "BACKFILL_GENERATION":p["generation"],"BACKFILL_ORIGIN":p["origin"],
                "BACKFILL_MAX_REQUESTS":str(doc["max_requests"]),"BACKFILL_MAX_UNITS":str(doc["max_units"])}
-    out=TT._req("POST",f"{RUN_API}/{base}/jobs/{name}:run",{"overrides":{"containerOverrides":[{"env":[{"name":k,"value":v} for k,v in overrides.items()]}]}})
-    return {"operation":out["name"],"run_id":run_id,"lease_generation":generation,"ack_hash":ack_hash}
+    if p["window_days"] != 1:
+        overrides["BACKFILL_WINDOW_DAYS"] = str(p["window_days"])
+    body={"overrides":{"containerOverrides":[{"env":[{"name":k,"value":v} for k,v in overrides.items()]}]}}
+    prepared={"run_id":run_id,"lease_generation":generation,"ack_hash":ack_hash,
+              "job":base+"/jobs/"+name,"overrides":body}
+    # Durable intent publication is synchronous and happens before the only POST.
+    # A publication/response/receipt failure never retries that POST in this call.
+    if on_prepared is not None:
+        on_prepared(prepared)
+    out=backend.dispatch(doc,name,body) if backend is not None else TT._req("POST",f"{RUN_API}/{base}/jobs/{name}:run",body)
+    operation=out.get("name", "")
+    if not operation.startswith(base+"/operations/"):
+        raise B.EvidenceError("dispatch operation receipt missing/foreign; never repeat POST")
+    receipt={"operation":operation,"run_id":run_id,"lease_generation":generation,"ack_hash":ack_hash}
+    if on_receipt is not None:
+        on_receipt(receipt)
+    return receipt
 
 
-def read_proof(c,doc,run_id):
+def read_proof(c,doc,run_id,request=None):
+    reader = (lambda c, sql, params: select(c,sql,params,request=request)) if request is not None else select
     p=doc["runtime_plan"]; table=f"{c['project_id']}.ozon_raw.OZON_INGESTION_RUNS"
-    rows=select(c,f"SELECT DISTINCT status, evidence_json FROM `{table}` WHERE started_at >= @origin AND ingestion_run_id = @run AND entity = @entity LIMIT 2",
+    rows=reader(c,f"SELECT DISTINCT status, evidence_json FROM `{table}` WHERE started_at >= @origin AND ingestion_run_id = @run AND entity = @entity LIMIT 2",
                 {"origin":("TIMESTAMP",p["origin"]),"run":("STRING",run_id),"entity":("STRING",p["entity"])})
     if len(rows)!=1 or not rows[0].get("evidence_json"):
         raise B.EvidenceError("terminal execution lacks unambiguous aggregate runtime proof")
@@ -240,13 +338,14 @@ def read_proof(c,doc,run_id):
     return proof
 
 
-def reconcile(doc,ack_hash,receipt):
+def reconcile(doc,ack_hash,receipt, *, backend=None):
+    request = backend.request if backend is not None else TT._req
     c=validate_plan(doc,ack_hash)
     if receipt.get("ack_hash")!=ack_hash:raise B.EvidenceError("receipt ACK mismatch")
     base,jobs=resources(c)
     if not receipt["operation"].startswith(base+"/operations/"):
         raise B.EvidenceError("foreign operation receipt")
-    operation=TT._req("GET",f"{RUN_API}/{receipt['operation']}")
+    operation=request("GET",f"{RUN_API}/{receipt['operation']}")
     if not operation.get("done") or operation.get("error"):
         raise B.EvidenceError("execution active or failed; operator review required")
     execution=operation.get("response") or {}
@@ -264,14 +363,16 @@ def reconcile(doc,ack_hash,receipt):
         "BACKFILL_GENERATION":p["generation"],"BACKFILL_ORIGIN":p["origin"],
         "TENANT_BINDING_REQUIRED":"1","STRICT_PAGE_CAPS":"1",
         "BACKFILL_MAX_REQUESTS":str(doc["max_requests"]),"BACKFILL_MAX_UNITS":str(doc["max_units"])}
+    if p["window_days"] != 1:
+        expected["BACKFILL_WINDOW_DAYS"] = str(p["window_days"])
     if any(env.get(k)!=v for k,v in expected.items()):
         raise B.EvidenceError("execution provenance mismatch")
-    now=datetime.now(timezone.utc);tables,ledger=preflight(c,doc,now)
+    now=datetime.now(timezone.utc);tables,ledger=preflight(c,doc,now,backend=backend) if backend is not None else preflight(c,doc,now)
     cid=B.digest(["BOUNDED_PILOT_EXCLUSIVE",c["project_id"]])[:16]
     lease=tables.get_table(c["datasets"]["tenant_locks"],CK.lease_name(cid,receipt["lease_generation"]))
     if not lease or lease[0].get("owner")!=receipt["run_id"] or parse_tenant_json(lease[1] or "{}").get("ack_hash")!=ack_hash:
         raise B.EvidenceError("terminal execution lease/ACK provenance mismatch")
-    proof=read_proof(c,doc,receipt["run_id"])
+    proof=read_proof(c,doc,receipt["run_id"],request=request) if backend is not None else read_proof(c,doc,receipt["run_id"])
     # Persist traversal checkpoint. DQ/coverage remain separate; no blanket COMPLETE coverage.
     status="DONE" if proof["state"]["complete"] else "RUNNING"
     tables.append(c["datasets"]["tenant_ops"],"BACKFILL_CHECKPOINTS",
@@ -297,17 +398,18 @@ def source_detail(detail):
     return {k:v for k,v in detail.items() if k not in {"transport_requests","transport_retries"}}
 
 
-def verify_coverage(doc,ack_hash):
+def verify_coverage(doc,ack_hash, *, backend=None):
     """Read-back business grain plus source accounting; then append existing scoped evidence.
 
     API traversal completion is separate from economic DQ/finality. A partial pilot cannot
     become a full-history boundary or a READY decision.
     """
     c=validate_plan(doc,ack_hash);now=datetime.now(timezone.utc)
-    tables,ledger=preflight(c,doc,now)
+    tables,ledger=preflight(c,doc,now,backend=backend) if backend is not None else preflight(c,doc,now)
+    reader = (lambda c, sql, params: select(c,sql,params,request=backend.request)) if backend is not None else select
     p=doc["runtime_plan"];journal=f"{c['project_id']}.ozon_raw.OZON_INGESTION_RUNS"
     params={"origin":("TIMESTAMP",p["origin"]),"pid":("STRING",p["plan_id"]),"entity":("STRING",p["entity"])}
-    units=select(c,f"SELECT DISTINCT backfill_sequence, backfill_detail_json FROM `{journal}` WHERE started_at >= @origin AND backfill_plan_id = @pid AND entity = @entity AND status = 'OK' AND backfill_sequence IS NOT NULL ORDER BY backfill_sequence",params)
+    units=reader(c,f"SELECT DISTINCT backfill_sequence, backfill_detail_json FROM `{journal}` WHERE started_at >= @origin AND backfill_plan_id = @pid AND entity = @entity AND status = 'OK' AND backfill_sequence IS NOT NULL ORDER BY backfill_sequence",params)
     expected={};details={};unknown=set();limits=set()
     for u in units:
         seq=u["backfill_sequence"];d=source_detail(parse_tenant_json(u["backfill_detail_json"] or "{}"))
@@ -322,7 +424,7 @@ def verify_coverage(doc,ack_hash):
             day=d["day"];expected[day]=expected.get(day,0)+d.get("expected_unique_rows",0)
             unknown.update(d.get("unknown_type_ids",[]))
         if d.get("retention_completeness")=="UNPROVEN_EMPTY":limits.add(d["day"])
-    latest=select(c,f"SELECT DISTINCT evidence_json FROM `{journal}` WHERE started_at >= @origin AND backfill_plan_id = @pid AND entity = @entity AND backfill_sequence = @seq",dict(params,seq=("INT64",max(details))))
+    latest=reader(c,f"SELECT DISTINCT evidence_json FROM `{journal}` WHERE started_at >= @origin AND backfill_plan_id = @pid AND entity = @entity AND backfill_sequence = @seq",dict(params,seq=("INT64",max(details))))
     if len(latest)!=1:raise B.EvidenceError("latest source state ambiguous")
     state=parse_tenant_json(latest[0]["evidence_json"])["state"];B.validate(p,state)
     mapping={"fbo_postings":("RAW_OZON_POSTINGS_FBO","posting_number,sku","order_date BETWEEN DATE_SUB(@day,INTERVAL 1 DAY) AND @day AND DATE(TIMESTAMP(created_at),'Europe/Moscow') = @day"),
@@ -339,7 +441,7 @@ def verify_coverage(doc,ack_hash):
                 complete=state["progress"]["completed_to"]>=B.utc_ms(str(cur+timedelta(days=1)))
             else:complete=state["progress"]["next_day"]>day
             if complete:
-                out=select(c,f"SELECT COUNT(*) AS rows_n, COUNT(DISTINCT TO_JSON_STRING(STRUCT({keys}))) AS keys_n FROM `{c['project_id']}.ozon_raw.{table}` WHERE {predicate}",{"day":("DATE",day)})[0]
+                out=reader(c,f"SELECT COUNT(*) AS rows_n, COUNT(DISTINCT TO_JSON_STRING(STRUCT({keys}))) AS keys_n FROM `{c['project_id']}.ozon_raw.{table}` WHERE {predicate}",{"day":("DATE",day)})[0]
                 n=out["rows_n"];k=out["keys_n"]
                 if n!=k or n!=expected.get(day,0):
                     raise B.EvidenceError("PILOT_DATA_RECONCILIATION_FAILED: source/key/persisted counts differ")
@@ -350,9 +452,9 @@ def verify_coverage(doc,ack_hash):
                 item={"day":day,"rows":n,"keys":k,"coverage":status}
                 if p["entity"] in {"fbo_postings","finance_accrual","ads_sku_daily"}:
                     # Current retained ALL+ARCHIVED identity only, never fabricate historic status.
-                    link=select(c,f"SELECT COUNTIF(r.sku IS NOT NULL) AS sku_rows, COUNTIF(r.sku IS NOT NULL AND NOT EXISTS (SELECT 1 FROM `{c['project_id']}.ozon_raw.RAW_OZON_CATALOG` c WHERE c.snapshot_date = @snapshot AND c.sku = r.sku)) AS unresolved_sku_rows FROM `{c['project_id']}.ozon_raw.{table}` r WHERE {predicate}",
+                    link=reader(c,f"SELECT COUNTIF(r.sku IS NOT NULL) AS sku_rows, COUNTIF(r.sku IS NOT NULL AND NOT EXISTS (SELECT 1 FROM `{c['project_id']}.ozon_raw.RAW_OZON_CATALOG` c WHERE c.snapshot_date = @snapshot AND c.sku = r.sku)) AS unresolved_sku_rows FROM `{c['project_id']}.ozon_raw.{table}` r WHERE {predicate}",
                                 {"day":("DATE",day),"snapshot":("DATE",str(now.astimezone(B.MSK).date()))})[0]
-                    ambiguous=select(c,f"SELECT COUNT(*) AS n FROM (SELECT sku FROM `{c['project_id']}.ozon_raw.RAW_OZON_CATALOG` WHERE snapshot_date = @snapshot AND sku IS NOT NULL GROUP BY sku HAVING COUNT(DISTINCT product_id) > 1)", {"snapshot":("DATE",str(now.astimezone(B.MSK).date()))})[0]["n"]
+                    ambiguous=reader(c,f"SELECT COUNT(*) AS n FROM (SELECT sku FROM `{c['project_id']}.ozon_raw.RAW_OZON_CATALOG` WHERE snapshot_date = @snapshot AND sku IS NOT NULL GROUP BY sku HAVING COUNT(DISTINCT product_id) > 1)", {"snapshot":("DATE",str(now.astimezone(B.MSK).date()))})[0]["n"]
                     if ambiguous:raise B.EvidenceError("PILOT_CATALOG_SKU_JOIN_AMBIGUOUS")
                     item["sku_linkage"]=link
                     if link["unresolved_sku_rows"]:
@@ -371,7 +473,7 @@ def verify_coverage(doc,ack_hash):
                 ("RAW_OZON_SUPPLIES","order_id,supply_id","order_id",ids,state["supplies"]),
                 ("RAW_OZON_SUPPLY_BUNDLES","bundle_id,sku","bundle_id",bids,expected_bundles)]
         for table,keys,filterkey,values,expected_count in checks:
-            counts=select(c,f"SELECT COUNT(*) AS rows_n, COUNT(DISTINCT TO_JSON_STRING(STRUCT({keys}))) AS keys_n FROM `{c['project_id']}.ozon_raw.{table}` WHERE CAST({filterkey} AS STRING) IN UNNEST(JSON_VALUE_ARRAY(@ids))",{"ids":("STRING",json.dumps(values))})[0]
+            counts=reader(c,f"SELECT COUNT(*) AS rows_n, COUNT(DISTINCT TO_JSON_STRING(STRUCT({keys}))) AS keys_n FROM `{c['project_id']}.ozon_raw.{table}` WHERE CAST({filterkey} AS STRING) IN UNNEST(JSON_VALUE_ARRAY(@ids))",{"ids":("STRING",json.dumps(values))})[0]
             if counts["rows_n"]!=counts["keys_n"] or counts["rows_n"]!=expected_count:
                 raise B.EvidenceError("PILOT_SUPPLY_KEY_ACCOUNTING_FAILED")
             readback.append({"table":table,"rows":counts["rows_n"],"keys":counts["keys_n"]})
@@ -392,11 +494,11 @@ def verify_coverage(doc,ack_hash):
         else:
             table,keys="RAW_OZON_ADS_CAMPAIGNS","snapshot_date,campaign_id"
             expected_count=next(d["campaigns"] for d in details.values() if d.get("action")=="CAMPAIGNS_COMPLETE")
-        counts=select(c,f"SELECT COUNT(*) AS rows_n, COUNT(DISTINCT TO_JSON_STRING(STRUCT({keys}))) AS keys_n FROM `{c['project_id']}.ozon_raw.{table}` WHERE snapshot_date = @day",{"day":("DATE",p["observation_date"])})[0]
+        counts=reader(c,f"SELECT COUNT(*) AS rows_n, COUNT(DISTINCT TO_JSON_STRING(STRUCT({keys}))) AS keys_n FROM `{c['project_id']}.ozon_raw.{table}` WHERE snapshot_date = @day",{"day":("DATE",p["observation_date"])})[0]
         if counts["rows_n"]!=counts["keys_n"] or counts["rows_n"]!=expected_count:
             raise B.EvidenceError("PILOT_SNAPSHOT_KEY_ACCOUNTING_FAILED")
         if p["entity"]=="catalog":
-            identity=select(c,f"SELECT COUNTIF(product_id IS NULL OR SAFE_CAST(product_id AS INT64) IS NULL OR SAFE_CAST(product_id AS INT64) <= 0) AS invalid_products,COUNTIF(sku IS NOT NULL AND (SAFE_CAST(sku AS INT64) IS NULL OR SAFE_CAST(sku AS INT64) <= 0)) AS invalid_skus,COUNTIF(sku IS NULL) AS sku_absent,COUNT(DISTINCT sku) AS valid_skus,COUNTIF(sku IS NOT NULL) AS sku_rows FROM `{c['project_id']}.ozon_raw.{table}` WHERE snapshot_date = @day", {"day":("DATE",p["observation_date"])})[0]
+            identity=reader(c,f"SELECT COUNTIF(product_id IS NULL OR SAFE_CAST(product_id AS INT64) IS NULL OR SAFE_CAST(product_id AS INT64) <= 0) AS invalid_products,COUNTIF(sku IS NOT NULL AND (SAFE_CAST(sku AS INT64) IS NULL OR SAFE_CAST(sku AS INT64) <= 0)) AS invalid_skus,COUNTIF(sku IS NULL) AS sku_absent,COUNT(DISTINCT sku) AS valid_skus,COUNTIF(sku IS NOT NULL) AS sku_rows FROM `{c['project_id']}.ozon_raw.{table}` WHERE snapshot_date = @day", {"day":("DATE",p["observation_date"])})[0]
             if identity["invalid_products"] or identity["invalid_skus"] or identity["valid_skus"]!=identity["sku_rows"]:
                 raise B.EvidenceError("PILOT_CATALOG_IDENTITY_AMBIGUOUS")
             readback.append({"product_identity":identity})
@@ -407,7 +509,7 @@ def verify_coverage(doc,ack_hash):
     if coverage:tables.append(c["datasets"]["tenant_ops"],"DATA_COVERAGE",coverage)
     if p["entity"]=="finance_accrual":
         import dq as DQ
-        unresolved=select(c,f"SELECT COUNTIF(operation_name IS NULL OR operation_name = 'UNKNOWN') AS n FROM `{c['project_id']}.ozon_raw.RAW_OZON_FINANCE_ACCRUAL` WHERE event_date BETWEEN @frm AND @to",
+        unresolved=reader(c,f"SELECT COUNTIF(operation_name IS NULL OR operation_name = 'UNKNOWN') AS n FROM `{c['project_id']}.ozon_raw.RAW_OZON_FINANCE_ACCRUAL` WHERE event_date BETWEEN @frm AND @to",
                           {"frm":("DATE",p["from"]),"to":("DATE",p["to"])})[0]["n"]
         check=DQ.evaluate({"finance_unresolved_rows":unresolved})["FIN_CLASSIFICATION"]
         dq={"result_id":B.digest([p["plan_id"],"FIN_CLASSIFICATION",now.isoformat()])[:32],

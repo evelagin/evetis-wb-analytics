@@ -1,5 +1,21 @@
 # Tenant Ozon backfill engine — WINDOW_V1
 
+## Durable cloud execution authorization (owner ACK 2026-10-06)
+
+The newer owner ACK authorizes minimum dedicated tenant-scoped orchestration
+IAM, superseding the no-new-IAM boundary of the2026-10-05 ACK below. Existing
+runtime/control/provisioner identities must not be broadened. Full-history
+execution still requires qualified durable cloud orchestration, all applicable
+source/security/DQ gates and an immutable canonical plan. Ordinary Schedulers
+stay PAUSED. See [storage/authority foundation](TENANCY_CLOUD_BACKFILL.md) for
+implemented local candidate scope and explicitly unimplemented activation gates.
+
+For RAW historical Finance, unknown P&L mapping of type84 is not a traversal
+blocker. Its source label is «Дополнительная упаковка на складе Ozon», economic
+classification remains UNKNOWN, and traversal COMPLETE is economic PROVISIONAL.
+This supersedes any older wording below treating mapping absence alone as a
+RAW-loading blocker. No source coverage or economic finality is invented.
+
 Design baseline: 2026-10-04, repository b50666b. This document is a contract/design;
 code existence, tests and source captures do not prove deployed capability or full history.
 Owner ACK authorizes engineering, exact-image client_001 deployment and bounded pilot only.
@@ -284,3 +300,59 @@ explicitly checks the baseline, while tenant Terraform/render/parity use the evo
 Bounded pilot unit budget may be reduced to 1..20 (default 20); the exact value is hashed into the reviewed plan and checked against execution metadata during reconcile. This permits a real ALL → ARCHIVED continuation test without enlarging request, date, or continuation-size limits.
 
 The subsequent Catalog failure after a committed ALL unit is preserved independently. Its unit proof and RAW effects must be measured, not described as zero-effect. A fresh product-identity generation may replay those keys after canonical lease expiry/reclaim; it does not consume or reinterpret predecessor plan/receipt proof, release a failed lease as success, or delete historical snapshots.
+
+
+## 2026-10-06 — cloud continuation candidate (not deployed evidence)
+
+The dedicated controller candidate is registered through optional
+`historical_orchestration` in the canonical tenant registry. A qualified immutable
+controller release plus frozen durable root are mandatory. Existing tenants have
+no opt-in by default. Ordinary daily/fast/weekly schedules remain PAUSED and their
+Scheduler identity receives no invocation grant.
+
+Three new tenant-only identities separate SELECT verification, append-only control
+evidence, and hourly wake. `orchestration_identity.py` is the canonical exact
+principal/permission/resource matrix; `backfill-permissions.json` is its tested
+Terraform projection. Registry, Terraform preconditions and the plan scanner
+reject broader permissions, foreign resources, credential-bearing SA delegation,
+RAW/ref writes, schema alteration and ordinary Scheduler invocation. No Workflows
+API or new datastore is needed. IAM Credentials is an explicit dependency and
+must be verified rather than assumed enabled in a new tenant.
+
+Resume authority is tenant_ops BACKFILL_CHECKPOINTS plus consistent non-expiring
+BFR/BFQ metadata markers in tenant_locks. A committed manifest contains every
+immutable child plan; per-sequence CAS intent precedes the sole Run POST and its
+receipt follows. Uncertain POST is never repeated and an operation receipt is
+never invented from a Cloud Run execution name. Terminal receipt is reconciled
+before another dispatch. Immutable deployment descriptors BF_SPEC are canonical
+registry/release projections, published by the owner path; the cloud append
+identity cannot create or change them. PAUSED and ENABLED projections have
+separate immutable names. No local file is the authoritative resume store.
+
+`cloud_plan freeze` is offline; `publish` verifies retained source plan/state and
+ACK from BigQuery before publication and never dispatches. A cloud tick uses
+metadata service identity, not gcloud/owner OAuth. A distinct short-lived delegated
+append token cannot run query jobs or mutate RAW/ref. Execution is one task, no
+Cloud Run retry, 600 seconds maximum, one source dispatch per hourly wake.
+
+The candidate currently supports qualification manifests with frozen SKU and/or
+Supplies scopes. It preserves old plan/generation/origin and completed cohorts.
+A separately committed current-Moscow-day Catalog ALL+ARCHIVED dependency is
+created only when eligible continuation needs it; prior snapshots are immutable.
+SKU reconciliation checks completed cohort counts, natural keys, persisted rows
+and Catalog linkage; partial cohorts are never COMPLETE. Final completion can be
+recorded without a new export even while the modeled quota is exhausted.
+
+The conservative guard remains 15 exports per rolling 24 hours. Unknown ordinary
+exports and ambiguous REPORT_INTENT stop. A known POLL may finish without new
+budget. Quota WAIT issues no new source calls. Transient read transport failure
+retries on a later bounded wake; security/material evidence failure is a durable
+STOP. Durable history uses one bounded SELECT rather than one query per record.
+
+Full-history publication/execution remains fail-closed until the separate full
+plan, corrected capability discovery, remaining source qualification, exact-image
+and live orchestration gates are proven. This qualification candidate is not a
+full-history GO adapter, a READY transition or deployed-state assertion. Approved
+Finance D3/type84 semantics above are unchanged. Rollback must pause only the
+historical tick and preserve manifests, reservations, receipts and loaded data;
+never erase an uncertain intent or turn ordinary schedules on.

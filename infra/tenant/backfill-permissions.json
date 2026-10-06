@@ -1,0 +1,49 @@
+{
+  "backfillRead": [
+    "bigquery.datasets.get",
+    "bigquery.tables.get",
+    "bigquery.tables.getData"
+  ],
+  "backfillReadRef": [
+    "bigquery.tables.get",
+    "bigquery.tables.getData",
+    "bigquery.tables.list"
+  ],
+  "backfillLockRead": [
+    "bigquery.datasets.get",
+    "bigquery.tables.get",
+    "bigquery.tables.list"
+  ],
+  "backfillLockCreate": [
+    "bigquery.tables.create"
+  ],
+  "backfillQuery": [
+    "bigquery.jobs.create"
+  ],
+  "backfillAppend": [
+    "bigquery.tables.updateData"
+  ],
+  "backfillDelegateAppend": [
+    "iam.serviceAccounts.getAccessToken"
+  ],
+  "backfillRuntimeExecute": [
+    "run.jobs.get",
+    "run.jobs.run",
+    "run.jobs.runWithOverrides",
+    "run.executions.get",
+    "run.executions.list"
+  ],
+  "backfillInventoryRead": [
+    "run.jobs.list",
+    "run.operations.get",
+    "cloudscheduler.jobs.list"
+  ],
+  "backfillControllerRead": [
+    "run.jobs.get",
+    "run.executions.get",
+    "run.executions.list"
+  ],
+  "backfillWake": [
+    "run.jobs.run"
+  ]
+}
