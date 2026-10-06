@@ -350,3 +350,49 @@ describe('Phase 6: SQL оценки СПП (E1m5)', () => {
     expect(() => ozonSppEstimateSql({ project: 'p;drop', from: '2026-09-01', to: '2026-10-05' })).toThrow();
   });
 });
+
+describe('ревью #257: легаси-апрель, правило УФ, сутки после LCD, условие цены', () => {
+  it('R1: апрель 2026 — оценка не трогает 01–16.04; K до окна пишется только с 17-го числа', () => {
+    const apr = ozonMonthSpec(2026, 4, 432, 31, ['A']);
+    const est: Record<string, SppEstimate> = {};
+    const live: Record<string, SppDayEvidence> = {};
+    for (const d of ['2026-04-10', '2026-04-18']) { est[`${d}|A`] = { pct: 60, level: 'SKU' }; live[`${d}|A`] = { units: 1, priced: true, spp: false, orders: 1, price: 1000 }; }
+    const comp = composeMonth(apr, [], {}, '2026-04-30', 25, {}, { bloggers: {}, externalAds: {} });
+    const b = ozonDrrBases(apr, comp, '2026-04-30', 25, est, live, {});
+    expect(b.estimated.map((e) => e.day)).toEqual([18]);                 // 10.04 — легаси, не дополняется
+    const sec: OzonSectionInput = { spec: apr, facts: [], stock: {}, cart: {}, sheetInputs: { bloggers: {}, externalAds: {} }, fromDay: 25,
+      formulas: sectionFormulas(apr, comp, 'SEMICOLON', 'OZON_LAST_CLOSED_DATE', { lcd: '2026-04-30', from: 25, estimate: est, evidence: live, bloggers: {} }),
+      refTitle: [], refHeader: [], refAnchor: {}, sppEvidence: live, sppEstimate: est };
+    const plan = buildOzonPlan({ sheetId: 1, sheetName: 'OZON_Юнит_2025', sections: [sec], allSections: [layoutOf(apr)],
+      grid: { current: { rows: 800, columns: 600 }, growth: { widenBlockAt: [], insertColumnsBefore: 590, insertColumnCount: 0, appendColumnCount: 0, appendRowCount: 0 } },
+      lcd: '2026-04-30', lcdMirror: null, lcdRef: '$VB$2', blocks: 1 });
+    const kRanges = plan.values.map((v) => v.range).filter((r) => /!K\d+:K\d+$/.test(r));
+    expect(kRanges).toEqual([`'OZON_Юнит_2025'!K${apr.firstRow + 16}:K${apr.firstRow + 23}`]);   // 17.04..24.04, не с 01.04
+  });
+
+  it('R2: правило УФ ДРР — только числа (текст дня недели в легаси-K не красится)', async () => {
+    const { cfAllRequests } = await import('../src/loaders/unitka/ozon/requests.js');
+    const reqs = cfAllRequests(1, [layoutOf(ozonMonthSpec(2026, 9, 605, 30, ['A', 'B']))], '$VB$2');
+    const f = reqs.map((r) => JSON.stringify(r)).find((s) => s.includes('0,2)') || s.includes('0.2)'))!;
+    expect(f).toContain('ISNUMBER(');
+    expect(f).not.toMatch(/<>\\"\\";/);
+  });
+
+  it('сутки после LCD в оценённую базу не входят', () => {
+    const spec = ozonMonthSpec(2026, 9, 605, 30, ['A']);
+    const est: Record<string, SppEstimate> = { '2026-09-10|A': { pct: 60, level: 'SKU' }, '2026-09-20|A': { pct: 60, level: 'SKU' } };
+    const live: Record<string, SppDayEvidence> = { '2026-09-10|A': { units: 1, priced: true, spp: false, orders: 1, price: 1000 },
+      '2026-09-20|A': { units: 1, priced: true, spp: false, orders: 1, price: 1000 } };
+    const comp = composeMonth(spec, [], {}, '2026-09-15', 25, {}, { bloggers: {}, externalAds: {} });
+    expect(ozonDrrBases(spec, comp, '2026-09-15', 25, est, live, {}).estimated.map((e) => e.day)).toEqual([10]);
+  });
+
+  it('без цены продавца нет ни оценки, ни покрытия СПП', async () => {
+    const { sppMonthCoverage } = await import('../src/loaders/unitka/ozon/monthplan.js');
+    const spec = ozonMonthSpec(2026, 9, 605, 30, ['A']);
+    const live: Record<string, SppDayEvidence> = { '2026-09-10|A': { units: 2, priced: false, spp: false, orders: 2, price: 0 } };
+    const comp = composeMonth(spec, [], {}, '2026-09-30', 25, {}, { bloggers: {}, externalAds: {} });
+    expect(sppMonthCoverage(spec, comp, '2026-09-30', 25, 'A', live)).toEqual({ units: 0, covered: 0 });
+    expect(ozonDrrBases(spec, comp, '2026-09-30', 25, { '2026-09-10|A': { pct: 60, level: 'SKU' } }, live, {}).estimated).toEqual([]);
+  });
+});

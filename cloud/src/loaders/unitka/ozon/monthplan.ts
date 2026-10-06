@@ -64,6 +64,8 @@ export function ozonDrrBases(spec: OzonMonthSpec, comp: { cells: OzonMonthCompos
     const day = i + 1, row = spec.firstRow + i;
     const iso = `${spec.key}-${String(day).padStart(2, '0')}`;
     if (lcd !== null && iso > lcd) break;
+    // Легаси-сутки до эпохи перезаписи (01–16.04.2026) заморожены: оценкой не дополняются никогда.
+    if (iso < OZON_REWRITE_EPOCH) continue;
     for (const o of spec.blocks) {
       const key = `${iso}|${o}`;
       let orders: number, price: number, has: boolean, buyer: number | undefined, bl: number;
@@ -229,9 +231,11 @@ export function buildOzonPlan(input: OzonPlanInput): OzonWritePlan {
     }
     // Phase 6: ДРР магазина (K) — новая колонка движка; сутки секции ДО окна перезаписи тоже получают
     // формулу (их база — из живого листа), иначе K месяца, частично попавшего в окно, была бы дырявой.
-    if (from > 1) values.push({
-      range: `${q}!${columnName(OZON_SUMMARY.drr)}${spec.firstRow}:${columnName(OZON_SUMMARY.drr)}${spec.firstRow + from - 2}`,
-      values: grid.slice(0, from - 1).map((r) => [r[OZON_SUMMARY.drr - 1] as CellValue]),
+    // Легаси-сутки до эпохи (01–16.04.2026: в K там текст дня недели) не трогаются никогда (ревью #257, R1).
+    const kFirst = spec.key === OZON_REWRITE_EPOCH.slice(0, 7) ? Number(OZON_REWRITE_EPOCH.slice(8, 10)) : 1;
+    if (from > kFirst) values.push({
+      range: `${q}!${columnName(OZON_SUMMARY.drr)}${spec.firstRow + kFirst - 1}:${columnName(OZON_SUMMARY.drr)}${spec.firstRow + from - 2}`,
+      values: grid.slice(kFirst - 1, from - 1).map((r) => [r[OZON_SUMMARY.drr - 1] as CellValue]),
     });
     // MTD этих колонок — агрегаты, а не ручной ввод: их формулы остаются штатными.
     values.push({ range: `${q}!A${spec.mtdRow}:${last}${spec.mtdRow}`, values: [grid[spec.days]!] });
@@ -355,6 +359,7 @@ import {
   OZON_MTD_BLANK_OFFSETS, OZON_LEGACY_LCD_NAME,
 } from './formulas.js';
 import { OZON_SUMMARY } from './contract.js';
+import { OZON_REWRITE_EPOCH } from './window.js';
 import { toLocaleFormula, type FormulaStyle } from '../formulas.js';
 
 /** en-форма числового литерала для формулы; `toLocaleFormula` сам переведёт в ru_RU. */

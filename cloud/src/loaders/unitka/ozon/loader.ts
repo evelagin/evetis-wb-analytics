@@ -287,8 +287,14 @@ export async function ozonUnitkaLoader(
   for (const s of stockRows) stock[`${s.d}|${s.offer_id}`] = s.units;
   // Phase 6: оценка СПП для ДРР — с первого дня месяца начала окна: сутки секции до окна входят в итог
   // ДРР месяца и в ДРР магазина, и их оценка обязана быть той же, что у суток окна (привязка к дате).
-  const estRows = await bq.query<OzonSppEstimateRow>(
-    ozonSppEstimateSql({ project: ctx.config.projectId, from: `${w.from.slice(0, 7)}-01`, to: w.to }));
+  // Оценка — улучшение ДРР, а не условие публикации: её сбой не останавливает прогон (ДРР остаётся фактической).
+  let estRows: OzonSppEstimateRow[] = [];
+  try {
+    estRows = await bq.query<OzonSppEstimateRow>(
+      ozonSppEstimateSql({ project: ctx.config.projectId, from: `${w.from.slice(0, 7)}-01`, to: w.to }));
+  } catch (e) {
+    log.warn('ozon_unitka_spp_estimate_unavailable', { reason: e instanceof Error ? e.message : String(e) });
+  }
   const sppEstimate: Record<string, SppEstimate> = {};
   for (const e of estRows) {
     const pct = Number(e.spp_estimate_pct);
