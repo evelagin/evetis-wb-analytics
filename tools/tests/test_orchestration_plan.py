@@ -80,3 +80,46 @@ def test_qualified_plan_survives_canonical_json_roundtrip(qualified):
     shown=json.loads(json.dumps(plan,sort_keys=True))
     assert P.BP.verified(restored)==c['orchestration']
     assert P.scan_plan(shown,restored)==[]
+
+
+@pytest.mark.parametrize('kind,field', [
+    ('google_bigquery_table_iam_member', 'table_id'),
+    ('google_cloud_run_v2_job_iam_member', 'name'),
+])
+def test_refreshed_full_iam_resource_names_remain_exact(qualified, kind, field):
+    c, plan = qualified
+    for rc in plan['resource_changes']:
+        if rc['type'] == kind:
+            after = rc['change']['after']
+            after[field] = P.BP.target(kind, after, c['project_id'])
+    assert P.scan_plan(plan, c) == []
+
+
+@pytest.mark.parametrize('kind,field', [
+    ('google_bigquery_table_iam_member', 'table_id'),
+    ('google_cloud_run_v2_job_iam_member', 'name'),
+])
+@pytest.mark.parametrize('fault', ['foreign_project', 'foreign_parent', 'extra_segment', 'wrong_leaf'])
+def test_refreshed_iam_names_do_not_expand_scope(qualified, kind, field, fault):
+    c, plan = qualified
+    after = first(plan, kind)
+    target = P.BP.target(kind, after, c['project_id'])
+    if fault == 'foreign_project': target = target.replace(c['project_id'], 'mpa-t-client-002')
+    if fault == 'foreign_parent':
+        target = target.replace('/datasets/tenant_ops/', '/datasets/ozon_raw/') if field == 'table_id' else target.replace('/locations/europe-west1/', '/locations/us-central1/')
+    if fault == 'extra_segment': target += '/extra'
+    if fault == 'wrong_leaf': target = target.rsplit('/', 1)[0] + '/unregistered'
+    after[field] = target
+    assert P.scan_plan(plan, c)
+
+
+@pytest.mark.parametrize('kind,field,parent', [
+    ('google_bigquery_table_iam_member', 'table_id', 'dataset_id'),
+    ('google_cloud_run_v2_job_iam_member', 'name', 'location'),
+])
+def test_full_iam_name_must_match_provider_parent(qualified, kind, field, parent):
+    c, plan = qualified
+    after = first(plan, kind)
+    after[field] = P.BP.target(kind, after, c['project_id'])
+    after[parent] = 'different-parent'
+    assert P.scan_plan(plan, c)
