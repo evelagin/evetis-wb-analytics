@@ -262,3 +262,96 @@ def test_smaller_unit_budget_is_frozen_in_reviewed_plan(monkeypatch):
     monkeypatch.setattr(T.TT, "_req", lambda *a: pytest.fail("modified budget touched cloud"))
     with pytest.raises(T.B.EvidenceError, match="modified"):
         T.validate_plan(p,p["ack_hash"])
+
+
+@pytest.mark.parametrize("window", [0, 31, True, "14", None])
+def test_multiday_fbo_window_is_bounded_and_typed(window):
+    with pytest.raises(T.B.EvidenceError, match="FBO window"):
+        T.make_plan("client_001", "fbo_postings", "2026-09-17", "2026-09-30",
+                    "split-live", "2026-10-04T00:00:00Z", window_days=window)
+
+
+@pytest.fixture
+def offline_qualified_release(monkeypatch, tmp_path):
+    """Synthetic image evidence; never treat the deployed image as new source.
+
+    These tests exercise coordinator serialization, not production qualification.
+    Keep the real validate_plan check and supply an isolated release fixture.
+    """
+    from tools.tenancy import platform as PL
+    folder = tmp_path / PL.RUNTIME_RELEASES_DIR / "ozon"
+    folder.mkdir(parents=True)
+    fixture = folder / "synthetic.json"
+    fixture.write_text(json.dumps({"image": doc()["image"], "verification": {"built_artifact": {
+        "backfill_window_v1": "PASS", "backfill_implementation_hash": T.B.implementation_hash()}}}))
+    monkeypatch.setattr(T, "REPO", tmp_path)
+    return fixture
+
+
+def test_multiday_window_is_fbo_only_and_keeps_strict_cap(monkeypatch, offline_qualified_release):
+    monkeypatch.setattr(T.TT, "_req", lambda *a: pytest.fail("offline plan touched cloud"))
+    p = T.make_plan("client_001", "fbo_postings", "2026-09-17", "2026-09-30",
+                    "split-live", "2026-10-04T00:00:00Z", window_days=14)
+    assert p["runtime_plan"]["window_days"] == 14
+    assert p["runtime_plan"]["fbo_page_cap"] == 200
+    assert p["max_requests"] == 400
+    T.validate_plan(p, p["ack_hash"])
+    p["runtime_plan"]["window_days"] = 30
+    with pytest.raises(T.B.EvidenceError, match="modified"):
+        T.validate_plan(p, p["ack_hash"])
+    with pytest.raises(T.B.EvidenceError, match="only for FBO"):
+        T.make_plan("client_001", "finance_accrual", "2026-09-17", "2026-09-30",
+                    "split-live", "2026-10-04T00:00:00Z", window_days=14)
+
+
+def test_default_plan_and_existing_supplies_continuation_identity_unchanged():
+    small = T.make_plan("client_001", "supplies", "2026-09-17", "2026-09-17",
+                        "retained", "2026-10-04T00:00:00Z", max_units=1)
+    drain = T.make_plan("client_001", "supplies", "2026-09-17", "2026-09-17",
+                        "retained", "2026-10-04T00:00:00Z", max_units=20)
+    assert small["runtime_plan"] == drain["runtime_plan"]
+    assert small["ack_hash"] != drain["ack_hash"]
+
+
+def test_multiday_override_is_sent_and_wrong_readback_rejected(monkeypatch, offline_qualified_release):
+    p = T.make_plan("client_001", "fbo_postings", "2026-09-17", "2026-09-30",
+                    "split-live", "2026-10-04T00:00:00Z", window_days=14)
+    c = T.target("client_001")
+    writes = []
+    class Tables:
+        def list_tables(self, _): return []
+        def append(self, *args): writes.append(args)
+    monkeypatch.setattr(T, "preflight", lambda *a: (Tables(), []))
+    requests = []
+    def api(method, url, body):
+        requests.append((method, url, body))
+        return {"name": T.resources(c)[0] + "/operations/synthetic"}
+    monkeypatch.setattr(T.TT, "_req", api)
+    receipt = T.start(p, p["ack_hash"])
+    overrides = {e["name"]: e["value"] for e in requests[-1][2]["overrides"]["containerOverrides"][0]["env"]}
+    assert overrides["BACKFILL_WINDOW_DAYS"] == "14"
+    base, jobs = T.resources(c)
+    name = next(n for n, cfg in jobs.items() if "fbo_postings" in cfg["entities"])
+    env = dict(jobs[name]["env"], **overrides)
+    env["BACKFILL_WINDOW_DAYS"] = "1"
+    execution = {"name": base + "/jobs/" + name + "/executions/synthetic",
+        "completionTime": "2026-10-05T00:00:00Z", "succeededCount": 1,
+        "template": {"serviceAccount": c["marketplaces"]["ozon"]["service_accounts"]["runtime"] + "@" + c["project_id"] + ".iam.gserviceaccount.com",
+                     "containers": [{"image": p["image"], "env": [{"name":k,"value":v} for k,v in env.items()]}]}}
+    monkeypatch.setattr(T.TT, "_req", lambda *a: {"done": True, "response": execution})
+    monkeypatch.setattr(T, "preflight", lambda *a: pytest.fail("wrong override reached checkpoint mutation"))
+    before = copy.deepcopy(writes)
+    with pytest.raises(T.B.EvidenceError, match="provenance mismatch"):
+        T.reconcile(p, p["ack_hash"], receipt)
+    assert writes == before
+
+
+def test_multiday_stale_image_qualification_is_rejected_before_cloud(monkeypatch, offline_qualified_release):
+    record = json.loads(offline_qualified_release.read_text())
+    record["verification"]["built_artifact"]["backfill_implementation_hash"] = "0" * 64
+    offline_qualified_release.write_text(json.dumps(record))
+    monkeypatch.setattr(T.TT, "_req", lambda *a: pytest.fail("unqualified image touched cloud"))
+    p = T.make_plan("client_001", "fbo_postings", "2026-09-17", "2026-09-30",
+                    "split-live", "2026-10-04T00:00:00Z", window_days=14)
+    with pytest.raises(T.B.EvidenceError, match="no matching qualified"):
+        T.start(p, p["ack_hash"])

@@ -5,6 +5,43 @@ code existence, tests and source captures do not prove deployed capability or fu
 Owner ACK authorizes engineering, exact-image client_001 deployment and bounded pilot only.
 No Scheduler activation, destructive trial cleanup or automatic READY transition.
 
+## Capability probe inputs and full-history gates (owner ACK 2026-10-05)
+
+Stocks discovery reads only snapshot_date/sku through the existing control Tables
+API permissions, at most the reviewed product-page bound (1000 rows). It uses
+one positive SKU from the current Moscow-day retained Catalog after fresh BOUND
+verification, with the runtime request `{"skus":[sku]}`. Identifiers are never
+included in capability evidence. No usable current SKU in the bounded prefix
+means UNKNOWN with no HTTP result, not API UNAVAILABLE. This prefix is not a
+claim to have enumerated the tenant's entire Catalog. Supplies discovery makes
+one list read, limit1, runtime CPC_STATES, ORDER_CREATION DESC and initial last_id;
+it never traverses the inventory. Regression tests compare both probe bodies
+with actual runtime request construction. No callable paths or IAM are added.
+
+The owner now authorizes full-history execution only after all source, scale,
+binding, frozen-plan and unattended orchestration gates pass. The existing SKU
+qualification generation must retain completed work. Its plan includes the
+exact application implementation hash and immutable image, so a probe release
+must not silently invalidate or replace that generation. A release may be built
+and qualified independently; deployment waits for compatible continuation or
+completion of the pinned generation. Compatibility is not assumed merely
+because ingestion handlers did not change.
+
+Finance source COMPLETE means traversal complete as-of observation. Economic
+finality is PROVISIONAL; keep the existing30-day refresh and explicit older
+REOPEN/refresh. This owner-approved distinction permits RAW backfill without
+inventing a financial maturity threshold. Type84 is retained with its source
+label, but economic/P&L mapping remains UNKNOWN until separately reviewed.
+
+A local/Codex heartbeat may continue bounded qualification but is not production
+full-history orchestration. Existing control/runtime identities cannot invoke
+Jobs, the paused scheduler identity has no invoker, and platform WIF denies bot
+dispatch. No new IAM capability is authorized by this ACK. Before full GO,
+prove a compatible already-authorized durable cloud executor or report the
+missing narrow executor boundary; never reuse a broad provisioner as a runtime
+controller merely to avoid explicit permission design. Regular schedules stay
+PAUSED. A candidate manifest or passing CI is not a canonical approved full plan.
+
 ## Source contract matrix (before implementation)
 
 All destinations below are in the configured tenant ozon_raw dataset. Keys preserve
@@ -282,5 +319,23 @@ The original EVETIS capture in pipelines/ozon/schema remains unchanged; legacy p
 explicitly checks the baseline, while tenant Terraform/render/parity use the evolved contract.
 
 Bounded pilot unit budget may be reduced to 1..20 (default 20); the exact value is hashed into the reviewed plan and checked against execution metadata during reconcile. This permits a real ALL → ARCHIVED continuation test without enlarging request, date, or continuation-size limits.
+
+## Multiday FBO scale qualification
+
+The bounded coordinator accepts `--window-days` (integer 1..30, default 1), only
+for FBO when different from the default. The value is part of the runtime plan ID
+and owner execution hash; start passes it as a per-execution override and reconcile
+verifies the actual value. Existing default plans and receipts remain compatible.
+The qualified runtime already supports this setting; no image, template, IAM,
+schema or Scheduler change is needed. The strict page cap remains 200 and request
+budget remains 400. A natural source window reaching the cap must discard its parent
+rows before RAW MERGE and persist deterministic half-open children. A configured
+window split alone is not evidence of a live page-cap split.
+
+An expanded Supplies execution budget may use a separately frozen coordinator
+document with the same source scope/generation/origin and runtime plan ID. Preserve
+the earlier document and receipts; link the new execution hash to its predecessor.
+This does not raise the single-order-batch, request, state-size or timeout guards.
+Only exact runtime-plan equality permits consuming the existing continuation.
 
 The subsequent Catalog failure after a committed ALL unit is preserved independently. Its unit proof and RAW effects must be measured, not described as zero-effect. A fresh product-identity generation may replay those keys after canonical lease expiry/reclaim; it does not consume or reinterpret predecessor plan/receipt proof, release a failed lease as success, or delete historical snapshots.

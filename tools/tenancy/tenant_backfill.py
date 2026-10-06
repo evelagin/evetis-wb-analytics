@@ -34,13 +34,18 @@ def target(tenant_id):
     return c
 
 
-def make_plan(tenant_id, entity, frm, to, generation, origin, today=None, *, max_units=20):
+def make_plan(tenant_id, entity, frm, to, generation, origin, today=None, *, max_units=20, window_days=1):
     if type(max_units) is not int or not 1 <= max_units <= 20:
         raise B.EvidenceError("bounded unit budget must be integer 1..20")
+    if type(window_days) is not int or not 1 <= window_days <= 30:
+        raise B.EvidenceError("bounded FBO window must be integer 1..30")
+    if entity != "fbo_postings" and window_days != 1:
+        raise B.EvidenceError("multiday source windows are supported only for FBO")
     c = target(tenant_id)
     env = {"BACKFILL_MODE": B.VERSION, "TENANT_BINDING_REQUIRED": "1", "STRICT_PAGE_CAPS": "1",
            "BACKFILL_TARGET_PROJECT": c["project_id"], "SINCE": frm, "UNTIL": to,
-           "BACKFILL_GENERATION": generation, "BACKFILL_ORIGIN": origin}
+           "BACKFILL_GENERATION": generation, "BACKFILL_ORIGIN": origin,
+           "BACKFILL_WINDOW_DAYS": str(window_days)}
     p = B.plan(env, entity, c["project_id"], "ozon_raw", "ref", today or datetime.now(B.MSK).date())
     if entity not in {"catalog", "fbo_postings", "finance_accrual", "supplies", "ads_campaigns",
                        "ads_expense_daily", "ads_sku_daily"}:
@@ -63,7 +68,7 @@ def validate_plan(doc, ack_hash):
     if B.digest(unsigned) != ack_hash or doc.get("mode") != "BOUNDED_PILOT":
         raise B.EvidenceError("modified or unsupported pilot plan")
     p = doc["runtime_plan"]
-    expected = make_plan(doc["tenant_id"], p["entity"], p["from"], p["to"], p["generation"], p["origin"], max_units=doc["max_units"])
+    expected = make_plan(doc["tenant_id"], p["entity"], p["from"], p["to"], p["generation"], p["origin"], max_units=doc["max_units"], window_days=p["window_days"])
     if expected != doc:
         raise B.EvidenceError("pilot plan/config/image differs from current reviewed contract")
     c = target(doc["tenant_id"])
@@ -220,6 +225,8 @@ def start(doc, ack_hash):
                "BACKFILL_MODE":B.VERSION,"BACKFILL_TARGET_PROJECT":c["project_id"],
                "BACKFILL_GENERATION":p["generation"],"BACKFILL_ORIGIN":p["origin"],
                "BACKFILL_MAX_REQUESTS":str(doc["max_requests"]),"BACKFILL_MAX_UNITS":str(doc["max_units"])}
+    if p["window_days"] != 1:
+        overrides["BACKFILL_WINDOW_DAYS"] = str(p["window_days"])
     out=TT._req("POST",f"{RUN_API}/{base}/jobs/{name}:run",{"overrides":{"containerOverrides":[{"env":[{"name":k,"value":v} for k,v in overrides.items()]}]}})
     return {"operation":out["name"],"run_id":run_id,"lease_generation":generation,"ack_hash":ack_hash}
 
@@ -264,6 +271,8 @@ def reconcile(doc,ack_hash,receipt):
         "BACKFILL_GENERATION":p["generation"],"BACKFILL_ORIGIN":p["origin"],
         "TENANT_BINDING_REQUIRED":"1","STRICT_PAGE_CAPS":"1",
         "BACKFILL_MAX_REQUESTS":str(doc["max_requests"]),"BACKFILL_MAX_UNITS":str(doc["max_units"])}
+    if p["window_days"] != 1:
+        expected["BACKFILL_WINDOW_DAYS"] = str(p["window_days"])
     if any(env.get(k)!=v for k,v in expected.items()):
         raise B.EvidenceError("execution provenance mismatch")
     now=datetime.now(timezone.utc);tables,ledger=preflight(c,doc,now)
@@ -430,12 +439,13 @@ def main(argv=None):
     p=sub.add_parser("plan")
     for key in ("tenant","entity","since","until","generation","origin"):p.add_argument("--"+key,required=True)
     p.add_argument("--max-units",type=int,default=20)
+    p.add_argument("--window-days",type=int,default=1)
     for cmd in ("start","reconcile","verify"):
         p=sub.add_parser(cmd);p.add_argument("--plan",type=Path,required=True);p.add_argument("--ack-hash",required=True)
         if cmd=="reconcile":p.add_argument("--receipt",type=Path,required=True)
     args=parser.parse_args(argv)
     try:
-        if args.command=="plan":out=make_plan(args.tenant,args.entity,args.since,args.until,args.generation,args.origin,max_units=args.max_units)
+        if args.command=="plan":out=make_plan(args.tenant,args.entity,args.since,args.until,args.generation,args.origin,max_units=args.max_units,window_days=args.window_days)
         else:
             doc=parse_tenant_json(args.plan.read_text())
             out=start(doc,args.ack_hash) if args.command=="start" else (verify_coverage(doc,args.ack_hash) if args.command=="verify" else reconcile(doc,args.ack_hash,parse_tenant_json(args.receipt.read_text())))
