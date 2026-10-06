@@ -69,6 +69,55 @@ ads AS (
   SELECT date d, sku, SUM(impressions) impr, SUM(clicks) clicks
   FROM \`${project}.ozon_raw.RAW_OZON_ADS_SKU_DAILY\`
   WHERE date BETWEEN '${from}' AND '${to}' GROUP BY 1,2),
+order_prices AS (
+  -- Цена калькулятора, НЕ признанная выручка и НЕ цена покупателя.
+  SELECT p.order_date d, m.offer_id, SUM(p.quantity) units,
+    SUM(IF(p.quantity > 0 AND p.price_rub > 0, p.quantity, 0)) covered_units,
+    CASE WHEN COUNTIF(p.quantity IS NULL OR p.quantity <= 0
+                       OR p.price_rub IS NULL OR p.price_rub <= 0) = 0
+         THEN SAFE_DIVIDE(SUM(p.price_rub * p.quantity), SUM(p.quantity)) END price
+  FROM \`${project}.ozon_raw.RAW_OZON_POSTINGS_FBO\` p
+  JOIN m ON m.marketplace_sku = p.sku
+  WHERE p.order_date BETWEEN '${from}' AND '${to}'
+    AND p.status IN ('delivered', 'delivering', 'awaiting_deliver', 'awaiting_packaging')
+  GROUP BY 1,2),
+price_finance AS (
+  SELECT posting_number, sku, SUM(seller_base_price_rub) finance_unit_rub
+  FROM \`${project}.ozon_raw.RAW_OZON_FINANCE_ACCRUAL\`
+  WHERE seller_base_price_rub IS NOT NULL GROUP BY 1,2),
+price_units AS (
+  -- Один posting/SKU принадлежит ровно одной популяции. Сильное evidence не дополняется
+  -- reference ценой той же единицы. Денежные поля канонического факта не изменяются.
+  SELECT DISTINCT p.order_date d, mm.offer_id, p.posting_number, p.sku marketplace_sku,
+    p.status, p.quantity, p.price_rub reference_unit_rub, pf.finance_unit_rub,
+    b.posting_number IS NOT NULL documented_buyout_present,
+    b.buyout_proceeds_rub documented_buyout_unit_rub,
+    CASE WHEN p.status='delivered' AND b.posting_number IS NOT NULL THEN 'DOCUMENTED_BUYOUT'
+         WHEN p.status='delivered' AND pf.finance_unit_rub IS NOT NULL THEN 'ACTUAL_FINANCE'
+         ELSE 'REFERENCE' END basis_source,
+    CASE WHEN p.status='delivered' AND b.posting_number IS NOT NULL THEN b.buyout_proceeds_rub
+         WHEN p.status='delivered' AND pf.finance_unit_rub IS NOT NULL THEN pf.finance_unit_rub
+         ELSE p.price_rub END basis_unit_rub
+  FROM \`${project}.ozon_raw.RAW_OZON_POSTINGS_FBO\` p
+  JOIN m mm ON mm.marketplace_sku=p.sku
+  LEFT JOIN price_finance pf USING (posting_number, sku)
+  LEFT JOIN \`${project}.ozon_mart.V_OZON_CIS_BUYOUT\` b ON b.posting_number=p.posting_number
+  WHERE p.order_date BETWEEN '${from}' AND '${to}'
+    AND p.status IN ('delivered', 'delivering', 'awaiting_deliver', 'awaiting_packaging')),
+operational_prices AS (
+  SELECT d, offer_id, SUM(quantity) operational_expected_qty,
+    SUM(IF(basis_source <> 'REFERENCE', quantity, 0)) operational_actual_qty,
+    SUM(IF(basis_source = 'REFERENCE', quantity, 0)) operational_provisional_qty,
+    SUM(IF(basis_source = 'REFERENCE' AND quantity > 0 AND reference_unit_rub > 0, quantity, 0)) operational_reference_covered_qty,
+    SUM(IF(basis_source <> 'REFERENCE', basis_unit_rub * quantity, 0)) operational_actual_basis_rub,
+    SUM(IF(basis_source = 'REFERENCE', reference_unit_rub * quantity, 0)) operational_reference_basis_rub,
+    CASE WHEN COUNTIF(quantity IS NULL OR quantity <= 0 OR basis_unit_rub IS NULL
+                       OR basis_unit_rub < 0 OR (basis_source = 'REFERENCE' AND basis_unit_rub = 0)) = 0
+         THEN SUM(basis_unit_rub * quantity) END operational_basis_rub,
+    TO_JSON_STRING(ARRAY_AGG(STRUCT(posting_number, marketplace_sku, status, quantity,
+      reference_unit_rub, finance_unit_rub, documented_buyout_present,
+      documented_buyout_unit_rub, basis_source))) operational_basis_units_json
+  FROM price_units GROUP BY 1,2),
 unitp AS (
   SELECT posting_number, sku, SUM(buyer_paid_price_rub) bp, SUM(seller_base_price_rub) sp
   FROM \`${project}.ozon_raw.RAW_OZON_FINANCE_ACCRUAL\`
@@ -100,11 +149,20 @@ SELECT CAST(f.fact_date AS STRING) d, m.offer_id,
   f.cogs_missing_qty, f.commission_missing_qty,
   f.commission_not_applicable_qty, f.buyout_revenue_unproven_qty, f.buyout_revenue_unproven_rub,
   f.ad_spend_attributed_rub ads_spend, f.contribution_after_attributed_ads_rub contrib_after,
-  a.impr, a.clicks, b.buyer_amt, b.seller_amt
+  a.impr, a.clicks, b.buyer_amt, b.seller_amt,
+  CASE WHEN op.units = f.expected_realized_qty AND op.covered_units = op.units
+       THEN op.price END order_reference_price,
+  op.units order_reference_qty, op.covered_units order_reference_covered_qty,
+  1 operational_basis_version,
+  ob.operational_expected_qty, ob.operational_actual_qty, ob.operational_provisional_qty,
+  ob.operational_reference_covered_qty, ob.operational_actual_basis_rub,
+  ob.operational_reference_basis_rub, ob.operational_basis_rub, ob.operational_basis_units_json
 FROM f
 LEFT JOIN m USING (internal_sku)
 LEFT JOIN ads a ON a.d=f.fact_date AND a.sku=m.marketplace_sku
 LEFT JOIN buy b ON b.d=f.fact_date AND b.internal_sku=f.internal_sku
+LEFT JOIN order_prices op ON op.d=f.fact_date AND op.offer_id=m.offer_id
+LEFT JOIN operational_prices ob ON ob.d=f.fact_date AND ob.offer_id=m.offer_id
 ORDER BY d, offer_id`.trim();
 }
 
