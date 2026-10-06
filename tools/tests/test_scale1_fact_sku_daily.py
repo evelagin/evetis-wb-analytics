@@ -148,7 +148,7 @@ def test_buyout_repair_objects_are_deployed_and_read_back():
     # ожидающих развёртывания нет. Каждый из перечисленных ниже обязан быть captured_live.
     ubr010_pending = set()
     # 2026-10-06: Git-first смена даты заказа на сутки МСК — тело опережает production, снимок не переписан.
-    order_date_msk_pending = ORDER_DATE_MSK_OBJECTS
+    order_date_msk_pending = set()  # развёрнуто 2026-10-06 из main 6428919, сняты R2C: captured_live
     for dataset, name in (("ozon_mart", "V_OZON_CIS_BUYOUT"), ("ozon_mart", "FCT_OZON_SKU_PNL_DAILY"),
                           ("ozon_mart", "FCT_OZON_SKU_PNL_MONTHLY"), ("ozon_mart", "FCT_OZON_PNL_MONTHLY"),
                           ("evetis_mart", "FACT_SKU_DAILY")):

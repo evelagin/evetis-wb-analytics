@@ -125,12 +125,20 @@ def test_deploy_tool_order_bodies_and_rollback_are_exact():
             assert sha256_text(body) == man[n]["canonical_body_sha256"], n
         else:
             assert body == ct[n], n
-    # откат ozon_mart = тела production: снимок R2C, а у операционного представления — развёрнутое 2026-10-06 тело #256
-    prod_operational = "44f97ecc0c457090fb50b7bfee2cf3337a407d1a072b5ab8ece69acd4e419d0c"
+    # откат ozon_mart = тела production ДО развёртывания 2026-10-06 (канон main 30f2de9, закреплён литерально:
+    # после снятия R2C снимок в MANIFEST — уже новые тела)
+    pre_deploy = {
+        "V_OZON_COMMISSION_POLICY": "d7edb7a4579c30b38360f4a16a56a52a9ccec91d597ed36eedddd0f28733211d",
+        "V_OZON_LOGISTICS_ESTIMATOR": "89baf43334f740099ef664828674dbfb1198079cf2e7e5024bf1ce2e59baafcf",
+        "FCT_OZON_SKU_PNL_DAILY": "8c7068942b2ef81d34449043cc194ff6054171a56382adf306861af09307757c",
+        "FCT_OZON_SKU_PNL_MONTHLY": "1692f95acbed5a4472377f7debd782b5d165d95ec5016ccf205b56a990bfdb0d",
+        "FCT_OZON_PNL_MONTHLY": "59f900f2d1fb589e01c2a434b04c796d718def66ffebd240484174fda13d0905",
+        "V_OZON_SKU_PNL_DAILY_OPERATIONAL": "44f97ecc0c457090fb50b7bfee2cf3337a407d1a072b5ab8ece69acd4e419d0c",
+        "V_OZON_SKU_FORWARD_ECONOMICS_CURRENT": "21bbf65669b3dda8aba6307ebb7a5a01df157c17b3565fe26f89f52676db7483",
+    }
     for ds, n, _, body in dep.plan(True):
         if ds == "ozon_mart":
-            want = prod_operational if n == "V_OZON_SKU_PNL_DAILY_OPERATIONAL" else man[n]["live_body_sha256_at_capture"]
-            assert sha256_text(body) == want, n
+            assert sha256_text(body) == pre_deploy[n], n
             assert "DATE(p.created_at, 'Europe/Moscow')" not in body and "DATE(created_at, 'Europe/Moscow')" not in body, n
         else:
             assert BUSINESS_DATE not in re.sub(r"\b\w+\.created_at\b", "created_at", body), n
