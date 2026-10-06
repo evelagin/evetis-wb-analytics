@@ -69,7 +69,7 @@ async function seeded(over: (f: FactRow) => Partial<FactRow> | null = () => null
 
 describe('окно сверки: 35 календарных дней через границы месяцев, нижняя граница — первый месяц под Engine', () => {
   it('константы решения владельца', () => {
-    expect([RECONCILE_WINDOW_DAYS, RECONCILIATION_EPOCH, ENGINE_VERSION]).toEqual([35, '2026-09-01', 'unitka-engine/2.2.0']);
+    expect([RECONCILE_WINDOW_DAYS, RECONCILIATION_EPOCH, ENGINE_VERSION]).toEqual([35, '2026-09-01', 'unitka-engine/2.3.0']);
   });
   it('LCD 18.09 → окно с 01.09 (не с 15.08: август вела не Engine — сверка стёрла бы чужие значения)', () => {
     expect(reconcileWindow('2026-09-18')).toEqual({ from: '2026-09-01', to: '2026-09-18', days: 35, epoch: '2026-09-01', rollingFrom: '2026-08-15' });
@@ -159,6 +159,10 @@ describe('режимы: off = поведение 2.0.0, observe = только �
   it('off (по умолчанию): слой сверки не читается, прошлый месяц не трогается, журнал ремонта не используется', async () => {
     const book = buildBook('2026-08-31');
     const runner = new ReconRunner('2026-10-02', reconFactsFor('2026-09-01', '2026-10-02'), '2026-09-01');
+    // 2.3.0: книга не закрыла сентябрь, кандидат в октябре — off закрыть сентябрь не может → отказ ДО записи (не тихий перескок)
+    await expect(run(book, runner, 'off')).rejects.toMatchObject({ code: 'MONTH_END_UNCLOSED' });
+    expect([book.batchWrites.length, book.lcdSerial]).toEqual([0, isoToSerialG10('2026-08-31')]);
+    book.lcdSerial = isoToSerialG10('2026-09-30');                                                 // сентябрь в книге закрыт
     await run(book, runner, 'off');
     expect(runner.queries.some((q) => /RECON|REPAIR_LEDGER|INTEGRITY_ISSUES/.test(q))).toBe(false);
     expect(book.get(septRow(book, '2026-09-17'), blockCol(5, OFFSET.orders))).toBe('');       // сентябрь не тронут
@@ -219,7 +223,7 @@ describe('сверка через границу месяца: сентябрь-
     expect(book.get(septRow(book, '2026-09-17'), blockCol(5, OFFSET.opens))).toBe(27);
     expect(book.get(octRow(book, '2026-10-02'), blockCol(24, OFFSET.opens))).toBe(12);          // блок 25 (909951444) — только в октябре
     expect(book.get(septRow(book, '2026-09-17'), blockCol(24, OFFSET.opens))).toBe('');         // в сентябре блока нет — не пишем
-    expect(runner.journal[0]).toMatchObject({ qaStatus: 'PASS', engineVersion: 'unitka-engine/2.2.0' });
+    expect(runner.journal[0]).toMatchObject({ qaStatus: 'PASS', engineVersion: 'unitka-engine/2.3.0' });
   });
   it('LCD в октябре: источник пересмотрел 17.09 → поправка в сентябрьской секции, одна ячейка, одна запись журнала', async () => {
     const { book, runner } = await seeded();
@@ -243,6 +247,7 @@ describe('сверка через границу месяца: сентябрь-
   });
   it('будущий месяц Calendar V2: LCD в ноябре → сверяется октябрь (V2), сентябрь вне окна', async () => {
     const book = buildBook('2026-08-31', { november: true });
+    book.lcdSerial = isoToSerialG10('2026-10-06');            // 2.3.0: книга закрыта по 06.10 — иначе кандидат перешагнул бы незакрытые дни вне окна
     const runner = new ReconRunner('2026-11-10', reconFactsFor('2026-10-07', '2026-11-10'), '2026-10-07');
     const { lines } = await run(book, runner);
     const p = lines.find((l) => l.event === 'unitka_reconcile_plan')!.fields as { sections: Array<{ month: string; from: string; to: string; blocks: number }>; refused: unknown[] };
@@ -253,20 +258,23 @@ describe('сверка через границу месяца: сентябрь-
     expect(book.get(septRow(book, '2026-09-30'), blockCol(5, OFFSET.opens))).toBe('');          // сентябрь заморожен
   });
   it('прошлая секция не проходит контракт → отказ с кодом только для неё; месяц LCD пишется как обычно', async () => {
-    const book = buildBook('2026-08-31');
+    // Сентябрь в книге закрыт (seeded): незакрытых дней прошлого месяца нет — отказ секции касается только сверки.
+    // Если бы книга не закрыла сентябрь, тот же отказ дал бы MONTH_END_UNCLOSED (unitka_month_end_guards.test.ts).
+    const { book, runner } = await seeded();
     const sept = book.section('2026-09');
     sept.grid[1]![SUMMARY.date - 1] = 'не дата';                                                 // сломана шапка сентября
-    const runner = new ReconRunner('2026-10-02', reconFactsFor('2026-09-01', '2026-10-02'), '2026-09-01');
+    const before = book.get(septRow(book, '2026-09-17'), blockCol(5, OFFSET.orders));
+    runner.lcd = '2026-10-03'; runner.facts = patch(reconFactsFor('2026-09-01', '2026-10-03'), SEPT_NM, '2026-09-17', { orders: 7 });
     const { lines } = await run(book, runner);
     expect(lines.find((l) => l.event === 'unitka_reconcile_section_refused')!.fields).toMatchObject({ month: '2026-09', code: 'RECON_SECTION_INVALID' });
-    expect(book.get(octRow(book, '2026-10-02'), blockCol(5, OFFSET.orders))).not.toBe('');
-    expect(book.get(septRow(book, '2026-09-17'), blockCol(5, OFFSET.orders))).toBe('');
+    expect(book.get(octRow(book, '2026-10-03'), blockCol(5, OFFSET.orders))).not.toBe('');
+    expect(book.get(septRow(book, '2026-09-17'), blockCol(5, OFFSET.orders))).toBe(before);       // поправка в сломанной секции не пишется
     expect(runner.journal[0]).toMatchObject({ qaStatus: 'PASS' });
   });
   it('секции прошлого месяца нет в книге → RECON_SECTION_MISSING, прогон не падает', async () => {
-    const book = buildBook('2026-08-31');
+    const { book, runner } = await seeded();
     book.sections = book.sections.filter((s) => s.geometry.monthKey !== '2026-09');
-    const runner = new ReconRunner('2026-10-02', reconFactsFor('2026-09-01', '2026-10-02'), '2026-09-01');
+    runner.lcd = '2026-10-03'; runner.facts = reconFactsFor('2026-09-01', '2026-10-03');
     const { lines } = await run(book, runner);
     expect(lines.find((l) => l.event === 'unitka_reconcile_section_refused')!.fields).toMatchObject({ code: 'RECON_SECTION_MISSING' });
   });
