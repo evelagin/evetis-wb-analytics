@@ -9,6 +9,7 @@ import { OZON_SUMMARY_ROLES } from './presentation.js';
 import {
   composeMonth, buildGrid, buildHeaderRows, ozonMonthSpec,
   type OzonMonthSpec, type OzonFactRow, type CellValue,
+  type OzonSheetInputs,
 } from './month.js';
 import {
   rowHeightRequests, mtdBandRequests, cfAllRequests, futureDayRequests, columnName,
@@ -26,6 +27,8 @@ export interface OzonSectionInput {
   readonly facts: readonly OzonFactRow[];
   /** Доказанные снимки остатка, ключ `iso|offer_id`. */
   readonly stock: Readonly<Record<string, number>>;
+  readonly cart?: Readonly<Record<string, number>>;
+  readonly sheetInputs?: OzonSheetInputs;
   /** Формулы секции от адаптера формул (ключ `строка:колонка`). */
   readonly formulas: { day: Record<string, string>; mtd: Record<string, string>; mtdBlank: readonly string[] };
   /** Заголовок и шапка секции-эталона + её якоря блоков. */
@@ -85,20 +88,33 @@ export function buildOzonPlan(input: OzonPlanInput): OzonWritePlan {
   const totals: OzonWritePlan['totals'] = {};
   const observed: Array<{ row: number; block: number }> = [];
   const notes: ProvenanceNote[] = [];
+  const notesForEconomics: SheetsRequest[] = [];
   const q = quote(input.sheetName);
 
   for (const sec of input.sections) {
     const { spec } = sec;
     const from = Math.max(1, sec.fromDay ?? 1);
-    const comp = composeMonth(spec, sec.facts, sec.stock, input.lcd, from);
+    const comp = composeMonth(spec, sec.facts, sec.stock, input.lcd, from, sec.cart, sec.sheetInputs);
     totals[spec.key] = comp.totals;
     const { title, header } = buildHeaderRows(spec, sec.refTitle, sec.refHeader, sec.refAnchor, sec.skuTitles ?? {});
     const grid = buildGrid(spec, comp.cells, sec.formulas);
     const last = columnName(spec.ncols);
     values.push({ range: `${q}!A${spec.titleRow}:${last}${spec.titleRow}`, values: [title as CellValue[]] });
     values.push({ range: `${q}!A${spec.headerRow}:${last}${spec.headerRow}`, values: [header as CellValue[]] });
-    values.push({ range: `${q}!A${spec.firstRow + from - 1}:${last}${spec.mtdRow}`,
-                  values: grid.slice(from - 1) });
+    // Дневной ручной input и пока невосстановленный output НЕ входят в запись.
+    // Это сохраняет также исходные формулы и ввод владельца после чтения before-image.
+    const protectedCols = new Set(spec.blocks.flatMap((o) => [spec.anchor[o]! + 1, spec.anchor[o]! + 12]));
+    let start = 1;
+    for (let col = 1; col <= spec.ncols + 1; col++) {
+      if (col <= spec.ncols && !protectedCols.has(col)) continue;
+      if (start < col) values.push({
+        range: `${q}!${columnName(start)}${spec.firstRow + from - 1}:${columnName(col - 1)}${spec.lastRow}`,
+        values: grid.slice(from - 1, spec.days).map((r) => r.slice(start - 1, col - 1)),
+      });
+      start = col + 1;
+    }
+    // MTD этих колонок — агрегаты, а не ручной ввод: их формулы остаются штатными.
+    values.push({ range: `${q}!A${spec.mtdRow}:${last}${spec.mtdRow}`, values: [grid[spec.days]!] });
     spec.blocks.forEach((o, b) => {
       for (let i = 0; i < spec.days; i++) {
         const row = spec.firstRow + i;
@@ -113,6 +129,23 @@ export function buildOzonPlan(input: OzonPlanInput): OzonWritePlan {
       if (b === undefined) continue;
       notes.push({ row: pv.row, block: b, component: pv.component, text: provenanceNoteText(pv) });
     }
+    const noteCols = [9, 10, 14, 23];
+    for (const o of spec.blocks) for (const off of noteCols) notesForEconomics.push({
+      repeatCell: { range: { sheetId: input.sheetId, startRowIndex: spec.firstRow + from - 2,
+        endRowIndex: spec.mtdRow, startColumnIndex: spec.anchor[o]! + off - 1,
+        endColumnIndex: spec.anchor[o]! + off }, cell: { note: '' }, fields: 'note' },
+    });
+    for (const p of comp.partialEconomics) for (const off of noteCols) notesForEconomics.push({
+      repeatCell: { range: { sheetId: input.sheetId, startRowIndex: p.row - 1, endRowIndex: p.row,
+        startColumnIndex: spec.anchor[p.offerId]! + off - 1, endColumnIndex: spec.anchor[p.offerId]! + off },
+      cell: { note: 'PROVISIONAL_PARTIAL: расчёт калькулятора по известным компонентам, не окончательная прибыль. '
+        + 'Признанная выручка/часть экономики не доказана. Цена заказа не подставляется в финансовую выручку.' }, fields: 'note' },
+    });
+    for (const o of new Set(comp.partialEconomics.map((p) => p.offerId))) for (const off of [9, 10, 23]) notesForEconomics.push({
+      repeatCell: { range: { sheetId: input.sheetId, startRowIndex: spec.mtdRow - 1, endRowIndex: spec.mtdRow,
+        startColumnIndex: spec.anchor[o]! + off - 1, endColumnIndex: spec.anchor[o]! + off },
+      cell: { note: 'Итог содержит PROVISIONAL_PARTIAL: условная экономика, не окончательная прибыль.' }, fields: 'note' },
+    });
   }
 
   const secLayouts = input.sections.map((s) => layoutOf(s.spec));
@@ -136,6 +169,7 @@ export function buildOzonPlan(input: OzonPlanInput): OzonWritePlan {
     // иначе пометка «это оценка» пережила бы приход факта
     ...clearProvenanceNoteRequests(input.sheetId, secLayouts),
     ...provenanceNoteRequests(input.sheetId, notes),
+    ...notesForEconomics,
   ];
   // УФ ставится ЗАМЕНОЙ: сначала снимаем всё, что есть, иначе повторный прогон удвоит правила
   const conditional = [

@@ -24,6 +24,9 @@ import { cfAllRequests, futureDayRequests, columnName, type SectionLayout } from
 import { markedSlots } from './capacity.js';
 import { dateCellToIso } from '../config_sheet.js';
 import { addDaysIso, type LcdCell } from '../lcd.js';
+import { verifyOzonModel } from './model_qa.js';
+import type { OzonSectionInput } from './monthplan.js';
+import type { CellValue as ModelCell } from './month.js';
 
 /* ─────────────────────────── авторитет LCD ─────────────────────────── */
 
@@ -416,6 +419,7 @@ export async function readbackAndVerify(a: {
   sheets: SheetsGateway; sheetName: string; written: ReadonlyMap<string, unknown>;
   sections: ReadonlyArray<{ readonly titleRow: number; readonly firstRow: number; readonly lastRow: number; readonly mtdRow: number; readonly blockCount: number }>;
   tailFirst: number; summaryUpTo: string;
+  model?: { sections: readonly OzonSectionInput[]; lcd: string | null };
 }): Promise<PublicationCheck[]> {
   if (!a.sections.length) return [];
   const top = Math.min(...a.sections.map((s) => s.titleRow));
@@ -441,5 +445,12 @@ export async function readbackAndVerify(a: {
     return typeof v === 'number' ? new Date(EPOCH + v * 86_400_000).toISOString().slice(0, 10) : null;
   };
   const checks = verifyPublication({ written: inBox, values, formulas, sections: a.sections, dateAt, summaryUpTo: a.summaryUpTo });
+  if (a.model) {
+    const issues = verifyOzonModel({ ...a.model, read: (r, c) => formulas(r, c) as ModelCell | undefined,
+      effectiveRead: (r, c) => values(r, c) as ModelCell | undefined,
+      effectiveThrough: a.summaryUpTo, mode: 'READBACK' });
+    checks.push({ name: 'SOURCE_MODEL_QA', pass: issues.length === 0, count: issues.length,
+      sample: issues.slice(0, 10).map((i) => `${i.code} ${i.cell}: ${String(i.actual)} != ${String(i.expected)}`) });
+  }
   return [...checks, { name: 'NO_WRITE_INTO_OWNER_TAIL', pass: outside.length === 0, count: outside.length, sample: outside.slice(0, 10) }];
 }
