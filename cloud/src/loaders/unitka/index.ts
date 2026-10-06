@@ -768,7 +768,7 @@ export async function unitkaLoader(ctx: LoaderContext, deps: UnitkaDeps = defaul
           code: e instanceof LoaderError ? e.code : 'ENGINE_ERROR', message: 'Engine упал до оценки целостности',
         }));
       }
-      const err = e instanceof LoaderError ? e : new LoaderError(e instanceof Error ? e.message : String(e), 'ENGINE_ERROR');
+      const err = e instanceof LoaderError ? e : new LoaderError(e instanceof Error ? e.message : String(e), 'ENGINE_ERROR', { cause: e });
       try { rec.qaJson = JSON.stringify({ ...JSON.parse(rec.qaJson || '{}'), lifecycle: lifecycleSummary() }); } catch { /* журнал не должен падать */ }
       rec.errorCode = err.code;
       rec.errorMessage = err.message;

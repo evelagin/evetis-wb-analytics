@@ -197,6 +197,7 @@ resource "google_monitoring_alert_policy" "ozon_unitka_failed" {
       EOT
       label_extractors = {
         error_code = "EXTRACT(jsonPayload.code)"
+        execution  = "EXTRACT(labels.\"run.googleapis.com/execution_name\")"
       }
     }
   }

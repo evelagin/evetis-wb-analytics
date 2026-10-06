@@ -395,6 +395,7 @@ resource "google_monitoring_alert_policy" "unitka_engine_failed" {
       label_extractors = {
         error_code = "EXTRACT(jsonPayload.code)"
         job        = "EXTRACT(resource.labels.job_name)"
+        execution  = "EXTRACT(labels.\"run.googleapis.com/execution_name\")"
       }
     }
   }

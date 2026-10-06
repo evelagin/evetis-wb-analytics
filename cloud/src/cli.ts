@@ -12,6 +12,7 @@
  *   с инъекцией зависимостей — чтобы тестами доказать, что в DRY_RUN acquire и handler НЕ зовутся.
  */
 import { pathToFileURL } from 'node:url';
+import { randomUUID } from 'node:crypto';
 import { loadConfig, type Config } from './config.js';
 import { Logger, parseLevel } from './logging.js';
 import { EXIT_OK, EXIT_ERROR } from './errors.js';
@@ -26,6 +27,10 @@ import { classifyFailure, fatalRecord, type FailureClass } from './failure.js';
 export const PRE_LOCK_RETRY_DELAY_MS = 30_000;
 /** Пауза перед повтором идемпотентного писателя после транзиентного отказа (тот же часовой слот). */
 export const POST_LOCK_RETRY_DELAY_MS = 60_000;
+/** Повтор после lease — только если с начала прогона прошло не больше этого (таймаут WB-Job 600 с). */
+export const POST_LOCK_RETRY_MAX_ELAPSED_MS = 240_000;
+/** Пауза перед повтором finalize(COMPLETE): работа уже сделана, закрываем только журнал. */
+export const FINALIZE_RETRY_DELAY_MS = 10_000;
 
 /** Инъектируемые зависимости — реальные в проде, поддельные в тестах. */
 export interface CliDeps {
@@ -61,14 +66,14 @@ export async function runCli(
 
   const spec = resolveLoader(loaderName);
   if (!spec) {
-    logger.error('unknown_loader', { available: availableLoaderNames() });
+    logger.error('unknown_loader', { code: 'UNKNOWN_LOADER', available: availableLoaderNames() });
     return EXIT_ERROR;
   }
 
   // prodOnly-загрузчик (витрина публикует production wb_mart) запрещён вне prod — отклоняем
   // ДО захвата lease, чтобы не плодить строку LOADER_RUNS для заведомо неразрешённого прогона.
   if (spec.prodOnly && config.environment !== 'prod') {
-    logger.error('prod_only_loader', { loader: loaderName, environment: config.environment });
+    logger.error('prod_only_loader', { code: 'PROD_ONLY_LOADER', loader: loaderName, environment: config.environment });
     return EXIT_ERROR;
   }
 
@@ -77,7 +82,11 @@ export async function runCli(
   // Инвариант контракта LoaderContext: targetDate === logicalPeriod (см. types.ts).
   const logicalPeriod = spec.logicalPeriod();
   const key: ManifestKey = { environment: config.environment, loaderName, logicalPeriod };
-  const runId = `${config.environment}:${loaderName}:${logicalPeriod}:${config.gitSha}:${config.executionId || 'na'}`;
+  // Без CLOUD_RUN_EXECUTION (локально/CI) — уникальный id прогона: иначе два прогона одного часа
+  // получили бы одинаковый run_id и «узнали» бы чужую строку STARTED как свою.
+  const execId = config.executionId || `local-${randomUUID()}`;
+  const runId = `${config.environment}:${loaderName}:${logicalPeriod}:${config.gitSha}:${execId}`;
+  const startedMs = deps.nowMs();
   const ctxBase: LoaderContext = { config, logger, logicalPeriod, runId, targetDate: logicalPeriod };
 
   // Локальный/CI прогон каркаса без облака.
@@ -158,10 +167,14 @@ export async function runCli(
       } catch (fe) {
         logger.warn('finalize_failed', { status: 'ERROR', code: classifyFailure(fe).code, error: fe instanceof Error ? fe.message : String(fe) });
       }
-      if (c.category === 'TRANSIENT' && attempt <= postLockRetries) {
+      const elapsed = deps.nowMs() - startedMs;
+      if (c.category === 'TRANSIENT' && attempt <= postLockRetries && elapsed > POST_LOCK_RETRY_MAX_ELAPSED_MS) {
+        logger.warn('transient_retry_skipped', { stage: 'handler', code: c.code, elapsedMs: elapsed, budgetMs: POST_LOCK_RETRY_MAX_ELAPSED_MS });
+      }
+      if (c.category === 'TRANSIENT' && attempt <= postLockRetries && elapsed <= POST_LOCK_RETRY_MAX_ELAPSED_MS) {
         logger.warn('transient_retry', { stage: 'handler', code: c.code, attempt, delayMs: POST_LOCK_RETRY_DELAY_MS, error: message });
         await sleep(POST_LOCK_RETRY_DELAY_MS);
-        const retryRunId = `${config.environment}:${loaderName}:${logicalPeriod}:${config.gitSha}:${config.executionId || 'na'}-r${attempt + 1}`;
+        const retryRunId = `${config.environment}:${loaderName}:${logicalPeriod}:${config.gitSha}:${execId}-r${attempt + 1}`;
         let again: Awaited<ReturnType<ManifestStore['acquire']>>;
         try {
           again = await acquire(retryRunId);
@@ -178,11 +191,20 @@ export async function runCli(
       }
       return failed('handler', c, message);
     }
+    // Работа выполнена; закрываем журнал. Handler НЕ перезапускаем — повторяем только UPDATE (идемпотентен).
+    const complete = { status: 'COMPLETE' as const, rowsFetched: res.rowsFetched, rowsLoaded: res.rowsLoaded };
     try {
-      await store.finalize(key, lock.runId, { status: 'COMPLETE', rowsFetched: res.rowsFetched, rowsLoaded: res.rowsLoaded });
+      await store.finalize(key, lock.runId, complete);
     } catch (e) {
-      // Работа выполнена; журнал не закрыт. Не перезапускаем handler — только сообщаем с кодом.
-      return failed('finalize', classifyFailure(e), e instanceof Error ? e.message : String(e));
+      if (classifyFailure(e).category !== 'TRANSIENT') {
+        return failed('finalize', { code: 'MANIFEST_FINALIZE_FAILED', category: 'DETERMINISTIC' }, e instanceof Error ? e.message : String(e));
+      }
+      await sleep(FINALIZE_RETRY_DELAY_MS);
+      try {
+        await store.finalize(key, lock.runId, complete);
+      } catch (e2) {
+        return failed('finalize', { code: 'MANIFEST_FINALIZE_FAILED', category: 'TRANSIENT' }, e2 instanceof Error ? e2.message : String(e2));
+      }
     }
     logger.info('loader_complete', { rowsFetched: res.rowsFetched, rowsLoaded: res.rowsLoaded, attempt });
     return EXIT_OK;

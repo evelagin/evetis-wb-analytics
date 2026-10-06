@@ -4,6 +4,7 @@ import { runCli, PRE_LOCK_RETRY_DELAY_MS, POST_LOCK_RETRY_DELAY_MS, type CliDeps
 import { EXIT_OK, EXIT_ERROR, LoaderError } from '../src/errors.js';
 import { classifyFailure, fatalRecord, TRANSIENT_INFRA, SHEETS_API_TRANSIENT, FATAL_UNHANDLED } from '../src/failure.js';
 import { BqManifestStore, type ManifestStore, type AcquireParams, type FinalizePatch } from '../src/bq/runManifest.js';
+import { POST_LOCK_RETRY_MAX_ELAPSED_MS, FINALIZE_RETRY_DELAY_MS } from '../src/cli.js';
 import type { BqClient } from '../src/bq/client.js';
 
 /**
@@ -229,4 +230,109 @@ describe('Terraform: алерты Юнитки видят отказ без ко
       expect(s).toContain(job);
     });
   }
+});
+
+
+describe('ревью PR: обёртка Engine, узкий конфликт, finalize, локальный run_id, бюджет', () => {
+  it('ENGINE_ERROR-обёртка unitka с транзиентной причиной → TRANSIENT (повтор возможен)', () => {
+    const wrapped = new LoaderError(BQ_TRANSIENT_TEXT, 'ENGINE_ERROR', { cause: bqTransient() });
+    expect(classifyFailure(wrapped)).toEqual({ code: TRANSIENT_INFRA, category: 'TRANSIENT' });
+    expect(classifyFailure(new LoaderError('x', 'ENGINE_ERROR', { cause: new Error('TypeError: boom') })).category).toBe('DETERMINISTIC');
+    // сам обёртывающий код в Engine передаёт cause — иначе классификатор её не увидит
+    const src = readFileSync(new URL('../src/loaders/unitka/index.ts', import.meta.url), 'utf8');
+    expect(src).toContain("'ENGINE_ERROR', { cause: e })");
+  });
+
+  it('runCli: транзиентный BigQuery, обёрнутый Engine в ENGINE_ERROR, повторяется один раз', async () => {
+    capture();
+    const f = fakeStore();
+    let calls = 0;
+    const { d } = deps(f.store, async () => {
+      calls++;
+      if (calls === 1) throw new LoaderError(BQ_TRANSIENT_TEXT, 'ENGINE_ERROR', { cause: bqTransient() });
+      return { rowsFetched: 1, rowsLoaded: 1 };
+    });
+    expect(await runCli(argv('unitka'), env(), d)).toBe(EXIT_OK);
+    expect(calls).toBe(2);
+  });
+
+  it('собственный строковый код не-LoaderError сохраняется (SOURCE_STALE)', () => {
+    expect(classifyFailure(Object.assign(new Error('stale'), { code: 'SOURCE_STALE' }))).toEqual({ code: 'SOURCE_STALE', category: 'DETERMINISTIC' });
+  });
+
+  const params: AcquireParams = {
+    environment: 'prod', loaderName: 'unitka', logicalPeriod: '2026-10-06T10', runId: 'prod:unitka:2026-10-06T10:sha:exec1-r2',
+    executionId: 'exec1', imageDigest: 'img', gitSha: 'sha', nowMs: Date.parse('2026-10-06T07:00:00Z'), staleMs: 1_800_000,
+  };
+  const storeThrowing = (msg: string) =>
+    new BqManifestStore({ projectId: 'p', query: async () => { throw new Error(msg); } } as unknown as BqClient, 'wb_raw', 'LOADER_RUNS');
+  const storeReturning = (row: Record<string, unknown>) =>
+    new BqManifestStore({ projectId: 'p', query: async () => [row] } as unknown as BqClient, 'wb_raw', 'LOADER_RUNS');
+
+  it('только точный конфликт транзакции BigQuery = ALREADY_RUNNING', async () => {
+    expect(await storeThrowing('Transaction is aborted due to concurrent update against table p.wb_raw.LOADER_RUNS').acquire(params))
+      .toEqual({ acquired: false, reason: 'ALREADY_RUNNING' });
+  });
+  it.each(['request to https://x failed, reason: ECONNABORTED', 'The user aborted a request.',
+    'Exceeded rate limits: too many concurrent queries for this project_and_region'])(
+    'не-конфликт «%s» больше не превращается в тихий exit 0: исключение, транзиентное', async (msg) => {
+      await expect(storeThrowing(msg).acquire(params)).rejects.toThrow();
+      expect(classifyFailure(new Error(msg)).category).toBe('TRANSIENT');
+    });
+
+  it('finalize(ERROR) не дошёл: повтор того же исполнения продолжает lease под run_id первой попытки', async () => {
+    const r = await storeReturning({ active: 1, cur_status: 'STARTED', cur_run_id: 'prod:unitka:2026-10-06T10:sha:exec1', cur_execution_id: 'exec1' }).acquire(params);
+    expect(r).toEqual({ acquired: true, runId: 'prod:unitka:2026-10-06T10:sha:exec1', recovered: true });
+    const foreign = await storeReturning({ active: 1, cur_status: 'STARTED', cur_run_id: 'prod:unitka:2026-10-06T10:sha:exec2', cur_execution_id: 'exec2' }).acquire(params);
+    expect(foreign).toEqual({ acquired: false, reason: 'ALREADY_RUNNING' });
+    const anon = await storeReturning({ active: 1, cur_status: 'STARTED', cur_run_id: 'x', cur_execution_id: '' }).acquire({ ...params, executionId: '' });
+    expect(anon).toEqual({ acquired: false, reason: 'ALREADY_RUNNING' });
+  });
+
+  it('без CLOUD_RUN_EXECUTION два прогона получают РАЗНЫЕ run_id (нет кражи lease)', async () => {
+    capture();
+    const ids: string[] = [];
+    const store: ManifestStore = { acquire: async (p) => { ids.push(p.runId); return { acquired: true, runId: p.runId, recovered: false }; }, finalize: async () => {} };
+    const { d } = deps(store, async () => ({ rowsFetched: 0, rowsLoaded: 0 }));
+    const e = env(); delete e.CLOUD_RUN_EXECUTION;
+    await runCli(argv('unitka'), e, d); await runCli(argv('unitka'), e, d);
+    expect(ids[0]).not.toBe(ids[1]);
+    expect(ids.every((x) => !x.endsWith(':na'))).toBe(true);
+  });
+
+  it('finalize(COMPLETE): транзиентный отказ повторяется один раз; работа не перезапускается', async () => {
+    capture();
+    let fin = 0, calls = 0;
+    const store: ManifestStore = { acquire: async (p) => ({ acquired: true, runId: p.runId, recovered: false }),
+      finalize: async () => { fin++; if (fin === 1) throw bqTransient(); } };
+    const { d, sleeps } = deps(store, async () => { calls++; return { rowsFetched: 1, rowsLoaded: 1 }; });
+    expect(await runCli(argv('unitka'), env(), d)).toBe(EXIT_OK);
+    expect(calls).toBe(1); expect(fin).toBe(2); expect(sleeps).toEqual([FINALIZE_RETRY_DELAY_MS]);
+  });
+  it('finalize(COMPLETE) упал дважды → MANIFEST_FINALIZE_FAILED (а не «загрузка упала»)', async () => {
+    const lines = capture();
+    const store: ManifestStore = { acquire: async (p) => ({ acquired: true, runId: p.runId, recovered: false }),
+      finalize: async () => { throw bqTransient(); } };
+    const { d } = deps(store, async () => ({ rowsFetched: 1, rowsLoaded: 1 }));
+    expect(await runCli(argv('unitka'), env(), d)).toBe(EXIT_ERROR);
+    expect(lines.find((l) => l.severity === 'ERROR')).toMatchObject({ code: 'MANIFEST_FINALIZE_FAILED', stage: 'finalize' });
+  });
+
+  it('повтор после lease не стартует, если бюджет времени исчерпан', async () => {
+    const lines = capture();
+    const f = fakeStore();
+    let now = 0, calls = 0;
+    const d: CliDeps = { makeStore: () => f.store, nowMs: () => now, sleep: async () => {},
+      runHandler: async () => { calls++; now += POST_LOCK_RETRY_MAX_ELAPSED_MS + 1; throw bqTransient(); } };
+    expect(await runCli(argv('unitka'), env(), d)).toBe(EXIT_ERROR);
+    expect(calls).toBe(1);
+    expect(lines.some((l) => l.message === 'transient_retry_skipped')).toBe(true);
+  });
+
+  it('ошибки до lease (неизвестный загрузчик) тоже несут code', async () => {
+    const lines = capture();
+    const { d } = deps(fakeStore().store, async () => ({ rowsFetched: 0, rowsLoaded: 0 }));
+    expect(await runCli(argv('nope'), env(), d)).toBe(EXIT_ERROR);
+    expect(lines.filter((l) => l.severity === 'ERROR').every(alertMatches)).toBe(true);
+  });
 });
