@@ -1,5 +1,21 @@
 # Tenant Ozon backfill engine — WINDOW_V1
 
+## Durable cloud execution authorization (owner ACK 2026-10-06)
+
+The newer owner ACK authorizes minimum dedicated tenant-scoped orchestration
+IAM, superseding the no-new-IAM boundary of the2026-10-05 ACK below. Existing
+runtime/control/provisioner identities must not be broadened. Full-history
+execution still requires qualified durable cloud orchestration, all applicable
+source/security/DQ gates and an immutable canonical plan. Ordinary Schedulers
+stay PAUSED. See [storage/authority foundation](TENANCY_CLOUD_BACKFILL.md) for
+implemented local candidate scope and explicitly unimplemented activation gates.
+
+For RAW historical Finance, unknown P&L mapping of type84 is not a traversal
+blocker. Its source label is «Дополнительная упаковка на складе Ozon», economic
+classification remains UNKNOWN, and traversal COMPLETE is economic PROVISIONAL.
+This supersedes any older wording below treating mapping absence alone as a
+RAW-loading blocker. No source coverage or economic finality is invented.
+
 Design baseline: 2026-10-04, repository b50666b. This document is a contract/design;
 code existence, tests and source captures do not prove deployed capability or full history.
 Owner ACK authorizes engineering, exact-image client_001 deployment and bounded pilot only.

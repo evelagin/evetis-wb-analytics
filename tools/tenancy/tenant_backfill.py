@@ -139,19 +139,20 @@ def preflight(c, doc, now):
     return tables, ledger
 
 
-def select(c, sql, parameters):
+def select(c, sql, parameters, request=None):
+    request = request or TT._req
     if not sql.lstrip().startswith("SELECT ") or ";" in sql:
         raise B.EvidenceError("coordinator SQL must be a single SELECT")
     body = {"query": sql, "useLegacySql": False, "location": "EU", "timeoutMs": 10000,
             "maximumBytesBilled": "1073741824", "parameterMode": "NAMED",
             "queryParameters": [{"name":k,"parameterType":{"type":t},"parameterValue":{"value":str(v)}}
                                 for k,(t,v) in parameters.items()]}
-    result = TT._req("POST", f"{TT.BQ}/projects/{c['project_id']}/queries", body)
+    result = request("POST", f"{TT.BQ}/projects/{c['project_id']}/queries", body)
     ref = result["jobReference"]
     for _ in range(30):
         if result.get("jobComplete"):
             break
-        result = TT._req("GET", f"{TT.BQ}/projects/{c['project_id']}/queries/{ref['jobId']}?location=EU&timeoutMs=10000")
+        result = request("GET", f"{TT.BQ}/projects/{c['project_id']}/queries/{ref['jobId']}?location=EU&timeoutMs=10000")
     if not result.get("jobComplete") or result.get("errors") or result.get("pageToken"):
         raise B.EvidenceError("bounded verification query incomplete/failed")
     fields = result.get("schema",{}).get("fields",[])

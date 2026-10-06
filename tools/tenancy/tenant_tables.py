@@ -74,15 +74,19 @@ def _cast(field, v):
 
 
 class Tables:
-    def __init__(self, project: str):
+    def __init__(self, project: str, request=None, write_request=None):
         self.project = project
+        # Owner tools retain the current default. Cloud adapters supply separate
+        # reader/append authority without module-global credential replacement.
+        self.request = request or (lambda *a, **k: _req(*a, **k))
+        self.write_request = write_request or self.request
 
     def rows(self, dataset: str, table: str):
         base = f"{BQ}/projects/{self.project}/datasets/{dataset}/tables/{table}"
-        schema = _req("GET", base)["schema"]["fields"]
+        schema = self.request("GET", base)["schema"]["fields"]
         token = ""
         while True:
-            page = _req("GET", f"{base}/data?maxResults=10000" + (f"&pageToken={urllib.parse.quote(token)}" if token else ""))
+            page = self.request("GET", f"{base}/data?maxResults=10000" + (f"&pageToken={urllib.parse.quote(token)}" if token else ""))
             for r in page.get("rows") or []:
                 yield {f["name"]: _cast(f, c.get("v")) for f, c in zip(schema, r["f"])}
             token = page.get("pageToken") or ""
@@ -92,7 +96,7 @@ class Tables:
     def append(self, dataset: str, table: str, rows: list[dict]) -> None:
         body = {"rows": [{"insertId": hashlib.sha256(json.dumps(r, sort_keys=True, default=str).encode()).hexdigest()[:32],
                           "json": r} for r in rows], "skipInvalidRows": False, "ignoreUnknownValues": False}
-        out = _req("POST", f"{BQ}/projects/{self.project}/datasets/{dataset}/tables/{table}/insertAll", body)
+        out = self.write_request("POST", f"{BQ}/projects/{self.project}/datasets/{dataset}/tables/{table}/insertAll", body)
         if out.get("insertErrors"):
             raise TableError(f"{table}: insertAll отклонил {len(out['insertErrors'])} строк")
 
@@ -102,7 +106,7 @@ class Tables:
         base = f"{BQ}/projects/{self.project}/datasets/{dataset}/tables?maxResults=1000"
         token, out = "", []
         while True:
-            page = _req("GET", base + (f"&pageToken={urllib.parse.quote(token)}" if token else ""))
+            page = self.request("GET", base + (f"&pageToken={urllib.parse.quote(token)}" if token else ""))
             for t in page.get("tables") or []:
                 created = t.get("creationTime")
                 row = (t["tableReference"]["tableId"], t.get("labels") or {},
@@ -118,7 +122,7 @@ class Tables:
                 "labels": labels, "description": description,          # лимит BigQuery 16384 — без обрезки
                 "schema": {"fields": [{"name": "marker", "type": "STRING"}]}}
         try:
-            _req("POST", f"{BQ}/projects/{self.project}/datasets/{dataset}/tables", body)
+            self.write_request("POST", f"{BQ}/projects/{self.project}/datasets/{dataset}/tables", body)
             return True
         except Conflict:
             return False
@@ -126,7 +130,7 @@ class Tables:
     def get_table(self, dataset: str, name: str):
         """(метки, описание) таблицы или None — tables.get (консистентно)."""
         try:
-            t = _req("GET", f"{BQ}/projects/{self.project}/datasets/{dataset}/tables/{name}")
+            t = self.request("GET", f"{BQ}/projects/{self.project}/datasets/{dataset}/tables/{name}")
         except TableError as e:
             if "HTTP 404" in str(e):
                 return None
