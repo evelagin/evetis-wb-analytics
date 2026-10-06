@@ -134,7 +134,8 @@ locals {
   backfill_expected_bindings = local.ozon == null ? [] : concat(
     [for k in ["ozon_raw", "ref", "tenant_ops"] : "${local.backfill_principals.controller}|${local.backfill_role_prefix}${k == "ref" ? "backfillReadRef" : "backfillRead"}|projects/${var.contract.project_id}/datasets/${var.contract.datasets[k]}"],
     ["${local.backfill_principals.controller}|${local.backfill_role_prefix}backfillLockRead|projects/${var.contract.project_id}/datasets/${var.contract.datasets.tenant_locks}",
-    "${local.backfill_principals.append}|${local.backfill_role_prefix}backfillLockCreate|projects/${var.contract.project_id}/datasets/${var.contract.datasets.tenant_locks}"],
+      "${local.backfill_principals.append}|${local.backfill_role_prefix}backfillLockCreate|projects/${var.contract.project_id}/datasets/${var.contract.datasets.tenant_locks}",
+    "${local.backfill_principals.append}|${local.backfill_role_prefix}backfillAppendDatasetMetadata|projects/${var.contract.project_id}/datasets/${var.contract.datasets.tenant_ops}"],
     [for r in ["backfillQuery", "backfillInventoryRead"] : "${local.backfill_principals.controller}|${local.backfill_role_prefix}${r}|projects/${var.contract.project_id}"],
     [for j in keys(local.ozon.jobs) : "${local.backfill_principals.controller}|${local.backfill_role_prefix}backfillRuntimeExecute|projects/${var.contract.project_id}/locations/${var.contract.region}/jobs/${j}"],
     [for t in ["BACKFILL_CHECKPOINTS", "DATA_COVERAGE", "DQ_RESULTS"] : "${local.backfill_principals.append}|${local.backfill_role_prefix}backfillAppend|projects/${var.contract.project_id}/datasets/${var.contract.datasets.tenant_ops}/tables/${t}"],
@@ -169,8 +170,8 @@ resource "terraform_data" "backfill_guard" {
     }
     precondition {
       condition = var.contract.orchestration == null ? true : (
-        length(var.contract.orchestration.dataset_grants) == 5 &&
-        toset([for g in var.contract.orchestration.dataset_grants : "${g.email}|${g.role}|projects/${var.contract.project_id}/datasets/${lookup(var.contract.datasets, g.dataset_key, "invalid")}"]) == toset(slice(local.backfill_expected_bindings, 0, 5)) &&
+        length(var.contract.orchestration.dataset_grants) == 6 &&
+        toset([for g in var.contract.orchestration.dataset_grants : "${g.email}|${g.role}|projects/${var.contract.project_id}/datasets/${lookup(var.contract.datasets, g.dataset_key, "invalid")}"]) == toset(slice(local.backfill_expected_bindings, 0, 6)) &&
         var.contract.orchestration.job.name == "tenant-backfill-controller" &&
         var.contract.orchestration.job.timeout == "600s" &&
         can(regex("^europe-west1-docker\\.pkg\\.dev/mpa-platform/mpa-runtime/tenant-backfill-controller@sha256:[0-9a-f]{64}$", var.contract.orchestration.job.image)) &&

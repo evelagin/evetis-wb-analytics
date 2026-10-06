@@ -6,8 +6,8 @@ from tools.tenancy import orchestration_identity as I
 def test_query_authority_and_journal_mutation_are_separate_principals():
     rows=I.validate_matrix(I.matrix('client_001'),'client_001')
     writer=[r for r in rows if 'sa-backfill-append@' in r['principal']]
-    assert len(writer)==4
-    assert sorted(r['permissions'] for r in writer)==[['bigquery.tables.create'], *([['bigquery.tables.updateData']]*3)]
+    assert len(writer)==5
+    assert sorted(r['permissions'] for r in writer)==[['bigquery.datasets.get'], ['bigquery.tables.create'], *([['bigquery.tables.updateData','bigquery.tables.get']]*3)]
     assert not any('bigquery.jobs.create' in r['permissions'] for r in writer)
     reader=[r for r in rows if 'sa-backfill-controller@' in r['principal']]
     assert not any('bigquery.tables.updateData' in r['permissions'] or 'bigquery.tables.create' in r['permissions'] for r in reader)
@@ -61,3 +61,18 @@ def test_identity_matrix_is_stable_after_sorted_json_serialization():
     c=R.terraform_inputs('client_001')
     reordered=json.loads(json.dumps(c,sort_keys=True))
     assert I.matrix_for_contract(c)==I.matrix_for_contract(reordered)
+
+
+def test_append_metadata_prerequisites_have_exact_table_and_dataset_scope():
+    rows=I.matrix('client_001')
+    assert len(rows)==18 and len(I.ROLE_PERMISSIONS)==12
+    metadata=[r for r in rows if r['role'].endswith('/backfillAppendDatasetMetadata')]
+    assert len(metadata)==1 and metadata[0]['permissions']==['bigquery.datasets.get']
+    assert metadata[0]['resource']=='projects/mpa-t-client-001/datasets/tenant_ops'
+    assert metadata[0]['principal']=='sa-backfill-append@mpa-t-client-001.iam.gserviceaccount.com'
+    tables=[r for r in rows if r['role'].endswith('/backfillAppend')]
+    assert {r['resource'].rsplit('/',1)[-1] for r in tables}=={'BACKFILL_CHECKPOINTS','DATA_COVERAGE','DQ_RESULTS'}
+    assert all(r['permissions']==['bigquery.tables.updateData','bigquery.tables.get'] for r in tables)
+    writer=[r for r in rows if 'sa-backfill-append@' in r['principal']]
+    forbidden={'bigquery.tables.getData','bigquery.jobs.create','bigquery.tables.update','bigquery.tables.delete','bigquery.datasets.update','secretmanager.versions.access','run.jobs.run'}
+    assert not any(forbidden.intersection(r['permissions']) for r in writer)

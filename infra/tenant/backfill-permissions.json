@@ -21,7 +21,11 @@
     "bigquery.jobs.create"
   ],
   "backfillAppend": [
-    "bigquery.tables.updateData"
+    "bigquery.tables.updateData",
+    "bigquery.tables.get"
+  ],
+  "backfillAppendDatasetMetadata": [
+    "bigquery.datasets.get"
   ],
   "backfillDelegateAppend": [
     "iam.serviceAccounts.getAccessToken"

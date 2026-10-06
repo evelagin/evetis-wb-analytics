@@ -14,7 +14,8 @@ ROLE_PERMISSIONS = {
     'backfillLockRead': ('bigquery.datasets.get','bigquery.tables.get','bigquery.tables.list'),
     'backfillLockCreate': ('bigquery.tables.create',),
     'backfillQuery': ('bigquery.jobs.create',),
-    'backfillAppend': ('bigquery.tables.updateData',),
+    'backfillAppend': ('bigquery.tables.updateData','bigquery.tables.get'),
+    'backfillAppendDatasetMetadata': ('bigquery.datasets.get',),
     'backfillDelegateAppend': ('iam.serviceAccounts.getAccessToken',),
     'backfillRuntimeExecute': ('run.jobs.get','run.jobs.run','run.jobs.runWithOverrides','run.executions.get','run.executions.list'),
     'backfillInventoryRead': ('run.jobs.list','run.operations.get','cloudscheduler.jobs.list'),
@@ -41,6 +42,7 @@ def matrix_for_contract(c):
         add(controller,role(r),f"projects/{p}/datasets/{c['datasets'][key]}",ROLE_PERMISSIONS[r])
     for principal,r in ((controller,'backfillLockRead'),(writer,'backfillLockCreate')):
         add(principal,role(r),f"projects/{p}/datasets/{c['datasets']['tenant_locks']}",ROLE_PERMISSIONS[r])
+    add(writer,role('backfillAppendDatasetMetadata'),f"projects/{p}/datasets/{c['datasets']['tenant_ops']}",ROLE_PERMISSIONS['backfillAppendDatasetMetadata'])
     for r in ('backfillQuery','backfillInventoryRead'):
         add(controller,role(r),f'projects/{p}',ROLE_PERMISSIONS[r])
     for name in sorted(c['marketplaces']['ozon']['jobs']):
