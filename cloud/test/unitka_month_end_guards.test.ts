@@ -384,6 +384,20 @@ describe('E. RECON_RESIDUAL_PERSISTENT: остаток сверки второй
     expect(events(lines, 'unitka_recon_residual_check_failed')).toMatchObject([{ level: 'warn' }]);
     expect(runner.journal.at(-1)).toMatchObject({ qaStatus: 'PASS', errorCode: null });
   });
+  it('поздняя поправка месяца LCD, которую observe записывает сам, остатком НЕ считается (ревью #259)', async () => {
+    const book = buildBook('2026-08-31');
+    const runner = new ReconRunner('2026-09-30', reconFactsFor('2026-09-01', '2026-09-30'), '2026-09-01');
+    await run(book, runner, 'write');
+    runner.lcd = '2026-10-02'; runner.facts = reconFactsFor('2026-09-01', '2026-10-02');
+    await run(book, runner, 'write');
+    runner.lcd = '2026-10-03'; runner.facts = patch(reconFactsFor('2026-09-01', '2026-10-03'), SEPT_NMS[5]!, '2026-10-01', { cancels: 3 });
+    runner.previousResidual = 5;
+    const { lines } = await run(book, runner, 'observe');
+    const g = book.section('2026-10').geometry;
+    expect(book.get(dayRowOf(g, 0), slotStart(5) + OFFSET.cancels)).toBe(3);                    // записано этим прогоном
+    expect((qaOf(runner) as { reconcile: { repairs_residual: number } }).reconcile.repairs_residual).toBe(0);
+    expect(events(lines, 'unitka_recon_residual_persistent')).toHaveLength(0);
+  });
   it('write и нулевой остаток — журнал прогонов не читается', async () => {
     const { book, runner } = await withResidual();
     runner.previousResidual = 8;

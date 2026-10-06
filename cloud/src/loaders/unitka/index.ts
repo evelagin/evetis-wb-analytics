@@ -540,8 +540,10 @@ export async function unitkaLoader(ctx: LoaderContext, deps: UnitkaDeps = defaul
     // 3'a. ЗАКРЫТИЕ КОНЦА МЕСЯЦА (дефект A, 02.10.2026): кандидат LCD перешагивает дни прошлого месяца, которые книга
     //      ни разу не закрывала, — они пишутся из плана сверки В ЛЮБОМ режиме, кроме off, и в observe тоже. Неполное
     //      покрытие этих дней (или off) — MONTH_END_UNCLOSED ДО любой записи данных: LCD стоит, алерт по коду.
+    // База D — закоммиченный LCD жизненного цикла (именованная ячейка), а не max(зеркало, имя) плана:
+    // зеркало, убежавшее вперёд, занизило бы D и оставило бы день незакрытым.
     const monthEnd: MonthEndClosePlan = planMonthEndClose({
-      bookLcd: plan.bookLcd, lcd: plan.lcd, mode: reconcileMode, sections: reconcile?.sections ?? [], refused: reconcile?.refused ?? [],
+      bookLcd: life?.committed ?? plan.bookLcd, lcd: plan.lcd, mode: reconcileMode, sections: reconcile?.sections ?? [], refused: reconcile?.refused ?? [],
     });
     const monthEndJson = monthEnd.days.length ? { month_end_close: { days: monthEnd.days, cells: monthEnd.cells.length, format_cells: monthEnd.formatCells.length } } : {};
     if (monthEnd.days.length) {
@@ -555,15 +557,21 @@ export async function unitkaLoader(ctx: LoaderContext, deps: UnitkaDeps = defaul
     // 3'b. Остаток сверки, который НЕ пишется (observe: все поздние поправки; controlled: не пропущенные политикой). Висит
     //      второй прогон подряд — ошибка с кодом (алерт): поправки источника копятся в листе незамеченными (дефект D).
     //      Сбой чтения журнала прогонов — только предупреждение: прогон фактов от наблюдаемости не зависит.
-    const appliedA1 = new Set((controlled?.apply ?? []).map((c) => `${colA1(c.col)}${c.row}`));
-    const residual = reconcileMode === 'write' ? 0 : repairs.filter((r) => !appliedA1.has(r.cellA1)).length;
+    // Остаток = поправки, которые ЭТОТ прогон не пишет тем же значением. Поздние поправки месяца LCD observe пишет сам
+    // (старым слоем, lcd_month_delta пуст) — их в остатке нет; иначе алерт звенел бы на собственной записи (ревью #259).
+    const written = new Map<string, string | null>();
+    for (const c of [...plan.cells, ...monthEnd.cells, ...(controlled?.apply ?? [])]) {
+      written.set(`${colA1(c.col)}${c.row}`, c.want === null ? null : String(c.want));
+    }
+    const unwritten = (r: RepairRecord): boolean => !written.has(r.cellA1) || written.get(r.cellA1) !== r.newValue;
+    const residual = reconcileMode === 'write' ? 0 : repairs.filter(unwritten).length;
     if (config.environment === 'prod' && (reconcileMode === 'observe' || reconcileMode === 'controlled') && residual > 0) {
       try {
         const previous = await bq.previousReconResidual(runId);
         if (previous !== null && previous > 0) {
           log.error('unitka_recon_residual_persistent', {
             code: 'RECON_RESIDUAL_PERSISTENT', reconcile_mode: reconcileMode, residual, previous_residual: previous,
-            sample: repairs.filter((r) => !appliedA1.has(r.cellA1)).slice(0, 20).map((r) => `${r.businessDate} ${r.nmId} ${r.field} ${r.cellA1} ${r.oldValue ?? ''}→${r.newValue ?? ''} ${r.reason}`),
+            sample: repairs.filter(unwritten).slice(0, 20).map((r) => `${r.businessDate} ${r.nmId} ${r.field} ${r.cellA1} ${r.oldValue ?? ''}→${r.newValue ?? ''} ${r.reason}`),
           });
         }
       } catch (e) {
