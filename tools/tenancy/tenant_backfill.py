@@ -29,6 +29,31 @@ import checkpoints as CK
 
 RUN_API = "https://run.googleapis.com/v2"
 SCHED_API = "https://cloudscheduler.googleapis.com/v1"
+GLOBAL_JOB_FIELDS = "items(metadata(name,namespace,labels)),metadata(continue),unreachable"
+
+
+def global_job_url(project):
+    # Documented v1 global endpoint used by gcloud run jobs list. Projected
+    # metadata only: unknown Job environments/secret values are never read.
+    return (f"https://run.googleapis.com/apis/run.googleapis.com/v1/namespaces/{project}/jobs"
+            f"?limit=1000&fields={GLOBAL_JOB_FIELDS}")
+
+
+def verify_global_jobs(response, names, region):
+    if not isinstance(response, dict) or response.get("unreachable") or (response.get("metadata") or {}).get("continue"):
+        raise B.EvidenceError("all-region tenant inventory incomplete")
+    items=response.get("items", [])
+    if not isinstance(items,list):
+        raise B.EvidenceError("all-region tenant inventory malformed")
+    found=[]
+    for item in items:
+        meta=item.get("metadata",{}) if isinstance(item,dict) else {}
+        name=meta.get("name");location=(meta.get("labels") or {}).get("cloud.googleapis.com/location")
+        if not isinstance(name,str) or location!=region:
+            raise B.EvidenceError("unexpected tenant job in all-region inventory")
+        found.append(name)
+    if len(found)!=len(set(found)) or set(found)!=set(names):
+        raise B.EvidenceError("unexpected tenant job in all-region inventory")
 
 
 def target(tenant_id):
@@ -122,13 +147,15 @@ def preflight(c, doc, now, backend=None, *, allow_active=False):
     if any(v != "BOUND" for v in binding.values()) or any(v["status"] != "PASS" for v in creds.values()):
         raise B.EvidenceError("pilot requires verified binding/credential evidence")
     base, expected = resources(c)
-    live = request("GET", f"{RUN_API}/{base}/jobs")
-    jobs = {j["name"].rsplit("/",1)[-1]: j for j in live.get("jobs", [])}
     orchestration = c.get("orchestration")
     expected_names = set(expected) | {"tenant-control"}
     if orchestration:
         expected_names.add(orchestration["job"]["name"])
-    if set(jobs) != expected_names or live.get("nextPageToken"):
+    verify_global_jobs(request("GET",global_job_url(c["project_id"])),expected_names,c["region"])
+    live = request("GET", f"{RUN_API}/{base}/jobs")
+    items=live.get("jobs",[])
+    jobs = {j["name"].rsplit("/",1)[-1]: j for j in items}
+    if set(jobs) != expected_names or len(items)!=len(jobs) or live.get("nextPageToken") or any(j['name']!=base+'/jobs/'+n for n,j in jobs.items()):
         raise B.EvidenceError("unexpected tenant job inventory")
     for name, cfg in expected.items():
         job = jobs[name]

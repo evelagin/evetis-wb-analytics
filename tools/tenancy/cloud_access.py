@@ -163,7 +163,11 @@ class CloudAccess:
         elif authority == "reader" and method == "GET" and body is None:
             jobs = set(c["marketplaces"]["ozon"]["jobs"]) | {"tenant-control", "tenant-backfill-controller"}
             if parsed.netloc == "run.googleapis.com":
-                permitted = parsed.path == run + "/jobs" or bool(re.fullmatch(re.escape(run) + r"/operations/[A-Za-z0-9_-]+", parsed.path))
+                from tools.tenancy import tenant_backfill as BF
+                # Exactly the metadata projection; no arbitrary v1 route/filter
+                # or foreign-project/global Job environment access.
+                permitted = url == BF.global_job_url(c['project_id'])
+                permitted = permitted or parsed.path == run + "/jobs" or bool(re.fullmatch(re.escape(run) + r"/operations/[A-Za-z0-9_-]+", parsed.path))
                 permitted = permitted or any(re.fullmatch(re.escape(run + "/jobs/" + job) + r"(?:/executions(?:/[A-Za-z0-9_-]+)?)?", parsed.path) for job in jobs)
             elif parsed.netloc == "cloudscheduler.googleapis.com":
                 permitted = parsed.path == sched + "/jobs"

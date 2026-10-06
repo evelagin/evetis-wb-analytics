@@ -126,6 +126,10 @@ remaining-cohort plan merely for convenience is permitted.
   17 exact IAM bindings, Terraform preconditions and adversarial plan scanning.
 - Metadata-authenticated bounded entrypoint, canonical preflight/start/reconcile,
   one dispatch per wake, immutable publication before/after the Run POST.
+- Every preflight checks the global v1 Job metadata projection used by gcloud.
+  Unknown/duplicate jobs, foreign regions, unreachable locations and pagination
+  stop work before regional template/execution inspection or any dispatch.
+  Only names/region labels are requested for unknown resources; IAM is unchanged.
 - Exact old SKU runtime compatibility: the 20 runtime-file hash is unchanged.
   The pending PR252 probe implementation is deliberately a separate release.
 - Terminal receipt reconciliation, source/persisted DQ, fresh dated Catalog

@@ -82,6 +82,7 @@ def test_metadata_mutation_or_security_drift_stops_before_any_write(monkeypatch,
     def read(method,url,body=None):
         assert method=="GET", "drift caused a write"
         if "cloudscheduler" in url:return {"jobs":sched}
+        if "/namespaces/" in url:return {"items":[{"metadata":{"name":j["name"].rsplit("/",1)[-1],"labels":{"cloud.googleapis.com/location":c["region"]}}} for j in jobs]}
         if "/executions?" in url:return {"executions":[{}]} if fault=="active" else {"executions":[]}
         return {"jobs":jobs,**({"nextPageToken":"x"} if fault=="continuation-token" else {})}
     monkeypatch.setattr(T.TT,"_req",read)
@@ -276,3 +277,24 @@ def test_cloud_read_proof_uses_reader_only_and_validates_actual_plan(monkeypatch
     monkeypatch.setattr(T.TT,"_req",lambda *a:pytest.fail("cloud reader fell back to owner credentials"))
     assert T.read_proof(c,p,"synthetic-run",request=reader)==proof
     assert len(calls)==1 and calls[0][0]=="POST" and calls[0][2]["useLegacySql"] is False
+
+
+@pytest.mark.parametrize("fault",["foreign-region","orphan","duplicate","missing-region","unreachable","pagination","missing-job"])
+def test_global_inventory_fails_closed_on_hidden_or_incomplete_resources(fault):
+    names={"ozon-runtime-daily","ozon-runtime-fast","ozon-runtime-weekly","tenant-control"}
+    items=[{"metadata":{"name":n,"labels":{"cloud.googleapis.com/location":"europe-west1"}}} for n in sorted(names)]
+    response={"items":items}
+    if fault=="foreign-region":items[0]["metadata"]["labels"]["cloud.googleapis.com/location"]="us-central1"
+    if fault=="orphan":items.append({"metadata":{"name":"unregistered","labels":{"cloud.googleapis.com/location":"europe-west1"}}})
+    if fault=="duplicate":items.append(copy.deepcopy(items[0]))
+    if fault=="missing-region":items[0]["metadata"].pop("labels")
+    if fault=="unreachable":response["unreachable"]=["us-central1"]
+    if fault=="pagination":response["metadata"]={"continue":"more"}
+    if fault=="missing-job":items.pop()
+    with pytest.raises(T.B.EvidenceError):T.verify_global_jobs(response,names,"europe-west1")
+
+
+def test_complete_global_inventory_accepts_only_exact_registered_region():
+    names={"tenant-control","ozon-runtime-daily"}
+    response={"items":[{"metadata":{"name":n,"labels":{"cloud.googleapis.com/location":"europe-west1"}}} for n in names],"unreachable":[],"metadata":{}}
+    T.verify_global_jobs(response,names,"europe-west1")

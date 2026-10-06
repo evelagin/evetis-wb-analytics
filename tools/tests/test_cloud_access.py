@@ -138,3 +138,14 @@ def test_cloud_records_survive_restart_without_owner_gcloud_or_local_receipt(c,m
     with pytest.raises(D.BF.B.EvidenceError,match='concurrent durable sequence'):
         restored.commit(root,'DISPATCH_INTENT',1,{'run_id':'different-run'},now)
     assert len(rows)==1
+
+
+def test_global_inventory_reader_allows_only_exact_metadata_projection(access,c):
+    client,calls,tokens=access
+    url=BF.global_job_url(c["project_id"])
+    client.request("GET",url)
+    assert len(calls)==1 and tokens.calls==["reader"]
+    for other in (url.split("?")[0],url.replace("limit=1000","limit=2000"),url.replace(c["project_id"],"foreign-project"),url.replace(BF.GLOBAL_JOB_FIELDS,"items")):
+        with pytest.raises(C.TT.TableError):client.request("GET",other)
+    with pytest.raises(C.TT.TableError):client.append_request("GET",url)
+    assert len(calls)==1 and tokens.calls==["reader"]
