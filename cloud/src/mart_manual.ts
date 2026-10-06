@@ -15,6 +15,7 @@
  *   npm run build && npm run mart:manual -- --target-date=<D-1>  # явный D-1 (иная дата отклоняется)
  *   (env: GCP_PROJECT_ID, BQ_RAW_DATASET, ENVIRONMENT=prod, GIT_SHA=<sha>, [IMAGE_DIGEST])
  */
+import { fatalRecord } from './failure.js';
 import { randomUUID } from 'node:crypto';
 import { loadConfig } from './config.js';
 import { Logger, parseLevel } from './logging.js';
@@ -60,6 +61,6 @@ main()
   .then((code) => process.exit(code))
   .catch((e) => {
     // eslint-disable-next-line no-console
-    console.error(JSON.stringify({ severity: 'ERROR', message: 'fatal', error: e instanceof Error ? e.message : String(e) }));
+    console.error(JSON.stringify(fatalRecord(e)));
     process.exit(EXIT_ERROR);
   });

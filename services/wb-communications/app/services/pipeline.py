@@ -43,7 +43,7 @@ from app.utils.text import (
 
 logger = get_logger(__name__)
 
-ACTIONS = {"pub", "edit", "regen", "skip", "show"}
+ACTIONS = {"pub", "edit", "regen", "skip", "show", "ov", "oc"}
 # callback token -> state-machine action name
 _ACTION_MAP = {"pub": "publish", "edit": "edit", "regen": "regenerate", "skip": "skip", "show": "show"}
 _REVIEW_TEXT_CARD_LIMIT = 700
@@ -123,10 +123,10 @@ def parse_callback(data: str) -> tuple[Optional[str], Optional[str]]:
     return action, doc_id
 
 
-def build_keyboard(doc_id: str, *, show_full: bool = False, retry: bool = False) -> dict:
+def build_keyboard(doc_id: str, *, show_full: bool = False, retry: bool = False, generation=None) -> dict:
     rows = [
         [
-            {"text": "✅ Опубликовать", "callback_data": f"pub:{doc_id}"},
+            {"text": "✅ Опубликовать", "callback_data": f"pub:{doc_id}" + (f":{generation}" if generation is not None else "")},
             {"text": "✏️ Изменить", "callback_data": f"edit:{doc_id}"},
         ],
         [
@@ -137,6 +137,80 @@ def build_keyboard(doc_id: str, *, show_full: bool = False, retry: bool = False)
     if show_full:
         rows.append([{"text": "📋 Показать полностью", "callback_data": f"show:{doc_id}"}])
     return {"inline_keyboard": rows}
+
+
+
+def _recovery_enabled(deps):
+    return getattr(deps.settings, "v31_operator_recovery_enabled", False)
+
+
+def _prepare_response(deps, doc, text):
+    if not _recovery_enabled(deps):
+        return None, None
+    from app.v3.snapshot import load_snapshot
+    from app.v3.shadow import message_from_doc
+    from app.response_quality.core import prepare
+    from app.domain.models import GenerationResult
+    from app.response_quality import VERSION
+    try:
+        snap = load_snapshot(getattr(deps.settings, "v3_knowledge_snapshot_id", None))
+        from app.response_quality.language import renderer_for_client
+        renderer = renderer_for_client(deps.openai) if hasattr(deps.openai,'structured') else None
+        result = prepare(message_from_doc("", doc), text, snap, render=renderer)
+        meta = result.metadata()
+        meta['language_generation'] = ({'model':renderer.model,'calls':renderer.calls} if renderer else
+                                      {'model':'deterministic-fallback','calls':0})
+        gen = (GenerationResult(text=result.text, model=(renderer.model if renderer and renderer.calls else "deterministic-human-voice"),
+               prompt_version=VERSION, usage=(renderer.usage if renderer else {}),
+               latency_ms=(renderer.latency_ms if renderer else 0), request_id="")
+               if result.status == "READY" and result.repaired else None)
+        return gen, meta
+    except Exception as exc:
+        # Never expose an unchecked candidate if snapshot/repair fails.
+        return None, {"status": "HUMAN_REVIEW", "repaired": False,
+                      "reasons": ["REPAIR_ERROR:" + type(exc).__name__]}
+
+
+def _operator_keyboard(deps, doc_id, doc, *, show_full=False, retry=False):
+    k = build_keyboard(doc_id, show_full=show_full, retry=retry,
+                       generation=doc.get("generation_number", 0) if _recovery_enabled(deps) else None)
+    if _recovery_enabled(deps) and doc.get("response_review_required"):
+        k["inline_keyboard"][0] = [k["inline_keyboard"][0][1]]
+    from app.services.owner_override import enabled as override_enabled
+    if override_enabled(deps.settings):
+        from app.services.owner_override import offer
+        button=offer(doc,deps.settings)
+        if button:
+            k['inline_keyboard'].append([{'text':'⚠️ Опубликовать исходный всё равно',
+                'callback_data':f"ov:{doc_id}:{doc.get('generation_number',0)}:{button['source_version']}"}])
+            if (doc.get('response_recovery') or {}).get('repaired'):
+                k['inline_keyboard'][0][0]['text']='✅ Опубликовать исправленный'
+    return k
+
+
+def _recovery_note(text, doc):
+    meta = doc.get("response_recovery") or {}
+    if meta.get("operator_state") == "BLOCK":
+        note = "⛔ Ответ нарушает правила. Исправленный вариант недоступен: нужна редактура оператора."
+    elif meta.get("status") == "HUMAN_REVIEW":
+        note = "⛔ Нужна проверка оператора. Публикация не выполнялась."
+    elif meta.get("repaired"):
+        note = "Черновик автоматически скорректирован перед публикацией."
+    elif meta.get('operator_state')=='WARNING':
+        note = "⚠️ Ответ безопасен по правилам, но требует редакторского внимания."
+    else:
+        return text
+    reasons = meta.get("reasons") or []
+    if reasons:
+        names = {"V-CLAIM": "неподтверждённое свойство", "V-FACT": "ингредиент",
+                 "V-RESTRICTED": "закрытые сведения", "V-GENERAL": "неутверждённый совет"}
+        summary = "; ".join(dict.fromkeys(names.get(r, r) for r in reasons))
+        note += " Причина: " + summary[:220]
+    block = meta.get('original_block') or {}
+    if block.get('violation_spans'):
+        note += " Исходный текст: " + "; ".join(v['rule_id']+": «"+v['span']+"»" for v in block['violation_spans'])[:600]
+    # Keep the ready answer/customer context as the main card; never replace it with a generic error.
+    return truncate(text + "\n\n<i>" + escape_html(note) + "</i>", TELEGRAM_MSG_SOFT_LIMIT)
 
 
 def build_card(doc: dict, doc_id: str, *, full: bool = False) -> tuple[str, bool]:
@@ -466,23 +540,32 @@ def _draft_and_send(deps: Deps, subject, doc: dict, doc_id: str, communication_t
     identically; the caller owns the surrounding try/except."""
     _emit_event(deps, doc, doc_id, EventType.FIRST_SEEN, status_after=Status.PROCESSING.value)
     gen, v2_meta = _generate_answer(deps, subject, communication_type)
+    prepared_gen, recovery = _prepare_response(deps, doc, gen.text)
     # keep the record leased (PROCESSING) until the card is really sent
     doc = deps.repo.save_generation(doc_id, gen, source="ai", set_pending=False)
+    if prepared_gen is not None:
+        doc = deps.repo.save_generation(doc_id, prepared_gen, source="policy_repair", set_pending=False)
+    if recovery is not None:
+        deps.repo.update(doc_id, {"response_recovery": recovery,
+                                "response_review_required": recovery["status"] != "READY"})
+        doc = deps.repo.get(doc_id)
     _emit_event(deps, doc, doc_id, EventType.AI_GENERATED,
                 status_after=Status.PROCESSING.value, answer_version=doc.get("generation_number"))
 
     card_text, truncated = card_builder(doc, doc_id)
     card_text = _card_with_flags(card_text, v2_meta)
-    keyboard = build_keyboard(doc_id, show_full=truncated)
+    card_text = _recovery_note(card_text, doc)
+    keyboard = _operator_keyboard(deps, doc_id, doc, show_full=truncated)
     msg = deps.telegram.send_message(deps.settings.telegram_chat_id, card_text, keyboard)
     deps.repo.update(doc_id, {
         "telegram_message_id": str(msg.get("message_id", "")),
         "telegram_chat_id": str(deps.settings.telegram_chat_id),
-        "status": Status.PENDING_APPROVAL.value, "lock_expires_at": None,
+        "status": Status.POLICY_BLOCKED.value if doc.get("response_review_required") else Status.PENDING_APPROVAL.value,
+        "lock_expires_at": None,
     })
     doc = _sync_current(deps, doc_id, doc)
     _emit_event(deps, doc, doc_id, EventType.SENT_TO_TELEGRAM,
-                status_before=Status.PROCESSING.value, status_after=Status.PENDING_APPROVAL.value)
+                status_before=Status.PROCESSING.value, status_after=doc.get("status", Status.PENDING_APPROVAL.value))
     return doc
 
 
@@ -730,7 +813,7 @@ def _send_recovery_card(deps: Deps, doc_id: str) -> str:
     chat = doc.get("telegram_chat_id") or deps.settings.telegram_chat_id
     card_text, truncated = _card_builder_for(doc)(doc, doc_id)
     msg = deps.telegram.send_message(chat, _Q_RECOVERY_HEAD + card_text,
-                                     build_keyboard(doc_id, show_full=truncated, retry=True))
+                                     _operator_keyboard(deps, doc_id, doc, show_full=truncated, retry=True))
     new_id = str((msg or {}).get("message_id", ""))
     deps.repo.update(doc_id, {"telegram_chat_id": str(chat), "telegram_message_id": new_id,
                               "recovery_card_sent_at": _now_iso()})
@@ -789,8 +872,17 @@ def _handle_callback(deps: Deps, cq: dict) -> dict:
     if cq_id:
         deps.telegram.answer_callback_query(cq_id)  # stop the spinner
 
+    if action in {'ov','oc'}:
+        from app.services.owner_override import handle
+        return handle(deps,action,doc_id,chat,message_id,user_id)
     if action == "pub":
-        return _publish(deps, doc_id, chat, message_id, user_id)
+        expected_generation = None
+        if ":" in doc_id:
+            doc_id, _, version = doc_id.partition(":")
+            if not version.isdigit() or len(version) > 9:
+                return {"status": "bad_request"}
+            expected_generation = int(version)
+        return _publish(deps, doc_id, chat, message_id, user_id, expected_generation=expected_generation)
     if action == "skip":
         return _skip(deps, doc_id, chat, message_id)
     if action == "regen":
@@ -807,10 +899,16 @@ def _stale(deps: Deps, chat, message: str = "⚠️ Действие недос�
     return {"status": "stale"}
 
 
-def _publish(deps: Deps, doc_id, chat, message_id, user_id) -> dict:
+def _publish(deps: Deps, doc_id, chat, message_id, user_id, *, expected_generation=None, override_confirmation=None) -> dict:
     # Entity-aware, independent fail-closed publish gates. Questions and reviews
     # each have their own WB_*_PUBLISH_ENABLED flag and their own WB endpoint.
     peek = deps.repo.get(doc_id)
+    if not override_confirmation and _recovery_enabled(deps) and (peek or {}).get("response_recovery"):
+        if (peek or {}).get("response_review_required") or expected_generation is None:
+            return _stale(deps, chat, "⚠️ Прочитайте обновлённую карточку. Нужен Publish именно этого варианта.")
+    if _recovery_enabled(deps) and expected_generation is None and peek:
+        # Bind even a legacy button to the generation observed before claiming the lease.
+        expected_generation = peek.get("generation_number", 0)
     is_question = (peek or {}).get("entity_type") == "question"
     if is_question:
         gate_open = deps.settings.wb_question_publish_enabled
@@ -824,7 +922,15 @@ def _publish(deps: Deps, doc_id, chat, message_id, user_id) -> dict:
         deps.telegram.send_message(chat, disabled_msg)
         return {"status": "publish_disabled"}
     try:
-        doc = deps.repo.begin_publish(doc_id)  # atomic; recovers a crashed lease
+        if override_confirmation:
+            from app.services.owner_override import allowed, safety_fixed
+            if not allowed(deps,chat,user_id) or safety_fixed(peek,deps.settings):
+                return {'status':'unauthorized'}
+            doc = deps.repo.begin_publish(doc_id, expected_generation=expected_generation,
+                                         override_confirmation=override_confirmation)
+        else:
+            doc = (deps.repo.begin_publish(doc_id, expected_generation=expected_generation)
+               if expected_generation is not None else deps.repo.begin_publish(doc_id))  # atomic lease + generation
     except InvalidTransition:
         return _stale(deps, chat, "⚠️ Этот отзыв уже обрабатывается или опубликован.")
     except NotFound:
@@ -838,24 +944,62 @@ def _publish(deps: Deps, doc_id, chat, message_id, user_id) -> dict:
         deps.telegram.edit_message_text(
             chat, message_id,
             "⚠️ Ответ пустой или длиннее лимита WB (1000). Отредактируйте и попробуйте снова.",
-            build_keyboard(doc_id, retry=True),
+            _operator_keyboard(deps, doc_id, deps.repo.get(doc_id) or doc, retry=True),
         )
         return {"status": "invalid_length"}
 
     trace = _new_trace(doc_id, doc, phase="publish", state_before=Status.PUBLISHING.value)
     trace.update(write_attempted=False, write="not_attempted")
-    from app.services.publication_policy import validate_for_publication
+    from app.services.publication_policy import live_publication_validator
     try:
-        validator = deps.publication_validator or validate_for_publication
+        # Live v2 publication: production-compatible gate; v3.1E policy stays shadow-only (R1).
+        validator = deps.publication_validator or live_publication_validator(deps.settings)
         policy = validator(text, doc, deps.settings)
         if not isinstance(policy, dict) or policy.get("verdict") not in ("PASS", "INFO", "WARNING", "BLOCK"):
             raise ValueError("invalid policy verdict")
         trace["policy"] = policy
         status = "policy_blocked" if policy["verdict"] == "BLOCK" else None
+        if override_confirmation:
+            from app.services.owner_override import fingerprint
+            if fingerprint(policy)!=override_confirmation['policy_fingerprint'] or policy['text_sha256']!=override_confirmation['answer_hash']:
+                status='policy_check_failed'
+            else:
+                status=None
+                trace['owner_override']={k:override_confirmation[k] for k in ('override_by','override_at',
+                    'answer_hash','source_version','policy_version','knowledge_snapshot')}
+                trace['owner_override']['override']=True
+                trace['owner_override']['override_confirmed_at']=_now_iso()
     except Exception as exc:
         trace["policy"] = {"verdict": "ERROR", "error_class": type(exc).__name__}
         status = "policy_check_failed"
+    if not override_confirmation and _recovery_enabled(deps) and status is None:
+        _, route_check = _prepare_response(deps, doc, text)
+        if route_check and route_check["status"] == "HUMAN_REVIEW":
+            status = "policy_blocked"
+            trace["hard_route"] = route_check["reasons"]
     if status:
+        if not override_confirmation and status == "policy_blocked" and _recovery_enabled(deps):
+            prepared_gen, recovery = _prepare_response(deps, doc, text)
+            if prepared_gen is not None and recovery["status"] == "READY":
+                version = doc.get("generation_number", 0) + 1
+                fields = {"status": Status.PENDING_APPROVAL.value, "publication_state": "policy_repaired",
+                    "generation_number": version, "final_answer": prepared_gen.text,
+                    "answer_versions": (doc.get("answer_versions") or []) + [{"text": prepared_gen.text,
+                        "source": "policy_repair", "generation_number": version, "created_at": _now_iso(),
+                        "prompt_version": prepared_gen.prompt_version}], "response_recovery": recovery,
+                    "response_review_required": False}
+                trace.update(final_publication_state="policy_repaired", local_state_after="pending_approval",
+                             write_attempted=False, write="not_attempted", finished_at=_now_iso())
+                after = deps.repo.publication_update(doc_id, doc["lock_token"], fields, trace, release=True)
+                if not after:
+                    return _stale(deps, chat)
+                after = _sync_current(deps, doc_id, after)
+                _emit_event(deps, after, doc_id, EventType.REGENERATED, best_effort=False,
+                            answer_version=version, payload=trace)
+                card, trunc = _card_builder_for(after)(after, doc_id)
+                deps.telegram.edit_message_text(chat, message_id, _recovery_note(card, after),
+                    _operator_keyboard(deps, doc_id, after, show_full=trunc))
+                return {"status": "policy_repaired", "requires_new_publish": True}
         trace.update(final_publication_state=status, local_state_after=status,
                      telegram_state=status, finished_at=_now_iso())
         deps.repo.publication_update(doc_id, doc["lock_token"],
@@ -866,8 +1010,12 @@ def _publish(deps: Deps, doc_id, chat, message_id, user_id) -> dict:
         message = ("⛔ Ответ нельзя опубликовать.\nОтвет создан по устаревшей политике и требует обновления."
                    if status == "policy_blocked" else
                    "⛔ Проверка ответа временно недоступна. Публикация не выполнялась.")
-        keyboard = build_keyboard(doc_id)
+        keyboard = _operator_keyboard(deps, doc_id, doc)
         keyboard["inline_keyboard"][0] = [keyboard["inline_keyboard"][0][1]]
+        if _recovery_enabled(deps):
+            card, _ = _card_builder_for(after)(after, doc_id)
+            message = card + "\n\n" + escape_html("⛔ Требуется проверка оператора. " +
+                       "; ".join(v.get("rule_id", "ERROR") for v in trace["policy"].get("violations", [])))
         deps.telegram.edit_message_text(chat, message_id, message, keyboard)
         return {"status": status}
     deps.repo.publication_update(doc_id, doc["lock_token"], {"publication_policy": policy})
@@ -1012,7 +1160,7 @@ def _finish_question(deps: Deps, doc_id: str, doc: dict, text: str, outcome: str
                 status_before=trace.get("local_state_before", ""), status_after=status,
                 telegram_user_id=user_id, attempt=trace["publication_attempt_id"], payload=trace)
     if interactive:
-        keyboard = build_keyboard(doc_id, retry=True) if status == Status.PUBLISH_UNKNOWN.value else None
+        keyboard = _operator_keyboard(deps, doc_id, deps.repo.get(doc_id) or doc, retry=True) if status == Status.PUBLISH_UNKNOWN.value else None
         deps.telegram.edit_message_text(chat, message_id,
                                         _Q_MSG[status].format(text=escape_html(text)), keyboard)
     elif status == Status.PUBLISH_UNKNOWN.value:
@@ -1066,7 +1214,7 @@ def _publish_question(deps: Deps, doc_id: str, doc: dict, text: str, chat, messa
                     attempt=trace["publication_attempt_id"], payload=trace)
         deps.telegram.edit_message_text(chat, message_id,
                                         _wb_publish_error_message(exc, is_question=True),
-                                        build_keyboard(doc_id, retry=True))
+                                        _operator_keyboard(deps, doc_id, deps.repo.get(doc_id) or doc, retry=True))
         return {"status": "publish_failed", "code": exc.status_code}
 
     on_wb = _wb_answer_text(current)
@@ -1108,7 +1256,7 @@ def _publish_question(deps: Deps, doc_id: str, doc: dict, text: str, chat, messa
                     attempt=trace["publication_attempt_id"], payload=trace)
         deps.telegram.edit_message_text(chat, message_id,
                                         _wb_publish_error_message(exc, is_question=True),
-                                        build_keyboard(doc_id, retry=True))
+                                        _operator_keyboard(deps, doc_id, deps.repo.get(doc_id) or doc, retry=True))
         return {"status": "publish_failed", "code": exc.status_code}
 
     outcome = _verify_question(deps, qid, text, trace)
@@ -1153,7 +1301,9 @@ def _regenerate(deps: Deps, doc_id, chat, message_id) -> dict:
         return {"status": "regen_failed"}
 
     try:
-        doc = deps.repo.commit_regenerate(doc_id, gen, token)  # verifies lock+token
+        prepared_gen, recovery = _prepare_response(deps, doc, gen.text)
+        doc = (deps.repo.commit_regenerate(doc_id, gen, token, prepared_gen=prepared_gen, recovery=recovery)
+               if recovery is not None else deps.repo.commit_regenerate(doc_id, gen, token))
     except InvalidTransition:
         return _stale(deps, chat, "⚠️ Перегенерация неактуальна: отзыв уже изменён.")
     _sync_current(deps, doc_id, doc)
@@ -1161,7 +1311,8 @@ def _regenerate(deps: Deps, doc_id, chat, message_id) -> dict:
                 answer_version=doc.get("generation_number"))
     card_text, truncated = _card_builder_for(doc)(doc, doc_id)
     card_text = _card_with_flags(card_text, v2_meta)
-    deps.telegram.edit_message_text(chat, message_id, card_text, build_keyboard(doc_id, show_full=truncated))
+    deps.telegram.edit_message_text(chat, message_id, _recovery_note(card_text, doc),
+        _operator_keyboard(deps, doc_id, doc, show_full=truncated))
     return {"status": "regenerated", "generation_number": doc.get("generation_number")}
 
 
@@ -1197,7 +1348,7 @@ def _show_full(deps: Deps, doc_id, chat, message_id) -> dict:
     if not doc:
         return {"status": "not_found"}
     card_text, _ = _card_builder_for(doc)(doc, doc_id, full=True)
-    deps.telegram.edit_message_text(chat, message_id, card_text, build_keyboard(doc_id))
+    deps.telegram.edit_message_text(chat, message_id, _recovery_note(card_text, doc), _operator_keyboard(deps, doc_id, doc))
     return {"status": "shown"}
 
 
@@ -1260,8 +1411,11 @@ def _handle_message(deps: Deps, message: dict) -> dict:
     doc_id = session["doc_id"]
     try:
         # transactional: status still EDITING, our token, unchanged version
+        current = deps.repo.get(doc_id) or {}
+        prepared_gen, recovery = _prepare_response(deps, current, new_text)
+        kw = {"prepared_gen": prepared_gen, "recovery": recovery} if recovery is not None else {}
         doc = deps.repo.commit_manual_answer(doc_id, new_text, session.get("lock_token"),
-                                             session.get("expected_generation"))
+                                             session.get("expected_generation"), **kw)
     except InvalidTransition:
         deps.repo.clear_editing_session(user_id)
         deps.telegram.send_message(chat, "⚠️ Правка неактуальна: отзыв уже изменён или обработан.")
@@ -1276,7 +1430,8 @@ def _handle_message(deps: Deps, message: dict) -> dict:
                 telegram_user_id=user_id, answer_version=doc.get("generation_number"))
     card_text, truncated = _card_builder_for(doc)(doc, doc_id)
     card_text = _card_with_flags(card_text, {"flags": _manual_text_flags(deps, doc, new_text)})
-    msg = deps.telegram.send_message(chat, card_text, build_keyboard(doc_id, show_full=truncated))
+    msg = deps.telegram.send_message(chat, _recovery_note(card_text, doc),
+        _operator_keyboard(deps, doc_id, doc, show_full=truncated))
     _v3_manual_shadow_check(deps, doc_id, doc, new_text)
     # The new card supersedes the stored one: without this, later background updates
     # (reconcile / re-verify) edit the OLD message and the operator never sees them.

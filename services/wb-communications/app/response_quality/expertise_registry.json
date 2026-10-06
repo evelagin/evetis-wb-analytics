@@ -1,0 +1,266 @@
+{
+  "schema": "evetis-approved-expertise/1",
+  "snapshot_sha256": "66eec390a5af76b80a1ace26bd97b58b41d4ce621117c53540a82447c071215a",
+  "explanations": [
+    {
+      "explanation_id": "EX-F-EVT-HC-AMBER-300.fragrance_profile",
+      "kind": "fact",
+      "status": "APPROVED",
+      "product_ids": [
+        "EVT-HC-AMBER-300"
+      ],
+      "fact_ids": [
+        "EVT-HC-AMBER-300.fragrance_profile"
+      ],
+      "source_ids": [
+        "SRC-TU-SP-TS-12"
+      ],
+      "owner_decision_id": "ODR-02",
+      "variants_ru": [
+        "аромат Amber Vanilla"
+      ],
+      "signals": [
+        "fragrance_harsh",
+        "fragrance_liked",
+        "fragrance_disliked"
+      ]
+    },
+    {
+      "explanation_id": "EX-F-EVT-HC-CHERRY-300.fragrance_profile",
+      "kind": "fact",
+      "status": "APPROVED",
+      "product_ids": [
+        "EVT-HC-CHERRY-300"
+      ],
+      "fact_ids": [
+        "EVT-HC-CHERRY-300.fragrance_profile"
+      ],
+      "source_ids": [
+        "SRC-TU-SP-TS-11"
+      ],
+      "owner_decision_id": "ODR-02",
+      "variants_ru": [
+        "вишнёвый аромат"
+      ],
+      "signals": [
+        "fragrance_harsh",
+        "fragrance_liked",
+        "fragrance_disliked"
+      ]
+    },
+    {
+      "explanation_id": "EX-F-EVT-HC-HAND-300.fragrance_profile",
+      "kind": "fact",
+      "status": "APPROVED",
+      "product_ids": [
+        "EVT-HC-HAND-300"
+      ],
+      "fact_ids": [
+        "EVT-HC-HAND-300.fragrance_profile"
+      ],
+      "source_ids": [
+        "SRC-TU-SP-TS-2"
+      ],
+      "owner_decision_id": "ODR-02",
+      "variants_ru": [
+        "древесно-удовый аромат"
+      ],
+      "signals": [
+        "fragrance_harsh",
+        "fragrance_liked",
+        "fragrance_disliked"
+      ]
+    },
+    {
+      "explanation_id": "EX-C-HA-HYDRATION",
+      "owner_key": "У1",
+      "kind": "ingredient_benefit",
+      "status": "APPROVED",
+      "product_ids": [
+        "EVT-FT-MOIST-150"
+      ],
+      "source_ids": [
+        "SRC-TU-SP-TS-9",
+        "SRC-HA-PAVICIC-2011"
+      ],
+      "variants_ru": [
+        "Гиалуроновая кислота помогает поддерживать увлажнённость кожи."
+      ],
+      "signals": [
+        "softness",
+        "texture"
+      ],
+      "ingredient_id": "hyaluronic_acid",
+      "owner_decision_id": "ODR-31B-У1",
+      "meaning_id": "ha_hydration_v1",
+      "evidence_sha256": "4b8055379e20c48fe8b2713f89753302a5e759d7768218f08e6c9ffa14dec31f",
+      "approval": {
+        "approved_by": "EVETIS_OWNER",
+        "approved_at": "2026-10-04",
+        "authority": "OWNER DECISIONS — Phase 3.1B Expertise Approval",
+        "content_sha256": "ed70a3e44e5c8d87a0f2b94088049bddec8451f23b8693313965040c03ac98a5"
+      }
+    },
+    {
+      "explanation_id": "EX-C-SERUM-HYDRATION",
+      "owner_key": "У2",
+      "kind": "ingredient_benefit",
+      "status": "APPROVED",
+      "product_ids": [
+        "EVT-FS-MOIST-30"
+      ],
+      "source_ids": [
+        "SRC-TU-SP-TS-4"
+      ],
+      "variants_ru": [
+        "Сыворотка помогает поддерживать увлажнённость кожи."
+      ],
+      "signals": [
+        "result_liked",
+        "softness",
+        "texture"
+      ],
+      "ingredient_id": null,
+      "owner_decision_id": "ODR-31B-У2",
+      "approval": {
+        "approved_by": "EVETIS_OWNER",
+        "approved_at": "2026-10-04",
+        "authority": "OWNER DECISIONS — Phase 3.1B Expertise Approval",
+        "content_sha256": "30b876a76f0e5c4c33d920c2b53341f2816c3ca5b2838646e086370e15dbd4b9"
+      }
+    },
+    {
+      "explanation_id": "EX-C-HAND-DRYNESS",
+      "owner_key": "У3",
+      "kind": "ingredient_benefit",
+      "status": "APPROVED",
+      "product_ids": [
+        "EVT-HC-HAND-300"
+      ],
+      "source_ids": [
+        "SRC-TU-SP-TS-2"
+      ],
+      "variants_ru": [
+        "Крем помогает защищать кожу рук от сухости."
+      ],
+      "signals": [
+        "result_liked"
+      ],
+      "ingredient_id": null,
+      "owner_decision_id": "ODR-31B-У3",
+      "approval": {
+        "approved_by": "EVETIS_OWNER",
+        "approved_at": "2026-10-04",
+        "authority": "OWNER DECISIONS — Phase 3.1B Expertise Approval",
+        "content_sha256": "496d7e197b25e2aa3793f72e826c9c98b8faf2c2579261417b60d790704f8a6b"
+      }
+    },
+    {
+      "explanation_id": "EX-C-HAND-TEXTURE",
+      "owner_key": "М1",
+      "kind": "ingredient_benefit",
+      "status": "APPROVED",
+      "product_ids": [
+        "EVT-HC-HAND-300"
+      ],
+      "source_ids": [
+        "SRC-TU-SP-TS-2"
+      ],
+      "variants_ru": [
+        "Крем рассчитан на быстрое впитывание без жирной плёнки."
+      ],
+      "signals": [
+        "texture",
+        "non_sticky"
+      ],
+      "ingredient_id": null,
+      "owner_decision_id": "ODR-31B-М1",
+      "context_rule": "positive_or_neutral_texture",
+      "approval": {
+        "approved_by": "EVETIS_OWNER",
+        "approved_at": "2026-10-04",
+        "authority": "OWNER DECISIONS — Phase 3.1B Expertise Approval",
+        "content_sha256": "4e0080f70798f9f8c3f223c7082263a9c4f490f54f4fb879f8a82a716aa9c4f3"
+      }
+    },
+    {
+      "explanation_id": "EX-G-FRAGRANCE-PERCEPTION",
+      "owner_key": "А1",
+      "kind": "guidance",
+      "status": "APPROVED",
+      "product_ids": [
+        "EVT-HC-HAND-300",
+        "EVT-HC-CHERRY-300",
+        "EVT-HC-AMBER-300"
+      ],
+      "source_ids": [
+        "SRC-OWNER"
+      ],
+      "variants_ru": [
+        "Восприятие аромата индивидуально."
+      ],
+      "signals": [
+        "fragrance_harsh",
+        "fragrance_disliked"
+      ],
+      "ingredient_id": null,
+      "owner_decision_id": "ODR-31B-А1",
+      "meaning_id": "fragrance_perception_v1",
+      "approval": {
+        "approved_by": "EVETIS_OWNER",
+        "approved_at": "2026-10-04",
+        "authority": "OWNER DECISIONS — Phase 3.1B Expertise Approval",
+        "content_sha256": "0d36df4640b1cdc942480ef011a935751328c5cfc6abfc17729db3fa30b75388"
+      },
+      "generation_constraint": "Meaning only; integrate naturally. Never append this canonical sentence. Say аромат, not INCI парфюмерная композиция for CONTENT_MISMATCH products."
+    }
+  ],
+  "supporting_sources": {
+    "SRC-HA-PAVICIC-2011": {
+      "file": "evidence/ha_pavicic_2011.json",
+      "file_sha256": "4b8055379e20c48fe8b2713f89753302a5e759d7768218f08e6c9ffa14dec31f"
+    }
+  },
+  "owner_decisions": {
+    "ODR-31B-У1": {
+      "status": "CLOSED",
+      "topic": "approved_expert_explanation",
+      "explanation_sha256": "ed70a3e44e5c8d87a0f2b94088049bddec8451f23b8693313965040c03ac98a5",
+      "approved_by": "EVETIS_OWNER",
+      "approved_at": "2026-10-04",
+      "scope": "Named bounded exception only; existing ODR-05/06 and safety stay unchanged"
+    },
+    "ODR-31B-У2": {
+      "status": "CLOSED",
+      "topic": "approved_expert_explanation",
+      "explanation_sha256": "30b876a76f0e5c4c33d920c2b53341f2816c3ca5b2838646e086370e15dbd4b9",
+      "approved_by": "EVETIS_OWNER",
+      "approved_at": "2026-10-04",
+      "scope": "Named bounded exception only; existing ODR-05/06 and safety stay unchanged"
+    },
+    "ODR-31B-У3": {
+      "status": "CLOSED",
+      "topic": "approved_expert_explanation",
+      "explanation_sha256": "496d7e197b25e2aa3793f72e826c9c98b8faf2c2579261417b60d790704f8a6b",
+      "approved_by": "EVETIS_OWNER",
+      "approved_at": "2026-10-04",
+      "scope": "Named bounded exception only; existing ODR-05/06 and safety stay unchanged"
+    },
+    "ODR-31B-М1": {
+      "status": "CLOSED",
+      "topic": "approved_expert_explanation",
+      "explanation_sha256": "4e0080f70798f9f8c3f223c7082263a9c4f490f54f4fb879f8a82a716aa9c4f3",
+      "approved_by": "EVETIS_OWNER",
+      "approved_at": "2026-10-04",
+      "scope": "Named bounded exception only; existing ODR-05/06 and safety stay unchanged"
+    },
+    "ODR-31B-А1": {
+      "status": "CLOSED",
+      "topic": "approved_expert_explanation",
+      "explanation_sha256": "0d36df4640b1cdc942480ef011a935751328c5cfc6abfc17729db3fa30b75388",
+      "approved_by": "EVETIS_OWNER",
+      "approved_at": "2026-10-04",
+      "scope": "Named bounded exception only; existing ODR-05/06 and safety stay unchanged"
+    }
+  }
+}

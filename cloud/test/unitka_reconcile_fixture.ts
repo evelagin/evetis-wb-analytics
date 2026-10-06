@@ -227,6 +227,8 @@ export class ReconRunner implements QueryRunner {
   /** Окно, которое «вернёт вью» (по умолчанию — согласованное с кодом). */
   windowOverride: { from: string; to: string; epoch: string } | null = null;
   integrityRows: Array<Record<string, unknown>> = [];
+  /** Остаток сверки предыдущего production-прогона (previousReconResidual): число, null (нет) или 'fail' (чтение падает). */
+  previousResidual: number | null | 'fail' = null;
   cogsRows: Array<Record<string, unknown>> = [];
   constructor(public lcd: string, public facts: FactRow[], public windowFrom: string) {}
   private factRow(f: FactRow, recon: boolean): Record<string, unknown> {
@@ -248,6 +250,10 @@ export class ReconRunner implements QueryRunner {
       this.issueStatements.push(batch.length); this.issues.push(...batch); return [] as T[];
     }
     if (sql.includes('INSERT INTO') && sql.includes('UNITKA_ENGINE_RUNS')) { this.journal.push(params ?? {}); return [] as T[]; }
+    if (sql.includes('UNITKA_ENGINE_RUNS') && sql.includes('repairs_residual')) {
+      if (this.previousResidual === 'fail') throw new Error('runs table unavailable');
+      return (this.previousResidual === null ? [] : [{ residual: this.previousResidual }]) as T[];
+    }
     if (sql.includes('UNITKA_REPAIR_LEDGER')) { if (!this.ledgerAvailable) throw new Error('Not found: Table wb_ops.UNITKA_REPAIR_LEDGER'); return [] as T[]; }
     if (sql.includes('V_UNITKA_SOURCE_FRESHNESS')) return [] as T[];
     if (sql.includes('LOADER_RUNS')) {

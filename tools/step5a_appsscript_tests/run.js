@@ -175,6 +175,115 @@ t('13 catch-up не дублирует прогон: COMPLETE, случивши�
   assert(!e.table.some(x => x.trigger_type === 'CATCHUP'), 'создан конкурирующий CATCHUP-run');
 });
 
+
+// 14–16: порядок fullstats (инцидент 01.10.2026 — бюджет кончился на завершённых кампаниях)
+// Население как в проде 01.10: 411 завершённых (7) идут у WB первыми, затем 19 на паузе (11) и 1 активная (9).
+function incidentPopulation() {
+  const ids = [], st = {};
+  for (let i = 0; i < 411; i++) { const id = 19722775 + i * 43000; ids.push(id); st[id] = 7; }
+  for (let i = 0; i < 19; i++) { const id = 40000000 + i; ids.push(id); st[id] = 11; }
+  ids.push(40500000); st[40500000] = 9;
+  return { ids, st };
+}
+t('14 порядок 9→11→7: тот же набор и кратность, завершённые не исключены, внутри группы по возрастанию', () => {
+  const c = makeClock(T0), e = load(dir, ['WbAdsRawLoader.gs'], c);
+  need(e.ctx, 'wbAdsOrderFullstatsIds_');
+  const ids = [7007, 9002, 11005, 7001, 9001, 11001, 555, 7001], st = { 7007: 7, 7001: 7, 9002: 9, 9001: 9, 11005: 11, 11001: 11 };
+  const out = e.ctx.wbAdsOrderFullstatsIds_(ids, st);
+  assert(JSON.stringify(out) === JSON.stringify([9001, 9002, 11001, 11005, 7001, 7001, 7007, 555]), 'порядок ' + JSON.stringify(out));
+  assert(JSON.stringify(ids) === JSON.stringify([7007, 9002, 11005, 7001, 9001, 11001, 555, 7001]), 'вход изменён на месте');
+  const shuffled = ids.slice().reverse();
+  assert(JSON.stringify(e.ctx.wbAdsOrderFullstatsIds_(shuffled, st)) === JSON.stringify(out), 'порядок зависит от порядка WB');
+  const p = incidentPopulation(), o = e.ctx.wbAdsOrderFullstatsIds_(p.ids, p.st);
+  assert(o.length === 431 && JSON.stringify(o.slice().sort()) === JSON.stringify(p.ids.slice().sort()), 'набор изменился');
+  assert(p.st[o[0]] === 9 && o.slice(1, 20).every(id => p.st[id] === 11) && o.slice(20).every(id => p.st[id] === 7), 'группы');
+});
+function replay(ordered) {
+  const c = makeClock(T0), e = load(dir, ['WbAdsRawLoader.gs'], c), p = incidentPopulation();
+  e.ctx.WB_ADS_RAW_RUN_T0_ = c.now();
+  e.ctx.wbAdsRawWriteStatus_ = () => {};
+  // как 01.10: ~2,6 с на вызов, стата есть только у кампаний 9/11
+  e.ctx.wbAdsHttp_ = (m, url) => { c.advance(2600);
+    const ids = url.split('ids=')[1].split('&')[0].split(',').map(Number);
+    return { ok: true, code: 200, json: ids.filter(id => p.st[id] !== 7).map(id => ({ advertId: id, days: [] })) }; };
+  c.advance(100000); // медленный WB до fullstats (01.10: ~92–103 с)
+  const list = ordered ? e.ctx.wbAdsOrderFullstatsIds_(p.ids, p.st) : p.ids;
+  const out = e.ctx.wbAdsFullstatsCollect_('tok', list, '2026-09-24', '2026-09-30', 'r', e.ctx.wbAdsRawDeadline_());
+  const got = new Set(out.collected.map(x => x.advertId));
+  return { out, p, live: p.ids.filter(id => p.st[id] !== 7), got };
+}
+t('15 повтор 01.10: в порядке WB активная/паузные пропущены (воспроизведение), с порядком 9→11→7 — собраны', () => {
+  const base = replay(false);
+  assert(base.out.stopped && base.live.every(id => base.out.skipped.includes(id)), 'база не воспроизводит инцидент: ' + JSON.stringify({ stopped: base.out.stopped, skipped: base.out.skipped.length }));
+  const fix = replay(true);
+  assert(fix.live.every(id => fix.got.has(id)), 'активные/паузные не собраны: ' + fix.live.filter(id => !fix.got.has(id)).length);
+  assert(!fix.live.some(id => fix.out.skipped.includes(id)), 'активные/паузные в skipped');
+  assert(fix.out.stopped === base.out.stopped, 'бюджет и разбиение не должны меняться — меняется только порядок');
+  assert(fix.out.skipped.every(id => fix.p.st[id] === 7), 'пропущены не только завершённые');
+});
+t('16 PARTIAL остаётся PARTIAL; campaigns_sampled = реально отправленные id', () => {
+  const c = makeClock(T0), e = load(dir, ['WbAdsRawLoader.gs'], c), p = incidentPopulation(), statuses = [];
+  e.ctx.WB_ADS_RAW_RUN_T0_ = c.now();
+  Object.assign(e.ctx, {
+    SpreadsheetApp: { getActiveSpreadsheet: () => ({}) },
+    wbAdsResolveRunId_: (r) => r,
+    wbAdsRawNormalizeRange_: (f, t2) => ({ from: f, to: t2 }),
+    wbAdsSplitPeriod_: (f, t2) => [{ from: f, to: t2 }],
+    getWbAdsToken_: () => ({ token: 't' }),
+    wbAdsFetchCampaigns_: () => ({ advertIds: p.ids, statsAdvertIds: p.ids.slice(), statusById: p.st, countHttp: 200 }),
+    wbAdvRawEnsureSheet_: () => ({}), wbAdvRawAppendRows_: (sh, rows) => rows.length,
+    wbAdvFlattenFullstats_: (col) => ({ statRows: col.map(() => [1]), boosterRows: [] }),
+    wbAdvCampaignStatNoStatsRow_: () => [0],
+    wbAdsRawWriteStatus_: (rid, src, f, t2, o) => statuses.push(o),
+    wbAdsHttp_: () => { c.advance(2600); return { ok: true, code: 200, json: [] }; },
+  });
+  c.advance(100000);
+  const r = e.ctx.loadWbAdsFullstatsRaw('2026-09-24', '2026-09-30', 'RID');
+  const last = statuses[statuses.length - 1];
+  assert(r.status === 'PARTIAL', 'статус ' + r.status);
+  assert(last.status === 'PARTIAL' && last.campaigns_found === 431, JSON.stringify(last));
+  assert(last.campaigns_sampled < 431 && last.campaigns_sampled > 0, 'campaigns_sampled=' + last.campaigns_sampled + ' (должно быть число реально отправленных)');
+  const partialRow = statuses.find(s => /тайм-бюджету/.test(s.error_message || ''));
+  assert(partialRow && partialRow.campaigns_sampled === last.campaigns_sampled, 'строки PARTIAL расходятся');
+});
+
+t('16b загрузчик реально применяет порядок: первый запрос — активная + паузные, пропущены только завершённые', () => {
+  const c = makeClock(T0), e = load(dir, ['WbAdsRawLoader.gs'], c), p = incidentPopulation(), sent = [], statuses = [];
+  // WB отдаёт список в «своём» порядке — завершённые первыми, как 01.10
+  const wbOrder = p.ids.slice();
+  e.ctx.WB_ADS_RAW_RUN_T0_ = c.now();
+  Object.assign(e.ctx, {
+    SpreadsheetApp: { getActiveSpreadsheet: () => ({}) },
+    wbAdsResolveRunId_: (r) => r, wbAdsRawNormalizeRange_: (f, t2) => ({ from: f, to: t2 }),
+    wbAdsSplitPeriod_: (f, t2) => [{ from: f, to: t2 }],
+    getWbAdsToken_: () => ({ token: 't' }),
+    wbAdsFetchCampaigns_: () => ({ advertIds: wbOrder, statsAdvertIds: wbOrder.slice(), statusById: p.st, countHttp: 200 }),
+    wbAdvRawEnsureSheet_: () => ({}), wbAdvRawAppendRows_: (sh, rows) => rows.length,
+    wbAdvFlattenFullstats_: (col) => ({ statRows: col.map(() => [1]), boosterRows: [] }),
+    wbAdvCampaignStatNoStatsRow_: () => [0],
+    wbAdsRawWriteStatus_: (rid, src, f, t2, o) => statuses.push(o),
+    wbAdsHttp_: (m, url) => { c.advance(2600); sent.push(url.split('ids=')[1].split('&')[0].split(',').map(Number)); return { ok: true, code: 200, json: [] }; },
+  });
+  c.advance(100000);
+  e.ctx.loadWbAdsFullstatsRaw('2026-09-24', '2026-09-30', 'RID');
+  const first = sent[0];
+  assert(first && p.st[first[0]] === 9 && first.slice(1, 20).every(id => p.st[id] === 11), 'первый запрос не начинается с 9→11: ' + JSON.stringify(first && first.slice(0, 3)));
+  const flat = [].concat(...sent), sentSet = new Set(flat);
+  const skipped = p.ids.filter(id => !sentSet.has(id));
+  assert(skipped.length > 0 && skipped.every(id => p.st[id] === 7), 'пропущены не только завершённые');
+  assert(statuses[statuses.length - 1].campaigns_sampled === flat.length, 'campaigns_sampled ≠ отправлено: ' + statuses[statuses.length - 1].campaigns_sampled + ' vs ' + flat.length);
+});
+t('16c id в двух группах статусов: остаётся более приоритетный статус', () => {
+  const c = makeClock(T0), fs = require('fs'), path2 = require('path');
+  if (!fs.existsSync(path2.join(dir, 'WbAdsProbe.gs'))) throw new Error('нет WbAdsProbe.gs в каталоге');
+  const e2 = load(dir, ['WbAdsProbe.gs'], c);
+  e2.ctx.wbAdsHttp_ = (m, url) => /promotion\/count/.test(url)
+    ? { ok: true, code: 200, json: { adverts: [ { status: 7, advert_list: [{ advertId: 5 }] }, { status: 9, advert_list: [{ advertId: 5 }, { advertId: 6 }] } ] } }
+    : { ok: true, code: 200, json: [] };
+  const r = e2.ctx.wbAdsFetchCampaigns_('tok');
+  assert(r.statusById[5] === 9 && r.statusById[6] === 9, JSON.stringify(r.statusById));
+});
+
 results.forEach(r => console.log(r.join('  ')));
 const f = results.filter(r => r[0] === 'FAIL').length;
 console.log(`\n${variant}: ${results.length - f}/${results.length} PASS`);

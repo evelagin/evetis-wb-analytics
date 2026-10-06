@@ -48,6 +48,23 @@
   новые колонки — образ раньше вью падает «Unrecognized name»; старый загрузчик на новой вью работает.
 - `sync_state = pending_deploy`.
 
+## 2026-10-06 — Unitka Engine 2.3.0: защиты конца месяца (НЕ РАЗВЁРНУТО)
+
+Аудит 06.10.2026 (прогон kf6rr 02.10: LCD 29.09 → 01.10, строка 30.09 сентября осталась пустой). Структура листа,
+колонки и экономика витрин не меняются; env Job'ов не меняется (UNITKA_RECONCILE_MODE в prod остаётся observe).
+
+- Закрытие конца месяца: дни прошлого месяца, которые кандидат LCD перешагивает (bookLcd < d < 1-е число месяца
+  кандидата), пишутся из плана сверки в любом режиме, кроме off, и перечитываются до коммита LCD
+  (`MONTH_END_CLOSE_READBACK`), сводка — после коммита (`MONTH_END_CLOSE_SUMMARY`). Неполное покрытие или off —
+  `MONTH_END_UNCLOSED` до записи. qa_json: `month_end_close`.
+- Guard: `FACT_NOT_ON_SHEET` — пустые факт-ячейки прошлых секций (деньги — ERROR, счётчики/остаток — WARNING).
+- Guard: `SKU_WITHOUT_BLOCK` без денежной активности за дни секции — WARNING (`no_money_activity`), иначе ERROR.
+- Режим `UNITKA_RECONCILE_MODE=controlled` (реализован, не включён): прошлые месяцы — только первые заполнения и
+  поправки под потолком (≤ 50 и ≤ 2 % контракта), отзыв источника — никогда; журнал ремонта с `LATE_FIRST_FILL`.
+- Алерты (действующая политика по коду): `INTEGRITY_DATA_ERROR` (prod), `RECON_RESIDUAL_PERSISTENT` (остаток сверки
+  второй prod-прогон подряд; qa_json `reconcile.repairs_residual`), `RECON_WITHDRAWAL_REQUIRES_ACK` /
+  `RECON_CORRECTION_CAP_EXCEEDED` (controlled).
+
 ## 2026-10-04 — `sa-terraform-apply`: роли для мониторинга из Terraform (НЕ ПРИМЕНЕНО)
 
 - `infra/terraform/iam.tf` → `local.terraform_apply_roles` получает 3 роли:

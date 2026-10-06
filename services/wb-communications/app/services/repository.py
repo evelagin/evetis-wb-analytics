@@ -163,16 +163,45 @@ def _decide_claim(existing: Optional[dict]) -> str:
     return "skip"
 
 
-def _check_publishable(existing: Optional[dict]) -> tuple[dict, bool]:
+def _check_publishable(existing: Optional[dict], expected_generation=None) -> tuple[dict, bool]:
     """Return (doc, recovered_from_publishing)."""
     if existing is None:
         raise NotFound("record not found")
+    if expected_generation is not None and existing.get("generation_number", 0) != expected_generation:
+        raise InvalidTransition("publication generation changed; operator must read the new card")
     status = existing.get("status")
     if status in PUBLISHABLE_FROM:
         return existing, False
     if status == Status.PUBLISHING.value and _lease_expired(existing):
         return existing, True  # crashed publish — recoverable but must be verified
     raise InvalidTransition(f"cannot publish from status={status}")
+
+
+def _request_override(doc, pending, generation):
+    from app.services.owner_override import validate_binding
+    if doc is None: raise NotFound('record not found')
+    if doc.get('status') not in DRAFTABLE_FROM: raise InvalidTransition('override requires draft state')
+    if doc.get('generation_number',0)!=generation: raise InvalidTransition('override generation changed')
+    validate_binding(doc,pending)
+    return {'owner_override_pending': copy.deepcopy(pending), 'updated_at': _now()}
+
+
+def _consume_override(doc, confirmation):
+    from app.services.owner_override import validate_binding, source_text
+    if confirmation is None: return {}
+    pending=doc.get('owner_override_pending') or {}
+    if not pending or pending.get('consumed_at') or pending!=confirmation:
+        raise InvalidTransition('override confirmation superseded or consumed')
+    validate_binding(doc,pending)
+    text=source_text(doc,pending['source_version'])
+    now=_now(); version=doc.get('generation_number',0)+1
+    audit={k:copy.deepcopy(v) for k,v in pending.items() if k not in {'nonce','expires_at','current_hash','current_generation'}}
+    audit.update(override=True, override_confirmed_at=now)
+    consumed={**pending,'consumed_at':now}
+    return dict(owner_override_pending=consumed, owner_override_audit=(doc.get('owner_override_audit') or [])+[audit],
+        final_answer=text,generation_number=version,response_review_required=False,
+        answer_versions=(doc.get('answer_versions') or [])+[dict(text=text,source='owner_override',
+            generation_number=version,created_at=now,override=True,source_version=pending['source_version'])])
 
 
 def _draftable(existing: Optional[dict], lock_status: str) -> dict:
@@ -202,6 +231,23 @@ def _apply_generation(doc: dict, gen, source: str) -> None:
         "openai_model": gen.model, "prompt_version": gen.prompt_version,
         "openai_usage": gen.usage, "openai_latency_ms": gen.latency_ms, "updated_at": _now(),
     })
+
+
+def _draft_commit_fields(doc):
+    return {k: doc[k] for k in ("generation_number", "answer_versions", "final_answer", "ai_answer",
+        "openai_model", "prompt_version", "openai_usage", "openai_latency_ms", "updated_at",
+        "status", "lock_token", "lock_expires_at", "response_recovery", "response_review_required") if k in doc}
+
+
+def _apply_response_recovery(doc, prepared_gen, recovery):
+    if recovery is None:
+        return
+    if prepared_gen is not None:
+        _apply_generation(doc, prepared_gen, "policy_repair")
+    doc["response_recovery"] = recovery
+    doc["response_review_required"] = recovery["status"] != "READY"
+    if doc["response_review_required"]:
+        doc["status"] = Status.POLICY_BLOCKED.value
 
 
 def _feedback_uncertainty_patch(doc):
@@ -317,7 +363,7 @@ class MemoryRepository:
                     "lock_expires_at": _expiry(self._lease), "updated_at": _now()})
         return copy.deepcopy(doc), tok
 
-    def commit_regenerate(self, doc_id: str, gen, lock_token: str) -> dict:
+    def commit_regenerate(self, doc_id: str, gen, lock_token: str, *, prepared_gen=None, recovery=None) -> dict:
         doc = self.docs.get(doc_id)
         if doc is None:
             raise NotFound(doc_id)
@@ -325,6 +371,7 @@ class MemoryRepository:
             raise InvalidTransition("regenerate lock lost or superseded")
         _apply_generation(doc, gen, "regenerated")
         doc.update({"status": Status.PENDING_APPROVAL.value, "lock_token": None, "lock_expires_at": None})
+        _apply_response_recovery(doc, prepared_gen, recovery)
         return copy.deepcopy(doc)
 
     # --- edit (locked) ---
@@ -336,7 +383,7 @@ class MemoryRepository:
         return copy.deepcopy(doc), tok, doc.get("generation_number", 0)
 
     def commit_manual_answer(self, doc_id: str, text: str, lock_token: str,
-                             expected_generation: int) -> dict:
+                             expected_generation: int, *, prepared_gen=None, recovery=None) -> dict:
         doc = self.docs.get(doc_id)
         if doc is None:
             raise NotFound(doc_id)
@@ -350,6 +397,7 @@ class MemoryRepository:
         doc["final_answer"] = text  # ai_answer preserved for audit
         doc.update({"status": Status.PENDING_APPROVAL.value, "lock_token": None,
                     "lock_expires_at": None, "updated_at": _now()})
+        _apply_response_recovery(doc, prepared_gen, recovery)
         return copy.deepcopy(doc)
 
     def cancel_draft(self, doc_id: str, lock_token: Optional[str] = None) -> None:
@@ -363,9 +411,17 @@ class MemoryRepository:
         doc.update({"status": Status.PENDING_APPROVAL.value, "lock_token": None,
                     "lock_expires_at": None, "updated_at": _now()})
 
+    def request_override(self, doc_id, pending, expected_generation):
+        doc=self.docs.get(doc_id)
+        patch=_request_override(doc,pending,expected_generation)
+        doc.update(patch)
+        return copy.deepcopy(doc)
+
     # --- publish ---
-    def begin_publish(self, doc_id: str) -> dict:
-        doc, recovered = _check_publishable(self.docs.get(doc_id))
+    def begin_publish(self, doc_id: str, expected_generation=None, *, override_confirmation=None) -> dict:
+        doc, recovered = _check_publishable(self.docs.get(doc_id), expected_generation)
+        patch = _consume_override(doc, override_confirmation)
+        doc.update(patch)
         doc.update(_feedback_uncertainty_patch(doc))
         doc.update({"status": Status.PUBLISHING.value, "lock_token": _token(), "publishing_started_at": _now(),
                     "lock_expires_at": _expiry(self._lease),
@@ -664,9 +720,8 @@ class FirestoreRepository:
         return txn(client.transaction()), tok
 
     @translate_fs_errors
-    def commit_regenerate(self, doc_id: str, gen, lock_token: str) -> dict:
+    def commit_regenerate(self, doc_id: str, gen, lock_token: str, *, prepared_gen=None, recovery=None) -> dict:
         from google.cloud import firestore
-
         client = self._lazy()
         ref = self._doc(doc_id)
 
@@ -679,8 +734,9 @@ class FirestoreRepository:
             if doc.get("status") != Status.REGENERATING.value or doc.get("lock_token") != lock_token:
                 raise InvalidTransition("regenerate lock lost or superseded")
             _apply_generation(doc, gen, "regenerated")
-            doc.update({"status": Status.PENDING_APPROVAL.value, "lock_token": None, "lock_expires_at": None})
-            transaction.update(ref, doc)
+            doc.update(status=Status.PENDING_APPROVAL.value, lock_token=None, lock_expires_at=None)
+            _apply_response_recovery(doc, prepared_gen, recovery)
+            transaction.update(ref, _draft_commit_fields(doc))
             return doc
 
         return txn(client.transaction())
@@ -706,9 +762,8 @@ class FirestoreRepository:
 
     @translate_fs_errors
     def commit_manual_answer(self, doc_id: str, text: str, lock_token: str,
-                             expected_generation: int) -> dict:
+                             expected_generation: int, *, prepared_gen=None, recovery=None) -> dict:
         from google.cloud import firestore
-
         client = self._lazy()
         ref = self._doc(doc_id)
 
@@ -722,13 +777,12 @@ class FirestoreRepository:
                     or doc.get("generation_number", 0) != expected_generation):
                 raise InvalidTransition("edit lock lost or document changed")
             gen_no = doc.get("generation_number", 0) + 1
-            version = {"text": text, "source": "manual", "generation_number": gen_no, "created_at": _now()}
-            updates = {"generation_number": gen_no,
-                       "answer_versions": (doc.get("answer_versions") or []) + [version],
-                       "final_answer": text, "status": Status.PENDING_APPROVAL.value,
-                       "lock_token": None, "lock_expires_at": None, "updated_at": _now()}
-            transaction.update(ref, updates)
-            doc.update(updates)
+            doc["answer_versions"] = (doc.get("answer_versions") or []) + [{"text": text,
+                "source": "manual", "generation_number": gen_no, "created_at": _now()}]
+            doc.update(generation_number=gen_no, final_answer=text, status=Status.PENDING_APPROVAL.value,
+                       lock_token=None, lock_expires_at=None, updated_at=_now())
+            _apply_response_recovery(doc, prepared_gen, recovery)
+            transaction.update(ref, _draft_commit_fields(doc))
             return doc
 
         return txn(client.transaction())
@@ -756,7 +810,21 @@ class FirestoreRepository:
         txn(client.transaction())
 
     @translate_fs_errors
-    def begin_publish(self, doc_id: str) -> dict:
+    def request_override(self, doc_id, pending, expected_generation):
+        from google.cloud import firestore
+        client=self._lazy();ref=self._doc(doc_id)
+        @firestore.transactional
+        def txn(transaction):
+            snap=ref.get(transaction=transaction)
+            doc=snap.to_dict() if snap.exists else None
+            patch=_request_override(doc,pending,expected_generation)
+            transaction.update(ref,patch)
+            doc.update(patch)
+            return doc
+        return txn(client.transaction())
+
+    @translate_fs_errors
+    def begin_publish(self, doc_id: str, expected_generation=None, *, override_confirmation=None) -> dict:
         from google.cloud import firestore
 
         client = self._lazy()
@@ -765,8 +833,8 @@ class FirestoreRepository:
         @firestore.transactional
         def txn(transaction):
             snap = ref.get(transaction=transaction)
-            doc, recovered = _check_publishable(snap.to_dict() if snap.exists else None)
-            guard = _feedback_uncertainty_patch(doc)
+            doc, recovered = _check_publishable(snap.to_dict() if snap.exists else None, expected_generation)
+            guard = {**_feedback_uncertainty_patch(doc), **_consume_override(doc, override_confirmation)}
             doc.update(guard)
             doc["lock_token"] = _token()
             transaction.update(ref, {**guard, "status": Status.PUBLISHING.value, "lock_token": doc["lock_token"], "publishing_started_at": _now(),
