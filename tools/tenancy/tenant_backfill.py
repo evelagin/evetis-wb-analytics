@@ -11,11 +11,15 @@ import argparse
 import hashlib
 import json
 import sys
-import uuid
 from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[2]
+# A directly invoked tenancy CLI exposes tools/tenancy/platform.py on sys.path.
+# Keep project facts qualified; otherwise uuid can import that file as stdlib
+# platform on Linux. This changes only this process's module search boundary.
+sys.path[:] = [p for p in sys.path if Path(p or '.').resolve() != Path(__file__).resolve().parent]
+import uuid  # noqa: E402
 if str(REPO) not in sys.path:
     sys.path.insert(0, str(REPO))
 from tools.tenancy import registry as R, tenant_tables as TT, tenant_lifecycle as TL

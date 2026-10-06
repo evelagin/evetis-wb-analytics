@@ -185,3 +185,31 @@ def test_failed_runtime_rows_without_plan_id_use_committed_receipt_attribution()
     b.select=select;out=b.monitoring('3'*64,{'status':'STOPPED'})
     assert out['failed_chunks']==1 and out['scopes'][0]['failed_attempts']==1
     assert 'bf-synthetic-known' not in json.dumps(out)
+
+
+def test_packaged_docker_copy_closure_resolves_canonical_registry(tmp_path):
+    import shlex,shutil,subprocess,sys
+    for line in (BF.REPO/'tools/tenancy/controller.Dockerfile').read_text().splitlines():
+        if not line.startswith('COPY '):continue
+        _,source,target=shlex.split(line)
+        assert target.startswith('/app/')
+        dest=tmp_path/target.removeprefix('/app/')
+        dest.parent.mkdir(parents=True,exist_ok=True)
+        src=BF.REPO/source
+        if src.is_dir():shutil.copytree(src,dest,ignore=shutil.ignore_patterns('__pycache__','artifacts'))
+        else:shutil.copy2(src,dest)
+    (tmp_path/'CONTROLLER_SOURCE_SHA').write_text('5'*40+'\n')
+    result=subprocess.run([sys.executable,'-m','tools.tenancy.controller_image_check'],cwd=tmp_path,capture_output=True,text=True,timeout=60)
+    assert result.returncode==0,result.stderr
+    out=json.loads(result.stdout)
+    assert out['runtime_implementation_hash']==BF.B.implementation_hash() and out['python_version'].startswith('3.12.')
+    assert out['live_deployment']=='UNPROVEN'
+
+
+def test_direct_cli_does_not_shadow_stdlib_platform():
+    import subprocess,sys
+    result=subprocess.run([sys.executable,'-S',str(BF.REPO/'tools/tenancy/tenant_backfill.py'),'--help'],cwd=BF.REPO,capture_output=True,text=True,timeout=20)
+    assert result.returncode==0,result.stderr
+    code="import sys; sys.path.insert(0,'tools/tenancy'); from tools.tenancy.plan_scan import COMPUTED_APPLIER_FIELDS; import platform; assert callable(platform.system)"
+    result=subprocess.run([sys.executable,'-S','-c',code],cwd=BF.REPO,capture_output=True,text=True,timeout=20)
+    assert result.returncode==0,result.stderr

@@ -5,6 +5,7 @@ COPY tools/tenancy/controller-requirements.txt /app/controller-requirements.txt
 RUN pip install --no-cache-dir --only-binary=:all: --require-hashes -r controller-requirements.txt
 COPY tools /app/tools
 COPY pipelines/ozon/runtime /app/pipelines/ozon/runtime
+COPY pipelines/ozon/schema /app/pipelines/ozon/schema
 COPY tenants /app/tenants
 COPY infra/tenant/runtime_release.json /app/infra/tenant/runtime_release.json
 COPY infra/tenant/releases /app/infra/tenant/releases

@@ -7,6 +7,7 @@ never actual IAM, source completeness or live unattended deployment.
 import copy
 import json
 import re
+import sys
 from datetime import datetime,date,timedelta,timezone
 from tools.tenancy import cloud_access as A,durable_plan as D,cloud_tick as T
 from tools.tenancy import tenant_backfill as BF,orchestration_contract as O
@@ -14,6 +15,7 @@ from tools.tenancy.validation import parse_tenant_json
 
 
 def check(source_sha):
+    assert sys.version_info[:2]==(3,12), 'production Python 3.12 required'
     assert re.fullmatch('[0-9a-f]{40}',source_sha)
     assert (BF.REPO/'CONTROLLER_SOURCE_SHA').read_text().strip()==source_sha
     BF.TT._req=lambda *a,**k:(_ for _ in ()).throw(RuntimeError('OWNER_AUTH_FALLBACK'))
@@ -79,7 +81,7 @@ def check(source_sha):
         except BF.TT.TableError:denied+=1
         else:raise AssertionError('authority boundary broadened')
     assert denied==3 and set(calls)=={'reader','append'}
-    return {'source_sha':source_sha,'controller_implementation_hash':O.implementation_hash(BF.REPO),
+    return {'python_version':sys.version.split()[0],'source_sha':source_sha,'controller_implementation_hash':O.implementation_hash(BF.REPO),
             'runtime_implementation_hash':BF.B.implementation_hash(),
             'offline_restart':'PASS','lost_post_no_repeat':'PASS','quota_wait_no_source':'PASS',
             'reader_append_separation':'PASS','tenant_isolation':'PASS','live_deployment':'UNPROVEN'}
