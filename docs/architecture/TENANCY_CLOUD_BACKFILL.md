@@ -1,4 +1,4 @@
-# Durable tenant backfill: storage and authority foundation
+# Durable tenant backfill: bounded cloud qualification candidate
 
 ## Status and authority (2026-10-06)
 
@@ -14,11 +14,11 @@ tenant-scoped orchestration IAM, superseding the no-new-IAM restriction in the
 runtime, control, GitHub or legacy EVETIS identities. Ordinary tenant Schedulers
 remain PAUSED. Existing source and binding contracts remain authoritative.
 
-## Implemented local foundation
+## Implemented local storage and authority
 
 `tools/tenancy/durable_plan.py` uses existing BACKFILL_CHECKPOINTS rows to retain
 bounded canonical JSON records: MANIFEST, DISPATCH_INTENT, DISPATCH_RECEIPT,
-RECONCILED, WAITING and STOPPED. Root identity includes source SHA, immutable
+RECONCILED, WAITING, STOPPED, COMPLETE, DEPENDENCY_PLAN and SNAPSHOT_CERT. Root identity includes source SHA, immutable
 runtime image, canonical child plans, purpose and UTC creation timestamp.
 Every record is addressed and verified by its full SHA256, not by a local path.
 
@@ -82,12 +82,13 @@ project for that tenant.
 
 | Dedicated principal | Permission | Resource |
 |---|---|---|
-| sa-backfill-controller | bigquery.tables.get/getData | tenant ozon_raw, tenant_ops datasets |
+| sa-backfill-controller | bigquery.datasets.get; bigquery.tables.get/getData | tenant ozon_raw, tenant_ops datasets |
 | sa-backfill-controller | bigquery.tables.get/getData/list | tenant ref dataset |
-| sa-backfill-controller | bigquery.tables.get/list | tenant_locks dataset |
+| sa-backfill-controller | bigquery.datasets.get; bigquery.tables.get/list | tenant_locks dataset |
 | sa-backfill-controller | bigquery.jobs.create | tenant project |
 | sa-backfill-controller | run.jobs.get/run/runWithOverrides; run.executions.get/list | exact three canonical runtime jobs |
 | sa-backfill-controller | run.jobs.list; run.operations.get; cloudscheduler.jobs.list | tenant project |
+| sa-backfill-controller | run.jobs.get; run.executions.get/list | own controller and tenant-control jobs, read only |
 | sa-backfill-controller | iam.serviceAccounts.getAccessToken | dedicated sa-backfill-append only |
 | sa-backfill-append | bigquery.tables.updateData | BACKFILL_CHECKPOINTS, DATA_COVERAGE, DQ_RESULTS individually |
 | sa-backfill-append | bigquery.tables.create | tenant_locks dataset only |
@@ -119,25 +120,35 @@ differs from current PR252 because the qualified application changed. No
 silent hash substitution, generation reset, completed-result discard or new
 remaining-cohort plan merely for convenience is permitted.
 
-## Remaining activation work (not implemented by this foundation)
+## Implemented candidate adapters (not deployed)
 
-- Registered dedicated controller/template/Scheduler contract and Terraform
-  integration, including authoritative ACL and exact plan-scanner support.
-- Qualified cloud entrypoint using canonical preflight/start/reconcile and
-  explicit registration of its own job/Scheduler. Unknown resources must not
-  be hidden from current strict inventory checks.
-- Durable before-dispatch intent and after-dispatch receipt hooks, recovery
-  of an uncertain Run POST by exact run ID, and scope lease reconciliation.
-- Reviewed compatibility with the retained qualified SKU image/generation;
-  current plan validation must not be bypassed.
-- Successful PR252 CI, immutable probe image build/qualification/release,
-  reviewed tenant deployment and bounded corrected discovery.
-- Deployment/readback of minimum dedicated IAM and controller image; prove
-  restart recovery with the Mac/Codex offline before full GO.
-- Remaining SKU cohort, Supplies scale/state-growth proof, progressive DQ,
-  safe snapshot adapters and canonical durable11-domain full-history plan.
-- Full-history gate adapter and canonical lifecycle approval. Until these
-  gates pass, MANIFEST purpose FULL_HISTORY remains rejected.
+- Canonical opt-in registry/release contract, authoritative dataset ACL integration,
+  17 exact IAM bindings, Terraform preconditions and adversarial plan scanning.
+- Metadata-authenticated bounded entrypoint, canonical preflight/start/reconcile,
+  one dispatch per wake, immutable publication before/after the Run POST.
+- Exact old SKU runtime compatibility: the 20 runtime-file hash is unchanged.
+  The pending PR252 probe implementation is deliberately a separate release.
+- Terminal receipt reconciliation, source/persisted DQ, fresh dated Catalog
+  dependencies, conservative rolling quota and safe retry of transient reads.
+- An uncertain Run operation response stops automatically. The controller never
+  invents a receipt or repeats POST; evidence review is required to recover it.
+- Cloud log projection exposes root, qualification scope counts/windows, last
+  successful unit/checkpoint age, failed attempts, bindings and modeled WAIT.
+  These counts are not full-history chunks and do not imply economic finality.
+- Owner publisher, pinned controller dependencies, offline packaged checks,
+  CI build and Cloud Build definition. No image release verification is fabricated.
+
+## Remaining release / live / full-history gates
+
+- Candidate CI and actual immutable built-image qualification. A local Git archive
+  test is not evidence of a built or deployed image.
+- Reviewed tenant-only Terraform plan, minimum IAM apply/readback, runtime-access
+  proof, deployment and independent bounded wake/restart proof.
+- Successful PR252 CI, probe image qualification/deployment and corrected discovery.
+  Do not change the old frozen SKU implementation/image silently to use that release.
+- Remaining SKU90 cohort, Supplies live scale/state-growth proof and progressive DQ.
+- Safe snapshot-only adapters, canonical durable 11-domain full plan, full-history
+  GO adapter and canonical lifecycle approval. FULL_HISTORY is still rejected.
 
 Local tests cannot substitute for any of these live/release gates. A Python
 module or valid Terraform source is not a deployed/current production fact.
