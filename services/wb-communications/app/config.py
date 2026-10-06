@@ -143,10 +143,26 @@ class Settings:
         default_factory=lambda: os.environ.get("V3_ENFORCE_MANUAL_EDIT_VERIFIER", "false").lower() == "true"
     )
 
-    # Phase 3.1 comparison is confined to the existing v3 shadow runner. Customer-facing
-    # repair requires a SEPARATE owner activation ACK; promotion defaults to shadow-only.
+    # Phase 3.1E quality shadow (R1 pilot) — a layer inside the existing v3 shadow runner
+    # (V3_SHADOW_ENABLED controls the v3 baseline; these control only the 3.1E layer).
+    # Explicit opt-in: no variable = no 3.1E evaluation and no 3.1E LLM call. Even when on,
+    # it runs only inside a valid activation (app.v3.pilot): id, UTC window, global cap.
     v31_quality_shadow_enabled: bool = field(
-        default_factory=lambda: os.environ.get("V31_QUALITY_SHADOW_ENABLED", "true").lower() == "true"
+        default_factory=lambda: os.environ.get("V31_QUALITY_SHADOW_ENABLED", "false").lower() == "true"
+    )
+    v31_shadow_activation_id: str = field(
+        default_factory=lambda: os.environ.get("V31_SHADOW_ACTIVATION_ID", "")
+    )
+    # ISO-8601 with an explicit offset; start inclusive, end exclusive.
+    v31_shadow_start_at: str = field(
+        default_factory=lambda: os.environ.get("V31_SHADOW_START_AT", "")
+    )
+    v31_shadow_end_at: str = field(
+        default_factory=lambda: os.environ.get("V31_SHADOW_END_AT", "")
+    )
+    # Kept as text: a malformed value disables the pilot (app.v3.pilot), never v2 startup.
+    v31_shadow_pilot_max_communications: str = field(
+        default_factory=lambda: os.environ.get("V31_SHADOW_PILOT_MAX_COMMUNICATIONS", "20")
     )
     v31_operator_recovery_enabled: bool = field(
         default_factory=lambda: os.environ.get("V31_OPERATOR_RECOVERY_ENABLED", "false").lower() == "true"

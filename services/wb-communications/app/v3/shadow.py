@@ -8,10 +8,16 @@ Isolation guarantees (tested in tests/v3/test_isolation.py):
 Ledger key = (communication, engine_version, snapshot_id): one full decision per pair. When
 the v2 final text changes later (manual edit / publication), only the verifier is re-run on
 it (run_kind ``v2_final_recheck``, no LLM call).
+
+The Phase 3.1E quality layer (R1 pilot) runs inside this loop only through
+``app.v3.pilot``: explicit activation, post-activation communications only, one
+transactional claim per communication, global cap. It never backfills on a
+version change and never re-evaluates a claimed communication.
 """
 from __future__ import annotations
 
 import hashlib
+import threading
 import time
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
@@ -20,6 +26,7 @@ from typing import Any, Optional
 from app.utils.logging import get_logger, log_event
 from app.v3 import ENGINE_VERSION
 from app.v3 import journal as journal_mod
+from app.v3 import pilot as pilot_mod
 from app.v3 import verifier as verifier_mod
 from app.v3.engine import V3Engine
 from app.v3.resolver import resolve
@@ -61,6 +68,8 @@ class MemoryShadowStore:
     def __init__(self, docs: dict):
         self._docs = docs
         self.ledger: dict[str, dict] = {}
+        self.pilot: dict[str, dict] = {}
+        self._pilot_lock = threading.Lock()
 
     def candidates(self, scan_limit: int) -> list[tuple[str, dict]]:
         items = sorted(self._docs.items(), key=lambda kv: str(kv[1].get("first_seen_at") or ""), reverse=True)
@@ -72,6 +81,22 @@ class MemoryShadowStore:
 
     def mark(self, key: str, value: dict) -> None:
         self.ledger[key] = dict(value)
+
+    def claim_pilot(self, act, communication_id: str, record: dict) -> str:
+        with self._pilot_lock:
+            cid, counter = (pilot_mod.claim_id(act.activation_id, communication_id),
+                            pilot_mod.counter_id(act.activation_id))
+            if cid in self.pilot:
+                return pilot_mod.ALREADY_EVALUATED
+            claimed = int((self.pilot.get(counter) or {}).get("claimed", 0))
+            if claimed >= act.max_communications:
+                return pilot_mod.CAP_REACHED
+            self.pilot[cid] = dict(record)
+            self.pilot[counter] = {"activation_id": act.activation_id, "claimed": claimed + 1}
+            return pilot_mod.CLAIMED
+
+    def complete_pilot(self, act, communication_id: str, fields: dict) -> None:
+        self.pilot[pilot_mod.claim_id(act.activation_id, communication_id)].update(fields)
 
 
 class FirestoreShadowStore:
@@ -99,6 +124,36 @@ class FirestoreShadowStore:
     def mark(self, key: str, value: dict) -> None:
         self._client().collection(LEDGER_COLLECTION).document(key).set(value)
 
+    def claim_pilot(self, act, communication_id: str, record: dict) -> str:
+        """One transaction: claim + global counter. Overlapping instances serialize here."""
+        from google.cloud import firestore
+        client = self._client()
+        col = client.collection(pilot_mod.PILOT_COLLECTION)
+        claim_ref = col.document(pilot_mod.claim_id(act.activation_id, communication_id))
+        counter_ref = col.document(pilot_mod.counter_id(act.activation_id))
+
+        @firestore.transactional
+        def txn(transaction):
+            claim = claim_ref.get(transaction=transaction)
+            counter = counter_ref.get(transaction=transaction)
+            if claim.exists:
+                return pilot_mod.ALREADY_EVALUATED
+            claimed = int((counter.to_dict() or {}).get("claimed", 0)) if counter.exists else 0
+            if claimed >= act.max_communications:
+                return pilot_mod.CAP_REACHED
+            transaction.set(claim_ref, record)
+            transaction.set(counter_ref, {"activation_id": act.activation_id, "claimed": claimed + 1,
+                                          "max_communications": act.max_communications,
+                                          "start_at": act.start_at.isoformat(), "end_at": act.end_at.isoformat(),
+                                          "updated_at": datetime.now(timezone.utc).isoformat()})
+            return pilot_mod.CLAIMED
+
+        return txn(client.transaction())
+
+    def complete_pilot(self, act, communication_id: str, fields: dict) -> None:
+        col = self._client().collection(pilot_mod.PILOT_COLLECTION)
+        col.document(pilot_mod.claim_id(act.activation_id, communication_id)).set(fields, merge=True)
+
 
 @dataclass
 class V3Runtime:
@@ -122,6 +177,7 @@ class ShadowSummary:
     errors: int = 0
     skipped_budget: int = 0
     v31_evaluated: int = 0
+    v31_skips: dict = field(default_factory=dict)
     outcomes: dict = field(default_factory=dict)
 
     def to_dict(self) -> dict:
@@ -132,18 +188,18 @@ MIN_ITEM_SECONDS = 25.0   # one item = up to 2 LLM calls; never START one that c
 
 
 def run_shadow(rt: V3Runtime, *, max_items: int, deadline: float, scan_limit: int = 150,
-               clock=time.monotonic, min_item_seconds: float = MIN_ITEM_SECONDS) -> ShadowSummary:
+               clock=time.monotonic, min_item_seconds: float = MIN_ITEM_SECONDS,
+               wall_clock=lambda: datetime.now(timezone.utc)) -> ShadowSummary:
     s = ShadowSummary()
     snap_id = rt.engine.snapshot.snapshot_id
     cands = rt.store.candidates(scan_limit)
     s.scanned = len(cands)
     keys = {doc_id: ledger_key(doc_id, snap_id) for doc_id, _ in cands}
     done = rt.store.get_many(list(keys.values()))
-    quality_backfilled = 0
     prior_answers = [q["candidate_text"] for v in done.values()
                      if (q := v.get("response_quality_v31")) and q.get("candidate_text")]
     for doc_id, doc in cands:
-        if s.decided + s.rechecked + quality_backfilled >= max_items:
+        if s.decided + s.rechecked >= max_items:
             break
         if clock() >= deadline - min_item_seconds:
             s.skipped_budget += 1
@@ -156,21 +212,9 @@ def run_shadow(rt: V3Runtime, *, max_items: int, deadline: float, scan_limit: in
         final_sha = _sha(msg.get("v2_final_answer"))
         hard_plan = None
         try:
+            # Already decided for this engine/snapshot: nothing to do. A version change
+            # is never permission to re-run the 3.1E layer (no backfill).
             if prev and prev.get("v2_final_sha256") == final_sha:
-                from app.response_quality import VERSION
-                if (getattr(rt.settings, "v31_quality_shadow_enabled", False) and
-                    (prev.get("response_quality_v31") or {}).get("version") != VERSION):
-                    quality = _quality_shadow(rt, msg, previous_answers=prior_answers)
-                    quality_backfilled += 1
-                    if quality:
-                        s.v31_evaluated += 1
-                        try:
-                            rt.store.mark(key, {**prev, "response_quality_v31": quality})
-                        except Exception as exc:
-                            log_event(logger, "warning", "v3.1 quality ledger write failed (isolated)",
-                                      error_class=type(exc).__name__)
-                        if quality.get("candidate_text"):
-                            prior_answers.append(quality["candidate_text"])
                 continue
             if prev:
                 row = _recheck_row(rt, msg, snap_id)
@@ -187,12 +231,12 @@ def run_shadow(rt: V3Runtime, *, max_items: int, deadline: float, scan_limit: in
                                           error_class=type(exc).__name__, failure_code="ENGINE_ERROR")
             log_event(logger, "warning", "v3 shadow decision failed", communication_id=doc_id,
                       error=type(exc).__name__)
-        quality = _quality_shadow(rt, msg, safe_v3_draft=row.get("draft_text"),
-                                  hard_plan=hard_plan, previous_answers=prior_answers)
-        if quality:
-            s.v31_evaluated += 1
-            if quality.get("candidate_text"):
-                prior_answers.append(quality["candidate_text"])
+        quality = _r1_shadow(rt, s, doc_id, doc, msg, row, key, hard_plan=hard_plan,
+                             previous_answers=prior_answers, now=wall_clock())
+        if quality and quality.get("candidate_text"):
+            prior_answers.append(quality["candidate_text"])
+        # Keep an earlier 3.1E result when this pass (e.g. a v2 recheck) did not evaluate.
+        quality = quality or (prev or {}).get("response_quality_v31")
         ok = False
         try:
             ok = bool(rt.writer.insert_v3_decision(row))
@@ -220,7 +264,66 @@ def run_shadow(rt: V3Runtime, *, max_items: int, deadline: float, scan_limit: in
 
 
 
-def _quality_shadow(rt, msg, *, safe_v3_draft=None, hard_plan=None, previous_answers=()):
+def _r1_shadow(rt, s, doc_id, doc, msg, row, key, *, hard_plan, previous_answers, now):
+    """3.1E evaluation through the pilot gate; every refusal is counted, never retried."""
+    def skip(reason):
+        s.v31_skips[reason] = s.v31_skips.get(reason, 0) + 1
+        return None
+
+    act, reason = pilot_mod.activation(rt.settings)
+    if act is None:
+        return None if reason == pilot_mod.DISABLED else skip(reason)
+    reason = pilot_mod.eligibility(doc, act, now)
+    if reason:
+        return skip(reason)
+    record = {"activation_id": act.activation_id, "communication_id": doc_id,
+              "entity_type": msg.get("entity_type"), "source_sha256": pilot_mod.source_sha(msg),
+              "source_created_at": doc.get("source_created_at"), "first_seen_at": doc.get("first_seen_at"),
+              "claimed_at": now.isoformat(), "status": pilot_mod.CLAIMED,
+              "engine_version": ENGINE_VERSION, "snapshot_id": rt.engine.snapshot.snapshot_id, "ledger_key": key}
+    try:
+        status = rt.store.claim_pilot(act, doc_id, record)
+    except Exception as exc:  # noqa: BLE001 — no claim, no LLM call
+        log_event(logger, "warning", "v3.1 pilot claim failed (isolated)", error_class=type(exc).__name__)
+        status = pilot_mod.CLAIM_ERROR
+    if status != pilot_mod.CLAIMED:
+        return skip(status)
+    started, failure = time.monotonic(), {}
+    quality = _quality_shadow(rt, msg, safe_v3_draft=row.get("draft_text"), hard_plan=hard_plan,
+                              previous_answers=previous_answers, failure=failure)
+    generation = (quality or {}).get("language_generation") or {}
+    calls = int(generation.get("calls") or 0)
+    fields = {"status": "COMPLETED" if quality else "ERROR",
+              "evaluated_at": datetime.now(timezone.utc).isoformat(),
+              "latency_ms": int((time.monotonic() - started) * 1000),
+              "error_class": failure.get("error_class"),
+              "v3_final_outcome": row.get("final_outcome"), "product_id": row.get("product_id"),
+              "product_resolution_status": row.get("product_resolution_status"),
+              "v2_ai_sha256": _sha(msg.get("v2_ai_answer")), "v2_final_sha256": _sha(msg.get("v2_final_answer")),
+              "logical_llm_calls": calls, "model": generation.get("model"),
+              "generation_mode": "LLM" if calls else "DETERMINISTIC"}
+    if quality:
+        fields.update({"response_quality_version": quality.get("version"),
+                       "policy_version": quality.get("policy_version"), "route": quality.get("route"),
+                       "prepared_status": quality.get("status"), "operator_state": quality.get("operator_state"),
+                       "hard_verdict": quality.get("hard_verdict"),
+                       "quality_verdict": (quality.get("quality") or {}).get("verdict"),
+                       "quality_reasons": (quality.get("quality") or {}).get("reasons"),
+                       "candidate_sha256": quality.get("final_text_sha256"),
+                       "selected_expertise_ids": quality.get("approved_explanation_ids"),
+                       "fact_ids": quality.get("fact_ids")})
+        s.v31_evaluated += 1
+    try:
+        rt.store.complete_pilot(act, doc_id, fields)
+    except Exception as exc:  # noqa: BLE001 — the claim stays; the communication is never re-run
+        log_event(logger, "warning", "v3.1 pilot record failed (isolated)", error_class=type(exc).__name__)
+    log_event(logger, "info", "v3.1 pilot evaluation", communication_id=doc_id, activation_id=act.activation_id,
+              status=fields["status"], hard_verdict=fields.get("hard_verdict"),
+              quality_verdict=fields.get("quality_verdict"), logical_llm_calls=calls)
+    return quality
+
+
+def _quality_shadow(rt, msg, *, safe_v3_draft=None, hard_plan=None, previous_answers=(), failure=None):
     """Local-only comparison. Writes are confined to the existing v3 ledger by the caller.
     Baseline v3 is UNPROVEN when only a historical hash is available (no synthetic live claim).
     """
@@ -246,12 +349,17 @@ def _quality_shadow(rt, msg, *, safe_v3_draft=None, hard_plan=None, previous_ans
             validate_for_publication(safe_v3_draft, msg, rt.settings)).__dict__
             if safe_v3_draft else {"verdict": "UNPROVEN"})
         meta["candidate_text"] = r.text  # own shadow ledger only, never an operator-card input
+        meta["hard_verdict"] = r.final_policy.get("verdict")
+        meta["policy_version"] = r.final_policy.get("version")
+        meta["route"] = r.plan.route
         log_event(logger, "info", "v3.1 quality shadow", communication_id=msg["communication_id"],
                   snapshot_id=rt.engine.snapshot.snapshot_id, quality_verdict=r.quality.verdict,
                   hard_verdict=r.final_policy.get("verdict"), candidate_sha256=meta["final_text_sha256"],
                   information_budget=r.plan.information_budget, run_kind="quality_shadow")
         return meta
     except Exception as exc:
+        if failure is not None:
+            failure["error_class"] = type(exc).__name__
         log_event(logger, "warning", "v3.1 quality shadow failed (isolated)", error_class=type(exc).__name__)
         return None
 

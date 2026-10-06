@@ -12,33 +12,58 @@ from app.domain.exceptions import InvalidTransition
 
 SNAP=load_snapshot()
 
+def _activated_docs():
+    # R1: only communications created and first seen inside the activation window.
+    from tests.quality.test_r1_shadow_pilot import NOW
+    docs=_docs()
+    for d in docs.values():d['source_created_at']=d['first_seen_at']=NOW.isoformat()
+    return docs
+
+def _run(rt):
+    from tests.quality.test_r1_shadow_pilot import NOW
+    return run_shadow(rt,max_items=10,deadline=1e18,wall_clock=lambda:NOW)
+
 def test_quality_shadow_own_ledger_only_and_idempotent():
-    docs=_docs();before=copy.deepcopy(docs);rt=_rt(SNAP,docs)
-    rt.settings=SimpleNamespace(v31_quality_shadow_enabled=True,v3_knowledge_snapshot_id=SNAP.snapshot_id)
-    s=run_shadow(rt,max_items=10,deadline=1e18)
+    from tests.quality.test_r1_shadow_pilot import r1
+    docs=_activated_docs();before=copy.deepcopy(docs);rt=_rt(SNAP,docs)
+    rt.settings=r1()
+    s=_run(rt)
     assert s.v31_evaluated==3 and docs==before
     assert all(v['response_quality_v31']['version']==VERSION for v in rt.store.ledger.values())
     assert all('response_quality_v31' not in r for r in rt.writer.rows) # existing BQ schema
-    again=run_shadow(rt,max_items=10,deadline=1e18)
+    again=_run(rt)
     assert again.v31_evaluated==0 and docs==before
 
-def test_shadow_backfill_bounded_and_baseline_not_invented():
-    rt=_rt(SNAP,_docs());run_shadow(rt,max_items=10,deadline=1e18)
-    rt.settings=SimpleNamespace(v31_quality_shadow_enabled=True,v3_knowledge_snapshot_id=SNAP.snapshot_id)
+def test_no_quality_backfill_after_activation():
+    # Decided by the v3 baseline before 3.1E was on: never revisited afterwards.
+    from tests.quality.test_r1_shadow_pilot import r1
+    rt=_rt(SNAP,_activated_docs());_run(rt)
+    rt.settings=r1()
     count=len(rt.writer.rows)
-    s=run_shadow(rt,max_items=1,deadline=1e18)
-    assert s.v31_evaluated==1 and len(rt.writer.rows)==count
-    q=next(v['response_quality_v31'] for v in rt.store.ledger.values() if 'response_quality_v31' in v)
-    assert q['v3_quality']['verdict']=='UNPROVEN'
+    s=_run(rt)
+    assert s.v31_evaluated==0 and s.decided==0 and len(rt.writer.rows)==count
+    assert all('response_quality_v31' not in v for v in rt.store.ledger.values())
+
+def test_quality_baseline_not_invented_for_failed_v3():
+    from tests.quality.test_r1_shadow_pilot import r1
+    rt=_rt(SNAP,_activated_docs());rt.settings=r1()
+    rt.engine.decide=lambda msg:(_ for _ in ()).throw(RuntimeError('v3 down'))
+    s=_run(rt)
+    assert s.errors==3 and s.v31_evaluated==3
+    assert all(v['response_quality_v31']['v3_quality']['verdict']=='UNPROVEN' for v in rt.store.ledger.values())
 
 def test_quality_failure_isolated_from_existing_v3_and_no_raw_logs(monkeypatch,caplog):
     import app.response_quality.core as core
-    rt=_rt(SNAP,_docs());rt.settings=SimpleNamespace(v31_quality_shadow_enabled=True)
+    from tests.quality.test_r1_shadow_pilot import r1
+    rt=_rt(SNAP,_activated_docs());rt.settings=r1()
     def fail(*a,**kw):raise ValueError('secret customer content')
     monkeypatch.setattr(core,'prepare',fail)
-    s=run_shadow(rt,max_items=10,deadline=1e18)
+    s=_run(rt)
     assert s.persisted==3 and s.errors==0 and s.v31_evaluated==0
     assert 'secret customer content' not in caplog.text
+    pilot=[v for k,v in rt.store.pilot.items() if k.startswith('C.')]
+    assert len(pilot)==3 and {r['status'] for r in pilot}=={'ERROR'} and {r['error_class'] for r in pilot}=={'ValueError'}
+    assert 'secret customer content' not in str(pilot)
 
 def test_ingredient_neighbor_and_ambiguous_alias_remain_distinct():
     hits=lambda text:{i for i,_ in SNAP.ingredient_mentions(text)}
@@ -91,13 +116,14 @@ def test_firestore_stale_recovery_does_not_commit(monkeypatch,mode):
         else:repo.commit_regenerate('id',None,'own',recovery={'status':'READY'})
     assert not client.tx.updates
 
-def test_quality_backfill_write_failure_isolated_and_bounded(monkeypatch):
-    rt=_rt(SNAP,_docs());run_shadow(rt,max_items=10,deadline=1e18)
-    rt.settings=SimpleNamespace(v31_quality_shadow_enabled=True,v3_knowledge_snapshot_id=SNAP.snapshot_id)
-    count=len(rt.writer.rows)
+def test_quality_ledger_write_failure_isolated_and_bounded(monkeypatch):
+    from tests.quality.test_r1_shadow_pilot import r1
+    rt=_rt(SNAP,_activated_docs());rt.settings=r1()
     monkeypatch.setattr(rt.store,'mark',lambda *a:(_ for _ in ()).throw(ValueError('no ledger')))
-    s=run_shadow(rt,max_items=1,deadline=1e18)
-    assert s.errors==0 and s.v31_evaluated==1 and len(rt.writer.rows)==count
+    s=_run(rt)
+    assert s.errors==0 and s.v31_evaluated==3 and len(rt.writer.rows)==3
+    again=_run(rt)          # ledger lost, pilot claims kept: v3 re-decides, 3.1E does not
+    assert again.v31_evaluated==0 and again.v31_skips=={'SHADOW_ALREADY_EVALUATED':3}
 
 def test_shadow_evaluator_checks_previous_candidate_repetition():
     from app.v3.shadow import _quality_shadow
