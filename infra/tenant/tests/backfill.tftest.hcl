@@ -11,7 +11,7 @@ run "dedicated_opt_in_renders_and_preserves_ordinary_pause" {
   command = plan
   variables { contract = jsondecode(file("tests/fixtures/backfill.synthetic.contract.json")) }
   assert {
-    condition     = length(google_service_account.backfill) == 3 && length(google_project_iam_custom_role.backfill) == 11 && length(google_bigquery_table_iam_member.backfill) == 3 && length(google_cloud_run_v2_job_iam_member.backfill) == 6
+    condition     = length(google_service_account.backfill) == 3 && length(google_project_iam_custom_role.backfill) == 12 && length(google_bigquery_table_iam_member.backfill) == 3 && length(google_cloud_run_v2_job_iam_member.backfill) == 6
     error_message = "Only exact dedicated identities, roles and table/job grants are permitted."
   }
   assert {
@@ -45,5 +45,17 @@ run "reject_scheduler_override" {
 run "reject_binding_bypass" {
   command = plan
   variables { contract = merge(jsondecode(file("tests/fixtures/backfill.synthetic.contract.json")), { orchestration = merge(jsondecode(file("tests/fixtures/backfill.synthetic.contract.json")).orchestration, { job = merge(jsondecode(file("tests/fixtures/backfill.synthetic.contract.json")).orchestration.job, { env = merge(jsondecode(file("tests/fixtures/backfill.synthetic.contract.json")).orchestration.job.env, { TENANT_BINDING_REQUIRED = "0" }) }) }) }) }
+  expect_failures = [terraform_data.backfill_guard]
+}
+
+run "reject_append_data_read_permission" {
+  command = plan
+  variables { contract = merge(jsondecode(file("tests/fixtures/backfill.synthetic.contract.json")), { orchestration = merge(jsondecode(file("tests/fixtures/backfill.synthetic.contract.json")).orchestration, { roles = merge(jsondecode(file("tests/fixtures/backfill.synthetic.contract.json")).orchestration.roles, { backfillAppend = ["bigquery.tables.updateData", "bigquery.tables.get", "bigquery.tables.getData"] }) }) }) }
+  expect_failures = [terraform_data.backfill_guard]
+}
+
+run "reject_append_dataset_metadata_outside_ops" {
+  command = plan
+  variables { contract = merge(jsondecode(file("tests/fixtures/backfill.synthetic.contract.json")), { orchestration = merge(jsondecode(file("tests/fixtures/backfill.synthetic.contract.json")).orchestration, { dataset_grants = [for g in jsondecode(file("tests/fixtures/backfill.synthetic.contract.json")).orchestration.dataset_grants : endswith(g.role, "/backfillAppendDatasetMetadata") ? merge(g, { dataset_key = "ozon_raw" }) : g] }) }) }
   expect_failures = [terraform_data.backfill_guard]
 }

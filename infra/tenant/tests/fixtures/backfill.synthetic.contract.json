@@ -206,6 +206,11 @@
         "dataset_key": "tenant_locks",
         "email": "sa-backfill-append@mpa-t-client-002.iam.gserviceaccount.com",
         "role": "projects/mpa-t-client-002/roles/backfillLockCreate"
+      },
+      {
+        "dataset_key": "tenant_ops",
+        "email": "sa-backfill-append@mpa-t-client-002.iam.gserviceaccount.com",
+        "role": "projects/mpa-t-client-002/roles/backfillAppendDatasetMetadata"
       }
     ],
     "job": {
@@ -277,6 +282,14 @@
       },
       {
         "permissions": [
+          "bigquery.datasets.get"
+        ],
+        "principal": "sa-backfill-append@mpa-t-client-002.iam.gserviceaccount.com",
+        "resource": "projects/mpa-t-client-002/datasets/tenant_ops",
+        "role": "projects/mpa-t-client-002/roles/backfillAppendDatasetMetadata"
+      },
+      {
+        "permissions": [
           "bigquery.jobs.create"
         ],
         "principal": "sa-backfill-controller@mpa-t-client-002.iam.gserviceaccount.com",
@@ -302,7 +315,7 @@
           "run.executions.list"
         ],
         "principal": "sa-backfill-controller@mpa-t-client-002.iam.gserviceaccount.com",
-        "resource": "projects/mpa-t-client-002/locations/europe-west1/jobs/ozon-runtime-fast",
+        "resource": "projects/mpa-t-client-002/locations/europe-west1/jobs/ozon-runtime-daily",
         "role": "projects/mpa-t-client-002/roles/backfillRuntimeExecute"
       },
       {
@@ -314,7 +327,7 @@
           "run.executions.list"
         ],
         "principal": "sa-backfill-controller@mpa-t-client-002.iam.gserviceaccount.com",
-        "resource": "projects/mpa-t-client-002/locations/europe-west1/jobs/ozon-runtime-daily",
+        "resource": "projects/mpa-t-client-002/locations/europe-west1/jobs/ozon-runtime-fast",
         "role": "projects/mpa-t-client-002/roles/backfillRuntimeExecute"
       },
       {
@@ -331,7 +344,8 @@
       },
       {
         "permissions": [
-          "bigquery.tables.updateData"
+          "bigquery.tables.updateData",
+          "bigquery.tables.get"
         ],
         "principal": "sa-backfill-append@mpa-t-client-002.iam.gserviceaccount.com",
         "resource": "projects/mpa-t-client-002/datasets/tenant_ops/tables/BACKFILL_CHECKPOINTS",
@@ -339,7 +353,8 @@
       },
       {
         "permissions": [
-          "bigquery.tables.updateData"
+          "bigquery.tables.updateData",
+          "bigquery.tables.get"
         ],
         "principal": "sa-backfill-append@mpa-t-client-002.iam.gserviceaccount.com",
         "resource": "projects/mpa-t-client-002/datasets/tenant_ops/tables/DATA_COVERAGE",
@@ -347,7 +362,8 @@
       },
       {
         "permissions": [
-          "bigquery.tables.updateData"
+          "bigquery.tables.updateData",
+          "bigquery.tables.get"
         ],
         "principal": "sa-backfill-append@mpa-t-client-002.iam.gserviceaccount.com",
         "resource": "projects/mpa-t-client-002/datasets/tenant_ops/tables/DQ_RESULTS",
@@ -392,7 +408,11 @@
     ],
     "roles": {
       "backfillAppend": [
-        "bigquery.tables.updateData"
+        "bigquery.tables.updateData",
+        "bigquery.tables.get"
+      ],
+      "backfillAppendDatasetMetadata": [
+        "bigquery.datasets.get"
       ],
       "backfillControllerRead": [
         "run.jobs.get",

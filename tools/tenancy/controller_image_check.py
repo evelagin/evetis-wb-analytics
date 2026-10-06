@@ -10,8 +10,53 @@ import re
 import sys
 from datetime import datetime,date,timedelta,timezone
 from tools.tenancy import cloud_access as A,durable_plan as D,cloud_tick as T
-from tools.tenancy import tenant_backfill as BF,orchestration_contract as O
+from tools.tenancy import tenant_backfill as BF,orchestration_contract as O,cloud_controller as C
 from tools.tenancy.validation import parse_tenant_json
+
+
+def check_quota_query(c, doc):
+    """Exercise concrete Backend -> serialized EU REST SELECT -> typed rows.
+
+    Stub BigQuery accepts only the exact non-reserved output schema. This catches
+    alias/row-mapping drift hidden by a mock of Backend.quota itself. No source or
+    append operation is allowed. The same check runs in the immutable image.
+    """
+    import sqlglot
+    from sqlglot import exp
+    now=datetime(2026,10,6,8,tzinfo=timezone.utc)
+    calls=[]
+    class Tokens:
+        def token(self,kind):
+            assert kind=='reader'
+            return 'SYNTHETIC_NON_CREDENTIAL'
+    def send(method,url,body=None,headers=None):
+        assert method=='POST' and url==f"{BF.TT.BQ}/projects/{c['project_id']}/queries"
+        assert body['useLegacySql'] is False and body['location']=='EU'
+        assert body['maximumBytesBilled']=='1073741824'
+        assert body['queryParameters']==[{'name':'since','parameterType':{'type':'TIMESTAMP'},'parameterValue':{'value':(now-timedelta(hours=24)).isoformat()}}]
+        tree=sqlglot.parse_one(body['query'],read='bigquery')
+        assert isinstance(tree,exp.Select)
+        assert {t.catalog for t in tree.find_all(exp.Table)}=={c['project_id']}
+        assert {t.db for t in tree.find_all(exp.Table)}=={c['datasets']['ozon_raw']}
+        assert {t.name for t in tree.find_all(exp.Table)}=={'OZON_INGESTION_RUNS'}
+        sqlglot.parse_one(tree.sql(dialect='bigquery'),read='bigquery')
+        calls.append(body['query'])
+        if tree.named_selects==['plan_id','sequence','exports','reserved_at']:
+            assert 'MAX(started_at) AS reserved_at' in body['query']
+            fields=[('plan_id','STRING'),('sequence','INT64'),('exports','INT64'),('reserved_at','TIMESTAMP')]
+            values=[['1'*64,'2','10','1.791225494492827E9'],['1'*64,'5','5','1791225494.492827']]
+        else:
+            assert tree.named_selects==['n'] and 'backfill_plan_id IS NULL' in body['query']
+            fields=[('n','INT64')];values=[['0']]
+        return {'jobReference':{'jobId':'synthetic'},'jobComplete':True,
+                'schema':{'fields':[{'name':n,'type':t} for n,t in fields]},
+                'rows':[{'f':[{'v':v} for v in row]} for row in values]}
+    backend=C.Backend(A.CloudAccess(c,Tokens(),send),'synthetic-controller',lambda:now)
+    backend.state=lambda _:BF.B.initial(doc['runtime_plan'])
+    verdict=backend.quota({'plans':[doc]},now)
+    assert verdict=={'status':'WAITING','allowance':0,'eligible_at':'2026-10-06T18:38:14.492827+00:00'}
+    assert len(calls)==2
+    return 'PASS'
 
 
 def check(source_sha):
@@ -22,6 +67,7 @@ def check(source_sha):
     c=BF.target('client_001');now=datetime.now(timezone.utc);day=now.astimezone(BF.B.MSK).date()-timedelta(days=1)
     doc=BF.make_plan(c['tenant_id'],'ads_sku_daily',str(day),str(day),'offline-image-qualification',now.isoformat(),max_units=3)
     BF.validate_plan(doc,doc['ack_hash'])
+    assert check_quota_query(c,doc)=='PASS'
     from tools.tenancy import platform as P
     releases=[parse_tenant_json(f.read_text()) for f in (BF.REPO/P.RUNTIME_RELEASES_DIR/'ozon').glob('*.json')]
     release=next(r for r in releases if r.get('image')==doc['image'])
@@ -83,7 +129,7 @@ def check(source_sha):
     assert denied==3 and set(calls)=={'reader','append'}
     return {'python_version':sys.version.split()[0],'source_sha':source_sha,'controller_implementation_hash':O.implementation_hash(BF.REPO),
             'runtime_implementation_hash':BF.B.implementation_hash(),
-            'offline_restart':'PASS','lost_post_no_repeat':'PASS','quota_wait_no_source':'PASS',
+            'quota_query_syntax':'PASS','offline_restart':'PASS','lost_post_no_repeat':'PASS','quota_wait_no_source':'PASS',
             'reader_append_separation':'PASS','tenant_isolation':'PASS','live_deployment':'UNPROVEN'}
 
 

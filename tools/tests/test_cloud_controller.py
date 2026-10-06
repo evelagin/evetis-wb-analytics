@@ -39,7 +39,7 @@ def test_state_reader_never_resets_disappeared_or_conflicting_durable_checkpoint
 @pytest.mark.parametrize('at', ['1791225494.492827','1.791225494492827E9'])
 def test_quota_from_real_bq_timestamp_encoding_waits_without_dispatch(at):
     b=backend();doc=sku();b.state=lambda _:BF.B.initial(doc['runtime_plan'])
-    b.select=lambda q,p:[{'plan_id':'1'*64,'sequence':2,'exports':10,'at':at},{'plan_id':'1'*64,'sequence':5,'exports':5,'at':at}] if 'GROUP BY' in q else [{'n':0}]
+    b.select=lambda q,p:[{'plan_id':'1'*64,'sequence':2,'exports':10,'reserved_at':at},{'plan_id':'1'*64,'sequence':5,'exports':5,'reserved_at':at}] if 'GROUP BY' in q else [{'n':0}]
     result=b.quota({'plans':[doc]},NOW)
     assert result['status']=='WAITING' and result['eligible_at']=='2026-10-06T18:38:14.492827+00:00'
 
@@ -213,3 +213,8 @@ def test_direct_cli_does_not_shadow_stdlib_platform():
     code="import sys; sys.path.insert(0,'tools/tenancy'); from tools.tenancy.plan_scan import COMPUTED_APPLIER_FIELDS; import platform; assert callable(platform.system)"
     result=subprocess.run([sys.executable,'-S','-c',code],cwd=BF.REPO,capture_output=True,text=True,timeout=20)
     assert result.returncode==0,result.stderr
+
+
+def test_exact_quota_select_serializes_parses_and_executes_typed_rest_stub():
+    from tools.tenancy import controller_image_check as image
+    assert image.check_quota_query(BF.target('client_001'),sku())=='PASS'
