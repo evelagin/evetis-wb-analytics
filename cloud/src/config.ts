@@ -170,10 +170,15 @@ export interface Config {
    *   off     (по умолчанию) — поведение Engine 2.0.0: только месяц LCD, старый подготовленный слой;
    *   observe — запись как при off; дополнительно читается слой сверки и в журнал пишется, что изменил бы write;
    *   write   — факты месяца LCD и прошлых месяцев окна берутся из слоя сверки (цена с происхождением),
-   *             исторические поправки пишутся в лист и в журнал ремонта.
+   *             исторические поправки пишутся в лист и в журнал ремонта;
+   *   controlled — месяц LCD как при observe; прошлые месяцы окна — только по политике controlledWritePolicy
+   *             (первое заполнение — да, отзыв источника — никогда, поправки — ≤ 50 и ≤ 2 % контракта) + журнал ремонта.
+   *             Не включён нигде: включение — решение владельца.
+   * Во всех режимах, кроме off, незакрытые дни прошлого месяца, которые перешагивает кандидат LCD, пишутся
+   * (закрытие конца месяца); off при таких днях — MONTH_END_UNCLOSED до записи.
    * Разбирается МЯГКО: опечатка = off + предупреждение (как у Guard).
    */
-  unitkaReconcileMode: 'off' | 'observe' | 'write';
+  unitkaReconcileMode: 'off' | 'observe' | 'write' | 'controlled';
   unitkaReconcileModeInvalid: string | null;
   /**
    * SPP-3: колонка AB (СПП) из wb_mart.V_WB_SPP_DAILY. off — не читается; observe — план и манифест отката
@@ -242,7 +247,8 @@ function integrityConfig(env: Env): Pick<Config, 'unitkaIntegrityMode' | 'unitka
   const sppRaw = (env.UNITKA_SPP_MODE ?? '').trim().toLowerCase();
   const sppKnown = sppRaw === 'off' || sppRaw === 'observe' || sppRaw === 'write';
   const recRaw = (env.UNITKA_RECONCILE_MODE ?? '').trim().toLowerCase();
-  const recKnown = recRaw === 'off' || recRaw === 'observe' || recRaw === 'write';
+  // controlled — реализован, но не включён нигде (решение владельца): прошлые месяцы окна — только по политике reconcile.controlledWritePolicy.
+  const recKnown = recRaw === 'off' || recRaw === 'observe' || recRaw === 'write' || recRaw === 'controlled';
   const raw = (env.UNITKA_INTEGRITY_MODE ?? '').trim().toLowerCase();
   const known = raw === 'off' || raw === 'observe' || raw === 'enforce';
   const due = (env.UNITKA_STORAGE_DUE_MSK ?? '').trim();
@@ -253,7 +259,7 @@ function integrityConfig(env: Env): Pick<Config, 'unitkaIntegrityMode' | 'unitka
     unitkaIntegrityModeInvalid: raw === '' || known ? null : raw,
     unitkaStorageDueMsk: /^([01]\d|2[0-3]):[0-5]\d$/.test(due) ? due : '12:15',
     unitkaIntegrityBudgetMs: budget,
-    unitkaReconcileMode: recKnown ? (recRaw as 'off' | 'observe' | 'write') : 'off',
+    unitkaReconcileMode: recKnown ? (recRaw as 'off' | 'observe' | 'write' | 'controlled') : 'off',
     unitkaReconcileModeInvalid: recRaw === '' || recKnown ? null : recRaw,
     unitkaSppMode: sppKnown ? (sppRaw as 'off' | 'observe' | 'write') : 'off',
     unitkaSppRollbackManifest: (env.UNITKA_SPP_ROLLBACK_MANIFEST ?? '').trim(),

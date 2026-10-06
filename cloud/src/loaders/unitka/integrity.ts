@@ -73,6 +73,7 @@ export type IntegrityCode =
   | 'PRICE_ZERO_WITH_ORDERS'
   | 'PRICE_FUNNEL_FALLBACK'
   | 'PRICE_NOT_ON_SHEET'
+  | 'FACT_NOT_ON_SHEET'
   | 'STOCK_SNAPSHOT_MISSING'
   | 'COGS_ZERO_OR_MISSING'
   | 'COGS_SOURCE_MISMATCH'
@@ -360,6 +361,11 @@ export interface IntegrityInputs {
    */
   checkSheetCells?: boolean;
   pendingWrite?: (row: number, col: number) => boolean;
+  /**
+   * Денежная активность SKU за дни секции (SKU_WITHOUT_BLOCK): false — у SKU в эти дни нет ни заказов, ни отмен, ни
+   * рекламы, ни хранения. Не задано — прежнее поведение (ERROR, fail-safe). См. coverageRules.
+   */
+  moneyActivity?: (nmId: number) => boolean;
 }
 
 /** Дни секции под оценкой: [max(monthStart, fromDay), min(lcd, toDay)] → индекс дня месяца и дата. */
@@ -544,18 +550,93 @@ export function stockRules(facts: readonly IntegrityFactsRow[], lcd: string): In
   }));
 }
 
-/** Правило 5: активные SKU источника без блока в листе. */
-export function coverageRules(facts: readonly IntegrityFactsRow[], blocks: readonly Block[], lcd: string): IntegrityIssue[] {
+/**
+ * Правило 5: активные SKU источника без блока в листе.
+ *
+ * Тяжесть — по ДЕНЬГАМ (аудит 06.10.2026): SKU 909951444 активен в REF_SKU_MASTER, но в сентябре у него только 61
+ * открытие карточки — заказов, отмен, рекламы и хранения 0, т. е. 0 ₽. Безусловный ERROR делал integrity_status =
+ * DATA_ERROR в каждом прогоне и маскировал любую НОВУЮ ошибку данных. Теперь:
+ *   moneyActivity(nm) = false → WARNING, не блокирует (структурное исключение no_money_activity: сводка магазина
+ *                               в деньгах полна, блока не хватает только для счётчиков воронки);
+ *   moneyActivity(nm) = true или не задана → ERROR, как раньше (fail-safe: неизвестность — не повод молчать).
+ */
+export function coverageRules(facts: readonly IntegrityFactsRow[], blocks: readonly Block[], lcd: string, moneyActivity?: (nmId: number) => boolean): IntegrityIssue[] {
   const blockNm = new Set(blocks.map((b) => b.nmId));
   const names = new Map<number, string | null>();
   for (const r of facts) if (r.skuActive !== false && !names.has(r.nmId)) names.set(r.nmId, r.productName);
-  return [...names.keys()].filter((nm) => !blockNm.has(nm)).sort((a, b) => a - b).map((nm) => issue({
-    nmId: nm, day: null, field: 'block', code: 'SKU_WITHOUT_BLOCK', severity: 'ERROR',
-    blocking: true, financialInvalid: false, source: 'V_UNITKA_INTEGRITY (активные REF_SKU_MASTER) vs строка блоков листа',
-    sourceValue: `active_sku_without_block; lcd=${lcd}`, diagnosticValue: names.get(nm) ?? null,
-    dependentFields: ['SUMMARY_C..K', 'MTD_767'],
-    message: `${nm} активен в REF_SKU_MASTER, но блока в листе нет — сводка магазина неполна`,
-  }));
+  return [...names.keys()].filter((nm) => !blockNm.has(nm)).sort((a, b) => a - b).map((nm) => {
+    const noMoney = moneyActivity !== undefined && !moneyActivity(nm);
+    return issue({
+      nmId: nm, day: null, field: 'block', code: 'SKU_WITHOUT_BLOCK', severity: noMoney ? 'WARNING' : 'ERROR',
+      blocking: !noMoney, financialInvalid: false, source: 'V_UNITKA_INTEGRITY (активные REF_SKU_MASTER) vs строка блоков листа',
+      sourceValue: `active_sku_without_block; lcd=${lcd}${noMoney ? '; no_money_activity' : ''}`,
+      diagnosticValue: noMoney ? `no_money_activity${names.get(nm) ? `; ${names.get(nm)}` : ''}` : names.get(nm) ?? null,
+      dependentFields: ['SUMMARY_C..K', 'MTD_767'],
+      message: noMoney
+        ? `${nm} активен в REF_SKU_MASTER, блока в листе нет, но денег за эти дни нет (заказы, отмены, реклама, хранение = 0) — сводка магазина в деньгах полна (no_money_activity)`
+        : `${nm} активен в REF_SKU_MASTER, но блока в листе нет — сводка магазина неполна`,
+    });
+  });
+}
+
+/** Строка факта для денежной активности (FactRow слоя сверки или суточной вью; структурно, без зависимости от bq.ts). */
+export interface MoneyFactRow { nmId: number; date: string; orders: number | null; cancels: number | null; adsIn: number | null; storage: number | null; price: number | null }
+
+/**
+ * Денежная активность SKU за дни [from, to] (для SKU_WITHOUT_BLOCK): заказы, отмены, реклама или хранение > 0
+ * (цена > 0 при заказах — частный случай заказов). У SKU нет ни одной строки за эти дни — активность НЕИЗВЕСТНА → true
+ * (fail-safe: ERROR, как раньше).
+ */
+export function moneyActivityFrom(facts: readonly MoneyFactRow[], from: string, to: string): (nmId: number) => boolean {
+  const seen = new Set<number>();
+  const money = new Set<number>();
+  for (const f of facts) {
+    if (f.date < from || f.date > to) continue;
+    seen.add(f.nmId);
+    if (positive(f.orders) || positive(f.cancels) || positive(f.adsIn) || positive(f.storage) || (positive(f.price) && positive(f.orders))) money.add(f.nmId);
+  }
+  return (nm) => !seen.has(nm) || money.has(nm);
+}
+
+/** Денежные факт-ячейки: пустая ячейка при ненулевом источнике меняет прибыль строки (W/V/I). */
+export const MONEY_FACT_KEYS: ReadonlySet<string> = new Set(['orders', 'cancels', 'adsIn', 'storage']);
+
+/**
+ * FACT_NOT_ON_SHEET — факт есть в источнике, а ячейка ПРОШЛОЙ секции пуста (дефект B, аудит 06.10.2026). Раньше пустые
+ * закрытые факт-ячейки прошлых месяцев ловились только для цены (PRICE_NOT_ON_SHEET): 30.09 со всеми пустыми заказами,
+ * рекламой, хранением не дал ни одной issue. Правило — для прошлых секций окна (контракт plan.expected сверки):
+ *   факт-ячейка, кроме цены (её ведёт PRICE_NOT_ON_SHEET), день ≤ LCD и раньше месяца LCD, источник даёт значение,
+ *   ячейка листа пуста и этот прогон её не пишет (pendingWrite) — одна issue на ячейку (nmId, день, поле).
+ * Тяжесть: деньги (orders, cancels, adsIn, storage) с ненулевым источником — ERROR, строка фин. недействительна, ремонт
+ * доступен; счётчики воронки и остаток (views, opens, carts, stock) — WARNING. Денежный ноль — тоже WARNING: пустая
+ * ячейка и 0 дают в формулах одну и ту же прибыль, строка финансово верна (контракт «пусто ≠ 0» нарушен только по форме).
+ */
+export function factCellRules(inp: {
+  expected: ReadonlyArray<{ row: number; col: number; want: number | null; kind: string; nmId?: number; key?: string; date?: string; source?: string }>;
+  lcd: string; monthStart: string;
+  cellAt: (row: number, col: number) => CellValue;
+  pendingWrite?: (row: number, col: number) => boolean;
+}): IntegrityIssue[] {
+  const out: IntegrityIssue[] = [];
+  for (const e of inp.expected) {
+    if (e.kind !== 'fact' || e.key === undefined || e.key === 'price' || e.date === undefined || e.nmId === undefined) continue;
+    if (e.date > inp.lcd || e.date >= inp.monthStart || e.want === null) continue;
+    const v = inp.cellAt(e.row, e.col);
+    if (!isEmpty(v)) continue;
+    if (inp.pendingWrite?.(e.row, e.col)) continue;                 // прогон сам запишет эту ячейку
+    const money = MONEY_FACT_KEYS.has(e.key) && e.want !== 0;
+    out.push(issue({
+      nmId: e.nmId, day: e.date, field: e.key, code: 'FACT_NOT_ON_SHEET', severity: money ? 'ERROR' : 'WARNING',
+      blocking: money, financialInvalid: money, ...(money ? { repairAvailable: true } : {}), source: `SHEET:${colA1(e.col)}${e.row}`,
+      sourceValue: `cell=blank; source_${e.key}=${e.want}; source=${e.source ?? 'n/a'}`,
+      diagnosticValue: money ? 'repair_available=true; sheet_financial_valid=false' : null,
+      dependentFields: money ? ['W', 'V', 'SUMMARY_I', 'MTD_767'] : [],
+      message: money
+        ? `${e.date} ${e.nmId}: источник даёт ${e.key} = ${e.want}, а ячейка ${colA1(e.col)}${e.row} прошлой секции пуста — прибыль строки в листе недействительна, пока факт не записан`
+        : `${e.date} ${e.nmId}: источник даёт ${e.key} = ${e.want}, а ячейка ${colA1(e.col)}${e.row} прошлой секции пуста${MONEY_FACT_KEYS.has(e.key) ? ' (ноль — прибыль не затронута)' : ' — прибыль не затронута'}`,
+    }));
+  }
+  return out;
 }
 
 /** Правило 7: СПП. Только закрытый день, Q > 0 (факт Engine), ячейка AB действительно пуста. 0 = заполнено. */
@@ -728,7 +809,7 @@ export function evaluateIntegrity(inp: IntegrityInputs): IntegrityIssue[] {
     ...priceRules(inp.facts, blockNm, inp.lcd),
     ...(inp.checkSheetCells ? priceCellRules(inp) : []),
     ...cogsRules(inp),
-    ...coverageRules(inp.facts, inp.blocks, inp.lcd),
+    ...coverageRules(inp.facts, inp.blocks, inp.lcd, inp.moneyActivity),
     ...sppRules(inp),
     ...storageRules(inp.facts, inp.lcd, inp.now, inp.storageDueMinutes),
     ...stockRules(inp.facts, inp.lcd),

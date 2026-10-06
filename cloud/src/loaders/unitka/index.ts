@@ -19,6 +19,12 @@
  * сверки (цена с происхождением); прошлые месяцы окна находятся по заголовку (Calendar V2) и получают только
  * факт-ячейки дней окна. Всё уходит ОДНИМ values.batchUpdate; каждая историческая поправка — в журнал ремонта.
  * Сбой прошлой секции (нет секции, контракт, дубль) — отказ С КОДОМ только для неё: месяц LCD пишется как обычно.
+ *
+ * Защиты конца месяца (2.3.0, аудит 06.10.2026). Если кандидат LCD перешагивает дни прошлого месяца, которые книга ни
+ * разу не закрывала (bookLcd < d < 1-е число месяца кандидата), эти дни пишутся из плана сверки в ЛЮБОМ режиме, кроме
+ * off, — в той же единственной записи — и перечитываются до коммита LCD (MONTH_END_CLOSE_READBACK), а их сводка — после
+ * коммита. Неполное покрытие этих дней или off — MONTH_END_UNCLOSED до записи: LCD стоит. В этом случае отказ прошлой
+ * секции перестаёт быть «только для неё»: без её плана день закрыть нечем.
  */
 import type { LoaderContext, LoaderResult } from '../types.js';
 import { LoaderError } from '../../errors.js';
@@ -28,18 +34,20 @@ import { UnitkaBq, type EngineRunRecord, type FreshnessRow } from './bq.js';
 import { SheetsRest, type SheetsGateway } from './sheets.js';
 import { colA1 } from './model.js';
 import { discoverSection, nextMonthPrecheck, quoteSheet, readSnapshot, type NextMonthPrecheck, type SectionDiscovery } from './section.js';
-import { buildPlan, toWriteRanges, toFormatWrites, cellAt, formulaAt, type Plan, type Snapshot, type PlannedCell } from './plan.js';
+import { buildPlan, toWriteRanges, toFormatWrites, cellAt, formulaAt, type Plan, type Snapshot, type PlannedCell, type FormatCell } from './plan.js';
 import { evaluate, failureCode, qaJson, type QaCheck } from './qa.js';
 import { formatMonthKey, geometryAt, locateSection } from './calendar.js';
 import { monthStartIso } from './model.js';
 import {
   reconcileWindow, windowMonths, assertNotBeforeEpoch, buildSectionRepairPlan, evaluateRepairedSection, repairRecords, issueRecords,
-  type ReconcileMode, type ReconcileWindow, type SectionRepairPlan,
+  planMonthEndClose, sectionCellsReadback, controlledWritePolicy,
+  type ReconcileMode, type ReconcileWindow, type SectionRepairPlan, type MonthEndClosePlan, type ControlledPolicyResult,
 } from './reconcile.js';
 import type { FactRow, RepairRecord } from './bq.js';
 import {
   evaluateIntegrity, summarize, classifyCogsSnapshot, parseHhMm, DEFAULT_STORAGE_DUE_MSK, APPROVED_COGS_REFS,
-  type IntegrityIssue, type IntegritySummary, type EvaluationPhase, type IntegrityMode,
+  factCellRules, moneyActivityFrom,
+  type IntegrityIssue, type IntegritySummary, type EvaluationPhase, type IntegrityMode, type MoneyFactRow,
 } from './integrity.js';
 import type { CellValue } from './model.js';
 import type { Logger } from '../../logging.js';
@@ -55,7 +63,10 @@ import { monthKeyOf, nextMonth } from './calendar.js';
 // 2.1.0 — Financial Integrity V1: сверка окна 35 дней через границы месяцев, цена с происхождением, журнал ремонта.
 // 2.2.0 — SPP-3: колонка AB из wb_mart.V_WB_SPP_DAILY (UNITKA_SPP_MODE=off|observe|write, по умолчанию off).
 //         При UNITKA_RECONCILE_MODE=off (по умолчанию) поведение = 2.0.0.
-export const ENGINE_VERSION = 'unitka-engine/2.2.0';
+// 2.3.0 — защиты конца месяца (аудит 06.10.2026): закрытие незакрытых дней прошлого месяца до коммита LCD
+//         (MONTH_END_UNCLOSED — fail-closed), FACT_NOT_ON_SHEET, SKU_WITHOUT_BLOCK по деньгам, режим controlled
+//         (не включён), алерты INTEGRITY_DATA_ERROR и RECON_RESIDUAL_PERSISTENT.
+export const ENGINE_VERSION = 'unitka-engine/2.3.0';
 
 export interface UnitkaDeps {
   makeRunner: (ctx: LoaderContext) => QueryRunner;
@@ -111,6 +122,11 @@ export async function evaluateIntegrityPhase(a: {
   recon?: { sections: ReadonlyArray<{ snap: Snapshot; plan: SectionRepairPlan }> };
   /** PRE_WRITE: ячейки, которые прогон собирается записать (для PRICE_NOT_ON_SHEET). После записи не задаётся. */
   pendingWrite?: (row: number, col: number) => boolean;
+  /**
+   * Факты SKU × день (слой сверки, иначе суточная вью месяца LCD) — денежная активность для SKU_WITHOUT_BLOCK
+   * за дни каждой оцениваемой секции. Не задано — прежнее поведение (ERROR).
+   */
+  moneyFacts?: readonly MoneyFactRow[];
 }): Promise<IntegrityOutcome> {
   const mode: IntegrityMode = a.config.unitkaIntegrityMode ?? 'off';
   const budget = a.config.unitkaIntegrityBudgetMs ?? 90_000;
@@ -142,12 +158,14 @@ export async function evaluateIntegrityPhase(a: {
     const allFacts = factsRes.value;
     // Месяц LCD — как в Guard V1; в режиме сверки факты делятся по месяцам, прошлые секции оцениваются за дни окна.
     const lcdMonth = a.plan.monthStart.slice(0, 7);
+    const money = (from: string, to: string): { moneyActivity?: (nm: number) => boolean } => (a.moneyFacts ? { moneyActivity: moneyActivityFrom(a.moneyFacts, from, to) } : {});
     const issues = evaluateIntegrity({
       facts: useRecon ? allFacts.filter((f) => f.day.slice(0, 7) === lcdMonth) : allFacts,
       cogs, blocks: a.plan.blocks, lcd: a.plan.lcd, monthStart: a.plan.monthStart,
       firstDailyRow: a.plan.layout.firstDailyRow,
       cellAt: (r, c) => cellAt(a.snap, r, c), formulaAt: (r, c) => formulaAt(a.snap, r, c),
       refValues, now: a.now(), storageDueMinutes, checkSheetCells: true, ...(a.pendingWrite ? { pendingWrite: a.pendingWrite } : {}),
+      ...money(a.plan.monthStart, a.plan.lcd),
     });
     for (const sec of a.recon?.sections ?? []) {
       const mk = sec.plan.monthKey;
@@ -156,6 +174,12 @@ export async function evaluateIntegrityPhase(a: {
         cogs, blocks: sec.plan.blocks, lcd: a.plan.lcd, monthStart: `${mk}-01`, firstDailyRow: sec.plan.geometry.firstDailyRow,
         cellAt: (r, c) => cellAt(sec.snap, r, c), formulaAt: (r, c) => formulaAt(sec.snap, r, c),
         refValues, now: a.now(), storageDueMinutes, fromDay: sec.plan.fromDay, toDay: sec.plan.toDay, checkSheetCells: true, ...(a.pendingWrite ? { pendingWrite: a.pendingWrite } : {}),
+        ...money(sec.plan.fromDay, sec.plan.toDay),
+      }));
+      // FACT_NOT_ON_SHEET: пустые закрытые факт-ячейки прошлой секции (кроме цены — её ведёт PRICE_NOT_ON_SHEET).
+      issues.push(...factCellRules({
+        expected: sec.plan.expected, lcd: a.plan.lcd, monthStart: a.plan.monthStart,
+        cellAt: (r, c) => cellAt(sec.snap, r, c), ...(a.pendingWrite ? { pendingWrite: a.pendingWrite } : {}),
       }));
     }
     return { issues, summary: summarize(issues, mode, a.phase, a.now(), cogs) };
@@ -186,6 +210,16 @@ function publishIntegrity(
   };
   if (s.status === 'DATA_ERROR' || s.status === 'SYSTEM_ERROR') a.log.warn('unitka_integrity', payload);
   else a.log.info('unitka_integrity', payload);
+  // Алерт (действующая политика: severity ≥ ERROR и jsonPayload.code ≠ ""): есть хоть одна ошибка данных. Раньше
+  // DATA_ERROR жил только в qa_json и в журнале issue — его никто не видел. Только production: shadow оценивает ту же
+  // книгу и задублировал бы письмо. Структурное исключение SKU без денег (no_money_activity) — WARNING и сюда не входит.
+  const dataErrors = s.states.DATA_ERROR;
+  if (dataErrors > 0 && a.config.environment === 'prod') {
+    a.log.error('unitka_integrity_data_error', {
+      code: 'INTEGRITY_DATA_ERROR', run_id: a.runId, last_closed_date: a.lcd, phase: s.phase, data_error: dataErrors,
+      error_keys: s.error_keys.slice(0, 20), oldest_unresolved_data_error: s.oldest_unresolved_data_error, issue_codes: s.issue_codes,
+    });
+  }
 }
 
 /**
@@ -268,6 +302,14 @@ async function prepareReconcile(a: {
 }
 
 const cellKey = (c: { row: number; col: number; namedRange?: string }): string => c.namedRange ?? `${c.row}|${c.col}`;
+
+/** Объединение планов записи без дублей по ячейке (первое вхождение побеждает: в write ячейки конца месяца уже есть в сверке). */
+function mergeCells<T extends { row: number; col: number; namedRange?: string }>(base: readonly T[], extra: readonly T[]): T[] {
+  const seen = new Set(base.map(cellKey));
+  const out = [...base];
+  for (const c of extra) if (!seen.has(cellKey(c))) { seen.add(cellKey(c)); out.push(c); }
+  return out;
+}
 
 function reconcileSummary(o: ReconcileOutcome, extra: Record<string, unknown> = {}): Record<string, unknown> {
   return {
@@ -449,9 +491,12 @@ export async function unitkaLoader(ctx: LoaderContext, deps: UnitkaDeps = defaul
     });
     log.info('unitka_plan', planSummary(plan));
 
-    // 3'. Прошлые месяцы окна сверки. observe: только журнал (что изменил бы write); write: входит в запись.
+    // 3'. Прошлые месяцы окна сверки. observe: только журнал (что изменил бы write); write: входит в запись;
+    //     controlled: входит в запись только то, что пропустила политика controlledWritePolicy.
     let histCells: PlannedCell[] = [];
     let repairs: RepairRecord[] = [];
+    let controlled: ControlledPolicyResult | null = null;
+    let controlledRepairs: RepairRecord[] = [];
     if (reconcileMode !== 'off' && window && reconFacts) {
       reconcile = await prepareReconcile({
         sheets, sheetName: config.unitkaSheetName, found, window, mode: reconcileMode, facts: reconFacts,
@@ -463,10 +508,28 @@ export async function unitkaLoader(ctx: LoaderContext, deps: UnitkaDeps = defaul
       // В observe месяц LCD записывается по старому слою; что изменил бы слой сверки — считаем отдельным планом.
       const lcdCellsUnderRecon = reconcileMode === 'write' ? plan.cells
         : buildPlan({ snapshot: snap, lcd, facts: reconLcdFacts!, logistics, commission, minN: config.unitkaMinN, maxLagDays: Number.MAX_SAFE_INTEGER, deferLcdCommit: true }).cells;
-      repairs = repairRecords([...lcdCellsUnderRecon, ...histCells], {
+      const ledgerCtx = {
         runId, environment: config.environment, engineVersion: ENGINE_VERSION, gitSha: config.gitSha, detectedAt: deps.now().toISOString(),
-        repairedAt: null, status: 'PLANNED_NOT_WRITTEN', factOf: (nm, d) => byFact.get(`${nm}|${d}`),
-      });
+        repairedAt: null, status: 'PLANNED_NOT_WRITTEN' as const, factOf: (nm: number, d: string) => byFact.get(`${nm}|${d}`),
+      };
+      repairs = repairRecords([...lcdCellsUnderRecon, ...histCells], ledgerCtx);
+      if (reconcileMode === 'controlled') {
+        // controlled: месяц LCD — как observe; прошлые месяцы — только то, что пропустила политика. Отказ политики —
+        // ошибка С КОДОМ (алерт), но не падение прогона: пропущенное просто не пишется, остаток виден в журнале.
+        controlled = controlledWritePolicy(histCells, { lcdMonthStart, contractCells: reconcile.sections.reduce((n, x) => n + x.plan.expected.length, 0) });
+        controlledRepairs = repairRecords(controlled.apply, { ...ledgerCtx, includeFirstFills: true });
+        log.info('unitka_controlled_policy', {
+          ...controlled.counts, ledger_records: controlledRepairs.length,
+          applied_sample: controlled.apply.slice(0, 20).map((c) => `${c.date ?? ''} ${colA1(c.col)}${c.row} ${c.key ?? ''} ${String(c.before)}→${c.want === null ? '' : c.want}`),
+        });
+        for (const code of [...new Set(controlled.refused.map((r) => r.code))]) {
+          const list = controlled.refused.filter((r) => r.code === code);
+          log.error('unitka_controlled_refused', {
+            code, count: list.length, counts: controlled.counts,
+            sample: list.slice(0, 20).map((r) => `${r.cell.date ?? ''} ${r.cell.nmId ?? ''} ${colA1(r.cell.col)}${r.cell.row} ${r.cell.key ?? ''} ${String(r.cell.before)}→${r.cell.want === null ? '' : r.cell.want}`),
+          });
+        }
+      }
       const have = new Set(plan.cells.map(cellKey));
       log.info('unitka_reconcile_plan', reconcileSummary(reconcile, {
         repairs_planned: repairs.length,
@@ -474,6 +537,40 @@ export async function unitkaLoader(ctx: LoaderContext, deps: UnitkaDeps = defaul
         repairs_sample: repairs.slice(0, 40).map((r) => `${r.businessDate} ${r.nmId} ${r.field} ${r.cellA1} ${r.oldValue ?? ''}→${r.newValue ?? ''} ${r.reason} [${r.source}]`),
       }));
     }
+    // 3'a. ЗАКРЫТИЕ КОНЦА МЕСЯЦА (дефект A, 02.10.2026): кандидат LCD перешагивает дни прошлого месяца, которые книга
+    //      ни разу не закрывала, — они пишутся из плана сверки В ЛЮБОМ режиме, кроме off, и в observe тоже. Неполное
+    //      покрытие этих дней (или off) — MONTH_END_UNCLOSED ДО любой записи данных: LCD стоит, алерт по коду.
+    const monthEnd: MonthEndClosePlan = planMonthEndClose({
+      bookLcd: plan.bookLcd, lcd: plan.lcd, mode: reconcileMode, sections: reconcile?.sections ?? [], refused: reconcile?.refused ?? [],
+    });
+    const monthEndJson = monthEnd.days.length ? { month_end_close: { days: monthEnd.days, cells: monthEnd.cells.length, format_cells: monthEnd.formatCells.length } } : {};
+    if (monthEnd.days.length) {
+      log.info('unitka_month_end_close', {
+        days: monthEnd.days, book_lcd: plan.bookLcd, candidate: plan.lcd, reconcile_mode: reconcileMode, write: sheetBusinessWriteAllowed,
+        cells: monthEnd.cells.length, format_cells: monthEnd.formatCells.length, contract_cells: monthEnd.parts.reduce((n, p) => n + p.expected.length, 0),
+        sample: monthEnd.cells.slice(0, 20).map((c) => `${c.changeType} ${colA1(c.col)}${c.row} ${c.date ?? ''} ${c.key ?? ''} ${String(c.before)}→${c.want === null ? '' : c.want}`),
+      });
+    }
+
+    // 3'b. Остаток сверки, который НЕ пишется (observe: все поздние поправки; controlled: не пропущенные политикой). Висит
+    //      второй прогон подряд — ошибка с кодом (алерт): поправки источника копятся в листе незамеченными (дефект D).
+    //      Сбой чтения журнала прогонов — только предупреждение: прогон фактов от наблюдаемости не зависит.
+    const appliedA1 = new Set((controlled?.apply ?? []).map((c) => `${colA1(c.col)}${c.row}`));
+    const residual = reconcileMode === 'write' ? 0 : repairs.filter((r) => !appliedA1.has(r.cellA1)).length;
+    if (config.environment === 'prod' && (reconcileMode === 'observe' || reconcileMode === 'controlled') && residual > 0) {
+      try {
+        const previous = await bq.previousReconResidual(runId);
+        if (previous !== null && previous > 0) {
+          log.error('unitka_recon_residual_persistent', {
+            code: 'RECON_RESIDUAL_PERSISTENT', reconcile_mode: reconcileMode, residual, previous_residual: previous,
+            sample: repairs.filter((r) => !appliedA1.has(r.cellA1)).slice(0, 20).map((r) => `${r.businessDate} ${r.nmId} ${r.field} ${r.cellA1} ${r.oldValue ?? ''}→${r.newValue ?? ''} ${r.reason}`),
+          });
+        }
+      } catch (e) {
+        log.warn('unitka_recon_residual_check_failed', { message: e instanceof Error ? e.message : String(e) });
+      }
+    }
+
     // 3''. SPP-3: план AB по секциям окна (35 дней от кандидата, не раньше 01.09.2026). Снимки секций — до записи.
     // observe не меняет исход прогона фактов: сбой плана AB — предупреждение, факты и LCD идут как без SPP.
     // write — fail-closed: без плана AB прогон падает ДО любой записи (факты без AB не пишутся).
@@ -507,12 +604,24 @@ export async function unitkaLoader(ctx: LoaderContext, deps: UnitkaDeps = defaul
     // фактическое ИСПОЛНЕНИЕ ремонта (проба журнала, записи REPAIRED) — REPAIR_EXECUTION:
     // оно требует ещё и права записи в книгу, поэтому в контролируемом observe невозможно.
     const writeHistory = reconcileMode === 'write';
-    const repairExecutionAllowed = sheetBusinessWriteAllowed && writeHistory;
-    if (repairExecutionAllowed) pendingRepairs = repairs;
-    const allCells: PlannedCell[] = writeHistory ? [...plan.cells, ...histCells] : plan.cells;
-    const allFormatCells = writeHistory && reconcile ? [...plan.formatCells, ...reconcile.sections.flatMap((x) => x.plan.formatCells)] : plan.formatCells;
+    // Журнал ремонта: write — поздние поправки окна (как раньше); controlled — то, что пропустила политика, включая
+    // первые заполнения прошлых секций (LATE_FIRST_FILL). observe ремонт не исполняет.
+    const ledgerRepairs = writeHistory ? repairs : controlledRepairs;
+    const repairExecutionAllowed = sheetBusinessWriteAllowed && (writeHistory || (reconcileMode === 'controlled' && ledgerRepairs.length > 0));
+    if (repairExecutionAllowed) pendingRepairs = ledgerRepairs;
+    const controlledApply = controlled?.apply ?? [];
+    const sectionFormats: FormatCell[] = reconcile ? reconcile.sections.flatMap((x) => x.plan.formatCells) : [];
+    const controlledFmt = new Set(controlledApply.map((c) => `${c.row}|${c.col}`));
+    // Ячейки конца месяца добавляются в ЛЮБОМ режиме (в write они уже есть в сверке — без дублей).
+    const allCells: PlannedCell[] = mergeCells(writeHistory ? [...plan.cells, ...histCells] : [...plan.cells, ...controlledApply], monthEnd.cells);
+    const allFormatCells: FormatCell[] = mergeCells(
+      writeHistory ? [...plan.formatCells, ...sectionFormats] : [...plan.formatCells, ...sectionFormats.filter((f) => controlledFmt.has(`${f.row}|${f.col}`))],
+      monthEnd.formatCells,
+    );
     rec.cellsPlanned = allCells.length;
     const reconArg = reconcile && reconcileMode !== 'off' ? { sections: reconcile.sections } : undefined;
+    const moneyFacts: readonly MoneyFactRow[] = reconFacts ?? legacyAtCandidate;
+    const controlledJson = controlled ? { controlled: controlled.counts } : {};
 
     // Снимок issue — СОСТОЯНИЕ НАБЛЮДАЕМОСТИ, а не ремонт: одна и та же запись в обычном прогоне и в
     // контролируемом observe с отключённой записью в книгу. Условие ровно одно — OBSERVABILITY_WRITE.
@@ -549,7 +658,7 @@ export async function unitkaLoader(ctx: LoaderContext, deps: UnitkaDeps = defaul
     if (!writeMode) {
       if (integrityMode !== 'off') {
         const pending = new Set(allCells.filter((c) => c.namedRange === undefined).map((c) => `${c.row}|${c.col}`));
-        integrity = await evaluateIntegrityPhase({ bq, sheets, config, snap, plan, phase: 'PRE_WRITE', now: deps.now, log, pendingWrite: (r, c) => pending.has(`${r}|${c}`), ...(reconArg ? { recon: reconArg } : {}) });
+        integrity = await evaluateIntegrityPhase({ bq, sheets, config, snap, plan, phase: 'PRE_WRITE', now: deps.now, log, pendingWrite: (r, c) => pending.has(`${r}|${c}`), moneyFacts, ...(reconArg ? { recon: reconArg } : {}) });
         publishIntegrity(integrity, { config, log, runId, lcd: plan.lcd });
       }
       // Контролируемый production-observe (UNITKA_WRITE_ENABLED=0): оценка завершена — снимок сохраняется
@@ -560,7 +669,7 @@ export async function unitkaLoader(ctx: LoaderContext, deps: UnitkaDeps = defaul
       const SHADOW_DIFF = new Set(['BQ_SHEETS_MISMATCH', 'LCD_CONSISTENT', 'CLOSED_FORMAT_CONTRACT']);
       const expectedFail = qa.checks.filter((c) => !c.pass && !SHADOW_DIFF.has(c.name));
       rec.qaStatus = expectedFail.length ? 'SHADOW_FAIL' : (allCells.length || allFormatCells.length ? 'SHADOW_DIFF' : 'SHADOW_MATCH');
-      rec.qaJson = qaJson(qa, { plan: planSummary(plan), calendar, ...sppJson(0), ...(reconcile ? { reconcile: reconcileSummary(reconcile, { repairs_planned: repairs.length, repairs_recorded: 0, issue_snapshot: issueSnapshot }) } : {}), ...(integrity ? { integrity: integrity.summary } : {}) });
+      rec.qaJson = qaJson(qa, { plan: planSummary(plan), calendar, ...sppJson(0), ...monthEndJson, ...(reconcile ? { reconcile: reconcileSummary(reconcile, { repairs_planned: repairs.length, repairs_residual: residual, repairs_recorded: 0, issue_snapshot: issueSnapshot, ...controlledJson }) } : {}), ...(integrity ? { integrity: integrity.summary } : {}) });
       log.info('unitka_shadow', { qa_status: rec.qaStatus, cells_planned: plan.cells.length, checks: qa.checks.map((c) => `${c.name}:${c.pass ? 'PASS' : 'FAIL(' + c.count + ')'}`) });
       if (expectedFail.length) {
         rec.errorCode = failureCode({ pass: false, checks: expectedFail });
@@ -587,7 +696,7 @@ export async function unitkaLoader(ctx: LoaderContext, deps: UnitkaDeps = defaul
       // Факты и AB — ОДНОЙ записью (values.batchUpdate, RAW): AB не может лечь без фактов и наоборот.
       const ranges = [...toWriteRanges(allCells, config.unitkaSheetName), ...sppWriteRanges(sppCells, config.unitkaSheetName)];
       // План ремонта — в лог ДО мутации листа: происхождение не теряется при любом исходе записи.
-      if (repairExecutionAllowed && repairs.length > 0) log.info('unitka_repairs_planned', { count: repairs.length, records: repairs.slice(0, 200) });
+      if (repairExecutionAllowed && ledgerRepairs.length > 0) log.info('unitka_repairs_planned', { count: ledgerRepairs.length, records: ledgerRepairs.slice(0, 200) });
       writeStage = 'ATTEMPTED';
       const updated = await sheets.batchWrite(ranges);
       writeStage = 'ACKNOWLEDGED';
@@ -618,12 +727,40 @@ export async function unitkaLoader(ctx: LoaderContext, deps: UnitkaDeps = defaul
     const qaLcd = evaluate(after, plan, { commitBarrier: { committedIso: cycle.committed } });
     const reconChecks: QaCheck[] = [];
     const afterSections: ReconcileSection[] = [];
+    // Перечитанные после записи прошлые секции (по месяцу): одно чтение на секцию на фазу.
+    const reread = new Map<string, Snapshot>();
+    const rereadSection = async (monthKey: string): Promise<Snapshot> => {
+      const hit = reread.get(monthKey);
+      if (hit) return hit;
+      const sec = reconcile!.sections.find((x) => x.plan.monthKey === monthKey)!;
+      const again = await readSnapshot(sheets, config.unitkaSheetName, sec.snap.geometry, sec.snap.width, sec.snap.anchorCol);
+      reread.set(monthKey, again);
+      return again;
+    };
     if (writeHistory && reconcile) {
       for (const sec of reconcile.sections) {
-        const again = await readSnapshot(sheets, config.unitkaSheetName, sec.snap.geometry, sec.snap.width, sec.snap.anchorCol);
+        const again = await rereadSection(sec.plan.monthKey);
         afterSections.push({ snap: again, plan: sec.plan });
         reconChecks.push(...evaluateRepairedSection(again, sec.plan, { summaryUpTo: cycle.committed }));
       }
+    }
+    // Конец месяца: КАЖДАЯ ячейка контракта незакрытых дней == источнику + нет ошибок формул в их строках. Сводка этих дней
+    // до коммита законно пуста (формулы под отсечкой LCD) — она проверяется после коммита. Провал → коммит не начинается.
+    if (monthEnd.parts.length) {
+      const parts = [];
+      for (const p of monthEnd.parts) parts.push({ after: await rereadSection(p.plan.monthKey), plan: p.plan, cells: p.expected });
+      reconChecks.push(...sectionCellsReadback('MONTH_END_CLOSE', parts));
+    }
+    // controlled: записанные ячейки прошлых секций == плану; сводка дней, уже закрытых в книге, = Σ блоков.
+    if (controlledApply.length && reconcile) {
+      const parts = [];
+      for (const sec of reconcile.sections) {
+        const cells = controlledApply.filter((c) => c.date !== undefined && c.date.slice(0, 7) === sec.plan.monthKey);
+        if (!cells.length) continue;
+        const summaryDays = [...new Set(cells.map((c) => c.date!))].filter((d) => d <= cycle.committed).sort();
+        parts.push({ after: await rereadSection(sec.plan.monthKey), plan: sec.plan, cells, summaryDays });
+      }
+      reconChecks.push(...sectionCellsReadback('RECON_CONTROLLED', parts, { summary: true }));
     }
     // SPP-3: каждая записанная ячейка AB — значение = плану, формат числа прежний. Провал → коммит LCD не начинается.
     const sppChecks: QaCheck[] = [];
@@ -642,16 +779,17 @@ export async function unitkaLoader(ctx: LoaderContext, deps: UnitkaDeps = defaul
     // значения фактов и ТЕКСТ формул, а не результаты формул под отсечкой LCD, поэтому незакоммиченный
     // день-кандидат ложных issue не даёт. Не влияет на qa_status.
     if (integrityMode !== 'off') {
-      const reconAfter = reconArg ? { sections: writeHistory ? afterSections : reconcile!.sections } : undefined;
-      integrity = await evaluateIntegrityPhase({ bq, sheets, config, snap: after, plan, phase: 'POST_WRITE', now: deps.now, log, ...(reconAfter ? { recon: reconAfter } : {}) });
+      // Прошлые секции — по перечитанному листу, если прогон в них писал (write, конец месяца, controlled); иначе — снимок до записи.
+      const reconAfter = reconArg ? { sections: writeHistory ? afterSections : reconcile!.sections.map((x) => ({ snap: reread.get(x.plan.monthKey) ?? x.snap, plan: x.plan })) } : undefined;
+      integrity = await evaluateIntegrityPhase({ bq, sheets, config, snap: after, plan, phase: 'POST_WRITE', now: deps.now, log, moneyFacts, ...(reconAfter ? { recon: reconAfter } : {}) });
       publishIntegrity(integrity, { config, log, runId, lcd: plan.lcd });
     }
     // Журнал ремонта — ТОЛЬКО после подтверждённой записи (QA PASS): несостоявшийся ремонт не объявляется состоявшимся.
     let repairsRecorded = 0;
-    if (repairExecutionAllowed && qa.pass && repairs.length > 0) {
+    if (repairExecutionAllowed && qa.pass && ledgerRepairs.length > 0) {
       writeStage = 'VERIFIED';
       attemptRecorded = true;
-      const done = repairs.map((r) => ({ ...r, repairedAt: deps.now().toISOString(), status: 'REPAIRED' as const }));
+      const done = ledgerRepairs.map((r) => ({ ...r, repairedAt: deps.now().toISOString(), status: 'REPAIRED' as const }));
       // Сначала лог (происхождение не теряется, даже если BigQuery откажет), затем таблица.
       log.info('unitka_repairs', { count: done.length, records: done.slice(0, 200) });
       try {
@@ -664,8 +802,8 @@ export async function unitkaLoader(ctx: LoaderContext, deps: UnitkaDeps = defaul
     await persistIssueSnapshot();
     const setQaJson = (checks: QaCheck[] = qa.checks, pass: boolean = qa.pass): void => {
       rec.qaJson = qaJson({ pass, checks }, {
-        plan: planSummary(plan), calendar, format_cells_written: allFormatCells.length, ...sppJson(sppCells.length),
-        ...(reconcile ? { reconcile: reconcileSummary(reconcile, { repairs_planned: repairs.length, repairs_recorded: repairsRecorded, issue_snapshot: issueSnapshot }) } : {}),
+        plan: planSummary(plan), calendar, format_cells_written: allFormatCells.length, ...sppJson(sppCells.length), ...monthEndJson,
+        ...(reconcile ? { reconcile: reconcileSummary(reconcile, { repairs_planned: repairs.length, repairs_residual: residual, repairs_recorded: repairsRecorded, issue_snapshot: issueSnapshot, ...controlledJson }) } : {}),
         ...(integrity ? { integrity: integrity.summary } : {}),
         lifecycle: lifecycleSummary(),
       });
@@ -730,6 +868,16 @@ export async function unitkaLoader(ctx: LoaderContext, deps: UnitkaDeps = defaul
           const again = await readSnapshot(sheets, config.unitkaSheetName, sec.snap.geometry, sec.snap.width, sec.snap.anchorCol);
           postRecon.push(...evaluateRepairedSection(again, sec.plan));
         }
+      }
+      // Конец месяца: дни, закрытые только этим коммитом, — значения ещё раз и сводка = Σ блоков (формулы впервые считаются).
+      if (monthEnd.parts.length) {
+        const parts = [];
+        for (const p of monthEnd.parts) {
+          const sec = reconcile!.sections.find((x) => x.plan.monthKey === p.plan.monthKey)!;
+          const again = await readSnapshot(sheets, config.unitkaSheetName, sec.snap.geometry, sec.snap.width, sec.snap.anchorCol);
+          parts.push({ after: again, plan: p.plan, cells: p.expected, summaryDays: p.days });
+        }
+        postRecon.push(...sectionCellsReadback('MONTH_END_CLOSE', parts, { summary: true }));
       }
       const qaPost = { pass: qaPostLcd.pass && postRecon.every((c) => c.pass), checks: [...qaPostLcd.checks, ...postRecon] };
       log.info('unitka_qa', { pass: qaPost.pass, phase: 'POST_COMMIT', checks: qaPost.checks.map((c) => `${c.name}:${c.pass ? 'PASS' : 'FAIL(' + c.count + ')'}`) });
