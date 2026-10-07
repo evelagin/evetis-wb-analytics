@@ -99,6 +99,14 @@ bf AS (
   FROM `project-fa311fc0-4d87-4781-986.wb_raw.RAW_WB_FUNNEL_XLSX_BACKFILL`
   WHERE date_msk <= DATE '2026-09-03'
 ),
+-- Доказанные отказы вне Orders API (refusals_v1.sql): только они увеличивают S сверх Orders API —
+-- STILL_OPEN / MATURE_BUT_UNPROVEN ни продажей, ни отменой не становятся — только диагностика.
+rf AS (
+  SELECT nm_id, date_msk AS d, refusal_counted_qty, refusal_evidence_status, funnel_excess_qty,
+         sold_not_in_api_qty, unexplained_qty, finance_age_days, proven_refusal_srids, proven_srids, proven_logistics_rub
+  FROM `project-fa311fc0-4d87-4781-986.wb_mart.V_UNITKA_REFUSAL_DAILY`, w
+  WHERE date_msk BETWEEN w.d1 AND w.d2
+),
 sd AS (SELECT DISTINCT snapshot_date AS d FROM `project-fa311fc0-4d87-4781-986.wb_mart.FACT_STOCKS_SNAPSHOT`, w WHERE snapshot_date BETWEEN w.d1 AND w.d2),
 st AS (
   SELECT nm_id, snapshot_date AS d, SUM(quantity) AS stock
@@ -119,7 +127,8 @@ x AS (
     COALESCE(f.opens, bf.opens)                          AS opens,
     COALESCE(f.carts, bf.carts)                          AS carts,
     COALESCE(f.forders, bf.forders, o.gross, 0)          AS orders,
-    COALESCE(bf.canc, o.canc, 0)                         AS cancels,
+    COALESCE(bf.canc, o.canc, 0)
+      + IF(f.forders IS NOT NULL AND bf.canc IS NULL, IFNULL(rf.refusal_counted_qty, 0), 0) AS cancels,
     IF(sd.d IS NULL, NULL, IFNULL(st.stock, 0))          AS stock,
     ROUND(IFNULL(m.ads, 0), 2)                           AS ads_in,
     IF(pd.d IS NULL, NULL, ROUND(IFNULL(ps.storage, 0), 2)) AS storage,
@@ -127,12 +136,17 @@ x AS (
          WHEN bf.forders IS NOT NULL THEN 'XLSX_BACKFILL'
          ELSE 'ORDERS_API' END                           AS orders_source,
     CASE WHEN bf.canc IS NOT NULL THEN 'XLSX_BACKFILL'
+         WHEN f.forders IS NOT NULL AND IFNULL(rf.refusal_counted_qty, 0) > 0 THEN 'PROXY_FACT_ORDERS+FINANCE_REFUSAL'
          ELSE 'PROXY_FACT_ORDERS' END                    AS cancels_source,
     o.price                                              AS orders_api_price,
     IFNULL(o.gross, 0)                                   AS fact_order_qty,
     IFNULL(o.same_day_canc, 0)                           AS same_day_cancel_qty,
     f.forders                                            AS funnel_orders,
     f.fsum                                               AS funnel_orders_sum,
+    IF(f.forders IS NOT NULL AND bf.canc IS NULL, IFNULL(rf.refusal_counted_qty, 0), 0) AS refusal_counted_qty,
+    rf.refusal_evidence_status, rf.funnel_excess_qty, rf.sold_not_in_api_qty, rf.unexplained_qty,
+    rf.finance_age_days AS refusal_finance_age_days, rf.proven_srids AS refusal_proven_srids,
+    rf.proven_logistics_rub AS refusal_proven_logistics_rub,
     f.observed_at                                        AS funnel_observed_at,
     o.built_at                                           AS orders_built_at,
     ps.observed_at                                       AS storage_observed_at
@@ -141,6 +155,7 @@ x AS (
   LEFT JOIN m  ON m.nm_id  = g.nm_id AND m.d  = g.d
   LEFT JOIN f  ON f.nm_id  = g.nm_id AND f.d  = g.d
   LEFT JOIN bf ON bf.nm_id = g.nm_id AND bf.d = g.d
+  LEFT JOIN rf ON rf.nm_id = g.nm_id AND rf.d = g.d
   LEFT JOIN st ON st.nm_id = g.nm_id AND st.d = g.d
   LEFT JOIN ps ON ps.nm_id = g.nm_id AND ps.d = g.d
   LEFT JOIN sd ON sd.d = g.d
@@ -177,7 +192,15 @@ SELECT
   funnel_observed_at,
   orders_built_at,
   storage_observed_at,
-  same_day_cancel_qty
+  same_day_cancel_qty,
+  refusal_counted_qty,
+  refusal_evidence_status,
+  funnel_excess_qty,
+  sold_not_in_api_qty,
+  unexplained_qty,
+  refusal_finance_age_days,
+  refusal_proven_srids,
+  refusal_proven_logistics_rub
 FROM p;
 
 -- ─── 2. Факты целостности SKU × день за окно сверки ─────────────────────────
@@ -242,7 +265,15 @@ SELECT
     WHEN f.funnel_orders = 0 AND f.fact_order_qty > 0 THEN 'ONLY_FACT'
     WHEN f.funnel_orders > f.fact_order_qty THEN 'FUNNEL_GT_FACT'
     ELSE 'FACT_GT_FUNNEL'
-  END                           AS divergence_class
+  END                           AS divergence_class,
+  -- Доказательство отказов вне Orders API (refusals_v1.sql): Guard классифицирует избыток воронки по нему.
+  f.refusal_counted_qty,
+  f.refusal_evidence_status,
+  f.funnel_excess_qty,
+  f.sold_not_in_api_qty,
+  f.unexplained_qty,
+  f.refusal_finance_age_days,
+  f.refusal_proven_srids
 FROM f
 CROSS JOIN lcd
 LEFT JOIN ref USING (nm_id)

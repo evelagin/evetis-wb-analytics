@@ -57,6 +57,7 @@ import { resolveWbCandidate, ensureWbMonthSection, WbLcdCell, lifecycleLog, type
 import { asNumber, isoToSerial } from './model.js';
 import { planSpp, sppWindow, sppWriteRanges, sppClearRanges, buildSppManifest, encodeSppManifest, verifySppReadback, sppSummary, type SppPlan, type SppMode } from './spp.js';
 import { monthKeyOf, nextMonth } from './calendar.js';
+import { applyRefusalNotes, readbackRefusalNotes, type NoteCell } from './refusal_notes.js';
 
 // 1.2.0 — Integrity Guard V1 (Phase 1C1). При UNITKA_INTEGRITY_MODE=off (по умолчанию) поведение = 1.1.0.
 // 2.0.0 — Calendar V2 (Phase 2B): секция месяца по заголовку, любые 28–31 день, слоты блоков (24 — резерв).
@@ -727,6 +728,23 @@ export async function unitkaLoader(ctx: LoaderContext, deps: UnitkaDeps = defaul
       log.info('unitka_format_written', { cells: allFormatCells.length, requests: writes.length, applied });
     }
 
+    // 4'''. Phase 1A: заметки S о доказанных отказах вне Orders API — месяц LCD, отдельным batchUpdate ПОСЛЕ значений.
+    //       Движок ставит и снимает только заметки со своей меткой; чужие (владельца) не трогает. Идемпотентно.
+    // Цели заметок: S месяца LCD (весь контракт) + ЗАПИСАННЫЕ этим прогоном S прошлых месяцев (controlled / write).
+    const factByKey = new Map([...(reconFacts ?? []), ...facts].map((f) => [`${f.nmId}|${f.date}`, f]));
+    // Прошлые месяцы окна: S, который уже равен источнику (кем бы он ни был записан) или записан этим прогоном.
+    // S, ждущий ремонта и не записанный (observe / отказ политики), заметку НЕ получает: заметка не должна
+    // утверждать отказ, которого в ячейке ещё нет.
+    const noteCellKey = (c: { row: number; col: number }): string => `${c.row}|${c.col}`;
+    const writtenNow = new Set(allCells.map(noteCellKey));
+    const pendingHist = new Set((reconcile?.sections ?? []).flatMap((s) => s.plan.cells).map(noteCellKey).filter((k) => !writtenNow.has(k)));
+    const histTargets = (reconcile?.sections ?? []).flatMap((s) => s.plan.expected).filter((e) => e.key === 'cancels' && !pendingHist.has(noteCellKey(e)));
+    const noteTargets = [...plan.expected, ...histTargets, ...allCells.filter((c) => c.key === 'cancels')];
+    const notesOut = await applyRefusalNotes(sheets, config.unitkaSheetName, snap.sheetId, noteTargets, (nm, d) => factByKey.get(`${nm}|${d}`));
+    const refusalNotes: NoteCell[] = notesOut.notes;
+    if (notesOut.conflicts.length) log.warn('unitka_refusal_note_conflict', { cells: notesOut.conflicts.map((c) => `${c.date} ${c.nmId} r${c.row}c${c.col}`), reason: 'на ячейке S стоит чужая заметка — заметка об отказе не записана' });
+    if (refusalNotes.length) log.info('unitka_refusal_notes_written', { notes: refusalNotes.length, set: refusalNotes.filter((n) => n.note !== '').length, cleared: refusalNotes.filter((n) => n.note === '').length, applied: notesOut.applied });
+
     // 5. reconciliation ДО КОММИТА LCD (Gate 10): данные записаны, B2 ещё прежний. QA сверяет сводку по
     //    дням, закрытым В КНИГЕ, а LCD_CONSISTENT работает как барьер compare-before-commit: B2 обязан
     //    держать ожидаемый закоммиченный LCD. Прежний инвариант «имя = зеркало = LCD» — после коммита.
@@ -781,6 +799,8 @@ export async function unitkaLoader(ctx: LoaderContext, deps: UnitkaDeps = defaul
       }
       sppChecks.push(verifySppReadback(sppCells, (m) => reread.get(m)));
     }
+    const notesCheck = await readbackRefusalNotes(sheets, config.unitkaSheetName, refusalNotes);
+    if (notesCheck) reconChecks.push(notesCheck);
     const qa = { pass: qaLcd.pass && reconChecks.every((c) => c.pass) && sppChecks.every((c) => c.pass), checks: [...qaLcd.checks, ...reconChecks, ...sppChecks] };
     rec.qaStatus = qa.pass ? 'PASS' : 'FAIL';
     // Integrity — ПОСЛЕ записи и reconciliation, на перечитанном листе, ДО коммита LCD. Guard читает

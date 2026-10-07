@@ -7,7 +7,7 @@
  */
 import type { QueryRunner } from '../mart/bq.js';
 import { LoaderError } from '../../errors.js';
-import type { IntegrityFactsRow, CogsCanonicalRow, PriceState, DivergenceClass } from './integrity.js';
+import type { IntegrityFactsRow, CogsCanonicalRow, PriceState, DivergenceClass, RefusalEvidenceStatus } from './integrity.js';
 
 const PRICE_STATES: ReadonlySet<string> = new Set(['PRESENT', 'MISSING_WITH_ACTIVITY', 'MISSING_NO_ACTIVITY']);
 const DIVERGENCE_CLASSES: ReadonlySet<string> = new Set(['EXACT', 'FUNNEL_GT_FACT', 'FACT_GT_FUNNEL', 'ONLY_FUNNEL', 'ONLY_FACT', 'NO_FUNNEL_ROW']);
@@ -61,6 +61,56 @@ export interface FactRow {
   funnelObservedAt?: string | null;
   ordersBuiltAt?: string | null;
   storageObservedAt?: string | null;
+  /**
+   * Доказанные отказы вне Orders API (sql/unitka/refusals_v1.sql), уже включённые в cancels. 0 — нет.
+   * Провенанс для заметки S: srid и сумма их логистики из финотчёта.
+   */
+  refusalCountedQty?: number;
+  refusalProvenSrids?: string | null;
+  refusalProvenLogisticsRub?: number | null;
+  refusalEvidenceStatus?: string | null;
+}
+
+/** Источник отмен, в которые вошли доказанные отказы вне Orders API. */
+export const CANCELS_SOURCE_WITH_REFUSALS = 'PROXY_FACT_ORDERS+FINANCE_REFUSAL';
+const CANCELS_SOURCES: ReadonlySet<string> = new Set(['PROXY_FACT_ORDERS', 'XLSX_BACKFILL', CANCELS_SOURCE_WITH_REFUSALS]);
+const REFUSAL_STATUSES: ReadonlySet<string> = new Set(['NO_EXCESS', 'EXPLAINED', 'STILL_OPEN', 'MATURE_BUT_UNPROVEN']);
+
+/**
+ * Поля отказов строки факта + fail-closed проверка контракта слоя: отказ входит в S только на днях воронки,
+ * только с явным источником, не больше S и не больше Q (отмена без заказа невозможна).
+ */
+function refusalFields(r: Record<string, unknown>, view: string): Pick<FactRow, 'refusalCountedQty' | 'refusalProvenSrids' | 'refusalProvenLogisticsRub' | 'refusalEvidenceStatus'> {
+  const source = String(r.cancels_source ?? '');
+  // Строка без колонки отказов (тестовые подделки старой формы): отказов нет, проверять нечего. В production колонка
+  // есть всегда — SELECT несуществующей колонки BigQuery отвергает сам, поэтому этот путь в бою недостижим.
+  if (r.refusal_counted_qty === undefined) return { refusalCountedQty: 0, refusalProvenSrids: null, refusalProvenLogisticsRub: null, refusalEvidenceStatus: null };
+  const counted = num(r.refusal_counted_qty) ?? 0;
+  const status = str(r.refusal_evidence_status);
+  const where = `${String(r.nm_id)} ${String(date(r.date_msk))}`;
+  if (!CANCELS_SOURCES.has(source)) throw new LoaderError(`${view}: неизвестный cancels_source '${source}' (${where})`, 'BQ_SHAPE');
+  if (status !== null && !REFUSAL_STATUSES.has(status)) throw new LoaderError(`${view}: неизвестный refusal_evidence_status '${status}' (${where})`, 'BQ_SHAPE');
+  if (counted < 0 || !Number.isInteger(counted)) throw new LoaderError(`${view}: refusal_counted_qty=${counted} (${where})`, 'BQ_SHAPE');
+  if ((counted > 0) !== (source === CANCELS_SOURCE_WITH_REFUSALS)) throw new LoaderError(`${view}: refusal_counted_qty=${counted} и cancels_source='${source}' рассогласованы (${where})`, 'BQ_SHAPE');
+  if (counted > 0) {
+    const q = num(r.orders) ?? 0, s = num(r.cancels) ?? 0;
+    if (String(r.orders_source ?? '') !== 'FUNNEL_API' || s < counted || s > q) {
+      throw new LoaderError(`${view}: отказ вне доказанных условий (${where}: orders=${q}, cancels=${s}, refusals=${counted}, orders_source=${String(r.orders_source)})`, 'BQ_SHAPE');
+    }
+  }
+  return {
+    refusalCountedQty: counted,
+    refusalProvenSrids: str(r.refusal_proven_srids),
+    refusalProvenLogisticsRub: num(r.refusal_proven_logistics_rub),
+    refusalEvidenceStatus: status,
+  };
+}
+
+function refusalStatus(v: unknown): RefusalEvidenceStatus | null {
+  const s = str(v);
+  if (s === null) return null;
+  if (!REFUSAL_STATUSES.has(s)) throw new LoaderError(`V_UNITKA_INTEGRITY: неизвестный refusal_evidence_status '${s}'`, 'BQ_SHAPE');
+  return s as RefusalEvidenceStatus;
 }
 
 export type PriceSource = 'ORDERS_API' | 'FUNNEL_FALLBACK';
@@ -257,7 +307,8 @@ export class UnitkaBq {
 
   async facts(): Promise<FactRow[]> {
     const rows = await this.runner.query(
-      `SELECT nm_id, date_msk, views, opens, carts, orders, cancels, stock, ads_in, price, storage, orders_source, cancels_source
+      `SELECT nm_id, date_msk, views, opens, carts, orders, cancels, stock, ads_in, price, storage, orders_source, cancels_source,
+              refusal_counted_qty, refusal_evidence_status, refusal_proven_srids, refusal_proven_logistics_rub
        FROM ${this.fqn(this.martDataset, 'V_UNITKA_DAILY_FACT')} ORDER BY nm_id, date_msk`,
     );
     return rows.map((r) => ({
@@ -274,6 +325,7 @@ export class UnitkaBq {
       storage: num(r.storage),
       ordersSource: String(r.orders_source ?? ''),
       cancelsSource: String(r.cancels_source ?? ''),
+      ...refusalFields(r, 'V_UNITKA_DAILY_FACT'),
     }));
   }
 
@@ -321,7 +373,8 @@ export class UnitkaBq {
     const rows = await this.runner.query(
       `SELECT nm_id, date_msk, views, opens, carts, orders, cancels, stock, ads_in, price, storage, orders_source, cancels_source,
               price_source, fact_order_qty, funnel_orders, funnel_orders_sum, sku_active,
-              funnel_observed_at, orders_built_at, storage_observed_at
+              funnel_observed_at, orders_built_at, storage_observed_at,
+              refusal_counted_qty, refusal_evidence_status, refusal_proven_srids, refusal_proven_logistics_rub
        FROM ${this.fqn(this.martDataset, 'V_UNITKA_RECON_FACT')} ORDER BY nm_id, date_msk`,
     );
     return rows.map((r) => {
@@ -348,6 +401,7 @@ export class UnitkaBq {
         factOrderQty: num(r.fact_order_qty), funnelOrders: num(r.funnel_orders), funnelOrdersSum: num(r.funnel_orders_sum),
         skuActive: r.sku_active === true || r.sku_active === 'true',
         funnelObservedAt: str(r.funnel_observed_at), ordersBuiltAt: str(r.orders_built_at), storageObservedAt: str(r.storage_observed_at),
+        ...refusalFields(r, 'V_UNITKA_RECON_FACT'),
       };
     });
   }
@@ -401,7 +455,9 @@ export class UnitkaBq {
     const rows = await this.runner.query(
       `SELECT marketplace, nm_id, internal_sku, product_name, day, last_closed_date, orders_unitka, cancels_unitka,
               orders_source, factual_order_price, orders_funnel, fact_order_rows, fact_order_qty,
-              observed_price_diagnostic, observed_price_at, storage_value, storage_date_covered, price_state, divergence_class${extra}
+              observed_price_diagnostic, observed_price_at, storage_value, storage_date_covered, price_state, divergence_class,
+              refusal_counted_qty, refusal_evidence_status, funnel_excess_qty, sold_not_in_api_qty, unexplained_qty,
+              refusal_finance_age_days, refusal_proven_srids${extra}
        FROM ${this.fqn(this.martDataset, recon ? 'V_UNITKA_RECON_INTEGRITY' : 'V_UNITKA_INTEGRITY')} ORDER BY nm_id, day`,
       undefined, undefined, jobTimeoutMs === undefined ? undefined : { jobTimeoutMs },
     );
@@ -430,6 +486,13 @@ export class UnitkaBq {
         storageDateCovered: r.storage_date_covered === true || r.storage_date_covered === 'true',
         priceState: priceState as PriceState,
         divergenceClass: divergence as DivergenceClass,
+        refusalCountedQty: num(r.refusal_counted_qty),
+        refusalEvidenceStatus: refusalStatus(r.refusal_evidence_status),
+        funnelExcessQty: num(r.funnel_excess_qty),
+        soldNotInApiQty: num(r.sold_not_in_api_qty),
+        unexplainedQty: num(r.unexplained_qty),
+        refusalFinanceAgeDays: num(r.refusal_finance_age_days),
+        refusalProvenSrids: str(r.refusal_proven_srids),
         ...(recon ? {
           priceSource: str(r.price_source) as PriceSource | null,
           funnelOrdersSum: num(r.funnel_orders_sum),

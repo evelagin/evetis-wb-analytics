@@ -40,7 +40,9 @@ b AS (
 ),
 -- Ровно то, что Engine пишет в лист: Guard проверяет записываемые факты, а не свою копию логики.
 f AS (
-  SELECT nm_id, date_msk AS day, orders, cancels, price, storage, orders_source
+  SELECT nm_id, date_msk AS day, orders, cancels, price, storage, orders_source,
+         refusal_counted_qty, refusal_evidence_status, funnel_excess_qty, sold_not_in_api_qty,
+         unexplained_qty, refusal_finance_age_days, refusal_proven_srids
   FROM `project-fa311fc0-4d87-4781-986.wb_mart.V_UNITKA_DAILY_FACT`
 ),
 ref AS (
@@ -126,7 +128,15 @@ SELECT
     WHEN x.orders_funnel = 0 AND IFNULL(x.fact_order_qty, 0) > 0 THEN 'ONLY_FACT'
     WHEN x.orders_funnel > IFNULL(x.fact_order_qty, 0) THEN 'FUNNEL_GT_FACT'
     ELSE 'FACT_GT_FUNNEL'
-  END                           AS divergence_class
+  END                           AS divergence_class,
+  -- Доказательство отказов вне Orders API (refusals_v1.sql): Guard классифицирует избыток воронки по нему.
+  x.refusal_counted_qty,
+  x.refusal_evidence_status,
+  x.funnel_excess_qty,
+  x.sold_not_in_api_qty,
+  x.unexplained_qty,
+  x.refusal_finance_age_days,
+  x.refusal_proven_srids
 FROM x
 CROSS JOIN lcd
 LEFT JOIN ref USING (nm_id);

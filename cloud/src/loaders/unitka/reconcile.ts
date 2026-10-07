@@ -411,7 +411,7 @@ function asOfOf(c: PlannedCell, f: FactRow | undefined): string | null {
   switch (c.key) {
     case 'storage': return f.storageObservedAt ?? null;
     case 'price': return f.priceSource === 'FUNNEL_FALLBACK' ? f.funnelObservedAt ?? null : f.ordersBuiltAt ?? null;
-    case 'cancels': return f.cancelsSource === 'PROXY_FACT_ORDERS' ? f.ordersBuiltAt ?? null : null;
+    case 'cancels': return f.cancelsSource.startsWith('PROXY_FACT_ORDERS') ? f.ordersBuiltAt ?? null : null;
     case 'opens': case 'carts': case 'orders': return f.ordersSource === 'FUNNEL_API' ? f.funnelObservedAt ?? null : null;
     default: return null;
   }
