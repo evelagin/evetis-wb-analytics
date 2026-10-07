@@ -159,7 +159,7 @@ class CloudAccess:
                 elif match[1] == c["datasets"]["tenant_locks"] and match[2] is None:
                     ref = (body or {}).get("tableReference", {})
                     marker = ref.get("tableId", "")
-                    permitted = ref == {"projectId": c["project_id"], "datasetId": match[1], "tableId": marker} and bool(re.fullmatch(r"BFR_[0-9a-f]{64}|BFQ_[0-9a-f]{64}_[0-9]{10}_(?:DISPATCH_INTENT|DISPATCH_RECEIPT|RECONCILED)|L_[0-9a-f]{16}_[0-9]{4}|LD_[0-9a-f]{16}_[0-9]{4}", marker)) and not set(body) - {"tableReference", "schema", "labels", "description", "expirationTime"}
+                    permitted = ref == {"projectId": c["project_id"], "datasetId": match[1], "tableId": marker} and bool(re.fullmatch(r"BFR_[0-9a-f]{64}|BFQ_[0-9a-f]{64}_[0-9]{10}_(?:DISPATCH_INTENT|DISPATCH_RECEIPT|RECONCILED)|L_[0-9a-f]{16}_[0-9]{4,10}|LD_[0-9a-f]{16}_[0-9]{4,10}", marker)) and not set(body) - {"tableReference", "schema", "labels", "description", "expirationTime"}
         elif authority == "reader" and method == "GET" and body is None:
             jobs = set(c["marketplaces"]["ozon"]["jobs"]) | {"tenant-control", "tenant-backfill-controller"}
             if parsed.netloc == "run.googleapis.com":

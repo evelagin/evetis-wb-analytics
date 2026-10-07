@@ -103,3 +103,43 @@ def test_internal_catalog_gate_honors_nullable_string_sku_schema(monkeypatch, in
     else:
         assert F.internal_preflight(p,source_binding=False)['CAPABILITY_PROFILE_readable'] is True
         assert len(queries)==3
+
+
+def test_full_plan_quota_revalidates_exact_original_owner_exception_only(monkeypatch):
+    p,s,proof=failed();proof['root_hash']=F.QF.ROOT;proof['hash']=B.digest({k:v for k,v in proof.items() if k!='hash'});new=B.plan({'BACKFILL_MODE':B.VERSION,'BACKFILL_TARGET_PROJECT':p['project'],
+        'TENANT_BINDING_REQUIRED':'1','STRICT_PAGE_CAPS':'1','SINCE':'2023-03-24','UNTIL':'2023-03-24',
+        'BACKFILL_GENERATION':'full-new','BACKFILL_ORIGIN':'2026-10-07T00:00:00Z'},
+        'ads_sku_daily',p['project'],'ozon_raw','ref',__import__('datetime').date(2026,10,7))
+    from types import SimpleNamespace
+    name=PS.marker(proof);calls=[]
+    class DB:
+        def list_tables(self,where):return [SimpleNamespace(table_id=name)]
+        def get_table(self,where):return SimpleNamespace(description=PS.marker_value(proof)[1],labels=PS.marker_value(proof)[0])
+        def query(self,sql,**kw):
+            calls.append(sql)
+            values=[{'evidence_json':__import__('json').dumps({'plan':p,'state':s}),
+                     'backfill_detail_json':__import__('json').dumps({'action':'REPORT_INTENT','exports_reserved':10})}] if 'SELECT DISTINCT' in sql else [{'status':'FAILED'}]
+            return SimpleNamespace(result=lambda:values)
+    monkeypatch.setattr(C,'bq',lambda:DB())
+    monkeypatch.setattr(F.bigquery,'QueryJobConfig',lambda **kw:SimpleNamespace(**kw),raising=False)
+    monkeypatch.setattr(F.bigquery,'ScalarQueryParameter',lambda *a:a,raising=False)
+    assert F.read_recovery_proofs(new)==[] and not calls
+    assert F.read_recovery_proofs(new,accounting=True)==[proof] and len(calls)==2
+    proof['post_attempts']=1;proof['hash']=B.digest({k:v for k,v in proof.items() if k!='hash'});name=PS.marker(proof)
+    with pytest.raises(B.EvidenceError):F.read_recovery_proofs(new,accounting=True)
+
+
+def test_quota_exception_matches_plan_and_sequence_pair_not_sequence_alone(monkeypatch):
+    p,s,proof=failed();seen=[]
+    monkeypatch.setattr(F,'read_recovery_proofs',lambda p,**kw:[proof])
+    monkeypatch.setattr(F.bigquery,'QueryJobConfig',lambda **kw:SimpleNamespace(**kw),raising=False)
+    monkeypatch.setattr(F.bigquery,'ArrayQueryParameter',lambda *a:a,raising=False)
+    class DB:
+        def query(self,sql,**kw):
+            seen.append((sql,kw['job_config'].query_parameters))
+            return SimpleNamespace(result=lambda:[{'unknown_runs':0,'used':15,'accepted':15}])
+    monkeypatch.setattr(C,'bq',lambda:DB())
+    assert F.export_budget(p=p)==0
+    sql,params=seen[0]
+    assert 'CONCAT(backfill_plan_id' in sql
+    assert params[1]==('no_post_units','STRING',[p['plan_id']+':15'])
