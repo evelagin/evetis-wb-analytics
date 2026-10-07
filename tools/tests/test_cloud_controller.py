@@ -58,6 +58,31 @@ def test_ambiguous_source_intent_stops_even_when_budget_allows():
     assert b.recover_receipt({'preparation':{'run_id':'synthetic'}}) is None
 
 
+@pytest.mark.parametrize('unknown,expected', [(0,'ELIGIBLE'),(1,'STOPPED')])
+def test_supplies_does_not_spend_performance_exports_but_unknowns_still_stop(unknown,expected):
+    b=backend();doc=sku()
+    supply=BF.make_plan('client_001','supplies','2026-09-17','2026-09-17',
+                       'synthetic-supply','2026-10-05T00:00:00Z',date(2026,10,6))
+    done=BF.B.initial(doc['runtime_plan']);done.update(complete=True,sequence=3)
+    done['progress']={'next_day':'2026-09-18'}
+    b.state=lambda d:done if d==doc else BF.B.initial(supply['runtime_plan'])
+    reservations=[{'plan_id':'1'*64,'sequence':n,'exports':v,'reserved_at':'2026-10-05T18:38:14Z'} for n,v in [(2,10),(3,5)]]
+    b.select=lambda q,p:reservations if 'GROUP BY' in q else [{'n':unknown}]
+    before=copy.deepcopy(reservations)
+    if unknown:
+        with pytest.raises(BF.B.EvidenceError,match='unknown ordinary exports'):
+            b.quota({'plans':[doc,supply]},NOW)
+        assert reservations==before
+        return
+    result=b.quota({'plans':[doc,supply]},NOW)
+    assert result['status']==expected and reservations==before
+    if not unknown:
+        assert result['allowance']==0 and result['performance_quota']['status']=='WAITING'
+        assert result['basis']=='SELLER_SCOPE_NO_PERFORMANCE_EXPORT'
+    done['complete']=False
+    assert b.quota({'plans':[doc,supply]},NOW)['status']!= 'ELIGIBLE'
+
+
 def test_next_sku_requires_fresh_catalog_before_binding_linkage_check():
     b=backend();doc=sku();s=BF.B.initial(doc['runtime_plan']);s['sequence']=7
     b.state=lambda _:s;calls=[]
