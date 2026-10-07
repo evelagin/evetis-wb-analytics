@@ -1,0 +1,67 @@
+{
+  "source": "2ffe4e102db7c5c73f94e71f617d2668f28a28e7",
+  "image": "europe-west1-docker.pkg.dev/mpa-platform/mpa-runtime/tenant-backfill-controller@sha256:c2b5bc602f10ff508df82b4cabcb7fc43d98b8d62a393e6fdb695cab547e908c",
+  "runtime_image": "europe-west1-docker.pkg.dev/mpa-platform/mpa-runtime/ozon-runtime@sha256:09eb30307a3a645108d1d008c152e628d101afb3cf55f6e3562cdb11a6d01dd2",
+  "build_id": "0daf070b-3ace-4c5d-84f0-09725f1e6163",
+  "build_status": "SUCCESS",
+  "source_object": {
+    "bucket": "mpa-platform-runtime-build-777428383056",
+    "object": "source/1791398433.980042-9008212beaac4c4eb3b8f15325f2b622.tgz",
+    "generation": "1791398436642146"
+  },
+  "source_archive_sha256": "813fe44f341c2e6bfb6fa0562fabdedd7a74933a0d14f29af91aa149428a0c90",
+  "source_archive_readback": "PASS",
+  "exact_image": {
+    "controller_implementation_hash": "709423ff4601ad8657bb21dd0ac7fdfea3ce4494b9a0aede8d3cd5db88fb1fde",
+    "full_history_adapter": "PASS",
+    "full_history_live_go": "UNPROVEN",
+    "full_history_no_false_complete": "PASS",
+    "full_history_program_contract": "PASS",
+    "full_history_restart_protocol": "PASS",
+    "live_deployment": "UNPROVEN",
+    "lost_post_no_repeat": "PASS",
+    "offline_restart": "PASS",
+    "pre_source_recovery": "PASS",
+    "python_version": "3.12.15",
+    "quota_query_syntax": "PASS",
+    "quota_wait_no_source": "PASS",
+    "reader_append_separation": "PASS",
+    "runtime_implementation_hash": "8caaa370e52622761ed7bd34a4ffffcaa13a14e8214d35715a8643b2ce8a236b",
+    "source_sha": "2ffe4e102db7c5c73f94e71f617d2668f28a28e7",
+    "tenant_isolation": "PASS"
+  },
+  "source_ci": {
+    "sha": "2ffe4e102db7c5c73f94e71f617d2668f28a28e7",
+    "conclusion": "success",
+    "run_id": 37668568046,
+    "jobs": [
+      {
+        "id": 112954088994,
+        "name": "ozon",
+        "conclusion": "success"
+      },
+      {
+        "id": 112954089283,
+        "name": "infra",
+        "conclusion": "success"
+      },
+      {
+        "id": 112954089419,
+        "name": "wb-communications",
+        "conclusion": "success"
+      },
+      {
+        "id": 112954089447,
+        "name": "cloud",
+        "conclusion": "success"
+      },
+      {
+        "id": 112954089629,
+        "name": "tenancy",
+        "conclusion": "success"
+      }
+    ]
+  },
+  "live": "NOT_DEPLOYED",
+  "scope": "FULL_ADAPTER_QUALIFIED_OFFLINE; CURRENT QUALIFICATION_ROOT; FULL_GO/LIVE_FULL_START NOT_PROVEN; ORDINARY SCHEDULERS PAUSED"
+}
