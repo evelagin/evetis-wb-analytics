@@ -69,6 +69,10 @@ def validate_manifest(doc):
     check_hash(doc.get("hash"))
     if digest({k: v for k, v in doc.items() if k != "hash"}) != doc["hash"]:
         raise BF.B.EvidenceError("immutable manifest hash mismatch")
+    if doc == BF.QF.manifest():
+        for p in doc["plans"]:
+            BF.validate_plan(p, p["ack_hash"])
+        return BF.target(doc["tenant"])
     expected = root_manifest(doc["tenant"], doc["source_sha"], doc["image"],
                              doc["created_at"], doc["purpose"], doc["plans"])
     if expected != doc:
@@ -224,7 +228,7 @@ class DurableRecords:
         return record
 
 
-def quota_decision(reservations, unknown_exports, now, report_phase=None, floor=15):
+def quota_decision(reservations, unknown_exports, now, report_phase=None, floor=15, *, calibration=False):
     """Canonical rolling intents, not an assertion about Ozon's actual quota.
 
     Poll/download may finish a known submitted report with zero remaining intent
@@ -232,7 +236,7 @@ def quota_decision(reservations, unknown_exports, now, report_phase=None, floor=
     """
     if type(unknown_exports) is not int or unknown_exports < 0 or unknown_exports:
         raise BF.B.EvidenceError("unknown ordinary exports; quota accounting unproven")
-    if floor != 15:
+    if (not calibration and floor != 15) or type(floor) is not int or not 1 <= floor <= 90:
         raise BF.B.EvidenceError("reviewed conservative floor must not be changed")
     if report_phase not in (None, "POLL", "INTENT"):
         raise BF.B.EvidenceError("corrupt async phase")

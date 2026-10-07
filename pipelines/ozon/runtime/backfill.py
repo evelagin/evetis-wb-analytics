@@ -17,10 +17,14 @@ import backfill_core as B
 import common as C
 import entities as E
 import quota as Q
+import qualification as QF
 from google.cloud import bigquery
 
 
-def export_budget():
+QUOTA_EVIDENCE = {}
+
+
+def export_budget(cap=15):
     """Conservative existing T5 quota; own durable intents count even after ambiguous POST.
 
     Exclusive account export slot remains an owner/T5 lease prerequisite. Unknown
@@ -31,6 +35,13 @@ def export_budget():
     rows = list(C.bq().query(f"""SELECT
       (SELECT COUNT(*) FROM `{table}` WHERE started_at >= TIMESTAMP_SUB(CURRENT_TIMESTAMP(), INTERVAL 24 HOUR)
        AND entity = 'ads_sku_daily' AND backfill_plan_id IS NULL) AS unknown_runs,
+      (SELECT COALESCE(SUM(n),0) FROM (
+       SELECT backfill_plan_id,backfill_sequence,
+         MAX(ARRAY_LENGTH(JSON_QUERY_ARRAY(evidence_json,'$.state.progress.report.batch'))) AS n
+       FROM `{table}` WHERE started_at >= TIMESTAMP_SUB(CURRENT_TIMESTAMP(), INTERVAL 24 HOUR)
+        AND entity='ads_sku_daily' AND status='OK'
+        AND JSON_VALUE(backfill_detail_json,'$.action')='REPORT_SUBMITTED'
+       GROUP BY backfill_plan_id,backfill_sequence)) AS accepted,
       COALESCE(SUM(exports), 0) AS used FROM (
        SELECT backfill_plan_id, backfill_sequence,
          MAX(SAFE_CAST(JSON_VALUE(backfill_detail_json, '$.exports_reserved') AS INT64)) AS exports
@@ -42,7 +53,17 @@ def export_budget():
     used = rows[0]["used"]
     if type(used) is not int or used < 0:
         raise B.EvidenceError("invalid export reservation accounting")
-    return max(Q.budget(None, [], C.now_msk())["usable"] - used, 0)
+    accepted = rows[0]["accepted"]
+    if type(accepted) is not int or accepted < 0:
+        raise B.EvidenceError("accepted export accounting unproven")
+    QUOTA_EVIDENCE.clear()
+    QUOTA_EVIDENCE.update(rolling_guard=cap, recent_reserved=used, recent_accepted=accepted)
+    return max(cap - used, 0)
+
+
+class SourceThrottle(Exception):
+    def __init__(self, diagnostic):
+        self.diagnostic = diagnostic
 
 
 class Engine:
@@ -57,6 +78,8 @@ class Engine:
         self.types = None
         self.export_allowance = None
         self.exports_reserved = 0
+        self.before_submit = None
+        self.last_diagnostic = {}
 
     def call(self, path, body=None, *, performance=False, text=True):
         if self.requests >= self.budget or time.monotonic() >= self.deadline:
@@ -66,6 +89,10 @@ class Engine:
             code, value = C.perf_get(path, raw_text=text) if body is None else C.perf_post(path, body)
         else:
             code, value = C.seller_post(path, body)
+        if performance:
+            self.last_diagnostic = dict(C.perf_diagnostic(), http_status=code)
+        if code == 429 and performance:
+            raise SourceThrottle(self.last_diagnostic)
         if code != 200:
             # Never emit API bodies or identifiers in failure diagnostics.
             raise B.EvidenceError(f"SOURCE_HTTP_{code}: {path.split('?')[0]}")
@@ -422,34 +449,50 @@ class Engine:
             return {}, {"action": "SKU_COHORT", "day": day, "required_campaigns": len(need),
                         "not_applicable_campaigns": len(skipped), "source_terminal": not need,
                         "retention_completeness": "UNPROVEN_EMPTY" if not need else "OBSERVED"}
+        rate = pr.get("rate_limit")
+        if rate and datetime.fromisoformat(rate["eligible_at"]) > datetime.now().astimezone():
+            raise B.BudgetReached("documented source throttle cooldown")
         report = pr["report"]
         if report is None:
             if self.export_allowance is None:
-                self.export_allowance = export_budget()
+                self.export_allowance = export_budget(QF.guard(self.p, s)) if self.p["plan_id"] == QF.SKU else export_budget()
             remaining = self.export_allowance - self.exports_reserved
             if remaining <= 0 or self.units_remaining < 2 or self.requests >= self.budget or time.monotonic() + 30 >= self.deadline:
                 raise B.BudgetReached("performance quota/execution budget deferred before async intent")
             batch = pr["pending"][:min(10, remaining)]
             self.exports_reserved += len(batch)
-            pr["report"] = {"phase": "INTENT", "batch": batch, "execution": self.run_id}
+            pr["report"] = {"phase": "INTENT", "batch": batch, "execution": self.run_id,
+                            "cohort_hash": QF.cohort(self.p, day, batch),
+                            "quota_evidence": dict(QUOTA_EVIDENCE)}
             return {}, {"action": "REPORT_INTENT", "exports_reserved": len(batch),
-                        "quota_basis": "existing_T5_conservative_floor", "day": day}
+                        "quota_basis": "REVIEWED_INCREMENTAL_QUALIFICATION" if self.p["plan_id"] == QF.SKU else "existing_T5_conservative_floor",
+                        "cohort_hash": pr["report"]["cohort_hash"], "campaign_cohort": batch, "day": day, "quota_evidence": dict(QUOTA_EVIDENCE)}
+        cohort_hash = QF.cohort(self.p, day, report["batch"])
+        if report.get("cohort_hash", cohort_hash) != cohort_hash or report["batch"] != pr["pending"][:len(report["batch"])]:
+            raise B.EvidenceError("report cohort/hash continuation conflict")
+        report["cohort_hash"] = cohort_hash
         if report["phase"] == "INTENT":
             if report["execution"] != self.run_id:
                 raise B.EvidenceError("REPORT_SUBMISSION_AMBIGUOUS: do not create duplicate async report")
+            if self.before_submit is not None:
+                self.before_submit()
             d = self.call("/api/client/statistics", {"campaigns": report["batch"], "dateFrom": day,
                           "dateTo": day, "groupBy": "DATE"}, performance=True)
             uuid = d.get("UUID")
             if not isinstance(uuid, str) or not re.fullmatch(r"[0-9A-Za-z-]{1,64}", uuid):
                 raise B.EvidenceError("report UUID missing/unsafe")
             report.update(phase="POLL", uuid=uuid)
-            return {}, {"action": "REPORT_SUBMITTED"}
+            return {}, {"action": "REPORT_SUBMITTED", "cohort_hash": cohort_hash,
+                        "campaigns": len(report["batch"]), "quota_evidence": report.get("quota_evidence", {}),
+                        "source_diagnostic": self.last_diagnostic}
         d = self.call(f"/api/client/statistics/{report['uuid']}", performance=True, text=False)
         if d.get("state") == "ERROR":
             raise B.EvidenceError("SOURCE_REPORT_FAILED")
+        if d.get("state") not in {"NOT_STARTED", "IN_PROGRESS", "OK"}:
+            raise B.EvidenceError("SOURCE_REPORT_STATE_UNKNOWN")
         if d.get("state") != "OK":
             time.sleep(10)
-            return {}, {"action": "REPORT_PENDING"}
+            return {}, {"action": "REPORT_PENDING", "cohort_hash": cohort_hash, "source_diagnostic": self.last_diagnostic}
         blob = self.call(f"/api/client/statistics/report?UUID={report['uuid']}", performance=True)
         rows, files = [], set()
         for cid, txt in E._sku_report_files(blob, report["batch"]):
@@ -462,11 +505,14 @@ class Engine:
             rows.extend(got)
         if files != set(report["batch"]):
             raise B.EvidenceError("SKU report missing campaign file")
+        batch = list(report["batch"])
         out = self.merge("RAW_OZON_ADS_SKU_DAILY", rows, ["date", "campaign_id", "sku"])
         pr["pending"] = pr["pending"][len(report["batch"]):]; pr["report"] = None
         if not pr["pending"]:
             self.advance_day(s)
         return out, {"action": "SKU_BATCH_COMPLETE", "day": day, "campaigns": len(files),
+                    "campaign_cohort": batch, "cohort_hash": cohort_hash,
+                    "source_diagnostic": self.last_diagnostic,
                     "expected_unique_rows": len({(r["campaign_id"], r["sku"]) for r in rows}),
                     "source_terminal": "pending" not in s["progress"]}
 
@@ -487,6 +533,28 @@ class Engine:
             transport0, retry0 = C.STATS["requests"], C.STATS["retries"]
             try:
                 result, detail = handlers[self.p["entity"]](candidate)
+            except SourceThrottle as exc:
+                pr = candidate["progress"]
+                report = pr.get("report")
+                submitting = report is not None and report["phase"] == "INTENT"
+                if submitting:
+                    # Explicit HTTP429 rejected this submission. Keep its budget
+                    # reservation; only a durable rejected response clears INTENT.
+                    pr["report"] = None
+                previous = pr.get("rate_limit", {})
+                count = previous.get("count", 0) + 1
+                if count > 3:
+                    raise B.EvidenceError("SOURCE_REPEATED_LIMIT_OWNER_REVIEW")
+                seconds = max(3600, exc.diagnostic.get("retry-after", 3600))
+                if seconds > 86400:
+                    raise B.EvidenceError("SOURCE_ACCOUNT_RESTRICTION_OWNER_REVIEW")
+                pr["rate_limit"] = {"safe_cap": min(previous.get("safe_cap", 15), 15),
+                    "count": count, "eligible_at": (datetime.now().astimezone() + timedelta(seconds=seconds)).isoformat()}
+                result = {}
+                detail = {"action": "SOURCE_THROTTLED", "submission_rejected": submitting,
+                    "source_diagnostic": exc.diagnostic, "cooldown": pr["rate_limit"],
+                    "quota_evidence": (report or {}).get("quota_evidence", dict(QUOTA_EVIDENCE)),
+                    "quota_basis": "HTTP429_KNOWN_REJECTION_RESERVATION_RETAINED"}
             except B.BudgetReached:
                 break  # persisted state remains prior to this unit; replay is idempotent.
             candidate["sequence"] += 1
@@ -503,6 +571,8 @@ class Engine:
             self.state = candidate
             for k in total:
                 total[k] += result.get(k, 0)
+            if detail["action"] == "SOURCE_THROTTLED":
+                break
         total["evidence"] = {"version": B.VERSION, "plan": self.p, "state": self.state,
                              "execution_requests": self.requests, "execution_pages": self.pages,
                              "complete": self.state["complete"], "replay": self.state["complete"] and self.requests == 0}
@@ -543,6 +613,24 @@ def run_backfill(p, run_id, ts):
     engine = Engine(p, run_id, ts, state,
                     request_budget=B.integer(os.environ, "BACKFILL_MAX_REQUESTS", 400, 2, 500),
                     unit_budget=B.integer(os.environ, "BACKFILL_MAX_UNITS", 20, 1, 100))
+    def before_submit():
+        # Re-observe owner signs and actual account identity immediately before
+        # each report POST, not merely once at execution startup.
+        from main import binding_gate
+        from datetime import timezone
+        denied, _ = binding_gate([p["entity"]], datetime.now(timezone.utc))
+        if denied:
+            raise B.EvidenceError("SOURCE_SUBMISSION_BINDING_GATE_DENIED")
+        config = bigquery.QueryJobConfig(use_legacy_sql=False, maximum_bytes_billed=1073741824)
+        rows = list(C.bq().query(f"""SELECT api, status FROM `{C.PROJECT}.tenant_ops.CAPABILITY_PROFILE`
+            WHERE (api='seller' AND capability='credential_read_only')
+               OR (api='performance' AND capability='credential')
+            QUALIFY ROW_NUMBER() OVER (PARTITION BY api, capability
+                     ORDER BY discovered_at DESC, profile_id DESC)=1""",
+            job_config=config, location=C.LOCATION).result())
+        if len(rows)!=2 or {r["api"]:r["status"] for r in rows}!={"seller":"AVAILABLE","performance":"AVAILABLE"}:
+            raise B.EvidenceError("SOURCE_SUBMISSION_CREDENTIAL_GATE_DENIED")
+    engine.before_submit = before_submit
     def persist(result, evidence):
         C.record_run(f"{run_id}-u{evidence['state']['sequence']}", p["entity"], C.now_msk(),
                      p["from"], p["to"], dict(result, evidence=evidence), "OK",

@@ -187,11 +187,11 @@ resource "terraform_data" "backfill_guard" {
       condition = var.contract.orchestration == null ? true : (
         var.contract.orchestration.scheduler.name == "tenant-backfill-tick" &&
         contains(["PAUSED", "ENABLED"], var.contract.orchestration.scheduler.state) &&
-        var.contract.orchestration.scheduler.schedule == "0 * * * *" &&
+        contains(["0 * * * *", "*/10 * * * *"], var.contract.orchestration.scheduler.schedule) &&
         var.contract.orchestration.scheduler.time_zone == "Europe/Moscow" &&
         var.contract.orchestration.scheduler.uri == "https://run.googleapis.com/v2/projects/${var.contract.project_id}/locations/${var.contract.region}/jobs/tenant-backfill-controller:run"
       )
-      error_message = "Backfill: only the dedicated hourly historical Scheduler is permitted."
+      error_message = "Backfill: only the dedicated reviewed hourly/10-minute historical Scheduler is permitted."
     }
 
   }

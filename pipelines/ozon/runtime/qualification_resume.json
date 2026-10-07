@@ -1,0 +1,66 @@
+{
+  "version": "CLOUD_BACKFILL_V1",
+  "tenant": "client_001",
+  "project": "mpa-t-client-001",
+  "source_sha": "f360e5a5e9f0173d6378764144317a7111430a8b",
+  "image": "europe-west1-docker.pkg.dev/mpa-platform/mpa-runtime/ozon-runtime@sha256:ea71acd9860d1d29d225451d56ac98aac2c0f69fa323b5d03c3d4de08abade21",
+  "created_at": "2026-10-06T10:34:10.477729+00:00",
+  "purpose": "QUALIFICATION",
+  "plans": [
+    {
+      "mode": "BOUNDED_PILOT",
+      "tenant_id": "client_001",
+      "image": "europe-west1-docker.pkg.dev/mpa-platform/mpa-runtime/ozon-runtime@sha256:ea71acd9860d1d29d225451d56ac98aac2c0f69fa323b5d03c3d4de08abade21",
+      "runtime_plan": {
+        "version": "WINDOW_V1",
+        "project": "mpa-t-client-001",
+        "raw": "ozon_raw",
+        "ref": "ref",
+        "entity": "ads_sku_daily",
+        "from": "2026-09-17",
+        "to": "2026-09-17",
+        "generation": "product-identity-20261005-sku-async-resume",
+        "origin": "2026-10-05T18:18:59.097324+00:00",
+        "window_days": 1,
+        "minimum_ms": 60000,
+        "fbo_page_cap": 200,
+        "order_batch": 5,
+        "bundle_page_cap": 500,
+        "implementation_hash": "d1f381374ef3fa9ad625b4784c8707c8c6b8fd0008faf02a6ffd76997d815c43",
+        "plan_id": "d54a84904bba901fbf2788a60bff74eed178a62fd4f56eb41fbc19c8dbc5f701"
+      },
+      "max_requests": 400,
+      "max_units": 3,
+      "max_order_batches": 1,
+      "ack_hash": "b064c28b39d1592d1002f2303b44d809f71b02dbc49602830bf7cee3f299724f"
+    },
+    {
+      "mode": "BOUNDED_PILOT",
+      "tenant_id": "client_001",
+      "image": "europe-west1-docker.pkg.dev/mpa-platform/mpa-runtime/ozon-runtime@sha256:ea71acd9860d1d29d225451d56ac98aac2c0f69fa323b5d03c3d4de08abade21",
+      "runtime_plan": {
+        "version": "WINDOW_V1",
+        "project": "mpa-t-client-001",
+        "raw": "ozon_raw",
+        "ref": "ref",
+        "entity": "supplies",
+        "from": "2026-09-17",
+        "to": "2026-09-17",
+        "generation": "product-identity-20261005-supplies",
+        "origin": "2026-10-05T18:09:15.335675+00:00",
+        "window_days": 1,
+        "minimum_ms": 60000,
+        "fbo_page_cap": 200,
+        "order_batch": 5,
+        "bundle_page_cap": 500,
+        "implementation_hash": "d1f381374ef3fa9ad625b4784c8707c8c6b8fd0008faf02a6ffd76997d815c43",
+        "plan_id": "9b4702a141928eb1f4630ec85b2488838610dace63bd80701a3bf215d7ac1320"
+      },
+      "max_requests": 400,
+      "max_units": 20,
+      "max_order_batches": 1,
+      "ack_hash": "18721b388ab7f956ce4525f54e122624b964af8921094c4c890c0c533071777c"
+    }
+  ],
+  "hash": "4f4387b2bdaa39c8942735a3b9b386e665b20c61006c8e8a467832a7542b1779"
+}
