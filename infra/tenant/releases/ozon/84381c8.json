@@ -177,7 +177,7 @@
     "global_machine_dod": "BLOCKED outside tenant applicability; no gate waived"
   },
   "deployment": {
-    "tenants": "NOT_DEPLOYED; new schema-compatible candidate must pass final controller qualification, CI/merge and reviewed tenant-only deployment; previous staging remains PAUSED.",
+    "tenants": "INERT; NOT_DEPLOYED; new schema-compatible candidate must pass final controller qualification, CI/merge and reviewed tenant-only deployment; previous staging remains PAUSED.",
     "evetis": "NOT_DEPLOYED; historical reference only: sha256:24e3c6d6715fa7b73d30b4270f9863d2b8680b4b02d4874ff1ea12b4fd90fa1b. EVETIS untouched.",
     "rollback": "Pause dedicated controller safely; retain accepted manifests, all reservations/checkpoints and receipts. No blind old-image restore after new state or ambiguous intent."
   }
