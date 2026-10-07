@@ -51,12 +51,19 @@ def contract_for(tenant_id: str) -> dict:
     return contract
 
 
-def render(tenant_id: str, out_dir: Path, *, controller_paused=False) -> dict:
+def render(tenant_id: str, out_dir: Path) -> dict:
     """Записать контракт (tfvars) и конфигурацию backend. Секретов в них нет по построению."""
     contract = contract_for(tenant_id)
-    if controller_paused:
-        from tools.tenancy.orchestration_contract import paused_contract
-        contract=paused_contract(contract,REPO)
+    return _render_contract(contract,out_dir)
+
+
+def render_owner_paused(tenant_id: str, out_dir: Path) -> dict:
+    """Explicit owner staging, same registry; only dedicated controller is paused."""
+    from tools.tenancy.orchestration_contract import paused_contract
+    return _render_contract(paused_contract(contract_for(tenant_id),REPO),out_dir)
+
+
+def _render_contract(contract, out_dir):
     out_dir.mkdir(parents=True, exist_ok=True)
     (out_dir / CONTRACT_FILE).write_text(
         json.dumps({"contract": contract}, indent=2, ensure_ascii=False, sort_keys=True) + "\n",
@@ -111,11 +118,49 @@ def _tf(args: list[str], cwd: Path) -> subprocess.CompletedProcess:
     return proc
 
 
-def plan(tenant_id: str, work_dir: Path, *, controller_paused=False) -> int:
+def plan(tenant_id: str, work_dir: Path) -> int:
     from tools.tenancy.plan_scan import scan_plan
 
     try:
-        contract = render(tenant_id, work_dir,controller_paused=True) if controller_paused else render(tenant_id, work_dir)
+        contract = render(tenant_id, work_dir)
+    except ValueError:
+        # Optional controller qualification fails closed while the canonical
+        # runtime descriptor is absent. Keep the missing-image verdict without
+        # introducing a second tenant/contract derivation path.
+        if not PL.load_runtime_release(REPO).get("ozon"):
+            raise TenantInfraError("в infra/tenant/runtime_release.json нет утверждённого образа Ozon") from None
+        raise
+    if contract["marketplaces"].get("ozon") and not contract["marketplaces"]["ozon"]["runtime_image"]:
+        raise TenantInfraError("в infra/tenant/runtime_release.json нет утверждённого образа Ozon "
+                               "(выпуск — ворота T3.2b): план арендатора невозможен")
+    var_file = str((work_dir / CONTRACT_FILE).resolve())
+    plan_file = str((work_dir / "tenant.tfplan").resolve())
+    _tf(["fmt", "-check", "-recursive"], TENANT_ROOT)
+    check_billing_enabled(contract["project_id"])
+    # -lockfile=readonly: провайдеры и их хеши — только из закоммиченного
+    # .terraform.lock.hcl; новый провайдер в коде не установится молча (L2).
+    _tf(["init", "-input=false", "-reconfigure", "-lockfile=readonly",
+         f"-backend-config=bucket={contract['state']['bucket']}",
+         f"-backend-config=prefix={contract['state']['prefix']}"], TENANT_ROOT)
+    _tf(["validate"], TENANT_ROOT)
+    _tf(["plan", "-input=false", "-lock-timeout=120s", f"-var-file={var_file}", f"-out={plan_file}"],
+        TENANT_ROOT)
+    shown = _tf(["show", "-json", plan_file], TENANT_ROOT)
+    (work_dir / "plan.json").write_text(shown.stdout, encoding="utf-8")
+    from tools.tenancy.validation import parse_tenant_json   # единый строгий разборщик JSON
+    findings = scan_plan(parse_tenant_json(shown.stdout), contract)
+    for f in findings:
+        print(f"FAIL plan-scan {f}", file=sys.stderr)
+    print(f"plan-scan: нарушений {len(findings)}")
+    return 1 if findings else 0
+
+
+def plan_owner_paused(tenant_id: str, work_dir: Path) -> int:
+    """Owner bootstrap only: same registry, reviewed dedicated pause, no arbitrary inputs."""
+    from tools.tenancy.plan_scan import scan_plan
+
+    try:
+        contract = render_owner_paused(tenant_id, work_dir)
     except ValueError:
         # Optional controller qualification fails closed while the canonical
         # runtime descriptor is absent. Keep the missing-image verdict without
