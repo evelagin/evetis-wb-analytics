@@ -164,6 +164,16 @@ class Backend:
         unknown=self.select(f"SELECT COUNT(*) AS n FROM `{self.journal}` WHERE started_at >= @since AND entity = 'ads_sku_daily' AND backfill_plan_id IS NULL{exception}",params)
         if len(unknown)!=1:raise BF.B.EvidenceError('ordinary export accounting missing')
         verdict=D.quota_decision(reservations,unknown[0]['n'],now,phase,cap,calibration=calibrated)
+        # Performance export reservations do not consume Seller list/get capacity.
+        # Keep unknown-export accounting fail-closed and retain every reservation;
+        # only a proven completed SKU cohort with a pending Seller Supplies scope
+        # may progress without a new Performance report allowance.
+        pending=[d for d in manifest['plans'] if not self.state(d)['complete']]
+        if (verdict['status']=='WAITING' and phase is None and pending
+                and all(d['runtime_plan']['entity']=='supplies' for d in pending)
+                and any(d['runtime_plan']['entity']=='ads_sku_daily' for d in manifest['plans'])):
+            return {'status':'ELIGIBLE','allowance':0,'basis':'SELLER_SCOPE_NO_PERFORMANCE_EXPORT',
+                    'performance_quota':verdict}
         if cooldown and timestamp(cooldown)>now and verdict['status']!='STOPPED':
             return {'status':'WAITING','allowance':0,'eligible_at':cooldown,'basis':'SOURCE_THROTTLE'}
         return verdict

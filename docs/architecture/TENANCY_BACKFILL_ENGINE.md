@@ -40,6 +40,12 @@ multiday FBO split/resume support is preserved without duplicate implementation.
 Full-history GO additionally requires Supplies scale, safe state growth and a
 qualified durable full-history gate adapter and frozen manifest. Code, a release
 record or an enabled qualification Scheduler alone does not prove these gates.
+When SKU source/persisted completion is proven and only Seller Supplies remains,
+Performance budget WAIT cannot block Seller-only reads. Reservations remain
+immutable, new Performance export allowance remains zero, and unknown exports
+still STOP the root. Ordinary15-export accounting and ambiguous-intent guards
+are unchanged. This is source-scope separation, not an Ozon quota increase.
+
 Ordinary Schedulers remain PAUSED. Finance traversal COMPLETE is economic
 PROVISIONAL, with30-day refresh and explicit older REOPEN; type84 P&L UNKNOWN.
 
