@@ -66,9 +66,14 @@ def test_supplies_does_not_spend_performance_exports_but_unknowns_still_stop(unk
     done=BF.B.initial(doc['runtime_plan']);done.update(complete=True,sequence=3)
     done['progress']={'next_day':'2026-09-18'}
     b.state=lambda d:done if d==doc else BF.B.initial(supply['runtime_plan'])
-    reservations=[{'plan_id':'1'*64,'sequence':2,'exports':15,'reserved_at':'2026-10-05T18:38:14Z'}]
+    reservations=[{'plan_id':'1'*64,'sequence':n,'exports':v,'reserved_at':'2026-10-05T18:38:14Z'} for n,v in [(2,10),(3,5)]]
     b.select=lambda q,p:reservations if 'GROUP BY' in q else [{'n':unknown}]
     before=copy.deepcopy(reservations)
+    if unknown:
+        with pytest.raises(BF.B.EvidenceError,match='unknown ordinary exports'):
+            b.quota({'plans':[doc,supply]},NOW)
+        assert reservations==before
+        return
     result=b.quota({'plans':[doc,supply]},NOW)
     assert result['status']==expected and reservations==before
     if not unknown:
