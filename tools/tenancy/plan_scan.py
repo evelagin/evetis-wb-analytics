@@ -67,6 +67,7 @@ REPO = Path(__file__).resolve().parents[2]
 if str(REPO) not in sys.path:
     sys.path.insert(0, str(REPO))
 
+from tools.tenancy import runtime_identity as RI
 from tools.tenancy import control_identity as CI  # noqa: E402
 from tools.tenancy import platform as PL  # noqa: E402
 from tools.tenancy import sql_identity as SI  # noqa: E402
@@ -77,7 +78,7 @@ ALLOWED_MANAGED_TYPES = frozenset({
     "terraform_data",
     "google_project_service",
     "google_bigquery_dataset", "google_bigquery_table",
-    "google_project_iam_member",
+    "google_project_iam_member", "google_project_iam_custom_role", "google_bigquery_table_iam_member",
     "google_service_account",
     "google_secret_manager_secret", "google_secret_manager_secret_iam_member",
     "google_cloud_run_v2_job",
@@ -96,6 +97,8 @@ CRITICAL_FIELDS = {
     "google_bigquery_dataset": [("project",), ("dataset_id",), ("access",)],
     "google_bigquery_table": [("project",), ("dataset_id",), ("table_id",), ("schema",)],
     "google_project_iam_member": [("project",), ("role",), ("member",)],
+    "google_project_iam_custom_role": [("project",),("role_id",),("permissions",),("stage",)],
+    "google_bigquery_table_iam_member": [("project",),("dataset_id",),("table_id",),("role",),("member",)],
     "google_service_account": [("project",), ("account_id",), ("email",), ("member",)],
     "google_secret_manager_secret": [("project",), ("secret_id",)],
     "google_secret_manager_secret_iam_member": [("project",), ("secret_id",), ("role",), ("member",)],
@@ -254,6 +257,8 @@ def expected_iam(contract: dict) -> set[tuple[str, str, str, str]]:
                          runtime))
             allowed.add(("google_secret_manager_secret_iam_member", sid, "roles/secretmanager.secretAccessor",
                          f"serviceAccount:{CI.control_email(p)}"))
+    for row in RI.matrix(contract):
+        allowed.add(('google_bigquery_table_iam_member', row['resource'], row['role'], 'serviceAccount:'+row['principal']))
     allowed |= BP.iam(BP.verified(contract),contract)
     return allowed
 
@@ -665,7 +670,7 @@ def scan_plan(plan: dict, contract: dict) -> list[str]:
             findings.append(f"{addr}: сервисный аккаунт {after.get('account_id')!r} не входит в контракт")
 
         if rtype=='google_project_iam_custom_role':
-            want=(block or {}).get('roles',{}).get(after.get('role_id'))
+            want=RI.PERMISSIONS if ozon and after.get('role_id')==RI.ROLE and addr=='google_project_iam_custom_role.runtime_capability_read[0]' else (block or {}).get('roles',{}).get(after.get('role_id'))
             if want is None or sorted(after.get('permissions') or [])!=sorted(want) or after.get('stage')!='GA' or after.get('deleted'):
                 findings.append(f'{addr}: custom role permission/stage drift')
 

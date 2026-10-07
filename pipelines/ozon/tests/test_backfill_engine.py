@@ -26,7 +26,7 @@ def plan(entity="fbo_postings", values=None):
 def harness(entities, monkeypatch):
     database, writes, proofs = {}, [], []
     monkeypatch.setattr(F.time, "sleep", lambda _: None)
-    monkeypatch.setattr(F, "export_budget", lambda: 15)
+    monkeypatch.setattr(F, "export_budget", lambda *a,**kw: 15)
     def merge(table, rows, keys, run_id, **kw):
         cols = set().union(*(r.keys() for r in rows)) if rows else set()
         C.validate_merge_batch(table, rows, keys, sorted(cols), kw.get("on_duplicate_key", "collapse_identical"))
@@ -397,7 +397,7 @@ def test_future_journal_origin_cannot_hide_prior_progress():
 
 
 def test_sku_quota_deferred_without_report_intent_or_submission(harness,monkeypatch):
-    monkeypatch.setattr(F,"export_budget",lambda:0)
+    monkeypatch.setattr(F,"export_budget",lambda *a,**kw:0)
     p=plan("ads_sku_daily");s=B.initial(p)
     s["progress"].update(pending=["1"],report=None)
     out=engine(p,s).run(harness[3])

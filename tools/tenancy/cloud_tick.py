@@ -34,8 +34,11 @@ class Tick:
         active = self.backend.active_runtime_execution()
         if any(r['kind']=='COMPLETE' for r in records) and not active:
             return {'status':'QUALIFICATION_COMPLETE','source_dispatches':0}
+        from tools.tenancy import pre_source_recovery as PR
+        recoveries=PR.load(self.backend,records,self.root) if any(r['kind']==PR.KIND for r in records) else []
+        self.backend.verified_pre_source_failures=recoveries
         quota = self.backend.quota(manifest, self.clock())
-        decision = D.decide_tick(records, self.root, quota, active)
+        decision = D.decide_tick(records, self.root, quota, active, recoveries)
         action = decision['action']
         if action == 'MONITOR':
             return {'status':'MONITORING','source_dispatches':0}

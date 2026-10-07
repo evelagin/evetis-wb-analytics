@@ -14,7 +14,7 @@ from tools.tenancy.validation import parse_tenant_json
 
 VERSION = "CLOUD_BACKFILL_V1"
 HASH = re.compile(r"^[0-9a-f]{64}$")
-KINDS = frozenset({"MANIFEST", "DISPATCH_INTENT", "DISPATCH_RECEIPT", "RECONCILED", "WAITING", "STOPPED", "COMPLETE", "DEPENDENCY_PLAN", "SNAPSHOT_CERT"})
+KINDS = frozenset({"MANIFEST", "DISPATCH_INTENT", "DISPATCH_RECEIPT", "RECONCILED", "WAITING", "STOPPED", "COMPLETE", "DEPENDENCY_PLAN", "SNAPSHOT_CERT", "FAILED_PRE_SOURCE"})
 MAX_RECORD_BYTES = 900000
 
 
@@ -144,7 +144,7 @@ class DurableRecords:
         row = {f["name"]: None for f in parse_tenant_json((BF.REPO / "tools/tenancy/schema/tenant_ops/BACKFILL_CHECKPOINTS.json").read_text())["schema"]}
         day = now.astimezone(BF.B.MSK).date().isoformat()
         row.update(backfill_id=record_hash[:16], entity="orchestration", window_from=day,
-                   window_to=day, status="RUNNING", attempts=sequence, updated_at=now.isoformat(),
+                   window_to=day, status="FAILED" if kind=="FAILED_PRE_SOURCE" else "RUNNING", attempts=sequence, updated_at=now.isoformat(),
                    plan_hash=root_hash, evidence_json=data)
         self.write_record(row)
         self._read_rows(root_hash, record_hash)  # SELECT sees streaming rows; Tables API may lag.
@@ -266,7 +266,7 @@ def quota_decision(reservations, unknown_exports, now, report_phase=None, floor=
     return {"status": "WAITING", "allowance": 0, "eligible_at": min(expiry for n, expiry in active).isoformat()}
 
 
-def decide_tick(records, plan_hash, quota, active_execution=False):
+def decide_tick(records, plan_hash, quota, active_execution=False, verified_failures=()):
     """Pure fail-closed dispatch protocol; network adapter must obey this verdict.
 
     Never dispatch after an intent lacking a receipt. Reconcile terminal receipts
@@ -276,7 +276,13 @@ def decide_tick(records, plan_hash, quota, active_execution=False):
     current = [r for r in records if r.get("root_hash") == plan_hash]
     if any(r.get("version") != VERSION or r.get("kind") not in KINDS for r in current):
         raise BF.B.EvidenceError("corrupt durable orchestration history")
-    if any(r["kind"] == "STOPPED" for r in current):
+    if any(not any(r['kind']=='FAILED_PRE_SOURCE' and r['payload']==p and r['sequence']==p['dispatch_sequence'] for r in current) for p in verified_failures):
+        raise BF.B.EvidenceError('verified failure lacks its immutable recovery record')
+    recovered={p['dispatch_sequence'] for p in verified_failures}
+    approved_stops={h for p in verified_failures for h in p['stop_hashes']}
+    if any(r['root_hash']!=p['root_hash'] for p in verified_failures for r in current):
+        raise BF.B.EvidenceError('foreign recovery root')
+    if any(r["kind"] == "STOPPED" and digest(r) not in approved_stops for r in current):
         return {"action": "STOPPED"}
     intents = {r["sequence"]: r for r in current if r["kind"] == "DISPATCH_INTENT"}
     receipts = {r["sequence"]: r for r in current if r["kind"] == "DISPATCH_RECEIPT"}
@@ -300,7 +306,7 @@ def decide_tick(records, plan_hash, quota, active_execution=False):
     for seq in sorted(intents):
         if seq not in receipts:
             return {"action": "RECOVER_RECEIPT_OR_STOP", "sequence": seq}
-        if seq not in reconciled:
+        if seq not in reconciled and seq not in recovered:
             return {"action": "RECONCILE", "sequence": seq}
     if quota["status"] == "STOPPED":
         return {"action": "STOPPED", "reason": quota["reason"]}

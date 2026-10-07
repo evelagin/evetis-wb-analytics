@@ -1,0 +1,74 @@
+"""Pre-intent permission and immutable failed-before-POST recovery adversaries."""
+import copy
+from types import SimpleNamespace
+import pytest
+import backfill as F
+import backfill_core as B
+import common as C
+import pre_source as PS
+from test_backfill_engine import harness
+from test_qualification_acceleration import prefix
+
+
+def failed():
+    p,s=prefix();s['sequence']=15
+    s['progress']['report']={'phase':'INTENT','batch':[str(i) for i in range(31,41)],'execution':'failed-run',
+        'cohort_hash':F.QF.cohort(p,p['from'],[str(i) for i in range(31,41)])}
+    proof={'version':PS.VERSION,'root_hash':'1'*64,'tenant':'client_001','project':p['project'],'plan_id':p['plan_id'],
+        'dispatch_sequence':6,'run_id':'failed-run','execution':'ozon-runtime-daily-failed',
+        'image':'europe-west1-docker.pkg.dev/mpa-platform/mpa-runtime/ozon-runtime@sha256:'+'2'*64,
+        'source_sha':'3'*40,'lease_generation':6,'intent_hash':'4'*64,'receipt_hash':'5'*64,
+        'stop_hashes':['6'*64],'unit_sequence':15,'state_hash':B.digest(s),'cohort_hash':s['progress']['report']['cohort_hash'],
+        'exports_reserved':10,'query_id':'failed-query','failure_stage':'CAPABILITY_PROFILE_ACCESS_DENIED_BEFORE_REPORT_POST',
+        'verified_at':'2026-10-07T07:18:00+00:00','post_attempts':0,'uuid_present':False,'sku_rows_written':0}
+    proof['hash']=B.digest(proof)
+    return p,s,proof
+
+
+@pytest.mark.parametrize('message',['CAPABILITY_PROFILE accessDenied','permission revoked','binding revoked','Catalog missing','budget metadata unavailable'])
+def test_internal_gate_failure_creates_no_intent_or_post(harness,monkeypatch,message):
+    p,s=prefix();old=copy.deepcopy(s);engine=F.Engine(p,'new','safe',s,unit_budget=3)
+    engine.before_intent=lambda:(_ for _ in ()).throw(B.EvidenceError(message))
+    monkeypatch.setattr(C,'perf_post',lambda *a:pytest.fail('source POST before preflight'))
+    with pytest.raises(B.EvidenceError,match=message):engine.run(harness[3])
+    assert not harness[2] and not harness[0] and s==old
+
+
+def test_recovery_appends_new_unit_then_new_intent_preserving_thirty(harness,monkeypatch):
+    p,s,proof=failed();old=copy.deepcopy(s);oldproof=copy.deepcopy(proof)
+    e=F.Engine(p,'new-run','safe',s,unit_budget=3);e.before_intent=lambda:None;e.recovery_reader=lambda *a:proof
+    monkeypatch.setattr(F,'export_budget',lambda *a,**kw:10)
+    monkeypatch.setattr(C,'perf_post',lambda *a:(200,{'UUID':'new-safe-report'}))
+    result=e.run(harness[3]);units=harness[2]
+    assert [u['detail']['action'] for u in units]==['PRE_SOURCE_RECOVERED','REPORT_INTENT','REPORT_SUBMITTED']
+    assert [u['state']['sequence'] for u in units]==[16,17,18]
+    assert units[0]['state']['rows']==30 and units[0]['state']['progress']['pending']==old['progress']['pending']
+    assert units[1]['state']['progress']['report']['execution']=='new-run'
+    assert not result['evidence']['state']['complete'] and old['sequence']==15 and proof==oldproof
+
+
+@pytest.mark.parametrize('change',[{'post_attempts':1},{'uuid_present':True},{'sku_rows_written':1},{'project':'foreign'},
+    {'failure_stage':'HTTP_500_AFTER_POST'},{'stop_hashes':[]},{'unit_sequence':14},{'state_hash':'0'*64}])
+def test_ambiguous_foreign_or_changed_proof_never_retries(harness,monkeypatch,change):
+    p,s,proof=failed();proof.update(change);proof['hash']=B.digest({k:v for k,v in proof.items() if k!='hash'})
+    e=F.Engine(p,'new-run','safe',s,unit_budget=3);e.recovery_reader=lambda *a:proof
+    monkeypatch.setattr(C,'perf_post',lambda *a:pytest.fail('ambiguous POST repeated'))
+    with pytest.raises(B.EvidenceError):e.run(harness[3])
+    assert not harness[2] and not harness[0]
+
+
+def test_missing_owner_attestation_stays_ambiguous(harness,monkeypatch):
+    p,s,_=failed();e=F.Engine(p,'new-run','safe',s)
+    with pytest.raises(B.EvidenceError,match='AMBIGUOUS'):e.run(harness[3])
+    assert not harness[2]
+
+
+def test_exact_runtime_permission_failure_precedes_catalog_and_writes(monkeypatch):
+    p,_=prefix();queries=[]
+    monkeypatch.setattr(F.bigquery,'QueryJobConfig',lambda **kw:SimpleNamespace(**kw),raising=False)
+    class DB:
+        def query(self,sql,**kw):
+            queries.append(sql);raise PermissionError('CAPABILITY_PROFILE denied')
+    monkeypatch.setattr(C,'bq',lambda:DB())
+    with pytest.raises(PermissionError):F.internal_preflight(p,source_binding=False)
+    assert len(queries)==1 and 'CAPABILITY_PROFILE' in queries[0] and queries[0].startswith('SELECT ')

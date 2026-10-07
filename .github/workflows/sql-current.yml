@@ -18,7 +18,9 @@ jobs:
   sql-current:
     name: sql-current
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    # Full tools suite now approaches ten minutes before final SQL validation.
+    # Keep every gate; allow measured execution time plus setup/validation.
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
         with:

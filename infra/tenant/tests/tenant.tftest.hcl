@@ -23,6 +23,14 @@ run "client_001_renders" {
     values = { projects = [{ project_id = "mpa-t-client-001", number = "123456789012", lifecycle_state = "ACTIVE", parent = { id = "881419274207", type = "folder" } }] }
   }
   assert {
+    condition     = length(google_project_iam_custom_role.runtime_capability_read) == 1 && toset(google_project_iam_custom_role.runtime_capability_read[0].permissions) == toset(["bigquery.tables.getData"])
+    error_message = "runtime preflight: exact getData-only role, no mutation/metadata permission"
+  }
+  assert {
+    condition     = google_bigquery_table_iam_member.runtime_capability_read[0].project == "mpa-t-client-001" && google_bigquery_table_iam_member.runtime_capability_read[0].dataset_id == "tenant_ops" && google_bigquery_table_iam_member.runtime_capability_read[0].table_id == "CAPABILITY_PROFILE" && google_bigquery_table_iam_member.runtime_capability_read[0].member == "serviceAccount:sa-ozon-runtime@mpa-t-client-001.iam.gserviceaccount.com"
+    error_message = "runtime preflight: only exact CAPABILITY_PROFILE/runtime principal"
+  }
+  assert {
     condition     = output.project_id == "mpa-t-client-001" && output.state_prefix == "tenants/client_001"
     error_message = "client_001: проект или префикс state не из реестра"
   }

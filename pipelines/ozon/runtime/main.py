@@ -85,7 +85,7 @@ def validate_plan(want, since, until, lb_over, today):
 ADS_ENTITIES = ("ads_campaigns", "ads_expense_daily", "ads_sku_daily")
 
 
-def binding_gate(want, now):
+def binding_gate(want, now, *, metadata_only=False):
     """TENANT_BINDING_REQUIRED=1 (арендатор, T5): загрузка только в подтверждённый кабинет.
 
     Истина — таблицы-маркеры владельца в ref (tables.list/tables.get консистентны; у runtime READER
@@ -123,6 +123,8 @@ def binding_gate(want, now):
         # Нет действующего подтверждения — отказ ДО секретов и до Ozon (новый арендатор, отзыв).
         if bindings[api].status != "CONFIRMED":
             return f"{api}:{bindings[api].status}", bindings[api].reason
+    if metadata_only:
+        return None, 'stored binding metadata only; no source identity call'
     code, si = C.seller_post("/v1/seller/info", {})
     fp = None
     if code == 200:
@@ -187,6 +189,19 @@ def main():
         except B.EvidenceError as error:
             C.log(event="run_rejected", reason=C.safe_error_text(error))
             sys.exit(2)
+    if 'TENANCY_INTERNAL_PREFLIGHT' in os.environ:
+        if os.environ['TENANCY_INTERNAL_PREFLIGHT']!='1' or not binding_required or backfill_plan is None or want!=['ads_sku_daily'] or C.PROJECT==C.LEGACY_INGESTION_PROJECT:
+            C.log(event='internal_preflight_denied');sys.exit(2)
+        from datetime import datetime,timezone
+        denied,_=binding_gate(want,datetime.now(timezone.utc),metadata_only=True)
+        if denied:C.log(event='internal_preflight_denied');sys.exit(3)
+        import backfill as F
+        try:
+            result=F.internal_preflight(backfill_plan,source_binding=False)
+        except Exception:
+            C.log(event='internal_preflight_failed');sys.exit(1)
+        C.log(event='internal_preflight_pass',**result,source_calls=0,journal_writes=0,raw_writes=0)
+        return
     if binding_required:
         from datetime import datetime, timezone
         denied, reason = binding_gate(want, datetime.now(timezone.utc))

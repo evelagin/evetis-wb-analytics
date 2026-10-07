@@ -27,7 +27,7 @@ def freeze(tenant,plans,created_at):
     return D.root_manifest(tenant,matches[0]['source']['commit'],matches[0]['image'],created_at,'QUALIFICATION',plans)
 
 
-def verify_retained_plan(c,doc,read=None):
+def verify_retained_plan(c,doc,read=None, *, pre_source_proof=None):
     """Read-only latest source/checkpoint/ACK join, before publication writes."""
     read=read or BF.select
     p=doc['runtime_plan'];params={'pid':('STRING',p['plan_id']),'origin':('TIMESTAMP',p['origin']),'entity':('STRING',p['entity'])}
@@ -43,6 +43,10 @@ def verify_retained_plan(c,doc,read=None):
     BF.B.validate(p,proof['state'])
     if proof['state']['sequence']!=params['seq'][1]:
         raise BF.B.EvidenceError('retained source sequence/proof differs')
+    if pre_source_proof is not None:
+        from tools.tenancy import pre_source_recovery as R
+        R.PS.validate_state(pre_source_proof,p,proof['state'])
+        return  # FAILED before POST is not represented as a successful checkpoint.
     # Earlier owner-authorized execution budgets can have different ACK hashes
     # while preserving the same immutable runtime plan. Bind publication to the
     # latest source sequence and its reconciled proof; never erase that history.
@@ -54,20 +58,37 @@ def verify_retained_plan(c,doc,read=None):
         raise BF.B.EvidenceError('retained latest checkpoint/source proof differs')
 
 
-def publish(manifest):
+def publish(manifest, *, recovery_backend=None, recovery_proof=None, controller_paused=False):
     c=D.validate_manifest(manifest);profile=BF.R.load_tenant(manifest['tenant']).get('historical_orchestration')
     if not profile or profile['root_hash']!=manifest['hash']:
         raise BF.B.EvidenceError('exact canonical registry opt-in/root required before publication')
+    if controller_paused:
+        c=O.paused_contract(c,BF.REPO)
+        profile=dict(profile,scheduler_state='PAUSED')
+    if (recovery_backend is None)!=(recovery_proof is None):
+        raise BF.B.EvidenceError('both recovery backend and owner proof required')
+    if recovery_backend is not None:
+        from tools.tenancy import pre_source_recovery as R
+        # Publish the enabled descriptor while live resources remain deliberately
+        # PAUSED. This permits reviewed activation only after recovery readback.
+        if recovery_backend.c!=c and (controller_paused or recovery_backend.c!=O.paused_contract(c,BF.REPO)):
+            raise BF.B.EvidenceError('owner descriptor contract drift')
+        records=recovery_backend.store.history(manifest['hash'])
+        if recovery_proof not in R.load(recovery_backend,records,manifest['hash']):
+            raise BF.B.EvidenceError('committed owner pre-source recovery required')
+        recovery_backend.preflight(manifest,owner_observation=True)
     from tools.tenancy import orchestration_plan as P
     block=P.verified(c)
     if block is None:raise BF.B.EvidenceError('qualified controller release unavailable')
     # Prove every retained scope before creating any deployment/commit marker.
     for doc in manifest['plans']:
-        verify_retained_plan(c,doc)
+        matching=recovery_proof if recovery_proof is not None and recovery_proof['plan_id']==doc['runtime_plan']['plan_id'] else None
+        read=(lambda c,sql,params:recovery_backend.select(sql,params)) if recovery_backend is not None else None
+        verify_retained_plan(c,doc,read,pre_source_proof=matching)
     release=parse_tenant_json((BF.REPO/'infra/tenant/releases/backfill'/f"{profile['release']}.json").read_text())
     descriptor={'settings':profile,'release':release}
     name=C.descriptor_name(profile['release'],profile['root_hash'],profile['scheduler_state'])
-    tables=BF.TT.Tables(c['project_id']);locks=c['datasets']['tenant_locks']
+    tables=recovery_backend.tables if recovery_backend is not None else BF.TT.Tables(c['project_id']);locks=c['datasets']['tenant_locks']
     labels={'root':manifest['hash'][:16],'kind':'deployment_spec'};description=D.encoded(descriptor)
     if len(description.encode())>16384:raise BF.B.EvidenceError('descriptor metadata size guard')
     existing=tables.get_table(locks,name)
@@ -75,7 +96,7 @@ def publish(manifest):
         if not tables.create_marker(locks,name,labels,description):existing=tables.get_table(locks,name)
         else:existing=(labels,description)
     if existing!=(labels,description):raise BF.B.EvidenceError('immutable deployment descriptor conflict')
-    store=D.DurableRecords(c,tables,BF.select,
+    store=recovery_backend.store if recovery_backend is not None else D.DurableRecords(c,tables,BF.select,
         lambda row:tables.append(c['datasets']['tenant_ops'],'BACKFILL_CHECKPOINTS',[row]))
     record=store.commit(manifest['hash'],'MANIFEST',0,manifest,datetime.now(timezone.utc))
     store.read(manifest['hash'],record)

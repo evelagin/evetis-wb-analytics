@@ -84,7 +84,7 @@ class Backend:
     @property
     def journal(self):return f"{self.c['project_id']}.{self.c['datasets']['ozon_raw']}.OZON_INGESTION_RUNS"
 
-    def preflight(self,manifest):
+    def preflight(self,manifest, *, owner_observation=False):
         if manifest['tenant']!=self.c['tenant_id'] or manifest['project']!=self.c['project_id']:
             raise BF.B.EvidenceError('foreign qualification manifest')
         self.active=False
@@ -92,7 +92,7 @@ class Backend:
         if not entities <= {'ads_sku_daily','supplies'}:
             raise BF.B.EvidenceError('qualification controller supports only frozen SKU/Supplies scopes')
         for doc in manifest['plans']:
-            BF.preflight(BF.validate_plan(doc,doc['ack_hash']),doc,self.clock(),backend=self,allow_active=True)
+            BF.preflight(BF.validate_plan(doc,doc['ack_hash']),doc,self.clock(),backend=self,allow_active=not owner_observation,owner_observation=owner_observation)
         # Both credential boundaries are required even for a Seller-only scope.
         bindings,creds=BF.TL.operator_binding(self.c,self.tables,self.clock(),['ads_sku_daily'])
         if set(bindings)!={'seller','performance'} or any(v!='BOUND' for v in bindings.values()) or set(creds)!={'seller','performance'} or any(v.get('status')!='PASS' for v in creds.values()):
@@ -143,14 +143,25 @@ class Backend:
                     self.sku_accounting(doc,state,linkage=False)
                     cap=BF.QF.guard(doc['runtime_plan'],state);calibrated=True
                     cooldown=state['progress'].get('rate_limit',{}).get('eligible_at')
-                if report is not None:phases.append(report['phase'])
+                if report is not None:
+                    approved=[p for p in getattr(self,'verified_pre_source_failures',[]) if p['plan_id']==doc['runtime_plan']['plan_id'] and p['unit_sequence']==state['sequence']]
+                    if approved:
+                        from tools.tenancy.pre_source_recovery import PS
+                        PS.validate_state(approved[0],doc['runtime_plan'],state)
+                    else:phases.append(report['phase'])
         if len(phases)>1:raise BF.B.EvidenceError('multiple active async report scopes')
         phase=phases[0] if phases else None
         params={'since':('TIMESTAMP',(now-timedelta(hours=24)).isoformat())}
         rows=self.select(f"SELECT backfill_plan_id AS plan_id,backfill_sequence AS sequence,MAX(SAFE_CAST(JSON_VALUE(backfill_detail_json,'$.exports_reserved') AS INT64)) AS exports,MAX(started_at) AS reserved_at FROM `{self.journal}` WHERE started_at >= @since AND entity = 'ads_sku_daily' AND status = 'OK' AND backfill_sequence IS NOT NULL AND SAFE_CAST(JSON_VALUE(backfill_detail_json,'$.exports_reserved') AS INT64) > 0 GROUP BY backfill_plan_id,backfill_sequence",params)
+        approved=getattr(self,'verified_pre_source_failures',[])
+        excluded={(p['plan_id'],p['unit_sequence']) for p in approved}
+        rows=[r for r in rows if (r['plan_id'],r['sequence']) not in excluded]
         reservations=[{'plan_id':r['plan_id'],'sequence':r['sequence'],'exports':r['exports'],
                        'at':timestamp(r['reserved_at']).isoformat()} for r in rows]
-        unknown=self.select(f"SELECT COUNT(*) AS n FROM `{self.journal}` WHERE started_at >= @since AND entity = 'ads_sku_daily' AND backfill_plan_id IS NULL",params)
+        excluded_runs=[p['run_id'] for p in approved]
+        for i,run in enumerate(excluded_runs):params['excluded'+str(i)]=('STRING',run)
+        exception=" AND NOT COALESCE(status='FAILED' AND ingestion_run_id IN ("+','.join('@excluded'+str(i) for i in range(len(excluded_runs)))+"),FALSE)" if excluded_runs else ''
+        unknown=self.select(f"SELECT COUNT(*) AS n FROM `{self.journal}` WHERE started_at >= @since AND entity = 'ads_sku_daily' AND backfill_plan_id IS NULL{exception}",params)
         if len(unknown)!=1:raise BF.B.EvidenceError('ordinary export accounting missing')
         verdict=D.quota_decision(reservations,unknown[0]['n'],now,phase,cap,calibration=calibrated)
         if cooldown and timestamp(cooldown)>now and verdict['status']!='STOPPED':
@@ -332,7 +343,7 @@ def main():
         # diagnostic might contain identifiers or credential material.
         if backend is not None and root is not None:
             try:
-                backend.store.commit(root,'STOPPED',0,{'reason':'CONTROLLER_GATE_OR_EVIDENCE_FAILURE'},backend.clock())
+                backend.store.commit(root,'STOPPED',0,{'reason':'CONTROLLER_GATE_OR_EVIDENCE_FAILURE','controller_execution':backend.current_execution},backend.clock())
             except (BF.B.EvidenceError,BF.TT.TableError,ValueError,KeyError,OSError):
                 pass # Failure to publish STOP cannot authorize another dispatch.
         print(json.dumps({'status':'STOPPED','reason':'CONTROLLER_GATE_OR_EVIDENCE_FAILURE'}))

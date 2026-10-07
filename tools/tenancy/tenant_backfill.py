@@ -142,7 +142,7 @@ def canonical_template(job, expected_env, image, account, control=False):
         raise B.EvidenceError("canonical env differs (unknown/duplicate/changed settings)")
 
 
-def preflight(c, doc, now, backend=None, *, allow_active=False):
+def preflight(c, doc, now, backend=None, *, allow_active=False, owner_observation=False):
     if backend is not None:
         base_contract={k:v for k,v in backend.c.items() if k!='orchestration'}
         if base_contract!={k:v for k,v in c.items() if k!='orchestration'}:
@@ -205,11 +205,14 @@ def preflight(c, doc, now, backend=None, *, allow_active=False):
         OC.verify_job(controller,orchestration)
         executions=request("GET",f"{RUN_API}/{controller['name']}/executions?pageSize=1000")
         own=getattr(backend,'current_execution',None) if backend is not None else None
-        if not isinstance(own,str) or not own.startswith(controller['name']+'/executions/'):
+        if owner_observation:
+            if own is not None or allow_active or executions.get('nextPageToken') or controller.get('runningCount',0) or any(not e.get('completionTime') for e in executions.get('executions',[])):
+                raise B.EvidenceError('owner observation requires no controller execution')
+        elif not isinstance(own,str) or not own.startswith(controller['name']+'/executions/'):
             raise B.EvidenceError('own registered controller execution identity missing')
         if executions.get('nextPageToken') or any(not e.get('completionTime') and e.get('name')!=own for e in executions.get('executions',[])):
             raise B.EvidenceError('another controller execution active/unproven')
-        if not any(e.get('name')==own for e in executions.get('executions',[])):
+        if not owner_observation and not any(e.get('name')==own for e in executions.get('executions',[])):
             raise B.EvidenceError('own controller execution not visible')
     schedules = request("GET", f"{SCHED_API}/{base}/jobs?pageSize=500")
     names = {j["name"].rsplit("/",1)[-1]: j for j in schedules.get("jobs", [])}
@@ -261,7 +264,7 @@ def checkpoint(doc, run_id, status, generation, now, evidence=None):
             "evidence_json": json.dumps({"mode":"BOUNDED_PILOT", "proof":evidence},sort_keys=True)}
 
 
-def pilot_lease_generation(ledger, leases, cid, now, done_reader):
+def pilot_lease_generation(ledger, leases, cid, now, done_reader, failed_reader=None):
     """Monotonic CAS generation survives lease-table expiry; old LD never releases a new owner."""
     recorded=[]
     for row in ledger:
@@ -281,7 +284,8 @@ def pilot_lease_generation(ledger, leases, cid, now, done_reader):
         released=done is not None and bool(labels.get("owner")) and done[0].get("owner")==labels["owner"]
         until=labels.get("until")
         expired=until and until.isdigit() and datetime.fromtimestamp(int(until),timezone.utc)+CK.VISIBILITY_GRACE<=now
-        if not released and not expired:
+        failed=bool(failed_reader and failed_reader(last,labels))
+        if not released and not expired and not failed:
             raise B.EvidenceError("pilot lease held; reconcile terminal execution before continuation")
     if generation>9999:
         raise B.EvidenceError("pilot lease generation namespace exhausted; explicit migration required")
@@ -298,7 +302,8 @@ def start(doc, ack_hash, *, backend=None, on_prepared=None, on_receipt=None):
     p=doc["runtime_plan"]; cid=B.digest(["BOUNDED_PILOT_EXCLUSIVE",c["project_id"]])[:16]
     leases=[(n,lb) for n,lb,created in tables.list_tables(c["datasets"]["tenant_locks"])]
     generation=pilot_lease_generation(ledger,leases,cid,now,
-                lambda name:tables.get_table(c["datasets"]["tenant_locks"],name))
+                lambda name:tables.get_table(c["datasets"]["tenant_locks"],name),
+                failed_reader=(lambda generation,labels:any(p['lease_generation']==generation and p['run_id']==labels.get('owner') for p in getattr(backend,'verified_pre_source_failures',[]))) if backend is not None else None)
     run_id=f"bf-{uuid.uuid4()}"
     lease=CK.lease_name(cid,generation)
     body={"tableReference":{"projectId":c["project_id"],"datasetId":c["datasets"]["tenant_locks"],"tableId":lease},

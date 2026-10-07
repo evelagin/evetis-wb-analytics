@@ -8,7 +8,7 @@ JOB = 'tenant-backfill-controller'
 SCHEDULER = 'tenant-backfill-tick'
 SOURCE_FILES = (
     'cloud_access.py','cloud_tick.py','cloud_controller.py','durable_plan.py',
-    'orchestration_contract.py','orchestration_identity.py','tenant_backfill.py','tenant_tables.py',
+    'orchestration_contract.py','orchestration_identity.py','tenant_backfill.py','tenant_tables.py','pre_source_recovery.py',
 )
 
 
@@ -54,6 +54,17 @@ def block(c, settings, repo, release=None):
             'job':{'name':JOB,'image':release['image'],'env':env,'timeout':'600s'},
             'scheduler':{'name':SCHEDULER,'schedule':'0 * * * *' if release['runtime_implementation_hash']==BF.QF.accepted_doc(BF.QF.SKU)['runtime_plan']['implementation_hash'] else '*/10 * * * *','time_zone':'Europe/Moscow','state':settings['scheduler_state'],
                          'uri':f'https://run.googleapis.com/v2/{base}/jobs/{JOB}:run'}}
+
+
+def paused_contract(c, repo):
+    """Owner staging can only pause the same qualified root/release, never alter scope."""
+    from copy import deepcopy
+    out=deepcopy(c);old=out.get('orchestration')
+    if not old:raise ValueError('registered controller required for paused staging')
+    env=old['job']['env']
+    out['orchestration']=block(out,{'release':env['CONTROLLER_SOURCE_SHA'],
+        'root_hash':env['BACKFILL_ROOT_HASH'],'scheduler_state':'PAUSED'},repo)
+    return out
 
 
 def verify_job(job, expected):

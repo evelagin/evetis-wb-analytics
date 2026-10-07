@@ -18,13 +18,14 @@ import common as C
 import entities as E
 import quota as Q
 import qualification as QF
+import pre_source as PS
 from google.cloud import bigquery
 
 
 QUOTA_EVIDENCE = {}
 
 
-def export_budget(cap=15):
+def export_budget(cap=15, p=None):
     """Conservative existing T5 quota; own durable intents count even after ambiguous POST.
 
     Exclusive account export slot remains an owner/T5 lease prerequisite. Unknown
@@ -32,9 +33,15 @@ def export_budget(cap=15):
     """
     table = f"{C.PROJECT}.{C.DATASET}.{C.RUNS_TABLE}"
     config = bigquery.QueryJobConfig(use_legacy_sql=False, maximum_bytes_billed=1073741824)
+    approved = read_recovery_proofs(p) if p is not None else []
+    excluded = [x['run_id'] for x in approved]
+    config.query_parameters = [bigquery.ArrayQueryParameter('no_post_runs','STRING',excluded),
+        bigquery.ArrayQueryParameter('no_post_sequences','INT64',[x['unit_sequence'] for x in approved]),
+        bigquery.ScalarQueryParameter('recovery_plan','STRING',p['plan_id'] if p else '')]
     rows = list(C.bq().query(f"""SELECT
       (SELECT COUNT(*) FROM `{table}` WHERE started_at >= TIMESTAMP_SUB(CURRENT_TIMESTAMP(), INTERVAL 24 HOUR)
-       AND entity = 'ads_sku_daily' AND backfill_plan_id IS NULL) AS unknown_runs,
+       AND entity = 'ads_sku_daily' AND backfill_plan_id IS NULL
+       AND NOT COALESCE(status='FAILED' AND ingestion_run_id IN UNNEST(@no_post_runs),FALSE)) AS unknown_runs,
       (SELECT COALESCE(SUM(n),0) FROM (
        SELECT backfill_plan_id,backfill_sequence,
          MAX(ARRAY_LENGTH(JSON_QUERY_ARRAY(evidence_json,'$.state.progress.report.batch'))) AS n
@@ -47,6 +54,7 @@ def export_budget(cap=15):
          MAX(SAFE_CAST(JSON_VALUE(backfill_detail_json, '$.exports_reserved') AS INT64)) AS exports
        FROM `{table}` WHERE started_at >= TIMESTAMP_SUB(CURRENT_TIMESTAMP(), INTERVAL 24 HOUR)
         AND entity = 'ads_sku_daily' AND backfill_sequence IS NOT NULL AND status = 'OK'
+        AND NOT COALESCE(backfill_plan_id=@recovery_plan AND backfill_sequence IN UNNEST(@no_post_sequences),FALSE)
        GROUP BY backfill_plan_id, backfill_sequence)""", job_config=config, location=C.LOCATION).result())
     if len(rows) != 1 or rows[0]["unknown_runs"]:
         raise B.EvidenceError("PERFORMANCE_QUOTA_UNPROVEN: ordinary exports not accounted")
@@ -79,6 +87,8 @@ class Engine:
         self.export_allowance = None
         self.exports_reserved = 0
         self.before_submit = None
+        self.before_intent = None
+        self.recovery_reader = None
         self.last_diagnostic = {}
 
     def call(self, path, body=None, *, performance=False, text=True):
@@ -453,9 +463,18 @@ class Engine:
         if rate and datetime.fromisoformat(rate["eligible_at"]) > datetime.now().astimezone():
             raise B.BudgetReached("documented source throttle cooldown")
         report = pr["report"]
+        if report is not None and report['phase']=='INTENT' and report.get('execution')!=self.run_id:
+            proof=self.recovery_reader(self.p,s) if self.recovery_reader is not None else None
+            if proof is None:
+                raise B.EvidenceError('REPORT_SUBMISSION_AMBIGUOUS: no owner-attested pre-source recovery')
+            if self.before_intent is not None:self.before_intent()
+            recovered,detail=PS.recover(proof,self.p,s)
+            s.clear();s.update(recovered)
+            return {},detail
         if report is None:
+            if self.before_intent is not None:self.before_intent()
             if self.export_allowance is None:
-                self.export_allowance = export_budget(QF.guard(self.p, s)) if self.p["plan_id"] == QF.SKU else export_budget()
+                self.export_allowance = export_budget(QF.guard(self.p, s), self.p) if self.p["plan_id"] == QF.SKU else export_budget(p=self.p)
             remaining = self.export_allowance - self.exports_reserved
             if remaining <= 0 or self.units_remaining < 2 or self.requests >= self.budget or time.monotonic() + 30 >= self.deadline:
                 raise B.BudgetReached("performance quota/execution budget deferred before async intent")
@@ -631,9 +650,67 @@ def run_backfill(p, run_id, ts):
         if len(rows)!=2 or {r["api"]:r["status"] for r in rows}!={"seller":"AVAILABLE","performance":"AVAILABLE"}:
             raise B.EvidenceError("SOURCE_SUBMISSION_CREDENTIAL_GATE_DENIED")
     engine.before_submit = before_submit
+    engine.before_intent = lambda: internal_preflight(p)
+    engine.recovery_reader = read_recovery_for_state
     def persist(result, evidence):
         C.record_run(f"{run_id}-u{evidence['state']['sequence']}", p["entity"], C.now_msk(),
                      p["from"], p["to"], dict(result, evidence=evidence), "OK",
                      requests_n=evidence["detail"]["transport_requests"],
                      retries=evidence["detail"]["transport_retries"])
     return engine.run(persist)
+
+
+def internal_preflight(p, *, source_binding=True):
+    """All internal dependencies before INTENT; no business/journal mutations."""
+    config=bigquery.QueryJobConfig(use_legacy_sql=False,maximum_bytes_billed=1073741824)
+    if source_binding:
+        from main import binding_gate
+        denied,_=binding_gate([p['entity']],datetime.now().astimezone())
+        if denied:raise B.EvidenceError('PRE_INTENT_BINDING_DENIED')
+    profiles=list(C.bq().query(f"SELECT api,status FROM `{C.PROJECT}.tenant_ops.CAPABILITY_PROFILE` WHERE (api='seller' AND capability='credential_read_only') OR (api='performance' AND capability='credential') QUALIFY ROW_NUMBER() OVER(PARTITION BY api,capability ORDER BY discovered_at DESC,profile_id DESC)=1",job_config=config,location=C.LOCATION).result())
+    if len(profiles)!=2 or {r['api']:r['status'] for r in profiles}!={'seller':'AVAILABLE','performance':'AVAILABLE'}:
+        raise B.EvidenceError('PRE_INTENT_CREDENTIAL_GATE_DENIED')
+    day=str(C.now_msk().date())
+    config.query_parameters=[bigquery.ScalarQueryParameter('day','DATE',day)]
+    rows=list(C.bq().query(f"SELECT COUNT(*) AS n, COUNT(DISTINCT product_id) AS products,COUNTIF(product_id IS NULL OR product_id<=0 OR (sku IS NOT NULL AND sku<=0)) AS invalid FROM `{C.PROJECT}.{C.DATASET}.RAW_OZON_CATALOG` WHERE snapshot_date=@day",job_config=config,location=C.LOCATION).result())
+    if len(rows)!=1 or not rows[0]['n'] or rows[0]['n']!=rows[0]['products'] or rows[0]['invalid']:
+        raise B.EvidenceError('PRE_INTENT_CURRENT_CATALOG_DENIED')
+    rows=list(C.bq().query(f"SELECT COUNT(*) AS n FROM `{C.PROJECT}.{C.DATASET}.{C.RUNS_TABLE}` WHERE entity='catalog' AND status='OK' AND JSON_VALUE(evidence_json,'$.plan.observation_date')=CAST(@day AS STRING) AND JSON_VALUE(evidence_json,'$.state.complete')='true'",job_config=config,location=C.LOCATION).result())
+    if len(rows)!=1 or not rows[0]['n']:raise B.EvidenceError('PRE_INTENT_CATALOG_COMPLETION_UNPROVEN')
+    return {'credentials':'PASS','catalog':'PASS','CAPABILITY_PROFILE_readable':True}
+
+
+def read_recovery_for_state(p,state):
+    """Consistent owner-only ref markers; no cloud append authority can forge these."""
+    proofs=read_recovery_proofs(p)
+    matched=[x for x in proofs if x['unit_sequence']==state['sequence']]
+    if len(matched)>1:raise B.EvidenceError('conflicting pre-source recovery evidence')
+    return PS.validate_state(matched[0],p,state) if matched else None
+
+
+def read_recovery_proofs(p):
+    client=C.bq();out=[]
+    names=[x.table_id for x in client.list_tables(f'{C.PROJECT}.{C.REF_DATASET}') if x.table_id.startswith('BFP_')]
+    if len(names)>16:raise B.EvidenceError('bounded owner recovery inventory exceeded')
+    for name in names:
+        table=client.get_table(f'{C.PROJECT}.{C.REF_DATASET}.{name}')
+        proof=json.loads(table.description or '{}')
+        if proof.get('plan_id')!=p['plan_id']:continue
+        PS.validate(proof,p)
+        if name!=PS.marker(proof) or table.labels!=PS.marker_value(proof)[0]:raise B.EvidenceError('owner recovery marker corrupt')
+        # Never discount a reservation using a detached/corrupt owner assertion.
+        config=bigquery.QueryJobConfig(use_legacy_sql=False,maximum_bytes_billed=1073741824,
+            query_parameters=[bigquery.ScalarQueryParameter('origin','TIMESTAMP',p['origin']),
+                              bigquery.ScalarQueryParameter('pid','STRING',p['plan_id']),
+                              bigquery.ScalarQueryParameter('seq','INT64',proof['unit_sequence']),
+                              bigquery.ScalarQueryParameter('run','STRING',proof['run_id'])])
+        rows=list(client.query(f"SELECT DISTINCT evidence_json,backfill_detail_json FROM `{C.PROJECT}.{C.DATASET}.{C.RUNS_TABLE}` WHERE started_at>=@origin AND backfill_plan_id=@pid AND backfill_sequence=@seq AND status='OK' AND entity='ads_sku_daily' LIMIT 2",job_config=config,location=C.LOCATION).result())
+        if len(rows)!=1:raise B.EvidenceError('attested source intent missing/ambiguous')
+        original=json.loads(rows[0]['evidence_json']);detail=json.loads(rows[0]['backfill_detail_json'])
+        if original.get('plan')!=p or detail.get('action')!='REPORT_INTENT' or detail.get('exports_reserved')!=proof['exports_reserved']:
+            raise B.EvidenceError('attested source reservation conflict')
+        PS.validate_state(proof,p,original['state'])
+        rows=list(client.query(f"SELECT status FROM `{C.PROJECT}.{C.DATASET}.{C.RUNS_TABLE}` WHERE started_at>=@origin AND ingestion_run_id=@run AND entity='ads_sku_daily' LIMIT 2",job_config=config,location=C.LOCATION).result())
+        if len(rows)!=1 or rows[0]['status']!='FAILED':raise B.EvidenceError('failed aggregate attribution unproven')
+        out.append(proof)
+    return out

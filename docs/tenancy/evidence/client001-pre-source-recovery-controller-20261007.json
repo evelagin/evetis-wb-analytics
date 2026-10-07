@@ -1,0 +1,64 @@
+{
+  "controller_source_sha": "8baef573538cba8ae5ab640f7b8030a317d52fc5",
+  "image": "europe-west1-docker.pkg.dev/mpa-platform/mpa-runtime/tenant-backfill-controller@sha256:2f08b02f997b34c1386adf14f3d0292edf9fc4eb528be4e8876bcf25f3cccd76",
+  "runtime_image": "europe-west1-docker.pkg.dev/mpa-platform/mpa-runtime/ozon-runtime@sha256:205bc4069ba79f09a5f176e8d1d0a609470b28bf2012b26c207a0b7c526e1ea2",
+  "runtime_implementation_hash": "06030ea5d9f0ffd6e04aaf907cb5bbb48d2a9212d0544d7a2f67cf22833b72ee",
+  "controller_implementation_hash": "76c9bffdde47ad01ad1cacdd77deef27aa28729169e3f9f162f8343436a30d41",
+  "build_id": "33989e0f-4fb3-473d-a6cf-fe85652bcbe8",
+  "build_status": "SUCCESS",
+  "source_object": {
+    "bucket": "mpa-platform-runtime-build-777428383056",
+    "object": "pre-source-recovery-controller-final/1791360834.877134-e593a6f27b3548fd8f9ddae9692ec4a3.tgz",
+    "generation": "1791360837320758"
+  },
+  "source_archive_sha256": "f920d68a4b137d4d93170082b84a7c55b4b9ed3a0174f1763a69beaa940b193f",
+  "source_archive_readback_match": true,
+  "exact_image_checks": {
+    "controller_implementation_hash": "76c9bffdde47ad01ad1cacdd77deef27aa28729169e3f9f162f8343436a30d41",
+    "live_deployment": "UNPROVEN",
+    "lost_post_no_repeat": "PASS",
+    "offline_restart": "PASS",
+    "pre_source_recovery": "PASS",
+    "python_version": "3.12.15",
+    "quota_query_syntax": "PASS",
+    "quota_wait_no_source": "PASS",
+    "reader_append_separation": "PASS",
+    "runtime_implementation_hash": "06030ea5d9f0ffd6e04aaf907cb5bbb48d2a9212d0544d7a2f67cf22833b72ee",
+    "source_sha": "8baef573538cba8ae5ab640f7b8030a317d52fc5",
+    "tenant_isolation": "PASS"
+  },
+  "source_ci": {
+    "sha": "8baef573538cba8ae5ab640f7b8030a317d52fc5",
+    "run": 37592378220,
+    "conclusion": "success",
+    "jobs": [
+      {
+        "name": "tenancy",
+        "id": 112696711987,
+        "conclusion": "success"
+      },
+      {
+        "name": "ozon",
+        "id": 112696712284,
+        "conclusion": "success"
+      },
+      {
+        "name": "cloud",
+        "id": 112696712298,
+        "conclusion": "success"
+      },
+      {
+        "name": "infra",
+        "id": 112696712317,
+        "conclusion": "success"
+      },
+      {
+        "name": "wb-communications",
+        "id": 112696712374,
+        "conclusion": "success"
+      }
+    ]
+  },
+  "scope": "QUALIFICATION_ONLY; SAME IMMUTABLE ROOT; ORDINARY SCHEDULERS PAUSED",
+  "live_deployment": "UNPROVEN"
+}
