@@ -10,6 +10,19 @@
   `RECON_CANCELS_DECREASE_REQUIRES_ACK`, `RECON_CANCELS_EXCEED_ORDERS`). Прежняя политика — `UNITKA_CONTROLLED_SCOPE=full`.
 - Исторический прогон 49 прогонов сверки: 29 допустимых ячеек, 0 ложных срабатываний. См.
   `docs/ops/WB_UNITKA_RESTRICTED_CONTROLLED_2026-10-07.md`.
+## 2026-10-07 — DRO-1 Gate C: регулярная оценка здоровья данных каждые 30 минут (НЕ ПРИМЕНЕНО)
+
+`infra/terraform/evetis_health.tf`: `google_cloud_scheduler_job.dro_health_eval` `paused = true` → `false`.
+Расписание `*/30 * * * *` (Europe/Moscow), личность `sa-ops-health`, тело и политики не меняются. Листы не
+затрагиваются, экономика витрин не меняется. Применение — targeted apply по отдельному ACK. Ожидаемый план:
+0 to add, 1 to change, 0 to destroy.
+
+- Основание — доверенный прогон 2026-10-07 07:00 UTC (resume → одно исполнение → pause, `DRO_TRUSTED_RUN_PROVEN`).
+  Задания под `sa-ops-health`, снимок 40 строк. Инциденты 05.10 закрыты событиями RECOVERY.
+- Письма пакета, дайджеста и сторожа «Нет пульса dro_detector_heartbeat 90 минут» получены владельцем.
+  Подробности — `docs/ops/DRO1_DETECTION_ALERTING_2026-10-04.md` §9.1.
+- Тест `test_scheduler_is_created_paused_until_gate_c` заменён на `test_scheduler_is_enabled_after_gate_c`.
+- Откат: `paused = true` и тот же targeted apply.
 
 ## 2026-10-07 — WB Юнитка: доказанные отказы вне Orders API входят в S (Phase 1A, НЕ развёрнуто)
 

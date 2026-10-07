@@ -63,17 +63,17 @@ resource "google_bigquery_dataset_iam_member" "ops_health_read_evetis_ref" {
 # Стоимость прогона по backtest 2026-10-04: ≈ 3 МБ на пробу, ≈ 7 МБ на прогон
 # (≈ 10 ГБ в месяц).
 #
-# 🔴 Создаётся НА ПАУЗЕ (DRO-1 Gate B, 2026-10-05). Первый доверенный прогон должен идти
-# от sa-ops-health: политики и метрика фильтруют маркеры по principalEmail, а ручной CALL
-# владельца их не задевает (Gate B: 4 события HANDED_OFF без доставки, пульса нет).
-# Job существует с личностью sa-ops-health, но расписание не исполняется. Регулярная
-# оценка включается отдельным PR (paused = false) — Gate C, по owner ACK.
+# Создавался НА ПАУЗЕ (DRO-1 Gate B, 2026-10-05): политики и метрика фильтруют маркеры по
+# principalEmail = sa-ops-health, ручной CALL владельца их не задевает. Доверенный прогон
+# 2026-10-07 07:00 UTC (resume → одно исполнение → pause) доказал цепочку целиком: задания
+# под sa-ops-health, письма пакета и дайджеста, пульс, срабатывание сторожа.
+# Gate C (owner ACK 2026-10-07): регулярная оценка включена, paused = false.
 resource "google_cloud_scheduler_job" "dro_health_eval" {
   name      = "dro-health-eval"
   region    = var.region
   schedule  = "*/30 * * * *"
   time_zone = "Europe/Moscow"
-  paused    = true
+  paused    = false
 
   attempt_deadline = "320s"
 
