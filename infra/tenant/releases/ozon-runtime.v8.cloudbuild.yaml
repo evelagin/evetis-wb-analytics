@@ -116,6 +116,15 @@ steps:
         test "$$rc" -eq 2
         echo "$$out" | grep -q 'backfill target/config mismatch'
 
+  - id: installed-backfill-offline
+    name: gcr.io/cloud-builders/docker@sha256:bbb3d633c5c2813b2ce5245852979e1d637768f4acfc504d8ece288f91e9b60f
+    entrypoint: bash
+    args:
+      - -euc
+      - |
+        docker run --rm --network=none -e GCP_PROJECT_ID=offline-qualification-project -e BQ_REF_DATASET=ref -v /workspace/pipelines/ozon/tests:/verify:ro --entrypoint=python ${_IMAGE}:${_SOURCE_SHA} /verify/_backfill_image_driver.py
+        docker run --rm --network=none -e GCP_PROJECT_ID=offline-qualification-project -e BQ_REF_DATASET=ref -v /workspace/pipelines/ozon/tests:/verify:ro --entrypoint=python ${_IMAGE}:${_SOURCE_SHA} /verify/_catalog_identity_image_driver.py
+
   - id: qualification-acceleration-offline
     name: gcr.io/cloud-builders/docker@sha256:bbb3d633c5c2813b2ce5245852979e1d637768f4acfc504d8ece288f91e9b60f
     entrypoint: bash

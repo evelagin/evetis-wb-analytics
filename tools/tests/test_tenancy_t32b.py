@@ -161,7 +161,9 @@ def test_release_source_matches_git_when_history_is_available():
         blob = subprocess.run(["git", "show", f"{sha}:pipelines/ozon/runtime/{name}"], cwd=REPO,
                               capture_output=True, check=True).stdout
         assert hashlib.sha256(blob).hexdigest() == digest, name
-    archive = subprocess.run(["git", "archive", "--format=tar.gz", sha, "pipelines/ozon/runtime"],
+    paths = r["source"]["archive"].get("paths", ["pipelines/ozon/runtime"])
+    assert paths in (["pipelines/ozon/runtime"], ["pipelines/ozon/runtime", "pipelines/ozon/tests"])
+    archive = subprocess.run(["git", "archive", "--format=tar.gz", sha, *paths],
                              cwd=REPO, capture_output=True, check=True).stdout
     assert hashlib.sha256(archive).hexdigest() == r["source"]["archive"]["sha256"]
 
