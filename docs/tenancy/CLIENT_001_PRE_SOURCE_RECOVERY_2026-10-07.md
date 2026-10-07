@@ -123,4 +123,4 @@ A new qualified immutable release and effective source-free preflight are requir
 before publishing recovery or resuming the dedicated Scheduler. Original failure,
 sequence 15, STOP and all reservations remain immutable.
 
-Artifact assembly temporarily omits controller opt-in to avoid a circular release digest. This candidate revision MUST NOT be applied. The same immutable root and original desired schedule will be restored with independently qualified artifacts before final CI/merge/deployment.
+Intermediate artifact-assembly revisions omitted controller opt-in only to avoid circular release registration; they were never applied. Final integration restores the same immutable root with independently qualified schema-compatible runtime/controller artifacts. Final CI/merge, exact reviewed deployment and source-free effective-runtime preflight remain required before owner recovery publication or reactivation.

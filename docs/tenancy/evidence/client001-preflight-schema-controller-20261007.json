@@ -1,0 +1,61 @@
+{
+  "source": "f6f5177374f52d3154fbf0377f9b7f76e4495cf9",
+  "image": "europe-west1-docker.pkg.dev/mpa-platform/mpa-runtime/tenant-backfill-controller@sha256:a10eedd7f4c273bdb16796c822c56f2e0c5134f9918f62b7406b6c14dee8d775",
+  "runtime_image": "europe-west1-docker.pkg.dev/mpa-platform/mpa-runtime/ozon-runtime@sha256:28628753d5a8e88ed0cfeb13f06808b80bf7f1bc03e99b5fbbe3627da789bb90",
+  "build_id": "7b135ed8-099f-4266-8fc8-1114d9441427",
+  "build_status": "SUCCESS",
+  "source_object": {
+    "bucket": "mpa-platform-runtime-build-777428383056",
+    "object": "source/1791364112.486338-17664354363246789f0147870aca4035.tgz",
+    "generation": "1791364121014690"
+  },
+  "source_archive_sha256": "60209d52fb9700aecb47c791468bac85d26cea549015b52aefa4117063c274d4",
+  "source_archive_readback": "PASS",
+  "exact_image": {
+    "controller_implementation_hash": "76c9bffdde47ad01ad1cacdd77deef27aa28729169e3f9f162f8343436a30d41",
+    "live_deployment": "UNPROVEN",
+    "lost_post_no_repeat": "PASS",
+    "offline_restart": "PASS",
+    "pre_source_recovery": "PASS",
+    "python_version": "3.12.15",
+    "quota_query_syntax": "PASS",
+    "quota_wait_no_source": "PASS",
+    "reader_append_separation": "PASS",
+    "runtime_implementation_hash": "fe4bfa638697ed3dbc4221f9d85fbeecb11f9a901daa23c82c41b23d4f0016cd",
+    "source_sha": "f6f5177374f52d3154fbf0377f9b7f76e4495cf9",
+    "tenant_isolation": "PASS"
+  },
+  "source_ci": {
+    "sha": "f6f5177374f52d3154fbf0377f9b7f76e4495cf9",
+    "run": 37598522450,
+    "conclusion": "success",
+    "jobs": [
+      {
+        "name": "tenancy",
+        "conclusion": "success"
+      },
+      {
+        "name": "ozon",
+        "conclusion": "success"
+      },
+      {
+        "name": "cloud",
+        "conclusion": "success"
+      },
+      {
+        "name": "infra",
+        "conclusion": "success"
+      },
+      {
+        "name": "wb-communications",
+        "conclusion": "success"
+      }
+    ],
+    "sql_current": {
+      "run": 37598522405,
+      "conclusion": "success"
+    }
+  },
+  "live": "NOT_DEPLOYED",
+  "scope": "QUALIFICATION_ONLY; SAME ROOT; ORDINARY SCHEDULERS PAUSED"
+}

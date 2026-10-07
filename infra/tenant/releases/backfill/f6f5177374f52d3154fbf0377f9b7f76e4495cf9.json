@@ -1,0 +1,17 @@
+{
+  "schema_version": 1,
+  "image": "europe-west1-docker.pkg.dev/mpa-platform/mpa-runtime/tenant-backfill-controller@sha256:a10eedd7f4c273bdb16796c822c56f2e0c5134f9918f62b7406b6c14dee8d775",
+  "source_sha": "f6f5177374f52d3154fbf0377f9b7f76e4495cf9",
+  "runtime_image": "europe-west1-docker.pkg.dev/mpa-platform/mpa-runtime/ozon-runtime@sha256:28628753d5a8e88ed0cfeb13f06808b80bf7f1bc03e99b5fbbe3627da789bb90",
+  "runtime_implementation_hash": "fe4bfa638697ed3dbc4221f9d85fbeecb11f9a901daa23c82c41b23d4f0016cd",
+  "controller_implementation_hash": "76c9bffdde47ad01ad1cacdd77deef27aa28729169e3f9f162f8343436a30d41",
+  "verification": {
+    "ci": "PASS",
+    "exact_image": "PASS",
+    "offline_restart": "PASS",
+    "lost_post_no_repeat": "PASS",
+    "quota_wait_no_source": "PASS",
+    "tenant_isolation": "PASS",
+    "reader_append_separation": "PASS"
+  }
+}
