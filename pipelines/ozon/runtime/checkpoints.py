@@ -34,7 +34,7 @@ LEASE_TTL = timedelta(hours=2)
 VISIBILITY_GRACE = timedelta(hours=3)
 LEASE_TABLE_KEEP = timedelta(days=7)
 QUOTA_ERROR_CLASS = "QUOTA"
-LEASE_RE = re.compile(r"^L_([0-9a-f]{16})_(\d{4})$")
+LEASE_RE = re.compile(r"^L_([0-9a-f]{16})_(\d{4,10})$")
 _EPOCH = datetime(1970, 1, 1, tzinfo=timezone.utc)
 
 

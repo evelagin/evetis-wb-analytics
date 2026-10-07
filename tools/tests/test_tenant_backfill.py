@@ -154,7 +154,7 @@ def test_pilot_lease_generation_survives_expired_tables_and_ignores_old_release_
 
 
 def test_pilot_namespace_exhaustion_never_reuses_a_generation():
-    ledger=[{"lease_generation":9999,"evidence_json":json.dumps({"mode":"BOUNDED_PILOT"})}]
+    ledger=[{"lease_generation":9999999999,"evidence_json":json.dumps({"mode":"BOUNDED_PILOT"})}]
     with pytest.raises(T.B.EvidenceError,match="namespace exhausted"):
         T.pilot_lease_generation(ledger,[],"0"*16,datetime(2026,10,4,tzinfo=timezone.utc),lambda _:None)
 
@@ -391,3 +391,28 @@ def test_complete_global_inventory_accepts_only_exact_registered_region():
     names={"tenant-control","ozon-runtime-daily"}
     response={"items":[{"metadata":{"name":n,"labels":{"cloud.googleapis.com/location":"europe-west1"}}} for n in names],"unreachable":[],"metadata":{}}
     T.verify_global_jobs(response,names,"europe-west1")
+
+
+def test_full_scale_lease_generation_survives_four_digit_boundary_and_expiry():
+    cid='0'*16;now=datetime(2026,10,4,tzinfo=timezone.utc)
+    ledger=[{'lease_generation':9999,'evidence_json':'{"mode":"BOUNDED_PILOT"}'}]
+    assert T.pilot_lease_generation(ledger,[],cid,now,lambda _:None)==10000
+    name=T.CK.lease_name(cid,10000)
+    assert T.CK.LEASE_RE.fullmatch(name).group(2)=='10000'
+    assert T.pilot_lease_generation(ledger,[(name,{'owner':'a','until':str(int(now.timestamp()+3600))})],cid,now,
+                                  lambda _:({'owner':'a'},'{}'))==10001
+
+
+def test_execution_inventory_keeps_second_page_active_evidence():
+    calls=[]
+    def request(method,url):
+        calls.append(url)
+        return {'executions':[{'name':'first','completionTime':'done'}],'nextPageToken':'safe-next'} if len(calls)==1 else {'executions':[{'name':'active'}]}
+    result=T.execution_inventory(request,'projects/mpa-t-client-001/locations/europe-west1/jobs/ozon-runtime-daily')
+    assert len(calls)==2 and result['executions'][-1]=={'name':'active'}
+    assert 'pageToken=safe-next' in calls[-1]
+
+
+def test_execution_inventory_stalled_token_is_unproven():
+    with pytest.raises(T.B.EvidenceError,match='stalled'):
+        T.execution_inventory(lambda *a:{'executions':[],'nextPageToken':'same'},'safe-job')

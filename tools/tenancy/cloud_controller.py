@@ -15,6 +15,10 @@ from tools.tenancy import cloud_access as A, cloud_tick as T, orchestration_cont
 from tools.tenancy.validation import parse_tenant_json
 
 
+class SourceDispatchPaused(BF.B.EvidenceError):
+    """A staged/draining controller may reconcile, but cannot create source work."""
+
+
 def timestamp(value):
     if isinstance(value,str) and re.fullmatch(r'[0-9]+(?:\.[0-9]+)?(?:[Ee][+-]?[0-9]+)?',value):
         # BigQuery REST may use scientific epoch seconds. Preserve microseconds
@@ -254,7 +258,11 @@ class Backend:
         self.store.commit(manifest['hash'],'DEPENDENCY_PLAN',0,{'day':day,'plan':doc},self.clock())
         return doc
 
-    def start(self,doc,before,after):return BF.start(doc,doc['ack_hash'],backend=self,on_prepared=before,on_receipt=after)
+    def start(self,doc,before,after):
+        block=self.c.get('orchestration')
+        if block and block['job']['env']['HISTORICAL_SCHEDULER_STATE']!='ENABLED':
+            raise SourceDispatchPaused('source dispatch paused by exact deployment descriptor')
+        return BF.start(doc,doc['ack_hash'],backend=self,on_prepared=before,on_receipt=after)
 
     def monitoring(self,root,result):
         """Cloud log projection: scope hashes/counts only, never source payloads.
@@ -324,6 +332,13 @@ class Backend:
 
 def bounded_wake(root, backend):
     """At most one reconcile and one new dispatch; no source/wait busy loop."""
+    if root != BF.QF.ROOT:
+        records=backend.store.history(root)
+        if any(r['kind']=='FULL_MANIFEST' for r in records):
+            from tools.tenancy import full_controller as FH
+            result,full_backend=FH.wake(backend,root)
+            result['progress']=FH.monitoring(full_backend,root,result)
+            return result
     started=backend.clock()
     result=T.Tick(root,backend.store,backend,backend.clock).run()
     if result['status']=='RECONCILED' and (backend.clock()-started).total_seconds()<300:
@@ -339,9 +354,12 @@ def main():
     try:
         backend,root=bootstrap(os.environ)
         result=bounded_wake(root,backend)
-        result['progress']=backend.monitoring(root,result)
+        if 'progress' not in result:result['progress']=backend.monitoring(root,result)
         print(json.dumps(result,sort_keys=True))
         return 0 if result['status']!='STOPPED' else 2
+    except SourceDispatchPaused:
+        print(json.dumps({'status':'QUIESCENT_PAUSED','source_dispatches':0}))
+        return 0
     except A.TransientReadError:
         print(json.dumps({'status':'WAITING_READ_RETRY','reason':'TRANSIENT_READ_TRANSPORT'}))
         return 1

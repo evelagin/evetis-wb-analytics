@@ -283,6 +283,73 @@ COMMISSION_MAP = {
 }
 
 
+def _price_rows(items, run_id, ts, d):
+    rows, comm_rows = [], []
+    for i in items:
+        p = i.get("price") or {}
+        pi = i.get("price_indexes") or {}
+        ex = pi.get("external_index_data") or {}
+        oz = pi.get("ozon_index_data") or {}
+        sm = pi.get("self_marketplaces_index_data") or {}
+        c = i.get("commissions") or {}
+        offer = str(i["offer_id"])
+        unknown = sorted(k for k in c if k not in COMMISSION_MAP)
+        rows.append(dict(snapshot_ts=ts, snapshot_date=d, offer_id=offer,
+            product_id=str(i.get("product_id")), price_rub=_num(p.get("price")),
+            old_price_rub=_num(p.get("old_price")), min_price_rub=_num(p.get("min_price")),
+            marketing_seller_price_rub=_num(p.get("marketing_seller_price")),
+            net_price_rub=_num(p.get("net_price")), acquiring_rub=_num(i.get("acquiring")),
+            sales_percent_fbo=_num(c.get("sales_percent_fbo")),
+            price_index_color=pi.get("color_index"),
+            external_min_price_rub=_num(ex.get("min_price")),
+            external_index_value=_num(ex.get("price_index_value")),
+            ozon_actions_exist=(i.get("marketing_actions") or {}).get("ozon_actions_exist"),
+            # --- расширение Stage 3.4D.2: полный текущий тарифный контракт ---
+            currency_code=p.get("currency_code"),
+            retail_price_rub=_num(p.get("retail_price")), vat_rate=_num(p.get("vat")),
+            auto_action_enabled=p.get("auto_action_enabled"),
+            auto_add_to_ozon_actions_enabled=p.get("auto_add_to_ozon_actions_list_enabled"),
+            volume_weight_l=_num(i.get("volume_weight")),
+            sales_percent_fbs=_num(c.get("sales_percent_fbs")),
+            sales_percent_rfbs=_num(c.get("sales_percent_rfbs")),
+            sales_percent_fbp=_num(c.get("sales_percent_fbp")),
+            fbo_direct_flow_trans_min_rub=_num(c.get("fbo_direct_flow_trans_min_amount")),
+            fbo_direct_flow_trans_max_rub=_num(c.get("fbo_direct_flow_trans_max_amount")),
+            fbo_deliv_to_customer_rub=_num(c.get("fbo_deliv_to_customer_amount")),
+            fbo_return_flow_rub=_num(c.get("fbo_return_flow_amount")),
+            fbs_first_mile_min_rub=_num(c.get("fbs_first_mile_min_amount")),
+            fbs_first_mile_max_rub=_num(c.get("fbs_first_mile_max_amount")),
+            fbs_direct_flow_trans_min_rub=_num(c.get("fbs_direct_flow_trans_min_amount")),
+            fbs_direct_flow_trans_max_rub=_num(c.get("fbs_direct_flow_trans_max_amount")),
+            fbs_deliv_to_customer_rub=_num(c.get("fbs_deliv_to_customer_amount")),
+            fbs_return_flow_rub=_num(c.get("fbs_return_flow_amount")),
+            ozon_index_min_price_rub=_num(oz.get("min_price")),
+            ozon_index_value=_num(oz.get("price_index_value")),
+            self_marketplaces_index_min_price_rub=_num(sm.get("min_price")),
+            self_marketplaces_index_value=_num(sm.get("price_index_value")),
+            commissions_json=json.dumps(c, ensure_ascii=False, sort_keys=True),
+            commissions_field_count=len(c),
+            commissions_unknown_fields=(",".join(unknown) or None),
+            source_payload_hash=h(d, offer),
+            **_meta("POST /v5/product/info/prices", run_id, ts)))
+        # длинная проекция: одна строка на компоненту тарифа
+        for k, v in sorted(c.items()):
+            scheme, comp, unit = COMMISSION_MAP.get(k, ("UNKNOWN", k, "UNKNOWN"))
+            comm_rows.append(dict(snapshot_ts=ts, snapshot_date=d, offer_id=offer,
+                product_id=str(i.get("product_id")), sale_scheme=scheme,
+                commission_component=comp, api_field=k, value_num=_num(v), unit=unit,
+                is_known_component=(k in COMMISSION_MAP),
+                source_payload_hash=h(d, offer, k),
+                **_meta("POST /v5/product/info/prices", run_id, ts)))
+        comm_rows.append(dict(snapshot_ts=ts, snapshot_date=d, offer_id=offer,
+            product_id=str(i.get("product_id")), sale_scheme="COMMON",
+            commission_component="ACQUIRING", api_field="acquiring",
+            value_num=_num(i.get("acquiring")), unit="RUB", is_known_component=True,
+            source_payload_hash=h(d, offer, "acquiring"),
+            **_meta("POST /v5/product/info/prices", run_id, ts)))
+    return rows, comm_rows
+
+
 def prices(run_id, ts, _f, _t):
     d = str(now_msk().date())
     rows, comm_rows, cursor = [], [], ""
@@ -297,68 +364,8 @@ def prices(run_id, ts, _f, _t):
         if code != 200:
             raise RuntimeError(f"prices {code}: {r}")
         items = r.get("items") or []
-        for i in items:
-            p = i.get("price") or {}
-            pi = i.get("price_indexes") or {}
-            ex = pi.get("external_index_data") or {}
-            oz = pi.get("ozon_index_data") or {}
-            sm = pi.get("self_marketplaces_index_data") or {}
-            c = i.get("commissions") or {}
-            offer = str(i["offer_id"])
-            unknown = sorted(k for k in c if k not in COMMISSION_MAP)
-            rows.append(dict(snapshot_ts=ts, snapshot_date=d, offer_id=offer,
-                product_id=str(i.get("product_id")), price_rub=_num(p.get("price")),
-                old_price_rub=_num(p.get("old_price")), min_price_rub=_num(p.get("min_price")),
-                marketing_seller_price_rub=_num(p.get("marketing_seller_price")),
-                net_price_rub=_num(p.get("net_price")), acquiring_rub=_num(i.get("acquiring")),
-                sales_percent_fbo=_num(c.get("sales_percent_fbo")),
-                price_index_color=pi.get("color_index"),
-                external_min_price_rub=_num(ex.get("min_price")),
-                external_index_value=_num(ex.get("price_index_value")),
-                ozon_actions_exist=(i.get("marketing_actions") or {}).get("ozon_actions_exist"),
-                # --- расширение Stage 3.4D.2: полный текущий тарифный контракт ---
-                currency_code=p.get("currency_code"),
-                retail_price_rub=_num(p.get("retail_price")), vat_rate=_num(p.get("vat")),
-                auto_action_enabled=p.get("auto_action_enabled"),
-                auto_add_to_ozon_actions_enabled=p.get("auto_add_to_ozon_actions_list_enabled"),
-                volume_weight_l=_num(i.get("volume_weight")),
-                sales_percent_fbs=_num(c.get("sales_percent_fbs")),
-                sales_percent_rfbs=_num(c.get("sales_percent_rfbs")),
-                sales_percent_fbp=_num(c.get("sales_percent_fbp")),
-                fbo_direct_flow_trans_min_rub=_num(c.get("fbo_direct_flow_trans_min_amount")),
-                fbo_direct_flow_trans_max_rub=_num(c.get("fbo_direct_flow_trans_max_amount")),
-                fbo_deliv_to_customer_rub=_num(c.get("fbo_deliv_to_customer_amount")),
-                fbo_return_flow_rub=_num(c.get("fbo_return_flow_amount")),
-                fbs_first_mile_min_rub=_num(c.get("fbs_first_mile_min_amount")),
-                fbs_first_mile_max_rub=_num(c.get("fbs_first_mile_max_amount")),
-                fbs_direct_flow_trans_min_rub=_num(c.get("fbs_direct_flow_trans_min_amount")),
-                fbs_direct_flow_trans_max_rub=_num(c.get("fbs_direct_flow_trans_max_amount")),
-                fbs_deliv_to_customer_rub=_num(c.get("fbs_deliv_to_customer_amount")),
-                fbs_return_flow_rub=_num(c.get("fbs_return_flow_amount")),
-                ozon_index_min_price_rub=_num(oz.get("min_price")),
-                ozon_index_value=_num(oz.get("price_index_value")),
-                self_marketplaces_index_min_price_rub=_num(sm.get("min_price")),
-                self_marketplaces_index_value=_num(sm.get("price_index_value")),
-                commissions_json=json.dumps(c, ensure_ascii=False, sort_keys=True),
-                commissions_field_count=len(c),
-                commissions_unknown_fields=(",".join(unknown) or None),
-                source_payload_hash=h(d, offer),
-                **_meta("POST /v5/product/info/prices", run_id, ts)))
-            # длинная проекция: одна строка на компоненту тарифа
-            for k, v in sorted(c.items()):
-                scheme, comp, unit = COMMISSION_MAP.get(k, ("UNKNOWN", k, "UNKNOWN"))
-                comm_rows.append(dict(snapshot_ts=ts, snapshot_date=d, offer_id=offer,
-                    product_id=str(i.get("product_id")), sale_scheme=scheme,
-                    commission_component=comp, api_field=k, value_num=_num(v), unit=unit,
-                    is_known_component=(k in COMMISSION_MAP),
-                    source_payload_hash=h(d, offer, k),
-                    **_meta("POST /v5/product/info/prices", run_id, ts)))
-            comm_rows.append(dict(snapshot_ts=ts, snapshot_date=d, offer_id=offer,
-                product_id=str(i.get("product_id")), sale_scheme="COMMON",
-                commission_component="ACQUIRING", api_field="acquiring",
-                value_num=_num(i.get("acquiring")), unit="RUB", is_known_component=True,
-                source_payload_hash=h(d, offer, "acquiring"),
-                **_meta("POST /v5/product/info/prices", run_id, ts)))
+        page_rows, page_commissions = _price_rows(items, run_id, ts, d)
+        rows.extend(page_rows); comm_rows.extend(page_commissions)
         total = _list_total(r) if total is None else total
         cursor = r.get("cursor") or ""
         if not cursor or not items:
@@ -379,27 +386,7 @@ def prices(run_id, ts, _f, _t):
 
 
 # ------------------------------------------------- состояние продавца
-def seller_info(run_id, ts, _f, _t):
-    """Статус подписки и налоговый режим продавца. Только чтение.
-
-    Зачем отдельная сущность. Premium — постоянный расход уровня магазина
-    (9 990 ₽/мес). До этой сущности его статус проверялся руками и был
-    зашит в витрину константой FALSE: если бы подписку возобновили,
-    форвардный слой этого не заметил бы. Теперь статус приходит каждые
-    сутки и имеет возраст, который можно проверить.
-
-    Идентификаторы компании (ИНН, ОГРН, юридическое и торговое название)
-    НЕ сохраняются: для экономики они не нужны, а хранить их без нужды
-    незачем. Остаются только налоговый режим, страна и валюта.
-    """
-    d = str(now_msk().date())
-    code, si = seller_post("/v1/seller/info", {})
-    if code != 200:
-        raise RuntimeError(f"seller/info {code}: {si}")
-    code, rs = seller_post("/v1/rating/summary", {})
-    if code != 200:
-        raise RuntimeError(f"rating/summary {code}: {rs}")
-
+def _seller_info_rows(si, rs, run_id, ts, d):
     comp = {k: v for k, v in (si.get("company") or {}).items()
             if k in ("country", "currency", "tax_system")}
     sub = si.get("subscription") or {}
@@ -421,23 +408,37 @@ def seller_info(run_id, ts, _f, _t):
         raw_json=json.dumps(raw, ensure_ascii=False, sort_keys=True),
         source_payload_hash=h(d, "seller_info"),
         **_meta("POST /v1/seller/info + POST /v1/rating/summary", run_id, ts))
+    return [row]
+
+
+def seller_info(run_id, ts, _f, _t):
+    """Статус подписки и налоговый режим продавца. Только чтение.
+
+    Зачем отдельная сущность. Premium — постоянный расход уровня магазина
+    (9 990 ₽/мес). До этой сущности его статус проверялся руками и был
+    зашит в витрину константой FALSE: если бы подписку возобновили,
+    форвардный слой этого не заметил бы. Теперь статус приходит каждые
+    сутки и имеет возраст, который можно проверить.
+
+    Идентификаторы компании (ИНН, ОГРН, юридическое и торговое название)
+    НЕ сохраняются: для экономики они не нужны, а хранить их без нужды
+    незачем. Остаются только налоговый режим, страна и валюта.
+    """
+    d = str(now_msk().date())
+    code, si = seller_post("/v1/seller/info", {})
+    if code != 200:
+        raise RuntimeError(f"seller/info {code}: {si}")
+    code, rs = seller_post("/v1/rating/summary", {})
+    if code != 200:
+        raise RuntimeError(f"rating/summary {code}: {rs}")
+
+    rows = _seller_info_rows(si, rs, run_id, ts, d)
     # один снимок в сутки: повтор в тот же день перезаписывает, а не плодит
-    return merge_rows("RAW_OZON_SELLER_INFO", [row], ["snapshot_date"], run_id)
+    return merge_rows("RAW_OZON_SELLER_INFO", rows, ["snapshot_date"], run_id)
 
 
 # --------------------------------------------------------------- остатки
-def stocks(run_id, ts, _f, _t):
-    # Раньше код ответа product/list здесь не проверялся: при ошибке уходил пустой
-    # фильтр skus. Теперь та же проверка кода и полноты, что в catalog().
-    skus = [str(i["sku"]) for i in _product_list_items()]
-    items = []
-    # /v1/analytics/stocks: skus maximum 100 (Swagger 2026-09-28) — партиями по 100.
-    for k in range(0, max(len(skus), 1), STOCKS_SKU_BATCH):
-        code, r = seller_post("/v1/analytics/stocks", {"skus": skus[k:k + STOCKS_SKU_BATCH]})
-        if code != 200:
-            raise RuntimeError(f"stocks {code}: {r}")
-        items += r.get("items") or []
-    d = str(now_msk().date())
+def _stock_rows(items, run_id, ts, d):
     rows = [dict(snapshot_date=d, sku=str(i["sku"]), warehouse_id=str(i.get("warehouse_id")),
         warehouse_name=i.get("warehouse_name"), cluster_id=str(i.get("cluster_id")),
         cluster_name=i.get("cluster_name"),
@@ -450,6 +451,22 @@ def stocks(run_id, ts, _f, _t):
         source_payload_hash=h(d, i["sku"], i.get("warehouse_id")),
         **_meta("POST /v1/analytics/stocks", run_id, ts))
         for i in items]
+    return rows
+
+
+def stocks(run_id, ts, _f, _t):
+    # Раньше код ответа product/list здесь не проверялся: при ошибке уходил пустой
+    # фильтр skus. Теперь та же проверка кода и полноты, что в catalog().
+    skus = [str(i["sku"]) for i in _product_list_items()]
+    items = []
+    # /v1/analytics/stocks: skus maximum 100 (Swagger 2026-09-28) — партиями по 100.
+    for k in range(0, max(len(skus), 1), STOCKS_SKU_BATCH):
+        code, r = seller_post("/v1/analytics/stocks", {"skus": skus[k:k + STOCKS_SKU_BATCH]})
+        if code != 200:
+            raise RuntimeError(f"stocks {code}: {r}")
+        items += r.get("items") or []
+    d = str(now_msk().date())
+    rows = _stock_rows(items, run_id, ts, d)
     return merge_rows("RAW_OZON_STOCKS", rows,
                       ["snapshot_date", "sku", "warehouse_id"], run_id)
 
@@ -995,11 +1012,7 @@ def _ads_sku_rows_legacy(run_id, ts, d0, d1):
 
 
 # -------------------------------------------------------------- поставки
-def clusters(run_id, ts, _f, _t):
-    code, r = seller_post("/v1/cluster/list", {"cluster_type": "CLUSTER_TYPE_OZON"})
-    if code != 200:
-        raise RuntimeError(f"cluster/list {code}: {r}")
-    d = str(now_msk().date())
+def _cluster_rows(r, run_id, ts, d):
     rows = []
     for c in (r.get("clusters") or []):
         for lc in (c.get("logistic_clusters") or []):
@@ -1009,6 +1022,15 @@ def clusters(run_id, ts, _f, _t):
                     warehouse_id=str(w["warehouse_id"]), warehouse_name=w.get("name"),
                     warehouse_type=w.get("type"), source_payload_hash=h(d, w["warehouse_id"]),
                     **_meta("POST /v1/cluster/list", run_id, ts)))
+    return rows
+
+
+def clusters(run_id, ts, _f, _t):
+    code, r = seller_post("/v1/cluster/list", {"cluster_type": "CLUSTER_TYPE_OZON"})
+    if code != 200:
+        raise RuntimeError(f"cluster/list {code}: {r}")
+    d = str(now_msk().date())
+    rows = _cluster_rows(r, run_id, ts, d)
     return merge_rows("RAW_OZON_CLUSTERS", rows, ["snapshot_date", "warehouse_id"], run_id)
 
 

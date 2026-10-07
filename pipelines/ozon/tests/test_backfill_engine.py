@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import copy
 import json
-from datetime import date
+from datetime import date, datetime
 
 import pytest
 
@@ -25,6 +25,7 @@ def plan(entity="fbo_postings", values=None):
 @pytest.fixture
 def harness(entities, monkeypatch):
     database, writes, proofs = {}, [], []
+    monkeypatch.setattr(C, 'now_msk', lambda: datetime(2026, 10, 4, 12, tzinfo=B.MSK))
     monkeypatch.setattr(F.time, "sleep", lambda _: None)
     monkeypatch.setattr(F, "export_budget", lambda *a,**kw: 15)
     def merge(table, rows, keys, run_id, **kw):
@@ -290,8 +291,10 @@ def test_performance_write_and_extra_query_paths_remain_denied(path):
     assert not any(r.fullmatch(path) for r in C.PERF_ALLOWED_GET)
 
 
-def test_snapshot_historical_mode_not_fabricated(harness):
-    with pytest.raises(B.EvidenceError,match="no source backfill"):engine(plan("prices")).run(harness[3])
+def test_snapshot_historical_mode_not_fabricated(harness,monkeypatch):
+    monkeypatch.setattr(C, 'now_msk', lambda: datetime(2026, 10, 5, 12, tzinfo=B.MSK))
+    with pytest.raises(B.EvidenceError,match="snapshot observation day stale"):
+        engine(plan("prices")).run(harness[3])
     assert not harness[0]
 
 

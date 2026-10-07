@@ -33,11 +33,10 @@ def export_budget(cap=15, p=None):
     """
     table = f"{C.PROJECT}.{C.DATASET}.{C.RUNS_TABLE}"
     config = bigquery.QueryJobConfig(use_legacy_sql=False, maximum_bytes_billed=1073741824)
-    approved = read_recovery_proofs(p) if p is not None else []
+    approved = read_recovery_proofs(p, accounting=True) if p is not None else []
     excluded = [x['run_id'] for x in approved]
     config.query_parameters = [bigquery.ArrayQueryParameter('no_post_runs','STRING',excluded),
-        bigquery.ArrayQueryParameter('no_post_sequences','INT64',[x['unit_sequence'] for x in approved]),
-        bigquery.ScalarQueryParameter('recovery_plan','STRING',p['plan_id'] if p else '')]
+        bigquery.ArrayQueryParameter('no_post_units','STRING',[f"{x['plan_id']}:{x['unit_sequence']}" for x in approved])]
     rows = list(C.bq().query(f"""SELECT
       (SELECT COUNT(*) FROM `{table}` WHERE started_at >= TIMESTAMP_SUB(CURRENT_TIMESTAMP(), INTERVAL 24 HOUR)
        AND entity = 'ads_sku_daily' AND backfill_plan_id IS NULL
@@ -54,7 +53,7 @@ def export_budget(cap=15, p=None):
          MAX(SAFE_CAST(JSON_VALUE(backfill_detail_json, '$.exports_reserved') AS INT64)) AS exports
        FROM `{table}` WHERE started_at >= TIMESTAMP_SUB(CURRENT_TIMESTAMP(), INTERVAL 24 HOUR)
         AND entity = 'ads_sku_daily' AND backfill_sequence IS NOT NULL AND status = 'OK'
-        AND NOT COALESCE(backfill_plan_id=@recovery_plan AND backfill_sequence IN UNNEST(@no_post_sequences),FALSE)
+        AND NOT COALESCE(CONCAT(backfill_plan_id,':',CAST(backfill_sequence AS STRING)) IN UNNEST(@no_post_units),FALSE)
        GROUP BY backfill_plan_id, backfill_sequence)""", job_config=config, location=C.LOCATION).result())
     if len(rows) != 1 or rows[0]["unknown_runs"]:
         raise B.EvidenceError("PERFORMANCE_QUOTA_UNPROVEN: ordinary exports not accounted")
@@ -209,7 +208,7 @@ class Engine:
     def catalog(self, s):
         pr = s["progress"]
         snapshot_date = str(C.now_msk().date())
-        if pr.get("snapshot_date", snapshot_date) != snapshot_date:
+        if self.p.get('observation_date') != snapshot_date or pr.get("snapshot_date", snapshot_date) != snapshot_date:
             raise B.EvidenceError("catalog snapshot date changed; fresh generation required")
         pr["snapshot_date"] = snapshot_date
         visibility = pr.get("visibility", "ALL")
@@ -390,6 +389,7 @@ class Engine:
         raise B.EvidenceError("campaign page cap")
 
     def campaign_snapshot(self, s):
+        self.snapshot_day()
         items = self.campaigns()
         out = self.merge("RAW_OZON_ADS_CAMPAIGNS", E._campaign_rows(items, self.run_id, self.ts),
                          ["snapshot_date", "campaign_id"])
@@ -535,11 +535,115 @@ class Engine:
                     "expected_unique_rows": len({(r["campaign_id"], r["sku"]) for r in rows}),
                     "source_terminal": "pending" not in s["progress"]}
 
+    def snapshot_day(self):
+        day = str(C.now_msk().date())
+        if self.p.get("observation_date") != day:
+            raise B.EvidenceError("snapshot observation day stale; fresh dated scope required")
+        return day
+
+    def prices(self, s):
+        day = self.snapshot_day(); pr = s["progress"]
+        payload = self.call("/v5/product/info/prices", {
+            "cursor": pr.get("cursor", ""), "limit": 100,
+            "filter": {"offer_id": [], "product_id": [], "visibility": "ALL"}})
+        self.pages += 1
+        items, total = payload.get("items"), E._list_total(payload)
+        if not isinstance(items, list) or type(total) is not int or total < 0:
+            raise B.EvidenceError("price snapshot missing items/total")
+        if pr.get("total", total) != total:
+            raise B.EvidenceError("price snapshot source changed during traversal")
+        offers = [str(i["offer_id"]) for i in items]
+        previous = pr.get("offers", [])
+        if len(set(offers)) != len(offers) or set(offers) & set(previous):
+            raise B.EvidenceError("price snapshot repeated offer keys")
+        count = len(previous) + len(offers)
+        if count > total:
+            raise B.EvidenceError("price snapshot count exceeds source total")
+        terminal = count == total
+        cursor = payload.get("cursor")
+        if not terminal and (not items or not isinstance(cursor, str) or not cursor or cursor in pr.get("cursors", [])):
+            raise B.EvidenceError("price snapshot nonprogress cursor")
+        if not terminal and len(pr.get("cursors", [])) >= E.PRICES_MAX_PAGES - 1:
+            raise B.EvidenceError("price snapshot page cap; completeness unproven")
+        rows, commissions = E._price_rows(items, self.run_id, self.ts, day)
+        pr.update(offers=previous + offers, total=total, cursor=cursor or "",
+                  cursors=pr.get("cursors", []) + ([cursor] if not terminal else []), done=terminal)
+        s["complete"] = terminal
+        B.validate(self.p, s, reserve=128)
+        r1 = self.merge("RAW_OZON_PRICES", rows, ["snapshot_date", "offer_id"])
+        r2 = self.merge("RAW_OZON_PRICE_COMMISSIONS", commissions,
+                        ["snapshot_date", "offer_id", "sale_scheme", "commission_component"])
+        out = {k: r1.get(k, 0) + r2.get(k, 0) for k in ("received", "inserted", "updated")}
+        return out, {"action": "PRICE_PAGE", "observation_date": day,
+                     "source_total": total, "source_offers": count, "source_terminal": terminal,
+                     "tables": {"RAW_OZON_PRICES": r1.get("received", 0),
+                                "RAW_OZON_PRICE_COMMISSIONS": r2.get("received", 0)}}
+
+    def stock_catalog_page(self, day, last):
+        cfg = bigquery.QueryJobConfig(use_legacy_sql=False, maximum_bytes_billed=1073741824,
+            query_parameters=[bigquery.ScalarQueryParameter("day", "DATE", day),
+                              bigquery.ScalarQueryParameter("last", "STRING", last)])
+        table = f"{C.PROJECT}.{C.DATASET}.RAW_OZON_CATALOG"
+        rows = list(C.bq().query(f"SELECT sku FROM `{table}` WHERE snapshot_date=@day AND sku>@last AND SAFE_CAST(sku AS INT64)>0 ORDER BY sku LIMIT 100", job_config=cfg, location=C.LOCATION).result())
+        skus = [CI.optional_sku(r["sku"]) for r in rows]
+        if any(x is None for x in skus) or len(skus) != len(set(skus)):
+            raise B.EvidenceError("stock Catalog SKU identity ambiguous")
+        return skus
+
+    def stocks(self, s):
+        day = self.snapshot_day(); pr = s["progress"]
+        # Read existing certified Catalog; no empty/fabricated source request.
+        if not pr.get("last_sku"):
+            internal_preflight(self.p, source_binding=False)
+        skus = self.stock_catalog_page(day, pr.get("last_sku", ""))
+        if not skus:
+            if not pr.get("skus", 0):
+                raise B.EvidenceError("stock snapshot has no eligible certified Catalog SKU")
+            pr["done"] = s["complete"] = True
+            return {}, {"action": "STOCKS_COMPLETE", "observation_date": day,
+                        "source_skus": pr["skus"], "source_terminal": True}
+        payload = self.call("/v1/analytics/stocks", {"skus": skus})
+        self.pages += 1
+        items = payload.get("items")
+        if not isinstance(items, list) or any(str(i.get("sku")) not in skus for i in items):
+            raise B.EvidenceError("stock response outside exact requested Catalog cohort")
+        rows = E._stock_rows(items, self.run_id, self.ts, day)
+        pr.update(last_sku=skus[-1], skus=pr.get("skus", 0) + len(skus))
+        B.validate(self.p, s, reserve=128)
+        out = self.merge("RAW_OZON_STOCKS", rows, ["snapshot_date", "sku", "warehouse_id"])
+        return out, {"action": "STOCKS_BATCH", "observation_date": day,
+                     "source_skus": len(skus), "source_terminal": False,
+                     "tables": {"RAW_OZON_STOCKS": out.get("received", 0)}}
+
+    def seller_snapshot(self, s):
+        day = self.snapshot_day()
+        si = self.call("/v1/seller/info", {})
+        rs = self.call("/v1/rating/summary", {})
+        rows = E._seller_info_rows(si, rs, self.run_id, self.ts, day)
+        s["progress"]["done"] = s["complete"] = True
+        B.validate(self.p, s, reserve=128)
+        out = self.merge("RAW_OZON_SELLER_INFO", rows, ["snapshot_date"])
+        return out, {"action": "SELLER_INFO_COMPLETE", "observation_date": day,
+                     "source_terminal": True, "tables": {"RAW_OZON_SELLER_INFO": out.get("received", 0)}}
+
+    def clusters(self, s):
+        day = self.snapshot_day()
+        payload = self.call("/v1/cluster/list", {"cluster_type": "CLUSTER_TYPE_OZON"})
+        if not isinstance(payload.get("clusters"), list):
+            raise B.EvidenceError("cluster snapshot missing source list")
+        rows = E._cluster_rows(payload, self.run_id, self.ts, day)
+        s["progress"]["done"] = s["complete"] = True
+        B.validate(self.p, s, reserve=128)
+        out = self.merge("RAW_OZON_CLUSTERS", rows, ["snapshot_date", "warehouse_id"])
+        return out, {"action": "CLUSTERS_COMPLETE", "observation_date": day,
+                     "source_terminal": True, "tables": {"RAW_OZON_CLUSTERS": out.get("received", 0)}}
+
     def run(self, persist):
         handlers = {"fbo_postings": self.fbo, "finance_accrual": self.finance,
                     "catalog": self.catalog, "supplies": self.supplies,
                     "ads_campaigns": self.campaign_snapshot, "ads_expense_daily": self.expense,
-                    "ads_sku_daily": self.sku}
+                    "ads_sku_daily": self.sku, "prices": self.prices, "stocks": self.stocks,
+                    "seller_info": self.seller_snapshot, "clusters": self.clusters}
         if self.p["entity"] not in handlers:
             raise B.EvidenceError("snapshot history has no source backfill contract")
         total = {"received": 0, "inserted": 0, "updated": 0}
@@ -688,28 +792,40 @@ def read_recovery_for_state(p,state):
     return PS.validate_state(matched[0],p,state) if matched else None
 
 
-def read_recovery_proofs(p):
+def read_recovery_proofs(p, *, accounting=False):
     client=C.bq();out=[]
     names=[x.table_id for x in client.list_tables(f'{C.PROJECT}.{C.REF_DATASET}') if x.table_id.startswith('BFP_')]
     if len(names)>16:raise B.EvidenceError('bounded owner recovery inventory exceeded')
     for name in names:
         table=client.get_table(f'{C.PROJECT}.{C.REF_DATASET}.{name}')
         proof=json.loads(table.description or '{}')
-        if proof.get('plan_id')!=p['plan_id']:continue
-        PS.validate(proof,p)
+        original_plan = p
+        if proof.get('plan_id')!=p['plan_id']:
+            if not accounting:continue
+            # Only the exact immutable accepted qualification may contribute a
+            # cross-plan exception. The owner marker and original unit/FAILED
+            # aggregate are independently revalidated below; no blanket skip.
+            accepted = QF.accepted_doc(proof.get('plan_id'))
+            if not accepted:raise B.EvidenceError('foreign quota recovery unproven')
+            if (accepted['runtime_plan']['project'] != p['project']
+                    or proof.get('tenant') != accepted['tenant_id']
+                    or proof.get('root_hash') != QF.ROOT):
+                raise B.EvidenceError('foreign quota recovery target/root')
+            original_plan = accepted['runtime_plan']
+        PS.validate(proof,original_plan)
         if name!=PS.marker(proof) or table.labels!=PS.marker_value(proof)[0]:raise B.EvidenceError('owner recovery marker corrupt')
         # Never discount a reservation using a detached/corrupt owner assertion.
         config=bigquery.QueryJobConfig(use_legacy_sql=False,maximum_bytes_billed=1073741824,
-            query_parameters=[bigquery.ScalarQueryParameter('origin','TIMESTAMP',p['origin']),
-                              bigquery.ScalarQueryParameter('pid','STRING',p['plan_id']),
+            query_parameters=[bigquery.ScalarQueryParameter('origin','TIMESTAMP',original_plan['origin']),
+                              bigquery.ScalarQueryParameter('pid','STRING',original_plan['plan_id']),
                               bigquery.ScalarQueryParameter('seq','INT64',proof['unit_sequence']),
                               bigquery.ScalarQueryParameter('run','STRING',proof['run_id'])])
         rows=list(client.query(f"SELECT DISTINCT evidence_json,backfill_detail_json FROM `{C.PROJECT}.{C.DATASET}.{C.RUNS_TABLE}` WHERE started_at>=@origin AND backfill_plan_id=@pid AND backfill_sequence=@seq AND status='OK' AND entity='ads_sku_daily' LIMIT 2",job_config=config,location=C.LOCATION).result())
         if len(rows)!=1:raise B.EvidenceError('attested source intent missing/ambiguous')
         original=json.loads(rows[0]['evidence_json']);detail=json.loads(rows[0]['backfill_detail_json'])
-        if original.get('plan')!=p or detail.get('action')!='REPORT_INTENT' or detail.get('exports_reserved')!=proof['exports_reserved']:
+        if original.get('plan')!=original_plan or detail.get('action')!='REPORT_INTENT' or detail.get('exports_reserved')!=proof['exports_reserved']:
             raise B.EvidenceError('attested source reservation conflict')
-        PS.validate_state(proof,p,original['state'])
+        PS.validate_state(proof,original_plan,original['state'])
         rows=list(client.query(f"SELECT status FROM `{C.PROJECT}.{C.DATASET}.{C.RUNS_TABLE}` WHERE started_at>=@origin AND ingestion_run_id=@run AND entity='ads_sku_daily' LIMIT 2",job_config=config,location=C.LOCATION).result())
         if len(rows)!=1 or rows[0]['status']!='FAILED':raise B.EvidenceError('failed aggregate attribution unproven')
         out.append(proof)

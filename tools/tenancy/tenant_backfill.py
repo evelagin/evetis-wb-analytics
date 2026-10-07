@@ -77,9 +77,8 @@ def make_plan(tenant_id, entity, frm, to, generation, origin, today=None, *, max
            "BACKFILL_GENERATION": generation, "BACKFILL_ORIGIN": origin,
            "BACKFILL_WINDOW_DAYS": str(window_days)}
     p = B.plan(env, entity, c["project_id"], "ozon_raw", "ref", today or datetime.now(B.MSK).date())
-    if entity not in {"catalog", "fbo_postings", "finance_accrual", "supplies", "ads_campaigns",
-                       "ads_expense_daily", "ads_sku_daily"}:
-        raise B.EvidenceError("no historical source execution for snapshot-only domain")
+    if entity not in B.DOMAINS:
+        raise B.EvidenceError("unsupported source domain")
     if (date.fromisoformat(to) - date.fromisoformat(frm)).days >= 31:
         raise B.EvidenceError("bounded pilot scope exceeds31days; full-history plan separately approved")
     if entity not in set(R.load_tenant(tenant_id)["marketplaces"]["ozon"]["entities"]):
@@ -147,6 +146,32 @@ def canonical_template(job, expected_env, image, account, control=False):
         raise B.EvidenceError("canonical env differs (unknown/duplicate/changed settings)")
 
 
+def execution_inventory(request, job_name):
+    """Complete retained Run metadata, including active executions on later pages.
+
+    Cloud Run documents retention of the latest 1000 plus the last seven days;
+    a ten-minute controller therefore needs more than a single page. No old
+    history is deleted and a pagination gap/repeated cursor remains fail closed.
+    """
+    from urllib.parse import quote
+    items, seen, token = [], set(), ''
+    for _ in range(10):
+        url = f"{RUN_API}/{job_name}/executions?pageSize=1000" + (f"&pageToken={quote(token,safe='')}" if token else '')
+        result = request('GET',url)
+        page = result.get('executions',[])
+        if not isinstance(page,list) or len(page)>1000:
+            raise B.EvidenceError('Run execution page malformed')
+        items.extend(page)
+        token = result.get('nextPageToken') or ''
+        if not token:
+            names=[x.get('name') for x in items]
+            if len(names)!=len(set(names)):raise B.EvidenceError('Run execution pagination repeats identity')
+            return {'executions':items}
+        if token in seen:raise B.EvidenceError('Run execution pagination stalled')
+        seen.add(token)
+    raise B.EvidenceError('Run execution retained inventory exceeds reviewed read budget')
+
+
 def preflight(c, doc, now, backend=None, *, allow_active=False, owner_observation=False):
     if backend is not None:
         base_contract={k:v for k,v in backend.c.items() if k!='orchestration'}
@@ -158,7 +183,13 @@ def preflight(c, doc, now, backend=None, *, allow_active=False, owner_observatio
     chain, decisions, ledger, rows, hold = TL.read_state(c, tables)
     import lifecycle_core as L
     state = L.current_state(chain)
-    if hold or state not in {L.VALIDATING, L.CAPABILITY_DISCOVERY}:
+    if hold:
+        raise B.EvidenceError("pilot lifecycle/hold gate denied")
+    if state == L.BACKFILLING:
+        from tools.tenancy import full_controller as FH
+        if not isinstance(backend, FH.Backend) or backend.authorize_full_leaf(doc) is not True:
+            raise B.EvidenceError("qualified full program authority required")
+    elif state not in {L.VALIDATING, L.CAPABILITY_DISCOVERY}:
         raise B.EvidenceError("pilot lifecycle/hold gate denied")
     binding, creds = TL.operator_binding(c, tables, now, [doc["runtime_plan"]["entity"]])
     if any(v != "BOUND" for v in binding.values()) or any(v["status"] != "PASS" for v in creds.values()):
@@ -180,7 +211,7 @@ def preflight(c, doc, now, backend=None, *, allow_active=False, owner_observatio
                            f"{c['marketplaces']['ozon']['service_accounts']['runtime']}@{c['project_id']}.iam.gserviceaccount.com")
         if job.get("runningCount", 0) and not allow_active:
             raise B.EvidenceError("tenant ingestion execution already active")
-        executions = request("GET", f"{RUN_API}/{job['name']}/executions?pageSize=1000")
+        executions = execution_inventory(request,job['name'])
         active=[e for e in executions.get('executions',[]) if not e.get('completionTime')]
         if executions.get('nextPageToken') or (active and not allow_active) or job.get('runningCount',0)>len(active):
             raise B.EvidenceError('active/unproven tenant execution')
@@ -194,7 +225,7 @@ def preflight(c, doc, now, backend=None, *, allow_active=False, owner_observatio
             backend.active=True
     control = jobs["tenant-control"]
     canonical_template(control,c["control"]["job"]["env"],execution_image(doc,c),c["control"]["email"],control=True)
-    executions = request("GET", f"{RUN_API}/{control['name']}/executions?pageSize=1000")
+    executions = execution_inventory(request,control['name'])
     active_control=[e for e in executions.get('executions',[]) if not e.get('completionTime')]
     if executions.get('nextPageToken') or (active_control and not allow_active) or control.get('runningCount',0)>len(active_control):
         raise B.EvidenceError('control execution active/unproven')
@@ -208,7 +239,7 @@ def preflight(c, doc, now, backend=None, *, allow_active=False, owner_observatio
         from tools.tenancy import orchestration_contract as OC
         controller=jobs[orchestration['job']['name']]
         OC.verify_job(controller,orchestration)
-        executions=request("GET",f"{RUN_API}/{controller['name']}/executions?pageSize=1000")
+        executions=execution_inventory(request,controller['name'])
         own=getattr(backend,'current_execution',None) if backend is not None else None
         if owner_observation:
             if own is not None or allow_active or executions.get('nextPageToken') or controller.get('runningCount',0) or any(not e.get('completionTime') for e in executions.get('executions',[])):
@@ -276,7 +307,7 @@ def pilot_lease_generation(ledger, leases, cid, now, done_reader, failed_reader=
         if parse_tenant_json(row.get("evidence_json") or "{}").get("mode") != "BOUNDED_PILOT":
             continue
         generation=row.get("lease_generation")
-        if type(generation) is not int or not 1 <= generation <= 9999:
+        if type(generation) is not int or not 1 <= generation <= 9999999999:
             raise B.EvidenceError("pilot lease ledger generation invalid")
         recorded.append(generation)
     generation=max(recorded,default=0)+1
@@ -292,7 +323,7 @@ def pilot_lease_generation(ledger, leases, cid, now, done_reader, failed_reader=
         failed=bool(failed_reader and failed_reader(last,labels))
         if not released and not expired and not failed:
             raise B.EvidenceError("pilot lease held; reconcile terminal execution before continuation")
-    if generation>9999:
+    if generation>9999999999:
         raise B.EvidenceError("pilot lease generation namespace exhausted; explicit migration required")
     return generation
 
@@ -510,26 +541,90 @@ def verify_coverage(doc,ack_hash, *, backend=None):
             "status":"PARTIAL","reason":"BOUNDED_RETAINED_ORDER_PREFIX_NOT_DATED_HISTORY",
             "rows_loaded":state["rows"],"source_run_id":p["plan_id"],"evaluated_at":now.isoformat()})
     elif p["entity"] in {"catalog","ads_campaigns"}:
-        if not state["complete"]:raise B.EvidenceError("snapshot traversal incomplete")
+        if p["entity"] == "ads_campaigns" and not state["complete"]:
+            raise B.EvidenceError("campaign snapshot traversal incomplete")
         if p["entity"]=="catalog":
             table,keys="RAW_OZON_CATALOG","snapshot_date,product_id"
-            final=next(d for d in reversed(list(details.values())) if "archived_count" in d)
-            expected_count=final["all_count"]+final["archived_count"]
+            ids = state["progress"].get("product_ids", [])
+            if len(ids) != len(set(ids)):
+                raise B.EvidenceError("Catalog prefix repeats product identities")
+            expected_count = len(ids)
+            if state["complete"]:
+                final=next(d for d in reversed(list(details.values())) if "archived_count" in d)
+                if expected_count != final["all_count"]+final["archived_count"]:
+                    raise B.EvidenceError("Catalog final source count differs from prefix")
         else:
             table,keys="RAW_OZON_ADS_CAMPAIGNS","snapshot_date,campaign_id"
             expected_count=next(d["campaigns"] for d in details.values() if d.get("action")=="CAMPAIGNS_COMPLETE")
-        counts=reader(c,f"SELECT COUNT(*) AS rows_n, COUNT(DISTINCT TO_JSON_STRING(STRUCT({keys}))) AS keys_n FROM `{c['project_id']}.ozon_raw.{table}` WHERE snapshot_date = @day",{"day":("DATE",p["observation_date"])})[0]
+        snapshot_params = {"day":("DATE",p["observation_date"])}
+        prefix = ""
+        if p["entity"] == "catalog" and not state["complete"]:
+            prefix = " AND CAST(product_id AS STRING) IN UNNEST(JSON_VALUE_ARRAY(@prefix))"
+            snapshot_params["prefix"] = ("STRING", json.dumps(ids))
+        counts=reader(c,f"SELECT COUNT(*) AS rows_n, COUNT(DISTINCT TO_JSON_STRING(STRUCT({keys}))) AS keys_n FROM `{c['project_id']}.ozon_raw.{table}` WHERE snapshot_date = @day{prefix}",snapshot_params)[0]
         if counts["rows_n"]!=counts["keys_n"] or counts["rows_n"]!=expected_count:
             raise B.EvidenceError("PILOT_SNAPSHOT_KEY_ACCOUNTING_FAILED")
         if p["entity"]=="catalog":
-            identity=reader(c,f"SELECT COUNTIF(product_id IS NULL OR SAFE_CAST(product_id AS INT64) IS NULL OR SAFE_CAST(product_id AS INT64) <= 0) AS invalid_products,COUNTIF(sku IS NOT NULL AND (SAFE_CAST(sku AS INT64) IS NULL OR SAFE_CAST(sku AS INT64) <= 0)) AS invalid_skus,COUNTIF(sku IS NULL) AS sku_absent,COUNT(DISTINCT sku) AS valid_skus,COUNTIF(sku IS NOT NULL) AS sku_rows FROM `{c['project_id']}.ozon_raw.{table}` WHERE snapshot_date = @day", {"day":("DATE",p["observation_date"])})[0]
+            identity=reader(c,f"SELECT COUNTIF(product_id IS NULL OR SAFE_CAST(product_id AS INT64) IS NULL OR SAFE_CAST(product_id AS INT64) <= 0) AS invalid_products,COUNTIF(sku IS NOT NULL AND (SAFE_CAST(sku AS INT64) IS NULL OR SAFE_CAST(sku AS INT64) <= 0)) AS invalid_skus,COUNTIF(sku IS NULL) AS sku_absent,COUNT(DISTINCT sku) AS valid_skus,COUNTIF(sku IS NOT NULL) AS sku_rows FROM `{c['project_id']}.ozon_raw.{table}` WHERE snapshot_date = @day{prefix}", snapshot_params)[0]
             if identity["invalid_products"] or identity["invalid_skus"] or identity["valid_skus"]!=identity["sku_rows"]:
                 raise B.EvidenceError("PILOT_CATALOG_IDENTITY_AMBIGUOUS")
             readback.append({"product_identity":identity})
         readback.append({"table":table,"rows":counts["rows_n"],"keys":counts["keys_n"],"historical_status":"UNPROVEN"})
-        coverage.append({"entity":p["entity"],"coverage_date":p["observation_date"],"status":"COMPLETE",
-            "reason":"CURRENT_SNAPSHOT_ONLY_NOT_HISTORICAL_STATUS", "rows_loaded":counts["rows_n"],
+        coverage.append({"entity":p["entity"],"coverage_date":p["observation_date"],"status":"COMPLETE" if state["complete"] else "PARTIAL",
+            "reason":"CURRENT_SNAPSHOT_ONLY_NOT_HISTORICAL_STATUS" if state["complete"] else "VERIFIED_CURRENT_SNAPSHOT_PREFIX", "rows_loaded":counts["rows_n"],
             "source_run_id":p["plan_id"],"evaluated_at":now.isoformat()})
+    elif p["entity"] in {"prices", "stocks", "seller_info", "clusters"}:
+        mapping = {
+            "RAW_OZON_PRICES": "snapshot_date,offer_id",
+            "RAW_OZON_PRICE_COMMISSIONS": "snapshot_date,offer_id,sale_scheme,commission_component",
+            "RAW_OZON_STOCKS": "snapshot_date,sku,warehouse_id",
+            "RAW_OZON_SELLER_INFO": "snapshot_date",
+            "RAW_OZON_CLUSTERS": "snapshot_date,warehouse_id",
+        }
+        names = {"prices": ("RAW_OZON_PRICES", "RAW_OZON_PRICE_COMMISSIONS"),
+                 "stocks": ("RAW_OZON_STOCKS",), "seller_info": ("RAW_OZON_SELLER_INFO",),
+                 "clusters": ("RAW_OZON_CLUSTERS",)}[p["entity"]]
+        expected_snapshot = {name: 0 for name in names}
+        if p['entity'] == 'stocks':
+            requested = sum(d.get('source_skus', 0) for d in details.values()
+                            if d.get('action') == 'STOCKS_BATCH')
+            cohort_params = {'day': ('DATE', p['observation_date'])}
+            cohort_prefix = ''
+            if not state['complete']:
+                cohort_prefix = ' AND sku <= @last'
+                cohort_params['last'] = ('STRING', state['progress'].get('last_sku', ''))
+            cohort = reader(c, f"SELECT COUNTIF(sku IS NOT NULL) AS eligible,COUNT(DISTINCT sku) AS unique_skus,COUNTIF(sku IS NOT NULL AND (SAFE_CAST(sku AS INT64) IS NULL OR SAFE_CAST(sku AS INT64)<=0)) AS invalid FROM `{c['project_id']}.ozon_raw.RAW_OZON_CATALOG` WHERE snapshot_date=@day{cohort_prefix}", cohort_params)[0]
+            if (cohort['invalid'] or cohort['eligible'] != cohort['unique_skus']
+                    or requested != state['progress'].get('skus', 0)
+                    or requested != cohort['eligible'] or requested <= 0):
+                raise B.EvidenceError('STOCKS_CATALOG_SOURCE_COHORT_ACCOUNTING_FAILED')
+            readback.append({'catalog_cohort_skus': requested, 'catalog_cohort_complete': state['complete']})
+        for d in details.values():
+            if d.get("observation_date") != p["observation_date"]:
+                raise B.EvidenceError("snapshot source observation date differs")
+            for name, count in d.get("tables", {}).items():
+                if name not in expected_snapshot or type(count) is not int or count < 0:
+                    raise B.EvidenceError("snapshot source table/count proof differs")
+                expected_snapshot[name] += count
+        for name in names:
+            snapshot_params = {"day": ("DATE", p["observation_date"])}
+            prefix = ""
+            if not state["complete"] and p["entity"] == "prices":
+                prefix = " AND CAST(offer_id AS STRING) IN UNNEST(JSON_VALUE_ARRAY(@prefix))"
+                snapshot_params["prefix"] = ("STRING", json.dumps(state["progress"].get("offers", [])))
+            elif not state["complete"] and p["entity"] == "stocks":
+                prefix = " AND sku <= @last"
+                snapshot_params["last"] = ("STRING", state["progress"].get("last_sku", ""))
+            counts = reader(c, f"SELECT COUNT(*) AS rows_n,COUNT(DISTINCT TO_JSON_STRING(STRUCT({mapping[name]}))) AS keys_n FROM `{c['project_id']}.ozon_raw.{name}` WHERE snapshot_date=@day{prefix}",
+                            snapshot_params)[0]
+            if counts["rows_n"] != counts["keys_n"] or counts["rows_n"] != expected_snapshot[name]:
+                raise B.EvidenceError("SNAPSHOT_SOURCE_PERSISTED_KEY_ACCOUNTING_FAILED")
+            readback.append({"table": name, "rows": counts["rows_n"], "keys": counts["keys_n"],
+                             "observation_date": p["observation_date"], "historical_status": "NO_HISTORY_FROM_SOURCE"})
+        if state["complete"]:
+            coverage.append({"entity": p["entity"], "coverage_date": p["observation_date"],
+                "status": "COMPLETE", "reason": "CURRENT_SNAPSHOT_ONLY_NOT_HISTORICAL_STATUS",
+                "rows_loaded": sum(expected_snapshot.values()), "source_run_id": p["plan_id"], "evaluated_at": now.isoformat()})
     if coverage:tables.append(c["datasets"]["tenant_ops"],"DATA_COVERAGE",coverage)
     if p["entity"]=="finance_accrual":
         import dq as DQ

@@ -267,6 +267,7 @@ def test_exact_quota_select_serializes_parses_and_executes_typed_rest_stub():
 @pytest.mark.parametrize('first,expected',[('RECONCILED',2),('WAITING',1),('MONITORING',1),('STOPPED',1),('DISPATCHED',1)])
 def test_bounded_wake_never_loops_or_dispatches_twice(monkeypatch,first,expected):
     b=backend();calls=[]
+    b.store=type('CommittedStore',(),{'history':lambda self,root:[]})()
     class Tick:
         def __init__(self,*a):pass
         def run(self):
@@ -276,3 +277,18 @@ def test_bounded_wake_never_loops_or_dispatches_twice(monkeypatch,first,expected
     result=C.bounded_wake('3'*64,b)
     assert len(calls)==expected and result['source_dispatches']<=1
     assert (result.get('prior_action')=='RECONCILED')==(expected==2)
+
+
+def test_paused_controller_cannot_prepare_or_dispatch_new_source(monkeypatch):
+    b=backend();b.c=copy.deepcopy(b.c)
+    b.c['orchestration']={'job':{'env':{'HISTORICAL_SCHEDULER_STATE':'PAUSED'}}}
+    monkeypatch.setattr(BF,'start',lambda *a,**k:pytest.fail('paused controller touched lease/source'))
+    with pytest.raises(C.SourceDispatchPaused):b.start(sku(),lambda *a:pytest.fail('intent'),lambda *a:pytest.fail('receipt'))
+
+
+def test_paused_dispatch_is_quiescent_not_a_new_durable_stop(monkeypatch,capsys):
+    b=backend()
+    monkeypatch.setattr(C,'bootstrap',lambda e:(b,'3'*64))
+    monkeypatch.setattr(C,'bounded_wake',lambda *a:(_ for _ in ()).throw(C.SourceDispatchPaused()))
+    assert C.main()==0
+    assert json.loads(capsys.readouterr().out)=={'status':'QUIESCENT_PAUSED','source_dispatches':0}

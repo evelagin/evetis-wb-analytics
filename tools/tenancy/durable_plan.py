@@ -14,7 +14,7 @@ from tools.tenancy.validation import parse_tenant_json
 
 VERSION = "CLOUD_BACKFILL_V1"
 HASH = re.compile(r"^[0-9a-f]{64}$")
-KINDS = frozenset({"MANIFEST", "DISPATCH_INTENT", "DISPATCH_RECEIPT", "RECONCILED", "WAITING", "STOPPED", "COMPLETE", "DEPENDENCY_PLAN", "SNAPSHOT_CERT", "FAILED_PRE_SOURCE"})
+KINDS = frozenset({"MANIFEST", "DISPATCH_INTENT", "DISPATCH_RECEIPT", "RECONCILED", "WAITING", "STOPPED", "COMPLETE", "DEPENDENCY_PLAN", "SNAPSHOT_CERT", "FAILED_PRE_SOURCE", "FULL_MANIFEST", "CHUNK_PLAN", "CHUNK_COMPLETE", "FULL_COMPLETE", "T5_PARENT_COMPLETE", "CHUNK_SUPERSEDED"})
 MAX_RECORD_BYTES = 900000
 
 
@@ -105,6 +105,11 @@ class DurableRecords:
             # must not accidentally publish an authorized full plan on code existence.
             if payload["purpose"] != "QUALIFICATION":
                 raise BF.B.EvidenceError("FULL_HISTORY_GO_UNPROVEN: qualified gate adapter required")
+        if kind == "FULL_MANIFEST":
+            from tools.tenancy import full_history as F
+            F.validate_manifest(payload)
+            if payload["hash"] != root_hash or sequence != 0:
+                raise BF.B.EvidenceError("full manifest/root identity differs")
         record = {"version": VERSION, "root_hash": root_hash, "kind": kind,
                   "sequence": sequence, "payload": payload}
         record_hash = digest(record)

@@ -143,7 +143,9 @@ def check(source_sha):
         except BF.TT.TableError:denied+=1
         else:raise AssertionError('authority boundary broadened')
     assert denied==3 and set(calls)=={'reader','append'}
-    return {'python_version':sys.version.split()[0],'source_sha':source_sha,'controller_implementation_hash':O.implementation_hash(BF.REPO),
+    from tools.tenancy.full_image_check import check as full_check
+    full=full_check(store(),C.Backend(client,'synthetic-full-controller',lambda:now),now,source_sha)
+    return {**full,'python_version':sys.version.split()[0],'source_sha':source_sha,'controller_implementation_hash':O.implementation_hash(BF.REPO),
             'runtime_implementation_hash':BF.B.implementation_hash(),
             'pre_source_recovery':check_pre_source(),'quota_query_syntax':'PASS','offline_restart':'PASS','lost_post_no_repeat':'PASS','quota_wait_no_source':'PASS',
             'reader_append_separation':'PASS','tenant_isolation':'PASS','live_deployment':'UNPROVEN'}
