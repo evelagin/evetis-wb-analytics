@@ -1,0 +1,67 @@
+{
+  "source": "f407ec38bdb644a4bb9e5b7f9bfcd0dd0091f550",
+  "image": "europe-west1-docker.pkg.dev/mpa-platform/mpa-runtime/tenant-backfill-controller@sha256:a0c679c382fb12464ced6b04368f0107ac78a06120b7432118f7b5ec650836e7",
+  "runtime_image": "europe-west1-docker.pkg.dev/mpa-platform/mpa-runtime/ozon-runtime@sha256:09eb30307a3a645108d1d008c152e628d101afb3cf55f6e3562cdb11a6d01dd2",
+  "build_id": "8f6684de-6895-44a0-bede-c2ef1bef4a1f",
+  "build_status": "SUCCESS",
+  "source_object": {
+    "bucket": "mpa-platform-runtime-build-777428383056",
+    "object": "source/1791399684.339439-cc957c82e0f34f16a17347534b505ed2.tgz",
+    "generation": "1791399949000777"
+  },
+  "source_archive_sha256": "47275147c6f92ae6859456c8c6d14cee8542225ea4ee15067e06de2f498a4756",
+  "source_archive_readback": "PASS",
+  "exact_image": {
+    "controller_implementation_hash": "22ab0e4ba94bf17ad359530374ed1c746672f8bbda7f17ad59575a8cd74848e3",
+    "full_history_adapter": "PASS",
+    "full_history_live_go": "UNPROVEN",
+    "full_history_no_false_complete": "PASS",
+    "full_history_program_contract": "PASS",
+    "full_history_restart_protocol": "PASS",
+    "live_deployment": "UNPROVEN",
+    "lost_post_no_repeat": "PASS",
+    "offline_restart": "PASS",
+    "pre_source_recovery": "PASS",
+    "python_version": "3.12.15",
+    "quota_query_syntax": "PASS",
+    "quota_wait_no_source": "PASS",
+    "reader_append_separation": "PASS",
+    "runtime_implementation_hash": "8caaa370e52622761ed7bd34a4ffffcaa13a14e8214d35715a8643b2ce8a236b",
+    "source_sha": "f407ec38bdb644a4bb9e5b7f9bfcd0dd0091f550",
+    "tenant_isolation": "PASS"
+  },
+  "source_ci": {
+    "sha": "f407ec38bdb644a4bb9e5b7f9bfcd0dd0091f550",
+    "conclusion": "success",
+    "run_id": 37671228256,
+    "jobs": [
+      {
+        "id": 112963187244,
+        "name": "wb-communications",
+        "conclusion": "success"
+      },
+      {
+        "id": 112963187645,
+        "name": "infra",
+        "conclusion": "success"
+      },
+      {
+        "id": 112963187767,
+        "name": "tenancy",
+        "conclusion": "success"
+      },
+      {
+        "id": 112963187856,
+        "name": "cloud",
+        "conclusion": "success"
+      },
+      {
+        "id": 112963187968,
+        "name": "ozon",
+        "conclusion": "success"
+      }
+    ]
+  },
+  "live": "NOT_DEPLOYED",
+  "scope": "FULL_ADAPTER_QUALIFIED_OFFLINE; CURRENT QUALIFICATION_ROOT; FULL_GO/LIVE_FULL_START NOT_PROVEN; ORDINARY SCHEDULERS PAUSED"
+}
