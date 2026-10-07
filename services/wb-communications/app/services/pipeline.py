@@ -11,6 +11,7 @@ dict and are final (HTTP 200).
 """
 from __future__ import annotations
 
+import contextvars
 import hashlib
 import json
 import time
@@ -43,7 +44,7 @@ from app.utils.text import (
 
 logger = get_logger(__name__)
 
-ACTIONS = {"pub", "edit", "regen", "skip", "show", "ov", "oc"}
+ACTIONS = {"pub", "p31", "edit", "regen", "skip", "show", "ov", "oc"}
 # callback token -> state-machine action name
 _ACTION_MAP = {"pub": "publish", "edit": "edit", "regen": "regenerate", "skip": "skip", "show": "show"}
 _REVIEW_TEXT_CARD_LIMIT = 700
@@ -144,6 +145,64 @@ def _recovery_enabled(deps):
     return getattr(deps.settings, "v31_operator_recovery_enabled", False)
 
 
+# --------------------------------------------------------------------------- #
+# R2 operator assist: a v3.1E draft next to the v2 draft (never auto-published)
+# --------------------------------------------------------------------------- #
+_POLL_STARTED = contextvars.ContextVar("poll_started", default=None)
+
+
+def _operator_draft_enabled(deps):
+    return getattr(deps.settings, "v31_operator_draft_enabled", False)
+
+
+def _v31_draft(deps, doc_id, doc, *, budgeted=True) -> dict | None:
+    """Prepare and store the v3.1E draft for this communication. One model call at most;
+    any failure leaves the v2 card unaffected. Inside a poll a time budget applies."""
+    if not _operator_draft_enabled(deps):
+        return None
+    started = _POLL_STARTED.get()
+    if budgeted and started is not None and time.monotonic() - started > float(
+            getattr(deps.settings, "v31_operator_draft_budget_seconds", 100)):
+        draft = {"status": "SKIPPED_BUDGET", "created_at": _now_iso()}
+        deps.repo.update(doc_id, {"v31_draft": draft})
+        return draft
+    t0 = time.monotonic()
+    try:
+        from app.v3.snapshot import load_snapshot
+        from app.v3.shadow import message_from_doc
+        from app.response_quality.core import prepare
+        from app.response_quality.language import renderer_for_client
+        from app.response_quality import VERSION
+        snap = load_snapshot(getattr(deps.settings, "v3_knowledge_snapshot_id", None))
+        renderer = renderer_for_client(deps.openai) if hasattr(deps.openai, "structured") else None
+        msg = message_from_doc(doc_id, doc)
+        result = prepare(msg, doc.get("ai_answer") or "", snap, render=renderer, force_generation=True)
+        usable = result.status == "READY" and bool(result.text) and result.final_policy.get("verdict") != "BLOCK"
+        draft = {"status": "READY" if usable else "HUMAN_REVIEW", "text": result.text if usable else None,
+                 "text_sha256": hashlib.sha256(result.text.encode()).hexdigest() if usable else None,
+                 "route": result.plan.route, "hard_verdict": result.final_policy.get("verdict"),
+                 "quality_verdict": result.quality.verdict, "version": VERSION,
+                 "model": renderer.model if renderer and renderer.calls else "deterministic",
+                 "llm_calls": renderer.calls if renderer else 0,
+                 "latency_ms": int((time.monotonic() - t0) * 1000), "created_at": _now_iso()}
+    except Exception as exc:  # noqa: BLE001 — the v2 card must still go out
+        log_event(logger, "warning", "v3.1 operator draft failed (isolated)", error_class=type(exc).__name__)
+        draft = {"status": "ERROR", "error_class": type(exc).__name__, "created_at": _now_iso()}
+    deps.repo.update(doc_id, {"v31_draft": draft})
+    log_event(logger, "info", "v3.1 operator draft", communication_id=doc_id, status=draft["status"],
+              route=draft.get("route"), hard_verdict=draft.get("hard_verdict"), llm_calls=draft.get("llm_calls"))
+    return draft
+
+
+def _v31_section(doc) -> list[str]:
+    draft = doc.get("v31_draft") or {}
+    if draft.get("text"):
+        return ["", f"✨ <b>Вариант 3.1E:</b>\n{escape_html(str(draft['text']))}"]
+    if draft.get("status") == "HUMAN_REVIEW":
+        return ["", "✨ <i>Вариант 3.1E не предложен: нужна проверка человеком.</i>"]
+    return []
+
+
 def _prepare_response(deps, doc, text):
     if not _recovery_enabled(deps):
         return None, None
@@ -172,8 +231,12 @@ def _prepare_response(deps, doc, text):
 
 
 def _operator_keyboard(deps, doc_id, doc, *, show_full=False, retry=False):
+    bind = _recovery_enabled(deps) or _operator_draft_enabled(deps)
     k = build_keyboard(doc_id, show_full=show_full, retry=retry,
-                       generation=doc.get("generation_number", 0) if _recovery_enabled(deps) else None)
+                       generation=doc.get("generation_number", 0) if bind else None)
+    if _operator_draft_enabled(deps) and (doc.get("v31_draft") or {}).get("text"):
+        k["inline_keyboard"].insert(1, [{"text": "✨ Опубликовать 3.1E",
+                                         "callback_data": f"p31:{doc_id}:{doc.get('generation_number', 0)}"}])
     if _recovery_enabled(deps) and doc.get("response_review_required"):
         k["inline_keyboard"][0] = [k["inline_keyboard"][0][1]]
     from app.services.owner_override import enabled as override_enabled
@@ -236,7 +299,7 @@ def build_card(doc: dict, doc_id: str, *, full: bool = False) -> tuple[str, bool
         f"<b>Недостатки:</b> {e(doc.get('cons') or '—')}",
         *([f"<b>Теги покупателя:</b> {e(', '.join(doc.get('bables')))}"] if doc.get('bables') else []),
         f"<b>Комментарий:</b> {e(review_text)}", "",
-        f"✍️ <b>Проект ответа:</b>\n{e(answer)}", "",
+        f"✍️ <b>Проект ответа:</b>\n{e(answer)}", *_v31_section(doc), "",
         f"<i>модель: {e(doc.get('openai_model') or '—')} · id: {e(doc_id)}</i>",
     ]
     return truncate("\n".join(lines), TELEGRAM_MSG_SOFT_LIMIT), truncated
@@ -262,7 +325,7 @@ def build_question_card(doc: dict, doc_id: str, *, full: bool = False) -> tuple[
         f"<b>nmId:</b> {e(doc.get('nm_id') or '—')}",
         f"<b>Дата:</b> {e(doc.get('source_created_at') or '—')}", "",
         f"❓ <b>Вопрос покупателя:</b>\n{e(q_text)}", "",
-        f"✍️ <b>Проект ответа:</b>\n{e(answer)}", "",
+        f"✍️ <b>Проект ответа:</b>\n{e(answer)}", *_v31_section(doc), "",
         f"<i>модель: {e(doc.get('openai_model') or '—')} · id: {e(doc_id)}</i>",
     ]
     return truncate("\n".join(lines), TELEGRAM_MSG_SOFT_LIMIT), truncated
@@ -551,6 +614,9 @@ def _draft_and_send(deps: Deps, subject, doc: dict, doc_id: str, communication_t
         deps.repo.update(doc_id, {"response_recovery": recovery,
                                 "response_review_required": recovery["status"] != "READY"})
         doc = deps.repo.get(doc_id)
+    if _operator_draft_enabled(deps):
+        _v31_draft(deps, doc_id, doc)
+        doc = deps.repo.get(doc_id)
     _emit_event(deps, doc, doc_id, EventType.AI_GENERATED,
                 status_after=Status.PROCESSING.value, answer_version=doc.get("generation_number"))
 
@@ -572,6 +638,15 @@ def _draft_and_send(deps: Deps, subject, doc: dict, doc_id: str, communication_t
 
 
 def run_poll(deps: Deps) -> dict:
+    """One scheduled poll. The poll start bounds the R2 operator-draft time budget."""
+    token = _POLL_STARTED.set(time.monotonic())
+    try:
+        return _run_poll(deps)
+    finally:
+        _POLL_STARTED.reset(token)
+
+
+def _run_poll(deps: Deps) -> dict:
     poll_started = time.monotonic()
     feedbacks = deps.wb.iter_unanswered_feedbacks()
     fetched = len(feedbacks)
@@ -885,6 +960,11 @@ def _handle_callback(deps: Deps, cq: dict) -> dict:
                 return {"status": "bad_request"}
             expected_generation = int(version)
         return _publish(deps, doc_id, chat, message_id, user_id, expected_generation=expected_generation)
+    if action == "p31":
+        doc_id, _, version = doc_id.partition(":")
+        if not version.isdigit() or len(version) > 9:
+            return {"status": "bad_request"}
+        return _publish_v31(deps, doc_id, int(version), chat, message_id, user_id)
     if action == "skip":
         return _skip(deps, doc_id, chat, message_id)
     if action == "regen":
@@ -894,6 +974,38 @@ def _handle_callback(deps: Deps, cq: dict) -> dict:
     if action == "show":
         return _show_full(deps, doc_id, chat, message_id)
     return {"status": "ignored"}
+
+
+def _publish_v31(deps: Deps, doc_id, expected_generation: int, chat, message_id, user_id) -> dict:
+    """«Опубликовать 3.1E»: adopt the stored v3.1E draft as the next answer version (atomic,
+    bound to the card's generation), then the unchanged verified publisher takes over:
+    current policy → one WB write → read-back → published only on a verified match."""
+    if not _operator_draft_enabled(deps):
+        return _stale(deps, chat, "⚠️ Вариант 3.1E сейчас отключён.")
+    doc = deps.repo.get(doc_id)
+    if doc is None:
+        deps.telegram.send_message(chat, "⚠️ Запись не найдена.")
+        return {"status": "not_found"}
+    text = (doc.get("v31_draft") or {}).get("text")
+    if not text:
+        return _stale(deps, chat, "⚠️ Для этого отзыва нет варианта 3.1E.")
+    # The publish gate is checked before the draft is adopted: a closed gate changes nothing.
+    gate_open = (deps.settings.wb_question_publish_enabled if doc.get("entity_type") == "question"
+                 else deps.settings.wb_publish_enabled)
+    if not gate_open:
+        deps.telegram.send_message(chat, "🚫 Публикация в WB сейчас отключена.")
+        return {"status": "publish_disabled"}
+    from app.domain.models import GenerationResult
+    from app.response_quality import VERSION
+    gen = GenerationResult(text=text, model="v3.1E:" + str((doc.get("v31_draft") or {}).get("model") or ""),
+                           prompt_version=VERSION, usage={}, latency_ms=0, request_id="")
+    try:
+        adopted = deps.repo.adopt_v31_draft(doc_id, expected_generation, gen)
+    except InvalidTransition:
+        return _stale(deps, chat, "⚠️ Карточка устарела или отзыв уже обрабатывается. Откройте актуальную карточку.")
+    _emit_event(deps, adopted, doc_id, EventType.MANUALLY_EDITED, best_effort=True,
+                answer_version=adopted.get("generation_number"))
+    return _publish(deps, doc_id, chat, message_id, user_id, expected_generation=adopted.get("generation_number"))
 
 
 def _stale(deps: Deps, chat, message: str = "⚠️ Действие недоступно: отзыв уже обработан."):
@@ -1308,6 +1420,9 @@ def _regenerate(deps: Deps, doc_id, chat, message_id) -> dict:
                if recovery is not None else deps.repo.commit_regenerate(doc_id, gen, token))
     except InvalidTransition:
         return _stale(deps, chat, "⚠️ Перегенерация неактуальна: отзыв уже изменён.")
+    if _operator_draft_enabled(deps) and not (doc.get("v31_draft") or {}).get("text"):
+        _v31_draft(deps, doc_id, doc, budgeted=False)  # e.g. skipped by the poll budget
+        doc = deps.repo.get(doc_id) or doc
     _sync_current(deps, doc_id, doc)
     _emit_event(deps, doc, doc_id, EventType.REGENERATED, best_effort=False,
                 answer_version=doc.get("generation_number"))

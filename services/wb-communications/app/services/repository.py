@@ -234,6 +234,17 @@ def _apply_generation(doc: dict, gen, source: str) -> None:
     })
 
 
+def _check_v31_adoptable(doc, expected_generation, gen) -> None:
+    """The operator's «Опубликовать 3.1E» tap binds to the card it saw: same generation,
+    a draftable status (never publishing/publish_unknown: an earlier write may exist),
+    and exactly the 3.1E text stored for this communication."""
+    draft = doc.get("v31_draft") or {}
+    if (doc.get("status") not in DRAFTABLE_FROM
+            or doc.get("generation_number", 0) != expected_generation
+            or not draft.get("text") or draft.get("text") != gen.text):
+        raise InvalidTransition("v31 draft not adoptable from this card state")
+
+
 def _draft_commit_fields(doc):
     return {k: doc[k] for k in ("generation_number", "answer_versions", "final_answer", "ai_answer",
         "openai_model", "prompt_version", "openai_usage", "openai_latency_ms", "updated_at",
@@ -340,6 +351,14 @@ class MemoryRepository:
             doc["status"] = Status.PENDING_APPROVAL.value
             doc["lock_expires_at"] = None
             doc["lock_token"] = None
+        return copy.deepcopy(doc)
+
+    def adopt_v31_draft(self, doc_id: str, expected_generation: int, gen) -> dict:
+        doc = self.docs.get(doc_id)
+        if doc is None:
+            raise NotFound(doc_id)
+        _check_v31_adoptable(doc, expected_generation, gen)
+        _apply_generation(doc, gen, "v31e")
         return copy.deepcopy(doc)
 
     # --- non-publish action state machine (skip/restore/show) ---
@@ -674,6 +693,29 @@ class FirestoreRepository:
                 updates["lock_expires_at"] = None
                 updates["lock_token"] = None
             transaction.update(ref, updates)
+            return doc
+
+        return txn(client.transaction())
+
+    @translate_fs_errors
+    def adopt_v31_draft(self, doc_id: str, expected_generation: int, gen) -> dict:
+        """Same check and version append as the memory repo, in one transaction."""
+        from google.cloud import firestore
+
+        client = self._lazy()
+        ref = self._doc(doc_id)
+
+        @firestore.transactional
+        def txn(transaction):
+            snap = ref.get(transaction=transaction)
+            if not snap.exists:
+                raise NotFound(doc_id)
+            doc = snap.to_dict()
+            _check_v31_adoptable(doc, expected_generation, gen)
+            _apply_generation(doc, gen, "v31e")
+            transaction.update(ref, {k: doc[k] for k in ("generation_number", "answer_versions", "final_answer",
+                                                         "openai_model", "prompt_version", "openai_usage",
+                                                         "openai_latency_ms", "updated_at") if k in doc})
             return doc
 
         return txn(client.transaction())

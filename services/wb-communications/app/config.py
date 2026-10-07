@@ -166,6 +166,16 @@ class Settings:
     v31_enforce_live_publication_policy: bool = field(
         default_factory=lambda: os.environ.get("V31_ENFORCE_LIVE_PUBLICATION_POLICY", "false").lower() == "true"
     )
+    # R2 operator assist: a v3.1E draft is prepared for every new communication and shown
+    # in the Telegram card next to the v2 draft, with its own «Опубликовать 3.1E» button.
+    # Publishing it still goes through the verified publisher; nothing is auto-published.
+    v31_operator_draft_enabled: bool = field(
+        default_factory=lambda: os.environ.get("V31_OPERATOR_DRAFT_ENABLED", "false").lower() == "true"
+    )
+    # Seconds since poll start after which new cards go out without a 3.1E draft.
+    v31_operator_draft_budget_seconds: float = field(
+        default_factory=lambda: float(os.environ.get("V31_OPERATOR_DRAFT_BUDGET_SECONDS", "100") or 100)
+    )
     # Kept as text: a malformed value disables the pilot (app.v3.pilot), never v2 startup.
     v31_shadow_pilot_max_communications: str = field(
         default_factory=lambda: os.environ.get("V31_SHADOW_PILOT_MAX_COMMUNICATIONS", "20")
