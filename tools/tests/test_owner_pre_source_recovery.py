@@ -113,3 +113,23 @@ def test_recovery_reader_rejects_unproven_terminal_or_source_attribution(fault):
     if fault=='aggregate':b.select=lambda sql,params:([{'status':'OK'}] if 'SELECT status' in sql else original(sql,params))
     if fault=='source':b.select=lambda sql,params:[]
     with pytest.raises(BF.B.EvidenceError):R.load(b,records,ROOT)
+
+
+def test_owner_publisher_preserves_all_predecessors_and_rejects_conflicting_marker(monkeypatch):
+    from types import SimpleNamespace
+    from tools.tests.test_durable_plan import Backend,NOW
+    memory=Backend();proof,records=chain()
+    for r in records[:3]:memory.store.commit(ROOT,r['kind'],r['sequence'],r['payload'],NOW)
+    monkeypatch.setattr(D,'validate_manifest',lambda _:None)
+    manifest={'hash':ROOT,'purpose':'QUALIFICATION','plans':[]}
+    memory.store.commit(ROOT,'MANIFEST',0,manifest,NOW)
+    backend,_,_,_=reader_fixture();backend.tables=memory.meta;backend.store=memory.store
+    backend.preflight=lambda m:None;backend.active_runtime_execution=lambda:False
+    old=copy.deepcopy(memory.rows)
+    out=R.publish(backend,proof,NOW)
+    assert out['old_STOP_preserved'] and out['old_reservation_preserved']
+    assert memory.rows[:len(old)]==old and memory.rows[-1]['status']=='FAILED'
+    assert not any(r['kind']=='RECONCILED' for r in memory.store.history(ROOT))
+    assert R.publish(backend,proof,NOW)==out and len(memory.rows)==len(old)+1
+    memory.meta.objects[R.PS.marker(proof)]=({},'conflict')
+    with pytest.raises(BF.B.EvidenceError,match='conflict'):R.publish(backend,proof,NOW)

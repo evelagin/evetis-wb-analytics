@@ -72,3 +72,13 @@ blind old-image restoration after new state, nor deletion of historical rows.
 After actual reconciled90/90, the owner's already accepted corrected current-main
 probe/release/discovery/Supplies/full-plan path remains subject to its separate
 live GO gates. Qualification completeness never implies full-history activation.
+
+## Artifact staging (not deployed)
+
+The runtime candidate is built from the exact reviewed PR271 source commit, not represented
+as an already merged main commit. The accepted source and actual image hashes are explicit.
+This intermediate branch revision omits the controller opt-in only to assemble/qualify its
+next immutable artifact without a circular digest dependency. DO NOT apply Terraform from
+this staging revision. Final integration must restore the same root with independently
+qualified controller metadata, pass unchanged packaged-controller CI and be merged before
+any reviewed deployment. Current cloud controller/ordinary schedules are untouched by staging.
