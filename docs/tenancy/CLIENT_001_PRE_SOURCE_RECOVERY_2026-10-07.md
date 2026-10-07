@@ -98,3 +98,11 @@ owner attestation preserving sequence15/STOP/receipt/reservation. Publish immuta
 PAUSED and ENABLED descriptors from that committed evidence, then review/apply
 activation containing only dedicated Scheduler/controller state restoration.
 A failed pre-source INTENT is never passed off as a successful reconciled checkpoint.
+
+## CI execution budget
+
+Final candidate SQL workflow37593155744 ran all tools cases to 2712 PASS/1 SKIP
+in593.52seconds, then was cancelled before final SQL validation under the ten-minute
+job budget. Candidate local full suite passed2713 tests. Increase only the job
+timeout to20minutes; retain both original full tests and SQL validation commands.
+Cancelled CI is not PASS; final candidate must complete both workflows before merge.
