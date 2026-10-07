@@ -77,11 +77,13 @@ live GO gates. Qualification completeness never implies full-history activation.
 
 The runtime candidate is built from the exact reviewed PR271 source commit, not represented
 as an already merged main commit. The accepted source and actual image hashes are explicit.
-This intermediate branch revision omits the controller opt-in only to assemble/qualify its
-next immutable artifact without a circular digest dependency. DO NOT apply Terraform from
-this staging revision. Final integration must restore the same root with independently
-qualified controller metadata, pass unchanged packaged-controller CI and be merged before
-any reviewed deployment. Current cloud controller/ordinary schedules are untouched by staging.
+Intermediate branch revisions omitted controller opt-in only to build/qualify its next
+immutable artifact without a circular digest dependency. They were never applied.
+Qualified controller source `8baef573538cba8ae5ab640f7b8030a317d52fc5` passed source CI `37592378220` and packaged image
+checks. Final integration restores the original root and ENABLED ten-minute desired
+Scheduler contract; deployment still requires final CI/merge and the reviewed owner
+PAUSED stage followed by audited recovery and a separate activation plan.
+Source commits are reviewed PR artifacts, not claimed main-at-build or live evidence.
 
 ## Owner publication and deployment ordering
 
