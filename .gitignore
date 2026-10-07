@@ -207,3 +207,24 @@ clasp-credentials*.json
 # Артефакты прогонов Definition of Done: доказательства конкретного прогона,
 # содержат значения данных и не версионируются (docs/architecture/REPOSITORY_DATA_POLICY.md).
 artifacts/
+
+# ---------------------------------------------------------------------------
+# Публичный репозиторий: учётные данные и частные доказательства — никогда в Git.
+# Политика: docs/security/PUBLIC_REPOSITORY_POLICY.md. Проверка: tools/tests/test_public_repo_security.py.
+# ---------------------------------------------------------------------------
+*.pem
+*.p12
+*.pfx
+*.key
+*.jks
+*.keystore
+gha-creds-*.json
+*service-account*.json
+*service_account*.json
+*credentials*.json
+*.tfstate
+*.tfstate.*
+.terraform/
+*.tfplan
+# Локальная папка владельца для непубличных отчётов аудита (вне Git).
+.security-private/

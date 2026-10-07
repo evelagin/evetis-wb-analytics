@@ -1,0 +1,23 @@
+# Владелец по умолчанию. Репозиторий публичный: изменения путей ниже меняют границу доверия
+# (кто и с какими правами исполняет код, какие идентичности GCP доступны, что попадает в production).
+# Обязательное ревью владельца включается правилом ветки main (docs/security/PUBLIC_REPOSITORY_POLICY.md §5);
+# сам по себе этот файл ничего не блокирует. При одном сопровождающем — только с обходом для владельца.
+*                     @evelagin
+
+# CI/CD и OIDC: каждый workflow — потенциальный носитель id-token.
+/.github/             @evelagin
+# Terraform: WIF, IAM, сервисные аккаунты, Cloud Run, Scheduler.
+/infra/               @evelagin
+# Автономный контур (код, исполняемый в job'ах с id-token) и его политика.
+/tools/autonomy/      @evelagin
+# Мультиарендность: провижионер, деплой SQL арендатора, реестр арендаторов.
+/tools/tenancy/       @evelagin
+/tenants/             @evelagin
+# Канонический SQL production-витрин.
+/sql/current/         @evelagin
+# Единственный сервис с правом записи во внешний маркетплейс (F-18).
+/services/wb-communications/  @evelagin
+# Проверки безопасности и сама политика.
+/tools/tests/test_public_repo_security.py  @evelagin
+/docs/security/       @evelagin
+/SECURITY.md          @evelagin

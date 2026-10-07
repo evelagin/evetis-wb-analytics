@@ -19,20 +19,29 @@ jobs:
   promote-prod:
     runs-on: ubuntu-latest
     environment: production # ручной approval
+    # Входы dispatch — только через env, не подстановкой ${{ }} в текст скрипта: свободный текст
+    # из формы не должен становиться кодом shell в job'е с токеном sa-deployer.
+    env:
+      DIGEST: ${{ inputs.image_digest }}
+      SOURCE_GIT_SHA: ${{ inputs.source_git_sha }}
     steps:
-      - uses: google-github-actions/auth@v2
+      - uses: google-github-actions/auth@c200f3691d83b41bf9bbd8638997a462592937ed # v2.1.13
         with:
           workload_identity_provider: ${{ vars.WIF_PROVIDER }}
           service_account: ${{ vars.DEPLOYER_SA }}
-      - uses: google-github-actions/setup-gcloud@v2
+      - uses: google-github-actions/setup-gcloud@e427ad8a34f8676edf47cf7d7925499adf3eb74f # v2.2.1
       - name: Validate digest
         run: |
-          DIGEST="${{ inputs.image_digest }}"
           EXPECTED_PREFIX="${{ vars.GCP_REGION }}-docker.pkg.dev/${{ vars.GCP_PROJECT_ID }}/${{ vars.AR_REPO }}/wb-loader@sha256:"
           case "$DIGEST" in
-            "${EXPECTED_PREFIX}"*) echo "digest ok: $DIGEST" ;;
+            "${EXPECTED_PREFIX}"*) ;;
             *) echo "BAD digest: ожидался префикс ${EXPECTED_PREFIX}"; exit 1 ;;
           esac
+          # После префикса — ровно 64 hex и ничего больше: запятая в digest стала бы лишними
+          # переменными в --update-env-vars prod-Job'ов. SHA исходников — полный, 40 hex.
+          [[ "${DIGEST#"$EXPECTED_PREFIX"}" =~ ^[0-9a-f]{64}$ ]] || { echo "BAD digest: после префикса нужен ровно sha256 из 64 hex"; exit 1; }
+          [[ "$SOURCE_GIT_SHA" =~ ^[0-9a-f]{40}$ ]] || { echo "BAD source_git_sha: нужен полный SHA из 40 hex"; exit 1; }
+          echo "digest ok: $DIGEST"
           # digest должен существовать в реестре
           gcloud artifacts docker images describe "$DIGEST" >/dev/null
       - name: Deploy prod Jobs (промоушен того же digest, source sha)
@@ -50,8 +59,8 @@ jobs:
             echo "== promote ${JOB} =="
             gcloud run jobs update "${JOB}" \
               --region ${{ vars.GCP_REGION }} \
-              --image "${{ inputs.image_digest }}" \
-              --update-env-vars IMAGE_DIGEST="${{ inputs.image_digest }}",GIT_SHA="${{ inputs.source_git_sha }}"
+              --image "${DIGEST}" \
+              --update-env-vars IMAGE_DIGEST="${DIGEST}",GIT_SHA="${SOURCE_GIT_SHA}"
           done
       - name: Deploy unitka-engine-prod (тот же digest)
         # UNITKA ENGINE v1 (Stage E1): тот же образ, dispatch args[0]=unitka. Пропуск оставил бы
@@ -61,8 +70,8 @@ jobs:
           if gcloud run jobs describe unitka-engine-prod --region ${{ vars.GCP_REGION }} >/dev/null 2>&1; then
             gcloud run jobs update unitka-engine-prod \
               --region ${{ vars.GCP_REGION }} \
-              --image "${{ inputs.image_digest }}" \
-              --update-env-vars IMAGE_DIGEST="${{ inputs.image_digest }}",GIT_SHA="${{ inputs.source_git_sha }}"
+              --image "${DIGEST}" \
+              --update-env-vars IMAGE_DIGEST="${DIGEST}",GIT_SHA="${SOURCE_GIT_SHA}"
           else
             echo "::warning title=unitka-engine-prod::Job ещё не создан Terraform'ом — шаг пропущен"
           fi
@@ -75,8 +84,8 @@ jobs:
           if gcloud run jobs describe ozon-unitka-prod --region ${{ vars.GCP_REGION }} >/dev/null 2>&1; then
             gcloud run jobs update ozon-unitka-prod \
               --region ${{ vars.GCP_REGION }} \
-              --image "${{ inputs.image_digest }}" \
-              --update-env-vars IMAGE_DIGEST="${{ inputs.image_digest }}",GIT_SHA="${{ inputs.source_git_sha }}"
+              --image "${DIGEST}" \
+              --update-env-vars IMAGE_DIGEST="${DIGEST}",GIT_SHA="${SOURCE_GIT_SHA}"
           else
             echo "::warning title=ozon-unitka-prod::Job ещё не создан Terraform'ом — шаг пропущен"
           fi
@@ -87,8 +96,8 @@ jobs:
           if gcloud run jobs describe wb-paid-storage-prod --region ${{ vars.GCP_REGION }} >/dev/null 2>&1; then
             gcloud run jobs update wb-paid-storage-prod \
               --region ${{ vars.GCP_REGION }} \
-              --image "${{ inputs.image_digest }}" \
-              --update-env-vars IMAGE_DIGEST="${{ inputs.image_digest }}",GIT_SHA="${{ inputs.source_git_sha }}"
+              --image "${DIGEST}" \
+              --update-env-vars IMAGE_DIGEST="${DIGEST}",GIT_SHA="${SOURCE_GIT_SHA}"
           else
             echo "::warning title=wb-paid-storage-prod::Job ещё не создан Terraform'ом — шаг пропущен"
           fi
@@ -108,8 +117,8 @@ jobs:
           if gcloud run jobs describe wb-promo-prod --region ${{ vars.GCP_REGION }} >/dev/null 2>&1; then
             gcloud run jobs update wb-promo-prod \
               --region ${{ vars.GCP_REGION }} \
-              --image "${{ inputs.image_digest }}" \
-              --update-env-vars IMAGE_DIGEST="${{ inputs.image_digest }}",GIT_SHA="${{ inputs.source_git_sha }}"
+              --image "${DIGEST}" \
+              --update-env-vars IMAGE_DIGEST="${DIGEST}",GIT_SHA="${SOURCE_GIT_SHA}"
           else
             echo "::warning title=wb-promo-prod::Job ещё не создан Terraform'ом — шаг пропущен"
           fi
@@ -126,6 +135,6 @@ jobs:
         run: |
           gcloud run jobs update wb-funnel-prod \
             --region ${{ vars.GCP_REGION }} \
-            --image "${{ inputs.image_digest }}" \
-            --update-env-vars IMAGE_DIGEST="${{ inputs.image_digest }}",GIT_SHA="${{ inputs.source_git_sha }}",WB_ANALYTICS_SECRET=WB_TOKEN_REPORTS
+            --image "${DIGEST}" \
+            --update-env-vars IMAGE_DIGEST="${DIGEST}",GIT_SHA="${SOURCE_GIT_SHA}",WB_ANALYTICS_SECRET=WB_TOKEN_REPORTS
       # НЕ включает Scheduler и НЕ меняет IAM.

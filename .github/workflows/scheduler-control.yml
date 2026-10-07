@@ -28,6 +28,11 @@ jobs:
   control:
     runs-on: ubuntu-latest
     environment: ${{ inputs.environment == 'prod' && 'production' || 'infra' }}
+    # Входы — через env, не подстановкой ${{ }} в текст скрипта (job держит токен sa-terraform-apply).
+    env:
+      LOADER: ${{ inputs.loader }}
+      TARGET_ENV: ${{ inputs.environment }}
+      ACTION: ${{ inputs.action }}
     steps:
       # Fail-fast ПЕРВЫМ шагом (аудит PR-Mart3b-3, блокер #1): `mart` помечен prodOnly в реестре
       # загрузчиков (cloud/src/loaders/registry.ts), Terraform создаёт только wb-mart-prod →
@@ -39,7 +44,7 @@ jobs:
           # PR-1: wb-prices существует только в prod по той же причине, что и wb-mart —
           # Terraform создаёт единственный Job wb-prices-prod, теневого контура у наблюдателя
           # цен нет (лишний носитель доступа к ценовому секрету не нужен).
-          case "${{ inputs.loader }}" in
+          case "${LOADER}" in
             wb-mart|wb-prices|wb-tariffs|wb-funnel|wb-paid-storage|ozon-unitka)
               # UNITKA 2.0 R3: воронка тоже существует только в prod (wb-funnel-prod).
               # Stage E4: платное хранение помечено prodOnly в реестре загрузчиков и пишет
@@ -52,27 +57,27 @@ jobs:
               # это ровно тот случай, который запрещён (infra/terraform/ozon_unitka.tf).
               # Расписание ozon-unitka-prod создаётся НА ПАУЗЕ; resume — отсюда, после первого
               # удачного run-now. Порядок эксплуатации: docs/ops/OZON_UNITKA_OPERATIONS.md.
-              if [ "${{ inputs.environment }}" != "prod" ]; then
-                echo "::error title=Invalid combination::${{ inputs.loader }} is prod-only; job ${{ inputs.loader }}-${{ inputs.environment }} does not exist. Use environment=prod."
+              if [ "${TARGET_ENV}" != "prod" ]; then
+                echo "::error title=Invalid combination::${LOADER} is prod-only; job ${LOADER}-${TARGET_ENV} does not exist. Use environment=prod."
                 exit 1
               fi
               ;;
           esac
-      - uses: google-github-actions/auth@v2
+      - uses: google-github-actions/auth@c200f3691d83b41bf9bbd8638997a462592937ed # v2.1.13
         with:
           workload_identity_provider: ${{ vars.WIF_PROVIDER }}
           service_account: ${{ vars.TERRAFORM_APPLY_SA }} # scheduler admin + run execute
-      - uses: google-github-actions/setup-gcloud@v2
+      - uses: google-github-actions/setup-gcloud@e427ad8a34f8676edf47cf7d7925499adf3eb74f # v2.2.1
       - name: Apply action
         run: |
-          JOB="${{ inputs.loader }}-${{ inputs.environment }}"
+          JOB="${LOADER}-${TARGET_ENV}"
           # UNITKA ENGINE v1: у Job'а unitka-engine-<env> ДВА Scheduler'а (-morning, -reserve);
           # pause/resume действуют на оба, run-now запускает сам Job (infra/terraform/unitka_engine.tf).
           SCHEDULERS="$JOB"
-          if [ "${{ inputs.loader }}" = "unitka-engine" ]; then
+          if [ "${LOADER}" = "unitka-engine" ]; then
             SCHEDULERS="${JOB}-morning ${JOB}-reserve"
           fi
-          case "${{ inputs.action }}" in
+          case "${ACTION}" in
             pause)   for S in $SCHEDULERS; do gcloud scheduler jobs pause  "$S" --location ${{ vars.GCP_REGION }}; done ;;
             resume)  for S in $SCHEDULERS; do gcloud scheduler jobs resume "$S" --location ${{ vars.GCP_REGION }}; done ;;
             run-now) gcloud run jobs execute "$JOB" --region ${{ vars.GCP_REGION }} --wait ;;
