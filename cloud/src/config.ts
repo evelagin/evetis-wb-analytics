@@ -181,6 +181,11 @@ export interface Config {
   unitkaReconcileMode: 'off' | 'observe' | 'write' | 'controlled';
   unitkaReconcileModeInvalid: string | null;
   /**
+   * Phase 1B: охват режима controlled (UNITKA_CONTROLLED_SCOPE). restricted (по умолчанию, и при любой опечатке) —
+   * только первые заполнения и рост S ≤ Q; full — прежняя политика, только разовым прогоном по решению владельца.
+   */
+  unitkaControlledScope: 'restricted' | 'full';
+  /**
    * SPP-3: колонка AB (СПП) из wb_mart.V_WB_SPP_DAILY. off — не читается; observe — план и манифест отката
    * в журнал, запись 0; write — AB входит в запись цикла. Мягкий разбор: опечатка = off + предупреждение.
    */
@@ -243,7 +248,7 @@ function intOpt(env: Env, name: string, fallback: number): number {
 }
 
 /** Integrity Guard: мягкий разбор. Никогда не бросает ConfigError. */
-function integrityConfig(env: Env): Pick<Config, 'unitkaIntegrityMode' | 'unitkaIntegrityModeInvalid' | 'unitkaStorageDueMsk' | 'unitkaIntegrityBudgetMs' | 'unitkaReconcileMode' | 'unitkaReconcileModeInvalid' | 'unitkaSppMode' | 'unitkaSppModeInvalid' | 'unitkaSppRollbackManifest' | 'unitkaSppRollbackDigest' | 'unitkaSppRollbackWrite'> {
+function integrityConfig(env: Env): Pick<Config, 'unitkaIntegrityMode' | 'unitkaIntegrityModeInvalid' | 'unitkaStorageDueMsk' | 'unitkaIntegrityBudgetMs' | 'unitkaReconcileMode' | 'unitkaReconcileModeInvalid' | 'unitkaControlledScope' | 'unitkaSppMode' | 'unitkaSppModeInvalid' | 'unitkaSppRollbackManifest' | 'unitkaSppRollbackDigest' | 'unitkaSppRollbackWrite'> {
   const sppRaw = (env.UNITKA_SPP_MODE ?? '').trim().toLowerCase();
   const sppKnown = sppRaw === 'off' || sppRaw === 'observe' || sppRaw === 'write';
   const recRaw = (env.UNITKA_RECONCILE_MODE ?? '').trim().toLowerCase();
@@ -261,6 +266,7 @@ function integrityConfig(env: Env): Pick<Config, 'unitkaIntegrityMode' | 'unitka
     unitkaIntegrityBudgetMs: budget,
     unitkaReconcileMode: recKnown ? (recRaw as 'off' | 'observe' | 'write' | 'controlled') : 'off',
     unitkaReconcileModeInvalid: recRaw === '' || recKnown ? null : recRaw,
+    unitkaControlledScope: (env.UNITKA_CONTROLLED_SCOPE ?? '').trim().toLowerCase() === 'full' ? 'full' : 'restricted',
     unitkaSppMode: sppKnown ? (sppRaw as 'off' | 'observe' | 'write') : 'off',
     unitkaSppRollbackManifest: (env.UNITKA_SPP_ROLLBACK_MANIFEST ?? '').trim(),
     unitkaSppRollbackDigest: (env.UNITKA_SPP_ROLLBACK_DIGEST ?? '').trim().toLowerCase(),

@@ -341,7 +341,18 @@ export function planMonthEndClose(a: {
 export const CONTROLLED_MAX_CORRECTIONS = 50;
 export const CONTROLLED_MAX_CORRECTION_SHARE = 0.02;
 
-export type ControlledRefusalCode = 'RECON_WITHDRAWAL_REQUIRES_ACK' | 'RECON_CORRECTION_CAP_EXCEEDED' | 'RECON_OUT_OF_SCOPE';
+export type ControlledRefusalCode = 'RECON_WITHDRAWAL_REQUIRES_ACK' | 'RECON_CORRECTION_CAP_EXCEEDED' | 'RECON_OUT_OF_SCOPE'
+  | 'RECON_RESTRICTED_REQUIRES_ACK' | 'RECON_CANCELS_DECREASE_REQUIRES_ACK' | 'RECON_CANCELS_EXCEED_ORDERS';
+
+/**
+ * Охват режима controlled (Phase 1B, решение владельца 07.10.2026 — «урезанный вариант B»).
+ *   restricted (по умолчанию) — без владельца пишутся ТОЛЬКО первые заполнения и РОСТ S (поздние отмены Orders API,
+ *     доказанные отказы вне Orders API) не выше Q того же дня. Цены, их откаты, уменьшение S, отзывы источника и прочие
+ *     поправки — только владельцем. Обоснование (48 прогонов сверки 20.09–07.10): S монотонен (0 откатов), цены
+ *     «плавают» (27.09/438775617 650→660→650) — стабильность цены источником не гарантирована.
+ *   full — прежняя политика controlled (все поправки ≤ 50 и ≤ 2 %): ТОЛЬКО разовый прогон, явно одобренный владельцем.
+ */
+export type ControlledScope = 'restricted' | 'full';
 
 export interface ControlledPolicyResult {
   apply: PlannedCell[];
@@ -349,6 +360,7 @@ export interface ControlledPolicyResult {
   counts: {
     candidates: number; first_fills: number; corrections: number; withdrawals: number; out_of_scope: number;
     applied: number; refused: number; contract_cells: number; correction_cap: number; cap_exceeded: boolean;
+    scope: ControlledScope; restricted_refused: number;
   };
 }
 
@@ -366,19 +378,30 @@ export interface ControlledPolicyResult {
  */
 export function controlledWritePolicy(
   cells: readonly PlannedCell[],
-  ctx: { lcdMonthStart: string; contractCells: number; maxCorrections?: number; maxShare?: number },
+  ctx: {
+    lcdMonthStart: string; contractCells: number; maxCorrections?: number; maxShare?: number;
+    /** По умолчанию restricted: шире — только явным решением владельца (UNITKA_CONTROLLED_SCOPE=full). */
+    scope?: ControlledScope;
+    /** Q источника на день SKU — граница роста S (restricted). Нет Q — рост S не пишется. */
+    ordersOf?: (nmId: number, date: string) => number | null;
+  },
 ): ControlledPolicyResult {
   const maxN = ctx.maxCorrections ?? CONTROLLED_MAX_CORRECTIONS;
   const share = ctx.maxShare ?? CONTROLLED_MAX_CORRECTION_SHARE;
+  const scope: ControlledScope = ctx.scope ?? 'restricted';
   const apply: PlannedCell[] = [];
   const refused: ControlledPolicyResult['refused'] = [];
   const corrections: PlannedCell[] = [];
-  let firstFills = 0, withdrawals = 0, outOfScope = 0;
+  let firstFills = 0, withdrawals = 0, outOfScope = 0, restrictedRefused = 0;
   for (const c of cells) {
     if (c.kind !== 'fact' || c.date === undefined || c.date >= ctx.lcdMonthStart) { outOfScope++; refused.push({ code: 'RECON_OUT_OF_SCOPE', cell: c }); continue; }
     const wasEmpty = isEmpty(c.before);
     if (wasEmpty && c.want !== null) { firstFills++; apply.push(c); continue; }
     if (!wasEmpty && c.want === null) { withdrawals++; refused.push({ code: 'RECON_WITHDRAWAL_REQUIRES_ACK', cell: c }); continue; }
+    if (scope === 'restricted') {
+      const code = restrictedCorrectionRefusal(c, ctx.ordersOf);
+      if (code) { restrictedRefused++; refused.push({ code, cell: c }); continue; }
+    }
     corrections.push(c);
   }
   const cap = Math.min(maxN, Math.floor(share * ctx.contractCells));
@@ -390,8 +413,24 @@ export function controlledWritePolicy(
     counts: {
       candidates: cells.length, first_fills: firstFills, corrections: corrections.length, withdrawals, out_of_scope: outOfScope,
       applied: apply.length, refused: refused.length, contract_cells: ctx.contractCells, correction_cap: cap, cap_exceeded: capExceeded,
+      scope, restricted_refused: restrictedRefused,
     },
   };
+}
+
+/**
+ * restricted: поправка заполненной ячейки пишется без владельца, только если это РОСТ S (want > before, оба — целые
+ * числа ≥ 0) и want ≤ Q источника того же дня. Иначе — код отказа (поправка остаётся владельцу).
+ */
+export function restrictedCorrectionRefusal(c: PlannedCell, ordersOf?: (nmId: number, date: string) => number | null): ControlledRefusalCode | null {
+  if (c.key !== 'cancels') return 'RECON_RESTRICTED_REQUIRES_ACK';
+  const before = typeof c.before === 'number' ? c.before : Number(c.before);
+  const want = c.want;
+  if (typeof want !== 'number' || !Number.isInteger(want) || !Number.isInteger(before) || before < 0) return 'RECON_RESTRICTED_REQUIRES_ACK';
+  if (want <= before) return 'RECON_CANCELS_DECREASE_REQUIRES_ACK';
+  const q = c.nmId !== undefined && c.date !== undefined && ordersOf ? ordersOf(c.nmId, c.date) : null;
+  if (q === null || want > q) return 'RECON_CANCELS_EXCEED_ORDERS';
+  return null;
 }
 
 /* ───────────────────────── журнал ремонта ───────────────────────── */

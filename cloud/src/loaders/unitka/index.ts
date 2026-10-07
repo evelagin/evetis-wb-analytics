@@ -517,7 +517,10 @@ export async function unitkaLoader(ctx: LoaderContext, deps: UnitkaDeps = defaul
       if (reconcileMode === 'controlled') {
         // controlled: месяц LCD — как observe; прошлые месяцы — только то, что пропустила политика. Отказ политики —
         // ошибка С КОДОМ (алерт), но не падение прогона: пропущенное просто не пишется, остаток виден в журнале.
-        controlled = controlledWritePolicy(histCells, { lcdMonthStart, contractCells: reconcile.sections.reduce((n, x) => n + x.plan.expected.length, 0) });
+        controlled = controlledWritePolicy(histCells, {
+          lcdMonthStart, contractCells: reconcile.sections.reduce((n, x) => n + x.plan.expected.length, 0),
+          scope: config.unitkaControlledScope, ordersOf: (nm, d) => byFact.get(`${nm}|${d}`)?.orders ?? null,
+        });
         controlledRepairs = repairRecords(controlled.apply, { ...ledgerCtx, includeFirstFills: true });
         log.info('unitka_controlled_policy', {
           ...controlled.counts, ledger_records: controlledRepairs.length,
