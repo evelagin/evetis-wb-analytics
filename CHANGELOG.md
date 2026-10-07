@@ -1,5 +1,15 @@
 # CHANGELOG.md
 
+## 2026-10-07 — WB Юнитка: охват controlled «restricted» — рост S и первые заполнения (Phase 1B, НЕ включено)
+
+`cloud/src/config.ts` (`UNITKA_CONTROLLED_SCOPE`), `cloud/src/loaders/unitka/reconcile.ts` (`controlledWritePolicy`,
+`restrictedCorrectionRefusal`), `index.ts`. Лист не меняется до включения режима controlled владельцем.
+
+- По умолчанию controlled пишет без владельца только первые заполнения и рост S (целое, ≤ Q источника дня); цены,
+  уменьшение S, отзывы и прочие поправки — отказ с кодом (`RECON_RESTRICTED_REQUIRES_ACK`,
+  `RECON_CANCELS_DECREASE_REQUIRES_ACK`, `RECON_CANCELS_EXCEED_ORDERS`). Прежняя политика — `UNITKA_CONTROLLED_SCOPE=full`.
+- Исторический прогон 49 прогонов сверки: 29 допустимых ячеек, 0 ложных срабатываний. См.
+  `docs/ops/WB_UNITKA_RESTRICTED_CONTROLLED_2026-10-07.md`.
 ## 2026-10-07 — DRO-1 Gate C: регулярная оценка здоровья данных каждые 30 минут (НЕ ПРИМЕНЕНО)
 
 `infra/terraform/evetis_health.tf`: `google_cloud_scheduler_job.dro_health_eval` `paused = true` → `false`.

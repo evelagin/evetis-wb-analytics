@@ -11,7 +11,7 @@ import { describe, it, expect } from 'vitest';
 import { unitkaLoader, type UnitkaDeps } from '../src/loaders/unitka/index.js';
 import {
   unclosedPreviousMonthDays, planMonthEndClose, controlledWritePolicy, sectionCellsReadback, buildSectionRepairPlan, reconcileWindow, repairRecords,
-  CONTROLLED_MAX_CORRECTIONS,
+  CONTROLLED_MAX_CORRECTIONS, restrictedCorrectionRefusal, restrictedOrdersBound,
 } from '../src/loaders/unitka/reconcile.js';
 import { factCellRules, coverageRules, moneyActivityFrom, type IntegrityFactsRow } from '../src/loaders/unitka/integrity.js';
 import { OFFSET, FACT_KEYS, isoToSerial, type Block } from '../src/loaders/unitka/model.js';
@@ -280,6 +280,89 @@ describe('C. SKU_WITHOUT_BLOCK: тяжесть по деньгам', () => {
   });
 });
 
+/* ───────────────────────── D2. controlled · restricted (Phase 1B, решение владельца 07.10.2026) ───────────────────────── */
+
+describe('D2. controlled restricted: без владельца — только первые заполнения и рост S ≤ Q', () => {
+  const cell = (key: string, before: number | string, want: number | null, i = 0, date = '2026-09-17'): PlannedCell => ({
+    row: 900 + i, col: 30, want, kind: 'fact', nmId: 1, key, date, source: 'SRC', before, changeType: 'LATE_SOURCE_CORRECTION', reason: 'r',
+  });
+  const q = (n: number) => () => n;
+  const ctx = { lcdMonthStart: '2026-10-01', contractCells: 6480 };
+  it('по умолчанию охват restricted; full — только явным UNITKA_CONTROLLED_SCOPE=full; опечатка = restricted', () => {
+    expect(cfg('controlled').unitkaControlledScope).toBe('restricted');
+    expect(cfg('controlled', { UNITKA_CONTROLLED_SCOPE: ' FULL ' }).unitkaControlledScope).toBe('full');
+    expect(cfg('controlled', { UNITKA_CONTROLLED_SCOPE: 'ful' }).unitkaControlledScope).toBe('restricted');
+    expect(controlledWritePolicy([], ctx).counts.scope).toBe('restricted');
+  });
+  it('рост S в пределах Q — пишется; первое заполнение — пишется', () => {
+    const r = controlledWritePolicy([cell('cancels', 1, 2, 0), cell('storage', '', 3.5, 1)], { ...ctx, ordersOf: q(12) });
+    expect(r.apply.map((c) => c.row)).toEqual([901, 900]);
+    expect(r.counts).toMatchObject({ applied: 2, refused: 0, restricted_refused: 0 });
+  });
+  it.each([
+    ['цена', cell('price', 1090, 1089.68), 'RECON_RESTRICTED_REQUIRES_ACK'],
+    ['откат цены', cell('price', 660, 650), 'RECON_RESTRICTED_REQUIRES_ACK'],
+    ['хранение (поправка, не первое заполнение)', cell('storage', 3, 4), 'RECON_RESTRICTED_REQUIRES_ACK'],
+    ['заказы', cell('orders', 3, 4), 'RECON_RESTRICTED_REQUIRES_ACK'],
+    ['уменьшение S', cell('cancels', 2, 1), 'RECON_CANCELS_DECREASE_REQUIRES_ACK'],
+    ['S выше Q', cell('cancels', 1, 13), 'RECON_CANCELS_EXCEED_ORDERS'],
+    ['S дробный', cell('cancels', 1, 1.5), 'RECON_RESTRICTED_REQUIRES_ACK'],
+  ])('не пишется без владельца: %s', (_n, c, code) => {
+    const r = controlledWritePolicy([c], { ...ctx, ordersOf: q(12) });
+    expect(r.apply).toEqual([]);
+    expect(r.refused.map((x) => x.code)).toEqual([code]);
+  });
+  it('граница роста S = min(Q источника, Q листа): отклонённая поправка Q не даёт S > Q в листе (ревью #275)', () => {
+    expect(restrictedOrdersBound(5, undefined)).toBe(5);              // Q листа = Q источника (поправки Q нет)
+    expect(restrictedOrdersBound(5, 3)).toBe(3);                      // в листе Q=3, источник 5 — S не выше 3
+    expect(restrictedOrdersBound(5, '')).toBeNull();                  // Q листа пуст — граница неизвестна
+    expect(restrictedOrdersBound(null, 3)).toBeNull();
+    expect(restrictedCorrectionRefusal(cell('cancels', 2, 4), () => restrictedOrdersBound(5, 3))).toBe('RECON_CANCELS_EXCEED_ORDERS');
+    expect(restrictedCorrectionRefusal(cell('cancels', 2, 3), () => restrictedOrdersBound(5, 3))).toBeNull();
+  });
+  it('опечатка охвата — restricted и предупреждение', () => {
+    expect(cfg('controlled', { UNITKA_CONTROLLED_SCOPE: 'ful' })).toMatchObject({ unitkaControlledScope: 'restricted', unitkaControlledScopeInvalid: 'ful' });
+    expect(cfg('controlled', { UNITKA_CONTROLLED_SCOPE: 'restricted' })).toMatchObject({ unitkaControlledScope: 'restricted', unitkaControlledScopeInvalid: null });
+  });
+  it('без Q источника рост S не пишется (граница S ≤ Q не проверяема)', () => {
+    expect(restrictedCorrectionRefusal(cell('cancels', 1, 2), () => null)).toBe('RECON_CANCELS_EXCEED_ORDERS');
+    expect(restrictedCorrectionRefusal(cell('cancels', 1, 2))).toBe('RECON_CANCELS_EXCEED_ORDERS');
+  });
+  it('отзыв источника — никогда; вне прошлых месяцев — вне рамок; потолок действует на рост S', () => {
+    const r = controlledWritePolicy([cell('cancels', 2, null, 0), cell('cancels', 1, 2, 1, '2026-10-02')], { ...ctx, ordersOf: q(12) });
+    expect(r.refused.map((x) => x.code)).toEqual(['RECON_WITHDRAWAL_REQUIRES_ACK', 'RECON_OUT_OF_SCOPE']);
+    const many = Array.from({ length: 51 }, (_, i) => cell('cancels', 1, 2, 10 + i));
+    expect(controlledWritePolicy(many, { ...ctx, ordersOf: q(12) }).counts).toMatchObject({ applied: 0, cap_exceeded: true });
+  });
+  it('в прогоне: рост S и первое заполнение записаны с журналом; правка цены — отказ с кодом, ячейка не тронута', async () => {
+    const { book, runner } = await seeded();
+    const r17 = septRow(book, '2026-09-17');
+    book.set(r17, col(5, OFFSET.storage), '');                                                    // первое заполнение
+    const before = book.get(r17, col(5, OFFSET.price));
+    book.set(r17, col(5, OFFSET.orders), 5);                                                      // Q листа = Q источника
+    runner.facts = patch(runner.facts, SEPT_NM, '2026-09-17', { cancels: 2, orders: 5, price: Number(before) + 1 });
+    const { lines } = await run(book, runner, 'controlled', { UNITKA_CONTROLLED_SCOPE: 'restricted' });
+    expect(book.get(r17, col(5, OFFSET.storage))).toBe(1.25);
+    expect(book.get(r17, col(5, OFFSET.cancels))).toBe(2);
+    expect(book.get(r17, col(5, OFFSET.price))).toBe(before);                                     // цена — только владельцем
+    expect(runner.ledger.map((x) => [x.field, x.status]).sort()).toEqual([['cancels', 'REPAIRED'], ['storage', 'REPAIRED']]);
+    expect(events(lines, 'unitka_controlled_refused').map((e) => (e.fields as { code: string }).code)).toContain('RECON_RESTRICTED_REQUIRES_ACK');
+    expect(events(lines, 'unitka_controlled_policy')[0]!.fields).toMatchObject({ scope: 'restricted' });
+  });
+  it('в прогоне: поправка Q отклонена → рост S выше Q листа не пишется (S ≤ Q в листе сохраняется)', async () => {
+    const { book, runner } = await seeded();
+    const r17 = septRow(book, '2026-09-17');
+    book.set(r17, col(5, OFFSET.orders), 1);
+    book.set(r17, col(5, OFFSET.cancels), 0);
+    runner.facts = patch(runner.facts, SEPT_NM, '2026-09-17', { cancels: 2, orders: 5 });
+    const { lines } = await run(book, runner, 'controlled', { UNITKA_CONTROLLED_SCOPE: 'restricted' });
+    expect(book.get(r17, col(5, OFFSET.orders))).toBe(1);
+    expect(book.get(r17, col(5, OFFSET.cancels))).toBe(0);
+    const codes = events(lines, 'unitka_controlled_refused').map((e) => (e.fields as { code: string }).code);
+    expect(codes).toEqual(expect.arrayContaining(['RECON_RESTRICTED_REQUIRES_ACK', 'RECON_CANCELS_EXCEED_ORDERS']));
+  });
+});
+
 /* ───────────────────────── D. режим controlled ───────────────────────── */
 
 describe('D. controlled: политика записи прошлых месяцев (реализован, не включён)', () => {
@@ -287,7 +370,8 @@ describe('D. controlled: политика записи прошлых месяц
     row: 800 + i, col: 30, want, kind: 'fact', nmId: 1, key: 'cancels', date, source: 'SRC', before,
     changeType: date > '2026-09-29' ? 'FACT_CHANGE' : 'LATE_SOURCE_CORRECTION', reason: 'r',
   });
-  const ctx = { lcdMonthStart: '2026-10-01', contractCells: 6480 };
+  // Охват full — прежняя политика (разовый прогон владельца). restricted (по умолчанию) — отдельный блок D2 ниже.
+  const ctx = { lcdMonthStart: '2026-10-01', contractCells: 6480, scope: 'full' as const };
   it('первое заполнение — пишется; отзыв источника — НИКОГДА (RECON_WITHDRAWAL_REQUIRES_ACK); поправка под потолком — пишется', () => {
     const r = controlledWritePolicy([cell('', 3, '2026-09-17', 0), cell(2, null, '2026-09-17', 1), cell(2, 3, '2026-09-17', 2)], ctx);
     expect(r.apply.map((c) => c.row)).toEqual([800, 802]);
@@ -331,7 +415,7 @@ describe('D. controlled: политика записи прошлых месяц
     const r17 = septRow(book, '2026-09-17'), r18 = septRow(book, '2026-09-18');
     book.set(r17, col(5, OFFSET.storage), '');                                                    // первое заполнение
     runner.facts = patch(patch(runner.facts, SEPT_NM, '2026-09-17', { cancels: 2 }), SEPT_NM, '2026-09-18', { views: null });
-    const { lines } = await run(book, runner, 'controlled');
+    const { lines } = await run(book, runner, 'controlled', { UNITKA_CONTROLLED_SCOPE: 'full' });
     expect(book.get(r17, col(5, OFFSET.storage))).toBe(1.25);
     expect(book.get(r17, col(5, OFFSET.cancels))).toBe(2);
     expect(book.get(r18, col(5, OFFSET.views))).toBe(105);                                       // отзыв не применён

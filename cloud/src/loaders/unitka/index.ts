@@ -40,7 +40,7 @@ import { formatMonthKey, geometryAt, locateSection } from './calendar.js';
 import { monthStartIso } from './model.js';
 import {
   reconcileWindow, windowMonths, assertNotBeforeEpoch, buildSectionRepairPlan, evaluateRepairedSection, repairRecords, issueRecords,
-  planMonthEndClose, sectionCellsReadback, controlledWritePolicy,
+  planMonthEndClose, sectionCellsReadback, controlledWritePolicy, restrictedOrdersBound,
   type ReconcileMode, type ReconcileWindow, type SectionRepairPlan, type MonthEndClosePlan, type ControlledPolicyResult,
 } from './reconcile.js';
 import type { FactRow, RepairRecord } from './bq.js';
@@ -357,6 +357,9 @@ export async function unitkaLoader(ctx: LoaderContext, deps: UnitkaDeps = defaul
   // write — AB входит в ту же единственную запись цикла, проверяется перечитыванием ДО коммита LCD.
   const sppMode: SppMode = config.unitkaSppMode ?? 'off';
   if (config.unitkaSppModeInvalid) log.warn('unitka_spp_mode_invalid', { value: config.unitkaSppModeInvalid, effective: 'off' });
+  if (config.unitkaControlledScopeInvalid) {
+    log.warn('unitka_controlled_scope_invalid', { value: config.unitkaControlledScopeInvalid, effective: 'restricted' });
+  }
   if (config.unitkaReconcileModeInvalid) {
     log.warn('unitka_reconcile_mode_invalid', { value: config.unitkaReconcileModeInvalid, effective: 'off' });
   }
@@ -514,10 +517,17 @@ export async function unitkaLoader(ctx: LoaderContext, deps: UnitkaDeps = defaul
         repairedAt: null, status: 'PLANNED_NOT_WRITTEN' as const, factOf: (nm: number, d: string) => byFact.get(`${nm}|${d}`),
       };
       repairs = repairRecords([...lcdCellsUnderRecon, ...histCells], ledgerCtx);
+      // Граница роста S (restricted) — Q ЛИСТА, если поправка Q того же дня в листе ещё не записана: иначе запись S при
+      // отклонённой поправке Q дала бы S > Q в листе (ревью #275). Q листа ≠ Q источника ⇔ в плане есть ячейка orders.
+      const sheetQ = new Map(histCells.filter((c) => c.key === 'orders' && c.nmId !== undefined && c.date !== undefined)
+        .map((c) => [`${c.nmId}|${c.date}`, c.before]));
       if (reconcileMode === 'controlled') {
         // controlled: месяц LCD — как observe; прошлые месяцы — только то, что пропустила политика. Отказ политики —
         // ошибка С КОДОМ (алерт), но не падение прогона: пропущенное просто не пишется, остаток виден в журнале.
-        controlled = controlledWritePolicy(histCells, { lcdMonthStart, contractCells: reconcile.sections.reduce((n, x) => n + x.plan.expected.length, 0) });
+        controlled = controlledWritePolicy(histCells, {
+          lcdMonthStart, contractCells: reconcile.sections.reduce((n, x) => n + x.plan.expected.length, 0),
+          scope: config.unitkaControlledScope, ordersOf: (nm, d) => restrictedOrdersBound(byFact.get(`${nm}|${d}`)?.orders ?? null, sheetQ.get(`${nm}|${d}`)),
+        });
         controlledRepairs = repairRecords(controlled.apply, { ...ledgerCtx, includeFirstFills: true });
         log.info('unitka_controlled_policy', {
           ...controlled.counts, ledger_records: controlledRepairs.length,
