@@ -88,7 +88,8 @@ def _with_name(msg, text):
 
 
 def _raw(msg):
-    return " ".join(str(msg.get(k) or "") for k in ("text", "pros", "cons")).strip()
+    from app.v3.text import customer_text
+    return customer_text(msg)
 
 
 # The acknowledgement is explicitly about the buyer's experience, not a new efficacy claim.
@@ -98,8 +99,9 @@ _ASPECTS = [
     ("non_sticky", r"\bне\s+лип|нелипк|без\s+липк|\bне\s+оставля[^.!?]{0,30}липк", "Рады, что средство не показалось Вам липким.", (r"липк|липким",)),
     ("texture", r"(?:приятн|нежн|легк|лёгк|нрав)\w*\s+текстур|текстур\w*[^.!?]{0,20}(?:приятн|нежн|легк|лёгк|нрав)|(?:быстро|хорошо)\s+впитыва", "Рады, что текстура Вам понравилась.", (r"текстур|впитыва",)),
     ("fragrance_harsh", r"резк\w*[^.!?]{0,20}(запах|аромат)|(запах|аромат)[^.!?]{0,20}резк", "Понимаем, что аромат показался Вам резким.", (r"аромат|запах", r"резк")),
-    ("fragrance_liked", r"(?:приятн|хорош|нежн)\w*\s+(запах|аромат)|(запах|аромат)[^.!?]{0,30}(?:понрав|хорош|приятн|нежн)|приятно\s+пах", "Рады, что аромат Вам понравился.", (r"аромат|запах", r"понрав|приятн|покорил")),
+    ("fragrance_liked", r"(?:приятн|хорош|нежн)\w*\s+(запах|аромат)|(запах|аромат)[^.!?]{0,30}(?:понрав|хорош|приятн|нежн)|(?:приятно|хорошо|вкусно)\s+пах", "Рады, что аромат Вам понравился.", (r"аромат|запах", r"понрав|приятн|покорил")),
     ("recommendation", r"рекомендую|советую", "Спасибо за рекомендацию.", (r"рекоменд(?:ац|овать|уете)|советуете",)),
+    ("convenience", r"\bудобн\w*(?:\s+[а-яё]+){0,2}\s+(?:пользоват|использ|наносит|дозир|дозатор|применя)|\bудобн\w*\s+в\s+(?:использ|применен)", "Рады, что пользоваться средством Вам удобно.", (r"удобн",)),
     ("delivery", r"быстр\w*[^.!?]{0,20}достав|достав\w*[^.!?]{0,20}быстр", "Спасибо, что отметили быструю доставку.", (r"достав|заказ[^.!?]{0,25}добрал", r"быстр|оператив")),
     ("repeat_purchase", r"(беру|покупаю|заказываю)[^.!?]{0,30}(снова|повтор|не\s+перв|втор|трет)|не\s+перв\w*\s+раз|постоянно\s+(беру|покупаю|заказываю)", "Спасибо, что снова выбрали EVETIS.", (r"снова|повтор|не\s+перв|возвращаетесь|в\s+(?:третий|второй)\s+раз|проверенный\s+фаворит",)),
     ("no_effect", r"не\s+увидел\w*[^.!?]{0,20}(эффект|результат)|нет\s+(эффект|результат)|без\s+результат|не\s+работает", "Жаль, что результат не совпал с Вашими ожиданиями.", (r"результат|ожидан",)),
@@ -130,7 +132,7 @@ def aspects_of(msg):
         ('fragrance_disliked', r'\bне\s+(?:понрав|нрав)[^.!?]{0,35}(аромат|запах)|(?:аромат|запах)[^.!?]{0,35}\bне\s+(?:понрав|нрав)', 'Жаль, что аромат Вам не понравился.', (r'аромат|запах',r'жаль|не\s+понрав')),
         ('packaging_inconvenient', r'неудобн[^.!?]{0,20}упаков|упаков[^.!?]{0,20}неудоб', 'Жаль, что упаковка оказалась для Вас неудобной.', (r'упаков',r'неудоб')),
         ('dispenser_inconvenient', r'неудобн[^.!?]{0,20}дозатор|дозатор[^.!?]{0,20}неудоб', 'Жаль, что дозатор оказался неудобным в использовании.', (r'дозатор',r'неудоб')),
-        ('result_liked', r'эффект[^.!?]{0,15}(есть|хорош)|хорош[^.!?]{0,15}(эффект|результат)|(?:кож|рук)\w*[^.!?]{0,35}(?:увлажнен|ухожен|нежн)', 'Рады, что Вы довольны результатом применения.', (r'результат|эффект|(?:кож|рук)[^.!?]{0,30}(?:нежн|ухожен|увлажнен)',)),
+        ('result_liked', r'эффект[^.!?]{0,15}(есть|хорош)|хорош[^.!?]{0,15}(эффект|результат)|(?:кож|рук)\w*[^.!?]{0,35}(?:увлажнен|ухожен|нежн)|\bхорошо\s+увлажня', 'Рады, что Вы довольны результатом применения.', (r'результат|эффект|(?:кож|рук)[^.!?]{0,30}(?:нежн|ухожен|увлажнен)',)),
         ('future_purchase',r'буду\s+(брать|покупать|заказыв)|куплю\s+ещ[её]', 'Будем рады видеть Вас снова.', (r'снова|ещ[её]',)),
     ]
     for key,rx,response,coverage in extra:
@@ -142,6 +144,35 @@ def aspects_of(msg):
     # A positive mention embedded in negation is never praise.
     if re.search(r'не\s+оставля[^.!?]{0,30}липк|без\s+липк|не\s+лип',t):out=[a for a in out if a.key!='sticky']
     return out
+
+
+# Product noun the warm thanks must name (from the VERIFIED identity, never the listing title).
+_PRODUCT_NOUN = {"hand_cream": r"крем", "body_cream": r"крем", "cream": r"крем", "serum": r"сыворот",
+                 "tonic": r"тоник", "powder": r"пудр", "bundle": r"набор"}
+# Accusative with agreeing possessive, for the deterministic fallback sentence.
+_PRODUCT_CHOSEN = {"hand_cream": "наш крем для рук", "body_cream": "наш крем", "cream": "наш крем",
+                   "serum": "нашу сыворотку", "tonic": "наш тоник", "powder": "нашу пудру", "bundle": "наш набор"}
+
+
+def rating_only_aspects(msg, res, snap):
+    """A rating with no words at all. High: thanks + the verified product + one warm brand
+    sentence, no product claims. Low: regret + an invitation to tell what went wrong."""
+    try:
+        rating = int(msg.get("rating"))
+    except (TypeError, ValueError):
+        return []
+    if rating >= 4:
+        product = (snap.product(res.product_id) or {}) if res.product_id else {}
+        ptype = product.get("product_type") or product.get("kind")
+        verified = res.status == "VERIFIED" and not res.restricted_components
+        noun = _PRODUCT_NOUN.get(ptype) if verified else None
+        coverage = (r"спасиб|благодар", r"оценк", r"приятн|рад[ыа]?\b|радуе") + ((noun,) if noun else ())
+        chosen = _PRODUCT_CHOSEN.get(ptype) if noun else None
+        return [Aspect("rating_only_thanks", "MUST_ADDRESS",
+                       f"Спасибо за высокую оценку! Нам очень приятно, что Вы выбрали {chosen or 'EVETIS'}.", coverage)]
+    return [Aspect("rating_only_low", "MUST_ADDRESS",
+                   "Жаль, что покупка не оправдала ожиданий. Расскажите, пожалуйста, что именно не понравилось.",
+                   (r"жаль|сожале",))]
 
 
 def make_plan(msg, snap, *, hard_plan=None):
@@ -247,6 +278,12 @@ def make_plan(msg, snap, *, hard_plan=None):
         p.block_reason = "PRODUCT_NOT_VERIFIED"
         return p
     p.information_budget = 1 if _raw(msg) else 0
+    # No written words at all (only a rating, or only tags that carry no recognised meaning).
+    if not p.aspects and not any(str(msg.get(k) or "").strip() for k in ("text", "pros", "cons")):
+        p.aspects = rating_only_aspects(msg, res, snap)
+        if any(a.key == "rating_only_low" for a in p.aspects):
+            p.clarifications.append({'unknown': 'specific_difficulty',
+                                     'changes': 'low rating without any words: ask what went wrong; no advice'})
     p.level = "P1" if p.aspects else "P0"
     keys = {a.key for a in p.aspects}
     if keys & {"softness", "texture"} and not keys & {"product_disliked", "no_effect", "fragrance_harsh"}:

@@ -21,6 +21,9 @@ def render(msg, p, *, safe_v3_draft=None):
         return p.direct_answer
     seed=int(sha(_raw(msg)+str(msg.get('communication_id') or msg.get('source_id') or ''))[:8],16)
     keys = {a.key for a in p.aspects}
+    rating_only = next((a for a in p.aspects if a.key in {'rating_only_thanks','rating_only_low'}), None)
+    if rating_only:  # a rating without words: the planned warm thanks / regret, nothing else
+        return _with_name(msg, rating_only.response)
     negative = keys & {'fragrance_harsh','fragrance_disliked','sticky','drying',
                        'no_effect','product_disliked','price','packaging_inconvenient','dispenser_inconvenient'}
     positive = []
@@ -28,6 +31,7 @@ def render(msg, p, *, safe_v3_draft=None):
     if 'texture' in keys: positive.append('Вы оценили текстуру')
     if 'non_sticky' in keys: positive.append('Вы не ощущаете липкости после нанесения')
     if 'fragrance_liked' in keys: positive.append('аромат Вам понравился')
+    if 'convenience' in keys: positive.append('пользоваться средством Вам удобно')
     if 'result_liked' in keys: positive.append('Вы довольны результатом применения')
     if 'product_liked' in keys and not positive: positive.append('само средство Вам понравилось')
     parts = []

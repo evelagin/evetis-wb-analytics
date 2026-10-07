@@ -32,6 +32,8 @@ class Review:
     text: str = ""
     pros: str = ""
     cons: str = ""
+    # WB `bables`: tags the buyer selected; no plus/minus sign in the API.
+    bables: list = field(default_factory=list)
     user_name: str = ""
     product_name: str = ""
     supplier_article: str = ""
@@ -53,6 +55,7 @@ class Review:
             text=fb.get("text", "") or "",
             pros=fb.get("pros", "") or "",
             cons=fb.get("cons", "") or "",
+            bables=[str(t).strip() for t in (fb.get("bables") or []) if str(t).strip()],
             user_name=fb.get("userName", "") or "",
             product_name=details.get("productName", "") or "",
             supplier_article=details.get("supplierArticle", "") or "",

@@ -29,7 +29,8 @@ def validate_for_publication(text, communication, settings, *, include_spans=Fal
         return result
     ctx = context_for_free_text(snap, [product.product_id])
     from app.v3.text import normalize
-    ctx.customer_experience = normalize(" ".join(str(communication.get(k) or "") for k in ("text","pros","cons")))
+    from app.v3.text import customer_text
+    ctx.customer_experience = normalize(customer_text(communication))
     rows = [r for r in approved(snap, product.product_id) if in_context(r,communication,snap)]
     ctx.approved_explanation_texts = [t for r in rows if r['kind']=='ingredient_benefit' for t in matching_texts(r,text)]
     ctx.approved_guidance_texts = [t for r in rows if r['kind']=='guidance' for t in matching_texts(r,text)]

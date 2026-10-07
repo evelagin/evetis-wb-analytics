@@ -102,6 +102,9 @@ def _text_of(msg: dict) -> str:
         parts.append("Достоинства: " + msg["pros"])
     if msg.get("cons"):
         parts.append("Недостатки: " + msg["cons"])
+    from app.v3.text import customer_tags
+    if customer_tags(msg):
+        parts.append("Теги покупателя: " + ", ".join(customer_tags(msg)))
     return "\n".join(p for p in parts if p).strip()
 
 
