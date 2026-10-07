@@ -142,7 +142,7 @@ def canonical_template(job, expected_env, image, account, control=False):
         raise B.EvidenceError("canonical env differs (unknown/duplicate/changed settings)")
 
 
-def preflight(c, doc, now, backend=None, *, allow_active=False):
+def preflight(c, doc, now, backend=None, *, allow_active=False, owner_observation=False):
     if backend is not None:
         base_contract={k:v for k,v in backend.c.items() if k!='orchestration'}
         if base_contract!={k:v for k,v in c.items() if k!='orchestration'}:
@@ -205,11 +205,14 @@ def preflight(c, doc, now, backend=None, *, allow_active=False):
         OC.verify_job(controller,orchestration)
         executions=request("GET",f"{RUN_API}/{controller['name']}/executions?pageSize=1000")
         own=getattr(backend,'current_execution',None) if backend is not None else None
-        if not isinstance(own,str) or not own.startswith(controller['name']+'/executions/'):
+        if owner_observation:
+            if own is not None or allow_active or executions.get('nextPageToken') or controller.get('runningCount',0) or any(not e.get('completionTime') for e in executions.get('executions',[])):
+                raise B.EvidenceError('owner observation requires no controller execution')
+        elif not isinstance(own,str) or not own.startswith(controller['name']+'/executions/'):
             raise B.EvidenceError('own registered controller execution identity missing')
         if executions.get('nextPageToken') or any(not e.get('completionTime') and e.get('name')!=own for e in executions.get('executions',[])):
             raise B.EvidenceError('another controller execution active/unproven')
-        if not any(e.get('name')==own for e in executions.get('executions',[])):
+        if not owner_observation and not any(e.get('name')==own for e in executions.get('executions',[])):
             raise B.EvidenceError('own controller execution not visible')
     schedules = request("GET", f"{SCHED_API}/{base}/jobs?pageSize=500")
     names = {j["name"].rsplit("/",1)[-1]: j for j in schedules.get("jobs", [])}

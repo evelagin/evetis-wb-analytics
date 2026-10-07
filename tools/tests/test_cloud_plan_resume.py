@@ -72,3 +72,15 @@ def test_source_row_sequence_must_match_its_proof():
     doc,proof,rows=fixture();proof['state']['sequence']=54
     with pytest.raises(BF.B.EvidenceError,match='source sequence'):
         P.verify_retained_plan(BF.target('client_001'),doc,reader(proof,rows,[]))
+
+
+def test_preserved_failed_intent_descriptor_requires_exact_attestation():
+    from tools.tests.test_owner_pre_source_recovery import failed
+    p,state,attestation=failed();doc={'runtime_plan':p};proof={'plan':p,'state':state}
+    def read(c,sql,params):
+        if 'MAX(backfill_sequence)' in sql:return [{'seq':15}]
+        if 'OZON_INGESTION_RUNS' in sql:return [{'evidence_json':json.dumps(proof)}]
+        pytest.fail('failed pre-source intent falsely treated as reconciled checkpoint')
+    P.verify_retained_plan(BF.target('client_001'),doc,read,pre_source_proof=attestation)
+    state['progress']['report']['uuid']='ambiguous'
+    with pytest.raises(BF.B.EvidenceError):P.verify_retained_plan(BF.target('client_001'),doc,read,pre_source_proof=attestation)

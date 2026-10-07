@@ -82,3 +82,17 @@ next immutable artifact without a circular digest dependency. DO NOT apply Terra
 this staging revision. Final integration must restore the same root with independently
 qualified controller metadata, pass unchanged packaged-controller CI and be merged before
 any reviewed deployment. Current cloud controller/ordinary schedules are untouched by staging.
+
+## Owner publication and deployment ordering
+
+Owner recovery publication uses a separate read-only observation preflight, with no
+controller execution identity and no active runtime/control/controller execution.
+The normal cloud preflight still requires its own visible registered execution.
+
+The reviewed staging plan derives only a PAUSED dedicated Scheduler/controller
+descriptor from the same canonical release/root; ordinary schedules stay PAUSED.
+After exact IAM/image readback and source-free internal preflight, append the typed
+owner attestation preserving sequence15/STOP/receipt/reservation. Publish immutable
+PAUSED and ENABLED descriptors from that committed evidence, then review/apply
+activation containing only dedicated Scheduler/controller state restoration.
+A failed pre-source INTENT is never passed off as a successful reconciled checkpoint.

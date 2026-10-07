@@ -84,7 +84,7 @@ class Backend:
     @property
     def journal(self):return f"{self.c['project_id']}.{self.c['datasets']['ozon_raw']}.OZON_INGESTION_RUNS"
 
-    def preflight(self,manifest):
+    def preflight(self,manifest, *, owner_observation=False):
         if manifest['tenant']!=self.c['tenant_id'] or manifest['project']!=self.c['project_id']:
             raise BF.B.EvidenceError('foreign qualification manifest')
         self.active=False
@@ -92,7 +92,7 @@ class Backend:
         if not entities <= {'ads_sku_daily','supplies'}:
             raise BF.B.EvidenceError('qualification controller supports only frozen SKU/Supplies scopes')
         for doc in manifest['plans']:
-            BF.preflight(BF.validate_plan(doc,doc['ack_hash']),doc,self.clock(),backend=self,allow_active=True)
+            BF.preflight(BF.validate_plan(doc,doc['ack_hash']),doc,self.clock(),backend=self,allow_active=not owner_observation,owner_observation=owner_observation)
         # Both credential boundaries are required even for a Seller-only scope.
         bindings,creds=BF.TL.operator_binding(self.c,self.tables,self.clock(),['ads_sku_daily'])
         if set(bindings)!={'seller','performance'} or any(v!='BOUND' for v in bindings.values()) or set(creds)!={'seller','performance'} or any(v.get('status')!='PASS' for v in creds.values()):

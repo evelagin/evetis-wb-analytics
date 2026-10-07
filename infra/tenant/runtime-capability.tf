@@ -14,7 +14,7 @@ resource "google_bigquery_table_iam_member" "runtime_capability_read" {
   project    = var.contract.project_id
   dataset_id = var.contract.datasets.tenant_ops
   table_id   = "CAPABILITY_PROFILE"
-  role       = google_project_iam_custom_role.runtime_capability_read[0].name
+  role       = "projects/${var.contract.project_id}/roles/runtimeCapabilityRead"
   member     = "serviceAccount:${local.ozon_runtime_email}"
-  depends_on = [google_bigquery_table.this]
+  depends_on = [google_bigquery_table.this, google_project_iam_custom_role.runtime_capability_read]
 }

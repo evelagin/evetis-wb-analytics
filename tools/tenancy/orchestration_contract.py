@@ -56,6 +56,17 @@ def block(c, settings, repo, release=None):
                          'uri':f'https://run.googleapis.com/v2/{base}/jobs/{JOB}:run'}}
 
 
+def paused_contract(c, repo):
+    """Owner staging can only pause the same qualified root/release, never alter scope."""
+    from copy import deepcopy
+    out=deepcopy(c);old=out.get('orchestration')
+    if not old:raise ValueError('registered controller required for paused staging')
+    env=old['job']['env']
+    out['orchestration']=block(out,{'release':env['CONTROLLER_SOURCE_SHA'],
+        'root_hash':env['BACKFILL_ROOT_HASH'],'scheduler_state':'PAUSED'},repo)
+    return out
+
+
 def verify_job(job, expected):
     from tools.tenancy import tenant_backfill as BF
     outer=job['template'];t=outer['template'];containers=t['containers']

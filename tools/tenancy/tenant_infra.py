@@ -51,9 +51,12 @@ def contract_for(tenant_id: str) -> dict:
     return contract
 
 
-def render(tenant_id: str, out_dir: Path) -> dict:
+def render(tenant_id: str, out_dir: Path, *, controller_paused=False) -> dict:
     """Записать контракт (tfvars) и конфигурацию backend. Секретов в них нет по построению."""
     contract = contract_for(tenant_id)
+    if controller_paused:
+        from tools.tenancy.orchestration_contract import paused_contract
+        contract=paused_contract(contract,REPO)
     out_dir.mkdir(parents=True, exist_ok=True)
     (out_dir / CONTRACT_FILE).write_text(
         json.dumps({"contract": contract}, indent=2, ensure_ascii=False, sort_keys=True) + "\n",
@@ -108,11 +111,11 @@ def _tf(args: list[str], cwd: Path) -> subprocess.CompletedProcess:
     return proc
 
 
-def plan(tenant_id: str, work_dir: Path) -> int:
+def plan(tenant_id: str, work_dir: Path, *, controller_paused=False) -> int:
     from tools.tenancy.plan_scan import scan_plan
 
     try:
-        contract = render(tenant_id, work_dir)
+        contract = render(tenant_id, work_dir,controller_paused=True) if controller_paused else render(tenant_id, work_dir)
     except ValueError:
         # Optional controller qualification fails closed while the canonical
         # runtime descriptor is absent. Keep the missing-image verdict without

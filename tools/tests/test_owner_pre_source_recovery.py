@@ -124,7 +124,7 @@ def test_owner_publisher_preserves_all_predecessors_and_rejects_conflicting_mark
     manifest={'hash':ROOT,'purpose':'QUALIFICATION','plans':[]}
     memory.store.commit(ROOT,'MANIFEST',0,manifest,NOW)
     backend,_,_,_=reader_fixture();backend.tables=memory.meta;backend.store=memory.store
-    backend.preflight=lambda m:None;backend.active_runtime_execution=lambda:False
+    backend.preflight=lambda m,**kw:None;backend.active_runtime_execution=lambda:False
     old=copy.deepcopy(memory.rows)
     out=R.publish(backend,proof,NOW)
     assert out['old_STOP_preserved'] and out['old_reservation_preserved']
@@ -133,3 +133,37 @@ def test_owner_publisher_preserves_all_predecessors_and_rejects_conflicting_mark
     assert R.publish(backend,proof,NOW)==out and len(memory.rows)==len(old)+1
     memory.meta.objects[R.PS.marker(proof)]=({},'conflict')
     with pytest.raises(BF.B.EvidenceError,match='conflict'):R.publish(backend,proof,NOW)
+
+
+@pytest.mark.parametrize('mode',['owner','cloud_missing_identity','owner_active','owner_fake_identity'])
+def test_owner_read_preflight_never_forges_cloud_execution_or_tolerates_active(monkeypatch,mode):
+    from types import SimpleNamespace
+    from tools.tests.test_tenant_backfill import metadata
+    from tools.tenancy import orchestration_contract as O
+    p=BF.QF.accepted_doc(BF.QF.SKU);c=BF.target('client_001');base,_=BF.resources(c)
+    release={'schema_version':1,'image':'europe-west1-docker.pkg.dev/mpa-platform/mpa-runtime/tenant-backfill-controller@sha256:'+'b'*64,
+        'source_sha':'a'*40,'runtime_image':c['marketplaces']['ozon']['runtime_image'],
+        'runtime_implementation_hash':BF.B.implementation_hash(),'controller_implementation_hash':'c'*64,
+        'verification':{k:'PASS' for k in ('ci','exact_image','offline_restart','lost_post_no_repeat','quota_wait_no_source','tenant_isolation','reader_append_separation')}}
+    c['orchestration']=O.block(c,{'release':'a'*40,'root_hash':'d'*64,'scheduler_state':'PAUSED'},BF.REPO,release)
+    p=copy.deepcopy(p);p['image']=c['marketplaces']['ozon']['runtime_image'];jobs,sched=metadata(c,p);block=c['orchestration']
+    controller={'name':base+'/jobs/'+O.JOB,'template':{'taskCount':1,'parallelism':1,'template':{'timeout':'600s','maxRetries':0,
+        'serviceAccount':block['accounts']['controller']['email'],'containers':[{'image':block['job']['image'],
+        'command':['python','-m','tools.tenancy.cloud_controller'],'env':[{'name':k,'value':v} for k,v in block['job']['env'].items()]}]}}}
+    jobs.append(controller);s=block['scheduler'];sched.append({'name':base+'/jobs/'+O.SCHEDULER,'state':'PAUSED',
+        'schedule':s['schedule'],'timeZone':s['time_zone'],'httpTarget':{'uri':s['uri'],'httpMethod':'POST','body':'e30=',
+        'oauthToken':{'serviceAccountEmail':block['accounts']['wake']['email'],'scope':'https://www.googleapis.com/auth/cloud-platform'}}})
+    def request(method,url,*args):
+        assert method=='GET'
+        if 'cloudscheduler' in url:return {'jobs':sched}
+        if '/namespaces/' in url:return {'items':[{'metadata':{'name':j['name'].split('/')[-1],'labels':{'cloud.googleapis.com/location':c['region']}}} for j in jobs]}
+        if '/executions?' in url:return {'executions':[{'name':controller['name']+'/executions/active'}] if mode=='owner_active' and O.JOB in url else []}
+        return {'jobs':jobs}
+    monkeypatch.setattr(BF.TL,'read_state',lambda *a:([],{},[],[],False))
+    import lifecycle_core as L
+    monkeypatch.setattr(L,'current_state',lambda _:L.CAPABILITY_DISCOVERY)
+    monkeypatch.setattr(BF.TL,'operator_binding',lambda *a:({'seller':'BOUND','performance':'BOUND'},{k:{'status':'PASS'} for k in ('seller','performance')}))
+    b=SimpleNamespace(c=c,tables=object(),request=request,current_execution=controller['name']+'/executions/fake' if mode=='owner_fake_identity' else None)
+    if mode=='owner':BF.preflight(c,p,datetime.now(timezone.utc),b,owner_observation=True)
+    else:
+        with pytest.raises(BF.B.EvidenceError):BF.preflight(c,p,datetime.now(timezone.utc),b,owner_observation=mode!='cloud_missing_identity')

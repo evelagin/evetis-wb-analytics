@@ -143,7 +143,7 @@ def publish(backend, proof, now):
     existing=[r for r in records if r['kind']==KIND and r['sequence']==proof['dispatch_sequence']]
     if existing and existing!=[record]:raise BF.B.EvidenceError('immutable recovery already differs')
     manifest=next(r['payload'] for r in records if r['kind']=='MANIFEST')
-    backend.preflight(manifest)
+    backend.preflight(manifest,owner_observation=True)
     if backend.active_runtime_execution():raise BF.B.EvidenceError('active execution: recovery publication deferred')
     load(backend,records if existing else records+[record],root,require_owner_marker=False)
     name=PS.marker(proof);labels,description=PS.marker_value(proof);ds=backend.c['datasets']['ref']
