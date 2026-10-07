@@ -46,7 +46,7 @@ def authority(monkeypatch, tmp_path):
     monkeypatch.setattr(BF.TL,'operator_binding',lambda *a:(facts.bindings,facts.credentials))
     objects={}
     env=c['orchestration']['job']['env']
-    objects[H.C.descriptor_name(env['CONTROLLER_SOURCE_SHA'],env['BACKFILL_ROOT_HASH'],'ENABLED')]=({},json.dumps({'release':release}))
+    objects[H.C.descriptor_name(env['CONTROLLER_SOURCE_SHA'],env['BACKFILL_ROOT_HASH'],'ENABLED')]=({},json.dumps({'settings':{'release':m['controller_source_sha'],'root_hash':m['hash'],'scheduler_state':'ENABLED'},'release':release}))
     objects[F.go_marker(m)]=F.go_value(m,{g:'PASS' for g in F.GATES})
     caps=[{'api':'seller','capability':g,'status':'AVAILABLE','discovered_at':NOW.isoformat()} for g in ('stocks','supplies')]
     tables=SimpleNamespace(get_table=lambda ds,name:objects.get(name),rows=lambda ds,name:iter(caps))
@@ -86,7 +86,7 @@ def test_old_image_cannot_claim_full_adapter(authority):
     p=authority
     key=next(k for k in p.objects if k.startswith('BF_SPEC'))
     bad=copy.deepcopy(p.release);bad['schema_version']=1
-    p.objects[key]=({},json.dumps({'release':bad}))
+    p.objects[key]=({},json.dumps({'settings':{'release':p.m['controller_source_sha'],'root_hash':p.m['hash'],'scheduler_state':'ENABLED'},'release':bad}))
     with pytest.raises(BF.B.EvidenceError,match='no full-adapter'):H.verify_authority(p.b,p.m)
 
 
@@ -284,3 +284,22 @@ def test_snapshot_readback_verifies_exact_partial_prefix_and_stock_catalog_cohor
         previous=copy.deepcopy(writes);bad[0]=True
         with pytest.raises(BF.B.EvidenceError,match='COHORT_ACCOUNTING'):BF.verify_coverage(doc,doc['ack_hash'],backend=SimpleNamespace(request=lambda *a:None))
         assert writes==previous
+
+
+def test_full_authority_reconstructs_future_deployment_from_immutable_descriptor(authority, monkeypatch):
+    p = authority
+    packaged = copy.deepcopy(p.c)
+    packaged.pop('orchestration')
+    monkeypatch.setattr(BF, 'target', lambda tenant: copy.deepcopy(packaged))
+    assert H.verify_authority(p.b, p.m) == p.c
+
+
+@pytest.mark.parametrize('field,value', [('root_hash','8'*64), ('release','8'*40), ('scheduler_state','PAUSED')])
+def test_full_descriptor_setting_drift_is_denied(authority, field, value):
+    p = authority
+    key = next(k for k in p.objects if k.startswith('BF_SPEC'))
+    descriptor = json.loads(p.objects[key][1])
+    descriptor['settings'][field] = value
+    p.objects[key] = ({}, json.dumps(descriptor))
+    with pytest.raises(BF.B.EvidenceError, match='descriptor settings'):
+        H.verify_authority(p.b, p.m)

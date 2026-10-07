@@ -76,16 +76,29 @@ def verify_authority(backend, manifest):
     c = F.validate_manifest(manifest)
     if manifest['tenant'] != backend.c['tenant_id'] or manifest['project'] != backend.c['project_id']:
         raise BF.B.EvidenceError('foreign full authority')
-    expected = c.get('orchestration')
-    if not expected or expected != backend.c.get('orchestration'):
-        raise BF.B.EvidenceError('full canonical deployment contract differs')
+    # The immutable controller is built before this deployment profile can be
+    # registered. Its durable immutable descriptor supplies deployment settings;
+    # the packaged registry still supplies tenant/project/runtime authority.
+    # Never require future full-root registration inside an older source image.
+    expected = backend.c.get('orchestration')
+    if not expected:
+        raise BF.B.EvidenceError('full canonical deployment contract absent')
     env = expected['job']['env']
-    marker = backend.tables.get_table(c['datasets']['tenant_locks'],C.descriptor_name(
-        env['CONTROLLER_SOURCE_SHA'],env['BACKFILL_ROOT_HASH'],env['HISTORICAL_SCHEDULER_STATE']))
+    settings = {'release': manifest['controller_source_sha'],
+                'root_hash': manifest['hash'],
+                'scheduler_state': env.get('HISTORICAL_SCHEDULER_STATE')}
+    marker = backend.tables.get_table(c['datasets']['tenant_locks'], C.descriptor_name(
+        settings['release'], settings['root_hash'], settings['scheduler_state']))
     descriptor = parse_tenant_json(marker[1]) if marker else {}
-    release = descriptor.get('release',{})
+    release = descriptor.get('release', {})
+    if set(descriptor) != {'settings', 'release'} or descriptor['settings'] != settings:
+        raise BF.B.EvidenceError('full deployment descriptor settings differ')
     if release.get('schema_version')!=2 or release.get('verification',{}).get('full_history_adapter')!='PASS':
         raise BF.B.EvidenceError('exact controller image has no full-adapter qualification')
+    canonical = C.O.block(c, settings, BF.REPO, release=release)
+    if canonical != expected:
+        raise BF.B.EvidenceError('full canonical deployment contract differs')
+    c = dict(c, orchestration=canonical)
     if env['BACKFILL_ROOT_HASH'] != manifest['hash'] or env['CONTROLLER_SOURCE_SHA'] != manifest['controller_source_sha']:
         raise BF.B.EvidenceError('full descriptor/root/source differs')
     if expected['job']['image'] != manifest['controller_image'] or c['marketplaces']['ozon']['runtime_image'] != manifest['runtime_image']:
