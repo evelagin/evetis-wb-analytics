@@ -388,10 +388,12 @@ def test_terraform_wires_detector_and_policies_to_existing_channel():
     assert tf.count('count        = var.unitka_alert_email == "" ? 0 : 1') == 4
 
 
-def test_scheduler_is_created_paused_until_gate_c():
-    """Регулярная оценка включается только отдельным PR (Gate C): до него job на паузе."""
+def test_scheduler_is_enabled_after_gate_c():
+    """Gate C (owner ACK 2026-10-07): после доверенного прогона регулярная оценка включена."""
     tf = TF_FILE.read_text(encoding="utf-8")
     block = re.search(r'resource "google_cloud_scheduler_job" "dro_health_eval" \{(.*?)\n\}', tf, re.S).group(1)
-    assert re.search(r"^\s*paused\s*=\s*true\s*$", block, re.M), "dro-health-eval должен создаваться на паузе"
+    assert re.search(r"^\s*paused\s*=\s*false\s*$", block, re.M), "dro-health-eval должен быть включён (Gate C)"
+    assert "ignore_changes" not in block  # состоянием паузы владеет Terraform, а не ручной resume
+    assert '"Europe/Moscow"' in block
     assert "google_service_account.ops_health.email" in block  # личность — sa-ops-health
     assert '"*/30 * * * *"' in block
