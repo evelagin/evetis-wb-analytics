@@ -36,7 +36,7 @@ def implementation_hash():
     root = Path(__file__).resolve().parent
     names = ("backfill_core.py", "catalog_identity.py", "backfill.py", "main.py", "entities.py", "common.py",
              "identity.py", "seller_policy.py", "seller_method_policy.json", "runtime_execution_contract.json",
-             "qualification.py", "qualification_resume.json", "checkpoints.py", "control_store.py", "credentials.py", "dq.py", "history.py", "lifecycle.py",
+             "qualification.py", "qualification_resume.json", "pre_source.py", "checkpoints.py", "control_store.py", "credentials.py", "dq.py", "history.py", "lifecycle.py",
              "lifecycle_core.py", "promo.py", "quota.py", "requirements.txt")
     return digest({name: hashlib.sha256((root / name).read_bytes()).hexdigest() for name in names})
 

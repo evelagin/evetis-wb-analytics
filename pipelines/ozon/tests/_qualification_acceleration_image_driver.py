@@ -21,7 +21,7 @@ def qualify():
     s.update(sequence=14,rows=30);s['progress'].update(pending=[str(i) for i in range(31,91)],report=None,skipped=0)
     db={};proofs=[];posts=[];limits=[];reserved=[15];batch=[None]
     F.time.sleep=lambda _:None
-    F.export_budget=lambda cap:(limits.append(cap) or max(0,cap-reserved[0]))
+    F.export_budget=lambda cap=15,p=None:(limits.append(cap) or max(0,cap-reserved[0]))
     def ack(result,ev):
         proofs.append(copy.deepcopy(ev));reserved[0]+=ev['detail'].get('exports_reserved',0)
     def merge(table,rows,keys,run,**kw):

@@ -59,6 +59,22 @@ def check_quota_query(c, doc):
     return 'PASS'
 
 
+def check_pre_source():
+    # Installed pure contract: existing STOP/failed dispatch stays historical;
+    # only its exact owner-verified recovery allows a new dispatch sequence.
+    from tools.tenancy import pre_source_recovery as PR
+    root='1'*64
+    record=lambda kind,seq,payload:{'version':D.VERSION,'root_hash':root,'kind':kind,'sequence':seq,'payload':payload}
+    stop=record('STOPPED',0,{'reason':'historical-failure'})
+    proof={'dispatch_sequence':1,'root_hash':root,'stop_hashes':[D.digest(stop)]}
+    rows=[record('DISPATCH_INTENT',1,{}),record('DISPATCH_RECEIPT',1,{}),stop,record(PR.KIND,1,proof)]
+    assert D.decide_tick(rows,root,{'status':'ELIGIBLE'},verified_failures=[proof])['sequence']==2
+    assert D.decide_tick(rows,root,{'status':'ELIGIBLE'})['action']=='STOPPED'
+    rows.append(record('STOPPED',0,{'reason':'new-failure','controller_execution':'new'}))
+    assert D.decide_tick(rows,root,{'status':'ELIGIBLE'},verified_failures=[proof])['action']=='STOPPED'
+    return 'PASS'
+
+
 def check(source_sha):
     assert sys.version_info[:2]==(3,12), 'production Python 3.12 required'
     assert re.fullmatch('[0-9a-f]{40}',source_sha)
@@ -129,7 +145,7 @@ def check(source_sha):
     assert denied==3 and set(calls)=={'reader','append'}
     return {'python_version':sys.version.split()[0],'source_sha':source_sha,'controller_implementation_hash':O.implementation_hash(BF.REPO),
             'runtime_implementation_hash':BF.B.implementation_hash(),
-            'quota_query_syntax':'PASS','offline_restart':'PASS','lost_post_no_repeat':'PASS','quota_wait_no_source':'PASS',
+            'pre_source_recovery':check_pre_source(),'quota_query_syntax':'PASS','offline_restart':'PASS','lost_post_no_repeat':'PASS','quota_wait_no_source':'PASS',
             'reader_append_separation':'PASS','tenant_isolation':'PASS','live_deployment':'UNPROVEN'}
 
 

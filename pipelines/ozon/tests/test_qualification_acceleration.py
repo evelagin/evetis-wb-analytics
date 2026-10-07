@@ -50,7 +50,7 @@ def test_calibration_only_exact_accepted_plan_and_reconciled_prefix():
 def test_thirty_preserved_six_bounded_submissions_complete_ninety(harness,monkeypatch):
     p,s=prefix();db,writes,proofs,persist=harness
     submitted=[];reserved=[15];limits=[];current=[None]
-    monkeypatch.setattr(F,'export_budget',lambda cap:(limits.append(cap) or max(cap-reserved[0],0)))
+    monkeypatch.setattr(F,'export_budget',lambda cap=15,p=None:(limits.append(cap) or max(cap-reserved[0],0)))
     def post(path,body):
         assert path=='/api/client/statistics' and len(body['campaigns'])<=10
         assert not set(body['campaigns']) & {str(i) for i in range(1,31)}
@@ -78,14 +78,14 @@ def test_thirty_preserved_six_bounded_submissions_complete_ninety(harness,monkey
 
 
 def test_lost_intent_ack_never_posts(harness,monkeypatch):
-    p,s=prefix();monkeypatch.setattr(F,'export_budget',lambda cap:10)
+    p,s=prefix();monkeypatch.setattr(F,'export_budget',lambda cap=15,p=None:10)
     monkeypatch.setattr(C,'perf_post',lambda *a:pytest.fail('POST after missing journal ACK'))
     with pytest.raises(RuntimeError,match='lost ACK'):
         F.Engine(p,'new','safe',s,unit_budget=3).run(lambda *a:(_ for _ in ()).throw(RuntimeError('lost ACK')))
 
 
 def test_submission_binding_revocation_prevents_post(harness,monkeypatch):
-    p,s=prefix();monkeypatch.setattr(F,'export_budget',lambda cap:10)
+    p,s=prefix();monkeypatch.setattr(F,'export_budget',lambda cap=15,p=None:10)
     e=F.Engine(p,'new','safe',s,unit_budget=3)
     e.before_submit=lambda:(_ for _ in ()).throw(B.EvidenceError('binding revoked'))
     with pytest.raises(B.EvidenceError,match='revoked'):e.run(harness[3])
@@ -93,7 +93,7 @@ def test_submission_binding_revocation_prevents_post(harness,monkeypatch):
 
 
 def test_explicit_429_is_durable_cooldown_not_ambiguous_repost(harness,monkeypatch):
-    p,s=prefix();monkeypatch.setattr(F,'export_budget',lambda cap:10)
+    p,s=prefix();monkeypatch.setattr(F,'export_budget',lambda cap=15,p=None:10)
     C.PERF_DIAGNOSTIC.clear();C.PERF_DIAGNOSTIC.update({'http_status':429,'retry-after':7200,'x-ratelimit-remaining':0})
     posts=[];monkeypatch.setattr(C,'perf_post',lambda *a:(posts.append(1) or 429,{'_error':'not persisted'}))
     e=F.Engine(p,'new','safe',s,unit_budget=3);out=e.run(harness[3]);final=out['evidence']['state']
