@@ -123,7 +123,15 @@ two-tenant isolation. Controller release schema 2 additionally requires installe
 full-adapter restart/dispatch/failure qualification. Old schema-1 releases remain
 readable for historical provenance but cannot activate full history.
 
-Tenant rollout is a reviewed image/descriptor-only plan. Stage PAUSED, reconcile
+Tenant rollout is a reviewed image/descriptor-only plan. An exact successful
+pre-staging Supplies receipt from the original qualification root may be drained
+by the new PAUSED cloud controller. It must uniquely join the immutable intent,
+receipt and lease; the old digest must have registered binding/security and exact
+qualification-root compatibility, with unchanged Seller/security source hashes.
+The execution must have completed before the new immutable descriptor was created.
+This exception cannot dispatch, run locally, accept another domain/root, reconcile
+an active/failed/unknown image or weaken full-history image equality.
+Stage PAUSED, reconcile
 the old root's terminal receipt in cloud without preparing another source dispatch,
 publish immutable full manifest/GO and canonical lifecycle, then activate the
 qualified full root. Ordinary daily/fast/weekly remain PAUSED. Rollback first pauses

@@ -392,6 +392,68 @@ def read_proof(c,doc,run_id,request=None):
     return proof
 
 
+def verify_paused_supplies_handoff(doc, c, receipt, execution, backend):
+    """Reconcile an exact pre-staging terminal QF Supplies execution, never dispatch.
+
+    A staged immutable controller must be able to drain the preceding reviewed
+    image without weakening normal image equality. Future/full-history receipts,
+    active executions, unknown images and owner/local reconciliation stay denied.
+    """
+    from tools.tenancy import cloud_controller as CC, orchestration_contract as OC
+    if (backend is None or not isinstance(backend, CC.Backend)
+            or not QF.matches(doc) or doc['runtime_plan']['entity'] != 'supplies'):
+        raise B.EvidenceError('historical execution is not an authorized Supplies handoff')
+    env=(backend.c.get('orchestration') or {}).get('job',{}).get('env',{})
+    if env.get('BACKFILL_ROOT_HASH')!=QF.ROOT or env.get('HISTORICAL_SCHEDULER_STATE')!='PAUSED':
+        raise B.EvidenceError('historical Supplies drain requires exact PAUSED qualification descriptor')
+    base,_=resources(c)
+    if not isinstance(backend.current_execution,str) or not backend.current_execution.startswith(base+'/jobs/'+OC.JOB+'/executions/'):
+        raise B.EvidenceError('historical drain is cloud-controller only')
+    if (not execution.get('completionTime') or execution.get('failedCount',0)
+            or execution.get('cancelledCount',0) or execution.get('succeededCount')!=1):
+        raise B.EvidenceError('historical drain requires successful terminal execution')
+    records=backend.store.history(QF.ROOT)
+    saved=[r for r in records if r['kind']=='DISPATCH_RECEIPT' and r['payload']=={'plan':doc,'receipt':receipt}]
+    if len(saved)!=1:raise B.EvidenceError('historical drain receipt is not uniquely committed')
+    intents=[r for r in records if r['kind']=='DISPATCH_INTENT' and r['sequence']==saved[0]['sequence']]
+    if (len(intents)!=1 or intents[0]['payload']['plan']!=doc
+            or any(intents[0]['payload']['preparation'].get(k)!=receipt.get(k)
+                   for k in ('run_id','lease_generation','ack_hash'))):
+        raise B.EvidenceError('historical drain intent/receipt join differs')
+    descriptor=CC.descriptor_name(env['CONTROLLER_SOURCE_SHA'],QF.ROOT,'PAUSED')
+    metadata=backend.request('GET',f"{TT.BQ}/projects/{c['project_id']}/datasets/{c['datasets']['tenant_locks']}/tables/{descriptor}")
+    proof=parse_tenant_json(metadata.get('description') or '{}')
+    settings={'release':env['CONTROLLER_SOURCE_SHA'],'root_hash':QF.ROOT,'scheduler_state':'PAUSED'}
+    if set(proof)!={'settings','release'} or proof['settings']!=settings:
+        raise B.EvidenceError('historical drain descriptor differs')
+    OC.verify_artifact_source(proof['release'],REPO)
+    if OC.block(c,settings,REPO,release=proof['release'])!=backend.c['orchestration']:
+        raise B.EvidenceError('historical drain deployment contract differs')
+    try:
+        created=datetime.fromtimestamp(int(metadata['creationTime'])/1000,timezone.utc)
+        start=CC.timestamp(execution['startTime']);end=CC.timestamp(execution['completionTime'])
+    except (KeyError,ValueError,TypeError,OverflowError):
+        raise B.EvidenceError('historical drain time provenance absent') from None
+    if not start<=end<=created<=backend.clock():
+        raise B.EvidenceError('historical execution is not before staged descriptor')
+    actual=execution['template']['containers'][0]['image']
+    from tools.tenancy import platform as PL
+    matches=[parse_tenant_json(f.read_text()) for f in (REPO/PL.RUNTIME_RELEASES_DIR/'ozon').glob('*.json')]
+    matches=[r for r in matches if r.get('image')==actual]
+    if len(matches)!=1:raise B.EvidenceError('historical runtime release missing/ambiguous')
+    old=matches[0];facts=old.get('verification',{}).get('built_artifact',{})
+    if (facts.get('backfill_window_v1')!='PASS' or facts.get('qualification_resume_root')!=QF.ROOT
+            or facts.get('binding_before_credentials')!='PASS' or facts.get('seller_transport_ast')!='PASS'
+            or CC.timestamp(old['released_at'])>start):
+        raise B.EvidenceError('historical runtime has no exact reviewed qualification compatibility')
+    # Handoff cannot introduce different callable Seller or binding semantics.
+    hashes=old.get('image_facts',{}).get('source_hashes',{})
+    for name in ('common.py','seller_method_policy.json','runtime_execution_contract.json','identity.py','lifecycle_core.py'):
+        if hashes.get(name)!=hashlib.sha256((REPO/'pipelines/ozon/runtime'/name).read_bytes()).hexdigest():
+            raise B.EvidenceError('historical runtime security/binding source differs')
+    return actual
+
+
 def reconcile(doc,ack_hash,receipt, *, backend=None):
     request = backend.request if backend is not None else TT._req
     c=validate_plan(doc,ack_hash)
@@ -409,8 +471,10 @@ def reconcile(doc,ack_hash,receipt, *, backend=None):
     job=next(n for n,cfg in jobs.items() if p["entity"] in cfg["entities"])
     template=execution["template"];containers=template["containers"]
     prefix=base+"/jobs/"+job+"/executions/"
-    if not execution.get("name","").startswith(prefix) or len(containers)!=1 or containers[0]["image"]!=execution_image(doc,c) or template.get("serviceAccount")!=f"{c['marketplaces']['ozon']['service_accounts']['runtime']}@{c['project_id']}.iam.gserviceaccount.com":
+    if not execution.get("name","").startswith(prefix) or len(containers)!=1 or template.get("serviceAccount")!=f"{c['marketplaces']['ozon']['service_accounts']['runtime']}@{c['project_id']}.iam.gserviceaccount.com":
         raise B.EvidenceError("execution job/image/identity provenance mismatch")
+    handoff=containers[0]['image']!=execution_image(doc,c)
+    if handoff:verify_paused_supplies_handoff(doc,c,receipt,execution,backend)
     env={v["name"]:v.get("value") for v in containers[0].get("env",[])}
     expected={"INGESTION_RUN_ID":receipt["run_id"],"BACKFILL_TARGET_PROJECT":c["project_id"],
         "ENTITIES":p["entity"],"SINCE":p["from"],"UNTIL":p["to"],"BACKFILL_MODE":B.VERSION,
@@ -441,7 +505,7 @@ def reconcile(doc,ack_hash,receipt, *, backend=None):
         existing=tables.get_table(c["datasets"]["tenant_locks"],marker)
         if not existing or existing[0].get("owner")!=receipt["run_id"] or parse_tenant_json(existing[1] or "{}").get("ack_hash")!=ack_hash:
             raise B.EvidenceError("pilot release marker belongs to a different lease owner")
-    return {"checkpoint":status,"sequence":proof["state"]["sequence"],"rows_observed":proof["state"]["rows"],
+    return {**({"deployment_handoff":"EXACT_PAUSED_PRE_STAGING_SUPPLIES", "reconciled_execution_image":containers[0]["image"]} if handoff else {}),"checkpoint":status,"sequence":proof["state"]["sequence"],"rows_observed":proof["state"]["rows"],
             "orders":proof["state"]["orders"],"supplies":proof["state"]["supplies"],"bundles":proof["state"]["bundles"],
             "coverage":"UNPROVEN_PENDING_DQ", "lifecycle_changed":False,"scheduler_changed":False}
 
