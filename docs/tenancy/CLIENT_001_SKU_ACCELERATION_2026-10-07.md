@@ -70,3 +70,13 @@ source calls. It does not imply full-history GO or READY. Corrected probes, redi
 scale and canonical full-history manifest/gates remain separate owner-authorized requirements.
 Original global DoD external gates remain BLOCKED until independently proven; tenant applicability
 exception preserves exact-image, CI, isolation, source/DQ/reconciliation and reviewed-deployment gates.
+
+## Artifact staging (not deployed)
+
+The runtime candidate is built from the exact reviewed PR269 source commit, not represented
+as an already merged main commit. The accepted source and actual image hashes are explicit.
+This intermediate branch revision omits the controller opt-in only to assemble/qualify its
+next immutable artifact without a circular digest dependency. DO NOT apply Terraform from
+this staging revision. Final integration must restore the same root with independently
+qualified controller metadata, pass unchanged packaged-controller CI and be merged before
+any reviewed deployment. Current cloud controller/ordinary schedules are untouched by staging.

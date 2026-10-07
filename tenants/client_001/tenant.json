@@ -21,7 +21,9 @@
   "marketplaces": {
     "ozon": {
       "enabled": true,
-      "fulfillment_schemes": ["FBO"],
+      "fulfillment_schemes": [
+        "FBO"
+      ],
       "secret_refs": {
         "seller_client_id": "ozon-seller-client-id",
         "seller_api_key": "ozon-seller-api-key",
@@ -29,11 +31,22 @@
         "performance_client_secret": "ozon-perf-client-secret"
       },
       "entities": [
-        "catalog", "prices", "seller_info", "stocks", "fbo_postings", "finance_accrual",
-        "ads_campaigns", "ads_expense_daily", "ads_sku_daily", "clusters", "supplies"
+        "catalog",
+        "prices",
+        "seller_info",
+        "stocks",
+        "fbo_postings",
+        "finance_accrual",
+        "ads_campaigns",
+        "ads_expense_daily",
+        "ads_sku_daily",
+        "clusters",
+        "supplies"
       ],
       "seller_inventory_model": "BROAD_READ_INVENTORY_V1",
-      "history_request": {"mode": "EARLIEST_AVAILABLE"}
+      "history_request": {
+        "mode": "EARLIEST_AVAILABLE"
+      }
     },
     "wb": {
       "enabled": false
@@ -54,11 +67,6 @@
     "wb": false
   },
   "scheduler_state": "PAUSED",
-  "historical_orchestration": {
-    "release": "d6c59125516c206f9576c20b4dcb2eec48cd646a",
-    "root_hash": "4f4387b2bdaa39c8942735a3b9b386e665b20c61006c8e8a467832a7542b1779",
-    "scheduler_state": "ENABLED"
-  },
   "bi_access": {
     "mode": "NONE"
   },
