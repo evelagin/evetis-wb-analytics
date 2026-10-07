@@ -11,7 +11,7 @@ import { describe, it, expect } from 'vitest';
 import { unitkaLoader, type UnitkaDeps } from '../src/loaders/unitka/index.js';
 import {
   unclosedPreviousMonthDays, planMonthEndClose, controlledWritePolicy, sectionCellsReadback, buildSectionRepairPlan, reconcileWindow, repairRecords,
-  CONTROLLED_MAX_CORRECTIONS, restrictedCorrectionRefusal,
+  CONTROLLED_MAX_CORRECTIONS, restrictedCorrectionRefusal, restrictedOrdersBound,
 } from '../src/loaders/unitka/reconcile.js';
 import { factCellRules, coverageRules, moneyActivityFrom, type IntegrityFactsRow } from '../src/loaders/unitka/integrity.js';
 import { OFFSET, FACT_KEYS, isoToSerial, type Block } from '../src/loaders/unitka/model.js';
@@ -312,6 +312,18 @@ describe('D2. controlled restricted: без владельца — только 
     expect(r.apply).toEqual([]);
     expect(r.refused.map((x) => x.code)).toEqual([code]);
   });
+  it('граница роста S = min(Q источника, Q листа): отклонённая поправка Q не даёт S > Q в листе (ревью #275)', () => {
+    expect(restrictedOrdersBound(5, undefined)).toBe(5);              // Q листа = Q источника (поправки Q нет)
+    expect(restrictedOrdersBound(5, 3)).toBe(3);                      // в листе Q=3, источник 5 — S не выше 3
+    expect(restrictedOrdersBound(5, '')).toBeNull();                  // Q листа пуст — граница неизвестна
+    expect(restrictedOrdersBound(null, 3)).toBeNull();
+    expect(restrictedCorrectionRefusal(cell('cancels', 2, 4), () => restrictedOrdersBound(5, 3))).toBe('RECON_CANCELS_EXCEED_ORDERS');
+    expect(restrictedCorrectionRefusal(cell('cancels', 2, 3), () => restrictedOrdersBound(5, 3))).toBeNull();
+  });
+  it('опечатка охвата — restricted и предупреждение', () => {
+    expect(cfg('controlled', { UNITKA_CONTROLLED_SCOPE: 'ful' })).toMatchObject({ unitkaControlledScope: 'restricted', unitkaControlledScopeInvalid: 'ful' });
+    expect(cfg('controlled', { UNITKA_CONTROLLED_SCOPE: 'restricted' })).toMatchObject({ unitkaControlledScope: 'restricted', unitkaControlledScopeInvalid: null });
+  });
   it('без Q источника рост S не пишется (граница S ≤ Q не проверяема)', () => {
     expect(restrictedCorrectionRefusal(cell('cancels', 1, 2), () => null)).toBe('RECON_CANCELS_EXCEED_ORDERS');
     expect(restrictedCorrectionRefusal(cell('cancels', 1, 2))).toBe('RECON_CANCELS_EXCEED_ORDERS');
@@ -327,14 +339,27 @@ describe('D2. controlled restricted: без владельца — только 
     const r17 = septRow(book, '2026-09-17');
     book.set(r17, col(5, OFFSET.storage), '');                                                    // первое заполнение
     const before = book.get(r17, col(5, OFFSET.price));
+    book.set(r17, col(5, OFFSET.orders), 5);                                                      // Q листа = Q источника
     runner.facts = patch(runner.facts, SEPT_NM, '2026-09-17', { cancels: 2, orders: 5, price: Number(before) + 1 });
-    const { lines } = await run(book, runner, 'controlled');
+    const { lines } = await run(book, runner, 'controlled', { UNITKA_CONTROLLED_SCOPE: 'restricted' });
     expect(book.get(r17, col(5, OFFSET.storage))).toBe(1.25);
     expect(book.get(r17, col(5, OFFSET.cancels))).toBe(2);
     expect(book.get(r17, col(5, OFFSET.price))).toBe(before);                                     // цена — только владельцем
     expect(runner.ledger.map((x) => [x.field, x.status]).sort()).toEqual([['cancels', 'REPAIRED'], ['storage', 'REPAIRED']]);
     expect(events(lines, 'unitka_controlled_refused').map((e) => (e.fields as { code: string }).code)).toContain('RECON_RESTRICTED_REQUIRES_ACK');
     expect(events(lines, 'unitka_controlled_policy')[0]!.fields).toMatchObject({ scope: 'restricted' });
+  });
+  it('в прогоне: поправка Q отклонена → рост S выше Q листа не пишется (S ≤ Q в листе сохраняется)', async () => {
+    const { book, runner } = await seeded();
+    const r17 = septRow(book, '2026-09-17');
+    book.set(r17, col(5, OFFSET.orders), 1);
+    book.set(r17, col(5, OFFSET.cancels), 0);
+    runner.facts = patch(runner.facts, SEPT_NM, '2026-09-17', { cancels: 2, orders: 5 });
+    const { lines } = await run(book, runner, 'controlled', { UNITKA_CONTROLLED_SCOPE: 'restricted' });
+    expect(book.get(r17, col(5, OFFSET.orders))).toBe(1);
+    expect(book.get(r17, col(5, OFFSET.cancels))).toBe(0);
+    const codes = events(lines, 'unitka_controlled_refused').map((e) => (e.fields as { code: string }).code);
+    expect(codes).toEqual(expect.arrayContaining(['RECON_RESTRICTED_REQUIRES_ACK', 'RECON_CANCELS_EXCEED_ORDERS']));
   });
 });
 

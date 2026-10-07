@@ -419,6 +419,17 @@ export function controlledWritePolicy(
 }
 
 /**
+ * Граница роста S для restricted: min(Q источника, Q листа). Q листа передаётся, только когда поправка Q того же дня
+ * есть в плане (лист ≠ источник); пустой или нечисловой Q листа — граница неизвестна (null → отказ).
+ */
+export function restrictedOrdersBound(sourceQ: number | null, sheetQ: CellValue | undefined): number | null {
+  if (sourceQ === null) return null;
+  if (sheetQ === undefined) return sourceQ;
+  const q = typeof sheetQ === 'number' ? sheetQ : (isEmpty(sheetQ) ? NaN : Number(sheetQ));
+  return Number.isFinite(q) ? Math.min(sourceQ, q) : null;
+}
+
+/**
  * restricted: поправка заполненной ячейки пишется без владельца, только если это РОСТ S (want > before, оба — целые
  * числа ≥ 0) и want ≤ Q источника того же дня. Иначе — код отказа (поправка остаётся владельцу).
  */
