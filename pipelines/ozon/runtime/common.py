@@ -467,16 +467,47 @@ def h(*parts):
 
 
 # ------------------------------------------------------------------ HTTP
+PERF_DIAGNOSTIC = {}
+
+
+def perf_diagnostic():
+    return dict(PERF_DIAGNOSTIC)
+
+
+def _perf_diagnostic(status, headers):
+    """Strict numeric whitelist; never raw headers, body or authorization."""
+    PERF_DIAGNOSTIC.clear()
+    PERF_DIAGNOSTIC.update(http_status=status, at=datetime.now(timezone.utc).isoformat())
+    for name in ("Retry-After", "X-RateLimit-Limit", "X-RateLimit-Remaining", "X-RateLimit-Reset"):
+        value = headers.get(name) if headers else None
+        if isinstance(value, str) and re.fullmatch(r"[0-9]{1,12}", value):
+            PERF_DIAGNOSTIC[name.lower()] = int(value)
+        elif name == "Retry-After" and isinstance(value, str):
+            from email.utils import parsedate_to_datetime
+            try:
+                until = parsedate_to_datetime(value)
+                if until.utcoffset() is not None:
+                    PERF_DIAGNOSTIC["retry-after"] = max(0, int((until-datetime.now(timezone.utc)).total_seconds()))
+            except (ValueError, TypeError, OverflowError):
+                pass
+
+
 def _request(req, attempt=0, raw_text=False):
     credentialed = (hasattr(req, "_seller_profile") or urllib.parse.urlsplit(req.full_url).hostname == "api-seller.ozon.ru"
                     or any(k.lower() in ("api-key", "client-id") for k, _ in req.header_items()))
     if credentialed:
         _validate_seller_route(req.full_url, req.get_method(), getattr(req, "_seller_profile", None))
+    report_submit = (urllib.parse.urlsplit(req.full_url).hostname == "api-performance.ozon.ru"
+                     and urllib.parse.urlsplit(req.full_url).path == "/api/client/statistics"
+                     and req.get_method() == "POST")
+    performance = urllib.parse.urlsplit(req.full_url).hostname == "api-performance.ozon.ru"
     STATS["requests"] += 1
     try:
         opener = _seller_open if credentialed else urllib.request.urlopen
         with opener(req, timeout=180) as r:
             body = r.read()
+            if performance:
+                _perf_diagnostic(r.status, r.headers)
             # surrogateescape: отчёты Performance API приходят ZIP-архивом, строгий
             # utf-8 на них падает. Round-trip .encode("utf-8","surrogateescape")
             # в entities.py восстанавливает байты один в один.
@@ -486,16 +517,20 @@ def _request(req, attempt=0, raw_text=False):
         raise
     except urllib.error.HTTPError as e:
         payload = e.read().decode("utf-8", "replace")
-        if e.code in (429, 500, 502, 503, 504) and attempt < len(BACKOFF):
+        if performance:
+            _perf_diagnostic(e.code, e.headers)
+        if not report_submit and (not performance or e.code != 429) and e.code in (429, 500, 502, 503, 504) and attempt < len(BACKOFF):
             STATS["retries"] += 1
             time.sleep(BACKOFF[attempt])
             return _request(req, attempt + 1, raw_text)
         return e.code, {"_error": safe_error_text(payload, 400)}
     except Exception as e:                                        # SSL, таймаут, обрыв
-        if attempt < len(BACKOFF):
+        if not report_submit and attempt < len(BACKOFF):
             STATS["retries"] += 1
             time.sleep(BACKOFF[attempt])
             return _request(req, attempt + 1, raw_text)
+        if performance:
+            _perf_diagnostic("NET_ERROR", None)
         return "NET_ERROR", {"_error": safe_error_text(repr(e), 300)}
 
 

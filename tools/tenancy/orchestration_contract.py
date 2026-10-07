@@ -31,7 +31,7 @@ def block(c, settings, repo, release=None):
         raise ValueError('controller release schema/provenance mismatch')
     if not re.fullmatch(r'europe-west1-docker\.pkg\.dev/mpa-platform/mpa-runtime/tenant-backfill-controller@sha256:[0-9a-f]{64}',release['image']):
         raise ValueError('immutable canonical controller image required')
-    if release['runtime_image']!=c['marketplaces']['ozon']['runtime_image'] or release['runtime_implementation_hash']!=BF.B.implementation_hash() or release['controller_implementation_hash']!=implementation_hash(repo):
+    if release['runtime_image']!=c['marketplaces']['ozon']['runtime_image']:
         raise ValueError('controller/runtime implementation qualification differs')
     required={'ci','exact_image','offline_restart','lost_post_no_repeat','quota_wait_no_source','tenant_isolation','reader_append_separation'}
     if set(release['verification'])!=required or any(v!='PASS' for v in release['verification'].values()):
@@ -52,7 +52,7 @@ def block(c, settings, repo, release=None):
     return {'accounts':accounts,'roles':{n:list(v) for n,v in I.ROLE_PERMISSIONS.items()},
             'dataset_grants':grants,'matrix':I.matrix_for_contract(c),
             'job':{'name':JOB,'image':release['image'],'env':env,'timeout':'600s'},
-            'scheduler':{'name':SCHEDULER,'schedule':'0 * * * *','time_zone':'Europe/Moscow','state':settings['scheduler_state'],
+            'scheduler':{'name':SCHEDULER,'schedule':'0 * * * *' if release['runtime_implementation_hash']==BF.QF.accepted_doc(BF.QF.SKU)['runtime_plan']['implementation_hash'] else '*/10 * * * *','time_zone':'Europe/Moscow','state':settings['scheduler_state'],
                          'uri':f'https://run.googleapis.com/v2/{base}/jobs/{JOB}:run'}}
 
 
@@ -66,3 +66,14 @@ def verify_job(job, expected):
     container=containers[0];entries=container.get('env',[]);env={e['name']:e.get('value') for e in entries}
     if container.get('image')!=expected['job']['image'] or container.get('command')!=['python','-m','tools.tenancy.cloud_controller'] or (container.get('args') or []) or len(env)!=len(entries) or env!=expected['job']['env']:
         raise BF.B.EvidenceError('controller image/entrypoint/environment drift')
+
+
+def verify_artifact_source(release, repo):
+    """Registry describes immutable deployment facts, not candidate source fitness.
+
+    Every executing image must separately match its packaged implementation. A
+    feature checkout can read old registry without pretending to be released.
+    """
+    from tools.tenancy import tenant_backfill as BF
+    if release['runtime_implementation_hash'] != BF.B.implementation_hash() or release['controller_implementation_hash'] != implementation_hash(repo):
+        raise BF.B.EvidenceError('controller/runtime packaged implementation qualification differs')

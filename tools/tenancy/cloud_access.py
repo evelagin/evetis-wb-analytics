@@ -212,6 +212,7 @@ class CloudAccess:
                   "BACKFILL_GENERATION":p["generation"],"BACKFILL_ORIGIN":p["origin"],
                   "BACKFILL_MAX_REQUESTS":str(doc["max_requests"]),"BACKFILL_MAX_UNITS":str(doc["max_units"])}
         if p["window_days"]!=1:expected["BACKFILL_WINDOW_DAYS"]=str(p["window_days"])
+        expected.update(BF.continuation_overrides(doc))
         if values != expected:
             raise TT.TableError("Run overrides differ from frozen canonical plan")
         url=f"https://run.googleapis.com/v2/{base}/jobs/{job}:run"

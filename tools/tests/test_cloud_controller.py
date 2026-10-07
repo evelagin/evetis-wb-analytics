@@ -21,7 +21,14 @@ def sku():return BF.make_plan('client_001','ads_sku_daily','2026-09-17','2026-09
 
 def test_real_immutable_plan_and_runtime_image_provenance_validate():
     doc=sku()
-    assert BF.validate_plan(doc,doc['ack_hash'])['project_id']=='mpa-t-client-001'
+    # A candidate checkout never upgrades an old image to current capability.
+    from tools.tenancy import platform as PL
+    facts=[json.loads(f.read_text()) for f in (BF.REPO/PL.RUNTIME_RELEASES_DIR/'ozon').glob('*.json')]
+    release=next(r for r in facts if r.get('image')==doc['image'])
+    if release['verification']['built_artifact']['backfill_implementation_hash']==BF.B.implementation_hash():
+        assert BF.validate_plan(doc,doc['ack_hash'])['project_id']=='mpa-t-client-001'
+    else:
+        with pytest.raises(BF.B.EvidenceError,match='qualified WINDOW_V1'):BF.validate_plan(doc,doc['ack_hash'])
     assert doc['runtime_plan']['implementation_hash']==BF.B.implementation_hash()
 
 
@@ -114,7 +121,9 @@ def test_canonical_opt_in_is_closed_and_does_not_rewrite_existing_runtime_or_sco
     lambda r:r.update(runtime_implementation_hash='7'*64),lambda r:r.update(controller_implementation_hash='7'*64)])
 def test_incomplete_or_fabricated_release_gates_fail_closed(change):
     c=BF.target('client_001');r=release(c);change(r)
-    with pytest.raises(ValueError):O.block(c,{'release':'5'*40,'root_hash':'3'*64,'scheduler_state':'PAUSED'},BF.REPO,release=r)
+    with pytest.raises((ValueError,BF.B.EvidenceError)):
+        O.block(c,{'release':'5'*40,'root_hash':'3'*64,'scheduler_state':'PAUSED'},BF.REPO,release=r)
+        O.verify_artifact_source(r,BF.REPO)
 
 
 def test_transient_read_is_retryable_and_never_marks_hard_stop(monkeypatch,capsys):
@@ -127,6 +136,9 @@ def test_transient_read_is_retryable_and_never_marks_hard_stop(monkeypatch,capsy
 
 def test_publisher_requires_current_registry_root_before_any_query(monkeypatch):
     from tools.tenancy import cloud_plan as P
+    # This test isolates publication-root authorization; artifact-source gates
+    # have independent positive/negative coverage and exact-image qualification.
+    monkeypatch.setattr(BF,"validate_plan",lambda *a:BF.target("client_001"))
     doc=sku();manifest=P.freeze("client_001",[doc],"2026-10-06T08:00:00Z")
     monkeypatch.setattr(BF.TT,"_req",lambda *a:pytest.fail("unregistered publication touched cloud"))
     with pytest.raises(BF.B.EvidenceError,match="canonical registry opt-in"):P.publish(manifest)
@@ -200,6 +212,13 @@ def test_packaged_docker_copy_closure_resolves_canonical_registry(tmp_path):
         else:shutil.copy2(src,dest)
     (tmp_path/'CONTROLLER_SOURCE_SHA').write_text('5'*40+'\n')
     result=subprocess.run([sys.executable,'-m','tools.tenancy.controller_image_check'],cwd=tmp_path,capture_output=True,text=True,timeout=60)
+    from tools.tenancy import platform as PL
+    image=BF.target('client_001')['marketplaces']['ozon']['runtime_image']
+    releases=[json.loads(f.read_text()) for f in (BF.REPO/PL.RUNTIME_RELEASES_DIR/'ozon').glob('*.json')]
+    facts=next(r for r in releases if r.get('image')==image)['verification']['built_artifact']
+    if facts['backfill_implementation_hash']!=BF.B.implementation_hash():
+        assert result.returncode!=0 and 'qualified WINDOW_V1' in result.stderr
+        return # candidate cannot claim old immutable artifact contains new code
     assert result.returncode==0,result.stderr
     out=json.loads(result.stdout)
     assert out['runtime_implementation_hash']==BF.B.implementation_hash() and out['python_version'].startswith('3.12.')
@@ -218,3 +237,17 @@ def test_direct_cli_does_not_shadow_stdlib_platform():
 def test_exact_quota_select_serializes_parses_and_executes_typed_rest_stub():
     from tools.tenancy import controller_image_check as image
     assert image.check_quota_query(BF.target('client_001'),sku())=='PASS'
+
+
+@pytest.mark.parametrize('first,expected',[('RECONCILED',2),('WAITING',1),('MONITORING',1),('STOPPED',1),('DISPATCHED',1)])
+def test_bounded_wake_never_loops_or_dispatches_twice(monkeypatch,first,expected):
+    b=backend();calls=[]
+    class Tick:
+        def __init__(self,*a):pass
+        def run(self):
+            calls.append(1)
+            return {'status':first if len(calls)==1 else 'DISPATCHED','source_dispatches':int(len(calls)>1 or first=='DISPATCHED')}
+    monkeypatch.setattr(C.T,'Tick',Tick)
+    result=C.bounded_wake('3'*64,b)
+    assert len(calls)==expected and result['source_dispatches']<=1
+    assert (result.get('prior_action')=='RECONCILED')==(expected==2)

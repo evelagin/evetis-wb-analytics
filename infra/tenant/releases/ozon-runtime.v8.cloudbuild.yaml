@@ -1,0 +1,140 @@
+# Reusable WINDOW_V1 tenant backfill; strict transport and binding unchanged.
+# Кандидат выпуска Ozon runtime — версия 8 (qualification resume / safe quota calibration).
+# Конфиги сборки неизменяемы по версиям: v1 (ozon-runtime.cloudbuild.yaml) — провенанс выпуска
+# 08f9438 и не меняется; запись выпуска (releases/ozon/<sha>.json, build.config) называет свой файл.
+# Отличия v4 от v2: policy evaluator, execution contract и binding-omission gate;
+# прежний control-fail-closed-without-project остаётся обязательным.
+#
+#
+# Источник — НЕ рабочее дерево, а архив ровно одного коммита main:
+#   git archive --format=tar.gz -o src.tgz <SHA> pipelines/ozon/runtime pipelines/ozon/tests
+# Архив детерминирован (время файлов = время коммита) и несёт SHA коммита в pax-заголовке:
+#   gzip -dc src.tgz | git get-tar-commit-id
+# Контекст docker build — только pipelines/ozon/runtime; остального репозитория в архиве нет.
+# Сборка — от выделенной идентичности sa-runtime-builder (запись только в mpa-runtime),
+# без аргументов сборки и без секретов: образу учётные данные маркетплейса не нужны.
+#
+#   gcloud builds submit src.tgz --project=mpa-platform --region=europe-west1 \
+#     --config=infra/tenant/releases/ozon-runtime.v8.cloudbuild.yaml \
+#     --service-account=projects/mpa-platform/serviceAccounts/sa-runtime-builder@mpa-platform.iam.gserviceaccount.com \
+#     --gcs-source-staging-dir=gs://mpa-platform-runtime-build-777428383056/source \
+#     --substitutions=_SOURCE_SHA=<40 hex>
+#
+# Тег = полный SHA исходного коммита. В репозитории теги неизменяемы, поэтому повторная
+# сборка того же коммита не может молча подменить образ. Контракт арендатора всё равно
+# ссылается только на digest (infra/tenant/runtime_release.json), тег — для оператора.
+# Образ пушится, только если прошли все шаги, включая проверки fail-closed ниже.
+steps:
+  - id: identity
+    # Гейт: сборка идёт от sa-runtime-builder, а не от устаревшего/умолчательного SA Cloud Build.
+    # Иначе — отказ до сборки и до публикации.
+    name: gcr.io/cloud-builders/docker@sha256:bbb3d633c5c2813b2ce5245852979e1d637768f4acfc504d8ece288f91e9b60f
+    entrypoint: bash
+    args:
+      - -euc
+      - |
+        who=$$(curl -sf -H 'Metadata-Flavor: Google' http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/default/email)
+        echo "build identity: $$who"
+        test "$$who" = "${_BUILDER}"
+
+  - id: build
+    name: gcr.io/cloud-builders/docker@sha256:bbb3d633c5c2813b2ce5245852979e1d637768f4acfc504d8ece288f91e9b60f
+    dir: pipelines/ozon/runtime
+    args:
+      - build
+      - --pull
+      - --no-cache
+      - --label=org.opencontainers.image.source=https://github.com/evelagin/evetis-wb-analytics
+      - --label=org.opencontainers.image.revision=${_SOURCE_SHA}
+      - --label=org.opencontainers.image.title=ozon-runtime
+      - --tag=${_IMAGE}:${_SOURCE_SHA}
+      - .
+
+  - id: record
+    # Базовый образ по digest, состав зависимостей, конфигурация и история слоёв — в журнал сборки.
+    name: gcr.io/cloud-builders/docker@sha256:bbb3d633c5c2813b2ce5245852979e1d637768f4acfc504d8ece288f91e9b60f
+    entrypoint: bash
+    args:
+      - -euc
+      - |
+        echo "base: $$(docker image inspect python:3.12-slim --format '{{json .RepoDigests}}')"
+        docker image inspect ${_IMAGE}:${_SOURCE_SHA} --format '{{json .Config}}'
+        docker history --no-trunc --format '{{.CreatedBy}}' ${_IMAGE}:${_SOURCE_SHA}
+        docker run --rm --network=none --entrypoint=pip ${_IMAGE}:${_SOURCE_SHA} freeze
+
+  - id: contents
+    # В /app ровно то, что копирует Dockerfile. Ни .git, ни Terraform, ни реестра арендаторов.
+    name: gcr.io/cloud-builders/docker@sha256:bbb3d633c5c2813b2ce5245852979e1d637768f4acfc504d8ece288f91e9b60f
+    entrypoint: bash
+    args:
+      - -euc
+      - |
+        got=$$(docker run --rm --network=none --entrypoint=sh ${_IMAGE}:${_SOURCE_SHA} -c 'ls -A /app | sort | tr "\n" " "')
+        echo "/app: $$got"
+        test "$$got" = "backfill.py backfill_core.py catalog_identity.py checkpoints.py common.py control_store.py credentials.py dq.py entities.py history.py identity.py lifecycle.py lifecycle_core.py main.py promo.py qualification.py qualification_resume.json quota.py requirements.txt runtime_execution_contract.json seller_method_policy.json seller_policy.py "
+
+  - id: fail-closed-without-project
+    # Без GCP_PROJECT_ID runtime обязан упасть до любого сетевого вызова. Сети у контейнера нет.
+    name: gcr.io/cloud-builders/docker@sha256:bbb3d633c5c2813b2ce5245852979e1d637768f4acfc504d8ece288f91e9b60f
+    entrypoint: bash
+    args:
+      - -uc
+      - |
+        out=$$(docker run --rm --network=none ${_IMAGE}:${_SOURCE_SHA} 2>&1); rc=$$?
+        echo "$$out" | tail -3
+        test "$$rc" -ne 0 && echo "$$out" | grep -q "GCP_PROJECT_ID не задан"
+
+  - id: control-fail-closed-without-project
+    # Точка входа control plane (job tenant-control: python lifecycle.py) без GCP_PROJECT_ID —
+    # тот же отказ до любого сетевого вызова. Сети у контейнера нет.
+    name: gcr.io/cloud-builders/docker@sha256:bbb3d633c5c2813b2ce5245852979e1d637768f4acfc504d8ece288f91e9b60f
+    entrypoint: bash
+    args:
+      - -uc
+      - |
+        out=$$(docker run --rm --network=none --entrypoint=python ${_IMAGE}:${_SOURCE_SHA} lifecycle.py status 2>&1); rc=$$?
+        echo "$$out" | tail -3
+        test "$$rc" -ne 0 && echo "$$out" | grep -q "GCP_PROJECT_ID не задан"
+
+  - id: external-binding-omission-denied
+    name: gcr.io/cloud-builders/docker@sha256:bbb3d633c5c2813b2ce5245852979e1d637768f4acfc504d8ece288f91e9b60f
+    entrypoint: bash
+    args:
+      - -uc
+      - |
+        out=$$(docker run --rm --network=none -e GCP_PROJECT_ID=mpa-t-client-001 -e BQ_REF_DATASET=ref -e ENTITIES=catalog ${_IMAGE}:${_SOURCE_SHA} 2>&1); rc=$$?
+        test "$$rc" -eq 2
+        echo "$$out" | grep -q 'ingestion execution contract denied'
+
+  - id: backfill-invalid-scope-denied
+    name: gcr.io/cloud-builders/docker@sha256:bbb3d633c5c2813b2ce5245852979e1d637768f4acfc504d8ece288f91e9b60f
+    entrypoint: bash
+    args:
+      - -uc
+      - |
+        out=$$(docker run --rm --network=none -e GCP_PROJECT_ID=mpa-t-synthetic -e BQ_REF_DATASET=ref -e ENTITIES=fbo_postings -e STRICT_PAGE_CAPS=1 -e TENANT_BINDING_REQUIRED=1 -e BACKFILL_MODE=WINDOW_V1 -e BACKFILL_TARGET_PROJECT=foreign-target -e SINCE=2020-01-01 -e UNTIL=2020-01-01 -e BACKFILL_GENERATION=offline -e BACKFILL_ORIGIN=2020-01-01T00:00:00Z ${_IMAGE}:${_SOURCE_SHA} 2>&1); rc=$$?
+        test "$$rc" -eq 2
+        echo "$$out" | grep -q 'backfill target/config mismatch'
+
+  - id: qualification-acceleration-offline
+    name: gcr.io/cloud-builders/docker@sha256:bbb3d633c5c2813b2ce5245852979e1d637768f4acfc504d8ece288f91e9b60f
+    entrypoint: bash
+    args:
+      - -euc
+      - |
+        docker run --rm --network=none -e GCP_PROJECT_ID=offline-qualification-project -e BQ_REF_DATASET=ref -v /workspace/pipelines/ozon/tests:/verify:ro --entrypoint=python ${_IMAGE}:${_SOURCE_SHA} /verify/_qualification_acceleration_image_driver.py
+
+substitutions:
+  _IMAGE: europe-west1-docker.pkg.dev/mpa-platform/mpa-runtime/ozon-runtime
+  _BUILDER: sa-runtime-builder@mpa-platform.iam.gserviceaccount.com
+  _SOURCE_SHA: ""
+
+images:
+  - ${_IMAGE}:${_SOURCE_SHA}
+
+options:
+  logging: CLOUD_LOGGING_ONLY
+  sourceProvenanceHash: ["SHA256"]
+  substitutionOption: MUST_MATCH
+
+timeout: 1200s

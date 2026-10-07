@@ -26,6 +26,7 @@ from tools.tenancy import registry as R, tenant_tables as TT, tenant_lifecycle a
 from tools.tenancy.validation import parse_tenant_json
 import backfill_core as B
 import checkpoints as CK
+import qualification as QF
 
 RUN_API = "https://run.googleapis.com/v2"
 SCHED_API = "https://cloudscheduler.googleapis.com/v1"
@@ -94,18 +95,29 @@ def validate_plan(doc, ack_hash):
     p = doc["runtime_plan"]
     observation = date.fromisoformat(p["observation_date"]) if "observation_date" in p else None
     expected = make_plan(doc["tenant_id"], p["entity"], p["from"], p["to"], p["generation"], p["origin"], today=observation, max_units=doc["max_units"])
-    if expected != doc:
+    compatible = QF.matches(doc)
+    if expected != doc and not compatible:
         raise B.EvidenceError("pilot plan/config/image differs from current reviewed contract")
     c = target(doc["tenant_id"])
     from tools.tenancy import platform as PL
     matches = [parse_tenant_json(f.read_text()) for f in (REPO / PL.RUNTIME_RELEASES_DIR / "ozon").glob("*.json")]
-    matches = [r for r in matches if r.get("image") == doc["image"]]
+    matches = [r for r in matches if r.get("image") == c["marketplaces"]["ozon"]["runtime_image"]]
     if len(matches) != 1:
         raise B.EvidenceError("backfill image release evidence missing/ambiguous")
     facts = matches[0].get("verification", {}).get("built_artifact", {})
     if facts.get("backfill_window_v1") != "PASS" or facts.get("backfill_implementation_hash") != B.implementation_hash():
         raise B.EvidenceError("exact image has no matching qualified WINDOW_V1 capability")
+    if compatible and facts.get("qualification_resume_root") != QF.ROOT:
+        raise B.EvidenceError("current artifact has no exact historical qualification compatibility")
     return c
+
+
+def execution_image(doc, c):
+    return c["marketplaces"]["ozon"]["runtime_image"] if QF.matches(doc) else doc["image"]
+
+
+def continuation_overrides(doc):
+    return {"BACKFILL_RESUME_PLAN_ID":doc["runtime_plan"]["plan_id"]} if QF.matches(doc) else {}
 
 
 def resources(c):
@@ -159,7 +171,7 @@ def preflight(c, doc, now, backend=None, *, allow_active=False):
         raise B.EvidenceError("unexpected tenant job inventory")
     for name, cfg in expected.items():
         job = jobs[name]
-        canonical_template(job,cfg["env"],doc["image"],
+        canonical_template(job,cfg["env"],execution_image(doc,c),
                            f"{c['marketplaces']['ozon']['service_accounts']['runtime']}@{c['project_id']}.iam.gserviceaccount.com")
         if job.get("runningCount", 0) and not allow_active:
             raise B.EvidenceError("tenant ingestion execution already active")
@@ -171,19 +183,19 @@ def preflight(c, doc, now, backend=None, *, allow_active=False):
             t=execution.get('template') or {};containers=t.get('containers') or []
             envs=containers[0].get('env',[]) if len(containers)==1 else []
             env={v['name']:v.get('value') for v in envs}
-            if len(containers)!=1 or containers[0].get('image')!=doc['image'] or t.get('serviceAccount')!=f"{c['marketplaces']['ozon']['service_accounts']['runtime']}@{c['project_id']}.iam.gserviceaccount.com" or len(env)!=len(envs) or env.get('TENANT_BINDING_REQUIRED')!='1' or env.get('STRICT_PAGE_CAPS')!='1':
+            if len(containers)!=1 or containers[0].get('image')!=execution_image(doc,c) or t.get('serviceAccount')!=f"{c['marketplaces']['ozon']['service_accounts']['runtime']}@{c['project_id']}.iam.gserviceaccount.com" or len(env)!=len(envs) or env.get('TENANT_BINDING_REQUIRED')!='1' or env.get('STRICT_PAGE_CAPS')!='1':
                 raise B.EvidenceError('active runtime execution security provenance drift')
         if backend is not None and active:
             backend.active=True
     control = jobs["tenant-control"]
-    canonical_template(control,c["control"]["job"]["env"],doc["image"],c["control"]["email"],control=True)
+    canonical_template(control,c["control"]["job"]["env"],execution_image(doc,c),c["control"]["email"],control=True)
     executions = request("GET", f"{RUN_API}/{control['name']}/executions?pageSize=1000")
     active_control=[e for e in executions.get('executions',[]) if not e.get('completionTime')]
     if executions.get('nextPageToken') or (active_control and not allow_active) or control.get('runningCount',0)>len(active_control):
         raise B.EvidenceError('control execution active/unproven')
     for execution in active_control:
         task=execution.get('template') or {}; containers=task.get('containers') or []
-        if len(containers)!=1 or containers[0].get('image')!=doc['image'] or task.get('serviceAccount')!=c['control']['email']:
+        if len(containers)!=1 or containers[0].get('image')!=execution_image(doc,c) or task.get('serviceAccount')!=c['control']['email']:
             raise B.EvidenceError('active control execution security provenance drift')
     if backend is not None and active_control:
         backend.active=True
@@ -304,6 +316,7 @@ def start(doc, ack_hash, *, backend=None, on_prepared=None, on_receipt=None):
                "BACKFILL_MAX_REQUESTS":str(doc["max_requests"]),"BACKFILL_MAX_UNITS":str(doc["max_units"])}
     if p["window_days"] != 1:
         overrides["BACKFILL_WINDOW_DAYS"] = str(p["window_days"])
+    overrides.update(continuation_overrides(doc))
     body={"overrides":{"containerOverrides":[{"env":[{"name":k,"value":v} for k,v in overrides.items()]}]}}
     prepared={"run_id":run_id,"lease_generation":generation,"ack_hash":ack_hash,
               "job":base+"/jobs/"+name,"overrides":body}
@@ -355,7 +368,7 @@ def reconcile(doc,ack_hash,receipt, *, backend=None):
     job=next(n for n,cfg in jobs.items() if p["entity"] in cfg["entities"])
     template=execution["template"];containers=template["containers"]
     prefix=base+"/jobs/"+job+"/executions/"
-    if not execution.get("name","").startswith(prefix) or len(containers)!=1 or containers[0]["image"]!=doc["image"] or template.get("serviceAccount")!=f"{c['marketplaces']['ozon']['service_accounts']['runtime']}@{c['project_id']}.iam.gserviceaccount.com":
+    if not execution.get("name","").startswith(prefix) or len(containers)!=1 or containers[0]["image"]!=execution_image(doc,c) or template.get("serviceAccount")!=f"{c['marketplaces']['ozon']['service_accounts']['runtime']}@{c['project_id']}.iam.gserviceaccount.com":
         raise B.EvidenceError("execution job/image/identity provenance mismatch")
     env={v["name"]:v.get("value") for v in containers[0].get("env",[])}
     expected={"INGESTION_RUN_ID":receipt["run_id"],"BACKFILL_TARGET_PROJECT":c["project_id"],
@@ -365,6 +378,7 @@ def reconcile(doc,ack_hash,receipt, *, backend=None):
         "BACKFILL_MAX_REQUESTS":str(doc["max_requests"]),"BACKFILL_MAX_UNITS":str(doc["max_units"])}
     if p["window_days"] != 1:
         expected["BACKFILL_WINDOW_DAYS"] = str(p["window_days"])
+    expected.update(continuation_overrides(doc))
     if any(env.get(k)!=v for k,v in expected.items()):
         raise B.EvidenceError("execution provenance mismatch")
     now=datetime.now(timezone.utc);tables,ledger=preflight(c,doc,now,backend=backend) if backend is not None else preflight(c,doc,now)

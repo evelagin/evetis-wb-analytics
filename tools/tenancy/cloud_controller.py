@@ -55,6 +55,7 @@ def bootstrap(env, send=A.wire):
     descriptor=parse_tenant_json(marker[1] or '{}')
     if set(descriptor)!={'settings','release'} or descriptor['settings'].get('release')!=source or descriptor['settings'].get('root_hash')!=root:
         raise BF.B.EvidenceError('deployment descriptor scope/provenance differs')
+    O.verify_artifact_source(descriptor['release'],BF.REPO)
     block=O.block(c,descriptor['settings'],BF.REPO,release=descriptor['release'])
     if any(env.get(k)!=v for k,v in block['job']['env'].items()):
         raise BF.B.EvidenceError('controller deployment env differs')
@@ -134,9 +135,14 @@ class Backend:
 
     def quota(self,manifest,now):
         phases=[]
+        cap=15; cooldown=None; calibrated=False
         for doc in manifest['plans']:
             if doc['runtime_plan']['entity']=='ads_sku_daily':
                 state=self.state(doc);report=state['progress'].get('report')
+                if BF.QF.matches(doc) and doc['runtime_plan']['plan_id']==BF.QF.SKU:
+                    self.sku_accounting(doc,state,linkage=False)
+                    cap=BF.QF.guard(doc['runtime_plan'],state);calibrated=True
+                    cooldown=state['progress'].get('rate_limit',{}).get('eligible_at')
                 if report is not None:phases.append(report['phase'])
         if len(phases)>1:raise BF.B.EvidenceError('multiple active async report scopes')
         phase=phases[0] if phases else None
@@ -146,7 +152,10 @@ class Backend:
                        'at':timestamp(r['reserved_at']).isoformat()} for r in rows]
         unknown=self.select(f"SELECT COUNT(*) AS n FROM `{self.journal}` WHERE started_at >= @since AND entity = 'ads_sku_daily' AND backfill_plan_id IS NULL",params)
         if len(unknown)!=1:raise BF.B.EvidenceError('ordinary export accounting missing')
-        return D.quota_decision(reservations,unknown[0]['n'],now,phase)
+        verdict=D.quota_decision(reservations,unknown[0]['n'],now,phase,cap,calibration=calibrated)
+        if cooldown and timestamp(cooldown)>now and verdict['status']!='STOPPED':
+            return {'status':'WAITING','allowance':0,'eligible_at':cooldown,'basis':'SOURCE_THROTTLE'}
+        return verdict
 
     def all_complete(self,manifest):
         return all(self.state(doc)["complete"] for doc in manifest["plans"])
@@ -292,11 +301,23 @@ class Backend:
         return result
 
 
+def bounded_wake(root, backend):
+    """At most one reconcile and one new dispatch; no source/wait busy loop."""
+    started=backend.clock()
+    result=T.Tick(root,backend.store,backend,backend.clock).run()
+    if result['status']=='RECONCILED' and (backend.clock()-started).total_seconds()<300:
+        # The first Tick committed RECONCILED and released the exact terminal
+        # lease. A fresh Tick reconstructs durable state and repeats all gates.
+        result=T.Tick(root,backend.store,backend,backend.clock).run()
+        result['prior_action']='RECONCILED'
+    return result
+
+
 def main():
     backend=None;root=None
     try:
         backend,root=bootstrap(os.environ)
-        result=T.Tick(root,backend.store,backend,backend.clock).run()
+        result=bounded_wake(root,backend)
         result['progress']=backend.monitoring(root,result)
         print(json.dumps(result,sort_keys=True))
         return 0 if result['status']!='STOPPED' else 2
