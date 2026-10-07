@@ -76,7 +76,7 @@ def test_exact_runtime_permission_failure_precedes_catalog_and_writes(monkeypatc
 
 @pytest.mark.parametrize('invalid', [0, 1])
 def test_internal_catalog_gate_honors_nullable_string_sku_schema(monkeypatch, invalid):
-    # RAW Catalog stores SKU as nullable STRING, while product_id is INTEGER.
+    # RAW Catalog stores SKU as nullable STRING, and product_id is also STRING.
     # Accept NULL (archived SKU) and positive numeric strings; reject malformed/zero.
     p,_=prefix();queries=[]
     monkeypatch.setattr(F.bigquery,'QueryJobConfig',lambda **kw:SimpleNamespace(**kw),raising=False)
@@ -89,7 +89,8 @@ def test_internal_catalog_gate_honors_nullable_string_sku_schema(monkeypatch, in
             elif 'RAW_OZON_CATALOG' in sql:
                 # Fail the regression if SQL directly compares a STRING SKU to INT64.
                 import re
-                assert not re.search(r'\bsku\s*<=\s*0',sql)
+                assert not re.search(r'\b(?:sku|product_id)\s*<=\s*0',sql)
+                assert 'SAFE_CAST(product_id AS INT64) IS NULL' in sql
                 assert 'SAFE_CAST(sku AS INT64) IS NULL' in sql
                 rows=[{'n':3,'products':3,'invalid':invalid}]
             else:rows=[{'n':1}]

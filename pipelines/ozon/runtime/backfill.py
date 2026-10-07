@@ -672,7 +672,7 @@ def internal_preflight(p, *, source_binding=True):
         raise B.EvidenceError('PRE_INTENT_CREDENTIAL_GATE_DENIED')
     day=str(C.now_msk().date())
     config.query_parameters=[bigquery.ScalarQueryParameter('day','DATE',day)]
-    rows=list(C.bq().query(f"SELECT COUNT(*) AS n, COUNT(DISTINCT product_id) AS products,COUNTIF(product_id IS NULL OR product_id<=0 OR (sku IS NOT NULL AND (SAFE_CAST(sku AS INT64) IS NULL OR SAFE_CAST(sku AS INT64)<=0))) AS invalid FROM `{C.PROJECT}.{C.DATASET}.RAW_OZON_CATALOG` WHERE snapshot_date=@day",job_config=config,location=C.LOCATION).result())
+    rows=list(C.bq().query(f"SELECT COUNT(*) AS n, COUNT(DISTINCT product_id) AS products,COUNTIF(SAFE_CAST(product_id AS INT64) IS NULL OR SAFE_CAST(product_id AS INT64)<=0 OR (sku IS NOT NULL AND (SAFE_CAST(sku AS INT64) IS NULL OR SAFE_CAST(sku AS INT64)<=0))) AS invalid FROM `{C.PROJECT}.{C.DATASET}.RAW_OZON_CATALOG` WHERE snapshot_date=@day",job_config=config,location=C.LOCATION).result())
     if len(rows)!=1 or not rows[0]['n'] or rows[0]['n']!=rows[0]['products'] or rows[0]['invalid']:
         raise B.EvidenceError('PRE_INTENT_CURRENT_CATALOG_DENIED')
     rows=list(C.bq().query(f"SELECT COUNT(*) AS n FROM `{C.PROJECT}.{C.DATASET}.{C.RUNS_TABLE}` WHERE entity='catalog' AND status='OK' AND JSON_VALUE(evidence_json,'$.plan.observation_date')=CAST(@day AS STRING) AND JSON_VALUE(evidence_json,'$.state.complete')='true'",job_config=config,location=C.LOCATION).result())

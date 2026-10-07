@@ -116,9 +116,9 @@ proving the exact table-scoped IAM grant works. Source-free execution
 12466a29-a579-44fb-9fd1-dcfde7cfebdb with STRING <= INT64 invalidQuery.
 No source calls, recovery publication, or Scheduler reactivation occurred.
 
-RAW Catalog SKU is nullable STRING by contract. The follow-up predicate uses
+RAW Catalog SKU is nullable STRING and product_id is STRING by contract. The follow-up predicate uses
 SAFE_CAST to validate positive numeric strings and rejects invalid non-null SKU;
-archived NULL SKU remains legitimate. Product ID semantics are unchanged.
+archived NULL SKU remains legitimate. Product ID must still cast to a positive stable integer; malformed, zero and NULL product IDs fail closed.
 A new qualified immutable release and effective source-free preflight are required
 before publishing recovery or resuming the dedicated Scheduler. Original failure,
 sequence 15, STOP and all reservations remain immutable.
