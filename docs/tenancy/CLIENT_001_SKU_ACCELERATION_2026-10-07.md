@@ -75,8 +75,9 @@ exception preserves exact-image, CI, isolation, source/DQ/reconciliation and rev
 
 The runtime candidate is built from the exact reviewed PR269 source commit, not represented
 as an already merged main commit. The accepted source and actual image hashes are explicit.
-This intermediate branch revision omits the controller opt-in only to assemble/qualify its
-next immutable artifact without a circular digest dependency. DO NOT apply Terraform from
-this staging revision. Final integration must restore the same root with independently
-qualified controller metadata, pass unchanged packaged-controller CI and be merged before
-any reviewed deployment. Current cloud controller/ordinary schedules are untouched by staging.
+Intermediate branch revision `8b00577f1cecd0853952bd6cfeb8fbf419e66577` omitted the controller opt-in only to assemble/qualify
+its next immutable artifact without a circular digest dependency; it was never applied.
+Final integration restores the same root with independently qualified controller metadata.
+The unchanged packaged-controller CI passed for exact source `8b00577f1cecd0853952bd6cfeb8fbf419e66577` (run37581482726).
+Final integration still must pass CI and merge before reviewed deployment; candidate builds
+are not falsely labeled as main-at-build or live deployment.

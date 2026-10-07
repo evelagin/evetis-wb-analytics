@@ -1,0 +1,36 @@
+{
+  "controller_source_sha": "8b00577f1cecd0853952bd6cfeb8fbf419e66577",
+  "image": "europe-west1-docker.pkg.dev/mpa-platform/mpa-runtime/tenant-backfill-controller@sha256:d25b73abbc91a1f08ba28152d51f2d249f39c29b7cf82061fe08863775b09c91",
+  "runtime_image": "europe-west1-docker.pkg.dev/mpa-platform/mpa-runtime/ozon-runtime@sha256:ebb41a5d273935b7d4b682dd040e13843ae1d17eac6707b68216784490d1362a",
+  "runtime_implementation_hash": "9b63dc497e599a1199eb0f9a80946d1d661f21900d58e30e0625621866790c9c",
+  "controller_implementation_hash": "0a9252262709d3840ac7d96140652c477ecdd28704593a9c98341d7d608103da",
+  "build_id": "f8505fce-3816-43fb-a468-d7f16c8349d5",
+  "build_status": "SUCCESS",
+  "source_object": {
+    "bucket": "mpa-platform-runtime-build-777428383056",
+    "object": "source/1791354378.99761-e9655a68f75e4c7fbc97273eb07e0373.tgz",
+    "generation": "1791354389348538"
+  },
+  "source_archive_sha256": "0807368855f15c8566ebf50416ef6f97dbd86b754f9055d5e0f7dead9cc01630",
+  "source_archive_readback_match": true,
+  "exact_image_checks": {
+    "controller_implementation_hash": "0a9252262709d3840ac7d96140652c477ecdd28704593a9c98341d7d608103da",
+    "live_deployment": "UNPROVEN",
+    "lost_post_no_repeat": "PASS",
+    "offline_restart": "PASS",
+    "python_version": "3.12.15",
+    "quota_query_syntax": "PASS",
+    "quota_wait_no_source": "PASS",
+    "reader_append_separation": "PASS",
+    "runtime_implementation_hash": "9b63dc497e599a1199eb0f9a80946d1d661f21900d58e30e0625621866790c9c",
+    "source_sha": "8b00577f1cecd0853952bd6cfeb8fbf419e66577",
+    "tenant_isolation": "PASS"
+  },
+  "source_ci": {
+    "head": "8b00577f1cecd0853952bd6cfeb8fbf419e66577",
+    "ci_run": 37581482726,
+    "conclusion": "success"
+  },
+  "scope": "QUALIFICATION_ONLY; SAME IMMUTABLE ROOT; ORDINARY SCHEDULERS PAUSED",
+  "live_deployment": "UNPROVEN"
+}
