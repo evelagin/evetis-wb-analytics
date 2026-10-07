@@ -106,3 +106,21 @@ in593.52seconds, then was cancelled before final SQL validation under the ten-mi
 job budget. Candidate local full suite passed2713 tests. Increase only the job
 timeout to20minutes; retain both original full tests and SQL validation commands.
 Cancelled CI is not PASS; final candidate must complete both workflows before merge.
+
+## Live source-free preflight follow-up
+
+The reviewed staging plan was applied on 2026-10-07 at 08:53:28 UTC. Runtime
+CAPABILITY_PROFILE SELECT job a9857046-4df4-4b1c-b54e-33b65133d55b succeeded,
+proving the exact table-scoped IAM grant works. Source-free execution
+`ozon-runtime-daily-2pdmq` then failed Catalog SELECT job
+12466a29-a579-44fb-9fd1-dcfde7cfebdb with STRING <= INT64 invalidQuery.
+No source calls, recovery publication, or Scheduler reactivation occurred.
+
+RAW Catalog SKU is nullable STRING and product_id is STRING by contract. The follow-up predicate uses
+SAFE_CAST to validate positive numeric strings and rejects invalid non-null SKU;
+archived NULL SKU remains legitimate. Product ID must still cast to a positive stable integer; malformed, zero and NULL product IDs fail closed.
+A new qualified immutable release and effective source-free preflight are required
+before publishing recovery or resuming the dedicated Scheduler. Original failure,
+sequence 15, STOP and all reservations remain immutable.
+
+Intermediate artifact-assembly revisions omitted controller opt-in only to avoid circular release registration; they were never applied. Final integration restores the same immutable root with independently qualified schema-compatible runtime/controller artifacts. Final CI/merge, exact reviewed deployment and source-free effective-runtime preflight remain required before owner recovery publication or reactivation.

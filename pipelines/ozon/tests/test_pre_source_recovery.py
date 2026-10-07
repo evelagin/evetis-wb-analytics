@@ -72,3 +72,34 @@ def test_exact_runtime_permission_failure_precedes_catalog_and_writes(monkeypatc
     monkeypatch.setattr(C,'bq',lambda:DB())
     with pytest.raises(PermissionError):F.internal_preflight(p,source_binding=False)
     assert len(queries)==1 and 'CAPABILITY_PROFILE' in queries[0] and queries[0].startswith('SELECT ')
+
+
+@pytest.mark.parametrize('invalid', [0, 1])
+def test_internal_catalog_gate_honors_nullable_string_sku_schema(monkeypatch, invalid):
+    # RAW Catalog stores SKU as nullable STRING, and product_id is also STRING.
+    # Accept NULL (archived SKU) and positive numeric strings; reject malformed/zero.
+    p,_=prefix();queries=[]
+    monkeypatch.setattr(F.bigquery,'QueryJobConfig',lambda **kw:SimpleNamespace(**kw),raising=False)
+    monkeypatch.setattr(F.bigquery,'ScalarQueryParameter',lambda *args:args,raising=False)
+    class DB:
+        def query(self,sql,**kw):
+            queries.append(sql)
+            if 'CAPABILITY_PROFILE' in sql:
+                rows=[{'api':'seller','status':'AVAILABLE'},{'api':'performance','status':'AVAILABLE'}]
+            elif 'RAW_OZON_CATALOG' in sql:
+                # Fail the regression if SQL directly compares a STRING SKU to INT64.
+                import re
+                assert not re.search(r'\b(?:sku|product_id)\s*<=\s*0',sql)
+                assert 'SAFE_CAST(product_id AS INT64) IS NULL' in sql
+                assert 'SAFE_CAST(sku AS INT64) IS NULL' in sql
+                rows=[{'n':3,'products':3,'invalid':invalid}]
+            else:rows=[{'n':1}]
+            return SimpleNamespace(result=lambda:rows)
+    monkeypatch.setattr(C,'bq',lambda:DB())
+    if invalid:
+        with pytest.raises(B.EvidenceError,match='PRE_INTENT_CURRENT_CATALOG_DENIED'):
+            F.internal_preflight(p,source_binding=False)
+        assert len(queries)==2
+    else:
+        assert F.internal_preflight(p,source_binding=False)['CAPABILITY_PROFILE_readable'] is True
+        assert len(queries)==3
