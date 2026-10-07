@@ -86,7 +86,8 @@ describe('отмена дня заказа — только диагностик
   });
   it('в Q, S и цену листа не входит: формулы этих колонок прежние', () => {
     expect(f).toContain('COALESCE(f.forders, bf.forders, o.gross, 0) AS orders');
-    expect(f).toContain('COALESCE(bf.canc, o.canc, 0) AS cancels');
+    // Phase 1A (07.10.2026): S = отмены следующих дней + доказанные отказы вне Orders API (только дни воронки).
+    expect(f).toContain('COALESCE(bf.canc, o.canc, 0) + IF(f.forders IS NOT NULL AND bf.canc IS NULL, IFNULL(rf.refusal_counted_qty, 0), 0) AS cancels');
     expect(f.match(/same_day_canc\b/g)).toHaveLength(2);                                            // определение + вывод, больше нигде
   });
 });
@@ -147,7 +148,7 @@ describe('контракт отмен: S = только отмены СЛЕДУ�
     expect(code(f)).toContain(SAME);
     expect(code(f)).toMatch(/IFNULL\(o\.same_day_canc, 0\)\s+AS same_day_cancel_qty/);
     const flat = code(f).replace(/\s+/g, ' ');
-    expect(flat).toContain('COALESCE(bf.canc, o.canc, 0) AS cancels');
+    expect(flat).toContain('COALESCE(bf.canc, o.canc, 0) + IF(f.forders IS NOT NULL AND bf.canc IS NULL, IFNULL(rf.refusal_counted_qty, 0), 0) AS cancels');
     expect(flat).not.toMatch(/same_day_canc[^,]*AS cancels/);
   });
 });

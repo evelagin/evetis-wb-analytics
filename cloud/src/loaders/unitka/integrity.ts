@@ -116,7 +116,25 @@ export interface IntegrityFactsRow {
   sameDayCancelQty?: number | null;
   stockDateCovered?: boolean;
   skuActive?: boolean;
+  /**
+   * Доказательство отказов вне Orders API (sql/unitka/refusals_v1.sql, Phase 1A 07.10.2026). Есть у каждого SKU-дня
+   * воронки с избытком над Orders API; refusalCountedQty уже входит в cancelsUnitka.
+   */
+  refusalCountedQty?: number | null;
+  refusalEvidenceStatus?: RefusalEvidenceStatus | null;
+  funnelExcessQty?: number | null;
+  soldNotInApiQty?: number | null;
+  unexplainedQty?: number | null;
+  refusalFinanceAgeDays?: number | null;
+  refusalProvenSrids?: string | null;
 }
+
+/**
+ * Классы избытка воронки над Orders API. Срок зрелости 46 дней = максимум второго плеча отказа на production
+ * (май–сентябрь 2026, p99 30), продажа — не позже 33 дней.
+ */
+export type RefusalEvidenceStatus = 'NO_EXCESS' | 'EXPLAINED' | 'STILL_OPEN' | 'MATURE_BUT_UNPROVEN';
+export const REFUSAL_MATURITY_DAYS = 46;
 
 /** Строка wb_mart.V_UNITKA_COGS_CANONICAL. canonicalCogs NULL ⇔ интервалов не ровно один. */
 export interface CogsCanonicalRow {
@@ -483,14 +501,68 @@ export function amountConfirmedByFunnel(r: Pick<IntegrityFactsRow, 'ordersUnitka
  *  ONLY_FUNNEL с доказанным fallback цены — не расхождение денег: INFO (происхождение — в PRICE_FUNNEL_FALLBACK).
  *  NO_FUNNEL_ROW (XLSX-бэкфилл, счётчик Orders API) — INFO. Старая вью без суммы воронки — поведение Guard V1.
  */
-export type DivergenceVerdict = 'LATE_DATA' | 'AMOUNT_CONFIRMED' | 'AMOUNT_NOT_CONFIRMED' | 'SAME_DAY_CANCEL_EXCLUDED_BY_FUNNEL' | 'ORDERS_API_AHEAD_UNEXPLAINED';
+export type DivergenceVerdict = 'LATE_DATA' | 'AMOUNT_CONFIRMED' | 'AMOUNT_NOT_CONFIRMED' | 'SAME_DAY_CANCEL_EXCLUDED_BY_FUNNEL' | 'ORDERS_API_AHEAD_UNEXPLAINED'
+  | 'PROVEN_REFUSAL_APPLIED' | 'SOLD_NOT_IN_ORDERS_API' | 'REFUSAL_EVIDENCE_OPEN' | 'MATURE_BUT_UNPROVEN';
+
+/**
+ * Правило 9A (Phase 1A, 07.10.2026) — избыток воронки над Orders API классифицируется ФИНАНСОВЫМ доказательством,
+ * а не суммой воронки. Прежний вердикт A «сумма воронки подтверждает деньги → на результат не влияет» был ложным:
+ * заказ, которого нет в Orders API, бывает отказом (финотчёт: два плеча логистики, без продажи), и Юнитка считала
+ * его продажей (сентябрь 2026: 6 доказанных случаев, прибыль завышена ≈ 1 546 ₽).
+ *   EXPLAINED + отказы > 0 → INFO PROVEN_REFUSAL_APPLIED: отказ уже в S (вью), строка достоверна;
+ *   EXPLAINED, только продажи → INFO SOLD_NOT_IN_ORDERS_API: продажа доказана финотчётом, строка достоверна;
+ *   STILL_OPEN             → EXPECTED_DELAY: моложе 46 дней — ни продажей, ни отменой не доказано, результат предварительный;
+ *                            без доказательства и с неподтверждённой суммой воронки старше 14 дней — прежний ERROR правила 9;
+ *   MATURE_BUT_UNPROVEN    → WARNING: старше 46 дней без финансового следа — в S не попадает, строка недостоверна.
+ *                            ВНИМАНИЕ: окно Guard ≤ 35 дней, поэтому построчно этот класс почти не встречается — зрелые
+ *                            единицы считает QA магазина (sql/unitka/qa_refusals_v1.sql R5) по всей эпохе воронки.
+ */
+function refusalVerdict(r: IntegrityFactsRow, today: string | null): { severity: IntegritySeverity; verdict: DivergenceVerdict; invalid: boolean; message: string } | null {
+  const st = r.refusalEvidenceStatus;
+  // Гейт — фактический избыток воронки над Orders API за вычетом отмен дня заказа, а не класс расхождения: избыток
+  // бывает и при EXACT / FACT_GT_FUNNEL, когда в Orders API есть отмены дня заказа.
+  if (!st || st === 'NO_EXCESS' || (r.funnelExcessQty ?? 0) <= 0) return null;
+  const counted = r.refusalCountedQty ?? 0, sold = r.soldNotInApiQty ?? 0, open = r.unexplainedQty ?? 0;
+  // Без финансового доказательства прежняя эскалация по деньгам сохраняется: старше срока Orders API, а сумма воронки
+  // не подтверждает выручку строки → AMOUNT_NOT_CONFIRMED (ERROR) по правилу 9. Подтверждённая сумма — уже не повод
+  // считать единицу продажей: остаётся STILL_OPEN (финотчёт ещё может доказать отказ).
+  const recon = r.funnelOrdersSum !== undefined;
+  if (st === 'STILL_OPEN' && counted === 0 && sold === 0 && recon && today !== null
+    && daysBetween(r.day, today) > ORDERS_API_MATURITY_DAYS && !amountConfirmedByFunnel(r)) return null;
+  const head = `${r.day} ${r.nmId}: воронка больше Orders API на ${fmt(r.funnelExcessQty)} шт.`;
+  if (st === 'EXPLAINED') {
+    return counted > 0
+      ? { severity: 'INFO', verdict: 'PROVEN_REFUSAL_APPLIED', invalid: false,
+          message: `${head} — ${counted} шт. доказанный отказ вне Orders API (финотчёт: прямое и обратное плечо, продажи нет; srid ${r.refusalProvenSrids ?? '—'}), учтён в S${sold > 0 ? `; ${sold} шт. — продажа вне Orders API` : ''}` }
+      : { severity: 'INFO', verdict: 'SOLD_NOT_IN_ORDERS_API', invalid: false,
+          message: `${head} — продажа доказана финотчётом (srid есть, в Orders API нет): строка достоверна` };
+  }
+  if (st === 'STILL_OPEN') {
+    return { severity: 'EXPECTED_DELAY', verdict: 'REFUSAL_EVIDENCE_OPEN', invalid: true,
+      message: `${head}${counted > 0 ? ` (${counted} шт. — доказанный отказ, учтён в S)` : ''}; ${open} шт. ещё без финансового следа (${fmt(r.refusalFinanceAgeDays)} дн. из ${REFUSAL_MATURITY_DAYS}) — ни продажей, ни отказом не доказаны, результат строки предварительный` };
+  }
+  return { severity: 'WARNING', verdict: 'MATURE_BUT_UNPROVEN', invalid: true,
+    message: `${head}; ${open} шт. старше ${REFUSAL_MATURITY_DAYS} дней без следа в финотчёте — не продажа и не отказ по доказательствам; в S не учтены, строка считает их продажей — недостоверна` };
+}
 
 export function divergenceRules(facts: readonly IntegrityFactsRow[], lcd: string, now?: Date): IntegrityIssue[] {
   const out: IntegrityIssue[] = [];
   const today = now ? moscowParts(now).date : null;
   for (const r of facts) {
-    if (r.day > lcd || r.divergenceClass === 'EXACT') continue;
+    if (r.day > lcd) continue;
     const fq = r.factOrderQty ?? 0;
+    const rv = refusalVerdict(r, today);
+    if (!rv && r.divergenceClass === 'EXACT') continue;
+    if (rv) {
+      out.push(issue({
+        nmId: r.nmId, day: r.day, field: 'orders', code: 'ORDERS_SOURCE_DIVERGENCE', severity: rv.severity,
+        blocking: false, financialInvalid: rv.invalid, source: 'V_WB_FUNNEL_DAILY vs FACT_ORDERS vs V_UNITKA_REFUSAL_DAILY',
+        sourceValue: `${r.divergenceClass}; funnel=${fmt(r.ordersFunnel) ?? 'NULL'}; fact_qty=${fmt(r.factOrderQty) ?? 'NULL'}; excess=${fmt(r.funnelExcessQty) ?? '0'}; refusals_in_S=${fmt(r.refusalCountedQty) ?? '0'}; sold_not_in_api=${fmt(r.soldNotInApiQty) ?? '0'}; unexplained=${fmt(r.unexplainedQty) ?? '0'}; finance_age_days=${fmt(r.refusalFinanceAgeDays) ?? 'NULL'}; verdict=${rv.verdict}`,
+        diagnosticValue: null, dependentFields: rv.verdict === 'PROVEN_REFUSAL_APPLIED' ? ['Q', 'S'] : ['Q'],
+        message: rv.message,
+      }));
+      continue;
+    }
     const delta = r.ordersFunnel === null ? null : Math.abs(r.ordersFunnel - fq);
     const recon = r.funnelOrdersSum !== undefined;
     let severity: IntegritySeverity;

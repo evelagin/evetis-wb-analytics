@@ -138,6 +138,11 @@ export interface SheetsGateway {
    * Необязательный: шлюзы, которым очистка не нужна, его не реализуют.
    */
   batchClear?(ranges: string[]): Promise<number>;
+  /**
+   * Phase 1A: заметки ячеек (spreadsheets.get, fields=note) — ключ `row|col`, пустые не возвращаются.
+   * Необязательный: шлюзы без заметок его не реализуют, и движок тогда заметок не пишет.
+   */
+  readNotes?(sheetName: string, cells: ReadonlyArray<{ row: number; col: number }>): Promise<Map<string, string>>;
   /** Один spreadsheets.batchUpdate из repeatCell; возвращает число применённых запросов. */
   formatWrite(sheetId: number, writes: FormatWrite[]): Promise<number>;
   /**
@@ -255,6 +260,28 @@ export class SheetsRest implements SheetsGateway {
       const vals = blocks[i]?.rowData?.[0]?.values ?? [];
       out.set(r, Array.from({ length: lastColumn }, (_, c) => vals[c]?.userEnteredFormat ?? null));
     });
+    return out;
+  }
+
+  async readNotes(sheetName: string, cells: ReadonlyArray<{ row: number; col: number }>): Promise<Map<string, string>> {
+    const out = new Map<string, string>();
+    const byCol = new Map<number, { lo: number; hi: number }>();
+    for (const c of cells) {
+      const r = byCol.get(c.col);
+      byCol.set(c.col, r ? { lo: Math.min(r.lo, c.row), hi: Math.max(r.hi, c.row) } : { lo: c.row, hi: c.row });
+    }
+    if (byCol.size === 0) return out;
+    const q = `'${sheetName.replace(/'/g, "''")}'`;
+    const ranges = [...byCol].map(([col, r]) => `ranges=${encodeURIComponent(`${q}!${colA1(col)}${r.lo}:${colA1(col)}${r.hi}`)}`).join('&');
+    const url = `${API}/${this.spreadsheetId}?${ranges}&fields=${encodeURIComponent('sheets(data(startRow,startColumn,rowData(values(note))))')}`;
+    const data = await this.request<{ sheets?: Array<{ data?: Array<{ startRow?: number; startColumn?: number; rowData?: Array<{ values?: Array<{ note?: string }> }> }> }> }>('GET', url);
+    const blocks = data.sheets?.[0]?.data ?? [];
+    if (blocks.length !== byCol.size) throw new LoaderError(`заметки: получено ${blocks.length} диапазонов из ${byCol.size}`, 'SHEETS_API');
+    for (const b of blocks) {
+      (b.rowData ?? []).forEach((rd, i) => (rd.values ?? []).forEach((v, j) => {
+        if (v.note) out.set(`${(b.startRow ?? 0) + i + 1}|${(b.startColumn ?? 0) + j + 1}`, v.note);
+      }));
+    }
     return out;
   }
 

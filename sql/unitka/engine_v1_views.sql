@@ -198,6 +198,14 @@ bf AS (
   FROM `project-fa311fc0-4d87-4781-986.wb_raw.RAW_WB_FUNNEL_XLSX_BACKFILL`
   WHERE date_msk <= DATE '2026-09-03'
 ),
+-- Доказанные отказы вне Orders API (refusals_v1.sql): только они увеличивают S сверх Orders API —
+-- STILL_OPEN / MATURE_BUT_UNPROVEN ни продажей, ни отменой не становятся — только диагностика.
+rf AS (
+  SELECT nm_id, date_msk AS d, refusal_counted_qty, refusal_evidence_status, funnel_excess_qty,
+         sold_not_in_api_qty, unexplained_qty, finance_age_days, proven_refusal_srids, proven_srids, proven_logistics_rub
+  FROM `project-fa311fc0-4d87-4781-986.wb_mart.V_UNITKA_REFUSAL_DAILY`, lcd
+  WHERE date_msk BETWEEN lcd.d1 AND lcd.d2
+),
 sd AS (SELECT DISTINCT snapshot_date AS d FROM `project-fa311fc0-4d87-4781-986.wb_mart.FACT_STOCKS_SNAPSHOT`, lcd WHERE snapshot_date BETWEEN lcd.d1 AND lcd.d2),
 st AS (
   SELECT nm_id, snapshot_date AS d, SUM(quantity) AS stock
@@ -219,7 +227,8 @@ x AS (
     COALESCE(f.opens, bf.opens)                          AS opens,
     COALESCE(f.carts, bf.carts)                          AS carts,
     COALESCE(f.forders, bf.forders, o.gross, 0)          AS orders,
-    COALESCE(bf.canc, o.canc, 0)                         AS cancels,
+    COALESCE(bf.canc, o.canc, 0)
+      + IF(f.forders IS NOT NULL AND bf.canc IS NULL, IFNULL(rf.refusal_counted_qty, 0), 0) AS cancels,
     IF(sd.d IS NULL, NULL, IFNULL(st.stock, 0))          AS stock,
     ROUND(IFNULL(m.ads, 0), 2)                           AS ads_in,
     IF(pd.d IS NULL, NULL, ROUND(IFNULL(ps.storage, 0), 2)) AS storage,
@@ -227,16 +236,22 @@ x AS (
          WHEN bf.forders IS NOT NULL THEN 'XLSX_BACKFILL'
          ELSE 'ORDERS_API' END                           AS orders_source,
     CASE WHEN bf.canc IS NOT NULL THEN 'XLSX_BACKFILL'
+         WHEN f.forders IS NOT NULL AND IFNULL(rf.refusal_counted_qty, 0) > 0 THEN 'PROXY_FACT_ORDERS+FINANCE_REFUSAL'
          ELSE 'PROXY_FACT_ORDERS' END                    AS cancels_source,
     o.price                                              AS orders_api_price,
     IFNULL(o.gross, 0)                                   AS fact_order_qty,
     f.forders                                            AS funnel_orders,
-    f.fsum                                               AS funnel_orders_sum
+    f.fsum                                               AS funnel_orders_sum,
+    IF(f.forders IS NOT NULL AND bf.canc IS NULL, IFNULL(rf.refusal_counted_qty, 0), 0) AS refusal_counted_qty,
+    rf.refusal_evidence_status, rf.funnel_excess_qty, rf.sold_not_in_api_qty, rf.unexplained_qty,
+    rf.finance_age_days AS refusal_finance_age_days, rf.proven_srids AS refusal_proven_srids,
+    rf.proven_logistics_rub AS refusal_proven_logistics_rub
   FROM g
   LEFT JOIN o  ON o.nm_id  = g.nm_id AND o.d  = g.d
   LEFT JOIN m  ON m.nm_id  = g.nm_id AND m.d  = g.d
   LEFT JOIN f  ON f.nm_id  = g.nm_id AND f.d  = g.d
   LEFT JOIN bf ON bf.nm_id = g.nm_id AND bf.d = g.d
+  LEFT JOIN rf ON rf.nm_id = g.nm_id AND rf.d = g.d
   LEFT JOIN st ON st.nm_id = g.nm_id AND st.d = g.d
   LEFT JOIN ps ON ps.nm_id = g.nm_id AND ps.d = g.d
   LEFT JOIN sd ON sd.d = g.d
@@ -264,7 +279,15 @@ SELECT
   CASE
     WHEN orders_api_price IS NOT NULL THEN 'ORDERS_API'
     WHEN funnel_fallback_ok THEN 'FUNNEL_FALLBACK'
-  END                                                    AS price_source
+  END                                                    AS price_source,
+  refusal_counted_qty,
+  refusal_evidence_status,
+  funnel_excess_qty,
+  sold_not_in_api_qty,
+  unexplained_qty,
+  refusal_finance_age_days,
+  refusal_proven_srids,
+  refusal_proven_logistics_rub
 FROM p;
 -- ─── 4. Ставки логистики, модель B, окно 30 дней [LCD−29, LCD], как s8win_() в Apps Script ──────
 -- Популяция прямых отправлений — уникальные srid с операцией IN ('Логистика','Доставка')

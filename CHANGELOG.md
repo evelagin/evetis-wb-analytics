@@ -1,5 +1,31 @@
 # CHANGELOG.md
 
+## 2026-10-07 — WB Юнитка: доказанные отказы вне Orders API входят в S (Phase 1A, НЕ развёрнуто)
+
+`sql/unitka/refusals_v1.sql` (2 новые вью), `engine_v1_views.sql` (`V_UNITKA_DAILY_FACT`), `integrity_v1.sql`
+(`V_UNITKA_INTEGRITY`), `reconcile_v1.sql` (`V_UNITKA_RECON_FACT`, `V_UNITKA_RECON_INTEGRITY`), `cloud/src/loaders/unitka/*`
+(bq, integrity, index, sheets, reconcile, новый refusal_notes). Лист `WB_Юнит_2025`: только колонка S дней с доказанным
+отказом и заметка на этой ячейке. Новых колонок в листе нет. Развёртывание — `tools/unitka_refusals_deploy.py`, см.
+`docs/ops/WB_UNITKA_PROVEN_REFUSALS_2026-10-07.md`.
+
+- Воронка (Q) содержит заказы, которых Orders API не отдаёт; отмены S брались только из Orders API, и такой заказ,
+  ставший отказом, Юнитка считала продажей. Доказательство отказа — финотчёт: srid вне Orders API, ≥ 2 ненулевых плеча
+  «Логистика»/«Доставка» в окончательном недельном слое, без «Продажа» и «Возврат» (на заказах Orders API это правило
+  даёт 256 отмен из 256). В S входит `LEAST(доказанные, избыток воронки над Orders API)` и только на днях воронки API.
+- Дата отказа — `DATE(order_dt, 'Europe/Moscow')`: `order_dt` финотчёта в UTC (200 заказов с мая — на день раньше).
+- Новые колонки вью фактов (в хвосте, движок старого образа их не читает): `refusal_counted_qty`,
+  `refusal_evidence_status` (NO_EXCESS / EXPLAINED / STILL_OPEN / MATURE_BUT_UNPROVEN), `funnel_excess_qty`,
+  `sold_not_in_api_qty`, `unexplained_qty`, `refusal_finance_age_days`, `refusal_proven_srids`,
+  `refusal_proven_logistics_rub`; `cancels_source` = `PROXY_FACT_ORDERS+FINANCE_REFUSAL`, если отказ учтён.
+  Вью целостности отдают те же поля Guard-у.
+- Guard, правило 9A: избыток воронки классифицируется финотчётом (INFO — доказанный отказ/продажа; EXPECTED_DELAY —
+  моложе 46 дней; WARNING — старше без следа, строка недостоверна). Прежний вердикт «сумма воронки подтверждает деньги —
+  на результат не влияет» для таких строк больше не выносится.
+- Движок пишет заметку на ячейку S с отказом (srid, логистика финотчёта) и снимает только свои заметки; перечитывание —
+  проверка `REFUSAL_NOTES_READBACK` до коммита LCD.
+- Сентябрь 2026 (закрыт, пишется только сверкой): 5 доказанных отказов, ΔW −1 284,94 ₽; 29.09/438775617 ждёт
+  окончательного слоя (−259,37 ₽). Октябрь: 0 доказанных, 14 единиц STILL_OPEN.
+
 ## 2026-10-06 — Ozon: бизнес-дата заказа = сутки МСК (развёрнуто 06.10.2026, main 6428919, образ a5b79c39)
 
 `sql/current/ozon_mart/*` (7 представлений), `sql/control_tower/*` (2), `cloud/src/loaders/unitka/ozon/bq.ts`. Лист `OZON_Юнит_2025`
