@@ -56,6 +56,7 @@ def message_from_doc(doc_id: str, doc: dict) -> dict:
         "nm_id": doc.get("nm_id"), "supplier_article": doc.get("supplier_article"),
         "barcode": doc.get("barcode"), "product_name": doc.get("product_name"),
         "text": doc.get("text") or "", "pros": doc.get("pros") or "", "cons": doc.get("cons") or "",
+        "tags": list(doc.get("bables") or []),
         "rating": rating, "buyer_name": doc.get("buyer_name") or "",
         "v2_ai_answer": doc.get("ai_answer"), "v2_final_answer": doc.get("final_answer"),
         "v2_answer_source": last_src,

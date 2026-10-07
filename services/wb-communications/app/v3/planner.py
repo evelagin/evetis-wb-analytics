@@ -133,7 +133,8 @@ def plan(snapshot: KnowledgeSnapshot, res: ProductResolution, c: Classification,
 
     # 4. service / marketplace order (ODR-08)
     from app.v3.service_premise import premises
-    source=' '.join(str(msg.get(k) or '') for k in ('text','pros','cons'))
+    from app.v3.text import customer_text
+    source=customer_text(msg)
     p.service_premises=premises(source,policy)
     proven={s['code'] for s in p.service_premises}
     packaging = sorted(x for x in proven if x.startswith("PACKAGING."))

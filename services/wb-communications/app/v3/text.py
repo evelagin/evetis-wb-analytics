@@ -133,3 +133,19 @@ def find_literal_spans(haystack: str, needle: str) -> list[tuple[int, int]]:
             return spans
         spans.append((i, i + len(n)))
         start = i + len(n)
+
+
+def customer_tags(msg: dict) -> list[str]:
+    """WB review tags (`bables`) the buyer selected. WB gives no plus/minus sign,
+    so a tag is the buyer's own words: its meaning, not its position, carries polarity."""
+    raw = msg.get("tags") if msg.get("tags") is not None else msg.get("bables")
+    return [str(t).strip() for t in (raw or []) if str(t).strip()]
+
+
+def customer_text(msg: dict, sep: str = " ") -> str:
+    """Everything the buyer wrote or selected: text, pros, cons and tags."""
+    parts = [str(msg.get(k) or "") for k in ("text", "pros", "cons")]
+    tags = customer_tags(msg)
+    if tags:
+        parts.append("Теги покупателя: " + ", ".join(tags) + ".")
+    return sep.join(p for p in parts if p).strip()

@@ -29,6 +29,8 @@ class ReviewInput(BaseModel):
     text: str = ""
     pros: str = ""
     cons: str = ""
+    # WB `bables` (buyer-selected tags, no plus/minus sign).
+    tags: tuple[str, ...] = ()
     user_name: str = ""
     product_name: str = ""
     supplier_article: str = ""
@@ -40,7 +42,8 @@ class ReviewInput(BaseModel):
     @property
     def combined_text(self) -> str:
         """All buyer-authored text, used for keyword/language classification."""
-        return " ".join(p for p in (self.text, self.pros, self.cons) if p).strip()
+        tags = ", ".join(self.tags)
+        return " ".join(p for p in (self.text, self.pros, self.cons, tags) if p).strip()
 
 
 class Classification(BaseModel):

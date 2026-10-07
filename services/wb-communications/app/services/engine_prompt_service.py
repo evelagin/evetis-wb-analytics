@@ -55,6 +55,7 @@ class EnginePromptService:
             text=review.text or "",
             pros=review.pros or "",
             cons=review.cons or "",
+            tags=tuple(getattr(review, "bables", None) or ()),
             user_name=review.user_name or "",
             product_name=review.product_name or "",
             supplier_article=review.supplier_article or "",

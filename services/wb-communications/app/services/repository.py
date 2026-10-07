@@ -113,6 +113,7 @@ def _initial_doc(review: Review, lease_seconds: int) -> dict:
         "processing_started_at": now, "publishing_started_at": None,
         "lock_expires_at": _expiry(lease_seconds), "lock_token": None,
         "rating": review.rating, "text": review.text, "pros": review.pros, "cons": review.cons,
+        "bables": list(review.bables or []),
         "buyer_name": review.user_name, "product_name": review.product_name,
         "supplier_article": review.supplier_article, "nm_id": review.nm_id,
         "imt_id": review.imt_id, "brand_name": review.brand_name,

@@ -93,7 +93,8 @@ def eligibility(doc: dict, act: Activation, now: datetime) -> str | None:
 
 
 def source_sha(msg: dict) -> str:
-    raw = "\x1f".join(str(msg.get(k) or "") for k in ("text", "pros", "cons"))
+    from app.v3.text import customer_tags
+    raw = "\x1f".join([str(msg.get(k) or "") for k in ("text", "pros", "cons")] + customer_tags(msg))
     return hashlib.sha256(raw.encode("utf-8")).hexdigest()
 
 

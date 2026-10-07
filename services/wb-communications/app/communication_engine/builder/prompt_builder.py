@@ -45,6 +45,8 @@ _HEADER = """Тип обращения: {ctype}
 {pros}
 Недостатки:
 {cons}
+Теги покупателя (WB не указывает, плюс это или минус — опирайтесь на смысл фразы и оценку; нейтральные теги не считайте ни похвалой, ни жалобой):
+{tags}
 """
 
 
@@ -80,6 +82,7 @@ class PromptBuilder:
             text=review.text or "",
             pros=review.pros or "",
             cons=review.cons or "",
+            tags=", ".join(review.tags) if review.tags else "—",
         )
         task = _TASK_BY_TYPE.get(cls.communication_type, _TASK_BY_TYPE[CommunicationType.REVIEW])
         return f"{header}\n{task}"

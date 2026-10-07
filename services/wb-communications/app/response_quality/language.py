@@ -20,6 +20,16 @@ case_contract замкнут: знания модели и известные е
 public_identity / application_areas / use_domains / explicit_roles. Generic уход
 не означает макияж, совместимость, SPF или новую область применения.
 
+customer.tags — теги, которые покупатель отметил на WB. Это его слова, а не факты о товаре.
+WB не сообщает, плюс это или минус: опирайтесь только на явный смысл фразы
+(«Хорошо пахнет» — понравился аромат, «Плохо пахнет» — нет) и на оценку. Нейтральный тег
+(«Цена», «Качество», «Запах») не называйте ни похвалой, ни жалобой.
+must_address rating_only_thanks: высокая оценка без единого слова. Поблагодарите за
+оценку, назовите товар по public_identity в правильном падеже и добавьте одну тёплую
+фразу бренда о том, что покупатель выбрал именно его, — без свойств, состава и результата.
+must_address rating_only_low: низкая оценка без слов — сожаление и вежливая просьба
+рассказать, что не понравилось; без советов и обещаний.
+
 Recognize customer → respond to actual experience → integrate useful selected
 expertise when relevant. Тёплый финал НЕ обязателен. Это единая естественная мысль, не перечень благодарности,
 пересказа и рекламы. Mixed feedback должен соединять плюс и минус по смыслу.
@@ -125,11 +135,12 @@ class LanguageRenderer:
             (selected if context['execution']=='USEFUL_AND_RELEVANT' else background).append(context)
         from app.v3.contextual_language import reported_features
         from app.response_quality.core import _raw
+        from app.v3.text import customer_tags
         case_contract={'knowledge_mode':'CLOSED_WORLD','allowed_sources':['CUSTOMER_REPORTED','VERIFIED_CASE_FACTS','SELECTED_EXPERTISE','SUPPLIED_BACKGROUND','NON_PROPOSITION_CONVERSATION'],
                        'unprovided_expertise_is_unavailable':True}
         product_capabilities={k:v for k,v in plan.product_capabilities.items() if k!='source_support'}
-        payload = {"case_contract":case_contract,"product_capabilities":product_capabilities,"customer_reported": {"provenance":"CUSTOMER_REPORTED", "features":reported_features(_raw(msg))}, "customer": {k: msg.get(k) for k in
-                   ("text", "pros", "cons", "rating", "buyer_name")},
+        payload = {"case_contract":case_contract,"product_capabilities":product_capabilities,"customer_reported": {"provenance":"CUSTOMER_REPORTED", "features":reported_features(_raw(msg))}, "customer": {**{k: msg.get(k) for k in
+                   ("text", "pros", "cons", "rating", "buyer_name")}, "tags": customer_tags(msg)},
                    "must_address": [a.key for a in plan.aspects],
                    "facts": [{"text":f['text']} for f in plan.facts],
                    "verified_product_types": plan.product_types,
