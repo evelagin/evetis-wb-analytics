@@ -1,5 +1,19 @@
 # CHANGELOG.md
 
+## 2026-10-07 — Безопасность публичного репозитория: закрепление actions, входы через env, проверки
+
+Только CI/CD и политика; листы, витрины и экономика не затрагиваются, колонки не меняются.
+
+- `.github/workflows/{ci,sql-current,deploy-prod,deploy-shadow,infra,scheduler-control}.yml`: внешние actions
+  закреплены полным SHA (те же коммиты, на которые сейчас указывают теги `v2/v3/v4/v5` — исполняемый код не
+  меняется); `persist-credentials: false` у checkout, которые ничего не пушат.
+- `deploy-prod.yml`, `scheduler-control.yml`, `infra.yml`: входы dispatch передаются через `env`, а не
+  подстановкой `${{ }}` в shell. `deploy-prod` дополнительно отвергает digest не вида `@sha256:<64 hex>` и
+  `source_git_sha` не из 40 hex (summary `deploy-shadow` всегда даёт ровно такие значения).
+- Новое: `tools/tests/test_public_repo_security.py`, `.github/CODEOWNERS`, `SECURITY.md`,
+  `docs/security/PUBLIC_REPOSITORY_POLICY.md`; `.gitignore` — ключи, credentials JSON, tfstate.
+- Откат: revert коммита. Привязки WIF, IAM, настройки GitHub этим изменением не трогаются.
+
 ## 2026-10-07 — WB Юнитка: охват controlled «restricted» — рост S и первые заполнения (Phase 1B, НЕ включено)
 
 `cloud/src/config.ts` (`UNITKA_CONTROLLED_SCOPE`), `cloud/src/loaders/unitka/reconcile.ts` (`controlledWritePolicy`,
