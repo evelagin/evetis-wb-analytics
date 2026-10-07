@@ -344,6 +344,35 @@ def _probe(api_call):
     return ("AVAILABLE" if code == 200 else "DENIED" if code == 403 else "UNAVAILABLE"), code
 
 
+def stocks_probe(ctx):
+    """A retained current SKU is required; missing probe input is not API rejection.
+
+    Bound identity is checked by cmd_discover before this Tables API read. The
+    existing product-page bound limits metadata work, not the tenant universe:
+    no suitable row in this bounded prefix means UNKNOWN, never UNAVAILABLE.
+    No identifier is placed in the capability evidence or logs.
+    """
+    from google.cloud import bigquery
+    import entities as E
+    fields = [bigquery.SchemaField("snapshot_date", "DATE"), bigquery.SchemaField("sku", "STRING")]
+    rows = ctx.store.rows("ozon_raw", "RAW_OZON_CATALOG", selected_fields=fields, max_results=E.PRODUCT_LIST_LIMIT)
+    for row in rows:
+        if str(row.get("snapshot_date")) != str(ctx.today_msk):
+            continue
+        sku = CI.optional_sku(row.get("sku"))
+        if sku is not None:
+            status, code = _probe(lambda: C.seller_post("/v1/analytics/stocks", {"skus": [sku]}))
+            return status, code, {"probe_input": "CURRENT_RETAINED_CATALOG_SKU", "sku_count": 1}
+    return "UNKNOWN", None, {"probe_input": "CURRENT_RETAINED_CATALOG_SKU_UNPROVEN", "sku_count": 0}
+
+
+def supplies_probe():
+    # Same reviewed source contract as WINDOW_V1 Engine.supplies; one page only.
+    import entities as E
+    return C.seller_post("/v3/supply-order/list", {"filter": {"states": E.CPC_STATES},
+                         "limit": 1, "sort_by": "ORDER_CREATION", "sort_dir": "DESC", "last_id": ""})
+
+
 def cmd_discover(ctx):
     require_state(ctx, "discover")
     sv, _b = require_bound(ctx)
@@ -353,17 +382,20 @@ def cmd_discover(ctx):
         "catalog": lambda: C.seller_post("/v3/product/list", {"filter": {"visibility": "ALL"}, "last_id": "", "limit": 1}),
         "prices": lambda: C.seller_post("/v5/product/info/prices", {"cursor": "", "limit": 1, "filter": {"visibility": "ALL"}}),
         "seller_info": lambda: C.seller_post("/v1/rating/summary", {}),
-        "stocks": lambda: C.seller_post("/v1/analytics/stocks", {"skus": []}),
         "fbo_postings": lambda: C.seller_post("/v3/posting/fbo/list", {"filter": {"since": f"{d30}T00:00:00.000Z", "to": f"{y}T23:59:59.999Z"}, "limit": 1, "cursor": ""}),
         "finance_accrual": lambda: C.seller_post("/v1/finance/accrual/by-day", {"date": str(y), "last_id": ""}),
         "clusters": lambda: C.seller_post("/v1/cluster/list", {"cluster_type": "CLUSTER_TYPE_OZON"}),
-        "supplies": lambda: C.seller_post("/v3/supply-order/list", {"filter": {"states": ["COMPLETED"]}, "limit": 1}),
+        "supplies": supplies_probe,
     }
     rows = []
     for ent, fn in probes.items():
         if ent in ctx.entities:
             st, code = _probe(fn)
             rows.append(_cap_row(ctx, "seller", ent, st, http=code))
+    if "stocks" in ctx.entities:
+        st, code, proof = stocks_probe(ctx)
+        rows.append(_cap_row(ctx, "seller", "stocks", st, http=code,
+                             kind="LIVE_CALL" if code is not None else "INFERRED", evidence=proof))
     code, fbs = C.seller_post("/v3/posting/fbs/list", {"dir": "ASC", "filter": {"since": f"{d30}T00:00:00.000Z", "to": f"{y}T23:59:59.999Z"}, "limit": 1, "offset": 0})
     fbs_n = len(((fbs or {}).get("result") or {}).get("postings") or []) if code == 200 else None
     rows.append(_cap_row(ctx, "seller", "fbs_activity", "NOT_APPLICABLE" if fbs_n == 0 else ("AVAILABLE" if fbs_n else "UNKNOWN"),

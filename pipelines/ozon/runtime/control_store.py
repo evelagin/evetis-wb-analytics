@@ -46,11 +46,16 @@ class ControlStore:
     def _ref(self, key: str, table: str) -> str:
         return f"{self.project}.{self.ds[key]}.{table}"
 
-    def rows(self, key: str, table: str):
+    def rows(self, key: str, table: str, *, selected_fields=None, max_results=None):
         """Строки таблицы — tabledata.list (без строк, ещё лежащих в буфере потоковой вставки)."""
         if key not in READ_DATASETS:
             raise StoreError(f"чтение {key} не предусмотрено")
-        for r in self.client.list_rows(self._ref(key, table)):
+        options = {}
+        if selected_fields is not None:
+            options["selected_fields"] = selected_fields
+        if max_results is not None:
+            options["max_results"] = max_results
+        for r in self.client.list_rows(self._ref(key, table), **options):
             yield dict(r.items())
 
     def append(self, table: str, rows: list[dict]) -> int:

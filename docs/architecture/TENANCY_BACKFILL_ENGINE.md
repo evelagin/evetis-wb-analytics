@@ -21,6 +21,28 @@ code existence, tests and source captures do not prove deployed capability or fu
 Owner ACK authorizes engineering, exact-image client_001 deployment and bounded pilot only.
 No Scheduler activation, destructive trial cleanup or automatic READY transition.
 
+## Corrected capability input contract (owner ACK 2026-10-07)
+
+Stocks discovery uses one positive retained Catalog SKU from the current Moscow
+snapshot after fresh BOUND verification. The existing control Tables API reads
+only snapshot_date and sku, at most1000 rows; no source call with an empty or
+invented SKU is permitted. Missing eligible input in this bounded prefix yields
+UNKNOWN and no HTTP status, never a false source UNAVAILABLE verdict. This is
+not a claim to enumerate the entire Catalog. Supplies discovery uses the actual
+WINDOW_V1 request: CPC_STATES, ORDER_CREATION DESC, initial last_id and limit1.
+The probe never traverses supply inventory. Identifiers are not logged or stored
+in capability diagnostics. No new Seller callable path or IAM is added.
+
+The accepted SKU90 completion is immutable evidence. The owner authorizes a
+replacement of stale PR252 on current main, CI, immutable exact-image release,
+reviewed tenant-only deployment and corrected canonical discovery. Existing
+multiday FBO split/resume support is preserved without duplicate implementation.
+Full-history GO additionally requires Supplies scale, safe state growth and a
+qualified durable full-history gate adapter and frozen manifest. Code, a release
+record or an enabled qualification Scheduler alone does not prove these gates.
+Ordinary Schedulers remain PAUSED. Finance traversal COMPLETE is economic
+PROVISIONAL, with30-day refresh and explicit older REOPEN; type84 P&L UNKNOWN.
+
 ## Source contract matrix (before implementation)
 
 All destinations below are in the configured tenant ozon_raw dataset. Keys preserve
