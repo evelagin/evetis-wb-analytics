@@ -23,6 +23,7 @@ import re
 PRIORITY = ["UNSAFE", "BLOCKED_BY_REVIEW", "BLOCKED_BY_TEST", "BLOCKED_BY_RUNTIME_ACCESS", "BLOCKED_BY_DATA",
             "HUMAN_DECISION_REQUIRED", "INCONCLUSIVE", "READY_FOR_PR"]
 TRUSTED_TEST_PROVENANCE = {"RECONCILED", "TRUSTED_LOCAL"}
+ENFORCED_ISOLATION = {"SUDO_UNSHARE"}        # allowlist: любое иное значение — изоляция не доказана
 LEGACY_VERDICTS = {"PASS": "APPROVE", "BLOCKED": "UNPROVEN"}
 FINAL_STATES = set(PRIORITY)
 BAD = {"FAIL", "EMPTY", "ERROR"}
@@ -86,7 +87,7 @@ def evaluate(evidence: dict, baseline: dict, review: dict | None, context: dict)
             hits["HUMAN_DECISION_REQUIRED"].append(v)
         # Вне allowlist / слишком большой дифф — исправимо инженером; отсутствие класса — нет.
         scope_fixable = bool(context["scope_violations"]) and bool(context.get("scope_present"))
-    if context.get("test_provenance") == "RECONCILED" and context.get("network_isolation") in (None, "NOT_ENFORCED"):
+    if context.get("test_provenance") == "RECONCILED" and context.get("network_isolation") not in ENFORCED_ISOLATION:
         # CI-путь: тесты кандидата обязаны исполняться без сети (иначе retest — не доказательство).
         hits["INCONCLUSIVE"].append("тесты кандидата исполнены без сетевой изоляции (network_isolation NOT_ENFORCED)")
     if context.get("test_provenance") not in TRUSTED_TEST_PROVENANCE:

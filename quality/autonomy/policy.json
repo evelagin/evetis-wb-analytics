@@ -85,7 +85,6 @@
     ],
     "parity_codes": [],
     "loader_defect_codes": [
-      "MART_RUNS_DUP",
       "STOCKS_POSTCOUNT_DUP"
     ],
     "recurrence_required_for": [

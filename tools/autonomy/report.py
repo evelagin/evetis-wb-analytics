@@ -41,7 +41,7 @@ def _diagnostics_lines(run: dict) -> list[str]:
         sha = (d.get("artifact_sha256") or d.get("sha256") or "")[:16]
         out.append(f"- `{role}`: {d.get('outcome')} · стадия **{d.get('failure_stage')}** · класс "
                    f"**{d.get('failure_class')}** · код выхода {d.get('exit_code')} · API {api} · "
-                   f"Messages API {d.get('messages_api_reached')} · sha256 `{sha}` · `{d.get('file')}`")
+                   f"Messages API {d.get('messages_api_reached')} · `sha256:{sha}` · `{d.get('file')}`")
     return out + [""]
 
 

@@ -58,10 +58,16 @@ def find_data(text: str | None) -> list[str]:
 
 
 def mask_data(text: str | None, limit: int = 600) -> str:
-    out = text or ""
+    # Сначала срез (с запасом на границу числа), потом маскирование и окончательный срез: регулярные
+    # выражения не гоняются по мегабайтам недоверенного текста.
+    out = (text or "")[:limit + 64]
     for name, rx in DATA_PATTERNS:
         out = rx.sub(f"[DATA:{name}]", out)
-    return out[:limit]
+    out = out[:limit]
+    # Срез мог отрезать хвост числа в маскированном тексте — повторная проверка на остатке.
+    for name, rx in DATA_PATTERNS:
+        out = rx.sub(f"[DATA:{name}]", out)
+    return out
 
 
 def ensure_public(text: str) -> str:

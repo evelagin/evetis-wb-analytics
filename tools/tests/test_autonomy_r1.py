@@ -91,6 +91,7 @@ def health(**over) -> dict:
     (ledger(error_code="INVARIANT_FAIL", failure_signature="OTHER", occurrences_7d=9), "UNCLASSIFIED"),
     (ledger(error_code="DUP_KEY", failure_signature="OTHER", occurrences_7d=9), "UNCLASSIFIED"),
     (ledger(error_code="STOCKS_POSTCOUNT_DUP", failure_signature="OTHER", occurrences_7d=3), "LOADER_DEFECT"),
+    (ledger(error_code="MART_RUNS_DUP", failure_signature="OTHER", occurrences_7d=9), "UNCLASSIFIED"),  # витрина вне области
     (ledger(error_code="STOCKS_POSTCOUNT_DUP", failure_signature="OTHER", occurrences_7d=2), "UNCLASSIFIED"),
     # обобщённые обёртки без временной сигнатуры смысла не несут — никогда не LOADER_DEFECT
     (ledger(error_code="MART_ERROR", failure_signature="OTHER", occurrences_7d=9), "UNCLASSIFIED"),
@@ -686,3 +687,21 @@ def test_forbidden_path_with_data_is_unsafe_not_waiting(env):
     o = orch(env, eng, ScriptedAdapter({}))
     run = o.advance(o.submit(synthetic_objective(env))[0]["run_id"])
     assert run["state"] == "BLOCKED" and "UNSAFE" in run["transitions"][-1]["reason"]
+
+
+# ========================================== замечания финальной проверки ===
+def test_all_digit_sha_prefix_survives_public_report():
+    line = "· `sha256:3274540515101732` · `diagnostics/engineer_plan-01.json`"
+    assert ensure_public(mask_data(line)) == line
+
+
+@pytest.mark.parametrize("iso", [None, "", "None", "NOT_ENFORCED", "UNSHARE_USERNS", "anything"])
+def test_isolation_is_an_allowlist(iso):
+    assert G.evaluate(GOOD, GOOD, review(), ctx(network_isolation=iso))["verdict"] == "INCONCLUSIVE"
+
+
+def test_mask_data_is_fast_on_long_untrusted_text():
+    import time
+    t0 = time.monotonic()
+    out = mask_data("1,2,3," * 20000, 600)
+    assert time.monotonic() - t0 < 1.0 and len(out) <= 600 and find_data(out) == []

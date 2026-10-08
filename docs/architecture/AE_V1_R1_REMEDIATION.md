@@ -94,7 +94,7 @@ LOADER_DEFECT, а коды состояния данных и пустого о�
 | R3X | временная сигнатура при коде вне списка обёрток | UNCLASSIFIED |
 | R4 | код из `schema_codes` (`WB_*_SHAPE`, `WB_*_BAD_JSON`, `WB_T6_PARSE`) ≥ 3 раз за 7 суток | **SCHEMA_DRIFT** (однократно — UNCLASSIFIED: возможен обрезанный ответ). `BQ_SHAPE` исключён: так называются охранники целостности данных Юнитки |
 | R5 | `parity_codes` пуст | **PARITY_DEFECT** автоматически не назначается: `INVARIANT_FAIL` (пустое окно), `FUTURE_LEAKAGE` (ручное состояние листа) — UNCLASSIFIED; класс доступен только цели владельца |
-| R7 | код из `loader_defect_codes` (`MART_RUNS_DUP`, `STOCKS_POSTCOUNT_DUP` — проверки собственной записи загрузчика) ≥ 3 раз за 7 суток | **LOADER_DEFECT**. `DUP_KEY` (дубли во вью) и обобщённые обёртки без временной сигнатуры — UNCLASSIFIED |
+| R7 | код из `loader_defect_codes` (`STOCKS_POSTCOUNT_DUP` — проверка собственной записи загрузчика приёма) ≥ 3 раз за 7 суток | **LOADER_DEFECT**. `DUP_KEY` (дубли во вью), `MART_RUNS_DUP` (витрина вне области) и обобщённые обёртки без временной сигнатуры — UNCLASSIFIED |
 | H1 | DRO: `data_class` или `source_system` = MANUAL (ФФ, план продаж, ручные операции) | NOT_ENGINEERING |
 | H2 | DRO: детектор устарел или не запускался | UNCLASSIFIED: причина может быть операционной (планировщик на паузе — документированный откат DRO-1) |
 | H3 | DRO: данных нет или они опаздывают (`SLOT_*`, `FRESHNESS_*`, `DATA_LOSS_*`, `NO_DATA_OBSERVED`, `MISSING_DATES_RECOVERABLE`) | NOT_ENGINEERING |
@@ -320,6 +320,10 @@ READY_FOR_PR не найдено, но выявлены ещё 1 HIGH и 4 MEDIU
 | L-1 | `concurrent/sequential/each.skip`, `it['skip']`, рост пропусков — FAIL |
 | L-2 | путь `unshare -r` удалён; CI-доказательства без изоляции — INCONCLUSIVE |
 | L-3 | `forbidden_paths` проверяется раньше скана данных: UNSAFE не понижается до решения человека |
+
+Финальная проверка `e4f3697`: **APPROVE_WITH_NITS**, обходов нет. Замечания закрыты: хеши в итоге — `sha256:<префикс>`
+(префикс из одних цифр не маскируется); изоляция в гейткипере — allowlist (`SUDO_UNSHARE`); `MART_RUNS_DUP` исключён;
+`mask_data` режет текст до маскирования (без сверхлинейного времени на длинных строках).
 
 Дорожная карта ввода в эксплуатацию — AE-C0 (shadow) … AE-C5, по отдельным ACK. Первый реальный
 кейс: Sheets 503 (фикстура `quality/autonomy/examples/signals.sheets_503_2026-10-07.json`).
