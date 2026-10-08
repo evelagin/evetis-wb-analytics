@@ -117,6 +117,13 @@ counts, state size, safe async phase, last-success/checkpoint age, binding/quota
 and explicit DQ/finance/READY boundaries. No secret, identifier or report UUID
 belongs in monitoring. Final full completeness requires every domain proof.
 
+Telemetry publishes ordered observation start/end and the current scope's
+read-end watermark. A success committed between sequential telemetry reads is
+compared to that read end, never to the earlier reference time. Backward clocks,
+timestamps later than the completed read, ambiguous telemetry and future completed
+leaf evidence remain denied. This observation rule grants no source/recovery or
+completion authority and does not turn an existing STOP into PASS.
+
 Build changed runtime with version-11 network-free installed snapshot checks;
 verify exact digest/source hashes, unchanged Seller callable surface, binding and
 two-tenant isolation. Controller release schema 2 additionally requires installed

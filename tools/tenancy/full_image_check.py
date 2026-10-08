@@ -5,6 +5,32 @@ from tools.tenancy import full_history as F, full_controller as H, tenant_backfi
 from tools.tenancy import durable_plan as D, cloud_controller as C, orchestration_contract as O
 
 
+def monitoring_check(store, base, manifest, now):
+    """Installed ordered-read race proof, without network or recovery authority."""
+    from types import SimpleNamespace
+    i=next(i for i,p in enumerate(manifest['programs']) if p['entity']=='catalog')
+    calls=[]
+    def observe(offsets, success):
+        times=iter(now+timedelta(seconds=n) for n in offsets)
+        b=SimpleNamespace(c=base.c,store=store,clock=lambda:next(times),
+            state=lambda d:BF.B.initial(d['runtime_plan']),
+            select=lambda *a:[{'last_success':(now+timedelta(seconds=success)).isoformat(),'failed_attempts':1}],
+            journal='mpa-t-client-001.ozon_raw.OZON_INGESTION_RUNS',
+            binding_status={'seller':'BOUND','performance':'BOUND'})
+        return H.monitoring(b,manifest['hash'],{'status':'MONITORING','index':i})
+    for success in (0,1.5,3,4):
+        out=observe((0,1,2,4),success)
+        assert out['current_scope']['checkpoint_age_seconds']==int(4-success)
+        assert out['current_scope']['source_complete'] is False and out['completed_chunks']==0
+        assert out['current_scope']['failed_attempts']==1
+    for offsets,success in (((0,1,2,4),5),((0,1,2,1),0),((1,0,2,4),0),((0,2,1,4),0)):
+        try:observe(offsets,success)
+        except BF.B.EvidenceError:calls.append('DENIED')
+        else:raise AssertionError('full monitoring temporal integrity weakened')
+    assert calls==['DENIED']*4
+    return 'PASS'
+
+
 def check(store, base, now, source):
     day=now.astimezone(BF.B.MSK).date();cutover=day-timedelta(days=1)
     starts={e:cutover for e in BF.B.DATED}
@@ -49,9 +75,11 @@ def check(store, base, now, source):
         else:raise AssertionError('ambiguous dispatch ignored')
         assert H.wake(base,m['hash'])[0]['status']=='STOPPED' and posts==[1,2,3]
         assert not any(r['kind'] in {'CHUNK_COMPLETE','FULL_COMPLETE'} for r in store.history(m['hash']))
+        watermark=monitoring_check(store,base,m,now)
         # No dependency on a local checkpoint: every wake reconstructs markers.
         return {'full_history_adapter':'PASS','full_history_program_contract':'PASS',
                 'full_history_restart_protocol':'PASS','full_history_no_false_complete':'PASS',
+                'full_history_monitoring_watermark':watermark,
                 'full_history_live_go':'UNPROVEN'}
     finally:
         (H.verify_authority,H.Backend.preflight,H.Backend.state,H.Backend.quota,
