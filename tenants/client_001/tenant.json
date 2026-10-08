@@ -75,7 +75,7 @@
   },
   "notes": "Первый внешний арендатор (T3.3: проект mpa-t-client-001 создан, инфраструктура применена, ключей нет). Identity продавца (Client-Id, ИНН, название) в Git не хранится: она обнаруживается read-only проверкой ключей и подтверждается оператором в проекте арендатора (ref.SELLER_BINDING, T4). fulfillment_schemes=FBO — подтверждено владельцем; решение D3 по FBS/rFBS не принималось.",
   "historical_orchestration": {
-    "release": "b799bf6108982142cef6706e333b1f677fbb630f",
+    "release": "b35b958f7e4297aa5a8b99e52686f87a1af8fa87",
     "root_hash": "4f4387b2bdaa39c8942735a3b9b386e665b20c61006c8e8a467832a7542b1779",
     "scheduler_state": "ENABLED"
   }

@@ -214,3 +214,48 @@ def test_source_free_transport_rejects_foreign_tenant_reads():
     calls=[];b=R.SourceFreeBackend(SimpleNamespace(c=BF.target('client_001'),request=lambda *a:calls.append(a)))
     with pytest.raises(BF.B.EvidenceError):b.request('GET','https://run.googleapis.com/v2/projects/foreign/locations/europe-west1/jobs/x')
     assert calls==[]
+
+
+def test_canonical_reconcile_current_qualified_runtime_without_old_handoff(monkeypatch):
+    from types import SimpleNamespace
+    from datetime import datetime,timezone
+    from tools.tests.test_durable_plan import Backend
+    p,rows,_=fixture();memory=Backend();doc=rows[4]['payload']['plan'];r=rows[4]['payload']['receipt']
+    p['runtime_image']=memory.c['marketplaces']['ozon']['runtime_image']
+    p['implementation_sha']=memory.c['orchestration']['job']['env']['CONTROLLER_SOURCE_SHA'];seal(p)
+    runtime_plan=doc['runtime_plan']
+    env={'INGESTION_RUN_ID':r['run_id'],'BACKFILL_TARGET_PROJECT':memory.c['project_id'],
+         'ENTITIES':runtime_plan['entity'],'SINCE':runtime_plan['from'],'UNTIL':runtime_plan['to'],
+         'BACKFILL_MODE':BF.B.VERSION,'BACKFILL_GENERATION':runtime_plan['generation'],
+         'BACKFILL_ORIGIN':runtime_plan['origin'],'TENANT_BINDING_REQUIRED':'1','STRICT_PAGE_CAPS':'1',
+         'BACKFILL_MAX_REQUESTS':str(doc['max_requests']),'BACKFILL_MAX_UNITS':str(doc['max_units'])}
+    if runtime_plan['window_days']!=1:env['BACKFILL_WINDOW_DAYS']=str(runtime_plan['window_days'])
+    env.update(BF.continuation_overrides(doc))
+    execution={'name':p['runtime_execution'],'completionTime':'2026-10-08T05:59:00Z','succeededCount':1,
+       'template':{'serviceAccount':f"{memory.c['marketplaces']['ozon']['service_accounts']['runtime']}@{memory.c['project_id']}.iam.gserviceaccount.com",
+                   'containers':[{'image':p['runtime_image'],'env':[{'name':k,'value':v} for k,v in env.items()]}]}}
+    calls=[]
+    def request(method,url,body=None):
+        calls.append((method,url));assert method=='GET' and url.endswith(r['operation'])
+        return {'done':True,'response':execution}
+    inner=SimpleNamespace(c=memory.c,tables=memory.meta,request=request)
+    guard=R.SourceFreeBackend(inner)
+    memory.meta.create_marker(memory.c['datasets']['ref'],R.marker(p),*R.marker_value(p))
+    monkeypatch.setattr(BF,'preflight',lambda *a,**k:(memory.meta,[]))
+    monkeypatch.setattr(BF,'read_proof',lambda *a,**k:{'state':{'complete':False,'sequence':3,'rows':2,'orders':1,'supplies':1,'bundles':1}})
+    memory.meta.create_marker(memory.c['datasets']['tenant_locks'],BF.CK.lease_name(BF.B.digest(['BOUNDED_PILOT_EXCLUSIVE',memory.c['project_id']])[:16],r['lease_generation']),{'owner':r['run_id']},D.encoded({'ack_hash':doc['ack_hash']}))
+    appends=[];monkeypatch.setattr(memory.meta,'append',lambda ds,table,records:appends.append((ds,table,records)),raising=False)
+    result=BF.reconcile(doc,doc['ack_hash'],r,backend=guard)
+    assert 'deployment_handoff' not in result and result['checkpoint']=='RUNNING'
+    assert BF.execution_image(doc,memory.c)==p['runtime_image']
+    assert doc['image']!=p['runtime_image']
+    assert result['coverage']=='UNPROVEN_PENDING_DQ'
+    assert len(appends)==1 and appends[0][1]=='BACKFILL_CHECKPOINTS' and len(calls)==1
+    assert memory.meta.get_table(memory.c['datasets']['tenant_locks'],f"LD_{BF.B.digest(['BOUNDED_PILOT_EXCLUSIVE',memory.c['project_id']])[:16]}_{r['lease_generation']:04d}")
+
+
+
+def test_old_cloud_only_handoff_still_denies_owner_backend():
+    from types import SimpleNamespace
+    p,rows,_=fixture()
+    with pytest.raises(BF.B.EvidenceError):BF.verify_paused_supplies_handoff(rows[4]["payload"]["plan"],BF.target("client_001"),rows[4]["payload"]["receipt"],{},SimpleNamespace())
