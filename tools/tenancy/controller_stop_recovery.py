@@ -37,7 +37,7 @@ def fail(message):
 def validate(proof):
     if not isinstance(proof, dict) or set(proof) != FIELDS:
         fail('closed proof schema required')
-    if proof['version'] != VERSION or proof['type'] != TYPE:
+    if type(proof['version']) is not int or proof['version'] != VERSION or proof['type'] != TYPE:
         fail('unsupported typed recovery')
     if D.digest({k: v for k, v in proof.items() if k != 'hash'}) != proof['hash']:
         fail('proof hash differs')

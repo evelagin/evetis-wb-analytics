@@ -260,3 +260,8 @@ def test_runtime_explicit_foreign_tenant_or_dataset_is_rejected():
     b,p,rows,objects=terminal_fixture();runtime=objects[BF.RUN_API+'/'+p['runtime_execution']]
     runtime['template']['containers'][0]['env'].append({'name':'TENANT_ID','value':'foreign'})
     with pytest.raises(BF.B.EvidenceError):R.terminal_executions(b,p)
+
+
+def test_boolean_is_not_a_recovery_schema_version():
+    p,_=fixture();p['version']=True;p['authorization']['version']=True;seal(p)
+    with pytest.raises(BF.B.EvidenceError):R.validate(p)
