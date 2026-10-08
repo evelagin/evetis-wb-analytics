@@ -216,6 +216,18 @@ def test_source_free_transport_rejects_foreign_tenant_reads():
     assert calls==[]
 
 
+def test_source_free_exact_global_inventory_get_only():
+    from types import SimpleNamespace
+    c=BF.target('client_001');calls=[]
+    guard=R.SourceFreeBackend(SimpleNamespace(c=c,request=lambda *a:calls.append(a)))
+    url=BF.global_job_url(c['project_id'])
+    guard.request('GET',url)
+    assert calls==[('GET',url)]
+    for method,other in [('POST',url),('GET',BF.global_job_url('foreign')),('GET',url+'&extra=true'),('GET',url.split('?')[0]),('GET',url.replace('/jobs?','/services?'))]:
+        with pytest.raises(BF.B.EvidenceError):guard.request(method,other,{})
+    assert calls==[('GET',url)]
+
+
 def test_canonical_reconcile_current_qualified_runtime_without_old_handoff(monkeypatch):
     from types import SimpleNamespace
     from datetime import datetime,timezone

@@ -210,7 +210,8 @@ class SourceFreeBackend:
         if host not in {'run.googleapis.com','cloudscheduler.googleapis.com','www.googleapis.com','bigquery.googleapis.com'} or ':run' in url or ':access' in url:fail('source/secret transport unavailable')
         if method not in {'GET','POST'}:fail('noncanonical mutation unavailable')
         if method=='POST' and ('/queries' not in url or not isinstance(body,dict) or not body.get('query','').lstrip().startswith('SELECT ') or ';' in body['query']):fail('only SELECT transport available')
-        if '/projects/'+self.backend.c['project_id']+'/' not in url:fail('foreign tenant transport unavailable')
+        global_inventory=method=='GET' and url==BF.global_job_url(self.backend.c['project_id'])
+        if not global_inventory and '/projects/'+self.backend.c['project_id']+'/' not in url:fail('foreign tenant transport unavailable')
         return self.backend.request(method,url,body) if body is not None else self.backend.request(method,url)
 
 
