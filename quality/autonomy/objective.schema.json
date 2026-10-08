@@ -148,7 +148,7 @@
     },
     "deduplication_key": {
       "type": "string",
-      "pattern": "^(check|health|parity|synthetic|objective):[A-Za-z0-9_.:-]{1,200}$"
+      "pattern": "^(check|health|parity|synthetic|objective|dro|runfail):[A-Za-z0-9_.:-]{1,200}$"
     },
     "execute": {
       "type": "boolean",
@@ -168,6 +168,45 @@
         "iteration_marker": {
           "type": "string",
           "pattern": "^AE-COMMISSIONING-[A-Z0-9-]{4,40}$"
+        }
+      }
+    },
+    "task_class": {
+      "enum": [
+        "RETRY_CLASSIFIER_DEFECT",
+        "PARITY_DEFECT",
+        "SCHEMA_DRIFT",
+        "DETECTOR_DEFECT",
+        "LOADER_DEFECT",
+        "COMMISSIONING_CANARY",
+        "SYNTHETIC_FIXTURE"
+      ],
+      "description": "AE-R1. Инженерный класс задачи (детерминированный классификатор). Allowlist путей и лимиты диффа берутся из policy.json по классу, а не из цели. Без класса область выводится только для commissioning/synthetic, иначе кандидат не может стать READY_FOR_PR."
+    },
+    "scope": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "allowed_paths",
+        "max_changed_lines",
+        "max_files"
+      ],
+      "description": "Копия области класса на момент создания цели — для инженера и владельца. Гейткипер её НЕ читает: область пересчитывается из policy.json.",
+      "properties": {
+        "allowed_paths": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "maxLength": 200
+          }
+        },
+        "max_changed_lines": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "max_files": {
+          "type": "integer",
+          "minimum": 0
         }
       }
     }

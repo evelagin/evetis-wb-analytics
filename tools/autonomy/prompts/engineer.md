@@ -19,6 +19,27 @@
 
 {feedback_block}
 
+## Область задачи (класс и allowlist, исполняет гейткипер)
+
+```json
+{scope_json}
+```
+
+Менять можно ТОЛЬКО пути из `allowed_paths`, в пределах `max_changed_lines` изменённых строк и
+`max_files` файлов. Кандидат вне области не станет READY_FOR_PR. Если исправление требует выйти
+за область — верни NEEDS_HUMAN и объясни, какой путь и почему.
+
+Тесты `cloud/` (TypeScript) запускай только так: `npm --prefix cloud ci --ignore-scripts`, затем
+`npm --prefix cloud run typecheck`, `npm --prefix cloud run lint`, `npm --prefix cloud test`.
+`package.json`, `package-lock.json`, конфиги vitest/eslint/tsconfig — доверенная база: их не трогай.
+
+## Политика вывода (репозиторий публичный)
+
+Твои `summary`, `root_cause`, `uncertainty`, `questions_for_owner`, `commands_run` наружу не
+публикуются — система хранит только их отпечаток. Не копируй строки данных BigQuery, суммы,
+проценты, идентификаторы покупателей и тексты отзывов ни в эти поля, ни в код, ни в тесты:
+фикстура теста — минимальная синтетическая, без реальных значений.
+
 ## Ограничения, которые исполняет не твоя добросовестность, а инфраструктура
 
 - У тебя нет прав записи ни в Git-удалённый репозиторий, ни в BigQuery, ни в GCP, ни в WB/Ozon.

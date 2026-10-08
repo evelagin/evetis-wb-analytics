@@ -18,6 +18,7 @@ on:
       run_id: {type: string, required: false, default: ""}
       objective_path: {type: string, required: false, default: ""}
       pending_artifact: {type: string, required: false, default: ""}
+      retest_artifact: {type: string, required: false, default: ""}
       expect: {type: string, required: false, default: ""}
     outputs:
       run_id:
@@ -85,6 +86,19 @@ jobs:
           name: ${{ inputs.pending_artifact }}
           # Вне рабочего каталога: недоверенный архив не ложится рядом с исполняемым кодом.
           path: ${{ runner.temp }}/ae-pending
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        if: inputs.retest_artifact != '' && inputs.expect != ''
+        with:
+          name: ${{ inputs.retest_artifact }}
+          # Отдельный каталог: архив retest не может перезаписать evidence.json. Берётся ровно retest.json.
+          path: ${{ runner.temp }}/ae-retest
+      - name: take retest.json only
+        if: inputs.retest_artifact != '' && inputs.expect != ''
+        run: |
+          [ -f "$RUNNER_TEMP/ae-retest/retest.json" ] && [ ! -L "$RUNNER_TEMP/ae-retest/retest.json" ] \
+            || { echo "::error::нет retest.json"; exit 1; }
+          mkdir -p "$RUNNER_TEMP/ae-pending"
+          cp "$RUNNER_TEMP/ae-retest/retest.json" "$RUNNER_TEMP/ae-pending/retest.json"
       - name: deterministic transition
         id: run
         env:

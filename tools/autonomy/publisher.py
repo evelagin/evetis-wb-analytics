@@ -10,6 +10,13 @@
 проверенный candidate.patch) — тогда он переиспользуется БЕЗ push; иначе отказ (force-push нет).
 Открытый PR этой ветки переиспользуется, только если он draft и нацелен на base. Approve/merge/ready
 публикатор не вызывает никогда. Без доверенного аудита «0 production-мутаций» публикации нет.
+
+AE-R1 / B2: идентичность публикатора — отдельный интерфейс. Целевая — выделенный GitHub App с ключом
+в Cloud KMS (docs/architecture/AE_V1_PUBLISHER_APP_DESIGN.md); App, ключ и учётные данные создаются
+отдельными воротами, поэтому `GitHubAppIdentity` пока отказывает (fail closed). Широкое право
+«Actions создаёт PR» не включается; `actions-token` оставлен только для стендов и dry-run.
+Перед публикацией область класса задачи и лимит диффа проверяются ещё раз; тело PR — только
+публичные метаданные (политика вывода B3).
 """
 from __future__ import annotations
 
@@ -20,7 +27,9 @@ import tempfile
 from pathlib import Path
 
 from tools.autonomy.audit import zero_mutations_proven
-from tools.autonomy.policy import branch_allowed, detect_gate_weakening, forbidden_paths, tcb_paths
+from tools.autonomy.output_policy import ensure_public
+from tools.autonomy.policy import (branch_allowed, detect_gate_weakening, forbidden_paths, patch_data_findings,
+                                   scope_violations, task_scope, tcb_paths)
 from tools.autonomy.redact import diff_added_secrets, redact_text, safe_text
 from tools.autonomy.report import render_report
 
@@ -36,16 +45,53 @@ def patch_files(patch: str) -> list[str]:
     return sorted(files)
 
 
+class ActionsTokenIdentity:
+    """GITHUB_TOKEN job'а publish. Требует настройки «Allow GitHub Actions to create … pull requests»,
+    которую владелец НЕ включает (B2). Только стенды и dry-run."""
+    name = "actions-token"
+
+    def ensure_ready(self) -> None:
+        return None
+
+    def env(self) -> dict:
+        return {}
+
+
+class GitHubAppIdentity:
+    """Выделенный GitHub App (B2): installation token, подписанный ключом в Cloud KMS через WIF job'а
+    publish. Не создан — отказ до любой записи. Реализация токена — отдельные ворота."""
+    name = "github-app"
+
+    def ensure_ready(self) -> None:
+        raise PublishRefused("B2: публикатор GitHub App ещё не создан (App, ключ в KMS, WIF job'а publish) — "
+                             "публикация невозможна; широкое право Actions создавать PR не используется")
+
+    def env(self) -> dict:
+        raise PublishRefused("B2: токен GitHub App недоступен")
+
+
+IDENTITIES = {"actions-token": ActionsTokenIdentity, "github-app": GitHubAppIdentity}
+
+
 class GitPublisher:
-    def __init__(self, repo: Path, remote: str = "origin", base_branch: str = "main", dry_run: bool = False):
+    def __init__(self, repo: Path, remote: str = "origin", base_branch: str = "main", dry_run: bool = False,
+                 identity: str = "github-app"):
         self.repo, self.remote, self.base, self.dry_run = Path(repo), remote, base_branch, dry_run
+        if identity not in IDENTITIES:
+            raise PublishRefused(f"неизвестная идентичность публикатора {identity!r}")
+        self.identity = IDENTITIES[identity]()
         self.log: list[list[str]] = []
 
     def _x(self, cmd: list[str], cwd: Path, mutating: bool = False) -> str:
         self.log.append(cmd)
         if mutating and self.dry_run:
             return "dry-run"
-        r = subprocess.run(cmd, cwd=cwd, capture_output=True, text=True)
+        env = None
+        if (mutating or cmd[0] == "gh") and not self.dry_run:
+            # Учётные данные записи даёт ТОЛЬКО идентичность публикатора (B2), а не окружение job'а.
+            import os
+            env = {**os.environ, **self.identity.env()}
+        r = subprocess.run(cmd, cwd=cwd, capture_output=True, text=True, env=env)
         if r.returncode != 0:
             raise PublishRefused(f"{' '.join(cmd[:3])}: {redact_text(r.stderr.strip()[:400])}")
         return r.stdout.strip()
@@ -76,6 +122,14 @@ class GitPublisher:
         proven, why = zero_mutations_proven(run)
         if not proven:
             raise PublishRefused(f"нет доказательства 0 production-мутаций: {why}")
+        objective_path = art_dir / "objective.json"
+        objective = json.loads(objective_path.read_text(encoding="utf-8")) if objective_path.exists() else {}
+        violations = scope_violations(files, patch, task_scope(objective))
+        if violations:
+            raise PublishRefused(f"кандидат вне области задачи: {violations[:3]}")
+        data = patch_data_findings(patch)
+        if data:
+            raise PublishRefused(f"данные или бинарные изменения в диффе (политика вывода B3): {data[:3]}")
         return files
 
     def _gh(self, args: list[str], cwd: Path, mutating: bool = False) -> str:
@@ -117,11 +171,13 @@ class GitPublisher:
         Вернуть {url, head_sha, dispatched_at, workflows}. «Опубликован» ещё не «готов»:
         готовность решает verification.py по фактическим прогонам."""
         from datetime import datetime, timezone
+        if not self.dry_run:
+            self.identity.ensure_ready()          # B2: без выделенной идентичности — ни одной записи
         files = self.preflight(run, patch, art_dir)
         branch = run["branch"]
         refspec = f"HEAD:refs/heads/{branch}"
         assert refspec.startswith("HEAD:refs/heads/ae/"), refspec   # последний рубеж
-        body = safe_text(render_report(run, art_dir))
+        body = ensure_public(safe_text(render_report(run, art_dir)))
         with tempfile.TemporaryDirectory(prefix="ae-publish-") as td:
             ws = Path(td) / "ws"
             self._x(["git", "worktree", "add", "--detach", str(ws), run["repository_sha"]], self.repo)

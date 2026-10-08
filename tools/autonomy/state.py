@@ -151,7 +151,10 @@ class StateStore:
         if to not in TRANSITIONS.get(frm, set()):
             raise TransitionError(f"{run['run_id']}: переход {frm} → {to} запрещён")
         ts = now_iso()
+        # Ветка состояния публична (политика вывода B3): данные в причине маскируются в любом случае.
+        from tools.autonomy.output_policy import mask_data
         run = {**run, **fields, "state": to, "updated_at": ts,
-               "transitions": run["transitions"] + [{"from": frm, "to": to, "at": ts, "reason": reason[:2000]}]}
+               "transitions": run["transitions"] + [{"from": frm, "to": to, "at": ts,
+                                                     "reason": mask_data(reason, 2000)}]}
         self.save(run)
         return run

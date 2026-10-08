@@ -73,7 +73,24 @@ class SyntheticEvidenceRunner:
             "parity": {"status": "NOT_APPLICABLE"},
             "data_suites": {"synthetic": {"verdict": status, "checks": {"SYN_TOTAL": status}}},
             "objective_resolution": "RESOLVED" if status == "PASS" else "NOT_DEMONSTRATED",
+            # Стенд исполняется доверенным процессом теста (как локальный RepoEvidenceRunner оператора).
+            "test_provenance": "TRUSTED_LOCAL",
         }
+
+
+class SyntheticRetestRunner:
+    """Независимый повторный прогон стенда (как RetestRunner, но по синтетическому репозиторию)."""
+
+    def __init__(self, override: dict | None = None):
+        self.override = override or {}
+
+    def collect(self, base_ws: Path, cand_ws: Path, changed_files: list[str], objective: dict) -> dict:
+        t = subprocess.run([sys.executable, "-m", "pytest", "-q", "-p", "no:cacheprovider", "tests_synthetic"],
+                           cwd=cand_ws, capture_output=True, text=True)
+        status = self.override.get("status") or ("PASS" if t.returncode == 0 else "FAIL")
+        return {"schema": "ae_retest/1", "changed_files": sorted(changed_files), "profiles": ["python"],
+                "tests": [{"name": "pytest tests_synthetic", "status": status, "exit_code": t.returncode}],
+                "network_isolation": self.override.get("network_isolation", "SUDO_UNSHARE")}
 
 
 def observations(status: str) -> list[dict]:
@@ -97,9 +114,12 @@ def implemented(status="CANDIDATE_READY", files=("synthetic/calc.py",)):
             "commands_run": ["python -m pytest -q tests_synthetic"], "uncertainty": [], "questions_for_owner": []}
 
 
-def verdict(v="PASS", findings=None, weakening=False, human=None):
+def verdict(v="PASS", findings=None, weakening=False, human=None, tests=("tests_synthetic/test_calc.py",),
+            tv_status="VERIFIED"):
     return {"verdict": v, "summary": f"ревью: {v}", "findings": findings or [],
-            "gate_weakening_detected": weakening, "missing_negative_tests": [], "human_decision_reason": human}
+            "gate_weakening_detected": weakening, "missing_negative_tests": [], "human_decision_reason": human,
+            "test_verification": {"status": tv_status, "relevant_tests": list(tests),
+                                  "basis": "тест суммы пустого списка проверяет изменённое поведение"}}
 
 
 def finding(sev="MAJOR", cat="missing_negative_test"):
@@ -220,3 +240,14 @@ def evidence_for(run: dict, **over) -> dict:
             "since": run["created_at"], "usage_count": len(run.get("usage", [])), "window_start": w["start"],
             "window_end": w["end"], "capability_mode": CAPABILITY_LIVE, "f18_result": "PASS", "accepted_risks": [],
             **over}
+
+
+def verified_replay(p, run_id: str, ev_out: Path, ev_sha: str, override: dict | None = None):
+    """CI-путь AE-R1: недоверенные доказательства + независимый retest (машина без учётных данных) →
+    ReplayEvidenceRunner доверенного verify. `p` — стенд Pipeline (orch/machine/tmp/repo)."""
+    from tools.autonomy.evidence import ReplayEvidenceRunner
+    from tools.autonomy.orchestrator import collect_retest
+    rt_out = Path(p.tmp) / "pending-test" / "retest.json"
+    rt_sha = collect_retest(p.orch(p.machine("retest")), run_id, rt_out, runner=SyntheticRetestRunner(override))
+    return ReplayEvidenceRunner(ev_out, ev_sha, SyntheticEvidenceRunner(), p.repo, retest_file=rt_out,
+                                retest_sha256=rt_sha)
