@@ -541,11 +541,16 @@ def import_accepted_sku90(backend,manifest,index,item,records,history):
 
 
 def monitoring(backend, root, result):
+    observed_start=backend.clock()
     records=backend.store.history(root);manifest=only_manifest(records);done=completed(records,manifest)
     latest=max((p['completed_at'] for p in done.values()),default=None)
     now=backend.clock()
+    if now<observed_start:raise BF.B.EvidenceError('full monitoring clock/order anomaly')
+    watermark=now
     index=result.get('index'); current=None
     if index is not None:
+        read_start=backend.clock()
+        if read_start<watermark:raise BF.B.EvidenceError('full monitoring clock/order anomaly')
         plans=reconstruct_plans(records,manifest,now)
         item=plans.get(index)
         # A current-day Catalog dependency may have the same program index.
@@ -559,18 +564,24 @@ def monitoring(backend, root, result):
             params={'origin':('TIMESTAMP',p['origin']),'pid':('STRING',p['plan_id']),
                     'entity':('STRING',p['entity']),'runs':('STRING',D.encoded(runs))}
             stats=backend.select(f"SELECT MAX(IF(status='OK',completed_at,NULL)) AS last_success,COUNT(DISTINCT IF(status='FAILED',ingestion_run_id,NULL)) AS failed_attempts FROM `{backend.journal}` WHERE started_at>=@origin AND entity=@entity AND (backfill_plan_id=@pid OR ingestion_run_id IN UNNEST(JSON_VALUE_ARRAY(@runs)))",params)
+            observed_end=backend.clock()
+            if observed_end<read_start:raise BF.B.EvidenceError('full monitoring clock/order anomaly')
+            watermark=observed_end
             if len(stats)!=1:raise BF.B.EvidenceError('full checkpoint telemetry ambiguous')
             success=C.timestamp(stats[0]['last_success']) if stats[0]['last_success'] is not None else None
-            if success and success>now:raise BF.B.EvidenceError('full checkpoint telemetry in future')
+            if success and success>observed_end:raise BF.B.EvidenceError('full checkpoint telemetry in future')
             current={'entity':p['entity'],'from':p['from'],'to':p['to'],'plan_id':p['plan_id'],
                 'observation_date':p.get('observation_date'),'sequence':state['sequence'],
                 'source_rows':state['rows'],'source_pages':state['pages'],'source_requests':state['requests'],
                 'state_bytes':len(D.encoded(state).encode()),'source_complete':state['complete'],
                 'failed_attempts':stats[0]['failed_attempts'],
                 'last_success':success.isoformat() if success else None,
-                'checkpoint_age_seconds':int((now-success).total_seconds()) if success else None,
+                'checkpoint_age_seconds':int((observed_end-success).total_seconds()) if success else None,
+                'observed_at':observed_end.isoformat(),
                 'async_phase':(state['progress'].get('report') or {}).get('phase')}
+    if latest and C.timestamp(latest)>watermark:raise BF.B.EvidenceError('full completed telemetry in future')
     return {'root_hash':root,'purpose':'FULL_HISTORY','t5_plan_hash':manifest['t5_plan_hash'],
+        'observation_start':observed_start.isoformat(),'observation_end':watermark.isoformat(),
         'chunk_grain':'BOUNDED_SOURCE_LEAF_WITH_CANONICAL_T5_PARENT',
         'total_chunks':len(manifest['programs']),'completed_chunks':len(done),
         'running_chunks':int(result['status'] in {'DISPATCHED','MONITORING'}),
@@ -580,7 +591,7 @@ def monitoring(backend, root, result):
         'current_from':result.get('from'),'current_to':result.get('to'),
         'current_scope':current,
         'last_successful_chunk':latest,
-        'checkpoint_age_seconds':int((now-C.timestamp(latest)).total_seconds()) if latest else None,
+        'checkpoint_age_seconds':int((watermark-C.timestamp(latest)).total_seconds()) if latest else None,
         'bindings':backend.binding_status,'quota_wait_until':result.get('eligible_at'),
         'dq_reconciliation':'VERIFIED_FOR_COMPLETED_LEAVES_PENDING_FOR_REMAINDER',
         'finance_economic_finality':'PROVISIONAL','ready':'UNPROVEN_FINAL_DQ_REQUIRED'}
