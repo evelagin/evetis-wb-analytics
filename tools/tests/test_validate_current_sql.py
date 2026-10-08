@@ -68,12 +68,17 @@ ORDER_DATE_MSK = {"FCT_OZON_SKU_PNL_DAILY", "FCT_OZON_SKU_PNL_MONTHLY", "FCT_OZO
                   "V_OZON_COMMISSION_POLICY", "V_OZON_LOGISTICS_ESTIMATOR",
                   "V_OZON_SKU_PNL_DAILY_OPERATIONAL", "V_OZON_SKU_FORWARD_ECONOMICS_CURRENT"}
 ORDER_DATE_MSK_PENDING = set()  # развёрнуто 2026-10-06 из main 6428919, сняты R2C
+# Phase B «Оплата за заказ» Ozon (2026-10-08): три новых вью + хвостовая колонка cpo_expense_rub у FCT и
+# операционного слоя. Git-first: pending_deploy до развёртывания; после снятия R2C имена уходят из CPO_PENDING.
+CPO = {"V_OZON_ADS_CPO_ORDERS", "V_OZON_ADS_CPO_RESIDUAL_DAILY", "V_OZON_ADS_CPO_PROMOTED_DAILY",
+       "FCT_OZON_SKU_PNL_DAILY", "V_OZON_SKU_PNL_DAILY_OPERATIONAL"}
+CPO_PENDING = set(CPO)
 NON_R2A = {"ozon_mart": {"V_OZON_COMMISSION_RECOVERY", "V_OZON_CIS_BUYOUT", "FCT_OZON_SKU_PNL_DAILY",
                          "FCT_OZON_SKU_PNL_MONTHLY", "FCT_OZON_PNL_MONTHLY",
                          # Gate 8: провизорная экономика Ozon
                          "V_OZON_COMMISSION_POLICY", "V_OZON_LOGISTICS_ESTIMATOR",
                          "V_OZON_SKU_PNL_DAILY_OPERATIONAL"} | PROMO2["ozon_mart"] | PROMO3["ozon_mart"]
-                        | AIE["ozon_mart"] | ORDER_DATE_MSK,
+                        | AIE["ozon_mart"] | ORDER_DATE_MSK | CPO,
            "evetis_mart": {"FACT_SKU_DAILY"} | PROMO2["evetis_mart"] | PROMO3["evetis_mart"] | PROMO4["evetis_mart"]
                            | PLAN1["evetis_mart"] | AIE["evetis_mart"]}
 # Gate 5M deployed every object Gate 5K/5L rewrote and read them back, so nothing is pending.
@@ -89,7 +94,7 @@ GATE8_OBJECTS = {"V_OZON_COMMISSION_POLICY", "V_OZON_LOGISTICS_ESTIMATOR",
 # Local Ozon Unitka completeness fix: production capture is preserved; no deploy authorized.
 GATE5K_PENDING = {"ozon_mart": set() | PROMO2_PENDING["ozon_mart"] | PROMO3_PENDING["ozon_mart"]
                   | PROMO4_PENDING["ozon_mart"] | PLAN1_PENDING["ozon_mart"] | AIE_PENDING["ozon_mart"]
-                  | ORDER_DATE_MSK_PENDING,
+                  | ORDER_DATE_MSK_PENDING | CPO_PENDING,
                   "evetis_mart": set() | PROMO2_PENDING["evetis_mart"] | PROMO3_PENDING["evetis_mart"]
                   | PROMO4_PENDING["evetis_mart"] | PLAN1_PENDING["evetis_mart"] | AIE_PENDING["evetis_mart"]}
 
@@ -208,7 +213,8 @@ def test_real_repository_passes():
     # 14 исторических + 4 файла отката UBR-010 (sql/ozon/promotion_l3_2026-09-22/)
     # + 3 файла отката UBR-012 (sql/ozon/ubr012_revenue_2026-09-22/)
     # + 7 файлов отката даты заказа МСК (sql/ozon/order_date_msk_2026-10-06/)
-    assert summary["historical_sites"] == 28
+    # + 2 файла отката Phase B CPO (sql/ozon/cpo_orders_2026-10-08/)
+    assert summary["historical_sites"] == 30
 
 
 def test_canonical_hash_v1_reproduces_r2a_hashes_byte_for_byte():

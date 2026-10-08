@@ -58,20 +58,13 @@
 -- отсутствующая комиссия обычной продажи считается 0 и видна в commission_missing_qty;
 -- отсутствующий COGS не входит в product_cogs_rub и виден в cogs_missing_qty. Расходы уровня
 -- магазина на SKU не разносятся (слоя L4 нет), налог не моделируется.
--- Phase B (OWNER ACK 2026-10-08): cpo_expense_rub — «Оплата за заказ» (CPO) на ЗАКАЗАННОМ SKU по
--- бизнес-дате заказа (V_OZON_ADS_CPO_ORDERS.business_date), только однозначно сопоставленные строки.
--- Отдельная колонка в хвосте: ad_spend_attributed_rub (CPC-атрибуция) и все contribution_* НЕ
--- меняются — потребители (evetis_mart.FACT_SKU_DAILY и др.) сохраняют прежнюю экономику. CPO в
--- RAW_OZON_ADS_SKU_DAILY отсутствует (ни одной CPO-кампании), поэтому двойного счёта с CPC нет;
--- type_id финансов CPO не определяет. Несопоставленный CPO и остаток биллинга — уровень магазина
--- (V_OZON_ADS_CPO_RESIDUAL_DAILY).
--- Internal dependencies: V_OZON_ADS_CPO_ORDERS, V_OZON_CIS_BUYOUT.
+-- Internal dependencies: V_OZON_CIS_BUYOUT.
 -- ============================================================================
 -- Дата заказа отправления (order_date в CTE) — бизнес-дата МСК: DATE(created_at, 'Europe/Moscow'),
 -- как в Ozon Seller Analytics. RAW order_date — UTC-дата created_at, остаётся в RAW для происхождения
 -- (2026-10-06: с UTC заказ 00:00–02:59 МСК уезжал в предыдущие сутки).
 CREATE OR REPLACE VIEW `project-fa311fc0-4d87-4781-986.ozon_mart.FCT_OZON_SKU_PNL_DAILY`
-OPTIONS (description = "Фактическая экономика Ozon, зерно = сутки x internal_sku. VIEW. Суточное выражение семантики FCT_OZON_SKU_PNL_MONTHLY: агрегат до месяца сходится с месячным P&L (деньги <= 0,01 руб., штуки точно). Суммы без ROUND, полная точность NUMERIC. Базис даты смешанный, как в месячном P&L: продажи, комиссия, COGS и расходы с posting_number - по order_date; расходы только со sku - по дате начисления; реклама - по дате статистики. Реализация = delivered. Тип операции: MARKETPLACE_SALE (агентская реализация) и CIS_BUYOUT (выкуп товара Ozon у продавца, Беларусь). У выкупа комиссии не существует как факта: commission_not_applicable_qty, а не commission_missing_qty; выручка выкупа - сумма по первичному документу. Выкуп без документа виден в buyout_revenue_unproven_qty/_rub. Возвраты и FBS не загружаются; налог и расходы уровня магазина не входят. cpo_expense_rub (Phase B) - Оплата за заказ на заказанном SKU по суткам МСК заказа, только сопоставленные строки; в contribution_* не входит, складывается с ad_spend_attributed_rub потребителем.")
+OPTIONS (description = "Фактическая экономика Ozon, зерно = сутки x internal_sku. VIEW. Суточное выражение семантики FCT_OZON_SKU_PNL_MONTHLY: агрегат до месяца сходится с месячным P&L (деньги <= 0,01 руб., штуки точно). Суммы без ROUND, полная точность NUMERIC. Базис даты смешанный, как в месячном P&L: продажи, комиссия, COGS и расходы с posting_number - по order_date; расходы только со sku - по дате начисления; реклама - по дате статистики. Реализация = delivered. Тип операции: MARKETPLACE_SALE (агентская реализация) и CIS_BUYOUT (выкуп товара Ozon у продавца, Беларусь). У выкупа комиссии не существует как факта: commission_not_applicable_qty, а не commission_missing_qty; выручка выкупа - сумма по первичному документу. Выкуп без документа виден в buyout_revenue_unproven_qty/_rub. Возвраты и FBS не загружаются; налог и расходы уровня магазина не входят.")
 AS
 WITH post AS (
   SELECT p.posting_number, p.sku, p.status, DATE(p.created_at, 'Europe/Moscow') order_date, p.quantity, p.price_rub,
@@ -148,11 +141,8 @@ ads AS (SELECT a.date d, mp.internal_sku, SUM(a.attributed_spend_rub) ad_attr
   FROM `project-fa311fc0-4d87-4781-986.ozon_raw.RAW_OZON_ADS_SKU_DAILY` a
   JOIN `project-fa311fc0-4d87-4781-986.evetis_ref.REF_SKU_CHANNEL_MAP` mp
     ON mp.marketplace='OZON' AND mp.marketplace_sku=a.sku GROUP BY 1,2),
-cpo AS (SELECT business_date d, ordered_internal_sku internal_sku, SUM(expense_rub) cpo_amt
-  FROM `project-fa311fc0-4d87-4781-986.ozon_mart.V_OZON_ADS_CPO_ORDERS`
-  WHERE ordered_mapping_status='MAPPED' AND campaign_status IN ('RESOLVED', 'RESOLVED_BY_BILLING_DAY') GROUP BY 1,2),
-j AS (SELECT COALESCE(s.d, dc.d, ads.d, cpo.d) fact_date,
-    COALESCE(s.internal_sku, dc.internal_sku, ads.internal_sku, cpo.internal_sku) internal_sku,
+j AS (SELECT COALESCE(s.d, dc.d, ads.d) fact_date,
+    COALESCE(s.internal_sku, dc.internal_sku, ads.internal_sku) internal_sku,
     IFNULL(s.gross_qty,0) gross_qty, IFNULL(s.cancelled_qty,0) cancelled_qty,
     IFNULL(s.in_transit_qty,0) in_transit_qty, IFNULL(s.realized_qty,0) realized_qty,
     IFNULL(s.seller_base_revenue_rub,0) seller_base_revenue_rub,
@@ -165,11 +155,9 @@ j AS (SELECT COALESCE(s.d, dc.d, ads.d, cpo.d) fact_date,
     IFNULL(dc.other_direct,0) other_direct_marketplace_costs_rub,
     IFNULL(dc.sku_promotion,0) sku_promotion_rub,
     IFNULL(s.product_cogs_rub,0) product_cogs_rub, IFNULL(s.cogs_missing_qty,0) cogs_missing_qty,
-    IFNULL(ads.ad_attr,0) ad_spend_attributed_rub,
-    IFNULL(cpo.cpo_amt,0) cpo_expense_rub
+    IFNULL(ads.ad_attr,0) ad_spend_attributed_rub
   FROM s FULL JOIN dc USING (d, internal_sku)
-         FULL JOIN ads USING (d, internal_sku)
-         FULL JOIN cpo USING (d, internal_sku))
+         FULL JOIN ads USING (d, internal_sku))
 SELECT j.fact_date, j.internal_sku,
   j.gross_qty, j.cancelled_qty, j.in_transit_qty, j.realized_qty,
   j.seller_base_revenue_rub, j.commission_rub, j.commission_missing_qty,
@@ -184,7 +172,6 @@ SELECT j.fact_date, j.internal_sku,
   j.seller_base_revenue_rub - j.product_cogs_rub - j.commission_rub
     - j.direct_variable_marketplace_costs_rub - j.other_direct_marketplace_costs_rub
     - j.sku_promotion_rub - j.ad_spend_attributed_rub contribution_after_attributed_ads_rub,
-  'OZON_V1: orders, sold, revenue, commission, cogs, posting-linked costs = order date; sku-only costs = accrual date; ads = ad stat date' fact_date_semantics,
-  j.cpo_expense_rub
+  'OZON_V1: orders, sold, revenue, commission, cogs, posting-linked costs = order date; sku-only costs = accrual date; ads = ad stat date' fact_date_semantics
 FROM j
 WHERE j.fact_date IS NOT NULL AND j.internal_sku IS NOT NULL;

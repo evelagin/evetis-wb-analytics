@@ -28,7 +28,7 @@ import { LoaderError } from '../../../errors.js';
 import { SheetsRest, type SheetsGateway } from '../sheets.js';
 import { BqClient } from '../../../bq/client.js';
 import { OZON_GEOMETRY } from './contract.js';
-import { ozonMonthFactsSql, ozonProvenStockSql, ozonSppEstimateSql, normalizeBqRow, type OzonSppEstimateRow } from './bq.js';
+import { ozonMonthFactsSql, ozonProvenStockSql, ozonSppEstimateSql, ozonCpoFreshnessSql, normalizeBqRow, type OzonSppEstimateRow } from './bq.js';
 import { ozonMonthSpec, composeMonth, type OzonFactRow, type CellValue } from './month.js';
 import type { CellValue as SheetCell } from '../model.js';
 import { buildOzonPlan, sectionFormulas, OZON_WRITE_PHASES, type SppDayEvidence, type SppEstimate } from './monthplan.js';
@@ -311,8 +311,33 @@ export async function ozonUnitkaLoader(
     stale: stale.length });
   if (stale.length && write) throw new StaleSourceError(stale);
 
+  // Phase B: свежесть «Оплаты за заказ». НЕ барьер: CPO приходит списаниями до 41 суток после заказа и
+  // перезаписывается окном 45 суток, поэтому отставание загрузчика лечится следующим прогоном. Отказ
+  // загрузчика ловит его собственный алерт; здесь — только явное предупреждение.
+  const cpoOn = ctx.config.ozonUnitkaCpo;
+  let cpoThrough: string | null = null;
+  if (cpoOn) try {
+    const [fr] = await bq.query<{ covered_through: string | null; unresolved_rows: number | null }>(ozonCpoFreshnessSql(ctx.config.projectId));
+    cpoThrough = fr?.covered_through ?? null;
+    // Строка без однозначной кампании или SKU в лист не идёт (остаётся на уровне магазина) — это должен увидеть
+    // владелец: ERROR с кодом поднимает алерт Юнитки, запись при этом не останавливается.
+    if (Number(fr?.unresolved_rows ?? 0) > 0) {
+      log.error('ozon_unitka_cpo_unresolved', { code: 'OZON_CPO_UNRESOLVED', unresolved_rows: Number(fr?.unresolved_rows),
+        note: 'CPO без однозначной кампании/SKU — в residual-вью (уровень магазина); см. V_OZON_ADS_CPO_ORDERS' });
+    }
+  } catch (e) {
+    log.warn('ozon_unitka_cpo_freshness_unavailable', { reason: e instanceof Error ? e.message : String(e) });
+  }
+  const yesterday = new Date(Date.parse(`${today}T00:00:00Z`) - 86_400_000).toISOString().slice(0, 10);
+  if (cpoOn && (cpoThrough === null || cpoThrough < yesterday)) {
+    log.warn('ozon_unitka_cpo_stale', { cpo_covered_through: cpoThrough ?? 'never', expected: yesterday,
+      note: 'Оплата за заказ за более поздние сутки появится следующим прогоном; запись не блокируется' });
+  }
+
   const facts = await bq.query<OzonFactRow>(
-    ozonMonthFactsSql({ project: ctx.config.projectId, from: w.from, to: w.to }));
+    ozonMonthFactsSql({ project: ctx.config.projectId, from: w.from, to: w.to, cpo: ctx.config.ozonUnitkaCpo }));
+  // Флаг выключен — CPO в лист не идёт: ячейка рекламы = CPC, как до Phase B (запись побайтно прежняя).
+  if (!cpoOn) for (const f of facts) f.cpo_spend = null;
   const sourceIssues = ozonSourceCompletenessIssues(facts);
   if (sourceIssues.length) throw new LoaderError(JSON.stringify(sourceIssues.slice(0, 5)), 'OZON_MODEL_QA_FAILED');
   const stockRows = await bq.query<{ d: string; offer_id: string; units: number }>(
@@ -430,6 +455,15 @@ export async function ozonUnitkaLoader(
       note: 'удаляется ФАКТИЧЕСКИЙ префикс правил движка; OZON_UNITKA_EXISTING_CF_RULES больше не авторитет' });
   }
 
+  // Phase B: заметки «Реклама внутренняя» записываемой области — чтобы поставить разложение CPC/CPO и не
+  // тронуть заметку владельца. Без метода чтения заметок у шлюза — заметки рекламы не управляются.
+  const adsCells = built.flatMap((b) => b.spec.blocks.flatMap((o) => Array.from(
+    { length: b.spec.days - b.fromDay + 1 },
+    (_, i) => ({ row: b.spec.firstRow + b.fromDay - 1 + i, col: b.spec.anchor[o]! + OZON_OFFSET.adsIn }))));
+  // Читаются и при выключенном флаге: тогда снимаются только управляемые строки разложения (откат флага не
+  // оставляет устаревших «Итого»); без управляемых строк запись побайтно прежняя — mergeAdsNote ничего не меняет.
+  const adsNotes = sheets.readNotes && adsCells.length ? await sheets.readNotes(name, adsCells) : undefined;
+
   const plan = buildOzonPlan({
     sheetId: meta.sheetId, sheetName: name, allSections, sections: built,
     // ширина листа суточным прогоном меняется ТОЛЬКО расширением ёмкости выше (с проверкой хвоста).
@@ -440,6 +474,7 @@ export async function ozonUnitkaLoader(
     lcd, lcdMirror: null, lcdRef,
     blocks: geo.physicalSlots,
     existingCfRules,
+    adsNotes,
   });
 
   const cells = plan.values.reduce((n, v) => n + v.values.reduce((m, r) => m + r.length, 0), 0);
@@ -450,6 +485,9 @@ export async function ozonUnitkaLoader(
   ctx.logger.info('ozon-unitka: план собран', {
     window: `${w.from}..${w.to}`, days: w.days, deep: w.deep,
     sections: built.map((b) => b.spec.key).join(','), createdSections: created.length, sppEstimates: estRows.length,
+    cpo_mode: cpoOn ? 'on' : 'off', cpo_covered_through: cpoThrough ?? 'never',
+    cpo_cells: facts.filter((f) => (f.cpo_spend ?? 0) !== 0).length,
+    cpo_rub: Math.round(facts.reduce((x, f) => x + (f.cpo_spend ?? 0), 0) * 100) / 100,
     activatedSkus: activated.length, appendRowCount, cells, requests, estimatedRows, write,
     lcd_authority: authority.kind, committed_lcd: cycle?.committed ?? lcd, candidate_lcd: lcd,
     slots: geo.physicalSlots, tail_first: geo.tailFirst, cf_rules_existing: existingCfRules });

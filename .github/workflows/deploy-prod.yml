@@ -89,6 +89,19 @@ jobs:
           else
             echo "::warning title=ozon-unitka-prod::Job ещё не создан Terraform'ом — шаг пропущен"
           fi
+      - name: Deploy ozon-cpo-orders-prod (тот же digest)
+        # Phase B (2026-10-08): «Оплата за заказ» Ozon, dispatch args[0]=ozon-cpo-orders, SA sa-ozon-cpo-loader.
+        # Guard сохраняет совместимость до первого infra apply. Секреты — имена в Terraform env; workflow
+        # их не читает и не меняет. Пропуск оставил бы Job на bootstrap-образе (урок PR-1).
+        run: |
+          if gcloud run jobs describe ozon-cpo-orders-prod --region ${{ vars.GCP_REGION }} >/dev/null 2>&1; then
+            gcloud run jobs update ozon-cpo-orders-prod \
+              --region ${{ vars.GCP_REGION }} \
+              --image "${DIGEST}" \
+              --update-env-vars IMAGE_DIGEST="${DIGEST}",GIT_SHA="${SOURCE_GIT_SHA}"
+          else
+            echo "::warning title=ozon-cpo-orders-prod::Job ещё не создан Terraform'ом — шаг пропущен"
+          fi
       - name: Deploy wb-paid-storage-prod (тот же digest)
         # Stage E4: Job создаётся Terraform'ом. Guard сохраняет совместимость до первого infra apply.
         # Секрет остаётся WB_TOKEN_ANALYTICS из Terraform env; workflow его не читает и не меняет.

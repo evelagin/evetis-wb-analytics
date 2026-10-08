@@ -21,6 +21,7 @@ import { unitkaMonthRollbackLoader } from './unitka/rollback.js';
 import { unitkaSppRollbackLoader } from './unitka/spp_rollback.js';
 import { ozonUnitkaLoader } from './unitka/ozon/loader.js';
 import { ozonLcdMigrationLoader } from './unitka/ozon/lcd_migration_loader.js';
+import { ozonCpoOrdersLoader } from './ozon_cpo/index.js';
 
 export interface LoaderSpec {
   handler: LoaderHandler;
@@ -66,6 +67,11 @@ export const LOADERS: Record<string, LoaderSpec> = {
   // запись — prod + OZON_LCD_MIGRATION_WRITE=1 + ожидания из плана. Нет расписания, запуск — одно
   // исполнение ozon-unitka-prod с --args=ozon-unitka-lcd-migration.
   'ozon-unitka-lcd-migration': { handler: (ctx) => ozonLcdMigrationLoader(ctx), logicalPeriod: (now) => unitkaSlot(now) },
+  // Phase B (OWNER ACK 08.10.2026): «Оплата за заказ» Ozon по заказам → ozon_raw.RAW_OZON_ADS_CPO_ORDERS.
+  // Свой Job ozon-cpo-orders-prod, BQ_RAW_DATASET=ozon_raw (аренда и журнал — в домене Ozon).
+  // Период — часовой слот МСК: ручной бэкфилл в другой час не упирается в COMPLETE суточного прогона.
+  // Замена блока окна идемпотентна, поэтому транзиентный отказ повторяется один раз в слоте.
+  'ozon-cpo-orders': { handler: (ctx) => ozonCpoOrdersLoader(ctx), logicalPeriod: (now) => unitkaSlot(now), prodOnly: true, retryTransient: true },
 };
 
 export function resolveLoader(name: string): LoaderSpec | undefined {
