@@ -751,8 +751,8 @@ def _generate_answer(deps: Deps, subject, communication_type=CommunicationType.R
     """Return ``(gen, v2_meta)``. ``v2_meta`` is None for reviews_v1, else a dict
     with the flags to surface on the card.
 
-    V2 is LEGACY_FALLBACK / ROLLBACK ONLY under R2.2 (V31_ONLY_OPERATOR_ENABLED): it is still
-    generated and stored as ``ai_answer`` for diagnostics, but never shown or published.
+    V2 is LEGACY_FALLBACK / ROLLBACK ONLY: under R2.2 (V31_ONLY_OPERATOR_ENABLED) it is not
+    called for new communications at all; it serves R2.1 rollback and legacy cards.
 
     Reviews use v2 only when it is primary (else reviews_v1 — the explicit
     config rollback path); questions ALWAYS use v2 (reviews_v1 has no question
@@ -779,8 +779,8 @@ def _generate_answer(deps: Deps, subject, communication_type=CommunicationType.R
 def _manual_text_flags(deps: Deps, doc: dict, text: str) -> list[str]:
     """Run the SAME validators the AI draft gets over operator-typed text (WP11).
     Advisory for now (surfaced on the card), exactly like the AI draft flags."""
-    if deps.engine is None:
-        return []
+    if deps.engine is None or _is_v31_only(doc):
+        return []  # R2.2: the v3.1E policy is the only check on operator text
     try:
         subject, communication_type = _subject_from_doc(doc)
         context = deps.engine.build_context(subject, communication_type)
@@ -817,8 +817,8 @@ def _run_shadow(deps: Deps, review: Review, doc: dict, doc_id: str) -> None:
       records a comparison row to the separate shadow table.
     """
     settings = deps.settings
-    if not getattr(settings, "communication_engine_v2_enabled", False):
-        return
+    if not getattr(settings, "communication_engine_v2_enabled", False) or _is_v31_only(doc):
+        return  # R2.2 cards: no V2 work at all
     if deps.shadow_engine is None or deps.shadow_repo is None:
         return
     try:
@@ -848,6 +848,15 @@ def _draft_and_send(deps: Deps, subject, doc: dict, doc_id: str, communication_t
     PENDING_APPROVAL, emit events. Shared by reviews and questions so both behave
     identically; the caller owns the surrounding try/except."""
     _emit_event(deps, doc, doc_id, EventType.FIRST_SEEN, status_after=Status.PROCESSING.value)
+    if _v31_only_enabled(deps):
+        # R2.2: the V2 generator is NOT called (LEGACY_FALLBACK / ROLLBACK ONLY). 3.1E prepares
+        # from the communication itself; a 3.1E failure yields the retry/write/skip card.
+        deps.repo.update(doc_id, {"operator_mode": _V31_ONLY})
+        draft = _v31_draft(deps, doc_id, deps.repo.get(doc_id) or doc)
+        if draft and draft.get("status") == "READY" and draft.get("text"):
+            deps.repo.save_generation(doc_id, _v31_generation(draft), source="v31e", set_pending=False)
+        doc, v2_meta = deps.repo.get(doc_id), None
+        return _send_card(deps, doc, doc_id, card_builder, v2_meta)
     gen, v2_meta = _generate_answer(deps, subject, communication_type)
     prepared_gen, recovery = _prepare_response(deps, doc, gen.text)
     # keep the record leased (PROCESSING) until the card is really sent
@@ -869,6 +878,10 @@ def _draft_and_send(deps: Deps, subject, doc: dict, doc_id: str, communication_t
                 deps.repo.save_generation(doc_id, _v31_generation(draft), source="v31e", set_pending=False)
                 v2_meta = None  # V2 flags describe a draft the card no longer leads with
         doc = deps.repo.get(doc_id)
+    return _send_card(deps, doc, doc_id, card_builder, v2_meta)
+
+
+def _send_card(deps: Deps, doc: dict, doc_id: str, card_builder, v2_meta) -> dict:
     _emit_event(deps, doc, doc_id, EventType.AI_GENERATED,
                 status_after=Status.PROCESSING.value, answer_version=doc.get("generation_number"))
 

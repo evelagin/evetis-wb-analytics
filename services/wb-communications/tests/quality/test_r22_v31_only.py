@@ -90,7 +90,7 @@ def test_v2_is_never_offered_or_adoptable():
     assert not any(c.startswith(("sv2:", "u2:")) for c in buttons(d))
     assert tap(d, f"sv2:{doc_id}:{gen}")["status"] == "stale"
     assert tap(d, f"u2:{doc_id}:{gen}", n=2)["status"] == "stale"
-    assert d.repo.get(doc_id)["final_answer"] != V2_TEXT and d.repo.get(doc_id)["ai_answer"] == V2_TEXT
+    assert d.repo.get(doc_id)["final_answer"] != V2_TEXT and not d.repo.get(doc_id).get("ai_answer")
 
 
 # questions ----------------------------------------------------------------------------------
@@ -99,7 +99,7 @@ def test_live_restock_question_gets_safe_answer_and_publishes(monkeypatch, polic
     run_poll(d)
     doc_id, doc = doc_of(d)
     assert doc["v31_draft"]["status"] == "READY" and doc["v31_draft"]["route"] == "SAFE_INFORMATION_GAP"
-    assert doc["final_answer"] == RESTOCK and doc["ai_answer"] != RESTOCK          # no V2 promotion
+    assert doc["final_answer"] == RESTOCK and not doc.get("ai_answer")              # V2 never ran
     assert "Рекомендуемый ответ 3.1E" in card(d) and "через неделю" not in card(d)
     assert tap(d, f"pub:{doc_id}:{doc['generation_number']}")["status"] == "published"
     assert published_questions(d) == [RESTOCK] and last_trace(d)["publication_mode"] == "v31"
@@ -169,7 +169,7 @@ def test_technical_failure_offers_retry_write_skip_never_v2(monkeypatch, policie
     assert tap(d, f"regen:{doc_id}", n=2)["status"] == "regen_no_v31"
     after = d.repo.get(doc_id)
     assert after["generation_number"] == gen and after["status"] == "pending_approval"
-    assert [v["source"] for v in after["answer_versions"]] == ["ai"]
+    assert not after.get("answer_versions") and not after.get("final_answer")
     # retry after recovery: the 3.1E answer becomes active and publishable
     monkeypatch.setattr(core, "prepare", real)
     assert tap(d, f"regen:{doc_id}", n=3)["status"] == "regenerated"
@@ -231,3 +231,88 @@ def test_live_anna_case_unchanged_under_r22():
            "buyer_name": "Анна", "entity_type": "review"}
     r = prepare(msg, V2_TEXT, load_snapshot(None), force_generation=True, moderate_safety=True, safe_gaps=True)
     assert r.status == "READY" and r.plan.route == "MODERATE_DISCOMFORT"
+
+
+# R2.2 blocker: V2 is not in the critical path -------------------------------------------------
+class CountingV2:
+    """A V2 generator that records every call and can fail."""
+    def __init__(self, fail=False):
+        self.calls, self.fail = 0, fail
+
+    def generate_answer(self, *a):
+        from app.domain.models import GenerationResult
+        self.calls += 1
+        if self.fail:
+            raise RuntimeError("V2 generator down")
+        return GenerationResult(V2_TEXT, "fake-v2", "reviews_v1", {}, 0, "")
+
+
+def v2_prompt_calls(d, monkeypatch, fail=False):
+    counter = {"n": 0}
+    if d.engine is not None:
+        real = d.engine.build_prompt
+
+        def build_prompt(*a, **k):
+            counter["n"] += 1
+            if fail:
+                raise RuntimeError("V2 prompt builder down")
+            return real(*a, **k)
+        monkeypatch.setattr(d.engine, "build_prompt", build_prompt)
+    return counter
+
+
+@pytest.mark.parametrize("fail", [False, True])
+def test_review_never_calls_v2_and_survives_v2_failure(monkeypatch, policies, fail):
+    v2 = CountingV2(fail=fail)
+    d = only(openai=v2, communication_engine_v2_primary=True)
+    prompts = v2_prompt_calls(d, monkeypatch, fail=fail)
+    run_poll(d)
+    doc_id, doc = doc_of(d)
+    assert v2.calls == 0 and prompts["n"] == 0
+    assert doc["status"] == "pending_approval" and doc["v31_draft"]["status"] == "READY"
+    assert "Рекомендуемый ответ 3.1E" in card(d)
+    assert tap(d, f"pub:{doc_id}:{doc['generation_number']}")["status"] == "published"
+    assert last_trace(d)["publication_mode"] == "v31" and policies.live.calls == []
+    assert v2.calls == 0 and prompts["n"] == 0
+
+
+@pytest.mark.parametrize("fail", [False, True])
+def test_question_never_calls_v2_and_survives_prompt_builder_failure(monkeypatch, policies, fail):
+    d = question("Здравствуйте когда появится крем 438775437 ?", monkeypatch=monkeypatch)
+    d.openai = v2 = CountingV2(fail=fail)
+    prompts = v2_prompt_calls(d, monkeypatch, fail=fail)
+    run_poll(d)
+    doc_id, doc = doc_of(d)
+    assert v2.calls == 0 and prompts["n"] == 0 and doc["final_answer"] == RESTOCK
+    assert tap(d, f"pub:{doc_id}:{doc['generation_number']}")["status"] == "published"
+    assert published_questions(d) == [RESTOCK] and policies.live.calls == []
+
+
+def test_v31_failure_card_without_any_v2_generation(monkeypatch):
+    import app.response_quality.core as core
+    monkeypatch.setattr(core, "prepare", lambda *a, **k: (_ for _ in ()).throw(RuntimeError("boom")))
+    v2 = CountingV2()
+    d = only(openai=v2, communication_engine_v2_primary=True)
+    prompts = v2_prompt_calls(d, monkeypatch)
+    run_poll(d)
+    doc_id, doc = doc_of(d)
+    assert doc["status"] == "pending_approval" and "Не удалось подготовить ответ 3.1E" in card(d)
+    assert buttons(d) == [f"regen:{doc_id}", f"edit:{doc_id}", f"skip:{doc_id}"]
+    assert tap(d, f"regen:{doc_id}", n=2)["status"] == "regen_no_v31"
+    edit(d, "Людмила, спасибо за отзыв!", n=10)                       # manual text: no V2 validators
+    assert "валидатор" not in card(d)
+    assert v2.calls == 0 and prompts["n"] == 0
+
+
+def test_flag_off_r21_still_uses_the_v2_fallback(monkeypatch, policies):
+    import app.response_quality.core as core
+    monkeypatch.setattr(core, "prepare", lambda *a, **k: (_ for _ in ()).throw(RuntimeError("boom")))
+    v2 = CountingV2()
+    d = make_deps([fb()], openai=v2, v31_primary_operator_enabled=True)
+    d.publication_validator = None
+    run_poll(d)
+    doc_id, doc = doc_of(d)
+    assert v2.calls == 1 and doc["operator_mode"] == "v31_primary" and doc["final_answer"] == V2_TEXT
+    assert "Резервный ответ V2" in card(d)
+    tap(d, f"pub:{doc_id}:{doc['generation_number']}")
+    assert last_trace(d)["publication_mode"] == "live_v2" and policies.live.calls == [V2_TEXT]
