@@ -1,17 +1,28 @@
-"""Наблюдатель AE v1. Детерминированный: ни одного вызова модели.
+"""Наблюдатель AE. Детерминированный: ни одного вызова модели.
 
-Отвечает на вопрос «нужен ли инженер», а не «здоров ли конвейер» — второе уже решают
-`run_data_checks.py` и детектор здоровья. Наблюдатель только сравнивает их вердикты с
-историей и с реестром известных нарушений.
+Отвечает на вопрос «нужен ли инженер», а не «здоров ли конвейер». С AE-R1 здоровье данных
+наблюдатель НЕ вычисляет: живой источник — канонические сигналы DRO-1 и журнал отказов прогонов
+(`tools/autonomy/signals.py`). Каждый сигнал до создания задачи проходит детерминированный
+классификатор (`tools/autonomy/classifier.py`); задачу создают только инженерные классы.
 
-Классы наблюдения:
+Классы канонических сигналов (AE-R1):
+  HEALTHY                конвейер здоров
+  NOT_ENGINEERING        данные отсутствуют/опаздывают, внешний сбой без дефекта кода, ручной или
+                         бизнесовый вход (ФФ, план продаж) — только владельцу, задачи нет никогда
+  UNCLASSIFIED           ни одно правило не сработало — fail closed: оповещение, задачи нет
+  OBSERVING              инженерный класс по DRO, ещё не устойчив — ждём подтверждения
+  ENGINEERING_CANDIDATE  инженерный класс (журнал отказов — сразу; DRO — при устойчивости) — диспатч
+  INFRA_BLOCKED          доказательство не получено или детектор устарел — это НЕ здоровье
+
+Классы старого пути наблюдений проверок (фикстуры и синтетические стенды):
   HEALTHY          проверка проходит
   KNOWN            падает, но привязана к открытому UBR или вынесена из ворот с доказательством
   OBSERVING        упала впервые — ждём подтверждения, модель не зовём
   FLAPPING         чередует PASS и FAIL — это дефект проверки или гонка, а не поломка кода;
                    оповестить, но не диспатчить: автономный «ремонт» мигающего сигнала опасен
-  NEW_PERSISTENT   падает подряд не меньше persistence_threshold раз и не известна — диспатч
-  HEALTH_DEGRADED  детектор здоровья сообщает о нездоровье — диспатч
+  NEW_PERSISTENT   падает подряд не меньше persistence_threshold раз и не известна — диспатч ТОЛЬКО
+                   на синтетическом стенде; в живом наблюдении без канонической классификации —
+                   UNCLASSIFIED (AE-R1: задачи без классификатора не бывает)
   INFRA_BLOCKED    доказательство не получено (нет доступа, ошибка запроса) — это НЕ здоровье
 """
 from __future__ import annotations
@@ -22,7 +33,9 @@ import sys
 import tempfile
 from pathlib import Path
 
-from tools.autonomy.envelope import build_incident, known_checks, objective_from_incident, suites_index
+from tools.autonomy import classifier
+from tools.autonomy.envelope import (build_incident, build_signal_incident, known_checks, objective_from_incident,
+                                     objective_from_signal_incident, suites_index)
 from tools.autonomy.policy import load_policy
 from tools.autonomy.redact import redact_tail, safe_dumps
 from tools.autonomy.state import StateStore, now_iso
@@ -36,9 +49,18 @@ def fixture_source(path: Path) -> list[dict]:
     return json.loads(Path(path).read_text(encoding="utf-8"))["observations"]
 
 
+def canonical_source(project: str, token_command: str) -> list[dict]:
+    """AE-R1: канонические сигналы DRO-1 и журнала отказов. Только SELECT от sa-ae-reader."""
+    from tools.autonomy.signals import canonical_signals, live_fetcher
+    return canonical_signals(live_fetcher(project, token_command), load_policy())
+
+
 def live_source(project: str, token_command: str, suites: list[str],
                 include_health: bool = True) -> list[dict]:
-    """Прогнать существующие ворота и превратить их отчёты в наблюдения. Только чтение."""
+    """УСТАРЕВШИЙ путь (до AE-R1): прогнать ворота данных и превратить отчёты в наблюдения.
+
+    Задачи по этим наблюдениям наблюдатель больше не создаёт (они не проходят классификатор):
+    устойчивое падение — UNCLASSIFIED с оповещением. Сохранён для диагностики владельцем."""
     obs: list[dict] = []
     for suite in suites:
         with tempfile.TemporaryDirectory() as td:
@@ -99,6 +121,39 @@ def classify(obs: dict, history: list[dict], known: dict[str, str], policy: dict
     return "NEW_PERSISTENT" if streak >= w["persistence_threshold"] else "OBSERVING"
 
 
+CANONICAL_KINDS = ("dro_health", "run_failure", "infra_blocked")
+SIGNAL_STATUS = {"run_failure": "RUN_FAILED", "dro_health": "DEGRADED"}
+
+
+def classify_signal(sig: dict, history: list[dict], policy: dict) -> tuple[str, dict | None]:
+    """Канонический сигнал → (класс наблюдения, решение классификатора)."""
+    if sig["kind"] == "infra_blocked":
+        return "INFRA_BLOCKED", None
+    decision = classifier.classify(sig, policy["signals"]["recurrence_threshold_7d"], policy)
+    if sig["kind"] == "dro_health" and sig.get("serving_status") == "HEALTHY":
+        return "HEALTHY", decision
+    if decision["task_class"] == "NOT_ENGINEERING":
+        return "NOT_ENGINEERING", decision
+    if not decision["engineering"]:
+        return "UNCLASSIFIED", decision
+    if sig["kind"] == "run_failure":
+        # Отказ прогона — уже свершившийся факт с кодом и сигнатурой: ждать повторения не нужно.
+        return "ENGINEERING_CANDIDATE", decision
+    streak = 0
+    for h in reversed(history[-policy["watch"]["history_window"]:]):
+        if h["status"] in ("HEALTHY", "PASS"):
+            break
+        streak += 1
+    return ("ENGINEERING_CANDIDATE" if streak >= policy["watch"]["persistence_threshold"] else "OBSERVING"), decision
+
+
+def _signal_row(sig: dict) -> dict:
+    """Публичная строка итога: только идентификаторы и перечисления."""
+    keep = ("pipeline_id", "loader_name", "error_code", "failure_signature", "reason_code", "serving_status",
+            "message_fingerprint", "occurrences_7d", "recovery_status")
+    return {k: sig[k] for k in keep if k in sig}
+
+
 # ----------------------------------------------------------------- прогон ---
 def watch(observations: list[dict], store: StateStore, repository_sha: str, out_dir: Path,
           synthetic: bool = False) -> dict:
@@ -112,31 +167,57 @@ def watch(observations: list[dict], store: StateStore, repository_sha: str, out_
 
     results, dispatch, notify = [], [], []
     for o in observations:
+        canonical = o.get("kind") in CANONICAL_KINDS
         entry = history.setdefault(o["key"], {"observations": [], "last_class": None})
-        entry["observations"] = (entry["observations"] + [
-            {"at": at, "status": o["status"], **({"failing_rows": o["failing_rows"]} if o.get("failing_rows") else {})}
-        ])[-policy["watch"]["history_window"]:]
-        cls = classify(o, entry["observations"], known, policy)
+        if canonical:
+            st = ("BLOCKED" if o["kind"] == "infra_blocked" else
+                  "HEALTHY" if o.get("serving_status") == "HEALTHY" else SIGNAL_STATUS[o["kind"]])
+            entry["observations"] = (entry["observations"] + [{"at": at, "status": st}])[-policy["watch"]["history_window"]:]
+            cls, decision = classify_signal(o, entry["observations"], policy)
+            row = {"key": o["key"], "check_id": o["key"], "suite": o["kind"], "status": st, "class": cls,
+                   **({"task_class": decision["task_class"], "rule": decision["rule"]} if decision else {}),
+                   **_signal_row(o)}
+        else:
+            entry["observations"] = (entry["observations"] + [
+                {"at": at, "status": o["status"], **({"failing_rows": o["failing_rows"]} if o.get("failing_rows") else {})}
+            ])[-policy["watch"]["history_window"]:]
+            cls, decision = classify(o, entry["observations"], known, policy), None
+            if cls in ("NEW_PERSISTENT", "HEALTH_DEGRADED") and not synthetic:
+                # AE-R1: без канонической классификации задачи не бывает — fail closed.
+                cls = "UNCLASSIFIED"
+            row = {"key": o["key"], "check_id": o["check_id"], "suite": o["suite"], "status": o["status"],
+                   "class": cls}
         changed = cls != entry["last_class"]
         entry["last_class"] = cls
-        row = {"key": o["key"], "check_id": o["check_id"], "suite": o["suite"], "status": o["status"],
-               "class": cls, "changed": changed}
-        if cls == "KNOWN" and o["check_id"] in known:
+        row["changed"] = changed
+        if cls == "KNOWN" and o.get("check_id") in known:
             row["ubr"] = known[o["check_id"]]
-        if cls in policy["watch"]["dispatch_on"]:
+        processed = canonical and o.get("kind") == "run_failure" and \
+            entry.get("dispatched_last_seen_at") == o.get("last_seen_at") and o.get("last_seen_at")
+        if cls in policy["watch"]["dispatch_on"] and processed:
+            # Та же строка журнала (тот же последний отказ) уже порождала задачу: повторно — только при
+            # новом отказе (last_seen_at сдвинулся), а не на каждом наблюдении в окне 14 суток.
+            row["dispatch"] = "already_processed"
+        elif cls in policy["watch"]["dispatch_on"]:
             active = store.active_run(o["key"])
             if active:
                 row["dispatch"] = f"already_active:{active['run_id']}"
             elif store.in_cooldown(o["key"], policy["budgets"]["failed_cooldown_hours"]):
                 row["dispatch"] = "cooldown"
             else:
-                incident = build_incident(o, entry["observations"], repository_sha, cls, synthetic)
-                objective = objective_from_incident(incident)
+                if canonical:
+                    incident = build_signal_incident(o, decision, entry["observations"], repository_sha)
+                    objective = objective_from_signal_incident(incident, policy)
+                else:
+                    incident = build_incident(o, entry["observations"], repository_sha, cls, synthetic)
+                    objective = objective_from_incident(incident)
                 p = out_dir / f"{objective['objective_id']}.json"
                 p.write_text(safe_dumps(objective, indent=2), encoding="utf-8")
                 row["dispatch"] = str(p)
                 dispatch.append({"objective_path": str(p), "deduplication_key": o["key"],
                                  "incident_id": incident["incident_id"]})
+                if canonical and o.get("kind") == "run_failure":
+                    entry["dispatched_last_seen_at"] = o.get("last_seen_at")
         if cls in policy["watch"]["notify_on"] and changed:
             notify.append(row)
         results.append(row)
@@ -147,7 +228,8 @@ def watch(observations: list[dict], store: StateStore, repository_sha: str, out_
         status = "ACTION"
     elif "INFRA_BLOCKED" in classes:
         status = "INFRA_BLOCKED"
-    elif classes & {"OBSERVING", "FLAPPING", "NEW_PERSISTENT", "HEALTH_DEGRADED"}:
+    elif classes & {"OBSERVING", "FLAPPING", "NEW_PERSISTENT", "HEALTH_DEGRADED", "UNCLASSIFIED",
+                    "ENGINEERING_CANDIDATE"}:
         status = "ATTENTION"
     else:
         status = "HEALTHY"

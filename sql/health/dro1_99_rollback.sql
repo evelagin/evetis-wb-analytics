@@ -16,6 +16,7 @@
 --   DELETE FROM `wb_ops.OPS_INCIDENT`    WHERE scope = 'DRO_PIPELINE';
 --   DELETE FROM `wb_ops.OPS_HEALTH_STATE` WHERE scope = 'DRO_PIPELINE';
 -- ============================================================================
+DROP VIEW IF EXISTS `evetis_health.V_RUN_FAILURE_LEDGER`;   -- AE-R1, dro1_07: независим, удаляется первым
 DROP VIEW IF EXISTS `evetis_health.V_DATA_PERIOD_STATE`;
 DROP VIEW IF EXISTS `evetis_health.V_HEALTH_CHECK_CURRENT`;
 DROP VIEW IF EXISTS `evetis_health.V_DATA_HEALTH_CURRENT`;

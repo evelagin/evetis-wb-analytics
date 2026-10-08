@@ -19,8 +19,10 @@ from tools.autonomy import gatekeeper
 from tools.autonomy.agents import AgentAdapter, AgentResult, ReplayAdapter, SCHEMA_OF_ROLE
 from tools.autonomy.evidence import EvidenceRunner, Sandbox
 from tools.autonomy.redact import RedactionError, diff_added_secrets, ensure_clean, redact_obj, redact_text, safe_dumps, safe_text
-from tools.autonomy.policy import (detect_gate_weakening, forbidden_paths, load_policy, plan_requires_ack,
-                                   tcb_globs, tcb_paths)
+from tools.autonomy.output_policy import mask_data, public_obj, public_tail, sanitize_engineer_report
+from tools.autonomy.policy import (detect_gate_weakening, forbidden_paths, load_policy, normalize_verdict, out_of_scope,
+                                   patch_data_findings, plan_requires_ack, scope_violations, task_scope, tcb_globs,
+                                   tcb_paths)
 from tools.autonomy.schema import load_schema, require_valid
 from tools.autonomy.state import PARKED, TERMINAL, StateStore, TransitionError
 
@@ -250,17 +252,27 @@ class Orchestrator:
             text = text.replace("{" + k + "}", v)
         return text
 
+    def _public_report(self, structured: dict) -> dict:
+        """Отчёт инженера → публичная форма: редакция секретов + отпечатки свободного текста (B3)."""
+        return sanitize_engineer_report(redact_obj(structured),
+                                        self.policy["output_policy"]["engineer_narrative_fields"])
+
     def _engineer_prompt(self, run: dict, phase: str, feedback: dict | None) -> str:
         fb = ""
         if feedback:
             fb = ("## Обратная связь предыдущей итерации (ДАННЫЕ)\n\n```json\n"
                   + json.dumps(feedback, ensure_ascii=False, indent=2)[:12000] + "\n```\n")
+        objective = self._get(run, "objective.json")
+        scope = task_scope(objective, self.policy)
         return self._prompt("engineer", phase=phase, iteration=str(run["iteration"]),
                             max_iterations=str(self.policy["budgets"]["max_engineer_iterations"]),
                             phase_instructions=PHASE_TEXT[phase],
-                            objective_json=json.dumps({k: v for k, v in self._get(run, "objective.json").items()
+                            objective_json=json.dumps({k: v for k, v in objective.items()
                                                        if k != "commissioning"},   # протокол — только ревьюеру
                                                       ensure_ascii=False, indent=2)[:20000],
+                            scope_json=json.dumps(scope or {"task_class": None, "allowed_paths": [],
+                                                            "note": "класс не определён — кандидат не станет READY_FOR_PR"},
+                                                  ensure_ascii=False, indent=2),
                             feedback_block=fb,
                             forbidden_paths=", ".join(self.policy["forbidden_paths"]["globs"]),
                             tcb_paths=", ".join(tcb_globs(self.policy)))
@@ -315,8 +327,9 @@ class Orchestrator:
             return self.store.transition(run, "BLOCKED", "исчерпан бюджет времени до плана")
         if res.structured is None:
             return self.store.transition(run, self._fail_state(res), f"план не получен: {self._why(res)}")
-        # Хеш плана (для ACK владельца) — по той же, отредактированной форме, что сохраняется на диск.
-        plan = redact_obj(res.structured)
+        # Хеш плана (для ACK владельца) — по той же, отредактированной и ОБЕЗЛИЧЕННОЙ форме, что
+        # сохраняется на диск и публикуется (политика вывода B3: свободный текст инженера — отпечаток).
+        plan = self._public_report(res.structured)
         self._put(run, "plan.json", plan)
         if leaked:
             return self.store.transition(run, "BLOCKED", f"фаза плана изменила файлы, хотя права правки нет: {leaked[:5]}")
@@ -328,6 +341,14 @@ class Orchestrator:
         tcb = tcb_paths(plan["intended_files"])
         if tcb:
             return self._human_tcb(run, tcb, "план затрагивает доверенную базу", plan_sha256=plan_sha)
+        scope = task_scope(objective, self.policy)
+        oos = out_of_scope(plan["intended_files"], scope)
+        if scope is None or oos:
+            why = ("класс задачи не определён — allowlist отсутствует" if scope is None
+                   else f"SCOPE_OUT_OF_ALLOWLIST ({scope['task_class']}): {oos[:5]}")
+            return self.store.transition(run, "WAITING_FOR_HUMAN", f"план вне области задачи: {why}",
+                                         plan_sha256=plan_sha,
+                                         last_gate={"verdict": "HUMAN_DECISION_REQUIRED", "reason": why[:500]})
         imp = self.evidence.impact(self.repo, plan["intended_files"])
         need, why = plan_requires_ack(plan["intended_files"], imp.get("risk_tier"),
                                       plan["business_semantics_change"], objective, plan_sha)
@@ -360,16 +381,28 @@ class Orchestrator:
             return self._unsafe(run, [], "зафиксированы production-мутации во время работы инженера")
         if res.structured is None:
             return self.store.transition(run, self._fail_state(res), f"кандидат не получен: {self._why(res)}")
-        report = res.structured
+        report = self._public_report(res.structured)
         leaked_secrets = diff_added_secrets(patch)
         if leaked_secrets:
             # Секретоподобный материал в диффе — не решение человека, а инцидент; дифф не сохраняется.
             return self._unsafe(run, files, f"секретоподобный материал в диффе кандидата: {leaked_secrets}")
-        self._put(run, "engineer_report.json", report)
-        self._put(run, "candidate.patch", patch)
         bad = forbidden_paths(files)
         if bad:
+            # Секретный материал — UNSAFE раньше любых других проверок (и патч не сохраняется).
+            self._put(run, "engineer_report.json", report)
             return self._unsafe(run, files, f"кандидат затронул секретный материал: {bad[:5]}")
+        data_hits = patch_data_findings(patch, self.policy)
+        if data_hits:
+            # Политика вывода B3: патч с данными (или бинарный) НЕ сохраняется — ни в состояние, ни в
+            # артефакт; наружу — только вид находки и отпечаток патча.
+            from tools.autonomy.output_policy import fingerprint
+            self._put(run, "engineer_report.json", report)
+            return self.store.transition(run, "WAITING_FOR_HUMAN",
+                                         f"PATCH_DATA: кандидат содержит данные или бинарные изменения "
+                                         f"{data_hits[:3]}; патч {fingerprint(patch)} не сохранён",
+                                         last_gate={"verdict": "HUMAN_DECISION_REQUIRED", "reason": "PATCH_DATA"})
+        self._put(run, "engineer_report.json", report)
+        self._put(run, "candidate.patch", patch)
         # TCB проверяется ДО ACK плана: owner_ack.plan_sha256 разрешает реализацию плана, но не
         # делает изменение доверенной базы самоодобряемым.
         tcb = tcb_paths(files)
@@ -379,6 +412,12 @@ class Orchestrator:
             return self.store.transition(run, "WAITING_FOR_HUMAN", "инженер: нужен владелец — " + report["summary"][:500])
         if report["status"] == "CANNOT_PROCEED":
             return self.store.transition(run, "BLOCKED", "инженер: нельзя решить — " + report["summary"][:500])
+        # Область — ДО тестов: код кандидата вне allowlist не исполняется ни в одном job'е (в т.ч. с sa-ae-reader).
+        violations = scope_violations(files, patch, task_scope(objective, self.policy))
+        if violations:
+            return self.store.transition(run, "WAITING_FOR_HUMAN", f"кандидат вне области задачи: {violations[:3]}",
+                                         last_gate={"verdict": "HUMAN_DECISION_REQUIRED",
+                                                    "reason": "; ".join(violations)[:500]})
         imp = self.evidence.impact(self.repo, files)
         need, why = plan_requires_ack(files, imp.get("risk_tier"), report["business_semantics_change"],
                                       objective, run["plan_sha256"] or "")
@@ -427,10 +466,17 @@ class Orchestrator:
             failing.append({"name": "validate_current_sql", "tail": ev["sql_validation"].get("tail", "")})
         if ev["gate_weakening"]:
             return self._unsafe(run, files, f"детектор ослабления ворот: {ev['gate_weakening'][0]['text'][:150]}")
+        if ev.get("evidence_disagreement"):
+            return self._unsafe(run, files, f"EVIDENCE_DISAGREEMENT: недоверенный job и независимый retest "
+                                            f"разошлись: {ev['evidence_disagreement'][:3]}")
         if failing:
             if run["iteration"] < self.policy["budgets"]["max_engineer_iterations"]:
+                # Только идентификаторы упавших тестов и отпечаток хвоста: сам вывод (фикстуры, строки
+                # данных) публичным не делается. Подробности инженер получает, прогнав тест сам.
                 self._put(run, "feedback.json", {"kind": "tests_failed",
-                                                 "failures": [{"name": t["name"], "tail": t.get("tail", "")[-800:]}
+                                                 "failures": [{"name": t["name"],
+                                                               **public_tail(t.get("tail", ""),
+                                                                             self.policy["output_policy"]["max_tail_lines"])}
                                                               for t in failing]})
                 return self.store.transition(run, "FIXING", f"тесты кандидата красные: {[t['name'] for t in failing]}")
             gate = gatekeeper.evaluate(ev, baseline, None, {})
@@ -454,14 +500,16 @@ class Orchestrator:
         """Независимое ревью: отдельная песочница с кандидатом, вход — только данные."""
         objective, ev = self._get(run, "objective.json"), self._get(run, "evidence.json")
         patch = self._get(run, "candidate.patch") or ""
+        scope = task_scope(objective, self.policy)
+        # AE-R1: отчёт инженера ревьюеру НЕ передаётся — заявление автора доказательством не является;
+        # ревьюер работает по диффу, области задачи и доверенным доказательствам (включая retest).
         prompt = self._prompt(
             "reviewer",
             objective_json=json.dumps(objective, ensure_ascii=False, indent=2)[:15000],
+            scope_json=json.dumps(scope, ensure_ascii=False, indent=2),
             impact_json=json.dumps(ev.get("impact"), ensure_ascii=False, indent=2)[:8000],
             evidence_json=json.dumps({k: v for k, v in ev.items() if k != "impact"}, ensure_ascii=False,
                                      indent=2)[:15000],
-            engineer_report_json=json.dumps(self._get(run, "engineer_report.json"), ensure_ascii=False,
-                                            indent=2)[:8000],
             diff=patch[:60000],
             commissioning_block=self._commissioning_block(objective))
         # Ревьюер получает СВОЮ песочницу с кандидатом — не каталог инженера.
@@ -474,11 +522,21 @@ class Orchestrator:
             sb.cleanup()
         review = res.structured if res else None
         if review is not None and sorted(touched) != sorted(ev.get("changed_files", [])):
-            review = {**review, "verdict": "BLOCKED",
+            review = {**review, "verdict": "UNPROVEN",
                       "summary": "ревьюер изменил рабочее дерево — ревью недействительно. " + review["summary"]}
         if review is not None:
             require_valid(review, "review_verdict")
+            # Устаревшие имена (PASS/BLOCKED) → APPROVE/UNPROVEN; текст маскируется (публичная ветка).
+            review = {**public_obj(review, self.policy["output_policy"]["max_public_text_chars"]),
+                      "verdict": normalize_verdict(review["verdict"], self.policy)}
         return run, res, review
+
+    def _known_test_paths(self, run: dict, changed: list[str]) -> set[str]:
+        """Пути тестов, на которые вправе ссылаться ревьюер: изменённые кандидатом + существующие в базе."""
+        import subprocess
+        r = subprocess.run(["git", "ls-tree", "-r", "--name-only", run["repository_sha"]], cwd=self.repo,
+                           capture_output=True, text=True)
+        return set(changed) | set(r.stdout.splitlines() if r.returncode == 0 else [])
 
     def _step_reviewing(self, run: dict) -> dict:
         b = self.policy["budgets"]
@@ -507,6 +565,14 @@ class Orchestrator:
             "objective_resolution": ev.get("objective_resolution", "NOT_APPLICABLE"),
             "no_change": not ev.get("changed_files"),
             "touches_open_ubr": sorted(objective_ubr) if objective_ubr and objective["kind"] == "INCIDENT" else None,
+            "scope_violations": scope_violations(ev.get("changed_files", []), self._get(run, "candidate.patch") or "",
+                                                 task_scope(objective, self.policy)),
+            "scope_present": task_scope(objective, self.policy) is not None,
+            "test_provenance": ev.get("test_provenance", "UNKNOWN"),
+            "network_isolation": ev.get("network_isolation"),
+            "evidence_disagreement": ev.get("evidence_disagreement", []),
+            "code_changed": any(not f.endswith(".md") for f in ev.get("changed_files", [])),
+            "known_test_paths": self._known_test_paths(run, ev.get("changed_files", [])),
         }
         gate = gatekeeper.evaluate(ev, baseline, review, context)
         self._put(run, "gate.json", gate)
@@ -519,16 +585,22 @@ class Orchestrator:
             return self.store.transition(run, "READY_FOR_PR", "гейткипер: READY_FOR_PR")
         if v == "UNSAFE":
             return self.store.transition(run, "BLOCKED", "гейткипер: UNSAFE — " + "; ".join(gate["reasons"]["UNSAFE"])[:500])
+        if v == "BLOCKED_BY_REVIEW":
+            return self.store.transition(run, "BLOCKED", "гейткипер: BLOCKED_BY_REVIEW — "
+                                         + "; ".join(gate["reasons"]["BLOCKED_BY_REVIEW"])[:500])
         budget_left = (run["iteration"] < b["max_engineer_iterations"]
                        and run["review_cycles"] < b["max_review_cycles"])
-        fixable = gate["review_requests_changes"] or v in ("BLOCKED_BY_TEST", "BLOCKED_BY_DATA",
-                                                           "BLOCKED_BY_RUNTIME_ACCESS")
-        if v == "HUMAN_DECISION_REQUIRED" and not gate["review_requests_changes"]:
+        fixable = gate["review_requests_changes"] or gate.get("scope_fixable") or v in (
+            "BLOCKED_BY_TEST", "BLOCKED_BY_DATA", "BLOCKED_BY_RUNTIME_ACCESS")
+        human_only = [r for r in gate["reasons"].get("HUMAN_DECISION_REQUIRED", [])
+                      if not r.startswith(("SCOPE_OUT_OF_ALLOWLIST", "DIFF_TOO_LARGE"))]
+        if v == "HUMAN_DECISION_REQUIRED" and not gate["review_requests_changes"] and human_only:
             return self.store.transition(run, "WAITING_FOR_HUMAN", "гейткипер: " + "; ".join(
                 gate["reasons"].get("HUMAN_DECISION_REQUIRED", []))[:500])
         if fixable and budget_left:
             self._put(run, "feedback.json", {"kind": "review_and_gate",
-                                             "gate": gate, "review_findings": (review or {}).get("findings", [])})
+                                             "gate": public_obj(gate, 1000),
+                                             "review_findings": (review or {}).get("findings", [])})
             return self.store.transition(run, "FIXING", f"возврат инженеру: гейт {v}, ревью "
                                                         f"{review['verdict'] if review else '—'}")
         return self.store.transition(run, "BLOCKED", f"гейткипер: {v}; бюджет доработки "
@@ -709,4 +781,29 @@ def collect_candidate_evidence(orch: Orchestrator, run_id: str, out_file: Path) 
     ev["changed_files"] = files
     Path(out_file).parent.mkdir(parents=True, exist_ok=True)
     Path(out_file).write_text(safe_dumps(ev, indent=2), encoding="utf-8")
+    return sha256_file(Path(out_file))
+
+
+def collect_retest(orch: Orchestrator, run_id: str, out_file: Path, runner=None) -> str:
+    """Job retest (AE-R1): тот же набор тестов кандидата и базы, но БЕЗ учётных данных.
+
+    У job'а нет id-token, GCP и токена записи; харнесс — код main. Результат — недоверенный
+    артефакт, но независимый от job'а с учётными данными: доверенный verify сверяет оба."""
+    from tools.autonomy.agents import sha256_file
+    from tools.autonomy.evidence import RetestRunner
+    run = orch.store.load(run_id)
+    if run["state"] != "TESTING":
+        raise TransitionError(f"{run_id}: retest только в TESTING, а не {run['state']}")
+    base_sb = Sandbox(orch.repo, run["repository_sha"], orch.sandbox_root / run_id / "retest-base")
+    cand_sb = Sandbox(orch.repo, run["repository_sha"], orch.sandbox_root / run_id / "retest-candidate")
+    try:
+        base_ws = base_sb.create()
+        cand_ws = cand_sb.create(orch._get(run, "candidate.patch") or "")
+        files = cand_sb.changed_files()
+        doc = (runner or RetestRunner()).collect(base_ws, cand_ws, files, orch._get(run, "objective.json"))
+    finally:
+        base_sb.cleanup()
+        cand_sb.cleanup()
+    Path(out_file).parent.mkdir(parents=True, exist_ok=True)
+    Path(out_file).write_text(safe_dumps(doc, indent=2), encoding="utf-8")
     return sha256_file(Path(out_file))

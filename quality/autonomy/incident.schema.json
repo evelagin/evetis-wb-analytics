@@ -5,57 +5,234 @@
   "description": "Создаётся ТОЛЬКО детерминированным наблюдателем (tools/autonomy/watcher.py) либо тестовой фикстурой. Невалидный конверт не диспатчится.",
   "type": "object",
   "additionalProperties": false,
-  "required": ["schema_version", "incident_id", "created_at", "source", "severity", "trigger_type",
-               "triggering_checks", "first_failure_at", "last_success_at", "repository_sha",
-               "affected_assets", "downstream_consumers", "contract_suites", "known_ubr_links",
-               "evidence", "deduplication_key"],
+  "required": [
+    "schema_version",
+    "incident_id",
+    "created_at",
+    "source",
+    "severity",
+    "trigger_type",
+    "triggering_checks",
+    "first_failure_at",
+    "last_success_at",
+    "repository_sha",
+    "affected_assets",
+    "downstream_consumers",
+    "contract_suites",
+    "known_ubr_links",
+    "evidence",
+    "deduplication_key"
+  ],
   "properties": {
-    "schema_version": {"const": 1},
-    "incident_id": {"type": "string", "pattern": "^inc-[0-9]{8}T[0-9]{6}Z-[0-9a-f]{8}$"},
-    "created_at": {"type": "string", "format": "date-time"},
-    "source": {"enum": ["watcher", "synthetic"]},
-    "severity": {"enum": ["CRITICAL", "HIGH", "MEDIUM", "LOW"]},
-    "trigger_type": {"enum": ["CHECK_FAILURE", "HEALTH_DEGRADED", "PARITY_DRIFT", "SYNTHETIC"]},
+    "schema_version": {
+      "const": 1
+    },
+    "incident_id": {
+      "type": "string",
+      "pattern": "^inc-[0-9]{8}T[0-9]{6}Z-[0-9a-f]{8}$"
+    },
+    "created_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "source": {
+      "enum": [
+        "watcher",
+        "synthetic"
+      ]
+    },
+    "severity": {
+      "enum": [
+        "CRITICAL",
+        "HIGH",
+        "MEDIUM",
+        "LOW"
+      ]
+    },
+    "trigger_type": {
+      "enum": [
+        "CHECK_FAILURE",
+        "HEALTH_DEGRADED",
+        "PARITY_DRIFT",
+        "SYNTHETIC",
+        "RUN_FAILURE",
+        "DRO_HEALTH"
+      ]
+    },
     "triggering_checks": {
-      "type": "array", "minItems": 1,
+      "type": "array",
+      "minItems": 1,
       "items": {
-        "type": "object", "additionalProperties": false,
-        "required": ["check_id", "suite", "status"],
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "check_id",
+          "suite",
+          "status"
+        ],
         "properties": {
-          "check_id": {"type": "string", "minLength": 1, "maxLength": 200},
-          "suite": {"type": "string", "minLength": 1, "maxLength": 100},
-          "status": {"enum": ["FAIL", "EMPTY", "ERROR", "UNHEALTHY", "DRIFT"]},
-          "source": {"type": "string", "maxLength": 300}
+          "check_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200
+          },
+          "suite": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 100
+          },
+          "status": {
+            "enum": [
+              "FAIL",
+              "EMPTY",
+              "ERROR",
+              "UNHEALTHY",
+              "DRIFT",
+              "RUN_FAILED",
+              "DEGRADED"
+            ]
+          },
+          "source": {
+            "type": "string",
+            "maxLength": 300
+          }
         }
       }
     },
-    "first_failure_at": {"type": "string", "format": "date-time"},
-    "last_success_at": {"type": ["string", "null"], "format": "date-time"},
-    "repository_sha": {"type": "string", "pattern": "^[0-9a-f]{40}$"},
-    "affected_assets": {"type": "array", "uniqueItems": true, "items": {"type": "string", "pattern": "^[a-z_]+\\.[A-Za-z0-9_]+$|^synthetic\\.[A-Za-z0-9_]+$"}},
-    "downstream_consumers": {"type": "array", "uniqueItems": true, "items": {"type": "string", "maxLength": 200}},
-    "contract_suites": {"type": "array", "uniqueItems": true, "items": {"type": "string", "maxLength": 100}},
-    "known_ubr_links": {"type": "array", "uniqueItems": true, "items": {"type": "string", "pattern": "^UBR-[0-9]{3}$"}},
+    "first_failure_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "last_success_at": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "format": "date-time"
+    },
+    "repository_sha": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{40}$"
+    },
+    "affected_assets": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {
+        "type": "string",
+        "pattern": "^[a-z_]+\\.[A-Za-z0-9_-]+$|^synthetic\\.[A-Za-z0-9_]+$"
+      }
+    },
+    "downstream_consumers": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {
+        "type": "string",
+        "maxLength": 200
+      }
+    },
+    "contract_suites": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {
+        "type": "string",
+        "maxLength": 100
+      }
+    },
+    "known_ubr_links": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {
+        "type": "string",
+        "pattern": "^UBR-[0-9]{3}$"
+      }
+    },
     "evidence": {
-      "type": "object", "additionalProperties": false,
-      "required": ["observations"],
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "observations"
+      ],
       "properties": {
         "observations": {
-          "type": "array", "minItems": 1,
+          "type": "array",
+          "minItems": 1,
           "items": {
-            "type": "object", "additionalProperties": false,
-            "required": ["at", "status"],
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "at",
+              "status"
+            ],
             "properties": {
-              "at": {"type": "string", "format": "date-time"},
-              "status": {"enum": ["PASS", "FAIL", "EMPTY", "ERROR", "BLOCKED", "HEALTHY", "UNHEALTHY"]},
-              "failing_rows": {"type": "integer", "minimum": 0}
+              "at": {
+                "type": "string",
+                "format": "date-time"
+              },
+              "status": {
+                "enum": [
+                  "PASS",
+                  "FAIL",
+                  "EMPTY",
+                  "ERROR",
+                  "BLOCKED",
+                  "HEALTHY",
+                  "UNHEALTHY",
+                  "RUN_FAILED",
+                  "DEGRADED"
+                ]
+              },
+              "failing_rows": {
+                "type": "integer",
+                "minimum": 0
+              }
             }
           }
         },
-        "classification": {"enum": ["NEW_PERSISTENT", "HEALTH_DEGRADED", "SYNTHETIC"]},
-        "note": {"type": "string", "maxLength": 2000}
+        "classification": {
+          "enum": [
+            "NEW_PERSISTENT",
+            "HEALTH_DEGRADED",
+            "SYNTHETIC",
+            "ENGINEERING_CANDIDATE"
+          ]
+        },
+        "note": {
+          "type": "string",
+          "maxLength": 2000
+        },
+        "task_class": {
+          "enum": [
+            "RETRY_CLASSIFIER_DEFECT",
+            "PARITY_DEFECT",
+            "SCHEMA_DRIFT",
+            "DETECTOR_DEFECT",
+            "LOADER_DEFECT",
+            "COMMISSIONING_CANARY",
+            "SYNTHETIC_FIXTURE"
+          ]
+        },
+        "classifier_rule": {
+          "type": "string",
+          "pattern": "^[A-Z][0-9]_[A-Z_]+$"
+        },
+        "signal": {
+          "type": "object",
+          "description": "AE-R1. Канонический сигнал: только перечисления, счётчики, идентификаторы, отпечатки. Текста ошибки и строк данных нет (политика вывода B3).",
+          "additionalProperties": {
+            "type": [
+              "string",
+              "integer",
+              "boolean",
+              "null"
+            ],
+            "maxLength": 200
+          }
+        }
       }
     },
-    "deduplication_key": {"type": "string", "pattern": "^(check|health|parity|synthetic):[A-Za-z0-9_.:-]{1,200}$"}
+    "deduplication_key": {
+      "type": "string",
+      "pattern": "^(check|health|parity|synthetic|dro|runfail):[A-Za-z0-9_.:-]{1,200}$"
+    }
   }
 }

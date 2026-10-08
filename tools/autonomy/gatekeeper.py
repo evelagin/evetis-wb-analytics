@@ -6,11 +6,25 @@
 
 Неизвестность не превращается в успех: BLOCKED/ERROR там, где доказательство обязательно,
 даёт INCONCLUSIVE, а не READY_FOR_PR.
+
+AE-R1:
+  * область класса задачи (allowlist путей) и лимит размера диффа — кандидат вне области или больше
+    лимита не становится READY_FOR_PR; это исправимо инженером (`scope_fixable`);
+  * доказательства тестов обязаны быть подтверждены НЕЗАВИСИМЫМ повторным прогоном (retest без учётных
+    данных): `test_provenance` RECONCILED или TRUSTED_LOCAL; расхождение двух исполнений — UNSAFE;
+  * вердикты ревьюера APPROVE / APPROVE_WITH_NITS / CHANGES_REQUIRED / BLOCK / UNPROVEN
+    (+ HUMAN_DECISION_REQUIRED); устаревшие PASS → APPROVE, BLOCKED → UNPROVEN. Одобрение без
+    подтверждённой ревьюером проверки тестов (`test_verification`) — не одобрение.
 """
 from __future__ import annotations
 
-PRIORITY = ["UNSAFE", "BLOCKED_BY_TEST", "BLOCKED_BY_RUNTIME_ACCESS", "BLOCKED_BY_DATA",
+import re
+
+PRIORITY = ["UNSAFE", "BLOCKED_BY_REVIEW", "BLOCKED_BY_TEST", "BLOCKED_BY_RUNTIME_ACCESS", "BLOCKED_BY_DATA",
             "HUMAN_DECISION_REQUIRED", "INCONCLUSIVE", "READY_FOR_PR"]
+TRUSTED_TEST_PROVENANCE = {"RECONCILED", "TRUSTED_LOCAL"}
+ENFORCED_ISOLATION = {"SUDO_UNSHARE"}        # allowlist: любое иное значение — изоляция не доказана
+LEGACY_VERDICTS = {"PASS": "APPROVE", "BLOCKED": "UNPROVEN"}
 FINAL_STATES = set(PRIORITY)
 BAD = {"FAIL", "EMPTY", "ERROR"}
 
@@ -59,6 +73,26 @@ def evaluate(evidence: dict, baseline: dict, review: dict | None, context: dict)
                               f"{g[0]['file']}: {g[0]['text'][:120]}")
     if review and review.get("gate_weakening_detected"):
         hits["UNSAFE"].append("ревьюер обнаружил ослабление ворот")
+    if context.get("evidence_disagreement"):
+        d = context["evidence_disagreement"]
+        hits["UNSAFE"].append(f"EVIDENCE_DISAGREEMENT: недоверенный job и независимый retest разошлись: {d[:5]}")
+
+    # --- область класса задачи и размер диффа (AE-R1) ---------------------------
+    # Fail closed: контекст AE-R1 обязателен; его отсутствие — не «нарушений нет», а «не доказано».
+    scope_fixable = False
+    if "scope_violations" not in context:
+        hits["HUMAN_DECISION_REQUIRED"].append("область задачи не проверена (нет scope_violations в контексте)")
+    else:
+        for v in context["scope_violations"]:
+            hits["HUMAN_DECISION_REQUIRED"].append(v)
+        # Вне allowlist / слишком большой дифф — исправимо инженером; отсутствие класса — нет.
+        scope_fixable = bool(context["scope_violations"]) and bool(context.get("scope_present"))
+    if context.get("test_provenance") == "RECONCILED" and context.get("network_isolation") not in ENFORCED_ISOLATION:
+        # CI-путь: тесты кандидата обязаны исполняться без сети (иначе retest — не доказательство).
+        hits["INCONCLUSIVE"].append("тесты кандидата исполнены без сетевой изоляции (network_isolation NOT_ENFORCED)")
+    if context.get("test_provenance") not in TRUSTED_TEST_PROVENANCE:
+        hits["INCONCLUSIVE"].append(f"тесты не подтверждены независимым повторным прогоном "
+                                    f"(provenance {context.get('test_provenance')})")
 
     # --- тесты и статическая проверка ------------------------------------------
     # Тесты репозитория — строго: красный тест блокирует ВСЕГДА, даже если он красный и на
@@ -121,19 +155,45 @@ def evaluate(evidence: dict, baseline: dict, review: dict | None, context: dict)
 
     # --- ревьюер: только ужесточает ------------------------------------------
     requests_changes = False
+    rv = LEGACY_VERDICTS.get((review or {}).get("verdict"), (review or {}).get("verdict"))
+    severities = {f["severity"] for f in (review or {}).get("findings", [])}
     if review is None:
         hits["INCONCLUSIVE"].append("независимое ревью не проведено")
-    elif review["verdict"] == "CHANGES_REQUIRED":
+    elif rv == "CHANGES_REQUIRED":
         requests_changes = True
         hits["INCONCLUSIVE"].append(f"ревьюер требует изменений: {len(review.get('findings', []))} находок")
-    elif review["verdict"] == "HUMAN_DECISION_REQUIRED":
+    elif rv == "HUMAN_DECISION_REQUIRED":
         hits["HUMAN_DECISION_REQUIRED"].append(f"ревьюер: {review.get('human_decision_reason') or 'решение человека'}")
-    elif review["verdict"] == "BLOCKED":
-        hits["INCONCLUSIVE"].append("ревьюер не смог провести ревью")
-    elif review["verdict"] == "PASS" and any(f["severity"] in ("BLOCKER", "MAJOR")
-                                             for f in review.get("findings", [])):
-        requests_changes = True
-        hits["INCONCLUSIVE"].append("ревьюер вернул PASS с находками BLOCKER/MAJOR — противоречие трактуется строго")
+    elif rv == "BLOCK":
+        hits["BLOCKED_BY_REVIEW"].append("ревьюер: BLOCK — кандидат не должен продвигаться "
+                                         f"({len(review.get('findings', []))} находок)")
+    elif rv == "UNPROVEN":
+        hits["INCONCLUSIVE"].append("ревьюер: UNPROVEN — доказательств недостаточно для вывода")
+    elif rv in ("APPROVE", "APPROVE_WITH_NITS"):
+        tv = review.get("test_verification") or {}
+        if severities & {"BLOCKER", "MAJOR"}:
+            requests_changes = True
+            hits["INCONCLUSIVE"].append(f"ревьюер вернул {rv} с находками BLOCKER/MAJOR — противоречие трактуется строго")
+        if tv.get("status") == "INSUFFICIENT" or not tv:
+            requests_changes = True
+            hits["INCONCLUSIVE"].append("ревьюер не подтвердил, что тесты покрывают изменение (test_verification)")
+        elif tv.get("status") == "NOT_APPLICABLE" and context.get("code_changed", True):
+            requests_changes = True
+            hits["INCONCLUSIVE"].append("test_verification NOT_APPLICABLE при изменении кода — противоречие")
+        elif tv.get("status") == "VERIFIED":
+            known = context.get("known_test_paths")
+            path_of = lambda t: re.split(r"::| > | › ", t, maxsplit=1)[0].strip()  # noqa: E731 — pytest/vitest id
+            unknown = [t for t in tv.get("relevant_tests", []) if known is None or path_of(t) not in known]
+            if not tv.get("relevant_tests") or unknown:
+                requests_changes = True
+                hits["INCONCLUSIVE"].append(f"ревьюер сослался на тесты, которых нет в кандидате/репозитории: "
+                                            f"{unknown[:5] or 'пустой список'}")
+        if rv == "APPROVE" and severities == {"MINOR"}:
+            info.append("ревьюер: APPROVE с замечаниями MINOR — трактуется как APPROVE_WITH_NITS")
+        if rv == "APPROVE_WITH_NITS" or severities == {"MINOR"}:
+            info.append(f"ревьюер: несущественные замечания ({len(review.get('findings', []))})")
+    else:
+        hits["INCONCLUSIVE"].append(f"неизвестный вердикт ревьюера {rv!r}")
 
     verdict = next(s for s in PRIORITY if s == "READY_FOR_PR" or hits[s])
     return {
@@ -141,5 +201,7 @@ def evaluate(evidence: dict, baseline: dict, review: dict | None, context: dict)
         "reasons": {s: v for s, v in hits.items() if v},
         "informational": info,
         "review_requests_changes": requests_changes,
+        "scope_fixable": scope_fixable,
+        "review_verdict": rv,
         "decided_by": "gatekeeper (deterministic)",
     }

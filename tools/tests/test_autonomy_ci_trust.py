@@ -81,7 +81,7 @@ def test_full_pipeline_across_isolated_runners(tmp_path):
     ev_out = tmp_path / "pending-test" / "evidence.json"
     ev_sha = collect_candidate_evidence(p.orch(p.machine("test")), run_id, ev_out)
     # verify (доверенный): доказательства → переход
-    verify = p.orch(p.branch, evidence=ReplayEvidenceRunner(ev_out, ev_sha, F.SyntheticEvidenceRunner(), p.repo))
+    verify = p.orch(p.branch, evidence=F.verified_replay(p, run_id, ev_out, ev_sha))
     assert verify.advance(run_id, stop_before={"REVIEWING"})["state"] == "REVIEWING"
     # review (модель, чистая машина): только вердикт
     rv_dir = tmp_path / "pending-review"

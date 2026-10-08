@@ -1,7 +1,8 @@
 name: autonomy-run
 # AE v1 · Один проход цикла. Каждая роль — отдельный job, то есть отдельная эфемерная машина.
 #
-#   prepare (Д) → engineer (Н, модель) → ingest (Д) → test (Н, код кандидата) → verify (Д)
+#   prepare (Д) → engineer (Н, модель) → ingest (Д) → test + retest (Н, код кандидата; retest — без
+#   учётных данных) → verify (Д, сверка двух исполнений)
 #   → review (Н, модель) → gate (Д) → audit (Д, 0 production-мутаций) → publish (Д, запись ae/* +
 #   диспатч обязательных workflows)
 #   → ci-verify (Д, решение по фактическим прогонам) → persist (Д)
@@ -122,7 +123,9 @@ jobs:
       step: verify
       run_id: ${{ needs.prepare.outputs.run_id }}
       pending_artifact: ae-${{ needs.prepare.outputs.run_id }}-test-${{ github.run_attempt }}
-      expect: ${{ needs.test.outputs.evidence_sha != '' && format('evidence.json={0}', needs.test.outputs.evidence_sha) || '' }}
+      # AE-R1: независимый retest (job без учётных данных) — отдельный артефакт и свой хеш.
+      retest_artifact: ${{ needs.test.outputs.retest_sha != '' && format('ae-{0}-retest-{1}', needs.prepare.outputs.run_id, github.run_attempt) || '' }}
+      expect: ${{ needs.test.outputs.evidence_sha != '' && format('evidence.json={0}{1}', needs.test.outputs.evidence_sha, needs.test.outputs.retest_sha != '' && format(' retest.json={0}', needs.test.outputs.retest_sha) || '') || '' }}
 
   review:
     needs: [prepare, verify]
@@ -182,7 +185,8 @@ jobs:
         run: |
           state=$(python -m tools.autonomy.cli status --state-dir "$STATE_DIR" --run-id "$RUN_ID" | awk '{print $2}')
           [ "$state" = "READY_FOR_PR" ] || { echo "состояние $state — публиковать нечего"; exit 0; }
-          python -m tools.autonomy.cli publish --engineer none --reviewer none \
+          # B2: идентичность — выделенный GitHub App; пока он не создан, публикатор отказывает до записи.
+          python -m tools.autonomy.cli publish --engineer none --reviewer none --publisher-identity github-app \
             --state-dir "$STATE_DIR" --run-id "$RUN_ID" --sandbox-root "$RUNNER_TEMP/sandboxes"
           bash tools/autonomy/ci/state_push.sh "autonomy-run publish: ${RUN_ID}"
 

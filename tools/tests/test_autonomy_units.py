@@ -94,37 +94,42 @@ GOOD = {"tests": [{"name": "t", "status": "PASS"}], "sql_validation": {"status":
         "runtime_access": {"status": "NOT_APPLICABLE"}, "parity": {"status": "NOT_APPLICABLE"},
         "data_suites": {"s": {"verdict": "PASS", "checks": {"C1": "PASS"}}}}
 PASS_REVIEW = F.verdict("PASS")
+# AE-R1: контекст области и происхождения тестов обязателен (без него гейткипер fail closed).
+OK = {"scope_violations": [], "scope_present": True, "test_provenance": "TRUSTED_LOCAL", "code_changed": True,
+      "known_test_paths": {"tests_synthetic/test_calc.py"}}
 
 
 def test_all_green_is_ready():
-    assert G.evaluate(GOOD, GOOD, PASS_REVIEW, {})["verdict"] == "READY_FOR_PR"
+    assert G.evaluate(GOOD, GOOD, PASS_REVIEW, OK)["verdict"] == "READY_FOR_PR"
+    # без контекста AE-R1 (область, происхождение тестов) готовности нет
+    assert G.evaluate(GOOD, GOOD, PASS_REVIEW, {})["verdict"] != "READY_FOR_PR"
 
 
 def test_reviewer_pass_cannot_override_a_deterministic_prohibition():
     for ctx in ({"forbidden_paths": [".github/x"]}, {"production_mutations": 1},
                 {"gate_weakening": [{"file": "f", "text": "+@pytest.mark.skip"}]}):
-        assert G.evaluate(GOOD, GOOD, PASS_REVIEW, ctx)["verdict"] == "UNSAFE"
+        assert G.evaluate(GOOD, GOOD, PASS_REVIEW, {**OK, **ctx})["verdict"] == "UNSAFE"
 
 
 def test_reviewer_findings_demote_ready_even_with_pass_verdict():
-    r = G.evaluate(GOOD, GOOD, F.verdict("PASS", [F.finding("BLOCKER")]), {})
+    r = G.evaluate(GOOD, GOOD, F.verdict("PASS", [F.finding("BLOCKER")]), OK)
     assert r["verdict"] != "READY_FOR_PR" and r["review_requests_changes"]
 
 
 def test_missing_review_is_not_ready():
-    assert G.evaluate(GOOD, GOOD, None, {})["verdict"] == "INCONCLUSIVE"
+    assert G.evaluate(GOOD, GOOD, None, OK)["verdict"] == "INCONCLUSIVE"
 
 
 def test_unknown_data_evidence_is_never_converted_to_pass():
     ev = copy.deepcopy(GOOD); ev["data_suites"]["s"] = {"verdict": "BLOCKED", "checks": {"C1": "BLOCKED"}}
-    assert G.evaluate(ev, GOOD, PASS_REVIEW, {})["verdict"] == "INCONCLUSIVE"
+    assert G.evaluate(ev, GOOD, PASS_REVIEW, OK)["verdict"] == "INCONCLUSIVE"
 
 
 def test_new_data_failure_blocks_but_inherited_one_is_reported():
     ev = copy.deepcopy(GOOD); ev["data_suites"]["s"]["checks"]["C1"] = "FAIL"
-    assert G.evaluate(ev, GOOD, PASS_REVIEW, {})["verdict"] == "BLOCKED_BY_DATA"
+    assert G.evaluate(ev, GOOD, PASS_REVIEW, OK)["verdict"] == "BLOCKED_BY_DATA"
     base = copy.deepcopy(ev)
-    r = G.evaluate(ev, base, PASS_REVIEW, {})
+    r = G.evaluate(ev, base, PASS_REVIEW, OK)
     assert r["verdict"] == "READY_FOR_PR" and r["informational"]
 
 
@@ -198,7 +203,13 @@ def test_publisher_refuses_without_ready_gate_and_on_forbidden_content(tmp_path)
         pub.preflight({**run, "production_mutations": 1}, patch, art)
     with pytest.raises(PublishRefused, match="0 production-мутаций"):
         pub.preflight({k: v for k, v in run.items() if k != "audit_evidence"}, patch, art)
+    # AE-R1: без класса задачи (нет цели/области) публикации нет — fail closed
+    with pytest.raises(PublishRefused, match="вне области"):
+        pub.preflight(run, patch, art)
+    (art / "objective.json").write_text(json.dumps({"incident": {"source": "synthetic"}}))
     assert pub.preflight(run, patch, art) == ["synthetic/calc.py"]
+    with pytest.raises(PublishRefused, match="SCOPE_OUT_OF_ALLOWLIST"):
+        pub.preflight(run, "diff --git a/cloud/src/failure.ts b/cloud/src/failure.ts\n", art)
 
 
 def test_deploy_tooling_is_forbidden_supply_chain_path():

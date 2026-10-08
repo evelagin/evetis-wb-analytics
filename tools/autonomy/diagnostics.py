@@ -5,7 +5,7 @@
 оставляет запись, а job — один файл `<job>_diagnostics.json` (engineer | reviewer), который всегда
 попадает в хеши и в артефакт.
 
-Что различается и чего различить нельзя (CLI 2.1.251 не отдаёт request-id Messages API и не
+Что различается и чего различить нельзя (CLI 2.1.280 не отдаёт request-id Messages API и не
 сообщает об обмене токена федерации):
   agent invocation   — запись в `invocations` (вызов адаптера оркестратором);
   CLI process        — `process_started`: подпроцесс claude создан;
@@ -190,10 +190,30 @@ def _blocked(doc: dict) -> dict:
     return out
 
 
+def _public(doc: dict) -> dict:
+    """Политика вывода B3: диагностика лежит в публичной ветке и артефактах. Вывод CLI инженера
+    (агент с доступом к BigQuery) — только отпечатком; ошибки и итоги — маскируются."""
+    from tools.autonomy.output_policy import fingerprint, mask_data
+    out = dict(doc)
+    invs = []
+    for inv in doc.get("invocations") or []:
+        inv = dict(inv)
+        engineer = str(inv.get("role", "")).startswith("engineer")
+        for f in FREE_TEXT:
+            if isinstance(inv.get(f), str) and inv[f]:
+                inv[f] = fingerprint(inv[f]) if (engineer and f == "stdout_tail") else mask_data(inv[f], len(inv[f]))
+        invs.append(inv)
+    if "invocations" in out:
+        out["invocations"] = invs
+    if isinstance(out.get("scratch_reason"), str):
+        out["scratch_reason"] = mask_data(out["scratch_reason"], REASON)
+    return out
+
+
 def finalize(doc: dict) -> tuple[str, dict]:
     """Текст для записи и итоговый документ. Никогда не бросает: сбой редакции/схемы → REDACTION_BLOCKED."""
     try:
-        clean = redact_obj(doc)
+        clean = redact_obj(_public(doc))
         errs = validate(clean, load_schema("agent_diagnostics"))
         if errs:
             raise RedactionError("диагностика не соответствует схеме: " + "; ".join(errs[:3]))

@@ -141,7 +141,7 @@ def _ready_for_pr(p: Pipeline) -> str:
     p.orch(p.branch, engineer=ReplayAdapter(eng_out, eng_hashes)).advance(run_id, stop_before={"TESTING"})
     ev_out = p.tmp / "pending-test" / "evidence.json"
     ev_sha = collect_candidate_evidence(p.orch(p.machine("test")), run_id, ev_out)
-    p.orch(p.branch, evidence=ReplayEvidenceRunner(ev_out, ev_sha, F.SyntheticEvidenceRunner(), p.repo)).advance(
+    p.orch(p.branch, evidence=F.verified_replay(p, run_id, ev_out, ev_sha)).advance(
         run_id, stop_before={"REVIEWING"})
     rv_dir = p.tmp / "pending-review"
     rv = review_only(p.orch(p.machine("review"), reviewer=ScriptedAdapter({"reviewer": [{"respond": F.verdict()}]})),
@@ -154,6 +154,7 @@ def _ready_for_pr(p: Pipeline) -> str:
 class FakeGhPublisher(GitPublisher):
     """Настоящий git и настоящий bare-remote; gh подменён — сети нет."""
     def __init__(self, *a, prs=None, **k):
+        k.setdefault("identity", "actions-token")   # механика публикации; B2-отказ App — отдельный тест
         super().__init__(*a, **k)
         self.gh_calls, self.prs = [], prs if prs is not None else []
 
@@ -285,7 +286,7 @@ def test_publisher_source_has_no_approve_merge_or_force():
     pushes = re.findall(r'\["git", "push"[^\]]*\]', src)
     assert pushes == ['["git", "push", self.remote, refspec]'], pushes          # без -f/--force/+refspec
     assert 'base_branch: str = "main"' in src and '"--draft"' in src
-    assert re.search(r"GitPublisher\(REPO, dry_run=a\.dry_run\)", (REPO / "tools/autonomy/cli.py").read_text())
+    assert re.search(r"GitPublisher\(REPO, dry_run=a\.dry_run, identity=", (REPO / "tools/autonomy/cli.py").read_text())
 
 
 def test_only_the_publish_job_has_pull_requests_write():
