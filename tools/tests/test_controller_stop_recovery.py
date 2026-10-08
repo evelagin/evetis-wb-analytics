@@ -278,3 +278,26 @@ def test_publication_rejects_unknown_implementation_before_any_write():
     b,p,rows,_=terminal_fixture()
     with pytest.raises(BF.B.EvidenceError,match='implementation'):
         R.publish(b,p,NOW)
+
+
+@pytest.mark.parametrize('fault',[None,'missing_expiry','held_at_stop','wrong_release_owner','latest_unreleased','successor'])
+def test_historical_lease_expiry_uses_canonical_boundary_without_reclassifying(monkeypatch,fault):
+    b,p,rows,controls,now=audit_fixture(monkeypatch)
+    cid=BF.B.digest(['BOUNDED_PILOT_EXCLUSIVE',b.c['project_id']])[:16]
+    generation=80 if fault=='successor' else 79 if fault=='latest_unreleased' else 1
+    labels={'owner':'prior','until':'1791000000'}
+    if fault=='missing_expiry':labels.pop('until')
+    if fault=='held_at_stop':labels['until']='1791399600'
+    b.tables.list_tables=lambda _: [(f'L_{cid}_{generation:04d}',labels,None)]
+    original=b.tables.get_table
+    def get(ds,name):
+        if name==f'LD_{cid}_{generation:04d}':
+            if fault=='wrong_release_owner':return ({'owner':'foreign'},'{}')
+            return None
+        return original(ds,name)
+    b.tables.get_table=get
+    if fault:
+        with pytest.raises(BF.B.EvidenceError,match='lease'):R.observe(b,p,now)
+    else:
+        assert R.observe(b,p,now)==p
+        assert not any(r['kind']==R.KIND for r in rows)

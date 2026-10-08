@@ -282,10 +282,22 @@ def observe(backend,proof,now):
             generation=int(match.group(2))
             if generation>gen:fail('successor lease exists')
             release=backend.tables.get_table(c['datasets']['tenant_locks'],f'LD_{cid}_{generation:04d}')
-            if not release or not labels.get('owner') or release[0].get('owner')!=labels['owner']:
-                fail('lease lacks exact terminal owner release')
-            if generation==gen and labels['owner']!=receipt['run_id']:
-                fail('predecessor lease owner differs')
+            if not labels.get('owner') or release and release[0].get('owner')!=labels['owner']:
+                fail('lease terminal owner differs')
+            if generation==gen:
+                if not release or labels['owner']!=receipt['run_id']:
+                    fail('predecessor lease lacks exact terminal owner release')
+            elif not release:
+                # Canonical leases cease holding after TTL + visibility grace.
+                # Historical rows remain immutable; expiry never reconciles a
+                # failed receipt or creates a new failed-before-source exemption.
+                until=labels.get('until')
+                if not isinstance(until,str) or not until.isdigit():
+                    fail('historical lease expiry unknown')
+                from datetime import datetime, timezone
+                expiry=datetime.fromtimestamp(int(until),timezone.utc)+BF.CK.VISIBILITY_GRACE
+                if expiry>=timestamp(start) or expiry>=now:
+                    fail('historical lease held at STOP boundary')
     # Historical exact source/image registrations, not mutable HEAD assumptions.
     from tools.tenancy import platform as PL
     controller_release=BF.REPO/'infra/tenant/releases/backfill'/(proof['controller_source_sha']+'.json')

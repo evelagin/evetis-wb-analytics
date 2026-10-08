@@ -15,7 +15,10 @@ exception text is not a substitute for or obstacle to proven safety boundaries.
 
 The owner writer independently reads fresh bindings, hold, executions, dispatch
 fences (including uncommitted ones), source journal, source/persisted natural
-keys and exact terminal lease release before publishing. Only metadata GET/list
+keys and exact predecessor terminal lease release before publishing. Older lease
+records must have an exact owner release or canonical TTL plus visibility grace
+expired before the STOP boundary. Missing/held expiry or conflicting release
+ownership fails closed. Expired history is preserved and never reclassified. Only metadata GET/list
 and SELECT are used for those checks. It must not invoke ingestion, report POST,
 validation, source reconciliation or the coverage writer.
 
