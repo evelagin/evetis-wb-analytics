@@ -260,10 +260,23 @@ def answer_lineage(doc) -> str:
     return "live_v2"
 
 
+def _serious(doc) -> bool:
+    """A primary-mode (R2.1) SERIOUS_SAFETY communication. R2 cards keep R2 behaviour."""
+    return _is_primary(doc) and ((doc or {}).get("v31_draft") or {}).get("restriction") == "SERIOUS_SAFETY"
+
+
 def _serious_unreviewed(doc) -> bool:
     """Serious safety: no machine answer may be published; only the operator's own text."""
-    return ((doc or {}).get("v31_draft") or {}).get("restriction") == "SERIOUS_SAFETY" \
-        and _answer_source(doc) != "manual"
+    return _serious(doc) and _answer_source(doc) != "manual"
+
+
+def publication_mode_for(doc) -> str:
+    """Policy context of the active answer. A serious-safety answer the operator wrote
+    through the edit flow gets the v3.1E policy with the human-review routing satisfied;
+    otherwise the answer's lineage decides."""
+    if _serious(doc) and _answer_source(doc) == "manual":
+        return "v31_human_safety"
+    return answer_lineage(doc)
 
 
 def _primary_answer_block(doc) -> str | None:
@@ -274,7 +287,8 @@ def _primary_answer_block(doc) -> str | None:
     if source == "v31e":
         label = "✨ <b>Рекомендуемый ответ 3.1E:</b>"
     elif source == "manual":
-        label = "✏️ <b>Ответ оператора</b> (правила " + ("3.1E" if answer_lineage(doc) == "v31" else "V2") + "):"
+        label = "✏️ <b>Ответ оператора</b> (правила " + {"v31": "3.1E", "v31_human_safety": "3.1E, проверен человеком"}.get(
+            publication_mode_for(doc), "V2") + "):"
     elif source == "v2_fallback":
         label = "✍️ <b>Вариант V2</b> (выбран оператором):"
     else:
@@ -1272,7 +1286,10 @@ def _publication_validator(deps, publication_mode: str):
     «v31» (✨ Опубликовать 3.1E): the v3.1E policy that produced the draft."""
     if deps.publication_validator:
         return deps.publication_validator
-    from app.services.publication_policy import live_publication_validator, validate_for_publication
+    from app.services.publication_policy import (live_publication_validator, validate_for_publication,
+                                                 validate_human_safety_publication)
+    if publication_mode == "v31_human_safety":
+        return validate_human_safety_publication
     return validate_for_publication if publication_mode == "v31" else live_publication_validator(deps.settings)
 
 
@@ -1335,7 +1352,7 @@ def _publish(deps: Deps, doc_id, chat, message_id, user_id, *, expected_generati
     trace.update(write_attempted=False, write="not_attempted")
     try:
         # The policy follows the answer's lineage (an explicit p31 says v31), never a flag alone.
-        publication_mode = publication_mode or answer_lineage(doc)
+        publication_mode = publication_mode or publication_mode_for(doc)
         trace["publication_mode"] = publication_mode
         policy = _publication_validator(deps, publication_mode)(text, doc, deps.settings)
         if not isinstance(policy, dict) or policy.get("verdict") not in ("PASS", "INFO", "WARNING", "BLOCK"):

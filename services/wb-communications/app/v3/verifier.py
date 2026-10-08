@@ -85,6 +85,9 @@ class VerifierContext:
     inci_order_warning: bool = False
     own_identifiers: set = field(default_factory=set)
     customer_experience: str = ""
+    # R2.1: an operator-written answer to a SERIOUS_SAFETY case. Satisfies ONLY the routing
+    # prohibition (V-SAFETY-ROUTE); every other rule keeps inspecting the text.
+    human_reviewed_safety: bool = False
     service_premises: list = field(default_factory=list)
     intended_use_boundaries: list = field(default_factory=list)
     product_capabilities: dict = field(default_factory=dict)
@@ -386,7 +389,8 @@ def verify(text: Optional[str], ctx: VerifierContext, snapshot: KnowledgeSnapsho
     safety=assess_safety(ctx.customer_experience,policy)
     # R2.1: a moderate fragrance discomfort is answered by an operator-reviewed text; every
     # other human/urgent route still forbids ordinary publication.
-    if safety.route in {'HUMAN_REVIEW','SAFETY_URGENT'} and not moderate_discomfort(ctx.customer_experience,safety):
+    if safety.route in {'HUMAN_REVIEW','SAFETY_URGENT'} and not ctx.human_reviewed_safety \
+            and not moderate_discomfort(ctx.customer_experience,safety):
         add('V-SAFETY-ROUTE','BLOCK',raw[:80],'customer safety event requires human; ordinary publication is forbidden')
     elif safety.route=='S2' and normalize(snapshot.template('T-S2')) not in norm:
         add('V-SAFETY-ROUTE','BLOCK',raw[:80],'severe/persistent reaction requires approved safety branch')

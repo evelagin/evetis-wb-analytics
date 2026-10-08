@@ -219,15 +219,93 @@ def test_serious_cases_stay_hard_human_review(text):
     assert tap(d, f"u2:{doc_id}:{gen}", n=3)["status"] == "stale"
 
 
-def test_serious_case_operator_text_can_be_published():
-    d = primary(feedback=fb(text="После крема опух язык и тяжело дышать", rating=1))
+SERIOUS = "После крема опух язык и тяжело дышать"
+
+
+def rules(d):
+    return {v["rule_id"] for v in last_trace(d)["policy"].get("violations") or []}
+
+
+def serious_with_operator_text(text, nm=252442517):
+    d = primary(feedback=fb(text=SERIOUS, nm=nm, rating=1))
     run_poll(d)
+    doc = edit(d, text)
+    return d, doc_of(d)[0], doc
+
+
+def test_serious_operator_text_publishes_through_v31_human_safety(policies):
     text = "Ольга, нам очень жаль. Пожалуйста, прекратите использование крема."
+    d, doc_id, doc = serious_with_operator_text(text)
+    assert "Ответ оператора</b> (правила 3.1E, проверен человеком)" in card(d)
+    assert f"pub:{doc_id}:{doc['generation_number']}" in buttons(d)
+    policies.v31.calls.clear()
+    assert tap(d, f"pub:{doc_id}:{doc['generation_number']}", n=40)["status"] == "published"
+    trace = last_trace(d)
+    assert trace["publication_mode"] == "v31_human_safety" and trace["policy"]["gate"] == "V31_HUMAN_SAFETY"
+    assert policies.live.calls == [] and policies.v31.calls == [text]       # v3.1E verifier, never LIVE_V2
+    assert [t for _, t in d.wb.published] == [text] and d.repo.get(doc_id)["status"] == "published"
+
+
+def test_human_review_waives_only_the_routing_rule():
+    from app.services.publication_policy import validate_for_publication, validate_human_safety_publication
+    d, doc_id, doc = serious_with_operator_text("Ольга, нам очень жаль. Пожалуйста, прекратите использование крема.")
+    ordinary = validate_for_publication(doc["final_answer"], doc, d.settings)
+    assert ordinary["verdict"] == "BLOCK" and {v["rule_id"] for v in ordinary["violations"]} == {"V-SAFETY-ROUTE"}
+    assert validate_human_safety_publication(doc["final_answer"], doc, d.settings)["verdict"] != "BLOCK"
+
+
+def test_serious_operator_unsupported_claim_is_blocked():
+    d, doc_id, doc = serious_with_operator_text("Ольга, нам очень жаль. Масла ши и миндаля питают кожу рук.")
+    assert tap(d, f"pub:{doc_id}:{doc['generation_number']}", n=40)["status"] == "policy_blocked"
+    assert last_trace(d)["publication_mode"] == "v31_human_safety"
+    assert rules(d) and "V-SAFETY-ROUTE" not in rules(d) and d.wb.published == []
+
+
+def test_serious_operator_restricted_value_is_blocked():
+    # A made-up percentage next to an ingredient whose concentration is restricted (never the real value).
+    d, doc_id, doc = serious_with_operator_text("Нам очень жаль. В креме салициловая кислота в концентрации 5%.",
+                                                nm=438775617)
+    assert tap(d, f"pub:{doc_id}:{doc['generation_number']}", n=40)["status"] == "policy_blocked"
+    assert last_trace(d)["publication_mode"] == "v31_human_safety"
+    assert "V-RESTRICTED" in rules(d) and "V-SAFETY-ROUTE" not in rules(d) and d.wb.published == []
+
+
+def test_human_safety_mode_needs_serious_flag_and_manual_source():
+    from app.services.pipeline import publication_mode_for
+    manual = [{"source": "ai"}, {"source": "manual"}]
+    serious = {"restriction": "SERIOUS_SAFETY"}
+    assert publication_mode_for({"operator_mode": "v31_primary", "v31_draft": serious,
+                                 "answer_versions": manual}) == "v31_human_safety"
+    assert publication_mode_for({"operator_mode": "v31_primary", "v31_draft": serious,
+                                 "answer_versions": manual[:1]}) == "live_v2"        # machine text: refused earlier
+    assert publication_mode_for({"operator_mode": "v31_primary", "v31_draft": {"attention": "MODERATE_DISCOMFORT"},
+                                 "answer_versions": [{"source": "v31e"}, {"source": "manual"}]}) == "v31"
+    assert publication_mode_for({"v31_draft": serious, "answer_versions": manual}) == "live_v2"   # R2 card
+
+
+def test_moderate_manual_edit_stays_on_ordinary_v31(policies):
+    d = primary(feedback=anna())
+    run_poll(d)
+    text = "Анна, спасибо за отзыв! Жаль, что аромат оказался для Вас слишком насыщенным."
     doc = edit(d, text)
     doc_id = doc_of(d)[0]
-    assert f"pub:{doc_id}:{doc['generation_number']}" in buttons(d)
     assert tap(d, f"pub:{doc_id}:{doc['generation_number']}", n=40)["status"] == "published"
+    assert last_trace(d)["publication_mode"] == "v31" and "gate" not in last_trace(d)["policy"]
     assert [t for _, t in d.wb.published] == [text]
+
+
+def test_flag_off_r2_serious_case_keeps_r2_behaviour(policies):
+    d = make_deps([fb(text=SERIOUS, rating=1)], openai=FixedV2(), v31_operator_draft_enabled=True)
+    d.publication_validator = None
+    run_poll(d)
+    doc_id, doc = doc_of(d)
+    assert doc["v31_draft"]["restriction"] == "SERIOUS_SAFETY" and "operator_mode" not in doc
+    assert tap(d, f"pub:{doc_id}:{doc['generation_number']}")["status"] == "policy_blocked"   # V2 gate, not refused
+    assert last_trace(d)["publication_mode"] == "live_v2"
+    text = "Ольга, нам очень жаль. Пожалуйста, прекратите использование крема."
+    doc = edit(d, text)
+    tap(d, f"pub:{doc_id}:{doc['generation_number']}", n=40)
+    assert last_trace(d)["publication_mode"] == "live_v2" and policies.live.calls[-1] == text
 
 
 def test_engine_moderate_only_when_asked_and_serious_never():

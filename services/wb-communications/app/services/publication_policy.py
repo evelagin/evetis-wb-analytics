@@ -9,7 +9,7 @@ from app.v3.resolver import resolve
 from app.v3.verifier import context_for_free_text, verify
 
 
-def validate_for_publication(text, communication, settings, *, include_spans=False):
+def validate_for_publication(text, communication, settings, *, include_spans=False, human_reviewed_safety=False):
     snap = load_snapshot(settings.v3_knowledge_snapshot_id or None)
     from app.response_quality.expertise import approved, registry_sha, in_context, matching_texts
     result = {
@@ -38,6 +38,7 @@ def validate_for_publication(text, communication, settings, *, include_spans=Fal
     # contains no scent descriptor. Actual descriptors outside this span stay checked.
     ctx.approved_fragrance_meaning_texts = [t for r in rows if r.get('meaning_id')=='fragrance_perception_v1'
                                           for t in matching_texts(r,text)]
+    ctx.human_reviewed_safety = bool(human_reviewed_safety)
     verdict = verify(text, ctx, snap)
     result.update(verdict=verdict.verdict, product_id=product.product_id,
                   violations=[{"rule_id": v.rule_id, "severity": v.severity,
@@ -109,6 +110,16 @@ def validate_live_publication(text, communication, settings, *, include_spans=Fa
     if include_spans:
         result["violation_spans"] = [{"rule_id": v.rule_id, "span": v.evidence_span}
                                      for v in verdict.violations if v.evidence_span]
+    return result
+
+
+def validate_human_safety_publication(text, communication, settings, *, include_spans=False):
+    """v3.1E policy for an operator-written answer to a SERIOUS_SAFETY case: the human review
+    satisfies the routing prohibition only; facts, restricted values, claims, service premises,
+    unsafe directives, length and product resolution are checked exactly as usual."""
+    result = validate_for_publication(text, communication, settings, include_spans=include_spans,
+                                      human_reviewed_safety=True)
+    result["gate"] = "V31_HUMAN_SAFETY"
     return result
 
 
