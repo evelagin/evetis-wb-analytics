@@ -25,8 +25,11 @@ locals {
   ozon_cpo_env = {
     LOADER_NAME = "ozon-cpo-orders"
     # Изоляция маркетплейсов: аренда (LOADER_RUNS) и журнал — в домене Ozon, не в wb_raw.
-    BQ_RAW_DATASET                 = "ozon_raw"
-    OZON_CPO_LOOKBACK_DAYS         = "45"
+    BQ_RAW_DATASET = "ozon_raw"
+    # 60 суток (OWNER ACK 2026-10-08): задержка заказ→списание max 41, p99 27; цена 45 и 60 одинакова
+    # (3 календарных блока × 2 отчёта). Живое значение выставлено gcloud — env в ignore_changes,
+    # здесь фиксируется для пересоздания Job'а.
+    OZON_CPO_LOOKBACK_DAYS         = "60"
     OZON_PERF_CLIENT_ID_SECRET     = "EVETIS_OZON_PERFORMANCE_CLIENT_ID"
     OZON_PERF_CLIENT_SECRET_SECRET = "EVETIS_OZON_PERFORMANCE_CLIENT_SECRET"
   }
