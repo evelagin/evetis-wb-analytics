@@ -1,7 +1,8 @@
 """CLI Autonomous Engineering v1. Точка входа для workflows и для оператора.
 
   python -m tools.autonomy.cli validate --kind objective FILE
-  python -m tools.autonomy.cli watch --state-dir D --out D (--fixture F | --live ...)
+  python -m tools.autonomy.cli watch --state-dir D --out D (--signals-fixture F | --live ... | --fixture F)
+  python -m tools.autonomy.cli collect-retest --state-dir D --run-id R --out F   (job без учётных данных)
   python -m tools.autonomy.cli submit --state-dir D --objective F
   python -m tools.autonomy.cli advance --state-dir D --run-id R [--stop-before S ...]
   python -m tools.autonomy.cli status --state-dir D [--run-id R]
@@ -69,7 +70,8 @@ def _evidence(a):
     if getattr(a, "evidence", "live") == "replay":
         exp = _expect(a) or {}
         return ReplayEvidenceRunner(Path(a.pending_dir) / "evidence.json", exp.get("evidence.json", ""), runner,
-                                    trusted_repo=REPO)
+                                    trusted_repo=REPO, retest_file=Path(a.pending_dir) / "retest.json",
+                                    retest_sha256=exp.get("retest.json"))
     return runner
 
 
@@ -88,7 +90,8 @@ def _orchestrator(a, store: StateStore):
 
         def audit(run):  # noqa: F811 — BLOCKED остаётся BLOCKED, а не нулём
             return count_mutations(a.project, a.token_command, run, ids, settle=settle)
-    publisher = GitPublisher(REPO, dry_run=a.dry_run) if getattr(a, "publish", False) else None
+    publisher = (GitPublisher(REPO, dry_run=a.dry_run, identity=getattr(a, "publisher_identity", None) or "github-app")
+                 if getattr(a, "publish", False) else None)
     verifier = None
     if getattr(a, "verify_repo", None):
         from tools.autonomy.policy import load_policy
@@ -156,9 +159,12 @@ def main(argv=None) -> int:
     w.add_argument("--fixture"); w.add_argument("--live", action="store_true"); w.add_argument("--project")
     w.add_argument("--token-command"); w.add_argument("--suites", nargs="*")
     w.add_argument("--no-health", action="store_true"); w.add_argument("--report")
+    w.add_argument("--signals-fixture", help="фикстура канонических сигналов (health/incidents/ledger)")
+    w.add_argument("--legacy-checks", action="store_true",
+                   help="устаревший путь: прогнать ворота данных (только оповещение, задач нет)")
     s = sub.add_parser("submit"); s.add_argument("--state-dir", required=True); s.add_argument("--objective", required=True)
     s.add_argument("--trusted-base-ref", help="repository_sha цели обязан быть предком этого ref (CI: origin/main)")
-    for name in ("advance", "publish", "review", "agent-run", "collect", "verify-ci", "audit"):
+    for name in ("advance", "publish", "review", "agent-run", "collect", "collect-retest", "verify-ci", "audit"):
         p = sub.add_parser(name)
         p.add_argument("--engineer", choices=["claude", "replay", "none"], default="claude")
         p.add_argument("--reviewer", choices=["claude", "replay", "none"], default="claude")
@@ -173,6 +179,9 @@ def main(argv=None) -> int:
         p.add_argument("--stop-before", nargs="*", default=[]); p.add_argument("--dry-run", action="store_true")
         p.add_argument("--trusted-base-ref", help="repository_sha прогона обязан быть предком этого ref")
         p.add_argument("--scope-guard-file", help="вывод anthropic_scope check этого job'а (в диагностику)")
+        if name == "publish":
+            p.add_argument("--publisher-identity", choices=["github-app", "actions-token"], default="github-app",
+                           help="идентичность публикатора (B2: целевая — GitHub App; actions-token только для стендов)")
         if name == "verify-ci":
             p.add_argument("--repo", dest="verify_repo", required=True, help="OWNER/NAME для API Actions")
             p.add_argument("--timeout-minutes", type=int); p.add_argument("--poll-seconds", type=int)
@@ -192,14 +201,21 @@ def main(argv=None) -> int:
     store = StateStore(Path(a.state_dir))
     if a.cmd == "watch":
         from tools.autonomy.watcher import fixture_source, live_source, watch
-        if a.fixture:
+        from tools.autonomy.policy import load_policy
+        from tools.autonomy.signals import canonical_signals, fixture_fetcher
+        if a.signals_fixture:
+            obs = canonical_signals(fixture_fetcher(Path(a.signals_fixture)), load_policy())
+        elif a.fixture:
             obs = fixture_source(Path(a.fixture))
-        elif a.live:
+        elif a.live and a.legacy_checks:
             from tools.autonomy.envelope import suites_index
             suites = a.suites or [n for n, s in suites_index().items() if s.get("gate")]
             obs = live_source(a.project, a.token_command, suites, include_health=not a.no_health)
+        elif a.live:
+            from tools.autonomy.watcher import canonical_source
+            obs = canonical_source(a.project, a.token_command)
         else:
-            ap.error("нужен --fixture или --live")
+            ap.error("нужен --signals-fixture, --live или --fixture")
         rep = watch(obs, store, _sha(), Path(a.out), synthetic=bool(a.fixture and "synthetic" in a.fixture))
         from tools.autonomy.redact import safe_dumps
         text = safe_dumps(rep, indent=2)
@@ -229,6 +245,13 @@ def main(argv=None) -> int:
         out = Path(a.out); out.parent.mkdir(parents=True, exist_ok=True)
         sha = collect_candidate_evidence(_orchestrator(a, store), a.run_id, out)
         print(json.dumps({"run_id": a.run_id, "evidence.json": sha}, ensure_ascii=False))
+        return 0
+    if a.cmd == "collect-retest":
+        # Job БЕЗ учётных данных: тот же набор тестов на базе и кандидате, решений не принимает.
+        from tools.autonomy.orchestrator import collect_retest
+        out = Path(a.out); out.parent.mkdir(parents=True, exist_ok=True)
+        sha = collect_retest(_orchestrator(a, store), a.run_id, out)
+        print(json.dumps({"run_id": a.run_id, "retest.json": sha}, ensure_ascii=False))
         return 0
     if a.cmd == "review":
         # Только ревьюер, без перехода состояния: вердикт сохраняется для job'а гейткипера.

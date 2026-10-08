@@ -128,3 +128,76 @@ def branch_allowed(branch: str, policy: dict | None = None) -> bool:
     policy = policy or load_policy()
     b = policy["branches"]
     return bool(re.fullmatch(b["slug_pattern"], branch)) and branch not in b["protected"]
+
+
+# ------------------------------------------------- классы задач (AE-R1) ---
+def task_class_of(objective: dict) -> str | None:
+    """Класс задачи цели. Явный `task_class`; иначе выводится только для двух известных форм:
+    цель ввода в эксплуатацию (commissioning) и синтетический стенд. Иначе — None (области нет)."""
+    if objective.get("task_class"):
+        return objective["task_class"]
+    # Синтетический стенд — первым: его область (synthetic/**) в настоящем репозитории пуста.
+    if ((objective.get("incident") or {}).get("source")) == "synthetic":
+        return "SYNTHETIC_FIXTURE"
+    if objective.get("commissioning"):
+        return "COMMISSIONING_CANARY"
+    return None
+
+
+def task_scope(objective: dict, policy: dict | None = None) -> dict | None:
+    """Область кандидата по классу задачи из policy.json — НЕ из цели: автор цели не расширяет allowlist.
+
+    None — класса нет, класс не инженерный или синтетический класс вне синтетического стенда.
+    Fail closed: без области кандидат не может стать READY_FOR_PR."""
+    policy = policy or load_policy()
+    tc = task_class_of(objective)
+    cls = policy["task_classes"]["classes"].get(tc or "")
+    if not cls or not cls.get("engineering") or not cls.get("allowed_paths"):
+        return None
+    if tc == "SYNTHETIC_FIXTURE" and ((objective.get("incident") or {}).get("source")) != "synthetic":
+        return None
+    lim = policy["diff_limits"]
+    return {"task_class": tc, "allowed_paths": list(cls["allowed_paths"]),
+            "max_changed_lines": min(int(cls["max_changed_lines"]), int(lim["max_changed_lines"])),
+            "max_files": min(int(cls["max_files"]), int(lim["max_files"])),
+            "test_profiles": list(cls.get("test_profiles", []))}
+
+
+def out_of_scope(files: list[str], scope: dict | None) -> list[str]:
+    if scope is None:
+        return sorted(files)
+    return sorted(f for f in files if not any(glob_match(f, g) for g in scope["allowed_paths"]))
+
+
+def diff_size(patch: str) -> dict:
+    """Изменённые строки (+ и −, без заголовков) и файлы унифицированного диффа."""
+    lines = files = 0
+    for line in (patch or "").splitlines():
+        if line.startswith("diff --git "):
+            files += 1
+        elif line.startswith(("+++ ", "--- ")):
+            continue
+        elif line.startswith(("+", "-")):
+            lines += 1
+    return {"changed_lines": lines, "files": files}
+
+
+def scope_violations(files: list[str], patch: str, scope: dict | None) -> list[str]:
+    """Нарушения области: класс отсутствует, файлы вне allowlist, дифф больше лимита."""
+    if scope is None:
+        return ["класс задачи не определён или не инженерный — allowlist отсутствует (fail closed)"]
+    out = []
+    oos = out_of_scope(files, scope)
+    if oos:
+        out.append(f"SCOPE_OUT_OF_ALLOWLIST ({scope['task_class']}): {oos[:10]}")
+    size = diff_size(patch)
+    if size["changed_lines"] > scope["max_changed_lines"]:
+        out.append(f"DIFF_TOO_LARGE: {size['changed_lines']} изменённых строк > {scope['max_changed_lines']}")
+    if max(size["files"], len(files)) > scope["max_files"]:
+        out.append(f"DIFF_TOO_LARGE: {max(size['files'], len(files))} файлов > {scope['max_files']}")
+    return out
+
+
+def normalize_verdict(verdict: str, policy: dict | None = None) -> str:
+    policy = policy or load_policy()
+    return policy["reviewer_verdicts"]["legacy_aliases"].get(verdict, verdict)

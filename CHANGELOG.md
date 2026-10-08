@@ -1,5 +1,29 @@
 # CHANGELOG.md
 
+## 2026-10-08 — Autonomous Engineering AE-R1: канонические сигналы, классификатор, область задачи, retest, политика вывода (НЕ ВКЛЮЧЕНО)
+
+Только код и документация: `AE_ENABLED`/`AE_PREFLIGHT_ENABLED` не заданы, расписаний нет, DDL, IAM,
+федерация Anthropic и GitHub App не тронуты. Листы не затрагиваются, экономика витрин не меняется.
+Подробно — `docs/architecture/AE_V1_R1_REMEDIATION.md`.
+
+- Наблюдатель читает канонические сигналы (`evetis_health.V_DATA_HEALTH_CURRENT`, инциденты DRO,
+  новый журнал отказов) вместо собственного вычисления здоровья; задачу создаёт только
+  детерминированный классификатор (`tools/autonomy/classifier.py`). Бизнесовые условия (ФФ, план,
+  ручные операции, отсутствие данных у маркетплейса) инженерной задачей не становятся.
+- `sql/health/dro1_07_run_failure_ledger.sql` — `evetis_health.V_RUN_FAILURE_LEDGER` (не развёрнут):
+  отказы прогонов с кодом, сигнатурой, отпечатком текста (без самого текста), повторяемостью и
+  восстановлением. Откат — `DROP VIEW` в `dro1_99_rollback.sql`.
+- Классы задач с allowlist путей и лимитом диффа (`policy.json → task_classes`, `diff_limits`);
+  кандидат вне области или больше лимита не становится READY_FOR_PR. TCB расширена конфигами cloud.
+- Тесты кандидата по профилям python/ozon/cloud (npm ci без скриптов, typecheck, lint, vitest),
+  статус = код выхода + JUnit харнесса main; job `retest` без учётных данных, сверка в доверенном verify.
+- Ревьюер без отчёта инженера; вердикты APPROVE / APPROVE_WITH_NITS / CHANGES_REQUIRED / BLOCK /
+  UNPROVEN (PASS/BLOCKED нормализуются); обязательное `test_verification`.
+- Политика вывода данных (B3) для autonomy-state, артефактов, issues, логов и тел PR.
+- Публикатор: интерфейс идентичности, по умолчанию GitHub App (B2) — пока не создан, отказ до записи.
+- Фикстура `quality/autonomy/examples/signals.sheets_503_2026-10-07.json` → ровно одна задача
+  RETRY_CLASSIFIER_DEFECT. Исправление Sheets 503 в production-коде в этот PR не входит.
+
 ## 2026-10-07 — Безопасность публичного репозитория: закрепление actions, входы через env, проверки
 
 Только CI/CD и политика; листы, витрины и экономика не затрагиваются, колонки не меняются.

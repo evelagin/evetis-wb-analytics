@@ -4,6 +4,10 @@ name: autonomy-test
 # Переход состояния делает доверенный job на другой машине.
 # id-token — только ради sa-ae-reader (job_workflow_ref этого файла): правило федерации Claude API
 # этот файл не пропускает, привилегированные SA — тоже (tools/tests/test_autonomy_wif.py, B2).
+#
+# AE-R1: job `retest` — те же тесты кандидата И базы, но БЕЗ учётных данных (ни id-token, ни GCP,
+# ни токена записи). Доверенный verify берёт тесты из retest и сверяет с job'ом `test`: расхождение —
+# UNSAFE, retest нет — тесты не доказаны. Сеть на время тестов отключается (unshare), где возможно.
 on:
   workflow_call:
     inputs:
@@ -12,6 +16,8 @@ on:
     outputs:
       evidence_sha:
         value: ${{ jobs.test.outputs.evidence_sha }}
+      retest_sha:
+        value: ${{ jobs.retest.outputs.retest_sha }}
 
 permissions: {}
 
@@ -44,6 +50,9 @@ jobs:
           python-version: "3.12"
       - name: install pinned dependencies (hash-checked)
         run: "pip install --only-binary=:all: --require-hashes -r tools/requirements-sql-ci.txt"
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: "20"   # профиль cloud (как в ci.yml); npm ci --ignore-scripts
       - uses: google-github-actions/auth@c200f3691d83b41bf9bbd8638997a462592937ed # v2
         with:
           workload_identity_provider: ${{ vars.WIF_PROVIDER }}
@@ -69,4 +78,56 @@ jobs:
         with:
           name: ae-${{ inputs.run_id }}-test-${{ github.run_attempt }}
           path: ${{ runner.temp }}/pending
+          retention-days: 30
+
+  retest:
+    # БЕЗ учётных данных: нет id-token (значит, нет ни sa-ae-reader, ни федерации Claude API), нет
+    # токена записи. Исполняет код кандидата и базы по профилям policy.json, харнесс — код main.
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    permissions:
+      contents: read
+    outputs:
+      retest_sha: ${{ steps.retest.outputs.retest_sha }}
+    env:
+      STATE_DIR: ${{ github.workspace }}/.ae-state
+      RUN_ID: ${{ inputs.run_id }}
+      STATE_SHA: ${{ inputs.state_sha }}
+    steps:
+      - name: guard — только main, строгие входы
+        run: |
+          [ "$GITHUB_REF" = "refs/heads/main" ] || { echo "::error::только из main"; exit 1; }
+          [[ "$RUN_ID" =~ ^run-[0-9]{8}T[0-9]{6}Z-[0-9a-f]{8}$ ]] || { echo "::error::неверный run_id"; exit 1; }
+          [[ "$STATE_SHA" =~ ^[0-9a-f]{40}$ ]] || { echo "::error::неверный state_sha"; exit 1; }
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: "3.12"
+      - name: install pinned dependencies (hash-checked)
+        run: "pip install --only-binary=:all: --require-hashes -r tools/requirements-sql-ci.txt"
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: "20"
+      - name: clone state at pinned sha (read)
+        env:
+          GH_TOKEN: ${{ github.token }}   # contents: read — только на этот шаг
+        run: bash tools/autonomy/ci/state_clone.sh "$STATE_SHA"
+      - name: retest candidate and base (offline, no credentials)
+        id: retest
+        run: |
+          state=$(python -m tools.autonomy.cli status --state-dir "$STATE_DIR" --run-id "$RUN_ID" | awk '{print $2}')
+          [ "$state" = "TESTING" ] || { echo "состояние $state — тестировать нечего"; echo "retest_sha=" >> "$GITHUB_OUTPUT"; exit 0; }
+          python -m tools.autonomy.cli collect-retest --engineer none --reviewer none \
+            --state-dir "$STATE_DIR" --run-id "$RUN_ID" --out "$RUNNER_TEMP/retest/retest.json" \
+            --sandbox-root "$RUNNER_TEMP/sandboxes" > "$RUNNER_TEMP/retest.out"
+          python -c 'import json,sys; print("retest_sha=" + json.load(open(sys.argv[1]))["retest.json"])' \
+            "$RUNNER_TEMP/retest.out" >> "$GITHUB_OUTPUT"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        if: steps.retest.outputs.retest_sha != ''
+        with:
+          name: ae-${{ inputs.run_id }}-retest-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/retest
           retention-days: 30

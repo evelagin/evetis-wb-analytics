@@ -198,7 +198,13 @@ def test_publisher_refuses_without_ready_gate_and_on_forbidden_content(tmp_path)
         pub.preflight({**run, "production_mutations": 1}, patch, art)
     with pytest.raises(PublishRefused, match="0 production-мутаций"):
         pub.preflight({k: v for k, v in run.items() if k != "audit_evidence"}, patch, art)
+    # AE-R1: без класса задачи (нет цели/области) публикации нет — fail closed
+    with pytest.raises(PublishRefused, match="вне области"):
+        pub.preflight(run, patch, art)
+    (art / "objective.json").write_text(json.dumps({"incident": {"source": "synthetic"}}))
     assert pub.preflight(run, patch, art) == ["synthetic/calc.py"]
+    with pytest.raises(PublishRefused, match="SCOPE_OUT_OF_ALLOWLIST"):
+        pub.preflight(run, "diff --git a/cloud/src/failure.ts b/cloud/src/failure.ts\n", art)
 
 
 def test_deploy_tooling_is_forbidden_supply_chain_path():

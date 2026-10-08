@@ -1,4 +1,9 @@
-"""Человекочитаемый итог прогона. Короткий: для PR, job summary и оповещения."""
+"""Человекочитаемый итог прогона. Короткий: для PR, job summary и оповещения.
+
+AE-R1 / B3: итог публичен (issue, тело PR, job summary). В нём только метаданные: состояния,
+вердикты, пути файлов, имена тестов и статусы, счётчики, отпечатки. Свободный текст инженера —
+только отпечатком (он и хранится отпечатком); всё остальное маскируется `mask_data`, а итоговый
+текст проходит `ensure_public` (остаток данных — отказ записи)."""
 from __future__ import annotations
 
 import json
@@ -41,6 +46,11 @@ def _diagnostics_lines(run: dict) -> list[str]:
 
 
 def render_report(run: dict, art_dir: Path) -> str:
+    from tools.autonomy.output_policy import ensure_public, mask_data
+    return ensure_public("\n".join(mask_data(line, 1200) for line in _render(run, art_dir).split("\n")))
+
+
+def _render(run: dict, art_dir: Path) -> str:
     obj = _load(art_dir / "objective.json") or {}
     rep = _load(art_dir / "engineer_report.json") or {}
     ev = _load(art_dir / "evidence.json") or {}
@@ -57,15 +67,20 @@ def render_report(run: dict, art_dir: Path) -> str:
         f"**{(run.get('audit_evidence') or {}).get('status', 'нет')}**"
         f"{' (' + str((run.get('audit_evidence') or {}).get('audited_at')) + ')' if run.get('audit_evidence') else ''}",
         "",
+        f"**Класс задачи:** {obj.get('task_class') or '—'} · **доказательства тестов:** "
+        f"{ev.get('test_provenance', '—')} · **сеть на время тестов:** {ev.get('network_isolation', '—')}",
+        "",
         "### Первопричина",
-        (rep.get("root_cause") or "не установлена") + ("" if rep.get("root_cause_established") else
-                                                          "  \n_Первопричина не доказана._"),
+        ("установлена" if rep.get("root_cause_established") else "_не доказана_")
+        + f" · отпечаток текста инженера `{rep.get('root_cause') or '—'}` (текст не публикуется — политика B3)",
         "",
         "### Изменённые файлы",
         *(f"- `{f}`" for f in ev.get("changed_files", [])), *(["_нет_"] if not ev.get("changed_files") else []),
         "",
         "### Доказательства (вычислены системой, не агентом)",
-        *(f"- {t['name']}: **{t['status']}**" for t in ev.get("tests", [])),
+        *(f"- {t['name']}: **{t['status']}**" + (f" (JUnit {t['junit']['tests']} тестов)" if t.get("junit") else "")
+          for t in ev.get("tests", [])),
+        *(f"- ⚠️ расхождение с независимым retest: {d}" for d in ev.get("evidence_disagreement", [])[:5]),
         f"- validate_current_sql: **{ev.get('sql_validation', {}).get('status', '—')}**",
         f"- runtime-доступ: **{ev.get('runtime_access', {}).get('status', '—')}**",
         f"- parity: **{ev.get('parity', {}).get('status', '—')}**",
@@ -77,7 +92,7 @@ def render_report(run: dict, art_dir: Path) -> str:
         *(f"- ℹ️ {i[:300]}" for i in gate.get("informational", [])),
         "",
         "### Остающаяся неопределённость",
-        *(f"- {u}" for u in rep.get("uncertainty", [])), *(["_не заявлена_"] if not rep.get("uncertainty") else []),
+        f"- заявлено пунктов: {len(rep.get('uncertainty', []))} (текст не публикуется — политика B3)",
         "",
         *_diagnostics_lines(run),
         f"_Стоимость моделей по данным CLI (для CI-вызовов — из проверенной диагностики недоверенного job'а): "

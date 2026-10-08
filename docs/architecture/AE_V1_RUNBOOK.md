@@ -103,7 +103,7 @@ Workflows AE лежат в `main`, но ничего не делают:
 
 | | |
 |---|---|
-| Текущее | есть `WIF_PROVIDER`, `GCP_PROJECT_ID`; переменных AE нет |
+| Текущее (2026-10-08) | `AE_READER_SA` и шесть `AE_ANTHROPIC_*` заданы (M4a/M4b); `AE_ENABLED` и `AE_PREFLIGHT_ENABLED` не заданы |
 | Желаемое | `AE_READER_SA=sa-ae-reader@project-fa311fc0-4d87-4781-986.iam.gserviceaccount.com` и шесть `AE_ANTHROPIC_*` из `quality/autonomy/anthropic_federation.json → github_variables`. **`AE_ENABLED` не задавать.** Секрет `ANTHROPIC_API_KEY` не создавать |
 | Команда | `gh variable set AE_READER_SA --body …` (и так для каждой) |
 | Проверка | `gh variable list`; `gh secret list` не содержит `ANTHROPIC*` |
@@ -113,7 +113,7 @@ Workflows AE лежат в `main`, но ничего не делают:
 
 | | |
 |---|---|
-| Текущее | нет |
+| Текущее (2026-10-08) | правила созданы с `workspace:developer` по исключению до 2026-10-09 (B1: перевести на `workspace:inference`) |
 | Желаемое | по `quality/autonomy/anthropic_federation.json`: issuer GitHub Actions (`check_jti` включён), workspace `evetis-ae` с лимитом расходов, аккаунты `evetis-ae-engineer` и `evetis-ae-reviewer`, два правила (claims — точные строки из файла, включая `repository_id` и `repository_owner_id`), `workspace:inference`, 600 с |
 | Где | Claude Console → Settings → Workload identity → Connect workload → GitHub Actions; затем «Advanced rule options»: вставить `claims` из файла, `subject_prefix` без `*` |
 | Проверка | первый прогон §3: в истории аутентификации два разных правила, у job'а `test` обменов нет |
@@ -123,7 +123,7 @@ Workflows AE лежат в `main`, но ничего не делают:
 
 | | |
 |---|---|
-| Текущее | ветки `autonomy-state` нет |
+| Текущее (2026-10-08) | ветка `autonomy-state` есть: прогон `run-20260927T121235Z-ab2e1c53` (READY_FOR_PR, публикация не состоялась — issue #201) |
 | Команда | `gh workflow run autonomy-watch.yml --ref main -f allow_dispatch=false` |
 | Проверка | отчёт прогона: `llm_invocations: 0`; ветка `autonomy-state` создана; диспатча нет (`AE_ENABLED` не задан) |
 | Откат | `git push origin --delete autonomy-state` |
@@ -201,3 +201,16 @@ python -m pytest -q tools/tests/test_autonomy_*.py
 python -m tools.autonomy.wif_check            # желаемое состояние Terraform, код 0
 python -m tools.autonomy.wif_check --snapshot quality/autonomy/wif_live_snapshot_2026-09-24.json   # код 1: живое состояние до исправления
 ```
+
+
+## AE-R1 (2026-10-08): наблюдатель на канонических сигналах
+
+- Живой наблюдатель: `python -m tools.autonomy.cli watch --live --state-dir D --out D --project P --token-command …`
+  читает `evetis_health.V_DATA_HEALTH_CURRENT`, инциденты DRO и `evetis_health.V_RUN_FAILURE_LEDGER` (только SELECT).
+  До ворот B7 (чтение `evetis_health` для `sa-ae-reader` и DDL журнала) он честно возвращает INFRA_BLOCKED.
+- Офлайн-проверка классификатора на реальном кейсе 2026-10-07:
+  `python -m tools.autonomy.cli watch --state-dir /tmp/s --out /tmp/o --signals-fixture quality/autonomy/examples/signals.sheets_503_2026-10-07.json`
+  → ровно одна цель `RETRY_CLASSIFIER_DEFECT` (unitka / SHEETS_API).
+- Старый путь проверок данных — только диагностика: `watch --live --legacy-checks` (задач не создаёт).
+- Повторный прогон тестов без учётных данных: `python -m tools.autonomy.cli collect-retest --engineer none --reviewer none --state-dir D --run-id R --out F`.
+- Подробно: [`AE_V1_R1_REMEDIATION.md`](AE_V1_R1_REMEDIATION.md).

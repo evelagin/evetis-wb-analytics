@@ -33,15 +33,165 @@
     "history_window": 10,
     "flapping_min_transitions": 2,
     "dispatch_on": [
-      "NEW_PERSISTENT",
-      "HEALTH_DEGRADED"
+      "ENGINEERING_CANDIDATE",
+      "NEW_PERSISTENT"
     ],
     "notify_on": [
+      "ENGINEERING_CANDIDATE",
       "NEW_PERSISTENT",
-      "HEALTH_DEGRADED",
+      "UNCLASSIFIED",
       "FLAPPING",
       "INFRA_BLOCKED"
-    ]
+    ],
+    "comment": "AE-R1. ENGINEERING_CANDIDATE — канонический сигнал (DRO-1 / журнал отказов), которому детерминированный классификатор присвоил инженерный класс. NEW_PERSISTENT по старому пути наблюдений проверок диспатчится ТОЛЬКО для синтетических стендов (incident.source = synthetic); в остальных случаях устойчивое падение проверки без канонической классификации — UNCLASSIFIED (оповещение, без задачи)."
+  },
+  "signals": {
+    "comment": "AE-R1. Наблюдатель НЕ вычисляет здоровье сам: он читает канонические сигналы DRO-1 (evetis_health.V_DATA_HEALTH_CURRENT + инциденты scope DRO_PIPELINE) и журнал отказов прогонов (evetis_health.V_RUN_FAILURE_LEDGER). Только SELECT от sa-ae-reader. Ошибка чтения или устаревший снимок детектора — INFRA_BLOCKED, а не здоровье.",
+    "health_view": "evetis_health.V_DATA_HEALTH_CURRENT",
+    "incident_table": "wb_ops.OPS_INCIDENT",
+    "incident_scope": "DRO_PIPELINE",
+    "ledger_view": "evetis_health.V_RUN_FAILURE_LEDGER",
+    "ledger_window_days": 14,
+    "max_detector_age_minutes": 90,
+    "recurrence_threshold_7d": 3
+  },
+  "task_classes": {
+    "comment": "AE-R1. Детерминированный классификатор (tools/autonomy/classifier.py) присваивает сигналу класс ДО создания задачи. Инженерную задачу создают только классы с engineering=true. allowed_paths — единственные пути, которые кандидат класса вправе менять (allowlist; TCB и forbidden_paths действуют поверх). Лимиты диффа — изменённые строки (+ и −) и файлы. NOT_ENGINEERING и UNCLASSIFIED задачу не создают никогда: оповещение владельцу.",
+    "classes": {
+      "RETRY_CLASSIFIER_DEFECT": {
+        "engineering": true,
+        "description": "Временный отказ источника (5xx, unavailable, таймаут, rate limit) записан как детерминированный: классификатор повторов его не распознал.",
+        "allowed_paths": [
+          "cloud/src/failure.ts",
+          "cloud/src/errors.ts",
+          "cloud/src/cli.ts",
+          "cloud/src/loaders/**/*.ts",
+          "cloud/test/**/*.test.ts",
+          "cloud/test/fixtures/**"
+        ],
+        "max_changed_lines": 300,
+        "max_files": 6,
+        "test_profiles": [
+          "python",
+          "cloud"
+        ]
+      },
+      "LOADER_DEFECT": {
+        "engineering": true,
+        "description": "Один и тот же детерминированный отказ загрузчика повторяется (порог signals.recurrence_threshold_7d) без внешней причины.",
+        "allowed_paths": [
+          "cloud/src/**/*.ts",
+          "cloud/test/**/*.test.ts",
+          "cloud/test/fixtures/**",
+          "pipelines/ozon/runtime/**/*.py",
+          "pipelines/ozon/tests/**/*.py"
+        ],
+        "max_changed_lines": 400,
+        "max_files": 8,
+        "test_profiles": [
+          "python",
+          "cloud",
+          "ozon"
+        ]
+      },
+      "SCHEMA_DRIFT": {
+        "engineering": true,
+        "description": "Источник изменил схему ответа: неизвестное/пропавшее поле, ошибка разбора.",
+        "allowed_paths": [
+          "cloud/src/loaders/**/*.ts",
+          "cloud/src/**/normalize*.ts",
+          "cloud/test/**/*.test.ts",
+          "cloud/test/fixtures/**",
+          "pipelines/ozon/runtime/**/*.py",
+          "pipelines/ozon/tests/**/*.py"
+        ],
+        "max_changed_lines": 400,
+        "max_files": 8,
+        "test_profiles": [
+          "python",
+          "cloud",
+          "ozon"
+        ]
+      },
+      "PARITY_DEFECT": {
+        "engineering": true,
+        "description": "Детерминированная проверка паритета/QA производного слоя падает при свежих исходных данных.",
+        "allowed_paths": [
+          "sql/**/*.sql",
+          "tools/tests/test_*.py"
+        ],
+        "max_changed_lines": 300,
+        "max_files": 6,
+        "test_profiles": [
+          "python"
+        ]
+      },
+      "DETECTOR_DEFECT": {
+        "engineering": true,
+        "description": "Дефект самого детектора DRO-1: снимок не пишется или устарел при живом планировщике.",
+        "allowed_paths": [
+          "sql/health/dro1_01_contract.sql",
+          "sql/health/dro1_02_probe.sql",
+          "sql/health/dro1_03_evaluate.sql",
+          "sql/health/dro1_04_tables.sql",
+          "sql/health/dro1_05_procedures.sql",
+          "sql/health/dro1_06_read_model.sql",
+          "tools/dro1_health.py",
+          "tools/tests/test_dro1_health.py"
+        ],
+        "max_changed_lines": 300,
+        "max_files": 5,
+        "test_profiles": [
+          "python"
+        ]
+      },
+      "COMMISSIONING_CANARY": {
+        "engineering": true,
+        "description": "Синтетическая цель ввода в эксплуатацию (objective.commissioning): один канареечный тест.",
+        "allowed_paths": [
+          "tools/tests/test_ae_commissioning_canary.py"
+        ],
+        "max_changed_lines": 120,
+        "max_files": 1,
+        "test_profiles": [
+          "python"
+        ]
+      },
+      "SYNTHETIC_FIXTURE": {
+        "engineering": true,
+        "description": "Только тестовые стенды AE (incident.source = synthetic): синтетический репозиторий приёмки. В настоящем репозитории этих путей нет; цель с этим классом без synthetic-инцидента области не получает.",
+        "allowed_paths": [
+          "synthetic/**",
+          "tests_synthetic/**"
+        ],
+        "max_changed_lines": 200,
+        "max_files": 4,
+        "test_profiles": [
+          "python"
+        ]
+      },
+      "NOT_ENGINEERING": {
+        "engineering": false,
+        "description": "Отсутствие данных у маркетплейса, внешний сбой без дефекта кода, ручной/бизнесовый вход (ФФ, план продаж), ручная операция. Только владельцу.",
+        "allowed_paths": [],
+        "max_changed_lines": 0,
+        "max_files": 0,
+        "test_profiles": []
+      },
+      "UNCLASSIFIED": {
+        "engineering": false,
+        "description": "Ни одно правило не сработало. Fail closed: задачи нет, оповещение владельцу.",
+        "allowed_paths": [],
+        "max_changed_lines": 0,
+        "max_files": 0,
+        "test_profiles": []
+      }
+    }
+  },
+  "diff_limits": {
+    "comment": "Глобальный потолок поверх класса: кандидат больше — не READY_FOR_PR ни при каком классе.",
+    "max_changed_lines": 400,
+    "max_files": 8
   },
   "branches": {
     "remediation_prefix": "ae/",
@@ -59,6 +209,77 @@
     ],
     "timeout_minutes": 45,
     "poll_seconds": 30
+  },
+  "test_profiles": {
+    "comment": "AE-R1. Профили тестов кандидата. Исполняются в недоверенном job'е (с sa-ae-reader, для данных) И ПОВТОРНО в job'е без учётных данных (retest): статус теста = код выхода + JUnit-отчёт харнесса main (os._exit(0) без отчёта — FAIL). Расхождение двух исполнений — UNSAFE. Сеть на время тестов отключается (unshare), где это возможно; иначе network_isolation=NOT_ENFORCED фиксируется в доказательстве.",
+    "python": {
+      "when_changed": [
+        "**"
+      ],
+      "commands": [
+        [
+          "{python}",
+          "-m",
+          "pytest",
+          "-q",
+          "-p",
+          "no:cacheprovider",
+          "tools/tests",
+          "--junitxml={junit}"
+        ]
+      ]
+    },
+    "ozon": {
+      "when_changed": [
+        "pipelines/ozon/**"
+      ],
+      "commands": [
+        [
+          "{python}",
+          "-m",
+          "pytest",
+          "-q",
+          "-p",
+          "no:cacheprovider",
+          "pipelines/ozon/tests",
+          "--junitxml={junit}"
+        ]
+      ]
+    },
+    "cloud": {
+      "when_changed": [
+        "cloud/**"
+      ],
+      "cwd": "cloud",
+      "install": [
+        "npm",
+        "ci",
+        "--ignore-scripts",
+        "--no-audit",
+        "--no-fund"
+      ],
+      "commands": [
+        [
+          "npm",
+          "run",
+          "typecheck"
+        ],
+        [
+          "npm",
+          "run",
+          "lint"
+        ],
+        [
+          "npx",
+          "--no-install",
+          "vitest",
+          "run",
+          "--reporter=default",
+          "--reporter=junit",
+          "--outputFile.junit={junit}"
+        ]
+      ]
+    }
   },
   "anthropic_runtime": {
     "comment": "Сторож идентичности Claude API в job'ах инженера и ревьюера (tools/autonomy/anthropic_scope.py). До запуска агента job обменивает ОТДЕЛЬНЫЙ свежий OIDC-токен, читает scope и expires_in из ответа и отбрасывает токен. Scope шире desired_scope допустим ТОЛЬКО по исключению из списка ниже с неистёкшим сроком; org:admin и любой не-workspace scope — никогда. Желаемое состояние — quality/autonomy/anthropic_federation.json (workspace:inference); исключение его не меняет.",
@@ -161,7 +382,13 @@
         ".idea/**",
         ".devcontainer/**",
         "**/.gitattributes",
-        ".gitmodules"
+        ".gitmodules",
+        "cloud/vitest.config.*",
+        "cloud/.eslintrc*",
+        "cloud/eslint.config.*",
+        "cloud/tsconfig*.json",
+        "**/.nvmrc",
+        "**/.node-version"
       ],
       "tenant_provisioning": [
         "tools/tenancy/**",
@@ -267,7 +494,11 @@
       "python3 tools/impact_analysis.py:*",
       "python3 tools/run_data_checks.py:*",
       "python3 tools/check_runtime_access.py:*",
-      "python3 tools/verify_current_sql_live.py:*"
+      "python3 tools/verify_current_sql_live.py:*",
+      "npm --prefix cloud ci --ignore-scripts:*",
+      "npm --prefix cloud run typecheck:*",
+      "npm --prefix cloud run lint:*",
+      "npm --prefix cloud test:*"
     ],
     "denied_bash": [
       "git push:*",
@@ -286,7 +517,13 @@
       "rm -rf:*",
       "sudo:*",
       "env:*",
-      "printenv:*"
+      "printenv:*",
+      "npm install:*",
+      "npm i:*",
+      "npm exec:*",
+      "npx:*",
+      "node:*",
+      "npm run build:*"
     ]
   },
   "reviewer_tools": {
@@ -301,5 +538,32 @@
     "engineer": "claude-opus-5-5",
     "reviewer": "claude-opus-5-5",
     "comment": "Модель ревьюера может отличаться от модели автора; независимость обеспечивает не модель, а чистый контекст и отдельная машина."
+  },
+  "reviewer_verdicts": {
+    "comment": "AE-R1. Вердикты независимого ревьюера. Устаревшие имена принимаются и нормализуются: PASS → APPROVE, BLOCKED → UNPROVEN.",
+    "allowed": [
+      "APPROVE",
+      "APPROVE_WITH_NITS",
+      "CHANGES_REQUIRED",
+      "BLOCK",
+      "UNPROVEN",
+      "HUMAN_DECISION_REQUIRED"
+    ],
+    "legacy_aliases": {
+      "PASS": "APPROVE",
+      "BLOCKED": "UNPROVEN"
+    }
+  },
+  "output_policy": {
+    "comment": "AE-R1 / B3. Всё, что AE пишет в autonomy-state, артефакты Actions, issues, логи и тела PR, считается ПУБЛИЧНЫМ, пока репозиторий публичный. Сырые строки BigQuery, коммерческие метрики, текст и имена покупателей, скриншоты — запрещены. Свободный текст агента с доступом к данным (инженер) наружу уходит только отпечатком (sha256 + длина). Тексты, выведенные из публичных входов (ревьюер без доступа к данным), — маскируются по правилам ниже и обрезаются. Редакция секретов (redact.py) — отдельный, обязательный, но недостаточный слой.",
+    "engineer_narrative_fields": [
+      "summary",
+      "root_cause",
+      "uncertainty",
+      "questions_for_owner",
+      "commands_run"
+    ],
+    "max_public_text_chars": 600,
+    "max_tail_lines": 20
   }
 }
