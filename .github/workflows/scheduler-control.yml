@@ -13,7 +13,7 @@ on:
         required: true
         default: "wb-stocks"
         type: choice
-        options: [wb-stocks, wb-mart, wb-prices, wb-tariffs, wb-funnel, wb-paid-storage, unitka-engine, ozon-unitka]
+        options: [wb-stocks, wb-mart, wb-prices, wb-tariffs, wb-funnel, wb-paid-storage, unitka-engine, ozon-unitka, ozon-cpo-orders]
       action:
         description: "pause | resume | run-now"
         required: true
@@ -45,7 +45,7 @@ jobs:
           # Terraform создаёт единственный Job wb-prices-prod, теневого контура у наблюдателя
           # цен нет (лишний носитель доступа к ценовому секрету не нужен).
           case "${LOADER}" in
-            wb-mart|wb-prices|wb-tariffs|wb-funnel|wb-paid-storage|ozon-unitka)
+            wb-mart|wb-prices|wb-tariffs|wb-funnel|wb-paid-storage|ozon-unitka|ozon-cpo-orders)
               # UNITKA 2.0 R3: воронка тоже существует только в prod (wb-funnel-prod).
               # Stage E4: платное хранение помечено prodOnly в реестре загрузчиков и пишет
               # production RAW; Terraform создаёт единственный Job wb-paid-storage-prod,
@@ -57,6 +57,9 @@ jobs:
               # это ровно тот случай, который запрещён (infra/terraform/ozon_unitka.tf).
               # Расписание ozon-unitka-prod создаётся НА ПАУЗЕ; resume — отсюда, после первого
               # удачного run-now. Порядок эксплуатации: docs/ops/OZON_UNITKA_OPERATIONS.md.
+              #
+              # Phase B: ozon-cpo-orders — только prod (Job и Scheduler ozon-cpo-orders-prod,
+              # infra/terraform/ozon_cpo_orders.tf); теневого контура у загрузчика CPO нет.
               if [ "${TARGET_ENV}" != "prod" ]; then
                 echo "::error title=Invalid combination::${LOADER} is prod-only; job ${LOADER}-${TARGET_ENV} does not exist. Use environment=prod."
                 exit 1
