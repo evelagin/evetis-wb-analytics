@@ -8,6 +8,7 @@
     "ozon_raw"
   ],
   "rebuild_order": [
+    "V_OZON_ADS_CPO_ORDERS",
     "V_OZON_CIS_BUYOUT",
     "V_OZON_COMMISSION_POLICY",
     "V_OZON_COMMISSION_RECOVERY",
@@ -20,6 +21,8 @@
     "FCT_OZON_PNL_MONTHLY",
     "FCT_OZON_SKU_PNL_DAILY",
     "FCT_OZON_SKU_PNL_MONTHLY",
+    "V_OZON_ADS_CPO_PROMOTED_DAILY",
+    "V_OZON_ADS_CPO_RESIDUAL_DAILY",
     "V_OZON_PROMO_HISTORY",
     "V_OZON_PROMO_SKU_EVIDENCE_HISTORY",
     "V_OZON_TARIFF_SOURCE_HEALTH",
@@ -559,8 +562,9 @@
       "object_name": "FCT_OZON_SKU_PNL_DAILY",
       "object_type": "VIEW",
       "canonical_path": "sql/current/ozon_mart/FCT_OZON_SKU_PNL_DAILY.sql",
-      "sync_state": "captured_live",
+      "sync_state": "pending_deploy",
       "dependencies": [
+        "V_OZON_ADS_CPO_ORDERS",
         "V_OZON_CIS_BUYOUT"
       ],
       "external_dependencies": [
@@ -728,11 +732,11 @@
           "ordinal_position": 24
         }
       ],
-      "canonical_body_sha256": "ae52a35ef016e44a61237fa9c86815e32a7630b1ab4028a8c5615ef628988c37",
-      "canonical_description_sha256": "f52300c177525f77e3e4c47a04ecd5e2a0ccc99bb1c25a73f4262165c63b7f85",
-      "canonical_schema_sha256": "3ecf7fccd50fab9bd3964e2e7748a0d0beec05faca9d2e15fb556e03ee2fd48a",
-      "canonical_schema_verification": "bigquery_verified",
-      "canonical_column_count": 24,
+      "canonical_body_sha256": "87cedc0a5fa34b993341297815861282035ce9d58924f70b5e1e9e7dd540f70f",
+      "canonical_description_sha256": "0672863d52bd5a973e72724fa4c1e4b7ac6a64523886100540d4f2f1c63282cc",
+      "canonical_schema_sha256": "af358af2551f44292facaa7df7fab9f94dd30a3fc4d250f368643abd6659bce4",
+      "canonical_schema_verification": "unverified",
+      "canonical_column_count": 25,
       "canonical_schema": [
         {
           "ordinal_position": 1,
@@ -876,6 +880,12 @@
           "ordinal_position": 24,
           "column_name": "fact_date_semantics",
           "data_type": "STRING",
+          "is_nullable": "YES"
+        },
+        {
+          "ordinal_position": 25,
+          "column_name": "cpo_expense_rub",
+          "data_type": "NUMERIC",
           "is_nullable": "YES"
         }
       ]
@@ -8674,7 +8684,7 @@
       "object_name": "V_OZON_SKU_PNL_DAILY_OPERATIONAL",
       "object_type": "VIEW",
       "canonical_path": "sql/current/ozon_mart/V_OZON_SKU_PNL_DAILY_OPERATIONAL.sql",
-      "sync_state": "captured_live",
+      "sync_state": "pending_deploy",
       "dependencies": [
         "FCT_OZON_SKU_PNL_DAILY",
         "V_OZON_CIS_BUYOUT",
@@ -9019,11 +9029,11 @@
           "ordinal_position": 53
         }
       ],
-      "canonical_body_sha256": "99d53d2d15785817e2b7aa00b4e343c04d7ca3a0895fc5918d3f4edadb2bfad3",
-      "canonical_description_sha256": "04a045f5aa7ba9fb12a7b3053e5c07d5e578757d0effa3484a319a42a7be4137",
-      "canonical_schema_sha256": "c83e689856030bddef30eb54e55d839e744430577a2e87a11c0f058fcdf3cf1a",
-      "canonical_schema_verification": "bigquery_verified",
-      "canonical_column_count": 53,
+      "canonical_body_sha256": "b52d865c228676ff93e9e504b9686ab6efc67bae52907446bd009dd461a59dc6",
+      "canonical_description_sha256": "43ea0d358e33f4f4b6a6e21263b27c150c58d0bd9f42236dd4bb5c2d2847e2f8",
+      "canonical_schema_sha256": "1d64847435c2212e1a8f20e2cec73417d5a108cc27bbd51f259ba2c100892d7e",
+      "canonical_schema_verification": "unverified",
+      "canonical_column_count": 54,
       "canonical_schema": [
         {
           "ordinal_position": 1,
@@ -9341,6 +9351,12 @@
           "ordinal_position": 53,
           "column_name": "commission_unaccounted_qty",
           "data_type": "INT64",
+          "is_nullable": "YES"
+        },
+        {
+          "ordinal_position": 54,
+          "column_name": "cpo_expense_rub",
+          "data_type": "NUMERIC",
           "is_nullable": "YES"
         }
       ]
@@ -11033,6 +11049,498 @@
           "ordinal_position": 36
         }
       ]
+    },
+    {
+      "dataset": "ozon_mart",
+      "object_name": "V_OZON_ADS_CPO_ORDERS",
+      "object_type": "VIEW",
+      "canonical_path": "sql/current/ozon_mart/V_OZON_ADS_CPO_ORDERS.sql",
+      "sync_state": "pending_deploy",
+      "dependencies": [],
+      "external_dependencies": [
+        "evetis_ref.REF_SKU_CHANNEL_MAP",
+        "ozon_raw.RAW_OZON_ADS_CAMPAIGNS",
+        "ozon_raw.RAW_OZON_ADS_CPO_ORDERS",
+        "ozon_raw.RAW_OZON_ADS_EXPENSE_DAILY",
+        "ozon_raw.RAW_OZON_POSTINGS_FBO"
+      ],
+      "dependency_level": 0,
+      "capture_main_sha": null,
+      "captured_at": null,
+      "provenance": {
+        "source": "Phase B (OWNER ACK 2026-10-08, docs/finance/OZON_CPO_PHASE_B_2026-10-08.md): Git-first, не развёрнут; схема — dry-run тела с типизированной подстановкой RAW-таблиц Terraform до их создания",
+        "historical_migration": null,
+        "preflight_parity": null,
+        "superseded_historical_definitions": []
+      },
+      "live_body_sha256_at_capture": null,
+      "live_schema_sha256_at_capture": null,
+      "live_description_sha256_at_capture": null,
+      "live_schema_at_capture": null,
+      "canonical_body_sha256": "b44f609dd3ac3eb683c91317d270a9577f118f7aa0577033f38845b713eb00bd",
+      "canonical_description_sha256": "bc1abc20824428fd07d6860ca0ae09c3c3f36d9b0f99030298d336acb7c0d7ee",
+      "canonical_schema": [
+        {
+          "column_name": "row_key",
+          "data_type": "STRING",
+          "is_nullable": "YES",
+          "ordinal_position": 1
+        },
+        {
+          "column_name": "report_family",
+          "data_type": "STRING",
+          "is_nullable": "YES",
+          "ordinal_position": 2
+        },
+        {
+          "column_name": "campaign_id",
+          "data_type": "STRING",
+          "is_nullable": "YES",
+          "ordinal_position": 3
+        },
+        {
+          "column_name": "campaign_status",
+          "data_type": "STRING",
+          "is_nullable": "YES",
+          "ordinal_position": 4
+        },
+        {
+          "column_name": "charge_date",
+          "data_type": "DATE",
+          "is_nullable": "YES",
+          "ordinal_position": 5
+        },
+        {
+          "column_name": "order_id",
+          "data_type": "STRING",
+          "is_nullable": "YES",
+          "ordinal_position": 6
+        },
+        {
+          "column_name": "order_number",
+          "data_type": "STRING",
+          "is_nullable": "YES",
+          "ordinal_position": 7
+        },
+        {
+          "column_name": "ordered_sku",
+          "data_type": "STRING",
+          "is_nullable": "YES",
+          "ordinal_position": 8
+        },
+        {
+          "column_name": "ordered_internal_sku",
+          "data_type": "STRING",
+          "is_nullable": "YES",
+          "ordinal_position": 9
+        },
+        {
+          "column_name": "ordered_offer_id",
+          "data_type": "STRING",
+          "is_nullable": "YES",
+          "ordinal_position": 10
+        },
+        {
+          "column_name": "ordered_offer_id_reported",
+          "data_type": "STRING",
+          "is_nullable": "YES",
+          "ordinal_position": 11
+        },
+        {
+          "column_name": "ordered_mapping_status",
+          "data_type": "STRING",
+          "is_nullable": "YES",
+          "ordinal_position": 12
+        },
+        {
+          "column_name": "promoted_sku",
+          "data_type": "STRING",
+          "is_nullable": "YES",
+          "ordinal_position": 13
+        },
+        {
+          "column_name": "promoted_internal_sku",
+          "data_type": "STRING",
+          "is_nullable": "YES",
+          "ordinal_position": 14
+        },
+        {
+          "column_name": "promoted_offer_id",
+          "data_type": "STRING",
+          "is_nullable": "YES",
+          "ordinal_position": 15
+        },
+        {
+          "column_name": "promoted_mapping_status",
+          "data_type": "STRING",
+          "is_nullable": "YES",
+          "ordinal_position": 16
+        },
+        {
+          "column_name": "ordered_differs_from_promoted",
+          "data_type": "BOOL",
+          "is_nullable": "YES",
+          "ordinal_position": 17
+        },
+        {
+          "column_name": "order_source",
+          "data_type": "STRING",
+          "is_nullable": "YES",
+          "ordinal_position": 18
+        },
+        {
+          "column_name": "product_name",
+          "data_type": "STRING",
+          "is_nullable": "YES",
+          "ordinal_position": 19
+        },
+        {
+          "column_name": "quantity",
+          "data_type": "INT64",
+          "is_nullable": "YES",
+          "ordinal_position": 20
+        },
+        {
+          "column_name": "unit_sale_price_rub",
+          "data_type": "NUMERIC",
+          "is_nullable": "YES",
+          "ordinal_position": 21
+        },
+        {
+          "column_name": "sale_value_rub",
+          "data_type": "NUMERIC",
+          "is_nullable": "YES",
+          "ordinal_position": 22
+        },
+        {
+          "column_name": "rate_pct",
+          "data_type": "NUMERIC",
+          "is_nullable": "YES",
+          "ordinal_position": 23
+        },
+        {
+          "column_name": "rate_rub",
+          "data_type": "NUMERIC",
+          "is_nullable": "YES",
+          "ordinal_position": 24
+        },
+        {
+          "column_name": "expense_rub",
+          "data_type": "NUMERIC",
+          "is_nullable": "YES",
+          "ordinal_position": 25
+        },
+        {
+          "column_name": "order_created_at",
+          "data_type": "TIMESTAMP",
+          "is_nullable": "YES",
+          "ordinal_position": 26
+        },
+        {
+          "column_name": "order_date_msk",
+          "data_type": "DATE",
+          "is_nullable": "YES",
+          "ordinal_position": 27
+        },
+        {
+          "column_name": "business_date",
+          "data_type": "DATE",
+          "is_nullable": "YES",
+          "ordinal_position": 28
+        },
+        {
+          "column_name": "business_date_basis",
+          "data_type": "STRING",
+          "is_nullable": "YES",
+          "ordinal_position": 29
+        },
+        {
+          "column_name": "postings",
+          "data_type": "INT64",
+          "is_nullable": "YES",
+          "ordinal_position": 30
+        },
+        {
+          "column_name": "posting_statuses",
+          "data_type": "STRING",
+          "is_nullable": "YES",
+          "ordinal_position": 31
+        },
+        {
+          "column_name": "order_cancelled",
+          "data_type": "BOOL",
+          "is_nullable": "YES",
+          "ordinal_position": 32
+        },
+        {
+          "column_name": "completeness_status",
+          "data_type": "STRING",
+          "is_nullable": "YES",
+          "ordinal_position": 33
+        },
+        {
+          "column_name": "report_uuid",
+          "data_type": "STRING",
+          "is_nullable": "YES",
+          "ordinal_position": 34
+        },
+        {
+          "column_name": "requested_from",
+          "data_type": "DATE",
+          "is_nullable": "YES",
+          "ordinal_position": 35
+        },
+        {
+          "column_name": "requested_to",
+          "data_type": "DATE",
+          "is_nullable": "YES",
+          "ordinal_position": 36
+        },
+        {
+          "column_name": "fetched_at",
+          "data_type": "TIMESTAMP",
+          "is_nullable": "YES",
+          "ordinal_position": 37
+        },
+        {
+          "column_name": "run_id",
+          "data_type": "STRING",
+          "is_nullable": "YES",
+          "ordinal_position": 38
+        }
+      ],
+      "canonical_schema_sha256": "4c7099c4f8649143e801609c8709e09edcb44ebb449796b008d1d796817148f0",
+      "canonical_column_count": 38,
+      "canonical_schema_verification": "unverified"
+    },
+    {
+      "dataset": "ozon_mart",
+      "object_name": "V_OZON_ADS_CPO_RESIDUAL_DAILY",
+      "object_type": "VIEW",
+      "canonical_path": "sql/current/ozon_mart/V_OZON_ADS_CPO_RESIDUAL_DAILY.sql",
+      "sync_state": "pending_deploy",
+      "dependencies": [
+        "V_OZON_ADS_CPO_ORDERS"
+      ],
+      "external_dependencies": [
+        "ozon_raw.OZON_CPO_ORDER_RUNS",
+        "ozon_raw.RAW_OZON_ADS_CAMPAIGNS",
+        "ozon_raw.RAW_OZON_ADS_EXPENSE_DAILY",
+        "ozon_raw.RAW_OZON_FINANCE_ACCRUAL"
+      ],
+      "dependency_level": 1,
+      "capture_main_sha": null,
+      "captured_at": null,
+      "provenance": {
+        "source": "Phase B (OWNER ACK 2026-10-08, docs/finance/OZON_CPO_PHASE_B_2026-10-08.md): Git-first, не развёрнут; схема — dry-run тела с типизированной подстановкой RAW-таблиц Terraform до их создания",
+        "historical_migration": null,
+        "preflight_parity": null,
+        "superseded_historical_definitions": []
+      },
+      "live_body_sha256_at_capture": null,
+      "live_schema_sha256_at_capture": null,
+      "live_description_sha256_at_capture": null,
+      "live_schema_at_capture": null,
+      "canonical_body_sha256": "d65b16db5d8d58248923118877d3a2d910c2c034f7022da89a6fe3a570418749",
+      "canonical_description_sha256": "0825f8691e248f935f0baae18776aaebf0fe5282fe81454197dff5d4251460cd",
+      "canonical_schema": [
+        {
+          "column_name": "charge_date",
+          "data_type": "DATE",
+          "is_nullable": "YES",
+          "ordinal_position": 1
+        },
+        {
+          "column_name": "campaign_id",
+          "data_type": "STRING",
+          "is_nullable": "YES",
+          "ordinal_position": 2
+        },
+        {
+          "column_name": "report_family",
+          "data_type": "STRING",
+          "is_nullable": "YES",
+          "ordinal_position": 3
+        },
+        {
+          "column_name": "billed_rub",
+          "data_type": "NUMERIC",
+          "is_nullable": "YES",
+          "ordinal_position": 4
+        },
+        {
+          "column_name": "report_rub",
+          "data_type": "NUMERIC",
+          "is_nullable": "YES",
+          "ordinal_position": 5
+        },
+        {
+          "column_name": "attributed_sku_rub",
+          "data_type": "NUMERIC",
+          "is_nullable": "YES",
+          "ordinal_position": 6
+        },
+        {
+          "column_name": "unmapped_rub",
+          "data_type": "NUMERIC",
+          "is_nullable": "YES",
+          "ordinal_position": 7
+        },
+        {
+          "column_name": "residual_rub",
+          "data_type": "NUMERIC",
+          "is_nullable": "YES",
+          "ordinal_position": 8
+        },
+        {
+          "column_name": "store_level_rub",
+          "data_type": "NUMERIC",
+          "is_nullable": "YES",
+          "ordinal_position": 9
+        },
+        {
+          "column_name": "report_rows",
+          "data_type": "INT64",
+          "is_nullable": "YES",
+          "ordinal_position": 10
+        },
+        {
+          "column_name": "finance_type54_rub",
+          "data_type": "NUMERIC",
+          "is_nullable": "YES",
+          "ordinal_position": 11
+        },
+        {
+          "column_name": "report_covered",
+          "data_type": "BOOL",
+          "is_nullable": "YES",
+          "ordinal_position": 12
+        },
+        {
+          "column_name": "billing_loaded",
+          "data_type": "BOOL",
+          "is_nullable": "YES",
+          "ordinal_position": 13
+        },
+        {
+          "column_name": "residual_status",
+          "data_type": "STRING",
+          "is_nullable": "YES",
+          "ordinal_position": 14
+        }
+      ],
+      "canonical_schema_sha256": "0c9852e0067be49faea63bd4edc5acb84d9c0d6dc6fd3ace3b6a1ae671c2dad6",
+      "canonical_column_count": 14,
+      "canonical_schema_verification": "unverified"
+    },
+    {
+      "dataset": "ozon_mart",
+      "object_name": "V_OZON_ADS_CPO_PROMOTED_DAILY",
+      "object_type": "VIEW",
+      "canonical_path": "sql/current/ozon_mart/V_OZON_ADS_CPO_PROMOTED_DAILY.sql",
+      "sync_state": "pending_deploy",
+      "dependencies": [
+        "V_OZON_ADS_CPO_ORDERS"
+      ],
+      "external_dependencies": [],
+      "dependency_level": 1,
+      "capture_main_sha": null,
+      "captured_at": null,
+      "provenance": {
+        "source": "Phase B (OWNER ACK 2026-10-08, docs/finance/OZON_CPO_PHASE_B_2026-10-08.md): Git-first, не развёрнут; схема — dry-run тела с типизированной подстановкой RAW-таблиц Terraform до их создания",
+        "historical_migration": null,
+        "preflight_parity": null,
+        "superseded_historical_definitions": []
+      },
+      "live_body_sha256_at_capture": null,
+      "live_schema_sha256_at_capture": null,
+      "live_description_sha256_at_capture": null,
+      "live_schema_at_capture": null,
+      "canonical_body_sha256": "0b5d41438905dfad6b3a2d6aa1672cee6a2fe843875abd9ef492a383c94671c7",
+      "canonical_description_sha256": "c7c1588ea3843cb139cc497de396804ad871344389fcc481811faaaf14c68971",
+      "canonical_schema": [
+        {
+          "column_name": "business_date",
+          "data_type": "DATE",
+          "is_nullable": "YES",
+          "ordinal_position": 1
+        },
+        {
+          "column_name": "promoted_sku",
+          "data_type": "STRING",
+          "is_nullable": "YES",
+          "ordinal_position": 2
+        },
+        {
+          "column_name": "promoted_internal_sku",
+          "data_type": "STRING",
+          "is_nullable": "YES",
+          "ordinal_position": 3
+        },
+        {
+          "column_name": "promoted_offer_id",
+          "data_type": "STRING",
+          "is_nullable": "YES",
+          "ordinal_position": 4
+        },
+        {
+          "column_name": "promoted_mapping_status",
+          "data_type": "STRING",
+          "is_nullable": "YES",
+          "ordinal_position": 5
+        },
+        {
+          "column_name": "cpo_promoted_expense_rub",
+          "data_type": "NUMERIC",
+          "is_nullable": "YES",
+          "ordinal_position": 6
+        },
+        {
+          "column_name": "orders",
+          "data_type": "INT64",
+          "is_nullable": "YES",
+          "ordinal_position": 7
+        },
+        {
+          "column_name": "ordered_qty",
+          "data_type": "INT64",
+          "is_nullable": "YES",
+          "ordinal_position": 8
+        },
+        {
+          "column_name": "ordered_value_rub",
+          "data_type": "NUMERIC",
+          "is_nullable": "YES",
+          "ordinal_position": 9
+        },
+        {
+          "column_name": "cross_sku_expense_rub",
+          "data_type": "NUMERIC",
+          "is_nullable": "YES",
+          "ordinal_position": 10
+        },
+        {
+          "column_name": "cross_sku_ordered_value_rub",
+          "data_type": "NUMERIC",
+          "is_nullable": "YES",
+          "ordinal_position": 11
+        },
+        {
+          "column_name": "cancelled_order_expense_rub",
+          "data_type": "NUMERIC",
+          "is_nullable": "YES",
+          "ordinal_position": 12
+        },
+        {
+          "column_name": "charge_date_fallback_rows",
+          "data_type": "INT64",
+          "is_nullable": "YES",
+          "ordinal_position": 13
+        }
+      ],
+      "canonical_schema_sha256": "a6e7a133ec18f2203404fa825ffc249046ed5b9a18285c0827a330187906550f",
+      "canonical_column_count": 13,
+      "canonical_schema_verification": "unverified"
     }
   ]
 }

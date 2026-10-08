@@ -86,7 +86,7 @@ export const OZON_FIELD_SOURCE_MAP: ReadonlyArray<{
   { offset: 8,  field: 'Оборачиваемость',    availability: 'BLANK_NOT_INGESTED',  source: 'производная от остатка' },
   { offset: 9,  field: 'Доходность на 1 шт', availability: 'FORMULA',             source: '= Доходность общая / реализовано' },
   { offset: 10, field: 'Доходность (общая)', availability: 'FORMULA',             source: '= реализовано × доходность 1 шт − реклама' },
-  { offset: 11, field: 'Реклама внутренняя', availability: 'FACT',                source: 'FCT_OZON_SKU_PNL_DAILY.ad_spend_attributed_rub (АТРИБУЦИЯ, не биллинг)' },
+  { offset: 11, field: 'Реклама внутренняя', availability: 'FACT',                source: 'FCT_OZON_SKU_PNL_DAILY.ad_spend_attributed_rub (CPC: АТРИБУЦИЯ, не биллинг) + FCT_OZON_SKU_PNL_DAILY.cpo_expense_rub (Phase B: «Оплата за заказ» на заказанном SKU, сутки МСК заказа; итог CPO = биллинг кампании, остаток — уровень магазина); разложение — управляемой строкой заметки' },
   { offset: 12, field: 'Внешняя реклама',    availability: 'BLANK_SOURCE_ABSENT', source: 'расчётный output; legacy-формула UNPROVEN, существующие ячейки сохраняются' },
   { offset: 13, field: 'ДРР',                availability: 'FORMULA',             source: '= реклама / ((заказы − блогеры) × цена с СПП); без факта СПП — цена покупателя по ОЦЕНКЕ СПП E1m5 (заметка ESTIMATED), цена продавца знаменателем не бывает' },
   { offset: 14, field: 'цена',               availability: 'FACT',                source: 'полная взаимоисключающая posting/SKU-база: документальные proceeds/actual finance покрытых единиц + доказанная reference-цена остальных; / expected_realized_qty, с полным покрытием, не признанная выручка' },

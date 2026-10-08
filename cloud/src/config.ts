@@ -15,7 +15,7 @@ function ozonUnitkaConfig(env: NodeJS.ProcessEnv): Pick<Config,
   'ozonUnitkaSheetName' | 'ozonUnitkaWriteEnabled' | 'ozonUnitkaLastClosedDate'
   | 'ozonUnitkaTailFirstColumn' | 'ozonUnitkaBlockSlots' | 'ozonUnitkaLcdRef'
   | 'ozonUnitkaExistingCfRules' | 'ozonUnitkaOfferAliases'
-  | 'ozonUnitkaMaxSourceLagDays' | 'ozonUnitkaLcdCell'
+  | 'ozonUnitkaMaxSourceLagDays' | 'ozonUnitkaLcdCell' | 'ozonUnitkaCpo'
   | 'ozonLcdMigrationWrite' | 'ozonLcdMigrationExpectedRefs' | 'ozonLcdMigrationExpectedB2'> {
   let aliases: Record<string, string> = {};
   try {
@@ -32,6 +32,7 @@ function ozonUnitkaConfig(env: NodeJS.ProcessEnv): Pick<Config,
     ozonUnitkaLcdRef: opt(env, 'OZON_UNITKA_LCD_REF', '$VA$2'),
     ozonUnitkaExistingCfRules: intOpt(env, 'OZON_UNITKA_EXISTING_CF_RULES', 434),
     ozonUnitkaMaxSourceLagDays: intOpt(env, 'OZON_UNITKA_MAX_SOURCE_LAG_DAYS', 1),
+    ozonUnitkaCpo: opt(env, 'OZON_UNITKA_CPO', '0') === '1',
     ozonUnitkaOfferAliases: aliases,
     ozonLcdMigrationWrite: opt(env, 'OZON_LCD_MIGRATION_WRITE', '0') === '1',
     ozonLcdMigrationExpectedRefs: /^\d+$/.test(opt(env, 'OZON_LCD_MIGRATION_EXPECTED_REFS', ''))
@@ -144,6 +145,12 @@ export interface Config {
    * 1 — загрузка суточная: отставание больше суток означает пропущенный или упавший прогон.
    */
   ozonUnitkaMaxSourceLagDays: number;
+  /**
+   * Phase B: «Оплата за заказ» в «Реклама внутренняя» Ozon-Юнитки. По умолчанию ВЫКЛЮЧЕНО: образ с Phase B
+   * пишет лист побайтно как прежде, пока владелец не включит `OZON_UNITKA_CPO=1` (OWNER ACK — APPLY OZON CPO
+   * UNITKA). Флаг не трогает загрузку CPO и вью — только состав ячейки рекламы и её заметку.
+   */
+  ozonUnitkaCpo: boolean;
   /** Подпись блока → канонический offer_id, где подпись в листе содержит опечатку. */
   ozonUnitkaOfferAliases: Record<string, string>;
   // ── UNITKA INTEGRITY GUARD V1 (Phase 1C1) — все параметры разбираются МЯГКО: опечатка ──

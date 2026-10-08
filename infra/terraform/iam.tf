@@ -91,6 +91,8 @@ locals {
     # sa-promo-econ-{wb,ozon} (promo_economics_snapshot.tf) — тот же actAs-контракт.
     promo_econ_wb   = google_service_account.promo_econ["wb"].name
     promo_econ_ozon = google_service_account.promo_econ["ozon"].name
+    # Phase B: Job ozon-cpo-orders-prod исполняется от sa-ozon-cpo-loader (ozon_cpo_orders.tf).
+    ozon_cpo_loader = google_service_account.ozon_cpo_loader.name
   }
 }
 
