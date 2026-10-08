@@ -157,7 +157,12 @@ def _operator_draft_enabled(deps):
 
 def _primary_enabled(deps):
     """R2.1: v3.1E is the operator's primary draft (V2 only a secondary fallback)."""
-    return getattr(deps.settings, "v31_primary_operator_enabled", False)
+    return getattr(deps.settings, "v31_primary_operator_enabled", False) or _v31_only_enabled(deps)
+
+
+def _v31_only_enabled(deps):
+    """R2.2: v3.1E is the only normal operator answer; V2 is legacy rollback/diagnostics."""
+    return getattr(deps.settings, "v31_only_operator_enabled", False)
 
 
 def _v31_generation(draft):
@@ -189,7 +194,7 @@ def _v31_draft(deps, doc_id, doc, *, budgeted=True) -> dict | None:
         renderer = renderer_for_client(deps.openai) if hasattr(deps.openai, "structured") else None
         msg = message_from_doc(doc_id, doc)
         result = prepare(msg, doc.get("ai_answer") or "", snap, render=renderer, force_generation=True,
-                         moderate_safety=_primary_enabled(deps))
+                         moderate_safety=_primary_enabled(deps), safe_gaps=_v31_only_enabled(deps))
         usable = result.status == "READY" and bool(result.text) and result.final_policy.get("verdict") != "BLOCK"
         human = getattr(result.plan, "human_reason", None)
         draft = {"status": "READY" if usable else "HUMAN_REVIEW", "text": result.text if usable else None,
@@ -235,6 +240,19 @@ def _v31_section(doc) -> list[str]:
 # R2.1: v3.1E as the primary operator draft
 # --------------------------------------------------------------------------- #
 _PRIMARY = "v31_primary"
+_V31_ONLY = "v31_only"          # R2.2: V2 never becomes a publishable answer
+_V31_SOURCES = {"v31e", "manual"}
+_HUMAN_REASON_RU = {
+    "HUMAN_REVIEW_DOMAIN": "юридический вопрос, подлинность или требования регулятора",
+    "UNCLASSIFIED_QUESTION": "вопрос не распознан",
+    "SERVICE_INSTRUCTION_NOT_VERIFIED": "сервисный вопрос без утверждённой инструкции",
+    "REQUIRED_FACT_UNKNOWN": "нет подтверждённых данных для ответа",
+    "QUESTION_EXCEEDS_INFORMATION_BUDGET": "вопрос из нескольких частей",
+    "KNOWLEDGE_CONFLICT": "противоречивые данные о товаре",
+    "POLICY_RESTRICTED_CLAIM": "ограниченное утверждение",
+    "KNOWN_RESTRICTED_NO_ABSTRACTION": "ограниченные сведения",
+    "PRODUCT_NOT_VERIFIED": "товар не опознан",
+}
 _V2_LABEL = "🗂 <b>Старый вариант V2</b> (резервный, правила V2):\n"
 _FALLBACK_REASON = {"ERROR": "3.1E временно недоступен",
                     "SKIPPED_BUDGET": "3.1E не успел подготовиться — нажмите «🔄 Перегенерировать»",
@@ -242,7 +260,16 @@ _FALLBACK_REASON = {"ERROR": "3.1E временно недоступен",
 
 
 def _is_primary(doc) -> bool:
-    return (doc or {}).get("operator_mode") == _PRIMARY
+    return (doc or {}).get("operator_mode") in (_PRIMARY, _V31_ONLY)
+
+
+def _is_v31_only(doc) -> bool:
+    return (doc or {}).get("operator_mode") == _V31_ONLY
+
+
+def _no_v31_answer(doc) -> bool:
+    """R2.2: the active answer is not a 3.1E or operator text (e.g. only the stored V2 draft)."""
+    return _is_v31_only(doc) and _answer_source(doc) not in _V31_SOURCES
 
 
 def _answer_source(doc):
@@ -276,12 +303,14 @@ def publication_mode_for(doc) -> str:
     otherwise the answer's lineage decides."""
     if _serious(doc) and _answer_source(doc) == "manual":
         return "v31_human_safety"
+    if _is_v31_only(doc):
+        return "v31"            # R2.2: every publishable answer is 3.1E or operator text
     return answer_lineage(doc)
 
 
 def _primary_answer_block(doc) -> str | None:
     text = doc.get("final_answer") or doc.get("ai_answer")
-    if _serious_unreviewed(doc) or not text:
+    if _serious_unreviewed(doc) or _no_v31_answer(doc) or not text:
         return None
     source = _answer_source(doc)
     if source == "v31e":
@@ -307,6 +336,11 @@ def _primary_badges(doc) -> list[str]:
                 "Проверьте ответ перед публикацией.", ""]
     if draft.get("attention") == "SAFETY_TEMPLATE":
         return ["⚠️ <b>Требует внимания оператора:</b> реакция кожи, утверждённый ответ безопасности.", ""]
+    if _no_v31_answer(doc):
+        if draft.get("status") == "HUMAN_REVIEW":
+            reason = _HUMAN_REASON_RU.get(draft.get("human_reason"), "нужна проверка")
+            return [f"⛔ <b>Нужна проверка человеком:</b> {reason}. Напишите ответ через «✏️ Написать вручную».", ""]
+        return ["⚠️ <b>Не удалось подготовить ответ 3.1E.</b> Нажмите «🔄 Повторить» или напишите ответ вручную.", ""]
     return []
 
 
@@ -354,7 +388,30 @@ def _build_primary_card(doc, doc_id, *, full=False, question=False) -> tuple[str
     return truncate(text, TELEGRAM_MSG_SOFT_LIMIT), cut
 
 
+def _v31_only_keyboard(doc_id, doc, *, show_full=False, card_text=None):
+    """R2.2: no V2 anywhere. With an answer: the normal four; without: retry/write/skip."""
+    gen = doc.get("generation_number", 0)
+    answer = _primary_answer_block(doc)
+    edit = {"text": "✏️ Изменить", "callback_data": f"edit:{doc_id}"}
+    skip = {"text": "⏭ Пропустить", "callback_data": f"skip:{doc_id}"}
+    if answer:
+        visible = bool(card_text and answer in card_text)
+        rows = [[{"text": "✅ Опубликовать", "callback_data": f"pub:{doc_id}:{gen}"} if visible else
+                 {"text": "📋 Показать полностью", "callback_data": f"show:{doc_id}"}, edit],
+                [{"text": "🔄 Перегенерировать", "callback_data": f"regen:{doc_id}"}, skip]]
+        if show_full and visible:
+            rows.append([{"text": "📋 Показать полностью", "callback_data": f"show:{doc_id}"}])
+        return {"inline_keyboard": rows}
+    write = {"text": "✏️ Написать вручную", "callback_data": f"edit:{doc_id}"}
+    draft = doc.get("v31_draft") or {}
+    if draft.get("status") in ("ERROR", "SKIPPED_BUDGET"):
+        return {"inline_keyboard": [[{"text": "🔄 Повторить", "callback_data": f"regen:{doc_id}"}, write], [skip]]}
+    return {"inline_keyboard": [[write, skip]]}
+
+
 def _primary_keyboard(deps, doc_id, doc, *, show_full=False, card_text=None):
+    if _is_v31_only(doc):
+        return _v31_only_keyboard(doc_id, doc, show_full=show_full, card_text=card_text)
     gen = doc.get("generation_number", 0)
     serious = _serious_unreviewed(doc)
     answer = _primary_answer_block(doc)
@@ -694,6 +751,9 @@ def _generate_answer(deps: Deps, subject, communication_type=CommunicationType.R
     """Return ``(gen, v2_meta)``. ``v2_meta`` is None for reviews_v1, else a dict
     with the flags to surface on the card.
 
+    V2 is LEGACY_FALLBACK / ROLLBACK ONLY under R2.2 (V31_ONLY_OPERATOR_ENABLED): it is still
+    generated and stored as ``ai_answer`` for diagnostics, but never shown or published.
+
     Reviews use v2 only when it is primary (else reviews_v1 — the explicit
     config rollback path); questions ALWAYS use v2 (reviews_v1 has no question
     template). A v2 prompt-build failure is an item error retried on the next
@@ -802,7 +862,9 @@ def _draft_and_send(deps: Deps, subject, doc: dict, doc_id: str, communication_t
         draft = _v31_draft(deps, doc_id, doc)
         if _primary_enabled(deps):
             # R2.1: a READY 3.1E answer becomes the active answer; V2 stays as fallback.
-            deps.repo.update(doc_id, {"operator_mode": _PRIMARY})
+            deps.repo.update(doc_id, {"operator_mode": _V31_ONLY if _v31_only_enabled(deps) else _PRIMARY})
+            if _v31_only_enabled(deps):
+                v2_meta = None  # R2.2: the V2 draft is never shown or promoted
             if draft and draft.get("status") == "READY" and draft.get("text"):
                 deps.repo.save_generation(doc_id, _v31_generation(draft), source="v31e", set_pending=False)
                 v2_meta = None  # V2 flags describe a draft the card no longer leads with
@@ -1240,7 +1302,7 @@ def _show_v2(deps: Deps, doc_id, expected_generation: int, chat) -> dict:
     """R2.1 secondary diagnostic: the old V2 draft in its own message."""
     doc = deps.repo.get(doc_id)
     text = (doc or {}).get("ai_answer")
-    if not doc or not text or doc.get("generation_number", 0) != expected_generation:
+    if not doc or not text or _is_v31_only(doc) or doc.get("generation_number", 0) != expected_generation:
         return _stale(deps, chat, "⚠️ Карточка устарела. Откройте актуальную карточку.")
     message = f"{_V2_LABEL}{escape_html(text)}\n\n<i>id: {escape_html(doc_id)}</i>"
     rows = [] if _serious_unreviewed(doc) or _V2_LABEL + escape_html(text) not in message else \
@@ -1253,7 +1315,7 @@ def _use_v2(deps: Deps, doc_id, expected_generation: int, chat) -> dict:
     """The operator explicitly switches to the fallback V2 draft (LIVE_V2 policy lineage)."""
     from app.domain.models import GenerationResult
     doc = deps.repo.get(doc_id)
-    if not doc or not doc.get("ai_answer") or _serious_unreviewed(doc):
+    if not doc or not doc.get("ai_answer") or _serious_unreviewed(doc) or _is_v31_only(doc):
         return _stale(deps, chat, "⚠️ Карточка устарела. Откройте актуальную карточку.")
     model = ((doc.get("answer_versions") or [{}])[0] or {}).get("openai_model") or "v2"
     gen = GenerationResult(text=doc["ai_answer"], model=model, prompt_version=doc.get("prompt_version") or "",
@@ -1321,6 +1383,11 @@ def _publish(deps: Deps, doc_id, chat, message_id, user_id, *, expected_generati
         deps.telegram.send_message(chat, "⛔ Нужна проверка человеком: напишите ответ через «✏️ Изменить». "
                                          "Ничего не опубликовано.")
         return {"status": "human_review_required"}
+    if not override_confirmation and _no_v31_answer(peek):
+        # R2.2: a stored V2 draft is never published; only a 3.1E or operator answer.
+        deps.telegram.send_message(chat, "⛔ Нет ответа 3.1E для публикации: нажмите «🔄 Повторить» или "
+                                         "напишите ответ через «✏️ Написать вручную». Ничего не опубликовано.")
+        return {"status": "no_v31_answer"}
     try:
         if override_confirmation:
             from app.services.owner_override import allowed, safety_fixed
@@ -1703,6 +1770,14 @@ def _regenerate(deps: Deps, doc_id, chat, message_id) -> dict:
             except InvalidTransition:
                 return _stale(deps, chat, "⚠️ Перегенерация неактуальна: отзыв уже изменён.")
             return _after_regenerate(deps, doc_id, doc, chat, message_id, None)
+        if _is_v31_only(doc):
+            # R2.2: no V2 lottery. Release the lock; the card states that 3.1E has no answer.
+            deps.repo.cancel_draft(doc_id, token)
+            doc = deps.repo.get(doc_id) or doc
+            card_text, truncated = _card_builder_for(doc)(doc, doc_id)
+            deps.telegram.edit_message_text(chat, message_id, card_text,
+                _operator_keyboard(deps, doc_id, doc, show_full=truncated, card_text=card_text))
+            return {"status": "regen_no_v31", "v31_status": (primary_draft or {}).get("status")}
     try:
         gen, v2_meta = _generate_answer(deps, subject, communication_type)
     except Exception as exc:  # noqa: BLE001

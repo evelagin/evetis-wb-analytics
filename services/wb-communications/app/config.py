@@ -178,6 +178,12 @@ class Settings:
     v31_primary_operator_enabled: bool = field(
         default_factory=lambda: os.environ.get("V31_PRIMARY_OPERATOR_ENABLED", "false").lower() == "true"
     )
+    # R2.2: v3.1E is the ONLY normal operator answer. No V2 promotion, no V2 button: when 3.1E
+    # has no answer the card asks the operator to retry or write one; every operator text is
+    # published under the v3.1E policy (v31_human_safety for serious safety). Implies R2.1.
+    v31_only_operator_enabled: bool = field(
+        default_factory=lambda: os.environ.get("V31_ONLY_OPERATOR_ENABLED", "false").lower() == "true"
+    )
     # Seconds since poll start after which new cards go out without a 3.1E draft.
     v31_operator_draft_budget_seconds: float = field(
         default_factory=lambda: float(os.environ.get("V31_OPERATOR_DRAFT_BUDGET_SECONDS", "100") or 100)
