@@ -410,6 +410,12 @@ class Orchestrator:
             return self.store.transition(run, "WAITING_FOR_HUMAN", "инженер: нужен владелец — " + report["summary"][:500])
         if report["status"] == "CANNOT_PROCEED":
             return self.store.transition(run, "BLOCKED", "инженер: нельзя решить — " + report["summary"][:500])
+        # Область — ДО тестов: код кандидата вне allowlist не исполняется ни в одном job'е (в т.ч. с sa-ae-reader).
+        violations = scope_violations(files, patch, task_scope(objective, self.policy))
+        if violations:
+            return self.store.transition(run, "WAITING_FOR_HUMAN", f"кандидат вне области задачи: {violations[:3]}",
+                                         last_gate={"verdict": "HUMAN_DECISION_REQUIRED",
+                                                    "reason": "; ".join(violations)[:500]})
         imp = self.evidence.impact(self.repo, files)
         need, why = plan_requires_ack(files, imp.get("risk_tier"), report["business_semantics_change"],
                                       objective, run["plan_sha256"] or "")

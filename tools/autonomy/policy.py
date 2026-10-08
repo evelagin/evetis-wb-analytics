@@ -189,13 +189,19 @@ def diff_size(patch: str) -> dict:
     return {"changed_lines": lines, "files": files, "binary": binary}
 
 
+SAFE_PATH = re.compile(r"^[A-Za-z0-9._/-]+$")
+UNPARSED = "<unparsed-path>"
+
+
 def _added_by_file(patch: str) -> dict[str, list[str]]:
+    """Добавленные строки по файлам. Заголовок, который не разбирается (пробел, кавычки, не-ASCII в
+    пути), — НЕ повод пропустить строки: они попадают под `<unparsed-path>` и проверяются строже всего."""
     out: dict[str, list[str]] = {}
     current, in_hunk = None, False
     for line in (patch or "").splitlines():
         if line.startswith("diff --git "):
             m = re.match(r"^diff --git a/(\S+) b/(\S+)$", line)
-            current, in_hunk = (m.group(2) if m else None), False
+            current, in_hunk = (m.group(2) if m else UNPARSED), False
         elif line.startswith("@@"):
             in_hunk = True
         elif in_hunk and current and line.startswith("+"):
@@ -213,7 +219,9 @@ def patch_data_findings(patch: str, policy: dict | None = None) -> list[str]:
         findings.append("BINARY_CHANGE: бинарные изменения кандидату запрещены")
     rx = dict(DATA_PATTERNS)
     for f, added in _added_by_file(patch).items():
-        data_file = any(glob_match(f, g) for g in scan["data_file_globs"])
+        if f == UNPARSED:
+            findings.append("PATCH_PATH_UNPARSEABLE: путь файла в диффе не разбирается — допустимы только [A-Za-z0-9._/-]")
+        data_file = f == UNPARSED or any(glob_match(f, g) for g in scan["data_file_globs"])
         kinds = scan["data_file_kinds"] if data_file else scan["all_files_kinds"]
         text = "\n".join(added)
         hit = sorted(k for k in kinds if rx[k].search(text))
@@ -227,6 +235,9 @@ def scope_violations(files: list[str], patch: str, scope: dict | None) -> list[s
     if scope is None:
         return ["класс задачи не определён или не инженерный — allowlist отсутствует (fail closed)"]
     out = []
+    odd = [f for f in files if not SAFE_PATH.match(f)]
+    if odd:
+        out.append(f"PATH_NOT_ALLOWED: пути вне [A-Za-z0-9._/-] {odd[:5]}")
     oos = out_of_scope(files, scope)
     if oos:
         out.append(f"SCOPE_OUT_OF_ALLOWLIST ({scope['task_class']}): {oos[:10]}")

@@ -46,7 +46,7 @@ normalized AS (
   SELECT r.*,
          LOWER(IFNULL(r.error_message, '')) AS msg,
          UPPER(IFNULL(r.error_code, '')) AS code,
-         r.status IN ('COMPLETE', 'OK', 'OK_NO_NEW', 'SUCCESS') AS is_success,
+         r.status IN ('COMPLETE', 'OK', 'OK_NO_NEW', 'SUCCESS', 'REUSED') AS is_success,
          -- Отпечаток: числа, длинные hex и идентификаторы таблиц/диапазонов схлопнуты, чтобы один и
          -- тот же отказ на разных датах и листах давал один отпечаток.
          SUBSTR(TO_HEX(SHA256(REGEXP_REPLACE(REGEXP_REPLACE(LOWER(IFNULL(r.error_message, '')),
@@ -60,11 +60,11 @@ signatures AS (
            -- Только однозначные признаки: HTTP-статус в контексте («status code 503», «HTTP 503»,
            -- «503 Service Unavailable»), формулировки Google/BigQuery и сетевые коды. Голое «500» в тексте
            -- («получено 500 диапазонов») временным сбоем НЕ считается.
-           WHEN REGEXP_CONTAINS(n.msg, r'status code 5\d\d|http(?:/[\d.]+)?[ :]+5\d\d|\b5\d\d (?:service unavailable|bad gateway|gateway timeout|internal server error)|service is currently unavailable|service unavailable|backenderror|retrying the job may solve|\beconnreset\b|\betimedout\b|\beai_again\b|socket hang up|deadline exceeded')
+           WHEN REGEXP_CONTAINS(n.msg, r'status code 5\d\d|returned code 5\d\d|http(?:/[\d.]+)?[ :]+5\d\d|\b5\d\d (?:service unavailable|bad gateway|gateway timeout|internal server error)|service is currently unavailable|service unavailable|backenderror|retrying the job may solve|\beconnreset\b|\betimedout\b|\beai_again\b|socket hang up|deadline exceeded')
                 OR REGEXP_CONTAINS(n.code, r'(^|_)(TIMEOUT|RATE_LIMIT|TRANSIENT|UNAVAILABLE)(_|$)')
-                OR REGEXP_CONTAINS(n.msg, r'status code 429|http(?:/[\d.]+)?[ :]+429|too many requests|rate limit exceeded')
+                OR REGEXP_CONTAINS(n.msg, r'status code 429|returned code 429|http(?:/[\d.]+)?[ :]+429|too many requests|rate limit exceeded')
              THEN 'TRANSIENT_UPSTREAM'
-           WHEN REGEXP_CONTAINS(n.msg, r'status code 40[13]|http(?:/[\d.]+)?[ :]+40[13]|unauthori[sz]ed|permission denied|invalid token')
+           WHEN REGEXP_CONTAINS(n.msg, r'status code 40[13]|returned code 40[13]|http(?:/[\d.]+)?[ :]+40[13]|unauthori[sz]ed|permission denied|invalid token')
              THEN 'AUTH'
            WHEN REGEXP_CONTAINS(n.msg, r'quota exceeded|quota_exceeded|billing')
              THEN 'QUOTA'
@@ -94,14 +94,16 @@ grouped AS (
   GROUP BY source_log, loader_name, environment, error_code, failure_signature, recorded_as_transient,
            message_fingerprint),
 recovery AS (
-  SELECT g.source_log, g.loader_name, g.environment, g.error_code, g.message_fingerprint,
-         MIN(s.started_at) AS recovered_at
+  -- Ключ — полный ключ группы: «HTTP 403» и «HTTP 503» с одним отпечатком (цифры схлопнуты) — разные группы.
+  SELECT g.source_log, g.loader_name, g.environment, g.error_code, g.failure_signature, g.recorded_as_transient,
+         g.message_fingerprint, MIN(s.started_at) AS recovered_at
   FROM grouped g
   JOIN signatures s
     ON s.source_log = g.source_log AND s.loader_name = g.loader_name
    AND IFNULL(s.environment, '') = IFNULL(g.environment, '')
    AND s.is_success AND s.started_at > g.last_seen_at
-  GROUP BY g.source_log, g.loader_name, g.environment, g.error_code, g.message_fingerprint)
+  GROUP BY g.source_log, g.loader_name, g.environment, g.error_code, g.failure_signature, g.recorded_as_transient,
+           g.message_fingerprint)
 SELECT
   g.source_log, g.loader_name, g.environment, g.error_code, g.failure_signature, g.recorded_as_transient,
   g.message_fingerprint, g.occurrences_7d, g.occurrences_30d, g.first_seen_at, g.last_seen_at, g.last_run_id,
@@ -113,4 +115,6 @@ LEFT JOIN recovery r
   ON r.source_log = g.source_log AND r.loader_name = g.loader_name
  AND IFNULL(r.environment, '') = IFNULL(g.environment, '')
  AND IFNULL(r.error_code, '') = IFNULL(g.error_code, '')
+ AND r.failure_signature = g.failure_signature
+ AND r.recorded_as_transient = g.recorded_as_transient
  AND r.message_fingerprint = g.message_fingerprint;

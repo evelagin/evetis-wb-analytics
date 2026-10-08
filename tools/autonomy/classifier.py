@@ -45,6 +45,11 @@ def classify_run_failure(sig: dict, recurrence_threshold: int, policy: dict | No
     списков policy.json (classifier_codes); иначе UNCLASSIFIED. Код состояния данных/бизнеса — никогда."""
     cc = _codes(policy)
     code = (sig.get("error_code") or "").upper()
+    if sig.get("source_log") not in cc["engineering_source_logs"]:
+        return _result("NOT_ENGINEERING" if sig.get("source_log") == "INGEST_RUNS" else "UNCLASSIFIED",
+                       "R8_SOURCE_NOT_IN_SCOPE",
+                       f"журнал {sig.get('source_log') or '—'}: код загрузчика вне allowlist AE (Apps Script — "
+                       "доверенная база) — только владелец")
     signature = sig.get("failure_signature") or "OTHER"
     recorded_transient = bool(sig.get("recorded_as_transient")) or bool(_RECORDED_TRANSIENT.search(code))
     recurring = int(sig.get("occurrences_7d") or 0) >= recurrence_threshold
@@ -63,7 +68,10 @@ def classify_run_failure(sig: dict, recurrence_threshold: int, policy: dict | No
         return _result("UNCLASSIFIED", "R3X_TRANSIENT_UNKNOWN_CODE",
                        f"временная сигнатура при коде {code or '—'} вне списка обёрток — решение владельца")
     if code in cc["schema_codes"]:
-        return _result("SCHEMA_DRIFT", "R4_SCHEMA", f"схема ответа источника: код {code}")
+        if recurring:
+            return _result("SCHEMA_DRIFT", "R4_SCHEMA", f"схема ответа источника: код {code}, "
+                                                         f"{sig.get('occurrences_7d')} раз за 7 суток")
+        return _result("UNCLASSIFIED", "R4X_SCHEMA_SINGLE", f"{code} однократно — может быть обрезанным ответом")
     if code in cc["parity_codes"]:
         if recurring:
             return _result("PARITY_DEFECT", "R5_PARITY", f"паритет/QA: код {code}, {sig.get('occurrences_7d')} раз за 7 суток")

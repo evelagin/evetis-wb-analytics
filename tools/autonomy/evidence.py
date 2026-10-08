@@ -129,21 +129,29 @@ _PROBE = ("import socket, sys\ns = socket.socket(); s.settimeout(3)\n"
           "try:\n    s.connect(('1.1.1.1', 53))\nexcept OSError:\n    sys.exit(0)\nsys.exit(1)\n")
 # Вторая проба: внутри изоляции sudo обязан НЕ работать — иначе код кандидата вернул бы себе сеть
 # (`sudo nsenter -t 1 -n`). no_new_privs и пустой bounding set делают setuid-бинарники бессильными.
-_PROBE_NO_SUDO = ("import subprocess, sys\n"
+_PROBE_NO_SUDO = ("import os, socket, subprocess, sys\n"
                   "try:\n    r = subprocess.run(['sudo', '-n', 'true'], capture_output=True, timeout=10)\n"
-                  "except (OSError, subprocess.SubprocessError):\n    sys.exit(0)\n"
-                  "sys.exit(1 if r.returncode == 0 else 0)\n")
+                  "    if r.returncode == 0:\n        sys.exit(1)\n"
+                  "except (OSError, subprocess.SubprocessError):\n    pass\n"
+                  # Unix-сокет Docker не привязан к сетевому пространству: доступ к нему = сеть и root снова.
+                  "for path in ('/var/run/docker.sock', '/run/docker.sock'):\n"
+                  "    if os.path.exists(path):\n"
+                  "        s = socket.socket(socket.AF_UNIX)\n"
+                  "        try:\n            s.connect(path); sys.exit(1)\n"
+                  "        except OSError:\n            pass\n"
+                  "sys.exit(0)\n")
 
 
 def offline_prefix(env: dict | None = None) -> tuple[list[str], str]:
     """Префикс команды без сети и его вид. Отключение проверяется пробами, а не предполагается:
-    (1) соединение наружу не устанавливается; (2) sudo внутри изоляции не работает."""
+    (1) соединение наружу не устанавливается; (2) sudo внутри не работает; (3) сокет Docker недоступен
+    (группы очищены). Изоляция только СЕТЕВАЯ и best-effort: файловая система раннера не изолирована."""
     if os.environ.get("AE_FORCE_NETWORK_ISOLATION") == "off":
         return [], "NOT_ENFORCED"
-    candidates = [("UNSHARE_USERNS", ["unshare", "-rn", "--", "setpriv", "--no-new-privs", "--"])]
+    candidates = [("UNSHARE_USERNS", ["unshare", "-rn", "--", "setpriv", "--clear-groups", "--no-new-privs", "--"])]
     if shutil.which("sudo") and shutil.which("setpriv"):
         candidates.append(("SUDO_UNSHARE", ["sudo", "-n", "unshare", "-n", "--", "setpriv",
-                                            f"--reuid={os.getuid()}", f"--regid={os.getgid()}", "--init-groups",
+                                            f"--reuid={os.getuid()}", f"--regid={os.getgid()}", "--clear-groups",
                                             "--no-new-privs", "--inh-caps=-all", "--bounding-set=-all", "--"]))
     for name, pfx in candidates:
         if not shutil.which(pfx[0]) or not shutil.which("setpriv"):
@@ -302,6 +310,7 @@ class RepoEvidenceRunner:
             # перезаписывается результатом сверки с retest (ReplayEvidenceRunner).
             "test_provenance": "TRUSTED_LOCAL",
             "network_isolation": isolation,
+            "isolation_scope": "network-only, best-effort; runner filesystem is not isolated",
         }
 
 
@@ -334,7 +343,8 @@ class RetestRunner:
                     t["base_junit"] = b
                 tests.append(t)
         return {"schema": "ae_retest/1", "changed_files": sorted(changed_files), "profiles": names,
-                "tests": tests, "network_isolation": isolation}
+                "tests": tests, "network_isolation": isolation,
+                "isolation_scope": "network-only, best-effort; runner filesystem is not isolated"}
 
 
 def reconcile(untrusted: dict, retest: dict | None) -> dict:
@@ -351,6 +361,7 @@ def reconcile(untrusted: dict, retest: dict | None) -> dict:
         + [f"{n}: есть только в недоверенном job'е" for n in mine if n not in theirs])
     ev["tests"] = retest.get("tests", [])
     ev["network_isolation"] = retest.get("network_isolation", "NOT_ENFORCED")
+    ev["isolation_scope"] = "network-only, best-effort; runner filesystem is not isolated"
     ev["evidence_disagreement"] = disagreement
     ev["test_provenance"] = "RECONCILED" if not disagreement and ev["tests"] else "DISAGREEMENT"
     return ev

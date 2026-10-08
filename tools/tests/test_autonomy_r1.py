@@ -79,13 +79,24 @@ def health(**over) -> dict:
     (ledger(error_code="SOURCE_STALE", failure_signature="OTHER"), "NOT_ENGINEERING"),
     (ledger(error_code="X", failure_signature="AUTH"), "NOT_ENGINEERING"),
     (ledger(error_code="X", failure_signature="QUOTA"), "NOT_ENGINEERING"),
-    (ledger(error_code="WB_PRICES_SHAPE", failure_signature="OTHER"), "SCHEMA_DRIFT"),
-    (ledger(error_code="WB_T6_PARSE", failure_signature="SCHEMA"), "SCHEMA_DRIFT"),
+    (ledger(error_code="WB_PRICES_SHAPE", failure_signature="OTHER", occurrences_7d=3), "SCHEMA_DRIFT"),
+    (ledger(error_code="WB_PRICES_SHAPE", failure_signature="OTHER"), "UNCLASSIFIED"),          # однократно
+    (ledger(error_code="WB_PRICES_BAD_JSON", failure_signature="OTHER"), "UNCLASSIFIED"),       # обрезанный ответ
+    (ledger(error_code="WB_T6_PARSE", failure_signature="SCHEMA", occurrences_7d=4), "SCHEMA_DRIFT"),
     (ledger(error_code="X", failure_signature="SCHEMA"), "UNCLASSIFIED"),           # сигнатура без кода из списка
-    (ledger(error_code="INVARIANT_FAIL", failure_signature="OTHER", occurrences_7d=3), "PARITY_DEFECT"),
-    (ledger(error_code="INVARIANT_FAIL", failure_signature="OTHER", occurrences_7d=1), "UNCLASSIFIED"),
-    (ledger(error_code="MART_ERROR", failure_signature="OTHER", occurrences_7d=3), "LOADER_DEFECT"),
-    (ledger(error_code="MART_ERROR", failure_signature="OTHER", occurrences_7d=2), "UNCLASSIFIED"),
+    (ledger(error_code="FUTURE_LEAKAGE", failure_signature="OTHER", occurrences_7d=3), "PARITY_DEFECT"),
+    (ledger(error_code="FUTURE_LEAKAGE", failure_signature="OTHER", occurrences_7d=1), "UNCLASSIFIED"),
+    # INVARIANT_FAIL сообщает и пустое окно данных, и расхождение источников (второе ревью, HIGH-1)
+    (ledger(error_code="INVARIANT_FAIL", failure_signature="OTHER", occurrences_7d=9), "UNCLASSIFIED"),
+    (ledger(error_code="DUP_KEY", failure_signature="OTHER", occurrences_7d=3), "LOADER_DEFECT"),
+    (ledger(error_code="DUP_KEY", failure_signature="OTHER", occurrences_7d=2), "UNCLASSIFIED"),
+    # обобщённые обёртки без временной сигнатуры смысла не несут — никогда не LOADER_DEFECT
+    (ledger(error_code="MART_ERROR", failure_signature="OTHER", occurrences_7d=9), "UNCLASSIFIED"),
+    (ledger(error_code="ENGINE_ERROR", failure_signature="OTHER", occurrences_7d=9), "UNCLASSIFIED"),
+    (ledger(error_code="LOADER_ERROR", failure_signature="OTHER", occurrences_7d=9), "UNCLASSIFIED"),
+    # Apps Script (INGEST_RUNS) — доверенная база, задачи AE не бывает
+    (ledger(source_log="INGEST_RUNS", loader_name="sales", error_code="LOADER_ERROR"), "NOT_ENGINEERING"),
+    (ledger(source_log="WB_PRICES_OBSERVATIONS", error_code="LOADER_ERROR"), "UNCLASSIFIED"),
     (ledger(error_code="SOME_NEW_CODE", failure_signature="OTHER", occurrences_7d=9), "UNCLASSIFIED"),  # fail closed
     (ledger(error_code=None, failure_signature="OTHER"), "UNCLASSIFIED"),
     # реальные коды состояния данных/бизнеса — никогда не инженерные, даже повторяясь (независимое ревью H1)
@@ -339,7 +350,8 @@ def test_candidate_outside_allowlist_never_becomes_ready(env):
     run = o.advance(o.submit(synthetic_objective(env))[0]["run_id"])
     assert run["state"] != "READY_FOR_HUMAN_REVIEW" and run.get("pr_url") is None
     assert "READY_FOR_PR" not in [t["to"] for t in run["transitions"]]
-    assert any("SCOPE_OUT_OF_ALLOWLIST" in t["reason"] or "бюджет" in t["reason"] for t in run["transitions"])
+    assert run["state"] == "WAITING_FOR_HUMAN" and "SCOPE_OUT_OF_ALLOWLIST" in run["transitions"][-1]["reason"]
+    assert "TESTING" not in [t["to"] for t in run["transitions"]]       # код вне области не исполнялся
 
 
 def test_plan_outside_allowlist_waits_for_owner(env):
@@ -535,7 +547,8 @@ def test_legacy_review_without_test_verification_is_schema_valid():
     require_valid(legacy, "review_verdict")
 
 
-@pytest.mark.parametrize("line", ["+  it.only('x', () => {})", "+  describe.skip('x', () => {})", "+  test.todo('x')",
+@pytest.mark.parametrize("line", ["+  it.fails('x', () => {})", "-  it('keeps total', () => {",
+                                  "+  it.only('x', () => {})", "+  describe.skip('x', () => {})", "+  test.todo('x')",
                                   "+    pytest.skip('later')", "+np = pytest.importorskip('numpy')", "+  xit('x', f)"])
 def test_new_test_weakening_patterns(line):
     from tools.autonomy.policy import detect_gate_weakening
@@ -594,6 +607,29 @@ def test_isolation_prefix_drops_privileges():
     import inspect
     from tools.autonomy import evidence as E
     src = inspect.getsource(E.offline_prefix)
-    for flag in ("--no-new-privs", "--inh-caps=-all", "--bounding-set=-all"):
+    for flag in ("--no-new-privs", "--inh-caps=-all", "--bounding-set=-all", "--clear-groups"):
         assert flag in src
-    assert "_PROBE_NO_SUDO" in src
+    assert "--init-groups" not in src and "_PROBE_NO_SUDO" in src
+    assert "docker.sock" in E._PROBE_NO_SUDO
+
+
+# ========================================== находки второго независимого ревью ===
+def test_path_with_space_cannot_bypass_data_scan_or_scope():
+    from tools.autonomy.policy import patch_data_findings
+    patch = ('diff --git a/cloud/src/loaders/x y.ts b/cloud/src/loaders/x y.ts\n@@ -0,0 +1 @@\n'
+             "+const who = 'buyer@mail.ru'; // 12 345 ₽\n")
+    hits = patch_data_findings(patch)
+    assert any(h.startswith("PATCH_PATH_UNPARSEABLE") for h in hits) and any("email" in h for h in hits)
+    s = task_scope({"task_class": "RETRY_CLASSIFIER_DEFECT"})
+    assert any(v.startswith("PATH_NOT_ALLOWED") for v in scope_violations(["cloud/src/loaders/x y.ts"], "", s))
+
+
+def test_parity_class_sql_paths_all_require_owner_ack():
+    from tools.autonomy.policy import glob_match
+    ack = POLICY["plan_ack"]["requires_ack_path_globs"]
+    sql_globs = [g for g in POLICY["task_classes"]["classes"]["PARITY_DEFECT"]["allowed_paths"] if g.startswith("sql/")]
+    for g in sql_globs:
+        probe = g.replace("**/", "a/").replace("*", "x")
+        assert any(glob_match(probe, a) for a in ack), g
+    for path in ("sql/unitka/x.sql", "sql/promo/x.sql", "sql/pricing/x.sql", "sql/ops/x.sql"):
+        assert any(glob_match(path, a) for a in ack), path

@@ -56,7 +56,7 @@
     "recurrence_threshold_7d": 3
   },
   "classifier_codes": {
-    "comment": "AE-R1 (после независимого ревью). Классификатор fail closed: инженерный класс по журналу отказов — ТОЛЬКО для кодов из явных списков ниже (выведены из реальных кодов cloud/src и журналов прогонов, 2026-10-08). Любой иной повторяющийся код — UNCLASSIFIED (оповещение владельцу), а не LOADER_DEFECT. Коды состояния данных и бизнеса (пусто, нет секции, нужен ACK, авторизация, удержание LCD, расхождение источников) — NOT_ENGINEERING.",
+    "comment": "AE-R1 (после двух независимых ревью). Классификатор fail closed: инженерный класс по журналу отказов — ТОЛЬКО для отказов загрузчиков Cloud Run (source_log = LOADER_RUNS: их код в cloud/, внутри allowlist) и ТОЛЬКО для кодов из явных списков ниже. Обобщённые обёртки (LOADER_ERROR, ENGINE_ERROR, FATAL_UNHANDLED) смысла не несут: инженерными они бывают только как RETRY_CLASSIFIER_DEFECT при однозначной временной сигнатуре источника. INVARIANT_FAIL исключён: им же сообщается пустое окно данных и расхождение источников. Apps Script (INGEST_RUNS) — доверенная база (apps-script/**), задачи AE не бывает. Схема ответа — только при повторяемости. Любой иной код — UNCLASSIFIED (оповещение владельцу).",
     "business_code_patterns": [
       "(^|_)(EMPTY|ZERO_ROWS|MISSING|AUTH|PATH_DENIED|STALE|FRESHNESS_GATE|REQUIRES_ACK|HELD|MANUAL|OVERRIDE|PROD_ONLY|NOT_ON_SHEET|LOCKED|SKIPPED|LOCK_UNAVAILABLE|DIVERGENCE|MISMATCH|OUT_OF_SCOPE|OUT_OF_BOUNDS|CAP_EXCEEDED|NOT_APPLICABLE|FORBIDDEN)(_|$)",
       "^(MONTH_SECTION|NEXT_MONTH_SECTION|PREDECESSOR_SECTION|RECON|SPP|LCD|MIGRATION|ROLLBACK|CAPACITY|MONTH_PREP|STORAGE_PROD|ANCHOR|NO_FREE_SKU|NO_SAFE_EXPANSION|SHEET_TAIL|SKU_WITHOUT|BLOCK_MISSING|PRICE_|COGS_|ACTUAL_WITH|UNPROVEN_|KNOWN_COGS|OPERATIONAL_POPULATION|SOURCE_|INTEGRITY_DATA|FACT_NOT_ON_SHEET|ORDERS_SOURCE)"
@@ -82,30 +82,23 @@
       "WB_PRICES_SHAPE",
       "WB_PROMO_BAD_JSON",
       "WB_PRICES_BAD_JSON",
-      "WB_T6_PARSE",
-      "WB_PRICES_SCHEMA_MISSING",
-      "WB_PROMO_SCHEMA_MISSING"
+      "WB_T6_PARSE"
     ],
     "parity_codes": [
-      "INVARIANT_FAIL",
-      "POST_COMMIT_QA_FAILED",
       "FUTURE_LEAKAGE"
     ],
     "loader_defect_codes": [
-      "LOADER_ERROR",
-      "ENGINE_ERROR",
-      "FATAL_UNHANDLED",
-      "MART_ERROR",
-      "MANIFEST_FINALIZE_FAILED",
-      "LEDGER_WRITE_FAILED",
       "DUP_KEY",
       "MART_RUNS_DUP",
-      "STOCKS_POSTCOUNT_DUP",
-      "AMBIGUOUS"
+      "STOCKS_POSTCOUNT_DUP"
     ],
     "recurrence_required_for": [
       "PARITY_DEFECT",
-      "LOADER_DEFECT"
+      "LOADER_DEFECT",
+      "SCHEMA_DRIFT"
+    ],
+    "engineering_source_logs": [
+      "LOADER_RUNS"
     ]
   },
   "task_classes": {
@@ -167,9 +160,11 @@
       },
       "PARITY_DEFECT": {
         "engineering": true,
-        "description": "Детерминированная проверка паритета/QA производного слоя падает при свежих исходных данных.",
+        "description": "Детерминированная проверка паритета/QA производного слоя падает при свежих исходных данных. Все SQL-пути allowlist требуют ACK плана владельцем (plan_ack).",
         "allowed_paths": [
-          "sql/**/*.sql",
+          "sql/current/**/*.sql",
+          "sql/mart/**/*.sql",
+          "sql/dash/**/*.sql",
           "tools/tests/test_*.py"
         ],
         "max_changed_lines": 300,
@@ -486,7 +481,8 @@
       "^-\\s*--\\s*@check\\s",
       "^-\\s*ASSERT\\s",
       "^-\\s*def test_",
-      "^-\\s*\"gate\":\\s*true"
+      "^-\\s*\"gate\":\\s*true",
+      "^-\\s*(it|test|describe)\\(\\s*['\"`]"
     ],
     "added_line_patterns": [
       "^\\+.*pytest\\.mark\\.(skip|xfail)",
@@ -496,7 +492,7 @@
       "^\\+.*\"override\"\\s*:",
       "^\\+.*--\\s*@expect\\s+empty_ok",
       "^\\+.*\\bexit\\s+0\\b.*#.*(skip|bypass)",
-      "^\\+.*\\b(it|describe|test|suite)\\.(skip|only|todo|skipIf|runIf)\\b",
+      "^\\+.*\\b(it|describe|test|suite)\\.(skip|only|todo|skipIf|runIf|fails)\\b",
       "^\\+.*\\b(xit|xdescribe|fit|fdescribe)\\(",
       "^\\+.*\\bpytest\\.skip\\(",
       "^\\+.*\\bimportorskip\\(",
@@ -522,7 +518,12 @@
       "sql/control_tower/**",
       "sql/mart/**",
       "sql/dash/**",
-      "sql/ref/**"
+      "sql/ref/**",
+      "sql/unitka/**",
+      "sql/promo/**",
+      "sql/pricing/**",
+      "sql/ops/**",
+      "sql/health/**"
     ],
     "requires_ack_if_plan_declares_business_semantics": true
   },

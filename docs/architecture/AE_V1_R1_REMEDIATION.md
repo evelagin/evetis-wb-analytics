@@ -81,19 +81,20 @@ DDL в production, оно проходит отдельными воротами
 **Принцип: fail closed по явным спискам.** Инженерный класс по журналу отказов назначается только
 кодам из `policy.json → classifier_codes`. Списки выведены из реальных кодов `cloud/src` и журналов
 прогонов на 2026-10-08. Любой другой код — UNCLASSIFIED, даже если он повторяется. Так сделано
-после независимого ревью: первая версия делала любой повторяющийся код LOADER_DEFECT и
-классифицировала коды состояния данных как дефекты.
+после двух независимых ревью: первые версии делали повторяющиеся коды и обобщённые обёртки
+LOADER_DEFECT, а коды состояния данных и пустого окна — инженерными дефектами.
 
 | Правило | Условие | Класс |
 |---|---|---|
+| R8 | журнал не `LOADER_RUNS` (Cloud Run; его код в `cloud/`, внутри allowlist): Apps Script `INGEST_RUNS` — доверенная база | NOT_ENGINEERING (Apps Script) / UNCLASSIFIED |
 | R1 | код состояния данных или бизнеса — `business_code_patterns`: `*_EMPTY`, `*_MISSING`, `*_AUTH`, `*_STALE`, `FRESHNESS_GATE`, `*_REQUIRES_ACK`, `*_HELD*`, `*_LOCKED`, `MONTH_SECTION_*`, `RECON_*`, `SPP_*`, `LCD_*`, `PRICE_*`, `COGS_*`, `SOURCE_*`, `INTEGRITY_DATA_*` … | NOT_ENGINEERING |
 | R6 | сигнатура AUTH / QUOTA | NOT_ENGINEERING (токен или тариф — решение владельца) |
 | R2 | сигнатура временного сбоя, код сам объявил временным | NOT_ENGINEERING |
 | R3 | сигнатура временного сбоя, а обёрточный код (`retry_wrapper_codes`: `SHEETS_API`, `LOADER_ERROR`, `ENGINE_ERROR`, `FATAL_UNHANDLED`, `*_HTTP_FAILED` …) записан как детерминированный | **RETRY_CLASSIFIER_DEFECT** |
 | R3X | временная сигнатура при коде вне списка обёрток | UNCLASSIFIED |
-| R4 | код из `schema_codes` (`*_SHAPE`, `*_BAD_JSON`, `WB_T6_PARSE`, `*_SCHEMA_MISSING`, `BQ_SHAPE`) | **SCHEMA_DRIFT** |
-| R5 | код из `parity_codes` (`INVARIANT_FAIL`, `POST_COMMIT_QA_FAILED`, `FUTURE_LEAKAGE`) ≥ 3 раз за 7 суток | **PARITY_DEFECT** (однократно — UNCLASSIFIED) |
-| R7 | код из `loader_defect_codes` (`LOADER_ERROR`, `MART_ERROR`, `DUP_KEY`, `*_DUP`, `MANIFEST_FINALIZE_FAILED` …) ≥ 3 раз за 7 суток | **LOADER_DEFECT** (однократно — UNCLASSIFIED) |
+| R4 | код из `schema_codes` (`*_SHAPE`, `*_BAD_JSON`, `WB_T6_PARSE`, `BQ_SHAPE`) ≥ 3 раз за 7 суток | **SCHEMA_DRIFT** (однократно — UNCLASSIFIED: возможен обрезанный ответ) |
+| R5 | код из `parity_codes` (`FUTURE_LEAKAGE`) ≥ 3 раз за 7 суток | **PARITY_DEFECT** (однократно — UNCLASSIFIED). `INVARIANT_FAIL` исключён: им же сообщается пустое окно данных |
+| R7 | код из `loader_defect_codes` (`DUP_KEY`, `MART_RUNS_DUP`, `STOCKS_POSTCOUNT_DUP`) ≥ 3 раз за 7 суток | **LOADER_DEFECT**. Обобщённые обёртки (`LOADER_ERROR`, `ENGINE_ERROR`, `MART_ERROR` …) без временной сигнатуры — UNCLASSIFIED |
 | H1 | DRO: `data_class` или `source_system` = MANUAL (ФФ, план продаж, ручные операции) | NOT_ENGINEERING |
 | H2 | DRO: детектор устарел или не запускался | UNCLASSIFIED: причина может быть операционной (планировщик на паузе — документированный откат DRO-1) |
 | H3 | DRO: данных нет или они опаздывают (`SLOT_*`, `FRESHNESS_*`, `DATA_LOSS_*`, `NO_DATA_OBSERVED`, `MISSING_DATES_RECOVERABLE`) | NOT_ENGINEERING |
@@ -110,7 +111,7 @@ INFRA_BLOCKED, а не сигнал на каждый конвейер. Конв
 `runfail:<loader>:<code>:<signature>:<fingerprint>`.
 
 **Временная сигнатура в SQL** опирается только на однозначные признаки: «status code 5xx»,
-«HTTP 5xx», «503 Service Unavailable», формулировки Google/BigQuery и сетевые коды. Голое «500» в
+«HTTP 5xx», «returned code 5xx» (UrlFetch), «503 Service Unavailable», формулировки Google/BigQuery и сетевые коды. Голое «500» в
 тексте («получено 500 диапазонов») временной сигнатурой не считается.
 
 ## 5. Область задачи и лимит диффа
@@ -123,12 +124,12 @@ allowlist не расширяет.
 | RETRY_CLASSIFIER_DEFECT | `cloud/src/failure.ts`, `cloud/src/errors.ts`, `cloud/src/cli.ts`, `cloud/src/loaders/**/*.ts`, `cloud/test/**/*.test.ts` | 300 / 6 | python, cloud |
 | LOADER_DEFECT | `cloud/src/**/*.ts`, `cloud/test/**/*.test.ts`, `cloud/test/fixtures/**/*.json`, `pipelines/ozon/runtime/**/*.py`, `pipelines/ozon/tests/**/*.py` | 400 / 8 | python, cloud, ozon |
 | SCHEMA_DRIFT | загрузчики/нормализация cloud и ozon + их тесты, JSON-фикстуры | 400 / 8 | python, cloud, ozon |
-| PARITY_DEFECT | `sql/**/*.sql`, `tools/tests/test_*.py` | 300 / 6 | python |
+| PARITY_DEFECT | `sql/current/**/*.sql`, `sql/mart/**/*.sql`, `sql/dash/**/*.sql`, `tools/tests/test_*.py` — все SQL-пути требуют ACK плана | 300 / 6 | python |
 | DETECTOR_DEFECT (только цель владельца) | `sql/health/dro1_01…06`, `tools/dro1_health.py`, `tools/tests/test_dro1_health.py` | 300 / 5 | python |
 | COMMISSIONING_CANARY | `tools/tests/test_ae_commissioning_canary.py` | 120 / 1 | python |
 | SYNTHETIC_FIXTURE | `synthetic/**`, `tests_synthetic/**` (только при `incident.source = synthetic`) | 200 / 4 | python |
 
-Глобальный потолок `diff_limits` — 400 строк, 8 файлов. Строки считаются только внутри ханков `@@`. Бинарные изменения запрещены для любого класса. Поверх области действуют TCB
+Глобальный потолок `diff_limits` — 400 строк, 8 файлов. Строки считаются только внутри ханков `@@`. Бинарные изменения и пути вне `[A-Za-z0-9._/-]` запрещены для любого класса. ACK плана дополнительно требуется для `sql/unitka|promo|pricing|ops|health/**`. Поверх области действуют TCB
 (HUMAN_DECISION_REQUIRED) и forbidden_paths (UNSAFE). В TCB добавлены конфиги, которые
 исполняются инструментами cloud: `cloud/vitest.config.*`, `cloud/.eslintrc*`,
 `cloud/eslint.config.*`, `cloud/tsconfig*.json`, `.nvmrc`, `.node-version`, а также `cloud/src/secrets.ts`, `cloud/src/config.ts` и `cloud/src/**/secret*.ts`. ACK плана для
@@ -136,9 +137,11 @@ allowlist не расширяет.
 
 Где проверяется:
 1. **План.** Файлы вне области или класс не определён → WAITING_FOR_HUMAN.
-2. **Гейткипер.** `SCOPE_OUT_OF_ALLOWLIST` или `DIFF_TOO_LARGE` → HUMAN_DECISION_REQUIRED.
+2. **Реализация (до тестов).** Дифф вне области, больше лимита или с неразбираемым путём →
+   WAITING_FOR_HUMAN: код кандидата вне области не исполняется ни в одном job'е.
+3. **Гейткипер.** `SCOPE_OUT_OF_ALLOWLIST` или `DIFF_TOO_LARGE` → HUMAN_DECISION_REQUIRED.
    Это исправимо инженером: при оставшемся бюджете — FIXING. Класса нет → не исправимо.
-3. **Публикатор.** Повторная проверка перед любой записью.
+4. **Публикатор.** Повторная проверка перед любой записью.
 
 ## 6. Инженер и тесты cloud/
 
@@ -153,10 +156,11 @@ allowlist не расширяет.
 Правила профилей:
 - Статус теста = код выхода **и** валидный непустой JUnit по пути, который задаёт харнесс main. Тест, вызвавший `os._exit(0)`, не оставит отчёта и получит FAIL (`JUNIT_MISSING_OR_EMPTY`).
   - Сам отчёт пишет процесс тестов, т.е. код кандидата может его подделать. Это ограничение, а не гарантия.
-- Сеть на время тестов отключается, и это подтверждается двумя пробами: соединение наружу не устанавливается, и `sudo` внутри не работает.
-  - Варианты: `unshare -rn` или `sudo unshare -n`, затем `setpriv` с возвратом к пользователю раннера, `--no-new-privs`, `--inh-caps=-all`, `--bounding-set=-all`.
+- Сеть на время тестов отключается. Это подтверждается пробами: соединение наружу не устанавливается, `sudo` внутри не работает, сокет Docker недоступен.
+  - Варианты: `unshare -rn` или `sudo unshare -n`, затем `setpriv` с возвратом к пользователю раннера, `--clear-groups`, `--no-new-privs`, `--inh-caps=-all`, `--bounding-set=-all`.
+  - Изоляция **только сетевая и best-effort**: файловая система раннера не изолирована (`isolation_scope` в доказательстве). Код кандидата может оставить файлы, которые исполнят последующие шаги того же job'а.
   - Если отключить нельзя — `network_isolation: NOT_ENFORCED`.
-- Детектор ослабления ворот дополнен: `it/describe/test.skip|only|todo`, `xit` / `fit`, `pytest.skip(`, `importorskip`.
+- Детектор ослабления ворот дополнен: `it/describe/test.skip|only|todo|fails`, `xit` / `fit`, `pytest.skip(`, `importorskip`; удаление блоков `it(` / `test(` / `describe(` — UNSAFE.
 - Профили выбираются по изменённым файлам и по `test_profiles` класса.
 
 Инженер получает в промпте область задачи. Его `summary`, `root_cause`, `uncertainty`,
@@ -182,7 +186,9 @@ Job `retest` в `autonomy-test.yml` работает без учётных да�
 Остаточный риск (назван прямо): злонамеренный код теста исполняется и в retest, так что
 доказательство остаётся «двумя независимыми исполнениями с харнессом main», а не формальным.
 Следующие рубежи: независимый ревьюер, обязательные `ci.yml` и `sql-current.yml` на опубликованном
-SHA и слияние только человеком.
+SHA и слияние только человеком. Требование владельца «доверенный код независимо проверяет результаты»
+выполнено частично: независим исполнитель и харнесс, но не сам отчёт теста. Нестабильный тест, давший
+разные статусы в двух job'ах, ведёт к UNSAFE (fail closed, шумно).
 
 ## 8. Независимый ревьюер
 
@@ -287,6 +293,20 @@ SHA и слияние только человеком.
 | L4 | идентификаторы vitest |
 | L6 | `test_verification` не обязателен в схеме, но без него одобрения нет |
 | L5 | оставлен как названное ограничение (§9) |
+
+Второе свежее ревью по `b35b958...865e7d0` вернуло CHANGES_REQUIRED. Обходов гейткипера до
+READY_FOR_PR не найдено, но выявлены ещё 1 HIGH и 4 MEDIUM. Исправлено:
+
+| Находка | Исправление |
+|---|---|
+| HIGH-1 — обёртки, `INVARIANT_FAIL`, Apps Script и обрезанные ответы давали инженерные задачи | только `LOADER_RUNS`; обёртки — только как RETRY; без `INVARIANT_FAIL`; схема — только при повторяемости; UrlFetch «returned code» |
+| M-2 — путь с пробелом обходил скан данных | неразбираемый путь — находка, его строки проверяются строже всего; `PATH_NOT_ALLOWED` |
+| M-3 — выход через сокет Docker | `--clear-groups`, проба сокета Docker; изоляция названа best-effort |
+| M-4 — код вне области исполнялся в тестах | область проверяется до TESTING |
+| M-5 — экономический SQL без ACK | allowlist PARITY сужен; ACK для `sql/unitka|promo|pricing|ops|health` |
+| L-6 — ключ восстановления в журнале | полный ключ группы; `REUSED` — успех |
+| L-8 — ослабление тестов | `it.fails`, удаление блоков тестов |
+| L-7 | названо ограничением (§7) |
 
 Дорожная карта ввода в эксплуатацию — AE-C0 (shadow) … AE-C5, по отдельным ACK. Первый реальный
 кейс: Sheets 503 (фикстура `quality/autonomy/examples/signals.sheets_503_2026-10-07.json`).
