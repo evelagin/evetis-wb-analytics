@@ -60,7 +60,8 @@ def activation(settings) -> tuple[Activation | None, str | None]:
         return None, DISABLED
     if (getattr(settings, "v31_operator_recovery_enabled", False)
             or getattr(settings, "v31_owner_override_enabled", False)
-            or getattr(settings, "v31_enforce_live_publication_policy", False)):
+            or getattr(settings, "v31_enforce_live_publication_policy", False)
+            or getattr(settings, "v31_operator_draft_enabled", False)):
         return None, OPERATOR_SURFACES_ON
     activation_id = str(getattr(settings, "v31_shadow_activation_id", "") or "")
     start = parse_utc(getattr(settings, "v31_shadow_start_at", ""))
