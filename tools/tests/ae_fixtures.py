@@ -90,7 +90,7 @@ class SyntheticRetestRunner:
         status = self.override.get("status") or ("PASS" if t.returncode == 0 else "FAIL")
         return {"schema": "ae_retest/1", "changed_files": sorted(changed_files), "profiles": ["python"],
                 "tests": [{"name": "pytest tests_synthetic", "status": status, "exit_code": t.returncode}],
-                "network_isolation": "NOT_ENFORCED"}
+                "network_isolation": self.override.get("network_isolation", "SUDO_UNSHARE")}
 
 
 def observations(status: str) -> list[dict]:

@@ -386,6 +386,11 @@ class Orchestrator:
         if leaked_secrets:
             # Секретоподобный материал в диффе — не решение человека, а инцидент; дифф не сохраняется.
             return self._unsafe(run, files, f"секретоподобный материал в диффе кандидата: {leaked_secrets}")
+        bad = forbidden_paths(files)
+        if bad:
+            # Секретный материал — UNSAFE раньше любых других проверок (и патч не сохраняется).
+            self._put(run, "engineer_report.json", report)
+            return self._unsafe(run, files, f"кандидат затронул секретный материал: {bad[:5]}")
         data_hits = patch_data_findings(patch, self.policy)
         if data_hits:
             # Политика вывода B3: патч с данными (или бинарный) НЕ сохраняется — ни в состояние, ни в
@@ -398,9 +403,6 @@ class Orchestrator:
                                          last_gate={"verdict": "HUMAN_DECISION_REQUIRED", "reason": "PATCH_DATA"})
         self._put(run, "engineer_report.json", report)
         self._put(run, "candidate.patch", patch)
-        bad = forbidden_paths(files)
-        if bad:
-            return self._unsafe(run, files, f"кандидат затронул секретный материал: {bad[:5]}")
         # TCB проверяется ДО ACK плана: owner_ack.plan_sha256 разрешает реализацию плана, но не
         # делает изменение доверенной базы самоодобряемым.
         tcb = tcb_paths(files)
@@ -567,6 +569,7 @@ class Orchestrator:
                                                  task_scope(objective, self.policy)),
             "scope_present": task_scope(objective, self.policy) is not None,
             "test_provenance": ev.get("test_provenance", "UNKNOWN"),
+            "network_isolation": ev.get("network_isolation"),
             "evidence_disagreement": ev.get("evidence_disagreement", []),
             "code_changed": any(not f.endswith(".md") for f in ev.get("changed_files", [])),
             "known_test_paths": self._known_test_paths(run, ev.get("changed_files", [])),

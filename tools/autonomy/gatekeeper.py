@@ -86,6 +86,9 @@ def evaluate(evidence: dict, baseline: dict, review: dict | None, context: dict)
             hits["HUMAN_DECISION_REQUIRED"].append(v)
         # Вне allowlist / слишком большой дифф — исправимо инженером; отсутствие класса — нет.
         scope_fixable = bool(context["scope_violations"]) and bool(context.get("scope_present"))
+    if context.get("test_provenance") == "RECONCILED" and context.get("network_isolation") in (None, "NOT_ENFORCED"):
+        # CI-путь: тесты кандидата обязаны исполняться без сети (иначе retest — не доказательство).
+        hits["INCONCLUSIVE"].append("тесты кандидата исполнены без сетевой изоляции (network_isolation NOT_ENFORCED)")
     if context.get("test_provenance") not in TRUSTED_TEST_PROVENANCE:
         hits["INCONCLUSIVE"].append(f"тесты не подтверждены независимым повторным прогоном "
                                     f"(provenance {context.get('test_provenance')})")

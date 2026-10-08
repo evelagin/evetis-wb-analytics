@@ -84,12 +84,14 @@ def health(**over) -> dict:
     (ledger(error_code="WB_PRICES_BAD_JSON", failure_signature="OTHER"), "UNCLASSIFIED"),       # обрезанный ответ
     (ledger(error_code="WB_T6_PARSE", failure_signature="SCHEMA", occurrences_7d=4), "SCHEMA_DRIFT"),
     (ledger(error_code="X", failure_signature="SCHEMA"), "UNCLASSIFIED"),           # сигнатура без кода из списка
-    (ledger(error_code="FUTURE_LEAKAGE", failure_signature="OTHER", occurrences_7d=3), "PARITY_DEFECT"),
-    (ledger(error_code="FUTURE_LEAKAGE", failure_signature="OTHER", occurrences_7d=1), "UNCLASSIFIED"),
+    # третье ревью: ручное состояние листа и охранники целостности данных — не инженерные
+    (ledger(error_code="FUTURE_LEAKAGE", failure_signature="OTHER", occurrences_7d=9), "UNCLASSIFIED"),
+    (ledger(error_code="BQ_SHAPE", failure_signature="OTHER", occurrences_7d=9), "UNCLASSIFIED"),
     # INVARIANT_FAIL сообщает и пустое окно данных, и расхождение источников (второе ревью, HIGH-1)
     (ledger(error_code="INVARIANT_FAIL", failure_signature="OTHER", occurrences_7d=9), "UNCLASSIFIED"),
-    (ledger(error_code="DUP_KEY", failure_signature="OTHER", occurrences_7d=3), "LOADER_DEFECT"),
-    (ledger(error_code="DUP_KEY", failure_signature="OTHER", occurrences_7d=2), "UNCLASSIFIED"),
+    (ledger(error_code="DUP_KEY", failure_signature="OTHER", occurrences_7d=9), "UNCLASSIFIED"),
+    (ledger(error_code="STOCKS_POSTCOUNT_DUP", failure_signature="OTHER", occurrences_7d=3), "LOADER_DEFECT"),
+    (ledger(error_code="STOCKS_POSTCOUNT_DUP", failure_signature="OTHER", occurrences_7d=2), "UNCLASSIFIED"),
     # обобщённые обёртки без временной сигнатуры смысла не несут — никогда не LOADER_DEFECT
     (ledger(error_code="MART_ERROR", failure_signature="OTHER", occurrences_7d=9), "UNCLASSIFIED"),
     (ledger(error_code="ENGINE_ERROR", failure_signature="OTHER", occurrences_7d=9), "UNCLASSIFIED"),
@@ -244,7 +246,14 @@ def test_task_scope_comes_from_policy_not_from_objective():
 
 def test_out_of_allowlist_and_oversized_diff_are_violations():
     s = task_scope({"task_class": "RETRY_CLASSIFIER_DEFECT"})
-    assert out_of_scope(["cloud/src/failure.ts", "cloud/test/failure.test.ts"], s) == []
+    assert out_of_scope(["cloud/src/failure.ts", "cloud/test/failure.test.ts", "cloud/src/loaders/unitka/sheets.ts"], s) == []
+    # экономика Юнитки и витрины — вне области любого класса (третье ревью, MEDIUM-2)
+    for cls_name in ("RETRY_CLASSIFIER_DEFECT", "LOADER_DEFECT", "SCHEMA_DRIFT"):
+        sc = task_scope({"task_class": cls_name})
+        assert out_of_scope(["cloud/src/loaders/unitka/plan.ts", "cloud/src/loaders/unitka/bq.ts",
+                             "cloud/src/loaders/mart/index.ts"], sc) == ["cloud/src/loaders/mart/index.ts",
+                                                                       "cloud/src/loaders/unitka/bq.ts",
+                                                                       "cloud/src/loaders/unitka/plan.ts"], cls_name
     assert out_of_scope(["cloud/src/failure.ts", "sql/mart/x.sql"], s) == ["sql/mart/x.sql"]
     patch = "diff --git a/cloud/src/failure.ts b/cloud/src/failure.ts\n--- a/x\n+++ b/x\n@@ -1 +1 @@\n" + "+x\n" * 400
     assert diff_size(patch) == {"changed_lines": 400, "files": 1, "binary": 0}
@@ -278,6 +287,7 @@ def review(v="APPROVE", findings=(), tv="VERIFIED", tests=("cloud/test/cli_retry
 
 def ctx(**over):
     base = {"scope_violations": [], "scope_present": True, "test_provenance": "RECONCILED",
+            "network_isolation": "SUDO_UNSHARE",
             "evidence_disagreement": [], "code_changed": True,
             "known_test_paths": {"cloud/test/cli_retry.test.ts", "cloud/src/failure.ts"}}
     base.update(over)
@@ -547,7 +557,8 @@ def test_legacy_review_without_test_verification_is_schema_valid():
     require_valid(legacy, "review_verdict")
 
 
-@pytest.mark.parametrize("line", ["+  it.fails('x', () => {})", "-  it('keeps total', () => {",
+@pytest.mark.parametrize("line", ["+  it.concurrent.skip('x', f)", "+  describe.sequential.skip('x', f)",
+                                  "+  it['skip']('x', f)", "+  it.fails('x', () => {})", "-  it('keeps total', () => {",
                                   "+  it.only('x', () => {})", "+  describe.skip('x', () => {})", "+  test.todo('x')",
                                   "+    pytest.skip('later')", "+np = pytest.importorskip('numpy')", "+  xit('x', f)"])
 def test_new_test_weakening_patterns(line):
@@ -609,7 +620,7 @@ def test_isolation_prefix_drops_privileges():
     src = inspect.getsource(E.offline_prefix)
     for flag in ("--no-new-privs", "--inh-caps=-all", "--bounding-set=-all", "--clear-groups"):
         assert flag in src
-    assert "--init-groups" not in src and "_PROBE_NO_SUDO" in src
+    assert "--init-groups" not in src and "_PROBE_NO_SUDO" in src and '"-rn"' not in src
     assert "docker.sock" in E._PROBE_NO_SUDO
 
 
@@ -633,3 +644,45 @@ def test_parity_class_sql_paths_all_require_owner_ack():
         assert any(glob_match(probe, a) for a in ack), g
     for path in ("sql/unitka/x.sql", "sql/promo/x.sql", "sql/pricing/x.sql", "sql/ops/x.sql"):
         assert any(glob_match(path, a) for a in ack), path
+
+
+# ========================================== находки третьего независимого ревью ===
+def test_real_data_row_in_test_code_goes_to_human():
+    from tools.autonomy.policy import patch_data_findings
+    patch = ("diff --git a/cloud/test/unitka_real.test.ts b/cloud/test/unitka_real.test.ts\n@@ -0,0 +1 @@\n"
+             "+const row = { nmId: 438775437, orders: 12, price: 1290.5, buyout: 0.62 };\n")
+    assert patch_data_findings(patch)
+    small = ("diff --git a/cloud/test/x.test.ts b/cloud/test/x.test.ts\n@@ -0,0 +1 @@\n"
+             "+expect(total([1, 2, 3, 4])).toBe(10);\n")
+    assert patch_data_findings(small) == []          # маленькие синтетические числа — не данные
+
+
+def test_ci_tests_without_network_isolation_are_not_ready():
+    r = G.evaluate(GOOD, GOOD, review(), ctx(network_isolation="NOT_ENFORCED"))
+    assert r["verdict"] == "INCONCLUSIVE"
+    assert G.evaluate(GOOD, GOOD, review(), ctx(network_isolation="SUDO_UNSHARE"))["verdict"] == "READY_FOR_PR"
+
+
+def test_retest_flags_grown_skips(tmp_path, monkeypatch):
+    import tools.autonomy.evidence as E
+    def fake(name, prof, ws, py, pfx, env=None):
+        sk = 0 if ws.name == "base" else 1
+        n = 10 if ws.name == "base" else 11
+        return [{"name": f"{name}: t", "status": "PASS", "exit_code": 0,
+                 "junit": {"tests": n, "failures": 0, "errors": 0, "skipped": sk}, "tail": ""}]
+    monkeypatch.setattr(E, "run_profile", fake)
+    monkeypatch.setenv("AE_FORCE_NETWORK_ISOLATION", "off")
+    (tmp_path / "base").mkdir(); (tmp_path / "cand").mkdir()
+    doc = RetestRunner().collect(tmp_path / "base", tmp_path / "cand", ["a.py"], {})
+    assert doc["tests"][0]["status"] == "FAIL" and doc["tests"][0]["reason"].startswith("TESTS_SKIPPED_GREW")
+
+
+def test_forbidden_path_with_data_is_unsafe_not_waiting(env):
+    def edit(ws: Path) -> None:
+        F.edit_fix_with_extra_test(ws)
+        (ws / "synthetic" / ".env").write_text("OWNER=buyer@mail.ru\n")
+    eng = ScriptedAdapter({"engineer_plan": [{"respond": F.plan()}],
+                           "engineer_implement": [{"edit": edit, "respond": F.implemented()}]})
+    o = orch(env, eng, ScriptedAdapter({}))
+    run = o.advance(o.submit(synthetic_objective(env))[0]["run_id"])
+    assert run["state"] == "BLOCKED" and "UNSAFE" in run["transitions"][-1]["reason"]

@@ -148,7 +148,8 @@ def offline_prefix(env: dict | None = None) -> tuple[list[str], str]:
     (группы очищены). Изоляция только СЕТЕВАЯ и best-effort: файловая система раннера не изолирована."""
     if os.environ.get("AE_FORCE_NETWORK_ISOLATION") == "off":
         return [], "NOT_ENFORCED"
-    candidates = [("UNSHARE_USERNS", ["unshare", "-rn", "--", "setpriv", "--clear-groups", "--no-new-privs", "--"])]
+    # Только sudo + unshare: в непривилегированном `unshare -r` setgroups запрещён, и --clear-groups не работает.
+    candidates = []
     if shutil.which("sudo") and shutil.which("setpriv"):
         candidates.append(("SUDO_UNSHARE", ["sudo", "-n", "unshare", "-n", "--", "setpriv",
                                             f"--reuid={os.getuid()}", f"--regid={os.getgid()}", "--clear-groups",
@@ -339,6 +340,10 @@ class RetestRunner:
                 if b and t.get("junit") and ran(t["junit"]) < ran(b):
                     t = {**t, "status": "FAIL",
                          "reason": f"TESTS_DISAPPEARED: исполнено {ran(t['junit'])} < {ran(b)} на базе"}
+                elif b and t.get("junit") and t["junit"].get("skipped", 0) > b.get("skipped", 0):
+                    # «Пропустить один и добавить пустой» не меняет число исполненных — ловим рост пропусков.
+                    t = {**t, "status": "FAIL",
+                         "reason": f"TESTS_SKIPPED_GREW: пропущено {t['junit']['skipped']} > {b.get('skipped', 0)} на базе"}
                 if b:
                     t["base_junit"] = b
                 tests.append(t)

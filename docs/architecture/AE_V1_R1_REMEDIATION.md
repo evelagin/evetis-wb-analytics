@@ -92,9 +92,9 @@ LOADER_DEFECT, а коды состояния данных и пустого о�
 | R2 | сигнатура временного сбоя, код сам объявил временным | NOT_ENGINEERING |
 | R3 | сигнатура временного сбоя, а обёрточный код (`retry_wrapper_codes`: `SHEETS_API`, `LOADER_ERROR`, `ENGINE_ERROR`, `FATAL_UNHANDLED`, `*_HTTP_FAILED` …) записан как детерминированный | **RETRY_CLASSIFIER_DEFECT** |
 | R3X | временная сигнатура при коде вне списка обёрток | UNCLASSIFIED |
-| R4 | код из `schema_codes` (`*_SHAPE`, `*_BAD_JSON`, `WB_T6_PARSE`, `BQ_SHAPE`) ≥ 3 раз за 7 суток | **SCHEMA_DRIFT** (однократно — UNCLASSIFIED: возможен обрезанный ответ) |
-| R5 | код из `parity_codes` (`FUTURE_LEAKAGE`) ≥ 3 раз за 7 суток | **PARITY_DEFECT** (однократно — UNCLASSIFIED). `INVARIANT_FAIL` исключён: им же сообщается пустое окно данных |
-| R7 | код из `loader_defect_codes` (`DUP_KEY`, `MART_RUNS_DUP`, `STOCKS_POSTCOUNT_DUP`) ≥ 3 раз за 7 суток | **LOADER_DEFECT**. Обобщённые обёртки (`LOADER_ERROR`, `ENGINE_ERROR`, `MART_ERROR` …) без временной сигнатуры — UNCLASSIFIED |
+| R4 | код из `schema_codes` (`WB_*_SHAPE`, `WB_*_BAD_JSON`, `WB_T6_PARSE`) ≥ 3 раз за 7 суток | **SCHEMA_DRIFT** (однократно — UNCLASSIFIED: возможен обрезанный ответ). `BQ_SHAPE` исключён: так называются охранники целостности данных Юнитки |
+| R5 | `parity_codes` пуст | **PARITY_DEFECT** автоматически не назначается: `INVARIANT_FAIL` (пустое окно), `FUTURE_LEAKAGE` (ручное состояние листа) — UNCLASSIFIED; класс доступен только цели владельца |
+| R7 | код из `loader_defect_codes` (`MART_RUNS_DUP`, `STOCKS_POSTCOUNT_DUP` — проверки собственной записи загрузчика) ≥ 3 раз за 7 суток | **LOADER_DEFECT**. `DUP_KEY` (дубли во вью) и обобщённые обёртки без временной сигнатуры — UNCLASSIFIED |
 | H1 | DRO: `data_class` или `source_system` = MANUAL (ФФ, план продаж, ручные операции) | NOT_ENGINEERING |
 | H2 | DRO: детектор устарел или не запускался | UNCLASSIFIED: причина может быть операционной (планировщик на паузе — документированный откат DRO-1) |
 | H3 | DRO: данных нет или они опаздывают (`SLOT_*`, `FRESHNESS_*`, `DATA_LOSS_*`, `NO_DATA_OBSERVED`, `MISSING_DATES_RECOVERABLE`) | NOT_ENGINEERING |
@@ -121,15 +121,15 @@ allowlist не расширяет.
 
 | Класс | allowed_paths | строк / файлов | профили тестов |
 |---|---|---|---|
-| RETRY_CLASSIFIER_DEFECT | `cloud/src/failure.ts`, `cloud/src/errors.ts`, `cloud/src/cli.ts`, `cloud/src/loaders/**/*.ts`, `cloud/test/**/*.test.ts` | 300 / 6 | python, cloud |
-| LOADER_DEFECT | `cloud/src/**/*.ts`, `cloud/test/**/*.test.ts`, `cloud/test/fixtures/**/*.json`, `pipelines/ozon/runtime/**/*.py`, `pipelines/ozon/tests/**/*.py` | 400 / 8 | python, cloud, ozon |
-| SCHEMA_DRIFT | загрузчики/нормализация cloud и ozon + их тесты, JSON-фикстуры | 400 / 8 | python, cloud, ozon |
+| RETRY_CLASSIFIER_DEFECT | `cloud/src/failure.ts`, `cloud/src/errors.ts`, `cloud/src/cli.ts`, `cloud/src/http/*.ts`, `cloud/src/bq/client.ts`, `cloud/src/loaders/*/sheets.ts`, `cloud/src/loaders/*/wbApi.ts`, `cloud/src/loaders/unitka/ozon/requests.ts`, `cloud/test/**/*.test.ts` — классификатор и I/O-клиенты, без экономики | 300 / 6 | python, cloud |
+| LOADER_DEFECT | загрузчики приёма `cloud/src/loaders/{stocks,prices,funnel,promo,storage,tariffs}/**`, `cloud/src/bq/*.ts`, `cloud/src/http/*.ts`, тесты и JSON-фикстуры cloud, `pipelines/ozon/runtime|tests` | 400 / 8 | python, cloud, ozon |
+| SCHEMA_DRIFT | `normalize.ts` загрузчиков приёма, `wbApi.ts`, `cloud/src/http/*.ts`, тесты и JSON-фикстуры cloud, `pipelines/ozon/runtime|tests` | 400 / 8 | python, cloud, ozon |
 | PARITY_DEFECT | `sql/current/**/*.sql`, `sql/mart/**/*.sql`, `sql/dash/**/*.sql`, `tools/tests/test_*.py` — все SQL-пути требуют ACK плана | 300 / 6 | python |
 | DETECTOR_DEFECT (только цель владельца) | `sql/health/dro1_01…06`, `tools/dro1_health.py`, `tools/tests/test_dro1_health.py` | 300 / 5 | python |
 | COMMISSIONING_CANARY | `tools/tests/test_ae_commissioning_canary.py` | 120 / 1 | python |
 | SYNTHETIC_FIXTURE | `synthetic/**`, `tests_synthetic/**` (только при `incident.source = synthetic`) | 200 / 4 | python |
 
-Глобальный потолок `diff_limits` — 400 строк, 8 файлов. Строки считаются только внутри ханков `@@`. Бинарные изменения и пути вне `[A-Za-z0-9._/-]` запрещены для любого класса. ACK плана дополнительно требуется для `sql/unitka|promo|pricing|ops|health/**`. Поверх области действуют TCB
+Экономика Юнитки (`cloud/src/loaders/unitka/**`, кроме I/O-клиента `sheets.ts`) и витрины (`cloud/src/loaders/mart/**`) не входят ни в одну область. Глобальный потолок `diff_limits` — 400 строк, 8 файлов. Строки считаются только внутри ханков `@@`. Бинарные изменения и пути вне `[A-Za-z0-9._/-]` запрещены для любого класса. ACK плана дополнительно требуется для `sql/unitka|promo|pricing|ops|health/**`. Поверх области действуют TCB
 (HUMAN_DECISION_REQUIRED) и forbidden_paths (UNSAFE). В TCB добавлены конфиги, которые
 исполняются инструментами cloud: `cloud/vitest.config.*`, `cloud/.eslintrc*`,
 `cloud/eslint.config.*`, `cloud/tsconfig*.json`, `.nvmrc`, `.node-version`, а также `cloud/src/secrets.ts`, `cloud/src/config.ts` и `cloud/src/**/secret*.ts`. ACK плана для
@@ -157,7 +157,8 @@ allowlist не расширяет.
 - Статус теста = код выхода **и** валидный непустой JUnit по пути, который задаёт харнесс main. Тест, вызвавший `os._exit(0)`, не оставит отчёта и получит FAIL (`JUNIT_MISSING_OR_EMPTY`).
   - Сам отчёт пишет процесс тестов, т.е. код кандидата может его подделать. Это ограничение, а не гарантия.
 - Сеть на время тестов отключается. Это подтверждается пробами: соединение наружу не устанавливается, `sudo` внутри не работает, сокет Docker недоступен.
-  - Варианты: `unshare -rn` или `sudo unshare -n`, затем `setpriv` с возвратом к пользователю раннера, `--clear-groups`, `--no-new-privs`, `--inh-caps=-all`, `--bounding-set=-all`.
+  - Единственный вариант — `sudo unshare -n`, затем `setpriv` с возвратом к пользователю раннера, `--clear-groups`, `--no-new-privs`, `--inh-caps=-all`, `--bounding-set=-all`. Непривилегированный `unshare -r` не годится: в нём запрещён setgroups.
+  - Гейткипер требует изоляцию для CI-доказательств: `test_provenance = RECONCILED` при `network_isolation = NOT_ENFORCED` — INCONCLUSIVE.
   - Изоляция **только сетевая и best-effort**: файловая система раннера не изолирована (`isolation_scope` в доказательстве). Код кандидата может оставить файлы, которые исполнят последующие шаги того же job'а.
   - Если отключить нельзя — `network_isolation: NOT_ENFORCED`.
 - Детектор ослабления ворот дополнен: `it/describe/test.skip|only|todo|fails`, `xit` / `fit`, `pytest.skip(`, `importorskip`; удаление блоков `it(` / `test(` / `describe(` — UNSAFE.
@@ -171,7 +172,7 @@ allowlist не расширяет.
 Job `retest` в `autonomy-test.yml` работает без учётных данных: нет id-token (значит, нет
 `sa-ae-reader` и федерации Claude), нет токена записи. Он прогоняет те же профили на базовом
 коммите и на кандидате, харнесс — код main. Если исполненных тестов (`tests − skipped`) у
-кандидата меньше, чем у базы, это FAIL с причиной `TESTS_DISAPPEARED`.
+кандидата меньше, чем у базы, это FAIL с причиной `TESTS_DISAPPEARED`. Рост числа пропущенных тестов — FAIL `TESTS_SKIPPED_GREW`.
 
 Каждый job выгружает ровно один файл (`evidence.json` / `retest.json`). Гейт скачивает retest в
 отдельный каталог и берёт из него только `retest.json`. Из недоверенных документов в состояние
@@ -232,7 +233,7 @@ SHA и слияние только человеком. Требование вл
 | Причины переходов в состоянии | `mask_data` |
 | Сигналы наблюдателя, инцидент, цель | только перечисления, счётчики, идентификаторы, отпечатки; текста ошибки нет вообще |
 | Итог (issue / тело PR) | метаданные; `ensure_public` — остаток данных = отказ записи |
-| **Код кандидата (дифф)** | доверенный ingest проверяет добавленные строки: e-mail, телефоны, URL с параметрами, строки BigQuery и деньги — во всех файлах; длинные числа, табличные строки и проценты — в фикстурах и не-кодовых файлах. Бинарные изменения запрещены. Совпадение → WAITING_FOR_HUMAN, патч не сохраняется. Публикатор проверяет то же повторно |
+| **Код кандидата (дифф)** | доверенный ingest проверяет добавленные строки: e-mail, телефоны, URL с параметрами, строки BigQuery и деньги — во всех файлах; длинные числа, строки из трёх и более «реальных» чисел и проценты — в фикстурах, не-кодовых файлах и в тестовом коде (`cloud/test`, `tools/tests`, `pipelines/ozon/tests`). Бинарные изменения запрещены. Совпадение → WAITING_FOR_HUMAN, патч не сохраняется. Публикатор проверяет то же повторно |
 
 `mask_data` заменяет:
 - денежные суммы (₽, руб, RUB);
@@ -307,6 +308,18 @@ READY_FOR_PR не найдено, но выявлены ещё 1 HIGH и 4 MEDIU
 | L-6 — ключ восстановления в журнале | полный ключ группы; `REUSED` — успех |
 | L-8 — ослабление тестов | `it.fails`, удаление блоков тестов |
 | L-7 | названо ограничением (§7) |
+
+Третье свежее ревью по `b35b958...044b2d4` вернуло CHANGES_REQUIRED. Обходов гейткипера и
+публикатора не найдено, целевой кейс 503 подтверждён, найдены 3 MEDIUM и 3 LOW. Исправлено:
+
+| Находка | Исправление |
+|---|---|
+| M-1 — `FUTURE_LEAKAGE`, `BQ_SHAPE`, `DUP_KEY` | исключены; PARITY_DEFECT автоматически не назначается |
+| M-2 — экономика загрузчиков в allowlist без ACK | области сужены до классификатора, I/O-клиентов и загрузчиков приёма |
+| M-3 — данные в тестовом коде | тестовый код сканируется как данные |
+| L-1 | `concurrent/sequential/each.skip`, `it['skip']`, рост пропусков — FAIL |
+| L-2 | путь `unshare -r` удалён; CI-доказательства без изоляции — INCONCLUSIVE |
+| L-3 | `forbidden_paths` проверяется раньше скана данных: UNSAFE не понижается до решения человека |
 
 Дорожная карта ввода в эксплуатацию — AE-C0 (shadow) … AE-C5, по отдельным ACK. Первый реальный
 кейс: Sheets 503 (фикстура `quality/autonomy/examples/signals.sheets_503_2026-10-07.json`).

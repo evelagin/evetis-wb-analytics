@@ -56,7 +56,7 @@
     "recurrence_threshold_7d": 3
   },
   "classifier_codes": {
-    "comment": "AE-R1 (после двух независимых ревью). Классификатор fail closed: инженерный класс по журналу отказов — ТОЛЬКО для отказов загрузчиков Cloud Run (source_log = LOADER_RUNS: их код в cloud/, внутри allowlist) и ТОЛЬКО для кодов из явных списков ниже. Обобщённые обёртки (LOADER_ERROR, ENGINE_ERROR, FATAL_UNHANDLED) смысла не несут: инженерными они бывают только как RETRY_CLASSIFIER_DEFECT при однозначной временной сигнатуре источника. INVARIANT_FAIL исключён: им же сообщается пустое окно данных и расхождение источников. Apps Script (INGEST_RUNS) — доверенная база (apps-script/**), задачи AE не бывает. Схема ответа — только при повторяемости. Любой иной код — UNCLASSIFIED (оповещение владельцу).",
+    "comment": "AE-R1 (после двух независимых ревью). Классификатор fail closed: инженерный класс по журналу отказов — ТОЛЬКО для отказов загрузчиков Cloud Run (source_log = LOADER_RUNS: их код в cloud/, внутри allowlist) и ТОЛЬКО для кодов из явных списков ниже. Обобщённые обёртки (LOADER_ERROR, ENGINE_ERROR, FATAL_UNHANDLED) смысла не несут: инженерными они бывают только как RETRY_CLASSIFIER_DEFECT при однозначной временной сигнатуре источника. INVARIANT_FAIL исключён: им же сообщается пустое окно данных и расхождение источников. Apps Script (INGEST_RUNS) — доверенная база (apps-script/**), задачи AE не бывает. Схема ответа — только при повторяемости. Любой иной код — UNCLASSIFIED (оповещение владельцу). Третье ревью: BQ_SHAPE (охранники целостности данных Юнитки), FUTURE_LEAKAGE (ручное состояние листа) и DUP_KEY (дубли во вью) исключены; PARITY_DEFECT и DETECTOR_DEFECT автоматически не назначаются — только цель владельца с явным task_class.",
     "business_code_patterns": [
       "(^|_)(EMPTY|ZERO_ROWS|MISSING|AUTH|PATH_DENIED|STALE|FRESHNESS_GATE|REQUIRES_ACK|HELD|MANUAL|OVERRIDE|PROD_ONLY|NOT_ON_SHEET|LOCKED|SKIPPED|LOCK_UNAVAILABLE|DIVERGENCE|MISMATCH|OUT_OF_SCOPE|OUT_OF_BOUNDS|CAP_EXCEEDED|NOT_APPLICABLE|FORBIDDEN)(_|$)",
       "^(MONTH_SECTION|NEXT_MONTH_SECTION|PREDECESSOR_SECTION|RECON|SPP|LCD|MIGRATION|ROLLBACK|CAPACITY|MONTH_PREP|STORAGE_PROD|ANCHOR|NO_FREE_SKU|NO_SAFE_EXPANSION|SHEET_TAIL|SKU_WITHOUT|BLOCK_MISSING|PRICE_|COGS_|ACTUAL_WITH|UNPROVEN_|KNOWN_COGS|OPERATIONAL_POPULATION|SOURCE_|INTEGRITY_DATA|FACT_NOT_ON_SHEET|ORDERS_SOURCE)"
@@ -76,7 +76,6 @@
       "LEDGER_WRITE_FAILED"
     ],
     "schema_codes": [
-      "BQ_SHAPE",
       "WB_PROMO_SHAPE",
       "WB_TARIFF_SHAPE",
       "WB_PRICES_SHAPE",
@@ -84,11 +83,8 @@
       "WB_PRICES_BAD_JSON",
       "WB_T6_PARSE"
     ],
-    "parity_codes": [
-      "FUTURE_LEAKAGE"
-    ],
+    "parity_codes": [],
     "loader_defect_codes": [
-      "DUP_KEY",
       "MART_RUNS_DUP",
       "STOCKS_POSTCOUNT_DUP"
     ],
@@ -106,12 +102,16 @@
     "classes": {
       "RETRY_CLASSIFIER_DEFECT": {
         "engineering": true,
-        "description": "Временный отказ источника (5xx, unavailable, таймаут, rate limit) записан как детерминированный: классификатор повторов его не распознал.",
+        "description": "Временный отказ источника (5xx, unavailable, таймаут, rate limit) записан как детерминированный: классификатор повторов его не распознал. Allowlist — классификатор отказов и I/O-клиенты (Sheets, WB API, BigQuery), без экономической логики загрузчиков.",
         "allowed_paths": [
           "cloud/src/failure.ts",
           "cloud/src/errors.ts",
           "cloud/src/cli.ts",
-          "cloud/src/loaders/**/*.ts",
+          "cloud/src/http/*.ts",
+          "cloud/src/bq/client.ts",
+          "cloud/src/loaders/*/sheets.ts",
+          "cloud/src/loaders/*/wbApi.ts",
+          "cloud/src/loaders/unitka/ozon/requests.ts",
           "cloud/test/**/*.test.ts"
         ],
         "max_changed_lines": 300,
@@ -123,9 +123,16 @@
       },
       "LOADER_DEFECT": {
         "engineering": true,
-        "description": "Один и тот же детерминированный отказ загрузчика повторяется (порог signals.recurrence_threshold_7d) без внешней причины.",
+        "description": "Один и тот же детерминированный отказ загрузчика повторяется (порог signals.recurrence_threshold_7d) без внешней причины. Только загрузчики приёма (stocks/prices/funnel/promo/storage/tariffs, ozon runtime); экономика Юнитки и витрины — вне области.",
         "allowed_paths": [
-          "cloud/src/**/*.ts",
+          "cloud/src/loaders/stocks/**/*.ts",
+          "cloud/src/loaders/prices/**/*.ts",
+          "cloud/src/loaders/funnel/**/*.ts",
+          "cloud/src/loaders/promo/**/*.ts",
+          "cloud/src/loaders/storage/**/*.ts",
+          "cloud/src/loaders/tariffs/**/*.ts",
+          "cloud/src/bq/*.ts",
+          "cloud/src/http/*.ts",
           "cloud/test/**/*.test.ts",
           "cloud/test/fixtures/**/*.json",
           "pipelines/ozon/runtime/**/*.py",
@@ -141,10 +148,16 @@
       },
       "SCHEMA_DRIFT": {
         "engineering": true,
-        "description": "Источник изменил схему ответа: неизвестное/пропавшее поле, ошибка разбора.",
+        "description": "Источник изменил схему ответа: неизвестное/пропавшее поле, ошибка разбора. Только загрузчики приёма (stocks/prices/funnel/promo/storage/tariffs, ozon runtime); экономика Юнитки и витрины — вне области.",
         "allowed_paths": [
-          "cloud/src/loaders/**/*.ts",
-          "cloud/src/**/normalize*.ts",
+          "cloud/src/loaders/stocks/normalize.ts",
+          "cloud/src/loaders/prices/normalize.ts",
+          "cloud/src/loaders/funnel/normalize.ts",
+          "cloud/src/loaders/promo/normalize.ts",
+          "cloud/src/loaders/storage/normalize.ts",
+          "cloud/src/loaders/tariffs/normalize.ts",
+          "cloud/src/loaders/*/wbApi.ts",
+          "cloud/src/http/*.ts",
           "cloud/test/**/*.test.ts",
           "cloud/test/fixtures/**/*.json",
           "pipelines/ozon/runtime/**/*.py",
@@ -496,7 +509,9 @@
       "^\\+.*\\b(xit|xdescribe|fit|fdescribe)\\(",
       "^\\+.*\\bpytest\\.skip\\(",
       "^\\+.*\\bimportorskip\\(",
-      "^\\+.*\\bunittest\\.skip"
+      "^\\+.*\\bunittest\\.skip",
+      "^\\+.*\\b(it|describe|test|suite)\\.(concurrent|sequential|each)\\.(skip|only|todo|fails)\\b",
+      "^\\+.*\\b(it|describe|test|suite)\\[\\s*['\"`](skip|only|todo|fails)['\"`]\\s*\\]"
     ],
     "protected_files": [
       "quality/suites.json",
@@ -627,7 +642,7 @@
     "max_public_text_chars": 600,
     "max_tail_lines": 20,
     "patch_data_scan": {
-      "comment": "Кандидат публикуется (autonomy-state, ветка ae/*, PR). До сохранения патча доверенный код ищет в ДОБАВЛЕННЫХ строках данные: e-mail, телефоны, URL с параметрами, строки BigQuery REST, денежные суммы — во всех файлах; длинные числа и табличные строки — в фикстурах и не-кодовых файлах. Бинарные изменения запрещены. Совпадение — WAITING_FOR_HUMAN, патч не сохраняется.",
+      "comment": "Кандидат публикуется (autonomy-state, ветка ae/*, PR). До сохранения патча доверенный код ищет в ДОБАВЛЕННЫХ строках данные: e-mail, телефоны, URL с параметрами, строки BigQuery REST, денежные суммы — во всех файлах; длинные числа и табличные строки — в фикстурах и не-кодовых файлах. Бинарные изменения запрещены. Совпадение — WAITING_FOR_HUMAN, патч не сохраняется. Третье ревью: тестовый код сканируется как данные (длинные числа, строки из нескольких «реальных» чисел, проценты) — совпадение ведёт к человеку.",
       "all_files_kinds": [
         "email",
         "phone",
@@ -642,7 +657,7 @@
         "bq_row",
         "money",
         "long_number",
-        "table_row",
+        "numeric_row",
         "percent"
       ],
       "data_file_globs": [
@@ -651,7 +666,12 @@
         "**/*.csv",
         "**/*.tsv",
         "**/*.txt",
-        "**/*.ndjson"
+        "**/*.ndjson",
+        "cloud/test/**",
+        "tools/tests/**",
+        "pipelines/ozon/tests/**",
+        "**/test_*.py",
+        "**/*.test.ts"
       ]
     }
   }
