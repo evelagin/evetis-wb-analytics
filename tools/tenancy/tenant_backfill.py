@@ -486,7 +486,12 @@ def reconcile(doc,ack_hash,receipt, *, backend=None):
     expected.update(continuation_overrides(doc))
     if any(env.get(k)!=v for k,v in expected.items()):
         raise B.EvidenceError("execution provenance mismatch")
-    now=datetime.now(timezone.utc);tables,ledger=preflight(c,doc,now,backend=backend) if backend is not None else preflight(c,doc,now)
+    owner_observation=False
+    if backend is not None:
+        from tools.tenancy.controller_dispatch_recovery import SourceFreeBackend
+        if isinstance(backend,SourceFreeBackend):
+            owner_observation=backend.authorize_reconciliation(doc,receipt)
+    now=datetime.now(timezone.utc);tables,ledger=preflight(c,doc,now,backend=backend,owner_observation=owner_observation) if backend is not None else preflight(c,doc,now)
     cid=B.digest(["BOUNDED_PILOT_EXCLUSIVE",c["project_id"]])[:16]
     lease=tables.get_table(c["datasets"]["tenant_locks"],CK.lease_name(cid,receipt["lease_generation"]))
     if not lease or lease[0].get("owner")!=receipt["run_id"] or parse_tenant_json(lease[1] or "{}").get("ack_hash")!=ack_hash:

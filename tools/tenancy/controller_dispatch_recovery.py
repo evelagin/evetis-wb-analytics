@@ -200,7 +200,7 @@ def load(backend,records,root):
 
 class SourceFreeBackend:
     """No dispatcher or marketplace/Secret payload transport in owner recovery."""
-    def __init__(self,backend):self.backend=backend
+    def __init__(self,backend,proof=None):self.backend=backend;self.proof=proof
     def __getattr__(self,name):
         if name in {'start','next_plan','recover_receipt','reconcile'}:fail('source/coverage authority unavailable')
         return getattr(self.backend,name)
@@ -210,8 +210,23 @@ class SourceFreeBackend:
         if host not in {'run.googleapis.com','cloudscheduler.googleapis.com','www.googleapis.com','bigquery.googleapis.com'} or ':run' in url or ':access' in url:fail('source/secret transport unavailable')
         if method not in {'GET','POST'}:fail('noncanonical mutation unavailable')
         if method=='POST' and ('/queries' not in url or not isinstance(body,dict) or not body.get('query','').lstrip().startswith('SELECT ') or ';' in body['query']):fail('only SELECT transport available')
-        if '/projects/'+self.backend.c['project_id']+'/' not in url:fail('foreign tenant transport unavailable')
+        global_inventory=method=='GET' and url==BF.global_job_url(self.backend.c['project_id'])
+        if not global_inventory and '/projects/'+self.backend.c['project_id']+'/' not in url:fail('foreign tenant transport unavailable')
         return self.backend.request(method,url,body) if body is not None else self.backend.request(method,url)
+
+    def authorize_reconciliation(self,doc,receipt):
+        """Owner observation is authority only for this fenced exact certificate."""
+        from tools.tenancy import orchestration_contract as O
+        if self.proof is None:fail('owner reconciliation certificate absent')
+        proof=validate(self.proof)
+        source=self.c['orchestration']['job']['env']['CONTROLLER_SOURCE_SHA']
+        if proof['implementation_sha']!=source or self.current_execution is not None:fail('owner reconciliation implementation/context differs')
+        release=parse((BF.REPO/'infra/tenant/releases/backfill'/(source+'.json')).read_text())
+        O.verify_artifact_source(release,BF.REPO)
+        if self.tables.get_table(self.c['datasets']['ref'],marker(proof))!=marker_value(proof):fail('owner reconciliation fence absent')
+        expected,r,_=observe(self,proof)
+        if expected!=doc or r!=receipt:fail('owner reconciliation receipt differs')
+        return True
 
 
 def apply(backend,proof,now):
@@ -221,7 +236,7 @@ def apply(backend,proof,now):
     same exact owner certificate can finish it; a different certificate fails.
     """
     from tools.tenancy import orchestration_contract as O
-    backend=SourceFreeBackend(backend)
+    backend=SourceFreeBackend(backend,proof)
     from tools.tenancy.cloud_controller import timestamp
     validate(proof)
     if timestamp(proof['verified_at'])>now:fail('future owner observation')

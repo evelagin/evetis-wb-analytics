@@ -23,6 +23,14 @@ appends the checkpoint and creates its exact terminal lease marker. The resultin
 neither publishes COMPLETE nor manufactures coverage. No marketplace transport,
 source dispatch, coverage write or automatic recovery is part of this path.
 
+Canonical reconciliation uses owner observation only after verifying the exact
+closed certificate, owner fence, qualified implementation and fresh predicates.
+This requires no active cloud execution; it never invents a controller identity.
+Generic local/source-free wrappers remain unauthorized, and the older cloud-only
+historical handoff contract remains unchanged. Metadata transport additionally
+allows only the exact projected tenant global inventory GET, never its unfiltered
+or foreign-tenant variants.
+
 A crash may leave additive partial bookkeeping. Only the same owner certificate
 may finish that exact chain. It cannot repeat source work or release another
 lease. A later normal successor is allowed when consuming a previously committed

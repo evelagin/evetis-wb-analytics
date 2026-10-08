@@ -47,10 +47,21 @@ def check():
     b.store=SimpleNamespace(history=lambda _: [{'kind':'MANIFEST','payload':{'purpose':'QUALIFICATION','plans':[doc]}}]);b.c=BF.target('client_001')
     b.select=lambda *args:[{'last_success':(now+timedelta(seconds=1)).isoformat(),'last_failure':None,'failed_attempts':0}]
     assert b.monitoring(p['root_hash'],{'status':'MONITORING'})['scopes'][0]['checkpoint_age_seconds']==1
-    sent=[];guard=R.SourceFreeBackend(SimpleNamespace(request=lambda *args:sent.append(args)))
+    sent=[];guard=R.SourceFreeBackend(SimpleNamespace(c=BF.target('client_001'),request=lambda *args:sent.append(args)))
     for method,url,body in [('POST','https://api-seller.ozon.ru/v1/supply-order/list',{}),('POST','https://run.googleapis.com/v2/projects/mpa-t-client-001/locations/europe-west1/jobs/ozon-runtime-daily:run',{}),('GET','https://secretmanager.googleapis.com/v1/projects/mpa-t-client-001/secrets/synthetic/versions/latest:access',None)]:
         try:guard.request(method,url,body)
         except BF.B.EvidenceError:pass
         else:raise AssertionError('source authority exposed during recovery')
     assert not sent
+    inventory=BF.global_job_url(guard.c['project_id'])
+    guard.request('GET',inventory)
+    assert sent==[('GET',inventory)]
+    for method,url in [('POST',inventory),('GET',BF.global_job_url('foreign')),('GET',inventory+'&extra=true')]:
+        try:guard.request(method,url,{})
+        except BF.B.EvidenceError:pass
+        else:raise AssertionError('global inventory read boundary widened')
+    assert sent==[('GET',inventory)]
+    try:guard.authorize_reconciliation(doc,{})
+    except BF.B.EvidenceError:pass
+    else:raise AssertionError('anonymous source-free wrapper gained owner authority')
     return {'typed_terminal_recovery':'PASS','old_stop_not_bypassed':'PASS','monitoring_read_watermark':'PASS','source_budget_zero':'PASS'}
