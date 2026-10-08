@@ -61,4 +61,7 @@ def check():
         except BF.B.EvidenceError:pass
         else:raise AssertionError('global inventory read boundary widened')
     assert sent==[('GET',inventory)]
+    try:guard.authorize_reconciliation(doc,{})
+    except BF.B.EvidenceError:pass
+    else:raise AssertionError('anonymous source-free wrapper gained owner authority')
     return {'typed_terminal_recovery':'PASS','old_stop_not_bypassed':'PASS','monitoring_read_watermark':'PASS','source_budget_zero':'PASS'}
